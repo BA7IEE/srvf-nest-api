@@ -2644,6 +2644,38 @@ const MEMBER_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   },
 ];
 
+// issue #1055 T1(视觉身份终态升级):队员标准照两条业务码。
+//
+// ⚠️ **本刀只登记码,不绑任何角色** —— 两条都进 BIZ_ADMIN_EXCLUDED_CODES。
+// 不是保守,是有实质理由的:issue §8.1 明写
+// 「`member-portrait.manage.record` **必须支持组织数据范围,不能只做 GLOBAL RBAC**」。
+// biz-admin 的绑定是 **GLOBAL** 的;在 T1 顺手绑上去,等于在 scoped 设计落地之前
+// 先给出一个全局管辖的既成事实,T4 再想收回就是**缩小既有角色权限**(要另走一轮拍板)。
+// 绑定与 scoped 判权一起在 T4 做。
+//
+// 先登记不先接线的先例:证书标准库 PR-2 的 4 个审计事件同样是「事件名先落,消费方后到」——
+// 让 counts / 契约一次到位,不必在后续刀里再动跨模块枚举。
+const MEMBER_PORTRAIT_MANAGE_RECORD_CODE = 'member-portrait.manage.record';
+const MEMBER_PORTRAIT_READ_HISTORY_CODE = 'member-portrait.read.history';
+
+const MEMBER_PORTRAIT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: MEMBER_PORTRAIT_MANAGE_RECORD_CODE,
+    module: 'member-portrait',
+    action: 'manage',
+    resourceType: 'record',
+    description:
+      '管理队员标准照(上传 / 替换 / 作废;须走组织数据范围判权,不是 GLOBAL。当前标准照的**读取**复用 member.read.record)',
+  },
+  {
+    code: MEMBER_PORTRAIT_READ_HISTORY_CODE,
+    module: 'member-portrait',
+    action: 'read',
+    resourceType: 'history',
+    description: '查看队员标准照的版本历史(含已顶替 / 已作废版本;历史不可直接修改)',
+  },
+];
+
 const MEMBER_PROFILE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'member-profile.read.record',
@@ -3479,16 +3511,24 @@ const BIZ_ADMIN_TARGETED_REMOVAL_CODES = [
 // 活动责任闭环 contract 二十二码（其中两条 return 从未进入业务面集合）。
 const BIZ_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
   MEMBER_DELETE_RECORD_CODE,
+  // issue #1055 T1:标准照两码本刀只登记不绑定。manage 必须走组织数据范围(issue §8.1),
+  // 而 biz-admin 是 GLOBAL 绑定 —— 先绑再收回等于缩小既有角色权限,要另走拍板。
+  // read.history 一并排除:让「谁能看标准照历史」和「谁能管标准照」在 T4 一次定。
+  MEMBER_PORTRAIT_MANAGE_RECORD_CODE,
+  MEMBER_PORTRAIT_READ_HISTORY_CODE,
   ...BIZ_ADMIN_TARGETED_REMOVAL_CODES,
 ]);
 
-// 业务面权限码全集(各子数组求和,当前 86 条;运行期日志用 `.length` 输出为准,本注释不逐项维护数字,
+// 业务面权限码全集(各子数组求和,当前 89 条;运行期日志用 `.length` 输出为准,本注释不逐项维护数字,
 // 组成明细见下方 BIZ_ADMIN_DESCRIPTION。第三轮 review〔v0.38.0〕§F&A-3 使 member-profile 3→4、总 76→77;
 // v0.40.0 参与域收口 +3〔已并入各子数组〕;招新可用性收口 F2/F3 使 recruitment-application 6→8、总 80→82;
 // 十项收口刀D〔2026-07-11〕使 emergency-contact 4→5、总 82→83;十三项收口刀G 证书审核 +1 →84;
-// v0.47.0 F2 attendance.reopen.sheet +1 →85;D-INSURANCE PR2 review.record +1 →86)
+// v0.47.0 F2 attendance.reopen.sheet +1 →85;D-INSURANCE PR2 review.record +1 →86;
+// 〔实测口径〕本注释的历史累加与运行期 `.length` 早已对不上(累加到 86 时实际是 87)——
+// 以运行期日志为准,别照这串加减推算。issue #1055 T1 member-portrait +2 ⇒ 实测 89)
 const BIZ_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBER_PERMISSION_SEED,
+  ...MEMBER_PORTRAIT_PERMISSION_SEED,
   ...MEMBER_PROFILE_PERMISSION_SEED,
   ...EMERGENCY_CONTACT_PERMISSION_SEED,
   ...CERTIFICATE_PERMISSION_SEED,
@@ -3537,7 +3577,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面通用管理角色(Slow-3 决议 2026-06-11;v0.61.0 PR-11 contract 后活动发布/更新/取消/完成、报名写动作、考勤提交/编辑/删除/一审动作改由 owner/collaborator/reviewer 显式责任角色承载):87 条业务码中绑 69；继续保留 activity.create/delete.record、activity-registration.read.record、attendance.read.sheet。member.delete.record 仅 SUPER_ADMIN；考勤终审/撤回与活动责任 contract 动作均不绑。attachment 存量 20 码(member/certificate/activity)不在本角色，CMS content 附件写 4 码保留；notification 7 码与 membership.transfer.record 保留；证书标准库 PR-1 起含 certificate.read.sensitive(证书编号/审核备注明文，org-admin 不继承)；每个 ADMIN 用户由 seed 自动补挂本角色。';
+  '业务面通用管理角色(Slow-3 决议 2026-06-11;v0.61.0 PR-11 contract 后活动发布/更新/取消/完成、报名写动作、考勤提交/编辑/删除/一审动作改由 owner/collaborator/reviewer 显式责任角色承载):89 条业务码中绑 69；继续保留 activity.create/delete.record、activity-registration.read.record、attendance.read.sheet。member.delete.record 仅 SUPER_ADMIN；考勤终审/撤回与活动责任 contract 动作均不绑。member-portrait 两码（issue #1055 T1）登记但不绑——manage 须走组织数据范围，绑定与 scoped 判权一并在 T4 定。attachment 存量 20 码(member/certificate/activity)不在本角色，CMS content 附件写 4 码保留；notification 7 码与 membership.transfer.record 保留；证书标准库 PR-1 起含 certificate.read.sensitive(证书编号/审核备注明文，org-admin 不继承)；每个 ADMIN 用户由 seed 自动补挂本角色。';
 
 // Slow-4 T1(36/35)+ 保险模块含 PR2 增量(+8 全绑 → 44/43)+ 招新一期 T1 增量(+5 → 49/48):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
@@ -3561,7 +3601,8 @@ async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
   }
   console.log(
     `[seed] business permissions ensured (${BIZ_PERMISSION_SEED.length} entries: ` +
-      `member ${MEMBER_PERMISSION_SEED.length} + member-profile ${MEMBER_PROFILE_PERMISSION_SEED.length} + ` +
+      `member ${MEMBER_PERMISSION_SEED.length} + member-portrait ${MEMBER_PORTRAIT_PERMISSION_SEED.length} + ` +
+      `member-profile ${MEMBER_PROFILE_PERMISSION_SEED.length} + ` +
       `emergency-contact ${EMERGENCY_CONTACT_PERMISSION_SEED.length} + certificate ${CERTIFICATE_PERMISSION_SEED.length} + ` +
       `activity ${ACTIVITY_PERMISSION_SEED.length} + activity-registration ${ACTIVITY_REGISTRATION_PERMISSION_SEED.length} + ` +
       `attendance ${ATTENDANCE_PERMISSION_SEED.length} + ` +
@@ -4480,6 +4521,8 @@ export async function main(): Promise<void> {
     await seedContentAttachmentTypeConfigs(prisma);
     // 活动改造 v1.1 第 4 批:一次性报名附件会话内部 owner 配置(幂等,不 seed 权限码)。
     await seedRegistrationUploadSessionAttachmentTypeConfig(prisma);
+    // issue #1055 T1:账号头像 / 队员标准照两个 internal-only owner 配置(幂等,不 seed 权限码)。
+    await seedVisualIdentityAttachmentTypeConfigs(prisma);
 
     // 统一通知 S2(2026-06-25,评审稿 §3.5):微信订阅模板配置默认行(templateId=null 待运营填;幂等)
     await seedWechatSubscribeTemplates(prisma);
@@ -4579,6 +4622,59 @@ async function seedRegistrationUploadSessionAttachmentTypeConfig(
     },
   });
   console.log(`[seed] registration upload attachment type config ensured (${cfg.code})`);
+}
+
+// issue #1055 T1(视觉身份终态升级):账号头像 / 队员标准照两个 internal-only owner 的
+// AttachmentTypeConfig 默认行。沿 attachment-config-boundary §6「新增 owner type =
+// 新增一条配置行,不动 schema」。
+//
+// ⚠️ 两者都**不 seed 权限码**(镜像 registration-upload-session):它们不经通用
+// Attachment 端点,而是各自专用 facade 的内部资产 —— 通用写路径那套
+// `attachment.upload.*` / `attachment.delete.*` coarse 码对它们没有意义,
+// 发了反而会让人以为「拿着这个码就能通过通用接口改头像」。真正的授权码是
+// 业务侧的 `member-portrait.*`(标准照)与 LoginScoped self(账号头像)。
+//
+// MIME 白名单只给 `image/jpeg` + `image/png`(goal §2 T4 冻结规格):
+// 不含 webp —— 制证与印刷链路对 webp 支持仍不稳,而这两类图的终点就是印刷品。
+// 上限 10 MiB 对齐手机原图常见 3–8 MB。
+const VISUAL_IDENTITY_ATTACHMENT_TYPE_CONFIG_SEED = [
+  {
+    code: 'user-avatar',
+    displayName: '账号头像(用户本人)',
+    // ⚠️ 物理表名就是 "User"(该 model **没有** @@map),不是 users ——
+    // 这一列是给 Service 层做 ownerId 真实性校验用的表名,写错会在校验时找不到表。
+    ownerTable: 'User',
+    defaultMaxSizeBytes: 10 * 1024 * 1024,
+    defaultMimeWhitelist: ['image/jpeg', 'image/png'],
+  },
+  {
+    code: 'member-official-portrait',
+    displayName: '队员标准照(队伍管理)',
+    // 同上,Member 也没有 @@map。
+    ownerTable: 'Member',
+    defaultMaxSizeBytes: 10 * 1024 * 1024,
+    defaultMimeWhitelist: ['image/jpeg', 'image/png'],
+  },
+] as const;
+
+// 运营已调整的 MIME/大小/status 不得被 deploy/seed 回退:唯一允许的 update 是空对象。
+async function seedVisualIdentityAttachmentTypeConfigs(prisma: PrismaClient): Promise<void> {
+  for (const cfg of VISUAL_IDENTITY_ATTACHMENT_TYPE_CONFIG_SEED) {
+    await prisma.attachmentTypeConfig.upsert({
+      where: { code: cfg.code },
+      update: {},
+      create: {
+        code: cfg.code,
+        displayName: cfg.displayName,
+        ownerTable: cfg.ownerTable,
+        defaultMaxSizeBytes: cfg.defaultMaxSizeBytes,
+        defaultMimeWhitelist: [...cfg.defaultMimeWhitelist],
+      },
+    });
+  }
+  console.log(
+    `[seed] visual identity attachment type configs ensured (${VISUAL_IDENTITY_ATTACHMENT_TYPE_CONFIG_SEED.length}: user-avatar / member-official-portrait)`,
+  );
 }
 
 // 统一通知 S2(2026-06-25;微信订阅 quota 渠道,评审稿 §3.5 / D-N3):各 notification_type 的微信订阅模板

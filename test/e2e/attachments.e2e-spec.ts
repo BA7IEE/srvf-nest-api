@@ -293,7 +293,13 @@ describe('attachments 主模块', () => {
 
   // 每个 describe 块前清空 attachments 表(保留 type config / member / activity / cert fixtures)
   const truncateAttachments = async () => {
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "attachments" RESTART IDENTITY CASCADE');
+    // ⚠️ **不能用 `TRUNCATE ... CASCADE`**(issue #1055 T1 起)。
+    // `User.avatarAttachmentId` 是指向 attachments 的外键 ⇒ `TRUNCATE "attachments" CASCADE`
+    // 会**把 "User" 表一起清空**(TRUNCATE 的 CASCADE 按引用关系连坐,**不看 ON DELETE 规则**,
+    // 所以 SetNull 在这里救不了)。后果是 beforeAll 里登录拿到的 token 全部失效,
+    // 整个 spec 变成一片 401 —— 且错在"清表"这一步,读起来完全不像清表的锅。
+    // `DELETE` 走 ON DELETE 规则:头像指针与标准照指针各自置空,User 行留存。
+    await prisma.$executeRawUnsafe('DELETE FROM "attachments"');
   };
 
   // 帮助函数:构造一个合法的 POST body

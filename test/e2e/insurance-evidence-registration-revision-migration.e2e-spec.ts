@@ -13,6 +13,15 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 82;
+// 仓库当前 migration 总数。每加一刀就要 +1。
+//
+// ⚠️ 与本文件里的 **81** 是两件事:81 是「第 82 刀之前」的历史世代基线(冷库重放起点),
+// 出现在 `!== 81` ×2 与 `toBe(81)` ×2,**随仓库增长永不变**。见 81 就改 = 把基线改坏。
+//
+// 命名刻意与 `activity-v11-batch4-*-migration.e2e-spec.ts` 那 5 支一致:此前本支用的是
+// 裸 `toBe(90)`,于是「按 CURRENT_MIGRATION_COUNT 搜」找不到它 —— 加 migration 的人
+// 修完那 5 支、推上去被本支再咬一轮。已连续发生两次(#1048 / #1055),故统一。
+const CURRENT_MIGRATION_COUNT = 91;
 const MIGRATION_NAME =
   '20260809180000_activity_v11_batch4_registration_revision_insurance_evidence';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
@@ -520,9 +529,7 @@ describe('第 82 migration registration revision bridge', () => {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      // issue #1048 T1 新增第 90 个 migration。注意本文件另有 toBe(81) 两处,
-      // 那是**历史基线**(81-migration 起跑点),不随新增 migration 变。
-      expect(successfulMigrationCount(databaseName)).toBe(90);
+      expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
       expect(
         runPsql(
           databaseName,

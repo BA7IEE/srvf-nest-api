@@ -279,7 +279,28 @@ export type AuditLogEvent =
   | 'wecom.rebind.self' // 本人换绑;before/after 均掩码身份;extra.viaPath
   | 'wecom.clear.by-admin' // 管理员清除身份;before.wecomUserId 掩码;**幂等空转不写**
   | 'realname-setting.update' // realname settings upsert;resourceType='realname_setting';extra.changedFields
-  | 'realname-setting.reset-credentials'; // realname credentials reset;无 before/after/extra
+  | 'realname-setting.reset-credentials' // realname credentials reset;无 before/after/extra
+  // ===== 队员视觉身份资产终态升级(issue #1055)T1:6 个事件 =====
+  //
+  // **本刀只登记事件名,消费方在 T3(账号头像)/ T4(队员标准照)接入** ——
+  // 沿证书标准库 PR-2 的既有范式(事件名先落,让 counts / 契约一次到位,
+  // 不必在后续刀里再动 AuditLogEvent 这类跨模块 union)。
+  // 本 union 的铁律是「绝对禁止自行新增字符串值,须经评审稿或 goal 显式预授权」:
+  // 授权出处 = issue #1055 §11.2 逐条列名 + 本 goal T1 DoD 第 4 条。
+  //
+  // ⚠️ extra **闭集**(issue §11.2 的禁记清单,比本仓一般口径更严):
+  // 允许 userId / memberId / portraitVersionId / attachmentId / specVersion / source /
+  // oldVersionId / newVersionId / reason;
+  // **禁** storage key、signed URL、图片二进制、身份证件号、真实文件路径、
+  // Provider bucket/locator、EXIF/GPS。
+  // 头像与标准照的二进制定位信息一旦进了 audit,就等于把一条**不随附件删除而消失**的
+  // 旁路留存链写进了合规范围 —— 附件删了、审计里的 key 还在。
+  | 'user.avatar.change.self' // App 本人换头像;resourceType='user';extra {attachmentId, oldAttachmentId?}
+  | 'user.avatar.clear.self' // App 本人清空头像;幂等空转不写(沿 wecom.clear.by-admin 范式)
+  | 'member.official-portrait.activate' // 首次激活标准照(此前无 ACTIVE);extra {portraitVersionId, specVersion, source}
+  | 'member.official-portrait.replace' // 替换:旧版转 SUPERSEDED + 新版 ACTIVE 同事务;extra {oldVersionId, newVersionId}
+  | 'member.official-portrait.void' // 作废当前版本;extra {portraitVersionId, reason}(reason 必填,issue §8.3)
+  | 'member.official-portrait.purge'; // 历史版本二进制合规清理;extra {portraitVersionId}
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

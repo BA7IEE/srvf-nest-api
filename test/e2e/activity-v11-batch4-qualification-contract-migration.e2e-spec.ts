@@ -23,7 +23,10 @@ const SCRATCH_WORKER_ID = 83;
 const MIGRATION_NAME = '20260809223000_activity_v11_batch4_qualification_contract_guards';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_82_COUNT = 82;
-const CURRENT_MIGRATION_COUNT = 90;
+// ⚠️ 与上面的 MIGRATION_82_COUNT 是**两件事**:那个是第 83 刀之前的历史世代基线(冷库重放的起点),
+// 恒为 82、随仓库增长**不变**;这个是仓库当前的 migration 总数,每加一刀就要 +1。
+// 混改任何一个都会让「冷库 82→83 重放」那组用例的语义整个走样(issue #1055 T1 加第 91 刀时复核过)。
+const CURRENT_MIGRATION_COUNT = 91;
 // 这两例分别完整执行一次和五次冷库 82→83 重放；不能由 Jest 默认 30 秒截断。
 const COLD_MIGRATION_REPLAY_TIMEOUT_MS = 180_000;
 
@@ -736,7 +739,7 @@ describe('第 83 migration qualification contract guards', () => {
     }
   });
 
-  it('replays all current 90 migrations from a literally empty database', () => {
+  it(`replays all current ${CURRENT_MIGRATION_COUNT} migrations from a literally empty database`, () => {
     const databaseName = recreateEmptyScratchDatabase();
     try {
       deployCurrentMigrations(databaseName);
@@ -935,7 +938,7 @@ describe('第 83 migration qualification contract guards', () => {
   );
 
   it(
-    'five independent D83 migration mutations each rebuild a cold current 87 database and make its protected violation pass',
+    `five independent D83 migration mutations each rebuild a cold current ${CURRENT_MIGRATION_COUNT} database and make its protected violation pass`,
     async () => {
       const fullCompositeFk = `ALTER TABLE "ActivityQualificationRuleSet"
   ADD CONSTRAINT "activity_qualification_rule_set_activity_session_position_fkey"
