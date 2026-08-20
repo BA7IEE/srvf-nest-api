@@ -1,12 +1,14 @@
 import { ActivityBatchWorker } from './activity-batch.worker';
 
 describe('ActivityBatchWorker automatic ledger commit', () => {
-  function readyRound(commitReadyBatch: jest.Mock) {
+  // `fencedRows` = 带围栏的收尾写影响到的行数。1 = 租约仍在我手上(常态);
+  // 0 = 已被新一代持有者接管 ⇒ 收尾写落空(第六轮评审 B-02)。
+  function readyRound(commitReadyBatch: jest.Mock, fencedRows = 1) {
     const prisma = {
       activityBatchJobItem: { findMany: jest.fn().mockResolvedValue([]) },
       activityBatchJob: {
         update: jest.fn().mockResolvedValue(undefined),
-        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        updateMany: jest.fn().mockResolvedValue({ count: fencedRows }),
       },
     };
     const preparation = {
@@ -21,7 +23,12 @@ describe('ActivityBatchWorker automatic ledger commit', () => {
       { commitReadyBatch } as never,
       true,
     ) as unknown as {
-      drainOnce(): Promise<{ batchStatus: string | null }>;
+      drainOnce(): Promise<{
+        batchStatus: string | null;
+        jobClaimed: boolean;
+        commitAttempted: boolean;
+        commitErrorCode: string | null;
+      }>;
       enqueuePreparingBatches(): Promise<number>;
       claimJob(): Promise<{ id: string; leaseOwner: string; leaseGeneration: number }>;
     };
@@ -54,9 +61,25 @@ describe('ActivityBatchWorker automatic ledger commit', () => {
     await expect(worker.drainOnce()).resolves.toMatchObject({ batchStatus: 'ready' });
     expect(releaseForRetry).toHaveBeenCalledWith(
       'job-1',
+      { leaseOwner: 'worker-1', leaseGeneration: 1 },
       expect.any(Date),
       expect.objectContaining({ name: 'BizException' }),
     );
+  });
+
+  // 第六轮评审 B-02:围栏落空是**正常路径**(我已不是持有者),不是异常 ——
+  // 安静退出,既不抛错也不重试,更不替新持有者去跑 commit。
+  it('ready 收口时围栏已失效 ⇒ 放弃本轮,不调用自动提交者', async () => {
+    const commitReadyBatch = jest.fn().mockResolvedValue({ batchStatus: 'committed' });
+    const { worker } = readyRound(commitReadyBatch, 0);
+
+    await expect(worker.drainOnce()).resolves.toMatchObject({
+      jobClaimed: true,
+      batchStatus: null,
+      commitAttempted: false,
+      commitErrorCode: null,
+    });
+    expect(commitReadyBatch).not.toHaveBeenCalled();
   });
 
   it('claims the existing queue before it creates a new reconciliation job', async () => {
