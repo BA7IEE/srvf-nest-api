@@ -57,7 +57,6 @@ export class AppIdentityResolver {
         username: true,
         email: true,
         nickname: true,
-        avatarKey: true,
         role: true,
         status: true,
         memberId: true,
@@ -69,13 +68,5 @@ export class AppIdentityResolver {
 
 export type UserForApp = Pick<
   User,
-  | 'id'
-  | 'username'
-  | 'email'
-  | 'nickname'
-  | 'avatarKey'
-  | 'role'
-  | 'status'
-  | 'memberId'
-  | 'lastLoginAt'
+  'id' | 'username' | 'email' | 'nickname' | 'role' | 'status' | 'memberId' | 'lastLoginAt'
 > & { status: UserStatus };

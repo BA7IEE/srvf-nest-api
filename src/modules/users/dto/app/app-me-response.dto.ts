@@ -20,13 +20,6 @@ export class AppMeResponseDto {
   @ApiProperty({ description: '昵称(可空)', example: '小王', nullable: true })
   nickname!: string | null;
 
-  @ApiProperty({
-    description: '头像 attachment key(可空;不返完整 signed URL)',
-    example: 'user/avatars/clxxx.png',
-    nullable: true,
-  })
-  avatarKey!: string | null;
-
   @ApiProperty({ description: '系统角色(仅 UI 展示;非授权依据)', enum: Role })
   role!: Role;
 

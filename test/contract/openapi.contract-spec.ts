@@ -133,6 +133,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // P2-2 不新增 BizCode(沿 §6.1);字段集 / 行为契约沿 §10.3 + §14.2 锁定。
   ['get', '/api/app/v1/me/profile'],
   ['patch', '/api/app/v1/me/profile'],
+  // issue #1055 T3(2026-08-20):App 账号头像闭环。**三个**端点而不是 issue §7.1 写的四个 ——
+  // 维护者拍板走 multipart 直传服务端(服务端要规范化就必须看见字节;签名 URL 直传会让
+  // 未规范化的原图带着 EXIF/GPS 先落进 storage),于是 upload-url 与 confirm-upload 合成一次 POST。
+  // 准入沿本 controller 既有口径 app-member + self;**不**要任何 attachment.upload.* 通用权限码。
+  ['get', '/api/app/v1/me/avatar'],
+  ['post', '/api/app/v1/me/avatar'],
+  ['delete', '/api/app/v1/me/avatar'],
 
   // Phase 2 P2-3(2026-05-20):App /api/app/v1/me/password
   // 沿 docs/app-api-p2-3-password-review.md §1 + §11;**复用** ChangeMyPasswordDto +
@@ -1015,6 +1022,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/meta/participation-overview'],
 ];
 
+/**
+ * 路由足迹的**唯一数字**。加端点时只改这里一处 ——
+ * 生成器(`generate-authz-manifest.ts:525` 的 `contractCount()`)数的是 EXPECTED_ROUTES 的条目数,
+ * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
+ * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
+ */
+const EXPECTED_ROUTE_COUNT = 540;
+
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
   '/api/system/v1/sms-settings',
@@ -1718,9 +1733,14 @@ describe('OpenAPI 契约快照', () => {
   //   第 4 批⑧ managed onsite 临时参加 POST +1 →498；第 4 批分配核心：本人 accept
   //   邀请 + rank/lottery 批次 prepare/commit/void/get +5 →503；资格配置草稿 GET/PUT +2
   //   →505；第 5 批 QR 自助/managed attendance 十路 →515；第 6 批 staff/proxy/bulk/import
-  //   八路 →523；B6-2 offline package/review 六路 →529；B7 audience tags 三路 → **532**。
-  it('路由足迹精确为 532', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(537);
+  //   八路 →523；B6-2 offline package/review 六路 →529；B7 audience tags 三路 →532;
+  //   issue #1055 T3 App 账号头像三路(GET/POST/DELETE /app/v1/me/avatar) → **540**。
+  //
+  // ⚠️ 用例标题**从写死数字改成插值**:动它之前标题写着「精确为 532」而断言是 537 ——
+  // 有人 bump 了数字没 bump 标题,标题从此说谎。插值之后它不可能再漂。
+  // (同一形状在 `activity-v11-batch4-*-migration` 那批 spec 上刚治过一次。)
+  it(`路由足迹精确为 ${EXPECTED_ROUTE_COUNT}`, () => {
+    expect(EXPECTED_ROUTES).toHaveLength(EXPECTED_ROUTE_COUNT);
   });
 
   it('未出现意料之外的路由(全量路由集合与白名单一致)', () => {

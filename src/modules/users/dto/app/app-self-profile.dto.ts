@@ -24,13 +24,6 @@ export class AppSelfProfileDto {
   @ApiProperty({ description: '昵称', nullable: true, example: '阿明' })
   nickname!: string | null;
 
-  @ApiProperty({
-    description: '头像 attachment key(不返 signed URL)',
-    nullable: true,
-    example: 'user/avatars/clxxx.png',
-  })
-  avatarKey!: string | null;
-
   @ApiProperty({ description: '队员编号(终身不变)', example: 'V0001' })
   memberNo!: string;
 

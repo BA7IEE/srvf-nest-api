@@ -3,11 +3,17 @@
 // surface: App 小程序
 // contractVersion: 0.66.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:b8899326fb1ed9b5991bb5d6ec6c829411a3b45f70ce0577c5f2e0287b6b92c2
+// inputDigest: sha256:31c1a7c480f7419dfa584b743c0b2ffd2b70bb8b9f6b5667285438e4cdaa730a
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
 export type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto };
+
+export interface AccountAvatarDto {
+  "attachmentId": string;
+  "accessUrl": string | null;
+  "expiresAt": string | null;
+}
 
 export interface ActivityCheckInLocationDto {
   "longitude": number;
@@ -1005,7 +1011,6 @@ export interface AppMeResponseDto {
   "username": string;
   "email": Record<string, unknown> | null;
   "nickname": Record<string, unknown> | null;
-  "avatarKey": Record<string, unknown> | null;
   "role": "SUPER_ADMIN" | "ADMIN" | "USER";
   "status": "ACTIVE" | "DISABLED";
   "memberId": Record<string, unknown> | null;
@@ -1253,7 +1258,6 @@ export interface AppSelfProfileDto {
   "memberId": string;
   "username": string;
   "nickname": Record<string, unknown> | null;
-  "avatarKey": Record<string, unknown> | null;
   "memberNo": string;
   "realName": string;
   "memberLabel": string;
@@ -2045,7 +2049,6 @@ export interface UpdateAppMeInsuranceDto {
 
 export interface UpdateAppSelfProfileDto {
   "nickname"?: string;
-  "avatarKey"?: string;
 }
 
 export interface UpdateAppTeamJoinTargetsDto {

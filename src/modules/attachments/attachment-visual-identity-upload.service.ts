@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 
 import appConfig from '../../config/app.config';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -334,6 +334,60 @@ export class AttachmentVisualIdentityUploadService {
       specCode: KIND_CONFIG[state.kind].profile.code,
       createdAt: state.row.createdAt,
     };
+  }
+
+  /**
+   * 签出受控访问 URL。**短 TTL**,沿 storage settings 的 `downloadUrlTtlSeconds`(默认 300s)。
+   *
+   * 为什么这件事也收进 facade,而不是让 users / members 各自去注入
+   * `AttachmentAccessService`:那两个类**没有从 attachments 模块导出**,而这是刻意的 ——
+   * 视觉身份的两个 owner 只应该对**一个**面说话(issue §12)。让调用方直接拿到
+   * access service,等于把整个通用附件读写面一并递过去,internal-only 的边界就名存实亡了。
+   *
+   * 返回 `null` 有两种情形,调用方一视同仁按「当前没有可用头像」处理:
+   * 附件行不在(已被 durable delete),或 URL 签不出来(Provider 不可用 / 附件已过期)。
+   */
+  async resolveVisualIdentityAccessUrlTrusted(
+    attachmentId: string,
+  ): Promise<{ accessUrl: string; expiresAt: Date } | null> {
+    const row = await this.access.findAttachmentForVisualIdentityTrusted(attachmentId);
+    if (row === null) return null;
+    const accessUrl = await this.access.resolveAccessUrl(row.key, row.expireAt);
+    if (accessUrl === null) return null;
+    const ttlSeconds = await this.access.resolveDownloadUrlTtlSecondsTrusted();
+    return { accessUrl, expiresAt: new Date(Date.now() + ttlSeconds * 1000) };
+  }
+
+  /**
+   * 旧头像 / 旧标准照的 durable delete。
+   *
+   * ⚠️ **必须在调用方的事务提交之后调用**,不能塞进事务里:
+   * 它自己开事务(`prepareDelete` 内部 `$transaction`),嵌进外层事务会造成
+   * 「指针已改但 blob 删除失败 → 整个替换回滚」——而替换本身是成功的,
+   * 不该被一次清理失败拖垮。反过来,提交后清理失败只留下一个孤儿 blob,
+   * 由既有的对账 worker 收。**丢一个孤儿 blob 远好过丢一次用户操作。**
+   */
+  async deleteVisualIdentityAttachmentAfterCommitTrusted(input: {
+    attachmentId: string;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+  }): Promise<void> {
+    const eventKey = await this.storageConsistency.prepareDelete({
+      attachmentId: input.attachmentId,
+      actorUserId: input.actorUserId,
+      actorRoleSnap: input.actorRoleSnap,
+      // 本人替换自己的头像:不存在「加入别人正在进行的删除」这种情形。
+      allowAuthorizedJoin: false,
+      scope: 'self',
+      deletedByPath: 'owner',
+      auditMeta: input.auditMeta,
+    });
+    // ⚠️ `prepareDelete` **只落意图**,返回一个 eventKey;真正的 Provider 调用与
+    // Attachment 行删除在 `executeEventKey` 里原子完成。少了这一句,旧头像会一直挂在库里,
+    // 而**表面上一切正常** —— 替换成功、指针也对,只是旧行永远不走。
+    // 通用删除端点(`attachment-write.service.ts:362-367`)是同一对调用,照抄它的配对。
+    await this.storageConsistency.executeEventKey(eventKey);
   }
 
   // ===== 句柄生命周期(沿 registration-upload-session 同一实现)=====

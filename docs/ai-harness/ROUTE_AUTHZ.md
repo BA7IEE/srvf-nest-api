@@ -16,9 +16,9 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:06568a3c5b1ae6f77847179a84af95723ec16bb4dbfcc8ecea3dd6d50fa096f5 |
-| endpoint count | 537 |
-| legacy [auth] count | 164 |
+| inputDigest | sha256:e371419ffff614dd4f70bf55e1ec7953615cb39a4dbb7f79135f48a728018455 |
+| endpoint count | 540 |
+| legacy [auth] count | 167 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -30,7 +30,7 @@
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
 | admin | 273 | 273 | 0 |
-| app | 153 | 153 | 0 |
+| app | 156 | 156 | 0 |
 | system | 75 | 75 | 0 |
 | auth | 20 | 20 | 0 |
 | open | 16 | 16 | 0 |
@@ -41,7 +41,7 @@
 |---|---:|
 | public | 33 |
 | rbac | 340 |
-| auth | 164 |
+| auth | 167 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -76,7 +76,7 @@
 | app tag family | Mobile - Managed Activity Positions (4) | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-positions.controller.ts:139 |
 | app tag family | Mobile - Managed Activity Registrations (7) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts:53 |
 | app tag family | Mobile - Managed Activity Responsibilities (6) | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:141 |
-| app tag family | Mobile - Me (12) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:91 |
+| app tag family | Mobile - Me (15) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:361 |
 | app tag family | Mobile - My Activity Batch Jobs (5) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts:47 |
 | app tag family | Mobile - My Activity Check-ins (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:90 |
 | app tag family | Mobile - My Activity Feedback (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:55 |
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:06568a3c5b1ae6f77847179a84af95723ec16bb4dbfcc8ecea3dd6d50fa096f5",
+  "inputDigest": "sha256:e371419ffff614dd4f70bf55e1ec7953615cb39a4dbb7f79135f48a728018455",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -582,6 +582,22 @@
         "require": "all",
         "scopes": [],
         "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "DELETE /api/app/v1/me/avatar",
+      "controller": "AppMeController",
+      "handler": "clearMyAvatar",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "self"
+        ],
+        "engine": "authz-scoped"
       }
     },
     {
@@ -3186,6 +3202,22 @@
       "routeKey": "GET /api/app/v1/me/account",
       "controller": "AppMeController",
       "handler": "getMeAccount",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "self"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/me/avatar",
+      "controller": "AppMeController",
+      "handler": "getMyAvatar",
       "legacy": "auth",
       "policy": {
         "admission": "app-member",
@@ -7726,6 +7758,22 @@
       }
     },
     {
+      "routeKey": "POST /api/app/v1/me/avatar",
+      "controller": "AppMeController",
+      "handler": "uploadMyAvatar",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "self"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
       "routeKey": "POST /api/app/v1/me/insurances",
       "controller": "AppMeInsurancesController",
       "handler": "create",
@@ -9800,6 +9848,7 @@
 | DELETE | /api/admin/v1/users/:id/phone | Admin - Users | rbac | RBAC; admission=-; codes=user.phone.clear; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:249; src/modules/users/users.controller.ts:268 |
 | DELETE | /api/admin/v1/users/:id/wechat | Admin - Users | rbac | RBAC; admission=-; codes=user.wechat.clear; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:276; src/modules/users/users.controller.ts:294 |
 | DELETE | /api/admin/v1/users/:id/wecom | Admin - Users | rbac | RBAC; admission=-; codes=user.wecom.clear; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:303; src/modules/users/users.controller.ts:321 |
+| DELETE | /api/app/v1/me/avatar | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:361; src/modules/users/controllers/app-me.controller.ts:378 |
 | DELETE | /api/app/v1/me/insurances/:id | Mobile - My Insurances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:124; src/modules/insurances/controllers/app-me-insurances.controller.ts:148 |
 | DELETE | /api/app/v1/my/managed-activities/:activityId | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1054; src/modules/activities/controllers/app-managed-activities.controller.ts:1077 |
 | DELETE | /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:213; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:236 |
@@ -9937,14 +9986,15 @@
 | GET | /api/app/v1/activities/available | Mobile - Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=visibility:app-activity-catalog; engine=authz-scoped | code | src/modules/activities/controllers/app-activities.controller.ts:69; src/modules/activities/controllers/app-activities.controller.ts:86 |
 | GET | /api/app/v1/contents | Mobile - Content | auth | LOGIN_SCOPED; admission=app-member; codes=content.read.record; require=all; scopes=visibility:content-visibility; engine=authz-scoped | code | src/modules/content/content-app.controller.ts:36; src/modules/content/content-app.controller.ts:50 |
 | GET | /api/app/v1/contents/:id | Mobile - Content | auth | LOGIN_SCOPED; admission=app-member; codes=content.read.record; require=all; scopes=visibility:content-visibility; engine=authz-scoped | code | src/modules/content/content-app.controller.ts:53; src/modules/content/content-app.controller.ts:70 |
-| GET | /api/app/v1/me | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:91; src/modules/users/controllers/app-me.controller.ts:103 |
-| GET | /api/app/v1/me/account | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:131; src/modules/users/controllers/app-me.controller.ts:145 |
-| GET | /api/app/v1/me/capabilities | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:165; src/modules/users/controllers/app-me.controller.ts:179 |
+| GET | /api/app/v1/me | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:144; src/modules/users/controllers/app-me.controller.ts:156 |
+| GET | /api/app/v1/me/account | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:183; src/modules/users/controllers/app-me.controller.ts:197 |
+| GET | /api/app/v1/me/avatar | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:286; src/modules/users/controllers/app-me.controller.ts:299 |
+| GET | /api/app/v1/me/capabilities | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:217; src/modules/users/controllers/app-me.controller.ts:231 |
 | GET | /api/app/v1/me/insurances | Mobile - My Insurances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:50; src/modules/insurances/controllers/app-me-insurances.controller.ts:66 |
-| GET | /api/app/v1/me/profile | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:184; src/modules/users/controllers/app-me.controller.ts:198 |
+| GET | /api/app/v1/me/profile | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:236; src/modules/users/controllers/app-me.controller.ts:250 |
 | GET | /api/app/v1/me/team-join/applications/current | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:75; src/modules/team-join/team-join-applications.app.controller.ts:92 |
-| GET | /api/app/v1/me/wechat | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:349; src/modules/users/controllers/app-me.controller.ts:362 |
-| GET | /api/app/v1/me/wecom | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:405; src/modules/users/controllers/app-me.controller.ts:418 |
+| GET | /api/app/v1/me/wechat | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:507; src/modules/users/controllers/app-me.controller.ts:520 |
+| GET | /api/app/v1/me/wecom | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:563; src/modules/users/controllers/app-me.controller.ts:576 |
 | GET | /api/app/v1/my/activities | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:110; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:128 |
 | GET | /api/app/v1/my/activities/:activityId/check-in | Mobile - My Activity Check-ins | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:90; src/modules/attendances/controllers/app-activity-check-ins.controller.ts:110 |
 | GET | /api/app/v1/my/activities/:activityId/feedback | Mobile - My Activity Feedback | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:55; src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:74 |
@@ -10069,7 +10119,7 @@
 | PATCH | /api/admin/v1/users/:id/role | Admin - Users | rbac | RBAC; admission=-; codes=user.update.role; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:174; src/modules/users/users.controller.ts:196 |
 | PATCH | /api/admin/v1/users/:id/status | Admin - Users | rbac | RBAC; admission=-; codes=user.update.status; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:199; src/modules/users/users.controller.ts:218 |
 | PATCH | /api/app/v1/me/insurances/:id | Mobile - My Insurances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:95; src/modules/insurances/controllers/app-me-insurances.controller.ts:121 |
-| PATCH | /api/app/v1/me/profile | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:206; src/modules/users/controllers/app-me.controller.ts:220 |
+| PATCH | /api/app/v1/me/profile | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:258; src/modules/users/controllers/app-me.controller.ts:272 |
 | PATCH | /api/app/v1/me/team-join/applications/:id/targets | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:95; src/modules/team-join/team-join-applications.app.controller.ts:123 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity.create.cross-org; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1020; src/modules/activities/controllers/app-managed-activities.controller.ts:1051 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:183; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:210 |
@@ -10189,8 +10239,9 @@
 | POST | /api/app/v1/activities/:activityId/registrations | Mobile - Activity Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-activity-registrations.controller.ts:29; src/modules/activity-registrations/controllers/app-activity-registrations.controller.ts:68 |
 | POST | /api/app/v1/activities/:activityId/sessions/:sessionId/punches/check-in | Mobile - My Activity Punches | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-punches.controller.ts:36; src/modules/attendances/controllers/app-activity-punches.controller.ts:69 |
 | POST | /api/app/v1/activities/:activityId/sessions/:sessionId/punches/check-out | Mobile - My Activity Punches | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-punches.controller.ts:79; src/modules/attendances/controllers/app-activity-punches.controller.ts:112 |
+| POST | /api/app/v1/me/avatar | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:302; src/modules/users/controllers/app-me.controller.ts:349 |
 | POST | /api/app/v1/me/insurances | Mobile - My Insurances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:69; src/modules/insurances/controllers/app-me-insurances.controller.ts:92 |
-| POST | /api/app/v1/me/phone/send-code | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:272; src/modules/users/controllers/app-me.controller.ts:303 |
+| POST | /api/app/v1/me/phone/send-code | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:430; src/modules/users/controllers/app-me.controller.ts:461 |
 | POST | /api/app/v1/me/team-join/applications | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:44; src/modules/team-join/team-join-applications.app.controller.ts:72 |
 | POST | /api/app/v1/my/activities/:activityId/check-in | Mobile - My Activity Check-ins | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:28; src/modules/attendances/controllers/app-activity-check-ins.controller.ts:55 |
 | POST | /api/app/v1/my/activities/:activityId/check-out | Mobile - My Activity Check-ins | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-activity-check-ins.controller.ts:58; src/modules/attendances/controllers/app-activity-check-ins.controller.ts:87 |
@@ -10305,10 +10356,10 @@
 | PUT | /api/admin/v1/members/:memberId/department | Admin - Member Departments | rbac | RBAC; admission=-; codes=member-department.set.current; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/member-departments.controller.ts:74; src/modules/member-departments/member-departments.controller.ts:98 |
 | PUT | /api/admin/v1/notification-wechat-templates/:typeCode | Admin - Notifications | rbac | RBAC; admission=-; codes=notification.update.template; require=all; scopes=-; engine=rbac-global | code | src/modules/notifications/notification-wechat-template.admin.controller.ts:41; src/modules/notifications/notification-wechat-template.admin.controller.ts:59 |
 | PUT | /api/admin/v1/users/:id/password | Admin - Users | rbac | RBAC; admission=-; codes=user.reset.password; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:154; src/modules/users/users.controller.ts:171 |
-| PUT | /api/app/v1/me/password | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:231; src/modules/users/controllers/app-me.controller.ts:263 |
-| PUT | /api/app/v1/me/phone | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:308; src/modules/users/controllers/app-me.controller.ts:341 |
-| PUT | /api/app/v1/me/wechat | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:368; src/modules/users/controllers/app-me.controller.ts:397 |
-| PUT | /api/app/v1/me/wecom | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:425; src/modules/users/controllers/app-me.controller.ts:464 |
+| PUT | /api/app/v1/me/password | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:389; src/modules/users/controllers/app-me.controller.ts:421 |
+| PUT | /api/app/v1/me/phone | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:466; src/modules/users/controllers/app-me.controller.ts:499 |
+| PUT | /api/app/v1/me/wechat | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:526; src/modules/users/controllers/app-me.controller.ts:555 |
+| PUT | /api/app/v1/me/wecom | Mobile - Me | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/users/controllers/app-me.controller.ts:583; src/modules/users/controllers/app-me.controller.ts:622 |
 | PUT | /api/app/v1/my/activities/:activityId/feedback | Mobile - My Activity Feedback | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:27; src/modules/activity-feedbacks/controllers/app-activity-feedbacks.controller.ts:52 |
 | PUT | /api/app/v1/my/managed-activities/:activityId/qualification-rules | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:354; src/modules/activities/controllers/app-managed-activities.controller.ts:379 |
 | PUT | /api/app/v1/my/managed-activities/:activityId/registration-form | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:302; src/modules/activities/controllers/app-managed-activities.controller.ts:326 |
