@@ -1,7 +1,28 @@
-# SRVF API — 腾讯云 SMS 生产上线运维清单(验证码 + 生日祝福两模板)
+# SRVF API — 腾讯云 SMS 生产上线运维清单(验证码 + 通知 + 生日祝福**三**模板)
 
 > **性质**:运维侧 SOP(沿 [`cos-production-rollout-checklist.md`](cos-production-rollout-checklist.md) 范式);系统侧能力已随 SMS 基础设施 T1-T3 就绪,**本清单是真实通道开通的唯一接力入口**。
 > **权威源**:行为契约见冻结评审稿 [`docs/archive/reviews/sms-verification-infra-review.md`](../archive/reviews/sms-verification-infra-review.md);字段事实见 [`prisma/schema.prisma`](../../prisma/schema.prisma) `SmsSettings`。
+
+## 0-pre. 当前实况(2026-08-20)
+
+腾讯云侧维护者已备妥,系统侧尚未录入:
+
+| 项 | 状态 |
+|---|---|
+| 签名「深圳市公益救援」 | ✅ **可用(已生效)**;验证码/通知 **报备成功** |
+| 验证码模板 | ✅ 已生效;正文 `您的验证码为{1},...{2}分钟内有效` —— **恰 2 变量,与 §3a 要求逐项对上** |
+| 通知模板 | ✅ 已生效;正文零变量 —— 与 §3b 要求对上 |
+| 生日祝福模板 | ⏸ **未建**(只影响生日祝福,不阻塞其余两条链) |
+| `sms_settings` 录入 | ⏸ 待做(§5) |
+
+⚠️ **签名内容要逐字填进 `signName`** —— 是「深圳市公益救援」(七个字),不是队伍全名。
+填错腾讯云返 `FailedOperation.SignatureIncorrectOrUnapproved`。
+
+📌 与 COS 不同的两点,可以放心:
+- SMS **不做 boot fail-fast**(`sms-settings.service.ts` 注释:「SMS 是可选基础设施,production 未配置合法」)⇒ 配错不会让服务起不来。
+- 全部配置走 **PATCH 管理接口**,没有「只接受空表、写错不能重来」的 bootstrap ⇒ **填错可以直接改**。
+
+---
 
 ## 0. 用法说明
 
@@ -37,7 +58,20 @@
 
 **校验**:控制台签名状态 = **已通过**;记录 `<SIGN_NAME>`(与控制台显示完全一致,含中文)。
 
-## 3. 模板审核(**两模板一批送审**;2026-06-11 B 队列收口后口径)
+## 3. 模板审核(**三模板**;2026-08-20 更新)
+
+> ⚠️ **本节 2026-08-20 修补**:原文只写了验证码 + 生日祝福两模板,**漏掉 `templateIdNotification`**
+> —— 它是统一通知 S5 的**紧急召集兜底短信**,对救援队恰恰是最要紧的一条。
+> 缺口由真机接通时发现(维护者已建好验证码与通知两模板、反而没建生日模板)。
+>
+> **三者相互独立**:`missingRuntimeParams()` 按 template 分别校验
+> (`tencent-sms.provider.ts`)⇒ **缺哪个只影响哪条链**,不会互相拖累。
+
+| 模板 | 字段 | 变量 | 缺了会怎样 |
+|---|---|---|---|
+| 验证码 | `templateIdVerifyCode` | **恰 2 个**:`{1}`=码,`{2}`=分钟 | 短信登录 / 找回密码 / 绑手机不可用 |
+| **通知** | `templateIdNotification` | **零变量** | **紧急召集兜底短信发不出** |
+| 生日祝福 | `templateIdBirthday` | **零变量** | 只影响生日祝福,其余照常 |
 
 ### 3a. 验证码模板
 
@@ -53,7 +87,23 @@
 **校验**:模板状态 = **已通过**;记录数字模板 ID `<TEMPLATE_ID_VERIFY>`(录入 `templateIdVerifyCode`)。
 **⚠ 变量数不是 2 个 / 顺序颠倒** → 真实发送时腾讯云返回 `FailedOperation.TemplateParamSetNotMatch` 类错误(`GET /api/system/v1/sms-send-logs` 的 errCode 可见)。
 
-### 3b. 生日祝福模板(2026-06-11 +;queue-b 评审稿 §6.5)
+### 3b. 通知模板(**统一通知 S5 紧急召集兜底**;2026-08-20 补登记)
+
+1. 同入口创建模板;**内容必须零变量**(系统侧 `TemplateParamSet=[]`)。已过审的真实样例:
+
+   ```text
+   深圳公益救援队有一条重要通知,请及时打开系统/小程序或相关群组查看详情。
+   ```
+
+2. 模板类型选"普通短信"(通知类);等待审核。
+
+**校验**:模板状态 = **已通过**;记录数字模板 ID(录入 `templateIdNotification`)。
+**⚠ 模板含任何 {n} 变量** → 同样报 `TemplateParamSetNotMatch`(系统侧固定传空参数组)。
+
+> 📌 为什么零变量:紧急召集的**内容本身不进短信**(短信只做"去看系统"的触达),
+> 避免救援任务细节经运营商链路外泄。这是设计决定,不要为了"信息更全"给它加变量。
+
+### 3c. 生日祝福模板(2026-06-11 +;queue-b 评审稿 §6.5)
 
 1. 同入口创建第二个模板;**内容必须零变量**(系统侧 `TemplateParamSet=[]`,纯祝福文案),示例:
 
@@ -84,7 +134,7 @@
    ```bash
    curl -X PATCH https://<API_HOST>/api/system/v1/sms-settings \
      -H "Authorization: Bearer <ACCESS_TOKEN>" -H "Content-Type: application/json" \
-     -d '{"providerType":"TENCENT_SMS","enabled":true,"sdkAppId":"<SDK_APP_ID>","signName":"<SIGN_NAME>","region":"<REGION>","templateIdVerifyCode":"<TEMPLATE_ID_VERIFY>","templateIdBirthday":"<TEMPLATE_ID_BIRTHDAY>"}'
+     -d '{"providerType":"TENCENT_SMS","enabled":true,"sdkAppId":"<SDK_APP_ID>","signName":"<SIGN_NAME>","region":"<REGION>","templateIdVerifyCode":"<TEMPLATE_ID_VERIFY>","templateIdNotification":"<TEMPLATE_ID_NOTIFICATION>","templateIdBirthday":"<TEMPLATE_ID_BIRTHDAY>"}'
    ```
 
 2. 凭证(仅 SUPER_ADMIN;AES-256-GCM 加密落库,响应与日志永不回显):
@@ -127,7 +177,11 @@
    # 期望:status=SENT / providerType=TENCENT_SMS / providerMsgId 非空 / 手机号显示为掩码 138****XXXX
    ```
 
-4. 生日祝福链路验收(轻量;2026-06-11 +):`templateIdBirthday` 录入后,任一队员生日当天 09:00(Asia/Shanghai)后查 send-logs——期望出现 `templateKey=birthday-greeting / status=SENT` 行且真机收到祝福短信;当天无人生日则顺延至最近生日核验(系统侧幂等保证不重发)。
+4. **通知链路验收**(2026-08-20 补):`templateIdNotification` 录入后,发一条紧急召集(或任一走短信兜底的通知),
+   查 send-logs —— 期望出现 `templateKey=notification` / `status=SENT` / `providerMsgId` 非空。
+   ⚠️ **这条不能靠"等它自己触发"** —— 紧急召集是低频动作,不主动发一次就等于没验。
+
+5. 生日祝福链路验收(轻量;2026-06-11 +):`templateIdBirthday` 录入后,任一队员生日当天 09:00(Asia/Shanghai)后查 send-logs——期望出现 `templateKey=birthday-greeting / status=SENT` 行且真机收到祝福短信;当天无人生日则顺延至最近生日核验(系统侧幂等保证不重发)。
 
 **全部通过 = 通道上线完成。**
 
@@ -144,4 +198,4 @@
 
 - 上游 SMS SecretId/SecretKey 替换：仅在 `SMS_ENCRYPTION_KEY` 不变时重复 §4-§5；encryption key 轮换当前不支持，见 [`encryption-key-freeze.md`](encryption-key-freeze.md)
 - `sms_verification_codes` / `sms_send_logs` retention 清理:**手动 SQL SOP 已收口**(2026-06-11 P2-6),见 [`sms-data-retention-sop.md`](sms-data-retention-sop.md)
-- 找回密码 / OTP 登录 / 生日祝福:**系统侧三项消费者已全部落地**(P1-7 闭环,2026-06-11);本清单完成后三者即随通道真实生效,**零额外运维作业**
+- 找回密码 / OTP 登录 / 生日祝福 / **紧急召集兜底**:系统侧消费者已全部落地(P1-7 闭环,2026-06-11);本清单完成后三者即随通道真实生效,**零额外运维作业**
