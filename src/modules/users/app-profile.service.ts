@@ -22,7 +22,8 @@ import { UsersService } from './users.service';
 // 铁律(沿评审稿 §7.4 + §11):
 // - canUseApp=false → throw BizException(BizCode.FORBIDDEN)(P2-2 不新增 BizCode;沿 §6.1)
 // - empty body → throw BizException(BizCode.BAD_REQUEST)(§3.4 A 档)
-// - **禁止**透传 raw body / dto 给 UsersService;必须显式构造 safeDto = { nickname, avatarKey }
+// - **禁止**透传 raw body / dto 给 UsersService;必须显式构造 safeDto = { nickname }
+//   (issue #1055 T3 起 avatarKey 退出 App 白名单,头像走 POST /app/v1/me/avatar)
 type ResolvedAppAccess = AppAccessResult & { canUseApp: true; member: Member };
 
 @Injectable()
@@ -58,16 +59,18 @@ export class AppProfileService {
     this.assertCanUseApp(access);
 
     // 2) 空 body 拦截(沿 §3.4 A 档 / 评审稿 §6.1)
-    if (dto.nickname === undefined && dto.avatarKey === undefined) {
+    // issue #1055 T3:白名单从 {nickname, avatarKey} 收窄为 {nickname} ——
+    // 头像改走 `POST /app/v1/me/avatar`(multipart + 服务端规范化),
+    // 不再是「客户端塞一个 storage key 进来」。
+    if (dto.nickname === undefined) {
       throw new BizException(BizCode.BAD_REQUEST);
     }
 
     // 3) 白名单显式重构(沿 §7.4 铁律 + §11.2 风险表):
-    //    从 dto **逐字段**取 nickname / avatarKey 重组传给 UsersService;
+    //    从 dto **逐字段**取 nickname 重组传给 UsersService;
     //    **禁止** `dto as UpdateMyProfileDto` / `{ ...dto }` / `as unknown` 透传 raw body。
     const safeDto: UpdateMyProfileDto = {
       nickname: dto.nickname,
-      avatarKey: dto.avatarKey,
     };
     await this.usersService.updateMyProfile(currentUser, safeDto);
 
@@ -96,7 +99,7 @@ export class AppProfileService {
   // 拼装 AppSelfProfileDto(9 字段;沿 §2.4 v0.1 字段集冻结)。
   // GET / PATCH 共用,字段集严格一致。
   private buildDto(
-    user: { id: string; username: string; nickname: string | null; avatarKey: string | null },
+    user: { id: string; username: string; nickname: string | null },
     member: Member,
     hasMemberProfile: boolean,
   ): AppSelfProfileDto {
@@ -105,7 +108,6 @@ export class AppProfileService {
       memberId: member.id,
       username: user.username,
       nickname: user.nickname,
-      avatarKey: user.avatarKey,
       memberNo: member.memberNo,
       realName: member.realName,
       memberLabel: formatMemberLabel(member),

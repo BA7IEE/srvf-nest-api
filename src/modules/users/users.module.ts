@@ -7,8 +7,10 @@ import { SmsModule } from '../sms/sms.module';
 import { WechatModule } from '../wechat/wechat.module';
 import { WecomModule } from '../wecom/wecom.module';
 import { AuthzModule } from '../authz/authz.module';
+import { AttachmentsModule } from '../attachments/attachments.module';
 import { AppCapabilityService } from './app-capability.service';
 import { AppIdentityResolver } from './app-identity.resolver';
+import { AppAvatarService } from './app-avatar.service';
 import { AppProfileService } from './app-profile.service';
 import { AdminMeController } from './controllers/admin-me.controller';
 import { AppMeController } from './controllers/app-me.controller';
@@ -64,6 +66,11 @@ import { UsersService } from './users.service';
     // refresh 撤销与 audit 全部留在本模块。单向依赖 users → wecom,无环。
     WecomModule,
     AuthzModule,
+    // issue #1055 T3:账号头像走 attachments 模块导出的**可信 facade**
+    // (`AttachmentVisualIdentityUploadService`)。刻意只依赖那一个面 ——
+    // `AttachmentAccessService` / `AttachmentStorageOrchestrator` 都没有导出,
+    // 拿不到它们正是 internal-only 边界的一部分。单向依赖 users → attachments,无环。
+    AttachmentsModule,
   ],
   // admin/v1/me 本人身份只读 bootstrap(2026-06-14):AdminMeController 物理隔离于 Admin surface
   // (单一 @ApiTags('Admin - Me'),非 Mixed),复用 UsersService.getMyAdminIdentity 薄读路径。
@@ -73,6 +80,7 @@ import { UsersService } from './users.service';
     AppIdentityResolver,
     AppCapabilityService,
     AppProfileService,
+    AppAvatarService,
     UserWecomBindingService,
   ],
   exports: [AppIdentityResolver],

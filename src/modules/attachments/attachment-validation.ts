@@ -43,26 +43,42 @@ export function isKnownAttachmentOwnerType(value: string): value is AttachmentOw
 }
 
 // ============ internal-only owner 集合(唯一真相)============
-//
-// 这些 ownerType 在**每一个 generic Attachment 端点上都 fail-closed**:
-// 建 / 改 / 删 / 取详情一律拒绝,list 默认排除,显式按它筛则返回空页。
-// 只有各自的可信 facade 能碰。
-//
-// ⚠️ 本常量是**为了消灭一类缺陷而存在的**,不是顺手抽的工具:
-// 在此之前,这份名单以三份手抄副本存在 —— `isInternalRegistrationAttachmentOwner()`
-// 里一个三路 `||`,外加 `attachments.service.ts` 里两个内联 `notIn` 数组。
-// 新增一个 internal owner 要同时改三处,**漏掉任何一处都是静默敞口**
-// (漏 predicate = 写路径洞开;漏 notIn = 内部附件泄进通用列表),
-// 而三处都不会因为漏改而编译失败或测试变红。现在三处都读这一份。
-//
-// `satisfies` 不是装饰:它让「往这里写一个不存在的 ownerType」变成编译错误,
-// 否则拼错一个字符串的后果是"这条永远匹配不上",同样静默。
+
+/**
+ * 视觉身份两个 owner(issue #1055)。它是 internal-only 集合的**子集**,单独列出来是因为
+ * 「可信 facade 允许读哪些 owner」必须比「哪些 owner 不走通用接口」更窄 ——
+ * facade 的受控查询若按整个 internal-only 集合放行,就等于顺手把
+ * `registration-form-answer`(报名答案的最终附件)也开给了 users / members 模块。
+ */
+export const VISUAL_IDENTITY_ATTACHMENT_OWNER_TYPES = [
+  'user-avatar',
+  'member-official-portrait',
+] as const satisfies readonly AttachmentOwnerType[];
+
+export function isVisualIdentityAttachmentOwner(ownerType: string): boolean {
+  return (VISUAL_IDENTITY_ATTACHMENT_OWNER_TYPES as readonly string[]).includes(ownerType);
+}
+
+/**
+ * 这些 ownerType 在**每一个 generic Attachment 端点上都 fail-closed**:
+ * 建 / 改 / 删 / 取详情一律拒绝,list 默认排除,显式按它筛则返回空页。只有各自的可信 facade 能碰。
+ *
+ * ⚠️ 本常量是**为了消灭一类缺陷而存在的**,不是顺手抽的工具:
+ * 在此之前这份名单以三份手抄副本存在 —— `isInternalRegistrationAttachmentOwner()` 里一个三路 `||`,
+ * 外加 `attachments.service.ts` 里两个内联 `notIn` 数组。新增一个 internal owner 要同时改三处,
+ * **漏掉任何一处都是静默敞口**(漏 predicate = 写路径洞开;漏 notIn = 内部附件泄进通用列表),
+ * 而三处都不会因为漏改而编译失败或测试变红。现在三处都读这一份。
+ *
+ * `satisfies` 不是装饰:它让「往这里写一个不存在的 ownerType」变成编译错误 ——
+ * 否则拼错一个字符的后果是「这条永远匹配不上」,同样静默。
+ */
 export const INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES = [
   'registration-upload-session',
   'registration-form-answer',
   'attendance-import-preview',
-  'user-avatar',
-  'member-official-portrait',
+  // 视觉身份两个 owner 由上面的子集常量提供,**不在这里重列** ——
+  // 重列就会有两份名单,而它们迟早不一致。
+  ...VISUAL_IDENTITY_ATTACHMENT_OWNER_TYPES,
 ] as const satisfies readonly AttachmentOwnerType[];
 
 // ============ 系统级 MIME 黑名单(Q3 v1.0;沿 D7 §6.6)============

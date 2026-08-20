@@ -25,6 +25,7 @@ import {
   AttachmentOwnerType,
   INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES,
   detectPii,
+  isVisualIdentityAttachmentOwner,
   isKnownAttachmentOwnerType,
   isMimeBlocked,
 } from './attachment-validation';
@@ -413,6 +414,36 @@ export class AttachmentAccessService {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
     return found;
+  }
+
+  /**
+   * issue #1055 T2/T3 —— 视觉身份 facade 专用的窄查询。
+   *
+   * ⚠️ 与上面的 `findByIdOrThrow` 是**刻意相反**的两件事:那个是通用详情面,
+   * 对 internal-only owner 一律 fail-closed;本方法反过来,**只对视觉身份那两个 owner 放行**。
+   *
+   * 「只放行两个」这句是承重的,不是措辞:如果按整个 internal-only 集合放行,
+   * 就等于顺手把 `registration-form-answer`(报名答案的最终附件)与
+   * `attendance-import-preview` 也开给了 users / members 模块 —— 那两个 owner
+   * 与视觉身份毫无关系,却会因为「都归 facade 管」这个理由被一并递出去。
+   *
+   * 只回签 URL 所需的两个字段,不回 ownerId / uploadedBy / locator。
+   */
+  async findAttachmentForVisualIdentityTrusted(
+    attachmentId: string,
+  ): Promise<{ key: string; expireAt: Date | null } | null> {
+    const found = await this.prisma.attachment.findFirst({
+      where: { id: attachmentId },
+      select: { key: true, expireAt: true, ownerType: true },
+    });
+    if (found === null || !isVisualIdentityAttachmentOwner(found.ownerType)) return null;
+    return { key: found.key, expireAt: found.expireAt };
+  }
+
+  /** 签名 URL 的有效期(秒)。与 `resolveAccessUrl` 读同一处配置,不另立默认值。 */
+  async resolveDownloadUrlTtlSecondsTrusted(): Promise<number> {
+    const settings = await this.storageSettings.getActiveSettings();
+    return settings?.downloadUrlTtlSeconds ?? 300;
   }
 
   // 8. 通用 rbac.can() 失败抛 30100;沿 F5 v1.0

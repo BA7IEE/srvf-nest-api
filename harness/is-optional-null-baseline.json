@@ -625,7 +625,6 @@
     { "file": "src/modules/team-join/team-join.dto.ts", "symbol": "UpdateTeamJoinCycleDto.name" },
     { "file": "src/modules/team-join/team-join.dto.ts", "symbol": "UpdateTeamJoinCycleDto.requiresInsurance" },
     { "file": "src/modules/team-join/team-join.dto.ts", "symbol": "UpdateTeamJoinCycleDto.statusCode" },
-    { "file": "src/modules/users/dto/app/update-app-self-profile.dto.ts", "symbol": "UpdateAppSelfProfileDto.avatarKey" },
     { "file": "src/modules/users/dto/app/update-app-self-profile.dto.ts", "symbol": "UpdateAppSelfProfileDto.nickname" },
     { "file": "src/modules/users/users.dto.ts", "symbol": "CreateUserDto.avatarKey" },
     { "file": "src/modules/users/users.dto.ts", "symbol": "CreateUserDto.email" },

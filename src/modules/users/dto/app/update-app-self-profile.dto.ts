@@ -14,10 +14,4 @@ export class UpdateAppSelfProfileDto {
   @IsString()
   @MaxLength(50)
   nickname?: string;
-
-  @ApiPropertyOptional({ description: '头像 attachment key', maxLength: 255 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  avatarKey?: string;
 }

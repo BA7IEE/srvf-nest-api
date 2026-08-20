@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.66.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:b8899326fb1ed9b5991bb5d6ec6c829411a3b45f70ce0577c5f2e0287b6b92c2
+// inputDigest: sha256:31c1a7c480f7419dfa584b743c0b2ffd2b70bb8b9f6b5667285438e4cdaa730a
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -13,6 +13,7 @@ import type {
   PageResult,
   FetchRequest,
   Fetcher,
+  AccountAvatarDto,
   ActivityCheckInLocationDto,
   ActivityPublishReviewResponseDto,
   ActivityTemplateResolutionResponseDto,
@@ -303,6 +304,18 @@ export function createAppClient(fetcher: Fetcher) {
     AppMeControllerGetMeAccount(): Promise<ApiEnvelope<AppMeAccountDto>> {
       return fetcher<AppMeAccountDto>({ method: "GET", path: "/api/app/v1/me/account" });
     },
+    /** App 视角读本人账号头像(短 TTL 签名 URL;无头像返 null) [auth] */
+    AppMeControllerGetMyAvatar(): Promise<ApiEnvelope<AccountAvatarDto>> {
+      return fetcher<AccountAvatarDto>({ method: "GET", path: "/api/app/v1/me/avatar" });
+    },
+    /** App 视角上传 / 替换本人账号头像(multipart;服务端规范化并清除 EXIF/GPS) [auth] */
+    AppMeControllerUploadMyAvatar(): Promise<ApiEnvelope<AccountAvatarDto>> {
+      return fetcher<AccountAvatarDto>({ method: "POST", path: "/api/app/v1/me/avatar" });
+    },
+    /** App 视角清空本人账号头像(重复清空幂等) [auth] */
+    AppMeControllerClearMyAvatar(): Promise<ApiEnvelope<void>> {
+      return fetcher<void>({ method: "DELETE", path: "/api/app/v1/me/avatar" });
+    },
     /** App 视角本人 capability map(product-level;非 raw RBAC code) [auth] */
     AppMeControllerGetMeCapabilities(): Promise<ApiEnvelope<AppCapabilityResponseDto>> {
       return fetcher<AppCapabilityResponseDto>({ method: "GET", path: "/api/app/v1/me/capabilities" });
@@ -339,7 +352,7 @@ export function createAppClient(fetcher: Fetcher) {
     AppMeControllerGetMyProfile(): Promise<ApiEnvelope<AppSelfProfileDto>> {
       return fetcher<AppSelfProfileDto>({ method: "GET", path: "/api/app/v1/me/profile" });
     },
-    /** App 视角本人改 profile(严格白名单 nickname / avatarKey) [auth] */
+    /** App 视角本人改 profile(严格白名单:仅 nickname) [auth] */
     AppMeControllerUpdateMyProfile(body: UpdateAppSelfProfileDto): Promise<ApiEnvelope<AppSelfProfileDto>> {
       return fetcher<AppSelfProfileDto>({ method: "PATCH", path: "/api/app/v1/me/profile", body });
     },

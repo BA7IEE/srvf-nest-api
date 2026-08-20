@@ -1,16 +1,32 @@
 import {
+  type ArgumentsHost,
   Body,
+  Catch,
   Controller,
+  Delete,
+  type ExceptionFilter,
   Get,
   HttpCode,
   HttpStatus,
   Patch,
+  PayloadTooLargeException,
   Post,
   Put,
   Req,
   Res,
+  UploadedFile,
+  UseFilters,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiNoContentResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { formatMemberLabel } from '../../../common/identity/member-label.util';
 import { BizException } from '../../../common/exceptions/biz.exception';
@@ -34,7 +50,9 @@ import {
 } from '../../auth/wecom-browser-nonce';
 import { AppCapabilityService } from '../app-capability.service';
 import { AppIdentityResolver } from '../app-identity.resolver';
+import { AppAvatarService } from '../app-avatar.service';
 import { AppProfileService } from '../app-profile.service';
+import { AccountAvatarDto } from '../dto/app/account-avatar.dto';
 import { AppCapabilityResponseDto } from '../dto/app/app-capability-response.dto';
 import { AppMeAccountDto } from '../dto/app/app-me-account.dto';
 import { AppMeResponseDto } from '../dto/app/app-me-response.dto';
@@ -76,6 +94,40 @@ import { LoginScoped } from '../../../common/decorators/route-authz.decorator';
 // @PasswordChangeThrottle()(throttler 实例 'password-change')/
 // password.change.self audit / refresh token 撤销(revokedReason='self-password-change')。
 // **零新增**:0 DTO / 0 service / 0 BizCode / 0 audit event / 0 throttler 实例。
+// `Express.Multer.File` 需要 `@types/multer` 的全局命名空间;仓内既有做法是**各自局部声明
+// 只用到的那四个字段**(见 `app-registration-upload-sessions.controller.ts:43`),
+// 不引入一个只为类型服务的全局依赖。这里沿用同一形状。
+type AvatarMultipartFile = {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+};
+
+// issue #1055 T3:头像 multipart 的体积上限。
+// Busboy 在「已解析字节数等于配置值」时才发 limit 事件,故配置值取上限 +1 ——
+// 对外接受的最大值仍是 10 MiB,而第 1 个超出字节在进路由之前就被拒。
+const AVATAR_MULTIPART_FILE_SIZE_LIMIT = 10 * 1024 * 1024 + 1;
+
+// 全局 filter 刻意把通用 multipart 413 保持在 40000。本路由有固定的附件契约,
+// 解析层的体积拒绝必须保住 13013,否则客户端拿到的错误码会随「在哪一层被拒」漂移。
+//
+// ⚠️ 与 `app-registration-upload-sessions.controller.ts` 里那个是**同形的两份**。
+// 刻意不抽公共:共享处只能落在 `src/common/filters/**`,那是 `global-pipeline` 红区
+// (全局 Guard/Filter/Interceptor 影响每个请求)。两个 10 行、无共享清单的 filter
+// 各自漂移也不会互相影响,代价小于动红区。
+@Catch(PayloadTooLargeException)
+class AvatarUploadFileSizeFilter implements ExceptionFilter<PayloadTooLargeException> {
+  catch(_exception: PayloadTooLargeException, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse<Response>();
+    response.status(BizCode.ATTACHMENT_SIZE_EXCEEDED.httpStatus).json({
+      code: BizCode.ATTACHMENT_SIZE_EXCEEDED.code,
+      message: BizCode.ATTACHMENT_SIZE_EXCEEDED.message,
+      data: null,
+    });
+  }
+}
+
 @ApiTags('Mobile - Me')
 @ApiBearerAuth()
 @Controller('app/v1/me')
@@ -84,6 +136,7 @@ export class AppMeController {
     private readonly appIdentity: AppIdentityResolver,
     private readonly appCapability: AppCapabilityService,
     private readonly appProfile: AppProfileService,
+    private readonly appAvatar: AppAvatarService,
     private readonly usersService: UsersService,
     private readonly userWecomBinding: UserWecomBindingService,
   ) {}
@@ -114,7 +167,6 @@ export class AppMeController {
       username: user.username,
       email: user.email,
       nickname: user.nickname,
-      avatarKey: user.avatarKey,
       role: user.role,
       status: user.status,
       memberId: user.memberId,
@@ -210,7 +262,7 @@ export class AppMeController {
     scopes: ['self'],
     engine: 'authz-scoped',
   })
-  @ApiOperation({ summary: 'App 视角本人改 profile(严格白名单 nickname / avatarKey) [auth]' })
+  @ApiOperation({ summary: 'App 视角本人改 profile(严格白名单:仅 nickname) [auth]' })
   @ApiWrappedOkResponse(AppSelfProfileDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
   async updateMyProfile(
@@ -218,6 +270,112 @@ export class AppMeController {
     @Body() dto: UpdateAppSelfProfileDto,
   ): Promise<AppSelfProfileDto> {
     return this.appProfile.updateMyProfile(currentUser, dto);
+  }
+
+  // ===== issue #1055 T3:账号头像闭环 =====
+  //
+  // 三个端点,不是 issue §7.1 写的四个 —— 维护者 2026-08-20 拍板走 **multipart 直传服务端**:
+  // 服务端要规范化就必须看见字节,而「签名 URL 直传 + confirm 时拉回来规范化」会让
+  // **未规范化的原图(带 EXIF/GPS)先落进 storage 并停留一段时间**,正是整套设计要防的泄露。
+  // 于是 upload-url 与 confirm-upload 合并成一次 POST。
+  //
+  // 准入沿本 controller 既有口径:`app-member` + `self`。**不要**任何
+  // `attachment.upload.*` 通用权限码(issue §7.1 明写)—— 那是给通用附件面用的,
+  // 而这两个 owner type 恰恰在通用面上恒 fail-closed。
+
+  @Get('avatar')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({ summary: 'App 视角读本人账号头像(短 TTL 签名 URL;无头像返 null) [auth]' })
+  @ApiWrappedOkResponse(AccountAvatarDto)
+  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  async getMyAvatar(
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ): Promise<AccountAvatarDto | null> {
+    return this.appAvatar.getMyAvatar(currentUser);
+  }
+
+  @Post('avatar')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
+  @HttpCode(HttpStatus.OK)
+  @UseFilters(AvatarUploadFileSizeFilter)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: AVATAR_MULTIPART_FILE_SIZE_LIMIT, files: 1 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'JPEG / PNG 原图,≤10 MiB,短边 ≥512px(服务端会规范化成 512×512 JPEG)',
+        },
+      },
+    },
+  })
+  @ApiOperation({
+    summary: 'App 视角上传 / 替换本人账号头像(multipart;服务端规范化并清除 EXIF/GPS) [auth]',
+  })
+  @ApiWrappedOkResponse(AccountAvatarDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ATTACHMENT_MIME_NOT_ALLOWED,
+    BizCode.ATTACHMENT_SIZE_EXCEEDED,
+    BizCode.ATTACHMENT_IMAGE_UNDECODABLE,
+    BizCode.ATTACHMENT_IMAGE_ANIMATED_NOT_ALLOWED,
+    BizCode.ATTACHMENT_IMAGE_TOO_SMALL,
+    BizCode.ATTACHMENT_IMAGE_PIXELS_EXCEEDED,
+  )
+  async uploadMyAvatar(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @UploadedFile() file: AvatarMultipartFile | undefined,
+    @Req() req: Request,
+  ): Promise<AccountAvatarDto> {
+    if (file === undefined) throw new BizException(BizCode.BAD_REQUEST);
+    return this.appAvatar.replaceMyAvatar(
+      currentUser,
+      {
+        buffer: file.buffer,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+      },
+      this.buildAuditMeta(req),
+    );
+  }
+
+  @Delete('avatar')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['self'],
+    engine: 'authz-scoped',
+  })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'App 视角清空本人账号头像(重复清空幂等) [auth]' })
+  // 204 必须显式声明:契约快照有一条判据比对「Nest 的有效状态码」与「OpenAPI 里记录的成功状态码」,
+  // 不声明的话文档侧是空的,前端 client 生成器也不知道这条没有响应体。
+  @ApiNoContentResponse({ description: '已清空(重复清空同样返 204)' })
+  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.FORBIDDEN)
+  async clearMyAvatar(
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.appAvatar.clearMyAvatar(currentUser, this.buildAuditMeta(req));
   }
 
   // Phase 2 P2-3:PUT /me/password(沿评审稿 §1 + §9.2 + §15.1 + D-P2-3-1 = X)。

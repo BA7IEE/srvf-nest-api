@@ -27,9 +27,10 @@ interface ResBody {
   data: Record<string, unknown>;
 }
 
+// issue #1055 T3:`avatarKey` 退出 App 契约,头像自成一条端点
+// (`GET/POST/DELETE /api/app/v1/me/avatar`),返短 TTL 签名 URL 而不是裸 storage key。
 const APP_ME_KEYS = [
   'appAccessReason',
-  'avatarKey',
   'canUseApp',
   'email',
   'gradeCode',
@@ -89,9 +90,9 @@ function assertNoForbiddenKeys(obj: Record<string, unknown>): void {
   }
 }
 
-// Phase 2 P2-2:AppSelfProfileDto 字段集**恰好 10**(v0.1 锁的是 9;issue #1048 T1 把 displayName 换成 realName + memberLabel,净 +1)。
+// Phase 2 P2-2:AppSelfProfileDto 字段集(v0.1 锁 9;issue #1048 T1 把 displayName 换成
+// realName + memberLabel 净 +1 → 10;issue #1055 T3 移出 avatarKey → 9)。
 const APP_PROFILE_KEYS = [
-  'avatarKey',
   'hasMemberProfile',
   'memberId',
   'memberLabel',
@@ -777,7 +778,9 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       expect(dbUser.nickname).toBe('新昵称');
     });
 
-    it('success: update avatarKey only → 200 + DB user.avatarKey 已写', async () => {
+    it('avatarKey 已退出白名单:带它的请求被拒,且什么都没改到', async () => {
+      // issue #1055 T3:头像改走 `POST /api/app/v1/me/avatar`(multipart + 服务端规范化)。
+      // 旧路径「客户端塞一个 storage key 进来」无法证明该对象存在、属于本人、是图片、尺寸合规。
       const { userId, authHeader } = await setupLinkedUser({
         username: 'p22_patch_avatar',
         memberNo: 'P22-P2',
@@ -787,29 +790,24 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
         { avatarKey: 'user/avatars/clxxx.png' },
         authHeader,
       );
-      expect(res.status).toBe(200);
-      const { data } = res.body as ResBody;
-      expect(data.avatarKey).toBe('user/avatars/clxxx.png');
-      assertNoProfileForbiddenKeys(data);
+      // 收窄后它是个多余属性 ⇒ ValidationPipe 400。
+      // 关键不在状态码,而在**它不再能改到任何东西**。
+      expect(res.status).toBe(400);
 
       const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-      expect(dbUser.avatarKey).toBe('user/avatars/clxxx.png');
+      expect(dbUser.avatarKey).toBeNull();
+      expect(dbUser.avatarAttachmentId).toBeNull();
     });
 
-    it('success: update both → 200 + 两字段都已写', async () => {
+    it('只改 nickname 的调用逐字不受影响(反向对照:收窄没把整个端点关掉)', async () => {
       const { userId, authHeader } = await setupLinkedUser({
         username: 'p22_patch_both',
         memberNo: 'P22-P3',
       });
-      const res = await patch(
-        '/api/app/v1/me/profile',
-        { nickname: 'NN', avatarKey: 'a/b/c.png' },
-        authHeader,
-      );
+      const res = await patch('/api/app/v1/me/profile', { nickname: 'NN' }, authHeader);
       expect(res.status).toBe(200);
       const dbUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
       expect(dbUser.nickname).toBe('NN');
-      expect(dbUser.avatarKey).toBe('a/b/c.png');
     });
 
     it('empty body → 400 BAD_REQUEST(沿 §3.4 A 档)', async () => {
