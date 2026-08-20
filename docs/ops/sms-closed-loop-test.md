@@ -1,7 +1,7 @@
 # 短信闭环测试 —— 证明「这套系统能用腾讯云短信」
 
-> **状态**:⚠️ **未实测**(脚本已按仓库实况写好,**所有请求体与响应字段均逐个对着真实 DTO 类核过**;尚未在真机跑过)。
-> 跑完把结论回填到 §6。
+> **状态**:**验证码链路 PASS**(2026-08-20 真机实测,16 项验收全过)。
+> 🔴 **通知模板链路仍未验** —— 见 §5 与 §6.3。两条要分别声称。
 >
 > 配套:[`sms-production-rollout-checklist.md`](./sms-production-rollout-checklist.md)(录入侧 SOP)。
 > 本文只管**录入之后怎么验**。
@@ -74,15 +74,53 @@
 
 ⇒ **验证码链路 PASS ≠ 短信通道全部可用。** 两条要分别声称。
 
-## 6. 实测结论(跑完回填)
+## 6. 实测结论
+
+### 6.1 结论
+
+**2026-08-20 · 腾讯云 SMS 验证码真实闭环:PASS**(维护者在真机实测)。
+
+走通的是完整业务链,不是 Mock、不是 DEV_STUB、也不是只看接口返回 200:
 
 ```
-日期:
-环境:
-验证码链路:
-通知链路:
-备注:
+SRVF API → 腾讯云 SMS → 真实手机收码 → 验证码校验 → 手机号绑定 → 发送日志
 ```
+
+环境:`https://srvf-dp.23cc.cn` · `APP_ENV=production` ·
+`sdkAppId=1401142432` / `signName=深圳市公益救援` / `region=ap-guangzhou` ·
+`templateIdVerifyCode=2675279` / `templateIdNotification=2675285`。
+
+### 6.2 关键读数
+
+| 步骤 | 实测 |
+|---|---|
+| step-up(`action=PHONE_BIND`) | 成功(token 不回显) |
+| `POST /app/v1/me/phone/send-code` | `code=0`,`expiresInSeconds=300` |
+| 真机接收 | ✅ 收到「深圳市公益救援」签名的 6 位码 |
+| `PUT /app/v1/me/phone` | `code=0`,`phone=139****6288`,`phoneVerifiedAt` 已落库 |
+| 发送留痕 | `status=SENT` · `providerType=TENCENT_SMS` · **`providerMsgId=99:140053352417872116629479628`** · `errCode=null` · 手机号掩码 |
+
+⭐ **`providerMsgId` 非空是这一轮最硬的一条** —— 它是腾讯云的发送回执,
+证明请求**真的到达了腾讯云并被受理**,而不是只有本地接口返回成功。
+
+由此一并证实:凭据可解密可用 · SDK AppID 可用 · 签名匹配 · 模板匹配 ·
+**模板参数数量与顺序正确** · 服务器→腾讯云网络通 · 腾讯云→运营商→手机链路通。
+
+### 6.3 🔴 本轮**没有**证明的事
+
+`templateIdNotification=2675285` 已配置且腾讯云侧已生效,但**本轮没有触发真实通知业务发送**。
+
+⇒ 当前只能声称「**验证码 SMS 基础设施真实闭环 PASS**」,
+**不能**据此宣称「通知类 SMS 业务链路已验收」。后者须在对应通知业务验收中单独完成真实发送。
+
+### 6.4 本轮暴露的两处文档缺陷(均已修)
+
+1. **`sms-production-rollout-checklist.md` §6 契约漂移** —— 第 2 步的绑定示例只写
+   `phone` + `code`,**漏了 `stepUpToken`**;而 `BindMyPhoneDto` 是三个必填字段,
+   且该 token 必须是 `action=PHONE_BIND` 的 5 分钟 proof。**照旧文操作会直接失败。**
+   已补一整步(取 step-up)并订正示例。
+2. **脚本当时尚未合入仓库** —— 实测在 07:41,脚本随 #1103 于 07:46 合入,差 5 分钟。
+   本轮按本文档定义的步骤逐项手工执行,覆盖范围与脚本一致。
 
 ## 7. 排错
 
