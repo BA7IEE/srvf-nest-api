@@ -235,7 +235,8 @@ describe('Admin team-insurance-policies + member insurances(保险 T2)', () => {
     const cov = (res.body as ResBody).data;
     expect(cov.memberId).toBe(member.id);
     expect(cov.memberNo).toBe(member.memberNo);
-    expect(cov.memberDisplayName).toBe('Coverage Tester');
+    expect(cov.memberRealName).toBe('Coverage Tester');
+    expect(cov.memberLabel).toBe(`${member.memberNo} · Coverage Tester`);
 
     const audit = await prisma.auditLog.findFirst({
       where: { event: 'team-insurance-coverage.add', resourceId: policyId },

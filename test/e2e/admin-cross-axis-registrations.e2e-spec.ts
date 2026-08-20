@@ -277,7 +277,7 @@ describe('跨轴只读:报名(Tier2 跨活动 + Tier3 队员履历)', () => {
       });
     });
 
-    it('q 跨字段命中 memberNo+memberDisplayName+activityTitle(命中 memberA 两条,不看 activity)', async () => {
+    it('q 跨字段命中 memberNo+memberRealName+activityTitle(命中 memberA 两条,不看 activity)', async () => {
       const res = await request(httpServer(app))
         .get('/api/admin/v1/registrations')
         .query({ q: 'xreg-a' })
@@ -391,7 +391,9 @@ describe('跨轴只读:报名(Tier2 跨活动 + Tier3 队员履历)', () => {
       expect(item.member).toEqual({
         id: memberAId,
         memberNo: 'xreg-a',
-        ...memberIdentityData('XReg Member A'),
+        realName: 'XReg Member A',
+        nickname: null,
+        label: 'xreg-a · XReg Member A',
         gradeCode: null,
       });
       expect(item.activity).toEqual({

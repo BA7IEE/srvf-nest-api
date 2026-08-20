@@ -61,7 +61,10 @@ const APP_MY_REG_DETAIL_KEYS = [
 const REG_FORBIDDEN_KEYS = [
   'memberId',
   'memberNo',
-  'memberDisplayName',
+  // issue #1048 T1:`memberDisplayName` 已不可能出现,只留旧名 = 这道闸从此什么都不守。
+  // 换成改名后的两个字段,App 侧「不泄露队员身份」才继续被守着。
+  'memberRealName',
+  'memberLabel',
   'reviewedBy',
   'cancelledByUserId',
   'deletedAt',
