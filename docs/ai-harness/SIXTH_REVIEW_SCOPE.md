@@ -6,7 +6,81 @@
 > **为什么不放 `docs/archive/reviews/`**:归档区冻结不回改,而本文在评审推进中还要更新
 > (投放进度、范围微调)。评审**结论**产出后另立冻结件入归档,那时才是不可变的。
 >
-> **起草日**:2026-08-20 · **范围基线**:`v0.66.0..main` · **拍板**:维护者 2026-08-20 选 B(跨模型评审)
+> **起草日**:2026-08-20 · **范围基线**:`v0.66.0..bab3793e` · **拍板**:维护者 2026-08-20 选 B(跨模型评审)
+>
+> 📌 **范围 SHA 固定为 `bab3793e`**(A 包投放时的 main)。此后 main 继续前进(T3 等),
+> 但**评审对象不动** —— findings 按该 SHA 归因。T3 未碰 `prisma/`,故 A 包对象逐字节未变。
+
+---
+
+## 0-pre. 🔴 A 包已完成 —— **投放 B–F 时必须一并给「已确认事实」**
+
+A 包(schema + migration)已收回 findings 并**经本仓逐条复核**。
+下列三条是**已定性的事实**,投放其余五包时**必须随投放模板一并给出**,理由见每条末尾。
+
+### ① BLOCKER「migration 没包事务,失败留下半套 schema」—— **已实测证伪,不要再报**
+
+原报告的推论链依赖一句前提:「Prisma 不自动包事务」。**该前提不成立。**
+
+复现方式(任何人可重跑):建独立探针库 → 写一个**不含 `BEGIN/COMMIT`** 的 migration,
+前半段建两张表、末尾对既有表加 CHECK,而库里预置一行违反该 CHECK 的脏数据 →
+`prisma migrate deploy`。
+
+实测读数:
+```
+Error: P3018 · Database error code: 23514
+  check constraint "..." is violated by some row     ← 失败如期发生
+库内:只剩预置表与 _prisma_migrations
+      前半段两张表 —— 未建成
+      那个 CHECK   —— 未留下                          ← 整个文件被回滚
+```
+
+旁证两条:本批 **零个** migration 使用 `CONCURRENTLY`(唯一不能进事务的例外);
+**19 个** migration 自己还写了 `BEGIN;`。
+
+⇒ **观察准确**(被点名的五个确实没写 `BEGIN`),**推论错误**(没写 ≠ 没事务)。
+沿 SOP §1.5:**结论属实不等于机制正确** —— 本例是机制错导致结论也塌。
+
+### ② BLOCKER「业务复合锚点未闭合」—— **已确认属实**
+
+`ActivityParticipationIdentity` / `AttendancePunchEvent` / `ParticipationLedgerEntry` /
+`OfflinePackageParticipant` 等表同时保存多个业务锚点(activity / session / member /
+identity / position / revision),但**只有部分关系用了复合外键**,其余是单列 FK。
+
+⇒ 数据库只证明「这些 ID 各自存在」,**不证明「它们属于同一条业务主链」**。
+
+**这不是 Prisma/PostgreSQL 的能力限制** —— 同一张表里 `session` 与 `offlinePackage`
+已经在用复合外键;而 `ActivityParticipationIdentity` 上**已存在**
+`@@unique([id, activityId, sessionId, memberId])`,正是做复合 FK 所需的锚点,**建好了却没被引用**。
+
+🔴 **这条必须转成 B / C / D 包的一个问题**(见 §2 各包「重点问过」新增项):
+
+> 数据库**并不保证**这些组合合法。请找出**哪些代码路径依赖了数据库不提供的保证** ——
+> 即:service 层是否在每个写入口都补上了跨活动 / 跨场次 / 跨队员的组合校验?
+> 有没有哪条路径(尤其是导入、批量、worker、离线包)默认「有外键所以不用查」?
+
+⚠️ **不给这条,B/C/D 的评审员可能反向假设「数据库已经保证了」,从而漏掉真正的缺口。**
+这是本节存在的主要理由。
+
+### ③ 两条 SHOULD-FIX —— **已确认属实,待修**
+
+- `20260820100000` 的回填用 `COALESCE(p."realName", m."displayName")`,
+  **未处理空白串**(`'   '` 会优先于有效值);随后只查 `IS NULL`,照样通过。
+  建议 `COALESCE(NULLIF(BTRIM(...), ''), ...)`。
+- `member_official_portraits.version` schema 注释写明「从 1 起」,
+  但四条 CHECK 里**没有 `version >= 1`**,`0` / `-1` 均可入库。
+
+---
+
+## 0-pre-2. 投放并行性
+
+**A 包已完成 ⇒ 其余五包(B / C / D / E / F)可并行投放。**
+
+原 §4 的「A 先投 → F 第二 → …」顺序,其目的是「A 若有 BLOCKER,后面几包的前提就变了」——
+**该目的已达成**。B–F 之间**无真实依赖**:F(判据)排在前面是**本仓判断「CI 全绿算不算数」**
+所需,不是评审方的前置。
+
+⇒ 并行的唯一前提:**每包都带上 §0-pre 的三条已确认事实**。
 
 ## 0. 为什么必须切包
 
@@ -83,6 +157,9 @@
 - 抽奖 / 排序录取(`rank` / `lottery`)的 **prepare / commit / void** 三段:
   中途失败是否零写?重放是否幂等?
 - 容量预留(`CapacityReservation`)与 pointer / population 投影是否在**同一事务**?
+- 🔴 **A 包已确认:数据库不保证跨活动/场次/队员的组合合法**(§0-pre ②)。
+  ⇒ 请找出**哪些代码路径依赖了数据库不提供的保证** —— service 层是否在每个写入口
+  都补上了组合校验?有没有路径默认「有外键所以不用查」?
 - ⚠️ **已知缺口,不必重复报**:「终审改为提交 `LedgerPostingBatch`」那座桥**尚未实施**;
   未搭之前开闸,历史 approved 考勤不会出现在账本读面(已登记 `NEXT_TASKS` 第 7 批②)。
 
@@ -99,6 +176,9 @@
   重放窗口、时钟偏移(`deviceTime` 验 60 秒凭据)有没有可利用面?
 - 批量 / CSV 导入:worker fence 与 `AttendancePunchCommandService` **单一写入口**是否真的没被绕过?
 - 邀请 accept 复用 canonical Form / 资格 / 保险 / 身份 / 容量链 —— 有没有哪条校验被跳过?
+- 🔴 **A 包已确认:打卡事件的 identity / position / member / QR 凭据均为单列外键**(§0-pre ②),
+  数据库允许「活动 A 的打卡引用活动 B 的 identity」。⇒ **导入 / 批量 / worker / 离线包**
+  这四条路径是否各自补齐了组合校验?哪条最容易漏?
 
 ### 包 D —— 身份主档 + 视觉身份
 
@@ -122,6 +202,9 @@
 - 新引入的 `sharp`:图片解码是否有**资源耗尽面**(超大像素 / 恶意压缩比)?
   EXIF / GPS 清除是否**可断言**而非声称?
 - generic attachment API 对两个新 ownerType 是否**真的 fail-closed**?
+- 🔴 **A 包已确认:标准照 `version` 无 `>= 1` 约束**(§0-pre ③)。
+  ⇒ 代码侧的「按 Member 单调递增、不复用不回退」是否**只靠行锁 + 读当前最大值**?
+  并发下会不会产生 0 或负数?
 - ⚠️ **已知设计选择,不必重复报**:`memberSinceDate` / `memberOriginCode`
   **建档可设、之后不可改**(`UpdateMemberDto` 刻意不暴露),维护者拍板靠流程而非接口订正。
 
@@ -173,6 +256,9 @@
 > ④ 结论分级 **BLOCKER / SHOULD-FIX / NIT**;**没有问题就明说,不要凑数**;
 > ⑤ 「已知缺口」里列出的**不必重复报**,但若你认为定性有误请说明。
 >
+> 🔴 **已确认事实(A 包产出,已经本仓复核,请勿重复报)**:
+> `<粘贴 §0-pre 的三条>`
+>
 > ⚠️ 本包是全仓评审的一部分,**其余部分另投**。不要因为看不到其他模块就假设那里有问题,
 > 也不要把「本包外的代码没读到」写成 finding。
 
@@ -209,7 +295,7 @@ A(schema/migration)→ F(判据)→ E(auth/权限)→ D(身份)→ C(报名考�
 
 | 包 | 投放日 | 模型 | BLOCKER | SHOULD-FIX | NIT | 处置 PR |
 |---|---|---|---|---|---|---|
-| A schema+migration | | | | | | |
+| A schema+migration | 2026-08-20 | ChatGPT Pro | 3(**1 条经复核证伪**)| 2 | 0 | 待起草修复刀 |
 | F 判据/harness | | | | | | |
 | E auth/权限/common | | | | | | |
 | D 身份+视觉 | | | | | | |
