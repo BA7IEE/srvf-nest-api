@@ -37,7 +37,7 @@
 - **API surface**:5前缀;跨 surface Mixed=1(禁增);同 surface 双 Controller文件=3(非 Mixed);App 禁返 L3(content-* signed URL 例外);见 `api-surface-policy.md`
 - **身份/会话终态**:手机/微信换绑消费 5 分钟 step-up proof 并锁后重验身份快照；logout 可由未过期 rotated ancestor 幂等撤销同 refresh family，其他 family/access 不动；详见 `security.md`
 - **多实例**:10 throttler 共用 PG bucket；RBAC/外部设置逐请求直读已提交 PG；Effect 单配置快照，DB 异常 fail-closed，零进程正确性缓存
-- **Storage production**:空库 migration/seed→窄 bootstrap；固定 COS location+可解密凭证；disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换，真实 COS/fleet 待验
+- **Storage production**:空库 migration/seed→窄 bootstrap；固定 COS location+可解密凭证；disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换；COS 闭环已验，fleet 待验
 - **贡献规则 ACTIVE 槽位**:未软删 ACTIVE 按 `activityTypeCode × attendanceRoleCode` 唯一；重复 pair fail-closed
 - **Outbox**:PG lease/fence/gen/recipient/RBAC/quota；producer 事务同写 intent，provider 事务外至少一次；考勤 capped before/after 且同 application+threshold 一次；生产未部署，切换排空 API/worker/intents、禁混跑；取消通知禁 Member.id；键/目标不变
 - **队员/报名真值**:正式=ACTIVE+grade level-1..7；报名 create/approve/递补锁后重验 live+ACTIVE，reopen 只回 pending
@@ -82,7 +82,7 @@
 |---|---|
 | **P0** | **两轮 findings 全关 + T6-1 replay 运维闭环已交付(#897/#898/#901/#903,2026-08-03);但生产开 `loginEnabled` / `messageEnabled` 仍判 NO-GO**。⏸ **剩余账卡在「备案」** —— 域名**已注册**(2026-08-19 维护者报),备案卡在队长身份证过期换证中,换证完成后才能继续。备案落地前,以下仍无法验证:真浏览器 Cookie 行为、双标签页并发、真实上游耗时分布**均未验**(归 T6),连同 §15.1 身份链 GO 的 OAuth 回跳全链,都要真实 HTTPS 域名;`webBaseUrl` 须为 HTTPS origin 且与前端同 origin(见 §1 部署拓扑;域名/证书规划时就按这个来)。之后还有 **T6 后一轮总评审**才谈开两个开关。⚠️ **SOP §1.6「修复批次自己再投一轮」对第三刀已拍板豁免** —— 并进 T6 之后的总评审,**豁免的是「单独投一轮」不是「免评审」**,那轮仍是开两个开关的硬门。第二轮评审原始结论(GO WITH CONDITIONS / 直接安全 BLOCKER 0 / B4 机制经双方实测正式撤回)、#901+#903 已关的三笔(代际递增 / 错注释 / replay 终态与运维闭环)、B3 有界缓解的拍板(另见 AGENTS §3 防枚举锁)、以及「上一版锁序护栏是假的」那条取证教训 —— 均已归档,逐条见 `NEXT_TASKS` P1-27 |
 | P1 | 前端联调包剩运维演练 + 排错 SOP(系统侧无动作) |
-| P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、COS、worker/fleet、registry digest 未验，均为 production GO 硬门 |
+| P1 | 保险 gate 未启用、旧 server=0 未验证；真实 ingress/ACL、worker/fleet、registry digest 未验，均为 production GO 硬门 |
 | P1 | P1-22 gate 配置化;P1-23 isForeigner 改名;**P1-26 + 复审 M1–M6 全收口**(锁序/入队身份/终审批量化+RC+有界等待/棘轮注册表;另修一新查出的 40P01;新码 28211/40901;⚠️行为变更);S6 亦收口 |
 | P2 | 多次顺序锁等待可撞 7s 总预算(评审登记不入批,触碰 member 线性化框架时处理) |
 | **P1** | 企微 T5B 未上线(69 未 deploy / `messageEnabled` 未开 / FE 未适配 / T6 未立项);⚠️ **开关前须确认 fleet 只剩新 worker**,见 [`runbook`](ops/wecom-message-channel-rollout.md) |

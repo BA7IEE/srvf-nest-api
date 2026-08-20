@@ -1168,6 +1168,46 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **为什么登记而不是当场修**:改动落在 `src/`,而 ROUTE_AUTHZ 的 `computeControllerInputDigest()` 递归覆盖**全部 `src/`**(见 authz manifest 生成器 `:141-142`)⇒ 与在飞的 #1048 必冲突。**#1048 落地后随手做掉**,属 A 档微刀。
 - **缺陷类**:「把不同失败原因合并成一句话」。修的时候顺手想想仓内还有没有同形状的 —— 判据是「一个 `catch` 覆盖了两个及以上会独立失败的调用」。
 
+### P2-9 通知 outbox 守卫把「键名黑名单」用在不透明 id 上 ⇒ 合法通知**随机**被判成泄露 — 2026-08-20 由 CI flake 反查出
+
+> 起因:#1098(只加一个 `.sh` + 一个 `.md`,**都不被任何代码 import**)CI 红在
+> `notifications-participation-producers.e2e-spec.ts`,报
+> `NotificationOutboxInvariantError: eventKey contains forbidden sensitive material`。
+> 重跑即绿。因改动是惰性的,顺着「不可能是我引起的」反查守卫本身,挖出下面这条。
+
+**根缺陷**:`src/modules/notifications/notification-outbox.types.ts` 里同一条正则用在两处 ——
+
+| 位置 | 用法 | 判定 |
+|---|---|---|
+| `:739` | `FORBIDDEN_PAYLOAD_KEY.test(key)` — 查 payload 的**键名** | ✅ 名副其实(常量名就叫 `..._PAYLOAD_KEY`) |
+| `:717` | `FORBIDDEN_PAYLOAD_KEY.test(value)` — 查 `eventKey` / `aggregateId` 等**值** | ❌ **拿「键名黑名单」去查不透明 id** |
+
+`:723` 的正则是**无锚点子串匹配**:`/(phone|mobile|openid|token|secret|credential|...)/i`。
+而 eventKey 形如 `attendance-final:${sheetId}:${ISO}:${record.id}`,里面嵌的是随机 cuid
+⇒ **cuid 里恰好出现 `phone` / `token` 子串时,完全合法的通知被判成泄露、producer 直接抛异常**。
+
+**实测概率**(200 万条模拟 eventKey):3 条命中,命中词为 `phone` / `token` / `phone`
+≈ 0.00015%/条。单次全量 e2e 产生大量 eventKey ⇒ 表现为**低频不可复现的 flake**,
+而且**每次都红在随机的某条用例上**,极易被误判成被测业务的问题。
+
+**建议修法(已验正反对照,五个场景全对)**:给该正则加词边界 `\b(...)\b`。
+
+| 场景 | 现状 | 加 `\b` 后 | 期望 |
+|---|---|---|---|
+| 随机 id 里恰好含 `phone` / `token` | 拦 ❌ | 放 ✅ | 放 |
+| 开发者真写了 `sms-phone-verify:` / `reset-token:` | 拦 ✅ | 拦 ✅ | 拦 |
+| 正常 eventKey | 放 ✅ | 放 ✅ | 放 |
+
+⇒ **假阳性消除,真防御一条不丢**(`phone` 嵌在 `c3xphoneab7k` 里两侧都是词字符,无边界;
+写成 `sms-phone-verify` 时两侧是 `-`,有边界)。⚠️ 修的时候**必须同时留正反两条用例**,
+只留「不再误报」那条 = 把守卫改成恒放行也能绿。
+
+**为什么登记而不是当场修**:改动落在 `src/`,与在飞的 #1048 撞 ROUTE_AUTHZ digest(同 P2-8)。
+
+**缺陷类**:「为 A 用途设计的判据被复用到 B 用途,而 B 的输入分布完全不同」。
+本例 A = 开发者手写的键名(受控词表),B = 随机生成的 id(均匀分布)。
+修的时候顺手想想仓内还有没有同形状的复用。
+
 ## 已收口项
 
 全部移至 [`docs/archive/ai-harness/next-tasks-completed.md`](../archive/ai-harness/next-tasks-completed.md)(冻结,不再增长)。
