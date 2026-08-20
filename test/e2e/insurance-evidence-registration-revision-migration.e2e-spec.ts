@@ -10,7 +10,6 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { assertDroppableTestDbName, dropWorkerDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
-import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 82;
@@ -198,13 +197,36 @@ async function createLegacyFixture(databaseName: string, suffix: string): Promis
       },
       select: { id: true },
     });
-    const member = await prisma.member.create({
-      data: {
-        memberNo: `migration82-member-${suffix}`,
-        ...memberIdentityData(`Migration 82 Member ${suffix}`),
-      },
-      select: { id: true },
-    });
+    // issue #1048 T1:本夹具服务的是 **81-migration 历史库**(三个调用点都是
+    // `recreateMigration81Scratch()`),那时 `Member` 还是 `displayName`。
+    // 生成的 Prisma client 是**当前** schema 的,`prisma.member.create` 只会发 `realName`,
+    // 打到历史库上必然「column realName does not exist」—— client 根本表达不了历史形状,
+    // 只能走裸 SQL;并按库里实际存在的列选,免得下次列名再动又炸一次。
+    const memberId = `migration82-member-id-${suffix}`;
+    const memberName = `Migration 82 Member ${suffix}`;
+    const memberNo = `migration82-member-${suffix}`;
+    const realNameProbe = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT COUNT(*) AS count FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'Member' AND column_name = 'realName';`,
+    );
+    if (Number(realNameProbe[0]?.count ?? 0) === 1) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "Member" ("id","memberNo","realName","memberSinceDate","memberOriginCode","updatedAt")
+         VALUES ($1,$2,$3,DATE '2020-01-01','manual',CURRENT_TIMESTAMP)`,
+        memberId,
+        memberNo,
+        memberName,
+      );
+    } else {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "Member" ("id","memberNo","displayName","updatedAt")
+         VALUES ($1,$2,$3,CURRENT_TIMESTAMP)`,
+        memberId,
+        memberNo,
+        memberName,
+      );
+    }
+    const member = { id: memberId };
     const organization = await prisma.organization.create({
       data: {
         name: `Migration 82 Organization ${suffix}`,
@@ -498,7 +520,9 @@ describe('第 82 migration registration revision bridge', () => {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      expect(successfulMigrationCount(databaseName)).toBe(89);
+      // issue #1048 T1 新增第 90 个 migration。注意本文件另有 toBe(81) 两处,
+      // 那是**历史基线**(81-migration 起跑点),不随新增 migration 变。
+      expect(successfulMigrationCount(databaseName)).toBe(90);
       expect(
         runPsql(
           databaseName,

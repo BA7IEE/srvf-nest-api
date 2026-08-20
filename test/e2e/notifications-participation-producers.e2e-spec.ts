@@ -653,7 +653,9 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
           recipientMemberId: alice.memberId,
           notificationTypeCode: 'activity-changed',
           title: '队员取消活动报名',
-          body: '队员本地队员甲（LOCAL-001）已取消「自助退出活动」报名，原因：临时有事。',
+          // ⚠️ issue #1048 T1 DoD 6:人员标签由本模块私有的 `姓名（编号）` 统一成
+          // 全仓格式 `编号 · 姓名(外号)`,通知正文随之改变是刻意的,不是回归。
+          body: '队员LOCAL-001 · 本地队员甲已取消「自助退出活动」报名，原因：临时有事。',
           channels: ['in-app'],
         },
       });
@@ -794,7 +796,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
           recipientMemberId: alice.memberId,
           notificationTypeCode: 'activity-changed',
           title: '队员取消活动报名',
-          body: '队员本地队员乙（LOCAL-002）已取消「责任模型自助退出」报名。',
+          body: '队员LOCAL-002 · 本地队员乙已取消「责任模型自助退出」报名。',
           channels: ['in-app'],
         },
       });

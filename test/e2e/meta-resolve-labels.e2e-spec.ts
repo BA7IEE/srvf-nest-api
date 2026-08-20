@@ -154,7 +154,8 @@ describe('POST admin/v1/meta/resolve-labels(F1/A7 批量 id→label 解析)', ()
     const data = res.body.data as Record<string, Record<string, Record<string, unknown>>>;
 
     expect(data.member[memberId]).toEqual({
-      label: 'F1解析队员甲',
+      // issue #1048 T1 DoD 6:member label 统一为 `编号 · 姓名(外号)`
+      label: 'metarl-mem-1 · F1解析队员甲',
       memberNo: 'metarl-mem-1',
       gradeCode: null,
     });

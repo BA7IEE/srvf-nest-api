@@ -53,9 +53,11 @@ const FORBIDDEN_KEYS = [
   'secretIdEncrypted',
   'secretKeyEncrypted',
   // member 业务字段(只允许 memberId 这一 User 本体外键)
+  // ⚠️ 这里**不能**列 `nickname`:AdminMeResponseDto 的 `nickname` 是 **User 登录昵称**
+  // (本身就在 9 字段集内),与 `Member.nickname`(队内外号)同名不同物。列进来会把
+  // 合法字段判成泄露 —— issue #1048 T1 已在 users.dto.ts / role-bindings.dto.ts 记过同一处坑。
   'memberNo',
   'realName',
-  'nickname',
   'memberLabel',
   'gradeCode',
   'memberStatus',
@@ -226,7 +228,6 @@ describe('Admin /api/admin/v1/me 本人身份只读 bootstrap(2026-06-14)', () =
     // 仅 memberId(User 本体外键);member 业务字段一律不返
     expect(data).not.toHaveProperty('memberNo');
     expect(data).not.toHaveProperty('realName');
-    expect(data).not.toHaveProperty('nickname');
     expect(data).not.toHaveProperty('memberLabel');
     expect(data).not.toHaveProperty('gradeCode');
     expect(data).not.toHaveProperty('memberStatus');
