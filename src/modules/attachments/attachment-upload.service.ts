@@ -582,6 +582,27 @@ export class AttachmentUploadService {
           SELECT "id", "deletedAt" FROM "Activity" WHERE "id" = ${ownerId} FOR UPDATE
         `);
         break;
+      // issue #1055 T2:视觉身份两个 owner。表名首字母大写是因为 `User` / `Member`
+      // 两个 model **没有 `@@map`**,物理表名就是 model 名。
+      //
+      // ⚠️ 本 switch 是又一份**手写清单**:不在列的 ownerType 一律落到 default 抛
+      // OWNER_NOT_FOUND。它没有任何编译期约束 —— 新增 owner type 时漏掉这里,
+      // 前三个阶段全部正常,**只在 finalize 那一步失败**,而错误信息说的是
+      // 「owner 不存在」(owner 明明存在)。本刀就是这么发现它的:Storage E2E 跑到
+      // 阶段 ④ 才炸,前面三阶段一路绿。
+      //
+      // 调用方(T3 users / T4 members)此刻已持有同一行的聚合根锁;同事务内重复
+      // FOR UPDATE 同一行是可重入的,不构成新的锁序边。
+      case 'user-avatar:User':
+        rows = await tx.$queryRaw(Prisma.sql`
+          SELECT "id", "deletedAt" FROM "User" WHERE "id" = ${ownerId} FOR UPDATE
+        `);
+        break;
+      case 'member-official-portrait:Member':
+        rows = await tx.$queryRaw(Prisma.sql`
+          SELECT "id", "deletedAt" FROM "Member" WHERE "id" = ${ownerId} FOR UPDATE
+        `);
+        break;
       default:
         throw new BizException(BizCode.ATTACHMENT_OWNER_NOT_FOUND);
     }

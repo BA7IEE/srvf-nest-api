@@ -118,6 +118,34 @@ export type RegistrationUploadFinalized = Readonly<{
   [registrationUploadFinalizedBrand]: never;
 }>;
 
+// issue #1055 T2:视觉身份(账号头像 / 队员标准照)的可信 facade 句柄族。
+// 与 registration-upload-session 同构:四个阶段各一个不可伪造的不透明句柄,
+// 内部的 storage key / locator / Provider 证据 / 审计信封一律不外泄。
+//
+// **两个 owner type 共用同一族句柄**,因为它们的存储机制逐字相同 ——
+// 差别只在图片规格与落库时的领域不变量,而后者归调用方(T3 users / T4 members)的事务管。
+// kind 记在句柄背后的 state 里,由 facade 在每一阶段自行读取,调用方无从中途改写。
+declare const visualIdentityUploadValidatedBrand: unique symbol;
+declare const visualIdentityUploadPreparedBrand: unique symbol;
+declare const visualIdentityUploadVerifiedBrand: unique symbol;
+declare const visualIdentityUploadFinalizedBrand: unique symbol;
+
+export type VisualIdentityUploadValidated = Readonly<{
+  [visualIdentityUploadValidatedBrand]: never;
+}>;
+
+export type VisualIdentityUploadPrepared = Readonly<{
+  [visualIdentityUploadPreparedBrand]: never;
+}>;
+
+export type VisualIdentityUploadVerified = Readonly<{
+  [visualIdentityUploadVerifiedBrand]: never;
+}>;
+
+export type VisualIdentityUploadFinalized = Readonly<{
+  [visualIdentityUploadFinalizedBrand]: never;
+}>;
+
 export interface PrepareAttachmentDeleteInput {
   attachmentId: string;
   actorUserId: string;
