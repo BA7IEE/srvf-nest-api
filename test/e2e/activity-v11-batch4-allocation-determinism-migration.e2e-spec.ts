@@ -21,7 +21,10 @@ const MIGRATION_NAME = '20260812180000_activity_v11_batch4_allocation_determinis
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const MIGRATION_84_COUNT = 84;
 const MIGRATION_85_COUNT = 85;
-const CURRENT_MIGRATION_COUNT = 90;
+// ⚠️ 与上面的 MIGRATION_<N>_COUNT 是**两件事**:那些是固定的历史世代基线(冷库重放的起点),
+// 随仓库增长**永不变**;这个是仓库当前的 migration 总数,每加一刀就要 +1。
+// 混改任何一个都会把冷库重放用例的语义整个改坏(issue #1055 T1 加第 91 刀时逐个复核过)。
+const CURRENT_MIGRATION_COUNT = 91;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
@@ -828,7 +831,7 @@ describe('Activity v1.1 batch4 allocation determinism migration', () => {
   );
 
   it(
-    'replays all current 90 migrations from empty and enforces batch hashes, versions and seed lifecycle',
+    `replays all current ${CURRENT_MIGRATION_COUNT} migrations from empty and enforces batch hashes, versions and seed lifecycle`,
     () => {
       const databaseName = recreateEmptyScratchDatabase();
       try {
