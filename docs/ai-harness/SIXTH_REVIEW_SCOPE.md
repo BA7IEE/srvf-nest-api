@@ -291,13 +291,143 @@ A(schema/migration)→ F(判据)→ E(auth/权限)→ D(身份)→ C(报名考�
 
 ⇒ 本轮**明确选择跨模型评审,不做自评审**。
 
-## 7. 投放进度(逐包回填)
+## 7. 投放进度 —— **六包全部回收完毕(2026-08-20)**
 
-| 包 | 投放日 | 模型 | BLOCKER | SHOULD-FIX | NIT | 处置 PR |
-|---|---|---|---|---|---|---|
-| A schema+migration | 2026-08-20 | ChatGPT Pro | 3(**1 条经复核证伪**)| 2 | 0 | 待起草修复刀 |
-| F 判据/harness | | | | | | |
-| E auth/权限/common | | | | | | |
-| D 身份+视觉 | | | | | | |
-| C 报名+考勤 | | | | | | |
-| B 活动 | | | | | | |
+全部投放至 ChatGPT Pro,B–F 五包**并行**跑,每包带 §0-pre 三条已确认事实。
+
+| 包 | BLOCKER | SHOULD-FIX | NIT | 状态 |
+|---|---|---|---|---|
+| A schema+migration | 3 → **2**(1 条**实测证伪**) | 2 | 0 | 修复刀已起草 |
+| B 活动 | **3** | — | — | B-01 修复中;B-02 修复中;B-03 并入 A-2 |
+| C 报名+考勤 | **1** | 3 | — | 修复中 |
+| D 身份+视觉 | **0** | 5 | 1 | 待处置(无 BLOCKER) |
+| E auth/权限/common | **1** | 1 | 0 | ✅ **已修并合入** |
+| F 判据/harness | **1** | 0 | 0 | 判据缺口属实,**零实例**;待修 |
+
+**净结果**:7 条 BLOCKER 中 —— **1 条证伪**、**1 条已修**、**1 条零敞口**、**4 条修复中**。
+
+---
+
+## 8. findings 定性留档(**主会话逐条复核后的结论,非报告原文**)
+
+> 沿 SOP §1.5:**报告里的机制描述必须自己复现后再采信**。
+> 下列每条都标注了主会话的复核方式与读数;**未复核的明确写「未复核」**。
+
+### 8.1 🔴 已实测证伪:A 包「migration 没包事务,失败留下半套 schema」
+
+原报告推论链依赖前提「Prisma 不自动包事务」。**该前提不成立。**
+
+**复核方式**:建独立探针库 → 写一个**不含 `BEGIN/COMMIT`** 的 migration
+(前半段建两表、末尾对既有表加 CHECK)→ 预置违反该 CHECK 的脏行 → `prisma migrate deploy`。
+
+```
+Error: P3018 · Database error code: 23514
+  check constraint "..." is violated by some row     ← 失败如期发生
+库内:只剩预置表与 _prisma_migrations
+      前半段两张表 —— 未建成
+      那个 CHECK   —— 未留下                          ← 整个文件被回滚
+```
+
+旁证:本批**零个** migration 用 `CONCURRENTLY`(唯一事务例外);**19 个**自己写了 `BEGIN;`。
+
+⇒ **观察准确**(被点名的五个确实没写 `BEGIN`),**推论错误**(没写 ≠ 没事务)。
+
+🔴 **不要照它去给 22 个 migration 补事务** —— 那是在修一个不存在的问题。
+
+### 8.2 ✅ 已修:E-B1 控制面提权(`wecom-setting.reset.credentials`)
+
+**复核方式**:读单一事实源 `RBAC_SEED_FACTS` 的**真实数据**(非注释)。
+
+链条三段全部坐实:① 保留集恰 6 条不含 wecom;② 该码已 seed 成 Permission 可被授予;
+③ `WecomSettingsService.resetCredentials` 无 SUPER_ADMIN 兜底(只有审计字段 `actorRoleSnap`)。
+
+⇒ 持 `rbac.role-permission.create` 的 ops-admin 可自授该码,再覆盖 CorpSecret。
+
+⭐ **真根因比报告更准**:`prisma/seed.ts` 里同族五条,四条走共享谓词
+`isNotReservedSuperAdminOnlyPermission`,**只有 wecom 那行**写成
+`filter((p) => p.code !== WECOM_RESET_CREDENTIALS_CODE)` —— 全仓仅此一处不走共享谓词。
+
+⚠️ **而这个 bespoke 过滤器行为完全正确** —— ops-admin 确实没被绑上,seed 数据一行不差。
+**正因为没有任何症状,「保留集永远学不到 wecom」这件事没有任何东西会报警。**
+
+**已修**(#1115):改回共享谓词;并新增机器闸 —— 全仓每个 `*.reset.credentials`
+码必须在保留集内,扫描面**动态现取**、漏一条即红并点名。三条变异实测已贴 PR。
+
+### 8.3 🟡 判据缺口属实,但**零实例**:F-B01 R8 deny 分支可被冒充
+
+**复核方式**:直接调 R8 的 `hasThrowOrReturn()` 判据,喂两段代码。
+
+```
+样本 1: if (!allowed) { if (other) { return; } }   ⇒ 判定「有 deny 分支」  ← 语义上会漏过
+样本 2: if (!allowed) { throw new Error(...); }    ⇒ 判定「有 deny 分支」
+```
+
+**判据分不出真假 deny** —— 属实。
+
+⭐ **但又扫了全仓**:所有「授权否定式 + deny 分支」的实例,**终止都是直达的**,
+「非直达终止」实例 **0 处**。
+
+⇒ 准确定性:**未来的防线漏洞,不是当下的授权洞**。两本账不能混
+(判据缺口 ≠ 风险敞口)。
+
+### 8.4 ✅ 已坐实,且比报告更严重:B-01 参与真相读面漏接闸
+
+报告点名一处。**主会话复核发现是三处。**
+
+| 读面 | 接闸命中 |
+|---|---|
+| `attendances/participation-summary-query.service.ts` | **3** ✅ |
+| `activities/activity-participation-query.service.ts` | **0** ❌ ← 报告点名的 |
+| `meta/participation-overview-query.service.ts` | **0** ❌ |
+| `team-join/team-join-progress.ts` | **0** ❌ |
+
+⭐ **第四处后果最重**:它算的是 `CONTRIBUTION_THRESHOLD` / `contributionCutoff` ——
+**入队资格判定**。开闸后入队门槛会继续用旧真相判,不只是某个页面显示错数字。
+
+### 8.5 ✅ 已坐实:B-02 批任务状态变更漏 fence
+
+**复核方式**:逐处检查 `activity-batch.worker.ts` 的 job/item 写操作。
+
+`:781` 用 `updateMany({ where: { leaseOwner, leaseGeneration, ... }})` ✅;
+`:761` `:859` `:871` `:884` 四处用 `update({ where: { id } })` ❌。
+
+⇒ **同一文件里一处带 fence、四处不带**。不是能力限制,是不一致。
+
+⚠️ 报告称「`preparedCount` 是累加式投影,所以幂等消不掉竞态」——
+**主会话未复核该机制**,已在修复 goal 里要求实施方自行核实并按实测修正后果论述。
+
+### 8.6 ✅ 已坐实:C-1 递补路径漏锁后重验
+
+`promoteAfterCancellationInTransactionTrusted()` **零处**检查 Member 仍 ACTIVE,
+而**同文件 `:1379`** 与另外三条兄弟路径都查。
+
+⇒ 同文件、不同路径、写法不一致 —— **遗漏而非设计选择**(最硬的证据形状)。
+
+### 8.7 ✅ 已坐实(抽验):D 包 SHOULD-FIX 2 —— trim 口径不一致
+
+写入端 `realName!: string` 只有 `@IsString()` 无 trim;
+查询端 `member-reference-resolver.ts:155/164` **两处都 trim**。
+⇒ 存 `"张三 "`、用 `"张三"` 解析对不上。
+
+**D 包 0 BLOCKER**,是六包里最干净的一份。其余 4 条 SHOULD-FIX + 1 NIT **未逐条复核**。
+
+### 8.8 ⚠️ 未复核的 findings(**不因未复核就当不成立**)
+
+- A 包:BLOCKER-3(离线包信任链)、两条 SHOULD-FIX 中的细节论证
+- B 包:B-03 的完整论证(已并入 A-2 修复刀)
+- C 包:三条 SHOULD-FIX(CSV `itemKey` 排序、10k 行 `createMany` 撞 bind 上限、
+  bulk/import 对 `terminated` 活动的拒绝口径)
+- D 包:除 8.7 外的 4 条 SHOULD-FIX + 1 NIT
+
+⇒ 这些在起草对应修复刀时**逐条过**,不因「本轮没验」而当作不成立。
+
+## 9. 本轮的方法论收获
+
+1. **切包是对的**。119,715 行整包投必然只得到泛泛结论;切成 6 包后,
+   每包都给出了带「文件:行号」的具体 finding,**NIT 总数为 1** —— 没有凑数。
+2. **把 A 包结论前喂给 B/C/D 起了作用**。B-03 与 A-2 被独立指认为同一根因,
+   C 包主动去查了「导入/批量/worker/离线包四条路径」—— 正是前喂那条追问要的。
+3. **「结论属实 ≠ 机制正确」再次应验**,而且这次更进一步:机制错导致结论也塌(8.1)。
+4. **判据缺口与风险敞口是两本账**(8.3)。混为一谈会导致优先级排错。
+5. **最值钱的两条 finding 都是「同文件里两种写法并存」**(8.5 / 8.6)——
+   有人写对过一次,后来的人没照抄。这个形状值得单独做成扫描项。

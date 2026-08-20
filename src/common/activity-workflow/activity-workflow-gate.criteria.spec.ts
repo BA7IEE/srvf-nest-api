@@ -9,6 +9,7 @@ import {
   LEGACY_ASSERT,
   READ_SOURCE,
   REPO_ROOT,
+  REVERSE_GATE_MARKERS,
   V11_ASSERT,
   runCriteria,
 } from './activity-workflow-gate.criteria';
@@ -32,6 +33,35 @@ const JOURNEYS_KEY = 'jest-journeys.config.ts';
 const INSURANCE_ASSEMBLER = 'test/e2e/insurance-config-fail-fast.e2e-spec.ts';
 const WORKER_MODULE = 'src/modules/activities/activity-batch-worker.module.ts';
 const TEAM_JOIN_PROBE = 'src/modules/team-join/team-join-enrollment.service.ts';
+const ACTIVITY_PARTICIPATION = 'src/modules/activities/activity-participation-query.service.ts';
+const META_OVERVIEW = 'src/modules/meta/participation-overview-query.service.ts';
+const TEAM_JOIN_PROGRESS = 'src/modules/team-join/team-join-progress.ts';
+/** 与考勤毫无关系的纯函数文件 —— C8 反对照的宿主(证明发现靠规则不靠文件名)。 */
+const NEUTRAL_UTIL = 'src/common/identity/member-label.util.ts';
+
+/** 同一段读取,但放在一个**写旧链的 class method** 里 —— 链内部的形状。 */
+const SYNTHETIC_READ_FACE_IN_WRITING_CLASS = `
+export class ProbeWritingService {
+  constructor(private readonly prisma: any) {}
+  async probeServiceHours(): Promise<unknown[]> {
+    await this.prisma.attendanceSheet.update({ where: { id: 'x' }, data: {} });
+    return this.prisma.attendanceRecord.findMany({
+      where: { deletedAt: null },
+      select: { memberId: true, serviceHours: true },
+    });
+  }
+}
+`;
+
+/** 一个「读 attendanceRecord 且产出 serviceHours」的读面,不接闸。 */
+const SYNTHETIC_READ_FACE = `
+export async function probeServiceHours(prisma: any): Promise<unknown[]> {
+  return prisma.attendanceRecord.findMany({
+    where: { deletedAt: null },
+    select: { memberId: true, serviceHours: true },
+  });
+}
+`;
 
 function source(relPath: string): string {
   return readFileSync(join(REPO_ROOT, relPath), 'utf8');
@@ -55,6 +85,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       expect(counts.gateDependentModules).toBeGreaterThan(0);
       expect(counts.declaredTestRoots).toBeGreaterThan(0);
       expect(counts.productionRequiredEnv).toBeGreaterThan(0);
+      expect(counts.settlementReadFaces).toBeGreaterThan(0);
     });
   });
 
@@ -110,13 +141,23 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
 
   describe('C3 正对照:某一项受控面整体脱闸 ⇒ 必红', () => {
     it('读面不再问闸 ⇒ C3 报「统计读面没有接上闸」', () => {
-      const original = source(SUMMARY);
-      const mutated = original
-        .split(`this.activityWorkflowGate.${READ_SOURCE}()`)
-        .join("('approved-attendance' as const)");
-      expect(mutated).not.toBe(original);
+      // ⚠️ 2026-08-21(第六轮评审 B-01)起,这条变异必须**摘掉全部三处读面的闸**才会红。
+      //    原因正是 C3 的粒度:它只断言「全仓至少有一个文件调过闸的读面方法」,
+      //    **一处接了就绿**。当年只有一处读面接闸时,摘掉那一处就红;如今有三处,
+      //    摘掉一处剩下两处仍然 >0。⇒ **C3 对「第二、第三处漏进来」结构性失明**,
+      //    这正是 C8 存在的理由。两条判据粒度不同、都要留着。
+      const overrides = Object.fromEntries(
+        [SUMMARY, ACTIVITY_PARTICIPATION, META_OVERVIEW].map((target) => {
+          const original = source(target);
+          const mutated = original
+            .split(`this.activityWorkflowGate.${READ_SOURCE}()`)
+            .join("('approved-attendance' as const)");
+          expect(mutated).not.toBe(original);
+          return [target, mutated];
+        }),
+      );
 
-      const { findings } = runCriteria({ [SUMMARY]: mutated });
+      const { findings } = runCriteria(overrides);
       const c3 = findings.filter((f) => f.criterion === 'C3');
       expect(c3.some((f) => f.detail.includes(READ_SOURCE))).toBe(true);
     });
@@ -262,6 +303,112 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
             f.detail.includes('ACTIVITY_V11_WORKFLOW_ENABLED'),
         ),
       ).toBe(true);
+    });
+  });
+
+  describe('C8:凡「对外产出工时/贡献值」的读面都必须问闸', () => {
+    // 🔴 这一条守的缺陷,C1–C7 一条都抓不到,而且它**真的发生过** ——
+    //    v1.1 闸落地时全仓只有 participation-summary 一处读面接了闸,另外几处
+    //    「对外产出工时」的读面一处也没接。C3 只断言「至少有一个文件调过闸的读面方法」,
+    //    **一处接了就绿**,对「第二、第三处漏进来」结构性失明(与本仓已登记的
+    //    「漏进家族」同形)。C8 把粒度从「全仓至少一处」下沉到「每一个读面各自」。
+
+    it.each([
+      ['逐活动对账 / 参与汇总', ACTIVITY_PARTICIPATION],
+      ['月度参与概览', META_OVERVIEW],
+      ['队员参与汇总', SUMMARY],
+    ])('正对照:%s 摘掉判闸位 ⇒ C8 红并点名该文件', (_label, target) => {
+      const original = source(target);
+      const mutated = original
+        .split(`this.activityWorkflowGate.${READ_SOURCE}()`)
+        .join("('approved-attendance' as const)");
+      // 变异必须真的落在目标行上 —— 否则「判据没红」证明不了任何事。
+      expect(mutated).not.toBe(original);
+
+      const { findings } = runCriteria({ [target]: mutated });
+      const c8 = findings.filter((f) => f.criterion === 'C8');
+      expect(c8.length).toBeGreaterThan(0);
+      expect(c8.some((f) => f.detail.includes(target))).toBe(true);
+      // 报错必须点名「漏了什么」,不能只说「有问题」。
+      expect(c8.some((f) => f.detail.includes('serviceHours'))).toBe(true);
+    });
+
+    it('反对照:凭空新增一个不接闸的读面 ⇒ C8 红(证明扫描面是动态的,不是写死的四个文件名)', () => {
+      // 宿主是 `common/identity/member-label.util.ts` —— 纯函数、不碰 Prisma、
+      // 与考勤毫无关系。它此前完全不在任何读面清单里,只要「读 attendanceRecord 且
+      // select 了结算列」就会被圈进来 ⇒ **发现靠规则,不靠文件名**。
+      // 现实意义:将来冒出第 5 处读面,不需要有人记得回来改清单。
+      const original = source(NEUTRAL_UTIL);
+      const mutated = `${original}\n${SYNTHETIC_READ_FACE}`;
+      expect(mutated).not.toBe(original);
+      // 先证明它本来不在看守范围内,否则「红了」可能只是它一直就红。
+      expect(runCriteria().findings.some((f) => f.detail.includes(NEUTRAL_UTIL))).toBe(false);
+
+      const { findings, counts } = runCriteria({ [NEUTRAL_UTIL]: mutated });
+      const c8 = findings.filter((f) => f.criterion === 'C8');
+      expect(c8.some((f) => f.detail.includes(NEUTRAL_UTIL))).toBe(true);
+      expect(c8.some((f) => f.detail.includes('probeServiceHours'))).toBe(true);
+      // 看守面确实多了一个 —— 证明是「纳入后判红」而不是「碰巧红在别处」。
+      expect(counts.settlementReadFaces).toBe(runCriteria().counts.settlementReadFaces + 1);
+    });
+
+    it('豁免不是万能逃生门:同一段读取放进「写旧链的 class method」⇒ 转由 C2 管,C8 不再点名它', () => {
+      // 这条证明判据②(「这个函数写不写受控链」)**真的在区分**,而不是恒真的摆设:
+      // 同一段读取,只因为同一个方法里多了一次旧链写入,就从「对外读面」变成「链内部」。
+      //
+      // 用 class method 而不是自由函数,是因为 C2 的判闸位分析只遍历 class method ——
+      // 豁免必须落在**另一条判据真的有牙**的地方,否则就是两条判据互相甩锅。
+      // (C8 的豁免因此也钉死 `isMethod`,自由函数写旧链照样红。)
+      const mutated = `${source(NEUTRAL_UTIL)}\n${SYNTHETIC_READ_FACE_IN_WRITING_CLASS}`;
+      const { findings } = runCriteria({ [NEUTRAL_UTIL]: mutated });
+
+      expect(
+        findings.filter((f) => f.criterion === 'C8').some((f) => f.detail.includes(NEUTRAL_UTIL)),
+      ).toBe(false);
+      // 而写侧确实被另一条判据接住了 —— 豁免没有把缺陷放跑。
+      expect(
+        findings
+          .filter((f) => f.criterion === 'C2')
+          .some((f) => f.detail.includes('probeServiceHours')),
+      ).toBe(true);
+    });
+
+    it('自由函数写旧链**不给**豁免:C2 看不见它,C8 就必须接住(不留交叉空档)', () => {
+      // C2 的 analyzeFile 只遍历 class method ⇒ 自由函数是它的结构盲区。
+      // 若 C8 在这里也豁免,一个「既写旧链又读结算量」的自由函数会同时逃过两条判据。
+      const withWrite = SYNTHETIC_READ_FACE.replace(
+        '  return prisma.attendanceRecord.findMany({',
+        "  await prisma.attendanceSheet.update({ where: { id: 'x' }, data: {} });\n  return prisma.attendanceRecord.findMany({",
+      );
+      expect(withWrite).not.toBe(SYNTHETIC_READ_FACE);
+
+      const { findings } = runCriteria({ [NEUTRAL_UTIL]: `${source(NEUTRAL_UTIL)}\n${withWrite}` });
+      // C2 确实没抓到(记录这条盲区的实测读数,不是猜的)。
+      expect(
+        findings
+          .filter((f) => f.criterion === 'C2')
+          .some((f) => f.detail.includes('probeServiceHours')),
+      ).toBe(false);
+      // 所以 C8 必须红。
+      expect(
+        findings
+          .filter((f) => f.criterion === 'C8')
+          .some((f) => f.detail.includes('probeServiceHours')),
+      ).toBe(true);
+    });
+
+    it('C4 与 C8 按构造不可能互相矛盾:反向闸领地被 C8 整体豁免', () => {
+      // team-join-progress 确实「读 attendanceRecord 且 select 了 contributionPoints」,
+      // 形状上完全命中 C8 的定义域 —— 但维护者已拍板入队门槛恒按 approved 算,
+      // 接了闸反而由 C4 判红。两条判据**复用同一份 REVERSE_GATE_MARKERS**,
+      // 故「C8 要求接闸、C4 禁止接闸」这种自相矛盾在结构上不可能出现。
+      const text = source(TEAM_JOIN_PROGRESS);
+      expect(text).toContain('contributionPoints');
+      expect(text).toContain('attendanceRecord.findMany');
+      expect(REVERSE_GATE_MARKERS.some((marker) => TEAM_JOIN_PROGRESS.includes(marker))).toBe(true);
+
+      const { findings } = runCriteria();
+      expect(findings.some((f) => f.detail.includes(TEAM_JOIN_PROGRESS))).toBe(false);
     });
   });
 
