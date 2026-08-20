@@ -1,11 +1,35 @@
 # 真机部署 runbook —— 第二阶段:seed + COS + 生产态 + 域名
 
-> **状态**:⚠️ **未实测**。本文基于 `b39360d1`(v0.66.0,2026-08-20)的仓库实况编写,
-> 每条事实都标注了代码出处,但**整条链路尚未在真机跑过**。
-> 实测后请按第一阶段的体例回填「实测值」并把本行状态改为 PASS。
+> **状态**:**PASS**(2026-08-20,维护者在自有服务器实测,按 §0「内部验证轮」执行)。
+> 十项验收全部通过;实测中查出本文一处缺陷(§2.1 的 `--user 0:0`)与一处代码缺陷,均已回填。
 >
 > **前置**:[第一阶段](./server-deployment-runbook.md) 已 PASS(空库冒烟通过)。
 > 本文**接着它写**,不重复第一阶段已验证的内容。
+
+## 实测环境(2026-08-20 通过)
+
+| 项 | 实测值 |
+|---|---|
+| 轮次 | **内部验证轮**(§0),不对真实队员开放 |
+| 域名 | `https://srvf-dp.23cc.cn`(HTTPS + 强制跳转) |
+| `APP_ENV` | `production`(已在运行容器内 `printenv` 复核,非仅改 env 文件) |
+| API 端口 | `127.0.0.1:3000`(未暴露公网) |
+| PostgreSQL | `16.15`,库 `app`,**不映射宿主机端口** |
+| migration | `89 / 89` — `Database schema is up to date!` |
+| COS | bucket `srvf-attachments-1433783892` · region `ap-guangzhou` · envPrefix **`staging`** |
+| `APP_TRUSTED_PROXY_CIDRS` | **`172.20.0.1/32`**(最小信任,见 §2.F) |
+| 健康检查 | `/health/live` 与 `/health/ready` 公网 HTTPS 均 `200`,`db:up` |
+| SUPER_ADMIN | **真实公网 HTTPS 登录成功**(非仅查库有行) |
+
+### 🔴 本轮**没有**证明的事(别越界宣称)
+
+实测方明确保留了这条边界,本文照录:
+
+> 本轮证明的是「COS 配置已写入 + 凭据已加密 + production 能解密 + fail-fast 通过」。
+> **尚未执行真实的 COS PUT / HEAD / signed download / DELETE。**
+
+⇒ 「对象存储真实可用」**目前不成立**,需要补一次真实文件闭环测试(见 §5)。
+理由与 §1.3 同源:bootstrap 全程不连 COS,值能写进库**不等于**云端真的可用。
 
 ## 0. 目标与边界
 
@@ -212,17 +236,37 @@ EOF
 **D-2 dry-run**:
 
 ```
-docker run --rm --network <compose 网络> \
+docker run --rm --network <compose 网络> --user 0:0 \
   -e APP_ENV=production -e STORAGE_ENCRYPTION_KEY='<第一阶段那把,必须同一把>' \
   -v /root/cos-bootstrap.json:/tmp/cos.json:ro \
   <正式镜像> node dist/storage-settings-bootstrap \
   --config-file=/tmp/cos.json --confirm-database='<生产库名>' --dry-run
 ```
 
+### 🔴 `--user 0:0` 不能省(2026-08-20 实战踩出,本文原版漏了)
+
+`Dockerfile:176` 是 `USER node`(uid 1000),而 D-1 的配置文件按安全要求是 `600 root:root`
+⇒ **容器内的 node 用户读不了它**。
+
+更坑的是报错信息**指错方向**:`storage-settings-bootstrap.ts:215-217` 把
+`readFileSync` 与 `JSON.parse` 放在同一个 try、共用一个 catch,统一抛
+「**config-file 不是合法 JSON**」。⇒ 权限错误被报成 JSON 语法错误,
+在服务器上 `python3 -m json.tool` 验 JSON 又完全合法,于是白查一轮。
+
+| 现象 | 真因 |
+|---|---|
+| 报「config-file 不是合法 JSON」,但 `json.tool` 说合法 | **权限**问题,不是 JSON 问题。加 `--user 0:0` |
+
+⇒ bootstrap 是**一次性离线运维动作**,用 `--user 0:0` 跑它是正确解法 ——
+不要为了迁就它去降低配置文件权限或改 owner(那会真的削弱安全)。
+
+> 📌 代码侧改进已登记(拆开两种失败的报错文案),见 `docs/ai-harness/NEXT_TASKS.md`。
+
 ⚠️ **再说一遍**:dry-run 不连 COS,通过**不代表密钥或桶名是对的**。
 它只证明 JSON 合法、加密密钥可用、表是空的。
 
-**D-3 正式写入**:去掉 `--dry-run` 重跑一次。
+**D-3 正式写入**:去掉 `--dry-run` 重跑一次(**同样带 `--user 0:0`**)。
+写完用只读 SQL 复核一行:`row_count=1` · `enabled=true` · `provider_type=COS` · bucket/region/env_prefix 与配置一致。
 
 **D-4 删除配置文件**:`shred -u /root/cos-bootstrap.json`(含明文密钥)。
 
@@ -304,6 +348,10 @@ settings 丢失、LOCAL、未知 provider 一律 fail-closed。
 ---
 
 ## 5. 第三阶段的前置(未验证)
+
+**🔴 真实 COS 文件闭环测试**(PUT / HEAD / signed download / DELETE)—— 见本文开头
+「本轮没有证明的事」;这是 issue #935「完成真实外部供应商链路验证」的 COS 那一半,
+也是 `docs/current-state.md` 列的 production GO 硬门,**第二阶段 PASS 不覆盖它**。
 
 规模测试(500 / 2000 / 10000)· 企业微信(等备案)· 短信 · OCR ·
 前端部署与同源拓扑 · 备份恢复演练 · `STORAGE_CONSISTENCY_MODE` 收紧到 `STRICT` 的评估。
