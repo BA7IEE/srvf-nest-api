@@ -39,6 +39,12 @@ Claude Code 入口)。它们每次会话都被完整注入上下文,所以每个
 
 ## 能力清单
 
+> ⚠️ **「安全」那一条刻意留在 `current-state.md`,不在本文。**
+> 它含 `Decision 15.1=B/15.2=B` 等关键串,被 `notification-canonical-docs.spec.ts`
+> **钉成代码级契约**(三处互证:current-state / NEXT_TASKS / notifications 模块入口文档),
+> 搬走会直接打红那条 unit。这不是迁移遗漏,是 **INC-16** 那条历史事故的守护在生效 ——
+> 该事故的教训原话:「文档不总是『只是文档』…… **搬动/精简文档前先 grep 谁在 `readFileSync` 它**」。
+
 - **接口与字段真相**:live `/api/docs-json` + contract snapshot + `EXPECTED_ROUTES`;**逐版本叙事**:[`CHANGELOG.md`](../../CHANGELOG.md) + `../archive/handoff/`
 - **模块地图** `../CODEMAP.md` · **权限地图** `RBAC_MAP.md`(各有 check 脚本守护)· **数据模型** `prisma/schema.prisma`
 - **API surface**:5前缀;跨 surface Mixed=1(禁增);同 surface 双 Controller文件=3(非 Mixed);App 禁返 L3(content-* signed URL 例外);见 `../api-surface-policy.md`
@@ -51,7 +57,7 @@ Claude Code 入口)。它们每次会话都被完整注入上下文,所以每个
 - **Attachment storage Phase1**:ledger接 Attachment；Content根锁、provider外；无key FK/非 repo-wide closure；见 [`runbook`](../ops/attachment-storage-consistency-rollout.md)
 - **保险 v3(v0.59.0，未 deploy)**:PR1–PR4 gate/约束/evidence 已交付，脏数 fail-fast；Admin 360 overview 已补；切换须 drain 且禁混档
 - **活动责任(v0.62.0 已 release·未部署)**:取消闭环=cancelled/null;生产迁移/配置/认领/部署未做,按 [`runbook`](../ops/activity-responsibility-workflow-rollout.md) 审批验 digest
-- **安全**:审计SA全量/持码非SA仅self|USER；敏感读闭锁/extra禁PII；Decision 15.1=B/15.2=B(业务负责人最终确认:2026-07-27):C/N管理=SA|GLOBAL读码(ADMIN不直通)，部门=PRIMARY/SECONDARY/TEMPORARY/SUPPORT有效任职+组织ACTIVE；RBAC任期单轨，ops-admin现任常驻/同锁重读
+- **安全** → **留在 [`current-state.md`](../current-state.md) §2**(见本节开头的 ⚠️,INC-16 守护)
 - **可信代理边界**:`APP_TRUSTED_PROXY_CIDRS` 仅收 `none` 或精确 canonical CIDR；production/smoke 缺失拒启。真实 ingress/edge/backend ACL 尚须现场验证，反代部署不得用 `none`
 - **证书标准库(PR-1→PR-6 + 评审 findings F1–F6)**:类别/等级唯一权威=`CertificateStandard`(实例侧零副本);认定规则由录入时锁定的 `recognitionPolicyId` 记住、换版**不追溯**;招新申报一证一行,发号只搬 APPROVED 且不重判。**需求 = 冻结稿 + [`t0-amendments`](../archive/reviews/certificate-standard-library-t0-amendments.md) 两份合起来**(冲突以后者为准);三份 runbook 见 `../ops/certificate-*`
 - **活动（activity-business-overhaul-v1.1）**：87；永久头/保险 revision/参与投影、D83 资格 runtime 已落。D84 mode 以 v4 根锁/20152 闭合；D85–87 的冻结、资格 hash、lottery 承诺、回执和候选/岗位 guard 均零回填。第 4 批 runtime：邀请 accept 复用 canonical Form/资格/保险/身份/容量链；first_come 按场次即时 `pass|waitlisted`、不建 batch；rank/lottery 走 prepare/commit/void/get、D86 replay 和 20147 零写，同一根事务写容量/pointer/population/audit/outbox；递补仅原场次岗位。default 仅兼容旧 server/存量；资格配置/发布激活已落（draft typed RuleSet、V5 冻结激活）；活动到点 expiry 已落：复用既有两条 worker 与 `ActivityBatchJob` reconciliation、无新 cron，按最早 live session start 在 Activity 根事务内关闭 canonical pending/waitlisted 与 pending invitation，pass/容量不动，drift 20147 业务零写；整单取消/legacy writer lifecycle 也已收口：Activity 根事务关闭 canonical pending/waitlisted、追加 revision 并 CAS 投影，pass 的 active reservation 保留；legacy writer 只匹配无永久 identity 的兼容 header，漂移 20147 业务零写。
