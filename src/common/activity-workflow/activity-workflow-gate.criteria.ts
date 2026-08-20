@@ -73,8 +73,11 @@ export const DECLARED_TEST_CONFIGS: Record<string, string> = {
   'jest-unit.config.ts': 'unit —— 不起 Nest,无闸位姿态',
   // 契约快照:只比 OpenAPI 形状,不驱动写路径。
   'jest-contract.config.ts': 'contract —— 只比契约形状,不驱动写路径',
-  // e2e:22 个走结算真相链的 spec 已逐个声明闸开;其余跑默认(闸关)。
-  'jest-e2e.config.ts': 'e2e —— 22 个 spec 声明闸开,其余默认闸关',
+  // e2e:27 个走结算真相链的 spec 已逐个声明闸开;其余跑默认(闸关)。
+  // ⚠️ 2026-08-21 实测订正:这里原写「22 个」,而实际早已是 26 个(第六轮评审 B-01
+  //    新增读面一致性 spec 后为 27)—— 这串数字**没有机器闸盯着**,是散文,会过期。
+  //    真值随时可查:`grep -rl "ACTIVITY_V11_WORKFLOW_ENABLED = 'true'" test/e2e/*.ts | wc -l`。
+  'jest-e2e.config.ts': 'e2e —— 27 个 spec 声明闸开,其余默认闸关',
   // 旅程金五条:独立 project,被 e2e 配置的 testPathIgnorePatterns **显式排除**
   // ⇒ 必须单独跑、单独复核。其中「考勤修正全链」走结算真相链,已声明闸开;另 4 条默认闸关。
   'jest-journeys.config.ts': 'journeys —— 考勤修正全链声明闸开,另 4 条默认闸关',
@@ -82,12 +85,36 @@ export const DECLARED_TEST_CONFIGS: Record<string, string> = {
 
 export const REVERSE_GATE_MARKERS = ['team-join', 'contribution-calculator'];
 
+/**
+ * 「结算量」列 —— C8 判「这个查询是不是对外产出工时/贡献值」的锚点。
+ *
+ * 选列而不是选文件名:旧链内部那些 `attendanceRecord` 读取要的是 id / 状态 / 时间段
+ * (拿来做校验和状态机),压根不碰结算量。实测全仓 30 处 attendanceRecord 读取里
+ * 只有 7 处 select 了这两列 —— 判据的定义域因此是**结构事实**,不是命名约定。
+ */
+export const SETTLEMENT_COLUMNS = ['serviceHours', 'contributionPoints'] as const;
+
+/** Prisma 读方法 —— 与 `WRITE_METHODS` 互补。 */
+const READ_METHODS = new Set([
+  'findMany',
+  'findFirst',
+  'findUnique',
+  'findFirstOrThrow',
+  'findUniqueOrThrow',
+  'count',
+  'aggregate',
+  'groupBy',
+]);
+
+/** 参与真相的旧链表 —— C8 的看守对象。 */
+const PARTICIPATION_DELEGATE = 'attendanceRecord';
+
 /** production-like 下空值即 fail-fast 的启动点(仓库内可见的两处)。 */
 export const SMOKE_WORKFLOW_FILE = ['.github', 'workflows', 'docker-smoke.yml'].join('/');
 export const ENV_EXAMPLE_FILE = '.env.example';
 
 export type Finding = {
-  criterion: 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6' | 'C7';
+  criterion: 'C1' | 'C2' | 'C3' | 'C4' | 'C5' | 'C6' | 'C7' | 'C8';
   detail: string;
 };
 
@@ -177,6 +204,149 @@ function analyzeFile(fileName: string, text: string): Map<string, MethodInfo> {
   return methods;
 }
 
+type SettlementRead = { line: number; columns: string[] };
+
+type ReadFaceInfo = {
+  name: string;
+  reads: SettlementRead[];
+  /** 本作用域(或它调用的作用域)写了受控链 ⇒ 属链内部,不是对外读面。 */
+  writesGatedChain: boolean;
+  /** 本作用域(或同一调用链上的邻居)问了闸。 */
+  referencesGate: boolean;
+  /** 是不是 class method —— C2 的判闸位只覆盖 class method,自由函数是它的盲区。 */
+  isMethod: boolean;
+  calls: Set<string>;
+};
+
+/**
+ * 按**函数粒度**分析一个文件里的「结算量读面」—— C8 专用。
+ *
+ * 与 `analyzeFile` 的区别:那个只看 class method(闸位判在类上),
+ * 而结算量读面里有自由函数(如 team-join 的封顶核)和赋给 const 的箭头,
+ * 只看 method 会**结构性漏掉**它们 —— 那正是本判据要防的「漏进家族」。
+ */
+function analyzeSettlementReadFaces(fileName: string, text: string): Map<string, ReadFaceInfo> {
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true);
+  const scopes = new Map<string, ReadFaceInfo>();
+
+  const ensure = (name: string): ReadFaceInfo => {
+    const existing = scopes.get(name);
+    if (existing !== undefined) return existing;
+    const created: ReadFaceInfo = {
+      name,
+      reads: [],
+      writesGatedChain: false,
+      referencesGate: false,
+      isMethod: false,
+      calls: new Set(),
+    };
+    scopes.set(name, created);
+    return created;
+  };
+
+  /**
+   * 最近的**具名**外层作用域。匿名回调(典型:`$transaction(async (tx) => {...})`)
+   * 透传给它的宿主方法 —— 否则 `approve()` 里那次 R31 校验读会挂在一个无名作用域上,
+   * 与同一方法里的 `attendanceSheet.update` 分家,豁免判断当场失真。
+   */
+  const enclosingName = (node: ts.Node): string => {
+    for (let cur: ts.Node | undefined = node.parent; cur !== undefined; cur = cur.parent) {
+      if (
+        (ts.isMethodDeclaration(cur) || ts.isFunctionDeclaration(cur)) &&
+        cur.name !== undefined
+      ) {
+        const name = cur.name.getText(source);
+        if (ts.isMethodDeclaration(cur)) ensure(name).isMethod = true;
+        return name;
+      }
+      if (
+        (ts.isArrowFunction(cur) || ts.isFunctionExpression(cur)) &&
+        ts.isVariableDeclaration(cur.parent)
+      ) {
+        return cur.parent.name.getText(source);
+      }
+    }
+    return '<module>';
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const callee = node.expression;
+      const fnName = callee.name.getText(source);
+      const scope = ensure(enclosingName(node));
+
+      // <anything>.attendanceRecord.<readMethod>({ ... select: { serviceHours ... } })
+      if (
+        READ_METHODS.has(fnName) &&
+        ts.isPropertyAccessExpression(callee.expression) &&
+        callee.expression.name.getText(source) === PARTICIPATION_DELEGATE
+      ) {
+        const columns = new Set<string>();
+        const dig = (n: ts.Node): void => {
+          if (ts.isPropertyAssignment(n) || ts.isShorthandPropertyAssignment(n)) {
+            const key = n.name.getText(source);
+            if ((SETTLEMENT_COLUMNS as readonly string[]).includes(key)) columns.add(key);
+          }
+          ts.forEachChild(n, dig);
+        };
+        node.arguments.forEach(dig);
+        if (columns.size > 0) {
+          scope.reads.push({
+            line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+            columns: [...columns].sort(),
+          });
+        }
+      }
+
+      // 受控链写入 ⇒ 本作用域属链内部
+      if (WRITE_METHODS.has(fnName) && ts.isPropertyAccessExpression(callee.expression)) {
+        const delegate = callee.expression.name.getText(source);
+        if (
+          (V11_DELEGATES as readonly string[]).includes(delegate) ||
+          (LEGACY_DELEGATES as readonly string[]).includes(delegate)
+        ) {
+          scope.writesGatedChain = true;
+        }
+      }
+
+      if (fnName === READ_SOURCE) scope.referencesGate = true;
+      if (callee.expression.kind === ts.SyntaxKind.ThisKeyword) scope.calls.add(fnName);
+    }
+    // 裸函数调用 foo(...) —— 自由函数之间的边
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      ensure(enclosingName(node)).calls.add(node.expression.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(source, visit);
+
+  // 传播:写沿调用图**向上**(调了写者的也算写路径);
+  // 闸**双向**(闸位决定可以在调用方做好传下来,也可以由被调用的 helper 去问)。
+  for (let i = 0; i <= scopes.size; i += 1) {
+    let changed = false;
+    for (const info of scopes.values()) {
+      for (const calleeName of info.calls) {
+        const callee = scopes.get(calleeName);
+        if (callee === undefined) continue;
+        if (callee.writesGatedChain && !info.writesGatedChain) {
+          info.writesGatedChain = true;
+          changed = true;
+        }
+        if (callee.referencesGate && !info.referencesGate) {
+          info.referencesGate = true;
+          changed = true;
+        }
+        if (info.referencesGate && !callee.referencesGate) {
+          callee.referencesGate = true;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+  return scopes;
+}
+
 /** 把「体内含受控写」沿文件内调用图向上传播到公开入口。 */
 function propagate(methods: Map<string, MethodInfo>): void {
   for (let i = 0; i <= methods.size; i += 1) {
@@ -211,6 +381,8 @@ export type Counts = {
   declaredTestRoots: number;
   /** C7:production-like 下空值即 fail-fast 的配置项数量。 */
   productionRequiredEnv: number;
+  /** C8:受「必须问闸」看守的结算量读面数(函数粒度)。 */
+  settlementReadFaces: number;
 };
 
 /**
@@ -265,6 +437,7 @@ export function runCriteria(
     gateDependentModules: 0,
     declaredTestRoots: 0,
     productionRequiredEnv: 0,
+    settlementReadFaces: 0,
   };
   for (const file of files) {
     const r = rel(file);
@@ -529,6 +702,63 @@ export function runCriteria(
           detail: `${assembler} 自建 production-like 配置,但既没设 ${name}、.env.test 也没提供 —— 装配会**先**因这一项抛错,该 spec 原本要断言的那个错根本走不到(断言指向的错被顶替)。`,
         });
       }
+    }
+  }
+
+  // ── C8:凡「对外产出工时/贡献值」的读面,都必须问闸 ──
+  //
+  // 🔴 本条由第六轮评审 B-01 倒逼。v1.1 闸落地时全仓**只有一处读面接了闸**,
+  //    另外几处「对外产出工时」的读面一处也没接;而 C3 只断言「至少有一个文件调过
+  //    闸的读面方法(见 READ_SOURCE 常量)」—— **一处接了就绿**,对「第二、第三处漏进来」
+  //    ⚠️ 本注释**刻意不写那个方法名的字面量**:C3 按裸文本数 readFiles,
+  //       判据文件里提一嘴就会把自己算进去(本仓栽过「结构断言 grep 到自己散文」的账)。
+  //    结构性失明。这与本仓已登记的「漏进家族」缺陷同形。
+  //
+  // ## 怎么区分「对外汇总读面」与「旧链内部读写」
+  //
+  // **不用文件名启发式**(`*-query.service.ts` 之类 —— 那种判据加一个新目录就瞎)。
+  // 靠两个结构事实:
+  //
+  //   ① **这个查询要了哪些列**:只有 select 里出现 `serviceHours` / `contributionPoints`
+  //      的 `attendanceRecord` 读取才算结算量读面。旧链内部读的是 id / 状态 / 时间段,
+  //      拿来做校验和状态机。实测:全仓 30 处 attendanceRecord 读取,只有 7 处要了结算列。
+  //   ② **这个函数写不写受控链**:写了就是链内部。例:`attendance-review.approve()`
+  //      确实 select 了 contributionPoints,但那只是 R31 的非空校验,而同一方法里
+  //      `attendanceSheet.update` 在写旧链 ⇒ 豁免。写侧本来就由 C2 按
+  //      `assertLegacyWriteAllowed` 管着,不需要再问读面闸。
+  //
+  // 反向闸领地整体豁免,且**复用 C4 的同一份 `REVERSE_GATE_MARKERS`** ——
+  // 于是 C4(那里不许问闸)与 C8(这里必须问闸)**按构造不可能互相矛盾**:
+  // 一份清单同时驱动两条判据,改一处两处一起动,不会出现「两边都说自己对」。
+  //
+  // 扫描面是 `collectProdFiles()` **现取**,不写死文件名 —— 将来冒出第 5 处读面,
+  // 本条自动把它圈进来,不需要有人记得回来改清单。
+  for (const file of files) {
+    const r = rel(file);
+    if (r === GATE_FILE) continue;
+    // 反向闸领地:恒按 approved 算,接了闸反而由 C4 判红。
+    if (REVERSE_GATE_MARKERS.some((g) => r.includes(g))) continue;
+    const text = readSource(file);
+    if (!text.includes(PARTICIPATION_DELEGATE)) continue;
+
+    for (const info of analyzeSettlementReadFaces(r, text).values()) {
+      if (info.reads.length === 0) continue;
+      // 链内部读写:由 C2 的写侧判闸位管,读面闸与它无关。
+      //
+      // ⚠️ 豁免**只给 class method** —— 因为 C2 的判闸位分析(`analyzeFile`)只遍历
+      //    class method,自由函数是它结构上的盲区。若在这里连自由函数一起豁免,
+      //    一个「既写旧链又读结算量」的自由函数就会同时逃过 C2 和 C8,两条判据
+      //    各自以为对方管着。宁可在这里多红一次(fail-closed),也不留这种交叉空档。
+      if (info.writesGatedChain && info.isMethod) continue;
+      counts.settlementReadFaces += 1;
+      if (info.referencesGate) continue;
+      const where = info.reads
+        .map((read) => `第 ${read.line} 行取 ${read.columns.join(' / ')}`)
+        .join(';');
+      findings.push({
+        criterion: 'C8',
+        detail: `${r} 的 ${info.name}() 从 ${PARTICIPATION_DELEGATE} 读结算量(${where})并对外产出,却没有问闸(${READ_SOURCE}())—— 闸开后本读面会继续用旧真相出数,而同一实例的其它读面已切到已入账账本,同一个人在两个页面拿到两个数字。修法:照 participation-summary-query.service.ts 的三元范式接闸。`,
+      });
     }
   }
 

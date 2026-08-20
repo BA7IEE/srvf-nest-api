@@ -104,6 +104,21 @@ export interface MemberCommittedParticipationCounts {
   entryCount: number;
 }
 
+/**
+ * 「活动 × 队员」两轴小计(已生效口径)—— 第六轮评审 B-01 的统计读面用。
+ *
+ * 值与既有小计**同一种渲染**(`Decimal.toString()`),以免同一张卡片上两个数
+ * 一个写 `6`、一个写 `6.00`。空集不出行(调用方按 `?? '0'` 兜底)。
+ */
+export interface ActivityMemberLedgerTotalsView {
+  activityId: string;
+  memberId: string;
+  /** 服务时长小计。 */
+  serviceHours: string;
+  /** 贡献值小计(credited 口径,即封顶**后**的分)。 */
+  creditedPoints: string;
+}
+
 type PrismaLike = Pick<Prisma.TransactionClient, '$queryRaw'>;
 
 /**
@@ -394,6 +409,54 @@ export class LedgerQueryService {
       activityCount: Number(row?.activityCount ?? 0),
       entryCount: Number(row?.entryCount ?? 0),
     };
+  }
+
+  /**
+   * 一批活动下**已生效**分录的「活动 × 队员」两轴小计 —— 第六轮评审 B-01。
+   *
+   * ## 为什么是这一个方法而不是让读面各查各的
+   *
+   * 两个统计读面(逐活动的 `ActivityParticipationQueryService`、跨活动按月汇总的
+   * `ParticipationOverviewQueryService`)闸开后都要「已入账」口径的工时/贡献值,
+   * 粒度却不同:前者要逐队员(对账表逐行),后者只要逐活动(再按月折)。
+   * **两者都能从「活动 × 队员」这一份最细的小计折出来**,故只开一个方法、折叠在调用方,
+   * 而不是开两个各带一份 `committed` 过滤的查询 —— 后者一旦有人改错就会两处口径各说各话。
+   *
+   * 过滤条件与既有 committed 取数**逐字同源**(同一个 `b."statusCode" = 'committed'` join),
+   * 且不收批次状态入参 —— 收了就等于给调用方一个 `includeUncommitted` 开关。
+   *
+   * 只返回聚合标量,不返回任何分录字段 —— 合同 §3.22 的分录级不可见性一寸未让。
+   */
+  async sumCommittedByMemberForActivities(
+    activityIds: readonly string[],
+    client?: PrismaLike,
+  ): Promise<ActivityMemberLedgerTotalsView[]> {
+    // 空集不进 SQL:`IN ()` 是语法错误,而且没有活动时本来就没有小计可言。
+    if (activityIds.length === 0) return [];
+    const rows = await (client ?? this.prisma).$queryRaw<
+      Array<{
+        activityId: string;
+        memberId: string;
+        serviceHours: string;
+        creditedPoints: string;
+      }>
+    >`
+      SELECT e."activityId", e."memberId",
+             COALESCE(SUM(e."serviceHoursDelta"), 0)::text AS "serviceHours",
+             COALESCE(SUM(e."creditedPointsDelta"), 0)::text AS "creditedPoints"
+      FROM "ParticipationLedgerEntry" e
+      JOIN "LedgerPostingBatch" b ON b.id = e."postingBatchId"
+      WHERE e."activityId" IN (${Prisma.join([...activityIds])})
+        AND b."statusCode" = 'committed'
+      GROUP BY e."activityId", e."memberId"
+      ORDER BY e."activityId" ASC, e."memberId" ASC
+    `;
+    return rows.map((row) => ({
+      activityId: row.activityId,
+      memberId: row.memberId,
+      serviceHours: toTotalsString(row.serviceHours),
+      creditedPoints: toTotalsString(row.creditedPoints),
+    }));
   }
 
   // ===== 第 7 批第 ②-a 刀:「已生效 / 在途」两轴小计(只加显示,不动任何既有取数)=====
