@@ -8,6 +8,8 @@ import {
   buildActivityParticipationMetrics,
   type DurationHistogramMetric,
 } from '../activities/activity-participation-metrics';
+import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import { LedgerQueryService } from '../activities/ledger-query.service';
 import { AuthzService } from '../authz/authz.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import {
@@ -32,6 +34,9 @@ export class ParticipationOverviewQueryService {
     private readonly prisma: PrismaService,
     private readonly authz: AuthzService,
     private readonly organizations: OrganizationsService,
+    private readonly ledgerQuery: LedgerQueryService,
+    // 活动 v1.1 cutover gate —— 统计读面取数源的判闸依据(合同 §16.2 单轨第三项)。
+    private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
 
   private async resolveVisibleOrganizationIds(
@@ -69,6 +74,28 @@ export class ParticipationOverviewQueryService {
 
     const requestedSet = new Set(requestedIds);
     return authorizedIds.filter((id) => requestedSet.has(id));
+  }
+
+  /**
+   * 闸开后的取数:逐活动服务时长来自**已 committed 的账本分录**。
+   *
+   * 🔴 **只切「结算量」这一轴**。月度的 `participationCount` / `averageAttendanceRate` /
+   *    `noShowRate` / `durationHistogram` **刻意不随闸切换** —— 闸控范围经拍板收窄为
+   *    「结算真相链」,不含 Session / Participation / Registration;而「参与活动数 /
+   *    记录条数在账本口径下如何定义」是已登记的悬案 D1(维护者明文「不在无数据时
+   *    凭空发明语义」)。与 `activity-participation-query` 的取舍逐字同源。
+   */
+  private async loadCommittedServiceHoursByActivity(
+    activityIds: readonly string[],
+  ): Promise<Map<string, Prisma.Decimal>> {
+    const rows = await this.ledgerQuery.sumCommittedByMemberForActivities(activityIds);
+    const byActivity = new Map<string, Prisma.Decimal>();
+    for (const row of rows) {
+      const prev = byActivity.get(row.activityId) ?? new Prisma.Decimal(0);
+      // Decimal 相加是精确的,不经浮点。
+      byActivity.set(row.activityId, prev.add(new Prisma.Decimal(row.serviceHours)));
+    }
+    return byActivity;
   }
 
   async getOverview(
@@ -131,6 +158,12 @@ export class ParticipationOverviewQueryService {
       recordsByActivity.set(record.sheet.activityId, rows);
     }
 
+    // 取数源由闸决定,不是两套并存(合同 §16.2 第三项)。闸关(默认)= 今天的行为。
+    const committedByActivity =
+      this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
+        ? await this.loadCommittedServiceHoursByActivity(activityIds)
+        : null;
+
     const months = new Map<string, MonthAccumulator>();
     for (const activity of activities) {
       const metrics = buildActivityParticipationMetrics(
@@ -156,7 +189,11 @@ export class ParticipationOverviewQueryService {
       };
       accumulator.activityCount += 1;
       accumulator.participationCount += metrics.attendeeCount;
-      accumulator.totalServiceHours = accumulator.totalServiceHours.add(metrics.totalServiceHours);
+      accumulator.totalServiceHours = accumulator.totalServiceHours.add(
+        committedByActivity === null
+          ? metrics.totalServiceHours
+          : (committedByActivity.get(activity.id) ?? new Prisma.Decimal(0)),
+      );
       accumulator.durationHistogram.under2Hours += metrics.durationHistogram.under2Hours;
       accumulator.durationHistogram.from2To4Hours += metrics.durationHistogram.from2To4Hours;
       accumulator.durationHistogram.from4To8Hours += metrics.durationHistogram.from4To8Hours;

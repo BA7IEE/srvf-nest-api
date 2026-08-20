@@ -692,8 +692,12 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     //    而新增的这一处**自己就带 committed 过滤**,方向与本不变量一致。真正要防的是
     //    「有人加了一条不过滤 committed 的账本读」—— 那种改动会让这个数字**不涨**
     //    (新查询没有该过滤串),于是等式照样红。故计数继续有效,只是基线随真源前移。
+    //
+    // 第六轮评审 B-01 +1 → **9 处**:新增 `sumCommittedByMemberForActivities`
+    // (闸开后逐活动 / 月度两个统计读面的工时取数)。上调理由与上一次逐字相同 ——
+    // 新增的这一处自己就带 committed 过滤,方向与本不变量一致。
     const committedFilters = source.match(/AND b\."statusCode" = 'committed'/g) ?? [];
-    expect({ committed过滤处数: committedFilters.length }).toEqual({ committed过滤处数: 8 });
+    expect({ committed过滤处数: committedFilters.length }).toEqual({ committed过滤处数: 9 });
 
     // 在途那条**新**方法只有一处,状态是写死的字面量而不是入参。
     const inFlightFilters = source.match(/AND b\."statusCode" IN \('preparing', 'ready'\)/g) ?? [];

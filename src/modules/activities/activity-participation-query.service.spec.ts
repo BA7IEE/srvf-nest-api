@@ -2,6 +2,8 @@ import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PrismaService } from '../../database/prisma.service';
 import type { ActivityFeedbacksQueryService } from '../activity-feedbacks/activity-feedbacks-query.service';
+import type { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
+import type { LedgerQueryService } from './ledger-query.service';
 import type { AuthzService } from '../authz/authz.service';
 import type { RbacService } from '../permissions/rbac.service';
 import { ActivityParticipationQueryService } from './activity-participation-query.service';
@@ -42,7 +44,24 @@ describe('ActivityParticipationQueryService feedback aggregate integration', () 
     const feedbacks = {
       aggregateForActivity: feedbackAggregate,
     } as unknown as ActivityFeedbacksQueryService;
-    const service = new ActivityParticipationQueryService(prisma, authz, rbac, feedbacks);
+    // 闸关(默认)下取数逐字不变 —— 故 ledgerQuery 给一个「被调用即失败」的替身:
+    // 本用例若哪天走进了账本分支,会当场炸,而不是悄悄换了口径还全绿。
+    const ledgerQuery = {
+      sumCommittedByMemberForActivities: jest.fn(() => {
+        throw new Error('闸关时不应触碰账本读面');
+      }),
+    } as unknown as LedgerQueryService;
+    const gate = {
+      participationReadSource: jest.fn().mockReturnValue('approved-attendance'),
+    } as unknown as ActivityWorkflowGate;
+    const service = new ActivityParticipationQueryService(
+      prisma,
+      authz,
+      rbac,
+      feedbacks,
+      ledgerQuery,
+      gate,
+    );
 
     const result = await service.participationSummary('activity-1', CURRENT_USER);
 
