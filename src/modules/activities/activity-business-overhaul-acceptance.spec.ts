@@ -1683,13 +1683,35 @@ describe('活动业务改造 v1.1 合同完整性', () => {
   });
 
   it('活文档仍指向本合同目录(指针被删则红)', () => {
-    const currentState = readFileSync(resolve(process.cwd(), 'docs/current-state.md'), 'utf8');
-    const nextTasks = readFileSync(resolve(process.cwd(), 'docs/ai-harness/NEXT_TASKS.md'), 'utf8');
+    // ⚠️ **恒读层活文档在 2026-08-20(PR #1105)被重排过**:
+    // 原先 `docs/current-state.md` §2 承载各域能力摘要,其中就有本合同的指针;
+    // 那一刀把整段能力摘要迁去新建的 `docs/ai-harness/CAPABILITIES.md`(恒读预算 100% → 61%),
+    // **事实没删,是搬了家**。于是本判据原来点名的 current-state 不再含它。
+    //
+    // 修法是**让判据跟着事实走**,不是把摘要按回 current-state —— 按回去等于撤销 #1105 的目的。
+    // 但**强度保持不变**:仍然要求**两个各自独立的锚点**都在,只是其中一个换了身份
+    // (current-state.md → CAPABILITIES.md)。只要求「任意一份里有」会比原判据弱。
+    //
+    // 若日后 CAPABILITIES.md 再被重排而本条又红:去找那段能力摘要**搬到哪儿了**,
+    // 把下面的文件名改成新家;**不要**改成「至少一份含有」来让它变绿。
+    const liveDocuments = {
+      'docs/ai-harness/NEXT_TASKS.md': readFileSync(
+        resolve(process.cwd(), 'docs/ai-harness/NEXT_TASKS.md'),
+        'utf8',
+      ),
+      'docs/ai-harness/CAPABILITIES.md': readFileSync(
+        resolve(process.cwd(), 'docs/ai-harness/CAPABILITIES.md'),
+        'utf8',
+      ),
+    };
 
-    for (const document of [currentState, nextTasks]) {
-      expect(document).toContain('activity-business-overhaul-v1.1');
-    }
-    expect(nextTasks).toContain('P1-28');
+    const missing = Object.entries(liveDocuments)
+      .filter(([, text]) => !text.includes('activity-business-overhaul-v1.1'))
+      .map(([name]) => name);
+    // 报文件名而不是干巴巴的 toContain 失败 —— 两个锚点时,不说是哪一个丢了会白查一轮。
+    expect({ 丢了合同指针的活文档: missing }).toEqual({ 丢了合同指针的活文档: [] });
+
+    expect(liveDocuments['docs/ai-harness/NEXT_TASKS.md']).toContain('P1-28');
   });
 });
 
