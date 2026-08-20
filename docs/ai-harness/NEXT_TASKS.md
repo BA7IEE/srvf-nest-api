@@ -1243,6 +1243,39 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 判据是「这个状态字段的名字,承诺的是不是它实际能保证的?」——
 仓内凡是跨外部供应商的状态字段都值得照此过一遍。
 
+### P1-31 🔴 开工门禁没挂 Bash matcher —— 用 `python3` / `sed -i` 写文件 **100% 绕过**,而那正是默认路径
+
+> 2026-08-20 由 E-B1 修复会话报出;主会话**实测坐实,并确认自己当天全程在犯**。
+> **不是「已知性质」,是接线缺失** —— 与已登记的 `WRITE-GUARD-LITERAL-ONLY`(红区守卫的匹配精度)
+> 不是同一件事。
+
+**实测读数**(`.claude/settings.json` 的 `PreToolUse`):
+
+| matcher | 挂了哪些 hook |
+|---|---|
+| `Edit\|Write\|MultiEdit\|NotebookEdit` | `preflight-required.sh` · `redzone-guard.sh` |
+| `Bash` | `bash-write-guard.sh` |
+
+⇒ **红区守卫有 Bash 侧对应件,开工门禁没有。** 这个不对称本身就是它是遗漏而非设计取舍的证据。
+
+**为什么这不是边缘情况**:bypass 权限模式的会话指令**明确要求优先用 Bash 改文件**
+(`sed`、heredoc、短脚本),Edit/Write 只在 Bash 做不到时才用。
+⇒ **被门禁拦住的是少数路径,绕过的是多数路径。**
+
+**已实测的后果**(主会话 2026-08-20 当天):门禁因「Prisma 生成物比 schema 新」判定未通过时,
+`Write` 被正确拒绝;但同一时刻的 `python3 -c "pathlib.Path(...).write_text(...)"` **全部放行落盘**。
+门禁想拦的正是「基于陈旧生成物写出错代码」,而这条路径完全没被拦。
+
+**待做**:给 `Bash` matcher 补挂开工门禁(或在 `bash-write-guard.sh` 内合并该判定,
+沿它已有的「解释器内联代码 fail-closed」范式 —— 那套机制已经能识别 heredoc / `-c` 正文)。
+
+⚠️ **补挂前必须做正对照**:构造一个门禁未通过的状态,用 `python3` 写文件,**必须被拒**;
+只验「Edit 被拒」不算 —— 那条本来就没坏。
+
+**缺陷类**:「同一条规则在 A 通道有闸、B 通道没有,而 B 是默认通道」。
+判据是「这条 hook 挂了哪些 matcher?写文件还有别的通道吗?」——
+仓内每条 PreToolUse hook 都值得照此对一遍。
+
 ## 已收口项
 
 全部移至 [`docs/archive/ai-harness/next-tasks-completed.md`](../archive/ai-harness/next-tasks-completed.md)(冻结,不再增长)。
