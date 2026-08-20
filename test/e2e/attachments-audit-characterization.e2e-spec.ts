@@ -235,9 +235,13 @@ describe('AttachmentsService audit characterization', () => {
 
   // 每个 case 隔离 durable storage ledger + attachments + audit_logs；保留业务 seed。
   async function isolateFixtures(): Promise<void> {
-    await prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "storage_object_operations", "storage_objects", "attachments" RESTART IDENTITY CASCADE',
-    );
+    // ⚠️ 见 attachments.e2e-spec 同处说明:issue #1055 T1 起 "User" 有指向 attachments 的外键,
+    // `TRUNCATE ... CASCADE` 会连 "User" 一起清空(CASCADE 不看 ON DELETE 规则)⇒ 全 spec 401。
+    // 改 DELETE 走 ON DELETE 规则:两个指针各自置空,User 行留存。
+    // 必须**逐条**发:`$executeRawUnsafe` 走 prepared statement,多条 `;` 分隔命令报 42601。
+    await prisma.$executeRawUnsafe('DELETE FROM "storage_object_operations"');
+    await prisma.$executeRawUnsafe('DELETE FROM "storage_objects"');
+    await prisma.$executeRawUnsafe('DELETE FROM "attachments"');
     await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
   }
 

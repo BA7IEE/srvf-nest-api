@@ -12,7 +12,6 @@ import { PrismaService } from '../../database/prisma.service';
 import { RbacService } from '../permissions/rbac.service';
 import {
   AttachmentAccessService,
-  ATTENDANCE_IMPORT_PREVIEW_OWNER_TYPE,
   OwnerAttachmentView,
   SafeAttachment,
   isInternalRegistrationAttachmentOwner,
@@ -26,7 +25,6 @@ import {
 // ⚠️ 这一段看起来"未被本文件使用",但删掉会让上述三个模块编译失败 ——
 // 清理未用 import 的自动化在这里必须绕开(实测被误删过一次)。
 export type {
-  ATTENDANCE_IMPORT_PREVIEW_OWNER_TYPE,
   AttendanceImportPreviewAttachmentFinalized,
   AttendanceImportPreviewAttachmentPrepared,
   AttendanceImportPreviewAttachmentValidated,
@@ -46,7 +44,7 @@ import type {
   ContentAttachmentReferenceBoundaryInput,
   ContentPublishStorageBoundaryInput,
 } from './attachment-storage.types';
-import { AttachmentOwnerType } from './attachment-validation';
+import { AttachmentOwnerType, INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES } from './attachment-validation';
 import {
   AttachmentResponseDto,
   ListAttachmentsByOwnerQueryDto,
@@ -406,13 +404,8 @@ export class AttachmentsService {
       ...(ownerType !== undefined
         ? { ownerType }
         : {
-            ownerType: {
-              notIn: [
-                'registration-upload-session',
-                'registration-form-answer',
-                ATTENDANCE_IMPORT_PREVIEW_OWNER_TYPE,
-              ],
-            },
+            // 单一真相,见 attachment-validation.ts。此前这里是手抄副本之一。
+            ownerType: { notIn: [...INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES] },
           }),
       ...(ownerId !== undefined ? { ownerId } : {}),
       ...(uploadedBy !== undefined ? { uploadedBy } : {}),
@@ -524,13 +517,8 @@ export class AttachmentsService {
     const { page, pageSize } = query;
     const where: Prisma.AttachmentWhereInput = {
       uploadedBy: user.id,
-      ownerType: {
-        notIn: [
-          'registration-upload-session',
-          'registration-form-answer',
-          ATTENDANCE_IMPORT_PREVIEW_OWNER_TYPE,
-        ],
-      },
+      // 单一真相,见 attachment-validation.ts。此前这里是手抄副本之二。
+      ownerType: { notIn: [...INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES] },
     };
 
     const rows = await this.prisma.attachment.findMany({

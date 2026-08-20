@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:7be9254709a698e09f360179bdb1dfef1189d0dd97f93522690078023c03e543",
+  "inputDigest": "sha256:6e38e745d217adf409c874738a710356b8718c89daf1dcdeda48e26d2d85ebd7",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -189,6 +189,12 @@
       "confirmed": true
     },
     "MemberAudienceTagAssignment": {
+      "domain": "identity-org",
+      "ownerModule": "members",
+      "subdomain": "people",
+      "confirmed": true
+    },
+    "MemberOfficialPortrait": {
       "domain": "identity-org",
       "ownerModule": "members",
       "subdomain": "people",

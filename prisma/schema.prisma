@@ -59,6 +59,24 @@ model User {
   // 这个外部前提撑着,仓里没有任何执行位守着它;代际列是显式的。
   wecomIdentityVersion Int @default(0)
 
+  // 账号头像指针(issue #1055 T1,视觉身份终态升级 expand 段)。
+  //
+  // 上面那个 `avatarKey` 是**裸 storage key,无任何归属校验** —— 谁都能 PATCH 一个别人的 key
+  // 进来。终态由本列取代它:头像必须是一条真实 Attachment,而那条 Attachment 的
+  // `ownerType='user-avatar' + ownerId=User.id` 才是归属证明。
+  //
+  // ⚠️ **本刀刻意与 `avatarKey` 并存**,这是 expand/contract 的中间态,不是"长期双写":
+  // T1 只建列不切读写,`avatarKey` 连同它的全部读写契约在 T5 一次删净。
+  // 中间态里**没有任何代码同时写两列** —— 新路径要到 T3 才通,在那之前本列恒 NULL。
+  //
+  // 为什么 @unique:一张 Attachment 不能同时当两个人的当前头像(issue §5.1 不变量 2)。
+  // NULL 在 PG 唯一索引里互不冲突,所以"绝大多数用户没头像"天然不占槽位,无需 partial unique。
+  //
+  // 为什么 SetNull 而不是 Restrict:头像是可丢的展示品,不是业务凭据 ——
+  // 附件若被 durable delete 清掉,账号应当退回"无头像"而不是让整行 User 删不掉。
+  avatarAttachmentId String?     @unique
+  avatarAttachment   Attachment? @relation("UserAvatar", fields: [avatarAttachmentId], references: [id], onDelete: SetNull)
+
   // 队员账号闭环 v2(2026-07-07;评审稿 docs/archive/reviews/member-account-loop-v2-review.md
   // §3.1/E-1/E-2):去 @unique,改手写 partial unique index `User_memberId_active_key`
   // WHERE "deletedAt" IS NULL(migration 末尾追加,沿 role_bindings / member_organization_memberships
@@ -167,6 +185,11 @@ model User {
   offlinePackagesRevoked     OfflinePackage[]         @relation("OfflinePackageRevoker")
   offlineReviewItemsStaged   OfflinePunchReviewItem[] @relation("OfflinePunchReviewItemStager")
   offlineReviewItemsReviewed OfflinePunchReviewItem[] @relation("OfflinePunchReviewItemReviewer")
+
+  // issue #1055 T1:队员标准照的激活人 / 终结人两条独立 actor 边(仅关系映射,零标量字段)。
+  // 刻意不合并成一条 —— 激活和作废是两次不同的人为决定,常常也不是同一个人。
+  officialPortraitsActivated MemberOfficialPortrait[] @relation("OfficialPortraitActivator")
+  officialPortraitsEnded     MemberOfficialPortrait[] @relation("OfficialPortraitEnder")
 
   @@index([deletedAt])
   @@index([status])
@@ -617,6 +640,12 @@ model Member {
   ledgerEntries         ParticipationLedgerEntry[]   @relation("ParticipationLedgerEntryMember")
   contributionDayStates MemberContributionDayState[] @relation("MemberContributionDayStateMember")
 
+  // issue #1055 T1:队员标准照版本历史(仅关系映射,零标量字段)。
+  // ⚠️ 主表**刻意不放 `currentOfficialPortraitId` 这类指针列** —— "当前哪张"由
+  // `status='ACTIVE'` 加 DB partial unique 表达,一份真相。放指针列就等于让"指针"和
+  // "状态列"各说各话,两者不一致时没人知道该信谁(而它们迟早会不一致)。
+  officialPortraits MemberOfficialPortrait[]
+
   // issue #1048 T2:目录检索的排序第 ② 级是 realName **完全匹配**(等值谓词,btree 吃得到)。
   // ⚠️ 第 ④ 级的 `contains` 走 ILIKE,本索引对它无效 —— 不要因为这条索引在就以为模糊搜索被加速了。
   @@index([realName])
@@ -804,6 +833,112 @@ model EmergencyContact {
   @@index([memberId, priority])
   @@index([deletedAt])
   @@index([createdAt])
+}
+
+// ===== issue #1055 T1:member_official_portraits(队员标准照)=====
+//
+// 队员标准照 = 穿队服、符合冻结规格的**正式肖像**,归队伍管理,用于名录 / 组织架构 /
+// 展示墙 / 制证 / 正式材料。它与另外两类图片是**三条互不相通的链**(issue §一):
+//   - 账号头像(`User.avatarAttachmentId`)—— 用户本人控制,App 个性化展示;
+//   - 身份证件影像(招新 / 敏感档案)—— 只用于身份核验,**禁止任何展示用途**。
+// 三者之间**没有任何自动派生路径**:标准照不得由微信头像、身份证人像或 OCR 裁剪图生成
+// (issue §5.2 末条 + 本 goal §3 硬禁区)。
+//
+// **为什么是版本表而不是 Member 上的一列**:标准照是正式业务事实,制证 / 年度名录 /
+// 对外报送一旦定稿就不能因为本人换了照片而"背后变图"(issue §10.3)。所以每次替换
+// **新建一行**,旧行转 SUPERSEDED 保留 —— 正式材料引用的是
+// `MemberOfficialPortrait.id`,不是"当前那张"。
+//
+// **本刀只建表,不接任何读写路径**(T1 = expand)。Admin 上传 / 激活 / 作废在 T4。
+//
+// ===== 约束在哪儿执行(三处,缺一不可)=====
+// 1. `@@unique([memberId, version])` —— 版本号按队员单调,不重号。Prisma DSL 表达得了。
+// 2. **一个 Member 至多一张 ACTIVE** —— partial unique,Prisma DSL **表达不了**
+//    (至 6.x 不支持带 WHERE 的唯一索引),由 migration.sql 末尾手写
+//    `member_official_portrait_one_active_per_member`,沿
+//    `User_memberId_active_key` / `member_org_membership_primary_active_unique` 既有范式。
+// 3. **状态与终结字段的相容性** —— 四条 DB CHECK,见 migration.sql。
+//    ⚠️ 这三处**每一条都在 e2e 里配了一个"违反它"的负面用例**;DB 约束有太多种静默
+//    失效形状(写错谓词 / 建在错列 / 被后续 migration DROP 掉),"写了"不等于"挡得住"。
+//
+// 软删:**无 `deletedAt`,刻意的**。历史版本用 SUPERSEDED / VOIDED 终态表达,不是"删掉";
+// 软删一条历史照片等于让"这个人当年长什么样"这件事凭空消失,而正式材料还引着它。
+model MemberOfficialPortrait {
+  id       String @id @default(cuid())
+  memberId String
+  // 按 Member 单调递增,从 1 起。不复用、不回退 —— 作废第 3 版后再传,下一版是 4 不是 3。
+  version  Int
+
+  // 可空**不是因为"可以没有照片"**,而是因为历史版本的二进制被合规清理后
+  // (`purgedAt` 非空),元数据仍须留存以解释"曾经有过第 N 版"。
+  // ACTIVE 行必须非空 —— 由 CHECK 兜住(见 migration)。
+  // @unique:一张 Attachment 只能属于一个版本,杜绝两行共用同一 blob 后互相删。
+  attachmentId String? @unique
+
+  // 冻结规格代码,受控闭集(DB CHECK),当前唯一合法值 `uniform-portrait-v1`。
+  // 改规格 = 新增 v2 并**保留旧行的旧值**,绝不批量改写(issue §6.1)——
+  // 旧照片当年确实是按旧规格拍的,改写它就是伪造历史。
+  specVersion String
+
+  source MemberOfficialPortraitSource
+
+  // 实际拍摄日期。未知留空 —— **不拿上传日期冒充拍摄日期**。
+  capturedAt DateTime?
+
+  status MemberOfficialPortraitStatus @default(ACTIVE)
+
+  // ⚠️ **刻意不给 `@default(now())`**(issue §5.2 的建议模型里有,这里是有理由的偏离)。
+  //
+  // 仓内有一条「写用库时钟、判用应用时钟」的缺陷类闸(`clock-authority.spec.ts`):
+  // 每个非审计的 `@default(now())` 列都必须先归档成「判定列」或「显式豁免」。
+  // 本刀新建时它两档都不合适 —— 还没有任何读写点,归哪档都是在替 T4 预先表态。
+  //
+  // 去掉默认值把这件事从**约定**变成**类型**:没有默认值 ⇒ Prisma 的 `create` 把它变成必填
+  // ⇒ T4 写激活事务时被编译器逼着显式传一个应用时钟值,没有"忘了传就悄悄吃库时钟"这条路。
+  // 顺带解锁一个 T4 需要的性质:替换时旧版 `endedAt` 与新版 `activatedAt` 可以取**同一瞬间**,
+  // 版本历史不留缝也不重叠;若这一列吃库时钟,两者就来自两个时钟源,对不齐。
+  activatedAt       DateTime
+  activatedByUserId String
+
+  // 终结三件套:SUPERSEDED / VOIDED 时必须齐备(CHECK 兜),ACTIVE 时必须全空。
+  endedAt       DateTime?
+  endedByUserId String?
+  endReason     String?
+
+  // 二进制合规清理时间。非空 ⇒ 状态不能是 ACTIVE 且 attachmentId 必须已清空(CHECK 兜)。
+  purgedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Restrict:队员行不能在还挂着标准照时被硬删(软删离队不受影响 —— 离队**不删标准照**,
+  // issue §5.2 不变量 7)。
+  member      Member      @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  // SetNull:附件被 durable delete 后本行转为"元数据留存"态,不连坐删掉版本历史。
+  attachment  Attachment? @relation("MemberOfficialPortraitAttachment", fields: [attachmentId], references: [id], onDelete: SetNull)
+  activatedBy User        @relation("OfficialPortraitActivator", fields: [activatedByUserId], references: [id], onDelete: Restrict)
+  endedBy     User?       @relation("OfficialPortraitEnder", fields: [endedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([memberId, version])
+  @@index([memberId, status])
+  @@index([attachmentId])
+  @@map("member_official_portraits")
+}
+
+// 结构闭集用 enum(沿 MembershipType / MembershipStatus 范式;区别于运营可扩的字典码)。
+enum MemberOfficialPortraitStatus {
+  ACTIVE
+  // 被新版本顶替。属正常世代更替,不含"这张照片有问题"的判断。
+  SUPERSEDED
+  // 照片**本身**被判定无效(拍错人 / 没穿队服 / 严重失焦)。
+  // ⚠️ 与队员离队无关 —— 离队不作废标准照(issue §5.2 不变量 6/7)。
+  VOIDED
+}
+
+enum MemberOfficialPortraitSource {
+  ADMIN_UPLOAD
+  // 存量老队员由 API 脚本一次性录入时使用(维护者 2026-08-20 拍板:存量走脚本,不做 DB 迁移)。
+  LEGACY_IMPORT
 }
 
 // ===== V2 第一阶段批次 2:certificates =====
@@ -2155,6 +2290,14 @@ model Attachment {
   // 活动改造 v1.1 第 1 批第二刀(2026-08-04;合同 §3.12):file 型报名答案的反向 relation。
   // 仅关系映射,零标量字段;FK 在 RegistrationFormAnswer 侧,Restrict。
   registrationFormAnswers RegistrationFormAnswer[] @relation("RegistrationAnswerAttachment")
+
+  // issue #1055 T1:视觉身份两条 1:1 反向 relation(仅关系映射,零标量字段;FK 在对侧,均 SetNull)。
+  // 两边都是 `?` 而非数组 —— 对侧 FK 列带 @unique,一张附件至多被一处引用。
+  // ⚠️ 这两个 ownerType(`user-avatar` / `member-official-portrait`)是 **internal-only**:
+  // 通用 Admin Attachment 接口一律 fail-closed,只能走各自的专用 facade
+  // (issue §12;执行位在 attachment-validation.ts 的 internal-only 集合)。
+  avatarOfUser     User?                   @relation("UserAvatar")
+  officialPortrait MemberOfficialPortrait? @relation("MemberOfficialPortraitAttachment")
 
   @@index([ownerType, ownerId]) // 业务查询主路径:列出某业务对象的所有附件
   // 第 79 migration(维护者 2026-08-07 按推荐拍板)另手写 partial unique:

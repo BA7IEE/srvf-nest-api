@@ -30,12 +30,40 @@ export const ATTACHMENT_OWNER_TYPES = [
   // B6 CSV preview source. It is anchored to ActivityBatchJob and can only be read by the
   // attendance import parser facade; generic attachment surfaces reject it.
   'attendance-import-preview',
+  // issue #1055 T1. 账号头像与队员标准照:两者都带 generic API 无从知晓的领域不变量
+  // (「必须是本人的」/「一个 Member 至多一张 ACTIVE」/「替换要版本化」),
+  // 因此同样是 internal-only,只能走各自的专用 facade(issue §12)。
+  'user-avatar',
+  'member-official-portrait',
 ] as const;
 export type AttachmentOwnerType = (typeof ATTACHMENT_OWNER_TYPES)[number];
 
 export function isKnownAttachmentOwnerType(value: string): value is AttachmentOwnerType {
   return (ATTACHMENT_OWNER_TYPES as readonly string[]).includes(value);
 }
+
+// ============ internal-only owner 集合(唯一真相)============
+//
+// 这些 ownerType 在**每一个 generic Attachment 端点上都 fail-closed**:
+// 建 / 改 / 删 / 取详情一律拒绝,list 默认排除,显式按它筛则返回空页。
+// 只有各自的可信 facade 能碰。
+//
+// ⚠️ 本常量是**为了消灭一类缺陷而存在的**,不是顺手抽的工具:
+// 在此之前,这份名单以三份手抄副本存在 —— `isInternalRegistrationAttachmentOwner()`
+// 里一个三路 `||`,外加 `attachments.service.ts` 里两个内联 `notIn` 数组。
+// 新增一个 internal owner 要同时改三处,**漏掉任何一处都是静默敞口**
+// (漏 predicate = 写路径洞开;漏 notIn = 内部附件泄进通用列表),
+// 而三处都不会因为漏改而编译失败或测试变红。现在三处都读这一份。
+//
+// `satisfies` 不是装饰:它让「往这里写一个不存在的 ownerType」变成编译错误,
+// 否则拼错一个字符串的后果是"这条永远匹配不上",同样静默。
+export const INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES = [
+  'registration-upload-session',
+  'registration-form-answer',
+  'attendance-import-preview',
+  'user-avatar',
+  'member-official-portrait',
+] as const satisfies readonly AttachmentOwnerType[];
 
 // ============ 系统级 MIME 黑名单(Q3 v1.0;沿 D7 §6.6)============
 

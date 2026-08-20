@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(234 条,按一级域分组)
+### 权限码全集(236 条,按一级域分组)
 
 > 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert) + `src/modules/permissions/rbac-seed-facts.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -64,6 +64,7 @@
 | `activity-review` | 2 | `activity-review.read.request` · `activity-review.return.request` |
 | `announcement-import` | 2 | `announcement-import.execute.record` · `announcement-import.preview.record` |
 | `member-insurance` | 2 | `member-insurance.read.other` · `member-insurance.review.record` |
+| `member-portrait` | 2 | `member-portrait.manage.record` · `member-portrait.read.history` |
 | `activity-responsibility` | 1 | `activity-responsibility.override.record` |
 | `audit-log` | 1 | `audit-log.read.entry` |
 | `meta` | 1 | `meta.resolve.label` |

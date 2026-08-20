@@ -23,6 +23,7 @@ import type {
 import {
   ATTACHMENT_OWNER_TYPES,
   AttachmentOwnerType,
+  INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES,
   detectPii,
   isKnownAttachmentOwnerType,
   isMimeBlocked,
@@ -509,12 +510,12 @@ export class AttachmentAccessService {
   }
 }
 
+// 名字沿用历史(它最早只管 registration 那两个 owner),**函数名已经名不副实** ——
+// 现在它管的是全部 internal-only owner,包括账号头像与队员标准照。
+// 刻意不在本刀改名:9 个调用点散在 5 个文件里,改名会把一刀纯 additive 的 diff 冲淡成
+// 一片重命名噪音,评审看不清真正的改动。名单本身已收敛到唯一真相(见下)。
 export function isInternalRegistrationAttachmentOwner(ownerType: string): boolean {
-  return (
-    ownerType === 'registration-upload-session' ||
-    ownerType === 'registration-form-answer' ||
-    ownerType === ATTENDANCE_IMPORT_PREVIEW_OWNER_TYPE
-  );
+  return (INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES as readonly string[]).includes(ownerType);
 }
 
 export function isContentAttachmentOwnerType(

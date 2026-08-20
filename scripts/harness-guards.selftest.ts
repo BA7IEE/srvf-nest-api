@@ -289,10 +289,10 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
   const closureSources = readSeedFactsClosure();
   const closureDiff = diffSeedFactsPermissionExtractions(closureSources);
   check(
-    'R5-02 权限码:真实 seed 事实闭包双口径一致且为 234',
+    'R5-02 权限码:真实 seed 事实闭包双口径一致且为 236',
     closureDiff.onlyAst.length === 0 &&
       closureDiff.onlyLegacy.length === 0 &&
-      closureDiff.ast.size === 234,
+      closureDiff.ast.size === 236,
     `ast=${closureDiff.ast.size} onlyAst=[${closureDiff.onlyAst.join(',')}] onlyLegacy=[${closureDiff.onlyLegacy.join(',')}]`,
   );
 
@@ -303,9 +303,9 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
     fs.readFileSync(path.resolve(__dirname, '..', file), 'utf-8'),
   );
   checkEq(
-    'R5-02 权限码:剔除 facts 后码数跌至 220',
+    'R5-02 权限码:剔除 facts 后码数跌至 222',
     extractSeedFactsPermissionCodesAst(incompleteSources).size,
-    220,
+    222,
   );
   checkThrows(
     'R5-02 权限码:剔除 facts 的闭包被拒',
