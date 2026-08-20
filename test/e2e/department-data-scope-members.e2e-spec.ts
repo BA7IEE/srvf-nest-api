@@ -5,11 +5,14 @@ import {
   MembershipType,
   PrincipalType,
   Role,
+  UserStatus,
 } from '@prisma/client';
 import { execSync } from 'node:child_process';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
+import { MemberReferenceResolver } from '../../src/modules/members/member-reference-resolver';
 import { loginAs } from '../fixtures/auth.fixture';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -48,6 +51,19 @@ interface Person {
   userId: string;
   memberId: string;
   authHeader: string;
+}
+
+// issue #1048 T3:MemberReferenceResolver 没有 controller(它是给**机器**用的内部服务),
+// 故沿仓内 service-level e2e 范式(member-profiles-sensitive-masking / organizations-audit-
+// characterization)直调 `app.get(Service)`,自己造 actor payload。
+function payloadOf(person: Person, username: string): CurrentUserPayload {
+  return {
+    id: person.userId,
+    username,
+    role: Role.USER,
+    status: UserStatus.ACTIVE,
+    memberId: person.memberId,
+  };
 }
 
 describe('v0.49 department data scope — member axis', () => {
@@ -433,6 +449,51 @@ describe('v0.49 department data scope — member axis', () => {
     const optionIds = (options.body.data.items as Array<{ id: string }>).map((item) => item.id);
     expect(optionIds).toContain(inScope.id);
     expect(optionIds).not.toContain(outOfScope.id);
+  });
+
+  // ==========================================================================
+  // issue #1048 T3 · MemberReferenceResolver 规则 5(真链路)
+  //
+  // 单测里 scope filter 是 mock 的 —— 它只证明「解析器把范围腿 AND 进去了」。
+  // 这条走**真 authz → 真范围 → 真查询**,证明整条链上范围确实起作用。
+  // ==========================================================================
+  it('🔴 解析器:范围外的**精确 memberNo** 仍不得命中(GLOBAL 作正对照)', async () => {
+    const resolver = app.get(MemberReferenceResolver);
+    const leaderPayload = payloadOf(leader, 'v049-m-leader');
+    const globalPayload = payloadOf(globalAdmin, 'v049-m-global');
+
+    // crossMemberId 挂在 swrtId —— leader 树外。编号真实存在、拼写完全正确。
+    const cross = await prisma.member.findUniqueOrThrow({
+      where: { id: crossMemberId },
+      select: { memberNo: true, realName: true },
+    });
+
+    // ---- 正对照:GLOBAL 调用者用同一个编号必须 MATCHED ----
+    // 少了这步,下面的 NOT_FOUND 可能只是"这个编号本来就查不到",而不是"被范围挡住了"。
+    await expect(resolver.resolve(globalPayload, { memberNo: cross.memberNo })).resolves.toEqual({
+      state: 'MATCHED',
+      memberId: crossMemberId,
+    });
+
+    // ---- 真读数:范围内调用者拿同一个编号 → NOT_FOUND ----
+    await expect(resolver.resolve(leaderPayload, { memberNo: cross.memberNo })).resolves.toEqual({
+      state: 'NOT_FOUND',
+    });
+
+    // 姓名路径同样被范围挡住(防「换个字段就绕过去」)
+    await expect(resolver.resolve(leaderPayload, { realName: cross.realName })).resolves.toEqual({
+      state: 'NOT_FOUND',
+    });
+
+    // ---- 树内的人:同一个 leader 能正常解析(证明不是"对谁都返 NOT_FOUND")----
+    const inTree = await prisma.member.findUniqueOrThrow({
+      where: { id: sectMemberId },
+      select: { memberNo: true },
+    });
+    await expect(resolver.resolve(leaderPayload, { memberNo: inTree.memberNo })).resolves.toEqual({
+      state: 'MATCHED',
+      memberId: sectMemberId,
+    });
   });
 
   it('无码返回 30100；有 read 码但仅 SELF scope 的列表返回空集', async () => {

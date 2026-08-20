@@ -14,6 +14,7 @@ import {
   UserStatus,
 } from '@prisma/client';
 import { normalizeDateOnly } from '../../common/datetime/date-only.util';
+import { resolveMemberReadScope } from './member-read-scope';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -232,17 +233,12 @@ export class MembersService {
   // 第一刀边界:这一步(以及它抛的 RBAC_FORBIDDEN)留在 application service —— QueryService
   // 只接收算好的 scope 作入参,不得自己调 rbac / authz(docs/architecture-boundary.md §3.2)。
   // 有效持码但组织集合为空 ⇒ hasPermission=true,交由 filter 腿产出空列表(既有行为)。
+  // issue #1048 T3:实现搬到 member-read-scope.ts —— `MemberReferenceResolver` 也要用同一份。
+  // 这里保留薄委托,调用点与既有行为逐字不变。
   private async resolveMemberReadScope(
     currentUser: CurrentUserPayload,
   ): Promise<VisibleOrganizationScope> {
-    const authScope = await this.authz.getVisibleOrganizationScope(
-      currentUser,
-      'member.read.record',
-    );
-    if (!authScope.hasPermission) {
-      throw new BizException(BizCode.RBAC_FORBIDDEN);
-    }
-    return authScope;
+    return resolveMemberReadScope(this.authz, currentUser);
   }
 
   async list(
