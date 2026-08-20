@@ -240,7 +240,7 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
   // F1(#399)漂移哨兵:RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES(role-permission.assign
   // 分级闸的单一事实来源)必须与 seed「不绑」矩阵一致 —— 每条保留码都(a)存在为 Permission、
   // (b)未绑 ops-admin、(c)未绑 biz-admin。seed 重命名/改绑任一保留码而未同步常量,本测试即红。
-  it('F1 漂移哨兵:6 保留码均存在为 Permission 且未绑 ops-admin / biz-admin', async () => {
+  it('F1 漂移哨兵:7 保留码均存在为 Permission 且未绑 ops-admin / biz-admin', async () => {
     const result = runSeed({
       APP_ENV: 'test',
       SUPER_ADMIN_USERNAME: 'rbac-seed-f1',

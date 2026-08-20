@@ -25,7 +25,7 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 //   5. 只读角色 RolePermission 精确同步:补缺失、删脏写码
 //   6. 零指派 + 零漂移:5 个职务/分管角色无任何 RoleBinding 持有者(判权零影响);
 //      ops-admin 104(PR-2 +8 配置面码)/ member 9 不变；biz-admin 69(PR-1 +read.sensitive;PR-2 配置面码只绑 ops-admin);
-//      6 保留码不绑 3 新角色(F1 哨兵延伸)
+//      7 保留码不绑 3 新角色(F1 哨兵延伸)
 //   7. 幂等:连续两次 seed counts / role id 稳定 + policy updatedAt 不 bump
 //
 // 终态 scoped-authz PR9(2026-07-02)追加:第 7 内置角色 `attendance-final-reviewer`(冻结稿
@@ -436,7 +436,7 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
       expect(await prisma.rolePermission.count({ where: { role: { code } } })).toBe(expected);
     }
 
-    // F1 哨兵延伸:6 条 SUPER_ADMIN 保留码不绑任何新角色
+    // F1 哨兵延伸:7 条 SUPER_ADMIN 保留码不绑任何新角色
     const reservedBindings = await prisma.rolePermission.findMany({
       where: {
         role: { code: { in: [...NEW_ROLE_CODES] } },

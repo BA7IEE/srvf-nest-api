@@ -132,12 +132,20 @@ export const RBAC_SEED_FACTS = Object.freeze({
   }),
   contract: Object.freeze({
     // 控制面仅 SUPER_ADMIN 可授予的权限码；ops-admin / biz-admin 均不得绑定。
+    //
+    // ⚠️ `*.reset.credentials` 是一个**家族**,不是一串互不相干的码:每接入一个新 provider
+    // 的凭证重置端点,那条码都必须同步登记进本表,否则持 `rbac.role-permission.create` 的
+    // ops-admin 可把它自授给任意角色,再调对应 reset 端点覆盖该 provider 的 secret。
+    // 第六轮评审 E-B1 实测:`wecom-setting.reset.credentials` 就是这样漏的(T2 后加,没同步)。
+    // 现由 `reserved-super-admin-permission-codes.spec.ts` 的「家族全登记」判据机器执法 ——
+    // 该判据从 src/ + prisma/ 动态扫 `*.reset.credentials`,漏一条即红并点名。
     reservedSuperAdminOnlyPermissionCodes: readonlyCodes([
       'user.update.role',
       'storage-setting.reset.credentials',
       'sms-setting.reset.credentials',
       'wechat-setting.reset.credentials',
       'realname-setting.reset.credentials',
+      'wecom-setting.reset.credentials',
       'member.delete.record',
     ]),
   }),
