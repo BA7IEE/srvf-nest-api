@@ -10,6 +10,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 /**
  * 第 7 批第一刀 —— 收件人快照冻结的**真数据**判据(goal D2 ②)。
@@ -39,7 +40,7 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
 
   async function createMemberWithTag(memberNo: string, withTag: boolean): Promise<string> {
     const member = await prisma.member.create({
-      data: { memberNo, displayName: memberNo },
+      data: { memberNo, ...memberIdentityData(memberNo) },
       select: { id: true },
     });
     if (withTag) await assignTag(member.id, [tagCode]);
@@ -305,7 +306,7 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     const registrants = await Promise.all(
       ['cancel-reg-a', 'cancel-reg-b', 'cancel-reg-c'].map((memberNo) =>
         prisma.member.create({
-          data: { memberNo, displayName: memberNo },
+          data: { memberNo, ...memberIdentityData(memberNo) },
           select: { id: true },
         }),
       ),
@@ -348,7 +349,7 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
       data: { deletedAt: new Date(), statusCode: 'cancelled' },
     });
     const lateRegistrant = await prisma.member.create({
-      data: { memberNo: 'cancel-reg-late', displayName: 'cancel-reg-late' },
+      data: { memberNo: 'cancel-reg-late', ...memberIdentityData('cancel-reg-late') },
       select: { id: true },
     });
     await prisma.activityRegistration.create({

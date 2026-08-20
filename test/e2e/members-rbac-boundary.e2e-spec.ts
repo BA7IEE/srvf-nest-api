@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Slow-4 T2(2026-06-11):members 模块 RBAC 权限边界 spec。
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移五类验收:
@@ -49,7 +50,7 @@ describe('members RBAC 权限边界(Slow-4 T2)', () => {
     await grantBizAdminToUser(app, admBiz.id, bizSeed.bizAdminRoleId);
 
     const m = await prisma.member.create({
-      data: { memberNo: 'mrb-m-base', displayName: 'Boundary Base' },
+      data: { memberNo: 'mrb-m-base', ...memberIdentityData('Boundary Base') },
       select: { id: true },
     });
     memberId = m.id;
@@ -91,28 +92,28 @@ describe('members RBAC 权限边界(Slow-4 T2)', () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', saAuth)
-        .send({ memberNo: 'mrb-m-sa', displayName: 'SA Created' });
+        .send({ memberNo: 'mrb-m-sa', ...memberIdentityData('SA Created') });
       expect(res.status).toBe(201);
     });
     it('② ADMIN+biz-admin → 201', async () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', admBizAuth)
-        .send({ memberNo: 'mrb-m-biz', displayName: 'Biz Created' });
+        .send({ memberNo: 'mrb-m-biz', ...memberIdentityData('Biz Created') });
       expect(res.status).toBe(201);
     });
     it('③ ADMIN 无 biz-admin → 30100(合法 body,拒于判权而非校验)', async () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', admDefaultAuth)
-        .send({ memberNo: 'mrb-m-x1', displayName: 'X' });
+        .send({ memberNo: 'mrb-m-x1', ...memberIdentityData('X') });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
     it('④ USER → 30100', async () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', userAuth)
-        .send({ memberNo: 'mrb-m-x2', displayName: 'X' });
+        .send({ memberNo: 'mrb-m-x2', ...memberIdentityData('X') });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
@@ -150,22 +151,22 @@ describe('members RBAC 权限边界(Slow-4 T2)', () => {
       const ok1 = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', saAuth)
-        .send({ displayName: 'Renamed SA' });
+        .send({ realName: 'Renamed SA' });
       expect(ok1.status).toBe(200);
       const ok2 = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', admBizAuth)
-        .send({ displayName: 'Renamed Biz' });
+        .send({ realName: 'Renamed Biz' });
       expect(ok2.status).toBe(200);
       const deny1 = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', admDefaultAuth)
-        .send({ displayName: 'X' });
+        .send({ realName: 'X' });
       expectBizError(deny1, BizCode.RBAC_FORBIDDEN);
       const deny2 = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', userAuth)
-        .send({ displayName: 'X' });
+        .send({ realName: 'X' });
       expectBizError(deny2, BizCode.RBAC_FORBIDDEN);
     });
   });
@@ -198,7 +199,7 @@ describe('members RBAC 权限边界(Slow-4 T2)', () => {
   describe('DELETE /api/admin/v1/members/:id(member.delete.record;DoD-4 ⑤ 码不绑 biz-admin)', () => {
     it('⑤ ADMIN+biz-admin → 30100(持 biz-admin 也不放行;D1=A 镜像)', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'mrb-m-del-1', displayName: 'Del 1' },
+        data: { memberNo: 'mrb-m-del-1', ...memberIdentityData('Del 1') },
         select: { id: true },
       });
       const res = await request(httpServer(app))
@@ -220,7 +221,7 @@ describe('members RBAC 权限边界(Slow-4 T2)', () => {
     });
     it('① SUPER_ADMIN → 200(仍通,与迁移前一致)', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'mrb-m-del-2', displayName: 'Del 2' },
+        data: { memberNo: 'mrb-m-del-2', ...memberIdentityData('Del 2') },
         select: { id: true },
       });
       const res = await request(httpServer(app))

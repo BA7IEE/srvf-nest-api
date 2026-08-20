@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Phase 2 P2-1 App /api/app/v1/me* 三 endpoint e2e。
 // 沿 docs/app-api-phase-2-review.md §9.2 至少 9 类用例:success / unauthenticated /
@@ -17,7 +18,7 @@ import { createTestApp } from '../setup/test-app';
 //
 // Phase 2 P2-2(2026-05-20)追加 GET / PATCH /me/profile 用例(沿
 // docs/app-api-p2-2-profile-review.md §9):GET 8 + PATCH 12 + path stability 1。
-// 字段集恰好 9(沿 §2.4);PATCH 白名单恰好 2(沿 §3.1);空 body / forbidden field → 400;
+// 字段集恰好 10(issue #1048 T1:displayName 退役 → realName + memberLabel,净 +1;沿 §2.4);PATCH 白名单恰好 2(沿 §3.1);空 body / forbidden field → 400;
 // canUseApp=false → 403;P2-2 不新增 BizCode(沿 §6.1)。
 
 interface ResBody {
@@ -30,13 +31,14 @@ const APP_ME_KEYS = [
   'appAccessReason',
   'avatarKey',
   'canUseApp',
-  'displayName',
   'email',
   'gradeCode',
   'memberId',
+  'memberLabel',
   'memberNo',
   'memberStatus',
   'nickname',
+  'realName',
   'role',
   'status',
   'userId',
@@ -87,15 +89,16 @@ function assertNoForbiddenKeys(obj: Record<string, unknown>): void {
   }
 }
 
-// Phase 2 P2-2:AppSelfProfileDto 字段集**恰好 9**(沿评审稿 §2.4 v0.1 锁定)。
+// Phase 2 P2-2:AppSelfProfileDto 字段集**恰好 10**(v0.1 锁的是 9;issue #1048 T1 把 displayName 换成 realName + memberLabel,净 +1)。
 const APP_PROFILE_KEYS = [
   'avatarKey',
-  'displayName',
   'hasMemberProfile',
   'memberId',
+  'memberLabel',
   'memberNo',
   'memberStatus',
   'nickname',
+  'realName',
   'userId',
   'username',
 ].sort();
@@ -110,7 +113,6 @@ const PROFILE_FORBIDDEN_KEYS = [
   'status',
   'roles',
   'gradeCode',
-  'realName',
   'mobile',
   'mobileMasked',
   'documentNumber',
@@ -155,7 +157,7 @@ const FORBIDDEN_FIELD_CATEGORIES: ReadonlyArray<{
   { category: 'member', field: 'bloodTypeCode', value: 'A' },
   { category: 'member', field: 'medicalNotes', value: '过敏史' },
   { category: 'member', field: 'memberNo', value: 'V9999' },
-  { category: 'member', field: 'displayName', value: '改个名' },
+  { category: 'member', field: 'realName', value: '改个名' },
   { category: 'member', field: 'gradeCode', value: 'L2' },
   // Account 字段(沿 §3.3 第 4 组;走独立 endpoint)
   { category: 'account', field: 'username', value: 'newname' },
@@ -245,20 +247,27 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
 
   async function createActiveMember(
     memberNo: string,
-    displayName = '测试队员',
-  ): Promise<{ id: string; memberNo: string; displayName: string }> {
+    realName = '测试队员',
+  ): Promise<{ id: string; memberNo: string; realName: string }> {
     const m = await prisma.member.create({
-      data: { memberNo, displayName, gradeCode: 'L1', status: MemberStatus.ACTIVE },
+      data: {
+        memberNo,
+        ...memberIdentityData(realName),
+        gradeCode: 'L1',
+        status: MemberStatus.ACTIVE,
+      },
     });
-    return { id: m.id, memberNo: m.memberNo, displayName: m.displayName };
+    return { id: m.id, memberNo: m.memberNo, realName: m.realName };
   }
 
   async function setupLinkedUser(opts: {
     username: string;
     role?: Role;
     memberNo: string;
-    displayName?: string;
+    realName?: string;
     email?: string;
+    // ⚠️ 这个 `nickname` 是 **User 登录昵称**,不是 `Member.nickname`(队内外号)。
+    // issue #1048 T1 之后两者同名不同物,改这个 helper 时别把它们串了。
     nickname?: string;
   }): Promise<{ userId: string; memberId: string; authHeader: string }> {
     const user = await createTestUser(app, {
@@ -267,7 +276,7 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       email: opts.email,
       nickname: opts.nickname,
     });
-    const member = await createActiveMember(opts.memberNo, opts.displayName);
+    const member = await createActiveMember(opts.memberNo, opts.realName);
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
     const { authHeader } = await loginAs(app, opts.username);
     return { userId: user.id, memberId: member.id, authHeader };
@@ -291,11 +300,11 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
   // =====================================================
 
   describe('GET /api/app/v1/me', () => {
-    it('success: USER + active linked member → 200,字段集 = 14 + canUseApp=true', async () => {
+    it('success: USER + active linked member → 200,字段集 = 15 + canUseApp=true', async () => {
       const { memberId, authHeader } = await setupLinkedUser({
         username: 'app_me_user1',
         memberNo: 'V-A1',
-        displayName: '阿明队员',
+        realName: '阿明队员',
         nickname: '阿明',
       });
 
@@ -309,7 +318,8 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       expect(body.data.appAccessReason).toBeNull();
       expect(body.data.memberId).toBe(memberId);
       expect(body.data.memberNo).toBe('V-A1');
-      expect(body.data.displayName).toBe('阿明队员');
+      expect(body.data.realName).toBe('阿明队员');
+      expect(body.data.memberLabel).toBe('V-A1 · 阿明队员');
       expect(body.data.gradeCode).toBe('L1');
       expect(body.data.memberStatus).toBe('ACTIVE');
       expect(body.data.username).toBe('app_me_user1');
@@ -335,7 +345,8 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       expect(data.appAccessReason).toBe('MEMBER_NOT_LINKED');
       expect(data.memberId).toBeNull();
       expect(data.memberNo).toBeNull();
-      expect(data.displayName).toBeNull();
+      expect(data.realName).toBeNull();
+      expect(data.memberLabel).toBeNull();
       expect(data.gradeCode).toBeNull();
       expect(data.memberStatus).toBeNull();
     });
@@ -380,7 +391,7 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
         username: 'app_me_admin1',
         role: Role.ADMIN,
         memberNo: 'A-ADM',
-        displayName: '兼职队员',
+        realName: '兼职队员',
       });
 
       const res = await get('/api/app/v1/me', authHeader);
@@ -613,7 +624,6 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       await prisma.memberProfile.create({
         data: {
           memberId,
-          realName: '真实姓名',
           genderCode: 'male',
           birthDate: new Date('1990-01-01'),
           documentTypeCode: 'id_card',
@@ -622,18 +632,16 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
           email: 'profile@example.com',
           exerciseMethods: [],
           firstAidSkills: [],
-          joinedDate: new Date('2020-01-01'),
-          joinSourceCode: 'recommend',
           privacyConsentSigned: true,
         },
       });
     }
 
-    it('success(有 MemberProfile)→ 200,字段集 = 9 + hasMemberProfile=true', async () => {
+    it('success(有 MemberProfile)→ 200,字段集 = 10 + hasMemberProfile=true', async () => {
       const { userId, memberId, authHeader } = await setupLinkedUser({
         username: 'p22_get_with_profile',
         memberNo: 'P22-G1',
-        displayName: '阿明队员',
+        realName: '阿明队员',
         nickname: '阿明',
       });
       await createMemberProfile(memberId);
@@ -647,7 +655,8 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       expect(body.data.userId).toBe(userId);
       expect(body.data.memberId).toBe(memberId);
       expect(body.data.memberNo).toBe('P22-G1');
-      expect(body.data.displayName).toBe('阿明队员');
+      expect(body.data.realName).toBe('阿明队员');
+      expect(body.data.memberLabel).toBe('P22-G1 · 阿明队员');
       expect(body.data.nickname).toBe('阿明');
       expect(body.data.memberStatus).toBe('ACTIVE');
       expect(body.data.hasMemberProfile).toBe(true);
@@ -721,7 +730,7 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       const { memberId: memberA, authHeader: authHeaderA } = await setupLinkedUser({
         username: 'p22_get_scope_a',
         memberNo: 'P22-G6-A',
-        displayName: 'A 队员',
+        realName: 'A 队员',
       });
       // 造他人 active member B 但不绑定登录用户;调用应仅返 A 自身
       const memberB = await createActiveMember('P22-G6-B', 'B 队员');
@@ -732,7 +741,8 @@ describe('App /api/app/v1/me 三 endpoint(Phase 2 P2-1)', () => {
       const { data } = res.body as ResBody;
       expect(data.memberId).toBe(memberA);
       expect(data.memberNo).toBe('P22-G6-A');
-      expect(data.displayName).toBe('A 队员');
+      expect(data.realName).toBe('A 队员');
+      expect(data.memberLabel).toBe('P22-G6-A · A 队员');
     });
   });
 

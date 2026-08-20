@@ -20,6 +20,7 @@ import {
 } from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2.x C-7 attachments 实施 PR #6b(2026-05-15):attachments 主模块 e2e。
 // 沿 D7-attachments v1.0 §5.1 / §6 + 用户 PR #6b 14 项 Q 拍板。
@@ -125,11 +126,11 @@ describe('attachments 主模块', () => {
       select: { id: true },
     });
     memberA = await prisma.member.create({
-      data: { memberNo: 'M-A001', displayName: 'MemberA' },
+      data: { memberNo: 'M-A001', ...memberIdentityData('MemberA') },
       select: { id: true },
     });
     memberB = await prisma.member.create({
-      data: { memberNo: 'M-B001', displayName: 'MemberB' },
+      data: { memberNo: 'M-B001', ...memberIdentityData('MemberB') },
       select: { id: true },
     });
     // 绑定 User.memberId

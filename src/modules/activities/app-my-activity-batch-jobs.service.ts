@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -299,7 +300,9 @@ const JOB_SELECT = {
   startedAt: true,
   completedAt: true,
   activity: { select: { id: true, title: true, statusCode: true } },
-  createdBy: { select: { member: { select: { id: true, memberNo: true, displayName: true } } } },
+  createdBy: {
+    select: { member: { select: { id: true, memberNo: true, realName: true, nickname: true } } },
+  },
 } satisfies Prisma.ActivityBatchJobSelect;
 
 const ITEM_SELECT = {
@@ -334,8 +337,7 @@ function presentJob(row: JobRow, now: Date): AppMyActivityBatchJobListItemDto {
         ? null
         : {
             memberId: row.createdBy.member.id,
-            memberNo: row.createdBy.member.memberNo,
-            displayName: row.createdBy.member.displayName,
+            ...toMemberLabelFields(row.createdBy.member),
           },
     statusCode: row.statusCode,
     total: row.total,

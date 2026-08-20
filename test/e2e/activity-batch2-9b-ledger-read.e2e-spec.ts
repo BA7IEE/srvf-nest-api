@@ -11,6 +11,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 第 2 批第 ⑨b 刀：审核读面 + 账本读面 =====
 //
@@ -94,7 +95,7 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
     const appMember = await prisma.member.create({
       data: {
         memberNo: 'activity-batch2-9b-member-no',
-        displayName: '第 ⑨b 刀本人队员',
+        ...memberIdentityData('第 ⑨b 刀本人队员'),
         gradeCode: 'level-2',
         status: MemberStatus.ACTIVE,
       },
@@ -122,7 +123,7 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
         await prisma.member.create({
           data: {
             memberNo: `${tag}-member`,
-            displayName: `${tag} 队员`,
+            ...memberIdentityData(`${tag} 队员`),
             gradeCode: 'level-2',
             status: MemberStatus.ACTIVE,
           },
@@ -456,7 +457,7 @@ describe('第 2 批第 ⑨b 刀 —— 审核与账本读面', () => {
     const filterMember = await prisma.member.create({
       data: {
         memberNo: `activity-batch2-9b-filter-member-${sequence}`,
-        displayName: '第 ⑨b 刀分页过滤队员',
+        ...memberIdentityData('第 ⑨b 刀分页过滤队员'),
         gradeCode: 'level-2',
         status: MemberStatus.ACTIVE,
       },

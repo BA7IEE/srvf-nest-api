@@ -7,6 +7,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
 import { ATTENDANCE_SHEET_STATUS } from '../attendances/attendances.dto';
 import { RbacService } from '../permissions/rbac.service';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import {
   ActivityFeedbackAggregateDto,
   AdminActivityFeedbackListItemDto,
@@ -41,7 +42,7 @@ export class ActivityFeedbacksQueryService {
           comment: true,
           createdAt: true,
           updatedAt: true,
-          member: { select: { memberNo: true, displayName: true } },
+          member: { select: { memberNo: true, realName: true, nickname: true } },
         },
         orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
         skip: (query.page - 1) * query.pageSize,
@@ -52,8 +53,7 @@ export class ActivityFeedbacksQueryService {
 
     return {
       items: rows.map((row) => ({
-        memberNo: row.member.memberNo,
-        displayName: row.member.displayName,
+        ...toMemberLabelFields(row.member),
         rating: row.rating,
         comment: row.comment,
         createdAt: row.createdAt,

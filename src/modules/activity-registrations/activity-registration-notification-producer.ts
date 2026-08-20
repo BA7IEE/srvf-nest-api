@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { MemberStatus, type Prisma } from '@prisma/client';
+import { formatMemberLabel } from '../../common/identity/member-label.util';
 
 import appConfig from '../../config/app.config';
 import {
@@ -33,16 +34,21 @@ interface TargetedNotificationInput {
 
 interface CancellingMemberSnapshot {
   memberNo: string | null;
-  displayName: string | null;
+  realName: string | null;
+  nickname: string | null;
 }
 
+// ⚠️ issue #1048 T1 **行为变更(用户可见)**:本函数原本自带一套人员标签格式
+// `姓名（编号）`(全角括号、姓名在前),与全仓其它地方的 `编号 · 姓名` 不是同一个形状 ——
+// 这正是 DoD 6「人员 label 全仓统一」要消灭的第二份格式。现改为委托统一实现。
+// 通知正文里的这段文字会随之改变,是刻意的,不是回归。
 export function formatCancellingMemberLabel(
   member: CancellingMemberSnapshot | null,
 ): string | null {
   const memberNo = member?.memberNo?.trim();
-  const displayName = member?.displayName?.trim();
-  if (!memberNo || !displayName) return null;
-  return `${displayName}（${memberNo}）`;
+  const realName = member?.realName?.trim();
+  if (!memberNo || !realName) return null;
+  return formatMemberLabel({ memberNo, realName, nickname: member?.nickname ?? null });
 }
 
 @Injectable()

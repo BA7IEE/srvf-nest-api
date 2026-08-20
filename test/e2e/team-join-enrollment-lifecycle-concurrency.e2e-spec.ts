@@ -11,6 +11,7 @@ import { TeamJoinEnrollmentService } from '../../src/modules/team-join/team-join
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 并发审计 K2(B-F4 + B-F5):入队生命周期两头都没收口 ——
 // - F4:`submit` 只用普通读判「未入队」,随后向 Application 建行;并发 final join 在这两步之间
@@ -217,7 +218,7 @@ describe('team join submit × final join 生命周期并发(K2 · B-F4/B-F5)', (
     const member = await prismaA.member.create({
       data: {
         memberNo: `TJC${String(memberSeq).padStart(3, '0')}`,
-        displayName: `入队并发${memberSeq}`,
+        ...memberIdentityData(`入队并发${memberSeq}`),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },

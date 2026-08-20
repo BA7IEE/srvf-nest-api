@@ -21,6 +21,7 @@ import { NotificationOutboxWorker } from '../../src/modules/notifications/notifi
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ============================================================================
 // 外部评审 F2 / SF2 —— 系统定向通知的 replay 路径
@@ -94,7 +95,7 @@ describe('F2 / SF2 —— 系统定向通知的 replay 路径', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: 'F2RPL001',
-        displayName: 'F2 定向队员',
+        ...memberIdentityData('F2 定向队员'),
         status: 'ACTIVE',
         gradeCode: 'level-3',
       },

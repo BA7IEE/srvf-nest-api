@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2 Step 5 members 模块 e2e。
 // 覆盖 6 接口主成功 + 关键失败:权限边界 / memberNo 唯一(包含软删) /
@@ -106,14 +107,14 @@ describe('members 模块', () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', userAuth)
-        .send({ memberNo: 'demo-x1', displayName: 'X' });
+        .send({ memberNo: 'demo-x1', ...memberIdentityData('X') });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
     // DoD-4 ⑤:member.delete.record 不绑 biz-admin → ADMIN 即使持 biz-admin 仍 30100(D1=A 镜像)
     it('ADMIN(持 biz-admin)DELETE → 30100(码不绑,仅 SUPER_ADMIN 短路)', async () => {
       const member = await prisma.member.create({
-        data: { memberNo: 'demo-pb-1', displayName: 'P' },
+        data: { memberNo: 'demo-pb-1', ...memberIdentityData('P') },
       });
       const res = await request(httpServer(app))
         .delete(`/api/admin/v1/members/${member.id}`)
@@ -133,13 +134,16 @@ describe('members 模块', () => {
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-m1',
-          displayName: 'Demo Member 1',
+          ...memberIdentityData('Demo Member 1'),
           gradeCode: activeGradeCode,
         });
       expect(res.status).toBe(201);
       expect(res.body.code).toBe(0);
       expect(res.body.data.memberNo).toBe('demo-m1');
-      expect(res.body.data.displayName).toBe('Demo Member 1');
+      expect(res.body.data.realName).toBe('Demo Member 1');
+      expect(res.body.data.nickname).toBeNull();
+      expect(res.body.data.label).toBe('demo-m1 · Demo Member 1');
+      expect(res.body.data.memberOriginCode).toBe('manual');
       expect(res.body.data.gradeCode).toBe(activeGradeCode);
       expect(res.body.data.status).toBe(MemberStatus.ACTIVE);
       expect(res.body.data).not.toHaveProperty('deletedAt');
@@ -155,7 +159,7 @@ describe('members 模块', () => {
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: '  demo-Trim-Me  ',
-          displayName: 'Trim',
+          ...memberIdentityData('Trim'),
         });
       expect(res.status).toBe(400);
     });
@@ -166,7 +170,7 @@ describe('members 模块', () => {
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-MixedCase-1',
-          displayName: 'Mixed Case',
+          ...memberIdentityData('Mixed Case'),
         });
       expect(res.status).toBe(201);
       expect(res.body.data.memberNo).toBe('demo-MixedCase-1');
@@ -176,7 +180,7 @@ describe('members 模块', () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', adminAuth)
-        .send({ memberNo: 'demo-m2', displayName: 'Demo 2' });
+        .send({ memberNo: 'demo-m2', ...memberIdentityData('Demo 2') });
       expect(res.status).toBe(201);
       expect(res.body.data.gradeCode).toBeNull();
     });
@@ -185,7 +189,7 @@ describe('members 模块', () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
-        .send({ memberNo: 'demo-m1', displayName: 'Dup' });
+        .send({ memberNo: 'demo-m1', ...memberIdentityData('Dup') });
       expectBizError(res, BizCode.MEMBER_NO_ALREADY_EXISTS);
     });
 
@@ -194,14 +198,14 @@ describe('members 模块', () => {
       await prisma.member.create({
         data: {
           memberNo: 'demo-soft-deleted',
-          displayName: 'Old',
+          ...memberIdentityData('Old'),
           deletedAt: new Date(),
         },
       });
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
-        .send({ memberNo: 'demo-soft-deleted', displayName: 'New' });
+        .send({ memberNo: 'demo-soft-deleted', ...memberIdentityData('New') });
       expectBizError(res, BizCode.MEMBER_NO_ALREADY_EXISTS);
     });
 
@@ -211,7 +215,7 @@ describe('members 模块', () => {
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-m3',
-          displayName: 'X',
+          ...memberIdentityData('X'),
           gradeCode: 'no-such-grade',
         });
       expectBizError(res, BizCode.MEMBER_GRADE_CODE_INVALID);
@@ -223,7 +227,7 @@ describe('members 模块', () => {
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-m4',
-          displayName: 'X',
+          ...memberIdentityData('X'),
           gradeCode: wrongTypeGradeCode,
         });
       expectBizError(res, BizCode.MEMBER_GRADE_CODE_INVALID);
@@ -235,7 +239,7 @@ describe('members 模块', () => {
         .set('Authorization', superAdminAuth)
         .send({
           memberNo: 'demo-m5',
-          displayName: 'X',
+          ...memberIdentityData('X'),
           gradeCode: inactiveGradeCode,
         });
       expectBizError(res, BizCode.MEMBER_GRADE_CODE_INVALID);
@@ -245,7 +249,7 @@ describe('members 模块', () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
-        .send({ memberNo: 'demo m1', displayName: 'X' });
+        .send({ memberNo: 'demo m1', ...memberIdentityData('X') });
       expect(res.status).toBe(400);
     });
 
@@ -253,7 +257,7 @@ describe('members 模块', () => {
       const res = await request(httpServer(app))
         .post('/api/admin/v1/members')
         .set('Authorization', superAdminAuth)
-        .send({ memberNo: 'a'.repeat(33), displayName: 'X' });
+        .send({ memberNo: 'a'.repeat(33), ...memberIdentityData('X') });
       expect(res.status).toBe(400);
     });
 
@@ -301,13 +305,16 @@ describe('members 模块', () => {
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
 
-    it('PATCH displayName / gradeCode → 200', async () => {
+    it('PATCH realName / nickname / gradeCode → 200', async () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberId}`)
         .set('Authorization', superAdminAuth)
-        .send({ displayName: 'Renamed' });
+        .send({ realName: 'Renamed', nickname: '老张' });
       expect(res.status).toBe(200);
-      expect(res.body.data.displayName).toBe('Renamed');
+      expect(res.body.data.realName).toBe('Renamed');
+      expect(res.body.data.nickname).toBe('老张');
+      // DoD 6:label 由后端统一拼,外号非空 ⇒ 带括号。
+      expect(res.body.data.label).toBe(`${res.body.data.memberNo} · Renamed(老张)`);
     });
 
     it('PATCH 拒绝 memberNo(forbidNonWhitelisted)', async () => {
@@ -350,7 +357,7 @@ describe('members 模块', () => {
     it('有 v1 user 绑定 → MEMBER_HAS_LINKED_USER', async () => {
       // 创建新 member + 创建 user 并绑定
       const member = await prisma.member.create({
-        data: { memberNo: 'demo-linked', displayName: 'Linked' },
+        data: { memberNo: 'demo-linked', ...memberIdentityData('Linked') },
       });
       await createTestUser(app, {
         username: 'linkeduser',
@@ -370,7 +377,7 @@ describe('members 模块', () => {
     it('有 active 部门归属 → MEMBER_HAS_ACTIVE_DEPARTMENT', async () => {
       // 创建 member + organization + member_department
       const member = await prisma.member.create({
-        data: { memberNo: 'demo-deptm', displayName: 'D' },
+        data: { memberNo: 'demo-deptm', ...memberIdentityData('D') },
       });
       const org = await prisma.organization.create({
         data: { name: 'demo-dept-org', nodeTypeCode: 'demo-wrong-grade' },
@@ -387,7 +394,7 @@ describe('members 模块', () => {
 
     it('无引用 → 200,软删成功(deletedAt 设值,status=INACTIVE)', async () => {
       const member = await prisma.member.create({
-        data: { memberNo: 'demo-clean', displayName: 'C' },
+        data: { memberNo: 'demo-clean', ...memberIdentityData('C') },
       });
       const res = await request(httpServer(app))
         .delete(`/api/admin/v1/members/${member.id}`)
@@ -426,7 +433,7 @@ describe('members 模块', () => {
       childOrgId = await createOrg('F1成员搜索子', rootOrgId);
 
       const inChild = await prisma.member.create({
-        data: { memberNo: 'f1opt-in-child', displayName: 'F1唯一姓名张三XYZ' },
+        data: { memberNo: 'f1opt-in-child', ...memberIdentityData('F1唯一姓名张三XYZ') },
         select: { id: true },
       });
       memberInChild = inChild.id;
@@ -435,13 +442,13 @@ describe('members 模块', () => {
       });
 
       const outside = await prisma.member.create({
-        data: { memberNo: 'f1opt-outside', displayName: 'F1不在组织内' },
+        data: { memberNo: 'f1opt-outside', ...memberIdentityData('F1不在组织内') },
         select: { id: true },
       });
       memberOutside = outside.id;
     });
 
-    it('list q 跨字段模糊命中 displayName + memberNo', async () => {
+    it('list q 跨字段模糊命中 realName + memberNo', async () => {
       const byName = await request(httpServer(app))
         .get('/api/admin/v1/members')
         .query({ q: '唯一姓名张三XYZ' })
@@ -491,7 +498,7 @@ describe('members 模块', () => {
       ]);
     });
 
-    it('GET /options → 200,items 含 {id,label,memberNo,gradeCode},label=displayName', async () => {
+    it('GET /options → 200,items 含 {id,label,memberNo,gradeCode},label=`编号 · 姓名`', async () => {
       const res = await request(httpServer(app))
         .get('/api/admin/v1/members/options')
         .query({ q: '唯一姓名张三XYZ' })
@@ -501,7 +508,7 @@ describe('members 模块', () => {
       expect(res.body.data.items).toEqual([
         {
           id: memberInChild,
-          label: 'F1唯一姓名张三XYZ',
+          label: 'f1opt-in-child · F1唯一姓名张三XYZ',
           memberNo: 'f1opt-in-child',
           gradeCode: null,
         },

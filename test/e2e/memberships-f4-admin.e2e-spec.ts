@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // F4「D 组」memberships 扁平/组织轴增强面 e2e(2026-07-04;冻结路线图
 // admin-api-fe-integration-roadmap.md §4 D 组)。
@@ -67,7 +68,7 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
   let inactiveOrgId: string; // INACTIVE 组织(root 子级)
   let deletedOrgId: string; // 软删组织(root 子级)
 
-  let mAliceId: string; // PRIMARY@dept(displayName 化名甲)
+  let mAliceId: string; // PRIMARY@dept(realName 化名甲)
   let mBobId: string; // PRIMARY@group + SUPPORT@dept
   let mCarolId: string; // PRIMARY@root,ENDED 历史@dept
   let mDeletedId: string; // 软删队员,ACTIVE 归属@dept(dangling_member)
@@ -149,8 +150,11 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
       skipDuplicates: true,
     });
 
-    const mkMember = (memberNo: string, displayName: string, deletedAt: Date | null = null) =>
-      prisma.member.create({ data: { memberNo, displayName, deletedAt }, select: { id: true } });
+    const mkMember = (memberNo: string, realName: string, deletedAt: Date | null = null) =>
+      prisma.member.create({
+        data: { memberNo, ...memberIdentityData(realName), deletedAt },
+        select: { id: true },
+      });
     const alice = await mkMember('f4m-a', 'F4 队员甲');
     const bob = await mkMember('f4m-b', 'F4 队员乙');
     const carol = await mkMember('f4m-c', 'F4 队员丙');
@@ -310,7 +314,7 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
       expect(idsOf(deptTree)).toHaveLength(5);
     });
 
-    it('q 命中队员 memberNo/displayName 与组织 name(contains + insensitive)', async () => {
+    it('q 命中队员 memberNo/realName 与组织 name(contains + insensitive)', async () => {
       const byMemberNo = await getPage(adminAuth, { q: 'F4M-B' });
       expect(idsOf(byMemberNo).sort()).toEqual([msBobGroupId, msBobSupportDeptId].sort());
 
@@ -331,7 +335,9 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
       expect(expanded.body.data.items[0].member).toEqual({
         id: mAliceId,
         memberNo: 'f4m-a',
-        displayName: 'F4 队员甲',
+        realName: 'F4 队员甲',
+        nickname: null,
+        label: 'f4m-a · F4 队员甲',
         gradeCode: null,
       });
       expect(expanded.body.data.items[0].organization).toMatchObject({
@@ -588,7 +594,7 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
 
     it('真并发迁移同一源归属 → 恰一 201，败者 HTTP/BizCode=17003，且仅一个目标 ACTIVE', async () => {
       const member = await prisma.member.create({
-        data: { memberNo: 'f4-transfer-race', displayName: 'F4 transfer race' },
+        data: { memberNo: 'f4-transfer-race', ...memberIdentityData('F4 transfer race') },
         select: { id: true },
       });
       await prisma.memberOrganizationMembership.create({
@@ -683,7 +689,9 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
       expect(expanded.body.data.items[0].member).toEqual({
         id: fltAId,
         memberNo: 'flt-a',
-        displayName: 'F4 过滤队员甲',
+        realName: 'F4 过滤队员甲',
+        nickname: null,
+        label: 'flt-a · F4 过滤队员甲',
         gradeCode: null,
       });
       expect(expanded.body.data.items[0]).not.toHaveProperty('organization');
@@ -701,7 +709,8 @@ describe('F4/D 组 memberships 增强面(page / detail / conflicts / transfer / 
       expect(ids).toEqual(expect.arrayContaining([mAliceId, mBobId]));
       expect(ids).not.toContain(mCarolId);
       expect(items.find((i) => i.id === mAliceId)).toMatchObject({
-        label: 'F4 队员甲',
+        // issue #1048 T1 DoD 6:选择器 label 统一为 `编号 · 姓名(外号)`
+        label: 'f4m-a · F4 队员甲',
         memberNo: 'f4m-a',
       });
 

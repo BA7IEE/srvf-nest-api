@@ -14,6 +14,7 @@ import { AttendancesService } from '../../src/modules/attendances/attendances.se
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // M3(并发复审 P1):考勤终审的三条债一起还。
 //
@@ -144,7 +145,7 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `M3S${String(seq).padStart(4, '0')}`,
-        displayName: `规模${seq}`,
+        ...memberIdentityData(`规模${seq}`),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },

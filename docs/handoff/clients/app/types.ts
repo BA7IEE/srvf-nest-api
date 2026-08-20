@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.66.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:12fc1b8c910f694ff94d5a56e414c42c391de31cc4a969460c41b220079d724a
+// inputDigest: sha256:e614c31870eb3692a12c75b35ee78664b24535e85b3cbee5b70679c9bbcfd002
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -401,7 +401,9 @@ export interface AppCapabilityTasksDto {
 export interface AppCollaboratorOptionDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "gradeCode"?: string | null;
   "eligibilitySource": "participant" | "organization-member";
 }
@@ -615,7 +617,9 @@ export interface AppManagedAttendanceDraftAbsentDto {
   "registrationId": string;
   "memberId": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
 }
 
 export interface AppManagedAttendanceDraftFlagDto {
@@ -639,7 +643,9 @@ export interface AppManagedAttendanceDraftRecordDto {
 export interface AppManagedAttendanceMemberDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
 }
 
 export interface AppManagedAttendanceQrCredentialDto {
@@ -781,7 +787,9 @@ export interface AppManagedImportPreviewItemPageDto {
 export interface AppManagedMemberSummaryDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
   "gradeCode"?: string | null;
 }
 
@@ -928,7 +936,9 @@ export interface AppManagedRegistrationListItemDto {
 export interface AppManagedRegistrationMemberDto {
   "id": string;
   "memberNo": string | null;
-  "displayName": string | null;
+  "realName": string | null;
+  "nickname": string | null;
+  "label": string | null;
 }
 
 export interface AppManagedRegistrationPositionDto {
@@ -1000,7 +1010,8 @@ export interface AppMeResponseDto {
   "status": "ACTIVE" | "DISABLED";
   "memberId": Record<string, unknown> | null;
   "memberNo": Record<string, unknown> | null;
-  "displayName": Record<string, unknown> | null;
+  "realName": Record<string, unknown> | null;
+  "memberLabel": Record<string, unknown> | null;
   "gradeCode": Record<string, unknown> | null;
   "memberStatus": "ACTIVE" | "INACTIVE" | null;
   "canUseApp": boolean;
@@ -1027,7 +1038,9 @@ export interface AppMyActivityBatchJobActivityDto {
 export interface AppMyActivityBatchJobCreatorDto {
   "memberId": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
 }
 
 export interface AppMyActivityBatchJobDetailDto {
@@ -1242,7 +1255,8 @@ export interface AppSelfProfileDto {
   "nickname": Record<string, unknown> | null;
   "avatarKey": Record<string, unknown> | null;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "memberLabel": string;
   "memberStatus": "ACTIVE" | "INACTIVE";
   "hasMemberProfile": boolean;
 }
@@ -1332,7 +1346,9 @@ export interface AppSettlementItemDto {
 export interface AppSettlementItemMemberDto {
   "id": string;
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname": string | null;
+  "label": string;
 }
 
 export interface AppSettlementItemSessionDto {

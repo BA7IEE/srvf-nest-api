@@ -147,7 +147,9 @@ export class AppManagedAttendanceSheetListItemDto {
 export class AppManagedAttendanceMemberDto {
   @ApiProperty() id!: string;
   @ApiProperty() memberNo!: string;
-  @ApiProperty() displayName!: string;
+  @ApiProperty() realName!: string;
+  @ApiProperty({ nullable: true, type: String }) nickname!: string | null;
+  @ApiProperty() label!: string;
 }
 
 export class AppManagedAttendanceRecordDto {
@@ -213,7 +215,9 @@ export class AppManagedAttendanceDraftAbsentDto {
   @ApiProperty() registrationId!: string;
   @ApiProperty() memberId!: string;
   @ApiProperty() memberNo!: string;
-  @ApiProperty() displayName!: string;
+  @ApiProperty() realName!: string;
+  @ApiProperty({ nullable: true, type: String }) nickname!: string | null;
+  @ApiProperty() label!: string;
 }
 
 export class AppManagedAttendanceSheetDraftDto {

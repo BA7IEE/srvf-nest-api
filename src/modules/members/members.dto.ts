@@ -7,6 +7,7 @@ import {
   ArrayUnique,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsOptional,
@@ -17,9 +18,11 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 import { MAINLAND_PHONE_PATTERN } from '../sms/sms.constants';
 
 // query boolean 从 GET query string 解析:原始值是字符串 'true'/'false',@Type(() => Boolean)
@@ -51,8 +54,30 @@ export class MemberResponseDto {
   })
   memberNo!: string;
 
-  @ApiProperty({ description: '称呼 / 显示名(业务可读)', example: 'Demo Member' })
-  displayName!: string;
+  @ApiProperty({ description: '真实姓名(日常身份事实源)', example: '张三' })
+  realName!: string;
+
+  @ApiPropertyOptional({
+    description: '外号 / 队内称呼(可空;**不是**身份键,重名重外号都正常并存)',
+    nullable: true,
+    example: '老张',
+  })
+  nickname!: string | null;
+
+  @ApiProperty({
+    description: '统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号。由后端拼装,前端直接渲染',
+    example: 'M-0001 · 张三(老张)',
+  })
+  label!: string;
+
+  @ApiProperty({
+    description: '发号日(该 memberNo 生效日期;ISO 8601,已按北京日历日归一到 UTC 午夜)',
+    example: '2020-01-15T00:00:00.000Z',
+  })
+  memberSinceDate!: Date;
+
+  @ApiProperty({ description: '来源字典 code(字典 join_source)', example: 'recruitment' })
+  memberOriginCode!: string;
 
   @ApiPropertyOptional({
     description: '等级字典 code(隐含 type code = member_grade)',
@@ -259,11 +284,35 @@ export class CreateMemberDto {
   })
   memberNo!: string;
 
-  @ApiProperty({ description: '称呼 / 显示名', maxLength: 100 })
+  @ApiProperty({ description: '真实姓名', maxLength: 64 })
   @IsString()
   @MinLength(1)
-  @MaxLength(100)
-  displayName!: string;
+  @MaxLength(64)
+  realName!: string;
+
+  // 建档时「不传外号」= 没有外号;显式 null 应当 400 而不是被当成没传
+  //(`@IsOptional()` 对 null 与 undefined 一视同仁 —— 见 OmittableOnly 注释)。
+  @ApiPropertyOptional({ description: '外号 / 队内称呼(可选)', maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  nickname?: string;
+
+  // 刻意**必填**而不是「不传就取今天」:存量老队员要走 API 脚本一次性录入
+  //(维护者 2026-08-20 拍板),那批人的发号日是历史日期。给一个「今天」的隐式默认,
+  // 会让脚本漏传时把全队发号日静默盖成导入当天,而且事后无从分辨哪些是真值。
+  @ApiProperty({ description: '发号日(ISO 8601;按北京日历日归一)', example: '2020-01-15' })
+  @IsDateString()
+  memberSinceDate!: string;
+
+  // 同样刻意必填:字典 join_source 当前有 recruitment / manual / import 三条,
+  // 「管理员建的」与「历史导入的」是两件不同的事,不该由后端替维护者选一个。
+  @ApiProperty({ description: '来源字典 code(字典 join_source)', maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  memberOriginCode!: string;
 
   @ApiPropertyOptional({
     description: '等级字典 code(可选;若提供必须在 type=member_grade 字典中存在且 ACTIVE)',
@@ -276,18 +325,35 @@ export class CreateMemberDto {
   gradeCode?: string;
 }
 
-// 仅允许 displayName / gradeCode;**绝对禁止**:
+// 仅允许 realName / nickname / gradeCode;**绝对禁止**:
 // - memberNo(稳定身份标识,本期不开发改编号接口)
 // - status(走 PATCH /:id/status)
+// - memberSinceDate / memberOriginCode(建档时确定的身份事实,与 memberNo 同性质 ——
+//   本刀刻意不开改口;真需要订正时应有独立的、带审计的更正接口,而不是混进日常改资料)
 // - id / deletedAt
 // - 任何敏感字段(由 forbidNonWhitelisted 兜底拒绝)
 export class UpdateMemberDto {
-  @ApiPropertyOptional({ description: '称呼 / 显示名', maxLength: 100 })
-  @IsOptional()
+  // 姓名**不可清空**(队员总得有名字),只是可省略 ⇒ OmittableOnly,显式 null 稳定 400。
+  @ApiPropertyOptional({ description: '真实姓名', maxLength: 64 })
+  @OmittableOnly()
   @IsString()
   @MinLength(1)
-  @MaxLength(100)
-  displayName?: string;
+  @MaxLength(64)
+  realName?: string;
+
+  // 显式 `null` = 清空外号(沿 contribution-rules 的 ValidateIf 范式);
+  // 不传 = 不动。两者必须能区分,否则外号一旦填错就再也删不掉。
+  @ApiPropertyOptional({
+    description: '外号 / 队内称呼;传 null 清空,不传则不改动',
+    maxLength: 64,
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  nickname?: string | null;
 
   @ApiPropertyOptional({ description: '等级字典 code', maxLength: 64 })
   @IsOptional()
@@ -309,7 +375,7 @@ export class UpdateMemberStatusDto {
 
 // 列表 query:支持 memberNo 精确查询(完整匹配,不做模糊 — 编号即身份)、
 // gradeCode 过滤、status 过滤。
-// F1/A1(路线图 §4;D1/D7 拍板):新增可选 q(模糊命中 displayName+memberNo)/
+// F1/A1(路线图 §4;D1/D7 拍板):新增可选 q(模糊命中 memberNo + realName + nickname)/
 // organizationId(经 memberOrganizationMemberships 关联过滤)/ includeDescendants
 // (配合 organizationId 展开后代组织,默认 false)。旧字段/响应形状不变(additive)。
 export class ListMembersQueryDto extends PaginationQueryDto {
@@ -331,7 +397,8 @@ export class ListMembersQueryDto extends PaginationQueryDto {
   status?: MemberStatus;
 
   @ApiPropertyOptional({
-    description: '模糊搜索(跨字段命中 displayName + memberNo;contains + insensitive)',
+    description:
+      '模糊搜索(跨字段命中 memberNo + realName + nickname;contains + insensitive)。排序见 MemberDirectory 五级规则',
     maxLength: 100,
   })
   @IsOptional()
@@ -370,7 +437,7 @@ export class ListMembersQueryDto extends PaginationQueryDto {
 
 export class MemberOptionsQueryDto {
   @ApiPropertyOptional({
-    description: '模糊搜索(跨字段命中 displayName + memberNo)',
+    description: '模糊搜索(跨字段命中 memberNo + realName + nickname)',
     maxLength: 100,
   })
   @IsOptional()
@@ -406,7 +473,10 @@ export class MemberOptionItemDto {
   @ApiProperty({ description: '主键(cuid)' })
   id!: string;
 
-  @ApiProperty({ description: '展示标签(= displayName)' })
+  @ApiProperty({
+    description: '展示标签 `编号 · 姓名(外号)`;外号为空时不带括号',
+    example: 'M-0001 · 张三(老张)',
+  })
   label!: string;
 
   @ApiProperty({ description: '队员业务唯一编号' })

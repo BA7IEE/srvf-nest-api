@@ -55,6 +55,7 @@ import type {
 } from '../../src/modules/storage/storage.types';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const LOCATOR: StorageObjectLocator = {
   providerType: 'COS',
@@ -357,7 +358,7 @@ describe('Attachment durable storage consistency (real PostgreSQL barriers)', ()
     return prisma.member.create({
       data: {
         memberNo: `storage-member-${++sequence}`,
-        displayName: 'Storage consistency owner',
+        ...memberIdentityData('Storage consistency owner'),
       },
     });
   }

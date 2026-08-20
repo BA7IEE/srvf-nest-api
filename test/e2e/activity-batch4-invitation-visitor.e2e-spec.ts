@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('Activity batch4 invitation and visitor runtime', () => {
   let app: INestApplication;
@@ -69,7 +70,7 @@ describe('Activity batch4 invitation and visitor runtime', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `invitation-visitor-${label}-${sequence}`,
-        displayName: `Invitation Visitor ${label} ${sequence}`,
+        ...memberIdentityData(`Invitation Visitor ${label} ${sequence}`),
         gradeCode: 'level-3',
         status: MemberStatus.ACTIVE,
       },

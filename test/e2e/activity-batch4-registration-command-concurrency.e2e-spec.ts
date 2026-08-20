@@ -13,6 +13,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const FUTURE = {
   startAt: new Date('2099-12-01T08:00:00.000Z'),
@@ -58,7 +59,7 @@ describe('activity batch4 registration command concurrency', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: 'B4CMD-CONCURRENCY',
-        displayName: 'Command Concurrency',
+        ...memberIdentityData('Command Concurrency'),
         gradeCode: 'L1',
         status: MemberStatus.ACTIVE,
       },

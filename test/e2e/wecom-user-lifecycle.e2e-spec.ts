@@ -12,6 +12,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 企业微信接入 T4 e2e 组 A:User 生命周期闭环 —— 行为矩阵
 // (冻结稿 docs/archive/reviews/wecom-integration-t0-terminal-review.md D-WC-10 + §11.3 末条;
@@ -193,7 +194,11 @@ describe('企业微信 User 生命周期闭环:行为矩阵(T4 e2e 组 A)', () =
     n: number,
   ): Promise<{ memberId: string; userId: string; phone: string }> {
     const member = await prisma.member.create({
-      data: { memberNo: `t4a-m-${n}`, displayName: `T4A-${n}`, status: MemberStatus.ACTIVE },
+      data: {
+        memberNo: `t4a-m-${n}`,
+        ...memberIdentityData(`T4A-${n}`),
+        status: MemberStatus.ACTIVE,
+      },
       select: { id: true },
     });
     const granted = await request(httpServer(app))

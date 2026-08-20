@@ -13,6 +13,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 证书标准库 PR-5 e2e(冻结稿 §13.5 / §13.6 / §14 / §15.2 / §15.7)。
 //
@@ -68,7 +69,7 @@ describe('certificates 全局工作台 + 证据读取(PR-5)', () => {
 
     memberA = (
       await prisma.member.create({
-        data: { memberNo: 'WB-0001', displayName: '工作台甲' },
+        data: { memberNo: 'WB-0001', ...memberIdentityData('工作台甲') },
         select: { id: true },
       })
     ).id;

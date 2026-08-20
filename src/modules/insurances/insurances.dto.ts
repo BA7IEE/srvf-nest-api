@@ -61,8 +61,11 @@ export class TeamInsuranceCoverageResponseDto {
   @ApiProperty({ description: '队员编号(展示用冗余,自 Member 关联读出)' })
   memberNo!: string;
 
-  @ApiProperty({ description: '队员姓名(展示用冗余,自 Member 关联读出)' })
-  memberDisplayName!: string;
+  @ApiProperty({ description: '队员真实姓名(展示用冗余,自 Member 关联读出)' })
+  memberRealName!: string;
+
+  @ApiProperty({ description: '队员统一展示标签 `编号 · 姓名(外号)`(展示用冗余)' })
+  memberLabel!: string;
 
   @ApiProperty({ description: '加入名单时间' })
   createdAt!: Date;

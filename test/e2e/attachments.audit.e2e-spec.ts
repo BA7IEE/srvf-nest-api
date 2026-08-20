@@ -16,6 +16,7 @@ import { attachmentBytesForMime } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2.x C-7 attachments 实施 PR #6c(2026-05-15):attachments 主模块 audit_logs 集成 e2e。
 //
@@ -93,11 +94,11 @@ describe('attachments audit_logs 集成', () => {
     const otherUser = await createTestUser(app, { username: OTHER_USERNAME });
 
     memberA = await prisma.member.create({
-      data: { memberNo: 'MA-AUDIT', displayName: 'MemberA' },
+      data: { memberNo: 'MA-AUDIT', ...memberIdentityData('MemberA') },
       select: { id: true },
     });
     memberB = await prisma.member.create({
-      data: { memberNo: 'MB-AUDIT', displayName: 'MemberB' },
+      data: { memberNo: 'MB-AUDIT', ...memberIdentityData('MemberB') },
       select: { id: true },
     });
     await prisma.user.update({ where: { id: selfUser.id }, data: { memberId: memberA.id } });

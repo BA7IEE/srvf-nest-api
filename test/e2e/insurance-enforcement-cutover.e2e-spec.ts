@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('D-INSURANCE v3 PR3 App expectedVersion cutover', () => {
   let app: INestApplication;
@@ -35,7 +36,7 @@ describe('D-INSURANCE v3 PR3 App expectedVersion cutover', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `CAS-${username}`,
-        displayName: username,
+        ...memberIdentityData(username),
         status: MemberStatus.ACTIVE,
       },
     });

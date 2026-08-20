@@ -20,6 +20,7 @@ import { LedgerPreparationService } from '../../src/modules/activities/ledger-pr
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第六刀:机器关账(合同 §5.15 + §3.26)=====
 //
@@ -181,7 +182,7 @@ describe('机器关账 —— 十二步 / 八类硬检查 (合同 §5.15 + §3.2
       data: memberIds.map((id, index) => ({
         id,
         memberNo: `${tag}-m${index}`,
-        displayName: `${tag} 队员 ${index}`,
+        ...memberIdentityData(`${tag} 队员 ${index}`),
         gradeCode: 'level-2',
       })),
     });
@@ -198,7 +199,11 @@ describe('机器关账 —— 十二步 / 八类硬检查 (合同 §5.15 + §3.2
     });
 
     const ownerMember = await prisma.member.create({
-      data: { memberNo: `${tag}-owner`, displayName: `${tag} 负责人`, gradeCode: 'level-2' },
+      data: {
+        memberNo: `${tag}-owner`,
+        ...memberIdentityData(`${tag} 负责人`),
+        gradeCode: 'level-2',
+      },
       select: { id: true },
     });
     await prisma.activityResponsibilityAssignment.create({
@@ -815,7 +820,7 @@ describe('机器关账 —— 十二步 / 八类硬检查 (合同 §5.15 + §3.2
         data: {
           id: strayMemberId,
           memberNo: `${fixture.tag}-stray`,
-          displayName: `${fixture.tag} 漏网队员`,
+          ...memberIdentityData(`${fixture.tag} 漏网队员`),
           gradeCode: 'level-2',
         },
       });
@@ -966,7 +971,7 @@ describe('机器关账 —— 十二步 / 八类硬检查 (合同 §5.15 + §3.2
         data: {
           id: missingMemberId,
           memberNo: `${fixture.tag}-missing-result`,
-          displayName: `${fixture.tag} 待结算成员`,
+          ...memberIdentityData(`${fixture.tag} 待结算成员`),
           gradeCode: 'level-2',
         },
       });
@@ -1246,7 +1251,8 @@ describe('机器关账 —— 十二步 / 八类硬检查 (合同 §5.15 + §3.2
       for (const forbidden of [
         'memberId',
         'memberNo',
-        'displayName',
+        'realName',
+        'nickname',
         'identityId',
         'participationIdentityId',
         'registrationId',

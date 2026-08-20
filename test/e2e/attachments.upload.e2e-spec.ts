@@ -16,6 +16,7 @@ import {
 } from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2.x C-7.5 PR #10:upload-url + confirm-upload e2e(沿评审 §8 + Q-10-1 到 Q-10-15 拍板)
 // v0.44.0 findings #22/#23/#24 增补系统黑名单与 confirm 魔数不符拒绝行为锁。
@@ -77,11 +78,11 @@ describe('attachments upload-url + confirm-upload', () => {
       select: { id: true },
     });
     memberA = await prisma.member.create({
-      data: { memberNo: 'UPL-A001', displayName: 'MemberA' },
+      data: { memberNo: 'UPL-A001', ...memberIdentityData('MemberA') },
       select: { id: true },
     });
     memberB = await prisma.member.create({
-      data: { memberNo: 'UPL-B001', displayName: 'MemberB' },
+      data: { memberNo: 'UPL-B001', ...memberIdentityData('MemberB') },
       select: { id: true },
     });
     await prisma.user.update({ where: { id: selfUser.id }, data: { memberId: memberA.id } });
@@ -686,7 +687,7 @@ describe('attachments upload-url + confirm-upload', () => {
     it('29. confirm owner 软删窗口(F10 #399):token 签发后 owner 软删 → confirm 落库前复校 → 13011,不落悬空行', async () => {
       // 独立临时 member(不污染 memberA);superAuth 取 token(绕 RBAC),fakeUpload,再软删 owner
       const tmp = await prisma.member.create({
-        data: { memberNo: 'UPL-TMP01', displayName: 'MemberTmp' },
+        data: { memberNo: 'UPL-TMP01', ...memberIdentityData('MemberTmp') },
         select: { id: true },
       });
       const { token, key } = await getValidToken(superAuth, { ownerId: tmp.id });

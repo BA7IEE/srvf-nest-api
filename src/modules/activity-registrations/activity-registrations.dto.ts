@@ -101,7 +101,7 @@ export class ActivityRegistrationResponseDto {
   updatedAt!: Date;
 }
 
-// 列表精简版:可嵌套 Member 简要(memberNo / displayName)。
+// 列表精简版:可嵌套 Member 简要(memberNo / realName / nickname / label)。
 export class ActivityRegistrationListItemDto {
   @ApiProperty({ description: '主键' })
   id!: string;
@@ -122,8 +122,14 @@ export class ActivityRegistrationListItemDto {
   @ApiPropertyOptional({ description: '队员编号(冗余字段,便于前端展示)', nullable: true })
   memberNo!: string | null;
 
-  @ApiPropertyOptional({ description: '队员显示名(冗余字段,便于前端展示)', nullable: true })
-  memberDisplayName!: string | null;
+  @ApiPropertyOptional({ description: '队员真实姓名(冗余字段,便于前端展示)', nullable: true })
+  memberRealName!: string | null;
+
+  @ApiPropertyOptional({
+    description: '队员统一展示标签 `编号 · 姓名(外号)`(冗余字段,便于前端展示)',
+    nullable: true,
+  })
+  memberLabel!: string | null;
 
   @ApiProperty({ description: '报名状态字典 code' })
   statusCode!: string;
@@ -157,8 +163,17 @@ export class AdminRegistrationExpandedMemberDto {
   @ApiProperty({ description: '队员业务编号' })
   memberNo!: string;
 
-  @ApiProperty({ description: '队员显示名' })
-  displayName!: string;
+  @ApiProperty({ description: '队员真实姓名', example: '张三' })
+  realName!: string;
+
+  @ApiProperty({ description: '队员外号(队内称呼)', nullable: true, type: String })
+  nickname!: string | null;
+
+  @ApiProperty({
+    description: '统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号',
+    example: 'M-0001 · 张三(老张)',
+  })
+  label!: string;
 
   @ApiPropertyOptional({ description: '等级字典 code', nullable: true })
   gradeCode!: string | null;
@@ -208,8 +223,14 @@ export class AdminRegistrationListItemDto {
   @ApiPropertyOptional({ description: '队员编号(冗余字段,便于前端展示)', nullable: true })
   memberNo!: string | null;
 
-  @ApiPropertyOptional({ description: '队员显示名(冗余字段,便于前端展示)', nullable: true })
-  memberDisplayName!: string | null;
+  @ApiPropertyOptional({ description: '队员真实姓名(冗余字段,便于前端展示)', nullable: true })
+  memberRealName!: string | null;
+
+  @ApiPropertyOptional({
+    description: '队员统一展示标签 `编号 · 姓名(外号)`(冗余字段,便于前端展示)',
+    nullable: true,
+  })
+  memberLabel!: string | null;
 
   @ApiProperty({ description: '报名状态字典 code' })
   statusCode!: string;
@@ -383,7 +404,7 @@ export class CancelRegistrationDto {
 
 // 管理端列表:按 statusCode 过滤。
 // F2/B1(admin-api-fe-integration-roadmap.md §4 B1;D1/D6/D7 拍板):+可选 q(全局跨轴横扫
-// admin/v1/registrations 命中 memberNo+memberDisplayName+activityTitle)/ memberQ(仅命中队员
+// admin/v1/registrations 命中 memberNo+memberRealName+activityTitle)/ memberQ(仅命中队员
 // 字段)/ activityQ(仅命中活动标题)/ memberId / activityId(精确过滤)/ organizationId(经
 // activity→org)/ includeDescendants(配合 organizationId 展开后代)/ dateFrom+dateTo(按
 // registeredAt 区间)/ expand(member,activity 逗号白名单)。**本 DTO 同时被嵌套路径
@@ -400,7 +421,7 @@ export class ListRegistrationsQueryDto extends PaginationQueryDto {
 
   @ApiPropertyOptional({
     description:
-      '模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberDisplayName+activityTitle;contains + insensitive)',
+      '模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberRealName+activityTitle;contains + insensitive)',
     maxLength: 200,
   })
   @IsOptional()
@@ -409,7 +430,7 @@ export class ListRegistrationsQueryDto extends PaginationQueryDto {
   q?: string;
 
   @ApiPropertyOptional({
-    description: '模糊搜索(仅命中队员 memberNo+displayName;仅 admin/v1/registrations 全局横扫生效)',
+    description: '模糊搜索(仅命中队员 memberNo+realName;仅 admin/v1/registrations 全局横扫生效)',
     maxLength: 100,
   })
   @IsOptional()

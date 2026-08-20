@@ -6,6 +6,7 @@ import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { MemberProfilesService } from '../../src/modules/member-profiles/member-profiles.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // member-profiles 敏感字段分级 masking(第三轮全仓 review v0.38.0 §F&A-3)。
 // service-level e2e(沿 organizations-audit-characterization 范式):app.get(Service) 直调,构造不同 actor payload。
@@ -39,7 +40,7 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
   async function newMember(): Promise<string> {
     memberSeq += 1;
     const m = await prisma.member.create({
-      data: { memberNo: `mp-mask-m${memberSeq}`, displayName: `MPMask${memberSeq}` },
+      data: { memberNo: `mp-mask-m${memberSeq}`, ...memberIdentityData(`MPMask${memberSeq}`) },
       select: { id: true },
     });
     return m.id;
@@ -50,15 +51,12 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
     await prisma.memberProfile.create({
       data: {
         memberId,
-        realName: 'Mask Test',
         genderCode: 'male',
         birthDate: new Date('1990-01-01T00:00:00.000Z'),
         documentTypeCode: 'id-card',
         documentNumber: PLAIN_ID,
         mobile: PLAIN_MOBILE,
         email: 'mask@test.local',
-        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
-        joinSourceCode: 'other',
         privacyConsentSigned: true,
       },
     });
@@ -170,7 +168,9 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
       expect(dto).not.toBeNull();
       expect(dto!.documentNumber).toBe(MASKED_ID);
       expect(dto!.mobile).toBe(MASKED_MOBILE);
-      expect(dto!.realName).toBe('Mask Test'); // 非敏感字段不动
+      // issue #1048 T1:realName 已搬到 Member 主档,不再属于档案 DTO ——
+      // 「非敏感字段不掩码」这条不变量改用同档次的 genderCode 承载(仍在本 DTO 内)。
+      expect(dto!.genderCode).toBe('male');
       // 十项收口刀D「全收紧」:生日/座机/网络联系方式/医疗字段无 sensitive 码时一律 null
       expect(dto!.email).toBeNull();
       expect(dto!.birthDate).toBeNull();
@@ -247,8 +247,8 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
     it('C1. 无 read.sensitive update → 回显掩码', async () => {
       const memberId = await newMember();
       await seedProfile(memberId);
-      const dto = await service.update(memberId, { realName: 'Updated' }, recordOnlyPayload);
-      expect(dto.realName).toBe('Updated');
+      const dto = await service.update(memberId, { major: '测绘' }, recordOnlyPayload);
+      expect(dto.major).toBe('测绘');
       expect(dto.documentNumber).toBe(MASKED_ID);
       expect(dto.mobile).toBe(MASKED_MOBILE);
     });
@@ -256,7 +256,7 @@ describe('member-profiles sensitive masking (F&A-3)', () => {
     it('C2. 持 read.sensitive update → 回显明文', async () => {
       const memberId = await newMember();
       await seedProfile(memberId);
-      const dto = await service.update(memberId, { realName: 'Updated2' }, sensitivePayload);
+      const dto = await service.update(memberId, { major: '测绘2' }, sensitivePayload);
       expect(dto.documentNumber).toBe(PLAIN_ID);
       expect(dto.mobile).toBe(PLAIN_MOBILE);
     });

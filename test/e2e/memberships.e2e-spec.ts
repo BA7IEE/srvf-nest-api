@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR2(2026-07-01;冻结稿 §3.1 / §7.1):memberships 组织归属管理面 e2e。
 // 覆盖 4 端点(GET list / POST 新增 / PATCH :id 改类型任期 / DELETE :id 结束)主成功 + 关键失败:
@@ -89,7 +90,7 @@ describe('memberships 组织归属 CRUD', () => {
   // 便捷:建一个 member 返回 id。
   const newMember = async (memberNo: string, status: MemberStatus = MemberStatus.ACTIVE) => {
     const m = await prisma.member.create({
-      data: { memberNo, displayName: memberNo, status },
+      data: { memberNo, ...memberIdentityData(memberNo), status },
       select: { id: true },
     });
     return m.id;

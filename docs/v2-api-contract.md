@@ -101,7 +101,7 @@ V2 第一阶段开发范围共 **4 个新模块** + **1 项 v1 兼容性追加**
 | 21 | GET | `/api/v2/members` | members | 列出队员(分页;支持 memberNo 精确查询) |
 | 22 | POST | `/api/v2/members` | members | 创建队员(memberNo 必填) |
 | 23 | GET | `/api/v2/members/:id` | members | 队员详情(返回 memberNo) |
-| 24 | PATCH | `/api/v2/members/:id` | members | 更新队员(displayName / gradeCode;**禁止改 memberNo**) |
+| 24 | PATCH | `/api/v2/members/:id` | members | 更新队员(realName / nickname / gradeCode;**禁止改 memberNo / memberSinceDate / memberOriginCode**) |
 | 25 | PATCH | `/api/v2/members/:id/status` | members | 切换队员 status(ACTIVE↔INACTIVE) |
 | 26 | DELETE | `/api/v2/members/:id` | members | 软删队员 |
 | 27 | GET | `/api/v2/members/:memberId/department` | member_departments | 查队员当前部门归属 |
@@ -493,7 +493,7 @@ V2 第一阶段**严格禁止**通过 API 修改 `organizations.parentId`(对应
 | 21 | GET | `/api/v2/members` | 列出队员(分页;支持 `?memberNo=<exact>` 精确查询) |
 | 22 | POST | `/api/v2/members` | 创建队员(`memberNo` 必填) |
 | 23 | GET | `/api/v2/members/:id` | 队员详情(返回 `memberNo`) |
-| 24 | PATCH | `/api/v2/members/:id` | 更新队员(displayName / gradeCode;**禁止改 memberNo**) |
+| 24 | PATCH | `/api/v2/members/:id` | 更新队员(realName / nickname / gradeCode;**禁止改 memberNo / memberSinceDate / memberOriginCode**) |
 | 25 | PATCH | `/api/v2/members/:id/status` | 切换队员 status(ACTIVE↔INACTIVE) |
 | 26 | DELETE | `/api/v2/members/:id` | 软删队员 |
 
@@ -509,7 +509,7 @@ GET /api/v2/members
     - **不**支持按部门查询(部门归属走 member_departments;若需要"按部门查队员"作为运营场景,作为 V2.x 单独优化或在 organization 接口加子接口)
 
 POST /api/v2/members
-  入参:CreateMemberDto { memberNo, displayName, gradeCode? }
+  入参:CreateMemberDto { memberNo, realName, nickname?, memberSinceDate, memberOriginCode, gradeCode? }
   出参:MemberResponseDto
   权限:ADMIN / SUPER_ADMIN
   状态:201 Created
@@ -526,7 +526,7 @@ GET /api/v2/members/:id
   错误码:MEMBER_NOT_FOUND
 
 PATCH /api/v2/members/:id
-  入参:UpdateMemberDto { displayName?, gradeCode? }(白名单**仅**这两个字段)
+  入参:UpdateMemberDto { realName?, nickname?, gradeCode? }(白名单**仅**这三个字段;nickname 传 null = 清空)
   出参:MemberResponseDto
   权限:ADMIN / SUPER_ADMIN
   备注:
@@ -555,7 +555,11 @@ DELETE /api/v2/members/:id
 |---|---|---|
 | `id` | String | cuid(独立,**不**复用 users.id) |
 | `memberNo` | String | 队员业务唯一编号(必返;非敏感、高价值业务标识) |
-| `displayName` | String | 称呼 / 显示名 |
+| `realName` | String | 真实姓名 |
+| `nickname` | String? | 外号 / 队内称呼(可空;非身份键) |
+| `label` | String | 统一展示标签 `编号 · 姓名(外号)`,由后端拼装 |
+| `memberSinceDate` | DateTime | 发号日(按北京日历日归一) |
+| `memberOriginCode` | String | 来源字典 `join_source` code |
 | `gradeCode` | String? | 等级字典 code(可空) |
 | `status` | String enum | ACTIVE / INACTIVE |
 | `createdAt` | String(ISO 8601 UTC)| — |
@@ -567,8 +571,9 @@ DELETE /api/v2/members/:id
 
 #### 创建
 
-- 必填:`memberNo`(业务唯一编号)+ `displayName`(显示名)
-- 可选:`gradeCode`(若提供,必须在"队员等级"字典中存在且 status=ACTIVE)
+- 必填:`memberNo`(业务唯一编号)+ `realName`(真实姓名)+ `memberSinceDate`(发号日)+ `memberOriginCode`(来源码)
+  - 后两者**刻意必填**:存量老队员走 API 脚本一次性录入,发号日是历史值;给隐式默认会把全队静默盖成导入当天
+- 可选:`nickname`(外号)/ `gradeCode`(若提供,必须在"队员等级"字典中存在且 status=ACTIVE)
 - 不接收:`status`(默认 ACTIVE)/ `id`(系统生成)/ 任何敏感字段
 
 `memberNo` 校验:
@@ -580,7 +585,7 @@ DELETE /api/v2/members/:id
 
 #### 更新(PATCH /:id)
 
-- 仅允许改 `displayName` / `gradeCode`
+- 仅允许改 `realName` / `nickname` / `gradeCode`;`memberSinceDate` / `memberOriginCode` 是建档时确定的身份事实,与 memberNo 同性质,本期不开改口
 - **禁止改 memberNo**:UpdateMemberDto 白名单**不含** memberNo;若误传 → 400(`forbidNonWhitelisted: true` 全局拒绝)
 - 状态切换走独立接口(`PATCH /:id/status`)
 - 任何敏感字段尝试 → 400(全局 ValidationPipe `forbidNonWhitelisted` 自动拒绝)
@@ -608,7 +613,7 @@ DELETE /api/v2/members/:id
 
 **离队不等于软删**:status=INACTIVE 时档案完整保留(对应 D5 Q7 ① "完整保留档案,包括身份证 / 联系方式 / 医疗 等敏感字段")。
 
-V2 第一阶段 members 主表**不**包含敏感字段(全部延后到 `member_profiles`);因此"完整保留"的语义在 V2 第一阶段是"保留 displayName + gradeCode + status";真实敏感字段保留语义留给 V2.x。
+V2 第一阶段 members 主表**不**包含敏感字段(全部延后到 `member_profiles`);因此"完整保留"的语义在 V2 第一阶段是"保留 realName + nickname + memberSinceDate + memberOriginCode + gradeCode + status";真实敏感字段保留语义留给 V2.x。
 
 ### 4.5 与 v1 users.memberId 的衔接
 
@@ -797,7 +802,7 @@ V2 第一阶段**不修改** v1 §6 已交付的 14 个接口的:
 |---|---|---|
 | 现有 v1 字段(id / username / email / nickname / avatarKey / role / status / lastLoginAt / createdAt / updatedAt)| **保留不变** | v1 13 个核心字段(具体清单以 `docs/archive/legacy/architecture-v1-blueprint.md §6`,原 `ARCHITECTURE.md §6`,PR-6 已归档 为准)全部保留 |
 | `memberId` | **不**进必返字段 | 默认**不**返回;若 Step 5 实施时决定可选返回(用于前端关联展示),需:1. 在本节显式声明;2. 更新 OpenAPI 契约快照;3. 标 `nullable: true` |
-| `members.*` 字段 | **禁止倒灌** | 任何 V2 members 字段(displayName / gradeCode / status 等)**禁止**倒灌进 v1 UserResponseDto(沿用 `research.md §5.6`) |
+| `members.*` 字段 | **禁止倒灌** | 任何 V2 members 字段(realName / nickname / gradeCode / status 等)**禁止**倒灌进 v1 UserResponseDto(沿用 `research.md §5.6`) |
 
 **默认决策**:V2 第一阶段 v1 UserResponseDto **不新增任何字段**;`memberId` 留待 V2.x 评估是否可选返回。
 

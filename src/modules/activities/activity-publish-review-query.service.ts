@@ -68,7 +68,7 @@ export class ActivityPublishReviewQueryService {
           ? {
               initiator: {
                 OR: [
-                  { displayName: { contains: query.initiatorQ, mode: 'insensitive' } },
+                  { realName: { contains: query.initiatorQ, mode: 'insensitive' } },
                   { memberNo: { contains: query.initiatorQ, mode: 'insensitive' } },
                 ],
               },

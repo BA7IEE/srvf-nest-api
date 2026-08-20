@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 interface SuccessBody {
   code: number;
@@ -126,7 +127,7 @@ describe('App activity GPS self check-in (F2)', () => {
   ): Promise<{ memberId: string; authHeader: string }> {
     const user = await createTestUser(app, { username, role });
     const member = await prisma.member.create({
-      data: { memberNo, displayName: username, status: MemberStatus.ACTIVE },
+      data: { memberNo, ...memberIdentityData(username), status: MemberStatus.ACTIVE },
       select: { id: true },
     });
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });

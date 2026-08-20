@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const WINDOW = {
   startAt: new Date('2099-12-20T08:00:00.000Z'),
@@ -51,7 +52,7 @@ describe('permanent ActivityRegistration runtime', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: 'PERMANENT-REGISTRATION-MANAGER',
-        displayName: 'Permanent Registration Manager',
+        ...memberIdentityData('Permanent Registration Manager'),
         gradeCode: 'L1',
         status: MemberStatus.ACTIVE,
       },
@@ -174,7 +175,7 @@ describe('permanent ActivityRegistration runtime', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `PERMANENT-TARGET-${index}`,
-        displayName: `Permanent Target ${index}`,
+        ...memberIdentityData(`Permanent Target ${index}`),
         gradeCode: 'L1',
         status: MemberStatus.ACTIVE,
       },

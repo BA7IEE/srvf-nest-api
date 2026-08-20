@@ -6,7 +6,7 @@ import { Role, UserStatus } from '@prisma/client';
 //
 // 边界(独立定义,**严禁**继承 / Pick / Omit / PartialType / IntersectionType 任何既有 DTO
 // 含 AppMeResponseDto / UserResponseDto;沿 api-surface-policy §2.1 四 surface DTO 物理隔离):
-//   - **不**返 member 业务字段(memberNo / displayName / gradeCode / memberStatus 属 App 自视角,§9.3);
+//   - **不**返 member 业务字段(memberNo / realName / memberLabel / gradeCode / memberStatus 属 App 自视角,§9.3);
 //     仅返 memberId(User 本体外键,表"是否已绑")。
 //   - **不**返 raw RBAC permission code(§9.4);权限永远走 GET /api/system/v1/rbac/me/permissions。
 //   - **永不**返 L3 字段(passwordHash / refreshToken / tokenHash / secret*)。

@@ -18,6 +18,7 @@ import { LedgerPreparationService } from '../../src/modules/activities/ledger-pr
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第七刀:更正应用(合同 §5.14 + §3.25)=====
 //
@@ -173,7 +174,7 @@ describe('更正应用 —— 冲回 / 补记 / 原子切换 / 重新关账 (合
       data: memberIds.map((id, index) => ({
         id,
         memberNo: `${tag}-m${index}`,
-        displayName: `${tag} 队员 ${index}`,
+        ...memberIdentityData(`${tag} 队员 ${index}`),
         gradeCode: 'level-2',
       })),
     });
@@ -188,7 +189,11 @@ describe('更正应用 —— 冲回 / 补记 / 原子切换 / 重新关账 (合
     });
 
     const ownerMember = await prisma.member.create({
-      data: { memberNo: `${tag}-owner`, displayName: `${tag} 负责人`, gradeCode: 'level-2' },
+      data: {
+        memberNo: `${tag}-owner`,
+        ...memberIdentityData(`${tag} 负责人`),
+        gradeCode: 'level-2',
+      },
       select: { id: true },
     });
     await prisma.activityResponsibilityAssignment.create({
@@ -1179,7 +1184,7 @@ describe('更正应用 —— 冲回 / 补记 / 原子切换 / 重新关账 (合
       data: {
         id: memberId,
         memberNo: `${tag}-m0`,
-        displayName: `${tag} 队员`,
+        ...memberIdentityData(`${tag} 队员`),
         gradeCode: 'level-2',
       },
     });

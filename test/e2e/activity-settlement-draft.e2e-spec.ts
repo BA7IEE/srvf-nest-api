@@ -8,6 +8,7 @@ import { SettlementDraftService } from '../../src/modules/activities/settlement-
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第二刀:结算草稿生成(合同 §5.9)=====
 //
@@ -122,7 +123,11 @@ describe('settlement draft generation (合同 §5.9)', () => {
     });
 
     const member = await prisma.member.create({
-      data: { memberNo: `${tag}-m1`, displayName: `草稿队员 ${sequence}`, gradeCode: 'level-2' },
+      data: {
+        memberNo: `${tag}-m1`,
+        ...memberIdentityData(`草稿队员 ${sequence}`),
+        gradeCode: 'level-2',
+      },
       select: { id: true },
     });
     const registration = await prisma.activityRegistration.create({
@@ -387,7 +392,7 @@ describe('settlement draft generation (合同 §5.9)', () => {
       const excludedMember = await prisma.member.create({
         data: {
           memberNo: `draft-${sequence}-excluded`,
-          displayName: '未入人口',
+          ...memberIdentityData('未入人口'),
           gradeCode: 'level-2',
         },
         select: { id: true },
@@ -879,7 +884,7 @@ describe('settlement draft generation (合同 §5.9)', () => {
           prisma.member.create({
             data: {
               memberNo: `${tag}-${index}`,
-              displayName: `批量队员 ${index}`,
+              ...memberIdentityData(`批量队员 ${index}`),
               gradeCode: 'level-2',
             },
             select: { id: true },
@@ -914,7 +919,7 @@ describe('settlement draft generation (合同 §5.9)', () => {
           prisma.member.create({
             data: {
               memberNo: `${tag}-${index}`,
-              displayName: `边界队员 ${index}`,
+              ...memberIdentityData(`边界队员 ${index}`),
               gradeCode: 'level-2',
             },
             select: { id: true },

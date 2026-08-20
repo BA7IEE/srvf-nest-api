@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { MemberStatus, MembershipStatus, OrganizationStatus, Prisma } from '@prisma/client';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -508,7 +509,7 @@ export class AppManagedActivitiesService {
             AND: [
               {
                 OR: [
-                  { displayName: { contains: keyword, mode: 'insensitive' as const } },
+                  { realName: { contains: keyword, mode: 'insensitive' as const } },
                   { memberNo: { contains: keyword, mode: 'insensitive' as const } },
                 ],
               },
@@ -523,7 +524,8 @@ export class AppManagedActivitiesService {
         select: {
           id: true,
           memberNo: true,
-          displayName: true,
+          realName: true,
+          nickname: true,
           gradeCode: true,
         },
         orderBy: [{ memberNo: 'asc' }, { id: 'asc' }],
@@ -547,9 +549,8 @@ export class AppManagedActivitiesService {
     return {
       items: members.map((member) => ({
         id: member.id,
-        memberNo: member.memberNo,
-        displayName: member.displayName,
         gradeCode: member.gradeCode,
+        ...toMemberLabelFields(member),
         eligibilitySource: participantMemberIds.has(member.id)
           ? 'participant'
           : 'organization-member',

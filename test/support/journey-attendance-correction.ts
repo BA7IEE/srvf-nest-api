@@ -14,6 +14,7 @@ import { LedgerPostingService } from '../../src/modules/activities/ledger-postin
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { journeyAdmin, journeyPrisma, type JourneyRuntime } from './journey-runtime';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 /** 北京 2020-03-01 09:00 → 13:00，固定过去时刻避免耦合墙钟。 */
 const SESSION_START = new Date('2020-03-01T01:00:00.000Z');
@@ -85,7 +86,11 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     select: { id: true },
   });
   const member = await prisma.member.create({
-    data: { memberNo: `${tag}-member`, displayName: '考勤修正旅程队员', gradeCode: 'level-2' },
+    data: {
+      memberNo: `${tag}-member`,
+      ...memberIdentityData('考勤修正旅程队员'),
+      gradeCode: 'level-2',
+    },
     select: { id: true },
   });
   const registration = await prisma.activityRegistration.create({
@@ -93,7 +98,11 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     select: { id: true },
   });
   const owner = await prisma.member.create({
-    data: { memberNo: `${tag}-owner`, displayName: '考勤修正旅程负责人', gradeCode: 'level-2' },
+    data: {
+      memberNo: `${tag}-owner`,
+      ...memberIdentityData('考勤修正旅程负责人'),
+      gradeCode: 'level-2',
+    },
     select: { id: true },
   });
   await prisma.activityResponsibilityAssignment.create({

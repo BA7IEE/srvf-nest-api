@@ -9,6 +9,7 @@ import {
 } from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const NOW = new Date('2026-07-14T09:00:00+08:00');
 
@@ -52,11 +53,11 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
 
   it('首跑补齐五路径；活动仅提醒 pass 且 marker 保证二跑零新增；到期证书同事务翻态+audit', async () => {
     const members = await Promise.all(
-      ['证书预提醒', '证书到期', '个人保险'].map((displayName, index) =>
+      ['证书预提醒', '证书到期', '个人保险'].map((realName, index) =>
         prisma.member.create({
           data: {
             memberNo: `ER${String(index + 1).padStart(4, '0')}`,
-            displayName,
+            ...memberIdentityData(realName),
             status: 'ACTIVE',
           },
         }),
@@ -266,7 +267,7 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
 
   it('活动零 pass 首跑不写 marker/intent，新增 pass 后二跑才原子写 marker+intent', async () => {
     const member = await prisma.member.create({
-      data: { memberNo: 'ER-ZERO-PASS', displayName: '后续通过者', status: 'ACTIVE' },
+      data: { memberNo: 'ER-ZERO-PASS', ...memberIdentityData('后续通过者'), status: 'ACTIVE' },
     });
     const organization = await prisma.organization.create({
       data: { name: '零收件人提醒组织', nodeTypeCode: 'test-root' },
@@ -331,7 +332,7 @@ describe('到期提醒 job（真实 DB 直调 runOnce）', () => {
   // 全局计数会被前面用例的残留干扰(那是脆弱断言,不是本用例要证的事)。
   it('§10.5:最后有效日 = today 仍 verified 且进提醒窗;前一天才过期', async () => {
     const member = await prisma.member.create({
-      data: { memberNo: 'ER9001', displayName: '边界证书', status: 'ACTIVE' },
+      data: { memberNo: 'ER9001', ...memberIdentityData('边界证书'), status: 'ACTIVE' },
     });
     const lastValidDayIsToday = await prisma.certificate.create({
       data: {

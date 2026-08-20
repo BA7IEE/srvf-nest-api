@@ -48,7 +48,8 @@ export const recordWithMemberSelect = {
     select: {
       id: true,
       memberNo: true,
-      displayName: true,
+      realName: true,
+      nickname: true,
     },
   },
 } as const satisfies Prisma.AttendanceRecordSelect;

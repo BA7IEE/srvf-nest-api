@@ -16,6 +16,7 @@ import * as path from 'node:path';
 
 import { assertDroppableTestDbName, dropWorkerDatabase } from '../setup/test-db';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 83;
@@ -437,7 +438,7 @@ async function createQualificationSnapshotAnchors(
     const member = await prisma.member.create({
       data: {
         memberNo: `qualification83-member-${suffix}`,
-        displayName: `qualification83 member ${suffix}`,
+        ...memberIdentityData(`qualification83 member ${suffix}`),
       },
       select: { id: true },
     });

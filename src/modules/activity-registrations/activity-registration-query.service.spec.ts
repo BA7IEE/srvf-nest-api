@@ -128,7 +128,7 @@ describe('ActivityRegistrationQueryService (characterization)', () => {
       });
     });
 
-    it('memberQ → member OR(memberNo/displayName);q → 跨 member+activity OR', async () => {
+    it('memberQ → member OR(memberNo/realName);q → 跨 member+activity OR', async () => {
       const prisma = makePrismaMock();
       await makeService(prisma).listAllForAdmin(listQuery({ memberQ: 'A1', q: 'B2' }), undefined);
 
@@ -136,12 +136,12 @@ describe('ActivityRegistrationQueryService (characterization)', () => {
       expect(where.member).toEqual({
         OR: [
           { memberNo: { contains: 'A1', mode: 'insensitive' } },
-          { displayName: { contains: 'A1', mode: 'insensitive' } },
+          { realName: { contains: 'A1', mode: 'insensitive' } },
         ],
       });
       expect(where.OR).toEqual([
         { member: { memberNo: { contains: 'B2', mode: 'insensitive' } } },
-        { member: { displayName: { contains: 'B2', mode: 'insensitive' } } },
+        { member: { realName: { contains: 'B2', mode: 'insensitive' } } },
         { activity: { title: { contains: 'B2', mode: 'insensitive' } } },
       ]);
     });

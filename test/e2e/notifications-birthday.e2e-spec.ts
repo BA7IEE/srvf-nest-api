@@ -5,6 +5,7 @@ import { NotificationOutboxWorker } from '../../src/modules/notifications/notifi
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 生日祝福 job e2e(goal DoD-6/7;冻结评审稿 queue-b-otp-birthday-infra-review.md §6/§7)。
 //
@@ -49,22 +50,19 @@ describe('生日祝福 job(直调 runOnce;不等真实定时)', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `BD${String(seq).padStart(4, '0')}`,
-        displayName: `生日测试${seq}`,
+        ...memberIdentityData(`生日测试${seq}`),
         status: input.memberStatus ?? 'ACTIVE',
       },
     });
     await prisma.memberProfile.create({
       data: {
         memberId: member.id,
-        realName: `生日测试${seq}`,
         genderCode: 'male',
         birthDate: input.birthDate,
         documentTypeCode: 'id_card',
         documentNumber: `11010119900101${String(seq).padStart(4, '0')}`,
         mobile: `1351000${String(seq).padStart(4, '0')}`, // MemberProfile.mobile 永不用于发送(拍板⑤)
         email: `bd${seq}@example.com`,
-        joinedDate: new Date('2024-01-01T00:00:00.000Z'),
-        joinSourceCode: 'recruitment',
         privacyConsentSigned: true,
         deletedAt: input.profileDeletedAt ?? null,
       },

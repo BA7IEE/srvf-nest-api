@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const T = (iso: string) => `'${iso}'::timestamp`;
 const SESSION_START = '2099-06-01T09:00:00.000Z';
@@ -232,7 +233,7 @@ describe('activity v1.1 batch6 staff/import/offline schema constraints', () => {
     ).id;
     memberId = (
       await prisma.member.create({
-        data: { memberNo: uniq('member'), displayName: 'Batch6 Schema Member' },
+        data: { memberNo: uniq('member'), ...memberIdentityData('Batch6 Schema Member') },
         select: { id: true },
       })
     ).id;

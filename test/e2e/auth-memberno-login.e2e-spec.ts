@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2 Step 5 — auth.service.ts memberNo 登录回退 e2e。
 // 严格按 docs/v2-api-contract.md §6.6 + ARCHITECTURE.md §12.8.2.4 验收:
@@ -66,7 +67,7 @@ describe('auth memberNo 登录回退', () => {
       const user = await createUserWithPassword(prisma, 'mnologin1', TEST_PASSWORD);
       // 创建 member 并绑定
       const member = await prisma.member.create({
-        data: { memberNo: 'demo-MN-100', displayName: 'M100' },
+        data: { memberNo: 'demo-MN-100', ...memberIdentityData('M100') },
       });
       await prisma.user.update({
         where: { id: user.id },
@@ -110,7 +111,7 @@ describe('auth memberNo 登录回退', () => {
     it('场景 2:memberNo 命中 member,但 member 未绑定 user → LOGIN_FAILED', async () => {
       // 创建一个 member,**不**绑定任何 user
       await prisma.member.create({
-        data: { memberNo: 'demo-MN-200', displayName: 'M200' },
+        data: { memberNo: 'demo-MN-200', ...memberIdentityData('M200') },
       });
 
       const res = await request(httpServer(app))
@@ -122,7 +123,7 @@ describe('auth memberNo 登录回退', () => {
     it('场景 3a:命中 user 但 status=DISABLED → LOGIN_FAILED', async () => {
       const user = await createUserWithPassword(prisma, 'mndisabled', TEST_PASSWORD);
       const member = await prisma.member.create({
-        data: { memberNo: 'demo-MN-300', displayName: 'M300' },
+        data: { memberNo: 'demo-MN-300', ...memberIdentityData('M300') },
       });
       await prisma.user.update({
         where: { id: user.id },
@@ -138,7 +139,7 @@ describe('auth memberNo 登录回退', () => {
     it('场景 3b:命中 user 但 deletedAt!=null → LOGIN_FAILED', async () => {
       const user = await createUserWithPassword(prisma, 'mnsoftdel', TEST_PASSWORD);
       const member = await prisma.member.create({
-        data: { memberNo: 'demo-MN-310', displayName: 'M310' },
+        data: { memberNo: 'demo-MN-310', ...memberIdentityData('M310') },
       });
       await prisma.user.update({
         where: { id: user.id },
@@ -164,7 +165,7 @@ describe('auth memberNo 登录回退', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: 'demo-MN-400',
-          displayName: 'M400',
+          ...memberIdentityData('M400'),
           deletedAt: new Date(),
         },
       });

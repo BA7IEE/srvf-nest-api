@@ -14,6 +14,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const FUTURE_START = new Date('2099-12-15T08:00:00.000Z');
 const FUTURE_END = new Date('2099-12-15T12:00:00.000Z');
@@ -77,12 +78,12 @@ describe('activity batch4 expiry', () => {
 
   async function createActor(label: string, role: Role): Promise<AppActor> {
     const suffix = `${label}-${++sequence}`;
-    // Login DTO caps usernames at 32 characters; memberNo/displayName retain the descriptive label.
+    // Login DTO caps usernames at 32 characters; memberNo/realName retain the descriptive label.
     const user = await createTestUser(app, { username: `b4e-${sequence}`, role });
     const member = await prisma.member.create({
       data: {
         memberNo: `B4-${suffix.toUpperCase()}`,
-        displayName: `Batch4 ${label}`,
+        ...memberIdentityData(`Batch4 ${label}`),
         gradeCode: 'L1',
         status: MemberStatus.ACTIVE,
       },

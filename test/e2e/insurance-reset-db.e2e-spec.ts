@@ -6,6 +6,7 @@ import * as path from 'node:path';
 import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('D-INSURANCE v3 PR4 constrained resetDb regression', () => {
   let app: INestApplication;
@@ -37,7 +38,7 @@ describe('D-INSURANCE v3 PR4 constrained resetDb regression', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `insurance-reset-${label}`,
-        displayName: 'Insurance Reset Member',
+        ...memberIdentityData('Insurance Reset Member'),
       },
       select: { id: true },
     });

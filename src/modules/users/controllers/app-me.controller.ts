@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { formatMemberLabel } from '../../../common/identity/member-label.util';
 import { BizException } from '../../../common/exceptions/biz.exception';
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import {
@@ -118,7 +119,8 @@ export class AppMeController {
       status: user.status,
       memberId: user.memberId,
       memberNo: access.member?.memberNo ?? null,
-      displayName: access.member?.displayName ?? null,
+      realName: access.member?.realName ?? null,
+      memberLabel: access.member ? formatMemberLabel(access.member) : null,
       gradeCode: access.member?.gradeCode ?? null,
       memberStatus: access.member?.status ?? null,
       canUseApp: access.canUseApp,

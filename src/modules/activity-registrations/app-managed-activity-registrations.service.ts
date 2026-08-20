@@ -134,7 +134,11 @@ export class AppManagedActivityRegistrationsService {
       member: {
         id: item.memberId,
         memberNo: item.memberNo,
-        displayName: item.memberDisplayName,
+        realName: item.memberRealName,
+        // 上游 `ActivityRegistrationListItemDto` 只带扁平 memberLabel,
+        // 这里不重新拼(重新拼就有第二份格式);外号本身该层不投影,故给 null。
+        nickname: null,
+        label: item.memberLabel,
       },
       statusCode: item.statusCode,
       waitlistPosition: item.waitlistPosition,

@@ -1,3 +1,4 @@
+import { formatMemberLabel, toMemberLabelFields } from '../../common/identity/member-label.util';
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { escapeCsvField } from '../../common/csv/csv.util';
@@ -14,11 +15,14 @@ import type {
 export const REGISTRATION_EXPAND_WHITELIST = ['member', 'activity'] as const;
 export type RegistrationExpandKey = (typeof REGISTRATION_EXPAND_WHITELIST)[number];
 
+// ⚠️ issue #1048 T1:CSV 少了一列会静默错位(表头与 formatCsvRow 是两处),
+// 故 `display_name` 换成 `real_name` + `nickname` 时两处必须一起改 —— 见下方 formatCsvRow。
 export const REGISTRATION_CSV_HEADERS = [
   'registration_id',
   'member_id',
   'member_no',
-  'display_name',
+  'real_name',
+  'nickname',
   'status_code',
   'registered_at',
   'reviewed_at',
@@ -56,7 +60,7 @@ export type RegistrationListRowLike = {
   activityId: string;
   activityPosition: { id: string; name: string } | null;
   memberId: string;
-  member: { memberNo: string; displayName: string } | null;
+  member: { memberNo: string; realName: string; nickname: string | null } | null;
   statusCode: string;
   registeredAt: Date;
   reviewedAt: Date | null;
@@ -65,14 +69,20 @@ export type RegistrationListRowLike = {
 };
 
 export type RegistrationAdminListRowLike = Omit<RegistrationListRowLike, 'member'> & {
-  member: { id: string; memberNo: string; displayName: string; gradeCode: string | null } | null;
+  member: {
+    id: string;
+    memberNo: string;
+    realName: string;
+    nickname: string | null;
+    gradeCode: string | null;
+  } | null;
   activity: { id: string; title: string; startAt: Date; organizationId: string } | null;
 };
 
 export type RegistrationCsvRowLike = {
   id: string;
   memberId: string;
-  member: { memberNo: string; displayName: string } | null;
+  member: { memberNo: string; realName: string; nickname: string | null } | null;
   statusCode: string;
   registeredAt: Date;
   reviewedAt: Date | null;
@@ -136,7 +146,8 @@ export class ActivityRegistrationPresenter {
             },
       memberId: row.memberId,
       memberNo: row.member?.memberNo ?? null,
-      memberDisplayName: row.member?.displayName ?? null,
+      memberRealName: row.member?.realName ?? null,
+      memberLabel: row.member === null ? null : formatMemberLabel(row.member),
       statusCode: row.statusCode,
       waitlistPosition,
       registeredAt: row.registeredAt,
@@ -167,7 +178,8 @@ export class ActivityRegistrationPresenter {
       activityTitle: row.activity?.title ?? null,
       memberId: row.memberId,
       memberNo: row.member?.memberNo ?? null,
-      memberDisplayName: row.member?.displayName ?? null,
+      memberRealName: row.member?.realName ?? null,
+      memberLabel: row.member === null ? null : formatMemberLabel(row.member),
       statusCode: row.statusCode,
       waitlistPosition,
       registeredAt: row.registeredAt,
@@ -178,9 +190,8 @@ export class ActivityRegistrationPresenter {
         ? {
             member: {
               id: row.member.id,
-              memberNo: row.member.memberNo,
-              displayName: row.member.displayName,
               gradeCode: row.member.gradeCode,
+              ...toMemberLabelFields(row.member),
             },
           }
         : {}),
@@ -214,7 +225,8 @@ export class ActivityRegistrationPresenter {
       escapeCsvField(row.id),
       escapeCsvField(row.memberId),
       escapeCsvField(row.member?.memberNo ?? null),
-      escapeCsvField(row.member?.displayName ?? null),
+      escapeCsvField(row.member?.realName ?? null),
+      escapeCsvField(row.member?.nickname ?? null),
       escapeCsvField(row.statusCode),
       escapeCsvField(row.registeredAt),
       escapeCsvField(row.reviewedAt),

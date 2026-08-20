@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2 第一阶段批次 2 certificates 模块 e2e。
 // 覆盖 8 接口主成功 + 关键失败:权限 / 字典 / 状态机 / 跨 member / 软删 / 排序 / qualification-flag /
@@ -105,17 +106,17 @@ describe('certificates 模块', () => {
 
     // 3 个 member:A 主、B 跨、admMember 用于绑定 ADMIN 测 verifiedBy
     const a = await prisma.member.create({
-      data: { memberNo: 'cert-m-a', displayName: 'Member A' },
+      data: { memberNo: 'cert-m-a', ...memberIdentityData('Member A') },
       select: { id: true },
     });
     memberA = a.id;
     const b = await prisma.member.create({
-      data: { memberNo: 'cert-m-b', displayName: 'Member B' },
+      data: { memberNo: 'cert-m-b', ...memberIdentityData('Member B') },
       select: { id: true },
     });
     memberB = b.id;
     const admMember = await prisma.member.create({
-      data: { memberNo: 'cert-m-adm', displayName: 'Admin Member' },
+      data: { memberNo: 'cert-m-adm', ...memberIdentityData('Admin Member') },
       select: { id: true },
     });
     adminMemberId = admMember.id;
@@ -1304,7 +1305,7 @@ describe('certificates 模块', () => {
 
     beforeAll(async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf', displayName: 'QF Member' },
+        data: { memberNo: 'cert-m-qf', ...memberIdentityData('QF Member') },
         select: { id: true },
       });
       qfMember = m.id;
@@ -1369,7 +1370,7 @@ describe('certificates 模块', () => {
     it('verified + 未来 expiry → qualified=true', async () => {
       // 创建独立 member 隔离
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-fe', displayName: 'QF FE' },
+        data: { memberNo: 'cert-m-qf-fe', ...memberIdentityData('QF FE') },
         select: { id: true },
       });
       const r = await request(httpServer(app))
@@ -1390,7 +1391,7 @@ describe('certificates 模块', () => {
 
     it('verified + 已过期 → qualified=false', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-pe', displayName: 'QF PE' },
+        data: { memberNo: 'cert-m-qf-pe', ...memberIdentityData('QF PE') },
         select: { id: true },
       });
       // 直接在 DB 创建已过期 + verified 记录,绕过状态机限制
@@ -1417,7 +1418,7 @@ describe('certificates 模块', () => {
 
     it('pending only → qualified=false', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-pd', displayName: 'QF PD' },
+        data: { memberNo: 'cert-m-qf-pd', ...memberIdentityData('QF PD') },
         select: { id: true },
       });
       await request(httpServer(app))
@@ -1434,7 +1435,7 @@ describe('certificates 模块', () => {
 
     it('rejected only → qualified=false', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-rj', displayName: 'QF RJ' },
+        data: { memberNo: 'cert-m-qf-rj', ...memberIdentityData('QF RJ') },
         select: { id: true },
       });
       const r = await request(httpServer(app))
@@ -1455,7 +1456,7 @@ describe('certificates 模块', () => {
 
     it('verified 但已软删 → qualified=false', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-sd', displayName: 'QF SD' },
+        data: { memberNo: 'cert-m-qf-sd', ...memberIdentityData('QF SD') },
         select: { id: true },
       });
       const r = await request(httpServer(app))
@@ -1536,7 +1537,7 @@ describe('certificates 模块', () => {
 
     it('standard 级判据:按 Standard.code 匹配(不是 cuid —— §12 明令不用跨环境不稳定的 id)', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-std', displayName: 'QF Std' },
+        data: { memberNo: 'cert-m-qf-std', ...memberIdentityData('QF Std') },
         select: { id: true },
       });
       const certId = await seedVerifiedCert(m.id, {
@@ -1571,7 +1572,7 @@ describe('certificates 模块', () => {
 
     it('§12 四级稳定排序:永久有效优先 > expiredAt 较晚 > issuedAt 较晚 > id 字典序', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-order', displayName: 'QF Order' },
+        data: { memberNo: 'cert-m-qf-order', ...memberIdentityData('QF Order') },
         select: { id: true },
       });
       // 三张都有效,但只有一张是永久有效 —— 它必须赢,哪怕另外两张发证更晚。
@@ -1586,7 +1587,7 @@ describe('certificates 模块', () => {
 
     it('§12 排序第二级:都不是永久有效 → expiredAt 较晚的那张胜出', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-order2', displayName: 'QF Order2' },
+        data: { memberNo: 'cert-m-qf-order2', ...memberIdentityData('QF Order2') },
         select: { id: true },
       });
       await seedVerifiedCert(m.id, { issuedAt: '2026-07-01', expiredAt: '2098-01-01' });
@@ -1603,7 +1604,7 @@ describe('certificates 模块', () => {
 
     it('§12 排序第四级:前三级全并列 → id 字典序最小的那张(结果必须完全确定)', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-order4', displayName: 'QF Order4' },
+        data: { memberNo: 'cert-m-qf-order4', ...memberIdentityData('QF Order4') },
         select: { id: true },
       });
       const ids = [
@@ -1622,7 +1623,7 @@ describe('certificates 模块', () => {
 
     it('§12 历史证书不要求 Standard 当前 ACTIVE —— 停用标准不追溯作废存量持证人', async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'cert-m-qf-inactive', displayName: 'QF Inactive' },
+        data: { memberNo: 'cert-m-qf-inactive', ...memberIdentityData('QF Inactive') },
         select: { id: true },
       });
       const std = await prisma.certificateStandard.create({

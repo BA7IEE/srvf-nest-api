@@ -240,9 +240,11 @@ export class TeamJoinApplicationAdminDto {
   @ApiProperty() cycleId!: string;
   @ApiProperty() memberId!: string;
   @ApiPropertyOptional({ description: '队员永久编号', nullable: true }) memberNo!: string | null;
-  @ApiPropertyOptional({ description: '队员称呼', nullable: true }) memberDisplayName!:
+  @ApiPropertyOptional({ description: '队员真实姓名', nullable: true }) memberRealName!:
     | string
     | null;
+  @ApiPropertyOptional({ description: '队员统一展示标签 `编号 · 姓名(外号)`', nullable: true })
+  memberLabel!: string | null;
   @ApiProperty() statusCode!: string;
   @ApiProperty({ type: [String], description: '候选目标部门 orgId(可多)' })
   targetOrganizationIds!: string[];

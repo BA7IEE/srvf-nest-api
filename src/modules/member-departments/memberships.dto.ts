@@ -41,8 +41,17 @@ export class MembershipExpandedMemberDto {
   @ApiProperty({ description: '队员业务编号' })
   memberNo!: string;
 
-  @ApiProperty({ description: '队员显示名' })
-  displayName!: string;
+  @ApiProperty({ description: '队员真实姓名', example: '张三' })
+  realName!: string;
+
+  @ApiProperty({ description: '队员外号(队内称呼)', nullable: true, type: String })
+  nickname!: string | null;
+
+  @ApiProperty({
+    description: '统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号',
+    example: 'M-0001 · 张三(老张)',
+  })
+  label!: string;
 
   @ApiPropertyOptional({ description: '等级字典 code', nullable: true })
   gradeCode!: string | null;
@@ -163,7 +172,7 @@ export class PageMembershipsQueryDto extends PaginationQueryDto {
   status?: MembershipStatus;
 
   @ApiPropertyOptional({
-    description: '模糊搜索(命中队员 memberNo+displayName + 组织 name+code;contains + insensitive)',
+    description: '模糊搜索(命中队员 memberNo+realName + 组织 name+code;contains + insensitive)',
     maxLength: 100,
   })
   @IsOptional()
@@ -212,7 +221,7 @@ export class OrgMembershipsQueryDto extends PaginationQueryDto {
   status?: MembershipStatus;
 
   @ApiPropertyOptional({
-    description: '模糊搜索(命中队员 memberNo+displayName + 组织 name+code;contains + insensitive)',
+    description: '模糊搜索(命中队员 memberNo+realName + 组织 name+code;contains + insensitive)',
     maxLength: 100,
   })
   @IsOptional()
@@ -296,7 +305,7 @@ export class MembershipConflictsResponseDto {
 // 镜像 F1/A1 members/options 的 query 形状(organizationId 由路径段提供,不在 query 重复)。
 export class OrgMembersOptionsQueryDto {
   @ApiPropertyOptional({
-    description: '模糊搜索(跨字段命中 displayName + memberNo)',
+    description: '模糊搜索(跨字段命中 realName + memberNo)',
     maxLength: 100,
   })
   @IsOptional()

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { MembershipType, Prisma, UserStatus } from '@prisma/client';
+import { formatMemberLabel } from '../../common/identity/member-label.util';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { VisibleOrganizationScope } from '../authz/authz.service';
@@ -20,7 +21,10 @@ type PrismaTx = Prisma.TransactionClient;
 export const memberSafeSelect = {
   id: true,
   memberNo: true,
-  displayName: true,
+  realName: true,
+  nickname: true,
+  memberSinceDate: true,
+  memberOriginCode: true,
   gradeCode: true,
   status: true,
   createdAt: true,
@@ -107,8 +111,11 @@ export class MembersQueryService {
     if (gradeCode !== undefined) filters.gradeCode = gradeCode;
     if (status !== undefined) filters.status = status;
     if (q !== undefined) {
+      // issue #1048 T1 只做 `displayName -> realName` 的**等价搬迁**(旧 displayName 在两条
+      // 写路径上写入的就是真实姓名)。扩到 nickname、五级排序、trim 与 memberNo 归一
+      // 属 T2 MemberDirectory,刻意不在本刀提前做 —— 否则 T2 的 PR 就没有可验证的增量。
       filters.OR = [
-        { displayName: { contains: q, mode: 'insensitive' } },
+        { realName: { contains: q, mode: 'insensitive' } },
         { memberNo: { contains: q, mode: 'insensitive' } },
       ];
     }
@@ -151,8 +158,11 @@ export class MembersQueryService {
 
     const filters: Prisma.MemberWhereInput = {};
     if (q !== undefined) {
+      // issue #1048 T1 只做 `displayName -> realName` 的**等价搬迁**(旧 displayName 在两条
+      // 写路径上写入的就是真实姓名)。扩到 nickname、五级排序、trim 与 memberNo 归一
+      // 属 T2 MemberDirectory,刻意不在本刀提前做 —— 否则 T2 的 PR 就没有可验证的增量。
       filters.OR = [
-        { displayName: { contains: q, mode: 'insensitive' } },
+        { realName: { contains: q, mode: 'insensitive' } },
         { memberNo: { contains: q, mode: 'insensitive' } },
       ];
     }
@@ -172,7 +182,7 @@ export class MembersQueryService {
 
     const items: MemberOptionItemDto[] = rows.map((r) => ({
       id: r.id,
-      label: r.displayName,
+      label: formatMemberLabel(r),
       memberNo: r.memberNo,
       gradeCode: r.gradeCode,
     }));

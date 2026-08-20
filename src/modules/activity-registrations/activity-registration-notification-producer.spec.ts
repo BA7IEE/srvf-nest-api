@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import appConfig from '../../config/app.config';
 import type { NotificationOutboxService } from '../notifications/notification-outbox.service';
 import { ActivityRegistrationNotificationProducer } from './activity-registration-notification-producer';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 function makeFixture(workflowEnabled: boolean) {
   const tx = {
@@ -97,7 +98,11 @@ describe('ActivityRegistrationNotificationProducer', () => {
         activityId: 'act-1',
         activityTitle: '周末巡山',
         publisherMemberId: 'member-publisher',
-        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
+        cancellingMember: {
+          memberNo: 'LOCAL-001',
+          ...memberIdentityData('本地队员甲'),
+          nickname: null,
+        },
         cancelledAt: new Date('2026-07-26T00:00:03.000Z'),
         cancelReason: null,
       },
@@ -127,7 +132,9 @@ describe('ActivityRegistrationNotificationProducer', () => {
           recipientMemberId: 'member-owner',
           notificationTypeCode: 'activity-changed',
           title: '队员取消活动报名',
-          body: '队员本地队员甲（LOCAL-001）已取消「周末巡山」报名。',
+          // ⚠️ issue #1048 T1 DoD 6 的**用户可见**变更:人员标签由本模块私有的
+          // `姓名（编号）` 统一成全仓格式 `编号 · 姓名(外号)`。文案随之改变是刻意的。
+          body: '队员LOCAL-001 · 本地队员甲已取消「周末巡山」报名。',
           channels: ['in-app'],
         },
       }),
@@ -145,7 +152,11 @@ describe('ActivityRegistrationNotificationProducer', () => {
         activityId: 'act-1',
         activityTitle: '周末巡山',
         publisherMemberId: 'member-publisher',
-        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
+        cancellingMember: {
+          memberNo: 'LOCAL-001',
+          ...memberIdentityData('本地队员甲'),
+          nickname: null,
+        },
         cancelledAt: new Date('2026-07-26T00:00:03.000Z'),
         cancelReason: null,
       }),
@@ -162,7 +173,11 @@ describe('ActivityRegistrationNotificationProducer', () => {
         activityId: 'act-1',
         activityTitle: '周末巡山',
         publisherMemberId: 'member-publisher',
-        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
+        cancellingMember: {
+          memberNo: 'LOCAL-001',
+          ...memberIdentityData('本地队员甲'),
+          nickname: null,
+        },
         cancelledAt: new Date('2026-07-26T00:00:03.000Z'),
         cancelReason: '临时有事',
       }),
@@ -178,7 +193,7 @@ describe('ActivityRegistrationNotificationProducer', () => {
           recipientMemberId: 'member-publisher',
           notificationTypeCode: 'activity-changed',
           title: '队员取消活动报名',
-          body: '队员本地队员甲（LOCAL-001）已取消「周末巡山」报名，原因：临时有事。',
+          body: '队员LOCAL-001 · 本地队员甲已取消「周末巡山」报名，原因：临时有事。',
           channels: ['in-app'],
         },
       }),
@@ -195,7 +210,11 @@ describe('ActivityRegistrationNotificationProducer', () => {
         activityId: 'act-1',
         activityTitle: '周末巡山',
         publisherMemberId: null,
-        cancellingMember: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
+        cancellingMember: {
+          memberNo: 'LOCAL-001',
+          ...memberIdentityData('本地队员甲'),
+          nickname: null,
+        },
         cancelledAt: new Date('2026-07-26T00:00:03.000Z'),
         cancelReason: null,
       }),
@@ -211,12 +230,12 @@ describe('ActivityRegistrationNotificationProducer', () => {
       body: '有队员已取消「周末巡山」报名，请查看活动报名列表。',
     },
     {
-      cancellingMember: { memberNo: 'LOCAL-001', displayName: null },
+      cancellingMember: { memberNo: 'LOCAL-001', realName: null, nickname: null },
       cancelReason: '临时有事',
       body: '有队员已取消「周末巡山」报名，请查看活动报名列表。原因：临时有事。',
     },
     {
-      cancellingMember: { memberNo: '   ', displayName: '本地队员甲' },
+      cancellingMember: { memberNo: '   ', ...memberIdentityData('本地队员甲'), nickname: null },
       cancelReason: null,
       body: '有队员已取消「周末巡山」报名，请查看活动报名列表。',
     },

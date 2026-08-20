@@ -18,6 +18,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 type Scenario = { activityId: string; sessionId: string; positionId: string };
 type IssuedPackage = {
@@ -82,7 +83,7 @@ describe('activity batch6 offline package exact HTTP wire and writer', () => {
       prisma.member.create({
         data: {
           memberNo: 'B6-OFFLINE-MANAGER',
-          displayName: 'Batch6 Offline Manager',
+          ...memberIdentityData('Batch6 Offline Manager'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -91,7 +92,7 @@ describe('activity batch6 offline package exact HTTP wire and writer', () => {
       prisma.member.create({
         data: {
           memberNo: 'B6-OFFLINE-APPLICANT',
-          displayName: 'Batch6 Offline Applicant',
+          ...memberIdentityData('Batch6 Offline Applicant'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -100,7 +101,7 @@ describe('activity batch6 offline package exact HTTP wire and writer', () => {
       prisma.member.create({
         data: {
           memberNo: 'B6-OFFLINE-OPERATOR',
-          displayName: 'Batch6 Offline Operator',
+          ...memberIdentityData('Batch6 Offline Operator'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -109,7 +110,7 @@ describe('activity batch6 offline package exact HTTP wire and writer', () => {
       prisma.member.create({
         data: {
           memberNo: 'B6-OFFLINE-ADMIN',
-          displayName: 'Batch6 Offline Admin',
+          ...memberIdentityData('Batch6 Offline Admin'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },

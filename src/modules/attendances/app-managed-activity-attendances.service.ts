@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -66,11 +67,7 @@ export class AppManagedActivityAttendancesService {
         id: item.id,
         activityId: item.activityId,
         registrationId: item.registrationId,
-        member: {
-          id: item.member.id,
-          memberNo: item.member.memberNo,
-          displayName: item.member.displayName,
-        },
+        member: { id: item.member.id, ...toMemberLabelFields(item.member) },
         checkInAt: item.checkInAt,
         checkOutAt: item.checkOutAt,
         checkInDistance: item.checkInDistance,
@@ -111,7 +108,9 @@ export class AppManagedActivityAttendancesService {
         registrationId: registration.registrationId,
         memberId: registration.memberId,
         memberNo: registration.memberNo,
-        displayName: registration.displayName,
+        realName: registration.realName,
+        nickname: registration.nickname,
+        label: registration.label,
       })),
     };
   }
@@ -247,11 +246,7 @@ export class AppManagedActivityAttendancesService {
         sheetId: record.sheetId,
         memberId: record.memberId,
         member: record.member
-          ? {
-              id: record.member.id,
-              memberNo: record.member.memberNo,
-              displayName: record.member.displayName,
-            }
+          ? { id: record.member.id, ...toMemberLabelFields(record.member) }
           : null,
         roleCode: record.roleCode,
         checkInAt: record.checkInAt,

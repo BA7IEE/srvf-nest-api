@@ -20,6 +20,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR9(2026-07-02;冻结稿 §5.2/§5.3 + BD-2;首个 authz 消费者)+
 // 摘码微刀(2026-07-03;RBAC_MAP §5 挂账关闭):考勤终审 HTTP 面接线矩阵。
@@ -231,7 +232,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     const deptHeadUser = await createTestUser(app, { username: 'fra-dept-head', role: Role.USER });
     deptHeadUserId = deptHeadUser.id;
     const deptHeadMember = await prisma.member.create({
-      data: { memberNo: 'fra-m-head', displayName: 'FRA 部长' },
+      data: { memberNo: 'fra-m-head', ...memberIdentityData('FRA 部长') },
       select: { id: true },
     });
     await prisma.user.update({
@@ -286,7 +287,7 @@ describe('attendances 终审 authz 接线(PR9:22074/22075/30100 矩阵 + BD-2 sc
     // ⑦ 同职务(APD dept-leader)但零 RoleBinding 的对照者
     const peerUser = await createTestUser(app, { username: 'fra-dept-peer', role: Role.USER });
     const peerMember = await prisma.member.create({
-      data: { memberNo: 'fra-m-peer', displayName: 'FRA 部长对照' },
+      data: { memberNo: 'fra-m-peer', ...memberIdentityData('FRA 部长对照') },
       select: { id: true },
     });
     await prisma.user.update({ where: { id: peerUser.id }, data: { memberId: peerMember.id } });

@@ -15,6 +15,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 type Scenario = { activityId: string; sessionId: string; positionId: string };
 
@@ -63,7 +64,7 @@ describe('activity batch5 punch multi-instance concurrency', () => {
       prismaA.member.create({
         data: {
           memberNo: 'B5-PUNCH-CONC-MANAGER',
-          displayName: 'Batch5 Punch Concurrency Manager',
+          ...memberIdentityData('Batch5 Punch Concurrency Manager'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -72,7 +73,7 @@ describe('activity batch5 punch multi-instance concurrency', () => {
       prismaA.member.create({
         data: {
           memberNo: 'B5-PUNCH-CONC-APPLICANT',
-          displayName: 'Batch5 Punch Concurrency Applicant',
+          ...memberIdentityData('Batch5 Punch Concurrency Applicant'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -81,7 +82,7 @@ describe('activity batch5 punch multi-instance concurrency', () => {
       prismaA.member.create({
         data: {
           memberNo: 'B5-PUNCH-CONC-OTHER',
-          displayName: 'Batch5 Punch Concurrency Other Applicant',
+          ...memberIdentityData('Batch5 Punch Concurrency Other Applicant'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -90,7 +91,7 @@ describe('activity batch5 punch multi-instance concurrency', () => {
       prismaA.member.create({
         data: {
           memberNo: 'B5-PUNCH-CONC-ADMIN',
-          displayName: 'Batch5 Punch Concurrency Admin',
+          ...memberIdentityData('Batch5 Punch Concurrency Admin'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },

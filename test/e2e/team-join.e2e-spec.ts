@@ -16,6 +16,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 招新三期(入队:志愿者→队员)T2 admin 面 e2e(冻结评审稿 docs/archive/reviews/recruitment-phase3-review.md §7)。
 // 覆盖:入队轮 CRUD + 至多一个 open / RBAC 边界 / 标 gate 全链 + 自动推进 / 贡献值两路 + 过滤 /
@@ -102,7 +103,7 @@ describe('招新三期(入队)admin 面 e2e', () => {
     const m = await prisma.member.create({
       data: {
         memberNo: `TJ${String(memberSeq).padStart(3, '0')}`,
-        displayName: '志愿者',
+        ...memberIdentityData('志愿者'),
         status: 'ACTIVE',
       },
     });

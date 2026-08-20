@@ -11,6 +11,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 type Scenario = { activityId: string; sessionId: string; positionId: string };
 
@@ -79,9 +80,14 @@ describe('activity batch6 后台任务读面(§6.13)与撤权对抗', () => {
         ['B6-JOBS-ADMIN', 'Batch6 Jobs Admin'],
         ['B6-JOBS-APPLICANT', 'Batch6 Jobs Applicant'],
         ['B6-JOBS-OTHER-APPLICANT', 'Batch6 Jobs Other Applicant'],
-      ].map(([memberNo, displayName]) =>
+      ].map(([memberNo, realName]) =>
         prisma.member.create({
-          data: { memberNo, displayName, gradeCode: 'L1', status: MemberStatus.ACTIVE },
+          data: {
+            memberNo,
+            ...memberIdentityData(realName),
+            gradeCode: 'L1',
+            status: MemberStatus.ACTIVE,
+          },
           select: { id: true },
         }),
       ),

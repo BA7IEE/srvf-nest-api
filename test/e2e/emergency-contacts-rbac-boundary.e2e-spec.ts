@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Slow-4 T2(2026-06-11):emergency-contacts 模块 RBAC 权限边界 spec。
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收
@@ -56,7 +57,7 @@ describe('emergency-contacts RBAC 权限边界(Slow-4 T2)', () => {
     relationCode = rel.code;
 
     const a = await prisma.member.create({
-      data: { memberNo: 'ecrb-m-a', displayName: 'A' },
+      data: { memberNo: 'ecrb-m-a', ...memberIdentityData('A') },
       select: { id: true },
     });
     memberA = a.id;

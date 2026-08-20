@@ -25,6 +25,7 @@ import { attachmentBytesForMime } from '../helpers/file-fixtures';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // AttachmentsService audit characterization tests
 // (ActivityAuditRecorder 抽离前置;沿 PR #199 activities + PR #196 registrations
@@ -144,11 +145,11 @@ describe('AttachmentsService audit characterization', () => {
 
     // 2. Members(selfUser 绑 memberA → scope=self;memberB 用于 scope=other / E5 RBAC)
     memberA = await prisma.member.create({
-      data: { memberNo: 'MA-CHAR', displayName: 'CharMemberA' },
+      data: { memberNo: 'MA-CHAR', ...memberIdentityData('CharMemberA') },
       select: { id: true },
     });
     memberB = await prisma.member.create({
-      data: { memberNo: 'MB-CHAR', displayName: 'CharMemberB' },
+      data: { memberNo: 'MB-CHAR', ...memberIdentityData('CharMemberB') },
       select: { id: true },
     });
     await prisma.user.update({ where: { id: selfUser.id }, data: { memberId: memberA.id } });

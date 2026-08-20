@@ -245,8 +245,9 @@ Certificate (不在 participation 图内)
   与 `registration.review(action=promote)` audit、`notification.targeted@1` outbox intent
   全在同一事务；独立 worker 只在 commit 后执行通知 Effect。pass 取消与打卡写路径统一使用
   Activity → Registration 锁序。
-- **报名自助取消通知**:`cancelMy` 在既有事务内只读取取消队员的 `memberNo/displayName`
-  安全快照；正文使用 `displayName（memberNo）`，任一字段不可用即用固定匿名提示，禁止回退
+- **报名自助取消通知**:`cancelMy` 在既有事务内只读取取消队员的 `memberNo/realName/nickname`
+  安全快照；正文使用全仓统一标签 `编号 · 姓名(外号)`(issue #1048 T1 起;此前是本模块私有的
+  `姓名（编号）` 格式),任一字段不可用即用固定匿名提示，禁止回退
   Member/User 内部 ID。gate=true 收件人仍只认当前 ACTIVE owner，缺失时零 intent 且不回退
   publisher；gate=false 仅保留 legacy `publisherMemberId`。`registration-cancel:{registrationId}:{cancelledAt}`
   eventKey、`activity_registration` aggregate、member destination 与仅站内渠道均不变。

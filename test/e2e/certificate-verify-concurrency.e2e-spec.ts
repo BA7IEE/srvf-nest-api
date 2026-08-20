@@ -8,6 +8,7 @@ import { CertificatesService } from '../../src/modules/certificates/certificates
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 证书标准库 · 第二轮跨模型评审 findings G3:`verify()` 锁后复读。
 //
@@ -154,7 +155,7 @@ describe('certificate verify concurrency(评审 findings G3:核验必须用锁�
 
     memberId = (
       await prismaA.member.create({
-        data: { memberNo: 'cvc-m-1', displayName: 'CVC Member' },
+        data: { memberNo: 'cvc-m-1', ...memberIdentityData('CVC Member') },
         select: { id: true },
       })
     ).id;

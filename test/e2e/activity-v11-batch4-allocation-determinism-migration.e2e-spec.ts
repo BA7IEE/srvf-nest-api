@@ -332,9 +332,9 @@ function createFixture(databaseName: string, suffix: string): Fixture {
        (${sqlValue(fixture.activityId)},${sqlValue(`Allocation D85 ${suffix}`)},'allocation-d85',
         ${sqlValue(organizationId)},TIMESTAMP '2099-08-12 08:00:00',
         TIMESTAMP '2099-08-12 18:00:00','test','draft',CURRENT_TIMESTAMP);
-     INSERT INTO "Member" ("id","memberNo","displayName","updatedAt") VALUES
-       (${sqlValue(fixture.memberId)},${sqlValue(`D85-${suffix}-1`)},'D85 Member 1',CURRENT_TIMESTAMP),
-       (${sqlValue(fixture.memberId2)},${sqlValue(`D85-${suffix}-2`)},'D85 Member 2',CURRENT_TIMESTAMP);
+     INSERT INTO "Member" ("id","memberNo","realName","memberSinceDate","memberOriginCode","updatedAt") VALUES
+       (${sqlValue(fixture.memberId)},${sqlValue(`D85-${suffix}-1`)},'D85 Member 1','2020-01-01','manual',CURRENT_TIMESTAMP),
+       (${sqlValue(fixture.memberId2)},${sqlValue(`D85-${suffix}-2`)},'D85 Member 2','2020-01-01','manual',CURRENT_TIMESTAMP);
      INSERT INTO "ActivitySession"
        ("id","updatedAt","activityId","code","name","startAt","endAt","locationText",
         "checkInOpenAt","checkInCloseAt","checkOutOpenAt","checkOutCloseAt",

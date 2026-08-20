@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('App managed activity registrations', () => {
   let app: INestApplication;
@@ -82,7 +83,7 @@ describe('App managed activity registrations', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `managed-registration-${label}-${currentSequence}`,
-        displayName: `Managed Registration ${label} ${currentSequence}`,
+        ...memberIdentityData(`Managed Registration ${label} ${currentSequence}`),
         gradeCode: 'level-3',
         status: MemberStatus.ACTIVE,
       },

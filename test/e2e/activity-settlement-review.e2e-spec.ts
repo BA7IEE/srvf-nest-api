@@ -14,6 +14,7 @@ import { SettlementSubmitService } from '../../src/modules/activities/settlement
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第四刀:一审 / 终审(合同 §5.11 + §3.19)=====
 //
@@ -164,7 +165,11 @@ describe('settlement review —— 一审 / 终审 (合同 §5.11 + §3.19)', ()
     const identityIds = await createIdentities(activity.id, session.id, tag, populationSize);
 
     const ownerMember = await prisma.member.create({
-      data: { memberNo: `${tag}-owner`, displayName: `${tag} 负责人`, gradeCode: 'level-2' },
+      data: {
+        memberNo: `${tag}-owner`,
+        ...memberIdentityData(`${tag} 负责人`),
+        gradeCode: 'level-2',
+      },
       select: { id: true },
     });
     await prisma.activityResponsibilityAssignment.create({
@@ -258,7 +263,7 @@ describe('settlement review —— 一审 / 终审 (合同 §5.11 + §3.19)', ()
       data: memberIds.map((id, index) => ({
         id,
         memberNo: `${tag}-m${index}`,
-        displayName: `${tag} 队员 ${index}`,
+        ...memberIdentityData(`${tag} 队员 ${index}`),
         gradeCode: 'level-2',
       })),
     });

@@ -12,6 +12,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('activity B7 audience tags over real Admin/System HTTP', () => {
   let app: INestApplication;
@@ -39,7 +40,7 @@ describe('activity B7 audience tags over real Admin/System HTTP', () => {
       await prisma.member.create({
         data: {
           memberNo: 'activity-b7-audience-tags-member',
-          displayName: 'B7 audience tag member',
+          ...memberIdentityData('B7 audience tag member'),
         },
         select: { id: true },
       })
@@ -203,19 +204,19 @@ describe('activity B7 audience tags over real Admin/System HTTP', () => {
     // 会员档案本身是测试基础数据；B7 的标签字典与每次赋标均必须经过真实 HTTP。
     const [tagBMember, bothTagsMember, inactiveMember, softDeletedMember] = await Promise.all([
       prisma.member.create({
-        data: { memberNo: 'activity-b7-tag-b', displayName: 'B7 tag B member' },
+        data: { memberNo: 'activity-b7-tag-b', ...memberIdentityData('B7 tag B member') },
         select: { id: true },
       }),
       prisma.member.create({
-        data: { memberNo: 'activity-b7-tag-both', displayName: 'B7 both tags member' },
+        data: { memberNo: 'activity-b7-tag-both', ...memberIdentityData('B7 both tags member') },
         select: { id: true },
       }),
       prisma.member.create({
-        data: { memberNo: 'activity-b7-tag-inactive', displayName: 'B7 inactive member' },
+        data: { memberNo: 'activity-b7-tag-inactive', ...memberIdentityData('B7 inactive member') },
         select: { id: true },
       }),
       prisma.member.create({
-        data: { memberNo: 'activity-b7-tag-deleted', displayName: 'B7 deleted member' },
+        data: { memberNo: 'activity-b7-tag-deleted', ...memberIdentityData('B7 deleted member') },
         select: { id: true },
       }),
     ]);
@@ -351,13 +352,13 @@ describe('activity B7 audience tags over real Admin/System HTTP', () => {
       const creatorMember = await workflowPrisma.member.create({
         data: {
           memberNo: 'b7-workflow-creator-member',
-          displayName: 'B7 工作流发起人',
+          ...memberIdentityData('B7 工作流发起人'),
           gradeCode: 'level-3',
         },
         select: { id: true },
       });
       const audienceMember = await workflowPrisma.member.create({
-        data: { memberNo: 'b7-workflow-audience-member', displayName: 'B7 工作流受众' },
+        data: { memberNo: 'b7-workflow-audience-member', ...memberIdentityData('B7 工作流受众') },
         select: { id: true },
       });
       await workflowPrisma.user.update({

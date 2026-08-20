@@ -10,9 +10,6 @@ export class MemberProfileResponseDto {
   @ApiProperty({ description: '关联队员外键(指向 members.id;1:1)' })
   memberId!: string;
 
-  @ApiProperty({ description: '真实姓名(MP-1)' })
-  realName!: string;
-
   @ApiProperty({ description: '性别字典 code(MP-2;字典 gender)' })
   genderCode!: string;
 
@@ -163,12 +160,6 @@ export class MemberProfileResponseDto {
 
   @ApiPropertyOptional({ description: '其他特长(MP-26;长文本)', nullable: true })
   otherSkills!: string | null;
-
-  @ApiProperty({ description: '加入日期(MP-27;ISO 8601)' })
-  joinedDate!: Date;
-
-  @ApiProperty({ description: '加入来源字典 code(MP-28;候选字典 join_source)' })
-  joinSourceCode!: string;
 
   @ApiPropertyOptional({ description: '是否签署无违法犯罪声明(MP-29)', nullable: true })
   noCriminalRecordSigned!: boolean | null;

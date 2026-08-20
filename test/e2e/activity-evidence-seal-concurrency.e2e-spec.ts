@@ -8,6 +8,7 @@ import { EvidenceSealService } from '../../src/modules/activities/evidence-seal.
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第一刀:封场并发(goal DoD 4)=====
 //
@@ -127,7 +128,7 @@ describe('evidence seal multi-instance concurrency', () => {
     const member = await prismaA.member.create({
       data: {
         memberNo: `seal-conc-${sequence}`,
-        displayName: `并发封场队员 ${sequence}`,
+        ...memberIdentityData(`并发封场队员 ${sequence}`),
         gradeCode: 'level-2',
       },
       select: { id: true },

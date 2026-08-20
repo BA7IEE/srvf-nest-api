@@ -22448,7 +22448,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(命中队员 memberNo+displayName + 职务 code+name + 组织 name+code;contains + insensitive)",
+            "description": "模糊搜索(命中队员 memberNo+realName + 职务 code+name + 组织 name+code;contains + insensitive)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -23867,7 +23867,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(命中分管人 memberNo+displayName + 组织 name+code;contains + insensitive)",
+            "description": "模糊搜索(命中分管人 memberNo+realName + 组织 name+code;contains + insensitive)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -25855,7 +25855,7 @@
             "name": "principalQ",
             "required": false,
             "in": "query",
-            "description": "主体模糊搜索(USER 命中 username+nickname;MEMBER 命中 memberNo+displayName;POSITION_ASSIGNMENT 命中其背后队员的 memberNo+displayName;contains + insensitive)",
+            "description": "主体模糊搜索(USER 命中 username+nickname;MEMBER 命中 memberNo+realName;POSITION_ASSIGNMENT 命中其背后队员的 memberNo+realName;contains + insensitive)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -27210,7 +27210,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(跨字段命中 displayName + memberNo;contains + insensitive)",
+            "description": "模糊搜索(跨字段命中 memberNo + realName + nickname;contains + insensitive)。排序见 MemberDirectory 五级规则",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -27610,7 +27610,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(跨字段命中 displayName + memberNo)",
+            "description": "模糊搜索(跨字段命中 memberNo + realName + nickname)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -27786,7 +27786,7 @@
             "bearer": []
           }
         ],
-        "summary": "队员选择器投影(q 模糊 displayName+memberNo;limit≤100,默认 20) [rbac: member.read.record]",
+        "summary": "队员选择器投影(q 模糊 realName+memberNo;limit≤100,默认 20) [rbac: member.read.record]",
         "tags": [
           "Admin - Members"
         ]
@@ -28809,7 +28809,7 @@
             "bearer": []
           }
         ],
-        "summary": "更新队员(displayName / gradeCode;**禁止改 memberNo / status**) [rbac: member.update.record]",
+        "summary": "更新队员(realName / nickname / gradeCode;**禁止改 memberNo / status / memberSinceDate / memberOriginCode**) [rbac: member.update.record]",
         "tags": [
           "Admin - Members"
         ]
@@ -49735,7 +49735,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(跨字段命中 displayName + memberNo;trim + contains + case-insensitive)",
+            "description": "模糊搜索(跨字段命中 realName + memberNo;trim + contains + case-insensitive)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -82959,7 +82959,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(命中队员 memberNo+displayName + 组织 name+code;contains + insensitive)",
+            "description": "模糊搜索(命中队员 memberNo+realName + 组织 name+code;contains + insensitive)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -83811,7 +83811,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(命中队员 memberNo+displayName + 组织 name+code;contains + insensitive)",
+            "description": "模糊搜索(命中队员 memberNo+realName + 组织 name+code;contains + insensitive)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -84043,7 +84043,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(跨字段命中 displayName + memberNo)",
+            "description": "模糊搜索(跨字段命中 realName + memberNo)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -85109,7 +85109,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberDisplayName+activityTitle;contains + insensitive)",
+            "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberRealName+activityTitle;contains + insensitive)",
             "schema": {
               "maxLength": 200,
               "type": "string"
@@ -85119,7 +85119,7 @@
             "name": "memberQ",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(仅命中队员 memberNo+displayName;仅 admin/v1/registrations 全局横扫生效)",
+            "description": "模糊搜索(仅命中队员 memberNo+realName;仅 admin/v1/registrations 全局横扫生效)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -87172,7 +87172,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberDisplayName+activityTitle;contains + insensitive)",
+            "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberRealName+activityTitle;contains + insensitive)",
             "schema": {
               "maxLength": 200,
               "type": "string"
@@ -87182,7 +87182,7 @@
             "name": "memberQ",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(仅命中队员 memberNo+displayName;仅 admin/v1/registrations 全局横扫生效)",
+            "description": "模糊搜索(仅命中队员 memberNo+realName;仅 admin/v1/registrations 全局横扫生效)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -87483,7 +87483,7 @@
             "name": "q",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberDisplayName+activityTitle;contains + insensitive)",
+            "description": "模糊搜索(仅 admin/v1/registrations 全局横扫生效;命中 memberNo+memberRealName+activityTitle;contains + insensitive)",
             "schema": {
               "maxLength": 200,
               "type": "string"
@@ -87493,7 +87493,7 @@
             "name": "memberQ",
             "required": false,
             "in": "query",
-            "description": "模糊搜索(仅命中队员 memberNo+displayName;仅 admin/v1/registrations 全局横扫生效)",
+            "description": "模糊搜索(仅命中队员 memberNo+realName;仅 admin/v1/registrations 全局横扫生效)",
             "schema": {
               "maxLength": 100,
               "type": "string"
@@ -114048,15 +114048,26 @@
             "description": "队员业务唯一编号",
             "example": "M-0001"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员称呼 / 显示名",
-            "example": "Demo Member"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "object",
+            "description": "队员外号(队内称呼,非登录昵称)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`",
+            "example": "M-0001 · 张三(老张)"
           }
         },
         "required": [
           "memberNo",
-          "displayName"
+          "realName",
+          "label"
         ]
       },
       "UserResponseDto": {
@@ -114361,10 +114372,16 @@
             "example": "V0001",
             "nullable": true
           },
-          "displayName": {
+          "realName": {
             "type": "object",
-            "description": "队员展示名(未绑定时为 null)",
+            "description": "队员真实姓名(未绑定时为 null)",
             "example": "王小明",
+            "nullable": true
+          },
+          "memberLabel": {
+            "type": "object",
+            "description": "统一展示标签 `编号 · 姓名(外号)`(未绑定时为 null)",
+            "example": "V0001 · 王小明(小明)",
             "nullable": true
           },
           "gradeCode": {
@@ -114409,7 +114426,8 @@
           "status",
           "memberId",
           "memberNo",
-          "displayName",
+          "realName",
+          "memberLabel",
           "gradeCode",
           "memberStatus",
           "canUseApp",
@@ -114735,10 +114753,15 @@
             "description": "队员编号(终身不变)",
             "example": "V0001"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员展示名",
+            "description": "队员真实姓名",
             "example": "王小明"
+          },
+          "memberLabel": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`",
+            "example": "V0001 · 王小明(小明)"
           },
           "memberStatus": {
             "type": "string",
@@ -114762,7 +114785,8 @@
           "nickname",
           "avatarKey",
           "memberNo",
-          "displayName",
+          "realName",
+          "memberLabel",
           "memberStatus",
           "hasMemberProfile"
         ]
@@ -116676,9 +116700,20 @@
             "type": "string",
             "description": "队员业务编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "gradeCode": {
             "type": "object",
@@ -116689,7 +116724,9 @@
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "PositionAssignmentExpandedPositionDto": {
@@ -117006,9 +117043,20 @@
             "type": "string",
             "description": "队员业务编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "gradeCode": {
             "type": "object",
@@ -117019,7 +117067,9 @@
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "SupervisionExpandedOrganizationDto": {
@@ -117388,9 +117438,13 @@
             "type": "string",
             "description": "type=MEMBER 时:队员业务编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "type=MEMBER / POSITION_ASSIGNMENT 时:队员显示名(任职主体取其背后队员)"
+            "description": "type=MEMBER / POSITION_ASSIGNMENT 时:队员真实姓名(任职主体取其背后队员)"
+          },
+          "memberLabel": {
+            "type": "string",
+            "description": "type=MEMBER / POSITION_ASSIGNMENT 时:统一展示标签 `编号 · 姓名(外号)`(任职主体取其背后队员)"
           },
           "organizationId": {
             "type": "string",
@@ -117851,10 +117905,32 @@
             "description": "队员业务唯一编号(全局唯一,包含软删不复用;非敏感、高价值业务标识)",
             "example": "M-0001"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "称呼 / 显示名(业务可读)",
-            "example": "Demo Member"
+            "description": "真实姓名(日常身份事实源)",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "object",
+            "description": "外号 / 队内称呼(可空;**不是**身份键,重名重外号都正常并存)",
+            "nullable": true,
+            "example": "老张"
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号。由后端拼装,前端直接渲染",
+            "example": "M-0001 · 张三(老张)"
+          },
+          "memberSinceDate": {
+            "format": "date-time",
+            "type": "string",
+            "description": "发号日(该 memberNo 生效日期;ISO 8601,已按北京日历日归一到 UTC 午夜)",
+            "example": "2020-01-15T00:00:00.000Z"
+          },
+          "memberOriginCode": {
+            "type": "string",
+            "description": "来源字典 code(字典 join_source)",
+            "example": "recruitment"
           },
           "gradeCode": {
             "type": "object",
@@ -117901,7 +117977,10 @@
         "required": [
           "id",
           "memberNo",
-          "displayName",
+          "realName",
+          "label",
+          "memberSinceDate",
+          "memberOriginCode",
           "status",
           "hasAccount",
           "createdAt",
@@ -117917,7 +117996,8 @@
           },
           "label": {
             "type": "string",
-            "description": "展示标签(= displayName)"
+            "description": "展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "memberNo": {
             "type": "string",
@@ -118064,10 +118144,25 @@
             "minLength": 1,
             "maxLength": 32
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "称呼 / 显示名",
-            "maxLength": 100
+            "description": "真实姓名",
+            "maxLength": 64
+          },
+          "nickname": {
+            "type": "string",
+            "description": "外号 / 队内称呼(可选)",
+            "maxLength": 64
+          },
+          "memberSinceDate": {
+            "type": "string",
+            "description": "发号日(ISO 8601;按北京日历日归一)",
+            "example": "2020-01-15"
+          },
+          "memberOriginCode": {
+            "type": "string",
+            "description": "来源字典 code(字典 join_source)",
+            "maxLength": 64
           },
           "gradeCode": {
             "type": "string",
@@ -118077,7 +118172,9 @@
         },
         "required": [
           "memberNo",
-          "displayName"
+          "realName",
+          "memberSinceDate",
+          "memberOriginCode"
         ]
       },
       "MemberAudienceTagDto": {
@@ -118150,10 +118247,16 @@
       "UpdateMemberDto": {
         "type": "object",
         "properties": {
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "称呼 / 显示名",
-            "maxLength": 100
+            "description": "真实姓名",
+            "maxLength": 64
+          },
+          "nickname": {
+            "type": "object",
+            "description": "外号 / 队内称呼;传 null 清空,不传则不改动",
+            "maxLength": 64,
+            "nullable": true
           },
           "gradeCode": {
             "type": "string",
@@ -119933,9 +120036,20 @@
             "type": "string",
             "description": "队员编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "outcome": {
             "type": "string",
@@ -119962,7 +120076,9 @@
           "registrationId",
           "memberId",
           "memberNo",
-          "displayName",
+          "realName",
+          "nickname",
+          "label",
           "outcome",
           "recordCount",
           "approvedRecordCount",
@@ -119980,9 +120096,20 @@
             "type": "string",
             "description": "队员编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "outcome": {
             "type": "string",
@@ -120007,7 +120134,9 @@
         "required": [
           "memberId",
           "memberNo",
-          "displayName",
+          "realName",
+          "nickname",
+          "label",
           "outcome",
           "recordCount",
           "approvedRecordCount",
@@ -120568,8 +120697,20 @@
           "memberNo": {
             "type": "string"
           },
-          "displayName": {
-            "type": "string"
+          "realName": {
+            "type": "string",
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "gradeCode": {
             "type": "string",
@@ -120579,7 +120720,9 @@
         "required": [
           "id",
           "memberNo",
-          "displayName",
+          "realName",
+          "nickname",
+          "label",
           "gradeCode"
         ]
       },
@@ -120986,8 +121129,20 @@
           "memberNo": {
             "type": "string"
           },
-          "displayName": {
-            "type": "string"
+          "realName": {
+            "type": "string",
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "gradeCode": {
             "type": "string",
@@ -120997,7 +121152,9 @@
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "AppManagedMyResponsibilityDto": {
@@ -123036,14 +123193,28 @@
           "memberNo": {
             "type": "string"
           },
-          "displayName": {
-            "type": "string"
+          "realName": {
+            "type": "string",
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           }
         },
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "AppSettlementItemDto": {
@@ -124992,8 +125163,20 @@
           "memberNo": {
             "type": "string"
           },
-          "displayName": {
-            "type": "string"
+          "realName": {
+            "type": "string",
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "gradeCode": {
             "type": "string",
@@ -125010,7 +125193,9 @@
         "required": [
           "id",
           "memberNo",
-          "displayName",
+          "realName",
+          "nickname",
+          "label",
           "eligibilitySource"
         ]
       },
@@ -125140,15 +125325,28 @@
             "type": "string",
             "description": "创建人编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "创建人显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           }
         },
         "required": [
           "memberId",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "AppMyActivityBatchJobListItemDto": {
@@ -125538,9 +125736,13 @@
             "type": "string",
             "description": "队员编号(展示用冗余,自 Member 关联读出)"
           },
-          "memberDisplayName": {
+          "memberRealName": {
             "type": "string",
-            "description": "队员姓名(展示用冗余,自 Member 关联读出)"
+            "description": "队员真实姓名(展示用冗余,自 Member 关联读出)"
+          },
+          "memberLabel": {
+            "type": "string",
+            "description": "队员统一展示标签 `编号 · 姓名(外号)`(展示用冗余)"
           },
           "createdAt": {
             "format": "date-time",
@@ -125553,7 +125755,8 @@
           "policyId",
           "memberId",
           "memberNo",
-          "memberDisplayName",
+          "memberRealName",
+          "memberLabel",
           "createdAt"
         ]
       },
@@ -127125,15 +127328,28 @@
             "type": "string",
             "description": "队员编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员展示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           }
         },
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "WorkbenchStandardSummaryDto": {
@@ -127883,10 +128099,6 @@
             "type": "string",
             "description": "关联队员外键(指向 members.id;1:1)"
           },
-          "realName": {
-            "type": "string",
-            "description": "真实姓名(MP-1)"
-          },
           "genderCode": {
             "type": "string",
             "description": "性别字典 code(MP-2;字典 gender)"
@@ -128045,15 +128257,6 @@
             "description": "其他特长(MP-26;长文本)",
             "nullable": true
           },
-          "joinedDate": {
-            "format": "date-time",
-            "type": "string",
-            "description": "加入日期(MP-27;ISO 8601)"
-          },
-          "joinSourceCode": {
-            "type": "string",
-            "description": "加入来源字典 code(MP-28;候选字典 join_source)"
-          },
           "noCriminalRecordSigned": {
             "type": "object",
             "description": "是否签署无违法犯罪声明(MP-29)",
@@ -128087,7 +128290,6 @@
         "required": [
           "id",
           "memberId",
-          "realName",
           "genderCode",
           "birthDate",
           "documentTypeCode",
@@ -128095,8 +128297,6 @@
           "mobile",
           "exerciseMethods",
           "firstAidSkills",
-          "joinedDate",
-          "joinSourceCode",
           "privacyConsentSigned",
           "createdAt",
           "updatedAt"
@@ -128105,11 +128305,6 @@
       "CreateMemberProfileDto": {
         "type": "object",
         "properties": {
-          "realName": {
-            "type": "string",
-            "description": "真实姓名",
-            "maxLength": 64
-          },
           "genderCode": {
             "type": "string",
             "description": "性别字典 code(字典 gender)",
@@ -128138,15 +128333,6 @@
             "type": "string",
             "description": "邮箱",
             "maxLength": 256
-          },
-          "joinedDate": {
-            "type": "string",
-            "description": "加入日期(ISO 8601)"
-          },
-          "joinSourceCode": {
-            "type": "string",
-            "description": "加入来源字典 code(候选字典 join_source)",
-            "maxLength": 64
           },
           "privacyConsentSigned": {
             "type": "boolean",
@@ -128300,26 +128486,18 @@
           }
         },
         "required": [
-          "realName",
           "genderCode",
           "birthDate",
           "documentTypeCode",
           "documentNumber",
           "mobile",
           "email",
-          "joinedDate",
-          "joinSourceCode",
           "privacyConsentSigned"
         ]
       },
       "UpdateMemberProfileDto": {
         "type": "object",
         "properties": {
-          "realName": {
-            "type": "string",
-            "description": "真实姓名",
-            "maxLength": 64
-          },
           "genderCode": {
             "type": "string",
             "description": "性别字典 code",
@@ -128481,15 +128659,6 @@
             "type": "string",
             "description": "其他特长",
             "maxLength": 2000
-          },
-          "joinedDate": {
-            "type": "string",
-            "description": "加入日期(ISO 8601)"
-          },
-          "joinSourceCode": {
-            "type": "string",
-            "description": "加入来源字典 code",
-            "maxLength": 64
           },
           "noCriminalRecordSigned": {
             "type": "boolean",
@@ -129213,9 +129382,20 @@
             "type": "string",
             "description": "评价人队员编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "评价人显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "rating": {
             "type": "number",
@@ -129241,7 +129421,9 @@
         },
         "required": [
           "memberNo",
-          "displayName",
+          "realName",
+          "nickname",
+          "label",
           "rating",
           "comment",
           "createdAt",
@@ -129896,15 +130078,28 @@
             "type": "string",
             "description": "队员业务编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           }
         },
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "AdminActivityCheckInListItemDto": {
@@ -130078,16 +130273,29 @@
             "type": "string",
             "description": "队员业务编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           }
         },
         "required": [
           "registrationId",
           "memberId",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "AttendanceSheetDraftDto": {
@@ -130574,14 +130782,23 @@
           "memberNo": {
             "type": "string"
           },
-          "displayName": {
+          "realName": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
             "type": "string"
           }
         },
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "AppManagedActivityCheckInDto": {
@@ -130722,7 +130939,14 @@
           "memberNo": {
             "type": "string"
           },
-          "displayName": {
+          "realName": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string",
+            "nullable": true
+          },
+          "label": {
             "type": "string"
           }
         },
@@ -130730,7 +130954,9 @@
           "registrationId",
           "memberId",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "AppManagedAttendanceSheetDraftDto": {
@@ -132183,9 +132409,20 @@
             "type": "string",
             "description": "队员业务编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "gradeCode": {
             "type": "object",
@@ -132196,7 +132433,9 @@
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "MembershipExpandedOrganizationDto": {
@@ -132670,9 +132909,14 @@
             "description": "队员编号(冗余字段,便于前端展示)",
             "nullable": true
           },
-          "memberDisplayName": {
+          "memberRealName": {
             "type": "object",
-            "description": "队员显示名(冗余字段,便于前端展示)",
+            "description": "队员真实姓名(冗余字段,便于前端展示)",
+            "nullable": true
+          },
+          "memberLabel": {
+            "type": "object",
+            "description": "队员统一展示标签 `编号 · 姓名(外号)`(冗余字段,便于前端展示)",
             "nullable": true
           },
           "statusCode": {
@@ -132935,9 +133179,20 @@
             "type": "string",
             "description": "队员业务编号"
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员显示名"
+            "description": "队员真实姓名",
+            "example": "张三"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
+            "example": "M-0001 · 张三(老张)"
           },
           "gradeCode": {
             "type": "object",
@@ -132948,7 +133203,9 @@
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "AdminRegistrationExpandedActivityDto": {
@@ -133014,9 +133271,14 @@
             "description": "队员编号(冗余字段,便于前端展示)",
             "nullable": true
           },
-          "memberDisplayName": {
+          "memberRealName": {
             "type": "object",
-            "description": "队员显示名(冗余字段,便于前端展示)",
+            "description": "队员真实姓名(冗余字段,便于前端展示)",
+            "nullable": true
+          },
+          "memberLabel": {
+            "type": "object",
+            "description": "队员统一展示标签 `编号 · 姓名(外号)`(冗余字段,便于前端展示)",
             "nullable": true
           },
           "statusCode": {
@@ -133361,16 +133623,28 @@
             "description": "队员编号",
             "nullable": true
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "队员显示名",
+            "description": "队员真实姓名",
+            "nullable": true
+          },
+          "nickname": {
+            "type": "string",
+            "description": "队员外号(队内称呼)",
+            "nullable": true
+          },
+          "label": {
+            "type": "string",
+            "description": "统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号",
             "nullable": true
           }
         },
         "required": [
           "id",
           "memberNo",
-          "displayName"
+          "realName",
+          "nickname",
+          "label"
         ]
       },
       "AppManagedRegistrationListItemDto": {
@@ -134626,7 +134900,7 @@
             "description": "队员编号(双锚之一;execute 必须提供)",
             "maxLength": 64
           },
-          "displayName": {
+          "realName": {
             "type": "string",
             "description": "姓名(仅 preview 辅助解析用;唯一命中 active 队员时回显建议 memberNo,仍需人工确认)",
             "maxLength": 100
@@ -134693,7 +134967,7 @@
           },
           "suggestedMemberNo": {
             "type": "object",
-            "description": "displayName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
+            "description": "realName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
             "nullable": true
           },
           "positionAssignmentId": {
@@ -134716,9 +134990,9 @@
             "description": "分管人队员编号(双锚之一;execute 必须提供)",
             "maxLength": 64
           },
-          "displayName": {
+          "realName": {
             "type": "string",
-            "description": "姓名(仅 preview 辅助解析用;语义同 ImportPositionRowDto.displayName)",
+            "description": "姓名(仅 preview 辅助解析用;语义同 ImportPositionRowDto.realName)",
             "maxLength": 100
           },
           "orgCode": {
@@ -134777,7 +135051,7 @@
           },
           "suggestedMemberNo": {
             "type": "object",
-            "description": "displayName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
+            "description": "realName 唯一命中 active 队员时的建议 memberNo(仅 needs-manual 可能带值)",
             "nullable": true
           },
           "supervisionAssignmentId": {
@@ -137972,9 +138246,14 @@
             "description": "队员永久编号",
             "nullable": true
           },
-          "memberDisplayName": {
+          "memberRealName": {
             "type": "object",
-            "description": "队员称呼",
+            "description": "队员真实姓名",
+            "nullable": true
+          },
+          "memberLabel": {
+            "type": "object",
+            "description": "队员统一展示标签 `编号 · 姓名(外号)`",
             "nullable": true
           },
           "statusCode": {

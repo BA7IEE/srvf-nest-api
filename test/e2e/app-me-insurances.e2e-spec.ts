@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 保险模块 T2 App /api/app/v1/me/insurances 自助 CRUD e2e(2026-06-13)。
 // 沿冻结评审稿 docs/archive/reviews/insurance-module-review.md §8 测试计划:
@@ -83,7 +84,7 @@ describe('App /api/app/v1/me/insurances(保险 T2 自助 CRUD)', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `INS-${nextSeq()}`,
-        displayName: 'Ins Tester',
+        ...memberIdentityData('Ins Tester'),
         status: opts.memberStatus ?? MemberStatus.ACTIVE,
         deletedAt: opts.memberDeleted === true ? new Date() : null,
       },

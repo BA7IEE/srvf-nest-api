@@ -7,6 +7,7 @@ import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 并发审计 K4(B-F3):`cancelMy` 用**锁前**的活动快照写 durable intent。
 //
@@ -87,7 +88,7 @@ describe('cancelMy 锁后快照并发(K4 · B-F3)', () => {
     const member = await prismaA.member.create({
       data: {
         memberNo: `RCM${String(seq).padStart(3, '0')}`,
-        displayName: `取消并发${seq}`,
+        ...memberIdentityData(`取消并发${seq}`),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },
@@ -148,7 +149,11 @@ describe('cancelMy 锁后快照并发(K4 · B-F3)', () => {
       })
     ).id;
     const publisherMember = await prismaA.member.create({
-      data: { memberNo: 'RCM-OWNER', displayName: '活动发布人', status: MemberStatus.ACTIVE },
+      data: {
+        memberNo: 'RCM-OWNER',
+        ...memberIdentityData('活动发布人'),
+        status: MemberStatus.ACTIVE,
+      },
       select: { id: true },
     });
     publisherMemberId = publisherMember.id;

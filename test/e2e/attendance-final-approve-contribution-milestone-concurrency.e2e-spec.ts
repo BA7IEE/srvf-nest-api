@@ -7,6 +7,7 @@ import { AttendancesService } from '../../src/modules/attendances/attendances.se
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 并发审计 K3(B-F2):考勤终审的入队贡献值里程碑是 **write skew**。
 //
@@ -132,7 +133,7 @@ describe('考勤终审 × 入队贡献值里程碑并发(K3 · B-F2 write skew)'
     const member = await prismaA.member.create({
       data: {
         memberNo: `AFM${String(seq).padStart(3, '0')}`,
-        displayName: `里程碑${seq}`,
+        ...memberIdentityData(`里程碑${seq}`),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },

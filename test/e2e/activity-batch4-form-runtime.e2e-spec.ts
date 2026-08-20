@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const FORM = {
   fields: [
@@ -62,7 +63,7 @@ describe('activity batch4 Form runtime', () => {
       prisma.member.create({
         data: {
           memberNo: 'B4FORM-OWNER',
-          displayName: 'Form Owner',
+          ...memberIdentityData('Form Owner'),
           gradeCode: 'level-1',
           status: MemberStatus.ACTIVE,
         },
@@ -71,7 +72,7 @@ describe('activity batch4 Form runtime', () => {
       prisma.member.create({
         data: {
           memberNo: 'B4FORM-OTHER',
-          displayName: 'Form Other',
+          ...memberIdentityData('Form Other'),
           gradeCode: 'level-1',
           status: MemberStatus.ACTIVE,
         },

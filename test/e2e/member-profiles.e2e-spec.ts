@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2 第一阶段批次 1 member_profiles 模块 e2e。
 // 覆盖 3 接口主成功 + 关键失败:权限边界 / 1:1 unique / 字典 5 项校验 / 禁止白名单外字段。
@@ -95,12 +96,12 @@ describe('member-profiles 模块', () => {
 
     // 创建 2 个 member:一个会创建 profile,一个不会
     const m1 = await prisma.member.create({
-      data: { memberNo: 'mp-m-1', displayName: 'Demo Member 1' },
+      data: { memberNo: 'mp-m-1', ...memberIdentityData('Demo Member 1') },
       select: { id: true },
     });
     memberId = m1.id;
     const m2 = await prisma.member.create({
-      data: { memberNo: 'mp-m-2', displayName: 'Demo Member 2' },
+      data: { memberNo: 'mp-m-2', ...memberIdentityData('Demo Member 2') },
       select: { id: true },
     });
     memberWithoutProfileId = m2.id;
@@ -111,16 +112,15 @@ describe('member-profiles 模块', () => {
   });
 
   // 最小创建 payload(NOT NULL 业务字段)。
+  // issue #1048 T1:realName / joinedDate / joinSourceCode 已搬到 Member 主档,
+  // 不再属于档案 DTO —— 继续传会被 forbidNonWhitelisted 打成 400。
   const minimalCreatePayload = (): Record<string, unknown> => ({
-    realName: '演示张三',
     genderCode,
     birthDate: '1990-01-15T00:00:00.000Z',
     documentTypeCode,
     documentNumber: 'DEMO000000',
     mobile: '13800000001',
     email: 'demo@example.com',
-    joinedDate: '2020-06-01T00:00:00.000Z',
-    joinSourceCode: 'demo-join-recruit',
     privacyConsentSigned: true,
   });
 
@@ -151,7 +151,7 @@ describe('member-profiles 模块', () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${memberId}/profile`)
         .set('Authorization', userAuth)
-        .send({ realName: '新名字' });
+        .send({ genderCode });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
   });
@@ -175,12 +175,11 @@ describe('member-profiles 模块', () => {
       expect(res.status).toBe(201);
       expect(res.body.code).toBe(0);
       expect(res.body.data.memberId).toBe(memberId);
-      expect(res.body.data.realName).toBe('演示张三');
+      expect(res.body.data.genderCode).toBe(genderCode);
       expect(res.body.data.privacyConsentSigned).toBe(true);
       expect(res.body.data).not.toHaveProperty('deletedAt');
       // 日期字段规范化为 UTC 00:00:00
       expect(res.body.data.birthDate).toMatch(/^1990-01-15T00:00:00\.000Z$/);
-      expect(res.body.data.joinedDate).toMatch(/^2020-06-01T00:00:00\.000Z$/);
     });
 
     it('GET 已存在 profile → 200 + 完整字段(含 medicalNotes 默认 null + exerciseMethods 空数组)', async () => {
@@ -251,15 +250,15 @@ describe('member-profiles 模块', () => {
 
     beforeAll(async () => {
       const m = await prisma.member.create({
-        data: { memberNo: 'mp-m-3', displayName: 'Demo 3' },
+        data: { memberNo: 'mp-m-3', ...memberIdentityData('Demo 3') },
         select: { id: true },
       });
       m3Id = m.id;
     });
 
-    it('缺 realName → 400', async () => {
+    it('缺 genderCode → 400', async () => {
       const payload = minimalCreatePayload();
-      delete payload.realName;
+      delete payload.genderCode;
       const res = await request(httpServer(app))
         .post(`/api/admin/v1/members/${m3Id}/profile`)
         .set('Authorization', adminAuth)
@@ -340,7 +339,7 @@ describe('member-profiles 模块', () => {
 
     beforeAll(async () => {
       const a = await prisma.member.create({
-        data: { memberNo: 'mp-m-patch', displayName: 'Patch Target' },
+        data: { memberNo: 'mp-m-patch', ...memberIdentityData('Patch Target') },
         select: { id: true },
       });
       mPatchId = a.id;
@@ -351,7 +350,7 @@ describe('member-profiles 模块', () => {
         .send(minimalCreatePayload());
 
       const b = await prisma.member.create({
-        data: { memberNo: 'mp-m-patch-empty', displayName: 'Patch Empty' },
+        data: { memberNo: 'mp-m-patch-empty', ...memberIdentityData('Patch Empty') },
         select: { id: true },
       });
       mPatchNoProfileId = b.id;
@@ -361,9 +360,9 @@ describe('member-profiles 模块', () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${mPatchId}/profile`)
         .set('Authorization', superAdminAuth)
-        .send({ realName: '新名字', volunteerNo: 'V123' });
+        .send({ major: '测绘', volunteerNo: 'V123' });
       expect(res.status).toBe(200);
-      expect(res.body.data.realName).toBe('新名字');
+      expect(res.body.data.major).toBe('测绘');
       expect(res.body.data.volunteerNo).toBe('V123');
     });
 
@@ -398,7 +397,7 @@ describe('member-profiles 模块', () => {
       const res = await request(httpServer(app))
         .patch(`/api/admin/v1/members/${mPatchNoProfileId}/profile`)
         .set('Authorization', adminAuth)
-        .send({ realName: 'X' });
+        .send({ major: 'X' });
       expectBizError(res, BizCode.MEMBER_PROFILE_NOT_FOUND);
     });
 
@@ -433,7 +432,7 @@ describe('member-profiles 模块', () => {
       const res = await request(httpServer(app))
         .patch('/api/admin/v1/members/cl0000000000000000000000/profile')
         .set('Authorization', adminAuth)
-        .send({ realName: 'X' });
+        .send({ major: 'X' });
       expectBizError(res, BizCode.MEMBER_NOT_FOUND);
     });
   });

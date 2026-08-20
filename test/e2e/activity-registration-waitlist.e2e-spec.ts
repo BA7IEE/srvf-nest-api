@@ -16,6 +16,7 @@ import { MetaService } from '../../src/modules/meta/meta.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const AUDIT_META: AuditMeta = {
   requestId: 'waitlist-e2e-req-000000000001',
@@ -266,7 +267,7 @@ describe('activity registration waitlist', () => {
       await prisma.member.create({
         data: {
           memberNo: `waitlist-${label}-${sequence}`,
-          displayName: `Waitlist ${label} ${sequence}`,
+          ...memberIdentityData(`Waitlist ${label} ${sequence}`),
           gradeCode: 'level-1',
         },
         select: { id: true },
@@ -363,14 +364,11 @@ describe('activity registration waitlist', () => {
     await prisma.memberProfile.create({
       data: {
         memberId,
-        realName: '岗位性别闸测试',
         genderCode,
         birthDate: new Date('1990-01-01T00:00:00.000Z'),
         documentTypeCode: 'id_card',
         documentNumber: `activity-position-gender-${sequence}`,
         mobile: `139${String(sequence).padStart(8, '0')}`,
-        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
-        joinSourceCode: 'recommend',
         privacyConsentSigned: true,
       },
     });

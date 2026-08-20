@@ -21,6 +21,7 @@ import {
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // v0.49 部门数据范围成员轴 E2E：真 seed 的正/副职 policy，active PRIMARY 归属，列表交集，
 // point auth，敏感字段二次授权，以及 bulk 逐项授权。API path / DTO / response shape 均不改。
@@ -76,7 +77,7 @@ describe('v0.49 department data scope — member axis', () => {
 
   async function mkPerson(tag: string): Promise<Person> {
     const member = await prisma.member.create({
-      data: { memberNo: `v049-m-${tag}`, displayName: `v0.49 ${tag}` },
+      data: { memberNo: `v049-m-${tag}`, ...memberIdentityData(`v0.49 ${tag}`) },
       select: { id: true },
     });
     const user = await prisma.user.create({
@@ -97,7 +98,7 @@ describe('v0.49 department data scope — member axis', () => {
 
   async function mkTarget(tag: string, primaryOrganizationId: string): Promise<string> {
     const member = await prisma.member.create({
-      data: { memberNo: `v049-t-${tag}`, displayName: `范围目标 ${tag}` },
+      data: { memberNo: `v049-t-${tag}`, ...memberIdentityData(`范围目标 ${tag}`) },
       select: { id: true },
     });
     await prisma.memberOrganizationMembership.create({
@@ -259,14 +260,11 @@ describe('v0.49 department data scope — member axis', () => {
     await prisma.memberProfile.create({
       data: {
         memberId: sectMemberId,
-        realName: '范围内实名',
         genderCode: 'male',
         birthDate: new Date('1990-01-01T00:00:00.000Z'),
         documentTypeCode: 'id-card',
         documentNumber: 'V049123456789',
         mobile: '13800000001',
-        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
-        joinSourceCode: 'internal',
         privacyConsentSigned: true,
         exerciseMethods: [],
         firstAidSkills: [],
@@ -275,14 +273,11 @@ describe('v0.49 department data scope — member axis', () => {
     await prisma.memberProfile.create({
       data: {
         memberId: childMemberId,
-        realName: '子组实名',
         genderCode: 'male',
         birthDate: new Date('1991-01-01T00:00:00.000Z'),
         documentTypeCode: 'id-card',
         documentNumber: 'V049987654321',
         mobile: '13800000002',
-        joinedDate: new Date('2021-01-01T00:00:00.000Z'),
-        joinSourceCode: 'internal',
         privacyConsentSigned: true,
         exerciseMethods: [],
         firstAidSkills: [],
@@ -400,12 +395,12 @@ describe('v0.49 department data scope — member axis', () => {
     const writeInside = await request(httpServer(app))
       .patch(`/api/admin/v1/members/${sectMemberId}`)
       .set('Authorization', leader.authHeader)
-      .send({ displayName: '正职范围内更新' });
+      .send({ realName: '正职范围内更新' });
     expect(writeInside.status).toBe(200);
     const writeCross = await request(httpServer(app))
       .patch(`/api/admin/v1/members/${crossMemberId}`)
       .set('Authorization', leader.authHeader)
-      .send({ displayName: '越界更新' });
+      .send({ realName: '越界更新' });
     expectBizError(writeCross, BizCode.RBAC_FORBIDDEN);
 
     for (const path of [
@@ -435,7 +430,7 @@ describe('v0.49 department data scope — member axis', () => {
     const write = await request(httpServer(app))
       .patch(`/api/admin/v1/members/${crossMemberId}`)
       .set('Authorization', viceCaptain.authHeader)
-      .send({ displayName: '副队长不可写' });
+      .send({ realName: '副队长不可写' });
     expectBizError(write, BizCode.RBAC_FORBIDDEN);
   });
 
@@ -476,12 +471,14 @@ describe('v0.49 department data scope — member axis', () => {
     const memberWrite = await request(httpServer(app))
       .patch(`/api/admin/v1/members/${sectMemberId}`)
       .set('Authorization', deputy.authHeader)
-      .send({ displayName: '副职不可写' });
+      .send({ realName: '副职不可写' });
     expectBizError(memberWrite, BizCode.RBAC_FORBIDDEN);
     const profileWrite = await request(httpServer(app))
       .patch(`/api/admin/v1/members/${sectMemberId}/profile`)
       .set('Authorization', deputy.authHeader)
-      .send({ realName: '副职不可写' });
+      // issue #1048 T1:realName 已搬出档案 DTO,再传它会先被 forbidNonWhitelisted 打成 400,
+      // 于是这条用例量的就不再是「副职不可写」而是「字段不认识」。改用仍在档案里的 genderCode。
+      .send({ genderCode: 'female' });
     expectBizError(profileWrite, BizCode.RBAC_FORBIDDEN);
     const contactDelete = await request(httpServer(app))
       .delete(`/api/admin/v1/members/${sectMemberId}/emergency-contacts/${sectContactId}`)

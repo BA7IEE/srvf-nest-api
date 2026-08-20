@@ -27,6 +27,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ============================================================================
 // T6-1 —— 定向通知 replay 的**运维入口**(第二轮外部评审 SHOULD-FIX 3 的收口)
@@ -147,7 +148,7 @@ describe('T6-1 定向通知 replay 运维入口 e2e', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: 'T61RPL01',
-        displayName: 'T6-1 定向队员',
+        ...memberIdentityData('T6-1 定向队员'),
         status: 'ACTIVE',
         gradeCode: 'level-3',
       },

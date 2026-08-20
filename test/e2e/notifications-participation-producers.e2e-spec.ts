@@ -26,6 +26,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 统一通知 S4 + durable outbox L1:
 //   ① 报名审批、候补递补、自助取消在业务事务内 enqueue，worker commit 后执行 Effect；
@@ -138,7 +139,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
   async function makeMember(username: string): Promise<Member> {
     const user = await createTestUser(app, { username, role: Role.USER });
     const member = await prisma.member.create({
-      data: { memberNo: `S4-${username}`, displayName: username, status: 'ACTIVE' },
+      data: { memberNo: `S4-${username}`, ...memberIdentityData(username), status: 'ACTIVE' },
       select: { id: true },
     });
     await prisma.user.update({
@@ -618,7 +619,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       const cancelling = await makeMember('s4_cancel_label_legacy');
       await prisma.member.update({
         where: { id: cancelling.memberId },
-        data: { memberNo: 'LOCAL-001', displayName: '本地队员甲' },
+        data: { memberNo: 'LOCAL-001', ...memberIdentityData('本地队员甲') },
       });
       // B-D3 起只有取消**已通过**报名才通知负责人；用 pass 才测得到收件人解析本身。
       const registrationId = await seedRegistration(activityId, cancelling.memberId, 'pass');
@@ -761,7 +762,7 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
       const cancelling = await makeMember('s4_cancel_label_owner');
       await prisma.member.update({
         where: { id: cancelling.memberId },
-        data: { memberNo: 'LOCAL-002', displayName: '本地队员乙' },
+        data: { memberNo: 'LOCAL-002', ...memberIdentityData('本地队员乙') },
       });
       // B-D3 起只有取消**已通过**报名才通知负责人；用 pass 才测得到收件人解析本身。
       const registrationId = await seedRegistration(activityId, cancelling.memberId, 'pass');

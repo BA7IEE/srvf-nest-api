@@ -10,6 +10,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
+import { formatMemberLabel } from '../../common/identity/member-label.util';
 import {
   AddAllActiveCoverageResultDto,
   AddTeamInsuranceCoverageDto,
@@ -51,7 +52,7 @@ const coverageWithMemberSelect = {
   policyId: true,
   memberId: true,
   createdAt: true,
-  member: { select: { memberNo: true, displayName: true } },
+  member: { select: { memberNo: true, realName: true, nickname: true } },
 } as const satisfies Prisma.TeamInsuranceCoverageSelect;
 
 type CoverageWithMember = Prisma.TeamInsuranceCoverageGetPayload<{
@@ -174,7 +175,8 @@ export class TeamInsurancePoliciesService {
       policyId: row.policyId,
       memberId: row.memberId,
       memberNo: row.member.memberNo,
-      memberDisplayName: row.member.displayName,
+      memberRealName: row.member.realName,
+      memberLabel: formatMemberLabel(row.member),
       createdAt: row.createdAt,
     };
   }

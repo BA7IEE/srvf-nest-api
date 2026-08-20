@@ -10,6 +10,7 @@ import { TEST_PASSWORD, createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 14.6.2 admin-crud spec(36 jest tests)
 // 覆盖管理接口的基础路径:POST/GET/PATCH/PUT/DELETE 成功 + 字段校验 + 唯一约束。
@@ -327,10 +328,10 @@ describe('users 管理接口 CRUD 基础路径', () => {
       expect(res.body.data.member).toBeNull();
     });
 
-    it('GET 已绑定队员的用户 → memberId + member{memberNo,displayName} 摘要回显', async () => {
+    it('GET 已绑定队员的用户 → memberId + member{memberNo,realName,nickname,label} 摘要回显', async () => {
       const member = await prisma.member.create({
-        data: { memberNo: 'getid-linked-1', displayName: 'GetId Linked' },
-        select: { id: true, memberNo: true, displayName: true },
+        data: { memberNo: 'getid-linked-1', ...memberIdentityData('GetId Linked') },
+        select: { id: true, memberNo: true, realName: true, nickname: true },
       });
       const target = await createTestUser(app, { username: 'getidlinked1' });
       await prisma.user.update({ where: { id: target.id }, data: { memberId: member.id } });
@@ -343,7 +344,9 @@ describe('users 管理接口 CRUD 基础路径', () => {
       expect(res.body.data.memberId).toBe(member.id);
       expect(res.body.data.member).toEqual({
         memberNo: member.memberNo,
-        displayName: member.displayName,
+        realName: member.realName,
+        nickname: member.nickname,
+        label: `${member.memberNo} · ${member.realName}`,
       });
     });
 

@@ -14,6 +14,7 @@ import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 企业微信接入 T4 e2e 组 D:生命周期撤销 × 身份链路真并发(冻结稿 D-WC-10 + §9.1 / §9.4)
 //
@@ -162,7 +163,11 @@ describe('企业微信 User 生命周期撤销真并发(T4 e2e 组 D)', () => {
     n: number,
   ): Promise<{ memberId: string; userId: string; phone: string }> {
     const member = await prismaA.member.create({
-      data: { memberNo: `t4d-m-${n}`, displayName: `T4D-${n}`, status: MemberStatus.ACTIVE },
+      data: {
+        memberNo: `t4d-m-${n}`,
+        ...memberIdentityData(`T4D-${n}`),
+        status: MemberStatus.ACTIVE,
+      },
       select: { id: true },
     });
     const granted = await request(httpServer(appA))

@@ -29,6 +29,7 @@ const relativeIso = (yearOffset: number, suffix: string): string =>
 const pastIso = (suffix: string): string => relativeIso(-1, suffix);
 const futureIso = (suffix: string): string => relativeIso(2, suffix);
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR12(2026-07-02;冻结稿 §11 PR12+ 逐面迁移第一批;goal「PR12 —
 // 逐面迁移第一批(participation)」):activities / activity-registrations / attendances
@@ -147,7 +148,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       role: Role.USER,
     });
     const teamLeaderMember = await prisma.member.create({
-      data: { memberNo: 'psa-m-tl', displayName: 'PSA 队长' },
+      data: { memberNo: 'psa-m-tl', ...memberIdentityData('PSA 队长') },
       select: { id: true },
     });
     await prisma.user.update({
@@ -161,7 +162,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       role: Role.USER,
     });
     const groupLeaderMember = await prisma.member.create({
-      data: { memberNo: 'psa-m-gl', displayName: 'PSA 组长' },
+      data: { memberNo: 'psa-m-gl', ...memberIdentityData('PSA 组长') },
       select: { id: true },
     });
     await prisma.user.update({
@@ -175,7 +176,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
       role: Role.USER,
     });
     const supervisorMember = await prisma.member.create({
-      data: { memberNo: 'psa-m-sup', displayName: 'PSA 分管副队长' },
+      data: { memberNo: 'psa-m-sup', ...memberIdentityData('PSA 分管副队长') },
       select: { id: true },
     });
     await prisma.user.update({
@@ -299,7 +300,7 @@ describe('participation 三模块 scoped-authz HTTP 面(PR12:逐面迁移第一�
     const mkTargetMember = async (tag: string): Promise<string> =>
       (
         await prisma.member.create({
-          data: { memberNo: `psa-t-${tag}`, displayName: `PSA 目标 ${tag}` },
+          data: { memberNo: `psa-t-${tag}`, ...memberIdentityData(`PSA 目标 ${tag}`) },
           select: { id: true },
         })
       ).id;

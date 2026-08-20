@@ -5,6 +5,7 @@ import type { PrismaService } from '../../database/prisma.service';
 import type { AuthzService } from '../authz/authz.service';
 import type { RbacService } from '../permissions/rbac.service';
 import { ActivityFeedbacksQueryService } from './activity-feedbacks-query.service';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 const CURRENT_USER: CurrentUserPayload = {
   id: 'admin-1',
@@ -19,7 +20,7 @@ const ROW = {
   comment: '很好',
   createdAt: new Date('2026-02-01T00:00:00.000Z'),
   updatedAt: new Date('2026-02-02T00:00:00.000Z'),
-  member: { memberNo: 'V001', displayName: '队员甲' },
+  member: { memberNo: 'V001', ...memberIdentityData('队员甲') },
 };
 
 function makeService() {
@@ -73,7 +74,9 @@ describe('ActivityFeedbacksQueryService Admin read model', () => {
       items: [
         {
           memberNo: 'V001',
-          displayName: '队员甲',
+          realName: '队员甲',
+          nickname: null,
+          label: 'V001 · 队员甲',
           rating: 4,
           comment: '很好',
           createdAt: ROW.createdAt,
@@ -98,7 +101,7 @@ describe('ActivityFeedbacksQueryService Admin read model', () => {
         comment: true,
         createdAt: true,
         updatedAt: true,
-        member: { select: { memberNo: true, displayName: true } },
+        member: { select: { memberNo: true, realName: true, nickname: true } },
       },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       skip: 10,

@@ -305,10 +305,10 @@ function createFixture(databaseName: string, suffix: string): Fixture {
        (${sqlValue(fixture.otherActivityId)},${sqlValue(`Allocation D87 other ${suffix}`)},'allocation-d87',
         ${sqlValue(organizationId)},TIMESTAMP '2099-08-14 08:00:00',
         TIMESTAMP '2099-08-14 18:00:00','test','draft',CURRENT_TIMESTAMP);
-     INSERT INTO "Member" ("id","memberNo","displayName","updatedAt") VALUES
-       (${sqlValue(fixture.memberIds[0])},${sqlValue(`D87-${suffix}-0`)},'D87 Member 0',CURRENT_TIMESTAMP),
-       (${sqlValue(fixture.memberIds[1])},${sqlValue(`D87-${suffix}-1`)},'D87 Member 1',CURRENT_TIMESTAMP),
-       (${sqlValue(fixture.memberIds[2])},${sqlValue(`D87-${suffix}-2`)},'D87 Member 2',CURRENT_TIMESTAMP);
+     INSERT INTO "Member" ("id","memberNo","realName","memberSinceDate","memberOriginCode","updatedAt") VALUES
+       (${sqlValue(fixture.memberIds[0])},${sqlValue(`D87-${suffix}-0`)},'D87 Member 0','2020-01-01','manual',CURRENT_TIMESTAMP),
+       (${sqlValue(fixture.memberIds[1])},${sqlValue(`D87-${suffix}-1`)},'D87 Member 1','2020-01-01','manual',CURRENT_TIMESTAMP),
+       (${sqlValue(fixture.memberIds[2])},${sqlValue(`D87-${suffix}-2`)},'D87 Member 2','2020-01-01','manual',CURRENT_TIMESTAMP);
      INSERT INTO "ActivitySession"
        ("id","updatedAt","activityId","code","name","startAt","endAt","locationText",
         "checkInOpenAt","checkInCloseAt","checkOutOpenAt","checkOutCloseAt",

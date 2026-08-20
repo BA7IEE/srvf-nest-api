@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const relativeIso = (yearOffset: number, suffix: string): string =>
   `${new Date().getUTCFullYear() + yearOffset}-${suffix}`;
@@ -162,19 +163,19 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
 
     // ============ Members ============
     const ma = await prisma.member.create({
-      data: { memberNo: 'p26-m-a', displayName: 'Member A', status: MemberStatus.ACTIVE },
+      data: { memberNo: 'p26-m-a', ...memberIdentityData('Member A'), status: MemberStatus.ACTIVE },
       select: { id: true },
     });
     memberAId = ma.id;
     const mb = await prisma.member.create({
-      data: { memberNo: 'p26-m-b', displayName: 'Member B', status: MemberStatus.ACTIVE },
+      data: { memberNo: 'p26-m-b', ...memberIdentityData('Member B'), status: MemberStatus.ACTIVE },
       select: { id: true },
     });
     memberBId = mb.id;
     const minactive = await prisma.member.create({
       data: {
         memberNo: 'p26-m-inactive',
-        displayName: 'Inactive Member',
+        ...memberIdentityData('Inactive Member'),
         status: MemberStatus.INACTIVE,
       },
       select: { id: true },
@@ -183,7 +184,7 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     const mdeleted = await prisma.member.create({
       data: {
         memberNo: 'p26-m-deleted',
-        displayName: 'Deleted Member',
+        ...memberIdentityData('Deleted Member'),
         status: MemberStatus.ACTIVE,
         deletedAt: new Date(),
       },
@@ -191,7 +192,11 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
     });
     memberDeletedId = mdeleted.id;
     const madmin = await prisma.member.create({
-      data: { memberNo: 'p26-m-admin', displayName: 'Admin Member', status: MemberStatus.ACTIVE },
+      data: {
+        memberNo: 'p26-m-admin',
+        ...memberIdentityData('Admin Member'),
+        status: MemberStatus.ACTIVE,
+      },
       select: { id: true },
     });
     memberAdminId = madmin.id;

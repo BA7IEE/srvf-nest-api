@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/database/prisma.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 interface RawDbError {
   sqlState: string;
@@ -144,7 +145,7 @@ describe('activity B7 member audience-tag assignment schema', () => {
       select: { id: true },
     });
     const member = await prisma.member.create({
-      data: { memberNo: unique('member'), displayName: 'B7 schema member' },
+      data: { memberNo: unique('member'), ...memberIdentityData('B7 schema member') },
       select: { id: true },
     });
     const firstId = unique('assignment-first');

@@ -12,6 +12,7 @@ import { computeContribution } from '../../src/modules/team-join/team-join-progr
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // M1(并发复审 P1):markGate / evaluate 此前**完全不取 member 线性化键**,
 // 而两者的状态迁移都建立在 `computeContribution` 的读数上 —— 那是跨 Sheet 的 member 聚合,
@@ -200,7 +201,7 @@ describe('markGate / evaluate × 贡献值写方并发(M1 · member-first 锁序
     const member = await prismaA.member.create({
       data: {
         memberNo: `M1L${String(seq).padStart(3, '0')}`,
-        displayName: `锁序${seq}`,
+        ...memberIdentityData(`锁序${seq}`),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },

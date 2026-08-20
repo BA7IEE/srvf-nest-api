@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import { Role, type Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto } from '../../common/dto/pagination.dto';
@@ -41,7 +42,7 @@ export const managedActivitySelect = {
   createdAt: true,
   updatedAt: true,
   initiator: {
-    select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+    select: { id: true, memberNo: true, realName: true, nickname: true, gradeCode: true },
   },
   responsibilityAssignments: {
     where: { status: 'active' },
@@ -51,7 +52,7 @@ export const managedActivitySelect = {
       canManageRegistrations: true,
       canManageAttendance: true,
       member: {
-        select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+        select: { id: true, memberNo: true, realName: true, nickname: true, gradeCode: true },
       },
     },
   },
@@ -216,8 +217,23 @@ export class ActivityWorkflowQueryService {
 
     return {
       activity: this.toProjection(row),
-      initiator: row.initiator,
-      owner: owner?.member ?? null,
+      // issue #1048 T1:`label` 由后端拼装,Prisma 行里没有。
+      initiator:
+        row.initiator === null
+          ? null
+          : {
+              id: row.initiator.id,
+              gradeCode: row.initiator.gradeCode,
+              ...toMemberLabelFields(row.initiator),
+            },
+      owner:
+        owner?.member == null
+          ? null
+          : {
+              id: owner.member.id,
+              gradeCode: owner.member.gradeCode,
+              ...toMemberLabelFields(owner.member),
+            },
       myResponsibility: mine
         ? {
             responsibilityType: mine.responsibilityType === 'owner' ? 'owner' : 'collaborator',

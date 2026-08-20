@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('attendance return and resubmit workflow', () => {
   let app: INestApplication;
@@ -101,7 +102,7 @@ describe('attendance return and resubmit workflow', () => {
     ).id;
     memberId = (
       await prisma.member.create({
-        data: { memberNo: 'return-member', displayName: 'Return member' },
+        data: { memberNo: 'return-member', ...memberIdentityData('Return member') },
         select: { id: true },
       })
     ).id;

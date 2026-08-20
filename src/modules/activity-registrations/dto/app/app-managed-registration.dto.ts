@@ -49,8 +49,18 @@ export class AppManagedRegistrationMemberDto {
   @ApiProperty({ description: '队员编号', nullable: true, type: String })
   memberNo!: string | null;
 
-  @ApiProperty({ description: '队员显示名', nullable: true, type: String })
-  displayName!: string | null;
+  @ApiProperty({ description: '队员真实姓名', nullable: true, type: String })
+  realName!: string | null;
+
+  @ApiProperty({ description: '队员外号(队内称呼)', nullable: true, type: String })
+  nickname!: string | null;
+
+  @ApiProperty({
+    description: '统一展示标签 `编号 · 姓名(外号)`;外号为空时不带括号',
+    nullable: true,
+    type: String,
+  })
+  label!: string | null;
 }
 
 export class AppManagedRegistrationListItemDto {

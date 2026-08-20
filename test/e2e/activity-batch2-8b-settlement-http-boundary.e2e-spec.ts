@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 第 2 批第 ⑧b 刀:HTTP 判权与三方隔离 =====
 //
@@ -77,7 +78,7 @@ describe('第 2 批第 ⑧b 刀 —— 结算 HTTP 判权与人员隔离', () =>
       const member = await prisma.member.create({
         data: {
           memberNo: `${username}-member`,
-          displayName: `${username} 队员`,
+          ...memberIdentityData(`${username} 队员`),
           gradeCode: 'level-2',
           status: MemberStatus.ACTIVE,
         },

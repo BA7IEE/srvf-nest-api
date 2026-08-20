@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Member } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { formatMemberLabel } from '../../common/identity/member-label.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
@@ -106,7 +107,8 @@ export class AppProfileService {
       nickname: user.nickname,
       avatarKey: user.avatarKey,
       memberNo: member.memberNo,
-      displayName: member.displayName,
+      realName: member.realName,
+      memberLabel: formatMemberLabel(member),
       memberStatus: member.status,
       hasMemberProfile,
     };

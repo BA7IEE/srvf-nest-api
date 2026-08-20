@@ -15,6 +15,7 @@ import { LedgerPreparationService } from '../../src/modules/activities/ledger-pr
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:「万人统一生效恒串行」的运行期判据 =====
 //
@@ -141,7 +142,7 @@ describe('ledger posting concurrency —— 恒串行闸 + 双实例并发生效
       data: memberIds.map((id, index) => ({
         id,
         memberNo: `${tag}-m${index}`,
-        displayName: `${tag} 队员 ${index}`,
+        ...memberIdentityData(`${tag} 队员 ${index}`),
         gradeCode: 'level-2',
       })),
     });
@@ -158,7 +159,11 @@ describe('ledger posting concurrency —— 恒串行闸 + 双实例并发生效
     // 当前 active owner:通知 intent 的收件人。没有他 `enqueuePosted` 会静默跳过,
     // ④ 的「intent 只有一条」就会变成一条**空绿**判据。
     const ownerMember = await prismaA.member.create({
-      data: { memberNo: `${tag}-owner`, displayName: `${tag} 负责人`, gradeCode: 'level-2' },
+      data: {
+        memberNo: `${tag}-owner`,
+        ...memberIdentityData(`${tag} 负责人`),
+        gradeCode: 'level-2',
+      },
       select: { id: true },
     });
     await prismaA.activityResponsibilityAssignment.create({

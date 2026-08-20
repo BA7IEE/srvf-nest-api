@@ -32,6 +32,7 @@ import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-resp
 import { TEST_PASSWORD } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const REVIEWER_ROLE_PERMISSIONS = {
   'activity-publish-reviewer': [
@@ -129,7 +130,7 @@ describe('local activity frontend fixture engine', () => {
     const collision = await prisma.member.create({
       data: {
         memberNo: 'LOCAL-FE-PUBLISH-REVIEWER',
-        displayName: 'not the fixture placeholder',
+        ...memberIdentityData('not the fixture placeholder'),
         gradeCode: 'level-3',
         status: MemberStatus.ACTIVE,
       },
@@ -563,7 +564,7 @@ describe('local activity frontend fixture engine', () => {
             tx.member.create({
               data: {
                 memberNo: `LOCAL-FE-DRIFT-${memberNoSuffix}`,
-                displayName: `LOCAL-FE drift ${roleCode}`,
+                ...memberIdentityData(`LOCAL-FE drift ${roleCode}`),
                 gradeCode: 'level-3',
                 status: MemberStatus.ACTIVE,
               },

@@ -22,6 +22,7 @@ import { httpServer } from '../helpers/http-server';
 import { extractMethodSource } from '../helpers/source-span';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 /**
  * 两条规模可用性缺口 —— #1089 逐条判定时被推翻的两条**真能力缺口**。
@@ -68,7 +69,7 @@ describe('activity scale usability: selector reachability and batch split', () =
     const ownerMember = await prisma.member.create({
       data: {
         memberNo: 'SCALE-OWNER',
-        displayName: 'Scale Usability Owner',
+        ...memberIdentityData('Scale Usability Owner'),
         gradeCode: 'L1',
         status: MemberStatus.ACTIVE,
       },
@@ -168,7 +169,7 @@ describe('activity scale usability: selector reachability and batch split', () =
     const tag = `${prefix}-${++sequence}`;
     const members = Array.from({ length: count }, (_, i) => ({
       memberNo: `${tag}-${String(i).padStart(5, '0')}`,
-      displayName: `候选人 ${tag} ${String(i).padStart(5, '0')}`,
+      ...memberIdentityData(`候选人 ${tag} ${String(i).padStart(5, '0')}`),
       gradeCode: 'L1',
       status: MemberStatus.ACTIVE,
     }));
@@ -309,7 +310,7 @@ describe('activity scale usability: selector reachability and batch split', () =
           },
         ],
       },
-      select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+      select: { id: true, memberNo: true, realName: true, nickname: true, gradeCode: true },
       orderBy: [{ memberNo: 'asc' }, { id: 'asc' }],
       take: LEGACY_HARD_CUT,
     });
@@ -339,7 +340,7 @@ describe('activity scale usability: selector reachability and batch split', () =
     const inactiveMember = await prisma.member.create({
       data: {
         memberNo: `SCALE-INACTIVE-${++sequence}`,
-        displayName: '已停用队员',
+        ...memberIdentityData('已停用队员'),
         status: MemberStatus.INACTIVE,
       },
       select: { id: true },
@@ -358,7 +359,7 @@ describe('activity scale usability: selector reachability and batch split', () =
     const noAccountMember = await prisma.member.create({
       data: {
         memberNo: `SCALE-NOACCOUNT-${++sequence}`,
-        displayName: '无账号队员',
+        ...memberIdentityData('无账号队员'),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },
@@ -374,7 +375,7 @@ describe('activity scale usability: selector reachability and batch split', () =
     const outsiderMember = await prisma.member.create({
       data: {
         memberNo: `SCALE-OUTSIDER-${sequence}`,
-        displayName: '外组织队员',
+        ...memberIdentityData('外组织队员'),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },
@@ -523,7 +524,7 @@ describe('activity scale usability: selector reachability and batch split', () =
     // ---- 自证 ②:探测器对「内存过滤」的样本必须报阳,否则下面的阴性读数没有意义 ----
     const positiveControl = `
       const all = await this.prisma.member.findMany({ where });
-      const hit = all.filter((m) => m.displayName.includes(keyword)).sort((a, b) => 0);
+      const hit = all.filter((m) => m.realName.includes(keyword)).sort((a, b) => 0);
       return { items: hit };
     `;
     expect(hasInMemoryFilterOrSort(positiveControl)).toBe(true);

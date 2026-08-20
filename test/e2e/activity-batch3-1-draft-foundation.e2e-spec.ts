@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 /**
  * 第 3 批第一刀的独立红测入口。它不复用旧 ActivityPosition 面，所有岗位都必须
@@ -93,7 +94,7 @@ describe('Activity batch3 slice1 draft foundation', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `b3-draft-${label}-${sequence}`,
-        displayName: `B3 Draft ${label} ${sequence}`,
+        ...memberIdentityData(`B3 Draft ${label} ${sequence}`),
         gradeCode: 'level-3',
         status: MemberStatus.ACTIVE,
       },

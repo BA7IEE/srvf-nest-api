@@ -10,6 +10,7 @@ import { LedgerPreparationService } from '../../src/modules/activities/ledger-pr
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:bind 参数上限的规模判据(goal DoD 13)=====
 //
@@ -211,7 +212,7 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
       memberIds.map((id, index) => ({
         id,
         memberNo: `scale-m${index}`,
-        displayName: `规模队员 ${index}`,
+        ...memberIdentityData(`规模队员 ${index}`),
         gradeCode: 'level-2',
       })),
       (chunk) => prisma.member.createMany({ data: chunk }),

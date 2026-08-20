@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 统一通知 S3:定向派发器(NotificationDispatcher Effect)+ feed 可见性 e2e
 // (评审稿 unified-notification-dispatcher-review.md §2.1/§2.2/§3.6 + goal DoD #2/#3)。
@@ -41,7 +42,7 @@ describe('统一通知 S3 定向派发 + feed 可见性 e2e', () => {
   async function makeMember(username: string, openid: string | null): Promise<Caller> {
     const user = await createTestUser(app, { username, role: Role.USER });
     const member = await prisma.member.create({
-      data: { memberNo: `S3-${username}`, displayName: username, status: 'ACTIVE' },
+      data: { memberNo: `S3-${username}`, ...memberIdentityData(username), status: 'ACTIVE' },
       select: { id: true },
     });
     await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id, openid } });

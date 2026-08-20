@@ -13,6 +13,7 @@ import {
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第四刀:审核并发(goal DoD 3 / DoD 4)=====
 //
@@ -166,7 +167,7 @@ describe('settlement review multi-instance concurrency', () => {
       select: { id: true },
     });
     const member = await prismaA.member.create({
-      data: { memberNo: `${tag}-m`, displayName: `${tag} 队员`, gradeCode: 'level-2' },
+      data: { memberNo: `${tag}-m`, ...memberIdentityData(`${tag} 队员`), gradeCode: 'level-2' },
       select: { id: true },
     });
     const registration = await prismaA.activityRegistration.create({

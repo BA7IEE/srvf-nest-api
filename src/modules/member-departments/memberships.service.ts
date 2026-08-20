@@ -6,6 +6,7 @@ import {
   OrganizationStatus,
   Prisma,
 } from '@prisma/client';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PageResultDto } from '../../common/dto/pagination.dto';
 import { parseExpandQuery } from '../../common/dto/expand-query.util';
@@ -356,7 +357,7 @@ export class MembershipsService {
       const contains = { contains: params.q, mode: 'insensitive' as const };
       where.OR = [
         { member: { memberNo: contains } },
-        { member: { displayName: contains } },
+        { member: { realName: contains } },
         { organization: { name: contains } },
         { organization: { code: contains } },
       ];
@@ -367,7 +368,7 @@ export class MembershipsService {
   // ============ F4:GET /api/admin/v1/memberships(分页总表) ============
 
   // 全库归属分页(缺省含 ENDED/SUSPENDED 历史,不含软删行;status 显式过滤可收窄)。
-  // q 命中队员 memberNo+displayName + 组织 name+code(relation 过滤,单查询);
+  // q 命中队员 memberNo+realName + 组织 name+code(relation 过滤,单查询);
   // expand=member,organization(D6 约定:缺省不展开,响应形状与队员轴端点一致)。仅展示,不判权。
   async page(
     user: CurrentUserPayload,
@@ -416,9 +417,11 @@ export class MembershipsService {
     if (want.member && items.length > 0) {
       const rows = await this.prisma.member.findMany({
         where: { id: { in: [...new Set(items.map((i) => i.memberId))] } },
-        select: { id: true, memberNo: true, displayName: true, gradeCode: true },
+        select: { id: true, memberNo: true, realName: true, nickname: true, gradeCode: true },
       });
-      for (const r of rows) memberMap.set(r.id, r);
+      // issue #1048 T1:`label` 由后端拼装,Prisma 行里没有。
+      for (const r of rows)
+        memberMap.set(r.id, { id: r.id, gradeCode: r.gradeCode, ...toMemberLabelFields(r) });
     }
     if (want.organization && items.length > 0) {
       const rows = await this.prisma.organization.findMany({

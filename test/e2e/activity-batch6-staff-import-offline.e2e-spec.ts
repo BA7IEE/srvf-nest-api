@@ -14,6 +14,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 type Scenario = { activityId: string; sessionId: string; positionId: string };
 
@@ -64,7 +65,7 @@ describe('activity batch6 staff/import/offline runtime', () => {
         prisma.member.create({
           data: {
             memberNo: 'B6-ONSITE-MANAGER',
-            displayName: 'Batch6 Onsite Manager',
+            ...memberIdentityData('Batch6 Onsite Manager'),
             gradeCode: 'L1',
             status: MemberStatus.ACTIVE,
           },
@@ -73,7 +74,7 @@ describe('activity batch6 staff/import/offline runtime', () => {
         prisma.member.create({
           data: {
             memberNo: 'B6-ONSITE-APPLICANT',
-            displayName: 'Batch6 Onsite Applicant',
+            ...memberIdentityData('Batch6 Onsite Applicant'),
             gradeCode: 'L1',
             status: MemberStatus.ACTIVE,
           },
@@ -82,7 +83,7 @@ describe('activity batch6 staff/import/offline runtime', () => {
         prisma.member.create({
           data: {
             memberNo: 'B6-ONSITE-OTHER-APPLICANT',
-            displayName: 'Batch6 Onsite Other Applicant',
+            ...memberIdentityData('Batch6 Onsite Other Applicant'),
             gradeCode: 'L1',
             status: MemberStatus.ACTIVE,
           },
@@ -91,7 +92,7 @@ describe('activity batch6 staff/import/offline runtime', () => {
         prisma.member.create({
           data: {
             memberNo: 'B6-ONSITE-OPERATOR',
-            displayName: 'Batch6 Onsite Operator',
+            ...memberIdentityData('Batch6 Onsite Operator'),
             gradeCode: 'L1',
             status: MemberStatus.ACTIVE,
           },
@@ -100,7 +101,7 @@ describe('activity batch6 staff/import/offline runtime', () => {
         prisma.member.create({
           data: {
             memberNo: 'B6-ONSITE-ADMIN',
-            displayName: 'Batch6 Onsite Admin',
+            ...memberIdentityData('Batch6 Onsite Admin'),
             gradeCode: 'L1',
             status: MemberStatus.ACTIVE,
           },

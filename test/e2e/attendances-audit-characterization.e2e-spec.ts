@@ -13,6 +13,7 @@ import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // attendances audit characterization tests(AuditRecorder 抽离前置)。
 //
@@ -116,7 +117,7 @@ describe('AttendancesService audit characterization', () => {
     await grantBizAdminToUser(app, submitter.id, bizSeed.bizAdminRoleId);
 
     const member = await prisma.member.create({
-      data: { memberNo: 'att-aud-m-001', displayName: 'Aud Member' },
+      data: { memberNo: 'att-aud-m-001', ...memberIdentityData('Aud Member') },
       select: { id: true },
     });
 

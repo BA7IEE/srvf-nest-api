@@ -14,6 +14,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const FUTURE_START = new Date('2099-12-15T08:00:00.000Z');
 const FUTURE_END = new Date('2099-12-15T12:00:00.000Z');
@@ -51,7 +52,7 @@ describe('activity batch5 punch runtime', () => {
       prisma.member.create({
         data: {
           memberNo: 'B5-PUNCH-MANAGER',
-          displayName: 'Batch5 Punch Manager',
+          ...memberIdentityData('Batch5 Punch Manager'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -60,7 +61,7 @@ describe('activity batch5 punch runtime', () => {
       prisma.member.create({
         data: {
           memberNo: 'B5-PUNCH-APPLICANT',
-          displayName: 'Batch5 Punch Applicant',
+          ...memberIdentityData('Batch5 Punch Applicant'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },

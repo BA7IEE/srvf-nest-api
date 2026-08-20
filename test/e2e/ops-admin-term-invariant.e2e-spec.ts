@@ -18,6 +18,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('PR-C ops-admin 任期真值与常驻兜底不变量', () => {
   type DelegationEntryPermissionCode =
@@ -824,7 +825,7 @@ describe('PR-C ops-admin 任期真值与常驻兜底不变量', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: `OPS-TERM-${operation}-${sequence}`,
-          displayName: `Ops term ${operation}`,
+          ...memberIdentityData(`Ops term ${operation}`),
           status: MemberStatus.ACTIVE,
         },
         select: { id: true },
@@ -1050,7 +1051,7 @@ describe('PR-C ops-admin 任期真值与常驻兜底不变量', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `OPS-CONCURRENT-${sequence}`,
-        displayName: 'Ops concurrent member',
+        ...memberIdentityData('Ops concurrent member'),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true },

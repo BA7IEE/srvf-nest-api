@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2.x Slow-6 跨表引用约束 e2e(2026-05-16):配置三表 softDelete / updateStatus → INACTIVE
 // 时若仍被 attachment 引用,统一拒绝并返对应 13030 / 13031 / 13032。
@@ -49,7 +50,7 @@ describe('attachment-configs 跨表引用约束(V2.x Slow-6)', () => {
 
     // 创建一个 member 作为 attachment.ownerId 引用目标
     const member = await prisma.member.create({
-      data: { memberNo: 'M-INUSE-001', displayName: 'InUseMember' },
+      data: { memberNo: 'M-INUSE-001', ...memberIdentityData('InUseMember') },
       select: { id: true },
     });
     memberId = member.id;

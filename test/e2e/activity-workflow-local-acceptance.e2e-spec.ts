@@ -11,6 +11,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 type LocalActor = {
   memberId: string;
@@ -218,7 +219,7 @@ describe('activity responsibility workflow local acceptance', () => {
   }
 
   async function createActor(
-    displayName: string,
+    realName: string,
     organizationId = organizationAId,
     role: Role = Role.USER,
   ): Promise<LocalActor> {
@@ -226,7 +227,7 @@ describe('activity responsibility workflow local acceptance', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `LOCAL-ACTIVITY-${sequence}`,
-        displayName,
+        ...memberIdentityData(realName),
         gradeCode: 'level-3',
         status: MemberStatus.ACTIVE,
       },

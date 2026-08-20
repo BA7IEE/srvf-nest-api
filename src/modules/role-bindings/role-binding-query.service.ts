@@ -7,6 +7,7 @@ import { parseExpandQuery } from '../../common/dto/expand-query.util';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
+import { formatMemberLabel } from '../../common/identity/member-label.util';
 import { PrismaService } from '../../database/prisma.service';
 import { effectiveRoleBindingWhere } from '../permissions/role-binding-validity';
 import {} from '../permissions/role-delegation.policy';
@@ -130,7 +131,7 @@ export class RoleBindingQueryService {
         select: { id: true },
       }),
       this.prisma.member.findMany({
-        where: notDeletedWhere({ OR: [{ displayName: contains }, { memberNo: contains }] }),
+        where: notDeletedWhere({ OR: [{ realName: contains }, { memberNo: contains }] }),
         select: { id: true },
       }),
     ]);
@@ -168,7 +169,10 @@ export class RoleBindingQueryService {
     }
 
     const userMap = new Map<string, { id: string; username: string; nickname: string | null }>();
-    const memberMap = new Map<string, { id: string; memberNo: string; displayName: string }>();
+    const memberMap = new Map<
+      string,
+      { id: string; memberNo: string; realName: string; nickname: string | null }
+    >();
     const assignmentMap = new Map<
       string,
       {
@@ -176,7 +180,7 @@ export class RoleBindingQueryService {
         organizationId: string;
         positionId: string;
         memberId: string;
-        member: { displayName: string };
+        member: { memberNo: string; realName: string; nickname: string | null };
       }
     >();
     if (want.principal && items.length > 0) {
@@ -200,7 +204,7 @@ export class RoleBindingQueryService {
         memberIds.length > 0
           ? this.prisma.member.findMany({
               where: { id: { in: memberIds } },
-              select: { id: true, memberNo: true, displayName: true },
+              select: { id: true, memberNo: true, realName: true, nickname: true },
             })
           : Promise.resolve([]),
         assignmentIds.length > 0
@@ -211,7 +215,8 @@ export class RoleBindingQueryService {
                 organizationId: true,
                 positionId: true,
                 memberId: true,
-                member: { select: { displayName: true } },
+                // issue #1048 T1:拼 `编号 · 姓名(外号)` 需要 memberNo,原先只取了姓名。
+                member: { select: { memberNo: true, realName: true, nickname: true } },
               },
             })
           : Promise.resolve([]),
@@ -243,7 +248,10 @@ export class RoleBindingQueryService {
     id: string,
     maps: {
       userMap: ReadonlyMap<string, { id: string; username: string; nickname: string | null }>;
-      memberMap: ReadonlyMap<string, { id: string; memberNo: string; displayName: string }>;
+      memberMap: ReadonlyMap<
+        string,
+        { id: string; memberNo: string; realName: string; nickname: string | null }
+      >;
       assignmentMap: ReadonlyMap<
         string,
         {
@@ -251,7 +259,7 @@ export class RoleBindingQueryService {
           organizationId: string;
           positionId: string;
           memberId: string;
-          member: { displayName: string };
+          member: { memberNo: string; realName: string; nickname: string | null };
         }
       >;
     },
@@ -262,7 +270,15 @@ export class RoleBindingQueryService {
     }
     if (type === PrincipalType.MEMBER) {
       const m = maps.memberMap.get(id);
-      return m ? { type, id, memberNo: m.memberNo, displayName: m.displayName } : undefined;
+      return m
+        ? {
+            type,
+            id,
+            memberNo: m.memberNo,
+            realName: m.realName,
+            memberLabel: formatMemberLabel(m),
+          }
+        : undefined;
     }
     if (type === PrincipalType.POSITION_ASSIGNMENT) {
       const a = maps.assignmentMap.get(id);
@@ -273,7 +289,8 @@ export class RoleBindingQueryService {
             organizationId: a.organizationId,
             positionId: a.positionId,
             memberId: a.memberId,
-            displayName: a.member.displayName,
+            realName: a.member.realName,
+            memberLabel: formatMemberLabel(a.member),
           }
         : undefined;
     }

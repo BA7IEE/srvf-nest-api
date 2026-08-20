@@ -11,6 +11,7 @@ import { SettlementSubmitService } from '../../src/modules/activities/settlement
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第三刀:提交不可变 SettlementVersion(合同 §5.10)=====
 //
@@ -181,7 +182,11 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
 
     // 通知收件人:活动当前 active owner。
     const ownerMember = await prisma.member.create({
-      data: { memberNo: `${tag}-owner`, displayName: `${tag} 负责人`, gradeCode: 'level-2' },
+      data: {
+        memberNo: `${tag}-owner`,
+        ...memberIdentityData(`${tag} 负责人`),
+        gradeCode: 'level-2',
+      },
       select: { id: true },
     });
     await prisma.activityResponsibilityAssignment.create({
@@ -304,7 +309,7 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
       memberIds.map((id, index) => ({
         id,
         memberNo: `${tag}-m${index}`,
-        displayName: `${tag} 队员 ${index}`,
+        ...memberIdentityData(`${tag} 队员 ${index}`),
         gradeCode: 'level-2',
       })),
       (data) => prisma.member.createMany({ data }),

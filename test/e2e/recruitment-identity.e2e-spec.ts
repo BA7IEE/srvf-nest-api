@@ -10,6 +10,7 @@ import { devStubOcrImage, VALID_PNG_IMAGE } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 招新四期 S4a(H5 + 手机身份链)e2e:发码 → 验码发 token → H5 报名提交 → 手机查询② → 自助换绑;
 // + token 一次性失效 + 小程序链短信验码收紧 + 容量/去重不被会话行影响(冻结评审稿
@@ -417,7 +418,12 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
   it('F4-c 发号后查询②(User.phone 锚,H5 手机通道)→ stage=volunteer 引导态;INACTIVE 队员 → 28002', async () => {
     const cycle = await openCycle(); // 开放轮供发码(闭轮下发号者 phone 已清,send-code 走泛化 = E-U-5 已知边界)
     const member = await prisma.member.create({
-      data: { memberNo: '26901', displayName: '辛八', status: 'ACTIVE', gradeCode: 'volunteer' },
+      data: {
+        memberNo: '26901',
+        ...memberIdentityData('辛八'),
+        status: 'ACTIVE',
+        gradeCode: 'volunteer',
+      },
     });
     await prisma.user.create({
       data: {
@@ -471,7 +477,12 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
   it('F4-d 发号后查询②(member_profiles.mobile 锚,微信通道发号 User 无 phone)→ 同引导态', async () => {
     const cycle = await openCycle();
     const member = await prisma.member.create({
-      data: { memberNo: '26902', displayName: '壬九', status: 'ACTIVE', gradeCode: 'volunteer' },
+      data: {
+        memberNo: '26902',
+        ...memberIdentityData('壬九'),
+        status: 'ACTIVE',
+        gradeCode: 'volunteer',
+      },
     });
     await prisma.user.create({
       data: {
@@ -485,14 +496,11 @@ describe('招新四期 S4a(H5 + 手机身份链)e2e', () => {
     await prisma.memberProfile.create({
       data: {
         memberId: member.id,
-        realName: '壬九',
         genderCode: 'male',
         birthDate: new Date('1990-01-01T00:00:00.000Z'),
         documentTypeCode: 'mainland_id',
         documentNumber: 'F4D0001',
         mobile: '13900000032', // 报名手机搬进档案
-        joinedDate: new Date('2026-07-01T00:00:00.000Z'),
-        joinSourceCode: 'recruitment',
         privacyConsentSigned: true,
       },
     });

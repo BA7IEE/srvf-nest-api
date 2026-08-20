@@ -19,6 +19,7 @@ import { AppMeTeamJoinService } from '../../src/modules/team-join/team-join-appl
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // M2(并发复审 P1):「未入队志愿者」是一条 live 入队申请**唯一**的走通前提 ——
 // final join 的步骤 6 拿 `isUnenrolledVolunteer` 把关。除 final join 之外的任何写方把它翻掉,
@@ -105,7 +106,7 @@ describe('入队身份不变量:唯一 transition(M2)', () => {
     const member = await prismaA.member.create({
       data: {
         memberNo: `M2I${String(seq).padStart(3, '0')}`,
-        displayName: `不变量${seq}`,
+        ...memberIdentityData(`不变量${seq}`),
         status: MemberStatus.ACTIVE,
         gradeCode: 'volunteer',
       },
@@ -495,7 +496,7 @@ describe('入队身份不变量:唯一 transition(M2)', () => {
       const enrolled = await prismaA.member.create({
         data: {
           memberNo: `M2E${String(seq).padStart(3, '0')}`,
-          displayName: `已入队${seq}`,
+          ...memberIdentityData(`已入队${seq}`),
           status: MemberStatus.ACTIVE,
           gradeCode: 'level-1',
         },

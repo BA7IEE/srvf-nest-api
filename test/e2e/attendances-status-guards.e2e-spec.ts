@@ -13,6 +13,7 @@ import type {
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // attendances status guards characterization tests(StateMachine 抽离前置之一)。
 //
@@ -107,7 +108,7 @@ describe('AttendancesService status guards (characterization)', () => {
     await grantBizAdminToUser(app, submitter.id, bizSeed.bizAdminRoleId);
 
     const member = await prisma.member.create({
-      data: { memberNo: 'att-sg-m-001', displayName: 'SG Member' },
+      data: { memberNo: 'att-sg-m-001', ...memberIdentityData('SG Member') },
       select: { id: true },
     });
 

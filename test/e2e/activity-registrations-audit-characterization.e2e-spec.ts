@@ -8,6 +8,7 @@ import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures
 import { resetDb } from '../setup/reset-db';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // activity-registrations audit characterization tests
 // (AuditRecorder 抽离前置;沿 attendances-audit-characterization spec 范式)。
@@ -91,11 +92,11 @@ describe('ActivityRegistrationsService audit characterization', () => {
     await grantBizAdminToUser(app, admin.id, bizSeed.bizAdminRoleId);
 
     const memberA = await prisma.member.create({
-      data: { memberNo: 'reg-audit-m-a', displayName: 'Audit Member A' },
+      data: { memberNo: 'reg-audit-m-a', ...memberIdentityData('Audit Member A') },
       select: { id: true },
     });
     const memberC = await prisma.member.create({
-      data: { memberNo: 'reg-audit-m-c', displayName: 'Audit Member C' },
+      data: { memberNo: 'reg-audit-m-c', ...memberIdentityData('Audit Member C') },
       select: { id: true },
     });
 

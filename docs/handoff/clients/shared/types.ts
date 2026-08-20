@@ -3,7 +3,7 @@
 // surface: shared —— 被两个及以上 surface 共用的类型(唯一定义处)
 // contractVersion: 0.66.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:12fc1b8c910f694ff94d5a56e414c42c391de31cc4a969460c41b220079d724a
+// inputDigest: sha256:e614c31870eb3692a12c75b35ee78664b24535e85b3cbee5b70679c9bbcfd002
 
 /** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */
 export interface ApiEnvelope<T> {
@@ -101,7 +101,9 @@ export interface PageResultDto {
 
 export interface UserLinkedMemberDto {
   "memberNo": string;
-  "displayName": string;
+  "realName": string;
+  "nickname"?: Record<string, unknown> | null;
+  "label": string;
 }
 
 export interface UserResponseDto {

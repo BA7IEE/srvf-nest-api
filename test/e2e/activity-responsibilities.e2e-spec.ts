@@ -15,6 +15,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('activity responsibilities and system RoleBinding projection', () => {
   let app: INestApplication;
@@ -84,7 +85,7 @@ describe('activity responsibilities and system RoleBinding projection', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `responsibility-${label}-${sequence}`,
-        displayName: `责任测试 ${label} ${sequence}`,
+        ...memberIdentityData(`责任测试 ${label} ${sequence}`),
         gradeCode: `level-${(sequence % 7) + 1}`,
         status: MemberStatus.ACTIVE,
       },

@@ -60,10 +60,19 @@ export class RoleBindingExpandedPrincipalDto {
   @ApiPropertyOptional({ description: 'type=MEMBER 时:队员业务编号' })
   memberNo?: string;
 
+  // ⚠️ issue #1048 T1:本 class 是**扁平多态**,上面的 `nickname` 已被 USER 主体的
+  // 登录昵称占用 ⇒ 队员外号(`Member.nickname`)不能同名平铺。故 MEMBER /
+  // POSITION_ASSIGNMENT 主体出 `realName` + 统一标签 `memberLabel`(标签内已含外号)。
   @ApiPropertyOptional({
-    description: 'type=MEMBER / POSITION_ASSIGNMENT 时:队员显示名(任职主体取其背后队员)',
+    description: 'type=MEMBER / POSITION_ASSIGNMENT 时:队员真实姓名(任职主体取其背后队员)',
   })
-  displayName?: string;
+  realName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'type=MEMBER / POSITION_ASSIGNMENT 时:统一展示标签 `编号 · 姓名(外号)`(任职主体取其背后队员)',
+  })
+  memberLabel?: string;
 
   @ApiPropertyOptional({ description: 'type=POSITION_ASSIGNMENT 时:任职组织 id' })
   organizationId?: string;
@@ -354,8 +363,8 @@ export class PageRoleBindingsQueryDto extends PaginationQueryDto {
 
   @ApiPropertyOptional({
     description:
-      '主体模糊搜索(USER 命中 username+nickname;MEMBER 命中 memberNo+displayName;' +
-      'POSITION_ASSIGNMENT 命中其背后队员的 memberNo+displayName;contains + insensitive)',
+      '主体模糊搜索(USER 命中 username+nickname;MEMBER 命中 memberNo+realName;' +
+      'POSITION_ASSIGNMENT 命中其背后队员的 memberNo+realName;contains + insensitive)',
     maxLength: 100,
   })
   @IsOptional()

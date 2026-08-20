@@ -19,6 +19,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const PERIOD = {
   startAt: new Date('2199-11-01T08:00:00.000Z'),
@@ -180,7 +181,7 @@ describe('activity batch4 qualification runtime', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `QUAL-${suffix}`,
-        displayName: `Qualification ${suffix}`,
+        ...memberIdentityData(`Qualification ${suffix}`),
         gradeCode,
         status: MemberStatus.ACTIVE,
       },
@@ -201,15 +202,12 @@ describe('activity batch4 qualification runtime', () => {
     await prisma.memberProfile.create({
       data: {
         memberId,
-        realName: '资格运行时队员',
         genderCode: 'female',
         // 活动北京时间 2199-11-01 当日恰满 18 周岁。
         birthDate: new Date('2181-11-01T00:00:00.000Z'),
         documentTypeCode: 'id_card',
         documentNumber: `qualification-doc-${next('profile')}`,
         mobile: `138${String(sequence).padStart(8, '0')}`,
-        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
-        joinSourceCode: 'qualification-runtime',
         privacyConsentSigned: true,
       },
     });
@@ -658,7 +656,7 @@ describe('activity batch4 qualification runtime', () => {
     const onsiteTarget = await prisma.member.create({
       data: {
         memberNo: next('qualification-onsite-target'),
-        displayName: 'Qualification Onsite Target',
+        ...memberIdentityData('Qualification Onsite Target'),
         gradeCode: 'level-1',
         status: MemberStatus.ACTIVE,
       },

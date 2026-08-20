@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 证书标准库 · 跨模型评审 findings F3:PATCH 三态语义 + 日期真实性 + verify 落点状态。
 //
@@ -105,7 +106,7 @@ describe('certificates PATCH 三态 + 日期真实性 + verify 落点(评审 fin
 
     memberId = (
       await prisma.member.create({
-        data: { memberNo: 'f3-m-1', displayName: 'F3 Member' },
+        data: { memberNo: 'f3-m-1', ...memberIdentityData('F3 Member') },
         select: { id: true },
       })
     ).id;

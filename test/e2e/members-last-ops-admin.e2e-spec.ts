@@ -16,6 +16,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // finding-4 同类残留:队员轴三条账号削权路径必须与 users / role-bindings / user-roles
 // 共用 LastAdminProtectionPolicy 与同一 advisory lock。所有数据均为合成测试值,不含真实 PII。
@@ -53,7 +54,7 @@ describe('队员轴最后 active ops-admin 保护', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `T-OPS-${label}-${sequence}`,
-        displayName: `Synthetic Member ${sequence}`,
+        ...memberIdentityData(`Synthetic Member ${sequence}`),
         status: MemberStatus.ACTIVE,
       },
       select: { id: true, status: true },

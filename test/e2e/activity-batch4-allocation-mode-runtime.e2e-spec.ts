@@ -10,6 +10,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const ALLOCATION_MODE_INCONSISTENT = 20152;
 const ALLOCATION_MODES = ['first_come', 'qualification_rank', 'lottery'] as const;
@@ -45,7 +46,7 @@ describe('batch4 allocation mode runtime', () => {
     const creatorMember = await prisma.member.create({
       data: {
         memberNo: 'batch4-allocation-creator-member',
-        displayName: '分配方式发起人',
+        ...memberIdentityData('分配方式发起人'),
         gradeCode: 'level-3',
       },
       select: { id: true },
@@ -53,7 +54,7 @@ describe('batch4 allocation mode runtime', () => {
     const reviewerMember = await prisma.member.create({
       data: {
         memberNo: 'batch4-allocation-reviewer-member',
-        displayName: '分配方式审核人',
+        ...memberIdentityData('分配方式审核人'),
         gradeCode: 'level-3',
       },
       select: { id: true },

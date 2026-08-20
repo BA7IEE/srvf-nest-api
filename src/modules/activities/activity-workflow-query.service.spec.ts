@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import type { AuthzService } from '../authz/authz.service';
 import { ActivityClosurePolicy } from './activity-closure-policy';
 import { ActivityWorkflowQueryService } from './activity-workflow-query.service';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 describe('ActivityWorkflowQueryService', () => {
   it('aggregates one page with two bulk groupBy queries instead of per-row reads', async () => {
@@ -33,7 +34,7 @@ describe('ActivityWorkflowQueryService', () => {
           member: {
             id: 'member-1',
             memberNo: 'M001',
-            displayName: 'Owner',
+            ...memberIdentityData('Owner'),
             gradeCode: 'level-3',
           },
         },

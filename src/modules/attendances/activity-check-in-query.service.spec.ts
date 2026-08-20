@@ -8,6 +8,7 @@ import {
   ATTENDANCE_SHEET_DRAFT_REGISTRATION_SELECT,
 } from './activity-check-in-field-policy';
 import { ActivityCheckInQueryService } from './activity-check-in-query.service';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 type PrismaMock = ReturnType<typeof makePrismaMock>;
 
@@ -68,7 +69,9 @@ function makePresenterMock() {
         registrationId: registration.id,
         memberId: member.id,
         memberNo: member.memberNo,
-        displayName: member.displayName,
+        realName: member.realName,
+        nickname: member.nickname ?? null,
+        label: `${String(member.memberNo)} · ${String(member.realName)}`,
       }),
     ),
     toAttendanceSheetDraftDto: jest.fn(
@@ -95,8 +98,8 @@ function makeService(prisma: PrismaMock, presenter = makePresenterMock()) {
 
 const ACTIVITY = { id: 'activity-1', endAt: new Date('2026-07-15T12:00:00.000Z') };
 const ACTIVITY_POSITION_END = new Date('2026-07-15T10:30:00.000Z');
-const MEMBER_A = { id: 'member-a', memberNo: 'M-A', displayName: 'Member A' };
-const MEMBER_B = { id: 'member-b', memberNo: 'M-B', displayName: 'Member B' };
+const MEMBER_A = { id: 'member-a', memberNo: 'M-A', ...memberIdentityData('Member A') };
+const MEMBER_B = { id: 'member-b', memberNo: 'M-B', ...memberIdentityData('Member B') };
 
 function checkInRow(id: string, memberId: string, registrationId: string, createdAt: Date) {
   return {

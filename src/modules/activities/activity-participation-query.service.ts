@@ -15,6 +15,7 @@ import {
   ActivityReconciliationDto,
 } from './activity-participation.dto';
 import { buildActivityParticipationMetrics } from './activity-participation-metrics';
+import { toMemberLabelFields } from '../../common/identity/member-label.util';
 
 const PARTICIPATION_READ_ACTIONS = [
   'attendance.read.sheet',
@@ -77,7 +78,7 @@ export class ActivityParticipationQueryService {
           id: true,
           memberId: true,
           statusCode: true,
-          member: { select: { memberNo: true, displayName: true } },
+          member: { select: { memberNo: true, realName: true, nickname: true } },
         },
         orderBy: [{ registeredAt: 'asc' }, { id: 'asc' }],
       }),
@@ -87,7 +88,7 @@ export class ActivityParticipationQueryService {
           memberId: true,
           serviceHours: true,
           sheet: { select: { statusCode: true } },
-          member: { select: { memberNo: true, displayName: true } },
+          member: { select: { memberNo: true, realName: true, nickname: true } },
         },
         orderBy: [{ memberId: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       }),
@@ -126,8 +127,7 @@ export class ActivityParticipationQueryService {
       return {
         registrationId: registration.id,
         memberId: registration.memberId,
-        memberNo: registration.member.memberNo,
-        displayName: registration.member.displayName,
+        ...toMemberLabelFields(registration.member),
         outcome: memberRecords.length > 0 ? ('attended' as const) : ('no-show' as const),
         ...summarizeRecords(memberRecords),
       };
@@ -137,8 +137,7 @@ export class ActivityParticipationQueryService {
       .filter(([memberId]) => !registeredMemberIds.has(memberId))
       .map(([memberId, memberRecords]) => ({
         memberId,
-        memberNo: memberRecords[0].member.memberNo,
-        displayName: memberRecords[0].member.displayName,
+        ...toMemberLabelFields(memberRecords[0].member),
         outcome: 'temporary' as const,
         ...summarizeRecords(memberRecords),
       }));

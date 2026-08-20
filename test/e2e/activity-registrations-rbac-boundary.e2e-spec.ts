@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Slow-4 T3(2026-06-11):activity-registrations 模块 RBAC 权限边界 spec。
 // 沿冻结评审稿 slow4-rbac-business-face-review.md §7 零行为漂移验收
@@ -32,7 +33,7 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
   const createPendingRegistration = async (): Promise<string> => {
     memberSeq += 1;
     const m = await prisma.member.create({
-      data: { memberNo: `rrb-m-${memberSeq}`, displayName: `M${memberSeq}` },
+      data: { memberNo: `rrb-m-${memberSeq}`, ...memberIdentityData(`M${memberSeq}`) },
       select: { id: true },
     });
     const r = await prisma.activityRegistration.create({
@@ -132,7 +133,7 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
   describe('POST 代报名(activity-registration.create.record)', () => {
     it('②③④ 30100(合法 body)/ ① 201', async () => {
       const mDeny = await prisma.member.create({
-        data: { memberNo: 'rrb-m-deny', displayName: 'Deny' },
+        data: { memberNo: 'rrb-m-deny', ...memberIdentityData('Deny') },
         select: { id: true },
       });
       expectBizError(
@@ -157,7 +158,7 @@ describe('activity-registrations RBAC 权限边界(Slow-4 T3)', () => {
         BizCode.RBAC_FORBIDDEN,
       );
       const mSa = await prisma.member.create({
-        data: { memberNo: 'rrb-m-sa', displayName: 'SA' },
+        data: { memberNo: 'rrb-m-sa', ...memberIdentityData('SA') },
         select: { id: true },
       });
       expect(

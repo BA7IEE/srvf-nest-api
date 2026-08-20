@@ -12,6 +12,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 describe('batch3 slice2 activity publish proposal workflow', () => {
   let app: INestApplication;
@@ -41,7 +42,7 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
     const creatorMember = await prisma.member.create({
       data: {
         memberNo: 'batch3-slice2-creator-member',
-        displayName: '发布提案发起人',
+        ...memberIdentityData('发布提案发起人'),
         gradeCode: 'level-3',
       },
       select: { id: true },
@@ -49,7 +50,7 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
     const reviewerMember = await prisma.member.create({
       data: {
         memberNo: 'batch3-slice2-reviewer-member',
-        displayName: '发布提案审核人',
+        ...memberIdentityData('发布提案审核人'),
         gradeCode: 'level-3',
       },
       select: { id: true },

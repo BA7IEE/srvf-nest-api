@@ -9,6 +9,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 type MemberUser = {
   memberId: string;
@@ -376,13 +377,17 @@ describe('activity feedbacks F2-F4', () => {
       expect.arrayContaining([
         expect.objectContaining({
           memberNo: 'feedback-approved-a',
-          displayName: '评价队员 A',
+          realName: '评价队员 A',
+          nickname: null,
+          label: 'feedback-approved-a · 评价队员 A',
           rating: 5,
           comment: '更新后评价',
         }),
         expect.objectContaining({
           memberNo: 'feedback-approved-b',
-          displayName: '评价队员 B',
+          realName: '评价队员 B',
+          nickname: null,
+          label: 'feedback-approved-b · 评价队员 B',
           rating: 3,
           comment: null,
         }),
@@ -390,7 +395,16 @@ describe('activity feedbacks F2-F4', () => {
     );
     for (const item of items) {
       expect(Object.keys(item).sort()).toEqual(
-        ['comment', 'createdAt', 'displayName', 'memberNo', 'rating', 'updatedAt'].sort(),
+        [
+          'comment',
+          'createdAt',
+          'realName',
+          'nickname',
+          'label',
+          'memberNo',
+          'rating',
+          'updatedAt',
+        ].sort(),
       );
     }
 
@@ -726,9 +740,9 @@ describe('activity feedbacks F2-F4', () => {
     };
   }
 
-  async function createMemberUser(username: string, displayName: string): Promise<MemberUser> {
+  async function createMemberUser(username: string, realName: string): Promise<MemberUser> {
     const member = await prisma.member.create({
-      data: { memberNo: username, displayName },
+      data: { memberNo: username, ...memberIdentityData(realName) },
       select: { id: true },
     });
     const user = await createTestUser(app, { username, role: Role.USER });

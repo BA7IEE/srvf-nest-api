@@ -14,6 +14,7 @@ import {
 } from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // Phase 2 P2-7 App /api/app/v1/my/certificates e2e。
 // 沿 docs/app-api-p2-7-my-certificates-review.md §10.2 15 类用例:
@@ -173,19 +174,19 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
 
     // ============ Members ============
     const ma = await prisma.member.create({
-      data: { memberNo: 'p27-m-a', displayName: 'Member A', status: MemberStatus.ACTIVE },
+      data: { memberNo: 'p27-m-a', ...memberIdentityData('Member A'), status: MemberStatus.ACTIVE },
       select: { id: true },
     });
     memberAId = ma.id;
     const mb = await prisma.member.create({
-      data: { memberNo: 'p27-m-b', displayName: 'Member B', status: MemberStatus.ACTIVE },
+      data: { memberNo: 'p27-m-b', ...memberIdentityData('Member B'), status: MemberStatus.ACTIVE },
       select: { id: true },
     });
     memberBId = mb.id;
     const minactive = await prisma.member.create({
       data: {
         memberNo: 'p27-m-inactive',
-        displayName: 'Inactive Member',
+        ...memberIdentityData('Inactive Member'),
         status: MemberStatus.INACTIVE,
       },
       select: { id: true },
@@ -194,7 +195,7 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     const mdeleted = await prisma.member.create({
       data: {
         memberNo: 'p27-m-deleted',
-        displayName: 'Deleted Member',
+        ...memberIdentityData('Deleted Member'),
         status: MemberStatus.ACTIVE,
         deletedAt: new Date(),
       },
@@ -202,7 +203,11 @@ describe('App /api/app/v1/my/certificates (P2-7)', () => {
     });
     memberDeletedId = mdeleted.id;
     const madmin = await prisma.member.create({
-      data: { memberNo: 'p27-m-admin', displayName: 'Admin Member', status: MemberStatus.ACTIVE },
+      data: {
+        memberNo: 'p27-m-admin',
+        ...memberIdentityData('Admin Member'),
+        status: MemberStatus.ACTIVE,
+      },
       select: { id: true },
     });
     memberAdminId = madmin.id;

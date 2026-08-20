@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const pastIso = (suffix: string): string => `${new Date().getUTCFullYear() - 1}-08-${suffix}`;
 
@@ -127,9 +128,9 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
         ['acf3-e', '取消报名证据'],
         ['acf3-f', '软删队员证据'],
         ['acf3-g', '范围外零打卡'],
-      ].map(([memberNo, displayName]) =>
+      ].map(([memberNo, realName]) =>
         prisma.member.create({
-          data: { memberNo, displayName },
+          data: { memberNo, ...memberIdentityData(realName) },
           select: { id: true },
         }),
       ),
@@ -381,9 +382,11 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
     for (const item of page.body.data.items as Array<Record<string, unknown>>) {
       expect(Object.keys(item).sort()).toEqual(expectedItemKeys);
       expect(Object.keys(item.member as Record<string, unknown>).sort()).toEqual([
-        'displayName',
         'id',
+        'label',
         'memberNo',
+        'nickname',
+        'realName',
       ]);
       expect(typeof item.checkInDistance).toBe('string');
     }
@@ -453,7 +456,9 @@ describe('Admin activity GPS check-in evidence and attendance draft (F3)', () =>
         registrationId: absentRegistrationId,
         memberId: expect.any(String),
         memberNo: 'acf3-d',
-        displayName: '零打卡',
+        realName: '零打卡',
+        nickname: null,
+        label: 'acf3-d · 零打卡',
       },
     ]);
 

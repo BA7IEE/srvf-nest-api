@@ -35,6 +35,7 @@ import type { CurrentUserPayload } from '../../src/common/decorators/current-use
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ============================================================================
 // T5B —— 企业微信应用消息渠道全链 e2e
@@ -123,7 +124,7 @@ describe('T5B —— 企业微信通知渠道(Outbox 全链)', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `T5B${String(seq).padStart(4, '0')}`,
-        displayName: key,
+        ...memberIdentityData(key),
         status: 'ACTIVE',
         gradeCode: 'level-3',
       },

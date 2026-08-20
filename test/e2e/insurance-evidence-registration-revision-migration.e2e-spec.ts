@@ -10,6 +10,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { assertDroppableTestDbName, dropWorkerDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 82;
@@ -200,7 +201,7 @@ async function createLegacyFixture(databaseName: string, suffix: string): Promis
     const member = await prisma.member.create({
       data: {
         memberNo: `migration82-member-${suffix}`,
-        displayName: `Migration 82 Member ${suffix}`,
+        ...memberIdentityData(`Migration 82 Member ${suffix}`),
       },
       select: { id: true },
     });

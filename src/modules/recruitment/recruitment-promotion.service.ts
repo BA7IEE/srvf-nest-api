@@ -10,6 +10,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 
 import { beijingDateOnly, normalizeDateOnly } from '../../common/datetime/date-only.util';
+import { MEMBER_ORIGIN_RECRUITMENT } from '../../common/identity/member-origin.constant';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -73,7 +74,6 @@ const BCRYPT_SALT_ROUNDS = 10; // 与 users.service / password-reset.service 同
 // 每人 ~7 次写)留充足余量取 60s,远超 Prisma 默认 5s,杜绝大批量发号被事务超时整批顶死回滚。
 export const PROMOTE_TX_TIMEOUT_MS = 60_000;
 const AUDIT_RESOURCE_TYPE = 'recruitment_application';
-const JOIN_SOURCE_RECRUITMENT = 'recruitment'; // member_profiles.joinSourceCode(候选字典码,promote 直写)
 // 招新闭环优化 S5(评审稿 §5.2a):promote 出的志愿者身份。字面镜像 seed 稳定契约
 //(member_grade 'volunteer' 项 + Organization.code='VOL' ≠ VOD 志愿者组织部),不 import team-join(保持自洽)。
 const VOLUNTEER_GRADE_CODE = 'volunteer';
@@ -571,7 +571,14 @@ export class RecruitmentPromotionService {
     const member = await tx.member.create({
       data: {
         memberNo,
-        displayName: a.realName as string,
+        // issue #1048 T1:身份三件套直接落主档。姓名取报名行真值(旧代码写的
+        // `displayName` 本来也是这个值,故语义等价搬迁,不是行为变更)。
+        realName: a.realName as string,
+        // 招新链路不采集外号 —— 留 null,不编造。
+        nickname: null,
+        // 发号日 = promote 当刻(与下方 MemberProfile 原 `joinedDate` 逐字同源)。
+        memberSinceDate: normalizeDateOnly(now.toISOString()),
+        memberOriginCode: MEMBER_ORIGIN_RECRUITMENT,
         status: 'ACTIVE',
         gradeCode: VOLUNTEER_GRADE_CODE,
       },
@@ -604,18 +611,17 @@ export class RecruitmentPromotionService {
       },
       select: { id: true },
     });
-    // MemberProfile(§6 逐字段映射;email=null〔M-1〕;joinedDate=发号日;privacyConsentSigned=F5 搬真值)
+    // MemberProfile(§6 逐字段映射;email=null〔M-1〕;privacyConsentSigned=F5 搬真值)
+    // ⚠️ issue #1048 T1 起,realName / joinedDate / joinSourceCode 三列已搬到 Member 主档,
+    // 本表不再写它们(也不再有这三列)。
     await tx.memberProfile.create({
       data: {
         memberId: member.id,
-        realName: a.realName as string,
         genderCode: a.genderCode as string,
         birthDate: a.birthDate as Date, // 已在提交期归一 UTC 午夜
         documentTypeCode: toMemberProfileDocumentTypeCode(a.documentTypeCode),
         documentNumber: a.idCardNumber as string,
         mobile: a.phone as string,
-        joinedDate: normalizeDateOnly(now.toISOString()),
-        joinSourceCode: JOIN_SOURCE_RECRUITMENT,
         // F5(评审稿 §2.8;⚠️ 行为变更):privacyConsentSigned 由硬编码 true 改搬申请真值——
         // 报名期已确认知情同意(acceptedAt 置)才 true;存量历史行(F5 前无 consent 字段)→ false。
         // signedAt 一并搬真实确认时刻;签名图 key 搬入档案长期留存(R5,镜像 idCardImageKey)。

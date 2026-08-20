@@ -10,6 +10,7 @@ import { seedActivityResponsibilitySystemRoles } from '../fixtures/activity-resp
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const META = { requestId: 'responsibility-concurrency', ip: null, ua: null };
 
@@ -91,7 +92,7 @@ describe('activity responsibility transfer × member offboard concurrency', () =
     const member = await prismaA.member.create({
       data: {
         memberNo: `responsibility-race-${label}`,
-        displayName: `责任并发 ${label}`,
+        ...memberIdentityData(`责任并发 ${label}`),
         gradeCode: 'level-2',
       },
       select: { id: true },

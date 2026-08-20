@@ -22,7 +22,7 @@ import { UpdateMemberProfileDto } from './dto/update-member-profile.dto';
 // - 1:1 with Member;memberId 唯一(schema @unique)
 // - findOne member 存在但无 profile → 返 null(沿用 member-departments.findCurrent 风格)
 // - 字典 code 校验:5 个 NOT NULL + 5 个可空字典字段提供时校验(对应 BizCode 16010-16014)
-// - 日期字段 birthDate / joinedDate / privacyConsentSignedAt 入库前规范化为 UTC 00:00:00.000
+// - 日期字段 birthDate / privacyConsentSignedAt 入库前规范化为 UTC 00:00:00.000
 // - audit:findOne 查询完成后 fail-closed 落 profile.read.other;create/update 不扩本批次审计面
 
 // 集中定义对外 select。永不包含 deletedAt(软删除内部状态)。
@@ -30,7 +30,6 @@ import { UpdateMemberProfileDto } from './dto/update-member-profile.dto';
 const memberProfileSafeSelect = {
   id: true,
   memberId: true,
-  realName: true,
   genderCode: true,
   birthDate: true,
   documentTypeCode: true,
@@ -62,8 +61,6 @@ const memberProfileSafeSelect = {
   firstAidKnowledgeCode: true,
   firstAidSkills: true,
   otherSkills: true,
-  joinedDate: true,
-  joinSourceCode: true,
   noCriminalRecordSigned: true,
   privacyConsentSigned: true,
   privacyConsentSignedAt: true,
@@ -320,15 +317,12 @@ export class MemberProfilesService {
       // 4. 创建 + P2002 兜底防并发
       const data: Prisma.MemberProfileUncheckedCreateInput = {
         memberId,
-        realName: dto.realName,
         genderCode: dto.genderCode,
         birthDate: normalizeDateOnly(dto.birthDate),
         documentTypeCode: dto.documentTypeCode,
         documentNumber: dto.documentNumber,
         mobile: dto.mobile,
         email: dto.email,
-        joinedDate: normalizeDateOnly(dto.joinedDate),
-        joinSourceCode: dto.joinSourceCode,
         privacyConsentSigned: dto.privacyConsentSigned,
         ethnicityCode: dto.ethnicityCode,
         politicalStatusCode: dto.politicalStatusCode,
@@ -406,7 +400,6 @@ export class MemberProfilesService {
 
       // 4. 构造 update data — 只写入提供的字段(Prisma 跳过 undefined)
       const data: Prisma.MemberProfileUpdateInput = {};
-      if (dto.realName !== undefined) data.realName = dto.realName;
       if (dto.genderCode !== undefined) data.genderCode = dto.genderCode;
       if (dto.birthDate !== undefined) data.birthDate = normalizeDateOnly(dto.birthDate);
       if (dto.documentTypeCode !== undefined) data.documentTypeCode = dto.documentTypeCode;
@@ -442,8 +435,6 @@ export class MemberProfilesService {
         data.firstAidKnowledgeCode = dto.firstAidKnowledgeCode;
       if (dto.firstAidSkills !== undefined) data.firstAidSkills = dto.firstAidSkills;
       if (dto.otherSkills !== undefined) data.otherSkills = dto.otherSkills;
-      if (dto.joinedDate !== undefined) data.joinedDate = normalizeDateOnly(dto.joinedDate);
-      if (dto.joinSourceCode !== undefined) data.joinSourceCode = dto.joinSourceCode;
       if (dto.noCriminalRecordSigned !== undefined)
         data.noCriminalRecordSigned = dto.noCriminalRecordSigned;
       if (dto.privacyConsentSigned !== undefined)

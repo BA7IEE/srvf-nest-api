@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const attendanceTestYear = new Date().getUTCFullYear() - 1;
 
@@ -117,7 +118,7 @@ describe('attendances RBAC 权限边界(Slow-4 T3)', () => {
     });
     activityId = act.id;
     const m = await prisma.member.create({
-      data: { memberNo: 'atrb-m-1', displayName: 'ATRB M1' },
+      data: { memberNo: 'atrb-m-1', ...memberIdentityData('ATRB M1') },
       select: { id: true },
     });
     memberId = m.id;

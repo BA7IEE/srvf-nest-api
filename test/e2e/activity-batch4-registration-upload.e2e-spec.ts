@@ -14,6 +14,7 @@ import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -52,7 +53,7 @@ describe('activity batch4 one-time registration upload sessions', () => {
       prisma.member.create({
         data: {
           memberNo: 'B4UPLOAD-OWNER',
-          displayName: 'Upload Owner',
+          ...memberIdentityData('Upload Owner'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -61,7 +62,7 @@ describe('activity batch4 one-time registration upload sessions', () => {
       prisma.member.create({
         data: {
           memberNo: 'B4UPLOAD-OTHER',
-          displayName: 'Upload Other',
+          ...memberIdentityData('Upload Other'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },

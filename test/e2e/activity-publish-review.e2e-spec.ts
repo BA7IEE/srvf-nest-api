@@ -13,6 +13,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const AUDIT_META = { requestId: 'activity-review-e2e', ip: null, ua: null };
 
@@ -56,7 +57,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
     const creatorMember = await prisma.member.create({
       data: {
         memberNo: 'activity-review-creator-member',
-        displayName: '活动审核发起人',
+        ...memberIdentityData('活动审核发起人'),
         gradeCode: 'level-3',
       },
       select: { id: true },
@@ -64,7 +65,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
     const reviewerMember = await prisma.member.create({
       data: {
         memberNo: 'activity-review-reviewer-member',
-        displayName: '活动发布审核员',
+        ...memberIdentityData('活动发布审核员'),
         gradeCode: 'level-3',
       },
       select: { id: true },
@@ -720,7 +721,7 @@ describe('activity responsibility workflow gate=true publish review', () => {
       const member = await prisma.member.create({
         data: {
           memberNo: `delegated-${label}-${sequence}`,
-          displayName: `Delegated ${label} ${sequence}`,
+          ...memberIdentityData(`Delegated ${label} ${sequence}`),
           gradeCode: 'level-3',
         },
         select: { id: true },

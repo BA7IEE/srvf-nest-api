@@ -4,6 +4,7 @@ import type { VisibleOrganizationScope } from '../authz/authz.service';
 import type { OrganizationsService } from '../organizations/organizations.service';
 import { MembersQueryService } from './members-query.service';
 import type { ListMembersQueryDto } from './members.dto';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 // Phase 6-B 第一刀:读侧查询构造边界的 characterization spec(纯构造器注入 mock,
 // 不连库、不起 Nest)。锁定的是**抽出前后逐字不变**的 where 构造:组织范围交集、
@@ -26,7 +27,7 @@ function scopedTo(organizationIds: string[]): VisibleOrganizationScope {
 const ROW = {
   id: 'm1',
   memberNo: 'm-001',
-  displayName: '张三',
+  ...memberIdentityData('张三'),
   gradeCode: 'level-1',
   status: MemberStatus.ACTIVE,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -148,11 +149,11 @@ describe('MembersQueryService.list — 过滤 / 分页', () => {
     expect(where.deletedAt).toBeNull();
   });
 
-  it('关键字 q → displayName / memberNo 双字段 insensitive 模糊', async () => {
+  it('关键字 q → realName / memberNo 双字段 insensitive 模糊', async () => {
     const { service, findMany } = makeHarness();
     await service.list(listQuery({ q: '张' }), GLOBAL_SCOPE);
     expect(whereOf(findMany).OR).toEqual([
-      { displayName: { contains: '张', mode: 'insensitive' } },
+      { realName: { contains: '张', mode: 'insensitive' } },
       { memberNo: { contains: '张', mode: 'insensitive' } },
     ]);
   });
@@ -217,11 +218,11 @@ describe('MembersQueryService.options — 轻量投影', () => {
     expect(argsOf(explicit.findMany).take).toBe(5);
   });
 
-  it('投影为 { id, label, memberNo, gradeCode }(label 取 displayName)', async () => {
+  it('投影为 { id, label, memberNo, gradeCode }(label 取 realName)', async () => {
     const { service } = makeHarness();
     const result = await service.options({}, GLOBAL_SCOPE);
     expect(result.items).toEqual([
-      { id: 'm1', label: '张三', memberNo: 'm-001', gradeCode: 'level-1' },
+      { id: 'm1', label: 'm-001 · 张三', memberNo: 'm-001', gradeCode: 'level-1' },
     ]);
   });
 

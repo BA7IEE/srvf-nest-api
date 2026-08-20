@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 第 3 批第三刀：生命周期命令、封场 HTTP 接线、队员读面。
 //
@@ -91,7 +92,7 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
     const member = await prisma.member.create({
       data: {
         memberNo: `b3-s3-${label}-${sequence}`,
-        displayName: `B3 S3 ${label} ${sequence}`,
+        ...memberIdentityData(`B3 S3 ${label} ${sequence}`),
         gradeCode: 'level-3',
         status: MemberStatus.ACTIVE,
       },

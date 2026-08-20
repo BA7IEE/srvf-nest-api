@@ -13,6 +13,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // D-INSURANCE v3 PR2 唯一 admin review route；并发段使用两套独立 Nest app / Prisma pool，
 // 共用同一派生 app_test_* PostgreSQL，并以事务内 audit barrier + pg_stat_activity wait_event
@@ -260,7 +261,7 @@ describe('POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review', 
     return prisma.member.create({
       data: {
         memberNo: `REVIEW-${nextSeq()}`,
-        displayName: 'Insurance Review Target',
+        ...memberIdentityData('Insurance Review Target'),
         deletedAt,
       },
       select: { id: true },

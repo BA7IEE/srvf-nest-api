@@ -4,6 +4,12 @@ import {
   RBAC_SEED_FACTS,
   type RbacPermissionSeedFact,
 } from '../src/modules/permissions/rbac-seed-facts';
+import {
+  MEMBER_ORIGIN_DICT_TYPE,
+  MEMBER_ORIGIN_IMPORT,
+  MEMBER_ORIGIN_MANUAL,
+  MEMBER_ORIGIN_RECRUITMENT,
+} from '../src/common/identity/member-origin.constant';
 import { effectiveGlobalOpsAdminBindingWhere } from '../src/modules/permissions/role-binding-validity';
 
 // v1 唯一允许创建 SUPER_ADMIN 的入口(详见 ARCHITECTURE.md §7.11 + §8 + §13)。
@@ -403,12 +409,23 @@ const V2_DICT_SEED = [
     ],
   },
   {
-    // 加入来源(member_profiles.joinSourceCode;候选字典,无 FK = 自由串)。招新闭环优化 S5
-    //(2026-06-24,评审稿 §5 + §1.2 亲核纠正 8):promote 直写 joinSourceCode='recruitment',此前该字典
+    // 加入来源(候选字典,无 FK = 自由串)。招新闭环优化 S5
+    //(2026-06-24,评审稿 §5 + §1.2 亲核纠正 8):promote 直写 'recruitment',此前该字典
     // 从未 seed(自由串残留)。本片 additive 补齐字典基线(0 schema 改动、upsert 幂等),供后台展示/校验
     // 候选;镜像 phase-2 E-R2-15 遗留。未登记 dictionaries.service 防误删守卫(自由串候选字典,不在本片授权面)。
-    type: { code: 'join_source', label: '加入来源', sortOrder: 21 },
-    items: [{ code: 'recruitment', label: '招新转入', sortOrder: 0 }],
+    //
+    // issue #1048 T1(2026-08-20):本字典的消费列由 `MemberProfile.joinSourceCode` 改为
+    // `Member.memberOriginCode`(列搬家,字典 type code 不变)。同时补齐另外两条来源 ——
+    // 此前只有 `recruitment` 一条,而管理员建档与历史队员录入是**真实存在**的两条来源,
+    // 缺码会逼调用方自己编一个自由串(自由串字典不会拦),那正是字典存在的意义被架空。
+    // ⚠️ **label 待维护者与队里确认后定稿**(2026-08-21 字典定稿单);code 已按长期契约锁定,
+    //    见 src/common/identity/member-origin.constant.ts。改 label 不阻塞任何一刀。
+    type: { code: MEMBER_ORIGIN_DICT_TYPE, label: '加入来源', sortOrder: 21 },
+    items: [
+      { code: MEMBER_ORIGIN_RECRUITMENT, label: '招新转入', sortOrder: 0 },
+      { code: MEMBER_ORIGIN_MANUAL, label: '管理员录入', sortOrder: 1 },
+      { code: MEMBER_ORIGIN_IMPORT, label: '历史录入', sortOrder: 2 },
+    ],
   },
   {
     // 统一通知模块 S1 站内信渠道(2026-06-25;冻结评审稿

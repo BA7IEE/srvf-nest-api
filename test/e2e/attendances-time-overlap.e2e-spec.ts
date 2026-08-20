@@ -13,6 +13,7 @@ import type {
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // attendances time-overlap characterization tests(R16 / Q-S15;TimeOverlapPolicy 抽离前置)。
 //
@@ -102,11 +103,11 @@ describe('AttendancesService time overlap (characterization)', () => {
     await grantBizAdminToUser(app, reviewer.id, bizSeed.bizAdminRoleId);
 
     const memberA = await prisma.member.create({
-      data: { memberNo: 'att-tovr-m-a', displayName: 'TOVR Member A' },
+      data: { memberNo: 'att-tovr-m-a', ...memberIdentityData('TOVR Member A') },
       select: { id: true },
     });
     const memberB = await prisma.member.create({
-      data: { memberNo: 'att-tovr-m-b', displayName: 'TOVR Member B' },
+      data: { memberNo: 'att-tovr-m-b', ...memberIdentityData('TOVR Member B') },
       select: { id: true },
     });
 

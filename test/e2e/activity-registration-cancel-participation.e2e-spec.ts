@@ -10,6 +10,7 @@ import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const AUDIT_META: AuditMeta = {
   requestId: 'cancel-participation-e2e-000001',
@@ -193,7 +194,7 @@ describe('activity registration cancel participation evidence', () => {
     const member = await prismaA.member.create({
       data: {
         memberNo: `cancel-evidence-${label}-${sequence}`,
-        displayName: `Cancel Evidence ${label} ${sequence}`,
+        ...memberIdentityData(`Cancel Evidence ${label} ${sequence}`),
       },
       select: { id: true },
     });

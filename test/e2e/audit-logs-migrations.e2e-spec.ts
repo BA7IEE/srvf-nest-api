@@ -11,6 +11,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { assertConnectedTestDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // V2 第一阶段批次 6 PR #2 / PR #3 e2e:
 // PR #2:验证 8 处 emergency-contacts / certificates 写操作迁移到 AuditLogsService.log()
@@ -140,7 +141,7 @@ describe('audit-logs 写入迁移', () => {
 
     // member
     const m = await prisma.member.create({
-      data: { memberNo: 'al-mig-mem', displayName: 'Member For Migration Tests' },
+      data: { memberNo: 'al-mig-mem', ...memberIdentityData('Member For Migration Tests') },
       select: { id: true },
     });
     memberId = m.id;
@@ -1334,14 +1335,14 @@ describe('audit-logs 写入迁移', () => {
 
       // ADMIN 代报名目标 member(无绑 user,纯被代报名)
       const targetMember = await prisma.member.create({
-        data: { memberNo: 'reg-mig-target', displayName: 'Target Member' },
+        data: { memberNo: 'reg-mig-target', ...memberIdentityData('Target Member') },
         select: { id: true },
       });
       regMemberAdminTargetId = targetMember.id;
 
       // USER + 绑 member(自助报名 / cancelMy 路径)
       const userMember = await prisma.member.create({
-        data: { memberNo: 'reg-mig-user-mem', displayName: 'User Member' },
+        data: { memberNo: 'reg-mig-user-mem', ...memberIdentityData('User Member') },
         select: { id: true },
       });
       userMemberId = userMember.id;
@@ -1764,12 +1765,12 @@ describe('audit-logs 写入迁移', () => {
 
       // 2 个 member(防止 records 时间冲突时换 member)
       const ma = await prisma.member.create({
-        data: { memberNo: 'att-mig-a', displayName: 'Att A' },
+        data: { memberNo: 'att-mig-a', ...memberIdentityData('Att A') },
         select: { id: true },
       });
       attMemberAId = ma.id;
       const mb = await prisma.member.create({
-        data: { memberNo: 'att-mig-b', displayName: 'Att B' },
+        data: { memberNo: 'att-mig-b', ...memberIdentityData('Att B') },
         select: { id: true },
       });
       attMemberBId = mb.id;

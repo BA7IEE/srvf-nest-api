@@ -36,6 +36,7 @@ import { AppIdentityResolver } from '../users/app-identity.resolver';
 import { AttendanceReadService } from './attendance-read.service';
 import { AttendanceReviewService } from './attendance-review.service';
 import { AttendancesService } from './attendances.service';
+import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
 
 // attendances service-level characterization spec(B 档 test-only,scoped;沿 srvf-god-service-refactor）。
 // 锁定 `attendances.service.ts`(1157L,最大 god-service)**浅层编排契约**现状行为,作为后续
@@ -121,7 +122,7 @@ interface RecordRow {
   contributionPoints: Prisma.Decimal | null;
   createdAt: Date;
   updatedAt: Date;
-  member: { id: string; memberNo: string; displayName: string } | null;
+  member: { id: string; memberNo: string; realName: string; nickname: string | null } | null;
 }
 
 function makeRecordRow(overrides: Partial<RecordRow> = {}): RecordRow {
@@ -139,7 +140,7 @@ function makeRecordRow(overrides: Partial<RecordRow> = {}): RecordRow {
     contributionPoints: new Prisma.Decimal('1.50'),
     createdAt: FIXED_DATE,
     updatedAt: FIXED_DATE,
-    member: { id: 'mem-1', memberNo: 'M-1', displayName: 'Member One' },
+    member: { id: 'mem-1', memberNo: 'M-1', ...memberIdentityData('Member One'), nickname: null },
     ...overrides,
   };
 }
@@ -570,7 +571,9 @@ describe('AttendancesService (characterization, scoped)', () => {
       expect(page.items[0].member).toEqual({
         id: 'mem-1',
         memberNo: 'M-1',
-        displayName: 'Member One',
+        realName: 'Member One',
+        nickname: null,
+        label: 'M-1 · Member One',
       });
     });
 

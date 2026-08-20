@@ -10,6 +10,7 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // 终态 scoped-authz PR5「分管」e2e(2026-07-01;冻结稿 §3.5 / §7.4 / §4.3 / R5 + goal DoD §7)。
 // 覆盖:RBAC 边界 / 建分管(与职务正交:supervisor 无任何职务仍可建)/ 副队长乙双分管(SECT TREE + SSD EXACT 并存)/
@@ -68,7 +69,10 @@ describe('supervision-assignments 分管管理', () => {
   async function newMember(tag: string): Promise<string> {
     memberSeq += 1;
     const m = await prisma.member.create({
-      data: { memberNo: `sup-e2e-${tag}-${memberSeq}`, displayName: `SUP-${tag}-${memberSeq}` },
+      data: {
+        memberNo: `sup-e2e-${tag}-${memberSeq}`,
+        ...memberIdentityData(`SUP-${tag}-${memberSeq}`),
+      },
       select: { id: true },
     });
     return m.id;
@@ -328,7 +332,7 @@ describe('supervision-assignments 分管管理', () => {
       const inactive = await prisma.member.create({
         data: {
           memberNo: `sup-e2e-inactive-${Date.now()}`,
-          displayName: 'inactive',
+          ...memberIdentityData('inactive'),
           status: 'INACTIVE',
         },
         select: { id: true },

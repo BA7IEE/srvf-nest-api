@@ -35,6 +35,7 @@ import { WechatService } from '../../src/modules/wechat/wechat.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 interface Refs {
   notificationId: string;
@@ -108,7 +109,7 @@ describe('notification durable outbox PostgreSQL concurrency and crash recovery'
       const member = await prisma.member.create({
         data: {
           memberNo: `OUTBOX-${Date.now()}-${index}`,
-          displayName: `outbox-member-${index}`,
+          ...memberIdentityData(`outbox-member-${index}`),
           status: 'ACTIVE',
         },
         select: { id: true },

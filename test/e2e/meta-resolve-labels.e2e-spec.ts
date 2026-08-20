@@ -12,6 +12,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // F1/A7(admin-api-fe-integration-roadmap.md §4 A7;net-new meta 模块):
 // POST admin/v1/meta/resolve-labels 批量 id→label 解析 e2e。
@@ -89,7 +90,7 @@ describe('POST admin/v1/meta/resolve-labels(F1/A7 批量 id→label 解析)', ()
 
     // 待解析实体:member/user 直接造;organization/role/position 复用真 seed 已有实体。
     const member = await prisma.member.create({
-      data: { memberNo: 'metarl-mem-1', displayName: 'F1解析队员甲' },
+      data: { memberNo: 'metarl-mem-1', ...memberIdentityData('F1解析队员甲') },
       select: { id: true },
     });
     memberId = member.id;
@@ -192,7 +193,11 @@ describe('POST admin/v1/meta/resolve-labels(F1/A7 批量 id→label 解析)', ()
 
   it('④ 静默省略:不存在 / 已软删的 id 不出现在结果里,不报错', async () => {
     const softDeleted = await prisma.member.create({
-      data: { memberNo: 'metarl-mem-deleted', displayName: '已软删队员', deletedAt: new Date() },
+      data: {
+        memberNo: 'metarl-mem-deleted',
+        ...memberIdentityData('已软删队员'),
+        deletedAt: new Date(),
+      },
       select: { id: true },
     });
     const nonExistentId = 'cl0000000000000000000000';

@@ -11,6 +11,7 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const FUTURE = {
   startAt: new Date('2099-12-15T08:00:00.000Z'),
@@ -80,7 +81,7 @@ describe('activity batch4 onsite participation', () => {
       prisma.member.create({
         data: {
           memberNo: 'ONSITE-MANAGER',
-          displayName: 'Onsite Manager',
+          ...memberIdentityData('Onsite Manager'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -89,7 +90,7 @@ describe('activity batch4 onsite participation', () => {
       prisma.member.create({
         data: {
           memberNo: 'ONSITE-UNPRIVILEGED',
-          displayName: 'Onsite Unprivileged',
+          ...memberIdentityData('Onsite Unprivileged'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -98,7 +99,7 @@ describe('activity batch4 onsite participation', () => {
       prisma.member.create({
         data: {
           memberNo: 'ONSITE-SUPER',
-          displayName: 'Onsite Super',
+          ...memberIdentityData('Onsite Super'),
           gradeCode: 'L1',
           status: MemberStatus.ACTIVE,
         },
@@ -282,7 +283,7 @@ describe('activity batch4 onsite participation', () => {
     return prisma.member.create({
       data: {
         memberNo: 'ONSITE-TARGET-' + index,
-        displayName: 'Onsite Target ' + index,
+        ...memberIdentityData('Onsite Target ' + index),
         gradeCode: 'L1',
         status,
       },

@@ -28,6 +28,7 @@ import type { CurrentUserPayload } from '../../src/common/decorators/current-use
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ============================================================================
 // 外部评审 F2 第二刀(2026-08-03)—— B5 同代配置 / B7 类型化错误 / SF1 严格回执
@@ -152,7 +153,7 @@ describe('F2 —— 企业微信消息链的同代配置 / 类型化错误 / 严
     const member = await prisma.member.create({
       data: {
         memberNo: `F2${String(corpSeq).padStart(4, '0')}`,
-        displayName: 'F2 队员',
+        ...memberIdentityData('F2 队员'),
         status: 'ACTIVE',
         gradeCode: 'level-3',
       },

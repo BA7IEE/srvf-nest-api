@@ -517,14 +517,30 @@ enum SupervisionStatus {
 // ===== V2 第一阶段:members =====
 
 model Member {
-  id          String       @id @default(cuid())
-  memberNo    String       @unique
-  displayName String
-  gradeCode   String?
-  status      MemberStatus @default(ACTIVE)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  deletedAt   DateTime?
+  id       String @id @default(cuid())
+  memberNo String @unique
+
+  // 队员身份主档终态(issue #1048 T1,2026-08-20 维护者拍板)——
+  // Member 是 `memberNo + realName + nickname` 的唯一日常身份事实源,`displayName` 已退役。
+  // ⚠️ 这几列**不是** MemberProfile 的镜像:MP 侧同名列已在本刀一并删除,不存在双写/兼容态。
+  // 为什么搬上主表:`memberProfile` 是**可选**关系(见下方 relation),而"这个人叫什么"
+  // 是每条列表 / 选择器 / 通知都要读的日常事实 —— 挂在可选扩展表上等于让最热的读路径
+  // 依赖一张可能不存在的行(存量里管理员手工建的队员就没有 profile)。
+  realName         String // 真实姓名。日常展示与检索的主键面,统一 label `编号 · 姓名(外号)` 的中段。
+  // 外号 / 队内称呼。**刻意可空、刻意不唯一**(issue §5.2 规则 4):
+  // 重外号正常并存,且外号永远不能自动确认身份 —— 不加 @unique 就是这条合同在 schema 侧的执行位。
+  nickname         String?
+  // 发号日 = 这个 memberNo 生效的日期,业务层按日期规范化(镜像原 MemberProfile.joinedDate 口径)。
+  // ⚠️ 与 `TeamJoinApplication.joinedAt` 是**两个不同的时间事实**,不得合并(issue §二 已论证)。
+  memberSinceDate  DateTime
+  // 来源字典 join_source(自由串候选字典、无 FK —— 沿 MP-28 原口径不改判)。
+  memberOriginCode String
+
+  gradeCode String?
+  status    MemberStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
 
   // 队员账号闭环 v2(2026-07-07):User.memberId 去 @unique 改一对多——Prisma 要求
   // 一对一关系的 FK 侧字段必须 schema 级 @unique,而 partial unique(仅 DB 层约束
@@ -601,6 +617,9 @@ model Member {
   ledgerEntries         ParticipationLedgerEntry[]   @relation("ParticipationLedgerEntryMember")
   contributionDayStates MemberContributionDayState[] @relation("MemberContributionDayStateMember")
 
+  // issue #1048 T2:目录检索的排序第 ② 级是 realName **完全匹配**(等值谓词,btree 吃得到)。
+  // ⚠️ 第 ④ 级的 `contains` 走 ILIKE,本索引对它无效 —— 不要因为这条索引在就以为模糊搜索被加速了。
+  @@index([realName])
   @@index([gradeCode])
   @@index([status])
   @@index([deletedAt])
@@ -687,7 +706,8 @@ model MemberProfile {
   deletedAt DateTime?
 
   // ===== 报名表必填基础信息 =====
-  realName            String // MP-1
+  // ⚠️ MP-1 realName 已于 issue #1048 T1 搬到 `Member.realName` 并从本表删除 ——
+  // 身份主档只有一份,这里**不留镜像列**(留了就会有人写它,双写=第二份真相)。
   genderCode          String // MP-2 字典 gender
   birthDate           DateTime // MP-3 业务层按日期 00:00:00.000Z 规范化
   documentTypeCode    String // MP-4 字典 document_type
@@ -725,8 +745,8 @@ model MemberProfile {
   otherSkills           String? // MP-26 长文本
 
   // ===== 内部档案补充 =====
-  joinedDate             DateTime // MP-27 加入日期,业务层按日期规范化
-  joinSourceCode         String // MP-28 字典 join_source(候选)
+  // ⚠️ MP-27 joinedDate → `Member.memberSinceDate`、MP-28 joinSourceCode → `Member.memberOriginCode`,
+  // 均于 issue #1048 T1 搬走并从本表删除;同上,不留镜像列。
   noCriminalRecordSigned Boolean? // MP-29 是否签署无违法犯罪声明
   privacyConsentSigned   Boolean // MP-30a 是否授权(NOT NULL)
   privacyConsentSignedAt DateTime? // MP-30b 授权时间(Q-S05 保留)

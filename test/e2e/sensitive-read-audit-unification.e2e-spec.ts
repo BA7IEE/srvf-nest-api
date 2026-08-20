@@ -21,6 +21,7 @@ import {
 } from '../fixtures/certificate-standard.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // C-2 sensitive-read audit unification E2E.
 //
@@ -146,20 +147,17 @@ describe('sensitive-read audit unification (C-2)', () => {
     };
 
     const member = await prisma.member.create({
-      data: { memberNo: 'sensitive-audit-m-001', displayName: 'Sensitive Audit Member' },
+      data: { memberNo: 'sensitive-audit-m-001', ...memberIdentityData('Sensitive Audit Member') },
       select: { id: true },
     });
     const profile = await prisma.memberProfile.create({
       data: {
         memberId: member.id,
-        realName: PROFILE_REAL_NAME,
         genderCode: 'male',
         birthDate: new Date('1990-01-01T00:00:00.000Z'),
         documentTypeCode: 'mainland_id',
         documentNumber: PROFILE_DOCUMENT_NUMBER,
         mobile: PROFILE_MOBILE,
-        joinedDate: new Date('2020-01-01T00:00:00.000Z'),
-        joinSourceCode: 'audit-fixture',
         privacyConsentSigned: true,
         exerciseMethods: [],
         firstAidSkills: [],
