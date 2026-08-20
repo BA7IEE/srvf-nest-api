@@ -232,8 +232,15 @@ describe(`${CLASS_NAME}:改写角色权限映射的公开方法必须全部过�
     expect(names).toContain('revoke');
     expect(names.length).toBeGreaterThanOrEqual(2);
 
-    // 私有 helper 不该被当成公开写方法混进来。
-    expect(names).not.toContain('buildDetailResponse');
+    // isPublic 的两个方向都要有覆盖:
+    // - 恒 false ⇒ 上面 toContain('assign') 会红(assign 是公开的);
+    // - 恒 true  ⇒ 上面那两条**照样全绿**(本类当前没有会写映射的私有方法,
+    //   坏掉的过滤器不会把任何东西多放进来)。故这里单独钉住「确实认出了私有」。
+    const privateMethodNames = [...METHODS.values()]
+      .filter((facts) => !facts.isPublic)
+      .map((facts) => facts.name);
+    expect(privateMethodNames).toContain('assertNoControlPlaneCodesOrThrow');
+    expect(privateMethodNames).toContain('buildDetailResponse');
   });
 
   it('每个会改写映射的公开方法都必须到达控制面闸(漏一个即红并点名)', () => {
