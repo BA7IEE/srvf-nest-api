@@ -6,6 +6,7 @@ import { AuthzModule } from '../authz/authz.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { MemberAuditRecorder } from './member-audit-recorder';
+import { MemberReferenceResolver } from './member-reference-resolver';
 import { MembersController } from './members.controller';
 import { MembersQueryService } from './members-query.service';
 import { MemberAccessService } from './member-access.service';
@@ -35,13 +36,18 @@ import { MembersService } from './members.service';
   // 那一个入口(F4/D 组既有约定),避免第二条绕过判权腿的读路径。
   // Phase 6-B 第二刀:MemberAuditRecorder = 6 个 audit 事件的 payload 组装边界(§3.5)。
   // 只注入 AuditLogsService,tx 由调用方透传,事务边界仍归 MembersService。
+  // issue #1048 T3:MemberReferenceResolver = 「给机器确认人」的唯一入口(§5.2)。
+  // **exports 它是刻意的**:跨模块解析队员引用必须走这一个口子,而它的 `resolve()`
+  // 把 `currentUser` 设成必填形参、方法体第一件事就是解析可见组织范围 ——
+  // 没有"免范围"的重载,调用方结构上无法绕过 scoped authz(规则 5)。
   providers: [
     MemberAccessService,
     MemberAccountService,
     MembersService,
     MembersQueryService,
     MemberAuditRecorder,
+    MemberReferenceResolver,
   ],
-  exports: [MembersService],
+  exports: [MembersService, MemberReferenceResolver],
 })
 export class MembersModule {}
