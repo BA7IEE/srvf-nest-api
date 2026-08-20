@@ -2096,6 +2096,13 @@ const isNotReservedSuperAdminOnlyPermission = (permission: RbacPermissionSeed): 
 // 注:`sms-setting.reset.credentials` 从 SMS_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;评审稿 E-3)
 // 注:`wechat-setting.reset.credentials` 从 WECHAT_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wechat 评审稿 §3.4)
 // 注:`wecom-setting.reset.credentials` 从 WECOM_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;wecom 冻结稿 §11.1)—— T2 ops-admin +3(96→99);T3 追加 `user.wecom.clear` 整条绑,ops-admin +1(99→100)
+//     🔴 第六轮评审 E-B1(2026-08-21):本行此前用的是**一次性硬编码过滤器**
+//     `filter((p) => p.code !== WECOM_RESET_CREDENTIALS_CODE)`,全仓仅此一处不走共享谓词。
+//     后果不是 seed 绑错(它确实没绑),而是**保留集永远学不到 wecom** —— 于是
+//     `isControlPlanePermissionCode()` 放行,持 `rbac.role-permission.create` 的 ops-admin
+//     可自授该码再覆盖 CorpSecret。现改为与其余四条同走 `isNotReservedSuperAdminOnlyPermission`:
+//     绑定集合逐码不变,但 seed 从此**依赖**保留集正确 —— 保留集再漏一条,这里也会跟着漏绑,
+//     漂移哨兵随即变红。
 // 注:`realname-setting.reset.credentials` 从 REALNAME_INFRA_PERMISSION_SEED 过滤掉(镜像 D2=A;招新评审稿 E-R-19)
 // 注:NOTIFICATION-REPLAY 1 = 企业微信 T6-1 `notification.replay.wecom`(定向 replay 运维入口),整条绑 ⇒ ops-admin +1(100→101)
 //     —— 沿 T2/T3 同一记法:上方 OPS_ADMIN_DESCRIPTION 里那个 "96" 是**基线家族**历史值,由本组注释逐刀累加订正,不逐刀重写描述串
@@ -2108,7 +2115,7 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...AUDIT_LOG_PERMISSION_SEED,
   ...SMS_INFRA_PERMISSION_SEED.filter(isNotReservedSuperAdminOnlyPermission),
   ...WECHAT_INFRA_PERMISSION_SEED.filter(isNotReservedSuperAdminOnlyPermission),
-  ...WECOM_INFRA_PERMISSION_SEED.filter((p) => p.code !== WECOM_RESET_CREDENTIALS_CODE),
+  ...WECOM_INFRA_PERMISSION_SEED.filter(isNotReservedSuperAdminOnlyPermission),
   ...REALNAME_INFRA_PERMISSION_SEED.filter(isNotReservedSuperAdminOnlyPermission),
   ...AUTHZ_PERMISSION_SEED,
   ...ANNOUNCEMENT_IMPORT_PERMISSION_SEED,
