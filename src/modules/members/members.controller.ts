@@ -88,7 +88,8 @@ export class MembersController {
   @RequiresPermission('member.read.record', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
     summary:
-      '队员选择器投影(q 模糊 realName+memberNo;limit≤100,默认 20) [rbac: member.read.record]',
+      '队员选择器投影(q 模糊 memberNo+realName+nickname,与列表同一套五级相关性;' +
+      'limit≤100,默认 20) [rbac: member.read.record]',
   })
   @ApiWrappedOkResponse(MemberOptionsResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

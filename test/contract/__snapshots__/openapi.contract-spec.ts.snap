@@ -49560,7 +49560,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "模糊搜索(跨字段命中 memberNo + realName + nickname;contains + insensitive)。排序见 MemberDirectory 五级规则",
+          "description": "模糊搜索(跨字段命中 memberNo + realName + nickname;两端空白自动 trim)。相关性排序:memberNo 完全 > realName 完全 > memberNo 前缀 > realName 部分 > nickname;重名重外号正常返回多条,不做拼音/纠错/相似度绑定",
           "in": "query",
           "name": "q",
           "required": false,
@@ -50118,7 +50118,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "operationId": "MembersController_options",
       "parameters": [
         {
-          "description": "模糊搜索(跨字段命中 memberNo + realName + nickname)",
+          "description": "模糊搜索(跨字段命中 memberNo + realName + nickname;两端空白自动 trim)。与列表同序:memberNo 完全 > realName 完全 > memberNo 前缀 > realName 部分 > nickname;重名重外号正常返回多条,不做拼音/纠错/相似度绑定",
           "in": "query",
           "name": "q",
           "required": false,
@@ -50297,7 +50297,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "队员选择器投影(q 模糊 realName+memberNo;limit≤100,默认 20) [rbac: member.read.record]",
+      "summary": "队员选择器投影(q 模糊 memberNo+realName+nickname,与列表同一套五级相关性;limit≤100,默认 20) [rbac: member.read.record]",
       "tags": [
         "Admin - Members",
       ],

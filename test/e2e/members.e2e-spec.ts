@@ -466,6 +466,77 @@ describe('members 模块', () => {
       ]);
     });
 
+    // ========================================================================
+    // issue #1048 T2 · MemberDirectory 五级相关性(§5.1)
+    // ========================================================================
+
+    it('五级相关性:memberNo 完全 > realName 完全 > memberNo 前缀 > realName 部分 > nickname', async () => {
+      // 五个人**同时**被同一个词 `T2RANK` 命中,但各自命中在不同级上。
+      // 每人只在一个级上命中(级间互斥由实现保证),故期望顺序是确定的。
+      const seed = [
+        { memberNo: 'T2RANK', realName: 'T2 编号完全', nickname: null }, // ① memberNo 完全
+        { memberNo: 't2rank-b2', realName: 'T2RANK', nickname: null }, // ② realName 完全
+        { memberNo: 'T2RANK-c3', realName: 'T2 编号前缀', nickname: null }, // ③ memberNo 前缀
+        { memberNo: 't2rank-d4', realName: '含 T2RANK 的姓名', nickname: null }, // ④ realName 部分
+        { memberNo: 't2rank-e5', realName: 'T2 外号命中', nickname: 'T2RANK 外号' }, // ⑤ nickname
+      ];
+      const ids: string[] = [];
+      for (const row of seed) {
+        const created = await prisma.member.create({
+          data: {
+            memberNo: row.memberNo,
+            ...memberIdentityData(row.realName),
+            ...(row.nickname === null ? {} : { nickname: row.nickname }),
+          },
+          select: { id: true },
+        });
+        ids.push(created.id);
+      }
+
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/members')
+        .query({ q: 'T2RANK' })
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      const got = (res.body.data.items as Array<{ id: string }>).map((i) => i.id);
+
+      // ⚠️ 只断言这五个人的**相对次序**,不断言整表:同库其它用例可能也造了命中行,
+      // 断言整表会让本用例被别人的夹具影响(而那与本判据无关)。
+      expect(got.filter((id) => ids.includes(id))).toEqual(ids);
+      // total 必须是五级计数之和 —— 级间若不互斥,同一人会被数多次,这里会大于实际人数。
+      expect(res.body.data.total).toBeGreaterThanOrEqual(5);
+    });
+
+    it('q 两端空白被 trim(与 normalizeMemberNo 同源),命中不变', async () => {
+      const padded = await request(httpServer(app))
+        .get('/api/admin/v1/members')
+        .query({ q: '   唯一姓名张三XYZ   ' })
+        .set('Authorization', adminAuth);
+      expect((padded.body.data.items as Array<{ id: string }>).map((i) => i.id)).toEqual([
+        memberInChild,
+      ]);
+    });
+
+    it('第一版不猜:重名 / 重外号**正常返回多条**,不做相似度绑定(§5.1 第 4 条)', async () => {
+      const dupes: string[] = [];
+      for (const memberNo of ['t2dup-1', 't2dup-2']) {
+        const created = await prisma.member.create({
+          // 姓名与外号都逐字相同 —— 系统不得替人挑一个,必须两条都返
+          data: { memberNo, ...memberIdentityData('T2重名的人', 'T2重外号') },
+          select: { id: true },
+        });
+        dupes.push(created.id);
+      }
+
+      const res = await request(httpServer(app))
+        .get('/api/admin/v1/members')
+        .query({ q: 'T2重名的人' })
+        .set('Authorization', superAdminAuth);
+      const got = (res.body.data.items as Array<{ id: string }>).map((i) => i.id);
+      expect(got).toEqual(expect.arrayContaining(dupes));
+      expect(got.filter((id) => dupes.includes(id))).toHaveLength(2);
+    });
+
     it('list organizationId 过滤(经 active membership 关联),includeDescendants 展开后代', async () => {
       // 不带 includeDescendants:按 rootOrgId 过滤 → 无人(memberInChild 挂在 childOrgId,非 rootOrgId 本身)
       const rootOnly = await request(httpServer(app))

@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { MembershipType, Prisma, UserStatus } from '@prisma/client';
 import { formatMemberLabel } from '../../common/identity/member-label.util';
+import {
+  buildMemberDirectoryRankLevels,
+  MEMBER_DIRECTORY_TIE_BREAK,
+} from './member-directory-ranking';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { VisibleOrganizationScope } from '../authz/authz.service';
@@ -89,6 +93,58 @@ export class MembersQueryService {
     };
   }
 
+  /**
+   * 五级相关性分页(issue #1048 T2 DoD 2)。
+   *
+   * 🔴 **授权腿只有一份**:`base` 是调用方算好的完整 where(含 `notDeletedWhere` 与
+   * scoped authz 的组织范围腿),这里每一级都是 `{ AND: [base, level] }` —— base 被
+   * **原样复用**,没有任何一处重写它。想绕过授权就必须先把这行 AND 删掉,而那会被
+   * `members-query.service.spec.ts` 的结构判据当场抓住。
+   *
+   * 过滤、排序、分页全部在 SQL:每级一条 count,再按落点取 skip/take。
+   * 这里**不允许**出现 `.filter(` / `.sort(` —— 8192 人规模下取全量进内存会直接把
+   * 这个端点做成不可用(仓内同型不变量见 activity-scale-usability 的「不变量 2」)。
+   */
+  private async rankedPage(
+    base: Prisma.MemberWhereInput,
+    rawQuery: string,
+    skip: number,
+    take: number,
+  ): Promise<{ items: SafeMember[]; total: number }> {
+    const wheres = buildMemberDirectoryRankLevels(rawQuery).map(
+      (level): Prisma.MemberWhereInput => ({ AND: [base, level] }),
+    );
+
+    const counts = await this.prisma.$transaction(
+      wheres.map((where) => this.prisma.member.count({ where })),
+    );
+    const total = counts.reduce((sum, count) => sum + count, 0);
+
+    const items: SafeMember[] = [];
+    let offset = skip;
+    let remaining = take;
+    for (let index = 0; index < wheres.length && remaining > 0; index += 1) {
+      const size = counts[index];
+      // 整级都在请求页之前 → 跳过该级,并把偏移扣掉它的行数。
+      if (offset >= size) {
+        offset -= size;
+        continue;
+      }
+      const rows = await this.prisma.member.findMany({
+        where: wheres[index],
+        select: memberSafeSelect,
+        orderBy: MEMBER_DIRECTORY_TIE_BREAK,
+        skip: offset,
+        take: remaining,
+      });
+      items.push(...rows);
+      remaining -= rows.length;
+      offset = 0; // 跨级之后就从该级第一行开始取
+    }
+
+    return { items, total };
+  }
+
   // 返回原始行 + 总数;账号字段拼装与 PageResultDto 组装仍归调用方。
   async list(
     query: ListMembersQueryDto,
@@ -110,15 +166,6 @@ export class MembersQueryService {
     if (memberNo !== undefined) filters.memberNo = memberNo; // 精确匹配(完整字符串相等)
     if (gradeCode !== undefined) filters.gradeCode = gradeCode;
     if (status !== undefined) filters.status = status;
-    if (q !== undefined) {
-      // issue #1048 T1 只做 `displayName -> realName` 的**等价搬迁**(旧 displayName 在两条
-      // 写路径上写入的就是真实姓名)。扩到 nickname、五级排序、trim 与 memberNo 归一
-      // 属 T2 MemberDirectory,刻意不在本刀提前做 —— 否则 T2 的 PR 就没有可验证的增量。
-      filters.OR = [
-        { realName: { contains: q, mode: 'insensitive' } },
-        { memberNo: { contains: q, mode: 'insensitive' } },
-      ];
-    }
     const orgScope = await this.buildOrganizationScopeFilter(
       authScope,
       organizationId,
@@ -134,6 +181,13 @@ export class MembersQueryService {
     if (hasAccount === false) filters.users = { none: { deletedAt: null } };
 
     const where = notDeletedWhere(filters);
+
+    // issue #1048 T2:带 q 时走五级相关性(见 member-directory-ranking.ts);
+    // **不带 q 时逐字保持原行为**(createdAt desc)—— 目录排序只在搜索语境下有意义,
+    // 顺手改掉无搜索时的默认序会是本刀范围外的行为变更。
+    if (q !== undefined) {
+      return this.rankedPage(where, q, (page - 1) * pageSize, pageSize);
+    }
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.member.findMany({
@@ -157,15 +211,6 @@ export class MembersQueryService {
     const { q, organizationId, includeDescendants, limit } = query;
 
     const filters: Prisma.MemberWhereInput = {};
-    if (q !== undefined) {
-      // issue #1048 T1 只做 `displayName -> realName` 的**等价搬迁**(旧 displayName 在两条
-      // 写路径上写入的就是真实姓名)。扩到 nickname、五级排序、trim 与 memberNo 归一
-      // 属 T2 MemberDirectory,刻意不在本刀提前做 —— 否则 T2 的 PR 就没有可验证的增量。
-      filters.OR = [
-        { realName: { contains: q, mode: 'insensitive' } },
-        { memberNo: { contains: q, mode: 'insensitive' } },
-      ];
-    }
     const orgScope = await this.buildOrganizationScopeFilter(
       authScope,
       organizationId,
@@ -173,12 +218,20 @@ export class MembersQueryService {
     );
     if (orgScope !== undefined) Object.assign(filters, orgScope);
 
-    const rows = await this.prisma.member.findMany({
-      where: notDeletedWhere(filters),
-      select: memberSafeSelect,
-      orderBy: { createdAt: 'desc' },
-      take: limit ?? 20,
-    });
+    const where = notDeletedWhere(filters);
+    const take = limit ?? 20;
+
+    // 选择器与列表共用同一套相关性(同一个 q 在两处必须给出同序,否则「列表里第一个」
+    // 与「下拉里第一个」不是同一个人,用的人会当成 bug)。
+    const rows =
+      q === undefined
+        ? await this.prisma.member.findMany({
+            where,
+            select: memberSafeSelect,
+            orderBy: { createdAt: 'desc' },
+            take,
+          })
+        : (await this.rankedPage(where, q, 0, take)).items;
 
     const items: MemberOptionItemDto[] = rows.map((r) => ({
       id: r.id,

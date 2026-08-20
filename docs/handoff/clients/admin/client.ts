@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.66.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e614c31870eb3692a12c75b35ee78664b24535e85b3cbee5b70679c9bbcfd002
+// inputDigest: sha256:b8899326fb1ed9b5991bb5d6ec6c829411a3b45f70ce0577c5f2e0287b6b92c2
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -771,7 +771,7 @@ export function createAdminClient(fetcher: Fetcher) {
     MembersControllerBulkGrantAccounts(body: BulkGrantMemberAccountsDto): Promise<ApiEnvelope<BulkGrantMemberAccountsResponseDto>> {
       return fetcher<BulkGrantMemberAccountsResponseDto>({ method: "POST", path: "/api/admin/v1/members/accounts/bulk-grant", body });
     },
-    /** 队员选择器投影(q 模糊 realName+memberNo;limit≤100,默认 20) [rbac: member.read.record] */
+    /** 队员选择器投影(q 模糊 memberNo+realName+nickname,与列表同一套五级相关性;limit≤100,默认 20) [rbac: member.read.record] */
     MembersControllerOptions(query?: { "q"?: string; "organizationId"?: string; "includeDescendants"?: boolean; "limit"?: number }): Promise<ApiEnvelope<MemberOptionsResponseDto>> {
       return fetcher<MemberOptionsResponseDto>({ method: "GET", path: "/api/admin/v1/members/options", query });
     },
