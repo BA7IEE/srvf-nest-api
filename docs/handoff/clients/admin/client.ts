@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.66.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:31c1a7c480f7419dfa584b743c0b2ffd2b70bb8b9f6b5667285438e4cdaa730a
+// inputDigest: sha256:8319f54a178447df9b0f5a5398c843f15c0246fc0849a95be72b8471d02373ba
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -195,6 +195,7 @@ import type {
   MemberOffboardImpactResponseDto,
   MemberOffboardRegistrationImpactItemDto,
   MemberOffboardResponseDto,
+  MemberOfficialPortraitDto,
   MemberOptionItemDto,
   MemberOptionsResponseDto,
   MemberParticipationLedgerTotalsDto,
@@ -334,6 +335,7 @@ import type {
   UserOptionsResponseDto,
   UserResponseDto,
   VerifyCertificateDto,
+  VoidMemberOfficialPortraitDto,
   WechatSubscribeTemplateDto,
   WorkbenchMemberSummaryDto,
   WorkbenchStandardSummaryDto,
@@ -822,6 +824,22 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 离队影响预检(活动发起/负责人/协办及当前未来报名安全摘要) [rbac: member.offboard.record] */
     MembersControllerOffboardImpact(id: string): Promise<ApiEnvelope<MemberOffboardImpactResponseDto>> {
       return fetcher<MemberOffboardImpactResponseDto>({ method: "GET", path: `/api/admin/v1/members/${id}/offboard-impact` });
+    },
+    /** 当前生效的队员标准照(无则返 null;另按调用者的组织数据范围过滤) [rbac: member.read.record] */
+    MembersControllerGetOfficialPortrait(id: string): Promise<ApiEnvelope<MemberOfficialPortraitDto>> {
+      return fetcher<MemberOfficialPortraitDto>({ method: "GET", path: `/api/admin/v1/members/${id}/official-portrait` });
+    },
+    /** 上传 / 替换队员标准照(multipart;旧版转 SUPERSEDED 同事务保留;另按组织数据范围判权) [rbac: member-portrait.manage.record] */
+    MembersControllerUploadOfficialPortrait(id: string): Promise<ApiEnvelope<MemberOfficialPortraitDto>> {
+      return fetcher<MemberOfficialPortraitDto>({ method: "POST", path: `/api/admin/v1/members/${id}/official-portrait` });
+    },
+    /** 作废当前队员标准照(ACTIVE → VOIDED,必填 reason;**不**自动回退到上一版;另按组织数据范围判权) [rbac: member-portrait.manage.record] */
+    MembersControllerVoidOfficialPortrait(id: string, body: VoidMemberOfficialPortraitDto): Promise<ApiEnvelope<void>> {
+      return fetcher<void>({ method: "DELETE", path: `/api/admin/v1/members/${id}/official-portrait`, body });
+    },
+    /** 队员标准照版本历史(含已顶替 / 已作废,version 倒序;另按组织数据范围过滤) [rbac: member-portrait.read.history] */
+    MembersControllerListOfficialPortraits(id: string): Promise<ApiEnvelope<MemberOfficialPortraitDto[]>> {
+      return fetcher<MemberOfficialPortraitDto[]>({ method: "GET", path: `/api/admin/v1/members/${id}/official-portraits` });
     },
     /** 切换队员 status；置 INACTIVE 时同步结束全部当前授权来源 [rbac: member.update.status] */
     MembersControllerUpdateStatus(id: string, body: UpdateMemberStatusDto): Promise<ApiEnvelope<MemberResponseDto>> {

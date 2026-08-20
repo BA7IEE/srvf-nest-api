@@ -11,6 +11,8 @@ import { MembersController } from './members.controller';
 import { MembersQueryService } from './members-query.service';
 import { MemberAccessService } from './member-access.service';
 import { MemberAccountService } from './member-account.service';
+import { AttachmentsModule } from '../attachments/attachments.module';
+import { MemberOfficialPortraitService } from './member-official-portrait.service';
 import { MembersService } from './members.service';
 
 // Slow-4 T2(2026-06-11):imports PermissionsModule 供 MembersService 注入 RbacService
@@ -23,6 +25,9 @@ import { MembersService } from './members.service';
 // (`member.account-granted`;沿 users/recruitment 模块同款 DI 范式)。
 @Module({
   imports: [
+    // issue #1055 T4:队员标准照走 attachments 导出的可信 facade;
+    // 只依赖那一个面(AccessService / Orchestrator 都没导出,拿不到它们正是边界本身)。
+    AttachmentsModule,
     DatabaseModule,
     PermissionsModule,
     AuthzModule,
@@ -41,6 +46,7 @@ import { MembersService } from './members.service';
   // 把 `currentUser` 设成必填形参、方法体第一件事就是解析可见组织范围 ——
   // 没有"免范围"的重载,调用方结构上无法绕过 scoped authz(规则 5)。
   providers: [
+    MemberOfficialPortraitService,
     MemberAccessService,
     MemberAccountService,
     MembersService,

@@ -576,6 +576,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/members/{id}/account/reopen'],
   ['patch', '/api/admin/v1/members/{id}/account/status'],
   // B7: 会员受众标签查询与全量替换，+2 路由，529→531。
+  // issue #1055 T4(2026-08-20):队员标准照闭环。**四个**端点而不是 issue §8.1 写的五个 ——
+  // upload-url 与 confirm-upload 按 T3 已拍板的口径合成一次 multipart POST
+  // (服务端要规范化就必须看见字节;签名 URL 直传会让未规范化的原图带着 EXIF/GPS 先落进 storage)。
+  // 读当前复用 member.read.record;管理与作废用 member-portrait.manage.record;
+  // 历史另有 member-portrait.read.history —— 看得见当前不等于看得见历史。
+  ['get', '/api/admin/v1/members/{id}/official-portrait'],
+  ['post', '/api/admin/v1/members/{id}/official-portrait'],
+  ['delete', '/api/admin/v1/members/{id}/official-portrait'],
+  ['get', '/api/admin/v1/members/{id}/official-portraits'],
   ['get', '/api/admin/v1/members/{id}/audience-tags'],
   ['put', '/api/admin/v1/members/{id}/audience-tags'],
   // 参与域生命周期收口⑤(v0.40.0):一键离队,+1 路由,328→329。
@@ -1028,7 +1037,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 540;
+const EXPECTED_ROUTE_COUNT = 544;
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1734,7 +1743,8 @@ describe('OpenAPI 契约快照', () => {
   //   邀请 + rank/lottery 批次 prepare/commit/void/get +5 →503；资格配置草稿 GET/PUT +2
   //   →505；第 5 批 QR 自助/managed attendance 十路 →515；第 6 批 staff/proxy/bulk/import
   //   八路 →523；B6-2 offline package/review 六路 →529；B7 audience tags 三路 →532;
-  //   issue #1055 T3 App 账号头像三路(GET/POST/DELETE /app/v1/me/avatar) → **540**。
+  //   issue #1055 T3 App 账号头像三路(GET/POST/DELETE /app/v1/me/avatar) →540;
+  //   issue #1055 T4 队员标准照四路(official-portrait GET/POST/DELETE + official-portraits GET) → **544**。
   //
   // ⚠️ 用例标题**从写死数字改成插值**:动它之前标题写着「精确为 532」而断言是 537 ——
   // 有人 bump 了数字没 bump 标题,标题从此说谎。插值之后它不可能再漂。

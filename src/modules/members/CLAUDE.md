@@ -61,6 +61,15 @@
   **刻意留在 service 未搬**:`assertCanOrThrow`(判权)、`runWithUniqueConstraintGuard`(P2002 错误映射,
   包着调用方回调属编排)、`assertMemberNoUnique`(与 `assertGradeCodeValid` 同型,goal 只点名搬后者)。
 
+- **队员标准照(issue #1055 T4,2026-08-20)**:`member-official-portrait.service.ts` 独立成文件,承载 `GET/POST/DELETE :id/official-portrait` 与 `GET :id/official-portraits`;**不进** `members.service.ts`。形状是 **multipart 直传服务端**(与 T3 头像同一理由:服务端要规范化就必须看见字节)。本模块**只依赖 attachments 的一个面**(`AttachmentVisualIdentityUploadService`)。
+  - **one-active 三道防线**:`Member` 行 `FOR UPDATE` 串行 → 同事务「旧行转 SUPERSEDED + 新行 ACTIVE」→ **DB partial unique** `member_official_portrait_one_active_per_member`。第三道不是冗余:锁保证串行,不保证后来者重读到最新状态,而「忘了重读」不会让任何东西报错;P2002 映射成 `15040`。
+  - **锁内必须重读当前 ACTIVE** —— 阶段 ③(Provider put+HEAD)期间锁是放开的,锁外读到的值可能已经过期。
+  - **旧版 `endedAt` 与新版 `activatedAt` 取同一瞬间**(同一个 `new Date()`),版本历史不留缝也不重叠。T1 特意拿掉 `activatedAt` 的 `@default(now())` 就是为了让这件事可能。
+  - **版本号取 `max(version)+1` 不是 `count+1`** —— 作废过的行也占号,`count` 会给出已被占用的号并撞 `@@unique([memberId, version])`。
+  - **被顶替的那一版不清二进制**(与 T3 头像相反):它是历史事实,正式材料可能还引着它;合规清理走 issue §5.2 的 purge 流程。
+- ❌ **scoped 判权不能只验「有没有码」**:必须 `getVisibleOrganizationScope(user, code)` 取范围后,**再验目标 memberId 在不在范围内**。只验前半截的话,A 部门的队长拿着 org-scoped 绑定就能改 B 部门队员的标准照,而 `hasPermission` 照样为 true。范围→where 复用 `MembersQueryService.buildOrganizationScopeFilter`,不另写一份。范围外与不存在**返回同一个错误**(`15001`),区分开来等于给出一个成员枚举口。
+- ❌ **`@ApiOperation` 的鉴权后缀必须是严格的 `[rbac: <码>]`**:`docs:rbacmap` 按这个形状精确解析并回查 seed 事实闭包,写成 `[rbac: x + 组织范围]` 会被整串当成码名而报「不在闭包中」(本刀实测)。范围说明写进括号里的正文。
+
 ## Risk points
 
 - ❌ 不复用 `UsersService`、不引入模块环，也不把 policy 调用移到事务外。

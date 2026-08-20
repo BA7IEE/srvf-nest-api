@@ -552,6 +552,23 @@ export const BizCode = {
     message: '队员仍有当前或未来活动报名,请先完成清理',
     httpStatus: HttpStatus.CONFLICT,
   },
+  // ===== issue #1055 T4:队员标准照 =====
+  // 作废时没有当前 ACTIVE 标准照 —— **刻意不做成幂等成功**:作废是针对具体某一版的判断,
+  // 静默成功会让调用方以为自己作废了某张照片,而实际什么都没发生。
+  // (与「清空账号头像」不同 —— 那个是把一个指针置空,幂等是对的。)
+  MEMBER_OFFICIAL_PORTRAIT_NOT_FOUND: {
+    code: 15039,
+    message: '该队员当前没有生效中的标准照',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  // one-active partial unique(member_official_portrait_one_active_per_member)冲突。
+  // 走到这里说明两次替换并发穿过了 Member 行锁 —— DB 是最后一道、也是唯一一道
+  // 不依赖应用代码写对的兜底,不该把它的 23505 当成 500 抛出去。
+  MEMBER_OFFICIAL_PORTRAIT_CONFLICT: {
+    code: 15040,
+    message: '该队员的标准照正在被另一次操作变更,请重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // organizations 模块业务级(110xx + 111xx)。详见 docs/v2-api-contract.md §3.5。
   // 子段(对齐 baseline §1.3):

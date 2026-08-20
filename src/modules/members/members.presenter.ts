@@ -19,6 +19,17 @@ import type { SafeMember } from './members-query.service';
 export function attachAccountInfo(
   member: SafeMember,
   linked: { id: string; status: UserStatus } | undefined,
+  /**
+   * 当前 ACTIVE 标准照的版本 id(issue #1055 T4)。
+   *
+   * ⚠️ **刻意只给 id,不给签名 URL**:URL 的 TTL 只有几分钟,塞进一个本可缓存的详情响应里
+   * 会让整个响应跟着几分钟就过期;列表面更是每行签一个 URL 的代价。
+   * 图片本身走专用端点 `GET /admin/v1/members/:id/official-portrait`。
+   *
+   * 这个 id 本身是有用的:它是正式材料引用的那个稳定标识(issue §10.3),
+   * 前端也能靠它判断「换过没有」来决定要不要重取图。
+   */
+  officialPortraitId?: string | null,
 ): MemberResponseDto {
   return {
     ...member,
@@ -26,5 +37,7 @@ export function attachAccountInfo(
     hasAccount: linked !== undefined,
     accountStatus: linked?.status ?? null,
     userId: linked?.id ?? null,
+    officialPortraitId: officialPortraitId ?? null,
+    hasOfficialPortrait: officialPortraitId != null,
   };
 }
