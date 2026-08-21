@@ -19,13 +19,20 @@ import { createTestApp } from '../setup/test-app';
 // 沿 D7 v1.1 §5.1 端点 1-4。
 //
 // 覆盖:
-// - CRUD 主成功路径(GET list / POST create / PATCH update / DELETE)
+// - CRUD 主成功路径(GET list / PATCH update / DELETE)
 // - 重复 code 拦截(30002 PERMISSION_CODE_ALREADY_EXISTS)
 // - 非法 code 格式拦截(30008 INVALID_PERMISSION_CODE_FORMAT;Service 层显式 regex)
 // - 资源不存在(30001 PERMISSION_NOT_FOUND;PATCH / DELETE 不存在的 id)
 // - 权限边界(未登录 / USER 角色 / ADMIN 与 SUPER_ADMIN 都允许)
 // - DTO 白名单(PATCH 拒绝 code / module / action / resourceType / id 等)
 // - 物理删验证(D4 v1.0;DELETE 后 GET 返回 404)
+//
+// 权限目录护栏(P1-32 PR1;2026-08-22)对本 spec 的影响:
+// - `POST /permissions` **不再可能成功** —— 闭包内的码 seed 后已存在(30002),
+//   闭包外的码被目录护栏拒(30106)。原先几条 `→ 201` 的用例改判下一道闸的码,
+//   要证的东西(入口闸放行 / 格式闸放行 / 响应 DTO 形状)一条没丢,详见各例注释。
+// - `DELETE` 对闭包内的码返 30105;闭包外的码(本 spec 的 `pb.*` 夹具)行为一字不变。
+// - 护栏本身的正/反/级联对照在 `permission-catalog-guardrail.e2e-spec.ts`。
 //
 // 不覆盖(超本 PR 范围):
 // - RBAC 判权(rbac.can();留 PR #6)
@@ -145,7 +152,11 @@ describe('permissions 模块', () => {
 
     // P0-F PR-1:ADMIN 持 ops-admin 后能通过(seed 14 条 rbac.* 全集含 rbac.permission.create)。
     // SUPER_ADMIN 短路在 CRUD 主成功路径已覆盖。
-    it('ADMIN 持 ops-admin 角色 → POST 201(RBAC 入口通过)', async () => {
+    //
+    // 权限目录护栏(2026-08-22)后本例改判 30106 而非 201:POST 已不可能成功
+    // (闭包内的码 seed 后必已存在 → 30002;闭包外的码 → 30106)。
+    // 本例要证的是**入口闸放行**,判据不变 —— 没放行会返 30100,与 30106 可区分。
+    it('ADMIN 持 ops-admin 角色 → POST 不再返 30100(RBAC 入口通过,被目录护栏接手)', async () => {
       await grantOpsAdminToUser(app, adminUserId, opsAdminRoleId);
       try {
         const res = await request(httpServer(app))
@@ -157,9 +168,7 @@ describe('permissions 模块', () => {
             action: 'adm-ok',
             resourceType: 'create',
           });
-        expect(res.status).toBe(201);
-        expect(res.body.code).toBe(0);
-        expect(res.body.data.code).toBe('pb.adm-ok.create');
+        expectBizError(res, BizCode.PERMISSION_CODE_NOT_IN_SEED_CATALOG);
       } finally {
         await revokeOpsAdminFromUser(app, adminUserId, opsAdminRoleId);
       }
@@ -169,19 +178,27 @@ describe('permissions 模块', () => {
   // ============ CRUD 主成功路径 ============
 
   describe('CRUD 主成功路径', () => {
-    it('SUPER_ADMIN POST → 201,字段集严格', async () => {
-      const res = await request(httpServer(app))
-        .post('/api/system/v1/permissions')
-        .set('Authorization', superAdminAuth)
-        .send({
+    // 权限目录护栏(2026-08-22)后 POST 不再可能成功,故「响应字段集严格」这条契约
+    // 改由**同一个 `PermissionResponseDto`** 的另一条出口(PATCH)承载 —— 断言的是
+    // DTO 形状,不是哪个动词产出了它。两条 attachment.* 样本行改由 prisma 直建
+    // (它们是本 spec 的过滤器夹具,不属 seed 闭包,走 HTTP 会被 30106 拦)。
+    it('PermissionResponseDto 字段集严格(含无 deletedAt)', async () => {
+      const created = await prisma.permission.create({
+        data: {
           code: 'attachment.upload.cert',
           module: 'attachment',
           action: 'upload',
           resourceType: 'cert',
           description: '上传证件附件',
-        });
+        },
+        select: { id: true },
+      });
+      const res = await request(httpServer(app))
+        .patch(`/api/system/v1/permissions/${created.id}`)
+        .set('Authorization', superAdminAuth)
+        .send({ description: '上传证件附件' });
 
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
       expect(res.body.data).toMatchObject({
         code: 'attachment.upload.cert',
@@ -197,18 +214,24 @@ describe('permissions 模块', () => {
       expect(res.body.data).not.toHaveProperty('deletedAt');
     });
 
-    it('SUPER_ADMIN POST 不传 description → 201,description 为 null', async () => {
-      const res = await request(httpServer(app))
-        .post('/api/system/v1/permissions')
-        .set('Authorization', superAdminAuth)
-        .send({
+    it('description 可空 → 读回为 null', async () => {
+      await prisma.permission.create({
+        data: {
           code: 'attachment.view.cert',
           module: 'attachment',
           action: 'view',
           resourceType: 'cert',
-        });
-      expect(res.status).toBe(201);
-      expect(res.body.data.description).toBeNull();
+        },
+      });
+      const res = await request(httpServer(app))
+        .get('/api/system/v1/permissions?module=attachment&pageSize=100')
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      const item = (res.body.data.items as Array<{ code: string; description: string | null }>).find(
+        (i) => i.code === 'attachment.view.cert',
+      );
+      expect(item).toBeDefined();
+      expect(item?.description).toBeNull();
     });
 
     it('GET 列表 → 200,分页结构正确', async () => {
@@ -299,25 +322,19 @@ describe('permissions 模块', () => {
   // ============ 重复 code(30002) ============
 
   describe('重复 code(30002 PERMISSION_CODE_ALREADY_EXISTS)', () => {
-    it('POST 重复 code → 30002', async () => {
-      await request(httpServer(app))
-        .post('/api/system/v1/permissions')
-        .set('Authorization', superAdminAuth)
-        .send({
-          code: 'dup.test.code',
-          module: 'dup',
-          action: 'test',
-          resourceType: 'code',
-        });
-
+    // 权限目录护栏(2026-08-22)后,30002 只在**闭包内**的码上还可达:
+    // 闭包外的码先被 30106 拦下,根本走不到唯一性预检查。
+    // 故本例改用 fixture 已 seed 的 `rbac.permission.read` —— 它同时满足
+    // 「在闭包内(过护栏)」与「已存在(撞唯一)」,是 30002 现在唯一的到达路径。
+    it('POST 已存在的闭包内 code → 30002', async () => {
       const res = await request(httpServer(app))
         .post('/api/system/v1/permissions')
         .set('Authorization', superAdminAuth)
         .send({
-          code: 'dup.test.code',
-          module: 'dup',
-          action: 'test',
-          resourceType: 'code',
+          code: 'rbac.permission.read',
+          module: 'rbac',
+          action: 'read',
+          resourceType: 'permission',
         });
       expectBizError(res, BizCode.PERMISSION_CODE_ALREADY_EXISTS);
     });
@@ -369,7 +386,10 @@ describe('permissions 模块', () => {
       ['attachment_4seg_upload_other', 'attachment.upload.cert.other'],
       ['attachment_4seg_view_self', 'attachment.view.cert.self'],
       ['attachment_4seg_view_other', 'attachment.view.cert.other'],
-    ])('POST code = %s 合法形如 %s → 201', async (_name, code) => {
+    ])('POST code = %s 合法形如 %s → 过格式闸,被目录护栏拦(30106 而非 30008)', async (_name, code) => {
+      // 权限目录护栏(2026-08-22)后这些码不可能创建成功(都不在 seed 闭包内)。
+      // 但本组要证的是**格式闸放行**,判据仍在:格式不合法会返 30008,
+      // 返 30106 说明正则接受了它、是下一道闸拦的。两个码可区分 ⇒ 断言没变钝。
       const res = await request(httpServer(app))
         .post('/api/system/v1/permissions')
         .set('Authorization', superAdminAuth)
@@ -379,8 +399,7 @@ describe('permissions 模块', () => {
           action: 'a',
           resourceType: 'r',
         });
-      expect(res.status).toBe(201);
-      expect(res.body.data.code).toBe(code);
+      expectBizError(res, BizCode.PERMISSION_CODE_NOT_IN_SEED_CATALOG);
     });
   });
 

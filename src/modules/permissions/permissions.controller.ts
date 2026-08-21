@@ -69,7 +69,7 @@ export class PermissionsController {
   @RequiresPermission('rbac.permission.create')
   @ApiOperation({
     summary:
-      '创建权限点(code 格式 <module>.<action>.<resource_type>;失败抛 30008) [rbac: rbac.permission.create]',
+      '创建权限点(权限码由 seed 定义,此处不能凭空造 —— 闭包外的码抛 30106,闭包内的码 seed 后已存在抛 30002;实际不存在可成功路径) [rbac: rbac.permission.create]',
   })
   @ApiWrappedCreatedResponse(PermissionResponseDto)
   @ApiBizErrorResponse(
@@ -78,6 +78,7 @@ export class PermissionsController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.INVALID_PERMISSION_CODE_FORMAT,
     BizCode.PERMISSION_CODE_ALREADY_EXISTS,
+    BizCode.PERMISSION_CODE_NOT_IN_SEED_CATALOG,
   )
   create(
     @CurrentUser() user: CurrentUserPayload,
@@ -113,7 +114,7 @@ export class PermissionsController {
   @RequiresPermission('rbac.permission.delete')
   @ApiOperation({
     summary:
-      '物理删除权限点(D4 v1.0;RolePermission FK Cascade 自动联级清理) [rbac: rbac.permission.delete]',
+      '物理删除权限点(seed 事实闭包内的系统权限码一律拒绝,抛 30105 —— 删码会经 RolePermission FK Cascade 一次性撤销所有角色对它的授权;仅闭包外的历史码可删) [rbac: rbac.permission.delete]',
   })
   @ApiWrappedOkResponse(PermissionResponseDto)
   @ApiBizErrorResponse(
@@ -121,6 +122,7 @@ export class PermissionsController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.PERMISSION_NOT_FOUND,
+    BizCode.SEED_PERMISSION_DELETE_FORBIDDEN,
   )
   delete(
     @CurrentUser() user: CurrentUserPayload,

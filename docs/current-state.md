@@ -23,7 +23,7 @@
 | Controller | 101 |
 | Endpoint | 545 |
 | Migration | 92 |
-| BizCode | 458 |
+| BizCode | 460 |
 | 权限码 | 237 |
 | AuditLogEvent | 146 |
 | 内建角色 | 15 |

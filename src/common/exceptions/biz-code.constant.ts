@@ -3106,6 +3106,31 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // 权限目录护栏(P1-32 PR1;2026-08-22):seed 事实闭包内的权限码是**系统拥有**的 ——
+  // 由 seed 定义、被端点硬编码引用,管理员删它没有任何合法用途,只有自伤。
+  //
+  // 🔴 实测(clean 探针库,237 码 / 337 条 role_permissions):
+  //     DELETE FROM permissions WHERE code='member.read.record'  → DELETE 1
+  //     ⇒ role_permissions 337 → 333,biz-admin / org-admin / org-readonly / org-supervisor
+  //       四个角色同时失去「查看队员」。`RolePermission.permission` 是 onDelete: Cascade。
+  // 重跑 seed 只能恢复**内置**角色的映射;实测自定义角色那条授权**永久丢失**。
+  //
+  // 刻意**不**改成软删:软删的权限码会被 rbac 误读(既有拍板,见 permissions.service.ts)。
+  // 闭包清单唯一来源:src/modules/permissions/seed-permission-codes.ts。
+  SEED_PERMISSION_DELETE_FORBIDDEN: {
+    code: 30105,
+    message: '系统权限码不可删除;要收回某个角色的这项权限,请改该角色的权限映射,不要删权限码本身',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 权限目录护栏(P1-32 PR1;2026-08-22):闭包外的权限码**造出来也是惰性的** ——
+  // 端点判的是硬编码的码,凭空造的码能存表、能绑角色,却守不住任何端点,
+  // 管理员会得到一个「看起来生效、实际什么都不管」的权限且零反馈。故直接拒绝并说明去处。
+  PERMISSION_CODE_NOT_IN_SEED_CATALOG: {
+    code: 30106,
+    message: '权限码由系统定义,不能在此新建;新增权限点需要改代码并发版,请联系开发者',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+
   // V2.x C-6 RBAC 实施 PR #6(2026-05-14):RbacService.can() 配套统一拒绝码。
   //
   // 沿 D7 v1.1 §F5 / §12.2 锁定:Service 层显式 `rbac.can(actor, action, resource?)` 调用,
