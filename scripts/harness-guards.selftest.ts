@@ -3159,6 +3159,12 @@ async function runTrustedJudgeAssertions(): Promise<void> {
       metric: string,
       relPath?: string,
     ) => { ok: boolean; added: string[]; grown: string[]; removedFile: boolean };
+    judgeSetMonotonicity: (
+      baseText: string,
+      headText: string | null,
+      setField: string,
+      relPath?: string,
+    ) => { ok: boolean; added: string[]; grown: string[]; removedFile: boolean };
     judgeRegistryMonotonicity: (
       baseText: string,
       headText: string | null,
@@ -3182,12 +3188,13 @@ async function runTrustedJudgeAssertions(): Promise<void> {
       which: string,
     ) => Array<{
       id: string;
-      // EC-1:kind 省略时由解析器填 'eslint-exempt';numeric 型不带 rule/symbolShape。
+      // EC-1:kind 省略时由解析器填 'eslint-exempt';numeric / set 型不带 rule/symbolShape。
       kind: string;
       baseline: string;
       rule?: string;
       symbolShape?: string;
       metric?: string;
+      setField?: string;
     }>;
   };
   const reg = JSON.parse(
@@ -3689,6 +3696,94 @@ async function runTrustedJudgeAssertions(): Promise<void> {
           })(),
           '不冻结 kind,一个 PR 只要翻它就换掉了判据选择,而 baseline 逐字未变、旧冻结检查全绿 —— 与「同 id 换载体」同形',
         );
+
+        // ── set-monotonic:架构债棘轮的执行位(v4 §6 元规则「禁新增代码债」)──────
+        {
+          const SET = 'callSiteIds';
+          const doc = (ids: string[]): string =>
+            JSON.stringify({ schemaVersion: '1.0.0', [SET]: ids });
+          const BASE = doc(['cs:aaa', 'cs:bbb', 'cs:ccc']);
+          const setV = (head: string | null) =>
+            judge.judgeSetMonotonicity(BASE, head, SET, 'harness/x.json');
+
+          check(
+            'F3 set:head ⊆ base → 通过(原样)',
+            setV(doc(['cs:aaa', 'cs:bbb', 'cs:ccc'])).ok,
+            '',
+          );
+          check(
+            'F3 set:**还债**(成员消失)→ 通过',
+            setV(doc(['cs:aaa'])).ok,
+            '还债必须畅通,否则下一个人会绕开棘轮而不是还债 —— 与数值型「file 消失放行」同向',
+          );
+          check(
+            'F3 set:⚠️ **塞进一个基线外身份** → 破棘轮,且点名是谁',
+            (() => {
+              const v = setV(doc(['cs:aaa', 'cs:bbb', 'cs:ccc', 'cs:NEW']));
+              return !v.ok && v.added.length === 1 && v.added[0] === 'cs:NEW';
+            })(),
+            '这是本闸存在的唯一理由:「写了新违规 + 顺手把它登进基线」在 PR 自己的树上与「改掉违规」同样全绿',
+          );
+          check(
+            'F3 set:⚠️ **等量替换**(删一条加一条,总数不变)→ 仍然破棘轮',
+            (() => {
+              const v = setV(doc(['cs:aaa', 'cs:bbb', 'cs:NEW']));
+              return !v.ok && v.added[0] === 'cs:NEW';
+            })(),
+            '任何看总数的判据都看不见这一形状 —— 终审【九】「count 永不作为最终棘轮身份」正是为它写的',
+          );
+          check(
+            'F3 set:基线文件被删 / 改名 → removedFile(不许判成空集合成立)',
+            setV(null).removedFile,
+            '「删掉判据」与「判据通过」在门禁看来必须不同',
+          );
+          check(
+            'F3 set:缺 setField 数组 → 抛**且报的是缺该字段**',
+            throwsWith(
+              () => judge.judgeSetMonotonicity(BASE, JSON.stringify({}), SET, 'harness/x.json'),
+              `缺 ${SET}`,
+            ),
+            '判不了在这里等价于没有棘轮;断言认这条闸自己的错误,只断言「抛了」会被任意 TypeError 满足',
+          );
+          check(
+            'F3 set:重复成员 → 抛(不是去重)',
+            throwsWith(
+              () => judge.judgeSetMonotonicity(BASE, doc(['cs:aaa', 'cs:aaa']), SET, 'harness/x.json'),
+              '重复成员',
+            ),
+            '同一身份出现两次说明生成侧已按别的口径计数,「取哪一条」从此看运气',
+          );
+          check(
+            'F3 set:非字符串成员 → 抛',
+            throwsWith(
+              () =>
+                judge.judgeSetMonotonicity(
+                  BASE,
+                  JSON.stringify({ [SET]: ['cs:aaa', null] }),
+                  SET,
+                  'harness/x.json',
+                ),
+              '非字符串',
+            ),
+            '允许 null 混入 = 允许用一个 null 顶掉一条真实身份,而集合差集看不出这件事',
+          );
+          check(
+            'F3 kind:set-monotonic 带 setField → 通过',
+            regKind({ kind: 'set-monotonic', setField: 'callSiteIds' })()[0].setField ===
+              'callSiteIds',
+            '',
+          );
+          check(
+            'F3 kind:set-monotonic **缺 setField** → 抛',
+            throws(regKind({ kind: 'set-monotonic' })),
+            '缺了就没法判「载体有没有被换掉」,与 eslint 型缺 rule、数值型缺 metric 同理',
+          );
+          check(
+            'F3 kind:⚠️ set-monotonic **携带 rule** → 抛(与数值型同一理由)',
+            throws(regKind({ kind: 'set-monotonic', setField: 'callSiteIds', rule: 'srvf/x' })),
+            '它的基线里没有 symbol,⑤(rule 豁免并集只减不增)对它无从判起',
+          );
+        }
       }
 
       // ── 并集单调性:借「新增全新 id」这条合法通道给既有 rule 加豁免 ──────────

@@ -210,9 +210,19 @@ const RATCHET_KINDS = {
   // 而漂移的后果是「冻结检查漏掉一个字段」,静默且刚好是本裁判要防的东西。
   'eslint-exempt': RATCHET_IDENTITY_FIELDS,
   'numeric-monotonic': ['baseline', 'metric'],
+  // set-monotonic:基线是一组**身份字符串**(架构债的 callSiteId)。判据 = 集合只减不增。
+  // 与 numeric 的区别在于「架构债没有大小,只有在不在册」—— 数值型问「涨了多少」,
+  // 集合型问「进来的是谁」。二者不可互相顶替:把债务基线塞给数值型判据,
+  // 它会因为条目里没有 metric 字段而抛,而抛在这里等于 fail-closed 之外的一种失败形态。
+  'set-monotonic': ['baseline', 'setField'],
 };
 const DEFAULT_RATCHET_KIND = 'eslint-exempt';
-/** numeric 型绝不能带的字段 —— 带了就能借道 ESLint 豁免,见上方 ⚠️。 */
+/**
+ * numeric / set 型绝不能带的字段 —— 带了就能借道 ESLint 豁免,见上方 ⚠️。
+ *
+ * 两种非 eslint 型共用同一份禁带清单:它们的基线里都没有 symbol,
+ * 于是 ⑤(rule 豁免并集只减不增)对它们同样无从判起。
+ */
 const NUMERIC_FORBIDDEN_FIELDS = ['rule', 'symbolShape'];
 
 /**
@@ -265,12 +275,12 @@ export function parseRatchetRegistryDoc(text, which) {
         );
       }
     }
-    if (kind === 'numeric-monotonic') {
+    if (kind === 'numeric-monotonic' || kind === 'set-monotonic') {
       for (const field of NUMERIC_FORBIDDEN_FIELDS) {
         if (r[field] !== undefined) {
           throw new Error(
-            `${which} 的 ${RATCHET_REGISTRY_REL_PATH} 条目 ${r.id}(kind=numeric-monotonic)` +
-              `不得携带 ${field}:数值型棘轮没有 ESLint 规则,带上它等于借道把基线里的文件` +
+            `${which} 的 ${RATCHET_REGISTRY_REL_PATH} 条目 ${r.id}(kind=${kind})` +
+              `不得携带 ${field}:非 ESLint 型棘轮没有规则名,带上它等于借道把基线里的文件` +
               '从那条规则里豁免掉,而 ⑤(rule 豁免并集只减不增)对它无从判起。',
           );
         }
@@ -288,6 +298,7 @@ export function parseRatchetRegistryDoc(text, which) {
       rule: r.rule,
       symbolShape: r.symbolShape,
       metric: r.metric,
+      setField: r.setField,
     });
   }
   return out;
@@ -517,6 +528,73 @@ export function judgeNumericMonotonicity(baseText, headText, metric, relPath = '
   };
 }
 
+/**
+ * 集合单调性裁决:基线是一组**身份字符串**,只许出不许进。
+ *
+ * 用途 = 架构债棘轮(`harness/architecture-debt-baseline.json` 的 `callSiteIds`)。
+ * 语义与 v4 §6 元规则一致:**禁新增代码债**;还债(身份从集合里消失)恒放行。
+ *
+ * 为什么不复用 numeric:架构债没有"大小"这个维度,只有"在不在册"。
+ * 硬要用数值型表达就得给每条债编一个数字,而那个数字既无意义又会变成
+ * 第二个可被调低的旋钮 —— 终审【九】明写「count 永不作为最终棘轮身份」。
+ *
+ * ⚠️ 重复成员 ⇒ **抛**,不是去重。基线里同一个 id 出现两次,说明生成它的那一侧
+ * 已经在按别的口径计数,而"取哪一条"从此看运气 —— 与注册表重复 id 同一形状。
+ *
+ * ⚠️ 成员必须是非空字符串 ⇒ 否则抛。允许 `null`/数字混进来,等于允许用
+ * 一个 `null` 顶掉一条真实身份,而集合差集看不出这件事。
+ *
+ * @param {string} baseText base 分支上的基线全文
+ * @param {string|null} headText PR head 上的基线全文;null = 被删 / 改名
+ * @param {string} setField 承载身份集合的字段名(注册表里那条的 `setField`)
+ * @param {string} [relPath] 出错时报给人看的路径
+ * @returns {{ ok: boolean, added: string[], grown: string[], removedFile: boolean }}
+ */
+export function judgeSetMonotonicity(baseText, headText, setField, relPath = '<baseline>') {
+  const read = (text, which) => {
+    let doc;
+    try {
+      doc = JSON.parse(text);
+    } catch (err) {
+      throw new Error(`${which} 的 ${relPath}不是合法 JSON:${String(err)}`);
+    }
+    if (doc === null || typeof doc !== 'object') {
+      throw new Error(`${which} 的 ${relPath}结构不对(不是对象)`);
+    }
+    const members = doc[setField];
+    if (!Array.isArray(members)) {
+      throw new Error(
+        `${which} 的 ${relPath}缺 ${setField} 数组 —— ` +
+          '缺了就没法判「集合有没有变大」,而"判不了"在这里等价于"没有棘轮"。',
+      );
+    }
+    const set = new Set();
+    for (const m of members) {
+      if (typeof m !== 'string' || m === '') {
+        throw new Error(
+          `${which} 的 ${relPath}的 ${setField} 有非字符串 / 空成员:${JSON.stringify(m)}`,
+        );
+      }
+      if (set.has(m)) {
+        throw new Error(`${which} 的 ${relPath}的 ${setField} 有重复成员:${m}`);
+      }
+      set.add(m);
+    }
+    return set;
+  };
+
+  const base = read(baseText, 'base');
+  if (headText === null) {
+    return { ok: false, added: [], grown: [], removedFile: true };
+  }
+  const head = read(headText, 'head');
+  const added = [];
+  for (const m of head) if (!base.has(m)) added.push(m);
+  // `grown` 恒空:集合型没有"变大"这个维度,保留该字段只是为了让三种 kind
+  // 的裁决对象形状一致(调用方按同一份结构取值,少一个分支就少一个漏判面)。
+  return { ok: added.length === 0, added: added.sort(), grown: [], removedFile: false };
+}
+
 function main() {
   if (typeof path.matchesGlob !== 'function') {
     failClosed(
@@ -705,11 +783,16 @@ function main() {
       const head = headTextOf(ratchet.baseline, baseText);
 
       const isNumeric = ratchet.kind === 'numeric-monotonic';
+      const isSet = ratchet.kind === 'set-monotonic';
       let verdict;
       try {
-        verdict = isNumeric
-          ? judgeNumericMonotonicity(baseText, head.text, ratchet.metric, ratchet.baseline)
-          : judgeBaselineMonotonicity(baseText, head.text, ratchet.baseline);
+        if (isNumeric) {
+          verdict = judgeNumericMonotonicity(baseText, head.text, ratchet.metric, ratchet.baseline);
+        } else if (isSet) {
+          verdict = judgeSetMonotonicity(baseText, head.text, ratchet.setField, ratchet.baseline);
+        } else {
+          verdict = judgeBaselineMonotonicity(baseText, head.text, ratchet.baseline);
+        }
       } catch (err) {
         failClosed(`棘轮 ${ratchet.id} 单调性无法判定:${String(err)}`);
       }
@@ -753,6 +836,23 @@ function main() {
           '正确做法:把单元拆到基线值以下。确需上调基线 —— 那需要维护者临时授权改本裁判自身(双重人闸,刻意昂贵)。',
         ]);
       }
+      if (!verdict.ok && isSet) {
+        failHard(`棘轮 ${ratchet.id} 被破坏:集合只减不增,本 PR 却往基线里塞了新成员`, [
+          `判据:${ratchet.baseline} 的 ${ratchet.setField}(**认身份,不认计数**)`,
+          `新增 ${verdict.added.length} 个身份:`,
+          ...verdict.added.slice(0, 20).map((a) => `    + ${a}`),
+          ...(verdict.added.length > 20 ? [`    …另有 ${verdict.added.length - 20} 条`] : []),
+          '',
+          '这道闸拦的是「写了新的架构违规,再顺手把它的身份登进基线」——',
+          '在 PR 自己的树上,「把违规改掉」与「把违规登记为已知」产生的结果一模一样(闸都绿),',
+          '只有拿 base 的基线来比才分得出。这正是 v4 §6 元规则「**禁新增代码债**」那句话的执行位。',
+          '',
+          '⚠️ 本失败**不能由 harness-review 审批覆盖**(scan 失败 ⇒ 审批 job 直接被跳过)。',
+          '正确做法:改掉新引入的违规(走属主 API / tx 原语 / 共享谓词)。',
+          '若确属「扫描能力提升后新发现的存量历史债」(v4 勘误②允许登记入册)——',
+          '那需要维护者临时授权改本裁判自身(双重人闸,刻意昂贵),并在 PR 里写明为什么它是存量而非新增。',
+        ]);
+      }
       if (!verdict.ok) {
         failHard(`棘轮 ${ratchet.id} 被破坏:基线只减不增,本 PR 却新增了条目`, [
           `判据:${ratchet.baseline}(base 与 head 按 (file, symbol) 集合比,不看总数)`,
@@ -770,14 +870,16 @@ function main() {
           '若确属合法 revert 需要加回旧基线行 —— 那需要维护者临时授权改本裁判自身(双重人闸,刻意昂贵)。',
         ]);
       }
-      if (isNumeric) {
-        // ⑤(rule 豁免并集只减不增)对数值型**无从判起**:它没有 rule,基线里也没有 symbol。
+      if (isNumeric || isSet) {
+        // ⑤(rule 豁免并集只减不增)对非 ESLint 型**无从判起**:它们没有 rule,基线里也没有 symbol。
         // 不能 unite 一个 undefined 的 rule —— 那会造出一个名为 "undefined" 的桶,
         // 把不同棘轮的键混进同一个并集里,判据从此似是而非。
-        // 数值型不参与 ⑤ 是安全的:它借不出任何 ESLint 豁免
-        // (parseRatchetRegistryDoc 已禁止它携带 rule / symbolShape)。
+        // 它们不参与 ⑤ 是安全的:借不出任何 ESLint 豁免
+        // (parseRatchetRegistryDoc 已禁止它们携带 rule / symbolShape)。
         console.log(
-          `✓ 棘轮 ${ratchet.id} 单调性:HEAD ≤ BASE(${head.source};按 ${ratchet.metric} 逐 file 比)`,
+          isNumeric
+            ? `✓ 棘轮 ${ratchet.id} 单调性:HEAD ≤ BASE(${head.source};按 ${ratchet.metric} 逐 file 比)`
+            : `✓ 棘轮 ${ratchet.id} 单调性:HEAD ⊆ BASE(${head.source};按 ${ratchet.setField} 比身份集合)`,
         );
         continue;
       }
