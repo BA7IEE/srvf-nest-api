@@ -22,7 +22,7 @@ export function applySwagger(app: INestApplication, appCfg: AppConfig): void {
     .setDescription(
       'Shenzhen Rescue Volunteers Federation Digital Platform — 组织数字化业务底座后端 API(NestJS + Prisma + PostgreSQL)',
     )
-    .setVersion('0.66.0')
+    .setVersion('0.67.0')
     .addBearerAuth()
     // ===== Auth / Public(全部客户端共用)=====
     .addTag('Auth', '身份认证与会话管理(login / refresh / logout / logout-all)')

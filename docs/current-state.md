@@ -64,6 +64,12 @@
   全套同版本应用 → 再开闸 → 跑一遍全链路 smoke。
   ⚠️ 「终审改为提交 `LedgerPostingBatch`」那座桥**仍未实施** —— 未搭之前开闸,
   历史 approved 考勤不会出现在账本读面里(见 `NEXT_TASKS` 第 7 批②)。
+  🔴 **硬前置(2026-08-21 第六轮评审 B-03)**:**业务复合锚点闭合前不得开闸**。
+  账本表的 `postingBatchId` / `memberId` / `participationIdentityId` / `resultRevisionId`
+  仍是四个独立单列 FK,数据库不证明它们属于同一条主链;而 B 包实测
+  **正式账本写入口没有补齐数据库缺失的组合校验**(对比 C 包四条路径「交给 command,合理分层」,
+  账本这条是真敞口)。**闸不开则不可达;开闸即暴露**,且 committed 分录是关账与更正的基线,
+  脏组合进去后会被当可信基线继续冲正。修复刀 = A-2+B-03(D 档,待起)。
 
 ## 4. 当前风险 / 债务(仅 open 项;全文与建议见 `ai-harness/NEXT_TASKS.md` + 各评审稿)
 

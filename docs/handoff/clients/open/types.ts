@@ -1,9 +1,9 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: Open 无账号公开面
-// contractVersion: 0.66.0
+// contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:8319f54a178447df9b0f5a5398c843f15c0246fc0849a95be72b8471d02373ba
+// inputDigest: sha256:de35a90a0bee19af0ba1ecaa61d66b3d79c26e62e0b06f38beb3cc9aaf4ec734
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto } from '../shared/types';

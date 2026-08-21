@@ -1,3 +1,0 @@
-- 活动业务改造 v1.1 第 2 批第 ⑧a 刀补齐服务层闭环：两个既有 worker 进程注册 `ActivityBatchWorker`，账本批次准备到 `ready` 后自动复用统一生效协议，并以终审通过人为账本审计 actor；baseline 漂移等提交失败保持同批次 `ready`、零部分生效且按 lease 重试，不自动重算。
-- 结算草稿生成新增 `operationKey` / `requestHash` 幂等调度层；500 人以内仍同步复用既有生成器，超过 500 人创建 `ActivityBatchJob(bulk_proxy)` 并返回 job。同 key 同 payload 重放不新增草稿或 job，同 key 不同 payload 以具名业务码拒绝；BizCode 总数由 387 刷新为 389。
-- 本刀保持零 HTTP 端点、零 DTO、零权限码、零 schema、零新 cron / queue / worker 进程；对外端点与权限契约留给第 ⑧b 刀。

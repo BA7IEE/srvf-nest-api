@@ -1,3 +1,0 @@
-### Changed
-
-- 附件存储编排的不变量原语抽出 `attachment-storage-invariants.ts`(Phase 6-B 第四域第一刀,架构边界 §3.2):7 个纯判定函数(`terminalSucceededData` / `requireString` / `safeNumber` / `requireSafeSize` / `requireHeadSize` / `assertExpectedSizeMatchesHead` / `requireSha256Hex`)与 4 个判定失败错误类(`StorageAwaitingConfirmError` / `StorageCandidateNotFoundError` / `StorageObjectIntegrityMismatchError` / `StorageProviderDeleteStillPresentError`)由 `AttachmentStorageOrchestrator` 迁入该模块。这些原语被编排器内多族方法共用(`terminalSucceededData` 10 处、`assertExpectedSizeMatchesHead` 5 处),后续按族拆分编排器时,被抽出的族若从编排器 import 会形成循环依赖,故先将其降为共享底座。纯移动:零签名变更、零逻辑变更、零 DI 变更、零 endpoint / DTO / OpenAPI / BizCode / 权限码变更,对外行为逐字不变。
