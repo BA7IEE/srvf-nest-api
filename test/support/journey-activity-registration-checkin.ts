@@ -45,29 +45,35 @@ async function prepareActivityRegistrationFixture(runtime: JourneyRuntime): Prom
   const activityTypeCode = `${tag}-type`;
 
   const [nodeType, activityType] = await Promise.all([
+    // journey-direct-write: ambient — 字典底座,不属于「报名 → 签到」这条被验链
     prisma.dictType.create({
       data: { code: 'node_type', label: '旅程二组织节点类型' },
       select: { id: true },
     }),
+    // journey-direct-write: ambient — 同上
     prisma.dictType.create({
       data: { code: 'activity_type', label: '旅程二活动类型' },
       select: { id: true },
     }),
   ]);
   await Promise.all([
+    // journey-direct-write: ambient — 同上
     prisma.dictItem.create({
       data: { typeId: nodeType.id, code: nodeTypeCode, label: '旅程二组织节点' },
     }),
+    // journey-direct-write: ambient — 同上
     prisma.dictItem.create({
       data: { typeId: activityType.id, code: activityTypeCode, label: '旅程二活动类型' },
     }),
   ]);
 
   // Admin create 必须落在非根节点；组织树本身仍属于 test/support 的前置夹具。
+  // journey-direct-write: ambient — 组织树底座,不属于被验链
   const root = await prisma.organization.create({
     data: { name: `${tag} 根节点`, nodeTypeCode },
     select: { id: true },
   });
+  // journey-direct-write: ambient — 同上
   const organization = await prisma.organization.create({
     data: { name: `${tag} 承办队`, nodeTypeCode, parentId: root.id },
     select: { id: true },
@@ -77,6 +83,7 @@ async function prepareActivityRegistrationFixture(runtime: JourneyRuntime): Prom
     username: `${tag}-applicant`,
     role: Role.USER,
   });
+  // journey-direct-write: ambient — 队员建档属招新链(另有 journey 验),不是本链
   const member = await prisma.member.create({
     data: {
       memberNo: `${tag}-member`,
@@ -85,6 +92,7 @@ async function prepareActivityRegistrationFixture(runtime: JourneyRuntime): Prom
     },
     select: { id: true },
   });
+  // journey-direct-write: ambient — 账号与队员关联,同属招新链
   await prisma.user.update({ where: { id: user.id }, data: { memberId: member.id } });
 
   return {

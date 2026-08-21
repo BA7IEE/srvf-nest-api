@@ -51,10 +51,12 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
   const prisma = journeyPrisma(runtime);
   const submitter = journeyAdmin(runtime);
   const tag = `journey-attendance-${randomUUID()}`;
+  // journey-direct-write: ambient — 组织树底座
   const organization = await prisma.organization.create({
     data: { name: `${tag} 组织`, nodeTypeCode: 'journey-attendance-team' },
     select: { id: true },
   });
+  // journey-direct-write: ambient — 活动本体属发布链,不是「结算更正」这条被验链
   const activity = await prisma.activity.create({
     data: {
       title: `${tag} 活动`,
@@ -67,6 +69,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     },
     select: { id: true },
   });
+  // journey-direct-write: gate-unreachable — ActivitySession 写口在 app managed-activities 且 scopes=responsibility;ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED 默认关 ⇒ 无可达 API 路径
   const session = await prisma.activitySession.create({
     data: {
       activityId: activity.id,
@@ -85,6 +88,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     },
     select: { id: true },
   });
+  // journey-direct-write: ambient — 队员建档属招新链
   const member = await prisma.member.create({
     data: {
       memberNo: `${tag}-member`,
@@ -93,10 +97,12 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     },
     select: { id: true },
   });
+  // journey-direct-write: ambient — 报名属报名链(另有 journey 验)
   const registration = await prisma.activityRegistration.create({
     data: { activityId: activity.id, memberId: member.id, statusCode: 'pass' },
     select: { id: true },
   });
+  // journey-direct-write: ambient — 同 L88
   const owner = await prisma.member.create({
     data: {
       memberNo: `${tag}-owner`,
@@ -105,6 +111,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     },
     select: { id: true },
   });
+  // journey-direct-write: gate-unreachable — 责任闭环开关默认关,无可达 API 路径
   await prisma.activityResponsibilityAssignment.create({
     data: {
       activityId: activity.id,
@@ -117,6 +124,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
       source: 'publish',
     },
   });
+  // journey-direct-write: gate-unreachable — v1.1 结算真相链;ACTIVITY_V11_WORKFLOW_ENABLED 默认关
   const seal = await prisma.evidenceSeal.create({
     data: {
       activityId: activity.id,
@@ -136,6 +144,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     },
     select: { id: true },
   });
+  // journey-direct-write: gate-unreachable — 同上
   const run = await prisma.attendanceSettlementRun.create({
     data: {
       activityId: activity.id,
@@ -145,6 +154,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     },
     select: { id: true },
   });
+  // journey-direct-write: gate-unreachable — 同上
   const version = await prisma.attendanceSettlementVersion.create({
     data: {
       settlementRunId: run.id,
@@ -165,6 +175,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     },
     select: { id: true },
   });
+  // journey-direct-write: gate-unreachable — 同上
   const identity = await prisma.activityParticipationIdentity.create({
     data: {
       activityId: activity.id,
@@ -176,6 +187,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     },
     select: { id: true },
   });
+  // journey-direct-write: gate-unreachable — 同上(新打卡链闸关时被 assertV11WriteAllowed 拒绝)
   const checkIn = await prisma.attendancePunchEvent.create({
     data: {
       activityId: activity.id,
@@ -193,6 +205,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
     },
     select: { id: true },
   });
+  // journey-direct-write: gate-unreachable — 同上
   await prisma.participantServiceSegmentRevision.create({
     data: {
       participationIdentityId: identity.id,
@@ -206,6 +219,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
       serviceHours: 2,
     },
   });
+  // journey-direct-write: gate-unreachable — 同上
   await prisma.participantSettlementResultRevision.create({
     data: {
       settlementVersionId: version.id,
@@ -219,6 +233,7 @@ async function createSettledAttendance(runtime: JourneyRuntime): Promise<Settled
       statusCode: 'draft',
     },
   });
+  // journey-direct-write: gate-unreachable — 同上
   const batch = await prisma.ledgerPostingBatch.create({
     data: {
       settlementRunId: run.id,

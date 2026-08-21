@@ -53,6 +53,7 @@ async function submitApplicant(
   const wechatCode = 'journey-4-applicant';
   const phone = '13900004001';
   const token = 'journey-4-phone-token';
+  // journey-direct-write: mid-chain-start — 生产路径是 recruitment-identity.service.ts:135,入口要真实短信验证码往返 ⇒ 自动化跨不过去。⚠️ 后果:招新实名入口没有任何自动化测试穿过
   await prisma.recruitmentIdentitySession.create({
     data: {
       cycleId,
@@ -240,6 +241,7 @@ export async function runCertificateRecognitionJourney(
     throw new Error(`旅程四综合评定未进入 publicity: ${JSON.stringify(evaluated.body)}`);
   }
 
+  // journey-direct-write: ambient — 组织树底座
   await prisma.organization.create({
     data: { name: '旅程四志愿者归口', code: 'VOL', nodeTypeCode: 'volunteer', status: 'ACTIVE' },
   });

@@ -41,7 +41,9 @@ async function createDict(
   label: string,
   items: Array<{ code: string; label: string }>,
 ): Promise<void> {
+  // journey-direct-write: ambient — 字典是全 journey 共用的环境底座,不属于任何一条被验链
   const type = await prisma.dictType.create({ data: { code, label }, select: { id: true } });
+  // journey-direct-write: ambient — 同上
   await prisma.dictItem.createMany({
     data: items.map((item) => ({ typeId: type.id, code: item.code, label: item.label })),
   });
@@ -49,10 +51,13 @@ async function createDict(
 
 async function seedJourneyReferenceData(prisma: PrismaService): Promise<void> {
   // 公开报名的两条 DevStub 通道，以及发号/入队使用的业务字典，均是夹具前置事实。
+  // journey-direct-write: ambient — 第三方渠道配置;走 HTTP 需要真实凭证,且不属于被验链
   await prisma.wechatSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
+  // journey-direct-write: ambient — 同上
   await prisma.realnameVerificationSettings.create({
     data: { providerType: 'DEV_STUB', enabled: true },
   });
+  // journey-direct-write: ambient — 同上
   await prisma.smsSettings.create({ data: { providerType: 'DEV_STUB', enabled: true } });
 
   await createDict(prisma, 'emergency_relation', '紧急联系人关系', [
