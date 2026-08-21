@@ -378,25 +378,30 @@ function parseRatchetRegistry(text) {
     // 一侧认、另一侧不认 = 又一对「两把刻错的尺子」。裁判侧见
     // .github/workflows/redzone-trusted-judge.mjs 的 RATCHET_KINDS。
     const kind = r.kind === undefined ? 'eslint-exempt' : r.kind;
-    if (kind !== 'eslint-exempt' && kind !== 'numeric-monotonic') {
-      fail(`${at}.kind 未知:${JSON.stringify(r.kind)}(只认 eslint-exempt / numeric-monotonic)`);
+    if (kind !== 'eslint-exempt' && kind !== 'numeric-monotonic' && kind !== 'set-monotonic') {
+      fail(
+        `${at}.kind 未知:${JSON.stringify(r.kind)}` +
+          '(只认 eslint-exempt / numeric-monotonic / set-monotonic)',
+      );
     }
     const required =
       kind === 'numeric-monotonic'
         ? ['id', 'baseline', 'metric', 'why']
-        : ['id', 'baseline', 'rule', 'symbolShape', 'why'];
+        : kind === 'set-monotonic'
+          ? ['id', 'baseline', 'setField', 'why']
+          : ['id', 'baseline', 'rule', 'symbolShape', 'why'];
     for (const field of required) {
       if (typeof r[field] !== 'string' || r[field] === '') fail(`${at}.${field} 必须是非空字符串`);
     }
     if (ids.has(r.id)) fail(`${at}.id 重复:${r.id}`);
     ids.add(r.id);
-    if (kind === 'numeric-monotonic') {
-      // 数值型**禁带** rule / symbolShape:带了就能借道把基线里的文件从那条 ESLint 规则
-      // 里豁免掉(下面的 RATCHET_BASELINES / 豁免块生成都按 rule 走),而它的基线里没有 symbol,
-      // 裁判侧的「rule 豁免并集只减不增」对它无从判起。与裁判侧同一条禁令。
+    if (kind === 'numeric-monotonic' || kind === 'set-monotonic') {
+      // 非 ESLint 型**禁带** rule / symbolShape:带了就能借道把基线里的文件从那条 ESLint 规则
+      // 里豁免掉(下面的 RATCHET_BASELINES / 豁免块生成都按 rule 走),而它们的基线里没有 symbol,
+      // 裁判侧的「rule 豁免并集只减不增」对它们无从判起。与裁判侧同一条禁令。
       for (const field of ['rule', 'symbolShape']) {
         if (r[field] !== undefined) {
-          fail(`${at}(kind=numeric-monotonic)不得携带 ${field} —— 数值型棘轮没有 ESLint 规则`);
+          fail(`${at}(kind=${kind})不得携带 ${field} —— 非 ESLint 型棘轮没有规则名`);
         }
       }
     } else if (!Object.prototype.hasOwnProperty.call(BASELINE_SYMBOL_SHAPES, r.symbolShape)) {

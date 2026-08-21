@@ -227,12 +227,34 @@ jobs:
       # 接闸时机选在此刻是因为台账 222/222 全绿,零存量摩擦。
       # ⚠️ harness/architecture-debt.json 在 selfGuard 内,但授权闸管的是「能不能改」,
       #    管不了「改得完不完整」—— 两个问题,故人闸不替代本条。
+      # 2026-08-21 补 `docs:boundaries:newdebt:check` —— v4 §6 元规则
+      # 「**禁新增代码债**」此前**零执法**,与 2026-08-15 那次是同一形状的下一层:
+      # 那次是「命令在 package.json 却没接 CI」,这次是「接上了 CI,但它执法的
+      # 不是元规则说的那件事」。
+      #   · `docs:boundaries:debt:check` 的 enforcement 字段自述 registry-integrity-only,
+      #     只校验已登记条目的 7 个语义字段填没填,**从不与扫描结果比对**;
+      #   · 真正产出 findings 的 `docs:boundaries` 带 `|| true`。
+      # 实测 641 条 finding 里 412 条不在台账中 —— 登记与否对 CI 毫无影响,
+      # 于是 B 类规则(R2/R3/R5/R15)整条升级路径所依赖的「baseline 只减不增」
+      # 从来没有执行位。
+      #
+      # 本条判的是**身份集合**:每条 finding 的 callSiteId ∪ legacyCallSiteId
+      # 必须已在 harness/architecture-debt-baseline.json 里。两者都不在 = 本 PR 新写的违规。
+      # **无 `|| true`** —— 接闸时机选在此刻是因为基线刚由当前 main 生成,零存量摩擦
+      # (实测 scanned 641 / unknown 0 / exit 0)。
+      #
+      # ⚠️ 与既有三条 A 类检查的分工:它们判「台账/清单本身完不完整」,本条判
+      #    「有没有出现没登记过的违规」。两件事,互不顶替。
+      # ⚠️ 基线自身在 selfGuard 红区,且已登记为 set-monotonic 棘轮 ——
+      #    「顺手把新违规登进基线」被人闸(授权+环境审批)与 base-trusted 裁判
+      #    (集合只减不增)同时挡住。
       - name: Architecture governance A-metadata gate (B reports only)
         run: |
           pnpm docs:boundaries || true
           pnpm docs:boundaries:check
           pnpm docs:boundaries:ids:check
           pnpm docs:boundaries:debt:check
+          pnpm docs:boundaries:newdebt:check
           pnpm docs:authz:check
           pnpm gate:authz:graph:check
 
