@@ -3946,6 +3946,45 @@ async function runTrustedJudgeAssertions(): Promise<void> {
         '文档自称「机器现算」而数字是一次性抄进去的 —— 与同日 SERVICE_SIZE_RATCHET §4 的过期 ✅ 同一缺陷类;' +
           '总条目对不上时,表里由它派生的全部比率都不可信',
       );
+      // 同一缺陷类的第三处,且这次是**覆盖缺口**而非数字漂移:
+      // COMMON_GOVERNANCE.md §3 声称「逐个定性」并列了 12 个子目录,而 src/common
+      // 现有 14 个 —— activity-workflow 与 identity 从未经过 R15 定性。
+      //
+      // 为什么三个月无人发现:R15 的三条自动判据(业务表访问 / 业务谓词 / 模块入边)
+      // 只看**内容**,对它们照常生效且当前全绿。缺的是"有没有人看过一眼"这一步,
+      // 而那一步此前只活在文档里。本断言把它变成执行位。
+      //
+      // 判据是**集合相等**不是「至少包含」:少一个 = 新子目录未定性(本次的形状);
+      // 多一个 = 表里留着已删除的子目录(反方向,同样是失真)。
+      check(
+        'F3 common 治理:§3 表格列出的子目录集合 == src/common 实际子目录集合',
+        (() => {
+          const root = path.resolve(__dirname, '..');
+          const actual = fs
+            .readdirSync(path.join(root, 'src/common'), { withFileTypes: true })
+            .filter((d) => d.isDirectory())
+            .map((d) => d.name)
+            .sort();
+          if (actual.length === 0) return false; // 自证:读不到目录 ⇒ 判据无输入,不等于通过
+          const doc = fs.readFileSync(
+            path.join(root, 'docs/ai-harness/COMMON_GOVERNANCE.md'),
+            'utf-8',
+          );
+          const listed = [
+            ...new Set(
+              doc
+                .split('\n')
+                .map((l) => /^\|\s*`([a-z][a-z0-9-]*)`\s*\|\s*\d+\s*\|/.exec(l))
+                .filter((m): m is RegExpExecArray => m !== null)
+                .map((m) => m[1]),
+            ),
+          ].sort();
+          if (listed.length === 0) return false; // 表格锚点没了 ⇒ 同上
+          return listed.join(',') === actual.join(',');
+        })(),
+        '新增 src/common 子目录而不在 §3 定性,R15 的三条自动判据看不见(它们只查内容,不查"有没有人定性过");' +
+          '实测本次缺口:activity-workflow / identity 两个子目录三个月未被定性',
+      );
       check(
         'F3 债务棘轮:身份基线存在且非空(自证,不写死条数)',
         (() => {
