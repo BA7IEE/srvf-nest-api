@@ -29,6 +29,13 @@
       "baseline": "harness/service-size-baseline.json",
       "metric": "loc",
       "why": "Phase 6-A 大 service 尺寸棘轮(NCLOC ≥700)。EC-1:此前登记不进本表 —— 它没有 ESLint 规则、entries 没有 symbol、而裁判只比 (file, symbol) 集合不认数值(数值编进 symbol 会让合法的「变小」造出新 key 而硬失败,语义正好反了)。PR#1054 给裁判加了 numeric-monotonic 形态后方可登记:身份=file,判据=每个 file 的 loc 只减不增且不得新增 file。"
+    },
+    {
+      "id": "architecture-debt",
+      "kind": "set-monotonic",
+      "baseline": "harness/architecture-debt-baseline.json",
+      "setField": "callSiteIds",
+      "why": "v4 §6 元规则「**禁新增代码债**」的执行位。此前这句话没有任何一道闸在执行:`docs:boundaries:debt:check` 的 enforcement 自述 registry-integrity-only(只校验台账条目的语义字段填没填,从不与扫描结果比对),而产出 findings 的 `docs:boundaries` 带 `|| true` —— 实测 641 条 finding 里 412 条不在台账中,登记与否对 CI 毫无影响。身份=每条 finding 的 callSiteId ∪ legacyCallSiteId(两种编码都收,为的是将来再换一次 id 方案时不整片假红);判据=集合只减不增,还债(成员消失)恒放行。与 service-size 用 numeric 而本条用 set 的理由:架构债没有大小、只有在不在册 —— 终审【九】「count 永不作为最终棘轮身份」。"
     }
   ]
 }

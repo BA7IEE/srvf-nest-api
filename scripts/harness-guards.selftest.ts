@@ -3821,7 +3821,7 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     }
 
     check(
-      'F3 注册表:真实注册表登记了四条棘轮,且 service-size 是 numeric-monotonic(EC-1)',
+      'F3 注册表:真实注册表登记了五条棘轮,且 service-size / architecture-debt 的 kind 正确',
       (() => {
         // ⚠️ 刻意用**精确集合**而不是「至少包含」:精确形式同时抓两个方向 ——
         // 少一条 = 那条棘轮的单调性没人裁;多一条 = 有人塞了条没经过评审的棘轮。
@@ -3835,17 +3835,62 @@ async function runTrustedJudgeAssertions(): Promise<void> {
           .sort()
           .join(',');
         const ss = rs.find((r) => r.id === 'service-size');
-        // kind 与 metric 一起钉:只钉 id 的话,把 service-size 悄悄改回 eslint-exempt
+        const ad = rs.find((r) => r.id === 'architecture-debt');
+        // kind 与载体字段一起钉:只钉 id 的话,把 service-size 悄悄改回 eslint-exempt
         // 会让裁判用集合语义去判一份没有 symbol 的基线 —— 那会 fail-closed,但报的原因离真因很远。
+        // architecture-debt 同理:翻成 numeric 会让裁判去找不存在的 metric 字段。
         return (
-          ids === 'is-optional-null,legacy-param-id,near-future-date,service-size' &&
+          ids ===
+            'architecture-debt,is-optional-null,legacy-param-id,near-future-date,service-size' &&
           ss?.kind === 'numeric-monotonic' &&
-          ss.metric === 'loc'
+          ss.metric === 'loc' &&
+          ad?.kind === 'set-monotonic' &&
+          ad.setField === 'callSiteIds' &&
+          ad.baseline === 'harness/architecture-debt-baseline.json'
         );
       })(),
       '注册表少一条 = 那条棘轮的单调性没人裁,而 lint 与 selftest 都看不出来;' +
         'service-size 的 kind 被改回 eslint-exempt 则等于尺寸棘轮退回「装不进来」的状态',
     );
+
+    // ── 债务棘轮的**接线**断言 ────────────────────────────────────────────────
+    //
+    // 为什么接线也要断言:2026-08-15 的教训是「命令在 package.json 里却没接任何 CI」——
+    // 判据存在、执行位不存在,两头不靠。本组把「接了 CI」与「没被 || true 兜住」
+    // 各钉一条;它们与判据本体同处 selfGuard 红区,不会被单独回退。
+    {
+      const ci = fs.readFileSync(
+        path.resolve(__dirname, '../.github/workflows/ci.yml'),
+        'utf-8',
+      );
+      const line = ci
+        .split('\n')
+        .find((l) => l.includes('docs:boundaries:newdebt:check') && l.trim().startsWith('pnpm'));
+      check(
+        'F3 债务棘轮:`docs:boundaries:newdebt:check` 已接进 CI',
+        line !== undefined,
+        'v4 §6 元规则「禁新增代码债」的执行位 —— 不接 CI 就只是一句散文(2026-08-15 同形教训)',
+      );
+      check(
+        'F3 债务棘轮:该步骤**没有** `|| true` 兜底(它不是 report 期检查)',
+        line !== undefined && !line.includes('|| true'),
+        '带上 || true 等于把刚接的执行位当场拆掉,而检查名一字不变、CI 一片绿',
+      );
+      check(
+        'F3 债务棘轮:身份基线存在且非空(自证,不写死条数)',
+        (() => {
+          // 用**地板锚点**而不是「恰好 N 个」:基线随还债而缩小是棘轮做功的方向,
+          // 写死条数会让每次合法还债都要改这一行,于是这条断言迟早被改成恒真。
+          const raw = fs.readFileSync(
+            path.resolve(__dirname, '../harness/architecture-debt-baseline.json'),
+            'utf-8',
+          );
+          const doc = JSON.parse(raw) as { callSiteIds?: unknown };
+          return Array.isArray(doc.callSiteIds) && doc.callSiteIds.length > 0;
+        })(),
+        '空基线会让每条现存违规都变成「新增」⇒ 闸恒红 ⇒ 下一个人只会把它关掉',
+      );
+    }
   }
 }
 

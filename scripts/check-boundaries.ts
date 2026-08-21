@@ -27,6 +27,20 @@ const ROOT = path.resolve(__dirname, '..');
 const DOMAIN_MAP = 'harness/domain-map.json';
 const STATE_MACHINES = 'harness/state-machines.json';
 const ARCHITECTURE_DEBT = 'harness/architecture-debt.json';
+/**
+ * 架构债**身份基线**——v4 §6 元规则「禁新增代码债」的执行位判据。
+ *
+ * 与 ARCHITECTURE_DEBT 的分工(别搞混,两者都必须存在):
+ *   · architecture-debt.json  = **已策展**的债务身份证(带 classification/reason/desiredExit
+ *     等 7 个语义字段),回答「这笔债是什么、打算怎么还」。它是人读的。
+ *   · 本文件                  = **全部已知违规的身份集合**,回答「这个违规是不是新写的」。
+ *     它是机器读的,只有 id,没有语义。
+ *
+ * 为什么必须分成两份:策展是慢的(229/641 条完成),而止血不能等策展。
+ * 若把「必须登记在 architecture-debt.json」当闸,今天就会红 412 条,
+ * 于是闸只能继续挂着 `|| true` —— 那正是过去三个月的实际状态。
+ */
+const ARCHITECTURE_DEBT_BASELINE = 'harness/architecture-debt-baseline.json';
 const VERSION = '1.0.0';
 
 /**
@@ -2945,6 +2959,126 @@ function runDebtCheck(): void {
 }
 
 /**
+ * 已知违规的身份集合(callSiteId ∪ legacyCallSiteId)。
+ *
+ * 两个 id 都收:它们是**同一处调用的两种编码**(当前方案 / 迁移前方案),
+ * 641 条实测各自唯一且一一对应。都收进来,是为了将来再换一次 id 方案时
+ * 不会整片假红 —— 那正是 legacyCallSiteId 这个字段存在的理由。
+ */
+function knownDebtIdentities(): Set<string> {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(read(ARCHITECTURE_DEBT_BASELINE));
+  } catch (error) {
+    throw new Error(
+      `${ARCHITECTURE_DEBT_BASELINE} 读不出 / 不是合法 JSON:${String(error)} —— ` +
+        '基线读不到时**不得**当成空集合放行:空集合会让每一条现存违规都变成"新增",' +
+        '于是闸恒红、下一个人只会把它关掉。fail-closed 的正确形态是抛,不是"当没有"。',
+    );
+  }
+  const raw = objectOf(doc, ARCHITECTURE_DEBT_BASELINE);
+  if (!Array.isArray(raw.callSiteIds)) {
+    throw new Error(`${ARCHITECTURE_DEBT_BASELINE} 缺 callSiteIds 数组`);
+  }
+  const set = new Set<string>();
+  for (const id of raw.callSiteIds) {
+    if (typeof id !== 'string' || id === '') {
+      throw new Error(`${ARCHITECTURE_DEBT_BASELINE} 的 callSiteIds 有非字符串 / 空成员`);
+    }
+    set.add(id);
+  }
+  return set;
+}
+
+/**
+ * **禁新增代码债**(v4 §6 元规则)的执行位。
+ *
+ * 判据:本次扫描出的每一条 finding,其 `callSiteId` 或 `legacyCallSiteId`
+ * 必须已在身份基线中。出现两者都不在册的 ⇒ 这是本 PR 新写的违规 ⇒ 红。
+ *
+ * ⚠️ 与 `--debt-check` 的区别(它们**不能互相顶替**):
+ *   `--debt-check`     判「已登记的那些条目,语义字段填全没有」——台账卫生。
+ *   `--new-debt-check` 判「有没有出现没登记过的违规」——棘轮本身。
+ * 前者此前是唯一接 CI 的那个,于是「禁新增」这句话三个月没有执行位。
+ *
+ * ⚠️ 已知代价(写在明处,EC-6 的残余误报来源):
+ *   `callSiteId = hash(file + AST 路径 + 判别符)` **含文件路径**,所以把一处
+ *   既有违规**搬到别的文件**会换身份、被本闸判成新增。那是真实成本,不是缺陷 ——
+ *   它与「搬走后顺手写了个新违规」在扫描结果上确实无法区分。
+ *   处置路径是既有的:`pnpm docs:boundaries:ids`(--migrate-ids)重映射身份,
+ *   基线随之更新,并因基线在 selfGuard 红区而必须过维护者审批。
+ */
+function runNewDebtCheck(): void {
+  const map = domainMap();
+  const result = scan(map);
+  cycles(map, result.edges, result.findings);
+  const all = [...result.findings, ...result.commonFindings];
+  let known: Set<string>;
+  try {
+    known = knownDebtIdentities();
+  } catch (error) {
+    process.stdout.write(
+      JSON.stringify(
+        { mode: 'new-debt-check', enforcement: 'ratchet', ok: false, error: String(error) },
+        null,
+        2,
+      ) + '\n',
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const unknown = all.filter(
+    (item) => !known.has(item.callSiteId) && !known.has(item.legacyCallSiteId),
+  );
+  const ok = unknown.length === 0;
+  process.stdout.write(
+    JSON.stringify(
+      {
+        mode: 'new-debt-check',
+        // 这里**不是** report-only:它没有 `|| true`,红了就是红了。
+        enforcement: 'ratchet',
+        baseline: ARCHITECTURE_DEBT_BASELINE,
+        ok,
+        scanned: all.length,
+        baselineSize: known.size,
+        unknownCount: unknown.length,
+        unknown: unknown.slice(0, 50).map((item) => ({
+          kind: item.kind,
+          callSiteId: item.callSiteId,
+          file: item.location.file,
+          line: item.location.line,
+          symbol: item.location.symbol,
+          sourceDomain: item.sourceDomain,
+          targetDomain: item.targetDomain,
+          prismaModel: item.prismaModel,
+        })),
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  if (!ok) {
+    process.stderr.write(
+      `\n✗ 架构债棘轮:发现 ${unknown.length} 条**不在身份基线里**的违规。\n` +
+        `  判据:${ARCHITECTURE_DEBT_BASELINE}(按 callSiteId ∪ legacyCallSiteId 比身份集合)\n` +
+        '\n' +
+        '  这意味着本次改动写出了新的跨域违规。v4 §6 元规则:**禁新增代码债**。\n' +
+        '\n' +
+        '  正确做法(按代价从低到高):\n' +
+        '    ① 走属主导出的 public API / Query API / tx 原语 / owner 谓词,不直接跨域读写;\n' +
+        '    ② 若确属域内错切,把代码移回属主模块;\n' +
+        '    ③ 若确属「扫描能力提升后新发现的存量历史债」(v4 勘误②允许登记入册)——\n' +
+        '       须维护者授权改基线,并在 PR 里写明为什么它是存量而非新增。\n' +
+        '\n' +
+        '  ⚠️ 基线本身在 selfGuard 红区:把身份加进基线需要维护者授权 + 环境审批,\n' +
+        '     且 base-trusted 裁判会按 set-monotonic 棘轮判「集合只减不增」——\n' +
+        '     也就是说「顺手把自己登进基线」这条路是被两道闸同时挡住的。\n',
+    );
+    process.exitCode = 1;
+  }
+}
+
+/**
  * One-off migration of registered debt onto the normalized-AST identity.
  *
  * The danger this guards against is not a bad hash — it is a *silent* one. If
@@ -3053,10 +3187,15 @@ function main(): void {
   const debtCheck = process.argv.includes('--debt-check');
   const migrateIds = process.argv.includes('--migrate-ids');
   const migrateCheck = process.argv.includes('--migrate-ids-check');
-  if ([metadata, violations, debtCheck, migrateIds, migrateCheck].filter(Boolean).length !== 1) {
+  const newDebtCheck = process.argv.includes('--new-debt-check');
+  if (
+    [metadata, violations, debtCheck, migrateIds, migrateCheck, newDebtCheck].filter(Boolean)
+      .length !== 1
+  ) {
     process.stderr.write(
       'Usage: pnpm tsx scripts/check-boundaries.ts ' +
-        '--metadata | --violations | --debt-check | --migrate-ids | --migrate-ids-check\n',
+        '--metadata | --violations | --debt-check | --new-debt-check | ' +
+        '--migrate-ids | --migrate-ids-check\n',
     );
     process.exit(2);
   }
@@ -3065,6 +3204,7 @@ function main(): void {
     else if (violations) runViolations();
     else if (migrateIds) runMigrateIds(true);
     else if (migrateCheck) runMigrateIds(false);
+    else if (newDebtCheck) runNewDebtCheck();
     else runDebtCheck();
   } catch (error) {
     process.stderr.write(

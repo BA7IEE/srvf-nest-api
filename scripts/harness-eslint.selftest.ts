@@ -2452,14 +2452,26 @@ async function main(): Promise<void> {
     //    本段自动开始对账。上一版只对第 18 条对账,于是第二条棘轮落地时默认无人核对。
     //
     // ⚠️ EC-1:**只对账 eslint-exempt 型**。本段用 `rules: { [ratchet.rule]: … }` 起 ESLint,
-    //    数值型棘轮没有 rule ⇒ 键名成了字符串 "undefined" ⇒ ESLint 在配置校验期直接抛
+    //    非 ESLint 型棘轮没有 rule ⇒ 键名成了字符串 "undefined" ⇒ ESLint 在配置校验期直接抛
     //    `Could not find "undefined" in plugin "@"`,整个自测崩掉(实测)。
-    //    数值型的对账不在 ESLint 里做:判据由 `pnpm harness:servicesize` 出、
-    //    单调性由 base-trusted 裁判守(见本文件 EC-1 那组断言与 harness-guards.selftest 的 F3 组)。
-    //    ⚠️ 这是 EC-1 里**第三个** RATCHET_REGISTRY 消费者 —— 前两个在 eslint.harness.mjs
-    //    (RATCHET_BASELINES 加载、ratchetBaselineBlocks 生成)。改注册表形态时必须三处一起看:
-    //    漏掉任何一个,症状都是「加载期崩溃」而不是「某条判据变松」,离真因很远。
-    for (const ratchet of RATCHET_REGISTRY.filter((r) => r.kind !== 'numeric-monotonic')) {
+    //    它们的对账不在 ESLint 里做:数值型判据由 `pnpm harness:servicesize` 出、
+    //    集合型由 `pnpm docs:boundaries:newdebt:check` 出,单调性一律由 base-trusted 裁判守
+    //    (见本文件 EC-1 那组断言与 harness-guards.selftest 的 F3 组)。
+    //
+    // ⚠️ 2026-08-21 由**黑名单改白名单**。原判据是 `kind !== 'numeric-monotonic'` ——
+    //    它只排掉了「当时已知的那一种」,于是新增 set-monotonic 时本段照样把它吃进来、
+    //    在加载期崩掉(实测)。黑名单对未来的 kind 天然失明,而这类失明的表现是
+    //    **崩溃**不是「判据变松」:`grep -c '^✗'` 返回 0,与全过同一个读数,
+    //    只有退出码能分辨(exit=1 且零红 = 崩溃)。白名单形式下,任何新 kind 默认不进本段,
+    //    要进必须显式加 —— 这才是「新增形态时被迫想一遍」的正确方向。
+    //
+    // ⚠️ RATCHET_REGISTRY 的消费者共**四处**(上一版注释写「三处」,已过时):
+    //    ① eslint.harness.mjs 的 parseRatchetRegistry(kind 白名单 + 载体字段校验)
+    //    ② eslint.harness.mjs 的 RATCHET_BASELINES(已按 === 'eslint-exempt' 过滤)
+    //    ③ 本段
+    //    ④ .github/workflows/redzone-trusted-judge.mjs 的 RATCHET_KINDS(裁判侧)
+    //    加 kind 时四处一起看;别信任何一处注释里的计数,自己 grep 一遍。
+    for (const ratchet of RATCHET_REGISTRY.filter((r) => r.kind === 'eslint-exempt')) {
       const scanner = new ESLint({
         cwd: process.cwd(),
         overrideConfigFile: true,

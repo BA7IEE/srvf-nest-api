@@ -62,6 +62,7 @@
     "docs:boundaries": "tsx scripts/check-boundaries.ts --violations",
     "docs:boundaries:check": "tsx scripts/check-boundaries.ts --metadata",
     "docs:boundaries:debt:check": "tsx scripts/check-boundaries.ts --debt-check",
+    "docs:boundaries:newdebt:check": "tsx scripts/check-boundaries.ts --new-debt-check",
     "docs:boundaries:ids:check": "tsx scripts/check-boundaries.ts --migrate-ids-check",
     "docs:codemap": "tsx scripts/generate-codemap.ts",
     "docs:codemap:check": "tsx scripts/generate-codemap.ts --check && tsx scripts/check-codemap.ts",
