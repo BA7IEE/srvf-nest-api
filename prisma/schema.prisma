@@ -1577,6 +1577,9 @@ model ActivityRuleSnapshot {
   // 一个活动的一个 workflow revision 只能对应一份最终规则快照。createdByReviewId
   // 只保存审核来源，不假定合同未声明的“一审核请求至多一快照”。
   @@unique([activityId, workflowRevision])
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, activityId], map: "activity_rule_snapshot_id_activity_key")
   @@index([templateVersionId])
 }
 
@@ -1642,6 +1645,9 @@ model ActivityPosition {
   activity      Activity               @relation(fields: [activityId], references: [id], onDelete: Restrict)
   registrations ActivityRegistration[]
 
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, activityId], map: "activity_position_id_activity_key")
   @@index([activityId])
   @@index([attendanceRoleCode])
   @@index([deletedAt])
@@ -1704,7 +1710,7 @@ model ActivityRegistration {
   sourceCode           String? // self / admin / invitation / onsite(§3.6 明写闭集;放行 NULL)
 
   activity                      Activity                        @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  activityPosition              ActivityPosition?               @relation(fields: [activityPositionId], references: [id], onDelete: Restrict)
+  activityPosition              ActivityPosition?               @relation(fields: [activityPositionId, activityId], references: [id, activityId], onDelete: Restrict)
   member                        Member                          @relation(fields: [memberId], references: [id], onDelete: Restrict)
   reviewer                      User?                           @relation("RegistrationReviewer", fields: [reviewedBy], references: [id], onDelete: Restrict)
   canceller                     User?                           @relation("RegistrationCanceller", fields: [cancelledByUserId], references: [id], onDelete: Restrict)
@@ -1718,10 +1724,13 @@ model ActivityRegistration {
   participationIdentities       ActivityParticipationIdentity[]
 
   // 第 1 批第二刀(合同 §3.6 / §3.7)。
-  currentFormVersion RegistrationFormVersion?       @relation("RegistrationCurrentFormVersion", fields: [currentFormVersionId], references: [id], onDelete: Restrict)
+  currentFormVersion RegistrationFormVersion?       @relation("RegistrationCurrentFormVersion", fields: [currentFormVersionId, activityId], references: [id, activityId], onDelete: Restrict)
   revisions          ActivityRegistrationRevision[]
 
   @@unique([activityId, memberId], map: "activity_registrations_activity_member_permanent_unique")
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, activityId, memberId], map: "activity_registration_id_activity_member_key")
   @@index([activityId])
   @@index([activityPositionId])
   @@index([memberId])
@@ -1766,7 +1775,7 @@ model ActivityCheckIn {
 
   activity     Activity             @relation(fields: [activityId], references: [id], onDelete: Restrict)
   member       Member               @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  registration ActivityRegistration @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  registration ActivityRegistration @relation(fields: [registrationId, activityId, memberId], references: [id, activityId, memberId], onDelete: Restrict)
 
   @@index([activityId])
   @@index([memberId])
@@ -3813,9 +3822,9 @@ model ActivityParticipationIdentity {
 
   activity     Activity                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
   session      ActivitySession          @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  registration ActivityRegistration     @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  registration ActivityRegistration     @relation(fields: [registrationId, activityId, memberId], references: [id, activityId, memberId], onDelete: Restrict)
   member       Member                   @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  position     ActivitySessionPosition? @relation(fields: [currentPositionId], references: [id], onDelete: Restrict)
+  position     ActivitySessionPosition? @relation(fields: [currentPositionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
 
   revisions    ActivityParticipationRevision[]
   reservations CapacityReservation[]
@@ -3845,6 +3854,12 @@ model ActivityParticipationIdentity {
   // D86 projection 冻结 identity 的 member/activity/session 四元事实；id 单列主键
   // 不能作为 PostgreSQL 复合 FK 的被引用键。
   @@unique([id, activityId, sessionId, memberId], map: "activity_participation_identity_id_activity_session_member_key")
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, activityId, sessionId], map: "activity_participation_identity_id_activity_session_key")
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, registrationId, activityId, sessionId], map: "activity_participation_identity_id_reg_act_sess_key")
   @@index([activityId])
   @@index([sessionId])
   @@index([memberId])
@@ -4099,6 +4114,9 @@ model RegistrationFormVersion {
   // §3.12「一活动至多一个 active」是 **partial** unique(WHERE statusCode='active'),
   // Prisma DSL 表达不了 WHERE,手写在 migration 末尾。
   @@unique([activityId, version])
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, activityId], map: "registration_form_version_id_activity_key")
   @@index([activityId])
   @@index([statusCode])
 }
@@ -4215,7 +4233,7 @@ model RegistrationUploadSession {
 
   activity    Activity                @relation(fields: [activityId], references: [id], onDelete: Restrict)
   member      Member                  @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  formVersion RegistrationFormVersion @relation(fields: [formVersionId], references: [id], onDelete: Restrict)
+  formVersion RegistrationFormVersion @relation(fields: [formVersionId, activityId], references: [id, activityId], onDelete: Restrict)
 
   @@index([activityId])
   @@index([memberId])
@@ -4364,7 +4382,7 @@ model ActivityInvitation {
   activity  Activity                 @relation(fields: [activityId], references: [id], onDelete: Restrict)
   member    Member                   @relation(fields: [memberId], references: [id], onDelete: Restrict)
   session   ActivitySession?         @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  position  ActivitySessionPosition? @relation("InvitationPosition", fields: [positionId], references: [id], onDelete: Restrict)
+  position  ActivitySessionPosition? @relation("InvitationPosition", fields: [positionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
   invitedBy User?                    @relation("ActivityInvitationInviter", fields: [invitedByUserId], references: [id], onDelete: Restrict)
 
   @@index([activityId])
@@ -4484,6 +4502,9 @@ model AttendanceQrCredential {
   // 默认名 AttendanceQrCredential_sessionId_actionCode_credentialVersion_key = 65 字符
   // > PostgreSQL 63 字符标识符上限 ⇒ 必须显式 map(否则被静默截断,与既有长名漂移同源)。
   @@unique([sessionId, actionCode, credentialVersion], map: "attendance_qr_credential_session_action_version_key")
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, activityId, sessionId], map: "attendance_qr_credential_id_activity_session_key")
   @@index([activityId])
   @@index([sessionId])
   @@index([statusCode])
@@ -4562,17 +4583,17 @@ model AttendancePunchEvent {
 
   activity              Activity                      @relation(fields: [activityId], references: [id], onDelete: Restrict)
   session               ActivitySession               @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  position              ActivitySessionPosition?      @relation("PunchEventPosition", fields: [positionId], references: [id], onDelete: Restrict)
-  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  position              ActivitySessionPosition?      @relation("PunchEventPosition", fields: [positionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
+  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict)
   member                Member                        @relation("AttendancePunchEventMember", fields: [memberId], references: [id], onDelete: Restrict)
   operatorUser          User                          @relation("AttendancePunchEventOperatorUser", fields: [operatorUserId], references: [id], onDelete: Restrict)
   operatorMember        Member?                       @relation("AttendancePunchEventOperatorMember", fields: [operatorMemberId], references: [id], onDelete: Restrict)
-  qrCredential          AttendanceQrCredential?       @relation(fields: [qrCredentialId], references: [id], onDelete: Restrict)
+  qrCredential          AttendanceQrCredential?       @relation(fields: [qrCredentialId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
   importJobItem         ActivityBatchJobItem?         @relation("PunchEventImportJobItem", fields: [importJobItemId], references: [id], onDelete: Restrict)
   offlinePackage        OfflinePackage?               @relation("OfflinePackagePunchEvents", fields: [offlinePackageId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
   offlineReviewItem     OfflinePunchReviewItem?       @relation("OfflineReviewFormalPunchEvent")
 
-  supersedesEvent AttendancePunchEvent?  @relation("PunchEventSupersede", fields: [supersedesEventId], references: [id], onDelete: Restrict)
+  supersedesEvent AttendancePunchEvent?  @relation("PunchEventSupersede", fields: [supersedesEventId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict)
   supersededBy    AttendancePunchEvent[] @relation("PunchEventSupersede")
 
   serviceSegmentCheckIns ParticipantServiceSegmentRevision[] @relation("SegmentSourceCheckInEvent")
@@ -4580,6 +4601,12 @@ model AttendancePunchEvent {
 
   @@unique([eventKey])
   @@unique([offlinePackageId, offlineSequence], map: "attendance_punch_event_offline_package_sequence_key")
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, activityId, sessionId, memberId], map: "attendance_punch_event_id_activity_session_member_key")
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, activityId, sessionId], map: "attendance_punch_event_id_activity_session_key")
   // §11.3 点名的三条:
   @@index([activityId, sessionId, occurredAt])
   @@index([participationIdentityId, occurredAt], map: "attendance_punch_event_identity_occurred_idx")
@@ -5091,15 +5118,18 @@ model ParticipationLedgerEntry {
   // 双锚点复合 FK:(activityId, sessionId) → ActivitySession(activityId, id),
   // 挡住「分录挂到别的活动的场次上」(沿第一刀 / 第三刀范式)。
   session        ActivitySession                     @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  identity       ActivityParticipationIdentity       @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  identity       ActivityParticipationIdentity       @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict)
   resultRevision ParticipantSettlementResultRevision @relation(fields: [resultRevisionId], references: [id], onDelete: Restrict)
 
-  reversesEntry ParticipationLedgerEntry?  @relation("LedgerEntryReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict)
+  reversesEntry ParticipationLedgerEntry?  @relation("LedgerEntryReversal", fields: [reversesEntryId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict)
   reversedBy    ParticipationLedgerEntry[] @relation("LedgerEntryReversal")
 
   reversalClaim LedgerEntryReversalClaim? @relation("ReversalClaimOriginalEntry")
 
   @@unique([postingBatchId, resultRevisionId, ledgerDate, entryTypeCode], map: "participation_ledger_entry_batch_result_date_type_key")
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, activityId, sessionId, memberId], map: "participation_ledger_entry_id_activity_session_member_key")
   // §11.3 点名的三条:
   @@index([memberId, ledgerDate], map: "participation_ledger_entry_member_date_idx")
   @@index([activityId, postingBatchId], map: "participation_ledger_entry_activity_batch_idx")
@@ -5454,7 +5484,7 @@ model OfflinePackage {
   session        ActivitySession      @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
   operatorUser   User                 @relation("OfflinePackageOperator", fields: [operatorUserId], references: [id], onDelete: Restrict)
   operatorMember Member               @relation("OfflinePackageOperatorMember", fields: [operatorMemberId], references: [id], onDelete: Restrict)
-  ruleSnapshot   ActivityRuleSnapshot @relation(fields: [ruleSnapshotId], references: [id], onDelete: Restrict)
+  ruleSnapshot   ActivityRuleSnapshot @relation(fields: [ruleSnapshotId, activityId], references: [id, activityId], onDelete: Restrict)
   revokedByUser  User?                @relation("OfflinePackageRevoker", fields: [revokedByUserId], references: [id], onDelete: Restrict)
 
   participants OfflinePackageParticipant[]
@@ -5482,10 +5512,10 @@ model OfflinePackageParticipant {
   offlinePackage        OfflinePackage                @relation(fields: [offlinePackageId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
   activity              Activity                      @relation(fields: [activityId], references: [id], onDelete: Restrict)
   session               ActivitySession               @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict)
   member                Member                        @relation(fields: [memberId], references: [id], onDelete: Restrict)
   participationRevision ActivityParticipationRevision @relation(fields: [participationRevisionId], references: [id], onDelete: Restrict)
-  position              ActivitySessionPosition?      @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  position              ActivitySessionPosition?      @relation(fields: [positionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
 
   @@id([offlinePackageId, participationIdentityId], map: "offline_package_participant_pkey")
   @@index([participationIdentityId], map: "offline_package_participant_identity_idx")
@@ -5534,15 +5564,19 @@ model OfflinePunchReviewItem {
   offlinePackage        OfflinePackage                 @relation(fields: [offlinePackageId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
   activity              Activity                       @relation(fields: [activityId], references: [id], onDelete: Restrict)
   session               ActivitySession                @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  participationIdentity ActivityParticipationIdentity? @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  participationIdentity ActivityParticipationIdentity? @relation(fields: [participationIdentityId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
   participationRevision ActivityParticipationRevision? @relation(fields: [participationRevisionId], references: [id], onDelete: Restrict)
   stagedByUser          User                           @relation("OfflinePunchReviewItemStager", fields: [stagedByUserId], references: [id], onDelete: Restrict)
   stagedByMember        Member?                        @relation("OfflinePunchReviewItemStagerMember", fields: [stagedByMemberId], references: [id], onDelete: Restrict)
   reviewedByUser        User?                          @relation("OfflinePunchReviewItemReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
   reviewedByMember      Member?                        @relation("OfflinePunchReviewItemReviewerMember", fields: [reviewedByMemberId], references: [id], onDelete: Restrict)
-  formalPunchEvent      AttendancePunchEvent?          @relation("OfflineReviewFormalPunchEvent", fields: [formalPunchEventId], references: [id], onDelete: Restrict)
+  formalPunchEvent      AttendancePunchEvent?          @relation("OfflineReviewFormalPunchEvent", fields: [formalPunchEventId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
 
   @@unique([offlinePackageId, sequence], map: "offline_review_item_package_sequence_key")
+  // 1:1 关系的定义侧:Prisma 要求复合外键的本地列也具备 unique。
+  // ⚠️ 上方 formalPunchEventId 的单列 @unique **保留不动** —— 只加不减,
+  // 否则「一个正式打卡事件至多被一条复核项认领」这条既有保证会被放宽。
+  @@unique([formalPunchEventId, activityId, sessionId], map: "offline_review_item_formal_punch_event_activity_session_key")
   @@index([activityId, sessionId, statusCode, createdAt], map: "offline_review_item_activity_session_status_created_idx")
   @@index([offlinePackageId, statusCode], map: "offline_review_item_package_status_idx")
   @@index([participationIdentityId], map: "offline_review_item_identity_idx")
@@ -5669,8 +5703,8 @@ model ActivityAllocationBatch {
   // 复合 FK(activityId, sessionId)→ ActivitySession(activityId, id):沿第一刀,
   // 让「场次属于该活动」由 DB 保证,而不是只靠 service 自觉。
   session      ActivitySession          @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  position     ActivitySessionPosition? @relation("AllocationBatchPosition", fields: [positionId], references: [id], onDelete: Restrict)
-  ruleSnapshot ActivityRuleSnapshot?    @relation(fields: [ruleSnapshotId], references: [id], onDelete: Restrict)
+  position     ActivitySessionPosition? @relation("AllocationBatchPosition", fields: [positionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
+  ruleSnapshot ActivityRuleSnapshot?    @relation(fields: [ruleSnapshotId, activityId], references: [id, activityId], onDelete: Restrict)
   createdBy    User?                    @relation("AllocationBatchCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   candidates             ActivityAllocationCandidate[]
@@ -5756,7 +5790,7 @@ model ActivityAllocationCandidate {
 
   allocationBatch        ActivityAllocationBatch                   @relation(fields: [allocationBatchId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_batch_anchor_fkey")
   waitlistPosition       ActivitySessionPosition?                  @relation("AllocationCandidateWaitlistPosition", fields: [activityId, sessionId, waitlistPositionId], references: [activityId, sessionId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_waitlist_position_fkey")
-  participationIdentity  ActivityParticipationIdentity             @relation(fields: [participationIdentityId, registrationId], references: [id, registrationId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")
+  participationIdentity  ActivityParticipationIdentity             @relation(fields: [participationIdentityId, registrationId, activityId, sessionId], references: [id, registrationId, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")
   registrationRevision   ActivityRegistrationRevision              @relation(fields: [registrationId, registrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_registration_revision_fkey")
   // Prisma 对复合 FK + 被引用方单列 unique 无法同时表达 1:1；DB 的 projection
   // candidate 单列 unique 才是权威一对一保证，关系仍保留完整同 batch/identity 锚。
@@ -5767,6 +5801,9 @@ model ActivityAllocationCandidate {
   @@unique([allocationBatchId, participationIdentityId], map: "activity_allocation_candidate_batch_identity_key")
   @@unique([id, allocationBatchId, participationIdentityId], map: "activity_allocation_candidate_id_batch_identity_unique")
   @@unique([allocationBatchId, tieBreakKey], map: "activity_allocation_candidate_batch_tie_break_key")
+  // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
+  // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
+  @@unique([id, allocationBatchId, participationIdentityId, activityId, sessionId], map: "activity_allocation_candidate_id_batch_identity_act_sess_key")
   @@index([allocationBatchId, waitlistPositionId, waitlistRank], map: "activity_allocation_candidate_batch_position_rank_idx")
   @@index([allocationBatchId], map: "activity_allocation_candidate_batch_idx")
   @@index([participationIdentityId], map: "activity_allocation_candidate_identity_idx")
@@ -5836,7 +5873,7 @@ model ActivityAllocationApplicationProjection {
   positionBucketId                      String?
 
   allocationBatch              ActivityAllocationBatch       @relation("AllocationBatchApplicationProjections", fields: [allocationBatchId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_application_projection_batch_anchor_fkey")
-  allocationCandidate          ActivityAllocationCandidate   @relation("AllocationCandidateApplicationProjection", fields: [allocationCandidateId, allocationBatchId, participationIdentityId], references: [id, allocationBatchId, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_candidate_anchor_fkey")
+  allocationCandidate          ActivityAllocationCandidate   @relation("AllocationCandidateApplicationProjection", fields: [allocationCandidateId, allocationBatchId, participationIdentityId, activityId, sessionId], references: [id, allocationBatchId, participationIdentityId, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_candidate_anchor_fkey")
   // memberId 是 committed 时冻结的 identity 事实；四元 FK 防止同 activity/session
   // 的 identity 与 member 被拼接。activity_person reservation 则按 member/activity
   // 锚定，允许同一 member 的不同 session identity 正确复用那一条 reservation。
