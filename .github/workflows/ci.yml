@@ -186,6 +186,17 @@ jobs:
       - name: Docs guards (readtax + counts + codemap + rbacmap + openapi + feclient)
         run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check && pnpm docs:openapi:check && pnpm docs:feclient:check
 
+      # 第七轮评审包 F(F-01 + F-02):「生产必填项必须在部署 runbook 里有条目」类闸。
+      # 两条断言都从源动态发现 —— (a) `app.config.ts` 在 production / smoke 下 fail-fast
+      # 点名的环境变量,(b) `package.json` 里的 `start:*-worker` 脚本,各自必须至少在一份
+      # 部署 runbook 中出现。立项时实测:12 条必填变量里 7 条两份 runbook 都没提,
+      # 三个常驻 worker 类零提部署方式 —— 真机因此从未部署过 worker。
+      #
+      # ⚠️ **单列一步,不并进上面那条 `&&` 链**:链式下前面任一条挂掉它就不跑,
+      # 且失败归因不清。本判据纯文件解析、秒级,留在无 Postgres 的 fast job 里正合适。
+      - name: Ops required items registered in deployment runbooks
+        run: pnpm ops:required:check
+
       # Phase 0 A-class bootstrap: R1/R4/R7/R10 metadata integrity is now blocking
       # inside the existing Fast checks context. B-class findings remain visible only.
       #

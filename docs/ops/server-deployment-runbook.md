@@ -23,6 +23,9 @@
 | migration | **89 个全部成功** |
 | 健康检查 | `/health/live` → `{"status":"ok"}` · `/health/ready` → `{"status":"ok","db":"up"}` |
 | 端口暴露 | API 仅 `127.0.0.1:3000`;PostgreSQL `5432` **不映射宿主机** |
+| 部署目录 | **`/www/srvf`**(compose 文件与 env 文件都在这里;本文原版漏记,维护者因此白跑过命令) |
+| 容器名 | **`srvf-api`** / **`srvf-postgres`** |
+| compose 文件 | `/www/srvf/docker-compose.server.yml`(**服务器侧文件,不在仓库里**,见 2.1) |
 
 ## 2. 🔴 六处必须知道的事实(每条都是实战踩出来的)
 
@@ -64,11 +67,54 @@
 **⇒ 用 smoke 做空库冒烟不是绕过生产规则,是代码本来就为此留的档位。**
 ⚠️ **但 smoke ≠ 生产就绪**:切 `production` 前必须先完成上面那条 bootstrap 顺序。
 
-### 2.6 密钥五把 + JWT
+### 2.6 必填环境变量清单(缺任一项**直接拒启**)
 
-`STORAGE / SMS / WECHAT / WECOM / REALNAME` 五把 `*_ENCRYPTION_KEY`(各 ≥32 字符,`openssl rand -base64 32`)
-+ `JWT_SECRET`(`openssl rand -base64 48`)。
-🔴 **密钥丢失 = 已加密数据永久解不开**,必须离线备份;**不得入库、不得贴进任何对话**。
+`app.config.ts` 在启动期对下列变量 fail-fast。**`smoke` 与 `production` 同等对待**
+(`isProductionLike()`,`app.config.ts:16-18`)⇒ 第一阶段虽然用 smoke,下表 10 条
+**一条都不能少**;另有 2 条只在 `production` 生效,见
+[第二阶段 §1.5](./server-deployment-runbook-stage2.md)。
+
+> 🤖 本表由 `pnpm ops:required:check` 机器核对(CI Fast checks 里跑)——
+> 判据从 `app.config.ts` **动态解析**必填项,漏登记一条当场红。
+> 它核的是「**有没有条目**」,核不了「**填得对不对**」,后者仍然要人读。
+
+| 变量 | smoke | production | 出处 | 取值 |
+|---|:--:|:--:|---|---|
+| `APP_CORS_ORIGIN` | ✅ | ✅ | `:694` | 真实前端域名;禁空、禁 `*`(见 2.4) |
+| `APP_TRUSTED_PROXY_CIDRS` | ✅ | ✅ | `:167` | 无反代时填 `none`;挂反代后**必须回头改**(第二阶段 §2.F) |
+| `STORAGE_ENCRYPTION_KEY` | ✅ | ✅ | `:557` | 🔑 见下方密钥纪律 |
+| `SMS_ENCRYPTION_KEY` | ✅ | ✅ | `:577` | 🔑 |
+| `WECHAT_ENCRYPTION_KEY` | ✅ | ✅ | `:597` | 🔑 |
+| `WECOM_ENCRYPTION_KEY` | ✅ | ✅ | `:618` | 🔑 |
+| `REALNAME_ENCRYPTION_KEY` | ✅ | ✅ | `:638` | 🔑 |
+| `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` | ✅ | ✅ | `:481` | 严格 `true` / `false`;首次上线填 `false` |
+| `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED` | ✅ | ✅ | `:499` | 同上,首次上线填 `false` |
+| `ACTIVITY_V11_WORKFLOW_ENABLED` | ✅ | ✅ | `:517` | 同上,首次上线填 `false`(切换闸,见 `docs/ops/activity-batch-worker-runbook.md`) |
+| `INSURANCE_ENFORCEMENT_ENABLED` | — | ✅ | `:326` | 第二阶段 §1.5 |
+| `STORAGE_CONSISTENCY_MODE` | — | ✅ | `:542` | 第二阶段 §1.5 |
+
+另需 `JWT_SECRET`(`openssl rand -base64 48`)—— 它不在上表(不是启动期 fail-fast 项),
+但换掉会让所有已签发 token 失效。
+
+⚠️ 三个 `ACTIVITY_*` 开关在 2026-07-24 / 08-18 / 08-19 就已是必填,**早于本文 08-20 的实测**
+⇒ 那次 PASS 时它们必然已被赋值,只是**本文原版没记下来**。重建服务器前先去
+`/www/srvf` 把 env 文件里的实际取值抄下来。
+
+#### 🔑 五把加密密钥的纪律(比三个开关更要命)
+
+`STORAGE_ENCRYPTION_KEY` · `SMS_ENCRYPTION_KEY` · `WECHAT_ENCRYPTION_KEY` ·
+`WECOM_ENCRYPTION_KEY` · `REALNAME_ENCRYPTION_KEY`,各 ≥32 字符,
+用 `openssl rand -base64 32` 逐把单独生成(**不要五把用同一个值**)。
+
+它们做的是**静态加密**:实名信息等 PII、短信 / 微信 / 企微的第三方凭证,都是用它们加密后落库的。
+
+🔴 **一经启用,不得更换。** 缺失只是启动失败(还好,当场就知道);
+**换掉或填错则是用旧 key 加密的数据再也解不开** —— 而且不会当场报错,
+要等到某次读取实名信息或调第三方接口时才炸,那时已经分不清是哪一批数据受影响。
+
+⇒ 必须**离线备份**(密码管理器 / 纸质保险箱),与数据库备份**分开存放**;
+**不得入库、不得写进本文或任何文档、不得贴进任何对话或工单**。
+真要轮换,必须先设计存量数据的解密—重加密迁移,那是单独一次评审,不是改个 env。
 
 ## 3. 第一阶段验收判据(照此自查)
 
