@@ -228,13 +228,13 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
           };
         }
         itemsFailed += 1;
-        await this.markItemFailed(item.id, error);
+        await this.markItemFailed(item.id, fence, error);
         break;
       }
     }
 
     if (itemsFailed > 0) {
-      await this.releaseForRetry(claimed.id, now);
+      await this.releaseForRetry(claimed.id, fence, now);
       return {
         jobsEnqueued,
         jobClaimed: true,
@@ -254,9 +254,23 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         // `commitBatch` 会把成功的 settlement_prepare job 当作 baseline 明细真源。
         // 重试领取会把 job 暂时改成 processing,故调用统一生效协议前先恢复 succeeded;
         // lease 仍保留到 commit ack,崩溃后由下一轮的过期 lease 恢复器重新排队。
-        await this.markReadyForCommit(claimed.id);
+        if (!(await this.markReadyForCommit(claimed.id, fence))) {
+          // 围栏已失效 ⇒ 新持有者接管,本轮**不写任何收尾状态、也不替它跑 commit**。
+          this.logger.warn(`activity batch job ${claimed.id} lease lost before commit, aborting`);
+          return {
+            jobsEnqueued,
+            jobClaimed: true,
+            jobId: claimed.id,
+            itemsProcessed,
+            itemsSkipped,
+            itemsFailed,
+            batchStatus: null,
+            commitAttempted: false,
+            commitErrorCode: null,
+          };
+        }
         const committed = await this.committer.commitReadyBatch(finalized.postingBatchId);
-        await this.markCommitSucceeded(claimed.id);
+        await this.markCommitSucceeded(claimed.id, fence);
         return {
           jobsEnqueued,
           jobClaimed: true,
@@ -271,7 +285,7 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
       } catch (error) {
         // commitBatch 自己的事务保证任何失败都零部分生效。这里只退回**同一条 job**,
         // 不改 ready 批次、不重算 baseline,下一轮仍会拿同一批次重试。
-        await this.releaseForRetry(claimed.id, now, error);
+        await this.releaseForRetry(claimed.id, fence, now, error);
         this.logger.warn(
           `activity ledger auto commit deferred job=${claimed.id} error=${errorName(error)}`,
         );
@@ -291,7 +305,7 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     if (finalized.batchStatus === 'committed' && this.autoCommitEnabled) {
       // commit 已成功、但上一任在 ack job 前崩溃时,过期 lease 会重领到这里。
       // 批次本身就是幂等真源,只需把同一 job 收口,绝不再次写账。
-      await this.markCommitSucceeded(claimed.id);
+      await this.markCommitSucceeded(claimed.id, fence);
     }
     return {
       jobsEnqueued,
@@ -756,10 +770,23 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    *
    * ⚠️ **不改批次状态**:块失败是可重试的(下一轮从失败的那个块继续,已成功的块
    * 靠 item 状态跳过)。真正让批次落 `failed` 的只有 `finalize` 里的数量不一致。
+   *
+   * 🔴 围栏与 `releaseReconciliationForRetry` 同款:过期持有者绝不能把**新一代**
+   * 持有者手上的 job 清回 pending —— 那会让同一条 job 同时被两个 worker 跑。
+   * 落空(0 行)= 我已不是当前持有者,**安静退出**:清尾是新持有者的事。
    */
-  private async releaseForRetry(jobId: string, now: Date, error?: unknown): Promise<void> {
-    await this.prisma.activityBatchJob.update({
-      where: { id: jobId },
+  private async releaseForRetry(
+    jobId: string,
+    fence: LedgerPrepareLeaseFence,
+    now: Date,
+    error?: unknown,
+  ): Promise<void> {
+    const { count } = await this.prisma.activityBatchJob.updateMany({
+      where: {
+        id: jobId,
+        leaseOwner: fence.leaseOwner,
+        leaseGeneration: fence.leaseGeneration,
+      },
       data: {
         statusCode: 'pending',
         leaseOwner: null,
@@ -769,6 +796,9 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         ...(error === undefined ? {} : { lastErrorCode: errorName(error) }),
       },
     });
+    if (count === 0) {
+      this.logger.warn(`activity batch job ${jobId} release skipped, lease no longer held`);
+    }
   }
 
   /** Reconciliation must never release a newer holder's lease after its own transaction failed. */
@@ -854,10 +884,25 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
   /**
    * §3.27 明写「**不存异常堆栈、SQL 和敏感原值**」⇒ 只落
    * `lastErrorCode`(错误类名)与 `safeMessage`(BizCode 的对外文案,已是脱敏产物)。
+   *
+   * 🔴 围栏经 `job` 关系过滤:item 表本身没有租约列,租约恒挂在父 job 上。
+   * 过期持有者把新一代**已经跑成功**的 item 改回 `failed`,不是「多写一次日志」——
+   * 该 item 会被下一轮重跑,而 `LedgerPostingBatch.preparedCount` 是**累加式**投影
+   * (`preparedCount: { increment: chunkMemberIds.length }`),账目分录靠 `entryKey`
+   * 唯一键 `ON CONFLICT DO NOTHING` 不会重复,计数却会再加一遍 ⇒ `preparedCount >
+   * totalCount` ⇒ `finalize` 判 `LEDGER_PREPARE_COUNT_MISMATCH`,把一个业务上其实
+   * 已经准备完成的批次判 `failed`。
    */
-  private async markItemFailed(itemId: string, error: unknown): Promise<void> {
-    await this.prisma.activityBatchJobItem.update({
-      where: { id: itemId },
+  private async markItemFailed(
+    itemId: string,
+    fence: LedgerPrepareLeaseFence,
+    error: unknown,
+  ): Promise<void> {
+    const { count } = await this.prisma.activityBatchJobItem.updateMany({
+      where: {
+        id: itemId,
+        job: { leaseOwner: fence.leaseOwner, leaseGeneration: fence.leaseGeneration },
+      },
       data: {
         statusCode: 'failed',
         attempts: { increment: 1 },
@@ -865,11 +910,19 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         safeMessage: safeMessageOf(error),
       },
     });
+    if (count === 0) {
+      this.logger.warn(`activity batch item ${itemId} fail mark skipped, lease no longer held`);
+    }
   }
 
-  private async markCommitSucceeded(jobId: string): Promise<void> {
-    await this.prisma.activityBatchJob.update({
-      where: { id: jobId },
+  /** 围栏同上:过期持有者不得替新一代持有者把 job 收成 `succeeded`。 */
+  private async markCommitSucceeded(jobId: string, fence: LedgerPrepareLeaseFence): Promise<void> {
+    const { count } = await this.prisma.activityBatchJob.updateMany({
+      where: {
+        id: jobId,
+        leaseOwner: fence.leaseOwner,
+        leaseGeneration: fence.leaseGeneration,
+      },
       data: {
         statusCode: 'succeeded',
         leaseOwner: null,
@@ -878,17 +931,33 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         lastErrorCode: null,
       },
     });
+    if (count === 0) {
+      this.logger.warn(`activity batch job ${jobId} commit ack skipped, lease no longer held`);
+    }
   }
 
-  private async markReadyForCommit(jobId: string): Promise<void> {
-    await this.prisma.activityBatchJob.update({
-      where: { id: jobId },
+  /**
+   * 围栏同上。**返回是否生效**:落空 ⇒ 我已不是持有者,调用方必须放弃本轮而不是
+   * 接着替新持有者跑 `commitReadyBatch` —— 与既有 `LedgerPrepareLeaseLostError`
+   * 的处置同一形状(安静退出,不抛错、不重试、不写任何收尾状态)。
+   */
+  private async markReadyForCommit(
+    jobId: string,
+    fence: LedgerPrepareLeaseFence,
+  ): Promise<boolean> {
+    const { count } = await this.prisma.activityBatchJob.updateMany({
+      where: {
+        id: jobId,
+        leaseOwner: fence.leaseOwner,
+        leaseGeneration: fence.leaseGeneration,
+      },
       data: {
         statusCode: 'succeeded',
         completedAt: new Date(),
         lastErrorCode: null,
       },
     });
+    return count > 0;
   }
 
   private stopAndDrain(): Promise<void> {
