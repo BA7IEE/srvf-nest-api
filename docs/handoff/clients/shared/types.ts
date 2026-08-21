@@ -1,9 +1,9 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: shared —— 被两个及以上 surface 共用的类型(唯一定义处)
-// contractVersion: 0.66.0
+// contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:8319f54a178447df9b0f5a5398c843f15c0246fc0849a95be72b8471d02373ba
+// inputDigest: sha256:de35a90a0bee19af0ba1ecaa61d66b3d79c26e62e0b06f38beb3cc9aaf4ec734
 
 /** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */
 export interface ApiEnvelope<T> {

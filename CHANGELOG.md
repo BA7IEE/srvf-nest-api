@@ -2,6 +2,2897 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## v0.67.0 - 2026-08-21
+
+### Added
+
+- 活动业务改造 v1.1 第 3 批①.5新增版本化 `ActivityTemplate` 与不可变 `ActivityRuleSnapshot` schema，补 `ActivityAllocationBatch.ruleSnapshotId` FK 及发布提交、审核、取消、提前终止的 §10.3 幂等 key/hash 落点；零 endpoint、零运行时行为、零 seed。
+
+补 AC-035 的否定半边:低精度定位不得放宽签到半径(此前该缺陷类零执行位)。
+
+### Changed
+
+- `ActivitiesService` 按 D-7 边界拆为五个单元(Phase 6-B 第三域第三刀):序列化层 `activity-presenter.ts`(83,**模块级纯函数**)、共享准入与校验 `ActivityAccessService`(304)、建单改单 `ActivityWriteService`(483)、状态流转 `ActivityStatusCommandService`(362),主 service 由 **1263 → 201 NCLOC**。主 service 仍是唯一对外入口,九个方法保留同名薄委托;`ActivityFullRow` / `PUBLISHED_ACTIVITY_DISPLAY_FIELDS` 在主 service re-export,既有消费者调用面与类型面逐字不变。零 endpoint / 零 DTO / 零 OpenAPI / 零 BizCode / 零权限码变更。
+
+### Fixed
+
+- 收口活动业务改造验收中的六条运行时缺口：报名截止可清空为数据库 `NULL`；普通活动仅向正式会员开放且保留资格失败原因；活动终止后保留 30 分钟在线/离线签退窗口并允许员工清场；账本提交在既有成员锁内拒绝跨活动服务时间重叠；待复核离线打卡会阻止证据封存与关账，并一次返回完整结构化缺口；活动评价以最新生效关账时刻开启 30 天窗口，只认当前 `present` 结算结果与生效服务账，结算纠错可新增资格并标注已撤销资格的历史评价。
+- 本次不改 schema、权限码、BizCode、审计事件、定时任务或基础设施。
+
+### Changed
+
+- 活动名额分配抽出锁定读取层(Phase 6-B 第五域第二刀,架构边界 §3.2):六个「在调用方事务内加锁、按确定顺序读事实、做一致性断言」的函数(`lockBatchWaitlistHead` / `lockFirstComeWaitlistHead` / `lockApplicationProjections` / `assertProjectedReservationsExact` / `firstComeWaitlistRank` / `readReservationAnchors`)迁入 `activity-allocation-locks.ts`,七个相关数据形状 type 迁入 `activity-allocation.types.ts`。该层实测零 `this.` 注入依赖(只吃传入的 `tx`),故为模块级纯函数而非 `@Injectable`,不进 DI 图、两个 module 均无需改注册。锁序:该层是被调用方而非事务起点,调用顺序即锁顺序,权威次序仍在服务各命令方法的调用序列里,新文件不复制、只在头注声明该约束。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Changed
+
+- 活动名额分配抽出纯判定层与类型层(Phase 6-B 第五域第一刀,架构边界 §3.2):`activity-allocation.service.ts` 中六个零 IO 零事务的判定函数(`assertVoidLiveFacts` / `assertPreparingCandidates` / `readReceiptBatchStatusCode` / `initialPreferencePositions` / `assertPendingSource` / `targetProjection`)与两个纯值转换工具(`decimalString` / `asObject`)迁入 `activity-allocation-policy.ts`;七个核心数据形状 type 与响应 schema 版本常量迁入 `activity-allocation.types.ts`,供服务与判定层共享,避免判定层反向 import 服务。判定层为模块级纯函数而非 `@Injectable`:不进 DI 图,两个 module 均无需改注册。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Added
+
+- 活动名额分配判定层补齐单测(Phase 6-B 第五域第三刀):`activity-allocation-policy.ts` 的 `assertPendingSource` / `initialPreferencePositions` / `targetProjection` / `decimalString` / `asObject` 共 28 例。这些函数迁出 `activity-allocation.service.ts` 前零单测覆盖,抽成纯函数后才具备无 mock 可测性。因该层 11 个抛出点中有 10 个共用同一 BizCode(错误码无鉴别力),用例恒采用「每个用例只破坏一个字段、其余全部合法」的构造,定位职责由用例名与输入差异承担;三组变异对拍验证红集各自精确命中,不弥散。
+
+### Added
+
+- B7 新增会员受众标签：`ActivityPublishReview.audienceTagCodes` 以 nullable JSONB 保留审核期受众，`MemberAudienceTagAssignment` 以撤标历史和 live partial unique 记录会员赋标；迁移只扩展 schema，既有 NULL 审核保持 legacy 广播。
+- 管理端新增成员标签读取/全量替换与活动定向发布入口；标签字典固定为 `member_audience_tag`，非空标签按 OR 并集去重，`[]` 面向全部 ACTIVE 且未软删会员。
+
+### Changed
+
+- B7 受众在 Activity 根事务锁定后的真正发布/审核批准时匹配，并与 audit/outbox 同事务快照；后续赋标变化不改已生成收件人，取消通知范围不变。
+- `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED` 只接受严格 `true`/`false`；dev/test 缺省关闭，production/smoke 必须显式设置。关闭时，已登录且有权限的 B7 HTTP 调用返回既有 503 信封。
+
+### Changed
+
+- 活动业务改造 v1.1 第 7 批第一刀：活动侧四个 Notification Outbox producer 统一收口到单一收件人冻结入口 `activity-recipient-freeze.ts`（纯 tx 函数，不新建表/列）。收件人集合仍是既有「每人一行 intent」的 `destinationRef`，计算依据 / 计算时刻 / 算法版本号 / 集合基数落在既有 `payload` 的可选键 `recipientFreeze`（不 bump `payloadVersion`，in-flight 老行照常投递）。冻结批次按 `cohortKey` 先回捞后重算，回捞命中时**一次收件人查询都不发**；受众标签 `null/[]/非空` 三分支解析由 `activity-publish-review.service.ts` 与 `activity-status-command.service.ts` 的**两份拷贝**收敛为一份。producer 的收件人入参改为品牌类型 `FrozenRecipientCohort`，裸 `memberIds` / `ownerMemberId` 不再可表达。零 endpoint、零 schema、零 BizCode。
+
+### Added
+
+- 新增活动全链路贯通 e2e（`test/e2e/activity-full-chain.e2e-spec.ts`）：一条用例从建草稿走到关账，
+  覆盖 14 站生产 HTTP 路径，并逐条断言 8 条接缝的**身份连续性**（比集合不比计数）。
+  spec 内禁止用 prisma 直插链路自身能产出的任何实体，该禁令由同文件内的结构性自检断言执法
+  （剥注释后匹配 + 阳性对照，双向变异均已对拍）。零 `src/**` 改动。
+
+### Changed
+
+- `ActivityRegistrationsService` 按 D-7 边界拆为四个单元(Phase 6-B 第三域第二刀):共享准入 `ActivityRegistrationAccessService`(229)、建单族 `ActivityRegistrationCreateService`(514)、审批族 `ActivityRegistrationReviewService`(583),主 service 由 **1470 → 391 NCLOC** 并跌破 700 阈值。主 service 仍是本模块唯一对外入口,六个方法保留同名薄委托,controller 与既有消费者调用面逐字不变(`RegistrationAuthorization` 在主 service re-export,类型面亦不变)。零 endpoint / 零 DTO / 零 OpenAPI / 零 BizCode / 零权限码变更。
+
+### Changed
+
+- 活动报名模块响应序列化抽出 `ActivityRegistrationPresenter`(Phase 6-B 第三域第二刀,架构边界 §3.1):详情 / 列表项 / 跨轴列表项(含 `expand` 投影)的 Prisma 行 → DTO 纯字段映射、`extras` 的 Json 收敛、`expand` 白名单与解析,以及 CSV 的 BOM 首 chunk、表头与行格式化迁入该类。文件名走 `*presenter*.ts` ⇒ 落入 `eslint.harness.mjs` 规则 (j) 的结构性守护(Presenter 禁 import `PrismaService`)。事务、判权、状态机判定、audit 与查询构造均不随迁。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Changed
+
+- 活动报名模块读侧抽出 `ActivityRegistrationQueryService`(Phase 6-B 第三域第一刀,架构边界 §3.2):四条列表 surface(单活动报名列表 / 跨活动横扫 / 队员 360 报名履历 / 队员自助列表)的 where 构造、分页、orderBy、读侧 select 投影,以及 CSV 导出的 where 构造与 500 行游标分页取数迁入该类;判权(`assertCanOrThrow` / `assertManagedRegistrationAccess` / `resolveVisibleOrganizationIds` 与 30100)仍留在 `ActivityRegistrationsService`,算好的可见组织范围作为入参传入,CSV 的 fail-closed 审计仍在返回 generator 之前落库。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Added
+
+- 活动 v1.1 两条规模可用性缺口(#1089 逐条判定时推翻起草方初判查出的**真能力缺口**):
+  - **AC-030**：`GET /api/app/v1/my/managed-activities/:activityId/collaborator-options` 新增 `q` 模糊搜索与 `page` / `pageSize` 分页，取消 `take: 200` 硬截（合同追踪矩阵 E07 本期实现项）。过滤与排序全部下沉到 SQL，`eligibilitySource` 改用当前页批量 IN 取，不再把整场次 pass 报名拉进应用内存（开发文档 §11.4）；查询次数恒为 3 次，与候选人数、页大小、命中条数均无关。不传新参数时 `items` 与改造前逐位相同。
+  - **AC-068**：`POST .../onsite/sessions/:sessionId/bulk-punch-jobs` 新增 `selection` 选择条件入口（`mode: session-all`，可按 `statusCodes` / `positionId` 收窄），服务端用一条 `INSERT ... SELECT` 把整场次展开成任务项（`mode` 可省略、默认 `session-all`，使整个 `selection` 子树在契约语义上恒为 additive） —— 绑定参数与人数无关、零 identity id 进应用内存。2000 人一次入队实测 43.7ms（生产事务预算 5000ms）。既有 500 条 id 列表入口与 `@ArrayMaxSize(500)` 按合同追踪矩阵 I55「当前合理，保留现有正确方向」原样不动，二者恰好二选一。
+
+### Changed
+
+- `AppCollaboratorOptionsResponseDto` 增加 `total` / `page` / `pageSize` 三个分页元字段（`items` 不变）。`AppManagedBulkPunchJobDto.participationIdentityIds` 由必填改为「与 `selection` 恰好二选一」，两个都给或都不给一律 400。
+
+### Added
+
+- **活动业务改造 v1.1 第 1 批第五刀:分配 / 志愿 / 候补 / 预留名额 schema expand**
+  (第 **75** migration
+  `20260804100000_activity_v11_slice5_allocation_waitlist_reserved_quota`;合同
+  [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §3.11)。
+
+  ⚠️ **本刀的存在本身是在补合同的洞。** §3.11 这四张表**没有被 §14「第 1 批」建议拆分的
+  任何一条列入**(那四条是 Activity/Session/Participation/Capacity、
+  Form/Qualification/Invitation、Punch/Evidence、Settlement/Ledger/Correction/Closure/Job),
+  而 §14「第 4 批」的交付清单里明写要用 Allocation 与 Waitlist —— 这是合同的**第四处内部
+  矛盾**。维护者 2026-08-04 拍板**单独第五刀补齐**,不并进第四刀(账本链语义像钱,
+  不与不相干的分配表混刀)。
+
+  净新 **4 张空表**(全部 §3.11):`ActivityPositionPreference`(岗位志愿)、
+  `ActivityAllocationBatch`(分配批次)、`ActivityAllocationCandidate`(候选人评分与结果)、
+  `ActivityReservedQuotaGroup`(预留名额组)。
+
+  既有表加 **1 列(可空)**,是**兑现第一刀欠下的最后一个跨切片外键列**:
+  `ActivityParticipationRevision.allocationBatchId` → `ActivityAllocationBatch`,
+  连列带 FK,并补上 §11.3「必需索引」逐字点名的 `(allocationBatchId, statusCode)`。
+  至此「不占位」范式在本批次内走完全程。
+
+  **expand-only:零 DROP / 零 RENAME / 零 ALTER COLUMN / 零既有列语义变更 / 零回填 /
+  零删数 / 零 enum。** 四张新表**零调用方 / 零端点 / 零 DTO / 零权限码 / 零 audit / 零 seed**
+  —— 纯 schema 刀,契约 snapshot 一字未动;消费方在第 4 批。**零新增 cron**(全仓终态仍恰 2)、
+  零 Redis / queue、零新 worker 进程。**特别地,抽签只落了 `randomCommitment` 一个列,
+  不实现任何随机数逻辑。** 生产未 deploy。
+
+  末尾 **4 条手写 CHECK**(零 partial unique、**零 trigger**)。判据钉在
+  `test/e2e/activity-v11-slice5-schema-constraints.e2e-spec.ts`(**41 例**)。
+  既有 spec **零改动** —— 开工探针 `grep -rn "allocationBatchId" test/e2e/` 命中为空,
+  第三刀那条到期判据在第四刀就已收窄完毕,本刀不需要再动它。
+
+  五处值得记的落点:
+
+  - 🔴 **一条 CHECK 的初版是"有条件地对",在合入前被变异实测抓出并改掉。**
+    `activity_allocation_batch_committed_shape_check` 初版写成朴素 OR
+    `"statusCode" <> 'committed' OR "committedAt" IS NOT NULL`,注释里断言"两侧恒二值,
+    不可能塌成 NULL"。**那句话依赖的是 `statusCode` 的 NOT NULL —— 而那是别处的列声明,
+    不是本式的结构性质。** scratch 库实测:`DROP NOT NULL` 之后插
+    `statusCode=NULL, committedAt=NULL`,`NULL <> 'committed'` 求值成 NULL、
+    `NULL OR FALSE` = NULL ⇒ **CHECK 判通过,该行真的入库**。改成**守卫前置**
+    `"statusCode" IS NOT NULL AND (… OR …)` 后同一行被 23514 拒(AND 是 FALSE-主导,
+    塌成 FALSE 而不是 NULL)⇒ 结构免疫。这是第四刀那条教训(「守卫必须前置,不能靠别处的
+    NOT NULL 声明兜底」)的**同型复发**。
+  - ⚠️ **一条诚实的负面结论,与上一条正好构成对照。**
+    `capacity IS NULL OR capacity >= 1` 的 `IS NULL` 守卫是**自证文档而非行为**:
+    变异实测换成朴素 `capacity >= 1` 后,capacity=NULL 照样入库(NULL 是**合法**的"不限")、
+    capacity=0 照样被拒,两种写法在全部输入上判定完全相同。保留显式写法只为可读性 +
+    与既有两条姊妹约束逐字同形,**不是**因为它挡住了什么。
+    **两条的区别就是守卫本身是不是 `IS [NOT] NULL` 谓词** —— 是,则结构免疫;
+    不是(比如 `<>` 比较),则会随判别列的可空性静默失效。
+  - 🔴 **`ActivityAllocationCandidate` 刻意不装 append-only trigger**,理由不止先例:
+    ①**先例**:合同说的是「结果 **committed 后**不可改」,**没有**像 §3.23.8 那样点名
+    "DB 角色层禁 UPDATE/DELETE";§3.17 `EvidenceSeal`(第三刀)与 §3.19
+    `SettlementReviewAction`(第四刀)都按「合同没点名 ⇒ 不装」处置,**本刀沿的就是这两条**。
+    ②**更硬的正面理由**:这里是**条件不可变**,不是 append-only —— 批次 preparing 期正要往
+    候选行里写评分 / 抽签序号 / 结果 / 候补序号,一条无条件 append-only trigger 会把合法
+    写路径直接堵死,**装上就是错的**。③那么"按父批次 statusCode 判"的条件 trigger 呢?
+    那是**跨行**判据,行级 trigger 里读父批次在并发下会骗人(两事务互相看不见对方未提交的
+    status 变更),与第四刀「日合计求和 trigger 在并发下骗人」同型。执行位归第 4 批 service
+    (Activity 锁内重读批次状态)。用两条会变红的 e2e 钉住"刻意":preparing 期 UPDATE
+    **必须放行**;本表 `pg_trigger` **必须为空集**。
+  - 🔴 **`ruleSnapshotId` 不建 —— 本刀新欠下的唯一一笔账。** 合同 §3.11 字段表给了这一列,
+    但它指向 §3.4 的 `ActivityRuleSnapshot`,而那张表**至今没有建**(§14 第 3 批
+    「Template snapshot」才实现)。沿「跨切片外键列不提前占位」:提前建一列指向不存在的表,
+    既加不了外键也无人写入。由**建 `ActivityRuleSnapshot` 的那一刀连列带 FK 补齐**;
+    已用「该列必须不存在 + 目标表此刻确实不存在」两条 e2e 钉住前提。
+  - 🔴 **DoD 5(可空列进唯一索引)的答复是"本刀无处可加也不该加"。**
+    本表**唯一的**唯一索引键是 `operationKey` 单列(NOT NULL);可空的 `positionId`
+    **没有进任何唯一索引** —— §3.11 与 §11.3 都没有为本表要求岗位维度的唯一,按"合同没给的
+    不发明"处理。已用结构断言钉住;哪天有人补了含 `positionId` 的唯一索引这条会红,
+    **那时必须同时决定要不要 `NULLS NOT DISTINCT`**(否则岗位级为 NULL 的行可无限重复,
+    索引恰好在最该生效的那类行上完全失效 —— 第二刀邀请那条的原型)。
+  - 🔴 **幂等键唯一取 `operationKey` 单列不取复合**:复合唯一恰好**放行**「同一个 key 配
+    不同 payload」,而那正是幂等键最该拦的冲突(第二刀实测)。单列唯一严格蕴含复合唯一,
+    故同时满足合同字面;已用"同 key 不同 payload 仍须被拒"的用例钉住。
+
+  与合同的偏离(逐条在 PR body 展开):`ActivityAllocationBatch.committedAt` **改可空**
+  (合同字段表未标 `?`,但 §3.11 自己的 `statusCode` 闭集里就有 `preparing`,NOT NULL 会让
+  该状态根本写不进来 —— 并配了 shape CHECK 把"committed 却没有提交时刻"重新关上,
+  放宽不是净损失);`requestHash` 可空、`createdBy` 落为 `createdByUserId` 且可空
+  (沿全仓既有范式,9 处无一例外)。**`candidateSnapshotHash` 保持 NOT NULL** ——
+  同一条 bullet 里作者对 `positionId` 与 `randomCommitment` 显式标了 `?`,说明"未标 = 必填"
+  是刻意的,且找不到任何合同条款定义"该哈希此刻不存在"的合法形态。
+
+  合同**未给**的一律不发明,并全部用「任意取值必须放行 + 该列零 CHECK」钉成会变红的判据:
+  `ActivityAllocationCandidate.resultCode` 不落闭集(§3.11 说了"最终结果"却没给取值集)、
+  该表**零 unique**(§3.11 与 §11.3 一条唯一都没给);
+  `ActivityReservedQuotaGroup.scopeTypeCode` / `fallbackMode` 不落闭集
+  (⚠️ 照搬 §3.10 容量桶的 scope 闭集看着"很自然",但那是**另一张表**的闭集,
+  写进来等于替维护者定口径);`ActivityPositionPreference.preferenceOrder` 不落范围
+  (§3.11 没给 0-based 还是 1-based,姊妹列 `ActivityParticipationRevision.waitlistRank`
+  在第一刀同样没有范围 CHECK)。上述四处已作为**合同缺口**登记,待补定义后由行为批次补。
+
+  §3.11 对 `ActivityAllocationCandidate` 与 `ActivityReservedQuotaGroup` **只给散文不给
+  字段表**,故只落散文**明确点到**的项,逐列命名与类型依据在 PR body 给对照表;
+  "散文提到但刻意未建"的清单同样在 PR body 列出。
+
+### Added
+
+- **活动业务改造 v1.1 第 1 批第三刀:打卡 / 证据 schema expand**(第 **73** migration
+  `20260804060000_activity_v11_slice3_punch_evidence`;合同
+  [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §3.15 / §3.16 / §3.17 / §3.18,批次划分见 §14「第 1 批」建议拆分第 3 项)。
+
+  净新 **5 张空表**:`AttendanceQrCredential`(§3.15 场次二维码凭证)、
+  `AttendancePunchEvent`(§3.16 追加式打卡事件)、
+  `ActivityEvidenceState` / `EvidenceSeal`(§3.17 证据版本指针与封场凭证)、
+  `ParticipantServiceSegmentRevision`(§3.18 服务段投影与修订)。
+  **既有表本刀零加列** —— 前两刀各加过列,本刀一列没加,只有 Prisma 反向 relation。
+
+  **expand-only:零 DROP / 零 RENAME / 零既有列语义变更 / 零回填 / 零删数 / 零 enum。**
+  五张新表**零调用方 / 零端点 / 零 DTO / 零权限码 / 零 audit / 零 seed** —— 纯 schema 刀,
+  契约 snapshot 一字未动;消费方在第 5 批。生产未 deploy。
+
+  末尾 **25 条手写约束**:21 条 CHECK + 3 条 partial unique + **1 组 append-only trigger**。
+  判据钉在 `test/e2e/activity-v11-slice3-schema-constraints.e2e-spec.ts`(27 例),
+  并用两次变异 A/B 证明判据绑对(卸 trigger ⇒ 恰好 2 例红;去 QR partial 谓词 ⇒ 恰好 3 例红;
+  两个红集**互不重叠**)。
+
+  四处值得记的落点:
+
+  - **`AttendancePunchEvent` 由 DB trigger 强制 append-only**(§3.16「不提供 update/delete
+    endpoint」「生产业务角色不得 UPDATE/DELETE」),镜像既有
+    `trg_insurance_evidence_20_immutable` 的函数 + trigger 两段范式,`ERRCODE='55000'`。
+    四条判据全部**实测**而非推理:INSERT 放行(正对照 —— 一个恒拒的 trigger 也能让
+    "被拒"用例全绿)/ UPDATE 拒 / DELETE 拒 / **TRUNCATE 仍放行**。
+    第四条是 e2e 地基:`test/setup/reset-db.ts` 靠 `TRUNCATE ... CASCADE` 清库,而本表
+    **不在** TRUNCATE 列表里、靠引用 `Activity` 被 CASCADE 带走;行级 trigger 不响应
+    TRUNCATE,实测 7 行 → 0 行且 trigger 仍在(后半句同样是判据 —— 少了它,一个"被
+    TRUNCATE 顺手卸掉"的 trigger 也能让前面全绿)。
+  - **void/replace 形状拆成三条 CHECK 而非一条大 OR —— 但理由不是 NULL 坍塌。**
+    本刀实测核对过:朴素式 `(A AND B) OR (C AND D)` 的每个操作数都恒二值(判别列
+    `eventTypeCode` 是 NOT NULL ⇒ `IN` 恒二值;`IS [NOT] NULL` 亦恒二值),**不可能**
+    塌成 NULL —— 把它说成"OR 就会塌"是套用第一刀教训的**误述**,与本表事实不符。
+    真正的理由:①朴素单条 OR 会**静默误杀合法行** —— `early_departure_close` 让两条
+    支路**同时为假**,整式 false;变异实测装上朴素式后,一条带 reason 的合法
+    `early_departure_close` 立刻被 23514 拒。②拆开后每侧有独立可断言的约束名。
+    采用的 `CASE … ELSE TRUE` 显式放行未点名的 eventType,不误杀。
+  - **坐标成对用计数式**(`(CASE WHEN … THEN 1 ELSE 0 END + …) IN (0,2)`),三态
+    (全空 / 全有 / 半有)各一条用例。**`accuracy` / `distance` 刻意不入成对判定** ——
+    设备可以给出坐标却给不出精度估计,`distance` 还需一个参照点,而"不要求定位"的场次
+    根本没有参照点;并进来会比合同更严、误杀合法行。
+  - **两条 partial unique 的键列全 NOT NULL** ⇒ 与第二刀
+    `activity_invitation_active_unique` 不同,**不需要** `NULLS NOT DISTINCT`。
+    第三条 `attendance_punch_event_supersede_target_unique` 键列可空,按仓内纪律带上了
+    该子句,但**诚实说明**:supersede shape CHECK 已强制该谓词命中的行必有非空键
+    ⇒ 该子句在当前约束集下**无独立可观测行为**,配套 spec 无法为它单独产出"被拒"证据,
+    保留它是纵深防御而非已验证判据。
+
+  **时间重叠刻意不进 DB**:§3.18 明写「时间重叠校验在**现有 member lock 内**完成」
+  ⇒ 零 exclusion constraint、零 `btree_gist`,并用 `pg_constraint contype='x'` +
+  `pg_extension` 两条 e2e 断言把"不做"钉成会变红的判据。
+
+  与合同的偏离(均因合同自身要求而必需,PR body 逐条列):
+  `ParticipantServiceSegmentRevision` 的 `sourceCloseEventId` / `checkOutAt` /
+  `serviceHours` 三列**改可空** —— 合同字段表未标 `?`,但 §4.5「无开放段＋check_in → open」
+  定义了"已签到、尚未闭合"的段,此刻三者都不存在,NOT NULL 会让这个合同自己定义的形态
+  **根本写不进来**(沿第二刀同一处置)。`reason` 必填只落**能无歧义映射到编码**的三类
+  (特殊闭合 / 作废 / 替代);合同的「人工」在 `sourceCode` 闭集里没有唯一对应
+  (`proxy`? `bulk`? `correction`?)故不自行选定。
+  合同**未给**的一律不发明:`EvidenceSeal` 的「一活动至多一个 active seal」**不建**
+  (§3.17 没给;§11.3「必需索引」只给 Closure 点了「partial unique active activity」),
+  并用一条「第二条 active 必须放行」的 e2e 把"刻意不建"钉成会变红的判据。
+  三个跨切片外键列 `offlinePackageId` / `importJobItemId` / `effectiveBatchId` **不建**
+  (目标表分别在第 6 批与第四刀);其中 `OfflinePackage` 是**合同第三处内部矛盾** ——
+  被修订说明 §5 列为核心新对象、被 §3.16 当外键列引用、被 §5.7 详述协议字段,
+  但 §3 数据模型从头到尾**没有定义它**,故不从散文推导表结构。
+
+### Added
+
+- **活动业务改造 v1.1 第 1 批第一刀:场次 / 参与身份 / 容量 schema expand**(第 **71** migration
+  `20260804020000_activity_v11_slice1_sessions_participation_capacity`;合同
+  [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §3.1 / §3.2 / §3.3 / §3.8 / §3.9 / §3.10,批次划分见 §14「第 1 批」建议拆分第 1 项)。
+
+  净新 **6 张空表**:`ActivitySession`(场次,时间窗与定位策略在此冻结最终值)、
+  `ActivitySessionPosition`(场次级岗位)、`ActivityParticipationIdentity`(P0-04 核心:
+  一队员×一场次的**永久**身份)、`ActivityParticipationRevision`(不可变状态修订)、
+  `ActivityCapacityBucket` + `CapacityReservation`(容量桶与占位事实)。
+  既有表只动 `Activity`,**只加 12 列**(全部可空或带 default)+ 1 条 RESTRICT FK
+  (`terminatedByUserId`→`User`);其余仅 Prisma 反向 relation,零标量字段。
+
+  **expand-only:零 DROP / 零 RENAME / 零既有列语义变更 / 零回填 / 零删数 / 零 enum。**
+  合同 §3.1 另要求删 `attendanceDeclaredCompleteAt` 两列并把 `completed` 移出活动状态闭集 ——
+  那属 expand→migrate→contract 的 **contract 阶段**,`completed` 全仓 376 处引用,
+  在建表 PR 里动它会打穿半个仓库,故本刀不做,`statusCode` 取值闭集一并不动。
+  既有 `ActivityPosition` / `ActivityRegistration` 一列不动、一行不迁,**不写任何双写双读**
+  (合同 §0.4);两表退场同归 contract 阶段。
+
+  **零 runtime**:六张新表**零调用方 / 零端点 / 零 DTO / 零权限码 / 零 audit / 零 seed**
+  —— 纯 schema 刀,契约 snapshot 一字未动。生产未 deploy。
+
+  末尾 **34 条手写约束**(Prisma DSL 表达不了 CHECK 与 partial unique 的 WHERE):
+  29 条 CHECK + 5 条 partial unique(场次 live `(activityId,code)`/`(activityId,name)`、
+  岗位 live `(sessionId,code)`/`(sessionId,name)`、占位 `(identityId,bucketId) WHERE status='active'`)。
+  逐条在真实 PostgreSQL 上跑过**双向**阳性对照(违规被拒 + 合法放行),
+  判据钉在 `test/e2e/activity-v11-slice1-schema-constraints.e2e-spec.ts`(42 例)。
+
+  两处值得记的落点:
+
+  - **`ActivityParticipationIdentity` 的 `(activityId, sessionId, memberId)` 是普通 unique,
+    不带删除条件**(合同 §3.8)。取消重报只追加 Revision 并改当前指针,**永不再建身份行** ——
+    spec 里把身份置为 `cancelled` 后再插第二行,**仍然**必须被 23505 拒;
+    换成带删除条件的 partial unique 该用例立刻红。
+  - **`capacityReservationId` 指针**不加 FK(与 `CapacityReservation.identityId` 互指会成
+    循环外键,并凭空多一条隐式死锁边 —— 本仓已有「audit 外键是看不见的死锁边」前科)。
+    代价是悬空指针 DB 不挡,已用 LEFT JOIN 对账查询把「怎么发现失同步」显式钉成判据,
+    并反向断言指针正确时该查询查不出行(否则是恒真的假对账)。
+
+### Added
+
+- **活动业务改造 v1.1 第 1 批第四刀:结算 / 账本 / 更正 / 关账 / 任务 schema expand**
+  (第 **74** migration
+  `20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job`;合同
+  [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §3.19..§3.27,批次划分见 §14「第 1 批」建议拆分第 4 项)。
+
+  净新 **14 张空表**:`AttendanceSettlementRun` / `AttendanceSettlementVersion` /
+  `SettlementReviewAction`(§3.19)、`ParticipantSettlementResultRevision`(§3.20)、
+  `ParticipantSettlementDay`(§3.21)、`LedgerPostingBatch`(§3.22)、
+  `ParticipationLedgerEntry` + `LedgerEntryReversalClaim`(§3.23)、
+  `MemberContributionDayState`(§3.24)、`AttendanceCorrectionRequest` /
+  `CorrectionApplication`(§3.25)、`ActivitySettlementClosureRevision`(§3.26)、
+  `ActivityBatchJob` / `ActivityBatchJobItem`(§3.27)。
+
+  既有表加 **2 列,均可空**,都是**兑现第三刀欠下的跨切片外键列**(目标表正是本刀建的):
+  `ParticipantServiceSegmentRevision.effectiveBatchId` → `LedgerPostingBatch`、
+  `AttendancePunchEvent.importJobItemId` → `ActivityBatchJobItem`。
+
+  **expand-only:零 DROP / 零 RENAME / 零既有列语义变更 / 零回填 / 零删数 / 零 enum。**
+  十四张新表**零调用方 / 零端点 / 零 DTO / 零权限码 / 零 audit / 零 seed** —— 纯 schema 刀,
+  契约 snapshot 一字未动;消费方在第 2 批。**零新增 cron**(全仓终态仍恰 2)、
+  零 Redis / queue、零新 worker 进程。生产未 deploy。
+
+  末尾 **42 条手写约束**:37 条 CHECK + 4 条 partial unique + **1 组 append-only trigger**
+  (本仓第三组同形状 trigger)。判据钉在
+  `test/e2e/activity-v11-slice4-schema-constraints.e2e-spec.ts`(**82 例**,含 25 条正对照)。
+
+  五处值得记的落点:
+
+  - 🔴 **`recognized = credited + cappedOut`(§3.23.6)是本刀最高危的一条 —— 纯算术等式,
+    NULL 陷阱的教科书形状。** 三列任一为 NULL 时朴素等式求值成 NULL,而 CHECK 在 NULL 时
+    **判通过** ⇒ 约束静默失效,且只在"恰好有 NULL"的那些行上失效,正对照全绿完全看不出来。
+    落了**两道**独立防线:①四个 delta 列全部 NOT NULL;②CHECK 自身把三条 `IS NOT NULL`
+    守卫写在 **AND 链最前**(AND 是 FALSE-主导 ⇒ 整式塌成 FALSE 而不是 NULL)。
+    第二道**已实测而非推理**:在 scratch 库上 `DROP NOT NULL` 后插 NULL 行,仍被 23514
+    拒;换成朴素式 `a = b + c` 之后,**同一行被静默放行并真的入库**(变异 A/B 双向)。
+  - 🔴 **`ParticipationLedgerEntry` 由 DB trigger 强制 append-only**(§3.23.8「只允许
+    INSERT;数据库角色层禁止业务账号 UPDATE/DELETE」),镜像第三刀
+    `trg_attendance_punch_event_10_append_only` 的函数 + trigger 两段范式,`ERRCODE='55000'`。
+    四条判据全部实测:INSERT 放行(正对照)/ UPDATE 拒 / DELETE 拒 / **TRUNCATE 仍放行且
+    trigger 存活** —— 第四条是 e2e 地基(`reset-db.ts` 靠 TRUNCATE 清库,本表不在
+    TRUNCATE 列表里、靠引用 `Activity` / `Member` 被 CASCADE 带走)。
+    **加列之后重跑了第三刀打卡 trigger 的同一组四条判据**,证明 `ALTER TABLE ADD COLUMN`
+    没把既有 trigger 顺手弄坏。
+  - ⚠️ **「日合计必须 0..3」(§3.24)刻意不进 DB,一条 CHECK 都不加,更不用 trigger 伪造。**
+    它是**跨行**不变量(同 member 同 ledgerDate 多条分录求和),表级 CHECK 只能看单行;
+    用 trigger 求和会在并发下**骗人**(两个事务各自看不见对方未提交的行,双方都判"没超"),
+    比没有更危险。执行位归第 2 批 service,在**既有** member advisory lock 内按
+    `(memberId, ledgerDate)` 排序 `FOR UPDATE`。连 `MemberContributionDayState`
+    `.committedCreditedPoints`(物化日合计)上的单行 range CHECK 也**没加** —— 加了会让人
+    误以为日上限已有 DB 执行位。"刻意"用**两条会变红的判据**钉死:①同人同日合计 6.0 的
+    两条分录**必须放行**;②账本三表上不得出现 append-only 之外的任何 trigger。
+  - 🔴 **`ledgerDate` 三处同型 `@db.Date`**(§3.21 明写「必须唯一选型」):
+    `ParticipantSettlementDay` / `ParticipationLedgerEntry` / `MemberContributionDayState`,
+    `information_schema` 实测三行全 `date`。混型(date vs timestamp)会让
+    `(memberId, ledgerDate)` 唯一在跨表 join 时静默错位。
+    列型同时对第 0 批结论友好:全是明确标量、无逐行表达式 ⇒ 第 2 批的日状态批量回写可以走
+    `unnest($1::text[], $2::date[], …)`,bind 数恒等于列数、与人数无关(逐行 VALUES 每人
+    4 参数会在 8191 人处撞上实测 32767 的 bind 上限,10000 人确定性失败)。
+  - 🔴 **`attendance_correction_request_open_unique` 必须带 `NULLS NOT DISTINCT`**
+    (PG15+;沿第二刀 `activity_invitation_active_unique` 先例):键含**可空**的
+    `participationIdentityId`(NULL = 活动级更正)。不带该子句时同一活动可以被提出任意多条
+    并行的活动级 open 更正而一条都不被拦 —— 索引恰好在它最该生效的那类行上完全失效,
+    **而人员级因该列有值照样被拦,漏写在只测人员级的用例里完全看不出来**。
+    已跑变异 A/B:去掉子句后第二条活动级 open 直接入库。
+
+  与合同的偏离(逐条在 PR body 展开):`ActivityBatchJobItem` 的
+  `resourceType` / `resourceId` **改可空**(合同字段表未标 `?`,但 `import_preview` 这类
+  "资源尚未创建"的任务此刻没有资源可指);`AttendanceSettlementVersion.returnFromStage`
+  的取值集从**同节** SettlementReviewAction 的 `first/final` 推导(§3.19 没有单列它);
+  §3.23.7 只说"小数位和范围有 CHECK"没给数值,范围值全部从合同其它条款推导
+  (时长 ±24 ← §3.21 按北京自然日拆分;credited ±3 ← §3.24 日合计 0..3;
+  recognized / cappedOut **不设**上界 —— 它们是封顶**前**的值,设了会误杀合法行)。
+  **小数位这一半诚实说明:`numeric(5,2)` 对多余小数是四舍五入而不是报错,DB 层做不到
+  "既保留原值又拒绝",若业务要求报错,执行位只能在第 2 批 service/DTO。**
+  合同**未给**的一律不发明:`ActivityBatchJobItem.statusCode` **不落闭集 CHECK**
+  (§3.27 给了 Job 的七值、没给 Item 的),并用一条"任意值必须放行 + 该表零 statusCode
+  CHECK"的 e2e 把这个**合同缺口**钉成会变红的判据。
+  §3.11 分配相关四表与 `allocationBatchId` 是**合同第四处内部矛盾**(§14 任何一刀都没列入,
+  第 4 批行为实现却要用),维护者 2026-08-04 拍板**另走第五刀**,本刀不建、不占位。
+
+### Security
+
+- 活动业务改造 v1.1 第 2 批第 ⑩ 刀为结算一审／终审权限码接入入口层 `ActionConstraint`：提交人不可审核自己提交的结算版本，终审的一审人不可复审；approve 与 return 共用同一动作码，均受约束。入口层以精确结算版本解析事实，事务内锁后复判继续作为并发下的权威防线。
+- Authz 诊断白名单同步支持 `attendance_settlement_version`，供既有受控诊断面解释该已消费的资源；未新增权限码、业务端点或数据库结构。
+
+- 活动业务改造 v1.1 第 2 批第 ⑧a 刀补齐服务层闭环：两个既有 worker 进程注册 `ActivityBatchWorker`，账本批次准备到 `ready` 后自动复用统一生效协议，并以终审通过人为账本审计 actor；baseline 漂移等提交失败保持同批次 `ready`、零部分生效且按 lease 重试，不自动重算。
+- 结算草稿生成新增 `operationKey` / `requestHash` 幂等调度层；500 人以内仍同步复用既有生成器，超过 500 人创建 `ActivityBatchJob(bulk_proxy)` 并返回 job。同 key 同 payload 重放不新增草稿或 job，同 key 不同 payload 以具名业务码拒绝；BizCode 总数由 387 刷新为 389。
+- 本刀保持零 HTTP 端点、零 DTO、零权限码、零 schema、零新 cron / queue / worker 进程；对外端点与权限契约留给第 ⑧b 刀。
+
+### Added
+
+- **活动业务改造 v1.1 第 2 批第一刀:北京日历收口 + 证据封场算法**
+  (合同 [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §3.21 + §5.8,冲突以 `AMENDMENTS-v1.1.1.md` 为准)。
+
+  第 1 批建的 39 张表**第一次真正有了消费方**。本刀纯服务层:**零端点 / 零 DTO /
+  零权限码 / 零 schema / 零 migration / 零 seed / 零 cron**;`test:contract` 与
+  `docs/handoff/openapi.json` 逐字不动。
+
+  **① 北京日界口径收口(§3.21)。** 合同要求「业务转换统一调用 `BeijingCalendarService`」——
+  本仓**不新建**那个类:它要求的日界口径与既有 [`src/common/datetime/date-only.util.ts`](src/common/datetime/date-only.util.ts)
+  的 `beijingDateOnly` 是同一件事,再包一层就是冻结稿 §19 明禁的「第二套日期算法」。
+  合同点名的是**单一入口**这个性质,不是类名。新能力加在该 util 内:
+  `beijingDayBoundsUtc()`(北京日覆盖的 UTC 区间)与 `splitSpanByBeijingDay()`
+  (把一个服务段按北京日切成有序、无缝、不重叠的多片,直接产出 §3.21
+  `ParticipantSettlementDay.ledgerDate`)。13 条新单测覆盖跨日界 / 月末 / 闰日与非闰年对照 /
+  多日跨度 / 日界端点归属 / 空区间 / 无效 Date。消费方在第 2 批后续刀,本刀零调用方是预期状态。
+
+  **② `EvidenceSealService.seal()` 八步全实现(§5.8)。** 这条服务存在的全部理由是合同末句:
+  「seal 不是"负责人承诺",没有所有条件不能写。」旧世界由负责人**声明**考勤完成、不逐人核验;
+  这里换成八步机器判定:Activity `FOR UPDATE`(全流程唯一的锁,且在最前)→ 重读 live sessions
+  与终止截止 → authoritative now(取事务内 `now()`,不取应用时钟)必须晚于所有有效签退截止 →
+  查开放段 / 待人工复核 / 未处理 event effect → 读 evidence/population revision →
+  算 population distinct 与 by-session 摘要 → pending 变更审核或版本在本事务内变化则拒 →
+  写 immutable `EvidenceSeal` + audit,旧 active seal 同事务标 `superseded`(§4.6 投影)。
+
+  **③ 七条拒绝理由,七个具名 BizCode(20040–20046)。** 不用一个笼统的
+  `ACTIVITY_STATUS_INVALID` 兜底 —— 那会让调用方只知道"封不了"、不知道差哪一项,
+  机器判定退化回人工排查。七条各有独立 e2e 用例,并各配一条**翻面的放行用例**
+  (终止截止已过 / superseded 段 / voided 段 / 已审结的变更 / 版本真变了),
+  证明闸守的是它声称的那个条件。逐条卸闸的变异 A/B 实测:七次红集**两两不相交**,
+  合计 9 条红恰好等于未接闸版本的 9 条红。
+
+  **④ 并发。** 两个并发 `seal(同一 activityId)` 只能成功一个,败者以
+  `EVIDENCE_SEAL_ALREADY_ACTIVE` 收场(不是未映射 500)。e2e 用真实 barrier ——
+  两套 Nest/Prisma pool + 第三个事务当闸门,并以 `pg_stat_activity.wait_event_type='Lock'`
+  正面证明两条调用真的在排队,**不是 `Promise.all` 假并发**。把行锁从 `FOR UPDATE`
+  变异成 `FOR SHARE` 后该用例立刻红在「败者必须是具名业务码」那一行(败者退化成
+  `PrismaClientKnownRequestError`)⇒ 判据确实绑在锁模式上。
+
+  **⑤ audit 零新事件串。** 沿本模块 `activity.publish` 伞事件 + `extra.operation='evidence-seal'`
+  区分的既有范式,`AuditLogEvent` 总数不变(136)。
+
+  ⚠️ **与合同的偏离(四条,详见 service 文件头)**:
+  (a) §5.8 ⑤ 说三个 revision 都读自 `ActivityEvidenceState`,但 §3.17 该表字段表**没有**
+  `workflowRevision` —— 真源是 §3.1 的 `Activity`(§4.2「approved 时…递增 workflowRevision」),
+  故从**已加锁的 Activity 行**读。这是合同内部不一致。
+  (b) §5.8 ④「待人工复核数量」的真源 `OfflinePunchReviewItem` **至今没有定义**
+  (`AMENDMENTS-v1.1.1` §3 裁定为第 6 批开工硬门,并明禁从 §5.7 散文推导表结构)⇒
+  计数今天结构上恒 0,已在代码与 e2e 里**显式标注**为「闸已接、真源待接线」,不假装守住。
+  (c) §5.8 未给「已存在吻合版本的 active seal」的处置,本实现拒绝它,依据是 §3.17 的逆命题。
+  (d) 零 live 场次时 `allWindowsClosedAt` 取 authoritative now(该列 NOT NULL 必须有值),
+  不为此发明新的拒绝理由。
+
+### Added
+
+- **活动业务改造 v1.1 第 2 批第六刀:机器关账(`ActivityClosureService`)**
+  (合同 [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §5.15 + §3.26;业务 §9.2 的十二道硬检查)。
+
+  🔴 **关账是"这场活动的账算完了"的唯一权威。** 合同 §1.2 把它从「负责人**声明**考勤完成」
+  改成 **机器检查**:八类判定全过,才追加一张不可变 `ActivitySettlementClosureRevision`;
+  此后统计、评价资格、入队进度全部读它。它的失败模式不是报错,是**悄悄关掉一场没算完的
+  活动**,而维护者看不懂代码、发现不了 —— 故本刀每一处判定都走拒绝,没有一处走
+  "警告后放行"。
+
+  **⭐ 本刀与旧关账路径并存,一个字都没动它。** 合同 §1.2 还要求删除
+  `declareAttendanceComplete` 的关账权威地位、把 `activity-closure-policy.ts` 改为读最新有效
+  ClosureRevision —— 那是**既有行为 + 既有 e2e 断言的变更**,本仓铁律是"改既有 e2e 断言 =
+  改行为契约 ⇒ 停下报告"。旧路径退场另立一刀并单独拍板(已登记 P1-28)。
+  ⇒ 本刀 `activity-closure-policy.ts` / `app-managed-activities.service.ts` / 全部既有 spec
+  **零改动**。
+
+  **零端点 / 零 DTO / 零权限码 / 零 schema / 零 migration / 零 seed / 零 cron**(全仓终态仍恰 2)、
+  零 Redis / queue、零 Punch 写路径;`pnpm test:contract` 零 diff。对外入口统一留到第 ⑧ 刀。
+
+  新增 **9 个 BizCode(20090-20098)**:八类缺口码各一个 + 幂等撞键码。
+
+  五处值得记的落点:
+
+  - ⭐ **失败是"返回结构化缺口清单",不是抛第一个错。** §5.15 ⑫ 逐字要求「返回**结构化
+    缺口码和数量**」,业务 §9.2 举的例子是「30 人报名通过、0 打卡、0 人员结果时……必须
+    **清楚提示 30 个队员×场次尚未处理**」。一次尝试可能同时缺好几类,只抛第一个码等于
+    把排查成本原样推给一个看不懂代码的人。故 `close()` 返回判别联合
+    `{ outcome:'closed' | 'blocked', gaps:[{gapCode,bizCode,count,details}] }` ——
+    **八类全跑、不 fail-fast**,`details` 逐项给数,关账页直接渲染成合同 §6 的缺口清单。
+    (第二个、也是结构性的理由:本仓 `BizException` 只能携带一个 `BizCodeEntry`,
+    抛异常装不下这份清单;`biz.exception.ts` 也不在本刀写集内。)
+    真正的异常态(活动不存在 / 幂等撞键 / 撞 partial unique)仍然抛。
+
+  - 🔴 **「任一失败不写半张 closure」是结构性的,不是靠回滚兜底。** 八类检查全部排在
+    第一次写入**之前**:缺口路径上事务里只有 `SELECT`,一条写语句都没执行过。
+    e2e 造出「前七类过、只有第 ⑧ 类失败」的场景后逐条取证:closure **零新增**、
+    Activity 与 Run 的 closure 指针**未动**、outbox intent **零条**、audit **零条**。
+
+  - ⭐ **§5.15 ③ 拆成两类缺口码,不是自作主张。** 业务 §9.2 把"已自然结束或正式提前终止"
+    与"打卡窗口已关闭、证据版本已封场"列为**两道独立硬检查**;合并成一个码会让
+    "哪一道没有执法位"再也读不出来(沿 20062-20064 三方分离三条各一码的同一理由)。
+    ⇒ 2 + §5.15 ④–⑨ 的 6 = **八类**,每类一个具名码 + 逐项计数。
+
+  - ⚠️ **幂等键在合同里无处安放,这是合同的第五处内部不一致(新 finding)。**
+    §5.15 ② 要求按 `operationKey + requestHash` 防重,而 §3.26 的字段表**没有给这两列**。
+    本刀零 schema ⇒ 幂等键存进 `checksJson.idempotency`,去重域是 **(activityId, operationKey)**。
+    **诚实说明**:正确性来自第一把 `Activity` 行锁(所有关账写入都先取它,同一活动的两次
+    关账必然串行),**不是** DB unique —— 与第三/四/五刀靠单列 unique 兜底的幂等**不同级**,
+    跨活动同 key 不冲突。
+
+  - ⚠️ **「进入 archive waiting」零新列,且刻意不做成截止日。** 全仓没有 archive 状态列,
+    §3.1 只给了 `Activity.archiveWaitingDays`(默认 7)⇒ 归档等待是**派生态**
+    (存在 active closure 且 `now < closedAt + archiveWaitingDays`),算出来返回并写进 audit。
+    修订说明 §4 明确「7 天只是便于发现问题的等待期,**不是合法更正的最终截止日**」⇒
+    本刀没有任何一处拿它做拒绝判据,并用一条 e2e 钉住(`archiveWaitingDays=0` 的活动
+    在等待期早已过去之后,让位后重新关账照样成功并追加第 2 版)。
+
+  锁序 `Activity FOR UPDATE` → `AttendanceSettlementRun FOR UPDATE`(后者因为本刀要写它);
+  **不取 member advisory lock**(关账只读账、不写任何队员维度事实,取了只会凭空多一条
+  死锁边)。只读的 Version / Batch 不加锁 —— AC-063 要的串行由第一把提供(前五刀也都
+  先取 Activity 行锁)。评价开放 intent **同事务** enqueue(本仓 Outbox 铁律),判据是
+  让其后一步抛错、断言 intent 与 closure 一起回滚。
+
+  判据钉在 `test/e2e/activity-settlement-closure.e2e-spec.ts`(**26 例**)与
+  `src/modules/activities/activity-closure-checks.spec.ts`(**15 例**)。八类逐类 red-first,
+  每条用例**自己断言**「`gaps` 恰好等于那一类」;另跑八次卸闸变异 A/B,八个红集
+  **互不重叠**(读数见 PR 报告的红集矩阵)。
+
+### Added
+
+- **活动业务改造 v1.1 第 2 批第七刀:更正应用**(合同
+  [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §5.14 + §3.25;**零端点 / 零 DTO / 零权限码 / 零 schema**)。
+
+  🔴🔴 **这是全仓唯一能改动"已生效账本"的通路。** 它成功返回的那一刻,队员账上的
+  贡献值就换了一份真值。失败模式**不是报错,是账悄悄错了** —— 冲错、冲两次、
+  冲了没补、补了没冲,每一种都会产出一个看起来完全正常的账本。故本刀每一处判定
+  都走**拒绝**,没有一处走"警告后放行"。
+
+  新增 `CorrectionApplicationService`,四段式覆盖 §5.14 ①–⑦:
+  `submit`(保存 base 版本 / 结果 / 关闭版本三锚点 + 同 target 唯一)→
+  `review`(只 approve / return / reject,**不碰账**;§7.5 人员隔离)→
+  `prepare`(新版本链 + 更正 posting batch:**先冲回、后补记**)→
+  `commit`(§5.14 ⑥ 七项原子切换),`apply` 串起后两步并调**第六刀**重新关账(§5.14 ⑦)。
+
+  ⭐ **复用而非另写**:生效路径**逐字复用第五刀**的 commit 协议(baseline 比对 /
+  day-state CAS / 日合计 0..3 / 锁槽预算信号量 / 零部分生效),重新关账**直接调
+  第六刀** `ActivityClosureService`,member 锁仍是既有那一把 —— 本刀**没有第二套
+  生效路径、没有第二套 member 锁**,也**没有新建** member+date advisory lock。
+
+  账本语义:更正批次先为基础版本下**全部**已生效 credit 分录创建
+  `LedgerEntryReversalClaim` + **逐列取反**的负数分录,再写补记分录;
+  日上限分配的基线**扣掉本次冲回**(否则满额更正后会凭空少记满额)。
+  旧分录受 append-only trigger 保护,在物理上不可能被改 —— 冲回只能另写一条。
+
+  新增 **13 个 BizCode**(20099–20111)。配对残缺**分三码**(只冲不补 / 只补不冲 /
+  金额不相反),不合并 —— 合并会让"哪一种残缺没有执法位"再也读不出来。
+
+### Changed
+
+- **第五刀 `ledger-posting.service.ts` 两处改动**(其余一行未动):
+
+  1. **`*_reversal` 闸按更正场景放宽适用范围**(**不是删掉**)。判别式取自 DB 事实
+     (有没有 `CorrectionApplication` 指向本批次):更正批次走一套**更严**的配对判据
+     (冲回必须成对、逐列等额、有 claim、把旧账全部冲干净);
+     **普通结算批次里出现 reversal 仍然 20089**,一个字没放松(留有专门用例钉住)。
+  2. **`commitBatch` 的事务体抽成 `commitBatchWithin(tx, …)`**,`commitBatch` 只剩
+     「开事务 + 调它」。协议本身一个判定、一条 SQL、一个顺序都没改;抽出来是因为
+     §5.14 ⑥ 要求七项切换与 commit **同一事务**,而 Prisma 交互事务无法从外部加入。
+     ⚠️ 此项**超出本刀 goal 授权的"其余一行不动"**,已在 PR body 单独成段说明,
+     待维护者点头。行为零变化的正对照:第五刀既有 3 个 e2e suite / 27 条用例全绿。
+
+### Added
+
+- **活动业务改造 v1.1 第 2 批第五刀:账本分块准备 + 万人短事务统一生效**
+  (合同 [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §5.12 + §5.13 + §3.22 / §3.23 / §3.24 / §3.27;
+  **零端点 / 零 DTO / 零权限码 / 零 schema / 零新增 cron**)。
+
+  🔴 **本刀语义像钱。** `LedgerPostingService.commitBatch` 返回成功的那一刻,
+  `ParticipationLedgerEntry` 就从"看不见的准备结果"变成队员贡献值的**真值**。
+  它的失败模式**不是报错,是账悄悄错了**,所以本刀每一处判定都走**拒绝**,
+  没有一处走"警告后放行"。
+
+  **§5.12 分块准备**(`LedgerPreparationService` + `ActivityBatchWorker`):
+  worker 复用既有 PostgreSQL `SKIP LOCKED + lease/fencing` 形态(镜像 outbox /
+  storage-consistency 两条既有链路),**零新增 cron**(全仓终态仍恰 2)、零 Redis /
+  queue、零新进程。准备把每条 `ParticipantSettlementResultRevision` 的**认定值**按
+  `splitSpanByBeijingDay` 拆成 `ParticipantSettlementDay`,再按稳定服务顺序算
+  credited / cappedOut,写出挂在未 committed 批次上的 preparing 分录;
+  全部 item 成功且数量一致时批次进 `ready`,并把 day-state 基线摘要写进
+  `LedgerPostingBatch.baselineJsonHash`。**分块按队员切**(不是按 ResultRevision 随意切):
+  日上限是 (member, ledgerDate) 维度的跨行不变量,同一个人同一天的服务必须落在同一块内
+  才算得对。**准备路径零 `pg_advisory`**(§5.12 末句;结构断言 + `pg_locks` 双判据钉住)。
+
+  **§5.13 统一生效**(`LedgerPostingService.commitBatch`):固定锁序
+  `Activity → SettlementRun → SettlementVersion → LedgerPostingBatch` → 恒串行闸 →
+  既有 `lockMembersForWrite` → day-state 排序 `FOR UPDATE`。三条判定各管一段:
+  **基线记录完整性**(20085)、**基线漂移**(20084,任一 (member, date) 变化即整批拒绝,
+  **不允许部分 commit**)、**日合计 0..3**(20086)。全部通过才在**同一事务内**把
+  批次 → `committed`、run → `posted`、result / segment revisions → `committed`、
+  day-state 版本递增 + 日合计更新、写 Audit 与 NotificationOutbox intent。
+
+  🔴 **「日合计 0..3」的唯一执行位就在这里。** 第 1 批已实测判定它是**跨行**不变量
+  (表级 CHECK 只看单行;trigger 求和在并发下骗人)⇒ 刻意零 DB 执行位。本刀在
+  member advisory lock 内、day-state `FOR UPDATE` 之后判,写松即"贡献值当日无声超限"。
+
+  ⭐ **「万人统一生效恒串行」有了执行位**(维护者 2026-08-04 拍板,
+  `docs/current-state.md` 逐字记录;此前只是文字约束)。形态是**锁槽预算信号量**而不是
+  人数阈值 —— 拍板已点明阈值不严格成立(4999 + 8000 两场都在阈值下,合计 12999 > 共享锁表
+  公式保底 12800 照样炸)。预算 10 槽 × 1000 人 = 10000 把 advisory 锁,低于 12800 且留
+  2800 余量;按**并发总量**扣减,用 `pg_try_advisory_xact_lock`(非阻塞 ⇒ 自身不可能进
+  死锁环)在取队员锁**之前**占位,占不满即 20087(429,可重试);单场就超预算总量的
+  给 20088(409,重试无用,须运维调 `max_locks_per_transaction`)。
+
+  🔴 **bind 参数上限**(第 0 批实测 32767,非协议 65535):day-state 补建 / 加锁 / 回写与
+  分录批量写**全部改 `unnest($1::text[], …)`**,bind 数恒为列数、与人数无关。
+  **8192 人**(恰好越过"每人 4 参数 ⇒ 8191 人"那条线)实测:准备 17 块 4.4s、
+  生效**851ms / 21 条语句**(远低于 7s 事务预算),生效事务里唯一超过 64 个 bind 的语句
+  是既有 `lockMembersForWrite` 的每人 1 参数 `VALUES`(只读文件,本刀不改)。
+
+  新增 BizCode **20077-20089**(13 条,全 409,唯 20087 是 429)。
+  新增读面 `LedgerQueryService` —— 账本的**唯一**读入口,每个方法无条件 join
+  `batch.statusCode='committed'`,调用方拿不到"要不要过滤"这个开关(§3.22)。
+
+  **本刀不产生任何 reversal**(§3.23.5 `LedgerEntryReversalClaim` 零行):reversal 的唯一
+  来源是更正流程(§5.14),归第六刀。这不是靠自觉 —— 生效前有一条"批次里出现任何
+  `*_reversal` 分录即拒"(20089),第六刀真要写 reversal 时它会当场变红,逼那一刀把
+  「service 锁后检查 + 辅助表 unique」一起做出来。
+
+  **与合同的两处显式偏离**(PR body 与报告逐条列):① §3.27「在现有 worker 进程注册」——
+  两个 worker 进程入口在本刀写集之外,故只交付可被任一进程注册的 provider
+  (`drainOnce()` / `drainUntilIdle()`,无定时器、不自启动),进程注册与整条流程的对外
+  入口一起留到第 2 批收尾;② §5.13 ⑦「写 ReviewAction」—— `SettlementReviewAction` 的
+  `stageCode` / `actionCode` 在 DB 上都是二值闭集,没有一个值表示"账本已生效",
+  硬塞一条还会与第四刀的终审决定重复而破坏 §3.19,故只写 Audit + NotificationOutbox。
+
+### Added
+
+- 活动业务改造 v1.1 第 2 批第 ⑨b 刀新增审核读面：跨活动结算审核工作台、不可变审核详情，以及 `LedgerPostingBatch` 的 preparing／ready／committed 进度投影。
+- 新增我的、指定队员和指定活动三条参与账本分页读面；所有账本条目均经统一查询服务只读取已 `committed` 的批次。
+
+### Security
+
+- 审核与管理员账本读面复用既有 `attendance.read.sheet` 权限；无权的队员、活动和结算版本探测统一拒绝，App 读面仅按当前登录身份的队员范围返回。
+
+### Added
+
+- **活动业务改造 v1.1 第 1 批第二刀:报名表 / 资格 / 邀请 schema expand**(第 **72** migration
+  `20260804040000_activity_v11_slice2_form_qualification_invitation`;合同
+  [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §3.6 / §3.7 / §3.12 / §3.13 / §3.14,批次划分见 §14「第 1 批」建议拆分第 2 项)。
+
+  净新 **10 张空表**:`ActivityRegistrationRevision`(§3.7 不可变报名修订)、
+  `RegistrationFormVersion` / `RegistrationFormField` / `RegistrationFormAnswer` /
+  `RegistrationUploadSession`(§3.12 报名表版本、题目、答案与上传会话)、
+  `ActivityQualificationRuleSet` / `ActivityQualificationRule` /
+  `QualificationEvaluationSnapshot`(§3.13 资格规则与评估快照)、
+  `ActivityInvitation` / `ActivityVisitor`(§3.14 邀请与现场访客)。
+  既有表只加 5 列:`ActivityRegistration` 四列(`currentRevision` NOT NULL DEFAULT 0 +
+  `currentFormVersionId` / `statusSummaryCode` / `sourceCode` 可空)、
+  `ActivitySessionPosition` 一列 `qualificationRuleSetId` —— 后者是**兑现第一刀的欠账**:
+  第一刀按「跨切片外键列不提前占位」把它暂缓,而它指向的 §3.13 规则集表正是本刀建的,
+  故本刀连列带 FK 一起补上。其余仅 Prisma 反向 relation,零标量字段。
+
+  **expand-only:零 DROP / 零 RENAME / 零既有列语义变更 / 零回填 / 零删数 / 零 enum。**
+  十张新表**零调用方 / 零端点 / 零 DTO / 零权限码 / 零 audit / 零 seed** —— 纯 schema 刀,
+  契约 snapshot 一字未动;消费方在第 4 批。生产未 deploy。
+
+  末尾 **24 条手写约束**:21 条 CHECK + 3 条 partial unique
+  (一活动至多一个 active 报名表版本、`requestKey` 幂等唯一、邀请 active 去重)。
+  逐条在真实 PostgreSQL 上跑过**双向**阳性对照,判据钉在
+  `test/e2e/activity-v11-slice2-schema-constraints.e2e-spec.ts`(46 例)。
+
+  三处值得记的落点:
+
+  - **`RegistrationFormAnswer` 的 exactly-one 用计数式**
+    (`CASE WHEN … IS NOT NULL THEN 1 ELSE 0 END` 求和 `= 1`)而不是 AND/OR 串。
+    `IS NOT NULL` 是二值谓词 ⇒ 和恒为非 NULL 整数 ⇒ 整条 CHECK **结构上不可能求值成 NULL**,
+    天然免疫「表达式为 NULL ⇒ CHECK 判通过」那个第一刀真踩过的坑。
+    拒绝用例覆盖「零个非空」「两个非空」(三种组合)「五个全非空」,外加五种合法单值正对照。
+  - **`activity_invitation_active_unique` 带 `NULLS NOT DISTINCT`**(PG15+;沿
+    `role_bindings_active_unique` 先例)。键含**可空**的 `sessionId`(NULL = 活动级邀请),
+    PostgreSQL 默认把 NULL 视为互不相等 ⇒ 不带该子句时同一人可被重复发出任意多张活动级邀请
+    而一条都不被拦 —— **索引恰好在它最该生效的那一类行上完全失效**,而场次级邀请
+    (`sessionId` 有值)照样被拦,漏写在只测场次级的用例里**完全看不出来**。
+    已跑变异 A/B:去掉子句后两条重复行全部入库。
+  - **`ActivityVisitor` 刻意零 Member 外键**(合同 §3.14:「与 Member、Participation、Ledger
+    无 relation;禁止通过访客创建贡献分」)。`invitedByMemberId` 是裸留痕列。
+    「没有外键」用两条判据钉成可执行的:填不存在的 memberId 仍能入库(行为判据)+
+    直查 `information_schema` 断言外键目标集恰为 `{Activity, ActivitySession}`(结构判据)——
+    哪天有人顺手补上 FK,两条都会立刻变红。
+
+  与合同的偏离(均因合同自身要求而必需,PR body 逐条列):
+  `QualificationEvaluationSnapshot` 的 `identityId` / `registrationRevisionId` 改可空 ——
+  §3.13 明写「**展示**、提交和审核三次评估分别留快照」,展示发生在报名之前,
+  那一刻两个锚点都不存在,NOT NULL 会让这条合同明写的形态根本写不进来。
+  合同**未给**闭集的三处(`RegistrationFormField.visibilityCode` /
+  `RegistrationUploadSession.statusCode` / `ActivityQualificationRuleSet.statusCode`)
+  与未给的 RuleSet unique 一律**不自行发明**(AGENTS §2)。
+
+### Added
+
+- **活动业务改造 v1.1 第 2 批第二刀:结算草稿生成 + 服务段重建**(合同
+  [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §5.9 算法 / §4.5 服务段状态机 / §3.18 写入对象;修订件 `AMENDMENTS-v1.1.1` 五条缺口均不阻塞本刀)。
+
+  **零 schema / 零 migration / 零端点 / 零 DTO / 零权限码 / 零 Punch 写路径**
+  (`test:contract` 零 diff);新增 **5 个 BizCode**(20047–20051)。消费方是第三刀(提交不可变版本)。
+
+  新增两个文件承载算法:
+
+  - `src/modules/activities/settlement-segment-projector.ts` —— **纯函数**投影器:
+    打卡事件链 → 服务段。无 Prisma / 无 ConfigService / 无 `process.env` / 无 `Date.now()`,
+    阈值只能从入参来。
+  - `src/modules/activities/settlement-draft.service.ts` —— 编排:锁序
+    `Activity` → `AttendanceSettlementRun`(**只有这两把**,不取 member advisory lock);
+    写 `ParticipantServiceSegmentRevision`(draft)+ `AttendanceSettlementVersion`(draft)
+    + `ParticipantSettlementResultRevision`(draft)。
+
+  🔴 **本刀的错不会报错** —— 段算多算少、把待定当缺勤、无规则填 0,每一种都会安静地产出一个
+  "看起来正常"的结果然后进账本。故每一处"算不出来"都走**拒绝或待定**,没有一处走默认值:
+
+  - **绝不用计划 `endAt` 补签退**(§5.9 明文 / AC-039):已签到、无签退、窗口已过 ⇒ 段保持
+    **开放**(`checkOutAt` / `serviceHours` / `sourceCloseEventId` 三列全 `null`)。
+    闭合函数 `closeSegment()` 的签名里**拿不到**任何计划时间,结构上不可能补出一个签退时刻。
+  - **void / replace 链整体重建**:用不动点迭代解析"哪些操作事件生效"——
+    一条 `replace` 被 `void` 之后,它原本顶掉的事实**自动复活**;`replace` 以自己的
+    `occurredAt` 顶上被替代事实的角色,链式 replace 沿链上溯取角色。
+  - **`early_departure_close` ⇒ `early_departure_zero`,固定 0 时长 0 分**(不看实际跨度)。
+  - **无 event 者不自动判 `absent`**:落**待定**态,「建议」(`suggestedResultCode`)与
+    「认定」(`resultCode`)是**两个互斥填充的字段**。
+  - **应计分但算出 0 分 ⇒ 标 blocker**,绝不出现"0 分且无标记"的项。
+  - 迟到 / 早退只取 `ActivitySession` 行上的**冻结阈值**(`lateGraceMinutes` /
+    `earlyLeaveThresholdMinutes`),不读运行时配置、不读模板。
+  - 同步路径上限 **500**(具名常量 `SETTLEMENT_DRAFT_SYNC_MAX_POPULATION`,§5.9);
+    超阈值明确拒绝并提示走批处理,**本刀不实现 worker / `ActivityBatchJob`**(归第五刀)。
+
+  **重复生成的处置 = 内容寻址**:输入没变 ⇒ 一行不动(幂等,`contentHash` 与版本号都不漂);
+  输入变了 ⇒ 旧行标 `superseded` + 写 `revision+1`(§4.5「生成新的 segment revision,
+  **不覆盖**旧 revision」);段消失了 ⇒ 只降级不写替代行。
+
+  **贡献规则查找复用** `attendances/contribution-calculator.ts`(它带「同 pair 重复 ACTIVE
+  规则 fail-closed」不变量),活动模块**零处**直接查 `ContributionRule`;北京日界仍只有
+  `common/datetime/date-only.util.ts` 一份实现 —— 两条都有结构判据钉住。
+
+  ⚠️ **与合同的一处偏离(待拍板)**:§5.9 / §5.10 要求 working draft 里存在「**未决结果**」态,
+  但 §3.20 的 `resultCode` 是 **NOT NULL 十值闭集**(DB 有 CHECK),十个值全是**认定**,
+  没有一个表示"尚未认定"。本刀取**不写结果行**来表达未决(而不是写一行 `absent` 再挂个标记)
+  —— 后者会让任何没读那个标记的下游把人静默判成缺勤,而 DB 上没有任何执行位强迫下游读它。
+  机器执行位:`AttendanceSettlementVersion.sessionParticipationCount` 落的是"应有几项",
+  第三刀提交时按 §5.10 ④ 一比就红;「未决」与「不在人口」靠 `populationIncluded` 可区分。
+  代价:系统给出的**建议值**目前只在服务返回值里、不落库(§5.9 原话是「系统**可**建议」,
+  故不违约);若读面需要它可查,需合同方补一个不是 `resultCode` 的字段。
+
+  判据:新增 **64** 例(投影器单测 20 + 结构判据 7 + e2e 37),并跑了 **12 次单点变异 A/B**
+  证明每条硬判据都绑在它自己那处实现上(红集除一处可解释的重叠外互不相交)。
+
+### Added
+
+- 活动业务改造 v1.1 第 2 批第 ⑧b 刀接通结算最小 HTTP 闭环：App 负责人入口提供草稿生成、提交和机器关账；Admin 独立审核 surface 提供一审／终审通过与退回。未开放结算读面、草稿 item 修改、resubmit / archive、跨活动工作台或任何 Punch 写入口。
+- 五个专属 `activity.<动作>.record` 权限码按活动责任投影给负责人、考勤协办、一审员和终审员；端点先经既有 Authz/RBAC，再由第四刀服务在事务锁后复核提交人／一审人／终审人分离。
+- 提交、审核、关账均要求客户端版本锚点，并在既有 Activity/Run/Version 锁后比对；锚点缺省的内部调用保持既有行为。真实行锁竞争用例覆盖“预查见 v1、拿锁后变 v2”并证明锁外预查不足。
+
+### Security
+
+- 本刀只有端点 RBAC 这一层入口执法；提交人／一审人／终审人分离仍由第四刀 service 在锁后复核。入口层 `ActionConstraint` 未注册、未修改，已明确留给第 ⑩ 刀处理。
+
+### Added
+
+- **活动业务改造 v1.1 第 2 批第四刀:结算一审 / 终审**(合同
+  [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §5.11 算法 / §3.19 `SettlementReviewAction` / §3.22 `LedgerPostingBatch`;
+  修订件 `AMENDMENTS-v1.1.1` 未触及本刀真源)。
+
+  **零 schema / 零 migration / 零端点 / 零 DTO / 零权限码 / 零 Punch 写路径**
+  (`test:contract` 零 diff);新增 **15 个 BizCode**(20062–20076)。
+  消费方是第 2 批收尾那一刀(整条结算流程的对外入口)。
+
+  🔴 **这一刀守的是"谁说了算"** —— 隔离漏一条,自提自审就成立(合同 §4.1 与修订说明
+  列为一级阻断的同一类问题);并发漏一条,同一版本会有两个互相矛盾的生效决定。
+  故本刀每一处判据都走**拒绝**,没有一处走"警告后放行"。
+
+  新增两个纯判定件 + 一个编排件 + 一个边界件:
+
+  - `settlement-review-separation.ts` —— **纯函数**三方分离:提交人 ≠ 一审人、
+    提交人 ≠ 终审人、一审人 ≠ 终审人。三条**各一个具名码、各读互不相交的 (阶段, 字段)
+    组合**,故逐条卸掉后红集两两不相交。判定语义逐字沿用考勤
+    `attendances.service.ts::assertLockedReviewSeparation`(含"某一方为 null 时不否决"的口径)。
+  - `settlement-review-comparison.ts` —— **纯函数** §5.11 四项比对(seal /
+    evidence+population revision / workflowRevision / contentHash)。三个输入:
+    审核人看到的那一版 `expected`、不可变版本行 `version`、此刻现场事实 `live`;
+    两侧都比(只比一侧会漏掉另一半防的那件事)。
+    🔴 `contentHash` **只比对不重算** —— 重算等于把"审的是哪一版"又交回给可变数据。
+  - `settlement-review.service.ts` —— 编排:锁序 `Activity` → `AttendanceSettlementRun`
+    → `AttendanceSettlementVersion`(不倒置;**不取 member advisory lock**);
+    幂等 → 一版本一阶段一个生效决定 → run/version 状态闸 → **锁后复判三方分离**
+    → 四项比对 → 写 append-only `SettlementReviewAction` → 推进状态 →
+    同事务 enqueue 通知 intent + audit。
+  - `settlement-review-audit-recorder.ts` + `settlement-notification-producer.ts`
+    新增 `enqueueReviewed` —— 复用既有 `activity.publish` 伞事件 + `extra.operation`
+    (不新增事件串);通知 intent 走既有 outbox,**在业务事务内** enqueue。
+
+  ⭐ **三方分离必须是事务内锁后复判,不是入口处查一次**(§3.19 明写)。
+  判据打在锁后那一层,证据是一条**真并发**用例:同一个人 B 先做一审(事务停在
+  commit 前、握着 Activity 行锁),同时发起终审 —— 终审已经在等锁,而从事务外看
+  (= 入口处那一次读)**一审动作行还不存在**;一审 commit 后终审才拿到锁并复判,拒 20064。
+  变异 A/B:把分离事实源改成"入口处查一次",这条用例里**终审真的成立了**
+  (返回 `stageCode=final / versionStatusAfter=approved / batch=preparing`),
+  即一次自审落地;而四条顺序用例**全部仍绿** —— 顺序用例结构上抓不到这个缺陷。
+
+  🔴 **终审 approve 只创建/恢复 `LedgerPostingBatch` 准备,不把 run 标 `posted`**
+  (§5.11 逐字;`posted` 是第五刀 `commitBatch` 之后的事)。run 推到 `posting`,
+  批次留 `preparing`、`committedAt=null`、`ParticipationLedgerEntry` 零行。
+  「恢复」= 同版本已有未 committed 批次时复用,不开第二条(§3.22「至多一个 committed」)。
+  终审 return 只能在批次未 committed 前执行,并把该版本上未 committed 的批次置 `voided`。
+
+  **一版本一阶段一个生效决定**(§3.19):`SettlementReviewAction.operationKey` 是 DB 单列
+  unique,但**没有** `(settlementVersionId, stageCode)` 唯一 —— 该不变量由行锁串行化 +
+  锁后重查承载,P2002 另有兜底翻译。approve/return 真并发(两套 Nest/Prisma pool +
+  PostgreSQL lock waiter barrier)恰好一个成功,败者恒收具名码 20072。
+
+  判据:新增 **72** 例(三方分离单测 10 + 四项比对单测 16 + e2e 41 + 并发 e2e 5),
+  并跑了 **11 次单点变异 A/B**(读数逐条进报告);其中一次(删掉版本行锁)
+  **反过来推翻了实现自己的注释**,注释已按实测改写。
+
+  ⚠️ **与合同的偏离(三处,均已在源码文件头逐条标注)**:
+  ① §3.19 要求「Authz action constraint **和**事务内锁后复判」两层,本刀只落**锁后层** ——
+  `ActionConstraint` 的注册键就是 action(权限码)字符串,而本刀零权限码、零端点,
+  且 `src/modules/authz/**` 是本刀红区;编一个无人调用的 action 会得到一条永不触发的
+  约束(描述文本冒充执行位)。入口层留到**开端点那一刀**接。
+  ② §5.11 只说 return「推进 returned」——`returned` 是**版本**状态(§3.19 五值闭集有它),
+  run 的九值闭集里没有,故 run 回 `drafting`(§5.10 末句所需的前置)。
+  ③ §5.11 点名的 `SettlementVersion` row lock **实测对同活动并发是结构性冗余**
+  (删掉它 46/46 仍全绿):同版本并发必然先在 Activity 行锁上排队。仍保留(合同点名 +
+  第五刀 Batch 锁的天然锚点),但源码与本条都不把它写成"并发安全的来源"。
+
+### Added
+
+- **活动业务改造 v1.1 第 2 批第三刀:提交不可变 SettlementVersion**(合同
+  [`docs/archive/reviews/activity-business-overhaul-v1.1/`](docs/archive/reviews/activity-business-overhaul-v1.1/)
+  §5.10 算法 / §4.7 结算状态机 / §3.19 + §3.20 写入对象;修订件 `AMENDMENTS-v1.1.1` 五条缺口均不阻塞本刀)。
+
+  **零 schema / 零 migration / 零端点 / 零 DTO / 零权限码 / 零 Punch 写路径**
+  (`test:contract` 零 diff);新增 **10 个 BizCode**(20052–20061)。消费方是第四刀(一审 / 终审)。
+
+  🔴 **提交是单向门** —— 固化之后只能靠退回重来,而退回是人工成本。故本刀每一处判据都走
+  **拒绝**,没有一处走"警告后放行"。
+
+  新增三个承载算法的文件 + 两个边界件:
+
+  - `settlement-content-hash.ts` —— **纯函数** canonical 序列化 + sha256。递归**排序对象 key**
+    (⇒ 字段书写顺序不影响 hash),小数只能经 `decimalToCanonicalString` 变成定标度文本
+    (载荷类型把四个金额列声明成 `string`,TypeScript 直接挡住 `Number(decimal)`),
+    并且 **hash 里一个时间字段都没有** —— 提交时刻是元数据不是内容,时区口径问题在结构上不存在。
+  - `settlement-submission-validator.ts` —— **纯函数** §5.10 ④ 的五条校验,每条只读**自己那一个计数**。
+  - `settlement-submit.service.ts` —— 编排:锁序 `Activity` → `AttendanceSettlementRun`
+    (**只有这两把**,不取 member advisory lock);seal 复验 → 五条校验 → contentHash →
+    写不可变版本 + 结果行快照 → 推进 run → 同事务 enqueue 通知 intent + audit。
+  - `settlement-submit-audit-recorder.ts` / `settlement-notification-producer.ts` ——
+    复用既有 `activity.publish` 伞事件 + `extra.operation`(不新增事件串);
+    通知 intent 走既有 outbox,**在业务事务内** enqueue。
+
+  ⭐ **本刀最重要的东西是 §5.10 ④ 那五条闸** —— 第二刀把「未决」表达成**不写结果行**,
+  那个设计成立的唯一前提就是提交时"人口里有他、结果表里没有他"必须红。五条各有具名码:
+
+  - `PENDING_RESULT`(20056,**包含式**:人口 ⊆ 结果集)与 `ITEM_COUNT_MISMATCH`(20057,
+    **基数式**:|结果集| = |人口|)是**双闸**不是冗余 —— 各自能抓到对方抓不到的形态
+    (人口 {A,B}、结果 {A,X} 基数相等只有包含式能红;人口 {A}、结果 {A,X} 无人缺席只有基数式能红)。
+    自然形态的未决两条都会红,卸掉任意一条仍被另一条拦住。
+  - `DUPLICATE_IDENTITY`(20058)/ `OPEN_SEGMENT`(20059)/ `MISSING_RULE`(20060,
+    第二刀标的 blocker 在这里真正挡住提交)。
+
+  **提交 = 另开一版,不是把草稿行翻状态**(§3.19「把当前草稿**固化为** immutable
+  SettlementVersion」「审核永远引用 versionId,不引用可变 run 内容」):提交版本的结果行是
+  **物理上另一批行**(另一个 `settlementVersionId`,`baseResultRevisionId` 指回草稿行),
+  第二刀的生成器只写挂在草稿版本下的行,**结构上够不到**已提交版本的任何一行。
+  草稿版本行保持 `draft` 不动 —— 它仍是那个可编辑的工作区。
+
+  **幂等**(§5.10 ⑥):`operationKey` + `requestHash`。同 key 同 payload ⇒ 原样返回同一版本
+  (不产生第二条、不复制第二批结果行);同 key 不同 payload(或用在另一条 run 上)⇒ 20061。
+  ⚠️ `AttendanceSettlementVersion.operationKey` 在 DB 上**只有普通 index、没有 unique**
+  (§3.19 只给 `SettlementReviewAction` 点了 unique),防重的正确性来自 **run 行锁的串行化**,
+  不是唯一约束;P2002 仍有兜底翻译,不让 Prisma 异常裸奔成 500。
+  幂等判定**排在 run 状态闸之前** —— 重放请求打过来时 run 早已被第一次提交推到
+  `pending_first_review`,先判状态会把合法重放判成非法。
+
+  **规模**(实测,PG16 + Prisma 6.19.3):结果行固化用一条 `INSERT ... SELECT`,
+  **8192 行 ⇒ 1 条 SQL、2 个 bind 参数**,与人数完全无关。
+  ⚠️ 顺带更正一个流传的假前提:**Prisma `createMany` 不会**在 bind 上限处崩 —— 它自动分块
+  (实测 8192 行拆成 2 条 INSERT)。确定性打穿的是**手写逐行 `VALUES`**
+  (8192 行 × 4 列 = 32768 个参数即报 `expected maximum of 32767`;32000 通过 ⇒ 上限逐字 32767)。
+  不用 createMany 的真实理由是它的 SQL 条数为 O(人数)、且要把全部结果行读进应用进程再发回去,
+  两条都不满足本仓「SQL 次数固定」的批量化判据。
+
+  显式事务预算 **120s**(`SETTLEMENT_SUBMIT_TX_TIMEOUT_MS`):Prisma 默认 5s 在 8192 人的提交上
+  必然超时(第一版实测栽在这里)。这与 bind 上限是**两种不同的失败模式**,不能互相顶替。
+
+  判据:新增 **86** 例(contentHash 单测 32 + 五条校验单测 13 + e2e 41),
+  并跑了 **7 次单点变异 A/B**:五条闸逐条卸掉后红集**两两不相交**;
+  双闸同时卸掉才让"自然未决必被拒"那条红;去掉 canonicalize 的 key 排序只让
+  "key 序无关"那三条红(可复现 / 内容敏感两组仍绿)。
+
+  ⚠️ **与合同的偏离(两处,均已在源码文件头逐条标注)**:
+  ① §3.20 的 `statusCode` 三值闭集 `draft/committed/superseded` 讲的是**账本是否已入账**,
+  没有一个值表示"已提交待审" ⇒ 提交版本的结果行仍写 `draft`,审核阶段落在**版本行**的
+  `statusCode` 上(§3.20 本就明写「最新当前结果通过 SettlementVersion 指针确定」)。
+  ② §5.10 ⑨ 的「写 Review 待办」合同没有另立一张表 ⇒ 取 run 的
+  `statusCode='pending_first_review'` 作为待办本身(§3.19 明写 run 状态「是页面投影和流程根」)。
+  通知收件人取活动当前 active owner(一审人解析是 §5.11 的事,本刀不发明);
+  没有 active owner 时**跳过通知但不拒绝提交**,是有意的降级。
+
+### Added
+
+- 活动业务改造 v1.1 第 2 批第 ⑨a 刀新增负责人结算工作台读面：结算摘要、逐人分页与 `session`／`result`／`q` 过滤、不可变版本详情与封场修订，以及 returned 版本基于当前 working draft 的重新提交。
+- 负责人可用独立 `activity.settlement-update-draft.record` 权限编辑 working draft 单项；编辑采用 `expectedDraftVersion` CAS，运行进入 submitted／posted／closed 等非 drafting 状态即明确拒绝。
+
+### Security
+
+- working draft PATCH 的事务路径不写 `AttendanceSettlementVersion`；已提交版本不会因草稿编辑被修改，returned 重提始终生成新的 immutable version。
+
+### Added
+
+- 活动业务改造 v1.1 第 3 批第一刀新增发起人锚定的活动草稿、场次与新表 `ActivitySessionPosition` 岗位嵌套 CRUD；草稿直写只在 `draft` 阶段放行，已发布活动统一返回 change-review-required。
+
+### Security
+
+- 非发起人访问他人草稿不再暴露 RBAC 403，统一以 `ACTIVITY_NOT_FOUND` 作 404 式隐藏，防止按活动、场次或岗位 ID 枚举草稿归属。
+
+### Added
+
+- 活动业务改造 v1.1 第 3 批第三刀新增 App 发起人／负责人活动生命周期能力：首场开始前取消、已开始活动提前终止、仅配置 clone，以及机器证据封场 HTTP 接线。
+- App 队员活动目录与详情新增 published-only 可见性投影；邀请制活动仅向持有效邀请的队员可见，详情补充报名模式、场次／岗位投影，并为第 4 批预留恒为 `null` 的 `formVersion`。
+
+### Added
+
+- 活动业务改造 v1.1 第 3 批第二刀新增 canonical 初次发布/关键变更 proposal、本人撤回和模板最终解析读面；审核通过会进行锁后 stale CAS、写入不可变 RuleSnapshot，并支持审核动作幂等重放。
+
+### Changed
+
+- **前端适配提示：**既有 `direct-publish` 兼容端点不再直接发布活动，只会创建 pending 审核；新客户端应使用 `POST /api/app/v1/my/managed-activities/:activityId/publish-reviews`（携带 `operationKey` 与 `confirmation: true`），已发布活动的关键修改改用 `change-reviews`，审核通过/退回也携带独立 `operationKey` 并处理 409 stale/幂等键冲突。
+
+### Changed
+
+- 活动业务改造 v1.1 第 3 批②-pre 将 `ActivityRuleSnapshot.templateVersionId` 放开可空；无模板活动可在审核通过后生成不可变规则快照，同时保留有模板时的 FK 校验；零 endpoint、零运行时行为、零 seed。
+
+### Added
+
+- 活动业务改造 v1.1 第 4 批接通邀请 accept 与分配 runtime：邀请接受复用 canonical 报名的 Form、资格、保险、永久身份、容量和幂等链；`first_come` 按场次即时分配，`qualification_rank`/`lottery` 提供负责人 prepare、commit、void、安全读取四条 canonical 路由。
+- rank/lottery 批次冻结候选、报名修订、资格快照/hash 与算法版本；lottery 在 commit 前只保存服务端 seed commitment。commit/void 在同一 Activity 根事务内复核容量、pointer、population 与 D86 applied projection，漂移统一 20147 零写；候补递补只限原场次、原岗位。
+
+### Changed
+
+- allocation command 的同 `operationKey` + 同 canonical 请求现在重放首次安全视图；同 key 异请求保持稳定冲突，后续 commit/void 不会改写旧 prepare/commit 的回执语义。
+
+### Changed
+
+- 第 4 批整单活动取消现接入永久报名头 lifecycle：Activity 根事务只关闭 canonical `pending|waitlisted`，追加 immutable Registration/Participation revision 并 CAS 投影；已通过报名的历史审批、pointer 与 active capacity 保留。任何 revision、状态、pointer、population 或 reservation 漂移均复用既有 20147 整笔失败。
+- 旧 `activity-waitlist-promotion` writer 现仅处理无永久 participation identity 的 legacy header；canonical 候补继续只由 allocation caller 在原场次、原岗位递补。
+
+### Added
+
+- 活动业务改造 v1.1 第 4 批前置微刀新增第 78 migration：`CapacityReservation` 增加 nullable `memberId` / `activityId`、两条 RESTRICT FK、空值安全的 active `activity_person` 双锚点 CHECK，以及同 member/activity 的 active partial unique。expand-only、零 default、零回填、零 endpoint、零运行时业务行为。
+
+### Added
+
+- 第 4 批活动开始 expiry：复用现有两个 worker context 与 PostgreSQL `ActivityBatchJob` lease/fence，在不新增 cron、queue 或进程的前提下，为到点且仍有 canonical `pending|waitlisted` 报名或 pending invitation 的 published Activity 建立 reconciliation job。执行在 Activity 根事务内追加 system participation revision、清空 stale pointer/population、更新兼容报名摘要并过期邀请；pass 与 active capacity 不动，投影或 reservation 漂移统一以既有 20147 fail-closed。
+
+### Added
+
+- 活动业务改造 v1.1 第 4 批 Form 前置微刀新增第 79 migration：冻结报名表题目可见性和上传会话状态闭集、以双向 CHECK 锁 `consumed`/`consumedAt`，并以 partial unique 将 `registration-upload-session` 限为单附件。expand-only、零回填/删数/default/列变更/endpoint/runtime/seed/生产部署；MIME 与 10 MiB runtime 留待下一把 Form 行为刀。
+
+### Added
+
+- 活动业务改造 v1.1 第 4 批接通 managed 报名 Form 的 canonical 定义、draft/active 版本、发布/变更审核/clone 与队员活动详情安全读面；新 schemaVersion 3 proposal 将 Form 纳入 stale guard，历史 v2 审批保持兼容。
+- 新增一次性报名附件上传会话：token 仅创建响应明文一次、30 分钟有效，后端中转 multipart 仅接受 JPEG/PNG/WebP/PDF（10 MiB）并安全重放单会话单附件；不返回 provider signed upload URL 或内部存储字段。
+
+### Added
+
+- 第 4 批资格配置/发布激活：负责人可在 App managed `GET/PUT qualification-rules` 全量维护 activity/session/position 的 #22 typed RuleSet；草稿 canonical no-op 不写版本或审计，初发与显式规则集合变更审核冻结 V5 target/hash，已发布活动的 direct PUT 必须走审核。
+- RuleSet active/retired 版本保持冻结；变更中取消带资格 scope 的场次或岗位必须显式取消对应 RuleSet，失败以既有 `20022` 零写。clone 仅重映射定义到目标 draft v1，不复制 active 指针。
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities/{activityId}/change-reviews
+reason: 可选的 qualificationRuleSets 一旦出现，create/update/cancel 三个完整集合必须同时冻结，避免省略集合被误判为保留、清空或删除。
+impact: 既有 V4 调用方继续省略顶层 qualificationRuleSets，wire 与快照不变；选择 V5 资格配置的调用方须传入三个数组，未使用的数组传空数组。
+migration: 前端 codegen 后只在提交资格配置变更时构造 {create,update,cancel}；其它既有 change review 请求不添加该顶层字段。
+rollback: 真回滚为 revert 本 PR 的 V5 qualificationRuleSets DTO、冻结/applier 与生成契约，恢复只接受既有 V4 change review wire。
+-->
+
+新增 v1.1 活动报名 canonical App 命令：冻结表单答案、一次性附件消费、不可变报名/参与修订链与安全幂等回执；v1.1 活动的旧 App/Admin 创建入口现 fail-closed。
+
+### Added
+
+- 活动业务改造 v1.1 第 5 批接通场次自助二维码和现场服务段：考勤责任人可签发、作废并受保护渲染签到/签退二维码；本人可扫码签到、签退和读取安全服务段状态。
+- QR 与 PunchEvent 统一按 Activity 根事务、canonical request hash 和 append-only 事实链处理；支持责任人早退闭合、void、replace，并将有效 PunchEvent 作为整单取消的零写闸门。
+
+### Changed
+
+- 二维码 render 只返回 `Cache-Control: no-store` 的 SVG 二进制内容；任何 JSON 读面、回执和审计 extra 都不回显扫码 token、token digest 或 request hash。
+
+活动第 6 批 B6-2 新增负责人现场离线包签发、撤销、单事件上传与安全人工复核接口；离线正式事件复用既有 PunchCommand，原始 token、签名、成员凭证与坐标不进入审计或复核读面。
+
+### Added
+
+- 活动业务改造 v1.1 第 6 批接通工作人员短时成员凭证、staff scan、单人代理、可重放批量代签任务和 CSV 导入 preview/execute；所有正式在线 PunchEvent 复用 Activity 根事务、统一 PunchCommand 与服务段投影。
+- CSV preview 固定附件归属、文件摘要、解析器版本、逐行摘要与 preview hash；execute 重读同一冻结对象并重新核验，替换文件或解析漂移零 PunchEvent。
+- migration 88 新增 OfflinePackage、OfflinePackageParticipant、OfflinePunchReviewItem 及 AttendancePunchEvent 离线锚的字段、复合 FK、唯一键与状态/链 CHECK，未回填、未删除或重写既有行。
+
+### Changed
+
+- 考勤责任人的在线 staff/proxy/bulk/import 写入口均在 Activity 根事务内锁后重验 active `canManageAttendance=true`；bulk/import worker 每项都重验 lease/fence、责任、身份、窗口、segment 与 seal。
+- 离线包/人工复核目前只交付经批准的数据库地基；未有精确 HTTP wire 前不暴露 issue、revoke、upload、review 或离线 PunchEvent writer。
+
+### Added
+
+- **活动 v1.1 上线切换闸 `ACTIVITY_V11_WORKFLOW_ENABLED`**(第 7 批第 ③ 刀;合同 §16.2 的执行位,
+  C 档;默认关闭)。合同红线原文:「不能拆成多个可独立开启的开关让同一实例进入『新打卡＋旧结算』
+  混合状态。子能力可以有 UI 灰度,但**业务真相切换必须单轨**。」本刀把这句话做成机器判据。
+  - **配置项**逐字沿 `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED` 的形状:空值时 production / smoke
+    **抛错拒启**,其余环境默认 `false`;非严格 `true` / `false` 一律抛错。
+  - **单一真源** `ActivityWorkflowGate`(`src/common/activity-workflow/`)—— 它是 src 生产代码里
+    **唯一**读取该配置的地方,三项受控面全部经由它取值:
+    ① 新结算真相链(打卡 / 服务段 / 封场 / 结算 / 账本 / 关账 / 更正)写路径:闸关时拒绝(`20153` / 503);
+    ② 旧 `ActivityCheckIn` / `AttendanceSheet` 写路径:闸开时拒绝(`20154` / 410 —— 是永久关闭而非稍后重试);
+    ③ 统计读面取数:闸开读**已 committed 账本**,闸关读 approved 考勤(今天的行为)。
+  - **闸控范围按维护者 2026-08-19 拍板收窄为「结算真相链」**,不含 Session / Participation /
+    Registration。理由是实测:发布活动硬性要求 live session
+    (`ACTIVITY_PUBLISH_REVIEW_LIVE_SESSION_REQUIRED`),而旧 AttendanceSheet 链只能在已发布活动上跑
+    ⇒ 若闸关时连 Session 写一起拒绝,活动根本发布不了,**旧写路径会跟着一起死**,那就违反了
+    「闸关 ⇒ 旧写路径放行(今天的行为)」这条安全底线。合同点名要防的「新打卡＋旧结算」两端
+    都在收窄后的范围内。全链路 e2e 实测印证:闸关时第 1–8 站(建草稿→场次→岗位→发布审核→
+    批准→报名→分配→签发二维码)全部走通,恰好在第 9 站「签到」拿到 `20153`。
+  - **执行位不是那个布尔变量,而是四条结构判据**(`activity-workflow-gate.criteria.ts`,
+    随 unit 套件自动执法,**不新增需要单独接线的 CI 命令**):
+    C1 单一真源(按 AST 判,注释里的说明不误报)· C2 无漏网写路径(按 Prisma delegate 定位,
+    沿文件内调用图传播到公开入口 ⇒ **新增端点只要落到受控 delegate 上就会被抓住**,
+    是按缺陷类而不是按实例设闸)· C3 三面确实在闸上 · C4 反向闸。
+    四条判据各配**正对照**:拆掉判闸位 / 改成各读各的配置 / 换成写死 `true` ⇒ 判据必须转红,
+    且红在指名的那一处 —— 不做正对照的结构断言等于没有。
+  - **C4 是一条反向闸**:入队门槛(team-join)与 `computeCappedContribution` **恒按 approved 算**,
+    不随本闸切换(维护者已拍板)。这条不一致是刻意的,故上闸禁止它们接闸,防止后人「顺手统一」
+    悄悄改掉入队门槛的业务口径。
+  - footprint:BizCode 新增 **2** 条(`20153` / `20154`);Endpoint / 权限码 / Migration / Cron /
+    throttler **恒等**;零 schema、零数据迁移(合同 §16.3:非生产库由维护者重建,不写长期 backfill)。
+
+- `docs/ai-harness/README.md` 目录清单加机器守护:`docs:codemap:check` 新增 `ai-harness-index-complete`,双向比对 §4 登记清单与该目录实际 `*.md`(未登记 / 登记了不存在的文件 / §4 小节缺失,均 FAIL)。此前该清单写死"恰 4 文件",在架构治理 Phase 0-6 陆续新增 7 份报告后漂到 11 个而无任何守护发现。同刀 true-up §2 守护命令(4 条 → 12 条,并区分 CI 阻断 / report / base-trusted / 本地专用)与 §4 分组。
+
+### Changed
+
+- 架构治理 v4 Phase 0：维护者拍板已落册；A 类登记完整性检查在既有 Fast checks job 内由 report 翻为 blocking，跨域违规与 R6 仍保持 report-only。
+
+### Added
+
+- 架构治理 Phase 0 的纯取证基线：领域/数据所有权登记、跨属主写债务身份证、状态列清单、
+  Route Authorization Policy、外部 I/O 盘点与主分支 CI 健康基线。首轮检查仅报告，不改变任何业务行为或准入策略。
+
+### Changed
+
+- 架构治理 Phase 1：admin 面 270 个路由已由可重复 codemod 落为结构化访问声明，11 条历史 `[auth]` 决策同步转为代码真源。
+- 如实修正活动参与核对、参与合计和内容附件确认的 OpenAPI summary；内容确认按 upload token 的 ownerType 声明为 `content-image` / `content-file` 任一权限。
+
+### Changed
+
+- 架构治理 Phase 1：App 面 117 个路由全部迁移为结构化代码声明；Phase 0 的
+  `route-authz-classification.json` 已退役，Route Authorization Policy 改为仅从规范化装饰器生成。
+
+### Added
+
+- 架构治理 Phase 1 权限声明基础：五类路由声明、report-only `AuthzDeclarationGuard`、ALS 判权观测和统一 canonical normalizer；system/auth 95 个端点已迁移为代码声明，运行时不改变既有业务判权或 OpenAPI 契约。
+
+### Added
+
+- 架构治理 Phase 1：`AuthzDeclarationGuard` 在 report 模式启动时输出静态未声明路由总数，并与按流量观察到的未声明路由数并列记录；两者均不参与任何判权决定。
+- 新增旅程②当前真实部分链“活动→报名→审批→签到”，以 `ActivityCheckIn` 证据和签到重试幂等性守护；结算至贡献值账本因缺少 `AttendancePunchEvent` 生产写入口具名登记，待该入口合入 main 后扩展。
+
+### Added
+
+- 架构治理 Phase 1：`AuthzDeclarationGuard` 在 report 模式启动时输出静态未声明路由总数，并与按流量观察到的未声明路由数并列记录；两者均不参与任何判权决定。
+
+### Changed
+
+- 架构治理 Phase 1：在 red-first HTTP E2E 证明无声明路由会于 handler 前以
+  `AUTHZ_UNDECLARED` 拒绝后，`AuthzDeclarationGuard` 从 report 切换为 enforce；回滚仅需将同一开关改回 report。
+
+### Added
+
+- 架构治理 Phase 1：新增“考勤修正全链”与“业务通知 durable outbox 投递/重试终态”跨域 Journey，并在 CI 以独立数据库、单 worker job 运行 Journey 套件。
+
+新增独立 Journey Jest 配置，以及“招募至入队”和“证书认定至发号”两条跨域回归旅程。
+
+### Added
+
+- 架构治理 Phase 1：新增 R8 权限声明↔实现闭环的 report-only ESLint 扫描。它消费 Route Authorization Policy 与断言模式的生成物，覆盖 T1 handler、T2 同模块一层 service、别名/中转及 `require:any` 全部声明 OR 分支；超出可判边界的路径如实报告为 T3 候选。
+
+### Added
+
+- 架构治理 Phase 1：新增受红区保护的 RBAC seed facts，由 `prisma/seed.ts` 单向消费并暴露只读结构化目录；保留的 SUPER_ADMIN 权限码、四组 seed e2e 的码表、角色绑定、职务 policy 与计数均从同源事实派生，三个治理解析器按精确 seed 事实闭包读取，避免手工同步。
+
+### Added
+
+- Report-only Phase 2 data-ownership observations: cross-domain read tiers, raw-SQL physical-table visibility, observed subdomain writes, and an exact fact-read allowlist.
+- Completed architecture-debt semantics for the original 125 records, registered 76 blame-backed historical findings, and recorded 21 maintainer-reviewed undeclared-edge directions without changing business source lines.
+- Confirmed 28 `allowedEdges`, added report-only declared-edge usage statistics beside undeclared directions, and recorded the current public surface; no enforcement mode changed.
+
+### Added
+
+- **架构治理 Phase 4-1b:状态机 `governed` 声明闸**(R10)。`harness/state-machines.json` 的
+  `governanceStatus` 从此可取 `inventory | governed`,并由 `pnpm docs:boundaries:check` 把关 ——
+  声明 `governed` 必须附 `governedEvidence`,拿不出证据即拒(fail-closed)。
+  门槛按层分叉:**L1 配置列**要求闭集能从在册 migration 的 DB CHECK 原样重算且未被后续 `DROP`;
+  **L2/L3 流程列**要求具名实现模块存在、符号真在文件里、迁移边逐条与模块字面量双向对账、
+  wrong-state BizCode 真实存在。判据先守**边与实现映射**而非闭集 —— 4-1a 实测闭集已有 34/56
+  被 DB 兜住,而边有 20 条零机器声明,只比闭集会恒真通过(空绿)。
+  本轮升 `governed` 8 条(全为 L1 零 blocker 配置列),L3 一条不升;其余 48 条仍 `inventory`。
+  `pnpm docs:boundaries` 新增 `stateGovernance` 报告块(恒 report-only)。
+  零 `src/**` / `prisma/**` 改动,无行为变更。
+
+### Added
+
+- 前端 TS client 覆盖全部五个 surface(admin / app / auth / system / open),不再只出 admin 与 app —— 部分生成会让剩下那部分回到手写,等于制造第二份真相。跨 surface 共用的类型(envelope、分页、传输层契约、被 ≥2 个 surface 引用的 DTO)统一落 `docs/handoff/clients/shared/types.ts`,各 surface 引入并再导出;共用集由生成器**算出**而非硬编码,全仓零重复定义由 harness selftest 机核。
+
+### Added
+
+- 前端 TS client 生成:从 `docs/handoff/openapi.json` 按 surface 生成 admin 与 app 两份类型 + 轻客户端,落 `docs/handoff/clients/{admin,app}/`。产物只出类型与调用签名(不含 baseURL / 令牌 / 任何鉴权逻辑,传输层由消费方注入 Fetcher),`code/message/data` envelope 与分页形状按仓内既有契约表达,头部带确定性 `inputDigest`(不含时间戳 / git SHA)。新鲜度由 `pnpm docs:feclient:check` 在 CI Docs guards 同链守护;生成器并对自己的产物跑 TypeScript 诊断(`docs/**` 在 lint 与 typecheck 射程之外,不自校验就没人管)。
+- Phase 5 语义门收口报告 `docs/ai-harness/SEMANTIC_GATES.md`:三门真实 gate 输出样例、selftest 阳性对照与变异 A/B 清单、已知性质与缺口、本次未做段。
+
+### Added
+
+- R11 契约语义门:对 `docs/handoff/openapi.json` 的 base↔head 做语义分类,breaking 判定表成文九类(端点删除、响应字段删除、请求必填新增、类型收窄、请求枚举删值、响应枚举加值、请求撤销 nullable、响应变可空、成功状态码变更)。破坏性变更须在 changelog.d 里以 `contract-breaking` 块申报(含真回滚手段),并由维护者在 harness-review 环境点批;additive 变更放行但恒进 gate 报告。
+- 两级结构沿用 R14 已验证的形态:申报完整性是硬闸(scan 失败 ⇒ 审批 job 被跳过,点头也盖不掉),Environment 审批是补齐申报之后的第二道闸。
+
+### Changed
+
+- `agent:check:api` 与 `agent:check:full` 追加 `docs:openapi:check`(v4 §11 遗留项,本地管线补齐)。
+
+### Added
+
+- R14 授权语义门:对 ROUTE_AUTHZ manifest 的 base↔head 做四态语义比对(EQUIVALENT / NARROWER / BROADER / INCOMPARABLE),逐端点按 admission、mode、codes(按 `require` 语义分派)、scopes、engine 五轴判定。降级与不可比须在 changelog.d 里以 `authz-downgrade` 块申报,并由维护者在 harness-review 环境点批;收紧与等价放行但恒进全量迁移清单。
+- 权限蕴含图登记表 `harness/authz-implication-graph.json`(初始边集为空 = 任何换码恒不可比),带结构校验:引用不存在的权限码、自环、成环均硬红。
+
+### Changed
+
+- 内容发布/引用边界锁抽出独立模块(Phase 6-B 第四域第八刀,架构边界 §3.2):`lockContentPublishBoundary` / `lockContentPublishBoundaryUnsafe` / `lockContentReferenceBoundary` 三个方法与两个仅本族使用的辅助迁入 `attachment-content-boundary.ts`,均为模块级纯函数(实测零 `this` 依赖,只吃调用方传入的 tx),不进 DI 图、两个 module 均无需改注册。编排器保留两个 public 薄委托,`attachments.service` 的 6 处调用逐字不变。`AttachmentStorageOrchestrator` 由 1107 降至 677 NCLOC,**跌破 700 阈值并从尺寸基线中移除**。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Changed
+
+- 附件删除终态化时的内容根边界锁抽出 `attachment-content-delete-boundary.ts`(Phase 6-B 第四域第三刀,架构边界 §3.2):`lockContentDeleteFinalizationBoundary` 由 `AttachmentStorageOrchestrator` 的私有方法改为模块级纯函数,delete 族(`finalizeAttachmentDelete`)与 manual 族(`finalizeManualAttestedDelete`)各自 import,互不依赖。该原语实测零 `this.` 引用(只吃传入的 `tx`),故不做 `@Injectable` —— 不进 DI 图,两个 module 均无需改注册。锁序不变:它实现的仍是全局锁序台账中「Content root → Attachment → …」的第一段,调用点与调用时机逐字未动;文件头写明「必须在尚未持有 Attachment / StorageObject 行锁前调用」,因为挪位置不会有任何编译或测试报错。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Added
+
+- 补齐 attachments 三个零单测覆盖文件的单元测试(Phase 6-B 测试收口,192 例):`attachment-storage-locator`(41)、`attachment-reconciliation.service`(68)、`attachment-upload.service`(83)。此前六刀边界抽取把大文件拆小了,但测试覆盖没有跟着搬过来,留下三个 100~600 行、顶着「已抽出边界」名头的零覆盖块。本刀只加测试,零生产代码改动。13 个变异对拍全部命中(每个都定位到具体用例)。
+
+### Changed
+
+- 附件人工缺失认定的执行侧抽出 `AttachmentManualAttestService`(Phase 6-B 第四域第五刀 · manual 族收官,架构边界 §3.2):`executeManualAttestAbsent` 与 `finalizeManualAttestedDelete` 迁入该类,编排器 `executeClaimed` 改为按 kind 委托。该路径是不可逆补偿(物理删 Attachment 行、对象置 absent、原始 delete 与本 manual 操作双双置终态),四段锁序(内容根 → Attachment → 对象+操作 → 落库)逐字保留,并在文件头写明「把内容根或 Attachment 锁挪到 lockClaimedForUpdate 之后会静默破坏全局锁序且不会有任何编译错或测试失败」。至此 manual 族(受理 / relocate 执行 / attest 执行)全部迁出编排器,编排器只余三个注入字段与两个薄委托入口。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Changed
+
+- 附件人工运维操作的受理侧抽出 `AttachmentManualIntakeService`(Phase 6-B 第四域第四刀,架构边界 §3.2):`prepareManualOperation` 的实现(登记一条待执行 manual 操作:围栏事务内两条 `FOR UPDATE` 取锁、eventKey 幂等复用、活跃操作互斥、按 kind 分别校验来源态)迁入该类,`AttachmentStorageOrchestrator` 保留 `prepareManualRelocate` / `prepareManualAttestAbsent` 两个同名 public 方法作为薄委托 —— 它是本模块对外入口与 kind 分发器,故调用面(`storage-consistency-worker` 与 e2e)逐字不变。锁序不变:该方法迁出前后都自开事务、不接受外部 tx,两条 `FOR UPDATE` 的先后与 `ORDER BY "id"` 逐字保留(后者是死锁防线而非排序需求)。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Changed
+
+- 附件存储的人工重定位执行侧抽出 `AttachmentManualRelocateService`(Phase 6-B 第四域第二刀,架构边界 §3.2):`executeManualRelocate` / `collectManualRelocationEvidence` / `assertManualRelocationEvidence` 三个方法连同 `ManualRelocationEvidence` 类型与 `MANUAL_STORAGE_MAINTENANCE` 常量迁入该类,`AttachmentStorageOrchestrator` 保留 `executeClaimed` 按 kind 的分发与本操作的受理侧(`prepareManualRelocate` / `prepareManualOperation`),两者以操作 kind 为界互不重叠。锁序不变:该方法迁出前后都**自开事务**、不接受外部 tx,编排器文件头的锁序台账(全局单点)一行未动。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变;补齐迁出前**零单测覆盖**的证据校验分支(12 例,覆盖身份漂移 / HEAD 尺寸 / 流式摘要缺失与不符 / 同读竞态 etag 变化 / 无凭据重定位拒绝)。
+
+### Changed
+
+- 附件存储对账与回填抽出独立服务(Phase 6-B 第四域第六刀,架构边界 §3.2):backfill 与 reconcile 两族共 8 个方法迁入 `attachment-reconciliation.service.ts`;定位器解析与回填候选判定迁入 `attachment-storage-locator.ts`(模块级纯函数);`assertHeadMatchesObject` 与 `activeOperations` 并入既有的 `attachment-storage-invariants.ts`。编排器保留 `reconcileRolloutAttachments` 薄委托,使 `storage-consistency.worker` 的调用面逐字不变。`AttachmentStorageOrchestrator` 由 1918 降至 1474 NCLOC。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Changed
+
+- 附件存储编排的不变量原语抽出 `attachment-storage-invariants.ts`(Phase 6-B 第四域第一刀,架构边界 §3.2):7 个纯判定函数(`terminalSucceededData` / `requireString` / `safeNumber` / `requireSafeSize` / `requireHeadSize` / `assertExpectedSizeMatchesHead` / `requireSha256Hex`)与 4 个判定失败错误类(`StorageAwaitingConfirmError` / `StorageCandidateNotFoundError` / `StorageObjectIntegrityMismatchError` / `StorageProviderDeleteStillPresentError`)由 `AttachmentStorageOrchestrator` 迁入该模块。这些原语被编排器内多族方法共用(`terminalSucceededData` 10 处、`assertExpectedSizeMatchesHead` 5 处),后续按族拆分编排器时,被抽出的族若从编排器 import 会形成循环依赖,故先将其降为共享底座。纯移动:零签名变更、零逻辑变更、零 DI 变更、零 endpoint / DTO / OpenAPI / BizCode / 权限码变更,对外行为逐字不变。
+
+### Added
+
+- 存储不变量原语补齐单测(Phase 6-B 第四域收尾):`attachment-storage-invariants.ts` 的七个函数共 22 例。该层是 attachments 全模块共用的判定底座(`terminalSucceededData` 被 4 个文件引用),迁出编排器前零单测覆盖,一处失效会同时影响上传确认、删除终态化、人工重定位、人工缺失认定四条路径。用例挑的是「容易写错且失效不报错」的行为:Prisma 的 `undefined`(不更新)与 `null`(清空)语义之别、`size: 0` 的合法性、SHA-256 大小写归一化、以及「缺证据」与「内容不符」两类错误的分界。
+
+### Changed
+
+- 附件上传建账链路抽出独立服务(Phase 6-B 第四域第七刀,架构边界 §3.2):受理(`prepareUpload*`)、取证(`verifyUploadEvidence`)、落账(`finalizeUpload*`)共 13 个方法迁入 `attachment-upload.service.ts`;`SafeAttachment` 类型移入 `attachments.select.ts` 与 `attachmentSelect` 同源共享。`AttachmentStorageOrchestrator` 保留全部 10 个 public 的薄委托 —— `attachments.service` 对这些方法有约 100 处调用,编排器是本模块对外唯一入口,调用面因此逐字不变。编排器由 1549 降至 1107 NCLOC。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Changed
+
+- `AttachmentsService` 按 D-7 边界拆为六个单元(Phase 6-B 第三域第七刀):共享校验/判权/序列化 `AttachmentAccessService`(456)、报名上传链路 `AttachmentRegistrationUploadService`(417)、考勤导入预览上传 `AttachmentImportPreviewUploadService`(294)、内容确认上传 `AttachmentContentUploadConfirmService`(355)、写链路 `AttachmentWriteService`(474),主 service 由 **1781 → 387 NCLOC** 并跌破 700 阈值。主 service 仍是唯一对外入口,24 个方法保留同名薄委托(带显式 `ReturnType<>` 使签名逐字一致),视图与阶段类型在主 service re-export,全仓约 100 处调用面与类型面均不变。零 endpoint / 零 DTO / 零 OpenAPI / 零 BizCode / 零权限码变更。
+
+### Changed
+
+- `AttendancesService` 按 D-7 边界拆为四个单元(Phase 6-B 第三域第一刀):共享准入 `AttendanceAccessService`(110)、审批八式 `AttendanceReviewService`(623)、读 surface 族 `AttendanceReadService`(298),主 service 由 **1481 → 619 NCLOC** 并**跌破 700 阈值退出尺寸基线**(28 → 27 条)。`AttendancesService` 仍是本模块唯一对外入口,15 个方法保留同名薄委托,三个 controller 与薄壳 service 的调用面逐字不变。零 endpoint / 零 DTO / 零 OpenAPI / 零 BizCode / 零权限码变更。转闸摩擦(SERVICE_SIZE_RATCHET §3 严口径)由 93 降至 **77**。
+
+### Changed
+
+- 考勤模块读侧抽出 `AttendanceSheetQueryService`(Phase 6-B 第二域第一刀,架构边界 §3.2):四条列表 surface(单活动单据列表 / 跨活动横扫 / 队员 360 考勤记录 / 队员自助记录)的 where 构造、分页、orderBy 与读侧 select 投影迁入该类;判权(`assertCanOrThrow` / `resolveVisibleOrganizationIds` 与 30100)仍留在 `AttendancesService`,算好的可见组织范围作为入参传入。零 endpoint、零 DTO、零 OpenAPI、零 BizCode、零权限码变更,对外行为逐字不变。
+
+### Changed
+
+- 考勤模块抽出 `attendance-record.policy.ts`(Phase 6-B 第二域第二刀,架构边界 §3.3):record 的域校验与 normalize(`normalizeRecord` / `spanHours` / 时间窗判定 / 岗位时段选择 / 报名归属判定 / 单条完整校验 / claim 锁后复判)迁入该文件,全部为纯函数 —— 3 次 IN 预取与锁后复读仍留在 `AttendancesService`,查询结果作为入参传入。submit/edit 的普通批校验与 claim 锁后复判改为共用同一份报名归属判定(原本是逐字重复的两段)。判定顺序与全部 BizCode 逐条不变,零 endpoint、零 DTO、零 OpenAPI、零权限码变更,对外行为逐字不变。
+
+### Fixed
+
+- **批任务状态变更全员带围栏 —— 过期 worker 不得覆盖新一代持有者**(第六轮评审 B-02;零 schema、零端点、零权限码)。
+  `ActivityBatchWorker` 的租约围栏此前**只覆盖核心事务**:同一个文件里,
+  `releaseReconciliationForRetry` 带 `leaseOwner + leaseGeneration` 围栏,
+  而 `releaseForRetry` / `markItemFailed` / `markCommitSucceeded` / `markReadyForCommit`
+  四处按裸 `id` 更新 —— **不是能力限制,是不一致**。
+  - **可复现时序**:A 领 job(generation=7)→ A 超时但仍在跑 → B 重领(generation=8)
+    → B 处理完某 item → A 从旧调用返回、进入异常清理 → A 把 B 已完成的 item 改 `failed`、
+    把 B 持有的 job 清回 `pending`、或替 B 跑自动提交并释放它的租约。
+  - ⚠️ **「账本插入本身幂等」消不掉这个竞态**(已实测坐实):分录靠
+    `ParticipationLedgerEntry.entryKey` 唯一键 `ON CONFLICT DO NOTHING`,重跑不重复插入;
+    但 `LedgerPostingBatch.preparedCount` 是**累加式**投影
+    (`preparedCount: { increment: chunkMemberIds.length }`),旧 worker 重置已完成 item 后
+    下一轮会**再累加一遍** ⇒ `preparedCount > totalCount` ⇒ `finalize` 判
+    `LEDGER_PREPARE_COUNT_MISMATCH`,把一个业务上其实已经准备完成的批次判 `failed`。
+  - **修复**:四处一律改 `updateMany` + **照抄既有写法**的围栏条件
+    (`leaseOwner` + `leaseGeneration`,不自创第二种)。`ActivityBatchJobItem` 本身没有租约列,
+    围栏经 `job` 关系过滤(`job: { leaseOwner, leaseGeneration }`)。
+  - **落空(0 行)= 安静退出**:过期 worker 发现自己过期是**正常路径**,不是异常 ——
+    不抛错、不重试,只落一行 `warn`;`markReadyForCommit` 落空时**放弃本轮**,
+    不替新持有者跑 `commitReadyBatch`(与既有 `LedgerPrepareLeaseLostError` 分支同一形状)。
+  - ⭐ **主要产出是机器闸**:新增 `src/modules/activities/activity-batch-lease-fence.spec.ts`,
+    按 TypeScript AST **动态现取**扫描面(不写死行号、不写「恰 N 条」),断言
+    `activity-batch.worker.ts` 内对 `activityBatchJob` / `activityBatchJobItem` 的每一个写点
+    where 都含围栏两列,否则**点名 `file:line` 与缺哪个条件**。
+    豁免必须**显式登记 + 逐条写理由**(领取 / 两处清道夫 / ready 恢复器,共 4 条),
+    没有默认放行;登记了却扫不到的死条目同样红。覆盖面含**裸 SQL**——
+    否则「把违规改写成 `$executeRaw`」就是一条现成的逃生门,且围栏必须出现在 `WHERE` 之后
+    (`SET "leaseOwner" = NULL` 不能冒充)。
+  - **e2e 用 generation 差异构造时序,不用 sleep**:`activity-batch2-8a-auto-commit.e2e-spec.ts`
+    新增 4 条,每条都配一条**只在「有没有人重领」这一维上不同**的反面样本 ——
+    只断言「A 的清理不生效」是不够的,一个清理**永远**不生效的 worker 也能让它全绿。
+  - footprint:Endpoint / BizCode / AuditLogEvent / 权限码 / Migration / Cron **恒等**;
+    `ROUTE_AUTHZ.md` 与 `CODEMAP.md` 仅生成器重跑产物(inputDigest + 体量行)。
+
+### Added
+
+- 活动业务改造 v1.1 第 6 批收口:补齐合同 §6.13「后台任务」统一读面 5 个端点
+  (`GET/POST /api/app/v1/my/activity-batch-jobs[/:jobId[/items|/retry-failed|/cancel]]`),
+  按 §9.9 出 job type、activity、创建人、状态与四项计数、lease 与重试的人话状态、失败项分页。
+  判权基准是 `job.activityId` + 当前责任范围(**不是** job 创建人),越权与不存在同码
+  `40400` 同文案,不泄露任务存在性;重试与取消在事务内对责任行取 `FOR SHARE` 重新判权,
+  撤权后立即失效。`retry-failed` 只把 `failed` 项打回 `pending` 并同额扣减 job 计数
+  (成功/跳过项与既有 PunchEvent 一律不动);`cancel` 对 `succeeded`/`cancelled`/`dead`
+  拒绝,取消后 worker 的领取判据当场不再匹配。零新增权限码、零 schema、零 migration。
+
+### Added
+
+- 活动业务改造 v1.1 第 7 批第 ②-a 刀:队员参与统计的三条读面
+  (`GET /api/app/v1/my/participation-summary`、
+  `GET /api/admin/v1/members/:memberId/participation-summary`、
+  `GET /api/admin/v1/members/:memberId/contribution-summary`)
+  新增 `ledgerTotals` 对象,并排给出账本口径的**已生效 / 在途**两轴
+  (`committedServiceHours` / `committedContributionPoints` /
+  `inFlightServiceHours` / `inFlightContributionPoints`)。
+  **既有四个数字**(总服务时长 / 参与活动数 / 记录条数 / 贡献值)的取数、口径、字段名
+  **一个字未动** —— 仍是 approved 考勤口径;真正切换取数是 ②-b,需另行拍板。
+
+  「在途」取**直查法**:分录所属批次停在 `preparing` / `ready` 的那部分。差值法
+  (总数 − 已生效)被否掉,因为冲正已入账而重记仍在途时它会算出负数,且它相减的是
+  两张不同的表,会把口径漂移当成在途报出来。与已生效那一轴的互斥是**结构性**的
+  (一条分录一个批次,一个批次一个状态),不靠约定。
+
+  🔴 实测结论:「已生效 + 在途 = 总数」**不成立**(实测 1.5 + 3.5 = 5 ≠ 4)。两条独立原因:
+  批次要到终审才存在,「考勤已审批但结算未终审」那一段两轴都不计;且四个数字按考勤记录算、
+  两轴按账本分录 delta 算。故本刀**不合并数字**,三个口径并排摆出、各自标签清楚。
+
+  合同 §3.22 的分录级不可见性**一寸未让**:新方法只返回标量小计,不返回任何分录行
+  (无 entryKey / 无日期 / 无逐条金额),既有三条分录读面仍是全仓唯一出口且仍钉死
+  `committed`;`ledger-query.service.ts` 的 7 处 committed 过滤一处未改,也没有引入
+  `includeUncommitted` 之类的开关。§3.22 管**分录**、本刀给**聚合**,两者不相交 ——
+  合同对「聚合口径能否统计未 committed 批次」是**留白**而非禁止,已登记为
+  **合同缺口 #28**(`docs/ai-harness/NEXT_TASKS.md` P1-28 台账),待折进下一版修订件。
+  ⚠️ 本刀**不**主张「活文档拍板可压过冻结合同」——覆盖冻结稿的正式机制只有修订件。
+
+  四个数由**全仓唯一入口** `loadMemberLedgerTotals` 计算,三条读面口径一致是结构性的而非靠各自记得调同一个方法。
+  零新增权限码、零 schema、零 migration、零新增端点。
+
+### Changed
+
+- CI:把 `Fast checks` 里的 **harness 自测**与**事故回放**拆成两个并行 job(`Harness selftests` / `Incident replay`),折进既有聚合门 `Lint / Typecheck / E2E` 的 `needs`。两步在 fast 内合计 9m08s = 61% 预算,且 5 天内从 4m17s 涨到 9m08s(08-09 run 31318061317:147s + 110s → 08-14 run 31812869850:318s + 230s),导致 fast 贴着上限跑并自行 cancel 两次;增量全部来自 R8 治理线(#996 typed-AST、#997 self-by-construction),属正当能力增长,该改的是**它们串在关键路径上**而不是删检查。拆分后 fast ~5m30s,两个新 job 各 ~5m30s / ~4m,三者与 `Contract + E2E`(892s,本就是关键路径)并行 ⇒ **全程墙钟不变,超时风险归零**。刻意拆成**两个** job:`harness:replay` 的 `eslint-rules-live` 探针会整份重跑 eslint 自测(本机实测 replay 155.5s 中 127.6s 是这次重跑 = 82%),分开跑让这份重复变成并行的零墙钟代价,不必为省时间去动探针语义。两个新 job **不带** `if: docs_only`(与拆分前逐字一致),故 gate 对它们只接受 `success`、`skipped` 一律拒绝。**不新增 required context** —— 只通过 `gate` 的 `needs` 折入,符合「required context 必须先合后加」的既有教训。`fast` 的 `timeout-minutes` 由 #1003 的止血值 20 回落到 15(拆分后实测量级 ~5m30s,余量 2.7x)。
+- `docs/ai-harness/BASELINE_HEALTH.md` 增补「CI job 耗时趋势」章节记录上述读数与拆分前后对照;Phase 0 那份一次性冷跑快照**原样保留不动**,它正是这次增长得以被发现的对照起点。
+
+### Fixed
+
+- 统一时间权威:修掉「写入用数据库时钟、判定用应用时钟」这一**缺陷类**的全部 16 个写点
+  (14 处生产代码 + 2 处本地夹具;登记在册的判定写点共 29 个,其余 13 个此前就写对了)。
+  受影响的判定列有 5 个 —— `ActivityBatchJob.availableAt`、`StorageObjectOperation.availableAt`、
+  `NotificationOutboxIntent.availableAt`、`RoleBinding.startedAt`、`MemberOrganizationMembership.startedAt`。
+  它们此前落到 Prisma `@default(now())`(库时钟),而领取/判权侧拿应用时钟去比:库钟一旦快于应用钟,
+  `availableAt <= now` / `startedAt <= now` **恒假** —— 任务永不可领、刚发的角色判权侧「尚未生效」,
+  且不报错、不抛异常,只是什么都不发生。现在写侧一律显式写判定侧那个时钟。
+- `LedgerPreparationService.ensurePrepareJob` 接收 worker 本轮的 `now`,并把「本轮建的 job 下一轮才领」
+  这条两轮协议写成 `availableAt = now + 1ms`。此前该协议靠「库钟恰好落在应用钟之后」这个偶然维持,
+  库钟一旦慢于应用钟协议自己就翻面;现在与两个时钟的相对快慢无关。
+- App 面 `POST /app/v1/my/managed-activities`:责任制工作流开关关闭时不再抛
+  `ACTIVITY_ATTENDANCE_DECLARATION_INVALID`(20039「当前活动不能声明考勤已全部提交」)——
+  那个码说的是另一件事,会把排障的人引去查考勤。改抛新增的
+  `ACTIVITY_RESPONSIBILITY_WORKFLOW_NOT_ENABLED`(20036 / 503),形状沿既有 `*_NOT_CONFIGURED` 一族。
+
+- `ActivityRegistration.registeredAt`(候补队列排序键)此前是**混合权威**:三条写路径各自
+  「建头 `create`(吃库时钟默认值)+ 同事务紧随的改头 `updateMany`(显式写应用时钟)」。
+  提交后的行虽然总被 update 腿覆盖成应用时钟,但那是**跨语句**才成立的性质。现在 create 腿
+  也写同一个应用时钟表达式(值不变 —— update 随后写同一个值),不变量从此逐点局部成立。
+
+### Added
+
+- 新增 `src/common/datetime/clock-authority.spec.ts`:上述缺陷类的**执行位**。
+  以 TypeScript AST(非文本匹配,天然剥注释)扫描全部
+  `create / createMany / update / updateMany / upsert` 写点(upsert 的两个分支分别按 INSERT / UPDATE
+  语义计),四道断言 —— ① 完整性硬闸:`prisma/schema.prisma` 里每个非审计的 `@default(now())` 列
+  都必须在登记表里做过一次决定(清单从 schema 反推,不写「恰 N 条」);② 判定点仍在且仍读应用时钟;
+  ③ 判定列的每个写点都显式写出该列(INSERT 漏写才算缺陷,UPDATE 漏写不算 —— `@default(now())`
+  只在 INSERT 生效),且值表达式与登记表逐字一致;④ 反向闸:封场/关账/生命周期三处**刻意**取库时钟的
+  `now()` 不得被「统一时间权威」顺手改掉 —— 那是更强的事务级单一「现在」,改成应用时钟是降级。
+  9 条真变异对拍(逐条落在目标实现行)+ 8 条内置阳性对照,红集互不重叠。
+- 新增 `src/modules/activities/app-managed-activities-workflow-switch.spec.ts`:钉住开关关闭时的**具体码**
+  (整包比对码/文案/httpStatus),换成任何别的码都红。
+
+### Added
+
+- 补齐内容发布/引用边界锁的单元测试(73 例):`lockContentPublishBoundaryUnsafe` 单函数 364 行、是全仓最大单体方法,此前**零覆盖**;本刀按「自洽世界 + 每例只扰动一件事」组织,22 个拒绝点逐条对应,并额外覆盖外层错误面折叠与引用边界。零生产代码改动。变异对拍 25 条,查实并修正 6 条「被下游判据遮蔽因而为错的理由绿」的用例。
+
+### Added
+
+- 合同 §16.1「切换前检查」十条做成机器可核清单:`pnpm cutover:check`。每条按 **A 机器可判 / B 机器可查·人判定 / C 只能人判**三分型给结论,A 类不过即非零退出;B/C 类恒标「待维护者确认」,不渲染成绿勾。不接 CI —— 它是维护者开闸前手动跑的前置。
+- 该命令**先自证再报数**:每次运行先把全部正对照(把 A 类判据的输入弄假 ⇒ 必须转红 / 修好 ⇒ 必须转绿)跑一遍,任一条没按预期反应就以「仪器失效」退出并拒绝报结论;同时回查十条原文逐字取自合同。
+
+### Added
+
+- 生成的前端 client 产物(`docs/handoff/clients/**` 共 11 份)头部新增 **`// contractVersion: x.y.z`**。引入 client 的仓库在自己那边 `grep -r contractVersion` 即可答出「我编译在哪一版契约上」,不需要后端配合、不需要后端已部署。该值**派生自** `docs/handoff/openapi.json` 的 `info.version`,**不是新增第四处版本声明**(真源恒为三处);且 `info.version` 本就在 `inputDigest` 的输入闭包里 ⇒ 改了版本而不重新生成,`pnpm docs:feclient:check` 当场逐字对不上,**戳与真源脱节在结构上不可能**。快照缺 `info.version` 时生成器直接抛错,拒绝印出 `contractVersion: undefined`。
+- 新增 **`docs/handoff/contract-version-registry.md`** —— 合同 §16.1 第 ⑤ 条「五端同一 contract version」的**回执落点**。表内只用哨兵值(`未回执` / `同后端`)与各端实际回执版本,**不写后端版本号**,避免登记表自己变成会静默过期的第四处声明。
+
+### Changed
+
+- `pnpm cutover:check` 的 **5b** 从一句「本仓看不见」改成**对登记表的计算读数**:点名版本对不上的端、列出从未回执的端、并给出可执行的取证指引。登记表缺失 / 被清空 / 少了合同点名的某一端时当场说破(空表恒「零不一致」是空绿)。**5b 仍恒为「⏸ 待维护者确认」** —— 它的证据必须来自别的仓库,本仓不可能使其变绿;这一点由结构保证:`eviSub()` 硬编码 `pending`,`renderVerdict()` 只在 A 类才可能渲染成 ✅。
+- `pnpm cutover:check` 的 **5a** 从「比对三处真源」扩为「三处一致 **且全仓无第四处硬编码**」:扫描 `src` / `scripts` 下全部 `.ts`,报出白名单之外任何等于当前 contract version 的字符串字面量。此前「不新增第四处版本声明」只是自律 —— 5a 只读那三处点名位置,**第四处声明在任何别处都看不见**,而它不会被 `release:prepare` 同步、发版后静默过期。按「值等于当前版本」而非「形如 semver」扫描,以免把仓内别的版本命名空间(generator / schema 版本)全网进来把判据淹成摆设。
+
+### Security
+
+- **`wecom-setting.reset.credentials` 补进 SA-only 保留集**(第六轮全仓评审包 E · E-B1)。该码自企业微信 T2
+  落地起从未登记进 `RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes`(6 条 → **7 条**),
+  于是 `isControlPlanePermissionCode()` 对它返回 `false`,`RolePermissionsService.assign()` 的控制面闸放行 ——
+  持 `rbac.role-permission.create` 的 ops-admin 可把该码**自授**给任意角色,再调
+  `POST /api/system/v1/wecom-settings/reset-credentials` 覆盖 CorpSecret。同族的 storage / sms / wechat /
+  realname 四条**正是靠这个集合**才安全,wecom 不在集合里,同一机制就不保护它;等于把 #399 F1 修过的
+  同类洞重新打开一半。修复只改事实源,不给 `WecomSettingsService` 另加 `SUPER_ADMIN` 特判 ——
+  五个家族成员继续统一走「保留集 + `rbac.can()` 短路」这一套机制。
+- **根因是 seed 里一处一次性硬编码过滤器**。`OPS_ADMIN_PERMISSION_SEED` 中 wecom 那行写的是
+  `filter((p) => p.code !== WECOM_RESET_CREDENTIALS_CODE)`,全仓仅此一处不走共享谓词
+  `isNotReservedSuperAdminOnlyPermission`。后果不是 seed 绑错(ops-admin 确实没绑,行为看起来完全正常),
+  而是**保留集永远学不到 wecom**,漏洞就藏在这条"看起来没问题"的缝里。现改回共享谓词:
+  ops-admin 绑定集合逐码不变,但 seed 从此依赖保留集正确 —— 保留集再漏一条,seed 会跟着漏绑,
+  漂移哨兵随即变红。
+
+### Added
+
+- **「`*.reset.credentials` 家族全登记」动态判据**(`reserved-super-admin-permission-codes.spec.ts`)。
+  凭证重置是一个**家族**而非一串互不相干的码,而新成员漏登记**不会有任何症状** —— seed 照样不绑、
+  端点照样能用,只有"ops-admin 自授该码"这条路径悄悄打开(wecom 就这样漏了半年多)。新判据从
+  `src/**` + `prisma/**` 的 `.ts` **动态现取**所有 `*.reset.credentials` 字符串字面量(剥注释、
+  跳过 `.spec.ts`),逐条要求出现在保留集中,漏一条即红并**点名是哪条码、出现在哪些文件、后果是什么**。
+  刻意不写死名单 —— 写死名单等于把既有「恰 N 条」冻结断言的缺陷复制一份:第六个 provider 接进来时,
+  名单与保留集会一起漏掉它,两条守护同时变成摆设。判据自带自证断言(扫描面非空 + 确实读到了
+  `prisma/seed.ts` 里的家族成员),防扫描器坏掉时"空集 == 空集"静默变绿。
+  与既有「恰 N 条」冻结断言**职责相反,两条都留**:前者锁**集合内容**(防塞进不该塞的码),
+  后者锁**该进的都进来了**(防漏登记)。变异实测坐实二者不重叠:注入一个假的第六成员后,
+  「恰 N 条」保持全绿,只有新判据变红。
+
+### Security
+
+- **`RolePermissionsService.revoke()` 补上控制面闸,与 `assign()` 对称**(第六轮全仓评审包 E · E-B2)。
+  授码侧自 #399 F1 起就调 `assertNoControlPlaneCodesOrThrow()`,撤码侧**一个控制面判定都没有** ——
+  它只查了三件事:`rbac.role-permission.delete` 权限、角色存在且未软删、绑定存在。于是持
+  `rbac.role-permission.delete` 的 ops-admin **授不了**控制面码(`rbac.*` ∪ `role-binding.*` ∪ 7 条
+  SA-only 保留码),**却撤得掉** —— 包括把某个角色的 `rbac.*` / `role-binding.*` 权限一路撤空。
+  damage 方向与 F1 相反(F1 是提权,这里是拆权),但同属「控制面权限映射被非 SUPER_ADMIN 改动」,
+  是同一条不变量的两条腿。修复复用**同一个** `assertNoControlPlaneCodesOrThrow()` 与同一个 SoT 谓词
+  `isControlPlanePermissionCode()`,不另造判定,错误码同为 `30103`。
+  与 E-B1(#1115)同属一个缺陷家族:**一侧有闸、另一侧没有**;不同的只是「另一侧」这次是一条方法,上次是一条码。
+- **次序差是签名决定的,不是漏拦**。`assign()` 的入参本来就是 codes,故能在 Permission 存在性查询**之前**
+  拦下(未 seed 的保留码也返 `30103`,不退化成 `30001` 泄漏存在性);`revoke()` 的路径参数是 permissionId,
+  不查库拿不到 code,只能先查后判。permissionId 不存在时本就无绑定可撤,先返 `30001` 不缩小闸的覆盖面。
+
+### Added
+
+- **「成对操作只有一侧有闸」缺陷类的执行位**(`role-permissions-control-plane-gate.spec.ts`)。
+  修实例不修类,下一条写路径还会漏 —— RBAC 终态方案 PR 4 计划加原子 `PUT`(整体替换某角色的权限集合),
+  那是第三条腿。新判据按 TypeScript AST **动态现取** `RolePermissionsService` 里所有会改写 `rolePermission`
+  映射的**公开**方法,逐个要求能到达控制面谓词 `isControlPlanePermissionCode`,漏一个即红并**点名是哪个方法、
+  写点在哪一行、后果是什么**。
+  三处刻意设计:① **不写死 `['assign','revoke']`** —— 写死名单时新方法与它漏掉的闸会一起不在名单里,
+  判据当场变摆设且**全绿**;② 「会改写」与「过了闸」都走**传递闭包**(经 `this.<私有方法>()` 一路跟下去),
+  否则「把写操作搬进一个私有 helper」就能绕过,而那恰恰是重构时最自然的动作;
+  ③ 闸锚在**共享谓词**而非私有 helper 名上 —— helper 可改名可拆分,谓词是 SoT,换掉它就是「另造判定」,本该红。
+  判据自带自证断言(类解析到了、方法非空、谓词确实 import 自 `role-delegation.policy`、`assign`/`revoke`
+  都在发现集里),防扫描器坏掉时「空集 == 空集」静默变绿。
+  四条变异对拍实测:摘掉 `assign` 的闸 → 红并点名 `assign`;摘掉 `revoke` 的闸(= 本刀修复前的状态)→
+  红并点名 `revoke`;注入两个不调闸的公开写方法(一个直接写、一个把写藏进私有 helper)→ 两个都被点名;
+  注入一个**经私有 helper 到达闸**的公开写方法 → 保持绿(不误伤合法重构)。
+
+### Tests
+
+- **`role-permissions.e2e-spec.ts` 补 E-B2 三条行为用例**:ops-admin 撤销普通码 → 200 且真删了;
+  ops-admin 撤销控制面码 → `30103` 且绑定原样还在;SUPER_ADMIN 撤销同一码 → 200(短路语义不变)。
+  第一条**不能省** —— 只验「被拒」的话,一个「一律拒绝」的实现也会全绿,那不是修洞,
+  是把 ops-admin 的 `rbac.role-permission.delete` 整个废掉。
+  控制面码刻意取 `rbac.role.read`(前缀型)而非保留集成员,与 F1 既有用例合起来把
+  `isControlPlanePermissionCode()` 的两半定义域都钉在行为面上。
+
+### Added
+
+- base-trusted 裁判支持**两种棘轮形态**(EC-1 前置,PR-A):新增 `kind` 判别(`eslint-exempt` 默认 / `numeric-monotonic`)与 `judgeNumericMonotonicity` 数值单调性判决 —— 后者按 file 比数值,「只减不增 + 不得新增 file」,补上此前「裁判只比 (file, symbol) 集合、不认数值」这条使尺寸棘轮无法登记的结构缺口。既有三条棘轮**一个字节未改**(kind 省略即默认)。本 PR 只改裁判,注册表未动;登记与 eslint 侧分流在 PR-B(裁判跑 base 定义,必须先合入本 PR)。
+
+### Added
+
+- 尺寸棘轮登记入 `harness/ratchet-registry.json`(EC-1 达成,PR-B):新增 `service-size` 条目(`kind: numeric-monotonic` / `metric: loc`),`eslint.harness.mjs` 按 kind 分流(数值型不进 `RATCHET_BASELINES`、不生成任何 ESLint 豁免块)。至此 `ratchet-registry.json` 的 `_comment` 自称「全仓所有单调基线的唯一登记处」名副其实 —— 此前它只装得下 ESLint 规则型。尺寸基线的单调性(每个 file 的 loc 只减不增 + 不得新增 file)自本 PR 起由 base-trusted 裁判守。既有三条棘轮一个字节未改。
+
+### Added
+
+- 架构治理:`harness-guards.selftest.ts` 新增一条**结构断言**,钉住 `ActivityRegistrationsService.cancelMy` 的**两道**属主判定(`X.memberId !== memberId` 且所在 `if` 的 then 分支会抛)。判据要的是**后果**不是比较本身 —— 裸比较不算守卫,与「调用无后果分支不构成断言」同一条哲学。
+
+- **为什么是结构断言而不是 e2e**:`cancelMy` 的两道判定(锁活动前一道、锁后复读再一道)是纵深防御,删掉任意**一道**另一道照样返 404,**可观测行为逐字不变**,黑盒测试原理上区分不了「一道」与「两道」。实测印证:单删任一道 `app-my-registrations-write` 42 条全绿,两道全删才红 2 条。这一处正是 e2e 够不到、而「删一行无人知」真实成立的地方。
+
+- 其余三条内存比对属主的端点(`GET my/registrations/:id`、`GET notifications/:id`、`POST notifications/:id/read`)各只有一道判定,删掉即有具名 e2e 用例转红(`app-my-registrations-read:508`、`notifications-directed:171`),**已由行为层锁住,不重复登记**。
+
+- 判据由变异对拍绑定:删第一道 / 删第二道 / 保留比较但去掉 `throw` —— **三种变异各自翻红**;`findMy` 的单道判定作为**正对照**恒为 1,全程未被误伤(防判据写坏成恒 0 或恒大而无人发现)。
+
+### Added
+
+- 债务台账语义完整性检查 `pnpm docs:boundaries:debt:check` 接入 CI **Fast checks** 既有的 `Architecture governance A-metadata gate` 步骤,**不新增 required context**。定为 **blocking**(A 类 registry integrity,判台账不判代码,与同步骤的 `:check` / `:ids:check` 同类):断言 `harness/architecture-debt.json` 每条债务都填满 7 个语义字段(`classification` / `reason` / `risk` / `desiredExit` / `ownerApiTarget` / `reviewTrigger` / `introducedAt`)且不残留 `pending-phase2` 占位。此前该命令**存在于 package.json 却未接任何 CI**,而它是 `semanticFieldsComplete` 的唯一执法者(`--violations` 被 `|| true` 兜住、`--metadata` 的 errors 只装 domain-map 元数据、`:ids:check` 管的是 call-site 身份)——即该不变量此前零执法。真触发已验证:清空 `XW-0001` 的 `desiredExit` 则门 exit 1 并点名 `XW-0001 missing semantic fields: desiredExit`,还原后 exit 0;当前 222/222 通过。
+
+### Fixed
+
+- `scripts/check-boundaries.ts` 的 `--debt-check` 输出中 `reportOnly` 由 `true` 改正为 `false`——原值与紧接其后的 `process.exitCode = 1` 自相矛盾,只因该命令此前未接 CI 而一直没人撞上(既不阻断也不被跑)。`--violations` 那处的 `reportOnly: true` 是正确的,未改。
+
+### Added
+
+- 架构治理:`RouteAuthzEngine` 新增取值 **`none`** —— 表示**已声明的缺席**:该端点的判权由 scopes / admission 轴承载(self-by-construction、责任策略、App 准入),不欠任何 engine 断言。它与规范化声明上的 `null` 不同:`null` 表示该模式本就无引擎(PUBLIC / LOGIN_ONLY),`none` 是作者对一个**确有判定面**的路由做出的正面陈述。
+
+  背景:`@LoginScoped` 对未指定 engine 的路由填入 `authz-scoped`,而该类型此前只有两个取值 ⇒ **用 `@LoginScoped` 就必然声称走 scoped-authz 引擎,语法上无法表达「我不走」**。全仓 118 条声明 `authz-scoped` 的端点中,该轴**满足者为 0**(0/119)。本刀只把表达能力补上。
+
+### Changed
+
+- **R8 的 engine 轴改为 fail-closed**。此前 `patternForEngine()` 对任何未知取值一律 `return null` = 「不欠任何断言」,于是把 `authz-scopedd` 这类**拼写错误**与「没什么要证的」变成不可区分 —— 该轴静默通过。现在:`null` 与 `none` 不欠断言(前者模式本就无引擎、后者是已声明的缺席),**其余未注册取值一律落 T3**。
+
+- engine 词汇不再有第二份:`generate-authz-manifest.ts` 的声明解析器改为调用单源导出的 `isRouteAuthzEngine()`,并把自有 `Policy.engine` 的字面联合换成 `RouteAuthzEngine`。此前它硬编码了一份 `'rbac-global' | 'authz-scoped'`,与 `authz-context.ts` 各自演化。
+
+### 边界与验收(本刀真的零影响)
+
+- **未改 `@LoginScoped` 的默认值**(`engine: options.engine ?? 'authz-scoped'` 一字未动)—— 改默认会让 115 条 manifest 同时变化、触发 115 条 R14 审批,那是第二段的事。`route-authz.decorator.ts` **零改动**:它的 `engine?: RouteAuthzEngine` 直接引用单源,扩取值自动生效。
+- **零端点使用新取值**,实测:`ROUTE_AUTHZ.md` 的 `entries` 数组**逐字节不变**,整文件差异**恰好只有 `inputDigest` 两行**(该摘要摄入整个 `src/**`,任何源码改动都会让它变,与端点策略无关);`harness/authz-assertion-patterns.json` **整文件逐字节不变**;`docs:authz:check` 绿;全仓 R8 分布 `T1=4 / T2=5 / T3=110 / N-A=9` 与本刀前逐项相同。
+- 判据由变异对拍绑定:拆掉 fail-closed → 「未注册取值」负样例翻红;把 `none` 移出注册表 → 「已声明缺席」正样例翻红;**两红集不重叠**。
+
+### Added
+
+- 架构治理 Phase 3 前置：债务 call-site 身份一致性检查 `pnpm docs:boundaries:ids:check` 接入 CI **Fast checks** 既有的 `Architecture governance A-metadata gate` 步骤，**不新增 required context**。定为 **blocking**（A 类元数据完整性，判台账不判代码）：断言每条已登记的 call-site 债务条目仍能解析到一个活的调用点。真触发已验证——把某条的 `callSiteId` 改坏则门 exit 1 并逐条列出 `unmatched`，还原后 exit 0；当前 201/201 通过且幂等。
+
+### Changed
+
+- 架构治理 Phase 3 前置：R2/R3 依赖图补齐 `export … from` / 动态 `import()` / `import = require()` 三种形态的解析，并给每条跨域边标注 `form` 与 `typeOnly`。实测本仓这三种形态**各 0 条**，判定逻辑未改、findings 512 → 512 零变化；三条正样例证明解析器认得它们，三条「当前为 0」断言在第一条真出现时即红。type-only 跨域边（623 条边中 179 条，41 条违规中 4 条）按维护者拍板**照算并打标记**，不静默豁免 —— 其中 3 条正是 v4 §4 要求恒 0 的 `platform-access→participation` 反向边。
+
+### Changed
+
+- 架构治理 Phase 3 前置：R8 声明↔实现闭环规则（`srvf/authz-declaration-closure`）的注入依赖解析改为 **typed**——按类型在其**声明处**的名字与已登记 `receiverTypes` 比对，取代原先读注解文本的做法，`import { AuthzService as A }` / re-export / 局部 `type` 别名改名后不再误判整端点为 T3；解析不出类型时回落到注解读法，不会静默漏报。新增「接收者类型被改名后仍解析到真类」正样例。全仓重扫分布与 Phase 1 **逐项相同**（T1=4 / T2=2 / T3=113 / N-A=9，总计 128），119 条 warning 的理由字符串逐条相同——本仓无别名、无 `@Inject`、无缺注解构造参数，typed 化的收益是免疫力而非当期发现。
+
+- 架构治理 Phase 3 前置收尾：R8 规则补上**解构接收者**（`const { can } = this.authz; can(...)`）的解析——`localBindings` 原先用 `ts.isIdentifier` 过滤掉了 `ObjectBindingPattern`，解构出来的方法因此在调用处没有接收者可匹配。四类绕过（别名 / 中转 / 解构 / re-export）在 R8 侧各补一正一负共 8 条样例，re-export 走 origin → hub → 探针的真跨文件三段链。全仓分布不变（T1=4 / T2=2 / T3=113 / N-A=9）。
+
+### Changed
+
+- 架构治理 Phase 3 前置：R5/R6 边界扫描器改为 **typed-AST** 判定（`ts.Program` + `TypeChecker`，作用域复用仓库 tsconfig）。Prisma 访问的识别锚点从「接收者叫不叫 prisma/tx/client/db」换成「该成员访问的**类型**是否恰好解析到一个生成的 `<Model>Delegate`」，`$queryRaw`/`$executeRaw` 通道同改为按类型判定。实仓读数 511 → 512 条（0 条消失），能力差距由 selftest 对抗样例证明：import 别名 / 解构 / 变量中转 / re-export / tx 参数改名 / 窄口 client 六类，名字启发式 0/6、类型解析 6/6；两条 lookalike 负样例名字启发式全误报、类型解析全正确。债务身份 `callSiteId` 升级为归一化 AST 路径哈希，201 条 call-site 条目经 `supersedes` 迁移（21 条域级 undeclared-edge 条目不适用），条目集恒等、无碰撞；新增 `pnpm docs:boundaries:ids:check` 作为身份漂移的常驻判据。零 `src/**` 改动、零业务行为变化、规则仍恒 report。
+
+### Added
+
+- 架构治理 Phase 6-A：大 service **尺寸棘轮**落地(恒 report,不阻断任何 PR)。基线 `harness/service-size-baseline.json` 逐个具名冻结 31 个文件(共 36685 行,带 `schemaVersion`/`generatorVersion`/`inputDigest`,无时间戳与 git SHA)；判据三条:基线内只减不增、基线外达阈值须走授权入册、同域「变小+新超阈值」并列显示由人判是否真拆分。度量口径统一为**非注释非空行**(TS scanner 剥注释)并与既有 `service-loc-*` 共用一份计算,阈值沿用 700 —— 换度量的决定性理由是**反向激励**:物理行棘轮下删掉文件头的模块级铁律注释就能「达标」。新发现面 `src/**` 递归 + `*.service.ts`/`*-orchestrator.ts`/`*.handlers.ts` 补上了旧口径**结构上看不见**的两个文件,其一 `attachment-storage-orchestrator.ts`(2518 行)是全仓最大的代码文件。转闸摩擦实测:回放全部 1016 个提交,106(严口径)/182(宽口径)个 PR 会被拦,远超「>30 须先拆分」的判据线 ⇒ **必须先做 6-B 拆分才谈转 blocking**。棘轮此刻**未**接入 `harness/ratchet-registry.json`——该表实为 ESLint 豁免专用(`rule` 必须是真规则、`symbol` 必须匹配三种形状之一,否则 lint 加载即抛),已连同三条结构原因写入报告并列为转闸 EC-1。零 `src/**` 改动、零 schema、零业务行为、零既有测试断言变更。报告见 `docs/ai-harness/SERVICE_SIZE_RATCHET.md`。
+
+### Changed
+
+- 架构治理:R8 新增第六个断言族 `self-by-construction`,给 `scope: self` 出**结构性**判据。前五族证的是「判权发生过」(调用形态 + 后果分支);这一族证的是**「不可能冒充」** —— self 的「资源 ⋂ 身份」是 where 子句不是调用,没有可观测的调用点,可证的只有「handler 没有任何调用方可用来指定别人的输入面」。判据取**默认拒绝**:handler 的每个参数必须被白名单归类为框架注入的身份(`@CurrentUser`)或可枚举名字的调用方输入(`@Param`/`@Query`/`@Body`);`@Req`/`@Headers`/自定义装饰器/无装饰器一律**落 T3**,因为它们把整个 request 交给 handler,没有名字集可查、也就没有诚实的放行理由。DTO 携带的字段名由 TypeScript `TypeChecker` 展开(继承 / `PickType` / `OmitType` 由编译器负责,不在 R8 里重写第二个解析器);拿不到 typed program 一律落 T3,不回落字符串解析。
+
+- 实测:43 条声明 `scopes:['self']` 的端点里 **25 条 self 轴闭环**,18 条拒(8 条 `@Req` / 7 条 `@Param` 携带 `id` / 2 条 `@Body` 携带 `phone` / 1 条 `@UploadedFile`)。**但全仓 T3 只从 113 降到 110** —— 那 25 条里有 22 条同时被**另外两轴**挡着:`admission app-member has no AppIdentityResolver.resolve deny branch` 与 `engine authz-scoped has no authz-can-explain assertion`。两者都属于既有五族,本刀的硬边界明写不得改动,故如实留在 T3 并逐条记录。**「self 轴闭环」与「端点转出 T3」是两件事**,报告按前者计数。
+
+- 判据的正确性由变异对拍绑定,三条子句各自独立:变异「可控输入携带主体标识即拒」→ 4 条负样例翻红;变异「未登记装饰器即落 T3」→ 1 条负样例翻红;两红集**不重叠**。另有一条**结构自保**用例:把 registry 里的主体名字集改空后,连正样例也必须落 T3 —— 变异掉这条守卫后实测正样例变成 T1/closed,即名字集写漏会从「少拒一条」升级成「整族盖章」,方向正好反了。正样例覆盖 DTO 展开通道(无主体字段的 DTO 必须放行),否则「一律拒绝」也能让负样例全绿。
+
+- R8 仍恒 report-only,本次不转闸;零 `src/**` 业务改动、零 schema、零既有测试断言变更。`AUTHZ_ASSERTION_PATTERNS` 的单源仍在 `src/common/authz/authz-context.ts`,`harness/authz-assertion-patterns.json` 由 `pnpm docs:authz` 投影产出。
+
+### Fixed
+
+- **`lockMembersForWrite` 的排序键不是锁键 —— 碰撞时批次之间会反向取锁**(万人前置;#906 §5.1 收口)。
+  取锁顺序此前由 `ORDER BY member_id` 定,而真正的锁键是 `hashtext(member_id)`,两者不是同一个东西。
+  存在 `a < c < b` 且 `hashtext(a) == hashtext(b)` 时,批次 `{a,c}` 取序 `key(a)→key(c)`、
+  批次 `{c,b}` 取序 `key(c)→key(a)`,**反序即死锁边**。#906 用真实碰撞对
+  `c841bb8f66366ad0ab58eda83` / `c86b3e165b8154656a71ffe8a`(`hashtext` 同为 `-1901144566`)
+  实测触发 40P01;万人规模每场出现碰撞对的概率实测 **0.90%**。
+  改为 `ORDER BY hashtext(member_id), member_id`(排序键 = 锁键,`member_id` 只补全序)后,
+  任意两个批次对同一组键的取序恒同 ⇒ 批内不可能反序。
+  **对现有生产代码近似无影响**:今天单次最多锁一张考勤单的 200 人,碰撞概率 ≈ 0.00046%;
+  这是活动业务改造第 1/2 批落地前的前置,不是线上救火。
+  执行位:`test/e2e/member-advisory-lock-order.e2e-spec.ts` ①(判据 = 零死锁,把排序键改回
+  `member_id` 立刻红)。util 内那段「两层同向 ⇒ 不同批次之间不会反向取锁」的错误论证一并订正。
+
+- **PostgreSQL 40P01(死锁)不再以 `50000`「服务器内部错误」冒出去** —— 新码 **`40902`**
+  「并发写入相互占用,请重试该操作」(HTTP 409)。此前 `withBoundedMemberLockWait` 只翻 55P03,
+  死锁走未映射路径 → 500:既不是事实(数据库主动中止了环上的一个事务),也不可重试。
+  **刻意不并进 `40901`**:40901「有人排在你前面」是负载信号,40P01「取锁成环」是锁序缺陷信号,
+  归一等于用可诊断性换少一个常量。翻译**不替代**锁序纪律 —— 批内定序仍由上条那个「零死锁」
+  判据硬顶,本码只覆盖定序管不到的残留(调用方分两段交叉取锁、FK / 审计写入的隐式锁边)。
+  执行位:同一 spec 的 ③(真实交叉取锁造出 40P01,断言它以 `BizException(40902)` 收场)。
+  **前端注意**:`40902` 与 `40901` 同族,应按**可重试**处理(提示稍后重试 / 允许再点一次),
+  不要当成服务故障弹红。
+
+### Added
+
+- 人工运维两条服务补齐单测(Phase 6-B 测试收口):`attachment-manual-intake.service.ts`(16 例)与 `attachment-manual-attest.service.ts`(20 例)。前者是幂等受理入口,覆盖 eventKey 复用与身份冲突、活跃操作互斥、以及重定位与缺失认定两种 kind 各自不同的来源态判据;后者是**不可逆补偿路径**(物理删除 Attachment 行、对象置 absent、两条操作置终态),逐条钉住其十个围栏,并在每条拒绝用例中额外断言「拒绝时绝不能已经删了」。至此今天抽出的七个新文件全部具备单测覆盖。
+
+### Changed
+
+- **MemberDirectory「给人找人」(issue #1048 T2)**:`GET admin/v1/members` 与
+  `GET admin/v1/members/options` 的关键字搜索扩为 `memberNo + realName + nickname`,
+  两端空白统一 trim(memberNo 侧复用写路径同源的 `normalizeMemberNo`),并按五级相关性排序:
+  **memberNo 完全 > realName 完全 > memberNo 前缀 > realName 部分 > nickname**。
+  列表与选择器共用同一套排序 —— 同一个 `q` 在两处给出同序。
+- 第一版**刻意不做**拼音猜测 / 错别字纠正 / 相似度绑定;重名、重外号**正常返回多条**由人去挑
+  (issue §5.2 规则 4:外号永远不能自动确认身份)。
+- 不带 `q` 时**逐字保持旧行为**(`createdAt desc`)—— 目录排序只在搜索语境下有意义。
+
+### 实现说明(为什么不是一条带 CASE 的裸 SQL)
+
+五级相关性 Prisma 的 `orderBy` 表达不了,直觉做法是改 `$queryRaw` 写 `ORDER BY CASE …`。
+**本仓刻意不那么做**:队员列表的 where 里带着 scoped authz 的组织范围腿
+(`MemberOrganizationMembership` 在册谓词)。一旦改裸 SQL,那条谓词就要在 SQL 里重写一遍,
+于是授权判定有了**第二份真相**,两份各自演化;而漂移的表现是「多返了本不该看见的人」,
+不会有任何东西报错。
+
+现在的做法是按级切分:每一级都只是一个 `Prisma.MemberWhereInput`,与调用方算好的
+base where 用 `AND` 合并 —— 授权腿**原封不动地被复用**,不存在可漂移的第二份实现。
+过滤/排序/分页仍全部落在 SQL(每级一条 count + skip/take),没有内存 filter/sort。
+代价是每次搜索多 5 条 count 查询。
+
+级间用 `NOT(前序并集)` 保证互斥:否则同一人会在多级里各被数一次,分页 total 虚高、翻页出现重复行。
+
+### 判据
+
+- 单测:五级顺序逐字锁定 / 级间互斥(第 i 级恰好排除前 i 级)/ trim / 级内 `memberNo asc,id asc` 定序 /
+  不带 q 时不进相关性路径。
+- 🔴 授权判据(DoD 3):五级 count 与每次 findMany 的 **每一条** where 都必须 AND 上带组织腿的 base;
+  探测器自带正对照(对缺腿的 where 必须报阳)。
+- e2e 反面样本**只在授权这一维上不同**:两人 realName / nickname / status 逐字相同,
+  仅 PRIMARY 组织不同;先用 GLOBAL 调用者证明两人都能被同一个 `q` 命中(正对照),
+  再断言 scoped 调用者只见树内那个、且 `total` 也只数树内(授权腿漏在 count 上会让行数对但总数泄露)。
+- 两处都做过**变异对拍**:把 `AND: [base, level]` 改成 `AND: [level]` 后,单测 7 条红、
+  e2e 恰好 1 条红且失败理由正是「树外那个人泄露进来」。
+  ⚠️ 同一次变异下,**其余 9 条既有范围用例一条都没红**(它们不带 `q`,走不到相关性路径)——
+  没有这条新判据,授权腿在排序路径上被删掉是完全不可见的。
+
+### 契约
+
+`gate:contract:semantic` 判定 **breaking=0 / additive=0** —— 本刀只改 `q` 的**语义与排序**,
+不动任何字段形状,openapi 的 diff 只有描述文本。
+
+### Added
+
+- **历史身份快照盘点(issue #1048 T4 / §8·§12)—— 结论:当前不需要,且结论被钉成判据**:
+  issue 允许两条分支(建 `MemberIdentitySnapshotV1` 或写出盘点证据证明不需要),本刀走后者。
+  三条实测事实:① 引用 member 的 31 个模型(34 条关系字段)**没有一个**持有姓名副本(全部只存 `memberId`,
+  姓名读侧现取现渲染);② 软删只置 `deletedAt`,行仍在,历史渲染照样取得到姓名;
+  ③ 硬删被结构性阻止(`ParticipationLedgerEntry.member` 是必填关系 + `onDelete: Restrict`)。
+  ⇒ 身份**永久可达**,再建快照只会制造第二份可漂移的姓名。
+- 盘点结论落成 `src/modules/members/member-identity-snapshot.spec.ts`:
+  「schema 上不得出现队员姓名的反规范化副本」,白名单 5 个模型逐个写明理由。
+  **写成判据而不是写进文档**,是因为「我们盘点过、当时没有」是一句会过期的话 ——
+  下一个人往结算表加一列 `memberName` 做冗余展示,盘点结论就悄悄失效,而没有任何东西会报错。
+  判据自带三条正对照(打在判据本体 `offendersOf` 上,不只打在子探测器上)。
+  ⚠️ 它**不**声称「永远不需要快照」,只声称「当下不需要,新增副本必须显式过闸」。
+
+### 收口:issue #1048 T1–T4 对外影响一览
+
+- **对外契约破坏**:全部落在 T1(#1096),共 **100 个 operation**,逐条 `contract-breaking`
+  申报见 `changelog.d/member-identity-master-record.changed.md`。T2(#1099)只加可选查询能力,
+  T3(#1100)无 HTTP 端点 —— 两刀 `gate:contract:semantic` 均判 breaking=0 / additive=0。
+- **srvf-admin-web 后续**(维护者 2026-08-20 确认「尚未真正投用」,故未做兼容层):
+  ① 重新 codegen(`docs/handoff/clients/**` 已随 T1 更新);
+  ② 凡渲染队员姓名处改读 `label`(`编号 · 姓名(外号)`),需要分字段时读 `realName` / `nickname`;
+  ③ 队员列表/选择器的 `q` 现按五级相关性返回,前端**不要再自己重排**,否则会把后端相关性排序打乱;
+  ④ 报名导出 CSV 表头 `display_name` → `real_name` + `nickname`,列数 10 → 11,**按下标取值的脚本会错位**。
+- **回滚立场**:整条 goal **无 feature gate、无兼容层**(维护者拍板不留兼容态)。
+  代码 revert 可行,但 T1 的 migration 含 `DROP COLUMN`、**不可逆** ——
+  已在有数据的库上 deploy 过的话,真回滚必须同时恢复库快照。T2/T3/T4 无 schema 变更,可独立 revert。
+
+### 已知限制(本 goal 未做,需另行拍板)
+
+- `memberSinceDate`(发号日)与 `memberOriginCode`(来源码)在建档时**必填、无「默认今天」**,
+  且 `UpdateMemberDto` **刻意不暴露这两个字段** —— 因此历史导入脚本若写错发号日或来源码,
+  当前**没有 API 可以订正**。这是 T1 起就存在的设计问题,已在 #1096 提出,尚未有结论。
+- 字典 `join_source` 新增的 `manual` / `import` 两条,**code 已按长期契约锁定,label 待维护者与队里确认后定稿**。
+
+### 未做:恒读层能力条目
+
+- 本刀原计划在 `docs/current-state.md` §2 登记一条队员身份终态,**因恒读层预算已满而未写**:
+  该文件当前 9597 / 9600 字符 = **100%**,零余量。预算 2026-08-15 才由 7600 重设为 9600
+  (落点 74.9%),**5 天后即撞顶,实测增速 483 字符/天 ≈ 定预算时假定值的 3.3 倍**。
+  `scripts/docs-readtax.ts` 顶部已预先记下这一情形的处置:「若下次仍在两周内撞顶,
+  该动的不是预算数字而是结构」——把 §2 逐条能力摘要挪进 `handoff/` 与 `NEXT_TASKS`
+  (不在恒读层,写多不付预算),**且明记那是独立立项、不在当时 PR 范围**。
+  故本刀既不调预算、也不为腾位置删既有事实,把终态摘要留在 `handoff/admin-web.md`
+  (T1/T2 已同步)与本片段中,**恒读层条目待该立项落地后补**。
+
+### Changed
+
+- **队员身份主档终态升级(issue #1048 T1)**:`Member` 成为 `memberNo + realName + nickname` 的唯一日常身份事实源,新增 `memberSinceDate`(发号日)与 `memberOriginCode`(来源字典 `join_source`);`Member.displayName` 与 `MemberProfile` 的 `realName` / `joinedDate` / `joinSourceCode` 一并删除,**不留兼容层、不双写**。
+- 人员展示标签全仓统一为 `编号 · 姓名(外号)`(外号为空时不带括号),唯一实现在 `src/common/identity/member-label.util.ts`。⚠️ **用户可见变更**:报名自助取消通知原本用本模块私有的 `姓名（编号）` 格式,现随之改为统一格式。
+- 字典 `join_source` 补齐 `manual`(管理员录入)与 `import`(历史录入)两条 —— 此前只有 `recruitment`,而这两条来源真实存在,缺码会逼调用方自己编自由串。**label 待维护者与队里确认后定稿,code 已按长期契约锁定**。
+
+### API breaking change
+
+- 共 100 个 operation 受影响(99 个响应字段删除 + `POST /api/admin/v1/members` 另有三个新增必填请求字段)。逐条申报见下方 `contract-breaking` 块。
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/users
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/users
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/users/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/users/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/admin/v1/users/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PUT /api/admin/v1/users/{id}/password
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/users/{id}/role
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/users/{id}/status
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/admin/v1/users/{id}/phone
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/admin/v1/users/{id}/wechat
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/admin/v1/users/{id}/wecom
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/me
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/me/profile
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/app/v1/me/profile
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PUT /api/app/v1/me/password
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/organizations/{orgId}/position-assignments
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/organizations/{orgId}/position-assignments
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/members/{memberId}/position-assignments
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/position-assignments
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/position-assignments/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/position-assignments/{id}/revoke
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/position-assignments/{id}/history
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/supervision-assignments
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data[].supervisor.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/supervision-assignments
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.supervisor.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/supervision-assignments/page
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].supervisor.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/supervision-assignments/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.supervisor.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/supervision-assignments/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.supervisor.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/organizations/{orgId}/supervisors
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data[].supervisionAssignment.supervisor.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/supervision-assignments/{id}/revoke
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.supervisor.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/role-bindings
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data[].principal.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/role-bindings
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.principal.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/role-bindings/page
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].principal.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/role-bindings/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.principal.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/role-bindings/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.principal.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/admin/v1/role-bindings/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.principal.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/members
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/members
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`;建档必须显式给出姓名 / 发号日 / 来源码 —— 三者都是业务事实,后端不替维护者内置默认值。
+impact: 响应删除字段:`data.displayName`;请求新增必填:`realName`、`memberSinceDate`、`memberOriginCode`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`;建档表单补三个必填项;历史队员批量录入脚本必须显式传 `memberSinceDate`(历史日期)与 `memberOriginCode=import`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/members/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/members/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/admin/v1/members/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/members/{id}/status
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/members/{id}/account/bind
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/members/{id}/account/unbind
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/members/{id}/account/status
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/members/{id}/offboard
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/activities/{activityId}/reconciliation
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.registeredParticipants[].displayName`、`data.temporaryParticipants[].displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/activities/{activityId}/responsibilities
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.member.displayName`、`data.collaborators[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/activities/{activityId}/responsibilities/collaborators
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/admin/v1/activities/{activityId}/responsibilities/collaborators/{assignmentId}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/activities/{activityId}/responsibilities/transfer
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.member.displayName`、`data.collaborators[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/activities/{activityId}/responsibilities/claim
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/activities/{activityId}/responsibilities/assign-initiator
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.member.displayName`、`data.collaborators[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/managed-activities/{activityId}/settlement/items
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/managed-activities/{activityId}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/app/v1/my/managed-activities/{activityId}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities/{activityId}/direct-publish
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/managed-activities/{activityId}/responsibilities
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.member.displayName`、`data.collaborators[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/managed-activities/{activityId}/collaborator-options
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities/{activityId}/collaborators
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/app/v1/my/managed-activities/{activityId}/collaborators/{assignmentId}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities/{activityId}/transfer-initiator
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.member.displayName`、`data.collaborators[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities/{activityId}/transfer-owner
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.initiator.displayName`、`data.owner.member.displayName`、`data.collaborators[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/activity-batch-jobs
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].createdBy.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/activity-batch-jobs/{jobId}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.createdBy.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/activity-batch-jobs/{jobId}/retry-failed
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.createdBy.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/activity-batch-jobs/{jobId}/cancel
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.createdBy.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/team-insurance-policies/{id}/members
+reason: 扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.items[].memberDisplayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: `memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/team-insurance-policies/{id}/members
+reason: 扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.memberDisplayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: `memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/admin/v1/team-insurance-policies/{id}/members/{memberId}
+reason: 扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.memberDisplayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: `memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/certificates
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/members/{memberId}/profile
+reason: `MemberProfile` 的 realName / joinedDate / joinSourceCode 三列已搬到 `Member` 主档,档案不再承载。
+impact: 响应删除字段:`data.realName`、`data.joinedDate`、`data.joinSourceCode`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 姓名 / 发号日 / 来源改从队员主档端点读(`realName` / `memberSinceDate` / `memberOriginCode`)。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/members/{memberId}/profile
+reason: `MemberProfile` 的 realName / joinedDate / joinSourceCode 三列已搬到 `Member` 主档,档案不再承载。
+impact: 响应删除字段:`data.realName`、`data.joinedDate`、`data.joinSourceCode`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 姓名 / 发号日 / 来源改从队员主档端点读(`realName` / `memberSinceDate` / `memberOriginCode`)。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/members/{memberId}/profile
+reason: `MemberProfile` 的 realName / joinedDate / joinSourceCode 三列已搬到 `Member` 主档,档案不再承载。
+impact: 响应删除字段:`data.realName`、`data.joinedDate`、`data.joinSourceCode`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 姓名 / 发号日 / 来源改从队员主档端点读(`realName` / `memberSinceDate` / `memberOriginCode`)。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/activities/{activityId}/feedbacks
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/activities/{activityId}/check-ins
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/activities/{activityId}/attendance-sheet-draft
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.absentRegistrations[].displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/managed-activities/{activityId}/check-ins
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/managed-activities/{activityId}/attendance-sheet-draft
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.absentRegistrations[].displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/managed-activities/{activityId}/attendance-sheets/{sheetId}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.records[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/members/{memberId}/memberships
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/members/{memberId}/memberships
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/members/{memberId}/memberships/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/admin/v1/members/{memberId}/memberships/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/memberships
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/memberships/transfer
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/memberships/{id}
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/organizations/{orgId}/memberships
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/activities/{activityId}/registrations
+reason: 扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.items[].memberDisplayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: `memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/registrations
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`;扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.items[].memberDisplayName`、`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`;`memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/members/{memberId}/registrations
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`;扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.items[].memberDisplayName`、`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`;`memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/managed-activities/{activityId}/registrations
+reason: `Member.displayName` 退役 —— 身份主档改为 `realName` + `nickname`,并由后端拼装统一标签 `label`。
+impact: 响应删除字段:`data.items[].member.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 读 `label` 直接渲染(格式 `编号 · 姓名(外号)`,外号为空不带括号);需要分字段时读 `realName` / `nickname`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/announcement-import/preview
+reason: 本端点的 `row.displayName` 是**公告导入行里的「姓名」列**(用于按姓名反查队员做辅助解析),不是 `Member.displayName`;随全仓字段命名统一改名为 `realName`,语义逐字不变。
+impact: 响应删除字段:`data.positions[].row.displayName`、`data.supervisions[].row.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 请求体与响应里的 `positions[].displayName` / `supervisions[].displayName` 改为 `realName`,取值与用途不变(仅 preview 的辅助解析用,execute 仍**只认 memberNo 双锚**、绝不按姓名自动落库)。前端重新 codegen 后改字段名即可。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/announcement-import/execute
+reason: 本端点的 `row.displayName` 是**公告导入行里的「姓名」列**(用于按姓名反查队员做辅助解析),不是 `Member.displayName`;随全仓字段命名统一改名为 `realName`,语义逐字不变。
+impact: 响应删除字段:`data.positions[].row.displayName`、`data.supervisions[].row.displayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: 请求体与响应里的 `positions[].displayName` / `supervisions[].displayName` 改为 `realName`,取值与用途不变(仅 preview 的辅助解析用,execute 仍**只认 memberNo 双锚**、绝不按姓名自动落库)。前端重新 codegen 后改字段名即可。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/team-join/applications
+reason: 扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.items[].memberDisplayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: `memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: GET /api/admin/v1/team-join/applications/{id}
+reason: 扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.memberDisplayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: `memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/admin/v1/team-join/applications/{id}/gates
+reason: 扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.memberDisplayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: `memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/team-join/applications/{id}/evaluate
+reason: 扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.memberDisplayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: `memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+<!-- contract-breaking
+operation: POST /api/admin/v1/team-join/applications/{id}/join
+reason: 扁平冗余字段 `memberDisplayName` 随主档改名为 `memberRealName` + `memberLabel`。
+impact: 响应删除字段:`data.memberDisplayName`。调用方目前只有 srvf-admin-web(维护者 2026-08-20 确认「尚未真正投用,可随意改」),无第三方调用方。
+migration: `memberDisplayName` → `memberRealName`,需要完整标签读 `memberLabel`。前端重新 codegen 后按新字段改绑定。
+rollback: revert 本 PR(含 migration `20260820100000_member_identity_master_record`)。⚠️ 该 migration 含 DROP COLUMN、**不可逆**,revert 代码不会把已删的列变回来 —— 若已在有数据的库上 deploy,真回滚必须同时恢复库快照。无 feature gate、无兼容层(维护者拍板不留兼容态)。
+-->
+
+### Added
+
+- **`MemberReferenceResolver`(issue #1048 T3 / §5.2)—— 「给机器确认人」**:把一段队员引用
+  (`memberNo` / `realName` / `nickname`)解析成一个确定的 `memberId`,四态
+  `MATCHED / NOT_FOUND / AMBIGUOUS / CONFLICT`,**只有 `MATCHED` 携带 `memberId`**。
+  命名是 issue 点名要求的,与既有 `RecruitmentIdentityService`(招新**申请人**的身份核验:
+  短信 / 微信 / 实名 OCR)是两件事 —— 后者判「这个还不是队员的人是不是他本人」,
+  本类判「这条数据说的是队里哪一个人」。
+- 无 HTTP 端点(内部服务,由 `MembersModule` exports 供跨模块使用);**零契约变更**。
+
+### 严格模式六条规则(逐条落点)
+
+1. 给了 `memberNo` 就**只认编号**,必须精确定位一名;查不到就是 `NOT_FOUND`,
+   **不回退按姓名找**(否则一个打错的编号会被"纠正"成另一个人)。
+2. 同时给了 `realName` 且规范化后不一致 → `CONFLICT`,不是 `NOT_FOUND`、更不是按编号认下来:
+   两个信号打架是**数据有问题**,必须让人看见,而不是把一条错数据固化成一次正式关联。
+3. 只有姓名且重名 → `AMBIGUOUS`,不挑第一个。
+4. 🔴 **`nickname` 永远不能自动返回 `MATCHED`** —— 哪怕全队只有一个人叫这个外号(落 `AMBIGUOUS`);
+   也**不得**用外号在两个同名的人之间二选一。
+5. 🔴 解析限定在调用者可见组织范围内(防跨范围枚举)。这是**结构性**保证:
+   `currentUser` 是必填形参,方法体第一件事就是解析可见范围并 AND 进每一条查询,
+   没有"免范围"的重载。无 `member.read.record` → 30100(不是"解析不到"),且一条查询都不发出。
+6. 调用方只拿 `memberId`:`MATCHED` 的字段集**恰好** `{state, memberId}`,不回显姓名 ——
+   回显就是给调用方一个"顺手存下来"的机会,而姓名会变、且不唯一。
+
+**刻意没有宽松模式**:issue §5.2 只定义了严格模式,加一个宽松模式等于把「猜」重新引进来。
+第一版同样不做拼音 / 纠错 / 相似度绑定。
+
+### 判据:六条各自有红(逐条变异实测,不是声称)
+
+对实现做了六次单点变异,每次只违反一条规则,记录红集:
+
+| 变异 | 红 | 含本规则判据 |
+|---|---|---|
+| 规则 1 编号查不到时回退按姓名找 | 1 | ✅ |
+| 规则 2 不一致时按编号认下来 | 2 | ✅ |
+| 规则 3 重名挑第一个 | 3 | ✅ |
+| 规则 4 外号唯一命中就认下来 | **1** | ✅ 精确 |
+| 规则 5 抽掉可见范围腿 | **2** | ✅ 精确 |
+| 规则 6 `MATCHED` 回显姓名 | 4 | ✅ |
+
+两条**否定式合同**(4 / 5)的红集精确且互不重叠 —— 它们各自配了反面样本:
+「外号**唯一**命中仍不得 MATCHED」「范围外的**精确 memberNo** 仍不得命中」。
+这类条目的正确性不体现为"能返回什么",而体现为"永远不返回什么",故必须由反面样本钉住。
+
+规则 5 另有一条**真链路** e2e(真 authz → 真范围 → 真查询,直调 service):
+先用 GLOBAL 调用者证明同一个编号能 `MATCHED`(正对照),再断言范围内调用者拿同一个编号得
+`NOT_FOUND`,并证明该调用者对树内的人仍能正常解析(排除"对谁都返 NOT_FOUND")。
+同样做过变异对拍:抽掉范围腿后 e2e 恰好 1 条红,读数正是「范围外的人被 MATCHED 了」。
+
+### Changed
+
+- `MembersService.resolveMemberReadScope` 的实现搬到新的 `member-read-scope.ts`,
+  与 `MemberReferenceResolver` 共用一份 —— 否则「谁能看见哪些组织」会有两个可各自演化的入口,
+  而漂移的表现是「解析器多认出了本不该看见的人」,不会有任何东西报错。
+  调用点与既有行为逐字不变。
+
+### Added
+
+- **队员视觉身份资产终态升级 —— expand 段(issue #1055 T1)**:把当前混在一起的三类图片
+  (账号头像 / 队员标准照 / 身份证件影像)拆成三条独立链,本刀只建地基、**不切任何读写路径**。
+  - 新模型 `MemberOfficialPortrait`(表 `member_official_portraits`):队员标准照的**版本历史**。
+    每次替换新建一行、旧行转 `SUPERSEDED` 保留,正式材料(队员证 / 年度名录 / 对外报送)
+    引用具体 `MemberOfficialPortrait.id` 而不是"当前那张" —— 换照片不会让已定稿的材料背后变图。
+  - `User.avatarAttachmentId`:账号头像从裸 storage key 改为指向真实 Attachment。
+    本刀与既有 `User.avatarKey` **刻意并存**(expand/contract 中间态,中间没有任何代码同时写两列);
+    `avatarKey` 连同其全部读写契约在 T5 一次删净。
+  - 两个 internal-only owner type(`user-avatar` / `member-official-portrait`)及其
+    `attachment_type_configs` 默认行(JPEG/PNG,10 MiB)。二者在**每一个通用 Attachment 端点上
+    fail-closed**,只能走各自的专用 facade —— 通用接口无从知晓「必须是本人的」
+    「一个 Member 至多一张 ACTIVE」「替换要版本化」这些领域不变量。
+  - 权限码 `member-portrait.manage.record` / `member-portrait.read.history`
+    与 6 个审计事件名(`user.avatar.{change,clear}.self`、
+    `member.official-portrait.{activate,replace,void,purge}`):**只登记不接线**,
+    消费方在 T3 / T4 到位(沿证书标准库 PR-2「事件名先落」范式)。
+
+### 数据库约束(第 91 个 migration,纯 additive)
+
+Prisma DSL 表达不了、因而手写在 migration 里的部分:
+
+- partial unique `member_official_portrait_one_active_per_member`(`WHERE status = 'ACTIVE'`)
+  —— 一个 Member 至多一张 ACTIVE 标准照。它是唯一**不依赖应用代码写对**的兜底:
+  替换事务是「旧行转 SUPERSEDED + 新行 ACTIVE」两步,并发时行锁保证串行但不保证后来者重读。
+- 4 条 CHECK:ACTIVE 行相容性(须有二进制、不得带终结/清理字段)· 终态行须留下终结人与时刻 ·
+  已清理二进制的行不得仍指向附件 · `specVersion` 受控闭集(当前仅 `uniform-portrait-v1`)。
+
+**每条约束都配了一个违反它的负面用例,外加 3 条反向对照**证明它们不是恒红
+(第二条 SUPERSEDED 必须放行 / 多个 NULL 头像必须共存 / 附件删后版本行必须留存并置空指针)。
+
+### 两处有理由的偏离
+
+- **`activatedAt` 不给 `@default(now())`**(issue §5.2 的建议模型里有)。有默认值时应用侧漏传
+  就悄悄吃库时钟,而「写用库时钟、判用应用时钟」在本仓是一整类缺陷。无默认值 ⇒ Prisma `create`
+  必填 ⇒ 漏传是编译错误。顺带让 T4 的替换事务能把旧版 `endedAt` 与新版 `activatedAt`
+  取同一瞬间,版本历史不留缝也不重叠。
+- **两条新权限码登记但不绑任何角色**。issue §8.1 明写 `member-portrait.manage.record`
+  必须走组织数据范围;而 `biz-admin` 的绑定是 GLOBAL 的,先绑再收回等于缩小既有角色权限。
+  绑定与 scoped 判权一并在 T4 定。
+
+### Changed
+
+- internal-only owner 名单从**三份手抄副本**(一个三路 `||` + 两个内联 `notIn` 数组)收敛成
+  唯一常量 `INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES`。此前新增一个 internal owner 要同时改三处,
+  漏任何一处都是静默敞口(漏 predicate = 写路径洞开;漏 `notIn` = 内部附件泄进通用列表),
+  且三处都不会因漏改而编译失败或测试变红。常量带 `satisfies` 约束,拼错一个字符即编译错误。
+  **对既有 owner type 的行为逐字不变**。
+
+### Added
+
+- **队员视觉身份资产终态升级 —— sharp 地基 + 可信 facade(issue #1055 T2)**。
+  本刀仍**零 HTTP 端点**:把 T3(App 账号头像)/ T4(Admin 队员标准照)要踩的地基铺好并证明可用。
+  - **`AttachmentImageNormalizer`(sharp 0.35.3 / libvips 8.18.3)**:解码 → 多帧拒收 →
+    EXIF 方向修正 → 只缩不放 → 宽高比判定 → 居中裁 → **白底压平** → JPEG 重编码 →
+    **回读复核元数据已清空**。补齐 issue §6.2 要求而签名表证明不了的那部分。
+  - **`AttachmentVisualIdentityUploadService`**:`user-avatar` / `member-official-portrait`
+    两个 internal-only owner 的唯一入口。四阶段 branded 句柄,与
+    `registration-upload-session` 同构:事务外校验+规范化 → 锁内备 intent →
+    **事务外** Provider put+HEAD → 锁内原子落库。句柄一次性,顺序错 / 重放 / 跨阶段都拿不到 state。
+  - 5 个 BizCode(13035–13039)。**刻意不复用 13016** —— 那条只核 12 字节签名
+    (「像不像 JPEG」),这五条要求真解码出一张图。一码多义正是 13033 当初被从 13012 切出来的原因。
+  - 两套图片规格各只有一处定义:`uniform-portrait-v1`(goal §2 T4 冻结:5:7 ±1% ·
+    826×1158 · 最低同尺寸 · JPEG q90 · 纯白底)与 `account-avatar-v1`(512×512 · q85 ·
+    短边 ≥512;**这组数不在 goal 冻结范围内**,按 App 展示位推得,维护者 2026-08-20 确认)。
+
+### 一条对安全有实义的性质
+
+**落库的不是用户上传的字节,而是服务端规范化产出的那份。** 客户端声明的 mime / size
+只用来闸控入口,不进 storage identity。于是:落库 mime 恒 `image/jpeg`、体积是重编码后的体积、
+**EXIF/GPS 一定不在**。一张队员在家自拍的头像,原图 EXIF 会精确到门牌号 ——
+这条链上任何一环忘了清,那个坐标就跟着照片进了队员档案。
+
+清除**不靠** sharp 的默认行为兜底:normalizer 在返回前重新读一次输出的 metadata 并断言
+exif/icc/xmp 确已消失,结果作为 `metadataStripped` 返回;facade 见到 false 直接整条链失败,
+不静默放行。
+
+### Changed
+
+- `attachment-upload.service.ts` 的 `lockActiveUploadOwner` 登记两个新 owner
+  (`user-avatar:User` / `member-official-portrait:Member`),finalize 时对 owner 行
+  `FOR UPDATE` 并断言未软删。
+  ⚠️ 这是仓内**第二份**「新增 owner type 必须同步」的手写清单,且**没有任何编译期约束**:
+  漏登时前三个阶段全部正常,只在 finalize 失败,错误信息还说「owner 不存在」(owner 明明存在)。
+  本刀是被它咬了一次才发现的 —— 已写进 `src/modules/attachments/CLAUDE.md` 的踩雷区。
+- **Dockerfile 裁掉 17.8 MB 永远加载不了的 glibc 版 sharp 二进制**。镜像基于 alpine(musl),
+  而 pnpm 在 `--ignore-scripts` 下会把两种 libc 的预编译包一并装进来。
+  容器内实测:`@img` 35.8 M → **18.0 M**。
+
+### 验证
+
+- 图片层 14 条单测 + **6 类变异全部被抓**(去掉方向换轴 / 去掉白底压平 / 去掉多帧闸 /
+  放宽比例容差 / `centre→attention` / `centre→entropy`)。
+  ⚠️ 「确定性」那条用例的第一版是**假绿**:用纯色图只能证明「不随机」,证明不了「裁在哪」。
+  改成三色带图后 `attention` 会混进 101376 个红像素,判据才咬得住。
+- fail-closed 负面用例 16 条(7 个通用面 × 2 owner + 2 条反向对照);
+  把两个 owner 从 internal-only 名单移除后 **15/16 变红**,唯一保持绿的正是反向对照。
+- facade Storage E2E 5 条(真 DB + 真 Provider,四阶段逐段驱动)。
+- **正式镜像内实跑**:裁剪后的生产镜像里,用**应用自身的编译产物**规范化出 826×1158 JPEG、
+  `metadataStripped=true`,拒收闸(13037)也照常工作。
+
+### Added
+
+- **App 账号头像闭环(issue #1055 T3)**:三个端点 `GET / POST / DELETE /api/app/v1/me/avatar`,
+  准入 `LoginScoped{admission: app-member, scopes: [self]}`,**不要任何 `attachment.upload.*` 通用权限码**
+  —— 那是给通用附件面用的,而 `user-avatar` 恰恰在通用面上恒 fail-closed(T2 已装)。
+  - 上传走 **multipart 直传服务端**:服务端解码 → 修正 EXIF 方向 → 居中裁成正方形 →
+    512×512 → **清除 EXIF/GPS** → JPEG q85 → 落 `user-avatar` Attachment → 指针写入
+    `User.avatarAttachmentId`,旧头像 durable delete。
+  - 清空幂等;**幂等空转不写审计**(沿 `wecom.clear.by-admin` 既有口径 —— 什么都没变还记一笔,
+    审计流水会被空转淹没)。
+  - 读取返 `AccountAvatarDto { attachmentId, accessUrl, expiresAt }`,**不再返 raw storage key**。
+
+### 为什么是三个端点而不是 issue §7.1 写的四个
+
+维护者 2026-08-20 拍板。§7.1 描述的是「客户端拿签名 URL 直传 storage,confirm 时服务端校验
+规范化结果」—— 但**服务端要规范化就必须看见字节**。直传形状下服务端只能在 confirm 时把字节
+拉回来、规范化、再传一次:双倍传输,而且**未规范化的原图(带 EXIF/GPS)会先落进 storage
+并停留一段时间** —— 正是整套视觉身份设计要防的那个泄露。
+
+10 MB 以内的头像,省下的那点带宽换不来这个代价。形状取 multipart,与仓内既有的
+`registration-upload-session` 可信 facade 逐字同形。upload-url 与 confirm-upload 合成一次 POST。
+
+### Changed
+
+- `AccountAvatarDto` 取代 raw key。旧契约把 `User.avatarKey`(一个裸 storage key)直接吐给客户端,
+  于是任何拿到它的人都掌握了一个**永不过期、与鉴权无关**的对象引用。现在给的是短 TTL 签名 URL;
+  客户端要长期引用就存 `attachmentId`,每次显示时重新取。
+- `PATCH /api/app/v1/me/profile` 的白名单从 `{nickname, avatarKey}` 收窄为 `{nickname}`。
+- 可信 facade 补两个受控出口(签名 URL / durable delete),users 模块因此**只依赖一个面** ——
+  `AttachmentAccessService` 与 `AttachmentStorageOrchestrator` 都没有导出,拿不到它们正是
+  internal-only 边界的一部分。
+- 路由足迹计数收成单一常量 `EXPECTED_ROUTE_COUNT`,用例标题改插值。
+  动它之前标题写着「精确为 532」而断言是 537 —— **有人 bump 了数字没 bump 标题,标题从此说谎**。
+
+<!-- contract-breaking
+operation: GET /api/app/v1/me
+reason: 响应删除 avatarKey。它是裸 storage key,给出去等于发放一个永不过期、与鉴权无关的对象引用;头像改由 GET /api/app/v1/me/avatar 提供短 TTL 签名 URL。
+impact: 依赖 data.avatarKey 的调用方会拿到 undefined。srvf-admin-web 与小程序当前均未投用该字段(维护者 2026-08-20 确认前端尚未真正用起来),故不做兼容层。
+migration: 重新 codegen(docs/handoff/clients/** 已随本 PR 更新),头像显示改调 GET /api/app/v1/me/avatar 取 accessUrl;需长期引用则保存 attachmentId 而不是 URL。
+rollback: 真回滚为 revert 本 PR —— 恢复 AppMeResponseDto.avatarKey 字段与其映射。changelog 文件本身不是回滚手段。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/me/profile
+reason: 同上,响应删除 avatarKey;profile 面不再承载任何头像字段,头像自成一条端点。
+impact: 依赖 data.avatarKey 的调用方会拿到 undefined;profile 的其余字段逐字不变。
+migration: 重新 codegen 后,profile 页的头像改调 GET /api/app/v1/me/avatar。
+rollback: 真回滚为 revert 本 PR —— 恢复 AppSelfProfileDto.avatarKey 与 app-profile.service 的映射。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/app/v1/me/profile
+reason: 请求白名单收窄为 {nickname},响应同步删除 avatarKey。客户端塞一个 storage key 进来就能改头像,这条路径无法证明该对象存在、属于本人、是图片、尺寸合规 —— 头像因此改走 multipart + 服务端规范化。
+impact: 请求体里带 avatarKey 会被 ValidationPipe 以 400 拒绝(此前会被接受并写库);响应不再含 avatarKey。
+migration: 前端把「改头像」从 PATCH /me/profile 拆出来,改调 POST /api/app/v1/me/avatar(multipart,字段名 file);只改昵称的调用无需变更。
+rollback: 真回滚为 revert 本 PR —— 恢复 UpdateAppSelfProfileDto.avatarKey 与 AppSelfProfileDto.avatarKey。
+-->
+
+### 验证
+
+- 12 条 e2e:上传 / 替换 / 清空 / 幂等 / 审计 extra 闭集 / 读取 / 四条拒收面 / §7.2 契约收窄
+- **EXIF+GPS 那条先钉前提**:断言来图确实带 GPS(0x8825 是 TIFF 的 GPS IFD 指针标签),
+  否则「清干净了」可能只是因为它本来就没有
+- 替换那条配了**反向对照**:旧附件必须没了、**新附件必须还在** ——
+  少了后半句,一个「把两张都删了」的实现也会全绿
+
+### 交付中被咬到的一处
+
+`prepareDelete` **只落删除意图**,返回一个 eventKey;真正的 Provider 调用与 Attachment 行删除
+在 `executeEventKey` 里原子完成。第一版 facade 只调了前半截,现象是**替换成功、指针也对,
+只有旧行永远不走** —— 表面上一切正常。通用删除端点(`attachment-write.service.ts:362-367`)
+本来就是这对调用配对出现的,照抄它即可。e2e 的「旧附件被清理」那条把它抓了出来。
+
+### Added
+
+- **队员标准照闭环(issue #1055 T4)**:四个 Admin 端点
+  `GET / POST / DELETE /api/admin/v1/members/:id/official-portrait` 与
+  `GET /api/admin/v1/members/:id/official-portraits`(版本历史)。
+  - 上传走 **multipart 直传服务端**(与 T3 同一理由:服务端要规范化就必须看见字节),
+    规范化成 **826×1158 JPEG q90、白底、清 EXIF/GPS**(`uniform-portrait-v1`)。
+  - **one-active 版本状态机**:每次替换新建一行、旧行转 `SUPERSEDED` 并留下终结人与时刻;
+    作废(必填 reason)把当前版转 `VOIDED`,**不自动回退到上一版** ——
+    历史版本表达的是过去事实,想重新启用旧照片必须新建一个正式版本。
+  - 队员详情带出 `officialPortraitId` / `hasOfficialPortrait`。
+- **两条权限码开始生效**(T1 登记时刻意留的口):交给既有派生链,实测分发结果 ——
+  `biz-admin` 2 条(全局)· `org-admin` 2 条(组织范围继承)· 副职只读投影自动拿到
+  `read.history` 1 条 · `group-manager` 0 条。biz-admin 绑定数 69 → 71。
+- 两个 BizCode:`15039`(作废时无当前标准照)· `15040`(one-active 冲突)。
+
+### 为什么标准照要版本化,而 T3 的头像不用
+
+头像是展示品,换掉就换掉了。标准照是**正式业务事实**:制证 / 年度名录 / 对外报送一旦定稿,
+不能因为本人换了照片而背后变图(issue §10.3)。所以正式材料引用的是
+`MemberOfficialPortrait.id`,不是「当前那张」。
+
+同理,**被顶替的那一版不清二进制**(与 T3 头像相反)—— 它是历史事实,可能还被引着;
+合规清理走 issue §5.2 的 purge 流程,不在本刀。
+
+### 三处承重的实现细节
+
+- **one-active 三道防线**:`Member` 行 `FOR UPDATE` 串行 → 同事务原子换代 →
+  **DB partial unique** 兜底。第三道不是冗余:锁保证串行,**不保证后来者重读到最新状态**,
+  而「忘了重读」不会让任何东西报错。P2002 映射成 `15040` 而不是 500。
+- **锁内必须重读当前 ACTIVE** —— 阶段 ③(Provider put+HEAD)在事务外,那期间锁是放开的。
+- **旧版 `endedAt` 与新版 `activatedAt` 是同一个 `new Date()`**,版本历史不留缝也不重叠。
+  T1 特意拿掉 `activatedAt` 的 `@default(now())` 就是为了让这件事可能 ——
+  有默认值时新版时间来自库时钟、旧版来自应用时钟,两个源对不齐。
+- **版本号取 `max(version)+1` 不是 `count+1`** —— 作废过的行也占号。
+
+### scoped 判权:两半都要验
+
+issue §8.1 要求 `member-portrait.manage.record` **必须支持组织数据范围**。实现是
+`getVisibleOrganizationScope(user, code)` 取范围后,**再验目标 memberId 在不在范围内**。
+
+只验前半截(「有没有这个码」)是最容易犯的错:A 部门的队长拿着 org-scoped 绑定就能改
+B 部门队员的标准照,而 `hasPermission` 照样为 `true`。范围外与不存在**返回同一个错误**,
+区分开来等于给出一个成员枚举口。
+
+范围→where 的翻译**复用 `MembersQueryService.buildOrganizationScopeFilter`**,不另写一份 ——
+那条链上两端各只有一份实现,漂移的表现会是「多看见了本不该看见的人」,而这种漂移不报错。
+
+### 验证
+
+- e2e **15 条**:上传 / 替换 / 连替三次仍只有一张 ACTIVE / 并发 / 作废 / 作废后版本号 /
+  无当前版作废 / 历史倒序 / **scoped 正反两面** / 两条拒收面 / 详情接入 / 审计
+- **变异对拍**:把范围过滤摘掉(只剩「有没有码」)⇒ **2 条 scoped 反面用例变红**,正向对照保持绿
+- 并发那条**诚实标注了它证明什么**:`Member` 行锁会把两个请求串行,所以两个通常都成功;
+  它钉的是**串行后的结果不变量**(至多一张 ACTIVE、版本号不重),**不**期望出现 `15040`。
+  15040 那条路径由 T1 的 schema spec 直插库覆盖。
+
+### 交付中撞到的一处闸
+
+`docs:rbacmap` 的 `swagger-auth-suffix` 按**严格的 `[rbac: <码>]`** 解析 summary 并回查 seed
+事实闭包。我原本写成 `[rbac: member-portrait.manage.record + 组织范围]`,整串被当成码名,
+报「不在闭包中」。范围说明已挪进括号正文。
+
+### Changed
+
+- `MembersService` 按 D-7 边界拆为三个单元(Phase 6-B 第三域第五刀):账号生命周期 `MemberAccountService`(435)、共享准入 `MemberAccessService`(122),主 service 由 **817 → 441 NCLOC** 并跌破 700 阈值。主 service 仍是唯一对外入口,六个账号方法保留同名薄委托,controller 与既有消费者调用面逐字不变。零 endpoint / 零 DTO / 零 OpenAPI / 零 BizCode / 零权限码变更。
+
+### Changed
+
+- 队员模块抽出 `MemberAuditRecorder`(Phase 6-B 第二刀,架构边界 §3.5):账号开通/绑定/解绑/重开/启停与离队 6 个事件的 audit payload 组装迁入该类,`tx` 仍由调用方在原事务内透传,事务边界与调用顺序不变。事件名、`before`/`after`/`extra` 字段集逐字不变,零 endpoint、零 DTO、零 BizCode 变更。
+
+### Changed
+
+- 队员模块抽出 `members.presenter.ts` 与 `members.policy.ts`(Phase 6-B 第三刀,架构边界 §3.1/§3.3):对外 DTO 的账号字段拼装(`attachAccountInfo`)与两个域判定(`normalizeMemberNo`、`assertGradeCodeValid`)改为纯自由函数,入参即全部依赖,不持有 Prisma、不开事务、不判权。判权、P2002 错误映射与 memberNo 唯一性预检查仍留在 service。对外行为逐字不变。
+
+### Changed
+
+- 队员模块读侧抽出 `MembersQueryService`(Phase 6-B 第一刀,架构边界 §3.2):`list` / `options` 的 where 构造、组织范围交集、分页与投影迁入该类;判权(`getVisibleOrganizationScope` 与 30100)仍留在 `MembersService`,可见范围作为入参传入。零 endpoint、零 DTO、零 OpenAPI、零权限码变更,对外行为逐字不变。
+
+### Fixed
+
+- 修 `measureNcloc` 的扫描器脱锁缺陷:剥注释原用裸 `ts.createScanner` 循环,遇带替换的模板串 `` `…${…}` `` 未按契约重扫,扫描器脱锁后把其后的整行 `//` 注释吞成字符串内容,**注释被算成代码**。改用 TS parser 的真实 token 区间判定,一次关掉整个「重扫脱锁」缺陷类(模板串 / 正则 / `>>`)。实测发现面 150 个文件里 71 个(47.3%)读数虚高;大 service 尺寸基线据此重算 31 → 26 条(5 个纯靠虚高越过阈值 700 的假阳性移出、0 个新入册),`SERVICE_SIZE_GENERATOR_VERSION` 1→2。转闸摩擦评估随之由严口径 106 修正为 92,**仍远超判据线 30**,「必须先做 6-B 拆分」的结论不变。harness selftest 尺寸段由 22 条增至 29 条阳性对照(模板串后注释 / 嵌套模板串 / 多行模板串内 `//` 不得剥 / 正则含 `/*` / JSDoc 三条)。
+
+### Changed
+
+- 夜间句柄泄漏线(`.github/workflows/nightly-e2e-leaks.yml`)**按域切成 2 片**并行(issue #1080)。套件长到 290 个 spec 后,单进程串行跑满 75m 内层上限仍未跑完(08-17 那晚已是贴线通过:4345s / 4500s,余量 3.1%),历次「放宽 timeout」只还利息不还本金。刻意**不用** `jest --shard N/M` 的哈希均分:`--detectOpenHandles` 的价值在于单进程连续跑时能看见 spec 之间累积出来的句柄,哈希均分会把同族泄漏的两端拆散;改按域切(新增 `scripts/e2e-shard-plan.mjs` 为分片清单唯一真相源,片 2 为 catch-all 故新增 spec 不可能落空),同域 spec 仍连续跑在同一进程里。片数取 2 而非 3/4 —— activity 族单族约 29 分钟是不可再分的地板,切更细省不下时间却持续削弱检出能力。三条失败判别(跑完不退出 = 真泄漏 / 没跑完 = 时长不足 / OOM)逐片各判各报,文案逐字保留;新增第四条 `shard-plan-drift`(jest 实收 suite 数 ≠ 清单预算数即红),堵住「新增 spec 落不进任何一片而两片都绿」的静默漏跑。Issue 开关改为聚合 job(`needs` + `success()` = 两片全绿才关闭),避免单片绿关掉另一片刚开的 Issue。`harness-guards.selftest.ts` 补 7 条守护(矩阵片数 == 清单声明片数、清单自洽、job timeout > 内层 timeout 等),均经变异对拍验证为真执法位。行为面:仅 CI 编排与测试基建,业务代码与接口契约零改动。
+
+### Changed
+
+- 抽出离线包链**准入/原语层** `AttendanceOfflinePackageAccessService`(Activity / Session / OfflinePackage / Review / 参与人行锁,托管考勤准入、场次时间窗、冻结参与人时效校验,唯一键重放包装与理由归一),并导出两份查询投影与三个共享行类型。`AttendanceOfflinePackageService` 由 1373 降至 1068 NCLOC。该层以调用方 `tx` 为入参、不自持 `$transaction`,事务所有权与锁序未变。
+
+### Changed
+
+- 抽出离线包链**审核族** `AttendanceOfflineReviewService`(异常回执列表读面与 approve / reject 决议),`AttendanceOfflinePackageService` 由 1068 降至 688 NCLOC,**跌破 700 阈值**。至此尺寸棘轮三条 WARN 全部清零(`0 FAIL, 0 WARN`,棘轮判定 PASS)。签发 / 作废 / 上传留在原服务;两侧共用既有准入层原语,事务所有权与锁序未变。
+
+参与真相读面全员接闸(第六轮评审 B-01):逐活动参与汇总/对账表与月度参与概览此前从未问过 v1.1 cutover gate ——
+闸开后同一队员在不同页面会拿到两个服务时长。新增结构判据 C8 把「对外产出工时/贡献值的读面漏接闸」变成静态可判,
+判定靠「查询要了哪些结算列」+「这个函数写不写受控链」两个结构事实,不用文件名启发式;扫描面动态现取,
+新读面自动纳入看守。入队门槛与 computeCappedContribution 按维护者已有拍板**不接闸**(判据 C4 反向锁),
+C8 复用 C4 同一份清单,两条判据按构造不可能互相矛盾。
+
+### Changed
+
+- 拆出发布审核**提交/直发命令族**为 `ActivityPublishReviewSubmitService`,并把两侧共用的事务原语(Activity 行锁、提案快照、可发布性不变量、受众标签解析)与幂等原语(规范化 JSON、内容哈希、重放投影)下沉为纯函数模块。`ActivityPublishReviewService` 由 1335 降至 908 NCLOC,退出尺寸棘轮的「基线文件变大」告警;审核侧(approve / return / withdraw / cancel)与全部 7 个对外方法签名、锁序、审计事件、DTO、OpenAPI 契约零变化。
+
+### Changed
+
+- 抽出打卡链**准入层** `AttendancePunchAccessService`(Activity / Session / 参与身份 / QR 凭证 / PunchEvent 行锁与托管考勤准入断言),并把 `PUNCH_EVENT_SELECT` 投影与三个共享行类型一并导出。`AttendancePunchCommandService` 由 1504 降至 1219 NCLOC,回到尺寸棘轮基线以内。该层以调用方 `tx` 为入参、不自持 `$transaction` —— 事务所有权仍在打卡命令服务,锁序未变。
+
+### Changed
+
+- R15 判据① 的 6 条存量违规(`src/common/prisma/claim-at-status.util.ts` 在 `$queryRaw` 里硬编码 6 张业务物理表,跨 participation / credentials / engagement 三域)按 per-call-site 身份登记进架构债务台账,classification `common-business-table`。此前只有一条「计数钉」(selftest 把发现数钉在 6),能抓住**新增**但抓不住**换掉** —— 删一条又新增另一条时计数仍是 6。登记后 `callSiteId` 逐条对账,换掉即红。
+- `runMigrateIds`(`docs:boundaries:ids:check`)的活跃 call site 集合并上 R15 的 `commonFindings`。`--violations` 把 common 单独成块是为了不污染 `edgeUsage` / `readTiers` 的读数,而身份对账问的是「每条登记在案的 call site 是否还活着」,本就该覆盖全部已登记债务;不合并则登记 R15 债务会把该闸打红(实测退出码 1)。既有 21 条域级记录的 `notApplicable` 归属与全部读数逐字节不变。
+
+### Added
+
+- 架构治理 R15 落地:`src/common` 纳入边界扫描,新增三条 report-only 判据 —— 业务 Prisma 访问(delegate ∪ raw 物理表)、业务谓词(状态 ∧ 时间窗内联组合)、`common → src/modules` 入边。此前 `src/common/**` 因 `moduleOf()` 只认 `src/modules/` 而在扫描主循环第一行即被跳过,是所有边界规则的共同逃生通道。当前发现数 6 / 0 / 0,全部为 report,不改变任何业务行为。
+- `harness/domain-map.json` 的 `kernel.primitives` 登记 `member-advisory-lock`(owner = `identity-org`):共享业务内核必须显式登记归属,不因放在 `src/common` 而免除。
+
+### Changed
+
+- **R8 探针自测成批,一次自测的 `ts.Program` 构建由 32 次降到 2 次**(本机 133–181s → 59–61s)。原实现逐个重写同一个探针文件、每轮换一个 `cacheKey`,于是每轮**必须**重建一次全仓 `ts.Program`;现改为一次性写出 30 个探针文件、共用一个 `cacheKey`,再一次 `scanRouteAuthzClosure` + 一次 `lintFiles` 收结果,全仓首扫移到探针之前(此时 `src/` 还干净)。`SOURCE_INDEX_CACHE_LIMIT = 2` **未改**,峰值内存不升反降。判据强度零放宽,另新增三条机器判据:探针类名 / routeKey 唯一性、lint 覆盖面等于探针数、整段 R8 的 `ts.Program` 构建次数 ≤ 2(防再退化)。
+
+### Changed
+
+- `RecruitmentApplicationsService` 按 D-7 边界拆为四个单元(Phase 6-B 第三域第四刀):OCR 识别与裁剪图存取 `RecruitmentOcrService`(202)、进度查询 `RecruitmentApplicationProgressService`(94)、开放周期查找与容量预检 `RecruitmentCycleAccessService`(32),主 service 由 **763 → 508 NCLOC** 并跌破 700 阈值。主 service 仍是唯一对外入口,`recognize` / `query` 保留同名薄委托,controller 调用面逐字不变。零 endpoint / 零 DTO / 零 OpenAPI / 零 BizCode / 零权限码变更。
+
+### Changed
+
+- `RoleBindingsService` 按 D-7 边界拆为三个单元(Phase 6-B 第三域第六刀):读 surface 族 `RoleBindingQueryService`(281)、共享准入与序列化 `RoleBindingAccessService`(84),主 service 由 **827 → 585 NCLOC** 并跌破 700 阈值。主 service 仍是唯一对外入口,`list` / `page` / `findOne` 保留同名薄委托,controller 调用面逐字不变。零 endpoint / 零 DTO / 零 OpenAPI / 零 BizCode / 零权限码变更。
+
+### Changed
+
+- 重算尺寸棘轮基线(Phase 6-B 第三域七刀收官):条目 **27 → 21**,六个经拆分跌破 700 阈值的文件退出,**未新增、未上调任何条目**。转闸摩擦(SERVICE_SIZE_RATCHET §3 严口径)由 **93 降至 27**,低于判据线 30 —— 连同 PR#1054/#1056 达成的 EC-1,该文 §4 Exit Criteria 的两条 ❌ 全部清除。
+
+### Fixed
+
+- 记录并绕开一个真缺陷:`pnpm harness:servicesize:write` **不是棘轮安全的** —— 它按当前磁盘状态整体重算,既会新增条目也会上调既有条目,两者都被 base-trusted 裁判(EC-1 新增的 `judgeNumericMonotonicity`)正确拒绝且审批盖不掉。本刀改用「对 base 基线逐条取 min、丢弃跌破阈值的、绝不新增也绝不上调」的单调向下重算。缺陷成因与正确做法见 `SERVICE_SIZE_RATCHET.md §3.2`。
+
+### Changed
+
+- 架构治理 Phase 4-1a:`harness/state-machines.json` 的 56 条状态列登记补全为逐条含 `layer`(L1 配置 13 / L2 简单流程 19 / L3 复杂流程 24)、`stateSet`(含真值来源)、`transitions`、`wrongStateBizCode`、`implementation` 与 `governedBlockers`;**`governanceStatus` 全部仍为 `inventory`**,不构成治理承诺。新增现状报告 [`docs/ai-harness/STATE_MACHINE_INVENTORY.md`](docs/ai-harness/STATE_MACHINE_INVENTORY.md)。**零执行位**:未新增任何检查,未改 `check-boundaries.ts` / `action-state-checks.ts`,未回填 DB CHECK,未升任何条目为 `governed`。
+
+  主要读数:24 条 L3 里**仅 6 条有专属状态机**;最普遍缺口为 `no-wrong-state-bizcode`(25)/ `no-db-check`(22)/ `edges-not-derived`(20)/ `no-state-machine`(18);8 个既有状态机分属 5 种形状、零共享抽象,其中 2 个治理的是 Prisma `enum` 列而登记表只收 `String` 列 —— 结构上装不下。
+
+### Added
+
+- 事务层纯函数补齐单测(Phase 6-B 收尾):`attachment-content-delete-boundary.ts`(13 例)与 `activity-allocation-locks.ts`(13 例)。两者均为「吃调用方传入的 tx、零注入依赖」的纯函数,抽出前零单测覆盖。前者守的是附件删除终态化时内容根的三条「重新被引用」通道(封面附件 / 封面图 key / 正文占位符),各自独立钉住;后者覆盖先到先得候补队列的序号发放与队列事实一致性。两个 spec 均在头注声明:**锁序约束(调用顺序即锁顺序)无法用单测表达**,仍靠编排器锁序台账与人工评审,不得因单测全绿而认为锁序被守住。
+
+### Fixed
+
+- 活动候补**自动递补**补上锁后队员生命周期重验(第六轮评审 C-BLOCKER-1):`promoteAfterCancellationInTransactionTrusted` 在队首被 `lockFirstComeWaitlistHead` / `lockBatchWaitlistHead` 选出之后、占名额之前,先锁 Member 聚合再重读 live 真相;候选已离队 / 被软删 / 转非 ACTIVE 时**跳过该名额**(保持 waitlisted,不炸掉整批取消/驳回事务),不再把已离队的人自动录取、占名额并投影成 `populationIncluded`。锁序沿本模块既有次序 Activity → 报名头 / permanent identity → **Member** → capacity,复用 `member-lifecycle-lock` 的同一把排他锁。
+
+### Added
+
+- 「正式准入必须锁后重验被录取人」**结构判据**(`participation-admission-gate.criteria.ts`):对参与域永久身份链上写 `statusCode: 'pass'` 的路径动态现扫(不写死路径名单),要求同一事务内存在针对**非操作人**的 Member 行锁重验 —— 对操作人自己的准入复核不满足该条,避免上层边界遮蔽下层边界。配正反对照(摘掉任一兄弟路径的检查必红并点名 / 新增写 pass 的方法必红 / 降级成不加锁读判 G3)。同类未修复敞口以自清洁登记表显式登记:登记项一旦被修好即报 G4 逼其清理。
+
+### Fixed
+
+- **企业微信消息链 —— 外部评审 F2 四条 BLOCKER + 两条 SHOULD-FIX**(P1-27 第二刀,零 schema)。
+  评审的批次级根因是"多个局部状态机各自严谨,彼此却缺少同一代际",故按状态机接口而非局部补丁修:
+  - **锁序统一(B4)**:Provider 前最终闸把 `wecom_settings`(FOR SHARE)提到 `User` 之前,
+    共同实体相对锁序全仓统一为 `settings → User → identity`,与绑定 / 换绑路径逐字一致。
+    上一版把 settings 追加在尾部时**漏枚举了绑定路径**(它持 settings 共享锁的同时取 User 排他锁)。
+    锁与判据分离:资格失效仍然赢过 channel-disabled,退队 / 停用者不会平白多一条 delivery 行。
+  - **同代配置(B5)**:新增 `WecomService.resolveMessageContext()`,一次返回
+    `provider + corpId + configurationGeneration + webBaseUrl`;最终闸锁后校验 corpId 与 generation
+    仍与之一致,identity 查询用同一个 corpId,提交后只用此前那个 Provider。
+    `deliverWecom` **不再**调 `resolveRoute()` —— 此前它会在闸后重读配置,
+    换 CorpID 的窗口里能把 A 企业的 `wecomUserId` 发去 B 企业。
+  - **fence 与重试归属(B6)**:`beforeEffect` 下沉到 `request()` 内**每次 fetch 紧前**
+    (此前传输层重试的第 2、3 次完全没有 fence);`message/send` 的物理尝试预算收为 1,
+    退避归 Outbox 一家(此前 Provider 3 次 × token 强刷 2 轮 × Outbox 8 次 = 最多 48 次物理发送);
+    `forceRefresh` 只绕缓存 token,**不再**绕过在途 `refreshPromise`(此前并发 token 失效会各起一次 gettoken)。
+  - **类型化错误(B7)**:Provider 抛出与返回的每个失败都带 `kind` 闭集
+    (rate-limited / config-fatal / http-4xx / http-5xx / network / timeout / invalid-response /
+    token-invalid / channel-disabled / system-busy / upstream-rejected / provider-contract),
+    Outbox 只认 `kind`。退避集收窄为 network / timeout / http-5xx / system-busy / token-invalid;
+    **gettoken 阶段的 45009 与 HTTP 4xx 现为终态**,不再被压成 `TOKEN_FAILED` 白退避 8 次。
+  - **严格回执解析(SF1)**:`invaliduser` / `unlicenseduser` / `invalidparty` / `invalidtag`
+    四个名单字段三分 —— 缺席或空串 = 空名单,字符串 = 解析,**其它类型一律 `INVALID_RESPONSE`**。
+    此前 `{errcode:0, invaliduser:123}` 会被读成"没有无效收件人"并记 **SENT**。
+    另补 `errcode != 0` 与 invalidparty/invalidtag 同时出现的分支。
+  - **定向通知 replay(SF2)**:新增 `NotificationOutboxService.replayDirectedWecomDelivery()`,
+    建新 child id + 新 eventKey(v1 定向键允许 `:r{n}` nonce)。此前系统定向通知撞 45009 dead 之后
+    **没有任何重发路径**(它没有 publish 状态机,eventKey 是确定性的)。
+    跨 attempt 去重仍用 `notificationId + memberId + channel + SENT`,已 SENT 者不被重复打扰。
+
+  `messageEnabled` 保持出厂 false;零 schema、零新 BizCode、零新权限码、零新端点、零新 cron;
+  微信小程序 / 短信 / 站内三条链逐字不变。上线与 replay 口径见
+  [`docs/ops/wecom-message-channel-rollout.md`](docs/ops/wecom-message-channel-rollout.md) §5.1 / §6.2。
+
+### Fixed
+
+- **企业微信 —— 第二轮外部评审三条 SHOULD-FIX**(P1-27 第三刀,零 schema / 零端点 / 零 BizCode)。
+  第二轮评审判 **GO WITH CONDITIONS**(直接安全 BLOCKER 0),三条均属"文档或注释描述了某个机制,
+  但代码里没有对应执行位":
+  - **pre-auth 绑定补身份代际(SF1)**:`auth/login-wecom.service.ts` 的 `runBindTransaction`
+    在真实 create / rebind 路径递增 `User.wecomIdentityVersion`。此前该代际只有 authed 换绑
+    (`users/user-wecom-binding.service.ts`)与撤销原语(`users/wecom-identity-revoke.ts`)两个写入点,
+    而第 70 个 migration 的注释写的是"递增方:**两条**绑定事务 + 撤销原语" —— 补的是代码欠注释的那一条。
+    递增落在**已持有的那把 User 锁之内**、与 identity 同事务(后腿失败一起回滚),
+    **同目标 no-op 不递增**。
+  - **锁序机制表述订正(SF2)**:此前 `notification-wecom-dispatch.service.ts` 与并发 spec 称
+    "把最终闸的 `User` 升成 `FOR UPDATE`,环立刻成立" —— **不准确**:缺失的边在 `wecom_settings` 上,
+    settings 两侧都是 `FOR SHARE`,升 `User` 改变不了它们相容。同库实测 PG 16.13 的相容矩阵后改写为:
+    旧序下要兑现,需**任一侧**把 settings 升成 `FOR NO KEY UPDATE` / `FOR UPDATE`,
+    或新增"持 User 再申请 settings 写锁"的路径。并同步订正那条 PG 护栏用例的前提
+    (它用手写 SQL 造锁,**改应用代码不会让它红**;守应用锁序的是主用例),
+    断言从单格扩成**四格相容矩阵**,让它真正守住自称守住的条件。
+  - **定向 replay 补历史终态判据(SF3)**:`replayDirectedWecomDelivery` 默认只放行上一次是
+    `rate-limited` / `provider-contract-error` 的(intent dead 过 **且** 最后那条 delivery 的
+    reasonCode 在允许集内)。此前 runbook §6 写了这条限制但代码只看通知形态,于是
+    `channel-disabled` / `recipient-unlicensed` / **从未建过 child** 的通知都能重建 attempt——
+    这三类重发解决不了,只会把上游调用量放大一轮。越界需显式 `{ overrideReason: true }`,
+    它只绕这一条,其余护栏一概不绕。运维入口与 replay 审计仍归 T6。
+
+  三条各有 red-first 成对证据;既有断言**逐字未改**(三个 spec 全是新增用例)。
+
+### Security
+
+- **企业微信 OAuth `state` 现绑定发起授权的浏览器**(P1-27 第一刀 B1)。`login-wecom/authorize` 与
+  `wecom-bind/authorize` 额外下发 `HttpOnly + Secure + SameSite=Lax` 的 `__Host-` Cookie,
+  `state` 由该 nonce 派生;`POST auth/v1/login-wecom` 与 `PUT app/v1/me/wecom` 必须同时携带匹配 Cookie。
+  修复登录 CSRF 及其可升级出的**完整账号接管**(攻击者未绑定的企业微信身份被受害者用自己的手机号 + 短信码绑到本人账号)。
+  🔴 **破坏性变更 —— 前端必须适配**:这四个端点的请求需带 `credentials: 'include'`;
+  改法与部署前提见 [`docs/handoff/miniapp.md` §1.3.1](../docs/handoff/miniapp.md)。
+- **新增单调身份代际 `User.wecomIdentityVersion`**(P1-27 第一刀 B2;第 70 个 migration,additive)。
+  `WECOM_BIND` step-up proof 的 snapshot 纳入该代际,修复 ABA 回环:
+  `无绑定 → 绑定 → 管理员清除 → 无绑定` 之后,无绑定态签发的旧 proof 不再复活(现返 `10008`)。
+  bind / rebind 与撤销原语(admin clear / 软删 / 队员账号重开)同事务递增;
+  同目标 no-op 与幂等空转不递增。该列不进任何响应、Audit 或日志。
+- **`36010` 耗时归一**(P1-27 第一刀 B3)。企业微信登录的全部 `36010` 分支收进单一出口,
+  补齐有界最小响应时长 + 小扰动。修复前实测「`state` 无效」比其余分支快约一半,
+  构成"我方认不认这个 state"的计时 oracle。
+
+### Fixed
+
+- `login-wecom` 中非发起浏览器的失败**不再消费** `state` —— 修复浏览器绑定的同时不引入
+  "拿到 state 即可作废他人登录流程"的 DoS。
+
+### Added
+
+- **企业微信定向通知 replay 运维入口**(T6-1;第二轮外部评审 SHOULD-FIX 3 的收口,零 schema)。
+  第三刀(#901)把「只放行上次是 `rate-limited` / `provider-contract-error` 的重发」做成了代码判据,
+  但它只是**服务层原语** —— 没有入口、没有 RBAC、没有审计,runbook 只能写"需维护者在应用上下文中调用",
+  对本项目维护者而言那不是可执行路径。本刀把它做成运维点得到的东西:
+  - **新端点** `POST admin/v1/notifications/:id/replay-wecom`(逐字镜像 `send-sms` 的形状:
+    同 controller、同 surface、R 模式判权、同 audit 范式;body `{ overrideReason?: boolean }`,
+    返 `{ replayed, skipped, results[] }`)。**恒返 200**,结局在 `outcome` 十值闭集里 ——
+    这是诊断端点,"为什么没重发"比"HTTP 几"更该一眼看到。
+  - **新权限码** `notification.replay.wecom`,归 **ops-admin**(运维面,与 `wecom-setting.*` /
+    `user.wecom.clear` 同族),**不**绑 biz-admin;SUPER_ADMIN 经 `RbacService` 自然短路。
+  - **审计**复用 `notification.publish` 伞事件 + `extra.operation='replay-wecom'`
+    (**零新增 AuditLogEvent**,沿 send-sms 同一范式)。每一次通过判权的调用都记(含被拒的),
+    `extra` 含 `overrideReason` / `replayed` / `skipped` / `outcomes` / `newIntentIds` ——
+    **「谁绕过了允许集」可按 `extra.overrideReason=true` 直接筛出来**。
+    `wecomUserId` / 深链 / 凭证一概不入(§5.5)。
+  - **端点层零第二份判据**:允许集与「已 SENT / 在途 attempt / 非系统定向 / never-attempted」
+    全部由原语裁决,端点只做判权 + 参数 + 记账。连"通知存不存在"都不预检 ——
+    那会是原语已经拥有的判断的第二份拷贝,而**判据长出第二份正是本 finding 的成因类型**。
+  - **做端点不做 CLI**(2026-08-03 拍板):CLI 拿不到真实登录 actor,审计归属会变弱,
+    而 replay 恰恰是最需要"谁在什么时候重发了什么"的动作。
+  - runbook §6.2 从"需在应用上下文中调用"改成真实操作步骤(端点 / 权限 / 允许集 /
+    override 的后果 / audit 怎么查);`docs/handoff/admin-web.md` 登记 FE **可选**适配
+    (试点期维护者手动调用即可,本期不要求前端做按钮)。
+  - footprint:Endpoint 450→**451** · 权限码 227→**228**;
+    BizCode / AuditLogEvent / Migration / Cron / throttler **恒等**;零 schema。
+
 ## v0.66.0 - 2026-08-02
 
 - **受众判定唯一入口执法位(第五条自定义规则,T5A 挂账收口)**:`srvf/no-audience-primitive-import` —— `src/modules/notifications/**` 内禁止一切对 `content.visibility` 受众原语的 import(含 `import type`、改名转发 `export {x as y} from`、`export * from` 与动态 `import()`;R3 同型绕过路径一并封死)。常驻白名单恰两文件(判定服务本体 + 读侧 read.service),**刻意不进棘轮注册表**:棘轮语义是「只减不增的欠账」,这两处是永久设计位,硬套会让未来新增合法读面撞 base-trusted 裁判硬失败;白名单作为 `allow` 选项唯一定义在 `eslint.harness.mjs`(红区,改它天然要 grant + 环境审批)。自此「新通道必须消费 authorizeBroadcastRecipients / authorizeRecipientForEffect 两个入口」从散文变成执行位(D-WC-19 防两套可见性漂移;S5 形状补位),T5B 落地前护栏先行。覆盖闭环 21/21(16 选择器 + 5 自定义规则),8 组对抗/反向样例,真实 lint 探针红/白名单绿实测。

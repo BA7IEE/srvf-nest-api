@@ -1,1 +1,0 @@
-- `docs/ai-harness/README.md` 目录清单加机器守护:`docs:codemap:check` 新增 `ai-harness-index-complete`,双向比对 §4 登记清单与该目录实际 `*.md`(未登记 / 登记了不存在的文件 / §4 小节缺失,均 FAIL)。此前该清单写死"恰 4 文件",在架构治理 Phase 0-6 陆续新增 7 份报告后漂到 11 个而无任何守护发现。同刀 true-up §2 守护命令(4 条 → 12 条,并区分 CI 阻断 / report / base-trusted / 本地专用)与 §4 分组。
