@@ -3816,6 +3816,29 @@ const GROUP_MANAGER_PERMISSION_CODES: ReadonlyArray<string> = [
   'attachment.view.certificate.self',
   'attachment.view.certificate.other',
   'attachment.view.activity',
+  // attachment.update.*/delete.*(第七轮评审 R7-D-01,2026-08-21;6 条)。
+  //
+  // 修的是「能传、能看,改不了删不了」:这三类 owner 的 upload 码本来就在组长手上(上面 3 条),
+  // 但 update/delete 三对**零内建角色持有** ⇒ 组长替别人传错了附件只能找超管。
+  // 对照本身就是判据:content 类有完整的传/删、self 类有完整的传/改/删,不存在
+  // 「本系统就是不给删」的设计原则,这三类是单独漏的。
+  //
+  // 维护者拍板(方案 B,goal R7-D-01 §2 DoD 1):只补 group-manager,与既有 upload 完全对称;
+  // 不新建角色、不把 org-admin 纳入 —— 实测 org-admin 在本码族零持有(连 upload/view 都没有),
+  // 给它 update/delete 属于真实扩面且会造出「能改能删但不能传不能看」的新不对称。
+  //
+  // 只补 .other 与 .activity 三类:.self 两类的 update/delete 恒属队员本人(member 角色),
+  // 本来就不是零持有码,组长不介入。
+  //
+  // ⚠️ 这 6 条不会下放到 group-readonly —— GROUP_READONLY_PERMISSION_CODES 由
+  // isReadonlyProjectionCode 从本表投影,update/delete 既不含 `.read.` 也不以
+  // `attachment.view.` 开头,结构上取不到(只读角色恒 11 条不变)。
+  'attachment.update.member.other',
+  'attachment.update.certificate.other',
+  'attachment.update.activity',
+  'attachment.delete.member.other',
+  'attachment.delete.certificate.other',
+  'attachment.delete.activity',
   // 本组队员资料只读(3 条)
   'member-profile.read.record',
   'certificate.read.record',

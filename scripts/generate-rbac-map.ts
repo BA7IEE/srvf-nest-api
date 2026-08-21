@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { assertSeedFactsClosure } from './docs-counts';
+import { RBAC_SEED_CATALOG } from '../prisma/seed';
 
 // Harness 3.0 P4a — RBAC_MAP 派生段生成器(镜像反转:AI 生成给人看,不再人写给 AI 读)。
 //
@@ -109,6 +110,65 @@ function renderPermissionCodes(codes: string[]): string {
   ].join('\n');
 }
 
+// 第七轮评审 R7-D-01:补上「角色 → 权限码」这一维。
+//
+// 此前 RBAC_MAP 只有「权限码全集」与「controller × surface」两张表 —— 两者都回答
+// "有哪些码 / 码挂在哪个路由上",没有一张回答**"这条码谁拿得到"**。于是
+// 「码建出来了、端点判着权、却没有任何角色持有它」这一类缺陷在地图上完全不可见
+// (实测:6 条 attachment 维护码零持有,组长能传不能改删)。
+//
+// 本表只做**视图**,不做执法:零持有是否合规由
+// `src/modules/permissions/permission-code-holders.spec.ts` 判据裁决。
+interface RoleCoverage {
+  readonly code: string;
+  readonly permissionCodes: readonly string[];
+}
+
+function collectRoles(): RoleCoverage[] {
+  return Object.values(RBAC_SEED_CATALOG.roles)
+    .flatMap((entry): RoleCoverage[] =>
+      Array.isArray(entry) ? entry.map((role: RoleCoverage) => role) : [entry as RoleCoverage],
+    )
+    .sort((a, b) => b.permissionCodes.length - a.permissionCodes.length || a.code.localeCompare(b.code));
+}
+
+function renderRoleCoverage(codes: string[], roles: RoleCoverage[]): string {
+  const holders = new Map<string, string[]>();
+  for (const role of roles) {
+    for (const code of role.permissionCodes) {
+      const list = holders.get(code) ?? [];
+      if (!list.includes(role.code)) list.push(role.code);
+      holders.set(code, list);
+    }
+  }
+  const unheld = codes.filter((code) => (holders.get(code) ?? []).length === 0);
+  const roleRows = roles.map(
+    (role) =>
+      `| \`${role.code}\` | ${role.permissionCodes.length} | ${[...role.permissionCodes]
+        .sort()
+        .map((c) => `\`${c}\``)
+        .join(' · ')} |`,
+  );
+  return [
+    `### 角色 → 权限码覆盖(${roles.length} 个内建角色;${codes.length - unheld.length}/${codes.length} 条码有持有人)`,
+    '',
+    '> 权威源:`prisma/seed.ts` 导出的 `RBAC_SEED_CATALOG.roles`。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。',
+    '> 「零持有」= 没有任何内建角色持有该码,只有 SUPER_ADMIN 短路可用;是否合规由',
+    '> `src/modules/permissions/permission-code-holders.spec.ts` 判据执法(第七轮评审 R7-D-01),',
+    '> 豁免必须显式登记(SA-only 保留码,或"链未接通"且写明到期条件)。',
+    '',
+    '| 角色 | 持有码数 | 权限码 |',
+    '|---|---|---|',
+    ...roleRows,
+    '',
+    `#### 零持有权限码(${unheld.length} 条)`,
+    '',
+    ...(unheld.length === 0
+      ? ['(无 —— 每条权限码都至少有一个内建角色持有)']
+      : ['| 权限码 |', '|---|', ...unheld.map((c) => `| \`${c}\` |`)]),
+  ].join('\n');
+}
+
 function renderControllers(controllers: ControllerDecl[]): string {
   const bySurface = new Map<string, ControllerDecl[]>();
   for (const c of controllers) {
@@ -143,11 +203,13 @@ interface GeneratedRbacBlock {
   readonly content: string;
   readonly permissionCodeCount: number;
   readonly controllerCount: number;
+  readonly roleCount: number;
 }
 
 function buildBlock(): GeneratedRbacBlock {
   const codes = extractSeedCodes();
   const controllers = extractControllers(listControllerFiles());
+  const roles = collectRoles();
   return {
     content: [
       BEGIN,
@@ -157,11 +219,14 @@ function buildBlock(): GeneratedRbacBlock {
       '',
       renderPermissionCodes(codes),
       '',
+      renderRoleCoverage(codes, roles),
+      '',
       renderControllers(controllers),
       END,
     ].join('\n'),
     permissionCodeCount: codes.length,
     controllerCount: controllers.length,
+    roleCount: roles.length,
   };
 }
 
@@ -191,14 +256,16 @@ function main(): void {
     }
     fs.writeFileSync(docPath, next);
     console.log(
-      `✓ 已重新生成 ${DOC_REL} 的派生段(${generated.permissionCodeCount} 条权限码 / ${generated.controllerCount} 个 controller)`,
+      `✓ 已重新生成 ${DOC_REL} 的派生段(${generated.permissionCodeCount} 条权限码 / ` +
+        `${generated.roleCount} 个内建角色 / ${generated.controllerCount} 个 controller)`,
     );
     return;
   }
 
   if (next === current) {
     console.log(
-      `✓ rbacmap 生成段与代码一致(${generated.permissionCodeCount} 条权限码 / ${generated.controllerCount} 个 controller)`,
+      `✓ rbacmap 生成段与代码一致(${generated.permissionCodeCount} 条权限码 / ` +
+        `${generated.roleCount} 个内建角色 / ${generated.controllerCount} 个 controller)`,
     );
     return;
   }
