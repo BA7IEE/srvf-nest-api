@@ -3876,6 +3876,48 @@ async function runTrustedJudgeAssertions(): Promise<void> {
         line !== undefined && !line.includes('|| true'),
         '带上 || true 等于把刚接的执行位当场拆掉,而检查名一字不变、CI 一片绿',
       );
+      // ── 治理文档里的 ✅ 不得与闸的读数公然矛盾 ──────────────────────────────
+      //
+      // 2026-08-21 实测的缺陷类:SERVICE_SIZE_RATCHET.md §4「专属」条长期挂着
+      // 「✅ 已达成(2026-08-17)—— 严口径 93 → 27」,而当日实测已是 35(越过判据线 30)。
+      // 那个 ✅ 当时是真的,之后**静默过期**,且没有任何东西守着它 ——
+      // 谁照它拍板转闸,就会基于一个不成立的读数做决定。
+      //
+      // 判据设计(刻意只挑**可证伪**的那一半):
+      //   基线文件当前值 > 基线值 ⇒ 必定发生过至少一次「已超阈值文件被增长」
+      //   ⇒ 摩擦必定较冻结时上升 ⇒ 专属条不得写成 ✅。
+      // 挡不住「摩擦涨了但没超基线」(那需要重放全历史,太贵,由 §3.3 的
+      // 「转闸前必须重测」文字承担);挡得住本次这种文档与闸公然矛盾的形态。
+      check(
+        'F3 尺寸棘轮:闸报了基线文件变大时,§4「专属」条不得写成 ✅(防假 ✅ 静默过期)',
+        (() => {
+          const root = path.resolve(__dirname, '..');
+          const baseline = JSON.parse(
+            fs.readFileSync(path.join(root, 'harness/service-size-baseline.json'), 'utf-8'),
+          ) as { entries: Array<{ file: string; loc: number }> };
+          const grown = baseline.entries.filter((e) => {
+            let current: number;
+            try {
+              current = measureNcloc(fs.readFileSync(path.join(root, e.file), 'utf-8'));
+            } catch {
+              return false; // 文件没了 = 棘轮做功方向,不是「变大」
+            }
+            return current > e.loc;
+          });
+          const doc = fs.readFileSync(
+            path.join(root, 'docs/ai-harness/SERVICE_SIZE_RATCHET.md'),
+            'utf-8',
+          );
+          const row = doc
+            .split('\n')
+            .find((l) => l.includes('| **专属** |') || l.startsWith('| **专属**'));
+          if (row === undefined) return false; // 找不到那一行 = 判据失去锚点,fail-closed
+          const claimsMet = row.includes('✅');
+          return !(grown.length > 0 && claimsMet);
+        })(),
+        '文档说「摩擦已压到线内」而闸同时在报基线文件变大 —— 两者不可能同真;' +
+          '这类 ✅ 会静默过期,而转闸决策正是照它做的(2026-08-21 实测:文档写 27,实况 35)',
+      );
       check(
         'F3 债务棘轮:身份基线存在且非空(自证,不写死条数)',
         (() => {
