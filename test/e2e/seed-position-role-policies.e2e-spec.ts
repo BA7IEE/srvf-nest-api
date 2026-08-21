@@ -13,12 +13,19 @@ import { assertTestDatabaseUrl } from '../setup/test-db';
 // (execSync pnpm tsx prisma/seed.ts;期望码集为本 spec 独立维护,与 seed 内部表对照防漂移)。
 //
 // 覆盖(goal DoD 5 / 7):
-//   1. 内置角色 7→9:新增 org-readonly / group-readonly,码集从对应正职动态投影并逐码相等
-//      (v0.61.0 PR-11 contract 后 org-admin 47 / biz-admin 69 / group-manager 20；
-//       biz-admin 仍保留 activity.create/delete 与 participation read；
-//       2026-07-10 §F&A-3 +member-profile.read.sensitive、2026-07-30 证书标准库 PR-1
-//       +certificate.read.sensitive,均自动继承但被排除〕- 敏感 3
-//       - recruitment-* 12 - team-join-* 7;org-supervisor 4 = BD-3 定稿,2 候选码不加)
+//   1. 只读角色 org-readonly / group-readonly:码集从对应正职**动态投影**并逐码相等
+//      (投影规则见 seed 的 isReadonlyProjectionCode:只取 `.read.` 与 `attachment.view.`;
+//       biz-admin 仍保留 activity.create/delete 与 participation read;
+//       org-supervisor = BD-3 定稿,2 候选码不加)
+//
+//      ⚠️ **此处刻意不写各角色的码数与内置角色总数。** 这段注释此前写的是
+//      「内置角色 7→9 / org-admin 47 / biz-admin 69 / group-manager 20」——
+//      到 2026-08-21 实测已是 15 个角色、group-manager 26 条,**三个数字全部失准**,
+//      而没有任何判据会发现注释里的数字过期(第七轮评审顺带发现 ③)。
+//      填新数字只会把同一个缺陷再犯一遍 ⇒ 改为指向权威源:
+//      当期读数见 `docs/ai-harness/RBAC_MAP.md` 的「角色 → 权限码覆盖」生成表
+//      (`pnpm docs:rbacmap` 生成,禁手改);本 spec 的断言取自 seed 事实闭包,
+//      **不依赖这段散文**。
 //   2. 6 条默认 policy(3 正职管理 + 3 副职只读,scopeMode 全 TREE);org-supervisor 不是 policy 目标
 //   3. R5 v0.49 CI 断言:副职只映射对应只读角色,码集恒零写/零敏感
 //   4. R5 运行时护栏生效:人为给副职塞管理 policy 后重跑 seed → 非 0 退出
