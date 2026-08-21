@@ -25,7 +25,7 @@ const MIGRATION_86_COUNT = 86;
 // ⚠️ 与上面的 MIGRATION_<N>_COUNT 是**两件事**:那些是固定的历史世代基线(冷库重放的起点),
 // 随仓库增长**永不变**;这个是仓库当前的 migration 总数,每加一刀就要 +1。
 // 混改任何一个都会把冷库重放用例的语义整个改坏(issue #1055 T1 加第 91 刀时逐个复核过)。
-const CURRENT_MIGRATION_COUNT = 91;
+const CURRENT_MIGRATION_COUNT = 92;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const RESPONSE_SCHEMA_VERSION = 'allocation-command-response-v1';
 const HASH_A = 'a'.repeat(64);
@@ -36,6 +36,10 @@ const ACCEPTED_AT = '2099-08-13 08:30:00';
 
 // `migrate diff` 的两条来源都必须只留下这份已知 Prisma 映射差异；B6 的 offline
 // 复合 relation map 也在这里逐项钉死，不能以“当前 diff”名义放宽为任意输出。
+// 2026-08-21 业务复合锚点闭合(第六轮评审 A-2 + B-03)后这份基线由 23 条降为 19 条:
+// OfflinePackageParticipant 的 identity / position 与 OfflinePunchReviewItem 的
+// formal_event / identity 四条外键被整条 DROP 并重建为复合外键,不再需要"改名",
+// 于是从已知漂移里消失。**这是减少、不是放宽** —— 其余 19 条一字未动。
 // D86 本身不能新增、删除或重命名任何 schema / migration 物理对象。
 const EXPECTED_PRISMA_CURRENT_DIFF = `-- DropForeignKey
 ALTER TABLE "ActivityQualificationRuleSet" DROP CONSTRAINT "ActivityQualificationRuleSet_positionId_fkey";
@@ -59,28 +63,16 @@ ALTER TABLE "AttendancePunchEvent" RENAME CONSTRAINT "AttendancePunchEvent_offli
 ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_activity_session_fkey" TO "OfflinePackageParticipant_activityId_sessionId_fkey";
 
 -- RenameForeignKey
-ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_identity_fkey" TO "OfflinePackageParticipant_participationIdentityId_fkey";
-
--- RenameForeignKey
 ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_member_fkey" TO "OfflinePackageParticipant_memberId_fkey";
 
 -- RenameForeignKey
 ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_package_anchor_fkey" TO "OfflinePackageParticipant_offlinePackageId_activityId_sess_fkey";
 
 -- RenameForeignKey
-ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_position_fkey" TO "OfflinePackageParticipant_positionId_fkey";
-
--- RenameForeignKey
 ALTER TABLE "OfflinePackageParticipant" RENAME CONSTRAINT "OfflinePackageParticipant_revision_fkey" TO "OfflinePackageParticipant_participationRevisionId_fkey";
 
 -- RenameForeignKey
 ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_activity_session_fkey" TO "OfflinePunchReviewItem_activityId_sessionId_fkey";
-
--- RenameForeignKey
-ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_formal_event_fkey" TO "OfflinePunchReviewItem_formalPunchEventId_fkey";
-
--- RenameForeignKey
-ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_identity_fkey" TO "OfflinePunchReviewItem_participationIdentityId_fkey";
 
 -- RenameForeignKey
 ALTER TABLE "OfflinePunchReviewItem" RENAME CONSTRAINT "OfflinePunchReviewItem_package_anchor_fkey" TO "OfflinePunchReviewItem_offlinePackageId_activityId_session_fkey";
@@ -1413,7 +1405,7 @@ describe('Activity v1.1 batch4 allocation command replay migration', () => {
       '@relation("AllocationBatchCommandReceipts", fields: [allocationBatchId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_command_receipt_batch_anchor_fkey")',
     );
     expect(schema).toContain(
-      '@relation("AllocationCandidateApplicationProjection", fields: [allocationCandidateId, allocationBatchId, participationIdentityId], references: [id, allocationBatchId, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_candidate_anchor_fkey")',
+      '@relation("AllocationCandidateApplicationProjection", fields: [allocationCandidateId, allocationBatchId, participationIdentityId, activityId, sessionId], references: [id, allocationBatchId, participationIdentityId, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_app_projection_candidate_anchor_fkey")',
     );
     expect(schema).toContain(
       '@@unique([id, activityId, sessionId, memberId], map: "activity_participation_identity_id_activity_session_member_key")',

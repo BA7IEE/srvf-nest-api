@@ -68,6 +68,9 @@ describe('活动改造 v1.1 schema 约束(第 71–81 migration)', () => {
   let registrationId: string;
   let sessionId: string;
   let otherSessionId: string;
+  // 同一活动内的第二个场次。用于「只换场次」的正样本 —— 换活动会同时动到
+  // activityId,那样的样本在 sessionId 这一维上并不单独不同。
+  let sameActivityOtherSessionId: string;
   let positionId: string;
   let identityId: string;
   let bucketId: string;
@@ -195,6 +198,7 @@ describe('活动改造 v1.1 schema 约束(第 71–81 migration)', () => {
 
     sessionId = await makeSession(activityId, 'session');
     otherSessionId = await makeSession(otherActivityId, 'other-session');
+    sameActivityOtherSessionId = await makeSession(activityId, 'same-activity-session-2');
 
     const position = await prisma.activitySessionPosition.create({
       data: {
@@ -773,9 +777,11 @@ describe('活动改造 v1.1 schema 约束(第 71–81 migration)', () => {
       });
 
       // 换一个场次则放行(唯一键含 sessionId)。
-      await expectAccepted(
-        insertIdentity({ activityId: otherActivityId, sessionId: otherSessionId }),
-      );
+      // ⚠️ 这里必须换**同一活动内**的另一个场次:原本写的是 otherActivity + otherSession,
+      // 那个样本在 activityId 与 sessionId 两维上同时不同,证明不了「唯一键含 sessionId」;
+      // 而且 registrationId / memberId 仍是本活动的,复合锚点闭合后它会被
+      // ActivityParticipationIdentity_registrationId_activityId_me_fkey 直接拒掉。
+      await expectAccepted(insertIdentity({ sessionId: sameActivityOtherSessionId }));
     });
 
     it('currentStatusCode 闭集外被拒;14 个合法值全部放行', async () => {
@@ -839,7 +845,7 @@ describe('活动改造 v1.1 schema 约束(第 71–81 migration)', () => {
       await expectAccepted(upd('NULL'));
       await expectRejected(upd(sqlText('position-that-does-not-exist')), {
         sqlState: '23503',
-        constraint: 'ActivityParticipationIdentity_currentPositionId_fkey',
+        constraint: 'ActivityParticipationIdentity_currentPositionId_activityId_fkey',
       });
     });
 

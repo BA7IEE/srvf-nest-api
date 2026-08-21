@@ -24,7 +24,7 @@ const MIGRATION_85_COUNT = 85;
 // ⚠️ 与上面的 MIGRATION_<N>_COUNT 是**两件事**:那些是固定的历史世代基线(冷库重放的起点),
 // 随仓库增长**永不变**;这个是仓库当前的 migration 总数,每加一刀就要 +1。
 // 混改任何一个都会把冷库重放用例的语义整个改坏(issue #1055 T1 加第 91 刀时逐个复核过)。
-const CURRENT_MIGRATION_COUNT = 91;
+const CURRENT_MIGRATION_COUNT = 92;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
@@ -717,7 +717,7 @@ describe('Activity v1.1 batch4 allocation determinism migration', () => {
 
     const schema = await readFile(path.resolve(process.cwd(), 'prisma/schema.prisma'), 'utf8');
     expect(schema).toContain(
-      '@relation(fields: [participationIdentityId, registrationId], references: [id, registrationId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")',
+      '@relation(fields: [participationIdentityId, registrationId, activityId, sessionId], references: [id, registrationId, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")',
     );
     expect(schema).toContain(
       '@relation(fields: [registrationId, registrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_registration_revision_fkey")',

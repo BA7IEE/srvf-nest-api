@@ -1155,7 +1155,17 @@ describe('permanent ActivityRegistration runtime', () => {
     },
   );
 
-  it('blocks canonical creation when a member identity is already attached to a foreign head', async () => {
+  // 复合锚点闭合(第六轮评审 A-2 + B-03)之后,「队员身份挂在别人的报名头上」这个前提
+  // **在数据库层面已不可能存在**:identity 指回报名头的外键是
+  // [registrationId, activityId, memberId] → [id, activityId, memberId],而
+  // ActivityRegistration 的 (activityId, memberId) 唯一 ⇒ 一个队员在一个活动里至多一张头,
+  // identity 只能挂在自己那张上。
+  //
+  // 原用例先直插一行"错挂他人头"的 identity,再断言 canonical 创建以 20147 零写收场。
+  // 那个前提现在**构造不出来**,用例遂改为钉住「数据库在这一步就拒掉」这件事本身。
+  // ⚠️ service 侧原有的判断**刻意保留不动**(本刀不改 service 校验)—— 数据库闭合后
+  // 它由"唯一防线"降级为纵深冗余,是否删除另行判断。
+  it('cannot even construct a foreign-head identity — the database rejects it (23503)', async () => {
     const scenario = await createScenario();
     const applicant = await createCoveredApplicant();
     const foreignMemberId = await createCoveredTarget();
@@ -1169,110 +1179,44 @@ describe('permanent ActivityRegistration runtime', () => {
       },
       select: { id: true },
     });
-    const foreignHeadIdentity = await prisma.activityParticipationIdentity.create({
+
+    // 别人的头 + 本人的 memberId ⇒ 复合外键当场拒,并点名到具体约束。
+    await expect(
+      prisma.activityParticipationIdentity.create({
+        data: {
+          activityId: scenario.activityId,
+          sessionId: scenario.sessionId,
+          registrationId: foreignHead.id,
+          memberId: applicant.memberId,
+          currentRevision: 1,
+          currentStatusCode: 'cancelled',
+          populationIncluded: false,
+        },
+        select: { id: true },
+      }),
+    ).rejects.toThrow(/ActivityParticipationIdentity_registrationId_activityId_me_fkey/);
+
+    // 反向对照:同一张头配**它自己的**队员就放行 —— 证明这条外键不是恒拒。
+    const ownIdentity = await prisma.activityParticipationIdentity.create({
       data: {
         activityId: scenario.activityId,
         sessionId: scenario.sessionId,
         registrationId: foreignHead.id,
-        memberId: applicant.memberId,
+        memberId: foreignMemberId,
         currentRevision: 1,
         currentStatusCode: 'cancelled',
         populationIncluded: false,
       },
       select: { id: true },
     });
-    await prisma.activityParticipationRevision.create({
-      data: {
-        identityId: foreignHeadIdentity.id,
-        revision: 1,
-        statusCode: 'cancelled',
-        effectiveAt: new Date(),
-        createdByUserId: managerUserId,
-        sourceCode: 'admin',
-      },
-    });
-    const secondSession = await prisma.activitySession.create({
-      data: {
-        activityId: scenario.activityId,
-        code: `foreign-head-session-${++sequence}`,
-        name: 'Foreign-head canonical target session',
-        startAt: WINDOW.startAt,
-        endAt: WINDOW.endAt,
-        locationText: 'Permanent registration field',
-        capacity: 10,
-        checkInOpenAt: new Date('2099-12-20T07:30:00.000Z'),
-        checkInCloseAt: new Date('2099-12-20T08:30:00.000Z'),
-        checkOutOpenAt: new Date('2099-12-20T11:00:00.000Z'),
-        checkOutCloseAt: new Date('2099-12-20T12:30:00.000Z'),
-        locationRequired: false,
-        locationPolicySourceCode: 'session',
-        statusCode: 'scheduled',
-      },
-      select: { id: true },
-    });
-    const secondPosition = await prisma.activitySessionPosition.create({
-      data: {
-        activityId: scenario.activityId,
-        sessionId: secondSession.id,
-        code: `foreign-head-position-${sequence}`,
-        name: 'Foreign-head canonical target position',
-        attendanceRoleCode: 'volunteer',
-        capacity: 10,
-      },
-      select: { id: true },
-    });
-    await prisma.activityCapacityBucket.createMany({
-      data: [
-        {
-          activityId: scenario.activityId,
-          scopeTypeCode: 'session_participation',
-          scopeId: secondSession.id,
-          capacity: 10,
-        },
-        {
-          activityId: scenario.activityId,
-          scopeTypeCode: 'position_participation',
-          scopeId: secondPosition.id,
-          capacity: 10,
-        },
-      ],
-    });
-    const secondScenario = {
-      activityId: scenario.activityId,
-      sessionId: secondSession.id,
-      positionId: secondPosition.id,
-    };
-    const facts = () =>
-      Promise.all([
-        prisma.activityRegistration.count({
-          where: { activityId: scenario.activityId, memberId: applicant.memberId },
-        }),
-        prisma.activityParticipationIdentity.count({
-          where: { activityId: scenario.activityId, memberId: applicant.memberId },
-        }),
-        prisma.activityRegistrationRevision.count({ where: { registrationId: foreignHead.id } }),
-        prisma.activityParticipationRevision.count({
-          where: { identityId: foreignHeadIdentity.id },
-        }),
-        prisma.insuranceEligibilityEvidence.count({
-          where: { activityRegistrationId: foreignHead.id },
-        }),
-        prisma.capacityReservation.count({ where: { identityId: foreignHeadIdentity.id } }),
-        prisma.auditLog.count({ where: { resourceId: foreignHead.id } }),
-        prisma.notificationOutboxIntent.count({
-          where: { aggregateType: 'activity_registration', aggregateId: foreignHead.id },
-        }),
-      ]);
-    const before = await facts();
+    expect(ownIdentity.id).toBeTruthy();
 
-    const response = await canonical(
-      appA,
-      secondScenario,
-      applicant.auth,
-      'permanent-runtime-foreign-head-canonical',
-    );
-    expectBizError(response, BizCode.ACTIVITY_CAPACITY_RECONCILIATION_FAILED);
-    await expect(facts()).resolves.toEqual(before);
+    // 零写核对:被拒的那次没有留下任何本人身份行。
+    await expect(
+      prisma.activityParticipationIdentity.count({
+        where: { activityId: scenario.activityId, memberId: applicant.memberId },
+      }),
+    ).resolves.toBe(0);
   });
 
   it('collapses twenty concurrent exact onsite retries to one receipt and one revision', async () => {

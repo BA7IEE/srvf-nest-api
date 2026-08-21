@@ -1715,7 +1715,17 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
       }
     });
 
-    it('E2c. 无本人报名头但 identity 错挂他人头时 legacy 新请求返回 21038 且零写', async () => {
+    // 复合锚点闭合(第六轮评审 A-2 + B-03)之后,「identity 错挂他人报名头」这个状态
+    // **在数据库层面已不可能存在**:identity 指回报名头的外键是
+    // [registrationId, activityId, memberId] → [id, activityId, memberId],而
+    // ActivityRegistration 的 (activityId, memberId) 唯一 ⇒ 一个队员在一个活动里至多
+    // 一张头,identity 只能挂在自己那张上。
+    //
+    // 原用例先直插一行"错挂他人头"的 identity,再断言 legacy create 返回 21038 且零写。
+    // 那条输入现在**构造不出来**,用例遂改为钉住「数据库在这一步就拒掉」这件事本身。
+    // ⚠️ service 侧那道判断**刻意保留不动**(本刀不改 service 校验)—— 数据库闭合后
+    // 它由"唯一防线"降级为纵深冗余,是否删除另行判断。
+    it('E2c. identity 错挂他人报名头:数据库直接拒(23503),该状态已结构上不可达', async () => {
       const foreignRegistrationId = await seedRegistration({
         memberId: ctx.memberAId,
         statusCode: 'cancelled',
@@ -1739,48 +1749,42 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
         },
         select: { id: true },
       });
-      const foreignHeadIdentity = await ctx.prisma.activityParticipationIdentity.create({
-        data: {
-          activityId: ctx.publishedActivityId,
-          sessionId: historicalSession.id,
-          registrationId: foreignRegistrationId,
-          memberId: ctx.memberCId,
-          currentStatusCode: 'cancelled',
-        },
-        select: { id: true },
-      });
-      const before = await Promise.all([
-        ctx.prisma.activityRegistration.count({
-          where: { activityId: ctx.publishedActivityId, memberId: ctx.memberCId },
-        }),
-        ctx.prisma.activityRegistrationRevision.count(),
-        ctx.prisma.insuranceEligibilityEvidence.count(),
-        ctx.prisma.auditLog.count({ where: { event: 'registration.create' } }),
-      ]);
 
       try {
+        // memberA 的报名头 + memberC 的 memberId ⇒ 复合外键当场拒,并点名到具体约束。
         await expect(
-          ctx.service.create(
-            ctx.publishedActivityId,
-            { memberId: ctx.memberCId },
-            ctx.adminPayload,
-            AUDIT_META,
-          ),
-        ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED });
-        await expect(
-          Promise.all([
-            ctx.prisma.activityRegistration.count({
-              where: { activityId: ctx.publishedActivityId, memberId: ctx.memberCId },
-            }),
-            ctx.prisma.activityRegistrationRevision.count(),
-            ctx.prisma.insuranceEligibilityEvidence.count(),
-            ctx.prisma.auditLog.count({ where: { event: 'registration.create' } }),
-          ]),
-        ).resolves.toEqual(before);
-      } finally {
-        await ctx.prisma.activityParticipationIdentity.delete({
-          where: { id: foreignHeadIdentity.id },
+          ctx.prisma.activityParticipationIdentity.create({
+            data: {
+              activityId: ctx.publishedActivityId,
+              sessionId: historicalSession.id,
+              registrationId: foreignRegistrationId,
+              memberId: ctx.memberCId,
+              currentStatusCode: 'cancelled',
+            },
+            select: { id: true },
+          }),
+        ).rejects.toThrow(/ActivityParticipationIdentity_registrationId_activityId_me_fkey/);
+
+        // 反向对照:同一张头配**它自己的**队员就放行 —— 证明这条外键不是恒拒。
+        const ownIdentity = await ctx.prisma.activityParticipationIdentity.create({
+          data: {
+            activityId: ctx.publishedActivityId,
+            sessionId: historicalSession.id,
+            registrationId: foreignRegistrationId,
+            memberId: ctx.memberAId,
+            currentStatusCode: 'cancelled',
+          },
+          select: { id: true },
         });
+        await ctx.prisma.activityParticipationIdentity.delete({ where: { id: ownIdentity.id } });
+
+        // 零写核对:被拒的那次没有给 memberC 留下任何身份行。
+        await expect(
+          ctx.prisma.activityParticipationIdentity.count({
+            where: { activityId: ctx.publishedActivityId, memberId: ctx.memberCId },
+          }),
+        ).resolves.toBe(0);
+      } finally {
         await ctx.prisma.activitySession.delete({ where: { id: historicalSession.id } });
       }
     });

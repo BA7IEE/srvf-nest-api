@@ -872,10 +872,6 @@ describe('settlement draft generation (合同 §5.9)', () => {
   describe('DoD 7 —— 同步路径上限', () => {
     it('人口超过 500 → SETTLEMENT_DRAFT_POPULATION_TOO_LARGE(提示走批处理)', async () => {
       const fixture = await createSealedActivity({ withSeal: false });
-      const registration = await prisma.activityRegistration.findFirstOrThrow({
-        where: { activityId: fixture.activityId },
-        select: { id: true },
-      });
       // 基线已有 1 个身份;再补 500 个 ⇒ 501 > 500。
       sequence += 1;
       const tag = `bulk-${sequence}`;
@@ -891,12 +887,28 @@ describe('settlement draft generation (合同 §5.9)', () => {
           }),
         ),
       );
+      // ⚠️ 每人一张**自己的**报名头。原先这批身份共用一张头,而那张头只属于某一个
+      // 队员 —— 复合锚点闭合后 registrationId + activityId + memberId 会直接拒掉,
+      // 因为那正是「身份错挂他人报名头」的形态,此前只是被当作灌数据的捷径。
+      // 生产路径本来就是一人一头。
+      const registrations = await prisma.$transaction(
+        members.map((member) =>
+          prisma.activityRegistration.create({
+            data: {
+              activityId: fixture.activityId,
+              memberId: member.id,
+              statusCode: 'approved',
+            },
+            select: { id: true, memberId: true },
+          }),
+        ),
+      );
       await prisma.activityParticipationIdentity.createMany({
-        data: members.map((member) => ({
+        data: registrations.map((registration) => ({
           activityId: fixture.activityId,
           sessionId: fixture.sessionId,
           registrationId: registration.id,
-          memberId: member.id,
+          memberId: registration.memberId,
           currentStatusCode: 'pass',
           populationIncluded: true,
         })),
@@ -908,10 +920,6 @@ describe('settlement draft generation (合同 §5.9)', () => {
 
     it('翻面:恰好 500 放行(阈值是 > 500 才拒,不是 >= 500)', async () => {
       const fixture = await createSealedActivity({ withSeal: false });
-      const registration = await prisma.activityRegistration.findFirstOrThrow({
-        where: { activityId: fixture.activityId },
-        select: { id: true },
-      });
       sequence += 1;
       const tag = `bulk-edge-${sequence}`;
       const members = await prisma.$transaction(
@@ -926,12 +934,28 @@ describe('settlement draft generation (合同 §5.9)', () => {
           }),
         ),
       );
+      // ⚠️ 每人一张**自己的**报名头。原先这批身份共用一张头,而那张头只属于某一个
+      // 队员 —— 复合锚点闭合后 registrationId + activityId + memberId 会直接拒掉,
+      // 因为那正是「身份错挂他人报名头」的形态,此前只是被当作灌数据的捷径。
+      // 生产路径本来就是一人一头。
+      const registrations = await prisma.$transaction(
+        members.map((member) =>
+          prisma.activityRegistration.create({
+            data: {
+              activityId: fixture.activityId,
+              memberId: member.id,
+              statusCode: 'approved',
+            },
+            select: { id: true, memberId: true },
+          }),
+        ),
+      );
       await prisma.activityParticipationIdentity.createMany({
-        data: members.map((member) => ({
+        data: registrations.map((registration) => ({
           activityId: fixture.activityId,
           sessionId: fixture.sessionId,
           registrationId: registration.id,
-          memberId: member.id,
+          memberId: registration.memberId,
           currentStatusCode: 'pass',
           populationIncluded: true,
         })),

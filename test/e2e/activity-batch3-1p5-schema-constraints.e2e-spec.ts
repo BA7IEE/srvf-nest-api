@@ -518,7 +518,7 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
       await expectAccepted(snapshotSql('snapshot-1'));
       await expectRejected(batchSql('batch-no-snapshot', 'no-such-snapshot'), {
         sqlState: '23503',
-        constraint: 'ActivityAllocationBatch_ruleSnapshotId_fkey',
+        constraint: 'ActivityAllocationBatch_ruleSnapshotId_activityId_fkey',
       });
     });
   });

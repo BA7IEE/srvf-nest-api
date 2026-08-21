@@ -57,8 +57,11 @@
 - **D87 Candidate 候补岗位锚（第 4 批⑮）**：Candidate 必填 `activityId/sessionId`，以 `(allocationBatchId,activityId,sessionId)` 复合 FK 锚定 Batch；可空 `waitlistPositionId` 与 activity/session 组成岗位复合 FK。result/rank/position 两值闭合，只有 waitlisted 同时要求 position+rank；候补 rank unique 与查询索引均按 `allocationBatchId+waitlistPositionId+waitlistRank`，同一 session-level batch 的不同岗位可各自 rank=1，同岗位重复 rank 拒绝。lotteryOrder/tieBreakKey 仍是全 batch 不变量。migration 仅接受 Candidate 空表，count-only fail-fast、零回填；当前仍零 writer/runtime/endpoint/20147/容量或候补 caller。
 - **活动开始 expiry（第 4 批⑱）**：`ActivityBatchWorker` 先保留既有 ledger claim，再补建 `reconciliation` job，ledger 优先领取；只有到点的 published Activity 仍有 canonical `pending|waitlisted` 或 pending invitation 才建 job。实际执行固定 `Activity FOR UPDATE → job fence → headers/identities/revisions → invitations`，以最早 live session start（无 live session 才回退 Activity.startAt）为准；同一外层事务追加 system revision、清 pointer/population、投影 header、写既有审计并过期 invitation。pass/active reservation 不动，任何 pointer/revision/reservation drift 为 20147，业务/audit 零写；不引入新的容量占用算法。
 
+- **业务复合锚点闭合(第六轮评审 A-2 + B-03)**:凡持有 ≥2 个业务锚点(`activityId` / `sessionId` / `memberId`)的模型,其**指向同链对象**的外键必须是复合的 —— 数据库要证明这些 ID 属于**同一条业务主链**,不只是各自存在。判据在 [`composite-anchor-closure.criteria.ts`](composite-anchor-closure.criteria.ts) + 同名 `.criteria.spec.ts`,扫描面从 `schema.prisma` **动态解析**,新建的同形状表自动纳管;例外走 `ANCHOR_CLOSURE_EXEMPTIONS` 且**必须逐条写指向权威源的理由**,豁免一旦不再对应真实违规,判据自己会红。运行时那一格由 `test/e2e/business-composite-anchor-closure.e2e-spec.ts` 的 SQL 交叉组合负例(断 `23503` 并**钉到约束名**)承担 —— 结构判据只读 schema 文本,证明不了迁移漏跑、约束建在错列上或 `ADD CONSTRAINT` 静默失败。
+
 ## Risk points (不要做)
 
+- ❌ **不**给多锚点表新增**单列**外键去指向同链对象(报名头 / 参与身份 / 岗位 / 规则快照 / 账本分录等);新建的表同样受管 —— 要么把锚点列一起写进 `@relation` 的 `fields` / `references`(并在被引用侧补 `@@unique`),要么进 `ANCHOR_CLOSURE_EXEMPTIONS` 并写明理由
 - ❌ **不**绕过 `activity-state-machine.ts` 在 service 内裸写状态变更
 - ❌ **不**改 audit event 名 `'activity.publish'`(7 类操作共用〔含 complete 与 attendance-declare-complete〕,characterization 已锁)
 - ❌ **不**在发布审核事务中反转锁序或信任提交时快照；必须 Activity → review，approve 时服务端重建快照

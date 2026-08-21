@@ -22,7 +22,7 @@
 | 模块 | 37 |
 | Controller | 101 |
 | Endpoint | 544 |
-| Migration | 91 |
+| Migration | 92 |
 | BizCode | 456 |
 | 权限码 | 236 |
 | AuditLogEvent | 145 |
@@ -64,12 +64,19 @@
   全套同版本应用 → 再开闸 → 跑一遍全链路 smoke。
   ⚠️ 「终审改为提交 `LedgerPostingBatch`」那座桥**仍未实施** —— 未搭之前开闸,
   历史 approved 考勤不会出现在账本读面里(见 `NEXT_TASKS` 第 7 批②)。
-  🔴 **硬前置(2026-08-21 第六轮评审 B-03)**:**业务复合锚点闭合前不得开闸**。
-  账本表的 `postingBatchId` / `memberId` / `participationIdentityId` / `resultRevisionId`
-  仍是四个独立单列 FK,数据库不证明它们属于同一条主链;而 B 包实测
-  **正式账本写入口没有补齐数据库缺失的组合校验**(对比 C 包四条路径「交给 command,合理分层」,
-  账本这条是真敞口)。**闸不开则不可达;开闸即暴露**,且 committed 分录是关账与更正的基线,
-  脏组合进去后会被当可信基线继续冲正。修复刀 = A-2+B-03(D 档,待起)。
+  ✅ **该硬前置已解除(2026-08-21,第六轮评审 A-2 + B-03 修复刀已合)**:业务复合锚点
+  已闭合 —— 21 个持有 ≥2 锚点的模型上,**22 处**同链外键升级为复合外键,并落地 **12 条**
+  被引用侧 unique 锚点。数据库现在证明这些 ID 属于**同一条业务主链**:两条合法活动的数据
+  交叉组合插入实测得到 `23503`,非空库上的存量脏组合会让 migration **fail-closed 整体回滚**
+  (实测残余约束数与基线逐一相等,零部分应用)。
+  刻意**不**闭合的 4 处例外全部落在 CapacityReservation 族(第 78 migration 已拍板两锚点
+  仅 active+activity_person 行必填),逐条写明理由并由判据守护「豁免过期即红」。
+  「多锚点表用单列外键」已做成机器闸(`composite-anchor-closure.criteria.spec.ts`)——
+  扫描面从 `schema.prisma` 动态解析,**新建的第五张同形状表自动纳管**。
+  ⚠️ **只解除这一条**:上面 ⑦(worker 运维 runbook 零份)、⑨(验收编号仍 `it.todo`)
+  与「终审改为提交 `LedgerPostingBatch`」那座桥**均未实施**,开闸仍须走 §16.1 清单与 §16.3 顺序。
+  ⚠️ 账本写入口的 **service 层**跨锚点校验(`ledger-preparation.service.ts` 实测零处)
+  本刀**未补** —— 数据库闭合后它是纵深冗余而非唯一防线,是否补另行判断。
 
 ## 4. 当前风险 / 债务(仅 open 项;全文与建议见 `ai-harness/NEXT_TASKS.md` + 各评审稿)
 

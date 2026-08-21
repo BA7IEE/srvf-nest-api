@@ -351,7 +351,7 @@ describe('活动改造 v1.1 第 1 批第二刀 schema 约束(第 72 migration)',
     it('currentFormVersionId 外键真的在:指向不存在的版本被拒,指向真版本与 NULL 放行', async () => {
       await expectRejected(upd(`"currentFormVersionId" = 'NO-SUCH-FORM-VERSION'`), {
         sqlState: '23503',
-        constraint: 'ActivityRegistration_currentFormVersionId_fkey',
+        constraint: 'ActivityRegistration_currentFormVersionId_activityId_fkey',
       });
       await expectAccepted(upd(`"currentFormVersionId" = ${sqlText(draftFormVersionId)}`));
       await expectAccepted(upd(`"currentFormVersionId" = NULL`));
