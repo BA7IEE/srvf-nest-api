@@ -14,6 +14,7 @@ import {
   ActivityBatchWorker,
 } from '../../src/modules/activities/activity-batch.worker';
 import { ActivityBatchWorkerModule } from '../../src/modules/activities/activity-batch-worker.module';
+import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { LedgerReadyBatchCommitter } from '../../src/modules/activities/ledger-ready-batch-committer.service';
 import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
 import { SettlementDraftDispatchService } from '../../src/modules/activities/settlement-draft-dispatch.service';
@@ -60,6 +61,7 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
   let notificationActivityWorker: ActivityBatchWorker;
   let storageActivityWorker: ActivityBatchWorker;
   let notificationCommitter: LedgerReadyBatchCommitter;
+  let notificationPreparation: LedgerPreparationService;
   let ledgerQuery: LedgerQueryService;
 
   let submitter: HttpActor;
@@ -109,6 +111,9 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
     notificationCommitter = notificationContext
       .select(ActivityBatchWorkerModule)
       .get(LedgerReadyBatchCommitter, { strict: true });
+    notificationPreparation = notificationContext
+      .select(ActivityBatchWorkerModule)
+      .get(LedgerPreparationService, { strict: true });
     const databaseNames = await Promise.all(
       [prisma, notificationContext.get(PrismaService), storageContext.get(PrismaService)].map(
         async (client) =>
@@ -556,5 +561,164 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
         select: { statusCode: true, committedByUserId: true },
       }),
     ).resolves.toEqual({ statusCode: 'committed', committedByUserId: finalReviewer.id });
+  });
+  // ===== 第六轮评审 B-02:批任务状态变更全员带 fence =====
+  //
+  // 时序一律用 **generation 差异**构造,不用 sleep:`claimJob` 里「B 重领」的全部可观测
+  // 效果就是「`leaseOwner` 换人 + `leaseGeneration` 自增」,所以直接改这两列**就是**一次
+  // 真实重领 —— 既不依赖时间竞态,也不需要真的起第二个 worker 去抢。
+  //
+  // 每个用例都配一条**只在「有没有人重领」这一维上不同**的反面样本:只断言「A 的清理不
+  // 生效」是不够的 —— 一个清理**永远**不生效的 worker 也能让它全绿。
+  describe('B-02 过期 worker 不得覆盖新一代持有者', () => {
+    const NEXT_HOLDER = 'activity-batch-worker:b-02-next-holder';
+
+    async function readPrepareJob(batchId: string) {
+      return await prisma.activityBatchJob.findFirstOrThrow({
+        where: { postingBatchId: batchId, jobTypeCode: 'settlement_prepare' },
+        select: { id: true, statusCode: true, leaseOwner: true },
+      });
+    }
+
+    /**
+     * A 领到活、进了 `prepareChunk`,此刻 B 重领并把这个 item 跑成功;A 的旧调用随后以
+     * **非租约**错误返回(租约错误走既有 LeaseLost 分支,根本进不了异常清理),于是 A 带着
+     * 过期围栏进入 `markItemFailed` + `releaseForRetry`。
+     */
+    async function runAbortedRound(takeOver: boolean) {
+      const reviewed = await generateSubmitAndReview(
+        await createInitialFixture(1, { withPunches: true }),
+      );
+      let interleaved = 0;
+      jest
+        .spyOn(notificationPreparation, 'prepareChunk')
+        .mockImplementation(async (jobId: string, itemId: string) => {
+          interleaved += 1;
+          if (takeOver) {
+            await prisma.activityBatchJob.update({
+              where: { id: jobId },
+              data: { leaseOwner: NEXT_HOLDER, leaseGeneration: { increment: 1 } },
+            });
+          }
+          await prisma.activityBatchJobItem.update({
+            where: { id: itemId },
+            data: { statusCode: 'succeeded' },
+          });
+          throw new Error('TransientChunkFailure');
+        });
+      const drained = await drainUntilClaimed(notificationActivityWorker);
+      // 免「spy 挂在没人调的那个实例上」:没被调用过 = 本用例其实什么都没测。
+      expect(interleaved).toBe(1);
+      expect(drained.result).toMatchObject({ jobClaimed: true, itemsFailed: 1 });
+      return reviewed;
+    }
+
+    it('①B 重领后,A 既不能把 B 跑成功的 item 改回 failed,也不能把 job 清回 pending', async () => {
+      const reviewed = await runAbortedRound(true);
+
+      // releaseForRetry 落空 ⇒ job 仍在 B 手上。若这里变成 pending/leaseOwner=null,
+      // 第三个 worker 就能在 B 仍在跑的时候把同一条 job 再领走。
+      const job = await readPrepareJob(reviewed.batchId);
+      expect({ statusCode: job.statusCode, leaseOwner: job.leaseOwner }).toEqual({
+        statusCode: 'processing',
+        leaseOwner: NEXT_HOLDER,
+      });
+
+      // markItemFailed 落空 ⇒ B 已完成的 item 仍是 succeeded。它若被改回 failed,下一轮
+      // 会重跑同一块,而 `preparedCount` 是累加式投影 ⇒ preparedCount > totalCount ⇒
+      // finalize 会把一个其实已经准备完成的批次判 failed。
+      const items = await prisma.activityBatchJobItem.findMany({
+        where: { jobId: job.id },
+        select: { statusCode: true },
+      });
+      expect(items.map((item) => item.statusCode)).toEqual(['succeeded']);
+    });
+
+    it('②反面样本:无人重领(围栏仍一致)时,同一条清理路径必须照常生效', async () => {
+      const reviewed = await runAbortedRound(false);
+
+      const job = await readPrepareJob(reviewed.batchId);
+      expect({ statusCode: job.statusCode, leaseOwner: job.leaseOwner }).toEqual({
+        statusCode: 'pending',
+        leaseOwner: null,
+      });
+      const items = await prisma.activityBatchJobItem.findMany({
+        where: { jobId: job.id },
+        select: { statusCode: true },
+      });
+      expect(items.map((item) => item.statusCode)).toEqual(['failed']);
+    });
+
+    /** 准备已收口到 ready,B 在这之后重领;A 接着要走 `markReadyForCommit` → 自动提交。 */
+    async function runCommitRound(takeOver: boolean) {
+      const reviewed = await generateSubmitAndReview(
+        await createInitialFixture(1, { withPunches: true }),
+      );
+      const originalFinalize = notificationPreparation.finalize.bind(notificationPreparation);
+      let finalized = 0;
+      jest.spyOn(notificationPreparation, 'finalize').mockImplementation(async (jobId: string) => {
+        const result = await originalFinalize(jobId);
+        finalized += 1;
+        if (takeOver) {
+          await prisma.activityBatchJob.update({
+            where: { id: jobId },
+            data: { leaseOwner: NEXT_HOLDER, leaseGeneration: { increment: 1 } },
+          });
+        }
+        return result;
+      });
+      const drained = await drainUntilClaimed(notificationActivityWorker);
+      expect(finalized).toBe(1);
+      return { reviewed, result: drained.result };
+    }
+
+    it('③ready 后被 B 重领 ⇒ A 安静退出,既不替 B 跑 commit、也不替 B 释放租约', async () => {
+      const { reviewed, result } = await runCommitRound(true);
+
+      // 安静退出 = 不抛错、不重试、不写任何收尾状态(与既有 LeaseLost 分支同一形状)。
+      expect(result).toMatchObject({
+        jobClaimed: true,
+        commitAttempted: false,
+        commitErrorCode: null,
+        batchStatus: null,
+      });
+      // `markReadyForCommit` 落空 ⇒ A 放弃本轮 ⇒ 批次没有被过期 worker 提交。
+      await expect(
+        prisma.ledgerPostingBatch.findUniqueOrThrow({
+          where: { id: reviewed.batchId },
+          select: { statusCode: true },
+        }),
+      ).resolves.toEqual({ statusCode: 'ready' });
+
+      // ⚠️ `statusCode` 在这里**不是**判据:`finalize` 自己就会把 job 盖成 `succeeded`
+      // (`ledger-preparation.service.ts` 收口分支),而它跑在 B 重领**之前** ——
+      // 那一笔是 A 当时合法持有租约写下的。真正区分「围栏有没有生效」的是**租约有没有被
+      // 释放**:`markCommitSucceeded` 会写 `leaseOwner: null`,它落空则租约仍归 B。
+      // 与 ④ 的 `leaseOwner: null` 恰好构成只差这一维的对照。
+      const job = await readPrepareJob(reviewed.batchId);
+      expect({ leaseOwner: job.leaseOwner }).toEqual({ leaseOwner: NEXT_HOLDER });
+    });
+
+    it('④反面样本:无人重领时,同一轮必须照常收口到 committed', async () => {
+      const { reviewed, result } = await runCommitRound(false);
+
+      expect(result).toMatchObject({
+        jobClaimed: true,
+        commitAttempted: true,
+        commitErrorCode: null,
+        batchStatus: 'committed',
+      });
+      await expect(
+        prisma.ledgerPostingBatch.findUniqueOrThrow({
+          where: { id: reviewed.batchId },
+          select: { statusCode: true },
+        }),
+      ).resolves.toEqual({ statusCode: 'committed' });
+      const job = await readPrepareJob(reviewed.batchId);
+      expect({ statusCode: job.statusCode, leaseOwner: job.leaseOwner }).toEqual({
+        statusCode: 'succeeded',
+        leaseOwner: null,
+      });
+    });
   });
 });
