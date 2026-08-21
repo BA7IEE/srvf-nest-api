@@ -459,6 +459,107 @@ describe('role-permissions 模块', () => {
     });
   });
 
+  // E-B2(第六轮全仓评审,2026-08-21):**授码有闸、撤码没有** —— 控制面策略不对称。
+  // revoke() 此前只查三件事:`rbac.role-permission.delete` 权限 / 角色存在且未软删 / 绑定存在,
+  // **一个控制面判定都没有**。于是持 `rbac.role-permission.delete` 的 ops-admin 授不了控制面码
+  // (F1 那道闸挡着),**却撤得掉** —— 包括把某个角色的 `rbac.*` / `role-binding.*` 权限一路撤空。
+  // 与 F1 用保留集成员(member.delete.record / user.update.role)不同,这里刻意取 `rbac.*` 前缀码,
+  // 把 isControlPlanePermissionCode() 的**另一半**定义域也钉在行为面上。
+  //
+  // 结构面(「将来新增的写方法也必须挂闸」)由
+  // src/modules/permissions/role-permissions-control-plane-gate.spec.ts 动态判据守;这里守行为。
+  describe('E-B2 分级闸:控制面码不可被非 SUPER_ADMIN 撤销(与 assign 对称)', () => {
+    const CONTROL_PLANE_CODE = 'rbac.role.read'; // 前缀型控制面码,由 rbac.fixture seed
+
+    async function controlPlanePermissionId(): Promise<string> {
+      const perm = await prisma.permission.findUnique({
+        where: { code: CONTROL_PLANE_CODE },
+        select: { id: true },
+      });
+      expect(perm).not.toBeNull();
+      return (perm as { id: string }).id;
+    }
+
+    // 🔴 这条**不能省**。只验「被拒」的话,一个「一律拒绝」的实现也会全绿 ——
+    //    那不是修洞,那是把 ops-admin 的 rbac.role-permission.delete 整个废掉。
+    it('ops-admin 撤销普通码 → 200(闸不误伤正常运维)', async () => {
+      await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      try {
+        const { roleId, perms } = await setupRoleAndPermissions({
+          roleCode: 'eb2-ops-normal',
+          permCodes: ['eb2.plain.a', 'eb2.plain.b'],
+        });
+        await request(httpServer(app))
+          .post(`/api/system/v1/roles/${roleId}/permissions`)
+          .set('Authorization', superAdminAuth)
+          .send({ permissionCodes: ['eb2.plain.a', 'eb2.plain.b'] });
+
+        const res = await request(httpServer(app))
+          .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
+          .set('Authorization', adminAuth);
+        expect(res.status).toBe(200);
+        expect(res.body.data.permissions).toHaveLength(1);
+        expect(res.body.data.permissions[0].code).toBe('eb2.plain.b');
+
+        // 真删了,不是「返 200 但没动」
+        const remaining = await prisma.rolePermission.count({ where: { roleId } });
+        expect(remaining).toBe(1);
+      } finally {
+        await revokeOpsAdminFromUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      }
+    });
+
+    it('ops-admin 撤销控制面码 → 30103,且绑定原样还在', async () => {
+      await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      try {
+        const { roleId } = await setupRoleAndPermissions({
+          roleCode: 'eb2-ops-control-plane',
+          permCodes: [],
+        });
+        const permissionId = await controlPlanePermissionId();
+        // 由 SUPER_ADMIN 先授上(SA 短路放行),制造一条「可撤」的真实绑定
+        const granted = await request(httpServer(app))
+          .post(`/api/system/v1/roles/${roleId}/permissions`)
+          .set('Authorization', superAdminAuth)
+          .send({ permissionCodes: [CONTROL_PLANE_CODE] });
+        expect(granted.status).toBe(201);
+
+        const res = await request(httpServer(app))
+          .delete(`/api/system/v1/roles/${roleId}/permissions/${permissionId}`)
+          .set('Authorization', adminAuth);
+        expectBizError(res, BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
+
+        // 拒绝 = 什么都没删(闸在事务之前,不存在「删一半」)
+        const still = await prisma.rolePermission.findUnique({
+          where: { roleId_permissionId: { roleId, permissionId } },
+          select: { id: true },
+        });
+        expect(still).not.toBeNull();
+      } finally {
+        await revokeOpsAdminFromUser(app, rpAdminUserId, rpOpsAdminRoleId);
+      }
+    });
+
+    it('SUPER_ADMIN 撤销同一控制面码 → 200(短路语义不变)', async () => {
+      const { roleId } = await setupRoleAndPermissions({
+        roleCode: 'eb2-su-control-plane',
+        permCodes: [],
+      });
+      const permissionId = await controlPlanePermissionId();
+      const granted = await request(httpServer(app))
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
+        .set('Authorization', superAdminAuth)
+        .send({ permissionCodes: [CONTROL_PLANE_CODE] });
+      expect(granted.status).toBe(201);
+
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/roles/${roleId}/permissions/${permissionId}`)
+        .set('Authorization', superAdminAuth);
+      expect(res.status).toBe(200);
+      expect(res.body.data.permissions).toHaveLength(0);
+    });
+  });
+
   // ============ role detail 真实 permissions 填充 ============
 
   describe('GET /api/system/v1/roles/:id detail 返回真实 permissions(端到端)', () => {
