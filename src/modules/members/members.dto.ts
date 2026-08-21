@@ -345,12 +345,18 @@ export class CreateMemberDto {
 }
 
 // 仅允许 realName / nickname / gradeCode;**绝对禁止**:
-// - memberNo(稳定身份标识,本期不开发改编号接口)
+// - memberNo(稳定身份标识,同时是登录识别锚)
 // - status(走 PATCH /:id/status)
-// - memberSinceDate / memberOriginCode(建档时确定的身份事实,与 memberNo 同性质 ——
-//   本刀刻意不开改口;真需要订正时应有独立的、带审计的更正接口,而不是混进日常改资料)
+// - memberSinceDate / memberOriginCode(建档时确定的身份事实,与 memberNo 同性质)
 // - id / deletedAt
 // - 任何敏感字段(由 forbidNonWhitelisted 兜底拒绝)
+//
+// ⚠️ 第七轮评审 R7-A-01(2026-08-21)起,上面三个身份事实**有了正式订正路径** ——
+// 但它们**仍然进不了本 DTO**。录错时走本文件下方 `CorrectMemberIdentityDto` +
+// `POST /api/admin/v1/members/:id/identity-corrections`:独立端点、独立权限码
+// `member.correct.identity`、必填订正理由、独立审计事件 `member.identity.correct`。
+// 「存在订正入口」与「可以混进日常改资料」是两件事 —— 本清单是后者的边界,
+// 不因前者落地而放宽一个字段。
 export class UpdateMemberDto {
   // 姓名**不可清空**(队员总得有名字),只是可省略 ⇒ OmittableOnly,显式 null 稳定 400。
   @ApiPropertyOptional({ description: '真实姓名', maxLength: 64 })
@@ -390,6 +396,84 @@ export class UpdateMemberStatusDto {
   })
   @IsEnum(MemberStatus)
   status!: MemberStatus;
+}
+
+// ===== 第七轮评审 R7-A-01:队员身份主档订正入口 =====
+//
+// 这就是上方 UpdateMemberDto 注释此前预告的「独立的、带审计的更正接口」。
+// 起因:存量老队员导入 / 人工建档时把 memberNo、发号日或来源录错,此前**只能直接改库**
+// (实测全仓 member delegate 8 处写调用里,这三个字段只出现在 3 处 create,零订正路径)。
+//
+// 校验口径与建档(`CreateMemberDto`)**逐字同源** —— 一条不松,也一条不加:
+// - memberNo:同一条 @MinLength(1) / @MaxLength(32) / @Matches 字符集;
+//   service 侧同样 `normalizeMemberNo()` → `assertMemberNoUnique()` → P2002 兜底
+// - memberSinceDate:同一个 @IsDateString();service 侧同样 `normalizeDateOnly()` 按北京日历日归一
+// - memberOriginCode:同样只有 @IsString() + 长度,**刻意不加字典存在性校验**
+//   (`common/identity/member-origin.constant.ts`:join_source 是自由串候选字典,MP-28 起就是;
+//   当闭集校验会让「后台加了个码却订正不了」。维护者 2026-08-21 拍板:与建档逐字同口径)
+//
+// 三个身份字段一律 `@OmittableOnly()`:身份事实**不可清空**、只可省略 —— 显式 null 稳定 400。
+export class CorrectMemberIdentityDto {
+  @ApiPropertyOptional({
+    description: 'memberNo 订正后的值(不传 = 不改;字母 / 数字 / 连字符;长度 1-32)',
+    example: 'M-0001',
+    minLength: 1,
+    maxLength: 32,
+  })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(32)
+  @Matches(/^[A-Za-z0-9-]+$/, {
+    message: 'memberNo 只允许字母 / 数字 / 连字符',
+  })
+  memberNo?: string;
+
+  @ApiPropertyOptional({
+    description: '发号日订正后的值(不传 = 不改;ISO 8601,按北京日历日归一)',
+    example: '2020-01-15',
+  })
+  @OmittableOnly()
+  @IsDateString()
+  memberSinceDate?: string;
+
+  @ApiPropertyOptional({
+    description: '来源字典 code 订正后的值(不传 = 不改;字典 join_source)',
+    example: 'import',
+    maxLength: 64,
+  })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  memberOriginCode?: string;
+
+  // **必填**:订正的价值一半在「改成什么」,另一半在「为什么改」。没有理由的订正
+  // 在审计里与直接改库等价 —— 事后没人能分辨那是一次订正还是一次篡改。
+  @ApiProperty({
+    description: '订正理由(必填;落审计 extra.reason)',
+    example: '存量导入时把发号日误录成导入当天',
+    minLength: 1,
+    maxLength: 500,
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  reason!: string;
+
+  // memberNo 的二次确认(维护者 2026-08-21 拍板:用二次确认,不为 memberNo 单发权限码 ——
+  // 单发码多出一处「可能漏发给角色」的失败形态,那正是 R7-D-01 修的那一类;
+  // 二次确认是同一处代码里的显式参数,结构上不存在「码没发给人」这种形态)。
+  //
+  // 仅当本次**真的会改动** memberNo 时才要求为 true:传了但与现值相同不算改动,
+  // 否则「把现有编号原样回传」这种什么也没改的入参会被平白拒掉。
+  @ApiPropertyOptional({
+    description: '订正 memberNo 时必须显式传 true(改编号会换掉该队员的登录识别锚)',
+    example: true,
+  })
+  @OmittableOnly()
+  @IsBoolean()
+  confirmMemberNoChange?: boolean;
 }
 
 // 列表 query:支持 memberNo 精确查询(完整匹配,不做模糊 — 编号即身份)、

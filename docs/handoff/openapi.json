@@ -32516,6 +32516,247 @@
         ]
       }
     },
+    "/api/admin/v1/members/{id}/identity-corrections": {
+      "post": {
+        "operationId": "MembersController_correctIdentity",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectMemberIdentityDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MemberResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 身份订正未产生任何变更(未指定字段,或指定的值与现值相同)(code=15011) / 订正队员编号需显式确认(confirmMemberNoChange=true)(code=15012)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        15011,
+                        15012
+                      ],
+                      "description": "40000: 请求参数错误; 15011: 身份订正未产生任何变更(未指定字段,或指定的值与现值相同); 15012: 订正队员编号需显式确认(confirmMemberNoChange=true)",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "队员不存在(code=15001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        15001
+                      ],
+                      "description": "15001: 队员不存在",
+                      "example": 15001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "队员不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "队员编号已存在(code=15002)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        15002
+                      ],
+                      "description": "15002: 队员编号已存在",
+                      "example": 15002
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "队员编号已存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "订正队员身份事实(memberNo / memberSinceDate / memberOriginCode;必填订正理由,改编号需二次确认;写 1 条 member.identity.correct 审计) [rbac: member.correct.identity]",
+        "tags": [
+          "Admin - Members"
+        ]
+      }
+    },
     "/api/admin/v1/members/{id}/account": {
       "post": {
         "operationId": "MembersController_grantAccount",
@@ -120091,6 +120332,44 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "CorrectMemberIdentityDto": {
+        "type": "object",
+        "properties": {
+          "memberNo": {
+            "type": "string",
+            "description": "memberNo 订正后的值(不传 = 不改;字母 / 数字 / 连字符;长度 1-32)",
+            "example": "M-0001",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "memberSinceDate": {
+            "type": "string",
+            "description": "发号日订正后的值(不传 = 不改;ISO 8601,按北京日历日归一)",
+            "example": "2020-01-15"
+          },
+          "memberOriginCode": {
+            "type": "string",
+            "description": "来源字典 code 订正后的值(不传 = 不改;字典 join_source)",
+            "example": "import",
+            "maxLength": 64
+          },
+          "reason": {
+            "type": "string",
+            "description": "订正理由(必填;落审计 extra.reason)",
+            "example": "存量导入时把发号日误录成导入当天",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "confirmMemberNoChange": {
+            "type": "boolean",
+            "description": "订正 memberNo 时必须显式传 true(改编号会换掉该队员的登录识别锚)",
+            "example": true
+          }
+        },
+        "required": [
+          "reason"
         ]
       },
       "GrantMemberAccountResponseDto": {

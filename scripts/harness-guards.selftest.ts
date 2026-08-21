@@ -288,11 +288,17 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
 
   const closureSources = readSeedFactsClosure();
   const closureDiff = diffSeedFactsPermissionExtractions(closureSources);
+  // 第七轮评审 R7-A-01(2026-08-21):member.correct.identity 入目录 ⇒ 236 → 237、222 → 223。
+  // 两个数字都是**随新增码正常上移**的基线,不是不变量;真正的不变量是下方 checkEq 的
+  // 差值恒 14(= rbac-seed-facts.ts 独有的 14 条 rbac.* 码)—— 剔除 facts 后必须正好少这 14 条,
+  // 少于 14 说明 facts 里的码漏进了 seed.ts,多于 14 说明闭包提取器把别处的码算了进来。
+  const FACTS_ONLY_RBAC_CODE_COUNT = 14;
+  const CLOSURE_PERMISSION_CODE_COUNT = 237;
   check(
-    'R5-02 权限码:真实 seed 事实闭包双口径一致且为 236',
+    `R5-02 权限码:真实 seed 事实闭包双口径一致且为 ${CLOSURE_PERMISSION_CODE_COUNT}`,
     closureDiff.onlyAst.length === 0 &&
       closureDiff.onlyLegacy.length === 0 &&
-      closureDiff.ast.size === 236,
+      closureDiff.ast.size === CLOSURE_PERMISSION_CODE_COUNT,
     `ast=${closureDiff.ast.size} onlyAst=[${closureDiff.onlyAst.join(',')}] onlyLegacy=[${closureDiff.onlyLegacy.join(',')}]`,
   );
 
@@ -303,9 +309,9 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
     fs.readFileSync(path.resolve(__dirname, '..', file), 'utf-8'),
   );
   checkEq(
-    'R5-02 权限码:剔除 facts 后码数跌至 222',
+    `R5-02 权限码:剔除 facts 后码数跌至 ${CLOSURE_PERMISSION_CODE_COUNT - FACTS_ONLY_RBAC_CODE_COUNT}`,
     extractSeedFactsPermissionCodesAst(incompleteSources).size,
-    222,
+    CLOSURE_PERMISSION_CODE_COUNT - FACTS_ONLY_RBAC_CODE_COUNT,
   );
   checkThrows(
     'R5-02 权限码:剔除 facts 的闭包被拒',

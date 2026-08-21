@@ -44,6 +44,7 @@ import {
   BindMemberAccountDto,
   BulkGrantMemberAccountsDto,
   BulkGrantMemberAccountsResponseDto,
+  CorrectMemberIdentityDto,
   CreateMemberDto,
   GrantMemberAccountDto,
   GrantMemberAccountResponseDto,
@@ -415,6 +416,43 @@ export class MembersController {
     @Req() req: Request,
   ): Promise<MemberResponseDto> {
     return this.service.updateStatus(params.id, dto, currentUser, this.buildAuditMeta(req));
+  }
+
+  // ===== 第七轮评审 R7-A-01:队员身份主档订正 =====
+  //
+  // 独立端点,不并进 PATCH /:id —— 理由见 members.service.correctIdentity 头注,
+  // 以及 members.dto.ts 里 UpdateMemberDto 上方那份禁止清单(本刀一个字段都没放宽它)。
+  // 路径取复数资源名 `identity-corrections`:一次订正是一条**新登记的事实**
+  //(登记体落在审计事件 `member.identity.correct` 上),不是把某个开关拨一下。
+  //
+  // ⚠️ 装饰器沿本 controller 既有形状用 `rbac-global` 做粗判(有没有这个码),
+  // **组织数据范围在 service 内判** —— assertCanOrThrow 带 { type: 'member', id } ref
+  // 走三源 scoped authz,org-admin 只能订正自己范围内的队员。
+  @Post(':id/identity-corrections')
+  @RequiresPermission('member.correct.identity', { require: 'all', engine: 'rbac-global' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      '订正队员身份事实(memberNo / memberSinceDate / memberOriginCode;必填订正理由,' +
+      '改编号需二次确认;写 1 条 member.identity.correct 审计) [rbac: member.correct.identity]',
+  })
+  @ApiWrappedOkResponse(MemberResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.MEMBER_NOT_FOUND,
+    BizCode.MEMBER_IDENTITY_CORRECTION_NO_CHANGE,
+    BizCode.MEMBER_NO_CORRECTION_NOT_CONFIRMED,
+    BizCode.MEMBER_NO_ALREADY_EXISTS,
+  )
+  correctIdentity(
+    @Param() params: IdParamDto,
+    @Body() dto: CorrectMemberIdentityDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<MemberResponseDto> {
+    return this.service.correctIdentity(params.id, dto, currentUser, this.buildAuditMeta(req));
   }
 
   @Delete(':id')
