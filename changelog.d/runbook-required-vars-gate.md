@@ -1,6 +1,6 @@
 ### Added
 
-- 「生产必填项必须在部署 runbook 里有条目」类闸(`scripts/ops-required-audit.ts`,第七轮评审包 F 的 F-01 + F-02)。两条断言,**都从事实源动态解析,不写死名单**:① 凡 `src/config/app.config.ts` 在 production / smoke 守卫下 `throw` 点名的环境变量,必须至少在一份部署 runbook 中出现;② 凡 `package.json` 里形如 `start:*-worker` 的脚本,必须至少在一份部署 runbook 中出现。落地当天实测**红 9 条**(7 条环境变量 + 2 个 worker 进程),即本刀要修的缺陷本体。
+- 「生产必填项必须在部署 runbook 里有条目」类闸(`scripts/check-ops-required.ts`,接 `pnpm ops:required:check`,在 CI Fast checks 里单列一步;文件名落在 `scripts/check-*.ts` ⇒ 自动进 selfGuard 裁判保护,第七轮评审包 F 的 F-01 + F-02)。两条断言,**都从事实源动态解析,不写死名单**:① 凡 `src/config/app.config.ts` 在 production / smoke 守卫下 `throw` 点名的环境变量,必须至少在一份部署 runbook 中出现;② 凡 `package.json` 里形如 `start:*-worker` 的脚本,必须至少在一份部署 runbook 中出现。落地当天实测**红 9 条**(7 条环境变量 + 2 个 worker 进程),即本刀要修的缺陷本体。
 
   发现口径刻意**不用** grep 中文错误消息(起草探针用的是 `grep "X 不能为空"`)—— 那是措辞耦合,下一条必填项写成「必须显式设置」就静默漏掉、判据全绿。改用 typed-AST:遍历 `app.config.ts`,记录每个 `throw` 是否落在 production 守卫的 then 分支内(两种守卫形状 `isProductionLike(` 与 `env === 'production'` 实测都在用,else 分支不继承),从守卫内 throw 的消息里抽 SCREAMING_SNAKE token,再用「`src/` 里确实存在 `process.env.<TOKEN>`」做假阳性过滤。⇒ 换措辞不影响发现,新增第 13 条必填项自动进入扫描面。两种口径独立跑出同一读数(12 条必填 / 7 条未登记),互为交叉验证。
 

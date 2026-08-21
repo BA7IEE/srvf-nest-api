@@ -157,7 +157,7 @@ recruitment · registration_status · work_nature
 production 下 fail-fast 的必填项共 **12 条**,另外 10 条在 smoke 阶段就已必填 ——
 完整清单见[第一阶段 §2.6](./server-deployment-runbook.md);
 其中五把 `*_ENCRYPTION_KEY` **一经启用不得更换**,那一节写了后果。
-清单由 `pnpm exec tsx scripts/ops-required-audit.ts` 机器核对。
+清单由 `pnpm ops:required:check` 机器核对(CI Fast checks 里跑)。
 
 ### 1.6 `APP_CORS_ORIGIN` 要换成真实域名
 

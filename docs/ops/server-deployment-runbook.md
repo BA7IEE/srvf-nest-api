@@ -74,7 +74,7 @@
 **一条都不能少**;另有 2 条只在 `production` 生效,见
 [第二阶段 §1.5](./server-deployment-runbook-stage2.md)。
 
-> 🤖 本表由 `pnpm exec tsx scripts/ops-required-audit.ts` 机器核对 ——
+> 🤖 本表由 `pnpm ops:required:check` 机器核对(CI Fast checks 里跑)——
 > 判据从 `app.config.ts` **动态解析**必填项,漏登记一条当场红。
 > 它核的是「**有没有条目**」,核不了「**填得对不对**」,后者仍然要人读。
 

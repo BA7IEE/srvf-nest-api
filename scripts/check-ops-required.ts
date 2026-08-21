@@ -1,5 +1,9 @@
 /**
- * ops-required-audit.ts —— 「生产必填项必须在部署 runbook 里有条目」类闸。
+ * check-ops-required.ts —— 「生产必填项必须在部署 runbook 里有条目」类闸。
+ *
+ * ⚠️ 本文件在 `harness/redzone.json` 的 selfGuard 内(`scripts/check-*.ts`)。
+ *    命名不是随意的:CI 跑的是 PR 分支上的守卫脚本,不锁住裁判,任何违规 PR 都可以
+ *    顺手把它改成恒 PASS、检查名不变、CI 照绿。改名到 `check-*` 之外 = 自己摘掉保护。
  *
  * ──────────────────────────────────────────────────────────────────────────
  * 立项理由(第七轮评审包 F,F-01 + F-02)
@@ -57,8 +61,8 @@
  * ──────────────────────────────────────────────────────────────────────────
  * 跑法
  *
- *   pnpm exec tsx scripts/ops-required-audit.ts          # 结论 + 退出码
- *   pnpm exec tsx scripts/ops-required-audit.ts --json   # 机读输出
+ *   pnpm ops:required:check                                  # 结论 + 退出码(CI 走这条)
+ *   pnpm exec tsx scripts/check-ops-required.ts --json        # 机读输出
  *
  * 退出码:0 = 两条断言全过;1 = 有缺口,或仪器自证失败。
  */
