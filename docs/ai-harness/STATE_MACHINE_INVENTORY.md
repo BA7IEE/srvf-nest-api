@@ -315,16 +315,27 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 8/8 实测:闭集与在册 CHECK **逐值相等**、该表该列的 CHECK 命中数**恰 1**、无后续 `DROP`。
 **L3 一条都不升** —— 它们缺的正是 §10.2 ② 要求的边与实现映射。
 
-### 10.4 读数 true-up(机器现算,`--violations` 的 `stateGovernance` 块)
+### 10.4 读数 true-up
+
+> ⚠️ **本表是取数时点的快照,不是"永远现算"。** 原标题写作「机器现算」,而它是一次性抄进
+> 文档的数字 —— 2026-08-21 复核时实况已是 58 条,表里仍写 56(见 10.4.1)。
+> 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
+> `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
+
+**取数时点:2026-08-21(`73eb9178`)**
 
 | 项 | 值 |
 |---|---:|
-| 总条目 | 56 |
-| `governed` / `inventory` | **8 / 48** |
-| 48 条 inventory 的分层 | L1 **5** · L2 **19** · L3 **24** |
-| 已有机器可读边(`transitions` 是数组) | 19 |
-| `transitions: "not-derived"` | 24 |
-| `transitions: "unconstrained"` | 13 |
+| 总条目 | **58** |
+| `governed` / `inventory` | **8 / 50** |
+| 50 条 inventory 的分层 | L1 **5** · L2 **19** · L3 **26** |
+| 已有机器可读边(`transitions` 是数组)※ | 21 |
+| `transitions: "not-derived"` ※ | 24 |
+| `transitions: "unconstrained"` ※ | 13 |
+
+> ※ 这三行按**全部 58 条**统计(21+24+13=58),不是按上一行那 50 条 inventory。
+> 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
+> 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
 | **`vacuousGreenIfClosedSetOnly`** | **22** |
 | 零 blocker 但仍 inventory 的升格候选 | **1**(`ParticipantSettlementResultRevision.statusCode`) |
 
@@ -338,6 +349,21 @@ blocker 直方图与 §3 逐条一致(本刀未改任何 blocker):`no-wrong-stat
 `transitions` 又是 `not-derived` —— 一个「只比闭集 vs CHECK」的判据会**全部放它们过去**。
 selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.statusCode`:闭集 5 值合法、
 零 blocker,但零边零实现 ⇒ 必须被拒)。
+
+### 10.4.1 这张表为什么会漂(2026-08-21 复核)
+
+复核时实况 **58** 条,而表里写 **56**;`governed / inventory` 实况 **8 / 50**,表里写 **8 / 48**。
+两条 4-1b 之后新增的状态列被**登记闸正确地逼进了登记表**(A 类 blocking 在做功),
+但**文档里的叙述数字没跟着走** —— 而它自称「机器现算」,读者没有理由怀疑它。
+
+这与同日在 `SERVICE_SIZE_RATCHET.md` §4 查出的过期 ✅ 是**同一个缺陷类**:
+治理文档把一次性取数写成了持续事实,而没有任何执行位守着它。
+两处都不是写错,是**写对之后静默过期**。
+
+**已加机器守护**:`harness-guards.selftest.ts` 断言「本表 §10.4『总条目』一行的数字
+必须等于 `harness/state-machines.json` 的 `entries` 长度」。它只盯这一个数 ——
+表里其余比率全部由它派生,总数对不上时那些比率一定也不对;
+而逐个去盯每一个比率会让断言本身变成需要维护的第二份真相。
 
 ### 10.5 本轮发现的两处口径瑕疵(如实记录,均未回改)
 
