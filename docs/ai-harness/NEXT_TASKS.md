@@ -216,7 +216,7 @@
 
 ## P1(长期维护)
 
-### P1-30 通用系统集成地基 Integration Foundation v1 — **T0 已于 2026-08-19 拍板冻结(「按推荐」);PR1–PR8 一行未实施,⏸ 开工等 P1-28 活动线 schema 收尾**
+### P1-30 通用系统集成地基 Integration Foundation v1 — **T0 已于 2026-08-19 拍板冻结(「按推荐」);PR1–PR8 一行未实施,⏸ 开工排在 P1-32 的 PR 1(Catalog 落地)之后**
 
 - **拍板**:2026-08-19 维护者回复**「按推荐」**,冻结稿 §2.1 决策表 `D-IF-1 … D-IF-12` **全部按推荐值(全 =A)整体冻结,无逐项调整**([#1086](https://github.com/BA7IEE/srvf-nest-api/pull/1086))。
 - **依据**:[`integration-foundation-v1-t0-terminal-review.md`](../archive/reviews/integration-foundation-v1-t0-terminal-review.md)
@@ -232,17 +232,44 @@
      待生产做出并稳定选择后另立 PR7'。任何 PR 禁止新增绕过 `assertLegacyWriteAllowed()` / `assertV11WriteAllowed()` 的通路。
   2. **Integration principal 绝不能挂 `request.user`**(§5.3 F-1)—— 生产代码里只有 2 处读它,一挂上就等于让 503 个 `@CurrentUser()` 与 `RolesGuard` 把机器当人。
   3. **PR2–PR7 每个都会改写红区生成物 `ROUTE_AUTHZ.md`**(F-2,其 `inputDigest` 覆盖全部 `src/**/*.ts`)⇒ 一次只能有一条在飞;合并用 merge 不用 rebase。
-- **⛔ 开工触发条件(2026-08-19 维护者:「等活动线跑完先吧」)**:**T0 已合并、板已拍完,都不构成开 PR1 的授权。**
-  三条齐了才可以开工,缺一即停:
+- **⛔ 开工触发条件(2026-08-20 复核后重定;**取代 08-19 那版**)**:**T0 已合并、板已拍完,都不构成开 PR1 的授权。**
+  四条齐了才可以开工,缺一即停:
 
-  | # | 条件 | 硬度 | 现状(2026-08-19) |
+  | # | 条件 | 硬度 | 现状(2026-08-20 实测 `403fd27e`) |
   |---|---|---|---|
-  | ① | **P1-28 活动线无在飞/排队的 schema 刀**(migration token 让出来) | **硬**([`process.md §8`](../process.md) schema-touching lane ≤1) | ❌ 未满足 —— 第 7 批在跑、第 8 批未开、「终审改提交 `LedgerPostingBatch`」桥尚未实施 |
-  | ② | 不在 release 收口窗口 | **硬**(E 档要 global preflight 全过 = 0 open PR) | 上线前至少还要再切一个 tag(`current-state §1`:v0.66.0 永久不可部署,修完另发新版本) |
-  | ③ | 首次上线用的 release tag **已切并钉死**,或生产已部署完成 | 建议(满足其一即可) | ❌ go-live tag 尚未切出 |
+  | ① | **无任何 schema-touching lane 在飞** | **硬**([`process.md §8`](../process.md) 同一时刻至多一条) | 🟡 此刻空窗(0 open PR),但队列非空 —— 见② |
+  | **②** | **P1-32 的 PR 1(Permission Catalog 单一事实源)已落地** | **硬**(维护者 2026-08-20 拍板「A」) | ❌ 未开始;P1-32 的 PR 0 需维护者逐条分类 **236 条权限**,是人工长杆 |
+  | ③ | 不在 release 收口窗口 | **硬**(E 档要 global preflight 全过 = 0 open PR) | ✅ **已满足** —— v0.67.0 已发(Latest)、0 open PR |
+  | ④ | 首次上线用的 release tag **已切并钉死**,或生产已部署完成 | 建议(满足其一即可) | 🟡 前进中 —— 真机部署第一阶段 2026-08-20 PASS(`APP_ENV=smoke` 非生产态);发布边界仍 🟡 NO-GO(卡备案) |
 
-  **① 是当前唯一真正卡住 PR1 的**,与上线无关;维护者已据此定为「先等活动线跑完」。
-  叠加下面第 3 条硬约束 ⇒ **PR1–PR8 之间也一次只能有一条在飞**。
+  **② 是当前真正卡住 PR1 的那条。** 叠加上面第 3 条硬约束 ⇒ **PR1–PR8 之间也一次只能有一条在飞**。
+
+  > ⚠️ **订正 08-19 那版条件①的表述错误(2026-08-20 实测)**:原文写「等 **P1-28 活动线** 让出 migration token」,
+  > 把当时的队首误当成了结构性约束。实测:活动线近 40 笔里只有 **3 笔**相关、基本已静;
+  > migration 90/91/92 全属**别的线**(队员身份主档 [#1096](https://github.com/BA7IEE/srvf-nest-api/pull/1096) /
+  > 视觉身份资产 [#1106](https://github.com/BA7IEE/srvf-nest-api/pull/1106) / 第六轮 prisma 锚点 [#1125](https://github.com/BA7IEE/srvf-nest-api/pull/1125))。
+  > ⇒ 正确表述是「**无任何** schema lane 在飞」,不点名任何一条线。
+  > 账本桥(终审改提交 `LedgerPostingBatch`)仍未搭(`attendance-review.service.ts` 仍写 `pending_final_review → approved`),
+  > 但它已不是 PR1 的队首前置。
+
+- **⛔ 与 [P1-32](#p1-32-rbac-权限目录与角色权限管理终态--8-个-pr已抽-1-条实施余-7-条待排) 的关系:重叠,不是排队(2026-08-20 维护者拍板「A」)**
+
+  两者**碰同一张表、同一件事**,不是先来后到的档期问题:
+
+  | 碰撞点 | 本项目(IF) | P1-32 |
+  |---|---|---|
+  | `prisma/seed.ts`(红区) | PR2 新增 9 条控制面权限码 | PR 1 重构权限事实位置 |
+  | `rbac-seed-facts.ts`(红区) | PR2 | PR 1 |
+  | `prisma/schema.prisma` + migration | PR1(`Permission` +2 列、新表、`PrincipalType` 枚举) | PR 4(`RbacRole.permissionRevision`) |
+  | **`Permission` 元数据归属** | 挂 `servicePrincipalAllowed` / `delegatedAccessAllowed` | Catalog 成为**单一事实源**,Catalog-owned Permission 禁运行时增删改 |
+
+  最后一行是要害:**两边各自给 `Permission` 挂元数据 = 给权限元数据造第二份真相**,正是本仓一贯反对的形状。
+  另有计数连带:P1-32 的 PR 0 要维护者给 **236 条**权限逐条定分类且 DoD 明写「不许有未分类 active 权限」;
+  IF PR2 会 +9 条 —— 先做 IF 则那张表变 245,先做 Catalog 则 IF 那 9 条须从 Catalog 进。
+
+  **⇒ 拍板结果(A):先让 P1-32 走到 PR 1(Catalog 落地),IF PR1 再上。**
+  这样 IF 的两个 eligibility 字段有正确归属位置,不用事后返工。
+  代价是 P1-32 PR 0 卡在维护者逐条分类,IF 要多等一程 —— 已接受。
 
   > ⚠️ **纠正一处此前的错误理由(2026-08-19 实测)**:冻结稿 §3.3 与本条原文都写过
   > 「PR1 合入 main 就会随首发进生产」—— **本仓不是这么部署的**。
@@ -251,9 +278,31 @@
   > 并专门禁止「用会随版本增长的累计数量作门槛」。
   > ⇒ 合进 main ≠ 进生产;真实风险只在「go-live tag 恰好在 PR1 之后切」这一种情形,
   > 故上表把它降为条件 ③(可用「先把 tag 钉死」消解)。
-  > **`D-IF-2`=A 的结论不变**(PR1 仍不现在开),变的只是理由:从 migration 论证换成 ①②③。
+  > **`D-IF-2`=A 的结论不变**(PR1 仍不现在开),变的只是理由:从 migration 论证换成上表四条。
   > 冻结稿正文按 `D-IF-12` **不回改**,该修正待出 `integration-foundation-v1-t0-amendments.md` 时正式落文;
   > 在此之前**以本条为准**。
+
+- **📉 冻结稿基线漂移(2026-08-20 实测 `403fd27e`;开工前须按冻结稿 §1 体例重跑)**
+
+  T0 冻结在 `48637fab`(v0.66.0),此后 main 前移 **47 笔**并发布 **v0.67.0**(现为 Latest,不再 pre-release):
+
+  | 计数项 | T0 冻结时 | 现在 | Δ |
+  |---|---:|---:|---:|
+  | Endpoint | 537 | **545** | +8 |
+  | Migration | 89 | **92** | +3 |
+  | BizCode | 449 | **458** | +9 |
+  | 权限码 | 234 | **237** | +3 |
+  | AuditLogEvent | 139 | **146** | +7 |
+
+  **但冻结稿的承重事实逐条复验仍成立**,不需要 superseding:
+
+  | 冻结项 | 2026-08-20 复验 |
+  |---|---|
+  | `D-IF-3` BizCode 段位 37xxx | ✅ 仍全仓零占用(新增 9 码未碰) |
+  | `D-IF-10` `PrincipalType` 恰 4 值 | ✅ 未变 |
+  | **F-1** `request.user` 恰 2 处生产读取点 | ✅ 仍是 `current-user.decorator.ts` + `roles.guard.ts` |
+  | `D-IF-5` `isControlPlanePermissionCode()` | ✅ 仍是 `['rbac.','role-binding.']` ∪ 6 保留码,未被扩宽 |
+  | `Permission` 模型 | ✅ 未被任何人加列 —— 两个 eligibility 字段落点仍干净 |
 - **拍板冻结值速查**(`D-IF-1..12` 全 =A;权威原表见冻结稿 §2.1,冲突以冻结稿为准):
   ① 采纳终态方向 · ② **PR1 不现在开**(触发条件见上表,理由已换) · ③ BizCode 37xxx 并补登漏登的 36xxx · ④ 新增第六 surface ·
   ⑤ **不动 `isControlPlanePermissionCode()`,只加单向 seed 自检** · ⑥ eligibility 两字段不开放 HTTP 修改 ·
@@ -261,7 +310,8 @@
   ⑩ 枚举值命名 `SERVICE_PRINCIPAL` · ⑪ `allowedPrincipalKinds` 默认值省略序列化 · ⑫ 本稿为冻结稿。
 - **不阻塞首次上线**的三条可核验判据见冻结稿 §3.2(B-1 / B-2 / B-3)。
 - **本项目当前状态**:仅冻结稿一份 docs;`src/` 与 Prisma 侧 **零改动**。`current-state.md §3`「暂不启动清单」中的
-  「新 schema / migration / Permission seed / Role 扩展」由本 T0 解锁**立项**,**不等于解锁开工** —— 开工另需上面三条触发条件全齐。
+  「新 schema / migration / Permission seed / Role 扩展」由本 T0 解锁**立项**,**不等于解锁开工** —— 开工另需上面**四条**触发条件全齐,
+  其中②(P1-32 PR 1 落地)是当前队首前置。
 
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
@@ -1305,6 +1355,14 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 > 方案冻结件:[`archive/reviews/rbac-permission-catalog-t0-review.md`](../archive/reviews/rbac-permission-catalog-t0-review.md)
 > (3,006 行,维护者 2026-08-20 提供,逐字入仓)。
 > **本条只做排期登记,不复述方案内容** —— 细节读冻结件。
+
+⚠️ **下游依赖(2026-08-20 维护者拍板「A」)**:[P1-30](#p1-30-通用系统集成地基-integration-foundation-v1--t0-已于-2026-08-19-拍板冻结按推荐pr1pr8-一行未实施-开工排在-p1-32-的-pr-1catalog-落地之后)
+(Integration Foundation v1)的 **PR1 排在本项目 PR 1(Catalog 单一事实源)之后**,原因是两者碰同一张表:
+IF 要给 `Permission` 挂 `servicePrincipalAllowed` / `delegatedAccessAllowed` 两个「能不能给机器用」的字段,
+而本方案要把权限元数据收进 Catalog 单一事实源 —— **各干各的就是造第二份真相**。
+另有计数连带:本项目 PR 0 要逐条分类 **236 条**权限且 DoD 不许留未分类项,而 IF PR2 会 **+9 条**控制面权限码;
+先 Catalog 则那 9 条从 Catalog 进,顺序已定,**实施 PR 0/PR 1 时不必为 IF 预留**,但**别把 236 这个数字写死成常量**。
+详见 P1-30 的「与 P1-32 的关系」表。
 
 **方案的核心判断**(主会话认同):当前权限底座本身不弱
 (`Permission → RbacRole → RolePermission → RoleBinding` + GLOBAL/scoped 双轨 +
