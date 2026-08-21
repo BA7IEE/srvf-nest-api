@@ -39,6 +39,7 @@ import type {
   ReceiptBatchStatusCode,
 } from './activity-allocation.types';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { lockAndReadLiveMemberLifecycle } from '../members/member-lifecycle-lock';
 import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { ActivityRegistrationAuditRecorder } from './activity-registration-audit-recorder';
@@ -549,6 +550,12 @@ export class ActivityAllocationService {
             ? await lockBatchWaitlistHead(tx, input.activityId, slot, modeCode)
             : null;
       if (candidate === null) continue;
+      // 锁后重验:队首是在**本事务内**才被 `lockFirstComeWaitlistHead` / `lockBatchWaitlistHead`
+      // 选出的,但那两把锁只押住 identity / revision,押不住 Member —— 候选在被选中到写入 pass
+      // 之间仍可能离队、被软删或转非 ACTIVE。必须在**占名额之前**锁 Member 聚合再读一次生命周期
+      // 真相,否则已离队的人会被自动录取、占掉名额并被投影进 populationIncluded。
+      // 锁序沿本模块既有次序 Activity → 报名头 / permanent identity → **Member** → capacity。
+      if (!(await this.promotionCandidateStillLive(tx, candidate.memberId))) continue;
       const reservation = await this.capacityReservations.reserveInTransactionTrusted(tx, {
         activityId: input.activityId,
         memberId: candidate.memberId,
@@ -1383,6 +1390,20 @@ export class ActivityAllocationService {
     ) {
       throw new BizException(BizCode.FORBIDDEN);
     }
+  }
+
+  /**
+   * 候补递补的**锁后**队员生命周期重验 —— 与 `promoteActivityWaitlist`(另一条候补出队循环)
+   * 同款:先锁 Member 聚合,再从同一事务读 live 真相。软删行按 `member-lifecycle-lock` 的既有
+   * 语义返 null(物理行锁住了,业务上视为不存在)。
+   *
+   * 返回布尔而不是抛异常,是刻意的:递补是**批量**动作,挂在取消 / 驳回主业务事务上。一个队首
+   * 不合格只应让**这个名额**本轮空着(候选保持 waitlisted,等下一次释放或管理员安排),
+   * 绝不能把已经成功的取消回滚掉。同循环里 `candidate === null` 与占名额失败也都是 `continue`。
+   */
+  private async promotionCandidateStillLive(tx: PrismaTx, memberId: string): Promise<boolean> {
+    const member = await lockAndReadLiveMemberLifecycle(tx, memberId);
+    return member !== null && member.status === MemberStatus.ACTIVE;
   }
 
   private async assertAllHistoricalBatchModes(

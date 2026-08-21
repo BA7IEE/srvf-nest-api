@@ -245,6 +245,111 @@ describe('activity batch4 allocation runtime', () => {
     throw new Error(`expected an Activity root-lock waiter, observed ${observed}`);
   }
 
+  /**
+   * 等到有事务卡在 Member 生命周期行锁上 —— `lockMemberLifecycle` 就是这条 SQL。
+   * 它是「递补事务已经选出队首、正等在锁后重验那一步」的可观测证据。
+   */
+  async function waitForMemberLifecycleLockWaiter(): Promise<boolean> {
+    // ⚠️ 这个窗口必须**明显短于 Prisma 的 5s 交互事务预算**。窗口开太大时,重验缺失的那一版
+    // 会在这里耗光事务预算、以 500 收场 —— 用例照样红,但红的是「事务超时」这个仪器假象,
+    // 真症状(已离队的人被录取了)反而被盖住。有重验时等待只需毫秒级,2s 绰绰有余。
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline) {
+      const [row] = await prisma.$queryRaw<Array<{ waitingCount: number }>>`
+        SELECT count(*)::int AS "waitingCount"
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND wait_event_type = 'Lock'
+          AND query LIKE '%FROM "Member"%FOR UPDATE%'
+      `;
+      if ((row?.waitingCount ?? 0) >= 1) return true;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    // 刻意**不抛** —— 重验缺失时压根不会有人等这把锁,抛在这里会让用例红在屏障上,
+    // 把真正的症状(已离队的人被录取了)藏在后面。让它返回 false,先让行为断言说话。
+    return false;
+  }
+
+  function identityOf(activityId: string, memberId: string) {
+    return prisma.activityParticipationIdentity.findFirstOrThrow({
+      where: { activityId, memberId },
+      select: {
+        currentStatusCode: true,
+        currentPositionId: true,
+        populationIncluded: true,
+        capacityReservationId: true,
+      },
+    });
+  }
+
+  /**
+   * first_come 单名额队列:holder 占住唯一名额,head / runnerUp 依次候补。
+   * 队列次序由**服务器受理事实** `effectiveAt` 决定,这里显式写死以免依赖 HTTP 时钟抖动。
+   */
+  async function buildFirstComeQueue(label: string): Promise<{
+    activityId: string;
+    positionId: string;
+    holderRegistrationId: string;
+    head: { auth: string; memberId: string };
+    runnerUp: { auth: string; memberId: string };
+  }> {
+    const scenario = await createCandidateScenario({
+      allocationModeCode: 'first_come',
+      capacity: 1,
+    });
+    const head = await createActiveApplicant(`${label}-head`, 'L1');
+    const runnerUp = await createActiveApplicant(`${label}-runner`, 'L1');
+    const body = {
+      formVersion: null,
+      answers: [],
+      preferences: [{ sessionId: scenario.sessionId, positionIds: [scenario.positionId] }],
+    };
+    const submit = async (auth: string, key: string) => {
+      const response = await request(httpServer(app))
+        .post(registrationPath(scenario.activityId))
+        .set('Authorization', auth)
+        .send({ ...body, operationKey: `${label}-${key}-${sequence}` });
+      expect(response.status).toBe(201);
+      return response.body.data.registrationId as string;
+    };
+    const holderRegistrationId = await submit(applicantAuth, 'holder');
+    await submit(head.auth, 'head');
+    await submit(runnerUp.auth, 'runner');
+
+    const revisions = await prisma.activityParticipationRevision.findMany({
+      where: {
+        statusCode: 'waitlisted',
+        identity: {
+          activityId: scenario.activityId,
+          memberId: { in: [head.memberId, runnerUp.memberId] },
+        },
+      },
+      select: { id: true, identity: { select: { memberId: true } } },
+    });
+    const revisionByMember = new Map(revisions.map((r) => [r.identity.memberId, r.id]));
+    await prisma.activityParticipationRevision.update({
+      where: { id: revisionByMember.get(head.memberId)! },
+      data: { effectiveAt: new Date('2025-01-01T00:00:00.000Z') },
+    });
+    await prisma.activityParticipationRevision.update({
+      where: { id: revisionByMember.get(runnerUp.memberId)! },
+      data: { effectiveAt: new Date('2025-01-02T00:00:00.000Z') },
+    });
+
+    // 起点也要钉住:head 现在确实是队首、且确实还是候补,后面的断言才有意义。
+    expect(await identityOf(scenario.activityId, head.memberId)).toEqual(
+      expect.objectContaining({ currentStatusCode: 'waitlisted', populationIncluded: false }),
+    );
+    return {
+      activityId: scenario.activityId,
+      positionId: scenario.positionId,
+      holderRegistrationId,
+      head,
+      runnerUp,
+    };
+  }
+
   function holdActivityRootLock(activityId: string) {
     let markAcquired!: () => void;
     const acquired = new Promise<void>((resolve) => {
@@ -594,6 +699,105 @@ describe('activity batch4 allocation runtime', () => {
       expect.objectContaining({ currentStatusCode: 'waitlisted', currentPositionId: null }),
     );
   });
+
+  it('候补队首在被锁定选出之后才离队 ⇒ 递补跳过他,取消本身仍成功(锁后重验,不是锁前过滤)', async () => {
+    // 第六轮评审 C-BLOCKER-1。这条用例的价值全在**时序**上:直接插一个已经非 ACTIVE 的
+    // 候选只能证明「锁前过滤」有效,证明不了「锁后重验」—— 队首必须在递补事务**已经把他
+    // 选出来并锁住**之后才转非 ACTIVE。屏障事务先握住队首的 Member 行,递补事务因此会卡在
+    // 重验那一步;此刻它已经走过 `lockFirstComeWaitlistHead`,才由屏障提交离队。
+
+    // ① 对照组:队首全程 ACTIVE —— 先钉住「这套夹具真的会递补」。
+    //    没有这一半,下面的「没被录取」可能只是夹具坏了,而不是重验起了作用。
+    const control = await buildFirstComeQueue('fc-recheck-control');
+    const controlCancelled = await request(httpServer(app))
+      .patch(`/api/app/v1/my/registrations/${control.holderRegistrationId}/cancel`)
+      .set('Authorization', applicantAuth)
+      .send({ cancelReason: 'control: free the only first-come slot' });
+    expect(controlCancelled.status).toBe(200);
+    expect(await identityOf(control.activityId, control.head.memberId)).toEqual(
+      expect.objectContaining({
+        currentStatusCode: 'pass',
+        currentPositionId: control.positionId,
+        populationIncluded: true,
+      }),
+    );
+
+    // ② 被测组:同样的队列,唯一不同是队首在递补事务在途时离队。
+    const subject = await buildFirstComeQueue('fc-recheck-subject');
+
+    let markAcquired!: () => void;
+    let release!: () => void;
+    const acquired = new Promise<void>((resolve) => {
+      markAcquired = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const blocker = prismaB.$transaction(
+      async (tx) => {
+        await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT "id" FROM "Member" WHERE "id" = ${subject.head.memberId} FOR UPDATE
+          `;
+        markAcquired();
+        await gate;
+        // 走到这里时递补事务已经选出队首、正卡在 Member 行锁上 —— 现在才让他离队。
+        await tx.$executeRaw`
+            UPDATE "Member" SET "status" = 'INACTIVE' WHERE "id" = ${subject.head.memberId}
+          `;
+      },
+      { maxWait: 60_000, timeout: 60_000 },
+    );
+    await acquired;
+
+    const cancelling = request(httpServer(app))
+      .patch(`/api/app/v1/my/registrations/${subject.holderRegistrationId}/cancel`)
+      .set('Authorization', applicantAuth)
+      .send({ cancelReason: 'subject: free the only first-come slot' })
+      .then((response) => response);
+
+    // 卡住的这一刻就是时序证据:递补事务已经过了队首选取,正等在**锁后**的那次重读上。
+    const blockedOnRecheck = await waitForMemberLifecycleLockWaiter();
+    release();
+    await blocker;
+
+    const cancelled = await cancelling;
+    // 一个候选不合格不该炸掉整批取消 —— 取消必须照常成功。
+    expect(cancelled.status).toBe(200);
+
+    expect(
+      await prisma.member.findUniqueOrThrow({
+        where: { id: subject.head.memberId },
+        select: { status: true },
+      }),
+    ).toEqual({ status: MemberStatus.INACTIVE });
+
+    // 队首没有被录取:状态、岗位、人口投影三处都不能动。
+    expect(await identityOf(subject.activityId, subject.head.memberId)).toEqual(
+      expect.objectContaining({
+        currentStatusCode: 'waitlisted',
+        currentPositionId: null,
+        populationIncluded: false,
+        capacityReservationId: null,
+      }),
+    );
+    expect(
+      await prisma.activityParticipationRevision.count({
+        where: {
+          statusCode: 'pass',
+          identity: { activityId: subject.activityId, memberId: subject.head.memberId },
+        },
+      }),
+    ).toBe(0);
+
+    // 本轮该名额空着等管理员安排 —— 与「跳过这个名额」的既有递补语义一致,
+    // 不会顺位把下一个人拉上来(那属于改选人算法)。
+    expect(await identityOf(subject.activityId, subject.runnerUp.memberId)).toEqual(
+      expect.objectContaining({ currentStatusCode: 'waitlisted', currentPositionId: null }),
+    );
+
+    // 最后才断时序证据:上面的行为对了,也得是**锁后重验**换来的,不能是锁前过滤蒙对的。
+    expect(blockedOnRecheck).toBe(true);
+  }, 90_000);
 
   it('freezes qualification_rank scores, replays prepare exactly, and commits capacity in score order', async () => {
     const scenario = await createCandidateScenario({
