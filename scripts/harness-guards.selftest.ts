@@ -3918,6 +3918,34 @@ async function runTrustedJudgeAssertions(): Promise<void> {
         '文档说「摩擦已压到线内」而闸同时在报基线文件变大 —— 两者不可能同真;' +
           '这类 ✅ 会静默过期,而转闸决策正是照它做的(2026-08-21 实测:文档写 27,实况 35)',
       );
+      // 同一缺陷类的第二处:STATE_MACHINE_INVENTORY.md §10.4 自称「机器现算」,
+      // 实为一次性抄进文档的快照。2026-08-21 复核时登记表已 58 条而表里写 56
+      // ——两条 4-1b 之后新增的状态列被登记闸正确逼进了登记表(A 类 blocking 在做功),
+      // 文档叙述却没跟着走。
+      //
+      // 只盯**总条目**一个数:表里其余比率全部由它派生,总数对不上时那些比率一定也不对;
+      // 逐个去盯每个比率会让断言本身变成需要维护的第二份真相。
+      check(
+        'F3 状态机登记表:§10.4「总条目」与 state-machines.json 的 entries 一致(防快照静默过期)',
+        (() => {
+          const root = path.resolve(__dirname, '..');
+          const registry = JSON.parse(
+            fs.readFileSync(path.join(root, 'harness/state-machines.json'), 'utf-8'),
+          ) as { entries?: unknown[] };
+          if (!Array.isArray(registry.entries)) return false; // 拿不到真值 ⇒ fail-closed
+          const doc = fs.readFileSync(
+            path.join(root, 'docs/ai-harness/STATE_MACHINE_INVENTORY.md'),
+            'utf-8',
+          );
+          const row = doc.split('\n').find((l) => /^\|\s*总条目\s*\|/.test(l));
+          if (row === undefined) return false; // 锚点没了 ⇒ 判据失效,不等于通过
+          const claimed = row.match(/\|\s*\*{0,2}(\d+)\*{0,2}\s*\|\s*$/);
+          if (claimed === null) return false;
+          return Number(claimed[1]) === registry.entries.length;
+        })(),
+        '文档自称「机器现算」而数字是一次性抄进去的 —— 与同日 SERVICE_SIZE_RATCHET §4 的过期 ✅ 同一缺陷类;' +
+          '总条目对不上时,表里由它派生的全部比率都不可信',
+      );
       // 同一缺陷类的第三处,且这次是**覆盖缺口**而非数字漂移:
       // COMMON_GOVERNANCE.md §3 声称「逐个定性」并列了 12 个子目录,而 src/common
       // 现有 14 个 —— activity-workflow 与 identity 从未经过 R15 定性。
