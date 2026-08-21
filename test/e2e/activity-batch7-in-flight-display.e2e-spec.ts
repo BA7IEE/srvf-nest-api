@@ -73,12 +73,42 @@ interface LedgerEntrySpec {
   revisionSlot?: 'primary' | 'secondary';
 }
 
+/**
+ * 一次 createLedgerFixture 建出来的活动上下文。
+ *
+ * 「冲正 + 重记」的更正批次**必须复用原始批次的这套上下文** —— 复合锚点闭合
+ * (第六轮评审 A-2 + B-03)之后,`reversesEntryId` 的外键是
+ * [reversesEntryId, activityId, sessionId, memberId] → [id, activityId, sessionId, memberId],
+ * 冲正分录只能回指**同活动同场次同队员**的原始分录。各建各的活动会当场 23503。
+ */
+interface LedgerContext {
+  activityId: string;
+  sessionId: string;
+  secondarySessionId: string;
+  settlementRunId: string;
+  evidenceSealId: string;
+  settlementVersionId: string;
+  identityId: string;
+  secondaryIdentityId: string;
+  primaryRevisionId: string;
+  secondaryRevisionId: string;
+  /**
+   * 复用时要**另开一个结算版本**:`ledger_posting_batch_committed_unique` 是
+   * `settlementVersionId` 上 `WHERE statusCode='committed'` 的 partial unique ——
+   * 同一个版本下只能有一笔 committed 批次。更正批次本来也确实是新版本。
+   */
+  nextVersionNumber: number;
+  batchRevision: number;
+}
+
 interface LedgerFixture {
   activityId: string;
   batchId: string;
   /** entryKey → entry id;冲正用例要拿 id 回指。 */
   entryIds: Record<string, string>;
   entryKeys: string[];
+  /** 传给下一次 createLedgerFixture 的 `reuse`,让更正批次落在同一条主链上。 */
+  context: LedgerContext;
 }
 
 describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显示', () => {
@@ -199,9 +229,12 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       ledgerDate: '2026-07-10',
       entries: [creditPair({ serviceHours: '2', points: '1' })].flat(),
     });
+    // ⚠️ 必须 reuse:冲正分录的复合外键要求回指**同活动同场次同队员**的原始分录,
+    // 各建各的活动会当场 23503(复合锚点闭合,第六轮评审 A-2 + B-03)。
     await createLedgerFixture({
       batchStatus: 'committed',
       ledgerDate: '2026-07-10',
+      reuse: committedOriginal.context,
       entries: [
         {
           entryTypeCode: 'service_reversal',
@@ -282,6 +315,11 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     entries: LedgerEntrySpec[];
     /** 缺省落在主角身上;守恒探针要一个不受其它用例干扰的独占队员。 */
     memberId?: string;
+    /**
+     * 复用上一批的活动上下文。「冲正 + 重记」的更正批次必须传它 ——
+     * 冲正分录的复合外键要求回指同活动同场次同队员的原始分录。
+     */
+    reuse?: LedgerContext;
   }): Promise<LedgerFixture> {
     sequence += 1;
     const tag = `batch7-slice2a-${sequence}`;
@@ -289,133 +327,206 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
     const sessionStart = new Date(`${options.ledgerDate}T01:00:00.000Z`);
     const sessionEnd = new Date(`${options.ledgerDate}T05:00:00.000Z`);
 
-    const activity = await prisma.activity.create({
-      data: {
-        title: `第 7 批②-a 账本活动 ${sequence}`,
-        activityTypeCode: `${tag}-type`,
-        organizationId,
-        startAt: sessionStart,
-        endAt: sessionEnd,
-        location: '深圳',
-        statusCode: 'published',
-      },
-      select: { id: true },
-    });
-    // 两套 session / identity / result revision:`ParticipantSettlementResultRevision`
-    // 唯一键是 (settlementVersionId, participationIdentityId) —— 同一 identity 上开不出
-    // 第二个 revision,所以「冲正 + 重记」的重记那笔必须挂在**另一个 identity** 上。
-    const [session, secondarySession] = await Promise.all(
-      (['primary', 'secondary'] as const).map((slot) =>
-        prisma.activitySession.create({
-          data: {
-            activityId: activity.id,
-            code: `${tag}-session-${slot}`,
-            name: `${tag} ${slot} 场次`,
-            startAt: sessionStart,
-            endAt: sessionEnd,
-            locationText: '深圳',
-            checkInOpenAt: new Date(sessionStart.getTime() - 3600_000),
-            checkInCloseAt: new Date(sessionStart.getTime() + 3600_000),
-            checkOutOpenAt: new Date(sessionStart.getTime() + 2 * 3600_000),
-            checkOutCloseAt: new Date(sessionEnd.getTime() + 3600_000),
-            locationRequired: false,
-            locationPolicySourceCode: 'session',
-            statusCode: 'scheduled',
-          },
-          select: { id: true },
-        }),
-      ),
-    );
-    const seal = await prisma.evidenceSeal.create({
-      data: {
+    const reuse = options.reuse;
+    const context: LedgerContext = reuse
+      ? await extendLedgerContext(reuse)
+      : await createLedgerContext();
+    const batchRevision = context.batchRevision;
+
+    /** 在既有活动 / 场次 / 身份之上另开一个结算版本与一套结果修订。 */
+    async function extendLedgerContext(prev: LedgerContext): Promise<LedgerContext> {
+      const nextVersion = await prisma.attendanceSettlementVersion.create({
+        data: {
+          settlementRunId: prev.settlementRunId,
+          version: prev.nextVersionNumber,
+          evidenceSealId: prev.evidenceSealId,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          contentHash: `${tag}-content`,
+          personCount: 1,
+          sessionParticipationCount: 1,
+          serviceSegmentCount: 1,
+          createdByUserId: adminUserId,
+          submittedAt: sessionEnd,
+          statusCode: 'approved',
+          operationKey: `${tag}-submit`,
+          requestHash: `${tag}-submit-hash`,
+        },
+        select: { id: true },
+      });
+      const [primary, secondary] = await Promise.all(
+        [prev.identityId, prev.secondaryIdentityId].map((identityId) =>
+          prisma.participantSettlementResultRevision.create({
+            data: {
+              settlementVersionId: nextVersion.id,
+              participationIdentityId: identityId,
+              revision: 1,
+              resultCode: 'present',
+              recognizedServiceHours: 2,
+              recognizedContributionPoints: 1,
+              calculatedServiceHours: 2,
+              calculatedContributionPoints: 1,
+              statusCode: options.batchStatus === 'committed' ? 'committed' : 'draft',
+            },
+            select: { id: true },
+          }),
+        ),
+      );
+      return {
+        ...prev,
+        settlementVersionId: nextVersion.id,
+        primaryRevisionId: primary.id,
+        secondaryRevisionId: secondary.id,
+        nextVersionNumber: prev.nextVersionNumber + 1,
+        batchRevision: prev.batchRevision + 1,
+      };
+    }
+
+    async function createLedgerContext(): Promise<LedgerContext> {
+      const activity = await prisma.activity.create({
+        data: {
+          title: `第 7 批②-a 账本活动 ${sequence}`,
+          activityTypeCode: `${tag}-type`,
+          organizationId,
+          startAt: sessionStart,
+          endAt: sessionEnd,
+          location: '深圳',
+          statusCode: 'published',
+        },
+        select: { id: true },
+      });
+      // 两套 session / identity / result revision:`ParticipantSettlementResultRevision`
+      // 唯一键是 (settlementVersionId, participationIdentityId) —— 同一 identity 上开不出
+      // 第二个 revision,所以「冲正 + 重记」的重记那笔必须挂在**另一个 identity** 上。
+      const [session, secondarySession] = await Promise.all(
+        (['primary', 'secondary'] as const).map((slot) =>
+          prisma.activitySession.create({
+            data: {
+              activityId: activity.id,
+              code: `${tag}-session-${slot}`,
+              name: `${tag} ${slot} 场次`,
+              startAt: sessionStart,
+              endAt: sessionEnd,
+              locationText: '深圳',
+              checkInOpenAt: new Date(sessionStart.getTime() - 3600_000),
+              checkInCloseAt: new Date(sessionStart.getTime() + 3600_000),
+              checkOutOpenAt: new Date(sessionStart.getTime() + 2 * 3600_000),
+              checkOutCloseAt: new Date(sessionEnd.getTime() + 3600_000),
+              locationRequired: false,
+              locationPolicySourceCode: 'session',
+              statusCode: 'scheduled',
+            },
+            select: { id: true },
+          }),
+        ),
+      );
+      const seal = await prisma.evidenceSeal.create({
+        data: {
+          activityId: activity.id,
+          sealRevision: 1,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          allWindowsClosedAt: sessionEnd,
+          openSegmentCount: 0,
+          manualReviewPendingCount: 0,
+          populationCountDistinct: 1,
+          populationCountBySession: {},
+          contentHash: `${tag}-seal`,
+          statusCode: 'active',
+          sealedByUserId: adminUserId,
+          sealedAt: sessionEnd,
+        },
+        select: { id: true },
+      });
+      const run = await prisma.attendanceSettlementRun.create({
+        data: {
+          activityId: activity.id,
+          statusCode: options.batchStatus === 'committed' ? 'posted' : 'posting',
+          currentSubmittedVersion: 1,
+          ...(options.batchStatus === 'committed' ? { currentPostedVersion: 1 } : {}),
+        },
+        select: { id: true },
+      });
+      const version = await prisma.attendanceSettlementVersion.create({
+        data: {
+          settlementRunId: run.id,
+          version: 1,
+          evidenceSealId: seal.id,
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+          contentHash: `${tag}-content`,
+          personCount: 1,
+          sessionParticipationCount: 1,
+          serviceSegmentCount: 1,
+          createdByUserId: adminUserId,
+          submittedAt: sessionEnd,
+          statusCode: 'approved',
+          operationKey: `${tag}-submit`,
+          requestHash: `${tag}-submit-hash`,
+        },
+        select: { id: true },
+      });
+      const registration = await prisma.activityRegistration.create({
+        data: { activityId: activity.id, memberId: ledgerMemberId, statusCode: 'approved' },
+        select: { id: true },
+      });
+      const [identity, secondaryIdentity] = await Promise.all(
+        [session, secondarySession].map((target) =>
+          prisma.activityParticipationIdentity.create({
+            data: {
+              activityId: activity.id,
+              sessionId: target.id,
+              registrationId: registration.id,
+              memberId: ledgerMemberId,
+              currentStatusCode: 'pass',
+              populationIncluded: true,
+            },
+            select: { id: true },
+          }),
+        ),
+      );
+      const [primaryRevision, secondaryRevision] = await Promise.all(
+        [identity, secondaryIdentity].map((target) =>
+          prisma.participantSettlementResultRevision.create({
+            data: {
+              settlementVersionId: version.id,
+              participationIdentityId: target.id,
+              revision: 1,
+              resultCode: 'present',
+              recognizedServiceHours: 2,
+              recognizedContributionPoints: 1,
+              calculatedServiceHours: 2,
+              calculatedContributionPoints: 1,
+              statusCode: options.batchStatus === 'committed' ? 'committed' : 'draft',
+            },
+            select: { id: true },
+          }),
+        ),
+      );
+      return {
         activityId: activity.id,
-        sealRevision: 1,
-        evidenceRevision: 0,
-        populationRevision: 0,
-        workflowRevision: 0,
-        allWindowsClosedAt: sessionEnd,
-        openSegmentCount: 0,
-        manualReviewPendingCount: 0,
-        populationCountDistinct: 1,
-        populationCountBySession: {},
-        contentHash: `${tag}-seal`,
-        statusCode: 'active',
-        sealedByUserId: adminUserId,
-        sealedAt: sessionEnd,
-      },
-      select: { id: true },
-    });
-    const run = await prisma.attendanceSettlementRun.create({
-      data: {
-        activityId: activity.id,
-        statusCode: options.batchStatus === 'committed' ? 'posted' : 'posting',
-        currentSubmittedVersion: 1,
-        ...(options.batchStatus === 'committed' ? { currentPostedVersion: 1 } : {}),
-      },
-      select: { id: true },
-    });
-    const version = await prisma.attendanceSettlementVersion.create({
-      data: {
+        sessionId: session.id,
+        secondarySessionId: secondarySession.id,
         settlementRunId: run.id,
-        version: 1,
         evidenceSealId: seal.id,
-        evidenceRevision: 0,
-        populationRevision: 0,
-        workflowRevision: 0,
-        contentHash: `${tag}-content`,
-        personCount: 1,
-        sessionParticipationCount: 1,
-        serviceSegmentCount: 1,
-        createdByUserId: adminUserId,
-        submittedAt: sessionEnd,
-        statusCode: 'approved',
-        operationKey: `${tag}-submit`,
-        requestHash: `${tag}-submit-hash`,
-      },
-      select: { id: true },
-    });
-    const registration = await prisma.activityRegistration.create({
-      data: { activityId: activity.id, memberId: ledgerMemberId, statusCode: 'approved' },
-      select: { id: true },
-    });
-    const [identity, secondaryIdentity] = await Promise.all(
-      [session, secondarySession].map((target) =>
-        prisma.activityParticipationIdentity.create({
-          data: {
-            activityId: activity.id,
-            sessionId: target.id,
-            registrationId: registration.id,
-            memberId: ledgerMemberId,
-            currentStatusCode: 'pass',
-            populationIncluded: true,
-          },
-          select: { id: true },
-        }),
-      ),
-    );
-    const [primaryRevision, secondaryRevision] = await Promise.all(
-      [identity, secondaryIdentity].map((target) =>
-        prisma.participantSettlementResultRevision.create({
-          data: {
-            settlementVersionId: version.id,
-            participationIdentityId: target.id,
-            revision: 1,
-            resultCode: 'present',
-            recognizedServiceHours: 2,
-            recognizedContributionPoints: 1,
-            calculatedServiceHours: 2,
-            calculatedContributionPoints: 1,
-            statusCode: options.batchStatus === 'committed' ? 'committed' : 'draft',
-          },
-          select: { id: true },
-        }),
-      ),
-    );
+        settlementVersionId: version.id,
+        identityId: identity.id,
+        secondaryIdentityId: secondaryIdentity.id,
+        primaryRevisionId: primaryRevision.id,
+        secondaryRevisionId: secondaryRevision.id,
+        nextVersionNumber: 2,
+        batchRevision: 1,
+      };
+    }
+
     const batch = await prisma.ledgerPostingBatch.create({
       data: {
-        settlementRunId: run.id,
-        settlementVersionId: version.id,
-        batchRevision: 1,
+        settlementRunId: context.settlementRunId,
+        settlementVersionId: context.settlementVersionId,
+        batchRevision,
         statusCode: options.batchStatus,
         requestKey: `${tag}-batch`,
         requestHash: `${tag}-batch-hash`,
@@ -443,13 +554,16 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
           entryKey,
           operationKey: `${entryKey}:operation`,
           memberId: ledgerMemberId,
-          activityId: activity.id,
+          activityId: context.activityId,
           // session / identity / revision 三者必须取同一槽位,否则分录会指向别人的场次。
-          sessionId: spec.revisionSlot === 'secondary' ? secondarySession.id : session.id,
+          sessionId:
+            spec.revisionSlot === 'secondary' ? context.secondarySessionId : context.sessionId,
           participationIdentityId:
-            spec.revisionSlot === 'secondary' ? secondaryIdentity.id : identity.id,
+            spec.revisionSlot === 'secondary' ? context.secondaryIdentityId : context.identityId,
           resultRevisionId:
-            spec.revisionSlot === 'secondary' ? secondaryRevision.id : primaryRevision.id,
+            spec.revisionSlot === 'secondary'
+              ? context.secondaryRevisionId
+              : context.primaryRevisionId,
           ledgerDate,
           entryTypeCode: spec.entryTypeCode,
           serviceHoursDelta: spec.serviceHoursDelta,
@@ -464,7 +578,13 @@ describe('第 7 批第 ②-a 刀 —— 统计读面「已生效 / 在途」显�
       entryKeys.push(created.entryKey);
     }
 
-    return { activityId: activity.id, batchId: batch.id, entryIds, entryKeys };
+    return {
+      activityId: context.activityId,
+      batchId: batch.id,
+      entryIds,
+      entryKeys,
+      context,
+    };
   }
 
   async function entryKeysByBatchStatus(statuses: string[]): Promise<string[]> {

@@ -67,6 +67,13 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
   let registrationRevisionId2: string;
   let identityId: string;
   let identityId2: string;
+  // 复合锚点闭合(第六轮评审 A-2 + B-03)之后,候选行的 (activityId, sessionId) 必须与
+  // 它指向的参与身份、以及它挂靠的批次三者一致。于是「同批次里的第二个身份」只能是
+  // **同场次的另一个队员**(identity 的 (activityId, sessionId, memberId) 唯一),
+  // 不能像以前那样借用另一个场次的身份 —— 那样批次锚点也会跟着对不上。
+  let memberId2: string;
+  let registrationId2: string;
+  let registrationRevisionIdForMember2: string;
   let ruleSetId: string;
 
   let seq = 0;
@@ -244,6 +251,15 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       explanation: '{}',
       ...o,
     };
+    // 复合锚点闭合:候选行的 registrationId 必须与它指向的参与身份属于同一张报名头
+    // (外键 [participationIdentityId, registrationId, activityId, sessionId])。
+    // 调用点只写 participationIdentityId,这里替它把报名头与报名修订配齐。
+    if (v.participationIdentityId === identityId2) {
+      if (o.registrationId === undefined) v.registrationId = registrationId2;
+      if (o.registrationRevisionId === undefined)
+        v.registrationRevisionId = registrationRevisionIdForMember2;
+    }
+
     const s = (x: string | null) => (x === null ? 'NULL' : `'${x}'`);
     const n = (x: number | null) => (x === null ? 'NULL' : String(x));
     return `INSERT INTO "ActivityAllocationCandidate"
@@ -408,14 +424,14 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
     registrationRevisionId = await makeRegRevision(0);
     registrationRevisionId2 = await makeRegRevision(1);
 
-    const makeIdentity = async (sid: string) =>
+    const makeIdentity = async (sid: string, mid = memberId, rid = registrationId) =>
       (
         await prisma.activityParticipationIdentity.create({
           data: {
             activityId,
             sessionId: sid,
-            registrationId,
-            memberId,
+            registrationId: rid,
+            memberId: mid,
             currentStatusCode: 'pending',
           },
           select: { id: true },
@@ -423,7 +439,36 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
       ).id;
 
     identityId = await makeIdentity(sessionId);
-    identityId2 = await makeIdentity(sessionId2);
+
+    memberId2 = (
+      await prisma.member.create({
+        data: {
+          memberNo: uniq('member2'),
+          ...memberIdentityData('V11 Slice5 Member 2'),
+          gradeCode: 'level-2',
+        },
+        select: { id: true },
+      })
+    ).id;
+    registrationId2 = (
+      await prisma.activityRegistration.create({
+        data: { activityId, memberId: memberId2, statusCode: 'pending' },
+        select: { id: true },
+      })
+    ).id;
+    registrationRevisionIdForMember2 = (
+      await prisma.activityRegistrationRevision.create({
+        data: {
+          registrationId: registrationId2,
+          revision: 0,
+          sourceCode: 'self',
+          submittedAt: new Date(SESSION_START),
+        },
+        select: { id: true },
+      })
+    ).id;
+    // 同场次、另一个队员 —— 与 identityId 只在「是谁」这一维上不同。
+    identityId2 = await makeIdentity(sessionId, memberId2, registrationId2);
 
     ruleSetId = (
       await prisma.activityQualificationRuleSet.create({
@@ -845,6 +890,8 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         'activity_allocation_candidate_batch_lottery_order_unique',
         'activity_allocation_candidate_batch_position_rank_unique',
         'activity_allocation_candidate_batch_tie_break_key',
+        // 业务复合锚点闭合(第六轮评审 A-2 + B-03)新增:复合外键的被引用侧靶点。
+        'activity_allocation_candidate_id_batch_identity_act_sess_key',
         'activity_allocation_candidate_id_batch_identity_unique',
       ]);
       expect(uniques.every((u) => !u.indexdef.includes('NULLS NOT DISTINCT'))).toBe(true);
@@ -1055,13 +1102,15 @@ describe('活动改造 v1.1 第 1 批第五刀 / 第 4 批缺口⑤ schema 约�
         FROM pg_constraint c
         WHERE c.contype = 'f'
           AND c.conrelid = '"ActivityAllocationBatch"'::regclass
-          AND c.conkey = (
+          -- 复合锚点闭合后该外键是 [ruleSnapshotId, activityId],conkey 不再是单列数组;
+          -- 改问「列集包含 ruleSnapshotId」,下面的 conname 仍逐字钉死是哪一条。
+          AND c.conkey @> (
             SELECT ARRAY[a.attnum] FROM pg_attribute a
             WHERE a.attrelid = c.conrelid AND a.attname = 'ruleSnapshotId')
       `;
       expect(fks).toEqual([
         {
-          conname: 'ActivityAllocationBatch_ruleSnapshotId_fkey',
+          conname: 'ActivityAllocationBatch_ruleSnapshotId_activityId_fkey',
           target: '"ActivityRuleSnapshot"',
         },
       ]);

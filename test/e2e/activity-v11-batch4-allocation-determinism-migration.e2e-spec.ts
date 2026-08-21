@@ -717,7 +717,7 @@ describe('Activity v1.1 batch4 allocation determinism migration', () => {
 
     const schema = await readFile(path.resolve(process.cwd(), 'prisma/schema.prisma'), 'utf8');
     expect(schema).toContain(
-      '@relation(fields: [participationIdentityId, registrationId], references: [id, registrationId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")',
+      '@relation(fields: [participationIdentityId, registrationId, activityId, sessionId], references: [id, registrationId, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_identity_registration_fkey")',
     );
     expect(schema).toContain(
       '@relation(fields: [registrationId, registrationRevisionId], references: [registrationId, id], onDelete: Restrict, onUpdate: Restrict, map: "activity_allocation_candidate_registration_revision_fkey")',
