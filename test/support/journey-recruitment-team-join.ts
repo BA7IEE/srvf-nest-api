@@ -66,6 +66,7 @@ async function submitRecruitmentApplication(
   const wechatCode = 'journey-1-applicant';
   const phone = '13900001001';
   const token = 'journey-1-phone-token';
+  // journey-direct-write: mid-chain-start — 同 certificate-recognition:入口要真实短信验证码往返
   await prisma.recruitmentIdentitySession.create({
     data: {
       cycleId,
@@ -124,6 +125,7 @@ async function seedClaimRecognitionStandards(
   const prisma = journeyPrisma(runtime);
   const standardByCategory = new Map<string, string>();
   for (const category of ['first_aid', 'bsafe']) {
+    // journey-direct-write: ambient — 证书标准属配置底座
     const standard = await prisma.certificateStandard.create({
       data: {
         code: `journey-1-${category}`,
@@ -134,6 +136,7 @@ async function seedClaimRecognitionStandards(
       },
       select: { id: true },
     });
+    // journey-direct-write: ambient — 同上
     await prisma.certificateRecognitionPolicy.create({
       data: {
         standardId: standard.id,
@@ -207,6 +210,7 @@ async function promoteApplicant(
   user: CurrentUserPayload;
 }> {
   const prisma = journeyPrisma(runtime);
+  // journey-direct-write: ambient — 组织树底座
   const volOrg = await prisma.organization.create({
     data: { name: '志愿者归口', code: 'VOL', nodeTypeCode: 'volunteer', status: 'ACTIVE' },
   });
@@ -248,9 +252,11 @@ async function promoteApplicant(
 
 async function prepareTeamJoin(runtime: JourneyRuntime, memberId: string): Promise<string> {
   const prisma = journeyPrisma(runtime);
+  // journey-direct-write: ambient — 同上
   const target = await prisma.organization.create({
     data: { name: '旅程一目标队', nodeTypeCode: 'general', status: 'ACTIVE' },
   });
+  // journey-direct-write: ambient — 入队周期属配置底座
   await prisma.teamJoinCycle.create({
     data: {
       year: 2026,
@@ -263,6 +269,7 @@ async function prepareTeamJoin(runtime: JourneyRuntime, memberId: string): Promi
   });
 
   // 入队贡献值是已完成活动的历史事实；按两个北京自然日拆 3+2，避开每日封顶。
+  // journey-direct-write: ambient — 活动本体属发布链
   const activity = await prisma.activity.create({
     data: {
       title: '旅程一贡献前置活动',
@@ -274,6 +281,7 @@ async function prepareTeamJoin(runtime: JourneyRuntime, memberId: string): Promi
       statusCode: 'completed',
     },
   });
+  // journey-direct-write: mid-chain-start — ⚠️ 直接建 statusCode=approved 的考勤单,**整条考勤审核链(建 → 一审 → 终审)被跳过**;目的是凑出贡献值过入队门槛。后果:本 journey 不证明「贡献值真能由考勤链产出」
   const sheet = await prisma.attendanceSheet.create({
     data: {
       activityId: activity.id,
@@ -281,6 +289,7 @@ async function prepareTeamJoin(runtime: JourneyRuntime, memberId: string): Promi
       statusCode: 'approved',
     },
   });
+  // journey-direct-write: mid-chain-start — 同 L277,记录侧
   await prisma.attendanceRecord.createMany({
     data: [
       {

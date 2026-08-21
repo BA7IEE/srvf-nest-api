@@ -1317,6 +1317,40 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
    把不变量搬到应用层事务里断言。⚠️ 三种代价差很远,**必须先量出 1、2 的读数再选**,
    否则又是「按体量拍脑袋」而不是按归因。
 
+### P2-12 golden journey 有两条链**从未被自动化穿过**(直写库绕过去了)— 2026-08-21 由新建的 journey 直写纪律闸逼出
+
+> 出处:`scripts/harness-guards.selftest.ts` 的「journey 直写库接缝纪律」闸。
+> 立项时 `test/support/journey-*.ts` 共 **46 处**直接写库,逐条分类后
+> **`ambient` 31 · `gate-unreachable` 10 · `mid-chain-start` 4 · `time-compression` 1**。
+> 前两类是合法的(环境底座 / 闸后本就无 API 路径),**后面这两条是真接缝**:
+
+#### ① 招新实名入口:没有任何自动化测试穿过
+
+`RecruitmentIdentitySession` 的生产创建路径是
+[`recruitment-identity.service.ts:135`](../../src/modules/recruitment/recruitment-identity.service.ts) ——
+入口要**真实短信验证码往返**,自动化跨不过去,于是两条 journey
+(`journey-certificate-recognition.ts` · `journey-recruitment-team-join.ts`)都直接写库起步。
+
+⚠️ **后果**:招新链的**第一步**(手机号验证 → 建实名会话)在 CI 里**一次都没跑过**。
+它断了的话,现有任何测试都不会红。
+
+**该怎么做**(先答再动):短信 provider 有没有可注入的 stub 通道?若有,journey 应改走
+真 HTTP 入口 + stub provider;若没有,这一格属**测试基建缺口**而非业务缺口,
+但要在 runbook 里写明「实名入口只能真机验」。
+
+#### ② 入队门槛的贡献值:考勤审核链被整条跳过
+
+`journey-recruitment-team-join.ts` 直接建 `statusCode: 'approved'` 的
+`AttendanceSheet` + `AttendanceRecord`,目的是凑出贡献值过入队门槛。
+
+⚠️ **后果**:该 journey **不证明「贡献值真能由考勤链产出」** ——
+建单 → 一审 → 终审整条链被跳过。而入队门槛恒按 approved 考勤算
+(见 `activity-workflow.gate.ts` 的 C4 反向闸注释),
+**「考勤链产出的 approved」与「直插的 approved」是不是同一件事,当前无人证明**。
+
+⚠️ **零已知缺陷**:这属**判据缺口**不是风险敞口 —— 两本账别混。
+登记它是因为「上线后第一次真人走查若在这里出问题,现有测试给不出任何预警」。
+
 ### P1-31 🔴 开工门禁没挂 Bash matcher —— 用 `python3` / `sed -i` 写文件 **100% 绕过**,而那正是默认路径
 
 > 2026-08-20 由 E-B1 修复会话报出;主会话**实测坐实,并确认自己当天全程在犯**。

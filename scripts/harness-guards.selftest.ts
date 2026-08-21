@@ -5459,6 +5459,136 @@ void (async (): Promise<void> => {
     );
   }
 
+  // ===========================================================================
+  // journey 直写库接缝纪律(第七轮后续,2026-08-21)
+  //
+  // 缺陷类:**验证代码自己绕过了被验证的路径,而且没人知道它绕了。**
+  //
+  // 实测立项时:`test/support/journey-*.ts` 共 **46 处**直接写库
+  // (attendance-correction 15 · recruitment-team-join 9 · registration-checkin 8
+  //  · outbox-delivery 7 · runtime 5 · certificate-recognition 2),
+  // 而 golden journey 是全仓最端到端的验证。每一处直写都是**一段没被穿过的接缝**:
+  // 建那个状态的 API 路径若断了、或有个满足不了的前置(第七轮③类),
+  // journey 照样全绿 —— 因为它压根没走那条路。
+  //
+  // 本闸**不禁止直写**(禁了 journey 无法起步),而是**逼每一处交代一次**:
+  // 每个直写调用的**紧邻上一行**必须是 `// journey-direct-write: <分类> — <理由>`,
+  // 分类取自闭集 —— 自由文本的理由验不了真伪,分类可以。
+  //
+  // ⭐ `no-api` 是关键一档:它把「图省事的直写」与「真的没有接口」分开 ——
+  // 前者该改成走 HTTP,后者是**缺口显形**,必须同时登记 NEXT_TASKS。
+  // ===========================================================================
+  {
+    const JOURNEY_DIRECT_WRITE_CATEGORIES = new Set([
+      // 环境搭建,不属于本 journey 声称验证的那条链(组织树 / 字典 / 渠道配置)
+      'ambient',
+      // 属于被验链,但闸后不可达 ⇒ 当前根本没有 API 路径可走
+      'gate-unreachable',
+      // 只压缩等待(重试退避 / 定时窗),不跳过任何链上步骤
+      'time-compression',
+      // 属于被验链、有 API,但刻意从中间态起步 —— 理由必须写明为什么不从头走
+      'mid-chain-start',
+      // 属于被验链且**没有** API 路径 ⇒ 真缺口,必须同时登记 NEXT_TASKS
+      'no-api',
+    ]);
+
+    const JOURNEY_WRITE_RE =
+      /(?:prisma|tx)\.[A-Za-z][A-Za-z0-9]*\.(?:create|createMany|upsert|update|updateMany)\(/;
+    const JOURNEY_NOTE_RE = /\/\/\s*journey-direct-write:\s*([a-z][a-z-]*)\s*—/;
+
+    /** 地板锚点:不写「恰 46 条」—— 那会在下次加 journey 时过期,然后被人顺手改大。 */
+    const JOURNEY_WRITE_FLOOR = 30;
+
+    interface JourneyAuditResult {
+      writes: number;
+      findings: string[];
+    }
+
+    function auditJourneyDirectWrites(
+      files: ReadonlyArray<{ path: string; text: string }>,
+    ): JourneyAuditResult {
+      const findings: string[] = [];
+      let writes = 0;
+      for (const file of files) {
+        const lines = file.text.split('\n');
+        for (let i = 0; i < lines.length; i += 1) {
+          if (!JOURNEY_WRITE_RE.test(lines[i])) continue;
+          writes += 1;
+          // 只认**紧邻上一行**:允许标注离得远 = 允许一条标注假装覆盖后面所有直写。
+          const previous = i > 0 ? lines[i - 1] : '';
+          const matched = JOURNEY_NOTE_RE.exec(previous);
+          if (!matched) {
+            findings.push(`${file.path}:${i + 1} 直写库但上一行没有 journey-direct-write 标注`);
+            continue;
+          }
+          if (!JOURNEY_DIRECT_WRITE_CATEGORIES.has(matched[1])) {
+            findings.push(
+              `${file.path}:${i + 1} 分类 "${matched[1]}" 不在闭集内` +
+                `(合法值:${[...JOURNEY_DIRECT_WRITE_CATEGORIES].join(' / ')})`,
+            );
+          }
+        }
+      }
+      return { writes, findings };
+    }
+
+    // ── 仪器正反对照:先证明这个函数真的会红,再拿它去量真仓库 ──────────────
+    const STUB_UNLABELED = 'const a = await prisma.member.create({ data: {} });';
+    const STUB_LABELED =
+      '// journey-direct-write: ambient — 底座\nconst a = await prisma.member.create({ data: {} });';
+    const STUB_BAD_CATEGORY =
+      '// journey-direct-write: bogus-category — 理由\nconst a = await prisma.member.create({ data: {} });';
+    const STUB_FAR_LABEL =
+      '// journey-direct-write: ambient — 底座\n\nconst a = await prisma.member.create({ data: {} });';
+
+    checkEq(
+      'journey 直写:无标注 = FAIL',
+      auditJourneyDirectWrites([{ path: 's.ts', text: STUB_UNLABELED }]).findings.length,
+      1,
+    );
+    checkEq(
+      'journey 直写:合法分类 = PASS',
+      auditJourneyDirectWrites([{ path: 's.ts', text: STUB_LABELED }]).findings.length,
+      0,
+    );
+    checkEq(
+      'journey 直写:闭集外分类 = FAIL(证明分类闭集真的在管)',
+      auditJourneyDirectWrites([{ path: 's.ts', text: STUB_BAD_CATEGORY }]).findings.length,
+      1,
+    );
+    checkEq(
+      'journey 直写:标注不紧邻 = FAIL(否则一条标注能假装覆盖后面所有直写)',
+      auditJourneyDirectWrites([{ path: 's.ts', text: STUB_FAR_LABEL }]).findings.length,
+      1,
+    );
+
+    // ── 真仓库读数 ────────────────────────────────────────────────────────
+    const journeySupportDir = path.resolve(__dirname, '..', 'test/support');
+    const journeyFiles = fs
+      .readdirSync(journeySupportDir)
+      .filter((name) => name.startsWith('journey-') && name.endsWith('.ts'))
+      .sort()
+      .map((name) => ({
+        path: `test/support/${name}`,
+        text: fs.readFileSync(path.join(journeySupportDir, name), 'utf-8'),
+      }));
+
+    const journeyAudit = auditJourneyDirectWrites(journeyFiles);
+
+    // 自证:扫描面塌了(找不到 journey 文件 / 正则失配)必须红,不能空集恒等空集变绿。
+    check(
+      'journey 直写:扫描面非空(地板锚点,不写死条数)',
+      journeyFiles.length >= 5 && journeyAudit.writes >= JOURNEY_WRITE_FLOOR,
+      `发现 ${journeyFiles.length} 个 journey 文件 / ${journeyAudit.writes} 处直写` +
+        `(地板 5 / ${JOURNEY_WRITE_FLOOR})—— 扫描面塌了`,
+    );
+    check(
+      'journey 直写:真实 test/support 当前 PASS(每处都已交代)',
+      journeyAudit.findings.length === 0,
+      journeyAudit.findings.slice(0, 8).join('\n      '),
+    );
+  }
+
   if (knownGaps.length > 0) {
     process.stdout.write(`\n── 已知缺口:${knownGaps.length} 条(不假装安全)──\n`);
     for (const gap of knownGaps) {

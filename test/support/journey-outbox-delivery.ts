@@ -36,6 +36,7 @@ async function createRecipient(
     username: `journey-outbox-${suffix}-${randomUUID()}`,
     role: Role.USER,
   });
+  // journey-direct-write: ambient — 队员建档属招新链
   const member = await prisma.member.create({
     data: {
       memberNo: `journey-outbox-${suffix}-${randomUUID()}`,
@@ -44,6 +45,7 @@ async function createRecipient(
     },
     select: { id: true },
   });
+  // journey-direct-write: ambient — 账号关联同属招新链
   await prisma.user.update({
     where: { id: user.id },
     data: { memberId: member.id, openid },
@@ -53,13 +55,16 @@ async function createRecipient(
 
 async function seedWechatBroadcastReferences(runtime: JourneyRuntime): Promise<void> {
   const prisma = journeyPrisma(runtime);
+  // journey-direct-write: ambient — 字典底座
   const type = await prisma.dictType.create({
     data: { code: 'notification_type', label: '通知类型', status: 'ACTIVE' },
     select: { id: true },
   });
+  // journey-direct-write: ambient — 同上
   await prisma.dictItem.create({
     data: { typeId: type.id, code: 'general', label: '一般通知', status: 'ACTIVE' },
   });
+  // journey-direct-write: ambient — 微信订阅模板属渠道配置,不是被验的投递链
   await prisma.wechatSubscribeTemplate.create({
     data: { notificationTypeCode: 'general', templateId: TEMPLATE_ID, enabled: true },
   });
@@ -82,6 +87,7 @@ export async function runOutboxDeliveryJourney(
   const delivered = await createRecipient(runtime, '正常', 'dev-openid-journey-outbox-ok');
   // DevStub 的 40001 是 token 无效类暂态错误；因此真实 handler 会 nack，而不是直接记终态。
   const retried = await createRecipient(runtime, '重试', 'dev-openid-wxerr-40001');
+  // journey-direct-write: ambient — 微信配额是外部系统产物
   await prisma.wechatSubscriptionQuota.createMany({
     data: [
       { memberId: delivered.memberId, templateId: TEMPLATE_ID, availableCount: 1 },
@@ -141,6 +147,7 @@ export async function runOutboxDeliveryJourney(
       throw new Error(`第 ${attempt} 次暂态投递结果不符合重试协议: ${JSON.stringify(result)}`);
     }
     if (attempt < 8) {
+      // journey-direct-write: time-compression — 只把 availableAt 提前到 epoch 以压掉重试退避等待;不跳过任何链上步骤,重试仍逐次真跑 drainEventKey
       await prisma.notificationOutboxIntent.update({
         where: { eventKey: retriedChild.eventKey },
         data: { availableAt: new Date(0) },
