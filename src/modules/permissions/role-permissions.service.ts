@@ -54,18 +54,26 @@ export class RolePermissionsService {
     }
   }
 
-  // 第一档安全收口 D2:role-permission 分级闸 —— 非 SUPER_ADMIN 不得把任何控制面权限码
-  // (6 个 SA-only 保留码 + rbac.* + role-binding.*)分配给任何角色。
+  // 第一档安全收口 D2:role-permission 分级闸 —— 非 SUPER_ADMIN 不得**改动**任何角色的
+  // 控制面权限码(7 条 SA-only 保留码 + rbac.* + role-binding.*)映射。
   //
   // 这组保留码在 seed 中有意不绑 biz-admin / ops-admin(仅 SUPER_ADMIN 短路);
   // assign() 原先只判 `rbac.role-permission.create`,未阻止持 ops-admin 者把保留码
   // 自授给某角色再绑到自己身上,间接获得 SA-only 能力(授权越权洞)。
   //
+  // 🔴 **授与撤必须对称,本方法是两侧共用的唯一闸**(第六轮评审 E-B2,2026-08-21)。
+  //    E-B2 前 revoke() 一个控制面判定都没有:非 SA 授不了控制面码,却可以**撤** ——
+  //    包括把某个角色的 rbac.* / role-binding.* 权限撤空。damage 方向相反但同属
+  //    「控制面权限映射被非 SA 改动」,和授码是同一条不变量的两条腿。
+  //    这与刚修完的 E-B1(#1115)同属一个缺陷家族:**一侧有闸、另一侧没有**。
+  //    机器执法见同目录 role-permissions-control-plane-gate.spec.ts —— 该判据动态现取
+  //    本类所有会改写 rolePermission 映射的公开方法,逐个要求能到达本闸,漏一个即红。
+  //
   // 设计:
   // - SUPER_ADMIN 短路放行(沿 user-roles.canAssignRole 范式);
-  // - 在请求码(已去重)字符串层面拦截,**早于** Permission 存在性查询 —— 即便保留码
-  //   尚未 seed,非 SA 也拿 30103(fail-close,不退化成 30001 泄漏存在性);
-  // - 命中即整批拒绝(不部分写入),与 30001 整批拒绝语义一致。
+  // - 在权限码(已去重)字符串层面拦截;命中即整批拒绝(不部分写入),与 30001 整批拒绝语义一致;
+  // - assign() 收 codes,故能**早于** Permission 存在性查询拦下 —— 即便保留码尚未 seed,
+  //   非 SA 也拿 30103(fail-close,不退化成 30001 泄漏存在性)。
   private assertNoControlPlaneCodesOrThrow(user: CurrentUserPayload, uniqueCodes: string[]): void {
     if (user.role === Role.SUPER_ADMIN) return;
     if (uniqueCodes.some(isControlPlanePermissionCode)) {
@@ -167,14 +175,21 @@ export class RolePermissionsService {
     // 1. role 必须存在 + 未软删
     await this.assertRoleAccessibleOrThrow(roleId);
 
-    // 2. permission 必须存在
+    // 2. permission 必须存在(顺带取 code —— 分级闸判的是码,不是 id)
     const perm = await this.prisma.permission.findUnique({
       where: { id: permissionId },
-      select: { id: true },
+      select: { id: true, code: true },
     });
     if (!perm) throw new BizException(BizCode.PERMISSION_NOT_FOUND);
 
-    // 3. 撤权 + audit(单事务原子)。先查存在性(不存在 → 30011),再删 + 留痕。
+    // 3. D2 分级闸(授撤对称):非 SUPER_ADMIN 不得撤销控制面权限码。
+    //    与 assign() 复用**同一个** assertNoControlPlaneCodesOrThrow,不另造判定。
+    //    ⚠️ 与 assign 的唯一次序差:assign 的入参本来就是 codes,可在存在性查询前拦;
+    //    revoke 的路径参数是 permissionId,不查库拿不到 code,只能先查后判。这不是漏拦 ——
+    //    permissionId 不存在时本就无绑定可撤,先返 30001 不缩小闸的覆盖面。
+    this.assertNoControlPlaneCodesOrThrow(user, [perm.code]);
+
+    // 4. 撤权 + audit(单事务原子)。先查存在性(不存在 → 30011),再删 + 留痕。
     //    用先查再删范式避免 prisma delete P2025;沿现有项目"先查再操作"范式更可读。
     const existing = await this.prisma.rolePermission.findUnique({
       where: { roleId_permissionId: { roleId, permissionId } },
@@ -198,7 +213,7 @@ export class RolePermissionsService {
       });
     });
 
-    // 4. 返回该角色当前完整 detail(含最新 permissions)
+    // 5. 返回该角色当前完整 detail(含最新 permissions)
     return this.buildDetailResponse(roleId);
   }
 }
