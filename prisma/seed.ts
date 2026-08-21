@@ -4778,11 +4778,29 @@ const POSITION_ROLE_POLICY_CATALOG = Object.freeze(
 );
 
 export const RBAC_SEED_CATALOG = Object.freeze({
+  // ⚠️ `permissions` 的**各桶并集必须等于权限码全集** —— 这不是散文,由
+  // `pnpm docs:catalog:check`(`scripts/check-permission-catalog-closure.ts`)机器执法。
+  //
+  // 立项由来(第七轮评审顺带发现 ①):本对象曾只有下面前四桶,并集 **225 / 全集 237**,
+  // 漏的 12 条**恰好是整个 `ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED`** ——
+  // 责任闭环那批加了自己的权限数组,却没人把它接进本目录,也没有任何判据会注意到。
+  //
+  // 🔴 为什么这种漏法**零症状**:本对象是四个具名字段,读它的人得自己决定要不要全并起来;
+  // 并起来是错的,但类型对、数量看着合理(225 很像「差不多全部」)、没有断言也没有命名提示。
+  // 唯一的发现方式是有人恰好去数一遍 —— 而漏掉的偏偏是最新、最需要盯的 flag-gated 码。
+  //
+  // ⇒ **新增权限数组时必须在这里加一个桶**,否则判据当场红。
+  //    不要用「加一个 all 桶把全集塞进去」了事:那让分桶失去意义,
+  //    且下次新数组照样可以不进任何桶(闸会红,但人会顺手往 all 里塞)。
   permissions: Object.freeze({
     rbac: readonlyPermissionSeeds(RBAC_PERMISSION_SEED),
     bootstrap: readonlyPermissionSeeds(ALL_PERMISSION_SEED),
     attachment: readonlyPermissionSeeds(ATTACHMENT_PERMISSION_SEED),
     business: readonlyPermissionSeeds(BIZ_PERMISSION_SEED),
+    // 责任闭环 / 结算真相链 / 考勤退回(12 条)。数组名只说了 responsibility,
+    // 但它同时装着 `activity.settlement-*` 与 `attendance.*-return.sheet` ——
+    // 那批 feature 的权限本来就是一起加的,按**批次**分桶而不是按码前缀。
+    activityWorkflow: readonlyPermissionSeeds(ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED),
   }),
   roles: Object.freeze({
     opsAdmin: roleSeed(OPS_ADMIN_ROLE_CODE, OPS_ADMIN_PERMISSION_CODES),
