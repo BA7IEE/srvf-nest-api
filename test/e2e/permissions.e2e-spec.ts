@@ -227,9 +227,9 @@ describe('permissions 模块', () => {
         .get('/api/system/v1/permissions?module=attachment&pageSize=100')
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
-      const item = (res.body.data.items as Array<{ code: string; description: string | null }>).find(
-        (i) => i.code === 'attachment.view.cert',
-      );
+      const item = (
+        res.body.data.items as Array<{ code: string; description: string | null }>
+      ).find((i) => i.code === 'attachment.view.cert');
       expect(item).toBeDefined();
       expect(item?.description).toBeNull();
     });
@@ -386,21 +386,24 @@ describe('permissions 模块', () => {
       ['attachment_4seg_upload_other', 'attachment.upload.cert.other'],
       ['attachment_4seg_view_self', 'attachment.view.cert.self'],
       ['attachment_4seg_view_other', 'attachment.view.cert.other'],
-    ])('POST code = %s 合法形如 %s → 过格式闸,被目录护栏拦(30106 而非 30008)', async (_name, code) => {
-      // 权限目录护栏(2026-08-22)后这些码不可能创建成功(都不在 seed 闭包内)。
-      // 但本组要证的是**格式闸放行**,判据仍在:格式不合法会返 30008,
-      // 返 30106 说明正则接受了它、是下一道闸拦的。两个码可区分 ⇒ 断言没变钝。
-      const res = await request(httpServer(app))
-        .post('/api/system/v1/permissions')
-        .set('Authorization', superAdminAuth)
-        .send({
-          code,
-          module: 'm',
-          action: 'a',
-          resourceType: 'r',
-        });
-      expectBizError(res, BizCode.PERMISSION_CODE_NOT_IN_SEED_CATALOG);
-    });
+    ])(
+      'POST code = %s 合法形如 %s → 过格式闸,被目录护栏拦(30106 而非 30008)',
+      async (_name, code) => {
+        // 权限目录护栏(2026-08-22)后这些码不可能创建成功(都不在 seed 闭包内)。
+        // 但本组要证的是**格式闸放行**,判据仍在:格式不合法会返 30008,
+        // 返 30106 说明正则接受了它、是下一道闸拦的。两个码可区分 ⇒ 断言没变钝。
+        const res = await request(httpServer(app))
+          .post('/api/system/v1/permissions')
+          .set('Authorization', superAdminAuth)
+          .send({
+            code,
+            module: 'm',
+            action: 'a',
+            resourceType: 'r',
+          });
+        expectBizError(res, BizCode.PERMISSION_CODE_NOT_IN_SEED_CATALOG);
+      },
+    );
   });
 
   // ============ 资源不存在(30001) ============
