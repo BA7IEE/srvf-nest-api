@@ -2635,6 +2635,27 @@ const MEMBER_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     description: '切换队员 status(ACTIVE↔INACTIVE;镜像 user.update.status 命名)',
   },
   {
+    // 第七轮评审 R7-A-01(2026-08-21):队员身份主档订正入口。
+    //
+    // 此前 memberNo / memberSinceDate / memberOriginCode 录错**只能直接改库** ——
+    // 实测全仓 member delegate 8 处写调用里,这三个字段只出现在 3 处 create,零订正路径。
+    //
+    // 持有人与 `member.create.record` 一致(biz-admin + org-admin;维护者 2026-08-21 拍板):
+    // 能建档就该能订正建档时录错的事实 —— 与创建同权是最小且自洽的口径。本码**不**入
+    // BIZ_ADMIN_EXCLUDED_CODES / ORG_ADMIN_EXCLUDED_CODES,靠既有派生链自动挂上;
+    // 副职只读投影结构上取不到它(isReadonlyProjectionCode 只认 `.read.` 与 attachment.view.)。
+    //
+    // ⚠️ memberNo 刻意**不**单发第二个码:单发码多出一处「可能漏发给角色」的失败形态,
+    // 那正是 R7-D-01 修的那一类。改编号改用请求体里的二次确认参数 —— 同一处代码里的
+    // 显式入参,结构上不存在「码没发给人」这种形态。
+    code: 'member.correct.identity',
+    module: 'member',
+    action: 'correct',
+    resourceType: 'identity',
+    description:
+      '订正队员身份事实(memberNo / 发号日 / 来源;必填订正理由 + 独立审计事件,不混进日常改资料)',
+  },
+  {
     // 一键离队关闭队员身份及全部当前授权来源。绑 biz-admin。
     code: 'member.offboard.record',
     module: 'member',
@@ -3579,7 +3600,7 @@ const BIZ_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = BIZ_PERMISS
 const BIZ_ADMIN_ROLE_CODE = 'biz-admin';
 const BIZ_ADMIN_DISPLAY_NAME = '业务管理员';
 const BIZ_ADMIN_DESCRIPTION =
-  '业务面通用管理角色(Slow-3 决议 2026-06-11;v0.61.0 PR-11 contract 后活动发布/更新/取消/完成、报名写动作、考勤提交/编辑/删除/一审动作改由 owner/collaborator/reviewer 显式责任角色承载):89 条业务码中绑 69；继续保留 activity.create/delete.record、activity-registration.read.record、attendance.read.sheet。member.delete.record 仅 SUPER_ADMIN；考勤终审/撤回与活动责任 contract 动作均不绑。member-portrait 两码（issue #1055 T4）交给既有派生链：biz-admin 全局持有，org-admin 按组织范围继承，副职只读投影自动拿到 read.history，group-manager 不绑。manage 的**组织范围由端点判**（getVisibleOrganizationScope 取范围，再验目标 memberId 在不在范围内），不是靠绑定形态判 —— biz-admin 的 GLOBAL 绑定本来就该能管全队。attachment 存量 20 码(member/certificate/activity)不在本角色，CMS content 附件写 4 码保留；notification 7 码与 membership.transfer.record 保留；证书标准库 PR-1 起含 certificate.read.sensitive(证书编号/审核备注明文，org-admin 不继承)；每个 ADMIN 用户由 seed 自动补挂本角色。';
+  '业务面通用管理角色(Slow-3 决议 2026-06-11;v0.61.0 PR-11 contract 后活动发布/更新/取消/完成、报名写动作、考勤提交/编辑/删除/一审动作改由 owner/collaborator/reviewer 显式责任角色承载):90 条业务码中绑 72；继续保留 activity.create/delete.record、activity-registration.read.record、attendance.read.sheet。member.delete.record 仅 SUPER_ADMIN；考勤终审/撤回与活动责任 contract 动作均不绑。member-portrait 两码（issue #1055 T4）交给既有派生链：biz-admin 全局持有，org-admin 按组织范围继承，副职只读投影自动拿到 read.history，group-manager 不绑。manage 的**组织范围由端点判**（getVisibleOrganizationScope 取范围，再验目标 memberId 在不在范围内），不是靠绑定形态判 —— biz-admin 的 GLOBAL 绑定本来就该能管全队。attachment 存量 20 码(member/certificate/activity)不在本角色，CMS content 附件写 4 码保留；notification 7 码与 membership.transfer.record 保留；证书标准库 PR-1 起含 certificate.read.sensitive(证书编号/审核备注明文，org-admin 不继承)；每个 ADMIN 用户由 seed 自动补挂本角色。';
 
 // Slow-4 T1(36/35)+ 保险模块含 PR2 增量(+8 全绑 → 44/43)+ 招新一期 T1 增量(+5 → 49/48):
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。

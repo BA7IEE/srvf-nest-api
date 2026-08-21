@@ -566,6 +566,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/members/{id}'],
   ['patch', '/api/admin/v1/members/{id}'],
   ['patch', '/api/admin/v1/members/{id}/status'],
+  ['post', '/api/admin/v1/members/{id}/identity-corrections'],
   ['delete', '/api/admin/v1/members/{id}'],
   // 队员账号闭环 v1(MVP,2026-07-07):开号(手机验证码登录,不设密码),320→321。
   ['post', '/api/admin/v1/members/{id}/account'],
@@ -1037,7 +1038,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 544;
+const EXPECTED_ROUTE_COUNT = 545;
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1744,7 +1745,8 @@ describe('OpenAPI 契约快照', () => {
   //   →505；第 5 批 QR 自助/managed attendance 十路 →515；第 6 批 staff/proxy/bulk/import
   //   八路 →523；B6-2 offline package/review 六路 →529；B7 audience tags 三路 →532;
   //   issue #1055 T3 App 账号头像三路(GET/POST/DELETE /app/v1/me/avatar) →540;
-  //   issue #1055 T4 队员标准照四路(official-portrait GET/POST/DELETE + official-portraits GET) → **544**。
+  //   issue #1055 T4 队员标准照四路(official-portrait GET/POST/DELETE + official-portraits GET) →544;
+  //   第七轮评审 R7-A-01 队员身份主档订正一路(POST /admin/v1/members/{id}/identity-corrections) → **545**。
   //
   // ⚠️ 用例标题**从写死数字改成插值**:动它之前标题写着「精确为 532」而断言是 537 ——
   // 有人 bump 了数字没 bump 标题,标题从此说谎。插值之后它不可能再漂。

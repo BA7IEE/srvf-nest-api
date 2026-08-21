@@ -479,7 +479,8 @@ export const BizCode = {
   // 子段(对齐 baseline §1.3):
   // - 15001:NOT_FOUND
   // - 15002-15009:唯一约束冲突(memberNo)
-  // - 15010-15029:业务级输入校验(grade_code_invalid)
+  // - 15010-15029:业务级输入校验(grade_code_invalid / identity_correction_no_change /
+  //   member_no_correction_not_confirmed)
   // - 15030-15099:资源状态非法 / 引用约束(has_active_department / has_linked_user)
   //
   // 注:登录账号枚举相关失败场景(memberNo 路径未命中 / 命中但未绑 user 等)
@@ -497,6 +498,28 @@ export const BizCode = {
   MEMBER_GRADE_CODE_INVALID: {
     code: 15010,
     message: '队员等级字典 code 不存在或已停用',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // ===== 第七轮评审 R7-A-01:队员身份主档订正入口 =====
+  // 两码都落 15010-15029「业务级输入校验」子段而不是 15030+「资源状态非法」——
+  // 这两种失败都只由入参形状决定,与队员当前处于什么状态无关。
+  // 覆盖两种形状:三个字段一个都没传,以及传了但每一项都与现值相同。
+  // **刻意不做成幂等成功** —— 沿本文件 MEMBER_OFFICIAL_PORTRAIT_NOT_FOUND 的同一立场:
+  // 订正是针对某个具体错值的判断,静默 200 会让调用方以为自己订正了什么,而实际什么
+  // 都没发生(本仓 omittable-only 装饰器注释里点名的第 3 种失败形态:没有报错、
+  // 没有日志、没有异常指标,最难查)。
+  MEMBER_IDENTITY_CORRECTION_NO_CHANGE: {
+    code: 15011,
+    message: '身份订正未产生任何变更(未指定字段,或指定的值与现值相同)',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  // memberNo 是**登录识别锚**(auth.service 用户名未命中时按它反查队员),改它等于换掉
+  // 队员的登录标识。因此要求调用方在同一次请求里显式确认,而不是为它单发一个权限码:
+  // 单发码多出一处「可能漏发给角色」的失败形态(R7-D-01 修的正是那一类);
+  // 二次确认是同一处代码里的显式参数,结构上不存在「码没发给人」这种形态。
+  MEMBER_NO_CORRECTION_NOT_CONFIRMED: {
+    code: 15012,
+    message: '订正队员编号需显式确认(confirmMemberNoChange=true)',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
   MEMBER_HAS_ACTIVE_DEPARTMENT: {
