@@ -35,6 +35,7 @@ import { assertEnrollmentIdentityChangeAllowed } from '../team-join/team-join-en
 // T4(D-WC-10):撤销原语归 users(见该文件头注「为什么落在 users 而不是 wecom」)。
 // 纯 tx 函数,与既有 `auth/auth-session-lock` 同型 —— 不注入 UsersService、不产生模块环。
 import {
+  CorrectMemberIdentityDto,
   CreateMemberDto,
   ListMembersQueryDto,
   MemberAudienceTagDto,
@@ -356,6 +357,123 @@ export class MembersService {
         data,
         select: memberSafeSelect,
       });
+      const linked = await this.query.findLinkedUser(id, tx);
+      return attachAccountInfo(updated, linked);
+    });
+  }
+
+  // ============ 身份主档订正(第七轮评审 R7-A-01)============
+
+  // 这是 `UpdateMemberDto` 上方注释此前预告的「独立的、带审计的更正接口」。
+  //
+  // 为什么必须独立而不是把三个字段并进 PATCH /:id:身份事实与日常资料的**失败代价**
+  // 不同量级 —— memberNo 同时是登录识别锚(auth.service:改名后旧编号不再能登录),
+  // memberSinceDate / memberOriginCode 是建档时一次性确定的事实。混进日常改资料
+  // 就没有必填理由、没有二次确认、也没有独立审计事件可查。
+  //
+  // 校验一条不松:memberNo 唯一性(含软删)+ P2002 兜底 + 日期北京日归一,
+  // 全部**复用建档同一份**(assertMemberNoUnique / runWithUniqueConstraintGuard /
+  // normalizeMemberNo / normalizeDateOnly),不在本路径另写一套。
+  //
+  // ⚠️ 刻意不做的一件事:改 memberNo **不**改已发放账号的 username。username 是开号
+  // 当刻由 memberNo 推导出来的一次性铸造值(member-account.service.computeNextUsername),
+  // 此后它是独立的登录标识;回头改名既可能撞上别人的 username,也会让"这个人此前用
+  // 什么登录"在审计里断链。订正后两条登录路径都通:旧 username 照常,新 memberNo 走
+  // auth.service 的编号回查腿。
+  async correctIdentity(
+    id: string,
+    dto: CorrectMemberIdentityDto,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<MemberResponseDto> {
+    await this.access.assertCanOrThrow(currentUser, 'member.correct.identity', {
+      type: 'member',
+      id,
+    });
+
+    // 三个字段一个都没传 = 空订正。先于取锁判 —— 这一档只看入参形状,不需要读库。
+    if (
+      dto.memberNo === undefined &&
+      dto.memberSinceDate === undefined &&
+      dto.memberOriginCode === undefined
+    ) {
+      throw new BizException(BizCode.MEMBER_IDENTITY_CORRECTION_NO_CHANGE);
+    }
+
+    // 与 updateStatus 同型:只取 Member 行锁,不取队员线性化 advisory 键
+    //(本路径不碰入队身份闸,不需要 runMemberLinearizedTransaction 那套预算)。
+    // 取锁的实质理由:改 memberNo 必须与「同时有人在给这个队员开号 / 退号重开」排队 ——
+    // 那两条路径都在 lockMemberLifecycle 下读 member.memberNo 去铸 username。
+    return this.prisma.$transaction(async (tx) => {
+      await lockMemberLifecycle(tx, id);
+      const before = await this.access.findMemberOrThrow(id, tx);
+
+      // 未传 = 保持现值(不是清空)—— DTO 侧 @OmittableOnly() 已让显式 null 稳定 400,
+      // 所以这里的 `undefined` 判定只会对应「真的没传」。
+      const nextMemberNo =
+        dto.memberNo === undefined ? before.memberNo : normalizeMemberNo(dto.memberNo);
+      const nextMemberSinceDate =
+        dto.memberSinceDate === undefined
+          ? before.memberSinceDate
+          : normalizeDateOnly(dto.memberSinceDate);
+      const nextMemberOriginCode =
+        dto.memberOriginCode === undefined ? before.memberOriginCode : dto.memberOriginCode;
+
+      const memberNoChanged = nextMemberNo !== before.memberNo;
+
+      // 二次确认只在**真的会改动**编号时要求:把现有编号原样回传什么也没改,
+      // 不该被拒(维护者 2026-08-21 拍板用二次确认替代单发权限码)。
+      if (memberNoChanged && dto.confirmMemberNoChange !== true) {
+        throw new BizException(BizCode.MEMBER_NO_CORRECTION_NOT_CONFIRMED);
+      }
+
+      // 复用建档那条唯一性预检(findUnique **含软删**:memberNo 全局唯一不复用)。
+      // 只在真改动时查 —— 不改动时它会命中队员自己,把一次无害入参平白撞成「编号已存在」。
+      if (memberNoChanged) {
+        await this.assertMemberNoUnique(nextMemberNo, tx);
+      }
+
+      const changedFields: string[] = [];
+      if (memberNoChanged) changedFields.push('memberNo');
+      if (nextMemberSinceDate.getTime() !== before.memberSinceDate.getTime()) {
+        changedFields.push('memberSinceDate');
+      }
+      if (nextMemberOriginCode !== before.memberOriginCode) changedFields.push('memberOriginCode');
+
+      // 传了、但每一项都与现值相同 ⇒ 与空订正同一形状,同样不静默成功。
+      if (changedFields.length === 0) {
+        throw new BizException(BizCode.MEMBER_IDENTITY_CORRECTION_NO_CHANGE);
+      }
+
+      // 复用建档同一个 P2002 兜底:预检查与写之间仍有并发窗口(两个管理员同时把两个
+      // 队员订正成同一个编号),包住的正是真正会撞唯一键的那一次写。
+      const updated = await this.access.runWithUniqueConstraintGuard(() =>
+        tx.member.update({
+          where: { id },
+          data: {
+            memberNo: nextMemberNo,
+            memberSinceDate: nextMemberSinceDate,
+            memberOriginCode: nextMemberOriginCode,
+          },
+          select: memberSafeSelect,
+        }),
+      );
+
+      await this.auditRecorder.identityCorrected(tx, auditCtx(id, currentUser, auditMeta), {
+        before: {
+          memberNo: before.memberNo,
+          memberSinceDate: before.memberSinceDate.toISOString(),
+          memberOriginCode: before.memberOriginCode,
+        },
+        after: {
+          memberNo: updated.memberNo,
+          memberSinceDate: updated.memberSinceDate.toISOString(),
+          memberOriginCode: updated.memberOriginCode,
+        },
+        changedFields,
+        reason: dto.reason,
+      });
+
       const linked = await this.query.findLinkedUser(id, tx);
       return attachAccountInfo(updated, linked);
     });

@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:9d90116f52bfce0eb090ea8535c8a4a06a27fbdc69b6ccf13df38f02ac35bc6a |
-| endpoint count | 544 |
+| inputDigest | sha256:c33fc555915d08bd6d7bfd4ee8dab9c98282a177d5d09d7b95a144223187c70a |
+| endpoint count | 545 |
 | legacy [auth] count | 167 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -29,7 +29,7 @@
 
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
-| admin | 277 | 277 | 0 |
+| admin | 278 | 278 | 0 |
 | app | 156 | 156 | 0 |
 | system | 75 | 75 | 0 |
 | auth | 20 | 20 | 0 |
@@ -40,7 +40,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 344 |
+| rbac | 345 |
 | auth | 167 |
 | unclassified | 0 |
 
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:9d90116f52bfce0eb090ea8535c8a4a06a27fbdc69b6ccf13df38f02ac35bc6a",
+  "inputDigest": "sha256:c33fc555915d08bd6d7bfd4ee8dab9c98282a177d5d09d7b95a144223187c70a",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -6918,6 +6918,25 @@
       }
     },
     {
+      "routeKey": "POST /api/admin/v1/members/:id/identity-corrections",
+      "controller": "MembersController",
+      "handler": "correctIdentity",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "member.correct.identity",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
       "routeKey": "POST /api/admin/v1/members/:id/offboard",
       "controller": "MembersController",
       "handler": "offboard",
@@ -9908,8 +9927,8 @@
 | DELETE | /api/admin/v1/certificate-standards/:id | Admin - Certificate Standards | rbac | RBAC; admission=-; codes=certificate-standard.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-standards.controller.ts:205; src/modules/certificates/certificate-standards.controller.ts:228 |
 | DELETE | /api/admin/v1/contents/:id | Admin - Content | rbac | RBAC; admission=-; codes=content.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:143; src/modules/content/content-admin.controller.ts:154 |
 | DELETE | /api/admin/v1/contents/:id/attachments/:attachmentId | Admin - Content | rbac | RBAC; admission=-; codes=attachment.delete.*; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:277; src/modules/content/content-admin.controller.ts:299 |
-| DELETE | /api/admin/v1/members/:id | Admin - Members | rbac | RBAC; admission=-; codes=member.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:420; src/modules/members/members.controller.ts:439 |
-| DELETE | /api/admin/v1/members/:id/official-portrait | Admin - Members | rbac | RBAC; admission=-; codes=member-portrait.manage.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:296; src/modules/members/members.controller.ts:317 |
+| DELETE | /api/admin/v1/members/:id | Admin - Members | rbac | RBAC; admission=-; codes=member.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:458; src/modules/members/members.controller.ts:477 |
+| DELETE | /api/admin/v1/members/:id/official-portrait | Admin - Members | rbac | RBAC; admission=-; codes=member-portrait.manage.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:297; src/modules/members/members.controller.ts:318 |
 | DELETE | /api/admin/v1/members/:memberId/certificates/:id | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:207; src/modules/certificates/certificates.controller.ts:227 |
 | DELETE | /api/admin/v1/members/:memberId/department | Admin - Member Departments | rbac | RBAC; admission=-; codes=member-department.clear.current; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/member-departments.controller.ts:101; src/modules/member-departments/member-departments.controller.ts:119 |
 | DELETE | /api/admin/v1/members/:memberId/emergency-contacts/:id | Admin - Emergency Contacts | rbac | RBAC; admission=-; codes=emergency-contact.delete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/emergency-contacts/emergency-contacts.controller.ts:114; src/modules/emergency-contacts/emergency-contacts.controller.ts:134 |
@@ -9980,12 +9999,12 @@
 | GET | /api/admin/v1/contents | Admin - Content | rbac | RBAC; admission=-; codes=content.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:91; src/modules/content/content-admin.controller.ts:100 |
 | GET | /api/admin/v1/contents/:id | Admin - Content | rbac | RBAC; admission=-; codes=content.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:103; src/modules/content/content-admin.controller.ts:115 |
 | GET | /api/admin/v1/me | Admin - Me | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/users/controllers/admin-me.controller.ts:34; src/modules/users/controllers/admin-me.controller.ts:43 |
-| GET | /api/admin/v1/members | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:122; src/modules/members/members.controller.ts:134 |
-| GET | /api/admin/v1/members/:id | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:358; src/modules/members/members.controller.ts:372 |
-| GET | /api/admin/v1/members/:id/audience-tags | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:320; src/modules/members/members.controller.ts:335 |
-| GET | /api/admin/v1/members/:id/offboard-impact | Admin - Members | rbac | RBAC; admission=-; codes=member.offboard.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:575; src/modules/members/members.controller.ts:592 |
-| GET | /api/admin/v1/members/:id/official-portrait | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:205; src/modules/members/members.controller.ts:217 |
-| GET | /api/admin/v1/members/:id/official-portraits | Admin - Members | rbac | RBAC; admission=-; codes=member-portrait.read.history; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:220; src/modules/members/members.controller.ts:232 |
+| GET | /api/admin/v1/members | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:123; src/modules/members/members.controller.ts:135 |
+| GET | /api/admin/v1/members/:id | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:359; src/modules/members/members.controller.ts:373 |
+| GET | /api/admin/v1/members/:id/audience-tags | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:321; src/modules/members/members.controller.ts:336 |
+| GET | /api/admin/v1/members/:id/offboard-impact | Admin - Members | rbac | RBAC; admission=-; codes=member.offboard.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:613; src/modules/members/members.controller.ts:630 |
+| GET | /api/admin/v1/members/:id/official-portrait | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:206; src/modules/members/members.controller.ts:218 |
+| GET | /api/admin/v1/members/:id/official-portraits | Admin - Members | rbac | RBAC; admission=-; codes=member-portrait.read.history; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:221; src/modules/members/members.controller.ts:233 |
 | GET | /api/admin/v1/members/:memberId/attendance-records | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-member-attendance.controller.ts:42; src/modules/attendances/controllers/admin-member-attendance.controller.ts:60 |
 | GET | /api/admin/v1/members/:memberId/certificates | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:75; src/modules/certificates/certificates.controller.ts:93 |
 | GET | /api/admin/v1/members/:memberId/certificates/:id | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:157; src/modules/certificates/certificates.controller.ts:177 |
@@ -10003,7 +10022,7 @@
 | GET | /api/admin/v1/members/:memberId/profile | Admin - Member Profiles | rbac | RBAC; admission=-; codes=member-profile.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-profiles/member-profiles.controller.ts:47; src/modules/member-profiles/member-profiles.controller.ts:65 |
 | GET | /api/admin/v1/members/:memberId/registrations | Admin - Registrations | rbac | RBAC; admission=-; codes=activity-registration.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-registrations/controllers/admin-registrations.controller.ts:65; src/modules/activity-registrations/controllers/admin-registrations.controller.ts:86 |
 | GET | /api/admin/v1/members/:memberId/supervision-scope | Admin - Supervision Assignments | rbac | RBAC; admission=-; codes=supervision-assignment.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/supervision-assignments/supervision-assignments.controller.ts:176; src/modules/supervision-assignments/supervision-assignments.controller.ts:196 |
-| GET | /api/admin/v1/members/options | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:138; src/modules/members/members.controller.ts:151 |
+| GET | /api/admin/v1/members/options | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:139; src/modules/members/members.controller.ts:152 |
 | GET | /api/admin/v1/memberships | Admin - Memberships | rbac | RBAC; admission=-; codes=membership.list.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships-admin.controller.ts:60; src/modules/member-departments/memberships-admin.controller.ts:72 |
 | GET | /api/admin/v1/memberships/:id | Admin - Memberships | rbac | RBAC; admission=-; codes=membership.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships-admin.controller.ts:118; src/modules/member-departments/memberships-admin.controller.ts:134 |
 | GET | /api/admin/v1/memberships/conflicts | Admin - Memberships | rbac | RBAC; admission=-; codes=membership.list.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships-admin.controller.ts:75; src/modules/member-departments/memberships-admin.controller.ts:87 |
@@ -10172,9 +10191,9 @@
 | PATCH | /api/admin/v1/certificate-standards/:id | Admin - Certificate Standards | rbac | RBAC; admission=-; codes=certificate-standard.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-standards.controller.ts:150; src/modules/certificates/certificate-standards.controller.ts:172 |
 | PATCH | /api/admin/v1/certificate-standards/:id/status | Admin - Certificate Standards | rbac | RBAC; admission=-; codes=certificate-standard.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificate-standards.controller.ts:175; src/modules/certificates/certificate-standards.controller.ts:202 |
 | PATCH | /api/admin/v1/contents/:id | Admin - Content | rbac | RBAC; admission=-; codes=content.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:118; src/modules/content/content-admin.controller.ts:140 |
-| PATCH | /api/admin/v1/members/:id | Admin - Members | rbac | RBAC; admission=-; codes=member.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:375; src/modules/members/members.controller.ts:394 |
-| PATCH | /api/admin/v1/members/:id/account/status | Admin - Members | rbac | RBAC; admission=-; codes=user.update.status; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:550; src/modules/members/members.controller.ts:572 |
-| PATCH | /api/admin/v1/members/:id/status | Admin - Members | rbac | RBAC; admission=-; codes=member.update.status; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:397; src/modules/members/members.controller.ts:417 |
+| PATCH | /api/admin/v1/members/:id | Admin - Members | rbac | RBAC; admission=-; codes=member.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:376; src/modules/members/members.controller.ts:395 |
+| PATCH | /api/admin/v1/members/:id/account/status | Admin - Members | rbac | RBAC; admission=-; codes=user.update.status; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:588; src/modules/members/members.controller.ts:610 |
+| PATCH | /api/admin/v1/members/:id/status | Admin - Members | rbac | RBAC; admission=-; codes=member.update.status; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:398; src/modules/members/members.controller.ts:418 |
 | PATCH | /api/admin/v1/members/:memberId/certificates/:id | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:180; src/modules/certificates/certificates.controller.ts:204 |
 | PATCH | /api/admin/v1/members/:memberId/certificates/:id/reject | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.reject.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:256; src/modules/certificates/certificates.controller.ts:279 |
 | PATCH | /api/admin/v1/members/:memberId/certificates/:id/verify | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.verify.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:230; src/modules/certificates/certificates.controller.ts:253 |
@@ -10265,19 +10284,20 @@
 | POST | /api/admin/v1/contents/:id/attachments/upload-url | Admin - Content | rbac | RBAC; admission=-; codes=attachment.upload.*; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:221; src/modules/content/content-admin.controller.ts:245 |
 | POST | /api/admin/v1/contents/:id/publish | Admin - Content | rbac | RBAC; admission=-; codes=content.publish.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:158; src/modules/content/content-admin.controller.ts:176 |
 | POST | /api/admin/v1/contents/:id/unpublish | Admin - Content | rbac | RBAC; admission=-; codes=content.publish.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:179; src/modules/content/content-admin.controller.ts:197 |
-| POST | /api/admin/v1/members | Admin - Members | rbac | RBAC; admission=-; codes=member.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:174; src/modules/members/members.controller.ts:192 |
-| POST | /api/admin/v1/members/:id/account | Admin - Members | rbac | RBAC; admission=-; codes=member.grant.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:444; src/modules/members/members.controller.ts:467 |
-| POST | /api/admin/v1/members/:id/account/bind | Admin - Members | rbac | RBAC; admission=-; codes=member.bind.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:473; src/modules/members/members.controller.ts:498 |
-| POST | /api/admin/v1/members/:id/account/reopen | Admin - Members | rbac | RBAC; admission=-; codes=member.grant.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:522; src/modules/members/members.controller.ts:547 |
-| POST | /api/admin/v1/members/:id/account/unbind | Admin - Members | rbac | RBAC; admission=-; codes=member.bind.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:501; src/modules/members/members.controller.ts:519 |
-| POST | /api/admin/v1/members/:id/offboard | Admin - Members | rbac | RBAC; admission=-; codes=member.offboard.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:598; src/modules/members/members.controller.ts:621 |
-| POST | /api/admin/v1/members/:id/official-portrait | Admin - Members | rbac | RBAC; admission=-; codes=member-portrait.manage.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:235; src/modules/members/members.controller.ts:283 |
+| POST | /api/admin/v1/members | Admin - Members | rbac | RBAC; admission=-; codes=member.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:175; src/modules/members/members.controller.ts:193 |
+| POST | /api/admin/v1/members/:id/account | Admin - Members | rbac | RBAC; admission=-; codes=member.grant.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:482; src/modules/members/members.controller.ts:505 |
+| POST | /api/admin/v1/members/:id/account/bind | Admin - Members | rbac | RBAC; admission=-; codes=member.bind.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:511; src/modules/members/members.controller.ts:536 |
+| POST | /api/admin/v1/members/:id/account/reopen | Admin - Members | rbac | RBAC; admission=-; codes=member.grant.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:560; src/modules/members/members.controller.ts:585 |
+| POST | /api/admin/v1/members/:id/account/unbind | Admin - Members | rbac | RBAC; admission=-; codes=member.bind.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:539; src/modules/members/members.controller.ts:557 |
+| POST | /api/admin/v1/members/:id/identity-corrections | Admin - Members | rbac | RBAC; admission=-; codes=member.correct.identity; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:431; src/modules/members/members.controller.ts:455 |
+| POST | /api/admin/v1/members/:id/offboard | Admin - Members | rbac | RBAC; admission=-; codes=member.offboard.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:636; src/modules/members/members.controller.ts:659 |
+| POST | /api/admin/v1/members/:id/official-portrait | Admin - Members | rbac | RBAC; admission=-; codes=member-portrait.manage.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:236; src/modules/members/members.controller.ts:284 |
 | POST | /api/admin/v1/members/:memberId/certificates | Admin - Certificates | rbac | RBAC; admission=-; codes=certificate.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/certificates/certificates.controller.ts:96; src/modules/certificates/certificates.controller.ts:117 |
 | POST | /api/admin/v1/members/:memberId/emergency-contacts | Admin - Emergency Contacts | rbac | RBAC; admission=-; codes=emergency-contact.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/emergency-contacts/emergency-contacts.controller.ts:68; src/modules/emergency-contacts/emergency-contacts.controller.ts:85 |
 | POST | /api/admin/v1/members/:memberId/insurances/:insuranceId/review | Admin - Member Insurances | rbac | RBAC; admission=-; codes=member-insurance.review.record; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/admin-member-insurances.controller.ts:86; src/modules/insurances/admin-member-insurances.controller.ts:109 |
 | POST | /api/admin/v1/members/:memberId/memberships | Admin - Member Memberships | rbac | RBAC; admission=-; codes=membership.set.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships.controller.ts:59; src/modules/member-departments/memberships.controller.ts:81 |
 | POST | /api/admin/v1/members/:memberId/profile | Admin - Member Profiles | rbac | RBAC; admission=-; codes=member-profile.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-profiles/member-profiles.controller.ts:68; src/modules/member-profiles/member-profiles.controller.ts:92 |
-| POST | /api/admin/v1/members/accounts/bulk-grant | Admin - Members | rbac | RBAC; admission=-; codes=member.grant.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:157; src/modules/members/members.controller.ts:171 |
+| POST | /api/admin/v1/members/accounts/bulk-grant | Admin - Members | rbac | RBAC; admission=-; codes=member.grant.account; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:158; src/modules/members/members.controller.ts:172 |
 | POST | /api/admin/v1/memberships/transfer | Admin - Memberships | rbac | RBAC; admission=-; codes=membership.transfer.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships-admin.controller.ts:91; src/modules/member-departments/memberships-admin.controller.ts:115 |
 | POST | /api/admin/v1/meta/resolve-labels | Admin - Meta | rbac | RBAC; admission=-; codes=meta.resolve.label; require=all; scopes=-; engine=rbac-global | code | src/modules/meta/meta.controller.ts:39; src/modules/meta/meta.controller.ts:52 |
 | POST | /api/admin/v1/notifications | Admin - Notifications | rbac | RBAC; admission=-; codes=notification.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/notifications/notification-admin.controller.ts:71; src/modules/notifications/notification-admin.controller.ts:88 |
@@ -10432,7 +10452,7 @@
 | POST | /api/system/v1/wecom-settings/reset-credentials | Ops - WeCom Settings | rbac | RBAC; admission=-; codes=wecom-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/wecom/wecom-settings.controller.ts:86; src/modules/wecom/wecom-settings.controller.ts:100 |
 | POST | /api/system/v1/wecom-settings/test-connection | Ops - WeCom Settings | rbac | RBAC; admission=-; codes=wecom-setting.test.connection; require=all; scopes=-; engine=rbac-global | code | src/modules/wecom/wecom-settings.controller.ts:103; src/modules/wecom/wecom-settings.controller.ts:118 |
 | PUT | /api/admin/v1/contents/:id/cover | Admin - Content | rbac | RBAC; admission=-; codes=content.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:303; src/modules/content/content-admin.controller.ts:323 |
-| PUT | /api/admin/v1/members/:id/audience-tags | Admin - Members | rbac | RBAC; admission=-; codes=member.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:338; src/modules/members/members.controller.ts:355 |
+| PUT | /api/admin/v1/members/:id/audience-tags | Admin - Members | rbac | RBAC; admission=-; codes=member.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:339; src/modules/members/members.controller.ts:356 |
 | PUT | /api/admin/v1/members/:memberId/department | Admin - Member Departments | rbac | RBAC; admission=-; codes=member-department.set.current; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/member-departments.controller.ts:74; src/modules/member-departments/member-departments.controller.ts:98 |
 | PUT | /api/admin/v1/notification-wechat-templates/:typeCode | Admin - Notifications | rbac | RBAC; admission=-; codes=notification.update.template; require=all; scopes=-; engine=rbac-global | code | src/modules/notifications/notification-wechat-template.admin.controller.ts:41; src/modules/notifications/notification-wechat-template.admin.controller.ts:59 |
 | PUT | /api/admin/v1/users/:id/password | Admin - Users | rbac | RBAC; admission=-; codes=user.reset.password; require=all; scopes=-; engine=rbac-global | code | src/modules/users/users.controller.ts:154; src/modules/users/users.controller.ts:171 |

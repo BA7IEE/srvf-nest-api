@@ -231,6 +231,10 @@ export type AuditLogEvent =
   // 仅含账号 status;extra 仅含 linkedUserId / refreshTokensRevoked,不含 phone/openid/secret。
   | 'member.account.status-change' // admin 从队员面启停关联 USER 账号(members.service:updateAccountStatus;与 user status 写 / refresh 撤销同事务)
   | 'member.audience-tags.update' // 活动 B7:管理员全量替换会员受众标签(before/after 为排序 code;extra 为 added/removed code,不含 PII)
+  // 第七轮评审 R7-A-01(2026-08-21):队员身份主档订正入口。此前 memberNo / memberSinceDate /
+  // memberOriginCode 录错**只能直接改库**(全仓这三个字段的写点只有 3 处 create,零订正路径),
+  // 于是没有统一的操作者 / 理由 / 前后值记录。resourceType='member' / resourceId=memberId。
+  | 'member.identity.correct' // admin 订正队员身份事实(members.service: correctIdentity 1 处;before/after 恒为完整身份三元组 {memberNo,memberSinceDate,memberOriginCode};extra.{changedFields,reason};reason 由 DTO 保证非空)
   // 参与域生命周期收口⑤(v0.40.0;goal「参与域生命周期收口…」T4 显式预授权的唯一 +1 AuditLogEvent)。
   // resourceType='member' / resourceId=memberId;一键离队关闭全部当前授权来源的伞事件。
   | 'member.offboard' // admin 一键离队(members.service: offboard/offboardCore;extra 含 member/归属/账号/refresh/任职/分管/绑定实际计数与锁后残留探针)

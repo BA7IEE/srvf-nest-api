@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:de35a90a0bee19af0ba1ecaa61d66b3d79c26e62e0b06f38beb3cc9aaf4ec734
+// inputDigest: sha256:8db3ac7437f7f5e2def3f4d424aa8a1fe296a19458a887d43cd729a322f1c1ff
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -117,6 +117,7 @@ import type {
   ContentAttachmentConfirmDto,
   ContentAttachmentDto,
   ContentAttachmentUploadUrlDto,
+  CorrectMemberIdentityDto,
   CreateActivityCollaboratorDto,
   CreateActivityDto,
   CreateActivityPositionDto,
@@ -816,6 +817,10 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 全量替换会员受众标签(空数组撤销全部) [rbac: member.update.record] */
     MembersControllerReplaceAudienceTags(id: string, body: ReplaceMemberAudienceTagsDto): Promise<ApiEnvelope<MemberAudienceTagsResponseDto>> {
       return fetcher<MemberAudienceTagsResponseDto>({ method: "PUT", path: `/api/admin/v1/members/${id}/audience-tags`, body });
+    },
+    /** 订正队员身份事实(memberNo / memberSinceDate / memberOriginCode;必填订正理由,改编号需二次确认;写 1 条 member.identity.correct 审计) [rbac: member.correct.identity] */
+    MembersControllerCorrectIdentity(id: string, body: CorrectMemberIdentityDto): Promise<ApiEnvelope<MemberResponseDto>> {
+      return fetcher<MemberResponseDto>({ method: "POST", path: `/api/admin/v1/members/${id}/identity-corrections`, body });
     },
     /** 一键离队并结束全部当前授权来源(归属/账号/任职/分管/直接绑定) [rbac: member.offboard.record] */
     MembersControllerOffboard(id: string): Promise<ApiEnvelope<MemberOffboardResponseDto>> {

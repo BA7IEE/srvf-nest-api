@@ -7,7 +7,7 @@ import { maskPhone } from '../sms/sms.constants';
 
 type PrismaTx = Prisma.TransactionClient;
 
-/** 六个事件共用的调用者上下文(actor 快照 + 资源定位 + 请求 meta)。 */
+/** 七个事件共用的调用者上下文(actor 快照 + 资源定位 + 请求 meta)。 */
 export interface MemberAuditContext {
   memberId: string;
   currentUser: CurrentUserPayload;
@@ -28,6 +28,28 @@ export interface OffboardAuditExtra {
   residualActiveSupervisions: number;
 }
 
+/**
+ * 队员身份三元组快照(第七轮评审 R7-A-01)。
+ *
+ * `memberSinceDate` 取 ISO 8601 字符串而不是 `Date`:审计 payload 落 JSON,
+ * 让**写入侧**决定表示法,读审计的人才不会看到同一字段一会儿是对象一会儿是串。
+ * 取值与 `MemberResponseDto.memberSinceDate` 同一表示(已归一到北京日的 UTC 午夜)。
+ */
+export interface MemberIdentityFacts {
+  memberNo: string;
+  memberSinceDate: string;
+  memberOriginCode: string;
+}
+
+export interface IdentityCorrectionAuditInput {
+  before: MemberIdentityFacts;
+  after: MemberIdentityFacts;
+  /** 本次**真正发生变化**的字段名(before ≠ after 的那些);全部未变时调用方根本不会走到这里。 */
+  changedFields: readonly string[];
+  /** 订正理由,DTO 层已保证非空。 */
+  reason: string;
+}
+
 export interface AudienceTagsAuditInput {
   beforeTagCodes: string[];
   afterTagCodes: string[];
@@ -35,7 +57,7 @@ export interface AudienceTagsAuditInput {
   removedTagCodes: string[];
 }
 
-/** 六个事件逐字相同的信封字段(event / before / after / extra / tx 由各方法自带)。 */
+/** 七个事件逐字相同的信封字段(event / before / after / extra / tx 由各方法自带)。 */
 function envelope(ctx: MemberAuditContext) {
   return {
     actorUserId: ctx.currentUser.id,
@@ -54,7 +76,9 @@ function envelope(ctx: MemberAuditContext) {
 //   `MembersService` 持有,audit 写失败仍由 Prisma `$transaction` 隐式回滚
 //
 // **职责边界(严守"搬家不优化")**:
-// - ✅ 6 个事件的 `before` / `after` / `extra` payload 组装 + 手机号掩码
+// (下面这条 ❌ 约束的是**当初搬进来的那六个事件**;R7-A-01 新增的
+//  `identityCorrected` 是新事件,不在"不得增删字段"的冻结面内。)
+// - ✅ 7 个事件的 `before` / `after` / `extra` payload 组装 + 手机号掩码
 // - ❌ 不开事务 / 不读写业务表 / 不判权 / 不做状态跃迁判断
 // - ❌ 不改 event 名、`resourceType`、`actorUserId` / `actorRoleSnap` / `meta`,
 //      也不增删 `before` / `after` / `extra` 的任何字段名与取值
@@ -167,6 +191,30 @@ export class MemberAuditRecorder {
         addedTagCodes: input.addedTagCodes,
         removedTagCodes: input.removedTagCodes,
       },
+      tx,
+    });
+  }
+
+  // 第七轮评审 R7-A-01:队员身份主档订正(memberNo / 发号日 / 来源)。
+  //
+  // before / after 恒写**完整身份三元组**,不只写改动的那一两个 —— 沿
+  // `member.audience-tags.update` 已有的口径:before/after 是被改对象的全量状态,
+  // extra 是 delta。只记改动项的话,这条审计行本身答不出「订正之后这个人的身份事实
+  // 到底是什么」,而那正是事后回溯要问的第一个问题。
+  //
+  // extra.reason 是**必写**的:没有理由的订正,在审计里与直接改库等价 ——
+  // 事后没人能分辨那是一次订正还是一次篡改。
+  async identityCorrected(
+    tx: PrismaTx,
+    ctx: MemberAuditContext,
+    input: IdentityCorrectionAuditInput,
+  ): Promise<void> {
+    await this.auditLogs.log({
+      event: 'member.identity.correct',
+      ...envelope(ctx),
+      before: { ...input.before },
+      after: { ...input.after },
+      extra: { changedFields: [...input.changedFields], reason: input.reason },
       tx,
     });
   }
