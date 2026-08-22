@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:8db3ac7437f7f5e2def3f4d424aa8a1fe296a19458a887d43cd729a322f1c1ff
+// inputDigest: sha256:06996f76bb74b095f0f393cf4c1495c11c48c7cf4da7c8451373b4684654113d
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -251,7 +251,7 @@ export function createSystemClient(fetcher: Fetcher) {
     PermissionsControllerList(query?: { "page"?: number; "pageSize"?: number; "module"?: string; "resourceType"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": PermissionResponseDto[] }>> {
       return fetcher<PageResultDto & { "items": PermissionResponseDto[] }>({ method: "GET", path: "/api/system/v1/permissions", query });
     },
-    /** 创建权限点(code 格式 <module>.<action>.<resource_type>;失败抛 30008) [rbac: rbac.permission.create] */
+    /** 创建权限点(权限码由 seed 定义,此处不能凭空造 —— 闭包外的码抛 30106,闭包内的码 seed 后已存在抛 30002;实际不存在可成功路径) [rbac: rbac.permission.create] */
     PermissionsControllerCreate(body: CreatePermissionDto): Promise<ApiEnvelope<PermissionResponseDto>> {
       return fetcher<PermissionResponseDto>({ method: "POST", path: "/api/system/v1/permissions", body });
     },
@@ -259,7 +259,7 @@ export function createSystemClient(fetcher: Fetcher) {
     PermissionsControllerUpdate(id: string, body: UpdatePermissionDto): Promise<ApiEnvelope<PermissionResponseDto>> {
       return fetcher<PermissionResponseDto>({ method: "PATCH", path: `/api/system/v1/permissions/${id}`, body });
     },
-    /** 物理删除权限点(D4 v1.0;RolePermission FK Cascade 自动联级清理) [rbac: rbac.permission.delete] */
+    /** 物理删除权限点(seed 事实闭包内的系统权限码一律拒绝,抛 30105 —— 删码会经 RolePermission FK Cascade 一次性撤销所有角色对它的授权;仅闭包外的历史码可删) [rbac: rbac.permission.delete] */
     PermissionsControllerDelete(id: string): Promise<ApiEnvelope<PermissionResponseDto>> {
       return fetcher<PermissionResponseDto>({ method: "DELETE", path: `/api/system/v1/permissions/${id}` });
     },

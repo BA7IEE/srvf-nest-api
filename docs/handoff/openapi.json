@@ -4483,7 +4483,7 @@
             }
           },
           "400": {
-            "description": "请求参数错误(code=40000) / 权限点 code 格式不合法(code=30008)",
+            "description": "请求参数错误(code=40000) / 权限点 code 格式不合法(code=30008) / 权限码由系统定义,不能在此新建;新增权限点需要改代码并发版,请联系开发者(code=30106)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4498,9 +4498,10 @@
                       "type": "integer",
                       "enum": [
                         40000,
-                        30008
+                        30008,
+                        30106
                       ],
-                      "description": "40000: 请求参数错误; 30008: 权限点 code 格式不合法",
+                      "description": "40000: 请求参数错误; 30008: 权限点 code 格式不合法; 30106: 权限码由系统定义,不能在此新建;新增权限点需要改代码并发版,请联系开发者",
                       "example": 40000
                     },
                     "message": {
@@ -4625,7 +4626,7 @@
             "bearer": []
           }
         ],
-        "summary": "创建权限点(code 格式 <module>.<action>.<resource_type>;失败抛 30008) [rbac: rbac.permission.create]",
+        "summary": "创建权限点(权限码由 seed 定义,此处不能凭空造 —— 闭包外的码抛 30106,闭包内的码 seed 后已存在抛 30002;实际不存在可成功路径) [rbac: rbac.permission.create]",
         "tags": [
           "Ops - Permissions"
         ]
@@ -5016,6 +5017,40 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "系统权限码不可删除;要收回某个角色的这项权限,请改该角色的权限映射,不要删权限码本身(code=30105)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30105
+                      ],
+                      "description": "30105: 系统权限码不可删除;要收回某个角色的这项权限,请改该角色的权限映射,不要删权限码本身",
+                      "example": 30105
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "系统权限码不可删除;要收回某个角色的这项权限,请改该角色的权限映射,不要删权限码本身"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5023,7 +5058,7 @@
             "bearer": []
           }
         ],
-        "summary": "物理删除权限点(D4 v1.0;RolePermission FK Cascade 自动联级清理) [rbac: rbac.permission.delete]",
+        "summary": "物理删除权限点(seed 事实闭包内的系统权限码一律拒绝,抛 30105 —— 删码会经 RolePermission FK Cascade 一次性撤销所有角色对它的授权;仅闭包外的历史码可删) [rbac: rbac.permission.delete]",
         "tags": [
           "Ops - Permissions"
         ]

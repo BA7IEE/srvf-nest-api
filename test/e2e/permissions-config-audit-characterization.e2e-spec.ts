@@ -243,10 +243,13 @@ describe('permissions config-audit characterization (F&A-2)', () => {
   describe('C. permission', () => {
     beforeEach(isolate);
 
+    // 权限目录护栏(2026-08-22)后 create 只接受 seed 闭包内的码。
+    // `isolate()` 已把 permissions 表清空,故这里用真码也不会撞唯一约束 ——
+    // 换码不改本组要刻画的东西(audit 事件名 / before-after 快照形状)。
     it('C1. create → event=permission.create + after 快照 + before 缺席', async () => {
       const perm = await permissions.create(
         actor,
-        { code: 'audit-c.read.thing', module: 'audit-c', action: 'read', resourceType: 'thing' },
+        { code: 'member.read.record', module: 'member', action: 'read', resourceType: 'record' },
         AUDIT_META,
       );
       const audits = await prisma.auditLog.findMany({ where: { event: 'permission.create' } });
@@ -258,10 +261,10 @@ describe('permissions config-audit characterization (F&A-2)', () => {
       assertMeta(c);
       expect(c.before).toBeUndefined();
       expect(c.after).toMatchObject({
-        code: 'audit-c.read.thing',
-        module: 'audit-c',
+        code: 'member.read.record',
+        module: 'member',
         action: 'read',
-        resourceType: 'thing',
+        resourceType: 'record',
       });
     });
 
@@ -269,10 +272,10 @@ describe('permissions config-audit characterization (F&A-2)', () => {
       const perm = await permissions.create(
         actor,
         {
-          code: 'audit-c.write.thing',
-          module: 'audit-c',
-          action: 'write',
-          resourceType: 'thing',
+          code: 'member.update.record',
+          module: 'member',
+          action: 'update',
+          resourceType: 'record',
           description: '旧述',
         },
         AUDIT_META,
@@ -287,17 +290,19 @@ describe('permissions config-audit characterization (F&A-2)', () => {
       expect(c.after).toMatchObject({ description: '新述' });
     });
 
+    // 权限目录护栏(2026-08-22)后 delete 只对**闭包外**的码可达(闭包内一律 30105)。
+    // 而闭包外的码又造不出来(30106)⇒ 被删对象改由 prisma 直建。
+    // 刻画的对象没变:走的仍是 `PermissionsService.delete` 那条 audit 路径。
     it('C3. delete → event=permission.delete + before 快照', async () => {
-      const perm = await permissions.create(
-        actor,
-        {
+      const perm = await prisma.permission.create({
+        data: {
           code: 'audit-c.delete.thing',
           module: 'audit-c',
           action: 'delete',
           resourceType: 'thing',
         },
-        AUDIT_META,
-      );
+        select: { id: true },
+      });
       await permissions.delete(actor, perm.id, AUDIT_META);
       const audits = await prisma.auditLog.findMany({ where: { event: 'permission.delete' } });
       expect(audits).toHaveLength(1);
@@ -342,17 +347,17 @@ describe('permissions config-audit characterization (F&A-2)', () => {
         permissions.create(
           actor,
           {
-            code: 'audit-rollback.read.thing',
-            module: 'audit-rollback',
-            action: 'read',
-            resourceType: 'thing',
+            code: 'member.create.record',
+            module: 'member',
+            action: 'create',
+            resourceType: 'record',
           },
           AUDIT_META,
         ),
       ).rejects.toThrow('simulated audit failure');
 
       const perm = await prisma.permission.findUnique({
-        where: { code: 'audit-rollback.read.thing' },
+        where: { code: 'member.create.record' },
       });
       expect(perm).toBeNull();
       expect(await prisma.auditLog.count()).toBe(0);

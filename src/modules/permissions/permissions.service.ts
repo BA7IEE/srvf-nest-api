@@ -15,6 +15,7 @@ import {
 } from './permissions.dto';
 import { permissionSelect } from './permissions.select';
 import { RbacService } from './rbac.service';
+import { isSeedPermissionCode } from './seed-permission-codes';
 
 // V2.x C-6 RBAC 实施 PR #2:permissions 模块业务逻辑。
 // 沿 D7 v1.1 §4.2 / §5.1 / §12.1。
@@ -82,6 +83,39 @@ export class PermissionsService {
     }
   }
 
+  // ============ 权限目录护栏(P1-32 PR1;2026-08-22)============
+  //
+  // 判据唯一谓词 `isSeedPermissionCode()`(唯一清单 seed-permission-codes.ts)。
+  // 三条写路径共用它,**不得**各自再判一次 —— 各判各的就会出现「删挡住了、造没挡住」
+  // 这种半边闸,而半边闸的症状恰好是「什么都不发生」。
+  //
+  // ⚠️ 护栏**只**管闭包内的码。闭包外的码(历史上凭空造出来的惰性码)删除行为一字不变 ——
+  // 那些码本来就该能清掉,顺手全禁反而把唯一的清理入口也堵死。
+
+  // 删:seed 事实闭包内的码是系统拥有的,任何身份(含 SUPER_ADMIN)均不得经 API 删。
+  //
+  // 挡的是什么:`RolePermission.permission` 是 onDelete: Cascade ⇒ 删一个码 = 一次性
+  // 撤销**所有**角色对它的授权,无确认、无预览、无撤销。实测 `member.read.record`
+  // 一次 DELETE 打掉 4 个角色的授权(337 → 333 行);重跑 seed 只能补回内置角色那部分,
+  // 自定义角色那条永久丢失。
+  private assertSeedPermissionDeletable(code: string): void {
+    if (isSeedPermissionCode(code)) {
+      throw new BizException(BizCode.SEED_PERMISSION_DELETE_FORBIDDEN);
+    }
+  }
+
+  // 造:闭包外的码造出来是**惰性**的 —— 端点判的是硬编码的码,新造的码守不住任何端点。
+  // 与其让管理员拿到一个「看起来生效、实际什么都不管」的权限且零反馈,不如当场拒绝并说明去处。
+  //
+  // 结果上这让 POST /permissions 不再可能成功(闭包内的码 seed 后已存在 → 30002;
+  // 闭包外的码 → 30106)。这是**刻意的**:v1 的权限码只能改代码并发版,
+  // 端点保留是为了给出一个明确的「不能这么干,该去哪」而不是静默造出无效配置。
+  private assertPermissionCodeCreatable(code: string): void {
+    if (!isSeedPermissionCode(code)) {
+      throw new BizException(BizCode.PERMISSION_CODE_NOT_IN_SEED_CATALOG);
+    }
+  }
+
   // ============ 4 端点业务逻辑 ============
 
   async list(
@@ -118,6 +152,10 @@ export class PermissionsService {
     await this.assertCanOrThrow(user, 'rbac.permission.create');
     // 1. 显式格式校验(30008)
     this.assertCodeFormatValid(dto.code);
+
+    // 1.5 目录护栏:闭包外的码不得凭空造(30106)。放在格式校验之后、查库之前 ——
+    //     格式都不对的码先按 30008 回,不必扯到目录;而目录判定不需要查库。
+    this.assertPermissionCodeCreatable(dto.code);
 
     // 2. 预检查 code 唯一性,提供 user-friendly 30002(P2002 兜底处理并发)
     const existing = await this.prisma.permission.findUnique({
@@ -197,6 +235,11 @@ export class PermissionsService {
     await this.assertCanOrThrow(user, 'rbac.permission.delete');
     // 1. 先确认存在(30001)
     const existing = await this.findByIdOrThrow(id);
+
+    // 1.5 目录护栏:seed 事实闭包内的码不可删(30105)。
+    //     次序刻意「先存在性、后护栏」—— 删一个根本不存在的 id 仍返 30001,
+    //     不因为护栏而把「不存在」误报成「被保护」。
+    this.assertSeedPermissionDeletable(existing.code);
 
     // 2. 物理删 + audit(单事务;D4 v1.0:Permission 物理删,无 deletedAt;
     //    RolePermission FK Cascade 自动联级清理 — 沿 schema 设计)

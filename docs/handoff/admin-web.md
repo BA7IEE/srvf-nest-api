@@ -648,7 +648,7 @@
 > - **v0.43.0 刀A 契约/行为收紧**:申请人上传现必填 `issuingOrg` + `issuedAt`(date-only,不得晚于今天),admin 报名 list/detail 共用 DTO additive `certificates:[{category,imageCount,issuingOrg,issuedAt,reviewStatus,reviewedAt,reviewedBy,reviewNote}]` 摘要;已 approved 类别重传返 `28054`。直接/批量标证书类门槛除有图外还须审核 approved,否则 `28055`;CSV 列不变。promote 仍建 `pending` Certificate,但 `issuingOrg/issuedAt` 搬申请真值,存量缺值才回退占位,招新阶段 approved 结论写入 `verifyNote` 供后续证书核验人参考。
 | 内容发布 | `contents` | `content.read.record`；删附件另需 `content.update.record` + `attachment.delete.content-*` | 富文本 + 封面 `el-upload` + 可见性下拉(5 档)+ 状态机按钮；附件仅 draft 且未被封面/正文引用可删，29031 时引导先移除引用，禁止前端假设后端会自动清理 |
 | 用户管理 | `admin/v1/users` | `user.read.account` | CRUD;自我保护 / 最后超管后端拦,按错误码提示 |
-| 角色与权限 | `system/v1/{roles,permissions,user-roles}` | `rbac.role.read` / `rbac.permission.read` | 角色授权 `el-tree`/`el-transfer`;仅 USER+GLOBAL 简单授权,契约不变;scoped 场景改用下方「角色绑定(scoped)」页 |
+| 角色与权限 | `system/v1/{roles,permissions,user-roles}` | `rbac.role.read` / `rbac.permission.read` | 角色授权 `el-tree`/`el-transfer`;仅 USER+GLOBAL 简单授权,契约不变;scoped 场景改用下方「角色绑定(scoped)」页。**⚠️ 权限点列表页的「新建」与「删除」两个按钮恒不可用** —— 见表后「权限目录护栏」说明 |
 | 组织架构 | `admin/v1/organizations`(含 reparent `POST .../:id/move`)+ 节点详情只读:`.../:id/position-assignments`(在任职务)· `.../:id/supervisors`(被谁分管) | `org.read.node`(reparent 用 `org.move.node`;节点详情另持 `position-assignment.read.record` / `supervision-assignment.read.record`)| `el-tree` 增删改 + **重挂父级 reparent**("移动"操作,body 必填 `parentId`;禁改根 / 守环,§2.6);选中节点右侧详情面板加两个只读区块——**在任职务**(该组织当前任命,任命/撤销动作在此发起:`POST .../:id/position-assignments` + `POST position-assignments/:aid/revoke`)+ **被谁分管**(标 `coverage` DIRECT/INHERITED,纯展示,管理走下方「分管」页);已内置根 + 15 部门 |
 | 职务定义 | `admin/v1/positions` | `position.read.definition`(增/改/删另持 `create`/`update`/`delete`.definition)| `PureTable` CRUD;类别 LEADER / DEPUTY / STAFF;`code` 创建后不可改;6 内置(队/部/组正副职);被规则引用禁删(32003);全局配置(§2.6)|
 | 职务规则 | `admin/v1/position-rules` | `position-rule.read.record`(增/改/删另持 `create`/`update`/`delete`.record)| 设"某组织类别可设哪些职务";按 `nodeTypeCode` 过滤;`(类别, 职务)` 唯一;30 内置默认(§2.6)|
@@ -664,6 +664,21 @@
 | 个人中心(头像下拉,非侧栏) | `admin/v1/me`(身份)· 改密走账号级 `app/v1/me/password`(admin 可用) | `[auth]` 仅登录 | `el-descriptions` 展示身份/角色;改密表单(旧→新)直接打账号级端点(踩坑 #6 例外,非缺口) |
 
 > 可见性码只列"能否看见该菜单/列表"的 read 码;**按钮级码(approve / promote / final-approve …)另查** §2 + 端点 `[rbac:]` summary(沿 §3 #3,**禁臆造**)。菜单 = 前端静态路由 + `permissions[]` 过滤(§3 #5,后端无菜单树端点)。
+
+> **权限目录护栏(2026-08-22;权限点管理页必读)**
+>
+> 权限码是**系统拥有**的配置:由 seed 定义、被端点硬编码引用。后端已上护栏,
+> 权限点页的两个写按钮**在 v1 恒无可用路径**,前端应直接置灰并给出说明文案,不要让人点了才吃错误码。
+>
+> | 动作 | 端点 | 后端行为 | 前端该怎么做 |
+> |---|---|---|---|
+> | 删除权限点 | `DELETE system/v1/permissions/:id` | seed 目录内的码一律返 **`30105`**(409);任何身份含 SUPER_ADMIN 都拒 | 按钮置灰。要收回某角色的这项权限,引导去「角色与权限」页改**角色的权限映射**,不是删码 |
+> | 新建权限点 | `POST system/v1/permissions` | 目录外的码返 **`30106`**(400);目录内的码 seed 后已存在 → `30002` ⇒ **不存在成功路径** | 按钮置灰或整个隐藏。文案:「权限点由系统定义,新增需要改代码并发版」 |
+> | 改权限点 | `PATCH system/v1/permissions/:id` | **仅** `description` 可改;`code`/`module`/`action`/`resourceType` 一律被 DTO 白名单拒(通用 `400`) | 编辑表单只放说明字段,其余只读 |
+>
+> **为什么删除要禁**:`RolePermission` 对 `Permission` 是 `onDelete: Cascade` —— 删一个码 = **一次性撤销所有角色对它的授权**,无确认、无影响预览、无撤销。
+> 实测删 `member.read.record` 一次打掉 4 个角色的授权(`role_permissions` 337 → 333);重跑 seed 只补得回内置角色那部分,**自定义角色那条永久丢失**。
+> 「权限点只读」不是缺功能,是 v1 的显式设计 —— 权限**目录**是代码资产,权限**分配**才是运营动作。
 
 > **页面细化(后端已就绪,这些动作别漏)**:
 > - **证书 tab 含核验工作流**:`PATCH .../members/:id/certificates/:cid/{verify,reject}`(待核验→已核验 / 已拒绝,`reject` 须填 `verifyNote`)+ `GET .../qualification-flag`(资质标记)。不是"上传 + 表格"那么简单,要有 状态 + 核验通过 / 拒绝 动作。
