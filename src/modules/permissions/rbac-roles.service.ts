@@ -264,7 +264,7 @@ export class RbacRolesService {
     // 2. P1-32 PR 3a:系统内置角色只读 —— 改名 / 改描述一律 30107(SUPER_ADMIN 也拒)。
     //    次序刻意排在存在性判定**之后**:先按既有语义把「不存在 / 已软删」收敛成 30003,
     //    再谈「这个角色能不能改」,避免用 30107 反向探测某 id 是不是内置角色。
-    this.assertRoleNotProtectedOrThrow(before.code, BizCode.PROTECTED_ROLE_UPDATE_FORBIDDEN);
+    // [MUTATION 1/4] 摘掉 update 上的内建角色保护 —— 期望判据 + e2e 双红。
 
     // 3. 更新 + audit(单事务;仅允许 displayName / description;DTO 层已白名单 +
     //    ValidationPipe forbidNonWhitelisted 兜底)
