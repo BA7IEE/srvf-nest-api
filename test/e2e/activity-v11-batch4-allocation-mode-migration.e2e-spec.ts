@@ -240,9 +240,7 @@ function activityWithoutAllocationMode(databaseName: string, activityId: string)
 function expectExistingColumnsUnchanged(before: string, after: string): void {
   const b = JSON.parse(before) as Record<string, unknown>;
   const a = JSON.parse(after) as Record<string, unknown>;
-  const drifted = Object.keys(b).filter(
-    (k) => JSON.stringify(b[k]) !== JSON.stringify(a[k]),
-  );
+  const drifted = Object.keys(b).filter((k) => JSON.stringify(b[k]) !== JSON.stringify(a[k]));
   expect(drifted).toEqual([]);
 }
 
