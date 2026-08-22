@@ -9914,6 +9914,238 @@
 }
 -->
 
+## Permission code surface
+
+> 每条权限码守着哪些端点。**217 条码有端点;其中 70 条守多于一个端点。**
+>
+> ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
+> 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
+> 本来就会让 `docs:authz:check` 变红(`All endpoints` 会跟着变),**本节不增加这份检测**;
+> 它把改动 diff 从「某处多了几行」变成「**哪条码的管辖面变大了**」,并为后续绑定提供指纹源。
+>
+> 🔴 **真正的执行位还不存在**:说明与管辖面之间没有绑定,而说明此刻不在仓内(PR 0 产出)。
+> 等说明进仓后按码绑本表做指纹(面变了而说明没改即红)才是执行位。已登记 NEXT_TASKS。
+
+| 权限码 | 端点数 | 端点 |
+|---|---:|---|
+| `attendance.read.sheet` | 19 | GET /api/admin/v1/activities/:activityId/attendance-sheet-draft · GET /api/admin/v1/activities/:activityId/attendance-sheets · GET /api/admin/v1/activities/:activityId/check-ins · GET /api/admin/v1/activities/:activityId/feedback-summary · GET /api/admin/v1/activities/:activityId/feedbacks · GET /api/admin/v1/activities/:activityId/participation-ledger · GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/attendance-settlements · GET /api/admin/v1/attendance-settlements/:id/posting-batch · GET /api/admin/v1/attendance-settlements/:settlementVersionId/review-detail · GET /api/admin/v1/attendance-sheets · GET /api/admin/v1/attendance-sheets/:id · GET /api/admin/v1/attendance-sheets/:id/review-detail · GET /api/admin/v1/members/:memberId/attendance-records · GET /api/admin/v1/members/:memberId/contribution-summary · GET /api/admin/v1/members/:memberId/participation-ledger · GET /api/admin/v1/members/:memberId/participation-summary · GET /api/admin/v1/meta/participation-overview |
+| `activity-responsibility.override.record` | 18 | DELETE /api/admin/v1/activities/:activityId/responsibilities/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · GET /api/admin/v1/activities/:activityId/responsibilities · PATCH /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · POST /api/admin/v1/activities/:activityId/responsibilities/assign-initiator · POST /api/admin/v1/activities/:activityId/responsibilities/claim · POST /api/admin/v1/activities/:activityId/responsibilities/collaborators · POST /api/admin/v1/activities/:activityId/responsibilities/transfer · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/cancel · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/collaborators · POST /api/app/v1/my/managed-activities/:activityId/evidence-seals · POST /api/app/v1/my/managed-activities/:activityId/positions · POST /api/app/v1/my/managed-activities/:activityId/terminate · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator · POST /api/app/v1/my/managed-activities/:activityId/transfer-owner |
+| `activity-registration.read.record` | 7 | GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/activities/:activityId/registrations · GET /api/admin/v1/activities/:activityId/registrations/export · GET /api/admin/v1/members/:memberId/registrations · GET /api/admin/v1/meta/participation-overview · GET /api/admin/v1/registrations |
+| `recruitment-application.read.record` | 7 | GET /api/admin/v1/recruitment/applications · GET /api/admin/v1/recruitment/applications/:applicationId/certificate-claims · GET /api/admin/v1/recruitment/applications/:id · GET /api/admin/v1/recruitment/certificate-claims/:id · GET /api/admin/v1/recruitment/cycles/:id/publicity-list · GET /api/admin/v1/recruitment/cycles/:id/stats · POST /api/admin/v1/recruitment/applications/export |
+| `member.read.record` | 6 | GET /api/admin/v1/members · GET /api/admin/v1/members/:id · GET /api/admin/v1/members/:id/audience-tags · GET /api/admin/v1/members/:id/official-portrait · GET /api/admin/v1/members/options · GET /api/admin/v1/organizations/:orgId/members/options |
+| `org.read.node` | 6 | GET /api/admin/v1/organizations · GET /api/admin/v1/organizations/:id · GET /api/admin/v1/organizations/options · GET /api/admin/v1/organizations/tree · GET /api/admin/v1/organizations/tree-options · GET /api/admin/v1/organizations/tree-with-summary |
+| `supervision-assignment.read.record` | 6 | GET /api/admin/v1/members/:memberId/supervision-scope · GET /api/admin/v1/organizations/:orgId/supervisors · GET /api/admin/v1/supervision-assignments · GET /api/admin/v1/supervision-assignments/:id · GET /api/admin/v1/supervision-assignments/page · POST /api/admin/v1/supervision-assignments/coverage-preview |
+| `certificate.read.record` | 5 | GET /api/admin/v1/certificates · GET /api/admin/v1/certificates/stats · GET /api/admin/v1/members/:memberId/certificates · GET /api/admin/v1/members/:memberId/certificates/:id · GET /api/admin/v1/members/:memberId/certificates/qualification-flag |
+| `position-assignment.read.record` | 5 | GET /api/admin/v1/members/:memberId/position-assignments · GET /api/admin/v1/organizations/:orgId/position-assignments · GET /api/admin/v1/position-assignments · GET /api/admin/v1/position-assignments/:id · POST /api/admin/v1/position-assignments/preview |
+| `activity.create.cross-org` | 4 | PATCH /api/app/v1/my/managed-activities/:activityId · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator |
+| `activity.settlement-generate.record` | 4 | GET /api/app/v1/my/managed-activities/:activityId/settlement · GET /api/app/v1/my/managed-activities/:activityId/settlement/items · GET /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId · POST /api/app/v1/my/managed-activities/:activityId/settlement/generate |
+| `activity.update.record` | 4 | DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:id · POST /api/admin/v1/activities/:activityId/positions |
+| `attachment.upload.*` | 4 | POST /api/admin/v1/attachments · POST /api/admin/v1/attachments/confirm-upload · POST /api/admin/v1/attachments/upload-url · POST /api/admin/v1/contents/:id/attachments/upload-url |
+| `content.read.record` | 4 | GET /api/admin/v1/contents · GET /api/admin/v1/contents/:id · GET /api/app/v1/contents · GET /api/app/v1/contents/:id |
+| `membership.list.record` | 4 | GET /api/admin/v1/members/:memberId/memberships · GET /api/admin/v1/memberships · GET /api/admin/v1/memberships/conflicts · GET /api/admin/v1/organizations/:orgId/memberships |
+| `role-binding.read.record` | 4 | GET /api/admin/v1/role-bindings · GET /api/admin/v1/role-bindings/:id · GET /api/admin/v1/role-bindings/page · GET /api/admin/v1/role-bindings/preview |
+| `activity.publish.record` | 3 | PATCH /api/admin/v1/activities/:id/publish · PATCH /api/admin/v1/activities/:id/publish-with-audience-tags · POST /api/admin/v1/activity-publish-reviews/:id/approve |
+| `attachment.view.*` | 3 | GET /api/admin/v1/attachments · GET /api/admin/v1/attachments/:id · GET /api/admin/v1/attachments/by-owner |
+| `certificate-standard.read.record` | 3 | GET /api/admin/v1/certificate-standards · GET /api/admin/v1/certificate-standards/:id · GET /api/admin/v1/certificate-standards/options |
+| `content.publish.record` | 3 | POST /api/admin/v1/contents/:id/archive · POST /api/admin/v1/contents/:id/publish · POST /api/admin/v1/contents/:id/unpublish |
+| `dict.read.item` | 3 | GET /api/system/v1/dict-items · GET /api/system/v1/dict-items/:id · GET /api/system/v1/dict-items/tree |
+| `member.grant.account` | 3 | POST /api/admin/v1/members/:id/account · POST /api/admin/v1/members/:id/account/reopen · POST /api/admin/v1/members/accounts/bulk-grant |
+| `notification.publish.record` | 3 | POST /api/admin/v1/notifications/:id/archive · POST /api/admin/v1/notifications/:id/publish · POST /api/admin/v1/notifications/:id/unpublish |
+| `notification.read.record` | 3 | GET /api/admin/v1/notification-wechat-templates · GET /api/admin/v1/notifications · GET /api/admin/v1/notifications/:id |
+| `position.read.definition` | 3 | GET /api/admin/v1/positions · GET /api/admin/v1/positions/:id · GET /api/admin/v1/positions/options |
+| `rbac.role.read` | 3 | GET /api/system/v1/roles · GET /api/system/v1/roles/:id · GET /api/system/v1/roles/options |
+| `recruitment-application.review.certificate` | 3 | GET /api/admin/v1/certificate-standards/options · POST /api/admin/v1/recruitment/certificate-claims/:id/review · POST /api/admin/v1/recruitment/certificate-claims/:id/revoke-review |
+| `team-insurance-policy.read.record` | 3 | GET /api/admin/v1/team-insurance-policies · GET /api/admin/v1/team-insurance-policies/:id · GET /api/admin/v1/team-insurance-policies/:id/members |
+| `user.read.account` | 3 | GET /api/admin/v1/users · GET /api/admin/v1/users/:id · GET /api/admin/v1/users/options |
+| `activity-registration.approve.record` | 2 | PATCH /api/admin/v1/activities/:activityId/registrations/:id/approve · PATCH /api/admin/v1/activities/:activityId/registrations/bulk-approve |
+| `activity-registration.create.record` | 2 | POST /api/admin/v1/activities/:activityId/registrations · POST /api/app/v1/my/managed-activities/:activityId/onsite-participations |
+| `activity-registration.reject.record` | 2 | PATCH /api/admin/v1/activities/:activityId/registrations/:id/reject · PATCH /api/admin/v1/activities/:activityId/registrations/bulk-reject |
+| `activity-review.read.request` | 2 | GET /api/admin/v1/activity-publish-reviews · GET /api/admin/v1/activity-publish-reviews/:id |
+| `activity.settlement-final-review.record` | 2 | POST /api/admin/v1/attendance-settlements/:id/final-approve · POST /api/admin/v1/attendance-settlements/:id/final-return |
+| `activity.settlement-first-review.record` | 2 | POST /api/admin/v1/attendance-settlements/:id/first-approve · POST /api/admin/v1/attendance-settlements/:id/first-return |
+| `activity.settlement-submit.record` | 2 | POST /api/app/v1/my/managed-activities/:activityId/settlement/submit · POST /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId/resubmit |
+| `attachment-config.read.mime` | 2 | GET /api/system/v1/attachment-mime-configs · GET /api/system/v1/attachment-mime-configs/:id |
+| `attachment-config.read.size-limit` | 2 | GET /api/system/v1/attachment-size-limit-configs · GET /api/system/v1/attachment-size-limit-configs/:id |
+| `attachment-config.read.type` | 2 | GET /api/system/v1/attachment-type-configs · GET /api/system/v1/attachment-type-configs/:id |
+| `attachment-config.update.mime` | 2 | PATCH /api/system/v1/attachment-mime-configs/:id · PATCH /api/system/v1/attachment-mime-configs/:id/status |
+| `attachment-config.update.type` | 2 | PATCH /api/system/v1/attachment-type-configs/:id · PATCH /api/system/v1/attachment-type-configs/:id/status |
+| `attachment.delete.*` | 2 | DELETE /api/admin/v1/attachments/:id · DELETE /api/admin/v1/contents/:id/attachments/:attachmentId |
+| `attendance.update.sheet` | 2 | PATCH /api/admin/v1/attendance-sheets/:id · POST /api/admin/v1/attendance-sheets/:id/resubmit |
+| `audit-log.read.entry` | 2 | GET /api/system/v1/audit-logs · GET /api/system/v1/audit-logs/:id |
+| `certificate-recognition-policy.read.record` | 2 | GET /api/admin/v1/certificate-recognition-policies/:id · GET /api/admin/v1/certificate-standards/:standardId/recognition-policies |
+| `certificate-recognition-policy.update.record` | 2 | PATCH /api/admin/v1/certificate-recognition-policies/:id · PATCH /api/admin/v1/certificate-recognition-policies/:id/status |
+| `certificate-standard.update.record` | 2 | PATCH /api/admin/v1/certificate-standards/:id · PATCH /api/admin/v1/certificate-standards/:id/status |
+| `certificate.create.record` | 2 | GET /api/admin/v1/certificate-standards/options · POST /api/admin/v1/members/:memberId/certificates |
+| `certificate.verify.record` | 2 | GET /api/admin/v1/certificate-standards/options · PATCH /api/admin/v1/members/:memberId/certificates/:id/verify |
+| `content.update.record` | 2 | PATCH /api/admin/v1/contents/:id · PUT /api/admin/v1/contents/:id/cover |
+| `contribution.read.rule` | 2 | GET /api/system/v1/contribution-rules · GET /api/system/v1/contribution-rules/:id |
+| `dict.read.type` | 2 | GET /api/system/v1/dict-types · GET /api/system/v1/dict-types/:id |
+| `dict.update.item` | 2 | PATCH /api/system/v1/dict-items/:id · PATCH /api/system/v1/dict-items/:id/status |
+| `dict.update.type` | 2 | PATCH /api/system/v1/dict-types/:id · PATCH /api/system/v1/dict-types/:id/status |
+| `member-insurance.read.other` | 2 | GET /api/admin/v1/members/:memberId/insurances · GET /api/admin/v1/members/:memberId/insurances/overview |
+| `member-portrait.manage.record` | 2 | DELETE /api/admin/v1/members/:id/official-portrait · POST /api/admin/v1/members/:id/official-portrait |
+| `member.bind.account` | 2 | POST /api/admin/v1/members/:id/account/bind · POST /api/admin/v1/members/:id/account/unbind |
+| `member.offboard.record` | 2 | GET /api/admin/v1/members/:id/offboard-impact · POST /api/admin/v1/members/:id/offboard |
+| `member.update.record` | 2 | PATCH /api/admin/v1/members/:id · PUT /api/admin/v1/members/:id/audience-tags |
+| `membership.set.record` | 2 | PATCH /api/admin/v1/members/:memberId/memberships/:id · POST /api/admin/v1/members/:memberId/memberships |
+| `org.update.node` | 2 | PATCH /api/admin/v1/organizations/:id · PATCH /api/admin/v1/organizations/:id/status |
+| `recruitment-application.mark.threshold` | 2 | PATCH /api/admin/v1/recruitment/applications/:id/thresholds · POST /api/admin/v1/recruitment/applications/batch-mark-threshold |
+| `recruitment-application.promote.member` | 2 | GET /api/admin/v1/recruitment/cycles/:id/promote-precheck · POST /api/admin/v1/recruitment/cycles/:id/promote |
+| `recruitment-application.read.sensitive` | 2 | GET /api/admin/v1/recruitment/applications/:id/id-card-image-url · GET /api/admin/v1/recruitment/certificate-claims/:id/image-urls |
+| `recruitment-cycle.read.record` | 2 | GET /api/admin/v1/recruitment/cycles · GET /api/admin/v1/recruitment/cycles/:id |
+| `role-binding.create.record` | 2 | POST /api/admin/v1/role-bindings · POST /api/admin/v1/role-bindings/batch |
+| `team-insurance-policy.add.member` | 2 | POST /api/admin/v1/team-insurance-policies/:id/members · POST /api/admin/v1/team-insurance-policies/:id/members/add-all-active |
+| `team-join-application.read.record` | 2 | GET /api/admin/v1/team-join/applications · GET /api/admin/v1/team-join/applications/:id |
+| `team-join-cycle.read.record` | 2 | GET /api/admin/v1/team-join/cycles · GET /api/admin/v1/team-join/cycles/:id |
+| `user.update.status` | 2 | PATCH /api/admin/v1/members/:id/account/status · PATCH /api/admin/v1/users/:id/status |
+| `activity-registration.cancel.record` | 1 | PATCH /api/admin/v1/activities/:activityId/registrations/:id/cancel |
+| `activity-registration.reopen.record` | 1 | POST /api/admin/v1/activities/:activityId/registrations/:id/reopen |
+| `activity-review.return.request` | 1 | POST /api/admin/v1/activity-publish-reviews/:id/return |
+| `activity.cancel.record` | 1 | PATCH /api/admin/v1/activities/:id/cancel |
+| `activity.complete.record` | 1 | POST /api/admin/v1/activities/:id/complete |
+| `activity.create.record` | 1 | POST /api/admin/v1/activities |
+| `activity.delete.record` | 1 | DELETE /api/admin/v1/activities/:id |
+| `activity.settlement-close.record` | 1 | POST /api/app/v1/my/managed-activities/:activityId/settlement/close |
+| `activity.settlement-update-draft.record` | 1 | PATCH /api/app/v1/my/managed-activities/:activityId/settlement/items/:identityId |
+| `announcement-import.execute.record` | 1 | POST /api/admin/v1/announcement-import/execute |
+| `announcement-import.preview.record` | 1 | POST /api/admin/v1/announcement-import/preview |
+| `attachment-config.create.mime` | 1 | POST /api/system/v1/attachment-mime-configs |
+| `attachment-config.create.size-limit` | 1 | POST /api/system/v1/attachment-size-limit-configs |
+| `attachment-config.create.type` | 1 | POST /api/system/v1/attachment-type-configs |
+| `attachment-config.delete.mime` | 1 | DELETE /api/system/v1/attachment-mime-configs/:id |
+| `attachment-config.delete.size-limit` | 1 | DELETE /api/system/v1/attachment-size-limit-configs/:id |
+| `attachment-config.delete.type` | 1 | DELETE /api/system/v1/attachment-type-configs/:id |
+| `attachment-config.update.size-limit` | 1 | PATCH /api/system/v1/attachment-size-limit-configs/:id |
+| `attachment.update.*` | 1 | PATCH /api/admin/v1/attachments/:id |
+| `attachment.upload.content-file` | 1 | POST /api/admin/v1/contents/:id/attachments/confirm |
+| `attachment.upload.content-image` | 1 | POST /api/admin/v1/contents/:id/attachments/confirm |
+| `attendance.approve.sheet` | 1 | PATCH /api/admin/v1/attendance-sheets/:id/approve |
+| `attendance.create.sheet` | 1 | POST /api/admin/v1/activities/:activityId/attendance-sheets |
+| `attendance.delete.sheet` | 1 | DELETE /api/admin/v1/attendance-sheets/:id |
+| `attendance.final-approve.sheet` | 1 | PATCH /api/admin/v1/attendance-sheets/:id/final-approve |
+| `attendance.final-reject.sheet` | 1 | PATCH /api/admin/v1/attendance-sheets/:id/final-reject |
+| `attendance.final-return.sheet` | 1 | POST /api/admin/v1/attendance-sheets/:id/final-return |
+| `attendance.reject.sheet` | 1 | PATCH /api/admin/v1/attendance-sheets/:id/reject |
+| `attendance.reopen.sheet` | 1 | POST /api/admin/v1/attendance-sheets/:id/reopen |
+| `attendance.return.sheet` | 1 | POST /api/admin/v1/attendance-sheets/:id/return |
+| `authz.action-state.decision` | 1 | POST /api/admin/v1/authz/action-state/batch |
+| `authz.explain-batch.decision` | 1 | POST /api/admin/v1/authz/explain-batch |
+| `authz.explain.decision` | 1 | POST /api/admin/v1/authz/explain |
+| `certificate-recognition-policy.create.record` | 1 | POST /api/admin/v1/certificate-standards/:standardId/recognition-policies |
+| `certificate-recognition-policy.delete.record` | 1 | DELETE /api/admin/v1/certificate-recognition-policies/:id |
+| `certificate-standard.create.record` | 1 | POST /api/admin/v1/certificate-standards |
+| `certificate-standard.delete.record` | 1 | DELETE /api/admin/v1/certificate-standards/:id |
+| `certificate.delete.record` | 1 | DELETE /api/admin/v1/members/:memberId/certificates/:id |
+| `certificate.read.sensitive` | 1 | GET /api/admin/v1/members/:memberId/certificates/:id/evidence-urls |
+| `certificate.reject.record` | 1 | PATCH /api/admin/v1/members/:memberId/certificates/:id/reject |
+| `certificate.update.record` | 1 | PATCH /api/admin/v1/members/:memberId/certificates/:id |
+| `content.create.record` | 1 | POST /api/admin/v1/contents |
+| `content.delete.record` | 1 | DELETE /api/admin/v1/contents/:id |
+| `contribution.create.rule` | 1 | POST /api/system/v1/contribution-rules |
+| `contribution.delete.rule` | 1 | DELETE /api/system/v1/contribution-rules/:id |
+| `contribution.update.rule` | 1 | PATCH /api/system/v1/contribution-rules/:id |
+| `dict.create.item` | 1 | POST /api/system/v1/dict-items |
+| `dict.create.type` | 1 | POST /api/system/v1/dict-types |
+| `dict.delete.item` | 1 | DELETE /api/system/v1/dict-items/:id |
+| `dict.delete.type` | 1 | DELETE /api/system/v1/dict-types/:id |
+| `emergency-contact.create.record` | 1 | POST /api/admin/v1/members/:memberId/emergency-contacts |
+| `emergency-contact.delete.record` | 1 | DELETE /api/admin/v1/members/:memberId/emergency-contacts/:id |
+| `emergency-contact.read.record` | 1 | GET /api/admin/v1/members/:memberId/emergency-contacts |
+| `emergency-contact.update.record` | 1 | PATCH /api/admin/v1/members/:memberId/emergency-contacts/:id |
+| `member-department.clear.current` | 1 | DELETE /api/admin/v1/members/:memberId/department |
+| `member-department.read.current` | 1 | GET /api/admin/v1/members/:memberId/department |
+| `member-department.set.current` | 1 | PUT /api/admin/v1/members/:memberId/department |
+| `member-insurance.review.record` | 1 | POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review |
+| `member-portrait.read.history` | 1 | GET /api/admin/v1/members/:id/official-portraits |
+| `member-profile.create.record` | 1 | POST /api/admin/v1/members/:memberId/profile |
+| `member-profile.read.record` | 1 | GET /api/admin/v1/members/:memberId/profile |
+| `member-profile.update.record` | 1 | PATCH /api/admin/v1/members/:memberId/profile |
+| `member.correct.identity` | 1 | POST /api/admin/v1/members/:id/identity-corrections |
+| `member.create.record` | 1 | POST /api/admin/v1/members |
+| `member.delete.record` | 1 | DELETE /api/admin/v1/members/:id |
+| `member.update.status` | 1 | PATCH /api/admin/v1/members/:id/status |
+| `membership.end.record` | 1 | DELETE /api/admin/v1/members/:memberId/memberships/:id |
+| `membership.read.record` | 1 | GET /api/admin/v1/memberships/:id |
+| `membership.transfer.record` | 1 | POST /api/admin/v1/memberships/transfer |
+| `meta.resolve.label` | 1 | POST /api/admin/v1/meta/resolve-labels |
+| `notification.create.record` | 1 | POST /api/admin/v1/notifications |
+| `notification.delete.record` | 1 | DELETE /api/admin/v1/notifications/:id |
+| `notification.replay.wecom` | 1 | POST /api/admin/v1/notifications/:id/replay-wecom |
+| `notification.send.sms` | 1 | POST /api/admin/v1/notifications/:id/send-sms |
+| `notification.update.record` | 1 | PATCH /api/admin/v1/notifications/:id |
+| `notification.update.template` | 1 | PUT /api/admin/v1/notification-wechat-templates/:typeCode |
+| `org.create.node` | 1 | POST /api/admin/v1/organizations |
+| `org.delete.node` | 1 | DELETE /api/admin/v1/organizations/:id |
+| `org.move.node` | 1 | POST /api/admin/v1/organizations/:id/move |
+| `position-assignment.create.record` | 1 | POST /api/admin/v1/organizations/:orgId/position-assignments |
+| `position-assignment.read.history` | 1 | GET /api/admin/v1/position-assignments/:id/history |
+| `position-assignment.revoke.record` | 1 | POST /api/admin/v1/position-assignments/:id/revoke |
+| `position-rule.create.record` | 1 | POST /api/admin/v1/position-rules |
+| `position-rule.delete.record` | 1 | DELETE /api/admin/v1/position-rules/:id |
+| `position-rule.read.record` | 1 | GET /api/admin/v1/position-rules |
+| `position-rule.update.record` | 1 | PATCH /api/admin/v1/position-rules/:id |
+| `position.create.definition` | 1 | POST /api/admin/v1/positions |
+| `position.delete.definition` | 1 | DELETE /api/admin/v1/positions/:id |
+| `position.update.definition` | 1 | PATCH /api/admin/v1/positions/:id |
+| `rbac.config.reload` | 1 | POST /api/system/v1/rbac/reload |
+| `rbac.permission.create` | 1 | POST /api/system/v1/permissions |
+| `rbac.permission.delete` | 1 | DELETE /api/system/v1/permissions/:id |
+| `rbac.permission.read` | 1 | GET /api/system/v1/permissions |
+| `rbac.permission.update` | 1 | PATCH /api/system/v1/permissions/:id |
+| `rbac.role-permission.create` | 1 | POST /api/system/v1/roles/:id/permissions |
+| `rbac.role-permission.delete` | 1 | DELETE /api/system/v1/roles/:id/permissions/:permissionId |
+| `rbac.role.create` | 1 | POST /api/system/v1/roles |
+| `rbac.role.delete` | 1 | DELETE /api/system/v1/roles/:id |
+| `rbac.role.update` | 1 | PATCH /api/system/v1/roles/:id |
+| `rbac.user-role.create` | 1 | POST /api/system/v1/users/:userId/roles |
+| `rbac.user-role.delete` | 1 | DELETE /api/system/v1/users/:userId/roles/:roleId |
+| `rbac.user-role.read` | 1 | GET /api/system/v1/users/:userId/roles |
+| `realname-setting.read.singleton` | 1 | GET /api/system/v1/realname-settings |
+| `realname-setting.reset.credentials` | 1 | POST /api/system/v1/realname-settings/reset-credentials |
+| `realname-setting.update.singleton` | 1 | PATCH /api/system/v1/realname-settings |
+| `recruitment-application.evaluate.assessment` | 1 | POST /api/admin/v1/recruitment/applications/:id/evaluate |
+| `recruitment-application.promote.single` | 1 | POST /api/admin/v1/recruitment/applications/:id/promote-single |
+| `recruitment-application.resolve.manual` | 1 | POST /api/admin/v1/recruitment/applications/:id/resolve |
+| `recruitment-application.update.record` | 1 | PATCH /api/admin/v1/recruitment/applications/:id |
+| `recruitment-cycle.create.record` | 1 | POST /api/admin/v1/recruitment/cycles |
+| `recruitment-cycle.update.record` | 1 | PATCH /api/admin/v1/recruitment/cycles/:id |
+| `role-binding.delete.record` | 1 | DELETE /api/admin/v1/role-bindings/:id |
+| `role-binding.update.record` | 1 | PATCH /api/admin/v1/role-bindings/:id |
+| `sms-send-log.read.list` | 1 | GET /api/system/v1/sms-send-logs |
+| `sms-setting.read.singleton` | 1 | GET /api/system/v1/sms-settings |
+| `sms-setting.reset.credentials` | 1 | POST /api/system/v1/sms-settings/reset-credentials |
+| `sms-setting.update.singleton` | 1 | PATCH /api/system/v1/sms-settings |
+| `storage-setting.read.singleton` | 1 | GET /api/system/v1/storage-settings |
+| `storage-setting.reset.credentials` | 1 | POST /api/system/v1/storage-settings/reset-credentials |
+| `storage-setting.update.singleton` | 1 | PATCH /api/system/v1/storage-settings |
+| `supervision-assignment.create.record` | 1 | POST /api/admin/v1/supervision-assignments |
+| `supervision-assignment.revoke.record` | 1 | POST /api/admin/v1/supervision-assignments/:id/revoke |
+| `supervision-assignment.update.record` | 1 | PATCH /api/admin/v1/supervision-assignments/:id |
+| `team-insurance-policy.create.record` | 1 | POST /api/admin/v1/team-insurance-policies |
+| `team-insurance-policy.delete.record` | 1 | DELETE /api/admin/v1/team-insurance-policies/:id |
+| `team-insurance-policy.remove.member` | 1 | DELETE /api/admin/v1/team-insurance-policies/:id/members/:memberId |
+| `team-insurance-policy.update.record` | 1 | PATCH /api/admin/v1/team-insurance-policies/:id |
+| `team-join-application.evaluate.assessment` | 1 | POST /api/admin/v1/team-join/applications/:id/evaluate |
+| `team-join-application.join.member` | 1 | POST /api/admin/v1/team-join/applications/:id/join |
+| `team-join-application.mark.gate` | 1 | PATCH /api/admin/v1/team-join/applications/:id/gates |
+| `team-join-cycle.create.record` | 1 | POST /api/admin/v1/team-join/cycles |
+| `team-join-cycle.update.record` | 1 | PATCH /api/admin/v1/team-join/cycles/:id |
+| `user.create.account` | 1 | POST /api/admin/v1/users |
+| `user.delete.account` | 1 | DELETE /api/admin/v1/users/:id |
+| `user.phone.clear` | 1 | DELETE /api/admin/v1/users/:id/phone |
+| `user.reset.password` | 1 | PUT /api/admin/v1/users/:id/password |
+| `user.update.account` | 1 | PATCH /api/admin/v1/users/:id |
+| `user.update.role` | 1 | PATCH /api/admin/v1/users/:id/role |
+| `user.wechat.clear` | 1 | DELETE /api/admin/v1/users/:id/wechat |
+| `user.wecom.clear` | 1 | DELETE /api/admin/v1/users/:id/wecom |
+| `wechat-setting.read.singleton` | 1 | GET /api/system/v1/wechat-settings |
+| `wechat-setting.reset.credentials` | 1 | POST /api/system/v1/wechat-settings/reset-credentials |
+| `wechat-setting.update.singleton` | 1 | PATCH /api/system/v1/wechat-settings |
+| `wecom-setting.read.singleton` | 1 | GET /api/system/v1/wecom-settings |
+| `wecom-setting.reset.credentials` | 1 | POST /api/system/v1/wecom-settings/reset-credentials |
+| `wecom-setting.test.connection` | 1 | POST /api/system/v1/wecom-settings/test-connection |
+| `wecom-setting.update.singleton` | 1 | PATCH /api/system/v1/wecom-settings |
+
 ## All endpoints
 
 | method | path | tag family | legacy declaration | structured policy | truth source | evidence |
