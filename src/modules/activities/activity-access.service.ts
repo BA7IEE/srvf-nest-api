@@ -10,6 +10,7 @@ import { AuthzService } from '../authz/authz.service';
 import type { ResourceRef } from '../authz/authz.types';
 import { ActivityResponseDto, CreateActivityDto, UpdateActivityDto } from './activities.dto';
 import { toResponseDto } from './activity-presenter';
+import { ActivityImageSigningService } from './activity-image-signing.service';
 
 export const DICT_TYPE_ACTIVITY_TYPE = 'activity_type';
 export const DICT_TYPE_GENDER_REQUIREMENT = 'gender_requirement';
@@ -25,10 +26,12 @@ export const TERMINAL_ACTIVITY_STATUS_CODES = new Set([
   ACTIVITY_STATUS_CANCELLED,
   ACTIVITY_STATUS_TERMINATED,
 ]);
+// ⚠️ P2-14 刀 A:`coverImageUrl` / `galleryImageUrls` 从本集合移出,**不是收窄权限** ——
+// 它们已不再是 UpdateActivityDto 的字段(裸 URL 写入口已拆除),改由专用的
+// set-cover / set-gallery 端点承接。那两个端点**刻意不加状态闸**,以逐字保留
+// 「终态活动仍可改封面」这条既有行为(见 activity-cover.service.ts 文件头)。
 export const TERMINAL_ACTIVITY_UPDATE_FIELDS = new Set<keyof UpdateActivityDto>([
   'description',
-  'coverImageUrl',
-  'galleryImageUrls',
   'content',
   'registrationNotes',
 ]);
@@ -36,11 +39,11 @@ export const TERMINAL_ACTIVITY_UPDATE_FIELDS = new Set<keyof UpdateActivityDto>(
 // 第 3 批第二刀：published 根活动只允许不改变执行、名额、组织、模板或状态语义的展示字段。
 // title 是报名者的关键识别信息，直改必须走 change-review；这必须是显式正向闭集，任何新字段
 // 默认进入 change-review，而不是随 DTO 增长悄然放行。
+// ⚠️ 同上:封面 / 图集移出本闭集是因为它们已不在 UpdateActivityDto 上,
+// 而**不是**「已发布活动不能再改封面」。改封面走 set-cover 端点,行为不变。
 export const PUBLISHED_ACTIVITY_DISPLAY_FIELDS = [
   'description',
   'registrationNotes',
-  'coverImageUrl',
-  'galleryImageUrls',
   'content',
 ] as const satisfies ReadonlyArray<keyof UpdateActivityDto>;
 export const PUBLISHED_ACTIVITY_DISPLAY_FIELD_SET = new Set<keyof UpdateActivityDto>(
@@ -91,8 +94,15 @@ export const activitySafeSelect = {
   defaultLocationRequired: true,
   archiveWaitingDays: true,
   registrationSchema: true,
+  // ⚠️ P2-14 刀 A:coverImageUrl / galleryImageUrls 是**裸 URL 遗留列**,已零写入路径。
+  // 仍 select 出来只为让刀 B 删列前的读侧对照可做,**presenter 不再读它们** ——
+  // 对外的 coverImageUrl / galleryImageUrls 一律由下面四个附件制列现签而来。
   coverImageUrl: true,
   galleryImageUrls: true,
+  coverImageKey: true,
+  coverAttachmentId: true,
+  galleryImageKeys: true,
+  galleryAttachmentIds: true,
   content: true,
   locationLongitude: true,
   locationLatitude: true,
@@ -121,7 +131,9 @@ export const activityListItemSelect = {
   statusCode: true,
   isPublicRegistration: true,
   requiresInsurance: true,
+  // 同上:列表的 coverImageUrl 也改由 coverImageKey 现签(列表不带图集)。
   coverImageUrl: true,
+  coverImageKey: true,
   locationLongitude: true,
   locationLatitude: true,
   createdAt: true,
@@ -162,6 +174,8 @@ export class ActivityAccessService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly authz: AuthzService,
+    // P2-14 刀 A:封面 / 图集对外是**现签 URL**,presenter 是纯函数不能取数,故在此解析后传入。
+    private readonly images: ActivityImageSigningService,
   ) {}
 
   // Slow-4 T3(2026-06-11,评审稿 §3.5 / D-S4-8)起点;终态 scoped-authz PR12(2026-07-02;
@@ -369,6 +383,6 @@ export class ActivityAccessService {
       throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
     }
 
-    return toResponseDto(row);
+    return toResponseDto(row, await this.images.signImages(row));
   }
 }

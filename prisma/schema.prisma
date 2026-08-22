@@ -243,9 +243,9 @@ model DictItem {
   updatedAt DateTime       @updatedAt
   deletedAt DateTime?
 
-  type                   DictType                     @relation(fields: [typeId], references: [id], onDelete: Restrict)
-  parent                 DictItem?                    @relation("DictItemTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children               DictItem[]                   @relation("DictItemTree")
+  type                   DictType                      @relation(fields: [typeId], references: [id], onDelete: Restrict)
+  parent                 DictItem?                     @relation("DictItemTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children               DictItem[]                    @relation("DictItemTree")
   audienceTagAssignments MemberAudienceTagAssignment[] @relation("DictItemAudienceTagAssignments")
 
   @@unique([typeId, code])
@@ -629,10 +629,10 @@ model Member {
   attendancePunchEventsOperated AttendancePunchEvent[] @relation("AttendancePunchEventOperatorMember")
 
   // 第 6 批:离线包的签发人和人工复核人都是责任成员快照，不和被打卡成员混同。
-  offlinePackagesOperated    OfflinePackage[]            @relation("OfflinePackageOperatorMember")
+  offlinePackagesOperated    OfflinePackage[]              @relation("OfflinePackageOperatorMember")
   offlinePackageParticipants OfflinePackageParticipant[]
-  offlineReviewItemsStaged   OfflinePunchReviewItem[]    @relation("OfflinePunchReviewItemStagerMember")
-  offlineReviewItemsReviewed OfflinePunchReviewItem[]    @relation("OfflinePunchReviewItemReviewerMember")
+  offlineReviewItemsStaged   OfflinePunchReviewItem[]      @relation("OfflinePunchReviewItemStagerMember")
+  offlineReviewItemsReviewed OfflinePunchReviewItem[]      @relation("OfflinePunchReviewItemReviewerMember")
   audienceTagAssignments     MemberAudienceTagAssignment[] @relation("MemberAudienceTagAssignments")
 
   // 第 1 批第四刀反向 relation(合同 §3.21 / §3.23 / §3.24):仅关系映射,零标量字段。
@@ -1361,6 +1361,9 @@ model RecruitmentCertificateClaim {
 //
 // 索引:7 单列;v0.2 / v0.4 新增 5 字段(content / galleryImageUrls /
 //   coverImageUrl / locationLongitude / locationLatitude)不加索引(沿 Q-D11/12/13/19)。
+//   P2-14 刀 A 新增的 4 个附件制字段(coverImageKey / coverAttachmentId /
+//   galleryImageKeys / galleryAttachmentIds)同样不加索引 —— 它们只在按 id 取到活动之后被读,
+//   从不作为查询条件(与对照组 Content.coverImageKey / coverAttachmentId 一致,那两列也无索引)。
 // 无唯一约束。
 
 model Activity {
@@ -1401,9 +1404,31 @@ model Activity {
   attendanceDeclaredCompleteByUserId String?
 
   // v0.2 展示内容字段(Q-D11 / Q-D12 / Q-D13)
+  //
+  // ⚠️ coverImageUrl / galleryImageUrls 是**裸 URL 遗留列**(P2-14 刀 A 的 expand 阶段保留,刀 B 才删)。
+  // 它们此刻**零写入路径**:可写 DTO 上的对应字段已拆除,读出侧一律改走下方附件制四列。
+  // 保留只为给「发现漏迁」留一个可回退窗口 —— 不要给它们重新接上任何写入口。
   coverImageUrl    String?
   galleryImageUrls Json?
   content          Json?
+
+  // ===== P2-14 刀 A:封面 / 图集改附件制(2026-08-22)=====
+  //
+  // 与 `Content.coverImageKey` / `Content.coverAttachmentId` **逐字同形**:
+  //   - `*ImageKey(s)`     反范式 storage key,列表缩略图直签,免 per-row Attachment 查询
+  //   - `*AttachmentId(s)` 附件 id,供标记 / 换 / 清
+  // **刻意不建外键**(沿 Content 同名两列的「不建外键」与 reviewedByUserId / SmsSettings.updatedBy
+  // 的仓内惯例):附件被删后 id 变悬空,由 `resolveSignedUrlTrusted(key)` 返回 null 兜底 ——
+  // 与内容模块行为逐字一致。改成真外键就是造第二种形状。
+  coverImageKey     String?
+  coverAttachmentId String?
+
+  // 图集是**有序多图**,两列逐位对齐(`galleryImageKeys[i]` 是 `galleryAttachmentIds[i]` 的 key),
+  // 由写入侧在同一事务内成对写入。对齐不变量的执行位是 migration 末尾的
+  // `activity_gallery_arrays_aligned_check`(等长 CHECK),不是应用层约定 ——
+  // 应用层约定漂移时没有症状。`String[]` 沿 tags / visibleOrganizationIds 惯例,不用 Json。
+  galleryImageKeys     String[] @default([])
+  galleryAttachmentIds String[] @default([])
 
   // v0.4 经纬度字段(Q-D19;显式 @db.Decimal(10, 7),WGS84 ~1.1 cm 精度)
   locationLongitude Decimal? @db.Decimal(10, 7)
@@ -1528,14 +1553,14 @@ model Activity {
 // status / requestType 保持 String，沿活动域运营字典码与后续状态机校验；
 // 同一活动只允许一个 pending 请求的 partial unique 由 migration 手写。
 model ActivityPublishReview {
-  id             String  @id @default(cuid())
-  activityId     String
-  requestType    String
-  requestVersion Int
-  baseRevision   Int
-  status         String
-  snapshot       Json
-  directPublish  Boolean @default(false)
+  id               String  @id @default(cuid())
+  activityId       String
+  requestType      String
+  requestVersion   Int
+  baseRevision     Int
+  status           String
+  snapshot         Json
+  directPublish    Boolean @default(false)
   audienceTagCodes Json?
 
   submittedByUserId String

@@ -15,6 +15,7 @@ import {
 import { CreateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
 import { ActivitiesService } from './activities.service';
 import { ActivityAccessService } from './activity-access.service';
+import { ActivityImageSigningService } from './activity-image-signing.service';
 import type { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import { ActivityStatusCommandService } from './activity-status-command.service';
 import { ActivityWriteService } from './activity-write.service';
@@ -97,6 +98,13 @@ interface ActivityRow {
   registrationSchema: Prisma.JsonValue | null;
   coverImageUrl: string | null;
   galleryImageUrls: Prisma.JsonValue | null;
+  // P2-14 刀 A:附件制四列。夹具必须带上它们 —— 真实 Prisma 行恒有这四列
+  // (两个数组列有 DB 默认值 `{}`,migration 的等长 CHECK 还禁止它们为 NULL),
+  // 夹具漏掉就会让签名层在测试里遇到生产上不可能出现的形状。
+  coverImageKey: string | null;
+  coverAttachmentId: string | null;
+  galleryImageKeys: string[];
+  galleryAttachmentIds: string[];
   content: Prisma.JsonValue | null;
   locationLongitude: Prisma.Decimal | null;
   locationLatitude: Prisma.Decimal | null;
@@ -132,6 +140,10 @@ function makeActivityRow(overrides: Partial<ActivityRow> = {}): ActivityRow {
     registrationSchema: null,
     coverImageUrl: null,
     galleryImageUrls: null,
+    coverImageKey: null,
+    coverAttachmentId: null,
+    galleryImageKeys: [],
+    galleryAttachmentIds: [],
     content: null,
     locationLongitude: null,
     locationLatitude: null,
@@ -418,15 +430,42 @@ function makeService(
   const configMock = {
     activityResponsibilityWorkflow: { enabled: opts.workflowEnabled ?? false },
   } as ConfigType<typeof appConfig>;
+  // P2-14 刀 A:封面 / 图集对外是现签 URL。单测里签名层是 stub —— 但它**不能返回定值**,
+  // 否则「读出侧到底走没走签名」在单测里不可观测。返回 key 派生值,让断言能区分
+  // 「签过」与「原样吐 key」。真链路(含过期附件 → null)由 e2e 负责。
+  const imagesMock = {
+    signCover: jest.fn((row: { coverImageKey: string | null }) =>
+      Promise.resolve({
+        coverImageUrl: row.coverImageKey === null ? null : `/uploads/${row.coverImageKey}?sig=stub`,
+      }),
+    ),
+    signCovers: jest.fn((rows: Array<{ coverImageKey: string | null }>) =>
+      Promise.resolve(
+        rows.map((row) => ({
+          coverImageUrl:
+            row.coverImageKey === null ? null : `/uploads/${row.coverImageKey}?sig=stub`,
+        })),
+      ),
+    ),
+    signImages: jest.fn((row: { coverImageKey: string | null; galleryImageKeys: string[] }) =>
+      Promise.resolve({
+        coverImageUrl: row.coverImageKey === null ? null : `/uploads/${row.coverImageKey}?sig=stub`,
+        galleryImageUrls: row.galleryImageKeys.map((key) => `/uploads/${key}?sig=stub`),
+      }),
+    ),
+  } as unknown as ActivityImageSigningService;
   const access = new ActivityAccessService(
     prisma as unknown as PrismaService,
     rbacMock,
     authz as unknown as AuthzService,
+    imagesMock,
   );
   return new ActivitiesService(
+    imagesMock,
     access,
     new ActivityWriteService(
       prisma as unknown as PrismaService,
+      imagesMock,
       access,
       recorder as unknown as ActivityAuditRecorder,
       stateMachine,
@@ -439,6 +478,7 @@ function makeService(
     ),
     new ActivityStatusCommandService(
       prisma as unknown as PrismaService,
+      imagesMock,
       access,
       recorder as unknown as ActivityAuditRecorder,
       stateMachine,
@@ -466,7 +506,7 @@ function makeService(
 describe('ActivitiesService (characterization)', () => {
   // ============ A. DTO mapping / normalization(toResponseDto via findOne) ============
   describe('DTO mapping / normalization', () => {
-    it('rich row → Decimal→string / json object 透传 / gallery→string[] / content object', async () => {
+    it('rich row → Decimal→string / json object 透传 / content object', async () => {
       const prisma = makePrismaMock();
       prisma.activity.findFirst.mockResolvedValue(
         makeActivityRow({
@@ -474,7 +514,6 @@ describe('ActivitiesService (characterization)', () => {
           locationLongitude: new Prisma.Decimal('116.404'),
           locationLatitude: new Prisma.Decimal('39.915'),
           registrationSchema: { fields: ['name'] },
-          galleryImageUrls: ['x.jpg', 'y.jpg'],
           content: { blocks: [1] },
         }),
       );
@@ -485,7 +524,6 @@ describe('ActivitiesService (characterization)', () => {
       expect(res.locationLongitude).toBe('116.404');
       expect(res.locationLatitude).toBe('39.915');
       expect(res.registrationSchema).toEqual({ fields: ['name'] });
-      expect(res.galleryImageUrls).toEqual(['x.jpg', 'y.jpg']);
       expect(res.content).toEqual({ blocks: [1] });
     });
 
@@ -498,17 +536,15 @@ describe('ActivitiesService (characterization)', () => {
 
       expect(res.locationLongitude).toBeNull();
       expect(res.registrationSchema).toBeNull();
-      expect(res.galleryImageUrls).toBeNull();
       expect(res.content).toBeNull();
     });
 
-    it('json 不符型收窄为 null(schema 为数组 / gallery 为对象 / content 为数组)', async () => {
+    it('json 不符型收窄为 null(schema 为数组 / content 为数组)', async () => {
       const prisma = makePrismaMock();
       prisma.activity.findFirst.mockResolvedValue(
         makeActivityRow({
           statusCode: 'published',
           registrationSchema: ['x'],
-          galleryImageUrls: { a: 1 },
           content: ['y'],
         }),
       );
@@ -517,20 +553,55 @@ describe('ActivitiesService (characterization)', () => {
       const res = await service.findOne('act-1', makeCurrentUser());
 
       expect(res.registrationSchema).toBeNull();
-      expect(res.galleryImageUrls).toBeNull();
       expect(res.content).toBeNull();
     });
 
-    it('galleryImageUrls 过滤非字符串元素', async () => {
+    // ============ P2-14 刀 A:封面 / 图集不再从裸 URL 列派生 ============
+    //
+    // 改造前这里有三条断言刻画的是「`galleryImageUrls` JSON 列 → jsonAsStringArray →
+    // 出参」(含「对象收窄为 null」「过滤非字符串元素」)。那条链路已被拆除:
+    // 出参现在只由 `coverImageKey` / `galleryImageKeys` 现签而来。
+    // 下面两条替换它们,并且**必须**能区分「签过」与「原样吐 key」——
+    // 所以签名 stub 返回的是 key 派生值而不是定值。
+    //
+    // ⚠️ 遗留 JSON 列的 jsonAsStringArray 收窄行为并没有消失,它仍在
+    // `activity-audit-recorder.ts` 的私有副本里(审计快照仍记那两列),
+    // 由 audit characterization 覆盖 —— 不是本处失去覆盖。
+
+    it('封面 / 图集出参来自 key 现签,不来自裸 URL 遗留列', async () => {
       const prisma = makePrismaMock();
       prisma.activity.findFirst.mockResolvedValue(
-        makeActivityRow({ statusCode: 'published', galleryImageUrls: ['a', 123, 'b', null] }),
+        makeActivityRow({
+          statusCode: 'published',
+          // 遗留列刻意塞入可辨识的值:它们**不得**出现在出参里。
+          coverImageUrl: 'https://evil.example.com/hijacked.jpg',
+          galleryImageUrls: ['https://evil.example.com/a.jpg'],
+          coverImageKey: 'attachments/test/cover.jpg',
+          galleryImageKeys: ['attachments/test/g1.jpg', 'attachments/test/g2.jpg'],
+        }),
       );
       const service = makeService(prisma);
 
       const res = await service.findOne('act-1', makeCurrentUser());
 
-      expect(res.galleryImageUrls).toEqual(['a', 'b']);
+      expect(res.coverImageUrl).toBe('/uploads/attachments/test/cover.jpg?sig=stub');
+      expect(res.galleryImageUrls).toEqual([
+        '/uploads/attachments/test/g1.jpg?sig=stub',
+        '/uploads/attachments/test/g2.jpg?sig=stub',
+      ]);
+      // 遗留列的值一处都不许泄漏到出参。
+      expect(JSON.stringify(res)).not.toContain('evil.example.com');
+    });
+
+    it('未设封面 / 图集 → 封面 null,图集空数组', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findFirst.mockResolvedValue(makeActivityRow({ statusCode: 'published' }));
+      const service = makeService(prisma);
+
+      const res = await service.findOne('act-1', makeCurrentUser());
+
+      expect(res.coverImageUrl).toBeNull();
+      expect(res.galleryImageUrls).toEqual([]);
     });
   });
 

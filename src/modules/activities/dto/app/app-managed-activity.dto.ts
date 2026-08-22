@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -26,6 +28,42 @@ export class AppManagedActivityParamsDto {
   @MinLength(8)
   @MaxLength(64)
   activityId!: string;
+}
+
+// ============ P2-14 刀 A:设 / 清封面与图集(App 面)============
+//
+// 与 Admin 面 `SetActivityCoverDto` / `SetActivityGalleryDto` 同形,按本模块既有的
+// 「Admin DTO 在 activities.dto.ts / App DTO 在 dto/app/」隔离约定各留一份
+// (Create / Update 本来就是这么两份)。**校验与落库逻辑只有一份**,
+// 两个 controller 都委托同一个 ActivityCoverService。
+//
+// 为什么封面不在 create/update 里:附件必须已归属本活动,而创建那一刻活动还不存在。
+// 详见 activities.dto.ts 同名 DTO 上的注释。
+
+export class SetAppManagedActivityCoverDto {
+  @ApiProperty({
+    description: '封面对应的 activity 附件 id(必须属于本活动);传 null 清空封面',
+    nullable: true,
+    type: String,
+  })
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  @MinLength(1)
+  attachmentId!: string | null;
+}
+
+export class SetAppManagedActivityGalleryDto {
+  @ApiProperty({
+    description: '图集附件 id 有序数组(每个都必须属于本活动);传 [] 清空图集',
+    type: [String],
+  })
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(64, { each: true })
+  attachmentIds!: string[];
 }
 
 export class AppManagedActivityPositionParamsDto extends AppManagedActivityParamsDto {
@@ -197,18 +235,6 @@ export class CreateAppManagedActivityDto {
   @IsObject()
   registrationSchema?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ maxLength: 512 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  coverImageUrl?: string;
-
-  @ApiPropertyOptional({ type: [String] })
-  @OmittableOnly()
-  @IsArray()
-  @IsString({ each: true })
-  galleryImageUrls?: string[];
-
   @ApiPropertyOptional({ type: 'object', additionalProperties: true })
   @IsOptional()
   @IsObject()
@@ -344,18 +370,6 @@ export class UpdateAppManagedActivityDto {
   @IsOptional()
   @IsObject()
   registrationSchema?: Record<string, unknown>;
-
-  @ApiPropertyOptional({ maxLength: 512 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  coverImageUrl?: string;
-
-  @ApiPropertyOptional({ type: [String] })
-  @OmittableOnly()
-  @IsArray()
-  @IsString({ each: true })
-  galleryImageUrls?: string[];
 
   @ApiPropertyOptional({ type: 'object', additionalProperties: true })
   @IsOptional()
@@ -501,6 +515,23 @@ export class AppManagedActivityProjectionDto {
 
   @ApiProperty()
   archiveWaitingDays!: number;
+
+  // ============ P2-14 刀 A(纯加法)============
+  // 改造前 managed 面**能写封面却读不回来**(可写 DTO 有 coverImageUrl,详情投影没有)。
+  // 既然设封面 / 设图集端点返回本 DTO,不补上这两个只读字段,调用方看不到自己刚设的东西。
+  // 值是**现签的短时效 URL**,不是存储 key。
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description: '封面签名 URL(由 coverImageKey 现签;未设或附件已过期 / 已删则为 null)',
+  })
+  coverImageUrl!: string | null;
+
+  @ApiProperty({
+    type: [String],
+    description: '图集签名 URL 有序数组(签不出来的项已剔除;未设为空数组)',
+  })
+  galleryImageUrls!: string[];
 
   @ApiProperty()
   createdAt!: Date;

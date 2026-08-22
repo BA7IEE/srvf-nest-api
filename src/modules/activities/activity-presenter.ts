@@ -3,6 +3,7 @@ import { ActivityListItemDto, ActivityResponseDto } from './activities.dto';
 import { deriveEffectiveActivityCapacity } from './activity-capacity';
 import { deriveActivityPhase } from './activity-phase';
 import type { ActivityFullRow, ActivityListRow } from './activity-access.service';
+import type { ActivitySignedCover, ActivitySignedImages } from './activity-image-signing.service';
 
 /*
  * 活动的**序列化层**(Phase 6-B 第三域第三刀,D-7 Presenter)。
@@ -32,7 +33,20 @@ export function jsonAsStringArray(v: Prisma.JsonValue | null): string[] | null {
   return v.filter((x): x is string => typeof x === 'string');
 }
 
-export function toResponseDto(row: ActivityFullRow): ActivityResponseDto {
+/*
+ * P2-14 刀 A:封面 / 图集不再从行上直读。
+ *
+ * `row.coverImageUrl` / `row.galleryImageUrls` 是**裸 URL 遗留列**(已零写入路径,刀 B 删);
+ * 对外的同名字段一律是**现签的短时效 URL**,由 `ActivityImageSigningService` 解析后
+ * 当入参传进来。本文件是纯函数层,不能自己取数 —— 见文件头的 Presenter 契约。
+ *
+ * ⚠️ 参数是**必填**而不是可选带默认值:可选参数会让漏传的调用方静默返回 undefined /
+ * 旧值,而那正是「读出侧看起来没坏、其实没走签名」的形状。必填 ⇒ 漏传是编译错误。
+ */
+export function toResponseDto(
+  row: ActivityFullRow,
+  images: ActivitySignedImages,
+): ActivityResponseDto {
   return {
     id: row.id,
     title: row.title,
@@ -64,8 +78,8 @@ export function toResponseDto(row: ActivityFullRow): ActivityResponseDto {
     defaultLocationRequired: row.defaultLocationRequired,
     archiveWaitingDays: row.archiveWaitingDays,
     registrationSchema: jsonAsObject(row.registrationSchema),
-    coverImageUrl: row.coverImageUrl,
-    galleryImageUrls: jsonAsStringArray(row.galleryImageUrls),
+    coverImageUrl: images.coverImageUrl,
+    galleryImageUrls: images.galleryImageUrls,
     content: jsonAsObject(row.content),
     locationLongitude: decimalToString(row.locationLongitude),
     locationLatitude: decimalToString(row.locationLatitude),
@@ -74,7 +88,10 @@ export function toResponseDto(row: ActivityFullRow): ActivityResponseDto {
   };
 }
 
-export function toListItemDto(row: ActivityListRow): ActivityListItemDto {
+export function toListItemDto(
+  row: ActivityListRow,
+  cover: ActivitySignedCover,
+): ActivityListItemDto {
   return {
     id: row.id,
     title: row.title,
@@ -91,7 +108,7 @@ export function toListItemDto(row: ActivityListRow): ActivityListItemDto {
     phase: deriveActivityPhase(row.startAt, row.endAt),
     isPublicRegistration: row.isPublicRegistration,
     requiresInsurance: row.requiresInsurance,
-    coverImageUrl: row.coverImageUrl,
+    coverImageUrl: cover.coverImageUrl,
     locationLongitude: decimalToString(row.locationLongitude),
     locationLatitude: decimalToString(row.locationLatitude),
     createdAt: row.createdAt,

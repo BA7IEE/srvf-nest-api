@@ -90,6 +90,9 @@ import { ActivityQualificationEvaluatorService } from '../activity-registrations
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import { AttendanceSegmentProjectorService } from './attendance-segment-projector.service';
 import { AttendancesModule } from '../attendances/attendances.module';
+import { AttachmentsModule } from '../attachments/attachments.module';
+import { ActivityCoverService } from './activity-cover.service';
+import { ActivityImageSigningService } from './activity-image-signing.service';
 
 // V2 批次 6 PR #4(D6 v1.1 §8 / 第二波第二步):导入 AuditLogsModule 以注入 AuditLogsService,
 // activities 写操作(create / update / softDelete / publish / cancel 共 5 处共用 activity.publish)
@@ -129,6 +132,9 @@ import { AttendancesModule } from '../attendances/attendances.module';
     NotificationsModule,
     OrganizationsModule,
     ActivityFeedbacksModule,
+    // P2-14 刀 A:封面 / 图集改附件制 —— 归属校验、存储边界锁与签 URL 全部复用
+    // attachments 模块的既有实现(与内容模块同一份),本模块不另写一套。
+    AttachmentsModule,
     // B6 的 durable bulk worker 只能复用 Attendances 的统一 PunchCommand；双向模块关系
     // 由 forwardRef 显式声明，避免在 Activities 侧复制考勤写链。
     forwardRef(() => AttendancesModule),
@@ -152,6 +158,8 @@ import { AttendancesModule } from '../attendances/attendances.module';
     ActivitiesService,
     AppMyActivityBatchJobsService,
     ActivityAccessService,
+    ActivityCoverService,
+    ActivityImageSigningService,
     ActivityStatusCommandService,
     ActivityWriteService,
     ActivityAuditRecorder,
@@ -255,6 +263,9 @@ import { AttendancesModule } from '../attendances/attendances.module';
   ],
   exports: [
     ActivitiesService,
+    // 跨模块读侧(activity-registrations / attendances 的 App 列表)也要按 coverImageKey
+    // 现签活动封面 —— 导出签名层,而不是让它们各自去调 AttachmentsService。
+    ActivityImageSigningService,
     EvidenceSealService,
     SettlementDraftService,
     SettlementDraftDispatchService,

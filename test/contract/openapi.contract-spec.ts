@@ -237,6 +237,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 第 4 批：草稿发起人直改 Form；published 仍由 change review 接管。
   ['get', '/api/app/v1/my/managed-activities/{activityId}/registration-form'],
   ['put', '/api/app/v1/my/managed-activities/{activityId}/registration-form'],
+  // P2-14 刀 A:App 面同两条(与 Admin 面委托同一个 ActivityCoverService)。
+  ['put', '/api/app/v1/my/managed-activities/{activityId}/cover'],
+  ['put', '/api/app/v1/my/managed-activities/{activityId}/gallery'],
   // 第 4 批资格配置/发布激活：草稿全量替换读取/写入；已发布变更仍经 change review。
   ['get', '/api/app/v1/my/managed-activities/{activityId}/qualification-rules'],
   ['put', '/api/app/v1/my/managed-activities/{activityId}/qualification-rules'],
@@ -672,6 +675,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/admin/v1/activities/{id}/publish-with-audience-tags'],
   ['patch', '/api/admin/v1/activities/{id}/cancel'],
   ['post', '/api/admin/v1/activities/{id}/complete'],
+  // P2-14 刀 A:封面 / 图集改附件制。写入口从 create/update 的裸 URL 字段
+  // 搬到这两条专用路由(附件必须先归属本活动 ⇒ create 时结构上无法校验)。
+  ['put', '/api/admin/v1/activities/{id}/cover'],
+  ['put', '/api/admin/v1/activities/{id}/gallery'],
   // 活动责任闭环 PR-4:独立发布审核工作台 4 端点。
   ['get', '/api/admin/v1/activity-publish-reviews'],
   ['get', '/api/admin/v1/activity-publish-reviews/{id}'],
@@ -1038,7 +1045,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 545;
+const EXPECTED_ROUTE_COUNT = 549;
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

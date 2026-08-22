@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:06996f76bb74b095f0f393cf4c1495c11c48c7cf4da7c8451373b4684654113d
+// inputDigest: sha256:191fcc88abbe0a6349610f54ff4e4ea1e31561e2455408a445fc9924f288aa08
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理

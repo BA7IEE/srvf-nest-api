@@ -29,6 +29,7 @@ import {
 export type { ActivityFullRow } from './activity-access.service';
 export { PUBLISHED_ACTIVITY_DISPLAY_FIELDS } from './activity-access.service';
 import { toListItemDto } from './activity-presenter';
+import { ActivityImageSigningService } from './activity-image-signing.service';
 import { ActivityStatusCommandService } from './activity-status-command.service';
 import { ActivityWriteService } from './activity-write.service';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
@@ -62,6 +63,8 @@ import { ActivityAllocationModeService } from './activity-allocation-mode.servic
 @Injectable()
 export class ActivitiesService {
   constructor(
+    // P2-14 刀 A:列表封面改为按 coverImageKey 现签。
+    private readonly images: ActivityImageSigningService,
     // 第三域第三刀:多段共用的判权 / 聚合根装载 / 域校验。
     private readonly access: ActivityAccessService,
     // 建单改单与状态流转的实现持有者;本 service 仅保留同名薄委托作为唯一对外入口。
@@ -234,7 +237,11 @@ export class ActivitiesService {
       this.prisma.activity.count({ where }),
     ]);
 
-    const items = rows.map((r) => toListItemDto(r));
+    const covers = await this.images.signCovers(rows);
+    const items = rows.map((r, index) =>
+      // 顺序对齐由 signCovers 保证(它是 rows.map,不重排)。
+      toListItemDto(r, covers[index] ?? { coverImageUrl: null }),
+    );
 
     return {
       items: includeStats ? await this.attachStats(items) : items,

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:dac23ce2cedf36dfe0614db39660561920499813a25b03d4c396709f55d83c63",
+  "inputDigest": "sha256:4ffd493e922c172a70bd3583e22f2c01e46f5ab58cec73380defbddc8c231410",
   "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 50 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。",
   "entries": [
     {

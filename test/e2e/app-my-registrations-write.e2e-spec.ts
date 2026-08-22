@@ -185,7 +185,11 @@ describe('App /api/app/v1/my/* (P2-5b 写 2 endpoint)', () => {
       startAt: new Date('2099-07-01T08:00:00.000Z'), // v0.40.0 endAt 闸:远未来避免墙钟越过
       endAt: new Date('2099-07-01T12:00:00.000Z'),
       location: '梧桐山',
-      coverImageUrl: 'https://example.test/cover.png',
+      // P2-14 刀 A:封面已改附件制,夹具**不再设封面**。
+      // 直插一个悬空 key 会签不出 URL(没有对应 Attachment 行 ⇒ resolveDownloadUrl 返 null),
+      // 看着像「设了封面」实际读出 null —— 比不设更容易误导。
+      // 本 spec 只断字段**存在性**,封面的签名 / 过期 / 越权行为由
+      // test/e2e/activity-cover-attachment.e2e-spec.ts 端到端覆盖。
       capacity: opts.capacity === undefined ? 30 : opts.capacity,
       isPublicRegistration: opts.isPublicRegistration ?? true,
       // 默认远未来(不触发截止闸,保留「截止存在但未过」覆盖);需要测截止时显式传过去时刻(见下「截止后」用例)。

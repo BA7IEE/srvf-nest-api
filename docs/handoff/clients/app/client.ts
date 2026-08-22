@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:06996f76bb74b095f0f393cf4c1495c11c48c7cf4da7c8451373b4684654113d
+// inputDigest: sha256:191fcc88abbe0a6349610f54ff4e4ea1e31561e2455408a445fc9924f288aa08
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -223,6 +223,8 @@ import type {
   RevokeAppManagedAttendanceQrDto,
   SendMyPhoneCodeDto,
   SendMyPhoneCodeResponseDto,
+  SetAppManagedActivityCoverDto,
+  SetAppManagedActivityGalleryDto,
   SubmitActivityPublishReviewDto,
   TransferAppManagedActivityInitiatorDto,
   TransferAppManagedActivityOwnerDto,
@@ -544,6 +546,10 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivityResponsibilitiesControllerEndCollaborator(activityId: string, assignmentId: string): Promise<ApiEnvelope<AppManagedResponsibilityAssignmentDto>> {
       return fetcher<AppManagedResponsibilityAssignmentDto>({ method: "DELETE", path: `/api/app/v1/my/managed-activities/${activityId}/collaborators/${assignmentId}` });
     },
+    /** App 设 / 清本人 managed 活动封面(attachmentId 须为本活动附件;null 清空) [auth] */
+    AppManagedActivitiesControllerSetCover(activityId: string, body: SetAppManagedActivityCoverDto): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
+      return fetcher<AppManagedActivityDetailDto>({ method: "PUT", path: `/api/app/v1/my/managed-activities/${activityId}/cover`, body });
+    },
     /** App 主负责人声明活动考勤已全部提交 [auth] */
     AppManagedActivitiesControllerDeclareAttendanceComplete(activityId: string): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
       return fetcher<AppManagedActivityDetailDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/declare-attendance-complete` });
@@ -555,6 +561,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 负责人执行机器证据封场；缺口与 seal 结果沿既有服务透传 [auth] */
     AppManagedActivitiesControllerEvidenceSeal(activityId: string): Promise<ApiEnvelope<AppEvidenceSealResultDto>> {
       return fetcher<AppEvidenceSealResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/evidence-seals` });
+    },
+    /** App 设 / 清本人 managed 活动图集(每个 id 须为本活动附件;[] 清空) [auth] */
+    AppManagedActivitiesControllerSetGallery(activityId: string, body: SetAppManagedActivityGalleryDto): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
+      return fetcher<AppManagedActivityDetailDto>({ method: "PUT", path: `/api/app/v1/my/managed-activities/${activityId}/gallery`, body });
     },
     /** App 活动负责人或报名协办查看邀请列表 [auth] */
     AppManagedActivityGuestsControllerListInvitations(activityId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityInvitationDto[] }>> {

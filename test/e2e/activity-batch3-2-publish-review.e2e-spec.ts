@@ -379,11 +379,12 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
   });
 
   it('rejects stale change proposals and leaves critical published fields behind review', async () => {
+    // P2-14 刀 A:coverImageUrl / galleryImageUrls 从本闭集移出。
+    // ⚠️ 这**不是**「已发布活动不能再改封面」——它们已不是 UpdateActivityDto 的字段,
+    // 改封面走 PUT :id/cover(该端点刻意不加状态闸,逐字保留原先的可直改行为)。
     expect(PUBLISHED_ACTIVITY_DISPLAY_FIELDS).toEqual([
       'description',
       'registrationNotes',
-      'coverImageUrl',
-      'galleryImageUrls',
       'content',
     ]);
     for (const criticalField of [

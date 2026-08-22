@@ -223,8 +223,9 @@ describe('activities 模块', () => {
             registrationDeadline: '2026-05-30T23:59:59.000Z',
             registrationNotes: '请提前报名',
             isPublicRegistration: true,
-            coverImageUrl: 'https://example.com/cover.jpg',
-            galleryImageUrls: ['https://example.com/1.jpg', 'https://example.com/2.jpg'],
+            // P2-14 刀 A:create 不再收 coverImageUrl / galleryImageUrls 裸 URL 字段
+            // (附件必须先归属本活动,而创建那一刻活动还不存在)。改走
+            // PUT :id/cover 与 PUT :id/gallery,覆盖在 activity-cover-attachment.e2e-spec.ts。
             content: { sections: ['intro', 'agenda'] },
             registrationSchema: { fields: [] },
             locationLongitude: 114.123456,
@@ -235,10 +236,9 @@ describe('activities 模块', () => {
       expect(res.body.data.capacity).toBe(20);
       expect(typeof res.body.data.locationLongitude).toBe('string');
       expect(typeof res.body.data.locationLatitude).toBe('string');
-      expect(res.body.data.galleryImageUrls).toEqual([
-        'https://example.com/1.jpg',
-        'https://example.com/2.jpg',
-      ]);
+      // 新建活动尚未设封面 / 图集 ⇒ 出参分别是 null 与空数组(不再是回显入参的裸 URL)。
+      expect(res.body.data.coverImageUrl).toBeNull();
+      expect(res.body.data.galleryImageUrls).toEqual([]);
       expect(res.body.data.content).toEqual({ sections: ['intro', 'agenda'] });
     });
 

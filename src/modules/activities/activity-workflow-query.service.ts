@@ -17,6 +17,7 @@ import type {
   AppManagedActivityListItemDto,
   AppManagedActivityProjectionDto,
 } from './dto/app/app-managed-activity.dto';
+import { ActivityImageSigningService } from './activity-image-signing.service';
 
 export const managedActivitySelect = {
   id: true,
@@ -38,6 +39,9 @@ export const managedActivitySelect = {
   defaultCheckInRadiusMeters: true,
   defaultLocationRequired: true,
   archiveWaitingDays: true,
+  // P2-14 刀 A:封面 / 图集按 key 现签(不读裸 URL 遗留列)。
+  coverImageKey: true,
+  galleryImageKeys: true,
   attendanceDeclaredCompleteAt: true,
   createdAt: true,
   updatedAt: true,
@@ -98,6 +102,8 @@ export class ActivityWorkflowQueryService {
     private readonly prisma: PrismaService,
     private readonly authz: AuthzService,
     private readonly closurePolicy: ActivityClosurePolicy,
+    // P2-14 刀 A:封面 / 图集现签。
+    private readonly images: ActivityImageSigningService,
   ) {}
 
   async list(
@@ -216,7 +222,7 @@ export class ActivityWorkflowQueryService {
     const closure = this.closurePolicy.decide(this.toClosureInput(row, attendance));
 
     return {
-      activity: this.toProjection(row),
+      activity: await this.toProjection(row),
       // issue #1048 T1:`label` 由后端拼装,Prisma 行里没有。
       initiator:
         row.initiator === null
@@ -340,7 +346,8 @@ export class ActivityWorkflowQueryService {
     };
   }
 
-  private toProjection(row: ManagedActivityRow): AppManagedActivityProjectionDto {
+  private async toProjection(row: ManagedActivityRow): Promise<AppManagedActivityProjectionDto> {
+    const signed = await this.images.signImages(row);
     return {
       id: row.id,
       title: row.title,
@@ -361,6 +368,8 @@ export class ActivityWorkflowQueryService {
       defaultCheckInRadiusMeters: row.defaultCheckInRadiusMeters,
       defaultLocationRequired: row.defaultLocationRequired,
       archiveWaitingDays: row.archiveWaitingDays,
+      coverImageUrl: signed.coverImageUrl,
+      galleryImageUrls: signed.galleryImageUrls ?? [],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:06996f76bb74b095f0f393cf4c1495c11c48c7cf4da7c8451373b4684654113d
+// inputDigest: sha256:191fcc88abbe0a6349610f54ff4e4ea1e31561e2455408a445fc9924f288aa08
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -1042,8 +1042,6 @@ export interface CreateActivityDto {
   "defaultLocationRequired"?: boolean | null;
   "archiveWaitingDays"?: number;
   "registrationSchema"?: Record<string, unknown>;
-  "coverImageUrl"?: string;
-  "galleryImageUrls"?: string[];
   "content"?: Record<string, unknown>;
   "locationLongitude"?: number;
   "locationLatitude"?: number;
@@ -2454,6 +2452,14 @@ export interface SendNotificationSmsDto {
   "confirmed": boolean;
 }
 
+export interface SetActivityCoverDto {
+  "attachmentId": string | null;
+}
+
+export interface SetActivityGalleryDto {
+  "attachmentIds": string[];
+}
+
 export interface SetContentCoverDto {
   "attachmentId": string | null;
 }
@@ -2604,8 +2610,6 @@ export interface UpdateActivityDto {
   "defaultLocationRequired"?: boolean | null;
   "archiveWaitingDays"?: number;
   "registrationSchema"?: Record<string, unknown>;
-  "coverImageUrl"?: string;
-  "galleryImageUrls"?: string[];
   "content"?: Record<string, unknown>;
   "locationLongitude"?: number;
   "locationLatitude"?: number;

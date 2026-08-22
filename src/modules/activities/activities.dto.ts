@@ -457,22 +457,6 @@ export class CreateActivityDto {
   @IsObject()
   registrationSchema?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ description: '封面图片 URL', maxLength: 512 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  coverImageUrl?: string;
-
-  @ApiPropertyOptional({
-    description: '相册图片 URL 数组',
-    type: 'array',
-    items: { type: 'string' },
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  galleryImageUrls?: string[];
-
   @ApiPropertyOptional({
     description: '正文内容(Json)',
     type: 'object',
@@ -502,6 +486,45 @@ export class CreateActivityDto {
 // PATCH 语义:全字段 optional;**绝对禁止** statusCode / publishedBy / publishedAt /
 //   cancelledBy / cancelledAt / cancelReason(forbidNonWhitelisted 兜底)。
 // Q-A12:cancelled Activity 由 service 层拒绝修改。
+// ============ P2-14 刀 A:设 / 清封面与图集(Admin 面)============
+//
+// 为什么是**独立端点**而不是 create/update 上的一个字段:附件必须已经属于本活动
+// (`ownerType='activity'` 且 `ownerId=<本活动 id>`),而**创建活动那一刻活动还不存在**,
+// 附件不可能已归属它 —— create 上的封面字段在结构上不可能被正确校验。
+// 对照组 `Content` 同理:CreateContentDto / UpdateContentDto 一个 cover 字段都没有,
+// 封面只走 `SetContentCoverDto` 的专用端点。本刀照抄这个形状。
+//
+// 顺序因此是:建活动(draft)→ 用通用附件接口以 ownerType='activity' 上传 → 设封面。
+
+export class SetActivityCoverDto {
+  @ApiProperty({
+    description: '封面对应的 activity 附件 id(必须属于本活动);传 null 清空封面',
+    nullable: true,
+    type: String,
+  })
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  @MinLength(1)
+  attachmentId!: string | null;
+}
+
+export class SetActivityGalleryDto {
+  @ApiProperty({
+    description:
+      '图集附件 id 有序数组(每个都必须属于本活动);传 [] 清空图集。顺序即展示顺序,不去重之外不重排',
+    type: [String],
+  })
+  @IsArray()
+  // ⚠️ 上限是**新加的**:旧的 galleryImageUrls 既无 ArrayMaxSize 也无每项 MaxLength,
+  // 即无界数组 + 无界字符串。20 张是展示用图集的合理上限,超出应当走正文富文本。
+  @ArrayMaxSize(20)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MinLength(1, { each: true })
+  @MaxLength(64, { each: true })
+  attachmentIds!: string[];
+}
+
 export class UpdateActivityDto {
   @ApiPropertyOptional({ description: '活动标题', maxLength: 200 })
   @IsOptional()
@@ -643,22 +666,6 @@ export class UpdateActivityDto {
   @IsOptional()
   @IsObject()
   registrationSchema?: Record<string, unknown>;
-
-  @ApiPropertyOptional({ description: '封面图片 URL', maxLength: 512 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  coverImageUrl?: string;
-
-  @ApiPropertyOptional({
-    description: '相册图片 URL 数组',
-    type: 'array',
-    items: { type: 'string' },
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  galleryImageUrls?: string[];
 
   @ApiPropertyOptional({
     description: '正文内容',
