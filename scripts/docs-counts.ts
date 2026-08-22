@@ -19,7 +19,7 @@
  *   Migration     = prisma/migrations 一级目录数(migration_lock.toml 为文件不计)
  *   BizCode       = biz-code.constant.ts 内 `httpStatus` 属性赋值数(每码恰一处,见 docs/reference/response-pagination-errors.md)
  *   权限码        = seed 事实闭包(`prisma/seed.ts` +
- *                   `src/modules/permissions/rbac-seed-facts.ts`)权限码集合大小
+ *                   `src/modules/permissions/permission-catalog.ts`)权限码集合大小
  *                   (AST:`code: '…'` 属性 + `*_CODE` 常量;同时保留
  *                   scripts/check-rbac-map.ts 镜像正则做第二口径交叉校验,
  *                   双口径分歧 → exit 2 —— 守住闭包书写契约并强制三解析器同步)
@@ -45,10 +45,16 @@ const BEGIN = '<!-- counts:begin -->';
 const END = '<!-- counts:end -->';
 
 // 权限事实只允许来自这两个具名文件；禁止改成目录扫描，避免把业务字符串误算成权限码。
-// generate-rbac-map.ts / check-rbac-map.ts 各自保留同款清单，守卫自测会交叉核验。
+// generate-rbac-map.ts / check-rbac-map.ts 各自保留同款清单，三处都调 assertSeedFactsClosure()
+// 交叉核验 ⇒ 改这里而漏改另外两处会当场抛错，不会静默。
+//
+// ⚠️ **顺序也是判据的一部分**:assertSeedFactsClosure 逐位比对,三份副本必须逐字同序。
+// ⚠️ 从这个数组里摘掉一个文件 ⇒ 权限码全集**静默缩水**,而缩水后的全集恒是
+//    RBAC_SEED_CATALOG 各桶并集的子集 ⇒ check-permission-catalog-closure 的方向 (a) 反而全绿。
+//    抓住这种缩水的是它的方向 (b)(桶里有、全集没有)。
 export const SEED_FACTS_CLOSURE = Object.freeze([
   'prisma/seed.ts',
-  'src/modules/permissions/rbac-seed-facts.ts',
+  'src/modules/permissions/permission-catalog.ts',
 ] as const);
 
 export function assertSeedFactsClosure(files: readonly string[]): void {

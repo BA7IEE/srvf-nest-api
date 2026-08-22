@@ -2,7 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { execSync } from 'child_process';
 import { RBAC_SEED_CATALOG } from '../../prisma/seed';
 import { PrismaService } from '../../src/database/prisma.service';
-import { RBAC_SEED_FACTS } from '../../src/modules/permissions/rbac-seed-facts';
+import { RBAC_PERMISSION_SEED } from '../../src/modules/permissions/permission-catalog';
 import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES } from '../../src/modules/permissions/reserved-super-admin-permission-codes';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
@@ -168,9 +168,9 @@ describe('prisma/seed.ts — position role policies + v0.61.0 activity workflow(
 
   it('1. 内置角色与 seed 目录一致；org/biz/group contract 码集与只读投影不漂移', async () => {
     expect(runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'pr7-seed-su-1' }).code).toBe(0);
-    expect(RBAC_SEED_CATALOG.permissions.rbac).toEqual(RBAC_SEED_FACTS.permissions.rbac);
+    expect(RBAC_SEED_CATALOG.permissions.rbac).toEqual(RBAC_PERMISSION_SEED);
     expect(RBAC_SEED_CATALOG.contract.reservedSuperAdminOnlyPermissionCodes).toEqual(
-      RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes,
+      RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES,
     );
 
     const roles = await prisma.rbacRole.findMany({

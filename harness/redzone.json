@@ -41,8 +41,8 @@
     },
     {
       "id": "permission-seed-facts",
-      "globs": ["src/modules/permissions/rbac-seed-facts.ts"],
-      "why": "跨运行时共享的权限 seed 事实；seed、生产控制面与 seed e2e 均消费，改动等同权限定义 / seed 语义变更"
+      "globs": ["src/modules/permissions/permission-catalog.ts"],
+      "why": "跨运行时共享的权限 seed 事实；seed、生产控制面与 seed e2e 均消费，改动等同权限定义 / seed 语义变更。P1-32 PR1 把权限定义从 rbac-seed-facts.ts 与 prisma/seed.ts 搬进 permission-catalog.ts，本 glob 随之跟到新位置 —— 否则纯搬家会把这道 D 档护栏拆掉（今天要授权才能改的权限定义变成随便写）"
     },
     {
       "id": "global-pipeline",

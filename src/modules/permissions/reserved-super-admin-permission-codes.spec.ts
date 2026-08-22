@@ -122,10 +122,21 @@ describe('`*.reset.credentials` 家族必须全员登记进 SA-only 保留集(�
     // 地板值,不是普查数:家族只增不减,当前 5 个 provider(storage / sms / wechat /
     // realname / wecom)。真跌破 5 说明有 provider 被摘掉,该有人来看一眼。
     expect(CREDENTIAL_RESET_FAMILY.length).toBeGreaterThanOrEqual(5);
-    // 锚点:证明扫描器真的走到了 prisma/seed.ts 并从中解析出了字面量,而不是只扫了 src。
-    expect(CREDENTIAL_RESET_SITES.get('storage-setting.reset.credentials') ?? []).toContain(
-      'prisma/seed.ts',
-    );
+    // ── 锚点:证明扫描器真的走完了两个 SCAN_ROOT,而不是只扫到其中一半 ──────────
+    //
+    // P1-32 PR 1 之前,这里锚的是「storage 那条码出现在 prisma/seed.ts」。搬家后
+    // `prisma/**` 里**一条权限码都不剩**(权限定义全在 permission-catalog.ts),
+    // 那个锚点在结构上不可能再成立 —— 但它守的性质仍然要守,所以拆成三条各守一半:
+    const storageSites = CREDENTIAL_RESET_SITES.get('storage-setting.reset.credentials') ?? [];
+    // ① walker 仍然走到了 prisma/(该根现在零家族成员,只能锚文件本身;
+    //    哪天有人把权限码写回 seed.ts,scan 面还在,判据就还看得见)。
+    expect(SCANNED_FILES.map((f) => f.rel)).toContain('prisma/seed.ts');
+    // ② **定义侧**被解析到了:权限目录里那条 `code: '<literal>'`。
+    expect(storageSites).toContain('src/modules/permissions/permission-catalog.ts');
+    // ③ **消费侧**也被解析到了:判权装饰器所在的 controller。少了这条,
+    //    「扫描器只认目录文件」这种缩窄会静默通过 —— 而新 provider 漏登记时,
+    //    最先出现那条码的地方恰恰是消费侧。
+    expect(storageSites).toContain('src/modules/storage/storage-settings.controller.ts');
   });
 
   it('每一条 `*.reset.credentials` 权限码都在保留集内(漏登记即红并点名)', () => {
