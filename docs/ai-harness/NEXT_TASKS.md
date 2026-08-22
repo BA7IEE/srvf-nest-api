@@ -1408,6 +1408,46 @@ IF 要给 `Permission` 挂 `servicePrincipalAllowed` / `delegatedAccessAllowed` 
 
 > 只做中文展示而不做第一优先级,会让「更好用的后台」**反而更容易把现有控制面改坏**。
 
+#### PR 0 决策拍板 —— ✅ **维护者 2026-08-22 逐项答复,已落地(决策锁)**
+
+> 冻结稿 §25 列的六项「必须由维护者明确拍板的事项」,答复原文见 PR body。
+> **结论不只写在这里** —— 每一项能做成闸的都接了执行位,见右列。
+
+| # | 事项 | 维护者答复(2026-08-22) | 执行位 |
+|---|---|---|---|
+| ① | `HIGH` 与 `CRITICAL` 怎么分 | 「CRITICAL 就按你的推荐分」= **出错后救不回来,或能把权力给出去**;五族:提权 / 凭证 / 身份 / 账本 / 硬删。**判据用标签不写死清单**,新控制面码自动进 CRITICAL | `permission-catalog-metadata.criteria.spec.ts`「① CRITICAL 恰好等于五族」(双向:该升没升 / 升了没依据) |
+| ② | 7 条保留码能否由 SA 授给角色 | **B 收紧:一条都不进任何角色**,只走 SA 身份短路 | 元数据 `grantPolicy: 'SUPER_ADMIN_ONLY'` + `uiVisibility: 'HIDDEN'`,并与 `RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET` 双向钉死;seed 侧「这 7 条零角色持有」的执行位**早已在** `permission-code-holders.spec.ts`,不重复造 |
+| ③ | Scope 首版提示还是强校验 | **只提示** | 本期刻意**不出** `scopeProfile` 字段;判据反向断言「元数据里不许出现 scopeProfile」 |
+| ④ | step-up 绑哪些 action | **只记 `CRITICAL`,本刀不承诺绑定** | —(见下方「已知缺口」第 2 条) |
+| ⑤ | 旧 Permission 写 CRUD 退役时间线 | **不定死日期**,由冻结稿 PR 8 的前提触发 | 判据断言 `rbac.permission.create/update/delete` 仍为 `ACTIVE` |
+| ⑥ | 15 个内建角色是否全部只读 | **全部 15 个「系统角色 · 权限集只读」**,含 `member` / `group-readonly` / `org-readonly` | 见下方「⑥ 的执行位还不存在」 |
+
+**⑥ 为什么单独点出那三个**:起草时以为 `member` / `group-readonly` / `org-readonly`「是给普通队员的、可能要区别对待」。
+实测结论**相反,而且理由更硬** —— `org-readonly`(副队长/副部长)与 `group-readonly`(副组长)的码集
+**不是手工清单,是从正职角色自动过滤生成的**(`isReadonlyProjectionCode`:只留 `.read.` / `attachment.view.`,
+恒排除 `*.read.sensitive` 与所有写码),手改必被下次 seed 覆盖,或造出与派生链打架的第二份真相;
+`member` 的 9 条码同样是 seed 写死的自助码。
+
+##### ⚠️ PR 0 之后仍然存在的三个缺口(**别读成「决策已全部生效」**)
+
+1. **⑥ 的执行位还不存在**:15 个内建角色今天**删不掉**(`PROTECTED_ROLE_CODE_SET` 只守 `softDelete`),
+   但**改名、加减权限都没有任何拦阻**(`rbac.role.update` / `rbac.role-permission.create|delete`)。
+   「系统角色只读」是 PR 3 的行为改动,PR 0 只锁住了决定。
+2. **④ 的靶子还没有枪**:今天 step-up 只覆盖 `PHONE_BIND` / `WECHAT_BIND` / `WECOM_BIND`
+   三个**本人绑定**动作,管理端一条都没绑。「绑 CRITICAL 全集」= 新增 StepUpAction + 给管理端接口加闸,
+   是独立一刀,不是翻开关。
+3. **② 只关了一半**:非 SA 已被 `assertNoControlPlaneCodesOrThrow` 拦住,
+   **SA 本人仍可把保留码授给任意角色**(`role-permissions.service.ts` 首行 `if (user.role === SUPER_ADMIN) return;`)。
+   关掉这条路是 PR 3。
+
+##### ⚠️ 元数据自身的一处已知执法缺口
+
+CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 `riskTag`,新码贴标签就自动进 CRITICAL;
+**唯独「身份签发」族在 11 个冻结标签里没有对应项**,只能写成
+`IDENTITY_ISSUANCE_PERMISSION_CODES` 清单(6 条)。⇒ **新增身份签发类权限码时必须手工补,漏补零症状**
+(新码照样有元数据、照样过完整性判据,只是档位低了一级)。
+真正的修法是给标签集加一个 `IDENTITY_ISSUANCE`,要动 PR 2 的枚举 —— **本条即为该登记**。
+
 #### 已抽出实施
 
 - ⭐ **授撤对称收口**(方案 PR 3 的安全部分)—— 8 条缺陷里**唯一「现在就存在的、可被利用的安全缺口」**:
