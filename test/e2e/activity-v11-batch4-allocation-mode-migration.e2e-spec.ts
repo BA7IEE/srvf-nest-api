@@ -224,6 +224,28 @@ function activityWithoutAllocationMode(databaseName: string, activityId: string)
   );
 }
 
+/**
+ * 断言「既有列一个都没被改写」—— 只比对 `before` 里出现过的键。
+ *
+ * ⚠️ 为什么不整串比对:`to_jsonb(activity)` 吐的是**当时的全部列**,于是**任何**
+ * 后续给 `Activity` 加列的 migration 都会让断言变红,而那与本用例要测的
+ * 「升级不改写既有数据」毫无关系 —— P2-14(封面/图集改附件制)加了 4 列,当场打挂。
+ *
+ * 收窄不削弱:既有列被改值 → 键值不同,红;既有列被删 → after 里 undefined,红;
+ * 物理行被重写 → 由紧随其后的 xmin 断言兜住。新增列取默认值是预期行为,不该由本用例拦。
+ *
+ * ⚠️ **只用在「迁移已升到最新」那条用例上**。回滚用例(库停在 83)必须继续整串严格比对 ——
+ * 那里「一列都不许多出来」正是要测的东西,换成本函数会把「回滚没删干净」放过去。
+ */
+function expectExistingColumnsUnchanged(before: string, after: string): void {
+  const b = JSON.parse(before) as Record<string, unknown>;
+  const a = JSON.parse(after) as Record<string, unknown>;
+  const drifted = Object.keys(b).filter(
+    (k) => JSON.stringify(b[k]) !== JSON.stringify(a[k]),
+  );
+  expect(drifted).toEqual([]);
+}
+
 function activityXmin(databaseName: string, activityId: string): string {
   return runPsql(
     databaseName,
@@ -357,7 +379,10 @@ describe('第 84 migration activity allocation mode', () => {
 
         expect(allocationMode(databaseName, fixture.activityId)).toBe('first_come');
         expect(successfulMigrationCount(databaseName)).toBe(CURRENT_MIGRATION_COUNT);
-        expect(activityWithoutAllocationMode(databaseName, fixture.activityId)).toBe(rowBefore);
+        expectExistingColumnsUnchanged(
+          rowBefore,
+          activityWithoutAllocationMode(databaseName, fixture.activityId),
+        );
         expect(activityXmin(databaseName, fixture.activityId)).toBe(xminBefore);
       } finally {
         dropWorkerDatabase(SCRATCH_WORKER_ID);
