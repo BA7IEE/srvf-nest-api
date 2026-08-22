@@ -714,14 +714,41 @@ function assertSafeMetadata(input: NotificationOutboxSafetyInput): void {
     ['destinationType', input.destinationType],
     ['destinationRef', input.destinationRef],
   ] as const) {
-    if (containsSensitiveValue(value) || FORBIDDEN_PAYLOAD_KEY.test(value)) {
+    if (containsSensitiveValue(value) || FORBIDDEN_PAYLOAD_SHAPE.test(value)) {
       throw new NotificationOutboxInvariantError(`${field} contains forbidden sensitive material`);
     }
   }
 }
 
-const FORBIDDEN_PAYLOAD_KEY =
-  /(phone|mobile|openid|token|secret|credential|signed.?url|provider.?request|provider.?response)/i;
+const FORBIDDEN_WORDS =
+  'phone|mobile|openid|token|secret|credential|signed.?url|provider.?request|provider.?response';
+
+// 键名侧：裸子串。键名恒是 camelCase / snake_case 的短标识符，`accessToken` / `userPhone` /
+// `phoneNumber` 这类词首前挨着字母，加任何词边界都会把它们放过去（实测），所以这里不能收窄。
+const FORBIDDEN_PAYLOAD_KEY = new RegExp(`(${FORBIDDEN_WORDS})`, 'i');
+
+/**
+ * 键名侧判据。**导出仅为可测**：`walkPayload` 的键名分支跑在 `exactKeys` 之后，而
+ * `exactKeys` 已经把任何未登记的键拒掉了 —— 从公开入口黑盒测「塞了 accessToken ⇒ 红」
+ * 测到的是 `exactKeys`，把这条谓词整个删掉那种测试照样全绿。要让它有真判据，只能直测。
+ * 它是 payload 键名的兜底闸（§10.2 禁字段），别拿去测**值** —— 值侧口径见
+ * `FORBIDDEN_PAYLOAD_SHAPE`，两者刻意不同。
+ */
+export function isForbiddenNotificationOutboxPayloadKey(key: string): boolean {
+  return FORBIDDEN_PAYLOAD_KEY.test(key);
+}
+
+// 值侧：另一条口径，拦的是「值的形状像在传敏感物料」（`token:abc123` / `openid_wx123`），
+// 与 containsSensitiveValue（值本身是敏感物料）互补，两条都要。
+// 值里装的是 cuid 这类不透明 id —— 用裸子串会随机误判（实测 200 万条 cuid 形状 id 命中 1 条），
+// 且是硬抛 + 非确定性，现场只会当成 flake 而不是 bug。
+// 只把「字母数字」当词内字符：`_` / `-` / `.` / `:` / `=` 都算分隔符，
+// 因此 `openid_wx123` 仍被拦（朴素 `\b` 方案在这里会漏 —— `_` 是 word 字符），
+// 而 cuid 内部前后都挨着字母数字的偶然子串被放行。
+const FORBIDDEN_PAYLOAD_SHAPE = new RegExp(
+  `(?:^|[^a-z0-9])(${FORBIDDEN_WORDS})(?:[^a-z0-9]|$)`,
+  'i',
+);
 
 function walkPayload(value: unknown, path: string): void {
   if (typeof value === 'string') {
@@ -736,7 +763,7 @@ function walkPayload(value: unknown, path: string): void {
   }
   if (value !== null && typeof value === 'object') {
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      if (FORBIDDEN_PAYLOAD_KEY.test(key)) {
+      if (isForbiddenNotificationOutboxPayloadKey(key)) {
         throw new NotificationOutboxInvariantError(`payload contains forbidden key ${path}.${key}`);
       }
       walkPayload(child, `${path}.${key}`);
