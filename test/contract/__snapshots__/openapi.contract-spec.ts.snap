@@ -137684,13 +137684,47 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "角色不存在(code=30003)",
         },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30104: 系统内置角色不允许删除",
+                    "enum": [
+                      30104,
+                    ],
+                    "example": 30104,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "系统内置角色不允许删除",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "系统内置角色不允许删除(code=30104)",
+        },
       },
       "security": [
         {
           "bearer": [],
         },
       ],
-      "summary": "软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003) [rbac: rbac.role.delete]",
+      "summary": "软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003;系统内置角色禁删返 30104,含 SUPER_ADMIN) [rbac: rbac.role.delete]",
       "tags": [
         "Ops - Roles",
       ],
@@ -138114,13 +138148,47 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
           "description": "角色不存在(code=30003)",
         },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30107: 系统内置角色的名称与描述由系统定义,不允许修改",
+                    "enum": [
+                      30107,
+                    ],
+                    "example": 30107,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "系统内置角色的名称与描述由系统定义,不允许修改",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "系统内置角色的名称与描述由系统定义,不允许修改(code=30107)",
+        },
       },
       "security": [
         {
           "bearer": [],
         },
       ],
-      "summary": "更新角色(仅 displayName / description;code 不可改;不存在或已软删返 30003) [rbac: rbac.role.update]",
+      "summary": "更新角色(仅 displayName / description;code 不可改;不存在或已软删返 30003;系统内置角色只读返 30107,含 SUPER_ADMIN) [rbac: rbac.role.update]",
       "tags": [
         "Ops - Roles",
       ],
@@ -138257,7 +138325,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "30100: 无权执行此操作; 30103: 该权限点仅超级管理员可分配",
+                    "description": "30100: 无权执行此操作; 30103: 控制面权限点不能授予任何角色;已存在的这类映射只有超级管理员能撤销",
                     "enum": [
                       30100,
                       30103,
@@ -138284,7 +138352,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "无权执行此操作(code=30100) / 该权限点仅超级管理员可分配(code=30103)",
+          "description": "无权执行此操作(code=30100) / 控制面权限点不能授予任何角色;已存在的这类映射只有超级管理员能撤销(code=30103)",
         },
         "404": {
           "content": {
@@ -138320,6 +138388,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             },
           },
           "description": "角色不存在(code=30003) / 权限点不存在(code=30001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30108: 系统内置角色的权限由系统定义,不允许在此增删;要调整授权范围,请新建自定义角色并绑给相应的人",
+                    "enum": [
+                      30108,
+                    ],
+                    "example": 30108,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "系统内置角色的权限由系统定义,不允许在此增删;要调整授权范围,请新建自定义角色并绑给相应的人",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "系统内置角色的权限由系统定义,不允许在此增删;要调整授权范围,请新建自定义角色并绑给相应的人(code=30108)",
         },
         "410": {
           "content": {
@@ -138361,7 +138463,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;SA-only 保留码仅 SUPER_ADMIN 可分配,否则 30103) [rbac: rbac.role-permission.create]",
+      "summary": "批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;控制面保留码任何身份都不可授予,含 SUPER_ADMIN,返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.create]",
       "tags": [
         "Ops - Role Permissions",
       ],
@@ -138500,9 +138602,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "30100: 无权执行此操作",
+                    "description": "30100: 无权执行此操作; 30103: 控制面权限点不能授予任何角色;已存在的这类映射只有超级管理员能撤销",
                     "enum": [
                       30100,
+                      30103,
                     ],
                     "example": 30100,
                     "type": "integer",
@@ -138526,7 +138629,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "无权执行此操作(code=30100)",
+          "description": "无权执行此操作(code=30100) / 控制面权限点不能授予任何角色;已存在的这类映射只有超级管理员能撤销(code=30103)",
         },
         "404": {
           "content": {
@@ -138563,6 +138666,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             },
           },
           "description": "角色不存在(code=30003) / 权限点不存在(code=30001) / 角色未持有此权限点(code=30011)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30108: 系统内置角色的权限由系统定义,不允许在此增删;要调整授权范围,请新建自定义角色并绑给相应的人",
+                    "enum": [
+                      30108,
+                    ],
+                    "example": 30108,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "系统内置角色的权限由系统定义,不允许在此增删;要调整授权范围,请新建自定义角色并绑给相应的人",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "系统内置角色的权限由系统定义,不允许在此增删;要调整授权范围,请新建自定义角色并绑给相应的人(code=30108)",
         },
         "410": {
           "content": {
@@ -138604,7 +138741,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011) [rbac: rbac.role-permission.delete]",
+      "summary": "撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011;控制面保留码仅 SUPER_ADMIN 可撤返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.delete]",
       "tags": [
         "Ops - Role Permissions",
       ],

@@ -123,7 +123,7 @@ export class RolePermissionsService {
   }
 
   // 查角色详情(含 permissions 数组),复用 rbac-roles.service 同形态;
-  // 但这里不抛 30005(已通过 assertRoleAccessibleOrThrow 拦掉),只查活跃角色。
+  // 但这里不抛 30005(已通过 assertRoleMutableOrThrow 拦掉),只查活跃角色。
   private async buildDetailResponse(roleId: string): Promise<RbacRoleDetailResponseDto> {
     const role = await this.prisma.rbacRole.findFirst({
       where: notDeletedWhere({ id: roleId }),
