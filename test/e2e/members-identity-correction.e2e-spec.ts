@@ -23,7 +23,7 @@ import { createTestApp } from '../setup/test-app';
 // 3 处 create(本地夹具 / 招新发号 / 建档),零订正路径。而存量老队员录入是上线前待办,
 // 一行录错就长期固化,memberNo 还同时是登录识别锚。
 //
-// 本 spec 锁四件事:
+// 本 spec 锁五件事:
 //   ① 判权矩阵 —— 含**决定性反面样本**:持 biz-admin 但单独摘掉 member.correct.identity
 //      这一条绑定 ⇒ 本端点 30100,而同一用户 PATCH /:id 仍 200。
 //      只测「无 biz-admin → 403」是不够的:那条在端点判的是**别的码**时也照样绿
@@ -32,6 +32,11 @@ import { createTestApp } from '../setup/test-app';
 //      也一条不加(memberOriginCode 与建档同口径:自由串候选字典,不做存在性校验)。
 //   ③ 审计 —— before / after / reason / actor / 时间五项齐全,before/after 恒为完整三元组。
 //   ④ 读面 + 禁止清单 —— 详情返回订正后的值;`UpdateMemberDto` 的禁止清单**原样保留**。
+//   ⑤ 已烧号台账(2026-08-22 追加)—— 「编号永不复用」这条铁律的**直接证据**:
+//      建档 A001 → 订正为 A999 → 再建档 A001 **必须被拒**。
+//      订正是原地 update,旧号改完 Member 表里一行都不剩,此前的唯一性预检因此看不见它;
+//      台账只增不删,占住的正是这批「发出去过、现在不挂在任何人身上」的号。
+//      本组用例**必须走 HTTP 建档端点** —— `prisma.member.create` 抄近路会绕开被测的那一段。
 
 const BASE = '/api/admin/v1/members';
 
@@ -403,5 +408,169 @@ describe('队员身份主档订正(第七轮评审 R7-A-01)', () => {
         expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
       },
     );
+  });
+  // ─────────────────────────────────────────────────────────────────────────
+  // ⑤ 已烧号台账 —— 「编号永不复用」这条铁律的直接证据(2026-08-22,维护者拍板方案 A)
+  //
+  // 缺陷:`correctIdentity` 是**原地 update**,`A001` 订正成 `A999` 之后库里再没有
+  // 任何行持有 `A001` ⇒ 下一个人建档时唯一性预检通过 ⇒ **旧号被重新发出去**。
+  // 而 memberNo 同时是登录识别锚(auth.service 按 memberNo 兜底查)⇒ 号被复用意味着
+  // 曾经用 `A001` 登录的是甲、现在是乙。
+  //
+  // ⚠️ 本组用例**必须走 HTTP 建档端点**,不能拿 `prisma.member.create` 抄近路 ——
+  //    近路绕开 `assertMemberNoUnique`,那正是被测的那一段。
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('⑤ 已烧号台账:编号永不复用', () => {
+    const createMember = (memberNo: string) =>
+      request(httpServer(app))
+        .post(BASE)
+        .set('Authorization', admBizAuth)
+        .send({ memberNo, ...memberIdentityData(`烧号样本-${memberNo}`) });
+
+    const reservations = (memberNo: string) =>
+      prisma.memberNoReservation.findMany({
+        where: { memberNo },
+        select: { memberNo: true, memberId: true, reason: true },
+      });
+
+    it('⭐ 建档 A001 → 订正为 A999 → 再建档 A001 必须被拒(铁律的直接证据)', async () => {
+      const created = await createMember('BURN-A001');
+      expect(created.status).toBe(201);
+      const memberId = created.body.data.id as string;
+
+      // 建档即烧号
+      expect(await reservations('BURN-A001')).toEqual([
+        { memberNo: 'BURN-A001', memberId, reason: 'created' },
+      ]);
+
+      const corrected = await correct(memberId, admBizAuth, {
+        memberNo: 'BURN-A999',
+        confirmMemberNoChange: true,
+        reason: '录入时把编号敲错了',
+      });
+      expect(corrected.status).toBe(200);
+      expect(corrected.body.data.memberNo).toBe('BURN-A999');
+
+      // 订正后:Member 表里 A001 **一行都没有**了 —— 这正是旧判据看不见它的原因
+      expect(await prisma.member.findUnique({ where: { memberNo: 'BURN-A001' } })).toBeNull();
+      // 而台账里旧号那行**原样留着**(memberId 保留原值,reason 不改)
+      expect(await reservations('BURN-A001')).toEqual([
+        { memberNo: 'BURN-A001', memberId, reason: 'created' },
+      ]);
+      // 新号也烧了一行
+      expect(await reservations('BURN-A999')).toEqual([
+        { memberNo: 'BURN-A999', memberId, reason: 'corrected' },
+      ]);
+
+      // ⭐ 铁律:旧号不可再发
+      const reuse = await createMember('BURN-A001');
+      expectBizError(reuse, BizCode.MEMBER_NO_ALREADY_EXISTS);
+      // 被拒之后台账不多不少 —— 失败的建档不该留下半行
+      expect(await reservations('BURN-A001')).toHaveLength(1);
+    });
+
+    it('反向对照:从未发过的号照常可建(证明上一条不是「什么都建不出来」)', async () => {
+      const res = await createMember('BURN-FRESH-1');
+      expect(res.status).toBe(201);
+      expect(await reservations('BURN-FRESH-1')).toHaveLength(1);
+    });
+
+    it('订正**回不去**:A→B 之后再想订正回 A 同样被拒(永不复用对本人也成立)', async () => {
+      const created = await createMember('BURN-B001');
+      const memberId = created.body.data.id as string;
+
+      expect(
+        (
+          await correct(memberId, admBizAuth, {
+            memberNo: 'BURN-B002',
+            confirmMemberNoChange: true,
+            reason: '第一次订正',
+          })
+        ).status,
+      ).toBe(200);
+
+      const back = await correct(memberId, admBizAuth, {
+        memberNo: 'BURN-B001',
+        confirmMemberNoChange: true,
+        reason: '想改回去',
+      });
+      expectBizError(back, BizCode.MEMBER_NO_ALREADY_EXISTS);
+      // 队员仍停在 B002,没有被这次失败弄成中间态
+      const row = await prisma.member.findUniqueOrThrow({
+        where: { id: memberId },
+        select: { memberNo: true },
+      });
+      expect(row.memberNo).toBe('BURN-B002');
+    });
+
+    it('订正失败时台账不留半行(同事务:member 没改成,号也不该被烧掉)', async () => {
+      const a = await createMember('BURN-C001');
+      const b = await createMember('BURN-C002');
+      const bId = b.body.data.id as string;
+      expect(a.status).toBe(201);
+
+      // 把 B 订正成 A 的号 —— 撞在活号上,必拒
+      const res = await correct(bId, admBizAuth, {
+        memberNo: 'BURN-C001',
+        confirmMemberNoChange: true,
+        reason: '故意撞号',
+      });
+      expectBizError(res, BizCode.MEMBER_NO_ALREADY_EXISTS);
+
+      // C001 台账仍只有 A 那一行(reason='created'),没被这次失败追加成两行
+      expect(await reservations('BURN-C001')).toEqual([
+        { memberNo: 'BURN-C001', memberId: a.body.data.id as string, reason: 'created' },
+      ]);
+      // B 自己也没动
+      const row = await prisma.member.findUniqueOrThrow({
+        where: { id: bId },
+        select: { memberNo: true },
+      });
+      expect(row.memberNo).toBe('BURN-C002');
+    });
+
+    it('只改日期 / 来源的订正不烧号(没换编号就不该凭空占一个号)', async () => {
+      const created = await createMember('BURN-D001');
+      const memberId = created.body.data.id as string;
+
+      const res = await correct(memberId, admBizAuth, {
+        memberSinceDate: '2018-08-08',
+        reason: '发号日录错',
+      });
+      expect(res.status).toBe(200);
+
+      const all = await prisma.memberNoReservation.findMany({
+        where: { memberId },
+        select: { memberNo: true },
+      });
+      expect(all).toEqual([{ memberNo: 'BURN-D001' }]);
+    });
+
+    // 判据是**比集合**不是比计数:计数相等完全掩盖得了内容缺失
+    // (实测:台账删一行、再插一行别的号 ⇒ 计数判据仍读 N=N 判「无问题」,集合判据当场点名)。
+    //
+    // ⚠️ 扫描面刻意收窄到 `BURN-` 前缀:本 spec 的 `newMember()` 走的是
+    //    `prisma.member.create` **直插**,绕开了建档端点也就绕开了烧号 ——
+    //    那是夹具抄近路,不是生产写路径的缺口。拿全表当扫描面会把夹具的
+    //    `IC-00xx` 也算进来,判据就变成在考夹具而不是在考被测对象。
+    //    生产写路径「一个不漏」由 `harness-guards.selftest.ts` 的烧号闸静态执法;
+    //    存量回填「一个不漏」由 migration 侧双向 EXCEPT 实测。
+    it('经建档端点发出的号,台账一个不漏(比集合,不比计数)', async () => {
+      const members = await prisma.member.findMany({
+        where: { memberNo: { startsWith: 'BURN-' } },
+        select: { memberNo: true },
+      });
+      const burned = await prisma.memberNoReservation.findMany({
+        where: { memberNo: { startsWith: 'BURN-' } },
+        select: { memberNo: true },
+      });
+      const burnedSet = new Set(burned.map((r) => r.memberNo));
+      // 先钉两边非空 —— 空集合互相包含会静默变绿
+      expect(members.length).toBeGreaterThan(0);
+      expect(burnedSet.size).toBeGreaterThan(0);
+      expect(members.filter((m) => !burnedSet.has(m.memberNo))).toEqual([]);
+      // 反向:台账里的 BURN- 号必然多于活号(被订正走的旧号只在台账里)
+      expect(burnedSet.size).toBeGreaterThan(members.length);
+    });
   });
 });

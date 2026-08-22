@@ -83,6 +83,14 @@ import { assertConnectedTestDatabase, assertTestDatabaseUrl } from './test-db';
 // V2 第一阶段批次 6 追加(2026-05-12):audit_logs 1 张表(物理名小写,Prisma `@@map`);
 // 仅持有 1 条 FK actorUserId → User.id(Restrict);**不被任何其它表 FK 引用**;
 // 放在 User 之前,确保 TRUNCATE User 时不被 Restrict FK 阻塞(CASCADE 兜底亦可)。
+//
+// 队员编号已烧号台账追加(2026-08-22):`MemberNoReservation` 1 张表,放在 `Member` 之前
+// (子表在前,沿本文件既有惯例)。
+// ⚠️ **显式列出而不是靠隐式 CASCADE**:该表 `memberId → Member.id` 是 ON DELETE Restrict,
+// 实测 `TRUNCATE "Member" ... CASCADE` 确实连带清得掉它(TRUNCATE CASCADE 不看 ON DELETE
+// 规则),但那条依赖一旦被挪走就会**静默失效** —— 与证书标准库 PR-3 修的是同一个形状。
+// 不清的后果特别隐蔽:台账是**只增不删**的,跨 spec 残留一行就会让后面任何 spec 建同号
+// 队员时拿到 `MEMBER_NO_ALREADY_EXISTS`,而错误信息里完全看不出是上一个 spec 留下的。
 // 单 spec 内频繁清表用 test/helpers/audit-logs-cleanup.ts(truncateAuditLogsTestOnly)。
 //
 // V2.x C-6 RBAC 追加(2026-05-14;实施 PR #3):4 张 RBAC 表(物理名小写,Prisma `@@map`):
@@ -192,6 +200,6 @@ export async function resetDb(app: INestApplication): Promise<void> {
   // 62 张业务表的 TRUNCATE —— 判错一次就是不可逆的数据破坏。
   await assertConnectedTestDatabase(prisma);
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "activity_publish_reviews", "activity_responsibility_assignments", "insurance_eligibility_evidences", "notification_outbox_intents", "throttler_buckets", "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "storage_settings", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "wecom_settings", "wecom_identities", "wecom_auth_attempts", "realname_verification_settings", "RecruitmentCertificateClaim", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "storage_object_operations", "storage_objects", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "activity_positions", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "CertificateRecognitionIssuer", "CertificateRecognitionPolicy", "CertificateStandard", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "activity_publish_reviews", "activity_responsibility_assignments", "insurance_eligibility_evidences", "notification_outbox_intents", "throttler_buckets", "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "storage_settings", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "wecom_settings", "wecom_identities", "wecom_auth_attempts", "realname_verification_settings", "RecruitmentCertificateClaim", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "storage_object_operations", "storage_objects", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "activity_positions", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "CertificateRecognitionIssuer", "CertificateRecognitionPolicy", "CertificateStandard", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "MemberNoReservation", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
   );
 }
