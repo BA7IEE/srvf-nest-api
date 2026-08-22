@@ -25,7 +25,8 @@ import {
  * 判据当场退化成 flake —— 那正是本次要修掉的病。
  */
 
-// 就是实测扫出来的那条误判样本(seed=20260822 的 200 万条里唯一命中):结尾恰好是 "token"。
+// 实测扫出来的一条真误判样本(200 万条随机 cuid 里的命中):结尾恰好是 "token"。
+// 写成字面量而非现场生成 —— 随机样本会让这条判据偶尔不触发,当场退化成 flake。
 const FALSE_POSITIVE_CUID = 'c8ob12qafrq354c5ptvjtoken';
 const PLAIN_CUID = 'cmt38187b00abcdefghijklm';
 
