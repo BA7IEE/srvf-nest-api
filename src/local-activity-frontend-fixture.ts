@@ -19,6 +19,7 @@ import * as bcrypt from 'bcryptjs';
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { MEMBER_ORIGIN_MANUAL } from './common/identity/member-origin.constant';
+import { burnMemberNo } from './modules/members/member-no-reservation';
 import { isFormalMemberGradeCode } from './modules/members/member-grade';
 
 const LOCAL_DATABASE_PATTERN = /^app_local_frontend(?:_[a-z0-9][a-z0-9_]*)?$/;
@@ -939,6 +940,17 @@ async function ensureFixtureAccounts(
           status: true,
           deletedAt: true,
         },
+      });
+      // 已烧号台账(2026-08-22):建 member 即烧号,与建档同事务。
+      // 只在**刚建出来**这一支写 —— 上面 findUnique 命中说明这个号早已烧过,
+      // 再插一次只会撞唯一约束。
+      // `reservedAt` 用固定常量而不是 `new Date()`:本文件已登记在 clock-authority 表内,
+      // 且夹具必须可重复,不该新增一次墙钟读取。
+      await burnMemberNo(tx, {
+        memberNo: expected.memberNo,
+        memberId: member.id,
+        reason: 'local-fixture',
+        now: FIXTURE_MEMBER_SINCE_DATE,
       });
     }
     if (

@@ -82,6 +82,11 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
             Promise.resolve({ id: `mem-${data.memberNo}` }),
           ),
       },
+      // 已烧号台账(2026-08-22):发号即烧号,与建档同事务。
+      // 桩必须在这里补 —— 手搓 tx mock 对「新增一个 delegate」是结构性失明的:
+      // 少一个键不会报缺桩,而是 `tx.memberNoReservation` 为 undefined 当场 TypeError,
+      // 把一组本来在测 bcrypt/锁序/intent 的用例全炸红,报错信息里完全看不出是台账。
+      memberNoReservation: { create: jest.fn().mockResolvedValue({ id: 'mnr' }) },
       user: { create: jest.fn().mockResolvedValue({ id: 'usr' }) },
       memberProfile: { create: jest.fn().mockResolvedValue({ id: 'prof' }) },
       emergencyContact: { create: jest.fn().mockResolvedValue({ id: 'ec' }) },
@@ -322,6 +327,25 @@ describe('RecruitmentPromotionService · promote 超时硬化(bcrypt 移出事�
       '26001',
       '26002',
       '26003',
+    ]);
+
+    // 已烧号台账(2026-08-22):发出去几个号就烧几个号,且**逐一对得上**发号序。
+    // ⚠️ 比集合不比计数 —— 只断言 `toHaveBeenCalledTimes(n)` 的话,
+    //    「三次都烧同一个号」也会绿。
+    const burnCalls = txMock.memberNoReservation.create.mock.calls as Array<
+      [{ data: { memberNo: string; memberId: string; reason: string } }]
+    >;
+    expect(burnCalls.map(([{ data }]) => data.memberNo)).toEqual(['26001', '26002', '26003']);
+    expect(burnCalls.map(([{ data }]) => data.reason)).toEqual([
+      'promoted',
+      'promoted',
+      'promoted',
+    ]);
+    // 归属指向的正是同一批 member(mock 的 id 由 memberNo 派生)
+    expect(burnCalls.map(([{ data }]) => data.memberId)).toEqual([
+      'mem-26001',
+      'mem-26002',
+      'mem-26003',
     ]);
 
     // 每人一条 VOL 归口部门(organizationId = 解析出的 VOL id;不双建)

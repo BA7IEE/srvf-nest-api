@@ -371,6 +371,14 @@ describe('招新一期(招新前段)报名全链 e2e', () => {
     // (FK→Member Restrict,须先于 member 清;Certificate.sourceClaimId FK→Claim Restrict,
     //  所以 Certificate 也必须先于 Claim 清)。
     await prisma.certificate.deleteMany({});
+    // 已烧号台账(2026-08-22):必须跟着 member 一起清 —— 本 dispose 是**每测重置**,
+    // 而每个用例都新建 cycle、`memberNoSeq` 从 0 起算 ⇒ 每测发的都是同一个 `26001`。
+    // 台账**只增不删**,不清它的话第二个用例发号就撞已烧号 → P2002 → 28042(409)。
+    //
+    // ⚠️ 这是**测试夹具重置**,不是「解烧」能力 —— 生产没有、也刻意不会有释放入口
+    //    (`docs/v2-data-model.md` §memberNo:号烧了就是烧了,要释放另行立项)。
+    //    正因为这里能清,这条注释必须在:别把它当成「原来可以放号」的先例。
+    await prisma.memberNoReservation.deleteMany({});
     await prisma.member.deleteMany({});
     // PR-4a-2:Claim 挂 application(FK Cascade),但显式先清更可读、也不依赖级联口径。
     await prisma.recruitmentCertificateClaim.deleteMany({});

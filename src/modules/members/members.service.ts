@@ -49,6 +49,7 @@ import {
   UpdateMemberDto,
   UpdateMemberStatusDto,
 } from './members.dto';
+import { burnMemberNo, isMemberNoBurned } from './member-no-reservation';
 import { lockMemberLifecycle } from './member-lifecycle-lock';
 import { MemberAccessService, auditCtx, type PrismaTx } from './member-access.service';
 import { MemberAccountService } from './member-account.service';
@@ -210,9 +211,23 @@ export class MembersService {
     });
   }
 
-  // 唯一性预检查:必须 findUnique 包含软删记录(memberNo 全局唯一不复用,memberNo
-  // 决议 Q2 = B-1)— 防止"软删后旧 memberNo 复活创建" 撞约束 + 防止前端拿到 P2002
-  // 错误而非业务级错误码。
+  // 唯一性预检查:**两个独立理由,任一命中即拒**(2026-08-22 起)。
+  //
+  // ① Member 表 `findUnique` **含软删**(memberNo 全局唯一不复用,memberNo 决议 Q2 = B-1)
+  //    — 防止"软删后旧 memberNo 复活创建"撞约束 + 防止前端拿到 P2002 而非业务级错误码。
+  //
+  // ② 已烧号台账 `MemberNoReservation` —— ① 覆盖不到的那一半。
+  //    `correctIdentity` 是**原地 update**:`A001` 订正成 `A999` 后库里再没有任何行持有
+  //    `A001`,①**查不到**,旧号就被重新发出去了。而 memberNo 是登录识别锚
+  //    (auth.service 按 memberNo 兜底查)⇒ 复用 = 曾用 A001 登录的是甲、现在是乙。
+  //    台账只增不删,占住的正是这批"曾经发出去过、现在不挂在任何人身上"的号。
+  //
+  // ⚠️ 顺序执行不用 `Promise.all`:两条查询共用同一个交互式事务客户端,
+  //    Prisma 的事务连接是单条,并发下发只会排队,拿不到并行收益却多一层出错姿势。
+  //
+  // ⚠️ 本预检**不是**执法位,只是错误码翻译器 —— 真正拦住复用的是台账上的 DB 唯一约束。
+  //    这个分工是刻意的:招新发号从不调本函数(它从 memberNoSeq 取号),
+  //    靠 `burnMemberNo` 撞 P2002 → 28042 兜底,同样被管住。
   private async assertMemberNoUnique(memberNo: string, tx?: PrismaTx): Promise<void> {
     const client = tx ?? this.prisma;
     const existing = await client.member.findUnique({
@@ -220,6 +235,9 @@ export class MembersService {
       select: { id: true },
     });
     if (existing) throw new BizException(BizCode.MEMBER_NO_ALREADY_EXISTS);
+    if (await isMemberNoBurned(client, memberNo)) {
+      throw new BizException(BizCode.MEMBER_NO_ALREADY_EXISTS);
+    }
   }
 
   // ============ 队员账号闭环 v1:hasAccount / accountStatus 批量计算(避免 N+1)============
@@ -284,8 +302,12 @@ export class MembersService {
       // 2. memberNo 唯一性预检查(包含软删)
       await this.assertMemberNoUnique(memberNo, tx);
 
-      const created = await this.access.runWithUniqueConstraintGuard(() =>
-        tx.member.create({
+      // 建档与烧号**同一个 guard 之内**:两次写都可能撞 memberNo 唯一键
+      //(member 表一条、台账一条),包住的正是真正会撞的那两次写,没有包大。
+      // ⚠️ 同事务是硬要求:分开写会留一个崩溃窗口 —— member 已落库、台账还没写,
+      //    此刻挂掉这个号就成了「不在台账里」的活号,订正之后又会被放出去。
+      const created = await this.access.runWithUniqueConstraintGuard(async () => {
+        const row = await tx.member.create({
           data: {
             memberNo,
             realName: dto.realName,
@@ -298,8 +320,15 @@ export class MembersService {
             gradeCode: dto.gradeCode ?? null,
           },
           select: memberSafeSelect,
-        }),
-      );
+        });
+        await burnMemberNo(tx, {
+          memberNo,
+          memberId: row.id,
+          reason: 'created',
+          now: new Date(),
+        });
+        return row;
+      });
       // 新建 member.id 刚生成,不可能已有关联 User(队员账号闭环 v1;免一次多余查询)。
       return attachAccountInfo(created, undefined);
     });
@@ -427,7 +456,9 @@ export class MembersService {
         throw new BizException(BizCode.MEMBER_NO_CORRECTION_NOT_CONFIRMED);
       }
 
-      // 复用建档那条唯一性预检(findUnique **含软删**:memberNo 全局唯一不复用)。
+      // 复用建档那条唯一性预检(Member 含软删 **或** 已烧号台账命中即拒)。
+      // ⚠️ 「全局唯一不复用」这句话**不是只靠 Member 表**兑现的 —— 本方法自己就是反例:
+      //    原地 update 之后旧号在 Member 表里一行不剩,只有台账还占着它。
       // 只在真改动时查 —— 不改动时它会命中队员自己,把一次无害入参平白撞成「编号已存在」。
       if (memberNoChanged) {
         await this.assertMemberNoUnique(nextMemberNo, tx);
@@ -447,8 +478,8 @@ export class MembersService {
 
       // 复用建档同一个 P2002 兜底:预检查与写之间仍有并发窗口(两个管理员同时把两个
       // 队员订正成同一个编号),包住的正是真正会撞唯一键的那一次写。
-      const updated = await this.access.runWithUniqueConstraintGuard(() =>
-        tx.member.update({
+      const updated = await this.access.runWithUniqueConstraintGuard(async () => {
+        const row = await tx.member.update({
           where: { id },
           data: {
             memberNo: nextMemberNo,
@@ -456,8 +487,24 @@ export class MembersService {
             memberOriginCode: nextMemberOriginCode,
           },
           select: memberSafeSelect,
-        }),
-      );
+        });
+        // ⭐ **这里是那条铁律的执行位。**
+        // 只烧**新号**;旧号那行原样留在台账里不动 —— 正因为它不动,`A001` 订正走之后
+        // 库里虽然再没有任何 Member 持有它,台账仍然占着,下一个人建档时被 ① 之外的
+        // 第 ② 条理由拒掉。**不删旧行**就是「永不复用」这四个字的物理形态。
+        // ⚠️ 由此带来一个必须知道的后果:**订正回不去**。A001→A999 之后再想改回 A001
+        //    会被拒(A001 已烧)。这是「永不复用」的直接推论,不是 bug ——
+        //    要留后悔药就得引入释放入口,而那被维护者明确划为「明确不做」。
+        if (memberNoChanged) {
+          await burnMemberNo(tx, {
+            memberNo: nextMemberNo,
+            memberId: id,
+            reason: 'corrected',
+            now: new Date(),
+          });
+        }
+        return row;
+      });
 
       await this.auditRecorder.identityCorrected(tx, auditCtx(id, currentUser, auditMeta), {
         before: {

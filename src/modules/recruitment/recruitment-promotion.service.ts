@@ -11,6 +11,7 @@ import * as bcrypt from 'bcryptjs';
 
 import { beijingDateOnly, normalizeDateOnly } from '../../common/datetime/date-only.util';
 import { MEMBER_ORIGIN_RECRUITMENT } from '../../common/identity/member-origin.constant';
+import { burnMemberNo } from '../members/member-no-reservation';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -584,6 +585,19 @@ export class RecruitmentPromotionService {
       },
       select: { id: true },
     });
+    // 已烧号台账(2026-08-22):发号即烧号,与建档**同一个事务**。
+    //
+    // ⚠️ 本路径**从不调** `assertMemberNoUnique` —— 号是从 `RecruitmentCycle.memberNoSeq`
+    //    取的,唯一性一向靠 DB 约束 + P2002 兜底(上方两个调用点的 catch → 28042
+    //    「整批回滚不跳号」)。本行插进来之后,台账的唯一约束自动接管同一条兜底路径:
+    //    撞上一个**已烧但已无人持有**的号(例如被订正腾出来的),照样 P2002 → 28042,
+    //    零改判逻辑、零新错误码。
+    //
+    // ⭐ 为什么这条路径真的会撞:`RecruitmentCycle.year` **没有唯一约束**,而 `memberNoSeq`
+    //    是**每个 cycle 各自从 0 起算**的。同一年开两个轮次 ⇒ 两轮都会发 `26001`。
+    //    此前靠 `Member.memberNo` 的唯一键挡住;号一旦被订正腾空,那道键就失效了 ——
+    //    台账是这里唯一还站着的防线。
+    await burnMemberNo(tx, { memberNo, memberId: member.id, reason: 'promoted', now });
     // VOL 归口部门 —— 终态 scoped-authz PR2:重指向 member_organization_memberships 的 PRIMARY 行
     //(默认 membershipType=PRIMARY/status=ACTIVE = 旧单部门语义;primary_active_unique 兜底:此刻仅此一条 active PRIMARY)。
     await tx.memberOrganizationMembership.create({

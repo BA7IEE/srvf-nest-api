@@ -646,6 +646,10 @@ model Member {
   // "状态列"各说各话,两者不一致时没人知道该信谁(而它们迟早会不一致)。
   officialPortraits MemberOfficialPortrait[]
 
+  // 队员编号已烧号台账反向 relation(2026-08-22;仅关系映射,零标量字段)。
+  // ⚠️ 一个 member 可持有**多行** —— 每被订正一次就再烧一个号,旧号那行原样留着。
+  memberNoReservations MemberNoReservation[]
+
   // issue #1048 T2:目录检索的排序第 ② 级是 realName **完全匹配**(等值谓词,btree 吃得到)。
   // ⚠️ 第 ④ 级的 `contains` 走 ILIKE,本索引对它无效 —— 不要因为这条索引在就以为模糊搜索被加速了。
   @@index([realName])
@@ -653,6 +657,61 @@ model Member {
   @@index([status])
   @@index([deletedAt])
   @@index([createdAt])
+}
+
+// ===== 队员编号已烧号台账(2026-08-22;跨模型二轮复核头号发现,维护者拍板方案 A)=====
+//
+// 铁律「memberNo 一旦发放就永久占用,即使队员被删也不复用」此前**只靠 Member 表兑现**:
+// `assertMemberNoUnique` 用**含软删**的 findUnique 查 Member —— 软删场景够用(行还在),
+// 但 `correctIdentity`(#1127)是**原地 update**:旧号改完在库里不留任何行,
+// 于是下一个人建档时唯一性预检通过,**旧号被重新发出去**。
+//
+// 为什么这不是洁癖:memberNo 同时是**登录识别锚**(auth.service:username 未命中即按
+// memberNo 兜底查,且刻意保留原大小写 —— 「编号即身份」)。号被复用 = 曾经用 A001
+// 登录的是甲、现在是乙,而证书上印着它、通讯录里写着它、队员自己记着它 ——
+// **系统外的世界不知道这个号被订正过**。
+//
+// 本表就是那条铁律的物理执行位:**只增不删**。
+// ⚠️ 刻意**不做** status 列 / 不做软删 / 不做释放入口 —— 号烧了就是烧了(维护者拍板)。
+//    将来真要释放另行立项;加一个 status 列就等于把「永不复用」偷偷降级成「默认不复用」。
+// ⚠️ 真正拦住复用的是 `memberNo @unique` 这条 **DB 约束**,不是应用层预检 ——
+//    预检只负责把 P2002 翻成业务错误码。任何**绕过预检**的写路径仍被约束挡下:
+//    招新发号就走这条(它从不调 `assertMemberNoUnique`,靠 P2002 → 28042 整批回滚不跳号)。
+model MemberNoReservation {
+  id String @id @default(cuid())
+
+  memberNo String @unique
+
+  // 这个号**当时**属于谁。刻意可空:归属是附带溯源事实,占号才是本表的职责,
+  // 台账行必须能在没有归属的情况下活着。
+  // ⚠️ 订正后**旧号那行的 memberId 保留原值**(不改指向订正后的持有人)——
+  //    它记录的是「这个号当年发给了谁」,不是「谁现在拿着它」。
+  memberId String?
+
+  // 烧号时刻。**刻意无 `@default(now())`**:有默认值时应用侧漏传就悄悄吃库时钟,
+  // 而「写用库时钟、判用应用时钟」在本仓是一整类缺陷(clock-authority.spec.ts 是它的
+  // 执行位);无默认值 ⇒ Prisma `create` 必填 ⇒ 漏传变成编译错误。
+  reservedAt DateTime
+
+  // 为什么烧的。短枚举以 String 落地(沿 statusCode 范式),**刻意不建字典、不加 CHECK**:
+  // 它只做人类可读的溯源注脚,全仓**没有任何判定读它** —— 一旦有判定读它就该改 enum。
+  // 取值见 src/modules/members/member-no-reservation.ts 的 MemberNoBurnReason。
+  reason String
+
+  // ⭐ onDelete: SetNull(**不是 Restrict**)—— 铁律说的是「这个**号**永不复用」,
+  // 不是「队员行永不可删」。队员行真被物理删掉时,归属指针跟着置空,
+  // 而**台账行连同它的 memberNo 唯一约束原样留着** ⇒ 号照样烧着,铁律不受影响。
+  //
+  // 为什么刻意不用 Restrict:Restrict 会让 `member.deleteMany()` 直接撞 FK 报错,
+  // 而撞上的人最顺手的解法就是「先把台账删了再删 member」—— 那正好**把号解烧了**。
+  // 用 SetNull 就没有这个诱惑:删不动的东西才会逼人绕路,删得动就不会。
+  // (镜像 `User.memberId` 同为可空成员指针、同取 SetNull 的既有先例。)
+  //
+  // ⚠️ e2e 的 `TRUNCATE ... CASCADE` **不看 ON DELETE 规则**,两种取值下都照样清得掉。
+  member Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([memberId])
+  @@index([reservedAt])
 }
 
 enum MemberStatus {

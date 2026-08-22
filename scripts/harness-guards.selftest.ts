@@ -5730,6 +5730,324 @@ void (async (): Promise<void> => {
     );
   }
 
+  // ===========================================================================
+  // 写 Member.memberNo 必须同事务烧号(2026-08-22)
+  //
+  // 缺陷类:**发出去一个队员编号,却没在台账里占住它 ⇒ 这个号将来会被再发一次。**
+  //
+  // 真实事故(本闸即由它逼出):铁律「memberNo 一旦发放就永久占用,即使队员被删也不
+  // 复用」此前**只靠 Member 表兑现** —— `assertMemberNoUnique` 用含软删的 findUnique
+  // 查 Member。软删场景够用(行还在),但 `correctIdentity`(#1127)是**原地 update**:
+  // `A001` 订正成 `A999` 之后库里**再没有任何行持有 `A001`**,下一个人建档预检通过,
+  // 旧号被重新发出去。而 memberNo 同时是**登录识别锚**(auth.service 按 memberNo 兜底
+  // 查)⇒ 曾经用 A001 登录的是甲、现在是乙,而证书 / 通讯录 / 队员本人都不知道。
+  //
+  // ⭐ 为什么必须是**类闸**而不是把三处写路径修好就算:实测三条生产写路径
+  // (建档 / 招新发号 / 订正)分散在**两个模块**,而且**只有两条过唯一性预检** ——
+  // 招新发号从不调 `assertMemberNoUnique`。第四条写路径出现时,没人会记得这件事。
+  // 所以扫描面**动态发现**写点,不写死文件名:新写一处 `member.create({ data: { memberNo`
+  // 而不烧号,本闸当场红并点名 file:line。
+  //
+  // ⚠️ 可达性按**传递闭包**算,不是只看紧邻那几行:烧号可以写在 `this.helper()` 里。
+  //    只看紧邻的话,「把烧号搬进私有 helper」这一个动作会同时造成漏抓与误红
+  //    (本仓在 reachability-judge 那条教训里栽过)。
+  // ⚠️ 满足侧同时认**共享谓词 `burnMemberNo`** 与**裸 delegate 写** —— 只认前者的话,
+  //    绕开 helper 直接 `tx.memberNoReservation.create` 会被误判成违规。
+  // ===========================================================================
+  {
+    /** 会写进 Member 行的 delegate 方法(读方法不在内)。 */
+    const MEMBER_WRITE_OPS = new Set(['create', 'createMany', 'update', 'updateMany', 'upsert']);
+    /** 写入负载所在的键;`where` / `select` 等**刻意不在内**(那是查不是写)。 */
+    const WRITE_PAYLOAD_KEYS = new Set(['data', 'create', 'update']);
+
+    interface BurnSite {
+      /** 仓库相对路径 */
+      file: string;
+      /** 1-based */
+      line: number;
+      /** 该写点所在的顶层函数名(报错用) */
+      fn: string;
+      /** 同事务是否烧了号 */
+      burned: boolean;
+    }
+
+    /** 对象字面量里是否**任意深度**存在名为 `memberNo` 的属性(数组字面量也钻)。 */
+    function mentionsMemberNo(node: ts.Node): boolean {
+      let hit = false;
+      const walk = (n: ts.Node): void => {
+        if (hit) return;
+        if (
+          (ts.isPropertyAssignment(n) || ts.isShorthandPropertyAssignment(n)) &&
+          n.name.getText() === 'memberNo'
+        ) {
+          hit = true;
+          return;
+        }
+        n.forEachChild(walk);
+      };
+      walk(node);
+      return hit;
+    }
+
+    /** `x.member.create({ data: { memberNo … } })` ⇒ true。 */
+    function isMemberNoWrite(call: ts.CallExpression): boolean {
+      const callee = call.expression;
+      if (!ts.isPropertyAccessExpression(callee)) return false;
+      if (!MEMBER_WRITE_OPS.has(callee.name.getText())) return false;
+      const owner = callee.expression;
+      if (!ts.isPropertyAccessExpression(owner) || owner.name.getText() !== 'member') return false;
+      const arg = call.arguments[0];
+      if (arg === undefined || !ts.isObjectLiteralExpression(arg)) return false;
+      // 只看写入负载键,`where: { memberNo }` 这类查询谓词不算写
+      return arg.properties.some(
+        (p) =>
+          ts.isPropertyAssignment(p) &&
+          WRITE_PAYLOAD_KEYS.has(p.name.getText()) &&
+          mentionsMemberNo(p.initializer),
+      );
+    }
+
+    /** 这段代码里有没有「烧号」这个动作(共享谓词 或 裸 delegate 写,两者等价)。 */
+    function burnsHere(body: ts.Node): boolean {
+      let hit = false;
+      const walk = (n: ts.Node): void => {
+        if (hit) return;
+        if (ts.isCallExpression(n)) {
+          const c = n.expression;
+          if (ts.isIdentifier(c) && c.text === 'burnMemberNo') hit = true;
+          else if (
+            ts.isPropertyAccessExpression(c) &&
+            ts.isPropertyAccessExpression(c.expression) &&
+            c.expression.name.getText() === 'memberNoReservation' &&
+            ['create', 'createMany', 'upsert'].includes(c.name.getText())
+          ) {
+            hit = true;
+          }
+        }
+        if (!hit) n.forEachChild(walk);
+      };
+      walk(body);
+      return hit;
+    }
+
+    /** 本文件内被调用的**同类方法 / 同文件函数**名字(用来做传递闭包)。 */
+    function calleeNames(body: ts.Node): string[] {
+      const out: string[] = [];
+      const walk = (n: ts.Node): void => {
+        if (ts.isCallExpression(n)) {
+          const c = n.expression;
+          if (ts.isPropertyAccessExpression(c) && c.expression.kind === ts.SyntaxKind.ThisKeyword) {
+            out.push(c.name.getText());
+          } else if (ts.isIdentifier(c)) {
+            out.push(c.text);
+          }
+        }
+        n.forEachChild(walk);
+      };
+      walk(body);
+      return out;
+    }
+
+    function isFunctionLike(n: ts.Node): boolean {
+      return (
+        ts.isFunctionDeclaration(n) ||
+        ts.isMethodDeclaration(n) ||
+        ts.isArrowFunction(n) ||
+        ts.isFunctionExpression(n)
+      );
+    }
+
+    function functionName(n: ts.Node): string {
+      if (ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n)) {
+        return n.name?.getText() ?? '<anonymous>';
+      }
+      // 箭头 / 函数表达式:取被赋给的变量名
+      const parent = n.parent;
+      if (parent !== undefined && ts.isVariableDeclaration(parent)) return parent.name.getText();
+      return '<anonymous>';
+    }
+
+    /**
+     * 一个文件的审计结果。
+     *
+     * ⚠️ 判「同事务烧号」取的是**包住写点的最外层函数**,不是紧邻的那个箭头 ——
+     *    `tx.member.create` 与 `burnMemberNo` 经常分别落在
+     *    `$transaction(async (tx) => …)` 里的不同嵌套层。取最外层再做传递闭包,
+     *    既不会因为分层而误红,也不会因为只看一层而漏抓。
+     */
+    function auditMemberNoWrites(fileName: string, source: string): BurnSite[] {
+      const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+
+      // 先建「函数名 → 函数体」索引,供传递闭包查
+      const bodies = new Map<string, ts.Node[]>();
+      const indexFns = (n: ts.Node): void => {
+        if (isFunctionLike(n)) {
+          const name = functionName(n);
+          const list = bodies.get(name) ?? [];
+          list.push(n);
+          bodies.set(name, list);
+        }
+        n.forEachChild(indexFns);
+      };
+      indexFns(sf);
+
+      /** 从 fn 出发能否到达一次烧号(跟 this.x() / 同文件裸函数调用,带环保护)。 */
+      function burnsTransitively(fn: ts.Node, seen: Set<ts.Node>): boolean {
+        if (seen.has(fn)) return false;
+        seen.add(fn);
+        if (burnsHere(fn)) return true;
+        for (const name of calleeNames(fn)) {
+          for (const target of bodies.get(name) ?? []) {
+            if (burnsTransitively(target, seen)) return true;
+          }
+        }
+        return false;
+      }
+
+      const sites: BurnSite[] = [];
+      const walk = (n: ts.Node): void => {
+        if (ts.isCallExpression(n) && isMemberNoWrite(n)) {
+          // 上溯到最外层函数
+          let outermost: ts.Node | undefined;
+          for (let p: ts.Node | undefined = n.parent; p !== undefined; p = p.parent) {
+            if (isFunctionLike(p)) outermost = p;
+          }
+          const scope = outermost ?? sf;
+          sites.push({
+            file: fileName,
+            line: sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1,
+            fn: outermost === undefined ? '<top-level>' : functionName(outermost),
+            burned: burnsTransitively(scope, new Set()),
+          });
+        }
+        n.forEachChild(walk);
+      };
+      walk(sf);
+      return sites;
+    }
+
+    // ── 仪器正反对照:先证明这个函数真会红,再拿它去量仓库 ──────────────────
+    const STUB_OK = `
+      class S {
+        async create(dto: D) {
+          return this.prisma.$transaction(async (tx) => {
+            const row = await tx.member.create({ data: { memberNo: dto.memberNo } });
+            await burnMemberNo(tx, { memberNo: dto.memberNo, memberId: row.id, reason: 'created', now: new Date() });
+            return row;
+          });
+        }
+      }`;
+    const STUB_MISSING = `
+      class S {
+        async create(dto: D) {
+          return this.prisma.$transaction(async (tx) => {
+            return tx.member.create({ data: { memberNo: dto.memberNo } });
+          });
+        }
+      }`;
+    const STUB_VIA_HELPER = `
+      class S {
+        async create(dto: D) {
+          return this.prisma.$transaction(async (tx) => {
+            const row = await tx.member.create({ data: { memberNo: dto.memberNo } });
+            await this.recordBurn(tx, dto.memberNo, row.id);
+            return row;
+          });
+        }
+        private async recordBurn(tx: T, memberNo: string, memberId: string) {
+          await tx.memberNoReservation.create({ data: { memberNo, memberId, reservedAt: new Date(), reason: 'created' } });
+        }
+      }`;
+    const STUB_NOT_A_MEMBERNO_WRITE = `
+      class S {
+        async promote(tx: T, id: string) {
+          await tx.member.update({ where: { id }, data: { gradeCode: 'level-1' } });
+          await tx.member.findUnique({ where: { memberNo: 'A001' } });
+          const rows = await tx.member.findMany({ select: { memberNo: true } });
+          return rows;
+        }
+      }`;
+    const STUB_UPSERT = `
+      class S {
+        async sync(tx: T, no: string) {
+          await tx.member.upsert({ where: { memberNo: no }, create: { memberNo: no }, update: { realName: 'x' } });
+        }
+      }`;
+
+    const okSites = auditMemberNoWrites('stub-ok.ts', STUB_OK);
+    check(
+      '烧号闸/仪器:同函数内烧号 ⇒ 判为已烧',
+      okSites.length === 1 && okSites[0].burned,
+      JSON.stringify(okSites),
+    );
+
+    const missingSites = auditMemberNoWrites('stub-missing.ts', STUB_MISSING);
+    check(
+      '烧号闸/仪器:写 memberNo 不烧号 ⇒ 判为违规并给出行号',
+      missingSites.length === 1 && !missingSites[0].burned && missingSites[0].line > 0,
+      JSON.stringify(missingSites),
+    );
+
+    const helperSites = auditMemberNoWrites('stub-helper.ts', STUB_VIA_HELPER);
+    check(
+      '烧号闸/仪器:烧号搬进 this.helper() ⇒ 传递闭包仍判为已烧(不误红)',
+      helperSites.length === 1 && helperSites[0].burned,
+      JSON.stringify(helperSites),
+    );
+
+    const inertSites = auditMemberNoWrites('stub-inert.ts', STUB_NOT_A_MEMBERNO_WRITE);
+    check(
+      '烧号闸/仪器:不碰 memberNo 的 update / 各种读 ⇒ 根本不进扫描面',
+      inertSites.length === 0,
+      JSON.stringify(inertSites),
+    );
+
+    const upsertSites = auditMemberNoWrites('stub-upsert.ts', STUB_UPSERT);
+    check(
+      '烧号闸/仪器:upsert 的 create 腿也算写 memberNo(where 腿不算)',
+      upsertSites.length === 1 && !upsertSites[0].burned,
+      JSON.stringify(upsertSites),
+    );
+
+    // ── 拿它去量真仓库 ────────────────────────────────────────────────────
+    function listTsFiles(dir: string): string[] {
+      const out: string[] = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) out.push(...listTsFiles(full));
+        else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts')) out.push(full);
+      }
+      return out;
+    }
+
+    // 与本文件另外两个块同型:各自在自己的块作用域内解析仓根。
+    const REPO_ROOT = path.resolve(__dirname, '..');
+    const SRC_DIR = path.join(REPO_ROOT, 'src');
+    const scanned = listTsFiles(SRC_DIR);
+    // 扫描面自证非空 —— 空集合上跑判据会静默全绿
+    check('烧号闸:扫描面非空', scanned.length > 100, `scanned=${scanned.length}`);
+
+    const realSites = scanned.flatMap((f) =>
+      auditMemberNoWrites(path.relative(REPO_ROOT, f), fs.readFileSync(f, 'utf8')),
+    );
+
+    // 地板锚点,不写「恰 N 处」—— 那会在下次新增写路径时过期,然后被人顺手改大。
+    // 起草时实测 4 处:建档 / 订正 / 招新发号 / 本地夹具。
+    check(
+      '烧号闸:发现侧确实找到了写 Member.memberNo 的生产路径',
+      realSites.length >= 4,
+      `实测只找到 ${realSites.length} 处 —— 发现侧多半坏了(应 ≥4:建档 / 订正 / 招新发号 / 本地夹具)`,
+    );
+
+    const unburned = realSites.filter((s) => !s.burned);
+    check(
+      '烧号闸:每一处写 Member.memberNo 的路径都在同事务烧了号',
+      unburned.length === 0,
+      '以下写点发出了队员编号却没写 MemberNoReservation ⇒ 这些号将来会被再发一次:\n      ' +
+        unburned.map((s) => `${s.file}:${s.line}(${s.fn})`).join('\n      '),
+    );
+  }
+
   if (knownGaps.length > 0) {
     process.stdout.write(`\n── 已知缺口:${knownGaps.length} 条(不假装安全)──\n`);
     for (const gap of knownGaps) {
