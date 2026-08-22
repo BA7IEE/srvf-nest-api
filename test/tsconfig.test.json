@@ -4,7 +4,18 @@
     "rootDir": "..",
     "types": ["node", "jest"],
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    // CI 提速刀①(2026-08-23 维护者拍板):ts-jest(29.4.9)直接读本 flag
+    // (config-set.js:parsedTsConfig.options.isolatedModules)—— 为 true 时四份 jest
+    // config(unit / e2e / contract / journeys,全部指向本文件)从 LanguageService
+    // 逐文件全量类型检查切换为纯转译(transpileModule),CI slow/fast 的 jest 步骤
+    // 不再重复付一遍类型检查的 CPU。
+    // 类型检查不是被删掉:`pnpm typecheck` 用同一份 tsconfig 对 src+test 跑权威
+    // tsc --noEmit(CI fast job 必跑)。⚠️ 若把本文件从 typecheck 脚本摘掉,jest 侧
+    // 将失去类型兜底 —— package.json 在红区,那一步过人闸时须连本行一起审。
+    // 本 flag 同时让 tsc 机器执法「兼容逐文件转译」(TS1272 装饰器元数据歧义、
+    // TS1205 类型裸 re-export 变硬错误);2026-08-23 开启当天实测全仓 0 违规。
+    "isolatedModules": true
   },
   "include": ["../src/**/*.ts", "./**/*.ts"],
   "exclude": ["../node_modules", "../dist"]
