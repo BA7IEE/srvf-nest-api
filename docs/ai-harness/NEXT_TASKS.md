@@ -1428,17 +1428,20 @@ IF 要给 `Permission` 挂 `servicePrincipalAllowed` / `delegatedAccessAllowed` 
 恒排除 `*.read.sensitive` 与所有写码),手改必被下次 seed 覆盖,或造出与派生链打架的第二份真相;
 `member` 的 9 条码同样是 seed 写死的自助码。
 
-##### ⚠️ PR 0 之后仍然存在的三个缺口(**别读成「决策已全部生效」**)
+##### ⚠️ PR 0 之后仍然存在的缺口(**别读成「决策已全部生效」**)
 
-1. **⑥ 的执行位还不存在**:15 个内建角色今天**删不掉**(`PROTECTED_ROLE_CODE_SET` 只守 `softDelete`),
-   但**改名、加减权限都没有任何拦阻**(`rbac.role.update` / `rbac.role-permission.create|delete`)。
-   「系统角色只读」是 PR 3 的行为改动,PR 0 只锁住了决定。
+1. ~~**⑥ 的执行位还不存在**~~ → ✅ **已关(P1-32 PR 3a,2026-08-23)**。15 个内建角色现在
+   删(`30104`)/ 改名(`30107`)/ 加减权限(`30108`)全部拒绝,**含 SUPER_ADMIN**,
+   四道闸共用谓词 `isProtectedRoleCode()`;可达性判据
+   `src/modules/permissions/role-permissions-control-plane-gate.spec.ts` 现取两份 service
+   的写方法逐个要求过闸。
 2. **④ 的靶子还没有枪**:今天 step-up 只覆盖 `PHONE_BIND` / `WECHAT_BIND` / `WECOM_BIND`
    三个**本人绑定**动作,管理端一条都没绑。「绑 CRITICAL 全集」= 新增 StepUpAction + 给管理端接口加闸,
-   是独立一刀,不是翻开关。
-3. **② 只关了一半**:非 SA 已被 `assertNoControlPlaneCodesOrThrow` 拦住,
-   **SA 本人仍可把保留码授给任意角色**(`role-permissions.service.ts` 首行 `if (user.role === SUPER_ADMIN) return;`)。
-   关掉这条路是 PR 3。
+   是独立一刀,不是翻开关。**本条仍未关。**
+3. ~~**② 只关了一半**~~ → ✅ **已关(P1-32 PR 3a,2026-08-23)**。授码侧的 SA 短路已摘掉:
+   任何身份都不能把控制面码沉淀成角色常驻权限。⚠️ **撤码侧刻意保留 SA 短路** ——
+   给历史脏数据留唯一清理路(seed 角色本就不含控制面码,交集为 0)。
+   两侧不同**不是漏改**,别当漏接闸补上。
 
 ##### ⚠️ 元数据自身的一处已知执法缺口
 
@@ -1460,7 +1463,7 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 |---|---|---|
 | **第一** | 发版 **v0.67.0** —— 182 个提交 / 128 份 fragment 该收口 | 第六轮四刀落完 |
 | **第二** | PR 0 **决策拍板** → PR 1 Catalog 单一事实源 → PR 2 只读 API | ⚠️ PR 0 要维护者给 **236 条权限**逐条定中文名/分类/风险/授予策略,DoD 明写「**没有『以后再说』的未分类 active 权限**」—— 建议照字典定稿单的做法,先拉成可过目清单分批确认 |
-| **第三** | PR 3 剩余(Catalog-owned Permission 禁运行时增删改 + 系统角色只读)· PR 4 原子 `PUT` + `permissionRevision` · PR 5 影响预览 + step-up | 依赖 Catalog 落地 |
+| **第三** | ~~PR 3a 系统角色只读 + 保留码对 SA 也关上~~ ✅ 已落(2026-08-23)· PR 3b Catalog-owned Permission 禁运行时增删改 · PR 4 原子 `PUT` + `permissionRevision` · PR 5 影响预览 + step-up | 依赖 Catalog 落地 |
 | **第四** | PR 6 scope 兼容提示 · PR 7 Admin Web 接入 · PR 8 旧接口退役 | ⚠️ PR 7 依赖前端;`srvf-admin-web` 目前**尚未真正投用** |
 
 #### 体量提示

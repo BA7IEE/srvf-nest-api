@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:593918c22be79fe86123cc5d246374c9ebffe07be38f5257093480bd9ffe0551 |
+| inputDigest | sha256:8bd6aeaae095a772258a5023e2f6f55dbb9db79ea20041049508701851399942 |
 | endpoint count | 549 |
 | legacy [auth] count | 169 |
 | source of truth | normalized controller declarations |
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:593918c22be79fe86123cc5d246374c9ebffe07be38f5257093480bd9ffe0551",
+  "inputDigest": "sha256:8bd6aeaae095a772258a5023e2f6f55dbb9db79ea20041049508701851399942",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -10261,8 +10261,8 @@
 | DELETE | /api/system/v1/dict-items/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.delete.item; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:277; src/modules/dictionaries/dictionaries.controller.ts:296 |
 | DELETE | /api/system/v1/dict-types/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.delete.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:133; src/modules/dictionaries/dictionaries.controller.ts:152 |
 | DELETE | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:113; src/modules/permissions/permissions.controller.ts:132 |
-| DELETE | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:155; src/modules/permissions/rbac-roles.controller.ts:173 |
-| DELETE | /api/system/v1/roles/:id/permissions/:permissionId | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:80; src/modules/permissions/role-permissions.controller.ts:101 |
+| DELETE | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:156; src/modules/permissions/rbac-roles.controller.ts:175 |
+| DELETE | /api/system/v1/roles/:id/permissions/:permissionId | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:81; src/modules/permissions/role-permissions.controller.ts:104 |
 | DELETE | /api/system/v1/users/:userId/roles/:roleId | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:100; src/modules/permissions/user-roles.controller.ts:124 |
 | GET | /api/admin/v1/activities | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:81; src/modules/activities/activities.controller.ts:93 |
 | GET | /api/admin/v1/activities/:activityId/attendance-sheet-draft | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:49; src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:65 |
@@ -10545,7 +10545,7 @@
 | PATCH | /api/system/v1/dict-types/:id/status | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.update.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:115; src/modules/dictionaries/dictionaries.controller.ts:130 |
 | PATCH | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.update; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:91; src/modules/permissions/permissions.controller.ts:110 |
 | PATCH | /api/system/v1/realname-settings | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:57; src/modules/realname/realname-settings.controller.ts:70 |
-| PATCH | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.update; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:133; src/modules/permissions/rbac-roles.controller.ts:152 |
+| PATCH | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.update; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:133; src/modules/permissions/rbac-roles.controller.ts:153 |
 | PATCH | /api/system/v1/sms-settings | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:53; src/modules/sms/sms-settings.controller.ts:66 |
 | PATCH | /api/system/v1/storage-settings | Ops - Storage Settings | rbac | RBAC; admission=-; codes=storage-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/storage/storage-settings.controller.ts:61; src/modules/storage/storage-settings.controller.ts:74 |
 | PATCH | /api/system/v1/wechat-settings | Ops - WeChat Settings | rbac | RBAC; admission=-; codes=wechat-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/wechat/wechat-settings.controller.ts:57; src/modules/wechat/wechat-settings.controller.ts:70 |
@@ -10746,7 +10746,7 @@
 | POST | /api/system/v1/rbac/reload | Ops - RBAC | rbac | RBAC; admission=-; codes=rbac.config.reload; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac.controller.ts:57; src/modules/permissions/rbac.controller.ts:72 |
 | POST | /api/system/v1/realname-settings/reset-credentials | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:73; src/modules/realname/realname-settings.controller.ts:87 |
 | POST | /api/system/v1/roles | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:111; src/modules/permissions/rbac-roles.controller.ts:130 |
-| POST | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:55; src/modules/permissions/role-permissions.controller.ts:77 |
+| POST | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:55; src/modules/permissions/role-permissions.controller.ts:78 |
 | POST | /api/system/v1/sms-settings/reset-credentials | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:69; src/modules/sms/sms-settings.controller.ts:83 |
 | POST | /api/system/v1/storage-settings/reset-credentials | Ops - Storage Settings | rbac | RBAC; admission=-; codes=storage-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/storage/storage-settings.controller.ts:77; src/modules/storage/storage-settings.controller.ts:91 |
 | POST | /api/system/v1/users/:userId/roles | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:74; src/modules/permissions/user-roles.controller.ts:97 |

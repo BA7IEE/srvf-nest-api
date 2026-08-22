@@ -56,7 +56,7 @@ export class RolePermissionsController {
   @RequiresPermission('rbac.role-permission.create')
   @ApiOperation({
     summary:
-      '批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;SA-only 保留码仅 SUPER_ADMIN 可分配,否则 30103) [rbac: rbac.role-permission.create]',
+      '批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;控制面保留码任何身份都不可授予,含 SUPER_ADMIN,返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.create]',
   })
   @ApiWrappedCreatedResponse(RbacRoleDetailResponseDto)
   @ApiBizErrorResponse(
@@ -67,6 +67,7 @@ export class RolePermissionsController {
     BizCode.ROLE_NOT_FOUND,
     BizCode.ROLE_DELETED,
     BizCode.PERMISSION_NOT_FOUND,
+    BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
   )
   assign(
     @CurrentUser() user: CurrentUserPayload,
@@ -81,17 +82,19 @@ export class RolePermissionsController {
   @RequiresPermission('rbac.role-permission.delete')
   @ApiOperation({
     summary:
-      '撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011) [rbac: rbac.role-permission.delete]',
+      '撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011;控制面保留码仅 SUPER_ADMIN 可撤返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.delete]',
   })
   @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
+    BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY,
     BizCode.ROLE_NOT_FOUND,
     BizCode.ROLE_DELETED,
     BizCode.PERMISSION_NOT_FOUND,
     BizCode.ROLE_PERMISSION_NOT_FOUND,
+    BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
   )
   revoke(
     @CurrentUser() user: CurrentUserPayload,

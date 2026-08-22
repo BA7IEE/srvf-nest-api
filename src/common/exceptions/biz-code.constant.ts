@@ -3092,14 +3092,23 @@ export const BizCode = {
   // 2026-07-13 起闸扩为单一控制面谓词:上述保留码 ∪ rbac.* ∪ role-binding.*；
   // 非 SUPER_ADMIN 命中任一 → 本码(整批拒绝,不部分写入)。保留码单一来源:
   // src/modules/permissions/reserved-super-admin-permission-codes.ts。
+  //
+  // 🔴 **P1-32 PR 3a(2026-08-23)起,授(grant)侧连 SUPER_ADMIN 也拒**,撤(revoke)侧不变。
+  //    这个不对称是**刻意**的,不是漏改:
+  //    - 授:把控制面码写进某角色的 role_permissions,就是让**持有该角色的非 SA**
+  //      永久拥有控制面能力 —— 那正是本码要杜绝的事,由谁按下按钮不改变结果。
+  //      SA 依然能用 SA 身份直接做控制面操作(SA 走的是身份短路,不查 role_permissions),
+  //      所以这里关掉的是「沉淀成角色常驻权限」这条路,不是削 SA 的权。
+  //    - 撤:seed 出来的角色本就不含控制面码(PR 0 实测交集为 0),
+  //      保留 SA 可撤是给**历史脏数据**留一条清理路;非 SA 仍拒(E-B2 不对称洞已收口)。
   PERMISSION_RESERVED_SUPER_ADMIN_ONLY: {
     code: 30103,
-    message: '该权限点仅超级管理员可分配',
+    message: '控制面权限点不能授予任何角色;已存在的这类映射只有超级管理员能撤销',
     httpStatus: HttpStatus.FORBIDDEN,
   },
-  // 第一档安全收口 D3(2026-07-13):7 个 seed 内置 RbacRole 是系统基座，任何身份(含
+  // 第一档安全收口 D3(2026-07-13):seed 内置 RbacRole 是系统基座，任何身份(含
   // SUPER_ADMIN)均不得经 API 软删；自定义角色删除逻辑不变。保护清单唯一来源:
-  // src/modules/permissions/protected-role-codes.ts。
+  // src/modules/permissions/protected-role-codes.ts(v0.61.0 起 15 个)。
   PROTECTED_ROLE_DELETE_FORBIDDEN: {
     code: 30104,
     message: '系统内置角色不允许删除',
@@ -3129,6 +3138,31 @@ export const BizCode = {
     code: 30106,
     message: '权限码由系统定义,不能在此新建;新增权限点需要改代码并发版,请联系开发者',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+
+  // 系统角色运行时只读(P1-32 PR 3a;2026-08-23)——— 与 30104 同族,同一份清单
+  // (src/modules/permissions/protected-role-codes.ts),只是把保护面从「删」扩到「改」。
+  //
+  // 🔴 立项理由不是「权限过宽」,是**设计错误**:
+  //    org-readonly(副队长/副部长)与 group-readonly(副组长)的码集不是手工清单,
+  //    是从正职角色**过滤派生**的(isReadonlyProjectionCode)。运行时手改这些角色,
+  //    要么被下次 seed 原样覆盖,要么造出一份与派生链打架的第二份真相 ——
+  //    两种结果都是「管理员看到自己改成功了,实际没有」。故对 SUPER_ADMIN 也关上。
+  PROTECTED_ROLE_UPDATE_FORBIDDEN: {
+    code: 30107,
+    message: '系统内置角色的名称与描述由系统定义,不允许修改',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 同上,针对「角色 ↔ 权限」映射的增删。
+  //
+  // 🔴 这条堵的是一条**真实可利用路径**(不是理论):在它之前,持 rbac.role-permission.create
+  //    的 ops-admin 可以把 member-profile.read.sensitive(明文证件号 / 手机)加到 member
+  //    角色上 —— 控制面闸拦不住它(它不是那 7 条保留码),于是全体队员当场能看彼此明文 PII。
+  PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN: {
+    code: 30108,
+    message:
+      '系统内置角色的权限由系统定义,不允许在此增删;要调整授权范围,请新建自定义角色并绑给相应的人',
+    httpStatus: HttpStatus.CONFLICT,
   },
 
   // V2.x C-6 RBAC 实施 PR #6(2026-05-14):RbacService.can() 配套统一拒绝码。

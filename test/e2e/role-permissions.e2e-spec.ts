@@ -415,7 +415,11 @@ describe('role-permissions 模块', () => {
       }
     });
 
-    it('SUPER_ADMIN 分配同一保留码 → 201(短路放行)', async () => {
+    // P1-32 PR 3a(2026-08-23)**行为反转**:此前这条断言的是「SA 短路放行 → 201」。
+    // 现在授码侧对 SUPER_ADMIN 也拒 —— 把保留码写进某角色的 role_permissions,
+    // 就是让**持有该角色的非 SA** 永久拥有 SA-only 能力,由谁按下按钮不改变结果。
+    // SA 依然能用 SA 身份直接做那些控制面操作(SA 走身份短路,根本不查 role_permissions)。
+    it('SUPER_ADMIN 分配同一保留码 → 也 30103(授码侧不再有 SA 短路)', async () => {
       const { roleId } = await setupRoleAndPermissions({
         roleCode: 'f1-su-reserved',
         permCodes: [],
@@ -435,9 +439,27 @@ describe('role-permissions 模块', () => {
         .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: ['user.update.role'] });
+      expectBizError(res, BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
+
+      // 拒绝 = 一条都没写进去(闸在事务之前)
+      const written = await prisma.rolePermission.count({ where: { roleId } });
+      expect(written).toBe(0);
+    });
+
+    // 🔴 反向用例:闸只认「控制面码」这一维,不是「SA 干什么都拒」。
+    //    少了它,一个「assign 一律拒绝」的实现也会让上面几条全绿。
+    it('SUPER_ADMIN 分配普通码 → 201(授码侧的收紧不误伤正常配置)', async () => {
+      const { roleId, perms } = await setupRoleAndPermissions({
+        roleCode: 'f1-su-normal',
+        permCodes: ['f1.su.plain'],
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
+        .set('Authorization', superAdminAuth)
+        .send({ permissionCodes: perms.map((p) => p.code) });
       expect(res.status).toBe(201);
       const codes = res.body.data.permissions.map((p: { code: string }) => p.code);
-      expect(codes).toContain('user.update.role');
+      expect(codes).toEqual(['f1.su.plain']);
     });
 
     it('ops-admin 分配纯普通码 → 201(闸不误伤非保留码)', async () => {
@@ -517,12 +539,11 @@ describe('role-permissions 模块', () => {
           permCodes: [],
         });
         const permissionId = await controlPlanePermissionId();
-        // 由 SUPER_ADMIN 先授上(SA 短路放行),制造一条「可撤」的真实绑定
-        const granted = await request(httpServer(app))
-          .post(`/api/system/v1/roles/${roleId}/permissions`)
-          .set('Authorization', superAdminAuth)
-          .send({ permissionCodes: [CONTROL_PLANE_CODE] });
-        expect(granted.status).toBe(201);
+        // 直插一条映射,制造一条「可撤」的真实绑定。
+        // ⚠️ P1-32 PR 3a 起**任何身份都授不了控制面码**(含 SA),所以这条映射不能再经 API 造。
+        //    这不是绕过被测路径 —— 恰恰是 revoke 侧保留 SA 通道的**唯一现实来源**:
+        //    历史脏数据(PR 3a 之前 SA 授上的、或直接改库留下的)。
+        await prisma.rolePermission.create({ data: { roleId, permissionId } });
 
         const res = await request(httpServer(app))
           .delete(`/api/system/v1/roles/${roleId}/permissions/${permissionId}`)
@@ -546,11 +567,8 @@ describe('role-permissions 模块', () => {
         permCodes: [],
       });
       const permissionId = await controlPlanePermissionId();
-      const granted = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [CONTROL_PLANE_CODE] });
-      expect(granted.status).toBe(201);
+      // 同上:PR 3a 后控制面码不能再经 API 授上,直插模拟历史脏数据。
+      await prisma.rolePermission.create({ data: { roleId, permissionId } });
 
       const res = await request(httpServer(app))
         .delete(`/api/system/v1/roles/${roleId}/permissions/${permissionId}`)
