@@ -23,10 +23,11 @@ const DOC_REL = 'docs/ai-harness/RBAC_MAP.md';
 const BEGIN = '<!-- rbac:begin -->';
 const END = '<!-- rbac:end -->';
 
-// 闭包必须与 docs-counts.ts / check-rbac-map.ts 逐项一致；selftest 交叉核验三份声明。
+// 闭包必须与 docs-counts.ts / check-rbac-map.ts 逐项**同序**一致；下方 extractSeedCodes()
+// 调 assertSeedFactsClosure() 逐位比对 ⇒ 三份副本漏改一处即抛错，不会静默。
 export const SEED_FACTS_CLOSURE = Object.freeze([
   'prisma/seed.ts',
-  'src/modules/permissions/rbac-seed-facts.ts',
+  'src/modules/permissions/permission-catalog.ts',
 ] as const);
 
 // 与 scripts/check-rbac-map.ts 同源(改一处须同步另一处;由 harness-guards.selftest 守护)
@@ -102,7 +103,7 @@ function renderPermissionCodes(codes: string[]): string {
   return [
     `### 权限码全集(${codes.length} 条,按一级域分组)`,
     '',
-    '> 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert) + `src/modules/permissions/rbac-seed-facts.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。',
+    '> 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert + 角色映射) + `src/modules/permissions/permission-catalog.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。',
     '',
     '| 一级域 | 条数 | 权限码 |',
     '|---|---|---|',

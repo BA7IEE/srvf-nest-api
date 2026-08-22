@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { RBAC_SEED_CATALOG } from '../../prisma/seed';
 import { PrismaService } from '../../src/database/prisma.service';
 import { PROTECTED_ROLE_CODES } from '../../src/modules/permissions/protected-role-codes';
-import { RBAC_SEED_FACTS } from '../../src/modules/permissions/rbac-seed-facts';
+import { RBAC_PERMISSION_SEED } from '../../src/modules/permissions/permission-catalog';
 import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES } from '../../src/modules/permissions/reserved-super-admin-permission-codes';
 import { SYSTEM_MANAGED_ROLE_CODES } from '../../src/modules/permissions/system-managed-role-codes';
 import { resetDb } from '../setup/reset-db';
@@ -127,9 +127,9 @@ describe('prisma/seed.ts — RBAC bootstrap', () => {
       RBAC_INITIAL_OPS_ADMIN_USER_ID: '',
     });
     expect(result.code).toBe(0);
-    expect(RBAC_SEED_CATALOG.permissions.rbac).toEqual(RBAC_SEED_FACTS.permissions.rbac);
+    expect(RBAC_SEED_CATALOG.permissions.rbac).toEqual(RBAC_PERMISSION_SEED);
     expect(RBAC_SEED_CATALOG.contract.reservedSuperAdminOnlyPermissionCodes).toEqual(
-      RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes,
+      RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES,
     );
 
     // 1. 97 条 permission 全部存在(14 rbac.* + 44 PR-2A + 15 PR-2B + 7 PR-3B + 1 PR-4B + 5 SMS + 4 WECHAT + 3 REALNAME + 1 AUTHZ + 2 ANNOUNCEMENT-IMPORT + 1 META;

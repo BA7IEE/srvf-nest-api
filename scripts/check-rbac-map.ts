@@ -50,9 +50,11 @@ interface CheckResult {
 }
 
 const repoRoot = process.cwd();
+// 闭包必须与 docs-counts.ts / generate-rbac-map.ts 逐项**同序**一致；main() 调
+// assertSeedFactsClosure() 逐位比对 ⇒ 三份副本漏改一处即抛错，不会静默。
 export const SEED_FACTS_CLOSURE = Object.freeze([
   'prisma/seed.ts',
-  'src/modules/permissions/rbac-seed-facts.ts',
+  'src/modules/permissions/permission-catalog.ts',
 ] as const);
 // 招新一期(招新前段)T3(2026-06-18):open/v1 首用——无账号公开报名 surface(api-surface-policy §0
 // 「预留→首用」解锁;第 5 canonical 前缀,与 test/contract/openapi.contract-spec.ts CANONICAL_PREFIXES 同步)。

@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:616be3084aaaca3de41d992d21327356dcb868d52d3cd89741b454d8b9352e4e |
+| inputDigest | sha256:2d23aaeaa613239f954426bf6f51a11866b5b83d7f3262783a2499aad49f6ae2 |
 | endpoint count | 545 |
 | legacy [auth] count | 167 |
 | source of truth | normalized controller declarations |
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:616be3084aaaca3de41d992d21327356dcb868d52d3cd89741b454d8b9352e4e",
+  "inputDigest": "sha256:2d23aaeaa613239f954426bf6f51a11866b5b83d7f3262783a2499aad49f6ae2",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",

@@ -1,6 +1,6 @@
 # RBAC_MAP — 权限体系地图与对照表
 
-> **性质**:derived 地图,非规则源。权限**事实**权威源:seed 事实闭包([`prisma/seed.ts`](../../prisma/seed.ts) 幂等绑定 + [`rbac-seed-facts.ts`](../../src/modules/permissions/rbac-seed-facts.ts) 权限定义);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) + [`roles-admin-protection §13`](../reference/roles-admin-protection.md)。
+> **性质**:derived 地图,非规则源。权限**事实**权威源:seed 事实闭包([`prisma/seed.ts`](../../prisma/seed.ts) 幂等绑定 + 角色映射 + [`permission-catalog.ts`](../../src/modules/permissions/permission-catalog.ts) 权限定义);判权实现 → [`src/modules/permissions/rbac.service.ts`](../../src/modules/permissions/rbac.service.ts);铁律 → [`auth-jwt-refresh`](../reference/auth-jwt-refresh.md) + [`roles-admin-protection §13`](../reference/roles-admin-protection.md)。
 
 > 历史逐 PR 戳(75 行)已归档至 [`archive/ai-harness/rbac-map-stamps.md`](../archive/ai-harness/rbac-map-stamps.md);
 > 派生对照表改为生成物(`pnpm docs:rbacmap`),本文件只保留人类知识与生成段。
@@ -21,7 +21,7 @@
 
 ### 权限码全集(237 条,按一级域分组)
 
-> 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert) + `src/modules/permissions/rbac-seed-facts.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
+> 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert + 角色映射) + `src/modules/permissions/permission-catalog.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
 | 一级域 | 条数 | 权限码 |
 |---|---|---|

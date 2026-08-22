@@ -30,7 +30,7 @@
  * ⭐ 两侧口径必须是**不同的来源**(否则是恒 PASS 假绿)
  *
  *   · 全集侧 = `docs-counts` 的 **typed-AST 提取器**,静态扫 seed 事实闭包的
- *     源文本(`prisma/seed.ts` + `src/modules/permissions/rbac-seed-facts.ts`),
+ *     源文本(`prisma/seed.ts` + `src/modules/permissions/permission-catalog.ts`),
  *     逐条读 `code: '<literal>'` / `*_CODE = '<literal>'`。
  *   · 并集侧 = `RBAC_SEED_CATALOG.permissions` 的**运行时导出值**。
  *

@@ -269,9 +269,9 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
   );
 }
 
-// seed 事实闭包必须由三个独立解析器精确具名；漏掉 facts 时 14 条 rbac.* 必须立刻显形。
+// seed 事实闭包必须由三个独立解析器精确具名；漏掉权限目录时全部 237 条码必须立刻显形。
 {
-  const expectedClosure = ['prisma/seed.ts', 'src/modules/permissions/rbac-seed-facts.ts'];
+  const expectedClosure = ['prisma/seed.ts', 'src/modules/permissions/permission-catalog.ts'];
   const closures = [
     DOCS_COUNTS_SEED_FACTS_CLOSURE,
     RBAC_MAP_SEED_FACTS_CLOSURE,
@@ -288,12 +288,20 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
 
   const closureSources = readSeedFactsClosure();
   const closureDiff = diffSeedFactsPermissionExtractions(closureSources);
-  // 第七轮评审 R7-A-01(2026-08-21):member.correct.identity 入目录 ⇒ 236 → 237、222 → 223。
-  // 两个数字都是**随新增码正常上移**的基线,不是不变量;真正的不变量是下方 checkEq 的
-  // 差值恒 14(= rbac-seed-facts.ts 独有的 14 条 rbac.* 码)—— 剔除 facts 后必须正好少这 14 条,
-  // 少于 14 说明 facts 里的码漏进了 seed.ts,多于 14 说明闭包提取器把别处的码算了进来。
-  const FACTS_ONLY_RBAC_CODE_COUNT = 14;
+  // 第七轮评审 R7-A-01(2026-08-21):member.correct.identity 入目录 ⇒ 236 → 237。
+  // 这个数字是**随新增码正常上移**的基线,不是不变量。
+  //
+  // P1-32 PR 1(2026-08-22)换了下方那条不变量的形状。搬家前:权限定义分居
+  // `prisma/seed.ts`(223 条)与 `rbac-seed-facts.ts`(14 条 rbac.*),不变量是「差值恒 14」。
+  // 搬家后**全部 237 条都在 permission-catalog.ts**,`prisma/seed.ts` 里一条都不剩 ——
+  // 于是不变量变成更强的一句:**剔除权限目录后码数恰为 0**。
+  //
+  // 这正是「权限定义只有一处」这句话的机器形式:seed.ts 但凡漏回一条码(比如有人图省事
+  // 直接在角色装配旁边补个 `code: 'x.y.z'`),下面那条 checkEq 就不再是 0,当场红。
+  // ⚠️ 0 本身是「空集」形状,单独看会踩本仓登记的「空集恒等于空集」陷阱 ——
+  // 所以它必须与上一条(完整闭包恰 237)成对读:一条钉住总量非空,一条钉住分布只有一处。
   const CLOSURE_PERMISSION_CODE_COUNT = 237;
+  const CODES_LEFT_IN_SEED_AFTER_MOVE = 0;
   check(
     `R5-02 权限码:真实 seed 事实闭包双口径一致且为 ${CLOSURE_PERMISSION_CODE_COUNT}`,
     closureDiff.onlyAst.length === 0 &&
@@ -302,20 +310,31 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
     `ast=${closureDiff.ast.size} onlyAst=[${closureDiff.onlyAst.join(',')}] onlyLegacy=[${closureDiff.onlyLegacy.join(',')}]`,
   );
 
-  const withoutFacts = DOCS_COUNTS_SEED_FACTS_CLOSURE.filter(
-    (file) => file !== 'src/modules/permissions/rbac-seed-facts.ts',
-  );
-  const incompleteSources = withoutFacts.map((file) =>
-    fs.readFileSync(path.resolve(__dirname, '..', file), 'utf-8'),
-  );
+  const readClosureFile = (file: string): string =>
+    fs.readFileSync(path.resolve(__dirname, '..', file), 'utf-8');
+
+  // 正向:权限目录**独自**就装着全部 237 条 —— 「单一事实源」的正面形式。
   checkEq(
-    `R5-02 权限码:剔除 facts 后码数跌至 ${CLOSURE_PERMISSION_CODE_COUNT - FACTS_ONLY_RBAC_CODE_COUNT}`,
+    `R5-02 权限码:权限目录独自装着全部 ${CLOSURE_PERMISSION_CODE_COUNT} 条码`,
+    extractSeedFactsPermissionCodesAst([
+      readClosureFile('src/modules/permissions/permission-catalog.ts'),
+    ]).size,
+    CLOSURE_PERMISSION_CODE_COUNT,
+  );
+
+  const withoutCatalog = DOCS_COUNTS_SEED_FACTS_CLOSURE.filter(
+    (file) => file !== 'src/modules/permissions/permission-catalog.ts',
+  );
+  const incompleteSources = withoutCatalog.map(readClosureFile);
+  // 反向:剔除权限目录后**一条都不剩** —— 「seed.ts 里没有第二处权限定义」的反面形式。
+  checkEq(
+    `R5-02 权限码:剔除权限目录后 prisma/seed.ts 里恰剩 ${CODES_LEFT_IN_SEED_AFTER_MOVE} 条码`,
     extractSeedFactsPermissionCodesAst(incompleteSources).size,
-    CLOSURE_PERMISSION_CODE_COUNT - FACTS_ONLY_RBAC_CODE_COUNT,
+    CODES_LEFT_IN_SEED_AFTER_MOVE,
   );
   checkThrows(
-    'R5-02 权限码:剔除 facts 的闭包被拒',
-    () => assertSeedFactsClosure(withoutFacts),
+    'R5-02 权限码:剔除权限目录的闭包被拒',
+    () => assertSeedFactsClosure(withoutCatalog),
     'seed 事实闭包必须精确为',
   );
 }
@@ -2747,9 +2766,9 @@ for (const [configName, config] of JEST_CONFIGS) {
       },
       { glob: 'prisma/seed.ts', yes: ['prisma/seed.ts'], no: ['prisma/seed-helpers.ts'] },
       {
-        glob: 'src/modules/permissions/rbac-seed-facts.ts',
-        yes: ['src/modules/permissions/rbac-seed-facts.ts'],
-        no: ['src/modules/permissions/rbac-seed-fact.ts'],
+        glob: 'src/modules/permissions/permission-catalog.ts',
+        yes: ['src/modules/permissions/permission-catalog.ts'],
+        no: ['src/modules/permissions/permission-catalog-closure.spec.ts'],
       },
       {
         glob: 'src/common/guards/**',
