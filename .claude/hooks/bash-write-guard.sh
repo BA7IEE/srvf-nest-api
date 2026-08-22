@@ -26,10 +26,44 @@ GUARD="$REPO_ROOT/.claude/hooks/redzone-guard.sh"
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+# ── P1-31:开工门禁的 Bash 半边(2026-08-22)──────────────────────────────
+# 缺陷:`preflight-required.sh` 只挂在 Edit|Write|MultiEdit|NotebookEdit 上,
+# Bash 侧**从不校验开工门禁通行标记** ⇒ 一条 `python3 <<'PY' … PY` 写文件
+# 完全绕过「依赖 / Prisma 生成物陈旧、落后 origin/main、会话中途换分支」这些前提。
+# **同一个写操作走 Edit 被拦、走 Bash 放行** —— 判定不一致本身就是缺陷,
+# 而 bypass 模式恰恰要求优先用 Bash,所以这条旁路是**默认路径**不是边角。
+#
+# ⚠️ **复用而非复制**:直接调 `preflight-required.sh` 本体,不重写一份判定 ——
+# 复制的话两份对「什么算门禁过」的理解会各自漂移,而漂移时「一侧放行一侧拦」
+# 没有任何症状,那正是本条缺陷自己的形态。
+#
+# ⚠️ **必须把路径传下去**:`preflight-required.sh` 的第一段规则是
+# 「绝对路径且不在仓内 → 放行」(门禁语义是「本仓状态不干净时别改本仓代码」)。
+# 初版做成命令级预检并喂空 JSON,丢掉了这条规则 ——
+# `cp <受保护路径> /tmp/backup`(从受保护路径**读出**)当场被误拦,
+# 由 `harness:replay` 的 INV-03 抓出。
+#
+# ⚠️ 定义必须在**第一处 check_path 之前** —— 本文件有两处 check_path 定义,
+# 靠前那处在解释器分支就被调用;函数未定义时调用会返回非零 = 被当成「门禁不过」
+# 而拦掉一切。
+PREFLIGHT="$REPO_ROOT/.claude/hooks/preflight-required.sh"
+preflight_ok() {
+  [ -x "$PREFLIGHT" ] || return 0
+  printf '{"tool_name":"Bash","tool_input":{"file_path":%s}}' "$(printf '%s' "$1" | jq -Rs .)" \
+    | "$PREFLIGHT"
+}
+
 # 复用 redzone-guard 判定单个路径:命中则它 exit 2。
 # **不吞它的 stderr** —— 那正是「命中哪条规则 / 为什么受保护 / 如何获授权」的说明,
 # 吞掉的话模型只看到「被拒了」却不知道原因,无法自我纠正。
 check_path() {
+  # ⚠️ 次序与 Edit 侧一致:**先门禁、后红区** —— 门禁不过时红区结论本身也不可信
+  # (可能落后 main、令牌是别的分支留下的)。判定见文件头 preflight_ok。
+  if ! preflight_ok "$1"; then
+    echo "   ↑ 触发者:Bash 写侧命令(解释器内联 / 重定向 / sed -i 等)。" >&2
+    echo "     开工门禁对 Edit 与 Bash **同口径** —— 换用 Bash 不能绕过它。" >&2
+    return 1
+  fi
   printf '{"tool_name":"Bash","tool_input":{"file_path":%s}}' "$(printf '%s' "$1" | jq -Rs .)" \
     | "$GUARD"
   return $?
@@ -151,50 +185,6 @@ has_write_verb() {
     *"git checkout -- "*|*"git restore"*|*"git apply"*|*"install -m"*|*"truncate "*) return 0 ;;
   esac
   return 1
-}
-
-has_redirect_write() {
-  printf '%s' "$1" | grep -qE '[^0-9>&]>>?[[:space:]]*[^[:space:]|&;>]' || return 1
-  # 排除 >/dev/... 与 >&N
-  printf '%s' "$1" | grep -qE '[^0-9>&]>>?[[:space:]]*(/dev/|&)' && return 1
-  return 0
-}
-
-# ── P1-31:开工门禁的 Bash 半边 ───────────────────────────────────────────
-# 缺陷(2026-08-22 收口):`preflight-required.sh` 只挂在 Edit|Write|MultiEdit 上,
-# Bash 侧**从不校验开工门禁通行标记** ⇒ 一条 `python3 <<'PY' … PY` 写文件
-# 完全绕过「依赖/生成物陈旧、落后 origin/main、中途换分支」这些前提检查。
-# **同一个写操作走 Edit 被拦、走 Bash 放行** —— 判定不一致本身就是缺陷,
-# 而 bypass 模式恰恰要求优先用 Bash,所以这条旁路是**默认路径**不是边角。
-#
-# ⚠️ **复用而非复制**:这里直接调 `preflight-required.sh` 本体(喂一个不含
-# file_path 的 JSON,它会落到标记校验那一段),**不重写一份判定**。
-# 复制一份的话,两份对「什么算门禁过」的理解会各自漂移,而漂移时
-# 「一侧放行一侧拦」没有任何症状 —— 那正是本条缺陷自己的形态。
-#
-# ⚠️ **只对写侧命令生效**:只读命令(cat / grep / git log …)照旧放行。
-# 门禁自己的文案就是「只读调研可继续,写操作会被拦下」,Bash 侧必须同口径。
-#
-# ⚠️ 次序与 Edit 侧一致:**先门禁、后红区**。门禁不过时红区结论本身也不可信
-# (可能落后 main、令牌是别的分支留下的)。
-if [ -n "$INTERP_CODE" ] || has_write_verb "$CMD" || has_redirect_write "$CMD"; then
-  PREFLIGHT="$REPO_ROOT/.claude/hooks/preflight-required.sh"
-  if [ -x "$PREFLIGHT" ]; then
-    if ! printf '{"tool_name":"Bash","tool_input":{}}' | "$PREFLIGHT"; then
-      echo "   ↑ 触发者:Bash 写侧命令(解释器内联 / 重定向 / sed -i 等)。" >&2
-      echo "     开工门禁对 Edit 与 Bash **同口径** —— 换用 Bash 不能绕过它。" >&2
-      exit 2
-    fi
-  fi
-fi
-
-# 复用 redzone-guard 判定单个路径:命中则它 exit 2。
-# **不吞它的 stderr** —— 那正是「命中哪条规则 / 为什么受保护 / 如何获授权」的说明,
-# 吞掉的话模型只看到「被拒了」却不知道原因,无法自我纠正。
-check_path() {
-  printf '{"tool_name":"Bash","tool_input":{"file_path":%s}}' "$(printf '%s' "$1" | jq -Rs .)" \
-    | "$GUARD"
-  return $?
 }
 
 # 逐子命令处理(&& || ; | 分隔),避免复合命令里漏判后半段

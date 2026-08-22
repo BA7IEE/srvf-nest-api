@@ -351,10 +351,25 @@ expectExit('bash:重定向 /dev/null 放行', 'bash-write-guard.sh', bash('pnpm 
     // ① 正:门禁未过 + 各类写侧 Bash 命令 → 必须拦
     fs.rmSync(marker, { force: true });
     expectExit(
-      'bash 门禁:未过时 python heredoc 写文件被拦(这条旁路正是 P1-31)',
+      'bash 门禁:未过时 python heredoc 写**仓内**文件被拦(这条旁路正是 P1-31)',
       'bash-write-guard.sh',
-      bash('python3 <<PY\nopen("/tmp/p131.md","w").write("x")\nPY'),
+      bash('python3 <<PY\nopen("docs/current-state.md","w").write("x")\nPY'),
       2,
+    );
+    // ⭐ 仓库**外**必须放行 —— 门禁语义是「本仓状态不干净时别改本仓代码」,与仓外文件无关。
+    // 本刀初版做成命令级预检并喂空 JSON,丢掉了这条规则,被 harness:replay 的 INV-03
+    // 当场抓出(`cp <受保护路径> /tmp/backup` 这种**从受保护路径读出**的命令被误拦)。
+    expectExit(
+      'bash 门禁:未过时写**仓库外**文件仍放行(与 Edit 侧「仓外不受门禁管」同口径)',
+      'bash-write-guard.sh',
+      bash('python3 <<PY\nopen("/tmp/p131-outside.md","w").write("x")\nPY'),
+      0,
+    );
+    expectExit(
+      'bash 门禁:未过时 cp 从受保护路径读出到仓外仍放行(INV-03 回归)',
+      'bash-write-guard.sh',
+      bash('cp .claude/hooks/redzone-guard.sh /tmp/p131-backup.sh'),
+      0,
     );
     expectExit(
       'bash 门禁:未过时 sed -i 被拦',
@@ -363,9 +378,9 @@ expectExit('bash:重定向 /dev/null 放行', 'bash-write-guard.sh', bash('pnpm 
       2,
     );
     expectExit(
-      'bash 门禁:未过时重定向写被拦',
+      'bash 门禁:未过时重定向写**仓内**被拦',
       'bash-write-guard.sh',
-      bash('echo hi > /tmp/p131.md'),
+      bash('echo hi > docs/current-state.md'),
       2,
     );
 
