@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:b3966eb011df74b9c3b443d465b523075c9181385e9521882b5f550c93a9ad5d |
+| inputDigest | sha256:5d35e9c2561171115a9fe1b1be2006d9768781f1145eca4ce5b40e194c89ee90 |
 | endpoint count | 549 |
 | legacy [auth] count | 169 |
 | source of truth | normalized controller declarations |
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:b3966eb011df74b9c3b443d465b523075c9181385e9521882b5f550c93a9ad5d",
+  "inputDigest": "sha256:5d35e9c2561171115a9fe1b1be2006d9768781f1145eca4ce5b40e194c89ee90",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -10260,7 +10260,7 @@
 | DELETE | /api/system/v1/contribution-rules/:id | Ops - Contribution Rules | rbac | RBAC; admission=-; codes=contribution.delete.rule; require=all; scopes=-; engine=rbac-global | code | src/modules/contribution-rules/contribution-rules.controller.ts:145; src/modules/contribution-rules/contribution-rules.controller.ts:164 |
 | DELETE | /api/system/v1/dict-items/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.delete.item; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:277; src/modules/dictionaries/dictionaries.controller.ts:296 |
 | DELETE | /api/system/v1/dict-types/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.delete.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:133; src/modules/dictionaries/dictionaries.controller.ts:152 |
-| DELETE | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:113; src/modules/permissions/permissions.controller.ts:132 |
+| DELETE | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:114; src/modules/permissions/permissions.controller.ts:133 |
 | DELETE | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:156; src/modules/permissions/rbac-roles.controller.ts:175 |
 | DELETE | /api/system/v1/roles/:id/permissions/:permissionId | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:82; src/modules/permissions/role-permissions.controller.ts:105 |
 | DELETE | /api/system/v1/users/:userId/roles/:roleId | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:100; src/modules/permissions/user-roles.controller.ts:124 |
@@ -10543,7 +10543,7 @@
 | PATCH | /api/system/v1/dict-items/:id/status | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.update.item; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:259; src/modules/dictionaries/dictionaries.controller.ts:274 |
 | PATCH | /api/system/v1/dict-types/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.update.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:97; src/modules/dictionaries/dictionaries.controller.ts:112 |
 | PATCH | /api/system/v1/dict-types/:id/status | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.update.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:115; src/modules/dictionaries/dictionaries.controller.ts:130 |
-| PATCH | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.update; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:91; src/modules/permissions/permissions.controller.ts:110 |
+| PATCH | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.update; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:91; src/modules/permissions/permissions.controller.ts:111 |
 | PATCH | /api/system/v1/realname-settings | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:57; src/modules/realname/realname-settings.controller.ts:70 |
 | PATCH | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.update; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:133; src/modules/permissions/rbac-roles.controller.ts:153 |
 | PATCH | /api/system/v1/sms-settings | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:53; src/modules/sms/sms-settings.controller.ts:66 |

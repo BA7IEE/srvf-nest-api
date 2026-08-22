@@ -18,9 +18,20 @@ import * as ts from 'typescript';
 // 控制面闸拦不住它(它不是那 7 条保留码),全体队员当场能看彼此明文 PII。
 // 同一家族、同一形状:一处写路径挂了闸,兄弟写路径没挂。
 //
+// 实例三(P1-32 PR 3b,2026-08-23):`PermissionsService` 的三条写路径里,
+// `create()` 查 `assertPermissionCodeCreatable`、`delete()` 查 `assertSeedPermissionDeletable`,
+// 两者都锚在同一个谓词 `isSeedPermissionCode` 上;而 `update()` **一个都不查** ——
+// 于是 237 条系统权限码造不出、删不掉,`description` 却人人可改,
+// 且 `prisma/seed.ts` 的 `update: {}` 保证 seed 永不把它拉回来。
+// 第三次同一形状:两条腿挂了闸,第三条腿裸奔。
+//
+// ⚠️ 实例三与前两个的差别值得写下来:它**不是**「漏接」,是**推翻一条刻意设计** ——
+//    那句 `update: {}` 的注释当年逐字写着「防止运营运行时调整被 seed 回退」。
+//    改立场的理由见 biz-code 30110 的注释块(PR 0 之后 description 有了代码侧权威源)。
+//
 // 本 spec 不修实例,它让这个类**长不回来**:
-//   下列两份 service 里,每一个会改写「角色行」或「角色 ↔ 权限映射」的**公开**方法,
-//   都必须能到达该写面对应的**全部**闸。
+//   下列三份 service 里,每一个会改写「角色行」「角色 ↔ 权限映射」或「Permission 行」的
+//   **公开**方法,都必须能到达该写面对应的**全部**闸。
 //
 // 🔴 **为什么必须动态现取方法名,不能写死 `['assign', 'revoke']`**:
 //    写死名单就是把缺陷复制一份 —— RBAC 终态方案 PR 4 计划加原子 `PUT`(整体替换某角色的
@@ -38,7 +49,7 @@ import * as ts from 'typescript';
 //     helper 可以改名/拆分,谓词是 SoT(role-delegation.policy.ts / protected-role-codes.ts),
 //     换掉它就是「另造判定」,那本来就该红。
 //
-// **两个写面的口径差**(这一条最容易被后来者改错,写清楚):
+// **各写面的口径差**(这一条最容易被后来者改错,写清楚):
 //   - `rolePermission`:**任何**写方法都算(含 `create` 家族)。新建一条映射的目标角色
 //     本来就是既有角色,加一条码和减一条码是同一条不变量的两条腿。
 //   - `rbacRole`:只有**改既有行**的写方法算(`update` / `upsert` / `delete` 家族),
@@ -47,11 +58,14 @@ import * as ts from 'typescript';
 //     用 `create` 改到一个内置角色。把 `create` 拉进来只会产出恒定的误红。
 //     👉 判据自证里有一条**专门钉住这个区分是活的**(`create` 必须不在名单里),
 //        否则「口径退化成认所有写方法」会静默通过。
+//   - `permission`:**任何**写方法都算(含 `create` 家族),与 `rbacRole` 面**刻意相反**。
+//     差别是结构性的:`permission.create` 恰恰**只对闭包内的码有意义**(闭包外的码是惰性的,
+//     30106),它必须查同一个谓词才知道该拒哪边;而 `rbacRole.create` 结构上够不到内建角色。
 //
 // **已知扫描面边界**(写出来,不假装没有):
-//   - 只解析下面 SCAN_TARGETS 列的这两份文件。角色 / 映射若从**别的** service 被改写,
-//     本判据看不见 —— 但那已不是「兄弟写路径漏挂闸」,而是「多了一条未登记写面」,
-//     属另一条不变量(单一写入口),不在本刀射程内。
+//   - 只解析下面 SCAN_TARGETS 列的那几份文件。角色 / 映射 / Permission 行若从**别的**
+//     service 被改写,本判据看不见 —— 但那已不是「兄弟写路径漏挂闸」,而是「多了一条未登记
+//     写面」,属另一条不变量(单一写入口),不在本刀射程内。
 //   - `delegate['rbacRole']` 这类元素访问写法不认。本仓零使用,且 typecheck 下
 //     它比属性访问更费事,不构成现实规避路径。
 //   - 静态判据只证明「执法位在」,不证明「运行时一定执行到」(闸被塞进死分支它看不出)。
@@ -69,6 +83,7 @@ const SCAN_TARGETS: readonly ScanTarget[] = [
     className: 'RolePermissionsService',
   },
   { relPath: 'src/modules/permissions/rbac-roles.service.ts', className: 'RbacRolesService' },
+  { relPath: 'src/modules/permissions/permissions.service.ts', className: 'PermissionsService' },
 ];
 
 /** 闸 = 一个共享谓词 + 它必须来自的 SoT 模块。 */
@@ -96,6 +111,16 @@ const GATES: readonly GateSpec[] = [
     damage:
       '15 个 seed 内置角色可被运行时改动 —— 例如把 member-profile.read.sensitive(明文证件号 / 手机)' +
       '加到 member 角色上,全体队员当场能看彼此明文 PII(P1-32 PR 3a 同款洞)',
+  },
+  {
+    id: 'seedPermission',
+    predicate: 'isSeedPermissionCode',
+    module: './seed-permission-codes',
+    damage:
+      'seed 事实闭包内的 237 条权限码行可被运行时改写 —— 这些行的 description 权威源是代码' +
+      '(permission-catalog.ts 各 *_PERMISSION_SEED 的 description),而 prisma/seed.ts 的 ' +
+      'upsert 用 `update: {}` 永不回写 ⇒ 改过之后 DB 与代码常量各存一份、无人比对,' +
+      '且没有任何入口能把它拉回来(P1-32 PR 3b)',
   },
 ];
 
@@ -156,6 +181,21 @@ const WRITE_SURFACES: readonly WriteSurface[] = [
     tablePattern: /RbacRole|rbac_role/i,
     requiredGateIds: ['protectedRole'],
     what: '既有角色行',
+  },
+  {
+    id: 'permissionRow',
+    delegate: 'permission',
+    // 三条腿都算(含 create 家族)—— 与 `rbacRole` 面的口径**刻意相反**,理由是结构性的:
+    // `rbacRole.create` 撞内建 code 会先被 unique 预检查判掉,改不到内建角色;
+    // 而 `permission.create` 恰恰**只对闭包内的码有意义**(闭包外的码是惰性的,30106),
+    // 它必须查同一个谓词才知道该拒哪边。现网三条腿(create/update/delete)确实都查它。
+    writeMethods: ALL_PRISMA_WRITE_METHODS,
+    // ⚠️ 不能写成 /Permission|permissions/i —— 那会连 `RolePermission` / `role_permissions`
+    //    一起吃掉,把映射面的 raw SQL 误算成本面的写点。`\b` 在这两个串里都不成立
+    //    (`RolePermission` 的 e|P 与 `role_permissions` 的 _|p 都是词内相邻)。
+    tablePattern: /\bPermission\b|\bpermissions\b/,
+    requiredGateIds: ['seedPermission'],
+    what: 'Permission 行(权限码定义)',
   },
 ];
 
@@ -322,6 +362,7 @@ const PARSED_BY_PATH = new Map(PARSED.map((file) => [file.target.relPath, file])
 
 const ROLE_PERMISSIONS_FILE = 'src/modules/permissions/role-permissions.service.ts';
 const RBAC_ROLES_FILE = 'src/modules/permissions/rbac-roles.service.ts';
+const PERMISSIONS_FILE = 'src/modules/permissions/permissions.service.ts';
 
 /**
  * 从 `start` 出发,沿本类内的 `this.<x>()` 边做传递闭包,问「有没有一处满足 predicate」。
@@ -362,7 +403,7 @@ function namesOf(relPath: string, surfaceId: string): string[] {
   return mutatingPublicMethods(file, surface).map((facts) => facts.name);
 }
 
-describe('角色写路径必须全部过闸:控制面授码闸(E-B2)+ 系统内置角色只读闸(P1-32 PR 3a)', () => {
+describe('RBAC 写路径必须全部过闸:控制面授码闸(E-B2)+ 系统内置角色只读闸(PR 3a)+ 权限目录闸(PR 3b)', () => {
   // 判据自证:先证明「这次运行真的解析到了东西」,再报数。
   // 沿本仓教训:扫描器坏掉(路径变了 / walker 抛空 / 类改名)时,下面那条主断言会因为
   // 「一个方法都没发现」而**全绿**,恰好在最需要它的时候失效。
@@ -382,6 +423,10 @@ describe('角色写路径必须全部过闸:控制面授码闸(E-B2)+ 系统内�
       './protected-role-codes',
     );
     expect(rbacRoles.predicateImports.get('isProtectedRoleCode')).toBe('./protected-role-codes');
+    const permissions = PARSED_BY_PATH.get(PERMISSIONS_FILE) as ParsedFile;
+    expect(permissions.predicateImports.get('isSeedPermissionCode')).toBe(
+      './seed-permission-codes',
+    );
   });
 
   it('判据自证:两个写面各自的发现结果非空且点名正确(地板锚点,不是「恰 N 个」)', () => {
@@ -398,6 +443,15 @@ describe('角色写路径必须全部过闸:控制面授码闸(E-B2)+ 系统内�
     expect(roleRow).toContain('update');
     expect(roleRow).toContain('softDelete');
     expect(roleRow.length).toBeGreaterThanOrEqual(2);
+
+    // Permission 行面(P1-32 PR 3b):三条腿都必须被发现。
+    // ⭐ `update` 在这里是**本刀的靶子** —— 它此前不在任何受闸名单里,
+    //    发现侧看得见它、满足侧要求它过闸,两件事合起来才是这一刀的执行位。
+    const permissionRow = namesOf(PERMISSIONS_FILE, 'permissionRow');
+    expect(permissionRow).toContain('create');
+    expect(permissionRow).toContain('update');
+    expect(permissionRow).toContain('delete');
+    expect(permissionRow.length).toBeGreaterThanOrEqual(3);
   });
 
   it('判据自证:`rbacRole` 面的「只认改既有行」口径是活的 —— create 必须不在名单里', () => {
@@ -427,9 +481,27 @@ describe('角色写路径必须全部过闸:控制面授码闸(E-B2)+ 系统内�
     expect(privateNames(ROLE_PERMISSIONS_FILE)).toContain('assertControlPlaneCodesOrThrow');
     expect(privateNames(ROLE_PERMISSIONS_FILE)).toContain('assertRoleMutableOrThrow');
     expect(privateNames(RBAC_ROLES_FILE)).toContain('assertRoleNotProtectedOrThrow');
+    expect(privateNames(PERMISSIONS_FILE)).toContain('assertSeedPermissionUpdatable');
   });
 
-  it('每个会改写角色或角色权限映射的公开方法,都必须到达该写面的全部闸(漏一个即红并点名)', () => {
+  it('判据自证:`permission` 面的表名正则不吃 `RolePermission` / `role_permissions`', () => {
+    // 🔴 这条钉住上面那段注释里的断言本身。写成 /Permission|permissions/i 时,
+    //    映射面的 raw SQL 会被同时算成 Permission 行的写点 —— 那是一个**恒定误红**的来源,
+    //    而止血手法通常是把闸削软。这里正面证明两个方向:该匹配的匹配、不该的不匹配。
+    const surface = SCANNED_SURFACES.find((s) => s.id === 'permissionRow') as WriteSurface;
+    // 取样一律用**raw SQL 里真会出现的形态** —— 这个正则只被喂 `$executeRaw*` / `$queryRaw*`
+    // 调用的正文,拿 `Prisma.PermissionSelect` 这种类型名当样本是在测一件不会发生的事。
+    //
+    // 方向一:真表名 / 真模型名认得(否则下面的否定是在一个恒 false 的正则上做的,毫无意义)。
+    expect(surface.tablePattern.test('SELECT * FROM "permissions"')).toBe(true);
+    expect(surface.tablePattern.test('UPDATE permissions SET description = $1')).toBe(true);
+    expect(surface.tablePattern.test('DELETE FROM Permission WHERE id = $1')).toBe(true);
+    // 方向二:兄弟写面的名字一律不认(词内相邻,`\b` 不成立)。
+    expect(surface.tablePattern.test('SELECT * FROM "role_permissions"')).toBe(false);
+    expect(surface.tablePattern.test('DELETE FROM RolePermission WHERE roleId = $1')).toBe(false);
+  });
+
+  it('每个会改写角色 / 角色权限映射 / Permission 行的公开方法,都必须到达该写面的全部闸(漏一个即红并点名)', () => {
     const unguarded: string[] = [];
 
     for (const file of PARSED) {

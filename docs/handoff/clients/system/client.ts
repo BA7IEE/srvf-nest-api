@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:8644abdaaa458e7d39f2dcfd0f72bb29242ddeee04ae3eb06b0bca0b94e1376a
+// inputDigest: sha256:deb11579200de2d098a15d683d0b17f6ad96e97509ca7735744b2856e9da5328
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -255,7 +255,7 @@ export function createSystemClient(fetcher: Fetcher) {
     PermissionsControllerCreate(body: CreatePermissionDto): Promise<ApiEnvelope<PermissionResponseDto>> {
       return fetcher<PermissionResponseDto>({ method: "POST", path: "/api/system/v1/permissions", body });
     },
-    /** 更新权限点(仅 description;code / module / action / resourceType 不可改) [rbac: rbac.permission.update] */
+    /** 更新权限点(description 由 seed 定义,此处不能改 —— 闭包内的码抛 30110;而闭包外的码又造不出来(30106);实际不存在可成功路径) [rbac: rbac.permission.update] */
     PermissionsControllerUpdate(id: string, body: UpdatePermissionDto): Promise<ApiEnvelope<PermissionResponseDto>> {
       return fetcher<PermissionResponseDto>({ method: "PATCH", path: `/api/system/v1/permissions/${id}`, body });
     },

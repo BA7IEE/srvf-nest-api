@@ -4824,6 +4824,40 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "系统权限码的描述由系统定义,不允许在此修改;调整描述需要改代码并发版,请联系开发者(code=30110)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30110
+                      ],
+                      "description": "30110: 系统权限码的描述由系统定义,不允许在此修改;调整描述需要改代码并发版,请联系开发者",
+                      "example": 30110
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "系统权限码的描述由系统定义,不允许在此修改;调整描述需要改代码并发版,请联系开发者"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4831,7 +4865,7 @@
             "bearer": []
           }
         ],
-        "summary": "更新权限点(仅 description;code / module / action / resourceType 不可改) [rbac: rbac.permission.update]",
+        "summary": "更新权限点(description 由 seed 定义,此处不能改 —— 闭包内的码抛 30110;而闭包外的码又造不出来(30106);实际不存在可成功路径) [rbac: rbac.permission.update]",
         "tags": [
           "Ops - Permissions"
         ]
