@@ -141,6 +141,53 @@ fi
 CMD="$(strip_noise "$CMD")"
 [ -n "$(printf '%s' "$CMD" | tr -d '[:space:]')" ] || exit 0
 
+# ── 写侧动词:**单一来源** ────────────────────────────────────────────────
+# 下面逐子命令的红区判定与上方的开工门禁预检**共用这一个函数**。
+# 若两处各写一份 case 模式,漂移时会出现「门禁那侧认为不是写、红区这侧认为是写」
+# ——门禁被静默跳过而**毫无症状**。做成函数是为了让漂移在结构上不可能发生。
+has_write_verb() {
+  case "$1" in
+    *"sed -i"*|*"perl -i"*|*" tee "*|*"cp "*|*"mv "*|*"patch "*|\
+    *"git checkout -- "*|*"git restore"*|*"git apply"*|*"install -m"*|*"truncate "*) return 0 ;;
+  esac
+  return 1
+}
+
+has_redirect_write() {
+  printf '%s' "$1" | grep -qE '[^0-9>&]>>?[[:space:]]*[^[:space:]|&;>]' || return 1
+  # 排除 >/dev/... 与 >&N
+  printf '%s' "$1" | grep -qE '[^0-9>&]>>?[[:space:]]*(/dev/|&)' && return 1
+  return 0
+}
+
+# ── P1-31:开工门禁的 Bash 半边 ───────────────────────────────────────────
+# 缺陷(2026-08-22 收口):`preflight-required.sh` 只挂在 Edit|Write|MultiEdit 上,
+# Bash 侧**从不校验开工门禁通行标记** ⇒ 一条 `python3 <<'PY' … PY` 写文件
+# 完全绕过「依赖/生成物陈旧、落后 origin/main、中途换分支」这些前提检查。
+# **同一个写操作走 Edit 被拦、走 Bash 放行** —— 判定不一致本身就是缺陷,
+# 而 bypass 模式恰恰要求优先用 Bash,所以这条旁路是**默认路径**不是边角。
+#
+# ⚠️ **复用而非复制**:这里直接调 `preflight-required.sh` 本体(喂一个不含
+# file_path 的 JSON,它会落到标记校验那一段),**不重写一份判定**。
+# 复制一份的话,两份对「什么算门禁过」的理解会各自漂移,而漂移时
+# 「一侧放行一侧拦」没有任何症状 —— 那正是本条缺陷自己的形态。
+#
+# ⚠️ **只对写侧命令生效**:只读命令(cat / grep / git log …)照旧放行。
+# 门禁自己的文案就是「只读调研可继续,写操作会被拦下」,Bash 侧必须同口径。
+#
+# ⚠️ 次序与 Edit 侧一致:**先门禁、后红区**。门禁不过时红区结论本身也不可信
+# (可能落后 main、令牌是别的分支留下的)。
+if [ -n "$INTERP_CODE" ] || has_write_verb "$CMD" || has_redirect_write "$CMD"; then
+  PREFLIGHT="$REPO_ROOT/.claude/hooks/preflight-required.sh"
+  if [ -x "$PREFLIGHT" ]; then
+    if ! printf '{"tool_name":"Bash","tool_input":{}}' | "$PREFLIGHT"; then
+      echo "   ↑ 触发者:Bash 写侧命令(解释器内联 / 重定向 / sed -i 等)。" >&2
+      echo "     开工门禁对 Edit 与 Bash **同口径** —— 换用 Bash 不能绕过它。" >&2
+      exit 2
+    fi
+  fi
+fi
+
 # 复用 redzone-guard 判定单个路径:命中则它 exit 2。
 # **不吞它的 stderr** —— 那正是「命中哪条规则 / 为什么受保护 / 如何获授权」的说明,
 # 吞掉的话模型只看到「被拒了」却不知道原因,无法自我纠正。
@@ -167,9 +214,9 @@ printf '%s\n' "$CMD" | tr ';&|' '\n' | while IFS= read -r part; do
   esac
 
   # 2) 原地修改 / 复制 / 移动 / 打补丁 / 恢复类动词
-  case "$part" in
-    *"sed -i"*|*"perl -i"*|*" tee "*|*"cp "*|*"mv "*|*"patch "*|\
-    *"git checkout -- "*|*"git restore"*|*"git apply"*|*"install -m"*|*"truncate "*)
+  # ⚠️ 判定走 `has_write_verb`(定义在上方)—— 与开工门禁预检**共用同一份动词表**,
+  #    在此内联一份 case 会让两处漂移,而漂移时门禁被静默跳过且毫无症状。
+  if has_write_verb "$part"; then
       # ── 误伤治理 ②:cp / mv / install 只判**目标**(最后一个参数),不判来源 ─────
       # 实测踩到:`cp .claude/hooks/x.sh tmp/backup.sh` 被拦 —— 但从受保护路径**读出**
       # 是无害的(等价于 cat > 别处),真正要拦的是写入受保护路径。
@@ -219,8 +266,7 @@ printf '%s\n' "$CMD" | tr ';&|' '\n' | while IFS= read -r part; do
 MSG
         exit 2
       fi
-      ;;
-  esac
+  fi
 done
 
 # 上面 while 处于管道末段 = 子 shell:其中的 exit 2 结束的是子 shell,
