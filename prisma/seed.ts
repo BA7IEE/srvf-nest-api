@@ -4569,6 +4569,10 @@ export async function main(): Promise<void> {
     await seedRegistrationUploadSessionAttachmentTypeConfig(prisma);
     // issue #1055 T1:账号头像 / 队员标准照两个 internal-only owner 配置(幂等,不 seed 权限码)。
     await seedVisualIdentityAttachmentTypeConfigs(prisma);
+    // 🔴 2026-08-21 补:member / certificate / activity 三种核心业务归属类型
+    // ——自附件功能上线以来一直没 seed,新库上这三类附件一律传不上去(fail-close)。
+    // 由 harness-guards.selftest.ts 的「每种归属类型必须有配置行」闸兜住,防再漏。
+    await seedCoreBusinessAttachmentTypeConfigs(prisma);
 
     // 统一通知 S2(2026-06-25,评审稿 §3.5):微信订阅模板配置默认行(templateId=null 待运营填;幂等)
     await seedWechatSubscribeTemplates(prisma);
@@ -4720,6 +4724,76 @@ async function seedVisualIdentityAttachmentTypeConfigs(prisma: PrismaClient): Pr
   }
   console.log(
     `[seed] visual identity attachment type configs ensured (${VISUAL_IDENTITY_ATTACHMENT_TYPE_CONFIG_SEED.length}: user-avatar / member-official-portrait)`,
+  );
+}
+
+// ============================================================================
+// 🔴 核心业务附件归属类型(2026-08-21 补;缺失自附件功能上线以来一直存在)
+//
+// 缺陷:`ATTACHMENT_OWNER_TYPES` 认 10 种归属类型,而 seed 只建了 5 种 ——
+// `member`(队员证件照)/ `certificate`(证书照片)/ `activity`(活动照片)三种
+// **从来没有 seed**。`assertOwnerTypeAllowed` 查不到 ACTIVE 配置行即抛
+// `ATTACHMENT_OWNER_TYPE_INVALID`(fail-close,见 docs/attachment-config-boundary.md §判定链)
+// ⇒ **全新部署后这三类附件一律传不上去**,连带 15 条 `attachment.*` 权限码发给谁都没用。
+//
+// ⭐ 为什么一直没人发现:**e2e 自己把配置行建出来了** —— 实测 test/ 下
+// `code: 'member'` 出现 31 次、`certificate` 7 次、`activity` 2 次。测试替生产补了
+// 缺失的数据,于是 CI 全绿而生产会红。与 journey 直写库是同一形状的缺陷。
+//
+// 根因:seed 里建附件类别配置的函数有三个,各是某批 feature 自己加的
+// (内容 / 报名上传 / 视觉身份)—— 每批只管自己那份,最早的三种没人认领。
+// 现由 `harness-guards.selftest.ts` 的「每种归属类型必须有配置行」闸兜住。
+//
+// ⚠️ `ownerTable` **不是物理表名**,是 `attachment-upload.service.ts` 那个
+// `${ownerType}:${ownerTable}` switch 的逻辑键 —— 实测它认的是小写
+// `member:member` / `certificate:certificate` / `activity:activity`
+// (而 `user-avatar:User` / `member-official-portrait:Member` 才是大写)。
+// 照 schema 推「物理表名」会写成大写,上传时落到 default 分支抛 OWNER_NOT_FOUND。
+//
+// ⚠️ 尺寸与格式沿既有五条的取值规律(图片 10MB;证书另放行 PDF)。
+// **这是起草方按规律推的,不是拍板值** —— 运营改过之后 `update: {}` 不会回退。
+const CORE_BUSINESS_ATTACHMENT_TYPE_CONFIG_SEED = [
+  {
+    code: 'member',
+    displayName: '队员证件照',
+    ownerTable: 'member',
+    defaultMaxSizeBytes: 10 * 1024 * 1024,
+    defaultMimeWhitelist: ['image/jpeg', 'image/png'],
+  },
+  {
+    code: 'certificate',
+    displayName: '证书照片',
+    ownerTable: 'certificate',
+    defaultMaxSizeBytes: 10 * 1024 * 1024,
+    // 证书常见扫描件是 PDF,故比其余图片类多放行一种。
+    defaultMimeWhitelist: ['image/jpeg', 'image/png', 'application/pdf'],
+  },
+  {
+    code: 'activity',
+    displayName: '活动照片',
+    ownerTable: 'activity',
+    defaultMaxSizeBytes: 10 * 1024 * 1024,
+    defaultMimeWhitelist: ['image/jpeg', 'image/png', 'image/webp'],
+  },
+] as const;
+
+// 运营已调整的 MIME/大小/status 不得被 deploy/seed 回退:唯一允许的 update 是空对象。
+async function seedCoreBusinessAttachmentTypeConfigs(prisma: PrismaClient): Promise<void> {
+  for (const cfg of CORE_BUSINESS_ATTACHMENT_TYPE_CONFIG_SEED) {
+    await prisma.attachmentTypeConfig.upsert({
+      where: { code: cfg.code },
+      update: {},
+      create: {
+        code: cfg.code,
+        displayName: cfg.displayName,
+        ownerTable: cfg.ownerTable,
+        defaultMaxSizeBytes: cfg.defaultMaxSizeBytes,
+        defaultMimeWhitelist: [...cfg.defaultMimeWhitelist],
+      },
+    });
+  }
+  console.log(
+    `[seed] core business attachment type configs ensured (${CORE_BUSINESS_ATTACHMENT_TYPE_CONFIG_SEED.length}: member / certificate / activity)`,
   );
 }
 

@@ -5589,6 +5589,147 @@ void (async (): Promise<void> => {
     );
   }
 
+  // ===========================================================================
+  // 附件归属类型必须有 seed 配置行(2026-08-21)
+  //
+  // 缺陷类:**代码认得这个类型,而库里没有它的配置行 ⇒ 该功能在新库上直接不可用。**
+  //
+  // 真实事故(本闸即由它逼出):`ATTACHMENT_OWNER_TYPES` 认 10 种归属类型,
+  // 而 seed 只建了 5 种 —— `member`(队员证件照)/ `certificate`(证书照片)/
+  // `activity`(活动照片)三种**自附件功能上线以来从未 seed**。
+  // `assertOwnerTypeAllowed` 是 fail-close:查不到 ACTIVE 配置行即抛
+  // `ATTACHMENT_OWNER_TYPE_INVALID` ⇒ 全新部署后这三类附件一律传不上去,
+  // 连带 15 条 `attachment.*` 权限码发给谁都没用。
+  //
+  // ⭐ 为什么两轮外部评审都没发现:**e2e 自己把配置行建出来了**
+  // (实测 test/ 下 `code: 'member'` 31 次 / `certificate` 7 次 / `activity` 2 次)——
+  // 测试替生产补了缺失的数据,于是 CI 全绿而生产会红。
+  // 与「journey 直写库」是同一形状:**验证代码替被验对象补了前提**。
+  //
+  // 根因:seed 里建附件类别配置的函数有三个,各是某批 feature 自己加的
+  // (内容 / 报名上传 / 视觉身份)—— 每批只管自己那份,最早的三种没人认领。
+  // ⇒ 本闸修的是「类」:新增归属类型必须同 PR 补 seed,否则当场红。
+  // ===========================================================================
+  {
+    /**
+     * 豁免:这两种归属类型**不经** `assertOwnerTypeAllowed`,故不需要配置行。
+     * 逐条实测(2026-08-21),不是拍脑袋:
+     */
+    const OWNER_TYPE_SEED_EXEMPTIONS = new Map<string, string>([
+      [
+        'registration-form-answer',
+        '不是上传入口产生的:由 registration-upload-session 附件**转换**而来' +
+          '(attachment-registration-upload.service.ts:357),上传侧校验用的是前者',
+      ],
+      [
+        'attendance-import-preview',
+        'trusted facade 自成一路:attachment-import-preview-upload.service.ts ' +
+          '对 assertOwnerTypeAllowed 的调用数实测为 **0**',
+      ],
+    ]);
+
+    /** 地板锚点:不写「恰 10 种」「恰 8 条」—— 会在下次加类型时过期然后被人顺手改大。 */
+    const MIN_OWNER_TYPES = 8;
+    const MIN_SEEDED_TYPE_CONFIGS = 5;
+
+    interface OwnerTypeSeedAudit {
+      ownerTypes: string[];
+      seeded: string[];
+      missing: string[];
+      staleExemptions: string[];
+    }
+
+    function auditAttachmentOwnerTypeSeed(
+      validationSource: string,
+      seedSource: string,
+    ): OwnerTypeSeedAudit {
+      // 左侧:代码认得的归属类型全集(ATTACHMENT_OWNER_TYPES 数组字面量)
+      const listMatch = /ATTACHMENT_OWNER_TYPES\s*=\s*\[([\s\S]*?)\]/.exec(validationSource);
+      const ownerTypes = listMatch
+        ? [...listMatch[1].matchAll(/'([a-z][a-z0-9-]*)'/g)].map((m) => m[1])
+        : [];
+
+      // 右侧:seed 里所有附件类别配置条目的 code。
+      //
+      // ⚠️ **按形状认,不按常量名认** —— 本闸第一版写的是
+      // `*_ATTACHMENT_TYPE_CONFIG_SEED = [...]`,当场被自己抓到漏了
+      // `REGISTRATION_UPLOAD_SESSION_ATTACHMENT_TYPE_CONFIG`(单数 · 无 _SEED 后缀 ·
+      // 是对象不是数组)。命名约定不统一是既成事实,靠名字匹配必然再漏。
+      //
+      // 类别配置条目的**结构特征**是 `code` 与 `ownerTable` 紧邻同现 —— 这个特征
+      // 不随命名习惯变化,新增一份不论叫什么名字、是数组还是单对象都会被扫到。
+      const seeded = [
+        ...seedSource.matchAll(/\bcode:\s*'([a-z][a-z0-9-]*)'[\s\S]{0,200}?\bownerTable:/g),
+      ].map((m) => m[1]);
+
+      const seededSet = new Set(seeded);
+      const missing = ownerTypes.filter(
+        (t) => !seededSet.has(t) && !OWNER_TYPE_SEED_EXEMPTIONS.has(t),
+      );
+      // 反向:豁免了却已经不在全集里(或已被 seed)⇒ 豁免过期,该删
+      const staleExemptions = [...OWNER_TYPE_SEED_EXEMPTIONS.keys()].filter(
+        (t) => !ownerTypes.includes(t) || seededSet.has(t),
+      );
+      return { ownerTypes, seeded, missing, staleExemptions };
+    }
+
+    // ── 仪器正反对照:先证明这个函数真会红 ────────────────────────────────
+    const STUB_VALIDATION = "export const ATTACHMENT_OWNER_TYPES = ['alpha', 'beta'] as const;";
+    const STUB_SEED_OK =
+      "const X = [\n  { code: 'alpha', ownerTable: 'a' },\n  { code: 'beta', ownerTable: 'b' },\n];";
+    const STUB_SEED_MISSING = "const X = [\n  { code: 'alpha', ownerTable: 'a' },\n];";
+
+    checkEq(
+      '附件归属类型:全部已 seed = PASS',
+      auditAttachmentOwnerTypeSeed(STUB_VALIDATION, STUB_SEED_OK).missing.length,
+      0,
+    );
+    checkEq(
+      '附件归属类型:漏 seed 一种 = FAIL 并点名',
+      auditAttachmentOwnerTypeSeed(STUB_VALIDATION, STUB_SEED_MISSING).missing.join(','),
+      'beta',
+    );
+    checkEq(
+      '附件归属类型:数组与单对象两种写法都进扫描面(不按常量名认)',
+      auditAttachmentOwnerTypeSeed(
+        STUB_VALIDATION,
+        // 左边是数组、右边是单对象且常量名毫无 _SEED 痕迹 —— 正是真仓库里
+        // REGISTRATION_UPLOAD_SESSION_ATTACHMENT_TYPE_CONFIG 那种形状。
+        "const A_ATTACHMENT_TYPE_CONFIG_SEED = [\n  { code: 'alpha', ownerTable: 'a' },\n];\n" +
+          "const WHATEVER_NAME = {\n  code: 'beta',\n  ownerTable: 'b',\n};",
+      ).missing.length,
+      0,
+    );
+
+    // ── 真仓库读数 ────────────────────────────────────────────────────────
+    const ownerTypeAudit = auditAttachmentOwnerTypeSeed(
+      fs.readFileSync(
+        path.resolve(__dirname, '..', 'src/modules/attachments/attachment-validation.ts'),
+        'utf-8',
+      ),
+      fs.readFileSync(path.resolve(__dirname, '..', 'prisma/seed.ts'), 'utf-8'),
+    );
+
+    check(
+      '附件归属类型:扫描面非空(地板锚点)',
+      ownerTypeAudit.ownerTypes.length >= MIN_OWNER_TYPES &&
+        ownerTypeAudit.seeded.length >= MIN_SEEDED_TYPE_CONFIGS,
+      `认得 ${ownerTypeAudit.ownerTypes.length} 种 / seed 了 ${ownerTypeAudit.seeded.length} 条` +
+        `(地板 ${MIN_OWNER_TYPES} / ${MIN_SEEDED_TYPE_CONFIGS})—— 扫描面塌了`,
+    );
+    check(
+      '附件归属类型:每种都有 seed 配置行(或已登记豁免)',
+      ownerTypeAudit.missing.length === 0,
+      `以下归属类型代码认得、seed 没建 ⇒ 新库上这类附件一律传不上去:\n      ` +
+        ownerTypeAudit.missing.join('\n      '),
+    );
+    check(
+      '附件归属类型:豁免口不留过期条目',
+      ownerTypeAudit.staleExemptions.length === 0,
+      `以下豁免已过期(类型没了、或已被 seed),该删:${ownerTypeAudit.staleExemptions.join(', ')}`,
+    );
+  }
+
   if (knownGaps.length > 0) {
     process.stdout.write(`\n── 已知缺口:${knownGaps.length} 条(不假装安全)──\n`);
     for (const gap of knownGaps) {
