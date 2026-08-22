@@ -415,7 +415,14 @@ describe('role-permissions 模块', () => {
       }
     });
 
-    it('SUPER_ADMIN 分配同一保留码 → 201(短路放行)', async () => {
+    // P1-32 PR 3a(2026-08-23)**行为反转**:此前这条断言的是「SA 短路放行 → 201」。
+    // 现在保留码在授码侧对 SUPER_ADMIN 也拒(30109)—— 把保留码写进某角色的
+    // role_permissions,就是让**持有该角色的非 SA** 永久拥有 SA-only 能力,
+    // 由谁按下按钮不改变结果。SA 依然能用 SA 身份直接做那些操作(走身份短路,
+    // 根本不查 role_permissions)。
+    // ⚠️ 收紧**只覆盖那 7 条保留码**;`rbac.*` / `role-binding.*` 前缀族对 SA 仍放行,
+    //    对照用例见 rbac-delegation-safety.e2e「SUPER_ADMIN 可授控制面前缀族码」。
+    it('SUPER_ADMIN 分配同一保留码 → 30109(保留码不得沉淀成角色常驻权限)', async () => {
       const { roleId } = await setupRoleAndPermissions({
         roleCode: 'f1-su-reserved',
         permCodes: [],
@@ -435,9 +442,27 @@ describe('role-permissions 模块', () => {
         .post(`/api/system/v1/roles/${roleId}/permissions`)
         .set('Authorization', superAdminAuth)
         .send({ permissionCodes: ['user.update.role'] });
+      expectBizError(res, BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE);
+
+      // 拒绝 = 一条都没写进去(闸在事务之前)
+      const written = await prisma.rolePermission.count({ where: { roleId } });
+      expect(written).toBe(0);
+    });
+
+    // 🔴 反向用例:闸只认「控制面码」这一维,不是「SA 干什么都拒」。
+    //    少了它,一个「assign 一律拒绝」的实现也会让上面几条全绿。
+    it('SUPER_ADMIN 分配普通码 → 201(授码侧的收紧不误伤正常配置)', async () => {
+      const { roleId, perms } = await setupRoleAndPermissions({
+        roleCode: 'f1-su-normal',
+        permCodes: ['f1.su.plain'],
+      });
+      const res = await request(httpServer(app))
+        .post(`/api/system/v1/roles/${roleId}/permissions`)
+        .set('Authorization', superAdminAuth)
+        .send({ permissionCodes: perms.map((p) => p.code) });
       expect(res.status).toBe(201);
       const codes = res.body.data.permissions.map((p: { code: string }) => p.code);
-      expect(codes).toContain('user.update.role');
+      expect(codes).toEqual(['f1.su.plain']);
     });
 
     it('ops-admin 分配纯普通码 → 201(闸不误伤非保留码)', async () => {

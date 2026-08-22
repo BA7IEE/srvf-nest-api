@@ -144,7 +144,14 @@ export function computeReadings(root: string): Reading[] {
   const catalogRuntimeFiles = readdirSync(join(root, 'src/modules/permissions')).filter(
     (name) => name.startsWith('permission-catalog') && !name.endsWith('.spec.ts'),
   ).length;
-  const revokeGate = /assertNoControlPlaneCodesOrThrow/.test(
+  // 锚在**共享谓词**上,不锚私有 helper 的名字。
+  // ⚠️ 教训:这里原本写死 `assertNoControlPlaneCodesOrThrow`。P1-32 PR 3a 把它改名成
+  //    `assertControlPlaneCodesOrThrow`(加 direction 参数),闸一行没少,这条读数却当场
+  //    翻成「未接」—— 名字锚点会把**纯重构**报成执法位消失。谓词 `isControlPlanePermissionCode`
+  //    是 role-delegation.policy.ts 的单一真相,换掉它才是真的另造判定。
+  //    「两条写路径是否都到得了这道闸」由 role-permissions-control-plane-gate.spec.ts
+  //    按调用闭包强制,本条只是台账上的状态读数,不是执法位。
+  const revokeGate = /isControlPlanePermissionCode/.test(
     read('src/modules/permissions/role-permissions.service.ts'),
   );
 
@@ -199,7 +206,7 @@ export function computeReadings(root: string): Reading[] {
     },
     {
       id: 'catalog-revoke-gate',
-      label: 'P1-32 PR3 已抽出的那半边:撤码是否复用控制面闸',
+      label: 'P1-32:授码 / 撤码两侧是否复用控制面闸谓词',
       value: revokeGate ? '已接' : '未接',
       source: 'src/modules/permissions/role-permissions.service.ts',
     },
