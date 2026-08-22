@@ -2365,8 +2365,11 @@ export const RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES: readonly string[] = Obj
 //    会变成最高危,与「能把权力给出去」这条定义对不上。
 // ② 7 条保留码:**收紧口径 —— 一条都不该进任何角色**,只走 SUPER_ADMIN 身份短路
 //    (记为 `grantPolicy: 'SUPER_ADMIN_ONLY'` + `uiVisibility: 'HIDDEN'`)。
-//    ⚠️ 今天代码里非 SA 已被 `assertNoControlPlaneCodesOrThrow` 拦住,但 **SA 本人仍可授予**;
-//    关掉 SA 那条路是 PR 3 的行为改动,本刀只锁决定 + 由判据守住「内建角色一条都不持有」。
+//    ✅ **执行位已补齐(P1-32 PR 3a,2026-08-23)**:授码侧的 SUPER_ADMIN 短路已摘掉 ——
+//    任何身份都不能把控制面码写进任何角色的 role_permissions(返 30103)。
+//    ⚠️ 撤码侧**刻意保留** SA 短路(历史脏数据的唯一清理路),这个不对称不是漏改;
+//    理由见 role-permissions.service.ts 的 assertControlPlaneCodesOrThrow 头注。
+//    判据仍守住「内建角色一条都不持有」。
 // ③ Scope 首版**只提示不强校验** ⇒ 本段刻意**不出** `scopeProfile` 字段(没有就不会被误当强校验依据)。
 // ④ step-up **不在本刀绑定任何 action**:今天 step-up 只覆盖「本人绑手机/微信/企微」三个动作,
 //    管理端一条都没绑,「绑 CRITICAL 全集」是另立一刀的事,不是翻个开关。本段只记 riskLevel。
