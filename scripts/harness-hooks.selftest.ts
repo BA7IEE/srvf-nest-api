@@ -165,6 +165,28 @@ expectExit('archive:新增文件放行', 'redzone-guard.sh', edit('docs/archive/
 }
 
 // ---- bash-write-guard:写侧旁路 ----
+//
+// ⚠️ **本批用例必须在「开工门禁已过」的前提下跑**(2026-08-22,P1-31 收口后新增)。
+// 收口内容:`bash-write-guard.sh` 在判出写侧后会先校验开工门禁通行标记 ——
+// 而本自测的环境**刻意隔离掉了 marker**(见文件头 isolateHookState)。
+// 不装回一份有效 marker 的话,本批**每一条**写侧用例都会以「门禁未过」被拦,
+// 期望 exit 0 的反向/误伤回归用例会集体假红(实测 7 条),
+// 而那与它们真正要测的**红区判定**毫无关系。
+//
+// ⇒ 本批的语义是「假设门禁已过,红区判定是否正确」;门禁本身的判定由
+//    下方 `bash:开工门禁半边` 那一组单独覆盖。
+{
+  const bashCaseMarker = gitPath('srvf-preflight.json');
+  const bashCaseBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+  }).trim();
+  fs.writeFileSync(
+    bashCaseMarker,
+    JSON.stringify({ status: 'pass', branch: bashCaseBranch, head: 'selftest' }),
+  );
+}
+
 expectExit('bash:sed -i 改红区拒绝', 'bash-write-guard.sh', bash("sed -i '' 's/x/y/' AGENTS.md"), 2);
 expectExit('bash:重定向写红区拒绝', 'bash-write-guard.sh', bash('echo x > AGENTS.md'), 2);
 expectExit('bash:cp 覆盖守卫脚本拒绝', 'bash-write-guard.sh', bash('cp /tmp/e.ts scripts/check-codemap.ts'), 2);
@@ -302,6 +324,121 @@ expectExit('bash:git status 放行', 'bash-write-guard.sh', bash('git status --s
 expectExit('bash:pnpm lint 放行', 'bash-write-guard.sh', bash('pnpm lint'), 0);
 expectExit('bash:写普通业务文件放行', 'bash-write-guard.sh', bash("sed -i '' 's/a/b/' src/modules/users/users.service.ts"), 0);
 expectExit('bash:重定向 /dev/null 放行', 'bash-write-guard.sh', bash('pnpm test > /dev/null 2>&1'), 0);
+
+// ---- bash:开工门禁半边(P1-31 收口,2026-08-22)----
+//
+// 缺陷:`preflight-required.sh` 只挂在 `Edit|Write|MultiEdit|NotebookEdit` 上,
+// Bash 侧**从不校验开工门禁通行标记** ⇒ 一条 `python3 <<'PY' … PY` 写文件
+// 完全绕过「依赖/生成物陈旧、落后 origin/main、中途换分支」这些前提。
+// **同一个写操作走 Edit 被拦、走 Bash 放行** —— 判定不一致本身就是缺陷,
+// 而 bypass 模式恰恰要求优先用 Bash,所以这条旁路是**默认路径**不是边角。
+//
+// ⭐ 下面第三组是**靶心**:只证明「Bash 侧会拦了」不够 —— 拦过头(连只读都拦)
+// 与拦不够都是错的,要证明它与 Edit 侧**同口径**。
+{
+  const marker = gitPath('srvf-preflight.json');
+  const backup = `${marker}.p131-bak`;
+  const had = fs.existsSync(marker);
+  if (had) fs.renameSync(marker, backup);
+  const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+  }).trim();
+  const writeMarker = (): void => {
+    fs.writeFileSync(marker, JSON.stringify({ status: 'pass', branch, head: 'selftest' }));
+  };
+  try {
+    // ① 正:门禁未过 + 各类写侧 Bash 命令 → 必须拦
+    fs.rmSync(marker, { force: true });
+    expectExit(
+      'bash 门禁:未过时 python heredoc 写**仓内**文件被拦(这条旁路正是 P1-31)',
+      'bash-write-guard.sh',
+      bash('python3 <<PY\nopen("docs/current-state.md","w").write("x")\nPY'),
+      2,
+    );
+    // ⭐ 仓库**外**必须放行 —— 门禁语义是「本仓状态不干净时别改本仓代码」,与仓外文件无关。
+    // 本刀初版做成命令级预检并喂空 JSON,丢掉了这条规则,被 harness:replay 的 INV-03
+    // 当场抓出(`cp <受保护路径> /tmp/backup` 这种**从受保护路径读出**的命令被误拦)。
+    expectExit(
+      'bash 门禁:未过时写**仓库外**文件仍放行(与 Edit 侧「仓外不受门禁管」同口径)',
+      'bash-write-guard.sh',
+      bash('python3 <<PY\nopen("/tmp/p131-outside.md","w").write("x")\nPY'),
+      0,
+    );
+    expectExit(
+      'bash 门禁:未过时 cp 从受保护路径读出到仓外仍放行(INV-03 回归)',
+      'bash-write-guard.sh',
+      bash('cp .claude/hooks/redzone-guard.sh /tmp/p131-backup.sh'),
+      0,
+    );
+    expectExit(
+      'bash 门禁:未过时 sed -i 被拦',
+      'bash-write-guard.sh',
+      bash("sed -i '' 's/a/b/' docs/current-state.md"),
+      2,
+    );
+    expectExit(
+      'bash 门禁:未过时重定向写**仓内**被拦',
+      'bash-write-guard.sh',
+      bash('echo hi > docs/current-state.md'),
+      2,
+    );
+
+    // ② 反:门禁未过 + 只读命令 → 必须放行
+    // 门禁自己的文案就是「只读调研可继续,写操作会被拦下」,Bash 侧必须同口径;
+    // 拦了只读就是过度收紧,会把调研也锁死。
+    expectExit(
+      'bash 门禁:未过时只读命令(cat)仍放行',
+      'bash-write-guard.sh',
+      bash('cat docs/current-state.md | head -5'),
+      0,
+    );
+    expectExit(
+      'bash 门禁:未过时只读命令(grep)仍放行',
+      'bash-write-guard.sh',
+      bash('grep -rn foo src/'),
+      0,
+    );
+
+    // ③ ⭐ 一致性(靶心):同一个写操作,Edit 侧与 Bash 侧结论必须相同 —— 两个方向都测。
+    expectExit(
+      '一致性:门禁未过 → Edit 侧拒',
+      'preflight-required.sh',
+      edit(path.join(repoRoot, 'docs/x.md')),
+      2,
+    );
+    expectExit(
+      '一致性:门禁未过 → Bash 侧同样拒(与上一条必须同结论)',
+      'bash-write-guard.sh',
+      bash("sed -i '' 's/a/b/' docs/x.md"),
+      2,
+    );
+    writeMarker();
+    expectExit(
+      '一致性:门禁已过 → Edit 侧放行',
+      'preflight-required.sh',
+      edit(path.join(repoRoot, 'docs/x.md')),
+      0,
+    );
+    expectExit(
+      '一致性:门禁已过 → Bash 侧同样放行(与上一条必须同结论)',
+      'bash-write-guard.sh',
+      bash("sed -i '' 's/a/b/' docs/x.md"),
+      0,
+    );
+
+    // ④ 回归:门禁已过时,红区判定不得被本次收口弄坏
+    expectExit(
+      'bash 门禁:已过时写红区仍按红区拦(没把老 behavior 弄坏)',
+      'bash-write-guard.sh',
+      bash("sed -i '' 's/a/b/' prisma/schema.prisma"),
+      2,
+    );
+  } finally {
+    fs.rmSync(marker, { force: true });
+    if (had) fs.renameSync(backup, marker);
+  }
+}
 
 // ---- preflight-gate:合并进行中不得拦写(2026-07-29 实测死锁)----
 // 合并未提交时 HEAD 仍指向合并前的提交,**按定义必然显示落后 origin/main**。

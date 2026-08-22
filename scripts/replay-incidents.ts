@@ -90,6 +90,41 @@ function gitPath(name: string): string {
   return path.isAbsolute(p) ? p : path.join(ROOT, p);
 }
 
+/**
+ * 在「开工门禁已过」的前提下跑一段探针,跑完恒还原。
+ *
+ * 为什么需要:P1-31 起 bash-write-guard 在查红区**之前**先查开工门禁(与 Edit 侧同口径)。
+ * CI 里从来没有门禁标记 ⇒ 凡是调 bash-write-guard 的探针都会先被门禁截住,
+ * 而那与它们真正要断言的**红区判定**是两件事。
+ *
+ * ⚠️ 两个方向都会坏,漏了哪个都不行:
+ *   - 期望 exit 0 的反向用例 → 以「门禁未过」**假红**(INV-03 / INC-15 benign 实测中招);
+ *   - 期望 exit 2 的攻击用例 → 被门禁**替红区满足**,变成**假绿**:
+ *     哪怕把红区判定整个删掉它照样返回 2。INC-15 的攻击断言当时正处在这个状态。
+ *
+ * ⚠️ 本机跑 replay 时标记通常**存在**(开工门禁刚写过),所以这类缺口在本机
+ *    看不见 —— 本条正是这么漏进 CI 的。helper 恒**覆盖**成有效标记,
+ *    让本机与 CI 走同一条路径,而不是听任环境决定。
+ */
+function withPreflightPass<T>(fn: () => T): T {
+  const marker = gitPath('srvf-preflight.json');
+  const bak = `${marker}.replay-bak`;
+  const had = fs.existsSync(marker);
+  if (had) fs.renameSync(marker, bak);
+  const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd: ROOT,
+    encoding: 'utf-8',
+  }).trim();
+  // 按分支名判过期(见 preflight-required.sh),故 branch 必须是当前分支。
+  fs.writeFileSync(marker, JSON.stringify({ status: 'pass', branch, head: 'replay' }));
+  try {
+    return fn();
+  } finally {
+    fs.rmSync(marker, { force: true });
+    if (had) fs.renameSync(bak, marker);
+  }
+}
+
 const edit = (f: string) => ({ tool_name: 'Edit', tool_input: { file_path: f } });
 const bash = (c: string) => ({ tool_name: 'Bash', tool_input: { command: c } });
 
@@ -182,18 +217,22 @@ const probes: Record<string, () => [boolean, string]> = {
     const had = fs.existsSync(grantFile);
     if (had) fs.renameSync(grantFile, bak);
     try {
-      const attack = hookExit(
-        'bash-write-guard.sh',
-        bash("python3 - <<'PY'\nopen('.github/workflows/ci.yml','w').write('x')\nPY"),
-      );
-      if (attack !== 2) return [false, `解释器写红区返回 exit ${attack},期望 2(旁路仍在)`];
-      const benign = hookExit(
-        'bash-write-guard.sh',
-        bash("python3 - <<'PY'\nopen('CODEMAP.md').read()\nPY"),
-      );
-      if (benign !== 0)
-        return [false, `只碰非红区的 heredoc 返回 exit ${benign},期望 0(规则过宽会逼人绕过)`];
-      return [true, ''];
+      // ⭐ 攻击那条**也**要在门禁已过的前提下跑:门禁未过时它会被门禁拦成 exit 2,
+      //    断言照样绿 —— 而那时红区判定有没有生效根本没被测到(假绿)。
+      return withPreflightPass((): [boolean, string] => {
+        const attack = hookExit(
+          'bash-write-guard.sh',
+          bash("python3 - <<'PY'\nopen('.github/workflows/ci.yml','w').write('x')\nPY"),
+        );
+        if (attack !== 2) return [false, `解释器写红区返回 exit ${attack},期望 2(旁路仍在)`];
+        const benign = hookExit(
+          'bash-write-guard.sh',
+          bash("python3 - <<'PY'\nopen('CODEMAP.md').read()\nPY"),
+        );
+        if (benign !== 0)
+          return [false, `只碰非红区的 heredoc 返回 exit ${benign},期望 0(规则过宽会逼人绕过)`];
+        return [true, ''];
+      });
     } finally {
       if (had) fs.renameSync(bak, grantFile);
     }
@@ -276,7 +315,11 @@ const probes: Record<string, () => [boolean, string]> = {
     return [code === 0, `提交信息里描述写侧命令被误拦(exit ${code})`];
   },
   'read-from-protected-allowed': () => {
-    const code = hookExit('bash-write-guard.sh', bash('cp .claude/hooks/redzone-guard.sh tmp/x.sh'));
+    // 目标 `tmp/x.sh` 是**仓内**相对路径 ⇒ 门禁未过时被拦是语义正确的(它确实在写本仓)。
+    // 本探针要测的是「源是受保护路径不构成拦截理由」,故须在门禁已过的前提下判。
+    const code = withPreflightPass(() =>
+      hookExit('bash-write-guard.sh', bash('cp .claude/hooks/redzone-guard.sh tmp/x.sh')),
+    );
     return [code === 0, `从受保护路径读出被误拦(exit ${code})`];
   },
   'outside-repo-allowed': () => {
