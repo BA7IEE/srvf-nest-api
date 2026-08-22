@@ -3092,14 +3092,19 @@ export const BizCode = {
   // 2026-07-13 起闸扩为单一控制面谓词:上述保留码 ∪ rbac.* ∪ role-binding.*；
   // 非 SUPER_ADMIN 命中任一 → 本码(整批拒绝,不部分写入)。保留码单一来源:
   // src/modules/permissions/reserved-super-admin-permission-codes.ts。
+  //
+  // 本码的口径是**「非 SUPER_ADMIN 不得改动控制面权限映射」**,授、撤两侧同口径,
+  // 语义自 E-B2(#1122)收口后一字未变。SUPER_ADMIN 走短路。
+  // ⚠️ 那 7 条保留码对 SUPER_ADMIN 的**授码**限制是**另一条规则**,用 30109,别混进本码 ——
+  //    本码的前缀族里有 `rbac.permission.read` 这类纯只读码,SA 建只读观察员角色是合法用途。
   PERMISSION_RESERVED_SUPER_ADMIN_ONLY: {
     code: 30103,
     message: '该权限点仅超级管理员可分配',
     httpStatus: HttpStatus.FORBIDDEN,
   },
-  // 第一档安全收口 D3(2026-07-13):7 个 seed 内置 RbacRole 是系统基座，任何身份(含
+  // 第一档安全收口 D3(2026-07-13):seed 内置 RbacRole 是系统基座，任何身份(含
   // SUPER_ADMIN)均不得经 API 软删；自定义角色删除逻辑不变。保护清单唯一来源:
-  // src/modules/permissions/protected-role-codes.ts。
+  // src/modules/permissions/protected-role-codes.ts(v0.61.0 起 15 个)。
   PROTECTED_ROLE_DELETE_FORBIDDEN: {
     code: 30104,
     message: '系统内置角色不允许删除',
@@ -3129,6 +3134,52 @@ export const BizCode = {
     code: 30106,
     message: '权限码由系统定义,不能在此新建;新增权限点需要改代码并发版,请联系开发者',
     httpStatus: HttpStatus.BAD_REQUEST,
+  },
+
+  // 系统角色运行时只读(P1-32 PR 3a;2026-08-23)——— 与 30104 同族,同一份清单
+  // (src/modules/permissions/protected-role-codes.ts),只是把保护面从「删」扩到「改」。
+  //
+  // 🔴 立项理由不是「权限过宽」,是**设计错误**:
+  //    org-readonly(副队长/副部长)与 group-readonly(副组长)的码集不是手工清单,
+  //    是从正职角色**过滤派生**的(isReadonlyProjectionCode)。运行时手改这些角色,
+  //    要么被下次 seed 原样覆盖,要么造出一份与派生链打架的第二份真相 ——
+  //    两种结果都是「管理员看到自己改成功了,实际没有」。故对 SUPER_ADMIN 也关上。
+  PROTECTED_ROLE_UPDATE_FORBIDDEN: {
+    code: 30107,
+    message: '系统内置角色的名称与描述由系统定义,不允许修改',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 同上,针对「角色 ↔ 权限」映射的增删。
+  //
+  // 🔴 这条堵的是一条**真实可利用路径**(不是理论):在它之前,持 rbac.role-permission.create
+  //    的 ops-admin 可以把 member-profile.read.sensitive(明文证件号 / 手机)加到 member
+  //    角色上 —— 控制面闸拦不住它(它不是那 7 条保留码),于是全体队员当场能看彼此明文 PII。
+  PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN: {
+    code: 30108,
+    message:
+      '系统内置角色的权限由系统定义,不允许在此增删;要调整授权范围,请新建自定义角色并绑给相应的人',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // 维护者 2026-08-22 拍板②的执行位(P1-32 PR 3a,2026-08-23):
+  // **那 7 条 SA-only 保留码「一条都不该进任何角色」** —— 授码侧对**任何身份都拒,含 SUPER_ADMIN**。
+  //
+  // 为什么连 SA 也拒:把保留码写进某角色的 role_permissions,就是让**持有该角色的非 SA**
+  // 永久拥有 SA-only 能力(改用户角色 / 重置各家 provider 凭证 / 软删队员),
+  // 由谁按下那一次按钮不改变结果。SA 依然能用 SA 身份直接做这些操作 ——
+  // 他走的是身份短路,根本不查 role_permissions。关掉的是「沉淀成角色常驻权限」这条路。
+  //
+  // ⚠️ **与 30103 是两条规则,别合并**:
+  //    - 30103 管「非 SA 不得改动控制面映射」,覆盖面含 `rbac.*` / `role-binding.*` 前缀族;
+  //    - 本码只管那 7 条保留码,但连 SA 也拦,且**只在授码侧**
+  //      (撤码侧保留 SA 通道 —— 历史脏数据的唯一清理路)。
+  //    合并会顺手把「SA 建一个 RBAC 只读观察员角色」也禁掉,那没有任何拍板支持。
+  // 保留码单一来源:src/modules/permissions/reserved-super-admin-permission-codes.ts。
+  RESERVED_PERMISSION_NOT_ROLE_GRANTABLE: {
+    code: 30109,
+    message:
+      '该权限点不能授予任何角色(包括超级管理员操作);它只对超级管理员本人生效,需要时请直接用超级管理员账号操作',
+    httpStatus: HttpStatus.FORBIDDEN,
   },
 
   // V2.x C-6 RBAC 实施 PR #6(2026-05-14):RbacService.can() 配套统一拒绝码。

@@ -3,13 +3,14 @@ import { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
+import type { BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
-import { PROTECTED_ROLE_CODE_SET } from './protected-role-codes';
+import { isProtectedRoleCode } from './protected-role-codes';
 import { RbacService } from './rbac.service';
 import {
   CreateRbacRoleDto,
@@ -102,6 +103,19 @@ export class RbacRolesService {
   private assertCodeFormatValid(code: string): void {
     if (!CODE_PATTERN.test(code)) {
       throw new BizException(BizCode.INVALID_ROLE_CODE_FORMAT);
+    }
+  }
+
+  // P1-32 PR 3a(2026-08-23):系统内置角色**运行时只读**的唯一闸(本 service 侧)。
+  //
+  // 入参带 denial 而不是各处自己写 if:改名与删除返不同码(30107 / 30104),
+  // 但「算不算内置角色」这个判定只能有一处 —— 判据锚的就是 isProtectedRoleCode。
+  //
+  // ⚠️ **对 SUPER_ADMIN 不放行**(与 30104 既有语义一致)。理由见 protected-role-codes.ts:
+  //    org-readonly / group-readonly 的码集是派生出来的,手改必被下次 seed 覆盖。
+  private assertRoleNotProtectedOrThrow(code: string, denial: BizCodeEntry): void {
+    if (isProtectedRoleCode(code)) {
+      throw new BizException(denial);
     }
   }
 
@@ -247,7 +261,12 @@ export class RbacRolesService {
     //    沿 docs/reference/soft-delete-transactions.md §10 信息泄漏防御);顺带取 before 快照。
     const before = await this.findActiveByIdOrThrow(id);
 
-    // 2. 更新 + audit(单事务;仅允许 displayName / description;DTO 层已白名单 +
+    // 2. P1-32 PR 3a:系统内置角色只读 —— 改名 / 改描述一律 30107(SUPER_ADMIN 也拒)。
+    //    次序刻意排在存在性判定**之后**:先按既有语义把「不存在 / 已软删」收敛成 30003,
+    //    再谈「这个角色能不能改」,避免用 30107 反向探测某 id 是不是内置角色。
+    this.assertRoleNotProtectedOrThrow(before.code, BizCode.PROTECTED_ROLE_UPDATE_FORBIDDEN);
+
+    // 3. 更新 + audit(单事务;仅允许 displayName / description;DTO 层已白名单 +
     //    ValidationPipe forbidNonWhitelisted 兜底)
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.rbacRole.update({
@@ -279,9 +298,9 @@ export class RbacRolesService {
     await this.assertCanOrThrow(user, 'rbac.role.delete');
     // 1. 先确认活跃(不存在 + 已软删都返 30003)
     const existing = await this.findActiveByIdOrThrow(id);
-    if (PROTECTED_ROLE_CODE_SET.has(existing.code)) {
-      throw new BizException(BizCode.PROTECTED_ROLE_DELETE_FORBIDDEN);
-    }
+    // P1-32 PR 3a:改走与 update 共用的同一道闸(行为不变,仍是 30104);
+    // 判定从行内 `.has()` 收进 isProtectedRoleCode,让「过没过闸」对机器判据可见。
+    this.assertRoleNotProtectedOrThrow(existing.code, BizCode.PROTECTED_ROLE_DELETE_FORBIDDEN);
 
     // 2. 软删 + audit(单事务;D4 v1.0;
     //    沿 docs/reference/soft-delete-transactions.md §10:update deletedAt = new Date();

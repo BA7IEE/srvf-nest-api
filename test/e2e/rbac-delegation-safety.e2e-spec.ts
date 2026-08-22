@@ -385,7 +385,11 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
       },
     );
 
-    it('SUPER_ADMIN 可授控制面码；ops-admin 授业务码不受影响', async () => {
+    // ⚠️ 这两条码是 `rbac.*` / `role-binding.*` **前缀族**,不是那 7 条保留码 ——
+    //    P1-32 PR 3a 对 SUPER_ADMIN 的收紧**只覆盖保留码**,前缀族语义一字未变。
+    //    (前缀族里有 `rbac.permission.read` 这类纯只读码,SA 建「RBAC 只读观察员」
+    //     角色是合法用途;砍掉它没有任何拍板支持。保留码那条见下面单独一个用例。)
+    it('SUPER_ADMIN 可授控制面前缀族码；ops-admin 授业务码不受影响', async () => {
       const saRole = await prisma.rbacRole.create({
         data: { code: 'rd-grant-sa', displayName: '超级管理员授码测试角色' },
         select: { id: true },
@@ -405,6 +409,24 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
         .set('Authorization', opsAdminAuth)
         .send({ permissionCodes: ['rd-business.manage.record'] });
       expect(businessRes.status).toBe(201);
+    });
+
+    // P1-32 PR 3a:拍板②「7 条保留码一条都不该进任何角色」的执行位。
+    // 与上一条形成**对照**:同是「控制面码 + SUPER_ADMIN」,前缀族放行、保留码拒绝 ——
+    // 两条并排放,才能证明收紧确实只落在保留码那一维上,不是一刀切。
+    it('SUPER_ADMIN 也不能把保留码授给角色 → 30109,且一条都没写进去', async () => {
+      const role = await prisma.rbacRole.create({
+        data: { code: 'rd-grant-reserved-sa', displayName: '保留码授码测试角色' },
+        select: { id: true },
+      });
+      expectBizError(
+        await request(httpServer(app))
+          .post(`/api/system/v1/roles/${role.id}/permissions`)
+          .set('Authorization', superAdminAuth)
+          .send({ permissionCodes: ['user.update.role'] }),
+        BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE,
+      );
+      expect(await prisma.rolePermission.count({ where: { roleId: role.id } })).toBe(0);
     });
   });
 
@@ -426,6 +448,152 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
         .set('Authorization', superAdminAuth);
       expect(res.status).toBe(200);
       expect(res.body.data.code).toBe('rd-delete-custom');
+    });
+  });
+
+  // ============ P1-32 PR 3a(2026-08-23):内建角色运行时只读 ============
+  //
+  // D3 只锁住了「删」。改名、加权限、减权限在此之前**一个拦阻都没有** ——
+  // `PROTECTED_ROLE_CODE_SET` 全仓只被 softDelete 查过一次。
+  //
+  // 🔴 下面第一条是本刀存在的理由,不是补充覆盖:它是一条**真实可利用路径**。
+  //    ops-admin 持 rbac.role-permission.create,把 member-profile.read.sensitive
+  //    (明文证件号 / 手机)加到 member 角色上 —— 控制面闸拦不住(它不是那 7 条保留码),
+  //    于是全体队员当场能看彼此明文 PII。
+  describe('PR 3a:15 个内建角色运行时只读(改名 / 加权限 / 减权限)', () => {
+    const SENSITIVE_CODE = 'member-profile.read.sensitive';
+
+    beforeAll(async () => {
+      // 该码由 prisma/seed.ts 定义,但 resetDb 清空了 RBAC 表且 rbac.fixture 不含它。
+      await prisma.permission.upsert({
+        where: { code: SENSITIVE_CODE },
+        update: {},
+        create: {
+          code: SENSITIVE_CODE,
+          module: 'member-profile',
+          action: 'read',
+          resourceType: 'sensitive',
+        },
+      });
+    });
+
+    it('⭐ ops-admin 把 member-profile.read.sensitive 加到 member 角色 → 30108,且一条都没写进去', async () => {
+      const memberRoleId = getRoleId('member');
+      const before = await prisma.rolePermission.count({ where: { roleId: memberRoleId } });
+
+      expectBizError(
+        await request(httpServer(app))
+          .post(`/api/system/v1/roles/${memberRoleId}/permissions`)
+          .set('Authorization', opsAdminAuth)
+          .send({ permissionCodes: [SENSITIVE_CODE] }),
+        BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
+      );
+
+      // 拒绝 = 什么都没写(闸在事务之前);顺带钉住「明文 PII 那条码确实没绑上去」
+      expect(await prisma.rolePermission.count({ where: { roleId: memberRoleId } })).toBe(before);
+      const sensitive = await prisma.permission.findUniqueOrThrow({
+        where: { code: SENSITIVE_CODE },
+        select: { id: true },
+      });
+      const leaked = await prisma.rolePermission.findUnique({
+        where: {
+          roleId_permissionId: { roleId: memberRoleId, permissionId: sensitive.id },
+        },
+        select: { id: true },
+      });
+      expect(leaked).toBeNull();
+    });
+
+    it.each(PROTECTED_ROLE_CODES)('%s 改名即使 SUPER_ADMIN 也 → 30107', async (roleCode) => {
+      expectBizError(
+        await request(httpServer(app))
+          .patch(`/api/system/v1/roles/${getRoleId(roleCode)}`)
+          .set('Authorization', superAdminAuth)
+          .send({ displayName: '被改名的内建角色' }),
+        BizCode.PROTECTED_ROLE_UPDATE_FORBIDDEN,
+      );
+      // 真没改(不是「返错码但已落库」)
+      const row = await prisma.rbacRole.findUniqueOrThrow({
+        where: { code: roleCode },
+        select: { displayName: true },
+      });
+      expect(row.displayName).not.toBe('被改名的内建角色');
+    });
+
+    it.each(PROTECTED_ROLE_CODES)('%s 加权限即使 SUPER_ADMIN 也 → 30108', async (roleCode) => {
+      expectBizError(
+        await request(httpServer(app))
+          .post(`/api/system/v1/roles/${getRoleId(roleCode)}/permissions`)
+          .set('Authorization', superAdminAuth)
+          .send({ permissionCodes: ['rd-business.manage.record'] }),
+        BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
+      );
+    });
+
+    it('内建角色减权限即使 SUPER_ADMIN 也 → 30108,且既有映射原样还在', async () => {
+      // 直插一条内建角色上的映射(内建角色的映射本来就由 seed 造,不经 API)
+      const roleId = getRoleId('org-readonly');
+      const perm = await prisma.permission.findUniqueOrThrow({
+        where: { code: 'rd-business.manage.record' },
+        select: { id: true },
+      });
+      await prisma.rolePermission.createMany({
+        data: [{ roleId, permissionId: perm.id }],
+        skipDuplicates: true,
+      });
+
+      expectBizError(
+        await request(httpServer(app))
+          .delete(`/api/system/v1/roles/${roleId}/permissions/${perm.id}`)
+          .set('Authorization', superAdminAuth),
+        BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
+      );
+
+      const still = await prisma.rolePermission.findUnique({
+        where: { roleId_permissionId: { roleId, permissionId: perm.id } },
+        select: { id: true },
+      });
+      expect(still).not.toBeNull();
+    });
+
+    // 🔴 反向用例,**不能省**。只验「该拦的拦住了」的话,一个「角色写操作一律拒绝」的
+    //    实现也会让上面全绿 —— 那不是修洞,那是把整个角色管理功能废掉。
+    describe('反向:自定义角色的改名 / 授权 / 撤权全部照常', () => {
+      it('自定义角色改名 → 200', async () => {
+        const custom = await prisma.rbacRole.create({
+          data: { code: 'rd-3a-rename-ok', displayName: '旧名' },
+          select: { id: true },
+        });
+        const res = await request(httpServer(app))
+          .patch(`/api/system/v1/roles/${custom.id}`)
+          .set('Authorization', superAdminAuth)
+          .send({ displayName: '新名' });
+        expect(res.status).toBe(200);
+        expect(res.body.data.displayName).toBe('新名');
+      });
+
+      it('ops-admin 给自定义角色授业务码 → 201,再撤 → 200', async () => {
+        const custom = await prisma.rbacRole.create({
+          data: { code: 'rd-3a-grant-ok', displayName: '自定义可授角色' },
+          select: { id: true },
+        });
+        const granted = await request(httpServer(app))
+          .post(`/api/system/v1/roles/${custom.id}/permissions`)
+          .set('Authorization', opsAdminAuth)
+          .send({ permissionCodes: ['rd-business.manage.record'] });
+        expect(granted.status).toBe(201);
+        expect(granted.body.data.permissions).toHaveLength(1);
+
+        const perm = await prisma.permission.findUniqueOrThrow({
+          where: { code: 'rd-business.manage.record' },
+          select: { id: true },
+        });
+        const revoked = await request(httpServer(app))
+          .delete(`/api/system/v1/roles/${custom.id}/permissions/${perm.id}`)
+          .set('Authorization', opsAdminAuth);
+        expect(revoked.status).toBe(200);
+        expect(revoked.body.data.permissions).toHaveLength(0);
+      });
     });
   });
 });

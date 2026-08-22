@@ -81,7 +81,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 | IF v1:ServicePrincipal / DelegationGrant 建表数 | **0** | `prisma/schema.prisma` |
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **0** | `src/**/*.ts(不含 .spec.ts)` |
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **1** | `src/modules/permissions/` |
-| P1-32 PR3 已抽出的那半边:撤码是否复用控制面闸 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
+| P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **237** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **63 / 95(32 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |

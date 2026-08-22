@@ -134,7 +134,7 @@ export class RbacRolesController {
   @RequiresPermission('rbac.role.update')
   @ApiOperation({
     summary:
-      '更新角色(仅 displayName / description;code 不可改;不存在或已软删返 30003) [rbac: rbac.role.update]',
+      '更新角色(仅 displayName / description;code 不可改;不存在或已软删返 30003;系统内置角色只读返 30107,含 SUPER_ADMIN) [rbac: rbac.role.update]',
   })
   @ApiWrappedOkResponse(RbacRoleResponseDto)
   @ApiBizErrorResponse(
@@ -142,6 +142,7 @@ export class RbacRolesController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ROLE_NOT_FOUND,
+    BizCode.PROTECTED_ROLE_UPDATE_FORBIDDEN,
   )
   update(
     @CurrentUser() user: CurrentUserPayload,
@@ -156,7 +157,7 @@ export class RbacRolesController {
   @RequiresPermission('rbac.role.delete')
   @ApiOperation({
     summary:
-      '软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003) [rbac: rbac.role.delete]',
+      '软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003;系统内置角色禁删返 30104,含 SUPER_ADMIN) [rbac: rbac.role.delete]',
   })
   @ApiWrappedOkResponse(RbacRoleResponseDto)
   @ApiBizErrorResponse(
@@ -164,6 +165,7 @@ export class RbacRolesController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ROLE_NOT_FOUND,
+    BizCode.PROTECTED_ROLE_DELETE_FORBIDDEN,
   )
   delete(
     @CurrentUser() user: CurrentUserPayload,
