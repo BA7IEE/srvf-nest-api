@@ -585,19 +585,6 @@ export class RecruitmentPromotionService {
       },
       select: { id: true },
     });
-    // 已烧号台账(2026-08-22):发号即烧号,与建档**同一个事务**。
-    //
-    // ⚠️ 本路径**从不调** `assertMemberNoUnique` —— 号是从 `RecruitmentCycle.memberNoSeq`
-    //    取的,唯一性一向靠 DB 约束 + P2002 兜底(上方两个调用点的 catch → 28042
-    //    「整批回滚不跳号」)。本行插进来之后,台账的唯一约束自动接管同一条兜底路径:
-    //    撞上一个**已烧但已无人持有**的号(例如被订正腾出来的),照样 P2002 → 28042,
-    //    零改判逻辑、零新错误码。
-    //
-    // ⭐ 为什么这条路径真的会撞:`RecruitmentCycle.year` **没有唯一约束**,而 `memberNoSeq`
-    //    是**每个 cycle 各自从 0 起算**的。同一年开两个轮次 ⇒ 两轮都会发 `26001`。
-    //    此前靠 `Member.memberNo` 的唯一键挡住;号一旦被订正腾空,那道键就失效了 ——
-    //    台账是这里唯一还站着的防线。
-    await burnMemberNo(tx, { memberNo, memberId: member.id, reason: 'promoted', now });
     // VOL 归口部门 —— 终态 scoped-authz PR2:重指向 member_organization_memberships 的 PRIMARY 行
     //(默认 membershipType=PRIMARY/status=ACTIVE = 旧单部门语义;primary_active_unique 兜底:此刻仅此一条 active PRIMARY)。
     await tx.memberOrganizationMembership.create({
@@ -653,6 +640,27 @@ export class RecruitmentPromotionService {
       },
       select: { id: true },
     });
+    // 已烧号台账(2026-08-22):发号即烧号,与建档**同一个事务**。
+    //
+    // ⚠️ 本路径**从不调** `assertMemberNoUnique` —— 号是从 `RecruitmentCycle.memberNoSeq`
+    //    取的,唯一性一向靠 DB 约束 + P2002 兜底(两个调用点的 catch → 28042「整批回滚
+    //    不跳号」)。本行插进来之后台账的唯一约束自动接管同一条兜底路径:撞上一个**已烧
+    //    但已无人持有**的号(例如被订正腾出来的),照样 P2002 → 28042,零改判、零新错误码。
+    //
+    // ⭐ 为什么这条路径真的会撞:`RecruitmentCycle.year` **没有唯一约束**,而 `memberNoSeq`
+    //    是**每个 cycle 各自从 0 起算**的 ⇒ 同一年开两个轮次都会发 `26001`。此前靠
+    //    `Member.memberNo` 的唯一键挡住;号一旦被订正腾空,那道键就失效了 ——
+    //    台账是这里唯一还站着的防线。
+    //
+    // ⚠️ **为什么排在这里而不是紧贴上面的 `member.create`**:业务上同事务内先后无差别,
+    //    这个位置是**边界债台账的身份口径**要求的。`harness/architecture-debt.json` 的
+    //    callSiteId 取自节点的 AST 路径,其位置分量是「**同类兄弟语句**中的序号」
+    //    (边界扫描器的 `pathStep`,注释原话:index among *same-kind* siblings only)。
+    //    把本行插在 membership / user / profile 那三条 `await` 之前,会把它们整体前移
+    //    一位 ⇒ 三条**一行未动**的存量债当场改号,`docs:boundaries:ids:check` 判 unmatched
+    //    而红;而它们并没有移动过,改号会让台账谎称"旧债消失、新债出现"。排在三条之后
+    //    则一条也不动。**在这段里加语句的人请照此办理**(或者接受迁台账那条更贵的路)。
+    await burnMemberNo(tx, { memberNo, memberId: member.id, reason: 'promoted', now });
     // EmergencyContact(Json → 行;priority=序)
     // 本次修订前为「relationCode 原样 best-effort」→ 绕过字典校验持久化非法码(#399 F3)。
     // 现复用 canonical assertEmergencyRelationCodeValid(纯函数、直连 tx,不引 service;防环铁律不破):
