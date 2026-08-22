@@ -92,7 +92,7 @@ V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威
 
 - ❌ `archive/handoff/v*.md`:已合入的 release 历史快照,字段、状态、PR 编号都冻结在 release 时刻;**当前版本状态以 [`current-state.md`](./current-state.md) §1 为准**
 - ❌ `archive/reviews/**`:评审稿在被实施落地后,**实施细节会演进**(BizCode 段位补全、字段命名调整、限流参数调整);**实际代码以 `src/**` 为准**
-  - ⚠️ **例外 —— 已冻结但尚未实施的 T0 评审稿是施工依据,不适用上一条**。当前两份:`wecom-integration-t0-terminal-review.md`(企业微信;T1–T5B 代码已合入,T6 剩「维护者执行」项)与 [`integration-foundation-v1-t0-terminal-review.md`](./archive/reviews/integration-foundation-v1-t0-terminal-review.md)(**通用系统集成地基 Integration Foundation v1**;T0 已冻结,PR1–PR8 **一行未实施**)(沿 `archive/plans/harness-3.0-blueprint.md` 先例)。它**实施完成后**才转为「以 `src/**` 为准」的历史证据;在此之前,实施若需偏离,必须暂停并另出 superseding 评审稿,**不得顺手回改冻结稿**。哪份处于哪个阶段以 [`ai-harness/NEXT_TASKS.md`](./ai-harness/NEXT_TASKS.md) 为准
+  - ⚠️ **例外 —— 已冻结但尚未实施的 T0 评审稿是施工依据,不适用上一条**。**当前哪几份处于这个阶段,以 [`ai-harness/FROZEN_DRAFTS.md`](./ai-harness/FROZEN_DRAFTS.md) 的 §3 `open` 行为准**,不在本行写死 —— 本行原先写「当前两份」,实测已漏登 `rbac-permission-catalog-t0-review.md` 与整个 `activity-business-overhaul-v1.1/`;漏登**不产生坏链接**,所以既有守护一次都没响过,现由那份台账的完整性闸接管(沿 `archive/plans/harness-3.0-blueprint.md` 先例)。它**实施完成后**才转为「以 `src/**` 为准」的历史证据;在此之前,实施若需偏离,必须暂停并另出 superseding 评审稿,**不得顺手回改冻结稿**。哪份处于哪个阶段以 [`ai-harness/NEXT_TASKS.md`](./ai-harness/NEXT_TASKS.md) 为准
   - 📌 **`certificate-standard-library-t0-review.md` 已实施完毕(2026-07-30)**,但它有一份**并列有效**的 post-freeze 修正:[`certificate-standard-library-t0-amendments.md`](./archive/reviews/certificate-standard-library-t0-amendments.md)。冻结稿正文一个字未改 —— 冻结的价值在于「当时到底是怎么定的」可复原,回改会让所有引用它的 PR 描述与审计记录指向一份已经不同的文本。**读需求时两份都要读,冲突以 amendments 为准。**
 - ❌ `archive/batches/**`:各批次冻结时刻的业务决议;**业务诉求若发生变化,需通过新的评审稿覆盖**
 - ❌ `archive/plans/**`:阶段开始前的执行计划;**实际执行可能偏离计划**
