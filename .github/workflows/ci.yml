@@ -13,7 +13,7 @@ name: CI
 #   fast(lint/typecheck/docs guards/build/unit;无 Postgres,~5m30s)──┤
 #   harness-selftest(守卫自测 + eslint 阳性对照;恒跑,~5m30s)────────┤
 #   harness-replay(事故回放 + 反向案例;恒跑,~4m)──────────────────┤
-#   slow(contract + e2e 并行;docs-only 跳过,~15m)◄─ changeset ──────┤
+#   slow(contract + e2e 五分片并行;docs-only 跳过)◄─ changeset ──────┤
 #   journeys(金五条独立库 / 单 worker;docs-only 跳过)◄─ changeset ───┤
 #   gate(name 恒为 'Lint / Typecheck / E2E';needs 含上列全部)◄────────┘
 #
@@ -388,7 +388,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5]
     # 旧单 job 有两次超时误杀前科(147 suites/15m → 误杀;177 suites/25m → 再误杀 → 提到 35m)。
     # 并行化实测(2026-07-28,PR #801 首跑,run 30361346317,195 suites / 4 vCPU / 2 worker):
     #   本 job 12m17s,其中 e2e 步骤 11m23s(改前单 job 25m59s、e2e 步骤 22m14s)。
@@ -402,6 +402,19 @@ jobs:
     #   三分片后 e2e 部分 ~9m,分片 1 合计 ~12m,恢复到 2 倍余量。
     #   未把 contract 挪成独立 job:每 job 重装依赖 + 起 PostgreSQL 约 4m 启动开销,
     #   为省 3m 多开一个 job 不划算。
+    #
+    # 2026-08-23 三分片 → 五分片(CI 提速刀②,维护者拍板;非超时驱动,是墙钟驱动):
+    #   基线 = 刀①(转译模式,#1149)合入后的 main run 32591391154:
+    #   e2e 步骤 8m56s / 13m28s / 8m47s(304 specs),全 run 墙钟 14m06s —— slow 是
+    #   唯一关键路径,e2e 总量 ~31 worker-min 摊 3 台的商就是墙钟地板。
+    #   为什么是 5 不是 6+:账号级 20 并发 job 上限(Free plan),五分片单 run 峰值
+    #   ~11 job,两条 run 并飞才轻度排队;六片起单 run 就把并飞挤成常态排队。
+    #   ⚠️ 已知不均衡(与 2026-08-16 那段「设计使然」不同源,是 jest --shard 本身):
+    #   --shard 按**文件数**均分(实测 102/101/101),不按耗时 —— 同 run 里片间耗时
+    #   差 43–53%,单 spec 硬地板 notification-outbox 205s / allocation-command-replay
+    #   169s 落在哪片哪片就慢。故五分片的预期是「最慢片 e2e ~7–9m、墙钟 ~9m」而非
+    #   理想商 6.2m;若实测显著差于此,下一刀是按耗时加权分片,不是继续加片。
+    #   timeout 25m 不动:对预期最慢片 ~9m 是 2.7x 余量,与历史校准一致。
     #
     # ⚠️ 改 timeout 之前先看**实际耗时趋势**:本 job 每次都打印各步骤时长,
     # 撞线前通常已有连续多次逼近的读数。抬 timeout 是治标,套件继续长就会有第四次。
@@ -484,7 +497,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p tmp
-          pnpm test:e2e --shard=${{ matrix.shard }}/3 2>&1 | tee tmp/e2e.log
+          pnpm test:e2e --shard=${{ matrix.shard }}/5 2>&1 | tee tmp/e2e.log
           if grep -q 'failed to exit gracefully' tmp/e2e.log; then
             echo "::warning::并行 e2e 出现 worker 强制退出(本仓已知基线,非硬失败)。若近期新增/改动了 spec,请核对 afterAll 是否 app.close();权威检测见 nightly-e2e-leaks.yml,本地复现:pnpm test:e2e:leaks"
           fi

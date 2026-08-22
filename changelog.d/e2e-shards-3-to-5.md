@@ -1,0 +1,3 @@
+### Changed
+
+- CI 提速刀②(维护者 2026-08-23 拍板,与刀① #1149 同一批授权):PR CI 的 e2e 分片 3 → 5(`ci.yml` slow job matrix + `--shard` 分母两处同改,selftest 的「矩阵片数 == 分母」守护同判通过)。**纯 CI 拓扑改动,不改任何测试本身**;每片仍是「4 vCPU + 同机 postgres + 2 worker」,`JEST_MAX_WORKERS` 不动。基线(刀①合入后的 main run 32591391154):e2e 步骤 8m56s / 13m28s / 8m47s,全 run 墙钟 14m06s —— e2e 总量 ~31 worker-min 摊 3 台就是墙钟地板,分片数是唯一真杠杆(刀①实测已证编译器不是)。**分片数变了,「每片耗时”与旧读数不可比,结论只比全 run 墙钟**;预期墙钟 ~9m(非理想商 6.2m:jest `--shard` 按**文件数**均分不按耗时 —— 实测文件数 102/101/101 全等而片间耗时差 43–53%,单 spec 硬地板 notification-outbox 205s / allocation-command-replay-migration 169s 落在哪片哪片慢)。不一步到 6 片:账号级 20 并发 job 上限下,五分片单 run 峰值 ~11 job,再加片会把两条 run 并飞挤成常态排队。若实测显著差于预期,下一刀形态是**按耗时加权分片**(自定义 sequencer 或拆最慢 spec),不是继续加片 —— 证据链已在 PR 登记。
