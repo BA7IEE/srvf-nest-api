@@ -706,6 +706,85 @@ function machineReadableManifest(endpointList: Endpoint[]): string {
   );
 }
 
+/**
+ * 「权限码 → 它守着的端点集合」聚合视图。
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * 为什么需要它(第三轮跨模型复核 §8 逼出来的)
+ *
+ * **权限码总数不变,不能证明权限说明没过期。** 一个已有的码可以在未来长出第二、
+ * 第三个消费入口,而总数纹丝不动 —— 已有判据(码数 237 / 闭包并集 / 角色持有人)
+ * 全部照绿。
+ *
+ * 真实事故:B7 受众标签那批加了 **3 个新端点、零个新权限码**,
+ * `member.read.record` / `member.update.record` / `activity.publish.record`
+ * 三条的说明当场过期,而**没有任何机器发现**;是第三轮人工复核抓到的。
+ *
+ * 实测(2026-08-22):**217 个有端点的码里,70 个(32%)守多于一个端点** ——
+ * 说明过期不是偶发,是结构上必然持续发生。
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * 🔴 本节做到什么、**没做到**什么(起草时口径对照实测,不要误读)
+ *
+ * **没做到:它不增加任何检测能力。** 起草时做过口径对照 —— 把本节从生成器里摘掉,
+ * 「已有码长出新端点」的变异**照样**让 `docs:authz:check` 变红,因为
+ * `## All endpoints` 那一节本来就会跟着变。
+ *
+ * ⇒ B7 当时**确实**触发过红,有人重新生成、红就消了 —— 而**重新生成不碰任何说明**。
+ * 所以真正缺的不是检测,是「**说明与管辖面之间没有绑定**」;而说明此刻还不在仓内
+ * (PR 0 的产出),没有东西可绑。
+ *
+ * **做到的两件:**
+ *   1. **归因**:改动 diff 从「某处多了 3 行」变成「`member.read.record` 从 5 个端点变成 6 个」;
+ *   2. **地基**:PR 0 的说明进仓后,可按码绑本节的端点集合做指纹 —— 面变了而说明没改即红。
+ *      那才是执行位,**不是本节**。已登记 NEXT_TASKS。
+ *
+ * ⚠️ 刻意**不新建生成物**:仓内已有四份生成物链条(openapi / ROUTE_AUTHZ /
+ * clients / contract 快照),每加一份都要付红区审批与串行代价。本节寄生在
+ * 已有的 ROUTE_AUTHZ 里,零新链条、零新 CI 接线。
+ *
+ * ⚠️ 按端点数**降序**排:多入口的码排最前,一眼看见谁的说明最容易过期。
+ */
+function renderCodeSurface(endpointList: Endpoint[]): string[] {
+  const byCode = new Map<string, Set<string>>();
+  for (const endpoint of endpointList) {
+    const codes = new Set<string>(endpoint.rbacCodes);
+    for (const entry of endpoint.codePolicy?.codes ?? []) codes.add(entry.code);
+    for (const code of codes) {
+      if (!code || code === '-') continue;
+      const set = byCode.get(code) ?? new Set<string>();
+      set.add(`${endpoint.method} ${endpoint.path}`);
+      byCode.set(code, set);
+    }
+  }
+
+  const ordered = [...byCode.entries()]
+    .map(([code, set]) => ({ code, endpoints: [...set].sort() }))
+    .sort((a, b) => b.endpoints.length - a.endpoints.length || a.code.localeCompare(b.code));
+  const multi = ordered.filter((row) => row.endpoints.length > 1);
+
+  return [
+    '## Permission code surface',
+    '',
+    `> 每条权限码守着哪些端点。**${ordered.length} 条码有端点;其中 ${multi.length} 条守多于一个端点。**`,
+    '>',
+    '> ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会',
+    '> 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」',
+    '> 本来就会让 `docs:authz:check` 变红(`All endpoints` 会跟着变),**本节不增加这份检测**;',
+    '> 它把改动 diff 从「某处多了几行」变成「**哪条码的管辖面变大了**」,并为后续绑定提供指纹源。',
+    '>',
+    '> 🔴 **真正的执行位还不存在**:说明与管辖面之间没有绑定,而说明此刻不在仓内(PR 0 产出)。',
+    '> 等说明进仓后按码绑本表做指纹(面变了而说明没改即红)才是执行位。已登记 NEXT_TASKS。',
+    '',
+    '| 权限码 | 端点数 | 端点 |',
+    '|---|---:|---|',
+    ...ordered.map(
+      (row) => `| \`${row.code}\` | ${row.endpoints.length} | ${row.endpoints.join(' · ')} |`,
+    ),
+    '',
+  ];
+}
+
 function render(endpointList: Endpoint[]): string {
   const counts = endpointList.reduce<Record<string, number>>((all, endpoint) => {
     all[endpoint.legacy] = (all[endpoint.legacy] ?? 0) + 1;
@@ -794,6 +873,7 @@ function render(endpointList: Endpoint[]): string {
     machineReadableManifest(endpointList),
     '-->',
     '',
+    ...renderCodeSurface(endpointList),
     '## All endpoints',
     '',
     '| method | path | tag family | legacy declaration | structured policy | truth source | evidence |',
