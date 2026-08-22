@@ -4,9 +4,11 @@
 
   **对 `SUPER_ADMIN` 同样关闭**,理由不是「权限过宽」而是「运行时可改本身就是设计错误」:`org-readonly`(副队长/副部长)与 `group-readonly`(副组长)的码集**不是手工清单,是从正职角色过滤派生的**(`isReadonlyProjectionCode`),手改必被下次 seed 覆盖,或造出一份与派生链打架的第二份真相 —— 给 SA 开口子等于允许他造一份注定被冲掉的假配置。四道闸一律锚在新增的共享谓词 `isProtectedRoleCode()` 上,禁止各处自己 `PROTECTED_ROLE_CODE_SET.has(...)`。
 
-- **控制面保留码不再能沉淀成角色的常驻权限**(P1-32 PR 3a):`assign()` 侧的 `SUPER_ADMIN` 短路已摘掉 —— 把控制面码(SA-only 保留码 ∪ `rbac.*` ∪ `role-binding.*`)写进某角色的 `role_permissions`,就是让**持有该角色的非 SA** 永久拥有控制面能力,由谁按下按钮不改变结果。SA 依然能用 SA 身份直接做任何控制面操作(他走身份短路,根本不查 `role_permissions`),本次关掉的只是「沉淀成角色常驻权限」这条路。
+- **7 条 SA-only 保留码不再能沉淀成角色的常驻权限**(P1-32 PR 3a,新 `30109`):沿维护者 2026-08-22 拍板②「一条都不该进任何角色」,`assign()` 对这 7 条码**任何身份都拒,含 `SUPER_ADMIN`** —— 把保留码写进某角色的 `role_permissions`,就是让**持有该角色的非 SA** 永久拥有 SA-only 能力(改用户角色 / 重置各家 provider 凭证 / 软删队员),由谁按下按钮不改变结果。SA 依然能用 SA 身份直接做这些操作(他走身份短路,根本不查 `role_permissions`),本次关掉的只是「沉淀成角色常驻权限」这条路。
 
-  ⚠️ **`revoke()` 侧刻意保留 SA 短路,这个不对称不是漏改**:seed 出来的角色本就不含控制面码(P1-32 PR 0 实测交集为 0),SA 可撤是给**历史脏数据**留的唯一清理路;非 SA 仍拒(E-B2 的「一侧有闸一侧没有」已收口)。下一个人不要把它当漏接闸补成对称 —— 收死之后最后一条清理入口就没了。判定收在同一个 `assertControlPlaneCodesOrThrow(user, codes, direction)` 里,两侧共用谓词、只有 `direction` 不同。
+  ⚠️ **收紧只覆盖那 7 条保留码,不覆盖 `rbac.*` / `role-binding.*` 前缀族**。前缀族里有 `rbac.permission.read` / `role-binding.read.record` 这类纯只读码,拍板②没说过要禁它们;把 SA 也拦住会当场取消「SUPER_ADMIN 建一个 RBAC 只读观察员角色」这个合法能力。因此 `30103`(非 SA 不得改动控制面映射,授撤同口径)语义**一字未变**,新增的 `30109` 只管保留码那一维。两条谓词 `isControlPlanePermissionCode` 与 `isReservedSuperAdminOnlyPermissionCode` 是真子集关系,**禁止合并**。
+
+  ⚠️ **`revoke()` 侧刻意没有这一层,不是漏改**:seed 出来的角色本就不含保留码(P1-32 PR 0 实测交集为 0),SA 可撤是给**历史脏数据**留的唯一清理路;非 SA 仍拒(E-B2 的「一侧有闸一侧没有」已收口)。下一个人不要把它当漏接闸补成对称 —— 收死之后最后一条清理入口就没了。
 
 ### Added
 

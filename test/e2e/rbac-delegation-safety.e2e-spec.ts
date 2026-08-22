@@ -385,22 +385,20 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
       },
     );
 
-    // P1-32 PR 3a(2026-08-23)**行为反转**:此前 SUPER_ADMIN 短路可授控制面码。
-    // 现在授码侧对任何身份都拒 —— 一旦沉淀成角色常驻权限,持有该角色的**非 SA**
-    // 就永久拥有控制面能力,而那正是本闸要杜绝的事。
-    it('SUPER_ADMIN 也授不了控制面码 → 30103；ops-admin 授业务码不受影响', async () => {
+    // ⚠️ 这两条码是 `rbac.*` / `role-binding.*` **前缀族**,不是那 7 条保留码 ——
+    //    P1-32 PR 3a 对 SUPER_ADMIN 的收紧**只覆盖保留码**,前缀族语义一字未变。
+    //    (前缀族里有 `rbac.permission.read` 这类纯只读码,SA 建「RBAC 只读观察员」
+    //     角色是合法用途;砍掉它没有任何拍板支持。保留码那条见下面单独一个用例。)
+    it('SUPER_ADMIN 可授控制面前缀族码；ops-admin 授业务码不受影响', async () => {
       const saRole = await prisma.rbacRole.create({
         data: { code: 'rd-grant-sa', displayName: '超级管理员授码测试角色' },
         select: { id: true },
       });
-      expectBizError(
-        await request(httpServer(app))
-          .post(`/api/system/v1/roles/${saRole.id}/permissions`)
-          .set('Authorization', superAdminAuth)
-          .send({ permissionCodes: ['rbac.permission.read', 'role-binding.create.record'] }),
-        BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY,
-      );
-      expect(await prisma.rolePermission.count({ where: { roleId: saRole.id } })).toBe(0);
+      const saRes = await request(httpServer(app))
+        .post(`/api/system/v1/roles/${saRole.id}/permissions`)
+        .set('Authorization', superAdminAuth)
+        .send({ permissionCodes: ['rbac.permission.read', 'role-binding.create.record'] });
+      expect(saRes.status).toBe(201);
 
       const businessRole = await prisma.rbacRole.create({
         data: { code: 'rd-grant-business', displayName: '业务授码测试角色' },
@@ -411,6 +409,24 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
         .set('Authorization', opsAdminAuth)
         .send({ permissionCodes: ['rd-business.manage.record'] });
       expect(businessRes.status).toBe(201);
+    });
+
+    // P1-32 PR 3a:拍板②「7 条保留码一条都不该进任何角色」的执行位。
+    // 与上一条形成**对照**:同是「控制面码 + SUPER_ADMIN」,前缀族放行、保留码拒绝 ——
+    // 两条并排放,才能证明收紧确实只落在保留码那一维上,不是一刀切。
+    it('SUPER_ADMIN 也不能把保留码授给角色 → 30109,且一条都没写进去', async () => {
+      const role = await prisma.rbacRole.create({
+        data: { code: 'rd-grant-reserved-sa', displayName: '保留码授码测试角色' },
+        select: { id: true },
+      });
+      expectBizError(
+        await request(httpServer(app))
+          .post(`/api/system/v1/roles/${role.id}/permissions`)
+          .set('Authorization', superAdminAuth)
+          .send({ permissionCodes: ['user.update.role'] }),
+        BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE,
+      );
+      expect(await prisma.rolePermission.count({ where: { roleId: role.id } })).toBe(0);
     });
   });
 

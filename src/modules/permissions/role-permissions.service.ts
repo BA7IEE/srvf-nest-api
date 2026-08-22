@@ -13,7 +13,10 @@ import { RbacService } from './rbac.service';
 import { RbacRoleDetailResponseDto } from './rbac-roles.dto';
 import { rbacRoleSelect } from './rbac-roles.select';
 import { AssignRolePermissionsDto } from './role-permissions.dto';
-import { isControlPlanePermissionCode } from './role-delegation.policy';
+import {
+  isControlPlanePermissionCode,
+  isReservedSuperAdminOnlyPermissionCode,
+} from './role-delegation.policy';
 
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表业务逻辑。
 // 沿 D7 v1.1 §5.1 端点 10-11 + §6.1 + 用户拍板。
@@ -69,35 +72,50 @@ export class RolePermissionsService {
   //    这与刚修完的 E-B1(#1115)同属一个缺陷家族:**一侧有闸、另一侧没有**。
   //    机器执法见同目录 role-permissions-control-plane-gate.spec.ts —— 该判据动态现取
   //    本类所有会改写 rolePermission 映射的公开方法,逐个要求能到达本闸,漏一个即红。
-  //    (共用 ≠ 两侧判定全等:SUPER_ADMIN 在授侧也拒、在撤侧放行,见下面 direction 一节。)
+  //    (共用 ≠ 两侧判定全等:保留码在授侧对 SUPER_ADMIN 也拒,见下面第 2 层。)
   //
-  // 设计:
-  // - 在权限码(已去重)字符串层面拦截;命中即整批拒绝(不部分写入),与 30001 整批拒绝语义一致;
-  // - assign() 收 codes,故能**早于** Permission 存在性查询拦下 —— 即便保留码尚未 seed,
-  //   也拿 30103(fail-close,不退化成 30001 泄漏存在性)。
+  // 🔴 **两层口径,别混成一层**(P1-32 PR 3a,2026-08-23):
   //
-  // 🔴 **direction 决定 SUPER_ADMIN 短不短路 —— 这个不对称是刻意的**(P1-32 PR 3a,2026-08-23):
+  //   第 1 层 · 非 SUPER_ADMIN → 控制面码一律拒(`30103`)。授、撤两侧同口径,
+  //     语义**一字未变**(E-B2 收口后就是这样)。
   //
-  //   - `'grant'`:**任何身份都拒,含 SUPER_ADMIN**。原先 SA 短路,于是 SA 可以把保留码
-  //     沉淀成某个角色的常驻权限;一旦沉淀,持有该角色的**非 SA** 就永久拥有控制面能力,
-  //     而那正是本闸要杜绝的事 —— 由谁按下按钮不改变结果。SA 依然能用 SA 身份直接做
-  //     控制面操作(SA 走身份短路,根本不查 role_permissions),所以关掉的是
-  //     「沉淀成角色常驻权限」这条路,**不是削 SA 的权**。
+  //   第 2 层 · 那 7 条 SA-only 保留码,**授码侧连 SUPER_ADMIN 也拒**(`30109`)。
+  //     沿维护者 2026-08-22 拍板②「一条都不该进任何角色」:把保留码写进某角色的
+  //     role_permissions,就是让**持有该角色的非 SA** 永久拥有 SA-only 能力 ——
+  //     由谁按下按钮不改变结果。SA 依然能用 SA 身份直接做那些操作(走身份短路,
+  //     根本不查 role_permissions),所以关掉的是「沉淀成角色常驻权限」这条路,
+  //     **不是削 SA 的权**。
   //
-  //   - `'revoke'`:**SUPER_ADMIN 仍放行**。seed 出来的角色本就不含控制面码
-  //     (P1-32 PR 0 实测交集为 0),保留 SA 可撤是给**历史脏数据**留一条清理路;
-  //     非 SA 仍拒(E-B2 「一侧有闸一侧没有」的洞已收口,不要顺手把这条也补成对称)。
+  //   ⚠️ **第 2 层只覆盖保留码,不覆盖 `rbac.*` / `role-binding.*` 前缀族。**
+  //      前缀族里有 `rbac.permission.read`、`role-binding.read.record` 这类纯只读码,
+  //      拍板②说的是「7 条保留码」,没说过要禁掉它们;把 SA 也拦住会当场取消
+  //      「SUPER_ADMIN 建一个 RBAC 只读观察员角色」这个能力,并打掉
+  //      rbac-multi-instance-consistency e2e 赖以证明「权限解析直读 DB」的那条授权。
+  //      (起草本刀时我把两者当成一回事,CI 上那条 e2e 是发现它的唯一信号。)
   //
-  //   ⚠️ 下一个读到这里的人:两侧不同**不是漏改**。要改的话先想清楚,
-  //      把 grant 侧放开等于把 PR 3a 的决策原路退回;把 revoke 侧收死则最后一条清理路没了。
+  //   ⚠️ **撤码侧刻意没有第 2 层**:seed 出来的角色本就不含保留码
+  //      (P1-32 PR 0 实测交集为 0),保留 SA 可撤是给**历史脏数据**留唯一清理路。
+  //      两侧不同**不是漏改** —— 收死之后最后一条清理入口就没了。
+  //
+  // 设计:在权限码(已去重)字符串层面拦截;命中即整批拒绝(不部分写入),
+  // 与 30001 整批拒绝语义一致。assign() 收 codes,故能**早于** Permission 存在性查询
+  // 拦下 —— 即便保留码尚未 seed,也拿拒绝码(fail-close,不退化成 30001 泄漏存在性)。
   private assertControlPlaneCodesOrThrow(
     user: CurrentUserPayload,
     uniqueCodes: string[],
     direction: 'grant' | 'revoke',
   ): void {
-    if (!uniqueCodes.some(isControlPlanePermissionCode)) return;
-    if (direction === 'revoke' && user.role === Role.SUPER_ADMIN) return;
-    throw new BizException(BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
+    // 第 1 层:非 SA 碰控制面码即拒(两侧同口径,行为未变)。
+    if (user.role !== Role.SUPER_ADMIN) {
+      if (uniqueCodes.some(isControlPlanePermissionCode)) {
+        throw new BizException(BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
+      }
+      return;
+    }
+    // 第 2 层:SA 也不得把保留码沉淀成角色常驻权限(仅授码侧)。
+    if (direction === 'grant' && uniqueCodes.some(isReservedSuperAdminOnlyPermissionCode)) {
+      throw new BizException(BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE);
+    }
   }
 
   // 沿 PR #3 rbac-roles 范式:区分不存在(30003)vs 已软删(30005);

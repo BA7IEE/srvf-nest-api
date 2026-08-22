@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:a0518d602731dd716752c9d3ae957c6f7f502b587cb23ca40c41c6ed7e2fc068
+// inputDigest: sha256:8644abdaaa458e7d39f2dcfd0f72bb29242ddeee04ae3eb06b0bca0b94e1376a
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -307,11 +307,11 @@ export function createSystemClient(fetcher: Fetcher) {
     RbacRolesControllerDelete(id: string): Promise<ApiEnvelope<RbacRoleResponseDto>> {
       return fetcher<RbacRoleResponseDto>({ method: "DELETE", path: `/api/system/v1/roles/${id}` });
     },
-    /** 批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;控制面保留码任何身份都不可授予,含 SUPER_ADMIN,返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.create] */
+    /** 批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108) [rbac: rbac.role-permission.create] */
     RolePermissionsControllerAssign(id: string, body: AssignRolePermissionsDto): Promise<ApiEnvelope<RbacRoleDetailResponseDto>> {
       return fetcher<RbacRoleDetailResponseDto>({ method: "POST", path: `/api/system/v1/roles/${id}/permissions`, body });
     },
-    /** 撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011;控制面保留码仅 SUPER_ADMIN 可撤返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.delete] */
+    /** 撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011;控制面码仅 SUPER_ADMIN 可撤返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.delete] */
     RolePermissionsControllerRevoke(id: string, permissionId: string): Promise<ApiEnvelope<RbacRoleDetailResponseDto>> {
       return fetcher<RbacRoleDetailResponseDto>({ method: "DELETE", path: `/api/system/v1/roles/${id}/permissions/${permissionId}` });
     },

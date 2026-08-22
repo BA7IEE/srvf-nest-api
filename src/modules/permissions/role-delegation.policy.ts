@@ -33,6 +33,27 @@ export function isControlPlanePermissionCode(code: string): boolean {
   );
 }
 
+/**
+ * 「这条码是不是那 7 条 SA-only 保留码之一」。
+ *
+ * ⚠️ **与 `isControlPlanePermissionCode` 是真子集关系,不是同义词** —— 后者还并进了
+ * `rbac.*` / `role-binding.*` 两个前缀族(含 `rbac.permission.read`、
+ * `role-binding.read.record` 这类**纯只读**码)。两者的授码口径**不同**:
+ *
+ *   - 保留码(本谓词):维护者 2026-08-22 拍板②「**一条都不该进任何角色**」
+ *     ⇒ 授码侧任何身份都拒,含 SUPER_ADMIN(P1-32 PR 3a 落地)。
+ *   - 前缀族(仅 `isControlPlanePermissionCode` 命中的其余部分):**非 SA 拒、SA 可授**,
+ *     语义一字未变。SUPER_ADMIN 仍能建出「RBAC 只读观察员」这类自定义角色 ——
+ *     砍掉它没有任何拍板支持,而且会当场打掉 rbac-multi-instance-consistency e2e
+ *     赖以证明「权限解析直读 DB」的那条授权。
+ *
+ * 🔴 别把这两个谓词合并成一个。它们回答的是两个不同的问题,合并等于在
+ *    「谁不能授」上取并集,悄悄扩大或缩小其中一侧的口径。
+ */
+export function isReservedSuperAdminOnlyPermissionCode(code: string): boolean {
+  return RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has(code);
+}
+
 export function isPrivilegedRole(role: RoleDelegationTarget): boolean {
   return (
     role.code === OPS_ADMIN_ROLE_CODE ||

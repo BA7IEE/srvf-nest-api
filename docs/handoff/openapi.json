@@ -6449,7 +6449,7 @@
             }
           },
           "403": {
-            "description": "无权执行此操作(code=30100) / 控制面权限点不能授予任何角色;已存在的这类映射只有超级管理员能撤销(code=30103)",
+            "description": "无权执行此操作(code=30100) / 该权限点仅超级管理员可分配(code=30103) / 该权限点不能授予任何角色(包括超级管理员操作);它只对超级管理员本人生效,需要时请直接用超级管理员账号操作(code=30109)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6464,9 +6464,10 @@
                       "type": "integer",
                       "enum": [
                         30100,
-                        30103
+                        30103,
+                        30109
                       ],
-                      "description": "30100: 无权执行此操作; 30103: 控制面权限点不能授予任何角色;已存在的这类映射只有超级管理员能撤销",
+                      "description": "30100: 无权执行此操作; 30103: 该权限点仅超级管理员可分配; 30109: 该权限点不能授予任何角色(包括超级管理员操作);它只对超级管理员本人生效,需要时请直接用超级管理员账号操作",
                       "example": 30100
                     },
                     "message": {
@@ -6592,7 +6593,7 @@
             "bearer": []
           }
         ],
-        "summary": "批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;控制面保留码任何身份都不可授予,含 SUPER_ADMIN,返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.create]",
+        "summary": "批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108) [rbac: rbac.role-permission.create]",
         "tags": [
           "Ops - Role Permissions"
         ]
@@ -6726,7 +6727,7 @@
             }
           },
           "403": {
-            "description": "无权执行此操作(code=30100) / 控制面权限点不能授予任何角色;已存在的这类映射只有超级管理员能撤销(code=30103)",
+            "description": "无权执行此操作(code=30100) / 该权限点仅超级管理员可分配(code=30103)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6743,7 +6744,7 @@
                         30100,
                         30103
                       ],
-                      "description": "30100: 无权执行此操作; 30103: 控制面权限点不能授予任何角色;已存在的这类映射只有超级管理员能撤销",
+                      "description": "30100: 无权执行此操作; 30103: 该权限点仅超级管理员可分配",
                       "example": 30100
                     },
                     "message": {
@@ -6870,7 +6871,7 @@
             "bearer": []
           }
         ],
-        "summary": "撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011;控制面保留码仅 SUPER_ADMIN 可撤返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.delete]",
+        "summary": "撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011;控制面码仅 SUPER_ADMIN 可撤返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.delete]",
         "tags": [
           "Ops - Role Permissions"
         ]
