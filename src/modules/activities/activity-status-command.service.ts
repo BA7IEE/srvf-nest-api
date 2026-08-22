@@ -15,6 +15,7 @@ import {
   PublishActivityWithAudienceTagsDto,
 } from './activities.dto';
 import { toResponseDto } from './activity-presenter';
+import { ActivityImageSigningService } from './activity-image-signing.service';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ACTIVITY_PHASE_ENDED, deriveActivityPhase } from './activity-phase';
 import { ActivityStateMachine } from './activity-state-machine';
@@ -53,6 +54,8 @@ import {
 export class ActivityStatusCommandService {
   constructor(
     private readonly prisma: PrismaService,
+    // P2-14 刀 A:封面 / 图集对外是现签 URL,presenter 纯函数不取数,故在此解析后传入。
+    private readonly images: ActivityImageSigningService,
     // 同建单族:判权与聚合根装载经共享层,调用点在本类各方法体内。
     private readonly access: ActivityAccessService,
     private readonly activityAuditRecorder: ActivityAuditRecorder,
@@ -165,7 +168,7 @@ export class ActivityStatusCommandService {
         tx,
       });
 
-      return toResponseDto(removed);
+      return toResponseDto(removed, await this.images.signImages(removed));
     });
   }
 
@@ -255,7 +258,7 @@ export class ActivityStatusCommandService {
         requiresInsurance: updated.requiresInsurance,
         isPublicRegistration: updated.isPublicRegistration,
       });
-      return toResponseDto(updated);
+      return toResponseDto(updated, await this.images.signImages(updated));
     });
   }
 
@@ -353,7 +356,7 @@ export class ActivityStatusCommandService {
         requiresInsurance: updated.requiresInsurance,
         cohort: audienceCohort,
       });
-      return toResponseDto(updated);
+      return toResponseDto(updated, await this.images.signImages(updated));
     });
   }
 
@@ -490,7 +493,7 @@ export class ActivityStatusCommandService {
         at: cancelledAt,
       }),
     });
-    return toResponseDto(updated);
+    return toResponseDto(updated, await this.images.signImages(updated));
   }
 
   // 状态机:published → completed;其他态拒(20030;沿 ActivityStateMachine complete decision)。
@@ -545,7 +548,7 @@ export class ActivityStatusCommandService {
         tx,
       });
 
-      return toResponseDto(updated);
+      return toResponseDto(updated, await this.images.signImages(updated));
     });
   }
 }

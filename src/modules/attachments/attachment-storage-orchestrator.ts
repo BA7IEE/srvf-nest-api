@@ -39,6 +39,8 @@ import { AttachmentAuditRecorder } from './attachment-audit-recorder';
 import {
   lockContentPublishBoundary,
   lockContentReferenceBoundary,
+  lockOwnerReferenceBoundary,
+  findOwnedAttachments,
 } from './attachment-content-boundary';
 import { lockContentDeleteFinalizationBoundary } from './attachment-content-delete-boundary';
 import { AttachmentReconciliationService } from './attachment-reconciliation.service';
@@ -62,6 +64,8 @@ import {
   type AttachmentUploadStorageIdentity,
   type ContentAttachmentReferenceBoundaryInput,
   type ContentPublishStorageBoundaryInput,
+  type OwnerAttachmentLookupInput,
+  type OwnerAttachmentReferenceBoundaryInput,
   type FinalizeAttachmentStorageUploadInput,
   type PrepareManualStorageAttestAbsentInput,
   type PrepareManualStorageRelocateInput,
@@ -443,6 +447,20 @@ export class AttachmentStorageOrchestrator {
     input: ContentAttachmentReferenceBoundaryInput,
   ): Promise<void> {
     return lockContentReferenceBoundary(tx, input);
+  }
+
+  async lockOwnerReferenceBoundary(
+    tx: Prisma.TransactionClient,
+    input: OwnerAttachmentReferenceBoundaryInput,
+  ): Promise<void> {
+    return lockOwnerReferenceBoundary(tx, input);
+  }
+
+  async findOwnedAttachments(
+    tx: Prisma.TransactionClient,
+    input: OwnerAttachmentLookupInput,
+  ): Promise<Array<{ id: string; key: string }> | null> {
+    return findOwnedAttachments(tx, input);
   }
 
   // 上传链路薄委托:实现在 AttachmentUploadService。编排器是本模块对外唯一入口,

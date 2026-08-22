@@ -396,8 +396,19 @@ export class ActivityLifecycleService {
           currentPopulationRevision: 0,
           currentClosureRevision: null,
           registrationSchema: source.registrationSchema ?? Prisma.JsonNull,
-          coverImageUrl: source.coverImageUrl,
-          galleryImageUrls: source.galleryImageUrls ?? Prisma.JsonNull,
+          // ⚠️ P2-14 刀 A:封面 / 图集**刻意不复制到克隆件**。
+          // 附件是按 `(ownerType='activity', ownerId)` 归属**源活动**的;把源活动的
+          // attachment id / key 抄进克隆件,就是造出一条「B 活动引用 A 活动的附件」——
+          // 那正是本刀的越权闸(`findOwnedAttachmentsOrThrow`)要拦的形状,
+          // 从写入口拦住却从克隆口放进来,等于闸形同虚设。
+          // 克隆件是 draft,使用者重新上传并设封面即可(与内容模块 clone 不复制附件同型)。
+          coverImageKey: null,
+          coverAttachmentId: null,
+          galleryImageKeys: [],
+          galleryAttachmentIds: [],
+          // 两个裸 URL 遗留列同样不复制:它们已零写入路径,刀 B 会删。
+          coverImageUrl: null,
+          galleryImageUrls: Prisma.JsonNull,
           content: source.content ?? Prisma.JsonNull,
           locationLongitude: source.locationLongitude,
           locationLatitude: source.locationLatitude,

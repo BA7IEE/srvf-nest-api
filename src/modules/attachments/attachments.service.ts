@@ -42,6 +42,8 @@ import { AttachmentWriteService } from './attachment-write.service';
 import { AttachmentStorageOrchestrator } from './attachment-storage-orchestrator';
 import type {
   ContentAttachmentReferenceBoundaryInput,
+  OwnerAttachmentLookupInput,
+  OwnerAttachmentReferenceBoundaryInput,
   ContentPublishStorageBoundaryInput,
 } from './attachment-storage.types';
 import { AttachmentOwnerType, INTERNAL_ONLY_ATTACHMENT_OWNER_TYPES } from './attachment-validation';
@@ -168,6 +170,36 @@ export class AttachmentsService {
     input: ContentAttachmentReferenceBoundaryInput,
   ): Promise<void> {
     return this.storageConsistency.lockContentReferenceBoundary(tx, input);
+  }
+
+  /**
+   * Owner-generic sibling of the fence above (P2-14). Same trust contract: the caller must already
+   * hold its aggregate root FOR UPDATE and must have completed its scoped authorization. The
+   * Activity cover/gallery writer reaches the **same implementation** Content does — deliberately,
+   * so "what counts as a legal reference" has exactly one definition.
+   */
+  async lockOwnerReferenceStorageBoundaryTrusted(
+    tx: Prisma.TransactionClient,
+    input: OwnerAttachmentReferenceBoundaryInput,
+  ): Promise<void> {
+    return this.storageConsistency.lockOwnerReferenceBoundary(tx, input);
+  }
+
+  /**
+   * 归属查询(P2-14)。**附件归属是本模块的事实** —— 模块外的调用方不得自己
+   * `tx.attachment.findMany` 去判「这个附件是不是我的」:那是跨域直读(架构债棘轮会红),
+   * 而且两处对 ownerType / 顺序的理解迟早漂移,漂移时没有症状。
+   *
+   * 全部命中才返回(顺序与入参一致);**任何一个 id 不属于该 owner 就返回 `null`** ——
+   * 由调用方决定映射成哪个业务码(活动侧映成 404,与内容模块 setCover 的防越权语义同型)。
+   *
+   * 可信语义:不做 RBAC。调用方必须先完成自己的判权与聚合根加锁。
+   */
+  async findOwnedAttachmentsTrusted(
+    tx: Prisma.TransactionClient,
+    input: OwnerAttachmentLookupInput,
+  ): Promise<Array<{ id: string; key: string }> | null> {
+    return this.storageConsistency.findOwnedAttachments(tx, input);
   }
 
   // ============ helpers:校验链(沿 D7 v1.0 §6.2 9 步)============

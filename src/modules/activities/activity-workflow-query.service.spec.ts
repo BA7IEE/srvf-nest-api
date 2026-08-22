@@ -2,8 +2,32 @@ import type { PrismaService } from '../../database/prisma.service';
 import { Role } from '@prisma/client';
 import type { AuthzService } from '../authz/authz.service';
 import { ActivityClosurePolicy } from './activity-closure-policy';
+import { ActivityImageSigningService } from './activity-image-signing.service';
 import { ActivityWorkflowQueryService } from './activity-workflow-query.service';
 import { memberIdentityData } from '../../../test/helpers/member-identity.fixture';
+
+// P2-14 刀 A:签名层 stub。返回 key 派生值而不是定值 —— 定值会让「读出侧到底走没走签名」
+// 在单测里不可观测。真链路(含过期附件 → null)由 e2e 负责。
+const imagesStub = {
+  signCover: jest.fn((row: { coverImageKey: string | null }) =>
+    Promise.resolve({
+      coverImageUrl: row.coverImageKey === null ? null : `/uploads/${row.coverImageKey}?sig=stub`,
+    }),
+  ),
+  signCovers: jest.fn((rows: Array<{ coverImageKey: string | null }>) =>
+    Promise.resolve(
+      rows.map((row) => ({
+        coverImageUrl: row.coverImageKey === null ? null : `/uploads/${row.coverImageKey}?sig=stub`,
+      })),
+    ),
+  ),
+  signImages: jest.fn((row: { coverImageKey: string | null; galleryImageKeys: string[] }) =>
+    Promise.resolve({
+      coverImageUrl: row.coverImageKey === null ? null : `/uploads/${row.coverImageKey}?sig=stub`,
+      galleryImageUrls: row.galleryImageKeys.map((key) => `/uploads/${key}?sig=stub`),
+    }),
+  ),
+} as unknown as ActivityImageSigningService;
 
 describe('ActivityWorkflowQueryService', () => {
   it('aggregates one page with two bulk groupBy queries instead of per-row reads', async () => {
@@ -65,7 +89,12 @@ describe('ActivityWorkflowQueryService', () => {
       $transaction: jest.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
     } as unknown as PrismaService;
     const authz = {} as AuthzService;
-    const service = new ActivityWorkflowQueryService(prisma, authz, new ActivityClosurePolicy());
+    const service = new ActivityWorkflowQueryService(
+      prisma,
+      authz,
+      new ActivityClosurePolicy(),
+      imagesStub,
+    );
 
     const result = await service.list('member-1', { page: 1, pageSize: 25 });
 
@@ -94,6 +123,7 @@ describe('ActivityWorkflowQueryService', () => {
       prisma,
       {} as AuthzService,
       new ActivityClosurePolicy(),
+      imagesStub,
     );
     jest.spyOn(service, 'loadManaged').mockResolvedValue({
       id: 'activity-1',
@@ -115,6 +145,9 @@ describe('ActivityWorkflowQueryService', () => {
       defaultCheckInRadiusMeters: null,
       defaultLocationRequired: false,
       archiveWaitingDays: 0,
+      // P2-14 刀 A:附件制两列(真实 Prisma 行恒有,数组列有 DB 默认值 `{}`)。
+      coverImageKey: null,
+      galleryImageKeys: [],
       attendanceDeclaredCompleteAt: null,
       createdAt: new Date('2026-07-20T00:00:00.000Z'),
       updatedAt: new Date('2026-07-24T03:00:00.000Z'),

@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:06996f76bb74b095f0f393cf4c1495c11c48c7cf4da7c8451373b4684654113d
+// inputDigest: sha256:191fcc88abbe0a6349610f54ff4e4ea1e31561e2455408a445fc9924f288aa08
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -285,6 +285,8 @@ import type {
   RoleBindingResolvedScopeDto,
   RoleBindingResponseDto,
   SendNotificationSmsDto,
+  SetActivityCoverDto,
+  SetActivityGalleryDto,
   SetContentCoverDto,
   SetMemberDepartmentDto,
   SupervisionAssignmentResponseDto,
@@ -493,6 +495,14 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 手动完结活动(published → completed；唯一完结通路，非 published → 20030) [rbac: activity.complete.record] */
     ActivitiesControllerComplete(id: string): Promise<ApiEnvelope<ActivityResponseDto>> {
       return fetcher<ActivityResponseDto>({ method: "POST", path: `/api/admin/v1/activities/${id}/complete` });
+    },
+    /** 设 / 清活动封面(attachmentId 须为本活动的 activity 类型附件;传 null 清空) [rbac: activity.update.record] */
+    ActivitiesControllerSetCover(id: string, body: SetActivityCoverDto): Promise<ApiEnvelope<ActivityResponseDto>> {
+      return fetcher<ActivityResponseDto>({ method: "PUT", path: `/api/admin/v1/activities/${id}/cover`, body });
+    },
+    /** 设 / 清活动图集(每个 attachmentId 须为本活动的 activity 类型附件;传 [] 清空) [rbac: activity.update.record] */
+    ActivitiesControllerSetGallery(id: string, body: SetActivityGalleryDto): Promise<ApiEnvelope<ActivityResponseDto>> {
+      return fetcher<ActivityResponseDto>({ method: "PUT", path: `/api/admin/v1/activities/${id}/gallery`, body });
     },
     /** 发布活动(draft → published;请求体须显式确认保险，且活动/报名截止时间有效) [rbac: activity.publish.record] */
     ActivitiesControllerPublish(id: string, body: PublishActivityDto): Promise<ApiEnvelope<ActivityResponseDto>> {

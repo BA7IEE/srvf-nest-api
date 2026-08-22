@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
 } from '@nestjs/common';
@@ -37,9 +38,12 @@ import {
   PublishActivityWithAudienceTagsDto,
   CreateActivityDto,
   ListActivitiesQueryDto,
+  SetActivityCoverDto,
+  SetActivityGalleryDto,
   UpdateActivityDto,
 } from './activities.dto';
 import { ActivitiesService } from './activities.service';
+import { ActivityCoverService } from './activity-cover.service';
 import { LoginScoped, RequiresPermission } from '../../common/decorators/route-authz.decorator';
 
 // V2 第一阶段批次 3A activities controller(8 路由;v0.40.0 +complete)。
@@ -58,7 +62,11 @@ import { LoginScoped, RequiresPermission } from '../../common/decorators/route-a
 @ApiBearerAuth()
 @Controller('admin/v1/activities')
 export class ActivitiesController {
-  constructor(private readonly service: ActivitiesService) {}
+  constructor(
+    private readonly service: ActivitiesService,
+    // P2-14 刀 A:封面 / 图集的唯一写入口;Admin 与 App 两条 surface 委托同一个它。
+    private readonly covers: ActivityCoverService,
+  ) {}
 
   // V2 批次 6 PR #4:从 @Req() 构造 AuditMeta 显式传给 service(D6 v1.1 §11.2 / D8 拍板;
   // 不引入 cls-rs / AsyncLocalStorage)。仅供本 controller 写操作内部复用。
@@ -176,6 +184,72 @@ export class ActivitiesController {
     @Req() req: Request,
   ): Promise<ActivityResponseDto> {
     return this.service.update(params.id, dto, currentUser, this.buildAuditMeta(req));
+  }
+
+  // ============ P2-14 刀 A:设 / 清封面与图集 ============
+  //
+  // 复用既有 `activity.update.record` 权限码 —— **不新增权限码**:改封面在语义上就是一次
+  // 活动更新,它此前也确实是 PATCH :id 的一个字段。新开端点是因为附件必须先归属本活动
+  // (create 那一刻活动还不存在),不是因为它变成了另一种权限。
+  //
+  // ⚠️ 刻意**不加状态闸**:改造前 coverImageUrl / galleryImageUrls 同时落在
+  // PUBLISHED_ACTIVITY_DISPLAY_FIELDS(已发布可直改)与 TERMINAL_ACTIVITY_UPDATE_FIELDS
+  // (终态仍可改)两个白名单里。加闸会是本刀夹带的行为收窄。
+
+  @Put(':id/cover')
+  @RequiresPermission('activity.update.record', { require: 'all', engine: 'rbac-global' })
+  @ApiOperation({
+    summary:
+      '设 / 清活动封面(attachmentId 须为本活动的 activity 类型附件;传 null 清空) [rbac: activity.update.record]',
+  })
+  @ApiWrappedOkResponse(ActivityResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
+  )
+  setCover(
+    @Param() params: IdParamDto,
+    @Body() dto: SetActivityCoverDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<ActivityResponseDto> {
+    return this.covers.setCoverAdmin(
+      params.id,
+      dto.attachmentId,
+      currentUser,
+      this.buildAuditMeta(req),
+    );
+  }
+
+  @Put(':id/gallery')
+  @RequiresPermission('activity.update.record', { require: 'all', engine: 'rbac-global' })
+  @ApiOperation({
+    summary:
+      '设 / 清活动图集(每个 attachmentId 须为本活动的 activity 类型附件;传 [] 清空) [rbac: activity.update.record]',
+  })
+  @ApiWrappedOkResponse(ActivityResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
+  )
+  setGallery(
+    @Param() params: IdParamDto,
+    @Body() dto: SetActivityGalleryDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+    @Req() req: Request,
+  ): Promise<ActivityResponseDto> {
+    return this.covers.setGalleryAdmin(
+      params.id,
+      dto.attachmentIds,
+      currentUser,
+      this.buildAuditMeta(req),
+    );
   }
 
   @Delete(':id')

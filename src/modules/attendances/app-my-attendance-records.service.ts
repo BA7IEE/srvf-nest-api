@@ -10,6 +10,10 @@ import { AttendanceRecordResponseDto, MyAttendanceRecordsQueryDto } from './atte
 import { AttendancesService } from './attendances.service';
 import { AppMyAttendanceRecordDto } from './dto/app/app-my-attendance-record.dto';
 import { ListAppMyAttendanceRecordsQueryDto } from './dto/app/list-app-my-attendance-records-query.dto';
+import {
+  ActivityImageSigningService,
+  type ActivitySignedCover,
+} from '../activities/activity-image-signing.service';
 
 // Phase 2 P2-6 App /api/app/v1/my/attendance-records 薄壳 service。
 // 沿 docs/app-api-p2-6-attendance-records-review.md §7 + D-P2-6-2 / D-P2-6-6 / D-P2-6-14:
@@ -44,6 +48,8 @@ export class AppMyAttendanceRecordsService {
     private readonly appIdentity: AppIdentityResolver,
     private readonly attendances: AttendancesService,
     private readonly prisma: PrismaService,
+    // P2-14 刀 A:活动封面现签。
+    private readonly images: ActivityImageSigningService,
   ) {}
 
   // ============ GET /api/app/v1/my/attendance-records(P2-6)============
@@ -92,8 +98,20 @@ export class AppMyAttendanceRecordsService {
           });
     const activityById = new Map(activities.map((a) => [a.id, a]));
 
-    const items = result.items.map((row) =>
-      AppMyAttendanceRecordsService.toAppDto(row, activityIdBySheetId, activityById),
+    // P2-14 刀 A:mapper 是 static(拿不到 this.images),故签名在调用方解析后当入参传入
+    // (与 activity-presenter 同一处置)。
+    const items = await Promise.all(
+      result.items.map(async (row) => {
+        const act = activityById.get(activityIdBySheetId.get(row.sheetId) ?? '');
+        const cover =
+          act === undefined ? { coverImageUrl: null } : await this.images.signCover(act);
+        return AppMyAttendanceRecordsService.toAppDto(
+          row,
+          activityIdBySheetId,
+          activityById,
+          cover,
+        );
+      }),
     );
 
     return { items, total: result.total, page: result.page, pageSize: result.pageSize };
@@ -126,7 +144,9 @@ export class AppMyAttendanceRecordsService {
     title: true,
     startAt: true,
     endAt: true,
-    coverImageUrl: true,
+    // ⚠️ P2-14 刀 A:coverImageUrl 是裸 URL 遗留列(已零写入路径,刀 B 删);
+    // 对外的 activityCoverImageUrl 由 coverImageKey 现签而来。
+    coverImageKey: true,
   } as const satisfies Prisma.ActivitySelect;
 
   // 私有 mapper(沿 §6.4 + §7.3 + P2-5 P0/P1 过渡;不抽独立 Presenter class)。
@@ -145,6 +165,7 @@ export class AppMyAttendanceRecordsService {
         select: typeof AppMyAttendanceRecordsService.activitySelect;
       }>
     >,
+    cover: ActivitySignedCover,
   ): AppMyAttendanceRecordDto {
     const activityId = activityIdBySheetId.get(row.sheetId) ?? '';
     const act = activityById.get(activityId);
@@ -154,7 +175,7 @@ export class AppMyAttendanceRecordsService {
       activityTitle: act?.title ?? '',
       activityStartAt: act?.startAt ?? row.checkInAt,
       activityEndAt: act?.endAt ?? row.checkOutAt,
-      activityCoverImageUrl: act?.coverImageUrl ?? null,
+      activityCoverImageUrl: cover.coverImageUrl,
       roleCode: row.roleCode,
       checkInAt: row.checkInAt,
       checkOutAt: row.checkOutAt,

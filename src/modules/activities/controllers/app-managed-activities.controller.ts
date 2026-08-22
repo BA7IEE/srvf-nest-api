@@ -31,6 +31,7 @@ import { BizException } from '../../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AppManagedActivitiesService } from '../app-managed-activities.service';
+import { ActivityCoverService } from '../activity-cover.service';
 import { ActivityLifecycleService } from '../activity-lifecycle.service';
 import { ActivitySettlementHttpService } from '../activity-settlement-http.service';
 import type { CreateActivityDto, UpdateActivityDto } from '../activities.dto';
@@ -49,6 +50,8 @@ import {
   AppManagedActivityProjectionDto,
   AppSubmitActivityChangeReviewDto,
   CreateAppManagedActivityDto,
+  SetAppManagedActivityCoverDto,
+  SetAppManagedActivityGalleryDto,
   UpdateAppManagedActivityDto,
 } from '../dto/app/app-managed-activity.dto';
 import {
@@ -113,6 +116,8 @@ export class AppManagedActivitiesController {
     private readonly settlements: ActivitySettlementHttpService,
     private readonly registrationForms: RegistrationFormVersionService,
     private readonly qualificationRules: QualificationRuleSetVersionService,
+    // P2-14 刀 A:与 Admin controller 委托的是同一个 service —— 校验只有一份。
+    private readonly covers: ActivityCoverService,
   ) {}
 
   @Get('organization-options')
@@ -324,6 +329,83 @@ export class AppManagedActivitiesController {
   ): Promise<AppRegistrationFormDto | null> {
     await this.resolveMemberId(user);
     return this.registrationForms.putManaged(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  // ============ P2-14 刀 A:设 / 清封面与图集(App 面)============
+  //
+  // 判权与同 controller 的 registration-form 等写端点一致(responsibility scope);
+  // 归属锚仍是发起人字段,越权一律 404 —— 由 ActivityCoverService 内的
+  // lockAndFindManagedActivityOrThrow 承担,不在此重复。
+  //
+  // ⚠️ 与 registration-form 不同:封面 / 图集**不**受「已发布须走变更审核」约束,
+  // 因为它们改造前就在「已发布可直改的展示字段」白名单里(见 activity-cover.service.ts)。
+
+  @Put(':activityId/cover')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({
+    summary: 'App 设 / 清本人 managed 活动封面(attachmentId 须为本活动附件;null 清空) [auth]',
+  })
+  @ApiWrappedOkResponse(AppManagedActivityDetailDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
+  )
+  async setCover(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: SetAppManagedActivityCoverDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivityDetailDto> {
+    const memberId = await this.resolveMemberId(user);
+    await this.covers.setCoverManaged(
+      params.activityId,
+      dto.attachmentId,
+      user,
+      this.auditMeta(req),
+    );
+    return this.service.detail(params.activityId, memberId, user);
+  }
+
+  @Put(':activityId/gallery')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @ApiOperation({
+    summary: 'App 设 / 清本人 managed 活动图集(每个 id 须为本活动附件;[] 清空) [auth]',
+  })
+  @ApiWrappedOkResponse(AppManagedActivityDetailDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING,
+  )
+  async setGallery(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: SetAppManagedActivityGalleryDto,
+    @Req() req: Request,
+  ): Promise<AppManagedActivityDetailDto> {
+    const memberId = await this.resolveMemberId(user);
+    await this.covers.setGalleryManaged(
+      params.activityId,
+      dto.attachmentIds,
+      user,
+      this.auditMeta(req),
+    );
+    return this.service.detail(params.activityId, memberId, user);
   }
 
   @Get(':activityId/qualification-rules')
@@ -1350,8 +1432,6 @@ export class AppManagedActivitiesController {
       ...(dto.registrationSchema === undefined
         ? {}
         : { registrationSchema: dto.registrationSchema }),
-      ...(dto.coverImageUrl === undefined ? {} : { coverImageUrl: dto.coverImageUrl }),
-      ...(dto.galleryImageUrls === undefined ? {} : { galleryImageUrls: dto.galleryImageUrls }),
       ...(dto.content === undefined ? {} : { content: dto.content }),
       ...(dto.locationLongitude === undefined ? {} : { locationLongitude: dto.locationLongitude }),
       ...(dto.locationLatitude === undefined ? {} : { locationLatitude: dto.locationLatitude }),
@@ -1404,8 +1484,6 @@ export class AppManagedActivitiesController {
       ...(dto.registrationSchema === undefined
         ? {}
         : { registrationSchema: dto.registrationSchema }),
-      ...(dto.coverImageUrl === undefined ? {} : { coverImageUrl: dto.coverImageUrl }),
-      ...(dto.galleryImageUrls === undefined ? {} : { galleryImageUrls: dto.galleryImageUrls }),
       ...(dto.content === undefined ? {} : { content: dto.content }),
       ...(dto.locationLongitude === undefined ? {} : { locationLongitude: dto.locationLongitude }),
       ...(dto.locationLatitude === undefined ? {} : { locationLatitude: dto.locationLatitude }),

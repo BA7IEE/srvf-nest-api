@@ -4,6 +4,10 @@ import { PageResultDto } from '../../common/dto/pagination.dto';
 import { PrismaService } from '../../database/prisma.service';
 import { AppMyActivityListItemDto } from './dto/app/app-my-activity-list-item.dto';
 import { ListAppMyActivitiesQueryDto } from './dto/app/list-app-my-activities-query.dto';
+import {
+  ActivityImageSigningService,
+  type ActivitySignedCover,
+} from './activity-image-signing.service';
 
 // Phase 2 P2-5a App /api/app/v1/my/activities 汇总 service。
 // 沿 docs/app-api-p2-5-registrations-review.md §11 + §16.B.1 默认锁定方案 A(两阶段查询)。
@@ -31,7 +35,11 @@ import { ListAppMyActivitiesQueryDto } from './dto/app/list-app-my-activities-qu
 //   - **不**做 N+1:Stage 2 单次 IN 查 activities + 单次 IN 查 registrations
 @Injectable()
 export class AppMyActivitiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // P2-14 刀 A:封面现签。
+    private readonly images: ActivityImageSigningService,
+  ) {}
 
   // 11 字段 + activity.id(用作 IN 查询 + Map key)= select 12 字段(activityId 通过
   // Activity.id 在 mapper 里改名为 activityId);严格沿评审稿 §8.2.3 锁定。
@@ -47,7 +55,9 @@ export class AppMyActivitiesService {
     startAt: true,
     endAt: true,
     location: true,
-    coverImageUrl: true,
+    // ⚠️ P2-14 刀 A:coverImageUrl 是裸 URL 遗留列(已零写入路径,刀 B 删);
+    // 对外的 coverImageUrl 由 coverImageKey 现签而来。
+    coverImageKey: true,
   } as const satisfies Prisma.ActivitySelect;
 
   // 仅 mapper / 优先级算法需要的字段;**不** select activity (避免 N+1 join);
@@ -143,7 +153,11 @@ export class AppMyActivitiesService {
       // 兜底:activity 软删 / registration 全软删 / 数据竞态 → 静默跳过该 row;
       // total/items 可能略不一致,但语义上"该活动已不在我可见关系内",刻意收窄。
       if (reg === undefined || act === undefined) continue;
-      items.push(AppMyActivitiesService.toAppListItemDto(reg, act));
+      // P2-14 刀 A:mapper 是 static(拿不到 this.images),故与 activity-presenter 同一处置:
+      // 签名在调用方解析,结果当入参传进去。
+      items.push(
+        AppMyActivitiesService.toAppListItemDto(reg, act, await this.images.signCover(act)),
+      );
     }
 
     return { items, total, page, pageSize };
@@ -163,6 +177,7 @@ export class AppMyActivitiesService {
       select: typeof AppMyActivitiesService.registrationSelect;
     }>,
     act: Prisma.ActivityGetPayload<{ select: typeof AppMyActivitiesService.activitySelect }>,
+    cover: ActivitySignedCover,
   ): AppMyActivityListItemDto {
     return {
       activityId: act.id,
@@ -172,7 +187,7 @@ export class AppMyActivitiesService {
       startAt: act.startAt,
       endAt: act.endAt,
       location: act.location,
-      coverImageUrl: act.coverImageUrl,
+      coverImageUrl: cover.coverImageUrl,
       myRegistrationId: reg.id,
       myRegistrationStatusCode: reg.statusCode,
       myRegisteredAt: reg.registeredAt,

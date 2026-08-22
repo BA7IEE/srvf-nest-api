@@ -87,7 +87,14 @@ export class ActivityProposalValidator {
       registrationSchema:
         (activityPatch.registrationSchema as Prisma.JsonValue | undefined) ??
         current.registrationSchema,
-      coverImageUrl: activityPatch.coverImageUrl ?? current.coverImageUrl,
+      // ⚠️ P2-14 刀 A:两者都改为**只取 current**。
+      // 变更审核快照(schemaVersion 2–5)是逐字冻结的契约,字段不能删也不能改口径;
+      // 而封面 / 图集已不是 UpdateActivityDto 的字段(改走 set-cover / set-gallery 端点,
+      // 它们本就在「已发布可直改的展示字段」闭集里、从不进审核链)。
+      // 于是 patch 侧恒无此键,快照只能沿用当前值 —— 这两列此后恒为 null(刀 B 删)。
+      // 顺带修掉一处既有不对称:改造前 cover 认 patch 而 gallery 只认 current,
+      // 两者语义相同却行为不同。现在两者一致。
+      coverImageUrl: current.coverImageUrl,
       galleryImageUrls: current.galleryImageUrls,
       content: (activityPatch.content as Prisma.JsonValue | undefined) ?? current.content,
       locationLongitude:

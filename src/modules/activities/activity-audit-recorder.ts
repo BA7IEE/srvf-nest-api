@@ -455,4 +455,38 @@ export class ActivityAuditRecorder {
       tx: args.tx,
     });
   }
+
+  // ============ P2-14 刀 A:设 / 清封面与图集 ============
+  //
+  // event 仍是 `'activity.publish'`(本模块 7 类操作共用,沿 batch3 草案 §20.2 A1 的
+  // 有意设计),靠 `extra.operation` 区分 —— 与 ContentService.setCover 复用
+  // `content.update` 的处置同型。
+  //
+  // before/after 只记**附件 id**,不记 storage key、更不记签名 URL:
+  // key 是存储内部标识,签名 URL 是带时效的凭据,两者都不该沉淀进审计流水。
+  async logImageReference(args: {
+    activityId: string;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    operation: 'set-cover' | 'set-gallery';
+    before: { coverAttachmentId: string | null } | { galleryAttachmentIds: string[] };
+    after: { coverAttachmentId: string | null } | { galleryAttachmentIds: string[] };
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      before: { ...args.before },
+      after: { ...args.after },
+      extra: {
+        operation: args.operation,
+      },
+      tx: args.tx,
+    });
+  }
 }

@@ -176,7 +176,11 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
       location: '梧桐山',
       description: 'P2-4b 详情测试用活动描述',
       registrationNotes: 'P2-4b 报名须知',
-      coverImageUrl: 'https://example.test/cover.png',
+      // P2-14 刀 A:封面已改附件制,夹具**不再设封面**。
+      // 直插一个悬空 key 会签不出 URL(没有对应 Attachment 行 ⇒ resolveDownloadUrl 返 null),
+      // 看着像「设了封面」实际读出 null —— 比不设更容易误导。
+      // 本 spec 只断字段**存在性**,封面的签名 / 过期 / 越权行为由
+      // test/e2e/activity-cover-attachment.e2e-spec.ts 端到端覆盖。
       capacity: 30,
       // 固定远未来,与 wall-clock 解耦(镜像 #452 app-my-registrations-write 同款 fixture 修复)。
       // 详情可见性仅 statusCode='published' + 未软删,不按截止闸过滤,原近未来默认值当前不 failing;

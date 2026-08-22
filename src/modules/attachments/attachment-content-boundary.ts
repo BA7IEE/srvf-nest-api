@@ -13,6 +13,8 @@ import { activeOperations } from './attachment-storage-invariants';
 import type {
   ContentAttachmentReferenceBoundaryInput,
   ContentPublishStorageBoundaryInput,
+  OwnerAttachmentLookupInput,
+  OwnerAttachmentReferenceBoundaryInput,
 } from './attachment-storage.types';
 
 /*
@@ -419,25 +421,102 @@ export async function lockContentPublishBoundaryUnsafe(
   }
 }
 
+/**
+ * Content-shaped entry point. Kept as a wrapper with its call signature literally unchanged so the
+ * Content module's ~2 call sites and this file's existing spec block keep observing the same
+ * function they always did — the generic body below is what both owners now share.
+ */
 export async function lockContentReferenceBoundary(
   tx: Prisma.TransactionClient,
   input: ContentAttachmentReferenceBoundaryInput,
 ): Promise<void> {
+  return lockOwnerReferenceBoundary(tx, {
+    ownerId: input.contentId,
+    ownerTypes: CONTENT_REFERENCE_OWNER_TYPES,
+    referencedAttachmentIds: input.referencedAttachmentIds,
+  });
+}
+
+const CONTENT_REFERENCE_OWNER_TYPES = ['content-image', 'content-file'] as const;
+
+/*
+ * Owner-generic writer fence (P2-14). The caller holds its aggregate root; matching owned
+ * Attachment rows are share-locked so a concurrent delete either waits and sees the new reference
+ * or has already committed a tombstone that this function rejects.
+ *
+ * ⚠️ ownerTypes 只接受 AttachmentOwnerType —— 它是编译期闭集,不是调用方传进来的任意字符串,
+ * 故下面的 `Prisma.join` 拼的是受控值,不构成注入面。
+ *
+ * ⚠️ 「id 不存在 / 属于别的 owner」在这里**静默跳过**而不是抛错 —— 这是 Content 既有语义
+ * (外来 id 在正文里保留成占位符)。调用方若要求「必须属于本记录」,那条判定归调用方,
+ * 本函数只负责「凡是属于本记录的,必须处于可引用状态」。活动封面 / 图集的归属校验
+ * 因此仍留在 ActivityCoverService 里(与 ContentService.setCover 同一处置)。
+ */
+/**
+ * Owner-scoped ownership lookup (P2-14). Resolves the requested attachment ids **only** when every
+ * one of them belongs to `(ownerTypes, ownerId)`; returns `null` as soon as one does not.
+ *
+ * 为什么它必须住在 attachments 模块里,而不是由调用方自己 `tx.attachment.findMany`:
+ * 「什么算属于本记录的合法附件」是附件域的事实。调用方各自查一遍就是跨域直读
+ * (架构债棘轮会当场判 `cross-domain-fact-read-candidate`),而且两处对
+ * ownerType / 软删 / 顺序的理解迟早漂移 —— 漂移时没有症状。
+ *
+ * 返回顺序**与入参一致**(不是 DB 顺序):活动图集的顺序就是展示顺序。
+ * 入参里的重复 id 会被折叠后按原位置展开。
+ */
+export async function findOwnedAttachments(
+  tx: Prisma.TransactionClient,
+  input: OwnerAttachmentLookupInput,
+): Promise<Array<{ id: string; key: string }> | null> {
+  const requested = [...input.attachmentIds];
+  if (requested.length === 0) return [];
+  const ownerTypes = [...input.ownerTypes];
+  if (ownerTypes.length === 0) return null;
+
+  const unique = [...new Set(requested)];
+  const rows = await tx.attachment.findMany({
+    where: {
+      id: { in: unique },
+      ownerType: { in: ownerTypes },
+      ownerId: input.ownerId,
+    },
+    select: { id: true, key: true },
+  });
+  // 「少了一个」与「一个都不属于本记录」是同一种失败:请求里含不属于本记录的附件。
+  if (rows.length !== unique.length) return null;
+
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const ordered: Array<{ id: string; key: string }> = [];
+  for (const id of requested) {
+    const row = byId.get(id);
+    /* istanbul ignore next -- 上面的等长判定已排除 */
+    if (row === undefined) return null;
+    ordered.push(row);
+  }
+  return ordered;
+}
+
+export async function lockOwnerReferenceBoundary(
+  tx: Prisma.TransactionClient,
+  input: OwnerAttachmentReferenceBoundaryInput,
+): Promise<void> {
   const ids = [...new Set(input.referencedAttachmentIds)].sort();
   if (ids.length === 0) return;
+  const ownerTypes = [...input.ownerTypes];
+  if (ownerTypes.length === 0) return;
   await tx.$queryRaw(Prisma.sql`
       SELECT "id" FROM "attachments"
       WHERE "id" IN (${Prisma.join(ids)})
-        AND "ownerId" = ${input.contentId}
-        AND "ownerType" IN ('content-image', 'content-file')
+        AND "ownerId" = ${input.ownerId}
+        AND "ownerType" IN (${Prisma.join(ownerTypes)})
       ORDER BY "id"
       FOR SHARE
     `);
   const attachments = await tx.attachment.findMany({
     where: {
       id: { in: ids },
-      ownerId: input.contentId,
-      ownerType: { in: ['content-image', 'content-file'] },
+      ownerId: input.ownerId,
+      ownerType: { in: ownerTypes },
     },
     select: { id: true, key: true },
     orderBy: { id: 'asc' },

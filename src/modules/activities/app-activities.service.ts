@@ -22,6 +22,7 @@ import {
 } from '../activity-registrations/activity-qualification-evaluator.service';
 import { registrationFormDefinitionFromStoredFields } from './registration-form-definition';
 import { isFormalMemberGradeCode } from '../members/member-grade';
+import { ActivityImageSigningService } from './activity-image-signing.service';
 
 // Phase 2 P2-4a/P2-4b App /api/app/v1/activities/* service。
 // 沿 docs/app-api-p2-4-activities-review.md §8.2 决议 D-P2-4-4 = 方案 B:
@@ -53,7 +54,9 @@ const appActivityListItemSelect = {
   location: true,
   capacity: true,
   registrationDeadline: true,
-  coverImageUrl: true,
+  // ⚠️ P2-14 刀 A:coverImageUrl 是裸 URL 遗留列(已零写入路径,刀 B 删)。
+  // 对外的 coverImageUrl 由 coverImageKey 现签而来 —— 别把它读回去。
+  coverImageKey: true,
   createdAt: true,
   activityPositions: {
     where: { deletedAt: null },
@@ -85,7 +88,8 @@ const appActivityDetailSelect = {
   genderRequirementCode: true,
   requiresInsurance: true,
   registrationModeCode: true,
-  coverImageUrl: true,
+  // 同上:详情面封面也走 coverImageKey 现签。
+  coverImageKey: true,
   createdAt: true,
   activityPositions: {
     where: { deletedAt: null },
@@ -180,6 +184,8 @@ type AppActivityDirectoryRow = Prisma.ActivityGetPayload<{
 export class AppActivitiesService {
   constructor(
     private readonly prisma: PrismaService,
+    // P2-14 刀 A:App 面封面同样改为按 coverImageKey 现签。
+    private readonly images: ActivityImageSigningService,
     private readonly activityParticipationPolicy: ActivityParticipationPolicy,
     private readonly qualificationEvaluator: ActivityQualificationEvaluatorService,
   ) {}
@@ -216,7 +222,7 @@ export class AppActivitiesService {
     ]);
 
     return {
-      items: rows.map((r) => this.toListItemDto(r)),
+      items: await Promise.all(rows.map((r) => this.toListItemDto(r))),
       total,
       page,
       pageSize,
@@ -452,7 +458,8 @@ export class AppActivitiesService {
   }
 
   // 私有 mapper(沿评审稿 §8.3.3;第一版不抽独立 Presenter class)。
-  private toListItemDto(row: AppActivityListRow): AppAvailableActivityListItemDto {
+  private async toListItemDto(row: AppActivityListRow): Promise<AppAvailableActivityListItemDto> {
+    const { coverImageUrl } = await this.images.signCover(row);
     return {
       id: row.id,
       title: row.title,
@@ -463,18 +470,19 @@ export class AppActivitiesService {
       location: row.location,
       capacity: deriveEffectiveActivityCapacity(row.capacity, row.activityPositions),
       registrationDeadline: row.registrationDeadline,
-      coverImageUrl: row.coverImageUrl,
+      coverImageUrl,
       createdAt: row.createdAt,
     };
   }
 
-  private toDetailDto(
+  private async toDetailDto(
     row: AppActivityDetailRow,
     passCount: number,
     invitations: AppActivityDetailInvitationRow[],
     now: Date,
     qualification: ActivityQualificationEvaluation,
-  ): AppActivityDetailDto {
+  ): Promise<AppActivityDetailDto> {
+    const { coverImageUrl } = await this.images.signCover(row);
     const activeForm = row.registrationFormVersions[0] ?? null;
     const registrationForm = activeForm
       ? {
@@ -499,7 +507,7 @@ export class AppActivitiesService {
       genderRequirementCode: row.genderRequirementCode,
       requiresInsurance: row.requiresInsurance,
       passCount,
-      coverImageUrl: row.coverImageUrl,
+      coverImageUrl,
       createdAt: row.createdAt,
       registrationMode: row.registrationModeCode,
       formVersion: registrationForm?.version ?? null,

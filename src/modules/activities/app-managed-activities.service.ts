@@ -216,6 +216,10 @@ export class AppManagedActivitiesService {
       defaultCheckInRadiusMeters: deleted.defaultCheckInRadiusMeters,
       defaultLocationRequired: deleted.defaultLocationRequired,
       archiveWaitingDays: deleted.archiveWaitingDays,
+      // P2-14 刀 A:softDelete 的返回是「已删活动的投影」。封面 / 图集在这里恒空 ——
+      // 活动已软删,再签一次短时效 URL 没有消费者,也不该给已删资源发放访问凭据。
+      coverImageUrl: null,
+      galleryImageUrls: [],
       createdAt: deleted.createdAt,
       updatedAt: deleted.updatedAt,
     };

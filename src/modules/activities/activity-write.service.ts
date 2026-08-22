@@ -13,6 +13,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
 import { ActivityResponseDto, CreateActivityDto, UpdateActivityDto } from './activities.dto';
 import { toResponseDto } from './activity-presenter';
+import { ActivityImageSigningService } from './activity-image-signing.service';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityStateMachine } from './activity-state-machine';
 import { promoteActivityWaitlist } from './activity-waitlist-promotion';
@@ -51,6 +52,8 @@ function nullableDate(value: string | null): Date | null {
 export class ActivityWriteService {
   constructor(
     private readonly prisma: PrismaService,
+    // P2-14 刀 A:封面 / 图集对外是现签 URL,presenter 纯函数不取数,故在此解析后传入。
+    private readonly images: ActivityImageSigningService,
     // 多段共用的判权 / 聚合根装载 / 域校验:调用点仍在本类各方法体内。
     private readonly access: ActivityAccessService,
     private readonly activityAuditRecorder: ActivityAuditRecorder,
@@ -153,10 +156,6 @@ export class ActivityWriteService {
       if (dto.registrationSchema !== undefined) {
         data.registrationSchema = dto.registrationSchema as Prisma.InputJsonValue;
       }
-      if (dto.coverImageUrl !== undefined) data.coverImageUrl = dto.coverImageUrl;
-      if (dto.galleryImageUrls !== undefined) {
-        data.galleryImageUrls = dto.galleryImageUrls;
-      }
       if (dto.content !== undefined) {
         data.content = dto.content as Prisma.InputJsonValue;
       }
@@ -177,7 +176,7 @@ export class ActivityWriteService {
         tx,
       });
 
-      return toResponseDto(created);
+      return toResponseDto(created, await this.images.signImages(created));
     });
   }
 
@@ -436,10 +435,6 @@ export class ActivityWriteService {
       if (dto.registrationSchema !== undefined) {
         data.registrationSchema = dto.registrationSchema as Prisma.InputJsonValue;
       }
-      if (dto.coverImageUrl !== undefined) data.coverImageUrl = dto.coverImageUrl;
-      if (dto.galleryImageUrls !== undefined) {
-        data.galleryImageUrls = dto.galleryImageUrls;
-      }
       if (dto.content !== undefined) {
         data.content = dto.content as Prisma.InputJsonValue;
       }
@@ -540,7 +535,7 @@ export class ActivityWriteService {
           at: updated.updatedAt,
         }),
       });
-      return toResponseDto(updated);
+      return toResponseDto(updated, await this.images.signImages(updated));
     });
   }
 

@@ -10,6 +10,11 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import appConfig from '../../src/config/app.config';
+import { conformingAttachmentKey } from '../helpers/attachment-key';
+import { attachmentBytesForMime } from '../helpers/file-fixtures';
 
 const relativeIso = (yearOffset: number, suffix: string): string =>
   `${new Date().getUTCFullYear() + yearOffset}-${suffix}`;
@@ -295,9 +300,48 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         endAt: futureIso('06-01T18:00:00.000Z'),
         location: '梧桐山',
         allocationModeCode: 'first_come',
-        coverImageUrl: 'https://example.com/cover-1.png',
       });
     activity1Id = a1.body.data.id;
+    // P2-14 刀 A:封面不再是 create 的入参字段(附件必须先归属本活动),改走
+    // PUT :id/cover。这里必须造**真附件**而不是直插一个裸 key ——
+    // 悬空 key 签不出 URL(resolveDownloadUrl 找不到 Attachment 行即返 null),
+    // 那样下面「封面来自 Activity」那条断言只会读到 null,与「压根没设封面」不可区分。
+    await prisma.attachmentTypeConfig.upsert({
+      where: { code: 'activity' },
+      update: {},
+      create: {
+        code: 'activity',
+        displayName: '活动照片',
+        ownerTable: 'activity',
+        defaultMaxSizeBytes: 10 * 1024 * 1024,
+        defaultMimeWhitelist: ['image/jpeg', 'image/png', 'image/webp'],
+      },
+    });
+    const coverKey = conformingAttachmentKey();
+    const coverPath = resolve(
+      app.get<{ storage: { localRoot: string } }>(appConfig.KEY).storage.localRoot,
+      coverKey,
+    );
+    mkdirSync(dirname(coverPath), { recursive: true });
+    writeFileSync(coverPath, attachmentBytesForMime('image/jpeg', 256));
+    const coverAttachment = await request(httpServer(app))
+      .post('/api/admin/v1/attachments')
+      .set('Authorization', superAdminAuth)
+      .send({
+        key: coverKey,
+        originalName: 'p26-cover-1.jpg',
+        mime: 'image/jpeg',
+        size: 256,
+        ownerType: 'activity',
+        ownerId: activity1Id,
+        expireAt: null,
+      });
+    expect([coverAttachment.status, coverAttachment.body?.code]).toEqual([201, 0]);
+    const setCover = await request(httpServer(app))
+      .put(`/api/admin/v1/activities/${activity1Id}/cover`)
+      .set('Authorization', superAdminAuth)
+      .send({ attachmentId: coverAttachment.body.data.id });
+    expect(setCover.status).toBe(200);
     await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activity1Id}/publish`)
       .set('Authorization', superAdminAuth)
@@ -625,7 +669,8 @@ describe('App /api/app/v1/my/attendance-records (P2-6)', () => {
         expect(item.activityTitle).toBe('P26 Activity 1');
         expect(item.activityStartAt).toBe(pastIso('06-01T08:00:00.000Z'));
         expect(item.activityEndAt).toBe(futureIso('06-01T18:00:00.000Z'));
-        expect(item.activityCoverImageUrl).toBe('https://example.com/cover-1.png');
+        // 出参是**现签 URL**,不是 storage key —— 与内容模块列表缩略图同一条口径。
+        expect(item.activityCoverImageUrl).toMatch(/^\/uploads\//);
       }
     });
 

@@ -6,6 +6,7 @@ import type {
   AttachmentDeleteAuditEnvelope,
 } from '../storage/storage-operation-payload';
 import type { StorageObjectLocator } from '../storage/storage.types';
+import type { AttachmentOwnerType } from './attachment-validation';
 
 export interface AttachmentUploadStorageIdentity {
   key: string;
@@ -56,6 +57,27 @@ export interface ContentPublishStorageBoundaryInput {
  */
 export interface ContentAttachmentReferenceBoundaryInput {
   contentId: string;
+  referencedAttachmentIds: readonly string[];
+}
+
+/**
+ * Ownership lookup input for the owner-scoped facade (P2-14). Callers outside the attachments
+ * module must never query `Attachment` themselves — ownership is this module's fact.
+ */
+export interface OwnerAttachmentLookupInput {
+  ownerId: string;
+  ownerTypes: readonly AttachmentOwnerType[];
+  attachmentIds: readonly string[];
+}
+
+/**
+ * Owner-generic form of the Content writer fence (P2-14). Content passes its two owner types; the
+ * Activity cover/gallery writer passes `['activity']`. Both reach the same implementation on
+ * purpose — a second copy of "what counts as a legal reference" drifts silently.
+ */
+export interface OwnerAttachmentReferenceBoundaryInput {
+  ownerId: string;
+  ownerTypes: readonly AttachmentOwnerType[];
   referencedAttachmentIds: readonly string[];
 }
 
