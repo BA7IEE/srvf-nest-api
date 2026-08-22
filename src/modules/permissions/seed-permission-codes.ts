@@ -4,10 +4,10 @@
  * ──────────────────────────────────────────────────────────────────────────
  * 为什么必须在 `src/` 再放一份(而不是直接读 seed)
  *
- * 权限码的事实源是 seed 事实闭包(`prisma/seed.ts` + `rbac-seed-facts.ts`),
+ * 权限码的事实源是 seed 事实闭包(`prisma/seed.ts` + `permission-catalog.ts`),
  * 但生产运行时**够不到它**:
  *   1. `tsconfig.json` 的 `include` 只有 `src/**\/*.ts` ⇒ `prisma/seed.ts` 不进 `dist/`;
- *   2. `prisma/seed.ts` 自己 `import { RBAC_SEED_FACTS } from '../src/modules/permissions/rbac-seed-facts'`
+ *   2. `prisma/seed.ts` 自己 `import { … } from '../src/modules/permissions/permission-catalog'`
  *      ⇒ 若 `src/` 反向 import 它就是**循环依赖**,且会把整个 seed 程序拖进 API 进程。
  * 方向恒为 seed → src,不得反向 —— 所以护栏要判「这个码是不是系统拥有的」,
  * 就只能在 `src/` 侧有一份可在运行时读到的清单。

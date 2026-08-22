@@ -3,7 +3,10 @@ import { execSync } from 'child_process';
 import { Role, UserStatus } from '@prisma/client';
 import { RBAC_SEED_CATALOG } from '../../prisma/seed';
 import { PrismaService } from '../../src/database/prisma.service';
-import { RBAC_SEED_FACTS } from '../../src/modules/permissions/rbac-seed-facts';
+import {
+  RBAC_PERMISSION_SEED,
+  RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES,
+} from '../../src/modules/permissions/permission-catalog';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { assertTestDatabaseUrl } from '../setup/test-db';
@@ -134,9 +137,9 @@ describe('prisma/seed.ts — Slow-4 business permissions and biz-admin role', ()
   it('1. 空 db → seed 跑完后业务面 permission 全部存在，模块分布一致', async () => {
     const result = runSeed({ ...SEED_ENV, SUPER_ADMIN_USERNAME: 'biz-seed-su-1' });
     expect(result.code).toBe(0);
-    expect(RBAC_SEED_CATALOG.permissions.rbac).toEqual(RBAC_SEED_FACTS.permissions.rbac);
+    expect(RBAC_SEED_CATALOG.permissions.rbac).toEqual(RBAC_PERMISSION_SEED);
     expect(RBAC_SEED_CATALOG.contract.reservedSuperAdminOnlyPermissionCodes).toEqual(
-      RBAC_SEED_FACTS.contract.reservedSuperAdminOnlyPermissionCodes,
+      RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES,
     );
 
     const perms = await prisma.permission.findMany({
