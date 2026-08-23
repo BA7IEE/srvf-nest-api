@@ -3,6 +3,33 @@
 > **性质**:任务提案清单(2026-06-10 Review 产出)。**每项任务仍须按 [`process.md`](../process.md) 单独立项,AI 不自动启动**(process §7)。状态列可由 AI 在 docs PR 中更新。
 > P0 = 不解决阻碍 AI Harness 落地;P1 = 影响长期维护;P2 = 可优化。
 
+<!-- status-legend:begin -->
+
+## 状态字段(机器执法)
+
+**每条 `### Pn-m` 恰有一行状态**,形如 `**状态**:<取值>`,紧跟在标题下方。执法在
+[`scripts/check-next-tasks-state.ts`](../../scripts/check-next-tasks-state.ts),挂在 CI 的
+`Diff guards` job(**不是** unit 轮 —— 改台账的 PR 大多是 docs-only,那一轮会被短路掉)。
+四种情形会红并点名条目:缺行 / 多行 · 取值不在白名单 · 声称已合的 PR 号在 main 上找不到 ·
+**写着「待办」却已有交付类 commit 点名它**。
+
+⭐ **读法:状态描述的是「剩余部分」,不是已完成部分。**
+代码全交付、只剩维护者跑 runbook ⇒ `⏸ 挂起`;8 个 PR 合了 5 个 ⇒ `进行中`。
+
+| 取值 | 什么时候用 | 形态要求 |
+|---|---|---|
+| `待办` | 剩余没人认领,无阻塞、无待拍板项 | 裸词,不带括号 |
+| `进行中(…)` | 多刀条目已合若干 / 有刀在做,剩余仍要做 | 括号内必须带 ≥1 个**已合入** `#PR 号` |
+| `待拍板(…)` | 取证 / 读数已交,选哪种做法在维护者 | 括号内写清等谁定什么 |
+| `⏸ 挂起(…)` | 有明确阻塞条件或触发条件,当前刻意不做 | 括号内写清原因 |
+| `已收口(…)` | 剩余为零 | 括号内必须带 ≥1 个**已合入** `#PR 号` |
+
+⚠️ **射程**:那条闸只管「commit subject 点名了编号」的那批 —— 实测(`3948ccbc`)近 40 个 commit 里
+**20** 个带 `Pn-m`。它管住的是「点名了却仍写待办」,漏的是「压根没点名」。
+**闸绿 ≠ 台账准**;另外状态是**条目级**的,多刀条目里新增的那一刀它也看不见。
+
+<!-- status-legend:end -->
+
 ---
 
 ## P0(harness 落地链路)
@@ -10,6 +37,8 @@
 (P0-1 / P0-2 / P0-3 均已完成,见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
 ### P1-27 v0.66.0 外部评审 —— **两轮 findings 全关 + T6-1 运维闭环已交付**(#897/#898/#901/#903);⏸ **剩两笔全部卡在「域名未下来」** + T6 后总评审 🟡
+
+**状态**:⏸ 挂起(两轮 findings 全关、T6-1 运维闭环已交付;剩两笔全在 T6 真机与其后的总评审,卡在域名备案未落地,AI 无可做之事)
 
 > **2026-08-03 交付状态**:第一刀 [#897](https://github.com/BA7IEE/srvf-nest-api/pull/897)(B1/B2/B3,第 70 migration)
 >
@@ -218,6 +247,8 @@
 
 ### P1-30 通用系统集成地基 Integration Foundation v1 — **T0 已于 2026-08-19 拍板冻结(「按推荐」);PR1–PR8 一行未实施,⏸ 开工排在 P1-32 的 PR 1(Catalog 落地)之后**
 
+**状态**:⏸ 挂起(T0 已拍板冻结、PR1–PR8 一行未实施;开工四条触发条件须先确认齐备,见下方触发条件表)
+
 - **拍板**:2026-08-19 维护者回复**「按推荐」**,冻结稿 §2.1 决策表 `D-IF-1 … D-IF-12` **全部按推荐值(全 =A)整体冻结,无逐项调整**([#1086](https://github.com/BA7IEE/srvf-nest-api/pull/1086))。
 - **依据**:[`integration-foundation-v1-t0-terminal-review.md`](../archive/reviews/integration-foundation-v1-t0-terminal-review.md)
   (冻结稿,不回改;偏离须另出 superseding / amendments)。上游权威设计基线 = 维护者提供的《SRVF Integration Foundation v1 终态架构与分阶段落地实施规格》。
@@ -316,6 +347,8 @@
 (P1-3〔Slow-4〕/ P1-7〔SMS 消费者三项〕/ P1-8〔微信小程序登录〕均已完成,P1-4 已于 2026-06-10 调研收口 —— 均见[已收口项归档](../archive/ai-harness/next-tasks-completed.md)。)
 
 ### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)、⑨永久报名头 DB 地基与 onsite 历史头 fail-closed([#968](https://github.com/BA7IEE/srvf-nest-api/pull/968))、⑩永久头 runtime/个人取消闭环、⑯分配与邀请 C runtime、⑰资格配置/发布激活（managed RuleSet/Rule typed configuration、V5 审核冻结/activation）、⑱活动到点 expiry（既有 worker + PG reconciliation、无新 cron）；合同已修订至 v1.1.1,缺口台账累计 #28**
+
+**状态**:进行中(第 0–3 批已收口 #952 #956;第 4 批多刀已合 #959 #965 #968;第 5–8 批未完,合同缺口台账见正文)
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -650,6 +683,8 @@
 
 ### P1-29 架构治理 Phase 0 — 拍照·登记·健康基线（执行中；纯取证，零业务代码）
 
+**状态**:待办
+
 - **依据**：[v4 冻结方案](../archive/reviews/architecture-governance-v4/README.md)；[本 goal 的 Phase 0 交付物](../archive/reviews/architecture-governance-v4/README.md#12-phase-0-真实交付物清单)。
 - **执行位**：`harness/domain-map.json`、`architecture-debt.json`、`state-machines.json`、
   `route-authz-classification.json`、`baseline-health.json` 与 `check-boundaries` / Route Authorization
@@ -669,6 +704,8 @@
 
 ### P1-10 D-INSURANCE v3 顺序四 PR 收口 — **PR1–PR4 代码均已交付；PR3 runtime enable 与 PR4 migration deploy 待后续运维窗口**
 
+**状态**:⏸ 挂起(PR1–PR4 代码均已交付;PR3 runtime enable 与 PR4 migration deploy 等运维窗口 —— 须先 drain 旧 server,AI 对部署恒无权)
+
 - **PR1 expand-only(已交付)**:`MemberInsurance` pending/v0/nullable reviewer + nullable 双 source/双 owner Evidence RESTRICT FK 骨架 + `TeamJoinCycle.requiresInsurance=false`；约束刻意留 PR4。
 - **PR2 compatibility window(已交付)**:唯一 review route + optional App expectedVersion + telemetry；consumer 保持旧语义、0 evidence。
 - **PR3 enforcement cutover(本次代码交付，不含部署)**:`INSURANCE_ENFORCEMENT_ENABLED` 单 gate 同时切 App required CAS、verified-only、Activity/Team Join 最小 evidence 与 final join 保险闸；production missing/empty/invalid fail-fast，显式 false 可启动。维护者于 2026-07-19 逐字确认“旧客户端都没上线，放心操作执行”，仅解除客户端兼容等待，**不构成旧 server=0 运行证据**；真正 enable 前仍须 drain 旧 server 且禁止 true/false fleet 混跑。
@@ -676,6 +713,8 @@
 - Admin 队员 360 的团队保险覆盖安全投影已交付；小程序/App 端保险展示仍不在本任务范围。理赔、到期主动提醒(新增 cron 须 D 档)与保单图 attachments 接线也仍须真实诉求触发后另立项。
 
 ### P1-14 GAP-005 统一通知模块后续(S1–S5 已发,余项 ⏸ 诉求触发再立项)
+
+**状态**:⏸ 挂起(S1–S5 已发;余项〔报名前 openid 推送路 / 短信投递查询端点〕诉求触发再立项)
 
 - **真·全员短信批处理异步**(S5 末位切片经 D-Outbox 收口):admin `confirmed=true` 现先持久化逐收件人 generation intent，再由 HTTP 做首轮、独立 worker 续跑失败项；跨进程 active-slot 防并发重复，真实 `NotificationDelivery SENT` 才是永久去重事实。实现未新增 cron/Redis/queue/事件总线；若未来受众规模需要分片、吞吐控制或专用队列，仍须另立 D 档，不在 durable outbox 基础能力中暗增。
 - **报名前 openid 非会员推送路**(S3/S5 均标注另立项):招新报名前 5 触发(报名受理/转人工/门槛/评定/公示)申请人**非队员**,站内/微信/短信(均需 member)够不着 → 现维持**查询进度 pull**;若需主动推送给未入队报名人(微信 openid 锚点),单独立项。
@@ -685,11 +724,15 @@
 
 ### P1-20 app 侧证书图暴露给队员本人 — **⏸ 诉求触发再立项**
 
+**状态**:⏸ 挂起(诉求触发再立项:小程序前端出现真实页面诉求时另立 C 档)
+
 - **背景**:v0.41.0 招新可用性收口 F7(评审稿 §2.9 R6)落地了证书图长期档案:申请人公开上传(`certificateImages`)→ promote 建 pending `Certificate` + 图 key 搬 `Certificate.imageKeys Json`。**app 侧 `GET app/v1/my/certificates` 的 `AppMyCertificateDto` v1 刻意不含 imageKeys/图 URL**(v1 契约不动,goal 拍板另议)。
 - **候选方案**:若队员需要在小程序回看本人证书图,镜像 admin 取图口径加 `GET app/v1/my/certificates/:id/image-urls`(self-scope 锁本人 memberId;短 TTL signed-URL;L3 不入日志)——须先过 App surface 语义评审(api-surface-policy §9)。
 - **触发条件**:小程序前端出现真实页面诉求时单独立项(C 档;0 schema——列已在)。
 
 ### P1-15 存量队员批量导入工具 — **⏸ 不自动启动,诉求触发再立项**
+
+**状态**:⏸ 挂起(不自动启动;出现批量导入存量队员的真实诉求时另立 D 档)
 
 - **背景**:终态 scoped-authz 序列(GAP-007,PR1–PR12 + 摘码微刀,已全量落地)的 PR11 只建了 `announcement-import`(preview/execute 两段式,导组织/任职/分管),**不建 `Member`**——双锚铁律(R7)要求执行前每条行都能按 `memberNo` 命中已存在的队员。当前给全新队员群体(如整队历史存量数据)批量建 `Member` 记录尚无专用端点,只能逐个 `POST admin/v1/members` 或运维 `psql` 直灌([`ops/scoped-authz-go-live-checklist.md` §3`](../ops/scoped-authz-go-live-checklist.md) 已登记此缺口)。
 - **候选方案**:镜像 `announcement-import` 的 preview/execute 两段式设计(零写入诊断 + 幂等落库 + 逐行 `ok`/`blocked`/`already-exists` 结果),但目标表是 `Member`(可能含基础档案字段)而非组织/任职/分管;**同样受 R13 约束**——测试与文档示例一律用假数据,真实姓名/证件信息不进本仓库任何位置。
@@ -697,6 +740,8 @@
 - **与 P1-18(队员账号闭环,✅ 已完成)关系**:P1-15 解决"批量把队员**档案**（`Member`)灌进来";P1-18 解决"给**已存在**队员开**登录账号**(`User`)"。两者正交——P1-15 若落地,批量导入出的 `Member` 仍可用 P1-18 已交付的 `POST admin/v1/members/accounts/bulk-grant` 批量开号能力。
 
 ### P1-24 通用证书标准库 + 队内认定规则 + 招新证书闭环 — **✅ 已交付并随 v0.65.0 发版(2026-08-02);剩首批初始化(生产 runbook)**
+
+**状态**:⏸ 挂起(代码随 v0.65.0 全交付;剩「首批标准与认定规则初始化」「第 67 migration 生产部署」「前端适配」三项 —— 前两项是维护者动作,AI 对 migrate deploy 恒无权)
 
 - **交付**:PR-0(冻结)→ PR-1 → PR-2 → PR-3 → PR-4a(拆三刀)+ PR-4b → PR-5 → PR-6 全部合入 main([#826–#834](https://github.com/BA7IEE/srvf-nest-api/pull/834));**Endpoint 435→438 · Migration 66→67 · 权限码 214→222**。
 - **⚠️ 交付后跨模型评审判 NO-GO → findings 修复批次 F1–F6**(2026-07-30):两个外部模型对 `main@bc300a66` 独立评审,21 条 findings 主会话逐条复现。修复见 [#835](https://github.com/BA7IEE/srvf-nest-api/pull/835)(并发四处统一收口)· [#836](https://github.com/BA7IEE/srvf-nest-api/pull/836)(证据授权按状态分流)· [#837](https://github.com/BA7IEE/srvf-nest-api/pull/837)(PATCH 三态 + 日期真实性 + 核验落点)· [#838](https://github.com/BA7IEE/srvf-nest-api/pull/838)(§12 资质判断)· [#839](https://github.com/BA7IEE/srvf-nest-api/pull/839)(主数据契约与审计)· F6(SOP / 初始化 / 台账)。
@@ -1019,6 +1064,8 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 ### P1-25 企业微信接入(身份入口 + 工作台入口 + 通知通道) — **T1–T5B 代码全部合入;T6 文档就绪(2026-08-02);⏸ 剩下的全部是「维护者执行」,AI 无可做之事**
 
+**状态**:⏸ 挂起(T1–T5B 代码全部合入、T6 文档就绪;剩下全是维护者执行〔企微后台配置 / migrate deploy / 开开关 / 工作台实跑 / 签两张 GO 单〕,AI 恒无权执行)
+
 - **T6 纪要**(2026-08-02;**A 档 docs-only,`src/` 零行、`prisma/` 零行、零端点 / 零权限码 / 零 BizCode**):把冻结稿 §15 的生产切换硬门做成四份**带判据**的可执行文档。三条边界拍板:① T6 只出文档 —— §15 硬门绝大多数是维护者在企业微信后台与生产环境的手工动作,AI 物理碰不到;② **试点期运营五指标走 SQL 手查,不做只读 admin 端点**(真要面板等试点跑出结论再另立项);③「Workbench 主页」是企业微信工作台内的 **H5 落地页**,归前端仓 + 后台配置(D-WC-29),后端 OAuth 链 T3 已备齐,本期不新建端点。
   - **四份新文档**(全在 `docs/ops/`,不付恒读层预算):[`wecom-backend-configuration-sop.md`](../ops/wecom-backend-configuration-sop.md)(后台配置 + 身份链启用 + 回滚,含 §15.1 十五条勾选单)· [`wecom-pilot-playbook.md`](../ops/wecom-pilot-playbook.md)(六类构成 + A/B/C 三步 + 十项留证)· [`wecom-failure-injection-drills.md`](../ops/wecom-failure-injection-drills.md)(四类注入,复用 T5B 已有的 DEV_STUB `wecomerr-*` 前缀)· 扩充 [`wecom-message-channel-rollout.md`](../ops/wecom-message-channel-rollout.md)(§15.2 十二条 GO 单 + §15.4 排空回滚四步与判据 SQL)。
   - **写文档时从代码里读出的三条运维事实**(冻结稿没写,但决定操作顺序):① **`test-connection` 自己要求 `enabled=true`**(内部走 `routeFor`),所以「开总闸 → 诊断 → 开 `loginEnabled`」不是习惯而是唯一可行顺序,`enabled=true && loginEnabled=false && messageEnabled=false` 是刻意存在的**安全诊断态**;② **可信 IP 生效的正面判据 = `test-connection` 200 且 `tokenAcquired:true`**(60020 会让 gettoken 失败),反过来不成立;③ ⚠️ **六个配置类 errcode(40001/40013/40056/50001/50003/60020)在 SRVF 侧全部归一成 36030 且 errcode 不进日志** —— 这是刻意的(errmsg 与完整 URL 带凭证),代价是运维分不出是哪一条配错了,SOP 因此改用「逐项配置 + 逐项验证」的执行顺序换回可诊断性。
@@ -1046,17 +1093,23 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 ### P1-22 入队专业队类型 / gate 定义配置化 — **⏸ 诉求触发再立项**
 
+**状态**:⏸ 挂起(诉求触发再立项:新增第 5 种专业队、或运营需自行调 gate 与有效期时另立 D 档)
+
 - **背景**(招新/入队十三项收口问题⑨):`PROFESSIONAL_GATE_CODES` / `GATE_VALIDITY` / `PROFESSIONAL_TEAM_GATE_BY_NODE_TYPE` 当前在 `team-join.constants.ts` 硬编码 4 种专业队及全部 gate 有效期;新增专业队、改 gate 或调整有效期都必须发后端版本。P⑦ 已拍板本 goal 只挂账,不顺手扩动态配置面。
 - **候选方案**:D 档新增 gate 定义表(建议字段:`code`/`professional`/`validityType`/`validityYears`/`extendable`/`status`) + 专业队 nodeType→gate 映射表(建议字段:`nodeTypeCode`/`gateCode`/`status`),由 Query/Policy 层一次加载后供标 gate、进度派生与一键入队重校验共用;须同步设计 admin 配置端点、RBAC、audit、缓存失效与存量常量迁移/回滚方案,禁止只把其中一个消费者改成读表造成双轨。
 - **触发条件**:业务提出新增第 5 种专业队、运营需自行调整 gate/有效期,或 node_type 约定开始跨版本频繁变化时单独立项。
 
 ### P1-23 `recruitment_applications.isForeigner` 历史 DB 列改名 — **⏸ 数据治理诉求触发再立项**
 
+**状态**:⏸ 挂起(数据治理诉求触发再立项:外部 BI 直读该列、或合规要求物理列名也去除「外籍」误述时)
+
 - **背景**(招新/入队十三项收口刀C2 遗留):API DTO/CSV/stats/audit 对外已统一改为 `isNonMainlandDocument` / `is_non_mainland_document`,含义锁定为「非大陆证件,不代表国籍」;仅 Prisma/DB 历史列仍名 `isForeigner`。直接 rename 属 D 档破坏性 schema 变更,本 goal 明确禁区,故不改列名。
 - **候选方案**:先盘点所有 SQL/报表/导出/备份消费者,再做 Prisma field 映射过渡或单次 rename + 存量验证;同步 current-state/CODEMAP/留存 SOP 与回滚 SQL。不得先新增第二列长期双写。
 - **触发条件**:外部 BI/报表开始直读该列,或合规审查要求物理字段名也去除“外籍”误述时单独立项。
 
 ### P1-26 并发写路径审计 findings 修复 — **6 🔴 + 2 🟡 已修 · A-R2 方案乙 · 整批复审 M1–M6 已收口 · S6 三处分叉 + GPS 审计口径已按拍板落地(全条关闭)**
+
+**状态**:已收口(#862 #864 #867)
 
 - **两份独立审计,同一范围、同一 base(`7b0f5c25`),都 report-only、零 `src/` 改动**:
   - **A · Claude 版** [`concurrency-write-path-audit.md`](../archive/reviews/concurrency-write-path-audit.md) —— **56 落点 / 🔴2 / 🟡2 / 🟢52**;
@@ -1190,6 +1243,8 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 ### P2-6 #399 review P2 修复残余(4 项;**均无当前运行时危害,诉求/接线时处理**) — 2026-06-20 收口登记
 
+**状态**:⏸ 挂起(4 项残余均无当前运行时危害,已「接受+登记」;COS / 腾讯云实名核验等外部通道接通、或 attachment.other 接 enforcement 时再处理)
+
 > #399 全仓 review P2 六项已修(#400-#404,见 [`current-state §4`](../current-state.md) + 冻结报告顶部 ✅);以下为修复时显式接受、留待后续的残余:
 
 - **F2 残余:attachment key owner-绑定**(P3)— F2 现把 create() 的 key 约束到 `attachments/<envPrefix>/` 派生格式正则,关闭「任意 COS 路径」面;残余 = 命名空间内、已知**完整 96-bit 随机段** key 仍可签(已知即已有权)。彻底闭合 = key↔owner 派生绑定 / 弃用模式 A 全量走模式 B(upload-url + HMAC token)。**COS 休眠,运维接通前非紧急**。
@@ -1202,12 +1257,16 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 ### P2-7 #399 review P3 处理残余(接受+登记 2 项;**均无当前运行时危害**) — 2026-06-20 收口登记
 
+**状态**:⏸ 挂起(2 项残余均无当前运行时危害,已「接受+登记」;真实实名核验通道接通 / seed 字典治理时一并处理)
+
 > #399 §3 的 13 项 P3:**9 项已修**(#409-#413,见归档区 + 冻结报告 ✅ P3 处理状态)、**1 项已完成**(F18 CI audit gate,见上 P2-6 末项)、**1 项已完成移入已完成项归档区**(F13,见文末;review #484 G27),以下 2 项 R0 triage 复核后**接受+登记**:
 
 - **F7 付费核验 cost-DoS**(P3)— 同 openid 可用不同伪造身份证号无限提交、每条直达付费实名核验(去重键 `(cycleId,idCardNumber)` 无 per-openid 上限),与已接受的 28003 枚举面**同源**(current-state §4)。**真实腾讯云实名核验休眠(DevStub 免费)→ 今日零成本**;接通才激活(类 F2/COS 接通前非紧急)。彻底修 = per-openid 配额(改报名去重语义,属产品决策)→ **真实通道接通触发再评**。
 - **F8 promote 写字典码契约**(P3)— promote 写 `MemberProfile.genderCode`/`documentTypeCode` 不经 canonical 字典校验。**R0 复核降级**:`isForeignDocument` 令非 `mainland_id` 即 foreign(不进一键发号),故 promote 只写固定 canonical 码 `mainland_id`/`male`/`female`(身份证派生 / 非用户可控,**无 F3 式注入污染**),且 profile 码当前无字典校验消费点 → **零运行时危害**。真修 = 保证 prod 字典 seed 含 `male`/`female`/`mainland_id` item code(**seed/ops 不变量**;加 promote 断言反会把潜在不一致硬化成 promote 失败、且 demo seed `demo-*` 会打挂既有 e2e)→ seed/字典治理时一并保障。
 
 ### P2-8 `storage-settings-bootstrap` 报错文案把权限错误说成 JSON 语法错误 — 2026-08-20 真机实测查出 ✅ 已收口(2026-08-23)
+
+**状态**:已收口(#1162)
 
 > 第二阶段真机部署(维护者实测,`docs/ops/server-deployment-runbook-stage2.md` §2 D-2)踩出。
 > **零运行时危害**(只影响一次性离线运维动作),但**实付了一轮白查的时间**。
@@ -1240,6 +1299,8 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 误判归零的同时把防御一起削弱了 —— 详见 `src/modules/notifications/notification-outbox.types.ts` 值侧常量处的注释。)
 
 ### P2-10 `sms_send_logs.status=SENT` 是「已提交 Provider」而非「已送达终端」,当前无从区分 — 2026-08-20 真机实测拿到反例
+
+**状态**:待办
 
 > 短信通知模板真机验发时暴露。**零运行时故障**(发送逻辑本身正确),
 > 但**运营口径有误判风险**:运营看到 `SENT` 会以为用户收到了。
@@ -1275,6 +1336,8 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 仓内凡是跨外部供应商的状态字段都值得照此过一遍。
 
 ### P2-11 用 `onUpdate: CASCADE` 的外键去守「副本与源一致」= 装了个会自己抹掉证据的报警器 — 2026-08-21 登记
+
+**状态**:待拍板(Q1=28 / Q2=15 / 真残余=4 三问已答;Q3 四种守法选哪一种、那 4 条真残余动不动,等维护者拍板)
 
 > 出处:A-2+B-03([#1125](https://github.com/BA7IEE/srvf-nest-api/pull/1125))实施方留的第二笔账。
 > 该刀把 `ActivityRuleSnapshot.snapshotHash` 判为「不补」,理由是:本批复合 FK 的 `onUpdate`
@@ -1458,6 +1521,8 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 ### P2-12 golden journey 有两条链**从未被自动化穿过**(直写库绕过去了)— 2026-08-21 由新建的 journey 直写纪律闸逼出
 
+**状态**:已收口(#1159 #1163)
+
 > 出处:`scripts/harness-guards.selftest.ts` 的「journey 直写库接缝纪律」闸。
 > 立项时 `test/support/journey-*.ts` 共 **46 处**直接写库,逐条分类后
 > **`ambient` 31 · `gate-unreachable` 10 · `mid-chain-start` 4 · `time-compression` 1**。
@@ -1508,6 +1573,8 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 (不新建第二套判据 —— 12a 选登记表形态正是为此)。
 
 ### P2-13 权限说明与「管辖面」之间没有绑定 —— 码复用导致说明过期,机器发现不了 — 2026-08-22 第三轮跨模型复核逼出
+
+**状态**:⏸ 挂起(主体已收口 #1161;残 P2-13a〔`Permission code surface` 节自述已过期〕等下一把本就要动 ROUTE_AUTHZ 的刀顺手带走,单独起会平白占串行道)
 
 > **缺陷类**:**总数不变 ≠ 说明没过期。** 一条已有权限码可以长出第二、第三个消费入口,
 > 而权限码总数纹丝不动 —— 现有全部判据(码数 237 / 四桶闭包 / 角色持有人)照绿。
@@ -1564,6 +1631,8 @@ P2-13 落地后这句话**已经不成立**(执行位就是 `check-permission-su
 
 ### P2-14 活动封面 / 图集改附件制 —— **刀 A ✅ 已合;刀 B(DROP 旧列)待起** — 2026-08-22 维护者拍板
 
+**状态**:进行中(刀 A 已合 #1146;刀 B〔DROP 两个旧列〕待起 —— 须先确认刀 A 在 main 稳定运行一段时间,且在届时存在的每个环境重测旧列非空计数)
+
 **刀 A**(`d8e557d7` / [#1146](https://github.com/BA7IEE/srvf-nest-api/pull/1146))已合:
 `Activity` 加 `coverImageKey` / `coverAttachmentId` / `galleryImageKeys` / `galleryAttachmentIds` 四列,
 写入必须给**本活动的 `activity` 类型附件 id**,读出一律现签;与 `Content` 逐字同形。
@@ -1579,6 +1648,8 @@ DROP 不可逆 ⇒ 起刀 B 前应先确认刀 A 已在 `main` 上稳定运行�
 项目尚未上线、无生产库。**起刀 B 前须在届时存在的每个环境上重测一次**,不得沿用此读数。
 
 ### P2-15 ✅ `description` 漂移还有第二条路 —— 关掉 `PATCH` 只堵了一半 **(已收口 2026-08-23)** — 由 PR 3b 实施方逼出
+
+**状态**:已收口(#1153)
 
 > ✅ **V2 已关**([#1153](https://github.com/BA7IEE/srvf-nest-api/pull/1153),`ff604d39`):四处 `permission.upsert` 全部改为覆写 `description`,代码常量单向成为权威;
 > 判据 `seed-description-authority.criteria.spec.ts` 结构性扫全部 upsert 调用(不写死处数),并含**反向锚点**——字典 7 处必须仍是 `update: {}`。
@@ -1614,6 +1685,8 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 它只对「长期存活且被改过的库」有牙,而那种库当前不存在(生产未上线)。
 
 ### P2-16 ✅ e2e 提速刀③ —— 加权分片的上限已被证伪,真余量在单 spec **(已收口 2026-08-23)**
+
+**状态**:已收口(#1155 #1157)
 
 > ✅ **已收口(2026-08-23)**:走的是「消除子进程编译突刺」而非「拆分 spec」。
 > `notification-outbox` 的真 OS worker child 从 ts-node+tsc 切到 **ts-node+SWC**
@@ -1677,6 +1750,8 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 
 ### P1-31 ✅ 开工门禁没挂 Bash matcher —— 用 `python3` / `sed -i` 写文件 **(已收口 2026-08-22)100% 绕过**,而那正是默认路径
 
+**状态**:已收口(#1142)
+
 > ✅ **已收口(2026-08-22)**:`bash-write-guard.sh` 判出写侧后增查开工门禁标记,
 > **直接调用 `preflight-required.sh` 本体**(零份重复判定),写侧动词表做成单一来源函数。
 > hook 自测新增 10 条断言,含**一致性对照**(同一写操作两侧结论必须相同)。
@@ -1714,7 +1789,9 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 判据是「这条 hook 挂了哪些 matcher?写文件还有别的通道吗?」——
 仓内每条 PreToolUse hook 都值得照此对一遍。
 
-### P1-32 RBAC 权限目录与角色权限管理终态 —— 8 个 PR,**已抽 1 条实施,余 7 条待排**
+### P1-32 RBAC 权限目录与角色权限管理终态 —— 8 个 PR,**PR 0/1/3a/3b/4a 五条已合,余 PR 2 / 4b / 5–8 待排**
+
+**状态**:进行中(5/8;PR 0/1/3a/3b/4a 已合 #1145 #1143 #1147 #1151 #1156;余 PR 2 / 4b / 5–8,其中 PR 7 依赖前端投用)
 
 > 方案冻结件:[`archive/reviews/rbac-permission-catalog-t0-review.md`](../archive/reviews/rbac-permission-catalog-t0-review.md)
 > (3,006 行,维护者 2026-08-20 提供,逐字入仓)。
