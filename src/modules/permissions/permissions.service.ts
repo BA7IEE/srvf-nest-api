@@ -116,6 +116,29 @@ export class PermissionsService {
     }
   }
 
+  // 改:闭包内的码,其 `description` 的权威源是**代码**(`permission-catalog.ts` 各
+  // `*_PERMISSION_SEED` 条目的 `description` 字段),不是 DB 行。
+  //
+  // 🔴 这是 P1-32 PR 3b 对一条**刻意设计**的推翻,不是补一道漏接的闸:
+  // `prisma/seed.ts` 的 upsert 用 `update: {}`,当年的注释逐字写着「防止运营运行时调整被
+  // seed 回退」—— 也就是说「运行时可改、seed 不覆盖」是故意的。PR 0 把权限元数据做成
+  // 代码侧单一事实源之后,这条设计的代价变成:DB 的 description 与代码常量是同一件事的
+  // 两份副本,`update: {}` 保证 seed 永不拉回,于是两份可以各自漂移而**无人比对**。
+  // 关掉这个入口 = 让代码常量单向成为唯一写者(seed 的 `create` 是唯一写路径)。
+  //
+  // ⚠️ 权威源是 `RbacPermissionSeed.description`,**不是**
+  // `PERMISSION_CATALOG_METADATA.businessDescription` —— 后者是另一个字段
+  // (面向后台编辑器的长句业务说明),从不写进 DB,两者内容本就不同。
+  //
+  // 结果上这让 PATCH /permissions/:id 不再可能成功(237 条码全在闭包内)。
+  // 与 `assertPermissionCodeCreatable` 同型且**刻意**:端点保留是为了给出一个明确的
+  // 「不能这么干,该去哪」,而不是静默接受一次什么都不会发生的写入。
+  private assertSeedPermissionUpdatable(code: string): void {
+    if (isSeedPermissionCode(code)) {
+      throw new BizException(BizCode.SEED_PERMISSION_UPDATE_FORBIDDEN);
+    }
+  }
+
   // ============ 4 端点业务逻辑 ============
 
   async list(
@@ -207,7 +230,11 @@ export class PermissionsService {
     // 1. 先确认存在(30001);顺带取 before 快照。
     const before = await this.findByIdOrThrow(id);
 
-    // 2. 更新 + audit(单事务;仅允许 description;DTO 层已白名单 + ValidationPipe forbidNonWhitelisted 兜底)
+    // 2. 目录护栏:闭包内的码禁运行时改写(30110)。放在存在性检查**之后** ——
+    //    不存在的 id 应当继续得到 30001,不该被这道闸抢答成 30110。
+    this.assertSeedPermissionUpdatable(before.code);
+
+    // 3. 更新 + audit(单事务;仅允许 description;DTO 层已白名单 + ValidationPipe forbidNonWhitelisted 兜底)
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.permission.update({
         where: { id },

@@ -1200,8 +1200,25 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   for (const perm of ALL_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
-      // 已存在不覆盖 description / module / action / resourceType(防止运营运行时调整被 seed 回退;
-      // 沿 V2 dictionaries seed 范式)
+      // 已存在不覆盖 description / module / action / resourceType。
+      //
+      // ⚠️ **这句的理由在 P1-32 PR 3b(2026-08-23)之后变了,原注释已作废,别照旧读。**
+      // 原文写的是「防止运营运行时调整被 seed 回退;沿 V2 dictionaries seed 范式」——
+      // 那句话成立的前提是「运行时可以改 description」。**该前提已被推翻**:
+      // `PATCH /permissions/:id` 现在对闭包内的码一律拒(30110,见
+      // permissions.service.ts 的 assertSeedPermissionUpdatable),
+      // 运行时**不再存在**任何改这四个字段的入口 ⇒ 「被 seed 回退」这件事已不可能发生。
+      //
+      // 现在仍保留 `update: {}` 的理由是**另一条**,只有一条:
+      // 覆盖会把**既有库**里可能存在的历史漂移静默改写掉,而没有任何告警。
+      // 维护者 2026-08-23 拍板「已漂移的数据不动」,故此处保持不覆盖。
+      //
+      // 🔴 **代价要说清:这意味着改代码里的 description 字符串,既有库永远收不到。**
+      // 新库无影响(`create` 用的就是代码常量),但长期存活的库会与代码分叉且无人比对。
+      // 这是**尚未处置的第二条漂移路径**,PR 3b 只关了「运行时改 DB」那条。
+      // 要堵它就得把这里改成 `update: { description: perm.description }`,
+      // 使代码常量单向成为权威 —— 该做法此前被否的理由(会静默改写运营手工调过的文案)
+      // 在 PR 3b 之后已不成立(不存在手工调过的文案)。**待维护者另行拍板,不要顺手改。**
       update: {},
       create: {
         code: perm.code,

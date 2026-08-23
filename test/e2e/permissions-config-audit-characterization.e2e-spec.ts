@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import * as configAudit from '../../src/modules/permissions/config-audit.util';
@@ -268,18 +269,21 @@ describe('permissions config-audit characterization (F&A-2)', () => {
       });
     });
 
+    // 权限目录护栏(P1-32 PR 3b,2026-08-23)后 update 只对**闭包外**的码可达
+    // (闭包内一律 30110)。而闭包外的码又造不出来(30106)⇒ 被改对象改由 prisma 直建,
+    // 与下面 C3 处理 delete 时是**同一手法**。
+    // 刻画的对象没变:走的仍是 `PermissionsService.update` 那条 audit 路径。
     it('C2. update → event=permission.update + before/after.description', async () => {
-      const perm = await permissions.create(
-        actor,
-        {
-          code: 'member.update.record',
-          module: 'member',
+      const perm = await prisma.permission.create({
+        data: {
+          code: 'audit-c.update.thing',
+          module: 'audit-c',
           action: 'update',
-          resourceType: 'record',
+          resourceType: 'thing',
           description: '旧述',
         },
-        AUDIT_META,
-      );
+        select: { id: true },
+      });
       await permissions.update(actor, perm.id, { description: '新述' }, AUDIT_META);
       const audits = await prisma.auditLog.findMany({ where: { event: 'permission.update' } });
       expect(audits).toHaveLength(1);
@@ -288,6 +292,34 @@ describe('permissions config-audit characterization (F&A-2)', () => {
       const c = a.context as unknown as ReadAuditContext;
       expect(c.before).toMatchObject({ description: '旧述' });
       expect(c.after).toMatchObject({ description: '新述' });
+    });
+
+    // 🔴 C2 曾经是「拿一条 **seed 闭包内**的码(member.update.record)改 description 并成功」。
+    //    P1-32 PR 3b 把那条路关上了。本用例保留「这条路曾经通」这个事实:
+    //    同样的动作、同样的闭包内码,现在必须被拒(30110),而不是把它从测试里删掉。
+    //    ⚠️ 这不是补一道漏接的闸,是**推翻一条刻意设计** —— 见 biz-code 30110 注释块。
+    it('C2b. update 对 seed 闭包内的码一律拒(30110;曾经可成功,PR 3b 关上)', async () => {
+      const perm = await prisma.permission.create({
+        data: {
+          code: 'member.update.record',
+          module: 'member',
+          action: 'update',
+          resourceType: 'record',
+          description: '旧述',
+        },
+        select: { id: true },
+      });
+      await expect(
+        permissions.update(actor, perm.id, { description: '新述' }, AUDIT_META),
+      ).rejects.toMatchObject({ biz: BizCode.SEED_PERMISSION_UPDATE_FORBIDDEN });
+
+      // 拒绝必须是**真的没写**:既没改行,也没留 audit。
+      const after = await prisma.permission.findUnique({
+        where: { id: perm.id },
+        select: { description: true },
+      });
+      expect(after?.description).toBe('旧述');
+      expect(await prisma.auditLog.count({ where: { event: 'permission.update' } })).toBe(0);
     });
 
     // 权限目录护栏(2026-08-22)后 delete 只对**闭包外**的码可达(闭包内一律 30105)。

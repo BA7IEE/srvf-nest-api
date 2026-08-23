@@ -92,7 +92,7 @@ export class PermissionsController {
   @RequiresPermission('rbac.permission.update')
   @ApiOperation({
     summary:
-      '更新权限点(仅 description;code / module / action / resourceType 不可改) [rbac: rbac.permission.update]',
+      '更新权限点(description 由 seed 定义,此处不能改 —— 闭包内的码抛 30110;而闭包外的码又造不出来(30106);实际不存在可成功路径) [rbac: rbac.permission.update]',
   })
   @ApiWrappedOkResponse(PermissionResponseDto)
   @ApiBizErrorResponse(
@@ -100,6 +100,7 @@ export class PermissionsController {
     BizCode.UNAUTHORIZED,
     BizCode.RBAC_FORBIDDEN,
     BizCode.PERMISSION_NOT_FOUND,
+    BizCode.SEED_PERMISSION_UPDATE_FORBIDDEN,
   )
   update(
     @CurrentUser() user: CurrentUserPayload,

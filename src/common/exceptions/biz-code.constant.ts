@@ -3135,6 +3135,31 @@ export const BizCode = {
     message: '权限码由系统定义,不能在此新建;新增权限点需要改代码并发版,请联系开发者',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  // 权限目录护栏(P1-32 PR 3b;2026-08-23):与 30105 / 30106 同族,同一份闭包清单
+  // (src/modules/permissions/seed-permission-codes.ts),把保护面从「删 / 造」补齐到「改」。
+  //
+  // 🔴 这一条是**推翻一条刻意设计**,不是补一道漏接的闸。
+  //    `prisma/seed.ts` 的 `update: {}` 当年逐字写着「防止运营运行时调整被 seed 回退」——
+  //    即「运行时可改 description、且 seed 不覆盖」是**故意**做的(沿 V2 dictionaries 范式)。
+  //    改立场的理由是 P1-32 PR 0 之后 description 有了代码侧权威源:
+  //    `permission-catalog.ts` 各 `*_PERMISSION_SEED` 条目的 `description` 字段。
+  //    DB 行与代码常量成了同一件事的两份副本,而 `update: {}` 保证 seed 永不拉回 ⇒
+  //    两份可以各自漂移,且**没有任何东西在比对它们**。关掉运行时写入口 =
+  //    让代码常量单向成为唯一写者。
+  //
+  // ⚠️ 注意不是拿它跟 `PERMISSION_CATALOG_METADATA.businessDescription` 比 —— 那是**另一个字段**
+  //    (面向后台编辑器的长句业务说明),从不写进 DB。`Permission.description` 的权威源
+  //    只有 `RbacPermissionSeed.description` 这一处。
+  //
+  // ⚠️ 拒绝面是**全部** 237 条闭包内的码 ⇒ 与 30106 同型,PATCH 实际不再有成功路径。
+  //    端点保留是为了给出明确的「不能这么干、该去哪」,而不是静默接受一次无效写入。
+  // ⚠️ 取 30110 而不是 30109 —— 30109 已被 `RESERVED_PERMISSION_NOT_ROLE_GRANTABLE` 占用
+  //    (本段位不连续,别按「上一条 +1」推)。
+  SEED_PERMISSION_UPDATE_FORBIDDEN: {
+    code: 30110,
+    message: '系统权限码的描述由系统定义,不允许在此修改;调整描述需要改代码并发版,请联系开发者',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // 系统角色运行时只读(P1-32 PR 3a;2026-08-23)——— 与 30104 同族,同一份清单
   // (src/modules/permissions/protected-role-codes.ts),只是把保护面从「删」扩到「改」。
