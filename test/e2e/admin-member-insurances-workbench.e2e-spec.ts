@@ -59,6 +59,8 @@ describe('GET /api/admin/v1/member-insurances (保险审核工作台)', () => {
   let prisma: PrismaService;
   let readerAuth: string;
   let noPermissionAuth: string;
+  /** verified / rejected 行的审核人 —— CHECK 要求审核快照成套,不能留 NULL。 */
+  let reviewerUserId: string;
 
   let seq = 0;
   const nextSeq = () => ++seq;
@@ -83,6 +85,10 @@ describe('GET /api/admin/v1/member-insurances (保险审核工作台)', () => {
     reviewStatusCode: string;
     deleted?: boolean;
   }): Promise<string> {
+    // `member_insurances_review_snapshot_ck`(第 20260719160335 号 migration)要求审核快照成套:
+    // pending ⇒ reviewer/reviewedAt 必须都为 NULL;verified/rejected ⇒ 必须都非 NULL。
+    // 直插夹具绕过 service,所以这条组合律得自己遵守 —— 不遵守时是 DB 报 23514,不是断言变红。
+    const reviewed = options.reviewStatusCode !== 'pending';
     const row = await prisma.memberInsurance.create({
       data: {
         memberId: options.memberId,
@@ -91,6 +97,8 @@ describe('GET /api/admin/v1/member-insurances (保险审核工作台)', () => {
         coverageStart: new Date('2026-01-01T00:00:00.000Z'),
         coverageEnd: new Date('2098-12-31T00:00:00.000Z'),
         reviewStatusCode: options.reviewStatusCode,
+        reviewedByUserId: reviewed ? reviewerUserId : null,
+        reviewedAt: reviewed ? new Date('2026-06-01T00:00:00.000Z') : null,
         deletedAt: options.deleted ? new Date() : null,
       },
       select: { id: true },
@@ -110,6 +118,7 @@ describe('GET /api/admin/v1/member-insurances (保险审核工作台)', () => {
     const bizSeed = await seedBizAdminPermissionsAndRole(app);
     await grantBizAdminToUser(app, reader.id, bizSeed.bizAdminRoleId);
     readerAuth = (await loginAs(app, 'insurance-workbench-reader')).authHeader;
+    reviewerUserId = reader.id;
 
     // 只有 ADMIN 角色、不挂任何 RBAC 绑定 —— 拿不到 member-insurance.read.other。
     await createTestUser(app, { username: 'insurance-workbench-outsider', role: Role.ADMIN });
@@ -266,6 +275,9 @@ describe('GET /api/admin/v1/member-insurances (保险审核工作台)', () => {
         expect(item).not.toHaveProperty('reviewedByUserId');
         expect(item).not.toHaveProperty('reviewer');
       }
+      // verified / rejected 两条的 reviewedByUserId 在库里**确实非空**(CHECK 要求成套),
+      // 所以这条断言不是空转:审核人 id 一旦漏进出参,这里就会红。
+      expect(JSON.stringify(res.body)).not.toContain(reviewerUserId);
     });
   });
 
