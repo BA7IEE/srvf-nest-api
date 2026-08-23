@@ -5625,12 +5625,35 @@ void (async (): Promise<void> => {
     // 形态取**封口模型登记表**而不是「certificate / team-join 两文件特判」:
     // 12b 把考勤审核链接通后,`attendanceSheet` / `attendanceRecord` 按同一形状进表即可,
     // 不用再造第二种判据(修「类」不修「实例」)。
+    //
+    // ⭐ P2-12b(2026-08-23)兑现了上面这句:两个考勤模型**只加了两行登记**,零新判据。
+    // 同一形状的对拍复现了同样的读数 —— 把旅程一改回直插 `approved` 并配一条合法
+    // `mid-chain-start` 标注 ⇒ 旧闸 findings = 0(**仍全绿**)· 新闸红并点名 file:行号。
+    //
+    // ⚠️ 读数别当分母看:12b 后直写总数 44 → **46**(**升**),因为抵掉 2 处
+    // `mid-chain-start` 的同时新增 4 处 `ambient`(1 条 ContributionRule 档位规则 +
+    // 3 处 RBAC 判权底座)。本刀的量是 **`mid-chain-start` 2 → 0** ——
+    // 该分类的语义是「属于被验链、有 API,却刻意从中间态起步」,归零 = journey 里
+    // 再没有一处从被验链的中间态起步。总数升降与这件事无关。
     const JOURNEY_SEALED_MODELS: ReadonlyArray<{ model: string; why: string }> = [
       {
         model: 'recruitmentIdentitySession',
         why:
           'P2-12a 已把两条 journey 的招新链第一步改走真入口(send-code → verify-code → 一次性 token);' +
           '直写这张表 = 把「招新实名入口在 CI 里一次都没跑过」那个缺口接回去',
+      },
+      {
+        model: 'attendanceSheet',
+        why:
+          'P2-12b 已把旅程一的入队贡献值改由真考勤链产出(建单 → 一审 → 终审,三段真 HTTP + 三个身份);' +
+          '直写这张表 = 把「考勤审核链被整条跳过、『链产出的 approved』与『直插的 approved』' +
+          '是不是同一件事无人证明」那个缺口接回去',
+      },
+      {
+        model: 'attendanceRecord',
+        why:
+          'P2-12b 同上,记录侧。直插 record 还额外买回一件事:contributionPoints 变回手填字面量,' +
+          '绕过 ContributionRule 档位计算 —— 而 contribution-calculator.ts 无匹配规则时静默返 0 不报错',
       },
     ];
 
