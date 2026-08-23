@@ -853,9 +853,9 @@
       "description": "sha256:b5e22a831b8a63356b891a0f39124ce553e22d016fe26a32fc52340cedd462f4"
     },
     "rbac.permission.read": {
-      "endpoints": 1,
-      "surface": "sha256:6bbbd59f6e2d1a773f58581b1c8a3f975390e21b7e683d820d4f04e721df9ba5",
-      "description": "sha256:9c2dff0089fe3209d3753cd720431ecdb0bc7ca316b9dec607c6e8dca0c2fa46"
+      "endpoints": 2,
+      "surface": "sha256:6b1b833055dbda6ff27330b4d1b520a027f2b65c8b53152130cd4932c37f9b72",
+      "description": "sha256:477fb34acdebba913bc4af87df6bd42f8e004517be464c0b8c2bbe49f05e7f5c"
     },
     "rbac.permission.update": {
       "endpoints": 1,

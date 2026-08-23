@@ -3,6 +3,16 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { PermissionResponseDto } from './permissions.dto';
+import {
+  BINDING_MANAGEMENT_MODES,
+  PERMISSION_MANAGEMENT_MODES,
+  ROLE_KINDS,
+} from './role-classification';
+import type {
+  BindingManagementMode,
+  PermissionManagementMode,
+  RoleKind,
+} from './role-classification';
 
 // V2.x C-6 RBAC 实施 PR #3:RbacRole 模块 DTO 集合。
 // 沿 D7 v1.1 §5.2.2(CreateRoleDto)+ §5.2.6(RoleResponseDto)+ §4.1(RbacRole schema)。
@@ -52,6 +62,42 @@ export class RbacRoleResponseDto {
 
   @ApiProperty({ description: '更新时间' })
   updatedAt!: Date;
+
+  // ===== P1-32 PR 2(2026-08-24):角色分类三字段(冻结稿 §6.1 / §6.3)=====
+  //
+  // 🔴 **additive** —— 上面的字段一个没删、没改类型、没改可空性;本段只往后**加**三个必填字段。
+  //    契约语义门对「新增响应字段」判 ADD(见 scripts/contract-semantic-diff.ts 的 breaking 判定表:
+  //    必填性只在**请求**侧算 breaking,响应侧新增恒 additive)⇒ 旧前端零影响。
+  //
+  // 🔴 **派生,不是 DB 列** —— 冻结稿 §6.3 标题逐字「不必立即给 Role 表增加 kind 字段」。
+  //    值由 `classifyRole(code)` 从正在执法的谓词算出,`RbacRole` 表没有对应列,
+  //    也就不存在「把 DB 里的 kind 改成 CUSTOM 来逃逸保护」这条路。详见 role-classification.ts。
+
+  @ApiProperty({
+    description:
+      '角色类型。`SYSTEM` = 15 个内建角色之一(seed 维护,运行时删不掉、改不了名);`CUSTOM` = 管理员自建。',
+    enum: [...ROLE_KINDS],
+    example: 'CUSTOM',
+  })
+  kind!: RoleKind;
+
+  @ApiProperty({
+    description:
+      '权限集由谁管。`RELEASE_MANAGED` = 随版本发布走 seed,运行时**任何人**(含 SUPER_ADMIN)加减权限都会被拒(30108);' +
+      '`ADMIN_EDITABLE` = 管理员可在后台改。**前端据此把权限编辑器置灰** —— 这就是「系统角色只读状态可被前端识别」的落点。',
+    enum: [...PERMISSION_MANAGEMENT_MODES],
+    example: 'ADMIN_EDITABLE',
+  })
+  permissionManagementMode!: PermissionManagementMode;
+
+  @ApiProperty({
+    description:
+      '角色绑定(谁持有这个角色)由谁管。`SYSTEM_ONLY` = 只能由系统投影器写,人工授予 / 撤销 / 续期一律拒;' +
+      '`MANUAL_ALLOWED` = 允许人工绑定。`POLICY_DERIVED`(职务策略派生)**本期不会出现** —— 理由见 role-classification.ts。',
+    enum: [...BINDING_MANAGEMENT_MODES],
+    example: 'MANUAL_ALLOWED',
+  })
+  bindingManagementMode!: BindingManagementMode;
 }
 
 // detail 接口额外含 permissions 数组(沿 D7 v1.1 §5.2.6)。

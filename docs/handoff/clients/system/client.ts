@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:ec4b5452a390b52c468f8e8ef2b953161db76399ec0e7b46a897db9944335d22
+// inputDigest: sha256:f1ccd87085184152560fb0450de6b5ba2df9f7809ca280d50ad5c7c71d7aee46
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -39,6 +39,10 @@ import type {
   HealthResponseDto,
   MyPermissionsResponseDto,
   PageResultDto,
+  PermissionCatalogGroupDto,
+  PermissionCatalogItemDto,
+  PermissionCatalogResponseDto,
+  PermissionCatalogSectionDto,
   PermissionResponseDto,
   RbacRoleDetailResponseDto,
   RbacRoleResponseDto,
@@ -255,6 +259,10 @@ export function createSystemClient(fetcher: Fetcher) {
     /** 创建权限点(权限码由 seed 定义,此处不能凭空造 —— 闭包外的码抛 30106,闭包内的码 seed 后已存在抛 30002;实际不存在可成功路径) [rbac: rbac.permission.create] */
     PermissionsControllerCreate(body: CreatePermissionDto): Promise<ApiEnvelope<PermissionResponseDto>> {
       return fetcher<PermissionResponseDto>({ method: "POST", path: "/api/system/v1/permissions", body });
+    },
+    /** 权限目录(只读;按业务区 / 分组两级返回全部权限码的中文名、人话说明、风险等级与授予策略;**不分页**,已登记例外) [rbac: rbac.permission.read] */
+    PermissionsControllerCatalog(): Promise<ApiEnvelope<PermissionCatalogResponseDto>> {
+      return fetcher<PermissionCatalogResponseDto>({ method: "GET", path: "/api/system/v1/permissions/catalog" });
     },
     /** 更新权限点(description 由 seed 定义,此处不能改 —— 闭包内的码抛 30110;而闭包外的码又造不出来(30106);实际不存在可成功路径) [rbac: rbac.permission.update] */
     PermissionsControllerUpdate(id: string, body: UpdatePermissionDto): Promise<ApiEnvelope<PermissionResponseDto>> {

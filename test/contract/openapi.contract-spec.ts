@@ -457,6 +457,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/system/v1/audit-logs'],
   ['get', '/api/system/v1/audit-logs/{id}'],
   ['get', '/api/system/v1/permissions'],
+  // P1-32 PR 2(冻结稿 §9.1):权限目录只读投影。复用 rbac.permission.read,零新增权限码;
+  // 一次返回全部条目、**不分页**(分页铁律的已登记例外,见 reference/response-pagination-errors.md §4)。
+  ['get', '/api/system/v1/permissions/catalog'],
   ['post', '/api/system/v1/permissions'],
   ['patch', '/api/system/v1/permissions/{id}'],
   ['delete', '/api/system/v1/permissions/{id}'],
@@ -1049,7 +1052,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 551;
+const EXPECTED_ROUTE_COUNT = 552;
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

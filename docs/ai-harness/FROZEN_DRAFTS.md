@@ -26,7 +26,7 @@
 | # | 冻结稿 | 台账 | 落地度 | 卡在谁 |
 |---|---|---|---|---|
 | 1 | Integration Foundation v1 T0 | P1-30 | `↔⏸ 挂起` **0 / 8 PR** | 冻结件 `D-IF-2`=A:首次生产上线**之后**才开工 |
-| 2 | RBAC 权限目录终态 | P1-32 | `↔进行中 3/9` **完整落地 3 / 9 PR**(另 PR 4 落一半) | 剩 PR 2 / 4b / 5–8 等前端(srvf-admin-web)投用 |
+| 2 | RBAC 权限目录终态 | P1-32 | `↔进行中 4/9` **完整落地 4 / 9 PR**(另 PR 4 落一半) | 剩 PR 4b / 5–8 等前端(srvf-admin-web)投用 |
 | 3 | 活动业务 v1.1 合同(6 份) | P1-28 | `↔进行中` 8 批:6 批主体完 / 2 批部分 | 施工中 |
 | 4 | 架构治理 v4(3 份) | P1-29 | `↔另尺(NEXT_TASKS 的 P1-29 条目只覆盖 Phase 0,本行覆盖 v4 全 11 阶段)` 11 阶段:6 个完 + Phase 6 部分 | 施工中 |
 | 5 | 企业微信 T0 | P1-25 | `↔⏸ 挂起` 代码 100%,运维 0% | 备案 |
@@ -47,13 +47,14 @@ ServicePrincipal 机器身份 + 可轮换凭证 + 受控 DelegationGrant + 第�
 `NEXT_TASKS` 那张开工条件表里的第②条(两边都要给 `Permission` 挂元数据,
 各干各的就是造第二份真相),不是队首。
 
-**② RBAC 权限目录终态 —— 抽走了三项,第四项落了一半**
+**② RBAC 权限目录终态 —— 抽走了四项,第五项落了一半**
 冻结件列 PR 0…PR 8 共九项(`## Goal/PR 0` + `## PR 1`…`## PR 8`,**九**是权威源读数)。
-按 PR 编号口径**完整落地 3 项**:PR 0(决策拍板,#1145)、PR 1(Catalog 单一事实源,#1143)、
+按 PR 编号口径**完整落地 4 项**:PR 0(决策拍板,#1145)、PR 1(Catalog 单一事实源,#1143)、
+PR 2(Catalog 只读 API 与角色分类,2026-08-24)、
 PR 3(控制面安全收口,3a #1147 + 3b #1151 两半都落);PR 4 只落 4a(#1156),4b 未起。
-余 PR 2 / 5 / 6 / 7 / 8 未动,其中 PR 7 依赖前端(srvf-admin-web)投用。
+余 PR 5 / 6 / 7 / 8 未动,其中 PR 7 依赖前端(srvf-admin-web)投用。
 ⚠️ **两把尺子别混用**:本行按**冻结件 PR 编号**计(9 项);`NEXT_TASKS` 状态行同时给出
-「已合 5 刀」(PR 0/1/3a/3b/4a)—— 那是**刀数**,不是 PR 项数。
+「已合 6 刀」(PR 0/1/2/3a/3b/4a)—— 那是**刀数**,不是 PR 项数。
 ⚠️ 冻结件写"236 条",§2 的读数是当前真值 —— **别把它写死成常量**。
 
 **③ 活动业务 v1.1 合同 —— 两根尺子读数不同,别混用**
@@ -99,7 +100,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 |---|---|---|
 | IF v1:ServicePrincipal / DelegationGrant 建表数 | **0** | `prisma/schema.prisma` |
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **0** | `src/**/*.ts(不含 .spec.ts)` |
-| P1-32 PR1:`permission-catalog*` 运行时文件数 | **1** | `src/modules/permissions/` |
+| P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **237** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **63 / 95(32 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
@@ -210,7 +211,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/postgresql-consistency-hardening-review.md` | landed | D-ORG/SMS/RBAC/Throttle/Outbox 五条全落 |
 | `docs/archive/reviews/pre-go-live-readiness-review-v0.35.0.md` | report | 上线前就绪审计 |
 | `docs/archive/reviews/queue-b-otp-birthday-infra-review.md` | landed | Storage 迁移 / SMS retention / OTP / 生日祝福已落 |
-| `docs/archive/reviews/rbac-permission-catalog-t0-review.md` | open · P1-32 | PR0–PR8 九项,只抽走 PR3 安全半边(#1122) |
+| `docs/archive/reviews/rbac-permission-catalog-t0-review.md` | open · P1-32 | PR0–PR8 九项,已落 PR 0/1/2/3(4 只落 4a) |
 | `docs/archive/reviews/recruitment-ocr-anti-forgery-enrichment-review.md` | landed | 鉴伪字段已落 |
 | `docs/archive/reviews/recruitment-phase1-review.md` | landed | P1-11 招新一期已落 |
 | `docs/archive/reviews/recruitment-phase1-systematic-review.md` | report | 招新一期开报名前终检 |

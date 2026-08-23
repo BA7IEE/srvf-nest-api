@@ -7,9 +7,11 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { writeConfigAudit } from './config-audit.util';
+import { buildPermissionCatalog } from './permission-catalog.presenter';
 import {
   CreatePermissionDto,
   ListPermissionsQueryDto,
+  PermissionCatalogResponseDto,
   PermissionResponseDto,
   UpdatePermissionDto,
 } from './permissions.dto';
@@ -165,6 +167,19 @@ export class PermissionsService {
       this.prisma.permission.count({ where }),
     ]);
     return { items, total, page, pageSize };
+  }
+
+  // P1-32 PR 2(冻结稿 §9.1):权限目录只读投影。
+  //
+  // **复用 `rbac.permission.read`,不新增权限码** —— 目录与 `GET /permissions` 是同一份
+  // 权限定义的两种呈现(一份给机器分页、一份给人按业务区分组),读它们该不该被允许
+  // 是同一个问题。新增一条码的连坐面(seed + fixture 独立子集 + selftest 基线 + 四份生成物)
+  // 换不来任何判权粒度。
+  //
+  // 判权之后零查询:目录是代码事实,构造逻辑在 permission-catalog.presenter.ts(纯函数)。
+  async catalog(user: CurrentUserPayload): Promise<PermissionCatalogResponseDto> {
+    await this.assertCanOrThrow(user, 'rbac.permission.read');
+    return buildPermissionCatalog();
   }
 
   async create(

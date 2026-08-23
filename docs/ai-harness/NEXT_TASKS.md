@@ -1878,9 +1878,9 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 判据是「这条 hook 挂了哪些 matcher?写文件还有别的通道吗?」——
 仓内每条 PreToolUse hook 都值得照此对一遍。
 
-### P1-32 RBAC 权限目录与角色权限管理终态 —— 9 个 PR,**PR 0/1/3a/3b/4a 五刀已合(按 PR 编号完整落地 3/9),余 PR 2 / 4b / 5–8 待排**
+### P1-32 RBAC 权限目录与角色权限管理终态 —— 9 个 PR,**PR 0/1/2/3a/3b/4a 六刀已合(按 PR 编号完整落地 4/9),余 PR 4b / 5–8 待排**
 
-**状态**:进行中(3/9 完整落地 + PR 4 落一半;已合 5 刀 PR 0/1/3a/3b/4a #1145 #1143 #1147 #1151 #1156;余 PR 2 / 4b / 5–8,其中 PR 7 依赖前端投用)
+**状态**:进行中(4/9 完整落地 + PR 4 落一半;PR 0/1/3a/3b/4a 已合 #1145 #1143 #1147 #1151 #1156,PR 2 由本刀交付〔在飞的 PR 号不写进状态行 —— 判据 B 要求 `#N` 已合入 main〕;余 PR 4b / 5–8,其中 PR 7 依赖前端投用)
 
 > 方案冻结件:[`archive/reviews/rbac-permission-catalog-t0-review.md`](../archive/reviews/rbac-permission-catalog-t0-review.md)
 > (3,006 行,维护者 2026-08-20 提供,逐字入仓)。
@@ -1960,6 +1960,29 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
   E-B1(#1115)与 E-B2 的授撤不对称都是同族形态。
   ⚠️ 行锁与版本号**不是补旧洞**:旧 POST(加码)/ DELETE(减码)语义可交换,没有丢更新;
   窗口是 `PUT` 这个读-改-写语义带进来的,同刀焊死。别把 changelog 读成「原来一直有并发 bug」。
+
+- ✅ **PR 2 Catalog 只读 API 与角色分类已落地**(2026-08-24):`GET /api/system/v1/permissions/catalog`
+  (只读,复用 `rbac.permission.read`,**零新增权限码**;两级分组树、237 条中文说明一次返回、**不分页**
+  —— 分页铁律的例外已登记进 [`response-pagination-errors.md §4`](../reference/response-pagination-errors.md))
+  + 角色响应 additive 三字段 `kind` / `permissionManagementMode` / `bindingManagementMode`。
+  ⭐ **三字段选「派生」不存库** —— 冻结稿 §6.3 标题逐字「不必立即给 Role 表增加 kind 字段」,
+  理由里最硬的一条是**「不会出现 DB 字段被改成 CUSTOM 逃逸保护」**:分类回答的正是「这个角色能不能改」,
+  存库等于给它开一个可写的第二真相。⇒ 零 migration、零 schema、不占 schema lane
+  (也就不碰那 6 份 e2e 里的 `CURRENT_MIGRATION_COUNT`)。
+  ⚠️ **本刀刻意不出** `catalogVersion` / `catalogHash`:前者仓内无事实源,后者的消费方(变更预览)在 PR 4b/5,
+  那时再加是 additive。同理 `technicalDescription` / `replacementCodes` —— PR 0 一条都没落地,没有东西可返。
+  ⚠️ **`bindingManagementMode` 本期只产出 `SYSTEM_ONLY` / `MANUAL_ALLOWED` 两值**。冻结稿 §6.2 对其余系统角色
+  写的是「`MANUAL_ALLOWED` / `POLICY_DERIVED` **或二者并存**」,而单值枚举表达不了「并存」;
+  且「有没有职务策略映射」是 `organization_position_role_policies` 的**逐行数据事实**,不是角色级分类。
+  枚举仍声明满三值 —— 首版声明全集,将来加值才不算响应枚举加值(契约语义门 B6)。
+  执行位:selfGuard 内的 `check-role-classification` 裁判 + 薄运行器
+  `src/modules/permissions/role-classification.criteria.spec.ts`;判据**两向**都钉
+  (内建角色全只读 / 自定义角色不许被标只读),并扫分类派生处**不许抄角色 code 字面量**。
+
+- ⏭ **登记(PR 2 顺带发现,本刀刻意不动)**:`FROZEN_DRAFTS.md` §2 那条生成读数的**标签**写着
+  「**P1-32 PR1**:`permission-catalog*` 运行时文件数」,而 PR 2 新增的 `permission-catalog.presenter.ts`
+  也匹配那个 glob ⇒ 读数已从 **1 变 2**,**数是对的、闸也绿,但标签把 PR2 的文件算在了 PR1 名下**。
+  改标签要动 `check-frozen-drafts-ledger.ts`(红区判据),与本刀的写集无关,故不顺手改 —— 另起一刀。
 
 - ⏭ **PR 4b 待排**(冻结稿 PR 4 的另一半,**读 / 预览面**):`GET` permission set + `preview`。
   前置已全部就绪(版本号、原语、闸都在 4a 落地);4b 零 schema 改动、零红区(预估)。
