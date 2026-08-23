@@ -1289,14 +1289,172 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 目前没有任何一条已知的生产数据因此出错,`ActivityRuleSnapshot` 那处也只是"守不住",
 不是"已经错了"。登记它是为了下次有人想用 FK 守一致性时能先看到这一条。
 
-**立项时该问的三问**(先答这三问,再决定要不要做,不要直接开工):
+> ⚠️ **上面这段有一处已被 2026-08-23 的取证推翻**:`ActivityRuleSnapshot` 那处
+> **连"守不住"都不是** —— 它挂着 append-only trigger,结构上不可能被 CASCADE 改写。
+> 详见下面「顺带订正」。**缺陷类本身依然成立**(已用 probe 复现),只是首个举例举错了。
 
-1. **全仓有多少 FK 实际在承担「一致性/不可变」职责**(而不只是「引用完整性」)?
-   —— 要按用途数,不是按 FK 总数数;大多数 FK 本来就只该管引用存在。
-2. **其中多少条的 `onUpdate` 是 CASCADE**?—— 这批才是"报警器会自己抹证据"的真子集。
-3. **正确守法能不能做成机器闸**?候选:改 `onUpdate: RESTRICT` / 存哈希并加 CHECK /
-   把不变量搬到应用层事务里断言。⚠️ 三种代价差很远,**必须先量出 1、2 的读数再选**,
-   否则又是「按体量拍脑袋」而不是按归因。
+**三问已答**(2026-08-23 取证,A 档零代码改动;基线 `b30b0cd8`)。
+读数如下,**守法未选 —— 等维护者看完 Q3 对照表再拍板**。
+
+#### 判别法:五路信号取样,交叉核对(不能只用一种)
+
+先按台账要求「按用途数」而不是「按 FK 总数数」。全仓 FK(有 `fields:` 的持有侧)
+共 **283 条** —— 这个数**没有意义**,先记在这里只为当分母。五种信号各自命中:
+
+| 信号 | 判别式 | 命中 | 其中 CASCADE |
+|---|---|---|---|
+| S1 模型名 | 模型名含 `Snapshot`/`Revision`/`Version`/`Evidence`/`Seal`/`Frozen` | 45 | 44 |
+| S2 字段名 | FK 列名含 `snapshot`/`frozen`/`sealed`/`revision`/`version`/`baseline` | 30 | 27 |
+| S3 配套哈希 | owner 模型有**内容型** `*Hash` 列(已剔除幂等型 `requestHash` 等) | 66 | 62 |
+| S4 注释词表 | 字段/模型注释含 快照 / 冻结 / 不可变 / 固化 / 不得修改 | 151 | 132 |
+| S5 复合 FK | FK 列数 > 1(带了一份被复制的锚) | 59 | 42 |
+
+⭐ **五路并集 196 / 283(69%)—— 这个数是错的**,只是没人会信 69% 的外键都在守不可变。
+这正是 P2-8 那个坑的同构复现:**信号是发现网,不是判据**。单用 S4 会报 151 条,
+据此得出的任何归因(「全仓普遍存在」)都是判据太粗造成的假象。
+
+#### Q1 = **28 条**(按用途数,非按 FK 总数数)
+
+把发现网收敛成机制判据,两个条件同时成立才算数:
+
+1. **持有侧是冻结记录** —— 证据三选一取并集:无 `updatedAt` 列 / 有 append-only DB trigger /
+   模型名自称快照类;**再逐个反证**:生产代码若真的 `update()` 它,就不是冻结记录,剔除。
+2. **FK 是复合的** —— ⭐ 这一条是机制决定的,不是偏好:`ON UPDATE CASCADE`
+   **只传播被引用列的变化**。全仓 283 条 FK 的被引用列**无一例外全是 `id` 型代理键**
+   (`id` 283 次,其余只有 `activityId`/`sessionId`/`memberId` 等锚列,**没有任何一条引用业务内容列**)。
+   单列 FK 指向 cuid 主键 ⇒ 那个值永不变 ⇒ CASCADE 结构上**无物可抹**。
+   只有复合 FK 才在自己列里存了一份**被复制的锚**,那份副本才是 CASCADE 能改写的东西。
+
+逐条清单(28 条 / 7 个模型):
+
+| 模型(持有侧) | 条数 | `onUpdate` | DB trigger | FK(relation 字段) |
+|---|---|---|---|---|
+| `ActivityAllocationApplicationProjection` | 11 | Restrict | ✅ | `allocationBatch` `allocationCandidate` `participationIdentity` `appliedParticipationRevision` `position` `activityPersonReservation` `sessionReservation` `positionReservation` `activityPersonBucket` `sessionBucket` `positionBucket` |
+| `AttendancePunchEvent` | 6 | **CASCADE** | ✅ | `session` `position` `participationIdentity` `qrCredential` `offlinePackage` `supersedesEvent` |
+| `OfflinePackageParticipant` | 4 | **CASCADE** | ❌ **无** | `offlinePackage` `session` `participationIdentity` `position` |
+| `ParticipationLedgerEntry` | 3 | **CASCADE** | ✅ | `session` `identity` `reversesEntry` |
+| `ActivityQualificationRuleSet` | 2 | **CASCADE** | ⚠️ 条件性 | `session` `position` |
+| `ActivityAllocationCommandReceipt` | 1 | Restrict | ✅ | `allocationBatch` |
+| `InsuranceEligibilityEvidence` | 1 | Restrict | ✅ | `activityRegistrationRevision` |
+
+**假阳性:做的是普查不是抽查。** 32 个候选模型逐个反证(生产代码是否真的 update 它),
+**11 个被剔除,假阳性率 34%**:
+
+- **模型名信号(S1)最差 —— 7 个假阳性**:`EvidenceSeal` / `ActivityEvidenceState` /
+  `RegistrationFormVersion` / `AttendanceSettlementVersion` / `ParticipantServiceSegmentRevision` /
+  `ParticipantSettlementResultRevision` / `ActivitySettlementClosureRevision`。
+  ⭐ 名字里写着 `Seal`(封存)`Evidence`(存证)的模型**照样天天被 update** ——
+  「名字听起来不可变」与「真的不可变」是两件事。
+- **无 `updatedAt` 信号 —— 4 个假阳性**:`RefreshToken`(21 处 update)/ `OrganizationClosure` /
+  `RecruitmentIdentitySession` / `MemberAudienceTagAssignment`。
+- ⚠️ **反向也查了(假阴性)**:9 张有 DB trigger 的表里,`ActivityQualificationRuleSet` 与
+  `ActivityQualificationRule` **带 `updatedAt`**,只用「无 `updatedAt`」会漏掉 **2/9**。
+  Q1 用并集正是为了接住这两条 —— **只用一种信号两个方向都会错**。
+
+#### Q2 = **15 条**;真正无遮挡的残余 = **4 条**
+
+先把默认值坐实(台账要求实测,不许假设):
+
+- ⭐ **Prisma 未写 `onUpdate` 时,默认落到 `CASCADE`** —— 由
+  `prisma migrate diff --from-empty --to-schema-datamodel` 生成的规范 DDL 实测:
+  283 条 FK 里 **264 条 `ON UPDATE CASCADE`**(= schema 中未写 `onUpdate` 的 264 条)、
+  **19 条 `ON UPDATE RESTRICT`**(= 显式写了 `onUpdate: Restrict` 的 19 条),**逐条一一对应**。
+- ⚠️ **该默认值与可空性无关**:264 条里 111 条可选 + 153 条必填,**全部** CASCADE。
+  这一点必须单独实测 —— 因为 `onDelete` 的默认值**是**看可空性的(必填 `Restrict` / 可选 `SetNull`),
+  照着推 `onUpdate` 会推错。
+- 读数按「显式 + 默认落到 CASCADE」算(即实际 DDL 口径),不是只数显式写了 CASCADE 的
+  —— 全仓**没有任何一处显式写 `onUpdate: Cascade`**,只数显式的会得到 0,那是假读数。
+- 本机库(容器 `u-nest-api-postgres` 的 `app`)只跑到 **67/95** 个 migration,已陈旧,
+  **不作为读数来源**;仅作方向性佐证:其 `information_schema` 为 98 CASCADE / 1 RESTRICT。
+
+于是:Q1 的 28 条里,`onUpdate` 为 CASCADE 的 = **15 条**(其余 13 条已是 `Restrict`)。
+
+⭐ **但 15 条不是真子集,4 条才是。** 15 条里有 11 条的持有表挂着 DB trigger。
+**实测**(一次性 probe 库,已删):FK 的级联更新会**触发持有侧的行级 BEFORE UPDATE trigger** ——
+报错上下文里能看到 PostgreSQL 内部发出的
+`UPDATE ONLY "public"."child_b" SET "pid" = $1, "anchor" = $2`,整个事务回滚,副本保持原值。
+⇒ **行级 BEFORE UPDATE trigger 会把 `ON UPDATE CASCADE` 就地废掉。**
+
+⚠️ 那 11 条**不是同一种 trigger**,逐个读过函数体后要分开算:
+
+- **9 条无条件挡**:`AttendancePunchEvent`(6)与 `ParticipationLedgerEntry`(3)的
+  `*_append_only_guard()` 函数体是**无条件 `RAISE EXCEPTION`**,没有任何 `IF` 分支。
+- **2 条按状态挡**:`ActivityQualificationRuleSet`(2)的 `freeze_guard()` 是**条件性**的 ——
+  `retired` 全拒;`active` 只放行「转 retired」且**显式点名拒绝**改
+  `activityId` / `sessionId` / `positionId`(恰好就是级联够得着的那几列);
+  `draft` 则完全放行。⭐ **但这不是缺口**:`draft` 阶段该规则集本就还在可变期,
+  没有「副本等于当初那份源」的不变量可违反 —— **保护范围与不变量的生效范围恰好对齐**。
+
+| | 条数 |
+|---|---|
+| Q1 承担不可变职责的 FK | 28 |
+| Q2 其中 `onUpdate` = CASCADE | **15** |
+| ├ 被无条件 append-only trigger 挡住 | 9 |
+| ├ 被条件性 freeze trigger 挡住(条件与不变量对齐) | 2 |
+| └ **Q2\* 无任何遮挡 = 真残余** | **4** |
+
+**4 条全部在 `OfflinePackageParticipant`**(离线打卡包的参与者名册快照:
+只有 `createdAt` 无 `updatedAt`、无 trigger、生产代码从不 update 它):
+`offlinePackage` / `session` / `participationIdentity` / `position`。
+它的四个父表(`OfflinePackage` / `ActivitySession` / `ActivityParticipationIdentity` /
+`ActivitySessionPosition`)**都是可变模型**(都带 `updatedAt`)。
+
+⚠️ **这 4 条当前打不响,但拦住它的不是任何执法位** —— 实测全仓
+**没有任何一条代码路径写被引用的锚列**:993 个 `src/**.ts` 里,typed Prisma 的
+`update/updateMany/upsert` 的 `data` 负载命中锚列的只有 1 处
+(`recruitment-certificate-claims.service.ts:594` 的 `standardId: null`,
+那是**持有侧**清空自己的 FK 列,不是改被引用侧,不会触发级联);
+9 条裸 SQL `UPDATE ... SET` 里命中锚列的 **0 处**。
+⇒ 拦住它的只是「碰巧没人写」这条**无人守的代码纪律**,而不是 schema 或闸。
+
+#### 机制实测(一次性 probe 库,已删,不碰 `app`)
+
+| 用例 | 结果 |
+|---|---|
+| A 复合 FK + CASCADE + 无 trigger,改父锚 | 子表副本**被静默改写** `A-OLD`→`A-NEW`,而记录当初值的旁列纹丝不动 ⇒ **缺陷类可复现** |
+| B 同上但子表有 append-only trigger | trigger **照常触发**,级联被拒、事务回滚,副本保持原值 ⇒ trigger 能遮挡 CASCADE |
+| C 把被引用列改写成**同一个值** | 级联**不触发**(PostgreSQL 只在值真变了才级联)|
+
+#### ⚠️ 顺带订正:本条出处引文里的理由,对 `ActivityRuleSnapshot` **不成立**
+
+上面引的「该刀把 `snapshotHash` 判为不补,理由是本批复合 FK 恒为 CASCADE」——
+**结论(不补)是对的,但理由是错的**,而被推广成缺陷类的恰恰是那个错理由:
+
+- `snapshotHash` **根本不是任何 FK 的列**,`ON UPDATE CASCADE` 结构上碰不到它;
+- `ActivityRuleSnapshot` 自己的 3 条 FK **全是单列指向 `id`**,不是复合 FK;
+- 它挂着 `trg_activity_rule_snapshot_10_append_only`(`BEFORE UPDATE OR DELETE` 无条件 RAISE),
+  ⇒ 它**永远不能被 UPDATE**,其 `id`/`activityId` 永不变,
+  因此**指向它**的那些复合 FK(`OfflinePackage.ruleSnapshot` 等)的级联也永远不会发生。
+
+⇒ 该处不补哈希是对的(trigger 已经比哈希更强),但不是因为「CASCADE 会抹掉证据」。
+**缺陷类本身依然成立**(用例 A 已复现),只是它的**首个举例举错了**。
+
+#### Q3 三种守法的代价对照(**不替维护者选**)
+
+⭐ 台账原列三种候选,实测发现**仓内已经在用第四种**,且它比前三种都强,故一并列出:
+
+| 候选 | 代价 | 适用条件 | 与本仓现状 |
+|---|---|---|---|
+| **A. 改 `onUpdate: Restrict`** | 1 个 migration(4 条约束 DROP/ADD);打掉合法级联更新路径的风险**实测为零**(全仓无任何代码写被引用锚列) | 持有侧是冻结记录、且父表锚列本就不该改 | ⭐ **已是本仓既有范式**:19 条显式 `Restrict` 全部落在冻结类模型上(`ActivityAllocationApplicationProjection` 11 条等),说明后续批次**已经自发在这么做**,只是 `OfflinePackageParticipant` 那批漏了 |
+| **B. 存哈希 + DB CHECK** | 加列 + 回填历史行 + **所有写入路径都要算哈希**;CHECK 无法跨表比对,实际要落成 trigger | 需要证明的是「整行内容」没变,而不只是锚列没变 | 成本最高;`ActivityRuleSnapshot` 的先例是**没走这条**(改用 trigger) |
+| **C. 应用层事务断言** | 无 migration;但**离开 DB 就没有强制力**,任何绕过服务层的写入(seed / 运维 SQL / 未来新路径)都不受约束 | 不变量依赖业务上下文、DB 表达不了 | 与本仓「能做成机器检查的就不要只写成文字要求」相冲 |
+| **D. append-only trigger**(台账未列) | 1 个 migration + 配套 spec(须验 INSERT 放行 / UPDATE 拒 / DELETE 拒 / TRUNCATE 放行且 trigger 存活四件事) | 整行都不该再变 | ⭐ **已是本仓房规**:9 张表 10 个 trigger 在跑;**实测能同时遮挡 CASCADE**(用例 B) |
+
+**取舍要点(供拍板参考,不构成结论)**:
+
+- A 与 D **不是二选一**:A 只锁锚列、D 锁整行;`AttendancePunchEvent` 等 11 条是
+  「D 已有、A 没做」,`ActivityAllocationApplicationProjection` 是「A、D 都做了」。
+  真残余的 4 条是**两样都没有**。
+- ⚠️ **若判定「4 条不值得动」也是一个合法结论** —— 但那要写成「已知敞口、接受风险」,
+  而不是留着当「无人知道的缺口」。
+- ⚠️ **Q2 ≠ 0,但也不等于「有 bug」**:4 条是**暴露形状**,当前**不可能被触发**
+  (无任何代码写被引用锚列)。这仍是**判据缺口不是风险敞口**,两本账别混 ——
+  没有任何一条生产数据因此出错。缺口在于:让它保持安全的是「碰巧没人写」,
+  **没有任何机器执法位**会在有人第一次写锚列时红。
+- ⭐ **若要建闸,别建在「数 CASCADE 有几条」上** —— 那是 283 那个无意义分母的变体。
+  按本刀的机制判据,闸的形状应是:**「冻结记录 + 复合 FK」的集合里,不允许出现
+  既无 `onUpdate: Restrict` 又无 append-only trigger 的成员**(当前该集合有 4 个成员)。
+  ⚠️ 但**闸的形状要等 Q3 拍板之后才定**,本刀不建闸。
 
 ### P2-12 golden journey 有两条链**从未被自动化穿过**(直写库绕过去了)— 2026-08-21 由新建的 journey 直写纪律闸逼出
 
