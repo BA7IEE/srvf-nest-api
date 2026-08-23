@@ -388,3 +388,59 @@ selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.s
   `*resultCode`·`*SummaryCode` 家族)仍在册外;"56 条 ≠ 全仓状态列总数"这条口径仍然成立。
 - ❌ **不改 blocker**:§10.5 ① 的 4 条缺口只记录,没往 `governedBlockers` 里加。
 - ❌ **不建共享状态机执行器**,不动 `action-state-checks.ts`,零 `src/**` / `prisma/**` 改动。
+
+### 10.7 订正:唯一那条「升格候选」是**假读数**(2026-08-24 实测)
+
+§10.4 表里「零 blocker 但仍 inventory 的升格候选 = **1**
+(`ParticipantSettlementResultRevision.statusCode`)」——**该条根本升不了格**,
+它不该出现在候选里。表里的旧读数保留作历史,本节是订正。
+
+**它是怎么变成假读数的**:`upgradeCandidates` 的算法是
+「`governanceStatus === 'inventory'` 且 `governedBlockers` 为空」。
+而**上一节 §10.6 自己就写着**这条升不了(「它的 `implementation` 是散文……结构上给不出
+`implementationFile`」)—— 也就是说,**事实当时就知道,只是写进了散文、没写进机器读的那个字段**。
+`governedBlockers` 空着,算法当然把它算成候选。这正是本仓那句
+「**描述文本 ≠ 执行位**」的又一个实例:同一份文件里,散文与机器字段对同一件事给出相反答案。
+
+**取证**(把它升 `governed` 试跑 `pnpm docs:boundaries:check`,判据自己打印):
+
+```
+state entry ParticipantSettlementResultRevision.statusCode: edge endpoint "committed"
+never appears as a string literal in src/modules/activities/ledger-preparation.service.ts
+(registry declares an edge the named module does not mention)
+```
+
+**根因**:这台状态机**物理散在 4 个文件** —— `settlement-draft.service.ts` 建 `draft`、
+`ledger-posting.service.ts` 用裸 SQL 写 `committed`、`correction-application.service.ts`
+用裸 SQL 写 `superseded`、`ledger-preparation.service.ts` 只读校验。
+§10.2 ② 的 L2 门槛要求**单一** `implementationFile` 做正反双向对账,结构上给不出。
+
+⚠️ **有三个文件恰好同时含 `draft` / `committed` / `superseded` 三个字面量**
+(`correction-application` / `settlement-draft` / `activity-settlement-http`),
+把其中任何一个填进 `implementationFile`,**闸会绿**。但那些字面量属于**兄弟模型**
+(`ActivitySettlementClosureRevision.statusCode` 与 `ParticipantServiceSegmentRevision.statusCode`
+是同一组三值闭集)。**「挑一个能让闸变绿的文件」= 为凑绿放宽口径,已否决。**
+这也是本闸的一个已知缺口,写在明处:**它只验字面量在不在,不验那个字面量属于哪个模型。**
+
+**处置**:按实测把 `impl-scattered`(仓内既有取值)补进该条的 `governedBlockers`。
+这是**补真相,不是放宽** —— 它此前是 `inventory`、不执行任何判据,补 blocker 不解除任何约束,
+只让机器字段与 §10.6 的散文对上。A/B 读数(`pnpm docs:boundaries`):
+
+| 读数 | 补之前 | 补之后 |
+|---|---|---|
+| `upgradeCandidates` | `["ParticipantSettlementResultRevision.statusCode"]` | `[]` |
+| `blockerHistogram["impl-scattered"]` | 1 | 2 |
+| `byStatus`(`governed` / `inventory`) | 8 / 50 | 8 / 50(不变) |
+| `--violations` findings 总数 | 634 | 634(不变) |
+| `pnpm docs:boundaries:check` | exit 0 | exit 0 |
+
+⇒ **Phase 4 当前的真实升格候选 = 0 条。** 「50 条 inventory 里有 1 条够得着门槛」这句话
+从今天起不成立;要恢复候选,只能靠**还债**(收口散落实现 / 回填 DB CHECK / 补 wrong-state 码),
+不能靠调登记表。
+
+**本节明确不做**:没有给「零 blocker 却仍 inventory」接执行位(那会是 v4 §5.2 R10
+「存量按棘轮晋升」的执行位,今天仍是零执法)。理由见
+[`NEXT_TASKS.md`](NEXT_TASKS.md) P1-29 的 **B-2**:该闸的常驻阳性对照必须写进
+`scripts/harness-guards.selftest.ts`(红区),而且那份里 `:1817` 的
+`governedEntries.length === 8` 把 governed 条数**硬编码**了 —— 任何升格都会打红它,
+与该条能否过闸无关。**没有常驻阳性对照的新闸是在给债务台账添条目,不是还债。**

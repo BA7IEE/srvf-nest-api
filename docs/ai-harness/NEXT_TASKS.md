@@ -681,16 +681,100 @@
   - 现状读数随时可查:`pnpm cutover:check` 的 5b(登记表在
     [`docs/handoff/contract-version-registry.md`](../handoff/contract-version-registry.md))。
 
-### P1-29 架构治理 Phase 0 — 拍照·登记·健康基线（执行中；纯取证，零业务代码）
+### P1-29 架构治理 v4 全 11 阶段 — **已落 7 阶段;剩 Phase 3 / 4 / 6-B / 7,翻闸项见 B 档三条**
 
-**状态**:待办
+**状态**:进行中(11 阶段落 7:Phase 0 / 1A / 1J / 1D / 2 / 5 / 6-A;最近两刀 #1009 债务台账闸、#1131 债务棘轮执行位。未完 Phase 3 / 4 / 6-B / 7,Phase 8 条件触发。2026-08-24 翻闸取证已完成 —— 结论是**剩下的都翻不动**,逐条见下方 B-1 / B-2 / B-3)
 
-- **依据**：[v4 冻结方案](../archive/reviews/architecture-governance-v4/README.md)；[本 goal 的 Phase 0 交付物](../archive/reviews/architecture-governance-v4/README.md#12-phase-0-真实交付物清单)。
-- **执行位**：`harness/domain-map.json`、`architecture-debt.json`、`state-machines.json`、
-  `route-authz-classification.json`、`baseline-health.json` 与 `check-boundaries` / Route Authorization
-  Policy 生成器；首轮恒 report 级，未满足 Exit Criteria 前不得翻闸。
-- **边界**：仅治理登记、报告与健康基线；不改 `src/**`、Prisma schema/migration、测试行为或 CI
-  控制面，不执行 Phase 1 Guard / ALS / enforce。128 个 `[auth]` 结构化定性、域/owner 与 kernel 字段均交维护者拍板。
+> ⚠️ **本条标题原写「Phase 0 — 拍照·登记·健康基线(执行中)」,状态行是裸 `待办`** ——
+> 与标题自述的「执行中」自相矛盾,且 Phase 0 早已收口。既有台账状态闸对它**结构性失明**:
+> 判据 C 只对「有交付类 commit 点名本条编号」的条目开火,而实测**点名 `P1-29` 的 commit 数 = 0**
+> (v4 各阶段的提交写的是 `feat(harness)` / `ci(governance)`,从不带编号)。
+> 这正是那条闸自己登记的已知缺口①「漏的是压根没点名的那一类」的实例。2026-08-24 订正。
+
+- **依据**：[v4 冻结方案](../archive/reviews/architecture-governance-v4/README.md)(11 阶段;§7 是 report→blocking 的 Exit Criteria)。
+- **载体**：`harness/domain-map.json`、`architecture-debt.json`、`architecture-debt-baseline.json`、
+  `state-machines.json`、`service-size-baseline.json`、`ratchet-registry.json` 与
+  `scripts/check-boundaries.ts` / `check-codemap.ts` / Route Authorization Policy 生成器。
+- **边界**：仅治理登记、报告与基线;不改 `src/**`、Prisma schema/migration、测试行为。
+
+#### 2026-08-24 翻闸取证:**授权预算内零个 CI 侧闸可翻**
+
+逐条判据是「**这条规则失败时 CI 那一步会不会让 PR 变红**」,不是「文件里有没有 `report` 字样」。
+
+| 规则 / 判据 | CI 会不会红 | 翻成执法后当前违规数 | 档 |
+|---|---|---|---|
+| A 类元数据 `docs:boundaries:check`(R1/R4/R7/R10 登记闸) | ✅ 已阻断 | — | 已执法 |
+| 债务台账语义完整性 `docs:boundaries:debt:check` | ✅ 已阻断(#1009) | — | 已执法 |
+| call-site 身份 `docs:boundaries:ids:check` | ✅ 已阻断 | — | 已执法 |
+| **架构债棘轮 `docs:boundaries:newdebt:check`** | ✅ 已阻断(#1131,无 `\|\| true`);实测 `scanned 641 / unknown 0` | — | 已执法 ⇒ **R2/R3/R5/R15 的「新增违规才阻断」已有执行位** |
+| `pnpm docs:boundaries`(`--violations`)的 `\|\| true` | ❌ —— 但**它是空开关**:`runViolations()` 从不设 exitCode,634 条 finding 实测仍 `EXIT=0` | 删掉 = 零行为变化 | 无收益,不翻 |
+| R6 跨域语义读三档 | ❌ report | 8 条 semantic-predicate 候选 + 119 条 dynamic | **B** —— v4 §5.2 明写「**长期 report**,升级须单独拍板」,不是欠账 |
+| R8 声明↔实现闭环 | ❌ 规则默认 `'off'`,只有 `SRVF_AUTHZ_R8_REPORT=1` 才 `'warn'`;而 `lint:authz:report` **未接任何 CI** | **160 条 warning**(实测) | **B** |
+| Phase 6-B 尺寸棘轮 `harness:servicesize \|\| true` | ❌ report(真开关) | **14 条**(13 个基线文件变大 + 1 个基线外新超阈值) | **B-1** |
+| Phase 4 状态列 `governed` 晋升 | A 类声明闸已阻断;50/58 仍 `inventory` | 真实升格候选 **0 条**(唯一那条是假读数,已订正) | **B-2** |
+| Phase 7 债务清偿 229 / 641 | 台账完整性已执法;清偿是内容工作 | — | 非执行位问题 |
+
+**两个必须记下的形态**:
+
+1. ⭐ **「看起来像逃生门、实际什么都没关」**。全仓 workflow 恰两处 `|| true`
+   (`ci.yml:253` / `:271`),而 `:253` 那处**兜的脚本根本不会失败** ——
+   `runViolations()` 只 `process.stdout.write` 不设 `exitCode`。
+   `docs/ai-harness/README.md` §2 末句写「末两条……脚本本身有发现即退出 1」,
+   对 `:271` 成立、对 `:253` **不成立**。读代码相信 ≠ 实跑退出码。
+2. ⭐ **两处 `|| true` 都在 `.github/workflows/ci.yml`(红区 `ci-workflows`)**,
+   且 `:253` 那处被 `scripts/harness-guards.selftest.ts:1121` 逐字钉住
+   (`ci.includes('pnpm docs:boundaries || true')`)。
+   ⇒ **翻任何一个 CI 侧闸都至少要两条红区授权**,本刀两条授权
+   (`check-boundaries.ts` + `state-machines.json`)一条也不覆盖它们。
+   **开关不在被授权的那两个文件里** —— 这是本刀 goal 的前提缺口,如实记下。
+
+#### B-1 Phase 6-B 尺寸棘轮转 blocking(`ci.yml:271` 删 `|| true`)
+
+**翻不动的理由**:实测 14 条违规 —— 13 个基线文件比基线大
+(`activity-responsibility` +40 / `attendance-onsite-batch-job` +76 等,合计 +171 NCLOC),
+外加 `attachments/attachment-storage-orchestrator.ts` 净 711 越过阈值 700 却不在基线。
+且 [`SERVICE_SIZE_RATCHET.md`](SERVICE_SIZE_RATCHET.md) §4 的**专属 EC**
+(「6-B 拆分已把摩擦压到可接受区间」)2026-08-21 复测 **❌ 严口径 35 > 判据线 30**。
+**代价**:先还这 14 条(或经拍板重算基线),再删 `|| true`;需 `ci.yml` 红区授权 + 环境审批。
+⚠️ `pnpm harness:servicesize:write` **不是棘轮安全的**(整体重算会新增 + 上调条目,
+而裁判那条硬失败**审批盖不掉**:scan 失败 ⇒ approval job 被 skip,没有可点的按钮),
+见 `SERVICE_SIZE_RATCHET.md` §3.2。
+
+#### B-2 Phase 4 晋升棘轮接执行位 + 去掉 `governed` 条数的硬编码
+
+v4 §5.2 R10 写着「存量按棘轮晋升」「Phase 4 起新建 stateful 实体必须直接 governed」——
+**这两句今天零执法**:`upgradeCandidates`(零 blocker 却仍 `inventory` 的条目)只出现在
+`--violations` 的 B 类报告块里,恒 report。把它搬进已阻断的 `--metadata` 即为执行位,
+形态与台账状态闸同源(**治「沉默」不治「没做完」**:如实写下 blocker 即放行)。
+
+**为什么本刀不做**:
+- 常驻阳性对照必须写进 `scripts/harness-guards.selftest.ts`(红区,本刀无授权)。
+  **没有常驻阳性对照的新闸是在给债务台账添条目,不是还债。**
+- 同一份 selftest 的 `:1817` 断言 `governedEntries.length === 8` —— **把 governed 条数硬编码**。
+  ⇒ **任何一条状态列升格都必然打红它**,与该条能否过闸无关。这是「写死 N」缺陷类
+  (`docs/ai-harness/README.md` §4 刚因同一形态从「恰 4 文件」true-up 过),该一并去掉。
+
+**前置读数**(本刀已订正,见 [`STATE_MACHINE_INVENTORY.md`](STATE_MACHINE_INVENTORY.md) §10.7):
+`ParticipantSettlementResultRevision.statusCode` 的 `governedBlockers: []` 是**假读数** ——
+实测升格被 L2 闸当场拒(状态机物理散在 4 个文件),已补 `impl-scattered`。
+⇒ 真实升格候选从 1 变 0,**该闸落地即零违规**。
+
+#### B-3 ⭐ 边界扫描面漏掉 `src/modules/**` 与 `src/common/**` 之外的 19 个文件
+
+`scan()` 主循环第一步是 `moduleOf(file)`,而它**只认 `^src/modules/([^/]+)/`** ——
+R15 当年建立就是为了堵这条「把业务 helper 搬出 modules 就免于一切边界规则」的逃生通道,
+但**只堵了 `src/common/` 一个目录**。`src/bootstrap/` · `src/config/` · `src/database/`
+与 src 根下的 worker / fixture 文件(共 **19 个非 spec `.ts`**)**结构上够不到任何边界判据**,
+也因此永远不会进 `architecture-debt-baseline.json`,连棘轮都看不见它们。
+
+**摩擦实测极小**:19 个里真有 Prisma / 裸 SQL 触点的只有 2 个 ——
+`src/local-activity-frontend-fixture.ts`(23 处,本地夹具)与
+`src/bootstrap/postgresql-throttler-storage.ts`(5 处,技术件)。
+
+**代价**(所以不在本刀内):扩扫描面 = **改判定口径**(本刀禁区),
+且新发现的存量违规必须登记进 `harness/architecture-debt-baseline.json`(红区,本刀无授权),
+而基线是 `set-monotonic` 棘轮、由 base-trusted 裁判守「只减不增」⇒ 新增条目须环境审批。
+**三条里这条最值钱**:它是结构性零执法,不是「存量多」。
 
 ### Content / Notification 可见性业务 Decision — **✅ 已最终拍板(2026-07-27)**
 
