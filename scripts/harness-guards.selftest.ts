@@ -5511,8 +5511,15 @@ void (async (): Promise<void> => {
       'no-api',
     ]);
 
-    const JOURNEY_WRITE_RE =
-      /(?:prisma|tx)\.[A-Za-z][A-Za-z0-9]*\.(?:create|createMany|upsert|update|updateMany)\(/;
+    /**
+     * 写动词闭集 —— 「逐条交代」扫描与下面「已接通接缝」扫描**共用一份**。
+     * 分两份写的代价:两处对「什么算写」各自漂移,而漂移的那侧不会有任何症状
+     * (真实先例:另一道闸的扫描面漏掉整个 `update` 家族 = 真敞口)。
+     */
+    const JOURNEY_WRITE_VERBS = '(?:create|createMany|upsert|update|updateMany)';
+    const JOURNEY_WRITE_RE = new RegExp(
+      `(?:prisma|tx)\\.[A-Za-z][A-Za-z0-9]*\\.${JOURNEY_WRITE_VERBS}\\(`,
+    );
     const JOURNEY_NOTE_RE = /\/\/\s*journey-direct-write:\s*([a-z][a-z-]*)\s*—/;
 
     /** 地板锚点:不写「恰 46 条」—— 那会在下次加 journey 时过期,然后被人顺手改大。 */
@@ -5605,6 +5612,106 @@ void (async (): Promise<void> => {
       'journey 直写:真实 test/support 当前 PASS(每处都已交代)',
       journeyAudit.findings.length === 0,
       journeyAudit.findings.slice(0, 8).join('\n      '),
+    );
+
+    // ── 已接通的接缝:不许接回去(P2-12a,2026-08-23)──────────────────────
+    //
+    // 上面那道闸只问「交代了没有」,**不问「这处还该不该存在」** —— 分类标注可以把
+    // 一次回退**买回来**。实测(变异对拍,同一份输入喂两道闸):把两条 journey 的
+    // 招新实名起步改回直插、并配一条**完全合法**的 `mid-chain-start` 标注 ⇒
+    //   旧闸 findings = 0(**仍全绿**) · 新闸 findings = 2(红,点名 file:行号)。
+    // 所以「接通了」这件事需要单独一道闸守,否则本刀只是当期快照。
+    //
+    // 形态取**封口模型登记表**而不是「certificate / team-join 两文件特判」:
+    // 12b 把考勤审核链接通后,`attendanceSheet` / `attendanceRecord` 按同一形状进表即可,
+    // 不用再造第二种判据(修「类」不修「实例」)。
+    const JOURNEY_SEALED_MODELS: ReadonlyArray<{ model: string; why: string }> = [
+      {
+        model: 'recruitmentIdentitySession',
+        why:
+          'P2-12a 已把两条 journey 的招新链第一步改走真入口(send-code → verify-code → 一次性 token);' +
+          '直写这张表 = 把「招新实名入口在 CI 里一次都没跑过」那个缺口接回去',
+      },
+    ];
+
+    function auditSealedSeams(
+      files: ReadonlyArray<{ path: string; text: string }>,
+      sealed: ReadonlyArray<{ model: string; why: string }>,
+    ): string[] {
+      const findings: string[] = [];
+      for (const { model, why } of sealed) {
+        // 与 JOURNEY_WRITE_RE 共用动词闭集;`prisma.` 与事务内 `tx.` 两种前缀都算
+        const re = new RegExp(`(?:prisma|tx)\\.${model}\\.${JOURNEY_WRITE_VERBS}\\(`);
+        for (const file of files) {
+          const lines = file.text.split('\n');
+          for (let i = 0; i < lines.length; i += 1) {
+            if (re.test(lines[i])) {
+              findings.push(`${file.path}:${i + 1} 直写已接通的接缝模型 ${model} —— ${why}`);
+            }
+          }
+        }
+      }
+      return findings;
+    }
+
+    // ── 仪器正反对照:先证明这个函数真的会红,再拿它去量真仓库 ──────────────
+    const SEALED_MODEL = JOURNEY_SEALED_MODELS[0].model;
+    const SEALED_STUB_LABELED =
+      '// journey-direct-write: mid-chain-start — 入口要真实短信验证码往返\n' +
+      `await prisma.${SEALED_MODEL}.create({ data: {} });`;
+
+    checkEq(
+      '封口接缝:封口模型 + **合法**分类标注 ⇒ 仍 FAIL(标注买不回来 —— 本闸存在的理由)',
+      auditSealedSeams([{ path: 's.ts', text: SEALED_STUB_LABELED }], JOURNEY_SEALED_MODELS).length,
+      1,
+    );
+    checkEq(
+      '封口接缝:`tx.` 前缀 + `update` 动词 ⇒ FAIL(前缀与动词闭集全覆盖)',
+      auditSealedSeams(
+        [{ path: 's.ts', text: `await tx.${SEALED_MODEL}.update({ where: {} });` }],
+        JOURNEY_SEALED_MODELS,
+      ).length,
+      1,
+    );
+    checkEq(
+      '封口接缝:非封口模型 ⇒ PASS(不误伤其余那 40+ 处合法直写)',
+      auditSealedSeams(
+        [{ path: 's.ts', text: 'await prisma.member.create({ data: {} });' }],
+        JOURNEY_SEALED_MODELS,
+      ).length,
+      0,
+    );
+    checkEq(
+      '封口接缝:封口模型**只读** ⇒ PASS(只禁写,不禁读)',
+      auditSealedSeams(
+        [{ path: 's.ts', text: `await prisma.${SEALED_MODEL}.findFirst({ where: {} });` }],
+        JOURNEY_SEALED_MODELS,
+      ).length,
+      0,
+    );
+
+    // ⭐ 假绿路径自证:登记表里的模型名一旦拼错,正则永不命中 ⇒ 本闸恒绿且毫无症状。
+    // 与 schema 交叉核对把这条路堵死(Prisma client 属性名 = schema 模型名的 camelCase)。
+    const prismaSchemaText = fs.readFileSync(
+      path.resolve(__dirname, '..', 'prisma/schema.prisma'),
+      'utf-8',
+    );
+    const sealedModelsMissing = JOURNEY_SEALED_MODELS.filter(({ model }) => {
+      const pascal = model.charAt(0).toUpperCase() + model.slice(1);
+      return !new RegExp(`^model\\s+${pascal}\\s*\\{`, 'm').test(prismaSchemaText);
+    }).map(({ model }) => model);
+    check(
+      '封口接缝:登记表模型名在 schema 内真实存在(拼错 ⇒ 恒绿假 PASS)',
+      sealedModelsMissing.length === 0,
+      `schema 里找不到这些封口模型:${sealedModelsMissing.join(' / ')}`,
+    );
+
+    // ── 真仓库读数 ────────────────────────────────────────────────────────
+    const sealedFindings = auditSealedSeams(journeyFiles, JOURNEY_SEALED_MODELS);
+    check(
+      '封口接缝:真实 test/support 对已接通模型零直写',
+      sealedFindings.length === 0,
+      sealedFindings.slice(0, 8).join('\n      '),
     );
   }
 

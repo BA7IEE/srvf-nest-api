@@ -1,8 +1,8 @@
 import request from 'supertest';
 
-import { hashPhoneVerificationToken } from '../../src/modules/recruitment/recruitment.constants';
 import { devStubOcrImage, VALID_PNG_IMAGE } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
+import { issuePhoneVerificationToken } from './journey-recruitment-identity';
 import { type JourneyRuntime, journeyPrisma } from './journey-runtime';
 
 const RECRUITMENT_CYCLES = '/api/admin/v1/recruitment/cycles';
@@ -52,18 +52,8 @@ async function submitApplicant(
   const prisma = journeyPrisma(runtime);
   const wechatCode = 'journey-4-applicant';
   const phone = '13900004001';
-  const token = 'journey-4-phone-token';
-  // journey-direct-write: mid-chain-start — 生产路径是 recruitment-identity.service.ts:135,入口要真实短信验证码往返 ⇒ 自动化跨不过去。⚠️ 后果:招新实名入口没有任何自动化测试穿过
-  await prisma.recruitmentIdentitySession.create({
-    data: {
-      cycleId,
-      phone,
-      phoneVerifiedAt: new Date(),
-      phoneVerificationMethod: 'sms',
-      phoneVerificationTokenHash: hashPhoneVerificationToken(token),
-      expiresAt: new Date(Date.now() + 30 * 60_000),
-    },
-  });
+  // 招新链第一步走**真入口**:发码 → 验码 → 拿一次性 token(P2-12a;此前是直写会话行起步)
+  const token = await issuePhoneVerificationToken(runtime, phone);
   const payload = {
     wechatCode,
     phoneVerificationToken: token,
