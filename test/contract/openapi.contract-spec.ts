@@ -664,6 +664,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/members/{memberId}/insurances'],
   ['get', '/api/admin/v1/members/{memberId}/insurances/overview'],
   ['post', '/api/admin/v1/members/{memberId}/insurances/{insuranceId}/review'],
+  // 保险审核工作台:跨队员面,不属于任何一个队员故挂顶层。
+  // 保单号恒掩码(policyNumberMasked),明文只在上面那个单人面。
+  ['get', '/api/admin/v1/member-insurances'],
   ['get', '/api/admin/v1/activities'],
   // F1/A6(admin-api-fe-integration-roadmap.md §4 A6)。
   ['get', '/api/admin/v1/activities/options'],
@@ -1046,7 +1049,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 550;
+const EXPECTED_ROUTE_COUNT = 551;
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

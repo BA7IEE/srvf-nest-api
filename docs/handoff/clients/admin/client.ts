@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:f2dca448b6a7bc6ebba73061ebb662ad35a3a4dc9a3a5294bf648186b9738579
+// inputDigest: sha256:10ce75b84e68f428f24977884ee44de111587ba47be80b7ed602260c33b75d85
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -191,6 +191,8 @@ import type {
   MemberInsuranceOverviewSelfItemDto,
   MemberInsuranceOverviewSummaryDto,
   MemberInsuranceOverviewTeamItemDto,
+  MemberInsuranceWorkbenchItemDto,
+  MemberInsuranceWorkbenchMemberDto,
   MemberOffboardActivityClosureDto,
   MemberOffboardActivityImpactItemDto,
   MemberOffboardImpactResponseDto,
@@ -771,6 +773,10 @@ export function createAdminClient(fetcher: Fetcher) {
     /** Admin 视角本人身份摘要(只读 bootstrap;不内联角色/权限——权限走 rbac/me/permissions) [auth] */
     AdminMeControllerGetMe(): Promise<ApiEnvelope<AdminMeResponseDto>> {
       return fetcher<AdminMeResponseDto>({ method: "GET", path: "/api/admin/v1/me" });
+    },
+    /** 保险审核工作列表(跨队员;按 reviewStatusCode 筛,**不传 = 不筛**;软删记录与软删队员均不出;createdAt desc)。出参保单号**恒掩码**,跨队员面永不返明文 —— 需要明文走 `GET /admin/v1/members/:memberId/insurances`。解锁 `INSURANCE_ENFORCEMENT_ENABLED` 的前置:开关前先把已录的保险审一遍 [rbac: member-insurance.read.other] */
+    MemberInsurancesWorkbenchControllerList(query?: { "page"?: number; "pageSize"?: number; "reviewStatusCode"?: "pending" | "verified" | "rejected" }): Promise<ApiEnvelope<PageResultDto & { "items": MemberInsuranceWorkbenchItemDto[] }>> {
+      return fetcher<PageResultDto & { "items": MemberInsuranceWorkbenchItemDto[] }>({ method: "GET", path: "/api/admin/v1/member-insurances", query });
     },
     /** 列出队员(分页;memberNo 精确查询 / gradeCode / status 过滤) [rbac: member.read.record] */
     MembersControllerList(query?: { "page"?: number; "pageSize"?: number; "memberNo"?: string; "gradeCode"?: string; "status"?: "ACTIVE" | "INACTIVE"; "q"?: string; "organizationId"?: string; "includeDescendants"?: boolean; "hasAccount"?: boolean }): Promise<ApiEnvelope<PageResultDto & { "items": MemberResponseDto[] }>> {
