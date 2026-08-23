@@ -2,12 +2,12 @@ import request from 'supertest';
 
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizException } from '../../src/common/exceptions/biz.exception';
-import { hashPhoneVerificationToken } from '../../src/modules/recruitment/recruitment.constants';
 import { AppMeTeamJoinService } from '../../src/modules/team-join/team-join-applications.app.service';
 import { TeamJoinApplicationsService } from '../../src/modules/team-join/team-join-applications.service';
 import { TeamJoinEnrollmentService } from '../../src/modules/team-join/team-join-enrollment.service';
 import { devStubOcrImage, VALID_PNG_IMAGE } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
+import { issuePhoneVerificationToken } from './journey-recruitment-identity';
 import { type JourneyRuntime, journeyAdmin, journeyPrisma } from './journey-runtime';
 
 const RECRUITMENT_CYCLES = '/api/admin/v1/recruitment/cycles';
@@ -65,18 +65,8 @@ async function submitRecruitmentApplication(
   const prisma = journeyPrisma(runtime);
   const wechatCode = 'journey-1-applicant';
   const phone = '13900001001';
-  const token = 'journey-1-phone-token';
-  // journey-direct-write: mid-chain-start — 同 certificate-recognition:入口要真实短信验证码往返
-  await prisma.recruitmentIdentitySession.create({
-    data: {
-      cycleId,
-      phone,
-      phoneVerifiedAt: new Date(),
-      phoneVerificationMethod: 'sms',
-      phoneVerificationTokenHash: hashPhoneVerificationToken(token),
-      expiresAt: new Date(Date.now() + 30 * 60_000),
-    },
-  });
+  // 招新链第一步走**真入口**:发码 → 验码 → 拿一次性 token(P2-12a;此前是直写会话行起步)
+  const token = await issuePhoneVerificationToken(runtime, phone);
 
   const payload = {
     wechatCode,

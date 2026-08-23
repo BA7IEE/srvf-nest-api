@@ -1289,22 +1289,24 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 > 立项时 `test/support/journey-*.ts` 共 **46 处**直接写库,逐条分类后
 > **`ambient` 31 · `gate-unreachable` 10 · `mid-chain-start` 4 · `time-compression` 1**。
 > 前两类是合法的(环境底座 / 闸后本就无 API 路径),**后面这两条是真接缝**:
+>
+> **进度(2026-08-23)**:① 已接通(P2-12a),读数降到 **44 处 / `mid-chain-start` 2**;
+> ② 仍未开工(12b)。
 
-#### ① 招新实名入口:没有任何自动化测试穿过
+#### ① 招新实名入口:✅ 已接通(P2-12a,2026-08-23)
 
-`RecruitmentIdentitySession` 的生产创建路径是
-[`recruitment-identity.service.ts:135`](../../src/modules/recruitment/recruitment-identity.service.ts) ——
-入口要**真实短信验证码往返**,自动化跨不过去,于是两条 journey
-(`journey-certificate-recognition.ts` · `journey-recruitment-team-join.ts`)都直接写库起步。
+~~`RecruitmentIdentitySession` 的生产创建路径要**真实短信验证码往返**,自动化跨不过去~~ ——
+**实测跨得过去**:`sms-code.service.ts` 在 `providerType === 'DEV_STUB'` 时签发固定码
+`SMS_DEV_STUB_FIXED_CODE`,而 `journey-runtime.ts` 早已把 smsSettings 置成 DEV_STUB。
+两条 journey 的起步已改走真 HTTP 入口(`identity/send-code` → `identity/verify-code`),
+共用 `test/support/journey-recruitment-identity.ts` 一份实现;**既不手算验证码哈希也不直插 codes 表**。
 
-⚠️ **后果**:招新链的**第一步**(手机号验证 → 建实名会话)在 CI 里**一次都没跑过**。
-它断了的话,现有任何测试都不会红。
+⭐ 同时补了一道「**已接通的接缝不许接回去**」闸(封口模型登记表):
+原有「逐条交代」闸对这类回退**完全失明** —— 实测把 journey 改回直插并配一条**合法**分类标注,
+旧闸**仍全绿**,新闸红并点名 `file:line`。表内当前只有 `recruitmentIdentitySession`;
+12b 接通考勤链后 `attendanceSheet` / `attendanceRecord` 按同一形状进表。
 
-**该怎么做**(先答再动):短信 provider 有没有可注入的 stub 通道?若有,journey 应改走
-真 HTTP 入口 + stub provider;若没有,这一格属**测试基建缺口**而非业务缺口,
-但要在 runbook 里写明「实名入口只能真机验」。
-
-#### ② 入队门槛的贡献值:考勤审核链被整条跳过
+#### ② 入队门槛的贡献值:考勤审核链被整条跳过(12b,未开工)
 
 `journey-recruitment-team-join.ts` 直接建 `statusCode: 'approved'` 的
 `AttendanceSheet` + `AttendanceRecord`,目的是凑出贡献值过入队门槛。
