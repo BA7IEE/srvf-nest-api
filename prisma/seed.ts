@@ -125,6 +125,9 @@ import { effectiveGlobalOpsAdminBindingWhere } from '../src/modules/permissions/
 // 5. **不** 写 audit_logs(seed 是 bootstrap 离线工具;D7 §11 audit 是运行时 API 写操作审计)
 // 6. **不** 创建"ADMIN 内置角色"(用户拍板方案 A;留业务模块 RBAC 接入 PR 落地)
 // 7. 全部 upsert 幂等:重复跑不重复创建 / 不覆盖运营运行时调整
+//    ⚠️ 唯一例外(P2-15,2026-08-23):`Permission.description` **每次覆写** ——
+//    运行时已无改它的入口(PR 3b 关闭 PATCH),代码常量是唯一权威,不存在「运营的调整」可踩。
+//    字典 / 组织 / 职务等仍是 `update: {}`,那是功能不是缺陷,别顺手统一。
 
 const DEFAULT_PASSWORD = 'ChangeMe123456';
 const USERNAME_PATTERN = /^[a-z0-9_-]{3,32}$/;
@@ -520,6 +523,20 @@ const V2_DICT_SEED = [
   },
 ] as const;
 
+// ⭐ **字典的 `update: {}` 是刻意保留的,不要跟着 Permission 一起改成覆写。**
+//
+// P2-15(2026-08-23)把 `permission.upsert` 的 `update` 改成了覆写 `description`,
+// 于是本文件里两处形状不同 —— **这是刻意的,不是漏改。** 两者语义已经分岔:
+//
+//   | | 运行时可改吗 | `update: {}` 的含义 |
+//   |---|---|---|
+//   | Permission | ❌ P1-32 PR 3b 之后已关(PATCH 一律拒) | 「代码改了库收不到」= **缺陷** |
+//   | DictType / DictItem | ✅ 运营本就该能改(**是功能**) | 「不回退运营的调整」= **正确** |
+//
+// 🔴 把这里改成覆写 = **悄悄打掉字典的运营编辑功能**(后台改过的文案下次 seed 就被刷回),
+//    而且**零症状**:不会有任何测试因此变红。执行位在
+//    `src/modules/permissions/seed-description-authority.criteria.spec.ts` 的反向锚点 ——
+//    它断言 dictType / dictItem 的 upsert **仍是** `update: {}`,改了即红。
 async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
   for (const entry of V2_DICT_SEED) {
     // 已存在则不覆盖 label / sortOrder / status,防止运营运行时调整被 seed 回退
@@ -571,6 +588,8 @@ async function seedV2Dictionaries(prisma: PrismaClient): Promise<void> {
 //   (日常 / 赛事保障 / 救援救灾物资)/ 轮值 icc_duty 合并「ICC轮值、无人机小组轮值」并删 uav_group_duty /
 //   训练「内训需求训练」→「无贡献值训练」(code internal_demand_training → no_contribution_training,
 //   语义变更故同步改 code)。
+// ⚠️ 本函数的三处 `update: {}` 与 `seedV2Dictionaries` 同理:字典是运营可改的**功能**,
+//    刻意不跟着 Permission 改成覆写。完整对照表见 `seedV2Dictionaries` 上方注释(P2-15)。
 async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
   const dictType = await prisma.dictType.upsert({
     where: { code: 'activity_type' },
@@ -748,6 +767,9 @@ const RECRUITMENT_STAGE_SEED = [
   { code: 'withdrawn', label: '已撤销报名', sortOrder: 10 },
 ] as const;
 
+// ⚠️ 本函数的两处 `update: {}` 与 `seedV2Dictionaries` 同理:字典是运营可改的**功能**
+//    (本字典存在的全部意义就是「改文案不发版」),刻意不跟着 Permission 改成覆写。
+//    完整对照表见 `seedV2Dictionaries` 上方注释(P2-15)。
 async function seedRecruitmentStageDict(prisma: PrismaClient): Promise<void> {
   const dictType = await prisma.dictType.upsert({
     where: { code: 'recruitment_stage' },
@@ -1200,26 +1222,31 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
   for (const perm of ALL_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
-      // 已存在不覆盖 description / module / action / resourceType。
+      // ⭐ **`description` 每次 seed 都覆写:代码常量是唯一权威,DB 只是它的投影。**
       //
-      // ⚠️ **这句的理由在 P1-32 PR 3b(2026-08-23)之后变了,原注释已作废,别照旧读。**
-      // 原文写的是「防止运营运行时调整被 seed 回退;沿 V2 dictionaries seed 范式」——
-      // 那句话成立的前提是「运行时可以改 description」。**该前提已被推翻**:
-      // `PATCH /permissions/:id` 现在对闭包内的码一律拒(30110,见
-      // permissions.service.ts 的 assertSeedPermissionUpdatable),
-      // 运行时**不再存在**任何改这四个字段的入口 ⇒ 「被 seed 回退」这件事已不可能发生。
+      // 权限码文案分叉有两条路,现在**两条都关上了**:
+      //   V1 运行时 `PATCH /permissions/:id` 改 DB
+      //      → P1-32 PR 3b(2026-08-23)关闭:闭包内的码一律拒(30110,见
+      //        permissions.service.ts 的 assertSeedPermissionUpdatable)。
+      //   V2 改代码里的字符串、而 seed `update: {}` 让既有库永远收不到
+      //      → **本处**(P2-15,2026-08-23)关闭。
       //
-      // 现在仍保留 `update: {}` 的理由是**另一条**,只有一条:
-      // 覆盖会把**既有库**里可能存在的历史漂移静默改写掉,而没有任何告警。
-      // 维护者 2026-08-23 拍板「已漂移的数据不动」,故此处保持不覆盖。
+      // V1 关闭是 V2 能这么做的前提:运行时已**不存在**任何改这四个字段的入口 ⇒
+      // 覆写不可能踩掉「运营手工调过的文案」,因为不存在这种文案。
       //
-      // 🔴 **代价要说清:这意味着改代码里的 description 字符串,既有库永远收不到。**
-      // 新库无影响(`create` 用的就是代码常量),但长期存活的库会与代码分叉且无人比对。
-      // 这是**尚未处置的第二条漂移路径**,PR 3b 只关了「运行时改 DB」那条。
-      // 要堵它就得把这里改成 `update: { description: perm.description }`,
-      // 使代码常量单向成为权威 —— 该做法此前被否的理由(会静默改写运营手工调过的文案)
-      // 在 PR 3b 之后已不成立(不存在手工调过的文案)。**待维护者另行拍板,不要顺手改。**
-      update: {},
+      // 立项时实测本机开发库 `app`:**4 条已漂移**,全是「代码后来改对了、库停在旧文案」
+      // (如招新那条代码早已把「红十字」改成「急救资质」,库里仍是旧的)。
+      // ⚠️ 这类漂移**零症状** —— 覆写前没有任何检查会因它变红,这正是要堵的理由。
+      //
+      // ⚠️ **刻意的范围收窄**:只覆写 `description`,**不**覆写
+      // `module` / `action` / `resourceType`。那三个是结构字段(被查询与索引使用),
+      // 覆写它们的打击面与本刀不同族 ⇒ 另立项,不要顺手加进来。
+      //
+      // ⚠️ 字典(`dictType` / `dictItem`)**刻意不跟着改**,别当成漏改去统一 ——
+      // 理由见 `seedV2Dictionaries` 处的注释。
+      // 执行位:`src/modules/permissions/seed-description-authority.criteria.spec.ts`
+      //(结构性扫全部 `permission.upsert`:新增一处不带 description 即红)。
+      update: { description: perm.description },
       create: {
         code: perm.code,
         module: perm.module,
@@ -1360,8 +1387,9 @@ async function seedAttachmentPermissions(prisma: PrismaClient): Promise<void> {
   for (const perm of ATTACHMENT_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
-      // 已存在不覆盖(防止运营运行时调整被 seed 回退;沿 seedRbac 范式)
-      update: {},
+      // description 每次覆写(代码常量是唯一权威);module / action / resourceType 刻意不动。
+      // 完整理由见 seedRbac 处的同款注释(P2-15)。
+      update: { description: perm.description },
       create: {
         code: perm.code,
         module: perm.module,
@@ -1503,13 +1531,16 @@ const BIZ_ADMIN_DESCRIPTION =
 // 业务面权限点 + biz-admin 角色 + 绑定 + ADMIN 全员补挂 + 强校验。
 // 幂等性:Permission.code / RbacRole.code / RolePermission 复合唯一键全部 upsert;global RoleBinding
 // 走 `ensureGlobalUserRoleBinding` 手写 findFirst+create 幂等(无 Prisma 复合唯一键,partial unique 手写)。
-// 连续跑两次数量与 id 稳定;不覆盖运营运行时调整(update: {} 范式)。
+// 连续跑两次数量与 id 稳定。RbacRole / RolePermission 仍是 `update: {}`(不覆盖运营运行时调整);
+// Permission 的 `description` 例外 —— 每次覆写,代码常量是唯一权威(P2-15,见下方 upsert 处注释)。
 async function seedBizAdminRbac(prisma: PrismaClient): Promise<void> {
   // 1. upsert 业务面 Permission 全集(数量 = BIZ_PERMISSION_SEED.length,见下方 log;F-7 收口:不再硬编码过时数字)
   for (const perm of BIZ_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: perm.code },
-      update: {},
+      // description 每次覆写(代码常量是唯一权威);module / action / resourceType 刻意不动。
+      // 完整理由见 seedRbac 处的同款注释(P2-15)。
+      update: { description: perm.description },
       create: {
         code: perm.code,
         module: perm.module,
@@ -2172,7 +2203,9 @@ async function seedActivityResponsibilityWorkflowRbac(prisma: PrismaClient): Pro
   for (const permission of ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED) {
     await prisma.permission.upsert({
       where: { code: permission.code },
-      update: {},
+      // description 每次覆写(代码常量是唯一权威);module / action / resourceType 刻意不动。
+      // 完整理由见 seedRbac 处的同款注释(P2-15)。
+      update: { description: permission.description },
       create: permission,
     });
   }
