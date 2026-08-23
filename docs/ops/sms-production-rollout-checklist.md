@@ -200,6 +200,7 @@
    curl "https://<API_HOST>/api/system/v1/sms-send-logs?page=1&pageSize=20" \
      -H "Authorization: Bearer <ACCESS_TOKEN>"
    # 期望:status=SENT / providerType=TENCENT_SMS / providerMsgId 非空 / 手机号显示为掩码 138****XXXX
+   # ⚠️ SENT = 已提交腾讯云,不代表终端已送达 —— 必须同时确认真机收到了码(见 §0-pre 反例)
    ```
 
 5. **通知链路验收**(2026-08-20 已完成;步骤如下,可重复):
