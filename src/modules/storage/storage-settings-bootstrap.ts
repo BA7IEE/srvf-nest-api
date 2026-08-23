@@ -210,9 +210,22 @@ function loadBootstrapConfig(filePath: string): StorageSettingsBootstrapConfig {
     );
   }
 
+  // ⚠️ 读与解析必须各自成段,不许合用一个 catch。
+  //    两者失败时**下一步动作不同**:读失败去查权限 / 属主 / 路径,解析失败去改文件内容。
+  //    合并过一次,代价是实付的:config-file 按安全要求设 600 root:root、runner 镜像却是
+  //    USER node(uid 1000),EACCES 被报成「不是合法 JSON」,维护者在服务器上用
+  //    `python3 -m json.tool` 验出 JSON 完全合法,照着错误信息白查了一轮(P2-8,2026-08-20 真机实测)。
+  //    本模块同族形状由 `merged-failure-diagnostics.criteria.spec.ts` 机器守护 —— 合回去会红。
+  let rawConfigText: string;
+  try {
+    rawConfigText = readFileSync(absolutePath, 'utf8');
+  } catch {
+    throw new StorageSettingsBootstrapError('无法读取 config-file(检查权限 / 属主 / 路径)');
+  }
+
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(absolutePath, 'utf8')) as unknown;
+    parsed = JSON.parse(rawConfigText) as unknown;
   } catch {
     throw new StorageSettingsBootstrapError('config-file 不是合法 JSON');
   }
