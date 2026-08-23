@@ -23186,7 +23186,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "status": {
-        "description": "发送状态",
+        "description": "发送状态。⚠️ \`SENT\` = **已提交 Provider**(腾讯云已受理 SendSms),**不代表**终端已送达 —— 本系统无送达回执链路,运营商免打扰名单等拦截仍会留痕为 \`SENT\`;要确认真送达须凭 \`providerMsgId\` 去腾讯云控制台查回执",
         "enum": [
           "SENT",
           "FAILED",
@@ -139437,7 +139437,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           },
         },
         {
-          "description": "按发送状态过滤",
+          "description": "按发送状态过滤。⚠️ \`SENT\` = **已提交 Provider**,**不代表**终端已送达 —— 筛 \`SENT\` 得到的是「提交成功」的流水,不是「用户收到了」的流水",
           "in": "query",
           "name": "status",
           "required": false,

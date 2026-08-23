@@ -26,6 +26,13 @@ import { SmsCredentialStatus } from './sms.types';
 // - SmsSettingsResponseDto **永不**包含 secretId / secretKey / secretIdEncrypted /
 //   secretKeyEncrypted / credentials;GET 不存在时返 `data: null`
 // - SmsSendLogResponseDto.phone **一律掩码** 138****1234(评审稿 E-20/E-21)
+//
+// 🔴 **`SmsSendStatus.SENT` = 已提交 Provider,不代表终端已送达**(P2-10 项 1,2026-08-24)。
+//    2026-08-20 真机实测反例:`status=SENT` + `providerMsgId` 非空 + `errCode=null`,
+//    腾讯云控制台显示「提交成功 / 送达失败 / 运营商免打扰名单」,手机始终没收到。
+//    本仓**无任何送达回执 / 状态回调链路**,`SENT` 只覆盖到腾讯云受理那一段。
+//    ⇒ 面向人的两处 status 描述都必须带这句免责说明,由
+//    `scripts/check-sms-sent-semantics.ts` 钉住(薄运行器 sms-sent-semantics.criteria.spec.ts)。
 
 // === 字段长度常量 ===
 const SDK_APP_ID_MAX_LENGTH = 64;
@@ -177,7 +184,11 @@ export class ResetSmsCredentialsDto {
 // ============ Send Logs(评审稿 E-20) ============
 
 export class SmsSendLogQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ description: '按发送状态过滤', enum: SmsSendStatus })
+  @ApiPropertyOptional({
+    description:
+      '按发送状态过滤。⚠️ `SENT` = **已提交 Provider**,**不代表**终端已送达 —— 筛 `SENT` 得到的是「提交成功」的流水,不是「用户收到了」的流水',
+    enum: SmsSendStatus,
+  })
   @IsOptional()
   @IsEnum(SmsSendStatus)
   status?: SmsSendStatus;
@@ -205,7 +216,11 @@ export class SmsSendLogResponseDto {
   @ApiProperty({ description: '发送时通道', enum: SmsProviderType })
   providerType!: SmsProviderType;
 
-  @ApiProperty({ description: '发送状态', enum: SmsSendStatus })
+  @ApiProperty({
+    description:
+      '发送状态。⚠️ `SENT` = **已提交 Provider**(腾讯云已受理 SendSms),**不代表**终端已送达 —— 本系统无送达回执链路,运营商免打扰名单等拦截仍会留痕为 `SENT`;要确认真送达须凭 `providerMsgId` 去腾讯云控制台查回执',
+    enum: SmsSendStatus,
+  })
   status!: SmsSendStatus;
 
   @ApiPropertyOptional({ description: 'provider 回执 ID(腾讯云 SerialNo)', nullable: true })
