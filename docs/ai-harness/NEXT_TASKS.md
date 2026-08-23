@@ -1350,6 +1350,30 @@ B7 当时也确实红过 —— 但**重新生成不碰任何说明**,红一消,
 
 > ✅ **前置已解除**(2026-08-22,P1-32 PR 0 `ac4f3b08`):237 条说明已入 Catalog。本条现在可做。
 
+> ✅ **已收口**(2026-08-23):`scripts/check-permission-surface-binding.ts` +
+> 基线 `harness/permission-surface-baseline.json`,由 `permission-surface-binding.spec.ts` 在 unit 轮执法。
+> **面变了而说明没改 ⇒ 红并点名该码**;`--write` 同样**拒绝**推进这种码(少了这条拒绝,
+> 顺手重跑写入就是 B7「红一消」的复刻),确实复核过的用 `--acknowledge-unchanged <码>` 显式放行。
+>
+> ⭐ **立项断言已变成读数**(上面「为什么现有检测不够」那段此前是推断):变异 = 给
+> `GET /members/:id/audience-tags` 加已有码 `org.read.node`(管辖面 6→7,零新码,说明一字未动)——
+> `docs:authz:check` 绿→**红**→(重新生成后)**绿**,而码数 / 四桶闭包 / 角色持有人**三条全程绿**;
+> 全程说明摘要恒为 `9ed0661c…`。**断言成立,不需要修正立项前提。**
+>
+> ⚠️ 起草时表格里的 `217 / 70` 已漂到 **`218 / 72`**(实测 `ce5fc66a`,两周内)—— 佐证「结构上必然持续发生」。
+> ⚠️ **B7 那三条说明现在已不是过期状态**:PR 0 写 237 条说明时已把受众标签写进去了
+> (`member.read.record` 等三条均含「受众标签…复用同一条权限」),**没有存量不符待拍板**。
+> 基线**不断言当前说明准确**,只钉住「从今天起面变了必须有人重看」。
+
+#### P2-13a `## Permission code surface` 节的自述已过期(小,收口即可)
+
+该节自述里写着「🔴 **真正的执行位还不存在**…等说明进仓后按码绑本表做指纹才是执行位。已登记 NEXT_TASKS」——
+P2-13 落地后这句话**已经不成立**(执行位就是 `check-permission-surface-binding.ts`)。
+
+⚠️ **刻意没在 P2-13 里顺手改**:那段文案在 `scripts/generate-authz-manifest.ts`(红区 `scripts/generate-*.ts`)里,
+改它要重新生成 `ROUTE_AUTHZ.md` ⇒ 改写 inputDigest ⇒ **占串行道**,而 P2-13 的排期明确是「零 `src/`、不占串行道」。
+留给下一个本来就要动 ROUTE_AUTHZ 的刀顺手带走。
+
 ### P2-14 活动封面 / 图集改附件制 —— **刀 A ✅ 已合;刀 B(DROP 旧列)待起** — 2026-08-22 维护者拍板
 
 **刀 A**(`d8e557d7` / [#1146](https://github.com/BA7IEE/srvf-nest-api/pull/1146))已合:

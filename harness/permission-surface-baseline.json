@@ -1,0 +1,1216 @@
+{
+  "_comment": "权限说明 ↔ 管辖面绑定基线(P2-13)。派生快照,不是真相源 —— 权威源是 ROUTE_AUTHZ 的 `## Permission code surface` 节与 permission-catalog.ts 的 businessDescription。它不断言当前说明准确,只钉住「面变了必须有人重看说明」。推进方式:pnpm exec tsx scripts/check-permission-surface-binding.ts --write",
+  "version": 1,
+  "codes": {
+    "activity-registration.approve.record": {
+      "endpoints": 2,
+      "surface": "sha256:54fa5cfe6035936096d74832f9ef13c6e31bc900cdd36f54c182ce6163c6ddbf",
+      "description": "sha256:e52223dfb26e215ed2104e471508321d149da10f35f3ae3387898a3748892d86"
+    },
+    "activity-registration.cancel.record": {
+      "endpoints": 1,
+      "surface": "sha256:170231e2f2d0f17f0a21e75363e35842d04f89768d2665e99ebb48ef51d3018b",
+      "description": "sha256:e0e522a81feecea5f5b711a29b675f5f0b13e3a30404c25853192a2d207b3525"
+    },
+    "activity-registration.create.record": {
+      "endpoints": 2,
+      "surface": "sha256:bc8f74676b22e8fc04d1c1e910c2f6fd4bc11c7b06a42a712ba9052da5b2d9f3",
+      "description": "sha256:a7ddc80589f8c97834b1ad9f31c5d491151afe1c8a6c7117034ae870d8682faf"
+    },
+    "activity-registration.read.record": {
+      "endpoints": 7,
+      "surface": "sha256:548f0e4b0c2b8f4fd84dfce591358d5d03794bdb6f562c843afc1e69c394d5a2",
+      "description": "sha256:4d36f4c0c9a710df2a2f7b939c0c84f7f79af9d32a0023c1507adfd284ad568e"
+    },
+    "activity-registration.reject.record": {
+      "endpoints": 2,
+      "surface": "sha256:3da94622575b871ffb651dfc94b6ff4527d79e582c147acf45cc01dd79c4d986",
+      "description": "sha256:2e0922e25decad426e3e327d0a21d4d3900899debb995b9fd99f34e20a538086"
+    },
+    "activity-registration.reopen.record": {
+      "endpoints": 1,
+      "surface": "sha256:2f7715f1f6449b00881176ea199bded06fe5ba17f292afb612932fe55e193217",
+      "description": "sha256:4cbaacfd1b0b2002d2fc0b81c0c46a9f1bdfcaf9ef9ef69bfe0ed364cd466344"
+    },
+    "activity-responsibility.override.record": {
+      "endpoints": 18,
+      "surface": "sha256:603733de51ab75e744f15d4eba80e2d2419798bdb100f498e772a9f88d947314",
+      "description": "sha256:2f7088ccb3362679edbdd88b431de01de1847debe8ceb4d7eba475f914763b7c"
+    },
+    "activity-review.read.request": {
+      "endpoints": 2,
+      "surface": "sha256:99a47a2344571be852d70f052fc8f228273e4d91b6f228927faa0b489d6785cc",
+      "description": "sha256:c47e82ec24adff488ab59b80d9b3017e7beaea1628f0ab6ed7f3646e0302899a"
+    },
+    "activity-review.return.request": {
+      "endpoints": 1,
+      "surface": "sha256:b8c5990beb746c7dadd89086ec441c556bcdcd6e036fa5b592adf1d24da5b948",
+      "description": "sha256:464a849ba9cddd2868fe7c75a56caae5227613c8033db37f90245516f603dd86"
+    },
+    "activity.cancel.record": {
+      "endpoints": 1,
+      "surface": "sha256:9f5299e4fc60aedfb5fe41b1c9e449897686395a2ea3d59b926a56b9d0310484",
+      "description": "sha256:986b27f97ef0b7660fea5b32066fbb7052e67b2e4ee838f96ed48c7be66c4aac"
+    },
+    "activity.complete.record": {
+      "endpoints": 1,
+      "surface": "sha256:4d6c491d1717052603670b24a326bf16820ed5205c850f52274f5706c73a901d",
+      "description": "sha256:f86286ed596d926337f4b80294a6a5915cdea8582027e68aa67b1d972bb8ec66"
+    },
+    "activity.create.cross-org": {
+      "endpoints": 4,
+      "surface": "sha256:efb879766bca51ab4c0ae429ba1bb4ae8b5dc07cf6115686e8335496b3ff3ab7",
+      "description": "sha256:945cbd9b2e54ad68bdf9a594e5ad190aa4fc933dd709186dcaff62c49cec25d7"
+    },
+    "activity.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:af14e29a428d3bda282464a88fe16c1696dab80ffa7c3da67d784bde4c03de5e",
+      "description": "sha256:afb4f5f86699e83fea110dfb87f5bbaf7e7b609addf8dec23dc38144c8fb25b0"
+    },
+    "activity.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:7a41fd8776db2c1e4a5066d69ae0a40bc548d1f470de4f498fc408ce6c3308d4",
+      "description": "sha256:82378d09acbe26fc0593e1e94ca3bec9a002456408a067410af63cf833d5cf9b"
+    },
+    "activity.publish.record": {
+      "endpoints": 3,
+      "surface": "sha256:66b9ef2d276dd7671283930b4049d22d2b4f025a6f4f6ad1a0f03a4889d6bf84",
+      "description": "sha256:d9eadefb7213c6c92e2efc0bb6140c68bcb5e54da98c719fb10b03fbe40bd158"
+    },
+    "activity.settlement-close.record": {
+      "endpoints": 1,
+      "surface": "sha256:cd77d1463da726e643513499fb69eea7d52414b2d9d7d9abf054a943bd32387a",
+      "description": "sha256:e9f672b8e3359d066420ea31c1472fac49058fe78b580178da135da99b1a34db"
+    },
+    "activity.settlement-final-review.record": {
+      "endpoints": 2,
+      "surface": "sha256:30be7e675d6a4eb4d4af3b0df67e89669d65310440b995522909c64af9632ebd",
+      "description": "sha256:060b3dc1732c61bae9b789fffd63e2b824269921aa1f30eb1b1b348ae92192c9"
+    },
+    "activity.settlement-first-review.record": {
+      "endpoints": 2,
+      "surface": "sha256:459657613cc9717d332e8e71ae81730362811e1f4311e15bd8f676638579ac93",
+      "description": "sha256:c53bd8e08dec52b798e4e30d7e57b2461f932d83ddf51c2def0b775b7ee7a3e7"
+    },
+    "activity.settlement-generate.record": {
+      "endpoints": 4,
+      "surface": "sha256:00aec4b66ab545a366ec65a4d58806ecba05de1e2b00cb2fa5396d54685a27ec",
+      "description": "sha256:72a8c3998f967813b34d482ee15ba4425d5a96c4aa98dd89e1cb8cbb3becf51a"
+    },
+    "activity.settlement-submit.record": {
+      "endpoints": 2,
+      "surface": "sha256:27676447cd5b18795a3adfff7089f878772caa978bbb3005bcd733e35793013c",
+      "description": "sha256:aba6b7abd2f31611be715bcce37916b05ded51e9200c9484e730b1bf343fc553"
+    },
+    "activity.settlement-update-draft.record": {
+      "endpoints": 1,
+      "surface": "sha256:0c704e7339d4b355c862532fc6f550d3b8c66e165ecadb67d4b39675c7fc4cd1",
+      "description": "sha256:ac398f0a06790e89da1531a06bdccf4f22afb6bb53eb2818d09c80350bbdf386"
+    },
+    "activity.update.record": {
+      "endpoints": 6,
+      "surface": "sha256:0a5d6cb50968a27873b7aa2b315e728ae8840acff282b8b29db775ae8ffc8681",
+      "description": "sha256:3ee61bc7f1410e6a1b273109713da70fa3214de40e354c65b07aab8db102a4bc"
+    },
+    "announcement-import.execute.record": {
+      "endpoints": 1,
+      "surface": "sha256:6e507c1ecac81316e0d52168d0babeeed7fc1b5bd32772ddab825e51621317a1",
+      "description": "sha256:577b26cb01bee44ca32832af3f89873996bff6a5063d3098a725e6c3aa729f49"
+    },
+    "announcement-import.preview.record": {
+      "endpoints": 1,
+      "surface": "sha256:5007053a1a7846817b1a0dad32ce2874af0bcbdb47bedcf35c76edf39ded269d",
+      "description": "sha256:1a316be1ed6ac134fc0866127af5e35a6412528839c3f6bb994f39e14c29cdd0"
+    },
+    "attachment-config.create.mime": {
+      "endpoints": 1,
+      "surface": "sha256:623a1d92746cfada0e2ab1908aa8230e36c4a6d26ccbf76fe94cb3d2c36649af",
+      "description": "sha256:fc1e041e7aec403281267a11de1772eea030220cb91a67101f1bf380921ade4f"
+    },
+    "attachment-config.create.size-limit": {
+      "endpoints": 1,
+      "surface": "sha256:f47ef51c9d8db2f2e1df2dc3ed04e2f109ae16eaf87ffa77237adc95610c09e4",
+      "description": "sha256:03b2e32b7b89ba957fedd5acb7aae2f47facff4edada5c7f262bef40551c6b58"
+    },
+    "attachment-config.create.type": {
+      "endpoints": 1,
+      "surface": "sha256:ad2d90007638b85f4a8c31589aba9155c092403f7aba551e24cdaa96764eb086",
+      "description": "sha256:3a469ba3cb166acecebd116bc626b531c12bb7840b75ebb838f11ead24edf4ea"
+    },
+    "attachment-config.delete.mime": {
+      "endpoints": 1,
+      "surface": "sha256:5704bbf1cb7db02c07367e07c11fb4e8c119c1c7fbcb90aa8794ac4c3a00392e",
+      "description": "sha256:45d61a6c5949f7716919e63d0837887b76876835f0840c2ff8e1ff7084f42252"
+    },
+    "attachment-config.delete.size-limit": {
+      "endpoints": 1,
+      "surface": "sha256:6fa95cff3dba1fca9163000d0e60ba890f828c1b945608a98d82c08ad6fe43ba",
+      "description": "sha256:e205f1e0707ad3b70516a174e0ce88844b809741918d8a2fac547475836b081c"
+    },
+    "attachment-config.delete.type": {
+      "endpoints": 1,
+      "surface": "sha256:01e1afcd8a48c4eff4a7ead8efaea385030fdf555e3910600ceb4cea3a47779c",
+      "description": "sha256:3dc1080e16e62c9a523c118941f7931e2de5afed3782f0896ec495afdff159d1"
+    },
+    "attachment-config.read.mime": {
+      "endpoints": 2,
+      "surface": "sha256:2ea84a78162cf13442e06298e3b751045100d61881a6b84876bc6eaf7739aee0",
+      "description": "sha256:5ed1a23d078d7079b58b3914023fd5c280ccfcf032af8b143d255aafb9bffc6f"
+    },
+    "attachment-config.read.size-limit": {
+      "endpoints": 2,
+      "surface": "sha256:d25fb0b90a8fa53830d347cbd2887b896be88152952f1847e21b65933409ce1f",
+      "description": "sha256:93e7ec45d6548e7cd17bf40a76ccab3ecfa139a1fbb96616b7af67c87701978b"
+    },
+    "attachment-config.read.type": {
+      "endpoints": 2,
+      "surface": "sha256:b8467458299d70ff432be5d36ddb0054e051464edde53685195bf451d8a07c4e",
+      "description": "sha256:64f2094a44d048dc19436773f190aa897c5480c8d14ec468b04de836e49bbf2b"
+    },
+    "attachment-config.update.mime": {
+      "endpoints": 2,
+      "surface": "sha256:91200204f608dc47402a39abe2b55600fcfea7e1f690947dc0c15741ad606b19",
+      "description": "sha256:a56220c81e0de4a7980479aa082ed477ff8ce092fca65c6482a9c40f0c7cda46"
+    },
+    "attachment-config.update.size-limit": {
+      "endpoints": 1,
+      "surface": "sha256:7f729f940a8394e1d86a3a9e7b0b34a7333669862d8ed81e4449fd9eca5a0519",
+      "description": "sha256:8c813a1ca555d3a6513b5e67b3c1ff451ff431c0c5ac44377cac56f3b2d6f6ae"
+    },
+    "attachment-config.update.type": {
+      "endpoints": 2,
+      "surface": "sha256:8129ede8c255c62378e189294c16e6c123541fee7c23d0e65caf8109fe668f11",
+      "description": "sha256:744884ee174fc89d896850507dabbc84de5305ce88e626a284bfa3fc549791d5"
+    },
+    "attachment.delete.*": {
+      "endpoints": 2,
+      "surface": "sha256:3c812a5ce376ef1a0a1587e92adad6e86315f76acb18bcb17cb99b65bfd7bb86",
+      "description": null
+    },
+    "attachment.delete.activity": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:8ea38fd1f0465a0677be625a295d7bd7d67b04a0bba3eb894f639379ac991fc3"
+    },
+    "attachment.delete.certificate.other": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:3589a0d6230b30af6bf19b02e5a234edf38b90a9a9e0380eaacac5a5d92e798a"
+    },
+    "attachment.delete.certificate.self": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:ccb4f96299e0e41176ba4ec8c13eafb9ff13d84687521300cd6d77f843a3a989"
+    },
+    "attachment.delete.content-file": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:26a9225d2aee486ff608f18138471e6bd23d2f3c69bf945ce6e188064f5ac64e"
+    },
+    "attachment.delete.content-image": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:1818991bf0c2d2370cb6554bd759697951c90b18709a61387c5a467e852c3d19"
+    },
+    "attachment.delete.member.other": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:9df9d44f7f5141526fc40201738336f83883e60c996cc3ef13fe8ec690cb0553"
+    },
+    "attachment.delete.member.self": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:baa8abb05a37007a0524c2c78d2a05cebb44ba048d3f3468762e8cebf154238b"
+    },
+    "attachment.update.*": {
+      "endpoints": 1,
+      "surface": "sha256:666382bcbdae6f9af8907fd1435147488f2823578e93a27e9d95976b6eea1c22",
+      "description": null
+    },
+    "attachment.update.activity": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:54429021725a8077f0af975bc06f12b67066b58a3c0e4c8e48e66a771fff02f9"
+    },
+    "attachment.update.certificate.other": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:0cbd4c761ec40f1ae8a3c6304cf628cb61dc660d1ba4acf35d516b3c2b80e0dc"
+    },
+    "attachment.update.certificate.self": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:87e126f546d3a4fbd7f2458e4503b436a4b45d0aea7b3d87cf4637333dfcf39f"
+    },
+    "attachment.update.member.other": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:24603961b3b91e5b8d7f633b68d6a5a951e65b3185f5644e20b08c3ccf3c6a82"
+    },
+    "attachment.update.member.self": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:a03103d771e1fef81f9d80bfa623af8507bce9401001975e2b561bbd06d0e741"
+    },
+    "attachment.upload.*": {
+      "endpoints": 4,
+      "surface": "sha256:6a458e758087e9ed4ee50dab2897f2a73c8344c030eeba7e097f23d052fa39c0",
+      "description": null
+    },
+    "attachment.upload.activity": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:1eb779a589886eea837938ce33540cc8fd97fa4cde8aa4690ca9cde423fcf1cb"
+    },
+    "attachment.upload.certificate.other": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:96f80d9ea2fd37c3e8638b0bf6529b0c09b3e9cca53dd42c70965d5d1b9038da"
+    },
+    "attachment.upload.certificate.self": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:d37d49d4af4cc2ffe1eef6bdce08ab41a028cee8bfaf3bdbe88ab5c565359b3d"
+    },
+    "attachment.upload.content-file": {
+      "endpoints": 1,
+      "surface": "sha256:9b96d4fed6845afe9e31d2e6fd840e9ebaee2b836d8b6b529cbe481b4fd51a9b",
+      "description": "sha256:aaa70fc690c0cc14112920e3ce3865d0e6735491567f7cabfff2b7352e378934"
+    },
+    "attachment.upload.content-image": {
+      "endpoints": 1,
+      "surface": "sha256:9b96d4fed6845afe9e31d2e6fd840e9ebaee2b836d8b6b529cbe481b4fd51a9b",
+      "description": "sha256:7469d34b4d7faff7cb34ccc539d2554fde5189ba772964f77890d7d75349ff5e"
+    },
+    "attachment.upload.member.other": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:3cb9b7a0f84ad854187d7d4afc1a91ea74a8646d0bff867ac7313b8ed059a95e"
+    },
+    "attachment.upload.member.self": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:ed50c3a0f7dbfc9fdf72b565c23cd47f83eabfe49a2e174224d9d30515d5119d"
+    },
+    "attachment.view.*": {
+      "endpoints": 3,
+      "surface": "sha256:3e6cdda0a35146c8d0a464272dd969c34485b7904395bf7c837ff72cd5ce1b2d",
+      "description": null
+    },
+    "attachment.view.activity": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:b48ebd9bbca88b097af158d5436fb2c6def6bf83b09cf5d1e65348d35d6f5fdb"
+    },
+    "attachment.view.certificate.other": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:d9295653e3a6f4113cea373a427112bb5b0bb16fb63c779c6af633d2d05e66a1"
+    },
+    "attachment.view.certificate.self": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:cf9154e52bb0b8f05fdd404e8140e99190bb74e0ed7614b2b102e7e5a1fc9806"
+    },
+    "attachment.view.member.other": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:334f8856d0198d87127b8ac3833eb405258a5dd82094c1d4cd9583f1af9cce61"
+    },
+    "attachment.view.member.self": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:b02ab20dd2bb4b258507e6e607280b431c0104590a1653aa749dc946db7d45d9"
+    },
+    "attendance.approve.sheet": {
+      "endpoints": 1,
+      "surface": "sha256:34ecea1616a817eaa4c3b4a3a03fd2f7bd940e1ebef22f00f334a6c4191b9066",
+      "description": "sha256:d0df5c209b599a49fe888addde775de208aa95d83ac61cdda0d4737bee51cdb1"
+    },
+    "attendance.create.sheet": {
+      "endpoints": 1,
+      "surface": "sha256:fb896d469ae9a05379acc061ec24d372f516c697468989ae52b67704c304ce2a",
+      "description": "sha256:74d83a4a7fc93aaf77ded528fe2bdbd10b7e2a4529c03508762cc61f93124dc5"
+    },
+    "attendance.delete.sheet": {
+      "endpoints": 1,
+      "surface": "sha256:401cf301b75d58032e622a62ecb539114bd0286f33bd67427618d173a81ba5ed",
+      "description": "sha256:b2db7dd23017e158e28df224a5d78c68adc3cd4b44497d2b1299a92f10bdbe8d"
+    },
+    "attendance.final-approve.sheet": {
+      "endpoints": 1,
+      "surface": "sha256:1798a0bb989228ac21418f145847a8083fd1d3cdfb3dba1d4d9141faffeed4de",
+      "description": "sha256:7c2ddd76e53817a539bca742579953c969fc121722c2bfbabd2d96f64a2e11cd"
+    },
+    "attendance.final-reject.sheet": {
+      "endpoints": 1,
+      "surface": "sha256:141d2f68d117da3a0197a5dbf3e4a303a27716419d8c692912836f7972487b02",
+      "description": "sha256:8132c1ef5d73c67ad23b23a62e5d814abccc6ae57eaed6745ae3d78863a2195f"
+    },
+    "attendance.final-return.sheet": {
+      "endpoints": 1,
+      "surface": "sha256:eb434a50680ca6c7ec8e75000e09c53f478a56e249730133b069c7a8805fd405",
+      "description": "sha256:4a5c0681c1c7d2cefdeffcd1091448a8139b94f0d0d86260ba1bfadfbc5c2e18"
+    },
+    "attendance.read.sheet": {
+      "endpoints": 19,
+      "surface": "sha256:e91fabfcd5d5bbf5199799d3bd41016b1629b6cc1d5211e6819c337a48e96f80",
+      "description": "sha256:efdfcdb3d7291a58a8bbdb0cf1c537ee6734e9fab0aa9558b3a916c1f693cbf8"
+    },
+    "attendance.reject.sheet": {
+      "endpoints": 1,
+      "surface": "sha256:6f45c43a4322dbf98e4aa02f206e5d9ecaba337b3a5396322a4bc7ed89e0a8b3",
+      "description": "sha256:11bd42c2162b732dd8e2fd0a3fe314215f06dbeb3c5120b1abbb6f597af64d52"
+    },
+    "attendance.reopen.sheet": {
+      "endpoints": 1,
+      "surface": "sha256:79b2ad0486ba824b04f726ba4106e3c893b26b5e9eda79984c05ce0f01448d0d",
+      "description": "sha256:bddb370bfee5c8fc808d802a60f590319889d77bdca15d7c4837829d0a70d2dd"
+    },
+    "attendance.return.sheet": {
+      "endpoints": 1,
+      "surface": "sha256:33cce42929dc51a6a664ec65d24ba37bdce2c5f9e5c78739ed4129c110394dfe",
+      "description": "sha256:55b910a3682a1ff162d035539cc0796d6833af908e2f57b14954b643b55d916c"
+    },
+    "attendance.update.sheet": {
+      "endpoints": 2,
+      "surface": "sha256:b21713b2043274ed14833c665ce0236fe8e6e4482736602fa72b1d6c80353c0f",
+      "description": "sha256:8a34850047092682cf30ffb95deee78c2f011151122007314edc99ff1f92b193"
+    },
+    "audit-log.read.entry": {
+      "endpoints": 2,
+      "surface": "sha256:37f4bda2831a8a6f9c62c4876f4d85dfb5aeb8da95f9ca8f266cf4ba3fab2acc",
+      "description": "sha256:33f2a4fbe101d894573364e13def906276fc2d2de480d79433fba76501ac25ff"
+    },
+    "authz.action-state.decision": {
+      "endpoints": 1,
+      "surface": "sha256:fab02034e0d1fd931d84181aa531ce6eaf79dfcb561422aca976483afce82ac8",
+      "description": "sha256:55eca879e2cb86f705b6698acc06b0d9531b928912639595653cbe6502460e34"
+    },
+    "authz.explain-batch.decision": {
+      "endpoints": 1,
+      "surface": "sha256:645e4e81310325be57f78d41b352183cf97ba5239d11359227f6e10c895b93de",
+      "description": "sha256:8c97c9d7f1fd21df01bc5bd4fedf8adb21bac4562a4e998ab721b50e73b69a41"
+    },
+    "authz.explain.decision": {
+      "endpoints": 1,
+      "surface": "sha256:00bc00ebce1ba4b3bc07c0c7e7abd59aa1dc0dfc65dfbfb1901a577bd0d2dc52",
+      "description": "sha256:79553b3fcff31650b437aec916f2b7622d6e096e6f65c8809caecdfd6203664d"
+    },
+    "certificate-recognition-policy.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:44a022c7b9f0224a2c5fd02927df15e80af88a5721c085b2a46bae71b6691d15",
+      "description": "sha256:51ef0ebab74f3ea22364f0b65bc0cde0e98d457d7f6b7eca72264d7984a27585"
+    },
+    "certificate-recognition-policy.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:230a1de8d1b4b7f1f0d659ca91438c2efc72fa3a702ff825b7ff6f0231182dfb",
+      "description": "sha256:41cb6e5d9b321d06a53b1ea7699c19feac213d40aeba4cb74afd7d25d3b396ac"
+    },
+    "certificate-recognition-policy.read.record": {
+      "endpoints": 2,
+      "surface": "sha256:1f5f1a6c7452d938c49cbb1b2cdd68b2d951fbc1c8809b060ffbff59de2a0f15",
+      "description": "sha256:4427b5e1897ab3db3f4ee8d3e048fe9e23e7090e3e50b0ffa3fb90bfdf942343"
+    },
+    "certificate-recognition-policy.update.record": {
+      "endpoints": 2,
+      "surface": "sha256:1959dcdcbd69237d8d9bf1a9a25b98e32f017e092322dcfb4999c2cd3cb001bf",
+      "description": "sha256:ace53ed62e9538e5d8e624c493f2d1c8fb4d1a1adc6f194987b5bd2aba686017"
+    },
+    "certificate-standard.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:18ce7ae34b088702c98d84b14460edabed63e182e25b767a9a520370fe6e25e8",
+      "description": "sha256:bd01a9827cea0d863c7e1dec36f4f3d0a70967e4372a227af38fc9a4635b5e48"
+    },
+    "certificate-standard.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:de38dcf4a6ef252b63552610d0a4475a0bbe24918f7da2a9b781a5afe65f66ea",
+      "description": "sha256:17a64fefdfb48effba7fea341cef0d27566ed56489e9721896a2cbbe27515ee4"
+    },
+    "certificate-standard.read.record": {
+      "endpoints": 3,
+      "surface": "sha256:d1f8f140636ddc68d0e74733fb5aa79b2061aa470b67a0a9002ec9e22eb8d67e",
+      "description": "sha256:fd55cd4fab84d45b024c0788e59c859fda96d7517cd3c7868f5787e8ae329827"
+    },
+    "certificate-standard.update.record": {
+      "endpoints": 2,
+      "surface": "sha256:01171586b55a08ea4a1e9548373cb66e6143167e0b51906778c571ab279b6486",
+      "description": "sha256:22c614f5c589d577da98a2fde6d63ac67e3b06e20779587a677053103c3c1422"
+    },
+    "certificate.create.record": {
+      "endpoints": 2,
+      "surface": "sha256:1467290f0fd4329a8e153c2fece3cc7a6f8ab33ac273db867a00b1f0f6324fba",
+      "description": "sha256:1c70a2a7ba10112cff32b80575f6989673d8338fffb3e4bc8b3d83d472ee3798"
+    },
+    "certificate.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:798b09886f6c920326c28a58c85c3e27110cca2d58e25bcadf728d4df0a9694a",
+      "description": "sha256:c82b1bfb8d56d8c31c1469de16778e175c0b762269f69dc9ffe76b9a835dbbdf"
+    },
+    "certificate.read.record": {
+      "endpoints": 5,
+      "surface": "sha256:1be37a7ab8a97daa5b3cbcad63a7fb95a9346268e7737d7e0f4e5322b60d1a47",
+      "description": "sha256:00b9a3b985cf8e49762e10125a3b535930d4bfb690618ceeee27bf15eda593ce"
+    },
+    "certificate.read.sensitive": {
+      "endpoints": 1,
+      "surface": "sha256:5f22165411b45518006e24d01290a14b3e0bc4716dbbb3c2738d12df67868e66",
+      "description": "sha256:526a9602bce652151077c03d92acea223530c75c1fd8278c99f1084f74153bbd"
+    },
+    "certificate.reject.record": {
+      "endpoints": 1,
+      "surface": "sha256:9dcbae1d0b80ca2f83f2f6ed9660a9450524fd1eb9b713de5303a0789ac6e621",
+      "description": "sha256:f8ccdd06ad64d00b152098c3b6dc61cbde01541d3acced3afa3966849cbb394d"
+    },
+    "certificate.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:79718a8e3fcb5b533c1958134988452d2e9755c9ed4af9c237be3a7c6590375e",
+      "description": "sha256:e03238ee05f17f81494d65742d2eca9fe03a26f480c414a4443f361925c2d4f5"
+    },
+    "certificate.verify.record": {
+      "endpoints": 2,
+      "surface": "sha256:b7a11b8ac7fcb0e741551c6eeb614f8f281bfc8535bfd3c9ec56e345878ca828",
+      "description": "sha256:071cb5e020326a976610a5b38e9f21c598323237f469cfd005bcd10828fe2321"
+    },
+    "content.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:e1e7e8977c6cb56ca486124051fd040fc8aeda48dad4628b46b454696048ac7d",
+      "description": "sha256:dcf4c9f64b27fb79c80ece6dc50605046cd34e50195ff42e115e25ce70647895"
+    },
+    "content.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:ee0671c2b952d21c17a128a3a6f0f078a719bdca94bbf47ac8c81fae747a6e94",
+      "description": "sha256:e2d3acd2cfc88f24ccce2f4013208baa7b29a393f33526dde124eab86183da77"
+    },
+    "content.publish.record": {
+      "endpoints": 3,
+      "surface": "sha256:802b4d037530636e8868784f9bd1c30862314bbc03a6e66ccaa3cf4fefaf99ba",
+      "description": "sha256:b72615f3132a552843ea7836e1a47cdecc3400d793ab234fa0304c5def269315"
+    },
+    "content.read.record": {
+      "endpoints": 4,
+      "surface": "sha256:a7ec7cd57e674645e8ae503cc79c4ba9a05216fa345a7179636d1adee641361f",
+      "description": "sha256:d1e89bfd174079b0dcfdb09366d6ff6325091d877bc5e3081a1e7292189777de"
+    },
+    "content.update.record": {
+      "endpoints": 2,
+      "surface": "sha256:e6bbb32cafad1b69bf8ae086a5cc639223907581237eb2d4aa8433e1ee1140ea",
+      "description": "sha256:9edb32ab43138317af5eefd74d986699990c076ca0d81e86ac1cb5462167d34a"
+    },
+    "contribution.create.rule": {
+      "endpoints": 1,
+      "surface": "sha256:ece74d183099e0900af23d0f230716fbc0cbc78ce09e0c2517c0a647fc9a6cc0",
+      "description": "sha256:6bde2353ff578ab2c5b93d240530e9b575a5dc2c8cd2371802a4ac02138f44a0"
+    },
+    "contribution.delete.rule": {
+      "endpoints": 1,
+      "surface": "sha256:9325ecfd635c136cc2d7b4ef4a747876ce6f3f2e12fb94b8e366043878a4f339",
+      "description": "sha256:3f081e5543e58da79761088702e56ccc188aefe85ef107677ed6ed54c52e7804"
+    },
+    "contribution.read.rule": {
+      "endpoints": 2,
+      "surface": "sha256:30ea3e4b1d3c67e7a7b04c3d9a8a20b748bed90bc7e1d653ead36a2980448489",
+      "description": "sha256:3fe860422f97c91112fa50101a99f83ed1170f78da55a57703bd8736950aec93"
+    },
+    "contribution.update.rule": {
+      "endpoints": 1,
+      "surface": "sha256:967e9af91dd3bbc46843a08beb4181c08c143446978158f3cda5723fe3174f8a",
+      "description": "sha256:a8212aa17c9e6973d67492d83e7113e395fd8f85965cf3e6526526ceacebbb2f"
+    },
+    "dict.create.item": {
+      "endpoints": 1,
+      "surface": "sha256:c9f043c3e68e804d647f3c9531dbd46ec74f4eaa8ea6f7d89a85e0d409629fe7",
+      "description": "sha256:bebceb81526876b8e8b62a3beb1642c9715f74ededdf514645f68f4042ca4edb"
+    },
+    "dict.create.type": {
+      "endpoints": 1,
+      "surface": "sha256:b2788eb21faea7b6fdb8add883e08f3af45218ae7dfa042014e72a47e7e0e9ec",
+      "description": "sha256:34a8177edcf587c7ae54ed17b7eca78c9851693f8963757cb9a2d45081b2a307"
+    },
+    "dict.delete.item": {
+      "endpoints": 1,
+      "surface": "sha256:a7d246bb17fb61243f9cbe13b189d5e50f1f116b4bfb31329f729bebc2430ab0",
+      "description": "sha256:3c656fef4d338ded36613cf2fccf85e6bbcccc447096d1de366242e60bfc999a"
+    },
+    "dict.delete.type": {
+      "endpoints": 1,
+      "surface": "sha256:c8e01536401f0faaa161fce072eee17026fa798accf73f89d031767e53589ad0",
+      "description": "sha256:8b73740c41dd03f5bc5a4d098008a487895b06f90da7c31dc96b8d9c322fdaa2"
+    },
+    "dict.read.item": {
+      "endpoints": 3,
+      "surface": "sha256:29c7f49210dc328056564260654e1437eba606f3416981e4912cfc8e928cc7a3",
+      "description": "sha256:100b15d5221129d686ab4a21b4843ad3df74a7c30e7b3ca1ccf2fabd37604b55"
+    },
+    "dict.read.type": {
+      "endpoints": 2,
+      "surface": "sha256:6db74d466d7331908e09c4be7be926c3c6cd6412642d461a0174573e4f364313",
+      "description": "sha256:628f045b93a02a40da6bb8667ddd08256b7e0c21fb76fb84b798a2f848227cee"
+    },
+    "dict.update.item": {
+      "endpoints": 2,
+      "surface": "sha256:5d50e11815d4bb1ebe5530bcc1b2cc0d78a6ef06818f0e99a9ad264b7ca6e0b3",
+      "description": "sha256:73198fd1c0e2966067bff47a67bac7b1c169e2f72ae4e25622df153b99db66e5"
+    },
+    "dict.update.type": {
+      "endpoints": 2,
+      "surface": "sha256:0076d730f1d7218a753a10587a48c06f39be19dd2fdf3c85e2b59669aa2f3ece",
+      "description": "sha256:6fa3b67fb4afe275f2435bc0dbe1a61d3a9d4d714329e35e052bb2c6edbb6dc1"
+    },
+    "emergency-contact.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:bf0e52a32f3313c80daf42af7c8a273935c84d61ecec9d55578f52b1227c79e0",
+      "description": "sha256:c48586ac8b8376e5f9e9d5137089ce254d48ec633d5ee50173f43335b64a4884"
+    },
+    "emergency-contact.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:58cde780f43eb5f4dd3f7fba26418048dcd4d919d7e7bbd012b1028901b16c1e",
+      "description": "sha256:6c0936508581e17b4d3bffd14bcf7051353d7cfb73cdb87e66c4f2a883b73377"
+    },
+    "emergency-contact.read.record": {
+      "endpoints": 1,
+      "surface": "sha256:e9606a7cbc03805632f09430cafac7f33888b2929ce846448ee378ea72af8739",
+      "description": "sha256:9cce0ccb0f91898224e1ca36aeea67f9a92123c41d71e661d0b87754a1a8f219"
+    },
+    "emergency-contact.read.sensitive": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:159afd440a9ce58bf627838aedf4d197289772c7a943d2a01fdc3a676fd26a1f"
+    },
+    "emergency-contact.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:c473c379d12016840dfb6537612e71dae51ab98cb2b9453175bf93c512e93af5",
+      "description": "sha256:ad1eea5312996a12aa0d1cf0c2ea68d95a09e8118312bedcdda66f3be8d026b0"
+    },
+    "member-department.clear.current": {
+      "endpoints": 1,
+      "surface": "sha256:1aa5f3ced63291dcefce35a119f12129e92f353bbaca1e8a4852a19dafc51dfe",
+      "description": "sha256:ab26b87d27bf0349809388b7072027df512e520bae15459b77393f7b41f7ad25"
+    },
+    "member-department.read.current": {
+      "endpoints": 1,
+      "surface": "sha256:5b7f2bd252799080c4379e5878137462e9951459ca2392de68a1c7b54397acc2",
+      "description": "sha256:f3264cf8fd5c08dcfedc6e5345151115fc1414d8afc99a0c70f3200d48cb2ea5"
+    },
+    "member-department.set.current": {
+      "endpoints": 1,
+      "surface": "sha256:ea893779946f668009791b74791910789941753bd4337e68355f63550145008b",
+      "description": "sha256:ce1b9ecb976a1e12943dd5603d08b428d1feefaf31a590b233c28288c7c71e8f"
+    },
+    "member-insurance.read.other": {
+      "endpoints": 3,
+      "surface": "sha256:96f983461878412d00af0236696e4470d092b4af38efacff89e08013bd5dce9c",
+      "description": "sha256:a276bd827618750562bb925c0ab14fc4c4c020e1e1015f86ad62a1b93dcf97b9"
+    },
+    "member-insurance.review.record": {
+      "endpoints": 1,
+      "surface": "sha256:1d9753d2f24af56f17aa0536e2b5f6230710b59cee02f8c555f64cd6b4325b81",
+      "description": "sha256:e07f3bc9e57c1f32cb861496645d15edbfbd031213bf26f7c605b42275e5cbfa"
+    },
+    "member-portrait.manage.record": {
+      "endpoints": 2,
+      "surface": "sha256:d5d2e2bb0a2e696c7d3f859100ecb2c34d01f1b1c7188e9bda5ca127705545a0",
+      "description": "sha256:4487c7d1d8e9d04b930da25ea5dfde8f352a3d145c79f6b2dadcaca44de790b3"
+    },
+    "member-portrait.read.history": {
+      "endpoints": 1,
+      "surface": "sha256:9e2d947dec3f6ac0afe02a711aea5c17e9396b0dc32d7b2fdf65767ab0043970",
+      "description": "sha256:2c76775ca979d223b445fc546217cbf40f458cb22f34fe0071bb3efa60e1622e"
+    },
+    "member-profile.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:c350e02f7cf3da3cadd6e1d549d04b8b59d46fcd394128c064b4d54d8f5775ab",
+      "description": "sha256:25311e5d03d2732bacb1f195caa2bce43b59ae23f227e8fd50afa9003aabbef8"
+    },
+    "member-profile.read.record": {
+      "endpoints": 1,
+      "surface": "sha256:b4e42121a489ba3af8a6a8326fa15df702bc69c129d297aabe6b706d55b38285",
+      "description": "sha256:035c64262673f39d2260441113ed0582b710cfd48434a91429313f651baa1aaf"
+    },
+    "member-profile.read.sensitive": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:b64f474f2d67f128ef32d14f8c088eba1fb907758f501f3c216be2ba6f55022f"
+    },
+    "member-profile.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:e119e34ca146704289ef84bc080f71abc15271c53dbd7b7aed9aa19b06d81643",
+      "description": "sha256:9b206d0e595d9e094eaa3ec30b0639fcac3ac608b4d1cb79014c61e066868608"
+    },
+    "member.bind.account": {
+      "endpoints": 2,
+      "surface": "sha256:7ec0430bfea94ae19d70f6745c46cf2ca929d11234fa6f0c43ea85ed239a71ab",
+      "description": "sha256:f31e06c9c454e518fd3b1392644b97372a3d82d3b9daee82171a284d1fb0ab6d"
+    },
+    "member.correct.identity": {
+      "endpoints": 1,
+      "surface": "sha256:7fe860a4ce8585a2be25c584f81fd5f7601318bd752e096f6f23224a56458593",
+      "description": "sha256:7874ebac980abb3b8ca4a08a6f7d41c697fae1f63497642392b960544bdcccb1"
+    },
+    "member.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:ebf17357aaff3ab52c985f37747483e9be2dbe5422164de08a4035fc09ff2a94",
+      "description": "sha256:45c3a5ee033118f59d2135affbb565c5b4ed517bad25475296dfda7ead8e3162"
+    },
+    "member.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:66f542026663402b2cfa30043190d17a9b181ae843773646f78d5bd5fe84cb24",
+      "description": "sha256:82ad226a2115753b47de0945cdadf31edd2b149a699e43c6f5224d33ee1a0608"
+    },
+    "member.grant.account": {
+      "endpoints": 3,
+      "surface": "sha256:fba46202b61f387c0ace8cfeb7df141d2b0763cbf2346126109067c66d65beff",
+      "description": "sha256:31255948d34f342036d94dd9b76a40c4be421da9e9c529a082f80db4430b8a62"
+    },
+    "member.offboard.record": {
+      "endpoints": 2,
+      "surface": "sha256:9dfdd9cd6b38f88d8e83b7f3d66013c03f4610bef357bbd2cbbad1764b4821bf",
+      "description": "sha256:e30d3802f795700642a73af621a7bff8dcdfc56bcf8fb4636f1a047b0971a037"
+    },
+    "member.read.record": {
+      "endpoints": 6,
+      "surface": "sha256:b33d721a999d160cc72cad39914b3fb4b730e57dcdc6b0c19eccf06379630db4",
+      "description": "sha256:1afb6e94e5cfe14a89ada2da434bd1b2cd634a236fe5ab98e8a3603dceed9f1a"
+    },
+    "member.update.record": {
+      "endpoints": 2,
+      "surface": "sha256:a6d1f9ae10ac61fcbb7583594cfb85f587276fe5eb175aa567c5c2757af3c0f8",
+      "description": "sha256:c8b8e49c3adc9fc2a9352a9be08a562c303c2926dd73953437d396db2d0281aa"
+    },
+    "member.update.status": {
+      "endpoints": 1,
+      "surface": "sha256:0eb9eb262f5dd4cff1a580de9300a0833894efaefabc854b114736a8fd44939c",
+      "description": "sha256:6a1e76a4627fe995dd9ec442d6d2a3c5da0435473e49312bf83ca4df96a6328f"
+    },
+    "membership.end.record": {
+      "endpoints": 1,
+      "surface": "sha256:6ebca9ad4dea58353ced9e0da84c29be1e65fba059df9c062aa141f864c8bcb5",
+      "description": "sha256:90881ad7636e190624c69a5903b66df10fc35ff725d9ab742852530fa24320d3"
+    },
+    "membership.list.record": {
+      "endpoints": 4,
+      "surface": "sha256:59318c6e9e67cd19a1fcb07c2a6bb557884e5b92a69669f6af1bcd1246e76018",
+      "description": "sha256:72a8621317fc7985e646a1746d0c2e809349f426ac20c825a7082477d91bd79a"
+    },
+    "membership.read.record": {
+      "endpoints": 1,
+      "surface": "sha256:85c39c7743bd69b74424d4b8aa4130acd1bf1bcb0135b0d03fa3c8573c3a91b3",
+      "description": "sha256:1c943bc9dc50d875d67c4ed0f43de9c59aab2ec15e2c8e5b80daa48bc4008817"
+    },
+    "membership.set.record": {
+      "endpoints": 2,
+      "surface": "sha256:e8c4fb7be1d1ff1f68db20e1b673b236d95aa97a011dce9334e59b5db9dce2b2",
+      "description": "sha256:8aa48ef077c2656e317429bbd96feedc5fb134657eca8960df45e051150d181a"
+    },
+    "membership.transfer.record": {
+      "endpoints": 1,
+      "surface": "sha256:9b00b39b78d6bbed7289fbca70cef183ff4aa6e1713aa34c24cabd19ec6f8979",
+      "description": "sha256:dc1868b9ee728d912ddfa10552436ff453a8db721dc0c3d8f5ad02c971261536"
+    },
+    "meta.resolve.label": {
+      "endpoints": 1,
+      "surface": "sha256:b02e9cbaeb5bce4c14cf67f8d23df0abb33f7ad923c8abf98b6a2226eab0b0e3",
+      "description": "sha256:4becee242730424656314eaf817bdb65bbbbbf88c8b406c51b6fb87b8932430d"
+    },
+    "notification.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:448ec4f76e87c0672d701205540559a2b256174d0af68b287bb5e336e9d79b34",
+      "description": "sha256:b79ad0178bd880fc73bcc74e314a2a5d00f8f93062eaf7fb25f7696cd45626b5"
+    },
+    "notification.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:e649433ff4775c863d30b7fb9451370c729660bb535097a80b9a5fd0f536ef6c",
+      "description": "sha256:2fd898aa536712dd88a0827319b66acc9c0fdd1c94b08f77b42f27e46e27b8e5"
+    },
+    "notification.publish.record": {
+      "endpoints": 3,
+      "surface": "sha256:78d93b0ae2f008da537b417088b844ef05d3e7d127fdb1d6ecaa6b02a6fd47db",
+      "description": "sha256:dc7aa6c8004a118ae118a096c5f09b33f745688572dd788da1fa1bb1c906d543"
+    },
+    "notification.read.record": {
+      "endpoints": 3,
+      "surface": "sha256:315acfe44a99741bcb9c47020c2022dc1d0cf4435d65728e61738dc385d6ca3a",
+      "description": "sha256:997b703de7db91e55994227a32a68eb050152fffe75b1426e5e038bc3680de2f"
+    },
+    "notification.replay.wecom": {
+      "endpoints": 1,
+      "surface": "sha256:cba85b1e52c37e839684c6c9410bbfef489821a9b319f1169110c230b443d2e4",
+      "description": "sha256:e5b1f0f98c16324ef0c5b41cd6e1a2d8411e793d59819877c1ba230a72bc0acf"
+    },
+    "notification.send.sms": {
+      "endpoints": 1,
+      "surface": "sha256:a145af42299c5322228002a0bef2929c8cd8d34a7832b07ecf557b6916809350",
+      "description": "sha256:ee534ef8c16cc47c7e4126dc4c6c4d6a926f5cef9c78201fa10f4d019b2184c5"
+    },
+    "notification.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:486e99dc5e6a17a6a214e649c72d0675fa951d3dc4ad4474dd5e5320f153ed19",
+      "description": "sha256:0b3d515c043821d298b00073700289ee5989ff8741efab264c2f80bd5c4a1e8b"
+    },
+    "notification.update.template": {
+      "endpoints": 1,
+      "surface": "sha256:32f5513c6a437dbd1f4fea7768c0d533a0f2793dcb4ecdf2974b4e02153f4790",
+      "description": "sha256:ddb530c0f0f2281ff55df06123042b7f06f4167fd1431ea41a580163ca8f7a17"
+    },
+    "org.create.node": {
+      "endpoints": 1,
+      "surface": "sha256:f465a0075525d6af6df0ab9d992dd0fa90daface6ae3aa9aec92d8cb84d9fc6f",
+      "description": "sha256:21d06b43fbeffe012e13278faad6e4c1ec21572c4ddb2c2fd1600ac30906639b"
+    },
+    "org.delete.node": {
+      "endpoints": 1,
+      "surface": "sha256:559c0a3d6d4d50f01dfc4a47e39fcc6f0439484b9c513328edcb06789160d7dd",
+      "description": "sha256:3de44b38b3519928e9e880ac2172469730a111696d400c93a2bff8a0020b3f8f"
+    },
+    "org.move.node": {
+      "endpoints": 1,
+      "surface": "sha256:8ba90c769b1664af9dea1526c49e8a01cfcef8fafaa207364b587909ba02788f",
+      "description": "sha256:3bffde88d9786b2cbdf932f26000e30849f4f016ad3fced97cfeedde2a3c4496"
+    },
+    "org.read.node": {
+      "endpoints": 6,
+      "surface": "sha256:e3039c6a8e88827c0ec21d7694703bd9df7fcb20712b79aa721cd893f6213c9e",
+      "description": "sha256:20063fb80036c86aa41f353b959ded1d338da7b203e59c34ab3a91f1e3d1582e"
+    },
+    "org.update.node": {
+      "endpoints": 2,
+      "surface": "sha256:7ea2b3c2095af49c4e5017d38a4f16066144029c79c6a3b31e71c8dd8f3508e1",
+      "description": "sha256:ec4249ed9f2b7c1776a1d3b1aab142c06282f658fb192de86b3a5cf344e6c4b4"
+    },
+    "position-assignment.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:57c55f1c243e1e1dfbe41f8bf44c7f88b6ed3db2ea7d1249a931dd74d07b7579",
+      "description": "sha256:8530312ac57fbcdc52acd670cd0eb22cd5d46950ab601d48349f7f934c3e970d"
+    },
+    "position-assignment.read.history": {
+      "endpoints": 1,
+      "surface": "sha256:2d8f0b46ee7774bf61d3c01fec30b2c6995c32524e11453f28f049d93372a08a",
+      "description": "sha256:29b87a7d40224fdf68fe65face8aa5e7f09fd4242c4bc1921a7f706f7adb6dbc"
+    },
+    "position-assignment.read.record": {
+      "endpoints": 5,
+      "surface": "sha256:b16ea963a920b387332a03032499ecfed01f2a2c12a1d2e4a2fc9a2c922ab480",
+      "description": "sha256:8b87768df64c1315b6ca14bae7d569f3a7753cdde3b68e280f9bb6aa443bf227"
+    },
+    "position-assignment.revoke.record": {
+      "endpoints": 1,
+      "surface": "sha256:dd39197b28509cffa09fbe56afbc233042a0fe8dd2ad0091e8f0527fedb22a85",
+      "description": "sha256:b50509056a5d289c4ce3a5b7155bf4eca8705e7f52ddba77b8355a83f9524983"
+    },
+    "position-rule.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:07cef29dc69893803d561ec180a5a093e36517508444ba4ca626d019afd6c7e4",
+      "description": "sha256:bc89ab221b58eb638a575e97bb0aeeeece5b4b2a9fb2974f5523bd7a4af23727"
+    },
+    "position-rule.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:1b22749017afbdaefec998cc84f4c4ec16a36b498587553344316d677be8b19b",
+      "description": "sha256:c595b4a2357afd08b8134a5e94f1e00adbf75d45d29a7f80e05af44cef7a94a4"
+    },
+    "position-rule.read.record": {
+      "endpoints": 1,
+      "surface": "sha256:1d1a57da3640470a9f6af6f5e267b0aa88ac1e54a6412e6bd10956bd416cbf4f",
+      "description": "sha256:cbad7e4ff799d3fad4657b46446bb20b48bc1a1cce8041307e594ced895f246e"
+    },
+    "position-rule.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:f21dce84184e8417b9f2f8314b80ed511d62af925f7d862cf5575d156d4c956e",
+      "description": "sha256:9d56c8e8a943c78f718cb424047644a145dfdc6273b48727c2d8df3c4a5b1c5d"
+    },
+    "position.create.definition": {
+      "endpoints": 1,
+      "surface": "sha256:74997ae296f8dface337a830ea3dfafd669f2e862ef2f32773ab7919de3b9256",
+      "description": "sha256:cdca37afec6e161d3b8a435b2209a46312ad83f9b7142c5ce77777774a6b6462"
+    },
+    "position.delete.definition": {
+      "endpoints": 1,
+      "surface": "sha256:8cbde03176437f1670aed6407757478392e8ad6e0c9f04cd28546b2aded36d05",
+      "description": "sha256:301970e9fc0c031f690f169efa4d79a4c24acaf1a7d3dbc276fa5652b6cea291"
+    },
+    "position.read.definition": {
+      "endpoints": 3,
+      "surface": "sha256:d00d6faa3e56e3e5cbfd3280edf26fae7e3cc7018f795a6127af2434de2bcdfd",
+      "description": "sha256:1490da20611c1555e131403699331d0042fba70ab182e44fb26aa22c61f8c92a"
+    },
+    "position.update.definition": {
+      "endpoints": 1,
+      "surface": "sha256:79987cba794b66f9baebedb52af584ffd18663b0d63b01feee47dad718ef754e",
+      "description": "sha256:db380d60ef428310b9b33c83bdcf8c6138fa8cd1c98816295bfd587e5ebb951f"
+    },
+    "rbac.config.reload": {
+      "endpoints": 1,
+      "surface": "sha256:d81ba544c06cbd559c64dbaff9f63b469e49a2c885c24b1bb82c65a8e96a7007",
+      "description": "sha256:6dc1aaf433b848395d6429f4f489cb26d2572dbb57313c2ee4ae9d449f43971b"
+    },
+    "rbac.permission.create": {
+      "endpoints": 1,
+      "surface": "sha256:b52b71509844a37ca77368fd4045d3b4729b2e05d83fbbb9d10099fd4f06fbe6",
+      "description": "sha256:861aa5e4e0e6c6aedf7312bd42a74cce366a0d457f6fa21316fbf0be0af9686f"
+    },
+    "rbac.permission.delete": {
+      "endpoints": 1,
+      "surface": "sha256:7f1f27396fc4718258602d6e97da96da2025a210672c3487dafad95a72661934",
+      "description": "sha256:b5e22a831b8a63356b891a0f39124ce553e22d016fe26a32fc52340cedd462f4"
+    },
+    "rbac.permission.read": {
+      "endpoints": 1,
+      "surface": "sha256:6bbbd59f6e2d1a773f58581b1c8a3f975390e21b7e683d820d4f04e721df9ba5",
+      "description": "sha256:9c2dff0089fe3209d3753cd720431ecdb0bc7ca316b9dec607c6e8dca0c2fa46"
+    },
+    "rbac.permission.update": {
+      "endpoints": 1,
+      "surface": "sha256:fcfe3f855823f41e93b71b38298721b37ba1fdbdb2583227e82410616a02a44a",
+      "description": "sha256:9f4442fab966ca3c7d63a41dc6e3031e731be4800a5ba991b5335fe0a71deb24"
+    },
+    "rbac.role-permission.*": {
+      "endpoints": 1,
+      "surface": "sha256:63d459f30bf0adca4bfa9ff1eaa9b850adf78a7419bcadd204ba4bd431a23854",
+      "description": null
+    },
+    "rbac.role-permission.create": {
+      "endpoints": 2,
+      "surface": "sha256:1a814593e58b90958f49d2b99a20418d83da34d153e824831d5639be8321684a",
+      "description": "sha256:677c62e5adef9a6273ceecd755eac22e9bd2f01c530e99114753c2352cee0606"
+    },
+    "rbac.role-permission.delete": {
+      "endpoints": 2,
+      "surface": "sha256:3213563dd9c5924a09e5b0bca6453757f35887eae4ec733fa4c7c4017b486db5",
+      "description": "sha256:0386e03bb26f2a820993eae22b718b299d097cdc550763b6219c57d2b12a6e3b"
+    },
+    "rbac.role.create": {
+      "endpoints": 1,
+      "surface": "sha256:d904d5c5a4bab723af640a0a70e56fdf4456feeb523dbdd969ffba3aa171a994",
+      "description": "sha256:65d4e43f3afdb8f73f34f02b79eb57fd1689cfb949ed57e921bbef4726bc99b4"
+    },
+    "rbac.role.delete": {
+      "endpoints": 1,
+      "surface": "sha256:647bfcc9c94fa1d1f373d50d2a2aaccd83b9f667e022b456e8884465c94669fc",
+      "description": "sha256:688d700131a0c8189758bb054524e8235e976cc620b27297dde9d0a9bf45d032"
+    },
+    "rbac.role.read": {
+      "endpoints": 3,
+      "surface": "sha256:d8e96ae71abfb79bb1647ee5e3537094fb600e970cfd7e2f513ac409363c726f",
+      "description": "sha256:165723b1ef6da8acdce77171c5c6cd851f5a42b2a72bf755eff077ceb9475428"
+    },
+    "rbac.role.update": {
+      "endpoints": 1,
+      "surface": "sha256:7eed3827efa19cf4780fe9d376b01c560112b08872b2da660f9556ed4240849a",
+      "description": "sha256:08da622d20ab84c05f4cf479c9502460cea7565111aa7a67a41248ede6d305dd"
+    },
+    "rbac.user-role.create": {
+      "endpoints": 1,
+      "surface": "sha256:f4346426d96e9926dce831fa87d89a4c3163c70b2ad6cbd211fd05958d993705",
+      "description": "sha256:17fd611570e99a2aa25028908299cf4973188ea774fdd57493d7afc32f552897"
+    },
+    "rbac.user-role.delete": {
+      "endpoints": 1,
+      "surface": "sha256:d47fb5f1897f079c8c55e735bb91048489742e7257951bf8d3235d47ee515595",
+      "description": "sha256:e2d69c85287b88d59a15b1c16bcb7e8851ccef8b42e581d4e6c30ed96f151f21"
+    },
+    "rbac.user-role.read": {
+      "endpoints": 1,
+      "surface": "sha256:7d0b12800f6ae39f42a8236f9edda74990fcc19c9624c3167aae3704699a02fd",
+      "description": "sha256:a9b2ebed60724f2efe819d4cd2f92aa215d6663480120c6f6eec4785292c5c18"
+    },
+    "realname-setting.read.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:074ce80fb92332952b73ca080c2c679aa2ee7a343463f4254206b73704320401",
+      "description": "sha256:e5ee3bc4cdcdb30b8412a45756e89c79b4da0a2fbde09153dc9a397ff0ab37c0"
+    },
+    "realname-setting.reset.credentials": {
+      "endpoints": 1,
+      "surface": "sha256:dbdd4fa3f4c447fd7d655ad4a6956211405dce0991f7070a5664edb2bf3a97f8",
+      "description": "sha256:35c2d0d7ef3dfb10642ce52b70ed419d4caf5adeb299b2d2d49c90c2b1cf596e"
+    },
+    "realname-setting.update.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:dbcd0c06529ca0bf24619006ccdac14d9a6a8dc0349b872d0a8dd2a05f5aaea7",
+      "description": "sha256:aa4942a67e2ad079cbf9056f38dabea4d265561bfbdaa3d19533edf086a1767d"
+    },
+    "recruitment-application.evaluate.assessment": {
+      "endpoints": 1,
+      "surface": "sha256:50f8b25ad26b059d1c545c27c50bc7d96cf46fe9f0b54c89361e98ca9ff12a0a",
+      "description": "sha256:66f39caa7caf016c34afaf27657b0b6d2610d7e653a9893f373b3b562e567494"
+    },
+    "recruitment-application.mark.threshold": {
+      "endpoints": 2,
+      "surface": "sha256:b26900fbaf8666688bd788364cd243bae8366f69f8a3ea223b6cee9cad05979e",
+      "description": "sha256:df60eec208d4ec90cf84a8c5fd2e7099789451b4808c6a8e6c5a130a828732b5"
+    },
+    "recruitment-application.promote.member": {
+      "endpoints": 2,
+      "surface": "sha256:b855a59b47d7dec9ba88fab0fd7777863b17d8ffaeb94760d06cec95eba22703",
+      "description": "sha256:76112fab0f2323e39a8a73ef0ba3ae4688275656782490432030865894f360f6"
+    },
+    "recruitment-application.promote.single": {
+      "endpoints": 1,
+      "surface": "sha256:1cc9271f9f283097c391a971703a5ebde3a177045b593b18c9f6cd1f8fde8ca4",
+      "description": "sha256:6b3a593e846f246b32e39d365f30ca21117065679e74b68ce7ad9f23aec4d0ad"
+    },
+    "recruitment-application.read.record": {
+      "endpoints": 7,
+      "surface": "sha256:835b8f863ae43b8a46184a874ba5bcfbc84d366a16cd0cf6e65c127b6d13be4d",
+      "description": "sha256:58f1108958cd1a9a24f49ac60d87dd46a9c259dd54645e293805e01f3decf074"
+    },
+    "recruitment-application.read.sensitive": {
+      "endpoints": 2,
+      "surface": "sha256:4168b9048e3548f0b3cbbdcbc0ab5eab7031f27831426f6a925bc3eeefaa5784",
+      "description": "sha256:7ae4daa82943487ca754c874f56c452badcfb292cd909ab3246943c4d3a9b5b8"
+    },
+    "recruitment-application.resolve.manual": {
+      "endpoints": 1,
+      "surface": "sha256:c21a8a3ce0bfa8662f69f703f2ca44d72e7f80d83f81a8c9aaf9685e16b4c866",
+      "description": "sha256:7dbb8dc550c16bede4ee3301a05ee5858e0bb18a36d8a9f852fc14f85d8cd594"
+    },
+    "recruitment-application.review.certificate": {
+      "endpoints": 3,
+      "surface": "sha256:87129e7f9ca669497857ac74b01e0272258f3b18eab28ab55489cd70d903fd67",
+      "description": "sha256:e8cbe7614e410aca7ed98411a592a4c9924be8304a7d485fa1e1f2a30717b5b2"
+    },
+    "recruitment-application.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:67b33253d010cf3dbaf9db2078bcb0ef47961c06518122f2841806683342e409",
+      "description": "sha256:dd56d2fe1dbb88f85ea57cb0d15c9c7c2faa53f71c2a9b1bd8b90f4c8f14cc85"
+    },
+    "recruitment-cycle.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:9dcaa496e58622266d5d176a98dd61547b13a3ee1ed03fe1e0c8d0f2a13e1cdf",
+      "description": "sha256:b2f4becc021cf5b3036c807b4f982f7518e1ef53b7da07ef85e7e44f3b9e337e"
+    },
+    "recruitment-cycle.read.record": {
+      "endpoints": 2,
+      "surface": "sha256:25470d7c372a36555c30333884d0bb694fbd305b7ebf3acc0a9e9ff70a7a6ae8",
+      "description": "sha256:1a5d61a26a5b127ee442d47ae39b5936e6fcb55b91e0eb561df6345b1c0635ad"
+    },
+    "recruitment-cycle.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:60282c5cbaa246971042960ccbef0beea289ad130d3a9cd8a8f1cb22455910b4",
+      "description": "sha256:6f622a6abbbddb23b0031b641a9acc2a0448e9906082567c1d2ac4d66e999385"
+    },
+    "role-binding.create.record": {
+      "endpoints": 2,
+      "surface": "sha256:3957a5381ed255d7e3d7de86de88e540fff252e2be13f21ed4125b9c147f408c",
+      "description": "sha256:0a73011feaa6bfaf18829cc3594408104b04d3f8fd6784c47610f221d0817324"
+    },
+    "role-binding.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:4282925ffc5d6a489e9e13e00fa40fe88fac31115118a62b8c7e811a98f568d1",
+      "description": "sha256:7355d15e315ef2bc2cf8cc20a27cb36bf147335a3822307dc17a9ca471a332ed"
+    },
+    "role-binding.read.record": {
+      "endpoints": 4,
+      "surface": "sha256:564c90e7e9900086f4cec594aeb47c88f38c891e9007f9c73eaabc292e55263a",
+      "description": "sha256:b7b9d7c3df972b586e3cc02c35e3982395823904dd0db8e97aa4dea7e49ed842"
+    },
+    "role-binding.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:6eaaafdffe4c0f6878c67b13bff4b3026c7377dae55d4a7c93697f4cd4864f6d",
+      "description": "sha256:35619bf966900ece51400840a8bcbb84328f28e2c003dc2d84e19673f14188ba"
+    },
+    "sms-send-log.read.list": {
+      "endpoints": 1,
+      "surface": "sha256:5cfec7a04c83fd2cd478f8a22c34d04c4ab130bb92651f618143173882651a9d",
+      "description": "sha256:28a7b91aefde9415b26b659832ca04f389b7cd0a747c2ebe8f289a1b9e6dda5b"
+    },
+    "sms-setting.read.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:a2a08711fe40760108c4329f4aabb3ebc1c95079b48dcbbab7a57ef1030fb76e",
+      "description": "sha256:557be6d132c693e55e51ab5bd16a084ac346360073dabcf2e2d087b3a54e532d"
+    },
+    "sms-setting.reset.credentials": {
+      "endpoints": 1,
+      "surface": "sha256:8ad673bd78368368a9d3dbeddae3004b696d1192a2d3b2acb34a98d306113e01",
+      "description": "sha256:5ca168714fc827624be50e1c4c23646f4fa3ab3818780b1a4f8ad5372591215f"
+    },
+    "sms-setting.update.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:d66e2e9b124660df8e861ce7b526adc14cd5e6715f7a9a6535b45ef237430af0",
+      "description": "sha256:f944c28c51ff974d2eed471f74d14c41ac99494f3bc4d4e42df56bdf777ed202"
+    },
+    "storage-setting.read.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:3cb3b41d85cc84d5fb5c06b05ccfeaf3dd60d778081d714c8a84fc6234becefe",
+      "description": "sha256:7624a53bcd9c38eaac832c7b10b18bcc8ac8f38b7ec66e61929e53349741647f"
+    },
+    "storage-setting.reset.credentials": {
+      "endpoints": 1,
+      "surface": "sha256:a4a4ee42176a3bc93dc9ad56705c0578d494b057a941f8a77d12388c314e06e2",
+      "description": "sha256:b634837c3ceaab190f6048e48908854ec7eeca4944db21e08b5f9d58b545bbfe"
+    },
+    "storage-setting.update.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:f5b9a81bfbcd4330c524f63c8721bca3e9ebf9e2ac02eaae7c63f5bb613f7c76",
+      "description": "sha256:b443a30c5cbeb16693f7aca060882f8774bc2f975815f81ebd32548a4f9a1b3f"
+    },
+    "supervision-assignment.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:17900b56a1397c94dec5cb487fcda41c9805fbfe8717ee48cbe7aadc93f55ae9",
+      "description": "sha256:83bd7e243fb4f153feef8654accb4fbca9e6baba3341928e0436e2b54595ef08"
+    },
+    "supervision-assignment.read.record": {
+      "endpoints": 6,
+      "surface": "sha256:bfadd5eb17eb03da03d95e0698505d479c5db03ca5ae39f8582f13f98df99e44",
+      "description": "sha256:7afb350f0b0475a57a02b943d8f84f65eefe06dc7a5ae9d4f8a8a91efdab8857"
+    },
+    "supervision-assignment.revoke.record": {
+      "endpoints": 1,
+      "surface": "sha256:3b83b742e3108b918701ca8d759da4ff5a3d3ae7ed915333dbd3bdec86caa0ee",
+      "description": "sha256:f5ce6ccb409f4c0364a282da332f12e10e5ef705ed010e247fe8a771d6a96b1c"
+    },
+    "supervision-assignment.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:06ecefebb3c390ecaa2c64c2323cd4feacb3c0dd29ffa973da123c7744cde76d",
+      "description": "sha256:a92f65de84e66e365d5053467a83517f9bca2e95c16c06104e044abe1ea8c6ed"
+    },
+    "team-insurance-policy.add.member": {
+      "endpoints": 2,
+      "surface": "sha256:f1b1b55deab027d04cbae37feff9ed773ad18104405a2ebe80408115d504fdc5",
+      "description": "sha256:a8c16a25f2f2ca1932e4458bd184fc853948ebf28154635c8edafd95cbe08a98"
+    },
+    "team-insurance-policy.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:cfcca83cfaf5d77153e37ed967116bec0a378b2c64ffb59903986102240ee6a5",
+      "description": "sha256:ddada70a6c4ab93d507db90ea2499c27aa85271b6b38cab93516ff954e5c8d20"
+    },
+    "team-insurance-policy.delete.record": {
+      "endpoints": 1,
+      "surface": "sha256:9b6e75caf11f3c664027ac9917ce8d0f1ce15f3fbcb4ce75f62703fa841e3e1e",
+      "description": "sha256:606641e6b3e48577acdf4aac6efca09339ab6a498c9cef54c4d9b2235bc9a9e9"
+    },
+    "team-insurance-policy.read.record": {
+      "endpoints": 3,
+      "surface": "sha256:48ebbab628066a508bab3501e5f690d27eba1ca6e16713cecc96274d8f1c1c0e",
+      "description": "sha256:420806cca3fa1f752a3eabd63c913bf3f0de841eed9a468fb3f8a884e0b5b6b0"
+    },
+    "team-insurance-policy.remove.member": {
+      "endpoints": 1,
+      "surface": "sha256:143c863829efc649962ad58e12e3c462d7577359702d8f988b1bb4fee3e9fea3",
+      "description": "sha256:c9ec887d3189f324892c1a95a6cd3c24979e6a209d32791dd0ac912d1a557477"
+    },
+    "team-insurance-policy.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:bbf3ca08e140738248af76268a92b8b1ae3a108e98da2c26cacc3328b5b55fb6",
+      "description": "sha256:b0809d115e54461aca4887801bc18c93ef16239403a18bec96854ed0d1b9736d"
+    },
+    "team-join-application.evaluate.assessment": {
+      "endpoints": 1,
+      "surface": "sha256:4582a5d581282228a1e905299ff403125b4c2ebebd522410b33aceb820c5a73b",
+      "description": "sha256:ca1fab002747f7fe0a4612233193e41ba525a5d6204972073c68b76372343b4f"
+    },
+    "team-join-application.join.member": {
+      "endpoints": 1,
+      "surface": "sha256:a9f291ff9edee1d4d2276aaae1a0bc5ec4ec9cd4063a6b968a4d4104136e8eaf",
+      "description": "sha256:d5b3b15ec8726733eba8f49ef25dea59d81f6cf80fb3f0061cbfa16bddd8368b"
+    },
+    "team-join-application.mark.gate": {
+      "endpoints": 1,
+      "surface": "sha256:01c89a685b3f928071c4002854963e883c765793be9f98c906adaa3032752989",
+      "description": "sha256:ac228e72cc353c4df5247cec745f69d97cb543a4e1828de2d0acf3fdf13892b3"
+    },
+    "team-join-application.read.record": {
+      "endpoints": 2,
+      "surface": "sha256:40b4ba2d315bdbdefc459e1d070044545924c8e7a659d7ab36924ddb9792a188",
+      "description": "sha256:923a068c096b86aedea7395c44d05634352798d3326cf3b08103fa119d37dae0"
+    },
+    "team-join-cycle.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:bcd2d12f24e1dfac103829757179c346a4e879027c51496444b9161d2c2f7f56",
+      "description": "sha256:69b438d8cba5c463388375c29fb2c29b34b5f327aa62e0f985dc699b91a01356"
+    },
+    "team-join-cycle.read.record": {
+      "endpoints": 2,
+      "surface": "sha256:0f33adba247131030d2211218834ff4a9756b6ef78bfb1b038e868e0cd2c4784",
+      "description": "sha256:25c0772a39c8a51464e14a6d178ae5c455c0d351cd86ced1a6d2cf3b6a3210b4"
+    },
+    "team-join-cycle.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:dca8d2e1d16558bc704942fac1a9850a5d454fc86d917255a3f92b649095a0a9",
+      "description": "sha256:47cea1158f05e32b59f9766278faa0f8aae7e791ab26eb65ea3211cf837fbf99"
+    },
+    "user.create.account": {
+      "endpoints": 1,
+      "surface": "sha256:29aba5788e692e544662b51b6886e598dd964b89646dc461645d322786d9b0b8",
+      "description": "sha256:7cfff4310b078a7fc5b78ffa39e83dfdd4ea6aa0f467c6ac781e7f9a13615b10"
+    },
+    "user.delete.account": {
+      "endpoints": 1,
+      "surface": "sha256:2bee6956efe52a39e5c1873922103e2c143bad448ebd0de12465d0b952bfb9f4",
+      "description": "sha256:42cd3abfcd21217ec980a5baed03e2f2ddd84a9ae4c43bc23089023d885fee57"
+    },
+    "user.phone.clear": {
+      "endpoints": 1,
+      "surface": "sha256:6255341b04801c11f215fc5b9949646061466e7f3812ec1ab2bbc42993e8cce4",
+      "description": "sha256:5c8bd655bd26b0536b39ac4e5803fc386173bc5b05188532f3c74721358ef98f"
+    },
+    "user.read.account": {
+      "endpoints": 3,
+      "surface": "sha256:b7f7a02d5c939c90402f8b4df91f52c77db31c1eb6c5817bcd9844b77bdfbac3",
+      "description": "sha256:7c527abaf18ff118ff4f357a0341ab98e624a51d921fbb873c468c4cabb4334a"
+    },
+    "user.reset.password": {
+      "endpoints": 1,
+      "surface": "sha256:1b6ae9faf985f7426e8dac38244ec6e6328fc45da82badcba0067f5233735edd",
+      "description": "sha256:2376162f0223215f473ddd8b095927cbf51f24ba2aefbd55d19ef345e8660e36"
+    },
+    "user.update.account": {
+      "endpoints": 1,
+      "surface": "sha256:ccd90968a3902bc5a43485ca985bcc0ce92ad606609c4eb5d1f945ef45fa5383",
+      "description": "sha256:0718fed610e0132f9a83be381291b985aa82a64ee78cca2c71be84b600d82865"
+    },
+    "user.update.role": {
+      "endpoints": 1,
+      "surface": "sha256:1e6f55d11205191dad80c7f49905c052daf7ae2dc036c7d717283c93d2a6ce98",
+      "description": "sha256:4f7a01bd52bc8d38fc0b80f3dd571f562c86c6dcb9495c2f6e1cfd1f62356f77"
+    },
+    "user.update.status": {
+      "endpoints": 2,
+      "surface": "sha256:3bd119b4def18f208f4062b6cc9a96e31790d51acbb6feb653722c82f5af0be8",
+      "description": "sha256:ff99da25939c56f28b612e71639ffef9d38f7c73a7ed5225a6c1e376a8e9bb3d"
+    },
+    "user.wechat.clear": {
+      "endpoints": 1,
+      "surface": "sha256:876834535b11b7d31bbab8445b136541cf097c13965245d404a803b01a63b1b4",
+      "description": "sha256:214653f868d57f578178a06e2abe74be606d32d40528739b1e25341ce45ce08e"
+    },
+    "user.wecom.clear": {
+      "endpoints": 1,
+      "surface": "sha256:b9f7303cd37593418604f31bbf2f608be523c47230952cbbdef56f01d94005f5",
+      "description": "sha256:df904aff09a9565acc74b608ffd1cf6a5a4e4ca9fe20910544ac4238bf797f67"
+    },
+    "wechat-setting.read.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:894cfdba2230d336c764f458656b85c37541fa887a6ce5d6cadd022c25c286da",
+      "description": "sha256:231a1229f4667b5a00cd80fdc9e14e368c321d5e7e2da6c8860af9b58b91e518"
+    },
+    "wechat-setting.reset.credentials": {
+      "endpoints": 1,
+      "surface": "sha256:6a73594454245c4e2e613208b46ee75e3ef37435ed4b0e67c327c670827e7050",
+      "description": "sha256:b2d61047b7a323aef15fda89fe05c266206df0fea062e94c1d34f007eeb3692b"
+    },
+    "wechat-setting.update.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:4bb077acfb0c8f2207c2f15fd928e351f2a6b5bde863b8f2379ab2ce5c7cd14e",
+      "description": "sha256:83b688425b42437aec6272608316d49b7365cf57d2306a9b8e3e6f7d51442337"
+    },
+    "wecom-setting.read.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:fea48f08809199293ff4a11e99012bf920179d4b85a68a47d0c49eb7bce1d03b",
+      "description": "sha256:9687697f046426e0d752d998c5bc15f9fe2e18e57b9199ff8d695195487ae965"
+    },
+    "wecom-setting.reset.credentials": {
+      "endpoints": 1,
+      "surface": "sha256:ce34ae818f8d424851096a55dd982f83f7d9b4a9c5cde771dcb13d0b08328e6a",
+      "description": "sha256:859d44f5598cc03e65a32f4c18cb81a1dd3dad2eeef3bbd945eb9ecef7a3d493"
+    },
+    "wecom-setting.test.connection": {
+      "endpoints": 1,
+      "surface": "sha256:c2527f68a139e5092a0acfc1c588651df63388e207f02089720443554b006bf3",
+      "description": "sha256:bc8827296f13d58248c55613f2c601119557d80a612aa30c4cfe37582ed48aea"
+    },
+    "wecom-setting.update.singleton": {
+      "endpoints": 1,
+      "surface": "sha256:35bd15769b535768a5413436b080832a5d8dc9c9e14fe7ea166e970b65912b0b",
+      "description": "sha256:6c6f0bbb46f200728d04dfe94ae125566eb64d548430fe7b4ce9a409289c1269"
+    }
+  }
+}
