@@ -621,6 +621,21 @@ jobs:
           BASE="origin/${{ github.base_ref || github.event.repository.default_branch }}"
           pnpm exec tsx scripts/check-changelog-fragment.ts --base "$BASE"
 
+      # 台账状态收口闸:`docs/ai-harness/NEXT_TASKS.md` 每条 `### Pn-m` 必须有显式状态,
+      # 且「写着待办却已有交付类 commit 点名它」当场红。立项证据:2026-08 内同一形态
+      # **复发四次**(P2-8 / P2-12 / P2-13 / P2-15)—— 活干完了台账仍写待办,
+      # 于是条目被重新下发、或在进度盘点里被算成未完成。
+      #
+      # 🔴 **为什么挂这里而不是 unit 轮(`pnpm test`)**:fast job 的 unit 步骤带
+      # `if: needs.changeset.outputs.docs_only != 'true'` —— 而改台账的 PR **大多是 docs-only**,
+      # 判据会恰好在最该拦的那批 PR 上不执行。本 job 不随 docs-only 短路,
+      # 且 checkout 用 `fetch-depth: 0`(判据 C 要读 main 的 commit subject,浅克隆会让它全程失明)。
+      # 与上面那条 changelog fragment 闸逐字同一个理由,故并排放在这里。
+      - name: NEXT_TASKS status gate
+        run: |
+          BASE="origin/${{ github.base_ref || github.event.repository.default_branch }}"
+          pnpm exec tsx scripts/check-next-tasks-state.ts --base "$BASE"
+
   # 触碰红区/执法层时才跑:environment 上挂了 required reviewer,
   # 这个 job 会一直 pending 直到维护者在 PR 页面点批准。
   #
