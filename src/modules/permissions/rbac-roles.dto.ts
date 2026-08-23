@@ -36,6 +36,17 @@ export class RbacRoleResponseDto {
   @ApiPropertyOptional({ description: '角色用途说明(可空)' })
   description?: string | null;
 
+  @ApiProperty({
+    description:
+      '权限集版本号(P1-32 PR 4a;从 0 起,每次**成功且有实际变化**的权限集写入 +1)。' +
+      '`PUT /api/system/v1/roles/{id}/permissions` 的 `expectedRevision` 用它做乐观并发校验:' +
+      '取回本值 → 编辑 → 带着它提交;期间被别人改过就返 30111,不会覆盖对方的改动。' +
+      '⚠️ 与 `updatedAt` 不是一回事:改角色显示名会动 `updatedAt`,**不**动本值;' +
+      '权限集空转(目标集合与现状相同)两者都不动。',
+    example: 3,
+  })
+  permissionRevision!: number;
+
   @ApiProperty({ description: '创建时间' })
   createdAt!: Date;
 

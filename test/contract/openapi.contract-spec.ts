@@ -468,6 +468,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/roles/{id}'],
   ['delete', '/api/system/v1/roles/{id}'],
   ['post', '/api/system/v1/roles/{id}/permissions'],
+  ['put', '/api/system/v1/roles/{id}/permissions'],
   ['delete', '/api/system/v1/roles/{id}/permissions/{permissionId}'],
   ['get', '/api/system/v1/users/{userId}/roles'],
   ['post', '/api/system/v1/users/{userId}/roles'],
@@ -1045,7 +1046,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 549;
+const EXPECTED_ROUTE_COUNT = 550;
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1754,6 +1755,9 @@ describe('OpenAPI 契约快照', () => {
   //   issue #1055 T3 App 账号头像三路(GET/POST/DELETE /app/v1/me/avatar) →540;
   //   issue #1055 T4 队员标准照四路(official-portrait GET/POST/DELETE + official-portraits GET) →544;
   //   第七轮评审 R7-A-01 队员身份主档订正一路(POST /admin/v1/members/{id}/identity-corrections) → **545**。
+  // P1-32 PR 4a(2026-08-23):+1 角色权限整集替换
+  //   (PUT /system/v1/roles/{id}/permissions;**零新增权限码**,复用
+  //    rbac.role-permission.{create,delete} 两条并要求 require=all)→ **550**。
   //
   // ⚠️ 用例标题**从写死数字改成插值**:动它之前标题写着「精确为 532」而断言是 537 ——
   // 有人 bump 了数字没 bump 标题,标题从此说谎。插值之后它不可能再漂。

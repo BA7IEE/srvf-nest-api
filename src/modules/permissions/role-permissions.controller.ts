@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Param, Post, Put, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
@@ -14,7 +14,11 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { PermissionResponseDto } from './permissions.dto';
 import { RbacRoleDetailResponseDto, RbacRoleResponseDto } from './rbac-roles.dto';
-import { AssignRolePermissionsDto, RevokeRolePermissionParamDto } from './role-permissions.dto';
+import {
+  AssignRolePermissionsDto,
+  ReplaceRolePermissionsDto,
+  RevokeRolePermissionParamDto,
+} from './role-permissions.dto';
 import { RolePermissionsService } from './role-permissions.service';
 
 // 从 @Req() 构造 AuditMeta(沿 user-roles.controller 范式)。第三轮 review §F&A-2:
@@ -28,17 +32,22 @@ function buildAuditMeta(req: Request): AuditMeta {
 }
 
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表 Controller。
-// 2 个端点(沿 D7 v1.1 §5.1 端点 10-11):
-//   POST   /api/system/v1/roles/:id/permissions       批量授权(幂等)
+// 3 个端点(沿 D7 v1.1 §5.1 端点 10-11 + P1-32 PR 4a):
+//   POST   /api/system/v1/roles/:id/permissions       批量授权(幂等,增量)
+//   PUT    /api/system/v1/roles/:id/permissions       整集替换(带 expectedRevision 乐观并发)
 //   DELETE /api/system/v1/roles/:id/permissions/:permissionId  撤权(精确)
+//
+// 三条对外契约互不相同,但**内部只有一条写原语**(RolePermissionsService
+// .replaceRolePermissionSet)—— 见该 service 头部「三条端点、一条写原语」。
 //
 // **路径参数语义**(沿 D7 v1.1 §5.1):
 // - `:id` = roleId(cuid 字符串)
 // - `:permissionId` = permission.id(cuid 字符串;**不**是 permission.code;
 //   有意设计:POST 批量授权用 codes 易读,DELETE 单条撤权用 id 精确)
 //
-// **出参**:两端点统一返 RbacRoleDetailResponseDto(沿 RbacRole detail 接口),
+// **出参**:三端点统一返 RbacRoleDetailResponseDto(沿 RbacRole detail 接口),
 // 调用者一次拿到该角色当前完整 permissions 列表,前端"保存当前选中"语义友好。
+// P1-32 PR 4a 起该 DTO additive 多一个 `permissionRevision`,前端拿回来直接用于下一次 PUT。
 //
 // **权限标注**(P0-F PR-1,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 RolePermissionsService 内 `rbac.can()`,失败抛
@@ -77,6 +86,45 @@ export class RolePermissionsController {
     @Req() req: Request,
   ): Promise<RbacRoleDetailResponseDto> {
     return this.service.assign(user, params.id, dto, buildAuditMeta(req));
+  }
+
+  // P1-32 PR 4a(2026-08-23):整集替换。
+  // **两个码 + require: 'all'** —— 一次替换可能同时授与撤:只拿 create 就能撤权、
+  // 只拿 delete 就能授权,两种都是把另一半闸绕过去。Service 侧对应两次 rbac.can()。
+  //
+  // summary 的鉴权后缀写成通配族 `[rbac: rbac.role-permission.*]` 而不是单码:
+  // check-rbac-map 的 G 校验只认「单码」或「`<family>.*` 通配族」两种形态,而本端点
+  // 要的**恰好是这一族的全部两条**(该族在 seed 闭包里就只有 create / delete)。
+  // ⚠️ 别为了让判据过而改成任一单码 —— 那会在文档面上少说一半闸;
+  //    也别去放宽 check-rbac-map(那是裁判,不该被被测方迁就)。具体两条码写在 summary 正文里。
+  @Put()
+  @RequiresPermission('rbac.role-permission.create', 'rbac.role-permission.delete', {
+    require: 'all',
+  })
+  @ApiOperation({
+    summary:
+      '整集替换角色的权限点(提交后恰好是 permissionCodes[];传 [] 清空;必带 expectedRevision 做乐观并发,版本不符返 30111;目标集合与现状相同时空转不写不留痕;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,少一条即 30100) [rbac: rbac.role-permission.*]',
+  })
+  @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY,
+    BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE,
+    BizCode.ROLE_NOT_FOUND,
+    BizCode.ROLE_DELETED,
+    BizCode.PERMISSION_NOT_FOUND,
+    BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
+    BizCode.ROLE_PERMISSION_REVISION_CONFLICT,
+  )
+  replace(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: IdParamDto,
+    @Body() dto: ReplaceRolePermissionsDto,
+    @Req() req: Request,
+  ): Promise<RbacRoleDetailResponseDto> {
+    return this.service.replace(user, params.id, dto, buildAuditMeta(req));
   }
 
   @Delete(':permissionId')

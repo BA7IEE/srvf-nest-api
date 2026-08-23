@@ -1,0 +1,27 @@
+-- P1-32 PR 4a:角色权限集版本号(`RbacRole.permissionRevision`)
+--
+-- 第 95 条 migration。**additive:零回填、零 DROP、零 RENAME、零 ALTER COLUMN**。
+--
+-- 为什么要这一列 —— 别把它读成「给既有并发 bug 打补丁」:
+--   旧的 `POST /roles/:id/permissions`(加码)与 `DELETE /roles/:id/permissions/:pid`(减码)
+--   在语义上**可交换**:两个管理员同时各加一条码,结果是两条都在,谁的改动都没丢。
+--   本刀新加的 `PUT /roles/:id/permissions` 是**整集替换** —— 「读现状 → 算目标 → 整体写回」,
+--   两个并发替换会后写覆盖先写,先写那次的改动**静默消失**而两边都拿到 200。
+--   ⇒ 窗口是新语义带进来的,版本号(乐观并发)与角色行锁(`SELECT … FOR UPDATE`)
+--     必须与 `PUT` **同一刀**落地,否则等于开一个新的丢更新面。
+--
+-- 语义:每次**成功且有实际变化**的权限集写入 `+1`,与映射写入、audit 同一事务、同一把行锁之后。
+--   - 目标集合与现状相同(空转)→ 不写、不 `+1`、不产生 audit;
+--   - 三条写路径(POST / PUT / DELETE)**都** `+1` —— 少一条,`PUT` 的乐观校验就看不见那条路径的改动。
+--
+-- ⚠️ 与 `updatedAt` 不是一回事,**别合并**:改 displayName / description 会动 `updatedAt`,
+--    不该让别人手里的权限编辑作废;合并会同时产生误冲突与漏冲突。
+--    (反过来,权限集写入会顺带带动 `updatedAt` —— 那是 `@updatedAt` 的行为,刻意接受:
+--     权限集就是这个角色的配置。)
+--
+-- 存量:既有角色一律拿默认值 `0`,不重解释任何既有行 —— 版本号是**变更计数器**,
+--   不是内容哈希,起点是几无所谓,只要它此后单调递增。
+--
+-- 回滚:`ALTER TABLE "roles" DROP COLUMN "permissionRevision";`(纯加列,可无损回退;
+--   但届时 `PUT` 端点必须一并 revert —— 没有版本号的整集替换就是裸奔的读-改-写)。
+ALTER TABLE "roles" ADD COLUMN "permissionRevision" INTEGER NOT NULL DEFAULT 0;

@@ -3207,6 +3207,25 @@ export const BizCode = {
     httpStatus: HttpStatus.FORBIDDEN,
   },
 
+  // 角色权限集乐观并发(P1-32 PR 4a,2026-08-23):`PUT /roles/:id/permissions` 的冲突码。
+  //
+  // 🔴 **这不是给旧洞补的码,是新语义自带的必需品**。旧 `POST`(加码)与 `DELETE`(减码)
+  //    在语义上**可交换**:两个管理员各加一条码,结果是两条都在,谁也没丢。
+  //    整集替换 `PUT` 不是 —— 它是「读现状 → 算目标 → 整体写回」,两个并发替换会
+  //    **后写覆盖先写**,先写那次的改动静默消失,而两边都拿到 200。
+  //    ⇒ 引入 `PUT` 的同一刀必须同时引入行锁 + 版本号,否则等于新开一个丢更新窗口。
+  //
+  // 判定位置:**取到角色行锁之后**复读 `RbacRole.permissionRevision` 再比 ——
+  // 锁前读到的版本号在锁等待期间可能已被前一个写者 +1(wecom S1 同款教训:
+  // 「锁前读 + 锁后用」等于没锁)。
+  //
+  // ⚠️ 取 30111:30109 / 30110 已分别被 PR 3a / PR 3b 占用,本段位不连续,别按「上一条 +1」推。
+  ROLE_PERMISSION_REVISION_CONFLICT: {
+    code: 30111,
+    message: '该角色的权限集已被其他人修改,请刷新后重新提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // V2.x C-6 RBAC 实施 PR #6(2026-05-14):RbacService.can() 配套统一拒绝码。
   //
   // 沿 D7 v1.1 §F5 / §12.2 锁定:Service 层显式 `rbac.can(actor, action, resource?)` 调用,
