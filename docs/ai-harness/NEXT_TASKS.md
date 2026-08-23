@@ -1291,7 +1291,13 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 > 前两类是合法的(环境底座 / 闸后本就无 API 路径),**后面这两条是真接缝**:
 >
 > **进度(2026-08-23)**:① 已接通(P2-12a),读数降到 **44 处 / `mid-chain-start` 2**;
-> ② 仍未开工(12b)。
+> ② 已接通(P2-12b),读数 **46 处 / `mid-chain-start` 0**
+> (`ambient` 35 · `gate-unreachable` 10 · `time-compression` 1)。
+>
+> ⚠️ **总数是升的,别读反** —— 抵掉的 2 处 `mid-chain-start` 被 4 处新 `ambient` 盖过
+> (1 条 `ContributionRule` 档位规则 + 3 处 RBAC 判权底座)。**`mid-chain-start` 归零才是本条的量**:
+> 该分类的语义是「属于被验链、有 API,却刻意从中间态起步」,归零 = journey 里**再没有一处**
+> 从被验链的中间态起步;新增那 4 处本就不在任何一条被验链上。总数当分母看会把这件事读反。
 
 #### ① 招新实名入口:✅ 已接通(P2-12a,2026-08-23)
 
@@ -1306,18 +1312,27 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 旧闸**仍全绿**,新闸红并点名 `file:line`。表内当前只有 `recruitmentIdentitySession`;
 12b 接通考勤链后 `attendanceSheet` / `attendanceRecord` 按同一形状进表。
 
-#### ② 入队门槛的贡献值:考勤审核链被整条跳过(12b,未开工)
+#### ② 入队门槛的贡献值:✅ 已接通(P2-12b,2026-08-23)
 
-`journey-recruitment-team-join.ts` 直接建 `statusCode: 'approved'` 的
-`AttendanceSheet` + `AttendanceRecord`,目的是凑出贡献值过入队门槛。
+~~`journey-recruitment-team-join.ts` 直接建 `statusCode: 'approved'` 的
+`AttendanceSheet` + `AttendanceRecord`(分值手填 `3.00` / `2.00`),目的是凑出贡献值过入队门槛~~ ——
+已改走**真 HTTP 入口 + 真角色**:
+`POST admin/v1/activities/:id/attendance-sheets` → `PATCH .../attendance-sheets/:id/approve`
+→ `PATCH .../attendance-sheets/:id/final-approve`。
 
-⚠️ **后果**:该 journey **不证明「贡献值真能由考勤链产出」** ——
-建单 → 一审 → 终审整条链被跳过。而入队门槛恒按 approved 考勤算
-(见 `activity-workflow.gate.ts` 的 C4 反向闸注释),
-**「考勤链产出的 approved」与「直插的 approved」是不是同一件事,当前无人证明**。
+⭐ **三个身份缺一不可,是审核链自己钉的**:submitter == 审核人 → 22073 / 22074
+(`SELF_{FIRST,FINAL}_REVIEW_FORBIDDEN`,SUPER_ADMIN 亦拒);一审人 == 终审人 → 22075
+(`SAME_REVIEWER_FORBIDDEN`)。故 submitter = journey SUPER_ADMIN、一审 = `attendance-first-reviewer`、
+终审 = `attendance-final-reviewer`(后两个是 `prisma/seed.ts` 的真生产角色码)。
+用同一身份走完全程一条 22075 都碰不到,而单据终态长得一模一样 ⇒ 等于没测角色隔离。
 
-⚠️ **零已知缺陷**:这属**判据缺口**不是风险敞口 —— 两本账别混。
-登记它是因为「上线后第一次真人走查若在这里出问题,现有测试给不出任何预警」。
+⭐ **顺带接通了分值来源**:submit 的 `contributionPoints` 由 `ContributionRule` 按**时长档位**
+权威计算(`contribution-calculator.ts`;请求体里传了也不作数),直插版那两个字面量正是绕过了它。
+夹具建一条档位规则(阈值 3h / 档下 2 分 / 档上 3 分),两条记录 4h 与 2h 分别取到 3 与 2 分,
+跨两个北京自然日避开 3 分/日封顶 ⇒ **门槛读数仍是 5,产出路径换成真的**。
+
+⭐ `attendanceSheet` / `attendanceRecord` 已按 ① 同一形状进**封口模型登记表**
+(不新建第二套判据 —— 12a 选登记表形态正是为此)。
 
 ### P2-13 权限说明与「管辖面」之间没有绑定 —— 码复用导致说明过期,机器发现不了 — 2026-08-22 第三轮跨模型复核逼出
 

@@ -73,6 +73,13 @@ async function seedJourneyReferenceData(prisma: PrismaService): Promise<void> {
     { code: 'first_aid', label: '急救' },
     { code: 'bsafe', label: 'BSAFE' },
   ]);
+  // 考勤单据提交(`POST admin/v1/activities/:id/attendance-sheets`)对每条 record 的
+  // roleCode / attendanceStatusCode 做字典闭集校验(attendance-record.policy.ts)。
+  // 旅程一的贡献值自 P2-12b 起由真考勤链产出,故这两类字典进公共底座。
+  await createDict(prisma, 'attendance_role', '考勤角色', [{ code: 'member', label: '队员' }]);
+  await createDict(prisma, 'attendance_status', '考勤明细状态', [
+    { code: 'present', label: '正常出勤' },
+  ]);
   await createDict(prisma, 'recruitment_stage', '招新进度', [
     { code: 'threshold', label: '门槛未完成' },
     { code: 'threshold_done', label: '门槛已完成' },

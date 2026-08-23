@@ -1,3 +1,4 @@
+import { Role } from '@prisma/client';
 import request from 'supertest';
 
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
@@ -5,6 +6,9 @@ import { BizException } from '../../src/common/exceptions/biz.exception';
 import { AppMeTeamJoinService } from '../../src/modules/team-join/team-join-applications.app.service';
 import { TeamJoinApplicationsService } from '../../src/modules/team-join/team-join-applications.service';
 import { TeamJoinEnrollmentService } from '../../src/modules/team-join/team-join-enrollment.service';
+import { loginAs } from '../fixtures/auth.fixture';
+import { seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
+import { createTestUser } from '../fixtures/users.fixture';
 import { devStubOcrImage, VALID_PNG_IMAGE } from '../helpers/file-fixtures';
 import { httpServer } from '../helpers/http-server';
 import { issuePhoneVerificationToken } from './journey-recruitment-identity';
@@ -14,6 +18,8 @@ const RECRUITMENT_CYCLES = '/api/admin/v1/recruitment/cycles';
 const RECRUITMENT_APPLICATIONS = '/api/open/v1/recruitment/applications';
 const CERTIFICATE_CLAIMS = '/api/open/v1/recruitment/certificate-claims';
 const ADMIN_RECRUITMENT = '/api/admin/v1/recruitment';
+const ADMIN_ACTIVITIES = '/api/admin/v1/activities';
+const ATTENDANCE_SHEETS = '/api/admin/v1/attendance-sheets';
 const GENERAL_GATES = [
   'fitness',
   'first-aid-training',
@@ -240,6 +246,207 @@ async function promoteApplicant(
   };
 }
 
+// ── 考勤审核链的两个审核身份(P2-12b)──────────────────────────────────────
+//
+// 一审 / 终审是**两个不同角色的两个人**,这不是排版偏好 —— 审核链自己就这么钉的:
+//   submitter == 审核人 → 22073 / 22074(SELF_{FIRST,FINAL}_REVIEW_FORBIDDEN;SUPER_ADMIN 亦拒)
+//   一审人   == 终审人 → 22075(SAME_REVIEWER_FORBIDDEN)
+// 故本 journey 用三个身份:submitter = journey SUPER_ADMIN(短路持 create 码)、
+// 一审 = `attendance-first-reviewer`、终审 = `attendance-final-reviewer`。后两个是
+// `prisma/seed.ts` 里的**真生产角色码**,不是本文件发明的测试角色;换一个身份走完全程
+// 一条 22075 都碰不到 = 没测审核链的角色隔离。
+interface AttendanceReviewers {
+  readonly firstAuth: string;
+  readonly finalAuth: string;
+}
+
+// 码集沿 seed.ts 两处生产定义(`ACTIVITY_RESPONSIBILITY_WORKFLOW_ROLE_SEED` /
+// `seedAttendanceFinalReviewerRole`),去掉两条 `activity.settlement-*-review.record`——
+// 它们不在 biz-admin fixture 的 `BIZ_PERMISSIONS` 里(建不出 Permission 行),本链也一条不走。
+// 少绑不会让链假绿:少了谁,对应那步当场 30100。
+const FIRST_REVIEWER_PERMISSION_CODES = [
+  'attendance.read.sheet',
+  'attendance.approve.sheet',
+  'attendance.reject.sheet',
+  'attendance.return.sheet',
+] as const;
+const FINAL_REVIEWER_PERMISSION_CODES = [
+  'attendance.read.sheet',
+  'attendance.final-approve.sheet',
+  'attendance.final-reject.sheet',
+  'attendance.final-return.sheet',
+  'attendance.reopen.sheet',
+] as const;
+
+async function grantWorkflowReviewerRole(
+  runtime: JourneyRuntime,
+  spec: {
+    username: string;
+    roleCode: string;
+    displayName: string;
+    permissionCodes: ReadonlyArray<string>;
+  },
+): Promise<string> {
+  const prisma = journeyPrisma(runtime);
+  // journey-direct-write: ambient — 判权底座(RBAC 角色行);建角色不属于被验的考勤审核链
+  const role = await prisma.rbacRole.create({
+    data: { code: spec.roleCode, displayName: spec.displayName },
+    select: { id: true },
+  });
+  const permissions = await prisma.permission.findMany({
+    where: { code: { in: [...spec.permissionCodes] } },
+    select: { id: true },
+  });
+  // 自证:码集没建全就当场炸。少一条 Permission 行 ⇒ 该角色少一条码,而症状要到几十行后
+  // 才以 30100 的形态出现,读起来像「判权写错了」而不是「夹具少建了一行」。
+  if (permissions.length !== spec.permissionCodes.length) {
+    throw new Error(
+      `${spec.roleCode} 需要 ${spec.permissionCodes.length} 条 Permission,` +
+        `实际只查到 ${permissions.length} 条`,
+    );
+  }
+  // journey-direct-write: ambient — 同上(角色 × 权限映射)
+  await prisma.rolePermission.createMany({
+    data: permissions.map((permission) => ({ roleId: role.id, permissionId: permission.id })),
+  });
+  const user = await createTestUser(runtime.app, { username: spec.username, role: Role.ADMIN });
+  // journey-direct-write: ambient — 同上(USER × 角色 GLOBAL 绑定;判权唯一读源)
+  await prisma.roleBinding.create({
+    data: {
+      principalType: 'USER',
+      principalId: user.id,
+      roleId: role.id,
+      scopeType: 'GLOBAL',
+      status: 'ACTIVE',
+    },
+  });
+  return (await loginAs(runtime.app, spec.username)).authHeader;
+}
+
+async function prepareAttendanceReviewers(runtime: JourneyRuntime): Promise<AttendanceReviewers> {
+  // 两个审核角色要绑的那几条业务面 Permission 行的既有唯一夹具来源(幂等)。
+  await seedBizAdminPermissionsAndRole(runtime.app);
+  const firstAuth = await grantWorkflowReviewerRole(runtime, {
+    username: 'journey-attendance-first',
+    roleCode: 'attendance-first-reviewer',
+    displayName: '考勤一审员',
+    permissionCodes: FIRST_REVIEWER_PERMISSION_CODES,
+  });
+  const finalAuth = await grantWorkflowReviewerRole(runtime, {
+    username: 'journey-attendance-final',
+    roleCode: 'attendance-final-reviewer',
+    displayName: '考勤终审员',
+    permissionCodes: FINAL_REVIEWER_PERMISSION_CODES,
+  });
+  return { firstAuth, finalAuth };
+}
+
+// 两条考勤记录跨**两个北京自然日**:入队门槛要 ≥5 分,而贡献值按北京日封顶 3 分/日
+// (`team-join-progress.ts` 的 `capByBeijingDay`),挤在同一天最多只能拿 3 分。
+// ⭐ 分值**不由本文件写死** —— submit 的 contributionPoints 由 `ContributionRule` 按时长档位
+// 权威计算(`contribution-calculator.ts`;请求体里传了也不作数)。直插版那两个 3.00 / 2.00
+// 是手填字面量,跳过的正是这一段。
+const ATTENDANCE_WINDOW = {
+  startAt: new Date('2026-01-19T01:00:00.000Z'),
+  endAt: new Date('2026-01-20T05:00:00.000Z'),
+} as const;
+const ATTENDANCE_DURATION_THRESHOLD_HOURS = 3;
+const ATTENDANCE_POINTS_BELOW = 2;
+const ATTENDANCE_POINTS_ABOVE = 3;
+const EXPECTED_CONTRIBUTION_TOTAL = ATTENDANCE_POINTS_BELOW + ATTENDANCE_POINTS_ABOVE;
+
+/**
+ * 贡献值走**真考勤审核链**:建单 → 一审 → 终审,三段各是真 HTTP + 真身份。
+ *
+ * 立项(P2-12b)前这里是直插 `statusCode: 'approved'` 的 sheet + records,于是整条审核链
+ * 在 journey 里一次都没跑过;而入队门槛恒按 approved 考勤算
+ * (`team-join-progress.ts` 的 `approvedRecordsWhere`)——「考勤链产出的 approved」与
+ * 「直插的 approved」是不是同一件事,当时无人证明。
+ */
+async function produceContributionViaAttendanceChain(
+  runtime: JourneyRuntime,
+  input: { activityId: string; memberId: string; reviewers: AttendanceReviewers },
+): Promise<void> {
+  const prisma = journeyPrisma(runtime);
+  const records = [
+    // 4h > 档位 ⇒ 取 pointsAbove(3 分);北京 1-20
+    {
+      memberId: input.memberId,
+      roleCode: 'member',
+      checkInAt: '2026-01-20T01:00:00.000Z',
+      checkOutAt: '2026-01-20T05:00:00.000Z',
+      attendanceStatusCode: 'present',
+    },
+    // 2h ≤ 档位 ⇒ 取 pointsBelow(2 分);北京 1-19
+    {
+      memberId: input.memberId,
+      roleCode: 'member',
+      checkInAt: '2026-01-19T01:00:00.000Z',
+      checkOutAt: '2026-01-19T03:00:00.000Z',
+      attendanceStatusCode: 'present',
+    },
+  ];
+
+  const submitted = await request(httpServer(runtime.app))
+    .post(`${ADMIN_ACTIVITIES}/${input.activityId}/attendance-sheets`)
+    .set('Authorization', runtime.adminAuth)
+    .send({ records });
+  requireStatus(submitted, 201, '提交考勤单据');
+  const sheetId = String(submitted.body.data?.id ?? '');
+  if (!sheetId) throw new Error('提交考勤单据未返回 id');
+  if (submitted.body.data?.statusCode !== 'pending') {
+    throw new Error(`提交考勤单据未进入 pending: ${JSON.stringify(submitted.body)}`);
+  }
+
+  // 自证①:预填分真的由 ContributionRule 算出来了。无匹配规则时 calculator **保守返 0
+  // 且不报错**(`computePrefilledPoints` 的 `if (!chosen) return 0`),症状会一路漂到几十行
+  // 之后的「入队门槛贡献值不足」,读起来像门槛口径变了。这里当场钉死。
+  const prefilled = await prisma.attendanceRecord.findMany({
+    where: { sheetId, deletedAt: null },
+    select: { contributionPoints: true },
+  });
+  const prefilledTotal = prefilled.reduce((sum, row) => sum + Number(row.contributionPoints), 0);
+  if (prefilled.length !== records.length || prefilledTotal !== EXPECTED_CONTRIBUTION_TOTAL) {
+    throw new Error(
+      `考勤单据预填分不符:期望 ${records.length} 条合计 ${EXPECTED_CONTRIBUTION_TOTAL},` +
+        `实得 ${prefilled.length} 条合计 ${prefilledTotal} —— ` +
+        'ContributionRule 没匹配上时 calculator 静默返 0,不会自己报错',
+    );
+  }
+
+  const firstApproved = await request(httpServer(runtime.app))
+    .patch(`${ATTENDANCE_SHEETS}/${sheetId}/approve`)
+    .set('Authorization', input.reviewers.firstAuth)
+    .send({ reviewNote: '旅程一考勤一审通过' });
+  requireStatus(firstApproved, 200, '考勤一审');
+  if (firstApproved.body.data?.statusCode !== 'pending_final_review') {
+    throw new Error(`考勤一审未进入 pending_final_review: ${JSON.stringify(firstApproved.body)}`);
+  }
+
+  const finalApproved = await request(httpServer(runtime.app))
+    .patch(`${ATTENDANCE_SHEETS}/${sheetId}/final-approve`)
+    .set('Authorization', input.reviewers.finalAuth)
+    .send({ finalReviewNote: '旅程一考勤终审通过' });
+  requireStatus(finalApproved, 200, '考勤终审');
+  if (finalApproved.body.data?.statusCode !== 'approved') {
+    throw new Error(`考勤终审未进入 approved: ${JSON.stringify(finalApproved.body)}`);
+  }
+
+  // 自证②:三段责任真的落在**三个不同 user** 上。三个字段都非空且两两不等,才排除
+  // 「同一身份走完全程」—— 那种走法碰不到 22074 / 22075,而单据终态长得一模一样。
+  const sheet = await prisma.attendanceSheet.findUniqueOrThrow({
+    where: { id: sheetId },
+    select: { submitterUserId: true, reviewerUserId: true, finalReviewerUserId: true },
+  });
+  const actors = [sheet.submitterUserId, sheet.reviewerUserId, sheet.finalReviewerUserId];
+  if (actors.some((actor) => !actor) || new Set(actors).size !== 3) {
+    throw new Error(
+      `考勤审核链三段责任人未落在三个不同身份上:${JSON.stringify(sheet)} —— ` +
+        '同一身份走完全程等于没测角色隔离',
+    );
+  }
+}
+
 async function prepareTeamJoin(runtime: JourneyRuntime, memberId: string): Promise<string> {
   const prisma = journeyPrisma(runtime);
   // journey-direct-write: ambient — 同上
@@ -258,51 +465,40 @@ async function prepareTeamJoin(runtime: JourneyRuntime, memberId: string): Promi
     },
   });
 
-  // 入队贡献值是已完成活动的历史事实；按两个北京自然日拆 3+2，避开每日封顶。
+  // 入队贡献值是已完成活动的历史事实。活动时间窗跨 1-19 / 1-20 两天 —— 考勤记录必须落在
+  // 活动窗 ± `ATTENDANCE_WINDOW_TOLERANCE_HOURS`(默认 2h)内,否则 submit 直接
+  // 22042 ATTENDANCE_OUTSIDE_ACTIVITY_WINDOW;而封顶要求两条记录分属两个北京日。
   // journey-direct-write: ambient — 活动本体属发布链
   const activity = await prisma.activity.create({
     data: {
       title: '旅程一贡献前置活动',
       activityTypeCode: 'journey-training',
       organizationId: target.id,
-      startAt: new Date('2026-01-20T01:00:00.000Z'),
-      endAt: new Date('2026-01-20T05:00:00.000Z'),
+      startAt: ATTENDANCE_WINDOW.startAt,
+      endAt: ATTENDANCE_WINDOW.endAt,
       location: '旅程测试地点',
       statusCode: 'completed',
     },
   });
-  // journey-direct-write: mid-chain-start — ⚠️ 直接建 statusCode=approved 的考勤单,**整条考勤审核链(建 → 一审 → 终审)被跳过**;目的是凑出贡献值过入队门槛。后果:本 journey 不证明「贡献值真能由考勤链产出」
-  const sheet = await prisma.attendanceSheet.create({
+  // 档位使两条记录分别取到 3 分与 2 分。`contribution-rules` 虽有 admin 写入口,
+  // 但它不在「建单 → 一审 → 终审」这条被验链上,故按配置底座计。
+  // journey-direct-write: ambient — 贡献值规则属配置底座
+  await prisma.contributionRule.create({
     data: {
-      activityId: activity.id,
-      submitterUserId: journeyAdmin(runtime).id,
-      statusCode: 'approved',
+      activityTypeCode: 'journey-training',
+      attendanceRoleCode: 'member',
+      durationThreshold: String(ATTENDANCE_DURATION_THRESHOLD_HOURS),
+      pointsBelow: String(ATTENDANCE_POINTS_BELOW),
+      pointsAbove: String(ATTENDANCE_POINTS_ABOVE),
+      status: 'ACTIVE',
     },
   });
-  // journey-direct-write: mid-chain-start — 同 L277,记录侧
-  await prisma.attendanceRecord.createMany({
-    data: [
-      {
-        sheetId: sheet.id,
-        memberId,
-        roleCode: 'member',
-        checkInAt: new Date('2026-01-20T01:00:00.000Z'),
-        checkOutAt: new Date('2026-01-20T05:00:00.000Z'),
-        serviceHours: '4.00',
-        attendanceStatusCode: 'present',
-        contributionPoints: '3.00',
-      },
-      {
-        sheetId: sheet.id,
-        memberId,
-        roleCode: 'member',
-        checkInAt: new Date('2026-01-19T01:00:00.000Z'),
-        checkOutAt: new Date('2026-01-19T05:00:00.000Z'),
-        serviceHours: '4.00',
-        attendanceStatusCode: 'present',
-        contributionPoints: '2.00',
-      },
-    ],
+
+  const reviewers = await prepareAttendanceReviewers(runtime);
+  await produceContributionViaAttendanceChain(runtime, {
+    activityId: activity.id,
+    memberId,
+    reviewers,
   });
   return target.id;
 }
