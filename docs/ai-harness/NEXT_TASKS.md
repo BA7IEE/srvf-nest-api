@@ -1393,7 +1393,27 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 而 seed 的 `create` 用的就是那个常量 ⇒ 两边**构造上必然相等**,判据**恒绿、零执法收益**。
 它只对「长期存活且被改过的库」有牙,而那种库当前不存在(生产未上线)。
 
-### P2-16 e2e 提速刀③ —— 加权分片的上限已被证伪,真余量在单 spec — 2026-08-23 由刀② 实测逼出
+### P2-16 ✅ e2e 提速刀③ —— 加权分片的上限已被证伪,真余量在单 spec **(已收口 2026-08-23)**
+
+> ✅ **已收口(2026-08-23)**:走的是「消除子进程编译突刺」而非「拆分 spec」。
+> `notification-outbox` 的真 OS worker child 从 ts-node+tsc 切到 **ts-node+SWC**
+> (`test/tsconfig.test.json` 加 `"ts-node": { "swc": true }` + devDependency `@swc/core`)。
+> 该 spec 经 `spawnWorkerChild()` 起 **18 次**子进程(12 `runChild` + 6 `startChild`,无循环放大),
+> 每次都从头转译整张 worker module 图。本机实测:jest Time 189.7s → 141.6s/143.1s(−25%),
+> **user CPU 115.8s → 35.1s/47.4s(−59%~−70%)**,39/39 用例不变全过、零断言改动。
+> ⭐ **突刺的机制是「宽」不只是「长」**:基线单次 spawn 的 user CPU(5.5s)高于其墙钟(3.4s)
+> ⇒ tsc 转译期间占着约 1.6 个核;SWC 侧 user≈wall≈1.5s。
+> ⭐ **刀①刻意留的 tsx/esbuild 边界没有被推翻,反而被复测钉死**:真判据是「转译器 emit 不 emit
+> `emitDecoratorMetadata`」,不是「必须是 TypeScript compiler」。实测同一张 module 图下
+> tsx(esbuild)产出的 `design:paramtypes` **5/5 全为 undefined**,SWC 与 tsc **逐字节相同**。
+> 理由与反向对照写在 `spawnWorkerChild()` 上方与 `test/tsconfig.test.json` 内,勿两处漂移。
+> ⚠️ **本 spec 落在 shard 3/5**,而 shard 3 在三个五分片基线里两次是最慢的那片
+> (7m50s/6m57s/8m29s)⇒ 主指标是 **shard 3 耗时 + 最慢片**,本 spec 自身耗时只作次指标;
+> baseline = main run `32623363505`(`ff604d39`)。⚠️ `d1cd99f9` 那个 run **不可用于对照**
+> —— docs-only 提交,五片 e2e 全 0m00s 未跑。CI 侧幅度以合并后 main run 同口径复核。
+> ⚠️ **踩坑留档**:`TS_NODE_SWC=true` **这个环境变量根本不存在**(ts-node 只认 tsconfig 的
+> `ts-node.swc` 键)。误用它会得到「SWC 毫无提升」的**假读数**,差点据此否掉整条路 ——
+> 换转译器前先自证 `options.swc` 真的翻了。
 
 刀①(`1462b528`)+ 刀②(`c0f0a69c`)之后,e2e 全 run 墙钟 **14m06s → 11m17s(−20%)**。
 刀②的实测同时**证伪了两条原以为成立的判断**,刀③必须建立在修正后的认识上:
