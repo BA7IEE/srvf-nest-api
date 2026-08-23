@@ -251,6 +251,11 @@ export type AuditLogEvent =
   | 'rbac-role.delete' // admin 软删角色(rbac-roles.service: softDelete;before 快照 code/displayName)
   | 'role-permission.grant' // admin 授予角色权限点(role-permissions.service: assign;resourceType='role_permission' / resourceId=roleId;extra.{permissionCodes,requestedCount})
   | 'role-permission.revoke' // admin 撤销角色权限点(role-permissions.service: revoke;resourceId=roleId;extra.permissionId)
+  // P1-32 PR 4a(2026-08-23;goal 显式授权的唯一 +1 AuditLogEvent):整集替换。
+  // 三条写路径共用同一条 replace 原语,但**事件名按入口分**:旧 POST / DELETE 保持
+  // grant / revoke 逐字不变(它们的 audit 形状被 permissions-config-audit-characterization
+  // B1/B2 钉着),新 PUT 用本事件 —— 一次替换同时含增与减,套 grant 或 revoke 都是说谎。
+  | 'role-permission.replace' // admin 整集替换角色权限(role-permissions.service: replace;resourceId=roleId;extra.{operation,addedCodes,removedCodes,resultCodes,fromRevision,toRevision})
   | 'permission.create' // admin 建权限点(permissions.service: create;resourceType='permission';after 快照 code/module/action/resourceType)
   | 'permission.update' // admin 改权限点描述(permissions.service: update;before/after description)
   | 'permission.delete' // admin 物理删权限点(permissions.service: delete;before 快照;RolePermission FK cascade 自动清理)

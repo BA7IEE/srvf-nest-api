@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:5d35e9c2561171115a9fe1b1be2006d9768781f1145eca4ce5b40e194c89ee90 |
-| endpoint count | 549 |
+| inputDigest | sha256:87ccae354f474a9cc666ed59a79edcfb9f74438c420abbe10c35fd27209df795 |
+| endpoint count | 550 |
 | legacy [auth] count | 169 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -31,7 +31,7 @@
 |---|---:|---:|---:|
 | admin | 280 | 280 | 0 |
 | app | 158 | 158 | 0 |
-| system | 75 | 75 | 0 |
+| system | 76 | 76 | 0 |
 | auth | 20 | 20 | 0 |
 | open | 16 | 16 | 0 |
 
@@ -40,7 +40,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 347 |
+| rbac | 348 |
 | auth | 169 |
 | unclassified | 0 |
 
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:5d35e9c2561171115a9fe1b1be2006d9768781f1145eca4ce5b40e194c89ee90",
+  "inputDigest": "sha256:87ccae354f474a9cc666ed59a79edcfb9f74438c420abbe10c35fd27209df795",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -9979,6 +9979,29 @@
         ],
         "engine": "authz-scoped"
       }
+    },
+    {
+      "routeKey": "PUT /api/system/v1/roles/:id/permissions",
+      "controller": "RolePermissionsController",
+      "handler": "replace",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "rbac.role-permission.create",
+            "scope": null
+          },
+          {
+            "code": "rbac.role-permission.delete",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
     }
   ]
 }
@@ -9986,7 +10009,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**217 条码有端点;其中 70 条守多于一个端点。**
+> 每条权限码守着哪些端点。**218 条码有端点;其中 72 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -10059,6 +10082,8 @@
 | `member.update.record` | 2 | PATCH /api/admin/v1/members/:id · PUT /api/admin/v1/members/:id/audience-tags |
 | `membership.set.record` | 2 | PATCH /api/admin/v1/members/:memberId/memberships/:id · POST /api/admin/v1/members/:memberId/memberships |
 | `org.update.node` | 2 | PATCH /api/admin/v1/organizations/:id · PATCH /api/admin/v1/organizations/:id/status |
+| `rbac.role-permission.create` | 2 | POST /api/system/v1/roles/:id/permissions · PUT /api/system/v1/roles/:id/permissions |
+| `rbac.role-permission.delete` | 2 | DELETE /api/system/v1/roles/:id/permissions/:permissionId · PUT /api/system/v1/roles/:id/permissions |
 | `recruitment-application.mark.threshold` | 2 | PATCH /api/admin/v1/recruitment/applications/:id/thresholds · POST /api/admin/v1/recruitment/applications/batch-mark-threshold |
 | `recruitment-application.promote.member` | 2 | GET /api/admin/v1/recruitment/cycles/:id/promote-precheck · POST /api/admin/v1/recruitment/cycles/:id/promote |
 | `recruitment-application.read.sensitive` | 2 | GET /api/admin/v1/recruitment/applications/:id/id-card-image-url · GET /api/admin/v1/recruitment/certificate-claims/:id/image-urls |
@@ -10162,8 +10187,7 @@
 | `rbac.permission.delete` | 1 | DELETE /api/system/v1/permissions/:id |
 | `rbac.permission.read` | 1 | GET /api/system/v1/permissions |
 | `rbac.permission.update` | 1 | PATCH /api/system/v1/permissions/:id |
-| `rbac.role-permission.create` | 1 | POST /api/system/v1/roles/:id/permissions |
-| `rbac.role-permission.delete` | 1 | DELETE /api/system/v1/roles/:id/permissions/:permissionId |
+| `rbac.role-permission.*` | 1 | PUT /api/system/v1/roles/:id/permissions |
 | `rbac.role.create` | 1 | POST /api/system/v1/roles |
 | `rbac.role.delete` | 1 | DELETE /api/system/v1/roles/:id |
 | `rbac.role.update` | 1 | PATCH /api/system/v1/roles/:id |
@@ -10262,7 +10286,7 @@
 | DELETE | /api/system/v1/dict-types/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.delete.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:133; src/modules/dictionaries/dictionaries.controller.ts:152 |
 | DELETE | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:114; src/modules/permissions/permissions.controller.ts:133 |
 | DELETE | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:156; src/modules/permissions/rbac-roles.controller.ts:175 |
-| DELETE | /api/system/v1/roles/:id/permissions/:permissionId | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:82; src/modules/permissions/role-permissions.controller.ts:105 |
+| DELETE | /api/system/v1/roles/:id/permissions/:permissionId | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:130; src/modules/permissions/role-permissions.controller.ts:153 |
 | DELETE | /api/system/v1/users/:userId/roles/:roleId | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:100; src/modules/permissions/user-roles.controller.ts:124 |
 | GET | /api/admin/v1/activities | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:81; src/modules/activities/activities.controller.ts:93 |
 | GET | /api/admin/v1/activities/:activityId/attendance-sheet-draft | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:49; src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:65 |
@@ -10746,7 +10770,7 @@
 | POST | /api/system/v1/rbac/reload | Ops - RBAC | rbac | RBAC; admission=-; codes=rbac.config.reload; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac.controller.ts:57; src/modules/permissions/rbac.controller.ts:72 |
 | POST | /api/system/v1/realname-settings/reset-credentials | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:73; src/modules/realname/realname-settings.controller.ts:87 |
 | POST | /api/system/v1/roles | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:111; src/modules/permissions/rbac-roles.controller.ts:130 |
-| POST | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:55; src/modules/permissions/role-permissions.controller.ts:79 |
+| POST | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:64; src/modules/permissions/role-permissions.controller.ts:88 |
 | POST | /api/system/v1/sms-settings/reset-credentials | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:69; src/modules/sms/sms-settings.controller.ts:83 |
 | POST | /api/system/v1/storage-settings/reset-credentials | Ops - Storage Settings | rbac | RBAC; admission=-; codes=storage-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/storage/storage-settings.controller.ts:77; src/modules/storage/storage-settings.controller.ts:91 |
 | POST | /api/system/v1/users/:userId/roles | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:74; src/modules/permissions/user-roles.controller.ts:97 |
@@ -10769,3 +10793,4 @@
 | PUT | /api/app/v1/my/managed-activities/:activityId/gallery | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:377; src/modules/activities/controllers/app-managed-activities.controller.ts:402 |
 | PUT | /api/app/v1/my/managed-activities/:activityId/qualification-rules | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:436; src/modules/activities/controllers/app-managed-activities.controller.ts:461 |
 | PUT | /api/app/v1/my/managed-activities/:activityId/registration-form | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:307; src/modules/activities/controllers/app-managed-activities.controller.ts:331 |
+| PUT | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:100; src/modules/permissions/role-permissions.controller.ts:127 |

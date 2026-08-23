@@ -2162,6 +2162,18 @@ model RbacRole {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime? // D4:RbacRole 软删
 
+  // P1-32 PR 4a(2026-08-23):角色**权限集**的版本号,供 `PUT /roles/:id/permissions`
+  // 做乐观并发(`expectedRevision` 不符 → 30111)。每次**成功且有实际变化**的权限集写入 +1,
+  // 与映射写入、audit 同一事务、同一把角色行锁之后。
+  //
+  // ⚠️ **不能用 `updatedAt` 代替**:两者语义不同 —— 改 displayName / description 会动
+  //    `updatedAt` 却不该让别人手里的权限编辑作废;而权限集空转(目标集合与现状相同)
+  //    两者都不动。合并成一个字段会同时产生误冲突与漏冲突。
+  //
+  // 🔴 它不是给旧洞补的:旧 POST(加码)/ DELETE(减码)语义**可交换**,并发不丢更新;
+  //    整集替换是读-改-写,窗口是那个新语义带进来的,所以版本号与它同刀落地。
+  permissionRevision Int @default(0)
+
   rolePermissions RolePermission[]
 
   // 终态 scoped-authz PR6(2026-07-01;冻结稿 §3.6):带 scope 的角色绑定反向 relation(真 FK,Restrict)。

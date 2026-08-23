@@ -2,7 +2,7 @@
 // surface: Auth 登录/令牌(admin 与 app 共用)
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:deb11579200de2d098a15d683d0b17f6ad96e97509ca7735744b2856e9da5328
+// inputDigest: sha256:f2dca448b6a7bc6ebba73061ebb662ad35a3a4dc9a3a5294bf648186b9738579
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
