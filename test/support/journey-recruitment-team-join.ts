@@ -494,11 +494,38 @@ async function prepareTeamJoin(runtime: JourneyRuntime, memberId: string): Promi
     },
   });
 
-  const reviewers = await prepareAttendanceReviewers(runtime);
-  await produceContributionViaAttendanceChain(runtime, {
-    activityId: activity.id,
-    memberId,
-    reviewers,
+  // journey-direct-write: mid-chain-start — 属被验链、有 API,但刻意从 approved 中间态起步:凑贡献值过入队门槛,建单/一审/终审三步不在本 journey 声称验证的范围内
+  const sheet = await prisma.attendanceSheet.create({
+    data: {
+      activityId: activity.id,
+      submitterUserId: journeyAdmin(runtime).id,
+      statusCode: 'approved',
+    },
+  });
+  // journey-direct-write: mid-chain-start — 同上,记录侧
+  await prisma.attendanceRecord.createMany({
+    data: [
+      {
+        sheetId: sheet.id,
+        memberId,
+        roleCode: 'member',
+        checkInAt: new Date('2026-01-20T01:00:00.000Z'),
+        checkOutAt: new Date('2026-01-20T05:00:00.000Z'),
+        serviceHours: '4.00',
+        attendanceStatusCode: 'present',
+        contributionPoints: '3.00',
+      },
+      {
+        sheetId: sheet.id,
+        memberId,
+        roleCode: 'member',
+        checkInAt: new Date('2026-01-19T01:00:00.000Z'),
+        checkOutAt: new Date('2026-01-19T03:00:00.000Z'),
+        serviceHours: '2.00',
+        attendanceStatusCode: 'present',
+        contributionPoints: '2.00',
+      },
+    ],
   });
   return target.id;
 }
