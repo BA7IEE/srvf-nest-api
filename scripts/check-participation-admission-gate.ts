@@ -45,7 +45,8 @@ import { join, relative } from 'node:path';
 
 import * as ts from 'typescript';
 
-export const REPO_ROOT = join(__dirname, '..', '..', '..');
+// ⚠️ 本文件从 `src/modules/activity-registrations/` 搬进 `scripts/` 时,这里的层级从三级变一级。
+export const REPO_ROOT = join(__dirname, '..');
 const SRC = join(REPO_ROOT, 'src');
 
 /** 参与域永久身份链 —— canonical participation 的两张表。 */
@@ -513,3 +514,207 @@ export function runCriteria(overrides: Record<string, string> = {}): {
 
   return { findings, counts, openGaps };
 }
+
+// ============================================================================
+// 变异对拍(正 / 反对照)—— 原先整段写在 spec 里
+//
+// 🔴 本仓的硬教训:**不做对照的结构断言等于没有**。只断言「当前是绿的」证明不了判据
+// 在缺陷出现时会变红 —— 判据可能压根没扫到目标文件、匹配写法写错、或被自己的配置
+// 遮蔽,那时「零命中」会被读成「合规」。
+//
+// 这些对照放在受保护文件里的理由:它们是判据「会不会红」的**证明本身**。
+// 写在 spec 里意味着任何 PR 都能把证明删掉,而删掉之后判据看起来照样全绿。
+//
+// 变异在**内存里**替换源码,不落盘 —— 避免「变异脚本超时停在半路留下脏工作区」
+// 和「git checkout 把未提交实现一起抹掉」这两类既有事故。
+// ============================================================================
+
+export const ALLOC_SERVICE = 'src/modules/activity-registrations/activity-allocation.service.ts';
+export const ONSITE_SERVICE =
+  'src/modules/activity-registrations/onsite-participation-command.service.ts';
+export const SUBMIT_SERVICE =
+  'src/modules/activity-registrations/registration-command.service.ts';
+
+export const PROMOTE_RECHECK =
+  'if (!(await this.promotionCandidateStillLive(tx, candidate.memberId))) continue;';
+
+/** 已登记敞口里那条 batch commit 路径的键 —— G4 自清洁对照要点名它。 */
+export const COMMIT_GAP_KEY = `${ALLOC_SERVICE}#persistCommittedCandidate`;
+
+/** 登记表键的形状:必须是 `src/....ts#方法名`。 */
+const DECLARED_GAP_KEY_SHAPE = /^src\/.+\.ts#\w+$/;
+
+/** 登记理由的最短长度 —— 防止塞「历史原因」这种空理由。 */
+export const MIN_DECLARED_GAP_REASON_LENGTH = 40;
+
+/** 一次内存变异的结果。`changed` 为 false 说明变异没落在目标行上 ⇒ 是空变异。 */
+export interface MutationControl {
+  changed: boolean;
+  findings: Finding[];
+}
+
+function readSource(relPath: string): string {
+  return readFileSync(join(REPO_ROOT, relPath), 'utf8');
+}
+
+function mutated(relPath: string, replacements: readonly (readonly [string, string])[]): MutationControl {
+  const original = readSource(relPath);
+  let next = original;
+  for (const [from, to] of replacements) next = next.split(from).join(to);
+  return { changed: next !== original, findings: runCriteria({ [relPath]: next }).findings };
+}
+
+/** 正对照①:候补递补摘掉锁后重验 ⇒ G2 红在 promoteAfterCancellationInTransactionTrusted()。 */
+export function controlPromoteRecheckRemoved(): MutationControl {
+  return mutated(ALLOC_SERVICE, [[PROMOTE_RECHECK, '']]);
+}
+
+/** 正对照②:兄弟路径「现场临时参加」摘掉 ACTIVE 检查 ⇒ G2 红在 onsite 的 createInTransaction()。 */
+export function controlOnsiteActiveCheckRemoved(): MutationControl {
+  return mutated(ONSITE_SERVICE, [
+    ['await assertActiveMemberLifecycle(input.tx, input.targetMemberId);', ''],
+    ['await this.assertActiveTargetMember(input.tx, input.targetMemberId);', ''],
+  ]);
+}
+
+/**
+ * 正对照③:兄弟路径「first_come 提交后即分配」摘掉**上游**重验 ⇒ G2 红。
+ * 这条路径的重验在调用方同一事务里(submitInTransaction),摘掉调用方那一次就必须红 ——
+ * 否则说明「调用方记功」是白记的。
+ */
+export function controlSubmitUpstreamRecheckRemoved(): MutationControl {
+  return mutated(SUBMIT_SERVICE, [
+    ['await this.assertAppAdmissionStillLive(input.tx, input.currentUser.id, input.memberId);', ''],
+  ]);
+}
+
+/** 正对照④:把重验降级成不加锁的读 ⇒ G3 红(「锁前过滤」不算「锁后重验」)。 */
+export function controlRecheckDowngradedToUnlockedRead(): MutationControl {
+  return mutated(ALLOC_SERVICE, [
+    [
+      'const member = await lockAndReadLiveMemberLifecycle(tx, memberId);',
+      'const member = await tx.member.findFirst({ where: { id: memberId, deletedAt: null }, select: { status: true } });',
+    ],
+  ]);
+}
+
+/**
+ * 正对照⑤:把重验换成对**操作人自己**的准入复核 ⇒ 仍然红。
+ * 这一条是本闸真正的执法力:同文件里就有一个对 currentUser 的 ACTIVE 复核,
+ * 只问「查没查过 MemberStatus.ACTIVE」会被它满足,洞却还在(上层边界遮蔽下层边界)。
+ */
+export function controlRecheckSwappedToActorSelf(): MutationControl {
+  return mutated(ALLOC_SERVICE, [
+    [
+      PROMOTE_RECHECK,
+      'await this.assertAppAdmissionStillLive(tx, input.actorUser.id, input.actorUser.memberId);',
+    ],
+  ]);
+}
+
+/** 正对照⑥:给已登记敞口补上锁后重验 ⇒ G4 红,逼登记行被删除。 */
+export function controlDeclaredGapFixed(): MutationControl {
+  return mutated(ALLOC_SERVICE, [
+    [
+      'const participationRevision = await tx.activityParticipationRevision.create({',
+      'await this.promotionCandidateStillLive(tx, input.candidate.memberId);\n    const participationRevision = await tx.activityParticipationRevision.create({',
+    ],
+  ]);
+}
+
+/** 反对照用的新文件路径 —— 它不在任何写死的路径名单里。 */
+export const NEW_ADMISSION_PATH_FILE =
+  'src/modules/activity-registrations/sixth-admission-path.service.ts';
+
+/** 反对照①:新增一个写 pass 但不查 ACTIVE 的方法 ⇒ G2 必红并点名该新文件。 */
+export function controlNewUnguardedAdmissionPath(): Finding[] {
+  return runCriteria({
+    [NEW_ADMISSION_PATH_FILE]: [
+      "import { Injectable } from '@nestjs/common';",
+      '',
+      '@Injectable()',
+      'export class SixthAdmissionPathService {',
+      '  async admitInTransactionTrusted(tx: any, input: { identityId: string }) {',
+      '    await tx.activityParticipationRevision.create({',
+      "      data: { identityId: input.identityId, revision: 1, statusCode: 'pass' },",
+      '    });',
+      '  }',
+      '}',
+    ].join('\n'),
+  }).findings;
+}
+
+/** 反对照②:同一个新方法补上锁后重验后 ⇒ 判据放行(证明它不是无差别报红)。 */
+export function controlNewGuardedAdmissionPath(): Finding[] {
+  return runCriteria({
+    [NEW_ADMISSION_PATH_FILE]: [
+      "import { Injectable } from '@nestjs/common';",
+      "import { assertActiveMemberLifecycle } from '../members/member-lifecycle-lock';",
+      '',
+      '@Injectable()',
+      'export class SixthAdmissionPathService {',
+      '  async admitInTransactionTrusted(tx: any, input: { identityId: string; memberId: string }) {',
+      '    await assertActiveMemberLifecycle(tx, input.memberId);',
+      '    await tx.activityParticipationRevision.create({',
+      "      data: { identityId: input.identityId, revision: 1, statusCode: 'pass' },",
+      '    });',
+      '  }',
+      '}',
+    ].join('\n'),
+  }).findings;
+}
+
+/** 登记表格式不合规的条目 —— 键的形状 + 理由长度。 */
+export function malformedDeclaredGaps(): string[] {
+  const bad: string[] = [];
+  for (const [key, reason] of Object.entries(DECLARED_OPEN_ADMISSION_GAPS)) {
+    if (!DECLARED_GAP_KEY_SHAPE.test(key)) bad.push(`${key}(键的形状不是 src/....ts#方法名)`);
+    if (reason.length <= MIN_DECLARED_GAP_REASON_LENGTH) {
+      bad.push(`${key}(登记理由太短,必须写明「为什么还没修」)`);
+    }
+  }
+  return bad;
+}
+
+/** 自证:仪器没瞎才报数。返回空数组 = 自证通过。 */
+export function selfCheck(): string[] {
+  const problems: string[] = [];
+  const { counts, openGaps } = runCriteria();
+
+  // 计数不是装饰:它们证明判据**真的扫到了东西**。任一个是 0,「零 finding」
+  // 就是空绿而不是合规 —— 例如 admissionWriters=0 意味着准入写入点一个都没识别出来。
+  for (const [label, value] of [
+    ['scannedFiles', counts.scannedFiles],
+    ['admissionWriters', counts.admissionWriters],
+    ['guardedWriters', counts.guardedWriters],
+    ['activePredicates', counts.activePredicates],
+    ['lockingPredicates', counts.lockingPredicates],
+  ] as const) {
+    if (value <= 0) problems.push(`计数自证失败:${label} = 0 ⇒ 判据在空转,「零 finding」是空绿。`);
+  }
+
+  const declared = Object.keys(DECLARED_OPEN_ADMISSION_GAPS).sort();
+  if (JSON.stringify([...openGaps].sort()) !== JSON.stringify(declared)) {
+    problems.push('已登记敞口与实际不符 —— 登记表与扫描结果对不上。');
+  }
+
+  problems.push(...malformedDeclaredGaps());
+  return problems;
+}
+
+function main(): void {
+  const { findings, counts } = runCriteria();
+  for (const problem of selfCheck()) console.error(`🔴 自证失败:${problem}`);
+  for (const finding of findings) console.error(`🔴 [${finding.criterion}] ${finding.detail}`);
+
+  const broken = selfCheck().length + findings.length;
+  if (broken === 0) {
+    console.log(
+      `✓ 正式准入写入点全部有锁后重验(扫描 ${counts.scannedFiles} 文件 / ` +
+        `${counts.admissionWriters} 个准入写入点)。`,
+    );
+  }
+  process.exit(broken === 0 ? 0 : 1);
+}
+
+if (require.main === module) main();

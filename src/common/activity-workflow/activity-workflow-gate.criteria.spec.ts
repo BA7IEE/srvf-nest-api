@@ -1,18 +1,17 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import {
   DECLARED_TEST_CONFIGS,
-  ENV_EXAMPLE_FILE,
+  ENV_EXAMPLE_REQUIRED_SAMPLE,
   GATE_FILE,
   SMOKE_WORKFLOW_FILE,
   LEGACY_ASSERT,
   READ_SOURCE,
-  REPO_ROOT,
   REVERSE_GATE_MARKERS,
   V11_ASSERT,
+  controlAllReadFacesDetached,
+  controlEnvExampleMissingRequired,
+  readSource,
   runCriteria,
-} from './activity-workflow-gate.criteria';
+} from '../../../scripts/check-activity-workflow-gate';
 
 /**
  * 活动 v1.1 单一 cutover gate 的结构判据 —— 断言 + **正对照**。
@@ -63,10 +62,6 @@ export async function probeServiceHours(prisma: any): Promise<unknown[]> {
 }
 `;
 
-function source(relPath: string): string {
-  return readFileSync(join(REPO_ROOT, relPath), 'utf8');
-}
-
 describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', () => {
   describe('基线:当前实现四条判据全绿', () => {
     it('零 finding,且三项受控面各自确实在闸上', () => {
@@ -91,7 +86,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
 
   describe('C1 正对照:任一处另读一遍配置 ⇒ 必红', () => {
     it('把读面改成自己读 config 而不是问闸 ⇒ C1 红在该文件', () => {
-      const original = source(SUMMARY);
+      const original = readSource(SUMMARY);
       const mutated = original.replace(
         'this.activityWorkflowGate.participationReadSource()',
         "this.config.activityV11Workflow.enabled ? 'committed-ledger' : 'approved-attendance'",
@@ -108,7 +103,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
 
   describe('C2 正对照:写路径绕开闸 ⇒ 必红', () => {
     it('拆掉打卡链的判闸位 ⇒ C2 红在 selfPunch 等公开入口', () => {
-      const original = source(PUNCH);
+      const original = readSource(PUNCH);
       const mutated = original.split(`this.activityWorkflowGate.${V11_ASSERT}();`).join('');
       expect(mutated).not.toBe(original);
 
@@ -118,7 +113,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
     });
 
     it('拆掉旧考勤审批链的判闸位 ⇒ C2 红在 approve 等公开入口', () => {
-      const original = source(REVIEW);
+      const original = readSource(REVIEW);
       const mutated = original.split(`this.activityWorkflowGate.${LEGACY_ASSERT}();`).join('');
       expect(mutated).not.toBe(original);
 
@@ -128,7 +123,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
     });
 
     it('把判闸位换成写死 true ⇒ 仍然红(闸必须真的被问到,不是摆个 if)', () => {
-      const original = source(PUNCH);
+      const original = readSource(PUNCH);
       const mutated = original
         .split(`this.activityWorkflowGate.${V11_ASSERT}();`)
         .join('if (!true) throw new Error("v11 disabled");');
@@ -146,19 +141,10 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       //    **一处接了就绿**。当年只有一处读面接闸时,摘掉那一处就红;如今有三处,
       //    摘掉一处剩下两处仍然 >0。⇒ **C3 对「第二、第三处漏进来」结构性失明**,
       //    这正是 C8 存在的理由。两条判据粒度不同、都要留着。
-      const overrides = Object.fromEntries(
-        [SUMMARY, ACTIVITY_PARTICIPATION, META_OVERVIEW].map((target) => {
-          const original = source(target);
-          const mutated = original
-            .split(`this.activityWorkflowGate.${READ_SOURCE}()`)
-            .join("('approved-attendance' as const)");
-          expect(mutated).not.toBe(original);
-          return [target, mutated];
-        }),
-      );
+      const control = controlAllReadFacesDetached();
+      expect(control.changed).toBe(true);
 
-      const { findings } = runCriteria(overrides);
-      const c3 = findings.filter((f) => f.criterion === 'C3');
+      const c3 = control.findings.filter((f) => f.criterion === 'C3');
       expect(c3.some((f) => f.detail.includes(READ_SOURCE))).toBe(true);
     });
   });
@@ -169,7 +155,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       // 不随 v1.1 闸切换。后人「顺手统一」会悄悄改掉入队门槛的业务口径,故上反向闸。
       // 变异用**真代码**而不是注释:注释也能触发 C4(它按文本判,刻意从宽 ——
       // 入队门槛文件里连提到闸都该引起复核),但正对照必须演示真实缺陷的形状。
-      const original = source(TEAM_JOIN_PROBE);
+      const original = readSource(TEAM_JOIN_PROBE);
       const mutated = original.replace(
         'export class',
         `const probe = (gate: ActivityWorkflowGate): boolean => gate.isV11Enabled();\nvoid probe;\nexport class`,
@@ -189,7 +175,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       // application context,该模块 providers 里有账本 prepare / commit 却没 import 闸 ⇒
       // 整个 worker 起不来。当时全部 unit spec 是绿的,只有 e2e 在
       // createApplicationContext 处炸 —— C5 把这一类缺陷从「运行时才炸」提前成「静态可判」。
-      const original = source(WORKER_MODULE);
+      const original = readSource(WORKER_MODULE);
       const mutated = original
         .split('ActivityWorkflowModule')
         .join('__GateModuleRemovedByMutation__');
@@ -242,7 +228,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       // **完全不点名是哪个 env 缺了**(本仓教训:失败消息说错方向比不说更费人)。
       // C7 的价值不只是「能发现」,更是**发现时直接说出是谁** ——
       // 下面断言里要求 detail 必须含变量名,就是在钉这一点。
-      const original = readFileSync(join(REPO_ROOT, SMOKE_WORKFLOW_FILE), 'utf8');
+      const original = readSource(SMOKE_WORKFLOW_FILE);
       const mutated = original.split('-e ACTIVITY_V11_WORKFLOW_ENABLED=false \\\n').join('');
       expect(mutated).not.toBe(original);
 
@@ -256,13 +242,11 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       // deployment.md 明确以 .env.example 为字段权威源:维护者照它做生产 env-file。
       // 漏一项 ⇒ 生产容器起不来。这一侧与 smoke 侧共用同一份「必填清单」,
       // 任一侧红都证明清单是从 app.config.ts 真反推出来的,不是手写死的。
-      const original = readFileSync(join(REPO_ROOT, ENV_EXAMPLE_FILE), 'utf8');
-      const mutated = original.replace(/^WECOM_ENCRYPTION_KEY=/m, '#WECOM_ENCRYPTION_KEY=');
-      expect(mutated).not.toBe(original);
+      const control = controlEnvExampleMissingRequired();
+      expect(control.changed).toBe(true);
 
-      const { findings } = runCriteria({ [ENV_EXAMPLE_FILE]: mutated });
-      const c7 = findings.filter((f) => f.criterion === 'C7');
-      expect(c7.some((f) => f.detail.includes('WECOM_ENCRYPTION_KEY'))).toBe(true);
+      const c7 = control.findings.filter((f) => f.criterion === 'C7');
+      expect(c7.some((f) => f.detail.includes(ENV_EXAMPLE_REQUIRED_SAMPLE))).toBe(true);
     });
   });
 
@@ -276,7 +260,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       //   ② 纳入后确实逐项比对必填清单。
       // 现实意义:将来再冒出第 2 个 `insurance-config-fail-fast` 那样的 spec,
       // 不需要有人记得来改清单,判据自己会把它圈进来。
-      const original = readFileSync(join(REPO_ROOT, SYNTHETIC_ASSEMBLER), 'utf8');
+      const original = readSource(SYNTHETIC_ASSEMBLER);
       const mutated = `${original}\n// synthetic assembler\nprocess.env.APP_ENV = 'production';\n`;
       expect(mutated).not.toBe(original);
 
@@ -288,7 +272,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
     it('真实组装点删掉闸位 env ⇒ C7 红并点名它', () => {
       // insurance-config-fail-fast 自建 production 环境验「空值拒启」。新增必填项后,
       // 装配会**先**因新项抛错 ⇒ 它原本要断言的那个错根本走不到(CI 现场就是这样红的)。
-      const original = readFileSync(join(REPO_ROOT, INSURANCE_ASSEMBLER), 'utf8');
+      const original = readSource(INSURANCE_ASSEMBLER);
       const mutated = original
         .split("process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'false';")
         .join('');
@@ -318,7 +302,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       ['月度参与概览', META_OVERVIEW],
       ['队员参与汇总', SUMMARY],
     ])('正对照:%s 摘掉判闸位 ⇒ C8 红并点名该文件', (_label, target) => {
-      const original = source(target);
+      const original = readSource(target);
       const mutated = original
         .split(`this.activityWorkflowGate.${READ_SOURCE}()`)
         .join("('approved-attendance' as const)");
@@ -338,7 +322,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       // 与考勤毫无关系。它此前完全不在任何读面清单里,只要「读 attendanceRecord 且
       // select 了结算列」就会被圈进来 ⇒ **发现靠规则,不靠文件名**。
       // 现实意义:将来冒出第 5 处读面,不需要有人记得回来改清单。
-      const original = source(NEUTRAL_UTIL);
+      const original = readSource(NEUTRAL_UTIL);
       const mutated = `${original}\n${SYNTHETIC_READ_FACE}`;
       expect(mutated).not.toBe(original);
       // 先证明它本来不在看守范围内,否则「红了」可能只是它一直就红。
@@ -359,7 +343,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       // 用 class method 而不是自由函数,是因为 C2 的判闸位分析只遍历 class method ——
       // 豁免必须落在**另一条判据真的有牙**的地方,否则就是两条判据互相甩锅。
       // (C8 的豁免因此也钉死 `isMethod`,自由函数写旧链照样红。)
-      const mutated = `${source(NEUTRAL_UTIL)}\n${SYNTHETIC_READ_FACE_IN_WRITING_CLASS}`;
+      const mutated = `${readSource(NEUTRAL_UTIL)}\n${SYNTHETIC_READ_FACE_IN_WRITING_CLASS}`;
       const { findings } = runCriteria({ [NEUTRAL_UTIL]: mutated });
 
       expect(
@@ -382,7 +366,9 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       );
       expect(withWrite).not.toBe(SYNTHETIC_READ_FACE);
 
-      const { findings } = runCriteria({ [NEUTRAL_UTIL]: `${source(NEUTRAL_UTIL)}\n${withWrite}` });
+      const { findings } = runCriteria({
+        [NEUTRAL_UTIL]: `${readSource(NEUTRAL_UTIL)}\n${withWrite}`,
+      });
       // C2 确实没抓到(记录这条盲区的实测读数,不是猜的)。
       expect(
         findings
@@ -402,7 +388,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       // 形状上完全命中 C8 的定义域 —— 但维护者已拍板入队门槛恒按 approved 算,
       // 接了闸反而由 C4 判红。两条判据**复用同一份 REVERSE_GATE_MARKERS**,
       // 故「C8 要求接闸、C4 禁止接闸」这种自相矛盾在结构上不可能出现。
-      const text = source(TEAM_JOIN_PROGRESS);
+      const text = readSource(TEAM_JOIN_PROGRESS);
       expect(text).toContain('contributionPoints');
       expect(text).toContain('attendanceRecord.findMany');
       expect(REVERSE_GATE_MARKERS.some((marker) => TEAM_JOIN_PROGRESS.includes(marker))).toBe(true);
@@ -414,7 +400,7 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
 
   describe('闸文件自身', () => {
     it('gate 是 src 生产代码里唯一读取 ACTIVITY_V11_WORKFLOW_ENABLED 的地方', () => {
-      const gate = source(GATE_FILE);
+      const gate = readSource(GATE_FILE);
       // 三项受控面全部经由 isV11Enabled();闸只在这一处碰配置。
       expect(gate).toContain('this.config.activityV11Workflow.enabled');
       expect(gate.split('this.config.activityV11Workflow.enabled').length - 1).toBe(1);

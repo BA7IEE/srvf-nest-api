@@ -18,7 +18,8 @@ import { join, relative } from 'node:path';
 
 import * as ts from 'typescript';
 
-export const REPO_ROOT = join(__dirname, '..', '..', '..');
+// ⚠️ 本文件从 `src/common/activity-workflow/` 搬进 `scripts/` 时,这里的层级从三级变一级。
+export const REPO_ROOT = join(__dirname, '..');
 const SRC = join(REPO_ROOT, 'src');
 
 export const CONFIG_DEF_FILE = 'src/config/app.config.ts';
@@ -763,4 +764,78 @@ export function runCriteria(
   }
 
   return { findings, counts };
+}
+
+// ============================================================================
+// 供薄运行器使用的读取与变异构造
+//
+// 这些原先写在 `activity-workflow-gate.criteria.spec.ts` 里 —— 而 spec 不在
+// selfGuard,任何 PR 都能顺手改松。搬进来后 spec 只拿结果,自己不再具备
+// 「读文件 / 写正则 / 造 overrides」的能力。
+// ============================================================================
+
+/** C3 三处读面 —— 变异必须**全部**摘掉才会红(见 controlAllReadFacesDetached)。 */
+export const READ_FACE_SUMMARY = 'src/modules/attendances/participation-summary-query.service.ts';
+export const READ_FACE_ACTIVITY_PARTICIPATION =
+  'src/modules/activities/activity-participation-query.service.ts';
+export const READ_FACE_META_OVERVIEW = 'src/modules/meta/participation-overview-query.service.ts';
+
+/** 按仓库相对路径读源码。spec 侧唯一被允许的读取入口。 */
+export function readSource(relPath: string): string {
+  return readFileSync(join(REPO_ROOT, relPath), 'utf8');
+}
+
+/** 一次内存变异的结果。`changed` 为 false 说明变异没落在目标行上 ⇒ 是空变异。 */
+export interface WorkflowMutationControl {
+  changed: boolean;
+  findings: Finding[];
+}
+
+/**
+ * C3 正对照:**三处读面全部脱闸** ⇒ C3 必红。
+ *
+ * ⚠️ 2026-08-21(第六轮评审 B-01)起,这条变异必须**摘掉全部三处读面的闸**才会红。
+ *    原因正是 C3 的粒度:它只断言「全仓至少有一个文件调过闸的读面方法」,
+ *    **一处接了就绿**。当年只有一处读面接闸时,摘掉那一处就红;如今有三处,
+ *    摘掉一处剩下两处仍然 >0。⇒ **C3 对「第二、第三处漏进来」结构性失明**,
+ *    这正是 C8 存在的理由。两条判据粒度不同、都要留着。
+ */
+export function controlAllReadFacesDetached(): WorkflowMutationControl {
+  let changed = true;
+  const overrides: Record<string, string> = {};
+  for (const target of [
+    READ_FACE_SUMMARY,
+    READ_FACE_ACTIVITY_PARTICIPATION,
+    READ_FACE_META_OVERVIEW,
+  ]) {
+    const original = readSource(target);
+    const next = original
+      .split(`this.activityWorkflowGate.${READ_SOURCE}()`)
+      .join("('approved-attendance' as const)");
+    if (next === original) changed = false;
+    overrides[target] = next;
+  }
+  return { changed, findings: runCriteria(overrides).findings };
+}
+
+/** `.env.example` 里被注释掉的那个必填项 —— C7 字段权威源侧的正对照。 */
+export const ENV_EXAMPLE_REQUIRED_SAMPLE = 'WECOM_ENCRYPTION_KEY';
+
+/**
+ * C7 正对照(字段权威源侧):从 `.env.example` 里删掉一个必填项 ⇒ C7 必红。
+ *
+ * deployment.md 明确以 `.env.example` 为字段权威源:维护者照它做生产 env-file。
+ * 漏一项 ⇒ 生产容器起不来。这一侧与 smoke 侧共用同一份「必填清单」,
+ * 任一侧红都证明清单是从 app.config.ts 真反推出来的,不是手写死的。
+ */
+export function controlEnvExampleMissingRequired(): WorkflowMutationControl {
+  const original = readSource(ENV_EXAMPLE_FILE);
+  const next = original.replace(
+    new RegExp(`^${ENV_EXAMPLE_REQUIRED_SAMPLE}=`, 'm'),
+    `#${ENV_EXAMPLE_REQUIRED_SAMPLE}=`,
+  );
+  return {
+    changed: next !== original,
+    findings: runCriteria({ [ENV_EXAMPLE_FILE]: next }).findings,
+  };
 }

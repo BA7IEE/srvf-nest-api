@@ -8,7 +8,14 @@
  * 都没登记。**漏登记不产生任何坏链接**,所以既有守护一次都没响过 ——
  * 与 `docs/ai-harness/README.md` 当年漂成"恰 4 文件"是同一类缺陷。
  *
- * 本文件只提供**计算**,判据在 `src/frozen-drafts-ledger.criteria.spec.ts`(跑在 CI Fast 的 unit job)。
+ * ⚠️ 本文件在 `harness/redzone.json` 的 selfGuard 内(`scripts/check-*.ts`)。
+ *    ⭐ 它原名 `scripts/frozen-drafts-ledger.ts` —— **放在 `scripts/` 下但名字不匹配任何
+ *    selfGuard glob,实测 `harness:needs` = 0 需授权**,即零保护。selfGuard 的 glob 钉在
+ *    **文件名**上(`check-*` / `generate-*` / `replay-*` / `*.selftest.*`),所以「搬进
+ *    `scripts/`」这句话本身是不够的,必须是「搬成 `check-*.ts`」。改名即为收编。
+ *
+ * 本文件提供**计算与判定**,`src/frozen-drafts-ledger.criteria.spec.ts` 只做薄运行器
+ * (跑在 CI Fast 的 unit job)。
  *
  * ⚠️ 两条设计约束,改本文件前先读:
  *
@@ -20,9 +27,12 @@
  *     (头部写的是"业务已定版"),而那份恰恰是代码已落、闸未开的欠账项。
  */
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { extractSeedFactsPermissionCodesAst, readSeedFactsClosure } from './docs-counts';
+
+/** 仓库根。本文件搬进 `scripts/` 后是上一级。 */
+const ROOT = resolve(__dirname, '..');
 
 export const LEDGER_PATH = 'docs/ai-harness/FROZEN_DRAFTS.md';
 export const ARCHIVE_DIRS = ['docs/archive/reviews', 'docs/archive/plans'] as const;
@@ -264,7 +274,7 @@ export function computeReadings(root: string): Reading[] {
 export function renderReadings(readings: readonly Reading[]): string {
   const lines = [
     BLOCK_BEGIN,
-    '<!-- 由 `pnpm exec tsx scripts/frozen-drafts-ledger.ts --write` 生成;禁止手改。',
+    '<!-- 由 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` 生成;禁止手改。',
     '     判据 `src/frozen-drafts-ledger.criteria.spec.ts` 逐字节比对,手改即红。 -->',
     '',
     '| 读数 | 值 | 取自 |',
@@ -295,7 +305,7 @@ export function extractReadingsBlock(markdown: string): string {
 }
 
 function main(): void {
-  const root = process.cwd();
+  const root = ROOT;
   const rendered = renderReadings(computeReadings(root));
   const path = join(root, LEDGER_PATH);
   const markdown = readFileSync(path, 'utf8');
@@ -315,13 +325,221 @@ function main(): void {
     console.log('读数块与真源一致。');
     return;
   }
-  console.error('读数块已过期。跑 `pnpm exec tsx scripts/frozen-drafts-ledger.ts --write` 刷新。');
+  console.error(
+    '读数块已过期。跑 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` 刷新。',
+  );
   console.error('\n应为:\n');
   console.error(rendered);
   process.exitCode = 1;
 }
 
+// 入口在文件末尾统一分发(见 `if (require.main === module)`)。
+
+// ============================================================================
+// 判定侧 —— 原先整段写在 `src/frozen-drafts-ledger.criteria.spec.ts` 里
+//
+// 那个文件不在 selfGuard,任何 PR 都能顺手把地板从 80 改成 0、把双向集合相等
+// 改成单向、或者把「读数逐字节比对」整条删掉,零授权零痕迹。搬进来。
+// ============================================================================
+
+/** 归档目录的地板:低于它说明扫描面塌了(读错目录 / 过滤写错),不是"仓库真的只剩这么几份"。 */
+export const ARCHIVED_DOCS_FLOOR = 80;
+
+/** 读数条数地板:computeReadings 被删空时判据必须红。 */
+export const READINGS_FLOOR = 10;
+
+/** 活动验收编号的定义数地板。 */
+export const ACTIVITY_ACCEPTANCE_DEFINED_FLOOR = 90;
+
+/** §1 欠账表的行形状:`| 序号 | … | 台账编号 | …`。 */
+const SUMMARY_ROW = /^\|\s*\d+\s*\|[^|]+\|\s*([^|]+?)\s*\|/;
+
+/** 台账编号形状 `P<数字>-<数字>`;`—` 表示这项没有 NEXT_TASKS 编号。 */
+const LEDGER_ID = /^P\d+-\d+$/;
+
+/** 读数块里不许出现的两样东西 —— 带了它们,字节比对会恒假红且自引用。 */
+const TIMESTAMP_SHAPE = /\b20\d{2}-\d{2}-\d{2}\b/;
+const GIT_SHA_SHAPE = /\b[0-9a-f]{7,40}\b/;
+
+/** 台账三个锚点 —— 缺任一个,后面的解析都是空对空。 */
+export const LEDGER_ANCHORS = [
+  '## 1. 还有欠账的冻结稿',
+  '## 3. 归档评审稿 / 计划全量分类',
+];
+
+export function readLedger(root: string = ROOT): string {
+  return readFileSync(resolve(root, LEDGER_PATH), 'utf8');
+}
+
+/** §1 欠账表里的台账编号(第三列)。 */
+export function ledgerIdsInSummaryTable(markdown: string): Set<string> {
+  const ids = new Set<string>();
+  for (const line of markdown.split('\n')) {
+    const row = SUMMARY_ROW.exec(line);
+    if (!row) continue;
+    const cell = row[1];
+    if (LEDGER_ID.test(cell)) ids.add(cell);
+  }
+  return ids;
+}
+
+export interface LedgerReport {
+  /** 归档目录里实际存在的 .md(相对路径)。 */
+  actual: string[];
+  /** §3 分类表里登记的路径。 */
+  declaredPaths: string[];
+  /** 分类取值不在闭集内的条目。 */
+  badCategories: string[];
+  /** `open` 却没带台账编号的条目。 */
+  openWithoutLedgerId: string[];
+  /** 归档目录有、§3 没登记(新增文件未登记)。 */
+  missingFromLedger: string[];
+  /** §3 登记了、归档目录已没有(登记了已删除的文件)。 */
+  staleInLedger: string[];
+  /** 同一份文件登记了两次(又一份"第二真相")。 */
+  duplicateDeclarations: string[];
+  /** §3 的 open 行有、§1 欠账表没有。 */
+  openNotInSummary: string[];
+  /** §1 欠账表有、§3 的 open 行没有。 */
+  summaryNotInOpen: string[];
+  /** 读数块与现算结果不一致(空串 = 一致)。 */
+  readingsDrift: string;
+  activityAcceptance: { defined: number; bound: number; todo: number };
+  readingsCount: number;
+  archivedCount: number;
+}
+
+export function analyzeLedger(root: string = ROOT): LedgerReport {
+  const ledger = readLedger(root);
+  const actual = scanArchivedDocs(root);
+  const declared = parseClassifications(ledger);
+  const declaredPaths = declared.map((c) => c.path);
+
+  const openIds = new Set(
+    declared
+      .filter((c) => c.category === 'open')
+      .map((c) => c.ledgerId)
+      .filter((id): id is string => id !== undefined && id !== '-'),
+  );
+  const summaryIds = ledgerIdsInSummaryTable(ledger);
+
+  const rendered = renderReadings(computeReadings(root));
+  const extracted = extractReadingsBlock(ledger);
+
+  return {
+    actual,
+    declaredPaths,
+    badCategories: declared
+      .filter((entry) => !CATEGORIES.includes(entry.category))
+      .map((entry) => `${entry.path}(分类 ${entry.category} 不在闭集内)`),
+    openWithoutLedgerId: declared
+      .filter((entry) => entry.category === 'open' && entry.ledgerId === undefined)
+      .map((entry) => entry.path),
+    missingFromLedger: actual.filter((f) => !declaredPaths.includes(f)),
+    staleInLedger: declaredPaths.filter((f) => !actual.includes(f)),
+    duplicateDeclarations:
+      declaredPaths.length === new Set(declaredPaths).size
+        ? []
+        : declaredPaths.filter((p, i) => declaredPaths.indexOf(p) !== i),
+    openNotInSummary: [...openIds].filter((id) => !summaryIds.has(id)),
+    summaryNotInOpen: [...summaryIds].filter((id) => !openIds.has(id)),
+    readingsDrift: extracted === rendered ? '' : rendered,
+    activityAcceptance: activityAcceptanceCoverage(root),
+    readingsCount: computeReadings(root).length,
+    archivedCount: actual.length,
+  };
+}
+
+/** 自证:仪器没瞎才报数。返回空数组 = 自证通过。 */
+export function selfCheck(report: LedgerReport, root: string = ROOT): string[] {
+  const problems: string[] = [];
+  const ledger = readLedger(root);
+
+  if (report.archivedCount < ARCHIVED_DOCS_FLOOR) {
+    problems.push(
+      `扫描面塌了:只扫到 ${report.archivedCount} 份归档 .md,地板是 ${ARCHIVED_DOCS_FLOOR}。` +
+        '「判据失去输入 ≠ 通过」。',
+    );
+  }
+  if (!report.actual.every((d) => d.startsWith('docs/archive/') && d.endsWith('.md'))) {
+    problems.push('扫描面越界:出现了不在 docs/archive/ 下的条目。');
+  }
+  for (const anchor of LEDGER_ANCHORS) {
+    if (!ledger.includes(anchor)) problems.push(`台账缺锚点:${anchor}`);
+  }
+  if (ledgerIdsInSummaryTable(ledger).size === 0) {
+    problems.push('§1 欠账表解析不出任何台账编号 —— 表格形状变了,后面的互证是空对空。');
+  }
+  if (report.declaredPaths.length < ARCHIVED_DOCS_FLOOR) {
+    problems.push(`§3 分类表只解析出 ${report.declaredPaths.length} 条,地板是 ${ARCHIVED_DOCS_FLOOR}。`);
+  }
+  if (report.readingsCount < READINGS_FLOOR) {
+    problems.push(`读数只有 ${report.readingsCount} 条,地板是 ${READINGS_FLOOR}。`);
+  }
+
+  const coverage = report.activityAcceptance;
+  if (coverage.defined < ACTIVITY_ACCEPTANCE_DEFINED_FLOOR) {
+    problems.push(
+      `活动验收编号只解析出 ${coverage.defined} 条,地板是 ${ACTIVITY_ACCEPTANCE_DEFINED_FLOOR}。`,
+    );
+  }
+  if (coverage.bound <= 0) problems.push('活动验收编号 bound = 0 —— 解析塌了。');
+  if (coverage.bound + coverage.todo !== coverage.defined) {
+    problems.push(
+      `活动验收编号不自洽:bound(${coverage.bound}) + todo(${coverage.todo}) ≠ defined(${coverage.defined})。`,
+    );
+  }
+
+  // 读数块不含时间戳与 git SHA,否则字节比对恒假红且自引用。
+  const block = renderReadings(computeReadings(root));
+  if (TIMESTAMP_SHAPE.test(block)) problems.push('读数块含时间戳 ⇒ 字节比对会恒假红且自引用。');
+  if (GIT_SHA_SHAPE.test(block)) problems.push('读数块含 git SHA ⇒ 字节比对会恒假红且自引用。');
+
+  return problems;
+}
+
+function check(): void {
+  const report = analyzeLedger();
+  const problems = selfCheck(report);
+  for (const problem of problems) console.error(`🔴 自证失败:${problem}`);
+
+  for (const f of report.missingFromLedger) console.error(`🔴 归档目录新增但 §3 未登记:${f}`);
+  for (const f of report.staleInLedger) console.error(`🔴 §3 登记了已不存在的文件:${f}`);
+  for (const f of report.duplicateDeclarations) console.error(`🔴 同一份文件登记了两次:${f}`);
+  for (const f of report.badCategories) console.error(`🔴 ${f}`);
+  for (const f of report.openWithoutLedgerId) console.error(`🔴 open 却没带台账编号:${f}`);
+  for (const id of report.openNotInSummary) console.error(`🔴 §3 的 open 行有、§1 欠账表没有:${id}`);
+  for (const id of report.summaryNotInOpen) console.error(`🔴 §1 欠账表有、§3 的 open 行没有:${id}`);
+  if (report.readingsDrift !== '') {
+    console.error('🔴 读数块已过期。跑 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` 刷新。');
+  }
+
+  const broken =
+    problems.length +
+    report.missingFromLedger.length +
+    report.staleInLedger.length +
+    report.duplicateDeclarations.length +
+    report.badCategories.length +
+    report.openWithoutLedgerId.length +
+    report.openNotInSummary.length +
+    report.summaryNotInOpen.length +
+    (report.readingsDrift === '' ? 0 : 1);
+
+  if (broken === 0) {
+    console.log(`✓ 冻结稿台账分类完整、读数新鲜(${report.archivedCount} 份归档 .md)。`);
+  }
+  process.exit(broken === 0 ? 0 : 1);
+}
+
 // 直接执行时跑 CLI;被 spec import 时不跑。
-if (process.argv[1] !== undefined && process.argv[1].endsWith('frozen-drafts-ledger.ts')) {
-  main();
+//
+// ⚠️ 原判别式是 `process.argv[1].endsWith('frozen-drafts-ledger.ts')` —— 改名成
+//    `check-frozen-drafts-ledger.ts` 后它**仍然匹配**(后缀恰好包含旧名),
+//    但那是巧合而不是设计。换成 `require.main` 与仓内其余裁判一致。
+//
+//   --write  刷新台账里的读数块
+//   (默认)  跑全部判据:分类完整性 + 互证 + 读数新鲜度 + 自证
+if (require.main === module) {
+  if (process.argv.includes('--write')) main();
+  else check();
 }
