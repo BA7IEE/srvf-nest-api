@@ -636,6 +636,24 @@ jobs:
           BASE="origin/${{ github.base_ref || github.event.repository.default_branch }}"
           pnpm exec tsx scripts/check-next-tasks-state.ts --base "$BASE"
 
+      # 冻结稿落地台账闸(`docs/ai-harness/FROZEN_DRAFTS.md`)。六条判据:分类完整性(双向
+      # 集合相等)· 分类闭集 · §1↔§3 互证 · 读数新鲜度(逐字节)· 自证非空 ·
+      # **跨台账落地度对照**(§1 落地度 ↔ NEXT_TASKS 状态行,治「沉默」不治「不一致」)。
+      #
+      # 🔴 **本条不是"新增一条判据的接线",是把既有五条第一次真正接上。**
+      # 立项前它的**唯一**入口是 `src/frozen-drafts-ledger.criteria.spec.ts`(即 `pnpm test`),
+      # 而上面 fast job 的 `Run unit tests` 带 `if: docs_only != 'true'`,
+      # 且 docs-only 判定 = 变更文件全部 `*.md` ⇒ **一个只改那份台账的 PR 就是 docs-only,
+      # 六条判据一条都不跑** —— 恰好在最该拦的那批 PR 上失效。
+      # 与上面 NEXT_TASKS 那条逐字同一个理由;`#1166` 修了那一个、没回头看这一个。
+      # (台账 §4 当时还写着"不随 docs-only 短路" —— 自称有执法而实际没有,同 PR 已订正。)
+      #
+      # 无 `--base`:六条判据全部是**当前工作树内**的静态对照,不读 git 历史。
+      # 无 `|| true`:接闸时机选在此刻是因为当前 main 上它已是绿的(实测 96 份归档 .md),
+      # **零存量摩擦**;薄运行器仍留在 unit 轮,两处同源不产生第二份真相。
+      - name: Frozen drafts ledger gate
+        run: pnpm exec tsx scripts/check-frozen-drafts-ledger.ts
+
   # 触碰红区/执法层时才跑:environment 上挂了 required reviewer,
   # 这个 job 会一直 pending 直到维护者在 PR 页面点批准。
   #

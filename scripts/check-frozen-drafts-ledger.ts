@@ -17,7 +17,7 @@
  * 本文件提供**计算与判定**,`src/frozen-drafts-ledger.criteria.spec.ts` 只做薄运行器
  * (跑在 CI Fast 的 unit job)。
  *
- * ⚠️ 两条设计约束,改本文件前先读:
+ * ⚠️ 三条设计约束,改本文件前先读:
  *
  *  1. **读数里不得含时间戳 / git SHA**(架构治理 v4 勘误①)。派生生成物一旦带这两样,
  *     字节比对新鲜度恒假红且自引用。本文件的输出只由被扫描文件的内容决定。
@@ -25,10 +25,27 @@
  *     会让判据当场红(缺分类),这正是本闸存在的理由。关键词扫描("头部含冻结/FROZEN")
  *     是**试过并否决**的方案 —— 实测漏掉 `activity-responsibility-workflow-v2-review.md`
  *     (头部写的是"业务已定版"),而那份恰恰是代码已落、闸未开的欠账项。
+ *  3. **跨台账对照(判据 6)治的是「沉默」,不是「不一致」** —— 存在刻意不同的合法情形,
+ *     逃生门必须留,但必须是**固定机器标记**且**不能把闸整体关掉**。详见下方判据 6 的段注。
+ *
+ * ⚠️ **接线**(2026-08-24 订正):本文件由 `.github/workflows/ci.yml` 的 `Diff guards`
+ *    (`redzone-scan`)job 直接跑,**不随 docs-only 短路**;`src/frozen-drafts-ledger.criteria.spec.ts`
+ *    在 unit 轮同跑一遍。⭐ 在此之前**唯一**入口是那个 spec,而 fast job 的 `Run unit tests`
+ *    带 `if: docs_only != 'true'` —— 改台账的 PR 几乎全是 docs-only ⇒ **本文件的全部判据
+ *    恰好在最该拦的那批 PR 上一条都不跑**,而台账 §4 当时还写着"不随 docs-only 短路"。
+ *    自称有执法而实际没有,比没写更危险。
  */
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import {
+  LEDGER_PATH as NEXT_TASKS_PATH,
+  parseEntries as parseNextTasksEntries,
+  parseStatus as parseNextTasksStatus,
+  STATUS_KINDS,
+  type Entry as NextTasksEntry,
+  type StatusKind,
+} from './check-next-tasks-state';
 import { extractSeedFactsPermissionCodesAst, readSeedFactsClosure } from './docs-counts';
 
 /** 仓库根。本文件搬进 `scripts/` 后是上一级。 */
@@ -383,6 +400,367 @@ export function ledgerIdsInSummaryTable(markdown: string): Set<string> {
   return ids;
 }
 
+// ============================================================================
+// 判据 6 —— 跨台账落地度对照(`FROZEN_DRAFTS` §1 ↔ `NEXT_TASKS` 状态行)
+//
+// **要防的缺陷类**:两份台账对**同一件事**的说法直接矛盾,而没有任何机器发现。
+// 实测立项证据(2026-08-24,`22d2449e`):§1 行 2 写 `**1 / 9 PR**` 且「卡在维护者
+// 逐条分类权限码(PR 0)」,而 `NEXT_TASKS` 的 P1-32 状态行同时写着
+// `进行中(5/8;PR 0/1/3a/3b/4a 已合 …)` —— PR 0 早已于 `#1145` 合入。
+// 两份都是权威源,**没有任何判据在对照它们**。
+//
+// ─── 🔴 「两边数字必须相等」是错的判据,别做成那样 ─────────────────────────
+// §1.1 ③ 的标题逐字写着「活动业务 v1.1 合同 —— **两根尺子读数不同,别混用**」
+// ⇒ **存在刻意不同的合法情形**,而那恰恰是台账里最用心写的一条。
+// 本闸沿 `check-next-tasks-state.ts` 同一路子:**治的是「沉默」,不是「不一致」。**
+//   · 两边一致                      ⇒ 绿
+//   · 不一致**但显式声明了另一把尺子** ⇒ 绿(逃生门,见 `另尺(…)`)
+//   · 不一致**且无任何声明**          ⇒ 红,并**同时打印两边原文**
+// ⚠️ 逃生门必须是**固定机器标记**。做成「正文出现『尺子』二字就放行」的关键词判据,
+//    随便一句话就能绕过 —— 那正是 §4 记着「关键词扫描面试过并当场否决」的同一教训。
+//
+// ─── 本刀能成立,靠的是一个刚变的前提 ────────────────────────────────────
+// §4 原本写着「不守 §1 那些散文描述是否与冻结稿正文一致 —— 那要人读」,
+// **那句话在当时是对的**:那时 `NEXT_TASKS.md` 没有任何机器可读的状态。
+// 但 `22d2449e`(#1166)已给 25 条条目各加了一行 `**状态**:` 白名单值
+// ⇒ 「落地度」从散文变成了可对照的数据。本判据接上这条对照。
+//
+// ─── ⚠️ 已知缺口(逐条登记,别当它们不存在)─────────────────────────────
+// 1. **无编号行对照不到。** §1 行 8「活动责任闭环 v2」台账列是 `—`,`NEXT_TASKS`
+//    里没有对应条目 ⇒ 它只能走 `↔无台账`,本判据对它**全程失明**。要纳管得先给它
+//    一个台账编号;**本刀不擅自编号**,登记在此。
+// 2. **不守「落地度数字本身是不是真的对」。** 只守两份台账不许**沉默地**互相矛盾。
+//    **两边一起写错仍然全绿。闸绿 ≠ 台账准。**
+// 3. **`↔另尺(…)` 的说明只能机器判「有没有实质内容」,判不了「说的是不是真话」。**
+//    说明是否真的描述了另一把尺子,要人读。地板见 `OTHER_RULER_REASON_FLOOR`。
+// 4. **分数只在 `NEXT_TASKS` 侧把它写在括号开头时才对照。** 台账图例本就是这个约定
+//    (「8 个 PR 合了 5 个 ⇒ `进行中(5/8,…)`」);写在别处的数字本判据看不见。
+// ============================================================================
+
+/**
+ * §1 欠账表**整行**:`| 序号 | 冻结稿 | 台账 | 落地度 | 卡在谁 |`。
+ * 与上面只取第三列的 `SUMMARY_ROW` 是两个用途 —— 那条喂判据 3(与 §3 互证),
+ * 本条喂判据 6(要读第四列的对照标记),刻意不合并:合并后任一方改列都会连坐另一方。
+ */
+const SUMMARY_FULL_ROW =
+  /^\|\s*(\d+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|\s*$/;
+
+/** §1 区段的起止锚点 —— 解析面**只在这一节内**,免得 §4 那张 `| # | 判据 | … |` 被误吃。 */
+const SUMMARY_SECTION_ANCHOR = '## 1. 还有欠账的冻结稿';
+
+/** 对照标记:落地度单元格**开头**的反引号块,形如 `` `↔进行中 3/9` ``。 */
+const CROSS_MARKER = /^`↔([^`]+)`/;
+
+/** 逃生门:`另尺(<说明>)`。ASCII 圆括号,与 `NEXT_TASKS` 状态行同一形态。 */
+const OTHER_RULER = /^另尺\((.+)\)$/s;
+
+/** 台账列是 `—`(没有 `NEXT_TASKS` 编号)时唯一允许的标记。 */
+const NO_LEDGER_MARKER = '无台账';
+
+/** 同尺标记里的可选进度分数:`<状态种类> a/b`。 */
+const MARKER_FRACTION = /^(\d+)\s*\/\s*(\d+)$/;
+
+/**
+ * `NEXT_TASKS` 侧的进度分数 —— **只认状态括号内容的开头**。
+ * 刻意不做「全文找第一个 `a/b`」:`进行中(3/9 …;已合 5 刀 PR 0/1/3a/3b/4a …)`
+ * 的括号里还有 `0/1/3a` 这种**不是分数**的斜杠,全文扫会抓错并造出假红。
+ */
+const NEXT_FRACTION = /^(\d+)\s*\/\s*(\d+)(?![0-9/])/;
+
+/**
+ * 逃生门说明的**实质性地板**。非空还不够 —— `另尺(3/9)` 那种「把数字再写一遍」
+ * 同样是沉默,而且它会让逃生门退化成一句空话。
+ * 判据:剥掉数字 / 斜杠 / 空白 / 常见标点后仍剩 ≥ 本地板个字符。
+ */
+export const OTHER_RULER_REASON_FLOOR = 8;
+
+/** §1 表行数地板:低于它说明表被删空或列数变了 ——「判据失去输入 ≠ 通过」。 */
+export const SUMMARY_ROWS_FLOOR = 6;
+
+/** `NEXT_TASKS` 条目数地板:那边解析塌了的话,本判据每一行都会红在「找不到条目」上。 */
+export const NEXT_TASKS_ENTRIES_FLOOR = 20;
+
+/**
+ * **真正做过对照**的行数地板。没有它,把每一行都改成 `↔另尺(随便写点什么)`
+ * 就能零授权地把整条判据关掉,而且全绿 —— 逃生门不得能够停掉它自己的闸。
+ */
+export const CROSS_COMPARED_FLOOR = 4;
+
+export function isSubstantiveReason(reason: string): boolean {
+  return reason.replace(/[\s\d/#%·、,,.。:;:;()()–—-]/g, '').length >= OTHER_RULER_REASON_FLOOR;
+}
+
+export type CrossMarker =
+  | {
+      readonly kind: 'same-ruler';
+      readonly status: StatusKind;
+      readonly fraction?: readonly [number, number];
+    }
+  | { readonly kind: 'other-ruler'; readonly reason: string }
+  | { readonly kind: 'no-ledger' };
+
+/** 解析对照标记内容(不含首尾反引号与 `↔`)。形态不合一律返回 `null` ⇒ 调用方判红。 */
+export function parseCrossMarker(payload: string): CrossMarker | null {
+  const trimmed = payload.trim();
+  if (trimmed === NO_LEDGER_MARKER) return { kind: 'no-ledger' };
+
+  const other = OTHER_RULER.exec(trimmed);
+  if (other) {
+    const reason = other[1].trim();
+    return isSubstantiveReason(reason) ? { kind: 'other-ruler', reason } : null;
+  }
+
+  // 白名单**直接来自** check-next-tasks-state 的 STATUS_KINDS —— 不在这里抄一份。
+  // 抄一份的话两处会各自漂移,而漂移时「一边认一边不认」没有任何症状。
+  for (const status of STATUS_KINDS) {
+    if (trimmed === status) return { kind: 'same-ruler', status };
+    if (!trimmed.startsWith(`${status} `)) continue;
+    const fraction = MARKER_FRACTION.exec(trimmed.slice(status.length + 1).trim());
+    if (!fraction) return null;
+    return { kind: 'same-ruler', status, fraction: [Number(fraction[1]), Number(fraction[2])] };
+  }
+  return null;
+}
+
+export interface SummaryRow {
+  /** 1-based 行号(全文,不是区段内)。 */
+  readonly line: number;
+  readonly raw: string;
+  readonly ledgerCell: string;
+  readonly progressCell: string;
+  readonly markerRaw: string | null;
+  readonly marker: CrossMarker | null;
+}
+
+/** 解析 §1 欠账表的每一行(动态发现面,**不写死 8 项**)。 */
+export function parseSummaryRows(markdown: string): SummaryRow[] {
+  const lines = markdown.split('\n');
+  const start = lines.findIndex((line) => line.startsWith(SUMMARY_SECTION_ANCHOR));
+  if (start === -1) return [];
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (lines[i].startsWith('## ')) {
+      end = i;
+      break;
+    }
+  }
+
+  const rows: SummaryRow[] = [];
+  for (let i = start; i < end; i += 1) {
+    const cells = SUMMARY_FULL_ROW.exec(lines[i]);
+    if (!cells) continue;
+    const progressCell = cells[4];
+    const marker = CROSS_MARKER.exec(progressCell);
+    rows.push({
+      line: i + 1,
+      raw: lines[i],
+      ledgerCell: cells[3],
+      progressCell,
+      markerRaw: marker === null ? null : marker[1],
+      marker: marker === null ? null : parseCrossMarker(marker[1]),
+    });
+  }
+  return rows;
+}
+
+export interface CrossLedgerReport {
+  readonly failures: readonly string[];
+  readonly summaryRows: number;
+  readonly nextTasksEntries: number;
+  /** 真正做过「同尺」对照的行数。 */
+  readonly compared: number;
+  /** 声明了另一把尺子的行数。 */
+  readonly otherRuler: number;
+  /** 台账列为 `—`、对照不到的行数(射程外)。 */
+  readonly noLedger: number;
+}
+
+export function crossLedgerCheck(root: string, ledger: string): CrossLedgerReport {
+  const failures: string[] = [];
+  const rows = parseSummaryRows(ledger);
+
+  const nextTasks = readFileSync(resolve(root, NEXT_TASKS_PATH), 'utf8');
+  const entries = parseNextTasksEntries(nextTasks);
+  const byId = new Map<string, NextTasksEntry>(entries.map((entry) => [entry.id, entry]));
+
+  let compared = 0;
+  let otherRuler = 0;
+  let noLedger = 0;
+
+  for (const row of rows) {
+    const where = `${LEDGER_PATH}:${row.line}`;
+    const hasLedgerId = LEDGER_ID.test(row.ledgerCell);
+
+    if (row.marker === null) {
+      failures.push(
+        `${where} 落地度单元格缺少跨台账对照标记,或标记形态不合法` +
+          `(读到:\`${row.markerRaw ?? row.progressCell}\`)。` +
+          '本闸治的是「沉默」—— §1 每一行都必须对 `NEXT_TASKS` 的状态显式表态。' +
+          '取值与写法见 FROZEN_DRAFTS §4 的标记表。',
+      );
+      continue;
+    }
+
+    if (row.marker.kind === 'no-ledger') {
+      if (hasLedgerId) {
+        failures.push(
+          `${where} 标记 \`↔${NO_LEDGER_MARKER}\` 与台账列 \`${row.ledgerCell}\` 自相矛盾 —— ` +
+            '有台账编号的行不许走这条「射程外」通道。',
+        );
+        continue;
+      }
+      noLedger += 1;
+      continue;
+    }
+
+    if (!hasLedgerId) {
+      failures.push(
+        `${where} 台账列是 \`${row.ledgerCell}\`(没有 \`Pn-m\` 编号),` +
+          `只能标 \`↔${NO_LEDGER_MARKER}\`;当前标的是 \`↔${row.markerRaw}\`。`,
+      );
+      continue;
+    }
+
+    if (row.marker.kind === 'other-ruler') {
+      otherRuler += 1;
+      continue;
+    }
+
+    const entry = byId.get(row.ledgerCell);
+    if (entry === undefined) {
+      failures.push(
+        `${where} 声明与 ${NEXT_TASKS_PATH} 同尺,但那边找不到 \`### ${row.ledgerCell}\` 条目。`,
+      );
+      continue;
+    }
+    if (entry.statusLines.length !== 1) {
+      failures.push(
+        `${where} 对照不了 ${row.ledgerCell}:${NEXT_TASKS_PATH} 那条有 ` +
+          `${entry.statusLines.length} 行状态(要恰一行)。先修那边 —— 见 check-next-tasks-state 判据 A。`,
+      );
+      continue;
+    }
+    const status = entry.statusLines[0];
+    const parsed = parseNextTasksStatus(status.value);
+    if (parsed === null) {
+      failures.push(
+        `${where} 对照不了 ${row.ledgerCell}:${NEXT_TASKS_PATH}:${status.line} 的状态取值 ` +
+          `\`${status.value}\` 不在白名单内。先修那边 —— 见 check-next-tasks-state 判据 A。`,
+      );
+      continue;
+    }
+
+    compared += 1;
+    const bothSides =
+      `      ${where}\n        ${row.raw.trim()}\n` +
+      `      ${NEXT_TASKS_PATH}:${status.line}\n        **状态**:${status.value}`;
+    const howToFix =
+      '\n    ⇒ 两边都是权威源:**先查清哪个对再改**,别只改一边;' +
+      '若本行是刻意用另一把尺子,把标记改成 `↔另尺(<说清另一把尺子量的是什么>)`。';
+
+    if (parsed.kind !== row.marker.status) {
+      failures.push(
+        `跨台账落地度矛盾(${row.ledgerCell}):FROZEN_DRAFTS 标 \`${row.marker.status}\`,` +
+          `NEXT_TASKS 写 \`${parsed.kind}\`。\n${bothSides}${howToFix}`,
+      );
+      continue;
+    }
+
+    const nextFraction = NEXT_FRACTION.exec(parsed.detail);
+    if (nextFraction === null) continue;
+    if (row.marker.fraction === undefined) {
+      failures.push(
+        `跨台账落地度沉默(${row.ledgerCell}):NEXT_TASKS 给出了进度分数 ` +
+          `\`${nextFraction[1]}/${nextFraction[2]}\`,而 §1 这一行没有对照它。\n${bothSides}${howToFix}`,
+      );
+      continue;
+    }
+    const [numerator, denominator] = row.marker.fraction;
+    if (numerator !== Number(nextFraction[1]) || denominator !== Number(nextFraction[2])) {
+      failures.push(
+        `跨台账落地度矛盾(${row.ledgerCell}):FROZEN_DRAFTS 标 ` +
+          `\`${numerator}/${denominator}\`,NEXT_TASKS 写 ` +
+          `\`${nextFraction[1]}/${nextFraction[2]}\`。\n${bothSides}${howToFix}`,
+      );
+    }
+  }
+
+  return {
+    failures,
+    summaryRows: rows.length,
+    nextTasksEntries: entries.length,
+    compared,
+    otherRuler,
+    noLedger,
+  };
+}
+
+/** 尺子自己的边界用例。判据在报数之前先证明自己没刻错 —— 返回空数组 = 通过。 */
+export function crossLedgerSelfCheck(cross: CrossLedgerReport): string[] {
+  const problems: string[] = [];
+
+  if (cross.summaryRows < SUMMARY_ROWS_FLOOR) {
+    problems.push(
+      `§1 欠账表只解析出 ${cross.summaryRows} 行(地板 ${SUMMARY_ROWS_FLOOR})—— ` +
+        '表被删空、列数变了或区段标题被改。「判据失去输入 ≠ 通过」。',
+    );
+  }
+  if (cross.nextTasksEntries < NEXT_TASKS_ENTRIES_FLOOR) {
+    problems.push(
+      `${NEXT_TASKS_PATH} 只解析出 ${cross.nextTasksEntries} 条条目` +
+        `(地板 ${NEXT_TASKS_ENTRIES_FLOOR})—— 对照面塌了。`,
+    );
+  }
+  if (cross.compared < CROSS_COMPARED_FLOOR) {
+    problems.push(
+      `真正做过对照的只有 ${cross.compared} 行(地板 ${CROSS_COMPARED_FLOOR})—— ` +
+        '逃生门 `↔另尺(…)` 不得把整条判据关掉。',
+    );
+  }
+  if (STATUS_KINDS.length < 5) {
+    problems.push(`状态白名单只剩 ${STATUS_KINDS.length} 个取值 —— 上游 STATUS_KINDS 塌了。`);
+  }
+
+  // ── 尺子的边界用例:每一条都是踩过或差点踩到的形状。
+  if (parseCrossMarker('另尺(3/9)') !== null) {
+    problems.push('逃生门说明的实质性地板失效:`另尺(3/9)` 这种「把数字再写一遍」被放行了。');
+  }
+  if (parseCrossMarker('另尺(NEXT_TASKS 那条只覆盖 Phase 0)') === null) {
+    problems.push('逃生门把**合法**说明判成了不合法 —— 地板调得太高,会逼人把两把尺子强行统一。');
+  }
+  const bare = parseCrossMarker('进行中');
+  if (bare === null || bare.kind !== 'same-ruler' || bare.fraction !== undefined) {
+    problems.push('裸状态标记 `↔进行中` 解析失败。');
+  }
+  const withFraction = parseCrossMarker('进行中 3/9');
+  if (
+    withFraction === null ||
+    withFraction.kind !== 'same-ruler' ||
+    withFraction.fraction?.[0] !== 3 ||
+    withFraction.fraction?.[1] !== 9
+  ) {
+    problems.push('带分数的标记 `↔进行中 3/9` 解析失败。');
+  }
+  if (parseCrossMarker('进行中3/9') !== null) {
+    problems.push('标记解析把 `进行中3/9`(缺分隔空格)当成了合法形态。');
+  }
+  if (parseCrossMarker('施工中') !== null) {
+    problems.push('标记解析放行了白名单外的取值。');
+  }
+  // 分数只认括号内容开头 —— `PR 0/1/3a` 那种斜杠不许被当成分数。
+  const leading = NEXT_FRACTION.exec('3/9 完整落地 + PR 4 半;已合 5 刀 PR 0/1/3a/3b/4a');
+  if (leading === null || leading[1] !== '3' || leading[2] !== '9') {
+    problems.push('NEXT_TASKS 侧分数解析:开头的 `3/9` 没解析出来。');
+  }
+  if (NEXT_FRACTION.exec('已合 5 刀 PR 0/1/3a/3b/4a') !== null) {
+    problems.push('NEXT_TASKS 侧分数解析越界:把 `PR 0/1/3a` 里的斜杠当成了分数。');
+  }
+  if (NEXT_FRACTION.exec('0/1/3a 已合') !== null) {
+    problems.push('NEXT_TASKS 侧分数解析越界:`0/1/3a` 被当成了分数 `0/1`。');
+  }
+  return problems;
+}
+
 export interface LedgerReport {
   /** 归档目录里实际存在的 .md(相对路径)。 */
   actual: string[];
@@ -407,6 +785,8 @@ export interface LedgerReport {
   activityAcceptance: { defined: number; bound: number; todo: number };
   readingsCount: number;
   archivedCount: number;
+  /** 判据 6:§1 落地度 ↔ NEXT_TASKS 状态行的跨台账对照。 */
+  crossLedger: CrossLedgerReport;
 }
 
 export function analyzeLedger(root: string = ROOT): LedgerReport {
@@ -447,6 +827,7 @@ export function analyzeLedger(root: string = ROOT): LedgerReport {
     activityAcceptance: activityAcceptanceCoverage(root),
     readingsCount: computeReadings(root).length,
     archivedCount: actual.length,
+    crossLedger: crossLedgerCheck(root, ledger),
   };
 }
 
@@ -495,6 +876,8 @@ export function selfCheck(report: LedgerReport, root: string = ROOT): string[] {
   if (TIMESTAMP_SHAPE.test(block)) problems.push('读数块含时间戳 ⇒ 字节比对会恒假红且自引用。');
   if (GIT_SHA_SHAPE.test(block)) problems.push('读数块含 git SHA ⇒ 字节比对会恒假红且自引用。');
 
+  problems.push(...crossLedgerSelfCheck(report.crossLedger));
+
   return problems;
 }
 
@@ -513,6 +896,7 @@ function check(): void {
   if (report.readingsDrift !== '') {
     console.error('🔴 读数块已过期。跑 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` 刷新。');
   }
+  for (const failure of report.crossLedger.failures) console.error(`🔴 ${failure}`);
 
   const broken =
     problems.length +
@@ -523,10 +907,21 @@ function check(): void {
     report.openWithoutLedgerId.length +
     report.openNotInSummary.length +
     report.summaryNotInOpen.length +
-    (report.readingsDrift === '' ? 0 : 1);
+    (report.readingsDrift === '' ? 0 : 1) +
+    report.crossLedger.failures.length;
 
+  const cross = report.crossLedger;
+  console.log(
+    `跨台账对照:§1 ${cross.summaryRows} 行 / NEXT_TASKS ${cross.nextTasksEntries} 条条目 ⇒ ` +
+      `同尺对照 ${cross.compared} · 声明另尺 ${cross.otherRuler} · 无台账编号 ${cross.noLedger}`,
+  );
   if (broken === 0) {
     console.log(`✓ 冻结稿台账分类完整、读数新鲜(${report.archivedCount} 份归档 .md)。`);
+    console.log(
+      '⚠️ 射程限制:本闸只守「两份台账不许**沉默地**互相矛盾」,' +
+        '**不守落地度数字本身是不是真的对** —— 两边一起写错仍然全绿。闸绿 ≠ 台账准。' +
+        '台账列为 `—` 的行(无 NEXT_TASKS 编号)对照不到,见本文件头注「已知缺口」。',
+    );
   }
   process.exit(broken === 0 ? 0 : 1);
 }

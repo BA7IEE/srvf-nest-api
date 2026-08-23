@@ -66,7 +66,7 @@ RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-
 
 ## 2. 守护命令
 
-以下十二条同挂 CI 的 **Fast checks** job,且**不随 docs-only 短路**(lint / typecheck / build / unit 会因 docs-only 跳过,守护步骤不会 —— 否则 docs PR 恰好绕开了守 docs 的那些检查):
+以下十五条同挂 CI 的 **Fast checks** job,且**不随 docs-only 短路**(lint / typecheck / build / unit 会因 docs-only 跳过,守护步骤不会 —— 否则 docs PR 恰好绕开了守 docs 的那些检查):
 
 | 命令 | 守什么 | 阻断 |
 |---|---|---|
@@ -78,8 +78,11 @@ RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-
 | `pnpm docs:feclient:check` | `docs/handoff/clients/**` FE client 新鲜度 | ✅ |
 | `pnpm docs:boundaries:check` | A 类 metadata 完整性(R1/R4/R7/R10) | ✅ |
 | `pnpm docs:boundaries:ids:check` | 已登记债务的 call-site 身份仍解析得开 | ✅ |
+| `pnpm docs:boundaries:debt:check` | 债务台账 7 个语义字段完整性(不留 `pending-phase2` 占位) | ✅ |
+| `pnpm docs:boundaries:newdebt:check` | **禁新增代码债**:每条 finding 的 call-site 身份必须已在基线里 | ✅ |
 | `pnpm docs:authz:check` | ROUTE_AUTHZ manifest 新鲜度 | ✅ |
 | `pnpm gate:authz:graph:check` | R14 蕴含图注册表完整性 | ✅ |
+| `pnpm ops:required:check` | 生产必填 env / worker 脚本必须在部署 runbook 里有条目 | ✅ |
 | `pnpm docs:boundaries` | R5/R6 边界违规观察(B 类) | ❌ report |
 | `pnpm harness:servicesize` | 大 service 尺寸棘轮(Phase 6-A) | ❌ report |
 
@@ -90,7 +93,10 @@ RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-
 **不在 Fast checks 的两类**(把它们并进上表就是假读数):
 
 - **base-trusted 语义门**:`pnpm gate:authz:semantic`(R14 授权)/ `pnpm gate:contract:semantic`(R11 契约)。本地形态只是**自查**;权威裁决恒在 `.github/workflows/redzone-trusted.yml`,用 **base 分支**的判据跑 —— PR 改不动自己的裁判,代价是新门合入后的下一个 PR 才真跑。详见 [`SEMANTIC_GATES.md`](SEMANTIC_GATES.md)。
-- **本地专用,未接 CI**:`pnpm docs:boundaries:debt:check`(债务台账语义字段完整性)。
+- **挂在 `Diff guards`(`redzone-scan`)job 的三条台账/流程闸**:`pnpm exec tsx scripts/check-changelog-fragment.ts` · `scripts/check-next-tasks-state.ts` · `scripts/check-frozen-drafts-ledger.ts`。放那里而不是 Fast checks 是因为它们要 `fetch-depth: 0`(读 main 的 commit),且**必须对 docs-only PR 生效** —— 改台账的 PR 大多是 docs-only。
+
+> ⚠️ **2026-08-24 订正两处**:① 上表此前漏登 `docs:boundaries:debt:check`,并在下面写着它「本地专用,未接 CI」—— 它自 `#1009`(`dc03e153`)起就在 Fast checks 的 A 类元数据门里**阻断**跑;② 同表还漏登 `docs:boundaries:newdebt:check` 与 `ops:required:check`。
+> ⚠️ 同日补上 `check-frozen-drafts-ledger.ts` 的接线:在此之前它**唯一**入口是 unit 轮的薄运行器,而那一步对 docs-only 短路 ⇒ 冻结稿台账的六条判据恰好在最该拦的那批 PR 上一条都不跑。
 
 CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行;是流程步骤,不是守护)。
 
@@ -110,7 +116,7 @@ CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行;是流程
 | [`README.md`](README.md) | 本页:开工命令 / 执法层 / 派生文档 / 守护命令 / 定位路径 / 目录说明 |
 | [`codex-review-sop.md`](codex-review-sop.md) | 跨模型评审 SOP(何时评审 / 投放模板 / findings 处置);协议条文在 [`process §8.3`](../process.md) |
 | [`NEXT_TASKS.md`](NEXT_TASKS.md) | 后续任务清单(P0/P1/P2);逐项单独立项,**AI 不自动启动**(process §7) |
-| [`FROZEN_DRAFTS.md`](FROZEN_DRAFTS.md) | **冻结稿落地台账**:已拍板冻结的施工依据还欠多少 —— §1 逐项欠账 / §2 机器读数(生成块,手改即红)/ §3 归档评审稿全量四值分类。判据 `scripts/check-frozen-drafts-ledger.ts` 守「不许有未分类项」+「读数不过期」(`src/frozen-drafts-ledger.criteria.spec.ts` 是薄运行器);刷新读数 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` |
+| [`FROZEN_DRAFTS.md`](FROZEN_DRAFTS.md) | **冻结稿落地台账**:已拍板冻结的施工依据还欠多少 —— §1 逐项欠账 / §2 机器读数(生成块,手改即红)/ §3 归档评审稿全量四值分类。判据 `scripts/check-frozen-drafts-ledger.ts` 六条:「不许有未分类项」+「读数不过期」+ **「§1 落地度不许对 `NEXT_TASKS` 的状态行沉默地矛盾」**(治沉默不治不一致,逃生门是固定标记 `` `↔另尺(…)` ``);挂 `Diff guards` job(不随 docs-only 短路),`src/frozen-drafts-ledger.criteria.spec.ts` 是 unit 轮薄运行器;刷新读数 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` |
 | [`CAPABILITIES.md`](CAPABILITIES.md) | 能力台账(各能力终态摘要 + **已部署/未部署**);2026-08-20 从 `current-state.md` §2 迁出 —— 那份在恒读层、每字符付恒定成本,本份不付。**新增能力条目写这里** |
 | [`SIXTH_REVIEW_SCOPE.md`](SIXTH_REVIEW_SCOPE.md) | 第六轮全仓评审的**范围切分与投放包**(`v0.66.0..main` 切 6 包,含投放顺序与逐包「重点问过」);**工作计划非冻结件**,评审结论产出后另立冻结件入 `archive/reviews/` |
 
