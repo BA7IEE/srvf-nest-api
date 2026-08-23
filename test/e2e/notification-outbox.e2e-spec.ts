@@ -2257,8 +2257,20 @@ function spawnWorkerChild(args: string[]) {
     'tsconfig-paths',
     'register.js',
   );
-  // tsx/esbuild 不生成 Nest 依赖注入所需的 decorator metadata；真 OS child 必须复用
-  // TypeScript compiler + 本仓 tsconfig 的 emitDecoratorMetadata，才能等价启动生产 module。
+  // 真 OS child 必须拿到 Nest 依赖注入所需的 decorator metadata(design:paramtypes)，
+  // 才能等价启动生产 module。⭐ 判据是「转译器 emit 不 emit 这份元数据」，**不是**「必须是
+  // TypeScript compiler」—— 转译器按这条线二分，不按速度二分:
+  //   - tsx / 裸 esbuild:❌ 不实现 emitDecoratorMetadata(esbuild 不做类型分析，构造函数
+  //     参数类型被整体擦除)。2026-08-23 P2-16 实测:同一张 module 图下 5/5 个 provider 的
+  //     design:paramtypes 全为 undefined ⇒ Nest DI 当场起不来。刀①(1462b528)把 jest 全家
+  //     改纯转译时刻意没动这里，就是这条边界 —— **勿因「SWC 能换」推翻它**。
+  //   - SWC:✅ 实现 emitDecoratorMetadata(Nest 官方推荐的转译路径之一)，由
+  //     test/tsconfig.test.json 的 `ts-node.swc` 开启。2026-08-23 P2-16 实测:产出的
+  //     design:paramtypes 与 tsc 逐字节相同(含 ActivityBatchWorker 的 7 参构造)，
+  //     而每次 spawn 的 user CPU 从 ~5.5s 降到 ~1.5s。
+  // ⇒ 本函数 spawn 的次数(当前 18 次)乘的就是那个单价，故它是本 spec 的 CPU 突刺来源。
+  // ⚠️ 若 SWC 的元数据不等价，子进程的 Nest DI 会当场起不来、测试大声失败 —— 不存在
+  // 「静默劣化」的形状，这也是选它的原因之一。
   return spawn(
     process.execPath,
     ['-r', tsNodeRegister, '-r', tsconfigPathsRegister, fixture, ...args],

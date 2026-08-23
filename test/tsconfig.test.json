@@ -17,6 +17,18 @@
     // TS1205 类型裸 re-export 变硬错误);2026-08-23 开启当天实测全仓 0 违规。
     "isolatedModules": true
   },
+  // CI 提速刀③(P2-16,2026-08-23):本键**只被 ts-node 读**,唯一消费者是
+  // test/e2e/notification-outbox.e2e-spec.ts 的 spawnWorkerChild() —— 它以
+  // TS_NODE_PROJECT 指向本文件起 18 次真 OS 子进程,每次都要把两张 worker module
+  // 的整张依赖图从头转译一遍(ts-node v10 无持久缓存)。改用 SWC 后实测单次 spawn 的
+  // user CPU 5.5s → 1.5s,该 spec 整体 user CPU 115.8s → 35.1s(39/39 用例不变全过)。
+  // ⚠️ 四份 jest config(ts-jest)、`pnpm typecheck`(tsc)、eslint 都**不读** `ts-node` 键
+  // —— 已实测 `tsc --showConfig` 接受本键且 isolatedModules / emitDecoratorMetadata
+  // 全部保留,故本键对上面那段刀①的口径零影响。
+  // ⭐ 选 SWC 而不是 tsx/esbuild 的判据是「能否 emit decorator metadata」,不是速度:
+  // 实测同一张 module 图下 tsx(esbuild)产出的 design:paramtypes 5/5 全为 undefined,
+  // SWC 与 tsc 逐字节相同。理由与反向对照写在 spawnWorkerChild() 上方,勿两处漂移。
+  "ts-node": { "swc": true },
   "include": ["../src/**/*.ts", "./**/*.ts"],
   "exclude": ["../node_modules", "../dist"]
 }
