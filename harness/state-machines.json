@@ -1116,8 +1116,10 @@
       ],
       "wrongStateBizCode": "LEDGER_PREPARE_RESULT_REVISION_STATUS_INVALID",
       "implementation": "settlement / ledger service 族",
-      "governedBlockers": [],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
+      "governedBlockers": [
+        "impl-scattered"
+      ],
+      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。2026-08-24 订正:原先 governedBlockers 为空,于是它是全仓唯一一条被 --violations 报成 upgradeCandidates 的条目 —— 那是**假读数**。实测把它升 governed,L2 声明闸当场拒:`edge endpoint \"committed\" never appears as a string literal in src/modules/activities/ledger-preparation.service.ts`。根因是这台状态机物理散在 4 个文件(settlement-draft 写 draft / ledger-posting 裸 SQL 写 committed / correction-application 裸 SQL 写 superseded),L2 闸要求的单一 implementationFile 结构上给不出。⚠️ 另有三个文件(correction-application / settlement-draft / activity-settlement-http)恰好同时含 draft/committed/superseded 三个字面量,填进去闸会绿 —— 但那些字面量属于兄弟模型(ActivitySettlementClosureRevision / ParticipantServiceSegmentRevision 同为三值闭集),那是为了让闸变绿而挑文件,已否决。故按实测补 impl-scattered。"
     },
     {
       "model": "QualificationEvaluationSnapshot",
