@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:87ccae354f474a9cc666ed59a79edcfb9f74438c420abbe10c35fd27209df795 |
-| endpoint count | 550 |
+| inputDigest | sha256:ed71fd7b929a9af6ef2a9bfc73782bb64d52b38dace0efae31ce3076cb0a2481 |
+| endpoint count | 551 |
 | legacy [auth] count | 169 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -29,7 +29,7 @@
 
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
-| admin | 280 | 280 | 0 |
+| admin | 281 | 281 | 0 |
 | app | 158 | 158 | 0 |
 | system | 76 | 76 | 0 |
 | auth | 20 | 20 | 0 |
@@ -40,7 +40,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 348 |
+| rbac | 349 |
 | auth | 169 |
 | unclassified | 0 |
 
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:87ccae354f474a9cc666ed59a79edcfb9f74438c420abbe10c35fd27209df795",
+  "inputDigest": "sha256:ed71fd7b929a9af6ef2a9bfc73782bb64d52b38dace0efae31ce3076cb0a2481",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -1632,6 +1632,25 @@
         "require": "all",
         "scopes": [],
         "engine": null
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/member-insurances",
+      "controller": "MemberInsurancesWorkbenchController",
+      "handler": "list",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "member-insurance.read.other",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
       }
     },
     {
@@ -10042,6 +10061,7 @@
 | `certificate-standard.read.record` | 3 | GET /api/admin/v1/certificate-standards · GET /api/admin/v1/certificate-standards/:id · GET /api/admin/v1/certificate-standards/options |
 | `content.publish.record` | 3 | POST /api/admin/v1/contents/:id/archive · POST /api/admin/v1/contents/:id/publish · POST /api/admin/v1/contents/:id/unpublish |
 | `dict.read.item` | 3 | GET /api/system/v1/dict-items · GET /api/system/v1/dict-items/:id · GET /api/system/v1/dict-items/tree |
+| `member-insurance.read.other` | 3 | GET /api/admin/v1/member-insurances · GET /api/admin/v1/members/:memberId/insurances · GET /api/admin/v1/members/:memberId/insurances/overview |
 | `member.grant.account` | 3 | POST /api/admin/v1/members/:id/account · POST /api/admin/v1/members/:id/account/reopen · POST /api/admin/v1/members/accounts/bulk-grant |
 | `notification.publish.record` | 3 | POST /api/admin/v1/notifications/:id/archive · POST /api/admin/v1/notifications/:id/publish · POST /api/admin/v1/notifications/:id/unpublish |
 | `notification.read.record` | 3 | GET /api/admin/v1/notification-wechat-templates · GET /api/admin/v1/notifications · GET /api/admin/v1/notifications/:id |
@@ -10075,7 +10095,6 @@
 | `dict.read.type` | 2 | GET /api/system/v1/dict-types · GET /api/system/v1/dict-types/:id |
 | `dict.update.item` | 2 | PATCH /api/system/v1/dict-items/:id · PATCH /api/system/v1/dict-items/:id/status |
 | `dict.update.type` | 2 | PATCH /api/system/v1/dict-types/:id · PATCH /api/system/v1/dict-types/:id/status |
-| `member-insurance.read.other` | 2 | GET /api/admin/v1/members/:memberId/insurances · GET /api/admin/v1/members/:memberId/insurances/overview |
 | `member-portrait.manage.record` | 2 | DELETE /api/admin/v1/members/:id/official-portrait · POST /api/admin/v1/members/:id/official-portrait |
 | `member.bind.account` | 2 | POST /api/admin/v1/members/:id/account/bind · POST /api/admin/v1/members/:id/account/unbind |
 | `member.offboard.record` | 2 | GET /api/admin/v1/members/:id/offboard-impact · POST /api/admin/v1/members/:id/offboard |
@@ -10325,6 +10344,7 @@
 | GET | /api/admin/v1/contents | Admin - Content | rbac | RBAC; admission=-; codes=content.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:91; src/modules/content/content-admin.controller.ts:100 |
 | GET | /api/admin/v1/contents/:id | Admin - Content | rbac | RBAC; admission=-; codes=content.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:103; src/modules/content/content-admin.controller.ts:115 |
 | GET | /api/admin/v1/me | Admin - Me | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/users/controllers/admin-me.controller.ts:34; src/modules/users/controllers/admin-me.controller.ts:43 |
+| GET | /api/admin/v1/member-insurances | Admin - Member Insurances Workbench | rbac | RBAC; admission=-; codes=member-insurance.read.other; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/member-insurances-workbench.controller.ts:47; src/modules/insurances/member-insurances-workbench.controller.ts:60 |
 | GET | /api/admin/v1/members | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:123; src/modules/members/members.controller.ts:135 |
 | GET | /api/admin/v1/members/:id | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:359; src/modules/members/members.controller.ts:373 |
 | GET | /api/admin/v1/members/:id/audience-tags | Admin - Members | rbac | RBAC; admission=-; codes=member.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:321; src/modules/members/members.controller.ts:336 |

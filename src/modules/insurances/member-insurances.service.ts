@@ -10,6 +10,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { AuthzService } from '../authz/authz.service';
 import { RbacService } from '../permissions/rbac.service';
 import { MemberInsuranceAdminResponseDto, ReviewMemberInsuranceDto } from './insurances.dto';
+import { MEMBER_INSURANCE_ADMIN_SELECT } from './member-insurance-projection';
 
 // 保险模块 T2:admin 查队员自购保险 service(2026-06-13)。
 // 冻结评审稿 docs/archive/reviews/insurance-module-review.md §3.2 端点 14 / E-15。
@@ -20,19 +21,9 @@ import { MemberInsuranceAdminResponseDto, ReviewMemberInsuranceDto } from './ins
 // audit:查询完成后 fail-closed 落 member-insurance.read.other;extra 只记 operation/count,
 // 不记录保单号、保险公司或 id 列表。
 
-const adminSelect = {
-  id: true,
-  memberId: true,
-  insurerName: true,
-  policyNumber: true,
-  coverageStart: true,
-  coverageEnd: true,
-  createdAt: true,
-  updatedAt: true,
-  reviewStatusCode: true,
-  version: true,
-  reviewedAt: true,
-} as const satisfies Prisma.MemberInsuranceSelect;
+// 字段集与之前逐字相同(安全列 ∪ 敏感列),但不再在这里手抄一份 ——
+// 跨队员工作台也从同一份分级取字段,两个面就不可能各自漂移(见 member-insurance-projection.ts 文件头)。
+const adminSelect = MEMBER_INSURANCE_ADMIN_SELECT;
 
 type LockedReviewInsuranceRow = {
   id: string;

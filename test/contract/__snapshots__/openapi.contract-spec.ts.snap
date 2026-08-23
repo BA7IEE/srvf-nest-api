@@ -17472,6 +17472,107 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "MemberInsuranceWorkbenchItemDto": {
+    "properties": {
+      "coverageEnd": {
+        "description": "到期日期(有效性唯一依据;覆盖含当日)",
+        "format": "date-time",
+        "type": "string",
+      },
+      "coverageStart": {
+        "description": "起保日期(可空 = 未填写,不参与起保校验)",
+        "nullable": true,
+        "type": "object",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "description": "保险记录 id(cuid);审核端点的 :insuranceId",
+        "type": "string",
+      },
+      "insurerName": {
+        "description": "保险公司",
+        "type": "string",
+      },
+      "member": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MemberInsuranceWorkbenchMemberDto",
+          },
+        ],
+        "description": "所属队员",
+      },
+      "policyNumberMasked": {
+        "description": "保单号**掩码值**(前 2 + \`****\` + 后 2;≤4 位整体打码)。跨队员面永不返明文 —— 需要明文请走单人端点 \`GET /admin/v1/members/:memberId/insurances\`",
+        "nullable": true,
+        "type": "object",
+      },
+      "reviewStatusCode": {
+        "description": "审核状态(pending / verified / rejected)",
+        "type": "string",
+      },
+      "reviewedAt": {
+        "description": "最近审核时间",
+        "nullable": true,
+        "type": "object",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "version": {
+        "description": "并发控制版本号;审核端点 expectedVersion 必填,直接取这个值",
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "member",
+      "insurerName",
+      "coverageEnd",
+      "reviewStatusCode",
+      "version",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "MemberInsuranceWorkbenchMemberDto": {
+    "properties": {
+      "id": {
+        "description": "队员 id(cuid)",
+        "type": "string",
+      },
+      "label": {
+        "description": "统一展示标签 \`编号 · 姓名(外号)\`",
+        "type": "string",
+      },
+      "memberNo": {
+        "description": "队员编号",
+        "type": "string",
+      },
+      "nickname": {
+        "description": "外号",
+        "nullable": true,
+        "type": "object",
+      },
+      "realName": {
+        "description": "队员真实姓名",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "memberNo",
+      "realName",
+      "label",
+    ],
+    "type": "object",
+  },
   "MemberOffboardActivityClosureDto": {
     "properties": {
       "status": {
@@ -50196,6 +50297,215 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "Admin 视角本人身份摘要(只读 bootstrap;不内联角色/权限——权限走 rbac/me/permissions) [auth]",
       "tags": [
         "Admin - Me",
+      ],
+    },
+  },
+  "/api/admin/v1/member-insurances": {
+    "get": {
+      "operationId": "MemberInsurancesWorkbenchController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按审核状态筛选;**不传 = 不筛**(返回全部状态)",
+          "in": "query",
+          "name": "reviewStatusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "pending",
+              "verified",
+              "rejected",
+            ],
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/MemberInsuranceWorkbenchItemDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "保险审核工作列表(跨队员;按 reviewStatusCode 筛,**不传 = 不筛**;软删记录与软删队员均不出;createdAt desc)。出参保单号**恒掩码**,跨队员面永不返明文 —— 需要明文走 \`GET /admin/v1/members/:memberId/insurances\`。解锁 \`INSURANCE_ENFORCEMENT_ENABLED\` 的前置:开关前先把已录的保险审一遍 [rbac: member-insurance.read.other]",
+      "tags": [
+        "Admin - Member Insurances Workbench",
       ],
     },
   },

@@ -108,12 +108,12 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(101 个 @Controller)
+### controller × surface 对照(102 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(48 个 controller)
+#### admin/v1(49 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -141,6 +141,7 @@
 | `admin/v1/certificates` | `src/modules/certificates/certificates-workbench.controller.ts` |
 | `admin/v1/contents` | `src/modules/content/content-admin.controller.ts` |
 | `admin/v1/me` | `src/modules/users/controllers/admin-me.controller.ts` |
+| `admin/v1/member-insurances` | `src/modules/insurances/member-insurances-workbench.controller.ts` |
 | `admin/v1/members` | `src/modules/members/members.controller.ts` |
 | `admin/v1/members/:memberId` | `src/modules/activities/controllers/admin-member-participation-ledger.controller.ts` |
 | `admin/v1/members/:memberId` | `src/modules/attendances/controllers/admin-member-attendance.controller.ts` |
