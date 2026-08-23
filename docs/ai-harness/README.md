@@ -110,7 +110,7 @@ CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行;是流程
 | [`README.md`](README.md) | 本页:开工命令 / 执法层 / 派生文档 / 守护命令 / 定位路径 / 目录说明 |
 | [`codex-review-sop.md`](codex-review-sop.md) | 跨模型评审 SOP(何时评审 / 投放模板 / findings 处置);协议条文在 [`process §8.3`](../process.md) |
 | [`NEXT_TASKS.md`](NEXT_TASKS.md) | 后续任务清单(P0/P1/P2);逐项单独立项,**AI 不自动启动**(process §7) |
-| [`FROZEN_DRAFTS.md`](FROZEN_DRAFTS.md) | **冻结稿落地台账**:已拍板冻结的施工依据还欠多少 —— §1 逐项欠账 / §2 机器读数(生成块,手改即红)/ §3 归档评审稿全量四值分类。判据 `src/frozen-drafts-ledger.criteria.spec.ts` 守「不许有未分类项」+「读数不过期」;刷新读数 `pnpm exec tsx scripts/frozen-drafts-ledger.ts --write` |
+| [`FROZEN_DRAFTS.md`](FROZEN_DRAFTS.md) | **冻结稿落地台账**:已拍板冻结的施工依据还欠多少 —— §1 逐项欠账 / §2 机器读数(生成块,手改即红)/ §3 归档评审稿全量四值分类。判据 `scripts/check-frozen-drafts-ledger.ts` 守「不许有未分类项」+「读数不过期」(`src/frozen-drafts-ledger.criteria.spec.ts` 是薄运行器);刷新读数 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` |
 | [`CAPABILITIES.md`](CAPABILITIES.md) | 能力台账(各能力终态摘要 + **已部署/未部署**);2026-08-20 从 `current-state.md` §2 迁出 —— 那份在恒读层、每字符付恒定成本,本份不付。**新增能力条目写这里** |
 | [`SIXTH_REVIEW_SCOPE.md`](SIXTH_REVIEW_SCOPE.md) | 第六轮全仓评审的**范围切分与投放包**(`v0.66.0..main` 切 6 包,含投放顺序与逐包「重点问过」);**工作计划非冻结件**,评审结论产出后另立冻结件入 `archive/reviews/` |
 

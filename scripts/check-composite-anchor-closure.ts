@@ -4,6 +4,11 @@ import { join } from 'node:path';
 /**
  * 业务复合锚点闭合判据(第六轮评审 A-2 + B-03)。
  *
+ * ⚠️ 本文件在 `harness/redzone.json` 的 selfGuard 内(`scripts/check-*.ts`)。
+ *    判据逻辑刻意放在这里而不是 spec 里:spec(`src/**\/*.spec.ts`)不在 selfGuard,
+ *    任何 PR 都能顺手改松它;把**实质逻辑**放在受保护文件里,改松就必须动红区。
+ *    spec 侧只做薄运行器(见 `src/modules/activities/composite-anchor-closure.criteria.spec.ts`)。
+ *
  * 规则一句话:**凡是同时保存 ≥2 个业务锚点的模型,其指向同链对象的外键必须是复合的**。
  *
  * 为什么这是一类缺陷而不是若干实例:多张表同时存 activity / session / member 等多个
@@ -122,7 +127,8 @@ export const ANCHOR_CLOSURE_EXEMPTIONS: readonly AnchorExemption[] = [
   },
 ];
 
-const SCHEMA_PATH = join(__dirname, '..', '..', '..', 'prisma', 'schema.prisma');
+// ⚠️ 本文件从 `src/modules/activities/` 搬进 `scripts/` 时,这里的层级从三级变一级。
+const SCHEMA_PATH = join(__dirname, '..', 'prisma', 'schema.prisma');
 
 export function readSchemaText(): string {
   return readFileSync(SCHEMA_PATH, 'utf8');
@@ -281,3 +287,217 @@ export function describeViolation(violation: AnchorViolation): string {
     `      被引用侧需 ${violation.target} 上有 @@unique([${violation.requiredUniqueOnTarget.join(', ')}])`
   );
 }
+
+// ============================================================================
+// 地板锚点 —— 原先以字面量写在 spec 里
+//
+// 「扫描面为空 ⇒ 零违规 ⇒ 全绿」是本仓已登记的假绿形状。下面几条用**地板锚点**
+// (至少有多少)而不是「恰好 N 条」—— 写死数量的自证会在下次加表时过期,
+// 然后被人顺手改大,判据就此失去意义。
+//
+// 放在这里而不是 spec 里的理由:它们是判据的**强度旋钮**。写在 spec 里的
+// `toBeGreaterThan(80)` 可以被任何 PR 改成 `toBeGreaterThan(0)`,零授权零痕迹。
+// ============================================================================
+
+/** 解析出的模型数地板。低于它说明 schema 解析器坏了,不是「仓库真的只剩这么几张表」。 */
+export const MIN_PARSED_MODELS = 80;
+
+/** 持有 ≥2 个业务锚点的模型数地板 —— 管辖面远不止那四张具名表。 */
+export const MIN_ANCHOR_HOLDERS = 15;
+
+/** 被检查的 to-one 关系数地板 —— 证明判据真的逐条看过关系,不是空转。 */
+export const MIN_INSPECTED_RELATIONS = 50;
+
+/** 豁免理由的最短长度 —— 防止白名单里塞「TODO」「暂时」这种空理由。 */
+export const MIN_EXEMPTION_REASON_LENGTH = 20;
+
+/** 必须落在管辖内的具名表(地板,不是全集)。 */
+export const NAMED_ANCHOR_TABLES = [
+  'ActivityParticipationIdentity',
+  'AttendancePunchEvent',
+  'ParticipationLedgerEntry',
+  'OfflinePackageParticipant',
+];
+
+/** 指向全局实体的操作者类关系 —— 这些**不该**被判红(Activity/User/Member 是链根)。 */
+export const GLOBAL_ENTITY_TARGETS = ['User', 'Member', 'Activity'];
+
+// ============================================================================
+// 结论:把「扫 + 套白名单」合成一次调用
+//
+// 原先 spec 里写的是 `findAnchorViolations(models).filter((v) => !isExempt(...))` ——
+// **白名单的应用**是判定口径的一部分,放在 spec 里意味着把 filter 改成
+// `.filter(() => false)` 就能全绿。搬进来。
+// ============================================================================
+
+export interface AnchorClosureReport {
+  models: Map<string, PrismaModel>;
+  holders: PrismaModel[];
+  /** 已套用豁免白名单的违规 —— 主断言看这个。 */
+  violations: AnchorViolation[];
+  /** 未套白名单的原始违规 —— 「豁免是否过期」要看这个。 */
+  rawViolations: AnchorViolation[];
+  /** 被逐条检查过的 to-one 关系数。 */
+  inspectedRelations: number;
+}
+
+export function analyzeAnchorClosure(schemaText: string = readSchemaText()): AnchorClosureReport {
+  const models = parsePrismaModels(schemaText);
+  const holders = findAnchorHolders(models);
+  const rawViolations = findAnchorViolations(models);
+  return {
+    models,
+    holders,
+    rawViolations,
+    violations: rawViolations.filter((v) => !isExempt(v.model, v.relation)),
+    inspectedRelations: holders
+      .flatMap((model) => model.relations)
+      .filter((relation) => !relation.list && relation.fields.length > 0).length,
+  };
+}
+
+/** 已经没有对应违规的豁免 —— 留着会让人误以为「这几处是故意不闭合的」。 */
+export function staleExemptions(report: AnchorClosureReport): string[] {
+  return ANCHOR_CLOSURE_EXEMPTIONS.filter(
+    (exemption) =>
+      !report.rawViolations.some(
+        (violation) =>
+          violation.model === exemption.model && violation.relation === exemption.relation,
+      ),
+  ).map((item) => `${item.model}.${item.relation}`);
+}
+
+/** 理由太短的豁免。 */
+export function thinExemptionReasons(): string[] {
+  return ANCHOR_CLOSURE_EXEMPTIONS.filter(
+    (exemption) => exemption.reason.length <= MIN_EXEMPTION_REASON_LENGTH,
+  ).map((item) => `${item.model}.${item.relation}`);
+}
+
+/** 操作者类关系被误判 —— 若「同链」判据改用「列名相同」就会大面积误红。 */
+export function misflaggedActorRelations(report: AnchorClosureReport): AnchorViolation[] {
+  return report.rawViolations.filter((violation) =>
+    GLOBAL_ENTITY_TARGETS.includes(violation.target),
+  );
+}
+
+// ============================================================================
+// 变异对拍:正对照 / 反对照
+//
+// 没有这两条,一个恒返回 [] 的 findAnchorViolations 也会让主断言全绿。
+// 它们原先带着正则与字符串替换写在 spec 里 —— 那正是判据「会不会红」的证明本身。
+// ============================================================================
+
+const CLOSED_RELATION_SNIPPET =
+  'participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict)';
+
+const REVERTED_RELATION_SNIPPET =
+  'participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)';
+
+/** schema 文本里把连续空白压成单空格,便于按片段比对。 */
+export function normaliseSchema(schemaText: string): string {
+  return schemaText.replace(/[ \t]+/g, ' ');
+}
+
+/** 前置:被测的那处**当下确实是闭合的**(否则下面的变异是空变异)。 */
+export function closedRelationIsPresent(schemaText: string = readSchemaText()): boolean {
+  return normaliseSchema(schemaText).includes(CLOSED_RELATION_SNIPPET);
+}
+
+/**
+ * 正对照:把一处已闭合的复合外键退回单列 ⇒ 判据必须当场红,并点名。
+ */
+export function revertedCompositeKeyControl(schemaText: string = readSchemaText()): {
+  changed: boolean;
+  violations: AnchorViolation[];
+} {
+  const normalised = normaliseSchema(schemaText);
+  const reverted = normalised.replace(CLOSED_RELATION_SNIPPET, REVERTED_RELATION_SNIPPET);
+  return {
+    changed: reverted !== normalised,
+    violations: analyzeAnchorClosure(reverted).violations,
+  };
+}
+
+/** 新建的同形状表(证明扫描面是**动态**的,不是写死的四张表名单)。 */
+export const INJECTED_FUTURE_TABLE = `
+model FutureAnchorTable {
+  id         String @id @default(cuid())
+  activityId String
+  sessionId  String
+  memberId   String
+  positionId String
+
+  activity Activity                @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  position ActivitySessionPosition @relation(fields: [positionId], references: [id], onDelete: Restrict)
+}
+`;
+
+/**
+ * 反对照:新建一张同形状的表 ⇒ 判据必须也管得住。
+ * 若把管辖范围写死成四张表的名单,`FutureAnchorTable` 会被一声不吭放过。
+ */
+export function futureTableControl(schemaText: string = readSchemaText()): AnchorViolation[] {
+  return analyzeAnchorClosure(`${schemaText}\n${INJECTED_FUTURE_TABLE}`).violations.filter(
+    (violation) => violation.model === 'FutureAnchorTable',
+  );
+}
+
+/** 自证:仪器没瞎才报数。返回空数组 = 自证通过。 */
+export function selfCheck(report: AnchorClosureReport): string[] {
+  const problems: string[] = [];
+
+  if (report.models.size <= MIN_PARSED_MODELS) {
+    problems.push(`schema 解析塌了:只解析出 ${report.models.size} 个模型,地板是 >${MIN_PARSED_MODELS}。`);
+  }
+  if (report.holders.length < MIN_ANCHOR_HOLDERS) {
+    problems.push(
+      `管辖面塌了:只找到 ${report.holders.length} 个多锚点模型,地板是 ${MIN_ANCHOR_HOLDERS}。`,
+    );
+  }
+  if (report.inspectedRelations < MIN_INSPECTED_RELATIONS) {
+    problems.push(
+      `检查过的 to-one 关系只有 ${report.inspectedRelations} 条,地板是 ${MIN_INSPECTED_RELATIONS} —— 判据在空转。`,
+    );
+  }
+  for (const table of NAMED_ANCHOR_TABLES) {
+    if (!report.holders.some((model) => model.name === table)) {
+      problems.push(`具名表 ${table} 掉出了管辖面 —— 锚点识别逻辑坏了。`);
+    }
+  }
+  if (!closedRelationIsPresent()) {
+    problems.push('正对照的前置不成立:被测的那处复合外键当下不是闭合的 ⇒ 变异会变成空变异。');
+  }
+
+  return problems;
+}
+
+function main(): void {
+  const report = analyzeAnchorClosure();
+  const problems = selfCheck(report);
+  for (const problem of problems) console.error(`🔴 自证失败:${problem}`);
+
+  for (const violation of report.violations) {
+    console.error(`🔴 ${describeViolation(violation)}`);
+  }
+  for (const stale of staleExemptions(report)) {
+    console.error(`🔴 豁免已过期(不再对应任何真实违规,应删掉):${stale}`);
+  }
+
+  const broken = problems.length + report.violations.length + staleExemptions(report).length;
+  if (broken === 0) {
+    console.log(
+      `✓ 多锚点表的同链外键全部闭合(${report.holders.length} 个多锚点模型 / ` +
+        `${report.inspectedRelations} 条 to-one 关系)。`,
+    );
+  } else {
+    console.error(
+      '\n修法二选一:' +
+        '\n  1) 把缺失的锚点列加进 @relation 的 fields/references(并在被引用侧补 @@unique);' +
+        '\n  2) 确属正确的单列外键 ⇒ 加进 ANCHOR_CLOSURE_EXEMPTIONS,并写明**指向权威源**的理由。',
+    );
+  }
+  process.exit(broken === 0 ? 0 : 1);
+}
+
+if (require.main === module) main();

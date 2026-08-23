@@ -1,10 +1,16 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, relative, resolve } from 'node:path';
 
 import * as ts from 'typescript';
 
 /**
  * 活动图片引用判据(P2-14 刀 A)。
+ *
+ * ⚠️ 本文件在 `harness/redzone.json` 的 selfGuard 内(`scripts/check-*.ts`)。
+ *    判据逻辑刻意放在这里而不是 spec 里:spec(`src/**\/*.spec.ts`)不在 selfGuard,
+ *    任何 PR 都能顺手改松它;把**实质逻辑**放在受保护文件里,改松就必须动红区。
+ *    spec 侧只做薄运行器(见 `src/modules/activities/activity-image-reference.criteria.spec.ts`)。
  *
  * 规则一句话:**活动模块的可写 DTO 上不得存在任何 `*ImageUrl` / `*ImageUrls` 形状的字段**。
  *
@@ -33,8 +39,18 @@ import * as ts from 'typescript';
  *    与签名断言负责,三者缺一不可。
  */
 
+const ROOT = resolve(__dirname, '..');
+
 /** 扫描面:活动模块全部 TS 源(含 dto/ 与 controllers/ 子目录)。 */
 export const ACTIVITY_SOURCE_ROOT = join('src', 'modules', 'activities');
+
+/**
+ * 扫描面地板:至少要扫到这么多个 class,否则说明扫描器坏了 / 目录挪走了。
+ *
+ * 原先这个 `50` 以字面量写在 spec 里 —— 那正是「把判据改松」最省事的下手处
+ * (改成 `0`,diff 一个字符,没人看得见)。现在它是受保护文件里的具名常量。
+ */
+export const MIN_SCANNED_DTO_CLASSES = 50;
 
 /**
  * 被禁的字段形状。`ImageUrl` / `ImageUrls` 结尾即命中,前缀任意。
@@ -94,7 +110,7 @@ function decoratorName(decorator: ts.Decorator): string | null {
  *
  * @param repoRoot 仓库根;判据在 spec 里以 `process.cwd()` 传入。
  */
-export function findWritableImageUrlFields(repoRoot: string): ImageUrlFieldViolation[] {
+export function findWritableImageUrlFields(repoRoot: string = ROOT): ImageUrlFieldViolation[] {
   const violations: ImageUrlFieldViolation[] = [];
   const root = join(repoRoot, ACTIVITY_SOURCE_ROOT);
 
@@ -144,7 +160,7 @@ export function findWritableImageUrlFields(repoRoot: string): ImageUrlFieldViola
  * 而它要防的其实是「扫描器坏了 / 目录挪走了 ⇒ 零命中 ⇒ 判据自动全绿」。
  * 地板锚点(不是精确计数)是本仓登记过的正确形状。
  */
-export function countScannedDtoClasses(repoRoot: string): number {
+export function countScannedDtoClasses(repoRoot: string = ROOT): number {
   let count = 0;
   const root = join(repoRoot, ACTIVITY_SOURCE_ROOT);
   for (const file of listTsFiles(root)) {
@@ -158,3 +174,100 @@ export function countScannedDtoClasses(repoRoot: string): number {
   }
   return count;
 }
+
+// ============================================================================
+// 自证对照:真阳性 / 假阳性各一条
+//
+// 这两条原先以 `mkdtempSync` + `writeFileSync` 的形态写在 spec 里 —— 那是判据
+// 「会不会红」的证明本身,放在无保护文件里等于证明可以被顺手删掉。
+// 搬进来后 spec 只拿结果,不再自己造夹具。
+//
+// 刻意在**临时目录**里复刻扫描面结构,不在真实 src/ 上做变异 —— 那会污染工作树。
+// ============================================================================
+
+function withFixture(fileName: string, lines: string[]): ImageUrlFieldViolation[] {
+  const tmp = mkdtempSync(join(tmpdir(), 'p214-criteria-'));
+  try {
+    const dir = join(tmp, ACTIVITY_SOURCE_ROOT);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, fileName), lines.join('\n'), 'utf-8');
+    return findWritableImageUrlFields(tmp);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+/** 真阳性对照:人工造一个带校验装饰器的 `*ImageUrl` 字段,判据必须抓到。 */
+export function positiveControl(): ImageUrlFieldViolation[] {
+  return withFixture('fake.dto.ts', [
+    'export class CreateSomethingDto {',
+    '  @ApiPropertyOptional({ maxLength: 512 })',
+    '  @IsOptional()',
+    '  @IsString()',
+    '  bannerImageUrl?: string;',
+    '}',
+  ]);
+}
+
+/**
+ * 假阳性对照:只带 `@ApiProperty` 的响应字段不算可写,必须放行。
+ *
+ * 判据若在这里也红,它就没法用了(整个读出面都会红)——
+ * 出参里的 `coverImageUrl` 是**现签 URL**,是本刀想要的结果,不是缺陷。
+ */
+export function negativeControl(): ImageUrlFieldViolation[] {
+  return withFixture('fake-response.dto.ts', [
+    'export class SomethingResponseDto {',
+    '  @ApiPropertyOptional({ nullable: true })',
+    '  coverImageUrl!: string | null;',
+    '}',
+  ]);
+}
+
+/** 自证:仪器没瞎才报数。返回空数组 = 自证通过。 */
+export function selfCheck(): string[] {
+  const problems: string[] = [];
+
+  const scanned = countScannedDtoClasses();
+  if (scanned <= MIN_SCANNED_DTO_CLASSES) {
+    problems.push(
+      `扫描面塌了:只扫到 ${scanned} 个 class,地板是 >${MIN_SCANNED_DTO_CLASSES}。` +
+        '「判据失去输入 ≠ 通过」—— 目录挪走了或扫描器坏了。',
+    );
+  }
+
+  const positive = positiveControl();
+  if (positive.length !== 1 || positive[0]?.fieldName !== 'bannerImageUrl') {
+    problems.push('真阳性对照失败:人工造的 bannerImageUrl 没被抓到 —— 判据不会红了。');
+  }
+
+  const negative = negativeControl();
+  if (negative.length !== 0) {
+    problems.push('假阳性对照失败:只带 @ApiProperty 的响应字段被误判成可写 —— 判据不可用。');
+  }
+
+  return problems;
+}
+
+function main(): void {
+  const problems = selfCheck();
+  for (const problem of problems) console.error(`🔴 自证失败:${problem}`);
+
+  const violations = findWritableImageUrlFields();
+  for (const v of violations) {
+    console.error(
+      `🔴 可写 DTO 上有裸图片 URL 字段:${v.file}:${v.line} ${v.className}.${v.fieldName}` +
+        `(装饰器:${v.decorators.join(' ')})`,
+    );
+  }
+
+  const broken = problems.length + violations.length;
+  if (broken === 0) {
+    console.log(`✓ 活动模块可写面无 *ImageUrl 字段(扫描面 ${countScannedDtoClasses()} 个 class)。`);
+  } else {
+    console.error('\n修法:图片一律走附件 id + 现签 URL,不要在可写 DTO 上收裸 URL 字符串。');
+  }
+  process.exit(broken === 0 ? 0 : 1);
+}
+
+if (require.main === module) main();

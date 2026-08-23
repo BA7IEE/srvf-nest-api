@@ -68,7 +68,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { runCriteria } from '../src/common/activity-workflow/activity-workflow-gate.criteria';
+import { runCriteria } from './check-activity-workflow-gate';
 import {
   parseActivityResponsibilityWorkflowEnabled,
   parseActivityV11WorkflowEnabled,

@@ -11,8 +11,9 @@
 > 都没登记。**漏登记不产生任何坏链接**,所以既有守护一次都没响过;
 > 这与 `docs/ai-harness/README.md` 当年漂成"恰 4 文件"是同一类缺陷,那边已有闸、这边没有。
 >
-> **怎么刷新读数**:`pnpm exec tsx scripts/frozen-drafts-ledger.ts --write`
-> **闸在哪**:`src/frozen-drafts-ledger.criteria.spec.ts`(CI Fast 的 unit job)。见 §4。
+> **怎么刷新读数**:`pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write`
+> **闸在哪**:`src/frozen-drafts-ledger.criteria.spec.ts`(CI Fast 的 unit job)—— 它只是**薄运行器**,
+> 实质判定在 `scripts/check-frozen-drafts-ledger.ts`(selfGuard 内)。见 §4。
 
 ---
 
@@ -73,7 +74,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ## 2. 机器读数
 
 <!-- frozen-drafts:readings:begin -->
-<!-- 由 `pnpm exec tsx scripts/frozen-drafts-ledger.ts --write` 生成;禁止手改。
+<!-- 由 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` 生成;禁止手改。
      判据 `src/frozen-drafts-ledger.criteria.spec.ts` 逐字节比对,手改即红。 -->
 
 | 读数 | 值 | 取自 |
@@ -213,8 +214,13 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 ## 4. 这份台账由什么守着
 
-判据:`src/frozen-drafts-ledger.criteria.spec.ts`;计算:`scripts/frozen-drafts-ledger.ts`。
+判据与计算都在 `scripts/check-frozen-drafts-ledger.ts`(在 selfGuard 内,改松要过红区人闸);
+`src/frozen-drafts-ledger.criteria.spec.ts` 只是**薄运行器**,负责让 `pnpm test` 收它。
 跑在 CI Fast 的 unit job 里,**不随 docs-only 短路**。
+
+> ⭐ 这份计算侧原名 `scripts/frozen-drafts-ledger.ts` —— 放在 `scripts/` 下却不匹配任何
+> selfGuard glob(`check-*` / `generate-*` / `replay-*` / `*.selftest.*`),实测 `harness:needs`
+> **0 需授权**,即零保护。「搬进 `scripts/`」不够,必须**搬成 `check-*.ts`**;2026-08-23 改名收编。
 
 | # | 判据 | 会在什么时候红 |
 |---|---|---|
