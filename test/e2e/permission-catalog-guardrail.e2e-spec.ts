@@ -248,23 +248,38 @@ describe('权限目录护栏(seed 事实闭包内的权限码)', () => {
   });
 
   // ===========================================================================
-  // 改码护栏(DoD 3)—— 既有实现已经锁死,这里是**回归锁**不是新行为
+  // 改码护栏 —— 分两段读:
+  //   · code 不可改(DoD 3,PR 1):既有实现已锁死,是**回归锁**不是新行为
+  //   · description 也不可改(P1-32 PR 3b,2026-08-23):**这一条是新行为**,
+  //     而且是**推翻一条刻意设计** —— 见 biz-code 30110 的注释块与 prisma/seed.ts
+  //     那句 `update: {}`(原注释「防止运营运行时调整被 seed 回退」的前提已不成立)。
+  // ⇒ 至此 PATCH 对闭包内的码**不再存在成功路径**,与 POST 同型且刻意。
   // ===========================================================================
-  describe('PATCH:闭包内码的 code 不可改', () => {
-    it('只改 description → 200,code 不变', async () => {
+  describe('PATCH:闭包内码的 code 与 description 都不可改', () => {
+    // 🔴 本用例**曾经断言 200**(「只改 description → 200,code 不变」)——
+    //    那是 PR 1 时代的正确行为,description 当时刻意允许运行时改。
+    //    PR 3b 把它关上了。这里**保留这条路曾经通的事实**,把断言翻面成「现在被拒」,
+    //    而不是删掉用例 —— 删掉会让「它曾经是允许的」从测试里彻底消失。
+    it('只改 description 也被拒(30110;PR 3b 前这里返 200)', async () => {
       const target = await prisma.permission.findUnique({
         where: { code: 'rbac.permission.read' },
-        select: { id: true },
+        select: { id: true, description: true },
       });
       expect(target).not.toBeNull();
 
       const res = await request(httpServer(app))
         .patch(`/api/system/v1/permissions/${target!.id}`)
         .set('Authorization', superAdminAuth)
-        .send({ description: '改个说明是允许的' });
-      expect(res.status).toBe(200);
-      expect(res.body.data.code).toBe('rbac.permission.read');
-      expect(res.body.data.description).toBe('改个说明是允许的');
+        .send({ description: '改个说明是不允许的' });
+      expectBizError(res, BizCode.SEED_PERMISSION_UPDATE_FORBIDDEN);
+
+      // 只看返回码不够:真正的不变量是**库里没被改**。
+      const after = await prisma.permission.findUnique({
+        where: { id: target!.id },
+        select: { code: true, description: true },
+      });
+      expect(after?.code).toBe('rbac.permission.read');
+      expect(after?.description).toBe(target!.description);
     });
 
     it('试图改 code → 被 DTO 白名单拒,且库里 code 一字未动', async () => {

@@ -56,4 +56,17 @@
   - `C2` 仍刻画 `permission.update` 的 audit 形状,只是被改对象改由 prisma 直建一条**闭包外**的码 —— 与同文件 `C3` 处理 delete 时**同一手法**,不是新发明的。
   - 新增 `C2b` 保住「这条路曾经通」这个事实:同样的动作、同样的**闭包内**码(`member.update.record`,正是 `C2` 原本用的那条),现在必须被拒 `30110`,并额外断言**真的没写**(行未改 + 无 audit 残留)。
 
+- **`permission-catalog-guardrail` 的 PATCH 回归锁同样翻面保留、没删**:该 spec 的
+  「只改 description → 200,code 不变」是 PR 1 时代的正确行为(那时 description **刻意**允许运行时改),
+  PR 3b 把它关上 ⇒ 断言翻成「被拒 `30110`」并补上「库里 code 与 description 都没动」的不变量断言,
+  用例标题写明「PR 3b 前这里返 200」。describe 块标题与注释同步改准(从「code 不可改」扩到「code 与 description 都不可改」)。
+
+  ⚠️ **这条是 CI 抓出来的,不是本机发现的** —— 本机 `agent:check:quick` 不含 e2e,而起草阶段找调用点的
+  grep 要求 URL 与 `.patch(` 同行,恰好漏掉这个跨行写法(`.patch(\`…\`)` 在下一行)。如实记下:
+  「全仓只有一处调用点」这个中间结论当时是错的,正确读数是**两个 spec 共 9 处 PATCH 调用点**。
+
+- **反向用例已由 CI 实证**:`permissions.e2e-spec.ts` 的 7 处 PATCH 全部通过 —— 它们的夹具由 prisma 直建
+  且码**不在闭包内**(`pb.user.patch` / `attachment.upload.cert` 等),故不受本闸影响。
+  这正是「闭包外的码行为一字不变」那条反向断言,现在有真实 CI 读数而不只是构造上的推理。
+
 - **补一笔欠账(维护者 2026-08-22 定「并进下一刀」)**:`changelog.d/system-role-runtime-readonly.md` 的「变异对拍读数」段缺出处标注,已补明那三条读数是**本机跑**、未经 CI 复跑。补在 fragment 里而非 PR body —— 后者发版时不带走。
