@@ -225,8 +225,15 @@ const BATCH2_ACCEPTANCE_DESTINATIONS: Readonly<Record<string, readonly Acceptanc
 };
 
 const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
-  // AC-047:现有 submit 仅覆盖开放段；与最后一次合法签退并发的端到端链属于第 5 批 Punch。
-  'AC-047': '卡第 5 批最后一次合法签退/窗口并发链；当前只覆盖开放服务段拒绝。',
+  // AC-047:2026-08-24 分拣刀订正 —— 「卡第 5 批」已过期(第 5 批 #1032 已合),
+  //   而且那条并发链就在 `activity-batch5-punch-concurrency.e2e-spec.ts` 里(已绑给 ADV-001)。
+  //   剩下的是一格**此前从没被写出来过**的真缺口:「活动未结束」没有独立执行位。
+  'AC-047':
+    '「卡第 5 批最后一次合法签退/窗口并发链」已过期:第 5 批(#1032)已给出 checkout×submit 的真并发用例;' +
+    '开放服务段(submit 侧 SETTLEMENT_SUBMIT_OPEN_SEGMENT)与签退窗口未关闭(封场侧 EVIDENCE_SEAL_CHECKOUT_WINDOW_OPEN)也都有 red-first 证据。' +
+    '真缺口是三个前置里的第一个:「**活动未结束**」全链没有独立执行位 —— submit 与封场都不读 Activity.endAt,' +
+    '实践中靠「签退窗口未关闭」间接覆盖,而**零 live 场次时窗口真空成立**,该形态既无闸也无判据;' +
+    '「只允许整理草稿」的正面一半(被拒的同时草稿仍可编辑)亦无同夹具断言。',
   // AC-049:当前覆盖人口数量，不覆盖 absent 零时长不得进入有效服务明细的完整投影。
   'AC-049': '缺 absent 零时长结果到有效服务明细的端到端断言。',
   // AC-054:现有规模用例为 8192，未覆盖合同固定的 10000 人与 0%/100%读面组合。
@@ -241,19 +248,60 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   //    小规模的「在途不漏进正式结果」已由
   //    `test/e2e/activity-batch7-in-flight-display.e2e-spec.ts` 不变量 1a / 3b 钉住,
   //    但**规模那一半仍然是空的** —— 本条因此照旧 todo,不拿一半凑完成数。
-  'AC-054': '缺 10000 人准备期间的 0%/100%读面规模用例；现有上限是 8192。',
+  //
+  // 🔴 **2026-08-24 分拣刀补一条硬天花板(判为 B 档「能写但太重」的实测依据)**:
+  //    统一生效走 `runMemberLinearizedTransaction`,并被 `ledger-commit-lock-budget.ts`
+  //    的**全局槽位预算**闸住 —— `LEDGER_COMMIT_LOCK_SLOT_COUNT = 10` ×
+  //    `LEDGER_COMMIT_MEMBERS_PER_SLOT = 1000` = 10000 把队员 advisory 锁。
+  //    也就是说 **10000 人恰好用尽全部 10 个槽**(`requiredSlots(10000) = 10`),
+  //    **超过 10000 恒不可能通过**(`ledgerCommitExceedsTotalBudget`)。
+  //    再往上是 PG 共享锁表的公式保底 12800(64 × 200,第 0 批 lock-probe §6 实测),
+  //    而那张表是**整个实例共享**的、不是每库一份 —— e2e 按 worker 派生独立库、
+  //    共用同一个 PostgreSQL 实例 ⇒ 一条 10000 人的用例会占掉全实例 78% 的锁表条目,
+  //    把 `out of shared memory` 撒到**别的 spec** 上。⇒ 这不是「跑得慢」,是造 flake 机器。
+  //    事务预算另注:该路径是 `MEMBER_TX_TIMEOUT_MS`(4000 锁等待 + 3000 业务 = **7000ms**),
+  //    不是 Prisma 默认的 5000 —— 别把 AC-068 那条 5000ms 的读数套到本条上。
+  'AC-054':
+    '缺 10000 人准备期间的 0%/100% 读面规模用例;现有上限是 8192。' +
+    'B 档(需专门的规模测试方案):10000 人恰好用尽 ledger-commit 的全部 10 个全局槽位' +
+    '(10 槽 × 1000 人/槽),>10000 由 ledgerCommitExceedsTotalBudget 恒拒;' +
+    'PG 共享锁表公式保底 12800 是**全实例共享**,e2e 各 worker 同实例 ⇒ 会把 out of shared memory 撒到别的 spec。',
   // AC-055:现有重放覆盖一次，不是终审、恢复、更正各 100 次。
-  'AC-055': '缺终审、任务恢复和更正各重复 100 次的总额恒等测试。',
+  'AC-055':
+    '缺终审、任务恢复和更正各重复 100 次的总额恒等测试(现有三条链各只有「重放一次不翻倍」的幂等证据)。' +
+    'B 档(需专门的耐久方案):三轴 × 100 轮完整事务链,**耗时是估计不是实测**' +
+    '(本刀无连库权限;可比读数是同仓 8192 人规模 spec 自述单跑 1–2 分钟)。',
   // AC-056:现有用例覆盖同活动同日多场次，未覆盖多活动稳定分配顺序。
   'AC-056': '缺同一北京日多活动的稳定分配顺序与 capped-out 展示断言。',
-  // AC-057:跨北京零点的服务段来自第 5 批 Punch 链，当前第 2 批夹具未生产该形态。
-  'AC-057': '卡第 5 批跨北京零点 Punch/服务段链。',
-  // AC-060:#9 requestedChangeJson 结构尚未定义；评价资格联动已由 AC-065 独立收口。
-  'AC-060': '卡已知合同缺口 #9 requestedChangeJson 结构。',
+  // AC-057:2026-08-24 分拣刀订正 —— 「卡第 5 批」已过期(#1032 已合),
+  //   卡的从来不是批次,是**没有人造过跨零点的夹具**。
+  'AC-057':
+    '「卡第 5 批」已过期(#1032 已合):拆日算法 `splitRecognizedIntoDays` 早已存在并有纯函数单测(15:00Z→17:00Z 断在 16:00Z)。' +
+    '真缺口是夹具:全套 e2e 的服务段**一律落在同一个北京日内**(账本 spec 固定 LEDGER_DATE、punch spec 08:00Z→12:00Z),' +
+    '「跨零点拆两日」在 e2e 层零覆盖,而「**拆开后各自跑每日 3 分上限**」这半格连单测都没有。',
+  // AC-060:2026-08-24 分拣刀订正 —— **原文是错的**。
+  //   #9 作为「合同文本未定义」仍然开着,但它**不构成本条的阻塞**:
+  //   `correction-change-set.ts`(第 2 批第七刀 #923,比本卡点 #949 还早)已给出带
+  //   schemaVersion 的显式闭集,十值 resultCode 含 absent / present,并已由
+  //   `correction-application.service.ts` 在提交与生效两处真解析、形状不符即 20102。
+  //   ⇒ 拿「结构未定义」当理由,把一条**只差用例**的编号写成了「做不了」。
+  'AC-060':
+    '原卡点「卡合同缺口 #9 requestedChangeJson 结构」**是错的**:该结构已由 correction-change-set.ts(第 2 批第七刀 #923)以带 schemaVersion 的显式闭集补齐,' +
+    '十值 resultCode 含 absent / present,提交与生效两处真解析、形状不符 20102 —— 合同文本仍未定义(#9 作为**文本**缺口不关),但它不阻塞本条。' +
+    '真缺口是用例:全仓没有任何 e2e 把结果码 flip(absent↔present)走一遍 submit→approve→prepare→commit,' +
+    '并在同一夹具里同时断言人员 / 时长 / 分数 / 评价资格 / 关闭版本五格一致变化(现有更正 e2e 与 journey 全部硬编码 present,' +
+    '评价资格那格由 AC-065 用**手写第二条 closure** 的夹具覆盖,没走真更正链)。',
   // AC-063:已有 close×close；未有 close 与最后终审/更正的真实并发屏障。
-  'AC-063': '缺关账×最后终审、关账×最后更正的 Activity-lock 并发用例。',
+  'AC-063':
+    '缺关账×最后终审、关账×最后更正的 Activity-lock 并发用例(三条路径都已在 Activity FOR UPDATE 之后,能力在)。' +
+    '⚠️ 写它要先给 `activity-settlement-closure.e2e-spec.ts` 加第二实例:该 spec 目前是单 app / 单 pool,' +
+    '写不出真竞态(现有 close×close 用的是不同 key 的串行两连发)。',
   // AC-064:archive action 读写入口尚未在本刀开放，现有仅证明等待期不是永久截止。
-  'AC-064': '卡后续 archive action；现有仅覆盖归档等待期不是更正永久截止。',
+  //   2026-08-24 分拣刀复核并把「零实现」写实:全仓无 archive 路由、无 archive 状态值。
+  'AC-064':
+    '卡后续 archive action;现有仅覆盖归档等待期不是更正永久截止。' +
+    '复核实况(2026-08-24):活动状态闭集只有 draft/published/completed/cancelled/terminated,无 archived;' +
+    'managed 活动控制器无 archive 动作;`archiveWaitingUntil` 是结算关账的**派生**读数,不是归档能力。',
   // ADV-001:同 AC-047，需第 5 批真实最后签退的并发入口。
   //
   // ⚠️ 这条**看起来**该删(第 5 批已在 BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS 里给了
@@ -263,15 +311,31 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   //    跨批次交付时,前批留卡点、后批给去向是本登记表的**既定形状**,不是矛盾。
   'ADV-001': '卡第 5 批结算提交×最后一次合法签退的真并发入口。',
   // ADV-008:合同点名六个 10000 条 kill/recover 检查点，现有 8192 规模 test 不等价。
-  'ADV-008': '缺 10000 条在 1/199/200/201/9999/10000 检查点 kill/recover 演练。',
-  // ADV-010:入队进度刷新与多活动记分尚无同一事务/并发集成能力。
-  'ADV-010': '卡多活动记分×入队进度刷新的并发集成链。',
+  'ADV-008':
+    '缺 10000 条在 1/199/200/201/9999/10000 检查点 kill/recover 演练。' +
+    'B 档(需专门的规模测试方案):与 AC-054 同一条天花板 —— 10000 恰好用尽全部 10 个 ledger-commit 槽位,' +
+    '且 6 个检查点意味着同规模夹具至少重建 6 次;`out of shared memory` 会串到同实例的别的 spec 上。',
+  // ADV-010:2026-08-24 分拣刀复核 —— 比原文更重:不是「缺并发集成用例」,是两条链根本不相交。
+  'ADV-010':
+    '不是缺用例,是能力缺口:新账本走 MemberContributionDayState / ParticipationLedgerEntry,' +
+    '而入队进度 `computeCappedContribution` 读的是**旧考勤** attendanceRecord —— 两条链取数源不相交,' +
+    '活动模块对 team-join 只 import 了 GLOBAL_DAILY_CONTRIBUTION_CAP 一个常量。' +
+    '「多活动记分×入队进度刷新」当前没有可并发的接缝可测;接缝本身要先立项。',
   // ADV-011:现有 partial unique 是串行覆盖，未有同 target 两个更正申请的真并发屏障。
-  'ADV-011': '缺同一结算项两份更正申请的双实例真并发用例。',
-  // ADV-012:缺席转出勤后的评价联动已由 AC-065 覆盖，仍卡未定请求结构。
-  'ADV-012': '卡已知合同缺口 #9 requestedChangeJson 结构。',
+  'ADV-011':
+    '缺同一结算项两份更正申请的双实例真并发用例(20101 与 NULLS NOT DISTINCT partial unique 已有串行与 schema 两层证据)。' +
+    '⚠️ 全仓没有 `activity-settlement-correction-concurrency` 这样的 spec,更正线是单实例的 —— 写它要先起第二个 app/pool。',
+  // ADV-012:与 AC-060 同因同修 —— 原文「卡 #9 结构」同样是错的,见 AC-060 那段的取证。
+  //   两条编号共用同一条待写用例(flip 走真更正链),补一条即可同时接通。
+  'ADV-012':
+    '同 AC-060:原卡点「卡合同缺口 #9 requestedChangeJson 结构」**是错的**(结构已由 correction-change-set.ts 补齐并生产接线);' +
+    '真缺口是没有 e2e 把 absent→present 走完真更正链并同夹具断言人数 / 时长 / 分数 / 评价 / 关闭版本一起变化。' +
+    '与 AC-060 共用同一条待写用例。',
   // ADV-022:archive 未开放，且尚缺更正×关闭的双实例并发屏障。
-  'ADV-022': '卡 archive action 与更正提交/生效×关账的真并发链。',
+  'ADV-022':
+    '卡 archive action(见 AC-064:全仓无该动作、无该状态值)与更正提交/生效×关账的真并发链。' +
+    '现有只有同事务原子性证据(audit 抛错整笔回滚 / 未 commit 时读面仍是旧账),' +
+    '且关账 spec 里那条「更正把 closure 顶成 superseded」是用裸 updateMany **模拟**的,不是真跑更正。',
 };
 
 const batch2ResolvedIds = new Set([
@@ -410,20 +474,64 @@ const BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS: Readonly<
 };
 
 const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
-  'AC-003': '卡第 3 刀 clone 生命周期端点；本刀不建 clone。',
-  'AC-004': '卡第 3 刀 archive 生命周期读写；本刀不新增归档动作或定时任务。',
+  // ⚠️ **本表原有六条写着「卡第 3 刀…」,而第 3 刀(`#955`)比本刀(`#952`)早三个 PR 就合了。**
+  //    2026-08-24 分拣刀逐条重判并订正;订正的是**卡点说明**,不是把编号提前结案。
+  //
+  // AC-003:clone 端点与真用例都已存在(`#955`),原文「本刀不建 clone」已过期。
+  //   真缺口是**证据面**:那条用例的事实表 spy 只看 11 张 delegate,合同点名的 9 类历史里
+  //   邀请 / 二维码 / 关闭 / 更正 / 通知 **四类零证据**,结算与账本各只证了一张表。
+  'AC-003':
+    'clone 端点与「配置复制 + 事实表零写」真用例已由第 3 刀(#955)交付,原「本刀不建 clone」已过期;' +
+    '真缺口是合同点名的 9 类历史里 ActivityInvitation / AttendanceQrCredential / ' +
+    'ActivitySettlementClosureRevision / AttendanceCorrectionRequest+CorrectionApplication / ' +
+    'Notification*+NotificationOutboxIntent 五类不在 spy 集内、零断言,结算与账本各只覆盖一张表。',
+  // AC-004:第 3 刀已合,但它**本来就没排** archive —— 原文把「本刀不做」写成了「卡第 3 刀」。
+  //   本刀复核 `NEXT_TASKS` P1-28 第三刀那段的自述,采用它给的准确口径。
+  'AC-004':
+    '归档端点尚未排批,且全仓没有 archive 状态列或 archivedAt 事实列(archiveWaitingUntil 是结算关账的**派生**等待期,不是活动归档);' +
+    '「长期未处理草稿在工作台提示」亦零实现 —— 唯一的 workbench 是结算工作台。三格全缺,不是缺测试。',
+  // AC-009:表单与资格两格已分别由第 4 批③/⑰落地并各有 published→ACTIVITY_CHANGE_REVIEW_REQUIRED 的真用例,
+  //   原文「表单、资格…仍卡第 4/5 批」已过期。
   'AC-009':
-    '发布链已覆盖根活动展示白名单与 Session/Position proposal；表单、资格、可见性、签到和计分规则仍卡第 4/5 批，整项不能提前结案。',
+    '场次 / 岗位 / 名额 / 表单 / 资格五格已各有 published 直写被拒的真用例(表单第 4 批③、资格第 4 批⑰),原「仍卡第 4/5 批」已过期;' +
+    '余可见性与签到规则两格**代码已在白名单外(会拒),只是没有任何用例把它们发出去过**;' +
+    '计分规则一格全仓无按活动的写接口(贡献规则按 activityType×role×version 全局查),' +
+    '「无接口算不算满足合同」须维护者裁定 —— 三格未证,整项不能结案。',
+  // AC-010:容量桶那格已由第 4 批⑤真实投影 + 三条 HTTP 判据落地,原文把它列进「仍是接缝」已过期。
   'AC-010':
-    '本刀已覆盖单场次 create/update/cancel 的变更审核；容量桶、二维码、人员影响、通知与结算人口仍是第 4/5/7 批接缝，整项不能提前结案。',
+    '变更审核与名额(容量桶)两格已落:第 4 批⑤的投影只取 scheduled 场次、取消场次的桶留作不可变历史、占用中降容 20147 三条各有真用例;' +
+    '余二维码(`applyQrCredentialsPlaceholder` 是**显式空实现**)、人员影响(场次取消零 identity 变更)、' +
+    '通知(变更审批按 activityId 向全体 populationIncluded 广播,不按场次收窄)、结算人口(只 bump 活动级 currentPopulationRevision)四格未做;' +
+    '另有一格全套用例从未覆盖:场次**改期**(sessions.update 只出现过 name / locationText / capacity,没有 startAt/endAt)。',
+  // AC-012:2026-08-24 分拣刀判为 A 并已在 TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS 给出真去向。
+  //   这句留着是**第 3 刀第一刀自己**的欠账记录(同 ADV-001 / ADV-004 的既定形状),删不得。
   'AC-012': '卡第 3 刀邀请可见性读面。',
-  'AC-013': '卡 S6：draft_editor 七值责任模型另立 D 档刀；本刀不给协作人草稿编辑能力。',
-  'AC-014': '卡第 3 刀 cancel 与现场事实并发语义。',
+  // AC-013:S6 责任模型那条**不是**「另立 D 档刀就会有」——本刀复核发现现状比原文更远:
+  //   `ActivityResponsibilityAssignment` 只有 owner/collaborator 两值 + 两个布尔,
+  //   而两布尔全 false 的协作人拿到的是**零 RoleBinding**(什么都看不到),不是「只读」。
+  'AC-013':
+    '§3.5 的 draft_editor 七值责任模型零实现:现状是 responsibilityType 两值(owner/collaborator)+ canManageRegistrations / canManageAttendance 两个布尔;' +
+    '两布尔全 false 的协作人经 grant projector 得到的是**零 RoleBinding**(连管理进度都看不到),不是合同要的「只读协作人」。' +
+    '九个动作里「归档」本身也不存在(见 AC-004)。另立 D 档责任模型刀,本刀不给协作人草稿编辑能力。',
+  // AC-014:现场事实闸已由第 5 批交付(cancelLocked 在 Activity 根锁内读整条 PunchEvent 链),
+  //   原文「卡第 3 刀 cancel 与现场事实并发语义」已过期。
+  'AC-014':
+    '「有效现场事实 ⇒ 普通取消被拒」已由第 5 批交付并有 App / Admin 两个入口的真用例(fixture 用未开始的场次,证明拒的是**事实**不是时间闸),原「卡第 3 刀」已过期;' +
+    '余三格未证:「**有效**」这个限定(已 void / superseded 的事实不得阻断)只有纯函数单测、无 HTTP 证据;' +
+    '「必须改走提前终止」无「取消被拒 → terminate 成功」的同活动链;「并结算」无 terminate → 结算的续链。',
   // ADV-004 同 ADV-001:第 5 批已给真去向,但这句是**第 3 刀自己**的欠账记录,删不得
   //(删掉会让本批的模块级完整性守护抛错)。详见 BATCH2_ACCEPTANCE_BLOCKERS 里 ADV-001 那段。
   'ADV-004': '卡第 3 刀普通取消×第一条现场签到真实并发。',
-  'ADV-018': '卡第 2/3 刀单场次取消的人员和通知影响链。',
-  'ADV-019': '卡第 3 刀正式/停用/非正式/未受邀可见性组合读面。',
+  // ADV-018:本刀复核发现这条**不是「缺测试」,是实现与合同相反** —— 写清楚以免下一个人去补测。
+  'ADV-018':
+    '不是缺测试,是实现层与合同相反:场次取消只翻 statusCode,二维码 effect 是显式空桩,人员零变更,' +
+    '而变更审批的通知 fan-out 按 activityId 取**全体** populationIncluded 身份广播,不按场次收窄 ⇒ 「只影响该场次」当前不成立。',
+  // ADV-019:四轴里三轴已有真读面证据,原文「卡第 3 刀…读面」已过期;缺的是第四轴。
+  'ADV-019':
+    '正式 / 非正式 / 未受邀三轴已各有真实读面证据(AC-011 与 AC-012 的去向即是),原「卡第 3 刀」已过期;' +
+    '缺的是**停用**这一轴在第 3 批新目录路由 `GET /api/app/v1/activities` 上的断言 —— ' +
+    '现有 INACTIVE→403 只钉在旧的 `activities/available` 与 `activities/:id` 上,新路由的三条用例全是 ACTIVE 成员;' +
+    '`UserStatus.DISABLED` 那种读法在任何活动读面上都零覆盖。另外合同要的是「组合」,当前无任何用例同时跨两轴。',
 };
 
 /** 第 4 批④只翻有真实端到端命令链证据的编号；三入口统一校验仍不得提前结案。 */
@@ -456,7 +564,13 @@ const BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_DESTINATIONS: Readonly<
 };
 
 const BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
-  'AC-017': '后台代报名与导入未接入本刀，三入口共享答案 validator 仍未实现。',
+  // 2026-08-24 分拣刀复核:结论不变(仍 C),但把「未接入」写准 ——
+  // 后台代报名不是「还没接」,是在有 v1.1 Form/live session 时被**主动拒**;导入根本没有端点。
+  'AC-017':
+    '三入口共享答案 validator 仍未实现:`validateRegistrationFormAnswers` 全仓只有一个生产调用方(canonical 报名命令,邀请 accept 复用同一个),' +
+    '后台代报名走的是 legacy 路径(formVersionId/answersHash 恒 null、收自由 extras),且一旦活动有 v1.1 Form/live session 就被 ' +
+    'assertLegacyRegistrationFlowAllowed 以 ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED **主动拒**——它不是「未接入」,是接不上;' +
+    '名单导入**零端点**(报名 sourceCode 闭集只有 self/admin/invitation/onsite,全仓唯一的 import 是考勤导入)。三入口只存在一个。',
 };
 
 /** 第 4 批⑪把已冻结 D83 规则接入 display / submit / onsite / review 四阶段。 */
@@ -487,8 +601,16 @@ const BATCH4_QUALIFICATION_RUNTIME_ACCEPTANCE_DESTINATIONS: Readonly<
 const BATCH4_RESERVATION_KERNEL_ACCEPTANCE_IDS = ['AC-022', 'AC-023'] as const;
 
 const BATCH4_RESERVATION_KERNEL_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  // 2026-08-24 分拣刀订正:两条原文里「尚缺 HTTP request / canonical 状态写 / 分配 policy caller」
+  //   这三样**都已落**(第 4 批④报名命令主链、⑧现场补录、⑯分配 runtime)。两条的结局不同 ——
+  //   AC-023 判 A 并已在 TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS 给出真去向;AC-022 仍是 todo。
   'AC-022':
-    '三层 reservation 内核已有真实 PostgreSQL 100人×3场与释放证据；尚缺 HTTP request、canonical 状态写和分配 policy caller。',
+    '「尚缺 HTTP request / canonical 状态写 / 分配 policy caller」已过期:三者均已落地(第 4 批④/⑧/⑯),报名与现场补录两条真 HTTP 链都走三层 reservation。' +
+    '真缺口收窄成两格断言:合同点名的 **100 人 × 3 场那组数字只有 service 直调的证据**(HTTP 侧最大只跑到 1–2 人),' +
+    '且没有任何 HTTP 用例在同一 member 拿下第二个场次之后**回读 activity_person 桶**、证明它仍只占 1 个活动位。',
+  // AC-023:本条**已由分拣刀接通**(见 TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS)。
+  //   这句留着是本批自己的欠账记录 —— 本批模块级守护要求两条都在卡点表里,删不得;
+  //   去向恒优先于卡点,所以渲染上它已经是真用例。同 ADV-001 / ADV-004 的既定形状。
   'AC-023':
     '内核已有两 pool、capacity=1、100 并发的最后一席证据；尚缺 HTTP/policy caller，不能把 service 直调当最终用户链。',
 };
@@ -539,8 +661,17 @@ const BATCH4_INVITATION_VISITOR_ACCEPTANCE_DESTINATIONS: Readonly<
 };
 
 const BATCH4_INVITATION_VISITOR_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  // 2026-08-24 分拣刀订正:「accept 仍缺其自身的资格/保险/容量 caller」**是错的,而且方向反了**——
+  //   accept 的设计就是**不给它自己的 caller**:它在 Activity→Invitation 锁序内直接调
+  //   `registrationCommands.submitInTransaction(source: 'invitation')`,复用 canonical 的
+  //   表单 / 资格 / 保险 / 容量四道闸,正是为了不留邀请旁路。`NEXT_TASKS` P1-28 第 4 批⑦/⑯
+  //   那段早已写着这件事,登记表这句是从更早的 `#22 资格 runtime` 时代逐字带过来没重判。
   'AC-019':
-    'create/list/revoke/decline 与过期可见性已接；accept 仍缺其自身的资格/保险/容量 caller，活动开始批量 expiry 已由 AC-028 覆盖。',
+    '「accept 仍缺其自身的资格/保险/容量 caller」**是错的**:accept 刻意不建自己的 caller,而是在 Activity→Invitation 锁序内复用 ' +
+    'canonical `submitInTransaction(source: invitation)` 的表单/资格/保险/容量四闸(不留邀请旁路)。' +
+    '真缺口是**断点位置**:四个入口(accept/decline/revoke/过期)都有真用例,accept 侧却只断言了「名额」这一格' +
+    '(capacityReservationId 与 first_come pass/pending);硬资格 block、保险 INSURANCE_REQUIRED、必要表单三格的断言全在**自助报名**入口上,' +
+    '现有三条 accept 用例一律 `formVersion: null, answers: []`、活动无 active Form。按本文件纪律不拿四分之一结案。',
 };
 
 /** 第 4 批⑱只结案活动开始时 unresolved canonical participation 与 pending invitation 的事务性 expiry。 */
@@ -1070,9 +1201,18 @@ const BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS: Readonly<
 };
 
 const BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  // 2026-08-24 分拣刀复核:原判(目标组织零实现)成立,但漏了同一句合同里的**另一个**缺口。
   'AC-066':
-    '标签定向与「明确不广播」已冻结并异步展开,但三个可选项里的「目标**组织**」本刀零实现 —— 整项不能按三分之二结案。',
-  'AC-067': '未签退提醒与收口待办不在冻结这条链上;卡第 7 批后续刀。',
+    '标签定向与「明确不广播」已冻结并异步展开,但三个可选项里的「目标**组织**」本刀零实现 —— 整项不能按三分之二结案。' +
+    '2026-08-24 复核补一格:收件人冻结依据闭集只有 audience-tags / all-active-members / broadcast-visibility / responsibility / registration-roster,' +
+    '解析收件人时只按 MemberStatus 与标签过滤,零处读 organizationId;发布 DTO 也只收 audienceTagCodes。' +
+    '另外同句点名的「**改期**」事件:src 侧有实现(cohortKey `activity-change:*`)且有单测,但 `test/` 下零绑定 —— 别当它已判过。',
+  // 2026-08-24 分拣刀复核:原判成立(三格全零),补上真正的立项约束 —— 第三个 cron 要过 D 档。
+  'AC-067':
+    '未签退提醒与收口待办不在冻结这条链上;卡第 7 批后续刀。' +
+    '2026-08-24 复核:三格全零 —— 全仓无未签退提醒(既有到期提醒 cron 发的是「活动即将开始」),' +
+    '负责人侧只有**拉取式**的 open_segment 缺口计数(结算/关账工作台),没有推给负责人的收口待办;第三格「重试不重复通知」因此空谈。' +
+    '⭐ 真正的立项约束是:定时发送要第三个 cron,而 cron 终态**恰 2** 是决策锁,加第三个须新 D 档评审 —— 这不是补测试能解决的。',
 };
 
 const batch7RecipientFreezeResolvedIds = new Set([
@@ -1383,8 +1523,12 @@ const BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS: Readonly<
 /**
  * C 类:如实留 todo,并写明**缺的是哪一格**。
  *
- * 这四条都不是「测试没写」,是**能力本身没做到合同要求**;本刀按合同 §6「零 src 业务改动」
+ * 这几条都不是「测试没写」,是**能力本身没做到合同要求**;本刀按合同 §6「零 src 业务改动」
  * 的授权边界,不替维护者实现,只把缺口写准以便立项。
+ *
+ * ⚠️ 原文写的是「这四条」,当时确实是四条(AC-020 / AC-025 / AC-030 / AC-068)。
+ *    `#1090` 把 AC-030 修成真能力并转了去向,本表就只剩三条,而这句没跟着改 ——
+ *    2026-08-24 分拣刀订正为不写死条数(**别再写「这 N 条」**:表一变它就悄悄成假话)。
  */
 const BATCH7_CLOSEOUT_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'AC-020':
@@ -1400,7 +1544,11 @@ const BATCH7_CLOSEOUT_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     '(`selection: { mode: session-all }`),2000 人一次入队实测 43.7ms / 事务预算 5000ms,业务人员不必再手工拆;' +
     '既有 500 条 id 列表入口与 `@ArrayMaxSize(500)` 按合同追踪矩阵 I55「当前合理,保留」原样不动。' +
     '仍未结案的是**10000 档读数**:那需要规模测试环境,本地不产出可信数字(考勤 sheet `records` 的 200 条' +
-    '是逐人数据而非 id 列表,条件无法替代,不在本条口径内)。',
+    '是逐人数据而非 id 列表,条件无法替代,不在本条口径内)。' +
+    '2026-08-24 分拣刀补两点:①**500 档同样没有正读数** —— 现有 500 相关断言是对 501 条伪造 id 的**拒绝**,' +
+    '正面只能由 2000 档那次 a fortiori 推出,台账上不该写成「500 已测」;' +
+    '②那句「不在本条口径内」指的是考勤单 `records` 上仍活着的 `@ArrayMaxSize(200)`(App/Admin 两处),' +
+    '它是合同这句里「200 人数组」字面唯一的存活点,且该路径**没有** selection 条件式入口 —— 是否算在本条内需维护者裁定。',
 };
 
 const batch7CloseoutResolvedIds = new Set([
@@ -1418,6 +1566,87 @@ if (
 }
 
 /**
+ * 2026-08-24 分拣刀 —— 32 条 `it.todo` 逐条重判后的**接通**部分。
+ *
+ * 🔴 **本刀是分拣不是清零。** 结论 A 14 / B 4 / C 14,逐条依据见 `NEXT_TASKS` P1-28
+ *    的「验收编号分拣」小节。A 档里**只有本表这 2 条是「证据已在、只差接线」**;
+ *    其余 12 条 A 都要**新写常规规模用例**(要连库跑才能交付),本刀不写。
+ *
+ * ⭐ **本刀查出的缺陷类**:这批卡点里有一大半是「**卡第 N 批 / 卡第 N 刀**」——
+ *    它们全部写于**对应批次交付之前**,而那些批次早已合入,却没有任何人回头重判:
+ *      · 「卡第 3 刀 clone / archive / 邀请可见性 / cancel / 可见性组合」五条写于 `#952`
+ *        (第 3 批第一刀),而第 3 刀是 `#955` —— 早三个 PR 就合了;
+ *      · 「卡第 5 批最后一次合法签退 / 跨北京零点」两条写于 `#949`(第 2 批),
+ *        第 5 批是 `#1032`。
+ *    ⇒ 与 `#1166` 治的「活干完了台账仍写待办」是**同一形态**,只是换了一份台账。
+ *    **卡点说明会过期**,它不是一次写死的常量;本刀把过期的逐条订正(仍留 todo 的那些)。
+ *
+ * ⚠️ 本表刻意**不删**原批次的卡点行 —— 沿 ADV-001 / ADV-004 的既定形状:
+ *    那句话记的是**那一批自己**没交付,不是「全仓至今没交付」。去向优先于卡点,
+ *    渲染上本表这 2 条已经是真用例,原卡点行只作历史记录留着(删了会让那批的
+ *    模块级完整性守护抛错,整套 `Tests: 0 total`)。
+ */
+const TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  // AC-012「邀请活动对未受邀者不可见,即使知道活动编号也不能读取详情。」
+  //
+  // 两格逐句对上,且**两格在同一个夹具里**(不是拼两条半覆盖):
+  //   ①「不可见」→ 目录列表里 `expect(ids).not.toContain(invitationMiss.id)`,
+  //     同一断言块内 `invited.id`(有 pending 邀请)**在**列表里 ⇒ 判据不是恒真;
+  //   ②「知道编号也读不到详情」→ 直接 `GET /api/app/v1/activities/{invitationMiss.id}`
+  //     得 `ACTIVITY_NOT_FOUND`(404 式,不是 403 —— 与防枚举锁同口径)。
+  // 第二条 needle 补的是「什么才算 grant」:只有**未过期的 pending** 算;
+  // 第三条是第 4 批的 red-first 否定式 —— 过期 pending **不**授予详情可见性。
+  'AC-012': [
+    {
+      file: 'test/e2e/activity-batch3-3-lifecycle-and-member-read.e2e-spec.ts',
+      needle:
+        'shows only published internal/invited activities and hides invitation misses and every terminal state as 404-style',
+    },
+    {
+      file: 'test/e2e/activity-batch3-3-lifecycle-and-member-read.e2e-spec.ts',
+      needle:
+        'treats only unexpired pending invitations as visibility grants and exposes only the caller own invitation summaries',
+    },
+    {
+      file: 'test/e2e/activity-batch4-invitation-visitor.e2e-spec.ts',
+      needle:
+        'red-first: an expired pending invitation never grants member activity detail visibility',
+    },
+  ],
+  // AC-023「100 个并发请求争最后一个名额,只能一个成功;容量桶不超卖、不负数。」
+  //
+  // 三格逐个绑:
+  //   ①「100 并发争最后一席、只一个成功」→ 100 条**真 HTTP** POST(不是 service 直调),
+  //     `capacity: 1`,`successes` 恰 1 / `failures` 恰 99 且**逐条**是容量码;
+  //   ②「不超卖」→ 100 次尝试后两只桶都停在 `{ capacity: 1, occupied: 1, version: 1 }`,
+  //     外加 DB CHECK `occupied <= capacity` 的独立反例;
+  //   ③「不负数」→ 同一条 CHECK 的 `occupied = -1` 反例(INSERT 与 UPDATE 两条路都咬)。
+  // ⚠️ **口径边界写在这里,别让后来者以为它比实际强**:那 100 并发跑在**现场补录**
+  //    入口(`onsite-participations`)上,不是报名入口 —— 报名入口的并发用例只有 2 宽,
+  //    且满员走候补而不是报错。合同这句没有限定入口,故按已覆盖计;
+  //    若日后要求「报名入口自己也得有 100 并发」,那是**加一条新判据**,不是本条回退。
+  'AC-023': [
+    {
+      file: 'test/e2e/activity-batch4-onsite-participation.e2e-spec.ts',
+      needle:
+        'serializes two independent capacity pools at one and returns exactly 1 success plus 99 capacity errors',
+    },
+    {
+      file: 'test/e2e/activity-batch4-onsite-participation.e2e-spec.ts',
+      needle:
+        'for (const failure of failures) expectBizError(failure, BizCode.ACTIVITY_CAPACITY_EXCEEDED);',
+    },
+    {
+      file: 'test/e2e/activity-v11-slice1-schema-constraints.e2e-spec.ts',
+      needle:
+        '超卖闸:occupied 为负被拒、occupied > capacity 被拒;occupied = capacity 放行;capacity=NULL 时不设上限',
+    },
+  ],
+};
+
+/**
  * 「哪些登记表参与查表」只写一处 —— `registerAcceptanceCases` 与下面的接线守护读的是
  * **同一个数组**,所以两者不可能各说各话。
  *
@@ -1429,6 +1658,8 @@ if (
 const ACCEPTANCE_DESTINATION_TABLES: ReadonlyArray<
   Readonly<Record<string, readonly AcceptanceDestination[]>>
 > = [
+  // 分拣表排在最前:它的结论优先于各批自己的历史卡点行(去向恒优先于卡点)。
+  TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS,
   BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
   BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS,
   BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
@@ -1579,6 +1810,7 @@ describe('活动业务改造 v1.1 合同完整性', () => {
       name: string;
       table: Readonly<Record<string, readonly AcceptanceDestination[]>>;
     }> = [
+      { name: 'TRIAGE_2026_08', table: TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH2', table: BATCH2_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH3_SLICE1', table: BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS },
       {
