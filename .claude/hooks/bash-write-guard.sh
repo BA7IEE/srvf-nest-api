@@ -26,6 +26,15 @@ GUARD="$REPO_ROOT/.claude/hooks/redzone-guard.sh"
 
 command -v jq >/dev/null 2>&1 || exit 0
 
+# ⚠️ 本文件**刻意不含**其余三个 hook 里那段「本次写操作归哪棵工作树管」的推导 ——
+# 它自己不做任何路径归属判定,只把解析出的路径原样转交给 preflight-required.sh 与
+# redzone-guard.sh,归属由它们各自算(「复用而非复制」,见下方 preflight_ok 的注释)。
+# 在这里再抄一份 = 第四份会漂移的副本,而漂移时没有任何症状。
+#
+# 但**必须把 cwd 一起转交**:本守护解析出的路径大多是**相对**路径(它们来自用户命令原文),
+# 而相对路径归哪棵工作树,只能由发起这条命令的 cwd 决定。不传就退化成「按 hook 进程的 cwd 猜」。
+HOOK_CWD=""
+
 # ── P1-31:开工门禁的 Bash 半边(2026-08-22)──────────────────────────────
 # 缺陷:`preflight-required.sh` 只挂在 Edit|Write|MultiEdit|NotebookEdit 上,
 # Bash 侧**从不校验开工门禁通行标记** ⇒ 一条 `python3 <<'PY' … PY` 写文件
@@ -53,7 +62,8 @@ command -v jq >/dev/null 2>&1 || exit 0
 PREFLIGHT="$REPO_ROOT/.claude/hooks/preflight-required.sh"
 preflight_ok() {
   [ -x "$PREFLIGHT" ] || return 0
-  printf '{"tool_name":"Bash","tool_input":{"file_path":%s}}' "$(printf '%s' "$1" | jq -Rs .)" \
+  printf '{"tool_name":"Bash","cwd":%s,"tool_input":{"file_path":%s}}' \
+    "$(printf '%s' "$HOOK_CWD" | jq -Rs .)" "$(printf '%s' "$1" | jq -Rs .)" \
     | "$PREFLIGHT"
 }
 
@@ -68,13 +78,17 @@ check_path() {
     echo "     开工门禁对 Edit 与 Bash **同口径** —— 换用 Bash 不能绕过它。" >&2
     return 1
   fi
-  printf '{"tool_name":"Bash","tool_input":{"file_path":%s}}' "$(printf '%s' "$1" | jq -Rs .)" \
+  printf '{"tool_name":"Bash","cwd":%s,"tool_input":{"file_path":%s}}' \
+    "$(printf '%s' "$HOOK_CWD" | jq -Rs .)" "$(printf '%s' "$1" | jq -Rs .)" \
     | "$GUARD"
   return $?
 }
 
 INPUT="$(cat)"
 CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""')"
+# 转交给下游两个 hook 的 cwd(见文件头)。必须在**第一处 check_path 调用之前**取到 ——
+# 解释器分支就会调它;`set -u` 下未赋值即调用会整条炸掉。
+HOOK_CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // ""')"
 [ -n "$CMD" ] || exit 0
 
 # ── 误伤治理 ①:只扫「命令位」,先剥掉 heredoc 正文与引号内容 ──────────────
