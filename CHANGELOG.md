@@ -2,6 +2,149 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## v0.69.0 - 2026-08-24
+
+### RBAC 旧增量写端点退役(P1-32 PR 8)—— ⚠️ **对外契约破坏,须单独发一个 breaking 版本**
+
+冻结稿 [`rbac-permission-catalog-t0-review.md:2540`](docs/archive/reviews/rbac-permission-catalog-t0-review.md) `## PR 8`
+的**前一半**。删掉两条旧增量写端点,角色权限的写面收成 `PUT`(整集替换)一条:
+
+| 动词 | 路径 | 处置 |
+|---|---|---|
+| `POST` | `/api/system/v1/roles/{id}/permissions` | **删**(assign,增量加码) |
+| `DELETE` | `/api/system/v1/roles/{id}/permissions/{permissionId}` | **删**(revoke,增量减码) |
+| `PUT` | `/api/system/v1/roles/{id}/permissions` | 保留 —— 唯一真写入口 |
+| `POST` | `/api/system/v1/roles/{id}/permissions/preview` | 保留(PR 4b) |
+| `GET` | `/api/system/v1/roles/{id}/permissions` | 保留(PR 4b) |
+
+路由足迹 **554 → 552**(`EXPECTED_ROUTES` 与 `EXPECTED_ROUTE_COUNT` 两处各改一次)。
+
+#### 🔴 前提五条**一条都不满足**,维护者知情后重申「直接删」
+
+| 冻结稿列的前提 | 现状 |
+|---|---|
+| 生产访问日志确认零调用 | ❌ 没有生产环境 |
+| 前端已切 | ❌ PR 7 已决定跳过(与前端同批) |
+| OpenAPI 已 deprecated 至少一个发布周期 | ❌ 从没 deprecate 过 |
+| 无外部调用方依赖 | ❌ 未验证 |
+| 回滚方案通过 | ❌ 本刀之前没有 |
+
+起草方已就此提过异议,**维护者 2026-08-24 重申「直接删」** ⇒ 按拍板执行。
+
+⭐ **安全价值不是本刀拿到的,本刀拿到的是「整洁」。** 三个 Permission 写端点早在
+**PR 3b** 就对 seed 闭包内的码分别抛 30106 / 30110 / 30105,237 条权限码那时起就写不动了;
+角色权限的两层控制面闸(30103 / 30109)也早在 PR 3a 落地。本刀真正消灭的是**结构性的多写入口**:
+
+- **step-up 旁路消失**。PR 5 把高风险二次验证挂在 `runReplaceSet()` 上,只覆盖 `PUT` 与 `preview`;
+  持 `rbac.role-permission.create` 的人仍可用 `POST` 加一条 CRITICAL 码而不触二次验证。
+  那条缺口由 `scripts/check-role-permission-impact.ts` 的 `stepup-scope-*` 登记在案,
+  并写明「PR 8 退役它们时本闸必红,强制重看登记」—— **本刀就是那一刻**。
+- **判权口径收严**:`PUT` 要 `rbac.role-permission.create` **与** `delete` 两条(`require: 'all'`),
+  而旧 `POST` 只要 create、旧 `DELETE` 只要 delete。只持一半的调用方从此什么都改不了。
+
+#### ⭐ 射程登记从「标注型」换成「禁止型」(本刀的真交付物)
+
+`STEP_UP_OUT_OF_SCOPE_ENTRIES` 清空之后,若只是清空,「零旁路」这件事就再没有守护 ——
+新加一个绕过 `runReplaceSet()` 的写入口不会有任何症状。故同刀接上一条**禁止型**不变量:
+
+> 凡能到达唯一写原语 `replaceRolePermissionSet()` 的方法,**都必须**能到达 `assertStepUpProofOrThrow()`。
+
+扫描面**动态发现**(AST + `this.<x>()` 传递闭包),不写死名单,新增写入口自动纳管;
+另带一条地板 `MIN_WRITE_PATHS = 3` —— 扫描面塌掉时「零旁路」会退化成空集恒真,必须先红在地板上。
+
+**变异对拍(本机,纯 AST 判据)**:往 service 里加一个绕过 `runReplaceSet()` 直调写原语的公开方法
+→ `role-permission-impact.criteria.spec.ts` **1 failed / 16 passed**(`stepup-bypass` 点名它);
+撤销变异 → **17 passed**。执行位实测有效。
+
+#### e2e:53 处调用点全部**改打新端点**,零删除
+
+4 个 spec / 53 处(⚠️ goal 原写的是「3 spec / 16 处」—— 那是用只匹配 URL 字符串的 grep 数的,
+而 supertest 惯用写法**动词与 URL 分两行**;本刀用 AST 式扫描重数):
+
+| spec | 处数 |
+|---|---|
+| `role-permissions.e2e-spec.ts` | 41 |
+| `rbac-delegation-safety.e2e-spec.ts` | 9 |
+| `rbac-multi-instance-consistency.e2e-spec.ts` | 2 |
+| `role-permissions-replace-concurrency.e2e-spec.ts` | 1 |
+
+另有 `permissions-config-audit-characterization.e2e-spec.ts` 的 **B1 / B2 / D3** 三条在 **service 层**
+直调 `assign()` / `revoke()`,一并改打 `replace()` —— 它们锁的是「写路径产出的 audit 长什么样」
+(resourceId = **roleId**、actor 三件套、requestId/ip/ua 原样落库、audit 写失败整个 `$transaction` 回滚),
+这三条性质在仅存的写入口上逐条都在。
+
+⚠️ **迁移时踩到的一个真陷阱,写下来免得后来者重踩**:`PUT` 的 step-up 闸(第 2.5 步)排在
+D2 **撤码方向**闸(写原语第 8 步,事务内)**之前**。E-B2 那组「ops-admin 撤控制面码 → 30103」
+直接改打 `PUT` 会拿到 **30112** —— 上层边界把下层边界遮住,断言看起来还在、测的却已不是同一件事。
+⇒ 那组改成**先铸一把真 proof 再打**,让被测的那一维单独暴露;顺带把「不带 proof → 30112」
+也一并钉住,两道闸各有各的用例。
+
+#### 🔴 三条断言「被测对象随端点消失」—— **一条都没删**,就地改成契约标记用例
+
+AGENTS §2 禁删测试 / 禁放宽断言。这三条无法平移(新旧契约方向相反或错误态不复存在),
+故就地改成守住**新**契约的标记用例,并在注释里逐条写明丢掉的是什么:
+
+| 原断言 | 为什么无法平移 | 现在守什么 |
+|---|---|---|
+| `空数组 → 400(@ArrayMinSize(1))` | 仅存的 `ReplaceRolePermissionsDto` **刻意允许**空目标集(= 清空),契约方向相反 | 空数组 → 200 且真的清空 |
+| `关系不存在 → 30011` | 整集替换没有「撤某一条」这个动作;提交不含 x 的目标集而 x 本来就不在 = **no-op** | no-op 200 且不 +1 |
+| `POST / DELETE 同样 +1` | 主语就是那两条已删端点;写入口只剩一条时「+1 覆盖全部写路径」= 它自己 | 每次真写都 +1,拿过期版本号回来 → 30111 |
+
+**丢掉的性质如实登记**(见 `NEXT_TASKS` P1-32 PR 8):
+「写入口拒绝空入参」在本模块已不存在;`30011 ROLE_PERMISSION_NOT_FOUND` 成为**孤儿码**
+(词条保留、全仓零 throw 点);「旧增量入口也推进版本号」这一条随主语消失。
+
+另有两条**反向对照**被迫换轴(不是放宽,换完更严):
+
+- `role-permissions-replace-concurrency`「两个并发 POST(可交换的加码)→ 双双成功」——
+  退役后全仓**再没有语义可交换的写路径**(`PUT` 恒带 `expectedRevision`,同角色两个并发 PUT
+  必然恰一个 30111)⇒ 换成**两条不同角色行**的并发 `PUT` 双双成功。
+  「PUT 一律返 30111」的坏实现在新用例上照样当场红,判据没变钝。
+  ⚠️ 它原先兼职守的那半个坑(写原语收「意图」而非「目标全集」)**不再需要守** ——
+  本刀同刀把 `add` / `remove` 两种意图从写原语里删掉了(只剩 `targetCodes` 一个数组),
+  坑连同产生它的代码一起消失;若将来加回增量语义,必须同时把那条对照加回来(service 头注已留警告)。
+- `role-permissions`「只持 create 的人用 POST 必须真的成功」—— 退役后这个人在本模块**确实什么都写不了**,
+  原对照的前提没了 ⇒ 换成「给他补上另一半码 `delete`,同一条 `PUT` 必须真的成功」,
+  证明拒绝来自 `require:'all'` 少了一半而不是「一律拒绝」,比原来多钉一条。
+
+#### 内部清理
+
+- `RolePermissionsService.assign()` / `revoke()` 删除;写原语的 `intent: {kind:'set'|'add'|'remove'}`
+  三态收成 `targetCodes: string[]`,`expectedRevision: number | null` 收成 `number`
+  (`null` 分支是旧增量端点专用,已无调用方)。
+- DTO `AssignRolePermissionsDto` / `RevokeRolePermissionParamDto` 删除。
+- audit 事件 `role-permission.grant` / `role-permission.revoke` **词条保留、已无产出者** ——
+  历史 `audit_log` 行里躺着这两个字符串,把名字从词表里删掉不会删掉那些行,
+  只会让将来读旧审计的人查不到这个事件是什么意思(号段 / 名字一律不回收复用)。新写入一律走
+  `role-permission.replace`。
+- `30011 ROLE_PERMISSION_NOT_FOUND` 同理保留词条(BizCode 总数仍 466)。
+
+#### 冻结稿同句的另一半**不在本刀**
+
+`## PR 8` 原文是「删除或永久封闭 Permission 写 CRUD;删除 RolePermission 增量旧写接口……」。
+两件事的**替代品成熟度差一个量级**:`PUT` 是 `assign`/`revoke` 的完整替代,而
+`POST` / `PATCH` / `DELETE /api/system/v1/permissions` **没有任何替代端点**(删完 controller 只剩两个 `@Get`)。
+实测代价:**~34 条断言失去被测对象**(`permission-catalog-guardrail` 9 条整份 + `permissions.e2e-spec`
+10 个 `it` + 两个 `it.each` 共 22 例)、**5 条 BizCode 变不可达**、
+`permission-catalog-guardrail` 那条 ⭐ 反面样本失去正面对照后**证明不了任何东西**。
+⇒ 维护者 2026-08-24 拍板**拆成单独一刀**,三条候选路与逐条代价登记在 `NEXT_TASKS` P1-32。
+
+<!-- contract-breaking
+operation: POST /api/system/v1/roles/{id}/permissions
+reason: 这条「增量加码」端点是 role_permissions 的第二条写入口,而 P1-32 PR 5 的高风险二次验证(step-up)挂在 runReplaceSet() 上、只覆盖 PUT 与 preview。⇒ 持 rbac.role-permission.create 的人可以用它给角色加一条 CRITICAL / 控制面码而完全不触二次验证 —— 那是一条无症状的提权旁路,PR 5 已把它登记成已知缺口并写明「PR 8 退役时本闸必红」。给它补 proof 字段同样是破坏性变更(要改 DTO 与原语判定),且会永久留下两条语义不同的写路径;整集替换 PUT 在语义上完整覆盖增量加码(目标集 = 现状 ∪ 新码),所以选择退役而不是加固。⚠️ 冻结稿列的五条退役前提(生产日志零调用 / 前端已切 / deprecated 满一个发布周期 / 无外部依赖 / 回滚方案通过)一条都不满足,起草方已提异议,维护者 2026-08-24 知情后重申「直接删」。
+impact: 服务端零存量调用方(全仓 grep 后仅测试代码在打它,已逐处改打 PUT)。外部调用方**未经验证**——项目尚无生产环境、无访问日志,无法证明为零。前端 srvf-admin-web 的角色权限编辑页若已按旧接口实现则会 404;该仓当前尚未真正投用,清单同步进 docs/handoff/admin-web.md。⚠️ 另有一类**看不见的影响**:PUT 要求同时持有 rbac.role-permission.create 与 rbac.role-permission.delete(require:'all'),只持 create 的调用方从 201 变 30100,这不是路由消失而是判权口径收严。
+migration: 三步替代。① GET /api/system/v1/roles/{id}/permissions 取回 { permissionCodes[], permissionRevision };② 在本地算目标集 = 现状 ∪ 要加的码;③ PUT /api/system/v1/roles/{id}/permissions 提交 { permissionCodes: 目标集, expectedRevision: 上一步拿到的 permissionRevision }。差异清单:成功码 201 → 200;收到 30111(版本冲突)要回到 ① 重取并重试,不能盲目重发;高风险差集(CRITICAL / 控制面码 / SUPER_ADMIN_ONLY 等)会返 30112,需先 POST /api/auth/v1/step-up/password 换 stepUpToken 再带上重提,请求体为 { action: 'RBAC_ROLE_PERMISSION_SET_REPLACE', password, rolePermissionSet: { roleId, expectedRevision, payloadHash } } —— payloadHash 的算法逐字是:把**这次要提交的目标权限码数组**去重 → 升序排序 → JSON.stringify 成 canonical JSON → sha256 → base64url(目标集为空时即 sha256 of "[]" 的 base64url)。⚠️ 算法在这里写全而不只给指针:申报块是给「将来某个不看仓库的人」读的,跨文档指针会失效(docs/handoff/admin-web.md §3.5 是同一份算法的另一处书写);调用方须同时持有 rbac.role-permission.create 与 rbac.role-permission.delete 两条码。建议在 ③ 之前先打 POST .../permissions/preview(同参、同判定、零写入)拿到 added/removed/impact 让人确认。
+rollback: 分两层,**不是「revert 这个 PR」一句能了事**。① 已部署环境:本刀单独发一个 breaking 版本,回滚 = **把上一个版本(v0.68.0)的镜像重新部署**。推理依据:本刀零 migration、零数据变更、零 feature gate、零持久化状态,两条端点纯粹是代码,旧版本二进制起来端点就回来了,不需要任何数据修补。⚠️ **该流程未经实测** —— 本项目尚无生产环境(见 docs/current-state.md §1「发布边界」),这是**依据上述零迁移事实推出的结论,不是演练过的手册**;与本申报 impact 栏「外部调用方未经验证」用同一把尺子,别把它读成已验证过的操作手册。真要执行时按 docs/ops/server-deployment-runbook.md 走,并把首次执行的实际读数补回本条。② 源码层:git revert 本 PR 的 squash commit(它同时恢复 controller 方法、service 的 assign()、两个 DTO、写原语的 add/remove 意图分支、契约白名单两行与全部生成物),然后重跑 pnpm docs:openapi && docs:feclient && docs:authz && docs:codemap && docs:counts。🔴 **禁止部分回滚**:本刀在同一个 commit 里把写原语的 intent 三态剪成了单一 targetCodes,只把 controller 路由手工加回来会得到一个「POST 名义上是增量、实际执行整集替换」的实现 —— 它会把该角色其余权限**静默抹掉**,而且不报任何错。要么整体 revert,要么不 revert。
+-->
+
+<!-- contract-breaking
+operation: DELETE /api/system/v1/roles/{id}/permissions/{permissionId}
+reason: 与上条同源 —— 这是 role_permissions 的第三条写入口,同样不经 runReplaceSet(),同样绕过 PR 5 的 step-up 二次验证:持 rbac.role-permission.delete 的人可以把某个角色的 rbac.* / role-binding.* 控制面能力一路撤空而不触二次验证。它还额外带来一处形状债:路径参数 :permissionId 收的是 permission.**id** 而不是 code,与同模块其余三条端点(全部用 code)不一致,前端要为它单独维护一份 id↔code 映射。整集替换 PUT 在语义上完整覆盖增量撤码(目标集 = 现状 \ 那条码),且天然用 code。⚠️ 退役前提同上条,五条一条不满足,维护者 2026-08-24 知情后重申「直接删」。
+impact: 服务端零存量调用方(全仓 grep 后仅测试代码在打它,已逐处改打 PUT)。外部调用方未经验证(无生产环境、无访问日志)。前端 srvf-admin-web 若已实现「单条撤权」按钮会 404,清单同步进 docs/handoff/admin-web.md。⚠️ 两处**行为面**的影响必须单独说:① 错误码 30011 ROLE_PERMISSION_NOT_FOUND 随之失去唯一产出者 —— 旧接口对「撤一条本来就不存在的映射」返 30011,新语义下这是 no-op 200,靠 30011 做「这条本来就没有」分支判断的调用方会拿到成功而不是错误;② PUT 要求同时持有 create 与 delete 两条码,只持 delete 的调用方从 200 变 30100。
+migration: 三步替代。① GET /api/system/v1/roles/{id}/permissions 取回 { permissionCodes[], permissionRevision };② 目标集 = 现状 \ 要撤的码 —— ⚠️ 这里是**按 code 剔除**,不再是按 permission.id,调用方原先维护的 id 不再需要(GET 直接给 code);③ PUT 提交 { permissionCodes: 目标集, expectedRevision }。差异清单:30111 要重取重试;撤控制面码 / CRITICAL 码属高风险差集,会先返 30112 要 step-up proof(冻结稿 §12.1 逐字「增加**或移除** CRITICAL 权限」都算高风险),换 proof 的请求体与算法与上条逐字相同:POST /api/auth/v1/step-up/password,{ action: 'RBAC_ROLE_PERMISSION_SET_REPLACE', password, rolePermissionSet: { roleId, expectedRevision, payloadHash } },payloadHash = 目标权限码数组去重 → 升序 → JSON.stringify → sha256 → base64url(撤到空集时即 sha256 of "[]" 的 base64url);撤控制面码对非 SUPER_ADMIN 仍返 30103(这道闸没变,只是排在 step-up 之后);「撤一条本来就没有的」不再报错而是 no-op,需要「确实存在过」这个判断的调用方要改成先看 ① 的 permissionCodes 里有没有它。同样建议先打 POST .../permissions/preview 确认 removed 列表。
+rollback: 与上条同一次发布、同一套手段,不能单独回滚其中一条。① 已部署环境:重新部署上一个版本(v0.68.0)的镜像 —— 零 migration、零数据变更、零 feature gate,旧二进制起来端点即恢复,不需要数据修补。⚠️ **与上条同一句诚实交代:该流程未经实测**,本项目尚无生产环境,这是依据零迁移事实推出的结论而不是演练过的手册;首次真执行后请把实际读数补回本条。② 源码层:git revert 本 PR 的 squash commit,再重跑四份生成物(openapi → feclient → authz → codemap)与 docs:counts。🔴 **禁止部分回滚**:revoke() 依赖写原语的 remove 意图分支,而该分支在同一个 commit 里被删除;只恢复 controller 与 service 而不恢复原语,DELETE 会退化成「把目标集替换成空集」,即**撤一条码变成撤光该角色所有权限**且零报错。要么整体 revert,要么不 revert。⚠️ 另有一条不可回滚的残留:本刀发布后若已有人按新流程改过角色权限,那些改动会把 permissionRevision 推高;回滚服务端不会回退这个数字,也不需要回退 —— 旧 POST/DELETE 本来就不校验它。
+-->
+
 ## v0.68.0 - 2026-08-24
 
 ### 测试 / 台账
