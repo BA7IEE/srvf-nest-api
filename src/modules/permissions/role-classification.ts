@@ -100,6 +100,40 @@ export function withRoleClassification<T extends { code: string }>(
   return { ...role, ...classifyRoleImpl(role.code) };
 }
 
+/**
+ * `readOnlyReason` 的唯一取值 —— 取自冻结稿 §9.2 的系统角色示例,**逐字**。
+ *
+ * 做成常量而不是散写字面量:它是前端要 switch 的机器可读原因码,
+ * 两处各写一遍就会在某次改文案时静默分家。
+ */
+export const ROLE_PERMISSION_SET_RELEASE_MANAGED_REASON =
+  'SYSTEM_ROLE_PERMISSION_SET_RELEASE_MANAGED';
+
+/** 权限集编辑策略(冻结稿 §9.2 的 `editPolicy`)。 */
+export interface RolePermissionEditPolicy {
+  readonly canEdit: boolean;
+  readonly readOnlyReason: string | null;
+}
+
+/**
+ * `editPolicy` —— **`permissionManagementMode` 的渲染,不是第二次判定**(P1-32 PR 4b)。
+ *
+ * 🔴 刻意住在本文件而不是 `role-permissions` 那边:本文件的头注写着它是三个分类字段的
+ *    **唯一派生处**,而 `canEdit` 问的就是 `permissionManagementMode` 那个问题的是非题形态。
+ *    放到别处 = 同一个问题有两处答案,而「后台显示可改、接口却拒」没有任何症状 ——
+ *    那正是这三个字段选「派生不存库」要消灭的形状。
+ *
+ * ⚠️ **它回答的是「这个角色的权限集本身能不能被运行时改」,不回答「你能不能改」。**
+ *    调用者自身的判权(`rbac.role-permission.*`)与控制面分级闸(30103 / 30109)
+ *    都在写路径里,与本函数无关;冻结稿 §9.2 里那两个 per-code 字段
+ *    (`addBlocked` / `removeBlocked`)属 PR 5,本期不出(见 controller 头注)。
+ */
+export function rolePermissionEditPolicy(code: string): RolePermissionEditPolicy {
+  return classifyRoleImpl(code).permissionManagementMode === 'ADMIN_EDITABLE'
+    ? { canEdit: true, readOnlyReason: null }
+    : { canEdit: false, readOnlyReason: ROLE_PERMISSION_SET_RELEASE_MANAGED_REASON };
+}
+
 function classifyRoleImpl(code: string): RoleClassification {
   const isBuiltin = isProtectedRoleCode(code);
   return {

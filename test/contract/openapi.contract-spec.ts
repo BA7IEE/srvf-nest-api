@@ -470,8 +470,18 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/system/v1/roles/{id}'],
   ['patch', '/api/system/v1/roles/{id}'],
   ['delete', '/api/system/v1/roles/{id}'],
+  // P1-32 PR 4b(冻结稿 §9.2 / §9.3):读 / 预览面。**零新增权限码** ——
+  // GET 复用 rbac.role.read(GET /roles/{id} 同码,且今天就已返回完整 permissions[]);
+  // preview 复用 rbac.role-permission.{create,delete} + require=all,与 PUT 逐字相同。
+  // ⚠️ GET 返回**一个对象**(role / permissionRevision / permissionCodes[] / editPolicy),
+  //    不是集合端点 ⇒ 分页铁律无适用对象,也**不**进 §4 那张「整取型只读目录」例外表
+  //    (那张表要求「固定参考集合」,角色权限集是运行时数据)。详见 controller 头注。
+  ['get', '/api/system/v1/roles/{id}/permissions'],
   ['post', '/api/system/v1/roles/{id}/permissions'],
   ['put', '/api/system/v1/roles/{id}/permissions'],
+  // preview 是 POST + @HttpCode(200):入参含 permissionCodes[](≤100)+ expectedRevision,
+  // 塞 query string 要自己编数组;零写入靠 service 的 dry-run 分支表达,不靠动词。
+  ['post', '/api/system/v1/roles/{id}/permissions/preview'],
   ['delete', '/api/system/v1/roles/{id}/permissions/{permissionId}'],
   ['get', '/api/system/v1/users/{userId}/roles'],
   ['post', '/api/system/v1/users/{userId}/roles'],
@@ -1052,7 +1062,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 552;
+const EXPECTED_ROUTE_COUNT = 554;
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1764,6 +1774,13 @@ describe('OpenAPI 契约快照', () => {
   // P1-32 PR 4a(2026-08-23):+1 角色权限整集替换
   //   (PUT /system/v1/roles/{id}/permissions;**零新增权限码**,复用
   //    rbac.role-permission.{create,delete} 两条并要求 require=all)→ **550**。
+  // P1-32 PR 4b(2026-08-24):+2 角色权限**读 / 预览面**
+  //   (GET /system/v1/roles/{id}/permissions + POST …/permissions/preview;
+  //    **零新增权限码**)→ **554**。
+  // ⚠️ **这条流水自己有缺口**:4a 那行写着 550,而本刀开工时常量已是 552 ——
+  //    中间两笔(其中一笔是 PR 2 的 /permissions/catalog)没记进流水。
+  //    本刀只在尾部续记自己的 +2,**不回补历史**(回补要逐笔取证,不是顺手能做对的事);
+  //    真值恒以 `EXPECTED_ROUTES` 条目数为准,`docs:counts` 会在两者不一致时当场红。
   //
   // ⚠️ 用例标题**从写死数字改成插值**:动它之前标题写着「精确为 532」而断言是 537 ——
   // 有人 bump 了数字没 bump 标题,标题从此说谎。插值之后它不可能再漂。

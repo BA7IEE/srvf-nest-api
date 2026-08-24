@@ -147,6 +147,78 @@ export interface SurfaceDrift {
   readonly descriptionChanged: boolean;
 }
 
+/** 通配码的复核委派结论。见 {@link delegatedReview}。 */
+export interface DelegatedReview {
+  /** 是否走委派路径(通配码 + 两侧都没有说明)。false ⇒ 按原口径判。 */
+  readonly delegable: boolean;
+  /** 该通配族在权限码全集里的成员码。 */
+  readonly members: readonly string[];
+  /** 成员码里「面变了却没改说明」的 —— 非空即委派失败,仍须拒绝。 */
+  readonly unreviewed: readonly string[];
+}
+
+/**
+ * 🔴 **通配码的结构性死路,以及为什么复核责任落在成员码上。**
+ *
+ * `<family>.*` 不是权限码,是 `[rbac: <family>.*]` 这个 summary 后缀约定的产物:
+ * `scripts/check-rbac-map.ts:381` 的 `const code = rm[1]` 把 `[rbac: ` 之后**整串**当一个码,
+ * 逗号分隔的两个单码会被判「不在 seed 闭包」⇒ **一个端点要两条码时只能退化成写通配族**。
+ *
+ * 于是通配码:
+ *   · **没有 `businessDescription` 可改**(它不在 Catalog 里,`description` 摘要恒为 `null`);
+ *   · 给它补一条说明会打红本闸自己的 `describedButUnknown` 自证(有说明却不在码全集里)。
+ * ⇒ 原口径「面变了 && 说明没变 ⇒ 拒绝」对它**恒成立且无路可走**。
+ *   实测(2026-08-24,P1-32 PR 4b):基线里有 **5 条**通配码
+ *   (`attachment.{delete,update,upload,view}.*` + `rbac.role-permission.*`),
+ *   今后任何端点加入这些族都会撞同一条死路 ⇒ 这是**缺陷类**不是单点。
+ *
+ * ⇒ 口径:两侧都没有说明的通配码,**复核责任委派给该族的成员码** ——
+ *   要求每个成员码「面没变」或「说明已改」。族成员是真权限码、有真说明,复核实质发生在那里。
+ *
+ * 🔴 **两条不许放松的守法**:
+ *   ① 委派**找不到任何成员**(零命中)⇒ 仍然拒绝。否则「族里没人」会变成自动全绿。
+ *   ② 成员码里只要有一条「面变了却没改说明」⇒ 仍然拒绝。否则「族里随便一条改过」就整族放行,
+ *      复核责任被放空。
+ *
+ * ⚠️ 本函数是 `formatFailures`(判红)与 `writeBaseline`(拒绝推进)**共用的唯一判定** ——
+ * 绑定型闸的执行位在这两处,各写一份就是在判据内部造第二份真相。
+ */
+export function delegatedReview(
+  code: string,
+  facts: SurfaceBindingFacts,
+  baseline: SurfaceBaseline,
+  current: Record<string, SurfaceBaselineEntry>,
+): DelegatedReview {
+  const NOT_DELEGABLE: DelegatedReview = { delegable: false, members: [], unreviewed: [] };
+  if (!code.endsWith('.*')) return NOT_DELEGABLE;
+  const before = baseline[code];
+  const now = current[code];
+  if (before === undefined || now === undefined) return NOT_DELEGABLE;
+  // 只有「两侧都没有说明」才是结构性无可复核;有说明却没改仍是本闸的靶心。
+  if (before.description !== null || now.description !== null) return NOT_DELEGABLE;
+
+  const prefix = code.slice(0, -1); // 'rbac.role-permission.*' → 'rbac.role-permission.'
+  const members = [...facts.universe].filter((c) => c.startsWith(prefix)).sort();
+  const unreviewed = members
+    .filter((member) => {
+      const mBefore = baseline[member];
+      const mNow = current[member];
+      if (mBefore === undefined || mNow === undefined) return false;
+      if (mBefore.surface === mNow.surface) return false; // 面没变 ⇒ 无需复核
+      return mBefore.description === mNow.description; // 面变了却没改说明 ⇒ 未复核
+    })
+    .sort();
+  return { delegable: true, members, unreviewed };
+}
+
+/**
+ * 委派是否成立 —— 供两处执行位共用的一句话判定。
+ * `delegable && members 非空 && unreviewed 为空` 才算复核已发生。
+ */
+export function delegationSatisfied(review: DelegatedReview): boolean {
+  return review.delegable && review.members.length > 0 && review.unreviewed.length === 0;
+}
+
 function read(rel: string): string {
   return readFileSync(join(ROOT, rel), 'utf-8');
 }
@@ -452,32 +524,71 @@ export function formatFailures(report: SurfaceBindingReport): string[] {
     return failures;
   }
 
-  const stale = report.surfaceDrift.filter((drift) => !drift.descriptionChanged);
-  const revisited = report.surfaceDrift.filter((drift) => drift.descriptionChanged);
+  // 通配码走委派复核(见 delegatedReview 头注)。委派成立的当「说明已改」处理 ——
+  // 复核实质发生在成员码上,它只差一次 --write 推进基线。
+  const currentEntries = computeEntries(report.facts);
+  const baselineForReview = report.baseline ?? {};
+  const delegationOf = new Map<string, DelegatedReview>();
+  for (const drift of report.surfaceDrift) {
+    delegationOf.set(
+      drift.code,
+      delegatedReview(drift.code, report.facts, baselineForReview, currentEntries),
+    );
+  }
+  const isReviewed = (drift: SurfaceDrift): boolean =>
+    drift.descriptionChanged || delegationSatisfied(delegationOf.get(drift.code)!);
+
+  const stale = report.surfaceDrift.filter((drift) => !isReviewed(drift));
+  const revisited = report.surfaceDrift.filter((drift) => isReviewed(drift));
 
   if (stale.length > 0) {
     failures.push(
       `✗ 以下 ${stale.length} 条码的**管辖面变了而说明没改** —— 说明多半已过期,请逐条复核 businessDescription:\n` +
         stale
-          .map(
-            (drift) =>
-              `    ${drift.code}:端点 ${drift.baselineEndpoints} → ${drift.currentEndpoints}(说明一字未动)`,
-          )
+          .map((drift) => {
+            const review = delegationOf.get(drift.code)!;
+            // ⚠️ 通配码没有说明可改 —— 别打印「说明一字未动」误导,如实说委派为什么没成立。
+            const why = !review.delegable
+              ? '说明一字未动'
+              : review.members.length === 0
+                ? '本身无说明可改,而该通配族在码全集里一个成员都没有 —— 复核无处落地'
+                : `本身无说明可改,而族成员 ${review.unreviewed.join(', ')} 的面也变了却没改说明`;
+            return `    ${drift.code}:端点 ${drift.baselineEndpoints} → ${drift.currentEndpoints}(${why})`;
+          })
           .join('\n') +
         `\n  改完说明后跑:pnpm exec tsx scripts/check-permission-surface-binding.ts --write` +
-        `\n  若逐条复核后认定说明仍然准确,显式放行:--write --acknowledge-unchanged ${stale
-          .map((drift) => drift.code)
-          .join(',')}`,
+        // 🔴 只对「有说明可改」的码建议 acknowledge。通配码本来就没有说明可复核,
+        //    给它建议逃生门等于把刚焊死的口子又指出来 —— 它的正解是去改族成员的说明。
+        (() => {
+          const ackable = stale.filter((drift) => !delegationOf.get(drift.code)!.delegable);
+          const delegated = stale.filter((drift) => delegationOf.get(drift.code)!.delegable);
+          let tail = '';
+          if (ackable.length > 0) {
+            tail += `\n  若逐条复核后认定说明仍然准确,显式放行:--write --acknowledge-unchanged ${ackable
+              .map((drift) => drift.code)
+              .join(',')}`;
+          }
+          if (delegated.length > 0) {
+            tail +=
+              `\n  ⚠️ 上列通配码(${delegated.map((d) => d.code).join(', ')})**没有说明可改,也不要 acknowledge** —— ` +
+              `去改它族成员的 businessDescription,复核责任在那里。`;
+          }
+          return tail;
+        })(),
     );
   }
   if (revisited.length > 0) {
     failures.push(
-      `✗ 以下 ${revisited.length} 条码的管辖面变了、说明也改了,但基线还没推进:\n` +
+      `✗ 以下 ${revisited.length} 条码的管辖面变了、复核已发生,但基线还没推进:\n` +
         revisited
-          .map(
-            (drift) =>
-              `    ${drift.code}:端点 ${drift.baselineEndpoints} → ${drift.currentEndpoints}(说明已改)`,
-          )
+          .map((drift) => {
+            // ⚠️ 通配码的说明**没有**改(它没有说明可改)—— 别打印「说明已改」骗人,
+            // 它是靠成员码的复核过关的,如实写出来。
+            const how = drift.descriptionChanged
+              ? '说明已改'
+              : `本身无说明,复核已由族成员 ${delegationOf.get(drift.code)!.members.join(', ')} 承担`;
+            return `    ${drift.code}:端点 ${drift.baselineEndpoints} → ${drift.currentEndpoints}(${how})`;
+          })
           .join('\n') +
         `\n  跑:pnpm exec tsx scripts/check-permission-surface-binding.ts --write`,
     );
@@ -541,6 +652,18 @@ export function writeBaseline(acknowledgeUnchanged: readonly string[]): WriteRes
       if (before.surface === now.surface) continue;
       if (before.description !== now.description) continue;
       if (acknowledged.has(code)) continue;
+      // 通配码:两侧都没有说明 ⇒ 复核委派给成员码。与 formatFailures 共用同一判定,
+      // 各写一份就是在判据内部造第二份真相。
+      const review = delegatedReview(code, facts, baseline, current);
+      if (delegationSatisfied(review)) continue;
+      if (review.delegable) {
+        refusals.push(
+          review.members.length === 0
+            ? `${code}:端点 ${before.endpoints} → ${now.endpoints},通配族在码全集里一个成员都没有 —— 复核无处落地`
+            : `${code}:端点 ${before.endpoints} → ${now.endpoints},本身无说明可改,而族成员 ${review.unreviewed.join(', ')} 的面也变了却没改说明`,
+        );
+        continue;
+      }
       refusals.push(
         `${code}:端点 ${before.endpoints} → ${now.endpoints},但 businessDescription 一字未动`,
       );

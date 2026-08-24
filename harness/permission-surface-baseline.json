@@ -863,19 +863,19 @@
       "description": "sha256:9f4442fab966ca3c7d63a41dc6e3031e731be4800a5ba991b5335fe0a71deb24"
     },
     "rbac.role-permission.*": {
-      "endpoints": 1,
-      "surface": "sha256:63d459f30bf0adca4bfa9ff1eaa9b850adf78a7419bcadd204ba4bd431a23854",
+      "endpoints": 2,
+      "surface": "sha256:be9cbe263108795273bff7ddc813fc934ff3617add5f4da00d32aced3ad6eec6",
       "description": null
     },
     "rbac.role-permission.create": {
-      "endpoints": 2,
-      "surface": "sha256:1a814593e58b90958f49d2b99a20418d83da34d153e824831d5639be8321684a",
-      "description": "sha256:677c62e5adef9a6273ceecd755eac22e9bd2f01c530e99114753c2352cee0606"
+      "endpoints": 3,
+      "surface": "sha256:3832f64c1b5effa8de1cc3e36cc9b7652991b1329c359787e8ac6aa877d2582b",
+      "description": "sha256:dcc67a7d535d2b85b5e8a6e8668efcc9a31ee319da03919df427fc9b8488f1ca"
     },
     "rbac.role-permission.delete": {
-      "endpoints": 2,
-      "surface": "sha256:3213563dd9c5924a09e5b0bca6453757f35887eae4ec733fa4c7c4017b486db5",
-      "description": "sha256:0386e03bb26f2a820993eae22b718b299d097cdc550763b6219c57d2b12a6e3b"
+      "endpoints": 3,
+      "surface": "sha256:f2260d3a91bc976cc7ed278d19aaeb83c692c120513ba59f86d05aea10ad2497",
+      "description": "sha256:b35cf68a6228cdfb749570dcbb0b65831c64659b819df8d0406b23fb7cdbd970"
     },
     "rbac.role.create": {
       "endpoints": 1,
@@ -888,9 +888,9 @@
       "description": "sha256:688d700131a0c8189758bb054524e8235e976cc620b27297dde9d0a9bf45d032"
     },
     "rbac.role.read": {
-      "endpoints": 3,
-      "surface": "sha256:d8e96ae71abfb79bb1647ee5e3537094fb600e970cfd7e2f513ac409363c726f",
-      "description": "sha256:165723b1ef6da8acdce77171c5c6cd851f5a42b2a72bf755eff077ceb9475428"
+      "endpoints": 4,
+      "surface": "sha256:0c83d4385540a98917f91f0cb89e53747a8b109ae049ce5f47a2b277d19fa87e",
+      "description": "sha256:fef8491ec1acb6e37d2ab7b590dfe78b684f676aede3422e66e243af8a564ae2"
     },
     "rbac.role.update": {
       "endpoints": 1,

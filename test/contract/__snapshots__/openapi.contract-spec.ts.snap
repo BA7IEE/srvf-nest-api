@@ -23206,6 +23206,264 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "RolePermissionDiffItemDto": {
+    "properties": {
+      "code": {
+        "description": "权限码",
+        "example": "attendance.approve.sheet",
+        "type": "string",
+      },
+      "displayName": {
+        "description": "中文名(取自权限目录;目录里没有该码时为 null)",
+        "example": "考勤一审通过",
+        "nullable": true,
+        "type": "object",
+      },
+      "riskLevel": {
+        "description": "风险等级(取自权限目录;目录里没有该码时为 null)",
+        "enum": [
+          "LOW",
+          "MEDIUM",
+          "HIGH",
+          "CRITICAL",
+        ],
+        "example": "HIGH",
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "code",
+      "displayName",
+      "riskLevel",
+    ],
+    "type": "object",
+  },
+  "RolePermissionPreviewIssueDto": {
+    "properties": {
+      "bizCode": {
+        "description": "业务错误码(与 \`PUT\` 抛出的同一个)",
+        "example": 30111,
+        "type": "number",
+      },
+      "httpStatus": {
+        "description": "HTTP 语义(\`PUT\` 走错误响应时会用的状态码)",
+        "example": 409,
+        "type": "number",
+      },
+      "message": {
+        "description": "人话原因(与 \`PUT\` 的错误响应同一句)",
+        "example": "该角色的权限集已被其他人修改,请刷新后重新提交",
+        "type": "string",
+      },
+    },
+    "required": [
+      "bizCode",
+      "message",
+      "httpStatus",
+    ],
+    "type": "object",
+  },
+  "RolePermissionPreviewOutcomeDto": {
+    "properties": {
+      "added": {
+        "description": "会被加上的权限码",
+        "items": {
+          "$ref": "#/components/schemas/RolePermissionDiffItemDto",
+        },
+        "type": "array",
+      },
+      "currentRevision": {
+        "description": "库中当前的权限集版本号(锁内读到的真值)",
+        "example": 7,
+        "type": "number",
+      },
+      "nextRevision": {
+        "description": "真提交后的版本号**预测值**(\`noOp=true\` 时等于 \`currentRevision\`)。⚠️ 是预测不是承诺:预览到提交之间别人改了,提交会返 30111 而不是悄悄用这个数。",
+        "example": 8,
+        "type": "number",
+      },
+      "noOp": {
+        "description": "空转:目标集合与现状**相同** ⇒ 真提交时不写、不 +1、不留审计痕迹",
+        "example": false,
+        "type": "boolean",
+      },
+      "removed": {
+        "description": "会被撤销的权限码",
+        "items": {
+          "$ref": "#/components/schemas/RolePermissionDiffItemDto",
+        },
+        "type": "array",
+      },
+      "resultCodes": {
+        "description": "真提交后该角色会持有的权限码全集(已按 code 升序排序)",
+        "example": [
+          "attendance.approve.sheet",
+          "attendance.read.sheet",
+        ],
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "unchangedCount": {
+        "description": "既在现状又在目标里、这次不动的条数",
+        "example": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "noOp",
+      "currentRevision",
+      "nextRevision",
+      "added",
+      "removed",
+      "unchangedCount",
+      "resultCodes",
+    ],
+    "type": "object",
+  },
+  "RolePermissionPreviewResponseDto": {
+    "properties": {
+      "blockingIssues": {
+        "description": "拦下来的原因。**长度恒为 0 或 1** —— 写路径本身是 fail-fast(第一道闸拦下就不跑后面的),硬凑成多条就得在锁外另跑一遍判定,那正是本端点要避免的第二份真相。⚠️ 所以它**不是全量诊断**:修掉这一条之后可能还有下一条。",
+        "items": {
+          "$ref": "#/components/schemas/RolePermissionPreviewIssueDto",
+        },
+        "type": "array",
+      },
+      "outcome": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RolePermissionPreviewOutcomeDto",
+          },
+        ],
+        "description": "预览结论;被拦下时(\`valid=false\`)为 \`null\`",
+        "nullable": true,
+        "type": "object",
+      },
+      "valid": {
+        "description": "这次替换**此刻**能不能提交。\`true\` ⟺ 同一时刻 \`PUT\` 会成功(同一段判定、同一把锁算出来的)。",
+        "example": true,
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "valid",
+      "blockingIssues",
+      "outcome",
+    ],
+    "type": "object",
+  },
+  "RolePermissionSetEditPolicyDto": {
+    "properties": {
+      "canEdit": {
+        "description": "这个角色的权限集能不能被运行时改。**问的是角色,不是你** —— 调用者自身的判权与控制面分级闸另算(见 PUT 的错误码清单)。取值恒等于 \`role.permissionManagementMode === ADMIN_EDITABLE\`。",
+        "example": true,
+        "type": "boolean",
+      },
+      "readOnlyReason": {
+        "description": "只读原因码(\`canEdit=false\` 时非空,否则为 \`null\`)。当前唯一取值 \`SYSTEM_ROLE_PERMISSION_SET_RELEASE_MANAGED\` —— 内建角色的权限集随版本发布走 seed。",
+        "example": null,
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "canEdit",
+      "readOnlyReason",
+    ],
+    "type": "object",
+  },
+  "RolePermissionSetResponseDto": {
+    "properties": {
+      "editPolicy": {
+        "$ref": "#/components/schemas/RolePermissionSetEditPolicyDto",
+      },
+      "permissionCodes": {
+        "description": "该角色当前持有的权限码全集(**已按 code 升序排序、无重复**;未分配任何权限时返 \`[]\`)。排序是服务端保证的,前端可直接与 \`permissions/catalog\` 的勾选状态做集合比对。",
+        "example": [
+          "attendance.approve.sheet",
+          "attendance.read.sheet",
+        ],
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "permissionRevision": {
+        "description": "权限集版本号(P1-32 PR 4a)。**拿它去填 \`PUT\` / \`preview\` 的 \`expectedRevision\`** —— 期间被别人改过就返 30111,不会覆盖对方的改动。",
+        "example": 7,
+        "type": "number",
+      },
+      "role": {
+        "$ref": "#/components/schemas/RolePermissionSetRoleDto",
+      },
+    },
+    "required": [
+      "role",
+      "permissionRevision",
+      "permissionCodes",
+      "editPolicy",
+    ],
+    "type": "object",
+  },
+  "RolePermissionSetRoleDto": {
+    "properties": {
+      "bindingManagementMode": {
+        "description": "角色绑定由谁管(派生)",
+        "enum": [
+          "SYSTEM_ONLY",
+          "MANUAL_ALLOWED",
+          "POLICY_DERIVED",
+        ],
+        "example": "MANUAL_ALLOWED",
+        "type": "string",
+      },
+      "code": {
+        "description": "角色 code(kebab-case)",
+        "example": "icc-attendance-reviewer",
+        "type": "string",
+      },
+      "displayName": {
+        "description": "显示名",
+        "example": "ICC 考勤审核员",
+        "type": "string",
+      },
+      "id": {
+        "description": "角色 id(cuid)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "type": "string",
+      },
+      "kind": {
+        "description": "角色类型(派生;\`SYSTEM\` = 15 个内建角色之一)",
+        "enum": [
+          "SYSTEM",
+          "CUSTOM",
+        ],
+        "example": "CUSTOM",
+        "type": "string",
+      },
+      "permissionManagementMode": {
+        "description": "权限集由谁管(派生)。\`RELEASE_MANAGED\` = 随版本发布走 seed,运行时任何人加减权限都返 30108",
+        "enum": [
+          "RELEASE_MANAGED",
+          "ADMIN_EDITABLE",
+        ],
+        "example": "ADMIN_EDITABLE",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "displayName",
+      "kind",
+      "permissionManagementMode",
+      "bindingManagementMode",
+    ],
+    "type": "object",
+  },
   "SendLoginSmsCodeDto": {
     "properties": {
       "phone": {
@@ -138966,6 +139224,233 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
     },
   },
   "/api/system/v1/roles/{id}/permissions": {
+    "get": {
+      "operationId": "RolePermissionsController_findPermissionSet",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RolePermissionSetResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30003: 角色不存在",
+                    "enum": [
+                      30003,
+                    ],
+                    "example": 30003,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "角色不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "角色不存在(code=30003)",
+        },
+        "410": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30005: 角色已删除",
+                    "enum": [
+                      30005,
+                    ],
+                    "example": 30005,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "角色已删除",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "角色已删除(code=30005)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "取角色当前权限集(只读;返回角色摘要 + 权限集版本号 permissionRevision + 已排序去重的 permissionCodes[] + editPolicy〔canEdit / readOnlyReason〕;内建角色照样读得到,只是 canEdit=false;角色不存在返 30003、已软删返 30005;**单资源读面不分页**) [rbac: rbac.role.read]",
+      "tags": [
+        "Ops - Role Permissions",
+      ],
+    },
     "post": {
       "operationId": "RolePermissionsController_assign",
       "parameters": [
@@ -139511,6 +139996,177 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "整集替换角色的权限点(提交后恰好是 permissionCodes[];传 [] 清空;必带 expectedRevision 做乐观并发,版本不符返 30111;目标集合与现状相同时空转不写不留痕;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,少一条即 30100) [rbac: rbac.role-permission.*]",
+      "tags": [
+        "Ops - Role Permissions",
+      ],
+    },
+  },
+  "/api/system/v1/roles/{id}/permissions/preview": {
+    "post": {
+      "operationId": "RolePermissionsController_previewReplace",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ReplaceRolePermissionsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/RolePermissionPreviewResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "预览整集替换的后果(dry-run:与 PUT 同参、同一段准入判定、同一把角色行锁,**零写入**;返回 valid / blockingIssues〔恒 0 或 1 条,不是全量诊断〕/ outcome〔noOp、currentRevision、nextRevision 预测值、added·removed 带中文名与风险等级、unchangedCount、resultCodes〕;被拦下时 valid=false 且拒绝码与 PUT 抛出的**同一个**,走 200 数据不走 HTTP 错误;预览不是授权证明,真提交仍在锁内重算并可返 30111;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,与 PUT 逐字相同) [rbac: rbac.role-permission.*]",
       "tags": [
         "Ops - Role Permissions",
       ],
