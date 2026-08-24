@@ -5172,7 +5172,8 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     // ===== 系统与安全 / 角色 =====
     'rbac.role-permission.create': {
       displayName: '给角色加权限',
-      businessDescription: '让某个角色多一项能力。加错了等于给一批人开了不该开的口子',
+      businessDescription:
+        '让某个角色多一项能力。加错了等于给一批人开了不该开的口子。另外,「按保存前先看一眼这次改动会加哪些、撤哪些能力」那个**只读预览**也归这条管 —— 预览要同时持有本条和「撤销角色的权限」才用得了(因为一次整批修改可能同时加和撤),而且它给出的结论与真保存出自同一段判断,不会出现「预览说能过、保存却被拒」。',
       sectionCode: 'system-security',
       groupCode: 'role',
       sortOrder: 81010,
@@ -5185,7 +5186,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'rbac.role-permission.delete': {
       displayName: '撤销角色的权限',
       businessDescription:
-        '把某个角色的一项能力收回来。这个角色下的所有人立刻少一项能力,撤错了会让一批人当场干不了活。',
+        '把某个角色的一项能力收回来。这个角色下的所有人立刻少一项能力,撤错了会让一批人当场干不了活。另外,「按保存前先看一眼这次改动会加哪些、撤哪些能力」那个**只读预览**也归这条管 —— 预览要同时持有本条和「给角色加权限」才用得了(因为一次整批修改可能同时加和撤)。',
       sectionCode: 'system-security',
       groupCode: 'role',
       sortOrder: 81020,
@@ -5224,7 +5225,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'rbac.role.read': {
       displayName: '查看角色清单',
       businessDescription:
-        '能看到全部角色的清单,以及每个角色具体带了哪些权限。后台各处把「角色 id」显示成角色名,靠的也是这条。只是看,不改。',
+        '能看到全部角色的清单,以及每个角色具体带了哪些权限。单个角色的权限清单另有一个**专门的只读入口**,一次给出它当前带的全部权限码、权限集的版本号(改权限时要带上它,免得两个人同时改把对方的改动冲掉),以及这个角色的权限能不能在后台改、不能改是什么原因 —— 系统内置的那 15 个角色照样看得到,只是标着不可改。后台各处把「角色 id」显示成角色名,靠的也是这条。只是看,不改。',
       sectionCode: 'system-security',
       groupCode: 'role',
       sortOrder: 81050,

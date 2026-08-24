@@ -3,7 +3,7 @@
 // surface: System 系统面
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:f1ccd87085184152560fb0450de6b5ba2df9f7809ca280d50ad5c7c71d7aee46
+// inputDigest: sha256:d166c9a3ec9d768c0f4819c22bf9381f4c0e5b9426b3dc7eaac1aba04b58e735
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto } from '../shared/types';
@@ -346,6 +346,55 @@ export interface RoleOptionItemDto {
 
 export interface RoleOptionsResponseDto {
   "items": RoleOptionItemDto[];
+}
+
+export interface RolePermissionDiffItemDto {
+  "code": string;
+  "displayName": Record<string, unknown> | null;
+  "riskLevel": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+}
+
+export interface RolePermissionPreviewIssueDto {
+  "bizCode": number;
+  "message": string;
+  "httpStatus": number;
+}
+
+export interface RolePermissionPreviewOutcomeDto {
+  "noOp": boolean;
+  "currentRevision": number;
+  "nextRevision": number;
+  "added": RolePermissionDiffItemDto[];
+  "removed": RolePermissionDiffItemDto[];
+  "unchangedCount": number;
+  "resultCodes": string[];
+}
+
+export interface RolePermissionPreviewResponseDto {
+  "valid": boolean;
+  "blockingIssues": RolePermissionPreviewIssueDto[];
+  "outcome": RolePermissionPreviewOutcomeDto;
+}
+
+export interface RolePermissionSetEditPolicyDto {
+  "canEdit": boolean;
+  "readOnlyReason": Record<string, unknown> | null;
+}
+
+export interface RolePermissionSetResponseDto {
+  "role": RolePermissionSetRoleDto;
+  "permissionRevision": number;
+  "permissionCodes": string[];
+  "editPolicy": RolePermissionSetEditPolicyDto;
+}
+
+export interface RolePermissionSetRoleDto {
+  "id": string;
+  "code": string;
+  "displayName": string;
+  "kind": "SYSTEM" | "CUSTOM";
+  "permissionManagementMode": "RELEASE_MANAGED" | "ADMIN_EDITABLE";
+  "bindingManagementMode": "SYSTEM_ONLY" | "MANUAL_ALLOWED" | "POLICY_DERIVED";
 }
 
 export interface SmsSendLogResponseDto {
