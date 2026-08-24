@@ -82,7 +82,7 @@ RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-
 | `docs:openapi` | `docs/handoff/openapi.json` | `src/` 全量(经 ts-node 模块图 809 份)| 否 |
 | `docs:feclient` | `docs/handoff/clients/` | **只有** `docs/handoff/openapi.json` | ⭐ **是 —— 全仓唯一一条** |
 | `docs:authz` | `ROUTE_AUTHZ.md` + `harness/authz-assertion-patterns.json` | `src` 下全部 `.ts`(**排除 `*.spec.ts`**)+ `test/contract/openapi.contract-spec.ts` | 否 |
-| `docs:codemap` | `CODEMAP.md` | `src/` | 否 |
+| `docs:codemap` | `CODEMAP.md` | `src/` + `prisma/migrations/` 与 `test/e2e/` 的**目录枚举**(只数不读内容) | 否 |
 | `docs:rbacmap` | `RBAC_MAP.md` 生成段 | `src` 下 `*.controller.ts` + `prisma/seed.ts` | 否 |
 | `docs:counts` | `current-state.md` 计数块 | `src/` + `prisma/seed.ts` + `prisma/migrations/` + `test/contract/openapi.contract-spec.ts` | 否 |
 
@@ -118,12 +118,15 @@ RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-
 
 - ❌「`.md` 躺在 `src/` 里照样进 `inputDigest`」:`generate-authz-manifest.ts` 的 `sourceFiles()` 只收 `.ts`。
   实测给 `src/modules/members/CLAUDE.md` 追加一行 ⇒ **八条守护全绿**。
-  (`src` 下的 `CLAUDE.md` 确实被 `docs:readtax:check` 与 `check-codemap.ts` 读,但前者只量预算、后者只查存在。)
+  (`src` 下的 `CLAUDE.md` 确实被 `docs:readtax:check` 与 `check-codemap.ts` 碰,但前者只量字符预算、
+  后者**只查存在性** —— 实测 53 份全是 `existsSync`;`check-codemap.ts` 唯一读内容的 `CLAUDE.md` 是
+  `prisma/CLAUDE.md`,取的是里面**人手写的** migration 数。)
 - ❌「`*.spec.ts` 也算」:实测给 `member-grade.spec.ts` 追加一行 ⇒ 全绿。
 
 ### 取证方法(三法交叉,单用一种会漏)
 
 1. **运行期 fs 追踪** —— `--require` 预加载包住 `fs.*` / `child_process.*`,记录每个生成器**真正打开**了哪些文件(这是唯一能穷举输入面的一种)。
+   ⚠️ 读文件与**枚举目录**要分开记:上表 codemap 那一行的 `prisma/migrations/` 与 `test/e2e/` 就只出现在 `readdirSync` 里,只按 `readFileSync` 统计会整类漏掉。
 2. **扰动矩阵** —— 逐类改一个输入(`src` 的 `.ts` / `.spec.ts` / `.md`、生成物本身),八条守护逐条记红绿。
 3. **读常量** —— 读每个生成器的 `OUT` / `CONTRACT` / `sourceFiles()` 定义。
    ⚠️ 只用第 3 种会失败:多数 `readFileSync` 读的是变量。

@@ -96,7 +96,7 @@ const REGISTRY: readonly RegistryRow[] = [
   {
     check: 'docs:codemap:check',
     refresh: 'docs:codemap',
-    why: '产物 CODEMAP.md。只读 src/ 与自己的产物;**与 openapi.json 无关**',
+    why: '产物 CODEMAP.md。读 src/ 与自己的产物,另枚举 prisma/migrations/ 与 test/e2e/ 目录(只数不读内容);**与 openapi.json 无关**',
   },
   {
     check: 'docs:rbacmap:check',
