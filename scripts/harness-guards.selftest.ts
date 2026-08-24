@@ -938,20 +938,48 @@ checkEq(
       );
     }
 
-    // 禁止型:标记 / 令牌 / 分支一律不得再按 REPO_ROOT 解析。
-    // 这三条是**修复前**的原写法,任何一条回来都意味着缺陷复发。
+    // 禁止型:标记 / 令牌 / 相对化一律不得再按 REPO_ROOT 解析。
+    // 这四条是**修复前**的原写法,任何一条回来都意味着缺陷复发。
     const FORBIDDEN: Array<[string, string]> = [
       ['git -C "$REPO_ROOT" rev-parse --git-path', '按主仓解析标记/令牌路径'],
       ['MARKER="$REPO_ROOT/', '标记回落到主仓'],
       ['GRANT_FILE="$REPO_ROOT/', '令牌回落到主仓'],
       ['REL="${FILE#$REPO_ROOT/}"', '按主仓相对化(worktree 绝对路径会被当成仓外放行)'],
     ];
+    // ⚠️ **必须先剥行注释再判**:上面那段推导块的注释里**逐字引用了旧写法**用来解释
+    // 缺陷是什么,不剥的话「解释这次修复的那句话」自己会被判成缺陷复发。
+    // 本次施工当场踩到(闸接上第一次跑就红了三条,全是注释)—— 与 replay 的
+    // release-prepare-anchors 探针同一课:**描述文本 ≠ 代码位**。
+    // 只剥「整行以 # 开头」的行:shell 的 ${var#pattern} 展开里也含 #,
+    // 从第一个 # 截断会把真代码切碎。
+    const codeOf = (src: string): string =>
+      src
+        .split('\n')
+        .filter((l) => !l.trim().startsWith('#'))
+        .join('\n');
+    const scanForbidden = (src: string): string[] => {
+      const code = codeOf(src);
+      return FORBIDDEN.filter(([needle]) => code.includes(needle)).map(([, why]) => why);
+    };
+
+    // 阳性对照:剥注释是为了治误伤,但它同时开了一个洞 —— 万一剥过头/判据失配,
+    // 这条闸会变成恒绿而毫无症状(正是它自己要防的那种失效)。所以两个方向都钉:
+    const fakeOld = 'MARKER="$REPO_ROOT/$MARKER_PATH"\nREL="${FILE#$REPO_ROOT/}"\n';
+    const fakeCommentOnly = '# 旧写法是 REL="${FILE#$REPO_ROOT/}" 与 MARKER="$REPO_ROOT/x",已改掉\n';
+    check(
+      '仓根推导(禁止型)阳性对照:合成的旧写法必被抓出',
+      scanForbidden(fakeOld).length === 2,
+      `合成样例只抓出 ${scanForbidden(fakeOld).length} 条,期望 2 —— 判据已失配,这条闸恒绿`,
+    );
+    check(
+      '仓根推导(禁止型)反向对照:注释里引用旧写法**不**算复发',
+      scanForbidden(fakeCommentOnly).length === 0,
+      `注释被误判成复发 ${scanForbidden(fakeCommentOnly).length} 条 —— 会天天误伤`,
+    );
+
     const offenders: string[] = [];
-    for (const name of [...SHARED, 'bash-write-guard.sh']) {
-      const src = hookSrc(name);
-      for (const [needle, why] of FORBIDDEN)
-        if (src.includes(needle)) offenders.push(`${name}:${why}`);
-    }
+    for (const name of [...SHARED, 'bash-write-guard.sh'])
+      for (const why of scanForbidden(hookSrc(name))) offenders.push(`${name}:${why}`);
     check(
       '仓根推导(禁止型):没有 hook 再按 REPO_ROOT 查标记 / 令牌 / 相对化',
       offenders.length === 0,
