@@ -6,6 +6,7 @@ import {
   MIN_PROOF_REUSE_MUTATIONS,
   MIN_SAFE_DTO_SITES,
   MIN_TRIGGERING_CODES,
+  MIN_WRITE_PATHS,
   PROOF_REUSE_MUTATIONS,
   analyzeRolePermissionImpact,
   checkProofFamilyForgery,
@@ -116,9 +117,31 @@ describe('step-up 的射程登记 —— 缺口必须在机器上可见', () => 
     expect(report.jurisdiction.gateIsConditional).toBe(false);
   });
 
-  it('🔴 旧增量端点 assign / revoke **不受管辖**(登记在案的真实缺口),且它们仍在并经唯一写原语落库 —— PR 8 退役它们时本条必红,强制重看登记', () => {
-    expect(report.jurisdiction.outOfScopeReach).toEqual({ assign: false, revoke: false });
-    expect(report.jurisdiction.legacyEntriesStillWired).toEqual({ assign: true, revoke: true });
+  // ⭐ **P1-32 PR 8(2026-08-24):这条断言按它自己的设计被迫重看了。**
+  //    PR 5 时它写的是「旧增量端点 assign / revoke 不受管辖(登记在案的真实缺口),
+  //    且它们仍在并经唯一写原语落库 —— PR 8 退役它们时本条必红,强制重看登记」。
+  //    ⇒ 本刀删掉了那两个端点与两个 service 方法,射程登记随之清空。
+  //    **不是删掉这条断言**,而是把它换成更强的形态:从「登记一条已知缺口」
+  //    变成「**禁止**任何绕过 step-up 的写路径」——
+  //    前者是标注型(对「接缝回退」失明),后者是禁止型(动态发现,新增写入口自动纳管)。
+  it('🔴 零旁路:凡能改写 role_permissions 的方法都必须经 step-up 闸(PR 8 退役旧增量端点后的终态)', () => {
+    // 射程登记已清空 —— 旧缺口窗口关闭
+    expect(report.jurisdiction.outOfScopeReach).toEqual({});
+    expect(report.jurisdiction.legacyEntriesStillWired).toEqual({});
+
+    // 仪器先自证:扫描面没塌(否则下面那条「零旁路」是空集恒真)
+    expect(report.jurisdiction.writePathsToPrimitive.length).toBeGreaterThanOrEqual(
+      MIN_WRITE_PATHS,
+    );
+    // 今天的写面恰好是这三条:两个公开入口 + 它们共用的判定序列
+    expect(report.jurisdiction.writePathsToPrimitive).toEqual([
+      'previewReplace',
+      'replace',
+      'runReplaceSet',
+    ]);
+
+    // 主断言:一条旁路都没有
+    expect(report.jurisdiction.writePathsBypassingStepUp).toEqual([]);
     expect(report.jurisdictionViolations.map((v) => `${v.rule}: ${v.detail}`)).toEqual([]);
   });
 

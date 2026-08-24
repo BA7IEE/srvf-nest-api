@@ -868,14 +868,14 @@
       "description": null
     },
     "rbac.role-permission.create": {
-      "endpoints": 3,
-      "surface": "sha256:3832f64c1b5effa8de1cc3e36cc9b7652991b1329c359787e8ac6aa877d2582b",
-      "description": "sha256:dcc67a7d535d2b85b5e8a6e8668efcc9a31ee319da03919df427fc9b8488f1ca"
+      "endpoints": 2,
+      "surface": "sha256:be9cbe263108795273bff7ddc813fc934ff3617add5f4da00d32aced3ad6eec6",
+      "description": "sha256:e8defed1cbf1f40d2c10ddf2f7930e4c11214b0fa6536061ecdf606e084875fe"
     },
     "rbac.role-permission.delete": {
-      "endpoints": 3,
-      "surface": "sha256:f2260d3a91bc976cc7ed278d19aaeb83c692c120513ba59f86d05aea10ad2497",
-      "description": "sha256:b35cf68a6228cdfb749570dcbb0b65831c64659b819df8d0406b23fb7cdbd970"
+      "endpoints": 2,
+      "surface": "sha256:be9cbe263108795273bff7ddc813fc934ff3617add5f4da00d32aced3ad6eec6",
+      "description": "sha256:1c2e561962d41ed1bc205c2d5bd14694ebace10c9dd1d19ce0230862bab05739"
     },
     "rbac.role.create": {
       "endpoints": 1,

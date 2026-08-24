@@ -77,6 +77,15 @@ describe('RBAC multi-instance PostgreSQL consistency', () => {
     await Promise.all([appA.close(), appB.close()]);
   });
 
+  /** 取该角色当前 permissionRevision —— `PUT` 必带,而它在本用例里会被推进两次。 */
+  async function readPermissionRevision(): Promise<number> {
+    const res = await request(httpServer(appB))
+      .get(`/api/system/v1/roles/${roleId}/permissions`)
+      .set('Authorization', superAdminAuthB);
+    expect(res.status).toBe(200);
+    return res.body.data.permissionRevision as number;
+  }
+
   it('两套独立 provider 共库时,GLOBAL grant/revoke 与 RolePermission 变更在 A 下一请求即时收敛', async () => {
     expect(appA.get(RbacService)).not.toBe(appB.get(RbacService));
     expect(appA.get(PrismaService)).not.toBe(appB.get(PrismaService));
@@ -113,9 +122,13 @@ describe('RBAC multi-instance PostgreSQL consistency', () => {
     expect(allowedAfterBindingGrant.status).toBe(200);
 
     // B 撤销 role-permission，A 下一请求必须立即拒绝。
+    // ⚠️ P1-32 PR 8(2026-08-24):旧 `DELETE /:permissionId` 已退役,改用整集替换清空。
+    //    被测性质不变 —— 「B 改了映射,A 下一请求立即看见」与用哪个动词改无关。
+    const revisionBeforeRevoke = await readPermissionRevision();
     const revokePermission = await request(httpServer(appB))
-      .delete(`/api/system/v1/roles/${roleId}/permissions/${permissionId}`)
-      .set('Authorization', superAdminAuthB);
+      .put(`/api/system/v1/roles/${roleId}/permissions`)
+      .set('Authorization', superAdminAuthB)
+      .send({ permissionCodes: [], expectedRevision: revisionBeforeRevoke });
     expect(revokePermission.status).toBe(200);
 
     const deniedAfterPermissionRevoke = await request(httpServer(appA))
@@ -124,11 +137,14 @@ describe('RBAC multi-instance PostgreSQL consistency', () => {
     expectBizError(deniedAfterPermissionRevoke, BizCode.RBAC_FORBIDDEN);
 
     // B 恢复 role-permission，A 下一请求必须立即允许。
+    // ⚠️ 同上:旧 `POST`(增量授权)已退役,改用整集替换写回同一条码。
+    //    ⚠️ 状态码随之从 201 变 200 —— 那是 `PUT` 的既有契约,不是本条断言被放宽。
+    const revisionBeforeGrant = await readPermissionRevision();
     const grantPermission = await request(httpServer(appB))
-      .post(`/api/system/v1/roles/${roleId}/permissions`)
+      .put(`/api/system/v1/roles/${roleId}/permissions`)
       .set('Authorization', superAdminAuthB)
-      .send({ permissionCodes: ['rbac.permission.read'] });
-    expect(grantPermission.status).toBe(201);
+      .send({ permissionCodes: ['rbac.permission.read'], expectedRevision: revisionBeforeGrant });
+    expect(grantPermission.status).toBe(200);
 
     const allowedAfterPermissionGrant = await request(httpServer(appA))
       .get('/api/system/v1/permissions')

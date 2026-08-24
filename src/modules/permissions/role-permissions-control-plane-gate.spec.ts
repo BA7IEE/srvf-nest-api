@@ -33,7 +33,7 @@ import * as ts from 'typescript';
 //   下列三份 service 里,每一个会改写「角色行」「角色 ↔ 权限映射」或「Permission 行」的
 //   **公开**方法,都必须能到达该写面对应的**全部**闸。
 //
-// 🔴 **为什么必须动态现取方法名,不能写死 `['assign', 'revoke']`**:
+// 🔴 **为什么必须动态现取方法名,不能写死 `['assign', 'revoke']`**(历史原文,名单已两度变化):
 //    写死名单就是把缺陷复制一份 —— RBAC 终态方案 PR 4 计划加原子 `PUT`(整体替换某角色的
 //    权限集合),那是第三条写路径。写死名单时,新方法与它漏掉的闸会**一起**不在名单里,
 //    判据当场变成摆设,而且**全绿**。所以扫描面从 AST 现取:任何新公开方法只要碰了
@@ -42,8 +42,14 @@ import * as ts from 'typescript';
 //    ✅ **这条预告在 2026-08-23 兑现了**(P1-32 PR 4a):`replace()` 真的落地了,
 //    判据一行没改就把它收进了判定范围,自证里只是多加了一个地板锚点。同一刀还把
 //    `assign` / `revoke` 的落库全部收进私有原语 `replaceRolePermissionSet()` ——
-//    三条公开写路径身上**一个直接写点都没有**,全靠 `this.<x>()` 传递闭包被发现。
+//    公开写路径身上**一个直接写点都没有**,全靠 `this.<x>()` 传递闭包被发现。
 //    「传递闭包」从此不是纸面性质而是**唯一**在起作用的机制,故本 spec 为它加了一条常驻自证。
+//
+//    ✅ **反方向也兑现了(2026-08-24,P1-32 PR 8)**:`assign()` / `revoke()` 连同它们的
+//    两条旧增量端点被退役删除。判据**又是一行没改**就把名单收成了当前的两条 ——
+//    动态现取在「加」和「减」两个方向上都成立,只有下面的自证锚点跟着改了名字。
+//    ⚠️ `previewReplace`(dry-run)也在名单里:它到得了写原语,可达性闭包**刻意保守**,
+//       不按运行时分支剪枝 —— 于是它必须与真写路径过同一批闸(它确实过)。
 //
 // **判定口径**(刻意,不是省事):
 //   - 「会改写」= 该方法(含其嵌套函数体,如 `$transaction` 回调)能到达一次该写面 delegate
@@ -445,17 +451,17 @@ describe('RBAC 写路径必须全部过闸:控制面授码闸(E-B2)+ 系统内�
     // 映射面:证明 walker 真的钻进了 `$transaction` 回调,
     // 也证明它认得 `this.prisma.<delegate>` 与 `tx.<delegate>` 两种接收者写法。
     // P1-32 PR 4a 起第三条写路径 `replace`(原子 PUT)也在这里 —— 如上面预告的,只多一个,没红。
+    // ⚠️ P1-32 PR 8(2026-08-24)退役 `assign` / `revoke` 后,名单收成 replace + previewReplace。
     const mapping = namesOf(ROLE_PERMISSIONS_FILE, 'roleMapping');
-    expect(mapping).toContain('assign');
-    expect(mapping).toContain('revoke');
     expect(mapping).toContain('replace');
-    expect(mapping.length).toBeGreaterThanOrEqual(3);
+    expect(mapping).toContain('previewReplace');
+    expect(mapping.length).toBeGreaterThanOrEqual(2);
 
     // 角色行面:P1-32 PR 4a 起三条写路径都会 `tx.rbacRole.update` 把 permissionRevision +1,
     // 于是它们同时落进 `roleRow` 面 —— 主断言因此要求它们**也**过内建角色闸(本来就过)。
     // 钉在这里是为了让「版本号自增这条写也受闸」成为一条明写的事实,而不是靠读代码推断。
     const roleRowFromMapping = namesOf(ROLE_PERMISSIONS_FILE, 'roleRow');
-    expect(roleRowFromMapping).toEqual(expect.arrayContaining(['assign', 'revoke', 'replace']));
+    expect(roleRowFromMapping).toEqual(expect.arrayContaining(['replace', 'previewReplace']));
 
     // 角色行面:update / softDelete 都改既有行。
     const roleRow = namesOf(RBAC_ROLES_FILE, 'roleRow');
@@ -489,16 +495,17 @@ describe('RBAC 写路径必须全部过闸:控制面授码闸(E-B2)+ 系统内�
   });
 
   it('判据自证:传递闭包是发现侧的**唯一**依据 —— 三条写路径身上一个直接写点都没有', () => {
-    // 🔴 P1-32 PR 4a 把三条写路径的落库全部收进私有原语 `replaceRolePermissionSet()`,
-    //    `assign` / `revoke` / `replace` 的方法体里**一行 Prisma 写调用都没有**。
-    //    上面那条 `toContain('assign')` 因此完全靠 `this.<x>()` 传递闭包成立。
+    // 🔴 P1-32 PR 4a 把全部写路径的落库收进私有原语 `replaceRolePermissionSet()`,
+    //    公开方法的方法体里**一行 Prisma 写调用都没有**(PR 8 退役 assign / revoke 后
+    //    只剩 `replace` / `previewReplace` 两条,性质不变)。
+    //    上面那条 `toContain('replace')` 因此完全靠 `this.<x>()` 传递闭包成立。
     //
     //    这条自证是「闸/写操作被搬进私有 helper 后判据仍然认得出」这一性质的**常驻断言**,
     //    不是一次性变异对拍:对拍只证明改判据的那一刻它是活的,断言让它一直活着。
     //    若哪天有人把闭包退化成「只看方法体字面量」,发现侧会当场空掉 ——
     //    而空掉的发现侧会让主断言**全绿**(在一个空集上循环),那正是本仓最怕的失效形状。
     //    有了这一条,退化会先在这里红。
-    for (const method of ['assign', 'revoke', 'replace']) {
+    for (const method of ['replace', 'previewReplace']) {
       expect(directWriteCount(ROLE_PERMISSIONS_FILE, method, 'roleMapping')).toBe(0);
       expect(directWriteCount(ROLE_PERMISSIONS_FILE, method, 'roleRow')).toBe(0);
       // 方向二:直接写点为 0,但发现侧照样点得到它(否则上面那条是在空集上做断言)。
@@ -515,7 +522,7 @@ describe('RBAC 写路径必须全部过闸:控制面授码闸(E-B2)+ 系统内�
   });
 
   it('判据自证:isPublic 两个方向都有覆盖(恒 true 也必须红)', () => {
-    // - 恒 false ⇒ 上面 toContain('assign') 会红(assign 是公开的);
+    // - 恒 false ⇒ 上面 toContain('replace') 会红(replace 是公开的);
     // - 恒 true  ⇒ 上面那些**照样全绿**(两个类当前都没有会写这两个面的私有方法,
     //   坏掉的过滤器不会把任何东西多放进来)。故这里单独钉住「确实认出了私有」。
     const privateNames = (relPath: string): string[] =>

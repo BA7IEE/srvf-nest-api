@@ -112,11 +112,28 @@ export const STEP_UP_GATE = 'assertStepUpProofOrThrow';
 export const STEP_UP_IN_SCOPE_ENTRIES = ['replace', 'previewReplace'];
 
 /**
- * 闸**刻意不覆盖**的两个入口(旧增量端点)。
- * 🔴 这不是"忘了挂",是 goal「不改 replace 原语的判定」的直接后果,也是一条真实缺口。
- *    冻结稿 PR 8 退役这两条端点时,下面的地板断言会让本闸红并要求重看登记。
+ * 闸**刻意不覆盖**的入口。
+ *
+ * ⭐ **P1-32 PR 8(2026-08-24)起为空集,这是本闸的设计目的达成,不是判据失效。**
+ *    PR 5 交付时这里登记着 `['assign', 'revoke']` —— 两条旧增量端点走同一条写原语
+ *    却不经 `runReplaceSet()`,构成一条真实的 step-up 旁路(持
+ *    `rbac.role-permission.create` 的人可用 `POST` 加一条 CRITICAL 码而不触二次验证)。
+ *    当时那条 `stepup-scope-stale` 地板断言写着「PR 8 退役它们时本闸必红,强制重看登记」——
+ *    ⇒ **本次就是那一刻**:端点与两个 service 方法一并删除,登记随之清空,两份台账同步。
+ *
+ * 🔴 **清空不等于「以后随便加」**:旁路窗口关闭这件事必须继续被机器守住,
+ *    否则将来任何人新加一个绕过 `runReplaceSet()` 的写入口都不会有症状。
+ *    接替它的是下面那条**禁止型**不变量 `writePathsBypassingStepUp` ——
+ *    「凡能到达唯一写原语的方法,都必须能到达 step-up 闸」,**动态发现,不写死名单**。
+ *    (仓内教训:接通接缝后必须另立禁止型闸,标注型闸对「接缝回退」失明。)
  */
-export const STEP_UP_OUT_OF_SCOPE_ENTRIES = ['assign', 'revoke'];
+export const STEP_UP_OUT_OF_SCOPE_ENTRIES: readonly string[] = [];
+
+/**
+ * 地板:能到达唯一写原语的方法**至少**这么多条(今天是 `replace` / `previewReplace` /
+ * `runReplaceSet` 三条)。低于它说明扫描面塌了 —— 那时「零旁路」会退化成空集恒真。
+ */
+export const MIN_WRITE_PATHS = 3;
 
 /** 唯一写原语 —— 射程地板:两个旧入口必须仍然经它落库,否则说明端点没了/改道了。 */
 export const WRITE_PRIMITIVE = 'replaceRolePermissionSet';
@@ -779,8 +796,12 @@ function reachesMethod(
 export interface JurisdictionReport {
   readonly inScopeReach: Readonly<Record<string, boolean>>;
   readonly outOfScopeReach: Readonly<Record<string, boolean>>;
-  /** 旧入口是否仍然存在并经唯一写原语落库(地板:PR 8 删掉它们时本项变 false ⇒ 红)。 */
+  /** 旧入口是否仍然存在并经唯一写原语落库。PR 8 退役后恒为空对象(登记已清空)。 */
   readonly legacyEntriesStillWired: Readonly<Record<string, boolean>>;
+  /** 能到达唯一写原语的全部方法(动态发现;地板 `MIN_WRITE_PATHS`)。 */
+  readonly writePathsToPrimitive: readonly string[];
+  /** 其中**到不了** step-up 闸的 —— 即绕过二次验证的写路径。**必须恒为空**。 */
+  readonly writePathsBypassingStepUp: readonly string[];
   readonly gateIsConditional: boolean;
   readonly gateExists: boolean;
   /** `impactQuery` 出现在哪些方法里(应当恰是 preview 那一个)。 */
@@ -800,6 +821,14 @@ export function analyzeJurisdiction(): JurisdictionReport {
     legacyEntriesStillWired[entry] =
       methods.has(entry) && reachesMethod(methods, entry, WRITE_PRIMITIVE);
   }
+  // 🔴 禁止型不变量:凡能到达唯一写原语的方法,都必须能到达 step-up 闸。
+  //    写原语自身排除(它是终点,闸挂在它上游的 runReplaceSet 上)。
+  const writePathsToPrimitive = [...methods.keys()]
+    .filter((name) => name !== WRITE_PRIMITIVE && reachesMethod(methods, name, WRITE_PRIMITIVE))
+    .sort();
+  const writePathsBypassingStepUp = writePathsToPrimitive
+    .filter((name) => !gateReach(methods, name).includes(STEP_UP_GATE))
+    .sort();
   const impactQueryUsers = [...methods.values()]
     .filter((m) => m.identifiers.has(IMPACT_QUERY_PROPERTY))
     .map((m) => m.name)
@@ -811,6 +840,8 @@ export function analyzeJurisdiction(): JurisdictionReport {
     inScopeReach,
     outOfScopeReach,
     legacyEntriesStillWired,
+    writePathsToPrimitive,
+    writePathsBypassingStepUp,
     gateIsConditional,
     gateExists: methods.has(STEP_UP_GATE),
     impactQueryUsers,
@@ -858,12 +889,35 @@ export function checkJurisdiction(report: JurisdictionReport): Violation[] {
         rule: 'stepup-scope-stale',
         detail:
           `\`${entry}()\` 已经不存在、或不再经唯一写原语 \`${WRITE_PRIMITIVE}\` 落库 —— ` +
-          '本闸的射程登记建立在「旧增量端点仍在、且不受 step-up 管辖」这个事实上。' +
-          '⇒ 若这是冻结稿 PR 8 的退役,请**重看射程登记**:那条缺口窗口已经关闭,' +
+          '本闸的射程登记建立在「该入口仍在、且不受 step-up 管辖」这个事实上。' +
+          '⇒ 请**重看射程登记**:那条缺口窗口已经关闭,' +
           '把它从 STEP_UP_OUT_OF_SCOPE_ENTRIES 里删掉并同步台账。' +
           '本条存在的全部意义就是让这一刻**必须被看见**,而不是悄悄失效。',
       });
     }
+  }
+  // 🔴 禁止型不变量(P1-32 PR 8 接替 `stepup-scope-*` 的登记):零旁路。
+  if (report.writePathsToPrimitive.length < MIN_WRITE_PATHS) {
+    violations.push({
+      rule: 'writepath-scan-collapsed',
+      detail:
+        `只发现 ${report.writePathsToPrimitive.length} 条通往 \`${WRITE_PRIMITIVE}\` 的路径,` +
+        `低于地板 ${MIN_WRITE_PATHS} —— 扫描面塌了。` +
+        '这一条**必须先于**下面那条零旁路断言:扫描面塌掉时「零旁路」会退化成空集恒真,' +
+        '判据看起来全绿而实际上什么都没看。',
+    });
+  }
+  if (report.writePathsBypassingStepUp.length > 0) {
+    violations.push({
+      rule: 'stepup-bypass',
+      detail:
+        `这些方法能改写 role_permissions 却到不了 \`${STEP_UP_GATE}\`:` +
+        report.writePathsBypassingStepUp.join(' / ') +
+        ' —— 高风险变更从这条路进来就免检了。' +
+        'P1-32 PR 8 退役旧增量端点之后,写面收成 \`replace\` / \`previewReplace\` 两条、' +
+        '两条都在闸内;**新增写入口必须同样经 \`runReplaceSet()\`**,' +
+        '否则就是把 PR 8 刚关上的那扇旁路重新打开(而且不会有任何运行时症状)。',
+    });
   }
   if (report.gateIsConditional) {
     violations.push({

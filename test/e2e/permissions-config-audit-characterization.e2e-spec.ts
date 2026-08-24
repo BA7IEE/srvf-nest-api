@@ -28,7 +28,7 @@ import { createTestApp } from '../setup/test-app';
 //
 // 覆盖矩阵:
 //   A. rbac-role.{create,update,delete}
-//   B. role-permission.{grant,revoke}
+//   B. role-permission.replace(⚠️ P1-32 PR 8 前是 `{grant,revoke}`,随两条旧增量端点退役改打 replace)
 //   C. permission.{create,update,delete}
 //   D. audit failure → $transaction 回滚(每服务一例:无实体变更 + 无 audit 残留)
 
@@ -203,40 +203,86 @@ describe('permissions config-audit characterization (F&A-2)', () => {
       return { roleId: role.id, permId: perm.id, code };
     }
 
-    it('B1. grant → event=role-permission.grant + extra.{operation,permissionCodes,requestedCount}', async () => {
+    // ⚠️ **P1-32 PR 8(2026-08-24)迁移说明 —— B1/B2 是改打新入口,不是放宽**:
+    //    这两条原先打 `assign()` / `revoke()`(旧 POST / DELETE 的 service 方法),
+    //    随两条端点一起退役。它们锁的性质是**「写路径产出的 audit 长什么样」**:
+    //      · resourceType='role_permission' 且 resourceId=**roleId**(不是 rolePermission 行 id)
+    //      · actor 三件套 + requestId/ip/ua 从 AuditMeta 原样落库
+    //      · extra 能分辨「这次加了什么 / 撤了什么」
+    //    这三条性质在**仅存的写入口** `replace()` 上逐条都在,只是事件名与 extra 字段名不同
+    //    (`role-permission.replace` + addedCodes/removedCodes)。⇒ 改打 replace,断言一条没松。
+    //    ⚠️ 旧事件名 `role-permission.grant` / `.revoke` 的**词条仍在** audit-logs.types.ts,
+    //       但全仓已无产出者 —— 那是历史 audit 行的词汇,不是还活着的写路径。
+
+    it('B1. replace 加码 → event=role-permission.replace + extra.{operation,addedCodes,resultCodes,版本区间}', async () => {
       const { roleId, code } = await seedRoleAndPerm();
-      await rolePermissions.assign(actor, roleId, { permissionCodes: [code] }, AUDIT_META);
-      const audits = await prisma.auditLog.findMany({ where: { event: 'role-permission.grant' } });
+      await rolePermissions.replace(
+        actor,
+        roleId,
+        { permissionCodes: [code], expectedRevision: 0 },
+        AUDIT_META,
+      );
+      const audits = await prisma.auditLog.findMany({
+        where: { event: 'role-permission.replace' },
+      });
       expect(audits).toHaveLength(1);
       const a = audits[0];
       assertCommon(a, 'role_permission');
       expect(a.resourceId).toBe(roleId); // resourceId = roleId(非 rolePermission 行 id)
       const c = a.context as unknown as ReadAuditContext<{
         operation: string;
-        permissionCodes: string[];
-        requestedCount: number;
+        addedCodes: string[];
+        removedCodes: string[];
+        resultCodes: string[];
+        fromRevision: number;
+        toRevision: number;
       }>;
       assertMeta(c);
-      expect(c.extra?.operation).toBe('grant');
-      expect(c.extra?.permissionCodes).toEqual([code]);
-      expect(c.extra?.requestedCount).toBe(1);
+      expect(c.extra?.operation).toBe('replace');
+      expect(c.extra?.addedCodes).toEqual([code]); // 「这次加了什么」——原 B1 的 permissionCodes
+      expect(c.extra?.removedCodes).toEqual([]);
+      expect(c.extra?.resultCodes).toEqual([code]);
+      expect(c.extra?.fromRevision).toBe(0);
+      expect(c.extra?.toRevision).toBe(1);
     });
 
-    it('B2. revoke → event=role-permission.revoke + extra.permissionId', async () => {
-      const { roleId, permId, code } = await seedRoleAndPerm();
-      await rolePermissions.assign(actor, roleId, { permissionCodes: [code] }, AUDIT_META);
-      await rolePermissions.revoke(actor, roleId, permId, AUDIT_META);
-      const audits = await prisma.auditLog.findMany({ where: { event: 'role-permission.revoke' } });
-      expect(audits).toHaveLength(1);
-      const a = audits[0];
+    it('B2. replace 撤码 → 同一事件的 removedCodes 记下撤的那条,resourceId 仍是 roleId', async () => {
+      const { roleId, code } = await seedRoleAndPerm();
+      await rolePermissions.replace(
+        actor,
+        roleId,
+        { permissionCodes: [code], expectedRevision: 0 },
+        AUDIT_META,
+      );
+      await rolePermissions.replace(
+        actor,
+        roleId,
+        { permissionCodes: [], expectedRevision: 1 },
+        AUDIT_META,
+      );
+      const audits = await prisma.auditLog.findMany({
+        where: { event: 'role-permission.replace' },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(audits).toHaveLength(2); // 授 + 撤 各一条,不是合并成一条
+      const a = audits[1];
       assertCommon(a, 'role_permission');
       expect(a.resourceId).toBe(roleId);
       const c = a.context as unknown as ReadAuditContext<{
         operation: string;
-        permissionId: string;
+        addedCodes: string[];
+        removedCodes: string[];
+        resultCodes: string[];
+        fromRevision: number;
+        toRevision: number;
       }>;
-      expect(c.extra?.operation).toBe('revoke');
-      expect(c.extra?.permissionId).toBe(permId);
+      assertMeta(c);
+      expect(c.extra?.operation).toBe('replace');
+      expect(c.extra?.addedCodes).toEqual([]);
+      expect(c.extra?.removedCodes).toEqual([code]); // 「这次撤了什么」——原 B2 的 permissionId 语义
+      expect(c.extra?.resultCodes).toEqual([]);
+      expect(c.extra?.fromRevision).toBe(1);
+      expect(c.extra?.toRevision).toBe(2);
     });
   });
 
@@ -395,7 +441,7 @@ describe('permissions config-audit characterization (F&A-2)', () => {
       expect(await prisma.auditLog.count()).toBe(0);
     });
 
-    it('D3. role-permission.grant 路径 writeConfigAudit 抛错 → 无 RolePermission + 无 audit', async () => {
+    it('D3. role-permission.replace 路径 writeConfigAudit 抛错 → 无 RolePermission + 无 audit', async () => {
       const role = await rbacRoles.create(
         actor,
         { code: 'audit-rollback-rp-role', displayName: 'RP回滚' },
@@ -416,10 +462,10 @@ describe('permissions config-audit characterization (F&A-2)', () => {
         .spyOn(configAudit, 'writeConfigAudit')
         .mockRejectedValueOnce(new Error('simulated audit failure'));
       await expect(
-        rolePermissions.assign(
+        rolePermissions.replace(
           actor,
           role.id,
-          { permissionCodes: ['audit-rollback-rp.read.x'] },
+          { permissionCodes: ['audit-rollback-rp.read.x'], expectedRevision: 0 },
           AUDIT_META,
         ),
       ).rejects.toThrow('simulated audit failure');

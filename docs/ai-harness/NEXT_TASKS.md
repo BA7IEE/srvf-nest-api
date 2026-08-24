@@ -1991,14 +1991,22 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 判据是「这条 hook 挂了哪些 matcher?写文件还有别的通道吗?」——
 仓内每条 PreToolUse hook 都值得照此对一遍。
 
-### P1-32 RBAC 权限目录与角色权限管理终态 —— 9 个 PR,**PR 0/1/2/3a/3b/4a/4b 七刀已合(按 PR 编号完整落地 5/9),PR 5 在飞,余 PR 6–8 待排**
+### P1-32 RBAC 权限目录与角色权限管理终态 —— 9 个 PR,**PR 0/1/2/3a/3b/4a/4b/5/8 九刀已合(按 PR 编号完整落地 7/9),余 PR 6–7 等前端**
 
-**状态**:进行中(5/9 完整落地;PR 0/1/3a/3b/4a 已合 #1145 #1143 #1147 #1151 #1156,PR 2 已合 #1170,PR 4b 已合 #1171 —— **PR 4 两半齐全**;PR 5「影响预览与 Step-up」由本刀交付〔在飞的 PR 号不写进状态行 —— 判据 B 要求 `#N` 已合入 main〕;余 PR 6–8,其中 PR 7 依赖前端投用)
+**状态**:进行中(7/9 完整落地;PR 0/1/3a/3b/4a 已合 #1145 #1143 #1147 #1151 #1156,PR 2 已合 #1170,PR 4b 已合 #1171 —— **PR 4 两半齐全**;PR 5「影响预览与 Step-up」已合 **#1175**;PR 8「旧增量写端点退役」本刀交付 —— ⚠️ **只做了 PR 8 的一半**,见下方「PR 8 拆刀」;余 PR 6–7,两条都依赖前端投用)
+
+> ⚠️ **读数订正(2026-08-24)**:本行此前一直写着「5/9,PR 5 在飞」—— PR 5 已于 `507d2bd3`(#1175)合入,
+> 但那刀按「在飞的 PR 号不写进状态行」的规矩没写号,合入后也没人回填。PR 8 这刀一次补两笔:
+> **5/9 →(补记 PR 5)6/9 →(本刀 PR 8)7/9**。
 
 > ⚠️ **PR 5 落地后「step-up 已生效」不是一句完整为真的话**:闸挂在 `runReplaceSet()`
 > (`PUT` + `preview`),**旧增量端点 `POST` / `DELETE /roles/:id/permissions` 不受管辖** ——
 > 持 `rbac.role-permission.create` 的人仍可用 `POST` 加一条 CRITICAL 码而不触二次验证。
 > 这是 goal「不改 replace 原语的判定」的直接后果;缺口窗口 = 「PR 5 合入 → **PR 8** 退役旧端点」。
+> ✅ **窗口已于 2026-08-24 关闭(PR 8)**:两条旧增量端点与 `assign()` / `revoke()` 已删,
+> 写面只剩 `replace` / `previewReplace`,两者都在闸内。射程登记从「标注型」换成**禁止型**
+> 不变量(「凡能到达唯一写原语的方法都必须能到达 step-up 闸」,动态发现不写死名单),
+> 变异对拍实测有执行位。下面那句「持 create 的人仍可用 POST……」自本日起是**历史记录**。
 > ⭐ 而 **PR 8 恰好就是下一刀**(2026-08-24 维护者把 PR 6 改判为与 PR 7 同批,见上方第四梯队)
 > ⇒ 这个窗口很短,但**不是零** —— 别在 PR 5 合入后就把「step-up 已生效」当成完整为真的话。
 > ⭐ 缺口已做成机器可见:`scripts/check-role-permission-impact.ts` 的 `stepup-scope-*` 把当前射程
@@ -2132,7 +2140,7 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 | **第一** | 发版 **v0.67.0** —— 182 个提交 / 128 份 fragment 该收口 | 第六轮四刀落完 |
 | **第二** | PR 0 **决策拍板** → PR 1 Catalog 单一事实源 → PR 2 只读 API | ⚠️ PR 0 要维护者给 **236 条权限**逐条定中文名/分类/风险/授予策略,DoD 明写「**没有『以后再说』的未分类 active 权限**」—— 建议照字典定稿单的做法,先拉成可过目清单分批确认 |
 | **第三** | ~~PR 3a 系统角色只读 + 保留码对 SA 也关上~~ ✅ 已落(2026-08-23)· PR 3b Catalog-owned Permission 禁运行时增删改 · PR 4 原子 `PUT` + `permissionRevision` · PR 5 影响预览 + step-up | 依赖 Catalog 落地 |
-| **第四** | ~~PR 6 scope 兼容提示~~ **与 PR 7 一起做** · PR 7 Admin Web 接入 · **PR 8 旧接口退役 ← 下一刀** | ⚠️ PR 7 依赖前端;`srvf-admin-web` 目前**尚未真正投用** |
+| **第四** | ~~PR 6 scope 兼容提示~~ **与 PR 7 一起做** · PR 7 Admin Web 接入 · ~~PR 8 旧接口退役~~ ✅ **前一半已落(2026-08-24)**,后一半拆出见下 | ⚠️ PR 7 依赖前端;`srvf-admin-web` 目前**尚未真正投用** |
 
 > 🔴 **PR 6 改判为「与 PR 7 同批」(维护者 2026-08-24 拍板)** —— 它不是「还没排到」,是**排它现在没有意义**:
 > - 它的两个产出是 `Catalog scopeProfile`(数据)与 `RoleBinding preview` 返 warning(API 字段),
@@ -2141,6 +2149,57 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 >   那是**判断题不是机械题**,需要维护者逐条拍板。⭐ **等前端投用时再判会准得多** —— 那时有真实场景可参照,现在是凭空判。
 >
 > ⇒ **RBAC 这条线在前端投用之前,PR 8 是最后一件真正有意义的活。**
+
+#### ⭐ PR 8 拆刀 —— 前一半已落,后一半「Permission 写 CRUD 退役」**单独立项待拍板**
+
+**已落(2026-08-24)**:删 `POST /api/system/v1/roles/{id}/permissions`(assign)与
+`DELETE /api/system/v1/roles/{id}/permissions/{permissionId}`(revoke),路由 **554 → 552**,
+2 块契约破坏申报,53 处 e2e 调用点全部改打 `PUT`(零删除),step-up 射程登记换成禁止型不变量。
+
+**未做(本条)**:冻结稿同句的另一半 ——
+`POST` / `PATCH` / `DELETE /api/system/v1/permissions` 三条 Permission 写 CRUD。
+
+##### ① 为什么拆
+
+**替代品成熟度差一个量级**。`PUT`(整集替换)是 `assign` / `revoke` 的**完整**替代 ——
+「加 N 条」= 目标集 ∪ N,「撤一条」= 目标集 \ 它,语义逐条对得上。
+而 Permission 写 CRUD **没有任何替代端点**:删完 `permissions.controller.ts` 只剩两个 `@Get`
+(列表 + `/catalog`),写面归零 —— 迁移文档里没有「改成打谁」这一栏可填。
+
+##### ② 代价清单(实测,不是估算)
+
+| 项 | 读数 |
+|---|---|
+| 失去被测对象的断言 | **~34 条** = `permission-catalog-guardrail.e2e-spec.ts` **9 条整份** + `permissions.e2e-spec.ts` **10 个 `it`** + 两个 `it.each`(13 + 9 = **22 例**) |
+| 变不可达的 BizCode | **5 条**:`30002` PERMISSION_CODE_ALREADY_EXISTS · `30008` INVALID_PERMISSION_CODE_FORMAT · `30105` SEED_PERMISSION_DELETE_FORBIDDEN · `30106` PERMISSION_CODE_NOT_IN_SEED_CATALOG · `30110` SEED_PERMISSION_UPDATE_FORBIDDEN(唯一 throw 点全在 `permissions.service.ts`) |
+| service 层连坐 | `permissions-config-audit-characterization.e2e-spec.ts` 的 **C1 / C2 / C2b / C3 / D2** 五条直调 `PermissionsService.create/update/delete` |
+| 判据连坐 | `scripts/check-permission-catalog-metadata.ts:75` 的 `LEGACY_PERMISSION_CRUD_CODES` 把 `rbac.permission.{create,update,delete}` 钉成 `ACTIVE`(PR 0 决策⑤的执行位,红区 selfGuard 内,动它要新授权) |
+
+🔴 **最要命的一条**:`permission-catalog-guardrail.e2e-spec.ts:146` 那条 ⭐ **反面样本**
+(绕过 HTTP 直发 SQL 删码 → 两条角色授权跟着 CASCADE 消失,证明护栏挡的就是这个)
+在语法上还能跑,但**失去正面对照后它证明不了任何东西** —— 变成一条自说自话的 SQL 演示。
+
+##### ③ 三条候选路(**登记 ≠ 批准**,要维护者单独拍板)
+
+| 路 | 做法 | 代价 |
+|---|---|---|
+| **A** | 冻结稿的另一半措辞:**永久封闭**而不是删除 —— 三条路由保留、恒返固定拒绝码 | 断言全部原样活着、端点数不变;但成功状态码变了,`gate:contract:semantic` 的 `B9/success-status-changed` 照样判 breaking,且与「整洁」这个目标背道而驰 |
+| **B** ⭐ | **全删 + 另立结构性禁止闸**:新写一条判据断言「全仓不存在 Permission 的写路由 / 写 service 方法」 | **结构上不存在 > 运行时拒绝**,比原来的 30105/30106/30110 更强,也正是仓内「接通接缝后必须另立**禁止型**闸」的形态。⚠️ 但字面上是「删掉 ~34 条 e2e 断言换一条静态判据」——**行为契约变更,必须维护者点头**;且要新开 `scripts/check-*.ts` 的红区授权 |
+| **C** | 维持现状,不动 | 三条端点继续存在但**实际写不动任何码**(PR 3b 起 237 条全被护栏挡住),是一组「只会失败的端点」 |
+
+⭐ **起草方倾向 B** —— 理由是结构性否定强于运行时拒绝,且它把「Permission 只能由 seed 定义」
+这条铁律从「运行时会拒」升级成「代码里根本没有那条路」。
+⚠️ **但这条倾向不构成批准**:它是行为契约变更(AGENTS §2「改既有 e2e 断言 = 改行为契约 → 停下报告」),
+必须由维护者单独拍板,并单独发放红区授权。
+
+##### ④ 顺带登记的两笔小账(本刀产生,择机清理,不阻塞任何东西)
+
+- `role-permissions.e2e-spec.ts` 的「权限边界」describe 与 `PUT` describe 的边界用例
+  **落在同一根轴上**(写面收成一条之后)⇒ 有 3 条冗余。本刀**刻意保留不删**(删测试是硬红线),
+  留待整理刀按「先合并再删」的流程处理。
+- 孤儿码 `30011 ROLE_PERMISSION_NOT_FOUND` 与孤儿 audit 事件
+  `role-permission.grant` / `role-permission.revoke`:词条**刻意保留**(历史 audit 行里有这些字符串,
+  号段 / 名字一律不回收复用),全仓已零产出者。计数因此仍是 BizCode 466 / AuditLogEvent 147。
 
 #### 体量提示
 

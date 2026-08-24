@@ -1,19 +1,7 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Put,
-  Req,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
-  ApiWrappedCreatedResponse,
   ApiBizErrorResponse,
   ApiWrappedOkResponse,
 } from '../../common/decorators/api-response.decorator';
@@ -26,9 +14,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { PermissionResponseDto } from './permissions.dto';
 import { RbacRoleDetailResponseDto, RbacRoleResponseDto } from './rbac-roles.dto';
 import {
-  AssignRolePermissionsDto,
   ReplaceRolePermissionsDto,
-  RevokeRolePermissionParamDto,
   RolePermissionDiffItemDto,
   RolePermissionImpactDto,
   RolePermissionImpactPrincipalBreakdownDto,
@@ -54,12 +40,24 @@ function buildAuditMeta(req: Request): AuditMeta {
 }
 
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表 Controller。
-// 5 个端点(沿 D7 v1.1 §5.1 端点 10-11 + P1-32 PR 4a + 4b):
+// 3 个端点(P1-32 PR 4a + 4b;**PR 8〔2026-08-24〕退役了两条旧增量端点**):
 //   GET    /api/system/v1/roles/:id/permissions       取当前权限集(4b;冻结稿 §9.2)
-//   POST   /api/system/v1/roles/:id/permissions       批量授权(幂等,增量)
 //   PUT    /api/system/v1/roles/:id/permissions       整集替换(带 expectedRevision 乐观并发)
 //   POST   /api/system/v1/roles/:id/permissions/preview  变更预览(4b;冻结稿 §9.3,零写入)
-//   DELETE /api/system/v1/roles/:id/permissions/:permissionId  撤权(精确)
+//
+// ─── P1-32 PR 8(2026-08-24):旧增量端点退役 ──────────────────────────────
+//
+// 🔴 **已删**:`POST /roles/:id/permissions`(assign,增量加码)与
+//    `DELETE /roles/:id/permissions/:permissionId`(revoke,增量减码)。
+//    替代品是 `PUT`(整集替换)+ `POST /preview`(先看后提交)——
+//    调用方从「加这几条 / 减这一条」改成「先 GET 拿 permissionCodes[] 与 permissionRevision,
+//    在本地增删后整集 PUT 回来,并带上那个 revision」。
+//
+// ⚠️ **前提五条一条不满足**(无生产日志 / 前端未切 / 从没 deprecate 过 / 外部调用方未验 /
+//    无回滚方案),维护者 2026-08-24 **知情后重申「直接删」** ⇒ 按拍板执行。
+//    ⭐ **安全价值不是本刀拿到的** —— 三个写端点对 seed 闭包内的码早在 PR 3b 就分别抛
+//    30106 / 30110 / 30105,237 条码那时起就写不动了。**本刀拿到的是「整洁」**:
+//    旧增量路径消失 ⇒ 下面那条 step-up 旁路一并消失。
 //
 // ─── P1-32 PR 4b(2026-08-24):读 / 预览面 ─────────────────────────────────
 //
@@ -111,29 +109,30 @@ function buildAuditMeta(req: Request): AuditMeta {
 //    那是把控制面两层闸重新表达一遍,属 preview 的第二份真相形状;要做得先把
 //    `assertControlPlaneCodesOrThrow` 拆成 per-code verdict 让两侧共用,属改写路径)。
 //
-// 🔴 **step-up 的射程**:闸挂在 `RolePermissionsService.runReplaceSet()` 上,只覆盖
-//    `PUT` 与 `preview`。**下面的 `POST` / `DELETE` 两条旧增量端点不受它管辖** ——
-//    持 `rbac.role-permission.create` 的人仍可用 `POST` 加一条 CRITICAL 码而不触二次验证。
-//    这是 goal「不改 replace 原语的判定」的直接后果,窗口是「PR 5 合入 → PR 8 退役旧端点」。
-//    射程由 `scripts/check-role-permission-impact.ts` 的 `stepup-scope-*` 登记并钉住。
+// 🔴 **step-up 的射程(PR 8 后已闭合)**:闸挂在 `RolePermissionsService.runReplaceSet()` 上,
+//    覆盖 `PUT` 与 `preview`。PR 5 合入时它**不管辖**旧增量端点 `POST` / `DELETE` ——
+//    持 `rbac.role-permission.create` 的人可用 `POST` 加一条 CRITICAL 码而不触二次验证。
+//    ⭐ **那条旁路随本刀消失**:两条旧端点已删,写面只剩 `PUT` 与 `preview`,两者都在闸内
+//    ⇒ **不存在绕过 step-up 的写路径**。窗口 =「PR 5 合入 → PR 8 退役旧端点」,现已关闭。
+//    射程登记在 `scripts/check-role-permission-impact.ts` 的 `stepup-scope-*`,PR 8 已同步重看。
 //
-// 三条**写**契约互不相同,但**内部只有一条写原语**(RolePermissionsService
-// .replaceRolePermissionSet)—— 见该 service 头部「三条端点、一条写原语」。
-// 4b 的 preview 走同一条原语的 dry-run 分支 ⇒ 「会发生什么」这个问题全仓只有一处答案。
+// 两条**写**契约(`PUT` 真写 / `preview` dry-run)共用**同一条写原语**
+// (RolePermissionsService.replaceRolePermissionSet)—— 见该 service 头部「一条写原语」。
+// preview 走同一条原语的 dry-run 分支 ⇒ 「会发生什么」这个问题全仓只有一处答案。
 //
 // **路径参数语义**(沿 D7 v1.1 §5.1):
 // - `:id` = roleId(cuid 字符串)
-// - `:permissionId` = permission.id(cuid 字符串;**不**是 permission.code;
-//   有意设计:POST 批量授权用 codes 易读,DELETE 单条撤权用 id 精确)
+// - ⚠️ `:permissionId` 随 PR 8 的 `DELETE` 一起消失;本 controller 现在只剩 `:id` 一个路径参数。
 //
-// **出参**:三条**写**端点统一返 RbacRoleDetailResponseDto(沿 RbacRole detail 接口),
+// **出参**:`PUT` 返 RbacRoleDetailResponseDto(沿 RbacRole detail 接口),
 // 调用者一次拿到该角色当前完整 permissions 列表,前端"保存当前选中"语义友好。
 // P1-32 PR 4a 起该 DTO additive 多一个 `permissionRevision`,前端拿回来直接用于下一次 PUT。
 //
 // **权限标注**(P0-F PR-1,2026-05-18):入口仅 JwtAuthGuard,**不**挂 `@Roles(...)`;
 // 全部判权迁移到 RolePermissionsService 内 `rbac.can()`,失败抛
 // BizException(BizCode.RBAC_FORBIDDEN)(30100)。沿 attachments F3 v1.0 范本。
-// 映射 seed 现有 2 条权限点:rbac.role-permission.{create,delete}。
+// 映射 seed 现有 2 条权限点:rbac.role-permission.{create,delete}——
+// PR 8 后两条码**同进同出**:唯一的写端点 `PUT` 与 `preview` 都 `require: 'all'` 地要这两条。
 
 @ApiTags('Ops - Role Permissions')
 @ApiBearerAuth()
@@ -180,33 +179,6 @@ export class RolePermissionsController {
     @Param() params: IdParamDto,
   ): Promise<RolePermissionSetResponseDto> {
     return this.service.findPermissionSet(user, params.id);
-  }
-
-  @Post()
-  @RequiresPermission('rbac.role-permission.create')
-  @ApiOperation({
-    summary:
-      '批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108) [rbac: rbac.role-permission.create]',
-  })
-  @ApiWrappedCreatedResponse(RbacRoleDetailResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.RBAC_FORBIDDEN,
-    BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY,
-    BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE,
-    BizCode.ROLE_NOT_FOUND,
-    BizCode.ROLE_DELETED,
-    BizCode.PERMISSION_NOT_FOUND,
-    BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
-  )
-  assign(
-    @CurrentUser() user: CurrentUserPayload,
-    @Param() params: IdParamDto,
-    @Body() dto: AssignRolePermissionsDto,
-    @Req() req: Request,
-  ): Promise<RbacRoleDetailResponseDto> {
-    return this.service.assign(user, params.id, dto, buildAuditMeta(req));
   }
 
   // P1-32 PR 4a(2026-08-23):整集替换。
@@ -284,31 +256,5 @@ export class RolePermissionsController {
     @Body() dto: ReplaceRolePermissionsDto,
   ): Promise<RolePermissionPreviewResponseDto> {
     return this.service.previewReplace(user, params.id, dto);
-  }
-
-  @Delete(':permissionId')
-  @RequiresPermission('rbac.role-permission.delete')
-  @ApiOperation({
-    summary:
-      '撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011;控制面码仅 SUPER_ADMIN 可撤返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.delete]',
-  })
-  @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
-  @ApiBizErrorResponse(
-    BizCode.BAD_REQUEST,
-    BizCode.UNAUTHORIZED,
-    BizCode.RBAC_FORBIDDEN,
-    BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY,
-    BizCode.ROLE_NOT_FOUND,
-    BizCode.ROLE_DELETED,
-    BizCode.PERMISSION_NOT_FOUND,
-    BizCode.ROLE_PERMISSION_NOT_FOUND,
-    BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
-  )
-  revoke(
-    @CurrentUser() user: CurrentUserPayload,
-    @Param() params: RevokeRolePermissionParamDto,
-    @Req() req: Request,
-  ): Promise<RbacRoleDetailResponseDto> {
-    return this.service.revoke(user, params.id, params.permissionId, buildAuditMeta(req));
   }
 }
