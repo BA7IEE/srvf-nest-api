@@ -84,8 +84,9 @@ goal 原文写的是「出现业务 model 的 **delegate** 访问即违规」。
 ## 3. `src/common/**` 子目录逐个定性
 
 > **取数时点:2026-08-21(`73eb9178`)。** 原文标题写「十二个子目录」,复核时实际 **14** 个 —— 见 §3.1。
+> **2026-08-24 起 15 个**:P1-32 PR 5 新增 `security`(1 文件),⏳ 待定性 —— 见 §3.2。
 
-扫描面 = **41** 个非 `.spec.ts` 文件(原文 36,复核订正;见 §3.1)。**剥掉注释后**全仓 `src/common` 中引用业务 Prisma
+扫描面 = **42** 个非 `.spec.ts` 文件(原文 36,2026-08-21 复核订正为 41;PR 5 +1)。**剥掉注释后**全仓 `src/common` 中引用业务 Prisma
 model 名的文件**只有 1 个**(`claim-at-status.util.ts`)。
 
 | 子目录 | 文件数 | 定性 | 依据 |
@@ -104,6 +105,41 @@ model 名的文件**只有 1 个**(`claim-at-status.util.ts`)。
 | `prisma` | 3 | **1 技术件 + 1 承重债 + 1 业务内核** | 见 §2.2 与 §4 |
 | `activity-workflow` | 3 | ⏳ **待定性(维护者拍板)** | 2026-08-21 复核发现:本刀之后新增,从未定性。见 §3.1 |
 | `identity` | 2 | ⏳ **待定性(维护者拍板)** | 同上 |
+| `security` | 1 | ⏳ **待定性(维护者拍板)** | 2026-08-24 P1-32 PR 5 新增。零 Prisma、零 model 名、零模块入边,但它绑的是 roleId / permissionRevision / 权限码集合 —— **语义归属 platform-access**。见 §3.2 |
+
+### 3.2 `security`(2026-08-24,P1-32 PR 5 新增)
+
+`src/common/security/role-permission-step-up-proof.ts`(1 文件)—— 角色权限集变更的二次验证 proof,
+签发与验签。**零 Prisma、零业务表知识、零模块 import**,§2 三条自动判据逐条为 0。
+
+🔴 **它放在 `src/common/` 是「可达性」的结果,不是「它是公共设施」的结论**:
+
+签发方在 `auth`(identity-org)、验签方在 `permissions`(platform-access),而**两个方向的模块间
+import 都过不了架构闸**(逐条实测):
+
+| 方向 | 实测 |
+|---|---|
+| `permissions → auth` | `allowedEdges` 里 **`platform-access → identity-org` 一条都没有** ⇒ `cross-domain-import` |
+| `auth → permissions` | 方向是允许边,但域图上 `platform-access → participation → identity-org` 已存在 ⇒ 这条边**闭合一个环**,报 `cross-domain-cycle`。⚠️ **不只是 `*.module.ts`** —— 撤掉模块 import、只留文件级 import,同一条环照样报 |
+
+两者都会触 `docs:boundaries:newdebt:check` 的「禁新增代码债」棘轮,而基线是 selfGuard 红区 +
+set-monotonic,登记不进去。⇒ 落在域中立层是当时唯一不新增架构债的位置
+(实测 `newdebt: ok=true / unknownCount=0`)。
+
+**为什么不由我直接定性为「技术件」**(与 §3.1 那两个同一条理由):
+
+| 我读到的事实 | 为什么需要拍板 |
+|---|---|
+| 它是 HMAC/HKDF + JWT 的薄封装,形态上百分之百是技术件 | 但它**绑定的三元组**是 `roleId` / `permissionRevision` / 权限码集合指纹 —— 那是 **platform-access 的领域知识**,不是技术横切件。与 §4 `member-advisory-lock.util.ts`(技术形态、业务语义)同一类 |
+| 「放这里的理由是合理的」 | §3.1 已经写过:**「合理的理由」不等于「定性为技术件」**。`activity-workflow` 的理由同样合理,当时也没被自行定性 |
+
+⇒ 与 §3.1 两件、§4 一件**同批**请维护者拍板:是照 `member-advisory-lock` 办理(**登记 owner 而非搬走**,
+该文件头注已按此写明「语义归属 platform-access,别往里加与角色权限集无关的东西」),还是另有处置。
+
+⚠️ **已加的机器守护只覆盖「别往这个文件里塞别的东西」**(PR 5 的判据 `proof-file-single-purpose`:
+每个导出符号须以 `ROLE_PERMISSION_` / `RolePermission` 开头),**挡不住**「另建
+`src/common/security/` 下的第二个文件」—— 新子目录由本表这条集合相等断言接住,
+但**同一子目录内新增文件仍是「人得看一眼」的那一步**。
 
 ### 3.1 两个未定性子目录(2026-08-21 复核发现)
 

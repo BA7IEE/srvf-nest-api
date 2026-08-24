@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import request from 'supertest';
@@ -10,7 +12,7 @@ import {
   revokeOpsAdminFromUser,
   seedRbacPermissionsAndOpsAdmin,
 } from '../fixtures/rbac.fixture';
-import { createTestUser } from '../fixtures/users.fixture';
+import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -1081,7 +1083,16 @@ describe('role-permissions 模块', () => {
       expect(await revisionOf(roleId)).toBe(0);
     });
 
-    it('SUPER_ADMIN 用 PUT 撤掉控制面码 → 200(撤码侧的刻意不对称没有被抹平)', async () => {
+    // P1-32 PR 5(2026-08-24)起本条**多一道正交要求**:撤掉控制面码属高风险差异 ⇒ 要二次验证。
+    //
+    // 🔴 **本条守的不变量一个字没变** —— 「撤码侧对 SUPER_ADMIN 开着」(那是历史脏数据的
+    //    唯一清理路)。step-up **不抹平那条不对称**,它只是要求先证明「确实是本人在操作」。
+    //    ⇒ 断言从「200」扩成「不带 proof 必 30112 / 带 proof 仍 200」,**比原来更严,没有放宽**。
+    //
+    // ⚠️ 「撤码也要 step-up」不是本刀的发明:冻结稿 §12.1 第一条逐字是
+    //    「**增加或移除** `CRITICAL` 权限」。damage 方向相反但同属高风险变更 ——
+    //    把终审 / 控制面能力从一批人手上撤掉,与授出去一样危险。
+    it('SUPER_ADMIN 用 PUT 撤掉控制面码:不带 proof → 30112,带 proof → 200(撤码侧的刻意不对称没有被抹平)', async () => {
       const { roleId } = await setupRoleAndPermissions({
         roleCode: 'put-su-drop-control-plane',
         permCodes: [],
@@ -1092,12 +1103,74 @@ describe('role-permissions 模块', () => {
       });
       await prisma.rolePermission.create({ data: { roleId, permissionId: perm.id } });
 
-      const res = await putAs(superAdminAuth, roleId, {
+      // ① 不带 proof:高风险差集 ⇒ 30112。**且一个字节都没写**(权限集原样、版本号不动)。
+      const without = await putAs(superAdminAuth, roleId, {
         permissionCodes: [],
         expectedRevision: 0,
       });
+      expectBizError(without, BizCode.ROLE_PERMISSION_STEP_UP_REQUIRED);
+      expect(await codeSetOf(roleId)).toEqual(new Set(['rbac.role.read']));
+      expect(await revisionOf(roleId)).toBe(0);
+
+      // ② 换一条真 proof 再来。⭐ `payloadHash` 在这里**独立实现一遍**(去重 → 升序 →
+      //    JSON.stringify → sha256 → base64url),不 import 服务端那个函数 ——
+      //    这样它同时验证了 `docs/handoff/admin-web.md` §3.5 写给前端的算法是可实现的。
+      const payloadHash = createHash('sha256')
+        .update(JSON.stringify([...new Set<string>([])].sort()))
+        .digest('base64url');
+      const stepUp = await request(httpServer(app))
+        .post('/api/auth/v1/step-up/password')
+        .set('Authorization', superAdminAuth)
+        .send({
+          action: 'RBAC_ROLE_PERMISSION_SET_REPLACE',
+          password: TEST_PASSWORD,
+          rolePermissionSet: { roleId, expectedRevision: 0, payloadHash },
+        });
+      expect(stepUp.status).toBe(200);
+      const stepUpToken: string = stepUp.body.data.stepUpToken;
+
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: [],
+        expectedRevision: 0,
+        stepUpToken,
+      });
       expect(res.status).toBe(200);
       expect(await codeSetOf(roleId)).toEqual(new Set());
+    });
+
+    // 🔴 反向对照(与上面那条同等重要):proof **不能跨角色复用**。
+    //    少了它,一个「只要带了任意 proof 就放行」的实现会让上面那条照样绿。
+    it('SUPER_ADMIN 拿 A 角色的 proof 去撤 B 角色的控制面码 → 10008(proof 绑死 roleId)', async () => {
+      const perm = await prisma.permission.findUniqueOrThrow({
+        where: { code: 'rbac.role.read' },
+        select: { id: true },
+      });
+      const a = await setupRoleAndPermissions({ roleCode: 'put-proof-role-a', permCodes: [] });
+      const b = await setupRoleAndPermissions({ roleCode: 'put-proof-role-b', permCodes: [] });
+      await prisma.rolePermission.create({ data: { roleId: b.roleId, permissionId: perm.id } });
+
+      const payloadHash = createHash('sha256')
+        .update(JSON.stringify([...new Set<string>([])].sort()))
+        .digest('base64url');
+      // 为 **A** 角色签的 proof —— 除 roleId 外,expectedRevision 与 payloadHash 与 B 那次逐字相同。
+      const stepUp = await request(httpServer(app))
+        .post('/api/auth/v1/step-up/password')
+        .set('Authorization', superAdminAuth)
+        .send({
+          action: 'RBAC_ROLE_PERMISSION_SET_REPLACE',
+          password: TEST_PASSWORD,
+          rolePermissionSet: { roleId: a.roleId, expectedRevision: 0, payloadHash },
+        });
+      expect(stepUp.status).toBe(200);
+
+      const res = await putAs(superAdminAuth, b.roleId, {
+        permissionCodes: [],
+        expectedRevision: 0,
+        stepUpToken: stepUp.body.data.stepUpToken,
+      });
+      expectBizError(res, BizCode.STEP_UP_PROOF_INVALID);
+      expect(await codeSetOf(b.roleId)).toEqual(new Set(['rbac.role.read']));
+      expect(await revisionOf(b.roleId)).toBe(0);
     });
 
     // 🔴 反向用例(与上面几条同等重要):闸只认「控制面码」这一维。

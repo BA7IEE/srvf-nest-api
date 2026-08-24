@@ -35,6 +35,12 @@
   - 🔴 **不新造风险分级**:五条触发条件全部锚在 Catalog 既有的 `riskLevel` / `riskTags` / `grantPolicy`
     与**正在执法的** `isControlPlanePermissionCode()` 上。判据 AST 扫策略文件的字符串字面量,
     出现任何权限码即红 —— 抄一份码清单进来就是第二份分级,而两套分级第一天一定一致、此后漂了毫无症状。
+  - 🔴 **撤码与授码同等对待,这是行为变更**:冻结稿 §12.1 第一条逐字是「**增加或移除** `CRITICAL` 权限」。
+    ⇒ **清空一个含高风险码的角色、或撤掉其中某条高风险码,现在也要二次验证**。
+    受影响的只有 SUPER_ADMIN(非 SA 碰控制面码本来就先被 `30103` 拦下),
+    典型场景是「SA 撤掉某角色的 `rbac.*` 码来清理历史脏数据」—— 那条路**仍然开着**,
+    只是多一步证明「确实是本人在操作」。e2e 已改成断言新行为(不带 proof → `30112`,
+    带 proof → `200` 且撤得掉),**原不变量「撤码侧对 SA 开着」一个字没减**。
   - 🔴 **proof 绑 (roleId, expectedRevision, 目标权限码集合) 三元组**(冻结稿 §12.2 标题逐字
     「Proof 必须绑定具体变更」)。三项各自单独进签名快照:换角色、换版本号、改一个字节的权限码,
     任一条都让 proof 失效。判据对三条**各做一次独立变异**,每个反面样本**只在被测那一维上不同**
@@ -117,6 +123,11 @@ rollback: git revert 本 PR
   - ⇒ 落在 `src/common/`(实测:`auth` 与 `permissions` 现有的 `src/common/**` import 零 finding;
     `commonGovernance` 的五类检查对本文件逐条为 0;`docs:boundaries:newdebt:check` 实测
     **`ok: true / unknownCount: 0`**)。
+  - ⚠️ **`src/common` 不是无人区**:除 `commonGovernance` 那五类内容检查外还有**第六道 —— 目录登记**。
+    `harness-guards.selftest` 断言「`COMMON_GOVERNANCE.md` §3 表格列出的子目录集合 == `src/common`
+    实际子目录集合」,新增子目录不定性当场红(本刀实测被它抓到)。
+    ⇒ 已在 §3 补 `security` 行 + 新开 §3.2,并**照 §3.1 两件的先例标 ⏳ 待定性、不自行定性为技术件** ——
+    「放这里的理由合理」不等于「它是技术件」,那是维护者的拍板位。
   - ⚠️ **「域中立」不等于「没有归属」**:这段代码的语义归属仍是 platform-access。
     放这里是**可达性**的要求,不是把它变成了公共设施 —— 执行位是 `proof-file-single-purpose`
     (每个导出符号都必须以 `ROLE_PERMISSION_` / `RolePermission` 开头)。
