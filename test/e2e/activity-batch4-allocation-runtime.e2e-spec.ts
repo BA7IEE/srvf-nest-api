@@ -617,6 +617,173 @@ describe('activity batch4 allocation runtime', () => {
     ).toBe(0);
   });
 
+  // ===== ⭐ AC-022(2026-08 验收补写)=====
+  //
+  // 合同原句:「100 人每人参加 3 场时,活动总名额占 100,场次参与人次合计 300。」
+  //
+  // 🔴 **那组数字本身**已有真用例:`activity-batch4-capacity-reservation.e2e-spec.ts` 的
+  //    「counts 100 members across three sessions as 100 people and 300 attendance instances」
+  //    逐字断言 `activity_person` 桶 `occupied: 100`、三只场次桶 `[100,100,100]`、合计 300。
+  //    但那条是 **service 直调** `CapacityReservationService.reserve(...)`;
+  //    **HTTP 入口**上最大只跑到 1–2 人,且从来没有任何 HTTP 用例在同一 member 拿下第二个场次
+  //    之后**回读 `activity_person` 桶**。⇒ 本条补的正是这一格:合同这句的**比例关系**
+  //    (一人多场只占 1 个活动位)在真报名入口上成立。
+  //
+  // 判据三层:
+  //   ① 正向 —— 一个人一次提交三场,三条身份全部 `pass`,场次桶各 1、合计 3,
+  //      而 `activity_person` 桶 **occupied = 1**(不是 3);
+  //   ② 反向(判据非恒真)—— 第二个人同样报三场后,`activity_person` 变 **2**、场次合计 **6**。
+  //      若实现把活动位算成"每场各占一个",①会读到 3;若活动位恒为 1(写死),②会读到 1。
+  //      两个方向各自排除一种坏实现。
+  //   ③ 预留行层面同一结论:`activity_person` 型 active 预留 = 人数,
+  //      `session_participation` 型 = 人次 —— 桶的 occupied 与在册预留数逐桶相等。
+  //
+  // ⚠️ 口径边界:本条**不**在 HTTP 上跑 100 人。100×3 那组绝对数字由上面那条 service 级用例承担,
+  //    本条承担的是"同一结论在生产入口上也成立"。10000 人那档是 B 档(PG 共享锁表天花板),明确不做。
+  it('AC-022 一人报三场只占 1 个活动位、场次人次按场计 —— 真 HTTP 报名入口回读容量桶', async () => {
+    const scenario = await createCandidateScenario({
+      allocationModeCode: 'first_come',
+      capacity: 4,
+    });
+    // `createCandidateScenario` 把场次 / 岗位桶的 capacity 写死成 1;本条要两个人,先放宽到 2。
+    await prisma.activityCapacityBucket.updateMany({
+      where: {
+        activityId: scenario.activityId,
+        scopeTypeCode: { in: ['session_participation', 'position_participation'] },
+      },
+      data: { capacity: 2 },
+    });
+
+    const extraSessions: Array<{ sessionId: string; positionId: string }> = [];
+    for (const suffix of ['b', 'c']) {
+      const session = await prisma.activitySession.create({
+        data: {
+          activityId: scenario.activityId,
+          code: `ac022-session-${suffix}-${sequence}`,
+          name: `AC-022 场次 ${suffix}`,
+          startAt: FAR.startAt,
+          endAt: FAR.endAt,
+          locationText: 'AC-022 Field',
+          capacity: 2,
+          checkInOpenAt: new Date(FAR.startAt.getTime() - 30 * 60_000),
+          checkInCloseAt: new Date(FAR.startAt.getTime() + 30 * 60_000),
+          checkOutOpenAt: new Date(FAR.endAt.getTime() - 60 * 60_000),
+          checkOutCloseAt: new Date(FAR.endAt.getTime() + 30 * 60_000),
+          locationRequired: false,
+          locationPolicySourceCode: 'activity',
+          statusCode: 'scheduled',
+        },
+        select: { id: true },
+      });
+      const position = await prisma.activitySessionPosition.create({
+        data: {
+          activityId: scenario.activityId,
+          sessionId: session.id,
+          code: `ac022-position-${suffix}-${sequence}`,
+          name: `AC-022 岗位 ${suffix}`,
+          attendanceRoleCode: 'volunteer',
+          capacity: 2,
+        },
+        select: { id: true },
+      });
+      await prisma.activityCapacityBucket.createMany({
+        data: [
+          {
+            activityId: scenario.activityId,
+            scopeTypeCode: 'session_participation',
+            scopeId: session.id,
+            capacity: 2,
+          },
+          {
+            activityId: scenario.activityId,
+            scopeTypeCode: 'position_participation',
+            scopeId: position.id,
+            capacity: 2,
+          },
+        ],
+      });
+      extraSessions.push({ sessionId: session.id, positionId: position.id });
+    }
+
+    const allThree = [
+      { sessionId: scenario.sessionId, positionIds: [scenario.positionId] },
+      ...extraSessions.map((row) => ({ sessionId: row.sessionId, positionIds: [row.positionId] })),
+    ];
+
+    /** 逐类桶的 occupied 读数 + 在册 active 预留数(两条独立路径,互为对拍)。 */
+    async function capacityFacts(): Promise<Record<string, unknown>> {
+      const buckets = await prisma.activityCapacityBucket.findMany({
+        where: { activityId: scenario.activityId },
+        select: { scopeTypeCode: true, occupied: true },
+      });
+      const reservations = await prisma.capacityReservation.findMany({
+        where: { bucket: { activityId: scenario.activityId }, status: 'active' },
+        select: { reservationType: true },
+      });
+      const sum = (scope: string): number =>
+        buckets
+          .filter((bucket) => bucket.scopeTypeCode === scope)
+          .reduce((total, bucket) => total + bucket.occupied, 0);
+      const count = (type: string): number =>
+        reservations.filter((row) => row.reservationType === type).length;
+      return {
+        活动位占用: sum('activity_person'),
+        场次参与人次: sum('session_participation'),
+        活动位预留行: count('activity_person'),
+        场次预留行: count('session_participation'),
+      };
+    }
+
+    // ① 第一个人一次提交三场。
+    const first = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', applicantAuth)
+      .send({
+        operationKey: `ac022-first-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: allThree,
+      });
+    expect(first.status).toBe(201);
+    const firstIdentities = await prisma.activityParticipationIdentity.findMany({
+      where: { registrationId: first.body.data.registrationId as string },
+      select: { sessionId: true, currentStatusCode: true },
+    });
+    expect(firstIdentities).toHaveLength(3);
+    expect(firstIdentities.map((row) => row.currentStatusCode)).toStrictEqual([
+      'pass',
+      'pass',
+      'pass',
+    ]);
+    // ⭐ 三场 = 三条身份、三份场次预留,而**活动位只占 1 个**。
+    expect(await capacityFacts()).toStrictEqual({
+      活动位占用: 1,
+      场次参与人次: 3,
+      活动位预留行: 1,
+      场次预留行: 3,
+    });
+
+    // ② 反向:第二个人同样报三场 ⇒ 活动位变 2、人次变 6。
+    //    ①排除"每场各占一个活动位"的坏实现,②排除"活动位写死成 1"的坏实现。
+    const second = await createActiveApplicant('ac022-second', 'L1');
+    const secondSubmission = await request(httpServer(app))
+      .post(registrationPath(scenario.activityId))
+      .set('Authorization', second.auth)
+      .send({
+        operationKey: `ac022-second-${sequence}`,
+        formVersion: null,
+        answers: [],
+        preferences: allThree,
+      });
+    expect(secondSubmission.status).toBe(201);
+    expect(await capacityFacts()).toStrictEqual({
+      活动位占用: 2,
+      场次参与人次: 6,
+      活动位预留行: 2,
+      场次预留行: 6,
+    });
+  });
+
   it('uses first_come server acceptance facts rather than review timestamps for promotion order', async () => {
     const scenario = await createCandidateScenario({
       allocationModeCode: 'first_come',
@@ -2390,6 +2557,188 @@ describe('activity batch4 allocation runtime', () => {
         capacityReservationId: expect.any(String),
       }),
     );
+  });
+
+  // ===== ⭐ AC-019(2026-08 验收补写)=====
+  //
+  // 合同原句:「邀请有接受、拒绝、撤回和过期入口;**接受邀请仍检查硬资格、保险、名额和必要表单**。」
+  //
+  // 四个**入口**都已有真用例(接受在本 spec,拒绝 / 撤回 / 过期在
+  // `activity-batch4-invitation-visitor.e2e-spec.ts`);缺的是后半句的**断点位置**:
+  // accept 侧此前只断言了「名额」这一格(`capacityReservationId` + first_come pass/pending),
+  // 硬资格 / 保险 / 必要表单三格的断言**全在自助报名入口上**;
+  // 三条既有 accept 用例一律 `formVersion: null, answers: []`、活动上没有 active Form。
+  //
+  // ⚠️ accept **刻意不建自己的 caller**:它在 Activity→Invitation 锁序内复用 canonical
+  //    `submitInTransaction(source: 'invitation')` 的同一组闸(不留邀请旁路)。
+  //    ⇒ 本条要证的正是「复用」这件事在**邀请入口**上真的成立,而不是再实现一遍逻辑。
+  //
+  // 三格各一条负例 + 表单那格带**正对照**(否则"表单闸"可能只是"一律拒绝"):
+  //   ① 硬资格 block ⇒ 21040 ACTIVITY_QUALIFICATION_NOT_MET
+  //   ② 保险要求未满足 ⇒ 26030 INSURANCE_REQUIRED
+  //   ③ 必要表单:版本对不上 ⇒ 21036;版本对但必填项没答 ⇒ 21037;**答齐 ⇒ 201**(正对照)
+  // 每条负例都回读:邀请仍 `pending`、该活动上**零身份行** —— 拒绝是零写,不是"写了再回滚一半"。
+  it('AC-019 接受邀请入口自己也过硬资格 / 保险 / 必要表单三闸(名额那格已由既有用例覆盖)', async () => {
+    /** 建一场 first_come 邀请制活动并给申请人发一张邀请,返回可直接 accept 的上下文。 */
+    async function invitedScenario(
+      label: string,
+      activityPatch: Record<string, unknown> = {},
+    ): Promise<{
+      activityId: string;
+      sessionId: string;
+      positionId: string;
+      invitationId: string;
+    }> {
+      const scenario = await createCandidateScenario({
+        allocationModeCode: 'first_come',
+        capacity: 1,
+      });
+      await prisma.activity.update({
+        where: { id: scenario.activityId },
+        data: { isPublicRegistration: false, ...activityPatch },
+      });
+      const created = await request(httpServer(app))
+        .post(`/api/app/v1/my/managed-activities/${scenario.activityId}/invitations`)
+        .set('Authorization', managerAuth)
+        .send({
+          memberId: applicantMemberId,
+          sessionId: scenario.sessionId,
+          positionId: scenario.positionId,
+          expiresAt: '2099-12-31T23:59:59.000Z',
+        });
+      expect(created.status).toBe(201);
+      return { ...scenario, invitationId: created.body.data.invitationId as string };
+    }
+
+    const acceptWith = async (
+      context: { invitationId: string; sessionId: string; positionId: string },
+      body: { formVersion: number | null; answers: Array<{ fieldCode: string; value: unknown }> },
+      keySuffix: string,
+    ) =>
+      await request(httpServer(app))
+        .post(`/api/app/v1/my/activity-invitations/${context.invitationId}/accept`)
+        .set('Authorization', applicantAuth)
+        .send({
+          operationKey: `ac019-${keySuffix}-${sequence}`,
+          formVersion: body.formVersion,
+          answers: body.answers,
+          preferences: [{ sessionId: context.sessionId, positionIds: [context.positionId] }],
+        });
+
+    /** 负例的共同后置条件:邀请仍 pending、该活动上零身份行(拒绝是零写)。 */
+    async function expectRefusedWithoutWrite(context: {
+      activityId: string;
+      invitationId: string;
+    }): Promise<void> {
+      await expect(
+        prisma.activityInvitation.findUniqueOrThrow({
+          where: { id: context.invitationId },
+          select: { statusCode: true, respondedAt: true },
+        }),
+      ).resolves.toStrictEqual({ statusCode: 'pending', respondedAt: null });
+      await expect(
+        prisma.activityParticipationIdentity.count({
+          where: { activityId: context.activityId, memberId: applicantMemberId },
+        }),
+      ).resolves.toBe(0);
+    }
+
+    // ① 硬资格:申请人 gradeCode = 'L1',规则只放行 'level-1' ⇒ block。
+    const qualification = await invitedScenario('qualification');
+    // ⚠️ `active` 的规则集在 DB 上是**冻结**的(`activity_qualification_rule_parent_frozen`),
+    //    规则只能在 draft 期插入 ⇒ 先建 draft 带规则,再翻 active。沿资格 spec 的既有做法。
+    const ruleSet = await prisma.activityQualificationRuleSet.create({
+      data: {
+        activityId: qualification.activityId,
+        version: 1,
+        statusCode: 'draft',
+        rules: {
+          create: [
+            {
+              ruleTypeCode: 'grade',
+              enforcementCode: 'block',
+              operator: 'in',
+              valueJson: { codes: ['level-1'] },
+              sortOrder: 1,
+            },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    await prisma.activityQualificationRuleSet.update({
+      where: { id: ruleSet.id },
+      data: { statusCode: 'active' },
+    });
+    expect(
+      (await acceptWith(qualification, { formVersion: null, answers: [] }, 'qualification')).body
+        .code,
+    ).toBe(BizCode.ACTIVITY_QUALIFICATION_NOT_MET.code);
+    await expectRefusedWithoutWrite(qualification);
+
+    // ② 保险:活动要求保险而申请人没有任何可用保险来源。
+    const insurance = await invitedScenario('insurance', { requiresInsurance: true });
+    expect(
+      (await acceptWith(insurance, { formVersion: null, answers: [] }, 'insurance')).body.code,
+    ).toBe(BizCode.INSURANCE_REQUIRED.code);
+    await expectRefusedWithoutWrite(insurance);
+
+    // ③ 必要表单:活动上有一份 active 表单,含一道必填短文本。
+    const form = await invitedScenario('form');
+    await prisma.registrationFormVersion.create({
+      data: {
+        activityId: form.activityId,
+        version: 1,
+        statusCode: 'active',
+        workflowRevision: 1,
+        schemaHash: 'c'.repeat(64),
+        activatedAt: new Date(),
+        fields: {
+          create: [
+            {
+              fieldCode: 'ac019-required',
+              typeCode: 'short_text',
+              label: 'AC-019 必填项',
+              required: true,
+              minLength: 2,
+              maxLength: 10,
+              visibilityCode: 'self_only',
+              exportable: false,
+              sortOrder: 1,
+            },
+          ],
+        },
+      },
+    });
+    // ③-a 版本对不上(邀请入口以前一律传 null,正是这一格从没被测过的原因)。
+    expect(
+      (await acceptWith(form, { formVersion: null, answers: [] }, 'form-version')).body.code,
+    ).toBe(BizCode.REGISTRATION_FORM_VERSION_INVALID.code);
+    await expectRefusedWithoutWrite(form);
+    // ③-b 版本对了,但必填项没答。
+    expect((await acceptWith(form, { formVersion: 1, answers: [] }, 'form-answer')).body.code).toBe(
+      BizCode.REGISTRATION_FORM_ANSWER_INVALID.code,
+    );
+    await expectRefusedWithoutWrite(form);
+    // ③-c ⭐ 正对照:答齐就通过 —— 证明这道闸不是"一律拒绝",三条负例才有意义。
+    const accepted = await acceptWith(
+      form,
+      { formVersion: 1, answers: [{ fieldCode: 'ac019-required', value: '已答' }] },
+      'form-ok',
+    );
+    expect(accepted.status).toBe(201);
+    await expect(
+      prisma.activityInvitation.findUniqueOrThrow({
+        where: { id: form.invitationId },
+        select: { statusCode: true },
+      }),
+    ).resolves.toStrictEqual({ statusCode: 'accepted' });
+    await expect(
+      prisma.activityParticipationIdentity.findFirstOrThrow({
+        where: { activityId: form.activityId, memberId: applicantMemberId },
+        select: { currentStatusCode: true },
+      }),
+    ).resolves.toStrictEqual({ currentStatusCode: 'pass' });
   });
 
   it.each(['qualification_rank', 'lottery'] as const)(
