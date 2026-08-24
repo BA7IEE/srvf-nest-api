@@ -1929,6 +1929,8 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 > (`PUT` + `preview`),**旧增量端点 `POST` / `DELETE /roles/:id/permissions` 不受管辖** ——
 > 持 `rbac.role-permission.create` 的人仍可用 `POST` 加一条 CRITICAL 码而不触二次验证。
 > 这是 goal「不改 replace 原语的判定」的直接后果;缺口窗口 = 「PR 5 合入 → **PR 8** 退役旧端点」。
+> ⭐ 而 **PR 8 恰好就是下一刀**(2026-08-24 维护者把 PR 6 改判为与 PR 7 同批,见上方第四梯队)
+> ⇒ 这个窗口很短,但**不是零** —— 别在 PR 5 合入后就把「step-up 已生效」当成完整为真的话。
 > ⭐ 缺口已做成机器可见:`scripts/check-role-permission-impact.ts` 的 `stepup-scope-*` 把当前射程
 > 登记在案,**PR 8 删掉那两条端点时判据会红并要求重看登记**,不会悄悄失效。
 
