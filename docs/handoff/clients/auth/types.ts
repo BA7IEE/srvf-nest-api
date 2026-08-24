@@ -1,9 +1,9 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // 真相源:后端 live /api/docs-json;本文件派生自 docs/handoff/openapi.json 快照。
 // surface: Auth 登录/令牌(admin 与 app 共用)
-// contractVersion: 0.67.0
+// contractVersion: 0.68.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:2178c101d902e0be3447b176c96be5e691568c54b94c69c10d7e64c906afd4b4
+// inputDigest: sha256:9d60ae3034353d0eafaa2383f712f083da13e0d79f9d2020229755af62ca002a
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher } from '../shared/types';
