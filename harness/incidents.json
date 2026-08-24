@@ -202,6 +202,39 @@
       "guard": "srvf/no-near-future-date(test/** + *.spec.ts 禁 (today, 2090-01-01) 日期字面量)+ 棘轮基线 harness/near-future-date-baseline.json(只减不增)+ base-trusted 裁判单调性",
       "probe": "near-future-date-lint",
       "probeNote": "真触发:写带近未来日期的临时 spec(回放当天+30 天动态生成 —— 探针自己硬编码日期就是下一颗炸弹)跑仓库真实 eslint,断言 exit≠0 且命中本规则"
+    },
+    {
+      "id": "INC-19",
+      "title": "红区在**每一棵 worktree 里整片失效**:绝对路径剥不掉主仓前缀 → 被当成『仓库外文件』放行",
+      "source": "2026-08-24 实施期取证(goal『门禁 hook 的 REPO_ROOT 不认 worktree』第 0 步)",
+      "cost": "本地红区纵深防御在所有 worktree 内为空:无授权也能用 Write/Edit 改 prisma/schema.prisma、AGENTS.md。CI 侧 redzone-trusted 扫描与环境审批独立有效,真正的执行位没塌 —— 塌的是本地那一层",
+      "status": "covered",
+      "guard": "redzone-guard.sh 按**目标文件所属的工作树**(git rev-parse --show-toplevel + git-common-dir 同仓校验)相对化,不再按脚本自身位置反推的 REPO_ROOT;判属本仓却仍剥不掉前缀时 fail-closed",
+      "lesson": "同一条『仓根推导』错误可以同时造出**方向相反**的两类故障:绝对路径漏放、相对路径误拦。立项时只看见误拦那一半(有人喊),漏放那一半没有症状 —— **没有症状不等于没有故障**,查缺陷要把两个方向都量一遍",
+      "probe": "worktree-redzone-enforced",
+      "probeNote": "真触发:临时造一棵 --no-checkout worktree(必须是**另一棵树**,否则仓根与目标树重合、缺陷无从显形 = 空变异),喂绝对路径给 redzone-guard.sh 并断言 exit 2;同组含阳性对照(普通业务文件必须 exit 0),防『改成无差别 fail-closed 也全绿』"
+    },
+    {
+      "id": "INC-20",
+      "title": "开工门禁按**主仓**那棵树判:worktree 里的绝对路径被当成仓外直接放行,相对路径又去查主仓的标记",
+      "source": "2026-08-24 当天三次实证(一条 lane 门禁已过却完全写不进文件;起草方两次被拦在仓外写入上)",
+      "cost": "一条 lane 能不能写文件,取决于**主仓那棵树**是否对齐 main —— 跨 worktree 耦合;同时绝对路径侧完全不校验门禁",
+      "status": "covered",
+      "guard": "preflight-required.sh / preflight-gate.sh 按目标文件所属工作树取标记与分支;bash-write-guard.sh 把 payload 的 cwd 转交下游,让相对路径也能定位到正确的树",
+      "lesson": "hook 以 $CLAUDE_PROJECT_DIR 注册,而该变量恒指主仓 —— **『脚本自身位置』适合定位执法层自己的资产,不适合定位被执法的对象**。两者是不同的问题,不该共用一个变量",
+      "probe": "worktree-preflight-per-tree",
+      "probeNote": "真触发:目标 worktree **无**标记而 ROOT 那棵树**有**有效标记,断言仍 exit 2 —— 同时钉死『绝对路径直接放行』与『拿别的树的标记顶替』两种错法"
+    },
+    {
+      "id": "INC-21",
+      "title": "维护者发放的红区授权令牌**从未被消费**:令牌写在本 worktree 的 git 目录,guard 却去主仓找",
+      "source": "2026-08-24 实施期取证(同上 goal;起草与总控双方独立复跑)",
+      "cost": "worktree 内走绝对路径时红区压根不判(见 INC-19),走相对路径时又因找不到令牌而把**已授权**的文件也拒掉 —— 授权机制两头落空",
+      "status": "covered",
+      "guard": "redzone-guard.sh 的 GRANT_PATH 改由目标所属工作树的 git-path 解析",
+      "lesson": "『授权发下来了』与『授权被消费了』是两件事。只验证前者(--list 有输出)会让整套授权机制在无人察觉中空转 —— 要验的是**持令牌时确实放行、且不越权**",
+      "probe": "worktree-grant-consumed",
+      "probeNote": "真触发:给临时 worktree 装一份只覆盖 prisma/schema.prisma 的令牌,断言该文件 exit 0 而 AGENTS.md 仍 exit 2(既证明被消费,又证明不越权)"
     }
   ],
   "inverse": [
@@ -248,6 +281,22 @@
       "probe": "justified-exemption-allowed",
       "probeKind": "structural",
       "probeNote": "跑的是 grep 源码统计豁免注释数量 —— 执行了命令,但那条命令不是守护本体"
+    },
+    {
+      "id": "INV-07",
+      "title": "worktree 自己的开工门禁已过时,该 worktree 内的写操作必须放行(主仓那棵树的状态不该拖累它)",
+      "why": "2026-08-24 实证:一条 lane 在自己 worktree 里门禁通过、标记也写了,却因为 hook 只看主仓而**完全写不进任何文件**。误伤到这个程度,防线只会被绕过",
+      "probe": "worktree-pass-allows-write",
+      "probeKind": "live",
+      "probeNote": "真触发:ROOT 那棵树**无**标记而目标 worktree **有**,断言门禁 exit 0 且普通业务文件不被红区误拦;标记状态由探针自己写死,不继承本机环境"
+    },
+    {
+      "id": "INV-08",
+      "title": "仓库外路径、以及**别的 git 仓**里的文件,不受本仓门禁与红区管",
+      "why": "门禁语义是『本仓状态不干净时别改本仓代码』,红区清单同样只管本仓;拦它们是纯误伤(INV-04 已钉仓外一半)。『仓外』的判据是 git-common-dir —— 主仓与它每一棵 worktree 相同,别的仓不同。若有人把修法写成『只要 git 认得就算仓内』,本条立刻转红",
+      "probe": "outside-repo-family-allowed",
+      "probeKind": "live",
+      "probeNote": "真触发:两棵树的标记全部清空后,对『非 git 仓的临时目录』与『另起的独立 git 仓』各喂 preflight-required 与 redzone-guard,四条都断言 exit 0 —— 放行只可能来自『判成仓外』,不可能来自任何标记"
     }
   ]
 }

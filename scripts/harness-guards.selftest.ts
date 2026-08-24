@@ -889,6 +889,114 @@ checkEq(
     '未挂 Bash matcher —— sed -i / > 可绕过红区',
   );
 
+  // ③b 仓根推导:三份副本必须逐字一致 + 不得回退到「按脚本自身位置查标记/令牌」
+  // (2026-08-24;缺陷全文见 harness/incidents.json 的 INC-19/20/21)
+  //
+  // 背景:hook 以 $CLAUDE_PROJECT_DIR/.claude/hooks/… 注册,而该变量恒指主仓 ⇒
+  // 用「脚本自身位置」反推出的 REPO_ROOT 在任何 worktree 里都指向主仓。
+  // 那个变量继续用来找**执法层自己的资产**是对的(脚本位置是恒定事实);
+  // 但用来定位**被执法的对象**归哪棵树管就是错的 —— 两者必须分开。
+  //
+  // 为什么做成两条断言而不是一条:
+  //   · 「三份逐字一致」防的是**漂移** —— 那段推导在三个 hook 里各有一份副本
+  //     (刻意不抽公共文件:新建 .claude/hooks/lib/* 要另开红区授权,而副本 + 本断言
+  //      能把漂移变成结构上可检测的东西)。改一处不改另外两处,这条当场红。
+  //   · 「禁止型」那条防的是**接缝回退** —— 仓内记过:标注型闸对『把接缝改回去』失明,
+  //     接通之后必须另立一条禁止旧写法的闸,否则一次 revert 就静默回到缺陷态。
+  {
+    const hookSrc = (name: string): string => read(`.claude/hooks/${name}`);
+    const BLOCK_START = '── 本次写操作归哪棵工作树管';
+    const BLOCK_END = 'CONTEXT_ROOT="$_root"';
+    const extractBlock = (src: string): string | null => {
+      const lines = src.split('\n');
+      const s = lines.findIndex((l) => l.includes(BLOCK_START));
+      const e = lines.findIndex((l, i) => i > s && s >= 0 && l.includes(BLOCK_END));
+      if (s < 0 || e < 0) return null;
+      // 收到闭合花括号那一行为止(resolve_write_context 的结尾)
+      return lines.slice(s, e + 2).join('\n');
+    };
+    const SHARED = ['preflight-required.sh', 'preflight-gate.sh', 'redzone-guard.sh'];
+    const blocks = SHARED.map((n) => [n, extractBlock(hookSrc(n))] as const);
+    const missing = blocks.filter(([, b]) => b === null).map(([n]) => n);
+    check(
+      `仓根推导:三个 hook 都含「归哪棵工作树管」推导块(${SHARED.join(' / ')})`,
+      missing.length === 0,
+      `缺推导块:${missing.join(', ')}`,
+    );
+    if (missing.length === 0) {
+      const uniq = new Set(blocks.map(([, b]) => b as string));
+      check(
+        '仓根推导:三份副本**逐字一致**(改一处必须改三处,否则漂移无症状)',
+        uniq.size === 1,
+        `出现 ${uniq.size} 种写法 —— 三份已漂移`,
+      );
+      // 阳性对照:比对逻辑本身要有效。抽不出内容时上面会以「三个 null 相等」假绿。
+      check(
+        '仓根推导:推导块非空(防「一个都没抽到」的假绿)',
+        [...uniq][0].length > 200,
+        `抽出的推导块只有 ${[...uniq][0].length} 字符,切分标记可能已失配`,
+      );
+    }
+
+    // 禁止型:标记 / 令牌 / 相对化一律不得再按 REPO_ROOT 解析。
+    // 这四条是**修复前**的原写法,任何一条回来都意味着缺陷复发。
+    const FORBIDDEN: Array<[string, string]> = [
+      ['git -C "$REPO_ROOT" rev-parse --git-path', '按主仓解析标记/令牌路径'],
+      ['MARKER="$REPO_ROOT/', '标记回落到主仓'],
+      ['GRANT_FILE="$REPO_ROOT/', '令牌回落到主仓'],
+      ['REL="${FILE#$REPO_ROOT/}"', '按主仓相对化(worktree 绝对路径会被当成仓外放行)'],
+    ];
+    // ⚠️ **必须先剥行注释再判**:上面那段推导块的注释里**逐字引用了旧写法**用来解释
+    // 缺陷是什么,不剥的话「解释这次修复的那句话」自己会被判成缺陷复发。
+    // 本次施工当场踩到(闸接上第一次跑就红了三条,全是注释)—— 与 replay 的
+    // release-prepare-anchors 探针同一课:**描述文本 ≠ 代码位**。
+    // 只剥「整行以 # 开头」的行:shell 的 ${var#pattern} 展开里也含 #,
+    // 从第一个 # 截断会把真代码切碎。
+    const codeOf = (src: string): string =>
+      src
+        .split('\n')
+        .filter((l) => !l.trim().startsWith('#'))
+        .join('\n');
+    const scanForbidden = (src: string): string[] => {
+      const code = codeOf(src);
+      return FORBIDDEN.filter(([needle]) => code.includes(needle)).map(([, why]) => why);
+    };
+
+    // 阳性对照:剥注释是为了治误伤,但它同时开了一个洞 —— 万一剥过头/判据失配,
+    // 这条闸会变成恒绿而毫无症状(正是它自己要防的那种失效)。所以两个方向都钉:
+    const fakeOld = 'MARKER="$REPO_ROOT/$MARKER_PATH"\nREL="${FILE#$REPO_ROOT/}"\n';
+    const fakeCommentOnly = '# 旧写法是 REL="${FILE#$REPO_ROOT/}" 与 MARKER="$REPO_ROOT/x",已改掉\n';
+    check(
+      '仓根推导(禁止型)阳性对照:合成的旧写法必被抓出',
+      scanForbidden(fakeOld).length === 2,
+      `合成样例只抓出 ${scanForbidden(fakeOld).length} 条,期望 2 —— 判据已失配,这条闸恒绿`,
+    );
+    check(
+      '仓根推导(禁止型)反向对照:注释里引用旧写法**不**算复发',
+      scanForbidden(fakeCommentOnly).length === 0,
+      `注释被误判成复发 ${scanForbidden(fakeCommentOnly).length} 条 —— 会天天误伤`,
+    );
+
+    const offenders: string[] = [];
+    for (const name of [...SHARED, 'bash-write-guard.sh'])
+      for (const why of scanForbidden(hookSrc(name))) offenders.push(`${name}:${why}`);
+    check(
+      '仓根推导(禁止型):没有 hook 再按 REPO_ROOT 查标记 / 令牌 / 相对化',
+      offenders.length === 0,
+      offenders.join(' · '),
+    );
+
+    // bash-write-guard 自己不做归属判定,但**必须把 cwd 转交**下游两个 hook ——
+    // 它解析出的路径大多是相对路径,不转交就退化成「按 hook 进程的 cwd 猜」。
+    const bwg = hookSrc('bash-write-guard.sh');
+    const forwards = (bwg.match(/"cwd":%s/g) ?? []).length;
+    check(
+      'bash-write-guard:向 preflight-required 与 redzone-guard **两处**都转交 cwd',
+      forwards === 2,
+      `只找到 ${forwards} 处 cwd 转交,期望 2(preflight_ok 与 check_path 各一)`,
+    );
+  }
+
   // ④ redzone.json 可解析,且裁判保护覆盖执法层自身
   const redzone = JSON.parse(read('harness/redzone.json')) as {
     redzone: Array<{ id: string; globs: string[] }>;

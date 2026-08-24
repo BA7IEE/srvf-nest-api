@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 // Harness 3.0 P2.5 — 事故回放(把「教训」变成「可重跑的证明」)。
@@ -122,6 +123,151 @@ function withPreflightPass<T>(fn: () => T): T {
   } finally {
     fs.rmSync(marker, { force: true });
     if (had) fs.renameSync(bak, marker);
+  }
+}
+
+// ── 跨 worktree 拓扑夹具(2026-08-24)────────────────────────────────────────
+// 被回放的缺陷:四个 hook 都从**脚本自身位置**反推仓根,而 hook 以
+// `$CLAUDE_PROJECT_DIR/.claude/hooks/…` 注册、`CLAUDE_PROJECT_DIR` 恒指主仓 ⇒
+// 在任何 worktree 里仓根都指向主仓,于是「归哪棵树管」全判错。
+//
+// ⚠️ 为什么非得**真造一棵** worktree:本文件的 hookExit 跑的是
+// `<ROOT>/.claude/hooks/*.sh`,hook 反推出来的仓根**就等于 ROOT**。探针若只喂 ROOT 内的
+// 路径,「仓根指的那棵树」与「目标所属的那棵树」永远重合,缺陷在结构上无从显形 ——
+// 用例对**修复前的代码也会全绿**,那是空变异(改了被测代码而被测的量纹丝不动)。
+// 必须让两者真的不是同一棵树,下面四条才有执行位。
+//
+// 造得起:`--no-checkout` 只落 `.git`、不 materialize 工作区文件(秒级)。
+// hook 定位工作树的办法是「向上找第一个存在的祖先目录再问 git」,空目录一样定位得到。
+let crossWt: { wt: string; dir: string } | null = null;
+let alienRepo: string | null = null;
+const pendingRestores: Array<() => void> = [];
+
+function gitPathIn(repo: string, name: string): string {
+  const p = execFileSync('git', ['rev-parse', '--git-path', name], {
+    encoding: 'utf-8',
+    cwd: repo,
+  }).trim();
+  return path.isAbsolute(p) ? p : path.join(repo, p);
+}
+
+function crossWorktree(): string {
+  if (crossWt) return crossWt.wt;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'srvf-replay-wt-'));
+  const wt = path.join(dir, 'wt');
+  execFileSync('git', ['worktree', 'add', '--no-checkout', '--detach', wt, 'HEAD'], {
+    cwd: ROOT,
+    stdio: 'pipe',
+  });
+  crossWt = { wt, dir };
+  return wt;
+}
+
+/** 造一棵**不属于本仓家族**的独立 git 仓 —— 用来钉「本仓 harness 不管别的仓」。 */
+function alienGitRepo(): string {
+  if (alienRepo) return alienRepo;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'srvf-replay-alien-'));
+  execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'pipe' });
+  alienRepo = dir;
+  return dir;
+}
+
+function cleanupFixtures(): void {
+  while (pendingRestores.length > 0) {
+    const restore = pendingRestores.pop();
+    try {
+      restore?.();
+    } catch {
+      /* 尽力还原:一处失败不该拖垮其余 */
+    }
+  }
+  if (crossWt) {
+    const { wt, dir } = crossWt;
+    crossWt = null;
+    // 只删本进程刚在临时目录里造的那棵,**永不**碰别处的 worktree
+    if (dir.startsWith(os.tmpdir()) && path.basename(dir).startsWith('srvf-replay-wt-')) {
+      try {
+        execFileSync('git', ['worktree', 'remove', '--force', wt], { cwd: ROOT, stdio: 'pipe' });
+      } catch {
+        /* 下面 rm + prune 兜底 */
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+      try {
+        execFileSync('git', ['worktree', 'prune'], { cwd: ROOT, stdio: 'pipe' });
+      } catch {
+        /* 已经干净 */
+      }
+    }
+  }
+  if (alienRepo) {
+    const dir = alienRepo;
+    alienRepo = null;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+process.on('exit', cleanupFixtures);
+process.on('SIGINT', () => {
+  cleanupFixtures();
+  process.exit(130);
+});
+
+/**
+ * 让跨 worktree 的用例**自己控制**两棵树的门禁标记与红区令牌,一律不继承本机环境。
+ *
+ * 仓内踩过(同 withPreflightPass 的教训):探针不隔离标记时,断言会被 preflight 顺手满足,
+ * 于是「本地跑过了」变成无效证据 —— 哪怕把被测的判定整个删掉它照样绿。
+ * 这里把**四个状态位**(两棵树的标记 + 两棵树的令牌)全部显式写死,跑完逐一还原;
+ * 还原动作同时挂进 pendingRestores,半途被 SIGINT 打断也不会把令牌停在 .bak。
+ */
+function withTreeState<T>(
+  wt: string,
+  state: {
+    readonly rootMarker: boolean;
+    readonly wtMarker: boolean;
+    readonly wtGrant: readonly string[] | null;
+  },
+  fn: () => T,
+): T {
+  const markerFor = (repo: string): string =>
+    JSON.stringify({
+      status: 'pass',
+      branch: execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+        cwd: repo,
+        encoding: 'utf-8',
+      }).trim(),
+      head: 'replay',
+    });
+  const grantFor = (globs: readonly string[]): string =>
+    JSON.stringify({ grants: globs.map((glob) => ({ glob, reason: 'replay 探针', ts: '' })) });
+
+  const bits: Array<[string, string | null]> = [
+    [gitPath('srvf-preflight.json'), state.rootMarker ? markerFor(ROOT) : null],
+    [gitPathIn(wt, 'srvf-preflight.json'), state.wtMarker ? markerFor(wt) : null],
+    [gitPathIn(wt, 'srvf-redzone-grant.json'), state.wtGrant ? grantFor(state.wtGrant) : null],
+    // ROOT 的令牌一并清空:维护者授权期间它是有内容的,不隔离的话红区用例会被
+    // **本次授权**顺手放行 —— 又一次「断言被别的东西满足」。
+    [gitPath('srvf-redzone-grant.json'), null],
+  ];
+  const saved = bits.map(([file]) => {
+    const bak = `${file}.wt-replay-bak`;
+    const had = fs.existsSync(file);
+    if (had) fs.renameSync(file, bak);
+    return { file, bak, had };
+  });
+  const restore = (): void => {
+    for (const s of saved) {
+      fs.rmSync(s.file, { force: true });
+      if (s.had && fs.existsSync(s.bak)) fs.renameSync(s.bak, s.file);
+    }
+  };
+  pendingRestores.push(restore);
+  for (const [file, content] of bits) if (content !== null) fs.writeFileSync(file, content);
+  try {
+    return fn();
+  } finally {
+    restore();
+    const i = pendingRestores.indexOf(restore);
+    if (i >= 0) pendingRestores.splice(i, 1);
   }
 }
 
@@ -304,7 +450,115 @@ const probes: Record<string, () => [boolean, string]> = {
     return [ok, '「落后 origin/main」未被列为拦写的硬条件'];
   },
 
+  'worktree-redzone-enforced': () => {
+    // ① worktree 内的**红区**文件、无授权 → 必须拦。
+    //
+    // 修复前实测(2026-08-24):`REL="${FILE#$REPO_ROOT/}"` 剥不掉主仓前缀 ⇒ REL 仍是绝对路径
+    // ⇒ 命中「仓库外文件不归红区管」而 exit 0 —— **红区在每一棵 worktree 里整片失效**,
+    // 无授权也能改 prisma/schema.prisma 与 AGENTS.md。这是四面里唯一的纯安全敞口。
+    // (CI 侧的 redzone-trusted 扫描与环境审批是独立的、一直有效;塌的是本地这层纵深防御。)
+    const wt = crossWorktree();
+    return withTreeState(wt, { rootMarker: true, wtMarker: true, wtGrant: null }, () => {
+      // 两棵树都装上有效标记:redzone-guard 目前不查门禁标记,装上是为了让本条
+      // 在「万一将来把门禁串进红区链路」之后**仍然只测红区**,不被门禁顺手满足。
+      const schema = hookExit('redzone-guard.sh', edit(path.join(wt, 'prisma/schema.prisma')));
+      if (schema !== 2)
+        return [false, `worktree 内 prisma/schema.prisma(绝对路径、无授权)返回 exit ${schema},期望 2`];
+      const doc = hookExit('redzone-guard.sh', edit(path.join(wt, 'AGENTS.md')));
+      if (doc !== 2) return [false, `worktree 内 AGENTS.md(绝对路径、无授权)返回 exit ${doc},期望 2`];
+      // 阳性对照:上面两个 2 必须来自**红区命中**,不能来自「一律 fail-closed」。
+      // 少了这一条,把判定改成 `exit 2` 恒拒也能让本探针全绿。
+      const normal = hookExit(
+        'redzone-guard.sh',
+        edit(path.join(wt, 'src/modules/users/users.service.ts')),
+      );
+      if (normal !== 0)
+        return [false, `worktree 内普通业务文件返回 exit ${normal},期望 0 —— 上面的拦截是无差别 fail-closed,不是红区判定`];
+      return [true, ''];
+    });
+  },
+  'worktree-grant-consumed': () => {
+    // ④(第四面)worktree 的红区**授权令牌**必须被消费。
+    // `harness:grant` 把令牌写进该 worktree 自己的 git 目录
+    // ($(git rev-parse --git-path srvf-redzone-grant.json)),而修复前 guard 拿 REPO_ROOT 去找,
+    // 找的是主仓那个根本不存在的令牌 ⇒ 维护者发下来的授权全程不被消费。
+    const wt = crossWorktree();
+    return withTreeState(
+      wt,
+      { rootMarker: true, wtMarker: true, wtGrant: ['prisma/schema.prisma'] },
+      () => {
+        const granted = hookExit('redzone-guard.sh', edit(path.join(wt, 'prisma/schema.prisma')));
+        if (granted !== 0)
+          return [false, `该 worktree 持有对应令牌却仍返回 exit ${granted},期望 0 —— 授权没被消费`];
+        // 令牌不得越权:只授了 schema,AGENTS.md 必须照拦。
+        const other = hookExit('redzone-guard.sh', edit(path.join(wt, 'AGENTS.md')));
+        if (other !== 2)
+          return [false, `令牌只覆盖 prisma/schema.prisma,AGENTS.md 却返回 exit ${other},期望 2`];
+        return [true, ''];
+      },
+    );
+  },
+  'worktree-preflight-per-tree': () => {
+    // ③ worktree 内文件、**该 worktree 的** preflight 未过 → 必须拦,且不许拿别的树顶替。
+    //
+    // ⭐ 靶心在 rootMarker=true:ROOT 那棵树**有**有效标记而目标那棵没有。
+    // 修复前绝对路径直接 exit 0(fail-open);若有人改成「按 REPO_ROOT 查标记」,
+    // 就会被 ROOT 的标记顶替而放行 —— 两种错法本条都拦得住。
+    const wt = crossWorktree();
+    return withTreeState(wt, { rootMarker: true, wtMarker: false, wtGrant: null }, () => {
+      const code = hookExit('preflight-required.sh', edit(path.join(wt, 'docs/x.md')));
+      if (code !== 2)
+        return [false, `目标 worktree 门禁未过却返回 exit ${code},期望 2(ROOT 那棵树有标记,但它不该顶替)`];
+      return [true, ''];
+    });
+  },
+
   // ── 反向案例:守护必须**不**拦 ──────────────────────────────────────────
+  'worktree-pass-allows-write': () => {
+    // ② worktree 内的**非红区**文件、**该 worktree 的** preflight 已过 → 必须放行。
+    //
+    // ⭐ 靶心在 rootMarker=false:ROOT 那棵树**没有**标记而目标那棵有。
+    // 这是缺陷的 fail-closed 那一半(2026-08-24 实证:一条 lane 在自己 worktree 里
+    // 门禁明明过了,却因为主仓没标记而完全写不进任何文件)。
+    const wt = crossWorktree();
+    return withTreeState(wt, { rootMarker: false, wtMarker: true, wtGrant: null }, () => {
+      const gate = hookExit('preflight-required.sh', edit(path.join(wt, 'docs/x.md')));
+      if (gate !== 0)
+        return [false, `目标 worktree 门禁已过却返回 exit ${gate},期望 0(ROOT 那棵树没标记,但它不该拖累)`];
+      const rz = hookExit(
+        'redzone-guard.sh',
+        edit(path.join(wt, 'src/modules/users/users.service.ts')),
+      );
+      if (rz !== 0) return [false, `worktree 内普通业务文件被红区误拦(exit ${rz})`];
+      return [true, ''];
+    });
+  },
+  'outside-repo-family-allowed': () => {
+    // ④(情形四)**仓外**绝对路径 —— 定义为**放行**,理由三条:
+    //   ⑴ 门禁语义是「本仓状态不干净时别改**本仓**代码」,与仓外文件无关(INV-04 已钉);
+    //   ⑵ 红区语义同理 —— 本仓的红区清单管不着别的仓的文件;
+    //   ⑶ 拦它们是纯误伤,而误伤会训练出「无视守护」的习惯,比漏放更能摧毁防线。
+    // 「仓外」的判据是 git-common-dir:主仓与它的每一棵 worktree 相同,别的仓 / 非仓则不同。
+    // ⚠️ 因此「别的 git 仓」也必须放行 —— 若有人把修法写成「只要 git 认得就算仓内」,
+    //    本条立刻转红。
+    const outside = path.join(os.tmpdir(), 'srvf-replay-outside', 'AGENTS.md');
+    const alien = path.join(alienGitRepo(), 'AGENTS.md');
+    const wt = crossWorktree();
+    return withTreeState(wt, { rootMarker: false, wtMarker: false, wtGrant: null }, () => {
+      // 两棵树的标记全部清掉:确保「放行」只可能来自「判成仓外」,不可能来自任何标记。
+      const cases: Array<[string, string, string]> = [
+        ['preflight-required.sh', outside, '仓外(非 git 仓)路径 · 门禁'],
+        ['redzone-guard.sh', outside, '仓外(非 git 仓)路径 · 红区'],
+        ['preflight-required.sh', alien, '别的 git 仓里的文件 · 门禁'],
+        ['redzone-guard.sh', alien, '别的 git 仓里的文件 · 红区'],
+      ];
+      for (const [hook, file, label] of cases) {
+        const code = hookExit(hook, edit(file));
+        if (code !== 0) return [false, `${label} 被误拦(exit ${code}),期望 0`];
+      }
+      return [true, ''];
+    });
+  },
   'dirty-tree-allows-write': () => {
     const src = fs.readFileSync(path.join(ROOT, '.claude/hooks/preflight-gate.sh'), 'utf-8');
     const ok = src.includes('ADVISORY') && src.includes('不应开新功能');
