@@ -12,6 +12,7 @@ import { isProtectedRoleCode } from './protected-role-codes';
 import { RbacService } from './rbac.service';
 import { RbacRoleDetailResponseDto } from './rbac-roles.dto';
 import { rbacRoleSelect } from './rbac-roles.select';
+import { withRoleClassification } from './role-classification';
 import { AssignRolePermissionsDto, ReplaceRolePermissionsDto } from './role-permissions.dto';
 import {
   isControlPlanePermissionCode,
@@ -185,7 +186,7 @@ export class RolePermissionsService {
       orderBy: { createdAt: 'asc' },
     });
     return {
-      ...role,
+      ...withRoleClassification(role),
       permissions: rolePermissions.map((rp) => rp.permission),
     };
   }

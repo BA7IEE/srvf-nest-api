@@ -1,6 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
+import {
+  PERMISSION_CATALOG_STATUSES,
+  PERMISSION_GRANT_POLICIES,
+  PERMISSION_RISK_LEVELS,
+  PERMISSION_RISK_TAGS,
+  PERMISSION_UI_VISIBILITIES,
+} from './permission-catalog';
+import type {
+  PermissionCatalogStatus,
+  PermissionGrantPolicy,
+  PermissionRiskLevel,
+  PermissionRiskTag,
+  PermissionUiVisibility,
+} from './permission-catalog';
 
 // V2.x C-6 RBAC 实施 PR #2:permissions 模块 DTO 集合。
 // 沿 D7 v1.1 §5.2.1(CreatePermissionDto)+ §4.2(Permission schema)。
@@ -49,6 +63,126 @@ export class PermissionResponseDto {
 
   @ApiProperty({ description: '更新时间' })
   updatedAt!: Date;
+}
+
+// ============ 权限目录只读投影(P1-32 PR 2;冻结稿 §9.1)============
+//
+// 🔴 **纯 additive**:本段只**新增** DTO,`PermissionResponseDto` 一个字段都没动 ——
+//    `GET /permissions`(分页)的响应体逐字保持原样,旧前端零影响。
+//
+// 形状沿冻结稿 §9.1 的 `PermissionCatalogResponseDto` / `PermissionCatalogItemDto`,
+// 两处刻意与建议稿不同,理由写在 permission-catalog.presenter.ts 头注:
+//   · 不出 `catalogVersion` / `catalogHash`(前者无事实源;后者的消费方在 PR 4b/5);
+//   · 不出 `technicalDescription` / `replacementCodes`(PR 0 刻意一条都没落地,无数据可返)。
+
+export class PermissionCatalogItemDto {
+  @ApiProperty({ description: '权限码', example: 'org.create.node' })
+  code!: string;
+
+  @ApiProperty({ description: '中文名(给人看的短标签)', example: '新建分队/小组' })
+  displayName!: string;
+
+  @ApiProperty({
+    description:
+      '人话说明:这条权限允许做什么、有什么后果。**目录中文可用的落点** —— 后台权限编辑器直接展示本字段。',
+    example: '在组织架构里加一个新的分队、部门或小组,挂到指定的上级下面。',
+  })
+  businessDescription!: string;
+
+  @ApiProperty({ description: '模块名(权限码第一段)', example: 'org' })
+  module!: string;
+
+  @ApiProperty({ description: '动作(权限码第二段)', example: 'create' })
+  action!: string;
+
+  @ApiProperty({ description: '资源类型(权限码第三段)', example: 'node' })
+  resourceType!: string;
+
+  @ApiProperty({ description: '所属一级业务区 code', example: 'organization-people' })
+  sectionCode!: string;
+
+  @ApiProperty({ description: '所属二级分组 code', example: 'organization-structure' })
+  groupCode!: string;
+
+  @ApiProperty({ description: '组内排序(正整数,越小越靠前)', example: 10510 })
+  sortOrder!: number;
+
+  @ApiProperty({
+    description: '风险等级(CRITICAL = 出错救不回,或能把权力给出去)',
+    enum: [...PERMISSION_RISK_LEVELS],
+  })
+  riskLevel!: PermissionRiskLevel;
+
+  @ApiProperty({
+    description: '风险性质标签(多值;描述这个动作是什么性质,与等级分工不同)',
+    enum: [...PERMISSION_RISK_TAGS],
+    isArray: true,
+  })
+  riskTags!: PermissionRiskTag[];
+
+  @ApiProperty({
+    description: '授予策略:这条码允许被放进什么样的角色',
+    enum: [...PERMISSION_GRANT_POLICIES],
+  })
+  grantPolicy!: PermissionGrantPolicy;
+
+  @ApiProperty({ description: '生命周期状态', enum: [...PERMISSION_CATALOG_STATUSES] })
+  status!: PermissionCatalogStatus;
+
+  @ApiProperty({
+    description: '在角色编辑器里的露面程度(HIDDEN = 不该出现在选择器里)',
+    enum: [...PERMISSION_UI_VISIBILITIES],
+  })
+  uiVisibility!: PermissionUiVisibility;
+}
+
+export class PermissionCatalogGroupDto {
+  @ApiProperty({ description: '二级分组 code', example: 'organization-structure' })
+  code!: string;
+
+  @ApiProperty({ description: '二级分组中文名', example: '组织架构' })
+  displayName!: string;
+
+  @ApiProperty({ description: '区内排序(越小越靠前)', example: 10 })
+  sortOrder!: number;
+
+  @ApiProperty({
+    description: '本分组下的权限条目(按 sortOrder 升序;分组下无条目时返 [])',
+    type: () => [PermissionCatalogItemDto],
+  })
+  items!: PermissionCatalogItemDto[];
+}
+
+export class PermissionCatalogSectionDto {
+  @ApiProperty({ description: '一级业务区 code', example: 'organization-people' })
+  code!: string;
+
+  @ApiProperty({ description: '一级业务区中文名', example: '组织与人员' })
+  displayName!: string;
+
+  @ApiProperty({ description: '全局排序(越小越靠前)', example: 100 })
+  sortOrder!: number;
+
+  @ApiProperty({
+    description: '本业务区下的二级分组(按 sortOrder 升序)',
+    type: () => [PermissionCatalogGroupDto],
+  })
+  groups!: PermissionCatalogGroupDto[];
+}
+
+export class PermissionCatalogResponseDto {
+  @ApiProperty({
+    description:
+      '目录条目总数(= 全部业务区/分组下 items 数之和)。前端可用它自证「拿全了没有」,不必自己遍历求和。',
+    example: 237,
+  })
+  totalItems!: number;
+
+  @ApiProperty({
+    description: '按一级业务区分组的完整目录(按 sortOrder 升序;一次返回全量,不分页)',
+    type: () => [PermissionCatalogSectionDto],
+  })
+  sections!: PermissionCatalogSectionDto[];
 }
 
 // ============ 入参 ============

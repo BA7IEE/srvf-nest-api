@@ -17,6 +17,10 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import {
   CreatePermissionDto,
   ListPermissionsQueryDto,
+  PermissionCatalogGroupDto,
+  PermissionCatalogItemDto,
+  PermissionCatalogResponseDto,
+  PermissionCatalogSectionDto,
   PermissionResponseDto,
   UpdatePermissionDto,
 } from './permissions.dto';
@@ -46,7 +50,13 @@ function buildAuditMeta(req: Request): AuditMeta {
 
 @ApiTags('Ops - Permissions')
 @ApiBearerAuth()
-@ApiExtraModels(PermissionResponseDto)
+@ApiExtraModels(
+  PermissionResponseDto,
+  PermissionCatalogResponseDto,
+  PermissionCatalogSectionDto,
+  PermissionCatalogGroupDto,
+  PermissionCatalogItemDto,
+)
 @Controller('system/v1/permissions')
 export class PermissionsController {
   constructor(private readonly service: PermissionsService) {}
@@ -63,6 +73,29 @@ export class PermissionsController {
     @Query() query: ListPermissionsQueryDto,
   ): Promise<PageResultDto<PermissionResponseDto>> {
     return this.service.list(user, query);
+  }
+
+  // P1-32 PR 2(冻结稿 §9.1):权限目录只读投影。
+  //
+  // 🔴 **不分页,一次返回全部 237 条** —— 冻结稿 §9.1 逐字「返回完整目录,不分页」。
+  //    这是对分页铁律的**已登记例外**,登记在
+  //    docs/reference/response-pagination-errors.md §4「已登记例外」表(不是默默不分页)。
+  //    理由:目录是**固定参考集合**不是业务流水,前端权限编辑器要按业务区渲染整棵树;
+  //    分页会让「按 sortOrder 分组」这件事在客户端拼不齐。本端点新增、无存量调用方,
+  //    不存在「老调用方从 N 条掉到 20 条」那类破坏。
+  //
+  // ⚠️ 路由次序:本 controller 没有 `@Get(':id')`,`catalog` 不会被动态段吃掉;
+  //    将来若新增 `@Get(':id')`,必须排在本方法**之后**(specific-before-dynamic)。
+  @Get('catalog')
+  @RequiresPermission('rbac.permission.read')
+  @ApiOperation({
+    summary:
+      '权限目录(只读;按业务区 / 分组两级返回全部权限码的中文名、人话说明、风险等级与授予策略;**不分页**,已登记例外) [rbac: rbac.permission.read]',
+  })
+  @ApiWrappedOkResponse(PermissionCatalogResponseDto)
+  @ApiBizErrorResponse(BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)
+  catalog(@CurrentUser() user: CurrentUserPayload): Promise<PermissionCatalogResponseDto> {
+    return this.service.catalog(user);
   }
 
   @Post()

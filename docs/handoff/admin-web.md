@@ -322,9 +322,35 @@
 > ⚠️ **scoped-authz 落地进度(2026-07-03 摘码微刀 #482 收官,序列 PR1–PR12 + 摘码微刀已全发 main,**GAP-007 完结,整条终态序列就此闭幕**;前端照当前状态造 UI 即可,不会再有下一刀改变本节口径)**:
 > - **判权现状一句话**:统一判权大脑 `AuthzService` **已上线**(PR8);**scoped-live 业务面 = 考勤终审**(`final-approve`/`final-reject`,PR9)+ **participation 三模块点动作**(`activities`/`activity-registrations`/`attendances`,PR12,24 处判权位点)。点动作(改/删/发布/取消单个活动;审批/驳回/管理员取消单条报名;单据 read/update/delete/approve/reject)带具体资源 ref,嵌套列表(路径带 `:activityId`)带父活动 ref;**扁平跨轴列表(如 `admin/v1/attendance-sheets`/`admin/v1/registrations`,见 §2.3)与新建活动(`activity.create`)仍 GLOBAL-only**(不带 ref,纯 scoped 持有者访问仍 `30100`;把 tree scope 变成列表查询条件的 QueryService 读下推是序列外后续 goal)。**除以上两批外的其余所有业务面**(证书核验、队员管理、招新/入队、内容发布、统一通知……)**仍只认 GLOBAL 角色绑定**,scoped 绑定对它们**零影响**(逐面迁移诉求触发再出 goal,不再挂 GAP-007)。
 > - **🔴 关键语义(必读,替换旧版"仅考勤终审"的表述)**:**任职(position-assignments,PR4)+ 一条显式指向该任职的角色绑定(role-bindings 绑 `attendance-final-reviewer`,PR6)两步都做,才会对考勤终审真实生效**(见 §2.1);只做任职不建绑定 = 不生效。**PR12 起新增一条不同形态的生效路径,且不需要额外显式绑定**:队长/部长(经"职务→角色 policy",PR7,自动推导为 `org-admin`@本组织树)、组长(推导为 `group-manager`@本组)、分管人(推导为 `org-supervisor`@分管范围)现在对 participation 三模块的点动作**在其组织树/分管范围内真实生效**——例如 team-leader/dept-leader 经 `org-admin`@TREE 可在本树内管理活动(update/publish/cancel)+ 审批本树报名 + 为本树活动建考勤单/一级审核,树外仍 `30100`;group-leader 经 `group-manager`@TREE 可在本组一级审核考勤;`org-supervisor` 经分管推导可读分管树内单据,树外 `out_of_supervised_scope`。**`org-admin`/`group-manager`/`org-supervisor` 三角色均不含终审两码**——即使已有任职或分管记录,**不会**因此自动获得终审权,终审仍必须走上一条路径单独显式绑定。**🔴 摘码微刀(#482,2026-07-03)后的关键变化**:持 `biz-admin` 的 ADMIN **不再天然拥有**终审权(不建任何绑定直调终审端点 → `30100`,见 §2.1);`biz-admin` 的其余业务码(含 participation 全部点动作对应的 GLOBAL 码)不受影响。前端在这些管理面的文案/交互上按此精确化——role-bindings 页具体文案见上一段。
-> - **角色与权限页现在会看到 7 个内置角色**:原有 3 个(`biz-admin`/`ops-admin`/`member`)+ 4 个新增(`org-admin` 56 码 / `group-manager` 22 码 / `org-supervisor` 4 码 / `attendance-final-reviewer` 3 码)。**这 4 个新角色 seed 阶段零持有、是 scoped 判权的载体**,设计上经"职务→角色 policy"(PR7,自动推导)或显式 RoleBinding(如给某个 POSITION_ASSIGNMENT 绑 `attendance-final-reviewer`)生效——**不建议在"角色与权限"页把它们当普通全局角色直接手工绑给某个 user**(技术上绑了也不会报错,但绑了只有 GLOBAL 语义,绕开了整套职务/分管推导设计,业务含义会跟运营预期不符)。
+> - **角色与权限页现在会看到 15 个内置角色**(⚠️ 本句 2026-08-24 订正,原写「7 个」是 2026-07-03 的读数;真值以 [`current-state.md §1`](../current-state.md) 计数块为准,脚本守护)。本刀(PR1–PR12 序列)当时新增的是其中 4 个 —— `org-admin` 56 码 / `group-manager` 22 码 / `org-supervisor` 4 码 / `attendance-final-reviewer` 3 码,叠在原有 3 个(`biz-admin`/`ops-admin`/`member`)之上;其余的是后续各刀陆续加入的。**这 4 个新角色 seed 阶段零持有、是 scoped 判权的载体**,设计上经"职务→角色 policy"(PR7,自动推导)或显式 RoleBinding(如给某个 POSITION_ASSIGNMENT 绑 `attendance-final-reviewer`)生效——**不建议在"角色与权限"页把它们当普通全局角色直接手工绑给某个 user**(技术上绑了也不会报错,但绑了只有 GLOBAL 语义,绕开了整套职务/分管推导设计,业务含义会跟运营预期不符)。
 > - **排查工具**:不确定某人某权限到底生不生效 → 用「权限解释」端点(`authz/explain`,PR10,见上段)一键查,不用猜。
 > - **GAP-007 序列已全部落地(PR1–PR12 + 摘码微刀 #482),详见 §4 [GAP-007](#4-缺口台账gap-ledger)**——序列内不再有"未落地"项;members/certificates/content/notifications 等其余业务面迁移、QueryService 扁平列表 scoped 过滤、16 个 `attachment.*.self` 收敛为 SELF scope、监督角色可配化、存量队员批量导入工具均已归入**序列外**候选清单,诉求触发再单独出 goal(不再挂本 GAP)。
+
+#### 2.6.1 权限目录 + 角色分类三字段(P1-32 PR 2,**纯 additive**)— ✅ 已发 main
+
+> 冻结稿 [`rbac-permission-catalog-t0-review.md`](../archive/reviews/rbac-permission-catalog-t0-review.md) §6 / §9.1。
+> **本刀只加不改**:既有接口 wire 一条没删没改,`PermissionResponseDto` / 分页列表响应逐字不动 ——
+> 旧前端不适配也照常工作,适配了才多出下面这些能力。
+
+**① 权限目录(新端点)**:`GET /api/system/v1/permissions/catalog`,鉴权 `[rbac: rbac.permission.read]`(**零新增权限码**,与 `GET system/v1/permissions` 同码)。
+
+- **一次返回全部条目,不分页**(已登记例外,见 [`response-pagination-errors.md §4`](../reference/response-pagination-errors.md))。响应 `{ totalItems, sections: [{ code, displayName, sortOrder, groups: [{ code, displayName, sortOrder, items: [...] }] }] }` —— 两级分组树,`sortOrder` 升序,直接照着渲染权限编辑器左树即可。
+- 每个 item:`code` / `displayName`(中文名)/ `businessDescription`(**人话说明,给运营看的那一段**)/ `module` / `action` / `resourceType` / `sectionCode` / `groupCode` / `sortOrder` / `riskLevel`(`LOW|MEDIUM|HIGH|CRITICAL`)/ `riskTags[]` / `grantPolicy` / `status`(`ACTIVE|DEPRECATED|INTERNAL`)/ `uiVisibility`(`DEFAULT|ADVANCED|HIDDEN`)。
+- **`uiVisibility: 'HIDDEN'` 的码不要出现在角色权限选择器里** —— 那批是 SUPER_ADMIN 保留码(`grantPolicy: 'SUPER_ADMIN_ONLY'`),后端对任何身份(含 SUPER_ADMIN)的授码请求都拒(`30109`);露出来等于邀请人去点一个必然失败的开关。`ADVANCED` 建议折叠在「高级」里。
+- **`riskLevel: 'CRITICAL'`** = 出错救不回来、或能把权力给出去。建议在勾选时给二次确认。
+- ⚠️ 本期**不出** `catalogVersion` / `catalogHash`(前者仓内无事实源;后者的消费方是 PR 4b/5 的变更预览,那时再加,additive)。也**不出** `technicalDescription` / `replacementCodes`(后端刻意一条都没落地,不是漏返)。
+- 目录条数会随版本增长,**别把它写死成常量**(后端判据用的是地板锚点,不是「恰 N 条」)。
+
+**② 角色响应新增三个字段**(`GET/POST/PATCH/DELETE system/v1/roles*` 与 `roles/:id/permissions` 的角色详情,**全部产出点统一带上**):
+
+| 字段 | 取值 | 前端怎么用 |
+|---|---|---|
+| `kind` | `SYSTEM` / `CUSTOM` | `SYSTEM` = 系统内建角色(seed 维护)。删除按钮对**所有身份**禁用(含 SUPER_ADMIN),后端返 `30104`;改名 / 改描述同样禁用,返 `30107`。 |
+| `permissionManagementMode` | `RELEASE_MANAGED` / `ADMIN_EDITABLE` | 🔴 **「系统角色只读状态可被前端识别」的落点**。`RELEASE_MANAGED` ⇒ 权限编辑器整个置灰,加码 / 撤码后端一律 `30108`(含 SUPER_ADMIN)。管理员有定制需求时应**新建自定义角色**,而不是改系统角色。 |
+| `bindingManagementMode` | `SYSTEM_ONLY` / `MANUAL_ALLOWED` / `POLICY_DERIVED` | `SYSTEM_ONLY` = 只能由活动责任投影器写(三个 `activity-*` 协作角色),人工授予 / 撤销 / 续期一律拒 ⇒ 角色绑定页对它隐藏「新建绑定」。`MANUAL_ALLOWED` = 可人工绑定。**`POLICY_DERIVED` 本期不会出现**(职务策略派生属于逐行数据事实,不是角色级分类);枚举里先声明满三值是为了将来加值不打爆老客户端的 `switch`,**前端仍要给它写一个兜底分支**。 |
+
+- 三个字段**由后端从代码事实派生**(不是 DB 列)⇒ 展示口径与执法口径结构上不可能分家:后台显示「只读」的角色,接口一定拒;显示「可改」的,接口一定放行。
+- ⚠️ 前端**不要硬编码角色数或角色 code 清单**(§2.6 那条「会看到 N 个内置角色」已随本刀订正为 15,但它**仍然是一个会变的数**)。改判「这个角色能不能改」一律读 `kind` / `permissionManagementMode` —— 那是本刀提供这两个字段的全部理由:清单会长,判定不会。
 
 ### 2.7 搜索 & 选择器(F1「A 组」;admin-api-fe-integration-roadmap.md §4 A1–A7)— ✅ 已发 main
 

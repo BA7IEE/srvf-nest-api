@@ -3,7 +3,7 @@
 // surface: System 系统面
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:ec4b5452a390b52c468f8e8ef2b953161db76399ec0e7b46a897db9944335d22
+// inputDigest: sha256:f1ccd87085184152560fb0450de6b5ba2df9f7809ca280d50ad5c7c71d7aee46
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto } from '../shared/types';
@@ -213,6 +213,42 @@ export interface MyPermissionsResponseDto {
   "effectiveRoles": EffectiveRoleDto[];
 }
 
+export interface PermissionCatalogGroupDto {
+  "code": string;
+  "displayName": string;
+  "sortOrder": number;
+  "items": PermissionCatalogItemDto[];
+}
+
+export interface PermissionCatalogItemDto {
+  "code": string;
+  "displayName": string;
+  "businessDescription": string;
+  "module": string;
+  "action": string;
+  "resourceType": string;
+  "sectionCode": string;
+  "groupCode": string;
+  "sortOrder": number;
+  "riskLevel": "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  "riskTags": "READ" | "WRITE" | "DESTRUCTIVE" | "SENSITIVE_DATA" | "ACCOUNT_SECURITY" | "CREDENTIAL" | "CONTROL_PLANE" | "FINAL_APPROVAL" | "MASS_EFFECT" | "LEDGER" | "WORKFLOW_INTERNAL"[];
+  "grantPolicy": "CUSTOM_ROLE_ALLOWED" | "SUPER_ADMIN_ONLY" | "ROLE_ALLOWLIST_ONLY" | "SYSTEM_ROLE_ONLY";
+  "status": "ACTIVE" | "DEPRECATED" | "INTERNAL";
+  "uiVisibility": "DEFAULT" | "ADVANCED" | "HIDDEN";
+}
+
+export interface PermissionCatalogResponseDto {
+  "totalItems": number;
+  "sections": PermissionCatalogSectionDto[];
+}
+
+export interface PermissionCatalogSectionDto {
+  "code": string;
+  "displayName": string;
+  "sortOrder": number;
+  "groups": PermissionCatalogGroupDto[];
+}
+
 export interface PermissionResponseDto {
   "id": string;
   "code": string;
@@ -232,6 +268,9 @@ export interface RbacRoleDetailResponseDto {
   "permissionRevision": number;
   "createdAt": string;
   "updatedAt": string;
+  "kind": "SYSTEM" | "CUSTOM";
+  "permissionManagementMode": "RELEASE_MANAGED" | "ADMIN_EDITABLE";
+  "bindingManagementMode": "SYSTEM_ONLY" | "MANUAL_ALLOWED" | "POLICY_DERIVED";
   "permissions": PermissionResponseDto[];
 }
 
@@ -243,6 +282,9 @@ export interface RbacRoleResponseDto {
   "permissionRevision": number;
   "createdAt": string;
   "updatedAt": string;
+  "kind": "SYSTEM" | "CUSTOM";
+  "permissionManagementMode": "RELEASE_MANAGED" | "ADMIN_EDITABLE";
+  "bindingManagementMode": "SYSTEM_ONLY" | "MANUAL_ALLOWED" | "POLICY_DERIVED";
 }
 
 export interface RealnameSettingsResponseDto {

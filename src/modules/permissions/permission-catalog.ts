@@ -5276,7 +5276,8 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     },
     'rbac.permission.read': {
       displayName: '查看权限清单',
-      businessDescription: '能看到系统里全部权限项的清单,可以按模块或资源类型筛选。只是看,不改。',
+      businessDescription:
+        '能看到系统里全部权限项的清单,可以按模块或资源类型筛选;也能打开**权限目录** —— 按业务区分组、带每条权限的中文名、人话说明、风险等级与授予策略,等于一张系统能力全景图。只是看,不改。',
       sectionCode: 'system-security',
       groupCode: 'permission',
       sortOrder: 81530,

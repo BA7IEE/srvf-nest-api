@@ -4632,6 +4632,120 @@
         ]
       }
     },
+    "/api/system/v1/permissions/catalog": {
+      "get": {
+        "operationId": "PermissionsController_catalog",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/PermissionCatalogResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "权限目录(只读;按业务区 / 分组两级返回全部权限码的中文名、人话说明、风险等级与授予策略;**不分页**,已登记例外) [rbac: rbac.permission.read]",
+        "tags": [
+          "Ops - Permissions"
+        ]
+      }
+    },
     "/api/system/v1/permissions/{id}": {
       "patch": {
         "operationId": "PermissionsController_update",
@@ -116108,6 +116222,217 @@
           "updatedAt"
         ]
       },
+      "PermissionCatalogItemDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "权限码",
+            "example": "org.create.node"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "中文名(给人看的短标签)",
+            "example": "新建分队/小组"
+          },
+          "businessDescription": {
+            "type": "string",
+            "description": "人话说明:这条权限允许做什么、有什么后果。**目录中文可用的落点** —— 后台权限编辑器直接展示本字段。",
+            "example": "在组织架构里加一个新的分队、部门或小组,挂到指定的上级下面。"
+          },
+          "module": {
+            "type": "string",
+            "description": "模块名(权限码第一段)",
+            "example": "org"
+          },
+          "action": {
+            "type": "string",
+            "description": "动作(权限码第二段)",
+            "example": "create"
+          },
+          "resourceType": {
+            "type": "string",
+            "description": "资源类型(权限码第三段)",
+            "example": "node"
+          },
+          "sectionCode": {
+            "type": "string",
+            "description": "所属一级业务区 code",
+            "example": "organization-people"
+          },
+          "groupCode": {
+            "type": "string",
+            "description": "所属二级分组 code",
+            "example": "organization-structure"
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "组内排序(正整数,越小越靠前)",
+            "example": 10510
+          },
+          "riskLevel": {
+            "type": "string",
+            "description": "风险等级(CRITICAL = 出错救不回,或能把权力给出去)",
+            "enum": [
+              "LOW",
+              "MEDIUM",
+              "HIGH",
+              "CRITICAL"
+            ]
+          },
+          "riskTags": {
+            "type": "array",
+            "description": "风险性质标签(多值;描述这个动作是什么性质,与等级分工不同)",
+            "items": {
+              "type": "string",
+              "enum": [
+                "READ",
+                "WRITE",
+                "DESTRUCTIVE",
+                "SENSITIVE_DATA",
+                "ACCOUNT_SECURITY",
+                "CREDENTIAL",
+                "CONTROL_PLANE",
+                "FINAL_APPROVAL",
+                "MASS_EFFECT",
+                "LEDGER",
+                "WORKFLOW_INTERNAL"
+              ]
+            }
+          },
+          "grantPolicy": {
+            "type": "string",
+            "description": "授予策略:这条码允许被放进什么样的角色",
+            "enum": [
+              "CUSTOM_ROLE_ALLOWED",
+              "SUPER_ADMIN_ONLY",
+              "ROLE_ALLOWLIST_ONLY",
+              "SYSTEM_ROLE_ONLY"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "生命周期状态",
+            "enum": [
+              "ACTIVE",
+              "DEPRECATED",
+              "INTERNAL"
+            ]
+          },
+          "uiVisibility": {
+            "type": "string",
+            "description": "在角色编辑器里的露面程度(HIDDEN = 不该出现在选择器里)",
+            "enum": [
+              "DEFAULT",
+              "ADVANCED",
+              "HIDDEN"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "displayName",
+          "businessDescription",
+          "module",
+          "action",
+          "resourceType",
+          "sectionCode",
+          "groupCode",
+          "sortOrder",
+          "riskLevel",
+          "riskTags",
+          "grantPolicy",
+          "status",
+          "uiVisibility"
+        ]
+      },
+      "PermissionCatalogGroupDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "二级分组 code",
+            "example": "organization-structure"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "二级分组中文名",
+            "example": "组织架构"
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "区内排序(越小越靠前)",
+            "example": 10
+          },
+          "items": {
+            "description": "本分组下的权限条目(按 sortOrder 升序;分组下无条目时返 [])",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionCatalogItemDto"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "displayName",
+          "sortOrder",
+          "items"
+        ]
+      },
+      "PermissionCatalogSectionDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "一级业务区 code",
+            "example": "organization-people"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "一级业务区中文名",
+            "example": "组织与人员"
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "全局排序(越小越靠前)",
+            "example": 100
+          },
+          "groups": {
+            "description": "本业务区下的二级分组(按 sortOrder 升序)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionCatalogGroupDto"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "displayName",
+          "sortOrder",
+          "groups"
+        ]
+      },
+      "PermissionCatalogResponseDto": {
+        "type": "object",
+        "properties": {
+          "totalItems": {
+            "type": "number",
+            "description": "目录条目总数(= 全部业务区/分组下 items 数之和)。前端可用它自证「拿全了没有」,不必自己遍历求和。",
+            "example": 237
+          },
+          "sections": {
+            "description": "按一级业务区分组的完整目录(按 sortOrder 升序;一次返回全量,不分页)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionCatalogSectionDto"
+            }
+          }
+        },
+        "required": [
+          "totalItems",
+          "sections"
+        ]
+      },
       "CreatePermissionDto": {
         "type": "object",
         "properties": {
@@ -116195,6 +116520,34 @@
             "format": "date-time",
             "type": "string",
             "description": "更新时间"
+          },
+          "kind": {
+            "type": "string",
+            "description": "角色类型。`SYSTEM` = 15 个内建角色之一(seed 维护,运行时删不掉、改不了名);`CUSTOM` = 管理员自建。",
+            "enum": [
+              "SYSTEM",
+              "CUSTOM"
+            ],
+            "example": "CUSTOM"
+          },
+          "permissionManagementMode": {
+            "type": "string",
+            "description": "权限集由谁管。`RELEASE_MANAGED` = 随版本发布走 seed,运行时**任何人**(含 SUPER_ADMIN)加减权限都会被拒(30108);`ADMIN_EDITABLE` = 管理员可在后台改。**前端据此把权限编辑器置灰** —— 这就是「系统角色只读状态可被前端识别」的落点。",
+            "enum": [
+              "RELEASE_MANAGED",
+              "ADMIN_EDITABLE"
+            ],
+            "example": "ADMIN_EDITABLE"
+          },
+          "bindingManagementMode": {
+            "type": "string",
+            "description": "角色绑定(谁持有这个角色)由谁管。`SYSTEM_ONLY` = 只能由系统投影器写,人工授予 / 撤销 / 续期一律拒;`MANUAL_ALLOWED` = 允许人工绑定。`POLICY_DERIVED`(职务策略派生)**本期不会出现** —— 理由见 role-classification.ts。",
+            "enum": [
+              "SYSTEM_ONLY",
+              "MANUAL_ALLOWED",
+              "POLICY_DERIVED"
+            ],
+            "example": "MANUAL_ALLOWED"
           }
         },
         "required": [
@@ -116203,7 +116556,10 @@
           "displayName",
           "permissionRevision",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "kind",
+          "permissionManagementMode",
+          "bindingManagementMode"
         ]
       },
       "RbacRoleDetailResponseDto": {
@@ -116243,6 +116599,34 @@
             "type": "string",
             "description": "更新时间"
           },
+          "kind": {
+            "type": "string",
+            "description": "角色类型。`SYSTEM` = 15 个内建角色之一(seed 维护,运行时删不掉、改不了名);`CUSTOM` = 管理员自建。",
+            "enum": [
+              "SYSTEM",
+              "CUSTOM"
+            ],
+            "example": "CUSTOM"
+          },
+          "permissionManagementMode": {
+            "type": "string",
+            "description": "权限集由谁管。`RELEASE_MANAGED` = 随版本发布走 seed,运行时**任何人**(含 SUPER_ADMIN)加减权限都会被拒(30108);`ADMIN_EDITABLE` = 管理员可在后台改。**前端据此把权限编辑器置灰** —— 这就是「系统角色只读状态可被前端识别」的落点。",
+            "enum": [
+              "RELEASE_MANAGED",
+              "ADMIN_EDITABLE"
+            ],
+            "example": "ADMIN_EDITABLE"
+          },
+          "bindingManagementMode": {
+            "type": "string",
+            "description": "角色绑定(谁持有这个角色)由谁管。`SYSTEM_ONLY` = 只能由系统投影器写,人工授予 / 撤销 / 续期一律拒;`MANUAL_ALLOWED` = 允许人工绑定。`POLICY_DERIVED`(职务策略派生)**本期不会出现** —— 理由见 role-classification.ts。",
+            "enum": [
+              "SYSTEM_ONLY",
+              "MANUAL_ALLOWED",
+              "POLICY_DERIVED"
+            ],
+            "example": "MANUAL_ALLOWED"
+          },
           "permissions": {
             "description": "该角色已分配的权限点列表(为空时返 [];RolePermission CRUD 实装前永远空)",
             "type": "array",
@@ -116258,6 +116642,9 @@
           "permissionRevision",
           "createdAt",
           "updatedAt",
+          "kind",
+          "permissionManagementMode",
+          "bindingManagementMode",
           "permissions"
         ]
       },

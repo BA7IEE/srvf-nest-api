@@ -11,6 +11,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
 import { isProtectedRoleCode } from './protected-role-codes';
+import { withRoleClassification } from './role-classification';
 import { RbacService } from './rbac.service';
 import {
   CreateRbacRoleDto,
@@ -145,7 +146,8 @@ export class RbacRolesService {
       }),
       this.prisma.rbacRole.count({ where }),
     ]);
-    return { items, total, page, pageSize };
+    // P1-32 PR 2:三个分类字段是**派生**的,列表逐条贴上(唯一出口 withRoleClassification)。
+    return { items: items.map(withRoleClassification), total, page, pageSize };
   }
 
   // ============ F1/A4 选择器(路线图 §4;D2/D3/D4 拍板)============
@@ -198,7 +200,7 @@ export class RbacRolesService {
     });
     const permissions = rolePermissions.map((rp) => rp.permission);
 
-    return { ...role, permissions };
+    return { ...withRoleClassification(role), permissions };
   }
 
   async create(
@@ -245,7 +247,7 @@ export class RbacRolesService {
             description: created.description,
           },
         });
-        return created;
+        return withRoleClassification(created);
       }),
     );
   }
@@ -286,7 +288,7 @@ export class RbacRolesService {
         before: { displayName: before.displayName, description: before.description },
         after: { displayName: updated.displayName, description: updated.description },
       });
-      return updated;
+      return withRoleClassification(updated);
     });
   }
 
@@ -321,7 +323,7 @@ export class RbacRolesService {
         meta,
         before: { code: existing.code, displayName: existing.displayName },
       });
-      return existing;
+      return withRoleClassification(existing);
     });
     return result;
   }
