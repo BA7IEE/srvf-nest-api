@@ -128,6 +128,8 @@ interface DomainMap {
   kernel: {
     confirmed?: boolean;
     primitives?: JsonRecord[];
+    /** `src/common` 有主子目录里被定性为**技术件**的文件(与 primitives 一起构成闭包)。 */
+    commonTechnicalArtifacts?: JsonRecord[];
     kernelReadFields?: { confirmed?: boolean; fields?: Record<string, string[]> };
     kernelPredicateFields?: { confirmed?: boolean; fields?: Record<string, string[]> };
   };
@@ -520,6 +522,18 @@ function domainMap(): DomainMap {
         return primitive;
       })
     : [];
+  // 缺这一块 ⇒ objectOf 抛错 ⇒ runMetadata 记 error(fail-closed):
+  // 把闭包清单整块删掉不能变成「闭包判据自动关掉」。
+  const technicalRaw = objectOf(
+    kernelRaw.commonTechnicalArtifacts,
+    'kernel.commonTechnicalArtifacts',
+  );
+  booleanOf(technicalRaw.confirmed, 'kernel.commonTechnicalArtifacts.confirmed');
+  const commonTechnicalArtifacts = Array.isArray(technicalRaw.files)
+    ? technicalRaw.files.map((item, index) =>
+        objectOf(item, 'kernel.commonTechnicalArtifacts.files[' + index + ']'),
+      )
+    : [];
   const domains = objectOf(raw.domains, 'domains');
   for (const [domainName, domain] of Object.entries(domains)) {
     const record = objectOf(domain, 'domains.' + domainName);
@@ -549,6 +563,7 @@ function domainMap(): DomainMap {
     kernel: {
       confirmed: booleanOf(kernelRaw.confirmed, 'kernel.confirmed'),
       primitives,
+      commonTechnicalArtifacts,
       kernelReadFields: kernelFields(kernelRaw.kernelReadFields, 'kernel.kernelReadFields'),
       kernelPredicateFields: kernelFields(
         kernelRaw.kernelPredicateFields,
@@ -1218,6 +1233,112 @@ function stateGovernanceReport(): JsonRecord {
   };
 }
 
+/**
+ * kernel 登记表的**完整性**,外加 `src/common` 有主子目录的**文件级闭包**。
+ *
+ * ## 为什么这条判据存在:登记表本身此前没有执行位
+ *
+ * `kernel.primitives` 在本函数出现之前**只被比过一次名字集合**
+ * (`expectedPrimitives`)—— 谁都没验过登记的 `path` 是否还存在、`ownerDomain`
+ * 是否是个真域。⇒ 「登记」这个动作在机器眼里只是往数组里加一行字符串,
+ * 加完之后仍然什么都没多守住。R15 §3.2 自己把缺口写在纸上:
+ *
+ *   > 挡不住「另建 `src/common/security/` 下的第二个文件」—— 新子目录由本表这条
+ *   > 集合相等断言接住,但**同一子目录内新增文件仍是「人得看一眼」的那一步**。
+ *
+ * `harness-guards.selftest.ts` 那条断言判的是**子目录集合**;本条判的是**文件集合**。
+ * 两件事:新建目录它管,往老目录里塞文件它看不见(实测:往
+ * `src/common/identity/` 加一个零 Prisma、零模块入边的业务 helper,
+ * 全部静态判据的红集与「往 `src/modules/` 加同一个文件」**逐条相同** ——
+ * 只有 authz / codemap 两条**陈旧型**红,`pnpm docs:refresh` 一刷就绿)。
+ *
+ * ## 判据形状
+ *
+ * - **有主子目录** = `src/common/<sub>/` 下至少有一个文件登记进 `kernel.primitives`。
+ *   这个集合是**推出来的**,不再手写第二份名单。
+ * - 有主子目录里每个非 `*.spec.ts` 的 `.ts` 必须在登记表里有交代:
+ *   要么是 primitive(业务内核),要么在 `kernel.commonTechnicalArtifacts`(技术件)。
+ * - **两个方向都比**:清单里留着已删 / 已不在有主子目录里的条目同样红
+ *   (与 `expectedPrimitives` 的 missing/unexpected 同范式)。
+ * - 同一文件不得既是 primitive 又是技术件 —— 那是两种互斥的定性。
+ *
+ * ⚠️ 未被登记的 `src/common` 子目录(如 `decorators` / `guards`)**不在本判据射程内**:
+ * 它们整目录都是技术件,由 `harness-guards.selftest.ts` 的子目录集合相等断言 +
+ * COMMON_GOVERNANCE §3 的人工定性接住。本判据只收紧「已经有人定性过、
+ * 因而后来者更容易顺手往里塞东西」的那几个目录。
+ */
+function kernelOwnershipErrors(map: DomainMap, domains: Set<string>): string[] {
+  const errors: string[] = [];
+  const primitivePaths = new Set<string>();
+  for (const primitive of map.kernel.primitives ?? []) {
+    const name = typeof primitive.name === 'string' ? primitive.name : '(unnamed)';
+    const rel = typeof primitive.path === 'string' ? primitive.path : '';
+    if (rel === '') {
+      errors.push('kernel.primitives entry has no path: ' + name);
+    } else {
+      primitivePaths.add(rel);
+      // 登记的是**文件**不是名字:路径不存在时这张表就是假话,而假话的登记表
+      // 比没有登记表更糟 —— 它让人以为归属问题已经被想过了。
+      if (!exists(rel)) errors.push('kernel.primitives path does not exist: ' + name + ' -> ' + rel);
+    }
+    const owner = typeof primitive.ownerDomain === 'string' ? primitive.ownerDomain : '';
+    if (!domains.has(owner))
+      errors.push(
+        'kernel.primitives unknown ownerDomain: ' +
+          name +
+          ' -> ' +
+          (owner === '' ? '(missing)' : owner),
+      );
+  }
+
+  const technicalPaths = new Set<string>();
+  for (const entry of map.kernel.commonTechnicalArtifacts ?? []) {
+    const rel = typeof entry.path === 'string' ? entry.path : '';
+    if (rel === '') {
+      errors.push('kernel.commonTechnicalArtifacts entry has no path');
+      continue;
+    }
+    if (!rel.startsWith(COMMON_PREFIX))
+      errors.push(
+        'kernel.commonTechnicalArtifacts only covers ' + COMMON_PREFIX + ' files: ' + rel,
+      );
+    if (!exists(rel)) errors.push('kernel.commonTechnicalArtifacts path does not exist: ' + rel);
+    if (primitivePaths.has(rel))
+      errors.push('file registered both as kernel primitive and as technical artifact: ' + rel);
+    technicalPaths.add(rel);
+  }
+
+  const ownedDirs = new Set<string>();
+  for (const rel of primitivePaths) {
+    if (!rel.startsWith(COMMON_PREFIX)) continue;
+    const sub = rel.slice(COMMON_PREFIX.length).split('/')[0];
+    if (sub !== undefined && sub !== '') ownedDirs.add(COMMON_PREFIX + sub);
+  }
+  for (const dir of [...ownedDirs].sort()) {
+    if (!exists(dir)) continue; // 目录都没了 —— 上面的 path-does-not-exist 已经点过名
+    for (const file of walk(dir, (name) => name.endsWith('.ts') && !name.endsWith('.spec.ts'))) {
+      if (primitivePaths.has(file) || technicalPaths.has(file)) continue;
+      errors.push(
+        'unclassified file in owned src/common subdirectory: ' +
+          file +
+          ' —— 该子目录已有文件登记为业务内核(owner 已定),新文件必须先定性:' +
+          '业务内核进 kernel.primitives,技术件进 kernel.commonTechnicalArtifacts,' +
+          '并在 docs/ai-harness/COMMON_GOVERNANCE.md §3 写下依据',
+      );
+    }
+  }
+  // 反方向:清单里的条目落在没有 owner 的子目录里 = 定性登记与现实脱节。
+  for (const rel of [...technicalPaths].sort()) {
+    if (!rel.startsWith(COMMON_PREFIX)) continue;
+    const sub = rel.slice(COMMON_PREFIX.length).split('/')[0];
+    if (!ownedDirs.has(COMMON_PREFIX + sub))
+      errors.push(
+        'stale kernel.commonTechnicalArtifacts entry (its subdirectory has no owner): ' + rel,
+      );
+  }
+  return errors;
+}
+
 function runMetadata(): void {
   const errors: string[] = [];
   const modules = listModules();
@@ -1268,11 +1389,19 @@ function runMetadata(): void {
     // 而且失败时说不出**是哪一条**多了或少了。R15 加入 member-advisory-lock 时
     // 这里从 4 条变 5 条:共享业务内核必须显式登记 owner,不能靠搬进 src/common
     // 免除归属(架构治理 v4 终审【七】)。
+    // 2026-08-25 再加 4 条(5 → 9):R15 §3/§3.1/§3.2 三个未定性子目录
+    // (activity-workflow / identity / security)经维护者拍板,照 member-advisory-lock
+    // 先例**登记 owner 而非搬走**。⚠️ 本表**刻意手动**,不从磁盘现取 ——
+    // 现取等于让被判的人自己写答案(同 EXPECTED_ROUTE_COUNT 范式)。
     const expectedPrimitives = [
+      'activity-workflow-gate',
       'app-identity.resolver',
       'member-advisory-lock',
+      'member-label',
       'member-lifecycle-lock',
+      'member-origin',
       'membership-term-state-machine',
+      'role-permission-step-up-proof',
       'wecom-identity-revoke',
     ];
     const primitiveNames = map.kernel.primitives?.map((item) => String(item.name ?? '')) ?? [];
@@ -1289,6 +1418,7 @@ function runMetadata(): void {
             : ''),
       );
     }
+    errors.push(...kernelOwnershipErrors(map, domains));
     errors.push(...decisionPendingErrors(map));
     if (map.kernel.kernelReadFields === undefined)
       errors.push('kernelReadFields governance object is missing');
