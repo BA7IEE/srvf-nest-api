@@ -138,12 +138,44 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
       /** 每条 result revision 的认定贡献值。 */
       recognizedPoints?: number;
       recognizedHours?: number;
+      /**
+       * 整体时间平移(毫秒)。**默认 0 ⇒ 既有全部调用方逐字保持原时刻**,
+       * 本参数不改动任何既有用例的被测对象。两处用途:
+       *   ① 造**同一北京日的第二场活动**时错开时间 —— 否则两场的服务段完全重叠,
+       *      `assertNoCrossActivitySegmentOverlap` 会在日上限被算到之前先抛 ATTENDANCE_TIME_OVERLAP;
+       *   ② 把服务段推过北京日界(UTC 16:00)造**跨零点**样本。
+       */
+      startOffsetMs?: number;
+      /** 单条服务段的时长(小时),默认 2。跨零点样本要更长的段才能落到两个自然日。 */
+      segmentHours?: number;
+      /** 逐场次覆盖认定贡献值(索引 = sessionIndex);未给的场次沿用 `recognizedPoints`。 */
+      recognizedPointsBySession?: readonly number[];
+      /**
+       * 把指定索引的队员写成**零时长结果**:`resultCode` 取本表给的值(absent / leave /
+       * early_departure_zero …),认定时长与认定贡献值恒 0,且**不建**打卡事件与服务段。
+       * 这正是缺席者在真实链路上的形状 —— 没签到就没有段,没有段就没有权重。
+       */
+      zeroResultByMemberIndex?: Readonly<Record<number, string>>;
     } = {},
   ): Promise<PostingFixture> {
     const memberCount = options.memberIds?.length ?? options.memberCount ?? 2;
     const sessionCount = options.sessionsPerMember ?? 1;
     const recognizedPoints = options.recognizedPoints ?? 1.2;
     const recognizedHours = options.recognizedHours ?? 4;
+    const startOffsetMs = options.startOffsetMs ?? 0;
+    const segmentHours = options.segmentHours ?? 2;
+    const zeroResultByMemberIndex = options.zeroResultByMemberIndex ?? {};
+    /** 场次之间的步长:默认与段等长(2h),不让加长的段把下一场盖住。 */
+    const sessionStrideMs = Math.max(2, segmentHours) * 3600_000;
+    const sessionStartAt = (index: number): Date =>
+      new Date(SESSION_START.getTime() + startOffsetMs + index * sessionStrideMs);
+    const segmentEndAt = (index: number): Date =>
+      new Date(sessionStartAt(index).getTime() + segmentHours * 3600_000);
+    const pointsForSession = (index: number): number =>
+      options.recognizedPointsBySession?.[index] ?? recognizedPoints;
+    // 封场时刻必须晚于最后一段服务;默认参数下 max() 恒取 SEAL_AT,读数与本刀之前逐字相同。
+    const lastSegmentEnd = segmentEndAt(sessionCount - 1);
+    const sealAt = new Date(Math.max(SEAL_AT.getTime(), lastSegmentEnd.getTime() + 3600_000));
     sequence += 1;
     const tag = `posting-${sequence}`;
 
@@ -152,8 +184,8 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         title: `账本入账活动 ${sequence}`,
         activityTypeCode: `ledger-posting-type-${sequence}`,
         organizationId,
-        startAt: SESSION_START,
-        endAt: SESSION_END,
+        startAt: new Date(SESSION_START.getTime() + startOffsetMs),
+        endAt: new Date(Math.max(SESSION_END.getTime() + startOffsetMs, lastSegmentEnd.getTime())),
         location: '深圳',
         statusCode: 'published',
       },
@@ -162,9 +194,9 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
 
     const sessionIds: string[] = [];
     for (let index = 0; index < sessionCount; index += 1) {
-      // 同一北京日内的多场次:第二场往后挪 2 小时,仍在 UTC 16:00 日界之前。
-      const startAt = new Date(SESSION_START.getTime() + index * 2 * 3600_000);
-      const endAt = new Date(startAt.getTime() + 2 * 3600_000);
+      // 同一北京日内的多场次:第二场往后挪一个步长,默认仍在 UTC 16:00 日界之前。
+      const startAt = sessionStartAt(index);
+      const endAt = segmentEndAt(index);
       const session = await prisma.activitySession.create({
         data: {
           activityId: activity.id,
@@ -237,7 +269,7 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         evidenceRevision: 0,
         populationRevision: 0,
         workflowRevision: 0,
-        allWindowsClosedAt: SEAL_AT,
+        allWindowsClosedAt: sealAt,
         openSegmentCount: 0,
         manualReviewPendingCount: 0,
         populationCountDistinct: memberCount,
@@ -245,7 +277,7 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         contentHash: `seal-hash-${tag}`,
         statusCode: 'active',
         sealedByUserId: actor.id,
-        sealedAt: SEAL_AT,
+        sealedAt: sealAt,
       },
       select: { id: true },
     });
@@ -274,7 +306,7 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         sessionParticipationCount: memberCount * sessionCount,
         serviceSegmentCount: memberCount * sessionCount,
         createdByUserId: actor.id,
-        submittedAt: SEAL_AT,
+        submittedAt: sealAt,
         statusCode: 'approved',
         operationKey: `${tag}-submit-key`,
         requestHash: `${tag}-submit-hash`,
@@ -300,48 +332,54 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
         });
         identityIds.push(identity.id);
 
-        const sessionStart = new Date(SESSION_START.getTime() + sessionIndex * 2 * 3600_000);
-        const checkIn = await prisma.attendancePunchEvent.create({
-          data: {
-            activityId: activity.id,
-            sessionId: sessionIds[sessionIndex],
-            participationIdentityId: identity.id,
-            memberId: memberIds[memberIndex],
-            eventTypeCode: 'check_in',
-            sourceCode: 'self_qr',
-            occurredAt: sessionStart,
-            receivedAt: sessionStart,
-            operatorUserId: actor.id,
-            eventKey: `${tag}-in-${memberIndex}-${sessionIndex}`,
-            requestHash: `${tag}-in-hash-${memberIndex}-${sessionIndex}`,
-            evidenceRevision: 0,
-          },
-          select: { id: true },
-        });
-        await prisma.participantServiceSegmentRevision.create({
-          data: {
-            participationIdentityId: identity.id,
-            segmentKey: 'seg-0',
-            revision: 0,
-            sourceCheckInEventId: checkIn.id,
-            resultCode: 'valid',
-            statusCode: 'draft',
-            checkInAt: sessionStart,
-            checkOutAt: new Date(sessionStart.getTime() + 2 * 3600_000),
-            serviceHours: 2,
-          },
-        });
+        // 零时长结果的队员**没有打卡、没有服务段** —— 缺席者在真实链路上就是这个形状。
+        const zeroResultCode = zeroResultByMemberIndex[memberIndex];
+        const sessionStart = sessionStartAt(sessionIndex);
+        if (zeroResultCode === undefined) {
+          const checkIn = await prisma.attendancePunchEvent.create({
+            data: {
+              activityId: activity.id,
+              sessionId: sessionIds[sessionIndex],
+              participationIdentityId: identity.id,
+              memberId: memberIds[memberIndex],
+              eventTypeCode: 'check_in',
+              sourceCode: 'self_qr',
+              occurredAt: sessionStart,
+              receivedAt: sessionStart,
+              operatorUserId: actor.id,
+              eventKey: `${tag}-in-${memberIndex}-${sessionIndex}`,
+              requestHash: `${tag}-in-hash-${memberIndex}-${sessionIndex}`,
+              evidenceRevision: 0,
+            },
+            select: { id: true },
+          });
+          await prisma.participantServiceSegmentRevision.create({
+            data: {
+              participationIdentityId: identity.id,
+              segmentKey: 'seg-0',
+              revision: 0,
+              sourceCheckInEventId: checkIn.id,
+              resultCode: 'valid',
+              statusCode: 'draft',
+              checkInAt: sessionStart,
+              checkOutAt: segmentEndAt(sessionIndex),
+              serviceHours: segmentHours,
+            },
+          });
+        }
 
         const revision = await prisma.participantSettlementResultRevision.create({
           data: {
             settlementVersionId: version.id,
             participationIdentityId: identity.id,
             revision: 0,
-            resultCode: 'present',
-            recognizedServiceHours: recognizedHours,
-            recognizedContributionPoints: recognizedPoints,
-            calculatedServiceHours: recognizedHours,
-            calculatedContributionPoints: recognizedPoints,
+            resultCode: zeroResultCode ?? 'present',
+            recognizedServiceHours: zeroResultCode === undefined ? recognizedHours : 0,
+            recognizedContributionPoints:
+              zeroResultCode === undefined ? pointsForSession(sessionIndex) : 0,
+            calculatedServiceHours: zeroResultCode === undefined ? recognizedHours : 0,
+            calculatedContributionPoints:
+              zeroResultCode === undefined ? pointsForSession(sessionIndex) : 0,
             statusCode: 'draft',
           },
           select: { id: true },
@@ -1100,6 +1138,280 @@ describe('ledger posting —— 分块准备 + 统一生效 (合同 §5.12 / §5
           select: { version: true, committedCreditedPoints: true },
         }),
       ).resolves.toStrictEqual({ version: 3, committedCreditedPoints: expect.anything() });
+    });
+  });
+
+  // =========================================================================
+  // ⑥bis ⭐ 验收编号 AC-049 / AC-056 / AC-057(2026-08 补写)
+  //
+  // 三条合同原句各自对应下面一个 describe,**逐句拆成格**再写断言:
+  //   AC-049「每个有效队员×场次都有且只有一个当前人员结果;缺席等零时长结果不进入有效服务明细。」
+  //   AC-056「北京时间同日多活动认定超过 3 分时,最终计入恰好 3 分,并显示未计入部分和稳定分配顺序。」
+  //   AC-057「跨北京时间零点的服务按两个自然日拆分并分别执行每日 3 分上限。」
+  //
+  // ⚠️ 本段**只新增**用例,既有断言一字未改;夹具新增的四个可选参数默认值
+  //    (`startOffsetMs=0` / `segmentHours=2` / 两张覆盖表为空)使既有调用方的
+  //    时刻与数值逐字保持原样。
+  // =========================================================================
+  describe('⭐ AC-049 每人每场恰一个当前结果 + 零时长结果不进有效服务明细', () => {
+    it('缺席 / 早退零时长 ⇒ 零 day 行、零分录、读面查不到;出勤那位照常入账(正对照)', async () => {
+      // 三个人同一场:0 号出勤 2.00 分,1 号缺席,2 号早退零时长。
+      // 后两位**没有打卡也没有服务段** —— 这正是他们在真实链路上的形状。
+      const fixture = await createPostingFixture({
+        memberCount: 3,
+        recognizedPoints: 2,
+        recognizedHours: 4,
+        zeroResultByMemberIndex: { 1: 'absent', 2: 'early_departure_zero' },
+      });
+      await prepareBatch(fixture);
+      await posting.commitBatch(commitInput(fixture), actor, auditMeta);
+
+      const [present, absent, earlyZero] = fixture.memberIds;
+
+      // ① 正对照:出勤那位有 1 条 day 行 + 2 条分录(时长 / 贡献各一),日合计 2.00。
+      //    没有这一格,下面的「零」可能只是整条链根本没跑起来。
+      await expect(
+        prisma.participantSettlementDay.count({ where: { memberId: present } }),
+      ).resolves.toBe(1);
+      await expect(
+        prisma.participationLedgerEntry.count({ where: { memberId: present } }),
+      ).resolves.toBe(2);
+      const presentState = await prisma.memberContributionDayState.findUniqueOrThrow({
+        where: {
+          memberId_ledgerDate: {
+            memberId: present,
+            ledgerDate: new Date(`${LEDGER_DATE}T00:00:00.000Z`),
+          },
+        },
+        select: { committedCreditedPoints: true },
+      });
+      expect(Number(presentState.committedCreditedPoints)).toBe(2);
+
+      // ② 零时长的两位:day 行、分录、day-state 三处**都**是零 —— 不是"记了 0",是"没记"。
+      for (const memberId of [absent, earlyZero]) {
+        await expect(prisma.participantSettlementDay.count({ where: { memberId } })).resolves.toBe(
+          0,
+        );
+        await expect(prisma.participationLedgerEntry.count({ where: { memberId } })).resolves.toBe(
+          0,
+        );
+        await expect(
+          prisma.memberContributionDayState.count({ where: { memberId } }),
+        ).resolves.toBe(0);
+      }
+
+      // ③ 读面(= 三个 participation-ledger 端点共用的那条已生效投影):只出现出勤那位。
+      const visible = await ledgerQuery.listCommittedEntriesForActivity(fixture.activityId);
+      expect([...new Set(visible.map((entry) => entry.memberId))]).toStrictEqual([present]);
+      expect(visible.map((entry) => entry.entryTypeCode).sort()).toStrictEqual([
+        'contribution_credit',
+        'service_credit',
+      ]);
+    });
+
+    it('「有且只有一个当前结果」是 DB 执行位:同版本同身份再插一条 ⇒ P2002', async () => {
+      const fixture = await createPostingFixture({ memberCount: 2 });
+
+      // 正向:两个身份各恰有 1 条结果行 —— "有且只有一个"当下成立。
+      const perIdentity = await Promise.all(
+        fixture.identityIds.map(async (identityId) =>
+          prisma.participantSettlementResultRevision.count({
+            where: { settlementVersionId: fixture.versionId, participationIdentityId: identityId },
+          }),
+        ),
+      );
+      expect(perIdentity).toStrictEqual([1, 1]);
+
+      // 反向:再插第二条(哪怕 revision 号不同)当场被唯一索引咬住,
+      // 而不是"多一条也无所谓、由后面某处取最新" —— 那正是账悄悄错的形状。
+      const duplicate = prisma.participantSettlementResultRevision.create({
+        data: {
+          settlementVersionId: fixture.versionId,
+          participationIdentityId: fixture.identityIds[0],
+          revision: 1,
+          resultCode: 'present',
+          recognizedServiceHours: 1,
+          recognizedContributionPoints: 1,
+          calculatedServiceHours: 1,
+          calculatedContributionPoints: 1,
+          statusCode: 'draft',
+        },
+      });
+      await expect(duplicate).rejects.toMatchObject({ code: 'P2002' });
+    });
+  });
+
+  describe('⭐ AC-056 同一北京日跨活动:计入恰好 3 分 + 显示未计入部分 + 稳定分配顺序', () => {
+    it('同日**两场不同活动**各认定 2.00 ⇒ 第二场只计 1.00、截掉 1.00,日合计恰好 3.00', async () => {
+      const first = await createPostingFixture({
+        memberCount: 1,
+        recognizedPoints: 2,
+        recognizedHours: 2,
+      });
+      await prepareBatch(first);
+      await posting.commitBatch(commitInput(first), actor, auditMeta);
+
+      // 同一队员、同一北京日、**另一个活动**;时间往后错 6 小时(07:00Z→09:00Z),
+      // 仍在 UTC 16:00 日界之前 —— 错开是为了绕过跨活动服务时间重叠闸,
+      // 让本条真正被测的那一维(日上限)单独暴露。
+      const second = await createPostingFixture({
+        memberIds: first.memberIds,
+        recognizedPoints: 2,
+        recognizedHours: 2,
+        startOffsetMs: 6 * 3600_000,
+      });
+      expect(second.activityId).not.toBe(first.activityId);
+      await prepareBatch(second);
+      await posting.commitBatch(commitInput(second), actor, auditMeta);
+
+      const memberId = first.memberIds[0];
+
+      // ①「最终计入恰好 3 分」:day-state 停在 3.00,两次 commit 各推进一版。
+      const dayState = await prisma.memberContributionDayState.findUniqueOrThrow({
+        where: {
+          memberId_ledgerDate: {
+            memberId,
+            ledgerDate: new Date(`${LEDGER_DATE}T00:00:00.000Z`),
+          },
+        },
+        select: { version: true, committedCreditedPoints: true },
+      });
+      expect(dayState.version).toBe(2);
+      expect(Number(dayState.committedCreditedPoints)).toBe(3);
+
+      // ② 反向对照:先到的那场**没有**被截 —— 证明判据不是"一律截成 3"。
+      const firstDay = await prisma.participantSettlementDay.findFirstOrThrow({
+        where: { resultRevisionId: { in: first.resultRevisionIds } },
+        select: { recognizedPoints: true, creditedPoints: true, cappedOutPoints: true },
+      });
+      expect([
+        Number(firstDay.recognizedPoints),
+        Number(firstDay.creditedPoints),
+        Number(firstDay.cappedOutPoints),
+      ]).toStrictEqual([2, 2, 0]);
+
+      // ③「显示未计入部分」:后到的那场认定 2.00 = 计入 1.00 + 未计入 1.00,
+      //    并且这个数**在对外读面上真的看得见**(cappedOutPointsDelta,不是只躺在内部表里)。
+      const secondDay = await prisma.participantSettlementDay.findFirstOrThrow({
+        where: { resultRevisionId: { in: second.resultRevisionIds } },
+        select: { recognizedPoints: true, creditedPoints: true, cappedOutPoints: true },
+      });
+      expect([
+        Number(secondDay.recognizedPoints),
+        Number(secondDay.creditedPoints),
+        Number(secondDay.cappedOutPoints),
+      ]).toStrictEqual([2, 1, 1]);
+
+      const visible = await ledgerQuery.listCommittedEntriesForMember(memberId);
+      const contribution = visible
+        .filter((entry) => entry.entryTypeCode === 'contribution_credit')
+        .map((entry) => ({
+          activityId: entry.activityId,
+          credited: entry.creditedPointsDelta,
+          cappedOut: entry.cappedOutPointsDelta,
+        }));
+      expect(contribution).toEqual(
+        expect.arrayContaining([
+          { activityId: first.activityId, credited: 2, cappedOut: 0 },
+          { activityId: second.activityId, credited: 1, cappedOut: 1 },
+        ]),
+      );
+      expect(contribution).toHaveLength(2);
+    });
+
+    it('「稳定分配顺序」= 按 sequenceStartAt:早的那条先拿额度,与认定值大小无关', async () => {
+      // 早的一场只认定 1.00、晚的一场认定 2.50(合计 3.50 > 3)。
+      // ⭐ 顺序**反过来**会得到 [0.50/0.50, 2.50/0.00] —— 与下面断言的
+      //    [1.00/0.00, 2.00/0.50] 完全不同 ⇒ 这条断言真的在测顺序,不是恒真。
+      const fixture = await createPostingFixture({
+        memberCount: 1,
+        sessionsPerMember: 2,
+        recognizedHours: 2,
+        recognizedPointsBySession: [1, 2.5],
+      });
+      await prepareBatch(fixture);
+      await posting.commitBatch(commitInput(fixture), actor, auditMeta);
+
+      const days = await prisma.participantSettlementDay.findMany({
+        where: { resultRevisionId: { in: fixture.resultRevisionIds } },
+        select: {
+          sequenceStartAt: true,
+          recognizedPoints: true,
+          creditedPoints: true,
+          cappedOutPoints: true,
+        },
+        orderBy: { sequenceStartAt: 'asc' },
+      });
+      expect(
+        days.map((row) => [
+          Number(row.recognizedPoints),
+          Number(row.creditedPoints),
+          Number(row.cappedOutPoints),
+        ]),
+      ).toStrictEqual([
+        [1, 1, 0],
+        [2.5, 2, 0.5],
+      ]);
+      // 顺序键本身也钉住:第二条确实晚于第一条(否则上面的"早/晚"是空话)。
+      expect(days[0].sequenceStartAt.getTime()).toBeLessThan(days[1].sequenceStartAt.getTime());
+    });
+  });
+
+  describe('⭐ AC-057 跨北京零点:拆成两个自然日,且**每日各自**跑 3 分上限', () => {
+    it('段 2020-03-01T15:00Z→03-02T03:00Z、认定 4.00 分 ⇒ 两日 0.33 / 3.00,合计计入 3.33', async () => {
+      // 北京日界 = UTC 16:00。这段 12 小时里 1 小时落在 03-01、11 小时落在 03-02,
+      // 认定值按毫秒权重拆成 0.33 / 3.67(最大余额法,逐日求和恒等于 4.00)。
+      const fixture = await createPostingFixture({
+        memberCount: 1,
+        recognizedPoints: 4,
+        recognizedHours: 12,
+        startOffsetMs: 14 * 3600_000,
+        segmentHours: 12,
+      });
+      await prepareBatch(fixture);
+      await posting.commitBatch(commitInput(fixture), actor, auditMeta);
+
+      const days = await prisma.$queryRaw<
+        Array<{ ledgerDate: string; h: string; r: string; c: string; o: string }>
+      >`
+        SELECT to_char("ledgerDate", 'YYYY-MM-DD') AS "ledgerDate",
+               "serviceHours"::text AS h, "recognizedPoints"::text AS r,
+               "creditedPoints"::text AS c, "cappedOutPoints"::text AS o
+        FROM "ParticipantSettlementDay"
+        WHERE "memberId" = ${fixture.memberIds[0]}
+        ORDER BY "ledgerDate" ASC
+      `;
+
+      // ①「按两个自然日拆分」:恰好两行,日期是相邻的两个北京自然日。
+      expect(days.map((row) => row.ledgerDate)).toStrictEqual(['2020-03-01', '2020-03-02']);
+      // 逐日求和恒等于认定总量(时长 1+11 = 12,贡献 0.33+3.67 = 4.00)。
+      expect(days.map((row) => row.h)).toStrictEqual(['1.00', '11.00']);
+      expect(days.map((row) => row.r)).toStrictEqual(['0.33', '3.67']);
+
+      // ②「分别执行每日 3 分上限」——
+      //   反向格:03-01 那天只有 0.33 分,**没有**被截(cappedOut = 0);
+      //   边界格:03-02 那天恰好停在上限 3.00,余下的 0.67 进未计入。
+      expect(days.map((row) => row.c)).toStrictEqual(['0.33', '3.00']);
+      expect(days.map((row) => row.o)).toStrictEqual(['0.00', '0.67']);
+
+      // ③ ⭐ 决定性的一格:两日**计入合计 = 3.33 > 3.00**。
+      //    只有"按日分别设限"才可能出现这个数;若哪天有人把上限改成对整段服务的
+      //    总量设限(或忘了拆日),这个和会被压回 3.00,本行当场变红。
+      const creditedTotal = days.reduce((sum, row) => sum + Number(row.c), 0);
+      expect(Number(creditedTotal.toFixed(2))).toBe(3.33);
+
+      // ④ day-state 也是**两行**(每个北京自然日一行),不是合成一行。
+      const states = await prisma.$queryRaw<Array<{ ledgerDate: string; credited: string }>>`
+        SELECT to_char("ledgerDate", 'YYYY-MM-DD') AS "ledgerDate",
+               "committedCreditedPoints"::text AS credited
+        FROM "MemberContributionDayState"
+        WHERE "memberId" = ${fixture.memberIds[0]}
+        ORDER BY "ledgerDate" ASC
+      `;
+      expect(states).toStrictEqual([
+        { ledgerDate: '2020-03-01', credited: '0.33' },
+        { ledgerDate: '2020-03-02', credited: '3.00' },
+      ]);
     });
   });
 

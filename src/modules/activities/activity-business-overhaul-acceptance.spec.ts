@@ -1644,6 +1644,336 @@ const TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS: Readonly<
         '超卖闸:occupied 为负被拒、occupied > capacity 被拒;occupied = capacity 放行;capacity=NULL 时不设上限',
     },
   ],
+  // AC-049「每个有效队员×场次都有且只有一个当前人员结果;缺席等零时长结果不进入有效服务明细。」
+  //
+  // 两个分句各一条用例:
+  //   ①「有且只有一个当前结果」→ 唯一索引 `participant_settlement_result_version_identity_key`
+  //     的双向证据:两个身份**各恰 1 条**(正向,说明"只有一个"当下真的成立),
+  //     同版本同身份再插第二条当场 P2002(反向,说明它是执行位而不是巧合)。
+  //   ②「缺席等零时长结果不进入有效服务明细」→ 一个夹具三个人:出勤 / 缺席 / 早退零时长。
+  //     缺席与早退**没有打卡也没有服务段**(真实形状),生效后 day 行 / 分录 / day-state
+  //     三处都是 **0 行**(不是"记了 0"),读面 `listCommittedEntriesForActivity`
+  //     只出现出勤那位;出勤那位有 1 day 行 + 2 分录 + 日合计 2.00 是**正对照**
+  //     —— 没有它,那三个零可能只是整条链根本没跑起来。
+  //   ⭐ 变异对拍(本机,`ledger-day-allocation.ts` 零结果分支改成写一行零 day 行):
+  //     本 spec 28 条里**恰这条**变红,其余 27 条全绿。
+  'AC-049': [
+    {
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: '缺席 / 早退零时长 ⇒ 零 day 行、零分录、读面查不到;出勤那位照常入账(正对照)',
+    },
+    {
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: '「有且只有一个当前结果」是 DB 执行位:同版本同身份再插一条 ⇒ P2002',
+    },
+  ],
+  // AC-056「北京时间同日多活动认定超过 3 分时,最终计入恰好 3 分,并显示未计入部分和稳定分配顺序。」
+  //
+  // ⭐ **先订正一个容易读错的地方**:仓内既有的「基线已有 2.5 分、本批再来 1.0 分 ⇒ 20086 被拒」
+  //    走的是 `craftReadyBatch`(**手工造 ready 批次、刻意绕过准备器算术**)——
+  //    那是"准备器坏了"的兜底闸,不是跨活动的正常语义。正常路径由
+  //    `ledger-preparation.service.ts` 的 `readDayStateBaseline` → `applyDailyCap` 负责,
+  //    prior 按 (member, 北京日) 取、与活动无关 ⇒ **跨活动就是截,不是拒**。
+  //
+  // 三格逐个绑:
+  //   ①「最终计入恰好 3 分」→ 同一队员、同一北京日、**两场不同活动**各认定 2.00,
+  //     第二场按真实准备路径只拿到 1.00,day-state 停在 **恰好 3.00**(version 2)。
+  //   ② 反向(判据非恒真)→ 同夹具里先到的那场 credited 2.00 / cappedOut 0.00,
+  //     证明不是"一律截成 3"。
+  //   ③「显示未计入部分」→ 后到那场 cappedOut 1.00,并且在**对外读面**上真的看得见
+  //     (`cappedOutPointsDelta`,不是只躺在内部表里)。
+  //   ④「稳定分配顺序」→ 单独一条:早的一场认定 1.00、晚的一场 2.50(合计 3.50 > 3),
+  //     按 `sequenceStartAt` 升序逐行断言 (recognized, credited, cappedOut)
+  //     = [1.00, 1.00, 0.00] 与 [2.50, 2.00, 0.50]。
+  //     ⭐ 顺序反过来会得到 [1.00, 0.50, 0.50] 与 [2.50, 2.50, 0.00] —— 两种顺序读数不同,
+  //     所以这条断言真的在测顺序。⚠️ 既有 `⑥ 同一人同一日两场共 4.0 分` 那条用了
+  //     `.map(...).sort()`,把顺序信息洗掉了(只钉住多重集 {1,2})⇒ 顺序这半格此前零覆盖。
+  //   ⭐ 变异对拍(本机,两轮各只红一条):
+  //     · `allocateDailyCredit` 的 `sequenceStartAt` 比较反向 ⇒ **只有 ④ 变红**
+  //       (既有那条因为 `.sort()` 照样全绿 —— 正是"此前零覆盖"的实测证据);
+  //     · `applyDailyCap` 的 prior 恒取 0(= 不读已 committed 基线)⇒ **只有 ①②③ 那条变红**,
+  //       既有 28 条一条都没动 —— 说明"跨活动日上限在正常路径上生效"此前也无人守。
+  'AC-056': [
+    {
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: '同日**两场不同活动**各认定 2.00 ⇒ 第二场只计 1.00、截掉 1.00,日合计恰好 3.00',
+    },
+    {
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: '「稳定分配顺序」= 按 sequenceStartAt:早的那条先拿额度,与认定值大小无关',
+    },
+  ],
+  // AC-057「跨北京时间零点的服务按两个自然日拆分并分别执行每日 3 分上限。」
+  //
+  // 一条用例把两个分句一次证完(它们在同一份读数里,拆开反而各自证不全):
+  //   段 = 2020-03-01T15:00Z → 03-02T03:00Z(北京日界 UTC 16:00),1 小时落 03-01、11 小时落 03-02;
+  //   认定 4.00 分按毫秒权重拆成 0.33 / 3.67(最大余额法,逐日求和恒等于 4.00)。
+  //   ①「按两个自然日拆分」→ 恰两行,日期 ['2020-03-01', '2020-03-02'],时长 1.00 / 11.00。
+  //   ② 反向 → 03-01 那天只有 0.33 分,**没有**被截(cappedOut 0.00)。
+  //   ③ 边界 → 03-02 那天恰好停在上限 3.00,余下 0.67 进未计入。
+  //   ④ ⭐ 决定性 → 两日**计入合计 3.33 > 3.00**。只有"按日分别设限"才可能出现这个数;
+  //     谁把上限改成对整段服务的总量设限(或忘了拆日),这一行当场变红。
+  //   ⑤ day-state 也是**两行**(每个北京自然日一行),不是合成一行。
+  //   ⭐ 变异对拍(本机,`splitSpanByBeijingDay(...).slice(0, 1)` = 只取第一天):
+  //     本 spec 28 条里**恰这条**变红,其余 27 条全绿。
+  //   ⚠️ 立项前实测:全仓 e2e 的时间常量**没有一个跨过 UTC 16:00**(结算/账本族一律
+  //     01:00Z→05:00Z 或 00:00Z→04:00Z),故本条的夹具是新造的,不是复用。
+  'AC-057': [
+    {
+      file: 'test/e2e/activity-ledger-posting.e2e-spec.ts',
+      needle: '段 2020-03-01T15:00Z→03-02T03:00Z、认定 4.00 分 ⇒ 两日 0.33 / 3.00,合计计入 3.33',
+    },
+  ],
+  // AC-060「更正把缺席改出勤或出勤改缺席后,人员、时长、分数、评价资格和关闭版本一致变化。」
+  // ADV-012「更正把缺席改出勤后,人数、时长、分数、评价和关闭版本一起变化。」
+  //
+  // 两条**共用同一段**新用例(合同一句话的两个方向),各绑自己那一向:
+  //   · AC-060 的「或」两向都要 ⇒ 绑两条(出勤改缺席 + 缺席改出勤);
+  //   · ADV-012 只点名「缺席改出勤」⇒ 只绑那一条。
+  //
+  // 五格在**同一夹具、同一次 apply 前后**各读一次:
+  //   人员 → closure.resultCountsJson 从 {present:2} 变 {present:1, absent:1}(反向那条相反)
+  //   时长 → closure.serviceHours 8.00 ⇄ 4.00
+  //   分数 → closure.contributionPoints 2.40 ⇄ 1.20 + day-state 1.20 ⇄ 0.00
+  //   评价资格 → ActivityFeedbacksService.getMine 的 canSubmit true ⇄ false(真读面,不重算谓词)
+  //   关闭版本 → revision 1 → 2,旧行 superseded 且 supersededByCorrectionId 指回本次申请
+  // 正对照:**未被更正的第二个人**五格原样不动 —— 否则"一致变化"可能只是整份账被推倒重来。
+  //
+  // ⭐ 变异对拍(本机,两轮,既有 19 条一条都没动):
+  //   · `correction-change-set.ts` 的 `resultCode` 恒取 'present' ⇒ **只有 AC-060 那条变红**
+  //     (既有 19 条全绿 —— 实测印证"全仓此前没有任何用例真的换过结果码");
+  //   · `activity-closure.service.ts` 的 `readTotals().serviceHours` 恒取 '0' ⇒ **两条都变红**,
+  //     既有 19 条仍全绿(closure 的时长汇总此前在本 spec 里也无人守)。
+  //
+  // 🔴 **少了一格,如实登记在此**:`eligibilityCorrected`(「最新结算纠错是否已撤销本人的当前评价资格」)
+  //    走真更正链时**恒为 false** —— `wasEligibleBeforeLatestClosure()` 找旧 closure 的结果行时带
+  //    `statusCode: 'committed'`,而真更正链在 commit 同事务里把旧结果行一律投影成 `superseded`,
+  //    两者对不上。既有 AC-065 用例能读到 `true`,是因为它的夹具**手写**两版结果行且都留在 `committed`
+  //    —— 真更正链从不产出那个形态。本刀**不修也不把 false 断言进来**(断言 false = 给缺陷发契约),
+  //    已登记进 `NEXT_TASKS` P1-28 验收分拣小节等维护者裁定。
+  'AC-060': [
+    {
+      file: 'test/e2e/activity-settlement-correction.e2e-spec.ts',
+      needle: '🔴 AC-060 出勤改缺席:五格一起变,未被更正的那位五格原样不动',
+    },
+    {
+      file: 'test/e2e/activity-settlement-correction.e2e-spec.ts',
+      needle: '🔴 ADV-012 缺席改出勤:反方向五格一起变(人到了却被判缺席,是更正要修的原形)',
+    },
+  ],
+  'ADV-012': [
+    {
+      file: 'test/e2e/activity-settlement-correction.e2e-spec.ts',
+      needle: '🔴 ADV-012 缺席改出勤:反方向五格一起变(人到了却被判缺席,是更正要修的原形)',
+    },
+  ],
+  // AC-003「复制旧活动只生成全新草稿,绝不复制报名、邀请、二维码、打卡、结算、账本、关闭、更正和通知历史。」
+  //
+  // 🔴 既有 clone 用例(同一个 spec 的「clones only live Activity / ActivitySession /
+  //    ActivitySessionPosition configuration into a new draft」)源活动上**只建了一条报名**;
+  //    九类里另外八类源侧一行都没有 ⇒「克隆件上是 0」对它们是**恒真**的。
+  //    本刀新增的用例把九类逐类在源活动上真的建出来,再断言克隆件上逐类恰 0。
+  //
+  // 三层:
+  //   ① 正向(判据非恒真)→ 源活动上九类**逐类**恰 1 行,先断言这一格;
+  //   ② 反向 → 克隆件上九类**逐类**恰 0 行,且克隆件确实是 `draft` / closure 指针为 null;
+  //      另断言源活动那九类**一行没被搬走**(clone 是复制不是搬家);
+  //   ③ 结构 → 整个 clone 事务内事实表 delegate 写次数 = 0。
+  //      同刀把 spy 面从 **11 → 24** 个 delegate(只增不减,既有断言一字未改):
+  //      原集合只覆盖九类里的四类,邀请 / 二维码 / 关闭 / 更正 / 通知**整整五类零观察**。
+  //      并加一条**地板**:集合里每个名字都必须是 Prisma client 上真实存在的 delegate
+  //      —— 写错一个字母会静默变成"永远观察不到"而读数照样是 0(扫描面塌掉型假绿)。
+  //
+  // ⭐ 变异对拍(本机,往 `activity-lifecycle.service.ts` 的 clone 事务里加一句
+  //    `tx.activityInvitation.createMany(...)` 把源邀请复制过去):
+  //    **本刀这条变红,而既有那条 clone 用例照样全绿** —— 实测印证「另外八类此前是恒真的」。
+  //
+  // ⚠️ 口径边界写清楚:`Notification` 表本身**没有 activityId**(按 recipientMemberId 锚),
+  //    所以"通知历史"这一类在行数层只能用 `NotificationOutboxIntent` 的多态锚点
+  //    (`aggregateType='activity'` + `aggregateId`)来数;`Notification` / `NotificationDelivery`
+  //    两张表由 delegate spy 那一层覆盖。
+  'AC-003': [
+    {
+      file: 'test/e2e/activity-batch3-3-lifecycle-and-member-read.e2e-spec.ts',
+      needle: 'AC-003 九类历史在源活动上逐类真实存在，克隆件上逐类恰零行且 clone 事务零事实写',
+    },
+  ],
+  // ADV-019「正式队员、停用账号、非正式队员和未受邀人员的活动可见性组合。」
+  //
+  // 补的是两件事:①「停用」这一轴在第 3 批新目录路由 `GET /api/app/v1/activities` 上**零覆盖**
+  // (既有 INACTIVE→403 只钉在旧的 `activities/available` 与 `activities/:id` 上;该 spec 的
+  //  `createMember()` 恒建 `MemberStatus.ACTIVE`,`UserStatus` 一次都没出现过);
+  // ②合同要的是「**组合**」,而此前没有任何用例同时跨两轴。
+  //
+  // 判据形状 = 一次读出**六个人 × 两个活动**的完整矩阵(比集合,不比计数),
+  // 目录路由与详情路由**各走一遍**(两处实现,只测目录会漏掉"列表藏住了、知道 id 还能直接读"):
+  //   正向 → 正式且受邀者两个都看得到(矩阵非恒空);
+  //   反向 → 未受邀看不到邀请制那个;非正式看不到内部那个;
+  //   ⭐ 组合 → **非正式 × 受邀**:只看得到邀请制那个(两轴结论叠加,任一轴单独给不出);
+  //   ⭐ 组合 → **停用 × (正式 + 受邀)**:另两轴全满足仍被挡在门外,
+  //             证明停用压过可见性计算,而不是"少看到几条"。
+  // ⚠️ 停用**两条路分码断言**,不许合并成一句"停用就是看不到":
+  //     `User.status=DISABLED` → JwtStrategy 每请求查库 ⇒ **40100**;
+  //     `Member.status=INACTIVE` → App 准入闭包 ⇒ **40300**。合并会让"401 退化成 403"看不出来。
+  // ⭐ 变异对拍(本机,`app-identity.resolver.ts` 把 `MEMBER_INACTIVE` 分支改成放行):
+  //    **本刀这条变红,既有 11 条全绿**。
+  'ADV-019': [
+    {
+      file: 'test/e2e/activity-batch3-3-lifecycle-and-member-read.e2e-spec.ts',
+      needle: 'ADV-019 正式/停用/非正式/未受邀四轴在新目录路由上的可见性组合矩阵',
+    },
+  ],
+  // AC-014「活动存在**有效**现场事实时普通取消被拒绝,必须**改走提前终止并结算**。」
+  //
+  // 第 5 批已交付「有现场事实 ⇒ 普通取消被拒」并有 App / Admin 两个真用例;本条补余下三格:
+  //   ①「**有效**」这个限定 —— 已被 void 顶掉的事实不得继续拦着取消。
+  //      此前只有纯函数单测(`settlement-segment-projector.spec.ts`),**HTTP 层零证据**;
+  //      而这一格最容易悄悄退化:把 `resolveEffectiveFacts(...)` 换成 `punchEvents.length > 0`
+  //      会让功能"更严",既有用例一条都不会红。
+  //   ②「必须改走提前终止」→ 同一条被拒的活动 terminate 成功(此前 `/terminate` 只在
+  //      **零打卡**的活动上被测过,取消被拒 → terminate 这条链全仓零覆盖);
+  //   ③「并结算」→ 终止之后结算真相链的第一步(封场)接受它。
+  //
+  // 正向对照:同形态、**零打卡**的活动取消成功 —— 没有它,那条 20030 可能来自任何别的闸。
+  // ⚠️ 夹具让**场次在未来**(取消的时间闸开着)⇒ 20030 只可能来自事实闸;
+  //    而 terminate 的时间闸恰恰相反,两闸互斥,故链的第二步之前把活动时刻整体挪到过去。
+  //
+  // ⭐ 变异对拍(本机,`activity-status-command.service.ts` 把
+  //    `resolveEffectiveFacts(punchEvents).length > 0` 换成 `punchEvents.length > 0`):
+  //    **本刀这条变红,既有 13 条全绿**。
+  //
+  // ⚠️ 两处口径边界,写清楚免得后来者高估:
+  //   · ③ 证明的是"终止之后结算能**开始**",不是整条结算链走通(那由 settlement 族 spec 覆盖);
+  //   · 20030 `ACTIVITY_STATUS_INVALID` 是**共用码**(状态机 / 时间闸 / 事实闸同一个),
+  //     所以本条不靠码本身分辨,靠"场次在未来 + 零打卡对照成功"把被测那一维单独暴露。
+  //
+  // ⭐ 顺带记一个动手才知道的事实:`AttendancePunchEvent` 在 DB 上是 **append-only**
+  //    (触发器直接拒绝 UPDATE,实测 `attendance punch event is append-only`),
+  //    所以夹具里打卡时刻只能一次写对,不能事后平移。
+  'AC-014': [
+    {
+      file: 'test/e2e/activity-batch3-3-lifecycle-and-member-read.e2e-spec.ts',
+      needle:
+        'AC-014 有效现场事实拦住普通取消；作废那条事实后可取消；同一条活动的正路是终止并进结算链',
+    },
+  ],
+  // AC-022「100 人每人参加 3 场时,活动总名额占 100,场次参与人次合计 300。」
+  //
+  // **两条去向各承担一半,写清楚谁承担什么**:
+  //   · 第一条(既有,service 级)承担合同这句的**绝对数字**:`activity_person` 桶
+  //     `occupied: 100`、三只场次桶 `[100,100,100]`、合计 300 —— 逐字就是合同那两个数;
+  //   · 第二条(本刀新增,HTTP 级)承担**同一结论在生产入口上也成立**:此前 HTTP 侧最大
+  //     只跑到 1–2 人,且**没有任何 HTTP 用例在同一 member 拿下第二个场次之后回读
+  //     `activity_person` 桶** —— 也就是"一人多场只占 1 个活动位"这句在真报名入口上零证据。
+  //
+  // 本刀那条的三层:
+  //   ① 正向 → 一人一次提交三场,三条身份全 `pass`,场次桶合计 3,而活动位桶 **occupied = 1**;
+  //   ② 反向 → 第二个人同样报三场 ⇒ 活动位 **2**、人次 **6**。
+  //     ①排除"每场各占一个活动位",②排除"活动位写死成 1",两个方向各堵一种坏实现;
+  //   ③ 桶的 occupied 与在册 active 预留行数**逐类相等**(两条独立路径互为对拍)。
+  //
+  // ⭐ 变异对拍的**如实读数**(三轮,其中两轮是有价值的阴性):
+  //   · 把 `planReserveCreates` 里那句 activity_person 意图**搬进逐场次循环**(= 每场各发一个)
+  //     ⇒ **26 条全绿,变异是惰性的**;换成"每场用各自 identity 发一个"⇒ **仍然 26 全绿**。
+  //     原因查清了:意图与 delta 都按 `target` 归并(`planCapacityReservationDeltas` 把同桶
+  //     变化折叠成一条),所以"多推几次同一个活动位意图"在结构上根本到不了库。
+  //     ⇒ 这不是判据钝,是**这一类坏实现在本仓写不出来**:一人一活动位由三处独立执行位守着
+  //     (意图按 target 归并 / DB partial unique `capacity_reservation_member_activity_active_person_unique`
+  //     / 释放路径留到最后一场)。
+  //   · 真能移动被测量的那一轮:`applyBucketDeltas` 跳过 `activity_person` 桶的记账
+  //     ⇒ 本条变红(证明它读的确实是那只桶),但**同时红了 11 条既有用例** ⇒ 只证明接线,
+  //     不证明红集独占。**如实写在这里,不把它说成"只红本条"。**
+  //
+  // ⚠️ 口径边界:本条**不**在 HTTP 上跑 100 人;10000 人那档是 B 档(PG 共享锁表天花板),明确不做。
+  'AC-022': [
+    {
+      file: 'test/e2e/activity-batch4-capacity-reservation.e2e-spec.ts',
+      needle: 'counts 100 members across three sessions as 100 people and 300 attendance instances',
+    },
+    {
+      file: 'test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts',
+      needle: 'AC-022 一人报三场只占 1 个活动位、场次人次按场计 —— 真 HTTP 报名入口回读容量桶',
+    },
+  ],
+  // AC-019「邀请有接受、拒绝、撤回和过期入口;**接受邀请仍检查硬资格、保险、名额和必要表单**。」
+  //
+  // 前半句(四个入口)既有真用例:接受在 `activity-batch4-allocation-runtime`,
+  // 拒绝 / 撤回 / 过期在 `activity-batch4-invitation-visitor`。
+  // 后半句此前只落了**名额**一格(`capacityReservationId` + first_come pass/pending),
+  // 硬资格 / 保险 / 必要表单三格的断言**全在自助报名入口上**;三条既有 accept 用例一律
+  // `formVersion: null, answers: []`、活动上没有 active Form ⇒ 那三格在**邀请入口**上零证据。
+  //
+  // ⚠️ 订正一处旧卡点:原写「accept 缺其自身的资格/保险/容量 caller」是**错的** ——
+  //    accept 刻意**不建**自己的 caller,而是在 Activity→Invitation 锁序内复用 canonical
+  //    `submitInTransaction(source: 'invitation')` 的同一组闸(不留邀请旁路)。
+  //    本条要证的正是"复用"在邀请入口上真的成立。
+  //
+  // 三格各一条负例,表单那格另带正对照:
+  //   ① 硬资格 block ⇒ 21040;② 保险要求未满足 ⇒ 26030;
+  //   ③ 表单版本对不上 ⇒ 21036;版本对但必填没答 ⇒ 21037;**答齐 ⇒ 201**(正对照,
+  //     证明这道闸不是"一律拒绝",三条负例才有意义)。
+  //   每条负例都回读:邀请仍 `pending` / `respondedAt` 仍空、该活动上**零身份行**
+  //   —— 拒绝是零写,不是"写了再回滚一半"。
+  //
+  // ⭐ 变异对拍的**如实读数**(两轮,第一轮是有价值的阴性):
+  //   · 只把 `registration-command.service.ts` 的 `assertNoBlock(qualification)` 卸掉
+  //     ⇒ **27 条全绿** —— 因为硬资格在这条路上有**两处**独立执行位:
+  //     canonical 命令里一处,`activity-allocation.service.ts` 的 first_come 落位前**再冻一次**。
+  //   · **两处一起卸掉** ⇒ **只有本条变红,既有 26 条全绿**。
+  //     ⇒ 判据绑的是"这条路上资格 block 必然生效"这个性质,而不是某一行代码;
+  //     顺带实测到:这两处此前在本 spec 里**一处都没有用例在守**。
+  //
+  // ⚠️ 保险那格的口径:`requireForActivityRegistration()` 在
+  //    `INSURANCE_ENFORCEMENT_ENABLED` **关闭时也会**抛 26030(退到 `hasCompatibilitySource`),
+  //    所以本条不依赖该开关;开关只改"用哪条来源判定",不改"要不要判"。
+  'AC-019': [
+    {
+      file: 'test/e2e/activity-batch4-allocation-runtime.e2e-spec.ts',
+      needle: 'AC-019 接受邀请入口自己也过硬资格 / 保险 / 必要表单三闸(名额那格已由既有用例覆盖)',
+    },
+  ],
+  // ADV-011「同一结算项同时申请两个更正。」
+  //
+  // 此前证据只有两层,**中间那层是空的**:串行层(⑨「同一 target 先后两次 ⇒ 20101」)与
+  // schema 层(partial unique `attendance_correction_request_open_unique`,`NULLS NOT DISTINCT`)。
+  // **真并发**这一层全仓零覆盖 —— 更正线在本刀之前是单实例的,物理上写不出竞态。
+  //
+  // 本刀给 `activity-settlement-correction.e2e-spec.ts` 加了**第二套 Nest / Prisma pool**,
+  // 并沿 `activity-settlement-review-concurrency` 的手法用第三个事务当闸门:
+  //   ⚠️ `Promise.all(两个 service 调用)` 是假并发(Node 单线程 + 交互事务会先后串行走完),
+  //      那样的用例在**没有任何锁**的实现上也会绿。
+  //   真构造 = 闸门事务先攥住 Activity 行锁 → 两条提交双双堵住 →
+  //      用 `pg_stat_activity` 的 `wait_event_type='Lock'` **正面数到 2 个等待者** → 放闸。
+  //   ⚠️ 轮询上限压到 3s(提交吃 Prisma 默认 5s 事务预算),放闸写在 `finally`,
+  //      屏障异常在 `allSettled` 之后才抛 —— 否则屏障超时会泄漏闸门事务、把后面所有用例带红。
+  //
+  // 三层:①两套实例确实是两套 pool(前提);②同 target 恰 1 成功 / 败者 20101 /
+  // **库里该 target 恰 1 行**(不是"报了错却留下两行");③正对照:**不同 target** 的两条
+  // 同样并发提交**双双成功**,证明串行化按 target 收,而不是"任意两条并发必死一条"。
+  //
+  // 🔴 **变异对拍给出的是一个诚实的阴性结果,连同结论一起写在这里**:
+  //   · 只卸掉 service 侧 `assertNoOpenRequest` ⇒ **24 条全绿**(DB partial unique 兜住,
+  //     P2002 仍被翻成 20101);
+  //   · 只卸掉 P2002→20101 的翻译 ⇒ 同样全绿(service 侧先拦下);
+  //   · **两处一起卸掉** ⇒ 本条与既有串行那条 ⑨ **同时**变红。
+  //   ⇒ 结论:**在当前锁协议下,「同时申请两个更正」会退化成串行情形** ——
+  //     Activity 行锁把第二条提交推到第一条 commit 之后,它读到的是**已提交**的进行中申请,
+  //     于是走的正是串行用例那条路,DB partial unique 在竞态里根本够不到。
+  //     所以本条的红集与 ⑨ 相同,它**不多守一条实现路径**;它多出来的是三样:
+  //     (a) 用锁等待者读数**正面证明**两条提交真的在排队(此前"并发"只是措辞);
+  //     (b)「库里恰 1 行」这个后置条件(⑨ 没有);
+  //     (c) 不同 target 双双成功的正对照(⑨ 没有,少了它无法排除"一律死一条")。
+  //   **不把它写成"新增一道执法"** —— 它是把合同这句从"没验过"变成"验过且知道边界在哪"。
+  'ADV-011': [
+    {
+      file: 'test/e2e/activity-settlement-correction.e2e-spec.ts',
+      needle: '🔴 同一 target 两条真并发申请 ⇒ 恰 1 条成功、败者 20101,库里恰 1 行',
+    },
+    {
+      file: 'test/e2e/activity-settlement-correction.e2e-spec.ts',
+      needle: '正对照:两条并发申请打在**不同** target 上 ⇒ 双双成功(串行化是按 target 收的)',
+    },
+  ],
 };
 
 /**

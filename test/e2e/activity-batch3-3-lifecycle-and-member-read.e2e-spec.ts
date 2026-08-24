@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { MemberStatus, Prisma, Role } from '@prisma/client';
+import { MemberStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -630,6 +630,299 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
     );
   });
 
+  // ===== 1bis ⭐ AC-014(2026-08 验收补写)=====
+  //
+  // 合同原句:「活动存在**有效**现场事实时普通取消被拒绝,必须**改走提前终止并结算**。」
+  //
+  // 第 5 批已交付「有现场事实 ⇒ 普通取消被拒」并有 App / Admin 两个真用例;本条补的是余下三格:
+  //   ①「**有效**」这个限定 —— 已被 void 掉的事实**不得**继续拦着取消。
+  //      此前只有纯函数单测(`settlement-segment-projector.spec.ts` 的 `resolveEffectiveFacts`),
+  //      **HTTP 层零证据**;而这正是最容易悄悄退化的一格:把 `resolveEffectiveFacts` 换成
+  //      `punchEvents.length > 0` 会让功能"更严",没有任何既有用例会红。
+  //   ②「必须改走提前终止」—— 此前 `/terminate` 只在**没有任何打卡**的活动上被测过,
+  //      「取消被拒 → 同一条活动 terminate 成功」这条链全仓零覆盖。
+  //   ③「并结算」—— 终止之后结算真相链能不能开始,此前无人验。
+  //
+  // ⚠️ 夹具必须让场次**在未来**:取消的时间闸(`now < firstSessionStart`)因此是开着的,
+  //    20030 只可能来自事实闸。若图省事直接用过去的场次,拒绝码一模一样,
+  //    但测到的是时间闸 —— 上层边界把下层边界遮住,断言看着还在、测的已不是同一件事。
+  //    而 terminate 的时间闸恰恰相反(`now >= firstSessionStart`),两闸互斥,
+  //    所以链的第二步之前要把这条活动的时刻整体挪到过去(DB `now()` 为准,改不了钟只能改数据)。
+  it('AC-014 有效现场事实拦住普通取消；作废那条事实后可取消；同一条活动的正路是终止并进结算链', async () => {
+    const owner = await createMember('ac014-owner');
+
+    /** 建一条**未来**场次的已发布活动;`withPunch` 时连身份、打卡与已闭合服务段一起建。 */
+    async function createFutureActivity(label: string, withPunch: boolean) {
+      const activity = await createActivity({
+        title: `AC-014 ${label}`,
+        statusCode: 'published',
+        initiatorMemberId: owner.memberId,
+        startAt: FUTURE_START,
+        endAt: FUTURE_END,
+      });
+      await assignOwner(activity.id, owner);
+      const session = await createSession(activity.id, {
+        startAt: FUTURE_START,
+        endAt: FUTURE_END,
+      });
+      if (!withPunch) return { activityId: activity.id, sessionId: session.id, checkInId: null };
+      // ⚠️ 打卡过的人必须是一份**自洽的 canonical 报名**:取消链会把这条活动上
+      //    所有未软删的报名整份锁下来逐层对账(报名头 ↔ 报名修订 ↔ 身份 ↔ 身份修订 ↔
+      //    容量桶 ↔ 预留),任何一层缺失都先 fail-closed 成 20147,把本条真正要测的
+      //    「事实闸」整片遮住 —— 就是本 spec 反复吃过的「上层边界遮蔽下层边界」。
+      //    所以这里按真实形状建齐,而不是塞一条最小报名行。
+      const registration = await prisma.activityRegistration.create({
+        data: {
+          activityId: activity.id,
+          memberId: owner.memberId,
+          statusCode: 'pass',
+          statusSummaryCode: 'active',
+          currentRevision: 1,
+        },
+        select: { id: true },
+      });
+      await prisma.activityRegistrationRevision.create({
+        data: {
+          registrationId: registration.id,
+          revision: 1,
+          sourceCode: 'admin',
+          submittedByUserId: owner.userId,
+          submittedAt: PAST_START,
+        },
+      });
+      const identity = await prisma.activityParticipationIdentity.create({
+        data: {
+          activityId: activity.id,
+          sessionId: session.id,
+          registrationId: registration.id,
+          memberId: owner.memberId,
+          currentRevision: 1,
+          currentStatusCode: 'pass',
+          populationIncluded: true,
+        },
+        select: { id: true },
+      });
+      await prisma.activityParticipationRevision.create({
+        data: {
+          identityId: identity.id,
+          revision: 1,
+          statusCode: 'pass',
+          effectiveAt: PAST_START,
+          createdByUserId: owner.userId,
+          sourceCode: 'admin',
+        },
+      });
+      sequence += 1;
+      const checkIn = await prisma.attendancePunchEvent.create({
+        data: {
+          activityId: activity.id,
+          sessionId: session.id,
+          participationIdentityId: identity.id,
+          memberId: owner.memberId,
+          eventTypeCode: 'check_in',
+          sourceCode: 'staff_scan',
+          // ⚠️ 打卡时刻取**过去**:打卡事件在 DB 上是 append-only(触发器直接拒绝 UPDATE,
+          //    实测报 `attendance punch event is append-only`),事后改不了。而**场次仍在未来**
+          //    ⇒ 取消的时间闸依旧开着,②那条 20030 只可能来自事实闸。
+          occurredAt: PAST_START,
+          receivedAt: PAST_START,
+          operatorUserId: owner.userId,
+          eventKey: `ac014-in-${sequence}`,
+          requestHash: `ac014-in-hash-${sequence}`,
+          evidenceRevision: 0,
+        },
+        select: { id: true },
+      });
+      await prisma.participantServiceSegmentRevision.create({
+        data: {
+          participationIdentityId: identity.id,
+          segmentKey: `ac014-segment-${sequence}`,
+          revision: 0,
+          sourceCheckInEventId: checkIn.id,
+          resultCode: 'valid',
+          statusCode: 'draft',
+          checkInAt: PAST_START,
+          checkOutAt: PAST_END,
+        },
+      });
+      // ⚠️ 一个 `pass` 身份必须配一份**自洽**的容量事实,否则取消链会先在容量对账上
+      //    fail-closed(20147),把本条真正要测的"事实闸"整片遮住 —— 那正是本 spec
+      //    反复吃过的「上层边界遮蔽下层边界」。这里按三层预留的真实形状建齐:
+      //    活动位一份(带 member/activity 锚)+ 场次位一份,桶的 occupied 与在册预留数相等。
+      const activityBucket = await prisma.activityCapacityBucket.create({
+        data: {
+          activityId: activity.id,
+          scopeTypeCode: 'activity_person',
+          scopeId: activity.id,
+          capacity: 20,
+          occupied: 1,
+          version: 1,
+        },
+        select: { id: true },
+      });
+      const sessionBucket = await prisma.activityCapacityBucket.create({
+        data: {
+          activityId: activity.id,
+          scopeTypeCode: 'session_participation',
+          scopeId: session.id,
+          capacity: 12,
+          occupied: 1,
+          version: 1,
+        },
+        select: { id: true },
+      });
+      await prisma.capacityReservation.create({
+        data: {
+          identityId: identity.id,
+          bucketId: activityBucket.id,
+          reservationType: 'activity_person',
+          memberId: owner.memberId,
+          activityId: activity.id,
+          status: 'active',
+        },
+      });
+      const sessionReservation = await prisma.capacityReservation.create({
+        data: {
+          identityId: identity.id,
+          bucketId: sessionBucket.id,
+          reservationType: 'session_participation',
+          status: 'active',
+        },
+        select: { id: true },
+      });
+      await prisma.activityParticipationIdentity.update({
+        where: { id: identity.id },
+        data: { capacityReservationId: sessionReservation.id },
+      });
+      return { activityId: activity.id, sessionId: session.id, checkInId: checkIn.id };
+    }
+
+    /** 200 或具名拒绝码 —— 直接断言状态码时,红了只看得到"409",看不出是哪道闸。 */
+    const outcomeOf = (response: { status: number; body?: { code?: number } }): unknown =>
+      response.status === 200 ? 200 : { 拒绝码: response.body?.code };
+
+    const statusOf = async (activityId: string): Promise<string> =>
+      (
+        await prisma.activity.findUniqueOrThrow({
+          where: { id: activityId },
+          select: { statusCode: true },
+        })
+      ).statusCode;
+
+    // ① 正向对照:同样形态、**零打卡** ⇒ 取消成功。
+    //    没有这一格,下面那条 20030 可能来自任何别的闸(权限 / 状态机 / 时间)。
+    const clean = await createFutureActivity('零打卡对照', false);
+    expect(
+      (
+        await cancel(clean.activityId, owner.auth, {
+          reason: '零现场事实,普通取消应当放行',
+          strongConfirmed: true,
+          operationKey: 'ac014-clean-cancel',
+        })
+      ).status,
+    ).toBe(200);
+    await expect(statusOf(clean.activityId)).resolves.toBe('cancelled');
+
+    // ② 反向:有一条有效签到 ⇒ 普通取消被拒,且活动**零副作用**(仍是 published)。
+    const withFact = await createFutureActivity('有有效现场事实', true);
+    expectBizError(
+      await cancel(withFact.activityId, owner.auth, {
+        reason: '有现场事实还想普通取消',
+        strongConfirmed: true,
+        operationKey: 'ac014-fact-cancel',
+      }),
+      BizCode.ACTIVITY_STATUS_INVALID,
+    );
+    await expect(statusOf(withFact.activityId)).resolves.toBe('published');
+
+    // ③ ⭐「**有效**」这个限定的 HTTP 证据:同样一条签到,补一条 void 指向它 ⇒ 取消放行。
+    //    ⚠️ 被作废的是"有效性"不是"存在" —— 打卡行仍在库里(全仓禁硬删),
+    //    所以同时回读事件行数,证明放行不是因为把证据删了。
+    const voided = await createFutureActivity('事实已被作废', true);
+    sequence += 1;
+    await prisma.attendancePunchEvent.create({
+      data: {
+        activityId: voided.activityId,
+        sessionId: voided.sessionId,
+        participationIdentityId: (
+          await prisma.attendancePunchEvent.findUniqueOrThrow({
+            where: { id: voided.checkInId as string },
+            select: { participationIdentityId: true },
+          })
+        ).participationIdentityId,
+        memberId: owner.memberId,
+        eventTypeCode: 'void',
+        sourceCode: 'staff_scan',
+        occurredAt: PAST_START,
+        receivedAt: PAST_START,
+        operatorUserId: owner.userId,
+        reason: '误扫,作废这条签到',
+        eventKey: `ac014-void-${sequence}`,
+        requestHash: `ac014-void-hash-${sequence}`,
+        supersedesEventId: voided.checkInId,
+        evidenceRevision: 1,
+      },
+    });
+    expect(
+      outcomeOf(
+        await cancel(voided.activityId, owner.auth, {
+          reason: '现场事实已作废,普通取消应当放行',
+          strongConfirmed: true,
+          operationKey: 'ac014-voided-cancel',
+        }),
+      ),
+    ).toStrictEqual(200);
+    await expect(statusOf(voided.activityId)).resolves.toBe('cancelled');
+    await expect(
+      prisma.attendancePunchEvent.count({ where: { activityId: voided.activityId } }),
+    ).resolves.toBe(2);
+
+    // ④「必须改走提前终止」—— 回到 ② 那条**同一活动**。
+    //    两个时间闸互斥且读 DB `now()`,故先把这条活动的时刻整体挪到过去。
+    await prisma.activity.update({
+      where: { id: withFact.activityId },
+      data: { startAt: PAST_START, endAt: PAST_END },
+    });
+    await prisma.activitySession.update({
+      where: { id: withFact.sessionId },
+      data: {
+        startAt: PAST_START,
+        endAt: PAST_END,
+        checkInOpenAt: new Date(PAST_START.getTime() - 30 * 60_000),
+        checkInCloseAt: new Date(PAST_START.getTime() + 30 * 60_000),
+        checkOutOpenAt: new Date(PAST_END.getTime() - 60 * 60_000),
+        checkOutCloseAt: new Date(PAST_END.getTime() + 30 * 60_000),
+      },
+    });
+    const terminated = await terminate(withFact.activityId, owner.auth, {
+      reason: '有现场事实,按合同改走提前终止',
+      operationKey: 'ac014-terminate',
+    });
+    expect(terminated.status).toBe(200);
+    await expect(statusOf(withFact.activityId)).resolves.toBe('terminated');
+
+    // ⑤「并结算」—— 终止之后结算真相链的第一步(封场)接受这条活动。
+    //    ⚠️ 口径:这一格证明的是"终止之后结算能**开始**",不是整条结算链走通
+    //    (那由 settlement 族 spec 覆盖)。终止会把签退截止设在 now+30min,
+    //    先把它挪到过去,否则会撞上另一道具名闸 EVIDENCE_SEAL_CHECKOUT_WINDOW_OPEN。
+    await prisma.activitySession.update({
+      where: { id: withFact.sessionId },
+      data: { terminationCheckOutDeadline: PAST_END },
+    });
+    const sealed = await request(httpServer(app))
+      .post(managedPath(withFact.activityId, 'evidence-seals'))
+      .set('Authorization', owner.auth)
+      .send({});
+    expect(sealed.status).toBe(200);
+    expect(sealed.body.data).toEqual(
+      expect.objectContaining({
+        activityId: withFact.activityId,
+        sealRevision: 1,
+        openSegmentCount: 0,
+      }),
+    );
+  });
+
   // ===== 2. clone：只能复制配置，事实表实际 delegate 写次数必须为零 =====
 
   const WRITE_METHODS = new Set([
@@ -641,16 +934,45 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
     'updateMany',
     'upsert',
   ]);
+  // ⭐ 2026-08 验收补写(AC-003):合同点名九类历史 ——
+  //    报名 / 邀请 / 二维码 / 打卡 / 结算 / 账本 / 关闭 / 更正 / 通知。
+  //    原集合 11 个 delegate **只覆盖其中四类**(报名 / 打卡 / 结算 / 账本各一张表),
+  //    邀请 / 二维码 / 关闭 / 更正 / 通知**整整五类零观察**。
+  //    ⚠️ 本次**只增不减**(11 → 24):被观察的面变宽 = 判据更严,既有断言一字未改。
+  //    正对照(本 describe 末尾那条 `positive.factWrites === 1`)保证这个 spy 真的会响。
   const FACT_DELEGATES = new Set([
+    // 报名
     'activityRegistration',
+    'registrationUploadSession',
+    'activityVisitor',
+    // 邀请
+    'activityInvitation',
+    // 二维码
+    'attendanceQrCredential',
+    // 打卡
     'activityCheckIn',
     'attendanceSheet',
     'activityParticipationIdentity',
     'activityParticipationRevision',
     'attendancePunchEvent',
     'participantServiceSegmentRevision',
+    // 结算
     'attendanceSettlementRun',
+    'attendanceSettlementVersion',
+    'participantSettlementResultRevision',
+    // 账本
     'participationLedgerEntry',
+    'ledgerPostingBatch',
+    // 关闭
+    'activitySettlementClosureRevision',
+    // 更正
+    'attendanceCorrectionRequest',
+    'correctionApplication',
+    // 通知
+    'notification',
+    'notificationDelivery',
+    'notificationOutboxIntent',
+    // 责任 / 封场(原集合已有)
     'activityResponsibilityAssignment',
     'evidenceSeal',
   ]);
@@ -821,6 +1143,353 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
         }),
     );
     expect(positive.factWrites).toBe(1);
+  });
+
+  // ===== 2bis ⭐ AC-003(2026-08 验收补写)=====
+  //
+  // 合同原句:「复制旧活动只生成全新草稿,**绝不复制报名、邀请、二维码、打卡、结算、
+  //           账本、关闭、更正和通知历史**。」
+  //
+  // 🔴 上面那条既有用例只在源活动上建了**一条报名**;九类里另外八类源侧一行都没有 ⇒
+  //    "克隆件上是 0" 对它们而言是**恒真**的(什么都没有,当然复制不出来)。
+  //    本条把九类历史在源活动上**逐类真的建出来**,再断言克隆件上逐类恰 0 ——
+  //    这才是"绝不复制"的非恒真证据。
+  //
+  // 三层判据:
+  //   ① 正向(判据非恒真)—— 源活动上九类逐类 ≥ 1 行,先断言这一格;
+  //   ② 反向 —— 克隆件上九类逐类恰 0 行;
+  //   ③ 结构 —— 整个 clone 事务里**事实表 delegate 写次数 = 0**(spy 面已扩到 18 个 delegate),
+  //      它守的是"以后有人往 clone 里加一句 `tx.activityInvitation.createMany(...)`"这种改动;
+  //      同一条里还钉住 spy 面自己不许塌(每个名字都必须是 Prisma client 上真实存在的 delegate)。
+  it('AC-003 九类历史在源活动上逐类真实存在，克隆件上逐类恰零行且 clone 事务零事实写', async () => {
+    const owner = await createMember('ac003-owner');
+    const source = await createActivity({
+      title: 'AC-003 九类历史源活动',
+      statusCode: 'published',
+      startAt: PAST_START,
+      endAt: PAST_END,
+      initiatorMemberId: owner.memberId,
+    });
+    await assignOwner(source.id, owner);
+    const session = await createSession(source.id, { startAt: PAST_START, endAt: PAST_END });
+
+    // ---- 报名 ----
+    const registration = await prisma.activityRegistration.create({
+      data: { activityId: source.id, memberId: owner.memberId, statusCode: 'approved' },
+      select: { id: true },
+    });
+    // ---- 邀请 ----
+    await prisma.activityInvitation.create({
+      data: {
+        activityId: source.id,
+        memberId: owner.memberId,
+        statusCode: 'pending',
+        expiresAt: new Date('2099-12-31T00:00:00.000Z'),
+      },
+    });
+    // ---- 二维码 ----
+    await prisma.attendanceQrCredential.create({
+      data: {
+        activityId: source.id,
+        sessionId: session.id,
+        actionCode: 'check_in',
+        credentialVersion: 1,
+        statusCode: 'active',
+        tokenDigest: 'ac003-token-digest',
+        signingKeyVersion: 1,
+        validFrom: PAST_START,
+        validUntil: PAST_END,
+        issuedAt: PAST_START,
+      },
+    });
+    // ---- 打卡(身份 + 打卡事件)----
+    const identity = await prisma.activityParticipationIdentity.create({
+      data: {
+        activityId: source.id,
+        sessionId: session.id,
+        registrationId: registration.id,
+        memberId: owner.memberId,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+      },
+      select: { id: true },
+    });
+    await prisma.attendancePunchEvent.create({
+      data: {
+        activityId: source.id,
+        sessionId: session.id,
+        participationIdentityId: identity.id,
+        memberId: owner.memberId,
+        eventTypeCode: 'check_in',
+        sourceCode: 'self_qr',
+        occurredAt: PAST_START,
+        receivedAt: PAST_START,
+        operatorUserId: owner.userId,
+        eventKey: 'ac003-in',
+        requestHash: 'ac003-in-hash',
+        evidenceRevision: 0,
+      },
+    });
+    // ---- 结算(封场 → run → version → 结果行)----
+    const seal = await prisma.evidenceSeal.create({
+      data: {
+        activityId: source.id,
+        sealRevision: 1,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        allWindowsClosedAt: PAST_END,
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: 1,
+        populationCountBySession: {},
+        contentHash: 'ac003-seal-hash',
+        statusCode: 'active',
+        sealedByUserId: owner.userId,
+        sealedAt: PAST_END,
+      },
+      select: { id: true },
+    });
+    const run = await prisma.attendanceSettlementRun.create({
+      data: {
+        activityId: source.id,
+        statusCode: 'closed',
+        currentDraftVersion: 1,
+        currentSubmittedVersion: 1,
+      },
+      select: { id: true },
+    });
+    const version = await prisma.attendanceSettlementVersion.create({
+      data: {
+        settlementRunId: run.id,
+        version: 1,
+        evidenceSealId: seal.id,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        contentHash: 'ac003-content-hash',
+        personCount: 1,
+        sessionParticipationCount: 1,
+        serviceSegmentCount: 1,
+        createdByUserId: owner.userId,
+        submittedAt: PAST_END,
+        statusCode: 'approved',
+        operationKey: 'ac003-submit-key',
+        requestHash: 'ac003-submit-hash',
+      },
+      select: { id: true },
+    });
+    const resultRevision = await prisma.participantSettlementResultRevision.create({
+      data: {
+        settlementVersionId: version.id,
+        participationIdentityId: identity.id,
+        revision: 0,
+        resultCode: 'present',
+        recognizedServiceHours: 2,
+        recognizedContributionPoints: 1,
+        calculatedServiceHours: 2,
+        calculatedContributionPoints: 1,
+        statusCode: 'committed',
+      },
+      select: { id: true },
+    });
+    // ---- 账本(批次 + 分录)----
+    const batch = await prisma.ledgerPostingBatch.create({
+      data: {
+        settlementRunId: run.id,
+        settlementVersionId: version.id,
+        batchRevision: 1,
+        statusCode: 'committed',
+        requestKey: 'ac003-batch-key',
+        requestHash: 'ac003-batch-hash',
+        preparedCount: 1,
+        totalCount: 1,
+        preparedByUserId: owner.userId,
+        committedByUserId: owner.userId,
+        preparedAt: PAST_END,
+        committedAt: PAST_END,
+      },
+      select: { id: true },
+    });
+    await prisma.participationLedgerEntry.create({
+      data: {
+        postingBatchId: batch.id,
+        entryKey: 'ac003-entry',
+        operationKey: 'ac003-entry-operation',
+        memberId: owner.memberId,
+        activityId: source.id,
+        sessionId: session.id,
+        participationIdentityId: identity.id,
+        resultRevisionId: resultRevision.id,
+        ledgerDate: new Date('2020-03-01T00:00:00.000Z'),
+        entryTypeCode: 'service_credit',
+        serviceHoursDelta: 2,
+        recognizedPointsDelta: 0,
+        creditedPointsDelta: 0,
+        cappedOutPointsDelta: 0,
+      },
+    });
+    // ---- 关闭 ----
+    await prisma.activitySettlementClosureRevision.create({
+      data: {
+        activityId: source.id,
+        revision: 1,
+        settlementVersionId: version.id,
+        postingBatchId: batch.id,
+        evidenceSealId: seal.id,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        personCount: 1,
+        sessionParticipationCount: 1,
+        resultCountsJson: { present: 1 },
+        serviceHours: 2,
+        contributionPoints: 1,
+        checksHash: 'ac003-checks-hash',
+        checksJson: {},
+        statusCode: 'active',
+        closedByUserId: owner.userId,
+        closedAt: PAST_END,
+      },
+    });
+    // ---- 更正 ----
+    await prisma.attendanceCorrectionRequest.create({
+      data: {
+        activityId: source.id,
+        settlementRunId: run.id,
+        participationIdentityId: identity.id,
+        baseSettlementVersionId: version.id,
+        baseResultRevisionId: resultRevision.id,
+        baseClosureRevision: 1,
+        requestTypeCode: 'points',
+        requestedChangeJson: { schemaVersion: 1, results: [], segments: [] },
+        reason: 'AC-003 夹具:源活动上要有一条更正历史',
+        statusCode: 'rejected',
+        submittedByUserId: owner.userId,
+        submittedAt: PAST_END,
+      },
+    });
+    // ---- 通知(活动锚在 outbox intent 的多态 aggregateId 上)----
+    await prisma.notificationOutboxIntent.create({
+      data: {
+        eventKey: 'ac003-outbox-event',
+        eventType: 'activity.closed',
+        payloadVersion: 1,
+        payload: {},
+        aggregateType: 'activity',
+        aggregateId: source.id,
+        destinationType: 'member',
+        destinationRef: owner.memberId,
+      },
+    });
+
+    /** 九类历史在某个活动上的行数(通知走多态锚点,其余走 activityId 外键)。 */
+    async function historyCounts(activityId: string): Promise<Record<string, number>> {
+      const [
+        registrations,
+        invitations,
+        qrCredentials,
+        punches,
+        settlementRuns,
+        ledgerEntries,
+        closures,
+        corrections,
+        notificationIntents,
+      ] = await Promise.all([
+        prisma.activityRegistration.count({ where: { activityId } }),
+        prisma.activityInvitation.count({ where: { activityId } }),
+        prisma.attendanceQrCredential.count({ where: { activityId } }),
+        prisma.attendancePunchEvent.count({ where: { activityId } }),
+        prisma.attendanceSettlementRun.count({ where: { activityId } }),
+        prisma.participationLedgerEntry.count({ where: { activityId } }),
+        prisma.activitySettlementClosureRevision.count({ where: { activityId } }),
+        prisma.attendanceCorrectionRequest.count({ where: { activityId } }),
+        prisma.notificationOutboxIntent.count({
+          where: { aggregateType: 'activity', aggregateId: activityId },
+        }),
+      ]);
+      return {
+        报名: registrations,
+        邀请: invitations,
+        二维码: qrCredentials,
+        打卡: punches,
+        结算: settlementRuns,
+        账本: ledgerEntries,
+        关闭: closures,
+        更正: corrections,
+        通知: notificationIntents,
+      };
+    }
+
+    // ① 正向:九类**逐类**在源活动上真的有 —— 没有这一格,下面的"逐类 0"是恒真的。
+    expect(await historyCounts(source.id)).toStrictEqual({
+      报名: 1,
+      邀请: 1,
+      二维码: 1,
+      打卡: 1,
+      结算: 1,
+      账本: 1,
+      关闭: 1,
+      更正: 1,
+      通知: 1,
+    });
+
+    // ③ 结构:spy 面自己不许塌 —— 集合里每个名字都必须是 Prisma client 上真实存在的
+    //    delegate,写错一个字母就会静默变成"永远观察不到",而读数照样是 0。
+    const missingDelegates = [...FACT_DELEGATES].filter(
+      (name) => typeof (prisma as unknown as Record<string, unknown>)[name] !== 'object',
+    );
+    expect({ 集合里不是真实delegate的名字: missingDelegates }).toStrictEqual({
+      集合里不是真实delegate的名字: [],
+    });
+
+    const observed = await countCloneFactWrites(
+      async () =>
+        await request(httpServer(app))
+          .post(managedPath(source.id, 'clone'))
+          .set('Authorization', owner.auth)
+          .send({ title: 'AC-003 克隆件' }),
+    );
+    expect(observed.result.status).toBe(201);
+    // clone 事务内对**任何**事实表 delegate 的写次数为零。
+    expect(observed.factWrites).toBe(0);
+
+    // ② 反向:克隆件上九类逐类恰 0 行,同时它确实是一份**全新草稿**(不是同一条活动)。
+    const cloneId = observed.result.body.data.activityId as string;
+    expect(cloneId).not.toBe(source.id);
+    expect(await historyCounts(cloneId)).toStrictEqual({
+      报名: 0,
+      邀请: 0,
+      二维码: 0,
+      打卡: 0,
+      结算: 0,
+      账本: 0,
+      关闭: 0,
+      更正: 0,
+      通知: 0,
+    });
+    await expect(
+      prisma.activity.findUniqueOrThrow({
+        where: { id: cloneId },
+        select: { statusCode: true, currentClosureRevision: true, workflowRevision: true },
+      }),
+    ).resolves.toStrictEqual({
+      statusCode: 'draft',
+      currentClosureRevision: null,
+      workflowRevision: 0,
+    });
+    // 源活动这九类一行都没被搬走(clone 是复制不是搬家)。
+    expect(await historyCounts(source.id)).toStrictEqual({
+      报名: 1,
+      邀请: 1,
+      二维码: 1,
+      打卡: 1,
+      结算: 1,
+      账本: 1,
+      关闭: 1,
+      更正: 1,
+      通知: 1,
+    });
   });
 
   // ===== 3. evidence seal：HTTP 层无翻译、无重建，只透传已有 seal() 语义 =====
@@ -994,6 +1663,147 @@ describe('Activity batch3 slice3 lifecycle and member read surfaces', () => {
         BizCode.ACTIVITY_NOT_FOUND,
       );
     }
+  });
+
+  // ===== 4bis ⭐ ADV-019(2026-08 验收补写)=====
+  //
+  // 合同原句:「正式队员、停用账号、非正式队员和未受邀人员的活动可见性**组合**。」
+  //
+  // 🔴 补的是两件事:
+  //   ① **停用**这一轴此前在第 3 批新目录路由 `GET /api/app/v1/activities` 上零覆盖
+  //      (既有 INACTIVE→403 只钉在旧的 `activities/available` 与 `activities/:id` 上,
+  //       本 spec 里 `createMember()` 恒建 `MemberStatus.ACTIVE`,`UserStatus` 一次都没出现);
+  //   ② 合同要的是「**组合**」,而此前没有任何用例同时跨两轴。
+  //
+  // ⚠️ 停用有**两条互不相同的路**,不许合并成一句"停用就是看不到":
+  //      · `User.status = DISABLED` → `JwtStrategy` 每请求查库 ⇒ **401 UNAUTHORIZED**;
+  //      · `Member.status = INACTIVE`(账号本身仍 ACTIVE)→ App 准入闭包 ⇒ **403 FORBIDDEN**。
+  //    合并断言会让"401 退化成 403"这类真回归看不出来。
+  //
+  // 判据形状 = **一次读出六个人 × 两个活动的完整矩阵**(比集合,不比计数):
+  //   正向格 —— 正式且受邀者两个都看得到(证明夹具与路由是活的,矩阵不是恒空);
+  //   反向格 —— 未受邀者看不到邀请制那个,非正式者看不到内部那个;
+  //   ⭐ 组合格 —— **非正式 × 受邀**:只看得到邀请制那个、看不到内部那个
+  //               (两轴各自的结论叠加,不是其中任一轴单独能给出的);
+  //   ⭐ 组合格 —— **停用 × (正式 + 受邀)**:另外两轴全满足,仍然被挡在门外,
+  //               证明停用这一轴**压过**可见性计算,而不是"少看到几条"。
+  it('ADV-019 正式/停用/非正式/未受邀四轴在新目录路由上的可见性组合矩阵', async () => {
+    const internal = await createActivity({
+      title: 'ADV-019 内部可见',
+      statusCode: 'published',
+      visibilityCode: 'internal',
+      startAt: FUTURE_START,
+      endAt: FUTURE_END,
+    });
+    const invitationOnly = await createActivity({
+      title: 'ADV-019 邀请可见',
+      statusCode: 'published',
+      visibilityCode: 'invitation',
+      startAt: FUTURE_START,
+      endAt: FUTURE_END,
+    });
+
+    async function invite(memberId: string): Promise<void> {
+      await prisma.activityInvitation.create({
+        data: {
+          activityId: invitationOnly.id,
+          memberId,
+          statusCode: 'pending',
+          expiresAt: new Date('2099-12-31T00:00:00.000Z'),
+        },
+      });
+    }
+
+    const formalInvited = await createMember('adv019-formal-in');
+    await invite(formalInvited.memberId);
+    const formalUninvited = await createMember('adv019-formal-out');
+    const nonFormalInvited = await createMember('adv019-volunteer-in');
+    await prisma.member.update({
+      where: { id: nonFormalInvited.memberId },
+      data: { gradeCode: 'volunteer' },
+    });
+    await invite(nonFormalInvited.memberId);
+    const nonFormalUninvited = await createMember('adv019-volunteer-out');
+    await prisma.member.update({
+      where: { id: nonFormalUninvited.memberId },
+      data: { gradeCode: 'volunteer' },
+    });
+    // 停用两位:先照常建号并登好(拿到真 token),再分别停掉账号 / 停掉队员。
+    // 顺序是有意的 —— 停用后再登录就登不上了,那样测的是登录闸而不是读面闸。
+    const disabledAccount = await createMember('adv019-disabled-user');
+    await invite(disabledAccount.memberId);
+    await prisma.user.update({
+      where: { id: disabledAccount.userId },
+      data: { status: UserStatus.DISABLED },
+    });
+    const inactiveMember = await createMember('adv019-inactive-member');
+    await invite(inactiveMember.memberId);
+    await prisma.member.update({
+      where: { id: inactiveMember.memberId },
+      data: { status: MemberStatus.INACTIVE },
+    });
+
+    /** 目录读面:能读到就返回"看得见哪两个",读不到就返回具名拒绝码。 */
+    async function directoryOutcome(auth: string): Promise<unknown> {
+      const response = await request(httpServer(app))
+        .get('/api/app/v1/activities?page=1&pageSize=100')
+        .set('Authorization', auth);
+      if (response.status !== 200) {
+        return { 拒绝码: response.body?.code as number };
+      }
+      const ids = (response.body.data.items as Array<{ id: string }>).map((item) => item.id);
+      return { 内部: ids.includes(internal.id), 邀请: ids.includes(invitationOnly.id) };
+    }
+
+    /** 详情读面:200 / 具名拒绝码。 */
+    async function detailOutcome(auth: string, activityId: string): Promise<unknown> {
+      const response = await request(httpServer(app))
+        .get(`/api/app/v1/activities/${activityId}`)
+        .set('Authorization', auth);
+      return response.status === 200 ? 200 : { 拒绝码: response.body?.code as number };
+    }
+
+    expect({
+      正式受邀: await directoryOutcome(formalInvited.auth),
+      正式未受邀: await directoryOutcome(formalUninvited.auth),
+      非正式受邀: await directoryOutcome(nonFormalInvited.auth),
+      非正式未受邀: await directoryOutcome(nonFormalUninvited.auth),
+      账号停用: await directoryOutcome(disabledAccount.auth),
+      队员停用: await directoryOutcome(inactiveMember.auth),
+    }).toStrictEqual({
+      // 正向:两个都看得到 —— 没有这一格,底下所有 false 都可能只是夹具坏了。
+      正式受邀: { 内部: true, 邀请: true },
+      // 反向:未受邀 ⇒ 邀请制那个不进目录(内部那个照旧看得到)。
+      正式未受邀: { 内部: true, 邀请: false },
+      // ⭐ 组合:非正式 × 受邀 ⇒ 只剩邀请那条通路,内部活动对他关闭。
+      非正式受邀: { 内部: false, 邀请: true },
+      // 两轴都不满足 ⇒ 两个都看不到(而不是报错)。
+      非正式未受邀: { 内部: false, 邀请: false },
+      // ⭐ 组合:停用 × (正式 + 受邀) ⇒ 另两轴全满足仍被挡,且两条停用路**分码**。
+      账号停用: { 拒绝码: BizCode.UNAUTHORIZED.code },
+      队员停用: { 拒绝码: BizCode.FORBIDDEN.code },
+    });
+
+    // 详情路由上同一张矩阵再走一遍 —— 目录过滤与详情防枚举是**两处实现**,
+    // 只测目录会让"列表里藏住了、知道 id 还能直接读"这种漏洞整片漏掉。
+    expect({
+      正式受邀_内部: await detailOutcome(formalInvited.auth, internal.id),
+      正式受邀_邀请: await detailOutcome(formalInvited.auth, invitationOnly.id),
+      正式未受邀_邀请: await detailOutcome(formalUninvited.auth, invitationOnly.id),
+      非正式受邀_内部: await detailOutcome(nonFormalInvited.auth, internal.id),
+      非正式受邀_邀请: await detailOutcome(nonFormalInvited.auth, invitationOnly.id),
+      账号停用_内部: await detailOutcome(disabledAccount.auth, internal.id),
+      队员停用_内部: await detailOutcome(inactiveMember.auth, internal.id),
+    }).toStrictEqual({
+      正式受邀_内部: 200,
+      正式受邀_邀请: 200,
+      // 防枚举:不是 403「你没权限看这条」,而是 404 式「这条不存在」。
+      正式未受邀_邀请: { 拒绝码: BizCode.ACTIVITY_NOT_FOUND.code },
+      非正式受邀_内部: { 拒绝码: BizCode.ACTIVITY_NOT_FOUND.code },
+      非正式受邀_邀请: 200,
+      账号停用_内部: { 拒绝码: BizCode.UNAUTHORIZED.code },
+      队员停用_内部: { 拒绝码: BizCode.FORBIDDEN.code },
+    });
   });
 
   it('AC-011 exposes ordinary activities only to formal members while preserving qualification reasons', async () => {
