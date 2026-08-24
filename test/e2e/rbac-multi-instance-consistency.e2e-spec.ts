@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import request from 'supertest';
@@ -5,7 +6,7 @@ import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { RbacService } from '../../src/modules/permissions/rbac.service';
 import { loginAs } from '../fixtures/auth.fixture';
-import { createTestUser } from '../fixtures/users.fixture';
+import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -86,6 +87,37 @@ describe('RBAC multi-instance PostgreSQL consistency', () => {
     return res.body.data.permissionRevision as number;
   }
 
+  /**
+   * 🔴 **本用例的靶子码 `rbac.permission.read` 是控制面码 ⇒ 增删它都属高风险差集,
+   *    `PUT` 必须带 step-up proof,否则返 30112(403)。**
+   *
+   * ⚠️ 这一格比 `role-permissions.e2e-spec.ts` 里那处更隐蔽:那处是「撤一条控制面码」,
+   *    一眼看得出危险;这里的写法是 `permissionCodes: []`,**字面上只是「清空」** ——
+   *    但按冻结稿 §12.1「增加**或移除** CRITICAL 权限」,清空当然覆盖了被清掉的每一条高风险码。
+   *    ⇒ **判高风险看的是差集,不是字面上的动作像不像危险操作。**
+   *
+   * ⚠️ 本 spec 被测的性质是「B 改了映射,A 下一请求立即看见」—— step-up 与它无关,
+   *    proof 在这里纯粹是**为了让写请求能真的落库**的前置,不是新增断言。
+   */
+  async function mintStepUpToken(
+    expectedRevision: number,
+    permissionCodes: readonly string[],
+  ): Promise<string> {
+    const payloadHash = createHash('sha256')
+      .update(JSON.stringify([...new Set<string>(permissionCodes)].sort()))
+      .digest('base64url');
+    const res = await request(httpServer(appB))
+      .post('/api/auth/v1/step-up/password')
+      .set('Authorization', superAdminAuthB)
+      .send({
+        action: 'RBAC_ROLE_PERMISSION_SET_REPLACE',
+        password: TEST_PASSWORD,
+        rolePermissionSet: { roleId, expectedRevision, payloadHash },
+      });
+    expect(res.status).toBe(200);
+    return res.body.data.stepUpToken as string;
+  }
+
   it('两套独立 provider 共库时,GLOBAL grant/revoke 与 RolePermission 变更在 A 下一请求即时收敛', async () => {
     expect(appA.get(RbacService)).not.toBe(appB.get(RbacService));
     expect(appA.get(PrismaService)).not.toBe(appB.get(PrismaService));
@@ -128,7 +160,11 @@ describe('RBAC multi-instance PostgreSQL consistency', () => {
     const revokePermission = await request(httpServer(appB))
       .put(`/api/system/v1/roles/${roleId}/permissions`)
       .set('Authorization', superAdminAuthB)
-      .send({ permissionCodes: [], expectedRevision: revisionBeforeRevoke });
+      .send({
+        permissionCodes: [],
+        expectedRevision: revisionBeforeRevoke,
+        stepUpToken: await mintStepUpToken(revisionBeforeRevoke, []),
+      });
     expect(revokePermission.status).toBe(200);
 
     const deniedAfterPermissionRevoke = await request(httpServer(appA))
@@ -143,7 +179,11 @@ describe('RBAC multi-instance PostgreSQL consistency', () => {
     const grantPermission = await request(httpServer(appB))
       .put(`/api/system/v1/roles/${roleId}/permissions`)
       .set('Authorization', superAdminAuthB)
-      .send({ permissionCodes: ['rbac.permission.read'], expectedRevision: revisionBeforeGrant });
+      .send({
+        permissionCodes: ['rbac.permission.read'],
+        expectedRevision: revisionBeforeGrant,
+        stepUpToken: await mintStepUpToken(revisionBeforeGrant, ['rbac.permission.read']),
+      });
     expect(grantPermission.status).toBe(200);
 
     const allowedAfterPermissionGrant = await request(httpServer(appA))
