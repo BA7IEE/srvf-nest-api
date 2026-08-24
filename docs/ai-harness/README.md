@@ -64,6 +64,75 @@ RBAC_MAP 的生成段夹在 `<!-- rbac:begin -->` / `<!-- rbac:end -->` 之间,*
 
 RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-map-stamps.md`](../archive/ai-harness/rbac-map-stamps.md) —— 那是与 CHANGELOG 重复的历史叙事,读者要得出「现在权限长什么样」却必须在脑内折叠全部戳;现状已可直接生成,故戳不再占据理解路径。
 
+## 1.7 生成物刷新:**实测**依赖图与一次性全刷入口
+
+> 2026-08-24 一天内同一形态复发 **7 次**:改了源、只刷了一部分生成物,剩下的到 CI 才红 ——
+> ①改 catalog 一行中文字符串(两份过期)②改 DTO 文案只刷了 openapi(三份)③刷完 contract 快照没刷下游(三份)
+> ④ v0.68.0 发版脚本刷版本号(两份)⑤ PR 8 刷完生成物又改 catalog(authz)
+> ⑥改 `src/modules/**/CLAUDE.md`(当时判成 authz 过期)⑦ v0.69.0 发版刷版本号(两份)。
+> 当时的补救办法只是一句口诀「顺序是 openapi → clients → authz → codemap」——
+> **本节的全部内容是实测出来的,不是那句口诀。口诀经实测有错,逐条见下。**
+
+**入口**:`pnpm exec tsx scripts/refresh-generated-docs.ts`(刷新集合从 `package.json` 现算,不维护第二份名单)
+
+### 实测出的图(不是一条链,是**一棵共源的树**)
+
+| 刷新器 | 产物 | 实测输入 | 读别人的产物吗 |
+|---|---|---|---|
+| `docs:openapi` | `docs/handoff/openapi.json` | `src/` 全量(经 ts-node 模块图 809 份)| 否 |
+| `docs:feclient` | `docs/handoff/clients/` | **只有** `docs/handoff/openapi.json` | ⭐ **是 —— 全仓唯一一条** |
+| `docs:authz` | `ROUTE_AUTHZ.md` + `harness/authz-assertion-patterns.json` | `src` 下全部 `.ts`(**排除 `*.spec.ts`**)+ `test/contract/openapi.contract-spec.ts` | 否 |
+| `docs:codemap` | `CODEMAP.md` | `src/` | 否 |
+| `docs:rbacmap` | `RBAC_MAP.md` 生成段 | `src` 下 `*.controller.ts` + `prisma/seed.ts` | 否 |
+| `docs:counts` | `current-state.md` 计数块 | `src/` + `prisma/seed.ts` + `prisma/migrations/` + `test/contract/openapi.contract-spec.ts` | 否 |
+
+⇒ **偏序只有一条边**:`docs:openapi` ▶ `docs:feclient`。其余五个共用上游 `src/`,**彼此无序**。
+⇒ 所以真缺陷**不是「顺序记错」,是「改了 `src/` 却只刷了一部分」** —— 该做的是「一次性全刷」。
+
+**口诀错在哪(两处)**:① `docs:authz` 与 `docs:codemap` **不在 openapi 的下游** ——
+实测把 `openapi.json` 改坏,这两条守护纹丝不动(只有 openapi + feclient 红);
+它们常跟着一起红是因为**共用上游 `src/`**,同源不是串联。
+② 发版刷版本号那次判成「openapi 刷了、authz 没跟上」,真因是 `src/bootstrap/apply-swagger.ts`
+的 `.setVersion(...)` 属于 authz 的 `inputDigest` 覆盖面 —— **`src/` 变了,与 openapi 无关**。
+
+### ⭐ 上游没刷时,下游守护是**假绿**(这才是 7 次复发的机制)
+
+实测因果链(改一个 DTO 字段,逐段读数):
+
+| 阶段 | `docs:openapi:check` | `docs:feclient:check` |
+|---|---|---|
+| 只改了 `src` 的 DTO | **红** | 绿 ← ⭐ 假绿 |
+| 跑完 `pnpm docs:openapi` | 绿 | **红** ← 这时才看得见 |
+| 再跑 `pnpm docs:feclient` | 绿 | 绿(clients 实际改了 23 行) |
+
+⇒ **「把全部 `docs:*:check` 跑一遍、把红的刷掉」在一趟里必然漏**:feclient 一个 `src/` 文件都不读,
+它在 `openapi.json` 刷新前**结构上不可能**看见源码改动。入口因此固定跑两趟并自证第二趟零改动。
+
+### 两种新鲜度机制(混为一谈会误判)
+
+- **字节 digest 型**(`docs:authz`):`src` 下任一 `.ts` 改一个字节就红,**哪怕产物不会变**。
+- **重生成比对型**(其余五个):只有产物真的会变才红。
+  实测对照:同一文件加一行注释 ⇒ authz 红 + codemap 红;**等行数**原地改注释文字 ⇒ 只有 authz 红。
+
+### 已被实测**否掉**的说法
+
+- ❌「`.md` 躺在 `src/` 里照样进 `inputDigest`」:`generate-authz-manifest.ts` 的 `sourceFiles()` 只收 `.ts`。
+  实测给 `src/modules/members/CLAUDE.md` 追加一行 ⇒ **八条守护全绿**。
+  (`src` 下的 `CLAUDE.md` 确实被 `docs:readtax:check` 与 `check-codemap.ts` 读,但前者只量预算、后者只查存在。)
+- ❌「`*.spec.ts` 也算」:实测给 `member-grade.spec.ts` 追加一行 ⇒ 全绿。
+
+### 取证方法(三法交叉,单用一种会漏)
+
+1. **运行期 fs 追踪** —— `--require` 预加载包住 `fs.*` / `child_process.*`,记录每个生成器**真正打开**了哪些文件(这是唯一能穷举输入面的一种)。
+2. **扰动矩阵** —— 逐类改一个输入(`src` 的 `.ts` / `.spec.ts` / `.md`、生成物本身),八条守护逐条记红绿。
+3. **读常量** —— 读每个生成器的 `OUT` / `CONTRACT` / `sourceFiles()` 定义。
+   ⚠️ 只用第 3 种会失败:多数 `readFileSync` 读的是变量。
+
+### 刻意不进入口的两份生成物
+
+- **contract 快照**(`pnpm test:contract -u`):要**连数据库**起 Nest;且「盲 `-u` 更新快照」在 deny 清单里。
+- **service 尺寸基线**(`pnpm harness:servicesize:write`):它是**棘轮**,整体重算会把上限一起调高。
+
 ## 2. 守护命令
 
 以下十五条同挂 CI 的 **Fast checks** job,且**不随 docs-only 短路**(lint / typecheck / build / unit 会因 docs-only 跳过,守护步骤不会 —— 否则 docs PR 恰好绕开了守 docs 的那些检查):
