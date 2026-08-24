@@ -619,6 +619,86 @@
 
 ---
 
+### 3.5 权限编辑器:影响预览 + 高风险二次验证(P1-32 PR 5,2026-08-24)
+
+针对 §3.4 那个 `PUT` 保存流。**低风险变更的交互一字未变**;高风险变更多一趟二次验证。
+
+**① `preview` 的 `outcome` 多两个字段**
+
+```jsonc
+"outcome": {
+  /* …4b 的 noOp / currentRevision / nextRevision / added / removed / unchangedCount / resultCodes… */
+  "requiresStepUp": false,
+  "impact": {
+    "completeness": "EXACT",          // EXACT | PARTIAL
+    "partialReason": null,
+    "totalGrantCount": 5,
+    "roleBinding":    { "grantCount": 3, "completeness": "EXACT", "partialReason": null },
+    "positionPolicy": { "grantCount": 2, "completeness": "EXACT", "partialReason": null },
+    "supervision":    { "grantCount": 0, "completeness": "EXACT", "partialReason": null },
+    "scopeBreakdown":     { "GLOBAL": 0, "ORGANIZATION": 1, "ORGANIZATION_TREE": 2, "ACTIVITY": 0, "RESOURCE": 0, "SELF": 0 },
+    "principalBreakdown": { "USER": 2, "MEMBER": 1, "POSITION_ASSIGNMENT": 0, "SYSTEM": 0 }
+  }
+}
+```
+
+- 🔴 **`grantCount` 是「授予数」不是「人数」**。一个人可能同时命中多条授予,
+  一条职务→角色策略也会随该职务的**在任人数**放大。文案请写「条」不要写「人」。
+- 🔴 **本期不提供「受影响账号数」。** 那要跨后端的域边界(`platform-access → identity-org`),
+  而那条依赖方向在架构上不存在。**宁可不给,也不给一个越过边界拿来的数** ——
+  别自己拿 `totalGrantCount` 当人数展示。
+- `completeness=EXACT` 时这些数就是真值(今天恒为 EXACT);
+  `PARTIAL` 时 `partialReason` 非空,请在 UI 上明确标注「至少」。
+- `requiresStepUp` 只在**已经完成**二次验证的成功预览里才可能为 `true`。
+  ⚠️ **它不是用来决定要不要弹验证框的** —— 那个看下面的 `30112`。
+
+**② 高风险变更:多一趟二次验证(两趟 preview)**
+
+判定高风险的口径:差集(added ∪ removed)里出现 `CRITICAL` 风险等级 / 控制面码
+(`rbac.*` / `role-binding.*` / 7 条 SA-only 保留码)/ `CONTROL_PLANE`·`CREDENTIAL`·
+`FINAL_APPROVAL`·`LEDGER` 风险标签 / `SUPER_ADMIN_ONLY` 授予策略。
+这些都能从 `GET /permissions/catalog`(§2.6.1)读到 —— **前端可以本地预判**,
+但**最终判定以后端为准**,别把本地预判当准入。
+
+```
+1. POST …/permissions/preview           (不带 stepUpToken)
+   低风险 → valid:true,拿 diff + impact,用户确认 → 3
+   高风险 → valid:false,blockingIssues[0].bizCode === 30112   ← 这里弹二次验证
+2. POST /api/auth/v1/step-up/password    { action, password, rolePermissionSet:{...} }
+   → { stepUpToken, expiresAt }          ← 有效期 5 分钟
+   再 POST …/permissions/preview,这次带上 stepUpToken → valid:true(拿 diff + impact)
+3. PUT …/permissions                     带上同一个 stepUpToken
+```
+
+- 🔴 **`stepUpToken` 进 `@Body()` 不进请求头**,而且 `preview` 与 `PUT` 是**同一个入参类**:
+  「预览说能过」⟺「此刻 `PUT` 会成功」是结构保证,带不带 proof 两边完全一致。
+- 🔴 **因子默认走密码**(`step-up/password`)。微信因子依赖企微 / 微信通道,
+  而企微仍卡在备案 —— 上线前那条路走不通。短信(`step-up/sms`)可作备选。
+- `rolePermissionSet` 三项**必填**:
+  - `roleId` —— 要改的角色 id;
+  - `expectedRevision` —— **必须与随后 `preview` / `PUT` 里的那个逐字相同**;
+  - `payloadHash` —— 目标权限码集合的指纹,算法:
+    **去重 → 升序 → `JSON.stringify(array)` → sha256 → base64url**。
+    ```ts
+    const canonical = JSON.stringify([...new Set(permissionCodes)].sort());
+    // sha256(canonical) 的 base64url 编码
+    ```
+- ⚠️ **proof 不能跨用**:换角色、换版本号、改一个字节的权限码,都会让它失效(返 `10008`)。
+  换句话说**用户改了勾选就要重新做一次二次验证** —— 请把「二次验证」放在最终确认那一步,
+  不要放在打开编辑器时。
+- ⚠️ **`10008` 与 `30112` 分工**:`30112` = 「你还没做二次验证」(去弹框);
+  `10008` = 「proof 对不上或过期了」(重新走一次二次验证)。两者都不是重试能解决的。
+
+**③ 一条如实说的限制**
+
+**旧的 `POST` / `DELETE /roles/:id/permissions` 不受二次验证管辖** ——
+它们的请求 / 响应形状一字未变,也不会要求 `stepUpToken`。
+⚠️ 所以「高风险变更必须二次验证」这句话**只对 `PUT` 成立**。
+后端已把这个缺口登记在案,退役那两条端点时会强制重看(见 `NEXT_TASKS` P1-32)。
+**前端请统一走 `PUT`**,别再用「先 POST 几条、再 DELETE 几条」拼保存。
+
+---
+
 ## 4. 缺口台账(gap-ledger)
 
 > 前端→后端的需求簿。状态:`提出` → `已出 goal` → `已发`。

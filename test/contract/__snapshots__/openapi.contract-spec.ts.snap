@@ -22357,6 +22357,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "minItems": 0,
         "type": "array",
       },
+      "stepUpToken": {
+        "description": "二次验证 proof(\`POST /api/auth/v1/step-up/*\` 签发的 \`stepUpToken\`)。**只有高风险变更需要**:差集里出现 CRITICAL 码 / 控制面码 / CONTROL_PLANE·CREDENTIAL·FINAL_APPROVAL·LEDGER 风险标签 / SUPER_ADMIN_ONLY 授予策略时,不带它返 30112(preview 里表现为 \`valid:false\` + \`blockingIssues[0].bizCode=30112\`)。proof 绑定 (roleId, expectedRevision, 目标权限码集合) 三元组 —— 换角色、换版本号、改一个字节的权限码都会让它失效(10008)。低风险变更传不传都不影响结果。",
+        "maxLength": 4096,
+        "type": "string",
+      },
     },
     "required": [
       "permissionCodes",
@@ -23239,6 +23244,185 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "RolePermissionImpactDto": {
+    "properties": {
+      "completeness": {
+        "description": "整体精确性:**三源全部 EXACT 才是 EXACT**,任一源**本域观测不到**即 PARTIAL。今天恒为 EXACT —— 三源读数全部来自 count / groupBy,结构上不存在截断。",
+        "enum": [
+          "EXACT",
+          "PARTIAL",
+        ],
+        "example": "EXACT",
+        "type": "string",
+      },
+      "partialReason": {
+        "description": "不精确的原因码(\`completeness=PARTIAL\` 时非空)。",
+        "example": null,
+        "nullable": true,
+        "type": "object",
+      },
+      "positionPolicy": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RolePermissionImpactSourceDto",
+          },
+        ],
+        "description": "职务推导源(冻结稿 §11.3「职务推导」)。数的是**有效职务→角色策略条数**,不是持有那些职务的人数。⚠️ 带 \`conditionJson\` 的策略与判权链逐字同口径地**保守跳过**(条件评估器未落地,fail-close)。",
+      },
+      "principalBreakdown": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RolePermissionImpactPrincipalBreakdownDto",
+          },
+        ],
+        "description": "direct 源的主体类型分布(恒精确;四个键恒全在)",
+      },
+      "roleBinding": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RolePermissionImpactSourceDto",
+          },
+        ],
+        "description": "直接 RoleBinding 源(冻结稿 §11.3「直接 RoleBinding」)",
+      },
+      "scopeBreakdown": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RolePermissionImpactScopeBreakdownDto",
+          },
+        ],
+        "description": "direct 源的 scope 分布(恒精确;六个键恒全在)",
+      },
+      "supervision": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RolePermissionImpactSourceDto",
+          },
+        ],
+        "description": "分管推导源(冻结稿 §11.3「分管推导」)。⚠️ 分管恒定只推导出固定角色 \`org-supervisor\`,而它是内建角色(权限集只读,任何编辑先返 30108)⇒ **对一切可编辑角色本源恒为 0,且这个 0 是精确的**。真编辑那个角色时本源改标 \`PARTIAL\`(分管行属 identity-org,本域数不出来),不会继续报 0 装作精确。",
+      },
+      "totalGrantCount": {
+        "description": "三源授予数之和。当前系统**没有权限缓存**,提交后这些授予在**下一次请求**即生效(冻结稿 §11.1)。⚠️ **不是人数**:一个人可能同时命中多条授予,一条职务策略也会随在任人数放大。受影响的**账号数**本期**不出** —— 那要跨 \`platform-access → identity-org\` 边界,而 domain-map 里没有那条边。宁可不给,也不给一个越过边界拿来的数(冻结稿 §11.4)。",
+        "example": 5,
+        "type": "number",
+      },
+    },
+    "required": [
+      "completeness",
+      "partialReason",
+      "totalGrantCount",
+      "roleBinding",
+      "positionPolicy",
+      "supervision",
+      "scopeBreakdown",
+      "principalBreakdown",
+    ],
+    "type": "object",
+  },
+  "RolePermissionImpactPrincipalBreakdownDto": {
+    "properties": {
+      "MEMBER": {
+        "description": "绑到队员",
+        "example": 1,
+        "type": "number",
+      },
+      "POSITION_ASSIGNMENT": {
+        "description": "绑到某条职务任职(⚠️ 该任职失效时这条绑定随之失效,但它仍计入本数 —— 这里数的是**绑定行**,失效与否要看判权链)",
+        "example": 0,
+        "type": "number",
+      },
+      "SYSTEM": {
+        "description": "系统主体(结构上没有对应账号)",
+        "example": 0,
+        "type": "number",
+      },
+      "USER": {
+        "description": "直接绑到账号",
+        "example": 2,
+        "type": "number",
+      },
+    },
+    "required": [
+      "USER",
+      "MEMBER",
+      "POSITION_ASSIGNMENT",
+      "SYSTEM",
+    ],
+    "type": "object",
+  },
+  "RolePermissionImpactScopeBreakdownDto": {
+    "properties": {
+      "ACTIVITY": {
+        "description": "单个活动",
+        "example": 0,
+        "type": "number",
+      },
+      "GLOBAL": {
+        "description": "全局",
+        "example": 0,
+        "type": "number",
+      },
+      "ORGANIZATION": {
+        "description": "单个组织",
+        "example": 1,
+        "type": "number",
+      },
+      "ORGANIZATION_TREE": {
+        "description": "组织及其全部下级",
+        "example": 2,
+        "type": "number",
+      },
+      "RESOURCE": {
+        "description": "单条资源",
+        "example": 0,
+        "type": "number",
+      },
+      "SELF": {
+        "description": "仅本人",
+        "example": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "GLOBAL",
+      "ORGANIZATION",
+      "ORGANIZATION_TREE",
+      "ACTIVITY",
+      "RESOURCE",
+      "SELF",
+    ],
+    "type": "object",
+  },
+  "RolePermissionImpactSourceDto": {
+    "properties": {
+      "completeness": {
+        "description": "本源读数的精确性。\`EXACT\` = 这个数就是真值;\`PARTIAL\` = 本域观测不到该源的事实。**标了 EXACT 就必须是精确数**,这条由 \`scripts/check-role-permission-impact.ts\` 反算真值比对钉住。",
+        "enum": [
+          "EXACT",
+          "PARTIAL",
+        ],
+        "example": "EXACT",
+        "type": "string",
+      },
+      "grantCount": {
+        "description": "本源当前有效、指向本角色的**授予数**。**恒精确** —— 一次 count / groupBy 读数,不需要把行取回来。direct = 有效 RoleBinding 行数;position = 有效职务→角色策略条数;supervision = 见下。⚠️ **它不是人数**:一条职务策略会随该职务的在任人数放大,而在任人数不属本域。",
+        "example": 3,
+        "type": "number",
+      },
+      "partialReason": {
+        "description": "不精确的原因码(\`completeness=PARTIAL\` 时非空,否则 \`null\`)。当前唯一取值 \`CROSS_DOMAIN_NOT_OBSERVABLE\` —— 该源的事实不属本域,数不出来。",
+        "example": null,
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "grantCount",
+      "completeness",
+      "partialReason",
+    ],
+    "type": "object",
+  },
   "RolePermissionPreviewIssueDto": {
     "properties": {
       "bizCode": {
@@ -23278,6 +23462,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "example": 7,
         "type": "number",
       },
+      "impact": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RolePermissionImpactDto",
+          },
+        ],
+        "description": "这次变更的影响面(三源统计 + 精确性标注)。⚠️ 读数取自**锁释放之后**的一次只读查询,与上面的 diff 之间存在毫秒级窗口 —— 预览本就不是授权证明。",
+      },
       "nextRevision": {
         "description": "真提交后的版本号**预测值**(\`noOp=true\` 时等于 \`currentRevision\`)。⚠️ 是预测不是承诺:预览到提交之间别人改了,提交会返 30111 而不是悄悄用这个数。",
         "example": 8,
@@ -23294,6 +23486,11 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           "$ref": "#/components/schemas/RolePermissionDiffItemDto",
         },
         "type": "array",
+      },
+      "requiresStepUp": {
+        "description": "这次变更**需不需要**二次验证(差集里有没有高风险码)。⚠️ 能读到这个字段就说明二次验证**已经满足**:需要而没带有效 proof 的请求根本走不到这里(\`valid:false\` + \`blockingIssues[0].bizCode=30112\`)。它的用途是让前端在确认页显示「本次变更已完成二次验证」,而不是用来决定要不要弹验证框 ——后者看 30112。",
+        "example": false,
+        "type": "boolean",
       },
       "resultCodes": {
         "description": "真提交后该角色会持有的权限码全集(已按 code 升序排序)",
@@ -23320,6 +23517,8 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "removed",
       "unchangedCount",
       "resultCodes",
+      "requiresStepUp",
+      "impact",
     ],
     "type": "object",
   },
@@ -23549,6 +23748,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           "PHONE_BIND",
           "WECHAT_BIND",
           "WECOM_BIND",
+          "RBAC_ROLE_PERMISSION_SET_REPLACE",
         ],
         "type": "string",
       },
@@ -23840,6 +24040,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           "PHONE_BIND",
           "WECHAT_BIND",
           "WECOM_BIND",
+          "RBAC_ROLE_PERMISSION_SET_REPLACE",
         ],
         "type": "string",
       },
@@ -23847,6 +24048,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "当前账号密码",
         "format": "password",
         "type": "string",
+      },
+      "rolePermissionSet": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StepUpRolePermissionSetDto",
+          },
+        ],
+        "description": "仅 \`action=RBAC_ROLE_PERMISSION_SET_REPLACE\` 时**必填**:proof 要绑定的角色权限集变更。其余 action 传了也不参与签名。缺它而 action 是那一条 → 40000。",
       },
     },
     "required": [
@@ -23872,6 +24081,36 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "StepUpRolePermissionSetDto": {
+    "properties": {
+      "expectedRevision": {
+        "description": "这次替换携带的 \`expectedRevision\`(必须与随后 PUT / preview 里的那个逐字相同);版本号一变,旧 proof 立刻失效",
+        "example": 7,
+        "minimum": 0,
+        "type": "number",
+      },
+      "payloadHash": {
+        "description": "目标权限码集合的规范化指纹(去重 + 升序后 sha256,base64url)。与随后提交的 \`permissionCodes\` 算出来的必须一致 —— 改一个码就对不上。前端算法见 \`docs/handoff/admin-web.md\`;服务端实现是 \`rolePermissionSetPayloadHash()\`。",
+        "example": "Yk9m0Q0nX0f5nUj2mQ0wEXAMPLEEXAMPLEEXAMPLE0",
+        "maxLength": 128,
+        "minLength": 16,
+        "type": "string",
+      },
+      "roleId": {
+        "description": "要改权限集的角色 id(cuid;proof 只对这一个角色有效)",
+        "example": "cl9z3a8b00000abcd1234efgh",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+    },
+    "required": [
+      "roleId",
+      "expectedRevision",
+      "payloadHash",
+    ],
+    "type": "object",
+  },
   "StepUpSmsDto": {
     "properties": {
       "action": {
@@ -23880,12 +24119,21 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           "PHONE_BIND",
           "WECHAT_BIND",
           "WECOM_BIND",
+          "RBAC_ROLE_PERMISSION_SET_REPLACE",
         ],
         "type": "string",
       },
       "code": {
         "description": "当前绑定手机号收到的 6 位数字验证码",
         "type": "string",
+      },
+      "rolePermissionSet": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StepUpRolePermissionSetDto",
+          },
+        ],
+        "description": "同 \`StepUpPasswordDto.rolePermissionSet\`",
       },
     },
     "required": [
@@ -23902,6 +24150,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           "PHONE_BIND",
           "WECHAT_BIND",
           "WECOM_BIND",
+          "RBAC_ROLE_PERMISSION_SET_REPLACE",
         ],
         "type": "string",
       },
@@ -23909,6 +24158,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "微信小程序 wx.login() 产出的一次性 code;解析出的 openid 必须等于当前绑定值",
         "maxLength": 128,
         "type": "string",
+      },
+      "rolePermissionSet": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StepUpRolePermissionSetDto",
+          },
+        ],
+        "description": "同 \`StepUpPasswordDto.rolePermissionSet\`",
       },
     },
     "required": [
@@ -139821,9 +140078,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "40100: 未登录或登录已失效",
+                    "description": "40100: 未登录或登录已失效; 10008: step-up proof 无效或已过期",
                     "enum": [
                       40100,
+                      10008,
                     ],
                     "example": 40100,
                     "type": "integer",
@@ -139847,7 +140105,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "未登录或登录已失效(code=40100)",
+          "description": "未登录或登录已失效(code=40100) / step-up proof 无效或已过期(code=10008)",
         },
         "403": {
           "content": {
@@ -139855,11 +140113,12 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "30100: 无权执行此操作; 30103: 该权限点仅超级管理员可分配; 30109: 该权限点不能授予任何角色(包括超级管理员操作);它只对超级管理员本人生效,需要时请直接用超级管理员账号操作",
+                    "description": "30100: 无权执行此操作; 30103: 该权限点仅超级管理员可分配; 30109: 该权限点不能授予任何角色(包括超级管理员操作);它只对超级管理员本人生效,需要时请直接用超级管理员账号操作; 30112: 该变更涉及高风险权限,请先完成二次验证",
                     "enum": [
                       30100,
                       30103,
                       30109,
+                      30112,
                     ],
                     "example": 30100,
                     "type": "integer",
@@ -139883,7 +140142,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "无权执行此操作(code=30100) / 该权限点仅超级管理员可分配(code=30103) / 该权限点不能授予任何角色(包括超级管理员操作);它只对超级管理员本人生效,需要时请直接用超级管理员账号操作(code=30109)",
+          "description": "无权执行此操作(code=30100) / 该权限点仅超级管理员可分配(code=30103) / 该权限点不能授予任何角色(包括超级管理员操作);它只对超级管理员本人生效,需要时请直接用超级管理员账号操作(code=30109) / 该变更涉及高风险权限,请先完成二次验证(code=30112)",
         },
         "404": {
           "content": {
@@ -139995,7 +140254,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "整集替换角色的权限点(提交后恰好是 permissionCodes[];传 [] 清空;必带 expectedRevision 做乐观并发,版本不符返 30111;目标集合与现状相同时空转不写不留痕;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,少一条即 30100) [rbac: rbac.role-permission.*]",
+      "summary": "整集替换角色的权限点(提交后恰好是 permissionCodes[];传 [] 清空;必带 expectedRevision 做乐观并发,版本不符返 30111;目标集合与现状相同时空转不写不留痕;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108;**高风险差集**(CRITICAL / 控制面码 / CONTROL_PLANE·CREDENTIAL·FINAL_APPROVAL·LEDGER 标签 / SUPER_ADMIN_ONLY)需带 stepUpToken,缺它返 30112、proof 与 (角色,版本号,权限码集合) 对不上返 10008;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,少一条即 30100) [rbac: rbac.role-permission.*]",
       "tags": [
         "Ops - Role Permissions",
       ],
@@ -140166,7 +140425,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "预览整集替换的后果(dry-run:与 PUT 同参、同一段准入判定、同一把角色行锁,**零写入**;返回 valid / blockingIssues〔恒 0 或 1 条,不是全量诊断〕/ outcome〔noOp、currentRevision、nextRevision 预测值、added·removed 带中文名与风险等级、unchangedCount、resultCodes〕;被拦下时 valid=false 且拒绝码与 PUT 抛出的**同一个**,走 200 数据不走 HTTP 错误;预览不是授权证明,真提交仍在锁内重算并可返 30111;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,与 PUT 逐字相同) [rbac: rbac.role-permission.*]",
+      "summary": "预览整集替换的后果(dry-run:与 PUT 同参、同一段准入判定、同一把角色行锁,**零写入**;返回 valid / blockingIssues〔恒 0 或 1 条,不是全量诊断〕/ outcome〔noOp、currentRevision、nextRevision 预测值、added·removed 带中文名与风险等级、unchangedCount、resultCodes、requiresStepUp、impact〕;impact 给 direct/position/supervision 三源的**授予数**(⚠️ 不是人数;受影响账号数本期不出,那要跨域取数)与 direct 源的 scope·主体分布,并带 EXACT/PARTIAL 标注〔今天恒 EXACT:全部 count/groupBy 读数,不存在截断〕;被拦下时 valid=false 且拒绝码与 PUT 抛出的**同一个**,走 200 数据不走 HTTP 错误 —— **高风险变更不带 stepUpToken 时这里就是 valid=false + 30112**,拿到它去 /auth/v1/step-up/* 换 proof 再重新预览;预览不是授权证明,真提交仍在锁内重算并可返 30111;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,与 PUT 逐字相同) [rbac: rbac.role-permission.*]",
       "tags": [
         "Ops - Role Permissions",
       ],

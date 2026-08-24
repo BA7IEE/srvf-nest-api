@@ -1921,9 +1921,16 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 判据是「这条 hook 挂了哪些 matcher?写文件还有别的通道吗?」——
 仓内每条 PreToolUse hook 都值得照此对一遍。
 
-### P1-32 RBAC 权限目录与角色权限管理终态 —— 9 个 PR,**PR 0/1/2/3a/3b/4a/4b 七刀已合(按 PR 编号完整落地 5/9),余 PR 5–8 待排**
+### P1-32 RBAC 权限目录与角色权限管理终态 —— 9 个 PR,**PR 0/1/2/3a/3b/4a/4b 七刀已合(按 PR 编号完整落地 5/9),PR 5 在飞,余 PR 6–8 待排**
 
-**状态**:进行中(5/9 完整落地;PR 0/1/3a/3b/4a 已合 #1145 #1143 #1147 #1151 #1156,PR 2 已合 #1170;PR 4b 由本刀交付,**PR 4 至此两半齐全**〔在飞的 PR 号不写进状态行 —— 判据 B 要求 `#N` 已合入 main〕;余 PR 5–8,其中 PR 7 依赖前端投用)
+**状态**:进行中(5/9 完整落地;PR 0/1/3a/3b/4a 已合 #1145 #1143 #1147 #1151 #1156,PR 2 已合 #1170,PR 4b 已合 #1171 —— **PR 4 两半齐全**;PR 5「影响预览与 Step-up」由本刀交付〔在飞的 PR 号不写进状态行 —— 判据 B 要求 `#N` 已合入 main〕;余 PR 6–8,其中 PR 7 依赖前端投用)
+
+> ⚠️ **PR 5 落地后「step-up 已生效」不是一句完整为真的话**:闸挂在 `runReplaceSet()`
+> (`PUT` + `preview`),**旧增量端点 `POST` / `DELETE /roles/:id/permissions` 不受管辖** ——
+> 持 `rbac.role-permission.create` 的人仍可用 `POST` 加一条 CRITICAL 码而不触二次验证。
+> 这是 goal「不改 replace 原语的判定」的直接后果;缺口窗口 = 「PR 5 合入 → **PR 8** 退役旧端点」。
+> ⭐ 缺口已做成机器可见:`scripts/check-role-permission-impact.ts` 的 `stepup-scope-*` 把当前射程
+> 登记在案,**PR 8 删掉那两条端点时判据会红并要求重看登记**,不会悄悄失效。
 
 > 方案冻结件:[`archive/reviews/rbac-permission-catalog-t0-review.md`](../archive/reviews/rbac-permission-catalog-t0-review.md)
 > (3,006 行,维护者 2026-08-20 提供,逐字入仓)。

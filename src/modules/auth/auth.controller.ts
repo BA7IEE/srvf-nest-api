@@ -180,7 +180,14 @@ export class AuthController {
     @Body() dto: StepUpPasswordDto,
     @Req() req: Request,
   ): Promise<StepUpResponseDto> {
-    const safeDto: StepUpPasswordDto = { action: dto.action, password: dto.password };
+    // ⚠️ **显式字段白名单**:新增 DTO 字段必须同步加进这一行,否则被静默丢弃且零报错。
+    //    P1-32 PR 5 起多一个 `rolePermissionSet`。这条同步由
+    //    `scripts/check-role-permission-impact.ts` 的 `stepup-dto-whitelist` 规则机器执法。
+    const safeDto: StepUpPasswordDto = {
+      action: dto.action,
+      password: dto.password,
+      rolePermissionSet: dto.rolePermissionSet,
+    };
     return this.identityStepUp.stepUpWithPassword(currentUser, safeDto, this.buildAuditMeta(req));
   }
 
@@ -228,7 +235,12 @@ export class AuthController {
     @Body() dto: StepUpSmsDto,
     @Req() req: Request,
   ): Promise<StepUpResponseDto> {
-    const safeDto: StepUpSmsDto = { action: dto.action, code: dto.code };
+    // ⚠️ 显式字段白名单 —— 同上,新增字段必须同步加进来(机器执法见 stepup-dto-whitelist)。
+    const safeDto: StepUpSmsDto = {
+      action: dto.action,
+      code: dto.code,
+      rolePermissionSet: dto.rolePermissionSet,
+    };
     return this.identityStepUp.stepUpWithSms(currentUser, safeDto, this.buildAuditMeta(req));
   }
 
@@ -253,7 +265,12 @@ export class AuthController {
     @Body() dto: StepUpWechatDto,
     @Req() req: Request,
   ): Promise<StepUpResponseDto> {
-    const safeDto: StepUpWechatDto = { action: dto.action, code: dto.code };
+    // ⚠️ 显式字段白名单 —— 同上,新增字段必须同步加进来(机器执法见 stepup-dto-whitelist)。
+    const safeDto: StepUpWechatDto = {
+      action: dto.action,
+      code: dto.code,
+      rolePermissionSet: dto.rolePermissionSet,
+    };
     return this.identityStepUp.stepUpWithWechat(currentUser, safeDto, this.buildAuditMeta(req));
   }
 

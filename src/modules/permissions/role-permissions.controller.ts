@@ -30,6 +30,10 @@ import {
   ReplaceRolePermissionsDto,
   RevokeRolePermissionParamDto,
   RolePermissionDiffItemDto,
+  RolePermissionImpactDto,
+  RolePermissionImpactPrincipalBreakdownDto,
+  RolePermissionImpactScopeBreakdownDto,
+  RolePermissionImpactSourceDto,
   RolePermissionPreviewIssueDto,
   RolePermissionPreviewOutcomeDto,
   RolePermissionPreviewResponseDto,
@@ -82,16 +86,36 @@ function buildAuditMeta(req: Request): AuditMeta {
 //    条数上界仍由**代码事实**兜住:|Permission| ≤ 目录条目数,而 `permission-catalog.ts` 在红区,
 //    运行时造不出目录外的 Permission 行(`POST /permissions` 对闭包外的码返 30106)。
 //
-// ⚠️ **划给 PR 5 的四项(冻结稿 `## PR 5` = 影响预览与 Step-up,本刀一条都不做)**:
-//    ① `impact{activeDirectBindingCount / activeDerivedGrantCount / estimatedAffectedUserCount /
-//       scopeBreakdown / sources{roleBinding,positionPolicy,supervision}}` —— PR 5 第一项逐字
-//       「direct/position/supervision 影响统计」;
-//    ② `requiresStepUp` 与 step-up proof —— PR 5 第二、三项;
-//    ③ `catalogHash` —— 它的用途是给预览结论**绑版本当证明**,而冻结稿 §2.8 标题就是
-//       「预览不是授权证明」,本刀的证明机制是 4a 的 `expectedRevision`;它随 proof 一起进 PR 5;
-//    ④ §9.2 `editPolicy` 里的 `addBlocked[]` / `removeBlocked[]`(「哪些码**你**加不了 / 撤不了」)
-//       —— 那是把控制面两层闸(含授撤方向不对称)重新表达一遍,同 preview 的第二份真相形状;
-//       要做得先把 `assertControlPlaneCodesOrThrow` 拆成 per-code verdict 让两侧共用,属改写路径。
+// ─── P1-32 PR 5(2026-08-24):影响预览与 Step-up ──────────────────────────
+//
+// ① ✅ `impact{...}` 已出:三源(direct / position / supervision)各给授予数与去重后的
+//    受影响账号数,并带 **EXACT / PARTIAL** 标注。⚠️ 形状与冻结稿 §9.3 示例不同 ——
+//    示例把 `activeDirectBindingCount` 之类平铺在一层且不带精确性标注,而 §11.4 又要求
+//    `impactCompleteness`;本刀按 §11.4 走(每源自带标注),理由见 `role-permission-impact.ts` 头注。
+//
+// ② ✅ `requiresStepUp` 与 step-up proof 已出。🔴 **有意偏离冻结稿 §9.3 示例形状**:
+//    示例是 `valid:true` + `requiresStepUp:true`,本刀是 **`valid:false` + 30112**。
+//    理由:示例写于 PR 4b 之前,而 4b 那条同源判据(`check-role-permission-read-preview.ts`)
+//    定义的缺陷正是「预览说能过、真提交拒」。若 PUT 会因缺 proof 拒绝而 preview 报 valid:true,
+//    就是亲手造出那个缺陷。**同源优先于示例保真。**
+//    前端流程改成两趟:preview(拿 diff/impact,低风险直接存)→ 高风险收 30112 → 做二次验证
+//    → 带 proof 重新 preview → PUT。
+//
+// ③ ⬜ `catalogHash` **本刀未做**。冻结稿 §12.2 把它列为 proof 的第四维,但 PR 5 的 DoD
+//    逐字只要求「不能跨角色 / 跨 revision / 跨 payload 复用」三条。补它要新开一个
+//    「目录版本」事实源(PR 2 刻意没出,理由见 `permission-catalog.presenter.ts` 头注)
+//    并往两个 DTO 加必填字段 —— 那是独立一刀,不在本刀授权范围内。
+//    ⚠️ 残余风险如实说:目录改分类后旧 proof **仍然有效**(5 分钟窗口内)。
+//
+// ④ ⬜ §9.2 `editPolicy` 里的 `addBlocked[]` / `removeBlocked[]` **本刀未做**(理由同 4b:
+//    那是把控制面两层闸重新表达一遍,属 preview 的第二份真相形状;要做得先把
+//    `assertControlPlaneCodesOrThrow` 拆成 per-code verdict 让两侧共用,属改写路径)。
+//
+// 🔴 **step-up 的射程**:闸挂在 `RolePermissionsService.runReplaceSet()` 上,只覆盖
+//    `PUT` 与 `preview`。**下面的 `POST` / `DELETE` 两条旧增量端点不受它管辖** ——
+//    持 `rbac.role-permission.create` 的人仍可用 `POST` 加一条 CRITICAL 码而不触二次验证。
+//    这是 goal「不改 replace 原语的判定」的直接后果,窗口是「PR 5 合入 → PR 8 退役旧端点」。
+//    射程由 `scripts/check-role-permission-impact.ts` 的 `stepup-scope-*` 登记并钉住。
 //
 // 三条**写**契约互不相同,但**内部只有一条写原语**(RolePermissionsService
 // .replaceRolePermissionSet)—— 见该 service 头部「三条端点、一条写原语」。
@@ -124,6 +148,10 @@ function buildAuditMeta(req: Request): AuditMeta {
   RolePermissionPreviewOutcomeDto,
   RolePermissionPreviewIssueDto,
   RolePermissionDiffItemDto,
+  RolePermissionImpactDto,
+  RolePermissionImpactSourceDto,
+  RolePermissionImpactScopeBreakdownDto,
+  RolePermissionImpactPrincipalBreakdownDto,
 )
 @Controller('system/v1/roles/:id/permissions')
 export class RolePermissionsController {
@@ -196,12 +224,13 @@ export class RolePermissionsController {
   })
   @ApiOperation({
     summary:
-      '整集替换角色的权限点(提交后恰好是 permissionCodes[];传 [] 清空;必带 expectedRevision 做乐观并发,版本不符返 30111;目标集合与现状相同时空转不写不留痕;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,少一条即 30100) [rbac: rbac.role-permission.*]',
+      '整集替换角色的权限点(提交后恰好是 permissionCodes[];传 [] 清空;必带 expectedRevision 做乐观并发,版本不符返 30111;目标集合与现状相同时空转不写不留痕;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108;**高风险差集**(CRITICAL / 控制面码 / CONTROL_PLANE·CREDENTIAL·FINAL_APPROVAL·LEDGER 标签 / SUPER_ADMIN_ONLY)需带 stepUpToken,缺它返 30112、proof 与 (角色,版本号,权限码集合) 对不上返 10008;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,少一条即 30100) [rbac: rbac.role-permission.*]',
   })
   @ApiWrappedOkResponse(RbacRoleDetailResponseDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
+    BizCode.STEP_UP_PROOF_INVALID,
     BizCode.RBAC_FORBIDDEN,
     BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY,
     BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE,
@@ -210,6 +239,7 @@ export class RolePermissionsController {
     BizCode.PERMISSION_NOT_FOUND,
     BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
     BizCode.ROLE_PERMISSION_REVISION_CONFLICT,
+    BizCode.ROLE_PERMISSION_STEP_UP_REQUIRED,
   )
   replace(
     @CurrentUser() user: CurrentUserPayload,
@@ -244,7 +274,7 @@ export class RolePermissionsController {
   })
   @ApiOperation({
     summary:
-      '预览整集替换的后果(dry-run:与 PUT 同参、同一段准入判定、同一把角色行锁,**零写入**;返回 valid / blockingIssues〔恒 0 或 1 条,不是全量诊断〕/ outcome〔noOp、currentRevision、nextRevision 预测值、added·removed 带中文名与风险等级、unchangedCount、resultCodes〕;被拦下时 valid=false 且拒绝码与 PUT 抛出的**同一个**,走 200 数据不走 HTTP 错误;预览不是授权证明,真提交仍在锁内重算并可返 30111;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,与 PUT 逐字相同) [rbac: rbac.role-permission.*]',
+      '预览整集替换的后果(dry-run:与 PUT 同参、同一段准入判定、同一把角色行锁,**零写入**;返回 valid / blockingIssues〔恒 0 或 1 条,不是全量诊断〕/ outcome〔noOp、currentRevision、nextRevision 预测值、added·removed 带中文名与风险等级、unchangedCount、resultCodes、requiresStepUp、impact〕;impact 给 direct/position/supervision 三源的**授予数**(⚠️ 不是人数;受影响账号数本期不出,那要跨域取数)与 direct 源的 scope·主体分布,并带 EXACT/PARTIAL 标注〔今天恒 EXACT:全部 count/groupBy 读数,不存在截断〕;被拦下时 valid=false 且拒绝码与 PUT 抛出的**同一个**,走 200 数据不走 HTTP 错误 —— **高风险变更不带 stepUpToken 时这里就是 valid=false + 30112**,拿到它去 /auth/v1/step-up/* 换 proof 再重新预览;预览不是授权证明,真提交仍在锁内重算并可返 30111;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,与 PUT 逐字相同) [rbac: rbac.role-permission.*]',
   })
   @ApiWrappedOkResponse(RolePermissionPreviewResponseDto)
   @ApiBizErrorResponse(BizCode.BAD_REQUEST, BizCode.UNAUTHORIZED, BizCode.RBAC_FORBIDDEN)

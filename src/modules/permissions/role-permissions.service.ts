@@ -5,6 +5,12 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import { RolePermissionImpactQueryService } from './role-permission-impact-query.service';
+import { RolePermissionStepUpProofService } from '../../common/security/role-permission-step-up-proof';
+import {
+  requiresStepUpForChange,
+  rolePermissionSetPayloadHash,
+} from './role-permission-step-up.policy';
 import type { AuditLogEvent, AuditMeta } from '../audit-logs/audit-logs.types';
 import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
@@ -81,6 +87,12 @@ export class RolePermissionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly impactQuery: RolePermissionImpactQueryService,
+    // P1-32 PR 5:配置变更 proof 的签发与验签**归本域自有**(见该 service 头注)。
+    // 🔴 刻意**不注入 `IdentityStepUpService`**:`permissions`(platform-access)依赖
+    //    `auth`(identity-org)是架构反向 —— domain-map 的 allowedEdges 里没有那条边。
+    //    反过来接:auth 的 step-up 端点验完因子后**委托本域签发**,本域自己验。
+    private readonly stepUpProof: RolePermissionStepUpProofService,
   ) {}
 
   // ============ helpers ============
@@ -150,6 +162,79 @@ export class RolePermissionsService {
     if (direction === 'grant' && uniqueCodes.some(isReservedSuperAdminOnlyPermissionCode)) {
       throw new BizException(BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE);
     }
+  }
+
+  /**
+   * 🔴 高风险变更的二次验证闸(P1-32 PR 5;冻结稿 §12)。
+   *
+   * ──────────────────────────────────────────────────────────────────────
+   * **落点:`runReplaceSet()`,不是写原语。** 这决定了它的射程。
+   *
+   * · 管辖 `PUT` 与 `preview` —— 两者共用 `runReplaceSet()`,所以本闸在
+   *   **两侧同时生效**:preview 就是 PUT 的真 dry-run。
+   *   ⚠️ 这也是为什么高风险变更**不带 proof 时 preview 直接 `valid:false`**
+   *   (`blockingIssues[0].bizCode=30112`)而不是 `valid:true + requiresStepUp:true`——
+   *   冻结稿 §9.3 的示例写于 PR 4b 之前,照抄它就等于亲手造出「预览说能过、真提交拒」,
+   *   而那正是 4b 那条同源判据(`check-role-permission-read-preview.ts`)定义的缺陷。
+   *   **同源优先于示例保真**,这是有意偏离。
+   *
+   * · 🔴 **不管辖** `assign()` / `revoke()`(旧增量端点)—— 它们走的是同一条写原语,
+   *   但不经 `runReplaceSet()`。这不是漏挂,是 goal「不改 replace 原语的判定」的直接后果,
+   *   **也是一条真实缺口**:持 `rbac.role-permission.create` 的人仍可用
+   *   `POST /roles/:id/permissions` 加一条 CRITICAL 码而不触二次验证。
+   *   收口它要给 `AssignRolePermissionsDto` 也加 proof 字段并改原语判定 = 行为破坏,
+   *   超出本刀;冻结稿 PR 8 本来就要退役那两条端点。
+   *   ⇒ 射程由 `scripts/check-role-permission-impact.ts` 的 `stepup-scope-*` 规则**登记并钉住**:
+   *   有人扩大或收窄都得显式改登记,PR 8 删掉旧端点时该判据会红并要求重看。
+   *
+   * ──────────────────────────────────────────────────────────────────────
+   * ⚠️ **差集在锁外算,这是安全的,理由要写下来免得后人当 bug 修**:
+   *    本闸取的现状是**未加锁**的一次读。它之所以不会与锁内真相分家,是因为
+   *    `set` 语义**必带 `expectedRevision`**,而 `permissionRevision` 在每次非空转的
+   *    替换里都 +1(原语第 9 步)。⇒ 锁内 revision 与 `expectedRevision` 相等
+   *    ⟺ 期间没有人改过这个角色的权限集 ⟺ 锁外读到的现状就是锁内那一份。
+   *    不相等的那条路径整批返 30111,请求本来就失败,不存在"按错误差集放行"。
+   *
+   * ⚠️ **要不要拦的判断在闸内部,不在调用点** —— 调用点必须是无条件语句。
+   *    把它写成 `if (isHighRisk) this.assertStepUp...` 会让「dry-run 时跳过」
+   *    只需要一个 `if`,而射程断言照样全绿(4b 判据的 `conditional-gate` 同款理由)。
+   */
+  private async assertStepUpProofOrThrow(
+    user: CurrentUserPayload,
+    roleId: string,
+    dto: ReplaceRolePermissionsDto,
+    uniqueCodes: string[],
+  ): Promise<void> {
+    const current = await this.prisma.rolePermission.findMany({
+      where: { roleId },
+      select: { permission: { select: { code: true } } },
+    });
+    const currentCodes = current.map((row) => row.permission.code);
+    const currentSet = new Set(currentCodes);
+    const targetSet = new Set(uniqueCodes);
+    const addedCodes = uniqueCodes.filter((code) => !currentSet.has(code));
+    const removedCodes = currentCodes.filter((code) => !targetSet.has(code));
+
+    // ⭐ DoD 第三条「低风险普通变更不被无意义加重」的落点:差集里没有高风险码就**到此为止** ——
+    //    不看 proof、不要求 proof、不产生任何额外拒绝。
+    //    ⚠️ 上面那次差集查询是**无条件**的(要先知道改了什么才能判风险),这条早返回省的是
+    //    「验签」那一段,不是那次查询。写清楚免得后来者以为低风险路径零查询。
+    if (!requiresStepUpForChange(addedCodes, removedCodes)) return;
+
+    const stepUpToken = dto.stepUpToken;
+    if (stepUpToken === undefined || stepUpToken.length === 0) {
+      throw new BizException(BizCode.ROLE_PERMISSION_STEP_UP_REQUIRED);
+    }
+
+    // 三元组逐项参与验签:换角色 / 换版本号 / 改一个字节的权限码,任一条都让 proof 失效(10008)。
+    // ⚠️ 这里**不读 User** —— proof 不绑凭证快照(理由与实测读数见 proof service 头注:
+    //    「改密码即刻踢人」在这条链上本来就不存在,绑它只是让假保证看起来是真的),
+    //    而且读 `User` 是 platform-access → identity-org 的跨域读,架构上不成立。
+    this.stepUpProof.verify(user.id, stepUpToken, {
+      roleId,
+      expectedRevision: dto.expectedRevision,
+      payloadHash: rolePermissionSetPayloadHash(uniqueCodes),
+    });
   }
 
   // 沿 PR #3 rbac-roles 范式:区分不存在(30003)vs 已软删(30005);
@@ -459,6 +544,11 @@ export class RolePermissionsService {
     //    这里这一道只是更早、更严的前置。
     this.assertControlPlaneCodesOrThrow(user, uniqueCodes, 'grant');
 
+    // 2.5 P1-32 PR 5:高风险变更要二次验证。**无条件调用**,要不要真拦由闸内部按差集决定。
+    //     ⇒ `PUT` 与 `preview` 在这一道上完全同源:preview 不带 proof 的高风险变更返
+    //     `valid:false` + 30112,而不是"说能过、真提交拒"。
+    await this.assertStepUpProofOrThrow(user, roleId, dto, uniqueCodes);
+
     // 3. 唯一写原语:行锁 → 锁后复读 revision → 冲突判定 → 差集 → 两方向闸 →(commit 才写)。
     return this.replaceRolePermissionSet(user, roleId, {
       intent: { kind: 'set', codes: uniqueCodes },
@@ -638,7 +728,16 @@ export class RolePermissionsService {
     dto: ReplaceRolePermissionsDto,
   ): Promise<RolePermissionPreviewResponseDto> {
     try {
-      return buildRolePermissionPreview(await this.runReplaceSet(user, roleId, dto, null));
+      const delta = await this.runReplaceSet(user, roleId, dto, null);
+      // 影响面在**锁释放之后**才查(P1-32 PR 5):它是给人看的参考读数,
+      // 塞进临界区只会延长持锁时间,而生产事务有 5s 预算。
+      // ⚠️ `requiresStepUp` 用的是**锁内**算出来的差集(权威的那一份);
+      //    闸里那次用的是锁外读 —— 两者在成功路径上必然相等(见闸头注对 revision 的论证)。
+      return buildRolePermissionPreview(
+        delta,
+        await this.impactQuery.summarize(roleId),
+        requiresStepUpForChange(delta.addedCodes, delta.removedCodes),
+      );
     } catch (error) {
       if (error instanceof BizException) return buildBlockedRolePermissionPreview(error.biz);
       throw error;
