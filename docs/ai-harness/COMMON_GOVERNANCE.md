@@ -84,10 +84,15 @@ goal 原文写的是「出现业务 model 的 **delegate** 访问即违规」。
 ## 3. `src/common/**` 子目录逐个定性
 
 > **取数时点:2026-08-21(`73eb9178`)。** 原文标题写「十二个子目录」,复核时实际 **14** 个 —— 见 §3.1。
-> **2026-08-24 起 15 个**:P1-32 PR 5 新增 `security`(1 文件),⏳ 待定性 —— 见 §3.2。
+> **2026-08-24 起 15 个**:P1-32 PR 5 新增 `security`(1 文件)—— 见 §3.2。
+> **2026-08-25:§3.1 / §3.2 的三个 ⏳ 待定性全部经维护者拍板收口**,照 `member-advisory-lock` 先例
+> **登记 `ownerDomain` 而非搬走文件**;登记本身不产生保护,配套的执行位见 §3.3。
 
-扫描面 = **42** 个非 `.spec.ts` 文件(原文 36,2026-08-21 复核订正为 41;PR 5 +1)。**剥掉注释后**全仓 `src/common` 中引用业务 Prisma
-model 名的文件**只有 1 个**(`claim-at-status.util.ts`)。
+扫描面 = **41** 个非 `.spec.ts` 文件(原文 36,2026-08-21 复核订正为 41;PR 5 +1 = 42;
+`#1165` 把 `activity-workflow-gate.criteria.ts` 的实质逻辑搬进 selfGuard 并删掉该文件,−1 = **41**)。
+⚠️ 这一条是**复核时才发现的**:§3.1 写的「`activity-workflow`(3 文件)」在 `#1165` 之后已是 2 文件,
+而那句话与由它派生的 42 都没人回头改 —— 与本文件 §3.1 自己记的「数字漂移」是同一缺陷类的又一次复发。
+**剥掉注释后**全仓 `src/common` 中引用业务 Prisma model 名的文件**只有 1 个**(`claim-at-status.util.ts`)。
 
 | 子目录 | 文件数 | 定性 | 依据 |
 |---|---|---|---|
@@ -103,9 +108,9 @@ model 名的文件**只有 1 个**(`claim-at-status.util.ts`)。
 | `guards` | 4 | 技术件 | 全局守卫 |
 | `interceptors` | 1 | 技术件 | 响应包装 |
 | `prisma` | 3 | **1 技术件 + 1 承重债 + 1 业务内核** | 见 §2.2 与 §4 |
-| `activity-workflow` | 3 | ⏳ **待定性(维护者拍板)** | 2026-08-21 复核发现:本刀之后新增,从未定性。见 §3.1 |
-| `identity` | 2 | ⏳ **待定性(维护者拍板)** | 同上 |
-| `security` | 1 | ⏳ **待定性(维护者拍板)** | 2026-08-24 P1-32 PR 5 新增。零 Prisma、零 model 名、零模块入边,但它绑的是 roleId / permissionRevision / 权限码集合 —— **语义归属 platform-access**。见 §3.2 |
+| `activity-workflow` | 2 | ✅ **业务内核**,owner = `participation`(2026-08-25 拍板) | `activity-workflow.gate.ts` 编码「活动 v1.1 新旧真相链走哪条」;同目录 `.module.ts` 是 DI 承载,技术件。见 §3.1 / §3.3 |
+| `identity` | 2 | ✅ **业务内核**,owner = `identity-org`(2026-08-25 拍板) | 两个文件都登记:展示格式 + 业务词汇表。见 §3.1 / §3.3 |
+| `security` | 1 | ✅ **业务内核**,owner = `platform-access`(2026-08-25 拍板) | 零 Prisma、零 model 名、零模块入边,但它绑的是 roleId / permissionRevision / 权限码集合 —— **语义归属 platform-access**。见 §3.2 / §3.3 |
 
 ### 3.2 `security`(2026-08-24,P1-32 PR 5 新增)
 
@@ -136,10 +141,20 @@ set-monotonic,登记不进去。⇒ 落在域中立层是当时唯一不新增�
 ⇒ 与 §3.1 两件、§4 一件**同批**请维护者拍板:是照 `member-advisory-lock` 办理(**登记 owner 而非搬走**,
 该文件头注已按此写明「语义归属 platform-access,别往里加与角色权限集无关的东西」),还是另有处置。
 
+> ✅ **维护者 2026-08-25 拍板:照 `member-advisory-lock` 办理 —— 登记 owner,不搬走。**
+> `kernel.primitives` 新增 `role-permission-step-up-proof`,`ownerDomain: platform-access`。
+> ⭐ **定性依据是上表那条理由,不是形态**:它形态上百分之百是技术件(HMAC/HKDF + JWT 薄封装、
+> 零 Prisma),按形态判会判成技术件 —— 那正是上表右列要挡的判法。真正的判据是**它绑定什么**
+> (roleId / permissionRevision / 权限码集合指纹 = platform-access 的领域知识)。
+
 ⚠️ **已加的机器守护只覆盖「别往这个文件里塞别的东西」**(PR 5 的判据 `proof-file-single-purpose`:
 每个导出符号须以 `ROLE_PERMISSION_` / `RolePermission` 开头),**挡不住**「另建
 `src/common/security/` 下的第二个文件」—— 新子目录由本表这条集合相等断言接住,
 但**同一子目录内新增文件仍是「人得看一眼」的那一步**。
+
+> ✅ **这条缺口已于 2026-08-25 补上执行位** —— 见 §3.3。它正是本节这段散文点名的那件事:
+> `security` 一旦有文件登记为 kernel primitive,该子目录就变成「有主的」,
+> 往里新建第二个文件而不定性,`pnpm docs:boundaries:check` 当场红并点名该文件。
 
 ### 3.1 两个未定性子目录(2026-08-21 复核发现)
 
@@ -161,9 +176,59 @@ set-monotonic,登记不进去。⇒ 落在域中立层是当时唯一不新增�
 两者与 §4 的 `member-advisory-lock.util.ts` 是同一类问题(技术形态、业务语义),
 那件当时的处置是**登记 owner 而非搬走**;这两个是否照此办理,请维护者拍板。
 
+> ✅ **维护者 2026-08-25 拍板:两个都照 `member-advisory-lock` 办理 —— 登记 owner,不搬走。**
+>
+> | 文件 | `ownerDomain` | 判据 |
+> |---|---|---|
+> | `activity-workflow/activity-workflow.gate.ts` | `participation` | 它闸控的三项受控面(新结算真相写 / 旧 `AttendanceSheet` 写 / 统计读面取数)对应的 `Activity` / `ActivityCheckIn` / `AttendanceSheet` / 账本 / 关闭 / 更正,`modelOwnership` 里**全部**是 participation;两个业务码亦然 |
+> | `identity/member-label.util.ts` | `identity-org` | `Member` 的 `modelOwnership.domain` = `identity-org`,与登记一致 |
+> | `identity/member-origin.constant.ts` | `identity-org` | 同上(`Member.memberOriginCode` 的字典码) |
+>
+> ⚠️ **上表左列有一处过期事实,2026-08-25 复核订正**:`activity-workflow` 已不是 3 文件而是 **2** ——
+> `*.criteria.ts`(766 行)在 `#1165` 里被删掉、实质逻辑搬进 selfGuard。派生的「扫描面 42」随之改 **41**。
+> 同目录剩下的 `activity-workflow.module.ts` 是纯 DI 承载,定性**技术件**,登记在
+> `kernel.commonTechnicalArtifacts`。
+
 **已加机器守护**:`harness-guards.selftest.ts` 断言「本表列出的子目录集合 ==
 `src/common` 实际子目录集合」。新增一个 common 子目录而不定性,selftest 当场红 ——
 这正是本次缺口三个月无人发现的原因(三条自动判据只看内容,不看"有没有人定性过")。
+
+### 3.3 ⭐ 登记之后机器多守住了什么(保护面前后对照)
+
+**登记本身零保护。** `kernel.primitives` 在 2026-08-25 之前只被比过一次**名字集合**
+(`check-boundaries.ts` 的 `expectedPrimitives`),没有任何判据验过登记的 `path` 还在不在、
+`ownerDomain` 是不是个真域,更没有任何判据用这张表去约束 `src/common` 的文件。
+⇒ 只加三行登记 = **记了个账**,别把它说成还了债。
+
+所以本刀同时补执行位:`check-boundaries.ts` 的 `kernelOwnershipErrors()`,挂在
+`--metadata`(CI 的 `pnpm docs:boundaries:check`,**无 `|| true`**)。
+
+判据形状:**有主子目录**(`src/common/<sub>/` 下至少有一个文件登记为 kernel primitive)
+是从登记表**推出来的**,不写第二份名单;有主子目录里每个非 `*.spec.ts` 的 `.ts`
+必须要么是 primitive(业务内核),要么在 `kernel.commonTechnicalArtifacts`(技术件)。
+两个方向都比(同 `expectedPrimitives` 的 missing / unexpected 范式)。
+
+#### 保护面前后对照(本机实测,判据恒为「**做错时 CI 会不会红**」)
+
+| # | 越界写法 | 登记 + 接闸**前** | **后** |
+|---|---|---|---|
+| 1 | 往 `src/common/identity/` 新建一个零 Prisma、零模块入边的业务 helper | 12 条静态判据里**只有** `authz` / `codemap` 两条**陈旧型**红,`pnpm docs:refresh` 一刷即全绿 | `docs:boundaries:check` **EXIT 1**,逐字点名该文件 |
+| 2 | 同上,但落在 `src/common/security/`(§3.2 逐字点名的那个缺口) | 全绿(`proof-file-single-purpose` 只管**已有那个文件内部**的导出符号名) | **EXIT 1**,点名该文件 |
+| 3 | 同上,落在 `src/common/activity-workflow/` 或 `src/common/prisma/` | 全绿 | **EXIT 1**,点名该文件 |
+| 4 | 把已登记文件改名 / 搬走而不改登记表 | 全绿(登记表变成假话,没人验) | **EXIT 1**:`kernel.primitives path does not exist: …` |
+| 5 | `ownerDomain` 打错字 / 写个不存在的域 | 全绿 | **EXIT 1**:`kernel.primitives unknown ownerDomain: …` |
+| 6 | 把 `kernel.commonTechnicalArtifacts` 整块删掉(想关掉闭包判据) | — | **不会变绿**:`kernel.commonTechnicalArtifacts must be an object`(fail-closed) |
+
+⭐ **① 的「前」这一格是本刀最值钱的读数**:同一个探针文件放进 `src/modules/members/`,
+红集与放进 `src/common/identity/` **逐条相同** ⇒ 证明当时**没有任何判据**在看
+「common 子目录里的文件有没有被定性」,那两条红纯粹是生成物陈旧,与定性无关。
+
+反向样本(判据没有过度绑定):把 ① 的探针登记进 `commonTechnicalArtifacts` ⇒
+错误数 4 → 3、**恰好那一条消失** —— 判据判的是「未定性」,不是「新文件」。
+
+⚠️ **射程边界,别读大**:本判据只覆盖**有主**子目录。`decorators` / `guards` / `dto` 等
+整目录技术件**不在射程内**,它们仍由 §3.1 那条**子目录**集合相等断言 + 本节 §3 的人工定性接住。
+一条判目录、一条判文件,两件事,互不顶替。
 
 ## 4. D2 存量三件定性(实测复核)
 
@@ -183,6 +248,32 @@ team-join 唯一例外)、以及 40901 / 40902 两个业务码 —— 都是 ide
 ⚠️ 登记它需要同步改 `check-boundaries.ts` 的 `expectedPrimitives`(原先硬判「恰四条
 Phase 0 primitives」)。顺手把该判据从**比个数**改成**比集合**并报出具体缺/多项 ——
 散文里写死「恰 N 个」会随登记表增长变成假话,且失败时说不出是哪一条。
+
+### 4.1 2026-08-25:`kernel.primitives` 5 → 9,另立技术件清单
+
+三个子目录拍板后(§3.1 / §3.2),`src/common` 下**被登记为业务内核的文件**由 1 个变 4 个:
+
+| 文件 | `name` | `ownerDomain` |
+|---|---|---|
+| `activity-workflow/activity-workflow.gate.ts` | `activity-workflow-gate` | `participation` |
+| `identity/member-label.util.ts` | `member-label` | `identity-org` |
+| `identity/member-origin.constant.ts` | `member-origin` | `identity-org` |
+| `security/role-permission-step-up-proof.ts` | `role-permission-step-up-proof` | `platform-access` |
+
+`expectedPrimitives` 同步 5 → 9(**两个方向都比**,不同步就直接红 —— 这是本节上一段
+写下的那条连坐点第一次被真的踩到)。
+
+同时新增 `kernel.commonTechnicalArtifacts`:**有主子目录里被定性为技术件的文件**,
+与 primitives 一起构成该目录的**闭包**。当前 3 条 ——
+`activity-workflow/activity-workflow.module.ts`(DI 承载)、
+`prisma/claim-at-status.util.ts`(技术件载体、携 6 条债)、
+`prisma/soft-delete.util.ts`(技术件白名单)。
+
+⚠️ **登记进这份清单 ≠ 追认为合规**:`claim-at-status.util.ts` 的 6 条跨域债照旧是债
+(§2.2「白名单 =『这样做是对的』;基线 =『这是历史债、只减不增』」这条区分不变),
+清单只回答「有没有人定性过」,不回答「定性成技术件是不是就没问题」。
+
+执行位与保护面前后对照见 **§3.3**。
 
 ### 有没有第四件?
 
@@ -225,6 +316,14 @@ Phase 0 primitives」)。顺手把该判据从**比个数**改成**比集合**�
 - delegate 解析继承既有 known gap:别名 / 解构 / 包装器 / computed 访问不保证解得出。
 - 判据③只查 `src/modules` 方向的入边;`src/common` → `src/database` 不算违规
   (当前唯一一条:`member-advisory-lock.util.ts:5` 的 type-only import)。
+- **§3.3 的闭包判据只覆盖「有主」子目录**(至少一个文件已登记为 kernel primitive 的那几个)。
+  往 `decorators` / `guards` / `dto` 等纯技术件目录里塞业务文件,它看不见 ——
+  那一层仍靠 §3 的人工定性 + 子目录集合相等断言。⚠️ 这不是疏漏而是选择:
+  把闭包铺到全部 15 个子目录 = 要一次性把 41 个文件逐个登记,
+  而其中大半从没人真的逐个看过,**照抄进登记表等于把"没看过"包装成"已定性"**。
+- §3.3 判据用**文件路径**做身份。把已登记文件原地改名(内容不变)会被 ①`path does not exist`
+  ②新名字变成「未定性文件」两条同时抓到,但**把两个已登记文件互换内容**它判不了 ——
+  它管的是「有没有人定性过这个文件」,不管「定性得对不对」。
 
 ### 6.1 施工中踩到的一次假绿:「闸绿是因为它没在看」
 
@@ -281,3 +380,14 @@ npx tsc --noEmit -p scripts/tsconfig.json
 - §3 两处灰色定性(`decorators` 业务命名、`exceptions` 业务码登记表)**维护者 2026-08-15
   明确暂不拍板,维持标灰** —— 它们不影响三条判据的执法,等将来真有人要往里塞业务逻辑时再拍。
 - `common-raw-sql-dynamic` 的那 1 条未做进一步取证。
+
+### 7.1 2026-08-25 三件定性刀:未做
+
+- **仍未搬任何文件** —— 拍板就是「登记 owner 而非搬走」,零 `src/**` 改动照旧成立。
+- **三条自动判据仍恒 report**,本刀新增的 §3.3 闭包判据挂的是**已阻断**的 `--metadata`
+  (A 类登记表完整性),不改变 ①②③ 的 report 状态,也不动 §2.2 的 6 条债务基线。
+  实测三条判据读数一字未变:`businessTableAccess 6 / businessPredicate 0 /
+  moduleImportEdges 0 / rawSqlDynamic 1`。
+- **`eligibilityCorrected` 恒 false 那条运行中缺陷不修**(维护者 2026-08-25 拍板:
+  前端未上线、收益为零,且它在活动结算核心链上)—— 只登记,见
+  [`NEXT_TASKS.md`](NEXT_TASKS.md) P2-19。它与本文件无关,登记在此仅为交叉索引。

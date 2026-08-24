@@ -747,7 +747,9 @@
 `statusCode` —— **真更正链从不产出那个形态**。同「夹具造了一个从没在生产出现过的世界」那一类。
 ⇒ 实施刀**不修**(AGENTS §2:调研中发现的问题不顺手修,先汇报),
 **也不把 `false` 断言进用例**(断言 false = 给缺陷发一张契约);AC-060 那条用例里逐字写明少了哪一格。
-**修法(改判据 vs 改投影)与优先级待维护者裁定。**
+~~**修法(改判据 vs 改投影)与优先级待维护者裁定。**~~
+✅ **2026-08-25 已裁定,单独立条:见本文件 `P2-19`**
+(拍板:现在不修,等前端要用评价面时再修;建议修法 = 改判据,让查询接受 `superseded`)。
 
 ##### ⭐ 三次**诚实的阴性变异**(比阳性更值得记)
 
@@ -2023,6 +2025,37 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 > `gen-chain-probe-5d45d1` 下 `gen` / `chain` / `probe` **三个词各匹配 306 个 spec = 全量**;
 > 同树下 `artifact` 1 个、`order` 2 个)。
 > 「起个好名字就安全」已被证伪 —— 换名只降低概率,不是防线。是否做成机器闸(如「危险的本机命令」这一族)待判。
+
+### P2-19 `feedback.eligibilityCorrected` 在真更正链上**结构性恒 `false`** —— 说明文字永不显示 — 2026-08-25 由 A 档验收实施刀查出,维护者当日拍板「现在不修」
+
+**状态**:⏸ 挂起(维护者 2026-08-25 拍板:前端未上线 ⇒ 收益为零,且它在活动结算核心链上;**等前端真要用评价面那一页时再修**)
+
+> 本条是 P1-28「A 档验收编号实施」顺带查出的一条**运行中缺陷**,原先只记在 P1-28 的
+> 验收分拣小节里等裁定。2026-08-25 裁定已下 ⇒ 单独立条,P1-28 那段保留原文并指回这里。
+
+- **症状**:App 评价面的 `feedback.eligibilityCorrected`(DTO 描述逐字是「最新结算纠错是否已撤销
+  本人的当前评价资格;历史评价仍保留」)在生产路径上**永远是 `false`** ⇒ 那句说明文字**永不显示**。
+- **真因**(两处对不上,各自都符合自己那侧的规格):
+
+  | 处 | 逐字 |
+  |---|---|
+  | `src/modules/activity-feedbacks/activity-feedbacks.service.ts` 的 `wasEligibleBeforeLatestClosure()` | 找**旧** closure 上的结果行时带 `statusCode: 'committed'` |
+  | `correction-application.service.ts` 的 commit 事务 | 把旧结果行一律置 `superseded`(合同 §5.14 ⑥ 明文要求) |
+
+  ⇒ 更正一旦生效,那次查询在生产路径上永远查不到东西。
+- **建议修法 = 改判据,不是改投影**:让 `wasEligibleBeforeLatestClosure()` 的查询接受
+  `superseded`(旧 closure 上的结果行本来就该是 superseded —— 那正是「它是旧的」的定义)。
+  改投影会动结算真相链的状态机,风险不对等。
+- ⚠️ **不是安全问题,别按安全优先级排**:真正的闸是同一个方法旁边的 `canSubmit`
+  (`hasSettlementEligibility()` 查的是**当前** active closure 上的 `committed` 行),**工作正常**。
+  失效的只是那句解释性文案的显示条件 —— 「不能提交」这件事本身照旧被正确拦住。
+- ⭐ **为什么一直没被发现**:既有 `AC-065` 用例(`activity-feedbacks.e2e-spec.ts`)**读到过 `true`**,
+  但它的夹具 `createFeedbackSettlement()` 是**手写**两版结果行、两版都留在 `committed`、
+  旧 closure 只改 `statusCode` —— **真更正链从不产出那个形态**。
+  同「夹具造了一个从没在生产出现过的世界」那一类。
+- 修的时候一并处理:`AC-060` 那条用例里逐字写明「少了 `eligibilityCorrected` 这一格」的注释
+  (`src/modules/activities/activity-business-overhaul-acceptance.spec.ts`),以及
+  **不要把 `false` 断言进用例**(断言 `false` = 给缺陷发一张契约)。
 
 ### P1-31 ✅ 开工门禁没挂 Bash matcher —— 用 `python3` / `sed -i` 写文件 **(已收口 2026-08-22)100% 绕过**,而那正是默认路径
 
