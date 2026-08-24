@@ -51,6 +51,7 @@
     "agent:check:api": "pnpm lint && pnpm typecheck && pnpm harness:selftest && pnpm test && pnpm test:contract && pnpm docs:openapi:check",
     "agent:check:full": "pnpm lint && pnpm typecheck && pnpm harness:selftest && pnpm build && pnpm test && pnpm test:contract && pnpm test:e2e && pnpm docs:openapi:check",
     "audit:production": "pnpm audit --prod --audit-level high",
+    "docs:refresh": "tsx scripts/refresh-generated-docs.ts",
     "docs:authz": "tsx scripts/generate-authz-manifest.ts --write",
     "docs:authz:check": "tsx scripts/generate-authz-manifest.ts --check",
     "gate:authz:semantic": "tsx scripts/authz-semantic-diff.ts --base origin/main",

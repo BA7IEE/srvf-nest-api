@@ -73,7 +73,8 @@ RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-
 > 当时的补救办法只是一句口诀「顺序是 openapi → clients → authz → codemap」——
 > **本节的全部内容是实测出来的,不是那句口诀。口诀经实测有错,逐条见下。**
 
-**入口**:`pnpm exec tsx scripts/refresh-generated-docs.ts`(刷新集合从 `package.json` 现算,不维护第二份名单)
+**入口**:`pnpm docs:refresh`(= `tsx scripts/refresh-generated-docs.ts`;刷新集合从 `package.json` **现算**,不维护第二份名单)
+`pnpm docs:refresh --dry-run` 只打印计划并跑自证①,不写任何文件。
 
 ### 实测出的图(不是一条链,是**一棵共源的树**)
 
@@ -122,6 +123,20 @@ RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-
   后者**只查存在性** —— 实测 53 份全是 `existsSync`;`check-codemap.ts` 唯一读内容的 `CLAUDE.md` 是
   `prisma/CLAUDE.md`,取的是里面**人手写的** migration 数。)
 - ❌「`*.spec.ts` 也算」:实测给 `member-grade.spec.ts` 追加一行 ⇒ 全绿。
+
+### ⚠️ 这套闸买不到什么:**一致性 ≠ 正确性**
+
+全部 `docs:*:check` 判的都是「生成物与源**同步没同步**」,**不是「源里该不该有这东西」**。
+⇒ 只要源里多出一个假字段、而生成物**正确地跟着更新了**,**八条守护一条都不会红**。
+
+⭐ 尤其阴的一种形状:给某个 DTO 加一个**可选**字段 —— 它不改端点数、不改权限码、不改路由,
+于是 `docs:counts` 的 9 个计数、`ROUTE_AUTHZ` 的端点数、contract 的 `EXPECTED_ROUTES`
+**没有任何一个会动**;而它长得就像一个正常业务字段。假 controller 会被端点数抓到,这个不会。
+
+⇒ 两条实操结论:① 本节这套东西**不替代**代码评审;
+② 用「加一个 DTO 字段」当变异探针时,**变异对拍的最后一步不是把读数记下来,是确认树回到了变异前**
+—— 读数与还原是两件事,做完前者很容易以为已经结束;而在多 lane 并行下,探针在树里的那段窗口
+别人也看得见(本刀实测踩过:总控在 M2/M3 阶段查树,抓到了正在生效的探针,虽然脚本收尾时已逐字节还原)。
 
 ### 取证方法(三法交叉,单用一种会漏)
 

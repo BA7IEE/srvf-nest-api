@@ -47,8 +47,8 @@
  *    说明存在一条没登记的依赖边(下游先于上游跑了)⇒ 退 1 并报出是哪份产物。
  *
  * 用法:
- *   pnpm exec tsx scripts/refresh-generated-docs.ts
- *   pnpm exec tsx scripts/refresh-generated-docs.ts --dry-run   # 只打印计划与自证 1
+ *   pnpm docs:refresh
+ *   pnpm docs:refresh --dry-run    # 只打印计划与自证①,不写任何文件
  *
  * ⚠️ 本文件**不在** harness/redzone.json 内(名字不匹配 selfGuard 的 `check-*` /
  *    `generate-*` 等 glob)—— 它是编排工具不是判据,执法仍然全在 CI 的 `docs:*:check`。

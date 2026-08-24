@@ -69,7 +69,19 @@
   (`src` 下的 `CLAUDE.md` 确实被 `docs:readtax:check` 与 `check-codemap.ts` 读,但前者只量字符预算、后者只查存在性。)
 - ❌ **「`*.spec.ts` 也算」** —— 实测给 `member-grade.spec.ts` 追加一行 ⇒ 全绿。
 
-#### 交付:`scripts/refresh-generated-docs.ts`
+#### ⚠️ 顺带钉住一条边界:**一致性 ≠ 正确性**
+
+全部 `docs:*:check` 判的都是「生成物与源同步没同步」,**不是「源里该不该有这东西」**。
+源里多一个假字段、而生成物正确地跟着更新了 ⇒ **八条守护一条都不会红**。
+⭐ 尤其阴的形状是**给 DTO 加一个可选字段**:不改端点数、不改权限码、不改路由,
+`docs:counts` 的 9 个计数 / `ROUTE_AUTHZ` 端点数 / `EXPECTED_ROUTES` **没有一个会动**(假 controller 会被端点数抓到,这个不会)。
+
+⇒ 方法论上收敛成一句:**变异对拍的最后一步不是「把读数记下来」,是「确认树回到了变异前」** ——
+读数与还原是两件事;且多 lane 并行下,探针在树里的那段窗口别人也看得见
+(本刀实测踩过:总控在 M2/M3 阶段查树抓到了正在生效的探针,脚本收尾时已逐字节还原,
+事后全仓 `grep -ri` 命中 0、两个 commit 全路径 diff 命中 0)。
+
+#### 交付:`scripts/refresh-generated-docs.ts`(短名 `pnpm docs:refresh`)
 
 刻意**不是**「把口诀写成脚本」:
 

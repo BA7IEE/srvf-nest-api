@@ -1950,9 +1950,9 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
    即使该字段不存在,行为也**不劣于修复前**(自测已按三条路径分别钉住)。
    ⇒ 触发条件:下次在**主仓**开会话时顺手验一次即可闭合。
 
-### P2-18 生成物刷新顺序只活在口口相传里 —— 实测图已交付,剩「入口要不要进 `package.json`」一条 — 2026-08-24 同形态一天复发 7 次逼出
+### P2-18 生成物刷新顺序只活在口口相传里 —— 实测图 + `pnpm docs:refresh` 入口已全部交付 — 2026-08-24 同形态一天复发 7 次逼出
 
-**状态**:待拍板(实测依赖图 + 一次性全刷入口 `scripts/refresh-generated-docs.ts` + README §1.7 已交付;剩一条:要不要在 `package.json` 加 `docs:refresh` 别名 —— 那是 `ci-control-plane` 红区,须维护者跑 `pnpm harness:grant 'package.json'`)
+**状态**:⏸ 挂起(**剩余工作量为零** —— 实测依赖图 / 入口 `pnpm docs:refresh` / README §1.7 三件都在 PR #1181 里;挂起的只是这行状态本身:判据 B 要求 `已收口(#N)` 的 `#N` **已合入 main**,而 #1181 此刻在飞 ⇒ 合入后由收口方把本行改成 `已收口(#1181)`,不必重新立项)
 
 > **已做**(见 README §1.7 与 changelog fragment):
 >
@@ -1961,9 +1961,11 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 > - 实测否掉了此前流传的口诀两处错(authz / codemap 不在 openapi 下游;发版那次 authz 红的真因是 `src/` 变了)。
 > - 入口两条自证各做过变异对拍(漏登记刷新器 / 漏登记依赖边,各自会让入口自己红;反向对照不误杀)。
 >
-> **剩余那一条为什么不自己做**:`package.json` 在 `harness/redzone.json` 的 `ci-control-plane` 内,
-> **AI 不得自行发放授权**。没有别名时入口照样能用(`pnpm exec tsx scripts/refresh-generated-docs.ts`),
-> 只是少了「记得住」这一半 —— 而这类缺陷的根因恰恰是**人记不住**,所以别名不是纯装饰。
+> - 入口短名 `pnpm docs:refresh` 已进 `package.json`。⚠️ 那是 `ci-control-plane` 红区,
+>   **由维护者 2026-08-24 跑 `pnpm harness:grant 'package.json'` 发放**(理由逐字:
+>   「生成物一次性全刷入口起短名 docs:refresh / PR #1181」)——**AI 未自行发放**。
+>   为什么值得占一次红区授权:没有短名时入口也能用(`pnpm exec tsx scripts/refresh-generated-docs.ts`),
+>   但少了「记得住」这一半,而这类缺陷的根因恰恰是**人记不住**,所以短名不是纯装饰。
 >
 > ⚠️ **两个已知射程缺口**(登记在案,本刀不扩范围):
 >
