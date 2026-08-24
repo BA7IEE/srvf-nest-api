@@ -25,7 +25,6 @@ import {
 } from './role-permission-preview.presenter';
 import type { RolePermissionSetDelta } from './role-permission-preview.presenter';
 import {
-  AssignRolePermissionsDto,
   ReplaceRolePermissionsDto,
   RolePermissionPreviewResponseDto,
   RolePermissionSetResponseDto,
@@ -38,9 +37,7 @@ import {
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表业务逻辑。
 // 沿 D7 v1.1 §5.1 端点 10-11 + §6.1 + 用户拍板。
 //
-// 5 个端点(3 写 + 2 读):
-//   POST   /api/system/v1/roles/:id/permissions       批量授权(幂等;入参 permissionCodes[])
-//   DELETE /api/system/v1/roles/:id/permissions/:permissionId  撤权(精确;路径 permissionId)
+// 3 个端点(1 写 + 2 读;**P1-32 PR 8〔2026-08-24〕退役了两条旧增量端点**):
 //   PUT    /api/system/v1/roles/:id/permissions       整集替换(P1-32 PR 4a;带 expectedRevision)
 //   GET    /api/system/v1/roles/:id/permissions       取当前权限集(P1-32 PR 4b;冻结稿 §9.2)
 //   POST   /api/system/v1/roles/:id/permissions/preview  变更预览(P1-32 PR 4b;冻结稿 §9.3)
@@ -52,15 +49,15 @@ import {
 //    并成一条原语要消灭的缺陷家族,不能在读面上原地重建一份。
 //    执行位:`scripts/check-role-permission-read-preview.ts`(selfGuard 内)+ 薄运行器。
 //
-// 🔴 **三条端点、一条写原语**(P1-32 PR 4a,2026-08-23):
-//    `replaceRolePermissionSet()` 是**唯一**会改写 role_permissions 的地方,
-//    `assign()` / `revoke()` / `replace()` 全部经它落库。
+// 🔴 **一条写原语**(P1-32 PR 4a,2026-08-23;PR 8 后成为唯一):
+//    `replaceRolePermissionSet()` 是**唯一**会改写 role_permissions 的地方。
+//    4a 时有三个公开入口(`assign` / `revoke` / `replace`)共用它;
+//    **PR 8 退役了前两条**,现在只剩 `replace()`(真写)与 `previewReplace()`(dry-run)。
 //    留两条写路径就是「一侧有闸、另一侧裸奔」—— 那是本仓反复吃亏的形态
-//    (E-B1 #1115、E-B2 的授撤不对称都是同族),所以旧 POST / DELETE 的内部改造
-//    **必须与新 PUT 同刀**,不能推到下一刀。
+//    (E-B1 #1115、E-B2 的授撤不对称都是同族)。**写面收成一条,那个形态在本模块结构上消失。**
 //
-// 🔴 **行锁与版本号不是给现状补的洞,是 `PUT` 这个新语义自带的必需品**:
-//    旧 `POST`(加码)与 `DELETE`(减码)在语义上**可交换** —— 两个管理员同时各加一条码,
+// 🔴 **行锁与版本号不是给现状补的洞,是 `PUT` 这个语义自带的必需品**:
+//    已退役的 `POST`(加码)与 `DELETE`(减码)在语义上**可交换** —— 两个管理员同时各加一条码,
 //    结果是两条都在,谁的改动都没丢。整集替换**不是**:它是「读现状 → 算目标 → 整体写回」,
 //    两个并发替换会后写覆盖先写,先写那次的改动**静默消失**而两边都拿到 200。
 //    ⇒ 别把本刀读成「原来一直有并发 bug」;是新语义把窗口带进来,同一刀把它焊死。
@@ -78,9 +75,10 @@ import {
 //        披露"角色已软删"无信息泄漏风险(管理者已知角色 id 存在),沿 detail 接口语义返 30005,
 //        让前端能精确提示"该角色已删除,请先恢复或重建"。
 //
-// **30001 / 30011 区分**:
-// - permission code / id 不存在 → 30001 PERMISSION_NOT_FOUND
-// - (roleId, permissionId) 关系不存在(撤权时)→ 30011 ROLE_PERMISSION_NOT_FOUND
+// **30001**:permission code 不存在 → 30001 PERMISSION_NOT_FOUND(整批拒绝,不部分成功)。
+// ⚠️ `30011 ROLE_PERMISSION_NOT_FOUND` 曾是 `revoke()` 专属(撤一条不存在的映射),
+//    随 PR 8 一并失去唯一抛出点。**码本体保留在 BizCode 表里**(段位不回收,避免号段复用
+//    让历史日志改变含义),但**全仓已无 throw 点** —— 登记见 `NEXT_TASKS` P1-32 PR 8 条目。
 
 @Injectable()
 export class RolePermissionsService {
@@ -108,11 +106,11 @@ export class RolePermissionsService {
   // (7 条 SA-only 保留码 + rbac.* + role-binding.*)的角色映射不得被随意改动。
   //
   // 这组保留码在 seed 中有意不绑 biz-admin / ops-admin;
-  // assign() 原先只判 `rbac.role-permission.create`,未阻止持 ops-admin 者把保留码
+  // 〔历史〕已退役的 assign() 原先只判 `rbac.role-permission.create`,未阻止持 ops-admin 者把保留码
   // 自授给某角色再绑到自己身上,间接获得 SA-only 能力(授权越权洞)。
   //
   // 🔴 **本方法是授、撤两侧共用的唯一闸**(第六轮评审 E-B2,2026-08-21)。
-  //    E-B2 前 revoke() 一个控制面判定都没有:非 SA 授不了控制面码,却可以**撤** ——
+  //    〔历史〕E-B2 前已退役的 revoke() 一个控制面判定都没有:非 SA 授不了控制面码,却可以**撤** ——
   //    包括把某个角色的 rbac.* / role-binding.* 权限撤空。damage 方向相反但同属
   //    「控制面权限映射被非 SA 改动」,和授码是同一条不变量的两条腿。
   //    这与刚修完的 E-B1(#1115)同属一个缺陷家族:**一侧有闸、另一侧没有**。
@@ -144,7 +142,7 @@ export class RolePermissionsService {
   //      两侧不同**不是漏改** —— 收死之后最后一条清理入口就没了。
   //
   // 设计:在权限码(已去重)字符串层面拦截;命中即整批拒绝(不部分写入),
-  // 与 30001 整批拒绝语义一致。assign() 收 codes,故能**早于** Permission 存在性查询
+  // 与 30001 整批拒绝语义一致。入口收的就是 codes,故能**早于** Permission 存在性查询
   // 拦下 —— 即便保留码尚未 seed,也拿拒绝码(fail-close,不退化成 30001 泄漏存在性)。
   private assertControlPlaneCodesOrThrow(
     user: CurrentUserPayload,
@@ -178,11 +176,12 @@ export class RolePermissionsService {
    *   而那正是 4b 那条同源判据(`check-role-permission-read-preview.ts`)定义的缺陷。
    *   **同源优先于示例保真**,这是有意偏离。
    *
-   * · 🔴 **不管辖** `assign()` / `revoke()`(旧增量端点)—— 它们走的是同一条写原语,
-   *   但不经 `runReplaceSet()`。这不是漏挂,是 goal「不改 replace 原语的判定」的直接后果,
-   *   **也是一条真实缺口**:持 `rbac.role-permission.create` 的人仍可用
-   *   `POST /roles/:id/permissions` 加一条 CRITICAL 码而不触二次验证。
-   *   收口它要给 `AssignRolePermissionsDto` 也加 proof 字段并改原语判定 = 行为破坏,
+   * · ⭐ **旧增量端点的旁路已随 P1-32 PR 8 消失**(2026-08-24)。PR 5 交付时
+   *   `assign()` / `revoke()` 走同一条写原语但**不经** `runReplaceSet()` ⇒ 持
+   *   `rbac.role-permission.create` 的人可用 `POST /roles/:id/permissions` 加一条
+   *   CRITICAL 码而不触二次验证。**那两个方法与它们的端点已删** ⇒ 本模块写面只剩
+   *   `replace()` 与 `previewReplace()`,**两者都在本闸内,不存在绕过它的写路径**。
+   *   〔历史记录〕当年收口它的另一条路是给 `AssignRolePermissionsDto` 也加 proof 字段并改原语判定 = 行为破坏,
    *   超出本刀;冻结稿 PR 8 本来就要退役那两条端点。
    *   ⇒ 射程由 `scripts/check-role-permission-impact.ts` 的 `stepup-scope-*` 规则**登记并钉住**:
    *   有人扩大或收窄都得显式改登记,PR 8 删掉旧端点时该判据会红并要求重看。
@@ -245,7 +244,7 @@ export class RolePermissionsService {
   // 运行时增删要么被下次 seed 覆盖,要么造出与派生链打架的第二份真相 ⇒ 一律 30108,
   // **SUPER_ADMIN 也拒**(与角色删除保护 30104 同语义)。
   //
-  // 闸放在这里而不是 assign()/revoke() 各写一遍:两条写路径本来就都要先取这一行,
+  // 闸放在这里而不是各公开入口各写一遍:所有写路径本来就都要先取这一行,
   // 收在同一个 helper 里,新增写方法只要照抄这一句就同时拿到三件事(存在 / 未软删 / 可改)。
   private async assertRoleMutableOrThrow(roleId: string): Promise<void> {
     const raw = await this.prisma.rbacRole.findUnique({
@@ -316,12 +315,12 @@ export class RolePermissionsService {
    *    照它写回去就是把别人刚提交的改动悄悄回滚。
    *
    * 🔴 **为什么入参是「意图」不是「目标全集」**(这一条别改回去):
-   *    旧 `POST` / `DELETE` 是**增量**语义 —— 「加这几条」「减这一条」,其余一律不动。
-   *    若让它们在锁**外**先读一遍现状、算出目标全集再交进来,那份快照会在锁等待期间过期,
-   *    于是「减掉 x」就顺手把别人刚加的 y 一起抹掉 —— 本刀本来是来消灭丢更新的,
-   *    那样写反而给两条旧路径**各造一个新的**。所以增量意图必须原样传进来,
-   *    由原语在**锁内**与真实现状合成目标集。
-   *    `PUT` 的 `set` 相反:调用者的全集**就是**权威,它的过期风险由 `expectedRevision` 兜。
+   *    〔历史,PR 8 后已无增量入口 —— **留着是为了别再犯**〕已退役的 `POST` / `DELETE`
+   *    是**增量**语义 —— 「加这几条」「减这一条」,其余一律不动。若让它们在锁**外**先读
+   *    一遍现状、算出目标全集再交进来,那份快照会在锁等待期间过期,于是「减掉 x」就顺手把
+   *    别人刚加的 y 一起抹掉 —— 4a 本来是来消灭丢更新的,那样写反而给两条旧路径**各造一个新的**。
+   *    `PUT` 的 `set` 相反:调用者的全集**就是**权威,它的过期风险由 `expectedRevision` 兜
+   *    ⇒ PR 8 之后入参收成 `targetCodes` 一个数组。
    *
    * 🔴 **P1-32 PR 4b(2026-08-24):`commit === null` = dry-run。**
    *    `POST /roles/:id/permissions/preview` 走的就是本方法,**判定一行都没有重写** ——
@@ -334,23 +333,28 @@ export class RolePermissionsService {
    *    算出来的差集就是一份看起来对、实际上属于另一个时刻的结论。
    *
    * @param input.commit 落库意图。传对象 = 真写(旧行为逐字不变);传 `null` = dry-run。
-   *                     `audit` 由调用方按入口构造事件与 extra —— 旧 POST / DELETE 的 audit 形状被
-   *                     `permissions-config-audit-characterization` B1/B2 逐字钉着,统一原语
-   *                     **不等于**统一事件名,那两处必须原样保留。
+   *                     `audit` 由调用方按入口构造事件与 extra。⚠️ P1-32 PR 8 之前
+   *                     `role-permission.grant` / `.revoke` 两个事件由已退役的 POST / DELETE 产出,
+   *                     被 `permissions-config-audit-characterization` B1/B2 逐字钉着;
+   *                     退役后写面只剩 `role-permission.replace` 一个事件。
    */
   private async replaceRolePermissionSet(
     user: CurrentUserPayload,
     roleId: string,
     input: {
       /**
-       * 写意图(码已去重):
-       * - `set`    整集替换 —— 提交后权限集**恰好**是 `codes`(PUT)
-       * - `add`    并入 —— 目标 = 锁内现状 ∪ `codes`(POST,增量语义不变)
-       * - `remove` 摘除 —— 目标 = 锁内现状 \ `codes`(DELETE,增量语义不变)
+       * 目标权限码全集(已去重)—— 提交后该角色的权限**恰好**是这些码。
+       *
+       * ⚠️ P1-32 PR 8 之前这里是一个三态「意图」(`set` / `add` / `remove`),因为旧
+       *    `POST` / `DELETE` 是**增量**语义,必须把「加这几条 / 减这一条」原样传进来、
+       *    由原语在**锁内**与真实现状合成目标集(锁外合成会把别人刚提交的改动抹掉)。
+       *    两条旧端点已随 PR 8 退役 ⇒ 只剩 `set` 一种,三态收成一个数组。
+       *    🔴 **若将来再加回增量语义,必须把「意图」这个形状一起加回来** ——
+       *    别在调用方先读现状算目标集再传进来,那正是当年要避开的丢更新窗口。
        */
-      intent: { kind: 'set' | 'add' | 'remove'; codes: string[] };
-      /** 乐观并发期望值;`null` = 不做版本校验(旧 POST / DELETE 的既有语义,契约不变)。 */
-      expectedRevision: number | null;
+      targetCodes: string[];
+      /** 乐观并发期望值(`PUT` / `preview` 必填,DTO 侧 `@IsInt() @Min(0)`)。 */
+      expectedRevision: number;
       commit: {
         audit: (delta: RolePermissionSetDelta) => {
           event: AuditLogEvent;
@@ -366,10 +370,10 @@ export class RolePermissionsService {
 
     // 2. 意图里的码 → Permission 行;**任一 code 不存在 → 30001**(整批拒绝,不部分成功)。
     const intentPerms = await this.prisma.permission.findMany({
-      where: { code: { in: input.intent.codes } },
+      where: { code: { in: input.targetCodes } },
       select: { id: true, code: true },
     });
-    if (intentPerms.length !== input.intent.codes.length) {
+    if (intentPerms.length !== input.targetCodes.length) {
       throw new BizException(BizCode.PERMISSION_NOT_FOUND);
     }
 
@@ -386,11 +390,11 @@ export class RolePermissionsService {
       );
 
       // 5. 乐观并发:期望值与锁内真值不符 → 整批拒绝,一个字节都不写。
-      if (input.expectedRevision !== null && input.expectedRevision !== locked.permissionRevision) {
+      if (input.expectedRevision !== locked.permissionRevision) {
         throw new BizException(BizCode.ROLE_PERMISSION_REVISION_CONFLICT);
       }
 
-      // 6. 锁内取现状 → 与意图合成目标集 → 按 **permissionId 集合**算差集
+      // 6. 锁内取现状 → 与目标集比 → 按 **permissionId 集合**算差集
       //    (比集合不比计数:计数相等会掩盖「换掉一条」这种内容互换)。
       const current = await tx.rolePermission.findMany({
         where: { roleId },
@@ -399,13 +403,8 @@ export class RolePermissionsService {
       const currentCodeById = new Map(
         current.map((row) => [row.permissionId, row.permission.code]),
       );
-      const targetCodeById = new Map<string, string>(
-        input.intent.kind === 'set' ? [] : currentCodeById,
-      );
-      for (const perm of intentPerms) {
-        if (input.intent.kind === 'remove') targetCodeById.delete(perm.id);
-        else targetCodeById.set(perm.id, perm.code);
-      }
+      const targetCodeById = new Map<string, string>();
+      for (const perm of intentPerms) targetCodeById.set(perm.id, perm.code);
       const addedIds = [...targetCodeById.keys()].filter((id) => !currentCodeById.has(id));
       const removedIds = [...currentCodeById.keys()].filter((id) => !targetCodeById.has(id));
       // 差集的码形态。**从第 8 步提到这里**(P1-32 PR 4b),纯位置调整:
@@ -529,7 +528,7 @@ export class RolePermissionsService {
 
     const uniqueCodes = Array.from(new Set(dto.permissionCodes));
 
-    // 2. D2 分级闸(授码方向,判**目标全集**)—— 与 assign() 完全同一句,连次序都一样:
+    // 2. D2 分级闸(授码方向,判**目标全集**)—— 沿用已退役 assign() 的那一句,连次序都一样:
     //    入参本来就是 codes,所以能**早于** Permission 存在性查询拦下,
     //    保留码即便尚未 seed 也拿拒绝码而非 30001(fail-close,不泄漏存在性)。
     //    这是 PR 3a 明文写下的刻意设计,新入口照抄,不重新发明。
@@ -537,7 +536,8 @@ export class RolePermissionsService {
     //    ⚠️ **判全集而不是判差集,是一个有代价的保守选择,写下来免得后来者当 bug 修**:
     //    整集替换的语义是「我主张这个角色应当恰好持有这些码」,主张里含控制面码 ——
     //    哪怕它本来就在 —— 也是一次主张。于是**非 SA 对「已含控制面码的自定义角色」用不了 PUT**
-    //    (保留它触第 1 层、去掉它触撤码方向),得退回 POST / DELETE 逐条改。
+    //    (保留它触第 1 层、去掉它触撤码方向)。⚠️ P1-32 PR 8 退役 POST / DELETE 之后
+    //    **「退回逐条改」这条退路也没有了** —— 这类角色只能由 SUPER_ADMIN 改。
     //    代价接受,理由:① 这类角色只可能由 SA 亲手造出来,极少;② 判差集虽然更好用,
     //    但那是**放宽**,而 goal 对本刀的要求是两层闸「原样保留」,不是顺手调松。
     //    ③ 原语内部仍会按**差集**判增、减两个方向 —— 那一道才是真正兜住所有写路径的闸,
@@ -551,7 +551,7 @@ export class RolePermissionsService {
 
     // 3. 唯一写原语:行锁 → 锁后复读 revision → 冲突判定 → 差集 → 两方向闸 →(commit 才写)。
     return this.replaceRolePermissionSet(user, roleId, {
-      intent: { kind: 'set', codes: uniqueCodes },
+      targetCodes: uniqueCodes,
       expectedRevision: dto.expectedRevision,
       commit:
         commitMeta === null
@@ -573,114 +573,13 @@ export class RolePermissionsService {
     });
   }
 
-  // ============ 3 端点 ============
-
-  async assign(
-    user: CurrentUserPayload,
-    roleId: string,
-    dto: AssignRolePermissionsDto,
-    meta: AuditMeta,
-  ): Promise<RbacRoleDetailResponseDto> {
-    await this.assertCanOrThrow(user, 'rbac.role-permission.create');
-    // 1. role 必须存在 + 未软删 + 不是系统内置角色(内置角色只读 → 30108)
-    await this.assertRoleMutableOrThrow(roleId);
-
-    //    去重处理:即使 DTO 重复传同一 code 也能正常工作
-    const uniqueCodes = Array.from(new Set(dto.permissionCodes));
-
-    // 2. D2 分级闸:控制面权限码不得沉淀成任何角色的常驻权限(SUPER_ADMIN 也拒;
-    //    早于 Permission 存在性查询;命中即整批拒绝)
-    this.assertControlPlaneCodesOrThrow(user, uniqueCodes, 'grant');
-
-    // 3. 交给唯一写原语。**增量意图**(`add`)原样传进去,由它在锁内与真实现状合成目标集 ——
-    //    绝不能在这里先读一遍现状算并集,那份快照会在锁等待期间过期,
-    //    等于给 POST 造一个它本来没有的丢更新窗口(见原语头部「为什么入参是意图」)。
-    //    幂等仍然成立:已存在的码合进去之后不在差集里,不写、不 +1、不留痕。
-    //
-    //    `expectedRevision: null` —— POST 的对外契约里没有版本号字段,不能凭空给它加一道
-    //    「不带版本号就拒」的闸(那是破坏性变更)。它仍然拿到行锁带来的串行化,
-    //    只是不做乐观校验。
-    await this.replaceRolePermissionSet(user, roleId, {
-      intent: { kind: 'add', codes: uniqueCodes },
-      expectedRevision: null,
-      commit: {
-        meta,
-        // audit 形状**逐字**保持 PR #4 原样(characterization B1 钉着 operation /
-        // permissionCodes / requestedCount 三项):记的是**这次请求要的码**,不是差集。
-        audit: () => ({
-          event: 'role-permission.grant',
-          extra: {
-            operation: 'grant',
-            permissionCodes: uniqueCodes,
-            requestedCount: uniqueCodes.length,
-          },
-        }),
-      },
-    });
-    // 返回该角色当前完整 detail(含最新 permissions 与 permissionRevision)。
-    // ⚠️ P1-32 PR 4b 起原语返回的是 delta 而不是 detail —— detail 由三条写入口各自取,
-    //    因为 dry-run 分支不需要它(preview 不返 detail),原语里留一句就成了「preview 白查一次库」。
-    return this.buildDetailResponse(roleId);
-  }
-
-  async revoke(
-    user: CurrentUserPayload,
-    roleId: string,
-    permissionId: string,
-    meta: AuditMeta,
-  ): Promise<RbacRoleDetailResponseDto> {
-    await this.assertCanOrThrow(user, 'rbac.role-permission.delete');
-    // 1. role 必须存在 + 未软删 + 不是系统内置角色(内置角色只读 → 30108)
-    await this.assertRoleMutableOrThrow(roleId);
-
-    // 2. permission 必须存在(顺带取 code —— 分级闸判的是码,不是 id)
-    const perm = await this.prisma.permission.findUnique({
-      where: { id: permissionId },
-      select: { id: true, code: true },
-    });
-    if (!perm) throw new BizException(BizCode.PERMISSION_NOT_FOUND);
-
-    // 3. D2 分级闸:非 SUPER_ADMIN 不得撤销控制面权限码;SA 仍可撤(清理历史脏数据)。
-    //    与 assign() 复用**同一个** assertControlPlaneCodesOrThrow,不另造判定;
-    //    差别只在 direction —— 见该 helper 头部对「为什么两侧不对称」的说明。
-    //    ⚠️ 与 assign 的唯一次序差:assign 的入参本来就是 codes,可在存在性查询前拦;
-    //    revoke 的路径参数是 permissionId,不查库拿不到 code,只能先查后判。这不是漏拦 ——
-    //    permissionId 不存在时本就无绑定可撤,先返 30001 不缩小闸的覆盖面。
-    this.assertControlPlaneCodesOrThrow(user, [perm.code], 'revoke');
-
-    // 4. 关系必须存在(不存在 → 30011)。沿既有"先查再操作"范式,契约一字不变。
-    const existing = await this.prisma.rolePermission.findUnique({
-      where: { roleId_permissionId: { roleId, permissionId } },
-      select: { id: true },
-    });
-    if (!existing) {
-      throw new BizException(BizCode.ROLE_PERMISSION_NOT_FOUND);
-    }
-
-    // 5. 交给唯一写原语。同样是**增量意图**(`remove`):只摘这一条,其余锁内现状原样保留 ——
-    //    若在这里把"现状减一条"算成目标全集交进去,并发时会把别人刚授的码一起抹掉。
-    //    ⚠️ 上面那次存在性检查在锁**外**,理论上存在"检查后、取锁前被别人撤掉"的窗口:
-    //       那种情况下差集为空 → no-op(200 + 当前 detail),而不是 P2025 500。
-    //       这是**改善**,不是漏判 —— 目标状态("这条没了")已经达成。
-    await this.replaceRolePermissionSet(user, roleId, {
-      intent: { kind: 'remove', codes: [perm.code] },
-      expectedRevision: null,
-      commit: {
-        meta,
-        // audit 形状**逐字**保持 PR #4 原样(characterization B2 钉着 operation / permissionId)。
-        audit: () => ({
-          event: 'role-permission.revoke',
-          extra: { operation: 'revoke', permissionId },
-        }),
-      },
-    });
-    return this.buildDetailResponse(roleId);
-  }
+  // ============ 写 / 读端点 ============
 
   /**
    * P1-32 PR 4a:整集替换(`PUT /api/system/v1/roles/:id/permissions`)。
    *
-   * 与 POST / DELETE 的差别只有两处,其余(角色三态闸、控制面两层闸、单事务 audit)完全同源:
+   * ⭐ P1-32 PR 8 起它是**唯一的真写入口**(preview 是它的 dry-run 孪生)。
+   * 与已退役的 POST / DELETE 的差别只有两处,其余(角色三态闸、控制面两层闸、单事务 audit)完全同源:
    *   - 语义是 `set` 而不是增量 —— 提交后该角色的权限**恰好**是 `permissionCodes`;
    *   - `expectedRevision` **必填** —— 整集替换是读-改-写,不带版本号就是允许后写覆盖先写。
    *

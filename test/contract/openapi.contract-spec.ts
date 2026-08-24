@@ -476,13 +476,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // ⚠️ GET 返回**一个对象**(role / permissionRevision / permissionCodes[] / editPolicy),
   //    不是集合端点 ⇒ 分页铁律无适用对象,也**不**进 §4 那张「整取型只读目录」例外表
   //    (那张表要求「固定参考集合」,角色权限集是运行时数据)。详见 controller 头注。
+  // ⚠️ P1-32 PR 8(2026-08-24):两条旧增量端点已退役 —— `POST …/permissions`(assign)与
+  //    `DELETE …/permissions/{permissionId}`(revoke)。写面只剩 `PUT` 与 `POST …/preview`。
   ['get', '/api/system/v1/roles/{id}/permissions'],
-  ['post', '/api/system/v1/roles/{id}/permissions'],
   ['put', '/api/system/v1/roles/{id}/permissions'],
   // preview 是 POST + @HttpCode(200):入参含 permissionCodes[](≤100)+ expectedRevision,
   // 塞 query string 要自己编数组;零写入靠 service 的 dry-run 分支表达,不靠动词。
   ['post', '/api/system/v1/roles/{id}/permissions/preview'],
-  ['delete', '/api/system/v1/roles/{id}/permissions/{permissionId}'],
   ['get', '/api/system/v1/users/{userId}/roles'],
   ['post', '/api/system/v1/users/{userId}/roles'],
   ['delete', '/api/system/v1/users/{userId}/roles/{roleId}'],
@@ -1062,7 +1062,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 554;
+const EXPECTED_ROUTE_COUNT = 552;
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1290,7 +1290,18 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // V2.x C-6 RBAC 实施 PR #4 role-permissions(2026-05-14;沿 D7 v1.1 §5.2.3)
   // 注:RevokeRolePermissionParamDto 是 @Param() DTO,被内联为 parameters,不进 components.schemas。
   //   出参复用 RbacRoleDetailResponseDto(沿 RbacRole detail 范式)。
-  'AssignRolePermissionsDto',
+  // ⚠️ **P1-32 PR 8(2026-08-24)删掉了本组唯一的条目 `AssignRolePermissionsDto`** ——
+  //    它是旧 `POST /roles/:id/permissions`(增量授权)的入参,端点退役后 DTO 一并删除。
+  //    入参 DTO 只剩 `ReplaceRolePermissionsDto`(`PUT` 与 `POST …/preview` **共用同一个类**),
+  //    它已登记在下方 P1-32 PR 4a 那组,故本组不再有条目,**整组只留这段注释**。
+  //
+  // 🔴 **本清单是第三份独立事实源,删端点时三处都要改**(踩过才写下来):
+  //    ① `EXPECTED_ROUTES`(路由白名单)② `EXPECTED_ROUTE_COUNT`(计数常量)
+  //    ③ **本清单 `EXPECTED_SCHEMAS`**(schema 名白名单)。
+  //    ①② 的「不同源」已经在 `EXPECTED_ROUTE_COUNT` 头注里写过;③ **此前没人写过** ——
+  //    它由 `it.each(EXPECTED_SCHEMAS)('Schema 仍存在: %s')` 消费,与两份 snapshot **各判各的**:
+  //    snapshot 用 `-u` 刷新会自动跟上,而本清单**只会以「Schema 仍存在: X → undefined」的形式报错**,
+  //    `-u` 对它一点作用都没有。⇒ 删 DTO 时别以为刷完快照就完了。
 
   // V2.x C-6 RBAC 实施 PR #5 user-roles(2026-05-14;沿 D7 v1.1 §5.2.4 / §5.2.6)
   // 注:UserIdParamDto / RevokeUserRoleParamDto 是 @Param() DTO,被内联为 parameters,
@@ -1777,6 +1788,14 @@ describe('OpenAPI 契约快照', () => {
   // P1-32 PR 4b(2026-08-24):+2 角色权限**读 / 预览面**
   //   (GET /system/v1/roles/{id}/permissions + POST …/permissions/preview;
   //    **零新增权限码**)→ **554**。
+  // P1-32 PR 8(2026-08-24):**−2** 旧增量写端点退役
+  //   (POST /system/v1/roles/{id}/permissions 与
+  //    DELETE /system/v1/roles/{id}/permissions/{permissionId})→ **552**。
+  //   🔴 **这是对外契约破坏,已按 operation 各出一块申报**(见 changelog.d;R11 双向配对)。
+  //   ⚠️ 冻结稿同句里的另一半「删除 Permission 写 CRUD」**不在本刀**:那三条端点
+  //      (POST / PATCH / DELETE /system/v1/permissions)没有任何替代端点,
+  //      删掉会让 ~34 条断言失去被测对象 ⇒ 维护者 2026-08-24 拍板拆成单独一刀,
+  //      代价清单与三条候选路登记在 NEXT_TASKS P1-32。
   // ⚠️ **这条流水自己有缺口**:4a 那行写着 550,而本刀开工时常量已是 552 ——
   //    中间两笔(其中一笔是 PR 2 的 /permissions/catalog)没记进流水。
   //    本刀只在尾部续记自己的 +2,**不回补历史**(回补要逐笔取证,不是顺手能做对的事);

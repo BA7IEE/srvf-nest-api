@@ -26,6 +26,9 @@ import { createTestApp } from '../setup/test-app';
 //   ⚠️ 别把它读成「原来一直有并发 bug」—— 旧 `POST`(加码)/ `DELETE`(减码)语义**可交换**,
 //      两个人各加一条码结果是两条都在,没有丢更新。窗口是 `PUT` 这个新语义带进来的,
 //      所以行锁与版本号跟它同刀落地,不是补旧洞。
+//      ⭐ **P1-32 PR 8(2026-08-24)退役了那两条旧端点** ⇒ 写面只剩 `PUT`,
+//      「可交换的写」在本模块不再存在。下方反向对照因此换了一根轴(两条不同角色),
+//      逐条理由见该用例上方注释。
 //
 // **测试编排**(不是被测语义的一部分,照抄 wecom-settings-concurrency 的 S1 范式):
 //   第三条连接持 `LOCK TABLE "role_permissions" IN SHARE MODE`。
@@ -45,6 +48,8 @@ import { createTestApp } from '../setup/test-app';
 
 const SA_USERNAME = 'rp-conc-su';
 const ROLE_CODE = 'rp-conc-target';
+/** 反向对照用的第二条角色 —— P1-32 PR 8 后「可交换的两条写」只能靠**不同角色**表达,见下方注释。 */
+const ROLE_CODE_B = 'rp-conc-target-b';
 
 /** 两个目标集**刻意不相交**:摘掉行锁后落库的是并集(4 条),症状响亮且不会被唯一约束遮蔽。 */
 const TARGET_A = ['rpconc.a.one', 'rpconc.a.two'];
@@ -58,6 +63,7 @@ describe('role-permissions PUT 整集替换 · 真并发(P1-32 PR 4a 行锁 + �
   let prismaB: PrismaService;
   let saAuth: string;
   let roleId: string;
+  let roleIdB: string;
 
   beforeAll(async () => {
     appA = await createTestApp();
@@ -87,13 +93,19 @@ describe('role-permissions PUT 整集替换 · 真并发(P1-32 PR 4a 行锁 + �
 
   beforeEach(async () => {
     await prismaA.auditLog.deleteMany({ where: { resourceType: 'role_permission' } });
-    await prismaA.rbacRole.deleteMany({ where: { code: ROLE_CODE } });
+    await prismaA.rbacRole.deleteMany({ where: { code: { in: [ROLE_CODE, ROLE_CODE_B] } } });
     const role = await prismaA.rbacRole.create({
       data: { code: ROLE_CODE, displayName: '并发靶子角色' },
       select: { id: true, permissionRevision: true },
     });
     roleId = role.id;
     expect(role.permissionRevision).toBe(0);
+    const roleB = await prismaA.rbacRole.create({
+      data: { code: ROLE_CODE_B, displayName: '并发靶子角色 B' },
+      select: { id: true, permissionRevision: true },
+    });
+    roleIdB = roleB.id;
+    expect(roleB.permissionRevision).toBe(0);
   });
 
   /** 等到确实有 `expected` 条连接卡在角色 / 映射相关的锁上(不 sleep:sleep 要么不够要么太长)。 */
@@ -114,18 +126,31 @@ describe('role-permissions PUT 整集替换 · 真并发(P1-32 PR 4a 行锁 + �
     throw new Error(`expected at least ${expected} role/role_permission lock waiter(s)`);
   }
 
-  function putVia(app: INestApplication, body: Record<string, unknown>): request.Test {
+  function putVia(
+    app: INestApplication,
+    body: Record<string, unknown>,
+    targetRoleId: string = roleId,
+  ): request.Test {
     return request(httpServer(app))
-      .put(`/api/system/v1/roles/${roleId}/permissions`)
+      .put(`/api/system/v1/roles/${targetRoleId}/permissions`)
       .set('Authorization', saAuth)
       .send(body);
   }
 
-  function postVia(app: INestApplication, permissionCodes: string[]): request.Test {
-    return request(httpServer(app))
-      .post(`/api/system/v1/roles/${roleId}/permissions`)
-      .set('Authorization', saAuth)
-      .send({ permissionCodes });
+  /** 某个角色此刻的落库事实(码集合 + 版本号)。 */
+  async function stateOf(id: string): Promise<{ codes: Set<string>; revision: number }> {
+    const rows = await prismaA.rolePermission.findMany({
+      where: { roleId: id },
+      select: { permission: { select: { code: true } } },
+    });
+    const role = await prismaA.rbacRole.findUniqueOrThrow({
+      where: { id },
+      select: { permissionRevision: true },
+    });
+    return {
+      codes: new Set(rows.map((r) => r.permission.code)),
+      revision: role.permissionRevision,
+    };
   }
 
   /** 两条请求在同一屏障窗口内并发跑完;`first` 走 appA、`second` 走 appB(两套独立 Nest / Prisma 池)。 */
@@ -157,19 +182,8 @@ describe('role-permissions PUT 整集替换 · 真并发(P1-32 PR 4a 行锁 + �
     }
 
     const responses = await attempts;
-    const rows = await prismaA.rolePermission.findMany({
-      where: { roleId },
-      select: { permission: { select: { code: true } } },
-    });
-    const role = await prismaA.rbacRole.findUniqueOrThrow({
-      where: { id: roleId },
-      select: { permissionRevision: true },
-    });
-    return {
-      responses,
-      codes: new Set(rows.map((r) => r.permission.code)),
-      revision: role.permissionRevision,
-    };
+    const { codes, revision } = await stateOf(roleId);
+    return { responses, codes, revision };
   }
 
   // 两个顺序都测:谁先到不该改变结论。摘掉行锁时**两序都会**落成并集。
@@ -215,22 +229,40 @@ describe('role-permissions PUT 整集替换 · 真并发(P1-32 PR 4a 行锁 + �
   );
 
   // 🔴 反向对照,**不能省**:上面那条若被一个「PUT 一律返 30111」的实现满足,也会全绿。
-  //    这里证明同一套屏障编排下,两条**语义可交换**的旧写路径(POST 加码)照样双双成功 ——
-  //    行锁只是让它们串行,不误杀。顺带把「旧 POST / DELETE 是可交换的」这条前提
-  //    (本刀 changelog 的立论基础)钉在行为面上,而不是只写在注释里。
+  //    本条证明同一套屏障编排下**双双成功是可能的** —— 行锁只是让冲突者串行,不误杀。
   //
-  //    ⭐ 它还兼职守住一条**实现层的坑**:原语收的是「意图」(add / remove / set)而不是
-  //    「目标全集」。若有人图省事,让 POST 在锁**外**先读一遍现状、算出目标全集再交进来,
-  //    那份快照会在锁等待期间过期 —— 后到那条 POST 会拿着「空集 ∪ B」当目标,
-  //    把先到者刚加的 A 一起删掉。届时本用例的终态会是 `B` 而不是并集,当场红。
-  it('反向对照:两个并发 POST(可交换的加码)→ 双双成功,终态 = 并集,版本号 +2', async () => {
-    const { responses, codes, revision } = await raceUnderBarrier(
-      () => postVia(appA, TARGET_A),
-      () => postVia(appB, TARGET_B),
+  // ⚠️ **P1-32 PR 8(2026-08-24)迁移说明 —— 这条是改写,不是放宽**:
+  //    原先它用的是两个并发 `POST`(旧增量加码,语义可交换)→ 双双 201、终态 = 并集、版本 +2。
+  //    PR 8 退役了 `POST` / `DELETE` 两条旧增量端点 ⇒ **全仓再没有「语义可交换的写路径」**:
+  //    仅存的 `PUT` 恒带 `expectedRevision`,同一角色上的两个并发 PUT **必然**恰一个 30111。
+  //    ⇒ 「双双成功」只能换一根轴表达:**两条不同角色行**的并发 PUT。
+  //    判据没变钝 —— 「PUT 一律返 30111」的实现在本条上照样当场红,那正是它要挡的东西。
+  //
+  // ⚠️ **随端点一起失去的那半个性质,如实登记**:原注释里那条「⭐ 兼职守住的实现层坑」
+  //    (原语收「意图」而不是「目标全集」,否则后到者会把先到者刚加的码一起抹掉)
+  //    **不再需要守** —— PR 8 同刀把 `add` / `remove` 两种意图从写原语里删掉了
+  //    (只剩 `targetCodes` 一个数组),那个坑连同产生它的代码一起消失。
+  //    🔴 若将来把增量语义加回来,必须**同时**把那条反向对照加回来,见
+  //    `role-permissions.service.ts` 写原语头注里的同款警告。
+  it('反向对照:两条不同角色的并发 PUT → 双双成功、各自落各自的目标集(行锁不误杀)', async () => {
+    // 屏障对本条同样成立:两条请求都要写 role_permissions(RowExclusiveLock),
+    // 都会卡在第三条连接持有的表级 ShareLock 上 ⇒ 稳定态仍是 2 个 waiter。
+    const { responses } = await raceUnderBarrier(
+      () => putVia(appA, { permissionCodes: TARGET_A, expectedRevision: 0 }, roleId),
+      () => putVia(appB, { permissionCodes: TARGET_B, expectedRevision: 0 }, roleIdB),
     );
 
-    expect(responses.map((r) => r.status)).toEqual([201, 201]);
-    expect(codes).toEqual(new Set(ALL_CODES));
-    expect(revision).toBe(2);
+    expect(responses.map((r) => r.status)).toEqual([200, 200]);
+
+    // 各自落各自的:互不污染、互不覆盖,各自版本号只 +1
+    const a = await stateOf(roleId);
+    const b = await stateOf(roleIdB);
+    expect(a.codes).toEqual(new Set(TARGET_A));
+    expect(a.revision).toBe(1);
+    expect(b.codes).toEqual(new Set(TARGET_B));
+    expect(b.revision).toBe(1);
+    // 反面钉死:任一角色落成并集 = 锁的粒度错了(锁了表 / 锁了权限行而不是角色行)
+    expect(a.codes).not.toEqual(new Set(ALL_CODES));
+    expect(b.codes).not.toEqual(new Set(ALL_CODES));
   });
 });

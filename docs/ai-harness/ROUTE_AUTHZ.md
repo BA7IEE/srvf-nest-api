@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:151dc9f997b64f6cc9452dcbd032cee52e127c03145810f3ad0b8e4b6bcda52f |
-| endpoint count | 554 |
+| inputDigest | sha256:b45c296b9ce1ff9cbb43944c5cdf3a99ad1709c7facebf4894aba12936e91f8b |
+| endpoint count | 552 |
 | legacy [auth] count | 169 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -31,7 +31,7 @@
 |---|---:|---:|---:|
 | admin | 281 | 281 | 0 |
 | app | 158 | 158 | 0 |
-| system | 79 | 79 | 0 |
+| system | 77 | 77 | 0 |
 | auth | 20 | 20 | 0 |
 | open | 16 | 16 | 0 |
 
@@ -40,7 +40,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 352 |
+| rbac | 350 |
 | auth | 169 |
 | unclassified | 0 |
 
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:151dc9f997b64f6cc9452dcbd032cee52e127c03145810f3ad0b8e4b6bcda52f",
+  "inputDigest": "sha256:b45c296b9ce1ff9cbb43944c5cdf3a99ad1709c7facebf4894aba12936e91f8b",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -885,25 +885,6 @@
         "codes": [
           {
             "code": "rbac.role.delete",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
-      "routeKey": "DELETE /api/system/v1/roles/:id/permissions/:permissionId",
-      "controller": "RolePermissionsController",
-      "handler": "revoke",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "rbac.role-permission.delete",
             "scope": null
           }
         ],
@@ -9628,25 +9609,6 @@
       }
     },
     {
-      "routeKey": "POST /api/system/v1/roles/:id/permissions",
-      "controller": "RolePermissionsController",
-      "handler": "assign",
-      "legacy": "rbac",
-      "policy": {
-        "admission": null,
-        "mode": "RBAC",
-        "codes": [
-          {
-            "code": "rbac.role-permission.create",
-            "scope": null
-          }
-        ],
-        "require": "all",
-        "scopes": [],
-        "engine": "rbac-global"
-      }
-    },
-    {
       "routeKey": "POST /api/system/v1/roles/:id/permissions/preview",
       "controller": "RolePermissionsController",
       "handler": "previewReplace",
@@ -10128,8 +10090,6 @@
 | `notification.publish.record` | 3 | POST /api/admin/v1/notifications/:id/archive · POST /api/admin/v1/notifications/:id/publish · POST /api/admin/v1/notifications/:id/unpublish |
 | `notification.read.record` | 3 | GET /api/admin/v1/notification-wechat-templates · GET /api/admin/v1/notifications · GET /api/admin/v1/notifications/:id |
 | `position.read.definition` | 3 | GET /api/admin/v1/positions · GET /api/admin/v1/positions/:id · GET /api/admin/v1/positions/options |
-| `rbac.role-permission.create` | 3 | POST /api/system/v1/roles/:id/permissions · POST /api/system/v1/roles/:id/permissions/preview · PUT /api/system/v1/roles/:id/permissions |
-| `rbac.role-permission.delete` | 3 | DELETE /api/system/v1/roles/:id/permissions/:permissionId · POST /api/system/v1/roles/:id/permissions/preview · PUT /api/system/v1/roles/:id/permissions |
 | `recruitment-application.review.certificate` | 3 | GET /api/admin/v1/certificate-standards/options · POST /api/admin/v1/recruitment/certificate-claims/:id/review · POST /api/admin/v1/recruitment/certificate-claims/:id/revoke-review |
 | `team-insurance-policy.read.record` | 3 | GET /api/admin/v1/team-insurance-policies · GET /api/admin/v1/team-insurance-policies/:id · GET /api/admin/v1/team-insurance-policies/:id/members |
 | `user.read.account` | 3 | GET /api/admin/v1/users · GET /api/admin/v1/users/:id · GET /api/admin/v1/users/options |
@@ -10166,6 +10126,8 @@
 | `org.update.node` | 2 | PATCH /api/admin/v1/organizations/:id · PATCH /api/admin/v1/organizations/:id/status |
 | `rbac.permission.read` | 2 | GET /api/system/v1/permissions · GET /api/system/v1/permissions/catalog |
 | `rbac.role-permission.*` | 2 | POST /api/system/v1/roles/:id/permissions/preview · PUT /api/system/v1/roles/:id/permissions |
+| `rbac.role-permission.create` | 2 | POST /api/system/v1/roles/:id/permissions/preview · PUT /api/system/v1/roles/:id/permissions |
+| `rbac.role-permission.delete` | 2 | POST /api/system/v1/roles/:id/permissions/preview · PUT /api/system/v1/roles/:id/permissions |
 | `recruitment-application.mark.threshold` | 2 | PATCH /api/admin/v1/recruitment/applications/:id/thresholds · POST /api/admin/v1/recruitment/applications/batch-mark-threshold |
 | `recruitment-application.promote.member` | 2 | GET /api/admin/v1/recruitment/cycles/:id/promote-precheck · POST /api/admin/v1/recruitment/cycles/:id/promote |
 | `recruitment-application.read.sensitive` | 2 | GET /api/admin/v1/recruitment/applications/:id/id-card-image-url · GET /api/admin/v1/recruitment/certificate-claims/:id/image-urls |
@@ -10366,7 +10328,6 @@
 | DELETE | /api/system/v1/dict-types/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.delete.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:133; src/modules/dictionaries/dictionaries.controller.ts:152 |
 | DELETE | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:147; src/modules/permissions/permissions.controller.ts:166 |
 | DELETE | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:156; src/modules/permissions/rbac-roles.controller.ts:175 |
-| DELETE | /api/system/v1/roles/:id/permissions/:permissionId | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:289; src/modules/permissions/role-permissions.controller.ts:312 |
 | DELETE | /api/system/v1/users/:userId/roles/:roleId | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:100; src/modules/permissions/user-roles.controller.ts:124 |
 | GET | /api/admin/v1/activities | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:81; src/modules/activities/activities.controller.ts:93 |
 | GET | /api/admin/v1/activities/:activityId/attendance-sheet-draft | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:49; src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:65 |
@@ -10571,7 +10532,7 @@
 | GET | /api/system/v1/realname-settings | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.read.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:45; src/modules/realname/realname-settings.controller.ts:54 |
 | GET | /api/system/v1/roles | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:63; src/modules/permissions/rbac-roles.controller.ts:72 |
 | GET | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:90; src/modules/permissions/rbac-roles.controller.ts:108 |
-| GET | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:164; src/modules/permissions/role-permissions.controller.ts:182 |
+| GET | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:163; src/modules/permissions/role-permissions.controller.ts:181 |
 | GET | /api/system/v1/roles/options | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:76; src/modules/permissions/rbac-roles.controller.ts:87 |
 | GET | /api/system/v1/sms-send-logs | Ops - SMS Send Logs | rbac | RBAC; admission=-; codes=sms-send-log.read.list; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-send-logs.controller.ts:31; src/modules/sms/sms-send-logs.controller.ts:43 |
 | GET | /api/system/v1/sms-settings | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.read.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:41; src/modules/sms/sms-settings.controller.ts:50 |
@@ -10853,8 +10814,7 @@
 | POST | /api/system/v1/rbac/reload | Ops - RBAC | rbac | RBAC; admission=-; codes=rbac.config.reload; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac.controller.ts:57; src/modules/permissions/rbac.controller.ts:72 |
 | POST | /api/system/v1/realname-settings/reset-credentials | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:73; src/modules/realname/realname-settings.controller.ts:87 |
 | POST | /api/system/v1/roles | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:111; src/modules/permissions/rbac-roles.controller.ts:130 |
-| POST | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:185; src/modules/permissions/role-permissions.controller.ts:209 |
-| POST | /api/system/v1/roles/:id/permissions/preview | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:270; src/modules/permissions/role-permissions.controller.ts:286 |
+| POST | /api/system/v1/roles/:id/permissions/preview | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:242; src/modules/permissions/role-permissions.controller.ts:258 |
 | POST | /api/system/v1/sms-settings/reset-credentials | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:69; src/modules/sms/sms-settings.controller.ts:83 |
 | POST | /api/system/v1/storage-settings/reset-credentials | Ops - Storage Settings | rbac | RBAC; admission=-; codes=storage-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/storage/storage-settings.controller.ts:77; src/modules/storage/storage-settings.controller.ts:91 |
 | POST | /api/system/v1/users/:userId/roles | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:74; src/modules/permissions/user-roles.controller.ts:97 |
@@ -10877,4 +10837,4 @@
 | PUT | /api/app/v1/my/managed-activities/:activityId/gallery | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:377; src/modules/activities/controllers/app-managed-activities.controller.ts:402 |
 | PUT | /api/app/v1/my/managed-activities/:activityId/qualification-rules | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:436; src/modules/activities/controllers/app-managed-activities.controller.ts:461 |
 | PUT | /api/app/v1/my/managed-activities/:activityId/registration-form | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:307; src/modules/activities/controllers/app-managed-activities.controller.ts:331 |
-| PUT | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:221; src/modules/permissions/role-permissions.controller.ts:250 |
+| PUT | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:193; src/modules/permissions/role-permissions.controller.ts:222 |

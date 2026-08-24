@@ -249,8 +249,13 @@ export type AuditLogEvent =
   | 'rbac-role.create' // admin 建 RBAC 角色(rbac-roles.service: create;resourceType='rbac_role';after 快照 code/displayName/description)
   | 'rbac-role.update' // admin 改角色(rbac-roles.service: update;before/after displayName/description)
   | 'rbac-role.delete' // admin 软删角色(rbac-roles.service: softDelete;before 快照 code/displayName)
-  | 'role-permission.grant' // admin 授予角色权限点(role-permissions.service: assign;resourceType='role_permission' / resourceId=roleId;extra.{permissionCodes,requestedCount})
-  | 'role-permission.revoke' // admin 撤销角色权限点(role-permissions.service: revoke;resourceId=roleId;extra.permissionId)
+  // ⚠️ 下面两条自 P1-32 PR 8(2026-08-24)起**已无产出者** —— 它们的唯一写入口
+  //    (POST assign / DELETE revoke 两条旧增量端点)已退役。**词条刻意保留**:
+  //    历史 audit_log 行里已经躺着这两个字符串,把名字从词表里删掉不会删掉那些行,
+  //    只会让将来读旧审计的人查不到这个事件是什么意思(号段 / 名字一律不回收复用)。
+  //    ⇒ 新写入一律走 'role-permission.replace'。
+  | 'role-permission.grant' // 〔已退役 · 无产出者〕admin 授予角色权限点(旧 role-permissions.service: assign;resourceType='role_permission' / resourceId=roleId;extra.{permissionCodes,requestedCount})
+  | 'role-permission.revoke' // 〔已退役 · 无产出者〕admin 撤销角色权限点(旧 role-permissions.service: revoke;resourceId=roleId;extra.permissionId)
   // P1-32 PR 4a(2026-08-23;goal 显式授权的唯一 +1 AuditLogEvent):整集替换。
   // 三条写路径共用同一条 replace 原语,但**事件名按入口分**:旧 POST / DELETE 保持
   // grant / revoke 逐字不变(它们的 audit 形状被 permissions-config-audit-characterization

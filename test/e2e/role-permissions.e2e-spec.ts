@@ -22,11 +22,34 @@ import { createTestApp } from '../setup/test-app';
 // 沿 D7 v1.1 §5.1 端点 10-11 + 用户拍板。
 //
 // 覆盖(沿任务 #9):
-// - 批量授权(成功 / 含已存在的幂等 / role 不存在 / role 已软删 / permission 不存在)
-// - 撤权(成功 / 关系不存在 30011 / role 不存在 / role 已软删 / permission 不存在)
+// - 授权(成功 / 重复提交幂等 / role 不存在 / role 已软删 / permission 不存在)
+// - 撤权(成功 / role 不存在 / role 已软删 / permission 不存在)
 // - role detail 返回真实 permissions
 // - 权限边界(未登录 / USER 403 / ADMIN 允许)
-// - DB-backed permission resolution 在 role-permission grant/revoke/role soft-delete 后下一请求收敛
+// - DB-backed permission resolution 在 role-permission 增减 / role soft-delete 后下一请求收敛
+//
+// ══════════════════════════════════════════════════════════════════════════
+// ⚠️ **P1-32 PR 8(2026-08-24)迁移说明 —— 本 spec 的 41 处调用点是改打新端点,不是删**
+// ══════════════════════════════════════════════════════════════════════════
+// 退役的两条旧增量端点:
+//   · `POST   /api/system/v1/roles/:id/permissions`               批量增量授权
+//   · `DELETE /api/system/v1/roles/:id/permissions/:permissionId` 精确撤权
+// 仅存写入口:`PUT /api/system/v1/roles/:id/permissions`(整集替换,必带 expectedRevision)
+// + `POST …/preview`(dry-run)。
+//
+// **逐条改写口径**(每个用例上方另有就地说明):
+//   ① 「加 N 条」→ 目标集 = 现状 ∪ N;「撤 1 条」→ 目标集 = 现状 \ {那条}。
+//   ② 状态码 201 → 200(`PUT` 的既有契约,不是断言放宽)。
+//   ③ 高风险差集(控制面码 / CRITICAL)在 `PUT` 上要 step-up proof(30112)——
+//      ⚠️ 它排在 D2 撤码方向闸(30103)**之前**,会遮蔽下层边界。
+//      ⇒ 要断言 30103 的用例**必须先铸一把 proof**,否则测到的是上层那道闸。
+//      (仓内教训:「上层边界遮蔽下层边界」——反面样本必须在被测那一维上单独不同。)
+//
+// 🔴 **三处「被测对象随端点消失」的,已就地改成「新契约标记用例」并逐条写明丢了什么**
+//    (没有删掉任何 it,登记见 NEXT_TASKS P1-32 PR 8):
+//      · 「空数组 → 400(@ArrayMinSize(1))」—— 新 DTO **刻意允许空目标集**,契约相反
+//      · 「关系不存在 → 30011」—— 30011 失去唯一产出者;整集替换下「撤一条本来没有的」= no-op
+//      · 「POST / DELETE 同样 +1」—— 主语就是那两条已删端点
 //
 // 不覆盖(超本 PR 范围):
 // - 完整 rbac.can() 判权矩阵(由 rbac.service.spec.ts / RBAC 相关 e2e 覆盖)
@@ -98,30 +121,83 @@ describe('role-permissions 模块', () => {
     return { roleId: role.id, perms };
   }
 
+  /** 整集替换 —— PR 8 之后本 spec 唯一的写手段。 */
+  function putAs(auth: string, roleId: string, body: Record<string, unknown>) {
+    return request(httpServer(app))
+      .put(`/api/system/v1/roles/${roleId}/permissions`)
+      .set('Authorization', auth)
+      .send(body);
+  }
+
+  /** 取该角色当前权限码**集合**(比集合不比计数:计数相等会掩盖内容互换)。 */
+  async function codeSetOf(roleId: string): Promise<Set<string>> {
+    const rows = await prisma.rolePermission.findMany({
+      where: { roleId },
+      select: { permission: { select: { code: true } } },
+    });
+    return new Set(rows.map((r) => r.permission.code));
+  }
+
+  async function revisionOf(roleId: string): Promise<number> {
+    const row = await prisma.rbacRole.findUniqueOrThrow({
+      where: { id: roleId },
+      select: { permissionRevision: true },
+    });
+    return row.permissionRevision;
+  }
+
+  /**
+   * 铸一把绑死 (roleId, expectedRevision, 目标码集) 的 step-up proof。
+   * ⚠️ payloadHash 在这里**独立实现一遍**(去重 → 升序 → JSON.stringify → sha256 → base64url),
+   *    不 import 服务端函数 —— 它同时验证 `docs/handoff/admin-web.md` §3.5 的算法可实现。
+   */
+  async function mintStepUpToken(
+    auth: string,
+    roleId: string,
+    expectedRevision: number,
+    permissionCodes: readonly string[],
+  ): Promise<string> {
+    const payloadHash = createHash('sha256')
+      .update(JSON.stringify([...new Set<string>(permissionCodes)].sort()))
+      .digest('base64url');
+    const res = await request(httpServer(app))
+      .post('/api/auth/v1/step-up/password')
+      .set('Authorization', auth)
+      .send({
+        action: 'RBAC_ROLE_PERMISSION_SET_REPLACE',
+        password: TEST_PASSWORD,
+        rolePermissionSet: { roleId, expectedRevision, payloadHash },
+      });
+    expect(res.status).toBe(200);
+    return res.body.data.stepUpToken as string;
+  }
+
   // ============ 权限边界 ============
 
   describe('权限边界', () => {
-    it('未登录 POST → 401', async () => {
+    // ⚠️ PR 8 后这三条与下方 `PUT` describe 里的同名边界用例**落在同一根轴上**(写面只剩一条)。
+    //    刻意**保留为冗余对照**而不是合并删除 —— 删测试是硬红线;
+    //    「本 describe 与 PUT describe 的边界用例可去重」已登记进 NEXT_TASKS,由后续整理刀处理。
+    it('未登录写角色权限 → 401', async () => {
       const res = await request(httpServer(app))
-        .post('/api/system/v1/roles/nonexistent000000000000000000/permissions')
-        .send({ permissionCodes: ['x.y.z'] });
+        .put('/api/system/v1/roles/nonexistent000000000000000000/permissions')
+        .send({ permissionCodes: ['x.y.z'], expectedRevision: 0 });
       expectBizError(res, BizCode.UNAUTHORIZED);
     });
 
-    it('USER POST → 30100 RBAC_FORBIDDEN', async () => {
+    it('USER 写角色权限 → 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .post('/api/system/v1/roles/nonexistent000000000000000000/permissions')
+        .put('/api/system/v1/roles/nonexistent000000000000000000/permissions')
         .set('Authorization', userAuth)
-        .send({ permissionCodes: ['x.y.z'] });
+        .send({ permissionCodes: ['x.y.z'], expectedRevision: 0 });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    it('USER DELETE → 30100 RBAC_FORBIDDEN', async () => {
+    it('USER 撤角色权限(目标集清空)→ 30100 RBAC_FORBIDDEN', async () => {
       const res = await request(httpServer(app))
-        .delete(
-          '/api/system/v1/roles/nonexistent000000000000000000/permissions/abc-perm-00000000000000000000',
-        )
-        .set('Authorization', userAuth);
+        .put('/api/system/v1/roles/nonexistent000000000000000000/permissions')
+        .set('Authorization', userAuth)
+        .send({ permissionCodes: [], expectedRevision: 0 });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
@@ -131,26 +207,27 @@ describe('role-permissions 模块', () => {
         roleCode: 'admin-no-rbac-rp',
         permCodes: ['adm.norbac.a'],
       });
-      const res = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', adminAuth)
-        .send({ permissionCodes: [perms[0].code] });
+      const res = await putAs(adminAuth, roleId, {
+        permissionCodes: [perms[0].code],
+        expectedRevision: 0,
+      });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
     });
 
-    // P0-F PR-1:ADMIN 持 ops-admin 后能通过(seed 14 条 rbac.* 含 rbac.role-permission.create)。
-    it('ADMIN 持 ops-admin 角色 → POST 201', async () => {
+    // P0-F PR-1:ADMIN 持 ops-admin 后能通过(seed 14 条 rbac.* 含
+    // rbac.role-permission.create **与** delete —— PUT 两条都要,ops-admin 两条都有)。
+    it('ADMIN 持 ops-admin 角色 → 写角色权限 200', async () => {
       await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
       try {
         const { roleId, perms } = await setupRoleAndPermissions({
           roleCode: 'admin-with-ops-rp',
           permCodes: ['adm.ops.b'],
         });
-        const res = await request(httpServer(app))
-          .post(`/api/system/v1/roles/${roleId}/permissions`)
-          .set('Authorization', adminAuth)
-          .send({ permissionCodes: [perms[0].code] });
-        expect(res.status).toBe(201);
+        const res = await putAs(adminAuth, roleId, {
+          permissionCodes: [perms[0].code],
+          expectedRevision: 0,
+        });
+        expect(res.status).toBe(200);
       } finally {
         await revokeOpsAdminFromUser(app, rpAdminUserId, rpOpsAdminRoleId);
       }
@@ -158,20 +235,22 @@ describe('role-permissions 模块', () => {
   });
 
   // ============ 批量授权 ============
+  // ⚠️ PR 8 前本组打的是 `POST`(增量授权);端点退役后逐条改打 `PUT`(整集替换)。
+  //    「加 N 条」在整集语义下 = 目标集 = 现状 ∪ N;本组多数用例的现状是空集,直接给 N。
 
-  describe('POST /api/system/v1/roles/:id/permissions', () => {
-    it('批量授权 → 200,detail.permissions 含全部新加', async () => {
+  describe('写角色权限集(PUT;PR 8 前是 POST 增量授权)', () => {
+    it('一次写入多条 → 200,detail.permissions 含全部', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'assign-multi',
         permCodes: ['multi.a.r1', 'multi.b.r2', 'multi.c.r3'],
       });
 
-      const res = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: perms.map((p) => p.code) });
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: perms.map((p) => p.code),
+        expectedRevision: 0,
+      });
 
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.code).toBe(0);
       expect(res.body.data.permissions).toHaveLength(3);
       const returnedCodes = res.body.data.permissions.map((p: { code: string }) => p.code);
@@ -180,52 +259,61 @@ describe('role-permissions 模块', () => {
       );
     });
 
-    it('重复授权幂等成功 → 200,total 仍为去重后的数量', async () => {
+    it('重复提交同一目标集 → 200 幂等,行数仍为去重后的数量', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'assign-idempotent',
         permCodes: ['idem.a.x'],
       });
 
-      // 第一次授权
-      const first = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [perms[0].code] });
-      expect(first.status).toBe(201);
+      // 第一次写入
+      const first = await putAs(superAdminAuth, roleId, {
+        permissionCodes: [perms[0].code],
+        expectedRevision: 0,
+      });
+      expect(first.status).toBe(200);
       expect(first.body.data.permissions).toHaveLength(1);
 
-      // 第二次重复授权(同一 code)— 幂等成功,不抛 30010,permissions 仍 1 条
-      const second = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [perms[0].code] });
-      expect(second.status).toBe(201);
+      // 第二次提交同一目标集 —— 幂等成功,不抛 30010,permissions 仍 1 条
+      // (整集语义下这是 no-op:不写、不 +1;版本号语义见下方 PUT describe 的 no-op 用例)
+      const second = await putAs(superAdminAuth, roleId, {
+        permissionCodes: [perms[0].code],
+        expectedRevision: 1,
+      });
+      expect(second.status).toBe(200);
       expect(second.body.data.permissions).toHaveLength(1);
 
-      // DB 中实际 RolePermission 行数也应是 1(skipDuplicates)
+      // DB 中实际 RolePermission 行数也应是 1(不重复建行)
       const dbCount = await prisma.rolePermission.count({ where: { roleId } });
       expect(dbCount).toBe(1);
     });
 
-    it('部分重复部分新增 → 200,只新增不存在的关系', async () => {
+    it('目标集含已有 + 新增 → 200,只新增不存在的关系', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'assign-partial',
         permCodes: ['part.a.x', 'part.b.y', 'part.c.z'],
       });
 
-      // 先授 a + b
-      await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: ['part.a.x', 'part.b.y'] });
+      // 先写 a + b
+      await putAs(superAdminAuth, roleId, {
+        permissionCodes: ['part.a.x', 'part.b.y'],
+        expectedRevision: 0,
+      });
 
-      // 再发送 a + b + c(含 2 个已存在 + 1 个新增)
-      const res = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: perms.map((p) => p.code) });
-      expect(res.status).toBe(201);
+      // 再提交 a + b + c(含 2 个已存在 + 1 个新增)
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: perms.map((p) => p.code),
+        expectedRevision: 1,
+      });
+      expect(res.status).toBe(200);
       expect(res.body.data.permissions).toHaveLength(3);
+      // 「只新增不存在的」在整集语义下由差集表达:audit 里 addedCodes 只有 c
+      const audit = await prisma.auditLog.findFirst({
+        where: { resourceType: 'role_permission', resourceId: roleId },
+        orderBy: { createdAt: 'desc' },
+        select: { context: true },
+      });
+      const extra = (audit?.context as { extra?: { addedCodes?: string[] } } | null)?.extra;
+      expect(extra?.addedCodes).toEqual(['part.c.z']);
     });
 
     it('入参中包含重复 code → 200,Service 内部 dedup', async () => {
@@ -233,19 +321,19 @@ describe('role-permissions 模块', () => {
         roleCode: 'assign-input-dup',
         permCodes: ['dup.x.x'],
       });
-      const res = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [perms[0].code, perms[0].code, perms[0].code] });
-      expect(res.status).toBe(201);
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: [perms[0].code, perms[0].code, perms[0].code],
+        expectedRevision: 0,
+      });
+      expect(res.status).toBe(200);
       expect(res.body.data.permissions).toHaveLength(1);
     });
 
     it('role 不存在 → 30003', async () => {
-      const res = await request(httpServer(app))
-        .post('/api/system/v1/roles/nonexistent000000000000000000/permissions')
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: ['any.x.y'] });
+      const res = await putAs(superAdminAuth, 'nonexistent000000000000000000', {
+        permissionCodes: ['any.x.y'],
+        expectedRevision: 0,
+      });
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
     });
 
@@ -255,10 +343,10 @@ describe('role-permissions 模块', () => {
         permCodes: [],
         roleDeletedAt: new Date(),
       });
-      const res = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: ['x.y.z'] });
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: ['x.y.z'],
+        expectedRevision: 0,
+      });
       expectBizError(res, BizCode.ROLE_DELETED);
     });
 
@@ -267,86 +355,119 @@ describe('role-permissions 模块', () => {
         roleCode: 'assign-perm-missing',
         permCodes: ['exist.a.x'],
       });
-      const res = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [perms[0].code, 'does.not.exist'] });
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: [perms[0].code, 'does.not.exist'],
+        expectedRevision: 0,
+      });
       expectBizError(res, BizCode.PERMISSION_NOT_FOUND);
 
-      // 确认部分授权也未发生(整批拒绝)
+      // 确认部分写入也未发生(整批拒绝)
       const dbCount = await prisma.rolePermission.count({ where: { roleId } });
       expect(dbCount).toBe(0);
     });
 
-    it('空数组 → 400(DTO @ArrayMinSize(1))', async () => {
-      const { roleId } = await setupRoleAndPermissions({
+    // 🔴 **契约反转标记用例(P1-32 PR 8)—— 原断言是「空数组 → 400」,现在相反。**
+    //    原用例打的是已退役的 `POST`,它的 `AssignRolePermissionsDto` 有 `@ArrayMinSize(1)`:
+    //    「增量加 0 条」没有意义,所以被 DTO 挡在 service 之前。
+    //    仅存的 `ReplaceRolePermissionsDto` **刻意没有** `@ArrayMinSize` ——
+    //    空数组是合法目标集(= 清空该角色全部权限点),理由逐字写在该 DTO 头注:
+    //    「整集替换若不许传空,『把权限收干净』就只能靠逐条 DELETE」。
+    //    ⇒ 这条断言**无法迁移**(新旧契约方向相反)。**不删**,就地改成守住新契约的标记用例,
+    //      并在此写明丢掉的是什么:「写入口拒绝空入参」这个性质在本模块已不存在。
+    //      (「空目标集真的把权限清空」由下方 PUT describe 的「替换成 [] → 清空」用例守。)
+    it('⚠️〔PR 8 契约反转〕空数组不再 400 —— 它是合法目标集(清空),原 @ArrayMinSize(1) 随旧 DTO 一并消失', async () => {
+      const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'assign-empty',
-        permCodes: [],
+        permCodes: ['empty.a.x'],
       });
-      const res = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [] });
-      expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
+      await putAs(superAdminAuth, roleId, {
+        permissionCodes: [perms[0].code],
+        expectedRevision: 0,
+      });
+      expect(await codeSetOf(roleId)).toEqual(new Set(['empty.a.x']));
+
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: [],
+        expectedRevision: 1,
+      });
+      expect(res.status).toBe(200);
+      expect(await codeSetOf(roleId)).toEqual(new Set());
     });
   });
 
   // ============ 撤权 ============
+  // ⚠️ PR 8 前本组打的是 `DELETE /:permissionId`(精确撤一条);端点退役后改打 `PUT`:
+  //    「撤 x」= 目标集 = 现状 \ {x}。⚠️ 路径参数也从 permission.**id** 变成目标集里的 **code**。
 
-  describe('DELETE /api/system/v1/roles/:id/permissions/:permissionId', () => {
-    it('撤权 → 200,detail.permissions 移除指定项', async () => {
-      const { roleId, perms } = await setupRoleAndPermissions({
+  describe('撤角色权限(PUT 目标集减项;PR 8 前是 DELETE 精确撤权)', () => {
+    it('撤一条 → 200,detail.permissions 移除指定项', async () => {
+      const { roleId } = await setupRoleAndPermissions({
         roleCode: 'revoke-success',
         permCodes: ['rev.a.x', 'rev.b.y'],
       });
 
-      // 先授 2 个
-      await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: ['rev.a.x', 'rev.b.y'] });
+      // 先写入 2 个
+      await putAs(superAdminAuth, roleId, {
+        permissionCodes: ['rev.a.x', 'rev.b.y'],
+        expectedRevision: 0,
+      });
 
-      // 撤 a
-      const res = await request(httpServer(app))
-        .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
-        .set('Authorization', superAdminAuth);
+      // 撤 a(= 目标集只留 b)
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: ['rev.b.y'],
+        expectedRevision: 1,
+      });
       expect(res.status).toBe(200);
       expect(res.body.data.permissions).toHaveLength(1);
       expect(res.body.data.permissions[0].code).toBe('rev.b.y');
     });
 
-    it('关系不存在 → 30011 ROLE_PERMISSION_NOT_FOUND', async () => {
-      const { roleId, perms } = await setupRoleAndPermissions({
+    // 🔴 **契约反转标记用例(P1-32 PR 8)—— 原断言是「关系不存在 → 30011」。**
+    //    `30011 ROLE_PERMISSION_NOT_FOUND` 的**唯一产出者**是已退役的 `revoke()`
+    //    (它先查 (roleId, permissionId) 关系,查不到就抛)。整集替换没有「撤某一条」这个动作 ——
+    //    提交一个不含 x 的目标集,而 x 本来就不在,差集为空 ⇒ 这就是 **no-op**,不是错误。
+    //    ⇒ 这条断言**无法迁移**(新语义下不存在该错误态)。**不删**,就地改成守住新契约的
+    //      标记用例;`30011` 已成孤儿码(词条保留、全仓无 throw 点),登记见 NEXT_TASKS。
+    it('⚠️〔PR 8 契约反转〕目标集不含一条本来就没有的码 → no-op 200(旧 DELETE 在这里返 30011)', async () => {
+      const { roleId } = await setupRoleAndPermissions({
         roleCode: 'revoke-no-relation',
         permCodes: ['norel.a.x'],
       });
-      // role 和 permission 都存在,但没建过关系
-      const res = await request(httpServer(app))
-        .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
-        .set('Authorization', superAdminAuth);
-      expectBizError(res, BizCode.ROLE_PERMISSION_NOT_FOUND);
+      // role 与 permission 都存在,但没建过关系;目标集给空 = 「撤掉它」
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: [],
+        expectedRevision: 0,
+      });
+      expect(res.status).toBe(200);
+      expect(await codeSetOf(roleId)).toEqual(new Set());
+      // no-op:不写、不 +1(差集为空)
+      expect(await revisionOf(roleId)).toBe(0);
     });
 
     it('role 不存在 → 30003', async () => {
-      const perm = await prisma.permission.create({
+      // 这条码**故意建出来但不用**:它证明 30003 是「角色不存在」判出来的,
+      // 而不是「顺带发现权限码也不存在」—— 库里确实有一条合法权限码可用时,结论不变。
+      await prisma.permission.create({
         data: { code: 'rev.norole.x', module: 'rev', action: 'norole', resourceType: 'x' },
         select: { id: true },
       });
-      const res = await request(httpServer(app))
-        .delete(`/api/system/v1/roles/nonexistent000000000000000000/permissions/${perm.id}`)
-        .set('Authorization', superAdminAuth);
+      const res = await putAs(superAdminAuth, 'nonexistent000000000000000000', {
+        permissionCodes: [],
+        expectedRevision: 0,
+      });
       expectBizError(res, BizCode.ROLE_NOT_FOUND);
     });
 
     it('role 已软删 → 30005', async () => {
-      const { roleId, perms } = await setupRoleAndPermissions({
+      const { roleId } = await setupRoleAndPermissions({
         roleCode: 'revoke-softdel-role',
         permCodes: ['rsdr.a.x'],
         roleDeletedAt: new Date(),
       });
-      const res = await request(httpServer(app))
-        .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
-        .set('Authorization', superAdminAuth);
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: [],
+        expectedRevision: 0,
+      });
       expectBizError(res, BizCode.ROLE_DELETED);
     });
 
@@ -355,9 +476,10 @@ describe('role-permissions 模块', () => {
         roleCode: 'revoke-no-perm',
         permCodes: [],
       });
-      const res = await request(httpServer(app))
-        .delete(`/api/system/v1/roles/${roleId}/permissions/missing000000000000000000000`)
-        .set('Authorization', superAdminAuth);
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: ['missing.no.such'],
+        expectedRevision: 0,
+      });
       expectBizError(res, BizCode.PERMISSION_NOT_FOUND);
     });
   });
@@ -385,10 +507,12 @@ describe('role-permissions 模块', () => {
             resourceType: 'record',
           },
         });
-        const res = await request(httpServer(app))
-          .post(`/api/system/v1/roles/${roleId}/permissions`)
-          .set('Authorization', adminAuth)
-          .send({ permissionCodes: ['f1.normal.ok', 'member.delete.record'] });
+        // D2 授码方向闸(runReplaceSet 第 2 步)排在 step-up(第 2.5 步)**之前**
+        // ⇒ 这里拿到的仍是 30103,不会被 30112 遮蔽。
+        const res = await putAs(adminAuth, roleId, {
+          permissionCodes: ['f1.normal.ok', 'member.delete.record'],
+          expectedRevision: 0,
+        });
         expectBizError(res, BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
 
         // 整批拒绝:连同批的普通码也未写入
@@ -407,10 +531,10 @@ describe('role-permissions 模块', () => {
           permCodes: [],
         });
         // 不创建 user.update.role Permission;闸在字符串层拦截,先于 findMany
-        const res = await request(httpServer(app))
-          .post(`/api/system/v1/roles/${roleId}/permissions`)
-          .set('Authorization', adminAuth)
-          .send({ permissionCodes: ['user.update.role'] });
+        const res = await putAs(adminAuth, roleId, {
+          permissionCodes: ['user.update.role'],
+          expectedRevision: 0,
+        });
         expectBizError(res, BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
       } finally {
         await revokeOpsAdminFromUser(app, rpAdminUserId, rpOpsAdminRoleId);
@@ -440,10 +564,10 @@ describe('role-permissions 模块', () => {
           resourceType: 'role',
         },
       });
-      const res = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: ['user.update.role'] });
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: ['user.update.role'],
+        expectedRevision: 0,
+      });
       expectBizError(res, BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE);
 
       // 拒绝 = 一条都没写进去(闸在事务之前)
@@ -453,32 +577,33 @@ describe('role-permissions 模块', () => {
 
     // 🔴 反向用例:闸只认「控制面码」这一维,不是「SA 干什么都拒」。
     //    少了它,一个「assign 一律拒绝」的实现也会让上面几条全绿。
-    it('SUPER_ADMIN 分配普通码 → 201(授码侧的收紧不误伤正常配置)', async () => {
+    it('SUPER_ADMIN 分配普通码 → 200(授码侧的收紧不误伤正常配置)', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'f1-su-normal',
         permCodes: ['f1.su.plain'],
       });
-      const res = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: perms.map((p) => p.code) });
-      expect(res.status).toBe(201);
+      // 普通码既非控制面也非 CRITICAL ⇒ 差集不高风险,不触 step-up,一趟到位。
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: perms.map((p) => p.code),
+        expectedRevision: 0,
+      });
+      expect(res.status).toBe(200);
       const codes = res.body.data.permissions.map((p: { code: string }) => p.code);
       expect(codes).toEqual(['f1.su.plain']);
     });
 
-    it('ops-admin 分配纯普通码 → 201(闸不误伤非保留码)', async () => {
+    it('ops-admin 分配纯普通码 → 200(闸不误伤非保留码)', async () => {
       await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
       try {
         const { roleId, perms } = await setupRoleAndPermissions({
           roleCode: 'f1-ops-normal',
           permCodes: ['f1.plain.a', 'f1.plain.b'],
         });
-        const res = await request(httpServer(app))
-          .post(`/api/system/v1/roles/${roleId}/permissions`)
-          .set('Authorization', adminAuth)
-          .send({ permissionCodes: perms.map((p) => p.code) });
-        expect(res.status).toBe(201);
+        const res = await putAs(adminAuth, roleId, {
+          permissionCodes: perms.map((p) => p.code),
+          expectedRevision: 0,
+        });
+        expect(res.status).toBe(200);
         expect(res.body.data.permissions).toHaveLength(2);
       } finally {
         await revokeOpsAdminFromUser(app, rpAdminUserId, rpOpsAdminRoleId);
@@ -507,23 +632,39 @@ describe('role-permissions 模块', () => {
       return (perm as { id: string }).id;
     }
 
+    // ⚠️ **P1-32 PR 8 迁移的关键点(仓内教训:上层边界遮蔽下层边界)**:
+    //    旧 `DELETE` 没有 step-up;`PUT` 有,而 step-up(runReplaceSet 第 2.5 步)排在
+    //    D2 **撤码方向**闸(写原语第 8 步,在事务内)**之前**。
+    //    ⇒ 非 SA 撤控制面码时,不带 proof 会先拿 30112,把要测的 30103 遮住。
+    //    本组因此**先铸 proof 再打** —— 让被测的那一维(撤码方向的控制面判定)单独暴露出来。
+    //    ⚠️ 上游那道 30112 本身也没被漏测:下面第二条用例把「不带 proof → 30112」一并钉住。
+
+    /** 直插一条控制面码绑定作为夹具 —— 走 API 授它现在要 SA + proof,那不是本组要测的东西。 */
+    async function seedControlPlaneBinding(roleId: string): Promise<string> {
+      const permissionId = await controlPlanePermissionId();
+      await prisma.rolePermission.create({ data: { roleId, permissionId } });
+      return permissionId;
+    }
+
     // 🔴 这条**不能省**。只验「被拒」的话,一个「一律拒绝」的实现也会全绿 ——
     //    那不是修洞,那是把 ops-admin 的 rbac.role-permission.delete 整个废掉。
     it('ops-admin 撤销普通码 → 200(闸不误伤正常运维)', async () => {
       await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
       try {
-        const { roleId, perms } = await setupRoleAndPermissions({
+        const { roleId } = await setupRoleAndPermissions({
           roleCode: 'eb2-ops-normal',
           permCodes: ['eb2.plain.a', 'eb2.plain.b'],
         });
-        await request(httpServer(app))
-          .post(`/api/system/v1/roles/${roleId}/permissions`)
-          .set('Authorization', superAdminAuth)
-          .send({ permissionCodes: ['eb2.plain.a', 'eb2.plain.b'] });
+        await putAs(superAdminAuth, roleId, {
+          permissionCodes: ['eb2.plain.a', 'eb2.plain.b'],
+          expectedRevision: 0,
+        });
 
-        const res = await request(httpServer(app))
-          .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
-          .set('Authorization', adminAuth);
+        // 撤普通码:差集不含高风险码 ⇒ 不触 step-up,不带 proof 也应直接成功。
+        const res = await putAs(adminAuth, roleId, {
+          permissionCodes: ['eb2.plain.b'],
+          expectedRevision: 1,
+        });
         expect(res.status).toBe(200);
         expect(res.body.data.permissions).toHaveLength(1);
         expect(res.body.data.permissions[0].code).toBe('eb2.plain.b');
@@ -536,24 +677,28 @@ describe('role-permissions 模块', () => {
       }
     });
 
-    it('ops-admin 撤销控制面码 → 30103,且绑定原样还在', async () => {
+    it('ops-admin 撤销控制面码 → 先 30112(未二次验证),带 proof 后 30103,且绑定原样还在', async () => {
       await grantOpsAdminToUser(app, rpAdminUserId, rpOpsAdminRoleId);
       try {
         const { roleId } = await setupRoleAndPermissions({
           roleCode: 'eb2-ops-control-plane',
           permCodes: [],
         });
-        const permissionId = await controlPlanePermissionId();
-        // 由 SUPER_ADMIN 先授上(SA 短路放行),制造一条「可撤」的真实绑定
-        const granted = await request(httpServer(app))
-          .post(`/api/system/v1/roles/${roleId}/permissions`)
-          .set('Authorization', superAdminAuth)
-          .send({ permissionCodes: [CONTROL_PLANE_CODE] });
-        expect(granted.status).toBe(201);
+        const permissionId = await seedControlPlaneBinding(roleId);
 
-        const res = await request(httpServer(app))
-          .delete(`/api/system/v1/roles/${roleId}/permissions/${permissionId}`)
-          .set('Authorization', adminAuth);
+        // ① 上层:不带 proof → 30112(撤控制面码属高风险差集)。这道闸本身也被钉住。
+        expectBizError(
+          await putAs(adminAuth, roleId, { permissionCodes: [], expectedRevision: 0 }),
+          BizCode.ROLE_PERMISSION_STEP_UP_REQUIRED,
+        );
+
+        // ② 下层(本组真正要测的):带上真 proof 越过 step-up 之后,
+        //    D2 撤码方向闸照样拒非 SA → 30103。少了 ① 那一步,这里测到的会是上层那道闸。
+        const res = await putAs(adminAuth, roleId, {
+          permissionCodes: [],
+          expectedRevision: 0,
+          stepUpToken: await mintStepUpToken(adminAuth, roleId, 0, []),
+        });
         expectBizError(res, BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY);
 
         // 拒绝 = 什么都没删(闸在事务之前,不存在「删一半」)
@@ -567,21 +712,18 @@ describe('role-permissions 模块', () => {
       }
     });
 
-    it('SUPER_ADMIN 撤销同一控制面码 → 200(短路语义不变)', async () => {
+    it('SUPER_ADMIN 撤销同一控制面码 → 带 proof 后 200(短路语义不变)', async () => {
       const { roleId } = await setupRoleAndPermissions({
         roleCode: 'eb2-su-control-plane',
         permCodes: [],
       });
-      const permissionId = await controlPlanePermissionId();
-      const granted = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [CONTROL_PLANE_CODE] });
-      expect(granted.status).toBe(201);
+      await seedControlPlaneBinding(roleId);
 
-      const res = await request(httpServer(app))
-        .delete(`/api/system/v1/roles/${roleId}/permissions/${permissionId}`)
-        .set('Authorization', superAdminAuth);
+      const res = await putAs(superAdminAuth, roleId, {
+        permissionCodes: [],
+        expectedRevision: 0,
+        stepUpToken: await mintStepUpToken(superAdminAuth, roleId, 0, []),
+      });
       expect(res.status).toBe(200);
       expect(res.body.data.permissions).toHaveLength(0);
     });
@@ -596,11 +738,11 @@ describe('role-permissions 模块', () => {
         permCodes: ['drf.a.x', 'drf.b.y'],
       });
 
-      // 用 POST 接口授权(走 service 完整路径)
-      await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: perms.map((p) => p.code) });
+      // 用写接口授权(走 service 完整路径;PR 8 前这里是 POST)
+      await putAs(superAdminAuth, roleId, {
+        permissionCodes: perms.map((p) => p.code),
+        expectedRevision: 0,
+      });
 
       // GET detail 验证
       const detailRes = await request(httpServer(app))
@@ -647,7 +789,7 @@ describe('role-permissions 模块', () => {
       );
     });
 
-    it('POST 授权后持有者下一次解析立即获得权限', async () => {
+    it('授权后持有者下一次解析立即获得权限', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'db-visible-post',
         permCodes: ['db.post.visible'],
@@ -655,33 +797,31 @@ describe('role-permissions 模块', () => {
       const user = await createBoundUser('rp-db-post', roleId);
       await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(new Set());
 
-      await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [perms[0].code] });
+      await putAs(superAdminAuth, roleId, {
+        permissionCodes: [perms[0].code],
+        expectedRevision: 0,
+      });
 
       await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(
         new Set(['db.post.visible']),
       );
     });
 
-    it('DELETE 撤权后持有者下一次解析立即失去权限', async () => {
+    it('撤权后持有者下一次解析立即失去权限', async () => {
       const { roleId, perms } = await setupRoleAndPermissions({
         roleCode: 'db-visible-delete',
         permCodes: ['db.delete.visible'],
       });
-      await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: [perms[0].code] });
+      await putAs(superAdminAuth, roleId, {
+        permissionCodes: [perms[0].code],
+        expectedRevision: 0,
+      });
       const user = await createBoundUser('rp-db-delete', roleId);
       await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(
         new Set(['db.delete.visible']),
       );
 
-      await request(httpServer(app))
-        .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
-        .set('Authorization', superAdminAuth);
+      await putAs(superAdminAuth, roleId, { permissionCodes: [], expectedRevision: 1 });
 
       await expect(rbac.getUserPermissionCodes(user.id)).resolves.toEqual(new Set());
     });
@@ -713,34 +853,13 @@ describe('role-permissions 模块', () => {
   //  —— 行锁与事务隔离在单进程顺序用例里根本不存在,放这里等于没测。
   // ══════════════════════════════════════════════════════════════════════════
   describe('PUT /api/system/v1/roles/:id/permissions(整集替换)', () => {
-    /** 取该角色当前权限码**集合**(比集合不比计数:计数相等会掩盖内容互换)。 */
-    async function codeSetOf(roleId: string): Promise<Set<string>> {
-      const rows = await prisma.rolePermission.findMany({
-        where: { roleId },
-        select: { permission: { select: { code: true } } },
-      });
-      return new Set(rows.map((r) => r.permission.code));
-    }
-
-    async function revisionOf(roleId: string): Promise<number> {
-      const row = await prisma.rbacRole.findUniqueOrThrow({
-        where: { id: roleId },
-        select: { permissionRevision: true },
-      });
-      return row.permissionRevision;
-    }
-
+    // ⚠️ `putAs` / `codeSetOf` / `revisionOf` 原是本 describe 的私有 helper;
+    //    P1-32 PR 8 后整份 spec 都要用它们(旧 POST / DELETE 的用例全改打 PUT),
+    //    已提到顶层 describe。这里只留本组独用的 `auditCountOf`。
     async function auditCountOf(roleId: string): Promise<number> {
       return prisma.auditLog.count({
         where: { resourceType: 'role_permission', resourceId: roleId },
       });
-    }
-
-    function putAs(auth: string, roleId: string, body: Record<string, unknown>) {
-      return request(httpServer(app))
-        .put(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', auth)
-        .send(body);
     }
 
     // ---------- 版本号本身 ----------
@@ -938,27 +1057,31 @@ describe('role-permissions 模块', () => {
       expectBizError(res, BizCode.BAD_REQUEST, { strictMessage: false });
     });
 
-    // ---------- 旧写路径也会推进版本号(乐观并发的正确性前提) ----------
+    // ---------- 每一次真写都推进版本号(乐观并发的正确性前提) ----------
 
-    it('POST / DELETE 同样 +1 —— 否则 PUT 的乐观校验看不见它们的改动', async () => {
-      const { roleId, perms } = await setupRoleAndPermissions({
+    // 🔴 **主语随端点消失的标记用例(P1-32 PR 8)—— 原题是「POST / DELETE 同样 +1」。**
+    //    它当年要证的是「+1 覆盖**全部**写路径」,因为那时有三条写入口;
+    //    PR 8 退役 POST / DELETE 之后**写入口只剩 PUT 一条**,「全部写路径」= 它自己,
+    //    那半个命题在结构上不再有内容。⇒ **不删**,就地收成仍然成立的那半:
+    //    每一次真写都 +1,拿旧版本号回来提交必被拒。
+    //    ⚠️ 丢掉的是「旧增量入口也 +1」这一条 —— 登记见 NEXT_TASKS P1-32 PR 8。
+    it('每次真写都 +1,拿过期版本号回来提交 → 30111', async () => {
+      const { roleId } = await setupRoleAndPermissions({
         roleCode: 'put-legacy-bumps',
         permCodes: ['legacy.a.x'],
       });
       expect(await revisionOf(roleId)).toBe(0);
 
-      await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: ['legacy.a.x'] });
+      await putAs(superAdminAuth, roleId, {
+        permissionCodes: ['legacy.a.x'],
+        expectedRevision: 0,
+      });
       expect(await revisionOf(roleId)).toBe(1);
 
-      await request(httpServer(app))
-        .delete(`/api/system/v1/roles/${roleId}/permissions/${perms[0].id}`)
-        .set('Authorization', superAdminAuth);
+      await putAs(superAdminAuth, roleId, { permissionCodes: [], expectedRevision: 1 });
       expect(await revisionOf(roleId)).toBe(2);
 
-      // 拿着 POST 之前的版本号提交 → 必须被拒(这正是「+1 要覆盖全部写路径」的意义)
+      // 拿着最初的版本号提交 → 必须被拒
       const res = await putAs(superAdminAuth, roleId, {
         permissionCodes: [],
         expectedRevision: 0,
@@ -966,27 +1089,29 @@ describe('role-permissions 模块', () => {
       expectBizError(res, BizCode.ROLE_PERMISSION_REVISION_CONFLICT);
     });
 
-    // 🔴 **契约变化,不是 bug**:POST 走同一条原语后,「重复授权」变成真正的空转 ——
-    //    不写、不 +1、**也不再产生 audit**。请求 / 响应形状一字未变(仍 201 + detail)。
-    it('POST 重复授权(纯空转)→ 201 但不 +1、不产生 audit(P1-32 PR 4a 起)', async () => {
+    // 🔴 **契约变化,不是 bug**(P1-32 PR 4a):重复提交同一目标集是真正的空转 ——
+    //    不写、不 +1、**也不再产生 audit**。请求 / 响应形状一字未变(200 + detail)。
+    //    ⚠️ PR 8 前本条打的是已退役的 POST(状态码 201);改打 PUT 后语义与断言逐条对应,
+    //       只有状态码随 PUT 契约变成 200。
+    it('重复提交同一目标集(纯空转)→ 200 但不 +1、不产生 audit(P1-32 PR 4a 起)', async () => {
       const { roleId } = await setupRoleAndPermissions({
         roleCode: 'put-post-noop',
         permCodes: ['pn.a.x'],
       });
-      await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: ['pn.a.x'] });
+      await putAs(superAdminAuth, roleId, {
+        permissionCodes: ['pn.a.x'],
+        expectedRevision: 0,
+      });
       const revAfterFirst = await revisionOf(roleId);
       const auditAfterFirst = await auditCountOf(roleId);
       expect(revAfterFirst).toBe(1);
       expect(auditAfterFirst).toBe(1);
 
-      const again = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: ['pn.a.x'] });
-      expect(again.status).toBe(201); // 形状不变
+      const again = await putAs(superAdminAuth, roleId, {
+        permissionCodes: ['pn.a.x'],
+        expectedRevision: 1,
+      });
+      expect(again.status).toBe(200); // 形状不变
       expect(again.body.data.permissions).toHaveLength(1);
       expect(await revisionOf(roleId)).toBe(revAfterFirst);
       expect(await auditCountOf(roleId)).toBe(auditAfterFirst);
@@ -1240,15 +1365,28 @@ describe('role-permissions 模块', () => {
       const res = await putAs(halfAuth, roleId, { permissionCodes: [], expectedRevision: 0 });
       expectBizError(res, BizCode.RBAC_FORBIDDEN);
 
-      // 🔴 反向对照:同一个人用 POST(只需 create)必须**真的成功** ——
-      //    少了它,一个「这人啥都不能干」的实现也会让上面那条绿。
-      //    (刻意不用空数组:空数组会被 DTO 的 @ArrayMinSize(1) 挡在 service 之前,
-      //     根本走不到 rbac.can(),证不了任何事。)
-      const post = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${roleId}/permissions`)
-        .set('Authorization', halfAuth)
-        .send({ permissionCodes: ['half.a.x'] });
-      expect(post.status).toBe(201);
+      // 🔴 反向对照,**不能省**:少了它,一个「这人啥都不能干」的实现也会让上面那条绿。
+      //
+      // ⚠️ **P1-32 PR 8 迁移说明 —— 这条是换轴,不是放宽**。原先的反向对照是
+      //    「同一个人用 POST(只需 create)必须真的成功」;POST 退役后,只持 create
+      //    的人在本模块**确实什么都写不了**(那正是收成单一写入口的目的)⇒ 原对照的前提没了。
+      //    换成**在同一维上单独不同**的样本:给这个人补上另一半码 `delete`,
+      //    同一条 PUT 必须**真的成功**。这证明拒绝来自 `require:'all'` 少了一半,
+      //    而不是「一律拒绝」;比原来多钉一条 —— 两半齐全才放行。
+      const deletePerm = await prisma.permission.findUniqueOrThrow({
+        where: { code: 'rbac.role-permission.delete' },
+        select: { id: true },
+      });
+      await prisma.rolePermission.create({
+        data: { roleId: halfRole.id, permissionId: deletePerm.id },
+      });
+
+      const bothHalves = await putAs(halfAuth, roleId, {
+        permissionCodes: [],
+        expectedRevision: 0,
+      });
+      expect(bothHalves.status).toBe(200);
+      expect(await codeSetOf(roleId)).toEqual(new Set());
     });
   });
 });

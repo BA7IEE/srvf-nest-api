@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.68.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:9d60ae3034353d0eafaa2383f712f083da13e0d79f9d2020229755af62ca002a
+// inputDigest: sha256:668ccfa5df9831be74281405e0215d8679737c6310f1521446bcf40ba4f400cc
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -13,7 +13,6 @@ import type {
   PageResult,
   FetchRequest,
   Fetcher,
-  AssignRolePermissionsDto,
   AssignUserRoleDto,
   AttachmentMimeConfigResponseDto,
   AttachmentMimeConfigTypeConfigSummaryDto,
@@ -331,10 +330,6 @@ export function createSystemClient(fetcher: Fetcher) {
     RolePermissionsControllerFindPermissionSet(id: string): Promise<ApiEnvelope<RolePermissionSetResponseDto>> {
       return fetcher<RolePermissionSetResponseDto>({ method: "GET", path: `/api/system/v1/roles/${id}/permissions` });
     },
-    /** 批量给角色加权限点(幂等:已存在的 (roleId, permissionId) 静默跳过;入参 permissionCodes[],非 ids;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108) [rbac: rbac.role-permission.create] */
-    RolePermissionsControllerAssign(id: string, body: AssignRolePermissionsDto): Promise<ApiEnvelope<RbacRoleDetailResponseDto>> {
-      return fetcher<RbacRoleDetailResponseDto>({ method: "POST", path: `/api/system/v1/roles/${id}/permissions`, body });
-    },
     /** 整集替换角色的权限点(提交后恰好是 permissionCodes[];传 [] 清空;必带 expectedRevision 做乐观并发,版本不符返 30111;目标集合与现状相同时空转不写不留痕;控制面码非 SUPER_ADMIN 不可分配返 30103;7 条 SA-only 保留码任何身份都不可授予角色返 30109;系统内置角色只读返 30108;**高风险差集**(CRITICAL / 控制面码 / CONTROL_PLANE·CREDENTIAL·FINAL_APPROVAL·LEDGER 标签 / SUPER_ADMIN_ONLY)需带 stepUpToken,缺它返 30112、proof 与 (角色,版本号,权限码集合) 对不上返 10008;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,少一条即 30100) [rbac: rbac.role-permission.*] */
     RolePermissionsControllerReplace(id: string, body: ReplaceRolePermissionsDto): Promise<ApiEnvelope<RbacRoleDetailResponseDto>> {
       return fetcher<RbacRoleDetailResponseDto>({ method: "PUT", path: `/api/system/v1/roles/${id}/permissions`, body });
@@ -342,10 +337,6 @@ export function createSystemClient(fetcher: Fetcher) {
     /** 预览整集替换的后果(dry-run:与 PUT 同参、同一段准入判定、同一把角色行锁,**零写入**;返回 valid / blockingIssues〔恒 0 或 1 条,不是全量诊断〕/ outcome〔noOp、currentRevision、nextRevision 预测值、added·removed 带中文名与风险等级、unchangedCount、resultCodes、requiresStepUp、impact〕;impact 给 direct/position/supervision 三源的**授予数**(⚠️ 不是人数;受影响账号数本期不出,那要跨域取数)与 direct 源的 scope·主体分布,并带 EXACT/PARTIAL 标注〔今天恒 EXACT:全部 count/groupBy 读数,不存在截断〕;被拦下时 valid=false 且拒绝码与 PUT 抛出的**同一个**,走 200 数据不走 HTTP 错误 —— **高风险变更不带 stepUpToken 时这里就是 valid=false + 30112**,拿到它去 /auth/v1/step-up/* 换 proof 再重新预览;预览不是授权证明,真提交仍在锁内重算并可返 30111;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,与 PUT 逐字相同) [rbac: rbac.role-permission.*] */
     RolePermissionsControllerPreviewReplace(id: string, body: ReplaceRolePermissionsDto): Promise<ApiEnvelope<RolePermissionPreviewResponseDto>> {
       return fetcher<RolePermissionPreviewResponseDto>({ method: "POST", path: `/api/system/v1/roles/${id}/permissions/preview`, body });
-    },
-    /** 撤销角色的某个权限点(精确路径 :permissionId 是 permission.id 非 code;关系不存在返 30011;控制面码仅 SUPER_ADMIN 可撤返 30103;系统内置角色只读返 30108) [rbac: rbac.role-permission.delete] */
-    RolePermissionsControllerRevoke(id: string, permissionId: string): Promise<ApiEnvelope<RbacRoleDetailResponseDto>> {
-      return fetcher<RbacRoleDetailResponseDto>({ method: "DELETE", path: `/api/system/v1/roles/${id}/permissions/${permissionId}` });
     },
     /** 分页查询短信发送日志(只读;响应手机号一律掩码 138****1234;可选 status / phone 精确过滤) [rbac: sms-send-log.read.list] */
     SmsSendLogsControllerList(query?: { "page"?: number; "pageSize"?: number; "status"?: "SENT" | "FAILED"; "phone"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": SmsSendLogResponseDto[] }>> {

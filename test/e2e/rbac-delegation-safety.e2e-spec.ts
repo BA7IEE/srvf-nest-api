@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, BindingStatus, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
@@ -6,7 +7,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { PROTECTED_ROLE_CODES } from '../../src/modules/permissions/protected-role-codes';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantOpsAdminToUser, seedRbacPermissionsAndOpsAdmin } from '../fixtures/rbac.fixture';
-import { createTestUser } from '../fixtures/users.fixture';
+import { createTestUser, TEST_PASSWORD } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
@@ -20,6 +21,18 @@ const ROLE_BINDING_CODES = [
 ] as const;
 
 const PRIVILEGED_ROLE_CODES = ['rd-control-role', 'rd-reserved-role', 'ops-admin'] as const;
+
+// ⚠️ **P1-32 PR 8(2026-08-24)迁移说明 —— 本 spec 的 9 处是改打新端点,不是删**:
+//    旧 `POST /roles/:id/permissions`(增量授权)与 `DELETE /roles/:id/permissions/:permissionId`
+//    (精确撤权)已退役,唯一写入口是 `PUT`(整集替换,必带 expectedRevision)。
+//    本 spec 守的是**委派安全**(谁能把什么码授给哪个角色),那与用哪个动词写无关 ——
+//    逐条改成 PUT 后闸的判定序列一字未改:
+//      ① 判权(PUT 要 rbac.role-permission.create **与** delete 两条码,比 POST 更严)
+//      ② 角色三态闸(30003 / 30005 / **30108 内建角色只读**)—— 在事务之前,早于版本号校验
+//      ③ D2 控制面两层闸(30103 / 30109)—— 早于 Permission 存在性查询
+//      ④ step-up(30112)—— ⭐ **PUT 独有**:控制面码 / CRITICAL 差集要二次验证。
+//    ⇒ ③ 恒早于 ④,所以「ops-admin 授控制面码 → 30103」这类断言的**码一个没变**;
+//      而 SA 走得过 ③ 的那条,现在要多铸一把 proof —— 见 `mintStepUpToken()`。
 const BUSINESS_ROLE_CODE = 'rd-business-role';
 const PREVIEW_PATH = '/api/admin/v1/role-bindings/preview';
 
@@ -31,6 +44,45 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
   let superAdminId: string;
   let sequence = 0;
   const roleIds = new Map<string, string>();
+
+  /** 整集替换 —— 旧 POST / DELETE 退役后本 spec 唯一的写角色权限手段。 */
+  function putPermissions(
+    auth: string,
+    roleId: string,
+    body: { permissionCodes: string[]; expectedRevision: number; stepUpToken?: string },
+  ): request.Test {
+    return request(httpServer(app))
+      .put(`/api/system/v1/roles/${roleId}/permissions`)
+      .set('Authorization', auth)
+      .send(body);
+  }
+
+  /**
+   * 铸一把绑死 (roleId, expectedRevision, 目标码集) 的 step-up proof。
+   * ⚠️ payloadHash 的算法在这里**独立实现一遍**(去重 → 升序 → JSON.stringify → sha256 →
+   *    base64url),与 `role-permissions.e2e-spec.ts` 同款:不 import 服务端函数,
+   *    这样它顺带验证 `docs/handoff/admin-web.md` §3.5 写给前端的算法是可实现的。
+   */
+  async function mintStepUpToken(
+    auth: string,
+    roleId: string,
+    expectedRevision: number,
+    permissionCodes: readonly string[],
+  ): Promise<string> {
+    const payloadHash = createHash('sha256')
+      .update(JSON.stringify([...new Set<string>(permissionCodes)].sort()))
+      .digest('base64url');
+    const res = await request(httpServer(app))
+      .post('/api/auth/v1/step-up/password')
+      .set('Authorization', auth)
+      .send({
+        action: 'RBAC_ROLE_PERMISSION_SET_REPLACE',
+        password: TEST_PASSWORD,
+        rolePermissionSet: { roleId, expectedRevision, payloadHash },
+      });
+    expect(res.status).toBe(200);
+    return res.body.data.stepUpToken as string;
+  }
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -375,11 +427,13 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
           data: { code: `rd-grant-deny-${sequence++}`, displayName: '授码拒绝测试角色' },
           select: { id: true },
         });
+        // 新建角色 permissionRevision 从 0 起;D2 闸(③)早于版本号校验与 step-up(④),
+        // 所以这里拿到的仍然是 30103 而不是 30111 / 30112。
         expectBizError(
-          await request(httpServer(app))
-            .post(`/api/system/v1/roles/${role.id}/permissions`)
-            .set('Authorization', opsAdminAuth)
-            .send({ permissionCodes: [permissionCode] }),
+          await putPermissions(opsAdminAuth, role.id, {
+            permissionCodes: [permissionCode],
+            expectedRevision: 0,
+          }),
           BizCode.PERMISSION_RESERVED_SUPER_ADMIN_ONLY,
         );
       },
@@ -394,21 +448,35 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
         data: { code: 'rd-grant-sa', displayName: '超级管理员授码测试角色' },
         select: { id: true },
       });
-      const saRes = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${saRole.id}/permissions`)
-        .set('Authorization', superAdminAuth)
-        .send({ permissionCodes: ['rbac.permission.read', 'role-binding.create.record'] });
-      expect(saRes.status).toBe(201);
+      const saCodes = ['rbac.permission.read', 'role-binding.create.record'];
+      // ⭐ 先证 **D2 闸(③)确实对 SA 短路** —— 若它没短路,这里会是 30103 而不是 30112。
+      //    (30112 = step-up 要求,是**下一道**闸接手的指纹;两个码可区分 ⇒ 断言没变钝。)
+      expectBizError(
+        await putPermissions(superAdminAuth, saRole.id, {
+          permissionCodes: saCodes,
+          expectedRevision: 0,
+        }),
+        BizCode.ROLE_PERMISSION_STEP_UP_REQUIRED,
+      );
+      // 再带 proof 走完,证明**真的授得成功**(原断言「201」的那半,一条没丢)
+      const saRes = await putPermissions(superAdminAuth, saRole.id, {
+        permissionCodes: saCodes,
+        expectedRevision: 0,
+        stepUpToken: await mintStepUpToken(superAdminAuth, saRole.id, 0, saCodes),
+      });
+      expect(saRes.status).toBe(200);
+      expect(saRes.body.data.permissions).toHaveLength(2);
 
       const businessRole = await prisma.rbacRole.create({
         data: { code: 'rd-grant-business', displayName: '业务授码测试角色' },
         select: { id: true },
       });
-      const businessRes = await request(httpServer(app))
-        .post(`/api/system/v1/roles/${businessRole.id}/permissions`)
-        .set('Authorization', opsAdminAuth)
-        .send({ permissionCodes: ['rd-business.manage.record'] });
-      expect(businessRes.status).toBe(201);
+      // 业务码既非控制面也非 CRITICAL ⇒ 不触 step-up,一趟到位。
+      const businessRes = await putPermissions(opsAdminAuth, businessRole.id, {
+        permissionCodes: ['rd-business.manage.record'],
+        expectedRevision: 0,
+      });
+      expect(businessRes.status).toBe(200);
     });
 
     // P1-32 PR 3a:拍板②「7 条保留码一条都不该进任何角色」的执行位。
@@ -420,10 +488,10 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
         select: { id: true },
       });
       expectBizError(
-        await request(httpServer(app))
-          .post(`/api/system/v1/roles/${role.id}/permissions`)
-          .set('Authorization', superAdminAuth)
-          .send({ permissionCodes: ['user.update.role'] }),
+        await putPermissions(superAdminAuth, role.id, {
+          permissionCodes: ['user.update.role'],
+          expectedRevision: 0,
+        }),
         BizCode.RESERVED_PERMISSION_NOT_ROLE_GRANTABLE,
       );
       expect(await prisma.rolePermission.count({ where: { roleId: role.id } })).toBe(0);
@@ -481,11 +549,13 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
       const memberRoleId = getRoleId('member');
       const before = await prisma.rolePermission.count({ where: { roleId: memberRoleId } });
 
+      // ⚠️ 内建角色只读闸(②)在**开事务之前**判,早于 expectedRevision 校验 ⇒
+      //    这里传 0 不会把 30108 换成 30111(那正是本条要钉的次序)。
       expectBizError(
-        await request(httpServer(app))
-          .post(`/api/system/v1/roles/${memberRoleId}/permissions`)
-          .set('Authorization', opsAdminAuth)
-          .send({ permissionCodes: [SENSITIVE_CODE] }),
+        await putPermissions(opsAdminAuth, memberRoleId, {
+          permissionCodes: [SENSITIVE_CODE],
+          expectedRevision: 0,
+        }),
         BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
       );
 
@@ -522,10 +592,10 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
 
     it.each(PROTECTED_ROLE_CODES)('%s 加权限即使 SUPER_ADMIN 也 → 30108', async (roleCode) => {
       expectBizError(
-        await request(httpServer(app))
-          .post(`/api/system/v1/roles/${getRoleId(roleCode)}/permissions`)
-          .set('Authorization', superAdminAuth)
-          .send({ permissionCodes: ['rd-business.manage.record'] }),
+        await putPermissions(superAdminAuth, getRoleId(roleCode), {
+          permissionCodes: ['rd-business.manage.record'],
+          expectedRevision: 0,
+        }),
         BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
       );
     });
@@ -542,10 +612,12 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
         skipDuplicates: true,
       });
 
+      // 「减权限」在 PUT 语义下 = 把目标集写成不含它的集合(这里直接清空)。
       expectBizError(
-        await request(httpServer(app))
-          .delete(`/api/system/v1/roles/${roleId}/permissions/${perm.id}`)
-          .set('Authorization', superAdminAuth),
+        await putPermissions(superAdminAuth, roleId, {
+          permissionCodes: [],
+          expectedRevision: 0,
+        }),
         BizCode.PROTECTED_ROLE_PERMISSION_CHANGE_FORBIDDEN,
       );
 
@@ -572,27 +644,28 @@ describe('第一档安全收口:委派、控制面授码与受保护角色', () 
         expect(res.body.data.displayName).toBe('新名');
       });
 
-      it('ops-admin 给自定义角色授业务码 → 201,再撤 → 200', async () => {
+      // ⚠️ 状态码由 201(旧 POST)变 200(PUT)—— 那是 `PUT` 的既有契约,不是断言被放宽:
+      //    「授得进去 / 撤得干净」这两件被测的事逐条都还在,且多钉了一条版本号推进。
+      it('ops-admin 给自定义角色授业务码 → 200,再撤 → 200(版本号逐次 +1)', async () => {
         const custom = await prisma.rbacRole.create({
           data: { code: 'rd-3a-grant-ok', displayName: '自定义可授角色' },
           select: { id: true },
         });
-        const granted = await request(httpServer(app))
-          .post(`/api/system/v1/roles/${custom.id}/permissions`)
-          .set('Authorization', opsAdminAuth)
-          .send({ permissionCodes: ['rd-business.manage.record'] });
-        expect(granted.status).toBe(201);
-        expect(granted.body.data.permissions).toHaveLength(1);
-
-        const perm = await prisma.permission.findUniqueOrThrow({
-          where: { code: 'rd-business.manage.record' },
-          select: { id: true },
+        const granted = await putPermissions(opsAdminAuth, custom.id, {
+          permissionCodes: ['rd-business.manage.record'],
+          expectedRevision: 0,
         });
-        const revoked = await request(httpServer(app))
-          .delete(`/api/system/v1/roles/${custom.id}/permissions/${perm.id}`)
-          .set('Authorization', opsAdminAuth);
+        expect(granted.status).toBe(200);
+        expect(granted.body.data.permissions).toHaveLength(1);
+        expect(granted.body.data.permissionRevision).toBe(1);
+
+        const revoked = await putPermissions(opsAdminAuth, custom.id, {
+          permissionCodes: [],
+          expectedRevision: 1,
+        });
         expect(revoked.status).toBe(200);
         expect(revoked.body.data.permissions).toHaveLength(0);
+        expect(revoked.body.data.permissionRevision).toBe(2);
       });
     });
   });
