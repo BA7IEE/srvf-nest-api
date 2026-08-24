@@ -3226,6 +3226,30 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // 高风险角色权限集变更要求二次验证(P1-32 PR 5,2026-08-24;冻结稿 §12)。
+  //
+  // 触发面锚在**既有字段**上(不新造风险分级):差集里出现 `CRITICAL` 码 /
+  // 控制面码(`isControlPlanePermissionCode`)/ CONTROL_PLANE·CREDENTIAL·FINAL_APPROVAL·LEDGER
+  // 风险标签 / `SUPER_ADMIN_ONLY` 授予策略 / **在 seed 闭包里却缺目录元数据**的码(fail-close;
+  // 今天是空集)。⚠️ **闭包外的合成码不触发** —— 它不是本系统的权限码,真提交时会因 30001
+  // 整批拒绝,先弹二次验证是无意义加重。两档的分界写在 `role-permission-step-up.policy.ts` 头注。
+  // 判定与触发面全文见 `role-permission-step-up.policy.ts`。
+  //
+  // 🔴 **这个码在 `preview` 与 `PUT` 上同时生效,而且是同一段判定算出来的。**
+  //    `preview` 把它渲染成 200 数据(`valid:false` + `blockingIssues[0].bizCode=30112`),
+  //    `PUT` 把它抛成 HTTP 错误 —— 两者是同一个异常的两种呈现。
+  //    ⚠️ 别把它做成「只在 PUT 上判」:那样 preview 会说能过而真提交拒,
+  //    正是 PR 4b 那条同源判据定义的缺陷。
+  //
+  // ⚠️ 与 `10008 STEP_UP_PROOF_INVALID` 分工:**缺 proof** 返本码(告诉前端"去做二次验证"),
+  //    **带了但对不上**(换角色 / 换版本号 / 改了权限码 / 过期)返 10008。
+  //    两者都要前端重新走一次 step-up,分开是为了让"从没带过"与"带错了"在日志里可区分。
+  ROLE_PERMISSION_STEP_UP_REQUIRED: {
+    code: 30112,
+    message: '该变更涉及高风险权限,请先完成二次验证',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
+
   // V2.x C-6 RBAC 实施 PR #6(2026-05-14):RbacService.can() 配套统一拒绝码。
   //
   // 沿 D7 v1.1 §F5 / §12.2 锁定:Service 层显式 `rbac.can(actor, action, resource?)` 调用,

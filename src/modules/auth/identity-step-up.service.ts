@@ -16,6 +16,14 @@ import { SmsCodeService } from '../sms/sms-code.service';
 import { SMS_CODE_TTL_SECONDS } from '../sms/sms.constants';
 import { WechatService } from '../wechat/wechat.service';
 import { WECOM_IDENTITY_STATUS } from '../wecom/wecom.types';
+// P1-32 PR 5:`RBAC_ROLE_PERMISSION_SET_REPLACE` 这一条 action 的 proof **语义归属 platform-access**
+// (它绑的是 roleId / permissionRevision / 权限码集合 —— 全是那个域的事实)。
+// 本服务只负责「验因子 + 记 audit」,签发那一步委托过去。
+// ⚠️ 实现落在**域中立**的 `src/common/security/`,不是 `permissions/` —— 因为签发方在这边、
+//    验签方在那边,而**两个方向的模块间 import 都被架构闸挡住**(反向无边 / 正向闭环)。
+//    完整取证与三条实测读数见那个文件的头注。
+import { RolePermissionStepUpProofService } from '../../common/security/role-permission-step-up-proof';
+import type { RolePermissionSetStepUpBinding } from '../../common/security/role-permission-step-up-proof';
 import { StepUpAction } from './auth.dto';
 import type {
   StepUpPasswordDto,
@@ -97,6 +105,8 @@ interface StepUpProofPayload {
 export class IdentityStepUpService {
   private readonly signingKey: Buffer;
   private readonly snapshotKey: Buffer;
+  /** 配置变更 proof 的签发器(platform-access 拥有;见构造函数里的说明)。 */
+  private readonly rolePermissionStepUp: RolePermissionStepUpProofService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -110,6 +120,19 @@ export class IdentityStepUpService {
     if (!jwtCfg) {
       throw new Error('jwt.config 未加载');
     }
+    // 🔴 **就地构造,不走 DI** —— 这是刻意的,理由是**依赖图**不是省事:
+    //    让 `AuthModule` import `PermissionsModule` 会在**域图**上闭合一个环
+    //    (`platform-access → participation → identity-org → platform-access`,
+    //    实测 `docs:boundaries` 报 `cross-domain-cycle`),而那条棘轮禁新增。
+    //    文件级 import(本文件顶部那条)是 `identity-org → platform-access`,
+    //    domain-map 里 `confirmed: true` 的允许边,实测零 finding。
+    //
+    // ⚠️ **前提是它必须无状态**:它只有两把由 `jwt.secret` 确定性派生的密钥,
+    //    所以本实例与 `PermissionsModule` 里那个实例**行为逐字相同**
+    //    (这边签、那边验,是生产路径上真实发生的事)。
+    //    这条前提由 `scripts/check-role-permission-impact.ts` 的 `proof-instance-interop`
+    //    钉住:两个独立构造的实例必须互通。哪天有人往里塞随机量或内存缓存,当场红。
+    this.rolePermissionStepUp = new RolePermissionStepUpProofService(this.jwt, config);
     this.signingKey = this.deriveKey(jwtCfg.secret, STEP_UP_SIGNING_INFO);
     this.snapshotKey = this.deriveKey(jwtCfg.secret, STEP_UP_SNAPSHOT_INFO);
   }
@@ -123,7 +146,7 @@ export class IdentityStepUpService {
     if (!(await bcrypt.compare(dto.password, user.passwordHash))) {
       throw new BizException(BizCode.STEP_UP_PROOF_INVALID);
     }
-    return this.issueProof(user, dto.action, IdentityStepUpFactor.PASSWORD, meta);
+    return this.issueProof(user, dto.action, IdentityStepUpFactor.PASSWORD, meta, dto);
   }
 
   async sendSmsCode(
@@ -159,7 +182,7 @@ export class IdentityStepUpService {
       code: dto.code,
       userId: user.id,
     });
-    return this.issueProof(user, dto.action, IdentityStepUpFactor.SMS, meta);
+    return this.issueProof(user, dto.action, IdentityStepUpFactor.SMS, meta, dto);
   }
 
   async stepUpWithWechat(
@@ -175,7 +198,7 @@ export class IdentityStepUpService {
     if (openid !== user.openid) {
       throw new BizException(BizCode.WECHAT_CODE_INVALID);
     }
-    return this.issueProof(user, dto.action, IdentityStepUpFactor.WECHAT, meta);
+    return this.issueProof(user, dto.action, IdentityStepUpFactor.WECHAT, meta, dto);
   }
 
   /**
@@ -320,11 +343,55 @@ export class IdentityStepUpService {
     return user;
   }
 
+  /**
+   * @param requested 签发请求本体。P1-32 PR 5 起 `RBAC_ROLE_PERMISSION_SET_REPLACE` 要从它取
+   *                  绑定三元组;**其余 action 一个字段都不读**(算法与开销都不变)。
+   *                  ⚠️ 传整个 dto 而不是三个散参数:漏传一个就静默退回"只绑身份",
+   *                  而那正是冻结稿 §12.2 要挡住的滥用面。
+   */
   private async issueProof(
     user: StepUpUserRow,
     action: StepUpAction,
     factor: IdentityStepUpFactor,
     meta: AuditMeta,
+    requested: { rolePermissionSet?: RolePermissionSetStepUpBinding },
+  ): Promise<StepUpResponseDto> {
+    const issued =
+      action === StepUpAction.RBAC_ROLE_PERMISSION_SET_REPLACE
+        ? // 🔴 **配置变更 proof 归 platform-access 拥有**(见文件头 import 处的说明):
+          //    本服务只证明"确实是本人在操作",绑定什么、怎么绑由那个域自己定。
+          //    ⚠️ 它有**自己的 HKDF 域与 audience** ⇒ 与下面的身份绑定 proof
+          //    **结构上互相冒充不了**,不是靠 `action` 字段区分。
+          this.rolePermissionStepUp.issue(user.id, this.requireRolePermissionBinding(requested))
+        : await this.issueIdentityProof(user, action, factor);
+
+    await this.auditLogs.log({
+      event: 'auth.step-up',
+      actorUserId: user.id,
+      actorRoleSnap: user.role,
+      resourceType: 'user',
+      resourceId: user.id,
+      meta,
+      extra: { action, factor },
+    });
+    return issued;
+  }
+
+  /** 缺绑定三元组 = 调用方漏传必填上下文 ⇒ 40000(不是 500,也不是"少绑一维照样发"). */
+  private requireRolePermissionBinding(requested: {
+    rolePermissionSet?: RolePermissionSetStepUpBinding;
+  }): RolePermissionSetStepUpBinding {
+    if (requested.rolePermissionSet === undefined) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    return requested.rolePermissionSet;
+  }
+
+  /** 身份绑定族(PHONE_BIND / WECHAT_BIND / WECOM_BIND)—— 算法**逐字未变**。 */
+  private async issueIdentityProof(
+    user: StepUpUserRow,
+    action: StepUpAction,
+    factor: IdentityStepUpFactor,
   ): Promise<StepUpResponseDto> {
     // 仅 WECOM_BIND 需要多读一次身份行;其余 action 保持零额外查询(算法与开销都不变)
     const wecomBinding: StepUpWecomBindingSnapshotInput | null =
@@ -349,15 +416,6 @@ export class IdentityStepUpService {
       },
     );
     const decoded = this.jwt.decode<{ exp: number }>(stepUpToken);
-    await this.auditLogs.log({
-      event: 'auth.step-up',
-      actorUserId: user.id,
-      actorRoleSnap: user.role,
-      resourceType: 'user',
-      resourceId: user.id,
-      meta,
-      extra: { action, factor },
-    });
     return {
       stepUpToken,
       expiresAt: new Date(decoded.exp * 1000).toISOString(),

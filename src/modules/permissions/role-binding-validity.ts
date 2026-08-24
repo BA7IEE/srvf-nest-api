@@ -1,4 +1,11 @@
-import { BindingScopeType, BindingStatus, PrincipalType, Prisma } from '@prisma/client';
+import {
+  AssignmentStatus,
+  BindingScopeType,
+  BindingStatus,
+  PrincipalType,
+  Prisma,
+  SupervisionStatus,
+} from '@prisma/client';
 
 export const OPS_ADMIN_ROLE_CODE = 'ops-admin';
 
@@ -72,5 +79,44 @@ export function currentPermanentGlobalOpsAdminBindingWhere(
   return {
     ...effectiveGlobalOpsAdminBindingWhere(now),
     endedAt: null,
+  };
+}
+
+// ============================================================================
+// 任职 / 分管的当前有效性 where(P1-32 PR 5)
+//
+// 🔴 **放在本文件是刻意的**:上面 `isWithinTerm` 的注释逐字写着
+//    「RoleBinding / assignment / supervision **共用**的任期边界」——
+//    三类行的任期语义本来就是同一条,再在别处写一遍
+//    `startedAt <= now && (endedAt == null || endedAt >= now)`
+//    就是把「同一条边界」拆成三份可以各自漂移的真相。
+//
+// ⚠️ 这两个 where 的**唯一消费方**是影响预览(`role-permission-impact-query.service.ts`)。
+//    判权链(`authz.service.ts` 的 3b / 3c)取的是**整行再用 `isWithinTerm` 过滤**
+//    (它要保留失效行做 `expired_grant` 归因),形态不同、边界同源 ——
+//    这不是两份判定,是同一条边界的两种取数方式。
+// ============================================================================
+
+// 当前有效的职务任职:未软删 + ACTIVE + 在任期内。与 authz 3b 的 `assignmentValid` 同边界。
+export function effectivePositionAssignmentWhere(
+  now: Date,
+): Prisma.OrganizationPositionAssignmentWhereInput {
+  return {
+    deletedAt: null,
+    status: AssignmentStatus.ACTIVE,
+    startedAt: { lte: now },
+    OR: [{ endedAt: null }, { endedAt: { gte: now } }],
+  };
+}
+
+// 当前有效的分管关系:未软删 + ACTIVE + 在任期内。与 authz 3c 的 `valid` 同边界。
+export function effectiveSupervisionAssignmentWhere(
+  now: Date,
+): Prisma.OrganizationSupervisionAssignmentWhereInput {
+  return {
+    deletedAt: null,
+    status: SupervisionStatus.ACTIVE,
+    startedAt: { lte: now },
+    OR: [{ endedAt: null }, { endedAt: { gte: now } }],
   };
 }

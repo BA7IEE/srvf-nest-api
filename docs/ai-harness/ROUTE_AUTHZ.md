@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:a81007449f70db0204eaec6adfe06933e91174efaad5f827771d3553e78d8b2a |
+| inputDigest | sha256:30b23250152701702a7d54a415af8225102055a909ea2b1724be53247c578ce1 |
 | endpoint count | 554 |
 | legacy [auth] count | 169 |
 | source of truth | normalized controller declarations |
@@ -93,11 +93,11 @@
 | auth/system individual | GET /api/system/v1/authz/me/effective-permissions | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/authz/effective-permissions.controller.ts:22; src/modules/authz/effective-permissions.controller.ts:33 |
 | auth/system individual | GET /api/system/v1/rbac/me/permissions | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/permissions/rbac.controller.ts:44; src/modules/permissions/rbac.controller.ts:54 |
 | auth/system individual | POST /api/auth/v1/logout-all | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:148; src/modules/auth/auth.controller.ts:162 |
-| auth/system individual | POST /api/auth/v1/step-up/password | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:184 |
-| auth/system individual | POST /api/auth/v1/step-up/sms | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:212; src/modules/auth/auth.controller.ts:232 |
-| auth/system individual | POST /api/auth/v1/step-up/sms/send-code | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:187; src/modules/auth/auth.controller.ts:209 |
-| auth/system individual | POST /api/auth/v1/step-up/wechat | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:235; src/modules/auth/auth.controller.ts:257 |
-| auth/system individual | POST /api/auth/v1/wecom-bind/authorize | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:560; src/modules/auth/auth.controller.ts:582 |
+| auth/system individual | POST /api/auth/v1/step-up/password | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
+| auth/system individual | POST /api/auth/v1/step-up/sms | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
+| auth/system individual | POST /api/auth/v1/step-up/sms/send-code | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |
+| auth/system individual | POST /api/auth/v1/step-up/wechat | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:247; src/modules/auth/auth.controller.ts:274 |
+| auth/system individual | POST /api/auth/v1/wecom-bind/authorize | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:577; src/modules/auth/auth.controller.ts:599 |
 
 ## Machine-readable manifest
 
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:a81007449f70db0204eaec6adfe06933e91174efaad5f827771d3553e78d8b2a",
+  "inputDigest": "sha256:30b23250152701702a7d54a415af8225102055a909ea2b1724be53247c578ce1",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -10366,7 +10366,7 @@
 | DELETE | /api/system/v1/dict-types/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.delete.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:133; src/modules/dictionaries/dictionaries.controller.ts:152 |
 | DELETE | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:147; src/modules/permissions/permissions.controller.ts:166 |
 | DELETE | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:156; src/modules/permissions/rbac-roles.controller.ts:175 |
-| DELETE | /api/system/v1/roles/:id/permissions/:permissionId | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:259; src/modules/permissions/role-permissions.controller.ts:282 |
+| DELETE | /api/system/v1/roles/:id/permissions/:permissionId | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:289; src/modules/permissions/role-permissions.controller.ts:312 |
 | DELETE | /api/system/v1/users/:userId/roles/:roleId | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:100; src/modules/permissions/user-roles.controller.ts:124 |
 | GET | /api/admin/v1/activities | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:81; src/modules/activities/activities.controller.ts:93 |
 | GET | /api/admin/v1/activities/:activityId/attendance-sheet-draft | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:49; src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:65 |
@@ -10571,7 +10571,7 @@
 | GET | /api/system/v1/realname-settings | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.read.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:45; src/modules/realname/realname-settings.controller.ts:54 |
 | GET | /api/system/v1/roles | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:63; src/modules/permissions/rbac-roles.controller.ts:72 |
 | GET | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:90; src/modules/permissions/rbac-roles.controller.ts:108 |
-| GET | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:136; src/modules/permissions/role-permissions.controller.ts:154 |
+| GET | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:164; src/modules/permissions/role-permissions.controller.ts:182 |
 | GET | /api/system/v1/roles/options | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:76; src/modules/permissions/rbac-roles.controller.ts:87 |
 | GET | /api/system/v1/sms-send-logs | Ops - SMS Send Logs | rbac | RBAC; admission=-; codes=sms-send-log.read.list; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-send-logs.controller.ts:31; src/modules/sms/sms-send-logs.controller.ts:43 |
 | GET | /api/system/v1/sms-settings | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.read.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:41; src/modules/sms/sms-settings.controller.ts:50 |
@@ -10812,25 +10812,25 @@
 | POST | /api/app/v1/notifications/:id/read | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:147; src/modules/notifications/notification-app.controller.ts:165 |
 | POST | /api/app/v1/notifications/subscriptions/ack | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:73; src/modules/notifications/notification-app.controller.ts:91 |
 | POST | /api/auth/v1/login | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:91; src/modules/auth/auth.controller.ts:101 |
-| POST | /api/auth/v1/login-sms | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:347; src/modules/auth/auth.controller.ts:357 |
-| POST | /api/auth/v1/login-sms/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:318; src/modules/auth/auth.controller.ts:338 |
-| POST | /api/auth/v1/login-wechat | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:366; src/modules/auth/auth.controller.ts:382 |
-| POST | /api/auth/v1/login-wecom | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:474; src/modules/auth/auth.controller.ts:502 |
-| POST | /api/auth/v1/login-wecom/authorize | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:446; src/modules/auth/auth.controller.ts:466 |
+| POST | /api/auth/v1/login-sms | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:364; src/modules/auth/auth.controller.ts:374 |
+| POST | /api/auth/v1/login-sms/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:335; src/modules/auth/auth.controller.ts:355 |
+| POST | /api/auth/v1/login-wechat | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:383; src/modules/auth/auth.controller.ts:399 |
+| POST | /api/auth/v1/login-wecom | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:491; src/modules/auth/auth.controller.ts:519 |
+| POST | /api/auth/v1/login-wecom/authorize | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:463; src/modules/auth/auth.controller.ts:483 |
 | POST | /api/auth/v1/logout | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:132; src/modules/auth/auth.controller.ts:141 |
 | POST | /api/auth/v1/logout-all | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:148; src/modules/auth/auth.controller.ts:162 |
-| POST | /api/auth/v1/password-reset | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:294; src/modules/auth/auth.controller.ts:309 |
-| POST | /api/auth/v1/password-reset/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:266; src/modules/auth/auth.controller.ts:286 |
+| POST | /api/auth/v1/password-reset | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:311; src/modules/auth/auth.controller.ts:326 |
+| POST | /api/auth/v1/password-reset/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:283; src/modules/auth/auth.controller.ts:303 |
 | POST | /api/auth/v1/refresh | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:108; src/modules/auth/auth.controller.ts:123 |
-| POST | /api/auth/v1/step-up/password | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:184 |
-| POST | /api/auth/v1/step-up/sms | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:212; src/modules/auth/auth.controller.ts:232 |
-| POST | /api/auth/v1/step-up/sms/send-code | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:187; src/modules/auth/auth.controller.ts:209 |
-| POST | /api/auth/v1/step-up/wechat | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:235; src/modules/auth/auth.controller.ts:257 |
-| POST | /api/auth/v1/wechat-bind | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:415; src/modules/auth/auth.controller.ts:433 |
-| POST | /api/auth/v1/wechat-bind/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:388; src/modules/auth/auth.controller.ts:408 |
-| POST | /api/auth/v1/wecom-bind | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:534; src/modules/auth/auth.controller.ts:554 |
-| POST | /api/auth/v1/wecom-bind/authorize | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:560; src/modules/auth/auth.controller.ts:582 |
-| POST | /api/auth/v1/wecom-bind/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:507; src/modules/auth/auth.controller.ts:529 |
+| POST | /api/auth/v1/step-up/password | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
+| POST | /api/auth/v1/step-up/sms | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
+| POST | /api/auth/v1/step-up/sms/send-code | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |
+| POST | /api/auth/v1/step-up/wechat | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:247; src/modules/auth/auth.controller.ts:274 |
+| POST | /api/auth/v1/wechat-bind | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:432; src/modules/auth/auth.controller.ts:450 |
+| POST | /api/auth/v1/wechat-bind/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:405; src/modules/auth/auth.controller.ts:425 |
+| POST | /api/auth/v1/wecom-bind | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:551; src/modules/auth/auth.controller.ts:571 |
+| POST | /api/auth/v1/wecom-bind/authorize | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:577; src/modules/auth/auth.controller.ts:599 |
+| POST | /api/auth/v1/wecom-bind/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:524; src/modules/auth/auth.controller.ts:546 |
 | POST | /api/open/v1/recruitment/applications | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:179; src/modules/recruitment/recruitment-public.controller.ts:245 |
 | POST | /api/open/v1/recruitment/applications/query | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:303; src/modules/recruitment/recruitment-public.controller.ts:318 |
 | POST | /api/open/v1/recruitment/applications/query-by-phone | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:367; src/modules/recruitment/recruitment-public.controller.ts:385 |
@@ -10853,8 +10853,8 @@
 | POST | /api/system/v1/rbac/reload | Ops - RBAC | rbac | RBAC; admission=-; codes=rbac.config.reload; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac.controller.ts:57; src/modules/permissions/rbac.controller.ts:72 |
 | POST | /api/system/v1/realname-settings/reset-credentials | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:73; src/modules/realname/realname-settings.controller.ts:87 |
 | POST | /api/system/v1/roles | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:111; src/modules/permissions/rbac-roles.controller.ts:130 |
-| POST | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:157; src/modules/permissions/role-permissions.controller.ts:181 |
-| POST | /api/system/v1/roles/:id/permissions/preview | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:240; src/modules/permissions/role-permissions.controller.ts:256 |
+| POST | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:185; src/modules/permissions/role-permissions.controller.ts:209 |
+| POST | /api/system/v1/roles/:id/permissions/preview | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:270; src/modules/permissions/role-permissions.controller.ts:286 |
 | POST | /api/system/v1/sms-settings/reset-credentials | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:69; src/modules/sms/sms-settings.controller.ts:83 |
 | POST | /api/system/v1/storage-settings/reset-credentials | Ops - Storage Settings | rbac | RBAC; admission=-; codes=storage-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/storage/storage-settings.controller.ts:77; src/modules/storage/storage-settings.controller.ts:91 |
 | POST | /api/system/v1/users/:userId/roles | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:74; src/modules/permissions/user-roles.controller.ts:97 |
@@ -10877,4 +10877,4 @@
 | PUT | /api/app/v1/my/managed-activities/:activityId/gallery | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:377; src/modules/activities/controllers/app-managed-activities.controller.ts:402 |
 | PUT | /api/app/v1/my/managed-activities/:activityId/qualification-rules | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:436; src/modules/activities/controllers/app-managed-activities.controller.ts:461 |
 | PUT | /api/app/v1/my/managed-activities/:activityId/registration-form | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:307; src/modules/activities/controllers/app-managed-activities.controller.ts:331 |
-| PUT | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:193; src/modules/permissions/role-permissions.controller.ts:220 |
+| PUT | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:221; src/modules/permissions/role-permissions.controller.ts:250 |

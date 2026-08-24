@@ -3,7 +3,7 @@
 // surface: Auth 登录/令牌(admin 与 app 共用)
 // contractVersion: 0.67.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:d166c9a3ec9d768c0f4819c22bf9381f4c0e5b9426b3dc7eaac1aba04b58e735
+// inputDigest: sha256:2178c101d902e0be3447b176c96be5e691568c54b94c69c10d7e64c906afd4b4
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher } from '../shared/types';
@@ -67,7 +67,7 @@ export interface SendPasswordResetCodeResponseDto {
 }
 
 export interface SendStepUpSmsCodeDto {
-  "action": "PHONE_BIND" | "WECHAT_BIND" | "WECOM_BIND";
+  "action": "PHONE_BIND" | "WECHAT_BIND" | "WECOM_BIND" | "RBAC_ROLE_PERMISSION_SET_REPLACE";
 }
 
 export interface SendWechatBindCodeDto {
@@ -80,8 +80,9 @@ export interface SendWecomBindCodeDto {
 }
 
 export interface StepUpPasswordDto {
-  "action": "PHONE_BIND" | "WECHAT_BIND" | "WECOM_BIND";
+  "action": "PHONE_BIND" | "WECHAT_BIND" | "WECOM_BIND" | "RBAC_ROLE_PERMISSION_SET_REPLACE";
   "password": string;
+  "rolePermissionSet"?: StepUpRolePermissionSetDto;
 }
 
 export interface StepUpResponseDto {
@@ -89,14 +90,22 @@ export interface StepUpResponseDto {
   "expiresAt": string;
 }
 
+export interface StepUpRolePermissionSetDto {
+  "roleId": string;
+  "expectedRevision": number;
+  "payloadHash": string;
+}
+
 export interface StepUpSmsDto {
-  "action": "PHONE_BIND" | "WECHAT_BIND" | "WECOM_BIND";
+  "action": "PHONE_BIND" | "WECHAT_BIND" | "WECOM_BIND" | "RBAC_ROLE_PERMISSION_SET_REPLACE";
   "code": string;
+  "rolePermissionSet"?: StepUpRolePermissionSetDto;
 }
 
 export interface StepUpWechatDto {
-  "action": "PHONE_BIND" | "WECHAT_BIND" | "WECOM_BIND";
+  "action": "PHONE_BIND" | "WECHAT_BIND" | "WECOM_BIND" | "RBAC_ROLE_PERMISSION_SET_REPLACE";
   "code": string;
+  "rolePermissionSet"?: StepUpRolePermissionSetDto;
 }
 
 export interface WechatBindDto {

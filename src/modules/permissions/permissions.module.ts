@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { DatabaseModule } from '../../database/database.module';
 import { PermissionsController } from './permissions.controller';
 import { PermissionsService } from './permissions.service';
@@ -8,6 +9,8 @@ import { RbacService } from './rbac.service';
 import { RbacRolesController } from './rbac-roles.controller';
 import { RbacRolesService } from './rbac-roles.service';
 import { RoleDelegationPolicy } from './role-delegation.policy';
+import { RolePermissionImpactQueryService } from './role-permission-impact-query.service';
+import { RolePermissionStepUpProofService } from '../../common/security/role-permission-step-up-proof';
 import { RolePermissionsController } from './role-permissions.controller';
 import { RolePermissionsService } from './role-permissions.service';
 import { UserRolesController } from './user-roles.controller';
@@ -46,7 +49,15 @@ import { UserRolesService } from './user-roles.service';
 // - 多 controller / 多 service:permissions.* + rbac-roles.* + role-permissions.* + user-roles.* + rbac.*
 // - 权限解析现由 RbacService 每请求直读 DB,无跨请求缓存 provider
 @Module({
-  imports: [DatabaseModule],
+  imports: [
+    DatabaseModule,
+    // P1-32 PR 5:配置变更 step-up proof 的签发/验签需要 `JwtService`。
+    // ⚠️ 空 `register({})` 是刻意的 —— 密钥与 audience **每次调用显式传**
+    //    (见 `src/common/security/role-permission-step-up-proof.ts`),模块级默认值一个都不该有:
+    //    落在模块配置里的 secret 会让"这条 proof 用的是哪把钥匙"变成要翻两个文件才知道的事。
+    // ⚠️ `JwtModule` 是库模块,不属任何业务域 ⇒ 不产生跨域边。
+    JwtModule.register({}),
+  ],
   controllers: [
     PermissionsController,
     RbacRolesController,
@@ -58,6 +69,13 @@ import { UserRolesService } from './user-roles.service';
     PermissionsService,
     RbacRolesService,
     RolePermissionsService,
+    // P1-32 PR 5:变更影响的只读查询(冻结稿 §11.2「只读,禁止写数据库」)。
+    // ⚠️ 刻意**不 export** —— 它是 preview 的内部投影,不是一个对外能力面。
+    RolePermissionImpactQueryService,
+    // P1-32 PR 5:配置变更 step-up proof。**必须 export** ——
+    // `auth` 的 step-up 端点验完因子后委托它签发(identity-org → platform-access,
+    // domain-map 已确认的允许边)。本域自己 verify,零反向依赖。
+    RolePermissionStepUpProofService,
     UserRolesService,
     RbacService,
     RoleDelegationPolicy,
@@ -65,6 +83,11 @@ import { UserRolesService } from './user-roles.service';
   ],
   // export RbacService 供业务模块在 Service 层接入 rbac.can()
   // (D7 v1.1 §8 / D7-attachments §6.2;首个消费方 AttachmentsModule,P0-F 后已扩展到管理面等多模块)。
-  exports: [RbacService, RoleDelegationPolicy, LastAdminProtectionPolicy],
+  exports: [
+    RbacService,
+    RoleDelegationPolicy,
+    LastAdminProtectionPolicy,
+    RolePermissionStepUpProofService,
+  ],
 })
 export class PermissionsModule {}

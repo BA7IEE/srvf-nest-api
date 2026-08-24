@@ -26,9 +26,11 @@ import type { BizCodeEntry } from '../../common/exceptions/biz-code.constant';
 import { PERMISSION_CATALOG_METADATA } from './permission-catalog';
 import type {
   RolePermissionDiffItemDto,
+  RolePermissionImpactDto,
   RolePermissionPreviewOutcomeDto,
   RolePermissionPreviewResponseDto,
 } from './role-permissions.dto';
+import type { RolePermissionImpactSummary } from './role-permission-impact';
 
 /**
  * 唯一写原语算出来的这次变更的全貌。
@@ -79,9 +81,32 @@ export function describePermissionCode(code: string): RolePermissionDiffItemDto 
 const describeAll = (codes: readonly string[]): RolePermissionDiffItemDto[] =>
   sortedCodes(codes).map(describePermissionCode);
 
-/** delta → 预览结论。 */
+/**
+ * 三源影响汇总 → 响应形状(P1-32 PR 5)。
+ *
+ * 🔴 **纯搬运**:精确性怎么定义、EXACT 什么时候成立,全都已经由
+ *    `summarizeRolePermissionImpact()` 算完了;本函数只是把 `sources.{...}` 摊平成
+ *    三个平级字段。**这里不许出现任何 EXACT / PARTIAL 的判断** ——
+ *    出现即第二份真相,而「标 EXACT 却不精确」没有任何症状。
+ */
+function describeImpact(summary: RolePermissionImpactSummary): RolePermissionImpactDto {
+  return {
+    completeness: summary.completeness,
+    partialReason: summary.partialReason,
+    totalGrantCount: summary.totalGrantCount,
+    roleBinding: { ...summary.sources.roleBinding },
+    positionPolicy: { ...summary.sources.positionPolicy },
+    supervision: { ...summary.sources.supervision },
+    scopeBreakdown: { ...summary.scopeBreakdown },
+    principalBreakdown: { ...summary.principalBreakdown },
+  };
+}
+
+/** delta + 影响面 + step-up 结论 → 预览结论。 */
 export function buildPreviewOutcome(
   delta: RolePermissionSetDelta,
+  impact: RolePermissionImpactSummary,
+  requiresStepUp: boolean,
 ): RolePermissionPreviewOutcomeDto {
   return {
     noOp: delta.noOp,
@@ -91,14 +116,22 @@ export function buildPreviewOutcome(
     removed: describeAll(delta.removedCodes),
     unchangedCount: delta.unchangedCount,
     resultCodes: sortedCodes(delta.resultCodes),
+    requiresStepUp,
+    impact: describeImpact(impact),
   };
 }
 
 /** 判定通过 —— `valid: true`,零 blocking。 */
 export function buildRolePermissionPreview(
   delta: RolePermissionSetDelta,
+  impact: RolePermissionImpactSummary,
+  requiresStepUp: boolean,
 ): RolePermissionPreviewResponseDto {
-  return { valid: true, blockingIssues: [], outcome: buildPreviewOutcome(delta) };
+  return {
+    valid: true,
+    blockingIssues: [],
+    outcome: buildPreviewOutcome(delta, impact, requiresStepUp),
+  };
 }
 
 /**

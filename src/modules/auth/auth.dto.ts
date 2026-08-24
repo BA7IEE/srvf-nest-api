@@ -1,12 +1,16 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsString,
   Length,
   Matches,
   MaxLength,
+  Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
 import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
@@ -129,6 +133,65 @@ export enum StepUpAction {
   // 用户仍用现有 PASSWORD / SMS / WECHAT 因子证明"当前账号控制权"。
   // 拿企业微信本身当因子会绕成一个圈:正要绑的东西不能同时充当"我已经是这个人"的证据。
   WECOM_BIND = 'WECOM_BIND',
+  // P1-32 PR 5(2026-08-24;冻结稿 §12.2 逐字的 action 名)。
+  //
+  // ⚠️ **这一条不是"身份绑定"** —— 前三条都是「本人绑手机 / 微信 / 企微」,
+  //    这一条是管理端的高风险配置变更。共用同一套 step-up 机制是刻意的
+  //    (冻结稿 §12.2 末句「实际接入必须沿用 auth 模块现有 step-up 机制」),
+  //    但它的 proof **额外绑定**一个 (roleId, expectedRevision, payloadHash) 三元组,
+  //    见下方 `StepUpRolePermissionSetDto`。
+  //
+  // ⚠️ 因子仍是 PASSWORD / SMS / WECHAT 三选一。**默认走密码** ——
+  //    微信因子依赖企微/微信通道,而企微卡在备案(current-state §4 P0),
+  //    默认走它会让整条路在上线前根本走不通。
+  RBAC_ROLE_PERMISSION_SET_REPLACE = 'RBAC_ROLE_PERMISSION_SET_REPLACE',
+}
+
+/**
+ * `RBAC_ROLE_PERMISSION_SET_REPLACE` 的绑定三元组(P1-32 PR 5;冻结稿 §12.2)。
+ *
+ * 🔴 **proof 不能只证明「刚刚做过一次二次验证」**(冻结稿 §12.2 标题逐字)。
+ *    这三项各挡一种滥用,缺一条那一维就形同虚设:
+ *      · `roleId`           —— 为角色 A 申请的 proof 用到角色 B
+ *      · `expectedRevision` —— revision 变化后复用旧 proof
+ *      · `payloadHash`      —— 为低风险差异申请的 proof 换成高风险 payload
+ *
+ * ⚠️ 三项都**必填**:任一项缺失都会让签发端返 40000,而不是"少绑一维照样发一个 proof"。
+ */
+export class StepUpRolePermissionSetDto {
+  @ApiProperty({
+    description: '要改权限集的角色 id(cuid;proof 只对这一个角色有效)',
+    example: 'cl9z3a8b00000abcd1234efgh',
+    minLength: 8,
+    maxLength: 64,
+  })
+  @IsString()
+  @Length(8, 64)
+  roleId!: string;
+
+  @ApiProperty({
+    description:
+      '这次替换携带的 `expectedRevision`(必须与随后 PUT / preview 里的那个逐字相同);' +
+      '版本号一变,旧 proof 立刻失效',
+    example: 7,
+    minimum: 0,
+  })
+  @IsInt()
+  @Min(0)
+  expectedRevision!: number;
+
+  @ApiProperty({
+    description:
+      '目标权限码集合的规范化指纹(去重 + 升序后 sha256,base64url)。' +
+      '与随后提交的 `permissionCodes` 算出来的必须一致 —— 改一个码就对不上。' +
+      '前端算法见 `docs/handoff/admin-web.md`;服务端实现是 `rolePermissionSetPayloadHash()`。',
+    example: 'Yk9m0Q0nX0f5nUj2mQ0wEXAMPLEEXAMPLEEXAMPLE0',
+    minLength: 16,
+    maxLength: 128,
+  })
+  @IsString()
+  @Length(16, 128)
+  payloadHash!: string;
 }
 
 export class StepUpPasswordDto {
@@ -140,6 +203,21 @@ export class StepUpPasswordDto {
   @IsString()
   @IsNotEmpty()
   password!: string;
+
+  @ApiPropertyOptional({
+    description:
+      '仅 `action=RBAC_ROLE_PERMISSION_SET_REPLACE` 时**必填**:proof 要绑定的角色权限集变更。' +
+      '其余 action 传了也不参与签名。缺它而 action 是那一条 → 40000。',
+    type: () => StepUpRolePermissionSetDto,
+  })
+  // ⚠️ `@OmittableOnly()` 而不是 `@IsOptional()`:这个对象业务上**不可清空**,只是可省略。
+  //    `@IsOptional()` 会让显式 `null` 跳过全部校验器,而 service 判「传没传」用的是
+  //    `=== undefined` —— 于是 `rolePermissionSet: null` 会被当成"没传"、静默退回
+  //    「只绑身份」的 proof,正好把冻结稿 §12.2 要挡的复用面重新打开。
+  @OmittableOnly()
+  @ValidateNested()
+  @Type(() => StepUpRolePermissionSetDto)
+  rolePermissionSet?: StepUpRolePermissionSetDto;
 }
 
 export class SendStepUpSmsCodeDto {
@@ -161,6 +239,19 @@ export class StepUpSmsDto {
   @Length(SMS_CODE_LENGTH, SMS_CODE_LENGTH)
   @Matches(/^\d{6}$/, { message: 'code 必须是 6 位数字' })
   code!: string;
+
+  @ApiPropertyOptional({
+    description: '同 `StepUpPasswordDto.rolePermissionSet`',
+    type: () => StepUpRolePermissionSetDto,
+  })
+  // ⚠️ `@OmittableOnly()` 而不是 `@IsOptional()`:这个对象业务上**不可清空**,只是可省略。
+  //    `@IsOptional()` 会让显式 `null` 跳过全部校验器,而 service 判「传没传」用的是
+  //    `=== undefined` —— 于是 `rolePermissionSet: null` 会被当成"没传"、静默退回
+  //    「只绑身份」的 proof,正好把冻结稿 §12.2 要挡的复用面重新打开。
+  @OmittableOnly()
+  @ValidateNested()
+  @Type(() => StepUpRolePermissionSetDto)
+  rolePermissionSet?: StepUpRolePermissionSetDto;
 }
 
 export class StepUpWechatDto {
@@ -176,6 +267,19 @@ export class StepUpWechatDto {
   @IsNotEmpty()
   @MaxLength(128)
   code!: string;
+
+  @ApiPropertyOptional({
+    description: '同 `StepUpPasswordDto.rolePermissionSet`',
+    type: () => StepUpRolePermissionSetDto,
+  })
+  // ⚠️ `@OmittableOnly()` 而不是 `@IsOptional()`:这个对象业务上**不可清空**,只是可省略。
+  //    `@IsOptional()` 会让显式 `null` 跳过全部校验器,而 service 判「传没传」用的是
+  //    `=== undefined` —— 于是 `rolePermissionSet: null` 会被当成"没传"、静默退回
+  //    「只绑身份」的 proof,正好把冻结稿 §12.2 要挡的复用面重新打开。
+  @OmittableOnly()
+  @ValidateNested()
+  @Type(() => StepUpRolePermissionSetDto)
+  rolePermissionSet?: StepUpRolePermissionSetDto;
 }
 
 export class StepUpResponseDto {
