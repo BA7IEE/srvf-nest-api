@@ -277,10 +277,13 @@ export class ActivityStatusCommandService {
       throw new BizException(BizCode.BAD_REQUEST);
     }
     const audienceTagCodes = [...dto.audienceTagCodes].sort();
+    // 组织定向(维护者 2026-08-25 拍板):省略 / 空数组 = 不按组织收窄,落库与盖章都保持
+    // 本刀之前的形状;非空才进交集。稳定序与标签码同处置,便于事后对账与幂等哈希。
+    const audienceOrganizationIds = [...(dto.audienceOrganizationIds ?? [])].sort();
     if (this.config.activityResponsibilityWorkflow.enabled) {
       await this.publishReviewService.compatibilityPublishWithAudienceTags(
         id,
-        { requiresInsuranceConfirmed: true, audienceTagCodes },
+        { requiresInsuranceConfirmed: true, audienceTagCodes, audienceOrganizationIds },
         currentUser,
         auditMeta,
       );
@@ -330,6 +333,7 @@ export class ActivityStatusCommandService {
       const audienceCohort = await freezeAudienceTags(tx, {
         activityId: updated.id,
         audienceTagCodes,
+        audienceOrganizationIds,
         at: now,
       });
       if (!isFrozenCohort(audienceCohort)) throw new BizException(BizCode.BAD_REQUEST);
@@ -343,6 +347,7 @@ export class ActivityStatusCommandService {
         priorStatusCode: current.statusCode,
         nextStatusCode,
         audienceTagCodes,
+        audienceOrganizationIds,
         recipientCount: recipientMemberIds.length,
         auditMeta,
         tx,

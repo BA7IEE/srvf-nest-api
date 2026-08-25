@@ -2,6 +2,10 @@ import { DictItemStatus, DictTypeStatus, MemberStatus, type Prisma } from '@pris
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import {
+  assertActiveOrganizationIds,
+  resolveOrganizationSubtreeMemberIds,
+} from '../organizations/organization-audience-scope';
 import { DICT_TYPE_MEMBER_AUDIENCE_TAG } from './activity-publish-review-access';
 
 type PrismaTx = Prisma.TransactionClient;
@@ -87,6 +91,14 @@ export const FREEZE_BASIS_BROADCAST_VISIBILITY = 'broadcast-visibility';
 export const FREEZE_BASIS_RESPONSIBILITY = 'responsibility';
 /** 报名名册(取消、改期等事件的收件人)。 */
 export const FREEZE_BASIS_REGISTRATION_ROSTER = 'registration-roster';
+/**
+ * 组织定向(维护者 2026-08-25 拍板):受众标签 **AND** 组织子树。
+ *
+ * ⚠️ 这一档只在**真的按组织收窄**时出现 —— `audienceOrganizationIds` 为 `null` 或 `[]` 时
+ * 依据仍是 `audience-tags` / `all-active-members`,盖章逐字节不变。否则本刀会把**存量在飞**
+ * 的 intent 的 `basisKind` 改掉,重放时同一 eventKey 带着不同 payload 撞上 `sameIntent`。
+ */
+export const FREEZE_BASIS_AUDIENCE_ORGANIZATIONS = 'audience-organizations';
 
 /**
  * 品牌位:`FrozenRecipientCohort` / `FrozenBroadcastAudience` **只能**由本模块造出来。
@@ -168,12 +180,21 @@ interface FreezeRequest {
  * 需要维护者拍板,不在本刀 —— 但它仍然要走本函数,拿到一个显式的
  * `broadcast-visibility` 盖章:**「不冻结」必须是这里做出的决定,不能是某个
  * producer 悄悄漏掉冻结。**
+ *
+ * ## 组织定向(维护者 2026-08-25 拍板)
+ *
+ * `audienceOrganizationIds` 与 `audienceTagCodes` 是**两个正交的收窄维度**,取**交集**:
+ * 「在这些组织(含下级)里」**且**「有这些标签」才收得到。三分支:
+ *   - `null` / `[]` ⇒ 组织维度**不设限**,盖章与本刀之前逐字节相同(见常量注释)。
+ *   - 非空 ⇒ 走 `organization_closure` 真子树展开,再与标签结果求交。
  */
 export async function freezeAudienceTags(
   tx: PrismaTx,
   input: {
     activityId: string;
     audienceTagCodes: string[] | null;
+    /** 维护者 2026-08-25 拍板的组织定向;`null` / `[]` = 该维度不设限。 */
+    audienceOrganizationIds?: string[] | null;
     at: Date;
   },
 ): Promise<FrozenAudience> {
@@ -192,15 +213,30 @@ export async function freezeAudienceTags(
     };
   }
   const audienceTagCodes = input.audienceTagCodes;
+  const organizationIds = input.audienceOrganizationIds ?? [];
+  // 「按组织收窄」= 非空数组。`[]` 与 `null` 同为「不设限」,刻意不让空数组塌成空收件人集
+  // —— 那会把「没勾组织」误读成「谁都不发」。
+  const scopedByOrganization = organizationIds.length > 0;
   return freeze(tx, {
     cohortKey,
     aggregateType: 'activity',
     aggregateIds: [input.activityId],
-    basisKind:
-      audienceTagCodes.length === 0 ? FREEZE_BASIS_ALL_ACTIVE_MEMBERS : FREEZE_BASIS_AUDIENCE_TAGS,
-    basisRef: [...audienceTagCodes].sort(),
+    basisKind: scopedByOrganization
+      ? FREEZE_BASIS_AUDIENCE_ORGANIZATIONS
+      : audienceTagCodes.length === 0
+        ? FREEZE_BASIS_ALL_ACTIVE_MEMBERS
+        : FREEZE_BASIS_AUDIENCE_TAGS,
+    // 不收窄时 basisRef 逐字节沿用旧值(裸标签码);收窄时两个维度都要能对账,故加前缀区分
+    // —— 否则组织 id 与标签码混在一个数组里,事后没人分得清哪个是哪个。
+    basisRef: scopedByOrganization
+      ? [
+          ...audienceTagCodes.map((code) => `tag:${code}`),
+          ...organizationIds.map((id) => `org:${id}`),
+        ].sort()
+      : [...audienceTagCodes].sort(),
     at: input.at,
-    candidateMemberIds: () => resolveAudienceMemberIds(tx, audienceTagCodes),
+    candidateMemberIds: () =>
+      resolveAudienceRecipientMemberIds(tx, audienceTagCodes, organizationIds, input.at),
   });
 }
 
@@ -333,6 +369,13 @@ async function readFrozenCohort(
  * B7 受众标签语义(`src/modules/activities/CLAUDE.md`):
  * `[]` = 全部 ACTIVE 且未软删的 Member;非空 = 按 ACTIVE、未软删的
  * `member_audience_tag` 标签 OR 并集去重。
+ *
+ * ⚠️ **本函数的函数体在组织定向那一刀里刻意一行未动**。架构债棘轮的
+ * `callSiteId = hash(file + AST 路径 + 判别符)`,而 AST 路径对函数是**按名字**取的
+ * (`Function(resolveAudienceMemberIds)/…`)—— 把这两条既有的 identity-org 跨域读
+ * 抽进另一个函数,它们的身份就变了,棘轮会把**搬家**报成「新增代码债」。
+ * 本刀实测踩过:一版抽出 `resolveTaggedMemberIds` 后,棘轮点名 5 条,其中 3 条是位移不是新增。
+ * 组织维度的收窄因此做在**调用方** `resolveAudienceRecipientMemberIds` 里,不动这里。
  */
 async function resolveAudienceMemberIds(
   tx: PrismaTx,
@@ -355,6 +398,41 @@ async function resolveAudienceMemberIds(
     select: { memberId: true },
   });
   return [...new Set(assignments.map((assignment) => assignment.memberId))].sort();
+}
+
+/**
+ * 受众标签 **AND** 组织子树(维护者 2026-08-25 拍板)。
+ *
+ * 两个维度各自算全,再求**交集** —— 刻意不是把组织条件塞进上面两条 where:
+ *   ① 交集这件事收敛到**一处**、一眼可读,也只有一处可以被变异对拍打中;
+ *   ② 塞进 where 要在两个分支各写一遍,漏一支就变成「标签分支是交集、全员分支是并集」,
+ *      而那种半对的实现在只测一支的用例里完全看不出来。
+ *
+ * 组织子树与「有效任职」的口径**不在本模块解释** —— 走 `identity-org` 域属主导出的
+ * tx 原语 `resolveOrganizationSubtreeMemberIds`。活动域直接读组织三表是跨域读,
+ * 架构债棘轮会判「新增代码债」;更重要的是,组织树怎么展开本来就该由组织域说了算。
+ */
+async function resolveAudienceRecipientMemberIds(
+  tx: PrismaTx,
+  audienceTagCodes: string[],
+  audienceOrganizationIds: string[],
+  at: Date,
+): Promise<string[]> {
+  const taggedMemberIds = await resolveAudienceMemberIds(tx, audienceTagCodes);
+  if (audienceOrganizationIds.length === 0) return taggedMemberIds;
+  // 与标签码**对称**:`resolveAudienceMemberIds` 在这一刻会重新解析标签码、解析不出即整批拒,
+  // 组织必须同样在**冻结这一刻**重新校验 —— 提交与审批之间组织被软删时,不能拿一棵已经不存在
+  // 的子树算收件人。放在这里而不是 freeze() 外面是刻意的:回捞到既有冻结批次时本函数
+  // **根本不会被调用**,于是重放既不重算也不会被新的校验结果拒掉。
+  await assertActiveOrganizationIds(tx, audienceOrganizationIds);
+  const organizationMemberIds = await resolveOrganizationSubtreeMemberIds(
+    tx,
+    audienceOrganizationIds,
+    at,
+  );
+  // ⬇⬇ 交集(AND)。改成并集即「在组织但没标签」「有标签但不在组织」两类人都会收到 ——
+  //     `activity-recipient-freeze.spec.ts` 的两条反向用例正钉在这一行上。
+  return taggedMemberIds.filter((memberId) => organizationMemberIds.has(memberId));
 }
 
 async function resolveActiveAudienceTagIds(

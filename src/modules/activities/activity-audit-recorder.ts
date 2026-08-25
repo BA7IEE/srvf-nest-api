@@ -266,6 +266,8 @@ export class ActivityAuditRecorder {
     priorStatusCode: string;
     nextStatusCode: string;
     audienceTagCodes: string[];
+    /** 组织定向;**空数组时整个键不进 extra** —— 不按组织发的审计形状逐字保持本刀之前的样子。 */
+    audienceOrganizationIds: string[];
     recipientCount: number;
     auditMeta: AuditMeta;
     tx: PrismaTx;
@@ -284,6 +286,9 @@ export class ActivityAuditRecorder {
         priorStatusCode: args.priorStatusCode,
         nextStatusCode: args.nextStatusCode,
         audienceTagCodes: args.audienceTagCodes,
+        ...(args.audienceOrganizationIds.length === 0
+          ? {}
+          : { audienceOrganizationIds: args.audienceOrganizationIds }),
         recipientCount: args.recipientCount,
       },
       tx: args.tx,

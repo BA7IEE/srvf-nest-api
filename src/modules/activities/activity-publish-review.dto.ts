@@ -53,6 +53,13 @@ export class ActivityPublishReviewResponseDto {
     nullable: true,
   })
   audienceTagCodes!: string[] | null;
+  @ApiPropertyOptional({
+    description:
+      '组织定向的目标组织 id(自动含全部下级);NULL 表示未按组织定向。与 audienceTagCodes 取交集',
+    type: [String],
+    nullable: true,
+  })
+  audienceOrganizationIds!: string[] | null;
   @ApiProperty()
   submittedByUserId!: string;
   @ApiProperty()
