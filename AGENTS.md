@@ -43,6 +43,12 @@
 
 > 这些无法做成确定性检查 —— 它们是本文件真正需要你读进去的部分。
 
+- 🔴 **读到「零」或「异常整齐」的读数时,先验仪器,再下结论。**
+  本仓工具链有一批**不报错、退出码正常、读数看着完全正常,而它测的不是你以为的那个量**的陷阱
+  (`grep -E` 的 `\|` 与 `\s` · 大文件被当二进制 · `-o` 摘掉文件名 · `git diff -- <不存在路径>` ·
+  管道吃掉退出码 · `harness:needs` 用通配符漏报 · `docs:refresh` 是动作不是闸 …)。
+  **每一条都实测栽过,且换任何 AI 都会踩** ⇒ 动手前读 [`docs/ai-harness/TOOL_TRAPS.md`](docs/ai-harness/TOOL_TRAPS.md)。
+
 - **授权边界**:已授权清单内连续推进;**清单外停下**。审计 / 调研中发现的问题(即使是明显 bug)**不顺手修**,先汇报。goal 内已写明范围的 C 档免二次确认;goal 外新发现一律按 [process §4.1](docs/process.md) 人话简报上报。
 - **诚实**:每次收尾必须输出**「本次未做」**段。所有判断给证据(路径:行号 / 命令输出 / PR 链接),**不凭印象、不确定不写成事实**。无 Docker 时跑 quick 并显式声明「contract / e2e 留给 CI」,**不得谎报全绿**。
 - **测试纪律**(⚠️ 当前**无机器守护**,P2c 补):**禁删测试 / 禁放宽断言**;改既有 e2e 断言 = 改行为契约 → **停下报告**。改 service 编排先跑 characterization,行为差异即停。
@@ -94,6 +100,7 @@
 
 | 细则 | 何时读 |
 |---|---|
+| ⭐ [TOOL_TRAPS](docs/ai-harness/TOOL_TRAPS.md) | **动手前**;以及任何时候读数为 0 / 异常整齐 |
 | [naming-dto-validation](docs/reference/naming-dto-validation.md) | 建模块 / 写 DTO / 字段校验 |
 | [response-pagination-errors](docs/reference/response-pagination-errors.md) | 返回结构 / 分页 / 错误码 / P2002 |
 | [swagger](docs/reference/swagger.md) | 写 / 改 endpoint 注解 |
