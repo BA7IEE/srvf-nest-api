@@ -420,4 +420,219 @@ describe('第 7 批第一刀:收件人快照冻结(真 HTTP + 真 outbox)', () =
     expect(stamp!.basisKind).toBe('broadcast-visibility');
     expect(stamp!.cohortSize).toBe(0);
   });
+
+  // =========================================================================
+  // AC-066 「改期」事件 —— 冻结收件人后异步展开(2026-08-26 补)
+  //
+  // 合同原句(AC-066,逐字):
+  //   「发布通知可以选择目标组织、标签或明确不广播；取消、改期等事件冻结收件人后异步展开。」
+  //
+  // 前半句三个可选项各自已有判据:标签定向与「明确不广播」是本 spec 上面那几条,
+  // 目标组织在 `src/modules/activities/activity-recipient-freeze.spec.ts` ⑥。
+  // 后半句点名**两个**事件:取消由上面 ADV-016 那条钉住,而**改期**在本组之前
+  // `test/` 下零绑定 —— 卡点原文写的就是这一格。
+  //
+  // 「改期」在 src 侧的准确定义(`activity-write.service.ts` 的 `scheduleChanged`):
+  // 活动级 startAt / endAt / location 任一变化 ⇒ 以 `activity-change:<活动>:<updatedAt>`
+  // 为 cohortKey 冻结**改期当刻的在册报名名册**,再逐人落 outbox intent,由 worker 异步展开。
+  //
+  // ⭐ 三格各自成 `it`(一个 `it` 内首个失败即停,塞一起会让后面的断言从未被执行):
+  //   ① 冻结的**集合**对不对(正向 + 反向:改期前就退出的人不在内)
+  //   ② 「**后**异步展开」这一半:intent 形成后名单再变,实收集合仍与快照逐字相同
+  //   ③ 改期批的**盖章**自成一批,与发布批互不吞并(否则「当初发给了谁」会串批)
+  // =========================================================================
+  interface RescheduleFixture {
+    activityId: string;
+    /** 改期那一刻的在册报名者(升序)—— 应当被冻下来的正是这一批。 */
+    roster: string[];
+    /** 改期**之前**就已退出的人:任何时刻都不该收到这条改期通知。 */
+    withdrawnBefore: string;
+    /** 改期后活动的 `updatedAt` —— 它就是这一批冻结的身份(cohortKey / versionKey)。 */
+    updatedAt: string;
+  }
+
+  /** 造一场已发布、有真实报名名册的活动,然后**真的改一次期**(改活动级起止时间)。 */
+  async function publishThenReschedule(label: string): Promise<RescheduleFixture> {
+    const activityId = await createDraftActivity(`冻结:改期 ${label}`);
+    await publishWithTags(activityId, [tagCode]);
+
+    const registrants = await Promise.all(
+      ['a', 'b', 'c'].map((slot) =>
+        prisma.member.create({
+          data: {
+            memberNo: `change-reg-${label}-${slot}`,
+            ...memberIdentityData(`change-reg-${label}-${slot}`),
+          },
+          select: { id: true },
+        }),
+      ),
+    );
+    const withdrawn = await prisma.member.create({
+      data: {
+        memberNo: `change-reg-${label}-out`,
+        ...memberIdentityData(`change-reg-${label}-out`),
+      },
+      select: { id: true },
+    });
+    await prisma.activityRegistration.createMany({
+      data: [
+        { activityId, memberId: registrants[0].id, statusCode: 'pending' },
+        { activityId, memberId: registrants[1].id, statusCode: 'pass' },
+        { activityId, memberId: registrants[2].id, statusCode: 'waitlisted' },
+        // ⭐ 反面样本在**被测那一维上单独不同**:同一场活动、同样报过名,
+        //    只有「已退出(cancelled + 软删)」这一点不同 —— 上层边界遮蔽不了它。
+        {
+          activityId,
+          memberId: withdrawn.id,
+          statusCode: 'cancelled',
+          deletedAt: new Date(),
+        },
+      ],
+    });
+
+    const rescheduled = await request(httpServer(app))
+      .patch(`/api/admin/v1/activities/${activityId}`)
+      .set('Authorization', auth)
+      .send({ startAt: '2099-09-15T08:00:00.000Z', endAt: '2099-09-15T12:00:00.000Z' });
+    expect(rescheduled.status).toBe(200);
+    // 先证明「改期真的发生了」—— 否则下面每一条断言都建立在一次空操作上。
+    expect(rescheduled.body.data.startAt).toBe('2099-09-15T08:00:00.000Z');
+    expect(rescheduled.body.data.endAt).toBe('2099-09-15T12:00:00.000Z');
+
+    return {
+      activityId,
+      roster: registrants.map((member) => member.id).sort(),
+      withdrawnBefore: withdrawn.id,
+      updatedAt: rescheduled.body.data.updatedAt as string,
+    };
+  }
+
+  /** 只取「改期」那一批 intent:发布批的 eventKey 前缀不同,取消批也一样。 */
+  async function scheduleChangeIntents(activityId: string) {
+    const intents = await prisma.notificationOutboxIntent.findMany({
+      where: { aggregateType: 'activity', aggregateId: activityId, destinationType: 'member' },
+      select: { eventKey: true, destinationRef: true, payload: true },
+      orderBy: { destinationRef: 'asc' },
+    });
+    return intents.filter((intent) => intent.eventKey.startsWith('activity-change:'));
+  }
+
+  it('AC-066 改期即冻结:收件人恰为改期那一刻的在册报名者,改期前已退出的不在内', async () => {
+    const fixture = await publishThenReschedule('roster');
+
+    const intents = await scheduleChangeIntents(fixture.activityId);
+    // 先钉非空 —— 空集 == 空集是本仓栽过的假绿形状。
+    expect(intents.length).toBeGreaterThan(0);
+    // 比集合,不比计数。
+    expect(intents.map((intent) => intent.destinationRef)).toEqual(fixture.roster);
+    // 反向:改期前就退出的人一条都没有(正面数出 0,不是「没在集合里就算了」)。
+    expect(
+      intents.filter((intent) => intent.destinationRef === fixture.withdrawnBefore),
+    ).toHaveLength(0);
+    // eventKey 的粒度是「这一次改期 × 这个人」——版本键就是活动的 updatedAt。
+    expect(intents.map((intent) => intent.eventKey).sort()).toEqual(
+      fixture.roster
+        .map((memberId) => `activity-change:${fixture.activityId}:${fixture.updatedAt}:${memberId}`)
+        .sort(),
+    );
+  });
+
+  it('AC-066 改期 intent 形成后名单再变:抽干 outbox 后实收集合与快照逐字相同', async () => {
+    const fixture = await publishThenReschedule('async');
+    const frozen = (await scheduleChangeIntents(fixture.activityId)).map(
+      (intent) => intent.destinationRef,
+    );
+    expect(frozen.length).toBeGreaterThan(0);
+    expect(frozen).toEqual(fixture.roster);
+
+    // ── intent 已经形成。现在**真改名单**:一个人退出、一个人新报名 ──
+    await prisma.activityRegistration.updateMany({
+      where: { activityId: fixture.activityId, memberId: fixture.roster[0] },
+      data: { deletedAt: new Date(), statusCode: 'cancelled' },
+    });
+    const lateRegistrant = await prisma.member.create({
+      data: {
+        memberNo: 'change-reg-async-late',
+        ...memberIdentityData('change-reg-async-late'),
+      },
+      select: { id: true },
+    });
+    await prisma.activityRegistration.create({
+      data: { activityId: fixture.activityId, memberId: lateRegistrant.id, statusCode: 'pending' },
+    });
+
+    // 名单确实变了 —— 先证明这一点,否则下面的「没变」什么都没证明。
+    const liveRoster = await prisma.activityRegistration.findMany({
+      where: {
+        activityId: fixture.activityId,
+        deletedAt: null,
+        statusCode: { in: ['pending', 'pass', 'waitlisted'] },
+      },
+      select: { memberId: true },
+    });
+    const liveNow = [...new Set(liveRoster.map((row) => row.memberId))].sort();
+    expect(liveNow.length).toBeGreaterThan(0);
+    expect(liveNow).not.toEqual(frozen);
+    expect(liveNow).toContain(lateRegistrant.id);
+
+    // ── 「异步展开」那一步 ──
+    await drainOutbox();
+
+    const delivered = await prisma.notification.findMany({
+      where: {
+        notificationTypeCode: 'activity-changed',
+        recipientMemberId: { in: [...fixture.roster, fixture.withdrawnBefore, lateRegistrant.id] },
+      },
+      select: { recipientMemberId: true },
+    });
+    const deliveredMembers = [...new Set(delivered.map((row) => row.recipientMemberId!))].sort();
+    expect(deliveredMembers.length).toBeGreaterThan(0);
+    expect(deliveredMembers).toEqual(frozen);
+    // 展开之后才退出的人**仍然**收到(改期那一刻他确实在册);
+    // 展开之后才报名的人一个都不许进来;改期之前就退出的人也一个都不许进来。
+    expect(deliveredMembers).toContain(fixture.roster[0]);
+    expect(deliveredMembers).not.toContain(lateRegistrant.id);
+    expect(deliveredMembers).not.toContain(fixture.withdrawnBefore);
+  });
+
+  it('AC-066 改期批自带 registration-roster 盖章,且与发布批是两批 cohort 互不吞并', async () => {
+    const fixture = await publishThenReschedule('stamp');
+
+    const changeIntents = await scheduleChangeIntents(fixture.activityId);
+    expect(changeIntents.length).toBeGreaterThan(0);
+    const changeStamps = changeIntents.map((intent) => readRecipientFreezeStamp(intent.payload));
+    for (const stamp of changeStamps) {
+      expect(stamp).not.toBeNull();
+      // 依据是**报名名册**,不是发布那批的受众标签 —— 两个事件取数源本来就不同。
+      expect(stamp!.basisKind).toBe('registration-roster');
+      expect(stamp!.basisRef).toEqual([`schedule:${fixture.updatedAt}`]);
+      expect(stamp!.algorithmVersion).toBe(1);
+      expect(stamp!.computedAt).toBe(fixture.updatedAt);
+      // 基数与真实落库行数相等 —— 「只写进去一半」时这条是唯一能看出来的判据。
+      expect(stamp!.cohortSize).toBe(changeIntents.length);
+    }
+    // 同一次改期共用一个 cohortKey:它就是「这一次改期」的身份。
+    expect(new Set(changeStamps.map((stamp) => stamp!.cohortKey)).size).toBe(1);
+    expect(changeStamps[0]!.cohortKey).toBe(
+      `activity-change:${fixture.activityId}:${fixture.updatedAt}`,
+    );
+
+    // 反向:发布那一批还在原地,既没被改期批吞掉,也没把改期批算进自己。
+    const publishIntents = (
+      await prisma.notificationOutboxIntent.findMany({
+        where: {
+          aggregateType: 'activity',
+          aggregateId: fixture.activityId,
+          destinationType: 'member',
+        },
+        select: { eventKey: true, payload: true },
+      })
+    ).filter((intent) => intent.eventKey.startsWith('activity-publish-audience:'));
+    expect(publishIntents.length).toBeGreaterThan(0);
+    const publishCohortKeys = new Set(
+      publishIntents.map((intent) => readRecipientFreezeStamp(intent.payload)!.cohortKey),
+    );
+    expect(publishCohortKeys.size).toBe(1);
+    expect(publishCohortKeys.has(changeStamps[0]!.cohortKey)).toBe(false);
+  });
 });

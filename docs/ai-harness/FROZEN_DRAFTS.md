@@ -108,7 +108,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **237** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
-| 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **79 / 95(16 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
+| 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **82 / 95(13 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
 | 治理 Phase 4:状态列 governed / 登记总数 | **8 / 59** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |

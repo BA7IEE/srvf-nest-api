@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
+import request from 'supertest';
 
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -17,9 +18,12 @@ import {
 } from '../../src/modules/activities/activity-closure.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
+import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { expectBizError } from '../helpers/biz-code.assert';
+import { httpServer } from '../helpers/http-server';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 // ===== 活动改造 v1.1 第 2 批第六刀:机器关账(合同 §5.15 + §3.26)=====
@@ -1339,6 +1343,199 @@ describe('机器关账 —— 十二步 / 八类硬检查 (合同 §5.15 + §3.2
           where: { eventKey: { startsWith: `settlement-closure:${fixture.activityId}:` } },
         }),
       ).resolves.toBe(2);
+    });
+  });
+
+  // =========================================================================
+  // ⑦ AC-064 —— 「7 天归档等待结束后可以归档」的 **HTTP 证据**(2026-08-26 补)
+  //
+  // 合同原句(业务方案 AC-064,逐字):
+  //   「7天归档等待结束后可以归档，但合法更正不因7天过去而被永久禁止。」
+  //
+  // 后半句已由本 describe ⑥ 的「归档等待期早已过去 ⇒ 让位后重新关账照样成功」钉住
+  //(关账链里没有任何一处拿 archiveWaitingUntil 做拒绝判据)。
+  // 前半句此前**只有纯函数证据**(`activity-archive-policy.spec.ts` 的结算路径五条),
+  // 归档 spec 自己在文件头如实写着「结算路径的放行那一半没有 HTTP 证据」。
+  //
+  // 🔴 为什么接在**这份** spec 上,而不是复制一套关账夹具进归档 spec:
+  //    结算路径要一条真的 `ActivitySettlementClosureRevision`,而它有三条必填外键
+  //    (settlementVersion / postingBatch / evidenceSeal)。这里的 `createClosureFixture`
+  //    走的是**真的第五刀 + 真的关账**,手搓第二份等于让判据去核对一个从没在生产出现过的世界。
+  //
+  // ⭐ 四格各自成 `it`(jest 一个 `it` 内首个失败即停 —— 塞一起会让后面的断言从未被执行,
+  //    而这在基线全绿时完全看不出来)。四条合起来把闸**钉死在** `closedAt + archiveWaitingDays`:
+  //      ① 关账满 7 天       ⇒ 放行             ← 少了它,「永远拒」也能全绿
+  //      ② 关账当刻(7 天)   ⇒ 20157 且零写入   ← 少了它,「关过账就放行」也能全绿
+  //      ③ 只差 2 小时       ⇒ 20157            ← 少了它,阈值取多大都能全绿
+  //      ④ archiveWaitingDays=0 ⇒ 当刻即放行     ← 少了它,把 7 写成常量也能全绿
+  //
+  // ⚠️ 时间口径:本组**不能**沿用别处的 2020 年固定时刻 —— 「等待期过没过」是拿
+  //    **同事务 `now()`** 与 `closedAt` 比的(`ActivityArchiveService.readAuthoritativeNow`),
+  //    所以「时间过去了」只能靠**把 closedAt 往回拨**造,而回拨的基准也必须取 DB 的 `now()`,
+  //    不能取本机墙钟(容器与宿主时钟不一定同步,差几秒就会把 ③ 的 2 小时余量吃掉)。
+  //    回拨量取 7 天 ± 小时级 ⇒ 与墙钟无耦合、无定时炸弹。
+  // =========================================================================
+  describe('⑦ AC-064 归档等待期的 HTTP 证据(关账 → 归档 续链)', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const HOUR_MS = 60 * 60 * 1000;
+
+    /**
+     * 夹具的 owner 责任行已经建好(见 `createClosureFixture`),这里只补一个绑定到它的
+     * `User` —— App 准入三件套是 `memberId ≠ null ∧ User.ACTIVE ∧ Member.ACTIVE`(D-5)。
+     * 归档端点的判权锚在**归档前**的状态上:published ⇒ 认 active owner 责任行。
+     */
+    async function loginAsFixtureOwner(fixture: ClosureFixture): Promise<string> {
+      const user = await createTestUser(app, {
+        username: `closure-archive-${fixture.tag}`,
+        role: Role.USER,
+      });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { memberId: fixture.ownerMemberId },
+      });
+      return (await loginAs(app, user.username)).authHeader;
+    }
+
+    function archiveRequest(auth: string, activityId: string, operationKey: string) {
+      return request(httpServer(app))
+        .post(`/api/app/v1/my/managed-activities/${activityId}/archive`)
+        .set('Authorization', auth)
+        .send({ operationKey });
+    }
+
+    /** 关账 → 拿到能打 App 接口的 owner。关账没成功就直接抛:那是夹具坏了,不是判据红。 */
+    async function closeThenLoginOwner(
+      archiveWaitingDays: number,
+    ): Promise<{ fixture: ClosureFixture; auth: string; closedAt: Date; waitingDays: number }> {
+      const fixture = await createClosureFixture({ archiveWaitingDays });
+      const outcome = await runClose(fixture);
+      if (outcome.outcome !== 'closed') {
+        throw new Error(`夹具前提不成立:关账应成功,实际缺口 ${JSON.stringify(outcome.gaps)}`);
+      }
+      expect(outcome.closure.archiveWaitingDays).toBe(archiveWaitingDays);
+      return {
+        fixture,
+        auth: await loginAsFixtureOwner(fixture),
+        closedAt: outcome.closure.closedAt,
+        waitingDays: outcome.closure.archiveWaitingDays,
+      };
+    }
+
+    /**
+     * 把这张 active closure 的 `closedAt` 往回拨 `elapsedMs` —— 「等待期过去了」的唯一造法。
+     * 基准取 **DB 的 `now()`**,与归档判闸读的是同一个时钟。
+     */
+    async function backdateClosedAt(fixture: ClosureFixture, elapsedMs: number): Promise<Date> {
+      const [row] = await prisma.$queryRaw<Array<{ dbNow: Date }>>`SELECT now() AS "dbNow"`;
+      if (!row) throw new Error('取不到 DB now(),回拨基准不成立');
+      const closedAt = new Date(row.dbNow.getTime() - elapsedMs);
+      const changed = await prisma.activitySettlementClosureRevision.updateMany({
+        where: { activityId: fixture.activityId, statusCode: 'active' },
+        data: { closedAt },
+      });
+      // 🔴 先验仪器:回拨影响的行数必须恰为 1,否则下面「时间过去了」这个前提是空的。
+      expect(changed.count).toBe(1);
+      return closedAt;
+    }
+
+    /** 被拒时的完整取证:归档六列一列都没写,活动状态原地不动。 */
+    async function expectArchiveColumnsUntouched(activityId: string): Promise<void> {
+      const row = await prisma.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: {
+          statusCode: true,
+          archivedAt: true,
+          archivedByUserId: true,
+          archivedFromStatusCode: true,
+          archiveReasonCode: true,
+          archiveOperationKey: true,
+        },
+      });
+      expect(row).toEqual({
+        statusCode: 'published',
+        archivedAt: null,
+        archivedByUserId: null,
+        archivedFromStatusCode: null,
+        archiveReasonCode: null,
+        archiveOperationKey: null,
+      });
+    }
+
+    // ① 正向:等待期真的过去了 ⇒ 放行,且走的是「办完的活动」那套条件。
+    it('AC-064 关账已过 7 天 ⇒ 归档放行(HTTP 200,reasonCode=settled)', async () => {
+      const { fixture, auth } = await closeThenLoginOwner(7);
+      const closedAt = await backdateClosedAt(fixture, 7 * DAY_MS + 60_000);
+
+      const response = await archiveRequest(
+        auth,
+        fixture.activityId,
+        `ac064-elapsed-${fixture.tag}`,
+      );
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual(
+        expect.objectContaining({
+          activityId: fixture.activityId,
+          statusCode: 'archived',
+          // 🔴 走的是结算那套条件,不是草稿那套 —— 两套条件谁也不许越界到对方的活动上。
+          reasonCode: 'settled',
+          archivedFromStatusCode: 'published',
+        }),
+      );
+
+      const row = await prisma.activity.findUniqueOrThrow({
+        where: { id: fixture.activityId },
+        select: { statusCode: true, archiveReasonCode: true, archivedAt: true },
+      });
+      expect(row.statusCode).toBe('archived');
+      expect(row.archiveReasonCode).toBe('settled');
+      // 正面读数:归档确实发生在 `closedAt + 7 天`**之后**,不是「反正成功了」。
+      expect(row.archivedAt).not.toBeNull();
+      expect(row.archivedAt!.getTime()).toBeGreaterThanOrEqual(closedAt.getTime() + 7 * DAY_MS);
+    });
+
+    // ② 反向:刚关完账,7 天一天都没过 ⇒ 具名码 20157,且一列都没写。
+    it('AC-064 关账当刻(等待期 7 天)⇒ 20157,归档六列一列都没写', async () => {
+      const { fixture, auth } = await closeThenLoginOwner(7);
+
+      const response = await archiveRequest(auth, fixture.activityId, `ac064-fresh-${fixture.tag}`);
+      expectBizError(response, BizCode.ACTIVITY_ARCHIVE_WAITING_PERIOD_NOT_ELAPSED);
+      await expectArchiveColumnsUntouched(fixture.activityId);
+    });
+
+    // ③ 边界(下侧):只差 2 小时不到 7 天 ⇒ 仍然拒。
+    //    没有这一条,「阈值取 1 小时」「阈值取 1 天」都能让 ①② 全绿。
+    it('AC-064 只差 2 小时不满 7 天 ⇒ 仍是 20157(阈值不是「关过账就行」)', async () => {
+      const { fixture, auth } = await closeThenLoginOwner(7);
+      await backdateClosedAt(fixture, 7 * DAY_MS - 2 * HOUR_MS);
+
+      const response = await archiveRequest(auth, fixture.activityId, `ac064-near-${fixture.tag}`);
+      expectBizError(response, BizCode.ACTIVITY_ARCHIVE_WAITING_PERIOD_NOT_ELAPSED);
+      await expectArchiveColumnsUntouched(fixture.activityId);
+    });
+
+    // ④ 参数化:等待期读的是 `Activity.archiveWaitingDays` 这一列,不是写死的 7。
+    //    合同允许 0(§3.1 的 0..365),此时 `archiveWaitingUntil === closedAt` ⇒ 当刻即可归档。
+    it('AC-064 archiveWaitingDays=0 ⇒ 关账当刻即可归档(等待期读的是活动那一列)', async () => {
+      const { fixture, auth } = await closeThenLoginOwner(0);
+
+      const response = await archiveRequest(auth, fixture.activityId, `ac064-zero-${fixture.tag}`);
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual(
+        expect.objectContaining({
+          activityId: fixture.activityId,
+          statusCode: 'archived',
+          reasonCode: 'settled',
+          archivedFromStatusCode: 'published',
+        }),
+      );
+      await expect(
+        prisma.activity
+          .findUniqueOrThrow({
+            where: { id: fixture.activityId },
+            select: { statusCode: true },
+          })
+          .then((row) => row.statusCode),
+      ).resolves.toBe('archived');
     });
   });
 });

@@ -238,7 +238,16 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     'pending_result / item_count_mismatch / duplicate_identity / open_segment / missing_rule,没有「活动未结束」这一条;' +
     '`settlement-submit.service.ts` 与 `evidence-seal.service.ts` 全文零处读 `Activity.endAt`(前者的 endAt 命中全在**场次**上);' +
     '封场那条 `deadlines.length === 0 ? authoritativeNow` 就是「零 live 场次时窗口真空成立」的原文。' +
-    '⇒ **功能缺口,不是测试缺口**,补测试关不掉。)',
+    '⇒ **功能缺口,不是测试缺口**,补测试关不掉。)' +
+    '(2026-08-26「只缺测试那批」独立复测,读数逐条重取并用第二个工具交叉核过 —— ' +
+    '`settlement-submit.service.ts`(853 行)与 `evidence-seal.service.ts`(460 行)对 `endAt` 命中**各 0 次**,' +
+    '后者对 `checkOutCloseAt` 命中 2 次 ⇒ 两条链读的确实只有签退窗口;validator 的拒绝种类仍恰五条。' +
+    '⭐ 并回答了「真空是缺陷还是刻意」这个此前悬着的问题:**是刻意的**,而且刻意的方向恰恰是不加闸 —— ' +
+    '`evidence-seal.service.ts` 文件头「与合同的偏离」第 ④ 条逐字写着「零 live 场次时…真空成立…' +
+    '**不发明新的拒绝理由去堵这个形态**」。⇒ 要关掉本条必须**新增一道读 `Activity.endAt` 的闸**' +
+    '(以及它的具名拒绝码),那是一次实现变更 + 一次拍板,不在「只补测试」的射程内。' +
+    '另:「只允许整理草稿」的正面一半确实是纯测试,但它**关不掉本条**,而且 `SettlementDraftService.updateItem` ' +
+    '在全仓 e2e 里**零调用点** —— 写它是新开一条 e2e 路径,应与那道闸同刀落地,两半共用一份夹具。)',
   // AC-049:当前覆盖人口数量，不覆盖 absent 零时长不得进入有效服务明细的完整投影。
   'AC-049': '缺 absent 零时长结果到有效服务明细的端到端断言。',
   // AC-054:现有规模用例为 8192，未覆盖合同固定的 10000 人与 0%/100%读面组合。
@@ -310,6 +319,9 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   //   无该状态值」已过期:`archived` 已是状态闭集第 6 值,`POST /my/managed-activities/{id}/archive`
   //   已开放,结算路径的两道闸(未关账 20156 / 未满等待期 20157)已实装并有纯函数判据。
   //   仍不能结案的**只剩一格**,且那一格是缺证据不是缺实现。
+  // ⚠️ 2026-08-26 起本条**已由 TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS 接通**
+  //    (那一格的 HTTP 续链已按本段点名的做法接在 `activity-settlement-closure.e2e-spec.ts` ⑦ 上,
+  //     没有把关账夹具复制进归档 spec),下面这段只作历史记录 —— 去向恒优先于卡点。
   'AC-064':
     '归档动作已交付(2026-08-25):`archived` 进入状态闭集,archive / unarchive 两端点开放,' +
     '结算路径两道闸各有具名码(未关账 20156 / 等待期未满 20157),判据见 activity-archive-policy.spec.ts 「结算路径」五条。' +
@@ -353,6 +365,13 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   // ADV-022:2026-08-25 归档刀**收窄**。原卡点两项里的第一项(「卡 archive action」)已消解 ——
   //   动作与状态值都有了,且归档写路径与关账走**同一把 Activity 行锁**(lockActivityForLifecycle
   //   → FOR UPDATE),结构上已具备可并发的接缝。剩下的是**用例**,不是能力。
+  // ⚠️ 2026-08-26 起本条**已由 TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS 接通**,下面这段只作历史记录。
+  //    ⭐ 订正一处**本段写错了的读数**:下面第一项「① 更正提交/生效 × 关账」里的**生效**那一半,
+  //       在本段写下时**已经存在** —— `activity-settlement-closure-concurrency.e2e-spec.ts` ②
+  //       就是真跑 `correctionA.commit` 的双实例竞态(不是 updateMany 模拟)。
+  //       同理「现有仍只有同事务原子性证据」这一句在写下时即为假。真正缺的是另外三格:
+  //       更正**提交** × 关账、更正生效 × 归档、更正提交 × 归档 —— 2026-08-26 补齐,
+  //       另加「归档 × 关账」(本段 ② 点名的那条)。
   'ADV-022':
     '原卡点第一项「卡 archive action(全仓无该动作、无该状态值)」已过期:2026-08-25 归档刀交付了 archive / unarchive,' +
     '且归档取的是与关账 / 终审 / 更正同一把 Activity `FOR UPDATE` 行锁 ⇒ 真并发接缝已经存在。' +
@@ -525,7 +544,14 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     '场次 / 岗位 / 名额 / 表单 / 资格五格已各有 published 直写被拒的真用例(表单第 4 批③、资格第 4 批⑰),原「仍卡第 4/5 批」已过期;' +
     '可见性与签到规则两格 2026-08-25 已补写(app-managed-activities.e2e-spec.ts),不再是缺口;' +
     '仅剩计分规则一格:全仓无按活动的写接口(贡献规则按 activityType×role×version 全局查),' +
-    '「无接口算不算满足合同」须**维护者裁定** —— 这一格补测试解决不了,整项不能结案。',
+    '「无接口算不算满足合同」须**维护者裁定** —— 这一格补测试解决不了,整项不能结案。' +
+    '(2026-08-26「只缺测试那批」复核并把裁定问题**收窄成一句可回答的话**:' +
+    '`ContributionRule` 的业务键是 `activityTypeCode` + `attendanceRoleCode`,schema 里**没有 activityId 这一列**,' +
+    '端点前缀是 `system/v1/contribution-rules` —— 而「contribution-rules 归 System surface」是**决策锁 D-1**。' +
+    '⇒ 「按活动写计分规则」不是漏做,是被 D-1 结构性排除掉的。裁定问题因此只剩一句:' +
+    '**合同这一句里的「计分规则」,在本仓不存在按活动的写面,这算不算已满足「直接写接口必须拒绝」?** ' +
+    '答「算」⇒ 本条可接一条结构判据(schema 无 activityId + 端点在 System surface)后结案;' +
+    '答「不算」⇒ 要新开按活动的计分规则写面,那是重开 D-1,必须先声明决策锁。两条路都不是补测试。)',
   // AC-010:容量桶那格已由第 4 批⑤真实投影 + 三条 HTTP 判据落地,原文把它列进「仍是接缝」已过期。
   'AC-010':
     '六格里五格已落:变更审核与名额(容量桶)由第 4 批⑤给出(投影只取 scheduled 场次、取消场次的桶留作不可变历史、占用中降容 20147);' +
@@ -534,7 +560,17 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     'name / locationText / capacity,**没有任何用例改过 startAt / endAt**,更没有「改 A 场次的时间、B 场次的时间与二维码有效期纹丝不动」这条反向。' +
     '⚠️ 改期不是取消的同形:取消走 statusCode,改期要动 checkIn*/checkOut* 四个时间窗,' +
     '而二维码的 validFrom / validUntil 是**签发时从场次时间窗冻下来的**(见 attendance-qr-credential.service.ts issue()),' +
-    '改期后既有凭证的有效期与新时间窗不一致 —— 这一格要先裁定「改期是否作废旧码」再补测,补测试解决不了。',
+    '改期后既有凭证的有效期与新时间窗不一致 —— 这一格要先裁定「改期是否作废旧码」再补测,补测试解决不了。' +
+    '(2026-08-26「只缺测试那批」复核,补三条给下一个人:' +
+    '① ⭐ **本条的「改期」与 AC-066 的「改期」不是同一件事**,别当成一格两写:' +
+    '   AC-066 是**活动级** startAt/endAt/location 变化触发的收件人冻结' +
+    '   (`activity-write.service.ts` 的 `scheduleChanged` → cohortKey `activity-change:*`,已于本日补齐 e2e);' +
+    '   本条是**单个场次**改期后「只影响该场次」的隔离,走的是变更审核的 `applySessions`,两条链不相交。' +
+    '② 这一格可写的是**隔离那一半**(改 A 场次的时间 ⇒ B 场次的名额桶 / 二维码行 / 人员身份逐字段不变),' +
+    '   与 ADV-018 取消那一刀的反向三条同形;挡住的只有**正向那一半**' +
+    '   ——「A 自己的旧码怎么办」正是那个未裁定的问题,而取消那一刀的正向三条恰恰都落在 A 上。' +
+    '③ 只写隔离半格 ⇒ 本条仍不能结案(合同这一句点名五格,正向缺一格就是没覆盖),' +
+    '   故本刀**不拿半格冒充**,照旧留 todo,等裁定后与正向一并落地。)',
   // AC-012:2026-08-24 分拣刀判为 A 并已在 TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS 给出真去向。
   //   这句留着是**第 3 刀第一刀自己**的欠账记录(同 ADV-001 / ADV-004 的既定形状),删不得。
   'AC-012': '卡第 3 刀邀请可见性读面。',
@@ -1256,6 +1292,9 @@ const BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS: Readonly<Record<string, strin
   // 2026-08-25 组织定向刀复核:上一版这条卡点的**四个分句已随实现变成假话**(依据闭集只有 5 个 /
   // 零处读 organizationId / 发布 DTO 只收 audienceTagCodes / 目标组织零实现)。台账写着已被推翻的
   // 读数比没写更坏 —— 逐条订正,但**卡点不撤**:同句点名的「改期」那一格仍然零绑定。
+  // ⚠️ 2026-08-26 起本条**已由 TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS 接通**:
+  //    「改期」那一格补了三条 e2e(冻结集合 / 异步展开后实收逐字相同 / 盖章与发布批互不吞并),
+  //    src 侧一行未动。下面这段只作历史记录 —— 去向恒优先于卡点。
   'AC-066':
     '标签定向、「明确不广播」与**目标组织**三个可选项已全部实现并冻结:组织定向走 `audienceOrganizationIds`' +
     '(与 audienceTagCodes 同形的 nullable JSONB),「勾上级含下级」走 organization_closure 真子树,' +
@@ -2176,6 +2215,8 @@ const ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS: Readonly<
  *     当前只有纯函数判据、**没有 HTTP 证据**;
  *   - ADV-022 要的是「更正提交/生效 × 关账 × 归档」的**真并发**屏障,本刀零并发用例。
  *   两条的卡点说明已就地收窄,不拿「动作做出来了」冒充「那一格证到了」。
+ *   ⚠️ 这两条已于 2026-08-26 由「只缺测试那批」补齐,去向见
+ *      `TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS`;上面这段只作历史记录。
  */
 const ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS: Readonly<
   Record<string, readonly AcceptanceDestination[]>
@@ -2205,6 +2246,126 @@ const ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS: Readonly<
 };
 
 /**
+ * 「只缺测试那批」(2026-08-26)—— 三条编号的功能都已交付,缺的一直是**证据**。
+ *
+ * 逐条对上合同原句的**每一格**,不拿「覆盖了一半」凑完成数:
+ *
+ * ⭐ **AC-064**「7天归档等待结束后可以归档，但合法更正不因7天过去而被永久禁止。」
+ *   · 后半句 → 关账 spec ⑥「归档等待期早已过去 ⇒ 让位后重新关账照样成功」(既有);
+ *   · 前半句此前**只有纯函数证据**,本刀在关账 spec 里接出 HTTP 续链,四格各自成 `it`:
+ *     满 7 天放行 / 关账当刻拒 20157 / 差 2 小时仍拒 / `archiveWaitingDays=0` 当刻放行。
+ *     四条合起来把闸钉死在 `closedAt + Activity.archiveWaitingDays`:少任一条,
+ *     「永远拒」「关过账就放行」「阈值取多大都行」「把 7 写成常量」各有一种能全绿。
+ *
+ * ⭐ **AC-066**「发布通知可以选择目标组织、标签或明确不广播；取消、改期等事件冻结收件人后异步展开。」
+ *   · 目标组织 → `activity-recipient-freeze.spec.ts` ⑥(既有);
+ *   · 标签 → 冻结 spec「发布即冻结」;明确不广播 → 同 spec 的 legacy 广播盖章(既有);
+ *   · 取消事件 → ADV-016 那条(既有);
+ *   · **改期事件** → 本刀补:集合 / 异步展开 / 盖章三格各自成 `it`。整项因此才收口。
+ *
+ * ⭐ **ADV-022**「更正提交或生效与关账、归档同时发生。」= 2×2 一张表:
+ *   | | 关账 | 归档 |
+ *   |---|---|---|
+ *   | 更正生效 | AC-063 并发 spec ②(既有) | 本刀 ⑤-a(判决翻转 → 20156) |
+ *   | 更正提交 | 本刀 ⑤-b(判决翻转 → pending_work_exists) | 本刀 ⑤-c |
+ *   另加 ⑤-d「归档 × 关账」—— 归档与关账取同一把 Activity `FOR UPDATE`,
+ *   这条接缝是归档刀(2026-08-25)新造的,此前全仓零并发用例。
+ *   四条都用两套 app / 两套 pool,并用 `pg_stat_activity` **正面数出锁等待者**。
+ */
+const TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'AC-064': [
+    // 前半句「等待结束**后可以归档**」—— 正向。
+    {
+      file: 'test/e2e/activity-settlement-closure.e2e-spec.ts',
+      needle: 'AC-064 关账已过 7 天 ⇒ 归档放行(HTTP 200,reasonCode=settled)',
+    },
+    // 反向:等待期一天都没过。
+    {
+      file: 'test/e2e/activity-settlement-closure.e2e-spec.ts',
+      needle: 'AC-064 关账当刻(等待期 7 天)⇒ 20157,归档六列一列都没写',
+    },
+    // 边界(下侧):差 2 小时不满 7 天。
+    {
+      file: 'test/e2e/activity-settlement-closure.e2e-spec.ts',
+      needle: 'AC-064 只差 2 小时不满 7 天 ⇒ 仍是 20157(阈值不是「关过账就行」)',
+    },
+    // 参数化:阈值读的是活动那一列,不是写死的 7。
+    {
+      file: 'test/e2e/activity-settlement-closure.e2e-spec.ts',
+      needle: 'AC-064 archiveWaitingDays=0 ⇒ 关账当刻即可归档(等待期读的是活动那一列)',
+    },
+    // 后半句「合法更正不因 7 天过去而被永久禁止」。
+    {
+      file: 'test/e2e/activity-settlement-closure.e2e-spec.ts',
+      needle: '归档等待期早已过去 ⇒ 让位后重新关账照样成功(不把门焊死)',
+    },
+  ],
+  'AC-066': [
+    // 前半句三个可选项。
+    {
+      file: 'src/modules/activities/activity-recipient-freeze.spec.ts',
+      needle: '⑥ 组织定向 —— 交集与真子树',
+    },
+    {
+      file: 'test/e2e/activity-batch7-recipient-freeze.e2e-spec.ts',
+      needle: '发布即冻结:每条 intent 都带齐依据/时刻/算法版本/基数,且基数与实际行数相等',
+    },
+    {
+      file: 'test/e2e/activity-batch7-recipient-freeze.e2e-spec.ts',
+      needle: 'legacy 广播(不带标签)拿到显式的 broadcast-visibility 盖章,而不是悄悄没有快照',
+    },
+    // 后半句点名的两个事件:取消(既有)+ 改期(本刀补,三格)。
+    {
+      file: 'test/e2e/activity-batch7-recipient-freeze.e2e-spec.ts',
+      needle: 'ADV-016 取消通知:intent 形成后**报名名单**再变,原事件收件人仍逐字冻结',
+    },
+    {
+      file: 'test/e2e/activity-batch7-recipient-freeze.e2e-spec.ts',
+      needle: 'AC-066 改期即冻结:收件人恰为改期那一刻的在册报名者,改期前已退出的不在内',
+    },
+    {
+      file: 'test/e2e/activity-batch7-recipient-freeze.e2e-spec.ts',
+      needle: 'AC-066 改期 intent 形成后名单再变:抽干 outbox 后实收集合与快照逐字相同',
+    },
+    {
+      file: 'test/e2e/activity-batch7-recipient-freeze.e2e-spec.ts',
+      needle: 'AC-066 改期批自带 registration-roster 盖章,且与发布批是两批 cohort 互不吞并',
+    },
+  ],
+  'ADV-022': [
+    // 更正生效 × 关账(既有)。
+    {
+      file: 'test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts',
+      needle: '⭐ 更正 commit 在关账等锁期间落地 ⇒ 关账按**锁后**状态复判并成功(不漏检查)',
+    },
+    // 更正生效 × 归档。
+    {
+      file: 'test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts',
+      needle:
+        '⭐ ADV-022 更正 commit 在归档等锁期间落地 ⇒ 归档按锁后状态复判、被 20156 挡下且零写入',
+    },
+    // 更正提交 × 关账。
+    {
+      file: 'test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts',
+      needle:
+        '⭐ ADV-022 更正 submit 在关账等锁期间落地 ⇒ 关账按锁后状态复判、被 pending_work_exists 挡下且零写入',
+    },
+    // 更正提交 × 归档。
+    {
+      file: 'test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts',
+      needle: 'ADV-022 归档握锁时更正提交排队 ⇒ 归档落地后更正仍提交成功(合法更正不被归档禁掉)',
+    },
+    // 归档 × 关账(同一把 Activity 行锁的第三条路径)。
+    {
+      file: 'test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts',
+      needle: '⭐ ADV-022 关账在归档等锁期间落地 ⇒ 归档按锁后状态复判并放行(入口本该是 20156)',
+    },
+  ],
+};
+
+/**
  * 「哪些登记表参与查表」只写一处 —— `registerAcceptanceCases` 与下面的接线守护读的是
  * **同一个数组**,所以两者不可能各说各话。
  *
@@ -2218,6 +2379,7 @@ const ACCEPTANCE_DESTINATION_TABLES: ReadonlyArray<
 > = [
   // 分拣表排在最前:它的结论优先于各批自己的历史卡点行(去向恒优先于卡点)。
   TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS,
+  TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS,
   ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS,
   ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS,
   BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
@@ -2371,6 +2533,7 @@ describe('活动业务改造 v1.1 合同完整性', () => {
       table: Readonly<Record<string, readonly AcceptanceDestination[]>>;
     }> = [
       { name: 'TRIAGE_2026_08', table: TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS },
+      { name: 'TEST_GAP_2026_08_26', table: TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS },
       { name: 'ARCHIVE_ACTION', table: ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS },
       { name: 'ADV018_SESSION_CANCEL', table: ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH2', table: BATCH2_ACCEPTANCE_DESTINATIONS },
