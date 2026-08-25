@@ -776,10 +776,13 @@ describe('App managed activities core', () => {
         .set('Authorization', owner.auth)
         .send(body);
 
+    // 基线 = App 管理草稿创建路径的兜底值(`app-managed-activities.service.ts` create:
+    // `visibilityCode ?? 'internal'` / `defaultLocationRequired ?? false`;签到半径无兜底 ⇒ NULL)。
+    // ⚠️ 下面每一次直写发的值都**必须与基线不同**,否则"库行零变化"会因为"本来就相等"而恒真。
     const baseline = {
-      visibilityCode: null,
+      visibilityCode: 'internal',
       defaultCheckInRadiusMeters: null,
-      defaultLocationRequired: null,
+      defaultLocationRequired: false,
       workflowRevision: 1,
     };
     const readRules = async () =>
@@ -792,7 +795,7 @@ describe('App managed activities core', () => {
           workflowRevision: true,
         },
       });
-    // 前提:这三列此刻都是 NULL —— 下面每一条"库行零变化"才有判别力。
+    // 前提:先把基线钉死 —— 下面每一条"库行零变化"才有判别力。
     await expect(readRules()).resolves.toEqual(baseline);
 
     // —— 反向 ①:可见性单独直写。
@@ -816,7 +819,7 @@ describe('App managed activities core', () => {
 
     // —— 边界:白名单字段与被测字段混发 ⇒ 仍然整包拒,展示字段也不许顺带落地。
     expectBizError(
-      await patch({ description: '展示说明混一个可见性', visibilityCode: 'internal' }),
+      await patch({ description: '展示说明混一个可见性', visibilityCode: 'invitation' }),
       BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
     );
     await expect(readRules()).resolves.toEqual(baseline);
