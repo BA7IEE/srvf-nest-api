@@ -86,7 +86,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 | 冻结稿 | 还差什么 |
 |---|---|
 | **企业微信 T0** | 后台配置 / 凭证录入 / `migrate deploy` / 开 `loginEnabled`+`messageEnabled` / 工作台实跑 / 签两张 GO 单。⏸ 卡备案;之后还有一轮总评审才谈开关 |
-| **证书标准库 T0 + amendments** | ① 第 67 migration(**不可逆**,DROP 七列)生产未部署 ② 首批标准与认定规则未建(零标准时建证/审核一律拒)③ 前端适配未做 |
+| **证书标准库 T0 + amendments** | ① 第 67 migration(**不可逆**,DROP 七列)生产未部署 ② 首批标准:法规定义的那批已内置 seed(业余无线电 A/B/C,2026-08-25 拍板),**队内认定的仍未建** ③ 前端适配未做 |
 | **D-INSURANCE v3** | PR3 `INSURANCE_ENFORCEMENT_ENABLED` 未启用、PR4 migration 未 deploy;开关前须证明旧 server=0、禁混跑 |
 | **活动责任闭环 v2** | `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 生产未开;legacy 认领须业务负责人逐条指定(禁止从 `publishedBy` 猜) |
 
