@@ -1948,7 +1948,14 @@ describe('OpenAPI 契约快照', () => {
     });
     // AC-004「长期未处理草稿在工作台提示」的后端半格:列表行上的纯布尔事实位,
     // 契约仍是扁平的(不塞嵌套对象)。
-    expect(listItemSchema?.properties?.staleDraft).toEqual({ type: 'boolean' });
+    // ⚠️ 用 objectContaining 而不是精确对象:本字段带 `@ApiProperty({ description })`,
+    //    精确对象会把**说明文案**也钉成契约 —— 那不是本条要守的东西(要守的是「它是布尔、
+    //    且没有变成嵌套结构」)。相邻两条 statusCode / nextAction 没有 description,
+    //    所以它们写精确对象是等价的,不是两套口径。
+    expect(listItemSchema?.properties?.staleDraft).toEqual(
+      expect.objectContaining({ type: 'boolean' }),
+    );
+    expect(listItemSchema?.properties?.staleDraft?.$ref).toBeUndefined();
     expect(detailSchema?.properties?.closure).toEqual({
       $ref: '#/components/schemas/AppManagedActivityClosureDto',
     });
