@@ -91,7 +91,7 @@ name / description / sortOrder 按 D-CERT-005 本就**允许运营在审计下�
 只有后续 PATCH 才 400,零症状)。**变异对拍**:把 C 的 levelCode 改成字典里没有的
 `amateur_radio_d` ⇒ **恰 1 条红**、其余 11 条全绿;还原后 12/12 复绿,零残留。
 
-#### ⭐ 规矩的措辞跟着改(五处),不是「本次例外」
+#### ⭐ 规矩的措辞跟着改(**六处**),不是「本次例外」
 
 runbook 原文「本仓刻意**不内置**任何证书标准」防的是「系统替维护者决定我们队认哪些证书」——
 那确实是判断题。而 A/B/C 由 67 号令定死、**全国一套队里没得选**,不构成替谁拍板。
@@ -102,7 +102,12 @@ runbook 原文「本仓刻意**不内置**任何证书标准」防的是「系�
 
 改了 `docs/ops/certificate-standard-library-initialization.md`(新增判据节 + 已内置清单 +
 「别重复建,撞 unique 会 409」)· `docs/current-state.md` §4 P1 ③ ·
-`docs/ai-harness/NEXT_TASKS.md`(两处)· `docs/ai-harness/FROZEN_DRAFTS.md`。
+`docs/ai-harness/NEXT_TASKS.md`(两处)· `docs/ai-harness/FROZEN_DRAFTS.md` ·
+`docs/README.md` 的 runbook 索引行(第六处,改完前五处后全仓自查才发现 ——
+同一个仓里留着两段互相矛盾的说明比只留一段正确的更糟)。
+
+⚠️ `docs/archive/handoff/v0.65.0.md` 有同样一句,**刻意不动**:`docs/archive/**` 是红区
+(仅允许新增),且按 AGENTS §0 归档是**历史证据不是当前事实** —— 它记的是 v0.65.0 当时为真的口径。
 
 ℹ️ **内置不是单向门**:`CertificateStandard` 是软删,`code` 的 unique 含软删行 ⇒ 维护者删掉之后
 再跑 seed,upsert 走 update 分支、`update: {}` 什么都不写,**不会复活**。删了就是删了。
