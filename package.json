@@ -74,6 +74,7 @@
     "docs:counts": "tsx scripts/docs-counts.ts --write",
     "docs:counts:check": "tsx scripts/docs-counts.ts --check",
     "docs:readtax:check": "tsx scripts/docs-readtax.ts",
+    "docs:migcount:check": "tsx scripts/check-migration-count-sync.ts",
     "changelog:merge": "tsx scripts/changelog-merge.ts",
     "release:prepare": "tsx scripts/release-prepare.ts",
     "release:finish": "tsx scripts/release-finish.ts",
