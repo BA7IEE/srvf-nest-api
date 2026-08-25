@@ -13,7 +13,7 @@
  *      `pnpm test` / `agent:check:quick` / CI。本仓栽过「命令写在 package.json 却没接 CI ⇒
  *      闸红了没人消费 = 没有执法」的账,这里不再造第二条需要单独接线的路。
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import * as ts from 'typescript';
@@ -25,10 +25,28 @@ const SRC = join(REPO_ROOT, 'src');
 export const CONFIG_DEF_FILE = 'src/config/app.config.ts';
 export const GATE_FILE = 'src/common/activity-workflow/activity-workflow.gate.ts';
 /**
- * 判据自身按构造必须**指名它所禁止的东西**,否则无从检查 —— 故 C1 豁免本文件。
- * 这不是逃生门:本文件不注入 config、拿不到运行时闸值,结构上不可能成为第二个读取处。
+ * C1 的豁免名单 —— **当前为空,且这是结构性结论,不是「暂时没人要豁免」**。
+ *
+ * 历史:判据正文原先住在 `src/common/activity-workflow/activity-workflow-gate.criteria.ts`,
+ * 而判据按构造必须**指名它所禁止的东西**,否则无从检查 ⇒ 当时必须自我豁免。
+ * 该文件已于 #1165 删除、判据搬进 `scripts/`,而 `collectProdFiles()` 只走 `SRC`
+ * ⇒ 判据自身**永远不在扫描面内**,豁免失去存在理由。
+ *
+ * ⚠️ 那条豁免在文件被删后**继续挂了下来,指着一个不存在的路径**:
+ * `includes(r)` 永远不匹配 ⇒ **不报错、不改判定、也没有任何机器发现它烂了**。
+ * 「豁免名单静默腐烂」是一类缺陷而不是一次疏忽 —— 故补了自证,见 `exemptionRot()`。
  */
-const C1_EXEMPT = ['src/common/activity-workflow/activity-workflow-gate.criteria.ts'];
+const C1_EXEMPT: readonly string[] = [];
+
+/**
+ * 自证:豁免名单里每一条都必须**真的存在**。
+ *
+ * 判据每次运行先自证再报数 —— 豁免指着不存在的文件时,它既不生效也不报错,
+ * 只会让人以为「这里已经豁免过了」。让它直接判红,腐烂就无处藏。
+ */
+export function exemptionRot(exempt: readonly string[] = C1_EXEMPT): string[] {
+  return exempt.filter((p) => !existsSync(join(REPO_ROOT, p)));
+}
 
 /** 结算真相链 —— 合同点名「新打卡＋旧结算」的两端都在这里。 */
 export const V11_DELEGATES = [
@@ -402,6 +420,16 @@ export function runCriteria(
   const findings: Finding[] = [];
   const files = collectProdFiles();
   const readSource = (f: string): string => overrides[rel(f)] ?? readFileSync(f, 'utf8');
+
+  // ── C0:先自证,再报数 ──
+  // 豁免名单指着不存在的文件时,它既不生效也不报错(见 C1_EXEMPT 头注的实测)。
+  // 不先验这一步,后面 C1 的「零命中」就分不清是「真的没人违规」还是「豁免早已烂掉」。
+  for (const stale of exemptionRot()) {
+    findings.push({
+      criterion: 'C1',
+      detail: `C1 豁免名单指向不存在的路径:${stale} —— 该豁免永远不匹配,既不生效也不报错。修法二选一:文件确已移除就把这条从 C1_EXEMPT 删掉;文件只是搬了家就把路径改对。`,
+    });
+  }
 
   // ── C1:单一真源 ──
   // 按 **AST 节点**判而不是裸文本:注释不是节点,故 biz-code 里「为什么这么设计」的说明
