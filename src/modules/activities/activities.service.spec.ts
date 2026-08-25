@@ -564,9 +564,15 @@ describe('ActivitiesService (characterization)', () => {
     // 下面两条替换它们,并且**必须**能区分「签过」与「原样吐 key」——
     // 所以签名 stub 返回的是 key 派生值而不是定值。
     //
-    // ⚠️ 遗留 JSON 列的 jsonAsStringArray 收窄行为并没有消失,它仍在
-    // `activity-audit-recorder.ts` 的私有副本里(审计快照仍记那两列),
-    // 由 audit characterization 覆盖 —— 不是本处失去覆盖。
+    // ⚠️ P2-14 刀 B(2026-08-25)后,那两列在 DB 上已经**不存在**了。
+    // 下面夹具里仍塞进 `coverImageUrl` / `galleryImageUrls` 是**刻意的**:
+    // 夹具是 `Record` 形状的手搓类型(不受 Prisma 生成物约束),塞进去等于问
+    // 「就算有人把这两列加回来并接上线,出参会不会被污染」—— 断言因此比删列前更强,
+    // 不是残留。
+    // ⚠️ 原注解说「jsonAsStringArray 收窄行为仍在 activity-audit-recorder.ts 的私有副本里、
+    // 由 audit characterization 覆盖」—— 该副本已随两列 DROP 一并移除;
+    // 且全仓实测没有任何测试断言过审计快照里的这两个键(那句「由 audit characterization
+    // 覆盖」当时就不成立)。
 
     it('封面 / 图集出参来自 key 现签,不来自裸 URL 遗留列', async () => {
       const prisma = makePrismaMock();

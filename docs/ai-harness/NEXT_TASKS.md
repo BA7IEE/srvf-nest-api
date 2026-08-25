@@ -1840,23 +1840,38 @@ P2-13 落地后这句话**已经不成立**(执行位就是 `check-permission-su
 改它要重新生成 `ROUTE_AUTHZ.md` ⇒ 改写 inputDigest ⇒ **占串行道**,而 P2-13 的排期明确是「零 `src/`、不占串行道」。
 留给下一个本来就要动 ROUTE_AUTHZ 的刀顺手带走。
 
-### P2-14 活动封面 / 图集改附件制 —— **刀 A ✅ 已合;刀 B(DROP 旧列)待起** — 2026-08-22 维护者拍板
+### P2-14 活动封面 / 图集改附件制 —— **刀 A 已合;刀 B 已交付、在飞** — 2026-08-22 / 08-25 维护者拍板
 
-**状态**:进行中(刀 A 已合 #1146;刀 B〔DROP 两个旧列〕待起 —— 须先确认刀 A 在 main 稳定运行一段时间,且在届时存在的每个环境重测旧列非空计数)
+**状态**:进行中(刀 A #1146 已合;刀 B 已提 PR **在飞** —— ⚠️ 按本闸 B 的规矩,在飞 PR 号只能写在正文不能写进状态行,合入后由收口方改成 `已收口`)
 
 **刀 A**(`d8e557d7` / [#1146](https://github.com/BA7IEE/srvf-nest-api/pull/1146))已合:
 `Activity` 加 `coverImageKey` / `coverAttachmentId` / `galleryImageKeys` / `galleryAttachmentIds` 四列,
 写入必须给**本活动的 `activity` 类型附件 id**,读出一律现签;与 `Content` 逐字同形。
 旧列 `coverImageUrl` / `galleryImageUrls` **保留但已零写入路径**。
 
-**刀 B 待起**:DROP 那两个旧列。
+**刀 B**([#1191](https://github.com/BA7IEE/srvf-nest-api/pull/1191),**在飞**):DROP 那两个旧列
+(migration `20260825170000_activity_drop_legacy_image_url_columns`,🔴 不可逆)。
 
-⚠️ **刻意分两刀**:刀 A 只 expand、不 DROP,是为了给「发现漏迁」留一个**可回退窗口**。
-DROP 不可逆 ⇒ 起刀 B 前应先确认刀 A 已在 `main` 上稳定运行一段时间、且无人报告封面异常。
+🔴 **前置条件被换过 —— 这一条比结论本身重要。** 本条目原文写的是
+「须先确认刀 A 已在 `main` 上**稳定运行一段时间**、且**无人报告**封面异常」。
+该条件**永远无法满足**:本项目无生产库、无真实用户 ⇒ 分母恒 0,既不可能满足也不可能证伪。
+维护者 2026-08-25 拍板**换成三条此刻可判的等价条件**(不是破例,是把不可判条件翻译成可判条件):
 
-**旧数据读数**(刀 A PR body,实测):两个旧列的非空计数在本机四个库(`app_test` / `app` /
-`app_membersv2_dev` / `app_migration_dev`)**均为 0**。⚠️ 该读数只代表**本机测试 / 开发库**;
-项目尚未上线、无生产库。**起刀 B 前须在届时存在的每个环境上重测一次**,不得沿用此读数。
+| | 条件 | 判法 |
+|---|---|---|
+| E1 | 无新值注入 | 创建口零该键;唯二 update 是**回声写**(值来自同一行刚 select 出的自己);克隆口写字面 `null`;可写 DTO 零 `*ImageUrl` 字段且有结构判据 `scripts/check-activity-image-reference.ts` 把关;全局 `forbidNonWhitelisted` 让请求体塞该键变 400 |
+| E2 | 无语义读 | 对外封面 / 图集一律来自 `resolveSignedUrlTrusted(row.coverImageKey)`;旧列的**值**不进任何类型化 API 出参(presenter 只读 `images.*`,并有「塞 evil.example.com 不得泄漏」的单测负例) |
+| E3 | 存量为零 | 起刀当日本机全库复测两列非空计数(读数写在 migration 头注与刀 B PR body) |
+
+⚠️ **判「一列还有没有人用」不能用 grep 字符串**:`coverImageUrl` 全仓 69 命中里绝大多数是
+**API 出参字段名**与局部变量。只有四条通路真能读写一列:`prisma.activity.*` 的
+`select`/`include` 块 · 同族的 `data` 块 · 已 select 出的行的属性访问 · `$queryRaw` 裸列名。
+(顺带订正一条曾经的错误说法:`Content` 模型**没有**同名列,只有 `coverImageKey`;
+全仓 Prisma 列声明里 `coverImageUrl` 只属 `Activity`。)
+
+⚠️ **刀 B 之后会出现「DB 列删了、TS 接口键还在」的形状** —— 维护者拍板「留着不动」,
+**不是漏改**:那两个键进了审批快照的 `canonicalJson` / `snapshotHash`,删掉会让**在途**
+审核单全部当场 `SNAPSHOT_INVALID`。类型定义处已写注释说明。
 
 ### P2-15 ✅ `description` 漂移还有第二条路 —— 关掉 `PATCH` 只堵了一半 **(已收口 2026-08-23)** — 由 PR 3b 实施方逼出
 
@@ -2063,6 +2078,34 @@ V2 与 `PATCH` 无关,PR 3b 一点没动它。**任何长期存活的库,第一�
 - 修的时候一并处理:`AC-060` 那条用例里逐字写明「少了 `eligibilityCorrected` 这一格」的注释
   (`src/modules/activities/activity-business-overhaul-acceptance.spec.ts`),以及
   **不要把 `false` 断言进用例**(断言 `false` = 给缺陷发一张契约)。
+
+### P2-20 三处 Swagger `description` 指着一个已经不存在的列 —— 「join `Activity.coverImageUrl`、裸 URL 字符串」 — 2026-08-25 由 P2-14 刀 B 复核逼出
+
+**状态**:待办
+
+> **缺陷类**:**说明文字与它描述的事实之间没有绑定。** 事实换了实现(甚至换掉了整根列),
+> 说明文字照旧躺在那里,**没有任何机器会发现它开始说谎**。与 P2-13(权限说明 ↔ 管辖面)同型。
+
+- **症状**:三处响应 DTO 的 Swagger `description` 逐字写着「活动封面图片 URL(join
+  `Activity.coverImageUrl`;裸 URL 字符串)」:
+  - `src/modules/activity-registrations/dto/app/app-my-registration-list-item.dto.ts:33`
+  - `src/modules/attendances/dto/app/app-my-attendance-record.dto.ts:19` / `:20` / `:55`
+
+  这些字符串进了 `docs/handoff/openapi.json`,是**前端唯一能读到的口径**。
+- **真因**:两句话都已成假,而且**成假的时间不同**:
+  - 「裸 URL 字符串」在 **P2-14 刀 A(#1146)** 之后就是假的 —— 值早已改成
+    `resolveSignedUrlTrusted()` 现签的**短时效签名 URL**;
+  - 「join `Activity.coverImageUrl`」在 **P2-14 刀 B** 之后连指代对象都没了 —— 那一列已 DROP。
+
+  ⚠️ **不是刀 B 造成的**:刀 B 只是让它从「说错了」变成「指着不存在的东西」。
+  前端若照着这句话缓存 / 拼接封面地址,会得到一个**会过期**的链接。
+- **代价**:改 `description` 会动 **OpenAPI 契约快照**(`test/contract/__snapshots__/…`,红区)。
+  刀 B 刻意没顺手改:那会把一刀不可逆 DROP 的改动面撑大,**红了就分不清是哪半引起的**;
+  且仓内铁律是「调研中发现的问题不顺手修,先汇报」。
+- **落点**:**下一次本就要动契约快照的刀顺带做**(改一行文案 + `-u` 刷快照 + 同步
+  `docs/handoff/`)。单独为它开一刀不值,但**不要再让它跨过第三个版本**。
+- ⚠️ 修的时候顺手把口径写成**不点名具体列**的形式(例如「活动封面签名 URL(短时效;未设或
+  附件已失效则为 null)」)—— 点名列名正是它会过期的原因。
 
 ### P1-31 ✅ 开工门禁没挂 Bash matcher —— 用 `python3` / `sed -i` 写文件 **(已收口 2026-08-22)100% 绕过**,而那正是默认路径
 

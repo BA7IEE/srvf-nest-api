@@ -154,13 +154,19 @@ describe('活动封面 / 图集改附件制(P2-14 刀 A)e2e', () => {
         .send({ coverImageUrl: 'https://example.com/x.jpg' });
 
       expect(res.status).toBe(400);
-      // 断言「没被静默吞掉」:若 DTO 白名单漏了这个字段,状态码会是 200 而这一列被写进去。
+      // 断言「没被静默吞掉」:若 DTO 白名单漏了这个字段,状态码会是 200 而封面被写进去。
+      //
+      // ⚠️ P2-14 刀 B:原先这里查的是裸 URL 遗留列 `coverImageUrl`,那一列已随本刀 DROP,
+      // 「那一列纹丝不动」这句话失去了指代对象。**不是放宽断言** —— 换成查此刻真正承载
+      // 封面的两列(`coverImageKey` / `coverAttachmentId`),守的仍是同一件事:
+      // 「这个被拒的请求没有在库里留下任何封面痕迹」。而且比原来更严:原来只看一列,
+      // 现在两列都必须为空。
       await expect(
         prisma.activity.findUniqueOrThrow({
           where: { id: activityId },
-          select: { coverImageUrl: true },
+          select: { coverImageKey: true, coverAttachmentId: true },
         }),
-      ).resolves.toEqual({ coverImageUrl: null });
+      ).resolves.toEqual({ coverImageKey: null, coverAttachmentId: null });
     });
 
     it('PATCH 活动时塞 galleryImageUrls 裸 URL 数组 → 400', async () => {

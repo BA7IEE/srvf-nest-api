@@ -47,8 +47,6 @@ export async function buildProposalSnapshot(
       isPublicRegistration: true,
       requiresInsurance: true,
       registrationSchema: true,
-      coverImageUrl: true,
-      galleryImageUrls: true,
       content: true,
       locationLongitude: true,
       locationLatitude: true,
@@ -70,7 +68,18 @@ export async function buildProposalSnapshot(
     },
   });
   ensureProposalInvariants(row);
-  const { activityPositions, ...activity } = row;
+  const { activityPositions, ...activityColumns } = row;
+  // 🔴 P2-14 刀 B:`coverImageUrl` / `galleryImageUrls` 两列已 DROP,但这两个**键**
+  // 必须继续出现在快照 JSON 里(恒 `null`)。
+  //
+  // 理由是 `activity-publish-review.service.ts` 的 initial 审批分支:批准时会**重建**
+  // 一份快照,再与库里存的那份做 `canonicalJson(...) === canonicalJson(...)` 逐字比对。
+  // `canonicalJson` 把 null 值原样写成 `"key":null`(不省略键)⇒ 少两个键 = 规范化串不等
+  // ⇒ 所有**在途**的 initial 审核单当场 ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID,
+  // 而它们本身没有任何问题。写死 `null` 与删列前的取值逐字相同(两列零写入路径 +
+  // 起刀当日全库实测非空计数为 0,读数见 migration `20260825170000_*` 头注的 E1/E3),
+  // 因此这是行为等价变换。完整理由见 `activity-proposal.types.ts`。
+  const activity = { ...activityColumns, coverImageUrl: null, galleryImageUrls: null };
   return JSON.parse(
     JSON.stringify({
       schemaVersion: 1,

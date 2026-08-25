@@ -14,9 +14,11 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 //   隐式回滚(沿 D-S7 红线 + PR #199 state-transition F1 audit-failure-rollback case)
 //
 // **职责边界(严守"搬家不优化")**:
-// - ✅ snapshot 组装(`toAuditSnapshot`)+ `jsonAsObject` / `jsonAsStringArray` /
-//      `decimalToString` JSON-safe 转换(沿 PR #199 audit-characterization 6 case
-//      锁定的字段输出零变化)
+// - ✅ snapshot 组装(`toAuditSnapshot`)+ `jsonAsObject` / `decimalToString`
+//      JSON-safe 转换(沿 PR #199 audit-characterization 6 case 锁定的字段输出零变化;
+//      P2-14 刀 B 随两列 DROP 移除 `coverImageUrl` / `galleryImageUrls` 两个键与
+//      `jsonAsStringArray` 私有副本 —— 审计快照记的是「当时那一行长什么样」,
+//      列没了就不该继续记一个恒 null 的幽灵键)
 // - ✅ `AuditLogsService.log()` payload assembly(5 处写路径,5 个 method 分组)
 // - ❌ 不开事务 / 不读 DB / 不写业务表
 // - ❌ 不做 state machine 判断 / 不做 dictionary / organization / start-end 校验
@@ -25,8 +27,8 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 //      锁定的 5 路径形状逐字保留;event 名 5 处共用 `'activity.publish'` **不动**
 //      (沿 batch3 草案 §20.2 A1 + `src/modules/audit-logs/audit-logs.types.ts:29` 有意设计)
 //
-// 注意:service 侧的 `jsonAsObject` / `jsonAsStringArray` / `decimalToString` **不能删**,
-// `toResponseDto` / `toListItemDto` 仍依赖。recorder 内的 3 个 helper 是私有副本,
+// 注意:service 侧的 `jsonAsObject` / `decimalToString` **不能删**,
+// `toResponseDto` / `toListItemDto` 仍依赖。recorder 内的 helper 是私有副本,
 // 沿 PR #198 范式(同一字面逻辑在 recorder 内复制一份,避免 service ↔ recorder
 // 双向依赖 + 避免抽出 common util grab-bag)。
 
@@ -37,7 +39,7 @@ const ACTIVITY_AUDIT_EVENT = 'activity.publish';
 
 // 最小结构性输入类型(沿 PR #198 范式;TypeScript structural typing 允许调用方
 // 传入更大的 payload 类型,如 service 内 `ActivityFullRow` 含 id / createdAt /
-// updatedAt 等额外字段)。本类型只声明 `toAuditSnapshot` 实际读取的 24 字段子集,
+// updatedAt 等额外字段)。本类型只声明 `toAuditSnapshot` 实际读取的 22 字段子集,
 // 避免 service ↔ recorder 双向 import 类型。
 type AuditActivitySnapshotInput = {
   title: string;
@@ -60,8 +62,6 @@ type AuditActivitySnapshotInput = {
   cancelReason: string | null;
   isPublicRegistration: boolean;
   registrationSchema: Prisma.JsonValue | null;
-  coverImageUrl: string | null;
-  galleryImageUrls: Prisma.JsonValue | null;
   content: Prisma.JsonValue | null;
   locationLongitude: Prisma.Decimal | null;
   locationLatitude: Prisma.Decimal | null;
@@ -84,15 +84,10 @@ export class ActivityAuditRecorder {
     return v;
   }
 
-  // 沿 service 原 `jsonAsStringArray` 字面值零变化(Prisma.JsonValue → string[] | null)。
-  private jsonAsStringArray(v: Prisma.JsonValue | null): string[] | null {
-    if (v === null || !Array.isArray(v)) return null;
-    return v.filter((x): x is string => typeof x === 'string');
-  }
-
-  // 沿 service 原 `toAuditSnapshot` 24 字段输出零变化(沿 PR #4 audit snapshot 字段集 =
+  // 沿 service 原 `toAuditSnapshot` 输出零变化(沿 PR #4 audit snapshot 字段集 =
   // `activitySafeSelect` 剔除 `id` / `createdAt` / `updatedAt`;Decimal 经 `decimalToString`,
-  // Json 经 `jsonAsObject` / `jsonAsStringArray`)。
+  // Json 经 `jsonAsObject`)。P2-14 刀 B 后为 22 字段:随两列 DROP 少了
+  // `coverImageUrl` / `galleryImageUrls`(以及只服务后者的 `jsonAsStringArray`)。
   //
   // Date 字段(`startAt` / `endAt` / `registrationDeadline` / `publishedAt` / `cancelledAt`)
   // 由 Prisma JsonValue 写入时自动调 `Date.toJSON()` → ISO string,沿 service 现状;
@@ -123,8 +118,6 @@ export class ActivityAuditRecorder {
       cancelReason: row.cancelReason,
       isPublicRegistration: row.isPublicRegistration,
       registrationSchema: this.jsonAsObject(row.registrationSchema),
-      coverImageUrl: row.coverImageUrl,
-      galleryImageUrls: this.jsonAsStringArray(row.galleryImageUrls),
       content: this.jsonAsObject(row.content),
       locationLongitude: this.decimalToString(row.locationLongitude),
       locationLatitude: this.decimalToString(row.locationLatitude),
