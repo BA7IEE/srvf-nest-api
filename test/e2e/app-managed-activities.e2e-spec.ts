@@ -743,6 +743,99 @@ describe('App managed activities core', () => {
     });
   });
 
+  // ===== AC-009 的两格补写(2026-08)=======================================
+  //
+  // 合同原句(业务方案 AC-009,逐字):
+  //   「已发布活动的场次、岗位、名额、表单、资格、可见性、签到或计分规则直接写接口
+  //     必须拒绝或进入变更提案。」
+  //
+  // 八格里 场次 / 岗位 / 名额 / 表单 / 资格 五格已各有 published 直写被拒的真用例;
+  // **可见性**与**签到规则**这两格此前从来没有任何用例把它们发出去过 ——
+  // 代码上它们本就在 `PUBLISHED_ACTIVITY_DISPLAY_FIELD_SET`(= description /
+  // registrationNotes / content 三个字段)之外、会被拒,但"会拒"与"证明它拒了"是两件事:
+  // 谁把 `visibilityCode` 加进那个白名单,今天全仓一条用例都不会红。
+  //
+  // ⚠️ 第八格「计分规则」**不在**本用例内:全仓没有按活动写计分规则的接口
+  //    (贡献规则按 activityType × role × version 全局查),「无接口算不算满足合同」
+  //    须维护者裁定 —— 故 AC-009 在验收登记表里仍是 todo,本用例只把两格从"未证"变成"已证"。
+  //
+  // 判据形状(正向 + 反向 + 边界,缺一不可):
+  //   · 反向 —— 三个字段**各自单独**发出去(不与别的字段同包),
+  //     否则上层边界(比如 title 也被拒)会遮蔽掉被测的这一维;
+  //   · 正向 —— 白名单内的 description 单独发 ⇒ 200,证明不是"这个端点对已发布活动一律拒";
+  //   · 边界 —— 白名单字段 + 一个被测字段混发 ⇒ 仍然拒(白名单是 `every`,不是"沾边就放行");
+  //   · 每次被拒之后回读库行,证明是**拒绝**而不是"报了错但已经改了"。
+  it('AC-009 已发布活动直写可见性 / 签到规则必须拒绝(两格补写,库行零变化)', async () => {
+    const owner = await createMember('published-visibility-checkin', 'level-5', true);
+    const activityId = await createManagedDraft(owner, 'Published visibility and check-in rules');
+    await publishThroughReview(owner, activityId);
+
+    const patch = (body: Record<string, unknown>) =>
+      request(httpServer(app))
+        .patch(`/api/app/v1/my/managed-activities/${activityId}`)
+        .set('Authorization', owner.auth)
+        .send(body);
+
+    // 基线 = App 管理草稿创建路径的兜底值(`app-managed-activities.service.ts` create:
+    // `visibilityCode ?? 'internal'` / `defaultLocationRequired ?? false`;签到半径无兜底 ⇒ NULL)。
+    // ⚠️ 下面每一次直写发的值都**必须与基线不同**,否则"库行零变化"会因为"本来就相等"而恒真。
+    const baseline = {
+      visibilityCode: 'internal',
+      defaultCheckInRadiusMeters: null,
+      defaultLocationRequired: false,
+      workflowRevision: 1,
+    };
+    const readRules = async () =>
+      await prisma.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: {
+          visibilityCode: true,
+          defaultCheckInRadiusMeters: true,
+          defaultLocationRequired: true,
+          workflowRevision: true,
+        },
+      });
+    // 前提:先把基线钉死 —— 下面每一条"库行零变化"才有判别力。
+    await expect(readRules()).resolves.toEqual(baseline);
+
+    // —— 反向 ①:可见性单独直写。
+    expectBizError(
+      await patch({ visibilityCode: 'invitation' }),
+      BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    );
+    await expect(readRules()).resolves.toEqual(baseline);
+
+    // —— 反向 ②③:签到规则两列各自单独直写。
+    expectBizError(
+      await patch({ defaultLocationRequired: true }),
+      BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    );
+    await expect(readRules()).resolves.toEqual(baseline);
+    expectBizError(
+      await patch({ defaultCheckInRadiusMeters: 300 }),
+      BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    );
+    await expect(readRules()).resolves.toEqual(baseline);
+
+    // —— 边界:白名单字段与被测字段混发 ⇒ 仍然整包拒,展示字段也不许顺带落地。
+    expectBizError(
+      await patch({ description: '展示说明混一个可见性', visibilityCode: 'invitation' }),
+      BizCode.ACTIVITY_CHANGE_REVIEW_REQUIRED,
+    );
+    await expect(readRules()).resolves.toEqual(baseline);
+    await expect(
+      prisma.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: { description: true },
+      }),
+    ).resolves.toEqual({ description: null });
+
+    // —— 正向对照:白名单字段单独发 ⇒ 200(证明上面四条不是"已发布就一律拒")。
+    const display = await patch({ description: '已发布活动的展示说明' });
+    expect(display.status).toBe(200);
+    await expect(readRules()).resolves.toEqual(baseline);
+  });
+
   it('rejects non-formal members before exposing initiation options', async () => {
     const nonFormal = await createMember('non-formal', 'observer');
     const response = await request(httpServer(app))

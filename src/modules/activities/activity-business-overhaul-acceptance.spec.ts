@@ -233,7 +233,12 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     '开放服务段(submit 侧 SETTLEMENT_SUBMIT_OPEN_SEGMENT)与签退窗口未关闭(封场侧 EVIDENCE_SEAL_CHECKOUT_WINDOW_OPEN)也都有 red-first 证据。' +
     '真缺口是三个前置里的第一个:「**活动未结束**」全链没有独立执行位 —— submit 与封场都不读 Activity.endAt,' +
     '实践中靠「签退窗口未关闭」间接覆盖,而**零 live 场次时窗口真空成立**,该形态既无闸也无判据;' +
-    '「只允许整理草稿」的正面一半(被拒的同时草稿仍可编辑)亦无同夹具断言。',
+    '「只允许整理草稿」的正面一半(被拒的同时草稿仍可编辑)亦无同夹具断言。' +
+    '(2026-08-25 动手复核确认:`settlement-submission-validator.ts` 的拒绝种类闭集恰五条 —— ' +
+    'pending_result / item_count_mismatch / duplicate_identity / open_segment / missing_rule,没有「活动未结束」这一条;' +
+    '`settlement-submit.service.ts` 与 `evidence-seal.service.ts` 全文零处读 `Activity.endAt`(前者的 endAt 命中全在**场次**上);' +
+    '封场那条 `deadlines.length === 0 ? authoritativeNow` 就是「零 live 场次时窗口真空成立」的原文。' +
+    '⇒ **功能缺口,不是测试缺口**,补测试关不掉。)',
   // AC-049:当前覆盖人口数量，不覆盖 absent 零时长不得进入有效服务明细的完整投影。
   'AC-049': '缺 absent 零时长结果到有效服务明细的端到端断言。',
   // AC-054:现有规模用例为 8192，未覆盖合同固定的 10000 人与 0%/100%读面组合。
@@ -292,6 +297,9 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     '并在同一夹具里同时断言人员 / 时长 / 分数 / 评价资格 / 关闭版本五格一致变化(现有更正 e2e 与 journey 全部硬编码 present,' +
     '评价资格那格由 AC-065 用**手写第二条 closure** 的夹具覆盖,没走真更正链)。',
   // AC-063:已有 close×close；未有 close 与最后终审/更正的真实并发屏障。
+  //   ⚠️ 2026-08-25 起本条**已由 TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS 接通**,下面这段只作历史记录。
+  //      其中「要先给 `activity-settlement-closure.e2e-spec.ts` 加第二实例」一句**实测已过期**:
+  //      新用例另开 `activity-settlement-closure-concurrency.e2e-spec.ts`,既有关账 spec 一个字未动。
   'AC-063':
     '缺关账×最后终审、关账×最后更正的 Activity-lock 并发用例(三条路径都已在 Activity FOR UPDATE 之后,能力在)。' +
     '⚠️ 写它要先给 `activity-settlement-closure.e2e-spec.ts` 加第二实例:该 spec 目前是单 app / 单 pool,' +
@@ -492,17 +500,23 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     '「长期未处理草稿在工作台提示」亦零实现 —— 唯一的 workbench 是结算工作台。三格全缺,不是缺测试。',
   // AC-009:表单与资格两格已分别由第 4 批③/⑰落地并各有 published→ACTIVITY_CHANGE_REVIEW_REQUIRED 的真用例,
   //   原文「表单、资格…仍卡第 4/5 批」已过期。
+  //   2026-08-25「只清缺测试那批」刀再订正:可见性 / 签到规则两格已补上真用例
+  //   (`app-managed-activities.e2e-spec.ts` ›「AC-009 已发布活动直写可见性 / 签到规则必须拒绝」,
+  //    三个字段各自单独发 + 白名单混发的边界 + description 单独发的正对照 + 每次回读库行),
+  //   本条因此只剩**一格**,而那一格是**裁定问题不是测试问题** ⇒ 仍留 todo。
   'AC-009':
     '场次 / 岗位 / 名额 / 表单 / 资格五格已各有 published 直写被拒的真用例(表单第 4 批③、资格第 4 批⑰),原「仍卡第 4/5 批」已过期;' +
-    '余可见性与签到规则两格**代码已在白名单外(会拒),只是没有任何用例把它们发出去过**;' +
-    '计分规则一格全仓无按活动的写接口(贡献规则按 activityType×role×version 全局查),' +
-    '「无接口算不算满足合同」须维护者裁定 —— 三格未证,整项不能结案。',
+    '可见性与签到规则两格 2026-08-25 已补写(app-managed-activities.e2e-spec.ts),不再是缺口;' +
+    '仅剩计分规则一格:全仓无按活动的写接口(贡献规则按 activityType×role×version 全局查),' +
+    '「无接口算不算满足合同」须**维护者裁定** —— 这一格补测试解决不了,整项不能结案。',
   // AC-010:容量桶那格已由第 4 批⑤真实投影 + 三条 HTTP 判据落地,原文把它列进「仍是接缝」已过期。
   'AC-010':
     '变更审核与名额(容量桶)两格已落:第 4 批⑤的投影只取 scheduled 场次、取消场次的桶留作不可变历史、占用中降容 20147 三条各有真用例;' +
     '余二维码(`applyQrCredentialsPlaceholder` 是**显式空实现**)、人员影响(场次取消零 identity 变更)、' +
     '通知(变更审批按 activityId 向全体 populationIncluded 广播,不按场次收窄)、结算人口(只 bump 活动级 currentPopulationRevision)四格未做;' +
-    '另有一格全套用例从未覆盖:场次**改期**(sessions.update 只出现过 name / locationText / capacity,没有 startAt/endAt)。',
+    '另有一格全套用例从未覆盖:场次**改期**(sessions.update 只出现过 name / locationText / capacity,没有 startAt/endAt)。' +
+    '(2026-08-25 动手复核:四格逐条确认属实,取证落点与 ADV-018 同一组(见该条注释)。' +
+    '⇒ **功能缺口,不是测试缺口**;其中二维码 / 人员 / 通知三格与 ADV-018 是同一条实现缺陷。)',
   // AC-012:2026-08-24 分拣刀判为 A 并已在 TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS 给出真去向。
   //   这句留着是**第 3 刀第一刀自己**的欠账记录(同 ADV-001 / ADV-004 的既定形状),删不得。
   'AC-012': '卡第 3 刀邀请可见性读面。',
@@ -523,9 +537,24 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   //(删掉会让本批的模块级完整性守护抛错)。详见 BATCH2_ACCEPTANCE_BLOCKERS 里 ADV-001 那段。
   'ADV-004': '卡第 3 刀普通取消×第一条现场签到真实并发。',
   // ADV-018:本刀复核发现这条**不是「缺测试」,是实现与合同相反** —— 写清楚以免下一个人去补测。
+  //   ⭐ 2026-08-25「只清缺测试那批」刀**逐点复核并确认属实**(只取证、不修;它是实现缺陷,
+  //      要单独立项 + 维护者定优先级),四个落点逐一给出:
+  //      ① `activity-publish-proposal-v2.service.ts` `applySessions()` 的
+  //         `if (session.statusCode === 'cancelled') { … void at; }` —— 取消分支里只有一句
+  //         「`deletedAt` 刻意不动」的注释,除通用 data 里那一列 statusCode 外**零副作用**;
+  //      ② 同文件 `applyQrCredentialsPlaceholder()` 体内是 `void tx; void activityId; return Promise.resolve()`
+  //         —— 显式空桩,注释自称「第 5 批占位」;
+  //      ③ 同文件 `applySnapshot()` 结尾写的是 `currentPopulationRevision: { increment: 1 }`
+  //         —— **活动级**;全仓没有任何场次级人口版本列;
+  //      ④ 通知 fan-out 两条路都按 activityId 取:`activity-publish-review.service.ts` 走
+  //         `activityParticipationIdentity.findMany({ where: { activityId, populationIncluded: true } })`,
+  //         `activity-proposal-applier.ts` 走 `activityRegistration.findMany({ where: { activityId, … } })`
+  //         且只在**活动级** startAt/endAt/location 变化时才非空 —— 单场次取消因此连一条通知都不发。
+  //      ⑤ `activityParticipationIdentity` 在这两个文件里**零次**出现在写路径上 ⇒ 人员零变更属实。
   'ADV-018':
     '不是缺测试,是实现层与合同相反:场次取消只翻 statusCode,二维码 effect 是显式空桩,人员零变更,' +
-    '而变更审批的通知 fan-out 按 activityId 取**全体** populationIncluded 身份广播,不按场次收窄 ⇒ 「只影响该场次」当前不成立。',
+    '而变更审批的通知 fan-out 按 activityId 取**全体** populationIncluded 身份广播,不按场次收窄 ⇒ 「只影响该场次」当前不成立。' +
+    '(2026-08-25 逐点复核确认属实,四个落点见上方注释;属**实现缺陷**,要单独立项,不是补测试能关的。)',
   // ADV-019:四轴里三轴已有真读面证据,原文「卡第 3 刀…读面」已过期;缺的是第四轴。
   'ADV-019':
     '正式 / 非正式 / 未受邀三轴已各有真实读面证据(AC-011 与 AC-012 的去向即是),原「卡第 3 刀」已过期;' +
@@ -1978,6 +2007,57 @@ const TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS: Readonly<
     {
       file: 'test/e2e/activity-settlement-correction.e2e-spec.ts',
       needle: '正对照:两条并发申请打在**不同** target 上 ⇒ 双双成功(串行化是按 target 收的)',
+    },
+  ],
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2026-08-25 「只清缺测试那批」刀:本刀只加下面这一条。
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // AC-063「关账与最后一次终审、最后一个更正并发时按活动锁串行,不漏检查、不重复关闭。」
+  //
+  // 原卡点里那句「写它要先给 `activity-settlement-closure.e2e-spec.ts` 加第二实例」
+  // **实测已过期**:更正 spec 在 `ADV-011` 那一刀里已经把双实例手法立住了,本条因此
+  // 新开一份 `activity-settlement-closure-concurrency.e2e-spec.ts`(与
+  // `activity-settlement-review-concurrency` 同形),不动既有关账 spec 一个字。
+  //
+  // 四格逐个绑(合同这句拆成四格,一条用例守一格或多格):
+  //   ①「关账 × 最后一个更正 按活动锁串行」+ ③「不漏检查」→ 第一条 needle。
+  //     ⭐ 这条是**判决翻转**型判据,不是"反正没成功":关账**发起的那一刻**,
+  //     入口世界里同时有 `closure_already_active`(rev 1 仍 active)与
+  //     `pending_work_exists`(更正申请仍 `applying`)两类缺口 —— 若八类检查在取锁**之前**
+  //     跑,关账必然 blocked;它实际返回 `closed` 且 revision=2,只可能是锁后复判。
+  //     把 `evaluateChecks` 挪到 `lockActivityAndReadNow` 之前,这条当场变红。
+  //   ②「关账 × 最后一次终审 按活动锁串行」→ 第三条 needle。
+  //     ⚠️ **诚实标注(别把它读强)**:这一格做不成判决翻转 ——
+  //     `AttendanceSettlementRun.statusCode` 是单值状态机,「终审可受理」
+  //     (pending_final_review)与「关账可放行」(posted/closed)**互斥**,
+  //     终审在飞时关账在任一交错顺序下都必然 blocked。故这条的判别力来自
+  //     (a) `pg_stat_activity` 锁等待者读数(锁被挪走 / 挪到检查之后 ⇒ 读数归零 ⇒ 红)、
+  //     (b) 缺口清单**只差**结算未生效那一类(其余六类逐条断言不在里面 ⇒ 夹具在别的维度全合格)、
+  //     (c) 零部分写入,并由同一条用例尾部的**正对照**(账走完之后关账成功)证明它不是恒红。
+  //   ⭐ **变异对拍读数(2026-08-25 本机连库实测)**:把两类决定性计数换成**取锁前**的快照
+  //      (锁照取 ⇒ 屏障读数不变,单独隔离「锁后复判」这一维)⇒ **第一条与第二条红、
+  //      第三条与前提条绿**(2/4,红集精确);第一条的红**落在判决翻转那一行**
+  //      (缺口恰是预测的 `pending_work_exists.pendingCorrection=1` + `closure_already_active=1`),
+  //      不是落在屏障上 ⇒ 判别力确实来自「锁后复判」。还原后 4/4 复绿。
+  //      —— 这条读数回答了 `#1182` 留下的问号:这类竞态用例**不必然**独占红集为空。
+  //   ④「不重复关闭」→ 第一条(2 条 revision 恰 1 条 active)与第二条(真并发两关账恰 1 成功)。
+  //     ⚠️ 第二条与既有关账 spec 里那条同名意图的用例**不是重复**:那一条是单 app / 单 pool
+  //     的 `Promise.all`(Node 单线程 + 交互事务会先后串行走完,**没有任何锁也会绿**);
+  //     这一条是两套 pool + 闸门事务,并正面数到**两个**等待者。
+  'AC-063': [
+    {
+      file: 'test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts',
+      needle: '⭐ 更正 commit 在关账等锁期间落地 ⇒ 关账按**锁后**状态复判并成功(不漏检查)',
+    },
+    {
+      file: 'test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts',
+      needle: '两条关账真并发(不同 key)⇒ 恰一条成功,败者 closure_already_active,库里恰一张 active',
+    },
+    {
+      file: 'test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts',
+      needle:
+        '⭐ 终审 commit 在关账等锁期间落地 ⇒ 关账排在同一把 Activity 锁后,按锁后状态判缺口且零写入',
     },
   ],
 };
