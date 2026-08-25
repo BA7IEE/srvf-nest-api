@@ -202,6 +202,7 @@ CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行;是流程
 |---|---|
 | [`README.md`](README.md) | 本页:开工命令 / 执法层 / 派生文档 / 守护命令 / 定位路径 / 目录说明 |
 | [`codex-review-sop.md`](codex-review-sop.md) | 跨模型评审 SOP(何时评审 / 投放模板 / findings 处置);协议条文在 [`process §8.3`](../process.md) |
+| [`TOOL_TRAPS.md`](TOOL_TRAPS.md) | ⭐ **工具陷阱清单** —— 只收「不报错、退出码正常、读数看着正常,而它测的不是你以为的那个量」这一类。每条附本仓实测读数。**与本仓无关、换任何 AI 都会踩**,故单独成文;规则在 `AGENTS.md`,事实在 `current-state.md`,**本文是教训**。 |
 | [`NEXT_TASKS.md`](NEXT_TASKS.md) | 后续任务清单(P0/P1/P2);逐项单独立项,**AI 不自动启动**(process §7) |
 | [`FROZEN_DRAFTS.md`](FROZEN_DRAFTS.md) | **冻结稿落地台账**:已拍板冻结的施工依据还欠多少 —— §1 逐项欠账 / §2 机器读数(生成块,手改即红)/ §3 归档评审稿全量四值分类。判据 `scripts/check-frozen-drafts-ledger.ts` 六条:「不许有未分类项」+「读数不过期」+ **「§1 落地度不许对 `NEXT_TASKS` 的状态行沉默地矛盾」**(治沉默不治不一致,逃生门是固定标记 `` `↔另尺(…)` ``);挂 `Diff guards` job(不随 docs-only 短路),`src/frozen-drafts-ledger.criteria.spec.ts` 是 unit 轮薄运行器;刷新读数 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` |
 | [`CAPABILITIES.md`](CAPABILITIES.md) | 能力台账(各能力终态摘要 + **已部署/未部署**);2026-08-20 从 `current-state.md` §2 迁出 —— 那份在恒读层、每字符付恒定成本,本份不付。**新增能力条目写这里** |
