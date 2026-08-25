@@ -29,7 +29,9 @@ PR-4b 起 `Certificate.standardId` / `recognitionPolicyId` / `sourceCode` 是 **
 
 **其余一切标准仍按本文档人工创建。**
 
-⚠️ **已内置的不要在这里重复建** —— `code` 是 unique,重复 `POST` 直接 `409`。先 `GET /api/admin/v1/certificate-standards?q=amateur_radio` 看一眼。
+⚠️ **已内置的不要在这里重复建** —— `code` 是 unique,重复 `POST` 直接 `409`。建之前先 `GET /api/admin/v1/certificate-standards?q=amateur_radio` 看一眼(`q` 同时匹配 `name` 与 `code`)。
+
+> 🔴 **但列表查不到 ≠ 这个 code 能用**:列表带软删过滤,而 `code` 的 unique **含软删行** —— 一个被软删掉的标准不会出现在 `GET` 里,却照样让同名 `POST` 吃 `409`。查不到又建不上,就是撞上这一格了(见上一节:软删是刻意的,不是 bug)。
 
 ℹ️ **内置不是单向门**:`CertificateStandard` 是**软删**,而 `code` 的 unique **含软删行** —— 你删掉之后再跑 seed,upsert 走 update 分支、`update: {}` 什么都不写,**不会复活**。不想要就删,seed 不会跟你抢。
 
