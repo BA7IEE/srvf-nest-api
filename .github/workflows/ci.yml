@@ -186,6 +186,25 @@ jobs:
       - name: Docs guards (readtax + counts + codemap + rbacmap + openapi + feclient)
         run: pnpm docs:readtax:check && pnpm docs:counts:check && pnpm docs:codemap:check && pnpm docs:rbacmap:check && pnpm docs:openapi:check && pnpm docs:feclient:check
 
+      # 「加一条 migration 打挂 N 份 e2e 计数 spec」类闸(2026-08-25 维护者拍板立项)。
+      # 立项证据:#1186 加了第 96 条 migration,6 份冷库重放 e2e 里手写的
+      # `CURRENT_MIGRATION_COUNT = 95` 全部过期,而本机 lint / typecheck / 全量 unit /
+      # 十余条静态判据**全绿零症状** —— 只有 CI 的 e2e 分片会红(最贵最晚的那一格)。
+      #
+      # ⚠️ **为什么挂在 fast 而不是跟着 `pnpm test` 走**(接闸前逐字读 workflow 得出,
+      # 不是凭印象):本 job 里 Lint / Typecheck / Build / Run unit tests 四步都带
+      # `if: needs.changeset.outputs.docs_only != 'true'` —— 纯 .md 变更时它们**一次都不跑**。
+      # 而 Docs guards / Ops required / Architecture governance 三步**没有 if**,恒跑;
+      # `fast` job 自身也没有 job 级 if(只有 `needs: changeset`),且在 `gate` 的 needs 里。
+      # 本判据读的是 `prisma/migrations/` 目录与 `test/**/*.ts`,与 docs-only 判定正交,
+      # 故与后三步同列:**无 if,恒跑**。
+      #
+      # ⚠️ **单列一步,不并进上面那条 `&&` 链**(同 ops:required:check 的理由):
+      # 链式下前面任一条挂掉它就不跑,且失败归因不清。
+      # 纯文件解析 + 语法树,不连库不起 Nest,秒级 —— 留在这个无 Postgres 的 job 里正合适。
+      - name: Migration count pinned in e2e specs is in sync
+        run: pnpm docs:migcount:check
+
       # 第七轮评审包 F(F-01 + F-02):「生产必填项必须在部署 runbook 里有条目」类闸。
       # 两条断言都从源动态发现 —— (a) `app.config.ts` 在 production / smoke 下 fail-fast
       # 点名的环境变量,(b) `package.json` 里的 `start:*-worker` 脚本,各自必须至少在一份

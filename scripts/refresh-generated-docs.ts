@@ -114,6 +114,11 @@ const REGISTRY: readonly RegistryRow[] = [
     why: '纯判据,无生成物 —— 它量的是恒读层字符预算。⚠️ 它**读** docs/current-state.md(= docs:counts 的产物),所以 counts 把计数块撑大到越过预算时它会红;当前 7232/9600(75%),不是本类缺陷的常见触发点',
   },
   {
+    check: 'docs:migcount:check',
+    refresh: null,
+    why: '纯判据(e2e 的 CURRENT_MIGRATION_COUNT ↔ prisma/migrations/ 目录数),无生成物 —— 且**刻意不该有**:那个常量是人手写的期望值,改成自动生成就等于判据永远同意自己(与 EXPECTED_ROUTE_COUNT 同一条理由)。读 prisma/migrations/ 与 test/**/*.ts,零写入',
+  },
+  {
     check: 'docs:boundaries:check',
     refresh: null,
     why: '纯判据(A 类 metadata 完整性),无生成物。同一脚本的报告态 `docs:boundaries` 也不写文件 —— 实测 WRITE 0 条',
