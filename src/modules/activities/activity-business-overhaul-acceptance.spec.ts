@@ -2074,37 +2074,56 @@ const TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS: Readonly<
  * 按本登记表的既定形状(ADV-001 / ADV-004 同形),前批的卡点行**保留**为它自己的欠账记录,
  * 后批在这张去向表里给真去向;去向恒优先于卡点。
  *
- * 去向选的是**反向**判据行,不是「有一条用例」:三格各自「正面数出 B 场次纹丝不动」的那一行
+ * 去向选的是**反向**判据,不是「有一条用例」:三格各自「正面数出 B 场次纹丝不动」的那一条
  * 逐条点名 —— 只点正向会让这条登记在「按活动广播」回潮时看不见。
+ *
+ * 🔴 点的是**用例名**不是断言体的某一行。理由是本刀实测的两件事:
+ *   ① 断言体那种 needle 一跑 prettier 就可能换行 / 改缩进,登记会因排版而假红;
+ *   ② 三格必须**各自成 `it`** —— 第一版七格塞一个 `it` 里,变异 M1 红在正向那条上,
+ *      jest 首个失败即停,三条反向**一条都没被执行到**,「反向有判别力」根本观测不到。
+ *      点用例名等于把「拆开」这件事本身也钉住:合回一个 `it` 会让这些 needle 全部失配。
  */
 const ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS: Readonly<
   Record<string, readonly AcceptanceDestination[]>
 > = {
   'ADV-018': [
+    // 正向三格:A 场次的人被退、A 的码被作废、A 场次的人收到通知。
     {
       file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
-      needle:
-        'cancels only the cancelled session: people, QR codes, notifications and settlement population',
+      needle: 'people · forward: every identity enrolled in session A is auto-cancelled',
     },
-    // 反向①人员:B 场次那两行逐字段(含 updatedAt / version)与取消前完全相等。
     {
       file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
-      needle: ').resolves.toEqual(bIdentitiesBefore);',
+      needle: 'qr · forward: session A credential is revoked with actor and reason',
     },
-    // 反向①附加:B 的身份一条新修订都不许多出来(「没变成 cancelled」不够)。
     {
       file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
-      needle: ').resolves.toBe(bRevisionCountBefore);',
+      needle: 'notification · forward: exactly the two session-A enrolees are notified',
     },
-    // 反向②二维码:B 的凭证整行不变。
+    // ⭐ 反向①人员(变异 M1 打红的正是这两条):B 场次那两行逐字段(含 updatedAt / version)
+    //    与取消前完全相等,且**一条新修订都不许多出来**(只断言「没变 cancelled」不够)。
     {
       file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
-      needle: ').resolves.toEqual(bCredentialBefore);',
+      needle: 'people · reverse: session B identities are byte-identical, field by field',
     },
-    // 反向③通知:只报了 B 的人一条都没收到 —— 正面数出 0,不靠集合相等顺带证明。
     {
       file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
-      needle: 'sessionCancelIntents.filter((intent) => intent.destinationRef === onlyB.memberId),',
+      needle: 'people · reverse: session B identities gained no new revision row',
+    },
+    // ⭐ 反向②二维码(变异 M2 的红集恰为这一条):B 的凭证整行不变。
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: 'qr · reverse: session B credential row is unchanged, updatedAt included',
+    },
+    // ⭐ 反向③通知(变异 M3 打红的两条之一):只报了 B 的人一条都没收到 —— 正面数出 0。
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: 'notification · reverse: the B-only member received zero session-cancel intents',
+    },
+    // 第四格:活动级人口版本指针递增(§3.17 把「场次取消」列为递增来源)。
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: 'settlement population · the activity-level revision pointer advanced by one',
     },
     {
       file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
