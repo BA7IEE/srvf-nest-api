@@ -1202,11 +1202,17 @@ const BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS: Readonly<
 
 const BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   // 2026-08-24 分拣刀复核:原判(目标组织零实现)成立,但漏了同一句合同里的**另一个**缺口。
+  // 2026-08-25 组织定向刀复核:上一版这条卡点的**四个分句已随实现变成假话**(依据闭集只有 5 个 /
+  // 零处读 organizationId / 发布 DTO 只收 audienceTagCodes / 目标组织零实现)。台账写着已被推翻的
+  // 读数比没写更坏 —— 逐条订正,但**卡点不撤**:同句点名的「改期」那一格仍然零绑定。
   'AC-066':
-    '标签定向与「明确不广播」已冻结并异步展开,但三个可选项里的「目标**组织**」本刀零实现 —— 整项不能按三分之二结案。' +
-    '2026-08-24 复核补一格:收件人冻结依据闭集只有 audience-tags / all-active-members / broadcast-visibility / responsibility / registration-roster,' +
-    '解析收件人时只按 MemberStatus 与标签过滤,零处读 organizationId;发布 DTO 也只收 audienceTagCodes。' +
-    '另外同句点名的「**改期**」事件:src 侧有实现(cohortKey `activity-change:*`)且有单测,但 `test/` 下零绑定 —— 别当它已判过。',
+    '标签定向、「明确不广播」与**目标组织**三个可选项已全部实现并冻结:组织定向走 `audienceOrganizationIds`' +
+    '(与 audienceTagCodes 同形的 nullable JSONB),「勾上级含下级」走 organization_closure 真子树,' +
+    '与标签取交集(AND);依据闭集随之升到 6 个(新增 audience-organizations),' +
+    '判据在 `src/modules/activities/activity-recipient-freeze.spec.ts` 的「⑥ 组织定向 —— 交集与真子树」' +
+    '(正向 + 两个反向 + 两条边界 + 禁止前缀匹配的结构断言,三次变异对拍红集互不相同)。' +
+    '⛔ **仍不能结案**:同句点名的「**改期**」事件 src 侧有实现(cohortKey `activity-change:*`)且有单测,' +
+    '但 `test/` 下零绑定 —— 别当它已判过。整项卡在这一格上,不是卡在组织那一格。',
   // 2026-08-24 分拣刀复核:原判成立(三格全零),补上真正的立项约束 —— 第三个 cron 要过 D 档。
   'AC-067':
     '未签退提醒与收口待办不在冻结这条链上;卡第 7 批后续刀。' +
