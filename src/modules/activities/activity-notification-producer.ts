@@ -146,6 +146,51 @@ export class ActivityNotificationProducer {
     }
   }
 
+  /**
+   * 单个场次被取消 → 只通知**报了这个场次**的人(维护者 2026-08-25 拍板)。
+   *
+   * 与 `enqueueCancellation`(整活动取消)刻意分开:那条的 `cohort` 是整活动名册,
+   * 这条的 `cohort` 必须是**按场次收窄**的名册,冻结依据里带 `session:<id>` 以便事后对账。
+   *
+   * 走 `enqueueMany` 而不是逐人 `enqueue`:一个场次可能上千人,而本链路挂在发布审核那条
+   * 事务上;逐条 await 会把审批拖出事务预算。
+   */
+  async enqueueSessionCancellation(
+    tx: PrismaTx,
+    input: {
+      activityId: string;
+      activityTitle: string;
+      versionKey: string;
+      sessionNames: readonly string[];
+      cohort: FrozenRecipientCohort;
+    },
+  ): Promise<void> {
+    if (input.cohort.memberIds.length === 0) return;
+    const sessionLabel =
+      input.sessionNames.length === 0 ? '' : `（${input.sessionNames.join('、')}）`;
+    const body = `您报名的「${input.activityTitle}」中有场次${sessionLabel}已取消，该场次的报名已自动退出、签到二维码已作废。其他场次不受影响。`;
+    await this.outbox.enqueueMany(
+      input.cohort.memberIds.map((memberId) => ({
+        eventKey: `activity-session-cancel:${input.activityId}:${input.versionKey}:${memberId}`,
+        eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+        payloadVersion: OUTBOX_PAYLOAD_VERSION,
+        payload: {
+          recipientMemberId: memberId,
+          notificationTypeCode: NOTIFICATION_TYPE_ACTIVITY_CHANGED,
+          title: '活动场次已取消',
+          body,
+          channels: [NOTIFICATION_CHANNEL_IN_APP],
+          recipientFreeze: { ...input.cohort.stamp },
+        },
+        aggregateType: 'activity',
+        aggregateId: input.activityId,
+        destinationType: 'member',
+        destinationRef: memberId,
+      })),
+      tx,
+    );
+  }
+
   async enqueueScheduleChange(
     tx: PrismaTx,
     input: {

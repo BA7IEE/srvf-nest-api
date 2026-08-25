@@ -511,12 +511,13 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     '「无接口算不算满足合同」须**维护者裁定** —— 这一格补测试解决不了,整项不能结案。',
   // AC-010:容量桶那格已由第 4 批⑤真实投影 + 三条 HTTP 判据落地,原文把它列进「仍是接缝」已过期。
   'AC-010':
-    '变更审核与名额(容量桶)两格已落:第 4 批⑤的投影只取 scheduled 场次、取消场次的桶留作不可变历史、占用中降容 20147 三条各有真用例;' +
-    '余二维码(`applyQrCredentialsPlaceholder` 是**显式空实现**)、人员影响(场次取消零 identity 变更)、' +
-    '通知(变更审批按 activityId 向全体 populationIncluded 广播,不按场次收窄)、结算人口(只 bump 活动级 currentPopulationRevision)四格未做;' +
-    '另有一格全套用例从未覆盖:场次**改期**(sessions.update 只出现过 name / locationText / capacity,没有 startAt/endAt)。' +
-    '(2026-08-25 动手复核:四格逐条确认属实,取证落点与 ADV-018 同一组(见该条注释)。' +
-    '⇒ **功能缺口,不是测试缺口**;其中二维码 / 人员 / 通知三格与 ADV-018 是同一条实现缺陷。)',
+    '六格里五格已落:变更审核与名额(容量桶)由第 4 批⑤给出(投影只取 scheduled 场次、取消场次的桶留作不可变历史、占用中降容 20147);' +
+    '二维码 / 人员 / 通知 / 结算人口四格由 ADV-018 那一刀(2026-08-25)实装并各有正向 + 反向用例,去向见 ADV-018 登记。' +
+    '**仅剩「改期」这一格**:合同原文是「取消**或改期**只影响该场次」,而 sessions.update 的既有用例只出现过 ' +
+    'name / locationText / capacity,**没有任何用例改过 startAt / endAt**,更没有「改 A 场次的时间、B 场次的时间与二维码有效期纹丝不动」这条反向。' +
+    '⚠️ 改期不是取消的同形:取消走 statusCode,改期要动 checkIn*/checkOut* 四个时间窗,' +
+    '而二维码的 validFrom / validUntil 是**签发时从场次时间窗冻下来的**(见 attendance-qr-credential.service.ts issue()),' +
+    '改期后既有凭证的有效期与新时间窗不一致 —— 这一格要先裁定「改期是否作废旧码」再补测,补测试解决不了。',
   // AC-012:2026-08-24 分拣刀判为 A 并已在 TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS 给出真去向。
   //   这句留着是**第 3 刀第一刀自己**的欠账记录(同 ADV-001 / ADV-004 的既定形状),删不得。
   'AC-012': '卡第 3 刀邀请可见性读面。',
@@ -551,10 +552,14 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   //         `activity-proposal-applier.ts` 走 `activityRegistration.findMany({ where: { activityId, … } })`
   //         且只在**活动级** startAt/endAt/location 变化时才非空 —— 单场次取消因此连一条通知都不发。
   //      ⑤ `activityParticipationIdentity` 在这两个文件里**零次**出现在写路径上 ⇒ 人员零变更属实。
+  // ⚠️ 这一行是**第 3 批第一刀自己**的欠账记录,删不得(删掉本批模块级完整性守护会抛错;
+  //    同 ADV-001 / ADV-004 的既定形状)。真去向已由 2026-08-25 的收口刀给出,登记在
+  //    `ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS` —— 去向恒优先于卡点,这段不再被渲染。
   'ADV-018':
     '不是缺测试,是实现层与合同相反:场次取消只翻 statusCode,二维码 effect 是显式空桩,人员零变更,' +
-    '而变更审批的通知 fan-out 按 activityId 取**全体** populationIncluded 身份广播,不按场次收窄 ⇒ 「只影响该场次」当前不成立。' +
-    '(2026-08-25 逐点复核确认属实,四个落点见上方注释;属**实现缺陷**,要单独立项,不是补测试能关的。)',
+    '而变更审批的通知 fan-out 按 activityId 取**全体** populationIncluded 身份广播,不按场次收窄 ⇒ 「只影响该场次」当时不成立。' +
+    '(2026-08-25 逐点复核确认属实,四个落点见上方注释;属**实现缺陷**,不是补测试能关的。' +
+    '**已于 2026-08-25 单独立项收口**:四格接线 + 三条反向判据,见 ADV018_SESSION_CANCEL 去向表。)',
   // ADV-019:四轴里三轴已有真读面证据,原文「卡第 3 刀…读面」已过期;缺的是第四轴。
   'ADV-019':
     '正式 / 非正式 / 未受邀三轴已各有真实读面证据(AC-011 与 AC-012 的去向即是),原「卡第 3 刀」已过期;' +
@@ -2063,6 +2068,63 @@ const TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS: Readonly<
 };
 
 /**
+ * ADV-018 收口(2026-08-25):**单场次取消只影响该场次**。
+ *
+ * 第 3 批第一刀在自己的卡点表里记的是「实现层与合同相反」—— 那句话在当时属实,现在由本刀实装。
+ * 按本登记表的既定形状(ADV-001 / ADV-004 同形),前批的卡点行**保留**为它自己的欠账记录,
+ * 后批在这张去向表里给真去向;去向恒优先于卡点。
+ *
+ * 去向选的是**反向**判据行,不是「有一条用例」:三格各自「正面数出 B 场次纹丝不动」的那一行
+ * 逐条点名 —— 只点正向会让这条登记在「按活动广播」回潮时看不见。
+ */
+const ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'ADV-018': [
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle:
+        'cancels only the cancelled session: people, QR codes, notifications and settlement population',
+    },
+    // 反向①人员:B 场次那两行逐字段(含 updatedAt / version)与取消前完全相等。
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: ').resolves.toEqual(bIdentitiesBefore);',
+    },
+    // 反向①附加:B 的身份一条新修订都不许多出来(「没变成 cancelled」不够)。
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: ').resolves.toBe(bRevisionCountBefore);',
+    },
+    // 反向②二维码:B 的凭证整行不变。
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: ').resolves.toEqual(bCredentialBefore);',
+    },
+    // 反向③通知:只报了 B 的人一条都没收到 —— 正面数出 0,不靠集合相等顺带证明。
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: 'sessionCancelIntents.filter((intent) => intent.destinationRef === onlyB.memberId),',
+    },
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle:
+        'stays idempotent: re-approving the same review replays without touching anyone twice',
+    },
+    // 接线本体:第 5 批留下的 applyQrCredentialsPlaceholder 空桩已被真联动取代。
+    {
+      file: 'src/modules/activities/activity-publish-proposal-v2.service.ts',
+      needle: 'await activitySessionCancellationEffects.applyInTransactionTrusted(',
+    },
+    // 顺序判据:联动必须排在容量投影之后(投影器才是「还有人占名额就不许取消」那道闸)。
+    {
+      file: 'src/modules/activities/activity-publish-proposal-v2.service.spec.ts',
+      needle: "'session-cancel-effects',",
+    },
+  ],
+};
+
+/**
  * 「哪些登记表参与查表」只写一处 —— `registerAcceptanceCases` 与下面的接线守护读的是
  * **同一个数组**,所以两者不可能各说各话。
  *
@@ -2076,6 +2138,7 @@ const ACCEPTANCE_DESTINATION_TABLES: ReadonlyArray<
 > = [
   // 分拣表排在最前:它的结论优先于各批自己的历史卡点行(去向恒优先于卡点)。
   TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS,
+  ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS,
   BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
   BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS,
   BATCH6_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
@@ -2227,6 +2290,7 @@ describe('活动业务改造 v1.1 合同完整性', () => {
       table: Readonly<Record<string, readonly AcceptanceDestination[]>>;
     }> = [
       { name: 'TRIAGE_2026_08', table: TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS },
+      { name: 'ADV018_SESSION_CANCEL', table: ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH2', table: BATCH2_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH3_SLICE1', table: BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS },
       {

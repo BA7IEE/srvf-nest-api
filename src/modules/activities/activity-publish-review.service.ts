@@ -557,7 +557,12 @@ export class ActivityPublishReviewService {
     const applied = await this.proposalV2.apply(tx, review.activityId, snapshot, {
       publish: review.requestType === 'initial',
       publishedByUserId: user.id,
+      publishedByUserRole: user.role,
       at: now,
+      // 审核 id 是这批联动效应的稳定批次键:同一次审批重放落在同一个 eventKey / cohortKey 上,
+      // 不用墙钟(墙钟每次都是新批次,冻结与去重同时失效)。
+      versionKey: `review:${review.id}`,
+      auditMeta,
     });
     if (review.requestType === 'initial') {
       await this.responsibilities.createOwnerForPublish(
