@@ -108,11 +108,8 @@ export const activitySafeSelect = {
   defaultLocationRequired: true,
   archiveWaitingDays: true,
   registrationSchema: true,
-  // ⚠️ P2-14 刀 A:coverImageUrl / galleryImageUrls 是**裸 URL 遗留列**,已零写入路径。
-  // 仍 select 出来只为让刀 B 删列前的读侧对照可做,**presenter 不再读它们** ——
+  // ⚠️ P2-14 刀 B:两个裸 URL 遗留列已 DROP,select 随之移除。
   // 对外的 coverImageUrl / galleryImageUrls 一律由下面四个附件制列现签而来。
-  coverImageUrl: true,
-  galleryImageUrls: true,
   coverImageKey: true,
   coverAttachmentId: true,
   galleryImageKeys: true,
@@ -146,7 +143,6 @@ export const activityListItemSelect = {
   isPublicRegistration: true,
   requiresInsurance: true,
   // 同上:列表的 coverImageUrl 也改由 coverImageKey 现签(列表不带图集)。
-  coverImageUrl: true,
   coverImageKey: true,
   locationLongitude: true,
   locationLatitude: true,

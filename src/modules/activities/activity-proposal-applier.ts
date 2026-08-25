@@ -37,8 +37,6 @@ const activityApplySelect = {
   isPublicRegistration: true,
   requiresInsurance: true,
   registrationSchema: true,
-  coverImageUrl: true,
-  galleryImageUrls: true,
   content: true,
   locationLongitude: true,
   locationLatitude: true,
@@ -157,11 +155,9 @@ export class ActivityProposalApplier {
           snapshot.activity.registrationSchema === null
             ? Prisma.DbNull
             : (snapshot.activity.registrationSchema as Prisma.InputJsonValue),
-        coverImageUrl: snapshot.activity.coverImageUrl,
-        galleryImageUrls:
-          snapshot.activity.galleryImageUrls === null
-            ? Prisma.DbNull
-            : (snapshot.activity.galleryImageUrls as Prisma.InputJsonValue),
+        // P2-14 刀 B:`coverImageUrl` / `galleryImageUrls` 两列已 DROP,不再回写。
+        // 快照里那两个键仍在(恒 null),留着只为逐字兼容已持久化快照 —— 见
+        // `activity-proposal.types.ts` 的注释。
         content:
           snapshot.activity.content === null
             ? Prisma.DbNull
@@ -355,8 +351,11 @@ export class ActivityProposalApplier {
       isPublicRegistration: snapshot.activity.isPublicRegistration,
       requiresInsurance: snapshot.activity.requiresInsurance,
       registrationSchema: snapshot.activity.registrationSchema,
-      coverImageUrl: snapshot.activity.coverImageUrl,
-      galleryImageUrls: snapshot.activity.galleryImageUrls,
+      // ⚠️ P2-14 刀 B:两列已 DROP ⇒ **必须**同时从这份对照表里摘掉。
+      // 这里 `before` 是 Prisma 行、`comparable` 是手搓 Record<string, unknown> ——
+      // 留着的话 `before['coverImageUrl']` 恒 undefined、快照侧恒 null,
+      // 每次变更都会被误报进 audit 的 `changedFields`,而 **typecheck 抓不到**
+      // (两侧都走 index 签名 / 手搓类型)。删列时这一处必须人工跟上。
       content: snapshot.activity.content,
       locationLongitude: snapshot.activity.locationLongitude,
       locationLatitude: snapshot.activity.locationLatitude,

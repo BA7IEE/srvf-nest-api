@@ -61,6 +61,11 @@ interface ProposalActivity {
   isPublicRegistration: boolean;
   requiresInsurance: boolean;
   registrationSchema: Prisma.JsonValue | null;
+  // 🔴 **不是漏改** —— 维护者 2026-08-25 拍板「留着不动」(P2-14 刀 B)。
+  // 对应 DB 列已 DROP,构造时一律写字面 `null`;键本身必须留着,否则
+  // `snapshotHash = sha256(unsigned)` 与**已持久化**快照重算比对时不再相等,
+  // 在途审核单全部当场 SNAPSHOT_INVALID。完整理由见
+  // `activity-proposal.types.ts` 同名两键上的注释。
   coverImageUrl: string | null;
   galleryImageUrls: Prisma.JsonValue | null;
   content: Prisma.JsonValue | null;
@@ -314,8 +319,6 @@ const proposalActivitySelect = {
   isPublicRegistration: true,
   requiresInsurance: true,
   registrationSchema: true,
-  coverImageUrl: true,
-  galleryImageUrls: true,
   content: true,
   locationLongitude: true,
   locationLatitude: true,
@@ -830,8 +833,11 @@ export class ActivityPublishProposalV2Service {
       isPublicRegistration: row.isPublicRegistration,
       requiresInsurance: row.requiresInsurance,
       registrationSchema: clone(row.registrationSchema),
-      coverImageUrl: row.coverImageUrl,
-      galleryImageUrls: clone(row.galleryImageUrls),
+      // P2-14 刀 B:两列已 DROP;此前它们恒为 null(零写入路径 + 起刀当日全库实测非空计数为 0),
+      // 写死 `null` 与原来的 `row.coverImageUrl` / `clone(row.galleryImageUrls)` 取值逐字相同,
+      // 于是 `snapshotHash` 一位不变。键为何不能删见 `activity-proposal.types.ts` 注释。
+      coverImageUrl: null,
+      galleryImageUrls: null,
       content: clone(row.content),
       locationLongitude: decimal(row.locationLongitude),
       locationLatitude: decimal(row.locationLatitude),
@@ -1817,11 +1823,7 @@ export class ActivityPublishProposalV2Service {
           activity.registrationSchema === null
             ? Prisma.DbNull
             : (activity.registrationSchema as Prisma.InputJsonValue),
-        coverImageUrl: activity.coverImageUrl,
-        galleryImageUrls:
-          activity.galleryImageUrls === null
-            ? Prisma.DbNull
-            : (activity.galleryImageUrls as Prisma.InputJsonValue),
+        // P2-14 刀 B:两列已 DROP,不再回写(快照里的同名键恒 null,只服务哈希兼容)。
         content:
           activity.content === null ? Prisma.DbNull : (activity.content as Prisma.InputJsonValue),
         locationLongitude: activity.locationLongitude,

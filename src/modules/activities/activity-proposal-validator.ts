@@ -32,8 +32,6 @@ const proposalActivitySelect = {
   isPublicRegistration: true,
   requiresInsurance: true,
   registrationSchema: true,
-  coverImageUrl: true,
-  galleryImageUrls: true,
   content: true,
   locationLongitude: true,
   locationLatitude: true,
@@ -87,15 +85,14 @@ export class ActivityProposalValidator {
       registrationSchema:
         (activityPatch.registrationSchema as Prisma.JsonValue | undefined) ??
         current.registrationSchema,
-      // ⚠️ P2-14 刀 A:两者都改为**只取 current**。
-      // 变更审核快照(schemaVersion 2–5)是逐字冻结的契约,字段不能删也不能改口径;
-      // 而封面 / 图集已不是 UpdateActivityDto 的字段(改走 set-cover / set-gallery 端点,
-      // 它们本就在「已发布可直改的展示字段」闭集里、从不进审核链)。
-      // 于是 patch 侧恒无此键,快照只能沿用当前值 —— 这两列此后恒为 null(刀 B 删)。
-      // 顺带修掉一处既有不对称:改造前 cover 认 patch 而 gallery 只认 current,
-      // 两者语义相同却行为不同。现在两者一致。
-      coverImageUrl: current.coverImageUrl,
-      galleryImageUrls: current.galleryImageUrls,
+      // ⚠️ P2-14 刀 B:两列已 DROP,这里改写**字面 null**,而不是把键一起删掉。
+      // 依据:刀 A 起两列就恒为 null(零写入路径),96 库实测非空计数全 0 ⇒
+      // `current.coverImageUrl` 的取值恒等于 `null`,写死是**行为等价变换**;
+      // 而键本身必须留着 —— 快照 JSON 会被 `canonicalJson` / `sha256` 与
+      // **已持久化**的那一份逐字比对,少两个键会让存量审核单当场 SNAPSHOT_INVALID。
+      // 详见 `activity-proposal.types.ts` 上 `coverImageUrl` / `galleryImageUrls` 的注释。
+      coverImageUrl: null,
+      galleryImageUrls: null,
       content: (activityPatch.content as Prisma.JsonValue | undefined) ?? current.content,
       locationLongitude:
         activityPatch.locationLongitude ?? current.locationLongitude?.toString() ?? null,

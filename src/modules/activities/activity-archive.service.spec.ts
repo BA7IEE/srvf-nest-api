@@ -52,8 +52,6 @@ function makeActivityRow(overrides: ActivityRowOverrides = {}): Record<string, u
     cancelReason: null,
     isPublicRegistration: true,
     registrationSchema: null,
-    coverImageUrl: null,
-    galleryImageUrls: null,
     content: null,
     locationLongitude: null,
     locationLatitude: null,

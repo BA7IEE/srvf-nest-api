@@ -1,0 +1,99 @@
+-- P2-14 刀 B:DROP `Activity` 的两个裸 URL 遗留列 —— contract 阶段
+--
+-- 维护者 2026-08-25 拍板:「现在就删」;审批存档里对应的两个空栏目「留着不动」。
+--
+-- 🔴 **不可逆**(DROP COLUMN)。无 down migration —— 回滚 = 回到本 migration 之前的库快照,
+--    或执行下方「回滚 SQL」把两列以原始类型加回来(值不可恢复;但见下文 E3:两列存量全为
+--    NULL,故加回来的空列与删之前**逐字等价**)。
+--
+-- ============================================================================
+-- 为什么现在能删 —— E1 / E2 / E3 三条联立 ⇒ DROP 是**行为等价变换**
+-- ============================================================================
+--
+-- 台账 `NEXT_TASKS.md` 原写的前置条件是「刀 A 已在 main 上稳定运行一段时间且无人报告
+-- 封面异常」。那条**永远无法满足**:本项目无生产库、无真实用户 ⇒ 分母恒 0,既不可能
+-- 满足也不可能证伪。维护者已拍板换成三条**此刻可判**的等价条件(全部为代码事实与当日读数,
+-- 不含任何时间量):
+--
+-- E1 无新值注入
+--   · 创建口 `activity-write.service.ts` 的 `create({ data })` 全文零 `coverImage` /
+--     `galleryImage` 字样;
+--   · 唯二 update 路径(`activity-proposal-applier.ts` / `activity-publish-proposal-v2.service.ts`
+--     的 `applyActivity`)是**回声写**:写回去的值来自同一行刚 select 出来的自己
+--     (`currentState()` / `buildChangeSnapshot()` 都只取 `current.*`);
+--   · 克隆口 `activity-lifecycle.service.ts` 写的是字面 `null` / `Prisma.JsonNull`;
+--   · 可写 DTO(`UpdateAppManagedActivityDto` / `UpdateActivityDto` / `CreateActivityDto` …)
+--     零 `*ImageUrl` 字段,且全局 ValidationPipe 开了 `whitelist` + `forbidNonWhitelisted`
+--     ⇒ 请求体里塞这个键是 400,不是静默落库;
+--   · 上面这条有结构判据把关:`scripts/check-activity-image-reference.ts`
+--     (形状判据 `^[a-z][A-Za-z0-9]*Image(Url|Urls)$`,带真/假阳性自证)。
+--
+-- E2 无语义读
+--   · 对外的 `coverImageUrl` / `galleryImageUrls` **字段名**仍在 12 个响应 schema 上,但取值
+--     一律来自 `activity-image-signing.service.ts` 的 `resolveSignedUrlTrusted(row.coverImageKey)`
+--     / `galleryImageKeys`;
+--   · 旧列的**值**没有任何一处进入类型化 API 出参(`activity-presenter.ts` 只读 `images.*`);
+--   · 单元 spec 有正面负例守着:夹具往旧列塞 `https://evil.example.com/...`,断言
+--     `JSON.stringify(res)` 不含该串。
+--
+-- E3 存量为零(2026-08-25 起刀当日复测,**不沿用刀 A 那份 08-22 的四库读数**)
+--
+--   本机 localhost:5432 全库只读扫描(纯 `SELECT count(...)`,零写 / 零 DDL / 零 TRUNCATE):
+--
+--     库总数(可连、非 template)                  99
+--     含 `Activity` 表且两列俱在(可测)           97
+--     97 库 `Activity` 行合计                     64
+--     ⭐ 仪器自证 count("title") 合计             64   ← 必须 > 0
+--     count("coverImageUrl")   合计                0
+--     count("galleryImageUrls") 合计               0
+--
+--   ⭐ **仪器自证的意义**:`count(col)` 只数非 NULL。若计数器本身瞎了(比如扫到空表、
+--      连错库),旧列读数也会是 0 —— 那个 0 是「没看见」不是「没有」。同一条 SQL 里
+--      `count("title")` 读到 64(= 行数,`title` NOT NULL)⇒ 计数器确实看得见非空值,
+--      所以同一行里的两个 0 是真的 0。
+--
+--   有数据的库逐个点名(其余 89 个库 Activity 为空表):
+--     app                                                 21 行
+--     app_test_activity_cover_attachment_be8351_eca453_w1..w5   2 / 28 / 8 / 1 / 1 行
+--     app_test_rbac_pr8_legacy_retire_b998e1_36b7da_w2/w3       1 / 2 行
+--
+--   ⚠️ **99 - 97 = 2 个库测不了,逐个点名**(读到「全 0」先验分母,别让它们静默消失):
+--     · `postgres` —— PG 维护库,**无 `Activity` 表**,结构上不可能有存量;
+--     · `app_test_activity_cover_attachment_be8351_eca453_w86` —— **invalid database**,
+--       PG 直接拒连(`FATAL: cannot connect to invalid database`)。它是上一轮 e2e
+--       建 / 删库中断留下的残骸:既读不出,也**存不下任何数据**(PG 不接受任何连接)。
+--
+--   ⚠️ 该读数只代表**本机开发 / 测试库**。项目尚未上线、无生产库(故不存在第三种环境)。
+--   ⚠️ E1 已证明**不存在任何能注入非空值的路径** ⇒ 这个 0 在刀 A 之后结构上不可能变大;
+--      但那是推演,上面的才是读数,两者都写在这里。
+--
+-- ============================================================================
+-- 刻意**不删**的两处:审批快照里的同名键
+-- ============================================================================
+--
+-- `ActivityProposalActivity`(`activity-proposal.types.ts`)与 `ProposalActivity`
+-- (`activity-publish-proposal-v2.service.ts`)上的 `coverImageUrl` / `galleryImageUrls`
+-- **保留**,构造时写字面 `null`。理由:审批快照是已持久化的 JSON,其完整性靠
+--   · v1     `canonicalJson(重建) === canonicalJson(库里那份)`
+--   · v2–v5  `sha256(unsigned)` 重算比对
+-- 少两个键 ⇒ 规范化串 / 哈希与存量不再相等 ⇒ 在途审核单全部当场 SNAPSHOT_INVALID。
+-- 仓内房规「历史快照逐字兼容」(`src/modules/activities/CLAUDE.md`)说的就是这件事。
+-- 要删得单独立项(先迁移 / 作废存量快照),本刀没有那份授权。
+--
+-- ⇒ 因此本刀之后会出现「DB 列删了、TS 接口键还在」的形状。**那是拍板结果,不是漏改。**
+--
+-- ============================================================================
+-- 回滚 SQL(照抄原始 DDL:20260510193742_v2_batch3_activities_attendances)
+-- ============================================================================
+--
+--   ALTER TABLE "Activity" ADD COLUMN "coverImageUrl" TEXT;
+--   ALTER TABLE "Activity" ADD COLUMN "galleryImageUrls" JSONB;
+--
+-- 两列无索引、无唯一约束、无 CHECK、无外键(全仓 migration 实测:除建表那两行外零引用),
+-- 故 DROP 不牵连任何数据库对象,回滚也不需要重建任何约束。
+--
+-- 生产未 deploy。
+
+-- DropColumn
+ALTER TABLE "Activity" DROP COLUMN "coverImageUrl",
+DROP COLUMN "galleryImageUrls";

@@ -1362,8 +1362,8 @@ model RecruitmentCertificateClaim {
 // - 从 v0.1 沿用的 NOT NULL 改为 String? 可空
 // - 语义:列表展示短说明 / 摘要;详情页正文走 content
 //
-// 索引:7 单列;v0.2 / v0.4 新增 5 字段(content / galleryImageUrls /
-//   coverImageUrl / locationLongitude / locationLatitude)不加索引(沿 Q-D11/12/13/19)。
+// 索引:7 单列;v0.2 / v0.4 新增字段(content / locationLongitude / locationLatitude)
+//   不加索引(沿 Q-D11/12/13/19;同批的 galleryImageUrls / coverImageUrl 已由 P2-14 刀 B DROP)。
 //   P2-14 刀 A 新增的 4 个附件制字段(coverImageKey / coverAttachmentId /
 //   galleryImageKeys / galleryAttachmentIds)同样不加索引 —— 它们只在按 id 取到活动之后被读,
 //   从不作为查询条件(与对照组 Content.coverImageKey / coverAttachmentId 一致,那两列也无索引)。
@@ -1408,12 +1408,12 @@ model Activity {
 
   // v0.2 展示内容字段(Q-D11 / Q-D12 / Q-D13)
   //
-  // ⚠️ coverImageUrl / galleryImageUrls 是**裸 URL 遗留列**(P2-14 刀 A 的 expand 阶段保留,刀 B 才删)。
-  // 它们此刻**零写入路径**:可写 DTO 上的对应字段已拆除,读出侧一律改走下方附件制四列。
-  // 保留只为给「发现漏迁」留一个可回退窗口 —— 不要给它们重新接上任何写入口。
-  coverImageUrl    String?
-  galleryImageUrls Json?
-  content          Json?
+  // ⚠️ P2-14 刀 B(2026-08-25):裸 URL 遗留列 `coverImageUrl String?` / `galleryImageUrls Json?`
+  // 已 DROP(migration `20260825170000_activity_drop_legacy_image_url_columns`,**不可逆**)。
+  // 封面 / 图集一律走下方附件制四列 + `resolveSignedUrlTrusted` 现签。
+  // ⚠️ 审批快照(publish review)的 JSON 里仍保留这两个键、恒为 null —— 那是**逐字兼容**
+  // 已持久化快照的 sha256 / canonicalJson 比对,不是漏删,见 `activity-proposal.types.ts` 注释。
+  content Json?
 
   // ===== P2-14 刀 A:封面 / 图集改附件制(2026-08-22)=====
   //
