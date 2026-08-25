@@ -1840,16 +1840,16 @@ P2-13 落地后这句话**已经不成立**(执行位就是 `check-permission-su
 改它要重新生成 `ROUTE_AUTHZ.md` ⇒ 改写 inputDigest ⇒ **占串行道**,而 P2-13 的排期明确是「零 `src/`、不占串行道」。
 留给下一个本来就要动 ROUTE_AUTHZ 的刀顺手带走。
 
-### P2-14 ✅ 活动封面 / 图集改附件制 —— **刀 A + 刀 B 均已收口** — 2026-08-22 / 08-25 维护者拍板
+### P2-14 活动封面 / 图集改附件制 —— **刀 A 已合;刀 B 已交付、在飞** — 2026-08-22 / 08-25 维护者拍板
 
-**状态**:已收口(刀 A #1146;刀 B PLACEHOLDER_PR_B)
+**状态**:进行中(刀 A #1146 已合;刀 B 已提 PR **在飞** —— ⚠️ 按本闸 B 的规矩,在飞 PR 号只能写在正文不能写进状态行,合入后由收口方改成 `已收口`)
 
 **刀 A**(`d8e557d7` / [#1146](https://github.com/BA7IEE/srvf-nest-api/pull/1146))已合:
 `Activity` 加 `coverImageKey` / `coverAttachmentId` / `galleryImageKeys` / `galleryAttachmentIds` 四列,
 写入必须给**本活动的 `activity` 类型附件 id**,读出一律现签;与 `Content` 逐字同形。
 旧列 `coverImageUrl` / `galleryImageUrls` **保留但已零写入路径**。
 
-**刀 B**(PLACEHOLDER_PR_B)已合:DROP 那两个旧列
+**刀 B**([#1191](https://github.com/BA7IEE/srvf-nest-api/pull/1191),**在飞**):DROP 那两个旧列
 (migration `20260825170000_activity_drop_legacy_image_url_columns`,🔴 不可逆)。
 
 🔴 **前置条件被换过 —— 这一条比结论本身重要。** 本条目原文写的是
