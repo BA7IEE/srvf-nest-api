@@ -26,6 +26,23 @@
 原卡点里「先给 `activity-settlement-closure.e2e-spec.ts` 加第二实例」同样已过期
 (更正 spec 在 ADV-011 那一刀已把双实例手法立住)。
 
+#### ⭐ 变异对拍读数(本机连库实测,回答 `#1182` 留下的问号)
+
+`#1182` 实测过「这类竞态用例的独占红集往往为空」⇒ 本条立项时就带着「会不会是假闸」的问号。
+变异 = 「八类检查在取锁**之后**重跑」的等价否定:把 `pendingWork.pendingCorrection` 与
+`closure.activeClosure` 两类决定性计数换成**取锁之前**的快照(**锁照取** ⇒ 屏障读数不变,
+单独隔离「锁后复判」这一维)。
+
+| 用例 | 变异后 |
+|---|---|
+| 两套 pool 前提 | 绿(与被测维无关) |
+| 关账 × 更正 锁后复判 | 🔴 **红** —— 关账被挡,缺口**恰是**预测的两条:`pending_work_exists`(`pendingCorrection: 1`)+ `closure_already_active`(`activeClosure: 1`) |
+| 两条关账真并发 | 🔴 **红** —— 败者不再是 `blocked`(两条都过了第 ⑧ 类,撞 DB partial unique 抛异常)|
+| 关账 × 终审 | 绿(该维度锁前锁后读数相同,与下面的诚实标注一致)|
+
+⇒ 红集**精确**(2/4),不是"一改就全红";更正那条的红**落在判决翻转那一行**而不是屏障上,
+说明判别力真的来自「锁后复判」。还原后 4/4 复绿,`git status --porcelain` 零残留。
+
 🔴 **诚实标注(别把这条读强)**:「不漏检查」在**更正**那一格是判决翻转,
 在**终审**那一格做不成 —— `AttendanceSettlementRun.statusCode` 是单值状态机,
 「终审可受理」(`pending_final_review`)与「关账可放行」(`posted`/`closed`)**互斥**,
@@ -39,6 +56,10 @@
 `app-managed-activities.e2e-spec.ts` 新增一条:三个字段(`visibilityCode` /
 `defaultLocationRequired` / `defaultCheckInRadiusMeters`)**各自单独**发出去(避免上层边界遮蔽被测维)、
 白名单字段混发的边界、`description` 单独发的正对照,每次被拒后**回读库行**证明是拒绝而不是"报了错但已经改了"。
+⭐ 首跑当场红了一条,是真读数不是走过场:管理草稿创建路径本就兜底
+`visibilityCode ?? 'internal'` / `defaultLocationRequired ?? false`,基线不是"三列全 NULL"。
+订正基线的同时把边界那条的混发值从 `'internal'`(= 基线,写进去看不出差别)改成 `'invitation'`,
+使三条反向 + 一条边界**每一条发的值都与基线不同**。
 
 ⚠️ **AC-009 仍是 todo**:第八格「计分规则」全仓无按活动的写接口,
 「无接口算不算满足合同」**须维护者裁定** —— 这一格补测试解决不了。登记表卡点已收窄到这一格。
@@ -65,4 +86,7 @@
 ⇒ 它是一条**实现缺陷**而不是测试缺口。本刀**不修**(AGENTS §2 授权边界),
 结论逐点写进登记表注释,**要单独立项 + 维护者定优先级**。
 
-零红区(`harness:needs` 实测全部写集免授权)· `src/` 业务代码零改动 · 生成物 `CODEMAP.md` 随之刷新。
+本机连库读数:`closure-concurrency` 4/4 绿(12s)· `app-managed-activities` 20/20 绿(10s);
+两条 pattern 跑前均 `--listTests` 数过,各恰 1 个文件。
+
+零红区(`harness:needs` 实测全部写集免授权)· `src/` 业务代码零改动(变异已还原,`git status --porcelain` 零残留)· 生成物 `CODEMAP.md` 随之刷新。
