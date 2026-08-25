@@ -5661,13 +5661,18 @@ model OfflinePackageParticipant {
   positionId              String?
   createdAt               DateTime @default(now())
 
-  offlinePackage        OfflinePackage                @relation(fields: [offlinePackageId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
+  // 名册是**冻结记录**(只有 createdAt、没有 updatedAt、唯一写者是 createMany)。
+  // 四条复合外键一律 `onUpdate: Restrict`:Prisma 的默认 onUpdate 是 Cascade,
+  // 上游改编号会让这份名册**跟着被改掉且不留痕**(本表无 updatedAt、无 append-only trigger,
+  // 事后没有任何一处能看出它变过)。Restrict 把「改上游编号」变成当场 23503 报错。
+  // ⚠️ 单列外键(activity / member / participationRevision)刻意不动 —— 本刀只锁复合锚。
+  offlinePackage        OfflinePackage                @relation(fields: [offlinePackageId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict)
   activity              Activity                      @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  session               ActivitySession               @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
-  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict)
+  session               ActivitySession               @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict, onUpdate: Restrict)
+  participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict)
   member                Member                        @relation(fields: [memberId], references: [id], onDelete: Restrict)
   participationRevision ActivityParticipationRevision @relation(fields: [participationRevisionId], references: [id], onDelete: Restrict)
-  position              ActivitySessionPosition?      @relation(fields: [positionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict)
+  position              ActivitySessionPosition?      @relation(fields: [positionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict)
 
   @@id([offlinePackageId, participationIdentityId], map: "offline_package_participant_pkey")
   @@index([participationIdentityId], map: "offline_package_participant_identity_idx")
