@@ -1904,6 +1904,17 @@ checkEq(
         { from: 'published', to: 'cancelled', action: 'cancel' },
         { from: 'published', to: 'terminated', action: 'terminate' },
         { from: 'published', to: 'completed', action: 'complete' },
+        // 2026-08-25 归档刀:`archived` 成为闭集第 6 值,四条入边 + 四条出边。
+        // ⚠️ 这八条**不是可选的装饰** —— 闸有一条「模块里出现的状态没有边覆盖必被拒」,
+        //    少了它们,本夹具会被闸正确地判红(归档刀首跑 CI 实测到的就是这个)。
+        { from: 'draft', to: 'archived', action: 'archive' },
+        { from: 'published', to: 'archived', action: 'archive' },
+        { from: 'completed', to: 'archived', action: 'archive' },
+        { from: 'terminated', to: 'archived', action: 'archive' },
+        { from: 'archived', to: 'draft', action: 'unarchive' },
+        { from: 'archived', to: 'published', action: 'unarchive' },
+        { from: 'archived', to: 'completed', action: 'unarchive' },
+        { from: 'archived', to: 'terminated', action: 'unarchive' },
       ],
       wrongStateBizCodes: ['ACTIVITY_STATUS_INVALID'],
     });
@@ -1963,7 +1974,7 @@ checkEq(
     );
 
     checkEq(
-      'R10 4-1b enumerated 正例:真文件 + 真符号 + 5 条真边 + 真码的 L3 通过(证明这条路不是死代码)',
+      'R10 4-1b enumerated 正例:真文件 + 真符号 + 13 条真边 + 真码的 L3 通过(证明这条路不是死代码)',
       runStateRegistry((entries) => asGovernedActivity(entries)).code,
       0,
     );
@@ -1988,7 +1999,13 @@ checkEq(
       asGovernedActivity(entries, (entry) => {
         entry.governedEvidence = {
           ...activityEvidence(),
-          edges: activityEvidence()?.edges?.filter((edge) => edge.to !== 'completed'),
+          // ⚠️ 必须**两个方向**都滤:闸的 `touched` 集合是 `edge.from` 与 `edge.to` 一起加的
+          //    (check-boundaries.ts `for (const endpoint of [edge.from, edge.to])`)。
+          //    归档刀新增了 `completed -> archived`,只滤 `to` 会让 completed 仍被 `from` 侧碰到,
+          //    这条负例就**永不触发**却依旧显示通过 —— 与本刀修的哨兵缺陷是同一形状。
+          edges: activityEvidence()?.edges?.filter(
+            (edge) => edge.from !== 'completed' && edge.to !== 'completed',
+          ),
         } as FixtureStateEntry['governedEvidence'];
       }),
     );
@@ -2001,15 +2018,46 @@ checkEq(
         ),
       missingEdge.out,
     );
+    /*
+     * 造边负例的哨兵。
+     *
+     * 🔴 **缺陷类修复(2026-08-25 归档刀)**:本条原来拿 `'archived'` 当「肯定非法」的端点 ——
+     *    那是一个**看起来像业务词、当时恰好没被用上**的真实感状态名。归档刀把 `archived`
+     *    变成闭集合法成员的那一刻,这条边就不再非法,闸返回 `ok: true`,负例**永不触发**
+     *    (CI 实测到的就是这个)。也就是说:**每一次状态闭集扩张都会把这条负例重新打成静默失效。**
+     * ⇒ 换成结构上**永不可能**成为真状态的哨兵:双下划线包裹、不是任何业务词。
+     * ⚠️ 别再用 `archived_v2` / `deleted` 这类「像业务词、现在恰好没人用」的串 —— 那正是本次栽的形状。
+     */
+    const FABRICATED_STATE_SENTINEL = '__not_a_state__';
+    const activityStateMachineSource = fs.readFileSync(
+      path.join(REPO, 'src/modules/activities/activity-state-machine.ts'),
+      'utf8',
+    );
+    // 哨兵自证:它必须**既不在**登记的闭集里、**也不在**实现文件的字面量里。
+    // 少了这条,将来万一有人真加了同名状态,负例会再次静默失效 —— 而这次不会有人发现。
+    check(
+      'R10 4-1b 造边负例的哨兵自证:哨兵不在 Activity.statusCode 闭集、也不在状态机源码里',
+      !(pick(liveStateRegistry.entries, 'Activity', 'statusCode').stateSet.values ?? []).includes(
+        FABRICATED_STATE_SENTINEL,
+      ) && !activityStateMachineSource.includes(FABRICATED_STATE_SENTINEL),
+      `sentinel=${FABRICATED_STATE_SENTINEL}`,
+    );
     const fabricatedEdge = runStateRegistry((entries) =>
       asGovernedActivity(entries, (entry) => {
-        entry.governedEvidence?.edges?.push({ from: 'published', to: 'archived', action: 'archive' });
+        entry.governedEvidence?.edges?.push({
+          from: 'published',
+          to: FABRICATED_STATE_SENTINEL,
+          action: 'archive',
+        });
       }),
     );
     check(
       'R10 4-1b 造边负例:端点不在闭集内必被拒',
       fabricatedEdge.code !== 0 &&
-        saidThat(fabricatedEdge, 'edge endpoint "archived" is not in stateSet.values'),
+        saidThat(
+          fabricatedEdge,
+          `edge endpoint "${FABRICATED_STATE_SENTINEL}" is not in stateSet.values`,
+        ),
       fabricatedEdge.out,
     );
     const wrongSymbol = runStateRegistry((entries) =>
