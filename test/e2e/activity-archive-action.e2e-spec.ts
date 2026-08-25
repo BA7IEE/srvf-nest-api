@@ -375,19 +375,48 @@ describe('Activity archive action', () => {
     );
   });
 
-  it('撤销归档后可以再次归档(归→撤→再归),并换成新的 operationKey', async () => {
+  /**
+   * 🔴 **首跑实测推翻了本条原来的前提**(原断言写的是「撤销后可以立刻再归档」)。
+   *
+   * `Activity.updatedAt` 是 Prisma `@updatedAt` ⇒ **归档与撤销归档这两个动作自己也会把它推到现在**。
+   * 撤销归档本来就是一次真实的人为处理(有人把这份草稿从抽屉里拿了回来),
+   * 所以「长期无人处理」的时钟在那一刻**重置**是对的语义,不是缺陷:
+   * 否则这个条件就成了一次性的 —— 归过一次以后,任何时候都能随手再归一次。
+   *
+   * 订正方向是**加强**而不是放宽:本条现在同时钉住「重置」与「重新陈旧后仍可再归」两侧。
+   */
+  it('撤销归档本身也算「有人处理了」:立刻再归档被拒(20155),重新放陈旧后才准', async () => {
     const owner = await createMember('recycle');
     const activityId = await createActivity({ owner, statusCode: 'draft', idleDays: 45 });
     expect((await archive(owner.auth, activityId, 'op-archive-recycle-1')).status).toBe(200);
     expect((await unarchive(owner.auth, activityId, 'op-unarchive-recycle-1')).status).toBe(200);
-    expect((await archive(owner.auth, activityId, 'op-archive-recycle-2')).status).toBe(200);
+
+    // ① 时钟已被撤销归档重置 ⇒ 立刻再归必须被拒。
+    expectBizError(
+      await archive(owner.auth, activityId, 'op-archive-recycle-2'),
+      BizCode.ACTIVITY_ARCHIVE_DRAFT_NOT_STALE,
+    );
+
+    // ② 让它重新变陈旧(= 撤销之后又一个多月没人管)。
+    //    ⚠️ 走 `$executeRaw` 而不是 `prisma.activity.update`:`@updatedAt` 列在 update 路径上
+    //    由 Prisma 自己接管,显式传值会被它覆盖成 now,夹具就静默失效了。
+    const staleAt = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+    await prisma.$executeRaw`UPDATE "Activity" SET "updatedAt" = ${staleAt} WHERE "id" = ${activityId}`;
+    expect((await archive(owner.auth, activityId, 'op-archive-recycle-3')).status).toBe(200);
 
     const row = await prisma.activity.findUniqueOrThrow({
       where: { id: activityId },
-      select: { statusCode: true, archiveOperationKey: true, unarchivedAt: true },
+      select: {
+        statusCode: true,
+        archiveOperationKey: true,
+        archivedFromStatusCode: true,
+        unarchivedAt: true,
+      },
     });
     expect(row.statusCode).toBe('archived');
-    expect(row.archiveOperationKey).toBe('op-archive-recycle-2');
+    // 换成了第三轮的 key —— 单列 unique 存的是**最近一次**归档,不是全历史。
+    expect(row.archiveOperationKey).toBe('op-archive-recycle-3');
+    expect(row.archivedFromStatusCode).toBe('draft');
     // 上一轮的撤销留痕仍在 —— 再次归档不清它。
     expect(row.unarchivedAt).not.toBeNull();
   });
