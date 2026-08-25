@@ -137,3 +137,73 @@ AC-004 四格逐条对上:工作台 `staleDraft` 提示(与归档闸**共用同�
 七八格塞一个 `it` 会让后面的反向断言一条都跑不到,而基线全绿时完全看不出来);
 ②列表类判据断言的是**交给 Prisma 的 `where`**、写路径类断言的是**交给 Prisma 的 `data`**,
 不是返回值 —— 恒定返回固定行的 mock 会把「查询被收窄」「留痕被抹」整类变异藏住。
+
+#### 🔴 契约破坏申报(R11):`closure.status` 响应枚举加值 `archived`
+
+`AppManagedActivityClosureDto.status` 从 9 值扩到 10 值(新值**追加在末尾**,既有 9 值顺序一格未动)。
+`docs/handoff/openapi.json` 的 base↔head 语义比对判为 **B6 / response-enum-value-added**:
+老客户端若对该字段写了穷尽 `switch`,会撞到一个它没有分支的值。**7 个 operation 都返回这个字段**,故**逐条**申报。
+
+⚠️ **这一格没有兼容写法可选**:归档态必须能被工作台表达。不加这个枚举值,已归档活动会掉进
+`ActivityClosurePolicy` 的兜底分支、被显示成「等待活动完结」—— 归档完还催人干活,比枚举加值坏得多。
+⇒ 属「确需破坏」,不是「没想到可以 additive」。
+
+⭐ **同一把闸对本刀另外三处判的是 additive 并放行**(`includeArchived` 可选 query ×3 面、
+`staleDraft` 新增响应字段、两个新端点)—— 说明这 7 条阻断**不是误报泛滥**,
+而是精确命中「响应枚举加值」这一种,分类是细的。
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities
+reason: 建单返回体带 closure 投影。归档态必须能在工作台表达;不加该枚举值,已归档活动会掉进 ActivityClosurePolicy 兜底分支被显示成「等待活动完结」。该字段是单值状态投影,无法用「新增可选字段」改写成 additive。
+impact: 事实读数 —— 前端 srvf-admin-web 尚未上线,当前**无任何线上客户端**消费本端点,实际影响面为 0。这不是免申报的理由,是本行要记录的事实。潜在影响面 = 将来对 closure.status 写穷尽 switch 且无 default 的调用方;新值仅在活动真的被归档后才可能出现,存量活动一律取不到。
+migration: 调用方给 closure.status 补 archived 分支(渲染为「已归档」,无下一步动作),或补 default 兜底。新值恒追加在枚举末尾,按下标读的实现不受影响。
+rollback: 真回滚 = revert 本 PR(代码 + migration 一并回退);不设 feature gate —— 端点在而枚举不在会造出「归档完还催人干活」的更坏状态。⚠️ 存量数据读数:本 migration **生产从未 deploy**(prisma/CLAUDE.md 逐字记「生产未 deploy」),故生产库里 statusCode='archived' 的行数**恒为 0**,revert 不产生孤儿状态;测试库由 resetDb + migrate deploy 每次重建,revert 后重跑即回到 9 值闭集。⚠️ 若将来已 deploy 再 revert,DROP 那十列之前必须先跑一条回填(按 archivedFromStatusCode 把 archived 行复原到原状态)—— 那一步是**不可逆数据变更,须维护者单独拍板**,不在本申报的自动射程内。
+-->
+
+<!-- contract-breaking
+operation: PUT /api/app/v1/my/managed-activities/{activityId}/cover
+reason: 换封面成功后回吐活动详情(含 closure 投影),因此连坐同一处枚举加值。本端点自身语义未变。
+impact: 事实读数 —— 前端未上线,无任何线上客户端,实际影响面为 0。潜在影响 = 换完封面后据 closure.status 刷新状态条、且写了穷尽 switch 的调用方。
+migration: 同族处置 —— 补 archived 分支或 default 兜底;枚举新值在末尾,不影响按下标读的实现。
+rollback: revert 本 PR。存量数据读数:生产未 deploy ⇒ archived 行恒为 0,无需回填;已 deploy 后再 revert 须先按 archivedFromStatusCode 回填再 DROP 列,那步须维护者单独拍板。
+-->
+
+<!-- contract-breaking
+operation: PUT /api/app/v1/my/managed-activities/{activityId}/gallery
+reason: 换图集成功后回吐活动详情(含 closure 投影),因此连坐同一处枚举加值。本端点自身语义未变。
+impact: 事实读数 —— 前端未上线,无任何线上客户端,实际影响面为 0。潜在影响 = 换完图集后据 closure.status 刷新状态条、且写了穷尽 switch 的调用方。
+migration: 同族处置 —— 补 archived 分支或 default 兜底;枚举新值在末尾,不影响按下标读的实现。
+rollback: revert 本 PR。存量数据读数:生产未 deploy ⇒ archived 行恒为 0,无需回填;已 deploy 后再 revert 须先按 archivedFromStatusCode 回填再 DROP 列,那步须维护者单独拍板。
+-->
+
+<!-- contract-breaking
+operation: GET /api/app/v1/my/managed-activities/{activityId}
+reason: 活动详情是 closure.status 的**主读面** —— 归档态必须在这里能被表达,否则负责人打开一个已归档活动会看到「等待活动完结」。这是本次枚举加值的直接目的地,不是连坐。
+impact: 事实读数 —— 前端未上线,无任何线上客户端,实际影响面为 0。潜在影响面里这条最大:详情页状态条最可能写成穷尽 switch。
+migration: 调用方给 closure.status 补 archived 分支(渲染「已归档」+ 提供「撤销归档」入口),或补 default 兜底。
+rollback: revert 本 PR。存量数据读数:生产未 deploy ⇒ archived 行恒为 0,无需回填;已 deploy 后再 revert 须先按 archivedFromStatusCode 回填再 DROP 列,那步须维护者单独拍板。
+-->
+
+<!-- contract-breaking
+operation: PATCH /api/app/v1/my/managed-activities/{activityId}
+reason: 改单成功后回吐活动详情(含 closure 投影),因此连坐同一处枚举加值。⚠️ 本端点另有一条相关行为变更:archived 态下改单会被 20030 拒(要改先撤销归档)—— 那是新状态值带来的,不是本枚举项。
+impact: 事实读数 —— 前端未上线,无任何线上客户端,实际影响面为 0。潜在影响 = 改完单据 closure.status 刷新状态条、且写了穷尽 switch 的调用方。
+migration: 同族处置 —— 补 archived 分支或 default 兜底;另建议把「activity 处于 archived 时禁用编辑入口」一并接上,避免用户提交后才吃 20030。
+rollback: revert 本 PR。存量数据读数:生产未 deploy ⇒ archived 行恒为 0,无需回填;已 deploy 后再 revert 须先按 archivedFromStatusCode 回填再 DROP 列,那步须维护者单独拍板。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities/{activityId}/direct-publish
+reason: 直接发布返回体带 closure 投影,因此连坐同一处枚举加值。本端点自身语义未变(它本就只能从 draft 出发,archived 会被状态机拒)。
+impact: 事实读数 —— 前端未上线,无任何线上客户端,实际影响面为 0。潜在影响 = 发布后据 closure.status 跳转/刷新、且写了穷尽 switch 的调用方。
+migration: 同族处置 —— 补 archived 分支或 default 兜底;枚举新值在末尾,不影响按下标读的实现。
+rollback: revert 本 PR。存量数据读数:生产未 deploy ⇒ archived 行恒为 0,无需回填;已 deploy 后再 revert 须先按 archivedFromStatusCode 回填再 DROP 列,那步须维护者单独拍板。
+-->
+
+<!-- contract-breaking
+operation: POST /api/app/v1/my/managed-activities/{activityId}/declare-attendance-complete
+reason: 声明考勤完成后回吐活动详情(含 closure 投影),因此连坐同一处枚举加值。⚠️ 本端点与归档语义相邻:归档态在 ActivityClosurePolicy 里被**排在考勤分支之前**返回,正是为了不让已归档活动继续催考勤声明。
+impact: 事实读数 —— 前端未上线,无任何线上客户端,实际影响面为 0。潜在影响 = 声明后据 closure.status 决定下一步待办、且写了穷尽 switch 的调用方。
+migration: 同族处置 —— 补 archived 分支或 default 兜底(archived 的 nextAction 恒为 null,前端应据此隐藏待办)。
+rollback: revert 本 PR。存量数据读数:生产未 deploy ⇒ archived 行恒为 0,无需回填;已 deploy 后再 revert 须先按 archivedFromStatusCode 回填再 DROP 列,那步须维护者单独拍板。
+-->
