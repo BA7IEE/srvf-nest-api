@@ -1,4 +1,16 @@
-import { PolicyScopeMode, PositionCategory, PrismaClient, Role, UserStatus } from '@prisma/client';
+import {
+  CertificateIssuerPolicy,
+  CertificateNumberMode,
+  CertificateRecognitionPolicyStatus,
+  CertificateStandardKind,
+  CertificateStandardStatus,
+  CertificateValidityMode,
+  PolicyScopeMode,
+  PositionCategory,
+  PrismaClient,
+  Role,
+  UserStatus,
+} from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import {
   type RbacPermissionSeed,
@@ -2473,6 +2485,11 @@ export async function main(): Promise<void> {
     // 招新闭环优化 S1(2026-06-24):recruitment_stage 招新业务态文案字典(additive;7 态)
     await seedRecruitmentStageDict(prisma);
 
+    // 首批证书标准(2026-08-25 维护者拍板):业余无线电台操作技术能力验证证书 A / B / C。
+    // 依赖 seedV2Dictionaries 已内置 cert_type 的 `comm` 项(categoryCode 无 FK,
+    // 但 API 侧按字典校验 —— 顺序错了 seed 不报错、后续 PATCH 会 400)。
+    await seedAmateurRadioCertificateStandards(prisma);
+
     // 组织树内置(2026-06-21 goal「组织树内置」):SRVF 根 + 15 部门。
     // 依赖 node_type 真实分类已由 seedV2Dictionaries 内置(nodeTypeCode 为字符串,无 FK,
     // 但语义上应在 node_type 之后)。
@@ -2861,6 +2878,220 @@ async function seedWechatSubscribeTemplates(prisma: PrismaClient): Promise<void>
   }
   console.log(
     `[seed] wechat subscribe templates ensured (${WECHAT_SUBSCRIBE_TEMPLATE_SEED.length}: templateId 默认 null 待运营配置)`,
+  );
+}
+
+// ===== 首批证书标准:业余无线电台操作技术能力验证证书 A / B / C =====
+//
+// 证书标准库 T0「② 首批标准与认定规则未建(零标准)」的第一批。本刀之前 seed 里
+// `certificateStandard` 命中 0 —— 证书模块接口齐全,新库上却一个可选标准都没有。
+//
+// 法规依据:工业和信息化部令第 67 号《业余无线电台管理办法》,**2024-03-01 施行**
+//   https://www.gov.cn/gongbao/2024/issue_11286/202404/content_6945591.html
+//   第二十六条  A / B / C 三类操作技术能力验证的参加条件
+//   第二十七条  国家无线电管理机构可组织 A/B/C;省、自治区、直辖市机构可组织 A/B
+//   第二十九条  成绩合格者由**无线电管理机构**颁发「业余无线电台操作技术能力验证证书」
+//   第三十条    各类可申请使用的频段与最大发射功率
+//
+// ⚠️ **名称**:67 号令全文不出现「业余无线电台操作证书」—— 那是原中国无线电运动协会 /
+//    中国无线电协会业余无线电分会时代的**旧证**名称,当前正在集中换发(各省通告口径:
+//    2026-12-31 前旧证仍可作为操作技术能力凭证,2027-01-01 起旧证不再作数)。
+//    本 seed 收录的是**新版法定名称**;旧证若要单独建档是另一批标准的事,不在本刀。
+//
+// ⚠️ **有效期**:67 号令**未规定**操作证书的有效期,也无换证条款(第二十九条只讲颁发与
+//    纸质 / 电子形式)。各地无线电管理机构的换发通告口径是「工信部监制、全国通用、终身有效」。
+//    ⇒ 证书本身不载到期日 ⇒ `validityMode = PERMANENT`(该档的语义正是「到期日必须 NULL」)。
+//    「终身」是**证书不载到期日**这一事实的表述,不是条文里的字面词 —— 别把它当法条引用。
+//
+// 🔴 **不建前置条件链**(维护者 2026-08-25 拍板):B 类要求「依法取得业余无线电台执照
+//    6 个月以上」、C 类要求「取得载明 30MHz 以下频段的执照 18 个月以上」—— 卡的是
+//    **电台执照**持有时长,不是证书;而本仓根本没有「电台执照」这个概念。
+//    系统的角色是**记录队员有什么证**,不是审核他该不该有(发证方是无线电管理机构,不会发错)。
+//    ⇒ 前置条件只写进 description 供人读,**不加字段、不加校验、不加 schema、不加父子依赖**。
+//    四个标准之间的 parentId 只是**目录分组**(D-CERT-003 的 FAMILY),不表达任何先后关系。
+//
+// 结构:1 个 FAMILY(目录分组,不可认定 / 不可持有)+ 3 个 CREDENTIAL 子节点;
+// categoryCode 全取既有字典 `cert_type` 的 `comm`(通讯),**不新增字典项**。
+
+const AMATEUR_RADIO_CATEGORY_CODE = 'comm';
+
+/**
+ * 三类共用的认定规则形状(每个 CREDENTIAL 各建一条 version=1 的 ACTIVE Policy)。
+ *
+ * - `PERMANENT`:证书不载到期日 ⇒ 实例 `expiredAt` 恒 NULL(Resolver 里客户端传了直接拒)。
+ *   ⇒ 这三个标准签出的证书**结构上进不了到期提醒的目标集** —— 提醒与自动过期两条扫描的
+ *   谓词都是 `expiredAt` 的区间比较(`gte/lte` 与 `lt`),SQL 三值逻辑下 NULL 恒不满足。
+ *   证据见 `src/modules/certificates/amateur-radio-standard-seed.spec.ts`。
+ * - `FREE_TEXT`:核发主体是「无线电管理机构」这一**集合**(国家 + 各省/自治区/直辖市),
+ *   既不是恰好 1 个(FIXED),穷举成 allowlist 又会变成一张随机构改名而腐烂的 30+ 行表;
+ *   且 `CertificateRecognitionIssuer` **没有自然唯一键**,seed 幂等只能靠 findFirst 兜 ——
+ *   FREE_TEXT 的 issuer 数恰好是 0,这条幂等风险直接不存在。实际发证机关按证录入自由文本。
+ * - `OPTIONAL` 编号:新版证书确有编号,但沿维护者「记录不审核」的定调选**不阻断**的一档 ——
+ *   REQUIRED 会让手边没有编号的录入直接失败,而 OPTIONAL 的代价只是某些行编号为空。
+ *
+ * 这三项都不是单向门:Policy 本就是**可迭代的版本**(§5.3),要改口径是新建 version=2
+ * 并激活、退役 v1,不动已签出的证书(实例锁的是自己那条 policyId)。
+ */
+const AMATEUR_RADIO_POLICY_SHAPE = Object.freeze({
+  version: 1,
+  issuerPolicy: CertificateIssuerPolicy.FREE_TEXT,
+  validityMode: CertificateValidityMode.PERMANENT,
+  // PERMANENT 必须留 NULL:`assertValidityCombination` 只允许 FIXED_MONTHS 带月数,
+  // 留一个「不生效但存着」的值,下一个人一定会以为它生效。
+  validityMonths: null,
+  certNumberMode: CertificateNumberMode.OPTIONAL,
+});
+
+const AMATEUR_RADIO_FAMILY_SEED = Object.freeze({
+  code: 'amateur_radio_operator',
+  name: '业余无线电台操作技术能力验证证书',
+  description:
+    '业余无线电台操作技术能力验证证书(旧称「业余无线电台操作证书」)的目录分组节点,' +
+    '仅用于归类,不可被认定、不可持有。依据工业和信息化部令第 67 号《业余无线电台管理办法》' +
+    '(2024-03-01 施行)分为 A / B / C 三类,由无线电管理机构颁发,全国通用。',
+  sortOrder: 0,
+});
+
+const AMATEUR_RADIO_CREDENTIAL_SEED = Object.freeze([
+  Object.freeze({
+    code: 'amateur_radio_operator_a',
+    name: '业余无线电台操作技术能力验证证书(A 类)',
+    description:
+      '前置条件(第二十六条):熟悉无线电管理规定,具有一定的业余无线电台操作技术能力;无其他前置条件。' +
+      '可申请使用的频段与功率(第三十条):工作在 30—3000MHz 频段且最大发射功率不大于 25 瓦。' +
+      '证书不载到期日。',
+    sortOrder: 1,
+  }),
+  Object.freeze({
+    code: 'amateur_radio_operator_b',
+    name: '业余无线电台操作技术能力验证证书(B 类)',
+    description:
+      '前置条件(第二十六条):依法取得业余无线电台执照 6 个月以上,且具有相应的实际操作经验。' +
+      '可申请使用的频段与功率(第三十条):工作在 30MHz 以下频段且最大发射功率小于 15 瓦,' +
+      '或工作在 30MHz 以上频段且最大发射功率不大于 25 瓦。证书不载到期日。' +
+      '⚠️ 前置条件卡的是**电台执照**持有时长(本仓无此概念),系统不作检查。',
+    sortOrder: 2,
+  }),
+  Object.freeze({
+    code: 'amateur_radio_operator_c',
+    name: '业余无线电台操作技术能力验证证书(C 类)',
+    description:
+      '前置条件(第二十六条):依法取得载明 30MHz 以下频段的业余无线电台执照 18 个月以上,' +
+      '且具有相应的实际操作经验。可申请使用的频段与功率(第三十条):工作在 30MHz 以下频段' +
+      '且最大发射功率不大于 1000 瓦,或工作在 30MHz 以上频段且最大发射功率不大于 25 瓦。' +
+      '证书不载到期日。⚠️ 前置条件卡的是**电台执照**持有时长(本仓无此概念),系统不作检查。',
+    sortOrder: 3,
+  }),
+]);
+
+/**
+ * 判据可消费的 seed 事实闭包(沿 `RBAC_SEED_CATALOG` 的既有形态)。
+ * spec 断言这份常量,而 `seedAmateurRadioCertificateStandards` 只按它写库 ——
+ * 判据与写入共用同一份真相,不会出现「测的是另一份表」。
+ */
+export const AMATEUR_RADIO_CERTIFICATE_SEED_CATALOG = Object.freeze({
+  categoryCode: AMATEUR_RADIO_CATEGORY_CODE,
+  family: AMATEUR_RADIO_FAMILY_SEED,
+  credentials: AMATEUR_RADIO_CREDENTIAL_SEED,
+  policy: AMATEUR_RADIO_POLICY_SHAPE,
+});
+
+/**
+ * 幂等:三处 `upsert` 全部 `update: {}`。
+ *
+ * 与字典同理而与 Permission 相反(P2-15 那张对照表):Standard 的 name / description /
+ * sortOrder 按 D-CERT-005 本就**允许运营在审计下改文案**,status 由状态机端点管 ——
+ * 覆写型 upsert 会把运营改过的文案回退,还恒跑 UPDATE 白动 `@updatedAt`。
+ * 身份字段(kind / categoryCode / levelCode / parentId / isInternal)首次启用后本就冻结,
+ * 即使写了覆写也只会和 API 侧的 18033 打架。
+ *
+ * 软删场景:`code` 的 unique 含软删行 ⇒ 有人软删了某条标准后再跑 seed,
+ * upsert 走 update 分支、`update: {}` 不复活也不重复建 —— 既不报错也不产生第二份。
+ */
+async function seedAmateurRadioCertificateStandards(prisma: PrismaClient): Promise<void> {
+  // 四个标准 + 三条规则共用同一个「本队启用时刻」。activatedAt 语义是**首次启用时刻**
+  // (§7.1),对 seed 出来的行就是这次 seed 的时刻;不取 2024-03-01(那是法规施行日,
+  // 不是本队采纳日)。`update: {}` 保证二跑不会把它挪动。
+  const activatedAt = new Date();
+
+  const family = await prisma.certificateStandard.upsert({
+    where: { code: AMATEUR_RADIO_FAMILY_SEED.code },
+    update: {},
+    create: {
+      code: AMATEUR_RADIO_FAMILY_SEED.code,
+      name: AMATEUR_RADIO_FAMILY_SEED.name,
+      description: AMATEUR_RADIO_FAMILY_SEED.description,
+      kind: CertificateStandardKind.FAMILY,
+      categoryCode: AMATEUR_RADIO_CATEGORY_CODE,
+      // 目录分组节点不带等级。
+      levelCode: null,
+      parentId: null,
+      isInternal: false,
+      // FAMILY 必须 ACTIVE:`assertParentUsable` 明确拒绝把子节点挂到 DRAFT 父节点下
+      // (会造出「子已 ACTIVE、父还 DRAFT」的悬空树)。
+      status: CertificateStandardStatus.ACTIVE,
+      sortOrder: AMATEUR_RADIO_FAMILY_SEED.sortOrder,
+      activatedAt,
+    },
+    select: { id: true },
+  });
+
+  for (const credential of AMATEUR_RADIO_CREDENTIAL_SEED) {
+    const standard = await prisma.certificateStandard.upsert({
+      where: { code: credential.code },
+      update: {},
+      create: {
+        code: credential.code,
+        name: credential.name,
+        description: credential.description,
+        kind: CertificateStandardKind.CREDENTIAL,
+        categoryCode: AMATEUR_RADIO_CATEGORY_CODE,
+        // ⚠️ `levelCode` 走字典 `cert_sub_type`,而该字典**当前没有**业余无线电 A/B/C 的取值
+        //    (只有 bsafe_l1 / bsafe_l2 / first_aid_basic / first_aid_advanced)。
+        //    往字典加值需要维护者拍板,故本刀留 NULL(列本就可空)。
+        //    🔴 注意这是**单向门**:`levelCode` 属身份字段,`activatedAt !== null` 之后
+        //    API 侧改它一律 18033(D-CERT-005)。要补 A/B/C 等级码必须在本 PR 合入前决定。
+        levelCode: null,
+        parentId: family.id,
+        // 发证方是无线电管理机构,不是本会。
+        isInternal: false,
+        status: CertificateStandardStatus.ACTIVE,
+        sortOrder: credential.sortOrder,
+        activatedAt,
+      },
+      select: { id: true },
+    });
+
+    await prisma.certificateRecognitionPolicy.upsert({
+      where: {
+        standardId_version: {
+          standardId: standard.id,
+          version: AMATEUR_RADIO_POLICY_SHAPE.version,
+        },
+      },
+      update: {},
+      create: {
+        standardId: standard.id,
+        version: AMATEUR_RADIO_POLICY_SHAPE.version,
+        // 同一 Standard 至多一条 ACTIVE(D-CERT-006,migration 末尾手写 partial unique 兜底);
+        // 这里每个标准只建 version=1 一条,二跑走 update 分支不会撞上它。
+        status: CertificateRecognitionPolicyStatus.ACTIVE,
+        issuerPolicy: AMATEUR_RADIO_POLICY_SHAPE.issuerPolicy,
+        validityMode: AMATEUR_RADIO_POLICY_SHAPE.validityMode,
+        validityMonths: AMATEUR_RADIO_POLICY_SHAPE.validityMonths,
+        certNumberMode: AMATEUR_RADIO_POLICY_SHAPE.certNumberMode,
+        activatedAt,
+      },
+    });
+    // FREE_TEXT 的 issuer 数必须恰好 0(`assertIssuerCountMatchesPolicy`),
+    // 所以这里**刻意不建** CertificateRecognitionIssuer 行 —— 不是漏了。
+  }
+
+  console.log(
+    `[seed] amateur radio certificate standards ensured ` +
+      `(1 FAMILY + ${AMATEUR_RADIO_CREDENTIAL_SEED.length} CREDENTIAL(A/B/C)+ ` +
+      `${AMATEUR_RADIO_CREDENTIAL_SEED.length} ACTIVE policy;PERMANENT / FREE_TEXT / 编号可选;` +
+      `levelCode 留空待字典拍板)`,
   );
 }
 
