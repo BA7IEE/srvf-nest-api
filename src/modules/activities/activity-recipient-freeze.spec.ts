@@ -20,6 +20,8 @@ import {
  */
 
 const MODULE_DIR = 'src/modules/activities';
+/** 组织子树 / 有效任职的**属主侧** tx 原语(identity-org 域),组织定向的查询长在这里。 */
+const ORGANIZATION_AUDIENCE_SCOPE = 'src/modules/organizations/organization-audience-scope.ts';
 const OUTBOX_DIR = 'src/modules/notifications';
 
 function readSource(relativePath: string): string {
@@ -654,18 +656,38 @@ describe('收件人冻结 —— D2 五条不变量', () => {
       }
     });
 
-    it('「含下级」不许靠编码前缀糊弄 —— 冻结模块里零字符串前缀匹配', () => {
-      const code = stripCommentsAndStrings(
+    it('「含下级」不许靠编码前缀糊弄 —— 两个文件都零字符串前缀匹配', () => {
+      // 组织是树。前缀匹配在改名 / 跨父移动 / 同前缀兄弟三种情况下都会静悄悄给出错答案。
+      // 两个文件都要查:子树查询本身在属主原语里,而冻结模块是它唯一的消费者 ——
+      // 只查一个,另一个就是这条判据够不到的地方。
+      for (const file of [
+        `${MODULE_DIR}/activity-recipient-freeze.ts`,
+        ORGANIZATION_AUDIENCE_SCOPE,
+      ]) {
+        const code = stripCommentsAndStrings(readSource(file));
+        expect(code).not.toContain('startsWith');
+        expect(code).not.toContain('endsWith');
+        expect(code).not.toContain('contains:');
+        expect(code).not.toContain('$queryRaw');
+      }
+    });
+
+    it('子树的唯一来源是闭包表,且查询长在**属主**域里(活动域不直接读组织三表)', () => {
+      const primitive = stripCommentsAndStrings(readSource(ORGANIZATION_AUDIENCE_SCOPE));
+      // 闭包表 = 树关系的唯一权威源;`ancestorId` 方向 = 「取后代」而不是「取祖先」。
+      expect(primitive).toContain('organizationClosure');
+      expect(primitive).toContain('ancestorId');
+
+      // 反过来:活动域自己不许直接读组织三表 —— 那是跨域读,架构债棘轮会当场判新增代码债,
+      // 而且会让「组织树怎么展开」在每个想按组织圈人的业务域里各有一份解释。
+      const freeze = stripCommentsAndStrings(
         readSource(`${MODULE_DIR}/activity-recipient-freeze.ts`),
       );
-
-      // 组织是树。前缀匹配在改名 / 跨父移动 / 同前缀兄弟三种情况下都会静悄悄给出错答案。
-      expect(code).not.toContain('startsWith');
-      expect(code).not.toContain('endsWith');
-      expect(code).not.toContain('contains:');
-      expect(code).not.toContain('$queryRaw');
-      // 子树的唯一来源是闭包表。
-      expect(code).toContain('organizationClosure');
+      expect(freeze).not.toContain('tx.organizationClosure');
+      expect(freeze).not.toContain('tx.memberOrganizationMembership');
+      expect(freeze).not.toContain('tx.organization.');
+      // 走的是属主导出的 tx 原语。
+      expect(freeze).toContain('resolveOrganizationSubtreeMemberIds');
     });
   });
 

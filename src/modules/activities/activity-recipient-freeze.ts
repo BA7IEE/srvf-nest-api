@@ -2,7 +2,7 @@ import { DictItemStatus, DictTypeStatus, MemberStatus, type Prisma } from '@pris
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
-import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
+import { resolveOrganizationSubtreeMemberIds } from '../organizations/organization-audience-scope';
 import { DICT_TYPE_MEMBER_AUDIENCE_TAG } from './activity-publish-review-access';
 
 type PrismaTx = Prisma.TransactionClient;
@@ -233,7 +233,7 @@ export async function freezeAudienceTags(
       : [...audienceTagCodes].sort(),
     at: input.at,
     candidateMemberIds: () =>
-      resolveAudienceMemberIds(tx, audienceTagCodes, organizationIds, input.at),
+      resolveAudienceRecipientMemberIds(tx, audienceTagCodes, organizationIds, input.at),
   });
 }
 
@@ -367,31 +367,17 @@ async function readFrozenCohort(
  * `[]` = 全部 ACTIVE 且未软删的 Member;非空 = 按 ACTIVE、未软删的
  * `member_audience_tag` 标签 OR 并集去重。
  *
- * 组织维度是**独立的第二次收窄**,与标签结果求**交集**(维护者 2026-08-25 拍板)。
- * 刻意做成「先各自算全,再求交」而不是把组织条件塞进上面两条 where:
- *   ① 交集这件事收敛到**一处**、一眼可读,也只有一处可以被变异对拍打中;
- *   ② 塞进 where 要在两个分支各写一遍,漏一支就变成「标签分支是交集、全员分支是并集」,
- *      而那种半对的实现在只测一支的用例里完全看不出来。
+ * ⚠️ **本函数的函数体在组织定向那一刀里刻意一行未动**。架构债棘轮的
+ * `callSiteId = hash(file + AST 路径 + 判别符)`,而 AST 路径对函数是**按名字**取的
+ * (`Function(resolveAudienceMemberIds)/…`)—— 把这两条既有的 identity-org 跨域读
+ * 抽进另一个函数,它们的身份就变了,棘轮会把**搬家**报成「新增代码债」。
+ * 本刀实测踩过:一版抽出 `resolveTaggedMemberIds` 后,棘轮点名 5 条,其中 3 条是位移不是新增。
+ * 组织维度的收窄因此做在**调用方** `resolveAudienceRecipientMemberIds` 里,不动这里。
  */
 async function resolveAudienceMemberIds(
   tx: PrismaTx,
   audienceTagCodes: string[],
-  audienceOrganizationIds: string[],
-  at: Date,
 ): Promise<string[]> {
-  const taggedMemberIds = await resolveTaggedMemberIds(tx, audienceTagCodes);
-  if (audienceOrganizationIds.length === 0) return taggedMemberIds;
-  const organizationMemberIds = await resolveOrganizationSubtreeMemberIds(
-    tx,
-    audienceOrganizationIds,
-    at,
-  );
-  // ⬇⬇ 交集(AND)。改成并集即「在组织但没标签」「有标签但不在组织」两类人都会收到 ——
-  //     `activity-recipient-freeze.spec.ts` 的两条反向用例正钉在这一行上。
-  return taggedMemberIds.filter((memberId) => organizationMemberIds.has(memberId));
-}
-
-async function resolveTaggedMemberIds(tx: PrismaTx, audienceTagCodes: string[]): Promise<string[]> {
   if (audienceTagCodes.length === 0) {
     const members = await tx.member.findMany({
       where: { status: MemberStatus.ACTIVE, deletedAt: null },
@@ -412,44 +398,33 @@ async function resolveTaggedMemberIds(tx: PrismaTx, audienceTagCodes: string[]):
 }
 
 /**
- * 「勾上级包含下级」——**真子树查询**,不是编码前缀匹配。
+ * 受众标签 **AND** 组织子树(维护者 2026-08-25 拍板)。
  *
- * 组织是树,而树关系的唯一权威源是闭包表 `organization_closure`
- * (`ancestorId → descendantId`,含 depth-0 自身行,由 20260701 建表 migration 一次性回填、
- * 由 `OrganizationsService` 在建 / 移动节点时整段重建)。本函数**复用**全仓既有的同一条
- * 子树口径 —— 与 `OrganizationsService.queryDescendantOrgIds` /
- * `ActivityPublishReviewQueryService` 的 `includeDescendants` /
- * `AuthzService` 的 `ORGANIZATION_TREE` 展开 / 分管与任职两处 `includeDescendants`
- * 逐字同形(`where: { ancestorId: … }, select: { descendantId: true }`)。
+ * 两个维度各自算全,再求**交集** —— 刻意不是把组织条件塞进上面两条 where:
+ *   ① 交集这件事收敛到**一处**、一眼可读,也只有一处可以被变异对拍打中;
+ *   ② 塞进 where 要在两个分支各写一遍,漏一支就变成「标签分支是交集、全员分支是并集」,
+ *      而那种半对的实现在只测一支的用例里完全看不出来。
  *
- * ⚠️ **不许**按 `Organization.code` 做 `startsWith` / `contains` 前缀匹配:编码前缀是命名约定
- * 而不是树结构,改名、跨父移动、同前缀的兄弟节点三种情况下它都会给出错答案,而且错得静悄悄。
- *
- * ⚠️ 有效任职的口径复用 `MembershipTermStateMachine.effectiveWhere(at)`(未软删 + ACTIVE +
- * 已生效 + 未终止),**不重造第二套**。时刻取调用方传进来的业务事件时刻 `at`,不取新墙钟 ——
- * 否则同一事件重放会算出不同的人,冻结第 3 条锁当场失效。
+ * 组织子树与「有效任职」的口径**不在本模块解释** —— 走 `identity-org` 域属主导出的
+ * tx 原语 `resolveOrganizationSubtreeMemberIds`。活动域直接读组织三表是跨域读,
+ * 架构债棘轮会判「新增代码债」;更重要的是,组织树怎么展开本来就该由组织域说了算。
  */
-async function resolveOrganizationSubtreeMemberIds(
+async function resolveAudienceRecipientMemberIds(
   tx: PrismaTx,
+  audienceTagCodes: string[],
   audienceOrganizationIds: string[],
   at: Date,
-): Promise<Set<string>> {
-  const closure = await tx.organizationClosure.findMany({
-    where: { ancestorId: { in: audienceOrganizationIds } },
-    select: { descendantId: true },
-  });
-  const subtreeOrganizationIds = [...new Set(closure.map((row) => row.descendantId))].sort();
-  // 闭包表恒含 depth-0 自身行 ⇒ 空集只可能是「勾的组织根本不存在」。此时不静默放行成全员,
-  // 也不抛错(校验在提交侧 `assertActiveOrganizationIds`),交集自然为空。
-  if (subtreeOrganizationIds.length === 0) return new Set();
-  const memberships = await tx.memberOrganizationMembership.findMany({
-    where: {
-      ...MembershipTermStateMachine.effectiveWhere(at),
-      organizationId: { in: subtreeOrganizationIds },
-    },
-    select: { memberId: true },
-  });
-  return new Set(memberships.map((membership) => membership.memberId));
+): Promise<string[]> {
+  const taggedMemberIds = await resolveAudienceMemberIds(tx, audienceTagCodes);
+  if (audienceOrganizationIds.length === 0) return taggedMemberIds;
+  const organizationMemberIds = await resolveOrganizationSubtreeMemberIds(
+    tx,
+    audienceOrganizationIds,
+    at,
+  );
+  // ⬇⬇ 交集(AND)。改成并集即「在组织但没标签」「有标签但不在组织」两类人都会收到 ——
+  //     `activity-recipient-freeze.spec.ts` 的两条反向用例正钉在这一行上。
+  return taggedMemberIds.filter((memberId) => organizationMemberIds.has(memberId));
 }
 
 async function resolveActiveAudienceTagIds(

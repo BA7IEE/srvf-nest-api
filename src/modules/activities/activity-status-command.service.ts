@@ -25,7 +25,7 @@ import {
   freezeRegistrationRoster,
   isFrozenCohort,
 } from './activity-recipient-freeze';
-import { assertActiveOrganizationIds } from './activity-publish-review-access';
+import { assertActiveOrganizationIds } from '../organizations/organization-audience-scope';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import { cancelActivityRegistrationLifecycle } from '../activity-registrations/activity-cancellation-lifecycle';

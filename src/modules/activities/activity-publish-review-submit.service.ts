@@ -28,8 +28,8 @@ import {
   ActivityPublishProposalV2Service,
   type ActivityTemplateResolution,
 } from './activity-publish-proposal-v2.service';
+import { assertActiveOrganizationIds } from '../organizations/organization-audience-scope';
 import {
-  assertActiveOrganizationIds,
   buildProposalSnapshot,
   ensureInitialPublishable,
   lockActivity,
