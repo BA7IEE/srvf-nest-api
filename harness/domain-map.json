@@ -817,8 +817,58 @@
         "confirmed": true,
         "registeredBy": "R15 src/common 治理(架构治理 v4 终审【七】)",
         "why": "共享业务内核,不因为放在 src/common 就免除归属。它编码的是「同一队员」维度的跨行不变量(考勤时间不重叠、贡献值跨 Sheet 汇总、同时只能有一条入队通路)、全仓取锁次序约定,以及 40901/40902 两个业务码 —— 都是 identity-org 的领域知识,不是技术横切件。"
+      },
+      {
+        "name": "activity-workflow-gate",
+        "path": "src/common/activity-workflow/activity-workflow.gate.ts",
+        "ownerDomain": "participation",
+        "confirmed": true,
+        "registeredBy": "R15 src/common 三件定性(维护者 2026-08-25 拍板;COMMON_GOVERNANCE.md §3.1)",
+        "why": "它编码的是「活动 v1.1 新旧真相链走哪条」这条业务真相切换,以及新结算真相写 / 旧 AttendanceSheet 写 / 统计读面取数三项受控面的单轨约束(合同 §16.2)。闸控对象 Activity / ActivityCheckIn / AttendanceSheet / 账本 / 关闭 / 更正全部属 participation,两个业务码 ACTIVITY_V11_WORKFLOW_NOT_ENABLED / ACTIVITY_LEGACY_ATTENDANCE_WRITE_CLOSED 亦然。放 common 的理由(activities 与 attendances 需共用同一实例)成立,但「理由成立」不等于「定性为技术件」。"
+      },
+      {
+        "name": "member-label",
+        "path": "src/common/identity/member-label.util.ts",
+        "ownerDomain": "identity-org",
+        "confirmed": true,
+        "registeredBy": "R15 src/common 三件定性(维护者 2026-08-25 拍板;COMMON_GOVERNANCE.md §3.1)",
+        "why": "队员展示名的全仓唯一拼装点 —— 它编码的是 memberNo / realName / nickname 的业务展示格式(含「外号全空白不显示括号」这条业务判定)。形态是纯函数、零 Prisma,但 R15 禁的是「业务谓词」不只是「业务表访问」。Member 的 modelOwnership.domain = identity-org,与登记一致。"
+      },
+      {
+        "name": "member-origin",
+        "path": "src/common/identity/member-origin.constant.ts",
+        "ownerDomain": "identity-org",
+        "confirmed": true,
+        "registeredBy": "R15 src/common 三件定性(维护者 2026-08-25 拍板;COMMON_GOVERNANCE.md §3.1)",
+        "why": "Member.memberOriginCode 的字典码常量 = 业务词汇表,跨 seed / 招新转入写路径 / 管理员建档三个运行时共享。字面串各写一遍就会错位,而 join_source 是自由串候选字典、DB 不替你拦 —— 这份知识属 identity-org,不是技术横切件。"
+      },
+      {
+        "name": "role-permission-step-up-proof",
+        "path": "src/common/security/role-permission-step-up-proof.ts",
+        "ownerDomain": "platform-access",
+        "confirmed": true,
+        "registeredBy": "R15 src/common 三件定性(维护者 2026-08-25 拍板;COMMON_GOVERNANCE.md §3.2)",
+        "why": "形态上是 HMAC/HKDF + JWT 的薄封装(零 Prisma、零 model 名、零模块入边,commonGovernance 三条判据逐条为 0),但它绑定的三元组 roleId / expectedRevision(permissionRevision)/ 权限码集合 payloadHash 是 platform-access 的领域知识。落在 src/common 是「可达性」的结果(签发方在 auth = identity-org、验签方在 permissions = platform-access,两个方向的模块间 import 都过不了架构闸),不是「它是公共设施」的结论 —— 与 member-advisory-lock 同一类:技术形态、业务语义。定性依据是 COMMON_GOVERNANCE §3.2 的「『合理的理由』不等于『定性为技术件』」,不是形态。"
       }
     ],
+    "commonTechnicalArtifacts": {
+      "confirmed": true,
+      "why": "R15 §3.2 逐字点名的缺口:「同一子目录内新增文件仍是『人得看一眼』的那一步」。一旦某个 src/common 子目录里有文件登记为 kernel primitive,该子目录就是**有主的**;有主子目录里每个非 spec 的 .ts 都必须在登记表里有交代 —— 要么是 primitive(业务内核),要么在本清单里(技术件)。本清单**刻意手动**维护(同 expectedPrimitives / EXPECTED_ROUTE_COUNT 范式):从磁盘现取等于让被判的人自己写答案。执法在 scripts/check-boundaries.ts 的 --metadata(CI 的 `pnpm docs:boundaries:check`,无 `|| true`)。",
+      "files": [
+        {
+          "path": "src/common/activity-workflow/activity-workflow.module.ts",
+          "why": "技术件:ActivityWorkflowGate 的 DI 承载,只有 @Module({ providers, exports }) 的装配,零业务判定。业务知识全在同目录的 gate 里(已登记 primitive)。"
+        },
+        {
+          "path": "src/common/prisma/claim-at-status.util.ts",
+          "why": "技术件载体,但携 6 条跨域债(XC-0001…XC-0006,见 COMMON_GOVERNANCE §2.2)。刻意**不给白名单** —— 白名单 =「这样做是对的」,而这 6 条是历史债、只减不增;正确终态是表名由调用方传入。本清单是「已被人定性过」的登记,不是「合规」的追认。"
+        },
+        {
+          "path": "src/common/prisma/soft-delete.util.ts",
+          "why": "技术件白名单(维护者 2026-08-15 拍板,维持):纯函数、22 行、零 Prisma 访问、零 model 知识。"
+        }
+      ]
+    },
     "kernelReadFields": {
       "confirmed": true,
       "fields": {

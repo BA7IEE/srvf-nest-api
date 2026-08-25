@@ -226,7 +226,7 @@ CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行;是流程
 | [`SERVICE_SIZE_RATCHET.md`](SERVICE_SIZE_RATCHET.md) | Phase 6-A:大 service 尺寸棘轮立闸(NCLOC 口径 / 基线 / Exit Criteria) |
 | [`SERVICE_SIZE_GROWTH_ATTRIBUTION.md`](SERVICE_SIZE_GROWTH_ATTRIBUTION.md) | Phase 6-B 诊断:增长按 D-7 六类 / 事务编排层归因(逐域表 / members 对照组 / 拆分收益结论) |
 | [`STATE_MACHINE_INVENTORY.md`](STATE_MACHINE_INVENTORY.md) | Phase 4-1a:R10 状态机登记完备化(56 列三层分布 / governedBlockers 聚合 / 8 机形状差异 / 老表零 CHECK) |
-| [`COMMON_GOVERNANCE.md`](COMMON_GOVERNANCE.md) | R15:`src/common` 治理(结构性零执法根因 / 三条判据与发现数 / 12 子目录定性 / 存量三件复核) |
+| [`COMMON_GOVERNANCE.md`](COMMON_GOVERNANCE.md) | R15:`src/common` 治理(结构性零执法根因 / 三条判据与发现数 / 子目录逐个定性 / 存量三件复核 / §3.3 有主子目录的文件级闭包与保护面前后对照) |
 
 🔒 = 该文件在 [`redzone.json`](../../harness/redzone.json) 的 `selfGuard` 内,改动需维护者 `pnpm harness:grant` + `harness-review` 环境审批。
 
