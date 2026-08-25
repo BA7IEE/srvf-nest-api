@@ -461,25 +461,49 @@ describe('收件人冻结 —— D2 五条不变量', () => {
       { memberId: 'm-sub', organizationId: 'org-a-1' },
     ];
 
+    /**
+     * 迷你 where 求值器:把 `args.where` 里**每一个** `{ 列: { in: [...] } }` 条件都真的施加到夹具上。
+     *
+     * ⚠️ 这一小段是变异对拍能不能打中的**前提**,不是装饰。第一版只硬编码解释了
+     * `ancestorId.in`,于是「子树改成只取直属」(给闭包查询多加一个 `descendantId.in` 收窄)
+     * 在读数上只剩 1 例红 —— 而那 1 例还是 `toHaveBeenCalledWith` 的结构断言,行为侧
+     * **一例都没红**:问的条件变了,mock 的答案却没变。恒返回固定行的 mock 会让
+     * 「查询被收窄」这一整类变异隐身。
+     */
+    function applyInFilters<T extends Record<string, string>>(
+      rows: readonly T[],
+      where: Record<string, unknown>,
+    ): T[] {
+      return rows.filter((row) =>
+        Object.entries(where).every(([column, condition]) => {
+          if (
+            condition === null ||
+            typeof condition !== 'object' ||
+            !('in' in (condition as Record<string, unknown>))
+          ) {
+            return true; // 非 `in` 条件(如 status / deletedAt)由下面的 toHaveBeenCalledWith 断言把关
+          }
+          const wanted = (condition as { in: string[] }).in;
+          return column in row && wanted.includes(row[column]);
+        }),
+      );
+    }
+
     function orgWorldTx(): {
       tx: Prisma.TransactionClient;
       closureFindMany: jest.Mock;
       membershipFindMany: jest.Mock;
     } {
       const closureFindMany = jest.fn(
-        (args: { where: { ancestorId: { in: string[] } } }) =>
+        (args: { where: Record<string, unknown> }) =>
           Promise.resolve(
-            CLOSURE.filter((row) => args.where.ancestorId.in.includes(row.ancestorId)).map(
-              ({ descendantId }) => ({ descendantId }),
-            ),
+            applyInFilters(CLOSURE, args.where).map(({ descendantId }) => ({ descendantId })),
           ) as unknown,
       );
       const membershipFindMany = jest.fn(
-        (args: { where: { organizationId: { in: string[] } } }) =>
+        (args: { where: Record<string, unknown> }) =>
           Promise.resolve(
-            MEMBERSHIPS.filter((row) =>
-              args.where.organizationId.in.includes(row.organizationId),
-            ).map(({ memberId }) => ({ memberId })),
+            applyInFilters(MEMBERSHIPS, args.where).map(({ memberId }) => ({ memberId })),
           ) as unknown,
       );
       const tx = {
