@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:cc5e22b0837c46cdf372d50174acccc2f6d5e4e8d8cb9dc4fca0570d557ffb67
+// inputDigest: sha256:e26776220194a8e19dbcf31c045ee503d0cef5676d20e2c9aa886ef44e3a3457
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -351,7 +351,7 @@ export type { ApiEnvelope, PageResult, FetchRequest, Fetcher };
 export function createAdminClient(fetcher: Fetcher) {
   return {
     /** 列出活动(分页 + 多字段过滤;Q-A7 USER 强制只见 published/completed,忽略入参 statusCode) [auth] */
-    ActivitiesControllerList(query?: { "page"?: number; "pageSize"?: number; "statusCode"?: string; "activityTypeCode"?: string; "organizationId"?: string; "isPublicRegistration"?: boolean; "q"?: string; "dateFrom"?: string; "dateTo"?: string; "includeDescendants"?: boolean; "includeStats"?: boolean }): Promise<ApiEnvelope<PageResultDto & { "items": ActivityListItemDto[] }>> {
+    ActivitiesControllerList(query?: { "page"?: number; "pageSize"?: number; "statusCode"?: string; "activityTypeCode"?: string; "organizationId"?: string; "isPublicRegistration"?: boolean; "q"?: string; "dateFrom"?: string; "dateTo"?: string; "includeDescendants"?: boolean; "includeStats"?: boolean; "includeArchived"?: boolean }): Promise<ApiEnvelope<PageResultDto & { "items": ActivityListItemDto[] }>> {
       return fetcher<PageResultDto & { "items": ActivityListItemDto[] }>({ method: "GET", path: "/api/admin/v1/activities", query });
     },
     /** 创建活动(initial statusCode=draft;禁 statusCode / audit 字段) [rbac: activity.create.record] */
@@ -359,7 +359,7 @@ export function createAdminClient(fetcher: Fetcher) {
       return fetcher<ActivityResponseDto>({ method: "POST", path: "/api/admin/v1/activities", body });
     },
     /** 活动选择器投影(q 模糊 title;USER 强制只见 published/completed) [auth] */
-    ActivitiesControllerOptions(query?: { "q"?: string; "statusCode"?: string; "organizationId"?: string; "limit"?: number }): Promise<ApiEnvelope<ActivityOptionsResponseDto>> {
+    ActivitiesControllerOptions(query?: { "q"?: string; "statusCode"?: string; "organizationId"?: string; "limit"?: number; "includeArchived"?: boolean }): Promise<ApiEnvelope<ActivityOptionsResponseDto>> {
       return fetcher<ActivityOptionsResponseDto>({ method: "GET", path: "/api/admin/v1/activities/options", query });
     },
     /** 生成活动考勤提交草稿（只读不落库） [rbac: attendance.read.sheet] */
