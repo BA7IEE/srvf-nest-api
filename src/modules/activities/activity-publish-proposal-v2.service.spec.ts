@@ -4,6 +4,7 @@ import {
   ActivityPublishProposalV2Service,
   type ActivityPublishProposalSnapshotV2,
 } from './activity-publish-proposal-v2.service';
+import { activitySessionCancellationEffects } from './activity-session-cancellation-effects';
 
 type ProposalV2Internals = {
   currentState: jest.Mock;
@@ -21,6 +22,12 @@ describe('ActivityPublishProposalV2Service', () => {
     activeResolvedConfig: jest.fn().mockResolvedValue([]),
     applyPublishedTarget: jest.fn().mockResolvedValue([]),
   };
+  /** apply() 的 actor / 批次键 / 审计上下文三件套(ADV-018 后为必填)。 */
+  const applyActorInput = {
+    publishedByUserRole: 'SUPER_ADMIN',
+    versionKey: 'review:proposal-v2-spec',
+    auditMeta: { requestId: 'req-proposal-v2-spec', ip: null, ua: null },
+  } as const;
 
   it('recognizes a historical schemaVersion 3 form-bearing proposal for approval compatibility', () => {
     const service = new ActivityPublishProposalV2Service(
@@ -28,6 +35,8 @@ describe('ActivityPublishProposalV2Service', () => {
       registrationForms as never,
       qualificationRules as never,
       { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
 
     expect(
@@ -44,6 +53,8 @@ describe('ActivityPublishProposalV2Service', () => {
       registrationForms as never,
       qualificationRules as never,
       { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
     const internals = service as unknown as ProposalV2Internals;
     const activity = {
@@ -134,6 +145,8 @@ describe('ActivityPublishProposalV2Service', () => {
       registrationForms as never,
       qualificationRules as never,
       { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
     const internals = service as unknown as { currentState: jest.Mock };
     const state = {
@@ -172,6 +185,8 @@ describe('ActivityPublishProposalV2Service', () => {
       registrationForms as never,
       qualificationRules as never,
       { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
     const internals = service as unknown as { currentState: jest.Mock };
     const state = {
@@ -237,6 +252,8 @@ describe('ActivityPublishProposalV2Service', () => {
       registrationForms as never,
       qualificationRules as never,
       { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     const state = {
@@ -283,6 +300,8 @@ describe('ActivityPublishProposalV2Service', () => {
       registrationForms as never,
       qualificationRules as never,
       { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     const appliedAllocationModes: Array<string | undefined> = [];
@@ -328,7 +347,12 @@ describe('ActivityPublishProposalV2Service', () => {
       sessions: [],
       registrationForm: null,
     };
-    const input = { publish: false, publishedByUserId: 'reviewer-1', at: new Date('2099-01-01') };
+    const input = {
+      publish: false,
+      publishedByUserId: 'reviewer-1',
+      at: new Date('2099-01-01'),
+      ...applyActorInput,
+    } as never;
 
     await service.apply(tx as never, 'activity-1', { ...common, schemaVersion: 2 } as never, input);
     await service.apply(tx as never, 'activity-1', { ...common, schemaVersion: 3 } as never, input);
@@ -353,6 +377,8 @@ describe('ActivityPublishProposalV2Service', () => {
       registrationForms as never,
       qualificationRules as never,
       { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     internals.currentState = jest
@@ -377,10 +403,18 @@ describe('ActivityPublishProposalV2Service', () => {
       registrationForms as never,
       qualificationRules as never,
       capacityBuckets as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
     const calls: string[] = [];
     const internals = service as unknown as Record<string, jest.Mock>;
 
+    // 「刚取消的场次」必须在 applySessions 落库**之前**读:落库之后 DB 里全是 cancelled,
+    // 分不出「这次刚取消」与「上次就已经取消」。顺序断言把这一条也钉住。
+    internals.resolveNewlyCancelledSessionIds = jest.fn(() => {
+      calls.push('newly-cancelled-probe');
+      return Promise.resolve([]);
+    });
     internals.applyActivity = jest.fn(() => {
       calls.push('activity');
       return Promise.resolve();
@@ -401,10 +435,18 @@ describe('ActivityPublishProposalV2Service', () => {
       calls.push('capacity-batch4');
       return Promise.resolve();
     });
-    internals.applyQrCredentialsPlaceholder = jest.fn(() => {
-      calls.push('qr-batch5');
-      return Promise.resolve();
-    });
+    // 联动是模块级对象上的方法(刻意导出成对象而不是裸函数,就是为了能在这里被 spy 住)。
+    const effectsSpy = jest
+      .spyOn(activitySessionCancellationEffects, 'applyInTransactionTrusted')
+      .mockImplementation(() => {
+        calls.push('session-cancel-effects');
+        return Promise.resolve({
+          cancelledIdentityCount: 0,
+          revokedCredentialCount: 0,
+          notifiedMemberCount: 0,
+          populationRevisionBumped: false,
+        });
+      });
     internals.getTemplateResolution = jest.fn(() => Promise.resolve({ templateVersionId: null }));
 
     const tx = {
@@ -420,18 +462,23 @@ describe('ActivityPublishProposalV2Service', () => {
       publish: true,
       publishedByUserId: 'reviewer-1',
       at: new Date('2099-01-01T00:00:00.000Z'),
+      ...applyActorInput,
     });
 
     expect(calls).toEqual([
+      'newly-cancelled-probe',
       'activity',
       'sessions',
       'positions',
       'form-rules-batch4',
       'capacity-batch4',
-      'qr-batch5',
+      // 第 5 批曾在这里留一个空桩(applyQrCredentialsPlaceholder);ADV-018 把它换成真联动,
+      // 并且必须排在容量投影**之后** —— 投影器才是「该场次还有人占名额就不许取消」那道闸。
+      'session-cancel-effects',
       'population-revision',
     ]);
     expect(result.workflowRevision).toBe(9);
+    effectsSpy.mockRestore();
   });
 
   it('routes v3 approval through the Form lifecycle with the exact next workflow revision, not the v2 placeholder', async () => {
@@ -451,9 +498,12 @@ describe('ActivityPublishProposalV2Service', () => {
       forms as never,
       qualificationRules as never,
       capacityBuckets as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
     );
     const calls: string[] = [];
     const internals = service as unknown as Record<string, jest.Mock>;
+    internals.resolveNewlyCancelledSessionIds = jest.fn(() => Promise.resolve([]));
     internals.applyActivity = jest.fn(() => Promise.resolve());
     internals.applySessions = jest.fn(() => Promise.resolve(new Map<string, string>()));
     internals.applyPositions = jest.fn(() => Promise.resolve());
@@ -462,7 +512,6 @@ describe('ActivityPublishProposalV2Service', () => {
       return Promise.resolve();
     });
     capacityBuckets.apply.mockResolvedValue(undefined);
-    internals.applyQrCredentialsPlaceholder = jest.fn(() => Promise.resolve());
     internals.getTemplateResolution = jest.fn(() => Promise.resolve({ templateVersionId: null }));
     const tx = {
       activity: {
@@ -482,7 +531,12 @@ describe('ActivityPublishProposalV2Service', () => {
         resolvedConfig: frozenConfig,
         registrationForm: null,
       } as never,
-      { publish: false, publishedByUserId: 'reviewer-1', at: new Date('2099-01-01T00:00:00.000Z') },
+      {
+        publish: false,
+        publishedByUserId: 'reviewer-1',
+        at: new Date('2099-01-01T00:00:00.000Z'),
+        ...applyActorInput,
+      },
     );
 
     expect(forms.applyPublishedTarget).toHaveBeenCalledWith(

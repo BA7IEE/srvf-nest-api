@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Role } from '@prisma/client';
 import type { AppConfig } from '../../config/app.config';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -25,7 +25,11 @@ import {
   type QualificationRuleSetInput,
 } from './qualification-rule-set-definition';
 import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-projector';
+import { activitySessionCancellationEffects } from './activity-session-cancellation-effects';
+import { ActivityNotificationProducer } from './activity-notification-producer';
 import { isActivityAllocationModeCode } from './activity-allocation-mode';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type {
   ChangeReviewDto,
   ChangeReviewQualificationRuleScopeDto,
@@ -440,6 +444,11 @@ export class ActivityPublishProposalV2Service {
     private readonly registrationForms: RegistrationFormVersionService,
     private readonly qualificationRules: QualificationRuleSetVersionService,
     private readonly capacityBuckets: ActivityCapacityBucketProjector,
+    // ADV-018 场次取消联动的两个协作者。**刻意直接注在既有 provider 上**而不是新建一个
+    // provider:新 provider 要登进 activities.module.ts,而 harness/domain-map.json 的
+    // inputDigest 覆盖全部 *.module.ts ⇒ 动一行 module 就要改红区。
+    private readonly notificationProducer: ActivityNotificationProducer,
+    private readonly auditLogs: AuditLogsService,
   ) {}
 
   async buildInitial(
@@ -674,14 +683,27 @@ export class ActivityPublishProposalV2Service {
 
   /**
    * Apply order is intentionally visible and mechanically asserted by the batch-3 suite:
-   * Activity → Sessions → Positions → batch-4 Form/Rules → batch-4 capacity projector → batch-5 QR
-   * → population revision. Do not fold placeholders into a neighbouring write.
+   * Activity → Sessions → Positions → batch-4 Form/Rules → batch-4 capacity projector →
+   * session-cancellation effects → population revision. Do not fold steps into a neighbouring
+   * write.
+   *
+   * ⚠️ 场次取消联动必须排在 `capacityBuckets.apply()` **之后**:投影器对「掉出目标集但
+   * occupied ≠ 0 的桶」是 failClosed —— 也就是「该场次还有人占着名额就不许取消」这条闸。
+   * 先跑投影器,联动才只会看到已经过闸的场次。
    */
   async apply(
     tx: PrismaTx,
     activityId: string,
     snapshot: ActivityPublishProposalSnapshot,
-    input: { publish: boolean; publishedByUserId: string; at: Date },
+    input: {
+      publish: boolean;
+      publishedByUserId: string;
+      publishedByUserRole: Role;
+      at: Date;
+      /** 稳定批次键(审核 id),让取消通知的 eventKey / cohortKey 在重放时不漂。 */
+      versionKey: string;
+      auditMeta: AuditMeta;
+    },
   ): Promise<{
     workflowRevision: number;
     resolvedConfig:
@@ -689,6 +711,14 @@ export class ActivityPublishProposalV2Service {
       | ActivityTemplateResolutionWithRegistrationForm
       | ActivityTemplateResolutionWithQualificationRules;
   }> {
+    // 「本次由 scheduled 变成 cancelled」的场次必须在 applySessions 落库**之前**读 ——
+    // 落库之后 DB 里全是 cancelled,分不出「这次刚取消」与「上次就已经取消」,联动会对
+    // 早已取消的场次重复发通知。一次查完,不逐个场次查。
+    const newlyCancelledSessionIds = await this.resolveNewlyCancelledSessionIds(
+      tx,
+      activityId,
+      snapshot.sessions,
+    );
     await this.applyActivity(
       tx,
       activityId,
@@ -736,7 +766,21 @@ export class ActivityPublishProposalV2Service {
           })
         : [];
     await this.capacityBuckets.apply(tx, activityId);
-    await this.applyQrCredentialsPlaceholder(tx, activityId); // 第 5 批占位，刻意空实现。
+    // ADV-018 / AC-010：单场次取消的人员 / 二维码 / 通知 / 结算人口四格联动。
+    // 第 5 批交付了二维码链却没回来接这个位置（原为 applyQrCredentialsPlaceholder 空桩）。
+    await activitySessionCancellationEffects.applyInTransactionTrusted(
+      tx,
+      { notificationProducer: this.notificationProducer, auditLogs: this.auditLogs },
+      {
+        activityId,
+        cancelledSessionIds: newlyCancelledSessionIds,
+        versionKey: input.versionKey,
+        at: input.at,
+        actorUserId: input.publishedByUserId,
+        actorRoleSnap: input.publishedByUserRole,
+        auditMeta: input.auditMeta,
+      },
+    );
     const activity = await tx.activity.update({
       where: { id: activityId },
       data: {
@@ -1923,10 +1967,33 @@ export class ActivityPublishProposalV2Service {
     return Promise.resolve();
   }
 
-  private applyQrCredentialsPlaceholder(tx: PrismaTx, activityId: string): Promise<void> {
-    void tx;
-    void activityId;
-    // 第 5 批：QR credential application。此刀必须显式经过但不得抢跑实装。
-    return Promise.resolve();
+  /**
+   * 本次审批里**刚**从非 cancelled 变成 cancelled 的既有场次。
+   *
+   * 提案快照每次都带**全量**场次,一个上次就取消掉的场次在这次快照里仍然是 cancelled ——
+   * 只看快照会把它当成「又取消了一次」,联动就会重复发通知。因此判据取 DB 现状:
+   * 「快照说 cancelled」且「库里还不是 cancelled」。
+   *
+   * 新建场次(`sessionId === null`)不进这里:它此刻不可能有报名、二维码或人口贡献。
+   */
+  private async resolveNewlyCancelledSessionIds(
+    tx: PrismaTx,
+    activityId: string,
+    sessions: readonly ProposalSession[],
+  ): Promise<string[]> {
+    const proposedCancelledIds = sessions.flatMap((session) =>
+      session.sessionId !== null && session.statusCode === 'cancelled' ? [session.sessionId] : [],
+    );
+    if (proposedCancelledIds.length === 0) return [];
+    const rows = await tx.activitySession.findMany({
+      where: {
+        activityId,
+        id: { in: proposedCancelledIds },
+        statusCode: { not: 'cancelled' },
+      },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    return rows.map((row) => row.id);
   }
 }
