@@ -25,7 +25,6 @@ import {
   freezeRegistrationRoster,
   isFrozenCohort,
 } from './activity-recipient-freeze';
-import { assertActiveOrganizationIds } from '../organizations/organization-audience-scope';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import { cancelActivityRegistrationLifecycle } from '../activity-registrations/activity-cancellation-lifecycle';
@@ -331,7 +330,6 @@ export class ActivityStatusCommandService {
         select: activitySafeSelect,
       });
 
-      await assertActiveOrganizationIds(tx, audienceOrganizationIds);
       const audienceCohort = await freezeAudienceTags(tx, {
         activityId: updated.id,
         audienceTagCodes,

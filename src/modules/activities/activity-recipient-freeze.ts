@@ -2,7 +2,10 @@ import { DictItemStatus, DictTypeStatus, MemberStatus, type Prisma } from '@pris
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
-import { resolveOrganizationSubtreeMemberIds } from '../organizations/organization-audience-scope';
+import {
+  assertActiveOrganizationIds,
+  resolveOrganizationSubtreeMemberIds,
+} from '../organizations/organization-audience-scope';
 import { DICT_TYPE_MEMBER_AUDIENCE_TAG } from './activity-publish-review-access';
 
 type PrismaTx = Prisma.TransactionClient;
@@ -417,6 +420,11 @@ async function resolveAudienceRecipientMemberIds(
 ): Promise<string[]> {
   const taggedMemberIds = await resolveAudienceMemberIds(tx, audienceTagCodes);
   if (audienceOrganizationIds.length === 0) return taggedMemberIds;
+  // 与标签码**对称**:`resolveAudienceMemberIds` 在这一刻会重新解析标签码、解析不出即整批拒,
+  // 组织必须同样在**冻结这一刻**重新校验 —— 提交与审批之间组织被软删时,不能拿一棵已经不存在
+  // 的子树算收件人。放在这里而不是 freeze() 外面是刻意的:回捞到既有冻结批次时本函数
+  // **根本不会被调用**,于是重放既不重算也不会被新的校验结果拒掉。
+  await assertActiveOrganizationIds(tx, audienceOrganizationIds);
   const organizationMemberIds = await resolveOrganizationSubtreeMemberIds(
     tx,
     audienceOrganizationIds,

@@ -456,6 +456,8 @@ describe('收件人冻结 —— D2 五条不变量', () => {
       { ancestorId: 'org-a-1', descendantId: 'org-a-1' },
       { ancestorId: 'org-b', descendantId: 'org-b' },
     ];
+    /** 库里真实存在、未软删的组织。`org-ghost` 刻意不在其中 —— 用来钉「打错 id 整批拒」。 */
+    const LIVE_ORGANIZATIONS = ['org-a', 'org-a-1', 'org-b'];
     const MEMBERSHIPS: ReadonlyArray<{ memberId: string; organizationId: string }> = [
       { memberId: 'm-both', organizationId: 'org-a' },
       { memberId: 'm-org-only', organizationId: 'org-a' },
@@ -502,6 +504,15 @@ describe('收件人冻结 —— D2 五条不变量', () => {
             applyInFilters(CLOSURE, args.where).map(({ descendantId }) => ({ descendantId })),
           ) as unknown,
       );
+      const organizationFindMany = jest.fn(
+        (args: { where: Record<string, unknown> }) =>
+          Promise.resolve(
+            applyInFilters(
+              LIVE_ORGANIZATIONS.map((id) => ({ id })),
+              args.where,
+            ),
+          ) as unknown,
+      );
       const membershipFindMany = jest.fn(
         (args: { where: Record<string, unknown> }) =>
           Promise.resolve(
@@ -518,6 +529,7 @@ describe('收件人冻结 —— D2 五条不变量', () => {
         member: {
           findMany: jest.fn().mockResolvedValue(ALL_ACTIVE_MEMBERS.map((id) => ({ id }))),
         },
+        organization: { findMany: organizationFindMany },
         organizationClosure: { findMany: closureFindMany },
         memberOrganizationMembership: { findMany: membershipFindMany },
       } as unknown as Prisma.TransactionClient;
@@ -654,6 +666,23 @@ describe('收件人冻结 —— D2 五条不变量', () => {
         expect(result.closureFindMany).not.toHaveBeenCalled();
         expect(result.membershipFindMany).not.toHaveBeenCalled();
       }
+    });
+
+    it('组织 id 解析不出未软删行 ⇒ 整批拒,不静默算出一个空收件人集', async () => {
+      const { tx } = orgWorldTx();
+
+      // 打错一个 id 时,子树展开得到空集、交集随之为空 —— 通知一个人都不发却照样 200。
+      // 那是「静默少发一整批人」,与标签码解析失败同一类事故,故同一处置(整批 400)。
+      // ⚠️ 校验落在冻结这一刻(不是只在提交时):提交与审批之间组织被软删,
+      //    不能拿一棵已经不存在的子树算收件人 —— 与标签码在审批时重新解析对称。
+      await expect(
+        freezeAudienceTags(tx, {
+          activityId: 'act-1',
+          at: AT,
+          audienceTagCodes: ['diving'],
+          audienceOrganizationIds: ['org-a', 'org-ghost'],
+        }),
+      ).rejects.toThrow();
     });
 
     it('「含下级」不许靠编码前缀糊弄 —— 两个文件都零字符串前缀匹配', () => {
