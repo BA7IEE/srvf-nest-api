@@ -70,6 +70,39 @@ name / description / sortOrder 按 D-CERT-005 本就**允许运营在审计下�
 既不复活也不建第二份。`FREE_TEXT` 要求 issuer 数**恰好 0**,故刻意不建 `CertificateRecognitionIssuer`
 行(顺带避开该表**没有自然唯一键**、幂等只能靠 findFirst 兜的风险)。
 
-⚠️ **`levelCode` 三条全留 NULL**:字典 `cert_sub_type` 当前只有 bsafe / 救护员四项,没有业余无线电
-A/B/C 的取值,而往字典加值需要维护者拍板。🔴 这是**单向门** —— `levelCode` 属身份字段,
-`activatedAt !== null` 之后 API 侧改它一律 18033(D-CERT-005),要补等级码必须在合入前决定。
+#### 同批新增 3 个 `cert_sub_type` 字典项 —— 分级是**出队前要知道的事**
+
+`amateur_radio_a` / `_b` / `_c`(label「业余无线电 A/B/C 类」),三个 CREDENTIAL 的 `levelCode` 取它们。
+理由不是「方便筛选」,是**短波(<30MHz)功率上限差一个量级**:
+
+| 等级 | 短波功率上限 |
+|---|---|
+| A | **不可用**(仅 30MHz 以上) |
+| B | <15W |
+| **C** | **≤1000W** |
+
+短波 1000 瓦 = 手机没信号时还能通联 ⇒「队里有几个 C 类」是救援调派的输入。
+而 `levelCode` 是身份字段、标准 `activatedAt` 之后 API 改它一律 18033(D-CERT-005)
+⇒ **现在不加就永远加不了**。code 沿本字典既有 `<族>_<级>` 惯例(`bsafe_l1` / `first_aid_basic`):
+族取 `amateur_radio` 而非 cert_type 的 `comm`(通讯将来还会装对讲机 / 卫星电话等别的族),
+也刻意不取标准自己的 code(两个命名空间用同一串字面量迟早被当成同一个东西)。
+
+新增一格判据闭合「`levelCode` ↔ 字典项」这条**没有 FK 的引用**(字典漏一项 seed 照样成功,
+只有后续 PATCH 才 400,零症状)。**变异对拍**:把 C 的 levelCode 改成字典里没有的
+`amateur_radio_d` ⇒ **恰 1 条红**、其余 11 条全绿;还原后 12/12 复绿,零残留。
+
+#### ⭐ 规矩的措辞跟着改(五处),不是「本次例外」
+
+runbook 原文「本仓刻意**不内置**任何证书标准」防的是「系统替维护者决定我们队认哪些证书」——
+那确实是判断题。而 A/B/C 由 67 号令定死、**全国一套队里没得选**,不构成替谁拍板。
+⇒ 把规矩改写成一条**可判的判据**(维护者 2026-08-25 拍板):
+
+> **国家法规定义的证书可以内置;队里自己认定的一律走人工创建。**
+> 判据:「这个证书的内容,队里有得选吗?」—— 有 ⇒ 人工建;没有 ⇒ 可内置。
+
+改了 `docs/ops/certificate-standard-library-initialization.md`(新增判据节 + 已内置清单 +
+「别重复建,撞 unique 会 409」)· `docs/current-state.md` §4 P1 ③ ·
+`docs/ai-harness/NEXT_TASKS.md`(两处)· `docs/ai-harness/FROZEN_DRAFTS.md`。
+
+ℹ️ **内置不是单向门**:`CertificateStandard` 是软删,`code` 的 unique 含软删行 ⇒ 维护者删掉之后
+再跑 seed,upsert 走 update 分支、`update: {}` 什么都不写,**不会复活**。删了就是删了。

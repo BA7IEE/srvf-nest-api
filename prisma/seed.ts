@@ -95,6 +95,7 @@ import { effectiveGlobalOpsAdminBindingWhere } from '../src/modules/permissions/
 // 风格:英文 code + 中文 label(Q-D7 决议),与批次 1 demo label 不同;
 //   - cert_type: 7 项占位(救护员 / BSAFE / 户外 / 教练 / 通讯 / 医疗 / 其他)
 //   - cert_sub_type: 4 项演示占位(BSAFE 一/二级 + 救护员基础/高级)
+//     + 3 项**真值**(业余无线电 A/B/C;2026-08-25 拍板,见该 items 段内注释)
 //   - cert_status: 4 态闭集(待核验 / 已核验 / 已失效 / 拒绝),新增态需走前评审
 // 真实 items 由队部 / TTD 后续运营层录入(Q-S1)。
 //
@@ -149,7 +150,10 @@ const BCRYPT_SALT_ROUNDS = 10;
 // 仍占位。真实成员 PII / 真实 memberNo 规则与样例仍不进 git(R13 保留口径;权威源 V2红线 A-9)。
 // - type code 用 snake_case,与字段名 organizations.nodeTypeCode / members.gradeCode 对齐
 // - 本表 dict_items 全部 parentId = null(顶层);activity_type 二级树由 seedActivityTypeHierarchy 处理
-const V2_DICT_SEED = [
+// 导出仅为判据消费(沿 `RBAC_SEED_CATALOG` 的既有形态):
+// `amateur-radio-standard-seed.spec.ts` 据此闭合「标准的 levelCode ↔ cert_sub_type 字典项」——
+// 两者之间**没有 FK**,字典漏一项 seed 照样成功,只有后续 API PATCH 才 400。
+export const V2_DICT_SEED = [
   {
     // 组织节点类别(2026-06-21 goal「组织树内置」;R13 收窄后非敏感分类字典可内置真实值)。
     // 8 项真实分类替换原 demo-node-type-1/2 占位。**4 个 professional-* code 原样保留**——
@@ -292,6 +296,22 @@ const V2_DICT_SEED = [
       { code: 'bsafe_l2', label: 'BSAFE 二级', sortOrder: 1 },
       { code: 'first_aid_basic', label: '救护员基础', sortOrder: 2 },
       { code: 'first_aid_advanced', label: '救护员高级', sortOrder: 3 },
+      // 业余无线电台操作技术能力验证 A / B / C(2026-08-25 维护者拍板;工信部令第 67 号第三十条)。
+      // ⚠️ 这三项**不是占位**,是首批内置标准 `amateur_radio_operator_{a,b,c}` 的 `levelCode` 真值。
+      //
+      // 为什么必须分级(不是「方便筛选」,是出队前要知道的事):三类的**短波(<30MHz)**权限差一个量级 ——
+      //   A 类 **不可用短波**(仅 30MHz 以上) / B 类 <15W / C 类 **≤1000W**。
+      // 短波 1000 瓦 = 手机没信号时还能通联 ⇒「队里有几个 C 类」是救援调派的输入。
+      // 而 `levelCode` 是身份字段、标准 `activatedAt` 之后 API 侧改它一律 18033(D-CERT-005)
+      // ⇒ **现在不加就永远加不了**。
+      //
+      // code 沿本字典既有的 `<族>_<级>` 惯例(bsafe_l1 / first_aid_basic):族取 `amateur_radio`
+      // 而不是 cert_type 的 `comm` —— `comm`(通讯)将来还会装对讲机 / 卫星电话等别的族;
+      // 也刻意**不**取标准自己的 code `amateur_radio_operator_a`,两个命名空间用同一串字面量
+      // 迟早被人当成同一个东西。级别取 a/b/c = 证书上印的法定级名(与 l1/l2 同理)。
+      { code: 'amateur_radio_a', label: '业余无线电 A 类', sortOrder: 4 },
+      { code: 'amateur_radio_b', label: '业余无线电 B 类', sortOrder: 5 },
+      { code: 'amateur_radio_c', label: '业余无线电 C 类', sortOrder: 6 },
     ],
   },
   {
@@ -2910,8 +2930,23 @@ async function seedWechatSubscribeTemplates(prisma: PrismaClient): Promise<void>
 //    ⇒ 前置条件只写进 description 供人读,**不加字段、不加校验、不加 schema、不加父子依赖**。
 //    四个标准之间的 parentId 只是**目录分组**(D-CERT-003 的 FAMILY),不表达任何先后关系。
 //
+// ⭐ **为什么这一批可以内置,而「队里认哪些证书」不可以**(2026-08-25 维护者拍板的判据,
+//    同步写进 `docs/ops/certificate-standard-library-initialization.md`):
+//
+//      **国家法规定义的证书可以内置;队里自己认定的一律走人工创建。**
+//      判据只有一句:「这个证书的内容,队里有得选吗?」—— 有 ⇒ 人工建;没有 ⇒ 可内置。
+//
+//    runbook 那条「不内置」的规矩防的是「**系统替维护者决定我们队认哪些证书**」——
+//    那确实是判断题。而 A/B/C 的分类、前置条件、频段功率全由工信部令第 67 号定死,
+//    **全国一套,队里没得选**,内置它不构成替谁拍板。⇒ 这不是破例,是把规矩写成可判的判据。
+//
+// ⭐ **内置不是单向门**(维护者敢保留内置的直接依据):`CertificateStandard` 是**软删**
+//    (`deletedAt`),而 `code` 的 unique **含软删行** —— 维护者删掉之后再跑 seed,
+//    upsert 走 update 分支、`update: {}` 什么都不写 ⇒ **不会复活**。删了就是删了。
+//
 // 结构:1 个 FAMILY(目录分组,不可认定 / 不可持有)+ 3 个 CREDENTIAL 子节点;
-// categoryCode 全取既有字典 `cert_type` 的 `comm`(通讯),**不新增字典项**。
+// categoryCode 全取既有字典 `cert_type` 的 `comm`(通讯);
+// levelCode 取字典 `cert_sub_type` 的 `amateur_radio_{a,b,c}`(同批新增,见该字典 items 段)。
 
 const AMATEUR_RADIO_CATEGORY_CODE = 'comm';
 
@@ -2956,6 +2991,7 @@ const AMATEUR_RADIO_CREDENTIAL_SEED = Object.freeze([
   Object.freeze({
     code: 'amateur_radio_operator_a',
     name: '业余无线电台操作技术能力验证证书(A 类)',
+    levelCode: 'amateur_radio_a',
     description:
       '前置条件(第二十六条):熟悉无线电管理规定,具有一定的业余无线电台操作技术能力;无其他前置条件。' +
       '可申请使用的频段与功率(第三十条):工作在 30—3000MHz 频段且最大发射功率不大于 25 瓦。' +
@@ -2965,6 +3001,7 @@ const AMATEUR_RADIO_CREDENTIAL_SEED = Object.freeze([
   Object.freeze({
     code: 'amateur_radio_operator_b',
     name: '业余无线电台操作技术能力验证证书(B 类)',
+    levelCode: 'amateur_radio_b',
     description:
       '前置条件(第二十六条):依法取得业余无线电台执照 6 个月以上,且具有相应的实际操作经验。' +
       '可申请使用的频段与功率(第三十条):工作在 30MHz 以下频段且最大发射功率小于 15 瓦,' +
@@ -2975,6 +3012,7 @@ const AMATEUR_RADIO_CREDENTIAL_SEED = Object.freeze([
   Object.freeze({
     code: 'amateur_radio_operator_c',
     name: '业余无线电台操作技术能力验证证书(C 类)',
+    levelCode: 'amateur_radio_c',
     description:
       '前置条件(第二十六条):依法取得载明 30MHz 以下频段的业余无线电台执照 18 个月以上,' +
       '且具有相应的实际操作经验。可申请使用的频段与功率(第三十条):工作在 30MHz 以下频段' +
@@ -3046,12 +3084,13 @@ async function seedAmateurRadioCertificateStandards(prisma: PrismaClient): Promi
         description: credential.description,
         kind: CertificateStandardKind.CREDENTIAL,
         categoryCode: AMATEUR_RADIO_CATEGORY_CODE,
-        // ⚠️ `levelCode` 走字典 `cert_sub_type`,而该字典**当前没有**业余无线电 A/B/C 的取值
-        //    (只有 bsafe_l1 / bsafe_l2 / first_aid_basic / first_aid_advanced)。
-        //    往字典加值需要维护者拍板,故本刀留 NULL(列本就可空)。
-        //    🔴 注意这是**单向门**:`levelCode` 属身份字段,`activatedAt !== null` 之后
-        //    API 侧改它一律 18033(D-CERT-005)。要补 A/B/C 等级码必须在本 PR 合入前决定。
-        levelCode: null,
+        // `levelCode` 走字典 `cert_sub_type`;A/B/C 三项由本 seed 的 `V2_DICT_SEED` 同批内置
+        // (2026-08-25 拍板),写入顺序由 `main()` 保证:`seedV2Dictionaries` 在本函数之前。
+        // 🔴 **必须现在填**:`levelCode` 属身份字段,`activatedAt !== null` 之后 API 侧改它
+        //    一律 18033(D-CERT-005)—— 标准一旦 ACTIVE 就再也加不上等级。
+        //    分级不是为了好筛,是短波功率上限差一个量级(A 不可用 / B <15W / C ≤1000W),
+        //    「队里有几个 C 类」是救援调派的输入。详见字典 items 段的注释。
+        levelCode: credential.levelCode,
         parentId: family.id,
         // 发证方是无线电管理机构,不是本会。
         isInternal: false,
@@ -3091,7 +3130,7 @@ async function seedAmateurRadioCertificateStandards(prisma: PrismaClient): Promi
     `[seed] amateur radio certificate standards ensured ` +
       `(1 FAMILY + ${AMATEUR_RADIO_CREDENTIAL_SEED.length} CREDENTIAL(A/B/C)+ ` +
       `${AMATEUR_RADIO_CREDENTIAL_SEED.length} ACTIVE policy;PERMANENT / FREE_TEXT / 编号可选;` +
-      `levelCode 留空待字典拍板)`,
+      `levelCode 取 cert_sub_type 的 amateur_radio_{a,b,c})`,
   );
 }
 

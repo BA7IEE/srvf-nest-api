@@ -940,7 +940,7 @@ R15 当年建立就是为了堵这条「把业务 helper 搬出 modules 就免�
 
 ### P1-24 通用证书标准库 + 队内认定规则 + 招新证书闭环 — **✅ 已交付并随 v0.65.0 发版(2026-08-02);剩首批初始化(生产 runbook)**
 
-**状态**:⏸ 挂起(代码随 v0.65.0 全交付;剩「首批标准与认定规则初始化」「第 67 migration 生产部署」「前端适配」三项 —— 前两项是维护者动作,AI 对 migrate deploy 恒无权)
+**状态**:⏸ 挂起(代码随 v0.65.0 全交付;剩「**队内认定**标准的初始化」「第 67 migration 生产部署」「前端适配」三项 —— 前两项是维护者动作,AI 对 migrate deploy 恒无权。**法规定义**的那批标准已内置 seed:业余无线电 A/B/C,2026-08-25 拍板)
 
 - **交付**:PR-0(冻结)→ PR-1 → PR-2 → PR-3 → PR-4a(拆三刀)+ PR-4b → PR-5 → PR-6 全部合入 main([#826–#834](https://github.com/BA7IEE/srvf-nest-api/pull/834));**Endpoint 435→438 · Migration 66→67 · 权限码 214→222**。
 - **⚠️ 交付后跨模型评审判 NO-GO → findings 修复批次 F1–F6**(2026-07-30):两个外部模型对 `main@bc300a66` 独立评审,21 条 findings 主会话逐条复现。修复见 [#835](https://github.com/BA7IEE/srvf-nest-api/pull/835)(并发四处统一收口)· [#836](https://github.com/BA7IEE/srvf-nest-api/pull/836)(证据授权按状态分流)· [#837](https://github.com/BA7IEE/srvf-nest-api/pull/837)(PATCH 三态 + 日期真实性 + 核验落点)· [#838](https://github.com/BA7IEE/srvf-nest-api/pull/838)(§12 资质判断)· [#839](https://github.com/BA7IEE/srvf-nest-api/pull/839)(主数据契约与审计)· F6(SOP / 初始化 / 台账)。
@@ -1249,7 +1249,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 - **⏸ 剩余挂账**(不属于本任务的代码范围,但没做完就不能算上线):
   - **发版**:#826–#834 与 F1–F6 全部未随版本发布(tag 仍是 v0.64.0)。
   - **PR-4b 的第 67 个 migration 未部署** —— 不可逆 contract,按 [`go-live runbook`](../ops/certificate-standard-library-go-live.md) 执行(停写 → 备份验证 → 探针 → migrate)。
-  - **首批标准与认定规则未建**(刻意不 seed:认定口径是维护者拍板,不由 AI 内置)。按 [`初始化 runbook`](../ops/certificate-standard-library-initialization.md);⚠️ `code` 打错不可挽回。
+  - **首批标准与认定规则:法规定义的那批已内置,队内认定的仍未建**(2026-08-25 维护者拍板的判据:「这个证书的内容,队里有得选吗?」有 ⇒ 人工建,没有 ⇒ 可内置)。已内置 = 业余无线电台操作技术能力验证证书 A/B/C(工信部令第 67 号);其余按 [`初始化 runbook`](../ops/certificate-standard-library-initialization.md);⚠️ `code` 打错不可挽回,且已内置的别重复建(撞 unique 会 409)。
   - **前端适配**:对外契约破坏清单见 [`handoff/admin-web.md`](../handoff/admin-web.md) §3.2 / §3.2.1。
 - **原立项背景(保留)**:
   [`certificate-standard-library-t0-review.md`](../archive/reviews/certificate-standard-library-t0-review.md)(2026-07-29 拍板;v1.0 / v1.1 **废止**)。

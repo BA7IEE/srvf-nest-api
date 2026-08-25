@@ -4,7 +4,7 @@ import {
   CertificateValidityMode,
 } from '@prisma/client';
 
-import { AMATEUR_RADIO_CERTIFICATE_SEED_CATALOG } from '../../../prisma/seed';
+import { AMATEUR_RADIO_CERTIFICATE_SEED_CATALOG, V2_DICT_SEED } from '../../../prisma/seed';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { ExpiryReminderService } from '../notifications/expiry-reminder.service';
 import { CertificateRecognitionResolver } from './certificate-recognition-resolver';
@@ -57,6 +57,46 @@ describe('首批证书标准 · 业余无线电台操作技术能力验证证书
       // ⇒ 三条规则同形、同版本号,seed 里也没有任何跨 credential 的引用。
       expect(catalog.policy.version).toBe(1);
       expect(new Set(catalog.credentials.map((c) => c.sortOrder)).size).toBe(3);
+    });
+
+    // ⭐ 这一格闭的是一条**没有 FK 的引用**:`CertificateStandard.levelCode` 只是个字符串,
+    // 字典里漏了对应项 seed 照样成功、DB 照样收下,直到某天有人 PATCH 这个标准才吃 400
+    // (`assertDictItemValid` → CERTIFICATE_SUB_TYPE_CODE_INVALID)。零症状,所以必须有判据。
+    describe('levelCode ↔ cert_sub_type 字典闭合(两者之间没有外键)', () => {
+      const certSubType = V2_DICT_SEED.find((entry) => entry.type.code === 'cert_sub_type');
+      // 一律先落成 `Set<string>`:`V2_DICT_SEED` 是 `as const`,直接 new Set 会被窄成
+      // 168 个字面量的联合,`has('随便一个没登记的 code')` 变成**编译错误**而不是运行时 false
+      // —— 那样阳性对照根本写不出来(判据必须能表达「不该命中的那一格」)。
+      const seededCodes: ReadonlySet<string> = new Set<string>(
+        (certSubType?.items ?? []).map((item) => item.code),
+      );
+
+      it('先验仪器:cert_sub_type 字典条目存在且非空', () => {
+        expect(certSubType).toBeDefined();
+        expect(seededCodes.size).toBeGreaterThan(0);
+      });
+
+      it('三个 CREDENTIAL 的 levelCode 都是同一份 seed 里真实存在的 cert_sub_type 项', () => {
+        // 逐条断言到「code → levelCode」这一对上,失败时直接看得出是哪一级漏了。
+        const pairs = catalog.credentials.map((c) => [c.code, c.levelCode] as const);
+        expect(pairs).toEqual([
+          ['amateur_radio_operator_a', 'amateur_radio_a'],
+          ['amateur_radio_operator_b', 'amateur_radio_b'],
+          ['amateur_radio_operator_c', 'amateur_radio_c'],
+        ]);
+        for (const [, levelCode] of pairs) {
+          expect(seededCodes.has(levelCode)).toBe(true);
+        }
+      });
+
+      it('A/B/C 三级各不相同(分级是短波功率权限,合并任意两级都是错的)', () => {
+        // A 不可用短波 / B <15W / C ≤1000W(工信部令第 67 号第三十条)。
+        expect(new Set(catalog.credentials.map((c) => c.levelCode)).size).toBe(3);
+      });
+
+      it('阳性对照:字典里没登记的 levelCode 必须判不命中', () => {
+        expect(seededCodes.has('amateur_radio_d')).toBe(false);
+      });
     });
   });
 
