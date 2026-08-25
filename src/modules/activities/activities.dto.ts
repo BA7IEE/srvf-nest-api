@@ -707,6 +707,8 @@ export class PublishActivityDto {
 }
 
 // B7 定向发布沿既有发布确认字段，额外接收不可重复、最多 50 个会员受众标签 code；空数组表示全体有效会员。
+// 组织定向(维护者 2026-08-25 拍板)沿同一形状追加 audienceOrganizationIds：省略 / 空数组 = 不按组织收窄；
+// 非空 = 该组织**及其全部下级**；两个维度取**交集**（都满足才收到）。
 export class PublishActivityWithAudienceTagsDto {
   @ApiProperty({ description: '确认已核对本活动保险要求；只能为 true', example: true })
   @IsBoolean()
@@ -726,6 +728,23 @@ export class PublishActivityWithAudienceTagsDto {
   @MinLength(1, { each: true })
   @MaxLength(64, { each: true })
   audienceTagCodes!: string[];
+
+  @ApiPropertyOptional({
+    description:
+      '组织定向：目标组织 id 集合，**自动包含其全部下级组织**；省略或空数组表示不按组织收窄。' +
+      '与 audienceTagCodes 取交集：两个条件都满足的会员才收到通知',
+    type: [String],
+    maxItems: 50,
+    uniqueItems: true,
+  })
+  @OmittableOnly()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MinLength(8, { each: true })
+  @MaxLength(64, { each: true })
+  audienceOrganizationIds?: string[];
 }
 
 // ============ 列表 query ============

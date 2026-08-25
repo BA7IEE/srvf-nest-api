@@ -185,3 +185,25 @@ export async function resolveActiveAudienceTagIds(
   if (tags.length !== audienceTagCodes.length) throw new BizException(BizCode.BAD_REQUEST);
   return tags.map((tag) => tag.id);
 }
+
+/**
+ * 组织定向的入参校验(维护者 2026-08-25 拍板),与 `resolveActiveAudienceTagIds` 同处置:
+ * **少解析出一个就整批拒绝**。
+ *
+ * 为什么必须校验:组织 id 打错时,子树展开会得到空集,交集随之为空 ——
+ * 通知**一个人都不发**却照样返回 200。那是「静默少发一整批人」,与标签码解析失败同一类事故。
+ *
+ * ⚠️ 这里只校验**勾选的**组织存在且未软删;下级由 `organization_closure` 展开,
+ * 不逐个校验后代(后代由建 / 移动节点时整段重建的闭包表负责,重复校验会造出第二份真相)。
+ */
+export async function assertActiveOrganizationIds(
+  tx: PrismaTx,
+  organizationIds: string[],
+): Promise<void> {
+  if (organizationIds.length === 0) return;
+  const found = await tx.organization.findMany({
+    where: { id: { in: organizationIds }, deletedAt: null },
+    select: { id: true },
+  });
+  if (found.length !== new Set(organizationIds).size) throw new BizException(BizCode.BAD_REQUEST);
+}

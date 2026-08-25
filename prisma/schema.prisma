@@ -1553,15 +1553,21 @@ model Activity {
 // status / requestType 保持 String，沿活动域运营字典码与后续状态机校验；
 // 同一活动只允许一个 pending 请求的 partial unique 由 migration 手写。
 model ActivityPublishReview {
-  id               String  @id @default(cuid())
-  activityId       String
-  requestType      String
-  requestVersion   Int
-  baseRevision     Int
-  status           String
-  snapshot         Json
-  directPublish    Boolean @default(false)
-  audienceTagCodes Json?
+  id                      String  @id @default(cuid())
+  activityId              String
+  requestType             String
+  requestVersion          Int
+  baseRevision            Int
+  status                  String
+  snapshot                Json
+  directPublish           Boolean @default(false)
+  audienceTagCodes        Json?
+  // 组织定向(维护者 2026-08-25 拍板):与 audienceTagCodes 逐字同形的 nullable JSONB,
+  // 运行时只把 `string[]` 视为有效。`null` = 未按组织定向(存量行与不勾组织的新行都落这里);
+  // `[]` = 不作组织收窄(与 audienceTagCodes 的 `[]` 同构:空数组表示该维度不设限);
+  // 非空 = 收件人须在这些组织**或其后代**中有有效任职 —— 「勾上级含下级」走 organization_closure
+  // 真子树,不是编码前缀匹配。与 audienceTagCodes **取交集(AND)**:两个维度都满足才收到。
+  audienceOrganizationIds Json?
 
   submittedByUserId String
   submittedAt       DateTime  @default(now())

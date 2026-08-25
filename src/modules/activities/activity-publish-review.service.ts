@@ -16,6 +16,7 @@ import {
 import { ActivityPublishReviewAuditRecorder } from './activity-publish-review-audit-recorder';
 import {
   ActivityPublishReviewPresenter,
+  readActivityPublishReviewAudienceOrganizationIds,
   readActivityPublishReviewAudienceTagCodes,
   activityPublishReviewViewSelect,
 } from './activity-publish-review-presenter';
@@ -216,6 +217,8 @@ export class ActivityPublishReviewService {
           where: { id: reviewId },
         });
         const audienceTagCodes = readActivityPublishReviewAudienceTagCodes(review.audienceTagCodes);
+        const audienceOrganizationIds =
+          readActivityPublishReviewAudienceOrganizationIds(review.audienceOrganizationIds) ?? [];
         if (audienceTagCodes !== null) this.assertAudienceTagsHttpEnabled();
         if (this.proposalV2.isSnapshot(review.snapshot) && dto.operationKey === undefined) {
           throw new BizException(BizCode.BAD_REQUEST);
@@ -254,6 +257,7 @@ export class ActivityPublishReviewService {
             user,
             auditMeta,
             audienceTagCodes,
+            audienceOrganizationIds,
           );
         }
         const decision = this.stateMachine.decide('approve', review.status);
@@ -360,6 +364,7 @@ export class ActivityPublishReviewService {
           const cohort = await freezeAudienceTags(tx, {
             activityId: review.activityId,
             audienceTagCodes,
+            audienceOrganizationIds,
             at: publishedEffect.publishedAt,
           });
           if (!isFrozenCohort(cohort)) throw new BizException(BizCode.BAD_REQUEST);
@@ -372,6 +377,7 @@ export class ActivityPublishReviewService {
             actorUserId: user.id,
             actorRoleSnap: user.role,
             audienceTagCodes,
+            audienceOrganizationIds,
             recipientCount: audienceRecipientMemberIds.length,
             auditMeta,
             tx,
@@ -507,6 +513,7 @@ export class ActivityPublishReviewService {
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
     audienceTagCodes: string[] | null,
+    audienceOrganizationIds: string[],
   ): Promise<{ dto: ActivityPublishReviewResponseDto; missingChangeOwner: boolean }> {
     const decision = this.stateMachine.decide('approve', review.status);
     if (!decision.allowed) throw new BizException(decision.biz);
@@ -596,6 +603,7 @@ export class ActivityPublishReviewService {
       const cohort = await freezeAudienceTags(tx, {
         activityId: review.activityId,
         audienceTagCodes,
+        audienceOrganizationIds,
         at: effect.publishedAt,
       });
       if (!isFrozenCohort(cohort)) throw new BizException(BizCode.BAD_REQUEST);
@@ -608,6 +616,7 @@ export class ActivityPublishReviewService {
         actorUserId: user.id,
         actorRoleSnap: user.role,
         audienceTagCodes,
+        audienceOrganizationIds,
         recipientCount: audienceRecipientMemberIds.length,
         auditMeta,
         tx,

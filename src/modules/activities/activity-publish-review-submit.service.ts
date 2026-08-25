@@ -29,6 +29,7 @@ import {
   type ActivityTemplateResolution,
 } from './activity-publish-proposal-v2.service';
 import {
+  assertActiveOrganizationIds,
   buildProposalSnapshot,
   ensureInitialPublishable,
   lockActivity,
@@ -360,7 +361,11 @@ export class ActivityPublishReviewSubmitService {
 
   async compatibilityPublishWithAudienceTags(
     activityId: string,
-    dto: { requiresInsuranceConfirmed: boolean; audienceTagCodes: string[] },
+    dto: {
+      requiresInsuranceConfirmed: boolean;
+      audienceTagCodes: string[];
+      audienceOrganizationIds: string[];
+    },
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<ActivityPublishReviewResponseDto> {
@@ -387,6 +392,7 @@ export class ActivityPublishReviewSubmitService {
       user,
       auditMeta,
       dto.audienceTagCodes,
+      dto.audienceOrganizationIds,
     );
   }
 
@@ -396,11 +402,22 @@ export class ActivityPublishReviewSubmitService {
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
     audienceTagCodes: string[] | null,
+    audienceOrganizationIds: string[] = [],
   ): Promise<ActivityPublishReviewResponseDto> {
+    // 幂等哈希:不按组织定向时 payload 逐字节沿用本刀之前的形状 —— 否则同一 operationKey 的
+    // 存量 pending 提交会算出新哈希,replay 对不上,当场变成「幂等键冲突」而不是幂等命中。
     const requestHash =
       audienceTagCodes === null
         ? this.submitRequestHash('initial', activityId, dto)
-        : hashCanonical({ requestType: 'initial', activityId, dto, audienceTagCodes });
+        : audienceOrganizationIds.length === 0
+          ? hashCanonical({ requestType: 'initial', activityId, dto, audienceTagCodes })
+          : hashCanonical({
+              requestType: 'initial',
+              activityId,
+              dto,
+              audienceTagCodes,
+              audienceOrganizationIds,
+            });
     try {
       const row = await this.prisma.$transaction(async (tx) => {
         await lockActivity(activityId, tx);
@@ -430,6 +447,7 @@ export class ActivityPublishReviewSubmitService {
         if (audienceTagCodes !== null) {
           if (!activity.isPublicRegistration) throw new BizException(BizCode.BAD_REQUEST);
           await resolveActiveAudienceTagIds(tx, audienceTagCodes);
+          await assertActiveOrganizationIds(tx, audienceOrganizationIds);
         }
         const pending = await tx.activityPublishReview.count({
           where: { activityId, status: 'pending' },
@@ -454,6 +472,14 @@ export class ActivityPublishReviewSubmitService {
               : {
                   audienceTagCodes: JSON.parse(
                     JSON.stringify(audienceTagCodes),
+                  ) as Prisma.InputJsonValue,
+                }),
+            // 组织定向:不按组织收窄时**整列不写**,存量与新行一律留 NULL,读回即 legacy 语义。
+            ...(audienceTagCodes === null || audienceOrganizationIds.length === 0
+              ? {}
+              : {
+                  audienceOrganizationIds: JSON.parse(
+                    JSON.stringify(audienceOrganizationIds),
                   ) as Prisma.InputJsonValue,
                 }),
           },

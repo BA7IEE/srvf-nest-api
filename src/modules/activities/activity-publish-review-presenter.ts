@@ -16,6 +16,18 @@ export function readActivityPublishReviewAudienceTagCodes(
   return value as string[];
 }
 
+// 组织定向列与 audienceTagCodes 同形同处置：形状不对即抛，绝不 filter 后静默继续
+// —— 那会把「损坏的组织定向」悄悄降级成「不按组织定向」，也就是**扩大**受众。
+export function readActivityPublishReviewAudienceOrganizationIds(
+  value: Prisma.JsonValue | null,
+): string[] | null {
+  if (value === null) return null;
+  if (!Array.isArray(value) || value.some((id) => typeof id !== 'string')) {
+    throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+  }
+  return value as string[];
+}
+
 export const activityPublishReviewViewSelect = {
   id: true,
   activityId: true,
@@ -26,6 +38,7 @@ export const activityPublishReviewViewSelect = {
   snapshot: true,
   directPublish: true,
   audienceTagCodes: true,
+  audienceOrganizationIds: true,
   submittedByUserId: true,
   submittedAt: true,
   reviewedByUserId: true,
@@ -55,6 +68,9 @@ export class ActivityPublishReviewPresenter {
       snapshot: row.snapshot as Record<string, unknown>,
       directPublish: row.directPublish,
       audienceTagCodes: readActivityPublishReviewAudienceTagCodes(row.audienceTagCodes),
+      audienceOrganizationIds: readActivityPublishReviewAudienceOrganizationIds(
+        row.audienceOrganizationIds,
+      ),
       submittedByUserId: row.submittedByUserId,
       submittedAt: row.submittedAt,
       reviewedByUserId: row.reviewedByUserId,

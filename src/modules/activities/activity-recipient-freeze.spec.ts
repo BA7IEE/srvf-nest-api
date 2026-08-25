@@ -304,6 +304,10 @@ describe('收件人冻结 —— D2 五条不变量', () => {
         expect(code).not.toContain('memberAudienceTagAssignment');
         expect(code).not.toContain('activityResponsibilityAssignment');
         expect(code).not.toContain('dictItem.');
+        // 组织定向(2026-08-25)带进来两个新的收件人来源。新增来源必须同时补进这份禁表 ——
+        // 否则这条判据只对「本刀之前的四张表」有效,后来的每一个来源都从它底下溜过去。
+        expect(code).not.toContain('organizationClosure');
+        expect(code).not.toContain('memberOrganizationMembership');
       }
     });
 
@@ -422,6 +426,222 @@ describe('收件人冻结 —— D2 五条不变量', () => {
           at: new Date('2026-08-18T00:00:00.000Z'),
         }),
       ).rejects.toThrow();
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // ⑥ 组织定向:交集(AND)语义 + 真子树(维护者 2026-08-25 拍板)
+  // ────────────────────────────────────────────────────────────────
+  //
+  // 全节共用**一个**世界。四个人刻意各自只在**一个**维度上与 `m-both` 不同 ——
+  // 否则上层边界会遮蔽下层边界,反面样本证不出被测的那一维:
+  //
+  //   m-both      org-a(直属)   有标签  ⇒ 收到(正向)
+  //   m-org-only  org-a(直属)   无标签  ⇒ 不收到(反向①:只差标签这一维)
+  //   m-tag-only  org-b(无关)   有标签  ⇒ 不收到(反向②:只差组织这一维)
+  //   m-sub       org-a-1(下级) 有标签  ⇒ 收到(只差「直属 vs 下级」这一维)
+  //
+  // ⚠️ 下面的 mock **真的执行 where 过滤**,不是「无论问什么都返回同一批行」。
+  //    这是变异对拍能不能打中的前提:恒返回固定行的 mock 会让「子树改成只取直属」
+  //    在读数上完全消失(问的条件变了,答案却没变)。
+  describe('⑥ 组织定向 —— 交集与真子树', () => {
+    const TAGGED = ['m-both', 'm-tag-only', 'm-sub'];
+    const ALL_ACTIVE_MEMBERS = ['m-both', 'm-org-only', 'm-tag-only', 'm-sub'];
+    /** ancestorId → descendantId,含 depth-0 自身行(与 organization_closure 建表回填同形)。 */
+    const CLOSURE: ReadonlyArray<{ ancestorId: string; descendantId: string }> = [
+      { ancestorId: 'org-a', descendantId: 'org-a' },
+      { ancestorId: 'org-a', descendantId: 'org-a-1' },
+      { ancestorId: 'org-a-1', descendantId: 'org-a-1' },
+      { ancestorId: 'org-b', descendantId: 'org-b' },
+    ];
+    const MEMBERSHIPS: ReadonlyArray<{ memberId: string; organizationId: string }> = [
+      { memberId: 'm-both', organizationId: 'org-a' },
+      { memberId: 'm-org-only', organizationId: 'org-a' },
+      { memberId: 'm-tag-only', organizationId: 'org-b' },
+      { memberId: 'm-sub', organizationId: 'org-a-1' },
+    ];
+
+    function orgWorldTx(): {
+      tx: Prisma.TransactionClient;
+      closureFindMany: jest.Mock;
+      membershipFindMany: jest.Mock;
+    } {
+      const closureFindMany = jest.fn(
+        (args: { where: { ancestorId: { in: string[] } } }) =>
+          Promise.resolve(
+            CLOSURE.filter((row) => args.where.ancestorId.in.includes(row.ancestorId)).map(
+              ({ descendantId }) => ({ descendantId }),
+            ),
+          ) as unknown,
+      );
+      const membershipFindMany = jest.fn(
+        (args: { where: { organizationId: { in: string[] } } }) =>
+          Promise.resolve(
+            MEMBERSHIPS.filter((row) =>
+              args.where.organizationId.in.includes(row.organizationId),
+            ).map(({ memberId }) => ({ memberId })),
+          ) as unknown,
+      );
+      const tx = {
+        notificationOutboxIntent: { findMany: jest.fn().mockResolvedValue([]) },
+        dictType: { findFirst: jest.fn().mockResolvedValue({ id: 'type-1' }) },
+        dictItem: { findMany: jest.fn().mockResolvedValue([{ id: 'tag-1' }]) },
+        memberAudienceTagAssignment: {
+          findMany: jest.fn().mockResolvedValue(TAGGED.map((memberId) => ({ memberId }))),
+        },
+        member: {
+          findMany: jest.fn().mockResolvedValue(ALL_ACTIVE_MEMBERS.map((id) => ({ id }))),
+        },
+        organizationClosure: { findMany: closureFindMany },
+        memberOrganizationMembership: { findMany: membershipFindMany },
+      } as unknown as Prisma.TransactionClient;
+      return { tx, closureFindMany, membershipFindMany };
+    }
+
+    const AT = new Date('2026-08-25T00:00:00.000Z');
+
+    async function freezeWith(input: {
+      audienceTagCodes: string[] | null;
+      audienceOrganizationIds?: string[] | null;
+    }): Promise<{
+      memberIds: readonly string[];
+      basisKind: string;
+      basisRef: string[];
+      closureFindMany: jest.Mock;
+      membershipFindMany: jest.Mock;
+    }> {
+      const { tx, closureFindMany, membershipFindMany } = orgWorldTx();
+      const audience = await freezeAudienceTags(tx, {
+        activityId: 'act-1',
+        at: AT,
+        ...input,
+      });
+      if (!isFrozenCohort(audience)) throw new Error('cohort expected');
+      return {
+        memberIds: audience.memberIds,
+        basisKind: audience.stamp.basisKind,
+        basisRef: audience.stamp.basisRef,
+        closureFindMany,
+        membershipFindMany,
+      };
+    }
+
+    it('正向:在 org-a **且**有标签 ⇒ 收到,且依据落在第 6 个常量上', async () => {
+      const result = await freezeWith({
+        audienceTagCodes: ['diving'],
+        audienceOrganizationIds: ['org-a'],
+      });
+
+      expect(result.memberIds).toContain('m-both');
+      expect(result.basisKind).toBe('audience-organizations');
+      // 两个维度都要能事后对账,故加前缀区分 —— 混在一起事后分不清哪个是哪个。
+      expect(result.basisRef).toEqual(['org:org-a', 'tag:diving']);
+    });
+
+    it('反向①:在 org-a **但没有**标签 ⇒ 不收到(与 m-both 只差标签这一维)', async () => {
+      const result = await freezeWith({
+        audienceTagCodes: ['diving'],
+        audienceOrganizationIds: ['org-a'],
+      });
+
+      // m-org-only 与 m-both 同在 org-a、同是 ACTIVE 有效任职,唯一差别就是没有这个标签。
+      // 它出现在收件人里 = 交集塌成了并集(或组织维度单独成立即可发)。
+      expect(result.memberIds).not.toContain('m-org-only');
+    });
+
+    it('反向②:有标签**但不在** org-a ⇒ 不收到(与 m-both 只差组织这一维)', async () => {
+      const result = await freezeWith({
+        audienceTagCodes: ['diving'],
+        audienceOrganizationIds: ['org-a'],
+      });
+
+      // m-tag-only 与 m-both 同样持有这个标签,唯一差别是任职在无关的 org-b。
+      expect(result.memberIds).not.toContain('m-tag-only');
+    });
+
+    it('交集的**全集**恰好是两条都满足的那两个人 —— 不多不少', async () => {
+      const result = await freezeWith({
+        audienceTagCodes: ['diving'],
+        audienceOrganizationIds: ['org-a'],
+      });
+
+      // 逐个 not.toContain 只能证「这两个人不在」;比集合才能挡住「顺手多发了第五个人」。
+      expect([...result.memberIds]).toEqual(['m-both', 'm-sub']);
+    });
+
+    it('勾上级**包含下级**:org-a-1 的人也收到,且展开走 organization_closure 真子树', async () => {
+      const result = await freezeWith({
+        audienceTagCodes: ['diving'],
+        audienceOrganizationIds: ['org-a'],
+      });
+
+      // m-sub 只在下级 org-a-1 有任职,直属 org-a 一条都没有。
+      expect(result.memberIds).toContain('m-sub');
+      // 「含下级」的来源必须是闭包表,不是编码前缀:问的是 ancestorId ∈ 勾选组织。
+      expect(result.closureFindMany).toHaveBeenCalledWith({
+        where: { ancestorId: { in: ['org-a'] } },
+        select: { descendantId: true },
+      });
+      // 任职口径复用 MembershipTermStateMachine.effectiveWhere:未软删 + ACTIVE + 已生效 + 未终止,
+      // 且时刻取业务事件时刻(不是新墙钟)—— 少一个条件就会把已调出的人算回来。
+      expect(result.membershipFindMany).toHaveBeenCalledWith({
+        where: {
+          deletedAt: null,
+          status: 'ACTIVE',
+          startedAt: { lte: AT },
+          endedAt: null,
+          organizationId: { in: ['org-a', 'org-a-1'] },
+        },
+        select: { memberId: true },
+      });
+    });
+
+    it('边界:只勾组织不勾标签([]) ⇒ 组织子树内的**全体**有效会员,不是空集', async () => {
+      const result = await freezeWith({
+        audienceTagCodes: [],
+        audienceOrganizationIds: ['org-a'],
+      });
+
+      expect([...result.memberIds]).toEqual(['m-both', 'm-org-only', 'm-sub']);
+      expect(result.basisKind).toBe('audience-organizations');
+      expect(result.basisRef).toEqual(['org:org-a']);
+    });
+
+    it('边界:只勾标签不勾组织 ⇒ 按标签单条件走,盖章逐字沿用本刀之前的形状', async () => {
+      const omitted = await freezeWith({ audienceTagCodes: ['diving'] });
+      const emptyArray = await freezeWith({
+        audienceTagCodes: ['diving'],
+        audienceOrganizationIds: [],
+      });
+      const explicitNull = await freezeWith({
+        audienceTagCodes: ['diving'],
+        audienceOrganizationIds: null,
+      });
+
+      for (const result of [omitted, emptyArray, explicitNull]) {
+        // 空数组**不是**空交集 —— 把它当交集会让「没勾组织」变成「谁都不发」。
+        expect([...result.memberIds]).toEqual(['m-both', 'm-sub', 'm-tag-only']);
+        // 不收窄时盖章必须与本刀之前逐字节相同:改了就会让在飞的 intent 重放撞 sameIntent。
+        expect(result.basisKind).toBe('audience-tags');
+        expect(result.basisRef).toEqual(['diving']);
+        // 不收窄 ⇒ 一次子树查询都不该发。
+        expect(result.closureFindMany).not.toHaveBeenCalled();
+        expect(result.membershipFindMany).not.toHaveBeenCalled();
+      }
+    });
+
+    it('「含下级」不许靠编码前缀糊弄 —— 冻结模块里零字符串前缀匹配', () => {
+      const code = stripCommentsAndStrings(
+        readSource(`${MODULE_DIR}/activity-recipient-freeze.ts`),
+      );
+
+      // 组织是树。前缀匹配在改名 / 跨父移动 / 同前缀兄弟三种情况下都会静悄悄给出错答案。
+      expect(code).not.toContain('startsWith');
+      expect(code).not.toContain('endsWith');
+      expect(code).not.toContain('contains:');
+      expect(code).not.toContain('$queryRaw');
+      // 子树的唯一来源是闭包表。
+      expect(code).toContain('organizationClosure');
     });
   });
 
