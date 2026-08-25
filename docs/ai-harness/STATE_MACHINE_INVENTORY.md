@@ -322,30 +322,47 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-08-21(`73eb9178`)**
+**取数时点:2026-08-25(活动归档刀)**
 
 | 项 | 值 |
 |---|---:|
-| 总条目 | **58** |
-| `governed` / `inventory` | **8 / 50** |
-| 50 条 inventory 的分层 | L1 **5** · L2 **19** · L3 **26** |
+| 总条目 | **59** |
+| `governed` / `inventory` | **8 / 51** |
+| 51 条 inventory 的分层 | L1 **6** · L2 **19** · L3 **26** |
 | 已有机器可读边(`transitions` 是数组)※ | 21 |
-| `transitions: "not-derived"` ※ | 24 |
+| `transitions: "not-derived"` ※ | 25 |
 | `transitions: "unconstrained"` ※ | 13 |
 
-> ※ 这三行按**全部 58 条**统计(21+24+13=58),不是按上一行那 50 条 inventory。
+> ※ 这三行按**全部 59 条**统计(21+25+13=59),不是按上一行那 51 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
-| **`vacuousGreenIfClosedSetOnly`** | **22** |
-| 零 blocker 但仍 inventory 的升格候选 | **1**(`ParticipantSettlementResultRevision.statusCode`) |
+| **`vacuousGreenIfClosedSetOnly`** | **23** |
+| 零 blocker 但仍 inventory 的升格候选 | **0** |
 
-blocker 直方图与 §3 逐条一致(本刀未改任何 blocker):`no-wrong-state-bizcode` 25 ·
-`no-db-check` 22 · `edges-not-derived` 20 · `no-state-machine` 18 · `closed-set-undeclared` 5 ·
+> 🔴 **本次 true-up 的两类改动要分开读**(2026-08-25 归档刀):
+>
+> **① 本刀移动的 6 个数**:总条目 58→59 · inventory 50→51 · L1 5→6 ·
+> `not-derived` 24→25 · `vacuousGreenIfClosedSetOnly` 22→23 · `no-db-check` 22→23。
+> 来源是新登记的 `Activity.archivedFromStatusCode`(L1 快照列)。
+> `Activity.statusCode` 的闭集虽从 5 值扩到 6 值、边从 6 条扩到 14 条,但它**本来就是**
+> 数组型 `transitions` 的 inventory L3,故不改变上面任何一个计数。
+>
+> **② 与本刀无关、早已过期的 3 处**(在 `origin/main` 上就已经是错的,只是没有机器守着):
+> 下面 blocker 直方图里 `no-wrong-state-bizcode` 写 25 实为 **27**、`no-state-machine` 写 18
+> 实为 **20**、`impl-scattered` 写 1 实为 **2**;「零 blocker 升格候选」写
+> `1(ParticipantSettlementResultRevision.statusCode)` 实为 **0**。
+> 本刀顺手 true-up 并如实标注来源,**不冒充是本刀造成的漂移**。
+> ⚠️ 这四处能悄悄错三个月,正是因为 selftest 的 F3 只钉了「总条目」一个数
+> (它自己的注释也写明了这是刻意取舍:逐个盯比率会让断言变成第二份真相)——
+> 已知射程限制,不是本刀新引入的缺口。
+
+blocker 直方图(2026-08-25 现算;本刀只新增 1 条 `no-db-check`):`no-wrong-state-bizcode` 27 ·
+`no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 20 · `closed-set-undeclared` 5 ·
 `edges-partially-derived` 2 · `vocabulary-divergence` 2 · `dictionary-driven` 2 ·
-`retired-value-in-set` 2 · `impl-scattered` 1 · `throws-instead-of-decide` 1 ·
+`retired-value-in-set` 2 · `impl-scattered` 2 · `throws-instead-of-decide` 1 ·
 `decision-shape-divergence` 1 · `duplicate-constant-definition` 1。
 
-**`vacuousGreenIfClosedSetOnly` = 22 是本刀存在的理由的量化**:这 22 条既有已声明的闭集、
+**`vacuousGreenIfClosedSetOnly` = 23 是本刀存在的理由的量化**:这 23 条既有已声明的闭集、
 `transitions` 又是 `not-derived` —— 一个「只比闭集 vs CHECK」的判据会**全部放它们过去**。
 selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.statusCode`:闭集 5 值合法、
 零 blocker,但零边零实现 ⇒ 必须被拒)。

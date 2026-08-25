@@ -814,6 +814,20 @@ export class ListActivitiesQueryDto extends PaginationQueryDto {
   @Transform(parseQueryBoolean)
   @IsBoolean()
   includeStats?: boolean;
+
+  // 归档默认不显示(维护者 2026-08-25 拍板②:「默认不显示,可勾『显示已归档』看到」)。
+  // ⚠️ 只在**不传 statusCode** 时起作用:显式 `statusCode=archived` 是「我就要看已归档」,
+  //    不需要再勾一次;USER 角色恒被 Q-A7 白名单挡住,与本参数无关。
+  @ApiPropertyOptional({
+    description: '是否把已归档活动一并列出(默认 false;仅在未传 statusCode 时生效)',
+    default: false,
+  })
+  // @OmittableOnly 而非 @IsOptional:本字段**只是可省略**,不接受显式 null
+  // (显式 null 会跳过 @IsBoolean 直穿契约层;规则 srvf/no-nullable-is-optional)。
+  @OmittableOnly()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  includeArchived?: boolean;
 }
 
 // ============ F1/A6 选择器(路线图 §4;D2/D3 拍板)============
@@ -844,6 +858,18 @@ export class ActivityOptionsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  // 与 ListActivitiesQueryDto.includeArchived 同语义(选择器同样默认不列已归档)。
+  @ApiPropertyOptional({
+    description: '是否把已归档活动一并列出(默认 false;仅在未传 statusCode 时生效)',
+    default: false,
+  })
+  // @OmittableOnly 而非 @IsOptional:本字段**只是可省略**,不接受显式 null
+  // (显式 null 会跳过 @IsBoolean 直穿契约层;规则 srvf/no-nullable-is-optional)。
+  @OmittableOnly()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  includeArchived?: boolean;
 }
 
 export class ActivityOptionItemDto {

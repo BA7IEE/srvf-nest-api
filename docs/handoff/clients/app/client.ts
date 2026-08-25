@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:cc5e22b0837c46cdf372d50174acccc2f6d5e4e8d8cb9dc4fca0570d557ffb67
+// inputDigest: sha256:e26776220194a8e19dbcf31c045ee503d0cef5676d20e2c9aa886ef44e3a3457
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -20,6 +20,7 @@ import type {
   AppActivityAllocationBatchDto,
   AppActivityAllocationCandidateDto,
   AppActivityAllocationCommandReceiptDto,
+  AppActivityArchiveResultDto,
   AppActivityChangePositionDto,
   AppActivityCheckInDto,
   AppActivityDetailDto,
@@ -61,6 +62,7 @@ import type {
   AppCollaboratorOptionsResponseDto,
   AppEvidenceSealResultDto,
   AppGateStatusDto,
+  AppManagedActivityArchiveCommandDto,
   AppManagedActivityCancelCommandDto,
   AppManagedActivityCheckInDto,
   AppManagedActivityCloneCommandDto,
@@ -75,6 +77,7 @@ import type {
   AppManagedActivitySessionDto,
   AppManagedActivitySessionPositionDto,
   AppManagedActivityTerminateCommandDto,
+  AppManagedActivityUnarchiveCommandDto,
   AppManagedAttendanceDraftAbsentDto,
   AppManagedAttendanceDraftFlagDto,
   AppManagedAttendanceDraftRecordDto,
@@ -451,7 +454,7 @@ export function createAppClient(fetcher: Fetcher) {
       return fetcher<PageResultDto & { "items": AppMyCertificateDto[] }>({ method: "GET", path: "/api/app/v1/my/certificates", query });
     },
     /** App 我发起或承担责任的活动分页 [auth] */
-    AppManagedActivitiesControllerList(query?: { "page"?: number; "pageSize"?: number; "statusCode"?: "draft" | "published" | "cancelled" | "completed" }): Promise<ApiEnvelope<PageResultDto & { "items": AppManagedActivityListItemDto[] }>> {
+    AppManagedActivitiesControllerList(query?: { "page"?: number; "pageSize"?: number; "statusCode"?: "draft" | "published" | "cancelled" | "completed" | "archived"; "includeArchived"?: boolean }): Promise<ApiEnvelope<PageResultDto & { "items": AppManagedActivityListItemDto[] }>> {
       return fetcher<PageResultDto & { "items": AppManagedActivityListItemDto[] }>({ method: "GET", path: "/api/app/v1/my/managed-activities", query });
     },
     /** App 正式队员创建本人作为发起人的活动草稿 [auth] */
@@ -489,6 +492,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** 负责人作废已冻结或未漂移的已提交批次 [auth] */
     AppManagedActivityAllocationBatchesControllerVoid(activityId: string, batchId: string, body: VoidAppManagedActivityAllocationBatchDto): Promise<ApiEnvelope<AppActivityAllocationCommandReceiptDto>> {
       return fetcher<AppActivityAllocationCommandReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/allocation-batches/${batchId}/void`, body });
+    },
+    /** App 归档活动(长期无人处理的草稿 / 已关账且过等待期的活动) [auth] */
+    AppManagedActivitiesControllerArchive(activityId: string, body: AppManagedActivityArchiveCommandDto): Promise<ApiEnvelope<AppActivityArchiveResultDto>> {
+      return fetcher<AppActivityArchiveResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/archive`, body });
     },
     /** App 活动考勤责任人生成考勤提交草稿（只读不落库） [auth] */
     AppManagedActivityAttendancesControllerDraft(activityId: string): Promise<ApiEnvelope<AppManagedAttendanceSheetDraftDto>> {
@@ -821,6 +828,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 活动负责人移交责任并原子切换授权 [auth] */
     AppManagedActivityResponsibilitiesControllerTransferOwner(activityId: string, body: TransferAppManagedActivityOwnerDto): Promise<ApiEnvelope<AppManagedResponsibilitiesDto>> {
       return fetcher<AppManagedResponsibilitiesDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/transfer-owner`, body });
+    },
+    /** App 撤销归档,活动退回归档前的状态 [auth] */
+    AppManagedActivitiesControllerUnarchive(activityId: string, body: AppManagedActivityUnarchiveCommandDto): Promise<ApiEnvelope<AppActivityArchiveResultDto>> {
+      return fetcher<AppActivityArchiveResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/unarchive`, body });
     },
     /** App 活动负责人或报名协办查看访客名单 [auth] */
     AppManagedActivityGuestsControllerListVisitors(activityId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityVisitorDto[] }>> {

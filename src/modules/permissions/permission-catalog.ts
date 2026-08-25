@@ -3468,7 +3468,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity-responsibility.override.record': {
       displayName: '强行接管活动负责人',
       businessDescription:
-        '这项功能当前未启用。开启后:不是这场活动的发起人或负责人也能管它 —— 换负责人、加或撤协办人、给历史活动补认领负责人和发起人。加一个协办人就等于把这场活动的管理权分给了别人。',
+        '这项功能当前未启用。开启后:不是这场活动的发起人或负责人也能管它 —— 换负责人、加或撤协办人、给历史活动补认领负责人和发起人,以及把活动收进归档、或者从归档里拿回来。加一个协办人就等于把这场活动的管理权分给了别人;把活动收进归档以后,它默认就不在列表里出现了。',
       sectionCode: 'activity-participation',
       groupCode: 'activity-responsibility',
       sortOrder: 21510,

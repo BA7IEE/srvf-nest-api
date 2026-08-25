@@ -32,6 +32,7 @@ import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AppManagedActivitiesService } from '../app-managed-activities.service';
 import { ActivityCoverService } from '../activity-cover.service';
+import { ActivityArchiveService } from '../activity-archive.service';
 import { ActivityLifecycleService } from '../activity-lifecycle.service';
 import { ActivitySettlementHttpService } from '../activity-settlement-http.service';
 import type { CreateActivityDto, UpdateActivityDto } from '../activities.dto';
@@ -67,12 +68,15 @@ import {
   UpdateAppManagedActivitySessionPositionDto,
 } from '../dto/app/app-managed-activity-draft.dto';
 import {
+  AppActivityArchiveResultDto,
   AppActivityLifecycleResultDto,
   AppEvidenceSealResultDto,
+  AppManagedActivityArchiveCommandDto,
   AppManagedActivityCancelCommandDto,
   AppManagedActivityCloneCommandDto,
   AppManagedActivityCloneResultDto,
   AppManagedActivityTerminateCommandDto,
+  AppManagedActivityUnarchiveCommandDto,
 } from '../dto/app/app-activity-lifecycle.dto';
 import {
   AppSettlementCloseCommandDto,
@@ -113,6 +117,7 @@ export class AppManagedActivitiesController {
     private readonly identity: AppIdentityResolver,
     private readonly service: AppManagedActivitiesService,
     private readonly lifecycle: ActivityLifecycleService,
+    private readonly archives: ActivityArchiveService,
     private readonly settlements: ActivitySettlementHttpService,
     private readonly registrationForms: RegistrationFormVersionService,
     private readonly qualificationRules: QualificationRuleSetVersionService,
@@ -246,6 +251,75 @@ export class AppManagedActivitiesController {
   ): Promise<AppActivityLifecycleResultDto> {
     await this.resolveMemberId(user);
     return await this.lifecycle.terminate(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  // ===== 归档 / 撤销归档(§6.6 + AC-004 / AC-064;维护者 2026-08-25 拍板)=====
+  //
+  // 判权与 cancel / terminate 逐字同形(responsibility scope +
+  // activity-responsibility.override.record)—— **零新增权限码**,seed 一个字不动。
+  @Post(':activityId/archive')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'App 归档活动(长期无人处理的草稿 / 已关账且过等待期的活动) [auth]',
+  })
+  @ApiWrappedOkResponse(AppActivityArchiveResultDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_ARCHIVE_DRAFT_NOT_STALE,
+    BizCode.ACTIVITY_ARCHIVE_NOT_CLOSED,
+    BizCode.ACTIVITY_ARCHIVE_WAITING_PERIOD_NOT_ELAPSED,
+    BizCode.ACTIVITY_LIFECYCLE_OPERATION_KEY_CONFLICT,
+  )
+  async archive(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: AppManagedActivityArchiveCommandDto,
+    @Req() req: Request,
+  ): Promise<AppActivityArchiveResultDto> {
+    await this.resolveMemberId(user);
+    return await this.archives.archive(params.activityId, dto, user, this.auditMeta(req));
+  }
+
+  @Post(':activityId/unarchive')
+  @LoginScoped({
+    admission: 'app-member',
+    require: 'all',
+    scopes: ['responsibility'],
+    engine: 'authz-scoped',
+  })
+  @RequiresPermission('activity-responsibility.override.record')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'App 撤销归档,活动退回归档前的状态 [auth]' })
+  @ApiWrappedOkResponse(AppActivityArchiveResultDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.RBAC_FORBIDDEN,
+    BizCode.ACTIVITY_NOT_FOUND,
+    BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_LIFECYCLE_OPERATION_KEY_CONFLICT,
+  )
+  async unarchive(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param() params: AppManagedActivityParamsDto,
+    @Body() dto: AppManagedActivityUnarchiveCommandDto,
+    @Req() req: Request,
+  ): Promise<AppActivityArchiveResultDto> {
+    await this.resolveMemberId(user);
+    return await this.archives.unarchive(params.activityId, dto, user, this.auditMeta(req));
   }
 
   @Post(':activityId/clone')

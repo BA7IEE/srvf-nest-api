@@ -34908,6 +34908,16 @@
               "default": false,
               "type": "boolean"
             }
+          },
+          {
+            "name": "includeArchived",
+            "required": false,
+            "in": "query",
+            "description": "是否把已归档活动一并列出(默认 false;仅在未传 statusCode 时生效)",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -35315,6 +35325,16 @@
               "minimum": 1,
               "maximum": 100,
               "type": "number"
+            }
+          },
+          {
+            "name": "includeArchived",
+            "required": false,
+            "in": "query",
+            "description": "是否把已归档活动一并列出(默认 false;仅在未传 statusCode 时生效)",
+            "schema": {
+              "default": false,
+              "type": "boolean"
             }
           }
         ],
@@ -42593,8 +42613,19 @@
                 "draft",
                 "published",
                 "cancelled",
-                "completed"
+                "completed",
+                "archived"
               ]
+            }
+          },
+          {
+            "name": "includeArchived",
+            "required": false,
+            "in": "query",
+            "description": "是否把已归档活动一并列出(默认 false;仅在未传 statusCode 时生效)",
+            "schema": {
+              "default": false,
+              "type": "boolean"
             }
           }
         ],
@@ -43499,6 +43530,489 @@
           }
         ],
         "summary": "App 负责人提前终止已开始的 published 活动 [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/archive": {
+      "post": {
+        "operationId": "AppManagedActivitiesController_archive",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppManagedActivityArchiveCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityArchiveResultDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动当前状态不允许此操作(code=20030) / 草稿尚未达到长期无人处理的归档阈值(code=20155) / 活动尚未机器关账,不能按结算路径归档(code=20156) / 归档等待期尚未结束(code=20157) / 相同操作标识已用于不同的活动生命周期内容,请更换操作标识(code=20142)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20030,
+                        20155,
+                        20156,
+                        20157,
+                        20142
+                      ],
+                      "description": "20030: 活动当前状态不允许此操作; 20155: 草稿尚未达到长期无人处理的归档阈值; 20156: 活动尚未机器关账,不能按结算路径归档; 20157: 归档等待期尚未结束; 20142: 相同操作标识已用于不同的活动生命周期内容,请更换操作标识",
+                      "example": 20030
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动当前状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 归档活动(长期无人处理的草稿 / 已关账且过等待期的活动) [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/unarchive": {
+      "post": {
+        "operationId": "AppManagedActivitiesController_unarchive",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppManagedActivityUnarchiveCommandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityArchiveResultDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300,
+                        30100
+                      ],
+                      "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动不存在(code=20001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20001
+                      ],
+                      "description": "20001: 活动不存在",
+                      "example": 20001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动当前状态不允许此操作(code=20030) / 相同操作标识已用于不同的活动生命周期内容,请更换操作标识(code=20142)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20030,
+                        20142
+                      ],
+                      "description": "20030: 活动当前状态不允许此操作; 20142: 相同操作标识已用于不同的活动生命周期内容,请更换操作标识",
+                      "example": 20030
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动当前状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 撤销归档,活动退回归档前的状态 [auth]",
         "tags": [
           "Mobile - Managed Activities"
         ]
@@ -125522,6 +126036,10 @@
           "nextAction": {
             "type": "string",
             "nullable": true
+          },
+          "staleDraft": {
+            "type": "boolean",
+            "description": "是否为长期无人处理的草稿(可归档提示;非草稿恒 false)"
           }
         },
         "required": [
@@ -125532,7 +126050,8 @@
           "endAt",
           "relationship",
           "pendingRegistrations",
-          "unresolvedAttendanceSheets"
+          "unresolvedAttendanceSheets",
+          "staleDraft"
         ]
       },
       "AppManagedActivityProjectionDto": {
@@ -125798,7 +126317,8 @@
               "attendance-first-review",
               "attendance-returned",
               "attendance-final-review",
-              "closed"
+              "closed",
+              "archived"
             ]
           },
           "nextAction": {
@@ -126051,6 +126571,88 @@
         },
         "required": [
           "reason",
+          "operationKey"
+        ]
+      },
+      "AppActivityArchiveResultDto": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string",
+            "description": "活动主键"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "动作完成后的活动状态。归档恒为 archived;撤销归档为归档前冻下来的来源状态",
+            "enum": [
+              "archived",
+              "draft",
+              "published",
+              "completed",
+              "terminated"
+            ]
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "服务端生成的动作发生时间(ISO 8601)"
+          },
+          "reasonCode": {
+            "type": "string",
+            "description": "归档走的是哪一套开工条件;撤销归档恒为 null",
+            "enum": [
+              "stale_draft",
+              "settled"
+            ],
+            "nullable": true
+          },
+          "archivedFromStatusCode": {
+            "type": "object",
+            "description": "归档前的活动状态。撤销归档后仍保留(留痕不清空)",
+            "nullable": true
+          }
+        },
+        "required": [
+          "activityId",
+          "statusCode",
+          "occurredAt"
+        ]
+      },
+      "AppManagedActivityArchiveCommandDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "归档说明",
+            "maxLength": 500
+          },
+          "operationKey": {
+            "type": "string",
+            "description": "客户端幂等操作标识",
+            "minLength": 8,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "operationKey"
+        ]
+      },
+      "AppManagedActivityUnarchiveCommandDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "撤销归档说明",
+            "maxLength": 500
+          },
+          "operationKey": {
+            "type": "string",
+            "description": "客户端幂等操作标识",
+            "minLength": 8,
+            "maxLength": 128
+          }
+        },
+        "required": [
           "operationKey"
         ]
       },

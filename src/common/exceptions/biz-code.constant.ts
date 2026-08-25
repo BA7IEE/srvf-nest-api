@@ -1764,6 +1764,31 @@ export const BizCode = {
     httpStatus: HttpStatus.GONE,
   },
 
+  // ===== 归档动作的两套开工条件(§6.6 / AC-004 / AC-064;2026-08-25 拍板)=====
+  //
+  // 🔴 **两套条件各给一个具名码,不合并成一个 ACTIVITY_ARCHIVE_NOT_ELIGIBLE。**
+  //    合并的后果是「为什么不让归档」在 HTTP 层不可分辨 —— 而这三条恰恰是运营最常问的
+  //    三个不同问题:草稿还太新 / 账还没关 / 关了但还在等待期。沿本文件既有
+  //    「每一条拒绝理由一个具名码」的口径(见 ACTIVITY_* 段头注)。
+  //
+  // ⚠️ 三条都是 CONFLICT(409)不是 400:请求本身合法,是**当前事实**不满足开工条件,
+  //    等一等 / 先关账就能成立 —— 与 ACTIVITY_STATUS_INVALID(20031)同族语义。
+  ACTIVITY_ARCHIVE_DRAFT_NOT_STALE: {
+    code: 20155,
+    message: '草稿尚未达到长期无人处理的归档阈值',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_ARCHIVE_NOT_CLOSED: {
+    code: 20156,
+    message: '活动尚未机器关账,不能按结算路径归档',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_ARCHIVE_WAITING_PERIOD_NOT_ELAPSED: {
+    code: 20157,
+    message: '归档等待期尚未结束',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // activity_registrations 模块业务级(210xx + 211xx)。批次 3A 引入(2026-05-11)。
   // 详见 docs:批次3_API前评审决议表.md v1.0 §1.1 / §1.3 + §6.2。
   // 子段(对齐 baseline §1.3):

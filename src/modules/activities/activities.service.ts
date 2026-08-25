@@ -33,7 +33,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
 import { ActivityStatusCommandService } from './activity-status-command.service';
 import { ActivityWriteService } from './activity-write.service';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
-import { ActivityStateMachine } from './activity-state-machine';
+import { ACTIVITY_STATUS_ARCHIVED, ActivityStateMachine } from './activity-state-machine';
 import { ActivityInitiationPolicy } from './activity-initiation-policy';
 import { ActivityNotificationProducer } from './activity-notification-producer';
 import { ActivityPublishReviewService } from './activity-publish-review.service';
@@ -125,15 +125,28 @@ export class ActivitiesService {
 
   // Q-A7:USER 强制白名单状态(忽略入参 statusCode,防 draft/cancelled 存在性泄漏);
   // list/options 共用同一份状态过滤构造。
+  //
+  // ===== 归档默认不显示(维护者 2026-08-25 拍板②)=====
+  //
+  // 🔴 非 USER 且**不传 statusCode** 时,此前一条状态过滤都不加 ⇒ 已归档活动会原样出现在
+  //    管理端列表里。归档的全部意义就是「默认不出现在列表里」,所以这一格必须显式排除。
+  // ⚠️ 另外两条分支**不需要**动:
+  //    - USER 分支恒 `in {published, completed}`,archived 不在里面(结构性排除);
+  //    - 显式传了 statusCode 的分支是「我就要看这个状态」,包括 `statusCode='archived'`。
+  //   ⇒ `includeArchived` 只影响「不传 statusCode 的管理端默认视图」这一格,
+  //     这正是前端那个「显示已归档」勾选框要控制的东西。
   private applyStatusCodeFilter(
     filters: Prisma.ActivityWhereInput,
     currentUser: CurrentUserPayload,
     statusCode: string | undefined,
+    includeArchived = false,
   ): void {
     if (currentUser.role === Role.USER) {
       filters.statusCode = { in: [...USER_VISIBLE_STATUS_CODES] };
     } else if (statusCode !== undefined) {
       filters.statusCode = statusCode;
+    } else if (!includeArchived) {
+      filters.statusCode = { not: ACTIVITY_STATUS_ARCHIVED };
     }
   }
 
@@ -203,10 +216,11 @@ export class ActivitiesService {
       dateTo,
       includeDescendants,
       includeStats,
+      includeArchived,
     } = query;
 
     const filters: Prisma.ActivityWhereInput = {};
-    this.applyStatusCodeFilter(filters, currentUser, statusCode);
+    this.applyStatusCodeFilter(filters, currentUser, statusCode, includeArchived);
     if (activityTypeCode !== undefined) filters.activityTypeCode = activityTypeCode;
     if (organizationId !== undefined) {
       filters.organizationId = includeDescendants
@@ -260,10 +274,10 @@ export class ActivitiesService {
     query: ActivityOptionsQueryDto,
     currentUser: CurrentUserPayload,
   ): Promise<ActivityOptionsResponseDto> {
-    const { q, statusCode, organizationId, limit } = query;
+    const { q, statusCode, organizationId, limit, includeArchived } = query;
 
     const filters: Prisma.ActivityWhereInput = {};
-    this.applyStatusCodeFilter(filters, currentUser, statusCode);
+    this.applyStatusCodeFilter(filters, currentUser, statusCode, includeArchived);
     if (organizationId !== undefined) filters.organizationId = organizationId;
     if (q !== undefined) {
       filters.title = { contains: q, mode: 'insensitive' };

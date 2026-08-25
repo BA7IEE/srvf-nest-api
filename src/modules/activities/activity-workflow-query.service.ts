@@ -18,6 +18,8 @@ import type {
   AppManagedActivityProjectionDto,
 } from './dto/app/app-managed-activity.dto';
 import { ActivityImageSigningService } from './activity-image-signing.service';
+import { ACTIVITY_STATUS_ARCHIVED } from './activity-state-machine';
+import { isStaleDraft } from './activity-archive-policy';
 
 export const managedActivitySelect = {
   id: true,
@@ -112,7 +114,14 @@ export class ActivityWorkflowQueryService {
   ): Promise<PageResultDto<AppManagedActivityListItemDto>> {
     const where: Prisma.ActivityWhereInput = {
       deletedAt: null,
-      ...(query.statusCode ? { statusCode: query.statusCode } : {}),
+      // 归档默认不显示(维护者 2026-08-25 拍板②)。这是 AC-004 说的那个「负责人工作台」——
+      // 归档动作就在本列表的行上,列表自己不排除已归档 = 归档了还留在原地。
+      // ⚠️ 显式传 statusCode(含 'archived')时按传的来,`includeArchived` 只管默认视图那一格。
+      ...(query.statusCode
+        ? { statusCode: query.statusCode }
+        : query.includeArchived
+          ? {}
+          : { statusCode: { not: ACTIVITY_STATUS_ARCHIVED } }),
       OR: [
         { initiatorMemberId: memberId },
         { responsibilityAssignments: { some: { memberId, status: 'active' } } },
@@ -178,6 +187,10 @@ export class ActivityWorkflowQueryService {
           pendingRegistrations: pendingByActivity.get(row.id) ?? 0,
           unresolvedAttendanceSheets: attendance.unresolved,
           nextAction: closure.nextAction,
+          // AC-004「长期未处理草稿在工作台**提示**」的后端半格。
+          // 判据与归档闸共用 `isStaleDraft` —— 两处各写一遍必然漂移,而漂移的形态是
+          // 「亮着可归档、点下去被 20155 拒」或「能归档却不提示」,两种都没人会发现。
+          staleDraft: isStaleDraft(row.statusCode, row.updatedAt, now),
         };
       }),
       total,

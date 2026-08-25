@@ -229,6 +229,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 第 3 批第三刀：App 生命周期命令、配置 clone 与既有 evidence seal 的 HTTP 接线。
   ['post', '/api/app/v1/my/managed-activities/{activityId}/cancel'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/terminate'],
+  // 归档动作(2026-08-25 拍板;§6.6 + AC-004 / AC-064):同一个标记、两套开工条件,可撤销且留痕。
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/archive'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/unarchive'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/clone'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/evidence-seals'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}'],
@@ -1062,7 +1065,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 552;
+const EXPECTED_ROUTE_COUNT = 554;
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1422,6 +1425,10 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'AppEvidenceSealResultDto',
   'AppManagedActivityCancelCommandDto',
   'AppManagedActivityTerminateCommandDto',
+  // 归档动作(2026-08-25 拍板;§6.6 + AC-004 / AC-064)。
+  'AppManagedActivityArchiveCommandDto',
+  'AppManagedActivityUnarchiveCommandDto',
+  'AppActivityArchiveResultDto',
   'AppManagedActivityCloneCommandDto',
   'AppManagedActivityCloneResultDto',
 
@@ -1915,6 +1922,8 @@ describe('OpenAPI 契约快照', () => {
     const listItemSchema = doc.components?.schemas?.AppManagedActivityListItemDto as OpenApiSchema;
     const detailSchema = doc.components?.schemas?.AppManagedActivityDetailDto as OpenApiSchema;
 
+    // 2026-08-25 归档拍板:第 10 值 `archived` 追加在**末尾**(additive,既有 9 值顺序一格未动)——
+    // 老客户端读到未知枚举值时的降级由它自己负责,而把新值插在中间会让按下标读的实现整体错位。
     expect(closureSchema?.properties?.status?.enum).toEqual([
       'draft',
       'publish-review-pending',
@@ -1925,6 +1934,7 @@ describe('OpenAPI 契约快照', () => {
       'attendance-returned',
       'attendance-final-review',
       'closed',
+      'archived',
     ]);
     expect(closureSchema?.properties?.nextAction).toEqual({
       type: 'string',
@@ -1936,6 +1946,16 @@ describe('OpenAPI 契约快照', () => {
       type: 'string',
       nullable: true,
     });
+    // AC-004「长期未处理草稿在工作台提示」的后端半格:列表行上的纯布尔事实位,
+    // 契约仍是扁平的(不塞嵌套对象)。
+    // ⚠️ 用 objectContaining 而不是精确对象:本字段带 `@ApiProperty({ description })`,
+    //    精确对象会把**说明文案**也钉成契约 —— 那不是本条要守的东西(要守的是「它是布尔、
+    //    且没有变成嵌套结构」)。相邻两条 statusCode / nextAction 没有 description,
+    //    所以它们写精确对象是等价的,不是两套口径。
+    expect(listItemSchema?.properties?.staleDraft).toEqual(
+      expect.objectContaining({ type: 'boolean' }),
+    );
+    expect(listItemSchema?.properties?.staleDraft?.$ref).toBeUndefined();
     expect(detailSchema?.properties?.closure).toEqual({
       $ref: '#/components/schemas/AppManagedActivityClosureDto',
     });

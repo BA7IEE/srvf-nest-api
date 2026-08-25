@@ -2,7 +2,7 @@
 // surface: Open 无账号公开面
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:cc5e22b0837c46cdf372d50174acccc2f6d5e4e8d8cb9dc4fca0570d557ffb67
+// inputDigest: sha256:e26776220194a8e19dbcf31c045ee503d0cef5676d20e2c9aa886ef44e3a3457
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理

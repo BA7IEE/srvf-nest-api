@@ -33,9 +33,9 @@
       "description": "sha256:4cbaacfd1b0b2002d2fc0b81c0c46a9f1bdfcaf9ef9ef69bfe0ed364cd466344"
     },
     "activity-responsibility.override.record": {
-      "endpoints": 18,
-      "surface": "sha256:603733de51ab75e744f15d4eba80e2d2419798bdb100f498e772a9f88d947314",
-      "description": "sha256:2f7088ccb3362679edbdd88b431de01de1847debe8ceb4d7eba475f914763b7c"
+      "endpoints": 20,
+      "surface": "sha256:4853e339a954af4a24cd3c8c55c1238daf1829e28232a2271dd18f808c2ed4b9",
+      "description": "sha256:b09328296de0c9be3c1e25e33e45e3f8069ff06d330c36a8f4b66c8fa345e1b2"
     },
     "activity-review.read.request": {
       "endpoints": 2,

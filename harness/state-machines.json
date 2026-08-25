@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:4427c53718ba074bf07f81ddacbdb0e312cb21a358cec13805c1ea3b74ef3fdb",
-  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 50 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。",
+  "inputDigest": "sha256:dd7fa09685319c126aa418da5db0eaa8e6d1d1caf3cdd3e65a5eaa814611991d",
+  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 51 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。",
   "entries": [
     {
       "model": "Activity",
@@ -57,6 +57,29 @@
     },
     {
       "model": "Activity",
+      "field": "archivedFromStatusCode",
+      "governanceStatus": "inventory",
+      "layer": "L1",
+      "stateSet": {
+        "values": [
+          "draft",
+          "published",
+          "completed",
+          "terminated"
+        ],
+        "source": "ts-constant",
+        "sourceRef": "ACTIVITY_ARCHIVABLE_FROM_STATUS_CODES @ src/modules/activities/activity-state-machine.ts"
+      },
+      "transitions": "not-derived",
+      "wrongStateBizCode": "ACTIVITY_STATUS_INVALID",
+      "implementation": "src/modules/activities/activity-archive.service.ts(归档时一次性写入 current.statusCode;撤销归档时**刻意不清空**)",
+      "governedBlockers": [
+        "no-db-check"
+      ],
+      "notes": "2026-08-25 归档刀新增。它**不是独立状态机**,是归档那一刻 `Activity.statusCode` 的快照 —— 撤销归档要退回哪里全靠它,没有它就只能猜一个常量、静默改写活动状态。闭集因此与 `statusCode` 的可归档子集逐字相同(不含 cancelled / archived 自身)。边不成立(快照列没有流程语义),故 transitions 取 not-derived;越界值由 ActivityStateMachine 的 unarchive 分支当场拒(ACTIVITY_STATUS_INVALID),不是 DB CHECK —— 与姊妹列 statusCode 同样零 DB 执行位,单给它加会造出「同一张表两个同形状态列一严一松」的第二份真相。"
+    },
+    {
+      "model": "Activity",
       "field": "statusCode",
       "governanceStatus": "inventory",
       "layer": "L3",
@@ -66,7 +89,8 @@
           "published",
           "cancelled",
           "terminated",
-          "completed"
+          "completed",
+          "archived"
         ],
         "source": "state-machine",
         "sourceRef": "src/modules/activities/activity-state-machine.ts"
@@ -77,14 +101,22 @@
         "draft -> cancelled (cancel)",
         "published -> cancelled (cancel)",
         "published -> terminated (terminate)",
-        "published -> completed (complete)"
+        "published -> completed (complete)",
+        "draft -> archived (archive)",
+        "published -> archived (archive)",
+        "completed -> archived (archive)",
+        "terminated -> archived (archive)",
+        "archived -> draft (unarchive)",
+        "archived -> published (unarchive)",
+        "archived -> completed (unarchive)",
+        "archived -> terminated (unarchive)"
       ],
       "wrongStateBizCode": "ACTIVITY_STATUS_INVALID",
       "implementation": "src/modules/activities/activity-state-machine.ts (ActivityStateMachine.decide)",
       "governedBlockers": [
         "no-db-check"
       ],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
+      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。2026-08-25 归档刀扩到第 6 值 `archived` 并补 8 条边:四条 archive 入边(cancelled **刻意不在内** —— 维护者只拍了「长期无人处理草稿」与「结算已关账且过等待期」两套开工条件,取消掉的活动两套都不属于),四条 unarchive 出边(目标恒等于 `archivedFromStatusCode`,拿不到就拒,不猜常量)。⚠️ 四条 unarchive 边在实现里是**同一个分支**,展开成四行只是让闭集在这张表里可读 —— 别据此以为有四段代码。归档还带一条**量**的闸(ActivityArchivePolicy 的两套开工条件),那不是状态边,不登记在此。"
     },
     {
       "model": "ActivityAllocationApplicationProjection",
