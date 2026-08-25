@@ -123786,6 +123786,15 @@
             "items": {
               "type": "string"
             }
+          },
+          "audienceOrganizationIds": {
+            "description": "组织定向：目标组织 id 集合，**自动包含其全部下级组织**；省略或空数组表示不按组织收窄。与 audienceTagCodes 取交集：两个条件都满足的会员才收到通知",
+            "maxItems": 50,
+            "uniqueItems": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -125080,6 +125089,14 @@
           },
           "audienceTagCodes": {
             "description": "B7 定向发布的会员受众标签 code；NULL 表示历史广播审核",
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "audienceOrganizationIds": {
+            "description": "组织定向的目标组织 id(自动含全部下级);NULL 表示未按组织定向。与 audienceTagCodes 取交集",
             "nullable": true,
             "type": "array",
             "items": {
