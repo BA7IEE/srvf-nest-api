@@ -636,13 +636,78 @@ describe('ActivitiesService (characterization)', () => {
       expect(arg.where.statusCode).toBe('draft');
     });
 
-    it('ADMIN 无入参 statusCode → 不加 statusCode 过滤', async () => {
+    // ⚠️ 本条**行为已变更**(2026-08-25 归档拍板②:「归档后默认不显示」)。
+    //    原断言是「ADMIN 无入参 statusCode → 不加 statusCode 过滤」(where.statusCode 为
+    //    undefined)。归档落地后那正是唯一会让已归档活动漏进管理端列表的那一格,
+    //    因此它必须变成「排除 archived」。这不是放宽断言,是把契约改严并同步锁住。
+    it('ADMIN 无入参 statusCode → 默认排除 archived(归档默认不显示)', async () => {
       const prisma = makePrismaMock();
       prisma.activity.findMany.mockResolvedValue([]);
       prisma.activity.count.mockResolvedValue(0);
       const service = makeService(prisma);
 
       await service.list(makeListQuery(), makeCurrentUser());
+
+      const arg = prisma.activity.findMany.mock.calls[0][0] as { where: { statusCode?: unknown } };
+      expect(arg.where.statusCode).toEqual({ not: 'archived' });
+    });
+
+    it('ADMIN 无入参 statusCode + includeArchived=true → 不加 statusCode 过滤(勾了「显示已归档」)', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findMany.mockResolvedValue([]);
+      prisma.activity.count.mockResolvedValue(0);
+      const service = makeService(prisma);
+
+      await service.list(makeListQuery({ includeArchived: true }), makeCurrentUser());
+
+      const arg = prisma.activity.findMany.mock.calls[0][0] as { where: { statusCode?: unknown } };
+      expect(arg.where.statusCode).toBeUndefined();
+    });
+
+    it('ADMIN + statusCode=archived → 按入参走(「只看已归档」是独立视图,不需要再勾一次)', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findMany.mockResolvedValue([]);
+      prisma.activity.count.mockResolvedValue(0);
+      const service = makeService(prisma);
+
+      await service.list(makeListQuery({ statusCode: 'archived' }), makeCurrentUser());
+
+      const arg = prisma.activity.findMany.mock.calls[0][0] as { where: { statusCode?: unknown } };
+      expect(arg.where.statusCode).toBe('archived');
+    });
+
+    it('USER 角色 + includeArchived=true 仍拿不到 archived(Q-A7 白名单优先,勾选框撬不开)', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findMany.mockResolvedValue([]);
+      prisma.activity.count.mockResolvedValue(0);
+      const service = makeService(prisma);
+
+      await service.list(
+        makeListQuery({ includeArchived: true, statusCode: 'archived' }),
+        makeCurrentUser({ role: Role.USER }),
+      );
+
+      const arg = prisma.activity.findMany.mock.calls[0][0] as { where: { statusCode?: unknown } };
+      expect(arg.where.statusCode).toEqual({ in: ['published', 'completed'] });
+    });
+
+    it('options 选择器与 list 同口径:默认排除 archived', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findMany.mockResolvedValue([]);
+      const service = makeService(prisma);
+
+      await service.options({}, makeCurrentUser());
+
+      const arg = prisma.activity.findMany.mock.calls[0][0] as { where: { statusCode?: unknown } };
+      expect(arg.where.statusCode).toEqual({ not: 'archived' });
+    });
+
+    it('options 选择器 + includeArchived=true → 不加 statusCode 过滤', async () => {
+      const prisma = makePrismaMock();
+      prisma.activity.findMany.mockResolvedValue([]);
+      const service = makeService(prisma);
+
+      await service.options({ includeArchived: true }, makeCurrentUser());
 
       const arg = prisma.activity.findMany.mock.calls[0][0] as { where: { statusCode?: unknown } };
       expect(arg.where.statusCode).toBeUndefined();

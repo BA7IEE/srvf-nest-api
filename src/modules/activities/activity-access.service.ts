@@ -86,6 +86,20 @@ export const activitySafeSelect = {
   cancelRequestHash: true,
   terminateOperationKey: true,
   terminateRequestHash: true,
+  // 归档留痕十列(2026-08-25):`archivedFromStatusCode` 是撤销归档唯一的复原依据,
+  // 两个 operationKey / requestHash 供重放判定 —— 与 cancel / terminate 四件套同处置。
+  // ⚠️ presenter 是**逐字段显式映射**,select 出来不等于对外暴露:`toResponseDto`
+  //    没有读它们中的任何一个,活动响应契约因此零变化。
+  archivedAt: true,
+  archivedByUserId: true,
+  archivedFromStatusCode: true,
+  archiveReasonCode: true,
+  archiveOperationKey: true,
+  archiveRequestHash: true,
+  unarchivedAt: true,
+  unarchivedByUserId: true,
+  unarchiveOperationKey: true,
+  unarchiveRequestHash: true,
   isPublicRegistration: true,
   requiresInsurance: true,
   registrationModeCode: true,

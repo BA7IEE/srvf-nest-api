@@ -369,6 +369,80 @@ export class ActivityAuditRecorder {
     });
   }
 
+  // ============ logArchive / logUnarchive(2026-08-25 归档拍板;§6.6 + AC-004 / AC-064) ============
+  //
+  // 沿既有 6 处写路径共用 `event: 'activity.publish'` 伞事件的现状,**不新造 event 名**
+  // (audit-logs.types.ts 的 event 闭集是有意设计,新值要单独拍板)。
+  // `extra.operation` 取 'archive' / 'unarchive' —— 与 cancel / terminate / complete 同一维度。
+  //
+  // 🔴 audit 是**第二份**留痕,不是唯一一份:「归过又撤过」这件事在 Activity 行上就查得出来
+  //    (archivedAt 与 unarchivedAt 同时非 NULL)。audit 在此补的是「每一次操作的 IP / UA /
+  //    前后快照」,两者互为对照,不互相替代。
+  async logArchive(args: {
+    activityId: string;
+    before: AuditActivitySnapshotInput;
+    after: AuditActivitySnapshotInput;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    priorStatusCode: string;
+    nextStatusCode: string;
+    archivedAt: Date;
+    /** 走的是哪一套开工条件:stale_draft / settled。 */
+    archiveReasonCode: string;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      before: this.toAuditSnapshot(args.before),
+      after: this.toAuditSnapshot(args.after),
+      extra: {
+        operation: 'archive',
+        priorStatusCode: args.priorStatusCode,
+        nextStatusCode: args.nextStatusCode,
+        archivedAt: args.archivedAt,
+        archiveReasonCode: args.archiveReasonCode,
+      },
+      tx: args.tx,
+    });
+  }
+
+  async logUnarchive(args: {
+    activityId: string;
+    before: AuditActivitySnapshotInput;
+    after: AuditActivitySnapshotInput;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    priorStatusCode: string;
+    nextStatusCode: string;
+    unarchivedAt: Date;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      before: this.toAuditSnapshot(args.before),
+      after: this.toAuditSnapshot(args.after),
+      extra: {
+        operation: 'unarchive',
+        priorStatusCode: args.priorStatusCode,
+        nextStatusCode: args.nextStatusCode,
+        unarchivedAt: args.unarchivedAt,
+      },
+      tx: args.tx,
+    });
+  }
+
   // ============ logClone(第 3 批第三刀配置复制) ============
   // clone 是新草稿创建，不复用 create 的 operation 字面量，避免审计把“从何处复制”丢掉。
   async logClone(args: {

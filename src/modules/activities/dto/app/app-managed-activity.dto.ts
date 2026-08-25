@@ -22,6 +22,12 @@ import {
 import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
 import { PaginationQueryDto } from '../../../../common/dto/pagination.dto';
 
+// query string 的布尔:`class-transformer` 的 @Type(() => Boolean) 会用 `Boolean(value)`,
+// 任何非空字符串(含 'false')都变 true。故显式判等 —— 与 activities.dto.ts /
+// members.dto.ts 的同名 helper 逐字同形(本仓约定:DTO 文件各自内联,不抽公共 util)。
+const parseQueryBoolean = ({ value }: { value: unknown }): unknown =>
+  value === true || value === 'true' ? true : value === false || value === 'false' ? false : value;
+
 export class AppManagedActivityParamsDto {
   @ApiProperty({ description: 'Activity.id', minLength: 8, maxLength: 64 })
   @IsString()
@@ -85,12 +91,26 @@ export class AppManagedActivityAssignmentParamsDto extends AppManagedActivityPar
 export class AppManagedActivitiesQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description: '活动状态过滤',
-    enum: ['draft', 'published', 'cancelled', 'completed'],
+    enum: ['draft', 'published', 'cancelled', 'completed', 'archived'],
   })
   @IsOptional()
   @IsString()
-  @IsIn(['draft', 'published', 'cancelled', 'completed'])
+  @IsIn(['draft', 'published', 'cancelled', 'completed', 'archived'])
   statusCode?: string;
+
+  // 归档默认不显示(维护者 2026-08-25 拍板②:「默认不显示,可勾『显示已归档』看到」)。
+  // 这个勾选框就长在本列表(App 我发起 / 我负责的活动 = AC-004 的负责人工作台)上。
+  // ⚠️ 只在未传 statusCode 时生效;`statusCode=archived` 是「只看已归档」的独立视图。
+  @ApiPropertyOptional({
+    description: '是否把已归档活动一并列出(默认 false;仅在未传 statusCode 时生效)',
+    default: false,
+  })
+  // @OmittableOnly 而非 @IsOptional:本字段**只是可省略**,不接受显式 null
+  // (显式 null 会跳过 @IsBoolean 直穿契约层;规则 srvf/no-nullable-is-optional)。
+  @OmittableOnly()
+  @Transform(parseQueryBoolean)
+  @IsBoolean()
+  includeArchived?: boolean;
 }
 
 export class AppActivityInitiationOrganizationOptionDto {
@@ -555,6 +575,8 @@ export class AppManagedActivityClosureDto {
       'attendance-returned',
       'attendance-final-review',
       'closed',
+      // 归档(2026-08-25):活动被收进抽屉,没有「下一步」。
+      'archived',
     ],
   })
   status!:
@@ -566,7 +588,8 @@ export class AppManagedActivityClosureDto {
     | 'attendance-first-review'
     | 'attendance-returned'
     | 'attendance-final-review'
-    | 'closed';
+    | 'closed'
+    | 'archived';
 
   @ApiPropertyOptional({ nullable: true, type: String })
   nextAction!: string | null;
@@ -622,6 +645,11 @@ export class AppManagedActivityListItemDto {
 
   @ApiPropertyOptional({ nullable: true, type: String })
   nextAction!: string | null;
+
+  // AC-004「长期未处理草稿在工作台提示」。后端只给事实位,徽标怎么画是前端的事。
+  // 非 draft 恒 false —— 「陈旧」这个概念只对草稿成立。
+  @ApiProperty({ description: '是否为长期无人处理的草稿(可归档提示;非草稿恒 false)' })
+  staleDraft!: boolean;
 }
 
 export class AppCollaboratorOptionDto extends AppManagedMemberSummaryDto {

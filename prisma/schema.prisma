@@ -151,6 +151,9 @@ model User {
   // activity-business-overhaul-v1.1/ §3.1 / §3.9):**只加反向 relation,零标量字段**
   // (沿 R2 范式;Prisma 关系映射不算业务字段新增)。
   activitiesTerminated            Activity[]                      @relation("ActivityTerminator")
+  // 归档动作(2026-08-25;§6.6 / AC-004 / AC-064):同上,只加反向 relation,零标量字段。
+  activitiesArchived              Activity[]                      @relation("ActivityArchiver")
+  activitiesUnarchived            Activity[]                      @relation("ActivityUnarchiver")
   participationRevisionsReviewed  ActivityParticipationRevision[] @relation("ParticipationRevisionReviewer")
   participationRevisionsCancelled ActivityParticipationRevision[] @relation("ParticipationRevisionCanceller")
   participationRevisionsCreated   ActivityParticipationRevision[] @relation("ParticipationRevisionCreator")
@@ -1478,12 +1481,59 @@ model Activity {
   // §10.3 提前终止:与 terminateOperationKey 配对持久化的 canonical requestHash。
   terminateRequestHash  String?
 
+  // ===== 归档动作(§6.6 + AC-004 / AC-064;维护者 2026-08-25 拍板三问)=====
+  //
+  // 拍板原文:「同一个标记,两套开工条件」/「默认不显示,可勾『显示已归档』看到」/
+  //          「能取消归档,但要留痕(谁归的、谁撤的、什么时候)」。
+  //
+  // ⭐ 「同一个标记」= `statusCode = 'archived'`(闭集第 6 值),**不是**第二个布尔位。
+  //    理由:全仓活动读面里有 6 处硬写 `statusCode: 'published'`(App 广场 / available /
+  //    dashboard 两计数 / 到期提醒 / 报名对账入队),它们靠**状态值**天然把已归档挡在外面;
+  //    换成正交布尔位,这 6 处每一处都得记得再加一条 `archivedAt: null`,漏一处就是
+  //    「归档了还在列表里」。执行位放在值域上比放在「每个人都要记得加过滤」上硬。
+  //
+  // ⚠️ 归档**不改**任何结算语义:关账的「已结束」判据是
+  //    `terminatedAt !== null || now > endAt`(activity-closure.service.ts evaluateChecks ①),
+  //    它一个字都不读 statusCode;唯一读 statusCode 的那格是「普通取消不伪造结算」。
+  //    ⇒ `completed → archived` 不会让「已关账的活动」在关账链里变形(AC-064 的
+  //    「合法更正不因 7 天过去而被永久禁止」不受本刀影响)。
+  //
+  // 🔴 下面十列**全部可空**:存量既有行一律取 NULL,读作「从未归档过」,
+  //    行为与本刀之前逐字相同。零回填、零 DROP、零 RENAME、零既有行重解释。
+  //
+  // 留痕成对(DoD:「这个活动被归档过又撤销过」查得出来吗?):
+  //   - 归档三件事实 archivedAt / archivedByUserId / archiveReasonCode
+  //   - 撤销两件事实 unarchivedAt / unarchivedByUserId
+  //   - **撤销时刻不清空归档三件事实** ⇒ 「归过又撤过」= 两侧时刻同时非 NULL,
+  //     一条 where 就查得出来。当前是否处于归档态由 statusCode 单独承载,
+  //     不靠「archivedAt 有没有被抹掉」去推 —— 抹掉就等于把留痕删了。
+  archivedAt             DateTime?
+  archivedByUserId       String?
+  // 归档前的 statusCode。撤销归档要退回**哪里**是归档时冻下来的事实,不是猜出来的:
+  // 没有它,一个 published 的活动被归档后撤销就只能退回某个常量,静默改写活动状态。
+  archivedFromStatusCode String?
+  // 走的是哪一套开工条件:`stale_draft`(长期无人处理草稿)/ `settled`(结算已关账且过等待期)。
+  // 两套条件各自可判的**留痕**位 —— 事后能回答「这条为什么准归档」。
+  archiveReasonCode      String?
+  // 当前归档操作防重。与 cancelOperationKey / terminateOperationKey 逐字同形(单列 unique)。
+  // ⚠️ 归档可反复(归→撤→再归),故本列保存的是**最近一次**归档的 key:
+  //    用更早一轮的 key 重放会拿到操作键冲突,不会静默再归档一次。
+  archiveOperationKey    String?   @unique(map: "activity_archive_operation_key_key")
+  archiveRequestHash     String?
+
+  unarchivedAt          DateTime?
+  unarchivedByUserId    String?
+  unarchiveOperationKey String?   @unique(map: "activity_unarchive_operation_key_key")
+  unarchiveRequestHash  String?
+
   organization                 Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   initiator                    Member?                            @relation("ActivityInitiator", fields: [initiatorMemberId], references: [id], onDelete: Restrict)
   publisher                    User?                              @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
   canceller                    User?                              @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
   attendanceDeclaredCompleteBy User?                              @relation("ActivityAttendanceDeclaration", fields: [attendanceDeclaredCompleteByUserId], references: [id], onDelete: Restrict)
   terminatedBy                 User?                              @relation("ActivityTerminator", fields: [terminatedByUserId], references: [id], onDelete: Restrict)
+  archivedBy                   User?                              @relation("ActivityArchiver", fields: [archivedByUserId], references: [id], onDelete: Restrict)
+  unarchivedBy                 User?                              @relation("ActivityUnarchiver", fields: [unarchivedByUserId], references: [id], onDelete: Restrict)
   registrations                ActivityRegistration[]
   activityPositions            ActivityPosition[]
   activityCheckIns             ActivityCheckIn[]

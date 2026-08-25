@@ -1,5 +1,11 @@
 import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.constant';
-import { ActivityStateMachine, type ActivityStateAction } from './activity-state-machine';
+import {
+  ACTIVITY_ARCHIVABLE_FROM_STATUS_CODES,
+  ACTIVITY_STATE_ACTIONS,
+  ACTIVITY_STATUS_ARCHIVED,
+  ActivityStateMachine,
+  type ActivityStateAction,
+} from './activity-state-machine';
 
 // ActivityStateMachine 组件级全矩阵 unit spec(B 档 test-only;沿 PR #199 characterization)。
 // 行为权威仍是 activities-state-transition.e2e-spec.ts(HTTP 层真实状态流转);
@@ -86,5 +92,103 @@ describe('ActivityStateMachine', () => {
       // complete 正向:仅 published 起态产出 completed
       expect(machine.decide('complete', 'published')).toEqual(allow('completed'));
     });
+  });
+
+  // ===== 归档 / 撤销归档(2026-08-25 拍板;§6.6 + AC-004 / AC-064)=====
+  //
+  // 🔴 **每一维各自成 `it`**:jest 首个失败即停,把七八格塞进同一个 `it` 会让后面的
+  //    反向断言一条都跑不到 —— 而基线全绿时完全看不出来。变异对拍要能读出精确红集,
+  //    这里就必须一维一格。
+  describe('archive:draft / published / completed / terminated → archived', () => {
+    it.each([...ACTIVITY_ARCHIVABLE_FROM_STATUS_CODES])('%s 可归档', (current) => {
+      expect(machine.decide('archive', current)).toEqual(allow(ACTIVITY_STATUS_ARCHIVED));
+    });
+
+    it('cancelled 不可归档(维护者只拍了两套条件,取消掉的活动两套都不属于)', () => {
+      expect(machine.decide('archive', 'cancelled')).toEqual(deny(BizCode.ACTIVITY_STATUS_INVALID));
+    });
+
+    it('archived 不可再归档(重复归档不是幂等成功,是状态非法)', () => {
+      expect(machine.decide('archive', ACTIVITY_STATUS_ARCHIVED)).toEqual(
+        deny(BizCode.ACTIVITY_STATUS_INVALID),
+      );
+    });
+
+    it('未知状态不可归档(闭集外一律拒,不 fail-open)', () => {
+      expect(machine.decide('archive', 'no-such-status')).toEqual(
+        deny(BizCode.ACTIVITY_STATUS_INVALID),
+      );
+    });
+  });
+
+  describe('unarchive:archived → archivedFromStatusCode', () => {
+    it.each([...ACTIVITY_ARCHIVABLE_FROM_STATUS_CODES])(
+      '复原到归档前的 %s',
+      (restoreStatusCode) => {
+        expect(machine.decide('unarchive', ACTIVITY_STATUS_ARCHIVED, restoreStatusCode)).toEqual(
+          allow(restoreStatusCode),
+        );
+      },
+    );
+
+    it.each(STATUSES)('非归档态(%s)不能撤销归档', (current) => {
+      expect(machine.decide('unarchive', current, 'draft')).toEqual(
+        deny(BizCode.ACTIVITY_STATUS_INVALID),
+      );
+    });
+
+    it('拿不到归档前状态时拒,而不是猜一个常量回退', () => {
+      expect(machine.decide('unarchive', ACTIVITY_STATUS_ARCHIVED)).toEqual(
+        deny(BizCode.ACTIVITY_STATUS_INVALID),
+      );
+    });
+
+    it('归档前状态越界(cancelled / 脏值)时拒 —— 撤销不得凭空写出一个新状态', () => {
+      expect(machine.decide('unarchive', ACTIVITY_STATUS_ARCHIVED, 'cancelled')).toEqual(
+        deny(BizCode.ACTIVITY_STATUS_INVALID),
+      );
+      expect(machine.decide('unarchive', ACTIVITY_STATUS_ARCHIVED, 'no-such-status')).toEqual(
+        deny(BizCode.ACTIVITY_STATUS_INVALID),
+      );
+    });
+  });
+
+  describe('archived 是终止编辑态', () => {
+    it('update 在 archived 上被拒(要改先撤销归档)', () => {
+      expect(machine.decide('update', ACTIVITY_STATUS_ARCHIVED)).toEqual(
+        deny(BizCode.ACTIVITY_STATUS_INVALID),
+      );
+    });
+
+    it.each(['publish', 'cancel', 'terminate', 'complete'] as const)(
+      '%s 在 archived 上被拒',
+      (action) => {
+        expect(machine.decide(action, ACTIVITY_STATUS_ARCHIVED)).toEqual(
+          deny(BizCode.ACTIVITY_STATUS_INVALID),
+        );
+      },
+    );
+
+    it('既有五态的 update 回显行为一格未动(归档分支是纯新增)', () => {
+      for (const current of STATUSES) {
+        expect(machine.decide('update', current)).toEqual(allow(current));
+      }
+      expect(machine.decide('update', 'terminated')).toEqual(allow('terminated'));
+    });
+  });
+
+  it('动作闭集恰 8 个,且含 archive / unarchive', () => {
+    // 加动作而忘了同步 harness/state-machines.json 的边表时,这条不会红 ——
+    // 那条由 scripts/check-boundaries.ts 的声明闸管。这里只钉动作集本身不漂移。
+    expect([...ACTIVITY_STATE_ACTIONS]).toEqual([
+      'create',
+      'update',
+      'publish',
+      'cancel',
+      'terminate',
+      'complete',
+      'archive',
+      'unarchive',
+    ]);
   });
 });

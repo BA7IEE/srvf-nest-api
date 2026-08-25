@@ -32,6 +32,14 @@ export class ActivityClosurePolicy {
       return { status: 'cancelled', nextAction: null };
     }
 
+    // 归档(2026-08-25):必须**排在考勤分支之前**。否则一个已归档、且从未声明考勤完成的
+    // 活动会掉进下面 `attendanceDeclaredCompleteAt === null` 那格,被显示成
+    // 「等待考勤声明 / 等待活动完结」—— 归档后还催人干活,恰好是状态闭集扩张最典型的漏接。
+    // nextAction 为 null:归档态没有「下一步」,要继续办得先撤销归档。
+    if (input.statusCode === 'archived') {
+      return { status: 'archived', nextAction: null };
+    }
+
     if (input.attendanceDeclaredCompleteAt === null) {
       return input.endAt.getTime() < now.getTime()
         ? {

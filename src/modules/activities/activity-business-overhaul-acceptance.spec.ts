@@ -306,10 +306,20 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     '写不出真竞态(现有 close×close 用的是不同 key 的串行两连发)。',
   // AC-064:archive action 读写入口尚未在本刀开放，现有仅证明等待期不是永久截止。
   //   2026-08-24 分拣刀复核并把「零实现」写实:全仓无 archive 路由、无 archive 状态值。
+  // AC-064:2026-08-25 归档刀**收窄** —— 原卡点「卡后续 archive action / 全仓无该动作、
+  //   无该状态值」已过期:`archived` 已是状态闭集第 6 值,`POST /my/managed-activities/{id}/archive`
+  //   已开放,结算路径的两道闸(未关账 20156 / 未满等待期 20157)已实装并有纯函数判据。
+  //   仍不能结案的**只剩一格**,且那一格是缺证据不是缺实现。
   'AC-064':
-    '卡后续 archive action;现有仅覆盖归档等待期不是更正永久截止。' +
-    '复核实况(2026-08-24):活动状态闭集只有 draft/published/completed/cancelled/terminated,无 archived;' +
-    'managed 活动控制器无 archive 动作;`archiveWaitingUntil` 是结算关账的**派生**读数,不是归档能力。',
+    '归档动作已交付(2026-08-25):`archived` 进入状态闭集,archive / unarchive 两端点开放,' +
+    '结算路径两道闸各有具名码(未关账 20156 / 等待期未满 20157),判据见 activity-archive-policy.spec.ts 「结算路径」五条。' +
+    '原卡点「全仓无该动作、无该状态值」已过期。' +
+    '**仅剩一格**:「7 天等待结束**后可以归档**」这一半只有纯函数证据,**没有 HTTP 证据** —— ' +
+    '造它要一条真 `ActivitySettlementClosureRevision`,而该表有三条必填外键' +
+    '(settlementVersion / postingBatch / evidenceSeal),等于把第 2 批第六刀的整套关账夹具搬进归档 spec。' +
+    '正确做法是在 `activity-settlement-closure.e2e-spec.ts` 里接一条「关账成功 → archiveWaitingDays=0 立即可归档 / ' +
+    '=7 时先 20157」的续链,而不是在归档 spec 里复制第二份关账夹具。另一半「合法更正不因 7 天过去而被永久禁止」' +
+    '已有覆盖(关账链里没有任何一处拿 archiveWaitingUntil 做拒绝判据),本刀未改动它。',
   // ADV-001:同 AC-047，需第 5 批真实最后签退的并发入口。
   //
   // ⚠️ 这条**看起来**该删(第 5 批已在 BATCH5_SELF_PUNCH_ACCEPTANCE_DESTINATIONS 里给了
@@ -340,9 +350,16 @@ const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
     '真缺口是没有 e2e 把 absent→present 走完真更正链并同夹具断言人数 / 时长 / 分数 / 评价 / 关闭版本一起变化。' +
     '与 AC-060 共用同一条待写用例。',
   // ADV-022:archive 未开放，且尚缺更正×关闭的双实例并发屏障。
+  // ADV-022:2026-08-25 归档刀**收窄**。原卡点两项里的第一项(「卡 archive action」)已消解 ——
+  //   动作与状态值都有了,且归档写路径与关账走**同一把 Activity 行锁**(lockActivityForLifecycle
+  //   → FOR UPDATE),结构上已具备可并发的接缝。剩下的是**用例**,不是能力。
   'ADV-022':
-    '卡 archive action(见 AC-064:全仓无该动作、无该状态值)与更正提交/生效×关账的真并发链。' +
-    '现有只有同事务原子性证据(audit 抛错整笔回滚 / 未 commit 时读面仍是旧账),' +
+    '原卡点第一项「卡 archive action(全仓无该动作、无该状态值)」已过期:2026-08-25 归档刀交付了 archive / unarchive,' +
+    '且归档取的是与关账 / 终审 / 更正同一把 Activity `FOR UPDATE` 行锁 ⇒ 真并发接缝已经存在。' +
+    '仍缺两条**真并发**用例:① 更正提交/生效 × 关账;② 归档 × 关账(或 × 更正生效)。' +
+    '两条都要第二个 app / pool(现有更正线与归档线都是单实例,写不出真竞态,只能串行两连发);' +
+    '可沿 AC-063 那条 `activity-settlement-closure-concurrency.e2e-spec.ts` 的双实例形状扩,不必另起地基。' +
+    '现有仍只有同事务原子性证据(audit 抛错整笔回滚 / 未 commit 时读面仍是旧账),' +
     '且关账 spec 里那条「更正把 closure 顶成 superseded」是用裸 updateMany **模拟**的,不是真跑更正。',
 };
 
@@ -2144,6 +2161,50 @@ const ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS: Readonly<
 };
 
 /**
+ * 归档动作刀(2026-08-25;§6.6 + 维护者三问拍板)。
+ *
+ * ⭐ 只接 **AC-004** 一条。它的四格逐条对上:
+ *   ① 「长期未处理草稿在工作台提示」→ 列表行上的 `staleDraft`(与归档闸共用 `isStaleDraft`,
+ *      两处各写一遍必漂移,那条同源判据在 activity-archive-policy.spec.ts);
+ *   ② 「可人工归档」→ `POST /my/managed-activities/{id}/archive`,草稿路径正反两向都有用例;
+ *   ③ 「不自动删除」→ 归档只改 statusCode,e2e 回读库行断言活动仍在、且撤销后能退回原状态;
+ *   ④ 「不新增清理定时任务」→ 本刀零 cron,由 docs:counts 的「cron 全仓恒 2 个」持续守着,
+ *      这里不重复钉一遍(重复钉会造出第二份真相)。
+ *
+ * 🔴 **AC-064 / ADV-022 刻意不接**:归档动作本身有了,但
+ *   - AC-064 的「7 天等待结束后可以归档」那一半需要一条真 closure(三条必填外键),
+ *     当前只有纯函数判据、**没有 HTTP 证据**;
+ *   - ADV-022 要的是「更正提交/生效 × 关账 × 归档」的**真并发**屏障,本刀零并发用例。
+ *   两条的卡点说明已就地收窄,不拿「动作做出来了」冒充「那一格证到了」。
+ */
+const ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  'AC-004': [
+    {
+      file: 'test/e2e/activity-archive-action.e2e-spec.ts',
+      needle: '长期无人处理的草稿可以归档,并落下归档四件事实',
+    },
+    {
+      file: 'test/e2e/activity-archive-action.e2e-spec.ts',
+      needle: '刚碰过的草稿不能归档(20155),且库里一列都没写',
+    },
+    {
+      file: 'test/e2e/activity-archive-action.e2e-spec.ts',
+      needle: '工作台列表把长期无人处理的草稿标成 staleDraft,刚碰过的不标',
+    },
+    {
+      file: 'test/e2e/activity-archive-action.e2e-spec.ts',
+      needle: '撤销归档退回归档前的状态,而归档留痕一列都没被抹',
+    },
+    {
+      file: 'src/modules/activities/activity-archive-policy.spec.ts',
+      needle: 'isStaleDraft:工作台提示与归档闸同源',
+    },
+  ],
+};
+
+/**
  * 「哪些登记表参与查表」只写一处 —— `registerAcceptanceCases` 与下面的接线守护读的是
  * **同一个数组**,所以两者不可能各说各话。
  *
@@ -2157,6 +2218,7 @@ const ACCEPTANCE_DESTINATION_TABLES: ReadonlyArray<
 > = [
   // 分拣表排在最前:它的结论优先于各批自己的历史卡点行(去向恒优先于卡点)。
   TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS,
+  ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS,
   ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS,
   BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
   BATCH7_RECIPIENT_FREEZE_ACCEPTANCE_DESTINATIONS,
@@ -2309,6 +2371,7 @@ describe('活动业务改造 v1.1 合同完整性', () => {
       table: Readonly<Record<string, readonly AcceptanceDestination[]>>;
     }> = [
       { name: 'TRIAGE_2026_08', table: TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS },
+      { name: 'ARCHIVE_ACTION', table: ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS },
       { name: 'ADV018_SESSION_CANCEL', table: ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH2', table: BATCH2_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH3_SLICE1', table: BATCH3_SLICE1_ACCEPTANCE_DESTINATIONS },
