@@ -225,14 +225,40 @@ function activityWithoutAllocationMode(databaseName: string, activityId: string)
 }
 
 /**
+ * 83 库里存在、而后被一次**获授权的** migration DROP 掉的 `Activity` 列。
+ *
+ * 🔴 **这不是「允许漂移」的开关,是一份具名、可证伪的事实登记。** 每加一条都要写清出处。
+ *
+ * - `coverImageUrl` / `galleryImageUrls` —— 第 98 条 migration
+ *   `20260825170000_activity_drop_legacy_image_url_columns`(P2-14 刀 B,维护者
+ *   2026-08-25 拍板「现在就删」;E1/E2/E3 三条读数见该 migration 头注)。
+ *
+ * ⚠️ **为什么不是放宽 `toEqual([])`**:本函数是全仓**唯一**能发现「`Activity` 表少了一列」
+ *    的探测器 —— 另两处碰 `Activity` 列的断言
+ *    (`activity-batch3-1p5-schema-constraints` / `activity-responsibility-workflow-expand-migration`)
+ *    都是 `column_name IN (显式清单)`,清单里没有这些列,对「列消失」结构性失明。
+ *    把 `toEqual([])` 改成「只要没新增就行」= 以后**任何** DROP 都不会被发现,那是半瞎不是收窄。
+ *
+ * ⚠️ **为什么不是裸白名单**:仓内刚修过这个形态(`C1_EXEMPT` 指着一个已被删掉的文件,
+ *    **不生效、不报错、没人发现**)。所以本清单**自带防腐自证**,见下方函数体的自证①②。
+ */
+const COLUMNS_DROPPED_SINCE_83 = ['coverImageUrl', 'galleryImageUrls'] as const;
+
+/**
  * 断言「既有列一个都没被改写」—— 只比对 `before` 里出现过的键。
  *
  * ⚠️ 为什么不整串比对:`to_jsonb(activity)` 吐的是**当时的全部列**,于是**任何**
  * 后续给 `Activity` 加列的 migration 都会让断言变红,而那与本用例要测的
  * 「升级不改写既有数据」毫无关系 —— P2-14(封面/图集改附件制)加了 4 列,当场打挂。
  *
- * 收窄不削弱:既有列被改值 → 键值不同,红;既有列被删 → after 里 undefined,红;
+ * 收窄不削弱:既有列被改值 → 键值不同,红;
+ * **除 `COLUMNS_DROPPED_SINCE_83` 具名的那几列外**,既有列被删 → after 里 undefined,红;
  * 物理行被重写 → 由紧随其后的 xmin 断言兜住。新增列取默认值是预期行为,不该由本用例拦。
+ *
+ * ⚠️ 上面那条「除具名列外」是 **P2-14 刀 B 改的**:本函数由刀 A(#1146)引入时,
+ * 「既有列被删 → 红」是当初论证「收窄不削弱」时**点名保住**的三条能力之一;刀 B 拿到
+ * 「删这两列」的授权后与它相撞。处置是**加具名白名单 + 自证**,不是放宽断言 ——
+ * 保护面**恰好只缩这几个具名列**,其余所有列的改值与删除照旧红。
  *
  * ⚠️ **只用在「迁移已升到最新」那条用例上**。回滚用例(库停在 83)必须继续整串严格比对 ——
  * 那里「一列都不许多出来」正是要测的东西,换成本函数会把「回滚没删干净」放过去。
@@ -240,7 +266,23 @@ function activityWithoutAllocationMode(databaseName: string, activityId: string)
 function expectExistingColumnsUnchanged(before: string, after: string): void {
   const b = JSON.parse(before) as Record<string, unknown>;
   const a = JSON.parse(after) as Record<string, unknown>;
-  const drifted = Object.keys(b).filter((k) => JSON.stringify(b[k]) !== JSON.stringify(a[k]));
+
+  // ── 白名单防腐自证:条目一旦变假,自己就红,不会像 `C1_EXEMPT` 那样静默腐烂。
+  for (const column of COLUMNS_DROPPED_SINCE_83) {
+    // 自证①:它必须**真的**在 83 库上存在过 —— 否则是列名写错 / 条目早已过期,
+    //        而一个指不到任何东西的豁免项会静悄悄地什么都不豁免、也什么都不报。
+    expect({ column, existedAt83: Object.hasOwn(b, column) }).toEqual({
+      column,
+      existedAt83: true,
+    });
+    // 自证②:它必须**真的**在 HEAD 上消失了 —— 否则说明列被加回来了,该撤掉这条豁免,
+    //        否则从此刻起这一列的任何改值都会被这份清单悄悄放过去。
+    expect({ column, goneAtHead: Object.hasOwn(a, column) }).toEqual({ column, goneAtHead: false });
+  }
+
+  const drifted = Object.keys(b)
+    .filter((k) => !(COLUMNS_DROPPED_SINCE_83 as readonly string[]).includes(k))
+    .filter((k) => JSON.stringify(b[k]) !== JSON.stringify(a[k]));
   expect(drifted).toEqual([]);
 }
 

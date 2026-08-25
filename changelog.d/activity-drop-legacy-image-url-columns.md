@@ -119,3 +119,69 @@ DROP 后 `prisma generate` 把两列从 `ActivitySelect` / `ActivityUpdateInput`
 - **契约零漂移**:响应 DTO 的字段一个没动(出参字段名保留,值本就来自现签),
   OpenAPI 快照因此**无变化**;唯一变形的是 `ActivityPublishReviewResponseDto.snapshot`
   那个 `additionalProperties: true` 的不透明 JSON 块 —— 而本刀刻意让它**逐字不变**(见上)。
+
+---
+
+## 🔴 CI 冷跑逼出的第二件事:一条**书面上刻意严格**的判据与本刀的授权相撞
+
+`Contract + E2E (2)` 红在 `test/e2e/activity-v11-batch4-allocation-mode-migration.e2e-spec.ts`:
+
+```
+● 第 84 migration activity allocation mode › upgrades a true 83 database …
+  expectExistingColumnsUnchanged (:244)   expect(drifted).toEqual([])
+  - Array []
+  + Array [ "coverImageUrl", "galleryImageUrls" ]
+```
+
+它守的是「从**真 83 库**升到 HEAD,既有列一个都不许漂移」。本刀在第 98 条删了两列 ⇒ 它红。
+
+### ⭐ 先取证「这条严格是不是刻意的」,再决定怎么改
+
+`git log -S'expectExistingColumnsUnchanged'` 实测:**这个 helper 是 P2-14 刀 A 自己**
+(`d8e557d7` / #1146)引入的 —— 它把原来的整串 `toBe(rowBefore)` 换成「只比对 `before` 里出现过的键」,
+因为刀 A 加的 4 列当场打挂了整串比对。而它的 docstring 逐字写着:
+
+> 收窄不削弱:既有列被改值 → 键值不同,红;**既有列被删 → after 里 undefined,红**;
+> 物理行被重写 → 由紧随其后的 xmin 断言兜住。
+
+⇒ **「能抓到删列」不是副作用,是当初论证「收窄不削弱」时点名保住的三条能力之一。**
+⚠️ 更要命的是**同一个 commit 的 message** 里还写着「旧列保留零写入路径,**刀 B 才 DROP**」——
+收窄这条判据、宣称删列仍会红、预告刀 B 会删这两列,**三件事写在同一次提交里**。
+
+⇒ 这不是「判据没想到」,是「判据想到了、并且当时就把删列列为必须红的情形」。
+所以处置方式必须由人拍,不能由实施方顺手放宽。
+
+### 处置:具名白名单 + **防腐自证**;三条否掉的路都写下来
+
+| 方案 | 裁定 |
+|---|---|
+| 放宽 `toEqual([])`(改成「只要没新增就行」) | ❌ **禁止**。实测本函数是全仓**唯一**能发现「`Activity` 表少了一列」的探测器 —— 另两处碰 `Activity` 列的断言(`activity-batch3-1p5-schema-constraints` / `activity-responsibility-workflow-expand-migration`)都是 `column_name IN (显式清单)`,清单里没有这些列,对「列消失」结构性失明。放宽 = 以后**任何** DROP 都不会被发现,是半瞎不是收窄 |
+| 裸白名单 | ❌ 仓内刚修过这个形态(`C1_EXEMPT` 指着一个已被删掉的文件,**不生效、不报错、没人发现**) |
+| 把 `before` 快照改成「只取该用例真正关心的列集」 | ❌ 那会把「哪些列该被守」从**全集**变成**某人当时想到的子集**,保护面损失更大且更难发现 |
+| ✅ **具名白名单 `COLUMNS_DROPPED_SINCE_83` + 两条防腐自证** | 保护面**恰好只缩两个具名列**;白名单条目一旦变假,**自己就红** |
+
+自证①「豁免项必须真的在 83 库上存在过」(否则是列名写错 / 条目过期)·
+自证②「豁免项必须真的在 HEAD 上消失了」(否则说明列被加回来了,该撤豁免)。
+docstring 里那句「既有列被删 → 红」已**同步**改成「除具名两列外……」并写清出处 ——
+不同步就成了「散文与机器字段互相矛盾」。
+
+⚠️ 该 helper **定义 1 处、调用 1 处**,**不是** 6 份计数 spec 共用的:`to_jsonb(activity)`
+(`Activity` 表)全仓只有这一处,其余 5 份的漂移断言打在别的表上。⇒ 只需改一处,
+也不存在「6 处各写一份白名单」的第二份真相。
+
+### 变异对拍(6 轮,真跑冷库 83→98 重放;每轮约 20 s)
+
+| # | 变异 | 读数 |
+|---|---|---|
+| 1 | 修复后基线 | ✅ **绿**(1 passed / 6 skipped) |
+| 2 | 🔴 **多删一个不在白名单的列**(`Activity.cancelReason`) | ❌ **红**,`drifted` **恰是** `["cancelReason"]`(`:286`)—— 这是「只缩两列、没缩成半瞎」的**唯一**证据 |
+| 3 | 还原 | ✅ **绿**(证明不是恒红) |
+| 4 | 白名单列名写错(`coverImageUrlTYPO`) | ❌ **红**,**自证①** 开火:`existedAt83: true → false`(`:274`) |
+| 5 | 清空白名单 | ❌ **红**,`drifted` = `["coverImageUrl","galleryImageUrls"]` —— **逐字复现今天 CI 那个红**,证明白名单真的在起作用,不是摆设 |
+| 6 | 把一个**至今仍存在**的列(`cancelReason`)塞进白名单 | ❌ **红**,**自证②** 开火:`goneAtHead: false → true`(`:280`) |
+
+⚠️ 第 2 轮的注入方式是「`deployCurrentMigrations` 之后直接对 scratch 库跑一条 `ALTER TABLE … DROP COLUMN`」,
+**没有**去 `prisma/migrations/` 造第 99 条 migration:判据只看 `before` / `after` 两串 JSON,
+列是怎么消失的对它不可见 ⇒ 两种注入在**被测的那个量**上等价;而造真 migration 会把
+migration 数变成 99、先打挂 6 份计数 spec 的 `CURRENT_MIGRATION_COUNT`,红在别处、归因不清。
+六轮跑完 `git status --porcelain` 只剩那一份 spec 的 `M`,`prisma/migrations/` 仍是 **98** 个。
