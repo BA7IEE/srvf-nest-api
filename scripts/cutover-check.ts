@@ -49,11 +49,13 @@
  * ci-control-plane 内)。为什么是两条别名而不是让 `--selftest` 走 pnpm 参数透传:
  * 本仓有过「`pnpm test:contract -- -u` 传不进去」的教训,别名比透传可靠。
  *
- * ⚠️ 加了别名**不等于**本脚本进了执法层保护 —— 它不被任何 CI 检查链引用(见下「不接 CI」),
- *    故按 redzone 的收窄口径(「是不是裁判」)仍在自由区。**哪天把它接进 CI,同一个 PR 里
- *    必须同步把它写进 harness/redzone.json 的 selfGuard**;否则就成了「CI 依赖一个
- *    PR 可以随手改成恒 PASS 的裁判」—— 那正是该清单收窄当天被 ci-guard-coverage
- *    当场纠正过的那种判断错误。
+ * 🔴 **本文件自 2026-08-26 起在 `harness/redzone.json` 的 selfGuard 内**(具名一条,
+ *    不是整个 `scripts/`)—— 改它要维护者发令牌。原因就是上一版这里写的那句
+ *    「哪天把它接进 CI,同一个 PR 里必须同步把它写进 selfGuard」:同一天
+ *    `--signoff` 接进了 `Diff guards`,而「CI 依赖一个 PR 可以随手改成恒 PASS 的裁判」
+ *    正是该清单收窄当天被 ci-guard-coverage 当场纠正过的那种判断错误。
+ *    ⚠️ 顺序不可反:**先收编、后接闸** —— 反过来做,`P4a ci-guard-coverage` 当场判红
+ *    (它拿正则扫 ci.yml **全文,注释也算**,故收编之前连写在注释里都会红)。
  *
  * 退出码:0 = A 类判据全过(**不等于可以开闸** —— B/C 仍待维护者确认);
  *         1 = 有 A 类判据未过,或仪器自证失败。

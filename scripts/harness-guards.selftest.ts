@@ -1056,6 +1056,37 @@ checkEq(
       `以下脚本被 CI/检查链引用却不在 selfGuard,可在同一 PR 内被改松而不被察觉:\n    ${unprotected.join('\n    ')}`,
     );
   }
+
+  // ── 签字登记闸的**接线**断言(禁止型;与债务棘轮那两条同源,但红集刻意做成不相交)──
+  //
+  // 上面 P4a 只管「被 CI 引用的裁判必须受保护」,它对**反方向**结构性失明:
+  // 把 ci.yml 里那一步删掉 ⇒ 没人引用 ⇒ unprotected 为空 ⇒ P4a 照样全绿,
+  // 而 docs/ai-harness/CUTOVER_SIGNOFF.md 当场回到「零执行位」。
+  // 登记表是一份 .md、只改它的 PR 恰恰是 docs-only ⇒ Diff guards 这一步是
+  // 「签字与机器读数矛盾即红」的**唯一**执行位,删掉它没有任何合法理由。
+  // (同日已逮到两例同类:#1184 豁免名单指着已删文件、#1195 腐烂检测改成恒返回空
+  //  —— 共同点是「检查只管有没有做错,不管有没有被拆掉」。)
+  //
+  // ⭐ 第二条刻意**不**写成 `line !== undefined && !line.includes('|| true')`:
+  //    那种形状下「删掉步骤」会把两条一起打红(红集相交),
+  //    「加了 || true」这一维的判别力就观测不到了。改成「不存在同时含命令与
+  //    `|| true` 的行」后,删步骤时它空真为绿 ⇒ 两维各红各的。
+  //    (「加了但恒不失败」比整步删掉更隐蔽 —— 空开关,本仓已记录的形状。)
+  {
+    const ciCode = codeOnly(read('.github/workflows/ci.yml'));
+    const ciLines = ciCode.split('\n');
+    check(
+      'P4a 签字登记闸:`cutover:check:signoff` 已接进 CI',
+      ciLines.some((l) => l.includes('cutover:check:signoff') && /^\s*(run:\s*)?pnpm\s/.test(l)),
+      '步骤缺失 = 签字登记表回到零执行位(对拍值任何 PR 都能改而 CI 一片绿)',
+    );
+    check(
+      'P4a 签字登记闸:该步骤**没有** `|| true` 兜底',
+      !ciLines.some((l) => l.includes('cutover:check:signoff') && l.includes('|| true')),
+      '带上 || true 等于把刚接的执行位当场拆掉,而步骤名一字不变、CI 一片绿',
+    );
+  }
+
   const redGlobs = redzone.redzone.flatMap((e) => e.globs);
   for (const must of [
     'AGENTS.md',
@@ -3084,6 +3115,18 @@ for (const [configName, config] of JEST_CONFIGS) {
         glob: 'scripts/*-semantic-diff.ts',
         yes: ['scripts/authz-semantic-diff.ts', 'scripts/contract-semantic-diff.ts'],
         no: ['scripts/authz-semantic-diff.mjs', 'scripts/semantic-diff.ts'],
+      },
+      {
+        // 2026-08-26:切换前签字登记表的判据本体。`--signoff` 在**同一个 PR** 里接进
+        // `Diff guards` —— 被 CI 引用却不在保护内 = 让一个「同 PR 内就能改成恒 PASS
+        // 的裁判」去卡合并(BLOCKER-1 形状),那正是 P4a ci-guard-coverage 判的事。
+        // **没走「改名成 scripts/check-cutover.ts 自动落进既有 glob」那条省事的路**:
+        // 该路径被 docs/ops/activity-batch-worker-runbook.md 点名,而那份 runbook 的
+        // sha256 正是 ⑦-c 签字的对拍锚 ⇒ 改名会让一条已签字的结论当场过期。
+        // 反样例挑「多一个字母」的近名:钉住本条是**具名精确**,不是 `scripts/cutover-*` 前缀。
+        glob: 'scripts/cutover-check.ts',
+        yes: ['scripts/cutover-check.ts'],
+        no: ['scripts/cutover-checks.ts'],
       },
       { glob: 'test/setup/**', yes: ['test/setup/test-db.ts'], no: ['test/setup.ts'] },
       {

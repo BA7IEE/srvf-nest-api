@@ -673,6 +673,38 @@ jobs:
       - name: Frozen drafts ledger gate
         run: pnpm exec tsx scripts/check-frozen-drafts-ledger.ts
 
+      # 切换前签字登记表的**可信性**闸(`docs/ai-harness/CUTOVER_SIGNOFF.md`)。
+      # 判的四件事:机器现读非退化 · 逐条对拍(签字里记的读数 ↔ 机器现读逐字相等)·
+      # 签了闸里不存在 / 不接受签字(A 类)的编号 · ⑨-c 规模档登记闭合。
+      #
+      # 🔴 **本条不是"新增一条判据",是把 2026-08-25 建好的签字机制第一次接上执行位。**
+      # 立项当天实测:`cutover:check` 在全部 workflow 里 **0 命中** ⇒
+      # 「签字与机器读数矛盾即红」至今只是散文,`scale-tiers-passing` 这类对拍值
+      # **任何 PR 都能改成任意数字而 CI 一片绿**。
+      #
+      # 🔴 **为什么挂这里而不是 unit 轮(`pnpm test`)**:登记表是一份 `.md`,
+      # 只改它的 PR **恰恰就是 docs-only** —— 而 fast job 的 Lint / Typecheck /
+      # Build / Run unit tests 四步都带 `if: docs_only != 'true'`,`Contract + E2E`
+      # 与 `Golden journeys` 是 job 级 `if` 整个跳过。挂错地方 = 在最该拦的那批 PR
+      # 上一次都不跑。本 job 不随 docs-only 短路,与上面三条闸逐字同一个理由。
+      #
+      # 无 `--base`:`--signoff` 全部是**当前工作树内**的静态对照,不读 git 历史。
+      # 无 `|| true`:带上等于把刚接的执行位当场拆掉(本仓已记录的「空开关」形状:
+      # 被 `|| true` 兜住的脚本根本不会失败)。
+      # 预算:`--signoff` 是全量的**子集** —— 不连库、不需要 Prisma client、
+      # 不跑验收套件与生成物对账,本机实测 1.9s,对本 job 的 `timeout-minutes: 5`
+      # 是三位数倍余量。
+      # ⚠️ 全量 `pnpm cutover:check` **仍然不接**:十条里今天还有必不过的
+      # (9a 尚有 it.todo、⑩ 要部署侧产物),接了等于全仓永久红,
+      # 而「闸红了没人消费 = 没有执法」是本仓已记录的事故形状。
+      #
+      # ⚠️ 接线的前置条件(顺序不可反):`scripts/cutover-check.ts` 已在**同一个 PR 里**
+      # 收进 `harness/redzone.json` 的 selfGuard。反过来做 ⇒ `P4a ci-guard-coverage`
+      # 当场判红 —— CI 依赖一个「同一个 PR 内就能改成恒 PASS 的裁判」,
+      # 那正是 2026-07-29 跨模型评审 BLOCKER-1 的形状。
+      - name: Cutover sign-off ledger gate
+        run: pnpm cutover:check:signoff
+
   # 触碰红区/执法层时才跑:environment 上挂了 required reviewer,
   # 这个 job 会一直 pending 直到维护者在 PR 页面点批准。
   #

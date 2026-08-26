@@ -96,6 +96,10 @@
 
 #### 🔴 顺带查实:签字登记表的对拍**至今零执行位**,而且**本刀补不上**
 
+> ⏭ **下一刀已补上**(2026-08-26,同日):判据先收进 selfGuard、再把 `cutover:check:signoff`
+> 接进 `Diff guards` —— 见本目录 `cutover-signoff-execution-bit.md`。
+> 本节以下文字保留为**当时的实测记录**,不是现状。
+
 `pnpm cutover:check` **从未接过任何 workflow**(`.github/workflows/*.yml` 全仓零命中)。
 ⇒「签字与机器读数矛盾即红」在此之前、以及现在,**都只是散文**:登记表是一份 `.md`,
 只改它的 PR 就是 docs-only,连 `pnpm test` 都不跑。
@@ -142,7 +146,7 @@ pnpm cutover:check     ⏸ 待维护者确认   1 条(⑩) → 1 条(⑩)   ← 
                        ☑ 已签字确认     9 条 → 10 条(+9b)
                        A 类子判据       10/11 → 11/12 过(+9c 通过)
                        ⑨               ❌ 未过 → ❌ 未过(9a 仍有 9 条 it.todo)
-pnpm cutover:check:signoff  (新)       exit 0,1.7s;12 个读数全部非退化(**未接 CI**,见上)
+pnpm cutover:check:signoff  (新)       exit 0,1.7s;12 个读数全部非退化(本刀内**未接 CI**;下一刀已接,见上)
 pnpm test:scale             (新)       1 个 spec(`--listTests` 实测恰 1 个,非 306)
 CI 那条 e2e 的首跑结论                  见 PR #1198 的 Contract + E2E 分片
 ```
