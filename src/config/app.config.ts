@@ -471,6 +471,19 @@ export interface ActivityAudienceTagsConfig {
 // ActivityWorkflowGate(唯一读取处)与 activity-workflow-gate-single-source 结构判据。
 export interface ActivityV11WorkflowConfig {
   enabled: boolean;
+  /**
+   * 只读维护态(合同 §16.4 第 1 条前半:「gate 切为拒绝新写」)。
+   *
+   * 🔴 **它刻意住在 `activityV11Workflow` 这个命名空间里,不是另立一个顶层配置项** ——
+   * `scripts/check-activity-workflow-gate.ts` 的 C1 判据把 `activityV11Workflow` 这个
+   * 标识符钉成「只有 `ActivityWorkflowGate` 能读」,住进来就自动继承那道执法;
+   * 另开顶层键则要新写一份同形状的判据,而那份判据落在红区里。
+   *
+   * 语义见 `ActivityWorkflowGate`:它**只做减法**(把两个写方向一起拒),
+   * 永远不放行任何原本被拒的写 ⇒ 合同 §16.2 禁止的「新打卡＋旧结算」混合态
+   * 在 `enabled × readonlyMaintenance` 的全部四态里结构上都不可能出现。
+   */
+  readonlyMaintenance: boolean;
 }
 
 export function parseActivityResponsibilityWorkflowEnabled(
@@ -523,6 +536,36 @@ export function parseActivityV11WorkflowEnabled(raw: string | undefined, env: Ap
   }
   if (raw !== 'true' && raw !== 'false') {
     throw new Error('ACTIVITY_V11_WORKFLOW_ENABLED 必须严格为 true 或 false');
+  }
+  return raw === 'true';
+}
+
+/**
+ * 活动 v1.1 **只读维护态**开关(合同 §16.4)。
+ *
+ * ⚠️ **形状与上面三个开关刻意不同:空值时不 fail-fast**,production 下也默认 `false`。
+ * 三条理由,缺一都会让它变成一个更坏的东西:
+ *
+ *   1. 它**不是**合同 §16.2 点名的「业务真相开关」。真相走哪条轨由
+ *      `ACTIVITY_V11_WORKFLOW_ENABLED` 单轨决定(那个必须显式配),本项只在真相轨之上
+ *      再叠一层「今天谁都别写」。默认值只有一个安全方向:**不在维护模式**。
+ *   2. 它是**破玻璃开关**。要求每次生产部署都显式写 `=false`,等于把一个应急旋钮
+ *      变成常规配置项 —— 而常规配置项是会被抄错的。
+ *   3. 若把它做成 production 下空值拒启,`scripts/check-activity-workflow-gate.ts`
+ *      的 C7 会要求它同时出现在 `.env.example` **与 `.github/workflows/docker-smoke.yml`
+ *      的每个启动块**里,而后者在红区 —— 本刀零红区,不改它。
+ *      🔴 这条是**实现约束**,前两条是**设计理由**;如果将来维护者要把它升成必填项,
+ *      那要连同 docker-smoke.yml 一起改,而不是只改这里。
+ *
+ * 取值仍然**严格**:写了就必须是 `true` / `false`,`ture` / `1` / `yes` 一律抛错拒启。
+ * 「打错字被当成 false 静默放行写入」正是只读维护态最不能有的失败方向。
+ */
+export function parseActivityWorkflowReadonly(raw: string | undefined): boolean {
+  if (raw === undefined || raw.trim() === '') return false;
+  if (raw !== 'true' && raw !== 'false') {
+    throw new Error(
+      'ACTIVITY_WORKFLOW_READONLY 必须严格为 true 或 false(留空 = false,即不在只读维护态)',
+    );
   }
   return raw === 'true';
 }
@@ -959,6 +1002,7 @@ export default registerAs('app', (): AppConfig => {
 
   const activityV11Workflow: ActivityV11WorkflowConfig = {
     enabled: parseActivityV11WorkflowEnabled(process.env.ACTIVITY_V11_WORKFLOW_ENABLED, env),
+    readonlyMaintenance: parseActivityWorkflowReadonly(process.env.ACTIVITY_WORKFLOW_READONLY),
   };
 
   return {
