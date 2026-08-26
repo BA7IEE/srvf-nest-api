@@ -71,6 +71,16 @@ PR 4(permissionRevision + 原子 PUT,4a #1156 + 4b 读/预览面 #1171,**两半�
 它早在 `#1088`(`a1b25764`,2026-08-19)就合了(`docs/ops/activity-batch-worker-runbook.md`),
 正是那一刀消掉了 §16.1 第⑦条硬红。**本节自己上一句"A 类唯一硬失败就是 9a"当时就已经和它打架了**。
 ⚠️ **验收编号绑完 ≠ 那批做完** —— 第 6 批的编号都已绑真用例,但那批本身没整体交付。
+⚠️ **2026-08-26 起,§2 那行「已绑真实证据」里有 4 条是「已判定不做」而不是「已做」**:
+万人档 `AC-054` / `AC-055` / `AC-068` / `ADV-008` 由维护者拍板**永久不做**
+(一场万人用尽 ledger-commit 全部 10 个槽位,PG 共享锁表保底 12800 全实例共享
+⇒ 两场并发即 `out of shared memory`,硬 ERROR 且会撒到别的 spec 上),
+登记在 [`CUTOVER_SIGNOFF.md`](CUTOVER_SIGNOFF.md) §5,并在验收套件里渲染成**真用例**
+(断言该豁免确实被登记、写明理由与拍板人)——**不是删掉编号**,合同里那四项仍在。
+⇒ 读这行时按 `86 = 82 已绑证据 + 4 已判定不做`。规模门那一格改由
+`cutover:check` 的 ⑨-b「规模测试通过」承载,那格仍是 ⏸。
+⚠️ 台账口径与套件真 todo 数由 `activity-business-overhaul-acceptance.spec.ts` 的
+「两把尺子」用例钉死(差一条当场红),**别靠人记得同步**。
 
 **④ 架构治理 v4 —— 阶段过半,两条尾巴长**
 合同 §11 迁移路线表**恰 11 阶段**:0 / 1A / 1J / 1D / 2 / 3 / 4 / 5 / 6 / 7 / 8。
@@ -108,7 +118,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **237** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
-| 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **82 / 95(13 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
+| 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **86 / 95(9 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
 | 治理 Phase 4:状态列 governed / 登记总数 | **8 / 59** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
