@@ -33,7 +33,8 @@ const fakeAppCfg: AppConfig = {
   activityResponsibilityWorkflow: { enabled: false },
   activityAudienceTags: { httpEnabled: false },
   // 活动 v1.1 单一 cutover gate:AppConfig 新增必填字段;本 unit test 不关心闸位,仅满足接口
-  activityV11Workflow: { enabled: false },
+  // 只读维护态(合同 §16.4):AppConfig 新增必填字段;本 unit test 不关心只读位,仅满足接口。
+  activityV11Workflow: { enabled: false, readonlyMaintenance: false },
   storage: { encryptionKey: '', localRoot: './tmp/storage', consistencyMode: 'JIT' },
   // SMS 基础设施 T2/T3:AppConfig 新增必填字段;本 unit test 不关心 SMS,仅满足接口
   sms: { encryptionKey: '' },
