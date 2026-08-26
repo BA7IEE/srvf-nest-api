@@ -58,8 +58,27 @@
  * 退出码:0 = A 类判据全过(**不等于可以开闸** —— B/C 仍待维护者确认);
  *         1 = 有 A 类判据未过,或仪器自证失败。
  *
- * ⚠️ 本脚本**不接 CI**。十条里大半今天必不过(见 §16.1 现状),接了等于全仓永久红,
- *    而「闸红了没人消费 = 没有执法」是本仓已记录的事故形状。它是维护者开闸前手动跑的前置。
+ * ──────────────────────────────────────────────────────────────────────────
+ * 两种模式:全量(不接 CI)与 `--signoff`(接 CI)
+ *
+ * ⚠️ **全量仍然不接 CI**,原因一字未改:十条里今天还有必不过的(9a 尚有 it.todo,
+ *    ⑩ 要部署侧产物),接了等于全仓永久红,而「闸红了没人消费 = 没有执法」
+ *    是本仓已记录的事故形状。它是维护者开闸前手动跑的前置。
+ *
+ * ⭐ `--signoff` 是**另一件事**,别把两者读成一回事:
+ *
+ *    | 模式 | 判什么 | 今天是不是绿的 |
+ *    |---|---|---|
+ *    | 全量 | 十条切换前检查的**结论** | 否(9a / ⑩ 未过)⇒ 不接 CI |
+ *    | `--signoff` | **签字登记表本身可不可信**(读数非退化 · 逐条对拍 · 签了不存在/A 类编号 · 规模档登记闭合) | **是** ⇒ 接 CI |
+ *
+ *    签字登记表是一份 `.md`,而它的判据此前**零执行位** —— 一个只改那份 .md 的 PR
+ *    是 docs-only,连 `pnpm test` 都不跑。⇒ `--signoff` 挂在 `redzone-scan`
+ *    (无 docs-only 短路、`fetch-depth: 0`),那是本仓已有的同一形状的落点。
+ *    它**不跑** `collectAcceptance()` / `collectReconcile()` / `resolveBaselineCommit()`
+ *    ——那三样要 jest、要生成的 Prisma client、要全量 git 历史,与「表可不可信」无关。
+ *    ⚠️ 因此 `--signoff` 是全量的**子集**,不是替代:`assertSubIdsClosed()` 仍只在全量里跑。
+ * ──────────────────────────────────────────────────────────────────────────
  */
 import { execFileSync } from 'node:child_process';
 import { spawnSync } from 'node:child_process';
@@ -75,6 +94,16 @@ import {
   parseAppEnv,
   parseInsuranceEnforcementEnabled,
 } from '../src/config/app.config';
+// ⑨-b / ⑨-c 的真源:规模档登记表。**判定逻辑不在本文件重写一遍** —— 那会造出第二份真相,
+// 而 e2e 侧与这里迟早分叉。两边 import 同一组纯函数,分叉在结构上不可能发生。
+import {
+  LEDGER_COMMIT_CONTRACT_SCALE_TIERS,
+  LEDGER_COMMIT_SCALE_TIERS,
+  LEDGER_COMMIT_SCALE_TIER_WAIVERS,
+  scaleTierClosureDefects,
+  scaleTierWaiverFieldDefects,
+  scaleTierWaiverMirrorDefects,
+} from '../test/helpers/ledger-commit-scale-tiers';
 
 const ROOT = resolve(__dirname, '..');
 
@@ -127,6 +156,21 @@ const VERSION_SCAN_DIRS: readonly string[] = ['src', 'scripts'];
  * 写死路径的意义:判据与文档之间有一份合同,改名 = 当场红,不会静默失去这道检查。
  */
 const WORKER_RUNBOOK = 'docs/ops/activity-batch-worker-runbook.md';
+
+/**
+ * ⑨-b / ⑨-c 的两个落点 —— 同样是**登记制**,路径写死。
+ *
+ * `SCALE_TIERS_MODULE` 是档位表(跑哪几档 / 哪档已判定不做)的唯一真源;
+ * `SCALE_TIERS_SPEC` 是唯一消费它的运行期用例。两者的关系是本条判据的靶心:
+ * **用例必须由档位表生成**,否则「档位表」与「真跑的用例」可以各说各话 ——
+ * 那时把 2000 档从表里删掉,签字读数会变(红),但把用例删掉表不变(不红),
+ * 于是最自然的那种腐烂反而看不见。
+ */
+const SCALE_TIERS_MODULE = 'test/helpers/ledger-commit-scale-tiers.ts';
+const SCALE_TIERS_SPEC = 'test/e2e/activity-ledger-commit-scale-tiers.e2e-spec.ts';
+
+/** 档位表被用例消费的**唯一合法形状**。写死这一句是判据的一部分,不是风格偏好。 */
+const SCALE_TIERS_CONSUMPTION = 'describe.each(LEDGER_COMMIT_SCALE_TIERS)';
 
 /** ⑦ 合同逐字要求 worker 具备的五要素;runbook 必须逐条成节。 */
 const RUNBOOK_TOPICS: readonly { key: string; label: string; pattern: RegExp }[] = [
@@ -221,6 +265,10 @@ export const SIGNOFF_READING_KEYS = [
   'worker-lease-columns',
   'worker-runbook-sha256-12',
   'seed-sha256-12',
+  // ── 2026-08-26 ⑨-b 规模门签字新增 ────────────────────────────────────────
+  // 判别式(同上):这条签字若将来不再成立,是哪个仓内读数会先变?
+  // 答案就是它 —— 有人把 2000 档从档位表里删掉,读数立刻从 `30,500,2000` 变成 `30,500`。
+  'scale-tiers-passing',
 ] as const;
 export type SignoffReadingKey = (typeof SIGNOFF_READING_KEYS)[number];
 
@@ -251,6 +299,16 @@ export const SIGNOFF_DIGEST_KEYS: readonly SignoffReadingKey[] = [
 ];
 
 /**
+ * 读数里必须是**逗号分隔的十进制清单**的那些键(如 `30,500,2000`)。
+ *
+ * 🔴 为什么单列第三类,而不是塞进「必须非零」:清单型读数的退化不是「变成 0」,
+ *    而是**变成一句人话**(采集器读不到源码时最自然的返回值是 `(未接线)` 之类)。
+ *    「必须非零」对那种退化完全失明 —— 它不是数字,`Number(v) === 0` 也不成立。
+ *    ⇒ 这一类的判别式是**形状**:不匹配 `\d+(,\d+)*` 即红,方向 fail-closed。
+ */
+export const SIGNOFF_LIST_KEYS: readonly SignoffReadingKey[] = ['scale-tiers-passing'];
+
+/**
  * 仪器自证:机器现读本身不能是退化值。
  *
  * 这条**先于**逐条验签字跑 —— 读数坏掉时,「签字与机器读数一致」这句话没有意义。
@@ -260,6 +318,7 @@ export function judgeSignoffReadings(
   nonZero: readonly string[] = SIGNOFF_NONZERO_COUNT_KEYS,
   digests: readonly string[] = SIGNOFF_DIGEST_KEYS,
   allKeys: readonly string[] = SIGNOFF_READING_KEYS,
+  lists: readonly string[] = SIGNOFF_LIST_KEYS,
 ): Judgement {
   const bad: string[] = [];
   for (const k of allKeys) {
@@ -278,8 +337,15 @@ export function judgeSignoffReadings(
     if (v === undefined) continue;
     if (!/^[0-9a-f]{12}$/.test(v)) bad.push(`读数「${k}」= ${v} —— 不是 12 位摘要 ⇒ 被锚的文件读不到`);
   }
+  for (const k of lists) {
+    const v = readings[k];
+    if (v === undefined) continue;
+    if (!/^\d+(,\d+)*$/.test(v)) {
+      bad.push(`读数「${k}」= ${v} —— 不是逗号分隔的十进制清单 ⇒ 采集器没读到真源(而不是「清单真的空了」)`);
+    }
+  }
   return bad.length === 0
-    ? { ok: true, evidence: [`${allKeys.length} 个可对拍读数全部非退化(计数非 0、摘要成形)`] }
+    ? { ok: true, evidence: [`${allKeys.length} 个可对拍读数全部非退化(计数非 0、摘要成形、清单成形)`] }
     : { ok: false, evidence: bad };
 }
 
@@ -298,7 +364,9 @@ export const ALL_SUB_IDS: readonly string[] = [
   '6a', '6b',
   '7a', '7b', '7c', '7d', '7e',
   '8a', '8b',
-  '9a', '9b',
+  // ⚠️ 9c 是 A 类 —— 它判「规模档登记表可不可信」(闭合 / 六要素 / 逐字镜像 / 用例由表生成),
+  //    那几样机器全判得了。⑨-b「三档真的通过了」才是要人签的那一半。
+  '9a', '9b', '9c',
   '10a', '10b',
 ];
 
@@ -1123,10 +1191,97 @@ function collectGrants(): string[] {
  * | `worker-lease-columns` | `ActivityBatchJob` 上**且被 worker 真用到**的 lease 列数 | 少一列 ⇒ ⑦-c 签字接受的那个「lease 恢复代偿」机制变了 |
  * | `worker-runbook-sha256-12` | ⑦-d 那份 runbook 的内容摘要 | runbook 被改 ⇒ ⑦-c 签字写进去的那份「明确不设 + 四个盲区」已不是原样 |
  * | `seed-sha256-12` | `prisma/seed.ts` 的内容摘要 | 字典 seed 变了 ⇒ ④-b 签的「接受当前状态」里的那个「当前」已经不是了 |
+ * | `scale-tiers-passing` | **真会跑起来**的规模档,逗号分隔 | 有人把 2000 档删掉 ⇒ `30,500,2000` → `30,500` ⇒ ⑨-b 签的「三档通过」不再是同一件事 |
  *
- * ⚠️ 后六个键**只锚身份,不锚正确性** —— 它们回答「你签字时看的那个东西还是不是那个」,
+ * ⚠️ 后六个摘要/计数键**只锚身份,不锚正确性** —— 它们回答「你签字时看的那个东西还是不是那个」,
  * 回答不了「那个东西对不对」。别把它们读成「已核对」。
  */
+/**
+ * ⑨-b 的对拍读数 `scale-tiers-passing` = **真跑的那几档,逗号分隔**。
+ *
+ * 🔴 采集的不是「档位表里写了什么」,而是「**真会跑起来的是哪几档**」——
+ *    两者只有在「用例由档位表生成」时才相等,所以这里先验那一条:
+ *    用例文件不在 / 不再 `describe.each(LEDGER_COMMIT_SCALE_TIERS)` ⇒ 读数**退化成一句人话**,
+ *    被 `judgeSignoffReadings` 的清单形状判据当场判红(fail-closed),
+ *    而不是照样返回 `30,500,2000` 让签字继续挂着。
+ *
+ * ⚠️ 档位数字本身直接取 import 进来的数组,**不做源码正则** ——
+ *    正则会因为 prettier 换行、`2_000` 这类写法静默读歪,而那种歪法看起来完全正常。
+ *    真源只有一个数组,import 它就是最短的路径。
+ */
+export function judgeScaleTiersReading(
+  moduleText: string | null,
+  specText: string | null,
+  tiers: readonly number[],
+): string {
+  if (moduleText === null) return `(档位表 ${SCALE_TIERS_MODULE} 不存在)`;
+  if (specText === null) return `(规模用例 ${SCALE_TIERS_SPEC} 不存在)`;
+  if (!specText.includes(SCALE_TIERS_CONSUMPTION)) return '(用例不再由档位表生成)';
+  if (tiers.length === 0) return '(档位表为空)';
+  return tiers.join(',');
+}
+
+function collectScaleTiers(): string {
+  return judgeScaleTiersReading(
+    readOrNull(SCALE_TIERS_MODULE),
+    readOrNull(SCALE_TIERS_SPEC),
+    LEDGER_COMMIT_SCALE_TIERS,
+  );
+}
+
+/**
+ * ⑨-c(A 类):**规模档登记表本身可不可信**。
+ *
+ * 四条各堵一条腐烂路径,红集互不重叠:
+ *   ⭐ **闭合** —— 真跑的档 ∪ 已判定不做的档 = 合同 §13.7 四档。挡「把跑不动的那档悄悄删掉」;
+ *   ⭐ **六要素** —— 豁免必须有理由 / 拍板人 / 合法日历日 / 残余。挡「登记退化成一句『不做』」;
+ *   ⭐ **逐字镜像** —— 豁免理由必须原样出现在签字登记表里。挡「代码与文档各说各话」;
+ *   ⭐ **用例由表生成** —— 挡「表还在、用例已被删」这条最自然的腐烂(读数不动 ⇒ 签字不红)。
+ *
+ * 🔴 它判的是**登记**,不是「三档真的跑通了」。后者是运行期事实,只有那条 e2e 能证,
+ *    在 CI 的 `slow` 分片里跑;这里一个字都不假装覆盖它 —— ⑨-b 的签字局限里写明了这一点。
+ */
+export function judgeScaleTierRegistry(input: {
+  readonly closureDefects: readonly string[];
+  readonly waiverFieldDefects: readonly string[];
+  readonly mirrorDefects: readonly string[];
+  readonly specText: string | null;
+  readonly tiersReading: string;
+  readonly runTiers: readonly number[];
+  readonly waivedTiers: readonly number[];
+  readonly contractTiers: readonly number[];
+}): Judgement {
+  const bad: string[] = [
+    ...input.closureDefects,
+    ...input.waiverFieldDefects,
+    ...input.mirrorDefects,
+  ];
+  if (input.specText === null) {
+    bad.push(`规模用例 ${SCALE_TIERS_SPEC} 不存在 ⇒ 三档一次都不会跑,而档位表还写着跑`);
+  } else if (!input.specText.includes(SCALE_TIERS_CONSUMPTION)) {
+    bad.push(
+      `规模用例里找不到 \`${SCALE_TIERS_CONSUMPTION}\` ⇒ 用例不再由档位表生成,` +
+        '两者可以各说各话:删掉一档的用例不会让任何读数变化',
+    );
+  }
+  if (!/^\d+(,\d+)*$/.test(input.tiersReading)) {
+    bad.push(`对拍读数 scale-tiers-passing = ${input.tiersReading} —— 形状非法,采集器没读到真源`);
+  }
+  return bad.length === 0
+    ? {
+        ok: true,
+        evidence: [
+          `真跑 ${input.runTiers.join(' / ')} 三档;已判定不做 ${input.waivedTiers.join(' / ')};` +
+            `合同 §13.7 四档 = ${input.contractTiers.join(' / ')} ⇒ 闭合(既没多也没少)`,
+          `万人档豁免六要素齐,理由逐字镜像在 ${SIGNOFF_REGISTRY} 里`,
+          `用例由档位表生成(${SCALE_TIERS_SPEC} 里的 \`${SCALE_TIERS_CONSUMPTION}\`)` +
+            ' ⇒ 删一档 = 同时删它的用例、改掉读数、让 ⑨-b 签字当场过期',
+          '复现命令:`pnpm test:scale`(CI 的 Contract + E2E 分片自动收集,无需手跑)',
+        ],
+      }
+    : { ok: false, evidence: bad };
+}
+
 function collectSignoffReadings(pkgVersion: string): Record<SignoffReadingKey, string> {
   const migrationDirs = readdirSync(rel('prisma/migrations'), { withFileTypes: true }).filter((e) =>
     e.isDirectory(),
@@ -1169,6 +1324,7 @@ function collectSignoffReadings(pkgVersion: string): Record<SignoffReadingKey, s
     'worker-lease-columns': String(leaseColumns),
     'worker-runbook-sha256-12': digest12(readOrNull(WORKER_RUNBOOK)),
     'seed-sha256-12': digest12(readOrNull('prisma/seed.ts')),
+    'scale-tiers-passing': collectScaleTiers(),
   };
 }
 
@@ -1778,7 +1934,104 @@ function signoffControls(): Control[] {
           'contract-version-mismatch-count': '0',
         }),
     },
+    // ── T 系列:⑨-c 规模档登记表(每条只否定**一维**,红集互不重叠)────────────
+    //
+    // 🔴 粗变异(比如整张表清空)会让好几条断言一起红,那样只能证明「表没了会红」,
+    //    证不了「这几条判据各自有判别力」。故每条只动一个格子,其余保持真值。
+    {
+      id: 'T1',
+      desc: '把 2000 档从真跑清单里删掉 ⇒ 必红(合同点名的档既没跑也没登记豁免)',
+      must: 'red',
+      run: () =>
+        judgeScaleTierRegistry({
+          ...realScaleTierInput(),
+          closureDefects: scaleTierClosureDefects([30, 500]),
+          runTiers: [30, 500],
+          tiersReading: '30,500',
+        }),
+    },
+    {
+      id: 'T2',
+      desc: '把万人档的豁免登记删掉 ⇒ 必红(缺口被洗成「零缺口」)',
+      must: 'red',
+      run: () =>
+        judgeScaleTierRegistry({
+          ...realScaleTierInput(),
+          closureDefects: scaleTierClosureDefects(LEDGER_COMMIT_SCALE_TIERS, []),
+          waiverFieldDefects: scaleTierWaiverFieldDefects([]),
+          waivedTiers: [],
+        }),
+    },
+    {
+      id: 'T3',
+      desc: '豁免登记的拍板人为空、日期是不存在的日历日 ⇒ 必红',
+      must: 'red',
+      run: () =>
+        judgeScaleTierRegistry({
+          ...realScaleTierInput(),
+          waiverFieldDefects: scaleTierWaiverFieldDefects([
+            { ...LEDGER_COMMIT_SCALE_TIER_WAIVERS[0], decidedBy: '', decidedOn: '2026-02-30' },
+          ]),
+        }),
+    },
+    {
+      id: 'T4',
+      desc: '豁免理由没有逐字出现在签字登记表里 ⇒ 必红(代码与文档分叉)',
+      must: 'red',
+      run: () =>
+        judgeScaleTierRegistry({
+          ...realScaleTierInput(),
+          mirrorDefects: scaleTierWaiverMirrorDefects('一份不含那段理由的登记表'),
+        }),
+    },
+    {
+      id: 'T5',
+      desc: `用例不再由档位表生成(找不到 ${SCALE_TIERS_CONSUMPTION})⇒ 必红`,
+      must: 'red',
+      run: () =>
+        judgeScaleTierRegistry({
+          ...realScaleTierInput(),
+          specText: "describe.each([30])('手写死的档位', () => {});",
+        }),
+    },
+    {
+      id: 'T6',
+      desc: '对拍读数退化成一句人话 ⇒ 必红(采集器没读到真源 ≠ 清单真的空了)',
+      must: 'red',
+      run: () => judgeScaleTierRegistry({ ...realScaleTierInput(), tiersReading: '(用例不再由档位表生成)' }),
+    },
+    {
+      id: 'T7',
+      desc: '反向:仓内当前真实输入 ⇒ 必绿(证明 T 系列不是恒红)',
+      must: 'green',
+      run: () => judgeScaleTierRegistry(realScaleTierInput()),
+    },
+    {
+      id: 'T8',
+      desc: '清单型读数退化成人话 ⇒ 必红(它不是 0,「必须非零」那条对它结构性失明)',
+      must: 'red',
+      run: () =>
+        judgeSignoffReadings({
+          ...Object.fromEntries(SIGNOFF_READING_KEYS.map((k) => [k, '1'])),
+          ...Object.fromEntries(SIGNOFF_DIGEST_KEYS.map((k) => [k, 'a1b2c3d4e5f6'])),
+          'scale-tiers-passing': '(档位表为空)',
+        }),
+    },
   ];
+}
+
+/** T 系列的**真值底座**:除被变异的那一格外,其余全取仓内当前事实。 */
+function realScaleTierInput(): Parameters<typeof judgeScaleTierRegistry>[0] {
+  return {
+    closureDefects: scaleTierClosureDefects(),
+    waiverFieldDefects: scaleTierWaiverFieldDefects(),
+    mirrorDefects: scaleTierWaiverMirrorDefects(readOrNull(SIGNOFF_REGISTRY)),
+    specText: readOrNull(SCALE_TIERS_SPEC),
+    tiersReading: collectScaleTiers(),
+    runTiers: LEDGER_COMMIT_SCALE_TIERS,
+    waivedTiers: LEDGER_COMMIT_SCALE_TIER_WAIVERS.map((w) => w.tier),
+    contractTiers: LEDGER_COMMIT_CONTRACT_SCALE_TIERS,
+  };
 }
 
 /**
@@ -2033,11 +2286,27 @@ function buildItems(signoff: SignoffState): ItemResult[] {
       text: CONTRACT_ITEMS[8],
       subs: [
         sub('9a', 'A', 'AC / ADV 验收套件零 todo 零失败(实跑 jest,不看文本)', judgeAcceptanceSuite(acceptance)),
+        sub(
+          '9c',
+          'A',
+          '规模档登记表闭合(真跑 ∪ 已判定不做 = 合同四档;豁免六要素齐;理由逐字入签字表;用例由档位表生成)',
+          judgeScaleTierRegistry({
+            closureDefects: scaleTierClosureDefects(),
+            waiverFieldDefects: scaleTierWaiverFieldDefects(),
+            mirrorDefects: scaleTierWaiverMirrorDefects(readOrNull(SIGNOFF_REGISTRY)),
+            specText: readOrNull(SCALE_TIERS_SPEC),
+            tiersReading: collectScaleTiers(),
+            runTiers: LEDGER_COMMIT_SCALE_TIERS,
+            waivedTiers: LEDGER_COMMIT_SCALE_TIER_WAIVERS.map((w) => w.tier),
+            contractTiers: LEDGER_COMMIT_CONTRACT_SCALE_TIERS,
+          }),
+        ),
         eviSub('9b', 'B', '「规模测试通过」', [
           '合同 §13.7 的口径:固定 fixture 构造 30、500、2000、10000 四档规模。',
-          '仓内已有的规模探针:scripts/probe-member-lock-scale.ts(第 0 批 10000 member lock 短事务原型;手动跑,刻意不进 CI —— 性能读数与机器规格强相关,挂 CI 会造假红)。',
-          '仓内**没有**「规模测试通过」的登记位或留痕读数 ⇒ 机器判不了这条。',
-          '需要的证据:四档规模的复现命令与读数留痕(合同 §14 要求「规模门达到本批要求并保存复现命令」)。',
+          `真跑三档:${LEDGER_COMMIT_SCALE_TIERS.join(' / ')} 人,走的是合同点名的那条「统一生效」链(准备分块 → commitBatch 短事务)。判据 ${SCALE_TIERS_SPEC},复现命令 \`pnpm test:scale\`,在 CI 的 Contract + E2E 分片里跑。`,
+          `万人档:**已判定不做**(登记见 ${SCALE_TIERS_MODULE} 的 LEDGER_COMMIT_SCALE_TIER_WAIVERS,理由逐字镜像在 ${SIGNOFF_REGISTRY});闭合性由 A 类 9c 机器守着。`,
+          '🔴 判据里**零耗时阈值 / 零超时断言 / 零 Date.now() 差值** —— 判的是「能不能跑完 + 数字对不对 + 规模变了结果变没变」,与机器快慢无关。scripts/probe-member-lock-scale.ts 反对的是拿耗时当判据,那条口径未被放宽一个字。',
+          '⚠️ 机器判得了「登记闭合」(9c),判不了「三档真的跑通了」—— 后者是运行期事实,证据在 CI 那次 e2e 的绿灯上。故本条仍需人签,且签的是「三档通过 + 万人档已判定不做」,**不是「四档全通过」**。',
         ]),
       ],
     },
@@ -2186,6 +2455,7 @@ function main(): void {
   const argv = process.argv.slice(2);
   const wantJson = argv.includes('--json');
   const selftestOnly = argv.includes('--selftest');
+  const signoffOnly = argv.includes('--signoff');
   const log = (s = ''): void => {
     if (!wantJson) console.log(s);
   };
@@ -2225,6 +2495,56 @@ function main(): void {
     log('✓ 仪器自证通过(--selftest 只跑到这里,未采数)。');
     if (wantJson) console.log(JSON.stringify({ instrumentOk: true, controls }, null, 2));
     return;
+  }
+
+  // ── `--signoff`:只判「签字登记表本身可不可信」,接 CI 的就是这一段 ──────────
+  //
+  // 🔴 与全量的分界线只有一条:**这里不判十条的结论**。
+  //    故它不跑 collectAcceptance()(要 jest + 生成的 Prisma client)、
+  //    不跑 collectReconcile()(8 条生成物新鲜度判据)、不跑 resolveBaselineCommit()(要 git 历史)。
+  //    ⇒ 纯文件解析 + AST,秒级,可以留在无 Postgres、无 prisma:generate 的 diff-guards job 里。
+  // ⚠️ 它是全量的**子集**:`assertSubIdsClosed()` 仍只在全量里跑(它需要 buildItems 的真实产出)。
+  if (signoffOnly) {
+    const pkgVersion = (JSON.parse(read('package.json')) as { version: string }).version;
+    const readings = collectSignoffReadings(pkgVersion);
+    const sane = judgeSignoffReadings(readings);
+    const state = judgeSignoffRegistry(parseSignoffRegistry(readOrNull(SIGNOFF_REGISTRY)), readings);
+    const tiers = judgeScaleTierRegistry(realScaleTierInput());
+
+    log('');
+    log('══════════════════════════════════════════════════════════════════════');
+    log(`签字登记表可信性(--signoff;${SIGNOFF_REGISTRY})`);
+    log('══════════════════════════════════════════════════════════════════════');
+    log('  机器现读(签字里的对拍值必须与这些逐字相等):');
+    for (const key of SIGNOFF_READING_KEYS) log(`    ${key.padEnd(32)} = ${readings[key]}`);
+    log('');
+    log(`  ${sane.ok ? '✓' : '✗'} 机器现读非退化(先验仪器,再谈「一致」)`);
+    for (const e of sane.evidence) log(`      · ${e}`);
+    log('');
+    log(`  ${state.integrity.ok ? '✓' : '✗'} 签字登记表完整性 + 逐条对拍`);
+    for (const e of state.integrity.evidence) log(`      · ${e}`);
+    log('');
+    log(`  ${tiers.ok ? '✓' : '✗'} ⑨-c 规模档登记表闭合`);
+    for (const e of tiers.evidence) log(`      · ${e}`);
+    log('');
+
+    const bad = !sane.ok || !state.integrity.ok || !tiers.ok;
+    log(
+      bad
+        ? '✗ 签字登记表不可信 —— 在它被修好之前,任何「已签字确认」都不作数。'
+        : '✓ 签字登记表可信(这**不等于**可以开闸 —— 十条的结论由全量 `pnpm cutover:check` 报)。',
+    );
+    log('══════════════════════════════════════════════════════════════════════');
+    if (wantJson) {
+      console.log(
+        JSON.stringify(
+          { instrumentOk: true, mode: 'signoff', readings, sane, integrity: state.integrity, tiers },
+          null,
+          2,
+        ),
+      );
+    }
+    process.exit(bad ? 1 : 0);
   }
 
   // ── 采数并报十行 ──
