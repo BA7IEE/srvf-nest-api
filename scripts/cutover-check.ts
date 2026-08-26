@@ -212,8 +212,76 @@ export const SIGNOFF_READING_KEYS = [
   'contract-registry-rows',
   'contract-version-mismatch-count',
   'review-report-sha256-12',
+  // ── 2026-08-26 第二批签字新增(6b / 7c / 8b / 4b 各自的锚)────────────────
+  // 加键的判别式只有一条:**这条签字若将来不再成立,是哪个仓内读数会先变?**
+  // 答不出那个读数的,老老实实写「无 —— 理由」,不要凑一个看着像对拍的东西。
+  'gate-read-files',
+  'gate-settlement-read-faces',
+  'instance-env-flag-count',
+  'worker-lease-columns',
+  'worker-runbook-sha256-12',
+  'seed-sha256-12',
 ] as const;
 export type SignoffReadingKey = (typeof SIGNOFF_READING_KEYS)[number];
+
+/**
+ * 读数里**必须非零**的那些键(计数型)。
+ *
+ * 🔴 为什么单列一张表:本仓纪律是「计数不是装饰,采集器采到 0 条时判据必须红」。
+ * 若采集器坏了恒返回 0,而签字里也写着 0,`signoffEntryDefects` 逐字相等 ⇒ **全绿**
+ * —— 那就是把对拍锚在一个坏掉的仪器上,比没有对拍更糟。
+ *
+ * ⚠️ `contract-version-mismatch-count` **刻意不在这里**:它的正确值本来就是 0
+ * (五端零不一致),把它算进「必须非零」会把正确状态判成红。
+ */
+export const SIGNOFF_NONZERO_COUNT_KEYS: readonly SignoffReadingKey[] = [
+  'migration-total',
+  'contract-registry-rows',
+  'gate-read-files',
+  'gate-settlement-read-faces',
+  'instance-env-flag-count',
+  'worker-lease-columns',
+];
+
+/** 读数里必须是 12 位十六进制摘要的那些键(采不到时会退化成「(文件不存在)」)。 */
+export const SIGNOFF_DIGEST_KEYS: readonly SignoffReadingKey[] = [
+  'review-report-sha256-12',
+  'worker-runbook-sha256-12',
+  'seed-sha256-12',
+];
+
+/**
+ * 仪器自证:机器现读本身不能是退化值。
+ *
+ * 这条**先于**逐条验签字跑 —— 读数坏掉时,「签字与机器读数一致」这句话没有意义。
+ */
+export function judgeSignoffReadings(
+  readings: Readonly<Record<string, string>>,
+  nonZero: readonly string[] = SIGNOFF_NONZERO_COUNT_KEYS,
+  digests: readonly string[] = SIGNOFF_DIGEST_KEYS,
+  allKeys: readonly string[] = SIGNOFF_READING_KEYS,
+): Judgement {
+  const bad: string[] = [];
+  for (const k of allKeys) {
+    const v = readings[k];
+    if (v === undefined || v.trim().length === 0) bad.push(`读数「${k}」缺失或为空 ⇒ 采集器没采到`);
+  }
+  for (const k of nonZero) {
+    const v = readings[k];
+    if (v === undefined) continue;
+    if (!/^\d+$/.test(v) || Number(v) === 0) {
+      bad.push(`读数「${k}」= ${v} —— 计数型读数为 0 / 非数字 ⇒ 采集器失真,拿它对拍等于把签字锚在坏仪器上`);
+    }
+  }
+  for (const k of digests) {
+    const v = readings[k];
+    if (v === undefined) continue;
+    if (!/^[0-9a-f]{12}$/.test(v)) bad.push(`读数「${k}」= ${v} —— 不是 12 位摘要 ⇒ 被锚的文件读不到`);
+  }
+  return bad.length === 0
+    ? { ok: true, evidence: [`${allKeys.length} 个可对拍读数全部非退化(计数非 0、摘要成形)`] }
+    : { ok: false, evidence: bad };
+}
 
 /**
  * 闸里全部子判据编号的**闭集**。签了闭集外的编号 ⇒ 红(§防腐 ④)。
@@ -1049,6 +1117,15 @@ function collectGrants(): string[] {
  * | `contract-registry-rows` | 契约版本登记表解析出的行数 | 有人删了一行 ⇒ 缺口被洗掉 |
  * | `contract-version-mismatch-count` | 登记表里与后端版本**不一致**的端数 | 0 → N ⇒ 五端不再对齐,而签字还在 |
  * | `review-report-sha256-12` | ①-b 那份复核报告的内容摘要 | 报告被改 / 被删 ⇒ 那次签字依据的东西已不在 |
+ * | `gate-read-files` | C3 文件粒度:接了读面闸的生产文件数 | 多 / 少一个读面 ⇒ ⑥-b 签的那个「闭包」不再是同一个集合 |
+ * | `gate-settlement-read-faces` | C8 函数粒度:被判为「对外产出结算量」的读面数 | 冒出第 N+1 处结算量读面 ⇒ ⑥-b 得重签 |
+ * | `instance-env-flag-count` | 合同 §16.1 ⑧ 点名的 per-instance env 开关数 | 3 → 4 ⇒ 实例间漂移面变大,⑧-b 的「已知晓」覆盖不到新那个 |
+ * | `worker-lease-columns` | `ActivityBatchJob` 上**且被 worker 真用到**的 lease 列数 | 少一列 ⇒ ⑦-c 签字接受的那个「lease 恢复代偿」机制变了 |
+ * | `worker-runbook-sha256-12` | ⑦-d 那份 runbook 的内容摘要 | runbook 被改 ⇒ ⑦-c 签字写进去的那份「明确不设 + 四个盲区」已不是原样 |
+ * | `seed-sha256-12` | `prisma/seed.ts` 的内容摘要 | 字典 seed 变了 ⇒ ④-b 签的「接受当前状态」里的那个「当前」已经不是了 |
+ *
+ * ⚠️ 后六个键**只锚身份,不锚正确性** —— 它们回答「你签字时看的那个东西还是不是那个」,
+ * 回答不了「那个东西对不对」。别把它们读成「已核对」。
  */
 function collectSignoffReadings(pkgVersion: string): Record<SignoffReadingKey, string> {
   const migrationDirs = readdirSync(rel('prisma/migrations'), { withFileTypes: true }).filter((e) =>
@@ -1063,13 +1140,35 @@ function collectSignoffReadings(pkgVersion: string): Record<SignoffReadingKey, s
       r.declared !== pkgVersion,
   );
   const report = readOrNull(`${CONTRACT_DIR}/${REVIEW_REPORT}`);
+  const digest12 = (body: string | null): string =>
+    body === null ? '(文件不存在)' : createHash('sha256').update(body, 'utf8').digest('hex').slice(0, 12);
+
+  // ⑥-b 的两个锚:C3 / C8 的**现算**闭包大小。runCriteria() 在 buildItems 里还会再跑一次 ——
+  // 刻意不共享:采集与判定分离是本文件的基本姿态,读数这一侧不该依赖那一侧的执行顺序。
+  const criteriaCounts = runCriteria().counts;
+
+  // ⑦-c 的锚之一:schema 上声明**且** worker 真的在用的 lease 列数。
+  // 与 judgeWorkerLease 同一份列名清单 —— 那边判「齐不齐」,这边报「几列」。
+  const schemaText = read(SCHEMA);
+  const workerText = read(WORKER_SRC);
+  const jobBlock = /model\s+ActivityBatchJob\s*\{([\s\S]*?)\n\}/.exec(schemaText);
+  const leaseColumns = ['leaseOwner', 'leaseGeneration', 'leaseExpiresAt'].filter(
+    (c) =>
+      jobBlock !== null && new RegExp(`^\\s*${c}\\s`, 'm').test(jobBlock[1]) && workerText.includes(c),
+  ).length;
+
   return {
     'migration-total': String(migrationDirs),
     'backend-contract-version': pkgVersion,
     'contract-registry-rows': String(rows.length),
     'contract-version-mismatch-count': String(mismatched.length),
-    'review-report-sha256-12':
-      report === null ? '(文件不存在)' : createHash('sha256').update(report, 'utf8').digest('hex').slice(0, 12),
+    'review-report-sha256-12': digest12(report),
+    'gate-read-files': String(criteriaCounts.readFiles),
+    'gate-settlement-read-faces': String(criteriaCounts.settlementReadFaces),
+    'instance-env-flag-count': String(INSTANCE_FLAGS.length),
+    'worker-lease-columns': String(leaseColumns),
+    'worker-runbook-sha256-12': digest12(readOrNull(WORKER_RUNBOOK)),
+    'seed-sha256-12': digest12(readOrNull('prisma/seed.ts')),
   };
 }
 
@@ -1628,6 +1727,57 @@ function signoffControls(): Control[] {
         return { ok: problems.length === 0, evidence: problems.length > 0 ? problems : ['(零 problem)'] };
       },
     },
+    // ── R 系列:被对拍的**机器现读**本身不能是退化值 ────────────────────────
+    //
+    // 🔴 这是「对拍」这套机制最后一个能静默失效的地方:采集器坏了恒返回 0,而签字里
+    //    也写着 0 ⇒ 逐字相等 ⇒ 全绿。签字看起来在守,实际锚在一个坏仪器上。
+    //    S 系列全都假定读数是真的;R 系列专门验那个假定。
+    {
+      id: 'R1',
+      desc: '计数型读数退化成 0 ⇒ 必红(空集恒等于空集会静默变绿)',
+      must: 'red',
+      run: () =>
+        judgeSignoffReadings({
+          ...Object.fromEntries(SIGNOFF_READING_KEYS.map((k) => [k, '1'])),
+          ...Object.fromEntries(SIGNOFF_DIGEST_KEYS.map((k) => [k, 'a1b2c3d4e5f6'])),
+          'gate-settlement-read-faces': '0',
+        }),
+    },
+    {
+      id: 'R2',
+      desc: '摘要型读数退化成「(文件不存在)」⇒ 必红(被锚的文件没了,签字却还在)',
+      must: 'red',
+      run: () =>
+        judgeSignoffReadings({
+          ...Object.fromEntries(SIGNOFF_READING_KEYS.map((k) => [k, '1'])),
+          ...Object.fromEntries(SIGNOFF_DIGEST_KEYS.map((k) => [k, 'a1b2c3d4e5f6'])),
+          'worker-runbook-sha256-12': '(文件不存在)',
+        }),
+    },
+    {
+      id: 'R3',
+      desc: '读数键整个缺失 ⇒ 必红(判据失去输入 ≠ 通过)',
+      must: 'red',
+      run: () =>
+        judgeSignoffReadings({
+          ...Object.fromEntries(SIGNOFF_READING_KEYS.filter((k) => k !== 'seed-sha256-12').map((k) => [k, '1'])),
+          ...Object.fromEntries(
+            SIGNOFF_DIGEST_KEYS.filter((k) => k !== 'seed-sha256-12').map((k) => [k, 'a1b2c3d4e5f6']),
+          ),
+        }),
+    },
+    {
+      id: 'R4',
+      desc: '反向:一份形状正常的读数 ⇒ 必绿(证明 R 系列不是恒红)',
+      must: 'green',
+      run: () =>
+        judgeSignoffReadings({
+          ...Object.fromEntries(SIGNOFF_READING_KEYS.map((k) => [k, '1'])),
+          ...Object.fromEntries(SIGNOFF_DIGEST_KEYS.map((k) => [k, 'a1b2c3d4e5f6'])),
+          // 这一个的正确值本来就是 0 —— 它必须**不**被「必须非零」误伤。
+          'contract-version-mismatch-count': '0',
+        }),
+    },
   ];
 }
 
@@ -1799,6 +1949,7 @@ function buildItems(signoff: SignoffState): ItemResult[] {
           '生成物链条覆盖的是**权限**(ROUTE_AUTHZ / RBAC map / 授权语义图)与**合同快照**(openapi.json / 前端 client)。',
           '字典与 Audit events **没有生成物、也没有登记表**:字典 seed 在 prisma/seed.ts,audit 事件无枚举登记 ⇒ 无对账判据。',
           '需要的证据:v1.1 新增的字典项与 Audit event 清单,逐条与 seed / 代码核对(或先把它们做成登记表,这条才可能升为 A 类)。',
+          '⚠️ 本刀**未做**那两份登记表,已登记为 docs/ai-harness/NEXT_TASKS.md 的 P2-23;签字只锚住 seed 的**身份**(seed-sha256-12),锚不住 audit events —— 后者连一个可摘要的落点都没有。',
         ]),
       ],
     },
@@ -1895,9 +2046,14 @@ function buildItems(signoff: SignoffState): ItemResult[] {
       text: CONTRACT_ITEMS[9],
       subs: [
         eviSub('10a', 'B', '仓内现成的「只读」机制', [
-          '合同 §16.4 给了两条路:(i) gate 切为拒绝新写;(ii) 部署只读维护镜像。',
-          '(i) 已有执行位:ACTIVITY_V11_WORKFLOW_ENABLED=false 拒绝 v1.1 新写(#1084);但它只覆盖结算真相链,不是全站只读。',
-          '(ii) 仓内**没有**全局只读 / 维护模式配置项(无 READ_ONLY / MAINTENANCE_MODE 之类)。',
+          '合同 §16.4 给了两条路:(i) gate 切为拒绝新写;(ii) 部署只读维护镜像。维护者 2026-08-26 拍板走 (i),用现成的闸、不建镜像。',
+          '(i) 已落地为闸的**第三态** ACTIVITY_WORKFLOW_READONLY=true:两个写方向一起拒(具名码 20158 / 503),读面取数逐字不变(§16.5 要求即使只读也可查询导出)。',
+          '   ⭐ 它解的是二值闸解不了的那一格:上线后把 ACTIVITY_V11_WORKFLOW_ENABLED 关掉会**重新放开旧考勤写**,而 §16.4 第 5 条禁止「切回旧表写入」。',
+          '   判据:src/common/activity-workflow/activity-workflow-readonly.spec.ts —— 四态穷举无混合态 + 只读位纯减法 + 关态行为逐字不变,每维各自成 it。',
+          '🔴 **边界**:只读态继承闸本身的范围 = **结算真相链**,报名 / 活动编辑 / 通知 / 用户管理照常可写 ⇒ **不是全站只读**。',
+          '   为什么只冻一半(维护者 2026-08-26 拍板,原话):「出问题最可能出在结算(并发 / 关账 / 更正 / 账本最复杂);而报名、查数据这些**不产生新账**,冻它们没有止血作用,只是让人用不了。随时可以再加『全站只读』,反过来很难。」',
+          '   怎么用:上线后发现结算在**持续产生错账**时,按下它立刻止血,而系统其余部分照常。',
+          '(ii) 仓内仍**没有**只读维护镜像或部署侧产物,也没有全站级 READ_ONLY / MAINTENANCE_MODE。',
         ]),
         eviSub('10b', 'C', '「准备可部署的只读维护版本」', [
           '这条要的是**部署侧产物**(可部署的镜像 / 部署配置),不是仓库里的一行代码 ⇒ 仓库无从判断。',
@@ -2076,6 +2232,8 @@ function main(): void {
   log('[采数] 跑生成物对账(8 条)与验收套件…');
   const pkgVersion = (JSON.parse(read('package.json')) as { version: string }).version;
   const signoffReadings = collectSignoffReadings(pkgVersion);
+  // 🔴 先验仪器:读数退化时,「签字与机器读数一致」这句话没有意义(0 == 0 是空绿)。
+  const readingsSane = judgeSignoffReadings(signoffReadings);
   const signoff = judgeSignoffRegistry(parseSignoffRegistry(readOrNull(SIGNOFF_REGISTRY)), signoffReadings);
   const items = buildItems(signoff);
   const idProblems = assertSubIdsClosed(items);
@@ -2086,6 +2244,9 @@ function main(): void {
   log('══════════════════════════════════════════════════════════════════════');
   log('  机器现读(签字里的对拍值必须与这些逐字相等):');
   for (const key of SIGNOFF_READING_KEYS) log(`    ${key.padEnd(32)} = ${signoffReadings[key]}`);
+  log('');
+  log(`  ${readingsSane.ok ? '✓' : '✗'} 机器现读非退化(先验仪器,再谈「一致」)`);
+  for (const e of readingsSane.evidence) log(`      · ${e}`);
   log('');
   log(`  ${signoff.integrity.ok && idProblems.length === 0 ? '✓' : '✗'} 签字登记表完整性`);
   for (const e of signoff.integrity.evidence) log(`      · ${e}`);
@@ -2112,7 +2273,7 @@ function main(): void {
   const signedItems = items.filter((i) => i.verdict === 'signed');
   // 退出码 = A 类判据 ∪ 签字登记表自身的缺陷。后者也是**机器完全可判**的:
   // 「签了不存在的编号」「签字与机器读数矛盾」都不需要人来下结论 ⇒ 拿它卡退出码不制造永久红。
-  const signoffBad = !signoff.integrity.ok || idProblems.length > 0;
+  const signoffBad = !signoff.integrity.ok || idProblems.length > 0 || !readingsSane.ok;
 
   log('');
   log('══════════════════════════════════════════════════════════════════════');
