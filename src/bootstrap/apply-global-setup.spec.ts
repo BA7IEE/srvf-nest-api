@@ -42,8 +42,9 @@ function fakeConfig(trustedProxyCidrs: string[]): AppConfig {
     insurance: { enforcementEnabled: false },
     activityResponsibilityWorkflow: { enabled: false },
     activityAudienceTags: { httpEnabled: false },
-    // 活动 v1.1 单一 cutover gate:AppConfig 新增必填字段;本 unit test 不关心闸位,仅满足接口
-    activityV11Workflow: { enabled: false },
+    // 活动 v1.1 单一 cutover gate:AppConfig 新增必填字段;本 unit test 不关心闸位,仅满足接口。
+    // readonlyMaintenance 是只读维护态(合同 §16.4)—— 同样只为满足接口,false = 不在维护态。
+    activityV11Workflow: { enabled: false, readonlyMaintenance: false },
     storage: { encryptionKey: '', localRoot: './tmp/storage', consistencyMode: 'JIT' },
     sms: { encryptionKey: '' },
     wechat: { encryptionKey: '' },
