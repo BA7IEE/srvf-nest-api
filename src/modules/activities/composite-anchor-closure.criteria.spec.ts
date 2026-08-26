@@ -1,18 +1,31 @@
 import {
   CHAIN_ANCHORS,
   MIN_ANCHOR_HOLDERS,
+  MIN_IMMUTABILITY_TRIGGERS,
   MIN_INSPECTED_RELATIONS,
   MIN_PARSED_MODELS,
+  MIN_SCANNED_MIGRATIONS,
   NAMED_ANCHOR_TABLES,
+  NAMED_FROZEN_ANCHOR_TABLES,
+  NAMED_TRIGGER_PROTECTED_TABLES,
+  REQUIRED_ON_UPDATE,
   analyzeAnchorClosure,
+  bogusExemptionControl,
   closedRelationIsPresent,
+  describeRenumberingLeak,
   describeViolation,
+  droppedUpdateLockControl,
+  futureFrozenTableControl,
   futureTableControl,
+  immutabilityTriggerCount,
+  lockedRelationIsPresent,
   misflaggedActorRelations,
   revertedCompositeKeyControl,
   selfCheck,
   staleExemptions,
   thinExemptionReasons,
+  triggerlessFrozenControl,
+  unrecognisedTriggerTables,
 } from '../../../scripts/check-composite-anchor-closure';
 
 /**
@@ -149,5 +162,78 @@ describe('business composite anchor closure', () => {
 
   it('uses a domain vocabulary of anchors rather than a hardcoded model list', () => {
     expect([...CHAIN_ANCHORS]).toEqual(['activityId', 'sessionId', 'memberId']);
+  });
+
+  // ===========================================================================
+  // 规则 ②:冻结记录的改号锁(P2-11)
+  //
+  // 「冻结记录 + 复合外键」的集合里,不允许出现**既无 onUpdate: Restrict
+  // 又无 BEFORE UPDATE 触发器**的成员。
+  //
+  // ⚠️ 下面每一维**各自成 `it`** —— jest 在一个 `it` 内首个失败即停,塞在一起时
+  //    后面的断言从未被执行,而这在基线全绿时完全看不出来(TOOL_TRAPS §6.1)。
+  // ===========================================================================
+
+  it('self-proves the frozen-record jurisdiction and the trigger index', () => {
+    // 管辖面塌成空集 ⇒ 零 leak ⇒ 全绿,是本规则最容易出现的假绿形状。
+    expect(report.frozenHolders.map((model) => model.name)).toEqual(
+      expect.arrayContaining(NAMED_FROZEN_ANCHOR_TABLES),
+    );
+    expect(report.scannedMigrations).toBeGreaterThanOrEqual(MIN_SCANNED_MIGRATIONS);
+    expect(immutabilityTriggerCount(report)).toBeGreaterThanOrEqual(MIN_IMMUTABILITY_TRIGGERS);
+    // 触发器豁免路径确实认得出那两张表,否则那条路径是死代码。
+    expect(unrecognisedTriggerTables(report)).toEqual([]);
+    // 变异对拍的前置:被测的那处当下确实上着锁,否则下面是空变异。
+    expect(lockedRelationIsPresent()).toBe(true);
+  });
+
+  it('locks every composite foreign key on frozen anchor-holding records', () => {
+    // 红时直接报人话:哪张表、哪条关系、外键列是哪几列、当前 onUpdate 是什么。
+    expect(report.renumberingLeaks.map(describeRenumberingLeak)).toEqual([]);
+  });
+
+  it('goes red when a single onUpdate lock is dropped, naming the table and the relation', () => {
+    const control = droppedUpdateLockControl();
+    expect(control.changed).toBe(true);
+    expect(control.leaks).not.toEqual([]);
+
+    // 按「模型 + 关系」定位而不是只按关系名 —— 'position' 这个关系名在多张表上都有,
+    // 只按名字找会在别的表也变红时悄悄指到另一张表去。
+    const named = control.leaks.find(
+      (leak) => leak.model === 'OfflinePackageParticipant' && leak.relation === 'position',
+    );
+    expect(named).toBeDefined();
+    expect(named?.target).toBe('ActivitySessionPosition');
+    expect(named?.declaredOnUpdate).toBeUndefined();
+    expect(describeRenumberingLeak(named!)).toContain(REQUIRED_ON_UPDATE);
+  });
+
+  it('accepts a BEFORE UPDATE trigger as the other half of the lock', () => {
+    // 把触发器索引清空 ⇒ 靠触发器过关的那两张表必须立刻变红。
+    // 没有这一条,一个「什么都算受保护」的触发器扫描器也会让主断言全绿。
+    const withoutTriggers = triggerlessFrozenControl().map((leak) => leak.model);
+    expect([...new Set(withoutTriggers)]).toEqual(
+      expect.arrayContaining(NAMED_TRIGGER_PROTECTED_TABLES),
+    );
+  });
+
+  it('catches a brand-new frozen roster table that nobody added to any list', () => {
+    // 证明规则 ② 的扫描面也是**动态**的:这张表不在任何名单里。
+    const caught = futureFrozenTableControl();
+    const position = caught.find((leak) => leak.relation === 'position');
+    const session = caught.find((leak) => leak.relation === 'session');
+
+    expect(position).toBeDefined();
+    expect(session).toBeDefined();
+    // 单列外键(activity)不在本规则管辖内 —— 它指的是链根的代理主键。
+    expect(caught.map((leak) => leak.relation)).not.toContain('activity');
+  });
+
+  it('reports an exemption that points at a table which does not exist', () => {
+    // 防腐自证(#1184 的事故形状):豁免名单指着已删/不存在的东西时,
+    // `includes()` 永远不匹配 —— 不生效、不报错、不改判定、没有任何机器发现它烂了。
+    // 上面那条 `staleExemptions(report)).toEqual([])` 在 staleExemptions 被改成
+    // 恒返回 [] 时也照样全绿;这一条才证明它真的会红。
+    expect(bogusExemptionControl(report)).not.toEqual([]);
   });
 });

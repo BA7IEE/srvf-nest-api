@@ -1548,7 +1548,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 ### P2-11 用 `onUpdate: CASCADE` 的外键去守「副本与源一致」= 装了个会自己抹掉证据的报警器 — 2026-08-21 登记
 
-**状态**:待拍板(Q1=28 / Q2=15 / 真残余=4 三问已答;Q3 四种守法选哪一种、那 4 条真残余动不动,等维护者拍板)
+**状态**:进行中(三问取证已合 #1164;Q3 已拍板走 **A 档「只锁编号」**,4 条真残余的实施刀 + 机器闸已提 PR **在飞** —— 按本闸 B 的规矩在飞 PR 号只能写正文;剩 D 档 append-only trigger,维护者明确列为独立一刀)
 
 > 出处:A-2+B-03([#1125](https://github.com/BA7IEE/srvf-nest-api/pull/1125))实施方留的第二笔账。
 > 该刀把 `ActivityRuleSnapshot.snapshotHash` 判为「不补」,理由是:本批复合 FK 的 `onUpdate`
@@ -1729,6 +1729,27 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
   按本刀的机制判据,闸的形状应是:**「冻结记录 + 复合 FK」的集合里,不允许出现
   既无 `onUpdate: Restrict` 又无 append-only trigger 的成员**(当前该集合有 4 个成员)。
   ⚠️ 但**闸的形状要等 Q3 拍板之后才定**,本刀不建闸。
+
+#### 进度(2026-08-25 拍板 → 实施刀在飞)
+
+维护者 2026-08-25 拍板:**走 A 档,先只锁编号**;D 档 append-only trigger 是**独立一刀**,本次不做。
+
+实施刀交付(PR 在飞,合入后由收口方把 PR 号补进正文,状态仍为 `进行中` —— D 档未做):
+
+1. **4 条真残余全部收掉**:`OfflinePackageParticipant` 的 `offlinePackage` / `session` /
+   `participationIdentity` / `position` 四条复合外键补 `onUpdate: Restrict`,
+   配第 99 条 migration `20260826090000_offline_package_participant_lock_anchor_renumbering`
+   (DROP + ADD CONSTRAINT,**四条约束名逐字不变**;不加列、不改可空性;回滚 SQL 写在头注)。
+2. **接闸**(照上面那句机制话建,**没有**建在「数 CASCADE 有几条」上):
+   `scripts/check-composite-anchor-closure.ts` 增规则 ② —— 冻结记录(持 ≥2 业务锚点 ·
+   有 `createdAt` 无 `updatedAt`)上的**复合**外键,必须要么写 `onUpdate: Restrict`、
+   要么其表挂着 **BEFORE UPDATE 触发器**;两样都没有即红并点名到表 + 关系 + 外键列。
+   扫描面动态取自 `schema.prisma` 与 `prisma/migrations/**`(触发器索引现算、且处理 `DROP TRIGGER`),
+   **不写死表名单**;起刀当日读数:4 张冻结多锚点表 / 24 条复合外键 / 10 条 BEFORE UPDATE 触发器。
+   本规则**没有白名单** —— 要放宽只能改那个文件本身,而它在红区 selfGuard 内。
+3. **豁免名单防腐自证**:同文件既有的 `ANCHOR_CLOSURE_EXEMPTIONS` 补一条对拍 ——
+   往名单里塞一条**指着不存在的表**的豁免,`staleExemptions` 必须当场报出来。
+   补的是 #1184 那个形状(名单指着已删掉的东西,不生效、不报错、没人发现)。
 
 ### P2-12 golden journey 有两条链**从未被自动化穿过**(直写库绕过去了)— 2026-08-21 由新建的 journey 直写纪律闸逼出
 
