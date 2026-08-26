@@ -207,6 +207,7 @@ CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行;是流程
 | [`FROZEN_DRAFTS.md`](FROZEN_DRAFTS.md) | **冻结稿落地台账**:已拍板冻结的施工依据还欠多少 —— §1 逐项欠账 / §2 机器读数(生成块,手改即红)/ §3 归档评审稿全量四值分类。判据 `scripts/check-frozen-drafts-ledger.ts` 六条:「不许有未分类项」+「读数不过期」+ **「§1 落地度不许对 `NEXT_TASKS` 的状态行沉默地矛盾」**(治沉默不治不一致,逃生门是固定标记 `` `↔另尺(…)` ``);挂 `Diff guards` job(不随 docs-only 短路),`src/frozen-drafts-ledger.criteria.spec.ts` 是 unit 轮薄运行器;刷新读数 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` |
 | [`CAPABILITIES.md`](CAPABILITIES.md) | 能力台账(各能力终态摘要 + **已部署/未部署**);2026-08-20 从 `current-state.md` §2 迁出 —— 那份在恒读层、每字符付恒定成本,本份不付。**新增能力条目写这里** |
 | [`SIXTH_REVIEW_SCOPE.md`](SIXTH_REVIEW_SCOPE.md) | 第六轮全仓评审的**范围切分与投放包**(`v0.66.0..main` 切 6 包,含投放顺序与逐包「重点问过」);**工作计划非冻结件**,评审结论产出后另立冻结件入 `archive/reviews/` |
+| [`CUTOVER_SIGNOFF.md`](CUTOVER_SIGNOFF.md) | **切换前检查的维护者签字登记**(合同 §16.1 十条里 B/C 类的「下结论」落点)+ **验收编号永久豁免登记**。🔴 **签了 ≠ 过**:签字里要写下当时的机器读数,`pnpm cutover:check` 每次运行重算并逐字比对 —— 矛盾即红并卡退出码;签一条闸里不存在 / 不接受签字(A 类)的编号同样红。判据 `scripts/cutover-check.ts`,自证 `pnpm cutover:check:selftest`(S1–S19 逐维正对照) |
 
 ### 4.2 派生地图(生成物,手改即红)
 

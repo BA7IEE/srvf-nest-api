@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+// 冻结稿台账的验收覆盖度计算侧 —— 它在 selfGuard(`scripts/check-*.ts`)内。
+// 这里只**读它的结论**用来做「两把尺子」对拍,不在本文件里重算一份(第二份真相)。
+import { activityAcceptanceCoverage } from '../../../scripts/check-frozen-drafts-ledger';
+
 /**
  * 活动业务改造 v1.1 —— 验收编号骨架 + 合同完整性守护(第 0 批交付项)。
  *
@@ -2365,6 +2369,146 @@ const TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS: Readonly<
   ],
 };
 
+// ════════════════════════════════════════════════════════════════════════════
+// 第三种结局:**已判定不做**(永久豁免)
+//
+// 在本刀之前,一条验收编号只有两种渲染:**有去向** ⇒ 真用例断言 needle;
+// **被卡住** ⇒ `it.todo`。于是「维护者已经拍板永远不做」这一类**无处安放** ——
+// 它既不是「做完了」,也不是「还没做」,却只能挂成 `it.todo`,让 9a 的「零 todo」永远红。
+//
+// 🔴 **不许直接删掉那几条编号**:删了就没人知道合同里还有这几项 ——
+//    这正是本文件开头那条纪律(「删 todo 等于让验收编号静默消失」)要防的事。
+// 🔴 **也不许放宽 9a 的「零 todo」口径** —— 那是判据,不是旋钮。
+//
+// ⭐ 落点因此是**第三种渲染**:真用例,断言「该豁免确实被登记了,且写明理由与拍板人」。
+//    豁免的**去向**是 `docs/ai-harness/CUTOVER_SIGNOFF.md` 的豁免登记段,逐字断言。
+// ════════════════════════════════════════════════════════════════════════════
+
+/** 永久豁免登记的落点 —— 写死路径 = 判据与文档之间有一份合同,改名/删文件当场红。 */
+const ACCEPTANCE_WAIVER_REGISTRY = 'docs/ai-harness/CUTOVER_SIGNOFF.md';
+
+/** 一条「已判定不做」的登记。六项缺一不可,由下面的自证逐项守。 */
+interface AcceptanceWaiver {
+  /** 为什么永久不做(逐字与登记文件一致)。 */
+  reason: string;
+  /** 拍板人。 */
+  decidedBy: string;
+  /** 拍板日期,ISO `YYYY-MM-DD`。 */
+  decidedOn: string;
+  /** 登记文件里必须逐字出现的锚点(除 id / reason / decidedBy / decidedOn 之外的额外证据)。 */
+  needles: readonly string[];
+}
+
+/**
+ * 万人档四条 —— 维护者 2026-08-26 拍板**永久不做**。
+ *
+ * 共同根因(四条同一条天花板):统一生效走 `runMemberLinearizedTransaction`,被
+ * `LEDGER_COMMIT_LOCK_SLOT_COUNT = 10` × `LEDGER_COMMIT_MEMBERS_PER_SLOT = 1000`
+ * 闸住 ⇒ **一场万人恰好用尽全部 10 个槽 = 10000 把队员 advisory 锁**;
+ * 而 PG 共享锁表公式保底 12800 是**整个实例共享**的(不是每库一份),
+ * e2e 各 jest worker 派生独立库却共用同一个 PostgreSQL 实例
+ * ⇒ 一条万人用例占掉全实例 78% 的锁表条目,**两场并发即 `out of shared memory`**。
+ * 那是**硬 ERROR**,而且会撒到**别的 spec** 上 —— 不是「跑得慢」,是造 flake 机器。
+ *
+ * ⚠️ 名字里的 `DESTINATIONS` **不是凑字数**:`scripts/check-frozen-drafts-ledger.ts` 的
+ *    `activityAcceptanceCoverage()` 按「表名含 DESTINATIONS」判一条编号算不算已落地,
+ *    而它自己的判别口径逐字写着「**只有前者算已落地 —— 后者在 jest 里仍是 it.todo**」。
+ *    豁免条在 jest 里**不是** `it.todo` ⇒ 按那份判据自己的定义,它就该落在这一侧。
+ *    这条耦合**不靠命名巧合维持**:下面「两把尺子」那条判据把台账读数与本套件的真 todo 数
+ *    钉在一起,哪天台账不再把豁免算进去,读数当场差 4 条并红。
+ */
+const PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS: Readonly<Record<string, AcceptanceWaiver>> = {
+  'AC-054': {
+    reason:
+      '万人档规模用例:10000 人恰好用尽 ledger-commit 全部 10 个槽位,PG 共享锁表保底 12800 为全实例共享,' +
+      '两场并发即 out of shared memory —— 硬 ERROR 且会撒到别的 spec 上。',
+    decidedBy: '维护者',
+    decidedOn: '2026-08-26',
+    needles: ['0%/100% 读面'],
+  },
+  'AC-055': {
+    reason:
+      '万人档耐久用例:终审 / 任务恢复 / 更正三轴各 100 轮完整事务链,与 AC-054 同一条锁表天花板,' +
+      '且现有三条链各已有「重放一次不翻倍」的幂等证据。',
+    decidedBy: '维护者',
+    decidedOn: '2026-08-26',
+    needles: ['三轴 × 100 轮'],
+  },
+  'AC-068': {
+    reason:
+      '万人档读数:结构性障碍已消除(条件式入口 selection.mode=session-all,2000 人一次入队实测 43.7ms / 预算 5000ms),' +
+      '仅剩 10000 档读数需要专门的规模测试环境,本地不产出可信数字。',
+    decidedBy: '维护者',
+    decidedOn: '2026-08-26',
+    needles: ['手工拆 200 人数组'],
+  },
+  'ADV-008': {
+    reason:
+      '万人档 kill/recover:10000 条在 1/199/200/201/9999/10000 六个检查点演练,同规模夹具至少重建 6 次,' +
+      '与 AC-054 同一条锁表天花板。',
+    decidedBy: '维护者',
+    decidedOn: '2026-08-26',
+    needles: ['六个检查点'],
+  },
+};
+
+/**
+ * 豁免表的注册处 —— 与去向表 / 卡点表**同构**:只写一处,漏接一张当场红。
+ * (少接一条**不产生坏链接**,这正是本仓已两次栽过的形状。)
+ */
+const ACCEPTANCE_WAIVER_TABLES: ReadonlyArray<Readonly<Record<string, AcceptanceWaiver>>> = [
+  PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS,
+];
+
+function resolveAcceptanceWaiver(id: string): AcceptanceWaiver | undefined {
+  for (const table of ACCEPTANCE_WAIVER_TABLES) {
+    const found = table[id];
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+// ── 腐烂检测(纯函数,好让下面的变异对拍能喂假输入)────────────────────────────
+//
+// 🔴 本仓 2026-08-26 一天内**两次**逮到「腐烂检测是摆设」:#1184 的豁免名单指着已被删除的
+//    文件(`includes()` 永远不匹配,不生效不报错);#1195 把腐烂检测改成恒返回空**照样全绿**。
+//    ⇒ 下面每一个函数都必须有**喂假输入 ⇒ 必须报出来**的正对照,而不是只断言「当前是干净的」。
+
+/** 豁免了一条合同里根本不存在的编号 ⇒ 报出来。 */
+export function waiverIdsNotInContract(
+  waived: readonly string[],
+  contractIds: ReadonlySet<string>,
+): string[] {
+  return waived.filter((id) => !contractIds.has(id));
+}
+
+/** 六项必填缺任一 / 日期不是合法 ISO 日历日 ⇒ 报出来。 */
+export function waiverFieldDefects(table: Readonly<Record<string, AcceptanceWaiver>>): string[] {
+  const defects: string[] = [];
+  for (const [id, w] of Object.entries(table)) {
+    if (w.reason.trim().length === 0) defects.push(`${id}:理由为空`);
+    if (w.decidedBy.trim().length === 0) defects.push(`${id}:拍板人为空`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(w.decidedOn)) defects.push(`${id}:日期不是 YYYY-MM-DD`);
+    else {
+      // `new Date('2026-02-30')` 会静默回卷成 3 月 2 日 —— 回查字面量才判得出非法日历日。
+      const d = new Date(`${w.decidedOn}T00:00:00Z`);
+      if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== w.decidedOn) {
+        defects.push(`${id}:日期不是合法日历日(${w.decidedOn})`);
+      }
+    }
+    if (w.needles.length === 0) defects.push(`${id}:没有登记文件锚点`);
+  }
+  return defects;
+}
+
+/** 同一编号既有真去向又被判定不做 ⇒ 报出来(两种结局互斥)。 */
+export function waiverIdsAlsoBound(
+  waived: readonly string[],
+  hasDestination: (id: string) => boolean,
+): string[] {
+  return waived.filter((id) => hasDestination(id));
+}
+
 /**
  * 「哪些登记表参与查表」只写一处 —— `registerAcceptanceCases` 与下面的接线守护读的是
  * **同一个数组**,所以两者不可能各说各话。
@@ -2435,6 +2579,23 @@ function resolveAcceptanceBlocker(id: string): string | undefined {
 
 function registerAcceptanceCases(cases: readonly { id: string; title: string }[]): void {
   for (const { id, title } of cases) {
+    // 豁免**优先于**去向与卡点判:一条被拍板永久不做的编号,它历史上的卡点说明照旧留在
+    // 卡点表里(那是「为什么当初做不了」的记录,不撤),但渲染结局由豁免决定。
+    const waiver = resolveAcceptanceWaiver(id);
+    if (waiver !== undefined) {
+      it(`${id} ${title}（已判定不做：${waiver.decidedBy} ${waiver.decidedOn}）`, () => {
+        const registry = readFileSync(resolve(process.cwd(), ACCEPTANCE_WAIVER_REGISTRY), 'utf8');
+        // 一次报出全部缺失项 —— 逐条 `toContain` 会在第一条就停,后面的从未被检查。
+        const missing = [id, waiver.reason, waiver.decidedBy, waiver.decidedOn, ...waiver.needles]
+          .filter((needle) => !registry.includes(needle))
+          .map((needle) => needle.slice(0, 40));
+        expect({ 豁免登记文件里找不到的字段: missing }).toEqual({
+          豁免登记文件里找不到的字段: [],
+        });
+      });
+      continue;
+    }
+
     const destinations = resolveAcceptanceDestinations(id);
     if (destinations !== undefined) {
       it(`${id} ${title}（已标注去向）`, () => {
@@ -2637,6 +2798,133 @@ describe('活动业务改造 v1.1 合同完整性', () => {
     //    而且每批的模块级守护本来就要求「本批编号逐条有去向**或**卡点」,
     //    强行去重会让那些守护抛错、整套 `Tests: 0 total`。
     //    「同一编号只能有一个去向」这件事由各批模块级守护 + ② 的遮蔽检查负责。
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 永久豁免的防腐自证 —— **每一维各自成 `it`**
+  //
+  // 🔴 jest 在一个 `it` 内首个失败即停:把这些塞进一个 `it`,后面的断言**从未被执行**,
+  //    而这在基线全绿时完全看不出来(`docs/ai-harness/TOOL_TRAPS.md` §6.1)。
+  // 🔴 每条「当前是干净的」旁边都配一条**喂假输入 ⇒ 必须报出来**的正对照:
+  //    只断言前者,把检测函数改成恒返回空**照样全绿**(本仓 #1195 当日实测)。
+  // ══════════════════════════════════════════════════════════════════════════
+
+  it('永久豁免表真的接进了查表链(守类,不守某一条)', () => {
+    const SECTIONS: ReadonlyArray<{
+      name: string;
+      table: Readonly<Record<string, AcceptanceWaiver>>;
+    }> = [{ name: 'PERMANENT_WAIVER', table: PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS }];
+
+    const missingTables = SECTIONS.filter(
+      (section) => !ACCEPTANCE_WAIVER_TABLES.includes(section.table),
+    ).map((section) => section.name);
+    expect({ 没接进豁免查表链的登记表: missingTables }).toEqual({ 没接进豁免查表链的登记表: [] });
+
+    const unresolved = SECTIONS.flatMap((section) =>
+      Object.keys(section.table)
+        .filter((id) => resolveAcceptanceWaiver(id) === undefined)
+        .map((id) => `${section.name}:${id}`),
+    );
+    expect({ 登记了豁免却解析不到的编号: unresolved }).toEqual({ 登记了豁免却解析不到的编号: [] });
+
+    // 反向:少登记一张表**不产生坏链接**,只靠上面两条看不见它。
+    expect(SECTIONS.length).toBe(ACCEPTANCE_WAIVER_TABLES.length);
+    expect(SECTIONS.length).toBeGreaterThan(0);
+  });
+
+  it('当前豁免零腐烂:每条被豁免的编号都是合同真实定义的编号', () => {
+    const contractIds = new Set([...acceptanceCases, ...adversarialCases].map((c) => c.id));
+    // 先验仪器:合同解析塌了的话,下面那条断言会恒真。
+    expect(contractIds.size).toBe(95);
+    expect(
+      waiverIdsNotInContract(Object.keys(PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS), contractIds),
+    ).toEqual([]);
+  });
+
+  it('腐烂检测有判别力:豁免一条合同里根本没有的编号 ⇒ 必须被报出来', () => {
+    const contractIds = new Set([...acceptanceCases, ...adversarialCases].map((c) => c.id));
+    expect(waiverIdsNotInContract(['AC-054', 'AC-999', 'ADV-900'], contractIds)).toEqual([
+      'AC-999',
+      'ADV-900',
+    ]);
+  });
+
+  it('当前豁免六项齐全:理由 / 拍板人 / 日期(合法日历日)/ 登记锚点一个不缺', () => {
+    expect(waiverFieldDefects(PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS)).toEqual([]);
+    // 反向:表为空时上面那条恒真 —— 钉住非空。
+    expect(Object.keys(PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS).length).toBe(4);
+  });
+
+  it('字段检测有判别力:四类缺项各自被报出来,且红集精确', () => {
+    const good = { reason: 'r', decidedBy: '维护者', decidedOn: '2026-08-26', needles: ['n'] };
+    const defects = waiverFieldDefects({
+      'AC-001': { ...good, reason: '   ' },
+      'AC-002': { ...good, decidedBy: '' },
+      // `new Date('2026-02-30')` 静默回卷成 3 月 2 日 —— 形状对、日历日非法。
+      'AC-003': { ...good, decidedOn: '2026-02-30' },
+      'AC-004': { ...good, needles: [] },
+      'AC-005': good,
+    });
+    expect(defects.sort()).toEqual(
+      [
+        'AC-001:理由为空',
+        'AC-002:拍板人为空',
+        'AC-003:日期不是合法日历日(2026-02-30)',
+        'AC-004:没有登记文件锚点',
+      ].sort(),
+    );
+  });
+
+  it('当前零重叠:没有任何编号既有真去向又被判定不做', () => {
+    expect(
+      waiverIdsAlsoBound(
+        Object.keys(PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS),
+        (id) => resolveAcceptanceDestinations(id) !== undefined,
+      ),
+    ).toEqual([]);
+  });
+
+  it('互斥检测有判别力:一个既有去向又被豁免的编号 ⇒ 必须被报出来', () => {
+    // AC-048 在 BATCH2 去向表里有真去向(见本文件开头),拿它当靶子。
+    expect(
+      waiverIdsAlsoBound(
+        ['AC-054', 'AC-048'],
+        (id) => resolveAcceptanceDestinations(id) !== undefined,
+      ),
+    ).toEqual(['AC-048']);
+  });
+
+  it('豁免条数与登记文件声明的条数一致(删掉一条不许静默)', () => {
+    const registry = readFileSync(resolve(process.cwd(), ACCEPTANCE_WAIVER_REGISTRY), 'utf8');
+    // ⚠️ 括号必须转义:中文正文里的「(」是**半角** `(` —— 不转义就成了捕获组,
+    //    正则会去找不带括号的字面量,**永远匹配不上**(本刀写第一版时实测踩过)。
+    const declared = /^\*\*永久豁免登记\(机器核对\)[:：](\d+) 条\*\*$/m.exec(registry);
+    // 声明行被删 / 被改名 ⇒ 判据失去输入,按红处理(「无法验证 ≠ 通过」)。
+    expect({ 登记文件里的声明行: declared === null ? '(解析不到)' : declared[1] }).toEqual({
+      登记文件里的声明行: String(Object.keys(PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS).length),
+    });
+  });
+
+  /**
+   * 两把尺子 —— 冻结稿台账的「仍 it.todo」读数与本套件的真实渲染必须相等。
+   *
+   * 台账 `activityAcceptanceCoverage()` 按「表名含 DESTINATIONS」数 bound,`todo = defined - bound`;
+   * 本套件按「有豁免 / 有去向 / 都没有」三分。哪天台账不再把豁免表算进 bound(改名、改解析),
+   * 它印出来的 todo 数会比真实多 4 条,而**那份读数是生成块,没人会去核**。
+   * ⇒ 把两把尺子钉在一起,差一条当场红。
+   */
+  it('两把尺子:冻结稿台账的验收覆盖读数 = 本套件真实 todo 数', () => {
+    const coverage = activityAcceptanceCoverage(process.cwd());
+    const realTodoIds = [...acceptanceCases, ...adversarialCases]
+      .map((c) => c.id)
+      .filter(
+        (id) =>
+          resolveAcceptanceWaiver(id) === undefined &&
+          resolveAcceptanceDestinations(id) === undefined,
+      );
+    // 先验仪器:台账解析塌了(defined=0)时下面会恒真。
+    expect(coverage.defined).toBe(95);
+    expect({ 台账口径todo: coverage.todo }).toEqual({ 台账口径todo: realTodoIds.length });
   });
 
   it('活文档仍指向本合同目录(指针被删则红)', () => {

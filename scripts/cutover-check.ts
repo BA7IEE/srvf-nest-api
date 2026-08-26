@@ -175,9 +175,82 @@ const INSTANCE_FLAGS: readonly {
   },
 ];
 
+/**
+ * ⭐ **签字登记表** —— B/C 类子判据「由人下结论」的唯一落点。
+ *
+ * 在本刀之前,「下结论」这件事**物理上不存在**:`eviSub()` 把 `verdict` 硬编码成
+ * `'pending'`,签一百次也不会变 ⇒ 这道闸设计成了「永远开不了」。
+ *
+ * 🔴 但**不是「签了就过」** —— 那等于把闸拆了。四种结局:
+ *   ① 签了且与机器读数一致        ⇒ ☑ 已签字确认
+ *   ② 签了但与机器读数矛盾        ⇒ ❌ 红(并卡退出码)
+ *   ③ 没签                        ⇒ ⏸ 待维护者确认(现状)
+ *   ④ 签了一条闸里不存在 / 不接受签字的编号 ⇒ ❌ 红
+ *
+ * 路径写死 = 判据与文档之间有一份合同(同 ⑤-b 登记表与 ⑦ runbook):改名 / 删文件当场红,
+ * 不会静默失去这道检查。
+ */
+const SIGNOFF_REGISTRY = 'docs/ai-harness/CUTOVER_SIGNOFF.md';
+
+/** 结论的**闭集**。写别的词(「大概可以」「基本认可」)⇒ 红 —— 模糊结论不是结论。 */
+export const SIGNOFF_CONCLUSIONS: readonly string[] = ['认可', '不认可'];
+
+/** ①-b 那份复核报告 —— 1b 的对拍锚点(报告被改动 / 删除 ⇒ 那次签字所依据的东西已不在)。 */
+const REVIEW_REPORT = 'SRVF_活动业务文档_系统性对抗性复核报告_v1.0.md';
+
+/**
+ * 可对拍读数的**闭集**。
+ *
+ * 🔴 为什么要闭集:签字里写 `` `migration-totl` = `99` ``(打错一个字母)时,若判据只是
+ * 「查得到就比,查不到就跳过」,这条对拍会**静默失效** —— 本仓 2026-08-26 一天内两次
+ * 栽在这个形状(#1184 豁免名单指着已删文件 / #1195 腐烂检测改恒返回空照样全绿)。
+ * ⇒ 键不在闭集**即红**,方向是 fail-closed。
+ */
+export const SIGNOFF_READING_KEYS = [
+  'migration-total',
+  'backend-contract-version',
+  'contract-registry-rows',
+  'contract-version-mismatch-count',
+  'review-report-sha256-12',
+] as const;
+export type SignoffReadingKey = (typeof SIGNOFF_READING_KEYS)[number];
+
+/**
+ * 闸里全部子判据编号的**闭集**。签了闭集外的编号 ⇒ 红(§防腐 ④)。
+ *
+ * ⚠️ 这份清单与 `buildItems()` 真正产出的编号由 `assertSubIdsClosed()` 每次运行时对拍 ——
+ *    加一条子判据却忘了登记进来,当场红。手写清单没有自证 = 装了个没验过的报警器。
+ */
+export const ALL_SUB_IDS: readonly string[] = [
+  '1a', '1b',
+  '2a', '2b',
+  '3a', '3b',
+  '4a', '4b',
+  '5a', '5b',
+  '6a', '6b',
+  '7a', '7b', '7c', '7d', '7e',
+  '8a', '8b',
+  '9a', '9b',
+  '10a', '10b',
+];
+
+/**
+ * **可签**的子判据 = B/C 类。A 类是机器判的,人签不动 ——
+ * 签 A 类编号 ⇒ 红,否则「用一张签字把 9a 的 13 条 todo 抹平」就成立了。
+ */
+export const SIGNABLE_SUB_IDS: readonly string[] = [
+  '1b', '2a', '2b', '3b', '4b', '5b', '6b', '7c', '8b', '9b', '10a', '10b',
+];
+
 // ── 分型与结论 ──────────────────────────────────────────────────────────
 export type Kind = 'A' | 'B' | 'C';
-export type Verdict = 'pass' | 'fail' | 'pending';
+/**
+ * `signed` / `conflict` 是本刀新增的两格。
+ *
+ * ⚠️ 它们**不破坏**原有不变量「B/C 永不渲染成 ✅ 通过」:`signed` 渲染成 **☑ 已签字确认**,
+ *    与机器判出来的 ✅ 视觉上分得开 —— 谁下的结论必须一眼看得出来。
+ */
+export type Verdict = 'pass' | 'fail' | 'pending' | 'signed' | 'conflict';
 
 export interface Judgement {
   readonly ok: boolean;
@@ -213,8 +286,229 @@ export function weakestKind(subs: readonly { kind: Kind }[]): Kind {
  */
 export function itemVerdict(subs: readonly SubCheck[]): Verdict {
   if (subs.some((s) => s.kind === 'A' && s.verdict === 'fail')) return 'fail';
+  // 签字与机器读数矛盾 = 机器**证明了**这份签字不成立 ⇒ 整条红,不许藏进「待确认」。
+  if (subs.some((s) => s.verdict === 'conflict')) return 'conflict';
   if (subs.every((s) => s.kind === 'A' && s.verdict === 'pass')) return 'pass';
+  // 全部子判据要么是机器判过的 A 类,要么已由维护者签字 ⇒ 这一条到此为止了。
+  if (subs.every((s) => (s.kind === 'A' && s.verdict === 'pass') || s.verdict === 'signed')) {
+    return 'signed';
+  }
   return 'pending';
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 签字登记表:解析 / 逐条验 / 与机器读数对拍(全是纯函数,好让正对照能喂假输入)
+// ══════════════════════════════════════════════════════════════════════════
+
+/** 一条签字的「对拍」字段。`none` = 声明无可对拍读数(必须写明为什么)。 */
+export type Crosscheck =
+  | { readonly kind: 'none'; readonly raw: string; readonly note: string }
+  | { readonly kind: 'has'; readonly raw: string; readonly pairs: readonly { key: string; value: string }[] }
+  | { readonly kind: 'unknown'; readonly raw: string };
+
+export interface SignoffEntry {
+  readonly id: string;
+  readonly title: string;
+  readonly conclusion: string;
+  readonly reason: string;
+  readonly signer: string;
+  readonly date: string;
+  readonly basis: string;
+  readonly crosscheck: Crosscheck;
+}
+
+export interface SignoffRegistry {
+  /** 登记表自报的签字条数。`null` = 声明行缺失 / 被改坏 ⇒ 判据失去输入,按红处理。 */
+  readonly declaredCount: number | null;
+  readonly entries: readonly SignoffEntry[];
+}
+
+/** `YYYY-MM-DD` 且是**真实存在的日历日**。`new Date('2026-02-30')` 会静默回卷成 3 月 2 日。 */
+export function isCalendarDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+/** 解析「对拍」字段。`有 —— \`key\` = \`value\`;…` / `无 —— <理由>`。 */
+export function parseCrosscheck(raw: string): Crosscheck {
+  const t = raw.trim();
+  if (t.startsWith('无')) return { kind: 'none', raw, note: t.slice(1).replace(/^\s*(——|--)\s*/, '').trim() };
+  if (!t.startsWith('有')) return { kind: 'unknown', raw };
+  const pairs: { key: string; value: string }[] = [];
+  for (const m of t.matchAll(/`([^`]+)`\s*=\s*`([^`]*)`/g)) pairs.push({ key: m[1].trim(), value: m[2].trim() });
+  return { kind: 'has', raw, pairs };
+}
+
+/**
+ * 解析签字登记表。
+ *
+ * 只认 `### <编号> — <标题>` 这一种块头,编号形如 `5b` —— 豁免登记那一节用 `### AC-054 …`,
+ * 形状不同,天然不会被误收进签字集合。
+ */
+export function parseSignoffRegistry(text: string | null): SignoffRegistry | null {
+  if (text === null) return null;
+  // ⚠️ 括号必须转义:本仓中文正文里的「(」是**半角** `(` —— 不转义就成了捕获组,
+  //    正则会去匹配「签字条数机器核对:4 条」(不带括号),**永远匹配不上**。
+  //    (本刀写第一版时就踩了这个,读数直接变成「声明行缺失」。)
+  const countLine = /^\*\*签字条数\(机器核对\)[:：](\d+) 条\*\*$/m.exec(text);
+  const entries: SignoffEntry[] = [];
+  let cur: { id: string; title: string; fields: Record<string, string> } | null = null;
+  const flush = (): void => {
+    if (cur === null) return;
+    const f = cur.fields;
+    entries.push({
+      id: cur.id,
+      title: cur.title,
+      conclusion: f['结论'] ?? '',
+      reason: f['理由'] ?? '',
+      signer: f['签字人'] ?? '',
+      date: f['日期'] ?? '',
+      basis: f['依据'] ?? '',
+      crosscheck: parseCrosscheck(f['对拍'] ?? ''),
+    });
+    cur = null;
+  };
+  // ⚠️ **围栏内的代码块不算签字。** §2 的填法模板本身长得就像一条签字 ——
+  //    第一版没跳围栏,那份模板被当成第五条签字收了进来,当场撞上「同一编号签了两次」。
+  //    (这是判据在替我抓错,不是判据坏了;但正确的解析语义就该跳围栏,故在此修。)
+  //    误把真签字写进围栏时也不会静默丢失:声明条数与解析条数对不上 ⇒ 红。
+  let inFence = false;
+  for (const line of text.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const head = /^###\s+(\d{1,2}[a-z])\s+—\s*(.*)$/.exec(line.trim());
+    if (head !== null) {
+      flush();
+      cur = { id: head[1], title: head[2].trim(), fields: {} };
+      continue;
+    }
+    if (/^#{1,3}\s/.test(line.trim())) {
+      flush();
+      continue;
+    }
+    const field = /^-\s+\*\*(结论|理由|签字人|日期|依据|对拍)\*\*\s*[:：]\s*(.*)$/.exec(line.trim());
+    if (field !== null && cur !== null) cur.fields[field[1]] = field[2].trim();
+  }
+  flush();
+  return { declaredCount: countLine === null ? null : Number(countLine[1]), entries };
+}
+
+/** 一条签字自身的缺陷清单(空 = 这条签字成立)。 */
+export function signoffEntryDefects(
+  e: SignoffEntry,
+  readings: Readonly<Record<string, string>>,
+): string[] {
+  const out: string[] = [];
+  const required: readonly [string, string][] = [
+    ['结论', e.conclusion],
+    ['理由', e.reason],
+    ['签字人', e.signer],
+    ['日期', e.date],
+    ['依据', e.basis],
+    ['对拍', e.crosscheck.raw],
+  ];
+  for (const [label, v] of required) if (v.trim().length === 0) out.push(`必填项「${label}」为空`);
+  if (e.conclusion.trim().length > 0 && !SIGNOFF_CONCLUSIONS.includes(e.conclusion.trim())) {
+    out.push(`结论「${e.conclusion}」不在闭集(${SIGNOFF_CONCLUSIONS.join(' / ')})—— 模糊结论不是结论`);
+  }
+  if (e.date.trim().length > 0 && !isCalendarDate(e.date.trim())) {
+    out.push(`日期「${e.date}」不是合法日历日(YYYY-MM-DD)`);
+  }
+  const cc = e.crosscheck;
+  if (cc.kind === 'unknown') {
+    if (cc.raw.trim().length > 0) out.push(`「对拍」既不是「有」也不是「无」:${cc.raw}`);
+  } else if (cc.kind === 'none') {
+    if (cc.note.length === 0) out.push('「对拍」写了「无」却没写为什么无 —— 不许静默地把对拍取消掉');
+  } else {
+    if (cc.pairs.length === 0) out.push('「对拍」写了「有」却一个读数都没给');
+    for (const p of cc.pairs) {
+      const actual = readings[p.key];
+      if (actual === undefined) {
+        out.push(`对拍读数键「${p.key}」不在闭集 ⇒ 这条对拍永远不会被计算(键改名即静默失效)`);
+      } else if (actual !== p.value) {
+        out.push(`❗签字与机器读数矛盾:「${p.key}」签字当时记 ${p.value},机器现读 ${actual}`);
+      }
+    }
+  }
+  return out;
+}
+
+export interface SignoffState {
+  /** 登记表整体的完整性判决(A 类:参与退出码)。 */
+  readonly integrity: Judgement;
+  /** 编号 → 该条签字的缺陷(空数组 = 成立)。只含闸里认得的可签编号。 */
+  readonly byId: ReadonlyMap<string, { entry: SignoffEntry; defects: readonly string[] }>;
+}
+
+/**
+ * 逐条验签字 + 出整体完整性判决。
+ *
+ * 🔴 判据形状刻意是 **fail-closed**:登记表不存在 / 声明行读不到 / 声明条数与解析条数不符,
+ *    一律红。空表恒「零腐烂」是空绿 —— 那正是本仓已两次栽过的形状。
+ */
+export function judgeSignoffRegistry(
+  registry: SignoffRegistry | null,
+  readings: Readonly<Record<string, string>>,
+  allSubIds: readonly string[] = ALL_SUB_IDS,
+  signableSubIds: readonly string[] = SIGNABLE_SUB_IDS,
+): SignoffState {
+  const byId = new Map<string, { entry: SignoffEntry; defects: readonly string[] }>();
+  if (registry === null) {
+    return {
+      integrity: {
+        ok: false,
+        evidence: [
+          `签字登记表 ${SIGNOFF_REGISTRY} **不存在** ⇒ 签字无处可落,这道闸退回「永远开不了」的状态。`,
+        ],
+      },
+      byId,
+    };
+  }
+  const bad: string[] = [];
+  if (registry.declaredCount === null) {
+    bad.push('登记表缺「**签字条数(机器核对):N 条**」声明行 ⇒ 表被清空 / 少一条都看不见,拒绝当绿');
+  } else if (registry.declaredCount !== registry.entries.length) {
+    bad.push(
+      `声明 ${registry.declaredCount} 条签字,实际解析到 ${registry.entries.length} 条 ` +
+        '⇒ 有签字被删 / 块头被改坏 / 解析塌了,读数作废',
+    );
+  }
+  const seen = new Set<string>();
+  for (const e of registry.entries) {
+    if (seen.has(e.id)) {
+      bad.push(`${e.id}:同一编号签了两次 ⇒ 哪一条作数无从判断`);
+      continue;
+    }
+    seen.add(e.id);
+    if (!allSubIds.includes(e.id)) {
+      bad.push(`${e.id}:闸里根本没有这条子判据 ⇒ 这份签字签的是一个不存在的东西(名单腐烂)`);
+      continue;
+    }
+    if (!signableSubIds.includes(e.id)) {
+      bad.push(`${e.id}:这是 A 类(机器可判)子判据,**不接受签字** —— 人签不动机器的结论`);
+      continue;
+    }
+    const defects = signoffEntryDefects(e, readings);
+    byId.set(e.id, { entry: e, defects });
+    bad.push(...defects.map((d) => `${e.id}:${d}`));
+  }
+  return {
+    integrity:
+      bad.length === 0
+        ? {
+            ok: true,
+            evidence: [
+              `签字 ${registry.entries.length} 条:编号全部真实且可签、六项齐全、` +
+                '对拍读数逐条与机器现读一致',
+            ],
+          }
+        : { ok: false, evidence: bad },
+    byId,
+  };
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -462,7 +756,8 @@ export function judgeContractVersionRegistry(
 }
 
 /**
- * ⑥-a 旧写入口已关闭(代码侧)—— 直接复用 #1084 的 C1–C7 结构判据,不重造。
+ * ⑥-a 旧写入口已关闭(代码侧)—— 直接复用 #1084 的结构判据,不重造。
+ * ⚠️ 2026-08-26 订正:判据族已由 C1–C7 扩到 **C1–C8**(C8 于 #1165 加入),此处原文点名 C1–C7 已过期。
  * counts 全部 > 0 是**防空绿**:某一面数字为 0 说明判据根本没扫到东西。
  */
 export function judgeV11GateCriteria(
@@ -477,7 +772,7 @@ export function judgeV11GateCriteria(
     ? {
         ok: true,
         evidence: [
-          `C1–C7 零 finding;受闸写入口 v11=${counts.v11GatedEntries} / legacy=${counts.legacyGatedEntries},` +
+          `C1–C8 零 finding;受闸写入口 v11=${counts.v11GatedEntries} / legacy=${counts.legacyGatedEntries},` +
             `读面文件 ${counts.readFiles},受闸模块 ${counts.gateDependentModules}`,
         ],
       }
@@ -742,6 +1037,42 @@ function collectGrants(): string[] {
     .filter((l) => l.length > 0 && !l.startsWith('>') && !l.startsWith('用法'));
 }
 
+/**
+ * 签字可对拍的**机器现读**。
+ *
+ * 每一条都是「本仓此刻可复算的事实」,不含任何时间量、不含别的仓库的证词:
+ *
+ * | 键 | 读的是什么 | 它一变说明什么 |
+ * |---|---|---|
+ * | `migration-total` | `prisma/migrations/` 下的目录数 | 新落了一条 migration ⇒ ③-b「经审查」的覆盖面变了,得重签 |
+ * | `backend-contract-version` | `package.json#version` | 后端发过版 ⇒ ⑤-b「五端同一版本」的前提变了,得重签 |
+ * | `contract-registry-rows` | 契约版本登记表解析出的行数 | 有人删了一行 ⇒ 缺口被洗掉 |
+ * | `contract-version-mismatch-count` | 登记表里与后端版本**不一致**的端数 | 0 → N ⇒ 五端不再对齐,而签字还在 |
+ * | `review-report-sha256-12` | ①-b 那份复核报告的内容摘要 | 报告被改 / 被删 ⇒ 那次签字依据的东西已不在 |
+ */
+function collectSignoffReadings(pkgVersion: string): Record<SignoffReadingKey, string> {
+  const migrationDirs = readdirSync(rel('prisma/migrations'), { withFileTypes: true }).filter((e) =>
+    e.isDirectory(),
+  ).length;
+  const registryText = readOrNull(VERSION_REGISTRY);
+  const rows = registryText === null ? [] : parseRegistryRows(registryText);
+  const mismatched = rows.filter(
+    (r) =>
+      r.declared !== REGISTRY_SAME_AS_BACKEND &&
+      r.declared !== REGISTRY_NOT_REPORTED &&
+      r.declared !== pkgVersion,
+  );
+  const report = readOrNull(`${CONTRACT_DIR}/${REVIEW_REPORT}`);
+  return {
+    'migration-total': String(migrationDirs),
+    'backend-contract-version': pkgVersion,
+    'contract-registry-rows': String(rows.length),
+    'contract-version-mismatch-count': String(mismatched.length),
+    'review-report-sha256-12':
+      report === null ? '(文件不存在)' : createHash('sha256').update(report, 'utf8').digest('hex').slice(0, 12),
+  };
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // 正对照(仪器自证)
 //
@@ -979,7 +1310,7 @@ export function positiveControls(): Control[] {
     },
     {
       id: '6a',
-      desc: 'C1–C7 有 finding ⇒ 必红',
+      desc: 'C1–C8 有 finding ⇒ 必红',
       must: 'red',
       run: () =>
         judgeV11GateCriteria([{ criterion: 'C2', detail: 'selfPunch 绕开闸' }], {
@@ -1090,6 +1421,213 @@ export function positiveControls(): Control[] {
       must: 'green',
       run: () => judgeAcceptanceSuite({ total: 95, passed: 95, todo: 0, failed: 0 }),
     },
+    // ════════════════════════════════════════════════════════════════════
+    // 签字机制的变异对拍(S 系列)
+    //
+    // 🔴 「签了就过」等于把闸拆了。下面每一条各自弄假**一个维度**,证明这套机制
+    //    真的分辨得出来。⚠️ **每条各自成一个控制项**(不是塞进一个断言里)——
+    //    塞一起的话第一条红了后面的**从未被执行**,而这在基线全绿时完全看不出来
+    //    (`docs/ai-harness/TOOL_TRAPS.md` §6.1;控制项数组是逐条独立跑并逐条报的)。
+    // 🔴 只断言「当前登记表是干净的」是不够的:把腐烂检测改成恒返回空**照样全绿**
+    //    —— 本仓 2026-08-26 当日实测(#1195)。故每条都是**喂假输入 ⇒ 必须红**。
+    // ════════════════════════════════════════════════════════════════════
+    ...signoffControls(),
+  ];
+}
+
+/** S 系列夹具:一条结构完整、对拍全对的签字。 */
+const SIGNOFF_FIXTURE_READINGS: Readonly<Record<string, string>> = {
+  'migration-total': '99',
+  'backend-contract-version': '7.7.7',
+};
+
+function signoffBlock(fields: Partial<Record<string, string>> = {}, id = '5b'): string {
+  const f: Record<string, string> = {
+    结论: '认可',
+    理由: '夹具理由',
+    签字人: '维护者',
+    日期: '2026-08-26',
+    依据: '夹具依据',
+    对拍: '有 —— `migration-total` = `99`',
+    ...fields,
+  };
+  return [
+    `### ${id} — 夹具标题`,
+    '',
+    ...['结论', '理由', '签字人', '日期', '依据', '对拍'].map((k) => `- **${k}**:${f[k]}`),
+    '',
+  ].join('\n');
+}
+
+function signoffDoc(blocks: readonly string[], declared = blocks.length): string {
+  return ['# 夹具', '', `**签字条数(机器核对):${declared} 条**`, '', ...blocks].join('\n');
+}
+
+/** 把登记表文本喂进整条链(解析 → 逐条验 → 完整性判决),返回可被正对照直接用的 Judgement。 */
+function runSignoff(text: string | null): Judgement {
+  return judgeSignoffRegistry(parseSignoffRegistry(text), SIGNOFF_FIXTURE_READINGS).integrity;
+}
+
+function signoffControls(): Control[] {
+  return [
+    {
+      id: 'S1',
+      desc: '签了一条闸里根本不存在的编号 ⇒ 必红(名单腐烂)',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock({}, '9z')])),
+    },
+    {
+      id: 'S2',
+      desc: '签了一条 A 类(机器可判)编号 ⇒ 必红(人签不动机器的结论)',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock({}, '9a')])),
+    },
+    {
+      id: 'S3',
+      desc: '缺必填项(理由为空)⇒ 必红',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock({ 理由: '' })])),
+    },
+    {
+      id: 'S4',
+      desc: '日期形状对但不是合法日历日(2026-02-30)⇒ 必红',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock({ 日期: '2026-02-30' })])),
+    },
+    {
+      id: 'S5',
+      desc: '结论不在闭集(「大概可以」)⇒ 必红(模糊结论不是结论)',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock({ 结论: '大概可以' })])),
+    },
+    {
+      id: 'S6',
+      desc: '🔴 签字与机器读数矛盾(签字记 98,机器读 99)⇒ 必红 —— 本机制的灵魂',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock({ 对拍: '有 —— `migration-total` = `98`' })])),
+    },
+    {
+      id: 'S7',
+      desc: '对拍读数键不在闭集(打错一个字母)⇒ 必红(否则这条对拍静默失效)',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock({ 对拍: '有 —— `migration-totl` = `99`' })])),
+    },
+    {
+      id: 'S8',
+      desc: '对拍写「有」却一个读数都没给 ⇒ 必红',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock({ 对拍: '有' })])),
+    },
+    {
+      id: 'S9',
+      desc: '对拍写「无」却没写为什么无 ⇒ 必红(不许静默取消对拍)',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock({ 对拍: '无' })])),
+    },
+    {
+      id: 'S10',
+      desc: '同一编号签了两次 ⇒ 必红(哪一条作数无从判断)',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock(), signoffBlock()], 2)),
+    },
+    {
+      id: 'S11',
+      desc: '删掉一条签字但声明条数没跟着改 ⇒ 必红(少一条不许静默)',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock()], 2)),
+    },
+    {
+      id: 'S12',
+      desc: '块头被改坏 ⇒ 解析塌成 0 条 ⇒ 必红(空表恒「零腐烂」是空绿)',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([signoffBlock().replace('### 5b —', '#### 5b -')], 1)),
+    },
+    {
+      id: 'S13',
+      desc: '「签字条数」声明行被删 ⇒ 必红(判据失去输入 ≠ 通过)',
+      must: 'red',
+      run: () =>
+        runSignoff(signoffDoc([signoffBlock()]).replace(/^\*\*签字条数.*$/m, '(声明行被删)')),
+    },
+    {
+      id: 'S14',
+      desc: '登记表整个不存在 ⇒ 必红(签字无处可落 = 闸退回「永远开不了」)',
+      must: 'red',
+      run: () => runSignoff(null),
+    },
+    {
+      id: 'S15',
+      desc: '结构完整、对拍全对 ⇒ 必绿(证明它不是恒红)',
+      must: 'green',
+      run: () => runSignoff(signoffDoc([signoffBlock()])),
+    },
+    {
+      // 实测踩过:§2 的填法模板长得就是一条签字,不跳围栏就会被当成真签字收进来。
+      id: 'S15′',
+      desc: '``` 围栏内的填法模板不算签字 ⇒ 必绿(条数不受模板影响)',
+      must: 'green',
+      run: () =>
+        runSignoff(signoffDoc([signoffBlock(), ['```md', signoffBlock(), '```', ''].join('\n')], 1)),
+    },
+    {
+      id: 'S15″',
+      desc: '把一条真签字误写进围栏 ⇒ 必红(不许静默丢失)',
+      must: 'red',
+      run: () => runSignoff(signoffDoc([['```md', signoffBlock(), '```', ''].join('\n')], 1)),
+    },
+    {
+      id: 'S16',
+      desc: '一条签字都没有(声明 0 条、解析 0 条)⇒ 必绿 —— 「没签」是 ⏸ 不是红',
+      must: 'green',
+      run: () => runSignoff(signoffDoc([], 0)),
+    },
+    {
+      // 「签了就过」这条路必须在**渲染侧**也堵死:conflict 不许被渲染成 ☑/⏸。
+      id: 'S17',
+      desc: '渲染侧:矛盾的签字必须渲染成 ❌,不许藏进「待维护者确认」',
+      must: 'red',
+      run: () => {
+        const conflicted: SubCheck = { id: '5b', kind: 'B', title: 't', verdict: 'conflict', evidence: [] };
+        const okA: SubCheck = { id: '5a', kind: 'A', title: 't', verdict: 'pass', evidence: [] };
+        const renderedSub = renderVerdict('B', 'conflict');
+        const renderedItem = renderVerdict('B', itemVerdict([okA, conflicted]));
+        return {
+          ok: !(renderedSub.startsWith('❌') && renderedItem.startsWith('❌')),
+          evidence: [`子判据渲染成「${renderedSub}」,整条渲染成「${renderedItem}」`],
+        };
+      },
+    },
+    {
+      // 反向:签过字且成立的 B 类,**不许**渲染成机器判的 ✅,必须是 ☑。
+      id: 'S18',
+      desc: '渲染侧:B/C 签过字渲染成 ☑ 而不是 ✅(谁下的结论必须一眼看得出来)',
+      must: 'green',
+      run: () => {
+        const b = renderVerdict('B', 'signed');
+        const a = renderVerdict('A', 'pass');
+        return {
+          ok: b.startsWith('☑') && a.startsWith('✅') && !b.includes('✅'),
+          evidence: [`B 签字渲染「${b}」,A 机判渲染「${a}」`],
+        };
+      },
+    },
+    {
+      // 编号闭集自证:手写清单漏一条**不产生坏链接**,必须双向比才看得见。
+      id: 'S19',
+      desc: '编号闭集:ALL_SUB_IDS 漏登记一条 ⇒ 必红(双向比,不是「至少包含」)',
+      must: 'red',
+      run: () => {
+        const fake: ItemResult = {
+          no: 1,
+          text: 't',
+          kind: 'A',
+          verdict: 'pass',
+          subs: [{ id: '11z', kind: 'A', title: 't', verdict: 'pass', evidence: [] }],
+        };
+        const problems = assertSubIdsClosed([fake]);
+        return { ok: problems.length === 0, evidence: problems.length > 0 ? problems : ['(零 problem)'] };
+      },
+    },
   ];
 }
 
@@ -1127,12 +1665,44 @@ function sub(id: string, kind: Kind, title: string, j: Judgement): SubCheck {
   return { id, kind, title, verdict: kind === 'A' ? (j.ok ? 'pass' : 'fail') : 'pending', evidence: j.evidence };
 }
 
-/** B/C 子判据:机器只出证据,恒 `pending`,永不影响退出码。 */
+/**
+ * B/C 子判据:机器只出证据,**结论由人在签字登记表里下**。
+ *
+ * 本刀之前这里硬编码 `verdict: 'pending'` ⇒ 签字这件事物理上不存在。现在三分:
+ * 没签 ⇒ `pending`(现状不变);签了且成立 ⇒ `signed`;签了但有缺陷 / 与机器读数矛盾 ⇒ `conflict`。
+ *
+ * ⚠️ 签字的**证据行**由机器追加在原证据之后,不覆盖原证据 —— 维护者当时看到的读数
+ *    与他签的字必须同屏可见,否则「他到底看着什么签的」下一个人无从复核。
+ */
 function eviSub(id: string, kind: 'B' | 'C', title: string, evidence: string[]): SubCheck {
   return { id, kind, title, verdict: 'pending', evidence };
 }
 
-function buildItems(): ItemResult[] {
+/**
+ * 把签字盖到一条 B/C 子判据上(纯函数,好让正对照能喂假签字)。
+ *
+ * ⚠️ 签字的证据行**追加**在机器证据之后,不覆盖它 —— 维护者当时看到的读数与他签的字
+ *    必须同屏可见,否则「他到底看着什么签的」下一个人无从复核。
+ */
+export function applySignoff(s: SubCheck, signoff: SignoffState): SubCheck {
+  if (s.kind === 'A') return s;
+  const signed = signoff.byId.get(s.id);
+  if (signed === undefined) return s;
+  const e = signed.entry;
+  const lines = [
+    ...s.evidence,
+    `───── 维护者签字(${SIGNOFF_REGISTRY})─────`,
+    `结论:${e.conclusion} · 签字人:${e.signer} · 日期:${e.date}`,
+    `理由:${e.reason}`,
+    `依据:${e.basis}`,
+    `对拍:${e.crosscheck.raw}`,
+  ];
+  return signed.defects.length === 0
+    ? { ...s, verdict: 'signed', evidence: lines }
+    : { ...s, verdict: 'conflict', evidence: [...lines, ...signed.defects.map((d) => `❌ ${d}`)] };
+}
+
+function buildItems(signoff: SignoffState): ItemResult[] {
   // ── 采集 ──
   const pkg = JSON.parse(read('package.json')) as { version: string; scripts: Record<string, string> };
   const manifest = read(SHA256_MANIFEST);
@@ -1261,13 +1831,21 @@ function buildItems(): ItemResult[] {
         sub(
           '6a',
           'A',
-          '旧写入口已关闭(代码侧):复用 #1084 的 C1–C7 结构判据',
+          '旧写入口已关闭(代码侧):复用 #1084 的 C1–C8 结构判据',
           judgeV11GateCriteria(criteria.findings, criteria.counts as unknown as Record<string, number>),
         ),
         eviSub('6b', 'B', '「旧读者清单全部切新账本」', [
-          `C1–C7 扫到并确认接闸的读面文件:${criteria.counts.readFiles} 个(它们都经 participationReadSource() 问闸)。`,
-          '但仓内**没有一份「旧读者清单」登记表** ⇒ 机器能证明「这几个接了闸」,证明不了「这几个就是全部」。',
-          '需要的证据:维护者认可的旧读者清单,逐条核对是否已切新账本;后续卡点见 docs/ai-harness/NEXT_TASKS.md。',
+          `C3(文件粒度)扫到并确认接闸的读面文件:${criteria.counts.readFiles} 个(它们都经 participationReadSource() 问闸)。`,
+          // ⚠️ 2026-08-26 订正:本条原文写的是「C1–C7」,而 C8 是 2026-08-24(#1165)加的,
+          //    它恰恰就是「这几个是不是全部」那一半 —— 原文因此低报了闸的实际覆盖面。
+          `C8(函数粒度,**结构性发现面**)判定为「对外产出结算量」的读面:${criteria.counts.settlementReadFaces} 个,` +
+            '逐个要求问闸;发现面是 collectProdFiles() 现取 + AST 判「select 里有没有 serviceHours / contributionPoints」,' +
+            '**不是硬编码文件名** ⇒ 新冒出第 5 处会自动进入看守。',
+          '⇒ 机器能证明的比原文多:在「读 attendanceRecord 的结算列并对外产出」这个口径内,**闭包是机器现算的**。',
+          '⚠️ 但机器仍证明不了的是**口径本身**:「旧读者」是否只等于这个口径(还是应含任何读 ActivityCheckIn / ' +
+            'AttendanceSheet 的地方、含 $queryRaw 裸列名),要由维护者定;口径定错时 C8 会**对定义外的读者结构性失明**。',
+          '需要的证据:维护者认可的「旧读者」口径 + 一份与 C8 发现面**双向比对**的登记表(漏登记一个真读者 ⇒ 红)。',
+          '⚠️ 本刀**未做**这份登记表,理由已登记在 docs/ai-harness/NEXT_TASKS.md 的 P2-22(要动红区 scripts/check-*.ts 才能把 C8 的**名字**导出来,不只是计数)。',
         ]),
       ],
     },
@@ -1329,13 +1907,41 @@ function buildItems(): ItemResult[] {
     },
   ];
 
-  return items.map((it, i) => ({
-    no: i + 1,
-    text: it.text,
-    kind: weakestKind(it.subs),
-    verdict: itemVerdict(it.subs),
-    subs: it.subs,
-  }));
+  return items.map((it, i) => {
+    // 签字统一在这里盖上去(单一落点),`eviSub` 那边保持「机器只出证据」不变。
+    const subs = it.subs.map((s) => applySignoff(s, signoff));
+    return {
+      no: i + 1,
+      text: it.text,
+      kind: weakestKind(subs),
+      verdict: itemVerdict(subs),
+      subs,
+    };
+  });
+}
+
+/**
+ * 自证:`ALL_SUB_IDS` / `SIGNABLE_SUB_IDS` 两份手写清单必须与 `buildItems()` 真正产出的
+ * 编号**双向相等**。
+ *
+ * 🔴 少登记一条**不产生任何坏链接** —— 那条编号会静默变成「签了也没人认」或反过来
+ *    「A 类编号也能被签」。这与本仓 README 清单那次是同一个形状,故必须双向比。
+ */
+export function assertSubIdsClosed(items: readonly ItemResult[]): string[] {
+  const actual = items.flatMap((i) => i.subs);
+  const actualIds = actual.map((s) => s.id);
+  const actualSignable = actual.filter((s) => s.kind !== 'A').map((s) => s.id);
+  const problems: string[] = [];
+  const diff = (a: readonly string[], b: readonly string[]): string[] => a.filter((x) => !b.includes(x));
+  const missing = diff(actualIds, ALL_SUB_IDS);
+  const stale = diff(ALL_SUB_IDS, actualIds);
+  if (missing.length > 0) problems.push(`ALL_SUB_IDS 漏登记:${missing.join('、')}`);
+  if (stale.length > 0) problems.push(`ALL_SUB_IDS 里有闸中已不存在的编号:${stale.join('、')}`);
+  const sMissing = diff(actualSignable, SIGNABLE_SUB_IDS);
+  const sStale = diff(SIGNABLE_SUB_IDS, actualSignable);
+  if (sMissing.length > 0) problems.push(`SIGNABLE_SUB_IDS 漏登记 B/C 编号:${sMissing.join('、')}`);
+  if (sStale.length > 0) problems.push(`SIGNABLE_SUB_IDS 里有非 B/C 或已不存在的编号:${sStale.join('、')}`);
+  return problems;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1358,20 +1964,38 @@ const KIND_LABEL: Record<Kind, string> = {
  *     方向反了但同样是失真。
  *   · `pass` 只在 `kind === 'A'` 时才可能出现(`itemVerdict()` 已在构造上保证),
  *     这里再挡一道:B/C **永远不会**渲染成绿勾。
+ *   · 本刀新增的 `signed` 渲染成 **☑ 已签字确认**,与机器判出来的 ✅ 视觉上分得开 ——
+ *     「谁下的这个结论」必须一眼看得出来,不许让人签的字冒充机器判的。
+ *   · `conflict` 渲染成 ❌:签字与机器读数矛盾时,机器**证明了**这份签字不成立。
  */
 function renderVerdict(kind: Kind, verdict: Verdict): string {
   if (verdict === 'fail') return '❌ 未过';
+  if (verdict === 'conflict') return '❌ 签字与机器读数矛盾';
   if (verdict === 'pass' && kind === 'A') return '✅ 通过';
+  if (verdict === 'signed') return '☑ 已签字确认';
   return '⏸ 待维护者确认';
 }
 
 function oneLiner(item: ItemResult): string {
   const failed = item.subs.filter((s) => s.kind === 'A' && s.verdict === 'fail');
   if (failed.length > 0) return `${failed.map((s) => s.id).join('/')} 未过:${failed[0].evidence[0]}`;
+  const conflicts = item.subs.filter((s) => s.verdict === 'conflict');
+  if (conflicts.length > 0) {
+    const first = conflicts[0].evidence.filter((e) => e.startsWith('❌'))[0] ?? '签字有缺陷';
+    return `${conflicts.map((s) => s.id).join('/')} 签字不成立:${first}`;
+  }
   const passedA = item.subs.filter((s) => s.kind === 'A');
-  const pending = item.subs.filter((s) => s.kind !== 'A');
+  const signed = item.subs.filter((s) => s.verdict === 'signed');
+  const pending = item.subs.filter((s) => s.kind !== 'A' && s.verdict === 'pending');
   const left = passedA.length > 0 ? `A 类 ${passedA.map((s) => s.id).join('/')} 已过` : '无 A 类判据';
-  return pending.length === 0 ? left : `${left};待人确认:${pending.map((s) => `${s.id}(${s.kind})`).join('、')}`;
+  const parts = [left];
+  if (signed.length > 0) {
+    parts.push(`已签字:${signed.map((s) => `${s.id}(${s.kind})`).join('、')}`);
+  }
+  if (pending.length > 0) {
+    parts.push(`待人确认:${pending.map((s) => `${s.id}(${s.kind})`).join('、')}`);
+  }
+  return parts.join(';');
 }
 
 function renderControls(controls: readonly { id: string; desc: string; must: 'red' | 'green'; got: boolean }[]): string[] {
@@ -1450,7 +2074,22 @@ function main(): void {
   // ── 采数并报十行 ──
   log('');
   log('[采数] 跑生成物对账(8 条)与验收套件…');
-  const items = buildItems();
+  const pkgVersion = (JSON.parse(read('package.json')) as { version: string }).version;
+  const signoffReadings = collectSignoffReadings(pkgVersion);
+  const signoff = judgeSignoffRegistry(parseSignoffRegistry(readOrNull(SIGNOFF_REGISTRY)), signoffReadings);
+  const items = buildItems(signoff);
+  const idProblems = assertSubIdsClosed(items);
+
+  log('');
+  log('══════════════════════════════════════════════════════════════════════');
+  log(`签字登记(${SIGNOFF_REGISTRY})`);
+  log('══════════════════════════════════════════════════════════════════════');
+  log('  机器现读(签字里的对拍值必须与这些逐字相等):');
+  for (const key of SIGNOFF_READING_KEYS) log(`    ${key.padEnd(32)} = ${signoffReadings[key]}`);
+  log('');
+  log(`  ${signoff.integrity.ok && idProblems.length === 0 ? '✓' : '✗'} 签字登记表完整性`);
+  for (const e of signoff.integrity.evidence) log(`      · ${e}`);
+  for (const p of idProblems) log(`      · 编号闭集自证:${p}`);
 
   log('');
   log('══════════════════════════════════════════════════════════════════════');
@@ -1464,9 +2103,16 @@ function main(): void {
   log('══════════════════════════════════════════════════════════════════════');
   for (const line of renderSummary(items)) log(line);
 
-  const aSubs = items.flatMap((i) => i.subs).filter((s) => s.kind === 'A');
+  const allSubs = items.flatMap((i) => i.subs);
+  const aSubs = allSubs.filter((s) => s.kind === 'A');
   const aFailed = aSubs.filter((s) => s.verdict === 'fail');
+  const conflicts = allSubs.filter((s) => s.verdict === 'conflict');
+  const signedSubs = allSubs.filter((s) => s.verdict === 'signed');
   const pendingItems = items.filter((i) => i.verdict === 'pending');
+  const signedItems = items.filter((i) => i.verdict === 'signed');
+  // 退出码 = A 类判据 ∪ 签字登记表自身的缺陷。后者也是**机器完全可判**的:
+  // 「签了不存在的编号」「签字与机器读数矛盾」都不需要人来下结论 ⇒ 拿它卡退出码不制造永久红。
+  const signoffBad = !signoff.integrity.ok || idProblems.length > 0;
 
   log('');
   log('══════════════════════════════════════════════════════════════════════');
@@ -1475,19 +2121,44 @@ function main(): void {
     log(`❌ 未过(硬,卡开闸):${aFailed.map((s) => s.id).join('、')}`);
     for (const s of aFailed) log(`     ${s.id} ${s.title} —— ${s.evidence[0]}`);
   }
-  log(`⏸ 待维护者确认:${pendingItems.length} 条(${pendingItems.map((i) => CIRCLED[i.no - 1]).join('')})`);
+  if (conflicts.length > 0) {
+    log(`❌ 签字不成立(硬,卡开闸):${conflicts.map((s) => s.id).join('、')}`);
+  }
+  log(
+    `☑ 已签字确认:${signedSubs.length} 条子判据` +
+      `(${signedSubs.map((s) => s.id).join('、') || '—'});整条收口 ${signedItems.length} 条` +
+      `(${signedItems.map((i) => CIRCLED[i.no - 1]).join('') || '—'})`,
+  );
+  log(`⏸ 待维护者确认:${pendingItems.length} 条(${pendingItems.map((i) => CIRCLED[i.no - 1]).join('') || '—'})`);
   log('');
-  if (aFailed.length > 0) {
-    log('结论:有 A 类判据未过 ⇒ **尚不可开闸**。');
+  if (aFailed.length > 0 || signoffBad) {
+    log('结论:有 A 类判据未过或签字登记表有缺陷 ⇒ **尚不可开闸**。');
+  } else if (pendingItems.length > 0) {
+    log('结论:A 类判据全过。**这不等于可以开闸** —— 仍有未签字的 B/C 类待维护者逐条确认。');
   } else {
-    log('结论:A 类判据全过。**这不等于可以开闸** —— B/C 类仍须维护者逐条确认后才拍板。');
+    log('结论:A 类判据全过,且 B/C 类已逐条签字并与机器读数一致 ⇒ 十条到此为止。');
   }
   log('══════════════════════════════════════════════════════════════════════');
 
   if (wantJson) {
-    console.log(JSON.stringify({ instrumentOk: true, items, aTotal: aSubs.length, aFailed: aFailed.map((s) => s.id) }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          instrumentOk: true,
+          items,
+          aTotal: aSubs.length,
+          aFailed: aFailed.map((s) => s.id),
+          signoffReadings,
+          signoffOk: !signoffBad,
+          signed: signedSubs.map((s) => s.id),
+          conflicts: conflicts.map((s) => s.id),
+        },
+        null,
+        2,
+      ),
+    );
   }
-  process.exit(aFailed.length > 0 ? 1 : 0);
+  process.exit(aFailed.length > 0 || signoffBad ? 1 : 0);
 }
 
 main();
