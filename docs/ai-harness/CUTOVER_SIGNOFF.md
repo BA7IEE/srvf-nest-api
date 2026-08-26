@@ -337,7 +337,7 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **签字人**:维护者
 - **日期**:2026-08-26
 - **依据**:维护者 2026-08-26 拍板三条 ——「跑 30 / 500 / 2000 三档,留复现命令与读数」「万人档写清为什么不做,不是『还没做』」「在 CI 里跑,不占我的机器」
-- **对拍**:有 —— `scale-tiers-passing` = `30,500,2000`
+- **对拍**:有 —— `scale-tiers-passing` = `30,500`
 
 **万人档(10000)—— 永久豁免登记。** 拍板原文逐字如下(同一段字也是
 `test/helpers/ledger-commit-scale-tiers.ts` 里 `LEDGER_COMMIT_SCALE_TIER_WAIVERS` 的 `reason` 字段,
