@@ -180,7 +180,7 @@ RBAC_MAP 的 75 行逐 PR 历史「戳」已归档至 [`archive/ai-harness/rbac-
 **不在 Fast checks 的两类**(把它们并进上表就是假读数):
 
 - **base-trusted 语义门**:`pnpm gate:authz:semantic`(R14 授权)/ `pnpm gate:contract:semantic`(R11 契约)。本地形态只是**自查**;权威裁决恒在 `.github/workflows/redzone-trusted.yml`,用 **base 分支**的判据跑 —— PR 改不动自己的裁判,代价是新门合入后的下一个 PR 才真跑。详见 [`SEMANTIC_GATES.md`](SEMANTIC_GATES.md)。
-- **挂在 `Diff guards`(`redzone-scan`)job 的三条台账/流程闸**:`pnpm exec tsx scripts/check-changelog-fragment.ts` · `scripts/check-next-tasks-state.ts` · `scripts/check-frozen-drafts-ledger.ts`。放那里而不是 Fast checks 是因为它们要 `fetch-depth: 0`(读 main 的 commit),且**必须对 docs-only PR 生效** —— 改台账的 PR 大多是 docs-only。
+- **挂在 `Diff guards`(`redzone-scan`)job 的台账/流程闸**:`pnpm exec tsx scripts/check-changelog-fragment.ts` · `scripts/check-next-tasks-state.ts` · `scripts/check-frozen-drafts-ledger.ts` · `pnpm cutover:check:signoff`(2026-08-26 接,签字登记表可信性)。放那里而不是 Fast checks 是因为**必须对 docs-only PR 生效**(改台账 / 改签字表的 PR 大多是 docs-only),前两条另需 `fetch-depth: 0`(读 main 的 commit)。⚠️ 本行**不写「恰 N 条」** —— 少登记一条不产生任何坏链接,写死数字只会在下次加闸时静默过期。
 
 > ⚠️ **2026-08-24 订正两处**:① 上表此前漏登 `docs:boundaries:debt:check`,并在下面写着它「本地专用,未接 CI」—— 它自 `#1009`(`dc03e153`)起就在 Fast checks 的 A 类元数据门里**阻断**跑;② 同表还漏登 `docs:boundaries:newdebt:check` 与 `ops:required:check`。
 > ⚠️ 同日补上 `check-frozen-drafts-ledger.ts` 的接线:在此之前它**唯一**入口是 unit 轮的薄运行器,而那一步对 docs-only 短路 ⇒ 冻结稿台账的六条判据恰好在最该拦的那批 PR 上一条都不跑。
@@ -207,7 +207,7 @@ CHANGELOG fragment 归并:`pnpm changelog:merge`(bump 前,总控执行;是流程
 | [`FROZEN_DRAFTS.md`](FROZEN_DRAFTS.md) | **冻结稿落地台账**:已拍板冻结的施工依据还欠多少 —— §1 逐项欠账 / §2 机器读数(生成块,手改即红)/ §3 归档评审稿全量四值分类。判据 `scripts/check-frozen-drafts-ledger.ts` 六条:「不许有未分类项」+「读数不过期」+ **「§1 落地度不许对 `NEXT_TASKS` 的状态行沉默地矛盾」**(治沉默不治不一致,逃生门是固定标记 `` `↔另尺(…)` ``);挂 `Diff guards` job(不随 docs-only 短路),`src/frozen-drafts-ledger.criteria.spec.ts` 是 unit 轮薄运行器;刷新读数 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` |
 | [`CAPABILITIES.md`](CAPABILITIES.md) | 能力台账(各能力终态摘要 + **已部署/未部署**);2026-08-20 从 `current-state.md` §2 迁出 —— 那份在恒读层、每字符付恒定成本,本份不付。**新增能力条目写这里** |
 | [`SIXTH_REVIEW_SCOPE.md`](SIXTH_REVIEW_SCOPE.md) | 第六轮全仓评审的**范围切分与投放包**(`v0.66.0..main` 切 6 包,含投放顺序与逐包「重点问过」);**工作计划非冻结件**,评审结论产出后另立冻结件入 `archive/reviews/` |
-| [`CUTOVER_SIGNOFF.md`](CUTOVER_SIGNOFF.md) | **切换前检查的维护者签字登记**(合同 §16.1 十条里 B/C 类的「下结论」落点)+ **验收编号永久豁免登记**。🔴 **签了 ≠ 过**:签字里要写下当时的机器读数,`pnpm cutover:check` 每次运行重算并逐字比对 —— 矛盾即红并卡退出码;签一条闸里不存在 / 不接受签字(A 类)的编号同样红。判据 `scripts/cutover-check.ts`,自证 `pnpm cutover:check:selftest`(逐维正对照 **69 条**:A 类判据各自的弄假必红 + S 系列签字表 + R 系列读数非退化 + **T 系列规模档登记**)。🔴 **它今天没有执行位** —— `cutover:check` 未接任何 workflow,而本表是 `.md` ⇒ 只改它的 PR 是 docs-only、连 `pnpm test` 都不跑;解锁条件见本表 §3.1(要先把判据收进 selfGuard) |
+| [`CUTOVER_SIGNOFF.md`](CUTOVER_SIGNOFF.md) | **切换前检查的维护者签字登记**(合同 §16.1 十条里 B/C 类的「下结论」落点)+ **验收编号永久豁免登记**。🔴 **签了 ≠ 过**:签字里要写下当时的机器读数,`pnpm cutover:check` 每次运行重算并逐字比对 —— 矛盾即红并卡退出码;签一条闸里不存在 / 不接受签字(A 类)的编号同样红。判据 `scripts/cutover-check.ts`,自证 `pnpm cutover:check:selftest`(逐维正对照 **69 条**:A 类判据各自的弄假必红 + S 系列签字表 + R 系列读数非退化 + **T 系列规模档登记**)。✅ **执行位 2026-08-26 接上**:`pnpm cutover:check:signoff`(判「本表可不可信」的子集)挂在 `Diff guards`,该 job 不随 docs-only 短路 —— 而本表是 `.md`、只改它的 PR 恰恰是 docs-only,挂错地方等于一次都不跑。判据本体 `scripts/cutover-check.ts` 同日收进 selfGuard(**先收编后接闸**,反过来被 `P4a ci-guard-coverage` 当场判红);全量 `pnpm cutover:check` **仍不接 CI**(9a 尚有 `it.todo`、⑩ 要部署侧产物,接了等于全仓永久红)。原委见本表 §3.1 |
 
 ### 4.2 派生地图(生成物,手改即红)
 
