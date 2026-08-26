@@ -104,23 +104,49 @@ function eviSub(id, kind, title, evidence): SubCheck {
 (采集器读不到真源时最自然的返回值)。「计数型不得为 0」对那种退化**结构性失明** ——
 它不是数字,`Number(v) === 0` 也不成立。故判别式换成**形状**:不匹配 `\d+(,\d+)*` 即红。
 
-## 3.1 这张表**什么时候**被机器核对(2026-08-26 补:此前是「从不」)
+## 3.1 🔴 这张表的对拍**今天没有执行位**(2026-08-26 实测确认,并记下解锁条件)
 
-🔴 立项前的事实:本登记表是一份 `.md`,而它的判据 `pnpm cutover:check` **没有接任何 CI**
-—— 一个只改本文件的 PR 是 docs-only,连 `pnpm test` 都不跑。也就是说
-「签字与机器读数矛盾即红」这句话在 2026-08-26 之前**只是散文**,谁都可以把对拍值改成任意数字。
+**事实**:本登记表是一份 `.md`,而它的判据 `pnpm cutover:check` **没有接任何 CI**
+(`.github/workflows/*.yml` 全仓零命中)。一个只改本文件的 PR **就是 docs-only** ——
+`Fast checks` 里 Lint / Typecheck / Build / Run unit tests 四步都带 `if: docs_only != 'true'`,
+`Contract + E2E` 与 `Golden journeys` 是 job 级 `if` 整个跳过。
+⇒ **「签字与机器读数矛盾即红」这句话目前只是散文**:谁都能把上面那些对拍值改成任意数字而 CI 一片绿。
 
-现在分成两个入口,别把两者读成一回事:
+### 已备好的命令,以及它为什么还没挂上去
 
 | 命令 | 判什么 | 今天绿不绿 | 接没接 CI |
 |---|---|---|---|
-| `pnpm cutover:check` | 十条切换前检查的**结论** | ❌ 不绿(9a 尚有 it.todo;⑩ 要部署侧产物) | **不接** —— 接了等于全仓永久红 |
-| `pnpm cutover:check:signoff` | **本表本身可不可信**(读数非退化 · 逐条对拍 · 签了不存在/A 类编号 · 规模档登记闭合) | ✅ 绿 | **接**,挂 `Diff guards` job |
+| `pnpm cutover:check` | 十条切换前检查的**结论** | ❌ 不绿(9a 尚有 `it.todo`;⑩ 要部署侧产物) | **不接** —— 接了等于全仓永久红 |
+| `pnpm cutover:check:signoff` | **本表本身可不可信**(读数非退化 · 逐条对拍 · 签了不存在/A 类编号 · 规模档登记闭合 ⑨-c) | ✅ 绿(本机 1.7s) | **未接** —— 被 P4a 拦下,见下 |
 
-⚠️ 选 `Diff guards` 而不是 `Fast checks`,理由是逐字读 workflow 得出的:
-`Fast checks` 里 Lint / Typecheck / Build / Run unit tests 四步都带 `if: docs_only != 'true'`,
-而**改本文件的 PR 大多正是 docs-only** —— 判据会恰好在最该拦的那批 PR 上不执行。
-`Diff guards` 无 docs-only 短路、`fetch-depth: 0`,与既有的 changelog / NEXT_TASKS / 冻结稿三条闸同一个落点。
+2026-08-26 曾把 `--signoff` 那条挂进 `Diff guards` job(无 docs-only 短路、`fetch-depth: 0`,
+与既有 changelog / NEXT_TASKS / 冻结稿三条闸同一落点),**当场被 harness 自测的
+`P4a ci-guard-coverage` 判红并撤回**。原文:
+
+> 以下脚本被 CI/检查链引用却不在 selfGuard,可在同一 PR 内被改松而不被察觉:
+> `scripts/cutover-check.ts`
+
+🔴 **那条判断是对的,不要绕过它。** `harness/redzone.json` 的 selfGuard glob 是
+`scripts/check-*.ts` 等**具名清单**,而 `cutover-check.ts` 一个都不匹配 ⇒
+把它挂进 CI 等于让一个「同一个 PR 就能改成恒 PASS 的裁判」去卡合并 ——
+那正是 2026-07-29 跨模型评审 BLOCKER-1 的形状。
+
+### 解锁顺序(**先收编,后接闸**,不能反过来)
+
+1. 维护者拍板把 `scripts/cutover-check.ts` 纳入 `harness/redzone.json` 的 selfGuard
+   —— 新增红区条目 = **改规则语义**,该文件头注写明须用户拍板,**AI 不得自行发放授权**;
+2. 授权:`harness:grant 'harness/redzone.json' --reason "<拍板出处>"`(由维护者执行);
+3. 在 `Diff guards` job 的「Frozen drafts ledger gate」之后加回一步,跑
+   `cutover:check:signoff`。它不连库、不需要生成 Prisma client、不读 git 历史
+   (刻意不跑验收套件、不跑生成物对账、不解析 migration 基线),对该 job 的
+   `timeout-minutes: 5` 是三位数倍余量。
+   ⚠️ 写 workflow 时注意:P4a 是拿正则扫 `ci.yml` **全文**(注释也算)去解析
+   `pnpm <脚本名>` 的,所以在 ① 落地之前,连**写在注释里**都会把它判红。
+
+⚠️ **另一条路是改名**:把它搬成 `scripts/check-cutover.ts` 就自动落进既有 glob,无需新增红区条目。
+本刀**没走这条**,因为该路径被 `docs/ops/activity-batch-worker-runbook.md` 点名,
+而那份 runbook 的 sha256 正是 ⑦-c 签字的对拍锚 —— 改它会让 **⑦-c 当场过期**,
+那是维护者的决定,不是改名顺手能带的。
 
 ⚠️ `--signoff` 是全量的**子集不是替代**:它不跑验收套件、不跑生成物对账、不读 git 历史,
 因此 `assertSubIdsClosed()`(手写编号清单 ↔ 闸真实产出的双向相等)仍**只在全量里**跑。

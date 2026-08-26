@@ -673,31 +673,6 @@ jobs:
       - name: Frozen drafts ledger gate
         run: pnpm exec tsx scripts/check-frozen-drafts-ledger.ts
 
-      # 切换前检查的**签字登记表可信性**闸(`docs/ai-harness/CUTOVER_SIGNOFF.md`)。
-      #
-      # 🔴 **本条不是「把 cutover:check 接进 CI」** —— 全量那支仍然不接,理由一字未改:
-      # 十条里今天还有必不过的(9a 尚有 it.todo、⑩ 要部署侧产物),接了等于全仓永久红,
-      # 而「闸红了没人消费 = 没有执法」是本仓已记录的事故形状。
-      # `--signoff` 判的是**另一件事**:那张表本身可不可信 —— 读数非退化 · 逐条对拍 ·
-      # 签了不存在/A 类编号 · 规模档登记闭合(⑨-c)。这四样今天全绿,**零存量摩擦**。
-      #
-      # 🔴 立项证据:签字机制 2026-08-26 落地(#1196/#1197)时**零执行位** ——
-      # `cutover:check` 从未接过任何 workflow。于是「签字与机器读数矛盾即红」这句话
-      # 在此之前只是散文:任何人都能把登记表里的对拍值改成任意数字而 CI 一片绿。
-      #
-      # ⚠️ **为什么挂这里而不是 fast job**(逐字读本文件得出,不是凭印象):
-      # 登记表是一份 `.md` ⇒ 只改它的 PR **就是 docs-only**,而 fast job 的
-      # Lint / Typecheck / Build / Run unit tests 四步都带 `if: docs_only != 'true'`
-      # —— 判据会恰好在最该拦的那批 PR 上一次都不跑。与上面 changelog / NEXT_TASKS /
-      # 冻结稿三条闸逐字同一个理由,故并排放在本 job(无 docs-only 短路)。
-      #
-      # 无 `--base`:纯当前工作树内的静态对照,不读 git 历史、不连库、不需要生成 Prisma client
-      # (`--signoff` 刻意不跑验收套件、不跑生成物对账、不解析 migration 基线)。
-      # 本机实测 1.7s,对本 job 的 timeout-minutes: 5 是三位数倍余量。
-      # 无 `|| true`:它有发现就退 1,转「报告态」= 加一个 `|| true`,一行,不可能只翻一半。
-      - name: Cutover sign-off registry gate
-        run: pnpm cutover:check:signoff
-
   # 触碰红区/执法层时才跑:environment 上挂了 required reviewer,
   # 这个 job 会一直 pending 直到维护者在 PR 页面点批准。
   #

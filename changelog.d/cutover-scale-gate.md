@@ -5,10 +5,11 @@
 维护者 2026-08-26 拍板三条:**跑 30 / 500 / 2000 三档留复现命令与读数**、
 **万人档写清为什么不做(不是「还没做」)**、**在 CI 里跑不占我的机器**。
 
-红区两条(均已授权):`.github/workflows/ci.yml` · `package.json`。其余写集
-(`test/**`、`scripts/cutover-check.ts`、`docs/ai-harness/CUTOVER_SIGNOFF.md`)**逐文件**跑过
-`harness:needs`,全部「不需要授权」——`scripts/cutover-check.ts` 不在 selfGuard 的
-`scripts/check-*.ts` 等具名清单内(那正是本仓「selfGuard 的 glob 钉在文件名上」那条教训)。
+红区**实际只动 1 条**:`package.json`(已授权)。`.github/workflows/ci.yml` 虽已授权,
+但最终**净改动为零**(见下「零执行位」段)。其余写集(`test/**`、`scripts/cutover-check.ts`、
+`docs/ai-harness/{CUTOVER_SIGNOFF,README}.md`)**逐文件**跑过 `harness:needs`,全部「不需要授权」
+——`scripts/cutover-check.ts` 不在 selfGuard 的 `scripts/check-*.ts` 等具名清单内
+(那正是本仓「selfGuard 的 glob 钉在文件名上」那条教训,下面会再咬一次)。
 
 #### 🔴🔴 本刀要绕开一条既有判断,而那条判断是对的
 
@@ -44,6 +45,21 @@
 ⑤ 账本总额 = 各人之和 ⑥ 终态 committed/posted ⑦ 分块数 = `ceil(人数/500)`;
 跨档再判 ⑧ 不退化(每人形状与最小档逐字相等)⑨ 档位表闭合 ⑩ 豁免六要素。
 
+#### 三档读数(§14 要求「保存复现命令与读数」;取自 CI #1198 `Contract + E2E (2)` 首跑)
+
+| 档 | 准备分块 | memberCount | 分录行 | day-state 行 | 分录侧贡献值 | day-state 侧贡献值 | 分录侧时长 |
+|---|---|---|---|---|---|---|---|
+| 30 | 1 | 30 | 60 | 30 | 3 000 | 3 000 | 12 000 |
+| 500 | 1 | 500 | 1 000 | 500 | 50 000 | 50 000 | 200 000 |
+| **2 000** | **4** | 2 000 | 4 000 | 2 000 | 200 000 | 200 000 | 800 000 |
+
+(金额单位 = 百分之一分 / 百分之一小时,整数域比较,不碰浮点。)
+
+**归一化后每档逐字相同**:每人 2 条分录 · 1 行 day-state · 贡献值 100 · 时长 400 ·
+分录类型恰 `contribution_credit` + `service_credit` · 终态 `committed`/`posted`
+⇒ **跨过 4 个准备 chunk 之后行为一字未变**。
+🔴 读数里**一个耗时都没有** —— 那是本条链存在的前提,不是省略。
+
 🔴 **为什么一维一个 `it`**:jest 在一个 `it` 内首个失败即停 ⇒ 塞在一起时做变异对拍
 只观测得到第一条,「判据有判别力」在结构上观测不到,而这在基线全绿时完全看不出来
 (`TOOL_TRAPS` §6.1)。
@@ -78,21 +94,26 @@
 - **读数校验新增第三类**:清单型(`\d+(,\d+)*`)。它的退化不是「变成 0」而是**变成一句人话**,
   既有「计数型不得为 0」对那种退化**结构性失明**(不是数字,`Number(v)===0` 也不成立)。
 
-#### 顺带:签字登记表此前**零执行位**(与 ⑨-b 同因,故同刀补上)
+#### 🔴 顺带查实:签字登记表的对拍**至今零执行位**,而且**本刀补不上**
 
-`pnpm cutover:check` **从未接过任何 workflow**(全仓 grep 实测:`.github/workflows/*.yml` 零命中)。
-⇒「签字与机器读数矛盾即红」在此之前**只是散文**:登记表是一份 `.md`,
+`pnpm cutover:check` **从未接过任何 workflow**(`.github/workflows/*.yml` 全仓零命中)。
+⇒「签字与机器读数矛盾即红」在此之前、以及现在,**都只是散文**:登记表是一份 `.md`,
 只改它的 PR 就是 docs-only,连 `pnpm test` 都不跑。
 
-新增 `pnpm cutover:check:signoff`,挂 **`Diff guards` job**(无 docs-only 短路、`fetch-depth: 0`),
-与既有 changelog / NEXT_TASKS / 冻结稿三条闸同一个落点、同一个理由。
+本刀新增 `pnpm cutover:check:signoff`(只判「表本身可不可信」,不判十条结论,本机 1.7s,
+不连库 / 不需要生成 Prisma client / 不读 git 历史),并**试着**把它挂进 `Diff guards` job ——
+**当场被 harness 自测的 `P4a ci-guard-coverage` 判红,已撤回,`ci.yml` 净改动为零**:
 
-🔴 **不是「把 cutover:check 接进 CI」** —— 全量那支**仍然不接**,理由一字未改:
-十条里今天还有必不过的(9a 尚有 9 条 `it.todo`、⑩ 要部署侧产物),接了等于全仓永久红。
-`--signoff` 判的是**另一件事**:那张表本身可不可信(读数非退化 · 逐条对拍 ·
-签了不存在/A 类编号 · 规模档登记闭合),四样今天全绿,**零存量摩擦**;
-它不跑验收套件、不跑生成物对账、不读 git 历史,**本机实测 1.7s**(该 job timeout 5 分钟)。
-⚠️ 它是全量的**子集不是替代**:`assertSubIdsClosed()` 仍只在全量里跑。
+> 以下脚本被 CI/检查链引用却不在 selfGuard,可在同一 PR 内被改松而不被察觉:`scripts/cutover-check.ts`
+
+**那条判断是对的**:selfGuard 的 glob 是 `scripts/check-*.ts` 等具名清单,`cutover-check.ts`
+一个都不匹配 ⇒ 挂它进 CI = 让一个「同一个 PR 就能改成恒 PASS 的裁判」卡合并,
+正是 2026-07-29 跨模型评审 BLOCKER-1 的形状。⇒ 顺序必须是**先收编、后接闸**,
+解锁条件逐条写进 `CUTOVER_SIGNOFF.md` §3.1(要维护者拍板 + 授权 `harness/redzone.json`;
+另一条路「改名成 `scripts/check-cutover.ts`」会让 ⑦-c 的 runbook 摘要对拍当场过期,本刀不走)。
+
+⚠️ 顺带记一个会咬人的细节:P4a 是拿正则扫 `ci.yml` **全文(注释也算)**解析 `pnpm <脚本名>` 的
+—— 收编之前,连把那条命令**写在注释里**都会判红。
 
 #### 变异对拍读数(每一维各自成一个控制项,红集两两不相交)
 
@@ -118,11 +139,12 @@ pnpm cutover:check:selftest   正对照  57/57 → 69/69(+T1–T8,+3 条既有�
 
 ```
 pnpm cutover:check     ⏸ 待维护者确认   1 条(⑩) → 1 条(⑩)   ← 不变,见下
-                       ☑ 已签字确认     9 条 → 10 条(+9b);整条收口 8 → 7 条
+                       ☑ 已签字确认     9 条 → 10 条(+9b)
                        A 类子判据       10/11 → 11/12 过(+9c 通过)
                        ⑨               ❌ 未过 → ❌ 未过(9a 仍有 9 条 it.todo)
-pnpm cutover:check:signoff  (新)       exit 0,1.7s;12 个读数全部非退化
+pnpm cutover:check:signoff  (新)       exit 0,1.7s;12 个读数全部非退化(**未接 CI**,见上)
 pnpm test:scale             (新)       1 个 spec(`--listTests` 实测恰 1 个,非 306)
+CI 那条 e2e 的首跑结论                  见 PR #1198 的 Contract + E2E 分片
 ```
 
 ⚠️ **⏸ 从 1 条变 1 条,不是「没生效」**:⑨ 此前就**不是 ⏸ 而是 ❌**(被 A 类 9a 的 9 条
