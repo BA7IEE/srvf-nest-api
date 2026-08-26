@@ -3,7 +3,12 @@ import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { BizException } from '../../src/common/exceptions/biz.exception';
 import { PrismaService } from '../../src/database/prisma.service';
+import { ActivityArchiveService } from '../../src/modules/activities/activity-archive.service';
+import { ActivityAuditRecorder } from '../../src/modules/activities/activity-audit-recorder';
+import { ActivityClosureAuditRecorder } from '../../src/modules/activities/activity-closure-audit-recorder';
 import { ActivityClosureService } from '../../src/modules/activities/activity-closure.service';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
 import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
@@ -114,6 +119,10 @@ describe('AC-063 关账并发 —— 与最后一次终审 / 最后一个更正�
   let reviewA: SettlementReviewService;
   let correctionAudit: CorrectionAuditRecorder;
   let reviewAudit: SettlementReviewAuditRecorder;
+  /** ADV-022:归档也走同一把 Activity 行锁 ⇒ 与关账 / 更正天然可竞。 */
+  let archiveB: ActivityArchiveService;
+  let closureAudit: ActivityClosureAuditRecorder;
+  let activityAuditB: ActivityAuditRecorder;
 
   /** 结算版本的提交人。§7.5 要求提交人 ≠ 审核人,更正也一样。 */
   let submitter: CurrentUserPayload;
@@ -138,11 +147,14 @@ describe('AC-063 关账并发 —— 与最后一次终审 / 最后一个更正�
     reviewA = appA.get(SettlementReviewService);
     correctionAudit = appA.get(CorrectionAuditRecorder);
     reviewAudit = appA.get(SettlementReviewAuditRecorder);
+    closureAudit = appA.get(ActivityClosureAuditRecorder);
 
     // ⚠️ `resetDb` 只在第一套上跑一次(两套共库);第二套只提供独立连接池。
     appB = await createTestApp();
     prismaB = appB.get(PrismaService);
     closureB = appB.get(ActivityClosureService);
+    archiveB = appB.get(ActivityArchiveService);
+    activityAuditB = appB.get(ActivityAuditRecorder);
 
     submitter = await makeActor('closure-conc-submitter');
     reviewerFirst = await makeActor('closure-conc-reviewer-first');
@@ -204,6 +216,66 @@ describe('AC-063 关账并发 —— 与最后一次终审 / 最后一个更正�
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     throw new Error(`期望至少 ${expected} 条关账事务堵在 Activity 行锁上,实际看到 ${observed}`);
+  }
+
+  /**
+   * ADV-022 用的两把屏障 —— 与关账那把**逐字认不同的取锁语句**,互相不会数错人:
+   *   · 归档 / 生命周期:`ActivityAccessService.lockAndFindActivityOrThrow` 的
+   *     `SELECT id FROM "Activity" … FOR UPDATE`(关账那条是 `SELECT title, "statusCode", …`,
+   *     更正那条是 `SELECT title FROM "Activity"` —— 三条前缀两两不相交);
+   *   · 更正:`CorrectionApplicationService.lockActivity` 的 `SELECT title FROM "Activity"`。
+   *
+   * ⚠️ 轮询上限同样压到 2.5s:被冻住的一方是 Prisma 交互事务(归档走默认 5000ms 预算),
+   *    等过头会把"真症状"变成"超时假红"。
+   */
+  async function waitForRowLockWaiters(
+    lockSqlNeedle: string,
+    expected: number,
+    label: string,
+  ): Promise<void> {
+    const deadline = Date.now() + 2_500;
+    let observed = 0;
+    while (Date.now() < deadline) {
+      const [row] = await prismaA.$queryRaw<Array<{ waitingCount: number }>>`
+        SELECT count(*)::int AS "waitingCount"
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND pid <> pg_backend_pid()
+          AND wait_event_type = 'Lock'
+          AND query LIKE ${`%${lockSqlNeedle}%`}
+          AND query LIKE '%FOR UPDATE%'
+      `;
+      observed = row?.waitingCount ?? 0;
+      if (observed >= expected) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`期望至少 ${expected} 条${label}事务堵在 Activity 行锁上,实际看到 ${observed}`);
+  }
+
+  const ARCHIVE_LOCK_SQL = 'SELECT id FROM "Activity"';
+  const CORRECTION_LOCK_SQL = 'SELECT title FROM "Activity"';
+
+  /** 归档被拒时的完整取证:六列一列都没写,活动状态原地不动。 */
+  async function expectArchiveColumnsUntouched(activityId: string): Promise<void> {
+    const row = await prismaA.activity.findUniqueOrThrow({
+      where: { id: activityId },
+      select: {
+        statusCode: true,
+        archivedAt: true,
+        archivedByUserId: true,
+        archivedFromStatusCode: true,
+        archiveReasonCode: true,
+        archiveOperationKey: true,
+      },
+    });
+    expect(row).toEqual({
+      statusCode: 'published',
+      archivedAt: null,
+      archivedByUserId: null,
+      archivedFromStatusCode: null,
+      archiveReasonCode: null,
+      archiveOperationKey: null,
+    });
   }
 
   /** 攥住 Activity 行锁的第三个事务;返回「放闸」回调。 */
@@ -874,5 +946,454 @@ describe('AC-063 关账并发 —— 与最后一次终审 / 最后一个更正�
     expect(await activeClosures(fixture.activityId)).toEqual([
       { revision: 1, statusCode: 'active' },
     ]);
+  });
+
+  // =========================================================================
+  // ⑤ ADV-022 —— 「更正提交或生效与关账、归档同时发生」(2026-08-26 补)
+  //
+  // 合同原句(对抗项 ADV-022,逐字):
+  //   「更正提交或生效与关账、归档同时发生。」
+  //
+  // 这一句是一张 2×2 的表:{更正**提交**, 更正**生效**} × {关账, 归档}。逐格去向:
+  //   | | 关账 | 归档 |
+  //   |---|---|---|
+  //   | 更正生效 | ✅ 已由上面 ② 号用例覆盖(更正 commit × 关账,判决翻转) | ⑤-a 本组 |
+  //   | 更正提交 | ⑤-b 本组 | ⑤-c 本组 |
+  //   另加 ⑤-d「归档 × 关账」—— 归档取的是与关账**同一把** Activity `FOR UPDATE`,
+  //   这条接缝是 2026-08-25 归档刀新造出来的,此前全仓零并发用例。
+  //
+  // ⭐ 三条判决翻转(⑤-a / ⑤-b / ⑤-d)都按同一个形状构造:
+  //    让**入口时刻**的世界给出与最终结论**相反**的答案 ——
+  //    「若在取锁之前判,必然是 X;实际返回 ¬X ⇒ 只可能是拿到 Activity 行锁之后重判的」。
+  //    这比「反正只有一个成功」强得多:后者在**完全没有锁**的实现上也常常是绿的。
+  //
+  // 🔴 屏障一律**正面数出锁等待者**(`pg_stat_activity.wait_event_type='Lock'`),
+  //    数不到就抛 —— 「没成功」不等于「排过队」。
+  //
+  // 🔴 每一维各自成 `it`:jest 在一个 `it` 内首个失败即停,塞一起会让后面的断言
+  //    从未被执行,而这在基线全绿时完全看不出来。
+  // =========================================================================
+
+  /** 把一条更正推到「已批准、已准备」——差最后一步 commit。 */
+  async function prepareCorrection(
+    fixture: ClosureConcurrencyFixture,
+    suffix: string,
+  ): Promise<{ correctionRequestId: string; operationKey: string; requestHash: string }> {
+    const submitted = await correctionA.submit(
+      {
+        activityId: fixture.activityId,
+        participationIdentityId: fixture.identityIds[0],
+        requestTypeCode: 'points',
+        requestedChangeJson: pointsChange(fixture, '0.60'),
+        reason: '现场记录有误,认定贡献值需要更正',
+        operationKey: `${fixture.tag}-correction-${suffix}`,
+        requestHash: `${fixture.tag}-correction-hash-${suffix}`,
+      },
+      submitter,
+      auditMeta,
+    );
+    const reviewed = await correctionA.review(
+      { correctionRequestId: submitted.correctionRequestId, actionCode: 'approve' },
+      reviewerFirst,
+      auditMeta,
+    );
+    expect(reviewed.outcome).toBe('reviewed');
+    const applyArgs = {
+      correctionRequestId: submitted.correctionRequestId,
+      operationKey: `${fixture.tag}-apply-${suffix}`,
+      requestHash: `${fixture.tag}-apply-hash-${suffix}`,
+    };
+    await correctionA.prepare(applyArgs, submitter, auditMeta);
+    return applyArgs;
+  }
+
+  /** 「等待期已经过去了吗」—— 拿 **DB 的** now() 与 active closure 的 closedAt 比,不用本机墙钟。 */
+  async function archiveWaitingElapsed(activityId: string): Promise<boolean> {
+    const [row] = await prismaA.$queryRaw<Array<{ elapsed: boolean }>>`
+      SELECT (now() >= c."closedAt" + (a."archiveWaitingDays" || ' days')::interval) AS elapsed
+      FROM "ActivitySettlementClosureRevision" c
+      JOIN "Activity" a ON a.id = c."activityId"
+      WHERE c."activityId" = ${activityId} AND c."statusCode" = 'active'
+    `;
+    if (row === undefined) throw new Error('取不到 active closure,前提不成立');
+    return row.elapsed;
+  }
+
+  // ---------------------------------------------------------------------
+  // ⑤-a 更正**生效** × 归档 —— 判决翻转:入口放行 → 锁后 20156
+  // ---------------------------------------------------------------------
+  it('⭐ ADV-022 更正 commit 在归档等锁期间落地 ⇒ 归档按锁后状态复判、被 20156 挡下且零写入', async () => {
+    const fixture = await createFixture({ stage: 'closed' });
+    // 等待期设 0 ⇒ 关账那一刻起就满足「过了等待期」。这样**入口世界里归档是放行的**,
+    // 结论一旦翻成拒绝,就只可能来自锁后复判。
+    await prismaA.activity.update({
+      where: { id: fixture.activityId },
+      data: { archiveWaitingDays: 0 },
+    });
+    const applyArgs = await prepareCorrection(fixture, 'archive-race');
+
+    // 更正 commit 停在最后一步(审计),握着 Activity 行锁。
+    // ⚠️ 先 `passThrough` 再等闸:审计行必须真的写下去,否则冻住的就不是
+    //    "完整事务差一步 commit",而是一个内容不同的事务。
+    const passThrough = correctionAudit.logCommit.bind(correctionAudit);
+    let releaseCommit!: () => void;
+    const commitHeld = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    const commitSpy = jest
+      .spyOn(correctionAudit, 'logCommit')
+      .mockImplementationOnce(async (args: Parameters<typeof passThrough>[0]) => {
+        await passThrough(args);
+        await commitHeld; // ← 事务停在这里,Activity 行锁没放
+      });
+
+    const commitPromise = correctionA.commit(applyArgs, submitter, auditMeta);
+    let archivePromise: ReturnType<ActivityArchiveService['archive']> | undefined;
+    let barrierError: unknown;
+    try {
+      await waitUntilHeld(() => commitSpy.mock.calls.length);
+
+      // 🔴 入口时刻的读数(**不在任何事务里**):active closure 还挂着、等待期已过
+      //    ⇒ **若归档在锁前判,它必然放行**。
+      expect(await activeClosures(fixture.activityId)).toEqual([
+        { revision: 1, statusCode: 'active' },
+      ]);
+      await expect(archiveWaitingElapsed(fixture.activityId)).resolves.toBe(true);
+
+      // B 实例发起归档 —— 它只能堵在更正握着的 Activity 行锁上。
+      archivePromise = archiveB.archive(
+        fixture.activityId,
+        { operationKey: `${fixture.tag}-archive-vs-correction` },
+        submitter,
+        auditMeta,
+      );
+      await waitForRowLockWaiters(ARCHIVE_LOCK_SQL, 1, '归档');
+
+      // 归档**已经在等锁**,而入口世界仍然是"有 active closure 且等待期已过"。
+      expect(await activeClosures(fixture.activityId)).toEqual([
+        { revision: 1, statusCode: 'active' },
+      ]);
+    } catch (error) {
+      barrierError = error;
+    } finally {
+      releaseCommit();
+      await commitPromise;
+    }
+    if (barrierError !== undefined) {
+      if (archivePromise !== undefined) await archivePromise.catch(() => undefined);
+      if (barrierError instanceof Error) throw barrierError;
+      throw new Error('屏障等待抛出了非 Error 值,无法转述');
+    }
+    if (archivePromise === undefined) throw new Error('归档没有被发起');
+
+    // 🔴 判决翻转:入口"放行" → 实际"未关账"。更正把 closure 顶成 superseded 之后,
+    //    归档读到的 active closure 是 null ⇒ 具名码 20156(而不是 20157,更不是成功)。
+    const rejected = archivePromise;
+    await expect(rejected).rejects.toBeInstanceOf(BizException);
+    await rejected.catch((error: unknown) => {
+      expect((error as BizException).biz).toBe(BizCode.ACTIVITY_ARCHIVE_NOT_CLOSED);
+    });
+
+    // 零写入 + 赢家的效果确实落地了(不是"归档失败因为更正也失败了")。
+    await expectArchiveColumnsUntouched(fixture.activityId);
+    expect(await activeClosures(fixture.activityId)).toEqual([]);
+    expect(await closureRevisionCount(fixture.activityId)).toBe(1);
+  });
+
+  // ---------------------------------------------------------------------
+  // ⑤-b 更正**提交** × 关账 —— 判决翻转:入口八类全过 → 锁后 pending_work_exists
+  // ---------------------------------------------------------------------
+  it('⭐ ADV-022 更正 submit 在关账等锁期间落地 ⇒ 关账按锁后状态复判、被 pending_work_exists 挡下且零写入', async () => {
+    const fixture = await createFixture({ stage: 'posted' });
+
+    // 更正 submit 停在最后一步(审计),握着 Activity 行锁。
+    const passThrough = correctionAudit.logSubmit.bind(correctionAudit);
+    let releaseSubmit!: () => void;
+    const submitHeld = new Promise<void>((resolve) => {
+      releaseSubmit = resolve;
+    });
+    const submitSpy = jest
+      .spyOn(correctionAudit, 'logSubmit')
+      .mockImplementationOnce(async (args: Parameters<typeof passThrough>[0]) => {
+        await passThrough(args);
+        await submitHeld; // ← 事务停在这里,Activity 行锁没放
+      });
+
+    const submitPromise = correctionA.submit(
+      {
+        activityId: fixture.activityId,
+        participationIdentityId: fixture.identityIds[0],
+        requestTypeCode: 'points',
+        requestedChangeJson: pointsChange(fixture, '0.60'),
+        reason: '现场记录有误,认定贡献值需要更正',
+        operationKey: `${fixture.tag}-submit-vs-close`,
+        requestHash: `${fixture.tag}-submit-vs-close-hash`,
+      },
+      submitter,
+      auditMeta,
+    );
+    let closePromise: ReturnType<ActivityClosureService['close']> | undefined;
+    let barrierError: unknown;
+    try {
+      await waitUntilHeld(() => submitSpy.mock.calls.length);
+
+      // 🔴 入口时刻的读数:更正的写入一件都还看不见 —— run 还是 `posted`、
+      //    一条开放更正都没有 ⇒ **若关账在锁前判,八类全过、必然成功**。
+      await expect(
+        prismaA.attendanceSettlementRun.findUniqueOrThrow({
+          where: { id: fixture.runId },
+          select: { statusCode: true },
+        }),
+      ).resolves.toEqual({ statusCode: 'posted' });
+      await expect(
+        prismaA.attendanceCorrectionRequest.count({ where: { activityId: fixture.activityId } }),
+      ).resolves.toBe(0);
+      expect(await activeClosures(fixture.activityId)).toEqual([]);
+
+      closePromise = closureB.close(
+        fixture.activityId,
+        {
+          operationKey: `${fixture.tag}-close-vs-submit`,
+          requestHash: `${fixture.tag}-close-vs-submit-hash`,
+        },
+        submitter,
+        auditMeta,
+      );
+      await waitForClosureLockWaiters(1);
+    } catch (error) {
+      barrierError = error;
+    } finally {
+      releaseSubmit();
+      await submitPromise;
+    }
+    if (barrierError !== undefined) {
+      if (closePromise !== undefined) await closePromise.catch(() => undefined);
+      if (barrierError instanceof Error) throw barrierError;
+      throw new Error('屏障等待抛出了非 Error 值,无法转述');
+    }
+    if (closePromise === undefined) throw new Error('关账没有被发起');
+
+    const outcome = await closePromise;
+    // 🔴 判决翻转:入口"八类全过" → 实际被挡,且缺口里**恰有**刚落地的那条开放更正。
+    if (outcome.outcome !== 'blocked') {
+      throw new Error('更正刚提交、还开着,关账不允许通过');
+    }
+    const pendingWorkGap = outcome.gaps.find((gap) => gap.gapCode === 'pending_work_exists');
+    if (pendingWorkGap === undefined) {
+      throw new Error(`缺口里没有 pending_work_exists:${JSON.stringify(outcome.gaps)}`);
+    }
+    expect(pendingWorkGap.details.pendingCorrection).toBe(1);
+
+    // 零部分写入:关账被挡时事务里全是 SELECT。
+    expect(await closureRevisionCount(fixture.activityId)).toBe(0);
+    await expect(
+      prismaA.activity.findUniqueOrThrow({
+        where: { id: fixture.activityId },
+        select: { currentClosureRevision: true },
+      }),
+    ).resolves.toEqual({ currentClosureRevision: null });
+
+    // 正对照:把这条更正驳回(`rejected` 不再占住 target,run 交回常态)⇒ 关账成功。
+    // 没有它,上面的 blocked 也可能只是"这个夹具本来就关不了账"。
+    const openRequest = await prismaA.attendanceCorrectionRequest.findFirstOrThrow({
+      where: { activityId: fixture.activityId },
+      select: { id: true },
+    });
+    await correctionA.review(
+      { correctionRequestId: openRequest.id, actionCode: 'reject' },
+      reviewerFirst,
+      auditMeta,
+    );
+    const after = await closureA.close(
+      fixture.activityId,
+      {
+        operationKey: `${fixture.tag}-close-after-reject`,
+        requestHash: `${fixture.tag}-close-after-reject-hash`,
+      },
+      submitter,
+      auditMeta,
+    );
+    if (after.outcome !== 'closed') {
+      throw new Error(`正对照失败:更正驳回后关账仍被挡 ${JSON.stringify(after.gaps)}`);
+    }
+    expect(await activeClosures(fixture.activityId)).toEqual([
+      { revision: 1, statusCode: 'active' },
+    ]);
+  });
+
+  // ---------------------------------------------------------------------
+  // ⑤-c 更正**提交** × 归档 —— 归档赢了锁,合法更正仍然提得进来
+  //
+  // 这一格**不是**判决翻转(更正提交不看活动状态,归档也不看在飞的更正),
+  // 读数是另外三组:①屏障(更正确实排在归档的锁后面)②归档赢家的效果落地
+  // ③🔴 更正在活动已 `archived` 之后**照样提交成功** —— 这正是 AC-064 后半句
+  //   「合法更正不因(等待期过去 / 已归档)而被永久禁止」在归档这一侧的读数。
+  // ---------------------------------------------------------------------
+  it('ADV-022 归档握锁时更正提交排队 ⇒ 归档落地后更正仍提交成功(合法更正不被归档禁掉)', async () => {
+    const fixture = await createFixture({ stage: 'closed' });
+    await prismaA.activity.update({
+      where: { id: fixture.activityId },
+      data: { archiveWaitingDays: 0 },
+    });
+    await expect(archiveWaitingElapsed(fixture.activityId)).resolves.toBe(true);
+
+    // 归档(B 实例)停在最后一步(审计),握着 Activity 行锁。
+    const passThrough = activityAuditB.logArchive.bind(activityAuditB);
+    let releaseArchive!: () => void;
+    const archiveHeld = new Promise<void>((resolve) => {
+      releaseArchive = resolve;
+    });
+    const archiveSpy = jest
+      .spyOn(activityAuditB, 'logArchive')
+      .mockImplementationOnce(async (args: Parameters<typeof passThrough>[0]) => {
+        await passThrough(args);
+        await archiveHeld; // ← 归档事务停在这里,Activity 行锁没放
+      });
+
+    const archivePromise = archiveB.archive(
+      fixture.activityId,
+      { operationKey: `${fixture.tag}-archive-holds-lock` },
+      submitter,
+      auditMeta,
+    );
+    let submitPromise: ReturnType<CorrectionApplicationService['submit']> | undefined;
+    let barrierError: unknown;
+    try {
+      await waitUntilHeld(() => archiveSpy.mock.calls.length);
+
+      // 入口时刻:归档还没提交,活动从事务外看仍是 published。
+      await expect(
+        prismaA.activity.findUniqueOrThrow({
+          where: { id: fixture.activityId },
+          select: { statusCode: true },
+        }),
+      ).resolves.toEqual({ statusCode: 'published' });
+
+      submitPromise = correctionA.submit(
+        {
+          activityId: fixture.activityId,
+          participationIdentityId: fixture.identityIds[0],
+          requestTypeCode: 'points',
+          requestedChangeJson: pointsChange(fixture, '0.60'),
+          reason: '归档之后发现认定贡献值仍需更正',
+          operationKey: `${fixture.tag}-submit-after-archive`,
+          requestHash: `${fixture.tag}-submit-after-archive-hash`,
+        },
+        submitter,
+        auditMeta,
+      );
+      // 正面数出:更正提交确实堵在归档握着的那把 Activity 行锁上。
+      await waitForRowLockWaiters(CORRECTION_LOCK_SQL, 1, '更正提交');
+    } catch (error) {
+      barrierError = error;
+    } finally {
+      releaseArchive();
+      await archivePromise;
+    }
+    if (barrierError !== undefined) {
+      if (submitPromise !== undefined) await submitPromise.catch(() => undefined);
+      if (barrierError instanceof Error) throw barrierError;
+      throw new Error('屏障等待抛出了非 Error 值,无法转述');
+    }
+    if (submitPromise === undefined) throw new Error('更正提交没有被发起');
+
+    // 归档赢家的效果落地。
+    await expect(
+      prismaA.activity.findUniqueOrThrow({
+        where: { id: fixture.activityId },
+        select: { statusCode: true, archiveReasonCode: true },
+      }),
+    ).resolves.toEqual({ statusCode: 'archived', archiveReasonCode: 'settled' });
+
+    // 🔴 而排在它后面的合法更正**照样成立** —— 归档不是"把账焊死"。
+    const submitted = await submitPromise;
+    expect(submitted.replayed).toBe(false);
+    await expect(
+      prismaA.attendanceCorrectionRequest.findUniqueOrThrow({
+        where: { id: submitted.correctionRequestId },
+        select: { activityId: true, statusCode: true },
+      }),
+    ).resolves.toEqual({ activityId: fixture.activityId, statusCode: 'pending' });
+  });
+
+  // ---------------------------------------------------------------------
+  // ⑤-d 归档 × 关账 —— 判决翻转:入口 20156 → 锁后放行
+  //
+  // 归档取的是与关账**同一把** Activity `FOR UPDATE`,这条接缝是 2026-08-25 归档刀
+  // 新造出来的,此前全仓零并发用例。构造与 ⑤-a 互为镜像:入口世界里归档是**被拒**的
+  //(一张 active closure 都没有 ⇒ 20156),关账赢锁之后它却**放行** ——
+  // 只可能是拿到行锁之后重读了 closure。
+  // ---------------------------------------------------------------------
+  it('⭐ ADV-022 关账在归档等锁期间落地 ⇒ 归档按锁后状态复判并放行(入口本该是 20156)', async () => {
+    const fixture = await createFixture({ stage: 'posted' });
+    await prismaA.activity.update({
+      where: { id: fixture.activityId },
+      data: { archiveWaitingDays: 0 },
+    });
+
+    // 关账(A 实例)停在最后一步(审计),握着 Activity 行锁。
+    const passThrough = closureAudit.log.bind(closureAudit);
+    let releaseClose!: () => void;
+    const closeHeld = new Promise<void>((resolve) => {
+      releaseClose = resolve;
+    });
+    const closeSpy = jest
+      .spyOn(closureAudit, 'log')
+      .mockImplementationOnce(async (args: Parameters<typeof passThrough>[0]) => {
+        await passThrough(args);
+        await closeHeld; // ← 关账事务停在这里,Activity 行锁没放
+      });
+
+    const closePromise = closureA.close(
+      fixture.activityId,
+      {
+        operationKey: `${fixture.tag}-close-holds-lock`,
+        requestHash: `${fixture.tag}-close-holds-lock-hash`,
+      },
+      submitter,
+      auditMeta,
+    );
+    let archivePromise: ReturnType<ActivityArchiveService['archive']> | undefined;
+    let barrierError: unknown;
+    try {
+      await waitUntilHeld(() => closeSpy.mock.calls.length);
+
+      // 🔴 入口时刻的读数:一张 active closure 都还看不见
+      //    ⇒ **若归档在锁前判,它必然被 20156 拒**。
+      expect(await activeClosures(fixture.activityId)).toEqual([]);
+
+      archivePromise = archiveB.archive(
+        fixture.activityId,
+        { operationKey: `${fixture.tag}-archive-vs-close` },
+        submitter,
+        auditMeta,
+      );
+      await waitForRowLockWaiters(ARCHIVE_LOCK_SQL, 1, '归档');
+
+      expect(await activeClosures(fixture.activityId)).toEqual([]);
+    } catch (error) {
+      barrierError = error;
+    } finally {
+      releaseClose();
+      await closePromise;
+    }
+    if (barrierError !== undefined) {
+      if (archivePromise !== undefined) await archivePromise.catch(() => undefined);
+      if (barrierError instanceof Error) throw barrierError;
+      throw new Error('屏障等待抛出了非 Error 值,无法转述');
+    }
+    if (archivePromise === undefined) throw new Error('归档没有被发起');
+
+    // 🔴 判决翻转:入口"20156" → 实际放行,且走的是**结算**那套开工条件。
+    const result = await archivePromise;
+    expect(result.statusCode).toBe('archived');
+    expect(result.reasonCode).toBe('settled');
+    expect(result.archivedFromStatusCode).toBe('published');
+
+    // 关账赢家一张 active closure,归档没有把它动过一列。
+    expect(await activeClosures(fixture.activityId)).toEqual([
+      { revision: 1, statusCode: 'active' },
+    ]);
+    expect(await closureRevisionCount(fixture.activityId)).toBe(1);
   });
 });
