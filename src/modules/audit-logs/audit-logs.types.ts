@@ -141,8 +141,8 @@ export type AuditLogEvent =
   // 招新可用性收口 F6(2026-07-11;评审稿 §3 R4):
   | 'recruitment-application.withdraw' // 申请人自助撤销(actor 置空);before/after status;extra {channel: wechat|phone, phone/openid 掩码}
   // 招新可用性收口 F7(2026-07-11;评审稿 §2.9 R6):
-  | 'recruitment-application.certificate-upload' // 申请人自助上传证书图(actor 置空);extra {channel, category, imageCount, replacedCount, phone 掩码}
-  | 'recruitment-application.certificate-review' // admin 审核申请人证书;extra {category, approved, imageCount},零 PII
+  | 'recruitment-application.certificate-upload' // 〔已退役 · 无产出者〕(生产者随 #830 PR-4a-2 删旧 category 端点,2026-07-30;词条刻意保留 —— 库中存在历史行,同批已发布错误码同款「保留不删」拍板)原语义:申请人自助上传证书图(actor 置空);extra {channel, category, imageCount, replacedCount, phone 掩码}
+  | 'recruitment-application.certificate-review' // 〔已退役 · 无产出者〕(同上一条,随 #830 退役)原语义:admin 审核申请人证书;extra {category, approved, imageCount},零 PII
   // 招新三期(入队:志愿者→队员)T2(2026-06-19;评审稿 recruitment-phase3-review.md §3.5 / E-J-8;
   // 本 PR 仅 admin 4 项,自助 submit〔T3〕/ join〔T4〕后续追加):
   | 'team-join-cycle.create' // admin 建入队轮;after
@@ -314,7 +314,7 @@ export type AuditLogEvent =
   | 'member.official-portrait.activate' // 首次激活标准照(此前无 ACTIVE);extra {portraitVersionId, specVersion, source}
   | 'member.official-portrait.replace' // 替换:旧版转 SUPERSEDED + 新版 ACTIVE 同事务;extra {oldVersionId, newVersionId}
   | 'member.official-portrait.void' // 作废当前版本;extra {portraitVersionId, reason}(reason 必填,issue §8.3)
-  | 'member.official-portrait.purge'; // 历史版本二进制合规清理;extra {portraitVersionId}
+  | 'member.official-portrait.purge'; // 〔预留 · 未接〕(#1106 T1 刻意未接;合规清理流程见 issue #1055 §5.2,建流程时接通)语义:历史版本二进制合规清理;extra {portraitVersionId}
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit
