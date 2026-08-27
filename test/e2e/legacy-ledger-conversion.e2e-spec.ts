@@ -44,8 +44,14 @@ describe('存量考勤账本化转换(P1-28 第 7 批② A 案,合同 §16.3 只
 
   const auditMeta = { requestId: 'legacy-ledger-conversion-e2e', ip: null, ua: null };
   const DAY = new Date('2026-07-01T00:00:00.000Z');
-  const WINDOW_A = { startAt: new Date('2026-07-01T10:00:00.000Z'), endAt: new Date('2026-07-01T12:00:00.000Z') };
-  const WINDOW_B = { startAt: new Date('2026-07-01T14:00:00.000Z'), endAt: new Date('2026-07-01T16:00:00.000Z') };
+  const WINDOW_A = {
+    startAt: new Date('2026-07-01T10:00:00.000Z'),
+    endAt: new Date('2026-07-01T12:00:00.000Z'),
+  };
+  const WINDOW_B = {
+    startAt: new Date('2026-07-01T14:00:00.000Z'),
+    endAt: new Date('2026-07-01T16:00:00.000Z'),
+  };
   const OUT_OF_WINDOW = new Date('2026-07-01T18:30:00.000Z');
 
   beforeAll(async () => {
@@ -68,7 +74,13 @@ describe('存量考勤账本化转换(P1-28 第 7 批② A 案,合同 §16.3 只
       username: 'legacy-conversion-operator',
       role: Role.SUPER_ADMIN,
     });
-    actor = { id: user.id, username: user.username, role: user.role, status: user.status, memberId: null };
+    actor = {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      status: user.status,
+      memberId: null,
+    };
 
     const root = await prisma.organization.create({
       data: { name: '转换根组织', nodeTypeCode: 'legacy-conversion-root' },
@@ -169,7 +181,10 @@ describe('存量考勤账本化转换(P1-28 第 7 批② A 案,合同 §16.3 只
     registrationId: string | null;
   }
 
-  async function createApprovedSheet(activityId: string, records: readonly RecordSpec[]): Promise<string> {
+  async function createApprovedSheet(
+    activityId: string,
+    records: readonly RecordSpec[],
+  ): Promise<string> {
     const sheet = await prisma.attendanceSheet.create({
       data: {
         activityId,
@@ -203,10 +218,14 @@ describe('存量考勤账本化转换(P1-28 第 7 批② A 案,合同 §16.3 只
     const activityId = await createActivityWithSessions();
     await expect(
       conversionClosed.convertActivity({ activityId, currentUser: actor, auditMeta }),
-    ).rejects.toMatchObject({ biz: { code: BizCode.LEGACY_LEDGER_CONVERSION_WINDOW_INVALID.code } });
+    ).rejects.toMatchObject({
+      biz: { code: BizCode.LEGACY_LEDGER_CONVERSION_WINDOW_INVALID.code },
+    });
     await expect(
       conversionV11.convertActivity({ activityId, currentUser: actor, auditMeta }),
-    ).rejects.toMatchObject({ biz: { code: BizCode.LEGACY_LEDGER_CONVERSION_WINDOW_INVALID.code } });
+    ).rejects.toMatchObject({
+      biz: { code: BizCode.LEGACY_LEDGER_CONVERSION_WINDOW_INVALID.code },
+    });
     // 只读态下读面不切(§16.5):闸未开 ⇒ 恒 approved 考勤口径。
     expect(gate.participationReadSource()).toBe('approved-attendance');
   });
@@ -288,7 +307,12 @@ describe('存量考勤账本化转换(P1-28 第 7 批② A 案,合同 §16.3 只
     // 日封顶分账:M1 原始 2.00/4.50 ⇒ credited 2.00/1.00、cappedOut 0/3.50;M2 全额。
     const contributionEntries = await prisma.participationLedgerEntry.findMany({
       where: { postingBatchId: outcome.postingBatchId, entryTypeCode: 'contribution_credit' },
-      select: { memberId: true, recognizedPointsDelta: true, creditedPointsDelta: true, cappedOutPointsDelta: true },
+      select: {
+        memberId: true,
+        recognizedPointsDelta: true,
+        creditedPointsDelta: true,
+        cappedOutPointsDelta: true,
+      },
     });
     const byMember = new Map(
       [...new Set(contributionEntries.map((row) => row.memberId))].map((memberId) => [
@@ -301,11 +325,17 @@ describe('存量考勤账本化转换(P1-28 第 7 批② A 案,合同 §16.3 只
               credited: sum.credited.plus(row.creditedPointsDelta),
               cappedOut: sum.cappedOut.plus(row.cappedOutPointsDelta),
             }),
-            { recognized: new Prisma.Decimal(0), credited: new Prisma.Decimal(0), cappedOut: new Prisma.Decimal(0) },
+            {
+              recognized: new Prisma.Decimal(0),
+              credited: new Prisma.Decimal(0),
+              cappedOut: new Prisma.Decimal(0),
+            },
           ),
       ]),
     );
-    expect(Number(byMember.get(memberWithHead)?.recognized ?? '-1') ?? -1).toBe(6.5);
+    expect((byMember.get(memberWithHead)?.recognized ?? new Prisma.Decimal(-1)).toNumber()).toBe(
+      6.5,
+    );
     expect(Number(byMember.get(memberWithHead)?.credited ?? -1)).toBe(3);
     expect(Number(byMember.get(memberWithHead)?.cappedOut ?? -1)).toBe(3.5);
     expect(Number(byMember.get(memberWithoutHead)?.credited ?? -1)).toBe(1.5);
@@ -342,9 +372,13 @@ describe('存量考勤账本化转换(P1-28 第 7 批② A 案,合同 §16.3 只
     });
     expect(first.status).toBe('converted');
     const entriesBefore = await prisma.participationLedgerEntry.count({
-      where: { postingBatchId: (first as Extract<typeof first, { status: 'converted' }>).postingBatchId },
+      where: {
+        postingBatchId: (first as Extract<typeof first, { status: 'converted' }>).postingBatchId,
+      },
     });
-    const batchesBefore = await prisma.ledgerPostingBatch.count({ where: { settlementRun: { activityId } } });
+    const batchesBefore = await prisma.ledgerPostingBatch.count({
+      where: { settlementRun: { activityId } },
+    });
 
     const second: LegacyLedgerConversionOutcome = await conversionReadonly.convertActivity({
       activityId,
@@ -354,9 +388,13 @@ describe('存量考勤账本化转换(P1-28 第 7 批② A 案,合同 §16.3 只
     expect(second.status).toBe('already-converted');
 
     const entriesAfter = await prisma.participationLedgerEntry.count({
-      where: { postingBatchId: (first as Extract<typeof first, { status: 'converted' }>).postingBatchId },
+      where: {
+        postingBatchId: (first as Extract<typeof first, { status: 'converted' }>).postingBatchId,
+      },
     });
-    const batchesAfter = await prisma.ledgerPostingBatch.count({ where: { settlementRun: { activityId } } });
+    const batchesAfter = await prisma.ledgerPostingBatch.count({
+      where: { settlementRun: { activityId } },
+    });
     expect(entriesAfter).toBe(entriesBefore);
     expect(batchesAfter).toBe(batchesBefore);
   });

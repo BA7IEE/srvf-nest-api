@@ -74,6 +74,8 @@ describe('活动 v1.1 cutover gate — 结构判据(合同 §16.2 执行位)', (
       // 说明那一面根本没被覆盖 —— 「零 finding」就会是空绿而不是合规。
       expect(counts.v11GatedEntries).toBeGreaterThan(0);
       expect(counts.legacyGatedEntries).toBeGreaterThan(0);
+      // 转换刀第三判闸位(P1-28 第 7 批② A 案,2026-08-27 收编):没有它 = 空扫。
+      expect(counts.conversionGatedEntries).toBeGreaterThan(0);
       expect(counts.v11Files).toBeGreaterThan(0);
       expect(counts.legacyFiles).toBeGreaterThan(0);
       expect(counts.readFiles).toBeGreaterThan(0);
