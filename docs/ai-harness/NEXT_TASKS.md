@@ -2475,12 +2475,11 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 ### P2-23 字典项与 Audit events 没有登记表 —— 合同 ④ 的「对账」在这两半上**零判据** — 2026-08-26 由第二批签字逼出
 
-**状态**:待办
+**状态**:进行中(Audit events 半;字典半 ✅ 已随 [#1202](https://github.com/BA7IEE/srvf-nest-api/pull/1202) 合入,2026-08-27)
 
 > ⚠️ **状态读法(2026-08-27 起)**:字典半已交付(登记表 + 六维判据 + 常驻变异对拍,
-> 2026-08-27 合入,见本节末尾「字典半交付读数」);`待办` 描述的是**剩余的 Audit events 半**
-> —— 无人认领、无阻塞,按图例「状态描述剩余部分」的读法保持 `待办`,合入后由收口刀
-> 评估是否改 `进行中(#N)`。
+> [#1202](https://github.com/BA7IEE/srvf-nest-api/pull/1202) 合入,见本节末尾「字典半交付读数」);
+> `进行中` 描述的是**剩余的 Audit events 半**(先造落点、再做登记表,两刀活)。
 
 > **缺陷类**:**同一条合同要求里,一半有生成物、另一半连落点都没有** ——
 > 于是「已对账」这句话在两半上的可信度天差地别,而清单上它们长得一样。
@@ -2536,6 +2535,32 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
   spec 降薄运行器,需维护者一条令牌,**与 P2-22 那刀可同批发**。
 - ⚠️ 本刀不碰 4b 签字与 `seed-sha256-12` 锚(内容没变,锚不过期);
   **Audit events 半原样未动**(两刀活,等立项)。
+
+#### Audit events 半交付读数(2026-08-27;P2-23b)
+
+- **摸底修正台账前提**:「连一个可摘要的落点都没有」**已过时** —— 事件名早已被
+  `src/modules/audit-logs/audit-logs.types.ts` 的闭 union `AuditLogEvent`(147 项)收编;
+  三条写库漏斗(`AuditLogsService.log()` / `writeConfigAudit()`(permissions)/
+  `user-roles.service` 内联薄封装)全部 `event: AuditLogEvent` 类型锁,
+  TS 已静态保证「新增事件不进 union 编译不过」(全仓无 `as any` 逃逸)。
+  ⇒ 台账设想的「第一刀:先把散落事件名收进枚举」**无需再做**;缺的是对外清单与双向对拍。
+- **登记表**:`docs/ai-harness/AUDIT_EVENT_REGISTRY.md` —— 147 个事件逐条点名
+  (AST 提取生成后人工复核),每条带「仓内出现次数」(口径:src 下 AST 字符串字面量,
+  排除 union 宿主与 spec,含常量定义与三元分支,不含注释);147 = 活跃 142 + 零产出 5。
+- **判据**:`src/modules/audit-logs/audit-event-registry.spec.ts`(unit 轮,零红区,
+  形态沿 P2-23a 先例不带 `.criteria.spec.ts` 后缀)。六维:D0 仪器健康 ·
+  D1 union 提取闭集(非字面量成员 fail-closed 红)· D2 声明行三段数字对拍 ·
+  D3 漏登记 · D4 多登记 · D5 出现次数逐条镜像 · D6 零产出闭集(死事件必须标注)。
+  常驻变异对拍 M1–M6(红集精确、两两不相交),含「只改计数让总数对上」的外科变异(M3)。
+- 🔴 **摸底新发现(只登记不删,待维护者拍板)**:3 个 union 成员零产出且注释未标注退役 ——
+  `recruitment-application.certificate-upload` / `.certificate-review`(招新证书上传/审核,
+  疑似随流程改造退役)/ `member.official-portrait.purge`(正片清理)。
+  登记表备注「⚠️ 零产出且 union 未标注退役」,D6 靠「零产出」标注兜住不红;
+  维护者拍板后:真退役 ⇒ union 注释补〔已退役〕或删词条(需同步本表);
+  还该有产出 ⇒ 这是**漏写审计**的 bug,另立项。
+- ⚠️ 4b 签字理由行是否随本刀升级(从「接受现状」到「已逐条核对」),留给下一次签字时一并处理;
+  本刀不动 `cutover:check`(scripts 红区,升级路径与字典刀同款:判据逻辑挪
+  `scripts/check-*.ts` + spec 降薄运行器,需维护者令牌,可与 P2-22 那刀同批)。
 
 ## 已收口项
 
