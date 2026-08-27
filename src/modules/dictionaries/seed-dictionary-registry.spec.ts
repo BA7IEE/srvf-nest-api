@@ -767,7 +767,6 @@ describe('P2-23a 字典 seed 登记表 —— 常驻变异对拍(做错时必须
     const mutated = REGISTRY_TEXT.replace(
       '> seed 不预置 items(运营自填;依据见 seed.ts 该条目注释)。',
       '> (标注被删)',
-      1,
     );
     expectOnlyRed(allDimensions(SEED_SOURCE, mutated), 'D6', "'group_function'");
   });
