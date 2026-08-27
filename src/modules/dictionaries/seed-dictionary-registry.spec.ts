@@ -64,7 +64,11 @@ const REAL_CONFIG: ExtractorConfig = {
   flatArrays: ['V2_DICT_SEED'],
   siteTyped: [
     { fn: 'seedActivityTypeHierarchy', typeCode: 'activity_type', arrays: ['parents', 'children'] },
-    { fn: 'seedRecruitmentStageDict', typeCode: 'recruitment_stage', arrays: ['RECRUITMENT_STAGE_SEED'] },
+    {
+      fn: 'seedRecruitmentStageDict',
+      typeCode: 'recruitment_stage',
+      arrays: ['RECRUITMENT_STAGE_SEED'],
+    },
   ],
 };
 
@@ -134,22 +138,28 @@ function evalLiteral(
   if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
   const u = unwrap(node as ts.Expression);
   if (u !== node) return evalLiteral(u, sf, bindings, defects);
-  if (ts.isArrayLiteralExpression(u)) return u.elements.map((e) => evalLiteral(e, sf, bindings, defects));
+  if (ts.isArrayLiteralExpression(u))
+    return u.elements.map((e) => evalLiteral(e, sf, bindings, defects));
   if (ts.isObjectLiteralExpression(u)) {
     const o: Record<string, unknown> = {};
     for (const p of u.properties) {
-      if (ts.isPropertyAssignment(p)) o[p.name.getText(sf)] = evalLiteral(p.initializer, sf, bindings, defects);
+      if (ts.isPropertyAssignment(p))
+        o[p.name.getText(sf)] = evalLiteral(p.initializer, sf, bindings, defects);
     }
     return o;
   }
   if (ts.isIdentifier(node)) {
     if (!(node.text in bindings)) {
-      defects.push(`字典数组里出现未绑定的标识符 '${node.text}'(${at})⇒ 提取器读不了,先在 IDENTIFIER_BINDINGS 登记它`);
+      defects.push(
+        `字典数组里出现未绑定的标识符 '${node.text}'(${at})⇒ 提取器读不了,先在 IDENTIFIER_BINDINGS 登记它`,
+      );
       return undefined;
     }
     return bindings[node.text];
   }
-  defects.push(`字典数组里有非字面量节点(${at},${ts.SyntaxKind[node.kind]})⇒ 提取器读不了,fail-closed`);
+  defects.push(
+    `字典数组里有非字面量节点(${at},${ts.SyntaxKind[node.kind]})⇒ 提取器读不了,fail-closed`,
+  );
   return undefined;
 }
 
@@ -221,7 +231,10 @@ function extractSeedDictionaries(
       const e = node.expression;
       if (ts.isPropertyAccessExpression(e) && e.name.text === 'upsert') {
         const obj = e.expression;
-        if (ts.isPropertyAccessExpression(obj) && (obj.name.text === 'dictType' || obj.name.text === 'dictItem')) {
+        if (
+          ts.isPropertyAccessExpression(obj) &&
+          (obj.name.text === 'dictType' || obj.name.text === 'dictItem')
+        ) {
           sites.push({
             model: obj.name.text,
             fn: enclosingFn(node),
@@ -264,7 +277,9 @@ function extractSeedDictionaries(
   for (const src of config.siteTyped) {
     const typeSite = sites.find((s) => s.model === 'dictType' && s.fn === src.fn);
     if (typeSite === undefined) {
-      defects.push(`在 ${src.fn} 里找不到 dictType.upsert 站点 ⇒ ${src.typeCode} 的 type 提取失去输入`);
+      defects.push(
+        `在 ${src.fn} 里找不到 dictType.upsert 站点 ⇒ ${src.typeCode} 的 type 提取失去输入`,
+      );
       continue;
     }
     // create 字面量直接从源码里读(该函数的 type code/label 是字面量;变成变量 ⇒ 读不了即红)。
@@ -304,13 +319,15 @@ function extractSeedDictionaries(
     const codeProp =
       create !== undefined && ts.isObjectLiteralExpression(create.initializer)
         ? create.initializer.properties.find(
-            (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && p.name.getText(sf) === 'code',
+            (p): p is ts.PropertyAssignment =>
+              ts.isPropertyAssignment(p) && p.name.getText(sf) === 'code',
           )
         : undefined;
     const labelProp =
       create !== undefined && ts.isObjectLiteralExpression(create.initializer)
         ? create.initializer.properties.find(
-            (p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && p.name.getText(sf) === 'label',
+            (p): p is ts.PropertyAssignment =>
+              ts.isPropertyAssignment(p) && p.name.getText(sf) === 'label',
           )
         : undefined;
     const tCode =
@@ -363,7 +380,12 @@ interface RegistryParse {
 function parseRegistry(text: string | null): RegistryParse {
   const defects: string[] = [];
   if (text === null) {
-    return { declaredTypes: null, declaredItems: null, sections: new Map(), defects: ['登记表文件不存在'] };
+    return {
+      declaredTypes: null,
+      declaredItems: null,
+      sections: new Map(),
+      defects: ['登记表文件不存在'],
+    };
   }
   let declaredTypes: number | null = null;
   let declaredItems: number | null = null;
@@ -399,7 +421,10 @@ function parseRegistry(text: string | null): RegistryParse {
     // 表格行:列头 / 分隔线 / 数据行;其余任何竖线行都是坏行(fail-closed)。
     if (/^\|\s*code\s*\|\s*label\s*\|$/.test(line)) continue;
     if (/^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|$/.test(line)) continue;
-    const cells = line.split('|').slice(1, -1).map((c) => c.trim());
+    const cells = line
+      .split('|')
+      .slice(1, -1)
+      .map((c) => c.trim());
     if (cells.length !== 2 || cells[0].length === 0 || cells[1].length === 0) {
       defects.push(`登记表有无法解析的表格行:'${line.slice(0, 60)}'`);
       continue;
@@ -414,7 +439,8 @@ function parseRegistry(text: string | null): RegistryParse {
     }
     cur.items.push({ code: cells[0], label: cells[1] });
   }
-  if (declaredTypes === null) defects.push('登记表缺「字典 type(机器核对)」声明行 ⇒ 表被清空也看不见');
+  if (declaredTypes === null)
+    defects.push('登记表缺「字典 type(机器核对)」声明行 ⇒ 表被清空也看不见');
   return { declaredTypes, declaredItems, sections, defects };
 }
 
@@ -430,7 +456,9 @@ function censusDefects(e: SeedExtraction): string[] {
     byFn.set(s.fn, cur);
     if (s.model === 'dictItem') {
       if (s.itemCodeLiteral === true) {
-        out.push(`${s.fn} 里有 dictItem.upsert 的 create.code 是字符串字面量 ⇒ 该项对提取器不可见,必须走具名数组`);
+        out.push(
+          `${s.fn} 里有 dictItem.upsert 的 create.code 是字符串字面量 ⇒ 该项对提取器不可见,必须走具名数组`,
+        );
       } else if (s.itemCodeLiteral === null) {
         out.push(`${s.fn} 里有 dictItem.upsert 的形状读不出 create.code ⇒ 判据失明,fail-closed`);
       }
@@ -440,9 +468,13 @@ function censusDefects(e: SeedExtraction): string[] {
   for (const [fn, c] of byFn) {
     const exp = expected.get(fn);
     if (exp === undefined) {
-      out.push(`在未知函数 ${fn} 里发现 ${c.dictType + c.dictItem} 个字典 upsert 站点 ⇒ 新的 seed 落点,判据与登记表都没覆盖`);
+      out.push(
+        `在未知函数 ${fn} 里发现 ${c.dictType + c.dictItem} 个字典 upsert 站点 ⇒ 新的 seed 落点,判据与登记表都没覆盖`,
+      );
     } else if (exp.dictType !== c.dictType || exp.dictItem !== c.dictItem) {
-      out.push(`${fn} 的 upsert 站点数变了(期望 dictType=${exp.dictType}/dictItem=${exp.dictItem},实读 ${c.dictType}/${c.dictItem})⇒ 同步改 EXPECTED_SITES 与登记表`);
+      out.push(
+        `${fn} 的 upsert 站点数变了(期望 dictType=${exp.dictType}/dictItem=${exp.dictItem},实读 ${c.dictType}/${c.dictItem})⇒ 同步改 EXPECTED_SITES 与登记表`,
+      );
     }
     expected.delete(fn);
   }
@@ -460,14 +492,17 @@ function declarationDefects(e: SeedExtraction, r: RegistryParse): string[] {
     out.push('声明行缺失或改坏 ⇒ 拒绝当绿(空表恒「零漂移」是空绿)');
   } else {
     if (r.declaredTypes !== r.sections.size) {
-      out.push(`声明 ${r.declaredTypes} 个 type,实际解析到 ${r.sections.size} 个 ⇒ 有小节被删/被改坏`);
+      out.push(
+        `声明 ${r.declaredTypes} 个 type,实际解析到 ${r.sections.size} 个 ⇒ 有小节被删/被改坏`,
+      );
     }
     if (r.declaredItems !== totalItems) {
       out.push(`声明 ${r.declaredItems} 项 item,实际解析到 ${totalItems} 项 ⇒ 有行被删/被改坏`);
     }
   }
   if (r.sections.size === 0) out.push('登记表一个小节都解析不到 ⇒ 解析塌了或表被清空,不许当绿');
-  if (e.types.size === 0) out.push('seed 侧一个字典 type 都提取不到 ⇒ 提取器失去输入,双向对拍没有意义');
+  if (e.types.size === 0)
+    out.push('seed 侧一个字典 type 都提取不到 ⇒ 提取器失去输入,双向对拍没有意义');
   if (totalItems === 0) out.push('登记表解析到 0 项 item ⇒ 空集恒等于空集会静默变绿,不许当绿');
   return out;
 }
@@ -523,7 +558,9 @@ function labelDefects(e: SeedExtraction, r: RegistryParse): string[] {
     for (const item of sec.items) {
       const seedLabel = seedLabels.get(item.code);
       if (seedLabel !== undefined && seedLabel !== item.label) {
-        out.push(`'${tCode}' 的 item '${item.code}' label 漂移:登记表 '${item.label}' ≠ seed '${seedLabel}'`);
+        out.push(
+          `'${tCode}' 的 item '${item.code}' label 漂移:登记表 '${item.label}' ≠ seed '${seedLabel}'`,
+        );
       }
     }
   }
@@ -540,7 +577,9 @@ function emptyMarkDefects(e: SeedExtraction, r: RegistryParse): string[] {
       out.push(`字典 '${tCode}' seed 不预置 items,但登记表没写「seed 不预置」标注 ⇒ 空得不明不白`);
     }
     if (t.items.length > 0 && sec.emptyMarked) {
-      out.push(`字典 '${tCode}' seed 有 ${t.items.length} 项,登记表却标着「seed 不预置」⇒ 标注与现实矛盾`);
+      out.push(
+        `字典 '${tCode}' seed 有 ${t.items.length} 项,登记表却标着「seed 不预置」⇒ 标注与现实矛盾`,
+      );
     }
   }
   return out;
@@ -611,7 +650,8 @@ describe('P2-23a 字典 seed 登记表 —— 仪器自证(合成样本,不落�
   });
 
   it('S2 提取器:未绑定标识符 ⇒ 记缺陷(新外部化常量不登记就过不去)', () => {
-    const synthetic = "const ARR = [{ type: { code: GHOST_TYPE, label: '甲' }, items: [] }] as const;";
+    const synthetic =
+      "const ARR = [{ type: { code: GHOST_TYPE, label: '甲' }, items: [] }] as const;";
     const e = extractSeedDictionaries(synthetic, {}, { flatArrays: ['ARR'], siteTyped: [] });
     expect(e.defects.join('\n')).toContain("未绑定的标识符 'GHOST_TYPE'");
   });
@@ -700,7 +740,11 @@ describe('P2-23a 字典 seed 登记表 —— 常驻变异对拍(做错时必须
 
   it('M3 改一个 label ⇒ 只有 D5 红,点名漂移', () => {
     const mutated = REGISTRY_SOURCE_MUTATE_LABEL();
-    expectOnlyRed(allDimensions(SEED_SOURCE, mutated), 'D5', "'member_grade' 的 item 'reserve' label 漂移");
+    expectOnlyRed(
+      allDimensions(SEED_SOURCE, mutated),
+      'D5',
+      "'member_grade' 的 item 'reserve' label 漂移",
+    );
   });
 
   it('M4 seed 里冒出新的 upsert 站点(未知函数 + 字面量 code)⇒ 只有 D1 红', () => {
