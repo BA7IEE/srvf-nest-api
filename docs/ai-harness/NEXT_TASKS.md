@@ -245,9 +245,9 @@
 
 ## P1(长期维护)
 
-### P1-30 通用系统集成地基 Integration Foundation v1 — **T0 已于 2026-08-19 拍板冻结(「按推荐」);PR1–PR8 一行未实施,⏸ 开工排在 P1-32 的 PR 1(Catalog 落地)之后**
+### P1-30 通用系统集成地基 Integration Foundation v1 — **T0 已于 2026-08-19 拍板冻结(「按推荐」);PR1–PR8 一行未实施,⏸ 队首前置②已满足(2026-08-27 复测),开工等维护者拍板 + 基线漂移重跑**
 
-**状态**:⏸ 挂起(T0 已拍板冻结、PR1–PR8 一行未实施;开工四条触发条件须先确认齐备,见下方触发条件表)
+**状态**:⏸ 挂起(T0 已拍板冻结、PR1–PR8 一行未实施;开工四条触发条件三条已齐(2026-08-27 复测,② 已随 P1-32 PR 1 #1143 合入而满足),剩④为建议级 —— 开工仍须维护者拍板并先按冻结稿 §1 体例重跑基线漂移,见下方触发条件表)
 
 - **拍板**:2026-08-19 维护者回复**「按推荐」**,冻结稿 §2.1 决策表 `D-IF-1 … D-IF-12` **全部按推荐值(全 =A)整体冻结,无逐项调整**([#1086](https://github.com/BA7IEE/srvf-nest-api/pull/1086))。
 - **依据**:[`integration-foundation-v1-t0-terminal-review.md`](../archive/reviews/integration-foundation-v1-t0-terminal-review.md)
@@ -274,6 +274,18 @@
   | ④ | 首次上线用的 release tag **已切并钉死**,或生产已部署完成 | 建议(满足其一即可) | 🟡 前进中 —— 真机部署第一阶段 2026-08-20 PASS(`APP_ENV=smoke` 非生产态);发布边界仍 🟡 NO-GO(卡备案) |
 
   **② 是当前真正卡住 PR1 的那条。** 叠加上面第 3 条硬约束 ⇒ **PR1–PR8 之间也一次只能有一条在飞**。
+
+  > ⭐ **2026-08-27 复测(`743abb5b`,docs 对齐刀,上表 08-20 读数自此为历史快照)**:
+  > **② 已满足** —— P1-32 的 PR 1(Permission Catalog 单一事实源)随 [#1143](https://github.com/BA7IEE/srvf-nest-api/pull/1143)
+  > 于 2026-08-22 合入 main(P1-32 现已完整落地 7/9,PR 0 的 236 条分类早已完成);
+  > ① ✅(0 open PR 实测);③ ✅(v0.69.0 已发 2026-08-24,0 open PR);④ 仍 🟡(真机第一阶段
+  > 为 `APP_ENV=smoke` 非生产态;发布边界 🟡 NO-GO 卡备案)。
+  > ⇒ **上一段「② 是当前真正卡住 PR1 的那条」自此订正:三条硬条件已齐,开工现在只差
+  > ①维护者拍板 ②按冻结稿 §1 体例重跑基线漂移** —— T0 冻结 `48637fab` 后 main 已前移 **117 笔**、
+  > 连发 v0.67 / v0.68 / v0.69 三版;当前计数 Endpoint **554** / Migration **99** / BizCode **470** /
+  > 权限码 **237** / AuditLogEvent **147**(对 T0 的 Δ = +17 / +10 / +21 / +3 / +8,比 08-20 表里的
+  > +8 / +3 / +9 / +3 / +7 继续扩大),冻结稿承重事实逐条复验仍待重跑。
+  > 第 3 条硬约束(ROUTE_AUTHZ 红区生成物)不变 ⇒ PR1–PR8 仍严格串行。
 
   > ⚠️ **订正 08-19 那版条件①的表述错误(2026-08-20 实测)**:原文写「等 **P1-28 活动线** 让出 migration token」,
   > 把当时的队首误当成了结构性约束。实测:活动线近 40 笔里只有 **3 笔**相关、基本已静;
@@ -714,6 +726,16 @@
 > `src/modules/activities/activity-business-overhaul-acceptance.spec.ts` 的去向表注释里
 > (**含三次诚实的阴性结果**,见下)。
 
+> ⭐ **2026-08-27 对齐刀读数(实跑 `pnpm cutover:check`,`743abb5b`)**:todo 19 → **9**
+> (`103 通 / 9 待 / 0 败 / 112 总`;A 类 12/13 过,9a 仍是唯一硬红)。接通链:
+> AC-063(关账 × 终审/更正真竞态,双 pool + 闸门事务)[#1185](https://github.com/BA7IEE/srvf-nest-api/pull/1185)·
+> AC-064 / AC-066 / ADV-022 [#1194](https://github.com/BA7IEE/srvf-nest-api/pull/1194)·
+> 万人档 4 条(AC-054 / AC-055 / AC-068 / ADV-008)转永久豁免真用例
+> [#1196](https://github.com/BA7IEE/srvf-nest-api/pull/1196)(19 → 18 → 16 → 13 → 9)。
+> **剩 9 条全部是 C 档能力缺口,不再有 B 档**:AC-009 / AC-010 / AC-013 / AC-017 / AC-020 /
+> AC-025 / AC-047 / AC-067 + ADV-010(卡 [P2-21](#p2-21-入队进度看不见活动结算记的分--目标形状账本是唯一真相上线前必做不是先不做) 的分账本合并)。
+> 下方「剩 B 档 5 + C 档 14」的分档自此为历史读数。
+
 | 编号 | 状态 | 一句话依据 |
 |---|---|---|
 | AC-012 | ✅ 分拣刀接通 | 同一夹具里两格都有:未受邀活动不进目录(有邀请的那条**在**列表里,判据非恒真)+ 直接拿 id 请求详情得 `ACTIVITY_NOT_FOUND` |
@@ -765,7 +787,7 @@
 
 | 编号 | 为什么重 |
 |---|---|
-| **AC-063**(2026-08-25 退回) | ⭐ **动手才知道的**:合同这句点名**两个**并发对象(「最后一次终审」与「最后一个更正」),而 `activity-settlement-closure.e2e-spec.ts` 的夹具族只产出「**终审之后**」的状态(`run.statusCode='posting'`,批次 `preparing`);「终审**待审**」那半边只存在于 `activity-settlement-review-concurrency` 的另一族夹具里,两族的活动形状不同 ⇒ 要把两套夹具体系合并才写得出「关账 × 终审」的真竞态。**「关账 × 更正」那半边是便宜的**(同刀已验证同一手法在更正 spec 上可行),但本文件的纪律是「未达到合同完整口径的一律仍为 todo」,不拿一半结案。<br>⚠️ 另一条实测理由:同刀在 ADV-011 上量到「Activity 行锁把并发推成串行」⇒ 这类竞态用例的**独占红集往往为空**(与既有串行用例同红),而屏障 + 5s 事务预算带来的**假红风险是真的**。⇒ 立项时先想清楚它要多守住什么,别为了一个编号造 flake 机器。<br>**下一个人的起点**:更正 spec 的第二实例 + 闸门事务已经落在 `activity-settlement-correction.e2e-spec.ts` ⑪ 段,照抄即可 |
+| **AC-063**(2026-08-25 退回;✅ **同日 #1185 已接通**,见上方 08-27 读数) | ⭐ **动手才知道的**:合同这句点名**两个**并发对象(「最后一次终审」与「最后一个更正」),而 `activity-settlement-closure.e2e-spec.ts` 的夹具族只产出「**终审之后**」的状态(`run.statusCode='posting'`,批次 `preparing`);「终审**待审**」那半边只存在于 `activity-settlement-review-concurrency` 的另一族夹具里,两族的活动形状不同 ⇒ 要把两套夹具体系合并才写得出「关账 × 终审」的真竞态。**「关账 × 更正」那半边是便宜的**(同刀已验证同一手法在更正 spec 上可行),但本文件的纪律是「未达到合同完整口径的一律仍为 todo」,不拿一半结案。<br>⚠️ 另一条实测理由:同刀在 ADV-011 上量到「Activity 行锁把并发推成串行」⇒ 这类竞态用例的**独占红集往往为空**(与既有串行用例同红),而屏障 + 5s 事务预算带来的**假红风险是真的**。⇒ 立项时先想清楚它要多守住什么,别为了一个编号造 flake 机器。<br>**下一个人的起点**:更正 spec 的第二实例 + 闸门事务已经落在 `activity-settlement-correction.e2e-spec.ts` ⑪ 段,照抄即可 |
 | AC-054 | 10000 人统一生效**恰好用尽**全局槽位预算(`LEDGER_COMMIT_LOCK_SLOT_COUNT 10` × `MEMBERS_PER_SLOT 1000`),`>10000` 由 `ledgerCommitExceedsTotalBudget` 恒拒 |
 | ADV-008 | 同上天花板,且 6 个检查点要把同规模夹具重建 6 次 |
 | AC-055 | 三轴 × 100 轮完整事务链(**耗时是估计不是实测**:本刀无连库权限;可比读数是同仓 8192 人 spec 自述单跑 1–2 分钟) |
@@ -1548,7 +1570,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 ### P2-11 用 `onUpdate: CASCADE` 的外键去守「副本与源一致」= 装了个会自己抹掉证据的报警器 — 2026-08-21 登记
 
-**状态**:进行中(三问取证已合 #1164;Q3 已拍板走 **A 档「只锁编号」**,4 条真残余的实施刀 + 机器闸已提 PR **在飞** —— 按本闸 B 的规矩在飞 PR 号只能写正文;剩 D 档 append-only trigger,维护者明确列为独立一刀)
+**状态**:进行中(三问取证已合 #1164;Q3 已拍板走 **A 档「只锁编号」**,实施刀 + 机器闸已合 **#1195**(2026-08-26);剩 D 档 append-only trigger,维护者明确列为独立一刀)
 
 > 出处:A-2+B-03([#1125](https://github.com/BA7IEE/srvf-nest-api/pull/1125))实施方留的第二笔账。
 > 该刀把 `ActivityRuleSnapshot.snapshotHash` 判为「不补」,理由是:本批复合 FK 的 `onUpdate`
@@ -1734,7 +1756,7 @@ knownGap,不因为「自定义规则这件事发生过了」就算解决。
 
 维护者 2026-08-25 拍板:**走 A 档,先只锁编号**;D 档 append-only trigger 是**独立一刀**,本次不做。
 
-实施刀交付(PR 在飞,合入后由收口方把 PR 号补进正文,状态仍为 `进行中` —— D 档未做):
+实施刀交付([#1195](https://github.com/BA7IEE/srvf-nest-api/pull/1195),2026-08-26 合入;状态仍为 `进行中` —— D 档未做):
 
 1. **4 条真残余全部收掉**:`OfflinePackageParticipant` 的 `offlinePackage` / `session` /
    `participationIdentity` / `position` 四条复合外键补 `onUpdate: Restrict`,
@@ -1861,16 +1883,16 @@ P2-13 落地后这句话**已经不成立**(执行位就是 `check-permission-su
 改它要重新生成 `ROUTE_AUTHZ.md` ⇒ 改写 inputDigest ⇒ **占串行道**,而 P2-13 的排期明确是「零 `src/`、不占串行道」。
 留给下一个本来就要动 ROUTE_AUTHZ 的刀顺手带走。
 
-### P2-14 活动封面 / 图集改附件制 —— **刀 A 已合;刀 B 已交付、在飞** — 2026-08-22 / 08-25 维护者拍板
+### P2-14 ✅ 活动封面 / 图集改附件制 —— 刀 A / 刀 B 均已合入 **(已收口 2026-08-26)** — 2026-08-22 / 08-25 维护者拍板
 
-**状态**:进行中(刀 A #1146 已合;刀 B 已提 PR **在飞** —— ⚠️ 按本闸 B 的规矩,在飞 PR 号只能写在正文不能写进状态行,合入后由收口方改成 `已收口`)
+**状态**:已收口(#1146 #1191 —— 刀 B 2026-08-26 合入;衍生债务 P2-20 另立待办,不在本条内)
 
 **刀 A**(`d8e557d7` / [#1146](https://github.com/BA7IEE/srvf-nest-api/pull/1146))已合:
 `Activity` 加 `coverImageKey` / `coverAttachmentId` / `galleryImageKeys` / `galleryAttachmentIds` 四列,
 写入必须给**本活动的 `activity` 类型附件 id**,读出一律现签;与 `Content` 逐字同形。
 旧列 `coverImageUrl` / `galleryImageUrls` **保留但已零写入路径**。
 
-**刀 B**([#1191](https://github.com/BA7IEE/srvf-nest-api/pull/1191),**在飞**):DROP 那两个旧列
+**刀 B**([#1191](https://github.com/BA7IEE/srvf-nest-api/pull/1191),已合 2026-08-26):DROP 那两个旧列
 (migration `20260825170000_activity_drop_legacy_image_url_columns`,🔴 不可逆)。
 
 🔴 **前置条件被换过 —— 这一条比结论本身重要。** 本条目原文写的是
