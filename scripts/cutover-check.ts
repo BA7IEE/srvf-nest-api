@@ -91,6 +91,18 @@ import { join, resolve } from 'node:path';
 
 import { runCriteria } from './check-activity-workflow-gate';
 import {
+  AUDIT_REGISTRY_PATH,
+  AUDIT_SRC_ROOT,
+  AUDIT_TYPES_PATH,
+  judgeAuditEventRegistry,
+  listSourceFiles as listAuditSourceFiles,
+} from './check-audit-event-registry';
+import {
+  DICT_REGISTRY_PATH,
+  DICT_SEED_PATH,
+  judgeDictionaryRegistry,
+} from './check-dictionary-seed-registry';
+import {
   parseActivityResponsibilityWorkflowEnabled,
   parseActivityV11WorkflowEnabled,
   parseAppEnv,
@@ -271,6 +283,12 @@ export const SIGNOFF_READING_KEYS = [
   // 判别式(同上):这条签字若将来不再成立,是哪个仓内读数会先变?
   // 答案就是它 —— 有人把 2000 档从档位表里删掉,读数立刻从 `30,500,2000` 变成 `30,500`。
   'scale-tiers-passing',
+  // ── 2026-08-27 P2-23a/b 登记表判据收编新增(④ 的字典/audit 两半逐条对账)──
+  // 判别式(同上):seed 增删一个字典项 / union 增删一个审计事件 ⇒ 这四个读数立刻变。
+  'dict-registry-types',
+  'dict-registry-items',
+  'audit-event-registry-total',
+  'audit-event-registry-active',
 ] as const;
 export type SignoffReadingKey = (typeof SIGNOFF_READING_KEYS)[number];
 
@@ -291,6 +309,10 @@ export const SIGNOFF_NONZERO_COUNT_KEYS: readonly SignoffReadingKey[] = [
   'gate-settlement-read-faces',
   'instance-env-flag-count',
   'worker-lease-columns',
+  'dict-registry-types',
+  'dict-registry-items',
+  'audit-event-registry-total',
+  'audit-event-registry-active',
 ];
 
 /** 读数里必须是 12 位十六进制摘要的那些键(采不到时会退化成「(文件不存在)」)。 */
@@ -361,7 +383,7 @@ export const ALL_SUB_IDS: readonly string[] = [
   '1a', '1b',
   '2a', '2b',
   '3a', '3b',
-  '4a', '4b',
+  '4a', '4b', '4c',
   '5a', '5b',
   '6a', '6b',
   '7a', '7b', '7c', '7d', '7e',
@@ -1193,6 +1215,8 @@ function collectGrants(): string[] {
  * | `worker-lease-columns` | `ActivityBatchJob` 上**且被 worker 真用到**的 lease 列数 | 少一列 ⇒ ⑦-c 签字接受的那个「lease 恢复代偿」机制变了 |
  * | `worker-runbook-sha256-12` | ⑦-d 那份 runbook 的内容摘要 | runbook 被改 ⇒ ⑦-c 签字写进去的那份「明确不设 + 四个盲区」已不是原样 |
  * | `seed-sha256-12` | `prisma/seed.ts` 的内容摘要 | 字典 seed 变了 ⇒ ④-b 签的「接受当前状态」里的那个「当前」已经不是了 |
+ * | `dict-registry-types` / `dict-registry-items` | 字典登记表判据实提的 type/item 计数 | seed 增删/改一个字典项而登记表没同步 ⇒ ④-c 当场红;这两个读数随之变 |
+ * | `audit-event-registry-total` / `audit-event-registry-active` | 审计登记表判据实提的事件总数/活跃数 | union 增删一个审计事件而登记表没同步 ⇒ ④-c 当场红;这两个读数随之变 |
  * | `scale-tiers-passing` | **真会跑起来**的规模档,逗号分隔 | 有人把 2000 档删掉 ⇒ `30,500,2000` → `30,500` ⇒ ⑨-b 签的「三档通过」不再是同一件事 |
  *
  * ⚠️ 后六个摘要/计数键**只锚身份,不锚正确性** —— 它们回答「你签字时看的那个东西还是不是那个」,
@@ -1327,6 +1351,50 @@ function collectSignoffReadings(pkgVersion: string): Record<SignoffReadingKey, s
     'worker-runbook-sha256-12': digest12(readOrNull(WORKER_RUNBOOK)),
     'seed-sha256-12': digest12(readOrNull('prisma/seed.ts')),
     'scale-tiers-passing': collectScaleTiers(),
+    // ④ 的字典/audit 两半:读数取自判据本体(scripts/check-*.ts,红区)—— 采集与判定
+    // 同一份代码,不存在「读数一个算法、判据另一个算法」的分叉。提取塌了给 -1,
+    // 被计数型读数判据(judgeSignoffReadings)当场判红,不会静默挂旧签字。
+    ...dictRegistryReadings(),
+    ...auditRegistryReadings(),
+  };
+}
+
+/** ④-c 的 A 类判据:两份登记表双向对拍(字典 + 审计事件),判据本体在红区脚本里。
+ *  overrides 只被正对照(control)用来喂变异输入;生产路径一律读真源。 */
+function judgeRegistryReconciliation(
+  overrides?: { dictRegistry?: string | null; auditRegistry?: string | null },
+): Judgement {
+  const dict = judgeDictionaryRegistry(
+    readOrNull(DICT_SEED_PATH),
+    overrides?.dictRegistry !== undefined ? overrides.dictRegistry : readOrNull(DICT_REGISTRY_PATH),
+  );
+  const typesRel = readOrNull(AUDIT_TYPES_PATH);
+  const srcFiles = listAuditSourceFiles(resolve(AUDIT_SRC_ROOT), [resolve(AUDIT_TYPES_PATH)]);
+  const audit = judgeAuditEventRegistry(
+    typesRel,
+    overrides?.auditRegistry !== undefined ? overrides.auditRegistry : readOrNull(AUDIT_REGISTRY_PATH),
+    srcFiles,
+  );
+  const evidence = [
+    `字典登记表:${dict.ok ? `✓ ${dict.counts.types} type / ${dict.counts.items} item 六维全绿` : `✕ ${dict.evidence.length} 条缺陷(首条:${dict.evidence[0]})`}`,
+    `审计登记表:${audit.ok ? `✓ ${audit.counts.total} 事件(${audit.counts.active} 活跃 / ${audit.counts.zero} 零产出)六维全绿` : `✕ ${audit.evidence.length} 条缺陷(首条:${audit.evidence[0]})`}`,
+  ];
+  return { ok: dict.ok && audit.ok, evidence };
+}
+
+/** ④ 字典半读数(seed.ts + 登记表 → 判据本体)。 */
+function dictRegistryReadings(): Pick<Record<SignoffReadingKey, string>, 'dict-registry-types' | 'dict-registry-items'> {  const j = judgeDictionaryRegistry(readOrNull(DICT_SEED_PATH), readOrNull(DICT_REGISTRY_PATH));
+  return { 'dict-registry-types': String(j.counts.types), 'dict-registry-items': String(j.counts.items) };
+}
+
+/** ④ audit 半读数(types.ts + 登记表 + 全仓扫描 → 判据本体)。 */
+function auditRegistryReadings(): Pick<Record<SignoffReadingKey, string>, 'audit-event-registry-total' | 'audit-event-registry-active'> {
+  const typesRel = readOrNull(AUDIT_TYPES_PATH);
+  const srcFiles = listAuditSourceFiles(resolve(AUDIT_SRC_ROOT), [resolve(AUDIT_TYPES_PATH)]);
+  const j = judgeAuditEventRegistry(typesRel, readOrNull(AUDIT_REGISTRY_PATH), srcFiles);
+  return {
+    'audit-event-registry-total': String(j.counts.total),
+    'audit-event-registry-active': String(j.counts.active),
   };
 }
 
@@ -1478,6 +1546,32 @@ export function positiveControls(): Control[] {
       desc: '少跑了一条对账命令 ⇒ 必红(采集不全不许当全绿)',
       must: 'red',
       run: () => judgeReconcile(RECONCILE_COMMANDS.slice(1).map((c) => ({ ...c, code: 0, tail: '' }))),
+    },
+    // 4c 的正对照:变异只动审计登记表一个计数(攻击者改计数让总数对上)——
+    // 判据本体(scripts/check-*-registry.ts)的 M1–M6 常驻变异对拍在 unit 轮全覆盖,
+    // 这里再钉一层「cutover 引用面没接错」:喂同一个变异,④-c 必须红且点名漂移。
+    {
+      id: '4c',
+      desc: '审计登记表一个计数被改 ⇒ ④-c 必红,点名漂移',
+      must: 'red',
+      run: () => {
+        const registry = readOrNull(AUDIT_REGISTRY_PATH);
+        const mutated =
+          registry === null
+            ? null
+            : registry.replace(/^(\| `auth\.login` \| )\d+( \|)/m, (_m, p1: string, p2: string) => `${p1}99${p2}`);
+        const j = judgeRegistryReconciliation({ auditRegistry: mutated });
+        // 不只要求「红」,还要求红在**那一条**上 —— 换成别的失真冒充不了命中。
+        return j.evidence.some((e) => e.includes('auth.login') && e.includes('99'))
+          ? j
+          : { ok: true, evidence: ['红了但不是红在 auth.login 计数漂移上 ⇒ 故意判绿,让自证报失效'] };
+      },
+    },
+    {
+      id: '4c′',
+      desc: '真源干净 ⇒ ④-c 必绿(证明它不是恒红)',
+      must: 'green',
+      run: () => judgeRegistryReconciliation(),
     },
     // 5a 系列的夹具**刻意不使用仓内当前版本号** —— 否则夹具自己就是「第四处硬编码」,
     // 会被 5a 新增的全仓扫描扫出来(判据把自己判红)。7.7.x 与仓内任何版本命名空间都不撞。
@@ -2200,11 +2294,17 @@ function buildItems(signoff: SignoffState): ItemResult[] {
       text: CONTRACT_ITEMS[3],
       subs: [
         sub('4a', 'A', '权限与合同快照类生成物:重跑生成器与仓内产物逐字节对账', judgeReconcile(reconcile)),
+        sub(
+          '4c',
+          'A',
+          '字典与 Audit events 登记表:双向对拍判红(判据本体在 scripts/check-*-registry.ts,红区)',
+          judgeRegistryReconciliation(),
+        ),
         eviSub('4b', 'C', '「字典、Audit events」的对账', [
-          '生成物链条覆盖的是**权限**(ROUTE_AUTHZ / RBAC map / 授权语义图)与**合同快照**(openapi.json / 前端 client)。',
-          '字典与 Audit events **没有生成物、也没有登记表**:字典 seed 在 prisma/seed.ts,audit 事件无枚举登记 ⇒ 无对账判据。',
-          '需要的证据:v1.1 新增的字典项与 Audit event 清单,逐条与 seed / 代码核对(或先把它们做成登记表,这条才可能升为 A 类)。',
-          '⚠️ 本刀**未做**那两份登记表,已登记为 docs/ai-harness/NEXT_TASKS.md 的 P2-23;签字只锚住 seed 的**身份**(seed-sha256-12),锚不住 audit events —— 后者连一个可摘要的落点都没有。',
+          '字典半与 audit 半已各有登记表 + 双向对拍判据(#1202 / #1203,2026-08-27),4c 已升 A 类。',
+          '本条签的是判据覆盖不了的余下判断:登记表口径本身是否符合合同 v1.1 的意图、三个零产出事件的处置(两退役一预留,#1205 已落地)是否认可。',
+          '对拍读数:`seed-sha256-12` + `dict-registry-types/items` + `audit-event-registry-total/active` —— 增删任何字典项/审计事件,读数变 ⇒ 本条须重签。',
+          '⚠️ 2026-08-26 那次签字签的是「接受现状」;登记表落地后重签的理由行应升级为「已逐条核对」(待维护者在 4c 合入后重签)。',
         ]),
       ],
     },

@@ -2528,11 +2528,10 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
   **D6** 空表标注。常驻变异对拍 M1–M6(红集精确、两两不相交),含「攻击者同步改计数」的
   外科变异(M1/M2)。join_source 族的 4 个常量引用经**活 import 绑定表**解析
   (常量改值判据跟着走;闭集外新标识符 fail-closed 红)。
-- ⚠️ **形态取舍(沿 `activity-workflow-readonly.spec.ts` 先例,已在 P2-22「顺带」同批登记)**:
-  判据本体在 `src/` 下**无红区保护**(判据纯度闸规定 `.criteria.spec.ts` 必须是薄运行器、
-  实质逻辑住 `scripts/check-*.ts` 红区;本刀零红区,故不带该后缀、逻辑留 spec)。
-  缓解:主真源 `prisma/seed.ts` 本身是红区。升级路径:挪进 `scripts/check-*.ts` +
-  spec 降薄运行器,需维护者一条令牌,**与 P2-22 那刀可同批发**。
+- ✅ **形态收编(2026-08-27,维护者令牌,随 ④-c 接线同刀)**:判据本体已挪进
+  `scripts/check-dictionary-seed-registry.ts`(selfGuard 红区,`scripts/check-*.ts` glob
+  自动覆盖,无需改 redzone 清单),spec 降薄运行器(真读数 + 常驻变异对拍 M1–M6)。
+  P2-23a 首发时的零红区形态(逻辑留 spec)自此闭坑;P2-22 那刀同款升级仍待其自身立项。
 - ⚠️ 本刀不碰 4b 签字与 `seed-sha256-12` 锚(内容没变,锚不过期);
   **Audit events 半原样未动**(两刀活,等立项)。
 
@@ -2561,9 +2560,13 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
   `member.official-portrait.purge`(#1106 / T1 刻意未接,合规清理流程见 issue #1055 §5.2)
   ⇒ 拍板:**保留,补〔预留 · 未接〕标注**,建流程时接通、登记表计数自动跟走。
   登记表备注与 union 注释均已同步;D6 对「已退役」「零产出」两种标注都认。
-- ⚠️ 4b 签字理由行是否随本刀升级(从「接受现状」到「已逐条核对」),留给下一次签字时一并处理;
-  本刀不动 `cutover:check`(scripts 红区,升级路径与字典刀同款:判据逻辑挪
-  `scripts/check-*.ts` + spec 降薄运行器,需维护者令牌,可与 P2-22 那刀同批)。
+- ✅ **判据收编 + ④-c 接线(2026-08-27,维护者令牌,同刀落地)**:判据本体已挪进
+  `scripts/check-audit-event-registry.ts`(selfGuard 红区),spec 降薄运行器;
+  `cutover-check.ts` 新增 **④-c(A 类)**「字典与 Audit events 登记表双向对拍」+ 四个对拍读数
+  (`dict-registry-types/items`、`audit-event-registry-total/active`,计数型,提取塌了给 -1 当场红)
+  + 正对照 4c/4c′(变异审计计数 ⇒ 必红且点名;真源 ⇒ 必绿)。全量与 `--signoff` 双模式本地绿。
+- ⚠️ 4b 签字理由行升级(从「接受现状」到「已逐条核对」)留给维护者随 ④-c 合入重签 ——
+  4b 证据行已由本刀改写为指向 ④-c 与五个对拍读数,重签时逐字替换登记表条目即可。
 
 ## 已收口项
 
