@@ -4,7 +4,7 @@
 > 此前 ④-b 的签字只能锚 `seed-sha256-12`(整份文件的摘要),证明不了「里面有哪些字典项」;
 > 本表把那份盲区变成**逐条点名、机器核对**的清单。
 >
-> **机器核对**(双向集合相等,判据在 `src/modules/dictionaries/seed-dictionary-registry.spec.ts`):
+> **机器核对**(双向集合相等;判据本体在 `scripts/check-dictionary-seed-registry.ts`(红区),薄运行器 `src/modules/dictionaries/seed-dictionary-registry.spec.ts`):
 > seed 里真正 upsert 的每个字典 type / item 都必须登记在册(**漏登记 ⇒ 红**);
 > 本表登记的每一条都必须真的在 seed 里(**多登记 / 已消失 ⇒ 红**);
 > type 与 item 的 label 与 seed **逐字相等**(**漂移 ⇒ 红**)。

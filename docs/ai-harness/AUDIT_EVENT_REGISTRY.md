@@ -6,7 +6,7 @@
 > 但「union 里有哪些事件」没有任何对外清单 —— ④-b 的签字只能「接受现状」。
 > 本表把那半变成**逐条点名、机器核对**的清单。
 >
-> **机器核对**(判据在 `src/modules/audit-logs/audit-event-registry.spec.ts`,双向集合相等):
+> **机器核对**(判据本体在 `scripts/check-audit-event-registry.ts`(红区);薄运行器 `src/modules/audit-logs/audit-event-registry.spec.ts`;双向集合相等):
 > union 里每个事件都必须登记在册(**漏登记 ⇒ 红**);本表每条都必须真在 union 里
 > (**多登记 / 已消失 ⇒ 红**);每条的「仓内出现次数」与 AST 全仓扫描**逐条相等**
 > (**漂移 ⇒ 红**);零产出事件必须显式标注(**静默死事件 ⇒ 红**)。
