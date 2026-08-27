@@ -1,10 +1,19 @@
-# 存量考勤账本化 —— 转换刀评审稿(草案,未冻结)
+# 存量考勤账本化 —— 转换刀设计稿(已签收)
 
-> **性质**:第 7 批②「账本桥」A 案的**设计稿**。2026-08-27 维护者拍板「按推荐」(= A 案)后起草;
-> 维护者评审通过后另立冻结件入 `docs/archive/reviews/`,本稿随之停更。
-> 拍板链:2026-08-19 三次拍板(见 `NEXT_TASKS` P1-28)→ **2026-08-27 四次拍板:A 案**。
+> **性质**:第 7 批②「账本桥」A 案的**设计稿 / 施工依据**。拍板链:2026-08-19 三次拍板
+> (见 `NEXT_TASKS` P1-28)→ 2026-08-27 四次拍板(A 案)→ **同日两问两答签收(见 §0.1)**。
+> 实施收口时随刀归档冻结入 `docs/archive/reviews/`。
 >
-> ⚠️ 本稿在维护者签收前**不构成施工授权**;D1–D13 是「带推荐的待评审项」,不是已定案。
+> **签收范围**:D1 / D2(仅有的两条业务后果项)已由维护者拍板;D3 为实施首日技术复核点
+> (失败即停、上报,不自行换形状);其余 D4–D13 按仓内「保守工程裁定」先例由实施方自理
+> ——可逆、不改业务语义、逐条写进实施 PR,不宣称为合同明文。
+
+## 0.1 签收记录(2026-08-27,维护者逐项「按推荐」)
+
+| 问 | 业务问题(人话) | 拍板 |
+|---|---|---|
+| Q1(=D1) | 旧考勤没记"是哪一场",新账本必须挂场次,怎么归? | **时间窗 + 兜底**:签到时间落在哪场算哪场;零窗算活动最早 live 场并单独记标记;分数时长一分不动 |
+| Q2(=D2) | 没绑报名单的老考勤,账本锚要求必须有报名头,怎么办? | **补历史报名头**:给这些人补一条标记「历史转换」来源的报名单(不是真报名);分数进账本,开闸后四数字不丢 |
 
 ---
 
@@ -42,23 +51,23 @@ v1.1 事实链(报名头 / 参与身份 / 结果修订 / 结算版本)并提交*
 - 转换批次 = **普通 committed 批次** ⇒ 天然纳入更正(`CorrectionApplication.newBatch`)与
   关账(closure 读 committed)口径,不造第二套语义。
 
-## 3. 设计决策(带推荐,待维护者评审)
+## 3. 设计决策(D1/D2 已拍板;D3 复核点;D4–D13 保守工程裁定)
 
-| # | 议题 | 推荐 | 备注 |
+| # | 议题 | 结论 | 状态 |
 |---|---|---|---|
-| D1 | **session 映射**(record 无 sessionId) | 按 `checkInAt` 落入 live session 时间窗;恰落一窗→该窗;零窗→活动最早 live session 兜底并记 flag;多窗→含 checkInAt 的最早窗 | 兜底分支必须在报告里逐条点名,不静默 |
-| D2 | **`registrationId` 为 NULL 的存量** | 为该 (member, activity) 合成一条 legacy 来源永久报名头(第 81 migration 全局唯一;同 member+activity 已有头则复用) | 实施首日核对头唯一约束与 statusCode 取值 |
-| D3 | **`evidenceSealId` 必填**(version 锚) | 合成一条「legacy-conversion」EvidenceSeal(证据集为空) | 实施首日核对 EvidenceSeal 模型可空性;若不可行→停,上报 |
-| D4 | **与既有 run 并存**(`AttendanceSettlementRun` 一活动一行) | 只向既有 run **追加** version;无 run 则创建(run/version statusCode 取「已过终审」的合法值,闭集以 schema CHECK 为准) | 实施首日核对两闭集 |
-| D5 | **幂等 / 可重跑** | `entryKey` 幂等键 + `(settlementVersionId, batchRevision)` unique + operationKey 三重防重;重跑先查后写 | 转换刀必须可安全重跑(探针 P0 判据) |
-| D6 | **规模** | 复用 `runMemberLinearizedTransaction` 与 slot 机制;30/500/2000 档判据已有,万人档豁免沿用 | 不新增耗时阈值类断言 |
-| D7 | **回滚** | 转换前对涉及表 `pg_dump` 快照 + 逆操作 SOP;运行期撤销用批次 void 原语 | 物理写数据 ⇒ 维护者执行,SOP 写明 |
-| D8 | **audit** | 复用既有伞事件 + `extra.operation='legacy-ledger-conversion'`,**零新 AuditLogEvent** | 与 T6-1 replay 同范式 |
-| D9 | **执行时机** | §16.3 顺序「停旧写之后、开闸之前」;转换后跑探针:四数字 approved 口径 == committed 口径(逐人)才允许开闸 | 探针不过 ⇒ 不开闸,SOP 写死 |
-| D10 | **②-b 换源** | C8 闭包(现读 3 文件 / 4 函数)四数字由闸控制:闸关 = approved 逐字恒等现状,闸开 = committed | `②-a 不变量 2` spec 按自述协议改写(闸关恒等 + 闸开 committed),断言变更在 PR 内逐条揭示 |
-| D11 | **D1 悬案收口** | 「参与活动数 / 记录条数」的账本口径对着转换后真实数据定案,写回 NEXT_TASKS | 不在无数据时凭空发明 |
-| D12 | **team-join** | 零触碰(C4 反向闸:入队门槛恒 approved) | 禁止域 |
-| D13 | **第 6 批收口宣告** | 逐 SHA 核对 B6-1 / B6-2 / 收口刀合并与 CI 状态后在 NEXT_TASKS 宣告(或如实列缺口) | 与本刀同一 goal 的 DoD,不混入同一代码 PR |
+| D1 | **session 映射**(record 无 sessionId) | 按 `checkInAt` 落入 live session 时间窗;恰落一窗→该窗;零窗→活动最早 live session 兜底并记 flag;多窗→含 checkInAt 的最早窗 | ✅ 已拍板(2026-08-27 Q1) |
+| D2 | **`registrationId` 为 NULL 的存量** | 为该 (member, activity) 合成一条「历史转换」来源永久报名头(第 81 migration 全局唯一;同 member+activity 已有头则复用);报名头明确标注非真报名 | ✅ 已拍板(2026-08-27 Q2) |
+| D3 | **`evidenceSealId` 必填**(version 锚) | 合成一条「legacy-conversion」EvidenceSeal(证据集为空) | ⚠️ 实施首日核对可空性;不可行→停,上报 |
+| D4 | **与既有 run 并存**(`AttendanceSettlementRun` 一活动一行) | 只向既有 run **追加** version;无 run 则创建(run/version statusCode 取「已过终审」的合法值,闭集以 schema CHECK 为准) | 保守工程裁定 |
+| D5 | **幂等 / 可重跑** | `entryKey` 幂等键 + `(settlementVersionId, batchRevision)` unique + operationKey 三重防重;重跑先查后写 | 保守工程裁定 |
+| D6 | **规模** | 复用 `runMemberLinearizedTransaction` 与 slot 机制;30/500/2000 档判据已有,万人档豁免沿用 | 保守工程裁定 |
+| D7 | **回滚** | 转换前对涉及表 `pg_dump` 快照 + 逆操作 SOP;运行期撤销用批次 void 原语 | 保守工程裁定(物理写数据 SOP 归维护者执行) |
+| D8 | **audit** | 复用既有伞事件 + `extra.operation='legacy-ledger-conversion'`,**零新 AuditLogEvent** | 保守工程裁定 |
+| D9 | **执行时机** | §16.3 顺序「停旧写之后、开闸之前」;转换后跑探针:四数字 approved 口径 == committed 口径(逐人)才允许开闸 | 已定(A 案) |
+| D10 | **②-b 换源** | C8 闭包(现读 3 文件 / 4 函数)四数字由闸控制:闸关 = approved 逐字恒等现状,闸开 = committed;`②-a 不变量 2` spec 按自述协议改写,断言变更在 PR 内逐条揭示 | 已定(三次拍板) |
+| D11 | **D1 悬案收口** | 「参与活动数 / 记录条数」的账本口径对着转换后真实数据定案,写回 NEXT_TASKS | 已定(顺延至本刀) |
+| D12 | **team-join** | 零触碰(C4 反向闸:入队门槛恒 approved) | 已定(2026-08-19 拍板) |
+| D13 | **第 6 批收口宣告** | 逐 SHA 核对 B6-1 / B6-2 / 收口刀合并与 CI 状态后在 NEXT_TASKS 宣告(或如实列缺口) | 已定(同 goal DoD) |
 
 ## 4. DoD(转换刀 + 换源,合并核验)
 
