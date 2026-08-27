@@ -221,6 +221,46 @@ export class LedgerPostingService {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
+    return this.commitBatchProtocol(tx, activityId, input, currentUser, auditMeta, {
+      conversion: false,
+    });
+  }
+
+  /**
+   * ⭐ 存量考勤账本化转换刀(P1-28 第 7 批② A 案,2026-08-27 拍板)的提交入口。
+   *
+   * 与 `commitBatchWithin` 共用**同一份协议体**(本文件私有 `commitBatchProtocol`),
+   * 只有两处刻意差异,均由 `options.conversion` 承载:
+   *   ① 判闸位换成 `assertLegacyLedgerConversionAllowed()`—— 唯一放行态是只读维护窗
+   *      (§16.3「停旧写之后、开闸之前」);常规闸关与闸开都拒(20159);
+   *   ② 跳过 ⑪ 的 settlement-posted 通知 intent:回填不是新结算,向历史活动负责人
+   *      逐活动重发「已入账」是追溯性骚扰;账本事实 / day-state / audit 全部照写。
+   *
+   * 判据:既有结算链 e2e 对 `commitBatchWithin` 行为零变化(协议体逐字搬运的正对照);
+   * 转换刀 e2e 对本入口三态判闸(闸关拒 / 闸开拒 / 只读窗放行)。
+   */
+  async commitConvertedBatchWithin(
+    tx: PrismaTx,
+    activityId: string,
+    input: LedgerCommitInput,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+  ): Promise<LedgerCommitResult> {
+    this.activityWorkflowGate.assertLegacyLedgerConversionAllowed();
+    return this.commitBatchProtocol(tx, activityId, input, currentUser, auditMeta, {
+      conversion: true,
+    });
+  }
+
+  /** `commitBatchWithin` / `commitConvertedBatchWithin` 的共享协议体(逐字,判闸位已外置)。 */
+  private async commitBatchProtocol(
+    tx: PrismaTx,
+    activityId: string,
+    input: LedgerCommitInput,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+    options: { conversion: boolean },
+  ): Promise<LedgerCommitResult> {
     {
       // ===== ①②③④ 固定锁序 =====
       const activity = await this.lockActivity(tx, activityId);
@@ -334,22 +374,26 @@ export class LedgerPostingService {
       };
 
       // ⑪ 通知 intent —— **必须在本事务内**(本仓 Outbox 铁律)。
-      await this.notifications.enqueuePosted(tx, {
-        activityId,
-        activityTitle: activity.title,
-        settlementVersionId: version.id,
-        settlementVersion: version.version,
-        postingBatchId: batch.id,
-        memberCount: memberIds.length,
-        cohort: await freezeResponsibility(tx, {
-          cohortKey: `settlement-ledger-commit:${batch.id}`,
-          aggregateType: 'activity',
-          aggregateIds: [activityId],
-          basisRef: [`postingBatch:${batch.id}`],
-          memberIds: [await this.readOwnerMemberId(tx, activityId)],
-          at: now,
-        }),
-      });
+      //    转换刀(conversion: true)刻意跳过:回填不是新结算,向历史活动负责人
+      //    逐活动重发「已入账」是追溯性骚扰;账本事实 / day-state / audit 全部照写。
+      if (!options.conversion) {
+        await this.notifications.enqueuePosted(tx, {
+          activityId,
+          activityTitle: activity.title,
+          settlementVersionId: version.id,
+          settlementVersion: version.version,
+          postingBatchId: batch.id,
+          memberCount: memberIds.length,
+          cohort: await freezeResponsibility(tx, {
+            cohortKey: `settlement-ledger-commit:${batch.id}`,
+            aggregateType: 'activity',
+            aggregateIds: [activityId],
+            basisRef: [`postingBatch:${batch.id}`],
+            memberIds: [await this.readOwnerMemberId(tx, activityId)],
+            at: now,
+          }),
+        });
+      }
 
       // ⑫ audit —— 刻意放**最后一步**:它是 DoD「原子切换」那条判据的落点
       //    (e2e 让它抛错,断言上面全部回滚)。

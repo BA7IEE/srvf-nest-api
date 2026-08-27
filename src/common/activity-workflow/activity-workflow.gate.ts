@@ -128,6 +128,26 @@ export class ActivityWorkflowGate {
   }
 
   /**
+   * 「存量考勤账本化」转换刀(P1-28 第 7 批② A 案)的判闸位:唯一放行态 = 只读维护窗。
+   *
+   * §16.3 顺序「停旧写 → 部署 → 开闸」的中间窗,是转换唯一合法的执行时机:
+   * - **常规闸关**(¬enabled ∧ ¬只读):旧终审还在产生新 approved 数据,
+   *   现在转换会与后续审批竞态(转完又来一批,账本口径漏人)⇒ 拒;
+   * - **闸开**(enabled):读面已切 committed,再跑转换等于对着已切换的真相补写历史
+   *   ⇒ 拒(窗口已过,补写须另走更正链);
+   * - **只读 ∧ 未开**(¬enabled ∧ 只读):旧写已被只读位拒绝 ⇒ 人群冻结,可转。
+   *
+   * ⚠️ 本方法与上面两个 assert 的关系是**第三个写方**,不是它们的放松:
+   * `v11 放行 ∧ legacy 放行 ≡ false` 不因本方法改变 —— 本方法只在「两个运行时写方
+   * 都被拒」的窗口里放行一个维护写方,运行时混合态仍然结构上不可能。
+   */
+  assertLegacyLedgerConversionAllowed(): void {
+    if (!this.isReadonlyMaintenance() || this.isV11Enabled()) {
+      throw new BizException(BizCode.LEGACY_LEDGER_CONVERSION_WINDOW_INVALID);
+    }
+  }
+
+  /**
    * 统计读面取数源:闸开读 committed 账本,闸关读 approved 考勤(今天的行为)。
    *
    * ⚠️ 与本方法**并存但刻意不一致**的是入队门槛(team-join)与
