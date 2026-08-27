@@ -632,6 +632,20 @@
   **⇒ 2026-08-19 三次拍板(②-b 交付方实测出前提不成立后):②-b 暂不换源,并入
   「终审改为提交 `LedgerPostingBatch`」那一刀,读写同批翻面。**
 
+  **⇒ 2026-08-27 四次拍板(桥形状,维护者「按推荐」= A 案)**:闸关期间 runtime 零改动;
+  §16.3 停写窗口内一次性「存量账本化」转换刀(D 档)为存量 approved 合成 v1.1 事实链
+  并提交真账本批次;②-b 四数字换源随闸翻面。双写案(B)被锚点证据否决 ——
+  `LedgerPostingBatch.settlementVersionId` 必填、分录锚 `(activityId,sessionId,memberId)` +
+  identity + resultRevision,而 `AttendanceRecord` 无 sessionId / identity / resultRevision;
+  读面并集案(C)不达合同终态「统计只读 committed batch」。评审稿草案(锚点证据 +
+  设计决策 D1–D13 + SOP 集成,未冻结):[`LEGACY_LEDGER_CONVERSION_DRAFT.md`](LEGACY_LEDGER_CONVERSION_DRAFT.md)。
+  P0 基线复跑(本机 Docker PG,`9c8be487`):`activity-full-chain` + `attendance-final-approve-*`
+  3 套件 11 用例全过。
+  **⇒ 同日两问两答签收(维护者逐项「按推荐」)**:Q1=D1 场次归属(时间窗 + 最早 live 场兜底 +
+  兜底记标记,分数时长不动);Q2=D2 无报名头存量(补「历史转换」来源报名头,非真报名)。
+  其余 D3–D13:D3 为实施首日技术复核点(失败即停上报),D4–D13 按保守工程裁定自理
+  (可逆、不改业务语义、逐条写进实施 PR)。设计自此定稿,施工依据即该稿。
+
   🔴 **实测结论:两条流水线目前人群完全不相交,换源不是「数字变小」而是「数字归零」。**
   交付方用**真实写链**各跑一遍(非静态推理,非直插夹具):
 
