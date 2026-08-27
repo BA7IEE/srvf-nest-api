@@ -63,8 +63,8 @@ v1.1 事实链(报名头 / 参与身份 / 结果修订 / 结算版本)并提交*
 | D6 | **规模** | 复用 `runMemberLinearizedTransaction` 与 slot 机制;30/500/2000 档判据已有,万人档豁免沿用 | 保守工程裁定 |
 | D7 | **回滚** | 转换前对涉及表 `pg_dump` 快照 + 逆操作 SOP;运行期撤销用批次 void 原语 | 保守工程裁定(物理写数据 SOP 归维护者执行) |
 | D8 | **audit** | 复用既有伞事件 + `extra.operation='legacy-ledger-conversion'`,**零新 AuditLogEvent** | 保守工程裁定 |
-| D9 | **执行时机** | §16.3 顺序「停旧写之后、开闸之前」;转换后跑探针:四数字 approved 口径 == committed 口径(逐人)才允许开闸 | 已定(A 案) |
-| D10 | **②-b 换源** | C8 闭包(现读 3 文件 / 4 函数)四数字由闸控制:闸关 = approved 逐字恒等现状,闸开 = committed;`②-a 不变量 2` spec 按自述协议改写,断言变更在 PR 内逐条揭示 | 已定(三次拍板) |
+| D9 | **执行时机** | §16.3 顺序「停旧写之后、开闸之前」;转换后跑探针:总时长 / 活动数 / 记录条数 approved 口径 == committed 口径(逐人),贡献值恒 approved 封顶(C4,不比较) | 已定(A 案;2026-08-28 收窄比较面) |
+| D10 | **②-b 换源** | ~~待做~~ **2026-08-28 取证更正:已交付** —— `participation-summary-query.service.ts` 已闸控取数(闸关 approved / 闸开 committed);贡献值恒 approved 封顶(C4);不变量 2 spec 无需改动 | ✅ 已实现(取证) |
 | D11 | **D1 悬案收口** | 「参与活动数 / 记录条数」的账本口径对着转换后真实数据定案,写回 NEXT_TASKS | 已定(顺延至本刀) |
 | D12 | **team-join** | 零触碰(C4 反向闸:入队门槛恒 approved) | 已定(2026-08-19 拍板) |
 | D13 | **第 6 批收口宣告** | 逐 SHA 核对 B6-1 / B6-2 / 收口刀合并与 CI 状态后在 NEXT_TASKS 宣告(或如实列缺口) | 已定(同 goal DoD) |
@@ -80,10 +80,27 @@ v1.1 事实链(报名头 / 参与身份 / 结果修订 / 结算版本)并提交*
 7. D11 定案落台账;D13 第 6 批宣告落台账;
 8. 全量结论以 PR CI 冷跑为准(本机只跑定向 spec)。
 
-## 5. 基线读数(2026-08-27,`9c8be487`)
+## 5. 基线读数与实施前取证
 
-- P0 双链探针:`activity-full-chain` + `attendance-final-approve-*` 3 套件 **11 用例全过**(本机 Docker PG);
+- P0 双链探针:`activity-full-chain` + `attendance-final-approve-*` 3 套件 **11 用例全过**(2026-08-27,本机 Docker PG);
+- P2 characterization 基线:`attendance-sheet|attendance-record` 族 **28 用例全过**(2026-08-28,同环境);
 - 人群镜像读数沿用 2026-08-19 实测(见 NEXT_TASKS P1-28 探针表),转换后须复测消除。
+
+**⇒ 2026-08-28 实施前取证两条(施工面随之缩小)**:
+
+1. **②-b 换源其实已交付** —— `participation-summary-query.service.ts` 的
+   `loadPositiveSummary()` 已由闸控制取数源(闸关 = approved 口径逐字保留;闸开 =
+   `loadCommittedPositive` committed 账本口径;`contributionPoints` 恒走
+   `computeCappedContribution`,C4 反向闸锁住不随闸切换)。**D10 剩余部分 = 无**;
+   `②-a 不变量 2` spec 亦无需改动(它跑在闸关下,恒等断言继续成立,守的正是
+   「没开闸就别换源」)。
+2. **封顶碰撞消解** —— 贡献值展示永不换源 ⇒ 转换分录按 `recognized = 原始日和、
+   credited = min(日和, 3)、cappedOut = 超出` 落账(与 `computeCappedContribution`
+   同一常数 `GLOBAL_DAILY_CONTRIBUTION_CAP`、同一北京日口径),**不改变任何用户可见数字**;
+   DB `participation_ledger_entry_magnitude_check` 恰好承载该形状(credited 有界、
+   recognized/cappedOut 无上界)。转换后唯一口径差 = 账本内部 credited/cappedOut 拆分,
+   贡献值展示恒 approved 封顶,两者今日已天然一致。
+   ⇒ 剩余施工面收敛为:**转换刀本体(事实合成 + 分录 + commitBatch)+ CLI + SOP + 判据**。
 
 ## 6. 禁止域 / 写集(沿 goal 声明)
 

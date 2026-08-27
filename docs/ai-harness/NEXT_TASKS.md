@@ -645,6 +645,12 @@
   兜底记标记,分数时长不动);Q2=D2 无报名头存量(补「历史转换」来源报名头,非真报名)。
   其余 D3–D13:D3 为实施首日技术复核点(失败即停上报),D4–D13 按保守工程裁定自理
   (可逆、不改业务语义、逐条写进实施 PR)。设计自此定稿,施工依据即该稿。
+  **2026-08-28 实施前取证(施工面缩小)**:①②-b 换源**已交付** ——
+  `participation-summary-query.service.ts` 已闸控取数(闸关 approved / 闸开 committed,
+  贡献值恒 approved 封顶,C4),D10 剩余为零、不变量 2 spec 无需改;②封顶碰撞消解 ——
+  转换分录 `recognized=原始日和 / credited=min(日和,3) / cappedOut=超出`,不改任何用户可见数字,
+  DB magnitude CHECK 恰好承载该形状。P2 characterization 基线:`attendance-sheet|attendance-record`
+  28 用例全过。剩余施工面 = 转换刀本体 + CLI + SOP + 判据。
 
   🔴 **实测结论:两条流水线目前人群完全不相交,换源不是「数字变小」而是「数字归零」。**
   交付方用**真实写链**各跑一遍(非静态推理,非直插夹具):
