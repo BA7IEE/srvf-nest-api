@@ -207,8 +207,8 @@
 | `recruitment-application.rebind-wechat` | 1 |  |
 | `recruitment-application.rebind-phone` | 1 |  |
 | `recruitment-application.withdraw` | 1 |  |
-| `recruitment-application.certificate-upload` | 0 | ⚠️ 零产出且 union 未标注退役 —— 疑似已退役,待维护者拍板(本刀只登记不删) |
-| `recruitment-application.certificate-review` | 0 | ⚠️ 零产出且 union 未标注退役 —— 疑似已退役,待维护者拍板(本刀只登记不删) |
+| `recruitment-application.certificate-upload` | 0 | 零产出:生产者随 #830(PR-4a-2,2026-07-30 删旧 category 端点)消失;词条保留但 union 注释未标注 —— 待维护者拍板(本刀只登记不删) |
+| `recruitment-application.certificate-review` | 0 | 零产出:生产者随 #830(PR-4a-2,2026-07-30 删旧 category 端点)消失;词条保留但 union 注释未标注 —— 待维护者拍板(本刀只登记不删) |
 
 ## team-join-cycle
 
@@ -300,7 +300,7 @@
 | `member.official-portrait.activate` | 1 |  |
 | `member.official-portrait.replace` | 1 |  |
 | `member.official-portrait.void` | 1 |  |
-| `member.official-portrait.purge` | 0 | ⚠️ 零产出且 union 未标注退役 —— 疑似已退役,待维护者拍板(本刀只登记不删) |
+| `member.official-portrait.purge` | 0 | 零产出:预留事件 —— #1106(T1)刻意未接,合规清理流程(issue #1055 §5.2)未建;接通或废弃待维护者拍板 |
 
 ## rbac-role
 
