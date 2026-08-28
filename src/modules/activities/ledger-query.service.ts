@@ -101,7 +101,8 @@ export interface MemberLedgerTotalsBreakdown {
  */
 export interface MemberCommittedParticipationCounts {
   activityCount: number;
-  entryCount: number;
+  /** D11 定案(2026-08-28):账本日行数(身份×北京日),旧「记录条数」的最近粒度。 */
+  recordCount: number;
 }
 
 /**
@@ -394,10 +395,10 @@ export class LedgerQueryService {
     client?: PrismaLike,
   ): Promise<MemberCommittedParticipationCounts> {
     const rows = await (client ?? this.prisma).$queryRaw<
-      Array<{ activityCount: bigint; entryCount: bigint }>
+      Array<{ activityCount: bigint; recordCount: bigint }>
     >`
       SELECT COUNT(DISTINCT e."activityId") AS "activityCount",
-             COUNT(*) AS "entryCount"
+             COUNT(DISTINCT (e."resultRevisionId", e."ledgerDate")) AS "recordCount"
       FROM "ParticipationLedgerEntry" e
       JOIN "LedgerPostingBatch" b ON b.id = e."postingBatchId"
       WHERE e."memberId" = ${memberId}
@@ -407,7 +408,11 @@ export class LedgerQueryService {
     // 空账本时 Postgres 仍返回一行(COUNT 恒有值);防御性兜底避免 undefined 解构。
     return {
       activityCount: Number(row?.activityCount ?? 0),
-      entryCount: Number(row?.entryCount ?? 0),
+      // D11 定案(维护者 2026-08-28 拍板「按推荐」):记录条数(账本口径)= 账本日行数
+      // (身份×北京日 去重),不是分录条数(每人每日两条)。这是与旧口径
+      // 「考勤记录条数」最贴近的粒度 ⇒ 开闸前后数字基本连续;锚在
+      // legacy-ledger-conversion.e2e-spec(转换后 committed 计数 == approved 计数)。
+      recordCount: Number(row?.recordCount ?? 0),
     };
   }
 

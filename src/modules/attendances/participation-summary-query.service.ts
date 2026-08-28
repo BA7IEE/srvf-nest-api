@@ -112,7 +112,7 @@ export class ParticipationSummaryQueryService {
     return {
       totalServiceHours: ledgerTotals.committedServiceHours,
       activityCount: counts.activityCount,
-      recordCount: counts.entryCount,
+      recordCount: counts.recordCount,
     };
   }
 

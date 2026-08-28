@@ -8,6 +8,7 @@ import {
   LegacyLedgerConversionService,
   type LegacyLedgerConversionOutcome,
 } from '../../src/modules/activities/legacy-ledger-conversion.service';
+import { LedgerQueryService } from '../../src/modules/activities/ledger-query.service';
 import { createTestUser } from '../fixtures/users.fixture';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -351,6 +352,16 @@ describe('存量考勤账本化转换(P1-28 第 7 批② A 案,合同 §16.3 只
       where: { memberId: memberWithHead, ledgerDate: new Date('2026-07-01T00:00:00.000Z') },
     });
     expect(dayState).not.toBeNull();
+
+    // D11 锚(维护者 2026-08-28 拍板「账本日行数」):闸开后的活动数 / 记录条数
+    // 与 approved 口径逐人相等 —— 转换桥的等价性在计数轴上也有执行位。
+    const ledgerQuery = appReadonly.get(LedgerQueryService);
+    const countsM1 = await ledgerQuery.countCommittedParticipationForMember(memberWithHead);
+    expect(countsM1.activityCount).toBe(1);
+    expect(countsM1.recordCount).toBe(2); // 两条考勤记录 = 两个身份日行
+    const countsM2 = await ledgerQuery.countCommittedParticipationForMember(memberWithoutHead);
+    expect(countsM2.activityCount).toBe(1);
+    expect(countsM2.recordCount).toBe(1);
   });
 
   it('③ 幂等重跑:requestKey 命中即 already-converted,库里零新增', async () => {
