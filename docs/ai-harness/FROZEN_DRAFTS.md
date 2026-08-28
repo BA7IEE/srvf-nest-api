@@ -25,7 +25,7 @@
 
 | # | 冻结稿 | 台账 | 落地度 | 卡在谁 |
 |---|---|---|---|---|
-| 1 | Integration Foundation v1 T0 | P1-30 | `↔⏸ 挂起` **0 / 8 PR** | 冻结件 `D-IF-2`=A:首次生产上线**之后**才开工 |
+| 1 | Integration Foundation v1 T0 | P1-30 | `↔进行中` **1 / 8 PR**(PR1 schema 已交付 2026-08-28) | 维护者 2026-08-28 拍板开工(条件②③齐、④建议级;`D-IF-2` 的「上线后」理由已于 2026-08-20 换成四条件表,见 NEXT_TASKS P1-30) |
 | 2 | RBAC 权限目录终态 | P1-32 | `↔进行中 7/9` **完整落地 7 / 9 PR**(PR 4 两半齐全;PR 5 已合 #1175;PR 8 **只落了前一半**) | 剩 PR 6–7(都等前端 srvf-admin-web 投用)+ PR 8 后一半「Permission 写 CRUD 退役」待维护者拍板 |
 | 3 | 活动业务 v1.1 合同(6 份) | P1-28 | `↔进行中` 8 批:6 批主体完 / 2 批部分 | 施工中 |
 | 4 | 架构治理 v4(3 份) | P1-29 | `↔另尺(NEXT_TASKS 的 P1-29 条目只覆盖 Phase 0,本行覆盖 v4 全 11 阶段)` 11 阶段:6 个完 + Phase 6 部分 | 施工中 |
@@ -215,7 +215,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/harness-2.0-t0-review.md` | landed | Harness 2.0 已落,后被 3.0 接续 |
 | `docs/archive/reviews/identity-session-p0-step-up-logout-review.md` | landed | step-up + refresh-family logout 已落 |
 | `docs/archive/reviews/insurance-module-review.md` | open · P1-10 | PR1–PR4 代码已交付;PR3 enable + PR4 deploy 待运维窗口 |
-| `docs/archive/reviews/integration-foundation-v1-t0-terminal-review.md` | open · P1-30 | PR1–PR8 一行未实施;卡 P1-32 PR1 |
+| `docs/archive/reviews/integration-foundation-v1-t0-terminal-review.md` | open · P1-30 | PR1 已交付(2026-08-28);余 PR2–PR8 严格串行 |
 | `docs/archive/reviews/jwt-ttl-startup-validation-v0.60-review.md` | landed | v0.60 已落 |
 | `docs/archive/reviews/log-query-redaction-v0.60-review.md` | landed | v0.60 已落 |
 | `docs/archive/reviews/member-account-loop-v2-review.md` | landed | P1-18 队员账号闭环已落 |
