@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:728e2e5dccb12317e3d3c199c1fb49327e1d4c94ab5e5e1e8d5ab2c63d0f7db8",
+  "inputDigest": "sha256:948dc0e81e62ca183796ff8f035dec4e1183b26b4d52ca156e871e5837338649",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -21,10 +21,23 @@
         "storage"
       ]
     },
-    "platform-access": { "confirmed": true, "modules": ["authz", "permissions", "role-bindings"] },
+    "platform-access": {
+      "confirmed": true,
+      "modules": [
+        "authz",
+        "permissions",
+        "role-bindings"
+      ]
+    },
     "comms": {
       "confirmed": true,
-      "modules": ["announcement-import", "notifications", "sms", "wechat", "wecom"]
+      "modules": [
+        "announcement-import",
+        "notifications",
+        "sms",
+        "wechat",
+        "wecom"
+      ]
     },
     "identity-org": {
       "confirmed": true,
@@ -42,12 +55,24 @@
         "users"
       ],
       "observedSubdomains": {
-        "accounts": { "confirmed": true },
-        "people": { "confirmed": true },
-        "structure": { "confirmed": true }
+        "accounts": {
+          "confirmed": true
+        },
+        "people": {
+          "confirmed": true
+        },
+        "structure": {
+          "confirmed": true
+        }
       }
     },
-    "engagement": { "confirmed": true, "modules": ["recruitment", "team-join"] },
+    "engagement": {
+      "confirmed": true,
+      "modules": [
+        "recruitment",
+        "team-join"
+      ]
+    },
     "participation": {
       "confirmed": true,
       "modules": [
@@ -58,59 +83,172 @@
         "contribution-rules"
       ],
       "observedSubdomains": {
-        "lifecycle": { "confirmed": true },
-        "registration": { "confirmed": true },
-        "attendance": { "confirmed": true },
-        "settlement-ledger": { "confirmed": true }
+        "lifecycle": {
+          "confirmed": true
+        },
+        "registration": {
+          "confirmed": true
+        },
+        "attendance": {
+          "confirmed": true
+        },
+        "settlement-ledger": {
+          "confirmed": true
+        }
       }
     },
-    "insurance": { "confirmed": true, "modules": ["insurances"] },
-    "credentials": { "confirmed": true, "modules": ["certificates"] },
-    "content": { "confirmed": true, "modules": ["content"] }
+    "insurance": {
+      "confirmed": true,
+      "modules": [
+        "insurances"
+      ]
+    },
+    "credentials": {
+      "confirmed": true,
+      "modules": [
+        "certificates"
+      ]
+    },
+    "content": {
+      "confirmed": true,
+      "modules": [
+        "content"
+      ]
+    }
   },
   "moduleOwnership": {
-    "ai": { "domain": "platform-core", "confirmed": true },
-    "attachment-configs": { "domain": "platform-core", "confirmed": true },
-    "attachments": { "domain": "platform-core", "confirmed": true },
-    "audit-logs": { "domain": "platform-core", "confirmed": true },
-    "dictionaries": { "domain": "platform-core", "confirmed": true },
-    "health": { "domain": "platform-core", "confirmed": true },
-    "meta": { "domain": "platform-core", "confirmed": true },
-    "storage": { "domain": "platform-core", "confirmed": true },
-    "authz": { "domain": "platform-access", "confirmed": true },
-    "permissions": { "domain": "platform-access", "confirmed": true },
-    "role-bindings": { "domain": "platform-access", "confirmed": true },
-    "announcement-import": { "domain": "comms", "confirmed": true },
-    "notifications": { "domain": "comms", "confirmed": true },
-    "sms": { "domain": "comms", "confirmed": true },
-    "wechat": { "domain": "comms", "confirmed": true },
-    "wecom": { "domain": "comms", "confirmed": true },
-    "auth": { "domain": "identity-org", "subdomain": "accounts", "confirmed": true },
-    "emergency-contacts": { "domain": "identity-org", "subdomain": "people", "confirmed": true },
+    "ai": {
+      "domain": "platform-core",
+      "confirmed": true
+    },
+    "attachment-configs": {
+      "domain": "platform-core",
+      "confirmed": true
+    },
+    "attachments": {
+      "domain": "platform-core",
+      "confirmed": true
+    },
+    "audit-logs": {
+      "domain": "platform-core",
+      "confirmed": true
+    },
+    "dictionaries": {
+      "domain": "platform-core",
+      "confirmed": true
+    },
+    "health": {
+      "domain": "platform-core",
+      "confirmed": true
+    },
+    "meta": {
+      "domain": "platform-core",
+      "confirmed": true
+    },
+    "storage": {
+      "domain": "platform-core",
+      "confirmed": true
+    },
+    "authz": {
+      "domain": "platform-access",
+      "confirmed": true
+    },
+    "permissions": {
+      "domain": "platform-access",
+      "confirmed": true
+    },
+    "role-bindings": {
+      "domain": "platform-access",
+      "confirmed": true
+    },
+    "announcement-import": {
+      "domain": "comms",
+      "confirmed": true
+    },
+    "notifications": {
+      "domain": "comms",
+      "confirmed": true
+    },
+    "sms": {
+      "domain": "comms",
+      "confirmed": true
+    },
+    "wechat": {
+      "domain": "comms",
+      "confirmed": true
+    },
+    "wecom": {
+      "domain": "comms",
+      "confirmed": true
+    },
+    "auth": {
+      "domain": "identity-org",
+      "subdomain": "accounts",
+      "confirmed": true
+    },
+    "emergency-contacts": {
+      "domain": "identity-org",
+      "subdomain": "people",
+      "confirmed": true
+    },
     "member-departments": {
       "domain": "identity-org",
       "subdomain": "structure",
       "confirmed": true
     },
-    "member-profiles": { "domain": "identity-org", "subdomain": "people", "confirmed": true },
-    "members": { "domain": "identity-org", "subdomain": "people", "confirmed": true },
-    "organizations": { "domain": "identity-org", "subdomain": "structure", "confirmed": true },
+    "member-profiles": {
+      "domain": "identity-org",
+      "subdomain": "people",
+      "confirmed": true
+    },
+    "members": {
+      "domain": "identity-org",
+      "subdomain": "people",
+      "confirmed": true
+    },
+    "organizations": {
+      "domain": "identity-org",
+      "subdomain": "structure",
+      "confirmed": true
+    },
     "position-assignments": {
       "domain": "identity-org",
       "subdomain": "structure",
       "confirmed": true
     },
-    "positions": { "domain": "identity-org", "subdomain": "structure", "confirmed": true },
-    "realname": { "domain": "identity-org", "subdomain": "people", "confirmed": true },
+    "positions": {
+      "domain": "identity-org",
+      "subdomain": "structure",
+      "confirmed": true
+    },
+    "realname": {
+      "domain": "identity-org",
+      "subdomain": "people",
+      "confirmed": true
+    },
     "supervision-assignments": {
       "domain": "identity-org",
       "subdomain": "structure",
       "confirmed": true
     },
-    "users": { "domain": "identity-org", "subdomain": "accounts", "confirmed": true },
-    "recruitment": { "domain": "engagement", "confirmed": true },
-    "team-join": { "domain": "engagement", "confirmed": true },
-    "activities": { "domain": "participation", "subdomain": "lifecycle", "confirmed": true },
+    "users": {
+      "domain": "identity-org",
+      "subdomain": "accounts",
+      "confirmed": true
+    },
+    "recruitment": {
+      "domain": "engagement",
+      "confirmed": true
+    },
+    "team-join": {
+      "domain": "engagement",
+      "confirmed": true
+    },
+    "activities": {
+      "domain": "participation",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
     "activity-feedbacks": {
       "domain": "participation",
       "subdomain": "attendance",
@@ -121,15 +259,28 @@
       "subdomain": "registration",
       "confirmed": true
     },
-    "attendances": { "domain": "participation", "subdomain": "attendance", "confirmed": true },
+    "attendances": {
+      "domain": "participation",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
     "contribution-rules": {
       "domain": "participation",
       "subdomain": "settlement-ledger",
       "confirmed": true
     },
-    "insurances": { "domain": "insurance", "confirmed": true },
-    "certificates": { "domain": "credentials", "confirmed": true },
-    "content": { "domain": "content", "confirmed": true }
+    "insurances": {
+      "domain": "insurance",
+      "confirmed": true
+    },
+    "certificates": {
+      "domain": "credentials",
+      "confirmed": true
+    },
+    "content": {
+      "domain": "content",
+      "confirmed": true
+    }
   },
   "modelOwnership": {
     "User": {
@@ -144,8 +295,16 @@
       "subdomain": "accounts",
       "confirmed": true
     },
-    "DictType": { "domain": "platform-core", "ownerModule": "dictionaries", "confirmed": true },
-    "DictItem": { "domain": "platform-core", "ownerModule": "dictionaries", "confirmed": true },
+    "DictType": {
+      "domain": "platform-core",
+      "ownerModule": "dictionaries",
+      "confirmed": true
+    },
+    "DictItem": {
+      "domain": "platform-core",
+      "ownerModule": "dictionaries",
+      "confirmed": true
+    },
     "Organization": {
       "domain": "identity-org",
       "ownerModule": "organizations",
@@ -224,7 +383,11 @@
       "subdomain": "people",
       "confirmed": true
     },
-    "Certificate": { "domain": "credentials", "ownerModule": "certificates", "confirmed": true },
+    "Certificate": {
+      "domain": "credentials",
+      "ownerModule": "certificates",
+      "confirmed": true
+    },
     "CertificateStandard": {
       "domain": "credentials",
       "ownerModule": "certificates",
@@ -245,7 +408,11 @@
       "ownerModule": "recruitment",
       "confirmed": true
     },
-    "RecruitmentCycle": { "domain": "engagement", "ownerModule": "recruitment", "confirmed": true },
+    "RecruitmentCycle": {
+      "domain": "engagement",
+      "ownerModule": "recruitment",
+      "confirmed": true
+    },
     "RecruitmentApplication": {
       "domain": "engagement",
       "ownerModule": "recruitment",
@@ -597,9 +764,21 @@
       "subdomain": "settlement-ledger",
       "confirmed": true
     },
-    "AuditLog": { "domain": "platform-core", "ownerModule": "audit-logs", "confirmed": true },
-    "RbacRole": { "domain": "platform-access", "ownerModule": "permissions", "confirmed": true },
-    "Permission": { "domain": "platform-access", "ownerModule": "permissions", "confirmed": true },
+    "AuditLog": {
+      "domain": "platform-core",
+      "ownerModule": "audit-logs",
+      "confirmed": true
+    },
+    "RbacRole": {
+      "domain": "platform-access",
+      "ownerModule": "permissions",
+      "confirmed": true
+    },
+    "Permission": {
+      "domain": "platform-access",
+      "ownerModule": "permissions",
+      "confirmed": true
+    },
     "RolePermission": {
       "domain": "platform-access",
       "ownerModule": "permissions",
@@ -615,14 +794,26 @@
       "ownerModule": "role-bindings",
       "confirmed": true
     },
-    "Attachment": { "domain": "platform-core", "ownerModule": "attachments", "confirmed": true },
-    "StorageObject": { "domain": "platform-core", "ownerModule": "storage", "confirmed": true },
+    "Attachment": {
+      "domain": "platform-core",
+      "ownerModule": "attachments",
+      "confirmed": true
+    },
+    "StorageObject": {
+      "domain": "platform-core",
+      "ownerModule": "storage",
+      "confirmed": true
+    },
     "StorageObjectOperation": {
       "domain": "platform-core",
       "ownerModule": "storage",
       "confirmed": true
     },
-    "StorageSettings": { "domain": "platform-core", "ownerModule": "storage", "confirmed": true },
+    "StorageSettings": {
+      "domain": "platform-core",
+      "ownerModule": "storage",
+      "confirmed": true
+    },
     "AttachmentTypeConfig": {
       "domain": "platform-core",
       "ownerModule": "attachment-configs",
@@ -650,11 +841,31 @@
       "subdomain": "accounts",
       "confirmed": true
     },
-    "SmsSettings": { "domain": "comms", "ownerModule": "sms", "confirmed": true },
-    "SmsVerificationCode": { "domain": "comms", "ownerModule": "sms", "confirmed": true },
-    "SmsSendLog": { "domain": "comms", "ownerModule": "sms", "confirmed": true },
-    "WechatSettings": { "domain": "comms", "ownerModule": "wechat", "confirmed": true },
-    "MemberInsurance": { "domain": "insurance", "ownerModule": "insurances", "confirmed": true },
+    "SmsSettings": {
+      "domain": "comms",
+      "ownerModule": "sms",
+      "confirmed": true
+    },
+    "SmsVerificationCode": {
+      "domain": "comms",
+      "ownerModule": "sms",
+      "confirmed": true
+    },
+    "SmsSendLog": {
+      "domain": "comms",
+      "ownerModule": "sms",
+      "confirmed": true
+    },
+    "WechatSettings": {
+      "domain": "comms",
+      "ownerModule": "wechat",
+      "confirmed": true
+    },
+    "MemberInsurance": {
+      "domain": "insurance",
+      "ownerModule": "insurances",
+      "confirmed": true
+    },
     "TeamInsurancePolicy": {
       "domain": "insurance",
       "ownerModule": "insurances",
@@ -676,15 +887,31 @@
       "subdomain": "people",
       "confirmed": true
     },
-    "TeamJoinCycle": { "domain": "engagement", "ownerModule": "team-join", "confirmed": true },
+    "TeamJoinCycle": {
+      "domain": "engagement",
+      "ownerModule": "team-join",
+      "confirmed": true
+    },
     "TeamJoinApplication": {
       "domain": "engagement",
       "ownerModule": "team-join",
       "confirmed": true
     },
-    "Content": { "domain": "content", "ownerModule": "content", "confirmed": true },
-    "Notification": { "domain": "comms", "ownerModule": "notifications", "confirmed": true },
-    "NotificationRead": { "domain": "comms", "ownerModule": "notifications", "confirmed": true },
+    "Content": {
+      "domain": "content",
+      "ownerModule": "content",
+      "confirmed": true
+    },
+    "Notification": {
+      "domain": "comms",
+      "ownerModule": "notifications",
+      "confirmed": true
+    },
+    "NotificationRead": {
+      "domain": "comms",
+      "ownerModule": "notifications",
+      "confirmed": true
+    },
     "NotificationDelivery": {
       "domain": "comms",
       "ownerModule": "notifications",
@@ -705,81 +932,355 @@
       "ownerModule": "notifications",
       "confirmed": true
     },
-    "ThrottlerBucket": { "domain": "platform-core", "ownerModule": "health", "confirmed": true },
-    "WecomSettings": { "domain": "comms", "ownerModule": "wecom", "confirmed": true }
+    "ThrottlerBucket": {
+      "domain": "platform-core",
+      "ownerModule": "health",
+      "confirmed": true
+    },
+    "WecomSettings": {
+      "domain": "comms",
+      "ownerModule": "wecom",
+      "confirmed": true
+    }
   },
   "allowedEdges": [
-    { "from": "identity-org", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "identity-org", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "identity-org", "to": "comms", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "identity-org", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "credentials", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "participation", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "engagement", "to": "comms", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "identity-org", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "credentials", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "insurance", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "participation", "to": "comms", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "insurance", "to": "identity-org", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "insurance", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "insurance", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "credentials", "to": "identity-org", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "credentials", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "credentials", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "content", "to": "platform-core", "kind": "declared-business", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "content", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "comms", "to": "identity-org", "kind": "read-only-query", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "comms", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "comms", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "platform-access", "to": "platform-core", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" },
-    { "from": "platform-core", "to": "platform-access", "kind": "public-surface", "confirmed": true, "decisionId": "allowedEdges" }
+    {
+      "from": "identity-org",
+      "to": "platform-core",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "identity-org",
+      "to": "platform-access",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "identity-org",
+      "to": "comms",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "engagement",
+      "to": "identity-org",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "engagement",
+      "to": "credentials",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "engagement",
+      "to": "participation",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "engagement",
+      "to": "platform-core",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "engagement",
+      "to": "platform-access",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "engagement",
+      "to": "comms",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "participation",
+      "to": "identity-org",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "participation",
+      "to": "credentials",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "participation",
+      "to": "insurance",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "participation",
+      "to": "platform-core",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "participation",
+      "to": "platform-access",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "participation",
+      "to": "comms",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "insurance",
+      "to": "identity-org",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "insurance",
+      "to": "platform-core",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "insurance",
+      "to": "platform-access",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "credentials",
+      "to": "identity-org",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "credentials",
+      "to": "platform-core",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "credentials",
+      "to": "platform-access",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "content",
+      "to": "platform-core",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "content",
+      "to": "platform-access",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "comms",
+      "to": "identity-org",
+      "kind": "read-only-query",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "comms",
+      "to": "platform-core",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "comms",
+      "to": "platform-access",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "platform-access",
+      "to": "platform-core",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "platform-core",
+      "to": "platform-access",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    }
   ],
   "publicSurface": {
     "confirmed": true,
     "purpose": "维护者于 2026-08-12 确认：初版 public surface 仅描述当前 Nest module exports 与现有具名 tx 原语；不描述计划，不构成直接 DB 访问出口。",
     "byDomain": {
       "comms": {
-        "modules": ["notifications", "sms", "wechat", "wecom"],
-        "exports": ["NotificationOutboxService", "SmsSettingsService", "SmsProviderRouter", "SmsCodeService", "WechatService", "WechatSettingsService", "WecomService", "WecomSettingsService", "WecomAuthAttemptService"]
+        "modules": [
+          "notifications",
+          "sms",
+          "wechat",
+          "wecom"
+        ],
+        "exports": [
+          "NotificationOutboxService",
+          "SmsSettingsService",
+          "SmsProviderRouter",
+          "SmsCodeService",
+          "WechatService",
+          "WechatSettingsService",
+          "WecomService",
+          "WecomSettingsService",
+          "WecomAuthAttemptService"
+        ]
       },
       "content": {
-        "modules": ["content"],
+        "modules": [
+          "content"
+        ],
         "exports": [],
         "notes": "未发现 Nest @Module exports；任何跨域调用 content 私有实现均为深引私有实现，属 Phase 3 待处置。"
       },
       "credentials": {
-        "modules": ["certificates"],
-        "exports": ["CertificateRecognitionResolver", "CertificateEvidenceSigner", "CertificateQualificationService"]
+        "modules": [
+          "certificates"
+        ],
+        "exports": [
+          "CertificateRecognitionResolver",
+          "CertificateEvidenceSigner",
+          "CertificateQualificationService"
+        ]
       },
       "engagement": {
-        "modules": ["recruitment", "team-join"],
+        "modules": [
+          "recruitment",
+          "team-join"
+        ],
         "exports": [],
         "notes": "未发现 Nest @Module exports；任何跨域调用 engagement 私有实现均为深引私有实现，属 Phase 3 待处置。"
       },
       "identity-org": {
-        "modules": ["auth", "member-profiles", "members", "organizations", "position-assignments", "realname", "supervision-assignments", "users"],
-        "exports": ["IdentityStepUpService", "MemberQualificationFactsService", "MembersService", "OrganizationsService", "PositionAssignmentsService", "RealnameVerificationService", "RealnameSettingsService", "SupervisionAssignmentsService", "AppIdentityResolver"],
-        "txPrimitives": ["revokeActiveWecomIdentityInTx"]
+        "modules": [
+          "auth",
+          "member-profiles",
+          "members",
+          "organizations",
+          "position-assignments",
+          "realname",
+          "supervision-assignments",
+          "users"
+        ],
+        "exports": [
+          "IdentityStepUpService",
+          "MemberQualificationFactsService",
+          "MembersService",
+          "OrganizationsService",
+          "PositionAssignmentsService",
+          "RealnameVerificationService",
+          "RealnameSettingsService",
+          "SupervisionAssignmentsService",
+          "AppIdentityResolver"
+        ],
+        "txPrimitives": [
+          "revokeActiveWecomIdentityInTx"
+        ]
       },
       "insurance": {
-        "modules": ["insurances"],
-        "exports": ["InsuranceRequirementService"]
+        "modules": [
+          "insurances"
+        ],
+        "exports": [
+          "InsuranceRequirementService"
+        ]
       },
       "participation": {
-        "modules": ["activities", "activity-feedbacks"],
-        "exports": ["ActivitiesService", "EvidenceSealService", "SettlementDraftService", "SettlementDraftDispatchService", "SettlementSubmitService", "SettlementReviewService", "LedgerPreparationService", "ActivityBatchWorker", "LedgerPostingService", "LedgerQueryService", "ActivityClosureService", "CorrectionApplicationService", "AppMyActivitiesService", "ActivityParticipationPolicy", "ActivityPublishReviewService", "ActivityResponsibilityPolicy", "ActivityResponsibilityService", "AppManagedActivitiesService", "ActivityWorkflowQueryService", "ActivityMemberOffboardImpactService", "ActivityQualificationEvaluatorService", "ActivityFeedbacksQueryService"]
+        "modules": [
+          "activities",
+          "activity-feedbacks"
+        ],
+        "exports": [
+          "ActivitiesService",
+          "EvidenceSealService",
+          "SettlementDraftService",
+          "SettlementDraftDispatchService",
+          "SettlementSubmitService",
+          "SettlementReviewService",
+          "LedgerPreparationService",
+          "ActivityBatchWorker",
+          "LedgerPostingService",
+          "LedgerQueryService",
+          "ActivityClosureService",
+          "CorrectionApplicationService",
+          "AppMyActivitiesService",
+          "ActivityParticipationPolicy",
+          "ActivityPublishReviewService",
+          "ActivityResponsibilityPolicy",
+          "ActivityResponsibilityService",
+          "AppManagedActivitiesService",
+          "ActivityWorkflowQueryService",
+          "ActivityMemberOffboardImpactService",
+          "ActivityQualificationEvaluatorService",
+          "ActivityFeedbacksQueryService"
+        ]
       },
       "platform-core": {
-        "modules": ["attachments", "audit-logs", "storage"],
-        "exports": ["AttachmentsService", "AttachmentContentValidator", "AuditLogsService", "StorageSettingsService", "StorageCryptoService", "StorageProviderRouter", "StorageObjectLedgerService", "STORAGE_PROVIDER"]
+        "modules": [
+          "attachments",
+          "audit-logs",
+          "storage"
+        ],
+        "exports": [
+          "AttachmentsService",
+          "AttachmentContentValidator",
+          "AuditLogsService",
+          "StorageSettingsService",
+          "StorageCryptoService",
+          "StorageProviderRouter",
+          "StorageObjectLedgerService",
+          "STORAGE_PROVIDER"
+        ]
       },
       "platform-access": {
-        "modules": ["authz", "permissions"],
-        "exports": ["AuthzService", "RbacService", "RoleDelegationPolicy", "LastAdminProtectionPolicy"]
+        "modules": [
+          "authz",
+          "permissions"
+        ],
+        "exports": [
+          "AuthzService",
+          "RbacService",
+          "RoleDelegationPolicy",
+          "LastAdminProtectionPolicy"
+        ]
       }
     }
   },
@@ -872,17 +1373,50 @@
     "kernelReadFields": {
       "confirmed": true,
       "fields": {
-        "User": ["id", "username", "nickname", "status", "memberId"],
-        "Member": ["id", "memberNo", "realName", "nickname", "gradeCode", "status"],
-        "Organization": ["id", "name", "code", "nodeTypeCode", "status", "parentId"]
+        "User": [
+          "id",
+          "username",
+          "nickname",
+          "status",
+          "memberId"
+        ],
+        "Member": [
+          "id",
+          "memberNo",
+          "realName",
+          "nickname",
+          "gradeCode",
+          "status"
+        ],
+        "Organization": [
+          "id",
+          "name",
+          "code",
+          "nodeTypeCode",
+          "status",
+          "parentId"
+        ]
       }
     },
     "kernelPredicateFields": {
       "confirmed": true,
       "fields": {
-        "User": ["id", "status", "memberId"],
-        "Member": ["id", "status", "gradeCode"],
-        "Organization": ["id", "status", "nodeTypeCode", "parentId"]
+        "User": [
+          "id",
+          "status",
+          "memberId"
+        ],
+        "Member": [
+          "id",
+          "status",
+          "gradeCode"
+        ],
+        "Organization": [
+          "id",
+          "status",
+          "nodeTypeCode",
+          "parentId"
+        ]
       }
     }
   },

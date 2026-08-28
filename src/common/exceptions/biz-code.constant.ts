@@ -1778,6 +1778,18 @@ export const BizCode = {
     httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
   },
 
+  // ===== 存量考勤账本化转换刀(P1-28 第 7 批② A 案,2026-08-27 拍板)=====
+  //
+  // 转换是唯一被允许「只读维护窗里写新链」的写方 —— 但窗口本身由闸判,不靠操作者自觉:
+  // 常规闸关(旧终审还在产数据,转换会与之竞态)与闸开(切换已完成,再转 = 造第二份真相)
+  // 都必须拒绝,唯一放行态 = 只读维护(§16.3「停旧写之后、开闸之前」)。
+  // 503 与上面三码同族:窗口条件不满足是「现在不能做」,不是「请求非法」。
+  LEGACY_LEDGER_CONVERSION_WINDOW_INVALID: {
+    code: 20159,
+    message: '存量考勤账本化只能在只读维护窗口执行(停旧写之后、开闸之前)',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+
   // ===== 归档动作的两套开工条件(§6.6 / AC-004 / AC-064;2026-08-25 拍板)=====
   //
   // 🔴 **两套条件各给一个具名码,不合并成一个 ACTIVITY_ARCHIVE_NOT_ELIGIBLE。**

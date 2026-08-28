@@ -95,6 +95,13 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
         clockSource: '同方法内 const now = new Date()(应用时钟)',
       },
       {
+        file: 'src/modules/activities/legacy-ledger-conversion.service.ts',
+        valueExpr: 'now',
+        clockSource:
+          '同方法内 const now = new Date()(应用时钟;镜像更正刀 createPrepareJob,' +
+          '转换刀的 prepare job 建时即 succeeded,availableAt 仍显式写应用时钟)',
+      },
+      {
         file: 'src/modules/activity-registrations/registration-reconciliation.service.ts',
         valueExpr: 'now',
         clockSource: '由 ActivityBatchWorker 传入本轮的应用时钟(本刀之前唯一已经写对的一处)',
@@ -353,6 +360,13 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
     // 本刀把 create 腿也写成同一个应用时钟表达式:值不变(update 随后写同一个值),
     // 但不变量从此是**逐点局部**的 —— 每个写点自己就是应用时钟,不依赖配对推理。
     writeSites: [
+      {
+        file: 'src/modules/activity-registrations/legacy-conversion-registration-head.service.ts',
+        valueExpr: 'args.registeredAt',
+        clockSource:
+          '存量账本化转换刀(D2 合成报名头,归属域导出服务):取旧考勤单 sheet.submittedAt ——' +
+          '旧链入库时库时钟写下的历史事实,回填沿用既有值,不引入新时钟',
+      },
       {
         file: 'src/modules/activity-registrations/activity-registration-create.service.ts',
         valueExpr: 'submittedAt',

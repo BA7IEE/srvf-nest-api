@@ -80,6 +80,13 @@ const WRITE_METHODS = new Set([
 
 export const V11_ASSERT = 'assertV11WriteAllowed';
 export const LEGACY_ASSERT = 'assertLegacyWriteAllowed';
+/**
+ * 存量考勤账本化转换刀(P1-28 第 7 批② A 案,2026-08-27 拍板)的第三判闸位。
+ * 它是**唯一被允许在只读维护窗写结算真相链**的写方(§16.3「停旧写之后、开闸之前」),
+ * 语义上与上面两个 assert 互斥(常规闸关 / 闸开都被它拒,20159)——
+ * C2 接受它作为 v11 写的合法判闸位,但**不**放宽另两条:运行时入口仍必须调 V11_ASSERT。
+ */
+export const CONVERSION_ASSERT = 'assertLegacyLedgerConversionAllowed';
 export const READ_SOURCE = 'participationReadSource';
 
 /** C4 反向闸的看守范围:这些文件承载「恒按 approved 算」的口径,不得随闸切换。 */
@@ -166,6 +173,7 @@ type MethodInfo = {
   writesLegacy: boolean;
   callsV11Assert: boolean;
   callsLegacyAssert: boolean;
+  callsConversionAssert: boolean;
   /** 同文件内被本方法调用的其它方法(this.foo(...))。 */
   calls: Set<string>;
 };
@@ -189,6 +197,7 @@ function analyzeFile(fileName: string, text: string): Map<string, MethodInfo> {
         writesLegacy: false,
         callsV11Assert: false,
         callsLegacyAssert: false,
+        callsConversionAssert: false,
         calls: new Set(),
       };
 
@@ -205,6 +214,7 @@ function analyzeFile(fileName: string, text: string): Map<string, MethodInfo> {
           }
           if (fnName === V11_ASSERT) info.callsV11Assert = true;
           if (fnName === LEGACY_ASSERT) info.callsLegacyAssert = true;
+          if (fnName === CONVERSION_ASSERT) info.callsConversionAssert = true;
           // this.foo(...) —— 文件内调用图
           if (callee.expression.kind === ts.SyntaxKind.ThisKeyword) info.calls.add(fnName);
         }
@@ -390,6 +400,8 @@ function propagate(methods: Map<string, MethodInfo>): void {
 
 export type Counts = {
   v11GatedEntries: number;
+  /** 转换刀写方(P1-28 第 7 批②):以 CONVERSION_ASSERT 为判闸位的 v11 写入口数。 */
+  conversionGatedEntries: number;
   legacyGatedEntries: number;
   v11Files: number;
   legacyFiles: number;
@@ -459,6 +471,7 @@ export function runCriteria(
   // ── C2:无漏网写路径 ──
   const counts: Counts = {
     v11GatedEntries: 0,
+    conversionGatedEntries: 0,
     legacyGatedEntries: 0,
     v11Files: 0,
     legacyFiles: 0,
@@ -482,7 +495,11 @@ export function runCriteria(
       if (!info.isPublic) continue;
       if (info.writesV11) {
         if (info.callsV11Assert) counts.v11GatedEntries += 1;
-        else
+        else if (info.callsConversionAssert) {
+          // 转换刀写方:判闸位是 CONVERSION_ASSERT(只读维护窗唯一放行态)。
+          // ⚠️ 只认「点名调用了 CONVERSION_ASSERT」——不是放宽 writesV11 的普遍要求。
+          counts.conversionGatedEntries += 1;
+        } else
           findings.push({
             criterion: 'C2',
             detail: `${r} 的公开入口 ${info.name}() 可达「结算真相链」写,却没有调 ${V11_ASSERT}() —— 闸关时这条写路径会绕过 cutover gate。`,
@@ -507,6 +524,16 @@ export function runCriteria(
     if (text.includes(`${LEGACY_ASSERT}(`)) counts.legacyFiles += 1;
     if (text.includes(`${READ_SOURCE}(`)) counts.readFiles += 1;
   }
+  if (counts.v11GatedEntries === 0)
+    findings.push({
+      criterion: 'C2',
+      detail: `没有任何受闸 v11 写入口 —— C2 这一面对当前实现是空扫(判据没扫到东西)。`,
+    });
+  if (counts.conversionGatedEntries === 0)
+    findings.push({
+      criterion: 'C2',
+      detail: `没有任何以 ${CONVERSION_ASSERT}() 为判闸位的写入口 —— 转换刀这一面没有接上闸(或判据没扫到它)。`,
+    });
   if (counts.v11Files === 0)
     findings.push({
       criterion: 'C3',
