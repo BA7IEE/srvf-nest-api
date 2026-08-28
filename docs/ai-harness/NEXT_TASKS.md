@@ -360,7 +360,7 @@
 
 ### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)、⑨永久报名头 DB 地基与 onsite 历史头 fail-closed([#968](https://github.com/BA7IEE/srvf-nest-api/pull/968))、⑩永久头 runtime/个人取消闭环、⑯分配与邀请 C runtime、⑰资格配置/发布激活（managed RuleSet/Rule typed configuration、V5 审核冻结/activation）、⑱活动到点 expiry（既有 worker + PG reconciliation、无新 cron）；合同已修订至 v1.1.1,缺口台账累计 #28**
 
-**状态**:进行中(第 0–3 批已收口 #952 #956;第 4 批多刀已合 #959 #965 #968;第 5–8 批未完,合同缺口台账见正文)
+**状态**:进行中(第 0–3 批已收口 #952 #956;第 4 批多刀已合 #959 #965 #968;第 6 批代码面收口宣告 + 第 7 批②账本桥交付 #1211 + D11 定案(均 2026-08-28);剩余:第 8 批与 9a 的 9 条 C 档能力缺口,合同缺口台账见正文)
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -555,6 +555,14 @@
 > 登记表没接进查表链会让编号**静默退回 todo**、整套仍全绿,现已成为可失败判据。
 >
 > **第 6 批（B6-2 子刀，尚未整体交付）**：B6-1 的成员凭证、`staff-scan`、`proxy-punch`、bulk 与 CSV import 已接真实 PunchCommand/Activity 根锁/责任重验/worker lease-fence；B6-2 按补充合同 v2 接入 package issue/revoke/单事件 upload、安全 review list/approve/reject。packageToken 仅首次签发与精确重放返回，正式离线事件继续复用唯一 PunchCommand；22097 零写，22098/22099 只 staging。PR/CI/独立核验/合并状态必须按对应 exact SHA 另行核对；不得写成完整第 6 批或部署完成。
+  **✅ 2026-08-28 代码面收口宣告（D13，转换刀同刀核对）**：逐项实证 —— 22097–22099 段位
+  在册（biz-code「第 6 批 offline/import 专用四码」）；staff-scan / proxy-punch 在
+  `app-managed-activity-onsite-operations.controller.ts`；OfflinePackage 服务族
+  （access / writer / punch-command / request-hash）齐；专属 e2e 三份
+  （`activity-batch6-offline-writer` / `activity-batch6-staff-import-offline` /
+  `activity-v11-batch6-staff-import-offline-schema-constraints`）随 main 的
+  Contract + E2E 分片恒绿（#1211 CI 亦全绿）。**代码与判据面自此宣告第 6 批收口；
+  部署仍未发生（生产未部署任何 v1.1），§16.3 顺序不变。**
 
 - **合同**:[`archive/reviews/activity-business-overhaul-v1.1/`](../archive/reviews/activity-business-overhaul-v1.1/README.md) 四份共同生效
   (业务方案 / 详细开发文档 / 355 项追踪矩阵 / 修订说明),SHA256 入仓时原位校验全过。
@@ -651,6 +659,25 @@
   转换分录 `recognized=原始日和 / credited=min(日和,3) / cappedOut=超出`,不改任何用户可见数字,
   DB magnitude CHECK 恰好承载该形状。P2 characterization 基线:`attendance-sheet|attendance-record`
   28 用例全过。剩余施工面 = 转换刀本体 + CLI + SOP + 判据。
+
+  **✅ 转换刀已交付([#1211](https://github.com/BA7IEE/srvf-nest-api/pull/1211),2026-08-28 合入,CI 17/17 全绿含 Red-zone trusted)**:
+  `LegacyLedgerConversionService` + `commitConvertedBatchWithin`(第五刀协议体逐字抽用,
+  判闸位换转换窗口断言、跳过 settlement-posted 通知)+ 闸第三写方
+  `assertLegacyLedgerConversionAllowed()`(20159,三态:常规闸关拒/闸开拒/只读维护窗放行)
+  + CLI(`scripts/legacy-ledger-conversion.ts`,幂等 requestKey)+ SOP
+  (`docs/ops/legacy-attendance-ledger-conversion.md`)+ e2e 三用例(三态闸/转换本体含
+  6.50→3.00+3.50 封顶分账/幂等重跑零新增)。D2 建头经归属域导出
+  `LegacyConversionRegistrationHeadService`(架构债棘轮判红后的正确解法);C2 收编
+  `callsConversionAssert` 第三判闸位(红区令牌,v11/legacy 判据零放宽)。
+  **2026-08-19 那座「终审改为提交 LedgerPostingBatch」的桥自此闭合** —— 开闸前的仓内
+  硬前置只剩 9a(验收 9 条 todo,全部 C 档能力缺口)与 §16.3 顺序本身。
+
+  **⇒ D1 悬案定案(维护者 2026-08-28 拍板「按推荐」)**:开闸后「参与活动数 / 记录条数」
+  的账本口径 = **有 committed 分录的活动数 / 账本日行数(身份×北京日 去重)**;
+  「记录条数」刻意**不**取分录条数(每人每日两条,开闸后会数值跳变)——这是与旧
+  「考勤记录条数」最贴近的粒度,等价锚在 `legacy-ledger-conversion.e2e-spec.ts`
+  (转换后 committed 计数 == approved 计数,逐人)。实现落点
+  `LedgerQueryService.countCommittedParticipationForMember`(同 PR)。
 
   🔴 **实测结论:两条流水线目前人群完全不相交,换源不是「数字变小」而是「数字归零」。**
   交付方用**真实写链**各跑一遍(非静态推理,非直插夹具):
