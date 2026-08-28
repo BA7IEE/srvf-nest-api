@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e26776220194a8e19dbcf31c045ee503d0cef5676d20e2c9aa886ef44e3a3457
+// inputDigest: sha256:66cf11e972095320c8e2f06b723481f8df6c2b740161a2d32062a7e73359fa43
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -1244,7 +1244,7 @@ export interface CreateRegistrationDto {
 }
 
 export interface CreateRoleBindingDto {
-  "principalType": "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SYSTEM";
+  "principalType": "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SERVICE_PRINCIPAL" | "SYSTEM";
   "principalId"?: string;
   "roleId": string;
   "scopeType": "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE" | "SELF";
@@ -2412,7 +2412,7 @@ export interface RoleBindingBatchSummaryDto {
 }
 
 export interface RoleBindingExpandedPrincipalDto {
-  "type": "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SYSTEM";
+  "type": "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SERVICE_PRINCIPAL" | "SYSTEM";
   "id": string;
   "username"?: string;
   "nickname"?: Record<string, unknown> | null;
@@ -2451,7 +2451,7 @@ export interface RoleBindingResolvedScopeDto {
 
 export interface RoleBindingResponseDto {
   "id": string;
-  "principalType": "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SYSTEM";
+  "principalType": "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SERVICE_PRINCIPAL" | "SYSTEM";
   "principalId"?: Record<string, unknown> | null;
   "roleId": string;
   "scopeType": "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE" | "SELF";

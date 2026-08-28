@@ -28173,6 +28173,7 @@
                 "USER",
                 "MEMBER",
                 "POSITION_ASSIGNMENT",
+                "SERVICE_PRINCIPAL",
                 "SYSTEM"
               ]
             }
@@ -28687,6 +28688,7 @@
                 "USER",
                 "MEMBER",
                 "POSITION_ASSIGNMENT",
+                "SERVICE_PRINCIPAL",
                 "SYSTEM"
               ]
             }
@@ -28986,6 +28988,7 @@
                 "USER",
                 "MEMBER",
                 "POSITION_ASSIGNMENT",
+                "SERVICE_PRINCIPAL",
                 "SYSTEM"
               ]
             }
@@ -122283,6 +122286,7 @@
               "USER",
               "MEMBER",
               "POSITION_ASSIGNMENT",
+              "SERVICE_PRINCIPAL",
               "SYSTEM"
             ]
           },
@@ -122344,6 +122348,7 @@
               "USER",
               "MEMBER",
               "POSITION_ASSIGNMENT",
+              "SERVICE_PRINCIPAL",
               "SYSTEM"
             ],
             "example": "USER"
@@ -122639,6 +122644,7 @@
               "USER",
               "MEMBER",
               "POSITION_ASSIGNMENT",
+              "SERVICE_PRINCIPAL",
               "SYSTEM"
             ],
             "example": "USER"
