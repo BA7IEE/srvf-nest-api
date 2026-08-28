@@ -15448,6 +15448,26 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "CreateServicePrincipalDto": {
+    "properties": {
+      "description": {
+        "maxLength": 512,
+        "type": "string",
+      },
+      "name": {
+        "maxLength": 64,
+        "minLength": 2,
+        "type": "string",
+      },
+      "ownerOrganizationId": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "name",
+    ],
+    "type": "object",
+  },
   "CreateSupervisionAssignmentDto": {
     "properties": {
       "endedAt": {
@@ -22963,6 +22983,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
   },
   "RoleBindingExpandedPrincipalDto": {
     "properties": {
+      "clientId": {
+        "description": "type=SERVICE_PRINCIPAL 时:机器身份 clientId(如 srvf_sp_xxx)",
+        "type": "string",
+      },
       "id": {
         "description": "主体实体 id(= 绑定行 principalId)",
         "type": "string",
@@ -22994,6 +23018,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       },
       "realName": {
         "description": "type=MEMBER / POSITION_ASSIGNMENT 时:队员真实姓名(任职主体取其背后队员)",
+        "type": "string",
+      },
+      "servicePrincipalName": {
+        "description": "type=SERVICE_PRINCIPAL 时:机器身份名称",
         "type": "string",
       },
       "type": {
@@ -23873,6 +23901,105 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "bindingTicket",
       "phone",
+    ],
+    "type": "object",
+  },
+  "ServicePrincipalCredentialCreatedDto": {
+    "properties": {
+      "clientSecret": {
+        "description": "原始 Client Secret —— 仅在本次创建响应中出现一次;列表/详情/日志/审计永不返回。外部系统必须立即保存到其 Secret Manager。",
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "createdAt",
+      "clientSecret",
+    ],
+    "type": "object",
+  },
+  "ServicePrincipalCredentialResponseDto": {
+    "properties": {
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "expiresAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "type": "string",
+      },
+      "lastUsedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+      "revokedAt": {
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "id",
+      "createdAt",
+      "expiresAt",
+      "revokedAt",
+      "lastUsedAt",
+    ],
+    "type": "object",
+  },
+  "ServicePrincipalResponseDto": {
+    "properties": {
+      "clientId": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "description": {
+        "nullable": true,
+        "type": "object",
+      },
+      "id": {
+        "type": "string",
+      },
+      "name": {
+        "type": "string",
+      },
+      "ownerOrganizationId": {
+        "nullable": true,
+        "type": "object",
+      },
+      "status": {
+        "enum": [
+          "ACTIVE",
+          "SUSPENDED",
+        ],
+        "type": "string",
+      },
+      "updatedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "clientId",
+      "name",
+      "description",
+      "status",
+      "ownerOrganizationId",
+      "createdAt",
+      "updatedAt",
     ],
     "type": "object",
   },
@@ -26648,6 +26775,38 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
     },
+    "type": "object",
+  },
+  "UpdateServicePrincipalDto": {
+    "properties": {
+      "description": {
+        "maxLength": 512,
+        "type": "string",
+      },
+      "name": {
+        "maxLength": 64,
+        "minLength": 2,
+        "type": "string",
+      },
+      "ownerOrganizationId": {
+        "type": "string",
+      },
+    },
+    "type": "object",
+  },
+  "UpdateServicePrincipalStatusDto": {
+    "properties": {
+      "status": {
+        "enum": [
+          "ACTIVE",
+          "SUSPENDED",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "status",
+    ],
     "type": "object",
   },
   "UpdateSmsSettingsDto": {
@@ -140758,6 +140917,865 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "预览整集替换的后果(dry-run:与 PUT 同参、同一段准入判定、同一把角色行锁,**零写入**;返回 valid / blockingIssues〔恒 0 或 1 条,不是全量诊断〕/ outcome〔noOp、currentRevision、nextRevision 预测值、added·removed 带中文名与风险等级、unchangedCount、resultCodes、requiresStepUp、impact〕;impact 给 direct/position/supervision 三源的**授予数**(⚠️ 不是人数;受影响账号数本期不出,那要跨域取数)与 direct 源的 scope·主体分布,并带 EXACT/PARTIAL 标注〔今天恒 EXACT:全部 count/groupBy 读数,不存在截断〕;被拦下时 valid=false 且拒绝码与 PUT 抛出的**同一个**,走 200 数据不走 HTTP 错误 —— **高风险变更不带 stepUpToken 时这里就是 valid=false + 30112**,拿到它去 /auth/v1/step-up/* 换 proof 再重新预览;预览不是授权证明,真提交仍在锁内重算并可返 30111;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,与 PUT 逐字相同) [rbac: rbac.role-permission.*]",
       "tags": [
         "Ops - Role Permissions",
+      ],
+    },
+  },
+  "/api/system/v1/service-principals": {
+    "get": {
+      "operationId": "ServicePrincipalsController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "按状态过滤",
+          "in": "query",
+          "name": "status",
+          "required": false,
+          "schema": {
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED",
+            ],
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/ServicePrincipalResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页列表",
+      "tags": [
+        "system/service-principals",
+      ],
+    },
+    "post": {
+      "operationId": "ServicePrincipalsController_create",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateServicePrincipalDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ServicePrincipalResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "11001: 组织节点不存在",
+                    "enum": [
+                      11001,
+                    ],
+                    "example": 11001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "组织节点不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "组织节点不存在(code=11001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "创建服务主体(服务端生成 clientId)",
+      "tags": [
+        "system/service-principals",
+      ],
+    },
+  },
+  "/api/system/v1/service-principals/{id}": {
+    "get": {
+      "operationId": "ServicePrincipalsController_findById",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ServicePrincipalResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37001: 服务主体不存在或已删除",
+                    "enum": [
+                      37001,
+                    ],
+                    "example": 37001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "服务主体不存在或已删除",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "服务主体不存在或已删除(code=37001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "详情",
+      "tags": [
+        "system/service-principals",
+      ],
+    },
+    "patch": {
+      "operationId": "ServicePrincipalsController_update",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateServicePrincipalDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ServicePrincipalResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37001: 服务主体不存在或已删除",
+                    "enum": [
+                      37001,
+                    ],
+                    "example": 37001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "服务主体不存在或已删除",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "服务主体不存在或已删除(code=37001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "修改名称/描述/属主组织",
+      "tags": [
+        "system/service-principals",
+      ],
+    },
+  },
+  "/api/system/v1/service-principals/{id}/credentials": {
+    "get": {
+      "operationId": "ServicePrincipalsController_listCredentials",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ServicePrincipalCredentialResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37001: 服务主体不存在或已删除",
+                    "enum": [
+                      37001,
+                    ],
+                    "example": 37001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "服务主体不存在或已删除",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "服务主体不存在或已删除(code=37001)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "凭证元数据列表(不返 hash)",
+      "tags": [
+        "system/service-principals",
+      ],
+    },
+    "post": {
+      "operationId": "ServicePrincipalsController_createCredential",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ServicePrincipalCredentialCreatedDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37001: 服务主体不存在或已删除",
+                    "enum": [
+                      37001,
+                    ],
+                    "example": 37001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "服务主体不存在或已删除",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "服务主体不存在或已删除(code=37001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37011: 该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建",
+                    "enum": [
+                      37011,
+                    ],
+                    "example": 37011,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建(code=37011)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "新建凭证(原始 Secret 只返回一次)",
+      "tags": [
+        "system/service-principals",
+      ],
+    },
+  },
+  "/api/system/v1/service-principals/{id}/credentials/{credentialId}/revoke": {
+    "post": {
+      "operationId": "ServicePrincipalsController_revokeCredential",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ServicePrincipalCredentialResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37001: 服务主体不存在或已删除",
+                    "enum": [
+                      37001,
+                    ],
+                    "example": 37001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "服务主体不存在或已删除",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "凭证不存在(code=37010)
+
+服务主体不存在或已删除(code=37001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37012: 凭证已被撤销,不能重复撤销",
+                    "enum": [
+                      37012,
+                    ],
+                    "example": 37012,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "凭证已被撤销,不能重复撤销",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "凭证已被撤销,不能重复撤销(code=37012)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "撤销凭证",
+      "tags": [
+        "system/service-principals",
+      ],
+    },
+  },
+  "/api/system/v1/service-principals/{id}/status": {
+    "patch": {
+      "operationId": "ServicePrincipalsController_updateStatus",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateServicePrincipalStatusDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ServicePrincipalResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37001: 服务主体不存在或已删除",
+                    "enum": [
+                      37001,
+                    ],
+                    "example": 37001,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "服务主体不存在或已删除",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "服务主体不存在或已删除(code=37001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37013: 服务主体已处于目标状态",
+                    "enum": [
+                      37013,
+                    ],
+                    "example": 37013,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "服务主体已处于目标状态",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "服务主体已处于目标状态(code=37013)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "ACTIVE/SUSPENDED",
+      "tags": [
+        "system/service-principals",
       ],
     },
   },

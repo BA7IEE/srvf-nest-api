@@ -40,6 +40,7 @@ import { MemberProfilesModule } from './modules/member-profiles/member-profiles.
 import { MembersModule } from './modules/members/members.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { ServicePrincipalsModule } from './modules/service-principals/service-principals.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { PositionAssignmentsModule } from './modules/position-assignments/position-assignments.module';
@@ -141,6 +142,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   P0-F(v0.15.0)后 rbac.can() 已从 attachments 扩展到管理面(rbac / config / users / audit-logs);
     //   当前接入边界以 docs/current-state.md 与 src/modules/permissions/CLAUDE.md 为准。
     PermissionsModule,
+    ServicePrincipalsModule,
     // 终态 scoped-authz PR8(2026-07-02;冻结稿 §5.1/§5.2/§5.3):统一判权模块(第 33 模块)。
     //   AuthzService(三源推导 + covers + ActionConstraint)+ ResourceResolverService(11 类资源归属解析);
     //   0 controller / 0 端点 / 0 新码 / 0 schema。**本刀零业务消费者**(第一个消费者 = PR9 考勤终审;

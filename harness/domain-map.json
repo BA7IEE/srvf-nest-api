@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:87a7e34bdbdd940f933cabb7c166d8552e6c60d490911221982fb5e0f2bd3b18",
+  "inputDigest": "sha256:d41783b603562e5be03ce6b81004f45675d21497c9fab01d5e1d4e0715951789",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -118,7 +118,7 @@
     "integration-foundation": {
       "confirmed": true,
       "modules": [
-        "integration-foundation"
+        "service-principals"
       ]
     }
   },
@@ -287,7 +287,7 @@
       "domain": "content",
       "confirmed": true
     },
-    "integration-foundation": {
+    "service-principals": {
       "domain": "integration-foundation",
       "confirmed": true
     }
@@ -954,31 +954,31 @@
     },
     "ServicePrincipal": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "principal",
       "confirmed": true
     },
     "ServicePrincipalCredential": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "credential",
       "confirmed": true
     },
     "DelegationGrant": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "delegation",
       "confirmed": true
     },
     "DelegationGrantPermission": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "delegation",
       "confirmed": true
     },
     "IntegrationCommandReceipt": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "receipt",
       "confirmed": true
     }

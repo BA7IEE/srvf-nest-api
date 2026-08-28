@@ -169,6 +169,7 @@ export class RoleBindingQueryService {
     }
 
     const userMap = new Map<string, { id: string; username: string; nickname: string | null }>();
+    const servicePrincipalMap = new Map<string, { id: string; clientId: string; name: string }>();
     const memberMap = new Map<
       string,
       { id: string; memberNo: string; realName: string; nickname: string | null }
@@ -194,7 +195,8 @@ export class RoleBindingQueryService {
       const userIds = idsOf(PrincipalType.USER);
       const memberIds = idsOf(PrincipalType.MEMBER);
       const assignmentIds = idsOf(PrincipalType.POSITION_ASSIGNMENT);
-      const [users, members, assignments] = await Promise.all([
+      const spIds = idsOf(PrincipalType.SERVICE_PRINCIPAL);
+      const [users, members, assignments, servicePrincipals] = await Promise.all([
         userIds.length > 0
           ? this.prisma.user.findMany({
               where: { id: { in: userIds } },
@@ -220,10 +222,19 @@ export class RoleBindingQueryService {
               },
             })
           : Promise.resolve([]),
+        // Integration Foundation v1 PR2:SP 展开只暴露 clientId + name(最小化;不暴露
+        // status/description/ownerOrg —— 那些走 service-principals 控制面自己的读码)。
+        spIds.length > 0
+          ? this.prisma.servicePrincipal.findMany({
+              where: { id: { in: spIds } },
+              select: { id: true, clientId: true, name: true },
+            })
+          : Promise.resolve([]),
       ]);
       for (const u of users) userMap.set(u.id, u);
       for (const m of members) memberMap.set(m.id, m);
       for (const a of assignments) assignmentMap.set(a.id, a);
+      for (const sp of servicePrincipals) servicePrincipalMap.set(sp.id, sp);
     }
 
     return items.map((item) => {
@@ -237,6 +248,7 @@ export class RoleBindingQueryService {
           userMap,
           memberMap,
           assignmentMap,
+          servicePrincipalMap,
         });
       }
       return out;
@@ -262,6 +274,7 @@ export class RoleBindingQueryService {
           member: { memberNo: string; realName: string; nickname: string | null };
         }
       >;
+      servicePrincipalMap: ReadonlyMap<string, { id: string; clientId: string; name: string }>;
     },
   ): RoleBindingExpandedPrincipalDto | undefined {
     if (type === PrincipalType.USER) {
@@ -293,6 +306,10 @@ export class RoleBindingQueryService {
             memberLabel: formatMemberLabel(a.member),
           }
         : undefined;
+    }
+    if (type === PrincipalType.SERVICE_PRINCIPAL) {
+      const sp = maps.servicePrincipalMap.get(id);
+      return sp ? { type, id, clientId: sp.clientId, servicePrincipalName: sp.name } : undefined;
     }
     return undefined; // SYSTEM 主体无实体(调用方已按 principalId=null 跳过,此处兜底)
   }

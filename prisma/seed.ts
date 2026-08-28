@@ -53,6 +53,7 @@ import {
   USER_PERMISSION_SEED,
   WECHAT_INFRA_PERMISSION_SEED,
   WECOM_INFRA_PERMISSION_SEED,
+  SERVICE_PRINCIPAL_PERMISSION_SEED,
 } from '../src/modules/permissions/permission-catalog';
 import {
   MEMBER_ORIGIN_DICT_TYPE,
@@ -1145,6 +1146,7 @@ const OPS_ADMIN_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...META_PERMISSION_SEED,
   ...MEMBER_ACCOUNT_PERMISSION_SEED,
   ...NOTIFICATION_REPLAY_PERMISSION_SEED,
+  ...SERVICE_PRINCIPAL_PERMISSION_SEED,
 ];
 
 // 运营管理员角色 code(沿 D7 §10.1 / §10.3 ops-admin 唯一公开 placeholder)
@@ -2842,6 +2844,7 @@ export const RBAC_SEED_CATALOG = Object.freeze({
     // 但它同时装着 `activity.settlement-*` 与 `attendance.*-return.sheet` ——
     // 那批 feature 的权限本来就是一起加的,按**批次**分桶而不是按码前缀。
     activityWorkflow: readonlyPermissionSeeds(ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED),
+    servicePrincipalControlPlane: readonlyPermissionSeeds(SERVICE_PRINCIPAL_PERMISSION_SEED),
   }),
   roles: Object.freeze({
     opsAdmin: roleSeed(OPS_ADMIN_ROLE_CODE, OPS_ADMIN_PERMISSION_CODES),

@@ -57,6 +57,54 @@ export interface RbacPermissionSeed {
   readonly description: string;
 }
 
+// Integration Foundation v1 PR2(P1-30;规格书 §35):ServicePrincipal 控制面权限 6 码。
+// 全部绑 ops-admin;ServicePrincipal 自身永远不能持有(§15.3 第 7 条 —— 控制面禁授)。
+// delegation-grant.* 3 码是 PR5 的(§36),本刀不 seed。
+export const SERVICE_PRINCIPAL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'service-principal.create.record',
+    module: 'service-principal',
+    action: 'create',
+    resourceType: 'record',
+    description: '创建服务主体(机器身份)',
+  },
+  {
+    code: 'service-principal.read.record',
+    module: 'service-principal',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看服务主体列表与详情',
+  },
+  {
+    code: 'service-principal.update.record',
+    module: 'service-principal',
+    action: 'update',
+    resourceType: 'record',
+    description: '修改服务主体名称/描述/属主组织',
+  },
+  {
+    code: 'service-principal.update.status',
+    module: 'service-principal',
+    action: 'update',
+    resourceType: 'status',
+    description: '启用/停用服务主体',
+  },
+  {
+    code: 'service-principal.create.credential',
+    module: 'service-principal',
+    action: 'create',
+    resourceType: 'credential',
+    description: '为服务主体新建凭证(原始 Secret 只返回一次)',
+  },
+  {
+    code: 'service-principal.revoke.credential',
+    module: 'service-principal',
+    action: 'revoke',
+    resourceType: 'credential',
+    description: '撤销服务主体凭证',
+  },
+];
+
 export const RBAC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'rbac.permission.read',
@@ -2629,6 +2677,7 @@ export const PERMISSION_CATALOG_GROUPS: ReadonlyArray<PermissionCatalogGroup> = 
   { code: 'user-account', sectionCode: 'system-security', displayName: '用户账号', sortOrder: 10 },
   { code: 'role', sectionCode: 'system-security', displayName: '角色', sortOrder: 20 },
   { code: 'permission', sectionCode: 'system-security', displayName: '权限点', sortOrder: 30 },
+  { code: 'integration', sectionCode: 'system-security', displayName: '系统集成', sortOrder: 45 },
   { code: 'user-role', sectionCode: 'system-security', displayName: '用户角色', sortOrder: 40 },
   {
     code: 'rbac-runtime',
@@ -5272,6 +5321,85 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       riskLevel: 'CRITICAL',
       riskTags: ['WRITE', 'CONTROL_PLANE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'ADVANCED',
+    },
+    // ===== Integration Foundation v1 PR2(P1-30;规格书 §35):ServicePrincipal 控制面 =====
+    'service-principal.create.record': {
+      displayName: '创建服务主体',
+      businessDescription:
+        '新建一个机器身份(代表某个外部系统或自动化任务)。系统自动生成永不复用的 clientId;创建后默认启用,还需要再给它发凭证才能换 Token。这是接入外部系统的第一步。',
+      sectionCode: 'system-security',
+      groupCode: 'integration',
+      sortOrder: 84510,
+      riskLevel: 'CRITICAL',
+      riskTags: ['WRITE', 'CREDENTIAL'],
+      grantPolicy: 'ROLE_ALLOWLIST_ONLY',
+      status: 'ACTIVE',
+      uiVisibility: 'ADVANCED',
+    },
+    'service-principal.read.record': {
+      displayName: '查看服务主体',
+      businessDescription:
+        '看服务主体列表和详情,包括它的名称、状态、属主组织;也能看它的凭证元数据列表(只剩创建时间和撤销状态,任何情况下都看不到原始 Secret 或哈希)。',
+      sectionCode: 'system-security',
+      groupCode: 'integration',
+      sortOrder: 84520,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'ROLE_ALLOWLIST_ONLY',
+      status: 'ACTIVE',
+      uiVisibility: 'ADVANCED',
+    },
+    'service-principal.update.record': {
+      displayName: '改服务主体资料',
+      businessDescription:
+        '修改服务主体的名称、描述或属主组织。不能改 clientId(那个是永久身份标识);也不能在这里改状态(启用/停用走独立的开关)。',
+      sectionCode: 'system-security',
+      groupCode: 'integration',
+      sortOrder: 84530,
+      riskLevel: 'MEDIUM',
+      riskTags: ['WRITE'],
+      grantPolicy: 'ROLE_ALLOWLIST_ONLY',
+      status: 'ACTIVE',
+      uiVisibility: 'ADVANCED',
+    },
+    'service-principal.update.status': {
+      displayName: '启用/停用服务主体',
+      businessDescription:
+        '把服务主体在启用和停用之间切换。停用后它持有的所有 Token 立即失效(下一次请求就被拒绝),但绑定和委托关系都保留;重新启用即恢复。这是泄露或误配时的第一道止血开关。',
+      sectionCode: 'system-security',
+      groupCode: 'integration',
+      sortOrder: 84540,
+      riskLevel: 'CRITICAL',
+      riskTags: ['WRITE', 'CREDENTIAL'],
+      grantPolicy: 'ROLE_ALLOWLIST_ONLY',
+      status: 'ACTIVE',
+      uiVisibility: 'ADVANCED',
+    },
+    'service-principal.create.credential': {
+      displayName: '为服务主体发凭证',
+      businessDescription:
+        '给服务主体新建一对凭证。原始 Secret 只在创建成功那一次的响应里出现,之后任何接口都看不到;每个服务主体同时最多 2 条有效凭证,支持不停机轮换。',
+      sectionCode: 'system-security',
+      groupCode: 'integration',
+      sortOrder: 84550,
+      riskLevel: 'CRITICAL',
+      riskTags: ['WRITE', 'CREDENTIAL'],
+      grantPolicy: 'ROLE_ALLOWLIST_ONLY',
+      status: 'ACTIVE',
+      uiVisibility: 'ADVANCED',
+    },
+    'service-principal.revoke.credential': {
+      displayName: '撤销服务主体凭证',
+      businessDescription:
+        '把某条凭证标记为已撤销。撤销后用它换过的所有 Token 立即失效;已撤销的凭证不能恢复,只能重新发一条新的。怀疑 Secret 泄露时的正确做法就是先撤销凭证。',
+      sectionCode: 'system-security',
+      groupCode: 'integration',
+      sortOrder: 84560,
+      riskLevel: 'CRITICAL',
+      riskTags: ['WRITE', 'CREDENTIAL'],
+      grantPolicy: 'ROLE_ALLOWLIST_ONLY',
       status: 'ACTIVE',
       uiVisibility: 'ADVANCED',
     },

@@ -3522,6 +3522,54 @@ export const BizCode = {
     message: '图片像素总数超出上限',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Integration Foundation v1 PR2(P1-30;规格书 §52 段位 37xxx)
+  // ServicePrincipal 控制面错误码。37010-37012 走 credential 子段;
+  // Token/认证侧归一码(37011 INTEGRATION_TOKEN_INVALID 等)是 PR3,不在本刀。
+  // ═══════════════════════════════════════════════════════════════════
+  SERVICE_PRINCIPAL_NOT_FOUND: {
+    code: 37001,
+    message: '服务主体不存在或已删除',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  SERVICE_CREDENTIAL_NOT_FOUND: {
+    code: 37010,
+    message: '凭证不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  SERVICE_CREDENTIAL_LIMIT_EXCEEDED: {
+    code: 37011,
+    message: '该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SERVICE_CREDENTIAL_ALREADY_REVOKED: {
+    code: 37012,
+    message: '凭证已被撤销,不能重复撤销',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  SERVICE_PRINCIPAL_ALREADY_SUSPENDED_OR_ACTIVE: {
+    code: 37013,
+    message: '服务主体已处于目标状态',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // RoleBinding 资格门(规格书 §15.3 七条;PR2)。
+  ROLE_BINDING_ROLE_INELIGIBLE_FOR_SERVICE_PRINCIPAL: {
+    code: 37020,
+    message: '该角色不能授予服务主体(system-managed 或不存在)',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ROLE_BINDING_SELF_SCOPE_FORBIDDEN_FOR_SERVICE_PRINCIPAL: {
+    code: 37021,
+    message: '服务主体绑定禁止 SELF scope',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ROLE_BINDING_INELIGIBLE_PERMISSION_FOR_SERVICE_PRINCIPAL: {
+    code: 37022,
+    message: '角色含未开放给机器的权限(servicePrincipalAllowed=false),不能授予服务主体',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 } as const;
 
 export type BizCodeEntry = (typeof BizCode)[keyof typeof BizCode];

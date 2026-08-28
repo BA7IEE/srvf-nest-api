@@ -14,6 +14,7 @@ import {
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { assertServicePrincipalRoleEligibilityOrThrow } from './service-principal-role-eligibility.policy';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -120,8 +121,7 @@ export class RoleBindingsService {
       });
       if (!m) throw new BizException(BizCode.MEMBER_NOT_FOUND);
       if (m.status !== MemberStatus.ACTIVE) throw new BizException(BizCode.MEMBER_INACTIVE);
-    } else {
-      // POSITION_ASSIGNMENT
+    } else if (principalType === PrincipalType.POSITION_ASSIGNMENT) {
       const initial = await tx.organizationPositionAssignment.findFirst({
         where: notDeletedWhere({ id: principalId }),
         select: { memberId: true },
@@ -142,6 +142,21 @@ export class RoleBindingsService {
       if (!member || member.status !== MemberStatus.ACTIVE) {
         throw new BizException(BizCode.MEMBER_INACTIVE);
       }
+    } else if (principalType === PrincipalType.SERVICE_PRINCIPAL) {
+      // Integration Foundation v1 PR2(规格书 §15.3):SERVICE_PRINCIPAL 绑定的存在性验证。
+      // 资格门七条不在这里 —— 那是 assertServicePrincipalRoleEligibilityOrThrow 的事;
+      // 这里只回答「这个 SP 存在且未软删」。SUSPENDED 的 SP 允许持有绑定(停用语义
+      // 是 PR3 运行时「下一请求即拒」,不是绑定层的),软删则主体已不存在。
+      const sp = await tx.servicePrincipal.findFirst({
+        where: { id: principalId, deletedAt: null },
+        select: { id: true, status: true },
+      });
+      if (!sp) throw new BizException(BizCode.SERVICE_PRINCIPAL_NOT_FOUND);
+    } else {
+      // exhaustive:五值闭集全覆盖后,落到这里 = 新增了 PrincipalType 枚举值却没做绑定层判定。
+      // 这正是 T0 冻结稿 §5.1 点名的缺陷形状(「未知类型静默落入 Position Assignment」)——
+      // PR2 起 fail-closed,不猜。
+      throw new BizException(BizCode.ROLE_BINDING_PRINCIPAL_INVALID);
     }
   }
 
@@ -419,6 +434,14 @@ export class RoleBindingsService {
       });
       const role = await this.findRoleOrThrow(tx, dto.roleId);
       this.roleDelegation.assertTargetRoleMayBeConferred(user, role);
+
+      // Integration Foundation v1 PR2:SERVICE_PRINCIPAL 绑定走资格门七条(§15.3)。
+      if (dto.principalType === 'SERVICE_PRINCIPAL') {
+        await assertServicePrincipalRoleEligibilityOrThrow(tx, {
+          roleId: dto.roleId,
+          scopeType: dto.scopeType,
+        });
+      }
 
       await this.validateScopeEntityOrThrow(tx, dto);
 
