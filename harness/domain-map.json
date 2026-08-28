@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:948dc0e81e62ca183796ff8f035dec4e1183b26b4d52ca156e871e5837338649",
+  "inputDigest": "sha256:87a7e34bdbdd940f933cabb7c166d8552e6c60d490911221982fb5e0f2bd3b18",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -113,6 +113,12 @@
       "confirmed": true,
       "modules": [
         "content"
+      ]
+    },
+    "integration-foundation": {
+      "confirmed": true,
+      "modules": [
+        "integration-foundation"
       ]
     }
   },
@@ -279,6 +285,10 @@
     },
     "content": {
       "domain": "content",
+      "confirmed": true
+    },
+    "integration-foundation": {
+      "domain": "integration-foundation",
       "confirmed": true
     }
   },
@@ -940,6 +950,36 @@
     "WecomSettings": {
       "domain": "comms",
       "ownerModule": "wecom",
+      "confirmed": true
+    },
+    "ServicePrincipal": {
+      "domain": "integration-foundation",
+      "ownerModule": "integration-foundation",
+      "subdomain": "principal",
+      "confirmed": true
+    },
+    "ServicePrincipalCredential": {
+      "domain": "integration-foundation",
+      "ownerModule": "integration-foundation",
+      "subdomain": "credential",
+      "confirmed": true
+    },
+    "DelegationGrant": {
+      "domain": "integration-foundation",
+      "ownerModule": "integration-foundation",
+      "subdomain": "delegation",
+      "confirmed": true
+    },
+    "DelegationGrantPermission": {
+      "domain": "integration-foundation",
+      "ownerModule": "integration-foundation",
+      "subdomain": "delegation",
+      "confirmed": true
+    },
+    "IntegrationCommandReceipt": {
+      "domain": "integration-foundation",
+      "ownerModule": "integration-foundation",
+      "subdomain": "receipt",
       "confirmed": true
     }
   },

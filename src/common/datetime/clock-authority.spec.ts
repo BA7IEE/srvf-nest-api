@@ -409,6 +409,16 @@ const NOT_CLOCK_CRITICAL: ReadonlyArray<{
   readonly column: string;
   readonly why: string;
 }> = [
+  // Integration Foundation v1 PR1(schema-only):新 @default(now()) 非 createdAt 列的
+  // 处置登记(createdAt 由 AUDIT_COLUMNS 全局豁免)。PR1 零运行时 —— 不与任何时钟
+  // 比较;PR3/PR5 接入运行时判定(SUSPENDED 即拒 / Grant 有效期)时若有比较需求,
+  // 须移入判定列登记。
+  {
+    model: 'DelegationGrant',
+    column: 'startedAt',
+    why: 'PR1 仅建列;委托有效期判定是 PR5 运行时,届时若与时钟比较须重新分类',
+  },
+  { model: 'IntegrationCommandReceipt', column: 'completedAt', why: '幂等回执留痕,只被展示/审计' },
   {
     model: 'ActivityPublishReview',
     column: 'submittedAt',

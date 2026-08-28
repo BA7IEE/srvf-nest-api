@@ -194,6 +194,16 @@ model User {
   officialPortraitsActivated MemberOfficialPortrait[] @relation("OfficialPortraitActivator")
   officialPortraitsEnded     MemberOfficialPortrait[] @relation("OfficialPortraitEnder")
 
+  // Integration Foundation v1 PR1 backrelations(规格书 §27/§28/§30/§32/§33)
+  servicePrincipalsCreated          ServicePrincipal[]            @relation("ServicePrincipalCreator")
+  servicePrincipalCredentialsCreated ServicePrincipalCredential[] @relation("ServiceCredentialCreator")
+  servicePrincipalCredentialsRevoked ServicePrincipalCredential[] @relation("ServiceCredentialRevoker")
+  delegationGrantsCreated           DelegationGrant[]             @relation("DelegationGrantCreator")
+  delegationGrantsRevoked           DelegationGrant[]             @relation("DelegationGrantRevoker")
+  delegationGrantsSubject           DelegationGrant[]             @relation("DelegationSubject")
+  integrationReceiptsSubject        IntegrationCommandReceipt[]   @relation("IntegrationReceiptSubject")
+  auditLogsOnBehalfOf               AuditLog[]                    @relation("AuditOnBehalfOfUser")
+
   @@index([deletedAt])
   @@index([status])
   @@index([memberId])
@@ -332,6 +342,7 @@ model Organization {
   // 终态 scoped-authz PR6(2026-07-01;冻结稿 §3.6):RoleBinding scope=ORGANIZATION/ORGANIZATION_TREE 的真 FK 反向
   // relation(仅关系映射,无列)。**scoped 绑定入库即止,RbacService 只读 GLOBAL、绝不判 scoped**(判权是 PR8)。
   roleBindingScopes RoleBinding[] @relation("RoleBindingScopeOrg")
+  servicePrincipalsOwned ServicePrincipal[] @relation("ServicePrincipalOwnerOrganization")
 
   @@index([parentId])
   @@index([nodeTypeCode])
@@ -2189,9 +2200,23 @@ model AuditLog {
 
   actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
+  // Integration Foundation v1 双主体审计(规格书 §22;语义矩阵见 T0 冻结稿 §12.1):
+  // 真人直接=actorUser;机器自身=actorServicePrincipal;机器代表真人=SP+onBehalfOfUser;
+  // SRVF 内部系统任务=三项全 null(12 处现存 Worker 行 —— migration 的 4 条 CHECK 必须放行)。
+  actorServicePrincipalId String?
+  actorCredentialId       String?
+  onBehalfOfUserId        String?
+  onBehalfOfRoleSnap      Role?
+
+  actorServicePrincipal ServicePrincipal?          @relation("AuditActorServicePrincipal", fields: [actorServicePrincipalId], references: [id], onDelete: Restrict)
+  actorCredential       ServicePrincipalCredential? @relation("AuditActorCredential", fields: [actorCredentialId], references: [id], onDelete: Restrict)
+  onBehalfOfUser        User?                       @relation("AuditOnBehalfOfUser", fields: [onBehalfOfUserId], references: [id], onDelete: Restrict)
+
   @@index([resourceType, resourceId])
   @@index([actorUserId, createdAt])
   @@index([event, createdAt])
+  @@index([actorServicePrincipalId, createdAt])
+  @@index([onBehalfOfUserId, createdAt])
   @@map("audit_logs")
 }
 
@@ -2258,6 +2283,12 @@ model Permission {
   // D4:Permission 物理删,无 deletedAt(seed-driven;运营不主动删)
 
   rolePermissions RolePermission[]
+  delegationGrantPermissions DelegationGrantPermission[]
+
+  // Integration Foundation v1(规格书 §15.1):资格门,默认双 false —— 234 个存量权限
+  // 一条也不自动开放给机器;migration 侧 CHECK 钉死 delegated ⇒ servicePrincipal。
+  servicePrincipalAllowed Boolean @default(false)
+  delegatedAccessAllowed  Boolean @default(false)
 
   @@index([module])
   @@index([resourceType])
@@ -2330,12 +2361,162 @@ model RoleBinding {
   @@map("role_bindings")
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// Integration Foundation v1 — PR1 Schema 地基(规格书 §27–§33;T0 冻结稿 §8;
+// 维护者 2026-08-28 拍板开工。纯 schema:零 Controller / 零 Token / 零业务接入 —— 那些是 PR2+。)
+// ⚠️ 第 100 条 migration:migration 侧另有 Prisma DSL 表达不了的 CHECK(见
+//    20260828120000_integration_foundation_pr1_schema/migration.sql 头注)。
+// ═══════════════════════════════════════════════════════════════════════
+
+// 机器身份(外部应用/自动化系统的安全主体;不是 User,也不是一串 Secret —— 三者分表)。
+model ServicePrincipal {
+  id                  String                 @id @default(cuid())
+  clientId            String                 @unique // 服务端生成,前缀 srvf_sp_,永不复用(软删后仍占用)
+  name                String
+  description         String?
+  status              ServicePrincipalStatus @default(ACTIVE) // SUSPENDED 下一请求即拒(PR3 接线)
+  ownerOrganizationId String?
+  createdByUserId     String
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  deletedAt           DateTime? // 沿仓内软删惯例;clientId 唯一约束使软删后仍占用
+
+  credentials      ServicePrincipalCredential[]
+  delegationGrants DelegationGrant[]
+  commandReceipts  IntegrationCommandReceipt[]
+  auditLogsAsActor AuditLog[] @relation("AuditActorServicePrincipal")
+
+  ownerOrganization Organization? @relation("ServicePrincipalOwnerOrganization", fields: [ownerOrganizationId], references: [id], onDelete: Restrict)
+  createdByUser     User          @relation("ServicePrincipalCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([ownerOrganizationId])
+  @@index([deletedAt])
+  @@map("service_principals")
+}
+
+// 机器凭证(身份与凭证分离,支持无停机轮换:新建 B → 切换 → 撤销 A)。
+// 行不可改 secretHash,只能新建 / 撤销;同 SP 同时 ≤2 条 ACTIVE 未过期 —— 计数必须
+// 锁定主体后再算(advisory lock 范式),这是 PR2 运行时约束,不是 DB CHECK(跨行)。
+model ServicePrincipalCredential {
+  id                 String   @id @default(cuid())
+  servicePrincipalId String
+  secretHash         String   @unique // SHA-256(高熵随机 Secret);明文只在新响应出现一次
+  createdByUserId    String
+  createdAt          DateTime @default(now())
+  expiresAt          DateTime?
+  revokedAt          DateTime?
+  revokedByUserId    String?
+  lastUsedAt         DateTime?
+
+  servicePrincipal ServicePrincipal @relation(fields: [servicePrincipalId], references: [id], onDelete: Restrict)
+  createdByUser    User             @relation("ServiceCredentialCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revokedByUser    User?            @relation("ServiceCredentialRevoker", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+  receipts         IntegrationCommandReceipt[]
+  auditLogsAsActor AuditLog[] @relation("AuditActorCredential")
+
+  @@index([servicePrincipalId, revokedAt])
+  @@index([expiresAt])
+  @@map("service_principal_credentials")
+}
+
+// 受控委托:某 SP 可否在指定权限/范围/期限内代表指定 User(规格书 §19/§30)。
+// scope 形状 CHECK 与 endedAt>startedAt 在 migration 侧(PG CHECK;见 migration 头注)。
+model DelegationGrant {
+  id                   String                @id @default(cuid())
+  servicePrincipalId   String
+  subjectUserId        String
+  status               DelegationGrantStatus @default(ACTIVE)
+
+  scopeType            BindingScopeType
+  scopeOrgId           String?
+  scopeActivityId      String?
+  scopeResourceType    String?
+  scopeResourceId      String?
+
+  startedAt            DateTime              @default(now())
+  endedAt              DateTime?
+  createdByUserId      String
+  createdAt            DateTime              @default(now())
+  revokedAt            DateTime?
+  revokedByUserId      String?
+  revokeReason         String?
+
+  servicePrincipal ServicePrincipal @relation(fields: [servicePrincipalId], references: [id], onDelete: Restrict)
+  subjectUser       User             @relation("DelegationSubject", fields: [subjectUserId], references: [id], onDelete: Restrict)
+  createdByUser     User             @relation("DelegationGrantCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revokedByUser     User?            @relation("DelegationGrantRevoker", fields: [revokedByUserId], references: [id], onDelete: Restrict)
+  permissions       DelegationGrantPermission[]
+  receipts          IntegrationCommandReceipt[]
+
+  @@index([servicePrincipalId, status])
+  @@index([subjectUserId, status])
+  @@index([endedAt])
+  @@map("delegation_grants")
+}
+
+// 委托权限 allowlist(创建时锁定并复核 delegatedAccessAllowed=true —— PR5 运行时)。
+model DelegationGrantPermission {
+  id           String @id @default(cuid())
+  grantId      String
+  permissionId String
+
+  grant      DelegationGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  permission Permission      @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@unique([grantId, permissionId])
+  @@index([permissionId])
+  @@map("delegation_grant_permissions")
+}
+
+// 集成写命令幂等回执(规格书 §32/§38-39:同 SP+operation+key 唯一;业务与回执同事务)。
+model IntegrationCommandReceipt {
+  id                 String   @id @default(cuid())
+  servicePrincipalId String
+  credentialId       String
+  delegationGrantId  String?
+  subjectUserId      String?
+  operation          String // 服务端固定常量,客户端不可传
+  idempotencyKey     String
+  requestHash        String
+  resourceType       String?
+  resourceId         String?
+  responseSnapshot   Json? // 只存重放所需最小非敏感结果;禁 Token/Secret/完整 PII/signed URL
+  createdAt          DateTime @default(now())
+  completedAt        DateTime @default(now())
+
+  servicePrincipal ServicePrincipal           @relation(fields: [servicePrincipalId], references: [id], onDelete: Restrict)
+  credential       ServicePrincipalCredential @relation(fields: [credentialId], references: [id], onDelete: Restrict)
+  delegationGrant  DelegationGrant?           @relation(fields: [delegationGrantId], references: [id], onDelete: Restrict)
+  subjectUser      User?                      @relation("IntegrationReceiptSubject", fields: [subjectUserId], references: [id], onDelete: Restrict)
+
+  @@unique([servicePrincipalId, operation, idempotencyKey])
+  @@index([credentialId])
+  @@index([delegationGrantId])
+  @@index([subjectUserId])
+  @@index([createdAt])
+  @@map("integration_command_receipts")
+}
+
 // 终态 scoped-authz PR6(2026-07-01;冻结稿 §3.6):RoleBinding 三枚举。
 enum PrincipalType {
   USER
   MEMBER
   POSITION_ASSIGNMENT
+  SERVICE_PRINCIPAL
   SYSTEM
+}
+
+// Integration Foundation v1 PR1(规格书 §27/§30;T0 冻结稿 §8)
+enum ServicePrincipalStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum DelegationGrantStatus {
+  ACTIVE
+  REVOKED
+  SUSPENDED
 }
 
 enum BindingScopeType {

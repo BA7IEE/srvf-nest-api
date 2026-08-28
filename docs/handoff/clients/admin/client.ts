@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e26776220194a8e19dbcf31c045ee503d0cef5676d20e2c9aa886ef44e3a3457
+// inputDigest: sha256:66cf11e972095320c8e2f06b723481f8df6c2b740161a2d32062a7e73359fa43
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -1295,7 +1295,7 @@ export function createAdminClient(fetcher: Fetcher) {
       return fetcher<PageResultDto & { "items": AdminRegistrationListItemDto[] }>({ method: "GET", path: "/api/admin/v1/registrations", query });
     },
     /** 列角色绑定(可按 principalType × principalId × role × scopeType × status 过滤;含 scoped 各型) [rbac: role-binding.read.record] */
-    RoleBindingsControllerList(query?: { "principalType"?: "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SYSTEM"; "principalId"?: string; "roleId"?: string; "scopeType"?: "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE" | "SELF"; "status"?: "ACTIVE" | "ENDED" | "SUSPENDED" }): Promise<ApiEnvelope<RoleBindingResponseDto[]>> {
+    RoleBindingsControllerList(query?: { "principalType"?: "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SERVICE_PRINCIPAL" | "SYSTEM"; "principalId"?: string; "roleId"?: string; "scopeType"?: "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE" | "SELF"; "status"?: "ACTIVE" | "ENDED" | "SUSPENDED" }): Promise<ApiEnvelope<RoleBindingResponseDto[]>> {
       return fetcher<RoleBindingResponseDto[]>({ method: "GET", path: "/api/admin/v1/role-bindings", query });
     },
     /** 建角色绑定(principal × role × scope + 任期;GLOBAL/ORGANIZATION/TREE/ACTIVITY/RESOURCE/SELF;scoped 入库不判,判权是 PR8) [rbac: role-binding.create.record] */
@@ -1307,11 +1307,11 @@ export function createAdminClient(fetcher: Fetcher) {
       return fetcher<BatchCreateRoleBindingsResponseDto>({ method: "POST", path: "/api/admin/v1/role-bindings/batch", body });
     },
     /** 分页列角色绑定(既有 5 过滤 + scopeOrgId/roleCode/principalQ/includeExpired/q + expand=role,principal;默认仅当前生效) [rbac: role-binding.read.record] */
-    RoleBindingsControllerPage(query?: { "page"?: number; "pageSize"?: number; "principalType"?: "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SYSTEM"; "principalId"?: string; "roleId"?: string; "scopeType"?: "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE" | "SELF"; "status"?: "ACTIVE" | "ENDED" | "SUSPENDED"; "scopeOrgId"?: string; "roleCode"?: string; "principalQ"?: string; "includeExpired"?: boolean; "q"?: string; "expand"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": RoleBindingResponseDto[] }>> {
+    RoleBindingsControllerPage(query?: { "page"?: number; "pageSize"?: number; "principalType"?: "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SERVICE_PRINCIPAL" | "SYSTEM"; "principalId"?: string; "roleId"?: string; "scopeType"?: "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE" | "SELF"; "status"?: "ACTIVE" | "ENDED" | "SUSPENDED"; "scopeOrgId"?: string; "roleCode"?: string; "principalQ"?: string; "includeExpired"?: boolean; "q"?: string; "expand"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": RoleBindingResponseDto[] }>> {
       return fetcher<PageResultDto & { "items": RoleBindingResponseDto[] }>({ method: "GET", path: "/api/admin/v1/role-bindings/page", query });
     },
     /** 预检待建角色绑定(dry-run:与 create 同参同校验,零写入;冲突/非法逐项返 conflicts,deny 是数据) [rbac: role-binding.read.record] */
-    RoleBindingsControllerPreview(query: { "principalType": "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SYSTEM"; "principalId"?: string; "roleId": string; "scopeType": "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE" | "SELF"; "scopeOrgId"?: string; "scopeActivityId"?: string; "scopeResourceType"?: string; "scopeResourceId"?: string; "startedAt"?: string; "endedAt"?: string; "note"?: string }): Promise<ApiEnvelope<RoleBindingPreviewResponseDto>> {
+    RoleBindingsControllerPreview(query: { "principalType": "USER" | "MEMBER" | "POSITION_ASSIGNMENT" | "SERVICE_PRINCIPAL" | "SYSTEM"; "principalId"?: string; "roleId": string; "scopeType": "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE" | "SELF"; "scopeOrgId"?: string; "scopeActivityId"?: string; "scopeResourceType"?: string; "scopeResourceId"?: string; "startedAt"?: string; "endedAt"?: string; "note"?: string }): Promise<ApiEnvelope<RoleBindingPreviewResponseDto>> {
       return fetcher<RoleBindingPreviewResponseDto>({ method: "GET", path: "/api/admin/v1/role-bindings/preview", query });
     },
     /** 查单条角色绑定(detail;找不到未软删记录 → 34001) [rbac: role-binding.read.record] */
