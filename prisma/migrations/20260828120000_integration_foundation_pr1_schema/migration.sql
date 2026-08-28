@@ -164,7 +164,7 @@ CREATE TABLE "integration_command_receipts" (
 
     CONSTRAINT "integration_command_receipts_pkey" PRIMARY KEY ("id")
 );
-CREATE UNIQUE INDEX "integration_command_receipts_servicePrincipalId_operation_idempot_key" ON "integration_command_receipts"("servicePrincipalId", "operation", "idempotencyKey");
+CREATE UNIQUE INDEX "integration_command_receipts_servicePrincipalId_operation_i_key" ON "integration_command_receipts"("servicePrincipalId", "operation", "idempotencyKey");
 CREATE INDEX "integration_command_receipts_credentialId_idx" ON "integration_command_receipts"("credentialId");
 CREATE INDEX "integration_command_receipts_delegationGrantId_idx" ON "integration_command_receipts"("delegationGrantId");
 CREATE INDEX "integration_command_receipts_subjectUserId_idx" ON "integration_command_receipts"("subjectUserId");
