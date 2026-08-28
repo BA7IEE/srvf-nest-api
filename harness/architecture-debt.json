@@ -5978,7 +5978,7 @@
       "violationFingerprint": "vfp:30c48448e290d36cd725baef",
       "shapeDigest": "sdg:9c4ca9a9b5055addb27941b5",
       "dynamicShape": false,
-      "callSiteId": "cs:433eb6f189815708d9c4f7f9",
+      "callSiteId": "cs:2307493888a78b0539793eb0",
       "occurrenceIndex": 2,
       "baselineRevision": "origin/main@10bc5840c25d（Phase 2 R5/R6 首次静态复扫）",
       "sourceDomain": "platform-access",
@@ -5994,8 +5994,8 @@
       "introducedAt": "git blame 36532e5b573e（2026-07-18；Phase 2 登记 PR 未改违规代码行）",
       "allowUntil": "Phase 7 rolling repayment；R5/R6 在本期保持 report-only",
       "debtOwner": "maintainer",
-      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。",
-      "supersedes": "cs:26af724d90dc3395d825ae3f"
+      "notes": "Phase 2 R5/R6 新发现的存量历史债；git blame 已取证，本登记 PR 未改违规代码行；不得仿写。 | 2026-08-28:IF PR2 把 validatePrincipalOrThrow 的尾部 else{} 重构为 else-if 链(SP 分支 + fail-closed else),POSITION 分支的 Member findFirst AST 路径随之改变;callSiteId 按行为等价迁移(supersedes 留旧 id)。",
+      "supersedes": "cs:433eb6f189815708d9c4f7f9"
     },
     {
       "id": "XW-0198",
