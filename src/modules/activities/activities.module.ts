@@ -73,6 +73,7 @@ import { SettlementSubmitService } from './settlement-submit.service';
 import { ACTIVITY_BATCH_AUTO_COMMIT_ENABLED, ActivityBatchWorker } from './activity-batch.worker';
 import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
 import { LedgerPostingService } from './ledger-posting.service';
+import { LegacyConversionRegistrationHeadService } from '../activity-registrations/legacy-conversion-registration-head.service';
 import { LegacyLedgerConversionService } from './legacy-ledger-conversion.service';
 import { LedgerPreparationService } from './ledger-preparation.service';
 import { LedgerQueryService } from './ledger-query.service';
@@ -250,6 +251,10 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     // 存量考勤账本化转换刀(P1-28 第 7 批② A 案,2026-08-27 拍板):零端点 / 零 DTO /
     // 零权限码 —— 唯一调用方是 scripts/legacy-ledger-conversion.ts(维护者 SOP)与 e2e。
     // ⭐ 复用而非另写:生效走 commitConvertedBatchWithin(第五刀协议体,判闸位换转换窗口)。
+    // 头服务文件放在归属域 activity-registrations/ 下(D2 建头是它的域),
+    // 但零 DI 依赖(事务由调用方传入),由本模块直接提供即可,不经模块互引
+    // (ActivityRegistrationsModule 已 import 本模块,反向直连会成环)。
+    LegacyConversionRegistrationHeadService,
     LegacyLedgerConversionService,
     LedgerQueryService,
     // 活动改造 v1.1 第 2 批第六刀(合同 §5.15 + §3.26):机器关账。

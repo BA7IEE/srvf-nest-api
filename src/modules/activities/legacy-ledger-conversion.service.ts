@@ -12,6 +12,7 @@ import { PrismaService } from '../../database/prisma.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ATTENDANCE_SHEET_STATUS } from '../attendances/attendances.dto';
+import { LegacyConversionRegistrationHeadService } from '../activity-registrations/legacy-conversion-registration-head.service';
 import { LedgerPostingService, type LedgerCommitResult } from './ledger-posting.service';
 import {
   LEDGER_BASELINE_PAYLOAD_KEY,
@@ -114,6 +115,7 @@ export class LegacyLedgerConversionService {
     private readonly prisma: PrismaService,
     private readonly gate: ActivityWorkflowGate,
     private readonly ledgerPosting: LedgerPostingService,
+    private readonly registrationHeads: LegacyConversionRegistrationHeadService,
   ) {}
 
   async convertActivity(args: {
@@ -228,32 +230,17 @@ export class LegacyLedgerConversionService {
         headIdByMember.set(memberId, withRegistration.record.registrationId as string);
         continue;
       }
-      const existingHead = await tx.activityRegistration.findFirst({
-        where: { activityId, memberId },
-        select: { id: true },
-      });
-      if (existingHead !== null) {
-        headIdByMember.set(memberId, existingHead.id);
-        continue;
-      }
       const sheetSubmittedAt =
         mapped.find((row) => row.record.memberId === memberId)?.record.sheet.submittedAt ??
         new Date();
-      const head = await tx.activityRegistration.create({
-        data: {
-          activityId,
-          memberId,
-          statusCode: 'pending',
-          currentRevision: 0,
-          currentFormVersionId: null,
-          statusSummaryCode: 'active',
-          sourceCode: 'admin',
-          registeredAt: sheetSubmittedAt,
-        },
-        select: { id: true },
+      // D2 落点走属主模块导出的唯一入口,不跨域直写(架构债棘轮;见该服务头注)。
+      const head = await this.registrationHeads.ensureLegacyConversionHead(tx, {
+        activityId,
+        memberId,
+        registeredAt: sheetSubmittedAt,
       });
       headIdByMember.set(memberId, head.id);
-      synthesizedHeads.push(head.id);
+      if (head.synthesized) synthesizedHeads.push(head.id);
     }
 
     // ===== identity:按 (member, mappedSession) 找或建(镜像 canonical 初始形状)=====

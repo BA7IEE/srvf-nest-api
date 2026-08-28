@@ -361,11 +361,11 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
     // 但不变量从此是**逐点局部**的 —— 每个写点自己就是应用时钟,不依赖配对推理。
     writeSites: [
       {
-        file: 'src/modules/activities/legacy-ledger-conversion.service.ts',
-        valueExpr: 'sheetSubmittedAt',
+        file: 'src/modules/activity-registrations/legacy-conversion-registration-head.service.ts',
+        valueExpr: 'args.registeredAt',
         clockSource:
-          '存量账本化转换刀(D2 合成报名头):取旧考勤单 sheet.submittedAt —— 那是旧链' +
-          '入库时库时钟写下的历史事实,回填沿用既有值,不引入新时钟',
+          '存量账本化转换刀(D2 合成报名头,归属域导出服务):取旧考勤单 sheet.submittedAt ——' +
+          '旧链入库时库时钟写下的历史事实,回填沿用既有值,不引入新时钟',
       },
       {
         file: 'src/modules/activity-registrations/activity-registration-create.service.ts',
