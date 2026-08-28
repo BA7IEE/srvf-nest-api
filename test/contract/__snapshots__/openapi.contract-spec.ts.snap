@@ -141020,7 +141020,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "分页列表",
+      "summary": "服务主体分页列表 [rbac: service-principal.read.record]",
       "tags": [
         "system/service-principals",
       ],
@@ -141108,7 +141108,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "创建服务主体(服务端生成 clientId)",
+      "summary": "创建服务主体(服务端生成 clientId) [rbac: service-principal.create.record]",
       "tags": [
         "system/service-principals",
       ],
@@ -141201,7 +141201,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "详情",
+      "summary": "服务主体详情(不存在 / 已软删统一返 37001) [rbac: service-principal.read.record]",
       "tags": [
         "system/service-principals",
       ],
@@ -141302,7 +141302,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "修改名称/描述/属主组织",
+      "summary": "修改服务主体名称/描述/属主组织 [rbac: service-principal.update.record]",
       "tags": [
         "system/service-principals",
       ],
@@ -141395,7 +141395,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "凭证元数据列表(不返 hash)",
+      "summary": "凭证元数据列表(永不返回 hash / 原始 Secret) [rbac: service-principal.read.record]",
       "tags": [
         "system/service-principals",
       ],
@@ -141520,7 +141520,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "新建凭证(原始 Secret 只返回一次)",
+      "summary": "为服务主体新建凭证(原始 Secret 只在本次响应出现一次) [rbac: service-principal.create.credential]",
       "tags": [
         "system/service-principals",
       ],
@@ -141636,7 +141636,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "撤销凭证",
+      "summary": "撤销凭证(撤销后以其换的 Token 下一请求即失效) [rbac: service-principal.revoke.credential]",
       "tags": [
         "system/service-principals",
       ],
@@ -141773,7 +141773,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "ACTIVE/SUSPENDED",
+      "summary": "启用/停用服务主体(停用即止血开关) [rbac: service-principal.update.status]",
       "tags": [
         "system/service-principals",
       ],

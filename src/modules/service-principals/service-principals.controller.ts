@@ -45,7 +45,9 @@ export class ServicePrincipalsController {
   constructor(private readonly servicePrincipals: ServicePrincipalsService) {}
 
   @Post()
-  @ApiOperation({ summary: '创建服务主体(服务端生成 clientId)' })
+  @ApiOperation({
+    summary: '创建服务主体(服务端生成 clientId) [rbac: service-principal.create.record]',
+  })
   @RequiresPermission('service-principal.create.record')
   @ApiWrappedCreatedResponse(ServicePrincipalResponseDto)
   @ApiBizErrorResponse(BizCode.ORGANIZATION_NOT_FOUND)
@@ -58,7 +60,7 @@ export class ServicePrincipalsController {
   }
 
   @Get()
-  @ApiOperation({ summary: '分页列表' })
+  @ApiOperation({ summary: '服务主体分页列表 [rbac: service-principal.read.record]' })
   @RequiresPermission('service-principal.read.record')
   @ApiWrappedPageResponse(ServicePrincipalResponseDto)
   async list(@Query() query: ListServicePrincipalsQueryDto) {
@@ -66,7 +68,9 @@ export class ServicePrincipalsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '详情' })
+  @ApiOperation({
+    summary: '服务主体详情(不存在 / 已软删统一返 37001) [rbac: service-principal.read.record]',
+  })
   @RequiresPermission('service-principal.read.record')
   @ApiWrappedOkResponse(ServicePrincipalResponseDto)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
@@ -75,7 +79,9 @@ export class ServicePrincipalsController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: '修改名称/描述/属主组织' })
+  @ApiOperation({
+    summary: '修改服务主体名称/描述/属主组织 [rbac: service-principal.update.record]',
+  })
   @RequiresPermission('service-principal.update.record')
   @ApiWrappedOkResponse(ServicePrincipalResponseDto)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
@@ -89,7 +95,9 @@ export class ServicePrincipalsController {
   }
 
   @Patch(':id/status')
-  @ApiOperation({ summary: 'ACTIVE/SUSPENDED' })
+  @ApiOperation({
+    summary: '启用/停用服务主体(停用即止血开关) [rbac: service-principal.update.status]',
+  })
   @RequiresPermission('service-principal.update.status')
   @ApiWrappedOkResponse(ServicePrincipalResponseDto)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
@@ -109,7 +117,10 @@ export class ServicePrincipalsController {
   }
 
   @Post(':id/credentials')
-  @ApiOperation({ summary: '新建凭证(原始 Secret 只返回一次)' })
+  @ApiOperation({
+    summary:
+      '为服务主体新建凭证(原始 Secret 只在本次响应出现一次) [rbac: service-principal.create.credential]',
+  })
   @RequiresPermission('service-principal.create.credential')
   @ApiWrappedCreatedResponse(ServicePrincipalCredentialCreatedDto)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
@@ -123,7 +134,9 @@ export class ServicePrincipalsController {
   }
 
   @Get(':id/credentials')
-  @ApiOperation({ summary: '凭证元数据列表(不返 hash)' })
+  @ApiOperation({
+    summary: '凭证元数据列表(永不返回 hash / 原始 Secret) [rbac: service-principal.read.record]',
+  })
   @RequiresPermission('service-principal.read.record')
   @ApiWrappedOkResponse(ServicePrincipalCredentialResponseDto)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
@@ -134,7 +147,10 @@ export class ServicePrincipalsController {
   }
 
   @Post(':id/credentials/:credentialId/revoke')
-  @ApiOperation({ summary: '撤销凭证' })
+  @ApiOperation({
+    summary:
+      '撤销凭证(撤销后以其换的 Token 下一请求即失效) [rbac: service-principal.revoke.credential]',
+  })
   @RequiresPermission('service-principal.revoke.credential')
   @ApiWrappedCreatedResponse(ServicePrincipalCredentialResponseDto)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
