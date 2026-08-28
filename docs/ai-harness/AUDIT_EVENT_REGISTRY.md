@@ -80,7 +80,7 @@
 
 | event | 仓内出现次数 | 备注 |
 |---|---|---|
-| `activity.publish` | 20 |  |
+| `activity.publish` | 21 | AC-010 改期联动 +1(2026-08-28,extra.operation=activity-session-reschedule) |
 
 ## registration
 
