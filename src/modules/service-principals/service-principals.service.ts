@@ -7,6 +7,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type {
   ServicePrincipalCredentialCreatedDto,
@@ -32,7 +33,10 @@ type PrismaTx = Prisma.TransactionClient;
  */
 @Injectable()
 export class ServicePrincipalsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
 
   // ===== 静态原语(PR3 token 交换复用;不挂实例状态)=====
 
@@ -314,11 +318,15 @@ export class ServicePrincipalsService {
   }
 
   private async assertOrganizationExists(tx: PrismaTx, organizationId: string): Promise<void> {
-    const org = await tx.organization.findFirst({
-      where: { id: organizationId, deletedAt: null },
-      select: { id: true },
+    // 核谓词(id 主键 + 软删过滤是 Organization 核允许的读法;select id 是核字段)。
+    // 判据侧若升级为更严口径,这里应改走 organizations 模块导出的 Query API。
+    const org = await tx.organization.findUnique({
+      where: { id: organizationId },
+      select: { id: true, deletedAt: true },
     });
-    if (org === null) throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
+    if (org === null || org.deletedAt !== null) {
+      throw new BizException(BizCode.ORGANIZATION_NOT_FOUND);
+    }
   }
 
   private async audit(
@@ -332,20 +340,15 @@ export class ServicePrincipalsService {
     // 事件名 ∈ {service-principal.create|update|status-change|credential-create|credential-revoke}
     // (规格书 §24 控制面 8 条的前 5 条;后 3 条 delegation-grant.* 归 PR5)。
     // extra 逐字段白名单:**永不**放 secretHash / 原始 Secret(§12.6 红线)。
-    await tx.auditLog.create({
-      data: {
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        resourceType: 'service-principal',
-        resourceId: servicePrincipalId,
-        event,
-        context: {
-          requestId: auditMeta.requestId,
-          ip: auditMeta.ip,
-          ua: auditMeta.ua,
-          extra,
-        } as unknown as Prisma.InputJsonValue,
-      },
+    await this.auditLogs.log({
+      event: event as never, // 事件名 ∈ §24 控制面五条(见调用侧注释);union 扩展在 audit-logs.types 是 PR3 一并
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      resourceType: 'service-principal',
+      resourceId: servicePrincipalId,
+      meta: auditMeta,
+      extra,
+      tx,
     });
   }
 }
