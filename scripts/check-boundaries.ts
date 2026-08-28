@@ -3142,7 +3142,13 @@ function runNewDebtCheck(): void {
   const map = domainMap();
   const result = scan(map);
   cycles(map, result.edges, result.findings);
-  const all = [...result.findings, ...result.commonFindings];
+  // ⭐ 棘轮只管「债」:disposition='allow'(域图 crossDomainReadAllowlist 七字段精确
+  // 匹配登记的合法跨域读)不是债 —— 把它算进 unknown 会让「走正路登记」与「往基线
+  // 塞身份」变成唯一出路,而后者被 trusted 裁判的 set-monotonic 棘轮拦截(P2-28 实测,
+  // #1218)。IF v1 PR2 起在此过滤;registry 语义不变,只是让正路能走通。
+  const all = [...result.findings, ...result.commonFindings].filter(
+    (item) => item.disposition !== 'allow',
+  );
   let known: Set<string>;
   try {
     known = knownDebtIdentities();
