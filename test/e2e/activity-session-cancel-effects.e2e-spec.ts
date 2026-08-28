@@ -692,4 +692,193 @@ describe('activity single-session cancellation effects (ADV-018 / AC-010)', () =
       }),
     ).resolves.toEqual(populationAfterFirst);
   });
+
+  // ══════════════════════════════════════════════════════════════════════
+  // AC-010 改期联动(P1-28 9a C 档;维护者 2026-08-28 拍板「作废旧二维码重签」)。
+  // 与上面的取消联动共用全部夹具;改期 = sessions.update 变更审核通过后,
+  // 该场次旧二维码作废、按新窗口重签,B 场次与名单/人口/容量全部纹丝不动。
+  // ══════════════════════════════════════════════════════════════════════
+  describe('one activity, two sessions — reschedule session A only (AC-010)', () => {
+    let activityId: string;
+    let sessionA: string;
+    let sessionB: string;
+    let credentialA: string;
+    let credentialB: string;
+    let bCredentialBefore: {
+      id: string;
+      statusCode: string;
+      credentialVersion: number;
+      validFrom: Date;
+      validUntil: Date;
+    };
+    let bIdentityRevisionCountBefore: number;
+    let populationRevisionBefore: number;
+    const rescheduledCheckInOpen = '2099-08-01T01:00:00.000Z';
+    const rescheduledCheckInClose = '2099-08-01T02:30:00.000Z';
+
+    beforeAll(async () => {
+      sequence += 1;
+      const suffix = `reschedule-${sequence}`;
+      const created = await request(httpServer(app))
+        .post('/api/admin/v1/activities')
+        .set('Authorization', creatorAuth)
+        .send({
+          title: `场次改期活动 ${sequence}`,
+          activityTypeCode,
+          organizationId,
+          startAt: '2099-08-01T01:00:00.000Z',
+          endAt: '2099-08-01T05:00:00.000Z',
+          registrationDeadline: '2099-07-31T12:00:00.000Z',
+          location: '深圳',
+          allocationModeCode: 'first_come',
+          capacity: 20,
+        })
+        .expect(201);
+      activityId = created.body.data.id as string;
+      sessionA = await createSession(activityId, `${suffix}-a`);
+      sessionB = await createSession(activityId, `${suffix}-b`);
+
+      const initial = await request(httpServer(app))
+        .post(`/api/app/v1/my/managed-activities/${activityId}/publish-reviews`)
+        .set('Authorization', creatorAuth)
+        .send({ operationKey: `reschedule-initial-${suffix}`, confirmation: true })
+        .expect(200);
+      await approveReview(initial.body.data.id as string, `initial-${suffix}`).expect(200);
+
+      // 有人报名(名单格的反向锚)+ 两场都签了码。
+      await enrol({ activityId, sessionIds: [sessionA], label: `${suffix}-onlyA` });
+      await enrol({ activityId, sessionIds: [sessionB], label: `${suffix}-onlyB` });
+      credentialA = await issueQrCredential(activityId, sessionA);
+      credentialB = await issueQrCredential(activityId, sessionB);
+
+      bCredentialBefore = await prisma.attendanceQrCredential.findUniqueOrThrow({
+        where: { id: credentialB },
+        select: {
+          id: true,
+          statusCode: true,
+          credentialVersion: true,
+          validFrom: true,
+          validUntil: true,
+        },
+      });
+      bIdentityRevisionCountBefore = await prisma.activityParticipationRevision.count({
+        where: { identity: { activityId, sessionId: sessionB } },
+      });
+      populationRevisionBefore =
+        (
+          await prisma.activityEvidenceState.findUnique({
+            where: { activityId },
+            select: { populationRevision: true },
+          })
+        )?.populationRevision ?? 0;
+
+      // 改期:只动 A 的四个时间窗(startAt/endAt 连带),其余一切不动。
+      const submitted = await request(httpServer(app))
+        .post(`/api/app/v1/my/managed-activities/${activityId}/change-reviews`)
+        .set('Authorization', creatorAuth)
+        .send({
+          operationKey: `reschedule-change-${suffix}`,
+          confirmation: true,
+          activityPatch: {},
+          sessions: {
+            create: [],
+            update: [
+              {
+                sessionId: sessionA,
+                startAt: '2099-08-01T01:30:00.000Z',
+                endAt: '2099-08-01T04:30:00.000Z',
+                checkInOpenAt: rescheduledCheckInOpen,
+                checkInCloseAt: rescheduledCheckInClose,
+                checkOutOpenAt: '2099-08-01T03:30:00.000Z',
+                checkOutCloseAt: '2099-08-01T04:30:00.000Z',
+              },
+            ],
+            cancel: [],
+          },
+          positions: { create: [], update: [], cancel: [] },
+        })
+        .expect(200);
+      await approveReview(submitted.body.data.id as string, `reschedule-${suffix}`).expect(200);
+    });
+
+    it('改期场次的时间窗落库(改期路径本身此前全仓零测试)', async () => {
+      const session = await prisma.activitySession.findUniqueOrThrow({
+        where: { id: sessionA },
+        select: { startAt: true, checkInOpenAt: true, statusCode: true },
+      });
+      expect(session.startAt.toISOString()).toBe('2099-08-01T01:30:00.000Z');
+      expect(session.checkInOpenAt.toISOString()).toBe(rescheduledCheckInOpen);
+      expect(session.statusCode).toBe('scheduled');
+    });
+
+    it('旧二维码作废(revokeReason=场次改期)+ 按新窗口重签版本 +1(拍板:作废旧码重签)', async () => {
+      const oldA = await prisma.attendanceQrCredential.findUniqueOrThrow({
+        where: { id: credentialA },
+        select: { statusCode: true, revokeReason: true },
+      });
+      expect(oldA.statusCode).toBe('revoked');
+      expect(oldA.revokeReason).toBe('场次改期');
+      const activeA = await prisma.attendanceQrCredential.findMany({
+        where: { sessionId: sessionA, statusCode: 'active' },
+        select: { actionCode: true, credentialVersion: true, validFrom: true, validUntil: true },
+        orderBy: { actionCode: 'asc' },
+      });
+      expect(activeA).toHaveLength(2); // check_in / check_out 各一条
+      const checkIn = activeA.find((row) => row.actionCode === 'check_in');
+      expect(checkIn?.credentialVersion).toBe(2);
+      expect(checkIn?.validFrom.toISOString()).toBe(rescheduledCheckInOpen);
+      expect(checkIn?.validUntil.toISOString()).toBe(rescheduledCheckInClose);
+    });
+
+    it('「只影响该场次」:B 的二维码/时间窗/报名修订/结算人口全部纹丝不动(反向)', async () => {
+      const bCredentialAfter = await prisma.attendanceQrCredential.findUniqueOrThrow({
+        where: { id: credentialB },
+        select: {
+          id: true,
+          statusCode: true,
+          credentialVersion: true,
+          validFrom: true,
+          validUntil: true,
+        },
+      });
+      expect(bCredentialAfter.statusCode).toBe(bCredentialBefore.statusCode);
+      expect(bCredentialAfter.credentialVersion).toBe(bCredentialBefore.credentialVersion);
+      expect(bCredentialAfter.validFrom.getTime()).toBe(bCredentialBefore.validFrom.getTime());
+      expect(bCredentialAfter.validUntil.getTime()).toBe(bCredentialBefore.validUntil.getTime());
+
+      const sessionBRow = await prisma.activitySession.findUniqueOrThrow({
+        where: { id: sessionB },
+        select: { startAt: true, endAt: true, statusCode: true },
+      });
+      expect(sessionBRow.startAt.getTime()).toBe(new Date('2099-08-01T01:00:00.000Z').getTime());
+      expect(sessionBRow.statusCode).toBe('scheduled');
+
+      const bRevisionCountAfter = await prisma.activityParticipationRevision.count({
+        where: { identity: { activityId, sessionId: sessionB } },
+      });
+      expect(bRevisionCountAfter).toBe(bIdentityRevisionCountBefore);
+
+      const populationRevisionAfter =
+        (
+          await prisma.activityEvidenceState.findUnique({
+            where: { activityId },
+            select: { populationRevision: true },
+          })
+        )?.populationRevision ?? 0;
+      expect(populationRevisionAfter).toBe(populationRevisionBefore);
+    });
+
+    it('审计:一条聚合行(activity.publish 伞事件 + extra.operation=activity-session-reschedule)', async () => {
+      const rows = await prisma.auditLog.findMany({
+        where: { event: 'activity.publish', resourceId: activityId },
+        select: { context: true },
+      });
+      const auditRow = rows.find((row) =>
+        JSON.stringify(row.context).includes('activity-session-reschedule'),
+      );
+      expect(auditRow).not.toBeNull();
+      const extra = (auditRow?.context as { extra?: { sessionIds?: string[] } } | null)?.extra;
+      expect(extra?.sessionIds).toEqual([sessionA]);
+    });
+  });
 });

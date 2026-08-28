@@ -563,6 +563,8 @@ const BATCH3_SLICE1_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
   'AC-010':
     '六格里五格已落:变更审核与名额(容量桶)由第 4 批⑤给出(投影只取 scheduled 场次、取消场次的桶留作不可变历史、占用中降容 20147);' +
     '二维码 / 人员 / 通知 / 结算人口四格由 ADV-018 那一刀(2026-08-25)实装并各有正向 + 反向用例,去向见 ADV-018 登记。' +
+    '⚠️ 2026-08-28 起改期格已由 TEST_GAP_2026_08_28_ACCEPTANCE_DESTINATIONS 接通(维护者拍板作废旧码重签;' +
+    '变异证据:卸掉改期检测 ⇒ QR 重签与审计两用例当场红),下面这段只作历史记录 —— 去向恒优先于卡点。' +
     '**仅剩「改期」这一格**:合同原文是「取消**或改期**只影响该场次」,而 sessions.update 的既有用例只出现过 ' +
     'name / locationText / capacity,**没有任何用例改过 startAt / endAt**,更没有「改 A 场次的时间、B 场次的时间与二维码有效期纹丝不动」这条反向。' +
     '⚠️ 改期不是取消的同形:取消走 statusCode,改期要动 checkIn*/checkOut* 四个时间窗,' +
@@ -2287,6 +2289,23 @@ const TEST_GAP_2026_08_28_ACCEPTANCE_DESTINATIONS: Readonly<
   // AC-047「活动未结束……只允许整理草稿,不能提交」—— 2026-08-28 补上独立执行位
   // (提交侧 20160,判定用应用时钟;封场侧刻意不加:零场次早封无害,提交侧闭住真空)。
   // red-first 证据:卸闸(判定改恒 false)⇒ 本组两条负例当场红(2 failed),装回全绿。
+  // AC-010 改期格(维护者 2026-08-28 拍板「作废旧二维码重签」):改期路径本身此前
+  // 全仓零测试;联动 = 旧码作废(revokeReason=场次改期)+ 按新窗口重签版本 +1,
+  // B 场次/名单/人口纹丝不动;通知格由既有 enqueueScheduleChange 承载(AC-066 已锚)。
+  'AC-010': [
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: '改期场次的时间窗落库(改期路径本身此前全仓零测试)',
+    },
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: '旧二维码作废(revokeReason=场次改期)+ 按新窗口重签版本 +1(拍板:作废旧码重签)',
+    },
+    {
+      file: 'test/e2e/activity-session-cancel-effects.e2e-spec.ts',
+      needle: '「只影响该场次」:B 的二维码/时间窗/报名修订/结算人口全部纹丝不动(反向)',
+    },
+  ],
   'AC-047': [
     {
       file: 'test/e2e/activity-settlement-submit.e2e-spec.ts',

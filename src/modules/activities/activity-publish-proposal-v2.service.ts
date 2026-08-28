@@ -25,6 +25,7 @@ import {
   type QualificationRuleSetInput,
 } from './qualification-rule-set-definition';
 import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-projector';
+import { activitySessionRescheduleEffects } from './activity-session-reschedule-effects';
 import { activitySessionCancellationEffects } from './activity-session-cancellation-effects';
 import { ActivityNotificationProducer } from './activity-notification-producer';
 import { isActivityAllocationModeCode } from './activity-allocation-mode';
@@ -722,6 +723,13 @@ export class ActivityPublishProposalV2Service {
       activityId,
       snapshot.sessions,
     );
+    // AC-010:改期检测必须在 applySessions **之前**取(取的是「旧窗 vs 提案窗」的差异),
+    // 联动本身在 apply 之后落(重签冻结的是新窗)。
+    const rescheduledSessionIds = await this.resolveRescheduledSessionIds(
+      tx,
+      activityId,
+      snapshot.sessions,
+    );
     await this.applyActivity(
       tx,
       activityId,
@@ -784,6 +792,34 @@ export class ActivityPublishProposalV2Service {
         auditMeta: input.auditMeta,
       },
     );
+    // AC-010 改期联动(维护者 2026-08-28 拍板「作废旧码重签」):排在 applySessions 之后,
+    // 与取消联动同一事务;通知 / 人口 / 名额格不重复动(见该文件头注的格子对照表)。
+    if (rescheduledSessionIds.length > 0) {
+      // 惰性读取:没有改期就不需要密钥(单元测试的 ConfigService 桩可能没提供 jwt 段)。
+      // 本服务的 ConfigService 是按 activities 侧 AppConfig 收窄的类型,其 Path 不含 jwt 段;
+      // 密钥真源与 AttendanceQrCredentialService 同一处 —— 这里一次性窄 cast 取值,
+      // 不引入第二份配置读取(改全局 AppConfig 形状属另一刀)。
+      const jwt = (this.config as unknown as import('@nestjs/config').ConfigService).get<{
+        secret: string;
+      }>('jwt');
+      if (jwt === undefined || typeof jwt.secret !== 'string') {
+        throw new Error('jwt.config 未加载');
+      }
+      await activitySessionRescheduleEffects.applyInTransactionTrusted(
+        { auditLogs: this.auditLogs },
+        tx,
+        {
+          activityId,
+          rescheduledSessionIds,
+          versionKey: input.versionKey,
+          at: input.at,
+          actorUserId: input.publishedByUserId,
+          actorRoleSnap: input.publishedByUserRole,
+          auditMeta: input.auditMeta,
+          jwtSecret: jwt.secret,
+        },
+      );
+    }
     const activity = await tx.activity.update({
       where: { id: activityId },
       data: {
@@ -1978,6 +2014,50 @@ export class ActivityPublishProposalV2Service {
    *
    * 新建场次(`sessionId === null`)不进这里:它此刻不可能有报名、二维码或人口贡献。
    */
+  /**
+   * AC-010 改期检测:提案里点名保留(sessionId 非空且非 cancelled)、但任一**时间窗列**
+   * (startAt / endAt / checkIn* / checkOut*)与当前库值不同的场次。只比时间窗 ——
+   * 改名 / 改地点 / 改容量不是改期,不触发二维码作废重签。
+   */
+  private async resolveRescheduledSessionIds(
+    tx: PrismaTx,
+    activityId: string,
+    sessions: readonly ProposalSession[],
+  ): Promise<string[]> {
+    // 旧 schemaVersion 的快照可能不带 sessions;防御性收窄 —— 没有场次就没有改期。
+    const proposedKept = (sessions ?? []).filter(
+      (session) => session.sessionId !== null && session.statusCode !== 'cancelled',
+    );
+    if (proposedKept.length === 0) return [];
+    const rows = await tx.activitySession.findMany({
+      where: { activityId, id: { in: proposedKept.map((s) => s.sessionId as string) } },
+      select: {
+        id: true,
+        startAt: true,
+        endAt: true,
+        checkInOpenAt: true,
+        checkInCloseAt: true,
+        checkOutOpenAt: true,
+        checkOutCloseAt: true,
+      },
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const changed: string[] = [];
+    for (const session of proposedKept) {
+      const current = byId.get(session.sessionId as string);
+      if (current === undefined) continue;
+      const windowChanged =
+        new Date(session.startAt).getTime() !== current.startAt.getTime() ||
+        new Date(session.endAt).getTime() !== current.endAt.getTime() ||
+        new Date(session.checkInOpenAt).getTime() !== current.checkInOpenAt.getTime() ||
+        new Date(session.checkInCloseAt).getTime() !== current.checkInCloseAt.getTime() ||
+        new Date(session.checkOutOpenAt).getTime() !== current.checkOutOpenAt.getTime() ||
+        new Date(session.checkOutCloseAt).getTime() !== current.checkOutCloseAt.getTime();
+      if (windowChanged) changed.push(current.id);
+    }
+    return changed.sort();
+  }
+
   private async resolveNewlyCancelledSessionIds(
     tx: PrismaTx,
     activityId: string,
