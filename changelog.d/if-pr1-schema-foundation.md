@@ -63,18 +63,4 @@ migration: 调用方补 SERVICE_PRINCIPAL 分支(渲染为「服务主体」,PR2
 rollback: revert 本 PR(代码 + migration 一并回退)。⚠️ ALTER TYPE ADD VALUE 不可逆:生产未 deploy ⇒ 库内恒无该值,revert 重放安全;若已 deploy 且已存在 SERVICE_PRINCIPAL 绑定行再回滚旧二进制,须维护者先清理该类绑定行(规格书 §53.1,不可自动执行)。
 -->
 
-<!-- contract-breaking
-operation: GET /api/admin/v1/role-bindings/preview
-reason: 纯入参扩值;preview 对 SERVICE_PRINCIPAL 的预览在 PR2 前返回零匹配。枚举源自 Prisma PrincipalType,PR1 为终态五值落地 schema(规格书 §15.2);query:principalType。
-impact: 事实读数 —— 前端 srvf-admin-web 尚未上线,无任何线上客户端;且 PR2 之前全仓无任何写路径能产出 SERVICE_PRINCIPAL 绑定 ⇒ 实际影响面双零。潜在影响 = 对 principalType 写穷尽 switch 且无 default 的调用方。
-migration: 调用方补 SERVICE_PRINCIPAL 分支(渲染为「服务主体」,PR2 前读不到/传入被拒)或 default 兜底;新值追加在枚举末尾,按下标读的实现不受影响。
-rollback: revert 本 PR(代码 + migration 一并回退)。⚠️ ALTER TYPE ADD VALUE 不可逆:生产未 deploy ⇒ 库内恒无该值,revert 重放安全;若已 deploy 且已存在 SERVICE_PRINCIPAL 绑定行再回滚旧二进制,须维护者先清理该类绑定行(规格书 §53.1,不可自动执行)。
--->
 
-<!-- contract-breaking
-operation: POST /api/admin/v1/role-bindings/batch
-reason: 批量入参扩值;PR2 前该值过校验即拒,整单回滚,无新行为。枚举源自 Prisma PrincipalType,PR1 为终态五值落地 schema(规格书 §15.2);items[].principalType。
-impact: 事实读数 —— 前端 srvf-admin-web 尚未上线,无任何线上客户端;且 PR2 之前全仓无任何写路径能产出 SERVICE_PRINCIPAL 绑定 ⇒ 实际影响面双零。潜在影响 = 对 principalType 写穷尽 switch 且无 default 的调用方。
-migration: 调用方补 SERVICE_PRINCIPAL 分支(渲染为「服务主体」,PR2 前读不到/传入被拒)或 default 兜底;新值追加在枚举末尾,按下标读的实现不受影响。
-rollback: revert 本 PR(代码 + migration 一并回退)。⚠️ ALTER TYPE ADD VALUE 不可逆:生产未 deploy ⇒ 库内恒无该值,revert 重放安全;若已 deploy 且已存在 SERVICE_PRINCIPAL 绑定行再回滚旧二进制,须维护者先清理该类绑定行(规格书 §53.1,不可自动执行)。
--->
