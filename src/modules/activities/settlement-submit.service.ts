@@ -641,14 +641,6 @@ export class SettlementSubmitService {
         }
 
         // 不是重放 ⇒ 这是一次**真正的新提交**,状态闸在这里落下。
-        // AC-047(合同「活动未结束……只允许整理草稿,不能提交」)的独立执行位:
-        // 此前三前置里「签退窗口未关闭 / 无开放服务段」各有判据,唯独「活动未结束」
-        // 全链无独立闸 —— 零 live 场次时两道既有闸双双真空,活动结束前即可整链提交。
-        // 判定用**应用时钟**(clock-authority:判用应用时钟);与 run 状态闸同点落下,
-        // 重放路径不经过(幂等保护的是"上次提交过什么"的既成事实)。
-        if (new Date().getTime() < activity.endAt.getTime()) {
-          throw new BizException(BizCode.SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED);
-        }
         this.assertRunDrafting(run);
         const draft = await this.readDraftVersion(tx, run.id);
 
@@ -680,6 +672,17 @@ export class SettlementSubmitService {
         const facts = await this.readSubmissionFacts(tx, activityId, draft.id);
         const rejection = validateSettlementSubmission(facts);
         if (rejection !== null) throw new BizException(REJECTION_TO_BIZ_CODE[rejection]);
+
+        // AC-047(合同「活动未结束……只允许整理草稿,不能提交」)的独立执行位,
+        // 刻意排在**全部既有拒绝之后**(状态闸 / 封印复验 / 版本锚点 / 五条校验):
+        // 新闸不得改变任何既有场景的裁决码(batch5 并发 spec 期望 20055 的场景实测
+        // 被前置位抢答过,CI 抓出后移到这里)。此前「窗口未关闭 / 无开放段」各有判据,
+        // 唯独「活动未结束」全链无闸 —— 零 live 场次时两道既有闸双双真空,活动结束前
+        // 即可整链提交。判定用**应用时钟**(clock-authority);重放路径不经过
+        // (幂等保护的是"上次提交过什么"的既成事实)。
+        if (new Date().getTime() < activity.endAt.getTime()) {
+          throw new BizException(BizCode.SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED);
+        }
 
         // ⑤ canonical contentHash。
         const contentHash = await this.computeContentHash(tx, {
