@@ -1265,6 +1265,7 @@ export const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...META_PERMISSION_SEED,
   ...MEMBER_ACCOUNT_PERMISSION_SEED,
   ...NOTIFICATION_REPLAY_PERMISSION_SEED,
+  ...SERVICE_PRINCIPAL_PERMISSION_SEED,
 ];
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集

@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:0b103ce25714bdf1cac9bc8e1f5dd0a110e3aa3aa53a07a75a97df647387c1d4
+// inputDigest: sha256:97f62261ea00cbe38e101371ba40c787dfaa40a523e289a00aaca51ceb9573b2
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -344,35 +344,35 @@ export function createSystemClient(fetcher: Fetcher) {
     RolePermissionsControllerPreviewReplace(id: string, body: ReplaceRolePermissionsDto): Promise<ApiEnvelope<RolePermissionPreviewResponseDto>> {
       return fetcher<RolePermissionPreviewResponseDto>({ method: "POST", path: `/api/system/v1/roles/${id}/permissions/preview`, body });
     },
-    /** 分页列表 */
+    /** 服务主体分页列表 [rbac: service-principal.read.record] */
     ServicePrincipalsControllerList(query?: { "page"?: number; "pageSize"?: number; "status"?: "ACTIVE" | "SUSPENDED" }): Promise<ApiEnvelope<PageResultDto & { "items": ServicePrincipalResponseDto[] }>> {
       return fetcher<PageResultDto & { "items": ServicePrincipalResponseDto[] }>({ method: "GET", path: "/api/system/v1/service-principals", query });
     },
-    /** 创建服务主体(服务端生成 clientId) */
+    /** 创建服务主体(服务端生成 clientId) [rbac: service-principal.create.record] */
     ServicePrincipalsControllerCreate(body: CreateServicePrincipalDto): Promise<ApiEnvelope<ServicePrincipalResponseDto>> {
       return fetcher<ServicePrincipalResponseDto>({ method: "POST", path: "/api/system/v1/service-principals", body });
     },
-    /** 详情 */
+    /** 服务主体详情(不存在 / 已软删统一返 37001) [rbac: service-principal.read.record] */
     ServicePrincipalsControllerFindById(id: string): Promise<ApiEnvelope<ServicePrincipalResponseDto>> {
       return fetcher<ServicePrincipalResponseDto>({ method: "GET", path: `/api/system/v1/service-principals/${id}` });
     },
-    /** 修改名称/描述/属主组织 */
+    /** 修改服务主体名称/描述/属主组织 [rbac: service-principal.update.record] */
     ServicePrincipalsControllerUpdate(id: string, body: UpdateServicePrincipalDto): Promise<ApiEnvelope<ServicePrincipalResponseDto>> {
       return fetcher<ServicePrincipalResponseDto>({ method: "PATCH", path: `/api/system/v1/service-principals/${id}`, body });
     },
-    /** 凭证元数据列表(不返 hash) */
+    /** 凭证元数据列表(永不返回 hash / 原始 Secret) [rbac: service-principal.read.record] */
     ServicePrincipalsControllerListCredentials(id: string): Promise<ApiEnvelope<ServicePrincipalCredentialResponseDto>> {
       return fetcher<ServicePrincipalCredentialResponseDto>({ method: "GET", path: `/api/system/v1/service-principals/${id}/credentials` });
     },
-    /** 新建凭证(原始 Secret 只返回一次) */
+    /** 为服务主体新建凭证(原始 Secret 只在本次响应出现一次) [rbac: service-principal.create.credential] */
     ServicePrincipalsControllerCreateCredential(id: string): Promise<ApiEnvelope<ServicePrincipalCredentialCreatedDto>> {
       return fetcher<ServicePrincipalCredentialCreatedDto>({ method: "POST", path: `/api/system/v1/service-principals/${id}/credentials` });
     },
-    /** 撤销凭证 */
+    /** 撤销凭证(撤销后以其换的 Token 下一请求即失效) [rbac: service-principal.revoke.credential] */
     ServicePrincipalsControllerRevokeCredential(): Promise<ApiEnvelope<ServicePrincipalCredentialResponseDto>> {
       return fetcher<ServicePrincipalCredentialResponseDto>({ method: "POST", path: "/api/system/v1/service-principals/{id}/credentials/{credentialId}/revoke" });
     },
-    /** ACTIVE/SUSPENDED */
+    /** 启用/停用服务主体(停用即止血开关) [rbac: service-principal.update.status] */
     ServicePrincipalsControllerUpdateStatus(id: string, body: UpdateServicePrincipalStatusDto): Promise<ApiEnvelope<ServicePrincipalResponseDto>> {
       return fetcher<ServicePrincipalResponseDto>({ method: "PATCH", path: `/api/system/v1/service-principals/${id}/status`, body });
     },
