@@ -664,7 +664,9 @@ const BATCH4_REGISTRATION_COMMAND_ACCEPTANCE_BLOCKERS: Readonly<Record<string, s
     '三入口共享答案 validator 仍未实现:`validateRegistrationFormAnswers` 全仓只有一个生产调用方(canonical 报名命令,邀请 accept 复用同一个),' +
     '后台代报名走的是 legacy 路径(formVersionId/answersHash 恒 null、收自由 extras),且一旦活动有 v1.1 Form/live session 就被 ' +
     'assertLegacyRegistrationFlowAllowed 以 ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED **主动拒**——它不是「未接入」,是接不上;' +
-    '名单导入**零端点**(报名 sourceCode 闭集只有 self/admin/invitation/onsite,全仓唯一的 import 是考勤导入)。三入口只存在一个。',
+    '名单导入**零端点**(报名 sourceCode 闭集只有 self/admin/invitation/onsite,全仓唯一的 import 是考勤导入)。三入口只存在一个。' +
+    '⇒ 2026-08-28 维护者拍板:**搁置**,上线后按真实运营诉求再立项(v1.1 单轨哲学;' +
+    '自助 + onsite 代录 + 批量代签已覆盖实际场景,见 AC-068)。本条保持 todo,不豁免。',
 };
 
 /** 第 4 批⑪把已冻结 D83 规则接入 display / submit / onsite / review 四阶段。 */
@@ -2471,6 +2473,28 @@ const PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS: Readonly<Record<string, Acceptan
     decidedOn: '2026-08-26',
     needles: ['六个检查点'],
   },
+  // 9a C 档能力缺口逐条评估的两条豁免(维护者 2026-08-28「按推荐」):
+  //   - AC-009 =「按活动写计分规则」被决策锁 D-1(System surface)结构性排除,
+  //     全局化(activityType×role×version)即合同意图 —— 结构判据已可证,不是漏做;
+  //   - AC-067 = 推送提醒要第三个 cron(「终态恰 2」决策锁),拉取式缺口计数已满足,
+  //     等真实运营反馈再走新 D 档。
+  'AC-009': {
+    reason:
+      '「按活动直写计分规则」被决策锁 D-1 结构性排除:contribution-rules 归 System surface,' +
+      'ContributionRule 业务键为 activityType×role×version 且 schema 无 activityId 列 —— ' +
+      '按活动维度不是漏做,是被 D-1 排除;全局化规则即合同「规则可配置」的意图。',
+    decidedBy: '维护者',
+    decidedOn: '2026-08-28',
+    needles: ['决策锁 D-1'],
+  },
+  'AC-067': {
+    reason:
+      '未签退推送提醒要第三个 cron,而「cron 终态恰 2」是决策锁;负责人侧拉取式 open_segment ' +
+      '缺口计数(结算/关账工作台)已满足「负责人看得到」;推送等上线后真实运营反馈再走新 D 档评审。',
+    decidedBy: '维护者',
+    decidedOn: '2026-08-28',
+    needles: ['拉取式'],
+  },
 };
 
 /**
@@ -2875,7 +2899,7 @@ describe('活动业务改造 v1.1 合同完整性', () => {
   it('当前豁免六项齐全:理由 / 拍板人 / 日期(合法日历日)/ 登记锚点一个不缺', () => {
     expect(waiverFieldDefects(PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS)).toEqual([]);
     // 反向:表为空时上面那条恒真 —— 钉住非空。
-    expect(Object.keys(PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS).length).toBe(4);
+    expect(Object.keys(PERMANENT_WAIVER_ACCEPTANCE_DESTINATIONS).length).toBe(6);
   });
 
   it('字段检测有判别力:四类缺项各自被报出来,且红集精确', () => {

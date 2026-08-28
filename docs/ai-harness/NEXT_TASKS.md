@@ -384,7 +384,7 @@
 
 ### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)、⑨永久报名头 DB 地基与 onsite 历史头 fail-closed([#968](https://github.com/BA7IEE/srvf-nest-api/pull/968))、⑩永久头 runtime/个人取消闭环、⑯分配与邀请 C runtime、⑰资格配置/发布激活（managed RuleSet/Rule typed configuration、V5 审核冻结/activation）、⑱活动到点 expiry（既有 worker + PG reconciliation、无新 cron）；合同已修订至 v1.1.1,缺口台账累计 #28**
 
-**状态**:进行中(第 0–3 批已收口 #952 #956;第 4 批多刀已合 #959 #965 #968;第 6 批代码面收口宣告 + 第 7 批②账本桥交付 #1211 + D11 定案(均 2026-08-28);剩余:第 8 批与 9a 的 8 条 C 档能力缺口(AC-047 已于 2026-08-28 补执行位结案,todo 9→8),合同缺口台账见正文)
+**状态**:进行中(第 0–3 批已收口 #952 #956;第 4 批多刀已合 #959 #965 #968;第 6 批代码面收口宣告 + 第 7 批②账本桥交付 #1211 + D11 定案(均 2026-08-28);剩余:第 8 批与 9a 的 6 条 C 档能力缺口(2026-08-28 拍板:AC-009/AC-067 永久豁免、AC-017 搁置后议、AC-010 改期刀开做;todo 8→6),合同缺口台账见正文)
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -696,6 +696,12 @@
   **2026-08-19 那座「终审改为提交 LedgerPostingBatch」的桥自此闭合** —— 开闸前的仓内
   硬前置只剩 9a(验收 9 条 todo,全部 C 档能力缺口)与 §16.3 顺序本身。
 
+  **⇒ 2026-08-28 六项拍板(维护者,合并 #1214 后一次回齐)**:① AC-009 永久豁免
+  (D-1 结构性排除);② AC-067 永久豁免(拉取式即满足,推送归未来新 D 档);
+  ③ AC-017 搁置(上线后按诉求立项,保持 todo);④ AC-010 改期刀开做(作废旧二维码重签);
+  ⑤ P1-30 开工(基线重跑 #1214 已合,PR1 待专注起跑);⑥ 9a 读数 todo 8→6
+  (AC-047 执行位 #1213 + 两条豁免;剩 AC-010 在做 / AC-013 / AC-020 / AC-025 / AC-017 搁置 / ADV-010 卡 P2-21)。
+
   **⇒ D1 悬案定案(维护者 2026-08-28 拍板「按推荐」)**:开闸后「参与活动数 / 记录条数」
   的账本口径 = **有 committed 分录的活动数 / 账本日行数(身份×北京日 去重)**;
   「记录条数」刻意**不**取分录条数(每人每日两条,开闸后会数值跳变)——这是与旧
@@ -883,10 +889,10 @@
 > 这一半没有 HTTP 证据(要一条真 closure,三条必填外键),后者只剩两条**真并发**用例
 > (能力已具备:归档与关账取同一把 Activity 行锁)。两条仍留在本表。
 
-AC-009(计分规则全仓无按活动写接口,「无接口算不算满足」待裁定)·
-AC-010(二维码 effect 是显式空桩、人员零变更、通知按活动广播、结算人口活动级、改期从未被测)·
+AC-009(✅ **2026-08-28 永久豁免**:被决策锁 D-1 结构性排除,全局化即合同意图;登记 CUTOVER_SIGNOFF §5)·
+AC-010(✅ **2026-08-28 拍板开做改期刀**:改期 = 动四时间窗 + 旧二维码**作废重签**;余五格已落)·
 AC-013(责任模型仍是 2 值 + 2 布尔;两布尔全 false ⇒ **零 RoleBinding**,不是「只读」)·
-AC-017(三入口只存在 1 个:后台代报名被 `ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED` **主动拒**、名单导入零端点)·
+AC-017(⏸ **2026-08-28 拍板搁置**:上线后按真实运营诉求再立项,保持 todo 不豁免)·
 AC-020 / AC-025(⚠️ AC-047 已于 2026-08-28 结案:提交侧补 20160 独立执行位 + 真空形态负例 + 草稿仍可整理的正向,red-first 卸闸 2 红;封场侧刻意不加闸)· AC-064 · AC-066 ·
 AC-067(⭐ 真约束是 **cron 终态恰 2 的决策锁**,加第三个要新 D 档)· ADV-010(新账本与入队进度读两张不相交的表)·
 ADV-018(实现层就是活动级广播,与「只影响该场次」相反)· ADV-022。
