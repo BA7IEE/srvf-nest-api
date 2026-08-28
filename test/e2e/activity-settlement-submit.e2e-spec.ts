@@ -484,6 +484,48 @@ describe('settlement submit —— 提交不可变版本 (合同 §5.10)', () =>
   // DoD 2 —— EvidenceSeal 复验(只复验,不重新封场)
   // =========================================================================
 
+  describe('前置闸 —— 「活动未结束」独立执行位 (AC-047;20160)', () => {
+    // 合同原文:「活动未结束、任一签退窗口未关闭或存在开放服务段时,只允许整理草稿,不能提交」。
+    // 此前「窗口未关闭 / 无开放段」各有判据,唯「活动未结束」全链无独立闸 ——
+    // 零 live 场次时两道既有闸双双真空。本块补上执行位与「只允许整理草稿」的正面一半。
+
+    it('endAt 在未来 + 零 live 场次(真空形态)⇒ SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED', async () => {
+      const fixture = await createSubmittable();
+      await prisma.activitySession.update({
+        where: { id: fixture.sessionId },
+        data: { statusCode: 'cancelled' },
+      });
+      await prisma.activity.update({
+        where: { id: fixture.activityId },
+        data: { endAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+      });
+      await expectRefusal(fixture, BizCode.SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED);
+    });
+
+    it('被拒的同时草稿仍可重新整理(「只允许整理草稿」的正面一半,同夹具)', async () => {
+      const fixture = await createSubmittable();
+      await prisma.activitySession.update({
+        where: { id: fixture.sessionId },
+        data: { statusCode: 'cancelled' },
+      });
+      await prisma.activity.update({
+        where: { id: fixture.activityId },
+        data: { endAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+      });
+      await expectRefusal(fixture, BizCode.SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED);
+      // 提交被拒不冻结草稿:generate 在同一形态下照常产出新草稿版本。
+      const draft = await draftService.generate(fixture.activityId, actor, auditMeta);
+      expect(draft.activityId).toBe(fixture.activityId);
+    });
+
+    it('endAt 已过 ⇒ 同夹具放行(正对照:闸不误伤正常链)', async () => {
+      const fixture = await createSubmittable();
+      const result = await service.submit(submitInput(fixture), actor, auditMeta);
+      expect(result.activityId).toBe(fixture.activityId);
+      expect(result.replayed).toBe(false);
+    });
+  });
+
   describe('DoD 2 —— EvidenceSeal 复验 (§5.10 ③)', () => {
     it('active seal 被标 superseded → EVIDENCE_SEAL_INACTIVE', async () => {
       const fixture = await createSubmittable();

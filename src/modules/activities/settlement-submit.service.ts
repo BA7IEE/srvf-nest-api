@@ -162,6 +162,7 @@ export interface SettlementSubmitResult {
 interface LockedActivity {
   title: string;
   workflowRevision: number;
+  endAt: Date;
 }
 
 interface LockedRun {
@@ -207,7 +208,7 @@ export class SettlementSubmitService {
   // ===== ① Activity FOR UPDATE(§5.10 ①;锁序第一层)=====
   private async lockActivity(tx: PrismaTx, activityId: string): Promise<LockedActivity> {
     const rows = await tx.$queryRaw<Array<LockedActivity>>`
-      SELECT title, "workflowRevision"
+      SELECT title, "workflowRevision", "endAt"
       FROM "Activity"
       WHERE id = ${activityId} AND "deletedAt" IS NULL
       FOR UPDATE
@@ -640,6 +641,14 @@ export class SettlementSubmitService {
         }
 
         // 不是重放 ⇒ 这是一次**真正的新提交**,状态闸在这里落下。
+        // AC-047(合同「活动未结束……只允许整理草稿,不能提交」)的独立执行位:
+        // 此前三前置里「签退窗口未关闭 / 无开放服务段」各有判据,唯独「活动未结束」
+        // 全链无独立闸 —— 零 live 场次时两道既有闸双双真空,活动结束前即可整链提交。
+        // 判定用**应用时钟**(clock-authority:判用应用时钟);与 run 状态闸同点落下,
+        // 重放路径不经过(幂等保护的是"上次提交过什么"的既成事实)。
+        if (new Date().getTime() < activity.endAt.getTime()) {
+          throw new BizException(BizCode.SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED);
+        }
         this.assertRunDrafting(run);
         const draft = await this.readDraftVersion(tx, run.id);
 
