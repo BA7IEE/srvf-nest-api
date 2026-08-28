@@ -136,7 +136,7 @@ export class ServicePrincipalsController {
   @Post(':id/credentials/:credentialId/revoke')
   @ApiOperation({ summary: '撤销凭证' })
   @RequiresPermission('service-principal.revoke.credential')
-  @ApiWrappedOkResponse(ServicePrincipalCredentialResponseDto)
+  @ApiWrappedCreatedResponse(ServicePrincipalCredentialResponseDto)
   @ApiBizErrorResponse(BizCode.SERVICE_PRINCIPAL_NOT_FOUND)
   @ApiBizErrorResponse(BizCode.SERVICE_CREDENTIAL_NOT_FOUND)
   @ApiBizErrorResponse(BizCode.SERVICE_CREDENTIAL_ALREADY_REVOKED)

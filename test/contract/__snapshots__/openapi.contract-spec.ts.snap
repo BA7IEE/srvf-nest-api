@@ -141531,7 +141531,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "operationId": "ServicePrincipalsController_revokeCredential",
       "parameters": [],
       "responses": {
-        "200": {
+        "201": {
           "content": {
             "application/json": {
               "schema": {
