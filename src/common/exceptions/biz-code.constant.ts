@@ -1790,6 +1790,15 @@ export const BizCode = {
     httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
   },
 
+  // 存量结算链 AC-047(P1-28 9a C 档):「活动未结束」的独立执行位 —— 提交侧补闸。
+  // 编号续 20xxx 活动段(20052-20061 提交族已满,顺延取 20160);语义归提交前置闸:
+  // 合同原文「活动未结束……只允许整理草稿,不能提交」。409 同族(当前状态不允许)。
+  SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED: {
+    code: 20160,
+    message: '活动尚未结束,只允许整理结算草稿,不能提交',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // ===== 归档动作的两套开工条件(§6.6 / AC-004 / AC-064;2026-08-25 拍板)=====
   //
   // 🔴 **两套条件各给一个具名码,不合并成一个 ACTIVITY_ARCHIVE_NOT_ELIGIBLE。**

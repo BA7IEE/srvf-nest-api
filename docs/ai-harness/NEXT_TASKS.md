@@ -360,7 +360,7 @@
 
 ### P1-28 活动业务全流程改造(批次 0–8) — **第 0–3 批 ✅ 全收口(2026-08-07;第 3 批五刀 [#952](https://github.com/BA7IEE/srvf-nest-api/pull/952)/[#953](https://github.com/BA7IEE/srvf-nest-api/pull/953)/[#954](https://github.com/BA7IEE/srvf-nest-api/pull/954)/[#955](https://github.com/BA7IEE/srvf-nest-api/pull/955)/[#956](https://github.com/BA7IEE/srvf-nest-api/pull/956));第 4 批前置微刀①✅(第 78 migration `20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`，[#959](https://github.com/BA7IEE/srvf-nest-api/pull/959))、②✅(第 79 migration Form 闭集/单会话单附件，[#960](https://github.com/BA7IEE/srvf-nest-api/pull/960))、③ Form runtime / 一次性附件会话([#961](https://github.com/BA7IEE/srvf-nest-api/pull/961))、④ canonical 报名命令主链([#962](https://github.com/BA7IEE/srvf-nest-api/pull/962))、⑤分配/预留名额 DB guards([#963](https://github.com/BA7IEE/srvf-nest-api/pull/963))、发布审核容量桶投影([#964](https://github.com/BA7IEE/srvf-nest-api/pull/964))、三层 CapacityReservation 内核([#965](https://github.com/BA7IEE/srvf-nest-api/pull/965) 已合 main)、⑨永久报名头 DB 地基与 onsite 历史头 fail-closed([#968](https://github.com/BA7IEE/srvf-nest-api/pull/968))、⑩永久头 runtime/个人取消闭环、⑯分配与邀请 C runtime、⑰资格配置/发布激活（managed RuleSet/Rule typed configuration、V5 审核冻结/activation）、⑱活动到点 expiry（既有 worker + PG reconciliation、无新 cron）；合同已修订至 v1.1.1,缺口台账累计 #28**
 
-**状态**:进行中(第 0–3 批已收口 #952 #956;第 4 批多刀已合 #959 #965 #968;第 6 批代码面收口宣告 + 第 7 批②账本桥交付 #1211 + D11 定案(均 2026-08-28);剩余:第 8 批与 9a 的 9 条 C 档能力缺口,合同缺口台账见正文)
+**状态**:进行中(第 0–3 批已收口 #952 #956;第 4 批多刀已合 #959 #965 #968;第 6 批代码面收口宣告 + 第 7 批②账本桥交付 #1211 + D11 定案(均 2026-08-28);剩余:第 8 批与 9a 的 8 条 C 档能力缺口(AC-047 已于 2026-08-28 补执行位结案,todo 9→8),合同缺口台账见正文)
 
 > **需求口径变更(2026-08-04)**:**= v1.1 四份 + [`AMENDMENTS-v1.1.1`](../archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md),冲突以后者为准。**
 > 第 1 批建表过程中实测撞到**五处合同内部不一致**,维护者当日**全部接受**并发布修订件。原件与 SHA256 一字未动(校验仍过)。
@@ -863,7 +863,7 @@ AC-009(计分规则全仓无按活动写接口,「无接口算不算满足」待
 AC-010(二维码 effect 是显式空桩、人员零变更、通知按活动广播、结算人口活动级、改期从未被测)·
 AC-013(责任模型仍是 2 值 + 2 布尔;两布尔全 false ⇒ **零 RoleBinding**,不是「只读」)·
 AC-017(三入口只存在 1 个:后台代报名被 `ACTIVITY_REGISTRATION_V11_FLOW_REQUIRED` **主动拒**、名单导入零端点)·
-AC-020 / AC-025 / AC-047(「活动未结束」无独立执行位,零 live 场次时窗口真空)· AC-064 · AC-066 ·
+AC-020 / AC-025(⚠️ AC-047 已于 2026-08-28 结案:提交侧补 20160 独立执行位 + 真空形态负例 + 草稿仍可整理的正向,red-first 卸闸 2 红;封场侧刻意不加闸)· AC-064 · AC-066 ·
 AC-067(⭐ 真约束是 **cron 终态恰 2 的决策锁**,加第三个要新 D 档)· ADV-010(新账本与入队进度读两张不相交的表)·
 ADV-018(实现层就是活动级广播,与「只影响该场次」相反)· ADV-022。
 

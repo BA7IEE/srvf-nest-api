@@ -229,6 +229,9 @@ const BATCH2_ACCEPTANCE_DESTINATIONS: Readonly<Record<string, readonly Acceptanc
 };
 
 const BATCH2_ACCEPTANCE_BLOCKERS: Readonly<Record<string, string>> = {
+  // AC-047:⚠️ 2026-08-28 起已由 TEST_GAP_2026_08_28_ACCEPTANCE_DESTINATIONS 接通
+  //   (提交侧补 20160 独立执行位 + 真空形态负例 + 「只允许整理草稿」正面一半,
+  //    red-first 卸闸 2 红 / 装回全绿),下面这段只作历史记录 —— 去向恒优先于卡点。
   // AC-047:2026-08-24 分拣刀订正 —— 「卡第 5 批」已过期(第 5 批 #1032 已合),
   //   而且那条并发链就在 `activity-batch5-punch-concurrency.e2e-spec.ts` 里(已绑给 ADV-001)。
   //   剩下的是一格**此前从没被写出来过**的真缺口:「活动未结束」没有独立执行位。
@@ -2276,6 +2279,24 @@ const ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS: Readonly<
  *   这条接缝是归档刀(2026-08-25)新造的,此前全仓零并发用例。
  *   四条都用两套 app / 两套 pool,并用 `pg_stat_activity` **正面数出锁等待者**。
  */
+const TEST_GAP_2026_08_28_ACCEPTANCE_DESTINATIONS: Readonly<
+  Record<string, readonly AcceptanceDestination[]>
+> = {
+  // AC-047「活动未结束……只允许整理草稿,不能提交」—— 2026-08-28 补上独立执行位
+  // (提交侧 20160,判定用应用时钟;封场侧刻意不加:零场次早封无害,提交侧闭住真空)。
+  // red-first 证据:卸闸(判定改恒 false)⇒ 本组两条负例当场红(2 failed),装回全绿。
+  'AC-047': [
+    {
+      file: 'test/e2e/activity-settlement-submit.e2e-spec.ts',
+      needle: 'endAt 在未来 + 零 live 场次(真空形态)⇒ SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED',
+    },
+    {
+      file: 'test/e2e/activity-settlement-submit.e2e-spec.ts',
+      needle: '被拒的同时草稿仍可重新整理(「只允许整理草稿」的正面一半,同夹具)',
+    },
+  ],
+};
+
 const TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS: Readonly<
   Record<string, readonly AcceptanceDestination[]>
 > = {
@@ -2524,6 +2545,7 @@ const ACCEPTANCE_DESTINATION_TABLES: ReadonlyArray<
   // 分拣表排在最前:它的结论优先于各批自己的历史卡点行(去向恒优先于卡点)。
   TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS,
   TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS,
+  TEST_GAP_2026_08_28_ACCEPTANCE_DESTINATIONS,
   ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS,
   ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS,
   BATCH7_CLOSEOUT_ACCEPTANCE_DESTINATIONS,
@@ -2695,6 +2717,7 @@ describe('活动业务改造 v1.1 合同完整性', () => {
     }> = [
       { name: 'TRIAGE_2026_08', table: TRIAGE_2026_08_ACCEPTANCE_DESTINATIONS },
       { name: 'TEST_GAP_2026_08_26', table: TEST_GAP_2026_08_26_ACCEPTANCE_DESTINATIONS },
+      { name: 'TEST_GAP_2026_08_28', table: TEST_GAP_2026_08_28_ACCEPTANCE_DESTINATIONS },
       { name: 'ARCHIVE_ACTION', table: ARCHIVE_ACTION_ACCEPTANCE_DESTINATIONS },
       { name: 'ADV018_SESSION_CANCEL', table: ADV018_SESSION_CANCEL_ACCEPTANCE_DESTINATIONS },
       { name: 'BATCH2', table: BATCH2_ACCEPTANCE_DESTINATIONS },

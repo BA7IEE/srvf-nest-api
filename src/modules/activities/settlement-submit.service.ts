@@ -162,6 +162,7 @@ export interface SettlementSubmitResult {
 interface LockedActivity {
   title: string;
   workflowRevision: number;
+  endAt: Date;
 }
 
 interface LockedRun {
@@ -207,7 +208,7 @@ export class SettlementSubmitService {
   // ===== ① Activity FOR UPDATE(§5.10 ①;锁序第一层)=====
   private async lockActivity(tx: PrismaTx, activityId: string): Promise<LockedActivity> {
     const rows = await tx.$queryRaw<Array<LockedActivity>>`
-      SELECT title, "workflowRevision"
+      SELECT title, "workflowRevision", "endAt"
       FROM "Activity"
       WHERE id = ${activityId} AND "deletedAt" IS NULL
       FOR UPDATE
@@ -671,6 +672,17 @@ export class SettlementSubmitService {
         const facts = await this.readSubmissionFacts(tx, activityId, draft.id);
         const rejection = validateSettlementSubmission(facts);
         if (rejection !== null) throw new BizException(REJECTION_TO_BIZ_CODE[rejection]);
+
+        // AC-047(合同「活动未结束……只允许整理草稿,不能提交」)的独立执行位,
+        // 刻意排在**全部既有拒绝之后**(状态闸 / 封印复验 / 版本锚点 / 五条校验):
+        // 新闸不得改变任何既有场景的裁决码(batch5 并发 spec 期望 20055 的场景实测
+        // 被前置位抢答过,CI 抓出后移到这里)。此前「窗口未关闭 / 无开放段」各有判据,
+        // 唯独「活动未结束」全链无闸 —— 零 live 场次时两道既有闸双双真空,活动结束前
+        // 即可整链提交。判定用**应用时钟**(clock-authority);重放路径不经过
+        // (幂等保护的是"上次提交过什么"的既成事实)。
+        if (new Date().getTime() < activity.endAt.getTime()) {
+          throw new BizException(BizCode.SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED);
+        }
 
         // ⑤ canonical contentHash。
         const contentHash = await this.computeContentHash(tx, {
