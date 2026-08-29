@@ -24,9 +24,24 @@ export function applySwagger(app: INestApplication, appCfg: AppConfig): void {
     )
     .setVersion('0.69.0')
     .addBearerAuth()
+    .addBasicAuth(
+      { type: 'http', scheme: 'basic', description: 'Integration Client Credentials' },
+      'integrationClientCredentials',
+    )
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: '短期 Service Token 或 Delegated Token；不支持 refresh',
+      },
+      'integrationBearer',
+    )
     // ===== Auth / Public(全部客户端共用)=====
     .addTag('Auth', '身份认证与会话管理(login / refresh / logout / logout-all)')
     .addTag('Public', '公开能力(健康检查;无需鉴权)')
+    // ===== Integration(外部系统；独立 JWT 信任域)=====
+    .addTag('Integration - Identity', '外部系统:当前 Service / Delegated 主体最小身份')
     // ===== Mobile(队员端 / 小程序 / App;当前登录人视角)=====
     // 注:'Mobile - Activities' 留到 Phase 2 新增 /api/app/v1/activities* 时再加入,
     //   Phase 1A 内**不**预声明无 endpoint 引用的空 tag(避免 Swagger UI 出现空分组)。

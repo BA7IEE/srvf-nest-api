@@ -32,7 +32,14 @@ export const SEED_FACTS_CLOSURE = Object.freeze([
 
 // 与 scripts/check-rbac-map.ts 同源(改一处须同步另一处;由 harness-guards.selftest 守护)
 const CODE_SHAPE = '[a-z][a-z-]*(?:\\.[a-z-]+)+';
-const CANONICAL_PREFIXES = ['admin/v1', 'app/v1', 'auth/v1', 'system/v1', 'open/v1'] as const;
+const CANONICAL_PREFIXES = [
+  'admin/v1',
+  'app/v1',
+  'auth/v1',
+  'system/v1',
+  'open/v1',
+  'integration/v1',
+] as const;
 
 function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -98,8 +105,11 @@ function renderPermissionCodes(codes: string[]): string {
     byDomain.set(domain, list);
   }
   const rows = [...byDomain.entries()]
-    .sort((a, b) => (b[1].length - a[1].length) || a[0].localeCompare(b[0]))
-    .map(([domain, list]) => `| \`${domain}\` | ${list.length} | ${list.map((c) => `\`${c}\``).join(' · ')} |`);
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+    .map(
+      ([domain, list]) =>
+        `| \`${domain}\` | ${list.length} | ${list.map((c) => `\`${c}\``).join(' · ')} |`,
+    );
   return [
     `### 权限码全集(${codes.length} 条,按一级域分组)`,
     '',
@@ -130,7 +140,9 @@ function collectRoles(): RoleCoverage[] {
     .flatMap((entry): RoleCoverage[] =>
       Array.isArray(entry) ? entry.map((role: RoleCoverage) => role) : [entry as RoleCoverage],
     )
-    .sort((a, b) => b.permissionCodes.length - a.permissionCodes.length || a.code.localeCompare(b.code));
+    .sort(
+      (a, b) => b.permissionCodes.length - a.permissionCodes.length || a.code.localeCompare(b.code),
+    );
 }
 
 function renderRoleCoverage(codes: string[], roles: RoleCoverage[]): string {

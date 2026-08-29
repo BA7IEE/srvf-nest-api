@@ -1,19 +1,17 @@
 /**
  * generate-fe-client.ts — 前端 TS client 生成器(架构治理 Phase 5 刀 5-3 / v4 Phase 5)
  *
- * 从 `docs/handoff/openapi.json` 按 surface 生成 **admin 与 app 两份** TypeScript
- * 类型 + 轻客户端,落 `docs/handoff/clients/{admin,app}/`。
+ * 从 `docs/handoff/openapi.json` 按 surface 生成 **admin / app / auth / system /
+ * open / integration 六份** TypeScript 类型 + 轻客户端，落 `docs/handoff/clients/`。
  *
  * ── 产物边界(刻意很窄,别顺手扩)────────────────────────────────────────────
  * 只出**类型与调用签名**。**不含任何鉴权逻辑、不含任何 secret / 令牌 / baseURL**:
  * 传输层由消费方注入一个 `Fetcher`,登录态怎么带、令牌怎么刷新,全在前端仓自己手里。
  * 生成器因此永远不需要知道任何凭证 —— 这不是"暂时没做",是产物的定义。
  *
- * ── 只生成 admin 与 app 两个 surface ────────────────────────────────────────
- * 现网 5 个 surface(admin 205 / app 94 / system 46 / auth 20 / open 16 paths)。
- * 本刀按 goal 只出 admin 与 app 两份。**auth/v1(登录/刷新)刻意不在内** ——
- * 它是全端通用的接线,handoff §3.1 已单独成节;要不要一并生成留给维护者拍板,
- * 不在这一刀替他决定。system / open 同理。此边界在收口报告与 handoff README 具名列出。
+ * ── 六个 surface 全覆盖 ──────────────────────────────────────────────────────
+ * 现网 6 个 surface(admin / app / system / auth / open / integration)各自生成，
+ * 跨 surface 共用类型集中到 shared，避免手写缺口与重复定义。
  *
  * ── inputDigest:确定性,禁时间戳 / git SHA(v4 §9 第 1 条)─────────────────
  * 产物头部带 `inputDigest = sha256(生成输入闭包)`。**不写时间戳、不写 git SHA**:
@@ -41,16 +39,21 @@ const GENERATOR_VERSION = '1.0.0';
 /**
  * surface 定义 —— 与 inputDigest 闭包同源,改这里必然翻转 digest。
  *
- * **五个 surface 全覆盖**(维护者 2026-08-13 拍板):部分生成 = 剩下那部分回到手写,
+ * **六个 surface 全覆盖**(2026-08-30 PR6 true-up):部分生成 = 剩下那部分回到手写,
  * 等于亲手制造第二份真相 —— 而消灭第二份真相正是 FE codegen 的立项理由。
  * `auth` 单独成份而不是往 admin/app 各塞一份:它两边都要调,复制就是两份各自演化的定义。
  */
-export const SURFACES: ReadonlyArray<{ readonly id: string; readonly prefix: string; readonly title: string }> = [
+export const SURFACES: ReadonlyArray<{
+  readonly id: string;
+  readonly prefix: string;
+  readonly title: string;
+}> = [
   { id: 'admin', prefix: '/api/admin/', title: 'Admin 管理后台' },
   { id: 'app', prefix: '/api/app/', title: 'App 小程序' },
   { id: 'auth', prefix: '/api/auth/', title: 'Auth 登录/令牌(admin 与 app 共用)' },
   { id: 'system', prefix: '/api/system/', title: 'System 系统面' },
   { id: 'open', prefix: '/api/open/', title: 'Open 无账号公开面' },
+  { id: 'integration', prefix: '/api/integration/', title: 'Integration 外部系统面' },
 ];
 
 /** 跨 surface 共用类型的落点 —— 同一个定义只出现一次。 */
@@ -92,7 +95,9 @@ export function tsType(schema: unknown, used: Set<string>, depth = 0): string {
     return name;
   }
   if (Array.isArray(node.allOf)) {
-    const parts = node.allOf.map((part) => tsType(part, used, depth + 1)).filter((t) => t !== 'unknown');
+    const parts = node.allOf
+      .map((part) => tsType(part, used, depth + 1))
+      .filter((t) => t !== 'unknown');
     const inline = node.properties ? objectLiteral(node, used, depth + 1) : null;
     const all = inline ? [...parts, inline] : parts;
     return all.length === 0 ? 'unknown' : all.join(' & ');
@@ -172,7 +177,9 @@ export function collectEndpoints(doc: AnyObject, prefix: string, used: Set<strin
     for (const method of METHODS) {
       const operation = item[method] as AnyObject | undefined;
       if (!operation) continue;
-      const params = Array.isArray(operation.parameters) ? (operation.parameters as AnyObject[]) : [];
+      const params = Array.isArray(operation.parameters)
+        ? (operation.parameters as AnyObject[])
+        : [];
       const body = (operation.requestBody ?? null) as AnyObject | null;
       const bodySchema = body
         ? ((((body.content ?? {}) as AnyObject)['application/json'] ?? {}) as AnyObject).schema
@@ -307,7 +314,7 @@ function renderShared(
     '  pageSize: number;',
     '}',
     '',
-    '/** 传输层由消费方注入 —— 生成器不产生任何网络与凭证代码。五个 surface 共用同一份定义。 */',
+    '/** 传输层由消费方注入 —— 生成器不产生任何网络与凭证代码。六个 surface 共用同一份定义。 */',
     'export interface FetchRequest {',
     '  method: string;',
     '  path: string;',
@@ -374,7 +381,7 @@ function renderClient(
     '//    (登录/刷新的三步接线见 docs/handoff/admin-web.md §3.1)。',
     '',
     // 类型全部来自 ./types(它自己再从 ../shared/types 引共用部分);
-    // FetchRequest / Fetcher 也在 shared —— 五个 surface 共用一份传输层契约,
+    // FetchRequest / Fetcher 也在 shared —— 六个 surface 共用一份传输层契约,
     // 否则每个 client 各带一份内容相同的定义,正是「两份相同却各自维护」的形状。
     `import type {\n  ApiEnvelope,\n  PageResult,\n  FetchRequest,\n  Fetcher,\n${schemaNames.map((n) => `  ${n},`).join('\n')}${schemaNames.length > 0 ? '\n' : ''}} from './types';`,
     '',
@@ -404,7 +411,9 @@ function renderClient(
     const pathExpr =
       endpoint.pathParams.length === 0
         ? JSON.stringify(endpoint.route)
-        : '`' + endpoint.route.replace(/\{([^}]+)\}/g, '${$1}').replace(/:([A-Za-z0-9_]+)/g, '${$1}') + '`';
+        : '`' +
+          endpoint.route.replace(/\{([^}]+)\}/g, '${$1}').replace(/:([A-Za-z0-9_]+)/g, '${$1}') +
+          '`';
 
     const call: string[] = [`method: ${JSON.stringify(endpoint.method)}`, `path: ${pathExpr}`];
     if (endpoint.queryParams.length > 0) call.push('query');
@@ -455,7 +464,7 @@ export function renderAll(contractText: string): Map<string, string> {
 
   const files = new Map<string, string>();
 
-  // 先把五个 surface 各自的 schema 闭包算出来,再据此**算出**共用集 ——
+  // 先把六个 surface 各自的 schema 闭包算出来,再据此**算出**共用集 ——
   // 共用集不硬编码:硬编码会随契约演进静默失准,而失准的样子正好是「又出现两份相同定义」。
   const perSurface = SURFACES.map((surface) => {
     const used = new Set<string>();
@@ -526,14 +535,18 @@ export function validateEmitted(files: ReadonlyMap<string, string>): string[] {
     useCaseSensitiveFileNames: () => true,
     getNewLine: () => '\n',
   };
-  const program = ts.createProgram(names, {
-    noEmit: true,
-    strict: true,
-    skipLibCheck: true,
-    target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-  }, host);
+  const program = ts.createProgram(
+    names,
+    {
+      noEmit: true,
+      strict: true,
+      skipLibCheck: true,
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+    },
+    host,
+  );
   return ts
     .getPreEmitDiagnostics(program)
     .filter((diagnostic) => diagnostic.file && sources.has(normalize(diagnostic.file.fileName)))
@@ -566,7 +579,10 @@ function main(): void {
   if (diagnostics.length > 0) {
     process.stderr.write(
       '[L6] 生成的 FE client 无法通过 TypeScript 诊断 —— 生成器产出了不合法的产物:\n' +
-        diagnostics.slice(0, 15).map((line) => '  · ' + line).join('\n') +
+        diagnostics
+          .slice(0, 15)
+          .map((line) => '  · ' + line)
+          .join('\n') +
         (diagnostics.length > 15 ? `\n  · …另有 ${diagnostics.length - 15} 条` : '') +
         '\n处置: 修 scripts/generate-fe-client.ts 的类型映射,不要手改产物。\n',
     );
@@ -610,7 +626,9 @@ if (require.main === module) {
     main();
   } catch (error) {
     process.stderr.write(
-      'generate-fe-client failed: ' + (error instanceof Error ? error.message : String(error)) + '\n',
+      'generate-fe-client failed: ' +
+        (error instanceof Error ? error.message : String(error)) +
+        '\n',
     );
     process.exit(1);
   }

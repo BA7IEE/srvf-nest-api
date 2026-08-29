@@ -17,10 +17,12 @@ import * as ts from 'typescript';
 import {
   AUTHZ_ASSERTION_PATTERNS,
   AUTHZ_VISIBILITY_PREDICATES,
+  ROUTE_PRINCIPAL_KINDS,
   isRouteAuthzEngine,
   normalizeRouteAuthzDeclaration,
   type RouteAuthzDeclarationFragment,
   type RouteAuthzEngine,
+  type RoutePrincipalKind,
 } from '../src/common/authz/authz-context';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -28,7 +30,7 @@ const RETIRED_CLASSIFICATION = 'harness/route-authz-classification.json';
 const ASSERTION_PATTERNS = 'harness/authz-assertion-patterns.json';
 const DOCUMENT = 'docs/ai-harness/ROUTE_AUTHZ.md';
 const SCHEMA_VERSION = '1.0.0';
-const GENERATOR_VERSION = '2.0.0';
+const GENERATOR_VERSION = '2.1.0';
 const HTTP_NAMES = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete']);
 const HTTP: Record<string, string> = {
   Get: 'GET',
@@ -71,9 +73,10 @@ interface Policy {
   require: 'all' | 'any';
   scopes: string[];
   engine: RouteAuthzEngine | null;
+  allowedPrincipalKinds?: RoutePrincipalKind[];
 }
 
-type Surface = 'admin' | 'app' | 'system' | 'auth' | 'open' | 'other';
+type Surface = 'admin' | 'app' | 'system' | 'auth' | 'open' | 'integration' | 'other';
 
 function assertionPatternsDocument(): string {
   return (
@@ -237,6 +240,22 @@ function routeAuthzOptions(
       // what decides whether a declaration is even readable.
       if (!isRouteAuthzEngine(engine)) throw new Error(label + '.engine is invalid');
       output.engine = engine;
+      continue;
+    }
+    if (key === 'allowedPrincipalKinds') {
+      if (!ts.isArrayLiteralExpression(property.initializer)) {
+        throw new Error(label + '.allowedPrincipalKinds must be an array literal');
+      }
+      output.allowedPrincipalKinds = property.initializer.elements.map((item) => {
+        if (!ts.isExpression(item)) {
+          throw new Error(label + '.allowedPrincipalKinds cannot contain spread');
+        }
+        const kind = literalString(item, label + '.allowedPrincipalKinds item');
+        if (!(ROUTE_PRINCIPAL_KINDS as readonly string[]).includes(kind)) {
+          throw new Error(label + '.allowedPrincipalKinds item is invalid');
+        }
+        return kind as RoutePrincipalKind;
+      });
       continue;
     }
     throw new Error(label + ' has unsupported option: ' + key);
@@ -573,6 +592,78 @@ function validateDeclarations(endpointList: Endpoint[]): void {
       'route authorization declaration missing:\n' + missing.map((key) => '- ' + key).join('\n'),
     );
   }
+
+  const invalidIntegrationPrincipals = endpointList
+    .filter((endpoint) => endpoint.path.startsWith('/api/integration/'))
+    .filter((endpoint) => {
+      const kinds = endpoint.codePolicy?.allowedPrincipalKinds;
+      return (
+        kinds === undefined ||
+        kinds.length === 0 ||
+        kinds.some((kind) => kind !== 'SERVICE' && kind !== 'DELEGATED')
+      );
+    })
+    .map((endpoint) => endpoint.key);
+  if (invalidIntegrationPrincipals.length > 0) {
+    throw new Error(
+      'integration route requires an explicit SERVICE/DELEGATED principal-kind declaration:\n' +
+        invalidIntegrationPrincipals.map((key) => '- ' + key).join('\n'),
+    );
+  }
+
+  const misplacedIntegrationBearer = endpointList
+    .filter((endpoint) =>
+      endpoint.codePolicy?.allowedPrincipalKinds?.some(
+        (kind) => kind === 'SERVICE' || kind === 'DELEGATED',
+      ),
+    )
+    .filter(
+      (endpoint) =>
+        !endpoint.path.startsWith('/api/integration/') &&
+        endpoint.key !== 'POST /api/auth/v1/delegated-token',
+    )
+    .map((endpoint) => endpoint.key);
+  if (misplacedIntegrationBearer.length > 0) {
+    throw new Error(
+      'SERVICE/DELEGATED principal kinds are reserved for the Integration surface ' +
+        'and delegated-token exchange:\n' +
+        misplacedIntegrationBearer.map((key) => '- ' + key).join('\n'),
+    );
+  }
+
+  const expectedTokenAdmissions = new Map<string, readonly RoutePrincipalKind[]>([
+    ['POST /api/auth/v1/service-token', ['CLIENT_CREDENTIALS']],
+    ['POST /api/auth/v1/delegated-token', ['SERVICE']],
+  ]);
+  const invalidTokenAdmissions = endpointList
+    .filter((endpoint) => expectedTokenAdmissions.has(endpoint.key))
+    .filter((endpoint) => {
+      const expected = expectedTokenAdmissions.get(endpoint.key) ?? [];
+      const actual = endpoint.codePolicy?.allowedPrincipalKinds ?? ['USER'];
+      return (
+        actual.length !== expected.length || actual.some((kind, index) => kind !== expected[index])
+      );
+    })
+    .map((endpoint) => endpoint.key);
+  if (invalidTokenAdmissions.length > 0) {
+    throw new Error(
+      'integration token route principal-kind declaration is invalid:\n' +
+        invalidTokenAdmissions.map((key) => '- ' + key).join('\n'),
+    );
+  }
+
+  const misplacedClientCredentials = endpointList
+    .filter((endpoint) =>
+      endpoint.codePolicy?.allowedPrincipalKinds?.includes('CLIENT_CREDENTIALS'),
+    )
+    .filter((endpoint) => endpoint.key !== 'POST /api/auth/v1/service-token')
+    .map((endpoint) => endpoint.key);
+  if (misplacedClientCredentials.length > 0) {
+    throw new Error(
+      'CLIENT_CREDENTIALS is reserved for POST /api/auth/v1/service-token:\n' +
+        misplacedClientCredentials.map((key) => '- ' + key).join('\n'),
+    );
+  }
 }
 
 function surfaceOf(endpoint: Endpoint): Surface {
@@ -581,6 +672,7 @@ function surfaceOf(endpoint: Endpoint): Surface {
   if (endpoint.path.startsWith('/api/system/')) return 'system';
   if (endpoint.path.startsWith('/api/auth/')) return 'auth';
   if (endpoint.path.startsWith('/api/open/')) return 'open';
+  if (endpoint.path.startsWith('/api/integration/')) return 'integration';
   return 'other';
 }
 
@@ -600,7 +692,10 @@ function label(policy: Policy): string {
     '; scopes=' +
     (policy.scopes.join(',') || '-') +
     '; engine=' +
-    (policy.engine ?? '-')
+    (policy.engine ?? '-') +
+    (policy.allowedPrincipalKinds === undefined
+      ? ''
+      : '; principals=' + policy.allowedPrincipalKinds.join(','))
   );
 }
 
@@ -654,11 +749,14 @@ function decisionRows(auth: Endpoint[]): string[] {
     );
   }
   for (const endpoint of auth.filter(
-    (item) => item.path.startsWith('/api/auth/') || item.path.startsWith('/api/system/'),
+    (item) =>
+      item.path.startsWith('/api/auth/') ||
+      item.path.startsWith('/api/system/') ||
+      item.path.startsWith('/api/integration/'),
   )) {
     const policy = declaredPolicy(endpoint);
     rows.push(
-      '| auth/system individual | ' +
+      '| auth/system/integration individual | ' +
         endpoint.method +
         ' ' +
         endpoint.path +
@@ -675,7 +773,7 @@ function decisionRows(auth: Endpoint[]): string[] {
 }
 
 function declarationCoverageRows(endpointList: Endpoint[]): string[] {
-  const surfaces: Surface[] = ['admin', 'app', 'system', 'auth', 'open', 'other'];
+  const surfaces: Surface[] = ['admin', 'app', 'system', 'auth', 'open', 'integration', 'other'];
   return surfaces.flatMap((surface) => {
     const routes = endpointList.filter((endpoint) => surfaceOf(endpoint) === surface);
     if (routes.length === 0) return [];

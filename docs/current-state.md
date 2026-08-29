@@ -19,11 +19,11 @@
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
 | 计数项 | 值 |
 |---|---|
-| 模块 | 41 |
-| Controller | 106 |
-| Endpoint | 568 |
+| 模块 | 43 |
+| Controller | 107 |
+| Endpoint | 569 |
 | Migration | 100 |
-| BizCode | 484 |
+| BizCode | 486 |
 | 权限码 | 246 |
 | AuditLogEvent | 156 |
 | 内建角色 | 15 |
