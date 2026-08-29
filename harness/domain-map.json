@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:83de94de6905d637727d443227dced7eff924f9e286c6fa63deac5e5bcb2eee1",
+  "inputDigest": "sha256:a1af9c974280a30bfa241798e6818f09541ddb655aa3e4cf5912666412e6a020",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -119,7 +119,8 @@
       "confirmed": true,
       "modules": [
         "service-principals",
-        "integration-auth"
+        "integration-auth",
+        "integration-authz"
       ]
     }
   },
@@ -293,6 +294,10 @@
       "confirmed": true
     },
     "integration-auth": {
+      "domain": "integration-foundation",
+      "confirmed": true
+    },
+    "integration-authz": {
       "domain": "integration-foundation",
       "confirmed": true
     }
@@ -1196,6 +1201,13 @@
       "from": "integration-foundation",
       "to": "platform-core",
       "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "integration-foundation",
+      "to": "platform-access",
+      "kind": "declared-business",
       "confirmed": true,
       "decisionId": "allowedEdges"
     }
@@ -2235,6 +2247,78 @@
       "accessPath": "Member",
       "observedBy": "IF v1 PR2(2026-08-28):attachExpansions 批量装载 Member 展开投影(memberNo/realName/nickname;分组批量一次取)",
       "reviewTrigger": "展开投影字段扩面时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "integration-authz",
+      "targetDomain": "platform-access",
+      "prismaModel": "RoleBinding",
+      "operation": "findMany",
+      "sourceFile": "src/modules/integration-authz/direct-principal-authz.service.ts",
+      "sourceSymbol": "DirectPrincipalAuthzService.explainDirect",
+      "accessPath": "RoleBinding",
+      "observedBy": "IF v1 PR4(2026-08-28):DirectPrincipalAuthz 读 SP direct binding(任期/状态过滤;资格门运行时执法)",
+      "reviewTrigger": "RoleBinding 核字段或绑定语义变化时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "integration-authz",
+      "targetDomain": "platform-access",
+      "prismaModel": "RbacRole",
+      "operation": "findMany",
+      "sourceFile": "src/modules/integration-authz/direct-principal-authz.service.ts",
+      "sourceSymbol": "DirectPrincipalAuthzService.explainDirect",
+      "accessPath": "RoleBinding.select.role",
+      "observedBy": "IF v1 PR4(2026-08-28):nested select 读 RbacRole(direct binding → role → permission 链;资格门运行时执法)",
+      "reviewTrigger": "RoleBinding/Role/Permission 核字段变化时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "integration-authz",
+      "targetDomain": "platform-access",
+      "prismaModel": "Permission",
+      "operation": "findMany",
+      "sourceFile": "src/modules/integration-authz/direct-principal-authz.service.ts",
+      "sourceSymbol": "DirectPrincipalAuthzService.explainDirect",
+      "accessPath": "RoleBinding.select.role.select.rolePermissions.select.permission",
+      "observedBy": "IF v1 PR4(2026-08-28):nested select 读 Permission(direct binding → role → permission 链;资格门运行时执法)",
+      "reviewTrigger": "RoleBinding/Role/Permission 核字段变化时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "integration-authz",
+      "targetDomain": "identity-org",
+      "prismaModel": "OrganizationClosure",
+      "operation": "findFirst",
+      "sourceFile": "src/modules/integration-authz/integration-authz.module.ts",
+      "sourceSymbol": "<module>",
+      "accessPath": "OrganizationClosure",
+      "observedBy": "IF v1 PR4(2026-08-28):nested select 读 OrganizationClosure(direct binding → role → permission 链;资格门运行时执法)",
+      "reviewTrigger": "RoleBinding/Role/Permission 核字段变化时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "integration-authz",
+      "targetDomain": "platform-access",
+      "prismaModel": "RolePermission",
+      "operation": "findMany",
+      "sourceFile": "src/modules/integration-authz/direct-principal-authz.service.ts",
+      "sourceSymbol": "DirectPrincipalAuthzService.explainDirect",
+      "accessPath": "RolePermission",
+      "observedBy": "IF v1 PR4(2026-08-28):权限链单独查(资格门运行时执法;nested select 拆为顶层)",
+      "reviewTrigger": "RolePermission/Permission 核字段变化时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "integration-authz",
+      "targetDomain": "platform-access",
+      "prismaModel": "Permission",
+      "operation": "findMany",
+      "sourceFile": "src/modules/integration-authz/direct-principal-authz.service.ts",
+      "sourceSymbol": "DirectPrincipalAuthzService.explainDirect",
+      "accessPath": "RolePermission.select.permission",
+      "observedBy": "IF v1 PR4(2026-08-28):权限链单独查(资格门运行时执法;nested select 拆为顶层)",
+      "reviewTrigger": "RolePermission/Permission 核字段变化时复核"
     }
   ],
   "decisionsPending": []

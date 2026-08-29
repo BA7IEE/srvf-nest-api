@@ -19,7 +19,7 @@
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
 | 计数项 | 值 |
 |---|---|
-| 模块 | 39 |
+| 模块 | 40 |
 | Controller | 104 |
 | Endpoint | 563 |
 | Migration | 100 |
