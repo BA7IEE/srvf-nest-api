@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:f0ba6e3e1df91be6008c916a96a31c79478417770258d2f08a81bc1039063ce7 |
+| inputDigest | sha256:ec1ad4e978f684fe0677b01c1aab8bcb0f1e78c8f2a6ecdd506b053312a04e2e |
 | endpoint count | 563 |
 | legacy [auth] count | 171 |
 | source of truth | normalized controller declarations |
@@ -39,8 +39,8 @@
 
 | marker | count |
 |---|---:|
-| public | 33 |
-| rbac | 359 |
+| public | 34 |
+| rbac | 358 |
 | auth | 171 |
 | unclassified | 0 |
 
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:f0ba6e3e1df91be6008c916a96a31c79478417770258d2f08a81bc1039063ce7",
+  "inputDigest": "sha256:ec1ad4e978f684fe0677b01c1aab8bcb0f1e78c8f2a6ecdd506b053312a04e2e",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -9265,7 +9265,7 @@
       "routeKey": "POST /api/auth/v1/service-token",
       "controller": "ServiceTokenController",
       "handler": "issue",
-      "legacy": "rbac",
+      "legacy": "public",
       "policy": {
         "admission": null,
         "mode": "PUBLIC",
@@ -10259,7 +10259,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**225 条码有端点;其中 75 条守多于一个端点。**
+> 每条权限码守着哪些端点。**224 条码有端点;其中 75 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -10435,7 +10435,6 @@
 | `position.create.definition` | 1 | POST /api/admin/v1/positions |
 | `position.delete.definition` | 1 | DELETE /api/admin/v1/positions/:id |
 | `position.update.definition` | 1 | PATCH /api/admin/v1/positions/:id |
-| `public-client-credentials` | 1 | POST /api/auth/v1/service-token |
 | `rbac.config.reload` | 1 | POST /api/system/v1/rbac/reload |
 | `rbac.permission.create` | 1 | POST /api/system/v1/permissions |
 | `rbac.permission.delete` | 1 | DELETE /api/system/v1/permissions/:id |
@@ -11005,7 +11004,7 @@
 | POST | /api/auth/v1/password-reset | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:311; src/modules/auth/auth.controller.ts:326 |
 | POST | /api/auth/v1/password-reset/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:283; src/modules/auth/auth.controller.ts:303 |
 | POST | /api/auth/v1/refresh | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:108; src/modules/auth/auth.controller.ts:123 |
-| POST | /api/auth/v1/service-token | auth/service-token | rbac | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/integration-auth/service-token.controller.ts:36; src/modules/integration-auth/service-token.controller.ts:66 |
+| POST | /api/auth/v1/service-token | auth/service-token | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/integration-auth/service-token.controller.ts:36; src/modules/integration-auth/service-token.controller.ts:65 |
 | POST | /api/auth/v1/step-up/password | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
 | POST | /api/auth/v1/step-up/sms | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
 | POST | /api/auth/v1/step-up/sms/send-code | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |
