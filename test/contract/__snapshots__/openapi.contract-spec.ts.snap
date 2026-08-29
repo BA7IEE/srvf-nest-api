@@ -124686,7 +124686,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "description": "Integration API 未启用(code=37030)",
         },
       },
-      "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [rbac: public-client-credentials]",
+      "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [public]",
       "tags": [
         "auth/service-token",
       ],

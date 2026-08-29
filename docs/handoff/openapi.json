@@ -99539,7 +99539,7 @@
             }
           }
         },
-        "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [rbac: public-client-credentials]",
+        "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [public]",
         "tags": [
           "auth/service-token"
         ]

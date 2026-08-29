@@ -38,7 +38,7 @@ export class ServiceTokenController {
   @ServiceTokenThrottle()
   @ApiOperation({
     summary:
-      'Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [rbac: public-client-credentials]',
+      'Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [public]',
   })
   @ApiWrappedCreatedResponse(Object)
   @ApiBizErrorResponse(BizCode.SERVICE_CREDENTIAL_INVALID)
