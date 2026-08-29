@@ -18,6 +18,10 @@ import {
   LOGIN_WECOM_THROTTLER_NAME,
 } from '../decorators/login-wecom-throttle.decorator';
 import {
+  SERVICE_TOKEN_THROTTLE_KEY,
+  SERVICE_TOKEN_THROTTLER_NAME,
+} from '../decorators/service-token-throttle.decorator';
+import {
   RECRUITMENT_THROTTLE_KEY,
   RECRUITMENT_THROTTLER_NAME,
 } from '../decorators/recruitment-throttle.decorator';
@@ -129,6 +133,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       LOGIN_WECOM_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const serviceTokenEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      SERVICE_TOKEN_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     // 未标任何一种 metadata 时全部跳过;任一 metadata 命中即进入限流逻辑,
     // 由 handleRequest 按 throttler.name 决定具体走哪个 throttler。
     return Promise.resolve(
@@ -141,6 +149,7 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
         passwordResetEnabled === true ||
         loginSmsEnabled === true ||
         loginWechatEnabled === true ||
+        serviceTokenEnabled === true ||
         recruitmentEnabled === true ||
         contentPublicEnabled === true ||
         loginWecomEnabled === true
@@ -197,6 +206,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
       LOGIN_WECOM_THROTTLE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const serviceTokenEnabled = this.reflector.getAllAndOverride<boolean | undefined>(
+      SERVICE_TOKEN_THROTTLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     // throttler `default` 仅服务 LoginThrottle;否则直接放过
     if (throttler.name === 'default' && loginEnabled !== true) {
@@ -242,6 +255,10 @@ export class ThrottlerBizGuard extends ThrottlerGuard {
     // ⚠️ 缺了这一条,`login-wecom` 实例会对**所有已挂其他限流装饰器的端点**多计一道数 ——
     // 那是真实行为变更(T2 因此刻意把注册与本分派一起推到 T3,不拆开落)。
     if (throttler.name === LOGIN_WECOM_THROTTLER_NAME && loginWecomEnabled !== true) {
+      return Promise.resolve(true);
+    }
+    // throttler `service-token` 仅服务 ServiceTokenThrottle(auth/v1/service-token;IF PR3)。
+    if (throttler.name === SERVICE_TOKEN_THROTTLER_NAME && serviceTokenEnabled !== true) {
       return Promise.resolve(true);
     }
 

@@ -59,6 +59,8 @@ function fakeConfig(trustedProxyCidrs: string[]): AppConfig {
     recruitmentThrottle: { limit: 10, ttlSeconds: 3600 },
     recruitmentOcr: { dailyIpLimit: 30 },
     contentPublicThrottle: { limit: 60, ttlSeconds: 60 },
+
+    serviceTokenThrottle: { limit: 10, ttlSeconds: 60 },
   };
 }
 

@@ -2,7 +2,7 @@
 // surface: Auth 登录/令牌(admin 与 app 共用)
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:97f62261ea00cbe38e101371ba40c787dfaa40a523e289a00aaca51ceb9573b2
+// inputDigest: sha256:2bd9add2490ae165ddd9fdd8ee3c8a7ac6d0bbf72a43a5fd0660ba6cc2646b9c
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -20,6 +20,7 @@ import type {
   LoginWecomDto,
   LogoutAllResponseDto,
   LogoutDto,
+  Object,
   RefreshTokenDto,
   ResetPasswordBySmsDto,
   SendLoginSmsCodeDto,
@@ -88,6 +89,10 @@ export function createAuthClient(fetcher: Fetcher) {
     /** refresh access token(rotation always;family revoke;absolute expiration;返回新 access + 新 refresh) [public] */
     AuthControllerRefresh(body: RefreshTokenDto): Promise<ApiEnvelope<LoginResponseDto>> {
       return fetcher<LoginResponseDto>({ method: "POST", path: "/api/auth/v1/refresh", body });
+    },
+    /** Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [rbac: public-client-credentials] */
+    ServiceTokenControllerIssue(): Promise<ApiEnvelope<Object>> {
+      return fetcher<Object>({ method: "POST", path: "/api/auth/v1/service-token" });
     },
     /** 使用当前密码签发 5 分钟身份绑定 step-up proof [auth] */
     AuthControllerStepUpWithPassword(body: StepUpPasswordDto): Promise<ApiEnvelope<StepUpResponseDto>> {

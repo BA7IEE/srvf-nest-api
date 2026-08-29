@@ -837,6 +837,11 @@
       "surface": "sha256:79987cba794b66f9baebedb52af584ffd18663b0d63b01feee47dad718ef754e",
       "description": "sha256:db380d60ef428310b9b33c83bdcf8c6138fa8cd1c98816295bfd587e5ebb951f"
     },
+    "public-client-credentials": {
+      "endpoints": 1,
+      "surface": "sha256:5133e546f25aee002a1b62df78d85aadcf3ec04a6edc6853548bc6d83fa8bd96",
+      "description": null
+    },
     "rbac.config.reload": {
       "endpoints": 1,
       "surface": "sha256:d81ba544c06cbd559c64dbaff9f63b469e49a2c885c24b1bb82c65a8e96a7007",

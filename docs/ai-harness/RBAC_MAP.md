@@ -109,7 +109,7 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(103 个 @Controller)
+### controller × surface 对照(104 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
@@ -203,11 +203,12 @@
 | `app/v1/my/managed-activities/:activityId/registrations` | `src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts` |
 | `app/v1/notifications` | `src/modules/notifications/notification-app.controller.ts` |
 
-#### auth/v1(1 个 controller)
+#### auth/v1(2 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
 | `auth/v1` | `src/modules/auth/auth.controller.ts` |
+| `auth/v1/service-token` | `src/modules/integration-auth/service-token.controller.ts` |
 
 #### open/v1(2 个 controller)
 

@@ -49,6 +49,14 @@ const LOG_REDACT_PATHS: readonly string[] = [
   'req.socket.remotePort',
   'req.connection.remoteAddress',
   'req.connection.remotePort',
+  // Integration Foundation v1 PR3(规格书 §12.6/§26 逐条枚举;pino 只支持精确路径,
+  // 故六个实际字段名全列,不做 *.secretHash 一类通配 —— 那会误伤非敏感同名)。
+  'clientSecret',
+  'secretHash',
+  'rawSecret',
+  'serviceToken',
+  'delegatedToken',
+  'credentialSecret',
   // 请求 body 中的敏感字段(若将来配置打 body,这里兜底屏蔽)
   'req.body.password',
   'req.body.oldPassword',
