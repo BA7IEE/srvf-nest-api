@@ -1057,6 +1057,15 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/meta/dashboard-summary'],
   // 审计刀 5 F5：两项读码可见组织范围求交，按 Activity.startAt UTC 月份聚合。
   ['get', '/api/admin/v1/meta/participation-overview'],
+  // Integration Foundation v1 PR2(2026-08-28;规格书 §35):ServicePrincipal 控制面 8 端点。
+  ['post', '/api/system/v1/service-principals'],
+  ['get', '/api/system/v1/service-principals'],
+  ['get', '/api/system/v1/service-principals/{id}'],
+  ['patch', '/api/system/v1/service-principals/{id}'],
+  ['patch', '/api/system/v1/service-principals/{id}/status'],
+  ['post', '/api/system/v1/service-principals/{id}/credentials'],
+  ['get', '/api/system/v1/service-principals/{id}/credentials'],
+  ['post', '/api/system/v1/service-principals/{id}/credentials/{credentialId}/revoke'],
 ];
 
 /**
@@ -1065,7 +1074,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 554;
+const EXPECTED_ROUTE_COUNT = 562; // 2026-08-28 IF PR2 +8(service-principals system/v1)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

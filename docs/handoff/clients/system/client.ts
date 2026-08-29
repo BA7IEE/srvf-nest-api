@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:66cf11e972095320c8e2f06b723481f8df6c2b740161a2d32062a7e73359fa43
+// inputDigest: sha256:97f62261ea00cbe38e101371ba40c787dfaa40a523e289a00aaca51ceb9573b2
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -30,6 +30,7 @@ import type {
   CreateDictTypeDto,
   CreatePermissionDto,
   CreateRbacRoleDto,
+  CreateServicePrincipalDto,
   DictItemResponseDto,
   DictItemTreeNodeDto,
   DictTypeResponseDto,
@@ -67,6 +68,9 @@ import type {
   RolePermissionSetEditPolicyDto,
   RolePermissionSetResponseDto,
   RolePermissionSetRoleDto,
+  ServicePrincipalCredentialCreatedDto,
+  ServicePrincipalCredentialResponseDto,
+  ServicePrincipalResponseDto,
   SmsSendLogResponseDto,
   SmsSettingsResponseDto,
   StorageSettingsResponseDto,
@@ -83,6 +87,8 @@ import type {
   UpdatePermissionDto,
   UpdateRbacRoleDto,
   UpdateRealnameSettingsDto,
+  UpdateServicePrincipalDto,
+  UpdateServicePrincipalStatusDto,
   UpdateSmsSettingsDto,
   UpdateStorageSettingsDto,
   UpdateWechatSettingsDto,
@@ -337,6 +343,38 @@ export function createSystemClient(fetcher: Fetcher) {
     /** 预览整集替换的后果(dry-run:与 PUT 同参、同一段准入判定、同一把角色行锁,**零写入**;返回 valid / blockingIssues〔恒 0 或 1 条,不是全量诊断〕/ outcome〔noOp、currentRevision、nextRevision 预测值、added·removed 带中文名与风险等级、unchangedCount、resultCodes、requiresStepUp、impact〕;impact 给 direct/position/supervision 三源的**授予数**(⚠️ 不是人数;受影响账号数本期不出,那要跨域取数)与 direct 源的 scope·主体分布,并带 EXACT/PARTIAL 标注〔今天恒 EXACT:全部 count/groupBy 读数,不存在截断〕;被拦下时 valid=false 且拒绝码与 PUT 抛出的**同一个**,走 200 数据不走 HTTP 错误 —— **高风险变更不带 stepUpToken 时这里就是 valid=false + 30112**,拿到它去 /auth/v1/step-up/* 换 proof 再重新预览;预览不是授权证明,真提交仍在锁内重算并可返 30111;**同时**需要 rbac.role-permission.create 与 rbac.role-permission.delete 两条码,与 PUT 逐字相同) [rbac: rbac.role-permission.*] */
     RolePermissionsControllerPreviewReplace(id: string, body: ReplaceRolePermissionsDto): Promise<ApiEnvelope<RolePermissionPreviewResponseDto>> {
       return fetcher<RolePermissionPreviewResponseDto>({ method: "POST", path: `/api/system/v1/roles/${id}/permissions/preview`, body });
+    },
+    /** 服务主体分页列表 [rbac: service-principal.read.record] */
+    ServicePrincipalsControllerList(query?: { "page"?: number; "pageSize"?: number; "status"?: "ACTIVE" | "SUSPENDED" }): Promise<ApiEnvelope<PageResultDto & { "items": ServicePrincipalResponseDto[] }>> {
+      return fetcher<PageResultDto & { "items": ServicePrincipalResponseDto[] }>({ method: "GET", path: "/api/system/v1/service-principals", query });
+    },
+    /** 创建服务主体(服务端生成 clientId) [rbac: service-principal.create.record] */
+    ServicePrincipalsControllerCreate(body: CreateServicePrincipalDto): Promise<ApiEnvelope<ServicePrincipalResponseDto>> {
+      return fetcher<ServicePrincipalResponseDto>({ method: "POST", path: "/api/system/v1/service-principals", body });
+    },
+    /** 服务主体详情(不存在 / 已软删统一返 37001) [rbac: service-principal.read.record] */
+    ServicePrincipalsControllerFindById(id: string): Promise<ApiEnvelope<ServicePrincipalResponseDto>> {
+      return fetcher<ServicePrincipalResponseDto>({ method: "GET", path: `/api/system/v1/service-principals/${id}` });
+    },
+    /** 修改服务主体名称/描述/属主组织 [rbac: service-principal.update.record] */
+    ServicePrincipalsControllerUpdate(id: string, body: UpdateServicePrincipalDto): Promise<ApiEnvelope<ServicePrincipalResponseDto>> {
+      return fetcher<ServicePrincipalResponseDto>({ method: "PATCH", path: `/api/system/v1/service-principals/${id}`, body });
+    },
+    /** 凭证元数据列表(永不返回 hash / 原始 Secret) [rbac: service-principal.read.record] */
+    ServicePrincipalsControllerListCredentials(id: string): Promise<ApiEnvelope<ServicePrincipalCredentialResponseDto>> {
+      return fetcher<ServicePrincipalCredentialResponseDto>({ method: "GET", path: `/api/system/v1/service-principals/${id}/credentials` });
+    },
+    /** 为服务主体新建凭证(原始 Secret 只在本次响应出现一次) [rbac: service-principal.create.credential] */
+    ServicePrincipalsControllerCreateCredential(id: string): Promise<ApiEnvelope<ServicePrincipalCredentialCreatedDto>> {
+      return fetcher<ServicePrincipalCredentialCreatedDto>({ method: "POST", path: `/api/system/v1/service-principals/${id}/credentials` });
+    },
+    /** 撤销凭证(撤销后以其换的 Token 下一请求即失效) [rbac: service-principal.revoke.credential] */
+    ServicePrincipalsControllerRevokeCredential(): Promise<ApiEnvelope<ServicePrincipalCredentialResponseDto>> {
+      return fetcher<ServicePrincipalCredentialResponseDto>({ method: "POST", path: "/api/system/v1/service-principals/{id}/credentials/{credentialId}/revoke" });
+    },
+    /** 启用/停用服务主体(停用即止血开关) [rbac: service-principal.update.status] */
+    ServicePrincipalsControllerUpdateStatus(id: string, body: UpdateServicePrincipalStatusDto): Promise<ApiEnvelope<ServicePrincipalResponseDto>> {
+      return fetcher<ServicePrincipalResponseDto>({ method: "PATCH", path: `/api/system/v1/service-principals/${id}/status`, body });
     },
     /** 分页查询短信发送日志(只读;响应手机号一律掩码 138****1234;可选 status / phone 精确过滤) [rbac: sms-send-log.read.list] */
     SmsSendLogsControllerList(query?: { "page"?: number; "pageSize"?: number; "status"?: "SENT" | "FAILED"; "phone"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": SmsSendLogResponseDto[] }>> {

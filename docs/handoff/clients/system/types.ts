@@ -3,7 +3,7 @@
 // surface: System 系统面
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:66cf11e972095320c8e2f06b723481f8df6c2b740161a2d32062a7e73359fa43
+// inputDigest: sha256:97f62261ea00cbe38e101371ba40c787dfaa40a523e289a00aaca51ceb9573b2
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto } from '../shared/types';
@@ -153,6 +153,12 @@ export interface CreateRbacRoleDto {
   "code": string;
   "displayName": string;
   "description"?: string;
+}
+
+export interface CreateServicePrincipalDto {
+  "name": string;
+  "description"?: string;
+  "ownerOrganizationId"?: string;
 }
 
 export interface DictItemResponseDto {
@@ -429,6 +435,31 @@ export interface RolePermissionSetRoleDto {
   "bindingManagementMode": "SYSTEM_ONLY" | "MANUAL_ALLOWED" | "POLICY_DERIVED";
 }
 
+export interface ServicePrincipalCredentialCreatedDto {
+  "id": string;
+  "createdAt": string;
+  "clientSecret": string;
+}
+
+export interface ServicePrincipalCredentialResponseDto {
+  "id": string;
+  "createdAt": string;
+  "expiresAt": Record<string, unknown> | null;
+  "revokedAt": Record<string, unknown> | null;
+  "lastUsedAt": Record<string, unknown> | null;
+}
+
+export interface ServicePrincipalResponseDto {
+  "id": string;
+  "clientId": string;
+  "name": string;
+  "description": Record<string, unknown> | null;
+  "status": "ACTIVE" | "SUSPENDED";
+  "ownerOrganizationId": Record<string, unknown> | null;
+  "createdAt": string;
+  "updatedAt": string;
+}
+
 export interface SmsSendLogResponseDto {
   "id": string;
   "phone": string;
@@ -547,6 +578,16 @@ export interface UpdateRealnameSettingsDto {
   "enabled"?: boolean;
   "region"?: string;
   "remarks"?: string;
+}
+
+export interface UpdateServicePrincipalDto {
+  "name"?: string;
+  "description"?: string;
+  "ownerOrganizationId"?: string;
+}
+
+export interface UpdateServicePrincipalStatusDto {
+  "status": "ACTIVE" | "SUSPENDED";
 }
 
 export interface UpdateSmsSettingsDto {

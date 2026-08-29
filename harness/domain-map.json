@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:87a7e34bdbdd940f933cabb7c166d8552e6c60d490911221982fb5e0f2bd3b18",
+  "inputDigest": "sha256:d8dc92aaf9db8a3f07314b8565c2bb7b9bf4eedb1d33844e6e13706c716039b3",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -118,7 +118,7 @@
     "integration-foundation": {
       "confirmed": true,
       "modules": [
-        "integration-foundation"
+        "service-principals"
       ]
     }
   },
@@ -287,7 +287,7 @@
       "domain": "content",
       "confirmed": true
     },
-    "integration-foundation": {
+    "service-principals": {
       "domain": "integration-foundation",
       "confirmed": true
     }
@@ -954,31 +954,31 @@
     },
     "ServicePrincipal": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "principal",
       "confirmed": true
     },
     "ServicePrincipalCredential": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "credential",
       "confirmed": true
     },
     "DelegationGrant": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "delegation",
       "confirmed": true
     },
     "DelegationGrantPermission": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "delegation",
       "confirmed": true
     },
     "IntegrationCommandReceipt": {
       "domain": "integration-foundation",
-      "ownerModule": "integration-foundation",
+      "ownerModule": "service-principals",
       "subdomain": "receipt",
       "confirmed": true
     }
@@ -1176,6 +1176,20 @@
     {
       "from": "platform-core",
       "to": "platform-access",
+      "kind": "public-surface",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "integration-foundation",
+      "to": "identity-org",
+      "kind": "declared-business",
+      "confirmed": true,
+      "decisionId": "allowedEdges"
+    },
+    {
+      "from": "integration-foundation",
+      "to": "platform-core",
       "kind": "public-surface",
       "confirmed": true,
       "decisionId": "allowedEdges"
@@ -2168,6 +2182,54 @@
       "accessPath": "WecomIdentity",
       "observedBy": "Phase 2 docs:boundaries R5/R6 实测",
       "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"
+    },
+    {
+      "sourceDomain": "platform-access",
+      "sourceModule": "role-bindings",
+      "targetDomain": "integration-foundation",
+      "prismaModel": "ServicePrincipal",
+      "operation": "findFirst",
+      "sourceFile": "src/modules/role-bindings/role-bindings.service.ts",
+      "sourceSymbol": "RoleBindingsService.validatePrincipalOrThrow",
+      "accessPath": "ServicePrincipal",
+      "observedBy": "IF v1 PR2(2026-08-28):RoleBinding SP 主体存在性验证(id+deletedAt 核读)",
+      "reviewTrigger": "SP 校验语义或核字段变化时复核"
+    },
+    {
+      "sourceDomain": "platform-access",
+      "sourceModule": "role-bindings",
+      "targetDomain": "integration-foundation",
+      "prismaModel": "ServicePrincipal",
+      "operation": "findMany",
+      "sourceFile": "src/modules/role-bindings/role-binding-query.service.ts",
+      "sourceSymbol": "RoleBindingQueryService.attachExpansions",
+      "accessPath": "ServicePrincipal",
+      "observedBy": "IF v1 PR2(2026-08-28):绑定展开读面回显 clientId+name(最小投影)",
+      "reviewTrigger": "展开投影字段扩面时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "service-principals",
+      "targetDomain": "identity-org",
+      "prismaModel": "Organization",
+      "operation": "findUnique",
+      "sourceFile": "src/modules/service-principals/service-principals.service.ts",
+      "sourceSymbol": "ServicePrincipalsService.assertOrganizationExists",
+      "accessPath": "Organization",
+      "observedBy": "IF v1 PR2(2026-08-28):ownerOrganizationId 存在性校验(主键+deletedAt)",
+      "reviewTrigger": "组织核字段变化时复核"
+    },
+    {
+      "sourceDomain": "platform-access",
+      "sourceModule": "role-bindings",
+      "targetDomain": "identity-org",
+      "prismaModel": "Member",
+      "operation": "findMany",
+      "sourceFile": "src/modules/role-bindings/role-binding-query.service.ts",
+      "sourceSymbol": "RoleBindingQueryService.attachExpansions",
+      "accessPath": "Member",
+      "observedBy": "IF v1 PR2(2026-08-28):attachExpansions 批量装载 Member 展开投影(memberNo/realName/nickname;分组批量一次取)",
+      "reviewTrigger": "展开投影字段扩面时复核"
     }
   ],
   "decisionsPending": []

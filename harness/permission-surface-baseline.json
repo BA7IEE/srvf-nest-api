@@ -1007,6 +1007,36 @@
       "surface": "sha256:6eaaafdffe4c0f6878c67b13bff4b3026c7377dae55d4a7c93697f4cd4864f6d",
       "description": "sha256:35619bf966900ece51400840a8bcbb84328f28e2c003dc2d84e19673f14188ba"
     },
+    "service-principal.create.credential": {
+      "endpoints": 1,
+      "surface": "sha256:f2413fdcc5bcc01ecebb7fe1b563e8b5d427ea3d7fec7c17f05731bd199e4ae1",
+      "description": "sha256:4917042eb5c9020ca574c2a09342762b4d45415252e9444ff4fd883a52d27185"
+    },
+    "service-principal.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:abe19b9c2c95ef46e4a75f5379283420c9fe0e7c194e204f9330a3476a2528f1",
+      "description": "sha256:822c7de5a182a022f8782707219242b09841699852124c095043caa50d98aee3"
+    },
+    "service-principal.read.record": {
+      "endpoints": 3,
+      "surface": "sha256:3f41ede32802f7bc0e045658dbb7c794e4133984fee988df3d88904fc44038ce",
+      "description": "sha256:793a251071fc0f33ab8772e7681e60665e5dc739ddc8acaed6f1cc58dcc89d45"
+    },
+    "service-principal.revoke.credential": {
+      "endpoints": 1,
+      "surface": "sha256:b8b7325ed5c6743ad5806411f1e67c7e9108469a126db86876430849a12ddc72",
+      "description": "sha256:16cc79a8d48f5b5f32cd91386bbe22be6b7be201056b871473d6e0bb43b630c8"
+    },
+    "service-principal.update.record": {
+      "endpoints": 1,
+      "surface": "sha256:64aea1b736a3b4ed7cc4cec95a4ef15df9aadd0472db4166c04ba52e88cac999",
+      "description": "sha256:7580f4821fc0f20a979fb44df9e2acb2f7251512c388312c75b5b5495e0e986c"
+    },
+    "service-principal.update.status": {
+      "endpoints": 1,
+      "surface": "sha256:22350fccab5ba0511eb8d5070c6730142deaa3548a79131ea8470608b7951c53",
+      "description": "sha256:045b5112754b5e5aee9e08d25c50ae2feac407dd157db454f686f09ef85e4fee"
+    },
     "sms-send-log.read.list": {
       "endpoints": 1,
       "surface": "sha256:5cfec7a04c83fd2cd478f8a22c34d04c4ab130bb92651f618143173882651a9d",

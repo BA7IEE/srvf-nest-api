@@ -54,6 +54,14 @@ export class RoleBindingExpandedPrincipalDto {
   @ApiPropertyOptional({ description: 'type=USER 时:用户名' })
   username?: string;
 
+  @ApiPropertyOptional({
+    description: 'type=SERVICE_PRINCIPAL 时:机器身份 clientId(如 srvf_sp_xxx)',
+  })
+  clientId?: string;
+
+  @ApiPropertyOptional({ description: 'type=SERVICE_PRINCIPAL 时:机器身份名称' })
+  servicePrincipalName?: string;
+
   @ApiPropertyOptional({ description: 'type=USER 时:昵称(可空)', nullable: true })
   nickname?: string | null;
 

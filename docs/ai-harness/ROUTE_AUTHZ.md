@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:1b3e3c90a678031f7d3043e73ff10ccced54927b4c4951ac3dec94579e2f18d9 |
-| endpoint count | 554 |
+| inputDigest | sha256:f9196fd23e4aaefdc06cef5019f5f6c3149e9a2a4928b9c907cfe3b69565af8c |
+| endpoint count | 562 |
 | legacy [auth] count | 171 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -31,7 +31,7 @@
 |---|---:|---:|---:|
 | admin | 281 | 281 | 0 |
 | app | 160 | 160 | 0 |
-| system | 77 | 77 | 0 |
+| system | 85 | 85 | 0 |
 | auth | 20 | 20 | 0 |
 | open | 16 | 16 | 0 |
 
@@ -40,7 +40,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 350 |
+| rbac | 358 |
 | auth | 171 |
 | unclassified | 0 |
 
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:1b3e3c90a678031f7d3043e73ff10ccced54927b4c4951ac3dec94579e2f18d9",
+  "inputDigest": "sha256:f9196fd23e4aaefdc06cef5019f5f6c3149e9a2a4928b9c907cfe3b69565af8c",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -4609,6 +4609,63 @@
       }
     },
     {
+      "routeKey": "GET /api/system/v1/service-principals",
+      "controller": "ServicePrincipalsController",
+      "handler": "list",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "service-principal.read.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/service-principals/:id",
+      "controller": "ServicePrincipalsController",
+      "handler": "findById",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "service-principal.read.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/service-principals/:id/credentials",
+      "controller": "ServicePrincipalsController",
+      "handler": "listCredentials",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "service-principal.read.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
       "routeKey": "GET /api/system/v1/sms-send-logs",
       "controller": "SmsSendLogsController",
       "handler": "list",
@@ -6088,6 +6145,44 @@
         "codes": [
           {
             "code": "rbac.role.update",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "PATCH /api/system/v1/service-principals/:id",
+      "controller": "ServicePrincipalsController",
+      "handler": "update",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "service-principal.update.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "PATCH /api/system/v1/service-principals/:id/status",
+      "controller": "ServicePrincipalsController",
+      "handler": "updateStatus",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "service-principal.update.status",
             "scope": null
           }
         ],
@@ -9674,6 +9769,63 @@
       }
     },
     {
+      "routeKey": "POST /api/system/v1/service-principals",
+      "controller": "ServicePrincipalsController",
+      "handler": "create",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "service-principal.create.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/system/v1/service-principals/:id/credentials",
+      "controller": "ServicePrincipalsController",
+      "handler": "createCredential",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "service-principal.create.credential",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/system/v1/service-principals/:id/credentials/:credentialId/revoke",
+      "controller": "ServicePrincipalsController",
+      "handler": "revokeCredential",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "service-principal.revoke.credential",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
       "routeKey": "POST /api/system/v1/sms-settings/reset-credentials",
       "controller": "SmsSettingsController",
       "handler": "resetCredentials",
@@ -10093,7 +10245,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**218 条码有端点;其中 74 条守多于一个端点。**
+> 每条权限码守着哪些端点。**224 条码有端点;其中 75 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -10133,6 +10285,7 @@
 | `notification.read.record` | 3 | GET /api/admin/v1/notification-wechat-templates · GET /api/admin/v1/notifications · GET /api/admin/v1/notifications/:id |
 | `position.read.definition` | 3 | GET /api/admin/v1/positions · GET /api/admin/v1/positions/:id · GET /api/admin/v1/positions/options |
 | `recruitment-application.review.certificate` | 3 | GET /api/admin/v1/certificate-standards/options · POST /api/admin/v1/recruitment/certificate-claims/:id/review · POST /api/admin/v1/recruitment/certificate-claims/:id/revoke-review |
+| `service-principal.read.record` | 3 | GET /api/system/v1/service-principals · GET /api/system/v1/service-principals/:id · GET /api/system/v1/service-principals/:id/credentials |
 | `team-insurance-policy.read.record` | 3 | GET /api/admin/v1/team-insurance-policies · GET /api/admin/v1/team-insurance-policies/:id · GET /api/admin/v1/team-insurance-policies/:id/members |
 | `user.read.account` | 3 | GET /api/admin/v1/users · GET /api/admin/v1/users/:id · GET /api/admin/v1/users/options |
 | `activity-registration.approve.record` | 2 | PATCH /api/admin/v1/activities/:activityId/registrations/:id/approve · PATCH /api/admin/v1/activities/:activityId/registrations/bulk-approve |
@@ -10289,6 +10442,11 @@
 | `recruitment-cycle.update.record` | 1 | PATCH /api/admin/v1/recruitment/cycles/:id |
 | `role-binding.delete.record` | 1 | DELETE /api/admin/v1/role-bindings/:id |
 | `role-binding.update.record` | 1 | PATCH /api/admin/v1/role-bindings/:id |
+| `service-principal.create.credential` | 1 | POST /api/system/v1/service-principals/:id/credentials |
+| `service-principal.create.record` | 1 | POST /api/system/v1/service-principals |
+| `service-principal.revoke.credential` | 1 | POST /api/system/v1/service-principals/:id/credentials/:credentialId/revoke |
+| `service-principal.update.record` | 1 | PATCH /api/system/v1/service-principals/:id |
+| `service-principal.update.status` | 1 | PATCH /api/system/v1/service-principals/:id/status |
 | `sms-send-log.read.list` | 1 | GET /api/system/v1/sms-send-logs |
 | `sms-setting.read.singleton` | 1 | GET /api/system/v1/sms-settings |
 | `sms-setting.reset.credentials` | 1 | POST /api/system/v1/sms-settings/reset-credentials |
@@ -10576,6 +10734,9 @@
 | GET | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:90; src/modules/permissions/rbac-roles.controller.ts:108 |
 | GET | /api/system/v1/roles/:id/permissions | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:163; src/modules/permissions/role-permissions.controller.ts:181 |
 | GET | /api/system/v1/roles/options | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.read; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:76; src/modules/permissions/rbac-roles.controller.ts:87 |
+| GET | /api/system/v1/service-principals | system/service-principals | rbac | RBAC; admission=-; codes=service-principal.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/service-principals/service-principals.controller.ts:62; src/modules/service-principals/service-principals.controller.ts:67 |
+| GET | /api/system/v1/service-principals/:id | system/service-principals | rbac | RBAC; admission=-; codes=service-principal.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/service-principals/service-principals.controller.ts:70; src/modules/service-principals/service-principals.controller.ts:78 |
+| GET | /api/system/v1/service-principals/:id/credentials | system/service-principals | rbac | RBAC; admission=-; codes=service-principal.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/service-principals/service-principals.controller.ts:136; src/modules/service-principals/service-principals.controller.ts:146 |
 | GET | /api/system/v1/sms-send-logs | Ops - SMS Send Logs | rbac | RBAC; admission=-; codes=sms-send-log.read.list; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-send-logs.controller.ts:31; src/modules/sms/sms-send-logs.controller.ts:43 |
 | GET | /api/system/v1/sms-settings | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.read.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:41; src/modules/sms/sms-settings.controller.ts:50 |
 | GET | /api/system/v1/storage-settings | Ops - Storage Settings | rbac | RBAC; admission=-; codes=storage-setting.read.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/storage/storage-settings.controller.ts:49; src/modules/storage/storage-settings.controller.ts:58 |
@@ -10656,6 +10817,8 @@
 | PATCH | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.update; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:124; src/modules/permissions/permissions.controller.ts:144 |
 | PATCH | /api/system/v1/realname-settings | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:57; src/modules/realname/realname-settings.controller.ts:70 |
 | PATCH | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.update; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:133; src/modules/permissions/rbac-roles.controller.ts:153 |
+| PATCH | /api/system/v1/service-principals/:id | system/service-principals | rbac | RBAC; admission=-; codes=service-principal.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/service-principals/service-principals.controller.ts:81; src/modules/service-principals/service-principals.controller.ts:94 |
+| PATCH | /api/system/v1/service-principals/:id/status | system/service-principals | rbac | RBAC; admission=-; codes=service-principal.update.status; require=all; scopes=-; engine=rbac-global | code | src/modules/service-principals/service-principals.controller.ts:97; src/modules/service-principals/service-principals.controller.ts:111 |
 | PATCH | /api/system/v1/sms-settings | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:53; src/modules/sms/sms-settings.controller.ts:66 |
 | PATCH | /api/system/v1/storage-settings | Ops - Storage Settings | rbac | RBAC; admission=-; codes=storage-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/storage/storage-settings.controller.ts:61; src/modules/storage/storage-settings.controller.ts:74 |
 | PATCH | /api/system/v1/wechat-settings | Ops - WeChat Settings | rbac | RBAC; admission=-; codes=wechat-setting.update.singleton; require=all; scopes=-; engine=rbac-global | code | src/modules/wechat/wechat-settings.controller.ts:57; src/modules/wechat/wechat-settings.controller.ts:70 |
@@ -10859,6 +11022,9 @@
 | POST | /api/system/v1/realname-settings/reset-credentials | Ops - Realname Settings | rbac | RBAC; admission=-; codes=realname-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/realname/realname-settings.controller.ts:73; src/modules/realname/realname-settings.controller.ts:87 |
 | POST | /api/system/v1/roles | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:111; src/modules/permissions/rbac-roles.controller.ts:130 |
 | POST | /api/system/v1/roles/:id/permissions/preview | Ops - Role Permissions | rbac | RBAC; admission=-; codes=rbac.role-permission.create,rbac.role-permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/role-permissions.controller.ts:242; src/modules/permissions/role-permissions.controller.ts:258 |
+| POST | /api/system/v1/service-principals | system/service-principals | rbac | RBAC; admission=-; codes=service-principal.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/service-principals/service-principals.controller.ts:47; src/modules/service-principals/service-principals.controller.ts:59 |
+| POST | /api/system/v1/service-principals/:id/credentials | system/service-principals | rbac | RBAC; admission=-; codes=service-principal.create.credential; require=all; scopes=-; engine=rbac-global | code | src/modules/service-principals/service-principals.controller.ts:119; src/modules/service-principals/service-principals.controller.ts:133 |
+| POST | /api/system/v1/service-principals/:id/credentials/:credentialId/revoke | system/service-principals | rbac | RBAC; admission=-; codes=service-principal.revoke.credential; require=all; scopes=-; engine=rbac-global | code | src/modules/service-principals/service-principals.controller.ts:149; src/modules/service-principals/service-principals.controller.ts:164 |
 | POST | /api/system/v1/sms-settings/reset-credentials | Ops - SMS Settings | rbac | RBAC; admission=-; codes=sms-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/sms/sms-settings.controller.ts:69; src/modules/sms/sms-settings.controller.ts:83 |
 | POST | /api/system/v1/storage-settings/reset-credentials | Ops - Storage Settings | rbac | RBAC; admission=-; codes=storage-setting.reset.credentials; require=all; scopes=-; engine=rbac-global | code | src/modules/storage/storage-settings.controller.ts:77; src/modules/storage/storage-settings.controller.ts:91 |
 | POST | /api/system/v1/users/:userId/roles | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:74; src/modules/permissions/user-roles.controller.ts:97 |
