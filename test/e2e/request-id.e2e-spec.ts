@@ -3,6 +3,7 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { httpServer } from '../helpers/http-server';
 import { buildHttpLogProps } from '../../src/app.module';
+import { setIntegrationLogPrincipal } from '../../src/bootstrap/request-id';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -161,6 +162,21 @@ describe('Request ID 贯通(x-request-id)', () => {
       // 模拟 genReqId 把 my-trace-123 写入 req.id 后,customProps 应原样取出。
       const props = buildHttpLogProps(makeFakeReq('my-trace-123'));
       expect(props).toEqual({ reqId: 'my-trace-123' });
+    });
+
+    it('委托调用:机器主体与被代表用户以顶层字段写入日志', () => {
+      const req = makeFakeReq('cdelegated001', 'operator_001');
+      setIntegrationLogPrincipal(req, {
+        servicePrincipalId: 'sp_001',
+        onBehalfOfUserId: 'subject_001',
+      });
+
+      expect(buildHttpLogProps(req)).toEqual({
+        reqId: 'cdelegated001',
+        userId: 'operator_001',
+        servicePrincipalId: 'sp_001',
+        onBehalfOfUserId: 'subject_001',
+      });
     });
 
     it('防御:req.id 缺失时不打 reqId 字段(避免 reqId: undefined 噪声)', () => {

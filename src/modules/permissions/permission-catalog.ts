@@ -60,6 +60,31 @@ export interface RbacPermissionSeed {
 // Integration Foundation v1 PR2(P1-30;规格书 §35):ServicePrincipal 控制面权限 6 码。
 // 全部绑 ops-admin;ServicePrincipal 自身永远不能持有(§15.3 第 7 条 —— 控制面禁授)。
 // delegation-grant.* 3 码是 PR5 的(§36),本刀不 seed。
+// Integration Foundation v1 PR5(规格书 §36):Delegation 控制面 3 码。绑 ops-admin。
+export const DELEGATION_GRANT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'delegation-grant.create.record',
+    module: 'delegation-grant',
+    action: 'create',
+    resourceType: 'record',
+    description: '创建委托(允许某 SP 在指定权限/范围/期限内代表指定 User)',
+  },
+  {
+    code: 'delegation-grant.read.record',
+    module: 'delegation-grant',
+    action: 'read',
+    resourceType: 'record',
+    description: '查看委托列表与详情',
+  },
+  {
+    code: 'delegation-grant.revoke.record',
+    module: 'delegation-grant',
+    action: 'revoke',
+    resourceType: 'record',
+    description: '撤销委托',
+  },
+];
+
 export const SERVICE_PRINCIPAL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'service-principal.create.record',
@@ -1266,6 +1291,7 @@ export const ALL_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   ...MEMBER_ACCOUNT_PERMISSION_SEED,
   ...NOTIFICATION_REPLAY_PERMISSION_SEED,
   ...SERVICE_PRINCIPAL_PERMISSION_SEED,
+  ...DELEGATION_GRANT_PERMISSION_SEED,
 ];
 
 // V2.x C-7 attachments 实施 PR #6a(2026-05-15):20 条 attachment.* 权限点全集
@@ -5400,6 +5426,46 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       sortOrder: 84560,
       riskLevel: 'CRITICAL',
       riskTags: ['WRITE', 'CREDENTIAL'],
+      grantPolicy: 'ROLE_ALLOWLIST_ONLY',
+      status: 'ACTIVE',
+      uiVisibility: 'ADVANCED',
+    },
+    // ===== Integration Foundation v1 PR5:Delegation 控制面(规格书 §36)=====
+    'delegation-grant.create.record': {
+      displayName: '创建委托',
+      businessDescription:
+        '系统委托控制面的创建操作：允许某个服务主体在指定权限、指定范围、指定期限内代表某个真人操作。创建后立即生效;GLOBAL 委托只允许超管创建,普通运营只能授予有边界的组织/活动/资源范围。',
+      sectionCode: 'system-security',
+      groupCode: 'integration',
+      sortOrder: 84570,
+      riskLevel: 'CRITICAL',
+      riskTags: ['CONTROL_PLANE', 'CREDENTIAL', 'WRITE'],
+      grantPolicy: 'ROLE_ALLOWLIST_ONLY',
+      status: 'ACTIVE',
+      uiVisibility: 'ADVANCED',
+    },
+    'delegation-grant.read.record': {
+      displayName: '查看委托',
+      businessDescription:
+        '系统委托控制面的列表和详情读取：看谁委托谁、哪些权限、什么范围、什么时候到期。只是看,不能改。',
+      sectionCode: 'system-security',
+      groupCode: 'integration',
+      sortOrder: 84580,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'ROLE_ALLOWLIST_ONLY',
+      status: 'ACTIVE',
+      uiVisibility: 'ADVANCED',
+    },
+    'delegation-grant.revoke.record': {
+      displayName: '撤销委托',
+      businessDescription:
+        '系统委托控制面的撤销操作：把某条委托标记为已撤销。撤销后用它换的 Delegated Token 立即失效;已撤销的不能恢复。人员变动或怀疑滥用时的止血开关。',
+      sectionCode: 'system-security',
+      groupCode: 'integration',
+      sortOrder: 84590,
+      riskLevel: 'CRITICAL',
+      riskTags: ['CONTROL_PLANE', 'CREDENTIAL', 'WRITE'],
       grantPolicy: 'ROLE_ALLOWLIST_ONLY',
       status: 'ACTIVE',
       uiVisibility: 'ADVANCED',

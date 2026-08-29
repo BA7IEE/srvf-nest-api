@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:0cfebda9c65800bf6276f9d92b4027eac43d50f2610193508898b03a0c1b5106
+// inputDigest: sha256:37349a15fa29087d8266ad35f03a06ddda1891097399dd3af53721dfca1ce152
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -26,11 +26,13 @@ import type {
   CreateAttachmentSizeLimitConfigDto,
   CreateAttachmentTypeConfigDto,
   CreateContributionRuleDto,
+  CreateDelegationGrantDto,
   CreateDictItemDto,
   CreateDictTypeDto,
   CreatePermissionDto,
   CreateRbacRoleDto,
   CreateServicePrincipalDto,
+  DelegationGrantResponseDto,
   DictItemResponseDto,
   DictItemTreeNodeDto,
   DictTypeResponseDto,
@@ -55,6 +57,7 @@ import type {
   ResetStorageCredentialsDto,
   ResetWechatCredentialsDto,
   ResetWecomCredentialsDto,
+  RevokeDelegationGrantDto,
   RoleOptionItemDto,
   RoleOptionsResponseDto,
   RolePermissionDiffItemDto,
@@ -203,6 +206,22 @@ export function createSystemClient(fetcher: Fetcher) {
     /** 软删贡献值规则(写 deletedAt + deletedByUserId;不强制改 status;删完该维度 attendance 预填走 22048 不抛错路径) [rbac: contribution.delete.rule] */
     ContributionRulesControllerSoftDelete(id: string): Promise<ApiEnvelope<void>> {
       return fetcher<void>({ method: "DELETE", path: `/api/system/v1/contribution-rules/${id}` });
+    },
+    /** 分页查看委托（默认含历史） [rbac: delegation-grant.read.record] */
+    DelegationGrantsControllerList(query?: { "page"?: number; "pageSize"?: number; "status"?: "ACTIVE" | "REVOKED" | "SUSPENDED" }): Promise<ApiEnvelope<PageResultDto & { "items": DelegationGrantResponseDto[] }>> {
+      return fetcher<PageResultDto & { "items": DelegationGrantResponseDto[] }>({ method: "GET", path: "/api/system/v1/delegation-grants", query });
+    },
+    /** 创建委托(SP 代表固定 User；权限、范围、期限取交集) [rbac: delegation-grant.create.record] */
+    DelegationGrantsControllerCreate(body: CreateDelegationGrantDto): Promise<ApiEnvelope<DelegationGrantResponseDto>> {
+      return fetcher<DelegationGrantResponseDto>({ method: "POST", path: "/api/system/v1/delegation-grants", body });
+    },
+    /** 查看单条委托 [rbac: delegation-grant.read.record] */
+    DelegationGrantsControllerFindOne(id: string): Promise<ApiEnvelope<DelegationGrantResponseDto>> {
+      return fetcher<DelegationGrantResponseDto>({ method: "GET", path: `/api/system/v1/delegation-grants/${id}` });
+    },
+    /** 撤销委托，下一请求立即失效 [rbac: delegation-grant.revoke.record] */
+    DelegationGrantsControllerRevoke(id: string, body: RevokeDelegationGrantDto): Promise<ApiEnvelope<DelegationGrantResponseDto>> {
+      return fetcher<DelegationGrantResponseDto>({ method: "POST", path: `/api/system/v1/delegation-grants/${id}/revoke`, body });
     },
     /** 列出字典项(分页;typeId 必填) [rbac: dict.read.item] */
     DictItemsControllerList(query: { "page"?: number; "pageSize"?: number; "typeId": string; "parentId"?: string; "status"?: "ACTIVE" | "INACTIVE" }): Promise<ApiEnvelope<PageResultDto & { "items": DictItemResponseDto[] }>> {

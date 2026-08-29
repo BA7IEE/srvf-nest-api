@@ -68,7 +68,7 @@ export class AuditContextDto {
 // ============ 出参:AuditLogResponseDto ============
 
 // 与 auditLogSafeSelect 严格同步:增删字段两边同时改。
-// 字段集等于 AuditLog model 的 9 个业务字段(无 actorUser relation 详情)。
+// 字段集等于 AuditLog model 的 13 个业务字段(无 actorUser relation 详情)。
 export class AuditLogResponseDto {
   @ApiProperty({ description: '主键(cuid)', example: 'cl9z3a8b00000abcd1234efgh' })
   id!: string;
@@ -90,6 +90,31 @@ export class AuditLogResponseDto {
     nullable: true,
   })
   actorRoleSnap!: Role | null;
+
+  @ApiPropertyOptional({
+    description: '技术操作方 ServicePrincipal.id;真人直接操作 / 系统任务为 null',
+    nullable: true,
+  })
+  actorServicePrincipalId!: string | null;
+
+  @ApiPropertyOptional({
+    description: '技术操作所用 Credential.id;无机器主体时为 null',
+    nullable: true,
+  })
+  actorCredentialId!: string | null;
+
+  @ApiPropertyOptional({
+    description: '被机器代表的 User.id;机器自身 / 真人直接操作为 null',
+    nullable: true,
+  })
+  onBehalfOfUserId!: string | null;
+
+  @ApiPropertyOptional({
+    description: '被代表 User 的角色快照;仅 onBehalfOfUserId 非空时有值',
+    enum: Role,
+    nullable: true,
+  })
+  onBehalfOfRoleSnap!: Role | null;
 
   @ApiProperty({
     description: '资源类型(第一批枚举值:emergency_contact / certificate;String,不用 Prisma enum)',

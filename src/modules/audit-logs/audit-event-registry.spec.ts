@@ -154,7 +154,7 @@ describe('P2-23b 审计事件登记表 —— 真源对拍(union ↔ 登记表 �
     expect(dims.D1).toEqual([]);
   });
 
-  it('B2 声明行:147/142/5 与实测相等', () => {
+  it('B2 声明行:156/151/5 与实测相等', () => {
     expect(dims.D2).toEqual([]);
   });
 
@@ -206,7 +206,7 @@ describe('P2-23b 审计事件登记表 —— 常驻变异对拍(弄假必红,�
   it('M4 声明行数字改错 ⇒ 只有 D2 红', () => {
     const mutated = REGISTRY_TEXT.replace(
       /^\*\*审计事件\(机器核对\):\d+ 个 · 活跃\(≥1 次出现\):\d+ · 已退役\/零产出:\d+\*\*$/m,
-      '**审计事件(机器核对):146 个 · 活跃(≥1 次出现):142 · 已退役/零产出:5**',
+      '**审计事件(机器核对):155 个 · 活跃(≥1 次出现):151 · 已退役/零产出:5**',
     );
     expect(mutated).not.toBe(REGISTRY_TEXT);
     expectOnlyRed(allDimensions(TYPES_SOURCE, mutated, REAL_COUNTS), 'D2', '实际解析到');

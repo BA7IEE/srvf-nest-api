@@ -13,8 +13,9 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { Public } from '../../common/decorators/public.decorator';
 import { ServiceTokenThrottle } from '../../common/decorators/service-token-throttle.decorator';
+import { setIntegrationLogPrincipal } from '../../bootstrap/request-id';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ServiceTokenService } from './service-token.service';
-import { IntegrationAuthGate } from './integration-auth.gate';
 
 /**
  * Integration Foundation v1 PR3(规格书 §12.3):Client Credentials → Service Token。
@@ -28,10 +29,7 @@ import { IntegrationAuthGate } from './integration-auth.gate';
 @Controller('auth/v1/service-token')
 @ApiTags('auth/service-token')
 export class ServiceTokenController {
-  constructor(
-    private readonly serviceToken: ServiceTokenService,
-    private readonly gate: IntegrationAuthGate,
-  ) {}
+  constructor(private readonly serviceToken: ServiceTokenService) {}
 
   @Public()
   @Post()
@@ -62,6 +60,17 @@ export class ServiceTokenController {
     } catch {
       // fall through to unified rejection
     }
-    return this.serviceToken.issueToken(clientId, clientSecret);
+    return this.serviceToken.issueToken(clientId, clientSecret, {
+      auditMeta: auditMetaOf(req),
+      onIssued: (actor) => setIntegrationLogPrincipal(req, actor),
+    });
   }
+}
+
+function auditMetaOf(req: Request): AuditMeta {
+  return {
+    requestId: typeof req.id === 'string' ? req.id : '',
+    ip: req.ip ?? null,
+    ua: req.headers['user-agent'] ?? null,
+  };
 }

@@ -3,7 +3,7 @@
 // surface: System 系统面
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:0cfebda9c65800bf6276f9d92b4027eac43d50f2610193508898b03a0c1b5106
+// inputDigest: sha256:37349a15fa29087d8266ad35f03a06ddda1891097399dd3af53721dfca1ce152
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto } from '../shared/types';
@@ -73,6 +73,10 @@ export interface AuditLogResponseDto {
   "createdAt": string;
   "actorUserId"?: Record<string, unknown> | null;
   "actorRoleSnap"?: "SUPER_ADMIN" | "ADMIN" | "USER" | null;
+  "actorServicePrincipalId"?: Record<string, unknown> | null;
+  "actorCredentialId"?: Record<string, unknown> | null;
+  "onBehalfOfUserId"?: Record<string, unknown> | null;
+  "onBehalfOfRoleSnap"?: "SUPER_ADMIN" | "ADMIN" | "USER" | null;
   "resourceType": string;
   "resourceId"?: Record<string, unknown> | null;
   "event": string;
@@ -127,6 +131,19 @@ export interface CreateContributionRuleDto {
   "remark"?: string;
 }
 
+export interface CreateDelegationGrantDto {
+  "servicePrincipalId": string;
+  "subjectUserId": string;
+  "permissionCodes": string[];
+  "scopeType": "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE";
+  "scopeOrgId"?: string;
+  "scopeActivityId"?: string;
+  "scopeResourceType"?: string;
+  "scopeResourceId"?: string;
+  "startedAt"?: string;
+  "endedAt"?: string;
+}
+
 export interface CreateDictItemDto {
   "typeId": string;
   "code": string;
@@ -159,6 +176,26 @@ export interface CreateServicePrincipalDto {
   "name": string;
   "description"?: string;
   "ownerOrganizationId"?: string;
+}
+
+export interface DelegationGrantResponseDto {
+  "id": string;
+  "servicePrincipalId": string;
+  "subjectUserId": string;
+  "status": "ACTIVE" | "REVOKED" | "SUSPENDED";
+  "scopeType": "GLOBAL" | "ORGANIZATION" | "ORGANIZATION_TREE" | "ACTIVITY" | "RESOURCE" | "SELF";
+  "scopeOrgId": Record<string, unknown> | null;
+  "scopeActivityId": Record<string, unknown> | null;
+  "scopeResourceType": Record<string, unknown> | null;
+  "scopeResourceId": Record<string, unknown> | null;
+  "permissionCodes": string[];
+  "startedAt": string;
+  "endedAt": Record<string, unknown> | null;
+  "createdByUserId": string;
+  "createdAt": string;
+  "revokedAt": Record<string, unknown> | null;
+  "revokedByUserId": Record<string, unknown> | null;
+  "revokeReason": Record<string, unknown> | null;
 }
 
 export interface DictItemResponseDto {
@@ -339,6 +376,10 @@ export interface ResetWechatCredentialsDto {
 
 export interface ResetWecomCredentialsDto {
   "corpSecret": string;
+}
+
+export interface RevokeDelegationGrantDto {
+  "reason"?: string;
 }
 
 export interface RoleOptionItemDto {

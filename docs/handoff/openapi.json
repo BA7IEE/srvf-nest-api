@@ -99545,6 +99545,791 @@
         ]
       }
     },
+    "/api/auth/v1/delegated-token": {
+      "post": {
+        "operationId": "DelegatedTokenController_issue",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DelegatedTokenRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/IntegrationTokenResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Integration Token 无效或已失效(code=37011)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37011
+                      ],
+                      "description": "37011: Integration Token 无效或已失效",
+                      "example": 37011
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Integration Token 无效或已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "委托关系无效或已失效(code=37016)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37016
+                      ],
+                      "description": "37016: 委托关系无效或已失效",
+                      "example": 37016
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "委托关系无效或已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Integration API 未启用(code=37030)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37030
+                      ],
+                      "description": "37030: Integration API 未启用",
+                      "example": 37030
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Integration API 未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Service Token 换 Delegated Token(Bearer 认证；subject 只能由 Grant 决定) [public]",
+        "tags": [
+          "auth/delegated-token"
+        ]
+      }
+    },
+    "/api/system/v1/delegation-grants": {
+      "post": {
+        "operationId": "DelegationGrantsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDelegationGrantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DelegationGrantResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "服务主体不存在或已删除(code=37001) / 用户不存在(code=10001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37001,
+                        10001
+                      ],
+                      "description": "37001: 服务主体不存在或已删除; 10001: 用户不存在",
+                      "example": 37001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "服务主体不存在或已删除"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "创建委托(SP 代表固定 User；权限、范围、期限取交集) [rbac: delegation-grant.create.record]",
+        "tags": [
+          "system/delegation-grants"
+        ]
+      },
+      "get": {
+        "operationId": "DelegationGrantsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "按状态过滤（默认含历史）",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "REVOKED",
+                "SUSPENDED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/DelegationGrantResponseDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "分页查看委托（默认含历史） [rbac: delegation-grant.read.record]",
+        "tags": [
+          "system/delegation-grants"
+        ]
+      }
+    },
+    "/api/system/v1/delegation-grants/{id}": {
+      "get": {
+        "operationId": "DelegationGrantsController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DelegationGrantResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 委托关系无效或已失效(code=37016)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37016
+                      ],
+                      "description": "30100: 无权执行此操作; 37016: 委托关系无效或已失效",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "查看单条委托 [rbac: delegation-grant.read.record]",
+        "tags": [
+          "system/delegation-grants"
+        ]
+      }
+    },
+    "/api/system/v1/delegation-grants/{id}/revoke": {
+      "post": {
+        "operationId": "DelegationGrantsController_revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeDelegationGrantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/DelegationGrantResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 委托关系无效或已失效(code=37016)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37016
+                      ],
+                      "description": "30100: 无权执行此操作; 37016: 委托关系无效或已失效",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "撤销委托，下一请求立即失效 [rbac: delegation-grant.revoke.record]",
+        "tags": [
+          "system/delegation-grants"
+        ]
+      }
+    },
     "/api/admin/v1/announcement-import/preview": {
       "post": {
         "operationId": "AnnouncementImportController_preview",
@@ -117512,6 +118297,31 @@
           "actorRoleSnap": {
             "type": "string",
             "description": "操作时的角色快照(Role enum;事后查 user 表取最新角色不可靠,审计取快照)",
+            "enum": [
+              "SUPER_ADMIN",
+              "ADMIN",
+              "USER"
+            ],
+            "nullable": true
+          },
+          "actorServicePrincipalId": {
+            "type": "object",
+            "description": "技术操作方 ServicePrincipal.id;真人直接操作 / 系统任务为 null",
+            "nullable": true
+          },
+          "actorCredentialId": {
+            "type": "object",
+            "description": "技术操作所用 Credential.id;无机器主体时为 null",
+            "nullable": true
+          },
+          "onBehalfOfUserId": {
+            "type": "object",
+            "description": "被机器代表的 User.id;机器自身 / 真人直接操作为 null",
+            "nullable": true
+          },
+          "onBehalfOfRoleSnap": {
+            "type": "string",
+            "description": "被代表 User 的角色快照;仅 onBehalfOfUserId 非空时有值",
             "enum": [
               "SUPER_ADMIN",
               "ADMIN",
@@ -140629,6 +141439,219 @@
       "Object": {
         "type": "object",
         "properties": {}
+      },
+      "IntegrationTokenResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "短期 Integration JWT；不含 refresh token"
+          },
+          "tokenType": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "expiresIn": {
+            "type": "number",
+            "description": "有效期（秒）",
+            "minimum": 1,
+            "maximum": 1800
+          }
+        },
+        "required": [
+          "accessToken",
+          "tokenType",
+          "expiresIn"
+        ]
+      },
+      "DelegatedTokenRequestDto": {
+        "type": "object",
+        "properties": {
+          "delegationGrantId": {
+            "type": "string",
+            "description": "由控制面创建的 DelegationGrant.id"
+          }
+        },
+        "required": [
+          "delegationGrantId"
+        ]
+      },
+      "DelegationGrantResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "servicePrincipalId": {
+            "type": "string"
+          },
+          "subjectUserId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "REVOKED",
+              "SUSPENDED"
+            ]
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "GLOBAL",
+              "ORGANIZATION",
+              "ORGANIZATION_TREE",
+              "ACTIVITY",
+              "RESOURCE",
+              "SELF"
+            ]
+          },
+          "scopeOrgId": {
+            "type": "object",
+            "nullable": true
+          },
+          "scopeActivityId": {
+            "type": "object",
+            "nullable": true
+          },
+          "scopeResourceType": {
+            "type": "object",
+            "nullable": true
+          },
+          "scopeResourceId": {
+            "type": "object",
+            "nullable": true
+          },
+          "permissionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "endedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "createdByUserId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "revokedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "revokedByUserId": {
+            "type": "object",
+            "nullable": true
+          },
+          "revokeReason": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "servicePrincipalId",
+          "subjectUserId",
+          "status",
+          "scopeType",
+          "scopeOrgId",
+          "scopeActivityId",
+          "scopeResourceType",
+          "scopeResourceId",
+          "permissionCodes",
+          "startedAt",
+          "endedAt",
+          "createdByUserId",
+          "createdAt",
+          "revokedAt",
+          "revokedByUserId",
+          "revokeReason"
+        ]
+      },
+      "CreateDelegationGrantDto": {
+        "type": "object",
+        "properties": {
+          "servicePrincipalId": {
+            "type": "string",
+            "description": "被授权的 ServicePrincipal.id"
+          },
+          "subjectUserId": {
+            "type": "string",
+            "description": "被代表的固定 User.id；只能由控制面管理员设置"
+          },
+          "permissionCodes": {
+            "description": "Grant allowlist；每一项都必须同时开放 servicePrincipalAllowed 与 delegatedAccessAllowed",
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "GLOBAL",
+              "ORGANIZATION",
+              "ORGANIZATION_TREE",
+              "ACTIVITY",
+              "RESOURCE"
+            ]
+          },
+          "scopeOrgId": {
+            "type": "string",
+            "description": "组织 / 组织树范围的根组织 ID"
+          },
+          "scopeActivityId": {
+            "type": "string",
+            "description": "活动范围的 Activity.id"
+          },
+          "scopeResourceType": {
+            "type": "string",
+            "description": "资源范围的资源类型"
+          },
+          "scopeResourceId": {
+            "type": "string",
+            "description": "资源范围的资源 ID"
+          },
+          "startedAt": {
+            "type": "string",
+            "description": "生效起点；省略时为当前时间",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": "string",
+            "description": "生效终点；必须晚于 startedAt",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "servicePrincipalId",
+          "subjectUserId",
+          "permissionCodes",
+          "scopeType"
+        ]
+      },
+      "RevokeDelegationGrantDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "撤销原因（可省略；一旦提供不得为空）",
+            "maxLength": 512
+          }
+        }
       },
       "ImportOrganizationRowDto": {
         "type": "object",

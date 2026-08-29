@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:a1af9c974280a30bfa241798e6818f09541ddb655aa3e4cf5912666412e6a020",
+  "inputDigest": "sha256:ef93d722ccedc43fe34e3d42cc692081abda6f285160d56da7b3b82f19c713c4",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -120,7 +120,8 @@
       "modules": [
         "service-principals",
         "integration-auth",
-        "integration-authz"
+        "integration-authz",
+        "delegation-grants"
       ]
     }
   },
@@ -298,6 +299,10 @@
       "confirmed": true
     },
     "integration-authz": {
+      "domain": "integration-foundation",
+      "confirmed": true
+    },
+    "delegation-grants": {
       "domain": "integration-foundation",
       "confirmed": true
     }
@@ -976,13 +981,13 @@
     },
     "DelegationGrant": {
       "domain": "integration-foundation",
-      "ownerModule": "service-principals",
+      "ownerModule": "delegation-grants",
       "subdomain": "delegation",
       "confirmed": true
     },
     "DelegationGrantPermission": {
       "domain": "integration-foundation",
-      "ownerModule": "service-principals",
+      "ownerModule": "delegation-grants",
       "subdomain": "delegation",
       "confirmed": true
     },
@@ -2319,6 +2324,42 @@
       "accessPath": "RolePermission.select.permission",
       "observedBy": "IF v1 PR4(2026-08-28):权限链单独查(资格门运行时执法;nested select 拆为顶层)",
       "reviewTrigger": "RolePermission/Permission 核字段变化时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "delegation-grants",
+      "targetDomain": "identity-org",
+      "prismaModel": "User",
+      "operation": "findFirst",
+      "sourceFile": "src/modules/delegation-grants/delegation-grant-runtime.service.ts",
+      "sourceSymbol": "DelegationGrantRuntimeService.findIssuableGrant",
+      "accessPath": "User",
+      "observedBy": "IF v1 PR5(2026-08-29):签发前复核被代表 User 的 ACTIVE/软删/角色事实",
+      "reviewTrigger": "Delegated Token 的 subject 可用性或最小身份投影变化时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "delegation-grants",
+      "targetDomain": "identity-org",
+      "prismaModel": "User",
+      "operation": "findFirst",
+      "sourceFile": "src/modules/delegation-grants/delegation-grant-runtime.service.ts",
+      "sourceSymbol": "DelegationGrantRuntimeService.judgeDelegated",
+      "accessPath": "User",
+      "observedBy": "IF v1 PR5(2026-08-29):每次 Delegated 判权复核被代表 User 的 ACTIVE/软删/身份快照",
+      "reviewTrigger": "Delegated 三腿交集的 User leg 或最小身份投影变化时复核"
+    },
+    {
+      "sourceDomain": "integration-foundation",
+      "sourceModule": "delegation-grants",
+      "targetDomain": "identity-org",
+      "prismaModel": "User",
+      "operation": "findFirst",
+      "sourceFile": "src/modules/delegation-grants/delegation-grants.service.ts",
+      "sourceSymbol": "DelegationGrantsService.create",
+      "accessPath": "User",
+      "observedBy": "IF v1 PR5(2026-08-29):创建 Grant 时复核被代表 User 的 ACTIVE/软删事实",
+      "reviewTrigger": "Grant 创建的 subject 可用性或生命周期判定变化时复核"
     }
   ],
   "decisionsPending": []

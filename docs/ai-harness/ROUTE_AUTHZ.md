@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:d15a4bdb055f1b41160245d985465221ae45d7b186b6faef5b68933c2af9f893 |
-| endpoint count | 563 |
+| inputDigest | sha256:1149a94299c7502a7160a61b9a4a219db500608a3c6727be7005cff33e3e1ddc |
+| endpoint count | 568 |
 | legacy [auth] count | 171 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -31,16 +31,16 @@
 |---|---:|---:|---:|
 | admin | 281 | 281 | 0 |
 | app | 160 | 160 | 0 |
-| system | 85 | 85 | 0 |
-| auth | 21 | 21 | 0 |
+| system | 89 | 89 | 0 |
+| auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
 
 ## Legacy declaration summary
 
 | marker | count |
 |---|---:|
-| public | 34 |
-| rbac | 358 |
+| public | 35 |
+| rbac | 362 |
 | auth | 171 |
 | unclassified | 0 |
 
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:d15a4bdb055f1b41160245d985465221ae45d7b186b6faef5b68933c2af9f893",
+  "inputDigest": "sha256:1149a94299c7502a7160a61b9a4a219db500608a3c6727be7005cff33e3e1ddc",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -4316,6 +4316,44 @@
         "codes": [
           {
             "code": "contribution.read.rule",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/delegation-grants",
+      "controller": "DelegationGrantsController",
+      "handler": "list",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "delegation-grant.read.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/delegation-grants/:id",
+      "controller": "DelegationGrantsController",
+      "handler": "findOne",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "delegation-grant.read.record",
             "scope": null
           }
         ],
@@ -9108,6 +9146,20 @@
       }
     },
     {
+      "routeKey": "POST /api/auth/v1/delegated-token",
+      "controller": "DelegatedTokenController",
+      "handler": "issue",
+      "legacy": "public",
+      "policy": {
+        "admission": null,
+        "mode": "PUBLIC",
+        "codes": [],
+        "require": "all",
+        "scopes": [],
+        "engine": null
+      }
+    },
+    {
       "routeKey": "POST /api/auth/v1/login",
       "controller": "AuthController",
       "handler": "login",
@@ -9637,6 +9689,44 @@
         "codes": [
           {
             "code": "contribution.create.rule",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/system/v1/delegation-grants",
+      "controller": "DelegationGrantsController",
+      "handler": "create",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "delegation-grant.create.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/system/v1/delegation-grants/:id/revoke",
+      "controller": "DelegationGrantsController",
+      "handler": "revoke",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "delegation-grant.revoke.record",
             "scope": null
           }
         ],
@@ -10259,7 +10349,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**224 条码有端点;其中 75 条守多于一个端点。**
+> 每条权限码守着哪些端点。**227 条码有端点;其中 76 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -10324,6 +10414,7 @@
 | `certificate.verify.record` | 2 | GET /api/admin/v1/certificate-standards/options · PATCH /api/admin/v1/members/:memberId/certificates/:id/verify |
 | `content.update.record` | 2 | PATCH /api/admin/v1/contents/:id · PUT /api/admin/v1/contents/:id/cover |
 | `contribution.read.rule` | 2 | GET /api/system/v1/contribution-rules · GET /api/system/v1/contribution-rules/:id |
+| `delegation-grant.read.record` | 2 | GET /api/system/v1/delegation-grants · GET /api/system/v1/delegation-grants/:id |
 | `dict.read.type` | 2 | GET /api/system/v1/dict-types · GET /api/system/v1/dict-types/:id |
 | `dict.update.item` | 2 | PATCH /api/system/v1/dict-items/:id · PATCH /api/system/v1/dict-items/:id/status |
 | `dict.update.type` | 2 | PATCH /api/system/v1/dict-types/:id · PATCH /api/system/v1/dict-types/:id/status |
@@ -10392,6 +10483,8 @@
 | `contribution.create.rule` | 1 | POST /api/system/v1/contribution-rules |
 | `contribution.delete.rule` | 1 | DELETE /api/system/v1/contribution-rules/:id |
 | `contribution.update.rule` | 1 | PATCH /api/system/v1/contribution-rules/:id |
+| `delegation-grant.create.record` | 1 | POST /api/system/v1/delegation-grants |
+| `delegation-grant.revoke.record` | 1 | POST /api/system/v1/delegation-grants/:id/revoke |
 | `dict.create.item` | 1 | POST /api/system/v1/dict-items |
 | `dict.create.type` | 1 | POST /api/system/v1/dict-types |
 | `dict.delete.item` | 1 | DELETE /api/system/v1/dict-items/:id |
@@ -10732,6 +10825,8 @@
 | GET | /api/system/v1/authz/me/effective-permissions | Ops - Authz | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/authz/effective-permissions.controller.ts:22; src/modules/authz/effective-permissions.controller.ts:33 |
 | GET | /api/system/v1/contribution-rules | Ops - Contribution Rules | rbac | RBAC; admission=-; codes=contribution.read.rule; require=all; scopes=-; engine=rbac-global | code | src/modules/contribution-rules/contribution-rules.controller.ts:65; src/modules/contribution-rules/contribution-rules.controller.ts:77 |
 | GET | /api/system/v1/contribution-rules/:id | Ops - Contribution Rules | rbac | RBAC; admission=-; codes=contribution.read.rule; require=all; scopes=-; engine=rbac-global | code | src/modules/contribution-rules/contribution-rules.controller.ts:104; src/modules/contribution-rules/contribution-rules.controller.ts:118 |
+| GET | /api/system/v1/delegation-grants | system/delegation-grants | rbac | RBAC; admission=-; codes=delegation-grant.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/delegation-grants/delegation-grants.controller.ts:74; src/modules/delegation-grants/delegation-grants.controller.ts:83 |
+| GET | /api/system/v1/delegation-grants/:id | system/delegation-grants | rbac | RBAC; admission=-; codes=delegation-grant.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/delegation-grants/delegation-grants.controller.ts:86; src/modules/delegation-grants/delegation-grants.controller.ts:99 |
 | GET | /api/system/v1/dict-items | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.read.item; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:164; src/modules/dictionaries/dictionaries.controller.ts:178 |
 | GET | /api/system/v1/dict-items/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.read.item; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:221; src/modules/dictionaries/dictionaries.controller.ts:235 |
 | GET | /api/system/v1/dict-items/tree | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.read.item; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:204; src/modules/dictionaries/dictionaries.controller.ts:218 |
@@ -10993,6 +11088,7 @@
 | POST | /api/app/v1/my/registrations | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:133; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:167 |
 | POST | /api/app/v1/notifications/:id/read | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:147; src/modules/notifications/notification-app.controller.ts:165 |
 | POST | /api/app/v1/notifications/subscriptions/ack | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:73; src/modules/notifications/notification-app.controller.ts:91 |
+| POST | /api/auth/v1/delegated-token | auth/delegated-token | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/integration-auth/delegated-token.controller.ts:30; src/modules/integration-auth/delegated-token.controller.ts:48 |
 | POST | /api/auth/v1/login | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:91; src/modules/auth/auth.controller.ts:101 |
 | POST | /api/auth/v1/login-sms | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:364; src/modules/auth/auth.controller.ts:374 |
 | POST | /api/auth/v1/login-sms/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:335; src/modules/auth/auth.controller.ts:355 |
@@ -11004,7 +11100,7 @@
 | POST | /api/auth/v1/password-reset | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:311; src/modules/auth/auth.controller.ts:326 |
 | POST | /api/auth/v1/password-reset/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:283; src/modules/auth/auth.controller.ts:303 |
 | POST | /api/auth/v1/refresh | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:108; src/modules/auth/auth.controller.ts:123 |
-| POST | /api/auth/v1/service-token | auth/service-token | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/integration-auth/service-token.controller.ts:36; src/modules/integration-auth/service-token.controller.ts:65 |
+| POST | /api/auth/v1/service-token | auth/service-token | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/integration-auth/service-token.controller.ts:34; src/modules/integration-auth/service-token.controller.ts:63 |
 | POST | /api/auth/v1/step-up/password | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
 | POST | /api/auth/v1/step-up/sms | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
 | POST | /api/auth/v1/step-up/sms/send-code | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |
@@ -11030,6 +11126,8 @@
 | POST | /api/system/v1/attachment-size-limit-configs | Ops - Attachment Configs | rbac | RBAC; admission=-; codes=attachment-config.create.size-limit; require=all; scopes=-; engine=rbac-global | code | src/modules/attachment-configs/attachment-size-limit-configs.controller.ts:74; src/modules/attachment-configs/attachment-size-limit-configs.controller.ts:93 |
 | POST | /api/system/v1/attachment-type-configs | Ops - Attachment Configs | rbac | RBAC; admission=-; codes=attachment-config.create.type; require=all; scopes=-; engine=rbac-global | code | src/modules/attachment-configs/attachment-type-configs.controller.ts:75; src/modules/attachment-configs/attachment-type-configs.controller.ts:94 |
 | POST | /api/system/v1/contribution-rules | Ops - Contribution Rules | rbac | RBAC; admission=-; codes=contribution.create.rule; require=all; scopes=-; engine=rbac-global | code | src/modules/contribution-rules/contribution-rules.controller.ts:80; src/modules/contribution-rules/contribution-rules.controller.ts:101 |
+| POST | /api/system/v1/delegation-grants | system/delegation-grants | rbac | RBAC; admission=-; codes=delegation-grant.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/delegation-grants/delegation-grants.controller.ts:52; src/modules/delegation-grants/delegation-grants.controller.ts:71 |
+| POST | /api/system/v1/delegation-grants/:id/revoke | system/delegation-grants | rbac | RBAC; admission=-; codes=delegation-grant.revoke.record; require=all; scopes=-; engine=rbac-global | code | src/modules/delegation-grants/delegation-grants.controller.ts:102; src/modules/delegation-grants/delegation-grants.controller.ts:118 |
 | POST | /api/system/v1/dict-items | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.create.item; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:181; src/modules/dictionaries/dictionaries.controller.ts:199 |
 | POST | /api/system/v1/dict-types | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.create.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:63; src/modules/dictionaries/dictionaries.controller.ts:77 |
 | POST | /api/system/v1/permissions | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.create; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:101; src/modules/permissions/permissions.controller.ts:121 |

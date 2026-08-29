@@ -33,6 +33,11 @@ export interface AuditLogInput {
   event: AuditLogEvent;
   actorUserId: string | null;
   actorRoleSnap: Role | null;
+  /** Integration Foundation v1 双主体字段;既有 205 处调用不传,保持零漂移。 */
+  actorServicePrincipalId?: string | null;
+  actorCredentialId?: string | null;
+  onBehalfOfUserId?: string | null;
+  onBehalfOfRoleSnap?: Role | null;
   resourceType: string;
   resourceId: string | null;
   meta: AuditMeta;
@@ -78,6 +83,10 @@ export class AuditLogsService {
       data: {
         actorUserId: input.actorUserId,
         actorRoleSnap: input.actorRoleSnap,
+        actorServicePrincipalId: input.actorServicePrincipalId,
+        actorCredentialId: input.actorCredentialId,
+        onBehalfOfUserId: input.onBehalfOfUserId,
+        onBehalfOfRoleSnap: input.onBehalfOfRoleSnap,
         resourceType: input.resourceType,
         resourceId: input.resourceId,
         event: input.event,
@@ -176,6 +185,10 @@ export class AuditLogsService {
       createdAt: row.createdAt,
       actorUserId: row.actorUserId,
       actorRoleSnap: row.actorRoleSnap,
+      actorServicePrincipalId: row.actorServicePrincipalId,
+      actorCredentialId: row.actorCredentialId,
+      onBehalfOfUserId: row.onBehalfOfUserId,
+      onBehalfOfRoleSnap: row.onBehalfOfRoleSnap,
       resourceType: row.resourceType,
       resourceId: row.resourceId,
       event: row.event,

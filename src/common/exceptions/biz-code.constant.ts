@@ -3570,6 +3570,11 @@ export const BizCode = {
     message: 'Integration API 未启用',
     httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
   },
+  DELEGATION_GRANT_INVALID: {
+    code: 37016,
+    message: '委托关系无效或已失效',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
 
   // RoleBinding 资格门(规格书 §15.3 七条;PR2)。
   ROLE_BINDING_ROLE_INELIGIBLE_FOR_SERVICE_PRINCIPAL: {
