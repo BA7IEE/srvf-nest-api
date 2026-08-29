@@ -6,15 +6,18 @@ import { DirectPrincipalAuthzService } from './direct-principal-authz.service';
 import { RoleBindingScopeCoveragePolicy } from './role-binding-scope-coverage.policy';
 
 /** closure 回调:PrismaService 只在装配层出现,Policy 本体零 DB 依赖(lint 铁律 D-7)。 */
-const makeClosureLookup =
-  (prisma: PrismaService) =>
-  async (ancestorId: string, descendantId: string): Promise<boolean> => {
+const makeClosureLookup = (prisma: PrismaService) => {
+  return async (ancestorId: string, descendantId: string): Promise<boolean> => {
     const row = await prisma.organizationClosure.findFirst({
-      where: { ancestorId, descendantId },
+      where: {
+        ancestorId: ancestorId,
+        descendantId: descendantId,
+      },
       select: { depth: true },
     });
     return row !== null;
   };
+};
 
 /**
  * Integration Foundation v1 PR4(规格书 §41/§60):Principal-neutral Authz。

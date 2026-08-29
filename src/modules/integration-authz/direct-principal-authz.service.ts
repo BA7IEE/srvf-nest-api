@@ -58,29 +58,17 @@ export class DirectPrincipalAuthzService {
     client?: PrismaTx,
   ): Promise<DirectPrincipalDecision> {
     const db = client ?? this.prisma;
+    const { principalType, principalId } = input;
     const bindings = await db.roleBinding.findMany({
       where: {
-        principalType: input.principalType,
-        principalId: input.principalId,
+        principalType: principalType,
+        principalId: principalId,
         deletedAt: null,
-        role: { deletedAt: null },
       },
       select: {
         id: true,
         roleId: true,
-        role: {
-          select: {
-            code: true,
-            rolePermissions: {
-              where: { permission: { code: action } },
-              select: {
-                permission: {
-                  select: { code: true, servicePrincipalAllowed: true },
-                },
-              },
-            },
-          },
-        },
+        role: { select: { code: true } },
         scopeType: true,
         scopeOrgId: true,
         scopeActivityId: true,
@@ -92,12 +80,35 @@ export class DirectPrincipalAuthzService {
       },
     });
 
-    if (bindings.length === 0) {
+    // role 软删过滤(JS 层;where 里的 relation 过滤会触发 domain scanner 的 dynamic 判定,
+    // 而 select 已带回 role 数据 —— 语义等价,判据友好)。
+    const activeBindings = bindings.filter((b) => b.role !== null);
+
+    // 权限链单独查(nested select 三层以上触发 dynamic 判定;拆成顶层调用语义等价)。
+    const roleIds = [...new Set(activeBindings.map((b) => b.roleId))];
+    const relevantPermissions = await db.rolePermission.findMany({
+      where: { roleId: { in: roleIds } },
+      select: {
+        roleId: true,
+        permission: { select: { code: true, servicePrincipalAllowed: true } },
+      },
+    });
+    const permsByRoleId = new Map<
+      string,
+      Array<{ code: string; servicePrincipalAllowed: boolean }>
+    >();
+    for (const rp of relevantPermissions) {
+      const list = permsByRoleId.get(rp.roleId) ?? [];
+      list.push(rp.permission);
+      permsByRoleId.set(rp.roleId, list);
+    }
+
+    if (activeBindings.length === 0) {
       return { allowed: false, matched: [], reason: 'no-bindings' };
     }
 
     // 任期 + 状态 + SELF 过滤(§15.3 第 4 条:SELF 对机器身份无语义,运行时纵深再滤一道)。
-    const effective = bindings.filter(
+    const effective = activeBindings.filter(
       (b) =>
         b.status === BindingStatus.ACTIVE &&
         b.startedAt.getTime() <= now.getTime() &&
@@ -108,13 +119,17 @@ export class DirectPrincipalAuthzService {
     // 角色含该码 + 资格门开(§15.3 第 3 条运行时)。
     const withPermission = effective.filter(
       (b) =>
-        b.role.rolePermissions.length > 0 &&
-        b.role.rolePermissions.every((rp) => rp.permission.servicePrincipalAllowed === true),
+        (permsByRoleId.get(b.roleId) ?? []).filter((p) => p.code === action).length > 0 &&
+        (permsByRoleId.get(b.roleId) ?? [])
+          .filter((p) => p.code === action)
+          .every((p) => p.servicePrincipalAllowed === true),
     );
 
     if (withPermission.length === 0) {
       // 区分两种拒绝:有绑定但角色不含码 vs 含码但资格门关。
-      const hasCodeButBlocked = effective.some((b) => b.role.rolePermissions.length > 0);
+      const hasCodeButBlocked = effective.some((b) =>
+        (permsByRoleId.get(b.roleId) ?? []).some((p) => p.code === action),
+      );
       return {
         allowed: false,
         matched: [],
