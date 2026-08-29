@@ -262,6 +262,16 @@ export class ServicePrincipalsService {
     return revoked;
   }
 
+  /** PR3:token 签发后回写 lastUsedAt(属主导出;integration-auth 不直写他域模型)。 */
+  async markCredentialUsed(credentialId: string): Promise<void> {
+    await this.prisma.servicePrincipalCredential
+      .update({
+        where: { id: credentialId },
+        data: { lastUsedAt: new Date() },
+      })
+      .catch(() => undefined);
+  }
+
   // ===== 内部 =====
 
   private present(sp: {

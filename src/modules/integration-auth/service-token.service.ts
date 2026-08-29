@@ -76,13 +76,8 @@ export class ServiceTokenService {
       },
     );
 
-    // lastUsedAt 留痕(§27 模型字段;fire-and-forget 的同步写,签发是低频操作不值得拆事务)。
-    await this.prisma.servicePrincipalCredential
-      .update({
-        where: { id: credentialId },
-        data: { lastUsedAt: new Date() },
-      })
-      .catch(() => undefined);
+    // lastUsedAt 留痕(§27 模型字段;走属主导出,不直写他域模型)。
+    await this.spService.markCredentialUsed(credentialId);
 
     return { accessToken: token, tokenType: 'Bearer', expiresIn };
   }

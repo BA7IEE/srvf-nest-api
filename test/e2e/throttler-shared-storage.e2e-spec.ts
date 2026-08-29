@@ -10,6 +10,7 @@ import { CONTENT_PUBLIC_THROTTLER_NAME } from '../../src/common/decorators/conte
 import { LOGIN_SMS_THROTTLER_NAME } from '../../src/common/decorators/login-sms-throttle.decorator';
 import { LOGIN_WECHAT_THROTTLER_NAME } from '../../src/common/decorators/login-wechat-throttle.decorator';
 import { LOGIN_WECOM_THROTTLER_NAME } from '../../src/common/decorators/login-wecom-throttle.decorator';
+import { SERVICE_TOKEN_THROTTLER_NAME } from '../../src/common/decorators/service-token-throttle.decorator';
 import { PASSWORD_CHANGE_THROTTLER_NAME } from '../../src/common/decorators/password-change-throttle.decorator';
 import { PASSWORD_RESET_THROTTLER_NAME } from '../../src/common/decorators/password-reset-throttle.decorator';
 import { RECRUITMENT_THROTTLER_NAME } from '../../src/common/decorators/recruitment-throttle.decorator';
@@ -41,6 +42,8 @@ const THROTTLER_NAMES = [
   // 企业微信接入 T3(2026-08-02;冻结稿 D-WC-16):第 11 个独立实例,
   // 服务 auth/v1 的 login-wecom{,/authorize} 与 wecom-bind{,/send-code,/authorize} 五端点。
   LOGIN_WECOM_THROTTLER_NAME,
+  // Integration Foundation v1 PR3(2026-08-28):第 12 个独立实例,服务 auth/v1/service-token。
+  SERVICE_TOKEN_THROTTLER_NAME,
 ] as const;
 
 function delay(milliseconds: number): Promise<void> {
