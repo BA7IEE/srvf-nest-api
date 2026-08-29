@@ -314,7 +314,17 @@ export type AuditLogEvent =
   | 'member.official-portrait.activate' // 首次激活标准照(此前无 ACTIVE);extra {portraitVersionId, specVersion, source}
   | 'member.official-portrait.replace' // 替换:旧版转 SUPERSEDED + 新版 ACTIVE 同事务;extra {oldVersionId, newVersionId}
   | 'member.official-portrait.void' // 作废当前版本;extra {portraitVersionId, reason}(reason 必填,issue §8.3)
-  | 'member.official-portrait.purge'; // 〔预留 · 未接〕(#1106 T1 刻意未接;合规清理流程见 issue #1055 §5.2,建流程时接通)语义:历史版本二进制合规清理;extra {portraitVersionId}
+  | 'member.official-portrait.purge' // 〔预留 · 未接〕(#1106 T1 刻意未接;合规清理流程见 issue #1055 §5.2,建流程时接通)语义:历史版本二进制合规清理;extra {portraitVersionId}
+  // Integration Foundation v1 PR2–PR5(规格书 §24;双主体字段承载技术 Actor 与业务 Subject)。
+  | 'service-principal.create'
+  | 'service-principal.update'
+  | 'service-principal.status-change'
+  | 'service-principal.credential-create'
+  | 'service-principal.credential-revoke'
+  | 'delegation-grant.create'
+  | 'delegation-grant.revoke'
+  | 'auth.service-token'
+  | 'auth.delegated-token';
 
 // Prisma AuditLog.context Json 字段的运行时锁形(D7 拍板)。
 // 共 6 字段:3 必填 + 3 可选。AuditLogsService.log() 内部构造,e2e 强断言每条 audit

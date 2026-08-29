@@ -19,6 +19,8 @@ export interface IntegrationAuthConfig {
   audience: string;
   /** Service Token TTL(秒)。规格书 §11.2:最长 30 分钟,默认 600(10m)。 */
   serviceTokenTtlSeconds: number;
+  /** Delegated Token TTL(秒)。同属 Integration 短 Token,最长 30 分钟,默认 600(10m)。 */
+  delegatedTokenTtlSeconds: number;
   /** 限流(规格书 §11.2 env):默认 10 次 / 60 秒。 */
   throttleLimit: number;
   throttleTtlSeconds: number;
@@ -40,6 +42,11 @@ export function loadIntegrationAuthConfig(
     Number.isFinite(ttlRaw) && ttlRaw > 0
       ? Math.min(ttlRaw, SERVICE_TOKEN_MAX_TTL_SECONDS)
       : SERVICE_TOKEN_DEFAULT_TTL_SECONDS;
+  const delegatedTtlRaw = Number.parseInt(env.INTEGRATION_DELEGATED_TOKEN_EXPIRES_IN ?? '', 10);
+  const delegatedTtl =
+    Number.isFinite(delegatedTtlRaw) && delegatedTtlRaw > 0
+      ? Math.min(delegatedTtlRaw, SERVICE_TOKEN_MAX_TTL_SECONDS)
+      : SERVICE_TOKEN_DEFAULT_TTL_SECONDS;
   const limitRaw = Number.parseInt(env.SERVICE_TOKEN_THROTTLE_LIMIT ?? '', 10);
   const ttlThrottleRaw = Number.parseInt(env.SERVICE_TOKEN_THROTTLE_TTL_SECONDS ?? '', 10);
   return {
@@ -48,6 +55,7 @@ export function loadIntegrationAuthConfig(
     issuer: INTEGRATION_JWT_ISSUER,
     audience: INTEGRATION_JWT_AUDIENCE,
     serviceTokenTtlSeconds: ttl,
+    delegatedTokenTtlSeconds: delegatedTtl,
     throttleLimit: Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 10,
     throttleTtlSeconds: Number.isFinite(ttlThrottleRaw) && ttlThrottleRaw > 0 ? ttlThrottleRaw : 60,
   };

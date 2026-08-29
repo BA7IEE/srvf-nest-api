@@ -2,6 +2,11 @@ import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
+export interface IntegrationLogPrincipal {
+  servicePrincipalId: string;
+  onBehalfOfUserId?: string | null;
+}
+
 // ARCHITECTURE.md §11.1:请求 ID 贯通(x-request-id)
 // 客户端可在请求头传 `x-request-id` 透传调用链 ID;缺失或非法时由后端生成。
 // 生成结果同时写回响应头与 pino 日志的 reqId 字段,前端报错时凭此对齐后端日志。
@@ -39,10 +44,28 @@ export function genReqId(req: IncomingMessage, res: ServerResponse): string {
 //   - reqId:与响应头 x-request-id 完全一致(同一字符串引用,均来自 genReqId → req.id)。
 //   - userId:已登录请求由 JwtStrategy.validate() 后 passport 挂在 Express Request 上;
 //     未登录请求省略字段,避免无意义噪声。
+export function setIntegrationLogPrincipal(
+  req: IncomingMessage,
+  principal: IntegrationLogPrincipal,
+): void {
+  const r = req as IncomingMessage & { integrationLogPrincipal?: IntegrationLogPrincipal };
+  r.integrationLogPrincipal = principal;
+}
+
 export function buildHttpLogProps(req: IncomingMessage): Record<string, unknown> {
-  const r = req as IncomingMessage & { id?: string; user?: CurrentUserPayload };
+  const r = req as IncomingMessage & {
+    id?: string;
+    user?: CurrentUserPayload;
+    integrationLogPrincipal?: IntegrationLogPrincipal;
+  };
   const props: Record<string, unknown> = {};
   if (r.id) props.reqId = r.id;
   if (r.user) props.userId = r.user.id;
+  if (r.integrationLogPrincipal) {
+    props.servicePrincipalId = r.integrationLogPrincipal.servicePrincipalId;
+    if (r.integrationLogPrincipal.onBehalfOfUserId != null) {
+      props.onBehalfOfUserId = r.integrationLogPrincipal.onBehalfOfUserId;
+    }
+  }
   return props;
 }

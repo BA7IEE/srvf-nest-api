@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { DatabaseModule } from '../../database/database.module';
+import { DelegationPermissionEligibilityService } from './delegation-permission-eligibility.service';
 import { PermissionsController } from './permissions.controller';
 import { PermissionsService } from './permissions.service';
 import { LastAdminProtectionPolicy } from './last-admin-protection.policy';
@@ -76,6 +77,7 @@ import { UserRolesService } from './user-roles.service';
     // `auth` 的 step-up 端点验完因子后委托它签发(identity-org → platform-access,
     // domain-map 已确认的允许边)。本域自己 verify,零反向依赖。
     RolePermissionStepUpProofService,
+    DelegationPermissionEligibilityService,
     UserRolesService,
     RbacService,
     RoleDelegationPolicy,
@@ -88,6 +90,7 @@ import { UserRolesService } from './user-roles.service';
     RoleDelegationPolicy,
     LastAdminProtectionPolicy,
     RolePermissionStepUpProofService,
+    DelegationPermissionEligibilityService,
   ],
 })
 export class PermissionsModule {}

@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client';
 // 沿 v1 users.select.ts / batch 5-A contribution-rules.select.ts 范式。
 //
 // 对外字段必须与 AuditLogResponseDto 严格同步:增删字段两边同时改。
-// 暴露全部 9 个业务字段;**不暴露 actorUser relation 详情**(避免循环 / 信息冗余;
+// 暴露全部 13 个业务字段;**不暴露 actorUser relation 详情**(避免循环 / 信息冗余;
 // 调用方按需用 actorUserId 二次查 users.service.findOne)。
 
 export const auditLogSafeSelect = {
@@ -12,6 +12,10 @@ export const auditLogSafeSelect = {
   createdAt: true,
   actorUserId: true,
   actorRoleSnap: true,
+  actorServicePrincipalId: true,
+  actorCredentialId: true,
+  onBehalfOfUserId: true,
+  onBehalfOfRoleSnap: true,
   resourceType: true,
   resourceId: true,
   event: true,

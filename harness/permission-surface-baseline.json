@@ -517,6 +517,21 @@
       "surface": "sha256:967e9af91dd3bbc46843a08beb4181c08c143446978158f3cda5723fe3174f8a",
       "description": "sha256:a8212aa17c9e6973d67492d83e7113e395fd8f85965cf3e6526526ceacebbb2f"
     },
+    "delegation-grant.create.record": {
+      "endpoints": 1,
+      "surface": "sha256:33b77ebaf5598bf5b4ed6e4a809e13e8054e19013bda48596c11b89dbf023f08",
+      "description": "sha256:4eb90bb5f27ae4ff438d953ad5cd5c64ace8ec46f3d8316ed1bbbb1d4dc43cff"
+    },
+    "delegation-grant.read.record": {
+      "endpoints": 2,
+      "surface": "sha256:11c06ba2754d4a891b736a667345974f265e7d8a5057f2fccc08c61351c36488",
+      "description": "sha256:d7b4475501ffa17b0e9a7996d393f2867f619ea6cf871ef35c29ae7b990cfdb6"
+    },
+    "delegation-grant.revoke.record": {
+      "endpoints": 1,
+      "surface": "sha256:b8d2194b5d1bd8d97a40a4daadb30d23a7c4cb1218ed209dd4bcb2f4ab36646c",
+      "description": "sha256:fa83c501f295df2df7c27ce573f7a668abbf492ecacf0e41b12e199672c9e868"
+    },
     "dict.create.item": {
       "endpoints": 1,
       "surface": "sha256:c9f043c3e68e804d647f3c9531dbd46ec74f4eaa8ea6f7d89a85e0d409629fe7",

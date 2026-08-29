@@ -6,6 +6,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { dummySecretHash } from '../../config/integration-auth.config';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ServicePrincipalsService } from '../service-principals/service-principals.service';
 import { IntegrationAuthGate } from './integration-auth.gate';
 
@@ -35,6 +37,17 @@ export interface ServiceTokenPayload {
   exp: number;
 }
 
+export interface ServiceTokenIssueOptions {
+  auditMeta?: AuditMeta;
+  onIssued?: (actor: { servicePrincipalId: string }) => void;
+}
+
+const INTERNAL_TOKEN_AUDIT_META: AuditMeta = {
+  requestId: 'integration-token-internal',
+  ip: null,
+  ua: null,
+};
+
 @Injectable()
 export class ServiceTokenService {
   /** 自有实例,绑定 integration secret —— 不走全局 JwtModule DI(全局注册互相覆盖,实测打挂 auth)。 */
@@ -44,6 +57,7 @@ export class ServiceTokenService {
     private readonly prisma: PrismaService,
     private readonly gate: IntegrationAuthGate,
     private readonly spService: ServicePrincipalsService,
+    private readonly auditLogs: AuditLogsService,
   ) {
     this.jwtService = new JwtService({ secret: gate.jwtSecret });
   }
@@ -53,6 +67,7 @@ export class ServiceTokenService {
   async issueToken(
     clientId: string,
     clientSecret: string,
+    options: ServiceTokenIssueOptions = {},
   ): Promise<{ accessToken: string; tokenType: 'Bearer'; expiresIn: number }> {
     if (!this.gate.isEnabled()) {
       throw new BizException(BizCode.INTEGRATION_API_DISABLED);
@@ -78,6 +93,17 @@ export class ServiceTokenService {
 
     // lastUsedAt 留痕(§27 模型字段;走属主导出,不直写他域模型)。
     await this.spService.markCredentialUsed(credentialId);
+    await this.auditLogs.log({
+      event: 'auth.service-token',
+      actorUserId: null,
+      actorRoleSnap: null,
+      actorServicePrincipalId: principal.servicePrincipalId,
+      actorCredentialId: credentialId,
+      resourceType: 'service-principal',
+      resourceId: principal.servicePrincipalId,
+      meta: options.auditMeta ?? INTERNAL_TOKEN_AUDIT_META,
+    });
+    options.onIssued?.({ servicePrincipalId: principal.servicePrincipalId });
 
     return { accessToken: token, tokenType: 'Bearer', expiresIn };
   }
@@ -93,15 +119,33 @@ export class ServiceTokenService {
       if (payload.tokenUse !== 'service') {
         throw new BizException(BizCode.INTEGRATION_TOKEN_INVALID);
       }
+      const iss = requiredString(payload.iss);
+      const aud = requiredString(payload.aud);
+      const sub = requiredString(payload.sub);
+      const credentialId = requiredString(payload.credentialId);
+      const jti = requiredString(payload.jti);
+      const iat = requiredNumber(payload.iat);
+      const exp = requiredNumber(payload.exp);
+      if (
+        iss === null ||
+        aud === null ||
+        sub === null ||
+        credentialId === null ||
+        jti === null ||
+        iat === null ||
+        exp === null
+      ) {
+        throw new BizException(BizCode.INTEGRATION_TOKEN_INVALID);
+      }
       return {
-        iss: String(payload.iss),
-        aud: String(payload.aud),
-        sub: String(payload.sub),
+        iss,
+        aud,
+        sub,
         tokenUse: 'service',
-        credentialId: String(payload.credentialId),
-        jti: typeof payload.jti === 'string' ? payload.jti : '',
-        iat: Number(payload.iat ?? 0),
-        exp: Number(payload.exp ?? 0),
+        credentialId,
+        jti,
+        iat,
+        exp,
       };
     } catch (error) {
       if (error instanceof BizException) throw error;
@@ -148,4 +192,25 @@ export class ServiceTokenService {
 
     return { servicePrincipalId: activeSp.id, credentialId: activeCredential.id };
   }
+}
+
+function requiredString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function requiredNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+export interface DelegatedTokenPayload {
+  iss: string;
+  aud: string;
+  sub: string; // subjectUserId(被代表的真人)
+  tokenUse: 'delegated';
+  credentialId: string;
+  delegationGrantId: string;
+  act: { sub: string }; // 真正调用的 SP
+  jti: string;
+  iat: number;
+  exp: number;
 }

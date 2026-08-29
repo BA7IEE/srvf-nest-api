@@ -1,8 +1,12 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { DelegationGrantsModule } from '../delegation-grants/delegation-grants.module';
 import { ServicePrincipalsModule } from '../service-principals/service-principals.module';
 import { IntegrationAuthGate } from './integration-auth.gate';
+import { DelegatedTokenController } from './delegated-token.controller';
 import { ServiceTokenController } from './service-token.controller';
+import { DelegatedTokenService } from './delegated-token.service';
 import { ServiceTokenService } from './service-token.service';
 
 /**
@@ -19,9 +23,9 @@ import { ServiceTokenService } from './service-token.service';
  * 的编解码原语即可,不碰实例默认值。
  */
 @Module({
-  imports: [DatabaseModule, ServicePrincipalsModule],
-  controllers: [ServiceTokenController],
-  providers: [IntegrationAuthGate, ServiceTokenService],
-  exports: [IntegrationAuthGate, ServiceTokenService],
+  imports: [DatabaseModule, ServicePrincipalsModule, DelegationGrantsModule, AuditLogsModule],
+  controllers: [ServiceTokenController, DelegatedTokenController],
+  providers: [IntegrationAuthGate, ServiceTokenService, DelegatedTokenService],
+  exports: [IntegrationAuthGate, ServiceTokenService, DelegatedTokenService],
 })
 export class IntegrationAuthModule {}

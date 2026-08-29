@@ -50,4 +50,8 @@ export class IntegrationAuthGate {
   get serviceTokenTtlSeconds(): number {
     return this.config.serviceTokenTtlSeconds;
   }
+
+  get delegatedTokenTtlSeconds(): number {
+    return this.config.delegatedTokenTtlSeconds;
+  }
 }

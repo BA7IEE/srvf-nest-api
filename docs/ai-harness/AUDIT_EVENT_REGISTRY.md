@@ -19,7 +19,7 @@
 > **三条写库漏斗**(全部 `event: AuditLogEvent` 类型锁,新增事件不进 union 编译不过):
 > `AuditLogsService.log()` · `writeConfigAudit()`(permissions)· `user-roles.service` 内联薄封装。
 
-**审计事件(机器核对):147 个 · 活跃(≥1 次出现):142 · 已退役/零产出:5**
+**审计事件(机器核对):156 个 · 活跃(≥1 次出现):151 · 已退役/零产出:5**
 
 
 ## profile
@@ -141,6 +141,20 @@
 | `auth.login.wechat` | 3 |  |
 | `auth.step-up` | 1 |  |
 | `auth.login.wecom` | 3 |  |
+
+## integration
+
+| event | 仓内出现次数 | 备注 |
+|---|---|---|
+| `service-principal.create` | 1 |  |
+| `service-principal.update` | 1 |  |
+| `service-principal.status-change` | 1 |  |
+| `service-principal.credential-create` | 1 |  |
+| `service-principal.credential-revoke` | 1 |  |
+| `delegation-grant.create` | 1 |  |
+| `delegation-grant.revoke` | 1 |  |
+| `auth.service-token` | 1 |  |
+| `auth.delegated-token` | 1 |  |
 
 ## phone
 
@@ -378,4 +392,3 @@
 |---|---|---|
 | `realname-setting.update` | 1 |  |
 | `realname-setting.reset-credentials` | 1 |  |
-
