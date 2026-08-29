@@ -37,12 +37,16 @@ export interface ServiceTokenPayload {
 
 @Injectable()
 export class ServiceTokenService {
+  /** 自有实例,绑定 integration secret —— 不走全局 JwtModule DI(全局注册互相覆盖,实测打挂 auth)。 */
+  private readonly jwtService: JwtService;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly gate: IntegrationAuthGate,
     private readonly spService: ServicePrincipalsService,
-    private readonly jwtService: JwtService,
-  ) {}
+  ) {
+    this.jwtService = new JwtService({ secret: gate.jwtSecret });
+  }
 
   // ===== 签发(§12.3)=====
 
@@ -63,7 +67,6 @@ export class ServiceTokenService {
         credentialId,
       },
       {
-        secret: this.gate.jwtSecret,
         algorithm: 'HS256',
         subject: principal.servicePrincipalId,
         issuer: this.gate.issuer,
@@ -89,7 +92,6 @@ export class ServiceTokenService {
   verifyToken(token: string): ServiceTokenPayload {
     try {
       const payload = this.jwtService.verify<Record<string, unknown>>(token, {
-        secret: this.gate.jwtSecret,
         issuer: this.gate.issuer,
         audience: this.gate.audience,
       });
