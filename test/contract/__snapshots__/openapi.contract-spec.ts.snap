@@ -18999,6 +18999,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "Object": {
+    "properties": {},
+    "type": "object",
+  },
   "OrganizationOptionItemDto": {
     "properties": {
       "code": {
@@ -124579,6 +124583,115 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/auth/v1/service-token": {
+    "post": {
+      "operationId": "ServiceTokenController_issue",
+      "parameters": [],
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/Object",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37010: 客户端凭证无效或已失效",
+                    "enum": [
+                      37010,
+                    ],
+                    "example": 37010,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "客户端凭证无效或已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "客户端凭证无效或已失效(code=37010)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37030: Integration API 未启用",
+                    "enum": [
+                      37030,
+                    ],
+                    "example": 37030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "Integration API 未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Integration API 未启用(code=37030)",
+        },
+      },
+      "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [public]",
+      "tags": [
+        "auth/service-token",
+      ],
+    },
+  },
   "/api/auth/v1/step-up/password": {
     "post": {
       "operationId": "AuthController_stepUpWithPassword",
@@ -141486,11 +141599,11 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "37011: 该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建",
+                    "description": "37015: 该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建",
                     "enum": [
-                      37011,
+                      37015,
                     ],
-                    "example": 37011,
+                    "example": 37015,
                     "type": "integer",
                   },
                   "data": {
@@ -141512,7 +141625,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建(code=37011)",
+          "description": "该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建(code=37015)",
         },
       },
       "security": [
@@ -141592,7 +141705,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "凭证不存在(code=37010)
+          "description": "凭证不存在(code=37014)
 
 服务主体不存在或已删除(code=37001)",
         },

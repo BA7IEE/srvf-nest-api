@@ -3534,12 +3534,12 @@ export const BizCode = {
     httpStatus: HttpStatus.NOT_FOUND,
   },
   SERVICE_CREDENTIAL_NOT_FOUND: {
-    code: 37010,
+    code: 37014,
     message: '凭证不存在',
     httpStatus: HttpStatus.NOT_FOUND,
   },
   SERVICE_CREDENTIAL_LIMIT_EXCEEDED: {
-    code: 37011,
+    code: 37015,
     message: '该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建',
     httpStatus: HttpStatus.CONFLICT,
   },
@@ -3552,6 +3552,23 @@ export const BizCode = {
     code: 37013,
     message: '服务主体已处于目标状态',
     httpStatus: HttpStatus.CONFLICT,
+  },
+
+  // PR3:认证侧归一码(规格书 §12.4 / §11.2 / §52)。
+  SERVICE_CREDENTIAL_INVALID: {
+    code: 37010,
+    message: '客户端凭证无效或已失效',
+    httpStatus: HttpStatus.UNAUTHORIZED,
+  },
+  INTEGRATION_TOKEN_INVALID: {
+    code: 37011,
+    message: 'Integration Token 无效或已失效',
+    httpStatus: HttpStatus.UNAUTHORIZED,
+  },
+  INTEGRATION_API_DISABLED: {
+    code: 37030,
+    message: 'Integration API 未启用',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
   },
 
   // RoleBinding 资格门(规格书 §15.3 七条;PR2)。

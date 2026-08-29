@@ -94,7 +94,7 @@ describe('Integration Foundation v1 PR2 —— ServicePrincipal 控制面(8 端�
   it('② 凭证上限:第三条 ACTIVE 必拒(37011);轮换闭环(新建→撤销→再新建可过)', async () => {
     await service.createCredential(spId, actor, auditMeta); // 第二条
     await expect(service.createCredential(spId, actor, auditMeta)).rejects.toMatchObject({
-      biz: { code: 37011 },
+      biz: { code: 37015 },
     });
 
     // 轮换:撤销第一条 → 再建可过(§12.2 形状)。

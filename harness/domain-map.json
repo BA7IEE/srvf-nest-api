@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:d8dc92aaf9db8a3f07314b8565c2bb7b9bf4eedb1d33844e6e13706c716039b3",
+  "inputDigest": "sha256:83de94de6905d637727d443227dced7eff924f9e286c6fa63deac5e5bcb2eee1",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -118,7 +118,8 @@
     "integration-foundation": {
       "confirmed": true,
       "modules": [
-        "service-principals"
+        "service-principals",
+        "integration-auth"
       ]
     }
   },
@@ -288,6 +289,10 @@
       "confirmed": true
     },
     "service-principals": {
+      "domain": "integration-foundation",
+      "confirmed": true
+    },
+    "integration-auth": {
       "domain": "integration-foundation",
       "confirmed": true
     }

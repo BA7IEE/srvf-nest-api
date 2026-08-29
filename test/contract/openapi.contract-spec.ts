@@ -1066,6 +1066,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/system/v1/service-principals/{id}/credentials'],
   ['get', '/api/system/v1/service-principals/{id}/credentials'],
   ['post', '/api/system/v1/service-principals/{id}/credentials/{credentialId}/revoke'],
+  // Integration Foundation v1 PR3(规格书 §12.3):Client Credentials 换 Service Token。
+  ['post', '/api/auth/v1/service-token'],
 ];
 
 /**
@@ -1074,7 +1076,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 562; // 2026-08-28 IF PR2 +8(service-principals system/v1)
+const EXPECTED_ROUTE_COUNT = 563; // 2026-08-28 IF PR2 +8(service-principals system/v1)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

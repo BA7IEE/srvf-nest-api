@@ -694,6 +694,12 @@ function parseRealnameEncryptionKey(raw: string | undefined, env: AppEnv): strin
   return trimmed;
 }
 
+// Integration Foundation v1 PR3(规格书 §11.2):service-token 端点限流。
+export interface ServiceTokenThrottleConfig {
+  limit: number;
+  ttlSeconds: number;
+}
+
 export interface AppConfig {
   env: AppEnv;
   port: number;
@@ -716,6 +722,7 @@ export interface AppConfig {
   passwordResetThrottle: PasswordResetThrottleConfig;
   loginSmsThrottle: LoginSmsThrottleConfig;
   loginWechatThrottle: LoginWechatThrottleConfig;
+  serviceTokenThrottle: ServiceTokenThrottleConfig;
   loginWecomThrottle: LoginWecomThrottleConfig;
   recruitmentThrottle: RecruitmentThrottleConfig;
   recruitmentOcr: RecruitmentOcrConfig;
@@ -921,6 +928,22 @@ export default registerAs('app', (): AppConfig => {
     ),
   };
 
+  // Integration Foundation v1 PR3(规格书 §11.2;第 12 个独立 throttler,默认 10/60)
+  const serviceTokenThrottle: ServiceTokenThrottleConfig = {
+    limit: parsePositiveInt(
+      process.env.SERVICE_TOKEN_THROTTLE_LIMIT,
+      10,
+      'SERVICE_TOKEN_THROTTLE_LIMIT',
+      { min: 1, max: 100 },
+    ),
+    ttlSeconds: parsePositiveInt(
+      process.env.SERVICE_TOKEN_THROTTLE_TTL_SECONDS,
+      60,
+      'SERVICE_TOKEN_THROTTLE_TTL_SECONDS',
+      { min: 1, max: 3600 },
+    ),
+  };
+
   // 企业微信接入 T2(2026-08-01):企业微信 pre-auth 端点限流配置骨架(冻结稿 §11)。
   // T2 只有配置与装饰器,**没有端点挂它**;实例注册与 guard 接线在 T3(见上方 interface 注释)。
   const loginWecomThrottle: LoginWecomThrottleConfig = {
@@ -1027,6 +1050,7 @@ export default registerAs('app', (): AppConfig => {
     passwordResetThrottle,
     loginSmsThrottle,
     loginWechatThrottle,
+    serviceTokenThrottle,
     loginWecomThrottle,
     recruitmentThrottle,
     recruitmentOcr,

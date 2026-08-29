@@ -15,6 +15,7 @@ import { StorageModule } from './modules/storage/storage.module';
 import appConfig from './config/app.config';
 import type { AppConfig } from './config/app.config';
 import databaseConfig from './config/database.config';
+import integrationAuthConfig from './config/integration-auth.config';
 import jwtConfig from './config/jwt.config';
 import { DatabaseModule } from './database/database.module';
 import { PrismaService } from './database/prisma.service';
@@ -41,6 +42,7 @@ import { MembersModule } from './modules/members/members.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { ServicePrincipalsModule } from './modules/service-principals/service-principals.module';
+import { IntegrationAuthModule } from './modules/integration-auth/integration-auth.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { PositionAssignmentsModule } from './modules/position-assignments/position-assignments.module';
@@ -72,7 +74,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, jwtConfig],
+      load: [appConfig, databaseConfig, jwtConfig, integrationAuthConfig],
     }),
     // ARCHITECTURE.md §11.1:LoggerModule 全局注册,所有 HTTP 请求自动打日志。
     LoggerModule.forRootAsync({
@@ -143,6 +145,7 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     //   当前接入边界以 docs/current-state.md 与 src/modules/permissions/CLAUDE.md 为准。
     PermissionsModule,
     ServicePrincipalsModule,
+    IntegrationAuthModule,
     // 终态 scoped-authz PR8(2026-07-02;冻结稿 §5.1/§5.2/§5.3):统一判权模块(第 33 模块)。
     //   AuthzService(三源推导 + covers + ActionConstraint)+ ResourceResolverService(11 类资源归属解析);
     //   0 controller / 0 端点 / 0 新码 / 0 schema。**本刀零业务消费者**(第一个消费者 = PR9 考勤终审;

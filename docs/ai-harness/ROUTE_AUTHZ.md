@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.0.0 |
-| inputDigest | sha256:f9196fd23e4aaefdc06cef5019f5f6c3149e9a2a4928b9c907cfe3b69565af8c |
-| endpoint count | 562 |
+| inputDigest | sha256:614a61a5d9fedfc2d44b37538044bab315f92fc3076859566b6be89f69f56e1f |
+| endpoint count | 563 |
 | legacy [auth] count | 171 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -32,14 +32,14 @@
 | admin | 281 | 281 | 0 |
 | app | 160 | 160 | 0 |
 | system | 85 | 85 | 0 |
-| auth | 20 | 20 | 0 |
+| auth | 21 | 21 | 0 |
 | open | 16 | 16 | 0 |
 
 ## Legacy declaration summary
 
 | marker | count |
 |---|---:|
-| public | 33 |
+| public | 34 |
 | rbac | 358 |
 | auth | 171 |
 | unclassified | 0 |
@@ -107,7 +107,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:f9196fd23e4aaefdc06cef5019f5f6c3149e9a2a4928b9c907cfe3b69565af8c",
+  "inputDigest": "sha256:614a61a5d9fedfc2d44b37538044bab315f92fc3076859566b6be89f69f56e1f",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -9262,6 +9262,20 @@
       }
     },
     {
+      "routeKey": "POST /api/auth/v1/service-token",
+      "controller": "ServiceTokenController",
+      "handler": "issue",
+      "legacy": "public",
+      "policy": {
+        "admission": null,
+        "mode": "PUBLIC",
+        "codes": [],
+        "require": "all",
+        "scopes": [],
+        "engine": null
+      }
+    },
+    {
       "routeKey": "POST /api/auth/v1/step-up/password",
       "controller": "AuthController",
       "handler": "stepUpWithPassword",
@@ -10990,6 +11004,7 @@
 | POST | /api/auth/v1/password-reset | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:311; src/modules/auth/auth.controller.ts:326 |
 | POST | /api/auth/v1/password-reset/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:283; src/modules/auth/auth.controller.ts:303 |
 | POST | /api/auth/v1/refresh | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:108; src/modules/auth/auth.controller.ts:123 |
+| POST | /api/auth/v1/service-token | auth/service-token | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/integration-auth/service-token.controller.ts:36; src/modules/integration-auth/service-token.controller.ts:65 |
 | POST | /api/auth/v1/step-up/password | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
 | POST | /api/auth/v1/step-up/sms | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
 | POST | /api/auth/v1/step-up/sms/send-code | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |

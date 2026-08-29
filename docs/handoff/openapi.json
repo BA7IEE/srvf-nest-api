@@ -99186,7 +99186,7 @@
             }
           },
           "409": {
-            "description": "该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建(code=37011)",
+            "description": "该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建(code=37015)",
             "content": {
               "application/json": {
                 "schema": {
@@ -99200,10 +99200,10 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        37011
+                        37015
                       ],
-                      "description": "37011: 该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建",
-                      "example": 37011
+                      "description": "37015: 该服务主体同时最多持有 2 条有效凭证,请先撤销旧凭证再新建",
+                      "example": 37015
                     },
                     "message": {
                       "type": "string",
@@ -99357,7 +99357,7 @@
             }
           },
           "404": {
-            "description": "凭证不存在(code=37010)\n\n服务主体不存在或已删除(code=37001)",
+            "description": "凭证不存在(code=37014)\n\n服务主体不存在或已删除(code=37001)",
             "content": {
               "application/json": {
                 "schema": {
@@ -99433,6 +99433,115 @@
         "summary": "撤销凭证(撤销后以其换的 Token 下一请求即失效) [rbac: service-principal.revoke.credential]",
         "tags": [
           "system/service-principals"
+        ]
+      }
+    },
+    "/api/auth/v1/service-token": {
+      "post": {
+        "operationId": "ServiceTokenController_issue",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "客户端凭证无效或已失效(code=37010)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37010
+                      ],
+                      "description": "37010: 客户端凭证无效或已失效",
+                      "example": 37010
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "客户端凭证无效或已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Integration API 未启用(code=37030)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37030
+                      ],
+                      "description": "37030: Integration API 未启用",
+                      "example": 37030
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Integration API 未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [public]",
+        "tags": [
+          "auth/service-token"
         ]
       }
     },
@@ -140516,6 +140625,10 @@
           "revokedAt",
           "lastUsedAt"
         ]
+      },
+      "Object": {
+        "type": "object",
+        "properties": {}
       },
       "ImportOrganizationRowDto": {
         "type": "object",

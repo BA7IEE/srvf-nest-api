@@ -3,6 +3,7 @@ import { CONTENT_PUBLIC_THROTTLER_NAME } from '../common/decorators/content-publ
 import { LOGIN_SMS_THROTTLER_NAME } from '../common/decorators/login-sms-throttle.decorator';
 import { LOGIN_WECHAT_THROTTLER_NAME } from '../common/decorators/login-wechat-throttle.decorator';
 import { LOGIN_WECOM_THROTTLER_NAME } from '../common/decorators/login-wecom-throttle.decorator';
+import { SERVICE_TOKEN_THROTTLER_NAME } from '../common/decorators/service-token-throttle.decorator';
 import { RECRUITMENT_THROTTLER_NAME } from '../common/decorators/recruitment-throttle.decorator';
 import { PASSWORD_CHANGE_THROTTLER_NAME } from '../common/decorators/password-change-throttle.decorator';
 import { PASSWORD_RESET_THROTTLER_NAME } from '../common/decorators/password-reset-throttle.decorator';
@@ -104,6 +105,13 @@ export function buildThrottlerOptions(
         name: LOGIN_WECOM_THROTTLER_NAME,
         limit: appCfg.loginWecomThrottle.limit,
         ttl: appCfg.loginWecomThrottle.ttlSeconds * 1000,
+      },
+      // Integration Foundation v1 PR3(2026-08-28):service-token 端点第 12 实例
+      // (规格书 §11.2/§51;默认 10/60)。⚠️ 与 ThrottlerBizGuard 分派成对。
+      {
+        name: SERVICE_TOKEN_THROTTLER_NAME,
+        limit: appCfg.serviceTokenThrottle.limit,
+        ttl: appCfg.serviceTokenThrottle.ttlSeconds * 1000,
       },
     ],
     setHeaders: false,
