@@ -13,8 +13,8 @@ import * as path from 'path';
 //   1. changelog.d/ fragment 归并进 ## Unreleased
 //   2. ## Unreleased → ## vX.Y.Z - <今天>(日期自动,消灭 #796 那类错)
 //   3. package.json#version + apply-swagger setVersion
-//   4. 生成 docs/archive/handoff/vX.Y.Z.md(数字来自守护计数,叙事取自 CHANGELOG 本版段)
-//   5. 回填 current-state §1
+//   4. 刷新版本变更的下游产物(openapi → clients；authz manifest)
+//   5. 生成 docs/archive/handoff/vX.Y.Z.md(数字来自守护计数,叙事取自 CHANGELOG 本版段)
 //
 // 设计约束(沿对抗性评审结论):
 //   - **幂等可重入**:每步先探测已完成态;中途失败重跑不会写坏
@@ -44,6 +44,8 @@ interface Step {
   readonly name: string;
   /** 已完成则返回说明(跳过);未完成返回 null */
   readonly done: () => string | null;
+  /** dry-run 需把前序待写动作算进去时使用；缺省时复用 done。 */
+  readonly dryRunDone?: () => string | null;
   readonly run: () => void;
 }
 
@@ -84,6 +86,39 @@ function extractChangelogSection(version: string): string {
   const rest = doc.slice(start);
   const nextIdx = rest.indexOf('\n## ', 1);
   return (nextIdx === -1 ? rest : rest.slice(0, nextIdx)).trim();
+}
+
+function isTargetVersionApplied(version: string): boolean {
+  const pkg = JSON.parse(read(PKG)) as { version: string };
+  return pkg.version === version && read(SWAGGER).includes(`.setVersion('${version}')`);
+}
+
+function generatedDocsCurrent(): string | null {
+  try {
+    // OpenAPI 是唯一一条生成物 → 生成物依赖的上游；clients 的 inputDigest 包含整份
+    // contract，contractVersion 也取自 info.version。authz 虽不读 OpenAPI，却把全部
+    // src/**/*.ts（含 apply-swagger.ts）纳入自己的 inputDigest。
+    execFileSync(
+      'pnpm',
+      ['exec', 'ts-node', '--project', 'tsconfig.json', 'scripts/generate-openapi.ts', '--check'],
+      { cwd: ROOT, stdio: 'pipe' },
+    );
+    execFileSync('pnpm', ['docs:feclient:check'], { cwd: ROOT, stdio: 'pipe' });
+    execFileSync('pnpm', ['docs:authz:check'], { cwd: ROOT, stdio: 'pipe' });
+    return 'OpenAPI、clients 与 authz manifest 均已是最新';
+  } catch {
+    return null;
+  }
+}
+
+function refreshGeneratedDocs(): void {
+  execFileSync(
+    'pnpm',
+    ['exec', 'ts-node', '--project', 'tsconfig.json', 'scripts/generate-openapi.ts'],
+    { cwd: ROOT, stdio: 'inherit' },
+  );
+  execFileSync('pnpm', ['docs:feclient'], { cwd: ROOT, stdio: 'inherit' });
+  execFileSync('pnpm', ['docs:authz'], { cwd: ROOT, stdio: 'inherit' });
 }
 
 function buildSteps(version: string, tag: string, date: string, handoffRel: string): Step[] {
@@ -140,25 +175,14 @@ function buildSteps(version: string, tag: string, date: string, handoffRel: stri
       },
     },
     {
-      // ⚠️ 必须紧跟在 apply-swagger 版本改动之后:openapi 快照的 `info.version`
-      // 取自 setVersion,版本一改快照立即过期,而 P4d 把「契约快照新鲜度」接进了 CI。
-      // 不做这一步,**每一次发版都会被自己的守护卡住** —— v0.63.0 发版 PR 的
-      // Fast checks 就是这么红的(2026-07-29 实测,发版链第一次真实使用即暴露)。
-      // 教训:加一道门时,必须同时问「哪些既有流程会撞上它」。
-      name: 'openapi 快照随版本刷新',
-      done: () => {
-        try {
-          execFileSync('pnpm', ['exec', 'ts-node', '--project', 'tsconfig.json',
-            'scripts/generate-openapi.ts', '--check'], { cwd: ROOT, stdio: 'pipe' });
-          return '快照已与当前代码一致';
-        } catch {
-          return null;
-        }
-      },
-      run: () => {
-        execFileSync('pnpm', ['exec', 'ts-node', '--project', 'tsconfig.json',
-          'scripts/generate-openapi.ts'], { cwd: ROOT, stdio: 'inherit' });
-      },
+      // 必须紧跟在 apply-swagger 版本改动之后。v0.63.0 已证明只漏 OpenAPI 就会
+      // 撞契约新鲜度门；当前 clients 与 authz manifest 又分别依赖它的 version/源码摘要。
+      // dry-run 若沿用当前状态检查，会在版本尚未实际写入时把它们错报为“已新鲜”，故需
+      // 用目标版本是否已落盘来预演前序动作的影响。
+      name: '版本变更下游产物刷新(OpenAPI → clients；authz manifest)',
+      done: generatedDocsCurrent,
+      dryRunDone: () => (isTargetVersionApplied(version) ? generatedDocsCurrent() : null),
+      run: refreshGeneratedDocs,
     },
     {
       name: `生成 ${handoffRel}`,
@@ -252,6 +276,7 @@ function main(): void {
     let already: string | null;
     try {
       already = step.done();
+      if (dryRun && step.dryRunDone !== undefined) already = step.dryRunDone();
     } catch (err) {
       console.error(`✗ 无法判定「${step.name}」是否已完成:${(err as Error).message}`);
       console.error('  fail-closed:停下,不猜。请人工确认后重跑。');
