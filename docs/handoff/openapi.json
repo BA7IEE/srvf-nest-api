@@ -117902,7 +117902,7 @@
   "info": {
     "title": "深圳公益救援队数字化平台 API(SRVF-DP)",
     "description": "Shenzhen Rescue Volunteers Federation Digital Platform — 组织数字化业务底座后端 API(NestJS + Prisma + PostgreSQL)",
-    "version": "0.69.0",
+    "version": "0.70.0",
     "contact": {}
   },
   "tags": [
