@@ -372,8 +372,9 @@ Certificate (不在 participation 图内)
 
 ### 文档
 
-- [`docs/current-state.md`](current-state.md) — 当前版本状态、已发能力、当前债务
-- [`docs/api-surface-policy.md`](api-surface-policy.md) — Admin / App / Auth / System / Open 五个 canonical surface 长期边界
+- [`docs/current-state.md`](current-state.md) — 人类决策与现实世界状态、能力指针、当前债务
+- [`docs/ai-harness/CAPABILITIES.md`](ai-harness/CAPABILITIES.md) — 已发能力终态摘要
+- [`docs/api-surface-policy.md`](api-surface-policy.md) — Admin / App / Auth / System / Open / Integration 六个 canonical surface 长期边界
 - [`docs/v2-api-contract.md`](v2-api-contract.md) — V2 第一阶段接口契约(完整字段 / 错误码 / 权限矩阵)
 - [`docs/v2-data-model.md`](v2-data-model.md) — V2 第一阶段数据模型说明
 - [`AGENTS.md`](../AGENTS.md) — 长期 AI 协作铁律主入口(命名 / 目录 / 错误码 / 软删除等)

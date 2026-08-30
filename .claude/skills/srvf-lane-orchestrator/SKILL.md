@@ -35,7 +35,7 @@ description: 当本会话要充当 SRVF 并行开发「总控」时使用:为执
 
 ## 4. 收口(E 档)
 
-global preflight 全过(全仓 0 open PR)→ `pnpm changelog:merge` 归并 fragment → 沿 `srvf-release-closeout` 九阶段。
+global preflight 全过(全仓 0 open PR)→ 沿 `srvf-release-closeout` 两阶段收口(`release:prepare` 会归并 fragment)。
 
 ## 5. 简报(唯一出口)
 

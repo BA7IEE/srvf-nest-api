@@ -77,7 +77,7 @@ docker run --rm -p 3000:3000 \
 - migration 必须由部署流程**显式**触发(CI/CD pipeline 独立步骤、K8s `Job` / `initContainer` / Helm pre-upgrade hook、平台一次性 migration job 等),并在应用副本启动**之前**完成
 - 应用 runner 镜像不保证包含 Prisma CLI(runner 阶段已裁掉 devDependencies)。如需在容器环境执行迁移,应使用 CI/CD 的源码工作区(直接 `pnpm prisma:deploy`),或单独构建 migrator 镜像
 - 不在容器启动时自动 migrate 的原因:连库失败会触发反复重启(K8s rollback 行为不可控);多副本同时启动会让多个 `migrate deploy` 并发,Prisma migration_lock 不保证安全。详见 [`Dockerfile`](../Dockerfile) 文末注释
-- 所有分项上线 SOP 都必须先按 [`current-state.md §1`](current-state.md) 核对当前批准 release tag，再绑定不可变 SHA / image digest；migration 通过条件是该 tag 的已审查 migration 均已部署且 `pnpm prisma migrate status` 无 pending，禁止使用会随版本增长的累计数量作门槛
+- 所有分项上线 SOP 都必须先由维护者为本次维护窗明确批准 release tag，并以 GitHub tag / Release、不可变 SHA / image digest 与部署记录互证；同时按 [`current-state.md §1`](current-state.md) 核对生产 GO/NO-GO 与开关边界。migration 通过条件是该 tag 的已审查 migration 均已部署且 `pnpm prisma migrate status` 无 pending，禁止使用会随版本增长的累计数量作门槛
 
 ### D-INSURANCE v3 PR3 single gate 上线与回退 SOP（本次未部署）
 

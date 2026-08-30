@@ -67,7 +67,7 @@ API Client Boundary 设计期(Phase 0)过程性约束(原 §19.1 ~ §19.6)已随
 > 本节是 §19.7 决策锁的**后续层**:沿 §19 开头"新增'客户端边界执行铁律'应**新增 §20+,不修订本节(§19)**"的 append-only 规则;§20 已被"Git 安全"占用,故顺延至本节。**D-series 编号在本节延续**(D-9),保持与 §19.7 D-1 ~ D-8 的交叉引用连续性。
 > 2026-06-01 用户主动要求重开 §19.7 D-2(已按 §19.7 preamble"暂停说明本节存在后再讨论"履行),拍板放弃"方案 C(`/api/v2/*` 长期保留)",改为 **Route B 全量物理迁移**。
 
-**D-9(2026-06-01 拍板;取代 D-2 的"不迁移"部分;2026-06-18 Open 首用后终态 true-up)**:API surface 固定为 **5 个 canonical surface**:
+**D-9(2026-06-01 拍板;取代 D-2 的"不迁移"部分;2026-06-18 Open 首用、2026-08-30 Integration Foundation v1 PR6 首用后终态 true-up)**:API surface 固定为 **6 个 canonical surface**:
 
 | Surface | 前缀 | 用途 |
 |---|---|---|
@@ -76,6 +76,7 @@ API Client Boundary 设计期(Phase 0)过程性约束(原 §19.1 ~ §19.6)已随
 | Auth | `/api/auth/v1/*` | 登录 / 刷新 / 登出 / 认证会话 |
 | System | `/api/system/v1/*` | 健康检查 / 运行状态 / 系统元信息 / ops 配置(承接 D-1 `contribution-rules` → System) |
 | Open | `/api/open/v1/*` | **首用(2026-06-18 招新一期 T3)**:无账号公开 surface(`@Public`;首落地 = 招新报名提交/查询);**2026-06-21 CMS 第二用** = 内容公开列表/详情(`open/v1/contents`);第 5 canonical 前缀,执行细节以 [`docs/api-surface-policy.md §0`](../api-surface-policy.md) 为准 |
+| Integration | `/api/integration/v1/*` | **首用(2026-08-30 Integration Foundation v1 PR6)**:外部系统机器调用面,只接受显式 Service / Delegated principal;第 6 canonical 前缀,执行细节以 [`docs/api-surface-policy.md §0`](../api-surface-policy.md) 为准 |
 
 存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` **已按 alias → 灰度 → deprecate → 删除完成全量迁移**(取代 D-2 的"不强制迁移 / 不做大面积老接口双写")。当前归属以 [`api-surface-policy.md §0`](../api-surface-policy.md) 为准；逐 endpoint 签字映射、阶段顺序与回退记录保留在 [`api-surface-migration-plan.md`](../api-surface-migration-plan.md)。
 

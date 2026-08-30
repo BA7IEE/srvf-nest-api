@@ -114,7 +114,7 @@ pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
 
 | 段 | 内容 | 谁执行 | 幂等 |
 |---|---|---|---|
-| **A**(合并前,一个 PR) | changelog.d 归并 → `## Unreleased` 折叠为 `## vX.Y.Z - <今天>`(**日期自动**)→ package.json + apply-swagger 版本 → 生成 handoff 快照(数字取自守护计数、叙事取自 CHANGELOG)→ 回填 current-state §1 | AI 跑脚本 | ✅ 重跑自动跳过已完成步骤 |
+| **A**(合并前,一个 PR) | changelog.d 归并 → `## Unreleased` 折叠为 `## vX.Y.Z - <今天>`(**日期自动**)→ package.json + apply-swagger 版本 → 生成 handoff 快照(数字取自守护计数、叙事取自 CHANGELOG) | AI 跑脚本 | ✅ 重跑自动跳过已完成步骤 |
 | **拍板** | 复核 diff + 全量检查 + **维护者合并** | 维护者 | — |
 | **B**(合并后) | 打 tag → push → 建 GitHub Release(Notes 抽自 CHANGELOG)→ 输出收尾证据 | AI 跑脚本 | ✅ 已存在则跳过并校验指向 |
 
@@ -126,21 +126,21 @@ pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
 - 两段均 **fail-closed**:任一步无法确定就停下并打印「已完成 / 未完成」清单,不猜
 - 阶段 B 会校验 `package.json#version` 与参数一致、本地 HEAD == origin/main、且 **HEAD 提交信息含本版号**(防 tag 指错提交);tag 已存在但指向不符 → 停下报告,**不自动移动 tag**
 
-**这样做的由来**:v0.62.0 收口用了 5 个纯簿记 PR(#794 归并 / #795 bump / **#796 修日期笔误** / #797 handoff / #798 current-state),每个都要维护者点一次、等一轮 CI。其中 #796 是手工必然会犯的那类错 —— 日期是可计算的,不该由人抄。
+**这样做的由来**:v0.62.0 收口用了 5 个纯簿记 PR(#794 归并 / #795 bump / **#796 修日期笔误** / #797 handoff / #798 current-state 回填),每个都要维护者点一次、等一轮 CI。其中 #796 是手工必然会犯的那类错 —— 日期是可计算的,不该由人抄。#798 是当时的历史步骤;Harness 3.0 恒读层重写后,版本 / HEAD / tag / PR 等机器事实已从 `current-state` 移除,现行 `release:prepare` 不再回填。
 
-> 旧的九阶段表(阶段 1–9)保留于 git 历史;单步手动路径不废除,脚本只是把 2–8 的机械部分合成两次执行。
+> 旧的九阶段表(阶段 1–9)保留于 git 历史;单步手动路径不废除,脚本只把仍适合自动化的机械步骤合成两次执行。
 
 ### 5.2 关键约束
 
 - **tag 默认指向 handoff PR 的 squash merge commit**,除非用户另行拍板
-- **handoff 是历史快照,合入后不回改**;发现过时 → 更新 `current-state.md`,不回改 handoff
-- release 后必须回填 `current-state.md`(§1 / §2 / §4);README 启动入口保持指向 `current-state.md`
-- **release PR 只允许含阶段 A 的产物**(版本三处 / CHANGELOG 折叠 / handoff 快照 / current-state §1),**禁止**夹带其他改动;脚本本身不会写别的文件,人也别顺手加
+- **handoff 是历史快照,合入后不回改**;发现时效性变化时更新对应权威文档(现实世界状态 / 债务 → `current-state.md`,能力 → [`ai-harness/CAPABILITIES.md`](ai-harness/CAPABILITIES.md)),不回改 handoff
+- release 后核对 `current-state.md`(§1 / §2 / §4)与能力台账:仅在本版本改变机器不可查的现实状态、能力事实或债务时最小回填对应权威文档。版本、main HEAD、open PR、tag、GitHub Release 等机器事实不写回 `current-state`;现场用 `pnpm agent:preflight` / GitHub 核验。README 启动入口保持指向 `current-state.md`
+- **release PR 只允许含阶段 A 的脚本产物**(CHANGELOG 折叠、版本及下游生成物、handoff 快照,以及确有非机器事实变化时对应权威文档的最小回填),**禁止**夹带其他改动;脚本本身不会写别的文件,人也别顺手加
 - **bump 前**:`changelog.d/` 有 fragment 时先 `pnpm changelog:merge` 归并进 `## Unreleased`(Harness 2.0;单 lane 直接编辑 Unreleased 的旧路径不废除)
 
 ### 5.3 release 后回填 checklist
 
-- [ ] 更新 `current-state.md §1`(main HEAD / tag / release Latest / open PR)、§2(新增能力)、§4(债务增减)
+- [ ] 核对 `current-state.md`(§1 / §2 / §4)与 [`ai-harness/CAPABILITIES.md`](ai-harness/CAPABILITIES.md):仅在本版本改变机器不可查的现实状态、能力事实或债务时更新对应权威文档;不因版本、main HEAD、open PR、tag、GitHub Release 改 `current-state`
 - [ ] **不**回改 `docs/archive/handoff/v0.X.0.md`(它就是阶段快照)
 - [ ] 检查 [`docs/V2红线与复活路径.md`](V2红线与复活路径.md) 顶部"基线版本"是否需要刷新
 - [ ] `git ls-remote --heads origin` 与 main 对齐;无残留分支
@@ -222,7 +222,7 @@ pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
 - 立项与出 goal(五要素,§7.1);按**写集声明**排班:写集相交或同一 bounded context → 不并行(合并 goal 或排队)
 - 持有 **migration token**:同一时刻至多一条 schema-touching lane(随 D 档拍板授予)
 - 串行集成,逐 PR:rebase → contract snapshot 复核(diff 逐行可解释)→ `agent:check:quick` + 定向 spec(全量由该 PR 的 CI 冷跑裁决)→ `gh pr diff --name-only` 落写集核对 → squash 合并(沿 §5.4)→ 通知其余 lane rebase
-- 独占 E 档(release / tag / bump / current-state 回填)与 `pnpm changelog:merge`
+- 独占 E 档(release / tag / bump / 必要的权威文档回填)与 `pnpm changelog:merge`
 - **唯一简报流**:各 lane 拍板项汇总为一份人话简报(§4.1);执行 lane 不直接向维护者请求拍板
 - 总控不写业务代码
 

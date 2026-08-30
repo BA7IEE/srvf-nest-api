@@ -13,7 +13,7 @@ SRVF Nest API 项目的 **release 收口 + PR squash merge + main 同步 + branc
 
 任务涉及以下任一即启用:
 
-- 收口一个 release(bump / handoff / tag / GitHub Release / current-state 回填)
+- 收口一个 release(bump / handoff / tag / GitHub Release / 必要的权威文档核对)
 - `gh pr merge`(尤其 `--squash --delete-branch`)收一个 CI 全绿、已评审的 PR
 - squash merge 后同步 main / 清理本地 + 远端 branch / 移除 Claude Code worktree
 - `git branch -d` 报 `not fully merged`,需走 patch-equivalence 判定
@@ -24,9 +24,9 @@ SRVF Nest API 项目的 **release 收口 + PR squash merge + main 同步 + branc
 冲突时按此优先级,**不自行调和,停止并报告**:
 
 1. 用户本轮明确指令
-2. [`docs/current-state.md §1`](../../../docs/current-state.md) + live Git / GitHub / 代码版本证据 — 版本 / tag / HEAD / open PR 当前事实
+2. [`docs/current-state.md §1`](../../../docs/current-state.md)(人类决策与现实世界状态) + live Git / GitHub / 代码版本证据(版本 / tag / HEAD / open PR 等机器事实)
 3. [`AGENTS.md`](../../../AGENTS.md) — 长期铁律、git 安全与 E 档串行边界
-4. [`docs/process.md §5 / §5.4`](../../../docs/process.md) — release 九阶段、squash merge、清理与 patch-equivalence 过程细则
+4. [`docs/process.md §5 / §5.4`](../../../docs/process.md) — release 两阶段、squash merge、清理与 patch-equivalence 过程细则
 5. [`CHANGELOG.md`](../../../CHANGELOG.md) — release notes 唯一来源(`## vX.Y.Z` 对应段)
 
 ## Required first checks
@@ -44,9 +44,13 @@ SRVF Nest API 项目的 **release 收口 + PR squash merge + main 同步 + branc
 
 ## Release closeout workflow
 
-沿 [`process.md §5.1`](../../../docs/process.md),**逐阶段独立 PR、不混不夹带**(0.x 默认 minor):
+沿 [`process.md §5.1`](../../../docs/process.md),**两阶段强串行、不混不夹带**(0.x 默认 minor):
 
-1. feature PR → 2. CHANGELOG `## Unreleased` 增量 → 3. landing docs PR → 4. **bump PR**(仅 `package.json` / `apply-swagger.ts` / `CHANGELOG.md` 折叠 3 文件)→ 5. **handoff PR**(新建 `docs/archive/handoff/vX.Y.Z.md`,合入后**不回改**)→ 6. **tag**(指向 handoff squash commit;AI 以 `git tag` + push 执行,维护者亦可手动)→ 7. **GitHub Release**(Notes 抽自 CHANGELOG 对应段;AI 以 `gh release create` 执行并输出 `gh release list` 证据,维护者亦可手动)→ 8. **current-state 回填**(§1 HEAD/tag/release/open PR;§2/§4 若变)→ 9. 分支清理。
+1. **阶段 A**(一个 release PR):`release:prepare` 归并 changelog、折叠本版段、更新版本及下游生成物,并生成 `docs/archive/handoff/vX.Y.Z.md`(合入后**不回改**)。
+2. **维护者合并**阶段 A PR。
+3. **阶段 B**:tag 指向 release PR 的 squash merge commit,再推送并创建 GitHub Release(Notes 抽自 CHANGELOG 对应段)。
+4. 核对现实世界状态、能力与债务:只有本版本改变机器不可查事实时,才最小更新对应权威文档;版本、main HEAD、open PR、tag、Release 不写入 `current-state`。
+5. 清理本任务分支与 worktree。
 
 ## Squash merge + cleanup workflow
 
@@ -74,7 +78,7 @@ squash merge 后 `git branch -d <head>` 报 `not fully merged` 属正常(squash 
 
 | 档 | 范围 | 用户拍板 |
 |---|---|---|
-| **A** | 本 skill / landing docs / current-state 回填(仅 docs) | ❌ |
+| **A** | 本 skill / landing docs / 必要的权威文档回填(仅 docs) | ❌ |
 | **D / E** | bump / handoff / tag / GitHub Release / version;或合并任何 D/E 档目标 PR | ✅(沿 [`process.md §3`](../../../docs/process.md)) |
 
 merge / 清理动作本身不改代码,但**整体档位随目标 PR 升档**;合并 D/E 档 PR 前用户必须已拍板。
@@ -102,7 +106,7 @@ merge / 清理动作本身不改代码,但**整体档位随目标 PR 升档**;�
 - 通配符 / 批量删分支(`branch -D claude/*` / `for` / `xargs`)
 - `git reset --hard` / `git push --force[-with-lease]` / `git worktree remove --force`
 - 清理非本任务的 worktree / 本地孤立 / 远端 `claude/*` 分支
-- 把 release bump / handoff / current-state 回填夹进无关 PR
+- 把 release bump / handoff / 必要的权威文档回填夹进无关 PR
 - tag 未指向正确的 release / handoff squash commit
 - GitHub Release notes 临场编造,而非抽自 CHANGELOG 对应段
 

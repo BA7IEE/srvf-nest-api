@@ -27,7 +27,7 @@
 
 ### 1.1 系统侧已就位(必读,部署侧确认)
 
-- [ ] 以 [`current-state.md §1`](../current-state.md) 指定的当前批准 release tag 为准，核对部署的不可变 SHA / image digest 与该 tag 一致；确认 migration `20260612091522_add_wechat_mini_login_infra` 已 deploy，并以 `pnpm prisma migrate status` 验证无 pending
+- [ ] 以维护者为本次上线明确批准的 release tag 为准，用 GitHub tag / Release 与部署记录中的不可变 SHA / image digest 互证；同时按 [`current-state.md §1`](../current-state.md) 核对生产 GO/NO-GO 与开关边界。确认 migration `20260612091522_add_wechat_mini_login_infra` 已 deploy，并以 `pnpm prisma migrate status` 验证无 pending
 - [ ] `pnpm prisma:seed` 已幂等执行；以同一 tag 的 [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md) + `pnpm docs:rbacmap:check` 对账，确认当前 `wechat-setting.*` 与 `user.wechat.clear` 权限及绑定到位，不用累计权限码数量作门槛
 - [ ] 生产 env 已注入并冻结 `WECHAT_ENCRYPTION_KEY`(≥32 字符,推荐 `openssl rand -base64 32`;**与其他三把 key 不同值**;缺失时 production 启动 fail-fast;已有密文后禁止直接修改,见 [`encryption-key-freeze.md`](encryption-key-freeze.md))
 - [ ] 可选 env:`LOGIN_WECHAT_THROTTLE_LIMIT` / `_TTL_SECONDS`(留空默认 IP 5 次/60 秒)

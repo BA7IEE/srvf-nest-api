@@ -610,7 +610,7 @@ V2 第一个使用软删的模块(预计 `organizations` 或 `dictionaries`)开�
 
 - ✅ 经 C 档授权后在 canonical 接口出参 DTO 新增**可选**字段(标 `nullable`)
 - ✅ 在 v1 数据表新增**可空**外键(如 `users.memberId` 候选)
-- ✅ 经 C 档授权后在五个 canonical surface 新增扩展接口
+- ✅ 经 C 档授权后在六个 canonical surface 新增扩展接口
 
 ### 11.4 V2 与 v1 集成的禁止动作
 
