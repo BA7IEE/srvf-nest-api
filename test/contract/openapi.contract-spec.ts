@@ -1077,6 +1077,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/system/v1/delegation-grants/{id}/revoke'],
   // Integration Foundation v1 PR6(规格书 §37/§62):第六 surface 的唯一新增端点。
   ['get', '/api/integration/v1/me'],
+  // Integration Foundation v1 PR7:首个业务面只读接入，只暴露活动类型最小参考数据。
+  ['get', '/api/integration/v1/reference/activity-types'],
 ];
 
 /**
@@ -1085,7 +1087,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 569; // 2026-08-30 IF PR6 +1(integration/v1/me)
+const EXPECTED_ROUTE_COUNT = 570; // 2026-08-30 IF PR7 +1(integration/v1/reference/activity-types)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1747,6 +1749,8 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   // Integration Foundation v1 PR6:机器主体 /me 的最小、独立出参。
   'IntegrationServicePrincipalDto',
   'IntegrationMeResponseDto',
+  // Integration Foundation v1 PR7:活动类型仅返回稳定业务码、显示名和排序。
+  'IntegrationActivityTypeItemDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
@@ -1797,6 +1801,7 @@ describe('OpenAPI 契约快照', () => {
     for (const [method, path] of [
       ['post', '/api/auth/v1/delegated-token'],
       ['get', '/api/integration/v1/me'],
+      ['get', '/api/integration/v1/reference/activity-types'],
     ] as const) {
       expect(doc.paths[path]?.[method]?.security).toEqual([{ integrationBearer: [] }]);
     }
@@ -1824,6 +1829,43 @@ describe('OpenAPI 契约快照', () => {
     expect(
       Object.keys((schemas.IntegrationServicePrincipalDto as OpenApiSchema).properties ?? {}),
     ).toEqual(['clientId', 'name']);
+  });
+
+  it('Integration 活动类型参考数据是 Service-only 的分页最小读模型', () => {
+    const operation = doc.paths['/api/integration/v1/reference/activity-types']?.get;
+    expect(operation?.security).toEqual([{ integrationBearer: [] }]);
+    expect(operation?.requestBody).toBeUndefined();
+    expect(documented4xxCodes(operation)).toEqual(
+      expect.arrayContaining([
+        BizCode.INTEGRATION_TOKEN_INVALID.code,
+        BizCode.PRINCIPAL_KIND_FORBIDDEN.code,
+        BizCode.RBAC_FORBIDDEN.code,
+        BizCode.DICT_TYPE_NOT_FOUND.code,
+      ]),
+    );
+    expect(
+      operation?.responses?.['503']?.content?.['application/json']?.schema?.properties?.code?.enum,
+    ).toContain(BizCode.INTEGRATION_API_DISABLED.code);
+
+    const dataSchema = operation?.responses?.['200']?.content?.['application/json']?.schema
+      ?.properties?.data as OpenApiSchema & { allOf?: OpenApiSchema[] };
+    expect(dataSchema?.allOf).toEqual([
+      { $ref: '#/components/schemas/PageResultDto' },
+      {
+        type: 'object',
+        required: ['items', 'total', 'page', 'pageSize'],
+        properties: {
+          items: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/IntegrationActivityTypeItemDto' },
+          },
+        },
+      },
+    ]);
+
+    const itemSchema = doc.components?.schemas?.IntegrationActivityTypeItemDto as OpenApiSchema;
+    expect(itemSchema.required).toEqual(['code', 'label', 'sortOrder']);
+    expect(Object.keys(itemSchema.properties ?? {})).toEqual(['code', 'label', 'sortOrder']);
   });
 
   it.each(EXPECTED_ROUTES)('路由仍存在: %s %s', (method, path) => {

@@ -181,6 +181,22 @@ describe('route authorization declaration normalizer', () => {
     ).toThrow('USER cannot be combined');
   });
 
+  it('reserves the Integration direct engine for SERVICE-only routes', () => {
+    expect(() =>
+      normalizeRouteAuthzDeclaration({
+        isPublic: false,
+        fragments: [
+          {
+            mode: 'RBAC',
+            codes: [{ code: 'dict.read.item', scope: null }],
+            engine: 'integration-direct',
+            allowedPrincipalKinds: ['DELEGATED'],
+          },
+        ],
+      }),
+    ).toThrow('integration-direct engine requires SERVICE as its only principal kind');
+  });
+
   it('keeps only registered ALS assertions and never retains a resource value', () => {
     const declaration = normalizeRouteAuthzDeclaration({
       isPublic: false,
@@ -219,6 +235,31 @@ describe('route authorization declaration normalizer', () => {
         hasResourceRef: false,
       },
     ]);
+    expect(findAuthzObservationGap(observation)).toBeNull();
+  });
+
+  it('requires the direct-principal assertion for Integration direct-permission routes', () => {
+    const declaration = normalizeRouteAuthzDeclaration({
+      isPublic: false,
+      fragments: [
+        {
+          mode: 'RBAC',
+          codes: [{ code: 'dict.read.item', scope: null }],
+          engine: 'integration-direct',
+          allowedPrincipalKinds: ['SERVICE'],
+        },
+      ],
+    });
+    if (!declaration) throw new Error('test declaration missing');
+
+    const observation = beginAuthzRequestObservation(declaration);
+    recordAuthzAssertion({ pattern: 'rbac-can', codes: ['dict.read.item'] });
+    expect(findAuthzObservationGap(observation)).toMatchObject({
+      missingCodes: ['dict.read.item'],
+      engine: 'integration-direct',
+    });
+
+    recordAuthzAssertion({ pattern: 'direct-principal-authz', codes: ['dict.read.item'] });
     expect(findAuthzObservationGap(observation)).toBeNull();
   });
 

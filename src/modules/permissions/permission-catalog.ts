@@ -245,6 +245,8 @@ export const RBAC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
 // **D4=A**:member-department 采用 set.current / clear.current 自定义动词
 // (沿 PR-1 rbac.config.reload 范式;业务语义清晰优先)。
 
+export const DICT_READ_ITEM_CODE = 'dict.read.item';
+
 // dict.* 8 条(dict_types 4 + dict_items 4)
 export const DICT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
@@ -276,7 +278,7 @@ export const DICT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     description: '软删字典类型(D3=A 放宽至 ops-admin)',
   },
   {
-    code: 'dict.read.item',
+    code: DICT_READ_ITEM_CODE,
     module: 'dict',
     action: 'read',
     resourceType: 'item',

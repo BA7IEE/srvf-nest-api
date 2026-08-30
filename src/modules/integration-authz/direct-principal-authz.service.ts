@@ -1,6 +1,7 @@
 import { Prisma, BindingScopeType, BindingStatus, PrincipalType } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 
+import { recordAuthzAssertion } from '../../common/authz/authz-context';
 import { PrismaService } from '../../database/prisma.service';
 
 type PrismaTx = Prisma.TransactionClient;
@@ -57,6 +58,7 @@ export class DirectPrincipalAuthzService {
     now: Date = new Date(),
     client?: PrismaTx,
   ): Promise<DirectPrincipalDecision> {
+    recordAuthzAssertion({ pattern: 'direct-principal-authz', codes: [action] });
     const db = client ?? this.prisma;
     const { principalType, principalId } = input;
     const bindings = await db.roleBinding.findMany({

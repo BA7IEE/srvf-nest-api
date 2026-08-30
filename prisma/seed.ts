@@ -27,6 +27,7 @@ import {
   CERTIFICATE_PERMISSION_SEED,
   CONTENT_ATTACHMENT_PERMISSION_SEED,
   CONTENT_PERMISSION_SEED,
+  DICT_READ_ITEM_CODE,
   EMERGENCY_CONTACT_PERMISSION_SEED,
   MEMBER_ACCOUNT_PERMISSION_SEED,
   MEMBER_DELETE_RECORD_CODE,
@@ -63,6 +64,7 @@ import {
   MEMBER_ORIGIN_RECRUITMENT,
 } from '../src/common/identity/member-origin.constant';
 import { effectiveGlobalOpsAdminBindingWhere } from '../src/modules/permissions/role-binding-validity';
+import { isControlPlanePermissionCode } from '../src/modules/permissions/role-delegation.policy';
 
 // v1 唯一允许创建 SUPER_ADMIN 的入口(详见 ARCHITECTURE.md §7.11 + §8 + §13)。
 // seed 直接读 process.env(§14 显式例外):SUPER_ADMIN_* 不进 ConfigService,
@@ -1177,6 +1179,22 @@ const MEMBER_ROLE_PERMISSION_CODES: ReadonlyArray<string> = [
   'attachment.view.activity',
 ];
 
+// Integration Foundation v1 PR7:首个业务面只读权限的**精确**资格门清单。
+//
+// - 机器需要它:外部系统读取 ACTIVE 活动类型的稳定参考数据。
+// - 最坏滥用:枚举活动分类名称与排序；不会取得 ID、状态、业务记录或任何写能力。
+// - 它不属于 isControlPlanePermissionCode()；控制面码永远不能由本清单打开。
+//
+// 这不是 Permission 定义、内置角色扩权或通用字典导出开关。未列出的所有 Permission
+// 继续依赖 schema 默认 false；Delegated 也没有任何初始开放码。
+const INTEGRATION_PERMISSION_ELIGIBILITY_SEED = [
+  {
+    code: DICT_READ_ITEM_CODE,
+    servicePrincipalAllowed: true,
+    delegatedAccessAllowed: false,
+  },
+] as const;
+
 // 终态 scoped-authz PR6(2026-07-01;冻结稿 §8.2):判权唯一读源 = global RoleBinding。
 // seed 授予角色(ops-admin bootstrap + biz-admin 补挂)改写 RoleBinding(principalType=USER, scopeType=GLOBAL,
 //   status=ACTIVE);旧 UserRole 表已 DROP(冻结表 cleanup,第 39 migration),seed 不写该表。
@@ -1399,6 +1417,43 @@ async function seedRbac(prisma: PrismaClient): Promise<void> {
     `[seed] RBAC bootstrap done (source=${bootstrapSource}, ` +
       `currentEffectiveOpsAdminCount=${holderCounts.effective}, ` +
       `currentPermanentOpsAdminCount=${holderCounts.permanent})`,
+  );
+}
+
+/**
+ * 对已存在的 Permission 定义覆写 Integration 资格门，而非把资格门散到角色或路由中。
+ * `updateMany` 的精确计数把「码被误删/改名」显式升级为 seed 失败，避免静默回到全关。
+ */
+async function seedIntegrationPermissionEligibility(prisma: PrismaClient): Promise<void> {
+  for (const eligibility of INTEGRATION_PERMISSION_ELIGIBILITY_SEED) {
+    if (isControlPlanePermissionCode(eligibility.code)) {
+      throw new Error(
+        `[seed] Integration eligibility 不允许控制面 Permission: ${eligibility.code}`,
+      );
+    }
+    if (eligibility.delegatedAccessAllowed && !eligibility.servicePrincipalAllowed) {
+      throw new Error(
+        `[seed] delegatedAccessAllowed 必须蕴含 servicePrincipalAllowed: ${eligibility.code}`,
+      );
+    }
+
+    const updated = await prisma.permission.updateMany({
+      where: { code: eligibility.code },
+      data: {
+        servicePrincipalAllowed: eligibility.servicePrincipalAllowed,
+        delegatedAccessAllowed: eligibility.delegatedAccessAllowed,
+      },
+    });
+    if (updated.count !== 1) {
+      throw new Error(
+        `[seed] Integration eligibility 目标 Permission 不存在或不唯一: ${eligibility.code}`,
+      );
+    }
+  }
+  console.log(
+    `[seed] Integration permission eligibility ensured (${INTEGRATION_PERMISSION_ELIGIBILITY_SEED.map(
+      ({ code }) => code,
+    ).join(', ')})`,
   );
 }
 
@@ -2527,6 +2582,9 @@ export async function main(): Promise<void> {
 
     // V2.x C-6 RBAC 实施 PR #8(沿 D7 v1.1 §10):14 条 rbac.* + ops-admin + bootstrap
     await seedRbac(prisma);
+
+    // Integration Foundation v1 PR7:在权限定义已 upsert 后，精确打开首个 Service-only 业务读码。
+    await seedIntegrationPermissionEligibility(prisma);
 
     // V2.x C-7 attachments 实施 PR #6a(沿 D7-attachments v1.0 §6.1 / §10.3):
     //   20 条 attachment.* + member 内置角色 + 9 条 RolePermission 映射

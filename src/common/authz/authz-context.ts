@@ -20,7 +20,12 @@ export type RouteAuthzMode =
 // Distinct from `null` on the canonical declaration: `null` means the mode
 // implies no engine at all (PUBLIC / LOGIN_ONLY), while `none` is a positive
 // statement by the author about a route that does have a judging surface.
-export const ROUTE_AUTHZ_ENGINES = ['rbac-global', 'authz-scoped', 'none'] as const;
+export const ROUTE_AUTHZ_ENGINES = [
+  'rbac-global',
+  'authz-scoped',
+  'integration-direct',
+  'none',
+] as const;
 export type RouteAuthzEngine = (typeof ROUTE_AUTHZ_ENGINES)[number];
 
 /**
@@ -193,6 +198,24 @@ export const AUTHZ_ASSERTION_PATTERNS: readonly AuthzAssertionPatternDefinition[
       {
         receiverTypes: ['AuthzService'],
         methods: ['can', 'explain'],
+        actionArgument: 1,
+        outcome: 'boolean-deny-branch',
+      },
+    ],
+  },
+  {
+    id: 'direct-principal-authz',
+    runtimeMarker: 'DirectPrincipalAuthzService.explainDirect|canDirect',
+    callShapes: [
+      'DirectPrincipalAuthzService.explainDirect(principal, action)',
+      'DirectPrincipalAuthzService.canDirect(principal, action)',
+    ],
+    requiredOutcomes: ['deny-to-BizCode', 'early-return', 'guard'],
+    axes: ['codes', 'engine'],
+    staticMatchers: [
+      {
+        receiverTypes: ['DirectPrincipalAuthzService'],
+        methods: ['explainDirect', 'canDirect'],
         actionArgument: 1,
         outcome: 'boolean-deny-branch',
       },
@@ -477,6 +500,16 @@ export function normalizeRouteAuthzDeclaration(
   if (hasOrgScope && engine !== 'authz-scoped') {
     throw new Error('Route authorization declaration with org-scope requires authz-scoped engine');
   }
+  // `integration-direct` only describes a ServicePrincipal's own direct
+  // RoleBinding check. A DELEGATED route must use the three-leg delegated
+  // judge instead; accepting it here would make that future misuse look like
+  // a normal route declaration rather than fail at boot.
+  if (
+    engine === 'integration-direct' &&
+    (allowedPrincipalKinds.length !== 1 || allowedPrincipalKinds[0] !== 'SERVICE')
+  ) {
+    throw new Error('integration-direct engine requires SERVICE as its only principal kind');
+  }
 
   return {
     admission: admission ?? null,
@@ -571,7 +604,9 @@ export function findAuthzObservationGap(
       ? 'authz-can-explain'
       : declaration.engine === 'rbac-global'
         ? 'rbac-can'
-        : null;
+        : declaration.engine === 'integration-direct'
+          ? 'direct-principal-authz'
+          : null;
   const observedCodes = new Set(
     observation.assertions
       .filter((assertion) => assertion.pattern === expectedPattern)

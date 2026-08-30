@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:ff63ba5c5437e201cf1b28cf4e746707b583a9c5ed5dc4e1fd4e738a20ea8135",
+  "inputDigest": "sha256:db57ca0ad6fa73865c1bba70559e73b016dbba677815779ac875d58a5ad1746f",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -1300,11 +1300,12 @@
         ]
       },
       "platform-core": {
-        "modules": ["attachments", "audit-logs", "storage"],
+        "modules": ["attachments", "audit-logs", "dictionaries", "storage"],
         "exports": [
           "AttachmentsService",
           "AttachmentContentValidator",
           "AuditLogsService",
+          "ActivityTypeReferenceQueryService",
           "StorageSettingsService",
           "StorageCryptoService",
           "StorageProviderRouter",
