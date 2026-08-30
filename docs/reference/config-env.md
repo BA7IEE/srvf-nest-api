@@ -5,7 +5,7 @@
 
 ## 14. 配置文件归属
 
-**归属铁律**:`APP_PORT` / `APP_ENV` / `APP_CORS_ORIGIN` / `APP_TRUSTED_PROXY_CIDRS` / `ENABLE_SWAGGER` → `src/config/app.config.ts`;`DATABASE_URL` → `src/config/database.config.ts`;`JWT_SECRET` / `JWT_EXPIRES_IN` → `src/config/jwt.config.ts`;`SUPER_ADMIN_*` **不进 config**,仅 `prisma/seed.ts` 内 `process.env` 直读(显式例外)。
+**归属铁律**:`APP_PORT` / `APP_ENV` / `APP_CORS_ORIGIN` / `APP_TRUSTED_PROXY_CIDRS` / `ENABLE_SWAGGER` → `src/config/app.config.ts`;`DATABASE_URL` → `src/config/database.config.ts`;`JWT_SECRET` / `JWT_EXPIRES_IN` → `src/config/jwt.config.ts`;`INTEGRATION_*` / `SERVICE_TOKEN_*` → `src/config/integration-auth.config.ts`;`SUPER_ADMIN_*` **不进 config**,仅 `prisma/seed.ts` 内 `process.env` 直读(显式例外)。
 
 - 业务代码与 service **不直接 `process.env.XXX`**,统一通过对应 `*.config.ts` 注入(`SUPER_ADMIN_*` 是唯一例外)
 - 不为 CORS / Swagger / 单一开关再单建 `cors.config.ts` / `swagger.config.ts`
@@ -23,5 +23,8 @@
 - `APP_CORS_ORIGIN` production 下**禁止**为空 / **禁止** `*`,必须显式列出前端域名;解析支持英文逗号分隔多 origin(`split(',').map(trim).filter(Boolean)`)
 - `APP_TRUSTED_PROXY_CIDRS` production/smoke 下缺失、空值、纯空白或非法值必须在 ConfigModule 装配期 fail-fast；`.env.test` 显式设置 `none`，避免测试隐式依赖 default。反代部署不得用 `none` 启动承流实例，否则全部客户端会退化为同一个 proxy socket IP
 - `ENABLE_SWAGGER` **必须严格字符串判断 `=== 'true'`**(**禁止** `Boolean(process.env.ENABLE_SWAGGER)` 或 truthy 判断,否则字符串 `'false'` 会被误判为开启);Swagger 开关公式 `APP_ENV !== 'production' || ENABLE_SWAGGER === 'true'`
+- `INTEGRATION_API_ENABLED` 是唯一 Integration 业务 Gate；development/test 缺失时默认 `false`，production/smoke 必须显式严格填写 `true|false`。`false` 时只允许控制面预配置，Token 签发与 Integration Surface 必须 fail-closed
+- `INTEGRATION_JWT_SECRET` 与真人 `JWT_SECRET` 必须独立；production/smoke 无条件必填、至少 48 字符且不得相同。development/test 开 Gate 时同样必须非空且不得复用真人密钥；密钥绝不进日志 / audit / 响应
+- `INTEGRATION_SERVICE_TOKEN_EXPIRES_IN` / `INTEGRATION_DELEGATED_TOKEN_EXPIRES_IN` 支持 `10m` 等 `s|m` 时长，也兼容历史纯秒数；留空默认 10m，显式值必须为安全正整数且不超过 30m，禁止 `parseInt` 式吞掉尾随字符
 - production 切换保险 single gate 前必须先 drain 旧 server 与旧事务；同一 fleet 禁止 true/false 混跑。配置代码可交付而不等于已 deploy/enable，文档不得用“旧客户端未上线”替代“旧 server=0”运行证据
 - `prisma/seed.ts` 额外校验:`SUPER_ADMIN_USERNAME` 必须符合 username 格式(小写字母+数字+下划线+中横线,3-32);**production 下禁止** `SUPER_ADMIN_USERNAME=admin` 或 `SUPER_ADMIN_PASSWORD=ChangeMe123456`(`.env.example` 默认值);对应用户已存在时**不覆盖**密码 / 角色 / 邮箱,只打印提示

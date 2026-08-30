@@ -107,6 +107,7 @@ jobs:
       - name: Generate ephemeral secrets
         run: |
           JWT_SECRET="$(openssl rand -base64 48)"
+          INTEGRATION_JWT_SECRET="$(openssl rand -base64 48)"
           SUPER_ADMIN_PASSWORD="Smoke$(openssl rand -hex 8)A1"
           STORAGE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
           SMS_ENCRYPTION_KEY="$(openssl rand -base64 32)"
@@ -116,6 +117,7 @@ jobs:
           STORAGE_SECRET_ID="$(openssl rand -base64 24)"
           STORAGE_SECRET_KEY="$(openssl rand -base64 32)"
           echo "::add-mask::$JWT_SECRET"
+          echo "::add-mask::$INTEGRATION_JWT_SECRET"
           echo "::add-mask::$SUPER_ADMIN_PASSWORD"
           echo "::add-mask::$STORAGE_ENCRYPTION_KEY"
           echo "::add-mask::$SMS_ENCRYPTION_KEY"
@@ -126,6 +128,7 @@ jobs:
           echo "::add-mask::$STORAGE_SECRET_KEY"
           {
             echo "JWT_SECRET=$JWT_SECRET"
+            echo "INTEGRATION_JWT_SECRET=$INTEGRATION_JWT_SECRET"
             echo "SUPER_ADMIN_PASSWORD=$SUPER_ADMIN_PASSWORD"
             echo "STORAGE_ENCRYPTION_KEY=$STORAGE_ENCRYPTION_KEY"
             echo "SMS_ENCRYPTION_KEY=$SMS_ENCRYPTION_KEY"
@@ -200,6 +203,8 @@ jobs:
             -e ENABLE_SWAGGER=false \
             -e LOG_LEVEL=info \
             -e JWT_SECRET="$JWT_SECRET" \
+            -e INTEGRATION_API_ENABLED=false \
+            -e INTEGRATION_JWT_SECRET="$INTEGRATION_JWT_SECRET" \
             -e JWT_EXPIRES_IN=15m \
             -e JWT_REFRESH_EXPIRES_IN=90d \
             -e STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
@@ -317,6 +322,8 @@ jobs:
             -e ENABLE_SWAGGER=false \
             -e LOG_LEVEL=info \
             -e JWT_SECRET="$JWT_SECRET" \
+            -e INTEGRATION_API_ENABLED=false \
+            -e INTEGRATION_JWT_SECRET="$INTEGRATION_JWT_SECRET" \
             -e JWT_EXPIRES_IN=15m \
             -e JWT_REFRESH_EXPIRES_IN=90d \
             -e STORAGE_ENCRYPTION_KEY="$STORAGE_ENCRYPTION_KEY" \
