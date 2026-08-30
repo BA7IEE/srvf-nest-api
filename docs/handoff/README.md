@@ -66,7 +66,7 @@
 | **App surface 准入 / scope 语义** | miniapp.md §1 模型五条 | `api-surface-policy.md`(红区文档,需授权) |
 | **通知类型 / 字典项**(影响前端图标/文案分支) | admin-web.md §2.5 + miniapp.md 通知两行 | seed 字典走 D 档流程 |
 
-release 收口(E 档,`srvf-release-closeout` 九阶段)末尾再统一核一次:**openapi 重导(`info.version` 须等于新版本号)+ gap-ledger 标"已发" + 按本表抽查**。
+release 收口(E 档,`srvf-release-closeout` 两阶段)末尾再统一核一次:**openapi 重导(`info.version` 须等于新版本号)+ gap-ledger 标"已发" + 按本表抽查**。
 
 > **刷新记录(2026-07-28,v0.62.0 release true-up)**:`openapi.json` 已用 `pnpm docs:handoff:openapi` 从当前 live `/api/docs-json` 重导；`info.version=0.62.0`、314 paths / 416 operations。除版本号外，本次同步补齐当前代码已存在的 RoleBinding `scopeInactive` schema/required 契约及失效/不存在 scope 的 17031/11001 错误响应细节；同日 content signed URL 契约 true-up 将 `ContentAttachmentDto.url` 与 admin/read 的 4 个 `coverImageUrl` 从 nullable object 校准为 nullable string，运行时字段与行为不变；paths / operations 数均不变。
 
@@ -146,7 +146,7 @@ const { data } = await client.getMe();
 | 角色 / 时机 | 动作 |
 |---|---|
 | 契约类 PR 作者(任何 lane) | 照 §2 对照表**同 PR** 更新受影响处;拿不准归哪行 → 宁可两篇都查 |
-| release 收口会话(E 档) | 九阶段末尾统一核:openapi 重导 + `info.version` 对版本号 + gap-ledger 标"已发" |
+| release 收口会话(E 档) | 两阶段收口末尾统一核:openapi 重导 + `info.version` 对版本号 + gap-ledger 标"已发" |
 | 前端各仓 | **只留指针不复制事实**;仓内手抄的后端快照数字(版本号/权限码数/路径数)一律视为过期装饰,以本仓 current-state 与 live docs-json 为准 |
 | 维护者 | 跨仓指针的增补/纠偏线下做(本仓 AI 不写姊妹仓);前端反馈的缺口核入 gap-ledger 并决定出 goal |
 

@@ -9,9 +9,9 @@
 
 | 文件 | 用途 |
 |---|---|
-| [`current-state.md`](./current-state.md) | **当前事实唯一入口**:版本、open PR、最新 release、surface 状态、当前债务、不做清单 |
+| [`current-state.md`](./current-state.md) | **当前非机器事实入口**:人类决策与现实世界状态、能力指针、当前债务、不做清单;版本、open PR、tag、Release 以 live Git / GitHub / 代码证据为准 |
 | [`process.md`](./process.md) | 开发流程与协作制度:开工 checklist、PR 五档分级、release 收口、AI 协作纪律 |
-| [`api-surface-policy.md`](./api-surface-policy.md) | API surface 长期边界(active 单一权威源):Admin / App / Auth / System / Open 五个 canonical 前缀 + 新增/迁移规则;原设计期顶层规范 `api-client-boundary.md` 已归档至 `archive/plans/api-client-boundary-design-period.md` |
+| [`api-surface-policy.md`](./api-surface-policy.md) | API surface 长期边界(active 单一权威源):Admin / App / Auth / System / Open / Integration 六个 canonical 前缀 + 新增/迁移规则;原设计期顶层规范 `api-client-boundary.md` 已归档至 `archive/plans/api-client-boundary-design-period.md` |
 | [`participation-bounded-context.md`](./participation-bounded-context.md) | Participation 业务上下文边界图:`activities` / `activity-registrations` / `attendances` / `contribution-rules` 4 模块的状态链条、跨模块耦合、API surface 与 governance;**不**含 `certificates`(独立 member-qualifications 上下文) |
 | [`attachment-config-boundary.md`](./attachment-config-boundary.md) | 附件配置三表(`AttachmentTypeConfig` / `AttachmentMimeConfig` / `AttachmentSizeLimitConfig`)的 override-with-default 边界说明:为什么不合表、为什么不抽 facade、新增规则落点 |
 | [`architecture-boundary.md`](./architecture-boundary.md) | 架构边界铁律 / active architecture boundary policy for Presenter / QueryService / PolicyService / StateMachine / AuditRecorder / Effect extraction decisions;承接 `AGENTS.md §2 D-7` |
@@ -90,13 +90,13 @@ V2 设计期产物(V2-D8 立项时刻 draft 历史快照,**非当前事实权威
 
 ## 4. What NOT to read as current truth
 
-- ❌ `archive/handoff/v*.md`:已合入的 release 历史快照,字段、状态、PR 编号都冻结在 release 时刻;**当前版本状态以 [`current-state.md`](./current-state.md) §1 为准**
+- ❌ `archive/handoff/v*.md`:已合入的 release 历史快照,字段、状态、PR 编号都冻结在 release 时刻;**当前事实以 [`current-state.md`](./current-state.md)(非机器现实状态) + 代码 + GitHub 当前状态为准**
 - ❌ `archive/reviews/**`:评审稿在被实施落地后,**实施细节会演进**(BizCode 段位补全、字段命名调整、限流参数调整);**实际代码以 `src/**` 为准**
   - ⚠️ **例外 —— 已冻结但尚未实施的 T0 评审稿是施工依据,不适用上一条**。**当前哪几份处于这个阶段,以 [`ai-harness/FROZEN_DRAFTS.md`](./ai-harness/FROZEN_DRAFTS.md) 的 §3 `open` 行为准**,不在本行写死 —— 本行原先写「当前两份」,实测已漏登 `rbac-permission-catalog-t0-review.md` 与整个 `activity-business-overhaul-v1.1/`;漏登**不产生坏链接**,所以既有守护一次都没响过,现由那份台账的完整性闸接管(沿 `archive/plans/harness-3.0-blueprint.md` 先例)。它**实施完成后**才转为「以 `src/**` 为准」的历史证据;在此之前,实施若需偏离,必须暂停并另出 superseding 评审稿,**不得顺手回改冻结稿**。哪份处于哪个阶段以 [`ai-harness/NEXT_TASKS.md`](./ai-harness/NEXT_TASKS.md) 为准
   - 📌 **`certificate-standard-library-t0-review.md` 已实施完毕(2026-07-30)**,但它有一份**并列有效**的 post-freeze 修正:[`certificate-standard-library-t0-amendments.md`](./archive/reviews/certificate-standard-library-t0-amendments.md)。冻结稿正文一个字未改 —— 冻结的价值在于「当时到底是怎么定的」可复原,回改会让所有引用它的 PR 描述与审计记录指向一份已经不同的文本。**读需求时两份都要读,冲突以 amendments 为准。**
 - ❌ `archive/batches/**`:各批次冻结时刻的业务决议;**业务诉求若发生变化,需通过新的评审稿覆盖**
 - ❌ `archive/plans/**`:阶段开始前的执行计划;**实际执行可能偏离计划**
-- ❌ `archive/legacy/FINAL_REPORT.md`:v0.1.3 时代的收尾报告;**与当前状态无关,当前版本以 [`current-state.md`](./current-state.md) §1 为准**
+- ❌ `archive/legacy/FINAL_REPORT.md`:v0.1.3 时代的收尾报告;**与当前状态无关,当前事实以 [`current-state.md`](./current-state.md)(非机器现实状态) + live Git / GitHub / 代码证据为准**
 
 ---
 

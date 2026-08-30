@@ -19,7 +19,7 @@
 
 ## 1. 部署当前批准的 release
 
-- [ ] 以 [`current-state.md §1`](../current-state.md) 指定的当前批准 release tag 为准，核对部署的不可变 SHA / image digest 与该 tag 一致；不得再用“版本 ≥ 某个历史下限”单独作为通过条件。该 release 必须包含摘码微刀([#482](https://github.com/BA7IEE/srvf-nest-api/pull/482))及部门数据范围全面接线 #604–#608
+- [ ] 以维护者为本次维护窗明确批准的 release tag 为准，用 GitHub tag / Release 与部署记录中的不可变 SHA / image digest 互证；同时按 [`current-state.md §1`](../current-state.md) 核对生产 GO/NO-GO 与开关边界。不得再用“版本 ≥ 某个历史下限”单独作为通过条件。该 release 必须包含摘码微刀([#482](https://github.com/BA7IEE/srvf-nest-api/pull/482))及部门数据范围全面接线 #604–#608
 - [ ] 对同一 release 的已审查 migration 执行 `pnpm prisma:deploy`，随后以 `pnpm prisma migrate status` 确认无 pending；不得用会随版本增长的累计 migration 数替代状态检查
 - [ ] `pnpm prisma:seed` 幂等执行；权限码、内置角色及绑定以同一 tag 的 [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md) 和 seed 为准，并运行 `pnpm docs:rbacmap:check` 对账。确认 `biz-admin` / `ops-admin` / `member` / `org-admin` / `org-readonly` / `group-manager` / `group-readonly` / `org-supervisor` / `attendance-final-reviewer`、六个内置职务（队长 / 副队长 / 部长 / 副部长 / 组长 / 副组长）及默认职务规则均已就位，不抄累计数量作门槛
 

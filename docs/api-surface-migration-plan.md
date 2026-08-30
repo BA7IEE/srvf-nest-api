@@ -1,10 +1,10 @@
 # API Surface 全量迁移计划(Route B)
 
 > **状态**:Route B 已完成；本文保留 2026-06-01 的冻结方案与执行追踪，属于迁移过程记录，不再承担当前 surface 事实。
-> **当前覆盖注记(2026-06-18 起)**:文中“终态四前缀 / `open/v1` 仅预留”均是 Route B 当日快照；招新随后首用 `open/v1`，现行代码与 contract 已锁定 **5 个 canonical 前缀**。当前权威源为 [`current-state.md`](current-state.md) + [`api-surface-policy.md §0`](api-surface-policy.md)。
+> **当前覆盖注记(2026-06-18 起)**:文中“终态四前缀 / `open/v1` 仅预留”均是 Route B 当日快照；招新随后首用 `open/v1`，Integration Foundation v1 PR6 再首用 `integration/v1`，现行代码与 contract 已锁定 **6 个 canonical 前缀**。当前 surface 权威源为 [`api-surface-policy.md §0`](api-surface-policy.md) + live contract / `EXPECTED_ROUTES`;生产与部署边界另见 [`current-state.md`](current-state.md)。
 > **档位**:**D 档**(surface 互转 / 删除 legacy / path alias / 前端联调口径变化);严格**分阶段、分 PR、串行**;每阶段先评审稿冻结再动代码。
 > **承接**:[`api-client-boundary`](reference/api-client-boundary.md) D-9(2026-06-01 重开并取代 §19.7 D-2)、[`api-surface-policy.md §0`](api-surface-policy.md)。
-> **配套**:当前事实见 [`current-state.md`](current-state.md);PR 分级 / D 档降速见 [`process.md §3 / §4`](process.md)。
+> **配套**:当前非机器现实与债务见 [`current-state.md`](current-state.md),能力摘要见 [`ai-harness/CAPABILITIES.md`](ai-harness/CAPABILITIES.md);PR 分级 / D 档降速见 [`process.md §3 / §4`](process.md)。
 > **本立项稿不改任何代码、不改 OpenAPI snapshot;仅冻结目标形态、原则、阶段顺序与禁止事项**。
 
 ---
@@ -96,7 +96,7 @@
 | 测试 | OpenAPI contract snapshot(单文件 ~1MB / 37k 行)、`openapi.contract-spec.ts` `EXPECTED_ROUTES`、78+ e2e spec、引用路径的 unit spec |
 | 已发版本 / 客户端 | 任何直连 API 的消费者(PC 管理后台、运维脚本)在删除阶段前必须切流;**D-2 原承诺"PC 后台联调不破坏"在 Route B 下改为"分阶段迁移、删除前必达零流量"** |
 | 用户可见行为 | 路径变化 = 对直连消费者的 breaking change;通过 alias 双挂 + deprecation 窗口缓冲 |
-| 文档 | `api-surface-policy.md` / `current-state.md §2.1` / README 路由总览 / Swagger Tag 体系 需逐阶段 true-up |
+| 文档 | `api-surface-policy.md` / `ai-harness/CAPABILITIES.md` / README 路由总览 / Swagger Tag 体系 需逐阶段 true-up |
 
 ---
 
