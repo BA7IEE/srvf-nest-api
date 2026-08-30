@@ -32,24 +32,70 @@ export const INTEGRATION_JWT_AUDIENCE = 'srvf-integration';
 export const SERVICE_TOKEN_MAX_TTL_SECONDS = 30 * 60;
 export const SERVICE_TOKEN_DEFAULT_TTL_SECONDS = 10 * 60;
 
+function isProductionLikeAppEnv(appEnv: string | undefined): boolean {
+  return appEnv === 'production' || appEnv === 'smoke';
+}
+
+function parseIntegrationApiEnabled(raw: string | undefined, appEnv: string | undefined): boolean {
+  if (raw === undefined || raw.trim() === '') {
+    if (isProductionLikeAppEnv(appEnv)) {
+      throw new Error(
+        'INTEGRATION_API_ENABLED 不能为空(production / smoke 必须显式设置 true 或 false)',
+      );
+    }
+    return false;
+  }
+  if (raw !== 'true' && raw !== 'false') {
+    throw new Error('INTEGRATION_API_ENABLED 必须严格为 true 或 false');
+  }
+  return raw === 'true';
+}
+
+/**
+ * Integration Token TTL 统一收敛为秒。
+ *
+ * - 规格书示例 `10m` 必须按 600 秒解释;
+ * - 保留既有纯秒数配置(例如 `600`)兼容;
+ * - 不再让 parseInt 吞掉尾随单位或垃圾字符。
+ */
+function parseIntegrationTokenTtlSeconds(fieldName: string, raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return SERVICE_TOKEN_DEFAULT_TTL_SECONDS;
+
+  const value = raw.trim();
+  const secondsMatch = /^(\d+)$/.exec(value);
+  const durationMatch = /^(\d+)(s|m)$/.exec(value);
+  if (!secondsMatch && !durationMatch) {
+    throw new Error(`${fieldName} 无效:必须是正整数秒或带单位的正整数(s/m)`);
+  }
+
+  const amount = Number(secondsMatch?.[1] ?? durationMatch?.[1]);
+  const seconds = durationMatch?.[2] === 'm' ? amount * 60 : amount;
+  if (!Number.isSafeInteger(seconds) || seconds <= 0) {
+    throw new Error(`${fieldName} 无效:解析结果必须是安全正整数秒`);
+  }
+  if (seconds > SERVICE_TOKEN_MAX_TTL_SECONDS) {
+    throw new Error(`${fieldName} 超出允许范围:最长 ${SERVICE_TOKEN_MAX_TTL_SECONDS} 秒`);
+  }
+  return seconds;
+}
+
 export function loadIntegrationAuthConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): IntegrationAuthConfig {
-  const enabled = env.INTEGRATION_API_ENABLED === 'true';
+  const appEnv = env.APP_ENV;
+  const enabled = parseIntegrationApiEnabled(env.INTEGRATION_API_ENABLED, appEnv);
   const jwtSecret = env.INTEGRATION_JWT_SECRET ?? '';
-  const ttlRaw = Number.parseInt(env.INTEGRATION_SERVICE_TOKEN_EXPIRES_IN ?? '', 10);
-  const ttl =
-    Number.isFinite(ttlRaw) && ttlRaw > 0
-      ? Math.min(ttlRaw, SERVICE_TOKEN_MAX_TTL_SECONDS)
-      : SERVICE_TOKEN_DEFAULT_TTL_SECONDS;
-  const delegatedTtlRaw = Number.parseInt(env.INTEGRATION_DELEGATED_TOKEN_EXPIRES_IN ?? '', 10);
-  const delegatedTtl =
-    Number.isFinite(delegatedTtlRaw) && delegatedTtlRaw > 0
-      ? Math.min(delegatedTtlRaw, SERVICE_TOKEN_MAX_TTL_SECONDS)
-      : SERVICE_TOKEN_DEFAULT_TTL_SECONDS;
+  const ttl = parseIntegrationTokenTtlSeconds(
+    'INTEGRATION_SERVICE_TOKEN_EXPIRES_IN',
+    env.INTEGRATION_SERVICE_TOKEN_EXPIRES_IN,
+  );
+  const delegatedTtl = parseIntegrationTokenTtlSeconds(
+    'INTEGRATION_DELEGATED_TOKEN_EXPIRES_IN',
+    env.INTEGRATION_DELEGATED_TOKEN_EXPIRES_IN,
+  );
   const limitRaw = Number.parseInt(env.SERVICE_TOKEN_THROTTLE_LIMIT ?? '', 10);
   const ttlThrottleRaw = Number.parseInt(env.SERVICE_TOKEN_THROTTLE_TTL_SECONDS ?? '', 10);
-  return {
+  const config: IntegrationAuthConfig = {
     enabled,
     jwtSecret,
     issuer: INTEGRATION_JWT_ISSUER,
@@ -59,17 +105,35 @@ export function loadIntegrationAuthConfig(
     throttleLimit: Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 10,
     throttleTtlSeconds: Number.isFinite(ttlThrottleRaw) && ttlThrottleRaw > 0 ? ttlThrottleRaw : 60,
   };
+  assertIntegrationSecretProductionGrade(config, appEnv, env.JWT_SECRET);
+  return config;
 }
 
-/** production/smoke 下密钥长度校验(≥48 字符;dev 可宽松)。 */
+/**
+ * 独立信任域边界:
+ * - production/smoke 无条件要求独立、至少 48 字符的密钥;
+ * - 任意环境一旦开 Gate,至少必须配置非空密钥；只要配置了密钥就不得与真人 JWT 共用。
+ */
 export function assertIntegrationSecretProductionGrade(
   config: IntegrationAuthConfig,
-  appEnv: string,
+  appEnv: string | undefined,
+  humanJwtSecret: string | undefined,
 ): void {
-  if ((appEnv === 'production' || appEnv === 'smoke') && config.jwtSecret.length < 48) {
-    throw new Error(
-      'INTEGRATION_JWT_SECRET 在 production/smoke 下至少 48 字符,且不得与 JWT_SECRET 相同(规格书 §11.2)',
-    );
+  const productionLike = isProductionLikeAppEnv(appEnv);
+  const secretRequired = productionLike || config.enabled;
+
+  if (secretRequired && config.jwtSecret.trim() === '') {
+    throw new Error('INTEGRATION_JWT_SECRET 未设置');
+  }
+  if (productionLike && config.jwtSecret.length < 48) {
+    throw new Error('INTEGRATION_JWT_SECRET 在 production/smoke 下至少 48 字符(规格书 §11.2)');
+  }
+  if (
+    config.jwtSecret.trim() !== '' &&
+    humanJwtSecret !== undefined &&
+    config.jwtSecret === humanJwtSecret
+  ) {
+    throw new Error('INTEGRATION_JWT_SECRET 不得与 JWT_SECRET 相同(规格书 §11.2)');
   }
 }
 
