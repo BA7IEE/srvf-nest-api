@@ -247,11 +247,11 @@ function eviSub(id, kind, title, evidence): SubCheck {
 ### 5b — 五端支持同一 contract version(登记表读数)
 
 - **结论**:认可
-- **理由**:后端 0.69.0;登记表合同点名 5 端、解析到 5 行,机器已对齐
+- **理由**:后端 0.70.0;登记表合同点名 5 端、解析到 5 行,机器已对齐
 - **签字人**:维护者
-- **日期**:2026-08-26
-- **依据**:维护者 2026-08-26 拍板「直接用新的上线」;登记表见 [`docs/handoff/contract-version-registry.md`](../handoff/contract-version-registry.md)
-- **对拍**:有 —— `backend-contract-version` = `0.69.0`;`contract-registry-rows` = `5`;`contract-version-mismatch-count` = `0`
+- **日期**:2026-08-30
+- **依据**:维护者 2026-08-30 对话重签「认可后端 v0.70.0 与五端登记表对齐」;登记表见 [`docs/handoff/contract-version-registry.md`](../handoff/contract-version-registry.md)
+- **对拍**:有 —— `backend-contract-version` = `0.70.0`;`contract-registry-rows` = `5`;`contract-version-mismatch-count` = `0`
 
 > 🔴 三个读数各堵一条腐烂路径:
 > **版本号**变了(发版)⇒ 「五端同一版本」的前提整个变了,得重签;

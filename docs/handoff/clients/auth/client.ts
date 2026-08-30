@@ -1,8 +1,8 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: Auth 登录/令牌(admin 与 app 共用)
-// contractVersion: 0.69.0
+// contractVersion: 0.70.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:1a830f40cadc824b9cac577adad2b100b11cdd85a5c4428a9a434f0b6050460e
+// inputDigest: sha256:a8b9d120b45c0a3a90ebaec2d8fa51769c92146f16c84f8302ab6ed89c963c31
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
