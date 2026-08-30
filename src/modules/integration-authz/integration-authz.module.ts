@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common';
-import { OrganizationStatus } from '@prisma/client';
 
 import { DatabaseModule } from '../../database/database.module';
 import { PrismaService } from '../../database/prisma.service';
+import { OrganizationsModule } from '../organizations/organizations.module';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { DirectPrincipalAuthzService } from './direct-principal-authz.service';
 import { RoleBindingScopeCoveragePolicy } from './role-binding-scope-coverage.policy';
 
@@ -20,18 +21,10 @@ const makeClosureLookup = (prisma: PrismaService) => {
   };
 };
 
-/** scope 根组织状态回调：只在装配层查库，Policy 本体仍保持零 DB 依赖。 */
-const makeOrganizationActiveLookup = (prisma: PrismaService) => {
+/** scope 根组织状态回调：通过组织域最小事实出口，Policy 本体仍保持零 DB 依赖。 */
+const makeOrganizationActiveLookup = (organizations: OrganizationsService) => {
   return async (organizationId: string): Promise<boolean> => {
-    const row = await prisma.organization.findFirst({
-      where: {
-        id: organizationId,
-        status: OrganizationStatus.ACTIVE,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    return row !== null;
+    return organizations.isActiveForScope(organizationId);
   };
 };
 
@@ -46,17 +39,17 @@ const makeOrganizationActiveLookup = (prisma: PrismaService) => {
  * 验收前置,规格书 §60);消费方是 PR6 的 Integration Surface Guard。
  */
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, OrganizationsModule],
   providers: [
     DirectPrincipalAuthzService,
     {
       provide: RoleBindingScopeCoveragePolicy,
-      useFactory: (prisma: PrismaService) =>
+      useFactory: (prisma: PrismaService, organizations: OrganizationsService) =>
         new RoleBindingScopeCoveragePolicy(
           makeClosureLookup(prisma),
-          makeOrganizationActiveLookup(prisma),
+          makeOrganizationActiveLookup(organizations),
         ),
-      inject: [PrismaService],
+      inject: [PrismaService, OrganizationsService],
     },
   ],
   exports: [DirectPrincipalAuthzService, RoleBindingScopeCoveragePolicy],

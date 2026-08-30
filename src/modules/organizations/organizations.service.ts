@@ -100,6 +100,18 @@ export class OrganizationsService {
     return found;
   }
 
+  /**
+   * 对外暴露组织 scope 根的最小当前事实，供跨域授权判定复核失效状态。
+   * 不返回组织详情，避免调用方自行拼接第二套组织有效性规则。
+   */
+  async isActiveForScope(organizationId: string): Promise<boolean> {
+    const found = await this.prisma.organization.findFirst({
+      where: notDeletedWhere({ id: organizationId, status: OrganizationStatus.ACTIVE }),
+      select: { id: true },
+    });
+    return found !== null;
+  }
+
   // nodeTypeCode 校验:6 项 AND 检查(对应 docs/v2-data-model.md §4.5):
   //   dict_type.code = NODE_TYPE_DICT_CODE
   //   dict_type.status = ACTIVE
