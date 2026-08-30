@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { BindingScopeType } from '@prisma/client';
+import { BindingScopeType, OrganizationStatus } from '@prisma/client';
 
 import { PrismaService } from '../../src/database/prisma.service';
 import { DirectPrincipalAuthzService } from '../../src/modules/integration-authz/direct-principal-authz.service';
@@ -240,7 +240,49 @@ describe('Integration Foundation v1 PR4 —— Principal-neutral Authz', () => {
     expect(await coverage.covers(g(BindingScopeType.SELF), {})).toBe(false);
   });
 
-  it('⑤ characterization:现有 User 判权零漂移(SUPER_ADMIN can / RbacService 路径)', async () => {
+  it('⑤ ORGANIZATION / TREE 只检查 scope 根组织 ACTIVE/live，不擅自检查目标后代', async () => {
+    const exactGrant = {
+      scopeType: BindingScopeType.ORGANIZATION,
+      scopeOrgId: orgId,
+      scopeActivityId: null,
+      scopeResourceType: null,
+      scopeResourceId: null,
+    } as const;
+    const treeGrant = { ...exactGrant, scopeType: BindingScopeType.ORGANIZATION_TREE } as const;
+
+    try {
+      await expect(coverage.covers(exactGrant, { organizationId: orgId })).resolves.toBe(true);
+
+      await prisma.organization.update({
+        where: { id: orgId },
+        data: { status: OrganizationStatus.INACTIVE },
+      });
+      await expect(coverage.covers(exactGrant, { organizationId: orgId })).resolves.toBe(false);
+
+      await prisma.organization.update({
+        where: { id: orgId },
+        data: { status: OrganizationStatus.ACTIVE, deletedAt: new Date() },
+      });
+      await expect(coverage.covers(exactGrant, { organizationId: orgId })).resolves.toBe(false);
+
+      await prisma.organization.update({
+        where: { id: orgId },
+        data: { deletedAt: null },
+      });
+      await prisma.organization.update({
+        where: { id: childOrgId },
+        data: { status: OrganizationStatus.INACTIVE },
+      });
+      await expect(coverage.covers(treeGrant, { organizationId: childOrgId })).resolves.toBe(true);
+    } finally {
+      await prisma.organization.updateMany({
+        where: { id: { in: [orgId, childOrgId] } },
+        data: { status: OrganizationStatus.ACTIVE, deletedAt: null },
+      });
+    }
+  });
+
+  it('⑥ characterization:现有 User 判权零漂移(SUPER_ADMIN can / RbacService 路径)', async () => {
     // 最简正向:同一权限码,USER direct binding 也能通过现有 RbacService。
     // SP 权限的资格门对 USER 判权**不构成过滤**(那是 SP-only 的门)—— 结构性证明:
     // 关掉资格门后 USER 路径不受影响。
@@ -248,27 +290,52 @@ describe('Integration Foundation v1 PR4 —— Principal-neutral Authz', () => {
       where: { code: 'pr4.test.read' },
       data: { servicePrincipalAllowed: false },
     });
-    await prisma.roleBinding.create({
-      data: {
-        principalType: 'USER',
-        principalId: userId,
-        roleId,
-        scopeType: 'GLOBAL',
-        status: 'ACTIVE',
-        startedAt: new Date(),
-        createdByUserId: userId,
-      },
-    });
-    // SP 被资格门挡(② 已证);USER 不受影响 —— RbacService.getUserPermissionCodes 不过滤该字段。
-    const { RbacService } = await import('../../src/modules/permissions/rbac.service');
-    const rbac = app.get(RbacService);
-    const codes = await rbac.getUserPermissionCodes(userId);
-    expect(codes.has('pr4.test.read')).toBe(true);
-    // SP 侧仍拒
-    const spDecision = await authz.explainDirect(
-      { principalType: 'SERVICE_PRINCIPAL', principalId: spId },
-      'pr4.test.read',
-    );
-    expect(spDecision.allowed).toBe(false);
+    try {
+      await prisma.roleBinding.create({
+        data: {
+          principalType: 'USER',
+          principalId: userId,
+          roleId,
+          scopeType: 'GLOBAL',
+          status: 'ACTIVE',
+          startedAt: new Date(),
+          createdByUserId: userId,
+        },
+      });
+      // SP 被资格门挡(② 已证);USER 不受影响 —— RbacService.getUserPermissionCodes 不过滤该字段。
+      const { RbacService } = await import('../../src/modules/permissions/rbac.service');
+      const rbac = app.get(RbacService);
+      const codes = await rbac.getUserPermissionCodes(userId);
+      expect(codes.has('pr4.test.read')).toBe(true);
+      // SP 侧仍拒
+      const spDecision = await authz.explainDirect(
+        { principalType: 'SERVICE_PRINCIPAL', principalId: spId },
+        'pr4.test.read',
+      );
+      expect(spDecision.allowed).toBe(false);
+    } finally {
+      await prisma.permission.update({
+        where: { code: 'pr4.test.read' },
+        data: { servicePrincipalAllowed: true },
+      });
+    }
+  });
+
+  it('⑦ 角色软删后，direct 判权下一请求拒绝且不再返回 matched grant', async () => {
+    await expect(
+      authz.explainDirect(
+        { principalType: 'SERVICE_PRINCIPAL', principalId: spId },
+        'pr4.test.read',
+      ),
+    ).resolves.toMatchObject({ allowed: true, reason: 'allowed' });
+
+    await prisma.rbacRole.update({ where: { id: roleId }, data: { deletedAt: new Date() } });
+
+    await expect(
+      authz.explainDirect(
+        { principalType: 'SERVICE_PRINCIPAL', principalId: spId },
+        'pr4.test.read',
+      ),
+    ).resolves.toEqual({ allowed: false, matched: [], reason: 'no-bindings' });
   });
 });
