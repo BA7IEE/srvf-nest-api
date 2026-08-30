@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 
 import { DatabaseModule } from '../../database/database.module';
 import { PrismaService } from '../../database/prisma.service';
+import { OrganizationsModule } from '../organizations/organizations.module';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { DirectPrincipalAuthzService } from './direct-principal-authz.service';
 import { RoleBindingScopeCoveragePolicy } from './role-binding-scope-coverage.policy';
 
@@ -19,25 +21,35 @@ const makeClosureLookup = (prisma: PrismaService) => {
   };
 };
 
+/** scope 根组织状态回调：通过组织域最小事实出口，Policy 本体仍保持零 DB 依赖。 */
+const makeOrganizationActiveLookup = (organizations: OrganizationsService) => {
+  return async (organizationId: string): Promise<boolean> => {
+    return organizations.isActiveForScope(organizationId);
+  };
+};
+
 /**
  * Integration Foundation v1 PR4(规格书 §41/§60):Principal-neutral Authz。
  *
  * DirectPrincipalAuthzService:SP 只认 direct binding,零 SUPER_ADMIN/职务/分管旁路。
- * ScopeCoveragePolicy:与 User direct binding 语义一致的共享判定(closure 查库以回调注入,
- * Policy 本体零 DB 依赖 —— lint 铁律 D-7)。
+ * ScopeCoveragePolicy:与 User direct binding 语义一致的共享判定(closure 与 scope 根组织状态
+ * 均以回调注入，Policy 本体零 DB 依赖 —— lint 铁律 D-7)。
  *
  * ⭐ 本模块**不改现有 AuthzService/RbacService 一行**(characterization 全绿是 PR4 的
  * 验收前置,规格书 §60);消费方是 PR6 的 Integration Surface Guard。
  */
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, OrganizationsModule],
   providers: [
     DirectPrincipalAuthzService,
     {
       provide: RoleBindingScopeCoveragePolicy,
-      useFactory: (prisma: PrismaService) =>
-        new RoleBindingScopeCoveragePolicy(makeClosureLookup(prisma)),
-      inject: [PrismaService],
+      useFactory: (prisma: PrismaService, organizations: OrganizationsService) =>
+        new RoleBindingScopeCoveragePolicy(
+          makeClosureLookup(prisma),
+          makeOrganizationActiveLookup(organizations),
+        ),
+      inject: [PrismaService, OrganizationsService],
     },
   ],
   exports: [DirectPrincipalAuthzService, RoleBindingScopeCoveragePolicy],

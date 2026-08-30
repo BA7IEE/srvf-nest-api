@@ -544,4 +544,33 @@ describe('Integration Foundation v1 PR5 —— Delegation + Delegated Token + �
       }),
     ).rejects.toThrow(/check constraint/i);
   });
+
+  it('软删 SP 角色后，Delegated 的 SP 授权腿下一请求拒绝', async () => {
+    const userFallbackRole = await prisma.rbacRole.create({
+      data: { code: 'pr5-user-fallback-role', displayName: 'PR5 用户保留角色' },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: userFallbackRole.id, permissionId },
+    });
+    await prisma.roleBinding.create({
+      data: {
+        principalType: 'USER',
+        principalId: subject.id,
+        roleId: userFallbackRole.id,
+        scopeType: BindingScopeType.ORGANIZATION,
+        scopeOrgId: organizationId,
+        status: 'ACTIVE',
+        startedAt: new Date('2000-01-01T00:00:00.000Z'),
+        createdByUserId: admin.id,
+      },
+    });
+    await expect(judge()).resolves.toMatchObject({ allowed: true, reason: 'allowed' });
+
+    await prisma.rbacRole.update({ where: { id: roleId }, data: { deletedAt: new Date() } });
+
+    await expect(judge()).resolves.toMatchObject({
+      allowed: false,
+      reason: 'sp-no-permission',
+    });
+  });
 });

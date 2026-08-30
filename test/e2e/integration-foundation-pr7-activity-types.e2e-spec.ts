@@ -9,6 +9,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { DelegationGrantsService } from '../../src/modules/delegation-grants/delegation-grants.service';
 import { DelegatedTokenService } from '../../src/modules/integration-auth/delegated-token.service';
 import { isControlPlanePermissionCode } from '../../src/modules/permissions/role-delegation.policy';
+import { RbacRolesService } from '../../src/modules/permissions/rbac-roles.service';
 import { ServicePrincipalsService } from '../../src/modules/service-principals/service-principals.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
@@ -94,6 +95,7 @@ describe('Integration Foundation v1 PR7 —— 活动类型只读业务接入', 
   let servicePrincipals: ServicePrincipalsService;
   let delegatedTokens: DelegatedTokenService;
   let delegationGrants: DelegationGrantsService;
+  let rbacRoles: RbacRolesService;
 
   let admin: CurrentUserPayload;
   let humanAuth: string;
@@ -119,6 +121,7 @@ describe('Integration Foundation v1 PR7 —— 活动类型只读业务接入', 
     servicePrincipals = app.get(ServicePrincipalsService);
     delegatedTokens = app.get(DelegatedTokenService);
     delegationGrants = app.get(DelegationGrantsService);
+    rbacRoles = app.get(RbacRolesService);
 
     const adminRow = await prisma.user.create({
       data: {
@@ -341,5 +344,20 @@ describe('Integration Foundation v1 PR7 —— 活动类型只读业务接入', 
       .set('Authorization', humanAuth);
     expect(humanResponse.status).toBe(BizCode.INTEGRATION_TOKEN_INVALID.httpStatus);
     expect(humanResponse.body.code).toBe(BizCode.INTEGRATION_TOKEN_INVALID.code);
+  });
+
+  it('控制面软删角色后，同一 Service Token 的下一次业务授权请求拒绝', async () => {
+    const before = await request(httpServer(app))
+      .get('/api/integration/v1/reference/activity-types')
+      .set('Authorization', `Bearer ${serviceToken}`);
+    expect(before.status).toBe(200);
+
+    await rbacRoles.softDelete(admin, roleId, auditMeta);
+
+    const after = await request(httpServer(app))
+      .get('/api/integration/v1/reference/activity-types')
+      .set('Authorization', `Bearer ${serviceToken}`);
+    expect(after.status).toBe(BizCode.RBAC_FORBIDDEN.httpStatus);
+    expect(after.body.code).toBe(BizCode.RBAC_FORBIDDEN.code);
   });
 });

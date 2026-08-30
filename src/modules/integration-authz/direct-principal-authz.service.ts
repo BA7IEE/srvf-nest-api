@@ -70,7 +70,7 @@ export class DirectPrincipalAuthzService {
       select: {
         id: true,
         roleId: true,
-        role: { select: { code: true } },
+        role: { select: { code: true, deletedAt: true } },
         scopeType: true,
         scopeOrgId: true,
         scopeActivityId: true,
@@ -83,8 +83,9 @@ export class DirectPrincipalAuthzService {
     });
 
     // role 软删过滤(JS 层;where 里的 relation 过滤会触发 domain scanner 的 dynamic 判定,
-    // 而 select 已带回 role 数据 —— 语义等价,判据友好)。
-    const activeBindings = bindings.filter((b) => b.role !== null);
+    // 而 select 已带回 role 数据 —— 语义等价,判据友好)。RoleBinding 的必填 relation
+    // 不会因角色软删变成 null，因此必须显式看 deletedAt，确保撤权在下一请求生效。
+    const activeBindings = bindings.filter((b) => b.role.deletedAt === null);
 
     // 权限链单独查(nested select 三层以上触发 dynamic 判定;拆成顶层调用语义等价)。
     const roleIds = [...new Set(activeBindings.map((b) => b.roleId))];
