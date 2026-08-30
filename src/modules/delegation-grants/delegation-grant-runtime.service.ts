@@ -29,6 +29,7 @@ export interface DelegationScopeTarget {
 export interface IssuableDelegationGrant {
   subjectUserId: string;
   subjectUserRole: Role;
+  subjectUser: CurrentUserPayload;
   credentialExpiresAt: Date | null;
   grantEndsAt: Date | null;
 }
@@ -127,13 +128,14 @@ export class DelegationGrantRuntimeService {
 
     const subjectUser = await db.user.findFirst({
       where: { id: grant.subjectUserId, deletedAt: null, status: UserStatus.ACTIVE },
-      select: { id: true, role: true },
+      select: { id: true, username: true, role: true, status: true, memberId: true },
     });
     if (subjectUser === null) return null;
 
     return {
       subjectUserId: subjectUser.id,
       subjectUserRole: subjectUser.role,
+      subjectUser,
       credentialExpiresAt: credential.expiresAt,
       grantEndsAt: grant.endedAt,
     };

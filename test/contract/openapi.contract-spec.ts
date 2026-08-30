@@ -45,6 +45,7 @@ interface OpenApiResponse {
 interface OpenApiOperation {
   operationId?: string;
   summary?: string;
+  security?: Array<Record<string, unknown[]>>;
   responses?: Record<string, OpenApiResponse>;
   requestBody?: {
     content?: {
@@ -1074,6 +1075,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/system/v1/delegation-grants'],
   ['get', '/api/system/v1/delegation-grants/{id}'],
   ['post', '/api/system/v1/delegation-grants/{id}/revoke'],
+  // Integration Foundation v1 PR6(规格书 §37/§62):第六 surface 的唯一新增端点。
+  ['get', '/api/integration/v1/me'],
 ];
 
 /**
@@ -1082,7 +1085,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 568; // 2026-08-29 IF PR5 +5(delegated-token + delegation-grants)
+const EXPECTED_ROUTE_COUNT = 569; // 2026-08-30 IF PR6 +1(integration/v1/me)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -1740,6 +1743,10 @@ const EXPECTED_SCHEMAS: readonly string[] = [
   'BulkReviewRegistrationsDto',
   'BulkReviewFailureDto',
   'BulkReviewRegistrationsResponseDto',
+
+  // Integration Foundation v1 PR6:机器主体 /me 的最小、独立出参。
+  'IntegrationServicePrincipalDto',
+  'IntegrationMeResponseDto',
 ];
 
 describe('OpenAPI 契约快照', () => {
@@ -1770,6 +1777,53 @@ describe('OpenAPI 契约快照', () => {
       (s) => typeof s === 'object' && s !== null && (s as { scheme?: string }).scheme === 'bearer',
     );
     expect(hasBearer).toBe(true);
+  });
+
+  it('Integration 认证方案与 Human bearer 物理分名', () => {
+    const securitySchemes = doc.components?.securitySchemes ?? {};
+    expect(securitySchemes.integrationClientCredentials).toMatchObject({
+      type: 'http',
+      scheme: 'basic',
+    });
+    expect(securitySchemes.integrationBearer).toMatchObject({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+    });
+
+    expect(doc.paths['/api/auth/v1/service-token']?.post?.security).toEqual([
+      { integrationClientCredentials: [] },
+    ]);
+    for (const [method, path] of [
+      ['post', '/api/auth/v1/delegated-token'],
+      ['get', '/api/integration/v1/me'],
+    ] as const) {
+      expect(doc.paths[path]?.[method]?.security).toEqual([{ integrationBearer: [] }]);
+    }
+    expect(documented4xxCodes(doc.paths['/api/auth/v1/delegated-token']?.post)).toContain(
+      BizCode.PRINCIPAL_KIND_FORBIDDEN.code,
+    );
+  });
+
+  it('Integration /me 只暴露最小身份 DTO，并声明主体类型错误', () => {
+    const operation = doc.paths['/api/integration/v1/me']?.get;
+    expect(
+      operation?.responses?.['200']?.content?.['application/json']?.schema?.properties?.data,
+    ).toEqual({ $ref: '#/components/schemas/IntegrationMeResponseDto' });
+    expect(documented4xxCodes(operation)).toContain(BizCode.PRINCIPAL_KIND_FORBIDDEN.code);
+
+    const schemas = doc.components?.schemas ?? {};
+    expect((schemas.IntegrationMeResponseDto as OpenApiSchema).required).toEqual([
+      'principalKind',
+      'servicePrincipal',
+      'delegated',
+    ]);
+    expect(
+      Object.keys((schemas.IntegrationMeResponseDto as OpenApiSchema).properties ?? {}),
+    ).toEqual(['principalKind', 'servicePrincipal', 'delegated']);
+    expect(
+      Object.keys((schemas.IntegrationServicePrincipalDto as OpenApiSchema).properties ?? {}),
+    ).toEqual(['clientId', 'name']);
   });
 
   it.each(EXPECTED_ROUTES)('路由仍存在: %s %s', (method, path) => {
@@ -2496,7 +2550,7 @@ describe('OpenAPI 契约快照', () => {
 
   // Route B 终态验收基线(沿 docs/api-surface-migration-plan.md §3.4):迁移完成后,
   // OpenAPI 全部路由**只允许**落 canonical 前缀;零 v2 / 零裸 auth·health·users / 零 legacy。
-  // 任何新增端点必须落 admin/v1 · app/v1 · auth/v1 · system/v1 · open/v1 之一,否则本断言失败。
+  // 任何新增端点必须落 admin/v1 · app/v1 · auth/v1 · system/v1 · open/v1 · integration/v1 之一。
   //
   // 招新一期(招新前段)T3(2026-06-18):open/v1 **首用**——api-surface-policy §0「预留→首用」
   //   解锁。open/v1 = 无账号公开报名 surface(小程序自助;@Public 跳过 JwtAuthGuard);
@@ -2507,9 +2561,10 @@ describe('OpenAPI 契约快照', () => {
     '/api/auth/v1/',
     '/api/system/v1/',
     '/api/open/v1/',
+    '/api/integration/v1/',
   ];
 
-  it('Route B 终态:全部路由仅落 5 canonical 前缀(含 open/v1 首用;零 v2 / 零 legacy)', () => {
+  it('终态:全部路由仅落 6 canonical 前缀(含 integration/v1;零 v2 / 零 legacy)', () => {
     const offenders = Object.keys(doc.paths).filter(
       (p) => !CANONICAL_PREFIXES.some((c) => p.startsWith(c)),
     );

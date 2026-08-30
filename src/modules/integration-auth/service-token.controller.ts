@@ -1,18 +1,18 @@
 import { Controller, Post, Req } from '@nestjs/common';
-
-// @Public:Client Credentials 的凭证是 Basic 头,不是 Bearer JWT —— JwtAuthGuard 必须跳过;
-// 认证由 ServiceTokenService.authenticateClientCredentials 内部完成(§12.3/§12.4)。
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBasicAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 
 import {
   ApiBizErrorResponse,
   ApiWrappedCreatedResponse,
 } from '../../common/decorators/api-response.decorator';
-import { BizCode } from '../../common/exceptions/biz-code.constant';
-import { BizException } from '../../common/exceptions/biz.exception';
-import { Public } from '../../common/decorators/public.decorator';
+import {
+  CurrentServiceClient,
+  type AuthenticatedServiceClient,
+} from '../../common/decorators/current-service-client.decorator';
+import { LoginOnly } from '../../common/decorators/route-authz.decorator';
 import { ServiceTokenThrottle } from '../../common/decorators/service-token-throttle.decorator';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { setIntegrationLogPrincipal } from '../../bootstrap/request-id';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ServiceTokenService } from './service-token.service';
@@ -24,43 +24,32 @@ import { ServiceTokenService } from './service-token.service';
  *   Authorization: Basic base64(clientId:clientSecret)
  *   → { accessToken, tokenType: 'Bearer', expiresIn }(§12.3 冻结响应形;零 refresh)
  *
- * GET /api/integration/v1/me —— PR6 才开 surface;本刀不建 Integration 路由。
+ * GET /api/integration/v1/me 已由 PR6 开放，且与本入口共享独立 Integration 信任域。
  */
 @Controller('auth/v1/service-token')
 @ApiTags('auth/service-token')
 export class ServiceTokenController {
   constructor(private readonly serviceToken: ServiceTokenService) {}
 
-  @Public()
+  @LoginOnly({ allowedPrincipalKinds: ['CLIENT_CREDENTIALS'] })
   @Post()
   @ServiceTokenThrottle()
+  @ApiBasicAuth('integrationClientCredentials')
   @ApiOperation({
-    summary: 'Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [public]',
+    summary: 'Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [auth]',
   })
   @ApiWrappedCreatedResponse(Object)
   @ApiBizErrorResponse(BizCode.SERVICE_CREDENTIAL_INVALID)
   @ApiBizErrorResponse(BizCode.INTEGRATION_API_DISABLED)
-  async issue(@Req() req: Request): Promise<{
+  async issue(
+    @CurrentServiceClient() client: AuthenticatedServiceClient,
+    @Req() req: Request,
+  ): Promise<{
     accessToken: string;
     tokenType: 'Bearer';
     expiresIn: number;
   }> {
-    // Basic 解析(clientId:clientSecret;缺失/畸形 = 与 Secret 错同码,§12.4 归一)。
-    const header = req.headers.authorization ?? '';
-    if (!header.startsWith('Basic ')) {
-      throw new BizException(BizCode.SERVICE_CREDENTIAL_INVALID);
-    }
-    let clientId = '';
-    let clientSecret = '';
-    try {
-      const decoded = Buffer.from(header.slice('Basic '.length), 'base64').toString('utf8');
-      const idx = decoded.indexOf(':');
-      clientId = decoded.slice(0, idx);
-      clientSecret = decoded.slice(idx + 1);
-    } catch {
-      // fall through to unified rejection
-    }
-    return this.serviceToken.issueToken(clientId, clientSecret, {
+    return this.serviceToken.issueTokenForAuthenticatedClient(client, {
       auditMeta: auditMetaOf(req),
       onIssued: (actor) => setIntegrationLogPrincipal(req, actor),
     });

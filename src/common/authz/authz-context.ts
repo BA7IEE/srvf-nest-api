@@ -32,6 +32,17 @@ export type RouteAuthzEngine = (typeof ROUTE_AUTHZ_ENGINES)[number];
 export function isRouteAuthzEngine(value: string): value is RouteAuthzEngine {
   return (ROUTE_AUTHZ_ENGINES as readonly string[]).includes(value);
 }
+
+// USER is the compatibility default for every existing authenticated route.
+// CLIENT_CREDENTIALS is a route-only admission kind: it never becomes an
+// IntegrationPrincipalContext and exists solely for the token exchange entry.
+export const ROUTE_PRINCIPAL_KINDS = [
+  'USER',
+  'SERVICE',
+  'DELEGATED',
+  'CLIENT_CREDENTIALS',
+] as const;
+export type RoutePrincipalKind = (typeof ROUTE_PRINCIPAL_KINDS)[number];
 export type RouteAuthzAdmission = 'app-member';
 export type RouteAuthzRequire = 'all' | 'any';
 
@@ -70,6 +81,7 @@ export interface RouteAuthzDeclarationFragment {
   require?: RouteAuthzRequire;
   scopes?: readonly string[];
   engine?: RouteAuthzEngine;
+  allowedPrincipalKinds?: readonly RoutePrincipalKind[];
 }
 
 export interface RouteAuthzNormalizationInput {
@@ -86,6 +98,8 @@ export interface CanonicalRouteAuthzDeclaration {
   require: RouteAuthzRequire;
   scopes: RouteAuthzScope[];
   engine: RouteAuthzEngine | null;
+  /** Omitted for the compatibility default USER so the existing manifest stays zero-drift. */
+  allowedPrincipalKinds?: RoutePrincipalKind[];
 }
 
 // This is the single source for both the runtime ALS markers and the R8
@@ -356,6 +370,50 @@ function canonicalCodes(
   });
 }
 
+function canonicalPrincipalKinds(
+  fragments: readonly RouteAuthzDeclarationFragment[],
+): RoutePrincipalKind[] {
+  const declarations = fragments.flatMap((fragment) =>
+    fragment.allowedPrincipalKinds === undefined ? [] : [fragment.allowedPrincipalKinds],
+  );
+  if (declarations.length === 0) return ['USER'];
+
+  const normalized = declarations.map((declaration) => {
+    if (declaration.length === 0) {
+      throw new Error('Route authorization declaration has empty allowed principal kinds');
+    }
+    const kinds = [...new Set(declaration)];
+    for (const kind of kinds) {
+      if (!(ROUTE_PRINCIPAL_KINDS as readonly string[]).includes(kind)) {
+        throw new Error(`Route authorization declaration has unsupported principal kind: ${kind}`);
+      }
+    }
+    return kinds.sort(
+      (left, right) => ROUTE_PRINCIPAL_KINDS.indexOf(left) - ROUTE_PRINCIPAL_KINDS.indexOf(right),
+    );
+  });
+  const distinct = new Set(normalized.map((kinds) => kinds.join('\u0000')));
+  if (distinct.size > 1) {
+    throw new Error('Route authorization declaration has multiple allowed principal kinds');
+  }
+
+  const result = normalized[0] ?? ['USER'];
+  if (result.includes('CLIENT_CREDENTIALS') && result.length > 1) {
+    throw new Error('CLIENT_CREDENTIALS cannot be combined with another principal kind');
+  }
+  if (result.includes('USER') && result.length > 1) {
+    throw new Error('USER cannot be combined with an Integration principal kind');
+  }
+  return result;
+}
+
+export function effectiveAllowedPrincipalKinds(
+  declaration: CanonicalRouteAuthzDeclaration,
+): readonly RoutePrincipalKind[] {
+  if (declaration.mode === 'PUBLIC') return [];
+  return declaration.allowedPrincipalKinds ?? ['USER'];
+}
+
 export function normalizeRouteAuthzDeclaration(
   input: RouteAuthzNormalizationInput,
 ): CanonicalRouteAuthzDeclaration | null {
@@ -399,6 +457,7 @@ export function normalizeRouteAuthzDeclaration(
       ),
     ),
   ].sort((left, right) => left.localeCompare(right));
+  const allowedPrincipalKinds = canonicalPrincipalKinds(input.fragments);
 
   const mode = explicitMode ?? (codes.length > 0 ? 'RBAC' : undefined);
   if (!mode) {
@@ -426,6 +485,9 @@ export function normalizeRouteAuthzDeclaration(
     require: require ?? 'all',
     scopes,
     engine,
+    ...(allowedPrincipalKinds.length === 1 && allowedPrincipalKinds[0] === 'USER'
+      ? {}
+      : { allowedPrincipalKinds }),
   };
 }
 

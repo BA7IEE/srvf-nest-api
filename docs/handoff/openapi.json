@@ -99539,7 +99539,12 @@
             }
           }
         },
-        "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [public]",
+        "security": [
+          {
+            "integrationClientCredentials": []
+          }
+        ],
+        "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [auth]",
         "tags": [
           "auth/service-token"
         ]
@@ -99624,7 +99629,7 @@
             }
           },
           "403": {
-            "description": "委托关系无效或已失效(code=37016)",
+            "description": "委托关系无效或已失效(code=37016) / 当前主体类型不能访问该接口(code=37017)",
             "content": {
               "application/json": {
                 "schema": {
@@ -99638,9 +99643,10 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        37016
+                        37016,
+                        37017
                       ],
-                      "description": "37016: 委托关系无效或已失效",
+                      "description": "37016: 委托关系无效或已失效; 37017: 当前主体类型不能访问该接口",
                       "example": 37016
                     },
                     "message": {
@@ -99692,7 +99698,12 @@
             }
           }
         },
-        "summary": "Service Token 换 Delegated Token(Bearer 认证；subject 只能由 Grant 决定) [public]",
+        "security": [
+          {
+            "integrationBearer": []
+          }
+        ],
+        "summary": "Service Token 换 Delegated Token(Bearer 认证；subject 只能由 Grant 决定) [auth]",
         "tags": [
           "auth/delegated-token"
         ]
@@ -100327,6 +100338,154 @@
         "summary": "撤销委托，下一请求立即失效 [rbac: delegation-grant.revoke.record]",
         "tags": [
           "system/delegation-grants"
+        ]
+      }
+    },
+    "/api/integration/v1/me": {
+      "get": {
+        "operationId": "IntegrationApiController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/IntegrationMeResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Integration Token 无效或已失效(code=37011)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37011
+                      ],
+                      "description": "37011: Integration Token 无效或已失效",
+                      "example": 37011
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Integration Token 无效或已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前主体类型不能访问该接口(code=37017)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37017
+                      ],
+                      "description": "37017: 当前主体类型不能访问该接口",
+                      "example": 37017
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "当前主体类型不能访问该接口"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Integration API 未启用(code=37030)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37030
+                      ],
+                      "description": "37030: Integration API 未启用",
+                      "example": 37030
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Integration API 未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "integrationBearer": []
+          }
+        ],
+        "summary": "查看当前 Integration 主体最小身份 [auth]",
+        "tags": [
+          "Integration - Identity"
         ]
       }
     },
@@ -117526,6 +117685,10 @@
       "description": "公开能力(健康检查;无需鉴权)"
     },
     {
+      "name": "Integration - Identity",
+      "description": "外部系统:当前 Service / Delegated 主体最小身份"
+    },
+    {
       "name": "Mobile - Me",
       "description": "队员端:当前登录人身份与基础资料"
     },
@@ -117637,6 +117800,17 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "type": "http"
+      },
+      "integrationClientCredentials": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "Integration Client Credentials"
+      },
+      "integrationBearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "description": "短期 Service Token 或 Delegated Token；不支持 refresh"
       }
     },
     "schemas": {
@@ -141652,6 +141826,46 @@
             "maxLength": 512
           }
         }
+      },
+      "IntegrationServicePrincipalDto": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string",
+            "example": "srvf_sp_example"
+          },
+          "name": {
+            "type": "string",
+            "example": "外部协作系统"
+          }
+        },
+        "required": [
+          "clientId",
+          "name"
+        ]
+      },
+      "IntegrationMeResponseDto": {
+        "type": "object",
+        "properties": {
+          "principalKind": {
+            "type": "string",
+            "enum": [
+              "SERVICE",
+              "DELEGATED"
+            ]
+          },
+          "servicePrincipal": {
+            "$ref": "#/components/schemas/IntegrationServicePrincipalDto"
+          },
+          "delegated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "principalKind",
+          "servicePrincipal",
+          "delegated"
+        ]
       },
       "ImportOrganizationRowDto": {
         "type": "object",

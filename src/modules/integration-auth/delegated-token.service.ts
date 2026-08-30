@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import type { IntegrationPrincipalContext } from '../../common/decorators/current-integration-principal.decorator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { DelegationGrantRuntimeService } from '../delegation-grants/delegation-grant-runtime.service';
@@ -92,6 +93,7 @@ export class DelegatedTokenService {
   verifyToken(token: string): DelegatedTokenPayload {
     try {
       const payload = this.jwt.verify<Record<string, unknown>>(token, {
+        algorithms: ['HS256'],
         issuer: this.gate.issuer,
         audience: this.gate.audience,
       });
@@ -138,6 +140,31 @@ export class DelegatedTokenService {
       if (error instanceof BizException) throw error;
       throw new BizException(BizCode.INTEGRATION_TOKEN_INVALID);
     }
+  }
+
+  /** Bearer request entry:token claims plus SP/Credential/Grant/User current facts. */
+  async resolvePrincipal(
+    token: string,
+  ): Promise<Extract<IntegrationPrincipalContext, { kind: 'DELEGATED' }>> {
+    if (!this.gate.isEnabled()) {
+      throw new BizException(BizCode.INTEGRATION_API_DISABLED);
+    }
+    const payload = this.verifyToken(token);
+    const grant = await this.grants.findIssuableGrant({
+      servicePrincipalId: payload.act.sub,
+      credentialId: payload.credentialId,
+      delegationGrantId: payload.delegationGrantId,
+    });
+    if (grant === null || grant.subjectUserId !== payload.sub) {
+      throw new BizException(BizCode.INTEGRATION_TOKEN_INVALID);
+    }
+    return {
+      kind: 'DELEGATED',
+      servicePrincipalId: payload.act.sub,
+      credentialId: payload.credentialId,
+      delegationGrantId: payload.delegationGrantId,
+      subjectUser: grant.subjectUser,
+    };
   }
 
   private resolveExpiresIn(

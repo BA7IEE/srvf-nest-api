@@ -56,9 +56,16 @@ export const SEED_FACTS_CLOSURE = Object.freeze([
   'prisma/seed.ts',
   'src/modules/permissions/permission-catalog.ts',
 ] as const);
-// 招新一期(招新前段)T3(2026-06-18):open/v1 首用——无账号公开报名 surface(api-surface-policy §0
-// 「预留→首用」解锁;第 5 canonical 前缀,与 test/contract/openapi.contract-spec.ts CANONICAL_PREFIXES 同步)。
-const CANONICAL_PREFIXES = ['admin/v1', 'app/v1', 'auth/v1', 'system/v1', 'open/v1'] as const;
+// 2026-08-30 Integration Foundation v1 PR6:integration/v1 成为第 6 canonical 前缀；
+// 与 generate-rbac-map.ts / contract CANONICAL_PREFIXES 同步。
+const CANONICAL_PREFIXES = [
+  'admin/v1',
+  'app/v1',
+  'auth/v1',
+  'system/v1',
+  'open/v1',
+  'integration/v1',
+] as const;
 
 // 权限码形态:小写字母/中横线段,至少一个点分隔(与 seed 实际码型一致)。
 const CODE_SHAPE = '[a-z][a-z-]*(?:\\.[a-z-]+)+';

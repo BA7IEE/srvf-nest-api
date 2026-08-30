@@ -2,7 +2,7 @@
 // surface: Auth 登录/令牌(admin 与 app 共用)
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:37349a15fa29087d8266ad35f03a06ddda1891097399dd3af53721dfca1ce152
+// inputDigest: sha256:a2991bd65b98212909486232db5e5e83b6997b6b66317e936f6d76222a7caa60
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -48,7 +48,7 @@ export type { ApiEnvelope, PageResult, FetchRequest, Fetcher };
 
 export function createAuthClient(fetcher: Fetcher) {
   return {
-    /** Service Token 换 Delegated Token(Bearer 认证；subject 只能由 Grant 决定) [public] */
+    /** Service Token 换 Delegated Token(Bearer 认证；subject 只能由 Grant 决定) [auth] */
     DelegatedTokenControllerIssue(body: DelegatedTokenRequestDto): Promise<ApiEnvelope<IntegrationTokenResponseDto>> {
       return fetcher<IntegrationTokenResponseDto>({ method: "POST", path: "/api/auth/v1/delegated-token", body });
     },
@@ -96,7 +96,7 @@ export function createAuthClient(fetcher: Fetcher) {
     AuthControllerRefresh(body: RefreshTokenDto): Promise<ApiEnvelope<LoginResponseDto>> {
       return fetcher<LoginResponseDto>({ method: "POST", path: "/api/auth/v1/refresh", body });
     },
-    /** Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [public] */
+    /** Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [auth] */
     ServiceTokenControllerIssue(): Promise<ApiEnvelope<Object>> {
       return fetcher<Object>({ method: "POST", path: "/api/auth/v1/service-token" });
     },

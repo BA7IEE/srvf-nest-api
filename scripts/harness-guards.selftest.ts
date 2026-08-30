@@ -762,7 +762,8 @@ checkEq(
   // (投递步骤里那句 verdict="${LEAK_VERDICT:-...}"),并同时要求产出侧确有写入。
   check(
     'P1 leak:nightly 投递复用检测步骤的判定(单一判据来源)',
-    /verdict="\$\{LEAK_VERDICT:-/.test(nightly) && /LEAK_VERDICT=\S+' >> "\$GITHUB_ENV"/.test(nightly),
+    /verdict="\$\{LEAK_VERDICT:-/.test(nightly) &&
+      /LEAK_VERDICT=\S+' >> "\$GITHUB_ENV"/.test(nightly),
     'nightly 的 Issue 投递未复用 $LEAK_VERDICT(或检测步骤未产出),存在两份判断分叉的风险',
   );
 
@@ -814,9 +815,14 @@ checkEq(
   // (job 先被杀,`too-slow` / `leak-no-stack` 两条消息都发不出来,退回 2026-08-16
   // 之前「只知道红了、不知道为什么红」的状态)。此前这条只写在注释里,现在机核。
   {
-    const jobSection = nightly.slice(nightly.indexOf('e2e-leaks:'), nightly.indexOf('notify-failure:'));
+    const jobSection = nightly.slice(
+      nightly.indexOf('e2e-leaks:'),
+      nightly.indexOf('notify-failure:'),
+    );
     const jobMin = Number(/timeout-minutes:\s*(\d+)/.exec(jobSection)?.[1] ?? 0);
-    const innerMin = Number(/timeout\s+--signal=TERM\s+--kill-after=\d+s\s+(\d+)m/.exec(jobSection)?.[1] ?? 0);
+    const innerMin = Number(
+      /timeout\s+--signal=TERM\s+--kill-after=\d+s\s+(\d+)m/.exec(jobSection)?.[1] ?? 0,
+    );
     check(
       'P1 leak:nightly job timeout > 内层 timeout(否则超时/泄漏判别拿不到执行机会)',
       jobMin > 0 && innerMin > 0 && jobMin > innerMin,
@@ -826,7 +832,10 @@ checkEq(
   // 通知必须是**聚合** job:片 1 绿不代表这条线绿。若关闭逻辑留在片内,
   // 片 1 会去关掉片 2 刚开的 Issue —— 红着的线看起来是绿的,比不通知更坏。
   {
-    const jobSection = nightly.slice(nightly.indexOf('e2e-leaks:'), nightly.indexOf('notify-failure:'));
+    const jobSection = nightly.slice(
+      nightly.indexOf('e2e-leaks:'),
+      nightly.indexOf('notify-failure:'),
+    );
     check(
       'P1 leak:分片 job 内不得直接开关 Issue(须由聚合 job 判两片全绿)',
       !/gh issue/.test(jobSection),
@@ -965,7 +974,8 @@ checkEq(
     // 阳性对照:剥注释是为了治误伤,但它同时开了一个洞 —— 万一剥过头/判据失配,
     // 这条闸会变成恒绿而毫无症状(正是它自己要防的那种失效)。所以两个方向都钉:
     const fakeOld = 'MARKER="$REPO_ROOT/$MARKER_PATH"\nREL="${FILE#$REPO_ROOT/}"\n';
-    const fakeCommentOnly = '# 旧写法是 REL="${FILE#$REPO_ROOT/}" 与 MARKER="$REPO_ROOT/x",已改掉\n';
+    const fakeCommentOnly =
+      '# 旧写法是 REL="${FILE#$REPO_ROOT/}" 与 MARKER="$REPO_ROOT/x",已改掉\n';
     check(
       '仓根推导(禁止型)阳性对照:合成的旧写法必被抓出',
       scanForbidden(fakeOld).length === 2,
@@ -1265,6 +1275,45 @@ checkEq(
     'A 类完整性翻闸缺失，或 B 类违规被误升级为硬门禁。',
   );
 
+  const writesUserProperty = (sourceText: string): boolean => {
+    const source = ts.createSourceFile(
+      'integration-guard.ts',
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    let found = false;
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ((ts.isPropertyAccessExpression(node.left) && node.left.name.text === 'user') ||
+          (ts.isElementAccessExpression(node.left) &&
+            ts.isStringLiteral(node.left.argumentExpression) &&
+            node.left.argumentExpression.text === 'user'))
+      ) {
+        found = true;
+      }
+      node.forEachChild(visit);
+    };
+    visit(source);
+    return found;
+  };
+  const integrationGuardFiles = [
+    'src/modules/integration-auth/integration-jwt-auth.guard.ts',
+    'src/modules/integration-auth/service-client-credentials.guard.ts',
+  ];
+  check(
+    'P1 Integration guards:机器主体不得写入 request.user',
+    integrationGuardFiles.every((file) => !writesUserProperty(read(file))),
+    'Integration 身份必须只写 request.integrationPrincipal / request.serviceClient',
+  );
+  check(
+    'P1 Integration guards 阳性:request.user 赋值探针会被发现',
+    writesUserProperty('request.user = principal; request["user"] = principal;'),
+  );
+
   const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'srvf-phase0-input-digest-'));
   const copyIntoFixture = (rel: string): void => {
     const source = path.join(REPO, rel);
@@ -1353,7 +1402,7 @@ checkEq(
         "    return this.prisma.user.findMany({ where: { username: 'u' }, select: { id: true } });",
         '  }',
         '  kernelOmitViolation() {',
-        "    return this.prisma.user.findMany({ omit: { username: true } });",
+        '    return this.prisma.user.findMany({ omit: { username: true } });',
         '  }',
         '  includeViolation() {',
         '    return this.prisma.activityRegistration.findMany({ include: { member: true } });',
@@ -1378,10 +1427,10 @@ checkEq(
         '    return this.prisma.user.findMany({ select });',
         '  }',
         '  rawSameDomainControl() {',
-        "    return this.prisma.$queryRawUnsafe('SELECT 1 FROM \\\"Activity\\\"');",
+        '    return this.prisma.$queryRawUnsafe(\'SELECT 1 FROM \\"Activity\\"\');',
         '  }',
         '  rawDefaultTableViolation() {',
-        "    return this.prisma.$queryRawUnsafe('SELECT 1 FROM \\\"User\\\"');",
+        '    return this.prisma.$queryRawUnsafe(\'SELECT 1 FROM \\"User\\"\');',
         '  }',
         '  rawMappedTableViolation() {',
         "    return this.prisma.$queryRawUnsafe('SELECT 1 FROM roles');",
@@ -1413,7 +1462,9 @@ checkEq(
       observedBy: 'Phase 2 synthetic positive control',
       reviewTrigger: 'selftest only',
     });
-    const phase2WithoutObservedSubdomainWrite = JSON.parse(JSON.stringify(phase2Map)) as typeof phase2Map;
+    const phase2WithoutObservedSubdomainWrite = JSON.parse(
+      JSON.stringify(phase2Map),
+    ) as typeof phase2Map;
     phase2WithoutObservedSubdomainWrite.moduleOwnership['activity-registrations'].subdomain =
       phase2WithoutObservedSubdomainWrite.moduleOwnership.activities.subdomain;
     fs.writeFileSync(
@@ -1541,8 +1592,7 @@ checkEq(
     );
     check(
       'P2 R5 动态形状负例:动态 select 不会被静默归入任何读档',
-      localKind('cross-domain-read-dynamic', 'Phase2BoundaryFixture.dynamicViolation').length ===
-        1,
+      localKind('cross-domain-read-dynamic', 'Phase2BoundaryFixture.dynamicViolation').length === 1,
       phase2Detail,
     );
     const rawFindings = phase2Local.filter((item) => item.kind === 'raw-cross-domain-table');
@@ -1620,7 +1670,11 @@ checkEq(
       const form = String((item.details as { form?: unknown }).form ?? 'import');
       liveImportForms.set(form, (liveImportForms.get(form) ?? 0) + 1);
     }
-    checkEq('D2 覆盖面:跨域 re-export 当前为 0(出现第一条即红)', liveImportForms.get('export-from') ?? 0, 0);
+    checkEq(
+      'D2 覆盖面:跨域 re-export 当前为 0(出现第一条即红)',
+      liveImportForms.get('export-from') ?? 0,
+      0,
+    );
     checkEq(
       'D2 覆盖面:跨域动态 import() 当前为 0(出现第一条即红)',
       liveImportForms.get('dynamic-import') ?? 0,
@@ -1641,7 +1695,8 @@ checkEq(
     // 若静默豁免,v4 §4 的 platform-access 业务入边「恒 0」会当场变成假话 ——
     // 实测那 3 条反向边恰好全是 type-only。
     const typeOnlyImports = phase2Findings.filter(
-      (f) => f.kind === 'cross-domain-import' && (f.details as { typeOnly?: unknown }).typeOnly === true,
+      (f) =>
+        f.kind === 'cross-domain-import' && (f.details as { typeOnly?: unknown }).typeOnly === true,
     );
     check(
       'D2 type-only:仍计入依赖边且带 typeOnly 标记(不静默豁免)',
@@ -1684,9 +1739,21 @@ checkEq(
       coverageForms = new Set();
     }
     const coverageDetail = coverageScan.out.slice(-3000);
-    check('D2 正样例:跨域 re-export 被识别为依赖边', coverageForms.has('export-from'), coverageDetail);
-    check('D2 正样例:跨域动态 import() 被识别为依赖边', coverageForms.has('dynamic-import'), coverageDetail);
-    check('D2 正样例:跨域 import=require 被识别为依赖边', coverageForms.has('import-equals'), coverageDetail);
+    check(
+      'D2 正样例:跨域 re-export 被识别为依赖边',
+      coverageForms.has('export-from'),
+      coverageDetail,
+    );
+    check(
+      'D2 正样例:跨域动态 import() 被识别为依赖边',
+      coverageForms.has('dynamic-import'),
+      coverageDetail,
+    );
+    check(
+      'D2 正样例:跨域 import=require 被识别为依赖边',
+      coverageForms.has('import-equals'),
+      coverageDetail,
+    );
 
     // ── R15 src/common 治理(架构治理 v4 终审【七】)──────────────────────
     // 三条判据各一正一负。**负样例必须是「形似但合法」** —— 与正样例只差
@@ -1892,7 +1959,11 @@ checkEq(
     const fixtureStateMachines = path.join(fixtureRoot, 'harness/state-machines.json');
     const originalStateMachines = fs.readFileSync(fixtureStateMachines, 'utf8');
     const liveStateRegistry = JSON.parse(originalStateMachines) as { entries: FixtureStateEntry[] };
-    const pick = (entries: FixtureStateEntry[], model: string, field: string): FixtureStateEntry => {
+    const pick = (
+      entries: FixtureStateEntry[],
+      model: string,
+      field: string,
+    ): FixtureStateEntry => {
       const found = entries.find((item) => item.model === model && item.field === field);
       if (found === undefined) throw new Error(`state entry missing: ${model}.${field}`);
       return found;
@@ -2210,9 +2281,8 @@ checkEq(
       edgeCoverage?: Record<string, number>;
     } = {};
     try {
-      stateGovernance = (
-        JSON.parse(r15Scan.out) as { stateGovernance: typeof stateGovernance }
-      ).stateGovernance;
+      stateGovernance = (JSON.parse(r15Scan.out) as { stateGovernance: typeof stateGovernance })
+        .stateGovernance;
     } catch {
       // 断言失败时下面会打出原始输出。
     }
@@ -2267,6 +2337,51 @@ checkEq(
       missingDeclaration.code !== 0 &&
         missingDeclaration.out.includes('route authorization declaration missing:'),
       missingDeclaration.out,
+    );
+    const fixtureIntegrationController = path.join(
+      fixtureRoot,
+      'src/modules/integration-api/integration-api.controller.ts',
+    );
+    const originalIntegrationController = fs.readFileSync(fixtureIntegrationController, 'utf8');
+    fs.writeFileSync(
+      fixtureIntegrationController,
+      originalIntegrationController.replace(
+        "@LoginOnly({ allowedPrincipalKinds: ['SERVICE', 'DELEGATED'] })",
+        '@LoginOnly()',
+      ),
+      'utf8',
+    );
+    const missingIntegrationPrincipalKind = runFixture('scripts/generate-authz-manifest.ts', [
+      '--check',
+    ]);
+    fs.writeFileSync(fixtureIntegrationController, originalIntegrationController, 'utf8');
+    check(
+      'P1 Integration surface 负例:缺显式 principal-kind 必被 --check 拒绝',
+      missingIntegrationPrincipalKind.code !== 0 &&
+        missingIntegrationPrincipalKind.out.includes(
+          'integration route requires an explicit SERVICE/DELEGATED principal-kind declaration:',
+        ),
+      missingIntegrationPrincipalKind.out,
+    );
+    fs.writeFileSync(
+      fixtureIntegrationController,
+      originalIntegrationController.replace(
+        "@Controller('integration/v1')",
+        "@Controller('admin/v1/integration-probe')",
+      ),
+      'utf8',
+    );
+    const misplacedIntegrationPrincipalKind = runFixture('scripts/generate-authz-manifest.ts', [
+      '--check',
+    ]);
+    fs.writeFileSync(fixtureIntegrationController, originalIntegrationController, 'utf8');
+    check(
+      'P1 Integration surface 反向负例:机器 bearer principal 不得挂到 Admin/App/System/Open',
+      misplacedIntegrationPrincipalKind.code !== 0 &&
+        misplacedIntegrationPrincipalKind.out.includes(
+          'SERVICE/DELEGATED principal kinds are reserved for the Integration surface',
+        ),
+      misplacedIntegrationPrincipalKind.out,
     );
     const fixtureAssertionPatterns = path.join(
       fixtureRoot,
@@ -2815,7 +2930,7 @@ for (const [configName, config] of JEST_CONFIGS) {
       // 落进「未触碰红区」分支直接放行 —— 第二路裁决必须真的参与聚合。
       'F3 trusted:verdict 聚合把授权降级那一路一起判(两路都要明确 true/false)',
       yml.includes("authz_required='${{ needs.scan.outputs.authzRequired }}'") &&
-        yml.includes('needs.scan.outputs.authzRequired == \'true\'') &&
+        yml.includes("needs.scan.outputs.authzRequired == 'true'") &&
         /for verdict in "\$required" "\$authz_required"/.test(yml),
       '只看 required 的话,授权降级的 PR 会因 approval 被跳过而落进「无需审批」分支放行',
     ],
@@ -3750,14 +3865,15 @@ async function runTrustedJudgeAssertions(): Promise<void> {
         ]);
         const nv = (head: string | null) => judge.judgeNumericMonotonicity(BASE_N, head, 'loc');
 
-        check(
-          'F3 数值型:HEAD == BASE → 放行',
-          nv(BASE_N).ok,
-          '不动基线的 PR 不该被这道闸打扰',
-        );
+        check('F3 数值型:HEAD == BASE → 放行', nv(BASE_N).ok, '不动基线的 PR 不该被这道闸打扰');
         check(
           'F3 数值型:数值**变小** → 放行(棘轮做功的方向)',
-          nv(numDoc([{ file: 'a.service.ts', loc: 900 }, { file: 'b.service.ts', loc: 800 }])).ok,
+          nv(
+            numDoc([
+              { file: 'a.service.ts', loc: 900 },
+              { file: 'b.service.ts', loc: 800 },
+            ]),
+          ).ok,
           '⚠️ 这一条正是旧裁判做不到的:按 (file,symbol) 集合比时,数值编进 symbol 会让「变小」造出新 key 而硬失败',
         );
         check(
@@ -3769,7 +3885,10 @@ async function runTrustedJudgeAssertions(): Promise<void> {
           'F3 数值型:数值**变大** → 拒(这是本形态存在的唯一理由)',
           (() => {
             const v = nv(
-              numDoc([{ file: 'a.service.ts', loc: 1001 }, { file: 'b.service.ts', loc: 800 }]),
+              numDoc([
+                { file: 'a.service.ts', loc: 1001 },
+                { file: 'b.service.ts', loc: 800 },
+              ]),
             );
             return !v.ok && v.grown.length === 1 && v.grown[0].includes('1000 → 1001');
           })(),
@@ -3816,7 +3935,10 @@ async function runTrustedJudgeAssertions(): Promise<void> {
             try {
               judge.judgeNumericMonotonicity(
                 BASE_N,
-                numDoc([{ file: 'a.service.ts', loc: 900 }, { file: 'a.service.ts', loc: 2000 }]),
+                numDoc([
+                  { file: 'a.service.ts', loc: 900 },
+                  { file: 'a.service.ts', loc: 2000 },
+                ]),
                 'loc',
               );
               return false;
@@ -3876,9 +3998,7 @@ async function runTrustedJudgeAssertions(): Promise<void> {
         );
         check(
           'F3 kind:numeric-monotonic 携带 symbolShape → 抛',
-          throws(
-            regKind({ kind: 'numeric-monotonic', metric: 'loc', symbolShape: 'class-field' }),
-          ),
+          throws(regKind({ kind: 'numeric-monotonic', metric: 'loc', symbolShape: 'class-field' })),
           '同上:数值型没有 symbol,带上它只会让人以为它参与集合判定',
         );
         check(
@@ -3893,7 +4013,13 @@ async function runTrustedJudgeAssertions(): Promise<void> {
             const base = JSON.stringify({
               version: 1,
               ratchets: [
-                { id: 'n', kind: 'numeric-monotonic', baseline: 'harness/n.json', metric: 'loc', why: 'w' },
+                {
+                  id: 'n',
+                  kind: 'numeric-monotonic',
+                  baseline: 'harness/n.json',
+                  metric: 'loc',
+                  why: 'w',
+                },
               ],
             });
             const head = JSON.stringify({
@@ -3966,7 +4092,8 @@ async function runTrustedJudgeAssertions(): Promise<void> {
           check(
             'F3 set:重复成员 → 抛(不是去重)',
             throwsWith(
-              () => judge.judgeSetMonotonicity(BASE, doc(['cs:aaa', 'cs:aaa']), SET, 'harness/x.json'),
+              () =>
+                judge.judgeSetMonotonicity(BASE, doc(['cs:aaa', 'cs:aaa']), SET, 'harness/x.json'),
               '重复成员',
             ),
             '同一身份出现两次说明生成侧已按别的口径计数,「取哪一条」从此看运气',
@@ -4077,10 +4204,7 @@ async function runTrustedJudgeAssertions(): Promise<void> {
     // 判据存在、执行位不存在,两头不靠。本组把「接了 CI」与「没被 || true 兜住」
     // 各钉一条;它们与判据本体同处 selfGuard 红区,不会被单独回退。
     {
-      const ci = fs.readFileSync(
-        path.resolve(__dirname, '../.github/workflows/ci.yml'),
-        'utf-8',
-      );
+      const ci = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/ci.yml'), 'utf-8');
       const line = ci
         .split('\n')
         .find((l) => l.includes('docs:boundaries:newdebt:check') && l.trim().startsWith('pnpm'));
@@ -4383,6 +4507,36 @@ void (async (): Promise<void> => {
       ),
       'NARROWER',
     );
+    const serviceOnly = basePolicy({
+      mode: 'LOGIN_ONLY',
+      codes: [],
+      engine: null,
+      allowedPrincipalKinds: ['SERVICE'],
+    });
+    const serviceOrDelegated = basePolicy({
+      mode: 'LOGIN_ONLY',
+      codes: [],
+      engine: null,
+      allowedPrincipalKinds: ['SERVICE', 'DELEGATED'],
+    });
+    checkEq(
+      'R14:principal kinds 缩集合 = 收紧',
+      verdictOf(serviceOrDelegated, serviceOnly),
+      'NARROWER',
+    );
+    checkEq(
+      'R14:principal kinds 扩集合 = 降级',
+      verdictOf(serviceOnly, serviceOrDelegated),
+      'BROADER',
+    );
+    checkEq(
+      'R14:principal kinds USER → SERVICE = 不可比',
+      verdictOf(
+        basePolicy({ mode: 'LOGIN_ONLY', codes: [], engine: null }),
+        serviceOnly,
+      ),
+      'INCOMPARABLE',
+    );
     checkEq(
       'R14:降级 — RBAC → LOGIN_ONLY',
       verdictOf(basePolicy(), basePolicy({ mode: 'LOGIN_ONLY', codes: [], engine: null })),
@@ -4431,7 +4585,10 @@ void (async (): Promise<void> => {
         { code: 'member.read.record', scope: null },
       ],
     });
-    const allOne = basePolicy({ require: 'all', codes: [{ code: 'user.read.account', scope: null }] });
+    const allOne = basePolicy({
+      require: 'all',
+      codes: [{ code: 'user.read.account', scope: null }],
+    });
     const anyTwo = basePolicy({
       require: 'any',
       codes: [
@@ -4439,7 +4596,10 @@ void (async (): Promise<void> => {
         { code: 'member.read.record', scope: null },
       ],
     });
-    const anyOne = basePolicy({ require: 'any', codes: [{ code: 'user.read.account', scope: null }] });
+    const anyOne = basePolicy({
+      require: 'any',
+      codes: [{ code: 'user.read.account', scope: null }],
+    });
 
     checkEq('R14:require=all — 缩码 = 降级', verdictOf(allTwo, allOne), 'BROADER');
     checkEq('R14:require=all — 增码 = 收紧', verdictOf(allOne, allTwo), 'NARROWER');
@@ -4460,11 +4620,7 @@ void (async (): Promise<void> => {
       `实际判成 ${verdictOf(allTwo, allOne)}`,
     );
     // 单码时 require 是真空的(all 与 any 的持有者集合逐字相同),不得误报成语义变更
-    checkEq(
-      'R14:单码时 require 翻转 = 等价(真空,不误报)',
-      verdictOf(anyOne, allOne),
-      'EQUIVALENT',
-    );
+    checkEq('R14:单码时 require 翻转 = 等价(真空,不误报)', verdictOf(anyOne, allOne), 'EQUIVALENT');
 
     // ③ engine 变化:两侧都有判定面时恒不可比
     checkEq(
@@ -4535,9 +4691,7 @@ void (async (): Promise<void> => {
       const manifest = (policy: AuthzPolicy): AuthzManifest => ({
         schemaVersion: '1.0.0',
         generatorVersion: '2.0.0',
-        entries: [
-          { routeKey: 'GET /api/admin/v1/probe', controller: 'C', handler: 'h', policy },
-        ],
+        entries: [{ routeKey: 'GET /api/admin/v1/probe', controller: 'C', handler: 'h', policy }],
       });
       const tightened = diffManifests(manifest(allOne), manifest(allTwo), closure);
       check(
@@ -4545,15 +4699,9 @@ void (async (): Promise<void> => {
         tightened.length === 1 && tightened[0].verdict === 'NARROWER',
         JSON.stringify(tightened.map((d) => d.verdict)),
       );
-      check(
-        'R14:收紧端点不产生阻断项(放行)',
-        judgeAuthzDeclarations(tightened, []).length === 0,
-      );
+      check('R14:收紧端点不产生阻断项(放行)', judgeAuthzDeclarations(tightened, []).length === 0);
       const broadened = diffManifests(manifest(allTwo), manifest(allOne), closure);
-      check(
-        'R14:降级端点无申报即阻断',
-        judgeAuthzDeclarations(broadened, []).length === 1,
-      );
+      check('R14:降级端点无申报即阻断', judgeAuthzDeclarations(broadened, []).length === 1);
       check(
         'R14:降级端点申报齐全后不再阻断(但审批仍另计)',
         judgeAuthzDeclarations(broadened, [
@@ -4619,7 +4767,10 @@ void (async (): Promise<void> => {
       checkEq(
         'R14:蕴含图引用不存在的权限码 = 红',
         validateAuthzGraph(
-          { schemaVersion: '1.0.0', edges: [{ from: 'user.read.acount', to: 'member.read.record' }] },
+          {
+            schemaVersion: '1.0.0',
+            edges: [{ from: 'user.read.acount', to: 'member.read.record' }],
+          },
           universe,
         ).length,
         1,
@@ -4627,7 +4778,10 @@ void (async (): Promise<void> => {
       checkEq(
         'R14:蕴含图自环 = 红',
         validateAuthzGraph(
-          { schemaVersion: '1.0.0', edges: [{ from: 'user.read.account', to: 'user.read.account' }] },
+          {
+            schemaVersion: '1.0.0',
+            edges: [{ from: 'user.read.account', to: 'user.read.account' }],
+          },
           universe,
         ).length,
         1,
@@ -4655,7 +4809,10 @@ void (async (): Promise<void> => {
       // 校验器立即红。沿本仓「『此刻不存在』型判据必须写明到期条件」的既有范式。
       {
         const oneEdge = validateAuthzGraph(
-          { schemaVersion: '1.0.0', edges: [{ from: 'user.read.account', to: 'member.read.record' }] },
+          {
+            schemaVersion: '1.0.0',
+            edges: [{ from: 'user.read.account', to: 'member.read.record' }],
+          },
           universe,
         );
         check(
@@ -4685,7 +4842,9 @@ void (async (): Promise<void> => {
           const flagOn = /SEED_CROSS_CHECK_IMPLEMENTED\s*=\s*true/.test(src);
           const implemented =
             /export function crossCheckSeedBindings\b/.test(src) &&
-            /crossCheckSeedBindings\s*\(/.test(src.replace(/export function crossCheckSeedBindings/g, ''));
+            /crossCheckSeedBindings\s*\(/.test(
+              src.replace(/export function crossCheckSeedBindings/g, ''),
+            );
           check(
             'R14 到期闸:标志位置 true 必须伴随真实现(只翻标志位即红)',
             !flagOn || implemented,
@@ -4711,15 +4870,25 @@ void (async (): Promise<void> => {
         threw = true;
       }
       check('R14:manifest schemaVersion 不匹配 → 抛错不放行', threw);
-      check('R14:manifest schemaVersion 匹配 → 正常解析', extractAuthzManifest(doc('1.0.0'), 'probe').entries.length === 0);
+      check(
+        'R14:manifest schemaVersion 匹配 → 正常解析',
+        extractAuthzManifest(doc('1.0.0'), 'probe').entries.length === 0,
+      );
     }
 
     // ⑩ 真实 manifest 必须能被本比较器读懂,且自比恒等价 ——
     //    防「比较器只在合成样例上work、遇到真 498 条就解析失败/漂移」的假绿。
     {
-      const realDoc = fs.readFileSync(path.join(REPO_ROOT, 'docs/ai-harness/ROUTE_AUTHZ.md'), 'utf8');
+      const realDoc = fs.readFileSync(
+        path.join(REPO_ROOT, 'docs/ai-harness/ROUTE_AUTHZ.md'),
+        'utf8',
+      );
       const real = extractAuthzManifest(realDoc, 'ROUTE_AUTHZ.md');
-      check('R14:真实 manifest 可解析且非空', real.entries.length >= 400, `entries=${real.entries.length}`);
+      check(
+        'R14:真实 manifest 可解析且非空',
+        real.entries.length >= 400,
+        `entries=${real.entries.length}`,
+      );
       const selfDiff = diffManifests(real, real, closure);
       check(
         'R14:真实 manifest 自比 = 全等价(无假迁移)',
@@ -4733,7 +4902,11 @@ void (async (): Promise<void> => {
       const universe = parseAuthzCodeUniverse(
         fs.readFileSync(path.join(REPO_ROOT, 'docs/ai-harness/RBAC_MAP.md'), 'utf8'),
       );
-      check('R14:权限码全集解析条数与 RBAC_MAP 自报一致', universe.size > 0, `size=${universe.size}`);
+      check(
+        'R14:权限码全集解析条数与 RBAC_MAP 自报一致',
+        universe.size > 0,
+        `size=${universe.size}`,
+      );
     }
   }
 
@@ -4762,7 +4935,9 @@ void (async (): Promise<void> => {
         responses: {
           [opts.status ?? '200']: {
             content: {
-              'application/json': { schema: { type: 'object', properties: response, required: [] } },
+              'application/json': {
+                schema: { type: 'object', properties: response, required: [] },
+              },
             },
           },
         },
@@ -4791,7 +4966,10 @@ void (async (): Promise<void> => {
     );
     checkEq(
       'R11:B3 新增必填请求字段 = breaking',
-      ids(doc(strReq, strRes), doc({ ...strReq, extra: { type: 'string' } }, strRes, { requiredReq: ['extra'] }))[0],
+      ids(
+        doc(strReq, strRes),
+        doc({ ...strReq, extra: { type: 'string' } }, strRes, { requiredReq: ['extra'] }),
+      )[0],
       'B3/request-required-added',
     );
     checkEq(
@@ -4801,22 +4979,34 @@ void (async (): Promise<void> => {
     );
     checkEq(
       'R11:B5 请求枚举**删值** = breaking',
-      ids(doc({ mode: { type: 'string', enum: ['a', 'b'] } }, strRes), doc({ mode: { type: 'string', enum: ['a'] } }, strRes))[0],
+      ids(
+        doc({ mode: { type: 'string', enum: ['a', 'b'] } }, strRes),
+        doc({ mode: { type: 'string', enum: ['a'] } }, strRes),
+      )[0],
       'B5/request-enum-value-removed',
     );
     checkEq(
       'R11:B6 响应枚举**加值** = breaking',
-      ids(doc(strReq, { s: { type: 'string', enum: ['a'] } }), doc(strReq, { s: { type: 'string', enum: ['a', 'b'] } }))[0],
+      ids(
+        doc(strReq, { s: { type: 'string', enum: ['a'] } }),
+        doc(strReq, { s: { type: 'string', enum: ['a', 'b'] } }),
+      )[0],
       'B6/response-enum-value-added',
     );
     checkEq(
       'R11:B7 请求撤销 nullable = breaking',
-      ids(doc({ n: { type: 'string', nullable: true } }, strRes), doc({ n: { type: 'string', nullable: false } }, strRes))[0],
+      ids(
+        doc({ n: { type: 'string', nullable: true } }, strRes),
+        doc({ n: { type: 'string', nullable: false } }, strRes),
+      )[0],
       'B7/request-nullable-revoked',
     );
     checkEq(
       'R11:B8 响应变为可空 = breaking',
-      ids(doc(strReq, { t: { type: 'string' } }), doc(strReq, { t: { type: 'string', nullable: true } }))[0],
+      ids(
+        doc(strReq, { t: { type: 'string' } }),
+        doc(strReq, { t: { type: 'string', nullable: true } }),
+      )[0],
       'B8/response-nullable-added',
     );
     checkEq(
@@ -4828,12 +5018,18 @@ void (async (): Promise<void> => {
     // 反方向必须是 additive —— 方向写反时这四条会红,而上面九条仍可能全绿。
     checkEq(
       'R11:反向 — 请求枚举加值 = additive(不是破坏)',
-      ids(doc({ mode: { type: 'string', enum: ['a'] } }, strRes), doc({ mode: { type: 'string', enum: ['a', 'b'] } }, strRes))[0],
+      ids(
+        doc({ mode: { type: 'string', enum: ['a'] } }, strRes),
+        doc({ mode: { type: 'string', enum: ['a', 'b'] } }, strRes),
+      )[0],
       'ADD/request-enum-value-added',
     );
     checkEq(
       'R11:反向 — 响应枚举删值 = additive',
-      ids(doc(strReq, { s: { type: 'string', enum: ['a', 'b'] } }), doc(strReq, { s: { type: 'string', enum: ['a'] } }))[0],
+      ids(
+        doc(strReq, { s: { type: 'string', enum: ['a', 'b'] } }),
+        doc(strReq, { s: { type: 'string', enum: ['a'] } }),
+      )[0],
       'ADD/response-enum-value-removed',
     );
     checkEq(
@@ -4864,10 +5060,14 @@ void (async (): Promise<void> => {
         line: 1,
       };
       check('R11:破坏无申报即阻断', judgeContractDeclarations(breakingDiff, []).length === 1);
-      check('R11:申报齐全后不再阻断(审批仍另计)', judgeContractDeclarations(breakingDiff, [decl]).length === 0);
+      check(
+        'R11:申报齐全后不再阻断(审批仍另计)',
+        judgeContractDeclarations(breakingDiff, [decl]).length === 0,
+      );
       check(
         'R11:申报落空(端点无破坏)同样阻断',
-        judgeContractDeclarations(diffContracts(doc(strReq, strRes), doc(strReq, strRes)), [decl]).length === 1,
+        judgeContractDeclarations(diffContracts(doc(strReq, strRes), doc(strReq, strRes)), [decl])
+          .length === 1,
       );
       const parsed = parseContractDeclarations([
         {
@@ -4905,7 +5105,10 @@ void (async (): Promise<void> => {
       check(
         'R11:真实 openapi.json 自比 = 零 finding(无假破坏)',
         selfDiff.length === 0,
-        selfDiff.slice(0, 5).map((f) => f.id + ' ' + f.operation + ' ' + f.location).join(' · '),
+        selfDiff
+          .slice(0, 5)
+          .map((f) => f.id + ' ' + f.operation + ' ' + f.location)
+          .join(' · '),
       );
     }
   }
@@ -4950,9 +5153,9 @@ void (async (): Promise<void> => {
         offenders.join(' · '),
       );
       check(
-        'FE client:五个 surface 各出 types.ts + client.ts,外加一份 shared/types.ts',
-        emitted.size === 11 &&
-          ['admin', 'app', 'auth', 'system', 'open'].every(
+        'FE client:六个 surface 各出 types.ts + client.ts,外加一份 shared/types.ts',
+        emitted.size === 13 &&
+          ['admin', 'app', 'auth', 'system', 'open', 'integration'].every(
             (id) =>
               emitted.has(`docs/handoff/clients/${id}/types.ts`) &&
               emitted.has(`docs/handoff/clients/${id}/client.ts`),
@@ -4962,7 +5165,7 @@ void (async (): Promise<void> => {
       );
       // 维护者 2026-08-13 的口径写成执行位:「产物里不要出现两份内容相同却各自维护的定义」。
       // 判的是**全仓产物**里同名 export 出现几次 —— 共用类型必须只在 shared 定义一次,
-      // 各 surface 只 import + re-export。五个 surface 各带一份 Fetcher 就是被这条抓出来的。
+      // 各 surface 只 import + re-export。六个 surface 各带一份 Fetcher 就是被这条抓出来的。
       {
         const declaredIn = new Map<string, string[]>();
         for (const [rel, content] of emitted) {
@@ -5217,7 +5420,11 @@ void (async (): Promise<void> => {
       phase0Heuristic('anythingAtAll'),
       false,
     );
-    checkEq('R5/R6 对照:tx-parameter 改名 handle 后骗得过 Phase 0 启发式', phase0Heuristic('handle'), false);
+    checkEq(
+      'R5/R6 对照:tx-parameter 改名 handle 后骗得过 Phase 0 启发式',
+      phase0Heuristic('handle'),
+      false,
+    );
     checkEq(
       'R5/R6 对照:lookalike 在 Phase 0 启发式下是误报(名字叫 db 就算数)',
       phase0Heuristic('db'),
@@ -5229,7 +5436,7 @@ void (async (): Promise<void> => {
       path.join(fixtureDir, 'raw-channel.ts'),
       "import type { Prisma } from '@prisma/client';\n" +
         'export function f(handle: Prisma.TransactionClient) {' +
-        " return handle.$queryRaw`SELECT 1 FROM members`; }\n",
+        ' return handle.$queryRaw`SELECT 1 FROM members`; }\n',
     );
     const rawProbes = probeDelegateResolution(
       [path.join(fixtureDir, 'raw-channel.ts')],
@@ -5364,10 +5571,8 @@ void (async (): Promise<void> => {
       inputDigest: serviceSizeInputDigest(),
       entries,
     });
-    const sevOf = (
-      results: ReturnType<typeof checkServiceSize>,
-      id: string,
-    ): string | undefined => results.find((r) => r.id === id)?.severity;
+    const sevOf = (results: ReturnType<typeof checkServiceSize>, id: string): string | undefined =>
+      results.find((r) => r.id === id)?.severity;
 
     const oneBaseline = [{ file: 'src/modules/demo/demo.service.ts', loc: 900, domain: 'demo' }];
 
@@ -5449,13 +5654,7 @@ void (async (): Promise<void> => {
       '尺寸棘轮:注释膨胀 400 行不触发棘轮',
       sevOf(
         checkServiceSize(
-          [
-            sizedUnit(
-              'src/modules/demo/demo.service.ts',
-              measureNcloc(commentBloat),
-              'demo',
-            ),
-          ],
+          [sizedUnit('src/modules/demo/demo.service.ts', measureNcloc(commentBloat), 'demo')],
           sizedBaseline([
             {
               file: 'src/modules/demo/demo.service.ts',
@@ -5490,9 +5689,12 @@ void (async (): Promise<void> => {
     checkEq('尺寸口径:嵌套模板串之后的整行注释仍不计入', measureNcloc(nestedTplThenComments), 2);
     // 反向:多行模板串**内部**的 `//` 是字符串内容,不是注释,**不得**被剥掉。
     // 少了这条,「把模板串整段当注释剥掉」也能让上面两条变绿 —— 那是另一种错。
-    const multilineTpl = ['const a = `line1', '// 这是字符串内容不是注释', 'line3`;', 'const b = 2;'].join(
-      '\n',
-    );
+    const multilineTpl = [
+      'const a = `line1',
+      '// 这是字符串内容不是注释',
+      'line3`;',
+      'const b = 2;',
+    ].join('\n');
     checkEq('尺寸口径:多行模板串内的 // 是内容,不得剥离', measureNcloc(multilineTpl), 4);
     // 同类:正则字面量里的 `/*` 不得被当成块注释起点(裸 scanner 需 reScanSlashToken)。
     checkEq(
@@ -5544,9 +5746,7 @@ void (async (): Promise<void> => {
             sizedUnit('src/modules/demo/demo.service.ts', 800, 'demo'),
             sizedUnit('src/modules/demo/demo-extracted.service.ts', 750, 'demo'),
           ],
-          sizedBaseline([
-            { file: 'src/modules/demo/demo.service.ts', loc: 1500, domain: 'demo' },
-          ]),
+          sizedBaseline([{ file: 'src/modules/demo/demo.service.ts', loc: 1500, domain: 'demo' }]),
         ),
         'service-size-possible-split',
       ),
@@ -5603,9 +5803,16 @@ void (async (): Promise<void> => {
     // ⑨ 落盘基线必须与当前口径一致 —— 防「改了阈值却忘了重生成基线」悄悄躺着。
     {
       const onDisk = JSON.parse(
-        fs.readFileSync(path.resolve(__dirname, '..', 'harness/service-size-baseline.json'), 'utf-8'),
+        fs.readFileSync(
+          path.resolve(__dirname, '..', 'harness/service-size-baseline.json'),
+          'utf-8',
+        ),
       ) as ServiceSizeBaseline;
-      checkEq('尺寸基线:落盘 inputDigest 与当前口径一致', onDisk.inputDigest, serviceSizeInputDigest());
+      checkEq(
+        '尺寸基线:落盘 inputDigest 与当前口径一致',
+        onDisk.inputDigest,
+        serviceSizeInputDigest(),
+      );
       checkEq('尺寸基线:落盘 metric 与当前口径一致', onDisk.metric, 'non-comment-non-blank-lines');
       check(
         '尺寸基线:entries 非空(空基线 = 棘轮没有判据)',

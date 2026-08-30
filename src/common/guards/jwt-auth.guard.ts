@@ -1,7 +1,7 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
-import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { routePrincipalKinds } from '../authz/route-principal-admission';
 import type { CurrentUserPayload } from '../decorators/current-user.decorator';
 import { BizCode } from '../exceptions/biz-code.constant';
 import { BizException } from '../exceptions/biz.exception';
@@ -19,11 +19,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   canActivate(context: ExecutionContext) {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (isPublic) return true;
+    const principalKinds = routePrincipalKinds(this.reflector, context);
+    // Public([]) and explicitly non-Human routes are owned by their specialized
+    // guards. Undeclared routes deliberately keep the historical Human default;
+    // AuthzDeclarationGuard later rejects the missing declaration.
+    if (principalKinds !== null && !principalKinds.includes('USER')) return true;
     return super.canActivate(context);
   }
 

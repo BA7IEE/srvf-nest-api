@@ -5,6 +5,7 @@ import type {
   RouteAuthzCodeDeclaration,
   RouteAuthzDeclarationFragment,
   RouteAuthzEngine,
+  RoutePrincipalKind,
   RouteAuthzRequire,
 } from '../authz/authz-context';
 
@@ -15,6 +16,7 @@ export interface RouteAuthzOptions {
   require?: RouteAuthzRequire;
   scopes?: readonly string[];
   engine?: RouteAuthzEngine;
+  allowedPrincipalKinds?: readonly RoutePrincipalKind[];
 }
 
 export type RouteAuthzPermissionCode =

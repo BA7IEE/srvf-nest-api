@@ -43,7 +43,11 @@ import { MetaModule } from './modules/meta/meta.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { ServicePrincipalsModule } from './modules/service-principals/service-principals.module';
 import { IntegrationAuthModule } from './modules/integration-auth/integration-auth.module';
+import { IntegrationJwtAuthGuard } from './modules/integration-auth/integration-jwt-auth.guard';
+import { ServiceClientCredentialsGuard } from './modules/integration-auth/service-client-credentials.guard';
 import { IntegrationAuthzModule } from './modules/integration-authz/integration-authz.module';
+import { IntegrationApiModule } from './modules/integration-api/integration-api.module';
+import { IntegrationIdempotencyModule } from './modules/integration-idempotency/integration-idempotency.module';
 import { DelegationGrantsModule } from './modules/delegation-grants/delegation-grants.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { PositionsModule } from './modules/positions/positions.module';
@@ -150,6 +154,9 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
     IntegrationAuthModule,
     IntegrationAuthzModule,
     DelegationGrantsModule,
+    // Integration Foundation v1 PR6:第六 surface 的最小身份自检 + PG 事务幂等地基。
+    IntegrationApiModule,
+    IntegrationIdempotencyModule,
     // 终态 scoped-authz PR8(2026-07-02;冻结稿 §5.1/§5.2/§5.3):统一判权模块(第 33 模块)。
     //   AuthzService(三源推导 + covers + ActionConstraint)+ ResourceResolverService(11 类资源归属解析);
     //   0 controller / 0 端点 / 0 新码 / 0 schema。**本刀零业务消费者**(第一个消费者 = PR9 考勤终审;
@@ -220,11 +227,15 @@ function getAppConfigOrThrow(configService: ConfigService, ctx: string): AppConf
   providers: [
     // 全局 Guard 顺序(NestJS 按 providers 数组顺序执行):
     //   ThrottlerBizGuard 先挡爆破(IP 维度,粗粒度),避免攻击流量打到 JWT 解析。
-    //   JwtAuthGuard 验登录(@Public 跳过)。
+    //   JwtAuthGuard 只验 Human Bearer；显式机器路由跳过。
+    //   ServiceClientCredentialsGuard 只验 Client Credentials 换 Token 路由。
+    //   IntegrationJwtAuthGuard 只验 Service/Delegated Bearer，并挂独立 integrationPrincipal。
     //   AuthzDeclarationGuard 在 enforce 模式下验证声明存在，不替代 Service 层业务判权。
     //   RolesGuard 验角色(详见 docs/reference/auth-jwt-refresh.md §8)。
     { provide: APP_GUARD, useClass: ThrottlerBizGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: ServiceClientCredentialsGuard },
+    { provide: APP_GUARD, useClass: IntegrationJwtAuthGuard },
     { provide: APP_GUARD, useClass: AuthzDeclarationGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],

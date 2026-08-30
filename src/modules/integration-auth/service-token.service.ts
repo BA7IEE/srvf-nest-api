@@ -4,6 +4,8 @@ import { JwtService } from '@nestjs/jwt';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import type { AuthenticatedServiceClient } from '../../common/decorators/current-service-client.decorator';
+import type { IntegrationPrincipalContext } from '../../common/decorators/current-integration-principal.decorator';
 import { PrismaService } from '../../database/prisma.service';
 import { dummySecretHash } from '../../config/integration-auth.config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -69,10 +71,17 @@ export class ServiceTokenService {
     clientSecret: string,
     options: ServiceTokenIssueOptions = {},
   ): Promise<{ accessToken: string; tokenType: 'Bearer'; expiresIn: number }> {
+    const principal = await this.authenticateClientCredentials(clientId, clientSecret);
+    return this.issueTokenForAuthenticatedClient(principal, options);
+  }
+
+  async issueTokenForAuthenticatedClient(
+    principal: AuthenticatedServiceClient,
+    options: ServiceTokenIssueOptions = {},
+  ): Promise<{ accessToken: string; tokenType: 'Bearer'; expiresIn: number }> {
     if (!this.gate.isEnabled()) {
       throw new BizException(BizCode.INTEGRATION_API_DISABLED);
     }
-    const principal = await this.authenticateClientCredentials(clientId, clientSecret);
     const credentialId = principal.credentialId;
     const expiresIn = this.gate.serviceTokenTtlSeconds;
     const jti = randomUUID();
@@ -113,6 +122,7 @@ export class ServiceTokenService {
   verifyToken(token: string): ServiceTokenPayload {
     try {
       const payload = this.jwtService.verify<Record<string, unknown>>(token, {
+        algorithms: ['HS256'],
         issuer: this.gate.issuer,
         audience: this.gate.audience,
       });
@@ -154,12 +164,46 @@ export class ServiceTokenService {
     }
   }
 
+  /** Bearer request entry:cryptographic verification plus current DB facts on every request. */
+  async resolvePrincipal(
+    token: string,
+  ): Promise<Extract<IntegrationPrincipalContext, { kind: 'SERVICE' }>> {
+    if (!this.gate.isEnabled()) {
+      throw new BizException(BizCode.INTEGRATION_API_DISABLED);
+    }
+    const payload = this.verifyToken(token);
+    const now = new Date();
+    const servicePrincipal = await this.prisma.servicePrincipal.findFirst({
+      where: { id: payload.sub, deletedAt: null, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (servicePrincipal === null) throw new BizException(BizCode.INTEGRATION_TOKEN_INVALID);
+    const credential = await this.prisma.servicePrincipalCredential.findFirst({
+      where: {
+        id: payload.credentialId,
+        servicePrincipalId: payload.sub,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      select: { id: true },
+    });
+    if (credential === null) throw new BizException(BizCode.INTEGRATION_TOKEN_INVALID);
+    return {
+      kind: 'SERVICE',
+      servicePrincipalId: servicePrincipal.id,
+      credentialId: credential.id,
+    };
+  }
+
   // ===== 内部:Client Credentials 认证(§12.4 五场景归一)=====
 
-  private async authenticateClientCredentials(
+  async authenticateClientCredentials(
     clientId: string,
     clientSecret: string,
-  ): Promise<{ servicePrincipalId: string; credentialId: string }> {
+  ): Promise<AuthenticatedServiceClient> {
+    if (!this.gate.isEnabled()) {
+      throw new BizException(BizCode.INTEGRATION_API_DISABLED);
+    }
     const invalid = (): never => {
       throw new BizException(BizCode.SERVICE_CREDENTIAL_INVALID);
     };

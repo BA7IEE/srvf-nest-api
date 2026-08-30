@@ -3575,6 +3575,13 @@ export const BizCode = {
     message: '委托关系无效或已失效',
     httpStatus: HttpStatus.FORBIDDEN,
   },
+  // PR6:路由主体准入。原冻结候选号 37013 已被 PR2 状态幂等占用；
+  // 维护者于 2026-08-30 拍板顺延到空闲号位 37017。
+  PRINCIPAL_KIND_FORBIDDEN: {
+    code: 37017,
+    message: '当前主体类型不能访问该接口',
+    httpStatus: HttpStatus.FORBIDDEN,
+  },
 
   // RoleBinding 资格门(规格书 §15.3 七条;PR2)。
   ROLE_BINDING_ROLE_INELIGIBLE_FOR_SERVICE_PRINCIPAL: {
@@ -3590,6 +3597,13 @@ export const BizCode = {
   ROLE_BINDING_INELIGIBLE_PERMISSION_FOR_SERVICE_PRINCIPAL: {
     code: 37022,
     message: '角色含未开放给机器的权限(servicePrincipalAllowed=false),不能授予服务主体',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // PR6:同 SP/operation/key 被不同语义请求复用。原冻结候选号 37020 已被
+  // PR2 RoleBinding 资格门占用；维护者于 2026-08-30 拍板顺延到 37023。
+  IDEMPOTENCY_KEY_CONFLICT: {
+    code: 37023,
+    message: 'Idempotency-Key 已用于不同请求',
     httpStatus: HttpStatus.CONFLICT,
   },
 } as const;

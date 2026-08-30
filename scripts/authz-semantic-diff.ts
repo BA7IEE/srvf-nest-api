@@ -88,12 +88,7 @@ const SUPPORTED_GRAPH_SCHEMA = '1.0.0';
  */
 const SEED_CROSS_CHECK_IMPLEMENTED = false;
 
-export type Mode =
-  | 'PUBLIC'
-  | 'LOGIN_ONLY'
-  | 'LOGIN_SCOPED'
-  | 'RESPONSIBILITY_SCOPED'
-  | 'RBAC';
+export type Mode = 'PUBLIC' | 'LOGIN_ONLY' | 'LOGIN_SCOPED' | 'RESPONSIBILITY_SCOPED' | 'RBAC';
 
 export interface PolicyCode {
   readonly code: string;
@@ -107,6 +102,8 @@ export interface Policy {
   readonly require: 'all' | 'any';
   readonly scopes: readonly string[];
   readonly engine: string | null;
+  /** Absent in v1.0 manifests means the compatibility default USER. */
+  readonly allowedPrincipalKinds?: readonly string[];
 }
 
 export interface ManifestEntry {
@@ -186,7 +183,8 @@ export function extractManifest(document: string, sourceLabel: string): Manifest
     parsed = JSON.parse(document.slice(bodyStart, close));
   } catch (error) {
     throw new Error(
-      sourceLabel + ' 的 manifest 块不是合法 JSON: ' +
+      sourceLabel +
+        ' 的 manifest 块不是合法 JSON: ' +
         (error instanceof Error ? error.message : String(error)),
     );
   }
@@ -269,7 +267,10 @@ export function validateGraph(
   };
   if (graph.schemaVersion !== SUPPORTED_GRAPH_SCHEMA) {
     push(
-      '蕴含图 schemaVersion=' + String(graph.schemaVersion) + ',本比较器只支持 ' + SUPPORTED_GRAPH_SCHEMA,
+      '蕴含图 schemaVersion=' +
+        String(graph.schemaVersion) +
+        ',本比较器只支持 ' +
+        SUPPORTED_GRAPH_SCHEMA,
       '升级比较器或回退登记表版本;版本不匹配恒 fail-closed(§9 第 3 条),不猜语义',
     );
     return findings;
@@ -298,7 +299,10 @@ export function validateGraph(
   for (const edge of graph.edges) {
     const label = String(edge?.from) + ' ⇒ ' + String(edge?.to);
     if (typeof edge?.from !== 'string' || typeof edge?.to !== 'string' || !edge.from || !edge.to) {
-      push('边 ' + label + ' 的 from/to 不是非空字符串', '按 { "from": "<码>", "to": "<码>" } 书写');
+      push(
+        '边 ' + label + ' 的 from/to 不是非空字符串',
+        '按 { "from": "<码>", "to": "<码>" } 书写',
+      );
       continue;
     }
     if (edge.from === edge.to) {
@@ -405,7 +409,11 @@ export function compareMode(base: Mode, head: Mode): AxisResult {
   }
   if (headLevel > baseLevel) return { axis: 'mode', relation: 'NARROWER', detail };
   if (headLevel < baseLevel) return { axis: 'mode', relation: 'BROADER', detail };
-  return { axis: 'mode', relation: 'INCOMPARABLE', detail: detail + '(同层不同模式,持有者集合互不包含)' };
+  return {
+    axis: 'mode',
+    relation: 'INCOMPARABLE',
+    detail: detail + '(同层不同模式,持有者集合互不包含)',
+  };
 }
 
 export function compareAdmission(base: string | null, head: string | null): AxisResult {
@@ -414,6 +422,38 @@ export function compareAdmission(base: string | null, head: string | null): Axis
   if (base === null) return { axis: 'admission', relation: 'NARROWER', detail };
   if (head === null) return { axis: 'admission', relation: 'BROADER', detail };
   return { axis: 'admission', relation: 'INCOMPARABLE', detail };
+}
+
+function effectivePrincipalKinds(policy: Policy): readonly string[] {
+  if (policy.mode === 'PUBLIC') return ['PUBLIC'];
+  return policy.allowedPrincipalKinds ?? ['USER'];
+}
+
+/** A smaller accepted-principal set is narrower; disjoint sets are incomparable. */
+export function comparePrincipalKinds(base: Policy, head: Policy): AxisResult {
+  const baseKinds = effectivePrincipalKinds(base);
+  const headKinds = effectivePrincipalKinds(head);
+  const detail = baseKinds.join('+') + ' → ' + headKinds.join('+');
+
+  // PUBLIC admits requests without an authenticated principal. Moving from it
+  // to any authenticated kind is a strict narrowing; the reverse is broader.
+  if (base.mode === 'PUBLIC' && head.mode !== 'PUBLIC') {
+    return { axis: 'principalKinds', relation: 'NARROWER', detail };
+  }
+  if (base.mode !== 'PUBLIC' && head.mode === 'PUBLIC') {
+    return { axis: 'principalKinds', relation: 'BROADER', detail };
+  }
+
+  const baseSet = new Set(baseKinds);
+  const headSet = new Set(headKinds);
+  const headSubset = headKinds.every((kind) => baseSet.has(kind));
+  const baseSubset = baseKinds.every((kind) => headSet.has(kind));
+  if (headSubset && baseSubset) {
+    return { axis: 'principalKinds', relation: 'EQUIVALENT', detail };
+  }
+  if (headSubset) return { axis: 'principalKinds', relation: 'NARROWER', detail };
+  if (baseSubset) return { axis: 'principalKinds', relation: 'BROADER', detail };
+  return { axis: 'principalKinds', relation: 'INCOMPARABLE', detail };
 }
 
 /**
@@ -497,13 +537,18 @@ export function compareCodes(
   else if (headImpliesBase) relation = 'NARROWER';
   else if (baseImpliesHead) relation = 'BROADER';
   else relation = 'INCOMPARABLE';
-  return { axis: 'codes', relation: join(relation, compareBoundScopes(base.codes, head.codes)), detail };
+  return {
+    axis: 'codes',
+    relation: join(relation, compareBoundScopes(base.codes, head.codes)),
+    detail,
+  };
 }
 
 export function compareScopes(base: readonly string[], head: readonly string[]): AxisResult {
   const baseSet = new Set(base);
   const headSet = new Set(head);
-  const detail = (base.length ? base.join('+') : '-') + ' → ' + (head.length ? head.join('+') : '-');
+  const detail =
+    (base.length ? base.join('+') : '-') + ' → ' + (head.length ? head.join('+') : '-');
   const headHasAllBase = [...baseSet].every((scope) => headSet.has(scope));
   const baseHasAllHead = [...headSet].every((scope) => baseSet.has(scope));
   if (headHasAllBase && baseHasAllHead) return { axis: 'scopes', relation: 'EQUIVALENT', detail };
@@ -555,6 +600,7 @@ export function comparePolicy(
 ): { verdict: Relation; axes: AxisResult[] } {
   const axes = [
     compareAdmission(base.admission, head.admission),
+    comparePrincipalKinds(base, head),
     compareMode(base.mode, head.mode),
     compareCodes(base, head, closure),
     compareScopes(base.scopes, head.scopes),
@@ -725,7 +771,8 @@ export function judgeDeclarations(
         (diff.verdict === 'BROADER' ? '(保护等级降级)' : '(证明不了强弱,保守按降级处置)') +
         ':' +
         (axisText || '无差异轴'),
-      basis: MANIFEST_DOC + ' 的 base↔head 结构化策略;判定规则见 scripts/authz-semantic-diff.ts 头注',
+      basis:
+        MANIFEST_DOC + ' 的 base↔head 结构化策略;判定规则见 scripts/authz-semantic-diff.ts 头注',
       remedy:
         '① 若非本意 —— 改回声明,让本端点回到 EQUIVALENT/NARROWER;' +
         '② 若确需放宽 —— 在 changelog.d/ 的 fragment 里补 authz-downgrade 申报块' +
@@ -767,13 +814,22 @@ export function renderReport(diffs: readonly EndpointDiff[], findings: readonly 
   const lines: string[] = [];
   const counts = new Map<Verdict, number>();
   for (const diff of diffs) counts.set(diff.verdict, (counts.get(diff.verdict) ?? 0) + 1);
-  const order: Verdict[] = ['BROADER', 'INCOMPARABLE', 'NARROWER', 'ADDED', 'REMOVED', 'EQUIVALENT'];
+  const order: Verdict[] = [
+    'BROADER',
+    'INCOMPARABLE',
+    'NARROWER',
+    'ADDED',
+    'REMOVED',
+    'EQUIVALENT',
+  ];
 
   lines.push('[L4/R14] 授权语义 diff —— ROUTE_AUTHZ base ↔ head');
   lines.push(
     '  ' +
       order.map((verdict) => verdict + '=' + (counts.get(verdict) ?? 0)).join('  ') +
-      '  (共 ' + diffs.length + ' 个端点)',
+      '  (共 ' +
+      diffs.length +
+      ' 个端点)',
   );
   lines.push('');
 
@@ -784,7 +840,9 @@ export function renderReport(diffs: readonly EndpointDiff[], findings: readonly 
   } else {
     lines.push('  ── 全量语义迁移清单(升/平/降恒可见)──');
     for (const diff of migrations) {
-      lines.push('  · [' + diff.verdict + '] ' + VERDICT_LABEL[diff.verdict] + '  ' + diff.routeKey);
+      lines.push(
+        '  · [' + diff.verdict + '] ' + VERDICT_LABEL[diff.verdict] + '  ' + diff.routeKey,
+      );
       lines.push('      ' + diff.controller + '.' + diff.handler);
       for (const axis of diff.axes) {
         if (axis.relation === 'EQUIVALENT') continue;
@@ -817,14 +875,21 @@ export function renderReport(diffs: readonly EndpointDiff[], findings: readonly 
 
 function describePolicy(policy: Policy): string {
   return (
-    'admission=' + (policy.admission ?? '-') +
-    '; mode=' + policy.mode +
+    'admission=' +
+    (policy.admission ?? '-') +
+    '; mode=' +
+    policy.mode +
     '; codes=' +
     (policy.codes.length
       ? policy.require + ':' + policy.codes.map((entry) => entry.code).join(',')
       : '-') +
-    '; scopes=' + (policy.scopes.length ? policy.scopes.join('+') : '-') +
-    '; engine=' + (policy.engine ?? '-')
+    '; scopes=' +
+    (policy.scopes.length ? policy.scopes.join('+') : '-') +
+    '; engine=' +
+    (policy.engine ?? '-') +
+    (policy.allowedPrincipalKinds === undefined
+      ? ''
+      : '; principals=' + policy.allowedPrincipalKinds.join(','))
   );
 }
 
@@ -873,8 +938,11 @@ function main(): void {
       process.exit(1);
     }
     process.stdout.write(
-      '权限蕴含图合法:' + graph.edges.length + ' 条边' +
-        (graph.edges.length === 0 ? '(空集 = 任何换码恒不可比,已拍板的默认立场)' : '') + '\n',
+      '权限蕴含图合法:' +
+        graph.edges.length +
+        ' 条边' +
+        (graph.edges.length === 0 ? '(空集 = 任何换码恒不可比,已拍板的默认立场)' : '') +
+        '\n',
     );
     return;
   }
@@ -899,7 +967,9 @@ function main(): void {
     baseDocument = git(root, ['show', baseRef + ':' + MANIFEST_DOC]);
     headDocument = readFile(path.join(root, MANIFEST_DOC));
     const changed = new Set<string>();
-    for (const line of git(root, ['diff', '--name-only', baseRef, '--', FRAGMENT_DIR]).split('\n')) {
+    for (const line of git(root, ['diff', '--name-only', baseRef, '--', FRAGMENT_DIR]).split(
+      '\n',
+    )) {
       if (line.trim()) changed.add(line.trim());
     }
     for (const line of git(root, [
@@ -964,13 +1034,16 @@ function main(): void {
 }
 
 // 被 selftest import 时不跑 CLI(两个运行时都靠这个判据:进程 argv 里有本文件名)。
-const invokedDirectly = process.argv[1] !== undefined && /authz-semantic-diff\.ts$/.test(process.argv[1]);
+const invokedDirectly =
+  process.argv[1] !== undefined && /authz-semantic-diff\.ts$/.test(process.argv[1]);
 if (invokedDirectly) {
   try {
     main();
   } catch (error) {
     process.stderr.write(
-      'authz-semantic-diff failed: ' + (error instanceof Error ? error.message : String(error)) + '\n',
+      'authz-semantic-diff failed: ' +
+        (error instanceof Error ? error.message : String(error)) +
+        '\n',
     );
     process.exit(1);
   }

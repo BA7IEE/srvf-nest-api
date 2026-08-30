@@ -47,7 +47,8 @@ Claude Code 入口)。它们每次会话都被完整注入上下文,所以每个
 
 - **接口与字段真相**:live `/api/docs-json` + contract snapshot + `EXPECTED_ROUTES`;**逐版本叙事**:[`CHANGELOG.md`](../../CHANGELOG.md) + `../archive/handoff/`
 - **模块地图** `../CODEMAP.md` · **权限地图** `RBAC_MAP.md`(各有 check 脚本守护)· **数据模型** `prisma/schema.prisma`
-- **API surface**:5前缀;跨 surface Mixed=1(禁增);同 surface 双 Controller文件=3(非 Mixed);App 禁返 L3(content-* signed URL 例外);见 `../api-surface-policy.md`
+- **API surface**:6前缀;跨 surface Mixed=1(禁增);同 surface 双 Controller文件=3(非 Mixed);App 禁返 L3(content-\* signed URL 例外);Integration 只接受显式 SERVICE / DELEGATED 主体;见 `../api-surface-policy.md`
+- **Integration Foundation v1 PR1–PR6（未部署）**:Service Principal / Credential / Delegation Grant 控制面、独立 Service / Delegated Token、三腿交集授权与双主体 Audit 已落；PR6 新增 `/api/integration/v1/me`、Human 与机器主体物理隔离、Credential 轮换不分裂的同事务幂等地基。当前无 Integration 业务命令，生产 gate 保持关闭；见 [`runbook`](../ops/integration-api-runbook.md)。
 - **身份/会话终态**:手机/微信换绑消费 5 分钟 step-up proof 并锁后重验身份快照；logout 可由未过期 rotated ancestor 幂等撤销同 refresh family，其他 family/access 不动；详见 `../security.md`
 - **多实例**:10 throttler 共用 PG bucket；RBAC/外部设置逐请求直读已提交 PG；Effect 单配置快照，DB 异常 fail-closed，零进程正确性缓存
 - **Storage production**:空库 migration/seed→窄 bootstrap；固定 COS location+可解密凭证；disabled 重启不放行 Effect，null/LOCAL/unknown 禁回退；密钥不可轮换；COS 闭环已验，fleet 待验

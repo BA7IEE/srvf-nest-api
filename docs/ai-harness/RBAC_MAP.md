@@ -110,7 +110,7 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(106 个 @Controller)
+### controller × surface 对照(107 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
@@ -212,6 +212,12 @@
 | `auth/v1/delegated-token` | `src/modules/integration-auth/delegated-token.controller.ts` |
 | `auth/v1/service-token` | `src/modules/integration-auth/service-token.controller.ts` |
 
+#### integration/v1(1 个 controller)
+
+| 路由前缀 | 文件 |
+|---|---|
+| `integration/v1` | `src/modules/integration-api/integration-api.controller.ts` |
+
 #### open/v1(2 个 controller)
 
 | 路由前缀 | 文件 |
@@ -286,7 +292,7 @@
 **首选自动检查**(NEXT_TASKS P1-1 已落地;0 FAIL 才算本表与事实一致):
 
 ```bash
-pnpm docs:rbacmap:check   # seed 码↔本表计数 / controller 数↔本表 / 5 canonical 前缀 / 直调码必在 seed / 孤码 WARN / summary 鉴权后缀一致(P2-2)
+pnpm docs:rbacmap:check   # seed 码↔本表计数 / controller 数↔本表 / 6 canonical 前缀 / 直调码必在 seed / 孤码 WARN / summary 鉴权后缀一致(P2-2)
 ```
 
 手工重新生成口径(true-up 改表时用):

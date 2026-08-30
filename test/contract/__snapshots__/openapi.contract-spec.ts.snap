@@ -17102,6 +17102,46 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "IntegrationMeResponseDto": {
+    "properties": {
+      "delegated": {
+        "type": "boolean",
+      },
+      "principalKind": {
+        "enum": [
+          "SERVICE",
+          "DELEGATED",
+        ],
+        "type": "string",
+      },
+      "servicePrincipal": {
+        "$ref": "#/components/schemas/IntegrationServicePrincipalDto",
+      },
+    },
+    "required": [
+      "principalKind",
+      "servicePrincipal",
+      "delegated",
+    ],
+    "type": "object",
+  },
+  "IntegrationServicePrincipalDto": {
+    "properties": {
+      "clientId": {
+        "example": "srvf_sp_example",
+        "type": "string",
+      },
+      "name": {
+        "example": "外部协作系统",
+        "type": "string",
+      },
+    },
+    "required": [
+      "clientId",
+      "name",
+    ],
+    "type": "object",
+  },
   "IntegrationTokenResponseDto": {
     "properties": {
       "accessToken": {
@@ -123248,9 +123288,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "37016: 委托关系无效或已失效",
+                    "description": "37016: 委托关系无效或已失效; 37017: 当前主体类型不能访问该接口",
                     "enum": [
                       37016,
+                      37017,
                     ],
                     "example": 37016,
                     "type": "integer",
@@ -123274,7 +123315,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "委托关系无效或已失效(code=37016)",
+          "description": "委托关系无效或已失效(code=37016) / 当前主体类型不能访问该接口(code=37017)",
         },
         "503": {
           "content": {
@@ -123311,7 +123352,12 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "description": "Integration API 未启用(code=37030)",
         },
       },
-      "summary": "Service Token 换 Delegated Token(Bearer 认证；subject 只能由 Grant 决定) [public]",
+      "security": [
+        {
+          "integrationBearer": [],
+        },
+      ],
+      "summary": "Service Token 换 Delegated Token(Bearer 认证；subject 只能由 Grant 决定) [auth]",
       "tags": [
         "auth/delegated-token",
       ],
@@ -125077,7 +125123,12 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "description": "Integration API 未启用(code=37030)",
         },
       },
-      "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [public]",
+      "security": [
+        {
+          "integrationClientCredentials": [],
+        },
+      ],
+      "summary": "Client Credentials 换 Service Token(Basic 认证;失败五场景归一 37010) [auth]",
       "tags": [
         "auth/service-token",
       ],
@@ -127039,6 +127090,154 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "发送企业微信绑定短信验证码(ticket 只校验不消费;防枚举泛化响应) [public]",
       "tags": [
         "Auth",
+      ],
+    },
+  },
+  "/api/integration/v1/me": {
+    "get": {
+      "operationId": "IntegrationApiController_getMe",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/IntegrationMeResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37011: Integration Token 无效或已失效",
+                    "enum": [
+                      37011,
+                    ],
+                    "example": 37011,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "Integration Token 无效或已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Integration Token 无效或已失效(code=37011)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      37017,
+                    ],
+                    "example": 37017,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "当前主体类型不能访问该接口",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "当前主体类型不能访问该接口(code=37017)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "37030: Integration API 未启用",
+                    "enum": [
+                      37030,
+                    ],
+                    "example": 37030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "Integration API 未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "Integration API 未启用(code=37030)",
+        },
+      },
+      "security": [
+        {
+          "integrationBearer": [],
+        },
+      ],
+      "summary": "查看当前 Integration 主体最小身份 [auth]",
+      "tags": [
+        "Integration - Identity",
       ],
     },
   },

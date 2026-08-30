@@ -7,6 +7,7 @@ import {
 } from '../decorators/route-authz.decorator';
 import {
   beginAuthzRequestObservation,
+  effectiveAllowedPrincipalKinds,
   findAuthzObservationGap,
   normalizeRouteAuthzDeclaration,
   recordAuthzAssertion,
@@ -139,6 +140,45 @@ describe('route authorization declaration normalizer', () => {
         fragments: [{ mode: 'LOGIN_ONLY' }, { mode: 'RBAC' }],
       }),
     ).toThrow('multiple modes');
+  });
+
+  it('omits the USER compatibility default but serializes non-default principal admission', () => {
+    const human = normalizeRouteAuthzDeclaration({
+      isPublic: false,
+      fragments: [{ mode: 'LOGIN_ONLY' }],
+    });
+    const integration = normalizeRouteAuthzDeclaration({
+      isPublic: false,
+      fragments: [
+        { mode: 'LOGIN_ONLY', allowedPrincipalKinds: ['DELEGATED', 'SERVICE', 'SERVICE'] },
+      ],
+    });
+    if (human === null || integration === null) throw new Error('test declaration missing');
+
+    expect(human).not.toHaveProperty('allowedPrincipalKinds');
+    expect(effectiveAllowedPrincipalKinds(human)).toEqual(['USER']);
+    expect(integration.allowedPrincipalKinds).toEqual(['SERVICE', 'DELEGATED']);
+    expect(effectiveAllowedPrincipalKinds(integration)).toEqual(['SERVICE', 'DELEGATED']);
+  });
+
+  it('keeps CLIENT_CREDENTIALS exclusive from bearer principal kinds', () => {
+    expect(() =>
+      normalizeRouteAuthzDeclaration({
+        isPublic: false,
+        fragments: [
+          { mode: 'LOGIN_ONLY', allowedPrincipalKinds: ['CLIENT_CREDENTIALS', 'SERVICE'] },
+        ],
+      }),
+    ).toThrow('CLIENT_CREDENTIALS cannot be combined');
+  });
+
+  it('keeps Human and Integration bearer routes physically separate', () => {
+    expect(() =>
+      normalizeRouteAuthzDeclaration({
+        isPublic: false,
+        fragments: [{ mode: 'LOGIN_ONLY', allowedPrincipalKinds: ['USER', 'SERVICE'] }],
+      }),
+    ).toThrow('USER cannot be combined');
   });
 
   it('keeps only registered ALS assertions and never retains a resource value', () => {

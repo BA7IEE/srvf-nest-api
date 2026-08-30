@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:ef93d722ccedc43fe34e3d42cc692081abda6f285160d56da7b3b82f19c713c4",
+  "inputDigest": "sha256:ff63ba5c5437e201cf1b28cf4e746707b583a9c5ed5dc4e1fd4e738a20ea8135",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -23,21 +23,11 @@
     },
     "platform-access": {
       "confirmed": true,
-      "modules": [
-        "authz",
-        "permissions",
-        "role-bindings"
-      ]
+      "modules": ["authz", "permissions", "role-bindings"]
     },
     "comms": {
       "confirmed": true,
-      "modules": [
-        "announcement-import",
-        "notifications",
-        "sms",
-        "wechat",
-        "wecom"
-      ]
+      "modules": ["announcement-import", "notifications", "sms", "wechat", "wecom"]
     },
     "identity-org": {
       "confirmed": true,
@@ -68,10 +58,7 @@
     },
     "engagement": {
       "confirmed": true,
-      "modules": [
-        "recruitment",
-        "team-join"
-      ]
+      "modules": ["recruitment", "team-join"]
     },
     "participation": {
       "confirmed": true,
@@ -99,21 +86,15 @@
     },
     "insurance": {
       "confirmed": true,
-      "modules": [
-        "insurances"
-      ]
+      "modules": ["insurances"]
     },
     "credentials": {
       "confirmed": true,
-      "modules": [
-        "certificates"
-      ]
+      "modules": ["certificates"]
     },
     "content": {
       "confirmed": true,
-      "modules": [
-        "content"
-      ]
+      "modules": ["content"]
     },
     "integration-foundation": {
       "confirmed": true,
@@ -121,7 +102,9 @@
         "service-principals",
         "integration-auth",
         "integration-authz",
-        "delegation-grants"
+        "delegation-grants",
+        "integration-api",
+        "integration-idempotency"
       ]
     }
   },
@@ -303,6 +286,14 @@
       "confirmed": true
     },
     "delegation-grants": {
+      "domain": "integration-foundation",
+      "confirmed": true
+    },
+    "integration-api": {
+      "domain": "integration-foundation",
+      "confirmed": true
+    },
+    "integration-idempotency": {
       "domain": "integration-foundation",
       "confirmed": true
     }
@@ -993,7 +984,7 @@
     },
     "IntegrationCommandReceipt": {
       "domain": "integration-foundation",
-      "ownerModule": "service-principals",
+      "ownerModule": "integration-idempotency",
       "subdomain": "receipt",
       "confirmed": true
     }
@@ -1222,12 +1213,7 @@
     "purpose": "维护者于 2026-08-12 确认：初版 public surface 仅描述当前 Nest module exports 与现有具名 tx 原语；不描述计划，不构成直接 DB 访问出口。",
     "byDomain": {
       "comms": {
-        "modules": [
-          "notifications",
-          "sms",
-          "wechat",
-          "wecom"
-        ],
+        "modules": ["notifications", "sms", "wechat", "wecom"],
         "exports": [
           "NotificationOutboxService",
           "SmsSettingsService",
@@ -1241,16 +1227,12 @@
         ]
       },
       "content": {
-        "modules": [
-          "content"
-        ],
+        "modules": ["content"],
         "exports": [],
         "notes": "未发现 Nest @Module exports；任何跨域调用 content 私有实现均为深引私有实现，属 Phase 3 待处置。"
       },
       "credentials": {
-        "modules": [
-          "certificates"
-        ],
+        "modules": ["certificates"],
         "exports": [
           "CertificateRecognitionResolver",
           "CertificateEvidenceSigner",
@@ -1258,10 +1240,7 @@
         ]
       },
       "engagement": {
-        "modules": [
-          "recruitment",
-          "team-join"
-        ],
+        "modules": ["recruitment", "team-join"],
         "exports": [],
         "notes": "未发现 Nest @Module exports；任何跨域调用 engagement 私有实现均为深引私有实现，属 Phase 3 待处置。"
       },
@@ -1287,23 +1266,14 @@
           "SupervisionAssignmentsService",
           "AppIdentityResolver"
         ],
-        "txPrimitives": [
-          "revokeActiveWecomIdentityInTx"
-        ]
+        "txPrimitives": ["revokeActiveWecomIdentityInTx"]
       },
       "insurance": {
-        "modules": [
-          "insurances"
-        ],
-        "exports": [
-          "InsuranceRequirementService"
-        ]
+        "modules": ["insurances"],
+        "exports": ["InsuranceRequirementService"]
       },
       "participation": {
-        "modules": [
-          "activities",
-          "activity-feedbacks"
-        ],
+        "modules": ["activities", "activity-feedbacks"],
         "exports": [
           "ActivitiesService",
           "EvidenceSealService",
@@ -1330,11 +1300,7 @@
         ]
       },
       "platform-core": {
-        "modules": [
-          "attachments",
-          "audit-logs",
-          "storage"
-        ],
+        "modules": ["attachments", "audit-logs", "storage"],
         "exports": [
           "AttachmentsService",
           "AttachmentContentValidator",
@@ -1347,10 +1313,7 @@
         ]
       },
       "platform-access": {
-        "modules": [
-          "authz",
-          "permissions"
-        ],
+        "modules": ["authz", "permissions"],
         "exports": [
           "AuthzService",
           "RbacService",
@@ -1449,50 +1412,17 @@
     "kernelReadFields": {
       "confirmed": true,
       "fields": {
-        "User": [
-          "id",
-          "username",
-          "nickname",
-          "status",
-          "memberId"
-        ],
-        "Member": [
-          "id",
-          "memberNo",
-          "realName",
-          "nickname",
-          "gradeCode",
-          "status"
-        ],
-        "Organization": [
-          "id",
-          "name",
-          "code",
-          "nodeTypeCode",
-          "status",
-          "parentId"
-        ]
+        "User": ["id", "username", "nickname", "status", "memberId"],
+        "Member": ["id", "memberNo", "realName", "nickname", "gradeCode", "status"],
+        "Organization": ["id", "name", "code", "nodeTypeCode", "status", "parentId"]
       }
     },
     "kernelPredicateFields": {
       "confirmed": true,
       "fields": {
-        "User": [
-          "id",
-          "status",
-          "memberId"
-        ],
-        "Member": [
-          "id",
-          "status",
-          "gradeCode"
-        ],
-        "Organization": [
-          "id",
-          "status",
-          "nodeTypeCode",
-          "parentId"
-        ]
+        "User": ["id", "status", "memberId"],
+        "Member": ["id", "status", "gradeCode"],
+        "Organization": ["id", "status", "nodeTypeCode", "parentId"]
       }
     }
   },

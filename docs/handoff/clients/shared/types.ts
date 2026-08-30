@@ -3,7 +3,7 @@
 // surface: shared —— 被两个及以上 surface 共用的类型(唯一定义处)
 // contractVersion: 0.69.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:37349a15fa29087d8266ad35f03a06ddda1891097399dd3af53721dfca1ce152
+// inputDigest: sha256:a2991bd65b98212909486232db5e5e83b6997b6b66317e936f6d76222a7caa60
 
 /** 统一响应 envelope —— 全仓契约恒为 { code, message, data }。 */
 export interface ApiEnvelope<T> {
@@ -20,7 +20,7 @@ export interface PageResult<T> {
   pageSize: number;
 }
 
-/** 传输层由消费方注入 —— 生成器不产生任何网络与凭证代码。五个 surface 共用同一份定义。 */
+/** 传输层由消费方注入 —— 生成器不产生任何网络与凭证代码。六个 surface 共用同一份定义。 */
 export interface FetchRequest {
   method: string;
   path: string;

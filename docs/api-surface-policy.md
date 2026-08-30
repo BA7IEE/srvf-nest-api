@@ -17,11 +17,12 @@
 | **Auth** | `/api/auth/v1/*` | 登录 / 刷新 / 登出 / 认证会话(由原 `/api/auth/*` 迁入) |
 | **System** | `/api/system/v1/*` | 健康检查 / 运行状态 / 系统元信息 / ops 配置(由原 `/api/health/*` + `/api/v2/*` 中 ops/配置/可观测类迁入;承接 D-1 `contribution-rules` → System) |
 | **Open** | `/api/open/v1/*` | **首用(2026-06-18 招新一期 T3)**:无账号公开 surface(`@Public` 跳过 JwtAuthGuard;首落地 = 招新报名提交/查询,小程序自助直连);**2026-06-21 CMS 第二用** = 内容公开列表/详情(`open/v1/contents`,published+public,第 10 throttler `content-public`);未来开放平台扩展仍按需 D 档立项 |
+| **Integration** | `/api/integration/v1/*` | **首用(2026-08-30 Integration Foundation v1 PR6)**:外部系统机器调用面;只接受显式声明的 Service / Delegated Token,独立于 Human JWT 与 Open 匿名面 |
 
 **新增规则(自 2026-06-01 生效,覆盖 §2.1 / §2.2 的"新接口落 v2"口径)**:
 
-- ✅ **新接口一律落 canonical 前缀**:新管理面 → `/api/admin/v1/*`;新 App → `/api/app/v1/*`;新认证 → `/api/auth/v1/*`;新 ops/系统 → `/api/system/v1/*`;新公开面 → `/api/open/v1/*`。**不再向 `/api/v2/*` 新增任何 endpoint**。
-- ✅ 存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` 已按 [`api-surface-migration-plan.md §6`](api-surface-migration-plan.md) 全部迁移并删除(**2026-06-01 完成**,终态由 contract 前缀断言锁定:**2026-06-01 = 4 canonical 前缀**;**2026-06-18 招新一期 T3 首用 `open/v1` → 5 canonical 前缀**,见 [`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) + [`scripts/check-rbac-map.ts`](../scripts/check-rbac-map.ts) 的 `CANONICAL_PREFIXES`);此后既有 endpoint 的 surface 重归类、path 迁移 / alias / deprecate / removal 仍需 **D 档、单独立项**;新增 endpoint 按 §2.4 至少 C 档。
+- ✅ **新接口一律落 canonical 前缀**:新管理面 → `/api/admin/v1/*`;新 App → `/api/app/v1/*`;新认证 → `/api/auth/v1/*`;新 ops/系统 → `/api/system/v1/*`;新公开面 → `/api/open/v1/*`;新外部系统面 → `/api/integration/v1/*`。**不再向 `/api/v2/*` 新增任何 endpoint**。
+- ✅ 存量 `/api/v2/*` / `/api/auth/*` / `/api/users/*` / `/api/health/*` 已按 [`api-surface-migration-plan.md §6`](api-surface-migration-plan.md) 全部迁移并删除(**2026-06-01 完成**,终态由 contract 前缀断言锁定:**2026-06-01 = 4 canonical 前缀**;**2026-06-18 招新一期 T3 首用 `open/v1` → 5 canonical 前缀**;**2026-08-30 Integration Foundation v1 PR6 首用 `integration/v1` → 6 canonical 前缀**,见 [`test/contract/openapi.contract-spec.ts`](../test/contract/openapi.contract-spec.ts) + [`scripts/check-rbac-map.ts`](../scripts/check-rbac-map.ts) 的 `CANONICAL_PREFIXES`);此后既有 endpoint 的 surface 重归类、path 迁移 / alias / deprecate / removal 仍需 **D 档、单独立项**;新增 endpoint 按 §2.4 至少 C 档。
 - ✅ App 顶层入参 / 出参 DTO **不得从 Admin DTO 派生**,也不得把 Admin 专属字段带入 App(沿 §2.1 / D-6);跨 surface 复用须是经评审登记的 surface-neutral 值对象或完全同语义读模型。当前唯一登记项:content 的 Open + App 共用 `ListContentReadQueryDto` / `ContentRead*Dto`,`ContentAttachmentDto` 作为嵌套附件值对象由 Admin / Open / App 共用;这些类型不含 Admin 专属字段。
 - ✅ audit-logs / storage / RBAC 系 / dictionaries / attachment-configs 的 admin↔system 灰区归属**已由迁移计划 Phase 0 映射表(经用户签字)冻结**(见 [`api-surface-migration-plan.md §3`](api-surface-migration-plan.md);均落 System surface `/api/system/v1/*`);**不**在常规 PR 内擅自重归类。
 
@@ -57,11 +58,13 @@
 - ✅ 管理面与移动端的顶层入参 / 出参 DTO **物理分离**,即使字段集相同也不共用 class;经评审登记的 surface-neutral 嵌套值对象不在此限
 - ❌ 不在管理面接口中夹带"顺手满足 Mobile"的字段语义
 
-### 2.3 Auth / System / Open
+### 2.3 Auth / System / Open / Integration
 
 - ✅ 登录 / 会话端点只落 `/api/auth/v1/*`;系统、运维、健康检查只落 `/api/system/v1/*`;认证域之外、面向匿名用户的公开业务端点只落 `/api/open/v1/*`
 - ❌ 不恢复已删除的裸 `/api/auth/*` / `/api/users/*` / `/api/health/*` 或 `/api/v2/*`,也不新增 legacy alias
 - ✅ Open surface 必须显式 `@Public()` 并按业务风险配置限流;`@Public` 不等于可以绕过业务身份、可见级或防枚举校验
+- ✅ Integration surface 只落 `/api/integration/v1/*`,必须显式声明 `SERVICE` / `DELEGATED` principal kind;不得标 `@Public()`、不得接受 Human JWT、不得把机器主体挂到 `request.user`
+- ✅ Client Credentials 换 Token 仍落 Auth surface,显式声明 `CLIENT_CREDENTIALS`;它是认证入口,不是匿名 Public 路由
 
 ### 2.4 Surface / path 变更
 

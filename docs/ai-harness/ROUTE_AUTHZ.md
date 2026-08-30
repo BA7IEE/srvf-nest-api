@@ -15,10 +15,10 @@
 | field | value |
 |---|---|
 | schemaVersion | 1.0.0 |
-| generatorVersion | 2.0.0 |
-| inputDigest | sha256:1149a94299c7502a7160a61b9a4a219db500608a3c6727be7005cff33e3e1ddc |
-| endpoint count | 568 |
-| legacy [auth] count | 171 |
+| generatorVersion | 2.1.0 |
+| inputDigest | sha256:b6758e83ff9ed28ad21193cbe3b5e1a15fdf9f325e225c721890be042e975b60 |
+| endpoint count | 569 |
+| legacy [auth] count | 174 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -34,14 +34,15 @@
 | system | 89 | 89 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
+| integration | 1 | 1 | 0 |
 
 ## Legacy declaration summary
 
 | marker | count |
 |---|---:|
-| public | 35 |
+| public | 33 |
 | rbac | 362 |
-| auth | 171 |
+| auth | 174 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -90,14 +91,17 @@
 | app tag family | Mobile - My Registrations (5) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:110 |
 | app tag family | Mobile - My Team Join (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:75 |
 | app tag family | Mobile - Notifications (6) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:52 |
-| auth/system individual | GET /api/system/v1/authz/me/effective-permissions | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/authz/effective-permissions.controller.ts:22; src/modules/authz/effective-permissions.controller.ts:33 |
-| auth/system individual | GET /api/system/v1/rbac/me/permissions | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/permissions/rbac.controller.ts:44; src/modules/permissions/rbac.controller.ts:54 |
-| auth/system individual | POST /api/auth/v1/logout-all | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:148; src/modules/auth/auth.controller.ts:162 |
-| auth/system individual | POST /api/auth/v1/step-up/password | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
-| auth/system individual | POST /api/auth/v1/step-up/sms | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
-| auth/system individual | POST /api/auth/v1/step-up/sms/send-code | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |
-| auth/system individual | POST /api/auth/v1/step-up/wechat | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:247; src/modules/auth/auth.controller.ts:274 |
-| auth/system individual | POST /api/auth/v1/wecom-bind/authorize | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:577; src/modules/auth/auth.controller.ts:599 |
+| auth/system/integration individual | GET /api/integration/v1/me | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=SERVICE,DELEGATED | code | src/modules/integration-api/integration-api.controller.ts:22; src/modules/integration-api/integration-api.controller.ts:33 |
+| auth/system/integration individual | GET /api/system/v1/authz/me/effective-permissions | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/authz/effective-permissions.controller.ts:22; src/modules/authz/effective-permissions.controller.ts:33 |
+| auth/system/integration individual | GET /api/system/v1/rbac/me/permissions | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/permissions/rbac.controller.ts:44; src/modules/permissions/rbac.controller.ts:54 |
+| auth/system/integration individual | POST /api/auth/v1/delegated-token | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=SERVICE | code | src/modules/integration-auth/delegated-token.controller.ts:29; src/modules/integration-auth/delegated-token.controller.ts:46 |
+| auth/system/integration individual | POST /api/auth/v1/logout-all | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:148; src/modules/auth/auth.controller.ts:162 |
+| auth/system/integration individual | POST /api/auth/v1/service-token | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=CLIENT_CREDENTIALS | code | src/modules/integration-auth/service-token.controller.ts:34; src/modules/integration-auth/service-token.controller.ts:52 |
+| auth/system/integration individual | POST /api/auth/v1/step-up/password | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
+| auth/system/integration individual | POST /api/auth/v1/step-up/sms | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
+| auth/system/integration individual | POST /api/auth/v1/step-up/sms/send-code | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |
+| auth/system/integration individual | POST /api/auth/v1/step-up/wechat | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:247; src/modules/auth/auth.controller.ts:274 |
+| auth/system/integration individual | POST /api/auth/v1/wecom-bind/authorize | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:577; src/modules/auth/auth.controller.ts:599 |
 
 ## Machine-readable manifest
 
@@ -106,8 +110,8 @@
 <!-- route-authz-manifest-json
 {
   "schemaVersion": "1.0.0",
-  "generatorVersion": "2.0.0",
-  "inputDigest": "sha256:1149a94299c7502a7160a61b9a4a219db500608a3c6727be7005cff33e3e1ddc",
+  "generatorVersion": "2.1.0",
+  "inputDigest": "sha256:b6758e83ff9ed28ad21193cbe3b5e1a15fdf9f325e225c721890be042e975b60",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -4062,6 +4066,24 @@
           "self"
         ],
         "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/integration/v1/me",
+      "controller": "IntegrationApiController",
+      "handler": "getMe",
+      "legacy": "auth",
+      "policy": {
+        "admission": null,
+        "mode": "LOGIN_ONLY",
+        "codes": [],
+        "require": "all",
+        "scopes": [],
+        "engine": null,
+        "allowedPrincipalKinds": [
+          "SERVICE",
+          "DELEGATED"
+        ]
       }
     },
     {
@@ -9149,14 +9171,17 @@
       "routeKey": "POST /api/auth/v1/delegated-token",
       "controller": "DelegatedTokenController",
       "handler": "issue",
-      "legacy": "public",
+      "legacy": "auth",
       "policy": {
         "admission": null,
-        "mode": "PUBLIC",
+        "mode": "LOGIN_ONLY",
         "codes": [],
         "require": "all",
         "scopes": [],
-        "engine": null
+        "engine": null,
+        "allowedPrincipalKinds": [
+          "SERVICE"
+        ]
       }
     },
     {
@@ -9317,14 +9342,17 @@
       "routeKey": "POST /api/auth/v1/service-token",
       "controller": "ServiceTokenController",
       "handler": "issue",
-      "legacy": "public",
+      "legacy": "auth",
       "policy": {
         "admission": null,
-        "mode": "PUBLIC",
+        "mode": "LOGIN_ONLY",
         "codes": [],
         "require": "all",
         "scopes": [],
-        "engine": null
+        "engine": null,
+        "allowedPrincipalKinds": [
+          "CLIENT_CREDENTIALS"
+        ]
       }
     },
     {
@@ -10810,6 +10838,7 @@
 | GET | /api/app/v1/notifications/:id | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:128; src/modules/notifications/notification-app.controller.ts:144 |
 | GET | /api/app/v1/notifications/subscriptions/status | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:94; src/modules/notifications/notification-app.controller.ts:110 |
 | GET | /api/app/v1/notifications/unread-count | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:114; src/modules/notifications/notification-app.controller.ts:125 |
+| GET | /api/integration/v1/me | Integration - Identity | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=SERVICE,DELEGATED | code | src/modules/integration-api/integration-api.controller.ts:22; src/modules/integration-api/integration-api.controller.ts:33 |
 | GET | /api/open/v1/contents | Public - Content | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/content/content-public.controller.ts:33; src/modules/content/content-public.controller.ts:43 |
 | GET | /api/open/v1/contents/:id | Public - Content | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/content/content-public.controller.ts:46; src/modules/content/content-public.controller.ts:56 |
 | GET | /api/open/v1/recruitment/certificate-standards | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:167; src/modules/recruitment/recruitment-public.controller.ts:176 |
@@ -11088,7 +11117,7 @@
 | POST | /api/app/v1/my/registrations | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:133; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:167 |
 | POST | /api/app/v1/notifications/:id/read | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:147; src/modules/notifications/notification-app.controller.ts:165 |
 | POST | /api/app/v1/notifications/subscriptions/ack | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:73; src/modules/notifications/notification-app.controller.ts:91 |
-| POST | /api/auth/v1/delegated-token | auth/delegated-token | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/integration-auth/delegated-token.controller.ts:30; src/modules/integration-auth/delegated-token.controller.ts:48 |
+| POST | /api/auth/v1/delegated-token | auth/delegated-token | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=SERVICE | code | src/modules/integration-auth/delegated-token.controller.ts:29; src/modules/integration-auth/delegated-token.controller.ts:46 |
 | POST | /api/auth/v1/login | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:91; src/modules/auth/auth.controller.ts:101 |
 | POST | /api/auth/v1/login-sms | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:364; src/modules/auth/auth.controller.ts:374 |
 | POST | /api/auth/v1/login-sms/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:335; src/modules/auth/auth.controller.ts:355 |
@@ -11100,7 +11129,7 @@
 | POST | /api/auth/v1/password-reset | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:311; src/modules/auth/auth.controller.ts:326 |
 | POST | /api/auth/v1/password-reset/send-code | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:283; src/modules/auth/auth.controller.ts:303 |
 | POST | /api/auth/v1/refresh | Auth | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:108; src/modules/auth/auth.controller.ts:123 |
-| POST | /api/auth/v1/service-token | auth/service-token | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/integration-auth/service-token.controller.ts:34; src/modules/integration-auth/service-token.controller.ts:63 |
+| POST | /api/auth/v1/service-token | auth/service-token | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=CLIENT_CREDENTIALS | code | src/modules/integration-auth/service-token.controller.ts:34; src/modules/integration-auth/service-token.controller.ts:52 |
 | POST | /api/auth/v1/step-up/password | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:165; src/modules/auth/auth.controller.ts:191 |
 | POST | /api/auth/v1/step-up/sms | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:219; src/modules/auth/auth.controller.ts:244 |
 | POST | /api/auth/v1/step-up/sms/send-code | Auth | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/auth/auth.controller.ts:194; src/modules/auth/auth.controller.ts:216 |
