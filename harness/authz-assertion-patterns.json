@@ -59,6 +59,36 @@
       ]
     },
     {
+      "id": "direct-principal-authz",
+      "runtimeMarker": "DirectPrincipalAuthzService.explainDirect|canDirect",
+      "callShapes": [
+        "DirectPrincipalAuthzService.explainDirect(principal, action)",
+        "DirectPrincipalAuthzService.canDirect(principal, action)"
+      ],
+      "requiredOutcomes": [
+        "deny-to-BizCode",
+        "early-return",
+        "guard"
+      ],
+      "axes": [
+        "codes",
+        "engine"
+      ],
+      "staticMatchers": [
+        {
+          "receiverTypes": [
+            "DirectPrincipalAuthzService"
+          ],
+          "methods": [
+            "explainDirect",
+            "canDirect"
+          ],
+          "actionArgument": 1,
+          "outcome": "boolean-deny-branch"
+        }
+      ]
+    },
+    {
       "id": "visible-organization-scope",
       "runtimeMarker": null,
       "callShapes": [

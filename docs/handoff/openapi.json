@@ -100489,6 +100489,236 @@
         ]
       }
     },
+    "/api/integration/v1/reference/activity-types": {
+      "get": {
+        "operationId": "IntegrationActivityTypesController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/IntegrationActivityTypeItemDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Integration Token 无效或已失效(code=37011)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37011
+                      ],
+                      "description": "37011: Integration Token 无效或已失效",
+                      "example": 37011
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Integration Token 无效或已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前主体类型不能访问该接口(code=37017) / 无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37017,
+                        30100
+                      ],
+                      "description": "37017: 当前主体类型不能访问该接口; 30100: 无权执行此操作",
+                      "example": 37017
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "当前主体类型不能访问该接口"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "字典类型不存在(code=12001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        12001
+                      ],
+                      "description": "12001: 字典类型不存在",
+                      "example": 12001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "字典类型不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Integration API 未启用(code=37030)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        37030
+                      ],
+                      "description": "37030: Integration API 未启用",
+                      "example": 37030
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Integration API 未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "integrationBearer": []
+          }
+        ],
+        "summary": "分页读取活动类型参考数据（仅 Service 主体） [rbac: dict.read.item]",
+        "tags": [
+          "Integration - Reference"
+        ]
+      }
+    },
     "/api/admin/v1/announcement-import/preview": {
       "post": {
         "operationId": "AnnouncementImportController_preview",
@@ -141865,6 +142095,31 @@
           "principalKind",
           "servicePrincipal",
           "delegated"
+        ]
+      },
+      "IntegrationActivityTypeItemDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "活动类型稳定业务码",
+            "example": "training"
+          },
+          "label": {
+            "type": "string",
+            "description": "活动类型显示名称",
+            "example": "培训"
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "排序权重",
+            "example": 0
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "sortOrder"
         ]
       },
       "ImportOrganizationRowDto": {

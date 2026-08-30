@@ -553,8 +553,8 @@
       "description": "sha256:8b73740c41dd03f5bc5a4d098008a487895b06f90da7c31dc96b8d9c322fdaa2"
     },
     "dict.read.item": {
-      "endpoints": 3,
-      "surface": "sha256:29c7f49210dc328056564260654e1437eba606f3416981e4912cfc8e928cc7a3",
+      "endpoints": 4,
+      "surface": "sha256:639074886c0da55cff8d29bb6869e20943fa91d4632a9ad1b75daf48bd01c923",
       "description": "sha256:100b15d5221129d686ab4a21b4843ad3df74a7c30e7b3ca1ccf2fabd37604b55"
     },
     "dict.read.type": {

@@ -368,6 +368,7 @@ function assertionPatterns(root) {
   for (const required of [
     'rbac-can',
     'authz-can-explain',
+    'direct-principal-authz',
     'visible-organization-scope',
     'app-identity-resolve',
     'responsibility-check',
@@ -920,6 +921,7 @@ function requiredScopeChecks(policy) {
 const ENGINE_ASSERTIONS = new Map([
   ['rbac-global', 'rbac-can'],
   ['authz-scoped', 'authz-can-explain'],
+  ['integration-direct', 'direct-principal-authz'],
   ['none', null],
 ]);
 

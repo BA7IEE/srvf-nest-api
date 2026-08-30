@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:4602b9979778fbedbc6b47ccafa31dd4cb1fc903112255b1e37182d1466beb19 |
-| endpoint count | 569 |
+| inputDigest | sha256:6e5a99e7034f6d6fc37630c0a89377ea0271a5487e48647adf5512ae6239accf |
+| endpoint count | 570 |
 | legacy [auth] count | 174 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -34,14 +34,14 @@
 | system | 89 | 89 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
-| integration | 1 | 1 | 0 |
+| integration | 2 | 2 | 0 |
 
 ## Legacy declaration summary
 
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 362 |
+| rbac | 363 |
 | auth | 174 |
 | unclassified | 0 |
 
@@ -111,7 +111,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:4602b9979778fbedbc6b47ccafa31dd4cb1fc903112255b1e37182d1466beb19",
+  "inputDigest": "sha256:6e5a99e7034f6d6fc37630c0a89377ea0271a5487e48647adf5512ae6239accf",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -4083,6 +4083,28 @@
         "allowedPrincipalKinds": [
           "SERVICE",
           "DELEGATED"
+        ]
+      }
+    },
+    {
+      "routeKey": "GET /api/integration/v1/reference/activity-types",
+      "controller": "IntegrationActivityTypesController",
+      "handler": "list",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "dict.read.item",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "integration-direct",
+        "allowedPrincipalKinds": [
+          "SERVICE"
         ]
       }
     },
@@ -10403,6 +10425,7 @@
 | `activity.settlement-generate.record` | 4 | GET /api/app/v1/my/managed-activities/:activityId/settlement · GET /api/app/v1/my/managed-activities/:activityId/settlement/items · GET /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId · POST /api/app/v1/my/managed-activities/:activityId/settlement/generate |
 | `attachment.upload.*` | 4 | POST /api/admin/v1/attachments · POST /api/admin/v1/attachments/confirm-upload · POST /api/admin/v1/attachments/upload-url · POST /api/admin/v1/contents/:id/attachments/upload-url |
 | `content.read.record` | 4 | GET /api/admin/v1/contents · GET /api/admin/v1/contents/:id · GET /api/app/v1/contents · GET /api/app/v1/contents/:id |
+| `dict.read.item` | 4 | GET /api/integration/v1/reference/activity-types · GET /api/system/v1/dict-items · GET /api/system/v1/dict-items/:id · GET /api/system/v1/dict-items/tree |
 | `membership.list.record` | 4 | GET /api/admin/v1/members/:memberId/memberships · GET /api/admin/v1/memberships · GET /api/admin/v1/memberships/conflicts · GET /api/admin/v1/organizations/:orgId/memberships |
 | `rbac.role.read` | 4 | GET /api/system/v1/roles · GET /api/system/v1/roles/:id · GET /api/system/v1/roles/:id/permissions · GET /api/system/v1/roles/options |
 | `role-binding.read.record` | 4 | GET /api/admin/v1/role-bindings · GET /api/admin/v1/role-bindings/:id · GET /api/admin/v1/role-bindings/page · GET /api/admin/v1/role-bindings/preview |
@@ -10410,7 +10433,6 @@
 | `attachment.view.*` | 3 | GET /api/admin/v1/attachments · GET /api/admin/v1/attachments/:id · GET /api/admin/v1/attachments/by-owner |
 | `certificate-standard.read.record` | 3 | GET /api/admin/v1/certificate-standards · GET /api/admin/v1/certificate-standards/:id · GET /api/admin/v1/certificate-standards/options |
 | `content.publish.record` | 3 | POST /api/admin/v1/contents/:id/archive · POST /api/admin/v1/contents/:id/publish · POST /api/admin/v1/contents/:id/unpublish |
-| `dict.read.item` | 3 | GET /api/system/v1/dict-items · GET /api/system/v1/dict-items/:id · GET /api/system/v1/dict-items/tree |
 | `member-insurance.read.other` | 3 | GET /api/admin/v1/member-insurances · GET /api/admin/v1/members/:memberId/insurances · GET /api/admin/v1/members/:memberId/insurances/overview |
 | `member.grant.account` | 3 | POST /api/admin/v1/members/:id/account · POST /api/admin/v1/members/:id/account/reopen · POST /api/admin/v1/members/accounts/bulk-grant |
 | `notification.publish.record` | 3 | POST /api/admin/v1/notifications/:id/archive · POST /api/admin/v1/notifications/:id/publish · POST /api/admin/v1/notifications/:id/unpublish |
@@ -10839,6 +10861,7 @@
 | GET | /api/app/v1/notifications/subscriptions/status | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:94; src/modules/notifications/notification-app.controller.ts:110 |
 | GET | /api/app/v1/notifications/unread-count | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:114; src/modules/notifications/notification-app.controller.ts:125 |
 | GET | /api/integration/v1/me | Integration - Identity | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=-; principals=SERVICE,DELEGATED | code | src/modules/integration-api/integration-api.controller.ts:22; src/modules/integration-api/integration-api.controller.ts:33 |
+| GET | /api/integration/v1/reference/activity-types | Integration - Reference | rbac | RBAC; admission=-; codes=dict.read.item; require=all; scopes=-; engine=integration-direct; principals=SERVICE | code | src/modules/integration-api/integration-activity-types.controller.ts:27; src/modules/integration-api/integration-activity-types.controller.ts:45 |
 | GET | /api/open/v1/contents | Public - Content | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/content/content-public.controller.ts:33; src/modules/content/content-public.controller.ts:43 |
 | GET | /api/open/v1/contents/:id | Public - Content | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/content/content-public.controller.ts:46; src/modules/content/content-public.controller.ts:56 |
 | GET | /api/open/v1/recruitment/certificate-standards | Public - Recruitment | public | PUBLIC; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/recruitment/recruitment-public.controller.ts:167; src/modules/recruitment/recruitment-public.controller.ts:176 |

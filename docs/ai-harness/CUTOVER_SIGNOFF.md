@@ -234,11 +234,11 @@ function eviSub(id, kind, title, evidence): SubCheck {
 ### 4b — 「字典、Audit events」的对账
 
 - **结论**:认可
-- **理由**:**已逐条核对**。字典(28 type / 242 item)与 Audit events(156 事件:151 活跃 + 5 已退役/零产出)均已有登记表 + 红区判据双向对拍(#1202 / #1203;判据收编 #1206),④-c 已升 A 类机器判;五个零产出事件均已显式处置。本条签的是判据覆盖不了的余下判断:登记表口径符合合同 v1.1 意图、零产出处置认可。2026-08-26 首签时的「接受现状」局限自此闭合。**2026-08-29 三次重签**:PR5 新增 `delegation-grant.*` 三条权限码，并将既有 `service-principal.*` 五项、`delegation-grant.*` 两项及 Token 两项审计事件补齐至登记表；`seed-sha256-12` 与 `audit-event-registry-total/active` 均已按机器现读更新。
+- **理由**:**已逐条核对**。字典(28 type / 242 item)与 Audit events(156 事件:151 活跃 + 5 已退役/零产出)均已有登记表 + 红区判据双向对拍(#1202 / #1203;判据收编 #1206),④-c 已升 A 类机器判;五个零产出事件均已显式处置。本条签的是判据覆盖不了的余下判断:登记表口径符合合同 v1.1 意图、零产出处置认可。2026-08-26 首签时的「接受现状」局限自此闭合。**2026-08-29 三次重签**:PR5 新增 `delegation-grant.*` 三条权限码，并将既有 `service-principal.*` 五项、`delegation-grant.*` 两项及 Token 两项审计事件补齐至登记表；`seed-sha256-12` 与 `audit-event-registry-total/active` 均已按机器现读更新。**2026-08-30 再次重签**:PR7 仅为既有 `dict.read.item` 写入 Service Principal eligibility(`servicePrincipalAllowed=true`、`delegatedAccessAllowed=false`)，未新增字典项、Audit event、权限码或内建角色；本条对该 seed 变动的余下判断一并认可。
 - **签字人**:维护者
-- **日期**:2026-08-29
-- **依据**:维护者 2026-08-29 对话批准重签(「已执行 批准重签 4b」);前签 2026-08-28
-- **对拍**:有 —— `seed-sha256-12` = `39ca92fe38a5`;`dict-registry-types` = `28`;`dict-registry-items` = `242`;`audit-event-registry-total` = `156`;`audit-event-registry-active` = `151`
+- **日期**:2026-08-30
+- **依据**:维护者 2026-08-30 对话批准重签(「已批准」);前签 2026-08-29
+- **对拍**:有 —— `seed-sha256-12` = `494a7e9dc224`;`dict-registry-types` = `28`;`dict-registry-items` = `242`;`audit-event-registry-total` = `156`;`audit-event-registry-active` = `151`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。

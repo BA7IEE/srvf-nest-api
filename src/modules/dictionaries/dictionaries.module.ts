@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { ActivityTypeReferenceQueryService } from './activity-type-reference-query.service';
 import { DictItemsController, DictTypesController } from './dictionaries.controller';
 import { DictionariesService } from './dictionaries.service';
 
@@ -9,6 +10,7 @@ import { DictionariesService } from './dictionaries.service';
 @Module({
   imports: [DatabaseModule, PermissionsModule],
   controllers: [DictTypesController, DictItemsController],
-  providers: [DictionariesService],
+  providers: [DictionariesService, ActivityTypeReferenceQueryService],
+  exports: [ActivityTypeReferenceQueryService],
 })
 export class DictionariesModule {}
