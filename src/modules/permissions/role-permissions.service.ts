@@ -19,6 +19,7 @@ import { RbacService } from './rbac.service';
 import { RbacRoleDetailResponseDto } from './rbac-roles.dto';
 import { rbacRoleSelect } from './rbac-roles.select';
 import { rolePermissionEditPolicy, withRoleClassification } from './role-classification';
+import { lockRbacRoleLifecycle } from './rbac-role-lifecycle-lock';
 import {
   buildBlockedRolePermissionPreview,
   buildRolePermissionPreview,
@@ -33,6 +34,7 @@ import {
   isControlPlanePermissionCode,
   isReservedSuperAdminOnlyPermissionCode,
 } from './role-delegation.policy';
+import { ServicePrincipalRoleEligibilityPolicy } from './service-principal-role-eligibility.policy';
 
 // V2.x C-6 RBAC 实施 PR #4:RolePermission 关联表业务逻辑。
 // 沿 D7 v1.1 §5.1 端点 10-11 + §6.1 + 用户拍板。
@@ -86,6 +88,7 @@ export class RolePermissionsService {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
     private readonly impactQuery: RolePermissionImpactQueryService,
+    private readonly servicePrincipalRoleEligibility: ServicePrincipalRoleEligibilityPolicy,
     // P1-32 PR 5:配置变更 proof 的签发与验签**归本域自有**(见该 service 头注)。
     // 🔴 刻意**不注入 `IdentityStepUpService`**:`permissions`(platform-access)依赖
     //    `auth`(identity-org)是架构反向 —— domain-map 的 allowedEdges 里没有那条边。
@@ -379,7 +382,7 @@ export class RolePermissionsService {
 
     return this.prisma.$transaction(async (tx): Promise<RolePermissionSetDelta> => {
       // 3. 🔴 角色行锁 —— 并发替换在这里排队。表名是 @@map 后的物理名 "roles"。
-      await tx.$queryRaw`SELECT id FROM "roles" WHERE id = ${roleId} FOR UPDATE`;
+      await lockRbacRoleLifecycle(tx, roleId);
 
       // 4. 锁后复读:锁等待期间前一个写者可能已软删角色 / 已把 revision +1。
       const locked = this.assertRoleRowMutableOrThrow(
@@ -413,6 +416,13 @@ export class RolePermissionsService {
       const removedCodes = removedIds.map((id) => currentCodeById.get(id) as string);
       const resultCodes = [...targetCodeById.values()];
       const unchangedCount = targetCodeById.size - addedIds.length;
+
+      // C2:若任意未软删 ServicePrincipal Binding 已指向本 Role，目标**最终集**必须全部合格。
+      // 必须排在 no-op 之前：历史脏集不能因「这次没改」被静默当作有效配置回显。
+      await this.servicePrincipalRoleEligibility.assertFinalPermissionSetEligibleForBoundServicePrincipals(
+        tx,
+        { roleId, targetPermissionCodes: resultCodes },
+      );
 
       // 7. no-op:目标集合与现状**相同** → 不写、不 +1、不产生 audit。
       //    (空转不是变更,给它记一条 audit 等于往审计流里灌噪声;`updatedAt` 同理不动。)

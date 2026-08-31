@@ -14,6 +14,7 @@ import { RolePermissionImpactQueryService } from './role-permission-impact-query
 import { RolePermissionStepUpProofService } from '../../common/security/role-permission-step-up-proof';
 import { RolePermissionsController } from './role-permissions.controller';
 import { RolePermissionsService } from './role-permissions.service';
+import { ServicePrincipalRoleEligibilityPolicy } from './service-principal-role-eligibility.policy';
 import { UserRolesController } from './user-roles.controller';
 import { UserRolesService } from './user-roles.service';
 
@@ -70,6 +71,7 @@ import { UserRolesService } from './user-roles.service';
     PermissionsService,
     RbacRolesService,
     RolePermissionsService,
+    ServicePrincipalRoleEligibilityPolicy,
     // P1-32 PR 5:变更影响的只读查询(冻结稿 §11.2「只读,禁止写数据库」)。
     // ⚠️ 刻意**不 export** —— 它是 preview 的内部投影,不是一个对外能力面。
     RolePermissionImpactQueryService,
@@ -91,6 +93,7 @@ import { UserRolesService } from './user-roles.service';
     LastAdminProtectionPolicy,
     RolePermissionStepUpProofService,
     DelegationPermissionEligibilityService,
+    ServicePrincipalRoleEligibilityPolicy,
   ],
 })
 export class PermissionsModule {}

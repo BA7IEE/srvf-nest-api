@@ -14,13 +14,13 @@ import {
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
-import { assertServicePrincipalRoleEligibilityOrThrow } from './service-principal-role-eligibility.policy';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { lockMemberLifecycle, lockLiveUserLifecycle } from '../members/member-lifecycle-lock';
 import { LastAdminProtectionPolicy } from '../permissions/last-admin-protection.policy';
+import { lockRbacRoleLifecycle } from '../permissions/rbac-role-lifecycle-lock';
 import { RbacService } from '../permissions/rbac.service';
 import { OPS_ADMIN_ROLE_CODE } from '../permissions/role-binding-validity';
 import {
@@ -28,6 +28,7 @@ import {
   RoleDelegationPolicy,
   type RoleDelegationTarget,
 } from '../permissions/role-delegation.policy';
+import { ServicePrincipalRoleEligibilityPolicy } from '../permissions/service-principal-role-eligibility.policy';
 import {
   BatchCreateRoleBindingsDto,
   BatchCreateRoleBindingsResponseDto,
@@ -65,6 +66,7 @@ export class RoleBindingsService {
     private readonly auditLogs: AuditLogsService,
     private readonly roleDelegation: RoleDelegationPolicy,
     private readonly lastAdminProtection: LastAdminProtectionPolicy,
+    private readonly servicePrincipalRoleEligibility: ServicePrincipalRoleEligibilityPolicy,
   ) {}
 
   // ============ helpers(模块内聚；跨入口最后管理员不变量统一委托 LastAdminProtectionPolicy)============
@@ -144,7 +146,7 @@ export class RoleBindingsService {
       }
     } else if (principalType === PrincipalType.SERVICE_PRINCIPAL) {
       // Integration Foundation v1 PR2(规格书 §15.3):SERVICE_PRINCIPAL 绑定的存在性验证。
-      // 资格门七条不在这里 —— 那是 assertServicePrincipalRoleEligibilityOrThrow 的事;
+      // 资格门七条不在这里 —— 那是 ServicePrincipalRoleEligibilityPolicy 的事;
       // 这里只回答「这个 SP 存在且未软删」。SUSPENDED 的 SP 允许持有绑定(停用语义
       // 是 PR3 运行时「下一请求即拒」,不是绑定层的),软删则主体已不存在。
       const sp = await tx.servicePrincipal.findFirst({
@@ -437,7 +439,9 @@ export class RoleBindingsService {
 
       // Integration Foundation v1 PR2:SERVICE_PRINCIPAL 绑定走资格门七条(§15.3)。
       if (dto.principalType === 'SERVICE_PRINCIPAL') {
-        await assertServicePrincipalRoleEligibilityOrThrow(tx, {
+        // C2:与 RolePermission 整集替换共用同一 Role 行锁，锁后由 policy 重新读取 Role 和权限集。
+        await lockRbacRoleLifecycle(tx, dto.roleId);
+        await this.servicePrincipalRoleEligibility.assertBindingEligible(tx, {
           roleId: dto.roleId,
           scopeType: dto.scopeType,
         });
@@ -615,6 +619,17 @@ export class RoleBindingsService {
       }
       if ((reactivatesBinding || startsEarlier || endsLater) && isPrivilegedRole(current.role)) {
         await this.roleDelegation.assertActorMayConferRole(user, current.role, tx);
+      }
+      if (
+        current.principalType === PrincipalType.SERVICE_PRINCIPAL &&
+        (reactivatesBinding || startsEarlier || endsLater || (!wasEffective && willBeEffective))
+      ) {
+        // C2:恢复或扩大有效期会让历史 Binding 再次生效，必须和 RolePermission 改写串行化。
+        await lockRbacRoleLifecycle(tx, current.roleId);
+        await this.servicePrincipalRoleEligibility.assertBindingEligible(tx, {
+          roleId: current.roleId,
+          scopeType: current.scopeType,
+        });
       }
 
       const data: Prisma.RoleBindingUpdateInput = {};
