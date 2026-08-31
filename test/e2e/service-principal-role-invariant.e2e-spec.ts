@@ -11,6 +11,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { RoleBindingsService } from '../../src/modules/role-bindings/role-bindings.service';
 import { RolePermissionsService } from '../../src/modules/permissions/role-permissions.service';
+import { RbacRolesService } from '../../src/modules/permissions/rbac-roles.service';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 
@@ -67,6 +68,7 @@ describe('Service Principal Role 资格不变量(C2)', () => {
   let rolePermissionsA: RolePermissionsService;
   let roleBindingsA: RoleBindingsService;
   let roleBindingsB: RoleBindingsService;
+  let rbacRolesA: RbacRolesService;
   let actor: CurrentUserPayload;
   let sequence = 0;
 
@@ -81,6 +83,7 @@ describe('Service Principal Role 资格不变量(C2)', () => {
     rolePermissionsA = appA.get(RolePermissionsService);
     roleBindingsA = appA.get(RoleBindingsService);
     roleBindingsB = appB.get(RoleBindingsService);
+    rbacRolesA = appA.get(RbacRolesService);
 
     const user = await prismaA.user.create({
       data: { username: 'sp-role-invariant-admin', passwordHash: 'probe', role: Role.SUPER_ADMIN },
@@ -373,6 +376,124 @@ describe('Service Principal Role 资格不变量(C2)', () => {
       ),
     ).resolves.toBeDefined();
     await assertNoSpRoleInvariantViolation(role.id);
+  });
+
+  it('先撤销 SP Binding 后 Role 可以删除，预检保持零违规', async () => {
+    const role = await createRole('delete-after-revoke');
+    const servicePrincipal = await createServicePrincipal('delete-after-revoke');
+    const binding = await createDirectSpBinding({
+      roleId: role.id,
+      servicePrincipalId: servicePrincipal.id,
+    });
+
+    await roleBindingsA.remove(actor, binding.id, META);
+    await expect(rbacRolesA.softDelete(actor, role.id, META)).resolves.toMatchObject({
+      id: role.id,
+    });
+
+    await expect(
+      prismaA.roleBinding.findUnique({ where: { id: binding.id }, select: { deletedAt: true } }),
+    ).resolves.toEqual({ deletedAt: expect.any(Date) });
+    await expect(
+      prismaA.rbacRole.findUnique({ where: { id: role.id }, select: { deletedAt: true } }),
+    ).resolves.toEqual({ deletedAt: expect.any(Date) });
+
+    const preflight = await runInvariantPreflight();
+    expect(preflight).toEqual({
+      exitCode: 0,
+      report: expect.objectContaining({
+        selfScopeViolationCount: 0,
+        deletedRoleViolationCount: 0,
+        systemManagedRoleViolationCount: 0,
+        ineligiblePermissionViolationCount: 0,
+        affectedRoleIds: [],
+        affectedBindingIds: [],
+        affectedPermissionCodes: [],
+      }),
+    });
+  });
+
+  it.each([
+    {
+      label: 'Binding 先取得 Role 锁',
+      first: 'binding' as const,
+      rejectedBizCode: BizCode.ROLE_HAS_SERVICE_PRINCIPAL_BINDINGS.code,
+    },
+    {
+      label: 'Role 删除先取得 Role 锁',
+      first: 'delete' as const,
+      rejectedBizCode: BizCode.ROLE_BINDING_ROLE_INELIGIBLE_FOR_SERVICE_PRINCIPAL.code,
+    },
+  ])('真实并发 C：$label → 恰好一方成功且预检保持零违规', async (race) => {
+    const role = await createRole(`race-role-delete-${race.first}`);
+    const servicePrincipal = await createServicePrincipal(`race-role-delete-${race.first}`);
+    const barrier = holdRoleLock(role.id);
+    await barrier.ready;
+
+    // 两套 Nest / Prisma 实例必须真的独立，否则这不是跨请求并发。
+    expect(prismaA).not.toBe(prismaB);
+    expect(appA.getHttpServer()).not.toBe(appB.getHttpServer());
+
+    let bindingCreate: Promise<unknown>;
+    let roleDelete: Promise<unknown>;
+    if (race.first === 'binding') {
+      bindingCreate = roleBindingsB.create(
+        actor,
+        {
+          principalType: PrincipalType.SERVICE_PRINCIPAL,
+          principalId: servicePrincipal.id,
+          roleId: role.id,
+          scopeType: BindingScopeType.GLOBAL,
+        },
+        META,
+      );
+      await waitForRoleLockWaiters(1);
+      roleDelete = rbacRolesA.softDelete(actor, role.id, META);
+    } else {
+      roleDelete = rbacRolesA.softDelete(actor, role.id, META);
+      await waitForRoleLockWaiters(1);
+      bindingCreate = roleBindingsB.create(
+        actor,
+        {
+          principalType: PrincipalType.SERVICE_PRINCIPAL,
+          principalId: servicePrincipal.id,
+          roleId: role.id,
+          scopeType: BindingScopeType.GLOBAL,
+        },
+        META,
+      );
+    }
+
+    let results: PromiseSettledResult<unknown>[] = [];
+    try {
+      await waitForRoleLockWaiters(2);
+    } finally {
+      barrier.release();
+      await barrier.done;
+      results = await Promise.allSettled([bindingCreate, roleDelete]);
+    }
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toMatchObject({ biz: { code: race.rejectedBizCode } });
+    await assertNoSpRoleInvariantViolation(role.id);
+
+    const preflight = await runInvariantPreflight();
+    expect(preflight).toEqual({
+      exitCode: 0,
+      report: expect.objectContaining({
+        selfScopeViolationCount: 0,
+        deletedRoleViolationCount: 0,
+        systemManagedRoleViolationCount: 0,
+        ineligiblePermissionViolationCount: 0,
+        affectedRoleIds: [],
+        affectedBindingIds: [],
+        affectedPermissionCodes: [],
+      }),
+    });
   });
 
   it('脏权限集可通过删除不合格 Permission 修复，但 no-op 与 preview 都必须暴露漂移且零副作用', async () => {

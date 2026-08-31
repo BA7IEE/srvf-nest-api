@@ -16,7 +16,7 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:dfaf7cdc6e4f5a7102b6b0640d7c8d30ab6c8b06f2afb7f4ae1f003556bb57c3 |
+| inputDigest | sha256:913651be410182ef47f4b5b5471a1e1c5e335ab14e87e445b7957b4ebd24d377 |
 | endpoint count | 570 |
 | legacy [auth] count | 174 |
 | source of truth | normalized controller declarations |
@@ -111,7 +111,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:dfaf7cdc6e4f5a7102b6b0640d7c8d30ab6c8b06f2afb7f4ae1f003556bb57c3",
+  "inputDigest": "sha256:913651be410182ef47f4b5b5471a1e1c5e335ab14e87e445b7957b4ebd24d377",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -10684,7 +10684,7 @@
 | DELETE | /api/system/v1/dict-items/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.delete.item; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:277; src/modules/dictionaries/dictionaries.controller.ts:296 |
 | DELETE | /api/system/v1/dict-types/:id | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.delete.type; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:133; src/modules/dictionaries/dictionaries.controller.ts:152 |
 | DELETE | /api/system/v1/permissions/:id | Ops - Permissions | rbac | RBAC; admission=-; codes=rbac.permission.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/permissions.controller.ts:147; src/modules/permissions/permissions.controller.ts:166 |
-| DELETE | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:156; src/modules/permissions/rbac-roles.controller.ts:175 |
+| DELETE | /api/system/v1/roles/:id | Ops - Roles | rbac | RBAC; admission=-; codes=rbac.role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/rbac-roles.controller.ts:156; src/modules/permissions/rbac-roles.controller.ts:176 |
 | DELETE | /api/system/v1/users/:userId/roles/:roleId | Ops - User Roles | rbac | RBAC; admission=-; codes=rbac.user-role.delete; require=all; scopes=-; engine=rbac-global | code | src/modules/permissions/user-roles.controller.ts:100; src/modules/permissions/user-roles.controller.ts:124 |
 | GET | /api/admin/v1/activities | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:81; src/modules/activities/activities.controller.ts:93 |
 | GET | /api/admin/v1/activities/:activityId/attendance-sheet-draft | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:49; src/modules/attendances/controllers/admin-activity-check-ins.controller.ts:65 |

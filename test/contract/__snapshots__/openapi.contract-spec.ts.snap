@@ -141329,9 +141329,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "30104: 系统内置角色不允许删除",
+                    "description": "30104: 系统内置角色不允许删除; 30113: 该角色仍存在未撤销的服务主体绑定",
                     "enum": [
                       30104,
+                      30113,
                     ],
                     "example": 30104,
                     "type": "integer",
@@ -141355,7 +141356,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "系统内置角色不允许删除(code=30104)",
+          "description": "系统内置角色不允许删除(code=30104) / 该角色仍存在未撤销的服务主体绑定(code=30113)",
         },
       },
       "security": [
@@ -141363,7 +141364,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003;系统内置角色禁删返 30104,含 SUPER_ADMIN) [rbac: rbac.role.delete]",
+      "summary": "软删角色(不联动撤销绑定;存在未撤销服务主体绑定返 30113,须先显式撤销;不存在或已软删返 30003;系统内置角色禁删返 30104,含 SUPER_ADMIN) [rbac: rbac.role.delete]",
       "tags": [
         "Ops - Roles",
       ],

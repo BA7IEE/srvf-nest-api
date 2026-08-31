@@ -157,7 +157,7 @@ export class RbacRolesController {
   @RequiresPermission('rbac.role.delete')
   @ApiOperation({
     summary:
-      '软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003;系统内置角色禁删返 30104,含 SUPER_ADMIN) [rbac: rbac.role.delete]',
+      '软删角色(不联动撤销绑定;存在未撤销服务主体绑定返 30113,须先显式撤销;不存在或已软删返 30003;系统内置角色禁删返 30104,含 SUPER_ADMIN) [rbac: rbac.role.delete]',
   })
   @ApiWrappedOkResponse(RbacRoleResponseDto)
   @ApiBizErrorResponse(
@@ -166,6 +166,7 @@ export class RbacRolesController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ROLE_NOT_FOUND,
     BizCode.PROTECTED_ROLE_DELETE_FORBIDDEN,
+    BizCode.ROLE_HAS_SERVICE_PRINCIPAL_BINDINGS,
   )
   delete(
     @CurrentUser() user: CurrentUserPayload,

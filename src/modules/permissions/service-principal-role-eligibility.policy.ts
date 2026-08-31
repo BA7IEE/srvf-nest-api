@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { PrincipalType, Prisma } from '@prisma/client';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -16,6 +16,29 @@ type PrismaTx = Prisma.TransactionClient;
  */
 @Injectable()
 export class ServicePrincipalRoleEligibilityPolicy {
+  /**
+   * Role 删除前的反向引用完整性门。
+   *
+   * 所有未软删的 SERVICE_PRINCIPAL Binding 都是配置事实，包括 SUSPENDED、未来生效和
+   * 已过期但尚未撤销的记录。调用方必须先取得同一 Role 生命周期锁，避免 Binding 创建与
+   * Role 删除在两个快照上交错提交。
+   */
+  async assertRoleHasNoUndeletedServicePrincipalBindingsOrThrow(
+    tx: PrismaTx,
+    roleId: string,
+  ): Promise<void> {
+    const count = await tx.roleBinding.count({
+      where: {
+        roleId,
+        principalType: PrincipalType.SERVICE_PRINCIPAL,
+        deletedAt: null,
+      },
+    });
+    if (count > 0) {
+      throw new BizException(BizCode.ROLE_HAS_SERVICE_PRINCIPAL_BINDINGS);
+    }
+  }
+
   /** 建立或重新生效的 SP Binding 必须满足的完整资格门。 */
   async assertBindingEligible(
     tx: PrismaTx,

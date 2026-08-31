@@ -11,8 +11,10 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { writeConfigAudit } from './config-audit.util';
 import { permissionSelect } from './permissions.select';
 import { isProtectedRoleCode } from './protected-role-codes';
+import { lockRbacRoleLifecycle } from './rbac-role-lifecycle-lock';
 import { withRoleClassification } from './role-classification';
 import { RbacService } from './rbac.service';
+import { ServicePrincipalRoleEligibilityPolicy } from './service-principal-role-eligibility.policy';
 import {
   CreateRbacRoleDto,
   ListRbacRolesQueryDto,
@@ -40,6 +42,7 @@ export class RbacRolesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
+    private readonly servicePrincipalRoleEligibility: ServicePrincipalRoleEligibilityPolicy,
   ) {}
 
   // ============ helpers ============
@@ -298,19 +301,26 @@ export class RbacRolesService {
     meta: AuditMeta,
   ): Promise<RbacRoleResponseDto> {
     await this.assertCanOrThrow(user, 'rbac.role.delete');
-    // 1. 先确认活跃(不存在 + 已软删都返 30003)
-    const existing = await this.findActiveByIdOrThrow(id);
-    // P1-32 PR 3a:改走与 update 共用的同一道闸(行为不变,仍是 30104);
-    // 判定从行内 `.has()` 收进 isProtectedRoleCode,让「过没过闸」对机器判据可见。
-    this.assertRoleNotProtectedOrThrow(existing.code, BizCode.PROTECTED_ROLE_DELETE_FORBIDDEN);
+    // C2.1:Role 删除与 Service Principal Binding 建立/恢复共用同一条 Role 行锁。
+    // 锁后重新读取活跃 Role，避免锁等待期间仍沿用事务外快照。
+    return this.prisma.$transaction(async (tx) => {
+      await lockRbacRoleLifecycle(tx, id);
+      const existing = await tx.rbacRole.findFirst({
+        where: { id, deletedAt: null },
+        select: rbacRoleSelect,
+      });
+      if (!existing) throw new BizException(BizCode.ROLE_NOT_FOUND);
 
-    // 2. 软删 + audit(单事务;D4 v1.0;
-    //    沿 docs/reference/soft-delete-transactions.md §10:update deletedAt = new Date();
-    //    user_roles / role_permissions 不联动,沿 D7 §6.3 "最后一个运营管理员保护" 决策)。
-    //    **不实装 deletedByUserId**(沿用户拍板方案 A;schema + D7 v1.1 均无此字段);删除责任由
-    //    audit_logs 的 rbac-role.delete 事件 + actorUserId 记录(第三轮 review §F&A-2 补齐;
-    //    此前该留痕不存在——旧注释假称已有,系僵尸注释,现落地为真)。
-    const result = await this.prisma.$transaction(async (tx) => {
+      // P1-32 PR 3a:系统内置角色仍走既有保护闸，语义保持 30104 不变。
+      this.assertRoleNotProtectedOrThrow(existing.code, BizCode.PROTECTED_ROLE_DELETE_FORBIDDEN);
+
+      // 任何未软删的机器主体 Binding 都必须显式撤销，不做隐式批量撤权。
+      await this.servicePrincipalRoleEligibility.assertRoleHasNoUndeletedServicePrincipalBindingsOrThrow(
+        tx,
+        id,
+      );
+
+      // 拒绝路径在此之前退出，Role / Binding / Audit 零副作用。
       await tx.rbacRole.update({
         where: { id },
         data: { deletedAt: new Date() },
@@ -325,6 +335,5 @@ export class RbacRolesService {
       });
       return withRoleClassification(existing);
     });
-    return result;
   }
 }
