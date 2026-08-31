@@ -2,6 +2,12 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## v0.71.0 - 2026-08-31
+
+- 收口 Integration Client Credentials 的失败路径与日志脱敏：凭据无效统一经同一 hash、关联查询和 `37010` 出口处理，并补齐六类敏感字段的嵌套日志遮蔽。
+
+- 修复 Integration 授权：角色软删、组织授权根组织失效后，后续请求立即拒绝。
+
 ## v0.70.0 - 2026-08-30
 
 ---
