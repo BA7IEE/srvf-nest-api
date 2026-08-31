@@ -14,7 +14,7 @@ import {
 import { LoginOnly } from '../../common/decorators/route-authz.decorator';
 import { ServiceTokenThrottle } from '../../common/decorators/service-token-throttle.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
-import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { auditMetaFromRequest } from '../audit-logs/audit-meta-from-request';
 import { DelegatedTokenRequestDto, IntegrationTokenResponseDto } from './integration-auth.dto';
 import { DelegatedTokenService } from './delegated-token.service';
 
@@ -48,17 +48,9 @@ export class DelegatedTokenController {
       principal.credentialId,
       body.delegationGrantId,
       {
-        auditMeta: auditMetaOf(req),
+        auditMeta: auditMetaFromRequest(req),
         onIssued: (actor) => setIntegrationLogPrincipal(req, actor),
       },
     );
   }
-}
-
-function auditMetaOf(req: Request): AuditMeta {
-  return {
-    requestId: typeof req.id === 'string' ? req.id : '',
-    ip: req.ip ?? null,
-    ua: req.headers['user-agent'] ?? null,
-  };
 }

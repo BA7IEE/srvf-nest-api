@@ -14,7 +14,7 @@ import { LoginOnly } from '../../common/decorators/route-authz.decorator';
 import { ServiceTokenThrottle } from '../../common/decorators/service-token-throttle.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { setIntegrationLogPrincipal } from '../../bootstrap/request-id';
-import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { auditMetaFromRequest } from '../audit-logs/audit-meta-from-request';
 import { ServiceTokenService } from './service-token.service';
 
 /**
@@ -50,16 +50,8 @@ export class ServiceTokenController {
     expiresIn: number;
   }> {
     return this.serviceToken.issueTokenForAuthenticatedClient(client, {
-      auditMeta: auditMetaOf(req),
+      auditMeta: auditMetaFromRequest(req),
       onIssued: (actor) => setIntegrationLogPrincipal(req, actor),
     });
   }
-}
-
-function auditMetaOf(req: Request): AuditMeta {
-  return {
-    requestId: typeof req.id === 'string' ? req.id : '',
-    ip: req.ip ?? null,
-    ua: req.headers['user-agent'] ?? null,
-  };
 }

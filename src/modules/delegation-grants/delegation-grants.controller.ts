@@ -25,7 +25,7 @@ import {
 import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
-import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { auditMetaFromRequest } from '../audit-logs/audit-meta-from-request';
 import {
   CreateDelegationGrantDto,
   DelegationGrantResponseDto,
@@ -33,14 +33,6 @@ import {
   RevokeDelegationGrantDto,
 } from './delegation-grants.dto';
 import { DelegationGrantsService } from './delegation-grants.service';
-
-function auditMetaOf(req: Request): AuditMeta {
-  return {
-    requestId: typeof req.id === 'string' ? req.id : '',
-    ip: req.ip ?? null,
-    ua: req.headers['user-agent'] ?? null,
-  };
-}
 
 /** Integration Foundation v1 PR5(规格书 §36):DelegationGrant 控制面 4 路由。 */
 @ApiTags('system/delegation-grants')
@@ -68,7 +60,7 @@ export class DelegationGrantsController {
     @CurrentUser() currentUser: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<DelegationGrantResponseDto> {
-    return this.delegationGrants.create(currentUser, dto, auditMetaOf(req));
+    return this.delegationGrants.create(currentUser, dto, auditMetaFromRequest(req));
   }
 
   @Get()
@@ -115,6 +107,6 @@ export class DelegationGrantsController {
     @CurrentUser() currentUser: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<DelegationGrantResponseDto> {
-    return this.delegationGrants.revoke(currentUser, params.id, dto, auditMetaOf(req));
+    return this.delegationGrants.revoke(currentUser, params.id, dto, auditMetaFromRequest(req));
   }
 }
