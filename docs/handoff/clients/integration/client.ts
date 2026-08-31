@@ -1,8 +1,8 @@
 // 由 scripts/generate-fe-client.ts 生成,请勿手改。
 // surface: Integration 外部系统面
-// contractVersion: 0.71.0
+// contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:dd0ff14ae72f725f554f4eb273d8bf233b09e3540006050ca33c4f952891d97e
+// inputDigest: sha256:157f07a0b67e9c51ed6d5fccfffae45bde69258c70fb742bad475a7476d22cb7
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理

@@ -2,6 +2,12 @@
 
 本仓库版本号在 `package.json#version` 与 Swagger `setVersion(...)` 同步维护;release 收口时 git tag 与 GitHub Release 由 AI 执行(gh),维护者亦可手动(沿 [`docs/process.md §5.1`](docs/process.md))。
 
+## v0.72.0 - 2026-08-31
+
+- 修复 Integration 控制面审计来源：统一使用全局规范化后的 request-id 和客户端 IP，拒绝控制器重新采纳原始代理头。
+
+- 收口 Service Principal 角色资格不变量：角色权限整集替换与绑定创建/恢复共享 Role 锁，拒绝不合资格权限进入已绑定角色，并提供存量只读核验。
+
 ## v0.71.0 - 2026-08-31
 
 - 收口 Integration Client Credentials 的失败路径与日志脱敏：凭据无效统一经同一 hash、关联查询和 `37010` 出口处理，并补齐六类敏感字段的嵌套日志遮蔽。
