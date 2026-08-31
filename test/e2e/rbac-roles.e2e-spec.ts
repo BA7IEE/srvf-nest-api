@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { BindingScopeType, BindingStatus, PrincipalType, Role } from '@prisma/client';
 import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -40,13 +40,15 @@ describe('rbac-roles 模块', () => {
   let userAuth: string;
   let opsAdminRoleId: string;
   let adminUserId: string;
+  let superAdminUserId: string;
 
   beforeAll(async () => {
     app = await createTestApp();
     await resetDb(app);
     prisma = app.get(PrismaService);
 
-    await createTestUser(app, { username: 'role-su', role: Role.SUPER_ADMIN });
+    const superAdmin = await createTestUser(app, { username: 'role-su', role: Role.SUPER_ADMIN });
+    superAdminUserId = superAdmin.id;
     const adm = await createTestUser(app, { username: 'role-adm', role: Role.ADMIN });
     adminUserId = adm.id;
     await createTestUser(app, { username: 'role-user', role: Role.USER });
@@ -511,6 +513,124 @@ describe('rbac-roles 模块', () => {
         .delete(`/api/system/v1/roles/${created.id}`)
         .set('Authorization', superAdminAuth);
       expectBizError(delAgain, BizCode.ROLE_NOT_FOUND);
+    });
+
+    it.each([
+      {
+        label: 'ACTIVE',
+        status: BindingStatus.ACTIVE,
+        startedAt: new Date('2026-01-01T00:00:00.000Z'),
+        endedAt: null,
+      },
+      {
+        label: 'SUSPENDED',
+        status: BindingStatus.SUSPENDED,
+        startedAt: new Date('2026-01-01T00:00:00.000Z'),
+        endedAt: null,
+      },
+      {
+        label: '未来生效',
+        status: BindingStatus.ACTIVE,
+        startedAt: new Date('2099-01-01T00:00:00.000Z'),
+        endedAt: null,
+      },
+      {
+        label: '已过期但未撤销',
+        status: BindingStatus.ACTIVE,
+        startedAt: new Date('2000-01-01T00:00:00.000Z'),
+        endedAt: new Date('2001-01-01T00:00:00.000Z'),
+      },
+    ])(
+      '存在 $label SERVICE_PRINCIPAL Binding → 30113 且 Role / Binding / Audit 零副作用',
+      async (bindingInput) => {
+        const suffix =
+          bindingInput.label === '未来生效'
+            ? 'future'
+            : bindingInput.label === '已过期但未撤销'
+              ? 'expired'
+              : bindingInput.label.toLowerCase();
+        const role = await prisma.rbacRole.create({
+          data: {
+            code: `sp-bound-delete-${suffix}`,
+            displayName: `SP 绑定删除保护 ${bindingInput.label}`,
+          },
+          select: { id: true },
+        });
+        const servicePrincipal = await prisma.servicePrincipal.create({
+          data: {
+            clientId: `srvf_sp_role_delete_${suffix}`,
+            name: `Role 删除保护 ${bindingInput.label}`,
+            createdByUserId: superAdminUserId,
+          },
+          select: { id: true },
+        });
+        const binding = await prisma.roleBinding.create({
+          data: {
+            principalType: PrincipalType.SERVICE_PRINCIPAL,
+            principalId: servicePrincipal.id,
+            roleId: role.id,
+            scopeType: BindingScopeType.GLOBAL,
+            status: bindingInput.status,
+            startedAt: bindingInput.startedAt,
+            endedAt: bindingInput.endedAt,
+            createdByUserId: superAdminUserId,
+          },
+          select: { id: true },
+        });
+        const auditBefore = await prisma.auditLog.count({
+          where: { event: 'rbac-role.delete', resourceId: role.id },
+        });
+
+        const res = await request(httpServer(app))
+          .delete(`/api/system/v1/roles/${role.id}`)
+          .set('Authorization', superAdminAuth);
+
+        expectBizError(res, BizCode.ROLE_HAS_SERVICE_PRINCIPAL_BINDINGS);
+        await expect(
+          prisma.rbacRole.findUnique({ where: { id: role.id }, select: { deletedAt: true } }),
+        ).resolves.toEqual({ deletedAt: null });
+        await expect(
+          prisma.roleBinding.findUnique({
+            where: { id: binding.id },
+            select: { status: true, startedAt: true, endedAt: true, deletedAt: true },
+          }),
+        ).resolves.toEqual({
+          status: bindingInput.status,
+          startedAt: bindingInput.startedAt,
+          endedAt: bindingInput.endedAt,
+          deletedAt: null,
+        });
+        await expect(
+          prisma.auditLog.count({ where: { event: 'rbac-role.delete', resourceId: role.id } }),
+        ).resolves.toBe(auditBefore);
+      },
+    );
+
+    it('仅有 USER Binding 的自定义角色仍可删除', async () => {
+      const role = await prisma.rbacRole.create({
+        data: { code: 'human-bound-delete', displayName: 'Human Binding 删除不变' },
+        select: { id: true },
+      });
+      await prisma.roleBinding.create({
+        data: {
+          principalType: PrincipalType.USER,
+          principalId: superAdminUserId,
+          roleId: role.id,
+          scopeType: BindingScopeType.GLOBAL,
+          status: BindingStatus.ACTIVE,
+          startedAt: new Date('2026-01-01T00:00:00.000Z'),
+          createdByUserId: superAdminUserId,
+        },
+      });
+
+      const res = await request(httpServer(app))
+        .delete(`/api/system/v1/roles/${role.id}`)
+        .set('Authorization', superAdminAuth);
+
+      expect(res.status).toBe(200);
+      await expect(
+        prisma.rbacRole.findUnique({ where: { id: role.id }, select: { deletedAt: true } }),
+      ).resolves.toEqual({ deletedAt: expect.any(Date) });
     });
 
     it('DELETE 不存在 id → 30003', async () => {

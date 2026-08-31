@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:157f07a0b67e9c51ed6d5fccfffae45bde69258c70fb742bad475a7476d22cb7
+// inputDigest: sha256:a6b7c352f3d5aca5ce5795df6f18c275e919b62920c42d1e761684d1f5b839ac
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理

@@ -1,0 +1,1 @@
+- 收口 Service Principal Role 删除生命周期：删除仍被未撤销服务主体 Binding 引用的自定义角色会返回 `30113`/409；删除与 Binding 创建或恢复共享 Role 锁，且不隐式撤销绑定。

@@ -3309,6 +3309,13 @@ export const BizCode = {
     message: '该变更涉及高风险权限,请先完成二次验证',
     httpStatus: HttpStatus.FORBIDDEN,
   },
+  // C2.1:Role 的 Service Principal Binding 是显式配置事实。删除角色不隐式批量撤权，
+  // 管理员必须先逐条撤销未软删 Binding，才能软删自定义角色。
+  ROLE_HAS_SERVICE_PRINCIPAL_BINDINGS: {
+    code: 30113,
+    message: '该角色仍存在未撤销的服务主体绑定',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // V2.x C-6 RBAC 实施 PR #6(2026-05-14):RbacService.can() 配套统一拒绝码。
   //

@@ -10,6 +10,7 @@ import { DelegationGrantsService } from '../../src/modules/delegation-grants/del
 import { DelegatedTokenService } from '../../src/modules/integration-auth/delegated-token.service';
 import { isControlPlanePermissionCode } from '../../src/modules/permissions/role-delegation.policy';
 import { RbacRolesService } from '../../src/modules/permissions/rbac-roles.service';
+import { RoleBindingsService } from '../../src/modules/role-bindings/role-bindings.service';
 import { ServicePrincipalsService } from '../../src/modules/service-principals/service-principals.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { TEST_PASSWORD_HASH } from '../fixtures/users.fixture';
@@ -96,6 +97,7 @@ describe('Integration Foundation v1 PR7 —— 活动类型只读业务接入', 
   let delegatedTokens: DelegatedTokenService;
   let delegationGrants: DelegationGrantsService;
   let rbacRoles: RbacRolesService;
+  let roleBindings: RoleBindingsService;
 
   let admin: CurrentUserPayload;
   let humanAuth: string;
@@ -122,6 +124,7 @@ describe('Integration Foundation v1 PR7 —— 活动类型只读业务接入', 
     delegatedTokens = app.get(DelegatedTokenService);
     delegationGrants = app.get(DelegationGrantsService);
     rbacRoles = app.get(RbacRolesService);
+    roleBindings = app.get(RoleBindingsService);
 
     const adminRow = await prisma.user.create({
       data: {
@@ -346,12 +349,23 @@ describe('Integration Foundation v1 PR7 —— 活动类型只读业务接入', 
     expect(humanResponse.body.code).toBe(BizCode.INTEGRATION_TOKEN_INVALID.code);
   });
 
-  it('控制面软删角色后，同一 Service Token 的下一次业务授权请求拒绝', async () => {
+  it('显式撤销全部服务主体 Binding 再软删角色后，同一 Service Token 的下一次业务授权请求拒绝', async () => {
     const before = await request(httpServer(app))
       .get('/api/integration/v1/reference/activity-types')
       .set('Authorization', `Bearer ${serviceToken}`);
     expect(before.status).toBe(200);
 
+    const bindings = await prisma.roleBinding.findMany({
+      where: {
+        principalType: PrincipalType.SERVICE_PRINCIPAL,
+        roleId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    for (const binding of bindings) {
+      await roleBindings.remove(admin, binding.id, auditMeta);
+    }
     await rbacRoles.softDelete(admin, roleId, auditMeta);
 
     const after = await request(httpServer(app))

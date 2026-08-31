@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:157f07a0b67e9c51ed6d5fccfffae45bde69258c70fb742bad475a7476d22cb7
+// inputDigest: sha256:a6b7c352f3d5aca5ce5795df6f18c275e919b62920c42d1e761684d1f5b839ac
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -347,7 +347,7 @@ export function createSystemClient(fetcher: Fetcher) {
     RbacRolesControllerUpdate(id: string, body: UpdateRbacRoleDto): Promise<ApiEnvelope<RbacRoleResponseDto>> {
       return fetcher<RbacRoleResponseDto>({ method: "PATCH", path: `/api/system/v1/roles/${id}`, body });
     },
-    /** 软删角色(D4 v1.0;update deletedAt;user_roles / role_permissions 不联动;不存在或已软删返 30003;系统内置角色禁删返 30104,含 SUPER_ADMIN) [rbac: rbac.role.delete] */
+    /** 软删角色(不联动撤销绑定;存在未撤销服务主体绑定返 30113,须先显式撤销;不存在或已软删返 30003;系统内置角色禁删返 30104,含 SUPER_ADMIN) [rbac: rbac.role.delete] */
     RbacRolesControllerDelete(id: string): Promise<ApiEnvelope<RbacRoleResponseDto>> {
       return fetcher<RbacRoleResponseDto>({ method: "DELETE", path: `/api/system/v1/roles/${id}` });
     },
