@@ -349,6 +349,54 @@ describe('Integration Foundation v1 PR7 —— 活动类型只读业务接入', 
     expect(humanResponse.body.code).toBe(BizCode.INTEGRATION_TOKEN_INVALID.code);
   });
 
+  it('历史脏状态下，已签发 Service Token 的下一次业务请求必须 fail-closed 且零副作用', async () => {
+    const injectedDeletedAt = new Date('2026-08-31T12:34:56.000Z');
+    const before = await request(httpServer(app))
+      .get('/api/integration/v1/reference/activity-types')
+      .set('Authorization', `Bearer ${serviceToken}`);
+    expect(before.status).toBe(200);
+
+    const binding = await prisma.roleBinding.findFirstOrThrow({
+      where: {
+        principalType: PrincipalType.SERVICE_PRINCIPAL,
+        principalId: servicePrincipalId,
+        roleId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    const auditBefore = await prisma.auditLog.count();
+    try {
+      // 只构造历史脏状态；正常生产删除必须先显式撤销 Binding，再走 RbacRolesService。
+      await prisma.rbacRole.update({
+        where: { id: roleId },
+        data: { deletedAt: injectedDeletedAt },
+      });
+
+      const denied = await request(httpServer(app))
+        .get('/api/integration/v1/reference/activity-types')
+        .set('Authorization', `Bearer ${serviceToken}`);
+      expect(denied.status).toBe(BizCode.RBAC_FORBIDDEN.httpStatus);
+      expect(denied.body.code).toBe(BizCode.RBAC_FORBIDDEN.code);
+
+      const [observedRole, observedBinding, auditAfter] = await Promise.all([
+        prisma.rbacRole.findUnique({ where: { id: roleId }, select: { deletedAt: true } }),
+        prisma.roleBinding.findUnique({ where: { id: binding.id }, select: { deletedAt: true } }),
+        prisma.auditLog.count(),
+      ]);
+      expect(observedRole).toEqual({ deletedAt: injectedDeletedAt });
+      expect(observedBinding).toEqual({ deletedAt: null });
+      expect(auditAfter).toBe(auditBefore);
+    } finally {
+      await prisma.rbacRole.update({ where: { id: roleId }, data: { deletedAt: null } });
+    }
+
+    const restored = await request(httpServer(app))
+      .get('/api/integration/v1/reference/activity-types')
+      .set('Authorization', `Bearer ${serviceToken}`);
+    expect(restored.status).toBe(200);
+  });
+
   it('显式撤销全部服务主体 Binding 再软删角色后，同一 Service Token 的下一次业务授权请求拒绝', async () => {
     const before = await request(httpServer(app))
       .get('/api/integration/v1/reference/activity-types')

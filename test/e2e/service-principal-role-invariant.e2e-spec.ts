@@ -9,6 +9,7 @@ import type { CurrentUserPayload } from '../../src/common/decorators/current-use
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
+import { DirectPrincipalAuthzService } from '../../src/modules/integration-authz/direct-principal-authz.service';
 import { RoleBindingsService } from '../../src/modules/role-bindings/role-bindings.service';
 import { RolePermissionsService } from '../../src/modules/permissions/role-permissions.service';
 import { RbacRolesService } from '../../src/modules/permissions/rbac-roles.service';
@@ -69,6 +70,7 @@ describe('Service Principal Role 资格不变量(C2)', () => {
   let roleBindingsA: RoleBindingsService;
   let roleBindingsB: RoleBindingsService;
   let rbacRolesA: RbacRolesService;
+  let directPrincipalAuthzA: DirectPrincipalAuthzService;
   let actor: CurrentUserPayload;
   let sequence = 0;
 
@@ -84,6 +86,7 @@ describe('Service Principal Role 资格不变量(C2)', () => {
     roleBindingsA = appA.get(RoleBindingsService);
     roleBindingsB = appB.get(RoleBindingsService);
     rbacRolesA = appA.get(RbacRolesService);
+    directPrincipalAuthzA = appA.get(DirectPrincipalAuthzService);
 
     const user = await prismaA.user.create({
       data: { username: 'sp-role-invariant-admin', passwordHash: 'probe', role: Role.SUPER_ADMIN },
@@ -410,6 +413,87 @@ describe('Service Principal Role 资格不变量(C2)', () => {
         affectedBindingIds: [],
         affectedPermissionCodes: [],
       }),
+    });
+  });
+
+  it('历史脏状态：Role 已软删但 SP Binding 未撤销时，运行时拒绝且预检精准报 deletedRoleViolation', async () => {
+    const now = new Date('2026-08-31T12:00:00.000Z');
+    const injectedDeletedAt = new Date('2026-08-31T12:34:56.000Z');
+    const role = await createRole('historical-deleted-role');
+    const permission = await createPermission('historical-deleted-role-permission', true);
+    const servicePrincipal = await createServicePrincipal('historical-deleted-role');
+    await prismaA.rolePermission.create({ data: { roleId: role.id, permissionId: permission.id } });
+    const binding = await createDirectSpBinding({
+      roleId: role.id,
+      servicePrincipalId: servicePrincipal.id,
+      startedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    await expect(
+      directPrincipalAuthzA.explainDirect(
+        { principalType: PrincipalType.SERVICE_PRINCIPAL, principalId: servicePrincipal.id },
+        permission.code,
+        now,
+      ),
+    ).resolves.toMatchObject({
+      allowed: true,
+      reason: 'allowed',
+      matched: [{ bindingId: binding.id, roleId: role.id }],
+    });
+
+    const auditBefore = await prismaA.auditLog.count();
+    try {
+      // 只为模拟旧版本、人工 SQL 或历史迁移遗留的脏状态；生产路径必须走领域 Service。
+      await prismaA.rbacRole.update({
+        where: { id: role.id },
+        data: { deletedAt: injectedDeletedAt },
+      });
+
+      await expect(
+        directPrincipalAuthzA.explainDirect(
+          { principalType: PrincipalType.SERVICE_PRINCIPAL, principalId: servicePrincipal.id },
+          permission.code,
+          now,
+        ),
+      ).resolves.toEqual({ allowed: false, matched: [], reason: 'no-bindings' });
+
+      const preflight = await runInvariantPreflight();
+      expect(preflight.exitCode).toBe(1);
+      expect(preflight.report).toMatchObject({
+        selfScopeViolationCount: 0,
+        deletedRoleViolationCount: 1,
+        systemManagedRoleViolationCount: 0,
+        ineligiblePermissionViolationCount: 0,
+        affectedRoleIds: [role.id],
+        affectedBindingIds: [binding.id],
+        affectedPermissionCodes: [],
+      });
+      expect(preflight.report.undeletedSpBindingCount).toBeGreaterThan(0);
+
+      const [observedRole, observedBinding, auditAfter] = await Promise.all([
+        prismaA.rbacRole.findUnique({ where: { id: role.id }, select: { deletedAt: true } }),
+        prismaA.roleBinding.findUnique({ where: { id: binding.id }, select: { deletedAt: true } }),
+        prismaA.auditLog.count(),
+      ]);
+      expect(observedRole).toEqual({ deletedAt: injectedDeletedAt });
+      expect(observedBinding).toEqual({ deletedAt: null });
+      expect(auditAfter).toBe(auditBefore);
+    } finally {
+      await prismaA.rbacRole.update({ where: { id: role.id }, data: { deletedAt: null } });
+    }
+
+    await assertNoSpRoleInvariantViolation(role.id);
+    await expect(runInvariantPreflight()).resolves.toMatchObject({
+      exitCode: 0,
+      report: {
+        selfScopeViolationCount: 0,
+        deletedRoleViolationCount: 0,
+        systemManagedRoleViolationCount: 0,
+        ineligiblePermissionViolationCount: 0,
+        affectedRoleIds: [],
+        affectedBindingIds: [],
+        affectedPermissionCodes: [],
+      },
     });
   });
 
