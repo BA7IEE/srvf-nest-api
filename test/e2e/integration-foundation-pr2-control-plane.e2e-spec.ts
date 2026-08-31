@@ -122,15 +122,13 @@ describe('Integration Foundation v1 PR2 —— ServicePrincipal 控制面(8 端�
   it('④ RoleBinding 资格门:SELF 拒 / ineligible 权限拒 / system-managed 拒 / 合法路径过', async () => {
     // 直接调 policy(走 RoleBindingsService.create 需 ops-admin 真实绑定 + audit 结构,
     // PR4 全链时补 HTTP 级;此处 policy 层全覆盖四条正反)。
-    const { assertServicePrincipalRoleEligibilityOrThrow } =
-      await import('../../src/modules/role-bindings/service-principal-role-eligibility.policy');
-    const tx = prisma as unknown as Parameters<
-      typeof assertServicePrincipalRoleEligibilityOrThrow
-    >[0];
+    const { ServicePrincipalRoleEligibilityPolicy } =
+      await import('../../src/modules/permissions/service-principal-role-eligibility.policy');
+    const policy = app.get(ServicePrincipalRoleEligibilityPolicy);
 
     // SELF 拒(37021)。
     await expect(
-      assertServicePrincipalRoleEligibilityOrThrow(tx as never, {
+      policy.assertBindingEligible(prisma as never, {
         roleId: 'any',
         scopeType: 'SELF',
       }),
@@ -152,7 +150,7 @@ describe('Integration Foundation v1 PR2 —— ServicePrincipal 控制面(8 端�
       data: { roleId: role.id, permissionId: perm.id },
     });
     await expect(
-      assertServicePrincipalRoleEligibilityOrThrow(tx as never, {
+      policy.assertBindingEligible(prisma as never, {
         roleId: role.id,
         scopeType: 'GLOBAL',
       }),
@@ -164,7 +162,7 @@ describe('Integration Foundation v1 PR2 —— ServicePrincipal 控制面(8 端�
       data: { servicePrincipalAllowed: true },
     });
     await expect(
-      assertServicePrincipalRoleEligibilityOrThrow(tx as never, {
+      policy.assertBindingEligible(prisma as never, {
         roleId: role.id,
         scopeType: 'GLOBAL',
       }),
@@ -182,7 +180,7 @@ describe('Integration Foundation v1 PR2 —— ServicePrincipal 控制面(8 端�
     });
     if (managed !== null) {
       await expect(
-        assertServicePrincipalRoleEligibilityOrThrow(tx as never, {
+        policy.assertBindingEligible(prisma as never, {
           roleId: managed.id,
           scopeType: 'GLOBAL',
         }),
