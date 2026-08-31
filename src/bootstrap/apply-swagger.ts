@@ -22,7 +22,7 @@ export function applySwagger(app: INestApplication, appCfg: AppConfig): void {
     .setDescription(
       'Shenzhen Rescue Volunteers Federation Digital Platform — 组织数字化业务底座后端 API(NestJS + Prisma + PostgreSQL)',
     )
-    .setVersion('0.70.0')
+    .setVersion('0.71.0')
     .addBearerAuth()
     .addBasicAuth(
       { type: 'http', scheme: 'basic', description: 'Integration Client Credentials' },
