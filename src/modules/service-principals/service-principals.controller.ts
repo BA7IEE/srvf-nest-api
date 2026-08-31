@@ -15,7 +15,7 @@ import {
 import { RequiresPermission } from '../../common/decorators/route-authz.decorator';
 import { IdParamDto } from '../../common/dto/id-param.dto';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
-import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { auditMetaFromRequest } from '../audit-logs/audit-meta-from-request';
 import {
   CreateServicePrincipalDto,
   ListServicePrincipalsQueryDto,
@@ -30,13 +30,6 @@ import { ServicePrincipalsService } from './service-principals.service';
 // Integration Foundation v1 PR2(规格书 §35):ServicePrincipal 控制面 8 端点。
 // 全部 system/v1;权限 6 码全绑 ops-admin;ServicePrincipal 自身永远不能持有这些码(§15.3)。
 // Secret 只在 POST credentials 的 201 响应中出现一次 —— 其余端点零 secret 零 hash。
-function auditMetaOf(req: Request): AuditMeta {
-  return {
-    requestId: String(req.headers['x-request-id'] ?? ''),
-    ip: (req.headers['x-forwarded-for'] as string | undefined) ?? req.ip ?? null,
-    ua: req.headers['user-agent'] ?? null,
-  };
-}
 
 @ApiTags('system/service-principals')
 @ApiBearerAuth()
@@ -56,7 +49,7 @@ export class ServicePrincipalsController {
     @CurrentUser() currentUser: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<ServicePrincipalResponseDto> {
-    return this.servicePrincipals.create(dto, currentUser, auditMetaOf(req));
+    return this.servicePrincipals.create(dto, currentUser, auditMetaFromRequest(req));
   }
 
   @Get()
@@ -91,7 +84,7 @@ export class ServicePrincipalsController {
     @CurrentUser() currentUser: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<ServicePrincipalResponseDto> {
-    return this.servicePrincipals.update(params.id, dto, currentUser, auditMetaOf(req));
+    return this.servicePrincipals.update(params.id, dto, currentUser, auditMetaFromRequest(req));
   }
 
   @Patch(':id/status')
@@ -112,7 +105,7 @@ export class ServicePrincipalsController {
       params.id,
       dto.status,
       currentUser,
-      auditMetaOf(req),
+      auditMetaFromRequest(req),
     );
   }
 
@@ -130,7 +123,11 @@ export class ServicePrincipalsController {
     @CurrentUser() currentUser: CurrentUserPayload,
     @Req() req: Request,
   ): Promise<ServicePrincipalCredentialCreatedDto> {
-    return this.servicePrincipals.createCredential(params.id, currentUser, auditMetaOf(req));
+    return this.servicePrincipals.createCredential(
+      params.id,
+      currentUser,
+      auditMetaFromRequest(req),
+    );
   }
 
   @Get(':id/credentials')
@@ -165,7 +162,7 @@ export class ServicePrincipalsController {
       params.id,
       params.credentialId,
       currentUser,
-      auditMetaOf(req),
+      auditMetaFromRequest(req),
     );
   }
 }

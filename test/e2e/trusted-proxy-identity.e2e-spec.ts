@@ -1,4 +1,5 @@
 import { Controller, Get, Req, type INestApplication } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { Test } from '@nestjs/testing';
 import { getStorageToken, type ThrottlerStorage } from '@nestjs/throttler';
 import { createHash } from 'node:crypto';
@@ -11,6 +12,7 @@ import { applyGlobalSetup, canonicalizeClientIp } from '../../src/bootstrap/appl
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import type { AppConfig } from '../../src/config/app.config';
 import { PrismaService } from '../../src/database/prisma.service';
+import { loginAs } from '../fixtures/auth.fixture';
 import { TEST_PASSWORD, createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { devStubOcrImage } from '../helpers/file-fixtures';
@@ -692,6 +694,82 @@ describe('trusted proxy identity — current business consumers (PostgreSQL)', (
     await expect(prisma.refreshToken.count()).resolves.toBe(0);
     await expect(prisma.smsVerificationCode.count()).resolves.toBe(0);
     await expect(prisma.recruitmentOcrDailyCounter.count()).resolves.toBe(0);
+  });
+
+  it('ServicePrincipal 控制面审计只采纳 canonical request-id 与 client IP', async () => {
+    const app = primaryApp();
+    const admin = await createTestUser(app, {
+      username: 'audit-provenance-super-admin',
+      role: Role.SUPER_ADMIN,
+    });
+    const authHeader = (await loginAs(app, admin.username)).authHeader;
+
+    async function auditContextFor(response: Response): Promise<{
+      requestId?: unknown;
+      ip?: unknown;
+      ua?: unknown;
+    }> {
+      expect(response.status).toBe(201);
+      const servicePrincipalId: unknown = response.body.data?.id;
+      expect(typeof servicePrincipalId).toBe('string');
+      if (typeof servicePrincipalId !== 'string') {
+        throw new Error('ServicePrincipal create response does not include id');
+      }
+      const audit = await prisma.auditLog.findFirstOrThrow({
+        where: {
+          resourceType: 'service-principal',
+          resourceId: servicePrincipalId,
+          event: 'service-principal.create',
+        },
+        select: { context: true },
+      });
+      return audit.context as { requestId?: unknown; ip?: unknown; ua?: unknown };
+    }
+
+    const forged = await request(httpServer(app))
+      .post('/api/system/v1/service-principals')
+      .set('Authorization', authHeader)
+      .set('x-forwarded-for', FORGED_CLIENT)
+      .set('User-Agent', 'audit-provenance-e2e')
+      .send({ name: 'Audit Provenance Forged XFF' });
+    const forgedAudit = await auditContextFor(forged);
+    expect(forgedAudit.ip).not.toBe(FORGED_CLIENT);
+    expect(forgedAudit.ua).toBe('audit-provenance-e2e');
+
+    const invalidRequestId = 'invalid request id "quoted"';
+    const invalid = await request(httpServer(app))
+      .post('/api/system/v1/service-principals')
+      .set('Authorization', authHeader)
+      .set('x-request-id', invalidRequestId)
+      .send({ name: 'Audit Provenance Invalid Request ID' });
+    const invalidAudit = await auditContextFor(invalid);
+    const generatedRequestId = invalid.headers['x-request-id'];
+    expect(typeof generatedRequestId).toBe('string');
+    if (typeof generatedRequestId !== 'string') {
+      throw new Error('response is missing x-request-id');
+    }
+    expect(generatedRequestId).not.toBe(invalidRequestId);
+    expect(invalidAudit.requestId).toBe(generatedRequestId);
+
+    const legalRequestId = 'audit-provenance-legal-trace-123';
+    const legal = await request(httpServer(app))
+      .post('/api/system/v1/service-principals')
+      .set('Authorization', authHeader)
+      .set('x-request-id', legalRequestId)
+      .send({ name: 'Audit Provenance Legal Request ID' });
+    const legalAudit = await auditContextFor(legal);
+    expect(legal.headers['x-request-id']).toBe(legalRequestId);
+    expect(legalAudit.requestId).toBe(legalRequestId);
+
+    await withProxy(app.getHttpServer() as Server, backendHost, 'preserve', async (proxy) => {
+      const proxied = await request(proxy)
+        .post('/api/system/v1/service-principals')
+        .set('Authorization', authHeader)
+        .set('x-forwarded-for', `::ffff:${CLIENT_A}`)
+        .send({ name: 'Audit Provenance Trusted Proxy' });
+      const proxiedAudit = await auditContextFor(proxied);
+      expect(proxiedAudit.ip).toBe(CLIENT_A);
+    });
   });
 
   it('login evidence, SMS code, and OCR counter all persist the resolved client IP', async () => {
