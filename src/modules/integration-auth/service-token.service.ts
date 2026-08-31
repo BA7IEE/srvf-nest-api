@@ -7,7 +7,6 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuthenticatedServiceClient } from '../../common/decorators/current-service-client.decorator';
 import type { IntegrationPrincipalContext } from '../../common/decorators/current-integration-principal.decorator';
 import { PrismaService } from '../../database/prisma.service';
-import { dummySecretHash } from '../../config/integration-auth.config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ServicePrincipalsService } from '../service-principals/service-principals.service';
@@ -23,8 +22,9 @@ import { IntegrationAuthGate } from './integration-auth.gate';
  * ## 失败归一(§12.4 —— 五场景同一码同一文案同一耗时档)
  *
  * clientId 不存在 / Secret 错 / SP SUSPENDED 或软删 / 凭证已撤销 / 已过期
- * ⇒ 统一 `37010 SERVICE_CREDENTIAL_INVALID`,不暴露失败原因;
- * clientId 不存在时用 dummySecretHash() 做同代价 SHA-256 比较(§12.1 常数时间)。
+ * ⇒ 统一 `37010 SERVICE_CREDENTIAL_INVALID`,不暴露失败原因。
+ * 每一类都先计算输入 Secret 的 SHA-256,再走同一条凭据关联查询;不以早返回暴露
+ * 我方可控的 hash / 查询形状差异。
  *
  * ## Claims(§13;禁入 §13 列出的全部字段 —— 权限/角色/组织范围/Secret/完整对象)
  */
@@ -207,34 +207,24 @@ export class ServiceTokenService {
     const invalid = (): never => {
       throw new BizException(BizCode.SERVICE_CREDENTIAL_INVALID);
     };
-    if (clientId === '' || clientSecret === '') invalid();
-
-    const sp = await this.prisma.servicePrincipal.findFirst({
-      where: { clientId, deletedAt: null },
-      select: { id: true, status: true },
-    });
-    if (sp === null) {
-      // §12.4:不存在也做同代价比较(dummy hash),防 timing。
-      ServicePrincipalsService.secretsMatch(clientSecret, dummySecretHash());
-      invalid();
-    }
-    const activeSp = sp as { id: string; status: string };
-    if (activeSp.status !== 'ACTIVE') invalid();
-
+    // PR-B:五类 37010 失败均无条件 hash,再经同一条 Credential → ServicePrincipal
+    // 关联查询收口。空 Basic 凭据同样落入这条路径,避免 parser 的空值形成可测早返回。
     const secretHash = ServicePrincipalsService.hashClientSecret(clientSecret);
+    const now = new Date();
     const credential = await this.prisma.servicePrincipalCredential.findFirst({
       where: {
-        servicePrincipalId: activeSp.id,
         secretHash,
         revokedAt: null,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        servicePrincipal: {
+          is: { clientId, deletedAt: null, status: 'ACTIVE' },
+        },
       },
-      select: { id: true },
+      select: { id: true, servicePrincipalId: true },
     });
-    if (credential === null) invalid();
-    const activeCredential = credential as { id: string };
+    if (credential === null) return invalid();
 
-    return { servicePrincipalId: activeSp.id, credentialId: activeCredential.id };
+    return { servicePrincipalId: credential.servicePrincipalId, credentialId: credential.id };
   }
 }
 

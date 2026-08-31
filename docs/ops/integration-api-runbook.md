@@ -100,6 +100,10 @@ Gate 开启是维护者的显式生产变更，不是部署脚本、AI 或外部
 on-behalf-of User ID 审计，但不得记录 Authorization、JWT 内容、Client Secret、Secret hash、完整
 响应快照或 Idempotency-Key。
 
+- 运行时日志对 `clientSecret`、`secretHash`、`rawSecret`、`serviceToken`、`delegatedToken` 与
+  `credentialSecret` 同时覆盖顶层、单层嵌套和当前 `req.body` 形状；自动 HTTP logger 仍不记录请求 body。
+  这层遮蔽是已知形状的纵深防御，不得据此把任意新嵌套对象当作可安全记录。
+
 | 场景 | 首要动作 |
 | --- | --- |
 | 怀疑 Secret 泄露或调用方失控 | 立即关闭 `INTEGRATION_API_ENABLED`；再撤销受影响 Credential，必要时 SUSPEND 主体与 REVOKE Grant。 |

@@ -1,0 +1,1 @@
+- 收口 Integration Client Credentials 的失败路径与日志脱敏：凭据无效统一经同一 hash、关联查询和 `37010` 出口处理，并补齐六类敏感字段的嵌套日志遮蔽。

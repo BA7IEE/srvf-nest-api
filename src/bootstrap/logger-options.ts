@@ -49,8 +49,9 @@ const LOG_REDACT_PATHS: readonly string[] = [
   'req.socket.remotePort',
   'req.connection.remoteAddress',
   'req.connection.remotePort',
-  // Integration Foundation v1 PR3(规格书 §12.6/§26 逐条枚举;pino 只支持精确路径,
-  // 故六个实际字段名全列,不做 *.secretHash 一类通配 —— 那会误伤非敏感同名)。
+  // Integration Foundation v1 PR-B(冻结稿 §12.6):六个字段都保留顶层路径，并补
+  // 一层嵌套通配和当前 HTTP req.body 的明确路径。pino 的 `*.<name>` 不是无限深度，
+  // 所以不能把它误写成对所有嵌套形状的保证。
   'clientSecret',
   'secretHash',
   'rawSecret',
@@ -65,6 +66,12 @@ const LOG_REDACT_PATHS: readonly string[] = [
   'req.body.accessToken',
   'req.body.refreshToken',
   'req.body.stepUpToken',
+  'req.body.clientSecret',
+  'req.body.secretHash',
+  'req.body.rawSecret',
+  'req.body.serviceToken',
+  'req.body.delegatedToken',
+  'req.body.credentialSecret',
   // v1 通配:任意嵌套层级出现的同名字段(响应日志 / 自定义日志)
   '*.password',
   '*.oldPassword',
@@ -75,6 +82,12 @@ const LOG_REDACT_PATHS: readonly string[] = [
   '*.refreshToken',
   '*.stepUpToken',
   '*.secret',
+  '*.clientSecret',
+  '*.secretHash',
+  '*.rawSecret',
+  '*.serviceToken',
+  '*.delegatedToken',
+  '*.credentialSecret',
 
   // V2 baseline §8.2 — 个人身份证类
   '*.idCard',
