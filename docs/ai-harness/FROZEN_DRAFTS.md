@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔待拍板` 合同 24 / 24；T0-B、Release 1 均未开始 | 维护者评审 T0-A |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔待拍板` 合同 24 / 24；T0-B 已完成本分支验证，Release 1 仍待独立评审 | 维护者独立评审 T0-B |
 
 ### 1.1 欠代码的五项
 
@@ -95,8 +95,9 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 **⑤ Activity OS T0-A —— 合同已冻结，不可跳过 T0-B 直接施工**
 本项只完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
-**T0-B 尚未开始**，其中包括 AI README 的主动文档纠偏、机器边界和 No-AI 测试入口设计；
-在维护者评审 T0-A、再独立完成 T0-B 前，Release 1 / A1 没有开工授权。
+**T0-B 已完成本分支验证**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
+红区裁判与已接线结构判据、No-AI Journey 入口，以及 `ARCHITECTURE.md` 过时预设的修正均已
+完成验证；在 T0-B 独立评审通过前，Release 1 / A1 没有开工授权。
 本项不改变现有 schema、migration、AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
@@ -131,7 +132,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 | 治理 Phase 4:状态列 governed / 登记总数 | **8 / 59** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
-| 治理 Phase 1J:跨域金路径 journey 数 | **5** | `test/journeys/` |
+| 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
 | 三条"代码已落、闸未开"的开关在配置里的数量 | **3 / 3** | `src/config/app.config.ts` |
 
 <!-- frozen-drafts:readings:end -->

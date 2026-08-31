@@ -2494,13 +2494,15 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 ### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A 合同已冻结；T0-B 必须独立评审**
 
-**状态**:待拍板(T0-A 已完成边界、数据所有权、迁移矩阵、合同和测试设计；维护者需评审是否通过并授权独立 T0-B；Release 1 / A1 仍不得启动)
+**状态**:待拍板(T0-B 已完成本分支验证；仍待维护者独立评审其合同和验证证据；Release 1 / A1 仍不得启动)
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
 - **已冻结**:main@3cf3786 的引用链、六层真相、Activity / Incident / Resource 边界、31 个旧类型迁移矩阵、模板/地点/表单/Readiness/Snapshot v6、时长/贡献/成果、Application Facade、Integration 授权和 AI/外部故障/迁移/cutover/Release 边界，共 24 项。
 - **T0-A 不做**:schema、migration、AiModule、AI SDK、pgvector、权限码、Integration 业务端点、运行时 Gate、生产 cutover 和部署。
-- **下一步唯一入口**:维护者评审 T0-A 后，单独立项 T0-B，处理 AI README 与主动文档对齐、No-AI / Integration 机器边界、测试入口和派生文档；T0-B 仍不改业务 schema 或运行时行为。
+- **T0-B 已完成本分支验证**:AI README 与 active reference/boundary 文档改为“可选 Assist、核心零依赖”；已修正 `ARCHITECTURE.md` 的旧预设；红区裁判 `scripts/check-ai-dependency-boundary.ts` 加上已接线的 `src/ai-dependency-boundary.criteria.spec.ts`，用源码扫描和四个正对照守住 Provider、AI 模块、AppModule 注册与依赖声明；`test/journeys/activity-os-no-ai.e2e-spec.ts` 以真实 Nest 启动跑现有创建、发布、报名、审批、签到手工链。
+- **T0-B 不做**:业务 schema、migration、AiModule、AI SDK、pgvector、Integration 业务端点、运行时行为、Gate 或生产入口。
+- **后续 Goal / lane / PR 顺序**:T0-B 独立评审通过 → Release 1 `A1 → A8` → Release 2 `B1 → B7` → Release 3 `C1 → C5` → Release 4 `D1 → D8` → Release 5 `E1 → E5` → Release 6 Incident / Resource 按真实优先级各自另立目标 → Release 7 可永久不开。每一箭头都是独立 PR；Activity 同一 bounded context 串行，schema lane 同时至多一条，前一 PR 合入和验收完成前不启动后一条。
 - **禁止跳级**:T0-A 与 T0-B 均通过前，不启动 Release 1 / A1；任何后续 PR 仍按一条业务轴、additive、gate-off、非空库 rehearsal、shadow 对账和独立 handoff 推进。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)

@@ -258,3 +258,28 @@ Prefer a named boundary class when **any** of the following is true:
 - [`docs/participation-bounded-context.md §7`](participation-bounded-context.md) — participation 上下文内的 `*-policy.ts` / `*-state-machine.ts` / `*-calculator.ts` / `*-audit-recorder.ts` 命名约定(本文档与之兼容,且把范围扩到全仓库 + 增加 Presenter / QueryService / Effect 3 类未来触发条件)
 - [`docs/api-surface-policy.md §7-§8`](api-surface-policy.md) — 2026-05 P1 执行期历史来源;当前规则由本文 §2 / §7 + 根 `AGENTS.md §1` 承接
 - [`docs/current-state.md §4`](current-state.md) — god-service 债务条目与拆分前置条件
+
+---
+
+## 10. Activity OS 的可选 AI Assist 边界
+
+Activity OS 的 AI 不是第七类核心架构边界，也不是核心服务的依赖。它若在未来出现，只能是
+可拔插的辅助渠道；AI 不可用、超时、返回非法内容或没有网络时，核心业务必须照常完成。
+
+- **核心不反向依赖 Assist**：Activity、报名、发布、考勤、结算、时长、贡献、成果、更正和
+  核心 health 不得 import AI 模块、SDK 或 Provider，更不得在主事务中等待其结果。
+- **Assist 只经 Facade**：读取只能使用已授权的 Query DTO、脱敏结构化上下文和白名单统计；
+  写入只能形成未提交建议或经人工确认后调用正式命令。不得把 Prisma、自由 SQL、连接串、
+  Token、Secret、完整 Prompt 或原始敏感字段交给模型。
+- **Effect 不拥有事实**：Provider 调用属于可选 Effect，必须在核心事务外；它不拥有状态迁移、
+  账本写入、发布判定或 Readiness 判定。确定性 Readiness 和手工输入是正式路径。
+- **建议是可删的附属物**：若未来持久化建议，记录归可选 Assist 域所有；核心事实不得对其建
+  NOT NULL 依赖，删除建议不得改变已确认的业务结果。
+- **不把模块形式预设为答案**：是否注册 `AiModule`、选择 SDK 或引入向量检索，都属于真实
+  产品需求出现后的单独设计与维护者授权；当前不得因本条创建任何运行时 AI 模块。
+
+该边界由红区裁判
+[`scripts/check-ai-dependency-boundary.ts`](../scripts/check-ai-dependency-boundary.ts) 执行，并由
+[`src/ai-dependency-boundary.criteria.spec.ts`](../src/ai-dependency-boundary.criteria.spec.ts) 接入
+既有 unit runner；对外机器入口和 Integration 授权矩阵见
+[`reference/api-client-boundary.md §22`](reference/api-client-boundary.md)。

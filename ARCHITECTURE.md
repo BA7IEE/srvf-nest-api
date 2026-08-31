@@ -56,7 +56,7 @@
 |---|---|---|---|
 | 框架 | **NestJS** | ^11 | 强约定 + 模块化适合"底座 + 业务"复用 |
 | 运行时 | **Node.js** | 22 LTS | 稳,生态全 |
-| 数据库 | **PostgreSQL** | 16 | 关系数据 + JSON + 向量(pgvector 触发后)一把梭 |
+| 数据库 | **PostgreSQL** | 16 | 关系数据 + JSON；语义检索不是当前职责，只有真实的多年非结构化案例检索需求经独立评审后才讨论 pgvector |
 | ORM | **Prisma** | ^6 | schema-first,类型安全,AI 训练语料最多 |
 | 鉴权 | **@nestjs/jwt** + **passport-jwt** | — | JWT 登录与请求鉴权;refresh token(P0-E)见 [`docs/reference/auth-jwt-refresh.md`](./docs/reference/auth-jwt-refresh.md) |
 | 密码哈希 | **bcryptjs** | salt rounds 10 | 跨平台部署稳定 |
@@ -174,13 +174,13 @@
 | 真有"无感续期"诉求 | 加 refresh token 表 + 接口 | `src/modules/auth/` |
 | 出现"普通用户自助改密码"产品 | **✅ 已落地**:`PUT /api/app/v1/me/password` + `ChangeMyPasswordDto` + 防爆破;旧 `/api/users/me/password` 已随 Route B 删除,当前 token 撤销行为按 P0-E 冻结 | `src/modules/auth/` + `src/modules/users/` |
 | 真有异步任务 / 限流 | 加 Redis + BullMQ | 新增 `src/modules/queue/` 模块 |
-| 第一个 AI 产品启动 | 再注册 `AiModule`,填充 `modules/ai/`,接 Vercel AI SDK,加 pgvector | `src/modules/ai/` |
+| 出现明确 AI Assist 产品且通过独立评审 | 先证明核心零依赖与手工路径，再决定旁路 Assist / 外部 Agent / 可选模块、Provider 与部署；不默认注册 `AiModule`，不默认接 SDK 或 pgvector | `src/modules/ai/` + 独立 Assist 交付 |
 | 真有审计需求 | 加 `operation_logs` 表 + 全局拦截器 | `src/common/interceptors/audit.interceptor.ts` |
 | JWT 每请求查库成为瓶颈(用户校验耗时占请求 >20%,或单表 QPS > 1000) | 引入 Redis 缓存用户状态(短 TTL,如 30s),禁用/软删时主动失效缓存 | `src/modules/auth/user-state.cache.ts`(用户状态缓存属于鉴权热路径,先归属 auth;若后续出现通用缓存需求再抽 `src/common/cache/`) |
 
 **判定原则**:不是"觉得以后会用",而是"现在的产品需求里出现了这个明确诉求"。
 
-> **当前已解锁能力**(由真实业务诉求驱动经独立评审解锁,对应本表多条已落地):RBAC(v0.13.0+ / v0.15.0 P0-F 管理面收紧)/ refresh token + logout + logout-all(v0.14.0+)/ attachments 元数据 + 配置三表 + COS Provider(v0.10.0~v0.12.0)/ App API Phase 2 15 endpoint(v0.15.0)/ audit_logs(v0.7.0+ / 第二波 22 处写迁移已完成)/ 本人改密 P0-D(v0.13.0)/ **微信小程序登录(2026-06-12 解锁,post-v0.22.0;openid 绑定 + 登录,DevStub 全链可测,真实可用待运维录入 AppID/AppSecret)**。详 [`docs/current-state.md §2`](./docs/current-state.md)。仍未解锁的项目(Redis / BullMQ / pgvector / LLM / 多租户 / `tokenVersion` 字段 / access token blacklist)继续遵守本表触发条件。
+> **当前已解锁能力**(由真实业务诉求驱动经独立评审解锁,对应本表多条已落地):RBAC(v0.13.0+ / v0.15.0 P0-F 管理面收紧)/ refresh token + logout + logout-all(v0.14.0+)/ attachments 元数据 + 配置三表 + COS Provider(v0.10.0~v0.12.0)/ App API Phase 2 15 endpoint(v0.15.0)/ audit_logs(v0.7.0+ / 第二波 22 处写迁移已完成)/ 本人改密 P0-D(v0.13.0)/ **微信小程序登录(2026-06-12 解锁,post-v0.22.0;openid 绑定 + 登录,DevStub 全链可测,真实可用待运维录入 AppID/AppSecret)**。详 [`docs/current-state.md §2`](./docs/current-state.md)。仍未解锁的项目(Redis / BullMQ / AI Provider / pgvector / LLM / 多租户 / `tokenVersion` 字段 / access token blacklist)继续遵守本表触发条件。
 
 ---
 
