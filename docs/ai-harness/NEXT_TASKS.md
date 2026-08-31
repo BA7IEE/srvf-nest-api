@@ -2492,6 +2492,17 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A 合同已冻结；T0-B 必须独立评审**
+
+**状态**:待拍板(T0-A 已完成边界、数据所有权、迁移矩阵、合同和测试设计；维护者需评审是否通过并授权独立 T0-B；Release 1 / A1 仍不得启动)
+
+> 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
+
+- **已冻结**:main@3cf3786 的引用链、六层真相、Activity / Incident / Resource 边界、31 个旧类型迁移矩阵、模板/地点/表单/Readiness/Snapshot v6、时长/贡献/成果、Application Facade、Integration 授权和 AI/外部故障/迁移/cutover/Release 边界，共 24 项。
+- **T0-A 不做**:schema、migration、AiModule、AI SDK、pgvector、权限码、Integration 业务端点、运行时 Gate、生产 cutover 和部署。
+- **下一步唯一入口**:维护者评审 T0-A 后，单独立项 T0-B，处理 AI README 与主动文档对齐、No-AI / Integration 机器边界、测试入口和派生文档；T0-B 仍不改业务 schema 或运行时行为。
+- **禁止跳级**:T0-A 与 T0-B 均通过前，不启动 Release 1 / A1；任何后续 PR 仍按一条业务轴、additive、gate-off、非空库 rehearsal、shadow 对账和独立 handoff 推进。
+
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
 **状态**:⏸ 挂起(⚠️ **这不是「不做」,是「必须在首次生产上线之前做完,现在时机不对」** —— 触发条件三条见正文「什么时候必须做」;三条齐了就立刻立项,不必再问维护者要不要做,只需拍板合并口径)
