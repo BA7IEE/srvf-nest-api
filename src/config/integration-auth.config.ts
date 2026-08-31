@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 /**
  * Integration Foundation v1 PR3(规格书 §11–§14;T0 冻结稿 §9):
  * Integration Token 的独立信任域配置。
@@ -135,14 +133,6 @@ export function assertIntegrationSecretProductionGrade(
   ) {
     throw new Error('INTEGRATION_JWT_SECRET 不得与 JWT_SECRET 相同(规格书 §11.2)');
   }
-}
-
-/**
- * dummy hash(规格书 §12.4 失败归一):clientId 不存在时也做一次同代价 SHA-256 比较,
- * 让「不存在」与「Secret 错」不可从耗时区分。
- */
-export function dummySecretHash(): string {
-  return createHash('sha256').update('dummy-client-secret-probe', 'utf8').digest('hex');
 }
 
 import { registerAs } from '@nestjs/config';

@@ -114,6 +114,40 @@ describe('LOG_REDACT_PATHS — v1 既有清单兜底', () => {
   });
 });
 
+describe('LOG_REDACT_PATHS — Integration Foundation PR-B 六敏感字段', () => {
+  const fields = [
+    'clientSecret',
+    'secretHash',
+    'rawSecret',
+    'serviceToken',
+    'delegatedToken',
+    'credentialSecret',
+  ] as const;
+  const paths = getRedactPaths();
+
+  it.each(fields)('保留顶层、单层嵌套和当前 req.body 路径: %s', (field) => {
+    expect(paths).toContain(field);
+    expect(paths).toContain(`*.${field}`);
+    expect(paths).toContain(`req.body.${field}`);
+  });
+
+  it.each(fields)('实际日志中不会泄露顶层、嵌套或 req.body 的 %s', (field) => {
+    const probe = `integration-redact-probe-${field}`;
+    const serialized = serializeWithConfiguredRedaction({
+      [field]: probe,
+      integration: { [field]: probe },
+      req: { body: { [field]: probe } },
+    });
+    const integration = serialized.integration as Record<string, unknown>;
+    const req = serialized.req as { body: Record<string, unknown> };
+
+    expect(serialized[field]).toBe('[REDACTED]');
+    expect(integration[field]).toBe('[REDACTED]');
+    expect(req.body[field]).toBe('[REDACTED]');
+    expect(JSON.stringify(serialized)).not.toContain(probe);
+  });
+});
+
 describe('LOG_REDACT_PATHS — client IP identity', () => {
   const paths = getRedactPaths();
 
