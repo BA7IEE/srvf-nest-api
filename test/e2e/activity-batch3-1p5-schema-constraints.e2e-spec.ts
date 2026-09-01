@@ -347,18 +347,29 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
       );
     });
 
-    it('同 (code, version) 重复被拒;statusCode 没有擅自钉 CHECK', async () => {
+    it('同 (code, version) 重复被拒;legacy statusCode 保持未定义集合，future Version 的条件 CHECK 受 A3 管住', async () => {
       await expectAccepted(templateSql('template-1', { code: 'service-day', version: 1 }));
       await expectRejected(templateSql('template-dup', { code: 'service-day', version: 1 }), {
         sqlState: '23505',
         key: 'Key (code, version)',
       });
 
-      const checks = await prisma.$queryRaw<Array<{ conname: string }>>`
-        SELECT conname FROM pg_constraint
+      const checks = await prisma.$queryRaw<Array<{ conname: string; definition: string }>>`
+        SELECT conname, pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
         WHERE conrelid = '"ActivityTemplate"'::regclass AND contype = 'c'
+        ORDER BY conname
       `;
-      expect(checks).toEqual([]);
+      expect(checks).toEqual([
+        {
+          conname: 'activity_template_family_version_effective_period',
+          definition: expect.stringContaining('"familyId" IS NULL'),
+        },
+        {
+          conname: 'activity_template_family_version_required_fields',
+          definition: expect.stringContaining('"familyId" IS NULL'),
+        },
+      ]);
     });
   });
 
