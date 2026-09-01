@@ -2492,9 +2492,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 与 Release 1 A1、A2 已通过；A3 独立实施中**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 与 Release 1 A1、A2、A3 已通过；A4 待独立立项**
 
-**状态**:进行中(T0-B #1236、A1 #1237 与 A2 #1239 已合；A2 TemplateFamily / TemplateVersion expand 的 schema/migration、独立 schema e2e、非空库 rehearsal、PR CI 与红区审批均已收口；A3 已获独立拍板与本 worktree 红区授权，仍须完成验证和 PR 验收)
+**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239 与 A3 #1241 已合；A3 的 canonical/hash、future Version lifecycle 存储约束、第 102 条 migration 回归证明、PR CI 与红区审批均已收口；A4 起仍按单轴独立立项)
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
@@ -2504,9 +2504,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 - **T0-B 不做**:业务 schema、migration、AiModule、AI SDK、pgvector、Integration 业务端点、运行时行为、Gate 或生产入口。
 - **A1 已交付并合入 #1237**:新增 `activity_category` / `activity_semantic_facet` 受控字典、唯一 `LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY` 与 31/31 漏重映射 CI；只做 additive seed，不建 schema/migration，不新建模板、政策、Outcome 或 `ActivitySemanticAssignment`，不改变旧 `activityTypeCode`、API、权限、Gate、统计、时长或贡献运行时行为。
 - **A2 已交付并合入 #1239**:方案 A 只新增 TemplateFamily 稳定身份，并把既有 ActivityTemplate 以六个可空元数据列扩展为未来 Version 存储行；schema/migration、独立数据库约束证明、非空库 rehearsal、PR CI 与红区审批均已完成。未改 legacy resolver、Activity 选定 Version、canonical JSON/hash/lifecycle、API/DTO/权限/Gate、seed、回填或生产部署。
-- **A3 实施中**:已冻结为独立 D 档，范围是 future Family Version 的 canonical JSON/hash 工具、`draft → active → retired` 存储约束和 PostgreSQL 回归证明；legacy resolver、Activity 指针、API/DTO、权限、Gate、seed、回填和部署继续不动。A3 未新增业务 writer，DB 不重算 hash；未来 writer 必须独立接入纯函数复验、授权与审计。
+- **A3 已交付并合入 #1241**:future Family Version 的 canonical JSON/hash 工具、`draft → active → retired` 存储约束和第 102 条 migration 的 PostgreSQL 回归证明均已完成；全套 PR CI 与红区审批通过。legacy resolver、Activity 指针、业务 writer、API/DTO、权限、Gate、seed、回填和部署均未改，DB 不重算 hash；未来 writer 必须独立接入纯函数复验、授权与审计。
 - **后续 Goal / lane / PR 顺序**:Release 1 `A1 → A8` → Release 2 `B1 → B7` → Release 3 `C1 → C5` → Release 4 `D1 → D8` → Release 5 `E1 → E5` → Release 6 Incident / Resource 按真实优先级各自另立目标 → Release 7 可永久不开。每一箭头都是独立 PR；Activity 同一 bounded context 串行，schema lane 同时至多一条，前一 PR 合入和验收完成前不启动后一条。
-- **串行约束**:A1、A2 已完成独立评审、实现与 PR 验收；A3 已独立立项、实现中，仍须按一条业务轴、additive、gate-off、shadow 对账和独立 handoff 收口，不得沿用 A2 的 schema 授权；A4 必须等 A3 合并验收后再立项。
+- **串行约束**:A1、A2、A3 已完成独立评审、实现与 PR 验收；A4 及以后仍须按一条业务轴、additive、gate-off、shadow 对账和独立 handoff 收口，且不得沿用 A3 的 D 档授权。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
