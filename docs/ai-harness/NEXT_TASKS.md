@@ -2494,7 +2494,7 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 ### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 与 Release 1 A1 已通过；A2 待独立 D 档实施**
 
-**状态**:进行中(T0-B #1236 与 A1 #1237 已合；A2 TemplateFamily / TemplateVersion expand 已获方案 A 拍板，待精确红区授权与独立 D 档 PR)
+**状态**:进行中(T0-B #1236 与 A1 #1237 已合；A2 TemplateFamily / TemplateVersion expand 待独立 D 档评审、精确红区授权与 PR)
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
