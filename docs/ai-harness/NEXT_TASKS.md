@@ -2492,9 +2492,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 已通过；Release 1 A1 实施中**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 与 Release 1 A1 已通过；A2 待独立 D 档实施**
 
-**状态**:进行中(T0-B #1236 已合；A1 分类 / Facet / 31 条 legacy registry 正在独立实施与验证，A2 及后续严格等待 A1 PR 合并)
+**状态**:进行中(T0-B #1236 与 A1 #1237 已合；A2 TemplateFamily / TemplateVersion expand 待独立 D 档评审、精确红区授权与 PR)
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
@@ -2502,9 +2502,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 - **T0-A 不做**:schema、migration、AiModule、AI SDK、pgvector、权限码、Integration 业务端点、运行时 Gate、生产 cutover 和部署。
 - **T0-B 已通过并合入 #1236**:AI README 与 active reference/boundary 文档改为“可选 Assist、核心零依赖”；已修正 `ARCHITECTURE.md` 的旧预设；红区裁判 `scripts/check-ai-dependency-boundary.ts` 加上已接线的 `src/ai-dependency-boundary.criteria.spec.ts`，用源码扫描和四个正对照守住 Provider、AI 模块、AppModule 注册与依赖声明；`test/journeys/activity-os-no-ai.e2e-spec.ts` 以真实 Nest 启动跑现有创建、发布、报名、审批、签到手工链。
 - **T0-B 不做**:业务 schema、migration、AiModule、AI SDK、pgvector、Integration 业务端点、运行时行为、Gate 或生产入口。
-- **A1 本 PR 范围**:新增 `activity_category` / `activity_semantic_facet` 受控字典、唯一 `LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY` 与 31/31 漏重映射 CI；只做 additive seed，不建 schema/migration，不新建模板、政策、Outcome 或 `ActivitySemanticAssignment`，不改变旧 `activityTypeCode`、API、权限、Gate、统计、时长或贡献运行时行为。
+- **A1 已交付并合入 #1237**:新增 `activity_category` / `activity_semantic_facet` 受控字典、唯一 `LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY` 与 31/31 漏重映射 CI；只做 additive seed，不建 schema/migration，不新建模板、政策、Outcome 或 `ActivitySemanticAssignment`，不改变旧 `activityTypeCode`、API、权限、Gate、统计、时长或贡献运行时行为。
 - **后续 Goal / lane / PR 顺序**:Release 1 `A1 → A8` → Release 2 `B1 → B7` → Release 3 `C1 → C5` → Release 4 `D1 → D8` → Release 5 `E1 → E5` → Release 6 Incident / Resource 按真实优先级各自另立目标 → Release 7 可永久不开。每一箭头都是独立 PR；Activity 同一 bounded context 串行，schema lane 同时至多一条，前一 PR 合入和验收完成前不启动后一条。
-- **禁止跳级**:A1 合并、CI 与维护者验收完成前，不启动 Release 1 / A2；任何后续 PR 仍按一条业务轴、additive、gate-off、非空库 rehearsal、shadow 对账和独立 handoff 推进。
+- **串行约束**:A1 已完成；A2 必须先完成独立 D 档评审、精确红区授权、非空库 rehearsal 与独立 PR，之后各切片仍按一条业务轴、additive、gate-off、shadow 对账和独立 handoff 推进。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
