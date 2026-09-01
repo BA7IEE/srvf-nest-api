@@ -322,24 +322,24 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-09-01(Activity OS R1 / A2 TemplateFamily expand)**
+**取数时点:2026-09-01(Activity OS R1 / A3 TemplateDefinition lifecycle)**
 
 | 项 | 值 |
 |---|---:|
 | 总条目 | **60** |
 | `governed` / `inventory` | **8 / 52** |
 | 52 条 inventory 的分层 | L1 **6** · L2 **20** · L3 **26** |
-| 已有机器可读边(`transitions` 是数组)※ | 21 |
-| `transitions: "not-derived"` ※ | 26 |
+| 已有机器可读边(`transitions` 是数组)※ | 22 |
+| `transitions: "not-derived"` ※ | 25 |
 | `transitions: "unconstrained"` ※ | 13 |
 
-> ※ 这三行按**全部 60 条**统计(21+26+13=60),不是按上一行那 52 条 inventory。
+> ※ 这三行按**全部 60 条**统计(22+25+13=60),不是按上一行那 52 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
 | **`vacuousGreenIfClosedSetOnly`** | **23** |
 | 零 blocker 但仍 inventory 的升格候选 | **0** |
 
-> 🔴 **历史 true-up 与本次 A2 增补要分开读**:
+> 🔴 **历史 true-up、A2 增补与本次 A3 落地要分开读**:
 >
 > **① 本刀移动的 6 个数**:总条目 58→59 · inventory 50→51 · L1 5→6 ·
 > `not-derived` 24→25 · `vacuousGreenIfClosedSetOnly` 22→23 · `no-db-check` 22→23。
@@ -360,12 +360,21 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > ⚠️ 这四处能悄悄错三个月,正是因为 selftest 的 F3 只钉了「总条目」一个数
 > (它自己的注释也写明了这是刻意取舍:逐个盯比率会让断言变成第二份真相)——
 > 已知射程限制,不是本刀新引入的缺口。
+>
+> **④ A3 的当前读数变化**:`ActivityTemplate.statusCode` 没有新增登记条目，仍是 L2
+> inventory；但它从「legacy 无闭集、无边、无写路径」变为「仅 `familyId IS NOT NULL` 的
+> future Version 由 migration 条件 CHECK + trigger 定义 `draft → active → retired`」。因此
+> `transitions` 数组 21→22、`not-derived` 26→25、`no-db-check` 24→23、
+> `edges-not-derived` 21→20、`closed-set-undeclared` 6→5；新增
+> `conditional-legacy-scope` 与 `no-service-writer` 各 1。它仍不升 `governed`：
+> 现有 legacy 行没有被回填，且尚无受控写入服务或错误码契约。
 
-blocker 直方图(2026-09-01 现算;A2 只新增 1 条 L2 inventory):`no-wrong-state-bizcode` 28 ·
-`no-db-check` 24 · `edges-not-derived` 21 · `no-state-machine` 20 · `closed-set-undeclared` 6 ·
+blocker 直方图(2026-09-01 现算;含 A3 future-Version 条件生命周期):`no-wrong-state-bizcode` 28 ·
+`no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 20 · `closed-set-undeclared` 5 ·
 `edges-partially-derived` 2 · `vocabulary-divergence` 2 · `dictionary-driven` 2 ·
 `retired-value-in-set` 2 · `impl-scattered` 2 · `throws-instead-of-decide` 1 ·
-`decision-shape-divergence` 1 · `duplicate-constant-definition` 1。
+`decision-shape-divergence` 1 · `conditional-legacy-scope` 1 · `no-service-writer` 1 ·
+`duplicate-constant-definition` 1。
 
 **`vacuousGreenIfClosedSetOnly` = 23 是本刀存在的理由的量化**:这 23 条既有已声明的闭集、
 `transitions` 又是 `not-derived` —— 一个「只比闭集 vs CHECK」的判据会**全部放它们过去**。
@@ -399,7 +408,7 @@ selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.s
    (migration 里也写 `ALTER TABLE "AttendanceSheet"`)。冻结稿不回改;
    **判据按 schema 真值取表名**,不受此影响。
 
-### 10.6 本次未做
+### 10.6 4-1b 本次未做（历史记录）
 
 - ❌ **不升任何 L3 / L2**:48 条仍 `inventory`(含唯一的零 blocker 候选 `ParticipantSettlementResultRevision.statusCode`
   —— 它的 `implementation` 是散文"settlement / ledger service 族",结构上给不出 `implementationFile`)。
@@ -410,6 +419,14 @@ selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.s
   `*resultCode`·`*SummaryCode` 家族)仍在册外;"56 条 ≠ 全仓状态列总数"这条口径仍然成立。
 - ❌ **不改 blocker**:§10.5 ① 的 4 条缺口只记录,没往 `governedBlockers` 里加。
 - ❌ **不建共享状态机执行器**,不动 `action-state-checks.ts`,零 `src/**` / `prisma/**` 改动。
+
+### 10.6.1 A3 未做
+
+- ❌ **不把 A3 升为 `governed`**：它仍是 52 条 `inventory` 中的一条 L2；受约束的仅是
+  `familyId` 非空的 future Version，legacy 模板保持兼容语义。
+- ❌ **不回填 legacy / 不改旧 resolver 或 API**：未新增写入端点、服务编排、权限、错误码或迁移回填。
+- ❌ **不改既有状态机或 `action-state-checks.ts`**：A3 的生命周期只由 migration trigger 与
+  纯函数 canonicalization 定义，不把它冒充为已有业务状态机收口。
 
 ### 10.7 订正:唯一那条「升格候选」是**假读数**(2026-08-24 实测)
 

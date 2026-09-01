@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2 已通过并合入 #1237/#1239 | 下一刀 A3 独立立项 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2 已通过并合入 #1237/#1239；A3 实施中 | A3 完成验证并独立提 PR |
 
 ### 1.1 欠代码的五项
 
@@ -163,6 +163,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-t0-terminal-review.md` | open · P1-33 | Activity OS T0-A 冻结合同；T0-B 和 Release 1 以后仍待独立实施 |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md` | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md` | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md` | open · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；实现、验证与独立 PR 验收进行中，legacy resolver/API 不在本刀范围 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
