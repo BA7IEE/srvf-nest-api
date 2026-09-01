@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 
@@ -9,6 +10,12 @@ import {
   MEMBER_ORIGIN_MANUAL,
   MEMBER_ORIGIN_RECRUITMENT,
 } from '../src/common/identity/member-origin.constant';
+import {
+  ACTIVITY_CATEGORY_CODES,
+  ACTIVITY_SEMANTIC_FACET_DIMENSION_CODES,
+  ACTIVITY_SEMANTIC_FACET_OPTION_CATALOG,
+  LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY,
+} from '../src/modules/activities/activity-type-migration.registry';
 
 /**
  * 字典 seed 登记表(`docs/ai-harness/DICTIONARY_SEED_REGISTRY.md`)的双向对拍判据 —— P2-23 字典半。
@@ -21,7 +28,7 @@ import {
  *
  * ─── 为什么读 AST,不 grep、不 import ─────────────────────────────────────
  * 字典项在 seed 里是**数据字面量**:grep 会把注释与示例一起吃进来;
- * import 只看得见已导出的 V2_DICT_SEED,而 activity_type 层级与招新进度态
+ * import 只看得见已导出的 V2_DICT_SEED,而 activity_type / activity_semantic_facet 层级与招新进度态
  * 的数据住在函数体内的未导出数组里 —— 只有 AST 能做**全量普查**。
  * 提取器读不了的东西(新标识符 / 非字面量)一律当缺陷红,方向 fail-closed。
  *
@@ -41,6 +48,7 @@ import {
 const EXPECTED_SITES: Readonly<Record<string, { dictType: number; dictItem: number }>> = {
   seedV2Dictionaries: { dictType: 1, dictItem: 1 },
   seedActivityTypeHierarchy: { dictType: 1, dictItem: 2 },
+  seedActivitySemanticFacetHierarchy: { dictType: 1, dictItem: 2 },
   seedRecruitmentStageDict: { dictType: 1, dictItem: 1 },
 };
 
@@ -58,6 +66,11 @@ const REAL_CONFIG: ExtractorConfig = {
   flatArrays: ['V2_DICT_SEED'],
   siteTyped: [
     { fn: 'seedActivityTypeHierarchy', typeCode: 'activity_type', arrays: ['parents', 'children'] },
+    {
+      fn: 'seedActivitySemanticFacetHierarchy',
+      typeCode: 'activity_semantic_facet',
+      arrays: ['ACTIVITY_SEMANTIC_FACET_DIMENSION_SEED', 'ACTIVITY_SEMANTIC_FACET_OPTION_SEED'],
+    },
     {
       fn: 'seedRecruitmentStageDict',
       typeCode: 'recruitment_stage',
@@ -630,6 +643,224 @@ export function judgeDictionaryRegistry(
   };
 }
 
+// ─── Activity OS R1/A1 旧 activityTypeCode 迁移目录判据 ──────────────────
+
+/**
+ * A1 的目录没有运行时 consumer，故不能把冻结矩阵放在普通 spec 中。
+ * 本判据住在 selfGuard 红区：缺行、重行、seed 漏项或任一映射漂移都会直接变红。
+ */
+const A1_ACTIVITY_TYPE_PARENT_CODES = new Set([
+  'rescue',
+  'support',
+  'outreach',
+  'training',
+  'exchange',
+  'joint_drill',
+  'duty_rotation',
+  'logistics',
+  'other',
+]);
+
+const A1_ACTIVITY_CATEGORY_CODES = [
+  'emergency_response',
+  'duty_readiness',
+  'training_exercise',
+  'event_support',
+  'outreach_communication',
+  'public_service',
+  'cooperation_exchange',
+  'organization_operation',
+  'logistics_support',
+  'pending_classification',
+] as const;
+
+const A1_FACET_DIMENSION_CODES = [
+  'environment',
+  'action',
+  'capability',
+  'cooperation',
+  'target',
+  'format',
+] as const;
+
+const A1_FACET_OPTION_CODES = [
+  'action=rescue',
+  'action=relief',
+  'action=supplies',
+  'action=transportation',
+  'capability=aviation',
+  'cooperation=external',
+  'cooperation=external_joint',
+  'cooperation=internal_joint',
+  'target=disaster_affected_people',
+  'target=public',
+  'format=event_support',
+  'format=team_support',
+  'format=lecture',
+  'format=training',
+  'format=competition',
+  'format=meeting',
+  'format=drill',
+  'format=interview',
+  'format=team_building',
+] as const;
+
+const A1_LEGACY_ACTIVITY_TYPE_COUNT = 31;
+const A1_ACTIVITY_CATEGORY_COUNT = 10;
+const A1_FACET_DIMENSION_COUNT = 6;
+const A1_FACET_OPTION_COUNT = 19;
+const A1_FROZEN_REGISTRY_SHA256 =
+  '39da4ea40d5363baad24207a1d8a77f6cefdc7bb852861ed7bd5daec8c28759b';
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function sortedCodes(codes: readonly string[]): string[] {
+  return [...codes].sort();
+}
+
+function activityTypeMigrationCanonicalHash(): string {
+  const canonical = LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY.map((entry) => ({
+    legacyActivityTypeCode: entry.legacyActivityTypeCode,
+    categoryCode: entry.categoryCode,
+    familyDirection: entry.familyDirection,
+    facets: entry.facets.map((facet) => ({
+      dimensionCode: facet.dimensionCode,
+      optionCode: facet.optionCode,
+    })),
+    outcomeCode: entry.outcomeCode,
+    timePolicySelector: entry.timePolicySelector,
+    contributionPolicySelector: entry.contributionPolicySelector,
+    legacyFacetOrOutcome: entry.legacyFacetOrOutcome,
+    manualGovernance: entry.manualGovernance,
+  }));
+  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
+
+function frozenActivityTypeMigrationRegistrySelfCheck(): string[] {
+  const defects: string[] = [];
+  if (A1_ACTIVITY_CATEGORY_CODES.length !== A1_ACTIVITY_CATEGORY_COUNT) {
+    defects.push('A1 冻结活动类别目录读数异常');
+  }
+  if (A1_FACET_DIMENSION_CODES.length !== A1_FACET_DIMENSION_COUNT) {
+    defects.push('A1 冻结 Facet 维度目录读数异常');
+  }
+  if (A1_FACET_OPTION_CODES.length !== A1_FACET_OPTION_COUNT) {
+    defects.push('A1 冻结 Facet 选项目录读数异常');
+  }
+  return defects;
+}
+
+/**
+ * 受保护的 A1 静态目录判据。它复用字典 AST 提取器的 fail-closed 口径，
+ * 同时把完整的 31 行冻结矩阵压缩为稳定的 canonical SHA-256。
+ */
+export function judgeActivityTypeMigrationRegistry(seedSource: string): string[] {
+  const defects = frozenActivityTypeMigrationRegistrySelfCheck();
+  const extraction = extractSeedDictionaries(seedSource, IDENTIFIER_BINDINGS);
+  defects.push(...extraction.defects);
+
+  const activityType = extraction.types.get('activity_type');
+  if (activityType === undefined) {
+    defects.push('seed 中找不到 activity_type，无法核对 A1 旧值覆盖');
+  } else {
+    const legacyCodes = activityType.items
+      .map((item) => item.code)
+      .filter((code) => !A1_ACTIVITY_TYPE_PARENT_CODES.has(code));
+    const registeredCodes = LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY.map(
+      (entry) => entry.legacyActivityTypeCode,
+    );
+    if (legacyCodes.length !== A1_LEGACY_ACTIVITY_TYPE_COUNT) {
+      defects.push('seed 中 activity_type 旧子项数量偏离 A1 冻结读数');
+    }
+    if (registeredCodes.length !== A1_LEGACY_ACTIVITY_TYPE_COUNT) {
+      defects.push('A1 迁移目录行数偏离冻结读数');
+    }
+    if (new Set(registeredCodes).size !== registeredCodes.length) {
+      defects.push('A1 迁移目录出现重复 legacyActivityTypeCode');
+    }
+    if (!sameJson(sortedCodes(registeredCodes), sortedCodes(legacyCodes))) {
+      defects.push('A1 迁移目录与 seed 的 activity_type 旧子项不能一一对应');
+    }
+  }
+
+  if (activityTypeMigrationCanonicalHash() !== A1_FROZEN_REGISTRY_SHA256) {
+    defects.push('A1 迁移目录的类别、Facet、selector 或人工治理矩阵偏离冻结合同');
+  }
+  if (!sameJson(ACTIVITY_CATEGORY_CODES, A1_ACTIVITY_CATEGORY_CODES)) {
+    defects.push('活动类别源码目录偏离 A1 冻结闭集');
+  }
+  if (!sameJson(ACTIVITY_SEMANTIC_FACET_DIMENSION_CODES, A1_FACET_DIMENSION_CODES)) {
+    defects.push('Facet 维度源码目录偏离 A1 冻结闭集');
+  }
+  const sourceFacetOptions = ACTIVITY_SEMANTIC_FACET_OPTION_CATALOG.map(
+    (option) => option.dimensionCode + '=' + option.optionCode,
+  );
+  if (!sameJson(sourceFacetOptions, A1_FACET_OPTION_CODES)) {
+    defects.push('Facet 选项源码目录偏离 A1 冻结闭集');
+  }
+
+  const categorySeed = extraction.types.get('activity_category');
+  if (categorySeed === undefined) {
+    defects.push('seed 中找不到 activity_category');
+  } else if (
+    !sameJson(
+      categorySeed.items.map((item) => item.code),
+      A1_ACTIVITY_CATEGORY_CODES,
+    )
+  ) {
+    defects.push('activity_category seed 目录偏离 A1 冻结闭集');
+  }
+  const facetSeed = extraction.types.get('activity_semantic_facet');
+  const expectedFacetSeedCodes = [
+    ...A1_FACET_DIMENSION_CODES,
+    ...A1_FACET_OPTION_CODES.map((facet) => facet.slice(facet.indexOf('=') + 1)),
+  ];
+  if (facetSeed === undefined) {
+    defects.push('seed 中找不到 activity_semantic_facet');
+  } else if (
+    !sameJson(
+      facetSeed.items.map((item) => item.code),
+      expectedFacetSeedCodes,
+    )
+  ) {
+    defects.push('activity_semantic_facet seed 目录偏离 A1 冻结闭集');
+  }
+
+  const controlledCategories = new Set(A1_ACTIVITY_CATEGORY_CODES);
+  const controlledDimensions = new Set(A1_FACET_DIMENSION_CODES);
+  const controlledOptions: ReadonlySet<string> = new Set(A1_FACET_OPTION_CODES);
+  for (const entry of LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY) {
+    if (!controlledCategories.has(entry.categoryCode)) {
+      defects.push('A1 迁移目录含有闭集外 category: ' + entry.legacyActivityTypeCode);
+    }
+    if (entry.legacyFacetOrOutcome.trim().length === 0) {
+      defects.push('A1 迁移目录缺 legacyFacetOrOutcome: ' + entry.legacyActivityTypeCode);
+    }
+    if (entry.manualGovernance.trim().length === 0) {
+      defects.push('A1 迁移目录缺 manualGovernance: ' + entry.legacyActivityTypeCode);
+    }
+    for (const facet of entry.facets) {
+      const pair = facet.dimensionCode + '=' + facet.optionCode;
+      if (!controlledDimensions.has(facet.dimensionCode)) {
+        defects.push('A1 迁移目录含有闭集外 Facet 维度: ' + entry.legacyActivityTypeCode);
+      }
+      if (!controlledOptions.has(pair)) {
+        defects.push('A1 迁移目录含有闭集外 Facet 选项: ' + entry.legacyActivityTypeCode);
+      }
+    }
+  }
+  return defects;
+}
+
+/** 薄运行器的真读数入口；路径固定在受保护的裁判中而非 spec。 */
+export function checkActivityTypeMigrationRegistry(
+  root: string = path.resolve(__dirname, '..'),
+): string[] {
+  return judgeActivityTypeMigrationRegistry(readFileSync(path.join(root, DICT_SEED_PATH), 'utf8'));
+}
+
 // ─── CLI(pnpm exec tsx scripts/check-dictionary-seed-registry.ts)──────────
 
 function main(): void {
@@ -637,13 +868,16 @@ function main(): void {
   const seed = readFileSync(path.join(repoRoot, DICT_SEED_PATH), 'utf8');
   const registry = readFileSync(path.join(repoRoot, DICT_REGISTRY_PATH), 'utf8');
   const j = judgeDictionaryRegistry(seed, registry);
+  const activityTypeMigrationDefects = judgeActivityTypeMigrationRegistry(seed);
   console.log(`dict-registry-types = ${j.counts.types}`);
   console.log(`dict-registry-items = ${j.counts.items}`);
-  if (j.ok) {
+  if (j.ok && activityTypeMigrationDefects.length === 0) {
+    console.log('✓ Activity OS R1/A1 旧 activityTypeCode 迁移目录全绿');
     console.log(`✓ 字典 seed 登记表六维全绿(${j.evidence[0]})`);
     return;
   }
   for (const d of j.evidence) console.error(`✕ ${d}`);
+  for (const d of activityTypeMigrationDefects) console.error('✕ ' + d);
   process.exit(1);
 }
 
