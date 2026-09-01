@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:be966f0213dba148bd23c6d11195a7c8f877faf5991c1ab7959cfa493c9bb24a",
-  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 52 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 另登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory。",
+  "inputDigest": "sha256:9e15896277b69b6342460eb1c76c46c442bb7284abd1f22ce147cce036063edb",
+  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 52 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。",
   "entries": [
     {
       "model": "Activity",
@@ -563,20 +563,26 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": null,
-        "source": "undeclared",
-        "sourceRef": "无 CHECK、无具名常量、代码内无写路径(仅 findFirst 读)"
+        "values": [
+          "draft",
+          "active",
+          "retired"
+        ],
+        "source": "db-check",
+        "sourceRef": "prisma/migrations/20260901110000_activity_os_r1_a3_template_definition_lifecycle_guards (仅 familyId IS NOT NULL)"
       },
-      "transitions": "not-derived",
+      "transitions": [
+        "draft -> active",
+        "active -> retired"
+      ],
       "wrongStateBizCode": "none",
-      "implementation": "无写路径(疑似仅由 seed / 运维直写)",
+      "implementation": "activity_template_family_version_freeze_guard DB trigger + src/modules/activities/activity-template-definition.ts（尚无业务 writer）",
       "governedBlockers": [
-        "no-db-check",
-        "closed-set-undeclared",
-        "edges-not-derived",
+        "conditional-legacy-scope",
+        "no-service-writer",
         "no-wrong-state-bizcode"
       ],
-      "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
+      "notes": "A3 只治理 familyId 非空的 future Version；legacy ActivityTemplate 保持原 statusCode/resolver 语义。无 controller/service writer、专属 BizCode、审计或权限面，故仍是 inventory，不能自称 governed。"
     },
     {
       "model": "ActivityTemplateFamily",
@@ -590,7 +596,7 @@
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
-      "implementation": "无写路径；Family lifecycle 留待 A3",
+      "implementation": "无写路径；Family lifecycle 不在 A3 范围，留待后续独立切片",
       "governedBlockers": [
         "no-db-check",
         "closed-set-undeclared",

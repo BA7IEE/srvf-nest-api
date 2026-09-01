@@ -1692,7 +1692,8 @@ model ActivityTemplateFamily {
 // ===== §3.4 ActivityTemplate:可版本化默认配置 =====
 //
 // 模板更新新建版本,不覆盖已发布活动;故唯一键是 (code, version),绝不把 code 单列 unique。
-// statusCode 的取值集未被合同定义:保留 String,刻意不加 CHECK(缺口 #13)。
+// A3 起,只有 familyId 非空的未来 Version 行受 migration 中的 draft → active → retired 闭集与
+// 冻结 trigger 约束；familyId 为 NULL 的 legacy 行仍保留原 statusCode / resolver 兼容语义。
 // 各默认列均以当前 Activity / ActivitySession 的最终字段为来源;解析与继承归第 3 批第二刀。
 model ActivityTemplate {
   id        String   @id @default(cuid())
@@ -1702,10 +1703,10 @@ model ActivityTemplate {
   code             String
   name             String
   activityTypeCode String
-  statusCode       String // 取值集待合同修订件;不加 CHECK。
+  statusCode       String // legacy 不限；familyId 非空的 future Version 受 A3 条件 CHECK / trigger 约束。
   version          Int
-  // Activity OS R1 / A2：全部可空，零回填。canonical JSON / hash / 有效期边界与 lifecycle
-  // 均由 A3 定义；本刀绝不把这些字段接进现有模板解析或 API。
+  // Activity OS R1 / A2-A3：legacy 行保持全部可空、零回填。familyId 非空的 future Version
+  // 必须提供 canonical JSON/hash/schemaVersion；A3 只写入 DB 不变量，绝不把字段接进现有 resolver 或 API。
   familyId         String?
   schemaVersion    Int?
   definitionJson   Json?

@@ -222,11 +222,11 @@ function eviSub(id, kind, title, evidence): SubCheck {
 ### 3b — 「新 schema migrations 经审查」
 
 - **结论**:认可
-- **理由**:101 条 migration;第 101 条 `20260901100000_activity_os_r1_a2_template_family_version_expand` 为纯 expand：新建空 ActivityTemplateFamily，并向既有 ActivityTemplate 增加六个可空 Version 元数据，零回填、seed 或运行时切换。该 migration 已完成非生产非空库 rehearsal 与独立 PostgreSQL 约束 E2E；维护者于 2026-09-01 明确确认本次 3b 重签。2026-08-26 首签时为 99 条；第 100 条(Integration Foundation v1 PR1 schema 地基,#1217)落地后曾按本表机制重签
+- **理由**:102 条 migration;第 101 条 `20260901100000_activity_os_r1_a2_template_family_version_expand` 为纯 expand：新建空 ActivityTemplateFamily，并向既有 ActivityTemplate 增加六个可空 Version 元数据，零回填、seed 或运行时切换。第 102 条 `20260901110000_activity_os_r1_a3_template_definition_lifecycle_guards` 只为 `familyId IS NOT NULL` 的 future Version 增加条件字段 CHECK 与 `draft → active → retired` 冻结 trigger；零回填、seed、legacy resolver/API 或生产部署。该 migration 已完成空库 102 条冷重放、A2 世代非空 Family Version fail-closed rehearsal 与独立 PostgreSQL 约束 E2E；维护者于 2026-09-01 明确确认本次 A3 3b 重签。2026-08-26 首签时为 99 条；第 100 条(Integration Foundation v1 PR1 schema 地基,#1217)落地后曾按本表机制重签
 - **签字人**:维护者
 - **日期**:2026-09-01
-- **依据**:维护者 2026-09-01 对话确认重签3b；前签依据为维护者 2026-08-28 对话批准重签(「批准签」)，首签依据为 2026-08-26 拍板「直接用新的上线」
-- **对拍**:有 —— `migration-total` = `101`
+- **依据**:维护者 2026-09-01 对话确认「确认重签3b（A3，第102条 migration）」；前签依据为维护者 2026-09-01 对话确认重签3b(A2)、2026-08-28 对话批准重签(「批准签」)，首签依据为 2026-08-26 拍板「直接用新的上线」
+- **对拍**:有 —— `migration-total` = `102`
 
 > ⭐ 这条对拍的价值在于它**会过期**:再落一条 migration ⇒ 机器读数与签字里的值不等 ⇒ 当场红,
 > 维护者必须为**新增的那条**重新签字。「经审查」的覆盖面因此不会随时间静默扩大。

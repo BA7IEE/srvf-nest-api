@@ -23,6 +23,7 @@ interface RawDbError {
 
 type TemplateOptions = {
   code?: string;
+  statusCode?: string;
   version?: number;
   familyId?: string | null;
   schemaVersion?: number | null;
@@ -126,6 +127,7 @@ describe('Activity OS R1 A2 TemplateFamily / TemplateVersion schema 约束', () 
   const templateSql = (id: string, options: TemplateOptions = {}) => {
     const value = {
       code: 'template-' + id,
+      statusCode: 'legacy-status',
       version: 1,
       familyId: null as string | null,
       schemaVersion: null as number | null,
@@ -150,7 +152,7 @@ describe('Activity OS R1 A2 TemplateFamily / TemplateVersion schema 约束', () 
         ', ' +
         sqlText('legacy-activity-type') +
         ', ' +
-        sqlText('legacy-status') +
+        sqlText(value.statusCode) +
         ', ' +
         value.version +
         ', ' +
@@ -325,21 +327,46 @@ describe('Activity OS R1 A2 TemplateFamily / TemplateVersion schema 约束', () 
     await expectAccepted(
       templateSql('one-v1', {
         familyId: 'one',
+        statusCode: 'draft',
         version: 1,
         schemaVersion: 1,
         definitionJson: '{"kind":"a2-storage-only"}',
-        definitionHash: 'opaque-a2-placeholder',
+        definitionHash: 'a'.repeat(64),
         effectiveFrom: '2099-09-01T00:00:00.000Z',
         effectiveTo: '2099-12-31T00:00:00.000Z',
       }),
     );
 
-    await expectRejected(templateSql('one-v1-duplicate', { familyId: 'one', version: 1 }), {
-      sqlState: '23505',
-    });
-    await expectAccepted(templateSql('two-v1', { familyId: 'two', version: 1 }));
     await expectRejected(
-      templateSql('unknown-family', { familyId: 'family-does-not-exist', version: 1 }),
+      templateSql('one-v1-duplicate', {
+        familyId: 'one',
+        statusCode: 'draft',
+        version: 1,
+        schemaVersion: 1,
+        definitionJson: '{"kind":"a3-valid-draft-duplicate"}',
+        definitionHash: 'c'.repeat(64),
+      }),
+      { sqlState: '23505' },
+    );
+    await expectAccepted(
+      templateSql('two-v1', {
+        familyId: 'two',
+        statusCode: 'draft',
+        version: 1,
+        schemaVersion: 1,
+        definitionJson: '{"kind":"a3-valid-draft"}',
+        definitionHash: 'b'.repeat(64),
+      }),
+    );
+    await expectRejected(
+      templateSql('unknown-family', {
+        familyId: 'family-does-not-exist',
+        statusCode: 'draft',
+        version: 1,
+        schemaVersion: 1,
+        definitionJson: '{"kind":"a3-valid-draft-unknown"}',
+        definitionHash: 'd'.repeat(64),
+      }),
       { sqlState: '23503', constraint: 'ActivityTemplate_familyId_fkey' },
     );
   });
@@ -352,7 +379,15 @@ describe('Activity OS R1 A2 TemplateFamily / TemplateVersion schema 约束', () 
     });
 
     await expectAccepted(familySql('referenced-family'));
-    await expectAccepted(templateSql('referenced-template', { familyId: 'referenced-family' }));
+    await expectAccepted(
+      templateSql('referenced-template', {
+        familyId: 'referenced-family',
+        statusCode: 'draft',
+        schemaVersion: 1,
+        definitionJson: '{"kind":"a3-valid-draft-reference"}',
+        definitionHash: 'e'.repeat(64),
+      }),
+    );
     await expectRejected(
       'DELETE FROM "ActivityTemplateFamily" WHERE id = ' + sqlText('referenced-family'),
       { sqlState: '23503', constraint: 'ActivityTemplate_familyId_fkey' },
