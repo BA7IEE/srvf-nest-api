@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1 已通过并合入 #1237；A2 schema/migration 与非空库 rehearsal 已完成 | A2 独立 PR、CI 与验收 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2 已通过并合入 #1237/#1239 | 下一刀 A3 独立立项 |
 
 ### 1.1 欠代码的五项
 
@@ -98,9 +98,10 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
 红区裁判与已接线结构判据、No-AI Journey 入口，以及 `ARCHITECTURE.md` 过时预设的修正均已
 完成验证。**A1 已于 2026-09-01 以 #1237 独立合并**：只增加分类 / Facet 受控字典和 31/31
-legacy registry，不改变现有 Activity 运行时或 API。A2 方案 A 已由维护者拍板并取得精确红区
-授权，Family / Version 的纯 expand、独立 schema e2e 与非空库 rehearsal 已完成；仍须独立 PR、
-CI 与验收收口，不得把 A1 的 seed 授权带入后续切片。
+legacy registry，不改变现有 Activity 运行时或 API。**A2 已于 2026-09-01 以 #1239 独立合并**：
+方案 A 的 Family / Version 纯 expand、独立 schema e2e、非空库 rehearsal、全套 PR CI 与红区
+审批均已通过；既有 resolver、Activity 选定 Version、canonical JSON/hash/lifecycle、API/DTO/
+权限/Gate、seed、回填和生产部署均未改。A3 及以后仍须逐刀独立立项，A2 的 schema 授权不得带入。
 本项不改变现有 schema、migration、AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
@@ -161,7 +162,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 |---|---|---|
 | `docs/archive/reviews/activity-os-t0-terminal-review.md` | open · P1-33 | Activity OS T0-A 冻结合同；T0-B 和 Release 1 以后仍待独立实施 |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md` | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md` | open · P1-33 | Release 1 / A2 D 档 Family / Version expand；方案 A 已拍板，实施与 PR 验收中 |
+| `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md` | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
