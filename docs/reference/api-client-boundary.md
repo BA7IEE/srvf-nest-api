@@ -85,3 +85,55 @@ API Client Boundary 设计期(Phase 0)过程性约束(原 §19.1 ~ §19.6)已随
 - **alias 只加不删 + deprecation 窗口 ≥ 2 release**是本轮迁移实施期已履行的历史约束,不是恢复 legacy alias 的授权;当前禁止恢复已删除老 path。
 - **D-1**(`contribution-rules` → System)、**D-3** Phase 1A(Tag 改名,已完成)、**D-4 ~ D-8**(App 身份/权限/DTO/数据访问/架构边界)**继续完全有效**,本节不触碰;raw permission code ≠ app capability(D-5.3)在迁移中继续保持。
 - 灰区归属已由迁移计划 Phase 0 映射表经用户签字冻结:audit-logs / storage / RBAC 系 / dictionaries / attachment-configs 均归 System;当前执行见 [`api-surface-policy.md §0`](../api-surface-policy.md),常规 PR 不得重归类。
+
+## 22. Activity OS 的 Integration 与 AI Assist 执行审查
+
+本节是 T0-B 的执行清单，不重开 §19 的已锁定决策，也不改变
+[`api-surface-policy.md`](../api-surface-policy.md) 作为 surface 归属的唯一权威源。当前没有
+因此新增任何 Integration 业务端点。
+
+### 22.1 新 Integration endpoint 的逐项矩阵
+
+每个新增或放宽的 `/api/integration/v1/*` endpoint 必须在评审稿和实现 PR 中各有一行，
+十列全部非空；不能用“沿用现有端点”省略任一列。
+
+| endpoint | principal admission | permission code | servicePrincipalAllowed | delegatedAccessAllowed | allowed scope | resource target resolver | idempotency operation | audit event | sensitive fields |
+|---|---|---|---|---|---|---|---|---|---|
+| `<method + path>` | `Service only` / `Delegated only` / 明确两者规则 | `<code>` | `true / false` | `true / false` | `GLOBAL / ORGANIZATION / ...` | 由服务端如何从可信输入解析目标 | `read-only` 或已注册 operation | `<event>` | 字段分级、掩码与禁传说明 |
+
+审查时逐项确认：
+
+1. Service Principal 使用的权限已显式 `servicePrincipalAllowed=true`；Delegated 再要求
+   `delegatedAccessAllowed=true`，并且 permission 在 Grant allowlist 内。
+2. User 当前 Authz、Service Principal direct RoleBinding、Grant scope 与 SP scope 都覆盖
+   服务端解析的目标；任一主体、Credential、Binding 或 Grant 失效后，下一请求立即拒绝。
+3. 创建类命令不信任调用方自填 target：先验证组织等输入，再由服务端构造授权目标，最后才
+   进入业务事务。
+4. 写命令有 `Idempotency-Key`、已注册 operation、覆盖业务输入与 Delegated 语义的 request
+   hash，以及同一事务内的领域写、receipt 与最小响应快照。
+5. 审计复用规范化 request-id、可信客户端 IP、principal、on-behalf-of user、operation 与
+   BizCode；日志和审计不得写 Token、Client Secret、Secret hash、完整 Prompt、完整响应
+   或 Idempotency-Key。
+6. 需要敏感字段时，先完成敏感字段三问；默认不得将原始报名答案、证件、医疗信息、精确
+   轨迹、Token、Secret 或 signed URL 交给 Integration 调用方或模型。
+
+### 22.2 Direct、Delegated 与唯一 Gate
+
+| 场景 | 允许 principal | 规则 |
+|---|---|---|
+| 公开参考目录、模板元数据、非人化探针 | Service Token | 仍需 direct RoleBinding 与 scope；只读不等于免授权。 |
+| 代表负责人创建或修改活动草稿 | Delegated Token | 三腿授权、服务端 target 解析和幂等全部成立。 |
+| 正式发布、时长终审、贡献调整、账本更正 | 默认 Human 流程 | 首批 Integration 不开放；以后逐端点评审，不可由 Service Token 冒充真人。 |
+
+`INTEGRATION_API_ENABLED` 是唯一 Integration 业务 Gate。不得以 Activity、AI Assist 或单个
+endpoint 为名新增第二个半开关；渐进开放依靠端点是否存在、显式 permission eligibility、
+最小 RoleBinding、Grant allowlist 和 scope。异常总止损统一关闭该 Gate。
+
+### 22.3 AI Assist 不是 Human API 的旁路
+
+人机协作 UI 由真人调用 Human API；外部 Agent 只调用 Integration API，代人动作只能使用
+Delegated Token。AI Assist 只能调用明确的 Application Facade，不能直接访问数据库或进入
+核心事务；每项 Assist 能力必须保留完整的手工等价业务路径。其核心依赖禁止由红区裁判
+[`scripts/check-ai-dependency-boundary.ts`](../../scripts/check-ai-dependency-boundary.ts) 持续检查，
+并由 [`src/ai-dependency-boundary.criteria.spec.ts`](../../src/ai-dependency-boundary.criteria.spec.ts)
+接入既有 unit runner。

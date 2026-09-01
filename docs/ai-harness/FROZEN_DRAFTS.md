@@ -18,7 +18,7 @@
 
 ---
 
-## 1. 还有欠账的冻结稿(8 项 / 涉 16 份文件)
+## 1. 还有欠账的冻结稿(9 项 / 涉 17 份文件)
 
 > **落地度列开头的 `` `↔…` `` 是给判据 6 读的对照标记**,不是装饰 —— 它声明本行与
 > `NEXT_TASKS.md` 同编号条目的状态行**是不是同一把尺子**。取值与写法见 [§4](#4-这份台账由什么守着)。
@@ -33,8 +33,9 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔待拍板` 合同 24 / 24；T0-B 已完成本分支验证，Release 1 仍待独立评审 | 维护者独立评审 T0-B |
 
-### 1.1 欠代码的四项
+### 1.1 欠代码的五项
 
 **① Integration Foundation v1 —— 唯一一份零行未动**
 外部系统(ICC / 车辆 / 物资 / 无人机 / 值班 / 大屏 / AI Agent / 兄弟部门自研)的安全接入地基:
@@ -91,6 +92,14 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
+**⑤ Activity OS T0-A —— 合同已冻结，不可跳过 T0-B 直接施工**
+本项只完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
+[Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
+**T0-B 已完成本分支验证**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
+红区裁判与已接线结构判据、No-AI Journey 入口，以及 `ARCHITECTURE.md` 过时预设的修正均已
+完成验证；在 T0-B 独立评审通过前，Release 1 / A1 没有开工授权。
+本项不改变现有 schema、migration、AI 模块、Integration 业务面、权限码或任何 Gate。
+
 ### 1.2 欠运维的四项(代码都写完了)
 
 | 冻结稿 | 还差什么 |
@@ -123,7 +132,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 | 治理 Phase 4:状态列 governed / 登记总数 | **8 / 59** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
-| 治理 Phase 1J:跨域金路径 journey 数 | **5** | `test/journeys/` |
+| 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
 | 三条"代码已落、闸未开"的开关在配置里的数量 | **3 / 3** | `src/config/app.config.ts` |
 
 <!-- frozen-drafts:readings:end -->
@@ -147,6 +156,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 | 文件 | 分类 | 去向 / 理由 |
 |---|---|---|
+| `docs/archive/reviews/activity-os-t0-terminal-review.md` | open · P1-33 | Activity OS T0-A 冻结合同；T0-B 和 Release 1 以后仍待独立实施 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |

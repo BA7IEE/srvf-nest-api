@@ -24,6 +24,7 @@
 - `APP_TRUSTED_PROXY_CIDRS` production/smoke 下缺失、空值、纯空白或非法值必须在 ConfigModule 装配期 fail-fast；`.env.test` 显式设置 `none`，避免测试隐式依赖 default。反代部署不得用 `none` 启动承流实例，否则全部客户端会退化为同一个 proxy socket IP
 - `ENABLE_SWAGGER` **必须严格字符串判断 `=== 'true'`**(**禁止** `Boolean(process.env.ENABLE_SWAGGER)` 或 truthy 判断,否则字符串 `'false'` 会被误判为开启);Swagger 开关公式 `APP_ENV !== 'production' || ENABLE_SWAGGER === 'true'`
 - `INTEGRATION_API_ENABLED` 是唯一 Integration 业务 Gate；development/test 缺失时默认 `false`，production/smoke 必须显式严格填写 `true|false`。`false` 时只允许控制面预配置，Token 签发与 Integration Surface 必须 fail-closed
+- `INTEGRATION_API_ENABLED` 不是按业务域拆分的选择器：不得再为 Activity、AI Assist 或某个 Integration endpoint 增设第二个业务 Gate。端点的渐进开放只能由端点是否已实现、显式 permission eligibility、最小 RoleBinding、Grant allowlist 和可信 scope 决定；紧急总止损仍只关闭这一项
 - `INTEGRATION_JWT_SECRET` 与真人 `JWT_SECRET` 必须独立；production/smoke 无条件必填、至少 48 字符且不得相同。development/test 开 Gate 时同样必须非空且不得复用真人密钥；密钥绝不进日志 / audit / 响应
 - `INTEGRATION_SERVICE_TOKEN_EXPIRES_IN` / `INTEGRATION_DELEGATED_TOKEN_EXPIRES_IN` 支持 `10m` 等 `s|m` 时长，也兼容历史纯秒数；留空默认 10m，显式值必须为安全正整数且不超过 30m，禁止 `parseInt` 式吞掉尾随字符
 - production 切换保险 single gate 前必须先 drain 旧 server 与旧事务；同一 fleet 禁止 true/false 混跑。配置代码可交付而不等于已 deploy/enable，文档不得用“旧客户端未上线”替代“旧 server=0”运行证据
