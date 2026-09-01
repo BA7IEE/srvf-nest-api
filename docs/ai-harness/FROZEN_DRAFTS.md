@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B 已通过；Release 1 A1 正在实施与验证，后续 A2 严格等待 A1 合并 | A1 验证、维护者评审与合并 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1 已通过并合入 #1237；A2 须独立 D 档推进 | A2 评审稿、精确红区授权与独立 PR |
 
 ### 1.1 欠代码的五项
 
@@ -97,8 +97,9 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
 红区裁判与已接线结构判据、No-AI Journey 入口，以及 `ARCHITECTURE.md` 过时预设的修正均已
-完成验证。**A1 正在本分支实施与验证**：只增加分类 / Facet 受控字典和 31/31 legacy registry，
-不改变现有 Activity 运行时或 API；A2 及之后必须等待 A1 独立 PR 合并、CI 与维护者验收完成。
+完成验证。**A1 已于 2026-09-01 以 #1237 独立合并**：只增加分类 / Facet 受控字典和 31/31
+legacy registry，不改变现有 Activity 运行时或 API。A2 及之后仍须各自完成独立 D 档评审、精确
+红区授权、验证与 PR 收口，不得把 A1 的 seed 授权带入后续切片。
 本项不改变现有 schema、migration、AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
@@ -158,7 +159,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | 文件 | 分类 | 去向 / 理由 |
 |---|---|---|
 | `docs/archive/reviews/activity-os-t0-terminal-review.md` | open · P1-33 | Activity OS T0-A 冻结合同；T0-B 和 Release 1 以后仍待独立实施 |
-| `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md` | open · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；A1 合并前保持 open |
+| `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md` | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
