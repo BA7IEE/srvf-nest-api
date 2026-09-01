@@ -222,13 +222,13 @@ function eviSub(id, kind, title, evidence): SubCheck {
 ### 3b — 「新 schema migrations 经审查」
 
 - **结论**:认可
-- **理由**:100 条 migration;本批新增的每一条都经 CI 冷跑全量重放通过。2026-08-26 首签时为 99 条;第 100 条(Integration Foundation v1 PR1 schema 地基,#1217)落地后按本表机制重签 —— 该条 migration 经干净库全量重放 + CHECK 双向变异对拍 + CI「Verify production migration command」全绿
+- **理由**:101 条 migration;第 101 条 `20260901100000_activity_os_r1_a2_template_family_version_expand` 为纯 expand：新建空 ActivityTemplateFamily，并向既有 ActivityTemplate 增加六个可空 Version 元数据，零回填、seed 或运行时切换。该 migration 已完成非生产非空库 rehearsal 与独立 PostgreSQL 约束 E2E；维护者于 2026-09-01 明确确认本次 3b 重签。2026-08-26 首签时为 99 条；第 100 条(Integration Foundation v1 PR1 schema 地基,#1217)落地后曾按本表机制重签
 - **签字人**:维护者
-- **日期**:2026-08-28
-- **依据**:维护者 2026-08-28 对话批准重签(「批准签」);首签依据为 2026-08-26 拍板「直接用新的上线」
-- **对拍**:有 —— `migration-total` = `100`
+- **日期**:2026-09-01
+- **依据**:维护者 2026-09-01 对话确认重签3b；前签依据为维护者 2026-08-28 对话批准重签(「批准签」)，首签依据为 2026-08-26 拍板「直接用新的上线」
+- **对拍**:有 —— `migration-total` = `101`
 
-> ⭐ 这条对拍的价值在于它**会过期**:再落一条 migration ⇒ 读数 100 ≠ 签字里的 99 ⇒ 当场红,
+> ⭐ 这条对拍的价值在于它**会过期**:再落一条 migration ⇒ 机器读数与签字里的值不等 ⇒ 当场红,
 > 维护者必须为**新增的那条**重新签字。「经审查」的覆盖面因此不会随时间静默扩大。
 
 ### 4b — 「字典、Audit events」的对账
