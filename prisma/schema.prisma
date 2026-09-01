@@ -343,6 +343,8 @@ model Organization {
   // relation(仅关系映射,无列)。**scoped 绑定入库即止,RbacService 只读 GLOBAL、绝不判 scoped**(判权是 PR8)。
   roleBindingScopes RoleBinding[] @relation("RoleBindingScopeOrg")
   servicePrincipalsOwned ServicePrincipal[] @relation("ServicePrincipalOwnerOrganization")
+  // Activity OS R1 / A2：模板 Family 的可选归属；仅关系映射，尚无读写路径。
+  activityTemplateFamiliesOwned ActivityTemplateFamily[] @relation("ActivityTemplateFamilyOwnerOrganization")
 
   @@index([parentId])
   @@index([nodeTypeCode])
@@ -1662,6 +1664,31 @@ model ActivityPublishReview {
   @@map("activity_publish_reviews")
 }
 
+// ===== Activity OS R1 / A2:TemplateFamily 稳定身份 =====
+//
+// Family 承载可识别的模板族、分类、归属、范围与生命周期占位；Version 的具体定义仍在
+// ActivityTemplate。A2 只提供储存和 FK / 唯一性，不引入业务写路径、闭集、Version 元数据默认值或 seed。
+model ActivityTemplateFamily {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  code                String  @unique
+  name                String
+  categoryCode        String
+  ownerOrganizationId String?
+  scopeTypeCode       String
+  statusCode          String
+
+  ownerOrganization Organization?      @relation("ActivityTemplateFamilyOwnerOrganization", fields: [ownerOrganizationId], references: [id], onDelete: Restrict)
+  versions          ActivityTemplate[]
+
+  @@index([ownerOrganizationId])
+  @@index([categoryCode])
+  @@index([scopeTypeCode])
+  @@index([statusCode])
+}
+
 // ===== §3.4 ActivityTemplate:可版本化默认配置 =====
 //
 // 模板更新新建版本,不覆盖已发布活动;故唯一键是 (code, version),绝不把 code 单列 unique。
@@ -1677,6 +1704,14 @@ model ActivityTemplate {
   activityTypeCode String
   statusCode       String // 取值集待合同修订件;不加 CHECK。
   version          Int
+  // Activity OS R1 / A2：全部可空，零回填。canonical JSON / hash / 有效期边界与 lifecycle
+  // 均由 A3 定义；本刀绝不把这些字段接进现有模板解析或 API。
+  familyId         String?
+  schemaVersion    Int?
+  definitionJson   Json?
+  definitionHash   String?
+  effectiveFrom    DateTime?
+  effectiveTo      DateTime?
 
   // 默认报名方式 → Activity.registrationModeCode。
   defaultRegistrationModeCode       String?
@@ -1697,11 +1732,14 @@ model ActivityTemplate {
   // 常用岗位模板:数组元素结构由第 3 批第二刀的 template-resolution 合同定义。
   commonPositionTemplates           Json?
 
+  family        ActivityTemplateFamily? @relation(fields: [familyId], references: [id], onDelete: Restrict)
   ruleSnapshots ActivityRuleSnapshot[]
 
   @@unique([code, version])
+  @@unique([familyId, version])
   @@index([activityTypeCode])
   @@index([statusCode])
+  @@index([familyId])
 }
 
 // ===== §3.4 ActivityRuleSnapshot:发布／关键变更审核通过后的不可变规则快照 =====
