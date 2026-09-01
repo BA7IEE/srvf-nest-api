@@ -1,0 +1,1 @@
+- 活动域：新增受控 Category / Facet 字典与 31 条旧 `activityTypeCode` 迁移注册表，保持旧接口和运行时行为不变。

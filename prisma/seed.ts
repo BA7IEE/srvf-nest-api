@@ -552,6 +552,24 @@ export const V2_DICT_SEED = [
     ],
   },
   {
+    // Activity OS R1 / A1:稳定一级分类。九类才是正式统计分类；待人工分类只承接证据不足的
+    // legacy 映射，治理完成前不得作为正式分类使用。31 条旧值的唯一解释见
+    // src/modules/activities/activity-type-migration.registry.ts；本 seed 只提供受控字典值。
+    type: { code: 'activity_category', label: '活动一级分类', sortOrder: 26 },
+    items: [
+      { code: 'emergency_response', label: '应急响应', sortOrder: 0 },
+      { code: 'duty_readiness', label: '值守备勤', sortOrder: 1 },
+      { code: 'training_exercise', label: '训练演练', sortOrder: 2 },
+      { code: 'event_support', label: '活动保障', sortOrder: 3 },
+      { code: 'outreach_communication', label: '宣教传播', sortOrder: 4 },
+      { code: 'public_service', label: '公益服务', sortOrder: 5 },
+      { code: 'cooperation_exchange', label: '交流协作', sortOrder: 6 },
+      { code: 'organization_operation', label: '组织运行', sortOrder: 7 },
+      { code: 'logistics_support', label: '后勤保障', sortOrder: 8 },
+      { code: 'pending_classification', label: '待人工分类', sortOrder: 9 },
+    ],
+  },
+  {
     // 活动 B7:运营维护会员受众标签，首次 seed 只建类型、不预置任何成员受众项。
     // 类型与 items 都禁止软删，停用是唯一退休语义，见 dictionaries.service.ts 的两组保护集。
     type: { code: 'member_audience_tag', label: '会员受众标签', sortOrder: 0 },
@@ -774,6 +792,91 @@ async function seedActivityTypeHierarchy(prisma: PrismaClient): Promise<void> {
 
   console.log(
     `[seed] V2 dict 'activity_type' ensured (${parents.length} 父项 + ${children.length} 子项,二级树)`,
+  );
+}
+
+// Activity OS R1 / A1:受控语义属性二级树。六个维度本身已经冻结；只预置 31 条 legacy
+// 映射实际需要的 option，不把蓝图的示例扩张成未经治理的全量词表。environment 现阶段
+// 有维度但无 option，后续 Family / Version 或 Place 轴若要新增取值，必须单独立项。
+const ACTIVITY_SEMANTIC_FACET_DIMENSION_SEED = [
+  { code: 'environment', label: '环境', sortOrder: 0 },
+  { code: 'action', label: '行动', sortOrder: 1 },
+  { code: 'capability', label: '能力', sortOrder: 2 },
+  { code: 'cooperation', label: '协作', sortOrder: 3 },
+  { code: 'target', label: '对象', sortOrder: 4 },
+  { code: 'format', label: '形式', sortOrder: 5 },
+] as const;
+
+const ACTIVITY_SEMANTIC_FACET_OPTION_SEED = [
+  { code: 'rescue', label: '救援', sortOrder: 0, parentCode: 'action' },
+  { code: 'relief', label: '救灾', sortOrder: 1, parentCode: 'action' },
+  { code: 'supplies', label: '物资保障', sortOrder: 2, parentCode: 'action' },
+  { code: 'transportation', label: '运输', sortOrder: 3, parentCode: 'action' },
+  { code: 'aviation', label: '航空', sortOrder: 0, parentCode: 'capability' },
+  { code: 'external', label: '外部协作', sortOrder: 0, parentCode: 'cooperation' },
+  { code: 'external_joint', label: '外部联合', sortOrder: 1, parentCode: 'cooperation' },
+  { code: 'internal_joint', label: '内部联合', sortOrder: 2, parentCode: 'cooperation' },
+  { code: 'disaster_affected_people', label: '受灾群众', sortOrder: 0, parentCode: 'target' },
+  { code: 'public', label: '公众', sortOrder: 1, parentCode: 'target' },
+  { code: 'event_support', label: '活动保障', sortOrder: 0, parentCode: 'format' },
+  { code: 'team_support', label: '队伍活动保障', sortOrder: 1, parentCode: 'format' },
+  { code: 'lecture', label: '讲座', sortOrder: 2, parentCode: 'format' },
+  { code: 'training', label: '培训', sortOrder: 3, parentCode: 'format' },
+  { code: 'competition', label: '比赛', sortOrder: 4, parentCode: 'format' },
+  { code: 'meeting', label: '会议', sortOrder: 5, parentCode: 'format' },
+  { code: 'drill', label: '演练', sortOrder: 6, parentCode: 'format' },
+  { code: 'interview', label: '采访', sortOrder: 7, parentCode: 'format' },
+  { code: 'team_building', label: '团建', sortOrder: 8, parentCode: 'format' },
+] as const;
+
+async function seedActivitySemanticFacetHierarchy(prisma: PrismaClient): Promise<void> {
+  const dictType = await prisma.dictType.upsert({
+    where: { code: 'activity_semantic_facet' },
+    update: {},
+    create: {
+      code: 'activity_semantic_facet',
+      label: '活动语义属性',
+      sortOrder: 27,
+    },
+    select: { id: true },
+  });
+
+  const dimensionMap = new Map<string, string>();
+  for (const dimension of ACTIVITY_SEMANTIC_FACET_DIMENSION_SEED) {
+    const item = await prisma.dictItem.upsert({
+      where: { typeId_code: { typeId: dictType.id, code: dimension.code } },
+      update: {},
+      create: {
+        typeId: dictType.id,
+        code: dimension.code,
+        label: dimension.label,
+        sortOrder: dimension.sortOrder,
+      },
+      select: { id: true, code: true },
+    });
+    dimensionMap.set(item.code, item.id);
+  }
+
+  for (const option of ACTIVITY_SEMANTIC_FACET_OPTION_SEED) {
+    const parentId = dimensionMap.get(option.parentCode);
+    if (!parentId) {
+      throw new Error(`[seed] activity_semantic_facet 维度 '${option.parentCode}' 不存在`);
+    }
+    await prisma.dictItem.upsert({
+      where: { typeId_code: { typeId: dictType.id, code: option.code } },
+      update: {},
+      create: {
+        typeId: dictType.id,
+        code: option.code,
+        label: option.label,
+        sortOrder: option.sortOrder,
+        parentId,
+      },
+    });
+  }
+
+  console.log(
+    `[seed] V2 dict 'activity_semantic_facet' ensured (${ACTIVITY_SEMANTIC_FACET_DIMENSION_SEED.length} 维度 + ${ACTIVITY_SEMANTIC_FACET_OPTION_SEED.length} option,二级树)`,
   );
 }
 
@@ -2560,6 +2663,9 @@ export async function main(): Promise<void> {
 
     // V2 第一阶段批次 3:activity_type 二级树字典(D11)
     await seedActivityTypeHierarchy(prisma);
+
+    // Activity OS R1 / A1:分类 / Facet 受控字典（纯 additive；不改旧 activityTypeCode）。
+    await seedActivitySemanticFacetHierarchy(prisma);
 
     // 招新闭环优化 S1(2026-06-24):recruitment_stage 招新业务态文案字典(additive;7 态)
     await seedRecruitmentStageDict(prisma);

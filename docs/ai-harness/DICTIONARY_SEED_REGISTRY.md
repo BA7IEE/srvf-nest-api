@@ -10,8 +10,10 @@
 > type 与 item 的 label 与 seed **逐字相等**(**漂移 ⇒ 红**)。
 > ⇒ 改 seed 的字典(红区文件,本就要令牌)= 同一 PR 必须同步改本表,否则 CI 红。
 >
-> **来源(seed.ts 的三个 seed 函数)**:`seedV2Dictionaries`(V2_DICT_SEED 平铺字典)/
-> `seedActivityTypeHierarchy`(activity_type 二级树:9 父 + 31 子)/ `seedRecruitmentStageDict`(招新进度态)。
+> **来源(seed.ts 的四个 seed 函数)**:`seedV2Dictionaries`(V2_DICT_SEED 平铺字典)/
+> `seedActivityTypeHierarchy`(activity_type 二级树:9 父 + 31 子)/
+> `seedActivitySemanticFacetHierarchy`(活动语义属性二级树:6 维度 + 19 option)/
+> `seedRecruitmentStageDict`(招新进度态)。
 >
 > **射程与刻意不登记的**:
 > - 只登记 **seed 预置** 的字典项;运营在运行时经后台增改的不在此表(那是字典的功能,不是 seed 的事实)。
@@ -20,7 +22,7 @@
 > - 「seed 不预置 items」的字典**必须**显式标注(见 group_function / member_audience_tag)——
 >   空表不许静默,否则「提取器漏了一节」和「本来就没有」长得一模一样。
 
-**字典 type(机器核对):28 个 · item(机器核对):242 项**
+**字典 type(机器核对):30 个 · item(机器核对):277 项**
 
 
 ## node_type — 组织节点类别
@@ -386,6 +388,51 @@
 | department_team_building | 部门团建 |
 | transportation | 交通类 |
 | special_social_service | 特殊社会服务 |
+
+## activity_category — 活动一级分类
+
+| code | label |
+|---|---|
+| emergency_response | 应急响应 |
+| duty_readiness | 值守备勤 |
+| training_exercise | 训练演练 |
+| event_support | 活动保障 |
+| outreach_communication | 宣教传播 |
+| public_service | 公益服务 |
+| cooperation_exchange | 交流协作 |
+| organization_operation | 组织运行 |
+| logistics_support | 后勤保障 |
+| pending_classification | 待人工分类 |
+
+## activity_semantic_facet — 活动语义属性
+
+| code | label |
+|---|---|
+| environment | 环境 |
+| action | 行动 |
+| capability | 能力 |
+| cooperation | 协作 |
+| target | 对象 |
+| format | 形式 |
+| rescue | 救援 |
+| relief | 救灾 |
+| supplies | 物资保障 |
+| transportation | 运输 |
+| aviation | 航空 |
+| external | 外部协作 |
+| external_joint | 外部联合 |
+| internal_joint | 内部联合 |
+| disaster_affected_people | 受灾群众 |
+| public | 公众 |
+| event_support | 活动保障 |
+| team_support | 队伍活动保障 |
+| lecture | 讲座 |
+| training | 培训 |
+| competition | 比赛 |
+| meeting | 会议 |
+| drill | 演练 |
+| interview | 采访 |
+| team_building | 团建 |
 
 ## recruitment_stage — 招新进度态
 

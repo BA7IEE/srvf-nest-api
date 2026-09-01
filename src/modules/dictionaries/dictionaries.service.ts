@@ -87,6 +87,9 @@ const SYSTEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   // 队内内置(items 亦受 ② 保护)。
   'member_grade',
   'activity_type',
+  // Activity OS R1 / A1:受控分类与语义属性；历史映射与正式统计都依赖 code 长存。
+  'activity_category',
+  'activity_semantic_facet',
   'gender_requirement',
   // 闭集状态 / 角色机(items 亦受 ② 保护)。
   'cert_status',
@@ -123,6 +126,8 @@ const ITEM_PROTECTED_DICT_TYPES: ReadonlySet<string> = new Set<string>([
   // 队内内置
   'member_grade',
   'activity_type',
+  'activity_category',
+  'activity_semantic_facet',
   'gender_requirement',
   // 闭集状态 / 角色机
   'cert_status',

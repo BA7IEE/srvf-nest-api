@@ -106,7 +106,7 @@ describe('P2-23a 字典 seed 登记表 —— 真读数(六维,全绿才作数)'
     expect(allDimensions(SEED_SOURCE, REGISTRY_TEXT).D0).toEqual([]);
   });
 
-  it('D1 🔴 站点闭集:dictType/dictItem upsert 只在三个已知函数、数量精确、item code 非字面量', () => {
+  it('D1 🔴 站点闭集:dictType/dictItem upsert 只在四个已知函数、数量精确、item code 非字面量', () => {
     expect(allDimensions(SEED_SOURCE, REGISTRY_TEXT).D1).toEqual([]);
   });
 
@@ -134,8 +134,8 @@ describe('P2-23a 字典 seed 登记表 —— 真读数(六维,全绿才作数)'
 describe('P2-23a 字典 seed 登记表 —— 常驻变异对拍(做错时必须红,且只红自己)', () => {
   it('M1 漏登记一条 item(声明行同步改,攻击者不会留着计数不不符)⇒ 只有 D3 红,点名那条', () => {
     const mutated = REGISTRY_TEXT.replace('| level-7 | 正式队员7级 |\n', '').replace(
-      '**字典 type(机器核对):28 个 · item(机器核对):242 项**',
-      '**字典 type(机器核对):28 个 · item(机器核对):241 项**',
+      '**字典 type(机器核对):30 个 · item(机器核对):277 项**',
+      '**字典 type(机器核对):30 个 · item(机器核对):276 项**',
     );
     expect(mutated).not.toBe(REGISTRY_TEXT);
     expectOnlyRed(allDimensions(SEED_SOURCE, mutated), 'D3', "'member_grade' 的 item 'level-7'");
@@ -146,8 +146,8 @@ describe('P2-23a 字典 seed 登记表 —— 常驻变异对拍(做错时必须
       '| reserve | 后备队员 |',
       '| reserve | 后备队员 |\n| level-8 | 幽灵级 |',
     ).replace(
-      '**字典 type(机器核对):28 个 · item(机器核对):242 项**',
-      '**字典 type(机器核对):28 个 · item(机器核对):243 项**',
+      '**字典 type(机器核对):30 个 · item(机器核对):277 项**',
+      '**字典 type(机器核对):30 个 · item(机器核对):278 项**',
     );
     expectOnlyRed(allDimensions(SEED_SOURCE, mutated), 'D4', "'member_grade' 的 item 'level-8'");
   });
@@ -170,8 +170,8 @@ describe('P2-23a 字典 seed 登记表 —— 常驻变异对拍(做错时必须
 
   it('M5 声明行数字改错 ⇒ 只有 D2 红', () => {
     const mutated = REGISTRY_TEXT.replace(
-      '**字典 type(机器核对):28 个 · item(机器核对):242 项**',
-      '**字典 type(机器核对):27 个 · item(机器核对):241 项**',
+      '**字典 type(机器核对):30 个 · item(机器核对):277 项**',
+      '**字典 type(机器核对):29 个 · item(机器核对):276 项**',
     );
     expect(mutated).not.toBe(REGISTRY_TEXT);
     expectOnlyRed(allDimensions(SEED_SOURCE, mutated), 'D2', '实际解析到');
