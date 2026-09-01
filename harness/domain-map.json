@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:f23a947c501342658db501a10eb6b94c21f2570c2a0af67a18fd35777123351b",
+  "inputDigest": "sha256:7a0393ab45f77c7521da45e64b1c01b58af2bf3f03dd9613765378ff12f5650c",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -457,6 +457,12 @@
       "confirmed": true
     },
     "ActivityTemplate": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityTemplateFamily": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",

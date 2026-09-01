@@ -1,0 +1,1 @@
+- 活动域：新增 TemplateFamily 稳定身份及 TemplateVersion 可空元数据扩展，保持既有模板解析和运行时行为不变。

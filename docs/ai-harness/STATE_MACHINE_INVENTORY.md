@@ -322,24 +322,24 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-08-25(活动归档刀)**
+**取数时点:2026-09-01(Activity OS R1 / A2 TemplateFamily expand)**
 
 | 项 | 值 |
 |---|---:|
-| 总条目 | **59** |
-| `governed` / `inventory` | **8 / 51** |
-| 51 条 inventory 的分层 | L1 **6** · L2 **19** · L3 **26** |
+| 总条目 | **60** |
+| `governed` / `inventory` | **8 / 52** |
+| 52 条 inventory 的分层 | L1 **6** · L2 **20** · L3 **26** |
 | 已有机器可读边(`transitions` 是数组)※ | 21 |
-| `transitions: "not-derived"` ※ | 25 |
+| `transitions: "not-derived"` ※ | 26 |
 | `transitions: "unconstrained"` ※ | 13 |
 
-> ※ 这三行按**全部 59 条**统计(21+25+13=59),不是按上一行那 51 条 inventory。
+> ※ 这三行按**全部 60 条**统计(21+26+13=60),不是按上一行那 52 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
 | **`vacuousGreenIfClosedSetOnly`** | **23** |
 | 零 blocker 但仍 inventory 的升格候选 | **0** |
 
-> 🔴 **本次 true-up 的两类改动要分开读**(2026-08-25 归档刀):
+> 🔴 **历史 true-up 与本次 A2 增补要分开读**:
 >
 > **① 本刀移动的 6 个数**:总条目 58→59 · inventory 50→51 · L1 5→6 ·
 > `not-derived` 24→25 · `vacuousGreenIfClosedSetOnly` 22→23 · `no-db-check` 22→23。
@@ -347,7 +347,12 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > `Activity.statusCode` 的闭集虽从 5 值扩到 6 值、边从 6 条扩到 14 条,但它**本来就是**
 > 数组型 `transitions` 的 inventory L3,故不改变上面任何一个计数。
 >
-> **② 与本刀无关、早已过期的 3 处**(在 `origin/main` 上就已经是错的,只是没有机器守着):
+> **② A2 追加的当前读数**:ActivityTemplateFamily.statusCode 是没有闭集、边或写路径的 L2
+> inventory，故总条目 59→60 · inventory 51→52 · L2 19→20 · `not-derived` 25→26 ·
+> `no-db-check` 23→24 · `no-wrong-state-bizcode` 27→28 · `edges-not-derived` 20→21 ·
+> `closed-set-undeclared` 5→6。它只登记存储占位，不代表 Family lifecycle 已治理。
+>
+> **③ 与 A2 无关、早已过期的 3 处**(在 `origin/main` 上就已经是错的,只是没有机器守着):
 > 下面 blocker 直方图里 `no-wrong-state-bizcode` 写 25 实为 **27**、`no-state-machine` 写 18
 > 实为 **20**、`impl-scattered` 写 1 实为 **2**;「零 blocker 升格候选」写
 > `1(ParticipantSettlementResultRevision.statusCode)` 实为 **0**。
@@ -356,8 +361,8 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > (它自己的注释也写明了这是刻意取舍:逐个盯比率会让断言变成第二份真相)——
 > 已知射程限制,不是本刀新引入的缺口。
 
-blocker 直方图(2026-08-25 现算;本刀只新增 1 条 `no-db-check`):`no-wrong-state-bizcode` 27 ·
-`no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 20 · `closed-set-undeclared` 5 ·
+blocker 直方图(2026-09-01 现算;A2 只新增 1 条 L2 inventory):`no-wrong-state-bizcode` 28 ·
+`no-db-check` 24 · `edges-not-derived` 21 · `no-state-machine` 20 · `closed-set-undeclared` 6 ·
 `edges-partially-derived` 2 · `vocabulary-divergence` 2 · `dictionary-driven` 2 ·
 `retired-value-in-set` 2 · `impl-scattered` 2 · `throws-instead-of-decide` 1 ·
 `decision-shape-divergence` 1 · `duplicate-constant-definition` 1。
