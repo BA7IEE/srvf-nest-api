@@ -241,9 +241,9 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
 
   beforeEach(async () => {
     await resetDb(app);
-    // ActivityTemplate 在本刀尚未被 Activity 反向引用；不能借 CASCADE 假装它会随 Activity
-    // 清掉。写集不含 test/setup，因此本 spec 只在已由 resetDb 验证过的**当前 worker 库**
-    // 局部 TRUNCATE 自己的 fixture，避免跨 it 残留；不触碰任何其它数据库。
+    // A4 后 Activity.selectedTemplateVersionId 会反向引用 ActivityTemplate；但 resetDb 已在
+    // 当前 worker 清掉 Activity（公共清单不列 ActivityTemplate）。因此这里再局部 TRUNCATE
+    // 自己的 Template fixture 仍成立，避免跨 it 残留；不触碰任何其它数据库。
     await prisma.$executeRawUnsafe('TRUNCATE TABLE "ActivityTemplate" RESTART IDENTITY CASCADE');
 
     organizationId = (

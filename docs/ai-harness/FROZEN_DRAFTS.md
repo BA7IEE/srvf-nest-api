@@ -168,6 +168,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md` | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md` | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md` | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r1-a4-explicit-template-version-review.md` | open · P1-33 | Release 1 / A4 的 D 档评审已于 2026-09-02 按方案 A 拍板，实施中；评审稿冻结不回改 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |

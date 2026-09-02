@@ -24,7 +24,7 @@ const MIGRATION_85_COUNT = 85;
 // ⚠️ 与上面的 MIGRATION_<N>_COUNT 是**两件事**:那些是固定的历史世代基线(冷库重放的起点),
 // 随仓库增长**永不变**;这个是仓库当前的 migration 总数,每加一刀就要 +1。
 // 混改任何一个都会把冷库重放用例的语义整个改坏(issue #1055 T1 加第 91 刀时逐个复核过)。
-const CURRENT_MIGRATION_COUNT = 102;
+const CURRENT_MIGRATION_COUNT = 103;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
