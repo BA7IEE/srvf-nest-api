@@ -396,6 +396,99 @@ describe('ActivityPublishProposalV2Service', () => {
     );
   });
 
+  it('resolves a stored template version by its exact id without legacy lifecycle filters', async () => {
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      registrationForms as never,
+      qualificationRules as never,
+      { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
+    );
+    const selected = {
+      id: 'selected-retired-version',
+      defaultRegistrationModeCode: 'selected-registration',
+      defaultLocationRequired: null,
+      defaultCheckInRadiusMeters: null,
+      defaultArchiveWaitingDays: null,
+    };
+    const tx = {
+      activityTemplate: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue(selected),
+        findFirst: jest.fn(),
+      },
+    };
+    const internals = service as unknown as {
+      findTemplate(
+        tx: unknown,
+        selectedTemplateVersionId: string | null,
+        activityTypeCode: string,
+      ): Promise<typeof selected | null>;
+    };
+
+    await expect(
+      internals.findTemplate(tx, 'selected-retired-version', 'legacy-activity-type'),
+    ).resolves.toEqual(selected);
+    expect(tx.activityTemplate.findUniqueOrThrow).toHaveBeenCalledWith({
+      where: { id: 'selected-retired-version' },
+      select: {
+        id: true,
+        defaultRegistrationModeCode: true,
+        defaultLocationRequired: true,
+        defaultCheckInRadiusMeters: true,
+        defaultArchiveWaitingDays: true,
+      },
+    });
+    expect(tx.activityTemplate.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('keeps the exact legacy active-template fallback when no stored version exists', async () => {
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      registrationForms as never,
+      qualificationRules as never,
+      { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
+    );
+    const fallback = {
+      id: 'latest-active-legacy-version',
+      defaultRegistrationModeCode: 'fallback-registration',
+      defaultLocationRequired: null,
+      defaultCheckInRadiusMeters: null,
+      defaultArchiveWaitingDays: null,
+    };
+    const tx = {
+      activityTemplate: {
+        findUniqueOrThrow: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue(fallback),
+      },
+    };
+    const internals = service as unknown as {
+      findTemplate(
+        tx: unknown,
+        selectedTemplateVersionId: string | null,
+        activityTypeCode: string,
+      ): Promise<typeof fallback | null>;
+    };
+
+    await expect(internals.findTemplate(tx, null, 'legacy-activity-type')).resolves.toEqual(
+      fallback,
+    );
+    expect(tx.activityTemplate.findUniqueOrThrow).not.toHaveBeenCalled();
+    expect(tx.activityTemplate.findFirst).toHaveBeenCalledWith({
+      where: { activityTypeCode: 'legacy-activity-type', statusCode: 'active' },
+      orderBy: [{ version: 'desc' }, { code: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        defaultRegistrationModeCode: true,
+        defaultLocationRequired: true,
+        defaultCheckInRadiusMeters: true,
+        defaultArchiveWaitingDays: true,
+      },
+    });
+  });
+
   it('runs the proposal application sequence through the capacity projector', async () => {
     const capacityBuckets = { apply: jest.fn() };
     const service = new ActivityPublishProposalV2Service(
