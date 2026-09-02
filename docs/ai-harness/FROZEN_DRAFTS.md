@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248；A7 已完成本地验证与 3b / 4b 签字闸 | A7 PR CI 冷跑与合入评审 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251 | 下一刀 A8 独立立项 |
 
 ### 1.1 欠代码的五项
 
@@ -123,6 +123,12 @@ Activity、Session、Position 和安全审计；不按 Family 状态或 effectiv
 migration 只为 Activity 添加两个 nullable 幂等列与一个唯一索引，零 default、回填、seed、删除和生产
 部署；V1 没有坐标，要求定位或半径的场次 / 岗位会 fail-closed。全套 PR CI 与红区审批均已收口；A6 不新增
 HTTP、DTO、Swagger、路由、权限码、Gate 或 A5 读侧改动。A7 及以后仍须逐刀独立立项，A6 的 D 档授权不得带入。
+**A7 已于 2026-09-02 以 #1251 独立合并**：新增仅供模块内使用的 Series façade 与 immutable Revision，按
+`Asia/Shanghai` 的日 / 周 / 月规则手工或按需生成。它复用 A6 的 transaction-bound materializer，在根事务内以
+命令收据和 `(seriesId, occurrenceKey)` 保证同键重放和单期唯一；第 105 条 migration 仅 additive 新增 Series、
+Revision、Receipt、Occurrence 及关联约束，零 default、回填、seed、删除和生产部署。单元 / PostgreSQL E2E、
+PR CI 与红区审批均已收口；A7 不新增 HTTP、DTO、Swagger、路由、权限码、Gate、cron、queue、Integration 或 AI
+入口。A8 及以后仍须逐刀独立立项，A7 的 D 档授权不得带入。
 本项不引入 AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
@@ -188,7 +194,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a4-explicit-template-version-review.md` | landed · P1-33 | Release 1 / A4 D 档显式 Template Version 指针纯 expand；已随 #1244 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a5-fallback-read-projection-review.md` | landed · P1-33 | Release 1 / A5 显式 Template Version fallback / 只读投影；已随 #1246 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a6-from-template-transaction-review.md` | landed · P1-33 | Release 1 / A6 内部从模板创建事务；已随 #1248 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | open · P1-33 | Release 1 / A7 Series 与手工／按需生成；方案、精确实施写集、3b migration 与 4b audit events 已获确认，本地验证完成，待 PR CI 冷跑与合入评审 |
+| `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | landed · P1-33 | Release 1 / A7 Series 与手工／按需生成；已随 #1251 合入，评审稿冻结不回改 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
