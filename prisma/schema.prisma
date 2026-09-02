@@ -1390,6 +1390,9 @@ model Activity {
 
   title                              String
   activityTypeCode                   String
+  // Activity OS R1 / A4：新活动未来会记录一次明确的模板版本选择；本刀只占可空指针，
+  // NULL 继续表示历史 activityTypeCode 路径，绝不在这里切换 resolver 或回填旧活动。
+  selectedTemplateVersionId          String?
   organizationId                     String
   startAt                            DateTime
   endAt                              DateTime
@@ -1540,6 +1543,7 @@ model Activity {
   unarchiveRequestHash  String?
 
   organization                 Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  selectedTemplateVersion      ActivityTemplate?                  @relation("ActivitySelectedTemplateVersion", fields: [selectedTemplateVersionId], references: [id], onDelete: Restrict)
   initiator                    Member?                            @relation("ActivityInitiator", fields: [initiatorMemberId], references: [id], onDelete: Restrict)
   publisher                    User?                              @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
   canceller                    User?                              @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
@@ -1605,6 +1609,7 @@ model Activity {
   @@index([statusCode])
   @@index([organizationId])
   @@index([activityTypeCode])
+  @@index([selectedTemplateVersionId])
   @@index([startAt])
   @@index([isPublicRegistration])
   @@index([initiatorMemberId])
@@ -1734,6 +1739,8 @@ model ActivityTemplate {
   commonPositionTemplates           Json?
 
   family        ActivityTemplateFamily? @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  // Activity OS R1 / A4：仅供未来 Activity 显式选择 Version 的反向映射；A4 不接入解析或写入路径。
+  selectedByActivities Activity[] @relation("ActivitySelectedTemplateVersion")
   ruleSnapshots ActivityRuleSnapshot[]
 
   @@unique([code, version])
