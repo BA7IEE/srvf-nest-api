@@ -222,11 +222,11 @@ function eviSub(id, kind, title, evidence): SubCheck {
 ### 3b — 「新 schema migrations 经审查」
 
 - **结论**:认可
-- **理由**:104 条 migration;第 101 条 `20260901100000_activity_os_r1_a2_template_family_version_expand` 为纯 expand：新建空 ActivityTemplateFamily，并向既有 ActivityTemplate 增加六个可空 Version 元数据，零回填、seed 或运行时切换。第 102 条 `20260901110000_activity_os_r1_a3_template_definition_lifecycle_guards` 只为 `familyId IS NOT NULL` 的 future Version 增加条件字段 CHECK 与 `draft → active → retired` 冻结 trigger；零回填、seed、legacy resolver/API 或生产部署。第 103 条 `20260901120000_activity_os_r1_a4_explicit_template_version` 只为 `Activity` 增加 nullable `selectedTemplateVersionId`、单列索引和指向 `ActivityTemplate.id` 的 `ON DELETE RESTRICT` FK；零 default、零 UPDATE、零回填、seed、runtime/API/resolver 切换，legacy `activityTypeCode` fallback 不变。第 104 条 `20260902143000_activity_os_r1_a6_from_template_transaction` 只为 `Activity` 增加 nullable `createFromTemplateOperationKey` / `createFromTemplateRequestHash` 和前者的全局唯一索引；零 default、零 UPDATE、零回填、seed、删除、既有行重解释或生产部署。它已在派生本地测试库按 `migrate deploy` 验证，且 A6 定向 unit / PostgreSQL E2E、契约及派生文档检查已完成；维护者于 2026-09-02 明确完成本次 A6 3b 重签。2026-08-26 首签时为 99 条；第 100 条(Integration Foundation v1 PR1 schema 地基,#1217)落地后曾按本表机制重签
+- **理由**:105 条 migration;第 101 条 `20260901100000_activity_os_r1_a2_template_family_version_expand` 为纯 expand：新建空 ActivityTemplateFamily，并向既有 ActivityTemplate 增加六个可空 Version 元数据，零回填、seed 或运行时切换。第 102 条 `20260901110000_activity_os_r1_a3_template_definition_lifecycle_guards` 只为 `familyId IS NOT NULL` 的 future Version 增加条件字段 CHECK 与 `draft → active → retired` 冻结 trigger；零回填、seed、legacy resolver/API 或生产部署。第 103 条 `20260901120000_activity_os_r1_a4_explicit_template_version` 只为 `Activity` 增加 nullable `selectedTemplateVersionId`、单列索引和指向 `ActivityTemplate.id` 的 `ON DELETE RESTRICT` FK；零 default、零 UPDATE、零回填、seed、runtime/API/resolver 切换，legacy `activityTypeCode` fallback 不变。第 104 条 `20260902143000_activity_os_r1_a6_from_template_transaction` 只为 `Activity` 增加 nullable `createFromTemplateOperationKey` / `createFromTemplateRequestHash` 和前者的全局唯一索引；零 default、零 UPDATE、零回填、seed、删除、既有行重解释或生产部署。第 105 条 `20260902190221_activity_os_r1_a7_series_generation` 只新增 ActivitySeries、Revision、通用命令收据与 Occurrence 四张表，以及 9 条 Restrict FK、索引、CHECK 和不可变 trigger；Receipt / Occurrence 用 `(revisionId, seriesId)` 复合 FK 锁住同链 Revision，零 default、零 UPDATE、零回填、seed、删除或生产部署。A7 受影响单元和静态检查已完成；本次重签后已完成隔离测试库 105 条 migration 回放、A7 E2E（9 个用例）、A6 回归 E2E（6 个用例）、8 个受影响历史 migration E2E（69 个用例）与 contract（975 个断言、2 个快照）。2026-08-26 首签时为 99 条；第 100 条(Integration Foundation v1 PR1 schema 地基,#1217)落地后曾按本表机制重签
 - **签字人**:维护者
 - **日期**:2026-09-02
-- **依据**:维护者 2026-09-02 对话确认「确认重签3b（A6，第104条 migration）」；前签依据为维护者 2026-09-02 对话确认「确认重签3b（A4，第103条 migration）」、2026-09-01 对话确认「确认重签3b（A3，第102条 migration）」、2026-09-01 对话确认重签3b(A2)、2026-08-28 对话批准重签(「批准签」)，首签依据为 2026-08-26 拍板「直接用新的上线」
-- **对拍**:有 —— `migration-total` = `104`
+- **依据**:维护者 2026-09-02 对话确认「确认重签 3b（A7，第105条 migration）」；前签依据为维护者 2026-09-02 对话确认「确认重签3b（A6，第104条 migration）」、2026-09-02 对话确认「确认重签3b（A4，第103条 migration）」、2026-09-01 对话确认「确认重签3b（A3，第102条 migration）」、2026-09-01 对话确认重签3b(A2)、2026-08-28 对话批准重签(「批准签」)，首签依据为 2026-08-26 拍板「直接用新的上线」
+- **对拍**:有 —— `migration-total` = `105`
 
 > ⭐ 这条对拍的价值在于它**会过期**:再落一条 migration ⇒ 机器读数与签字里的值不等 ⇒ 当场红,
 > 维护者必须为**新增的那条**重新签字。「经审查」的覆盖面因此不会随时间静默扩大。
@@ -234,11 +234,11 @@ function eviSub(id, kind, title, evidence): SubCheck {
 ### 4b — 「字典、Audit events」的对账
 
 - **结论**:认可
-- **理由**:**已逐条核对**。字典(28 type / 242 item)与 Audit events(156 事件:151 活跃 + 5 已退役/零产出)均已有登记表 + 红区判据双向对拍(#1202 / #1203;判据收编 #1206),④-c 已升 A 类机器判;五个零产出事件均已显式处置。本条签的是判据覆盖不了的余下判断:登记表口径符合合同 v1.1 意图、零产出处置认可。2026-08-26 首签时的「接受现状」局限自此闭合。**2026-08-29 三次重签**:PR5 新增 `delegation-grant.*` 三条权限码，并将既有 `service-principal.*` 五项、`delegation-grant.*` 两项及 Token 两项审计事件补齐至登记表；`seed-sha256-12` 与 `audit-event-registry-total/active` 均已按机器现读更新。**2026-08-30 再次重签**:PR7 仅为既有 `dict.read.item` 写入 Service Principal eligibility(`servicePrincipalAllowed=true`、`delegatedAccessAllowed=false`)，未新增字典项、Audit event、权限码或内建角色；本条对该 seed 变动的余下判断一并认可。**2026-09-01 再次重签**:Activity OS A1 新增 `activity_category` 10 条，以及 `activity_semantic_facet` 6 个维度与 19 个受控选项，共 35 条字典项；无新增或变更 Audit event、权限码、内建角色、schema 或运行时消费切换。本条对该增量 seed 的余下判断一并认可。
+- **理由**:**已逐条核对**。字典(28 type / 242 item)与 Audit events(156 事件:151 活跃 + 5 已退役/零产出)均已有登记表 + 红区判据双向对拍(#1202 / #1203;判据收编 #1206),④-c 已升 A 类机器判;五个零产出事件均已显式处置。本条签的是判据覆盖不了的余下判断:登记表口径符合合同 v1.1 意图、零产出处置认可。2026-08-26 首签时的「接受现状」局限自此闭合。**2026-08-29 三次重签**:PR5 新增 `delegation-grant.*` 三条权限码，并将既有 `service-principal.*` 五项、`delegation-grant.*` 两项及 Token 两项审计事件补齐至登记表；`seed-sha256-12` 与 `audit-event-registry-total/active` 均已按机器现读更新。**2026-08-30 再次重签**:PR7 仅为既有 `dict.read.item` 写入 Service Principal eligibility(`servicePrincipalAllowed=true`、`delegatedAccessAllowed=false`)，未新增字典项、Audit event、权限码或内建角色；本条对该 seed 变动的余下判断一并认可。**2026-09-01 再次重签**:Activity OS A1 新增 `activity_category` 10 条，以及 `activity_semantic_facet` 6 个维度与 19 个受控选项，共 35 条字典项；无新增或变更 Audit event、权限码、内建角色、schema 或运行时消费切换。本条对该增量 seed 的余下判断一并认可。**2026-09-02 再次重签**:Activity OS A7 新增 `activity-series.change` 一个活跃审计事件；无字典、权限码、内建角色或 seed 变更。本条对这项审计语义增量及登记表口径继续认可。
 - **签字人**:维护者
-- **日期**:2026-09-01
-- **依据**:维护者 2026-09-01 对话确认重签(「确认重签4b」);前签 2026-08-30
-- **对拍**:有 —— `seed-sha256-12` = `56d0a1a8b95d`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `156`;`audit-event-registry-active` = `151`
+- **日期**:2026-09-02
+- **依据**:维护者 2026-09-02 对话确认重签(「确认重签 4b（A7：Audit events 157 总计、152 活跃）」);前签 2026-09-01
+- **对拍**:有 —— `seed-sha256-12` = `56d0a1a8b95d`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `157`;`audit-event-registry-active` = `152`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。

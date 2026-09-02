@@ -53,6 +53,23 @@ export interface CreateActivityFromTemplateCommand {
   readonly operationKey: string;
 }
 
+/**
+ * A7 只能通过这个受限模式跳过“由调用者担任发起人”的责任工作流。
+ * 这不是泛化开关：Series 生成的 Activity 按已拍板合同必须没有 initiatorMemberId。
+ */
+export type ActivityFromTemplateInitiatorMode = 'resolve' | 'leave-empty-for-series';
+
+export interface ValidatedActivityTemplateVersion {
+  readonly id: string;
+  readonly definitionHash: string;
+}
+
+export interface MaterializedActivityFromTemplate {
+  readonly created: ActivityFullRow;
+  readonly templateVersionId: string;
+  readonly definitionHash: string;
+}
+
 interface NormalizedCreateActivityFromTemplateCommand {
   readonly templateVersionId: string;
   readonly title: string;
@@ -207,118 +224,24 @@ export class ActivityFromTemplateService {
         const replay = await this.findReplay(tx, input, user.id);
         if (replay) return replay;
 
-        const template = await this.lockTemplateVersion(tx, input.templateVersionId);
-        const { definition, definitionHash } = this.selectDefinitionOrThrow(template);
-        const requestHash = buildRequestHash(input, user.id, definitionHash);
-
-        this.allocationModes.assertValidMode(definition.activity.allocationModeCode);
-        this.access.assertStartEndValid(input.startAt, input.endAt);
-        this.access.assertRegistrationDeadlineValid(input.registrationDeadline, input.endAt);
-        const sessions = this.materializeSessions(definition, input.startAt, input.endAt);
-        await this.access.assertDictItemValid(
-          DICT_TYPE_ACTIVITY_TYPE,
-          template.activityTypeCode,
-          BizCode.ACTIVITY_TYPE_CODE_INVALID,
+        const materialized = await this.materializeNormalizedWithinTransaction({
           tx,
-        );
-        if (
-          definition.activity.genderRequirementCode !== undefined &&
-          definition.activity.genderRequirementCode !== null
-        ) {
-          await this.access.assertDictItemValid(
-            DICT_TYPE_GENDER_REQUIREMENT,
-            definition.activity.genderRequirementCode,
-            BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
-            tx,
-          );
-        }
-        await this.access.assertOrganizationValidAndNonRoot(input.organizationId, tx);
-        await this.assertMaterializedReferences(tx, sessions);
-
-        const initiatorMemberId = this.config.activityResponsibilityWorkflow.enabled
-          ? await this.initiationPolicy.resolveInitiator(
-              user,
-              input.organizationId,
-              input.initiatorMemberId,
-              tx,
-            )
-          : undefined;
-        const created = await tx.activity.create({
-          data: this.activityCreateData({
-            input,
-            templateVersionId: template.id,
-            activityTypeCode: template.activityTypeCode,
-            definition,
-            requestHash,
-            initiatorMemberId,
-          }),
-          select: activitySafeSelect,
+          input,
+          user,
+          initiatorMode: 'resolve',
         });
 
-        for (const session of sessions) {
-          const createdSession = await tx.activitySession.create({
-            data: {
-              activityId: created.id,
-              code: session.code,
-              name: session.name,
-              startAt: session.startAt,
-              endAt: session.endAt,
-              locationText: session.locationText,
-              meetingPoint: null,
-              executionPoint: null,
-              evacuationPoint: null,
-              longitude: null,
-              latitude: null,
-              capacity: session.capacity,
-              checkInOpenAt: session.checkInOpenAt,
-              checkInCloseAt: session.checkInCloseAt,
-              checkOutOpenAt: session.checkOutOpenAt,
-              checkOutCloseAt: session.checkOutCloseAt,
-              preparationStartAt: session.preparationStartAt,
-              locationRequired: false,
-              radiusMeters: null,
-              locationPolicySourceCode: 'template',
-              lateGraceMinutes: session.lateGraceMinutes,
-              earlyLeaveThresholdMinutes: session.earlyLeaveThresholdMinutes,
-              statusCode: 'scheduled',
-              sortOrder: session.sortOrder,
-            },
-            select: { id: true },
-          });
-          for (const position of session.positions) {
-            await tx.activitySessionPosition.create({
-              data: {
-                activityId: created.id,
-                sessionId: createdSession.id,
-                code: position.code,
-                name: position.name,
-                attendanceRoleCode: position.attendanceRoleCode,
-                capacity: position.capacity,
-                startAt: position.startAt,
-                endAt: position.endAt,
-                genderRequirementCode: position.genderRequirementCode,
-                locationRequired: position.locationRequired,
-                radiusMeters: position.radiusMeters,
-                leaderMemberId: null,
-                description: position.description,
-                equipmentNotes: position.equipmentNotes,
-                sortOrder: position.sortOrder,
-              },
-            });
-          }
-        }
-
         await this.auditRecorder.logCreateFromTemplate({
-          created,
+          created: materialized.created,
           actorUserId: user.id,
           actorRoleSnap: user.role,
-          templateVersionId: template.id,
-          definitionHash,
+          templateVersionId: materialized.templateVersionId,
+          definitionHash: materialized.definitionHash,
           nextStatusCode: ACTIVITY_STATUS_DRAFT,
           auditMeta,
           tx,
         });
-        return created;
+        return materialized.created;
       });
     } catch (error) {
       if (!this.isOperationKeyConflict(error)) throw error;
@@ -330,6 +253,165 @@ export class ActivityFromTemplateService {
     }
 
     return toResponseDto(row, await this.images.signImages(row));
+  }
+
+  /**
+   * 供 A7 在自己持有的根事务中复用 A6 的模板锁、校验和 Activity/Session/Position 物化。
+   * 它不查 A6 operationKey 重放，也不写 audit；两者必须由调用方同一根事务统一处理。
+   */
+  async materializeWithinTransaction(args: {
+    readonly tx: Prisma.TransactionClient;
+    readonly command: CreateActivityFromTemplateCommand;
+    readonly user: CurrentUserPayload;
+    readonly initiatorMode: ActivityFromTemplateInitiatorMode;
+    readonly expectedDefinitionHash?: string;
+  }): Promise<MaterializedActivityFromTemplate> {
+    return this.materializeNormalizedWithinTransaction({
+      tx: args.tx,
+      input: this.normalizeCommand(args.command),
+      user: args.user,
+      initiatorMode: args.initiatorMode,
+      expectedDefinitionHash: args.expectedDefinitionHash,
+    });
+  }
+
+  /**
+   * 只校验并锁定精确 Version，给 A7 写 Revision 时冻结 definitionHash 使用。
+   * 不暴露 Prisma row，也不让 Series 自己复制 A3/A6 的可选 Version 判定。
+   */
+  async validateExactTemplateVersionWithinTransaction(args: {
+    readonly tx: Prisma.TransactionClient;
+    readonly templateVersionId: string;
+  }): Promise<ValidatedActivityTemplateVersion> {
+    const template = await this.lockTemplateVersion(args.tx, args.templateVersionId);
+    const { definitionHash } = this.selectDefinitionOrThrow(template);
+    return { id: template.id, definitionHash };
+  }
+
+  private async materializeNormalizedWithinTransaction(args: {
+    readonly tx: Prisma.TransactionClient;
+    readonly input: NormalizedCreateActivityFromTemplateCommand;
+    readonly user: CurrentUserPayload;
+    readonly initiatorMode: ActivityFromTemplateInitiatorMode;
+    readonly expectedDefinitionHash?: string;
+  }): Promise<MaterializedActivityFromTemplate> {
+    const template = await this.lockTemplateVersion(args.tx, args.input.templateVersionId);
+    const { definition, definitionHash } = this.selectDefinitionOrThrow(template);
+    if (
+      args.expectedDefinitionHash !== undefined &&
+      args.expectedDefinitionHash !== definitionHash
+    ) {
+      throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_SELECTABLE);
+    }
+    const requestHash = buildRequestHash(args.input, args.user.id, definitionHash);
+
+    this.allocationModes.assertValidMode(definition.activity.allocationModeCode);
+    this.access.assertStartEndValid(args.input.startAt, args.input.endAt);
+    this.access.assertRegistrationDeadlineValid(args.input.registrationDeadline, args.input.endAt);
+    const sessions = this.materializeSessions(definition, args.input.startAt, args.input.endAt);
+    await this.access.assertDictItemValid(
+      DICT_TYPE_ACTIVITY_TYPE,
+      template.activityTypeCode,
+      BizCode.ACTIVITY_TYPE_CODE_INVALID,
+      args.tx,
+    );
+    if (
+      definition.activity.genderRequirementCode !== undefined &&
+      definition.activity.genderRequirementCode !== null
+    ) {
+      await this.access.assertDictItemValid(
+        DICT_TYPE_GENDER_REQUIREMENT,
+        definition.activity.genderRequirementCode,
+        BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
+        args.tx,
+      );
+    }
+    await this.access.assertOrganizationValidAndNonRoot(args.input.organizationId, args.tx);
+    await this.assertMaterializedReferences(args.tx, sessions);
+
+    if (
+      args.initiatorMode === 'leave-empty-for-series' &&
+      args.input.initiatorMemberId !== undefined
+    ) {
+      badRequest();
+    }
+    const initiatorMemberId =
+      args.initiatorMode === 'leave-empty-for-series'
+        ? undefined
+        : this.config.activityResponsibilityWorkflow.enabled
+          ? await this.initiationPolicy.resolveInitiator(
+              args.user,
+              args.input.organizationId,
+              args.input.initiatorMemberId,
+              args.tx,
+            )
+          : undefined;
+    const created = await args.tx.activity.create({
+      data: this.activityCreateData({
+        input: args.input,
+        templateVersionId: template.id,
+        activityTypeCode: template.activityTypeCode,
+        definition,
+        requestHash,
+        initiatorMemberId,
+      }),
+      select: activitySafeSelect,
+    });
+
+    for (const session of sessions) {
+      const createdSession = await args.tx.activitySession.create({
+        data: {
+          activityId: created.id,
+          code: session.code,
+          name: session.name,
+          startAt: session.startAt,
+          endAt: session.endAt,
+          locationText: session.locationText,
+          meetingPoint: null,
+          executionPoint: null,
+          evacuationPoint: null,
+          longitude: null,
+          latitude: null,
+          capacity: session.capacity,
+          checkInOpenAt: session.checkInOpenAt,
+          checkInCloseAt: session.checkInCloseAt,
+          checkOutOpenAt: session.checkOutOpenAt,
+          checkOutCloseAt: session.checkOutCloseAt,
+          preparationStartAt: session.preparationStartAt,
+          locationRequired: false,
+          radiusMeters: null,
+          locationPolicySourceCode: 'template',
+          lateGraceMinutes: session.lateGraceMinutes,
+          earlyLeaveThresholdMinutes: session.earlyLeaveThresholdMinutes,
+          statusCode: 'scheduled',
+          sortOrder: session.sortOrder,
+        },
+        select: { id: true },
+      });
+      for (const position of session.positions) {
+        await args.tx.activitySessionPosition.create({
+          data: {
+            activityId: created.id,
+            sessionId: createdSession.id,
+            code: position.code,
+            name: position.name,
+            attendanceRoleCode: position.attendanceRoleCode,
+            capacity: position.capacity,
+            startAt: position.startAt,
+            endAt: position.endAt,
+            genderRequirementCode: position.genderRequirementCode,
+            locationRequired: position.locationRequired,
+            radiusMeters: position.radiusMeters,
+            leaderMemberId: null,
+            description: position.description,
+            equipmentNotes: position.equipmentNotes,
+            sortOrder: position.sortOrder,
+          },
+        });
+      }
+    }
+
+    return { created, templateVersionId: template.id, definitionHash };
   }
 
   private normalizeCommand(

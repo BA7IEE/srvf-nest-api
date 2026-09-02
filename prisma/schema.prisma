@@ -89,6 +89,7 @@ model User {
   // 沿批次 1 / 批次 2 R2 范式:Prisma 关系映射不算业务字段新增。
   activitiesPublished              Activity[]                         @relation("ActivityPublisher")
   activitiesCancelled              Activity[]                         @relation("ActivityCanceller")
+  activitySeriesRevisionsCreated   ActivitySeriesRevision[]           @relation("ActivitySeriesRevisionCreator")
   registrationsReviewed            ActivityRegistration[]             @relation("RegistrationReviewer")
   registrationsCancelled           ActivityRegistration[]             @relation("RegistrationCanceller")
   attendanceSheetsSubmitted        AttendanceSheet[]                  @relation("SheetSubmitter")
@@ -345,6 +346,7 @@ model Organization {
   servicePrincipalsOwned ServicePrincipal[] @relation("ServicePrincipalOwnerOrganization")
   // Activity OS R1 / A2：模板 Family 的可选归属；仅关系映射，尚无读写路径。
   activityTemplateFamiliesOwned ActivityTemplateFamily[] @relation("ActivityTemplateFamilyOwnerOrganization")
+  activitySeriesRevisions       ActivitySeriesRevision[] @relation("ActivitySeriesRevisionOrganization")
 
   @@index([parentId])
   @@index([nodeTypeCode])
@@ -1549,6 +1551,7 @@ model Activity {
 
   organization                 Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   selectedTemplateVersion      ActivityTemplate?                  @relation("ActivitySelectedTemplateVersion", fields: [selectedTemplateVersionId], references: [id], onDelete: Restrict)
+  seriesOccurrence             ActivitySeriesOccurrence?          @relation("ActivitySeriesOccurrenceActivity")
   initiator                    Member?                            @relation("ActivityInitiator", fields: [initiatorMemberId], references: [id], onDelete: Restrict)
   publisher                    User?                              @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
   canceller                    User?                              @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
@@ -1746,6 +1749,7 @@ model ActivityTemplate {
   family        ActivityTemplateFamily? @relation(fields: [familyId], references: [id], onDelete: Restrict)
   // Activity OS R1 / A4：仅供未来 Activity 显式选择 Version 的反向映射；A4 不接入解析或写入路径。
   selectedByActivities Activity[] @relation("ActivitySelectedTemplateVersion")
+  seriesRevisions      ActivitySeriesRevision[] @relation("ActivitySeriesRevisionTemplate")
   ruleSnapshots ActivityRuleSnapshot[]
 
   @@unique([code, version])
@@ -1753,6 +1757,108 @@ model ActivityTemplate {
   @@index([activityTypeCode])
   @@index([statusCode])
   @@index([familyId])
+}
+
+// ===== Activity OS R1 / A7：活动系列与有限窗口生成 =====
+//
+// Series 只保留可变生命周期；排期、模板版本、文案和组织归属全部冻结在 Revision。
+// Generation / 状态变更等命令共用一张 receipt 表，避免为单一命令再造平行持久化协议。
+model ActivitySeries {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  statusCode String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  revisions       ActivitySeriesRevision[]
+  commandReceipts ActivitySeriesCommandReceipt[]
+  occurrences     ActivitySeriesOccurrence[]
+
+  @@index([statusCode])
+}
+
+// 不带 updatedAt / deletedAt；migration 以 trigger 拒绝历史 Revision 的 UPDATE / DELETE。
+model ActivitySeriesRevision {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  seriesId                       String
+  revision                       Int
+  templateVersionId              String
+  templateDefinitionHash         String
+  frequencyCode                  String
+  interval                       Int
+  weeklyWeekdayMask              Int
+  monthlyDay                     Int?
+  timeZone                       String
+  localStartDate                 DateTime @db.Date
+  localStartMinute               Int
+  durationMinutes                Int
+  title                          String
+  organizationId                 String
+  location                       String
+  registrationDeadlineOffsetMinutes Int?
+  effectiveFromLocalDate         DateTime @db.Date
+  effectiveToLocalDate           DateTime @db.Date
+  generationWindowDays           Int
+  createdByUserId                String
+
+  series          ActivitySeries   @relation(fields: [seriesId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  templateVersion ActivityTemplate @relation("ActivitySeriesRevisionTemplate", fields: [templateVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  organization    Organization     @relation("ActivitySeriesRevisionOrganization", fields: [organizationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdByUser   User             @relation("ActivitySeriesRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  commandReceipts ActivitySeriesCommandReceipt[]
+  occurrences     ActivitySeriesOccurrence[]
+
+  @@unique([seriesId, revision])
+  // 收据 / Occurrence 的 (revisionId, seriesId) 复合 FK 的被引用锚点；禁止把另一条
+  // Series 的 Revision 伪装成本 Series 的历史事实。
+  @@unique([id, seriesId], map: "activity_series_revision_id_series_key")
+  @@index([templateVersionId])
+  @@index([organizationId])
+  @@index([createdByUserId])
+}
+
+// 不带 updatedAt / deletedAt；同一 operationKey 绑定命令类别与 canonical requestHash。
+// result 只保存安全的业务标识，不保存请求原文、hash key 或模板定义 JSON。
+model ActivitySeriesCommandReceipt {
+  id               String   @id @default(cuid())
+  createdAt        DateTime @default(now())
+  commandCode      String
+  operationKey     String   @unique(map: "activity_series_command_receipt_operation_key_key")
+  requestHash      String
+  seriesId         String
+  revisionId       String?
+  resultRevision   Int?
+  resultStatusCode String
+  activityIds      String[] @default([])
+
+  series   ActivitySeries          @relation(fields: [seriesId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  revision ActivitySeriesRevision? @relation(fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([seriesId, createdAt])
+  @@index([revisionId])
+}
+
+// 不带 updatedAt / deletedAt；每个 (seriesId, occurrenceKey) 至多物化一个独立 Activity。
+// activityId 单列唯一，确保任一生成 Activity 不能被重新归属到另一条 occurrence。
+model ActivitySeriesOccurrence {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  seriesId      String
+  revisionId    String
+  activityId    String   @unique(map: "activity_series_occurrence_activity_id_key")
+  occurrenceKey String
+  startAt       DateTime
+  endAt         DateTime
+
+  series   ActivitySeries         @relation(fields: [seriesId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  revision ActivitySeriesRevision @relation(fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict, onUpdate: Restrict)
+  activity Activity               @relation("ActivitySeriesOccurrenceActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([seriesId, occurrenceKey])
+  @@index([revisionId])
+  @@index([startAt])
 }
 
 // ===== §3.4 ActivityRuleSnapshot:发布／关键变更审核通过后的不可变规则快照 =====

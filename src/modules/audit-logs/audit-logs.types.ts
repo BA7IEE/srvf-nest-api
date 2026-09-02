@@ -49,6 +49,7 @@ export type AuditLogEvent =
   | 'contribution-rule.update' // PR #3 接入(contribution-rules.service: update)
   | 'contribution-rule.delete' // PR #3 接入(contribution-rules.service: softDelete)
   | 'activity.publish' // PR #4 接入(activities.service: create / update / softDelete / publish / cancel 共 5 处;5 个 operation 通过 extra.operation 区分,沿 batch3 草案 §20.2 A1 同名设计)
+  | 'activity-series.change' // Activity OS R1 / A7：Series 创建 / Revision 追加 / 生命周期 / 手工生成；Activity 实例仍沿 activity.publish 留痕
   | 'registration.create' // PR #5 接入(activity-registrations.service: create [ADMIN 代报名] / createMy [USER 自助] 共 2 处;extra.viaPath ∈ {admin, self} 区分)
   | 'registration.review' // PR #5 接入;approve/reject/cancel/reopen/promote/export 共用,extra.action/operation 区分;cancel 再用 extra.cancelledByPath ∈ {admin, self} 细分
   | 'invitation.change' // P1-28 第4批⑦: create / decline / revoke / expire 共用;extra.operation 闭集,审计不复制 reason

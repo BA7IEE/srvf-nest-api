@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:402e69397840da5cd2cd005a2ca50890f8c61b3deb1bf68462158cdf4012f172",
-  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 52 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。",
+  "inputDigest": "sha256:084f7ec841712af4c752c1335a4b8ef1f5f5ab0a0d6ce93060684f096a36bc3a",
+  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 54 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。",
   "entries": [
     {
       "model": "Activity",
@@ -117,6 +117,58 @@
         "no-db-check"
       ],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。2026-08-25 归档刀扩到第 6 值 `archived` 并补 8 条边:四条 archive 入边(cancelled **刻意不在内** —— 维护者只拍了「长期无人处理草稿」与「结算已关账且过等待期」两套开工条件,取消掉的活动两套都不属于),四条 unarchive 出边(目标恒等于 `archivedFromStatusCode`,拿不到就拒,不猜常量)。⚠️ 四条 unarchive 边在实现里是**同一个分支**,展开成四行只是让闭集在这张表里可读 —— 别据此以为有四段代码。归档还带一条**量**的闸(ActivityArchivePolicy 的两套开工条件),那不是状态边,不登记在此。"
+    },
+    {
+      "model": "ActivitySeries",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "layer": "L2",
+      "stateSet": {
+        "values": [
+          "active",
+          "paused",
+          "terminated"
+        ],
+        "source": "db-check",
+        "sourceRef": "prisma/migrations/20260902190221_activity_os_r1_a7_series_generation"
+      },
+      "transitions": [
+        "(create) -> active",
+        "active -> paused (set_series_status)",
+        "active -> terminated (set_series_status)",
+        "paused -> active (set_series_status)",
+        "paused -> terminated (set_series_status)"
+      ],
+      "wrongStateBizCode": "BAD_REQUEST",
+      "implementation": "src/modules/activities/activity-series.service.ts (ActivitySeriesService.setStatus)",
+      "governedBlockers": [
+        "no-state-machine",
+        "no-wrong-state-bizcode"
+      ],
+      "notes": "A7 的唯一可变 Series 字段。migration 守三值闭集与除 statusCode/updatedAt 外不可更新；服务在锁定 Series 后拒绝终止态恢复和同态写入。错误仍复用通用 BAD_REQUEST，且没有独立 StateMachine，故保持 inventory。"
+    },
+    {
+      "model": "ActivitySeriesCommandReceipt",
+      "field": "resultStatusCode",
+      "governanceStatus": "inventory",
+      "layer": "L1",
+      "stateSet": {
+        "values": [
+          "active",
+          "paused",
+          "terminated"
+        ],
+        "source": "db-check",
+        "sourceRef": "prisma/migrations/20260902190221_activity_os_r1_a7_series_generation"
+      },
+      "transitions": "not-derived",
+      "wrongStateBizCode": "none",
+      "implementation": "src/modules/activities/activity-series.service.ts (ActivitySeriesService.persistReceipt / findReplay)",
+      "governedBlockers": [
+        "snapshot-not-lifecycle",
+        "composite-db-check"
+      ],
+      "notes": "这是写命令成功时的安全结果快照，不是可迁移的独立生命周期；重放必须原样返回当时的 Series 状态，不能按当前状态重新计算。闭集由 receipt 形状 CHECK 同时守住，但该 CHECK 不是独立状态机执行位。"
     },
     {
       "model": "ActivityAllocationApplicationProjection",

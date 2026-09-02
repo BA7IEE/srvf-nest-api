@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:009c6fd4a9e3ae4767f1b93c28cca44186900f76d374d41a8e064e489daa3303",
+  "inputDigest": "sha256:784396ce1baf27064045c3080808715afcbd099b0a4577c344a41163d377a0de",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -445,6 +445,30 @@
       "confirmed": true
     },
     "Activity": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivitySeries": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivitySeriesCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivitySeriesOccurrence": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivitySeriesRevision": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",

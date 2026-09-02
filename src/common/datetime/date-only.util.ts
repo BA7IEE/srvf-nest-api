@@ -11,6 +11,9 @@
 // 语义:解析 ISO 8601 输入 → +8h 移到北京时间 → 取北京日历日 Y/M/D →
 // 返回该日 UTC 午夜。存储格式不变,符合 schema 注释「00:00:00.000Z 规范化」
 // (草案 §6 决议:不落 @db.Date,业务层统一规范化处理)。
+// 北京日界的唯一 IANA 标识。业务模块需要展示或校验时区时从这里取值，不能另写一份。
+export const BEIJING_TIME_ZONE = 'Asia/Shanghai' as const;
+
 const UTC8_OFFSET_MS = 8 * 3600 * 1000;
 
 // 把任意瞬间映射到「它所处的北京日历日」的 UTC 午夜。
