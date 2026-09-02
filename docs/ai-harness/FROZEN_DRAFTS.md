@@ -188,6 +188,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a4-explicit-template-version-review.md` | landed · P1-33 | Release 1 / A4 D 档显式 Template Version 指针纯 expand；已随 #1244 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a5-fallback-read-projection-review.md` | landed · P1-33 | Release 1 / A5 显式 Template Version fallback / 只读投影；已随 #1246 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a6-from-template-transaction-review.md` | landed · P1-33 | Release 1 / A6 内部从模板创建事务；已随 #1248 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | open · P1-33 | Release 1 / A7 Series 与手工／按需生成；评审草案已起草，待维护者确认方案与精确实施授权 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
