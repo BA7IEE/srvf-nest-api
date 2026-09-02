@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4 已通过并合入 #1237/#1239/#1241/#1244 | 下一刀 A5 独立立项 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5 已通过并合入 #1237/#1239/#1241/#1244/#1246 | 下一刀 A6 独立立项 |
 
 ### 1.1 欠代码的五项
 
@@ -110,7 +110,14 @@ seed、回填和生产部署均未改，DB 亦不重算 hash。
 显式指针及 ActivityTemplate 反向关系；第 103 条 migration 以可空文本列、非唯一索引和
 `ON DELETE RESTRICT / ON UPDATE CASCADE` 外键纯 expand。legacy NULL 兼容、冷库 103 replay、
 非空库 rehearsal、DDL/FK 回归证明、全套 PR CI 与红区审批均已收口；legacy resolver、业务 writer、
-API/DTO、权限/Gate、seed、回填和生产部署均未改。A5 及以后仍须逐刀独立立项，A4 的 D 档授权不得带入。
+API/DTO、权限/Gate、seed、回填和生产部署均未改。
+**A5 已于 2026-09-02 以 #1246 独立合并**：既有模板解析改为非空
+`selectedTemplateVersionId` 按 id 精确读取、NULL 时逐字保留 legacy active fallback；已选 future
+Version 后来 retired 仍保持可读，缺行 fail-closed。template-resolution、initial/change proposal、
+`rebuildCurrent` 与 v2–v5 RuleSnapshot 共用同一解析；原始指针与最终 `templateVersionId` 分离，避免
+legacy fallback 被误写成显式选择。单元 / PostgreSQL E2E、OpenAPI 零漂移、全套 PR CI 与红区审批均已
+收口；schema、migration、seed、writer、API/DTO、权限/Gate、回填和生产部署均未改。A6 及以后仍须
+逐刀独立立项，A5 的授权不得带入。
 本项不改变现有 schema、migration、AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
@@ -174,7 +181,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md` | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md` | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a4-explicit-template-version-review.md` | landed · P1-33 | Release 1 / A4 D 档显式 Template Version 指针纯 expand；已随 #1244 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a5-fallback-read-projection-review.md` | open · P1-33 | Release 1 / A5 显式 Template Version fallback / 只读投影；维护者已按方案 A 拍板，实施中 |
+| `docs/archive/reviews/activity-os-r1-a5-fallback-read-projection-review.md` | landed · P1-33 | Release 1 / A5 显式 Template Version fallback / 只读投影；已随 #1246 合入，评审稿冻结不回改 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
