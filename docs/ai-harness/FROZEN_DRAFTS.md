@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248 | 下一刀 A7 独立立项 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248；A7 已完成本地验证与 3b / 4b 签字闸 | A7 PR CI 冷跑与合入评审 |
 
 ### 1.1 欠代码的五项
 
@@ -154,7 +154,7 @@ HTTP、DTO、Swagger、路由、权限码、Gate 或 A5 读侧改动。A7 及以
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **246** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 60** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 62** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
@@ -188,7 +188,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a4-explicit-template-version-review.md` | landed · P1-33 | Release 1 / A4 D 档显式 Template Version 指针纯 expand；已随 #1244 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a5-fallback-read-projection-review.md` | landed · P1-33 | Release 1 / A5 显式 Template Version fallback / 只读投影；已随 #1246 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a6-from-template-transaction-review.md` | landed · P1-33 | Release 1 / A6 内部从模板创建事务；已随 #1248 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | open · P1-33 | Release 1 / A7 Series 与手工／按需生成；评审草案已起草，待维护者确认方案与精确实施授权 |
+| `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | open · P1-33 | Release 1 / A7 Series 与手工／按需生成；方案、精确实施写集、3b migration 与 4b audit events 已获确认，本地验证完成，待 PR CI 冷跑与合入评审 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |

@@ -19,7 +19,7 @@
 > **三条写库漏斗**(全部 `event: AuditLogEvent` 类型锁,新增事件不进 union 编译不过):
 > `AuditLogsService.log()` · `writeConfigAudit()`(permissions)· `user-roles.service` 内联薄封装。
 
-**审计事件(机器核对):156 个 · 活跃(≥1 次出现):151 · 已退役/零产出:5**
+**审计事件(机器核对):157 个 · 活跃(≥1 次出现):152 · 已退役/零产出:5**
 
 
 ## profile
@@ -80,7 +80,13 @@
 
 | event | 仓内出现次数 | 备注 |
 |---|---|---|
-| `activity.publish` | 21 | AC-010 改期联动 +1(2026-08-28,extra.operation=activity-session-reschedule) |
+| `activity.publish` | 22 | AC-010 改期联动 +1(2026-08-28,extra.operation=activity-session-reschedule)；A7 生成独立 Activity 复用该事件，以 `extra.operation=generate_series_instance` 区分 |
+
+## activity-series
+
+| event | 仓内出现次数 | 备注 |
+|---|---|---|
+| `activity-series.change` | 1 | Activity OS R1 / A7：Series 创建、Revision 追加、生命周期变更与按需生成的安全审计；实例 Activity 仍使用 `activity.publish` |
 
 ## registration
 
