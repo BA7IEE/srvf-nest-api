@@ -32,6 +32,7 @@ import { toListItemDto } from './activity-presenter';
 import { ActivityImageSigningService } from './activity-image-signing.service';
 import { ActivityStatusCommandService } from './activity-status-command.service';
 import { ActivityWriteService } from './activity-write.service';
+import { ActivityFromTemplateService } from './activity-from-template.service';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ACTIVITY_STATUS_ARCHIVED, ActivityStateMachine } from './activity-state-machine';
 import { ActivityInitiationPolicy } from './activity-initiation-policy';
@@ -69,6 +70,8 @@ export class ActivitiesService {
     private readonly access: ActivityAccessService,
     // 建单改单与状态流转的实现持有者;本 service 仅保留同名薄委托作为唯一对外入口。
     private readonly writes: ActivityWriteService,
+    // Activity OS R1 / A6：内部 from-template 写命令的唯一 façade；A6 零 HTTP 入口。
+    private readonly fromTemplate: ActivityFromTemplateService,
     private readonly statuses: ActivityStatusCommandService,
     private readonly prisma: PrismaService,
     private readonly activityStateMachine: ActivityStateMachine,
@@ -168,6 +171,10 @@ export class ActivitiesService {
 
   async create(...args: Parameters<ActivityWriteService['create']>) {
     return this.writes.create(...args);
+  }
+
+  async createFromTemplate(...args: Parameters<ActivityFromTemplateService['createFromTemplate']>) {
+    return this.fromTemplate.createFromTemplate(...args);
   }
 
   async update(...args: Parameters<ActivityWriteService['update']>) {
