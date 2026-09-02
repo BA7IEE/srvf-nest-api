@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251 | 下一刀 A8 独立立项 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251；A8 评审草案已起草 | 维护者拍板 A8 方案与精确 `package.json` 授权 |
 
 ### 1.1 欠代码的五项
 
@@ -129,6 +129,9 @@ HTTP、DTO、Swagger、路由、权限码、Gate 或 A5 读侧改动。A7 及以
 Revision、Receipt、Occurrence 及关联约束，零 default、回填、seed、删除和生产部署。单元 / PostgreSQL E2E、
 PR CI 与红区审批均已收口；A7 不新增 HTTP、DTO、Swagger、路由、权限码、Gate、cron、queue、Integration 或 AI
 入口。A8 及以后仍须逐刀独立立项，A7 的 D 档授权不得带入。
+**A8 评审草案已起草**：本刀拟补齐冻结合同点名的 `test:business:no-ai` 入口、将 A7 E2E 的
+Activity v1.1 与 Integration 关闭态改为显式可执行，并以 contract / handoff 零差异证明不伪造前端接口。
+实施只候维护者拍板方案和 `package.json` 的精确红区授权；不改依赖、Jest 配置、CI、API 或运行时 Gate。
 本项不引入 AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
@@ -195,6 +198,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a5-fallback-read-projection-review.md` | landed · P1-33 | Release 1 / A5 显式 Template Version fallback / 只读投影；已随 #1246 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a6-from-template-transaction-review.md` | landed · P1-33 | Release 1 / A6 内部从模板创建事务；已随 #1248 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | landed · P1-33 | Release 1 / A7 Series 与手工／按需生成；已随 #1251 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r1-a8-contract-handoff-e2e-gate-review.md` | open · P1-33 | Release 1 / A8 contract、handoff、No-AI E2E 与 Gate 关闭态；仅评审草案，待维护者拍板和精确 `package.json` 授权 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
