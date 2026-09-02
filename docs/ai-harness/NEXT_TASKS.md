@@ -2492,9 +2492,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 与 Release 1 A1、A2、A3、A4、A5、A6 已通过；A7 待独立立项**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 与 Release 1 A1、A2、A3、A4、A5、A6 已通过；A7 评审草案待拍板**
 
-**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246 与 A6 #1248 已合；A6 的严格 Definition V1、同事务 copy-on-create、持久化幂等与安全审计、单元 / PostgreSQL E2E、PR CI 与红区审批均已收口；A7 起仍按单轴独立立项)
+**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246 与 A6 #1248 已合；A6 的严格 Definition V1、同事务 copy-on-create、持久化幂等与安全审计、单元 / PostgreSQL E2E、PR CI 与红区审批均已收口；A7 已完成独立评审草案，待维护者确认方案与精确实施授权)
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
@@ -2508,6 +2508,7 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 - **A4 已交付并合入 #1244**:Activity 新增可空 `selectedTemplateVersionId` 显式指针及 ActivityTemplate 反向关系；第 103 条 migration 仅增加可空文本列、非唯一索引与 `ON DELETE RESTRICT / ON UPDATE CASCADE` 外键。legacy NULL 兼容、冷库 103 replay、非空库 rehearsal、DDL/FK 回归证明、全套 PR CI 与红区审批均已收口；legacy resolver、业务 writer、API/DTO、权限、Gate、seed、回填和生产部署均未改。
 - **A5 已交付并合入 #1246**:既有模板解析改为非空 `selectedTemplateVersionId` 按 id 精确读取、NULL 时逐字保留 legacy active fallback；已选 future Version 后来 retired 仍保持可读，缺行 fail-closed。template-resolution、initial/change proposal、`rebuildCurrent` 与 v2–v5 RuleSnapshot 共用同一解析，原始指针与最终 `templateVersionId` 分离；schema、migration、seed、writer、API/DTO、权限、Gate、回填和生产部署均未改。
 - **A6 已交付并合入 #1248**:内部从模板创建 façade 以 operationKey 重放优先，首次调用锁定精确 Template Version、复验 A3 canonical/hash 与严格 Definition V1，并在同一事务物化草稿 Activity、Session、Position 和安全审计；第 104 条 migration 只增加两个 nullable 幂等列及唯一索引。Definition V1 不含坐标，要求定位或半径的场次 / 岗位 fail-closed；不新增 HTTP、DTO、Swagger、路由、权限、Gate、seed、回填或生产部署。
+- **A7 评审草案已起草**:Series / immutable Revision、手工／按需幂等生成、`Asia/Shanghai` 时区归属、A6 必填生成输入、批次收据与单期唯一锚点均已形成方案 A；负责人 / 资源模型、地点 / 表单、cron、HTTP / Integration 入口和依赖均明确排除，等待维护者拍板后才申请实施授权。
 - **后续 Goal / lane / PR 顺序**:Release 1 `A1 → A8` → Release 2 `B1 → B7` → Release 3 `C1 → C5` → Release 4 `D1 → D8` → Release 5 `E1 → E5` → Release 6 Incident / Resource 按真实优先级各自另立目标 → Release 7 可永久不开。每一箭头都是独立 PR；Activity 同一 bounded context 串行，schema lane 同时至多一条，前一 PR 合入和验收完成前不启动后一条。
 - **串行约束**:A1、A2、A3、A4、A5、A6 已完成独立评审、实现与 PR 验收；A7 及以后仍须按一条业务轴、additive、gate-off、shadow 对账和独立 handoff 收口，且不得沿用 A6 的 D 档授权。
 
