@@ -4,6 +4,7 @@ import request from 'supertest';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { PUBLISHED_ACTIVITY_DISPLAY_FIELDS } from '../../src/modules/activities/activities.service';
+import { computeActivityTemplateDefinitionHash } from '../../src/modules/activities/activity-template-definition';
 import { loginAs } from '../fixtures/auth.fixture';
 import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures/biz-admin.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
@@ -701,7 +702,7 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
   });
 
   it('reports template as a distinct resolution source', async () => {
-    await prisma.activityTemplate.create({
+    const legacyTemplate = await prisma.activityTemplate.create({
       data: {
         code: 'batch3-slice2-template-source',
         name: '第 3 批模板来源',
@@ -717,9 +718,140 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
       .get(`/api/app/v1/my/managed-activities/${activityId}/template-resolution`)
       .set('Authorization', creatorAuth)
       .expect(200);
-    expect(resolution.body.data.activity.registrationModeCode).toEqual({
-      value: 'template_registration',
-      source: 'template',
+    expect(resolution.body.data).toMatchObject({
+      templateVersionId: legacyTemplate.id,
+      activity: {
+        registrationModeCode: {
+          value: 'template_registration',
+          source: 'template',
+        },
+      },
+    });
+  });
+
+  it('keeps an explicitly selected retired future Version across the read and proposal projections', async () => {
+    sequence += 1;
+    const fixture = `batch3-slice2-a5-${sequence}`;
+    const selectedDefinition = { kind: 'a5-selected-template', revision: sequence };
+    const { selectedTemplate, newerLegacyTemplate } = await prisma.$transaction(async (tx) => {
+      const family = await tx.activityTemplateFamily.create({
+        data: {
+          code: `${fixture}-family`,
+          name: 'A5 显式选择模板族',
+          categoryCode: 'volunteer',
+          scopeTypeCode: 'organization',
+          statusCode: 'active',
+        },
+      });
+      const draft = await tx.activityTemplate.create({
+        data: {
+          code: `${fixture}-selected`,
+          name: 'A5 已选 future Version',
+          activityTypeCode,
+          statusCode: 'draft',
+          version: 1,
+          familyId: family.id,
+          schemaVersion: 1,
+          definitionJson: selectedDefinition,
+          definitionHash: computeActivityTemplateDefinitionHash({
+            schemaVersion: 1,
+            definition: selectedDefinition,
+          }),
+          effectiveFrom: new Date('2099-07-01T00:00:00.000Z'),
+          defaultRegistrationModeCode: 'a5_selected_registration',
+          defaultArchiveWaitingDays: 19,
+        },
+      });
+      await tx.activityTemplate.update({
+        where: { id: draft.id },
+        data: { statusCode: 'active' },
+      });
+      const selectedTemplate = await tx.activityTemplate.update({
+        where: { id: draft.id },
+        data: { statusCode: 'retired' },
+      });
+      const newerLegacyTemplate = await tx.activityTemplate.create({
+        data: {
+          code: `${fixture}-newer-legacy`,
+          name: 'A5 更新的 legacy active 模板',
+          activityTypeCode,
+          statusCode: 'active',
+          version: 100_000 + sequence,
+          defaultRegistrationModeCode: 'a5_newer_legacy_registration',
+          defaultArchiveWaitingDays: 31,
+        },
+      });
+      return { selectedTemplate, newerLegacyTemplate };
+    });
+    const { activityId } = await createDraftWithLiveSession();
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: { selectedTemplateVersionId: selectedTemplate.id },
+    });
+
+    const resolution = await request(httpServer(app))
+      .get(`/api/app/v1/my/managed-activities/${activityId}/template-resolution`)
+      .set('Authorization', creatorAuth)
+      .expect(200);
+    expect(resolution.body.data).toMatchObject({
+      templateVersionId: selectedTemplate.id,
+      activity: {
+        registrationModeCode: { value: 'a5_selected_registration', source: 'template' },
+      },
+    });
+    expect(resolution.body.data.templateVersionId).not.toBe(newerLegacyTemplate.id);
+
+    const initial = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/publish-reviews`)
+      .set('Authorization', creatorAuth)
+      .send({ operationKey: 'batch3-2-a5-initial-0001', confirmation: true })
+      .expect(200);
+    expect(initial.body.data.snapshot).toMatchObject({
+      templateVersionId: selectedTemplate.id,
+      resolvedConfig: {
+        templateVersionId: selectedTemplate.id,
+        activity: {
+          registrationModeCode: { value: 'a5_selected_registration', source: 'template' },
+        },
+      },
+    });
+
+    await request(httpServer(app))
+      .post(`/api/admin/v1/activity-publish-reviews/${initial.body.data.id}/approve`)
+      .set('Authorization', reviewerAuth)
+      .send({ requiresInsuranceConfirmed: true, operationKey: 'batch3-2-a5-approve-0001' })
+      .expect(200);
+    const ruleSnapshot = await prisma.activityRuleSnapshot.findFirstOrThrow({
+      where: { activityId, createdByReviewId: initial.body.data.id },
+      select: { templateVersionId: true, resolvedConfig: true },
+    });
+    expect(ruleSnapshot.templateVersionId).toBe(selectedTemplate.id);
+    expect(ruleSnapshot.resolvedConfig).toMatchObject({
+      templateVersionId: selectedTemplate.id,
+      activity: {
+        registrationModeCode: { value: 'a5_selected_registration', source: 'template' },
+      },
+    });
+
+    const change = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${activityId}/change-reviews`)
+      .set('Authorization', creatorAuth)
+      .send({
+        operationKey: 'batch3-2-a5-change-0001',
+        confirmation: true,
+        activityPatch: { registrationNotes: 'A5 显式模板只读投影回归' },
+        sessions: { create: [], update: [], cancel: [] },
+        positions: { create: [], update: [], cancel: [] },
+      })
+      .expect(200);
+    expect(change.body.data.snapshot).toMatchObject({
+      templateVersionId: selectedTemplate.id,
+      resolvedConfig: {
+        templateVersionId: selectedTemplate.id,
+        activity: {
+          registrationModeCode: { value: 'a5_selected_registration', source: 'template' },
+        },
+      },
     });
   });
 });

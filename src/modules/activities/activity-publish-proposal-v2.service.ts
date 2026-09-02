@@ -287,6 +287,8 @@ interface CurrentProposalState {
   workflowRevision: number;
   activity: ProposalActivity;
   sessions: ProposalSession[];
+  /** Stored selection fact; unlike templateVersionId it is never synthesized from fallback. */
+  selectedTemplateVersionId: string | null;
   templateVersionId: string | null;
   resolvedConfig: ActivityTemplateResolution;
   registrationForm: RegistrationFormTarget | null;
@@ -307,6 +309,7 @@ const proposalActivitySelect = {
   workflowRevision: true,
   title: true,
   activityTypeCode: true,
+  selectedTemplateVersionId: true,
   allocationModeCode: true,
   organizationId: true,
   startAt: true,
@@ -503,7 +506,11 @@ export class ActivityPublishProposalV2Service {
     this.sortCollections(sessions);
     this.assertProposalValid(activity, sessions);
 
-    const template = await this.findTemplate(tx, activity.activityTypeCode);
+    const template = await this.findTemplate(
+      tx,
+      current.selectedTemplateVersionId,
+      activity.activityTypeCode,
+    );
     const resolvedConfig = this.resolveConfig(activity, sessions, template);
     const registrationForm =
       dto.registrationForm === undefined
@@ -931,11 +938,16 @@ export class ActivityPublishProposalV2Service {
       })),
     }));
     this.sortCollections(sessions);
-    const template = await this.findTemplate(tx, activity.activityTypeCode);
+    const template = await this.findTemplate(
+      tx,
+      row.selectedTemplateVersionId,
+      activity.activityTypeCode,
+    );
     return {
       workflowRevision: row.workflowRevision,
       activity,
       sessions,
+      selectedTemplateVersionId: row.selectedTemplateVersionId,
       templateVersionId: template?.id ?? null,
       resolvedConfig: this.resolveConfig(activity, sessions, template),
       registrationForm: includeRegistrationForm
@@ -947,7 +959,26 @@ export class ActivityPublishProposalV2Service {
     };
   }
 
-  private async findTemplate(tx: PrismaTx, activityTypeCode: string): Promise<TemplateRow | null> {
+  private async findTemplate(
+    tx: PrismaTx,
+    selectedTemplateVersionId: string | null,
+    activityTypeCode: string,
+  ): Promise<TemplateRow | null> {
+    if (selectedTemplateVersionId !== null) {
+      // A4's FK makes this an integrity invariant. Do not mask a broken explicit selection by
+      // silently falling back to the current active template; a retired target is still valid
+      // historical input and is deliberately queried without lifecycle or Family filters.
+      return tx.activityTemplate.findUniqueOrThrow({
+        where: { id: selectedTemplateVersionId },
+        select: {
+          id: true,
+          defaultRegistrationModeCode: true,
+          defaultLocationRequired: true,
+          defaultCheckInRadiusMeters: true,
+          defaultArchiveWaitingDays: true,
+        },
+      });
+    }
     return tx.activityTemplate.findFirst({
       where: { activityTypeCode, statusCode: 'active' },
       orderBy: [{ version: 'desc' }, { code: 'asc' }, { id: 'asc' }],
