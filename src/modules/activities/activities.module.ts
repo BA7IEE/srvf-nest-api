@@ -16,6 +16,7 @@ import { ActivitiesService } from './activities.service';
 import { ActivityAccessService } from './activity-access.service';
 import { ActivityStatusCommandService } from './activity-status-command.service';
 import { ActivityWriteService } from './activity-write.service';
+import { ActivityFromTemplateService } from './activity-from-template.service';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
 import { ActivityDraftService } from './activity-draft.service';
@@ -167,6 +168,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityImageSigningService,
     ActivityStatusCommandService,
     ActivityWriteService,
+    ActivityFromTemplateService,
     ActivityAuditRecorder,
     ActivityDraftAuditRecorder,
     ActivityDraftService,

@@ -18,7 +18,7 @@
 
 ---
 
-## 1. 还有欠账的冻结稿(9 项 / 涉 17 份文件)
+## 1. 还有欠账的冻结稿(9 项 / 涉 18 份文件)
 
 > **落地度列开头的 `` `↔…` `` 是给判据 6 读的对照标记**,不是装饰 —— 它声明本行与
 > `NEXT_TASKS.md` 同编号条目的状态行**是不是同一把尺子**。取值与写法见 [§4](#4-这份台账由什么守着)。
@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5 已通过并合入 #1237/#1239/#1241/#1244/#1246 | 下一刀 A6 独立立项 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5 已通过并合入 #1237/#1239/#1241/#1244/#1246；A6 方案 A 的实施、验证与第 104 条 3b 重签已完成 | A6 PR / CI 与合并 |
 
 ### 1.1 欠代码的五项
 
@@ -116,9 +116,14 @@ API/DTO、权限/Gate、seed、回填和生产部署均未改。
 Version 后来 retired 仍保持可读，缺行 fail-closed。template-resolution、initial/change proposal、
 `rebuildCurrent` 与 v2–v5 RuleSnapshot 共用同一解析；原始指针与最终 `templateVersionId` 分离，避免
 legacy fallback 被误写成显式选择。单元 / PostgreSQL E2E、OpenAPI 零漂移、全套 PR CI 与红区审批均已
-收口；schema、migration、seed、writer、API/DTO、权限/Gate、回填和生产部署均未改。A6 及以后仍须
-逐刀独立立项，A5 的授权不得带入。
-本项不改变现有 schema、migration、AI 模块、Integration 业务面、权限码或任何 Gate。
+收口；schema、migration、seed、writer、API/DTO、权限/Gate、回填和生产部署均未改。
+**A6 已确认方案 A，实施、验证与第 104 条 3b 重签已完成**：只增加模块内从模板创建 façade。它按 operationKey 重放优先，首次
+调用锁定精确 Template Version，复验 A3 canonical/hash 与严格 Definition V1，再在同一事务物化草稿
+Activity、Session、Position 和安全审计；不按 Family 状态或 effective interval 推导“当前可选”。第 104 条
+migration 只会为 Activity 添加两个 nullable 幂等列与一个唯一索引，零 default、回填、seed、删除和生产
+部署；V1 没有坐标，要求定位或半径的场次 / 岗位会 fail-closed。A6 不新增 HTTP、DTO、Swagger、路由、
+权限码、Gate 或 A5 读侧改动。维护者已于 2026-09-02 完成第 104 条 3b 重签，接下来进入 PR / CI / 合并。
+本项不引入 AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -172,7 +177,7 @@ legacy fallback 被误写成显式选择。单元 / PostgreSQL E2E、OpenAPI 零
 **未逐份复验**(其中在本次会话里真读过代码或产物核实的,只有活动四份 T0、harness 3.0、
 PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)。
 发现某行定性错了,**直接改那一行**,不必走评审 —— 本闸保证的是"没有未分类项"与"读数不过期",
-**不保证历史定性正确**。`open` 那 16 份是本次逐条核过的。
+**不保证历史定性正确**。`open` 那 17 份是本次逐条核过的。
 
 | 文件 | 分类 | 去向 / 理由 |
 |---|---|---|
@@ -182,6 +187,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md` | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a4-explicit-template-version-review.md` | landed · P1-33 | Release 1 / A4 D 档显式 Template Version 指针纯 expand；已随 #1244 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a5-fallback-read-projection-review.md` | landed · P1-33 | Release 1 / A5 显式 Template Version fallback / 只读投影；已随 #1246 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r1-a6-from-template-transaction-review.md` | open · P1-33 | Release 1 / A6 内部从模板创建事务；方案 A 的实施、验证与 3b 重签已完成，PR / CI 与合并仍待完成 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |

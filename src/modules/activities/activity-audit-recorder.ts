@@ -152,6 +152,37 @@ export class ActivityAuditRecorder {
     });
   }
 
+  // ============ logCreateFromTemplate(Activity OS R1 / A6) ============
+  // 仍复用 activity.publish 伞事件；模板原文、operationKey、请求体均不进入 audit。
+  // after 只取既有安全 Activity 快照，extra 仅保留可追溯来源与不可变 definition hash。
+  async logCreateFromTemplate(args: {
+    created: AuditActivitySnapshotInput & { id: string };
+    actorUserId: string;
+    actorRoleSnap: Role;
+    templateVersionId: string;
+    definitionHash: string;
+    nextStatusCode: string;
+    auditMeta: AuditMeta;
+    tx: PrismaTx;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.created.id,
+      meta: args.auditMeta,
+      after: this.toAuditSnapshot(args.created),
+      extra: {
+        operation: 'create_from_template',
+        templateVersionId: args.templateVersionId,
+        definitionHash: args.definitionHash,
+        nextStatusCode: args.nextStatusCode,
+      },
+      tx: args.tx,
+    });
+  }
+
   // ============ logUpdate(沿 PR #199 audit-characterization B1) ============
   // event: 'activity.publish';
   // before + after = toAuditSnapshot(...);

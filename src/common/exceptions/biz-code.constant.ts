@@ -1799,6 +1799,20 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // Activity OS R1 / A6：从精确模板 Version 创建草稿。模板不存在、legacy、retired、
+  // 定义缺失 / hash 不一致都统一为同一口径，不能据错误消息枚举内部模板生命周期。
+  ACTIVITY_TEMPLATE_VERSION_NOT_SELECTABLE: {
+    code: 20161,
+    message: '该活动模板版本当前不可用于创建活动',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  // 同一个全局 operationKey 必须始终绑定同一调用者、精确 Version/hash 与同一份规范化输入。
+  ACTIVITY_CREATE_FROM_TEMPLATE_OPERATION_KEY_CONFLICT: {
+    code: 20162,
+    message: '从模板创建活动的操作键与首次请求不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // ===== 归档动作的两套开工条件(§6.6 / AC-004 / AC-064;2026-08-25 拍板)=====
   //
   // 🔴 **两套条件各给一个具名码,不合并成一个 ACTIVITY_ARCHIVE_NOT_ELIGIBLE。**

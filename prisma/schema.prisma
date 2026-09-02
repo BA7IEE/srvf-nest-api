@@ -1393,6 +1393,11 @@ model Activity {
   // Activity OS R1 / A4：新活动未来会记录一次明确的模板版本选择；本刀只占可空指针，
   // NULL 继续表示历史 activityTypeCode 路径，绝不在这里切换 resolver 或回填旧活动。
   selectedTemplateVersionId          String?
+  // Activity OS R1 / A6：从模板创建成功结果的持久化幂等锚。两列均可空，历史 Activity
+  // 零回填；operationKey 全局唯一，requestHash 绑定操作、调用者、精确 Version/hash 与输入。
+  // 不能复用 IntegrationCommandReceipt：后者绑定服务主体凭证，安全边界不同。
+  createFromTemplateOperationKey     String? @unique(map: "activity_create_from_template_operation_key_key")
+  createFromTemplateRequestHash      String?
   organizationId                     String
   startAt                            DateTime
   endAt                              DateTime

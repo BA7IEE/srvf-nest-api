@@ -19,6 +19,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
 import type { ActivityAllocationModeService } from './activity-allocation-mode.service';
 import { ActivityStatusCommandService } from './activity-status-command.service';
 import { ActivityWriteService } from './activity-write.service';
+import type { ActivityFromTemplateService } from './activity-from-template.service';
 import type { ActivityAuditRecorder } from './activity-audit-recorder';
 import type { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { InsuranceRequirementService } from '../insurances/insurance-requirement.service';
@@ -476,6 +477,7 @@ function makeService(
       notificationProducer as unknown as ActivityNotificationProducer,
       configMock,
     ),
+    { createFromTemplate: jest.fn() } as unknown as ActivityFromTemplateService,
     new ActivityStatusCommandService(
       prisma as unknown as PrismaService,
       imagesMock,
