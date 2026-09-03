@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:784396ce1baf27064045c3080808715afcbd099b0a4577c344a41163d377a0de",
+  "inputDigest": "sha256:2ce453e68737bc8adbda8a500b49b4311b20e58ba058f89a468760dd26b288a7",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -450,6 +450,12 @@
       "subdomain": "lifecycle",
       "confirmed": true
     },
+    "ActivityPlace": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
     "ActivitySeries": {
       "domain": "participation",
       "ownerModule": "activities",
@@ -706,6 +712,12 @@
       "domain": "participation",
       "ownerModule": "activity-registrations",
       "subdomain": "registration",
+      "confirmed": true
+    },
+    "PlacePreset": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
       "confirmed": true
     },
     "ActivityPositionPreference": {
