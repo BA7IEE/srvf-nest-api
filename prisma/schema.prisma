@@ -1569,6 +1569,8 @@ model Activity {
 
   // 活动改造 v1.1 第 1 批第一刀反向 relation(合同 §3.2 / §3.3 / §3.8 / §3.10)。
   sessions                ActivitySession[]
+  // Activity OS R2 / B1：地点快照属于活动根；B1 只建立持久化关系，不新增 writer / read API。
+  activityPlaces          ActivityPlace[]
   sessionPositions        ActivitySessionPosition[]
   participationIdentities ActivityParticipationIdentity[]
   capacityBuckets         ActivityCapacityBucket[]
@@ -4167,6 +4169,8 @@ model ActivitySession {
   sortOrder        Int    @default(0)
 
   activity                Activity                        @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  // Activity OS R2 / B1：场次级地点以 (activityId, sessionId) 复合锚物理确认同一活动链。
+  activityPlaces          ActivityPlace[]
   positions               ActivitySessionPosition[]
   participationIdentities ActivityParticipationIdentity[]
 
@@ -4201,6 +4205,63 @@ model ActivitySession {
   @@index([checkOutCloseAt])
   @@index([activityId, sortOrder])
   @@index([deletedAt])
+}
+
+// ===== Activity OS Release 2 / B1：地点预设与活动地点快照 =====
+//
+// PlacePreset 是未来定义层可选来源；ActivityPlace 保存活动 / 场次自己的本地快照。
+// B1 不提供预设 writer、生命周期、地图接入或旧字段投影，因而不臆造 status / owner / JSON 配置。
+model PlacePreset {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name                 String
+  addressText          String
+  instruction          String?
+  longitude            Decimal? @db.Decimal(10, 7)
+  latitude             Decimal? @db.Decimal(10, 7)
+  coordinateSystemCode String?
+  providerCode         String?
+  providerPlaceId      String?
+  checkInEligible      Boolean
+  radiusMeters         Int?
+
+  activityPlaces ActivityPlace[]
+}
+
+// ActivityPlace 是计划层快照。sourcePresetId 仅保留来源；将来的 writer 必须复制预设值，
+// 不能在读侧用当前预设覆盖此处字段。sessionId 为 NULL 表示活动级地点。
+model ActivityPlace {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activityId String
+  sessionId  String?
+
+  roleCode             String
+  name                 String
+  addressText          String
+  instruction          String?
+  longitude            Decimal? @db.Decimal(10, 7)
+  latitude             Decimal? @db.Decimal(10, 7)
+  coordinateSystemCode String?
+  providerCode         String?
+  providerPlaceId      String?
+  visibilityCode       String
+  checkInEligible      Boolean
+  radiusMeters         Int?
+  sourcePresetId       String?
+  workflowRevision     Int      @default(0)
+
+  activity     Activity         @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  session      ActivitySession? @relation(fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict)
+  sourcePreset PlacePreset?     @relation(fields: [sourcePresetId], references: [id], onDelete: Restrict)
+
+  @@index([activityId])
+  @@index([sessionId])
+  @@index([sourcePresetId])
 }
 
 // ===== §3.3 ActivitySessionPosition:场次级岗位 =====
