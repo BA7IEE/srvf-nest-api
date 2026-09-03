@@ -1,6 +1,6 @@
 # Activity OS R2 / B2：坐标系与旧字段兼容投影评审与授权清单
 
-> **状态：维护者已于 2026-09-03 确认起草本稿；尚未确认 B2 方案 A，也未授权任何 B2 实现。** 当前授权只允许新增本评审稿，不授权 Prisma schema、migration、测试基础设施、运行时代码、接口或生产部署。
+> **状态：维护者已于 2026-09-03 确认起草本稿；尚未确认 B2 方案 A，也未授权任何 B2 实现。** 当前授权只允许新增本评审稿及 CI 强制的冻结稿台账分类，不授权 Prisma schema、migration、测试基础设施、运行时代码、接口或生产部署。
 >
 > **上游合同**：Activity OS T0-A 终态合同第 6.1、10.3、11、12 节；原始蓝图第 8 章和 Release 2 排期。B1 已以 PR #1257 合入 main，B2 只接 B1 的地点存储地基，不重开 A1 至 A8、B3 表单、B4 Readiness、B5 快照或 B6 创建入口。
 >
@@ -128,11 +128,12 @@ gcj02 和 bd09 的转换仅在冻结的中国大陆转换包络内进行：经�
 
 ### 6.1 本次已获授权
 
-当前 B2 review worktree 只获如下精确授权：
+当前 B2 review PR 只获如下精确写集：
 
-- docs/archive/reviews/activity-os-r2-b2-coordinate-projection-review.md：新增本冻结评审稿。
+- docs/archive/reviews/activity-os-r2-b2-coordinate-projection-review.md：新增本冻结评审稿；此路径已由维护者在本 worktree 发放精确红区授权。
+- docs/ai-harness/FROZEN_DRAFTS.md：新增一条 B2 的 open 分类。它是 archive 新增文件的 CI 强制机械登记，harness:needs 已确认该路径不是红区。
 
-本稿不授权其它路径，也不把“起草方案 A”解释成 schema、migration 或代码实施授权。
+除上述两份文档外，本稿不授权其它路径，也不把“起草方案 A”解释成 schema、migration 或代码实施授权。
 
 ### 6.2 B2 实施前仍需维护者确认的写集
 
