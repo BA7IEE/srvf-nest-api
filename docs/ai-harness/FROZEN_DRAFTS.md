@@ -205,6 +205,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | landed · P1-33 | Release 1 / A7 Series 与手工／按需生成；已随 #1251 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a8-contract-handoff-e2e-gate-review.md` | landed · P1-33 | Release 1 / A8 contract、handoff、No-AI E2E 与 Gate 关闭态；已随 #1254 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b1-place-review.md` | open · P1-33 | Release 2 / B1 PlacePreset 与 ActivityPlace 的 D 档存储地基；方案 A 已确认，实施仍待独立 schema / migration 和测试基础设施授权 |
+| `docs/archive/reviews/activity-os-r2-b2-coordinate-projection-review.md` | open · P1-33 | Release 2 / B2 坐标系与旧字段兼容投影的 D 档评审与授权清单；方案 A 已确认，实施仍待独立 schema / migration 和测试基础设施授权 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
