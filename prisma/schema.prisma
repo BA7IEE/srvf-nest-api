@@ -4219,6 +4219,8 @@ model PlacePreset {
   name                 String
   addressText          String
   instruction          String?
+  // B2 的物理 CHECK：三列可同时为空（纯文字地点）；否则经纬度必须成对、位于全球
+  // 合法范围，coordinateSystemCode 只能是 wgs84 / gcj02 / bd09。
   longitude            Decimal? @db.Decimal(10, 7)
   latitude             Decimal? @db.Decimal(10, 7)
   coordinateSystemCode String?
@@ -4244,6 +4246,8 @@ model ActivityPlace {
   name                 String
   addressText          String
   instruction          String?
+  // B2 的物理 CHECK：三列可同时为空（纯文字地点）；否则经纬度必须成对、位于全球
+  // 合法范围，coordinateSystemCode 只能是 wgs84 / gcj02 / bd09。
   longitude            Decimal? @db.Decimal(10, 7)
   latitude             Decimal? @db.Decimal(10, 7)
   coordinateSystemCode String?

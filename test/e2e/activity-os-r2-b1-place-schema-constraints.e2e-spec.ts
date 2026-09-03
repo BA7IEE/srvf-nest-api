@@ -18,7 +18,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 93;
 const PREVIOUS_MIGRATION_COUNT = 105;
-const CURRENT_MIGRATION_COUNT = 106;
+const CURRENT_MIGRATION_COUNT = 107;
 const MIGRATION_NAME = '20260903131800_activity_os_r2_b1_place_expand';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const COLD_MIGRATION_REPLAY_TIMEOUT_MS = 180_000;
@@ -580,7 +580,7 @@ describe('Activity OS R2 B1 PlacePreset / ActivityPlace schema constraints', () 
     expect(textOnly).toEqual({ longitude: null, latitude: null });
   });
 
-  it('拒绝未知 role / visibility，且 B1 不提前施加 B2 / B4 的坐标和半径规则', async () => {
+  it('拒绝未知 role / visibility，并保留 B4 才收紧的半径规则', async () => {
     await expectRejected(rawPlaceSql(uniq('invalid-role'), { roleCode: 'temporary-role' }), {
       sqlState: '23514',
       constraint: 'activity_place_role_code_check',
@@ -591,10 +591,11 @@ describe('Activity OS R2 B1 PlacePreset / ActivityPlace schema constraints', () 
     });
 
     await expectAccepted(
-      rawPlaceSql(uniq('deferred-b2-b4'), {
-        longitude: '121.4737000',
+      rawPlaceSql(uniq('deferred-b4-radius'), {
+        // B2 已在当前库收紧坐标三元组；B1 的文字地点仍允许，B4 的半径语义则尚未落地。
+        longitude: null,
         latitude: null,
-        coordinateSystemCode: 'future-coordinate-system',
+        coordinateSystemCode: null,
         providerCode: 'future-provider',
         providerPlaceId: 'future-provider-place',
         checkInEligible: false,
