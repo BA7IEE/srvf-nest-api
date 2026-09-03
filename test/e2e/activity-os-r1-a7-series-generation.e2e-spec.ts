@@ -111,6 +111,8 @@ async function waitForSeriesLockWaiters(observer: PrismaService, expected: numbe
 
 describe('Activity OS R1 A7 周期 Series 与按需生成', () => {
   const previousResponsibilityWorkflow = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+  const previousActivityV11Workflow = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+  const previousIntegrationApi = process.env.INTEGRATION_API_ENABLED;
   let app: INestApplication;
   let appB: INestApplication;
   let prisma: PrismaService;
@@ -126,6 +128,9 @@ describe('Activity OS R1 A7 周期 Series 与按需生成', () => {
   beforeAll(async () => {
     // A7 的生成实例必须绕开 A6 的“调用者就是发起人”规则；这里故意在 workflow 打开时验证。
     process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
+    // A8：Series 是内部路径，必须明确证明其不依赖尚未切换的 v1.1 或 Integration 业务面。
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'false';
+    process.env.INTEGRATION_API_ENABLED = 'false';
     app = await createTestApp();
     appB = await createTestApp();
     prisma = app.get(PrismaService);
@@ -140,6 +145,16 @@ describe('Activity OS R1 A7 周期 Series 与按需生成', () => {
       delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
     } else {
       process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousResponsibilityWorkflow;
+    }
+    if (previousActivityV11Workflow === undefined) {
+      delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+    } else {
+      process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousActivityV11Workflow;
+    }
+    if (previousIntegrationApi === undefined) {
+      delete process.env.INTEGRATION_API_ENABLED;
+    } else {
+      process.env.INTEGRATION_API_ENABLED = previousIntegrationApi;
     }
   });
 
