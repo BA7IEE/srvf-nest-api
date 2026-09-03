@@ -21,7 +21,7 @@ const SCRATCH_WORKER_ID = 82;
 // 命名刻意与 `activity-v11-batch4-*-migration.e2e-spec.ts` 那 5 支一致:此前本支用的是
 // 裸 `toBe(90)`,于是「按 CURRENT_MIGRATION_COUNT 搜」找不到它 —— 加 migration 的人
 // 修完那 5 支、推上去被本支再咬一轮。已连续发生两次(#1048 / #1055),故统一。
-const CURRENT_MIGRATION_COUNT = 106;
+const CURRENT_MIGRATION_COUNT = 107;
 const MIGRATION_NAME =
   '20260809180000_activity_v11_batch4_registration_revision_insurance_evidence';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
