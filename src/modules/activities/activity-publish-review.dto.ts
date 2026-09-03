@@ -18,7 +18,7 @@ import {
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 import { OmittableOnly } from '../../common/decorators/omittable-only.decorator';
 import { UpdateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
-import { RegistrationFormDefinitionInputDto } from './dto/app/app-registration-form.dto';
+import { ManagedRegistrationFormDefinitionInputDto } from './dto/app/app-registration-form.dto';
 import { AppActivityQualificationRuleInputDto } from './dto/app/app-activity-qualification-rules.dto';
 import {
   CreateAppManagedActivitySessionDto,
@@ -403,13 +403,13 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
    * Omitted keeps the active Form; explicit null retires it on approval; an object replaces it.
    * The proposal service, not this DTO, canonicalizes and binds it into the generated v4 snapshot.
    */
-  @ApiPropertyOptional({ nullable: true, type: () => RegistrationFormDefinitionInputDto })
+  @ApiPropertyOptional({ nullable: true, type: () => ManagedRegistrationFormDefinitionInputDto })
   @IsOptional()
   @ValidateIf((_object, value: unknown) => value !== null)
   @IsObject()
   @ValidateNested()
-  @Type(() => RegistrationFormDefinitionInputDto)
-  registrationForm?: RegistrationFormDefinitionInputDto | null;
+  @Type(() => ManagedRegistrationFormDefinitionInputDto)
+  registrationForm?: ManagedRegistrationFormDefinitionInputDto | null;
 
   /** Omitted retains active RuleSets; explicit collection commands are frozen in V5. */
   @ApiPropertyOptional({ type: () => ChangeReviewQualificationRuleSetCollectionsDto })

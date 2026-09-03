@@ -8,14 +8,15 @@ import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
 import type {
-  AppRegistrationFormDto,
+  AppManagedRegistrationFormDto,
+  ManagedRegistrationFormDefinitionInputDto,
   PutAppManagedRegistrationFormDto,
-  RegistrationFormDefinitionInputDto,
 } from './dto/app/app-registration-form.dto';
 import {
-  canonicalizeRegistrationFormDefinition,
+  canonicalizeRegistrationFormDefinitionForB3,
   registrationFormDefinitionFromStoredFields,
   type CanonicalRegistrationFormDefinition,
+  type RegistrationFormDefinitionMode,
 } from './registration-form-definition';
 
 type PrismaTx = Prisma.TransactionClient;
@@ -35,6 +36,11 @@ const formFieldSelect = {
   maxLength: true,
   maxSelections: true,
   optionsJson: true,
+  purposeCode: true,
+  dataClassCode: true,
+  retentionPolicyCode: true,
+  maskingPolicyCode: true,
+  prefillSourceCode: true,
 } as const satisfies Prisma.RegistrationFormFieldSelect;
 
 const formVersionSelect = {
@@ -65,6 +71,11 @@ export interface RegistrationFormResolvedConfig {
   schemaHash: string;
 }
 
+interface CanonicalizedManagedFormInput {
+  readonly target: RegistrationFormTarget;
+  readonly mode: RegistrationFormDefinitionMode;
+}
+
 @Injectable()
 export class RegistrationFormVersionService {
   constructor(
@@ -75,7 +86,7 @@ export class RegistrationFormVersionService {
   async getManaged(
     activityId: string,
     user: CurrentUserPayload,
-  ): Promise<AppRegistrationFormDto | null> {
+  ): Promise<AppManagedRegistrationFormDto | null> {
     const activity = await this.prisma.activity.findFirst({
       where: this.managedActivityWhere(activityId, user),
       select: { statusCode: true },
@@ -97,8 +108,9 @@ export class RegistrationFormVersionService {
     dto: PutAppManagedRegistrationFormDto,
     user: CurrentUserPayload,
     auditMeta: AuditMeta,
-  ): Promise<AppRegistrationFormDto | null> {
-    const target = dto.form === null ? null : this.canonicalizeInput(dto.form);
+  ): Promise<AppManagedRegistrationFormDto | null> {
+    const requested = dto.form === null ? null : this.canonicalizeInput(dto.form);
+    const target = requested?.target ?? null;
     return this.prisma.$transaction(async (tx) => {
       const activity = await this.lockManagedActivity(tx, activityId, user);
       if (activity.statusCode !== 'draft') {
@@ -137,6 +149,11 @@ export class RegistrationFormVersionService {
       }
       const now = new Date();
       if (existing) {
+        // A legacy-shaped non-null request must never silently strip governance from a draft Form
+        // materialized by B3. Explicit `form: null` above remains the existing retirement command.
+        if (requested?.mode === 'legacy' && this.formMode(existing) === 'governed') {
+          throw new BizException(BizCode.BAD_REQUEST);
+        }
         await tx.registrationFormVersion.update({
           where: { id: existing.id },
           data: { statusCode: 'retired', retiredAt: now },
@@ -287,9 +304,35 @@ export class RegistrationFormVersionService {
     });
   }
 
-  private canonicalizeInput(input: RegistrationFormDefinitionInputDto): RegistrationFormTarget {
-    const canonical = canonicalizeRegistrationFormDefinition(input);
-    return { definition: canonical.definition, schemaHash: canonical.schemaHash };
+  /**
+   * B3 template materialization must stay inside the caller's Activity-root transaction. It never
+   * performs managed authorization/audit and cannot create a legacy or sensitive template Form.
+   */
+  async materializeTemplateDraft(
+    tx: PrismaTx,
+    activityId: string,
+    definition: CanonicalRegistrationFormDefinition,
+  ): Promise<void> {
+    const canonical = canonicalizeRegistrationFormDefinitionForB3(definition);
+    if (canonical.mode !== 'governed') throw new BizException(BizCode.BAD_REQUEST);
+    await this.createVersion(tx, {
+      activityId,
+      version: 1,
+      statusCode: 'draft',
+      workflowRevision: 0,
+      schemaHash: null,
+      definition: canonical.definition,
+    });
+  }
+
+  private canonicalizeInput(
+    input: ManagedRegistrationFormDefinitionInputDto,
+  ): CanonicalizedManagedFormInput {
+    const canonical = canonicalizeRegistrationFormDefinitionForB3(input);
+    return {
+      target: { definition: canonical.definition, schemaHash: canonical.schemaHash },
+      mode: canonical.mode,
+    };
   }
 
   private targetFromVersion(version: FormVersionRow): RegistrationFormTarget {
@@ -299,6 +342,10 @@ export class RegistrationFormVersionService {
 
   private sameTarget(left: RegistrationFormTarget, right: RegistrationFormTarget): boolean {
     return left.schemaHash === right.schemaHash;
+  }
+
+  private formMode(version: FormVersionRow): RegistrationFormDefinitionMode {
+    return registrationFormDefinitionFromStoredFields(version.fields).mode;
   }
 
   private async currentVersionForActivity(
@@ -363,6 +410,11 @@ export class RegistrationFormVersionService {
               field.options === null
                 ? Prisma.DbNull
                 : (field.options as unknown as Prisma.InputJsonValue),
+            purposeCode: field.governance?.purposeCode ?? null,
+            dataClassCode: field.governance?.dataClassCode ?? null,
+            retentionPolicyCode: field.governance?.retentionPolicyCode ?? null,
+            maskingPolicyCode: field.governance?.maskingPolicyCode ?? null,
+            prefillSourceCode: field.governance?.prefillSourceCode ?? null,
           })),
         },
       },
@@ -413,8 +465,15 @@ export class RegistrationFormVersionService {
     return { id: activityId, deletedAt: null, initiatorMemberId: user.memberId };
   }
 
-  private toDto(version: FormVersionRow): AppRegistrationFormDto {
+  private toDto(version: FormVersionRow): AppManagedRegistrationFormDto {
     const canonical = this.targetFromVersion(version).definition;
-    return { version: version.version, fields: canonical.fields };
+    return {
+      version: version.version,
+      // Legacy managed responses retain their pre-B3 wire shape. Governed fields alone gain the
+      // owner-only metadata object, which also matches the optional generated client property.
+      fields: canonical.fields.map(({ governance, ...field }) =>
+        governance === undefined ? field : { ...field, governance },
+      ),
+    };
   }
 }

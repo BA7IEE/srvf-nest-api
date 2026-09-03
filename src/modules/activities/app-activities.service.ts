@@ -20,7 +20,10 @@ import {
   type ActivityQualificationEvaluation,
   type QualificationProjection,
 } from '../activity-registrations/activity-qualification-evaluator.service';
-import { registrationFormDefinitionFromStoredFields } from './registration-form-definition';
+import {
+  registrationFormDefinitionFromStoredFields,
+  registrationFormPublicDefinition,
+} from './registration-form-definition';
 import { isFormalMemberGradeCode } from '../members/member-grade';
 import { ActivityImageSigningService } from './activity-image-signing.service';
 
@@ -148,6 +151,11 @@ const appActivityDetailSelect = {
           maxLength: true,
           maxSelections: true,
           optionsJson: true,
+          purposeCode: true,
+          dataClassCode: true,
+          retentionPolicyCode: true,
+          maskingPolicyCode: true,
+          prefillSourceCode: true,
         },
       },
     },
@@ -487,7 +495,9 @@ export class AppActivitiesService {
     const registrationForm = activeForm
       ? {
           version: activeForm.version,
-          fields: registrationFormDefinitionFromStoredFields(activeForm.fields).definition.fields,
+          fields: registrationFormPublicDefinition(
+            registrationFormDefinitionFromStoredFields(activeForm.fields).definition,
+          ).fields,
         }
       : null;
     return {

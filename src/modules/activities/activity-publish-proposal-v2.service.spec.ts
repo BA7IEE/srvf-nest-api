@@ -1,10 +1,12 @@
 import type { Prisma } from '@prisma/client';
 
+import { BizCode } from '../../common/exceptions/biz-code.constant';
 import {
   ActivityPublishProposalV2Service,
   type ActivityPublishProposalSnapshotV2,
 } from './activity-publish-proposal-v2.service';
 import { activitySessionCancellationEffects } from './activity-session-cancellation-effects';
+import { canonicalizeRegistrationFormDefinition } from './registration-form-definition';
 
 type ProposalV2Internals = {
   currentState: jest.Mock;
@@ -28,6 +30,98 @@ describe('ActivityPublishProposalV2Service', () => {
     versionKey: 'review:proposal-v2-spec',
     auditMeta: { requestId: 'req-proposal-v2-spec', ip: null, ua: null },
   } as const;
+
+  it('keeps governed Form targets canonical and hash-bound in every existing v3-v5 slot without changing the envelope', async () => {
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      registrationForms as never,
+      qualificationRules as never,
+      { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
+    );
+    const governed = canonicalizeRegistrationFormDefinition({
+      fields: [
+        {
+          fieldCode: 'travel_note',
+          typeCode: 'short_text',
+          label: '出行说明',
+          required: false,
+          visibilityCode: 'self_only',
+          exportable: false,
+          sortOrder: 0,
+          governance: {
+            purposeCode: 'transport_logistics',
+            dataClassCode: 'ordinary',
+            retentionPolicyCode: 'activity_lifecycle',
+            maskingPolicyCode: 'none',
+            prefillSourceCode: null,
+          },
+        },
+      ],
+    });
+    const changed = canonicalizeRegistrationFormDefinition({
+      fields: [
+        {
+          ...governed.definition.fields[0],
+          governance: {
+            purposeCode: 'equipment_clothing',
+            dataClassCode: 'ordinary',
+            retentionPolicyCode: 'activity_lifecycle',
+            maskingPolicyCode: 'none',
+            prefillSourceCode: null,
+          },
+        },
+      ],
+    });
+    const state = {
+      workflowRevision: 12,
+      activity: { title: 'B3 governed form hash', allocationModeCode: 'first_come' },
+      sessions: [],
+      templateVersionId: null,
+      resolvedConfig: { templateVersionId: null },
+      registrationForm: { definition: governed.definition, schemaHash: governed.schemaHash },
+      qualificationRuleSets: { ruleSets: [] },
+    };
+    const internals = service as unknown as {
+      currentState: jest.Mock;
+      assertSnapshotFormTarget(target: unknown): void;
+    };
+    internals.currentState = jest.fn().mockResolvedValue(state);
+
+    const before = await Promise.all([
+      service.rebuildCurrent({} as never, 'activity-1', 3),
+      service.rebuildCurrent({} as never, 'activity-1', 4),
+      service.rebuildCurrent({} as never, 'activity-1', 5),
+    ]);
+    internals.currentState.mockResolvedValue({
+      ...state,
+      registrationForm: { definition: changed.definition, schemaHash: changed.schemaHash },
+    });
+    const after = await Promise.all([
+      service.rebuildCurrent({} as never, 'activity-1', 3),
+      service.rebuildCurrent({} as never, 'activity-1', 4),
+      service.rebuildCurrent({} as never, 'activity-1', 5),
+    ]);
+    expect(after.map((item) => item.snapshotHash)).not.toEqual(
+      before.map((item) => item.snapshotHash),
+    );
+    expect(() =>
+      internals.assertSnapshotFormTarget({
+        definition: governed.definition,
+        schemaHash: governed.schemaHash,
+      }),
+    ).not.toThrow();
+    try {
+      internals.assertSnapshotFormTarget({
+        definition: governed.definition,
+        schemaHash: '0'.repeat(64),
+      });
+      throw new Error('expected governed Form snapshot hash mismatch to fail');
+    } catch (error) {
+      expect(error).toMatchObject({ biz: BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID });
+    }
+  });
 
   it('recognizes a historical schemaVersion 3 form-bearing proposal for approval compatibility', () => {
     const service = new ActivityPublishProposalV2Service(

@@ -17,6 +17,7 @@ import {
 } from './activity-from-template.service';
 import type { ActivityImageSigningService } from './activity-image-signing.service';
 import type { ActivityInitiationPolicy } from './activity-initiation-policy';
+import type { RegistrationFormVersionService } from './registration-form-version.service';
 import { canonicalize } from './settlement-content-hash';
 
 const META: AuditMeta = { requestId: 'a6-unit-req', ip: '127.0.0.1', ua: 'jest' };
@@ -90,8 +91,34 @@ function definition() {
   };
 }
 
-function definitionHash(definitionJson: Record<string, unknown> = definition()): string {
-  return computeActivityTemplateDefinitionHash({ schemaVersion: 1, definition: definitionJson });
+function definitionHash(
+  definitionJson: Record<string, unknown> = definition(),
+  schemaVersion = 1,
+): string {
+  return computeActivityTemplateDefinitionHash({ schemaVersion, definition: definitionJson });
+}
+
+function governedForm(dataClassCode: 'ordinary' | 'sensitive' = 'ordinary') {
+  return {
+    fields: [
+      {
+        fieldCode: 'transport_note',
+        typeCode: 'short_text',
+        label: '出行说明',
+        required: false,
+        visibilityCode: 'self_only',
+        exportable: false,
+        sortOrder: 0,
+        governance: {
+          purposeCode: 'transport_logistics',
+          dataClassCode,
+          retentionPolicyCode: 'activity_lifecycle',
+          maskingPolicyCode: 'none',
+          prefillSourceCode: null,
+        },
+      },
+    ],
+  };
 }
 
 function requestHash(
@@ -251,6 +278,7 @@ function makeSubject(
   const allocationModes = { assertValidMode: jest.fn() };
   const initiationPolicy = { resolveInitiator: jest.fn().mockResolvedValue('member-a6-0001') };
   const audit = { logCreateFromTemplate: jest.fn().mockResolvedValue(undefined) };
+  const registrationForms = { materializeTemplateDraft: jest.fn().mockResolvedValue(undefined) };
   const images = {
     signImages: jest.fn().mockResolvedValue({ coverImageUrl: null, galleryImageUrls: [] }),
   };
@@ -260,6 +288,7 @@ function makeSubject(
     allocationModes as unknown as ActivityAllocationModeService,
     initiationPolicy as unknown as ActivityInitiationPolicy,
     audit as unknown as ActivityAuditRecorder,
+    registrationForms as unknown as RegistrationFormVersionService,
     images as unknown as ActivityImageSigningService,
     { activityResponsibilityWorkflow: { enabled: false } } as never,
   );
@@ -271,6 +300,7 @@ function makeSubject(
     allocationModes,
     initiationPolicy,
     audit,
+    registrationForms,
     images,
     created,
     template,
@@ -281,6 +311,38 @@ function makeSubject(
 }
 
 describe('ActivityFromTemplateService', () => {
+  it('materializes a V2 governed Form as the new Activity-local draft v1 in the root transaction', async () => {
+    const definitionJson = { ...definition(), registrationForm: governedForm() };
+    const governanceMatcher: unknown = expect.objectContaining({
+      purposeCode: 'transport_logistics',
+      dataClassCode: 'ordinary',
+      prefillSourceCode: null,
+    });
+    const subject = makeSubject({
+      template: {
+        schemaVersion: 2,
+        definitionJson,
+        definitionHash: definitionHash(definitionJson, 2),
+      },
+    });
+
+    await subject.service.createFromTemplate(COMMAND, USER, META);
+
+    expect(subject.registrationForms.materializeTemplateDraft).toHaveBeenCalledWith(
+      subject.tx,
+      subject.created.id,
+      expect.objectContaining({
+        fields: [
+          expect.objectContaining({
+            fieldCode: 'transport_note',
+            governance: governanceMatcher,
+          }),
+        ],
+      }),
+    );
+    expect(subject.audit.logCreateFromTemplate).toHaveBeenCalled();
+  });
+
   it('在一条 transaction 内物化 Activity / Session / Position，并写专用安全审计', async () => {
     const subject = makeSubject();
 

@@ -2,6 +2,9 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import {
   canonicalizeRegistrationFormDefinition,
+  canonicalizeRegistrationFormDefinitionForB3,
+  registrationFormDefinitionFromStoredFields,
+  registrationFormPublicDefinition,
   type RegistrationFormFieldInput,
 } from './registration-form-definition';
 
@@ -219,5 +222,95 @@ describe('canonicalizeRegistrationFormDefinition', () => {
 
     expect(one.schemaHash).toBe(same.schemaHash);
     expect(choicesA.schemaHash).not.toBe(choicesB.schemaHash);
+  });
+
+  it('keeps the exact pre-B3 canonical JSON and hash when all persisted governance columns are null', () => {
+    const result = registrationFormDefinitionFromStoredFields([
+      {
+        fieldCode: 'legacy',
+        typeCode: 'short_text',
+        label: '旧题',
+        helpText: null,
+        required: false,
+        visibilityCode: 'self_only',
+        exportable: false,
+        sortOrder: 0,
+        minValue: null,
+        maxValue: null,
+        minLength: null,
+        maxLength: null,
+        maxSelections: null,
+        optionsJson: null,
+        purposeCode: null,
+        dataClassCode: null,
+        retentionPolicyCode: null,
+        maskingPolicyCode: null,
+        prefillSourceCode: null,
+      },
+    ]);
+
+    expect(result.mode).toBe('legacy');
+    expect(result.canonicalJson).toBe(
+      '{"fields":[{"exportable":false,"fieldCode":"legacy","helpText":null,"label":"旧题","maxLength":null,"maxSelections":null,"maxValue":null,"minLength":null,"minValue":null,"options":null,"required":false,"sortOrder":0,"typeCode":"short_text","visibilityCode":"self_only"}]}',
+    );
+    expect(result.schemaHash).toBe(
+      '7c898080723cca2ef3db0fe2f7ad8a42908d0135f7cc2275696347f8d6395950',
+    );
+    expect(result.definition.fields[0]).not.toHaveProperty('governance');
+  });
+
+  it('makes governance definition-level all-or-none and strips it from public projections', () => {
+    const governance = {
+      purposeCode: 'transport_logistics' as const,
+      dataClassCode: 'ordinary' as const,
+      retentionPolicyCode: 'activity_lifecycle' as const,
+      maskingPolicyCode: 'none' as const,
+      prefillSourceCode: null,
+    };
+    const governed = canonicalizeRegistrationFormDefinition({
+      fields: [field({ governance })],
+    });
+
+    expect(governed.mode).toBe('governed');
+    expect(governed.definition.fields[0]?.governance).toEqual(governance);
+    expect(registrationFormPublicDefinition(governed.definition).fields[0]).not.toHaveProperty(
+      'governance',
+    );
+    expectBad({ fields: [field(), field({ fieldCode: 'governed', sortOrder: 1, governance })] });
+    expectBad({
+      fields: [
+        field({
+          governance: {
+            purposeCode: 'transport_logistics',
+            dataClassCode: 'ordinary',
+            retentionPolicyCode: 'activity_lifecycle',
+            maskingPolicyCode: 'none',
+          } as never,
+        }),
+      ],
+    });
+  });
+
+  it('keeps sensitive in the canonical grammar but rejects it from all B3 writers', () => {
+    const sensitive = {
+      purposeCode: 'dietary_accommodation' as const,
+      dataClassCode: 'sensitive' as const,
+      retentionPolicyCode: 'activity_lifecycle' as const,
+      maskingPolicyCode: 'none' as const,
+      prefillSourceCode: null,
+    };
+    expect(
+      canonicalizeRegistrationFormDefinition({ fields: [field({ governance: sensitive })] }).mode,
+    ).toBe('governed');
+    expect(() =>
+      canonicalizeRegistrationFormDefinitionForB3({ fields: [field({ governance: sensitive })] }),
+    ).toThrow(BizException);
+    expect(() =>
+      canonicalizeRegistrationFormDefinitionForB3({
+        fields: [
+          field({ governance: { ...sensitive, dataClassCode: 'ordinary' }, exportable: true }),
+        ],
+      }),
+    ).toThrow(BizException);
   });
 });

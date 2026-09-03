@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:a6b7c352f3d5aca5ce5795df6f18c275e919b62920c42d1e761684d1f5b839ac
+// inputDigest: sha256:86f9cc369805fda0fadac811aedafafc0a0198a79727872846c10aff5b04833d
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -110,6 +110,9 @@ import type {
   AppManagedRegistrationBulkFailureDto,
   AppManagedRegistrationBulkResponseDto,
   AppManagedRegistrationDto,
+  AppManagedRegistrationFormDto,
+  AppManagedRegistrationFormFieldDto,
+  AppManagedRegistrationFormFieldGovernanceDto,
   AppManagedRegistrationListItemDto,
   AppManagedRegistrationMemberDto,
   AppManagedRegistrationPositionDto,
@@ -209,6 +212,9 @@ import type {
   DeclineAppMyActivityInvitationDto,
   EarlyDepartureCloseAppManagedOnsitePunchDto,
   IssueAppManagedAttendanceQrDto,
+  ManagedRegistrationFormDefinitionInputDto,
+  ManagedRegistrationFormFieldGovernanceInputDto,
+  ManagedRegistrationFormFieldInputDto,
   MarkNotificationReadResponseDto,
   NotificationReadDetailDto,
   NotificationReadListItemDto,
@@ -218,8 +224,6 @@ import type {
   PutAppManagedActivityQualificationRulesDto,
   PutAppManagedRegistrationFormDto,
   RegistrationFormChoiceInputDto,
-  RegistrationFormDefinitionInputDto,
-  RegistrationFormFieldInputDto,
   RejectAppManagedRegistrationDto,
   ResubmitAppManagedAttendanceSheetDto,
   RevokeAppManagedActivityInvitationDto,
@@ -690,12 +694,12 @@ export function createAppClient(fetcher: Fetcher) {
       return fetcher<AppActivityQualificationRulesDto>({ method: "PUT", path: `/api/app/v1/my/managed-activities/${activityId}/qualification-rules`, body });
     },
     /** App 获取本人 managed 活动当前报名表定义 [auth] */
-    AppManagedActivitiesControllerGetRegistrationForm(activityId: string): Promise<ApiEnvelope<AppRegistrationFormDto>> {
-      return fetcher<AppRegistrationFormDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/registration-form` });
+    AppManagedActivitiesControllerGetRegistrationForm(activityId: string): Promise<ApiEnvelope<AppManagedRegistrationFormDto>> {
+      return fetcher<AppManagedRegistrationFormDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/registration-form` });
     },
     /** App 直改本人 draft 活动报名表定义；已发布活动须走变更审核 [auth] */
-    AppManagedActivitiesControllerPutRegistrationForm(activityId: string, body: PutAppManagedRegistrationFormDto): Promise<ApiEnvelope<AppRegistrationFormDto>> {
-      return fetcher<AppRegistrationFormDto>({ method: "PUT", path: `/api/app/v1/my/managed-activities/${activityId}/registration-form`, body });
+    AppManagedActivitiesControllerPutRegistrationForm(activityId: string, body: PutAppManagedRegistrationFormDto): Promise<ApiEnvelope<AppManagedRegistrationFormDto>> {
+      return fetcher<AppManagedRegistrationFormDto>({ method: "PUT", path: `/api/app/v1/my/managed-activities/${activityId}/registration-form`, body });
     },
     /** App 活动负责人或报名协办查看报名列表 [auth] */
     AppManagedActivityRegistrationsControllerList(activityId: string, query?: { "page"?: number; "pageSize"?: number; "statusCode"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AppManagedRegistrationListItemDto[] }>> {

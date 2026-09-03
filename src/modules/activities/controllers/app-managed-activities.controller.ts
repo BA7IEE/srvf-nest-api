@@ -98,7 +98,7 @@ import {
   AppSettlementUpdateDraftItemDto,
 } from '../dto/app/app-settlement-workbench.dto';
 import {
-  AppRegistrationFormDto,
+  AppManagedRegistrationFormDto,
   PutAppManagedRegistrationFormDto,
 } from '../dto/app/app-registration-form.dto';
 import {
@@ -362,7 +362,7 @@ export class AppManagedActivitiesController {
     engine: 'authz-scoped',
   })
   @ApiOperation({ summary: 'App 获取本人 managed 活动当前报名表定义 [auth]' })
-  @ApiWrappedNullableResponse(AppRegistrationFormDto)
+  @ApiWrappedNullableResponse(AppManagedRegistrationFormDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -373,7 +373,7 @@ export class AppManagedActivitiesController {
   async getRegistrationForm(
     @CurrentUser() user: CurrentUserPayload,
     @Param() params: AppManagedActivityParamsDto,
-  ): Promise<AppRegistrationFormDto | null> {
+  ): Promise<AppManagedRegistrationFormDto | null> {
     await this.resolveMemberId(user);
     return this.registrationForms.getManaged(params.activityId, user);
   }
@@ -386,7 +386,7 @@ export class AppManagedActivitiesController {
     engine: 'authz-scoped',
   })
   @ApiOperation({ summary: 'App 直改本人 draft 活动报名表定义；已发布活动须走变更审核 [auth]' })
-  @ApiWrappedNullableResponse(AppRegistrationFormDto)
+  @ApiWrappedNullableResponse(AppManagedRegistrationFormDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
     BizCode.UNAUTHORIZED,
@@ -400,7 +400,7 @@ export class AppManagedActivitiesController {
     @Param() params: AppManagedActivityParamsDto,
     @Body() dto: PutAppManagedRegistrationFormDto,
     @Req() req: Request,
-  ): Promise<AppRegistrationFormDto | null> {
+  ): Promise<AppManagedRegistrationFormDto | null> {
     await this.resolveMemberId(user);
     return this.registrationForms.putManaged(params.activityId, dto, user, this.auditMeta(req));
   }

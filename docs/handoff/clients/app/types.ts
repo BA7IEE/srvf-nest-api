@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:a6b7c352f3d5aca5ce5795df6f18c275e919b62920c42d1e761684d1f5b839ac
+// inputDigest: sha256:86f9cc369805fda0fadac811aedafafc0a0198a79727872846c10aff5b04833d
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -947,6 +947,37 @@ export interface AppManagedRegistrationDto {
   "updatedAt": string;
 }
 
+export interface AppManagedRegistrationFormDto {
+  "version": number;
+  "fields": AppManagedRegistrationFormFieldDto[];
+}
+
+export interface AppManagedRegistrationFormFieldDto {
+  "fieldCode": string;
+  "typeCode": "short_text" | "long_text" | "number" | "date" | "single_choice" | "multi_choice" | "file" | "confirmation";
+  "label": string;
+  "helpText"?: string | null;
+  "required": boolean;
+  "visibilityCode": "self_and_registration_staff" | "self_and_owner" | "self_only";
+  "exportable": boolean;
+  "sortOrder": number;
+  "minValue"?: string | null;
+  "maxValue"?: string | null;
+  "minLength"?: number | null;
+  "maxLength"?: number | null;
+  "maxSelections"?: number | null;
+  "options"?: AppRegistrationFormChoiceDto[] | null;
+  "governance"?: AppManagedRegistrationFormFieldGovernanceDto;
+}
+
+export interface AppManagedRegistrationFormFieldGovernanceDto {
+  "purposeCode": "transport_logistics" | "accommodation_logistics" | "dietary_accommodation" | "equipment_clothing" | "activity_specific_note" | "file_confirmation";
+  "dataClassCode": "ordinary" | "sensitive";
+  "retentionPolicyCode": "activity_lifecycle";
+  "maskingPolicyCode": "none";
+  "prefillSourceCode": string | null;
+}
+
 export interface AppManagedRegistrationListItemDto {
   "registrationId": string;
   "activityId": string;
@@ -1587,7 +1618,7 @@ export interface ChangeReviewDto {
   "activityPatch": UpdateAppManagedActivityDto;
   "sessions": ChangeReviewSessionCollectionsDto;
   "positions": ChangeReviewSessionPositionCollectionsDto;
-  "registrationForm"?: RegistrationFormDefinitionInputDto;
+  "registrationForm"?: ManagedRegistrationFormDefinitionInputDto;
   "qualificationRuleSets"?: ChangeReviewQualificationRuleSetCollectionsDto;
 }
 
@@ -1868,6 +1899,36 @@ export interface IssueAppManagedAttendanceQrDto {
   "operationKey": string;
 }
 
+export interface ManagedRegistrationFormDefinitionInputDto {
+  "fields": ManagedRegistrationFormFieldInputDto[];
+}
+
+export interface ManagedRegistrationFormFieldGovernanceInputDto {
+  "purposeCode": "transport_logistics" | "accommodation_logistics" | "dietary_accommodation" | "equipment_clothing" | "activity_specific_note" | "file_confirmation";
+  "dataClassCode": "ordinary" | "sensitive";
+  "retentionPolicyCode": "activity_lifecycle";
+  "maskingPolicyCode": "none";
+  "prefillSourceCode": string | null;
+}
+
+export interface ManagedRegistrationFormFieldInputDto {
+  "fieldCode": string;
+  "typeCode": "short_text" | "long_text" | "number" | "date" | "single_choice" | "multi_choice" | "file" | "confirmation";
+  "label": string;
+  "helpText"?: string | null;
+  "required": boolean;
+  "visibilityCode": "self_and_registration_staff" | "self_and_owner" | "self_only";
+  "exportable": boolean;
+  "sortOrder": number;
+  "minValue"?: number | null;
+  "maxValue"?: number | null;
+  "minLength"?: number | null;
+  "maxLength"?: number | null;
+  "maxSelections"?: number | null;
+  "options"?: RegistrationFormChoiceInputDto[] | null;
+  "governance"?: ManagedRegistrationFormFieldGovernanceInputDto;
+}
+
 export interface MarkNotificationReadResponseDto {
   "read": boolean;
 }
@@ -1909,33 +1970,12 @@ export interface PutAppManagedActivityQualificationRulesDto {
 }
 
 export interface PutAppManagedRegistrationFormDto {
-  "form": RegistrationFormDefinitionInputDto;
+  "form": ManagedRegistrationFormDefinitionInputDto;
 }
 
 export interface RegistrationFormChoiceInputDto {
   "value": string;
   "label": string;
-}
-
-export interface RegistrationFormDefinitionInputDto {
-  "fields": RegistrationFormFieldInputDto[];
-}
-
-export interface RegistrationFormFieldInputDto {
-  "fieldCode": string;
-  "typeCode": "short_text" | "long_text" | "number" | "date" | "single_choice" | "multi_choice" | "file" | "confirmation";
-  "label": string;
-  "helpText"?: string | null;
-  "required": boolean;
-  "visibilityCode": "self_and_registration_staff" | "self_and_owner" | "self_only";
-  "exportable": boolean;
-  "sortOrder": number;
-  "minValue"?: number | null;
-  "maxValue"?: number | null;
-  "minLength"?: number | null;
-  "maxLength"?: number | null;
-  "maxSelections"?: number | null;
-  "options"?: RegistrationFormChoiceInputDto[] | null;
 }
 
 export interface RejectAppManagedRegistrationDto {

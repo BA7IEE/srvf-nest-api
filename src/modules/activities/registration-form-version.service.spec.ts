@@ -1,8 +1,13 @@
 import { Role, UserStatus } from '@prisma/client';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
-import { registrationFormDefinitionFromStoredFields } from './registration-form-definition';
+import {
+  canonicalizeRegistrationFormDefinition,
+  registrationFormDefinitionFromStoredFields,
+} from './registration-form-definition';
 import { RegistrationFormVersionService } from './registration-form-version.service';
 
 const USER: CurrentUserPayload = {
@@ -38,6 +43,11 @@ function storedVersion(overrides: Record<string, unknown> = {}) {
         maxLength: 20,
         maxSelections: null,
         optionsJson: null,
+        purposeCode: null,
+        dataClassCode: null,
+        retentionPolicyCode: null,
+        maskingPolicyCode: null,
+        prefillSourceCode: null,
       },
     ],
     ...overrides,
@@ -61,6 +71,47 @@ function input(label = '姓名') {
         },
       ],
     },
+  };
+}
+
+function governedInput(dataClassCode: 'ordinary' | 'sensitive' = 'ordinary', label = '出行说明') {
+  return {
+    form: {
+      fields: [
+        {
+          fieldCode: 'transport_note',
+          typeCode: 'short_text' as const,
+          label,
+          required: false,
+          visibilityCode: 'self_only' as const,
+          exportable: false,
+          sortOrder: 0,
+          governance: {
+            purposeCode: 'transport_logistics' as const,
+            dataClassCode,
+            retentionPolicyCode: 'activity_lifecycle' as const,
+            maskingPolicyCode: 'none' as const,
+            prefillSourceCode: null,
+          },
+        },
+      ],
+    },
+  };
+}
+
+function governedStoredVersion(overrides: Record<string, unknown> = {}) {
+  const base = storedVersion();
+  return {
+    ...base,
+    fields: base.fields.map((field) => ({
+      ...field,
+      purposeCode: 'transport_logistics',
+      dataClassCode: 'ordinary',
+      retentionPolicyCode: 'activity_lifecycle',
+      maskingPolicyCode: 'none',
+      prefillSourceCode: null,
+    })),
+    ...overrides,
   };
 }
 
@@ -91,10 +142,69 @@ function harness(options: { existing?: Record<string, unknown> | null } = {}) {
     service: new RegistrationFormVersionService(prisma as never, audit as never),
     tx,
     audit,
+    prisma,
   };
 }
 
 describe('RegistrationFormVersionService', () => {
+  it('materializes a governed template definition only as an Activity-local draft v1', async () => {
+    const { service, tx } = harness({ existing: null });
+    const definition = canonicalizeRegistrationFormDefinition(governedInput().form).definition;
+
+    await service.materializeTemplateDraft(tx as never, 'template-target-activity', definition);
+
+    expect(tx.registrationFormVersion.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: objectContaining({
+          activityId: 'template-target-activity',
+          version: 1,
+          statusCode: 'draft',
+          workflowRevision: 0,
+          schemaHash: null,
+          fields: objectContaining({
+            create: [
+              objectContaining({
+                purposeCode: 'transport_logistics',
+                dataClassCode: 'ordinary',
+                retentionPolicyCode: 'activity_lifecycle',
+                maskingPolicyCode: 'none',
+                prefillSourceCode: null,
+              }),
+            ],
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('rejects sensitive template or managed writer input before it can create a Form version', async () => {
+    const { service, tx, prisma } = harness({ existing: null });
+    const sensitive = canonicalizeRegistrationFormDefinition(
+      governedInput('sensitive').form,
+    ).definition;
+
+    await expect(
+      service.materializeTemplateDraft(tx as never, 'template-target-activity', sensitive),
+    ).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+    expect(tx.registrationFormVersion.create).not.toHaveBeenCalled();
+
+    await expect(
+      service.putManaged('activity-form-1', governedInput('sensitive'), USER, META),
+    ).rejects.toEqual(new BizException(BizCode.BAD_REQUEST));
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a legacy non-null PUT before it can overwrite a governed draft Form', async () => {
+    const { service, tx, audit } = harness({ existing: governedStoredVersion() });
+
+    await expect(service.putManaged('activity-form-1', input(), USER, META)).rejects.toEqual(
+      new BizException(BizCode.BAD_REQUEST),
+    );
+    expect(tx.registrationFormVersion.update).not.toHaveBeenCalled();
+    expect(tx.registrationFormVersion.create).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
   it('makes a same canonical draft PUT a true no-op: no version write and no audit', async () => {
     const { service, tx, audit } = harness();
 
@@ -103,6 +213,7 @@ describe('RegistrationFormVersionService', () => {
     if (result === null) throw new Error('Expected a stored draft form');
     expect(result).toEqual(expect.objectContaining({ version: 1 }));
     expect(result.fields).toEqual(expect.any(Array));
+    expect(result.fields[0]).not.toHaveProperty('governance');
 
     expect(tx.registrationFormVersion.update).not.toHaveBeenCalled();
     expect(tx.registrationFormVersion.create).not.toHaveBeenCalled();
@@ -292,8 +403,8 @@ describe('RegistrationFormVersionService', () => {
     );
   });
 
-  it('clones the source definition into target draft v1 with no active hash or source upload-session identity', async () => {
-    const source = storedVersion({
+  it('clones a governed source definition into target draft v1 with no active hash or source upload-session identity', async () => {
+    const source = governedStoredVersion({
       activityId: 'source-activity',
       version: 8,
       statusCode: 'active',
@@ -316,6 +427,17 @@ describe('RegistrationFormVersionService', () => {
           statusCode: 'draft',
           workflowRevision: 0,
           schemaHash: null,
+          fields: objectContaining({
+            create: [
+              objectContaining({
+                purposeCode: 'transport_logistics',
+                dataClassCode: 'ordinary',
+                retentionPolicyCode: 'activity_lifecycle',
+                maskingPolicyCode: 'none',
+                prefillSourceCode: null,
+              }),
+            ],
+          }),
         }),
       }),
     );

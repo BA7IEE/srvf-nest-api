@@ -4716,6 +4716,15 @@ model RegistrationFormField {
   exportable     Boolean @default(false) // 默认不可导出 —— 敏感口径下的保守起点
   sortOrder      Int     @default(0)
 
+  // Activity OS R2 / B3：legacy Field 五列全 NULL；新的 governed Field 由第 108 条
+  // migration 的 all-or-none CHECK 固定四项治理码 + 空 prefill。词表与敏感启用门槛只在
+  // registration-form-definition.ts 解释，避免 schema / SQL / JSON 三套闭集漂移。
+  purposeCode         String?
+  dataClassCode       String?
+  retentionPolicyCode String?
+  maskingPolicyCode   String?
+  prefillSourceCode   String?
+
   formVersion RegistrationFormVersion  @relation(fields: [formVersionId], references: [id], onDelete: Restrict)
   answers     RegistrationFormAnswer[]
 
