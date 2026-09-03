@@ -2492,9 +2492,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 与 Release 1 A1、A2、A3、A4、A5、A6、A7、A8 已通过；Release 2 / B1 待独立立项**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 与 Release 1 A1、A2、A3、A4、A5、A6、A7、A8 已通过；Release 2 / B1 评审稿已起草、方案 A 已确认；实施待独立授权**
 
-**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251 与 A8 #1254 已合；A8 的 No-AI 串行验收入口、显式 Gate 关闭态、contract / OpenAPI / client 零漂移、PR CI 与可信红区审批均已收口；Release 2 尚未启动)
+**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251 与 A8 #1254 已合；A8 的 No-AI 串行验收入口、显式 Gate 关闭态、contract / OpenAPI / client 零漂移、PR CI 与可信红区审批均已收口；Release 2 / B1 已完成独立评审稿与方案拍板，尚未获 schema / migration / 测试基础设施写入授权)
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
@@ -2510,6 +2510,7 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 - **A6 已交付并合入 #1248**:内部从模板创建 façade 以 operationKey 重放优先，首次调用锁定精确 Template Version、复验 A3 canonical/hash 与严格 Definition V1，并在同一事务物化草稿 Activity、Session、Position 和安全审计；第 104 条 migration 只增加两个 nullable 幂等列及唯一索引。Definition V1 不含坐标，要求定位或半径的场次 / 岗位 fail-closed；不新增 HTTP、DTO、Swagger、路由、权限、Gate、seed、回填或生产部署。
 - **A7 已交付并合入 #1251**:Series / immutable Revision、手工／按需幂等生成、`Asia/Shanghai` 时区归属、A6 transaction-bound materializer、批次收据与单期唯一锚点均已落地；第 105 条 migration 为纯 additive 表与约束，单元 / PostgreSQL E2E、PR CI 与红区审批均已收口。负责人 / 资源模型、地点 / 表单、cron、HTTP / Integration 入口、权限码、Gate 和依赖均未改。
 - **A8 已交付并合入 #1254**:冻结合同点名的 `test:business:no-ai` 已按核心 AI 零依赖结构判据、既有真实 HTTP Journey 与 A7 Series E2E 串行验收；A7 E2E 在创建 Nest app 前显式置 `ACTIVITY_V11_WORKFLOW_ENABLED=false` 与 `INTEGRATION_API_ENABLED=false`，结束后恢复原值。A8 不新增 API，contract、OpenAPI 与前端 client 零漂移，因此 handoff 正确地保持零差异；PR CI 与 `package.json` 可信红区审批均已收口。未改依赖、Jest 配置、CI、schema、migration、权限、运行时 Gate 或生产入口。
+- **B1 评审稿已起草、方案 A 已确认**:拟以纯 additive 的 PlacePreset / ActivityPlace 存储地基承接地点预设与活动地点快照；预设来源只作 provenance，场次关联必须以 Activity + Session 的复合锚物理固定。B1 不改旧 Activity / ActivitySession 坐标或投影，不开 API / DTO / 地图 / 权限 / Gate / 模板输入 / Readiness / Snapshot，实施仍待 schema、migration 和 resetDb 的精确 D 档授权及 migration 3b 重签。
 - **后续 Goal / lane / PR 顺序**:Release 1 `A1 → A8` 已完成 → Release 2 `B1 → B7` → Release 3 `C1 → C5` → Release 4 `D1 → D8` → Release 5 `E1 → E5` → Release 6 Incident / Resource 按真实优先级各自另立目标 → Release 7 可永久不开。每一箭头都是独立 PR；Activity 同一 bounded context 串行，schema lane 同时至多一条，前一 PR 合入和验收完成前不启动后一条。
 - **串行约束**:A1、A2、A3、A4、A5、A6、A7、A8 已完成独立评审、实现与 PR 验收；B1 及以后仍须按一条业务轴、additive、gate-off、shadow 对账和独立 handoff 收口，且不得沿用 A8 的授权。
 

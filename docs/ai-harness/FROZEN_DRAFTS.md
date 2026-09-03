@@ -18,7 +18,7 @@
 
 ---
 
-## 1. 还有欠账的冻结稿(9 项 / 涉 18 份文件)
+## 1. 还有欠账的冻结稿(9 项 / 涉 19 份文件)
 
 > **落地度列开头的 `` `↔…` `` 是给判据 6 读的对照标记**,不是装饰 —— 它声明本行与
 > `NEXT_TASKS.md` 同编号条目的状态行**是不是同一把尺子**。取值与写法见 [§4](#4-这份台账由什么守着)。
@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254 | Release 2 / B1 独立立项 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254；Release 2 / B1 评审稿已起草、方案 A 已确认 | B1 评审 PR 合并后再申请 schema / migration 精确授权 |
 
 ### 1.1 欠代码的五项
 
@@ -134,6 +134,9 @@ AI 零依赖判据、真实 HTTP Journey、A7 Series E2E 串行验收；A7 在�
 v1.1 与 Integration Gate，结束后恢复原环境值。contract、OpenAPI 与前端 client 均零漂移，未伪造 handoff
 或端点；PR CI 与 `package.json` 的可信红区审批均已收口。A8 不改依赖、Jest 配置、CI、API、schema、权限
 或运行时 Gate。Release 2 / B1 及以后仍须逐刀独立立项，A8 的授权不得带入。
+**B1 评审稿已起草、方案 A 已确认**：拟以纯加法的 PlacePreset 与 ActivityPlace 承接地点预设和活动地点
+快照，预设只保留来源、活动与场次必须以复合锚物理同链；当前只完成评审边界与授权预算的冻结，尚未改
+schema、migration、测试基础设施、API、地图、权限、Gate 或旧地点字段。
 本项不引入 AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
@@ -201,6 +204,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a6-from-template-transaction-review.md` | landed · P1-33 | Release 1 / A6 内部从模板创建事务；已随 #1248 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | landed · P1-33 | Release 1 / A7 Series 与手工／按需生成；已随 #1251 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a8-contract-handoff-e2e-gate-review.md` | landed · P1-33 | Release 1 / A8 contract、handoff、No-AI E2E 与 Gate 关闭态；已随 #1254 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r2-b1-place-review.md` | open · P1-33 | Release 2 / B1 PlacePreset 与 ActivityPlace 的 D 档存储地基；方案 A 已确认，实施仍待独立 schema / migration 和测试基础设施授权 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
