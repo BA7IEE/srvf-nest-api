@@ -1,6 +1,6 @@
 # Activity OS R2 / B3 模板报名表蓝图复制与数据治理评审记录
 
-> **状态：草案，尚未冻结**（2026-09-03）。维护者已授权起草本评审与授权清单；这不等同于确认 B3 实施、schema / migration 或任何运行时代码。
+> **状态：维护者已于 2026-09-03 确认方案 A；本稿只冻结 B3 的边界与后续授权预算。** 本决定不授权 Prisma schema、migration、测试基础设施、运行时代码、接口或生产部署。
 >
 > **上游约束**：[Activity OS T0-A 终态合同](activity-os-t0-terminal-review.md) §6.2；原始《SRVF 活动域终态蓝图与分阶段落地方案》§9。原始蓝图在这里仅作为业务需求来源，不能覆盖仓库红区、迁移、生产部署和维护者拍板流程。
 
@@ -276,25 +276,18 @@ RBAC seed、AuditLogEvent、全局 Gate、answer 读面 / CSV、附件写入、M
 queue、缓存、旧 migration 修改、`prisma/CLAUDE.md` 的独立事实更正或生产 deploy。敏感题目启用所需
 SOP、读面 / 掩码和清理执行位也不在本写集；若真实 diff 需要其中任一项，必须暂停并重新报批。
 
-## 7. 维护者下一次确认
+## 7. 维护者决策记录与下一次确认
 
-维护者已确认的只有：
-
-> 确认起草 B3 评审与授权清单（方案 A）
-
-这允许形成并评审本稿，不确认方案 A 的实施。维护者随后回复的“确认 B3 方案 A”针对的是上一版
-ordinary-only 文字；其后已核实既有 managed Form / publish-review DTO 会覆盖治理字段、公共详情会
-直接投影 canonical Form。此次修订因此新增了受控 managed 契约、公开投影和 v3-v5 Form target
-兼容的实际范围，不能把旧确认外推为新范围授权。
-
-若同意上述 V2、完整八种既有题型、全表 governed / legacy canonical 兼容、managed / 发布变更审核
-只能以完整治理字段修改 governed Form、公开 App 投影不泄露治理元数据、既有 v3-v5 Form target
-兼容且旧 hash 不漂移、无预填 / 无导出，以及“敏感题目须另有逐题用途 / 可见及掩码 / 留存清理批准
-才可启用”的边界，请明确回复：
+维护者已于 2026-09-03 确认：
 
 > 确认 B3 方案 A（八种既有题型；managed 治理契约；v3-v5 表单兼容；敏感题目逐题审批后启用）
 
-之后仍须为 B3 implementation 单独批准真实写集。第 108 条 migration SQL 逐行审核后，还须单独确认：
+此决定确认了上述 V2、全表 governed / legacy canonical 兼容、受控 managed / 发布变更审核契约、
+公开 App 投影不泄露治理元数据、既有 v3-v5 Form target 兼容、旧 hash 不漂移、无预填 / 无导出和
+敏感题目逐题审批后启用的边界，并允许完成这份 review PR 的收口；它不授权 B3 implementation。
+
+实际 schema、migration、测试或运行时代码仍须在 review PR 独立合入后，按真实 diff 重新申请授权；
+第 108 条 migration SQL 逐行审查完成后，还须单独确认：
 
 > 确认重签 3b（B3，第 108 条 migration）
 
