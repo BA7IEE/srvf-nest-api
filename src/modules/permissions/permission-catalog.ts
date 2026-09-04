@@ -3465,7 +3465,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.create.cross-org': {
       displayName: '替别的分队发起活动',
       businessDescription:
-        '让你给自己并不归属的那个分队/小组发起活动(默认只能给自己所在的分队发)。这道限制当前还没启用 —— 责任制开关没打开时,创建活动根本不查发起人归属,这项权限眼下只影响小程序发起页里能选到哪些分队。',
+        '责任制开启时，允许在获准的其他组织发起活动或调整草稿归属；同样约束模板快速、专业和紧急创建。它扩大的是可选组织范围，不代替普通或紧急创建权，也不免除有效发起人校验。责任制关闭时，旧创建保持兼容，三种新创建入口不受理。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 20530,
@@ -3478,7 +3478,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.create.emergency.record': {
       displayName: '发起紧急活动',
       businessDescription:
-        '在受控条件下创建紧急草稿并发出一次紧急呼叫。它不能直接发布，也不代替事故、医疗或安全处置；当前仅超级管理员可用，不能下放给角色。',
+        '在同时持有普通创建权、通过发起人及组织范围校验后，创建紧急草稿并把一次定向紧急呼叫入队；同键重试不重复呼叫。草稿不能正式发布，补齐事项也不会解除该限制，不代替事故或安全处置。仍仅超级管理员可用，不能下放给角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 20535,
@@ -3491,7 +3491,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.create.record': {
       displayName: '新建活动',
       businessDescription:
-        '建一场新活动,建出来是草稿 —— 只有后台看得到,队员还看不见,要发布之后才对外。',
+        '新建活动草稿，供后台或小程序本人管理入口使用，包括模板快速创建和专业创建；紧急创建还须另持紧急创建权。创建成功不等于正式发布，草稿不进入队员活动池。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 20540,
@@ -3571,7 +3571,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity-responsibility.override.record': {
       displayName: '强行接管活动负责人',
       businessDescription:
-        '这项功能当前未启用。开启后:不是这场活动的发起人或负责人也能管它 —— 换负责人、加或撤协办人、给历史活动补认领负责人和发起人,以及把活动收进归档、或者从归档里拿回来。加一个协办人就等于把这场活动的管理权分给了别人;把活动收进归档以后,它默认就不在列表里出现了。',
+        '责任制开启后，按既有范围代设活动发起人、换负责人、增撤协办、补认领和归档或撤销归档；三种新创建入口代设发起人也复用此权。它不代替创建权或跨组织范围校验，不解除紧急草稿的正式发布限制。加协办会分出管理权，归档会让活动默认不在列表出现。',
       sectionCode: 'activity-participation',
       groupCode: 'activity-responsibility',
       sortOrder: 21510,

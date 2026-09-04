@@ -1,3 +1,4 @@
+import { assertEmergencyFormalPublicationAllowed } from './activity-emergency-publication-policy';
 import { randomUUID } from 'node:crypto';
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -91,6 +92,12 @@ export class ActivityPublishReviewSubmitService {
         if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
           throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
         }
+        assertEmergencyFormalPublicationAllowed(
+          await tx.activityEmergencyInitiation.findUnique({
+            where: { activityId },
+            select: { id: true },
+          }),
+        );
         await this.allocationModes.assertLockedActivityConsistent(tx, {
           id: activityId,
           allocationModeCode: activity.allocationModeCode,
@@ -437,6 +444,12 @@ export class ActivityPublishReviewSubmitService {
         if (!user.memberId || activity.initiatorMemberId !== user.memberId) {
           throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
         }
+        assertEmergencyFormalPublicationAllowed(
+          await tx.activityEmergencyInitiation.findUnique({
+            where: { activityId },
+            select: { id: true },
+          }),
+        );
         await this.allocationModes.assertLockedActivityConsistent(tx, {
           id: activityId,
           allocationModeCode: activity.allocationModeCode,

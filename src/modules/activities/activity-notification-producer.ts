@@ -42,6 +42,40 @@ interface TargetedNotificationInput {
 export class ActivityNotificationProducer {
   constructor(private readonly outbox: NotificationOutboxService) {}
 
+  async enqueueEmergencyCall(
+    tx: PrismaTx,
+    input: {
+      activityId: string;
+      initiationId: string;
+      title: string;
+      startAt: Date;
+      endAt: Date;
+      coarseLocation: string;
+      cohort: FrozenRecipientCohort;
+    },
+  ): Promise<void> {
+    await this.outbox.enqueueMany(
+      input.cohort.memberIds.map((memberId) => ({
+        eventKey: `activity-emergency:${input.initiationId}:${memberId}`,
+        eventType: OUTBOX_EVENT_TARGETED_NOTIFICATION,
+        payloadVersion: OUTBOX_PAYLOAD_VERSION,
+        aggregateType: 'activity',
+        aggregateId: input.activityId,
+        destinationType: 'member',
+        destinationRef: memberId,
+        payload: {
+          recipientMemberId: memberId,
+          notificationTypeCode: 'emergency',
+          title: '紧急呼叫（非正式发布）',
+          body: `「${input.title}」紧急呼叫，预计时间 ${input.startAt.toISOString()} 至 ${input.endAt.toISOString()}，粗略地点 ${input.coarseLocation}。`,
+          channels: [NOTIFICATION_CHANNEL_IN_APP],
+          recipientFreeze: { ...input.cohort.stamp },
+        },
+      })),
+      tx,
+    );
+  }
+
   /**
    * legacy 广播发布。收件人是「此刻能看见它的人」,没有集合可冻 —— 但**必须**带上
    * `ActivityRecipientFreezeService` 发的 `broadcast-visibility` 盖章:

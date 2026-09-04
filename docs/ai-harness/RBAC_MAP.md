@@ -111,7 +111,7 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(108 个 @Controller)
+### controller × surface 对照(109 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
@@ -170,7 +170,7 @@
 | `admin/v1/team-join/cycles` | `src/modules/team-join/team-join-cycles.controller.ts` |
 | `admin/v1/users` | `src/modules/users/users.controller.ts` |
 
-#### app/v1(30 个 controller)
+#### app/v1(31 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -193,6 +193,7 @@
 | `app/v1/my/activity-batch-jobs` | `src/modules/activities/controllers/app-my-activity-batch-jobs.controller.ts` |
 | `app/v1/my/activity-invitations` | `src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts` |
 | `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activities.controller.ts` |
+| `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activity-creation.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-onsite-participations.controller.ts` |

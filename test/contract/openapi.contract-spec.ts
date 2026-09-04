@@ -227,6 +227,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities/organization-options'],
   ['get', '/api/app/v1/my/managed-activities'],
   ['post', '/api/app/v1/my/managed-activities'],
+  ['post', '/api/app/v1/my/managed-activities/from-template'],
+  ['post', '/api/app/v1/my/managed-activities/professional'],
+  ['post', '/api/app/v1/my/managed-activities/emergency'],
   // 第 3 批第三刀：App 生命周期命令、配置 clone 与既有 evidence seal 的 HTTP 接线。
   ['post', '/api/app/v1/my/managed-activities/{activityId}/cancel'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/terminate'],
@@ -1087,7 +1090,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 570; // 2026-08-30 IF PR7 +1(integration/v1/reference/activity-types)
+const EXPECTED_ROUTE_COUNT = 573; // Activity OS R2 / B6 D2 +3(App managed creation commands)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -2108,6 +2111,82 @@ describe('OpenAPI 契约快照', () => {
       expect(documented4xxCodes(operation)).toEqual(expect.arrayContaining(expectedCodes));
     },
   );
+
+  it.each([
+    ['from-template', 'AppQuickActivityCreationDto'],
+    ['professional', 'AppProfessionalActivityCreationDto'],
+    ['emergency', 'AppEmergencyActivityCreationDto'],
+  ])('B6 %s has a physical App request and safe creation receipt', (path, schemaName) => {
+    const operation = doc.paths[`/api/app/v1/my/managed-activities/${path}`]?.post;
+    expect(operation?.requestBody?.content?.['application/json']?.schema).toEqual({
+      $ref: `#/components/schemas/${schemaName}`,
+    });
+    expect(
+      operation?.responses?.['201']?.content?.['application/json']?.schema?.properties?.data,
+    ).toEqual({ $ref: '#/components/schemas/AppActivityCreationResultDto' });
+    const schema = doc.components?.schemas?.[schemaName] as OpenApiSchema;
+    expect(schema.required).toEqual(
+      expect.arrayContaining([
+        'operationKey',
+        'title',
+        'organizationId',
+        'startAt',
+        'endAt',
+        'location',
+      ]),
+    );
+    for (const forbidden of [
+      'content',
+      'registrationSchema',
+      'safetyPolicy',
+      'incidentId',
+      'statusCode',
+      'createdBy',
+    ])
+      expect(schema.properties?.[forbidden]).toBeUndefined();
+    expect(documented4xxCodes(operation)).toEqual(
+      expect.arrayContaining([
+        BizCode.BAD_REQUEST.code,
+        BizCode.FORBIDDEN.code,
+        BizCode.RBAC_FORBIDDEN.code,
+        BizCode.ACTIVITY_STATUS_INVALID.code,
+      ]),
+    );
+  });
+
+  it('B6 response contains immutable creation identity and closed follow-up states only', () => {
+    const schemas = doc.components?.schemas;
+    const result = schemas?.AppActivityCreationResultDto as OpenApiSchema;
+    const detail = schemas?.AppActivityCreationDetailDto as OpenApiSchema;
+    const followUp = schemas?.AppEmergencyCreationFollowUpDto as OpenApiSchema;
+    expect(Object.keys(result.properties ?? {}).sort()).toEqual([
+      'activity',
+      'followUpItems',
+      'mode',
+      'replayed',
+    ]);
+    expect(Object.keys(detail.properties ?? {}).sort()).toEqual([
+      'activityId',
+      'createdAt',
+      'createdStatusCode',
+    ]);
+    expect(detail.properties?.createdStatusCode?.enum).toEqual(['draft']);
+    expect(followUp.properties?.statusCode?.enum).toEqual([
+      'pending',
+      'verified',
+      'unrepresentable',
+    ]);
+    expect(followUp.properties?.itemCode?.enum).toEqual([
+      'session',
+      'position',
+      'detailed_location',
+      'equipment',
+      'attendance',
+      'outcome',
+      'incident_relation',
+    ]);
+    expect(Object.keys(followUp.properties ?? {}).sort()).toEqual(['itemCode', 'statusCode']);
+  });
 
   it('canonical 报名命令显式声明性别、岗位与保险准入错误', () => {
     const operation = doc.paths['/api/app/v1/activities/{activityId}/registrations']?.post;

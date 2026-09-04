@@ -271,6 +271,7 @@ function makePrismaMock() {
   const $transaction = jest.fn<Promise<unknown>, [unknown]>();
   const $queryRaw = jest.fn().mockResolvedValue([{ id: 'act-1' }]);
   const prisma = {
+    activityEmergencyInitiation: { findUnique: jest.fn().mockResolvedValue(null) },
     activity,
     dictItem,
     organization,

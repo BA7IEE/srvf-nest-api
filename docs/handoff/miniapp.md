@@ -16,6 +16,20 @@
 - **capability ≠ raw RBAC**:`GET /api/app/v1/me/capabilities` 返**产品级**能力，不返 raw 权限码。活动新增入口提示为 `activities.canInitiateActivity` / `canDirectPublishOwnActivity`，管理提示为 `managed.canViewManagedActivities` / `canManageManagedRegistrations` / `canSubmitManagedAttendance` / `canReviewActivityPublication` / `canFirstReviewAttendance` / `canFinalReviewAttendance`；它们都不能证明某一活动或组织最终可操作。
 - **L3 永不回**:App 永不返 `passwordHash` / `refreshToken` / `secretKey*` / 完整 signed URL。
 
+### Activity OS R2 / B6 D2：三种受控创建（生产未部署）
+
+三个新增 `POST /api/app/v1/my/managed-activities/{from-template|professional|emergency}` 都只创建草稿，且要求既有责任制开关开启。原 `POST /my/managed-activities` 不变，不用它绕过三种创建的校验。
+
+- **模板快速**：指定精确 `templateVersionId`（不是 Family ID）、标题、组织、起止时间和地点文字；`confirmedCapacity` 只能省略或与模板一致（null 表示不限），不能覆盖模板容量。`defaultPlaceVisibilityCode` 必填；未指定的活动/场次地点转成无坐标、不可用于签到的文字快照。
+- **专业**：提交封闭的 Activity 字段与 `sessions[{session,positions}]`，可附地点、受治理 `form`、`qualificationRuleSets`。资格配置以本次 `sessionCode/positionCode` 关联新行。失败整笔回滚；不收任意 `content`、`registrationSchema`、事故或安全 JSON。表单继续遵守 B3 八种题型与逐题治理，未获审批的敏感题仍不能启用。
+- **紧急**：明确发起人、类型、分配方式、预计时间和粗略地点，`organizationIds` 与 `memberIds` 恰选一个非空集合。还须已有紧急创建权；当前仍仅超级管理员可用。成功只把一次定向 `emergency` 站内呼叫入队，不代表已发送或正式发布。不要在标题/粗略地点中放精确坐标、敏感人员资料或处置细节。
+
+地点项为明确的 `roleCode/visibilityCode` 与 `presetId` 或 `inline` 二选一；省略 `sessionCode` 表示活动级。每个提供地点的 scope 必须恰有一个 primary；meeting/execution/evacuation 各至多一个。预设复制为本地快照，不跟随预设后改；可见性不能从 Activity 推断。只按 B2 安全规则投影坐标；不安全或非 WGS84 坐标不覆盖既有兼容坐标。
+
+统一成功 `data={activity:{activityId,createdAt,createdStatusCode:'draft'},mode,replayed,followUpItems}`。`createdStatusCode` 是首次创建事实，不是活动后续实时状态；创建后用 `activityId` 刷新 managed detail。响应不含原始名单、操作键、精确地点或签名 URL。网络重试必须保留同一 `operationKey` 和同一意图；专业/紧急同键改意图返 `40000`，快速模式沿 A6 的操作键冲突码。不要换键自动补偿未确认结果。
+
+紧急 `followUpItems` 固定七项，状态为 pending / verified / unrepresentable。现有场次、岗位和地点事实才可证明对应事项，删除后会恢复 pending；设备、结果、事故关联没有权威模型，当前如实为 unrepresentable，考勤仍 pending。**没有任意“完成”按钮；补齐全部可验证事项也不能正式发布**。App 提审/直发和 Admin 发布/审批均拒绝紧急起源（`20030`）；不要用旧入口重试绕过。B4 readiness 不因本刀启用。
+
 ### 1.1 登录与令牌(与 admin 全端一致,不在两处各维护)
 
 三种登录(`login` 密码 / `login-sms` 验证码 / `login-wechat` openid,未绑定时返 `bindingRequired` 见 §2)成功时返回同一 `LoginResponseDto`(P0-E 冻结 5 字段)。信封语义、业务失败 = HTTP 4xx、`expiresIn` 时长串 + `refreshExpiresAt` family 绝对死期的**双计时器**、rotation always、错误码(10004/40100/10007/42900)→ 行为映射,统一见 [`admin-web.md §3.1`](admin-web.md)(全端通用)。其中 `logout` 用传入 token 定位并撤销整个 refresh family，成功 `data=null`；只有 `logout-all` 返回 `revokedCount`。App 侧差异只有一条:登录后能力判定调 `GET app/v1/me/capabilities`(产品级),**不**消费 admin 的 raw 权限码出口(§1 铁律)。

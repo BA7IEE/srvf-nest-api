@@ -3059,6 +3059,122 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppActivityCreationDetailDto": {
+    "properties": {
+      "activityId": {
+        "description": "首次创建的 Activity ID",
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "首次创建时间，不随重放改变",
+        "format": "date-time",
+        "type": "string",
+      },
+      "createdStatusCode": {
+        "description": "本命令创建时的状态，不代表后续实时状态",
+        "enum": [
+          "draft",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "activityId",
+      "createdAt",
+      "createdStatusCode",
+    ],
+    "type": "object",
+  },
+  "AppActivityCreationPlaceDto": {
+    "properties": {
+      "inline": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppInlineCreationPlaceDto",
+          },
+        ],
+        "description": "内联地点；与 presetId 互斥，sourcePresetId 恒为空",
+      },
+      "presetId": {
+        "description": "精确预设 ID；与 inline 互斥，完整锁读复制，不允许覆盖",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "roleCode": {
+        "description": "地点用途，同一 scope 必须恰有一个 primary",
+        "enum": [
+          "primary",
+          "meeting",
+          "execution",
+          "evacuation",
+          "parking",
+          "other",
+        ],
+        "type": "string",
+      },
+      "sessionCode": {
+        "description": "场次 code；省略表示活动级地点",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "visibilityCode": {
+        "description": "明确的地点可见性，不继承活动可见性",
+        "enum": [
+          "public",
+          "accepted",
+          "staff",
+          "command",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "roleCode",
+      "visibilityCode",
+    ],
+    "type": "object",
+  },
+  "AppActivityCreationResultDto": {
+    "properties": {
+      "activity": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppActivityCreationDetailDto",
+          },
+        ],
+        "description": "首次安全创建结果；不包含精确地点、名单或签名 URL",
+      },
+      "followUpItems": {
+        "description": "当前可证明的紧急补齐状态，非紧急为空数组",
+        "items": {
+          "$ref": "#/components/schemas/AppEmergencyCreationFollowUpDto",
+        },
+        "type": "array",
+      },
+      "mode": {
+        "description": "创建方式",
+        "enum": [
+          "quick",
+          "professional",
+          "emergency",
+        ],
+        "type": "string",
+      },
+      "replayed": {
+        "description": "是否重放同一成功命令",
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "activity",
+      "mode",
+      "replayed",
+      "followUpItems",
+    ],
+    "type": "object",
+  },
   "AppActivityDetailDto": {
     "properties": {
       "activityTypeCode": {
@@ -4682,6 +4798,185 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppCreationPlaceCoordinateDto": {
+    "properties": {
+      "coordinateSystemCode": {
+        "description": "坐标系；兼容列仅接受 B2 安全投影",
+        "enum": [
+          "wgs84",
+          "gcj02",
+          "bd09",
+        ],
+        "type": "string",
+      },
+      "latitude": {
+        "description": "所声明坐标系中的纬度",
+        "maximum": 90,
+        "minimum": -90,
+        "type": "number",
+      },
+      "longitude": {
+        "description": "所声明坐标系中的经度",
+        "maximum": 180,
+        "minimum": -180,
+        "type": "number",
+      },
+    },
+    "required": [
+      "longitude",
+      "latitude",
+      "coordinateSystemCode",
+    ],
+    "type": "object",
+  },
+  "AppCreationQualificationRuleSetDto": {
+    "properties": {
+      "positionCode": {
+        "description": "本次场次内岗位 code；仅在同时提供 sessionCode 时使用",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "rules": {
+        "description": "既有受控资格规则，不接收自由形态 valueJson",
+        "items": {
+          "$ref": "#/components/schemas/AppActivityQualificationRuleInputDto",
+        },
+        "maxItems": 100,
+        "minItems": 1,
+        "type": "array",
+      },
+      "sessionCode": {
+        "description": "本次新建场次 code；省略表示活动级资格",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "rules",
+    ],
+    "type": "object",
+  },
+  "AppEmergencyActivityCreationDto": {
+    "properties": {
+      "activityTypeCode": {
+        "description": "既有活动类型字典码，不从任务名猜测",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "allocationModeCode": {
+        "description": "明确的既有分配方式",
+        "enum": [
+          "first_come",
+          "qualification_rank",
+          "lottery",
+        ],
+        "type": "string",
+      },
+      "endAt": {
+        "description": "结束时间，必须晚于开始时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "initiatorMemberId": {
+        "description": "明确发起人 ID；仍校验本人/代设与目标组织资格",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "location": {
+        "description": "地点文字；紧急模式仅限粗略地点，不填精确坐标",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "memberIds": {
+        "description": "呼叫成员；必须有效且处于调用者获准组织范围，不回显名单",
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 1000,
+        "minItems": 1,
+        "type": "array",
+      },
+      "operationKey": {
+        "description": "客户端操作键；同一命令重试必须复用",
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+      "organizationId": {
+        "description": "目标组织 ID，必须有效且不是根组织",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "organizationIds": {
+        "description": "呼叫组织（包含其子树）；与 memberIds 恰选一个非空集合",
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 100,
+        "minItems": 1,
+        "type": "array",
+      },
+      "startAt": {
+        "description": "开始时间，紧急模式可填写估计时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "title": {
+        "description": "活动标题；紧急模式只填写简短任务名",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "title",
+      "organizationId",
+      "startAt",
+      "endAt",
+      "location",
+      "initiatorMemberId",
+      "activityTypeCode",
+      "allocationModeCode",
+    ],
+    "type": "object",
+  },
+  "AppEmergencyCreationFollowUpDto": {
+    "properties": {
+      "itemCode": {
+        "description": "固定补齐事项",
+        "enum": [
+          "session",
+          "position",
+          "detailed_location",
+          "equipment",
+          "attendance",
+          "outcome",
+          "incident_relation",
+        ],
+        "type": "string",
+      },
+      "statusCode": {
+        "description": "由现有权威事实计算；不提供任意完成开关",
+        "enum": [
+          "pending",
+          "verified",
+          "unrepresentable",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "itemCode",
+      "statusCode",
+    ],
+    "type": "object",
+  },
   "AppEvidenceSealResultDto": {
     "properties": {
       "activityId": {
@@ -4785,6 +5080,61 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "professional",
       "marked",
       "satisfied",
+    ],
+    "type": "object",
+  },
+  "AppInlineCreationPlaceDto": {
+    "properties": {
+      "addressText": {
+        "description": "地点文字；用于对应旧地点字段",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "checkInEligible": {
+        "description": "是否为签到候选地点；不自动启用签到策略",
+        "type": "boolean",
+      },
+      "coordinate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppCreationPlaceCoordinateDto",
+          },
+        ],
+        "description": "完整坐标；省略表示纯文字地点",
+      },
+      "instruction": {
+        "description": "地点说明",
+        "maxLength": 2000,
+        "type": "string",
+      },
+      "name": {
+        "description": "地点名称",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "providerCode": {
+        "description": "地图来源标识，不据此推断坐标系",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "providerPlaceId": {
+        "description": "地图来源内部地点标识",
+        "maxLength": 200,
+        "type": "string",
+      },
+      "radiusMeters": {
+        "description": "签到候选半径，单位米",
+        "maximum": 10000,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "name",
+      "addressText",
+      "checkInEligible",
     ],
     "type": "object",
   },
@@ -8555,6 +8905,291 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "recognizedPointsDelta",
       "creditedPointsDelta",
       "cappedOutPointsDelta",
+    ],
+    "type": "object",
+  },
+  "AppProfessionalActivityCreationDto": {
+    "properties": {
+      "activityTypeCode": {
+        "description": "既有活动类型字典码",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "allocationModeCode": {
+        "description": "明确的既有分配方式",
+        "enum": [
+          "first_come",
+          "qualification_rank",
+          "lottery",
+        ],
+        "type": "string",
+      },
+      "archiveWaitingDays": {
+        "description": "归档等待天数",
+        "maximum": 365,
+        "minimum": 0,
+        "type": "number",
+      },
+      "capacity": {
+        "description": "活动容量；null 表示不设容量",
+        "minimum": 1,
+        "nullable": true,
+        "type": "number",
+      },
+      "defaultCheckInRadiusMeters": {
+        "description": "默认签到半径（米）；沿既有校验",
+        "maximum": 10000,
+        "minimum": 1,
+        "type": "number",
+      },
+      "defaultLocationRequired": {
+        "description": "既有默认定位要求",
+        "type": "boolean",
+      },
+      "description": {
+        "description": "活动说明",
+        "maxLength": 5000,
+        "type": "string",
+      },
+      "endAt": {
+        "description": "结束时间，必须晚于开始时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "form": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ManagedRegistrationFormDefinitionInputDto",
+          },
+        ],
+        "description": "B3 受治理表单；敏感题没有逐题批准前拒绝",
+      },
+      "genderRequirementCode": {
+        "description": "既有性别要求字典码",
+        "maxLength": 64,
+        "type": "string",
+      },
+      "initiatorMemberId": {
+        "description": "发起人；省略为本人，代设仍受权限控制",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "isPublicRegistration": {
+        "description": "是否公开报名；沿既有草稿语义",
+        "type": "boolean",
+      },
+      "location": {
+        "description": "地点文字；紧急模式仅限粗略地点，不填精确坐标",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "客户端操作键；同一命令重试必须复用",
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+      "organizationId": {
+        "description": "目标组织 ID，必须有效且不是根组织",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "places": {
+        "description": "明确可见性的活动/场次本地地点；每个提供的 scope 恰好一条 primary",
+        "items": {
+          "$ref": "#/components/schemas/AppActivityCreationPlaceDto",
+        },
+        "maxItems": 200,
+        "minItems": 1,
+        "type": "array",
+      },
+      "qualificationRuleSets": {
+        "description": "本次活动/场次/岗位的既有资格配置",
+        "items": {
+          "$ref": "#/components/schemas/AppCreationQualificationRuleSetDto",
+        },
+        "maxItems": 200,
+        "type": "array",
+      },
+      "registrationDeadline": {
+        "description": "报名截止时间；null 表示不另设",
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "registrationModeCode": {
+        "description": "既有报名方式",
+        "enum": [
+          "open_apply",
+          "invitation_only",
+          "admin_only",
+          "paused",
+        ],
+        "type": "string",
+      },
+      "registrationNotes": {
+        "description": "报名说明",
+        "maxLength": 2000,
+        "type": "string",
+      },
+      "requiresInsurance": {
+        "description": "是否要求既有保险资格，不创建保险记录",
+        "type": "boolean",
+      },
+      "sessions": {
+        "description": "完整场次及其岗位；在同一根事务写入",
+        "items": {
+          "$ref": "#/components/schemas/AppProfessionalCreationSessionDto",
+        },
+        "maxItems": 100,
+        "minItems": 1,
+        "type": "array",
+      },
+      "startAt": {
+        "description": "开始时间，紧急模式可填写估计时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "title": {
+        "description": "活动标题；紧急模式只填写简短任务名",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "visibilityCode": {
+        "description": "活动可见性，不决定地点可见性",
+        "enum": [
+          "internal",
+          "invitation",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "title",
+      "organizationId",
+      "startAt",
+      "endAt",
+      "location",
+      "activityTypeCode",
+      "allocationModeCode",
+      "sessions",
+    ],
+    "type": "object",
+  },
+  "AppProfessionalCreationSessionDto": {
+    "properties": {
+      "positions": {
+        "description": "该场次的岗位配置，code 在场次内唯一",
+        "items": {
+          "$ref": "#/components/schemas/CreateAppManagedActivitySessionPositionDto",
+        },
+        "maxItems": 100,
+        "type": "array",
+      },
+      "session": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CreateAppManagedActivitySessionDto",
+          },
+        ],
+        "description": "既有场次配置；不开放不透明 JSON",
+      },
+    },
+    "required": [
+      "session",
+      "positions",
+    ],
+    "type": "object",
+  },
+  "AppQuickActivityCreationDto": {
+    "properties": {
+      "confirmedCapacity": {
+        "description": "确认模板容量，仅允许等值；null 表示模板不设容量",
+        "minimum": 1,
+        "nullable": true,
+        "type": "number",
+      },
+      "defaultPlaceVisibilityCode": {
+        "description": "模板文字地点转换为本地快照时使用的明确可见性",
+        "enum": [
+          "public",
+          "accepted",
+          "staff",
+          "command",
+        ],
+        "type": "string",
+      },
+      "endAt": {
+        "description": "结束时间，必须晚于开始时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "initiatorMemberId": {
+        "description": "发起人；省略为本人，代设仍校验既有权限",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "location": {
+        "description": "地点文字；紧急模式仅限粗略地点，不填精确坐标",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "客户端操作键；同一命令重试必须复用",
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+      "organizationId": {
+        "description": "目标组织 ID，必须有效且不是根组织",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "places": {
+        "description": "按活动/场次 scope 指定地点；未指定 scope 复制模板文字地点",
+        "items": {
+          "$ref": "#/components/schemas/AppActivityCreationPlaceDto",
+        },
+        "maxItems": 200,
+        "minItems": 1,
+        "type": "array",
+      },
+      "startAt": {
+        "description": "开始时间，紧急模式可填写估计时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "templateVersionId": {
+        "description": "精确 Template Version ID，不接受 Family ID",
+        "maxLength": 64,
+        "minLength": 8,
+        "type": "string",
+      },
+      "title": {
+        "description": "活动标题；紧急模式只填写简短任务名",
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "title",
+      "organizationId",
+      "startAt",
+      "endAt",
+      "location",
+      "templateVersionId",
+      "defaultPlaceVisibilityCode",
     ],
     "type": "object",
   },
@@ -98513,6 +99148,325 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/my/managed-activities/emergency": {
+    "post": {
+      "operationId": "AppManagedActivityCreationController_emergency",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppEmergencyActivityCreationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityCreationResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作",
+                    "enum": [
+                      20030,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 创建紧急草稿并冻结呼叫受众（不正式发布） [auth]",
+      "tags": [
+        "Mobile - Managed Activities",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/from-template": {
+    "post": {
+      "operationId": "AppManagedActivityCreationController_quick",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppQuickActivityCreationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityCreationResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作; 20162: 从模板创建活动的操作键与首次请求不一致",
+                    "enum": [
+                      20030,
+                      20162,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030) / 从模板创建活动的操作键与首次请求不一致(code=20162)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 从精确模板创建草稿（含地点快照、幂等） [auth]",
+      "tags": [
+        "Mobile - Managed Activities",
+      ],
+    },
+  },
   "/api/app/v1/my/managed-activities/organization-options": {
     "get": {
       "operationId": "AppManagedActivitiesController_organizationOptions",
@@ -98626,6 +99580,165 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "App 获取当前队员可发起活动的组织 options [auth]",
+      "tags": [
+        "Mobile - Managed Activities",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/professional": {
+    "post": {
+      "operationId": "AppManagedActivityCreationController_professional",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppProfessionalActivityCreationDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityCreationResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 30100: 无权执行此操作",
+                    "enum": [
+                      40300,
+                      30100,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 无权执行此操作(code=30100)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20030: 活动当前状态不允许此操作",
+                    "enum": [
+                      20030,
+                    ],
+                    "example": 20030,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动当前状态不允许此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动当前状态不允许此操作(code=20030)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 原子创建专业活动草稿（场次、岗位、地点、表单、资格） [auth]",
       "tags": [
         "Mobile - Managed Activities",
       ],

@@ -11,6 +11,8 @@
 
 ## Local facts
 
+- **Activity OS R2 / B6 D2**：三种 App managed 创建入口都在 Service 校验 `activity.create.record`，紧急模式叠加 `activity.create.emergency.record`；后者的 `SUPER_ADMIN_ONLY`、角色不可授予和默认绑定不变。跨组织及代设发起人仍复用现有策略；本刀只同步四条受影响权限的 `businessDescription` 与派生管辖面，不改 seed 描述、权限集合或 grantPolicy。
+
 - **入口模式当前现状(2026-06-11 Slow-4 收口,单轨)**:全仓 controller 一律"入口仅 `JwtAuthGuard`,**不**挂 `@Roles(...)`,Service 内 `rbac.can()` 判权 + 失败抛 `RBAC_FORBIDDEN(30100)`"(活跃 `@Roles` = 0;`RolesGuard` 机制保留 Guard 链作防御性兜底;activities 列表/详情等 `[auth]` 端点无码仅登录)。业务面 ADMIN 权限由内置角色 `biz-admin`(v0.61.0 PR-11 contract 后绑 68)承载,seed 幂等补挂每个非软删 ADMIN；`org-admin` 47、`group-manager` 20，活动/报名/考勤动作改由 owner/collaborator/reviewer 显式角色承载。修改权限边界时仍必须说明 controller guard、service-level `rbac.can()`、数据范围(where 子句 / `.self`)三者关系
 - **`RbacService` 是唯一 legacy GLOBAL 判权出口**:`can()` / `judge()` / `getMyPermissions()` / `reload()`;`getUserPermissionCodes()` 每次直读 PostgreSQL 当前事实,无跨请求 Map/TTL;`SUPER_ADMIN` 短路在 `judge()` 内实现;`ADMIN` 继承 USER 由 **seed 给 ADMIN 内置角色配 USER 级权限点**实现,Service 本身**不**对 `ADMIN` 特判
 - **🔴 判权唯一读源 = 当前在期 global RoleBinding(终态 scoped-authz PR6;冻结稿 §8.2 行为锁)**:`getUserPermissionCodes`〔判权聚合〕/`getEffectiveRoles`〔角色摘要〕**只读** `RoleBinding(principalType=USER, scopeType=GLOBAL, status=ACTIVE, startedAt<=now, endedAt=null|>=now, deletedAt=null)`;任期边界与 `AuthzService` 共用 [`role-binding-validity.ts`](role-binding-validity.ts) 单一谓词/where 构造(起止时刻均含边界),未来/过期 GLOBAL 绑定不再产权限或角色摘要。**旧 UserRole 表已 DROP**(每条 UserRole 已由第 37 migration 回填为该形态 RoleBinding;第 39 migration 冻结表 cleanup 物理删除)。**只读 GLOBAL,绝不判 scoped**——经 `role-bindings/` CRUD 建的 ORGANIZATION/TREE/ACTIVITY/RESOURCE/SELF 绑定入库即止,判权忽略(scoped 判权是 PR8 AuthzService)。改判权/读源必跑 characterization(rbac.service.spec 判权矩阵 + user-roles/role-bindings e2e + `authz-rbac-equivalence` 任期矩阵)

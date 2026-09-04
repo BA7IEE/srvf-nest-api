@@ -4,6 +4,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import {
   assertActiveOrganizationIds,
+  resolveActiveMemberIdsWithinExactOrganizationScope,
   resolveOrganizationSubtreeMemberIds,
 } from '../organizations/organization-audience-scope';
 import { DICT_TYPE_MEMBER_AUDIENCE_TAG } from './activity-publish-review-access';
@@ -165,6 +166,61 @@ interface FreezeRequest {
    * 后者在读数上分不出来,也白白付了万人活动那次全表扫描的钱。
    */
   candidateMemberIds: () => Promise<readonly string[]> | readonly string[];
+}
+
+/** B6 emergency audiences are explicit, non-empty and bounded by current authorized organizations. */
+export async function freezeEmergencyCall(
+  tx: PrismaTx,
+  input: {
+    activityId: string;
+    initiationId: string;
+    requestHash: string;
+    at: Date;
+    authorizedOrganizationIds: readonly string[];
+    organizationIds?: readonly string[];
+    memberIds?: readonly string[];
+  },
+): Promise<FrozenRecipientCohort> {
+  const organizations = input.organizationIds;
+  const members = input.memberIds;
+  if (
+    (organizations === undefined) === (members === undefined) ||
+    (organizations !== undefined && organizations.length === 0) ||
+    (members !== undefined && members.length === 0)
+  )
+    throw new BizException(BizCode.BAD_REQUEST);
+  const authorized = new Set(input.authorizedOrganizationIds);
+  if (organizations?.some((id) => !authorized.has(id)))
+    throw new BizException(BizCode.RBAC_FORBIDDEN);
+  return freeze(tx, {
+    cohortKey: `activity-emergency:${input.initiationId}`,
+    aggregateType: 'activity',
+    aggregateIds: [input.activityId],
+    basisKind: organizations === undefined ? 'emergency-members' : 'emergency-organizations',
+    // A one-way command hash identifies the basis; the raw audience is never duplicated in payloads.
+    basisRef: [input.requestHash],
+    at: input.at,
+    candidateMemberIds: async () => {
+      if (organizations) await assertActiveOrganizationIds(tx, organizations);
+      const candidates = organizations
+        ? [...(await resolveOrganizationSubtreeMemberIds(tx, organizations, input.at))]
+        : [...members!];
+      const activeMemberIds = await resolveActiveMemberIdsWithinExactOrganizationScope(
+        tx,
+        candidates,
+        [...authorized],
+        input.at,
+      );
+      if (
+        activeMemberIds.size === 0 ||
+        (members && activeMemberIds.size !== new Set(members).size)
+      ) {
+        // No enumeration of missing/inactive/out-of-scope members.
+        throw new BizException(BizCode.RBAC_FORBIDDEN);
+      }
+      return [...activeMemberIds];
+    },
+  });
 }
 
 /**

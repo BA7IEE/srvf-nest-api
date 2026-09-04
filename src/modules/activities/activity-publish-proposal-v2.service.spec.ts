@@ -931,6 +931,7 @@ describe('ActivityPublishProposalV2Service', () => {
     internals.getTemplateResolution = jest.fn(() => Promise.resolve({ templateVersionId: null }));
 
     const tx = {
+      activityEmergencyInitiation: { findUnique: jest.fn().mockResolvedValue(null) },
       activity: {
         update: jest.fn(() => {
           calls.push('population-revision');

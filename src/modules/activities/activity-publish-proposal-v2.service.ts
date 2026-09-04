@@ -1,3 +1,4 @@
+import { assertEmergencyFormalPublicationAllowed } from './activity-emergency-publication-policy';
 import { createHash } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
@@ -885,6 +886,14 @@ export class ActivityPublishProposalV2Service {
       | ActivityTemplateResolutionWithQualificationRules
       | ActivityTemplateResolutionWithSnapshotV6;
   }> {
+    if (input.publish) {
+      assertEmergencyFormalPublicationAllowed(
+        await tx.activityEmergencyInitiation.findUnique({
+          where: { activityId },
+          select: { id: true },
+        }),
+      );
+    }
     // 「本次由 scheduled 变成 cancelled」的场次必须在 applySessions 落库**之前**读 ——
     // 落库之后 DB 里全是 cancelled,分不出「这次刚取消」与「上次就已经取消」,联动会对
     // 早已取消的场次重复发通知。一次查完,不逐个场次查。
