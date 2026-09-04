@@ -322,21 +322,21 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-09-02(Activity OS R1 / A7 Series 与按需生成)**
+**取数时点:2026-09-04(Activity OS R2 / B6 D1 数据地基与按需生成)**
 
 | 项 | 值 |
 |---|---:|
-| 总条目 | **62** |
-| `governed` / `inventory` | **8 / 54** |
-| 54 条 inventory 的分层 | L1 **7** · L2 **21** · L3 **26** |
+| 总条目 | **63** |
+| `governed` / `inventory` | **8 / 55** |
+| 55 条 inventory 的分层 | L1 **7** · L2 **22** · L3 **26** |
 | 已有机器可读边(`transitions` 是数组)※ | 23 |
-| `transitions: "not-derived"` ※ | 26 |
+| `transitions: "not-derived"` ※ | 27 |
 | `transitions: "unconstrained"` ※ | 13 |
 
-> ※ 这三行按**全部 62 条**统计(23+26+13=62),不是按上一行那 54 条 inventory。
+> ※ 这三行按**全部 63 条**统计(23+27+13=63),不是按上一行那 55 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
-| **`vacuousGreenIfClosedSetOnly`** | **24** |
+| **`vacuousGreenIfClosedSetOnly`** | **25** |
 | 零 blocker 但仍 inventory 的升格候选 | **0** |
 
 > 🔴 **历史 true-up、A2 增补、A3 与本次 A7 落地要分开读**:
@@ -377,14 +377,21 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > `no-wrong-state-bizcode` 与 `snapshot-not-lifecycle` / `composite-db-check`，两者均不升
 > `governed`。
 
-blocker 直方图(2026-09-02 现算;含 A3 future-Version 条件生命周期与 A7):`no-wrong-state-bizcode` 29 ·
-`no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·
+> **⑥ B6 D1 的当前读数变化**：新增 `ActivityEmergencyFollowUpItem.statusCode`（L2 紧急事后
+> 义务清单）一条 inventory；总条目 62→63 · inventory 54→55 · L2 21→22 ·
+> `not-derived` 26→27 · `vacuousGreenIfClosedSetOnly` 24→25。migration 的 CHECK 已锁定
+> 三值闭集及状态与处理事实的组合形状，但 D1 尚无 service writer、状态迁移边或错误码契约，
+> 故新增 `edges-not-derived`、`no-service-writer`、`no-wrong-state-bizcode` 各 1；不把数据库
+> 结构约束冒充为已治理的运行时状态机。
+
+blocker 直方图(2026-09-04 现算;含 A3 future-Version 条件生命周期、A7 与 B6 D1):`no-wrong-state-bizcode` 30 ·
+`no-db-check` 23 · `edges-not-derived` 21 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·
 `edges-partially-derived` 2 · `vocabulary-divergence` 2 · `dictionary-driven` 2 ·
 `retired-value-in-set` 2 · `impl-scattered` 2 · `throws-instead-of-decide` 1 ·
-`decision-shape-divergence` 1 · `conditional-legacy-scope` 1 · `no-service-writer` 1 ·
+`decision-shape-divergence` 1 · `conditional-legacy-scope` 1 · `no-service-writer` 2 ·
 `duplicate-constant-definition` 1 · `snapshot-not-lifecycle` 1 · `composite-db-check` 1。
 
-**`vacuousGreenIfClosedSetOnly` = 24 是本刀存在的理由的量化**:这 24 条既有已声明的闭集、
+**`vacuousGreenIfClosedSetOnly` = 25 是本刀存在的理由的量化**:这 25 条既有已声明的闭集、
 `transitions` 又是 `not-derived` —— 一个「只比闭集 vs CHECK」的判据会**全部放它们过去**。
 selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.statusCode`:闭集 5 值合法、
 零 blocker,但零边零实现 ⇒ 必须被拒)。
@@ -406,7 +413,7 @@ selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.s
 
 ### 10.5 本轮发现的两处口径瑕疵(如实记录,均未回改)
 
-1. **登记表内部不一致:24 vs 20**。`transitions: "not-derived"` 的有 **24** 条,
+1. **登记表内部不一致(4-1b 当时读数):24 vs 20**。`transitions: "not-derived"` 的有 **24** 条,
    但只有 **20** 条带 `edges-not-derived` blocker。差的 4 条全是 L2:
    `ActivityAllocationApplicationProjection.appliedStatusCode` · `NotificationDelivery.status` ·
    `RecruitmentCycle.statusCode` · `TeamJoinCycle.statusCode`。
@@ -430,7 +437,7 @@ selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.s
 
 ### 10.6.1 A3 未做
 
-- ❌ **不把 A3 升为 `governed`**：它仍是 54 条 `inventory` 中的一条 L2；受约束的仅是
+- ❌ **不把 A3 升为 `governed`**：它仍是 55 条 `inventory` 中的一条 L2；受约束的仅是
   `familyId` 非空的 future Version，legacy 模板保持兼容语义。
 - ❌ **不回填 legacy / 不改旧 resolver 或 API**：未新增写入端点、服务编排、权限、错误码或迁移回填。
 - ❌ **不改既有状态机或 `action-state-checks.ts`**：A3 的生命周期只由 migration trigger 与

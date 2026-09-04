@@ -19,9 +19,10 @@ import {
 //      可把它自授给任意角色,再调 POST /system/v1/wecom-settings/reset-credentials 覆盖
 //      CorpSecret。① 对此**零反应**,因为它只问"是不是这几条",不问"该有的有没有"。
 describe('RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES', () => {
-  it('恰为这 7 条 SA-only 保留码(改动需同步 seed 不绑矩阵 + e2e 漂移哨兵)', () => {
+  it('恰为这 8 条 SA-only 保留码(改动需同步 seed 不绑矩阵 + e2e 漂移哨兵)', () => {
     expect([...RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES].sort()).toEqual(
       [
+        'activity.create.emergency.record',
         'member.delete.record',
         'realname-setting.reset.credentials',
         'sms-setting.reset.credentials',
@@ -44,6 +45,9 @@ describe('RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES', () => {
       RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES.length,
     );
     expect(RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has('member.delete.record')).toBe(true);
+    expect(
+      RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has('activity.create.emergency.record'),
+    ).toBe(true);
     expect(RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has('member.read.list')).toBe(false);
   });
 });

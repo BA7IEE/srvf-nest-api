@@ -62,6 +62,11 @@
       "surface": "sha256:efb879766bca51ab4c0ae429ba1bb4ae8b5dc07cf6115686e8335496b3ff3ab7",
       "description": "sha256:945cbd9b2e54ad68bdf9a594e5ad190aa4fc933dd709186dcaff62c49cec25d7"
     },
+    "activity.create.emergency.record": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:3315a5537f3c2845470ef0bbdcbb7445abf1750f3028fdf227e2a78aaa04aefc"
+    },
     "activity.create.record": {
       "endpoints": 1,
       "surface": "sha256:af14e29a428d3bda282464a88fe16c1696dab80ffa7c3da67d784bde4c03de5e",
