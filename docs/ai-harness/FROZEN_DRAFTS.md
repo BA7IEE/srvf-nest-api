@@ -18,7 +18,7 @@
 
 ---
 
-## 1. 还有欠账的冻结稿(11 项 / 涉 17 份文件)
+## 1. 还有欠账的冻结稿(11 项 / 涉 18 份文件)
 
 > **落地度列开头的 `` `↔…` `` 是给判据 6 读的对照标记**,不是装饰 —— 它声明本行与
 > `NEXT_TASKS.md` 同编号条目的状态行**是不是同一把尺子**。取值与写法见 [§4](#4-这份台账由什么守着)。
@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 与 Release 2 B1、B2、B3、B4、B5 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254/#1257/#1259/#1261/#1264/#1267 | B6 三种创建 API 评审待起草 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 与 Release 2 B1、B2、B3、B4、B5 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254/#1257/#1259/#1261/#1264/#1267；B6 评审稿已起草、方案 A 已确认 | B6 review PR 合入后，逐文件确认 D 档 implementation 写集 |
 
 ### 1.1 欠代码的五项
 
@@ -150,8 +150,13 @@ ActivityPublishReadinessService，在一次只读事务内按固定顺序汇总�
 Time / Contribution / Metric 尚无正式模型，相关指针固定为 null。v2-v5 与在途 hash 保持不变；批准时的
 v6 事实写入既有 RuleSnapshot，审核详情只返回安全的 proposal-v6 变更摘要。B5 不改 schema、migration、
 Controller、外部 API/DTO、权限、Audit、Gate、Readiness、Place writer 或生产行为；PR CI 与可信红区审批均已收口。
-B6 三种创建 API 仍须独立评审与授权。
-本项不引入 AI 模块、Integration 业务面、权限码或任何 Gate。
+**B6 评审稿已于 2026-09-04 起草，方案 A 已确认**：后续将以三个独立 App managed 入口完整落实模板快速、
+专业完整和紧急创建；快速模式显式映射 A6 精确 Version，专业模式只使用现有 canonical 模型，紧急模式以
+草稿、冻结受众、同事务 outbox、专属权限、审计和事后真实清单走 D 档。三种模式均不能直接正式发布，B4
+readiness 仍保持 gate-off。该评审稿只冻结 D 档 implementation 决策与预算，尚未改动 schema、migration、
+seed、API、DTO、权限、通知、审计、Gate 或运行时行为；implementation 仍须独立确认、逐路径授权。
+本次 B6 review PR 不引入 AI 模块、Integration 业务面、权限码或任何 Gate；后续 D 档 implementation
+中的紧急专属权限仍须单独确认与逐路径授权。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -205,7 +210,7 @@ B6 三种创建 API 仍须独立评审与授权。
 **未逐份复验**(其中在本次会话里真读过代码或产物核实的,只有活动四份 T0、harness 3.0、
 PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)。
 发现某行定性错了,**直接改那一行**,不必走评审 —— 本闸保证的是"没有未分类项"与"读数不过期",
-**不保证历史定性正确**。`open` 那 15 份是本次逐条核过的。
+**不保证历史定性正确**。`open` 那 16 份是本次逐条核过的。
 
 | 文件 | 分类 | 去向 / 理由 |
 |---|---|---|
@@ -223,6 +228,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b3-form-blueprint-review.md` | landed · P1-33 | Release 2 / B3 模板报名表蓝图复制与数据治理；已随 #1261 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b4-publish-readiness-review.md` | landed · P1-33 | Release 2 / B4 确定性、只读、gate-off 的发布就绪评审与 implementation 写集预算；已随 #1264 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | open · P1-33 | Release 2 / B6 三种创建 API；方案 A 已确认，D 档 implementation 仍待独立确认 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
