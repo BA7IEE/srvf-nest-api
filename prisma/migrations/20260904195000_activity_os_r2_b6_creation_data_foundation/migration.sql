@@ -103,25 +103,25 @@ ALTER TABLE "ActivityEmergencyFollowUpItem"
   );
 
 ALTER TABLE "ActivityCreationCommandReceipt"
-  ADD CONSTRAINT "activity_creation_command_receipt_activity_fkey"
+  ADD CONSTRAINT "ActivityCreationCommandReceipt_activityId_fkey"
   FOREIGN KEY ("activityId") REFERENCES "Activity"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
 ALTER TABLE "ActivityCreationCommandReceipt"
-  ADD CONSTRAINT "activity_creation_command_receipt_actor_fkey"
+  ADD CONSTRAINT "ActivityCreationCommandReceipt_actorUserId_fkey"
   FOREIGN KEY ("actorUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 ALTER TABLE "ActivityEmergencyInitiation"
-  ADD CONSTRAINT "activity_emergency_initiation_activity_fkey"
+  ADD CONSTRAINT "ActivityEmergencyInitiation_activityId_fkey"
   FOREIGN KEY ("activityId") REFERENCES "Activity"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
 ALTER TABLE "ActivityEmergencyInitiation"
-  ADD CONSTRAINT "activity_emergency_initiation_receipt_activity_fkey"
+  ADD CONSTRAINT "ActivityEmergencyInitiation_creationReceiptId_activityId_fkey"
   FOREIGN KEY ("creationReceiptId", "activityId")
   REFERENCES "ActivityCreationCommandReceipt"("id", "activityId") ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 ALTER TABLE "ActivityEmergencyFollowUpItem"
-  ADD CONSTRAINT "activity_emergency_follow_up_item_initiation_fkey"
+  ADD CONSTRAINT "ActivityEmergencyFollowUpItem_emergencyInitiationId_fkey"
   FOREIGN KEY ("emergencyInitiationId") REFERENCES "ActivityEmergencyInitiation"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
 ALTER TABLE "ActivityEmergencyFollowUpItem"
-  ADD CONSTRAINT "activity_emergency_follow_up_item_resolved_by_fkey"
+  ADD CONSTRAINT "ActivityEmergencyFollowUpItem_resolvedByUserId_fkey"
   FOREIGN KEY ("resolvedByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 COMMIT;

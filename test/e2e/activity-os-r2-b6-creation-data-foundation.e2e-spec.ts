@@ -568,19 +568,19 @@ describe('Activity OS R2 B6 D1 creation data foundation schema', () => {
     expect(incidentColumns).toEqual([]);
 
     const constraints = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
-      "SELECT conname AS name FROM pg_constraint WHERE conname = ANY (ARRAY['activity_creation_command_receipt_command_code_check','activity_creation_command_receipt_activity_fkey','activity_creation_command_receipt_actor_fkey','activity_emergency_initiation_activity_fkey','activity_emergency_initiation_receipt_activity_fkey','activity_emergency_follow_up_item_code_check','activity_emergency_follow_up_item_status_check','activity_emergency_follow_up_item_resolution_shape_check','activity_emergency_follow_up_item_initiation_fkey','activity_emergency_follow_up_item_resolved_by_fkey']::text[]) ORDER BY conname",
+      "SELECT conname AS name FROM pg_constraint WHERE conname = ANY (ARRAY['activity_creation_command_receipt_command_code_check','ActivityCreationCommandReceipt_activityId_fkey','ActivityCreationCommandReceipt_actorUserId_fkey','ActivityEmergencyInitiation_activityId_fkey','ActivityEmergencyInitiation_creationReceiptId_activityId_fkey','activity_emergency_follow_up_item_code_check','activity_emergency_follow_up_item_status_check','activity_emergency_follow_up_item_resolution_shape_check','ActivityEmergencyFollowUpItem_emergencyInitiationId_fkey','ActivityEmergencyFollowUpItem_resolvedByUserId_fkey']::text[]) ORDER BY conname",
     );
     expect(constraints.map((row) => row.name)).toEqual([
-      'activity_creation_command_receipt_activity_fkey',
-      'activity_creation_command_receipt_actor_fkey',
+      'ActivityCreationCommandReceipt_activityId_fkey',
+      'ActivityCreationCommandReceipt_actorUserId_fkey',
+      'ActivityEmergencyFollowUpItem_emergencyInitiationId_fkey',
+      'ActivityEmergencyFollowUpItem_resolvedByUserId_fkey',
+      'ActivityEmergencyInitiation_activityId_fkey',
+      'ActivityEmergencyInitiation_creationReceiptId_activityId_fkey',
       'activity_creation_command_receipt_command_code_check',
       'activity_emergency_follow_up_item_code_check',
-      'activity_emergency_follow_up_item_initiation_fkey',
       'activity_emergency_follow_up_item_resolution_shape_check',
-      'activity_emergency_follow_up_item_resolved_by_fkey',
       'activity_emergency_follow_up_item_status_check',
-      'activity_emergency_initiation_activity_fkey',
-      'activity_emergency_initiation_receipt_activity_fkey',
     ]);
     const indexes = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
       "SELECT indexname AS name FROM pg_indexes WHERE schemaname = 'public' AND indexname = ANY (ARRAY['activity_creation_command_receipt_activity_id_key','activity_creation_command_receipt_actor_command_key','activity_creation_command_receipt_id_activity_key','activity_creation_command_receipt_actor_created_idx','activity_emergency_initiation_activity_id_key','activity_emergency_initiation_receipt_id_key','activity_emergency_initiation_receipt_activity_key','activity_emergency_follow_up_item_initiation_code_key','activity_emergency_follow_up_item_status_idx']::text[]) ORDER BY indexname",
