@@ -128,13 +128,15 @@ export class ActivityPublishReviewQueryService {
       return { kind: 'unparseable' };
     }
     const record = snapshot as Record<string, unknown>;
-    // v3 adds Form, v4 adds allocation mode, and v5 adds typed qualification RuleSets. All
-    // proposal generations retain the same Activity/Session diff envelope.
+    // v3 adds Form, v4 adds allocation mode, v5 adds typed qualification RuleSets, and v6 adds
+    // a separate safe summary for its frozen facts. All proposal generations retain the same
+    // Activity/Session diff envelope.
     if (
       (record.schemaVersion !== 2 &&
         record.schemaVersion !== 3 &&
         record.schemaVersion !== 4 &&
-        record.schemaVersion !== 5) ||
+        record.schemaVersion !== 5 &&
+        record.schemaVersion !== 6) ||
       !this.isRecord(record.base)
     ) {
       return { kind: 'legacy', requestSchemaVersion: record.schemaVersion ?? null };
@@ -143,7 +145,12 @@ export class ActivityPublishReviewQueryService {
     const activity = this.isRecord(record.activity) ? record.activity : {};
     const baseActivity = this.isRecord(base.activity) ? base.activity : {};
     return {
-      kind: record.schemaVersion === 5 ? 'proposal-v5' : 'proposal-v2',
+      kind:
+        record.schemaVersion === 6
+          ? 'proposal-v6'
+          : record.schemaVersion === 5
+            ? 'proposal-v5'
+            : 'proposal-v2',
       activityFields: Object.keys(activity)
         .filter((key) => JSON.stringify(activity[key]) !== JSON.stringify(baseActivity[key]))
         .sort(),
@@ -152,7 +159,7 @@ export class ActivityPublishReviewQueryService {
         Array.isArray(record.sessions) ? record.sessions : [],
         'sessionId',
       ),
-      ...(record.schemaVersion === 5
+      ...(record.schemaVersion === 5 || record.schemaVersion === 6
         ? {
             qualificationRuleSets: this.qualificationRuleSetDiff(
               base.qualificationRuleSets,
@@ -160,7 +167,31 @@ export class ActivityPublishReviewQueryService {
             ),
           }
         : {}),
+      ...(record.schemaVersion === 6
+        ? {
+            v6Fields: {
+              changedFields: this.v6ChangedFieldNames(base, record),
+            },
+          }
+        : {}),
     };
+  }
+
+  /** V6 review details expose field names only; never duplicate frozen place or form contents. */
+  private v6ChangedFieldNames(
+    base: Record<string, unknown>,
+    target: Record<string, unknown>,
+  ): string[] {
+    return [
+      'activityPlaces',
+      'categoryCode',
+      'contentVisibilitySummary',
+      'contributionPolicyPointers',
+      'metricSetPointer',
+      'plannedSemanticAssignments',
+      'selectedTemplateVersionId',
+      'timePolicyPointers',
+    ].filter((field) => JSON.stringify(base[field]) !== JSON.stringify(target[field]));
   }
 
   /** Safe administrative summary: scopes and change kind, never evaluator input facts. */

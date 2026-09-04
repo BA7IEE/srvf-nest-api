@@ -281,7 +281,7 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
       requestType: 'initial',
       status: 'pending',
       directPublish: false,
-      snapshot: expect.objectContaining({ schemaVersion: 4, snapshotHash: expect.any(String) }),
+      snapshot: expect.objectContaining({ schemaVersion: 6, snapshotHash: expect.any(String) }),
     });
 
     const replay = await request(httpServer(app))
@@ -590,9 +590,9 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
       .expect(200);
     expect(detail.body.data).toMatchObject({
       id: submitted.body.data.id,
-      snapshot: expect.objectContaining({ schemaVersion: 4 }),
+      snapshot: expect.objectContaining({ schemaVersion: 6 }),
       changeDiff: expect.objectContaining({
-        kind: 'proposal-v2',
+        kind: 'proposal-v6',
         activityFields: expect.arrayContaining(['title']),
         sessions: expect.objectContaining({
           create: expect.arrayContaining([expect.objectContaining({ code: 'new-session-0003' })]),

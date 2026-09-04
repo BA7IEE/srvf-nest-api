@@ -43,7 +43,7 @@ import { toResponseDto } from './activity-presenter';
  * **不加任何状态闸** —— 只要活动未软删就能设封面。加状态闸会是本刀夹带的行为收窄。
  *
  * ⚠️ 本服务**不进发布变更审核链**:封面本就是可直改的展示字段(见上),
- * 且 change-review 快照的 schemaVersion 2–5 是逐字冻结的契约,往里加字段要 v6,不在本刀范围。
+ * 且 change-review 快照的 schemaVersion 2–6 是逐字冻结的契约,往里加字段要 v7,不在本刀范围。
  */
 @Injectable()
 export class ActivityCoverService {

@@ -288,7 +288,7 @@ describe('activity batch4 Form runtime', () => {
       });
     expect(omitted.status).toBe(200);
     expect(omitted.body.data.snapshot).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 6,
       registrationForm: expect.objectContaining({ schemaHash: replacementHash }),
     });
     await request(httpServer(app))
@@ -307,7 +307,7 @@ describe('activity batch4 Form runtime', () => {
         registrationForm: null,
       });
     expect(remove.status).toBe(200);
-    expect(remove.body.data.snapshot).toMatchObject({ schemaVersion: 4, registrationForm: null });
+    expect(remove.body.data.snapshot).toMatchObject({ schemaVersion: 6, registrationForm: null });
     await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/reviews/withdraw`)
       .set('Authorization', ownerAuth)
@@ -331,7 +331,7 @@ describe('activity batch4 Form runtime', () => {
       });
     expect(replace.status).toBe(200);
     expect(replace.body.data.snapshot).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 6,
       registrationForm: expect.objectContaining({ schemaHash: proposedHash }),
     });
 
@@ -561,7 +561,7 @@ describe('activity batch4 Form runtime', () => {
       });
     expect(submitted.status).toBe(200);
     expect(submitted.body.data.snapshot).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 6,
       registrationForm: {
         schemaHash: canonicalizeRegistrationFormDefinition(proposed).schemaHash,
         definition: {

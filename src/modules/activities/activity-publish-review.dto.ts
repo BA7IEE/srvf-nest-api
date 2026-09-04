@@ -313,7 +313,8 @@ export class ChangeReviewSessionPositionCollectionsDto {
 
 /**
  * A scope accepts either an existing database id or a proposal-local clientRef. It is resolved
- * against the frozen session/position collections before being canonicalized into the V5 target.
+ * against the frozen session/position collections before being canonicalized into the versioned
+ * proposal target (the current new-proposal envelope is V6).
  */
 export class ChangeReviewQualificationRuleScopeDto {
   @ApiProperty({ nullable: true, minLength: 1, maxLength: 64, type: String })
@@ -401,7 +402,8 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
 
   /**
    * Omitted keeps the active Form; explicit null retires it on approval; an object replaces it.
-   * The proposal service, not this DTO, canonicalizes and binds it into the generated v4 snapshot.
+   * The proposal service, not this DTO, canonicalizes and binds it into the generated versioned
+   * proposal snapshot (the current new-proposal envelope is V6).
    */
   @ApiPropertyOptional({ nullable: true, type: () => ManagedRegistrationFormDefinitionInputDto })
   @IsOptional()

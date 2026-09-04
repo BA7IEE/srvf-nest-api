@@ -641,7 +641,7 @@ describe('activity batch4 qualification configuration', () => {
       .send(proposal);
     expect(submitted.status).toBe(200);
     expect(submitted.body.data.snapshot).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       qualificationRuleSets: {
         ruleSets: expect.arrayContaining([
           expect.objectContaining({

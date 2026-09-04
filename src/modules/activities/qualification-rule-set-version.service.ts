@@ -159,7 +159,7 @@ export class QualificationRuleSetVersionService {
   ): Promise<CanonicalQualificationRuleSetsDefinition> {
     const statusCode = activityStatus === 'draft' ? 'draft' : 'active';
     const versions = await this.currentVersions(tx, activityId, statusCode);
-    // A V5 stale guard must reject an active pointer drift before proposal application changes
+    // A V5/V6 stale guard must reject an active pointer drift before proposal application changes
     // any session/position rows. This is intentionally skipped for draft, whose pointers are
     // required to remain null by the direct-write path instead.
     if (statusCode === 'active') {
