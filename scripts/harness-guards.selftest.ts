@@ -300,7 +300,7 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
   // 直接在角色装配旁边补个 `code: 'x.y.z'`),下面那条 checkEq 就不再是 0,当场红。
   // ⚠️ 0 本身是「空集」形状,单独看会踩本仓登记的「空集恒等于空集」陷阱 ——
   // 所以它必须与上一条(完整闭包恰 237)成对读:一条钉住总量非空,一条钉住分布只有一处。
-  const CLOSURE_PERMISSION_CODE_COUNT = 246; // 2026-08-29 IF PR5 +3(delegation-grant.*)
+  const CLOSURE_PERMISSION_CODE_COUNT = 247; // 2026-09-04 Activity OS R2 B6 D1 +1(emergency creation)
   const CODES_LEFT_IN_SEED_AFTER_MOVE = 0;
   check(
     `R5-02 权限码:真实 seed 事实闭包双口径一致且为 ${CLOSURE_PERMISSION_CODE_COUNT}`,

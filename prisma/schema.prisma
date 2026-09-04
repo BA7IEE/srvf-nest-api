@@ -183,6 +183,11 @@ model User {
   allocationBatchesCreated       ActivityAllocationBatch[]          @relation("AllocationBatchCreator")
   allocationCommandReceiptsActed ActivityAllocationCommandReceipt[] @relation("AllocationCommandReceiptActor")
 
+  // Activity OS R2 / B6 D1:专业/紧急创建收据与紧急后续清单的独立 actor 边。
+  // 只铺数据事实,不在本刀接入创建、通知、审计或清单处理运行时。
+  activityCreationCommandReceipts   ActivityCreationCommandReceipt[] @relation("ActivityCreationCommandReceiptActor")
+  activityEmergencyFollowUpResolved ActivityEmergencyFollowUpItem[]  @relation("ActivityEmergencyFollowUpItemResolver")
+
   // 第 6 批(2026-08-16):离线包签发/作废与异常复核保留独立 actor 边，不能借用
   // AttendancePunchEvent 的 operator 边（后者指正式事件操作者）。
   offlinePackagesOperated    OfflinePackage[]         @relation("OfflinePackageOperator")
@@ -1552,6 +1557,8 @@ model Activity {
   organization                 Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   selectedTemplateVersion      ActivityTemplate?                  @relation("ActivitySelectedTemplateVersion", fields: [selectedTemplateVersionId], references: [id], onDelete: Restrict)
   seriesOccurrence             ActivitySeriesOccurrence?          @relation("ActivitySeriesOccurrenceActivity")
+  creationCommandReceipts      ActivityCreationCommandReceipt[]   @relation("ActivityCreationCommandReceiptActivity")
+  emergencyInitiation          ActivityEmergencyInitiation?       @relation("ActivityEmergencyInitiationActivity")
   initiator                    Member?                            @relation("ActivityInitiator", fields: [initiatorMemberId], references: [id], onDelete: Restrict)
   publisher                    User?                              @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
   canceller                    User?                              @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
@@ -1861,6 +1868,65 @@ model ActivitySeriesOccurrence {
   @@unique([seriesId, occurrenceKey])
   @@index([revisionId])
   @@index([startAt])
+}
+
+// ===== Activity OS R2 / B6 D1:受控创建的数据地基 =====
+//
+// 专业 / 紧急创建各自以 actor + command + operation key 精确幂等；快速模式继续使用
+// Activity 上既有 A6 锚点，不能混用。收据不保存原请求、响应体、受众或其它敏感内容。
+model ActivityCreationCommandReceipt {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  actorUserId  String
+  commandCode  String
+  operationKey String
+  requestHash  String
+  activityId   String   @unique(map: "activity_creation_command_receipt_activity_id_key")
+
+  activity            Activity                     @relation("ActivityCreationCommandReceiptActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actor               User                         @relation("ActivityCreationCommandReceiptActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  emergencyInitiation ActivityEmergencyInitiation? @relation("ActivityEmergencyInitiationReceipt")
+
+  @@unique([actorUserId, commandCode, operationKey], map: "activity_creation_command_receipt_actor_command_key")
+  // 紧急起源通过 (receiptId, activityId) 引用本锚，数据库证明二者属于同一活动。
+  @@unique([id, activityId], map: "activity_creation_command_receipt_id_activity_key")
+  @@index([actorUserId, createdAt], map: "activity_creation_command_receipt_actor_created_idx")
+}
+
+// 一条紧急起源只锚定一次创建事实与一次活动；真实发送生命周期由后续 outbox 接线唯一承载，
+// 本表不复制通知状态、不设伪事故编号、也不保存受众或精确地点。
+model ActivityEmergencyInitiation {
+  id                String   @id @default(cuid())
+  createdAt         DateTime @default(now())
+  activityId        String   @unique(map: "activity_emergency_initiation_activity_id_key")
+  creationReceiptId String   @unique(map: "activity_emergency_initiation_receipt_id_key")
+  callQueuedAt      DateTime
+
+  activity        Activity                        @relation("ActivityEmergencyInitiationActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  creationReceipt ActivityCreationCommandReceipt  @relation("ActivityEmergencyInitiationReceipt", fields: [creationReceiptId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict)
+  followUpItems   ActivityEmergencyFollowUpItem[]
+
+  // Prisma 的一对一关系也需定义侧的复合唯一锚；与 creationReceiptId 单列唯一共同锁死。
+  @@unique([creationReceiptId, activityId], map: "activity_emergency_initiation_receipt_activity_key")
+}
+
+// 固定的事后补齐义务。pending 不得伪装成已处理；只有带时间与操作人的 verified /
+// unrepresentable 终态才成立。D1 不提供任意自由文本、完成开关或运行时写入入口。
+model ActivityEmergencyFollowUpItem {
+  id                    String    @id @default(cuid())
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  emergencyInitiationId String
+  itemCode              String
+  statusCode            String    @default("pending")
+  resolvedAt            DateTime?
+  resolvedByUserId      String?
+
+  emergencyInitiation ActivityEmergencyInitiation @relation(fields: [emergencyInitiationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  resolvedBy          User?                       @relation("ActivityEmergencyFollowUpItemResolver", fields: [resolvedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([emergencyInitiationId, itemCode], map: "activity_emergency_follow_up_item_initiation_code_key")
+  @@index([statusCode], map: "activity_emergency_follow_up_item_status_idx")
 }
 
 // ===== §3.4 ActivityRuleSnapshot:发布／关键变更审核通过后的不可变规则快照 =====

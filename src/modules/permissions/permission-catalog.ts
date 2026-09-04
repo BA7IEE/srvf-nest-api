@@ -1724,6 +1724,15 @@ export const ACTIVITY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
     resourceType: 'record',
     description: '创建活动(initial draft;列表/详情无码仅登录,评审稿 §3.5)',
   },
+  // Activity OS R2 / B6 D1:紧急创建必须显式再持有这一枚码；不因普通创建权限自动取得。
+  // D1 只 seed 受控能力，实际紧急创建 / 呼叫 / 发布防线均留待后续 D2 根事务接线。
+  {
+    code: 'activity.create.emergency.record',
+    module: 'activity',
+    action: 'create',
+    resourceType: 'emergency',
+    description: '受控创建紧急活动草稿并发起紧急呼叫(仅 SUPER_ADMIN;不等同正式发布)',
+  },
   {
     code: 'activity.update.record',
     module: 'activity',
@@ -2357,6 +2366,8 @@ export const MEMBERSHIP_TRANSFER_PERMISSION_SEED: ReadonlyArray<RbacPermissionSe
 
 // D1=A 镜像:members DELETE 仅 SUPER_ADMIN 短路;码进 Permission 表但不绑 biz-admin(评审稿 §6)
 export const MEMBER_DELETE_RECORD_CODE = 'member.delete.record';
+// Activity OS R2 / B6 D1:紧急创建同样只留 SUPER_ADMIN 直通,绝不随默认业务角色下放。
+export const ACTIVITY_CREATE_EMERGENCY_RECORD_CODE = 'activity.create.emergency.record';
 
 // 业务面权限码全集(各子数组求和,当前 89 条;运行期日志用 `.length` 输出为准,本注释不逐项维护数字,
 // 组成明细见下方 BIZ_ADMIN_DESCRIPTION。第三轮 review〔v0.38.0〕§F&A-3 使 member-profile 3→4、总 76→77;
@@ -2408,6 +2419,7 @@ export const RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODES: readonly string[] = Obj
   'realname-setting.reset.credentials',
   'wecom-setting.reset.credentials',
   'member.delete.record',
+  'activity.create.emergency.record',
 ]);
 
 // ===========================================================================
@@ -3462,6 +3474,19 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',
       status: 'ACTIVE',
       uiVisibility: 'DEFAULT',
+    },
+    'activity.create.emergency.record': {
+      displayName: '发起紧急活动',
+      businessDescription:
+        '在受控条件下创建紧急草稿并发出一次紧急呼叫。它不能直接发布，也不代替事故、医疗或安全处置；当前仅超级管理员可用，不能下放给角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 20535,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE', 'MASS_EFFECT'],
+      grantPolicy: 'SUPER_ADMIN_ONLY',
+      status: 'ACTIVE',
+      uiVisibility: 'HIDDEN',
     },
     'activity.create.record': {
       displayName: '新建活动',

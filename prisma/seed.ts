@@ -14,6 +14,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 import {
   type RbacPermissionSeed,
+  ACTIVITY_CREATE_EMERGENCY_RECORD_CODE,
   ACTIVITY_PERMISSION_SEED,
   ACTIVITY_REGISTRATION_PERMISSION_SEED,
   ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED,
@@ -1682,9 +1683,10 @@ const BIZ_ADMIN_TARGETED_REMOVAL_CODES = [
   ...ACTIVITY_RESPONSIBILITY_CONTRACT_REMOVED_FROM_BIZ_CODES,
 ] as const;
 
-// biz-admin 不绑 26 码:member.delete.record(D1=A 镜像)+ 终审/撤回三码+
+// biz-admin 不绑 27 码:member.delete.record(D1=A 镜像)+ B6 紧急创建码(仅 SA)+ 终审/撤回三码+
 // 活动责任闭环 contract 二十二码（其中两条 return 从未进入业务面集合）。
 const BIZ_ADMIN_EXCLUDED_CODES: ReadonlySet<string> = new Set([
+  ACTIVITY_CREATE_EMERGENCY_RECORD_CODE,
   MEMBER_DELETE_RECORD_CODE,
   ...BIZ_ADMIN_TARGETED_REMOVAL_CODES,
 ]);
