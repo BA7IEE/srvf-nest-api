@@ -4,7 +4,10 @@ import request from 'supertest';
 
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
-import { canonicalizeRegistrationFormDefinition } from '../../src/modules/activities/registration-form-definition';
+import {
+  canonicalizeRegistrationFormDefinition,
+  type RegistrationFormDefinitionInput,
+} from '../../src/modules/activities/registration-form-definition';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
@@ -38,12 +41,39 @@ const FORM = {
   ],
 } as const;
 
+function governedForm(
+  dataClassCode: 'ordinary' | 'sensitive' = 'ordinary',
+  label = '出行说明',
+): RegistrationFormDefinitionInput {
+  return {
+    fields: [
+      {
+        fieldCode: 'travel_note',
+        typeCode: 'short_text',
+        label,
+        required: false,
+        visibilityCode: 'self_only',
+        exportable: false,
+        sortOrder: 0,
+        governance: {
+          purposeCode: 'transport_logistics',
+          dataClassCode,
+          retentionPolicyCode: 'activity_lifecycle',
+          maskingPolicyCode: 'none',
+          prefillSourceCode: null,
+        },
+      },
+    ],
+  };
+}
+
 describe('activity batch4 Form runtime', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let ownerAuth: string;
   let ownerUserId: string;
   let ownerMemberId: string;
+  let organizationId: string;
   let otherAuth: string;
   let activityId: string;
 
@@ -56,6 +86,7 @@ describe('activity batch4 Form runtime', () => {
       data: { name: 'Batch4 Form Runtime', nodeTypeCode: 'team', sortOrder: 0 },
       select: { id: true },
     });
+    organizationId = org.id;
     const owner = await createTestUser(app, { username: 'batch4-form-owner' });
     const other = await createTestUser(app, { username: 'batch4-form-other' });
     ownerUserId = owner.id;
@@ -318,6 +349,247 @@ describe('activity batch4 Form runtime', () => {
     });
     expect(JSON.stringify(detail.body.data.registrationForm)).not.toMatch(
       /schemaHash|workflowRevision|createdAt|updatedAt|"id"/,
+    );
+  });
+
+  it('round-trips governed Form only on the managed surface, rejects legacy/sensitive replacement, and never leaks governance publicly', async () => {
+    const governedActivity = await prisma.activity.create({
+      data: {
+        title: 'Batch4 Governed Form Draft',
+        activityTypeCode: 'training',
+        organizationId,
+        initiatorMemberId: ownerMemberId,
+        startAt: new Date('2099-11-01T08:00:00.000Z'),
+        endAt: new Date('2099-11-01T12:00:00.000Z'),
+        registrationDeadline: new Date('2099-10-31T23:59:59.000Z'),
+        location: 'Governed Form Test Field',
+        statusCode: 'draft',
+      },
+      select: { id: true },
+    });
+    const path = `/api/app/v1/my/managed-activities/${governedActivity.id}/registration-form`;
+    const ordinary = governedForm();
+
+    const created = await request(httpServer(app))
+      .put(path)
+      .set('Authorization', ownerAuth)
+      .send({ form: ordinary });
+    expect(created.status).toBe(200);
+    expect(created.body.data).toMatchObject({
+      version: 1,
+      fields: [
+        {
+          fieldCode: 'travel_note',
+          governance: {
+            purposeCode: 'transport_logistics',
+            dataClassCode: 'ordinary',
+            retentionPolicyCode: 'activity_lifecycle',
+            maskingPolicyCode: 'none',
+            prefillSourceCode: null,
+          },
+        },
+      ],
+    });
+    const managed = await request(httpServer(app)).get(path).set('Authorization', ownerAuth);
+    expect(managed.status).toBe(200);
+    expect(managed.body.data).toEqual(created.body.data);
+
+    const beforeLegacyOverwrite = await prisma.registrationFormVersion.findUniqueOrThrow({
+      where: { activityId_version: { activityId: governedActivity.id, version: 1 } },
+      select: {
+        schemaHash: true,
+        statusCode: true,
+        fields: {
+          select: {
+            purposeCode: true,
+            dataClassCode: true,
+            retentionPolicyCode: true,
+            maskingPolicyCode: true,
+            prefillSourceCode: true,
+          },
+        },
+      },
+    });
+    expectBizError(
+      await request(httpServer(app)).put(path).set('Authorization', ownerAuth).send({ form: FORM }),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
+    );
+    expectBizError(
+      await request(httpServer(app))
+        .put(path)
+        .set('Authorization', ownerAuth)
+        .send({ form: governedForm('sensitive') }),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
+    );
+    await expect(
+      prisma.registrationFormVersion.findUniqueOrThrow({
+        where: { activityId_version: { activityId: governedActivity.id, version: 1 } },
+        select: {
+          schemaHash: true,
+          statusCode: true,
+          fields: {
+            select: {
+              purposeCode: true,
+              dataClassCode: true,
+              retentionPolicyCode: true,
+              maskingPolicyCode: true,
+              prefillSourceCode: true,
+            },
+          },
+        },
+      }),
+    ).resolves.toEqual(beforeLegacyOverwrite);
+
+    // Explicit null keeps the established retirement command; it is not treated as a legacy
+    // compatibility overwrite. A fresh governed draft below then supplies the published target.
+    const retired = await request(httpServer(app))
+      .put(path)
+      .set('Authorization', ownerAuth)
+      .send({ form: null });
+    expect(retired.status).toBe(200);
+    expect(retired.body.data).toBeNull();
+    expect(
+      await prisma.registrationFormVersion.findUniqueOrThrow({
+        where: { activityId_version: { activityId: governedActivity.id, version: 1 } },
+        select: { statusCode: true },
+      }),
+    ).toEqual({ statusCode: 'retired' });
+
+    const recreated = await request(httpServer(app))
+      .put(path)
+      .set('Authorization', ownerAuth)
+      .send({ form: ordinary });
+    expect(recreated.status).toBe(200);
+    expect(recreated.body.data.version).toBe(2);
+    const activeHash = canonicalizeRegistrationFormDefinition(ordinary).schemaHash;
+    await prisma.registrationFormVersion.update({
+      where: { activityId_version: { activityId: governedActivity.id, version: 2 } },
+      data: {
+        statusCode: 'active',
+        schemaHash: activeHash,
+        workflowRevision: 3,
+        activatedAt: new Date(),
+      },
+    });
+    await prisma.activity.update({
+      where: { id: governedActivity.id },
+      data: { statusCode: 'published', publishedAt: new Date(), workflowRevision: 3 },
+    });
+    await prisma.activitySession.create({
+      data: {
+        activityId: governedActivity.id,
+        code: 'batch4-governed-live',
+        name: 'Governed Form Live Session',
+        startAt: new Date('2099-11-01T08:00:00.000Z'),
+        endAt: new Date('2099-11-01T12:00:00.000Z'),
+        locationText: 'Governed Form Test Field',
+        checkInOpenAt: new Date('2099-11-01T07:30:00.000Z'),
+        checkInCloseAt: new Date('2099-11-01T09:00:00.000Z'),
+        checkOutOpenAt: new Date('2099-11-01T11:00:00.000Z'),
+        checkOutCloseAt: new Date('2099-11-01T12:00:00.000Z'),
+        locationRequired: false,
+        locationPolicySourceCode: 'activity',
+        statusCode: 'scheduled',
+      },
+    });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: governedActivity.id,
+        memberId: ownerMemberId,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        assignedByUserId: ownerUserId,
+        source: 'publish',
+      },
+    });
+
+    const changeBase = {
+      confirmation: true,
+      sessions: { create: [], update: [], cancel: [] },
+      positions: { create: [], update: [], cancel: [] },
+      activityPatch: { title: 'Governed Form Change' },
+    };
+    const activeBeforeRejectedChange = await prisma.registrationFormVersion.findUniqueOrThrow({
+      where: { activityId_version: { activityId: governedActivity.id, version: 2 } },
+      select: { schemaHash: true, fields: { select: { purposeCode: true, dataClassCode: true } } },
+    });
+    expectBizError(
+      await request(httpServer(app))
+        .post(`/api/app/v1/my/managed-activities/${governedActivity.id}/change-reviews`)
+        .set('Authorization', ownerAuth)
+        .send({
+          ...changeBase,
+          operationKey: 'batch4-governed-legacy-reject-0001',
+          registrationForm: FORM,
+        }),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
+    );
+    expectBizError(
+      await request(httpServer(app))
+        .post(`/api/app/v1/my/managed-activities/${governedActivity.id}/change-reviews`)
+        .set('Authorization', ownerAuth)
+        .send({
+          ...changeBase,
+          operationKey: 'batch4-governed-sensitive-reject-0001',
+          registrationForm: governedForm('sensitive'),
+        }),
+      BizCode.BAD_REQUEST,
+      { strictMessage: false },
+    );
+    await expect(
+      prisma.registrationFormVersion.findUniqueOrThrow({
+        where: { activityId_version: { activityId: governedActivity.id, version: 2 } },
+        select: {
+          schemaHash: true,
+          fields: { select: { purposeCode: true, dataClassCode: true } },
+        },
+      }),
+    ).resolves.toEqual(activeBeforeRejectedChange);
+
+    const proposed = governedForm('ordinary', '新的出行说明');
+    const submitted = await request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${governedActivity.id}/change-reviews`)
+      .set('Authorization', ownerAuth)
+      .send({
+        ...changeBase,
+        operationKey: 'batch4-governed-change-0001',
+        registrationForm: proposed,
+      });
+    expect(submitted.status).toBe(200);
+    expect(submitted.body.data.snapshot).toMatchObject({
+      schemaVersion: 4,
+      registrationForm: {
+        schemaHash: canonicalizeRegistrationFormDefinition(proposed).schemaHash,
+        definition: {
+          fields: [
+            {
+              governance: {
+                purposeCode: 'transport_logistics',
+                dataClassCode: 'ordinary',
+                retentionPolicyCode: 'activity_lifecycle',
+                maskingPolicyCode: 'none',
+                prefillSourceCode: null,
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const detail = await request(httpServer(app))
+      .get(`/api/app/v1/activities/${governedActivity.id}`)
+      .set('Authorization', ownerAuth);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.registrationForm).toMatchObject({
+      version: 2,
+      fields: [expect.objectContaining({ fieldCode: 'travel_note' })],
+    });
+    expect(JSON.stringify(detail.body.data.registrationForm)).not.toMatch(
+      /purposeCode|dataClassCode|retentionPolicyCode|maskingPolicyCode|prefillSourceCode|governance/,
     );
   });
 });

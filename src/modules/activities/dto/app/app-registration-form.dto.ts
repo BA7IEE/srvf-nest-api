@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   IsBoolean,
   IsDefined,
+  Equals,
   IsIn,
   IsInt,
   IsNumber,
@@ -19,8 +20,12 @@ import {
 } from 'class-validator';
 
 import {
+  REGISTRATION_FORM_DATA_CLASS_CODES,
   REGISTRATION_FORM_FIELD_TYPES,
   REGISTRATION_FORM_FIELD_VISIBILITIES,
+  REGISTRATION_FORM_GOVERNANCE_PURPOSE_CODES,
+  REGISTRATION_FORM_MASKING_POLICY_CODES,
+  REGISTRATION_FORM_RETENTION_POLICY_CODES,
 } from '../../registration-form-definition';
 
 export class RegistrationFormChoiceInputDto {
@@ -113,6 +118,51 @@ export class RegistrationFormFieldInputDto {
   options?: RegistrationFormChoiceInputDto[] | null;
 }
 
+/**
+ * 仅 managed / publish-review 受控面可见的 definition governance。prefill 在 B3 固定
+ * 为 null；敏感题目虽保留 grammar，但实际 writer 会在 service 层 fail-closed，直到 B3-S。
+ */
+export class ManagedRegistrationFormFieldGovernanceInputDto {
+  @ApiProperty({ enum: REGISTRATION_FORM_GOVERNANCE_PURPOSE_CODES })
+  @IsIn(REGISTRATION_FORM_GOVERNANCE_PURPOSE_CODES)
+  purposeCode!: (typeof REGISTRATION_FORM_GOVERNANCE_PURPOSE_CODES)[number];
+
+  @ApiProperty({ enum: REGISTRATION_FORM_DATA_CLASS_CODES })
+  @IsIn(REGISTRATION_FORM_DATA_CLASS_CODES)
+  dataClassCode!: (typeof REGISTRATION_FORM_DATA_CLASS_CODES)[number];
+
+  @ApiProperty({ enum: REGISTRATION_FORM_RETENTION_POLICY_CODES })
+  @IsIn(REGISTRATION_FORM_RETENTION_POLICY_CODES)
+  retentionPolicyCode!: (typeof REGISTRATION_FORM_RETENTION_POLICY_CODES)[number];
+
+  @ApiProperty({ enum: REGISTRATION_FORM_MASKING_POLICY_CODES })
+  @IsIn(REGISTRATION_FORM_MASKING_POLICY_CODES)
+  maskingPolicyCode!: (typeof REGISTRATION_FORM_MASKING_POLICY_CODES)[number];
+
+  @ApiProperty({ nullable: true, type: String, description: 'B3 固定为 NULL，禁止档案预填' })
+  @Equals(null)
+  prefillSourceCode!: null;
+}
+
+/**
+ * Managed writer accepts exactly one definition-level shape: every Field has no governance, or
+ * every Field carries the full object. The canonicalizer, rather than class-validator alone,
+ * performs the cross-field all-or-none decision.
+ */
+export class ManagedRegistrationFormFieldInputDto extends RegistrationFormFieldInputDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    type: () => ManagedRegistrationFormFieldGovernanceInputDto,
+    description: '完整治理对象；NULL 或省略仅可用于全表 legacy definition',
+  })
+  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== null)
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ManagedRegistrationFormFieldGovernanceInputDto)
+  governance?: ManagedRegistrationFormFieldGovernanceInputDto | null;
+}
+
 export class RegistrationFormDefinitionInputDto {
   @ApiProperty({ type: () => [RegistrationFormFieldInputDto], minItems: 1 })
   @IsArray()
@@ -122,15 +172,24 @@ export class RegistrationFormDefinitionInputDto {
   fields!: RegistrationFormFieldInputDto[];
 }
 
+export class ManagedRegistrationFormDefinitionInputDto {
+  @ApiProperty({ type: () => [ManagedRegistrationFormFieldInputDto], minItems: 1 })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ManagedRegistrationFormFieldInputDto)
+  fields!: ManagedRegistrationFormFieldInputDto[];
+}
+
 /** Explicit null is a command to remove the custom Form; omission is rejected. */
 export class PutAppManagedRegistrationFormDto {
-  @ApiProperty({ nullable: true, type: () => RegistrationFormDefinitionInputDto })
+  @ApiProperty({ nullable: true, type: () => ManagedRegistrationFormDefinitionInputDto })
   @IsDefined()
   @ValidateIf((_object, value: unknown) => value !== null)
   @IsObject()
   @ValidateNested()
-  @Type(() => RegistrationFormDefinitionInputDto)
-  form!: RegistrationFormDefinitionInputDto | null;
+  @Type(() => ManagedRegistrationFormDefinitionInputDto)
+  form!: ManagedRegistrationFormDefinitionInputDto | null;
 }
 
 export class AppRegistrationFormChoiceDto {
@@ -192,4 +251,37 @@ export class AppRegistrationFormDto {
 
   @ApiProperty({ type: () => [AppRegistrationFormFieldDto] })
   fields!: AppRegistrationFormFieldDto[];
+}
+
+export class AppManagedRegistrationFormFieldGovernanceDto {
+  @ApiProperty({ enum: REGISTRATION_FORM_GOVERNANCE_PURPOSE_CODES })
+  purposeCode!: string;
+
+  @ApiProperty({ enum: REGISTRATION_FORM_DATA_CLASS_CODES })
+  dataClassCode!: string;
+
+  @ApiProperty({ enum: REGISTRATION_FORM_RETENTION_POLICY_CODES })
+  retentionPolicyCode!: string;
+
+  @ApiProperty({ enum: REGISTRATION_FORM_MASKING_POLICY_CODES })
+  maskingPolicyCode!: string;
+
+  @ApiProperty({ nullable: true, type: String, description: 'B3 固定为 NULL' })
+  prefillSourceCode!: null;
+}
+
+/** Owner-only managed read model; public AppRegistrationFormDto deliberately excludes governance. */
+export class AppManagedRegistrationFormFieldDto extends AppRegistrationFormFieldDto {
+  @ApiPropertyOptional({
+    type: () => AppManagedRegistrationFormFieldGovernanceDto,
+  })
+  governance?: AppManagedRegistrationFormFieldGovernanceDto;
+}
+
+export class AppManagedRegistrationFormDto {
+  @ApiProperty({ minimum: 1 })
+  version!: number;
+
+  @ApiProperty({ type: () => [AppManagedRegistrationFormFieldDto] })
+  fields!: AppManagedRegistrationFormFieldDto[];
 }

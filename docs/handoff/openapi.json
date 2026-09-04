@@ -44307,7 +44307,7 @@
                       "type": "object",
                       "allOf": [
                         {
-                          "$ref": "#/components/schemas/AppRegistrationFormDto"
+                          "$ref": "#/components/schemas/AppManagedRegistrationFormDto"
                         }
                       ],
                       "nullable": true,
@@ -44550,7 +44550,7 @@
                       "type": "object",
                       "allOf": [
                         {
-                          "$ref": "#/components/schemas/AppRegistrationFormDto"
+                          "$ref": "#/components/schemas/AppManagedRegistrationFormDto"
                         }
                       ],
                       "nullable": true,
@@ -128879,6 +128879,156 @@
           }
         }
       },
+      "AppManagedRegistrationFormFieldGovernanceDto": {
+        "type": "object",
+        "properties": {
+          "purposeCode": {
+            "type": "string",
+            "enum": [
+              "transport_logistics",
+              "accommodation_logistics",
+              "dietary_accommodation",
+              "equipment_clothing",
+              "activity_specific_note",
+              "file_confirmation"
+            ]
+          },
+          "dataClassCode": {
+            "type": "string",
+            "enum": [
+              "ordinary",
+              "sensitive"
+            ]
+          },
+          "retentionPolicyCode": {
+            "type": "string",
+            "enum": [
+              "activity_lifecycle"
+            ]
+          },
+          "maskingPolicyCode": {
+            "type": "string",
+            "enum": [
+              "none"
+            ]
+          },
+          "prefillSourceCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "B3 固定为 NULL"
+          }
+        },
+        "required": [
+          "purposeCode",
+          "dataClassCode",
+          "retentionPolicyCode",
+          "maskingPolicyCode",
+          "prefillSourceCode"
+        ]
+      },
+      "AppManagedRegistrationFormFieldDto": {
+        "type": "object",
+        "properties": {
+          "fieldCode": {
+            "type": "string"
+          },
+          "typeCode": {
+            "type": "string",
+            "enum": [
+              "short_text",
+              "long_text",
+              "number",
+              "date",
+              "single_choice",
+              "multi_choice",
+              "file",
+              "confirmation"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "helpText": {
+            "type": "string",
+            "nullable": true
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "visibilityCode": {
+            "type": "string",
+            "enum": [
+              "self_and_registration_staff",
+              "self_and_owner",
+              "self_only"
+            ]
+          },
+          "exportable": {
+            "type": "boolean"
+          },
+          "sortOrder": {
+            "type": "number"
+          },
+          "minValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "maxValue": {
+            "type": "string",
+            "nullable": true
+          },
+          "minLength": {
+            "type": "number",
+            "nullable": true
+          },
+          "maxLength": {
+            "type": "number",
+            "nullable": true
+          },
+          "maxSelections": {
+            "type": "number",
+            "nullable": true
+          },
+          "options": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppRegistrationFormChoiceDto"
+            }
+          },
+          "governance": {
+            "$ref": "#/components/schemas/AppManagedRegistrationFormFieldGovernanceDto"
+          }
+        },
+        "required": [
+          "fieldCode",
+          "typeCode",
+          "label",
+          "required",
+          "visibilityCode",
+          "exportable",
+          "sortOrder"
+        ]
+      },
+      "AppManagedRegistrationFormDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "number",
+            "minimum": 1
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppManagedRegistrationFormFieldDto"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "fields"
+        ]
+      },
       "RegistrationFormChoiceInputDto": {
         "type": "object",
         "properties": {
@@ -128898,7 +129048,54 @@
           "label"
         ]
       },
-      "RegistrationFormFieldInputDto": {
+      "ManagedRegistrationFormFieldGovernanceInputDto": {
+        "type": "object",
+        "properties": {
+          "purposeCode": {
+            "type": "string",
+            "enum": [
+              "transport_logistics",
+              "accommodation_logistics",
+              "dietary_accommodation",
+              "equipment_clothing",
+              "activity_specific_note",
+              "file_confirmation"
+            ]
+          },
+          "dataClassCode": {
+            "type": "string",
+            "enum": [
+              "ordinary",
+              "sensitive"
+            ]
+          },
+          "retentionPolicyCode": {
+            "type": "string",
+            "enum": [
+              "activity_lifecycle"
+            ]
+          },
+          "maskingPolicyCode": {
+            "type": "string",
+            "enum": [
+              "none"
+            ]
+          },
+          "prefillSourceCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "B3 固定为 NULL，禁止档案预填"
+          }
+        },
+        "required": [
+          "purposeCode",
+          "dataClassCode",
+          "retentionPolicyCode",
+          "maskingPolicyCode",
+          "prefillSourceCode"
+        ]
+      },
+      "ManagedRegistrationFormFieldInputDto": {
         "type": "object",
         "properties": {
           "fieldCode": {
@@ -128976,6 +129173,16 @@
             "items": {
               "$ref": "#/components/schemas/RegistrationFormChoiceInputDto"
             }
+          },
+          "governance": {
+            "nullable": true,
+            "description": "完整治理对象；NULL 或省略仅可用于全表 legacy definition",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ManagedRegistrationFormFieldGovernanceInputDto"
+              }
+            ]
           }
         },
         "required": [
@@ -128988,14 +129195,14 @@
           "sortOrder"
         ]
       },
-      "RegistrationFormDefinitionInputDto": {
+      "ManagedRegistrationFormDefinitionInputDto": {
         "type": "object",
         "properties": {
           "fields": {
             "minItems": 1,
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RegistrationFormFieldInputDto"
+              "$ref": "#/components/schemas/ManagedRegistrationFormFieldInputDto"
             }
           }
         },
@@ -129011,7 +129218,7 @@
             "type": "object",
             "allOf": [
               {
-                "$ref": "#/components/schemas/RegistrationFormDefinitionInputDto"
+                "$ref": "#/components/schemas/ManagedRegistrationFormDefinitionInputDto"
               }
             ]
           }
@@ -131671,7 +131878,7 @@
             "type": "object",
             "allOf": [
               {
-                "$ref": "#/components/schemas/RegistrationFormDefinitionInputDto"
+                "$ref": "#/components/schemas/ManagedRegistrationFormDefinitionInputDto"
               }
             ]
           },

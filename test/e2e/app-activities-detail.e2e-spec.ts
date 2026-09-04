@@ -346,6 +346,11 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
                 sortOrder: 1,
                 minLength: 1,
                 maxLength: 100,
+                purposeCode: 'activity_specific_note',
+                dataClassCode: 'ordinary',
+                retentionPolicyCode: 'activity_lifecycle',
+                maskingPolicyCode: 'none',
+                prefillSourceCode: null,
               },
               {
                 fieldCode: 'proof',
@@ -355,6 +360,11 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
                 visibilityCode: 'self_and_owner',
                 exportable: false,
                 sortOrder: 2,
+                purposeCode: 'file_confirmation',
+                dataClassCode: 'ordinary',
+                retentionPolicyCode: 'activity_lifecycle',
+                maskingPolicyCode: 'none',
+                prefillSourceCode: null,
               },
             ],
           },
@@ -372,7 +382,7 @@ describe('App GET /api/app/v1/activities/:id (P2-4b)', () => {
         ],
       });
       expect(JSON.stringify(res.body.data.registrationForm)).not.toMatch(
-        /schemaHash|workflowRevision|createdAt|updatedAt|storage|"id"/,
+        /schemaHash|workflowRevision|createdAt|updatedAt|storage|"id"|purposeCode|dataClassCode|retentionPolicyCode|maskingPolicyCode|prefillSourceCode|governance/,
       );
     });
   });

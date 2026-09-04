@@ -7,7 +7,10 @@ import type { AppConfig } from '../../config/app.config';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { canonicalize, type CanonicalValue } from './settlement-content-hash';
-import { canonicalizeRegistrationFormDefinition } from './registration-form-definition';
+import {
+  canonicalizeRegistrationFormDefinition,
+  canonicalizeRegistrationFormDefinitionForB3,
+} from './registration-form-definition';
 import {
   RegistrationFormVersionService,
   type RegistrationFormResolvedConfig,
@@ -518,7 +521,17 @@ export class ActivityPublishProposalV2Service {
         : dto.registrationForm === null
           ? null
           : (() => {
-              const canonical = canonicalizeRegistrationFormDefinition(dto.registrationForm);
+              const canonical = canonicalizeRegistrationFormDefinitionForB3(dto.registrationForm);
+              // Existing legacy change-review clients remain valid for legacy Forms, but cannot
+              // replace a B3 governed active Form with an object that omits governance.
+              if (
+                current.registrationForm !== null &&
+                canonical.mode === 'legacy' &&
+                canonicalizeRegistrationFormDefinition(current.registrationForm.definition).mode ===
+                  'governed'
+              ) {
+                throw new BizException(BizCode.BAD_REQUEST);
+              }
               return { definition: canonical.definition, schemaHash: canonical.schemaHash };
             })();
     if (!includesQualificationRuleSets) {

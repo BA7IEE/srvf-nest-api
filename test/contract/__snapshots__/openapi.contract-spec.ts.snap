@@ -6974,6 +6974,156 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppManagedRegistrationFormDto": {
+    "properties": {
+      "fields": {
+        "items": {
+          "$ref": "#/components/schemas/AppManagedRegistrationFormFieldDto",
+        },
+        "type": "array",
+      },
+      "version": {
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "version",
+      "fields",
+    ],
+    "type": "object",
+  },
+  "AppManagedRegistrationFormFieldDto": {
+    "properties": {
+      "exportable": {
+        "type": "boolean",
+      },
+      "fieldCode": {
+        "type": "string",
+      },
+      "governance": {
+        "$ref": "#/components/schemas/AppManagedRegistrationFormFieldGovernanceDto",
+      },
+      "helpText": {
+        "nullable": true,
+        "type": "string",
+      },
+      "label": {
+        "type": "string",
+      },
+      "maxLength": {
+        "nullable": true,
+        "type": "number",
+      },
+      "maxSelections": {
+        "nullable": true,
+        "type": "number",
+      },
+      "maxValue": {
+        "nullable": true,
+        "type": "string",
+      },
+      "minLength": {
+        "nullable": true,
+        "type": "number",
+      },
+      "minValue": {
+        "nullable": true,
+        "type": "string",
+      },
+      "options": {
+        "items": {
+          "$ref": "#/components/schemas/AppRegistrationFormChoiceDto",
+        },
+        "nullable": true,
+        "type": "array",
+      },
+      "required": {
+        "type": "boolean",
+      },
+      "sortOrder": {
+        "type": "number",
+      },
+      "typeCode": {
+        "enum": [
+          "short_text",
+          "long_text",
+          "number",
+          "date",
+          "single_choice",
+          "multi_choice",
+          "file",
+          "confirmation",
+        ],
+        "type": "string",
+      },
+      "visibilityCode": {
+        "enum": [
+          "self_and_registration_staff",
+          "self_and_owner",
+          "self_only",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "fieldCode",
+      "typeCode",
+      "label",
+      "required",
+      "visibilityCode",
+      "exportable",
+      "sortOrder",
+    ],
+    "type": "object",
+  },
+  "AppManagedRegistrationFormFieldGovernanceDto": {
+    "properties": {
+      "dataClassCode": {
+        "enum": [
+          "ordinary",
+          "sensitive",
+        ],
+        "type": "string",
+      },
+      "maskingPolicyCode": {
+        "enum": [
+          "none",
+        ],
+        "type": "string",
+      },
+      "prefillSourceCode": {
+        "description": "B3 固定为 NULL",
+        "nullable": true,
+        "type": "string",
+      },
+      "purposeCode": {
+        "enum": [
+          "transport_logistics",
+          "accommodation_logistics",
+          "dietary_accommodation",
+          "equipment_clothing",
+          "activity_specific_note",
+          "file_confirmation",
+        ],
+        "type": "string",
+      },
+      "retentionPolicyCode": {
+        "enum": [
+          "activity_lifecycle",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "purposeCode",
+      "dataClassCode",
+      "retentionPolicyCode",
+      "maskingPolicyCode",
+      "prefillSourceCode",
+    ],
+    "type": "object",
+  },
   "AppManagedRegistrationListItemDto": {
     "properties": {
       "activityId": {
@@ -12218,7 +12368,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "registrationForm": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/RegistrationFormDefinitionInputDto",
+            "$ref": "#/components/schemas/ManagedRegistrationFormDefinitionInputDto",
           },
         ],
         "nullable": true,
@@ -17350,6 +17500,168 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "ManagedRegistrationFormDefinitionInputDto": {
+    "properties": {
+      "fields": {
+        "items": {
+          "$ref": "#/components/schemas/ManagedRegistrationFormFieldInputDto",
+        },
+        "minItems": 1,
+        "type": "array",
+      },
+    },
+    "required": [
+      "fields",
+    ],
+    "type": "object",
+  },
+  "ManagedRegistrationFormFieldGovernanceInputDto": {
+    "properties": {
+      "dataClassCode": {
+        "enum": [
+          "ordinary",
+          "sensitive",
+        ],
+        "type": "string",
+      },
+      "maskingPolicyCode": {
+        "enum": [
+          "none",
+        ],
+        "type": "string",
+      },
+      "prefillSourceCode": {
+        "description": "B3 固定为 NULL，禁止档案预填",
+        "nullable": true,
+        "type": "string",
+      },
+      "purposeCode": {
+        "enum": [
+          "transport_logistics",
+          "accommodation_logistics",
+          "dietary_accommodation",
+          "equipment_clothing",
+          "activity_specific_note",
+          "file_confirmation",
+        ],
+        "type": "string",
+      },
+      "retentionPolicyCode": {
+        "enum": [
+          "activity_lifecycle",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "purposeCode",
+      "dataClassCode",
+      "retentionPolicyCode",
+      "maskingPolicyCode",
+      "prefillSourceCode",
+    ],
+    "type": "object",
+  },
+  "ManagedRegistrationFormFieldInputDto": {
+    "properties": {
+      "exportable": {
+        "type": "boolean",
+      },
+      "fieldCode": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "governance": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ManagedRegistrationFormFieldGovernanceInputDto",
+          },
+        ],
+        "description": "完整治理对象；NULL 或省略仅可用于全表 legacy definition",
+        "nullable": true,
+        "type": "object",
+      },
+      "helpText": {
+        "maxLength": 500,
+        "nullable": true,
+        "type": "string",
+      },
+      "label": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string",
+      },
+      "maxLength": {
+        "minimum": 0,
+        "nullable": true,
+        "type": "number",
+      },
+      "maxSelections": {
+        "minimum": 1,
+        "nullable": true,
+        "type": "number",
+      },
+      "maxValue": {
+        "nullable": true,
+        "type": "number",
+      },
+      "minLength": {
+        "minimum": 0,
+        "nullable": true,
+        "type": "number",
+      },
+      "minValue": {
+        "nullable": true,
+        "type": "number",
+      },
+      "options": {
+        "items": {
+          "$ref": "#/components/schemas/RegistrationFormChoiceInputDto",
+        },
+        "nullable": true,
+        "type": "array",
+      },
+      "required": {
+        "type": "boolean",
+      },
+      "sortOrder": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "typeCode": {
+        "enum": [
+          "short_text",
+          "long_text",
+          "number",
+          "date",
+          "single_choice",
+          "multi_choice",
+          "file",
+          "confirmation",
+        ],
+        "type": "string",
+      },
+      "visibilityCode": {
+        "enum": [
+          "self_and_registration_staff",
+          "self_and_owner",
+          "self_only",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "fieldCode",
+      "typeCode",
+      "label",
+      "required",
+      "visibilityCode",
+      "exportable",
+      "sortOrder",
+    ],
+    "type": "object",
+  },
   "MarkGateDto": {
     "properties": {
       "completionDate": {
@@ -21043,7 +21355,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "form": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/RegistrationFormDefinitionInputDto",
+            "$ref": "#/components/schemas/ManagedRegistrationFormDefinitionInputDto",
           },
         ],
         "nullable": true,
@@ -22506,111 +22818,6 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "value",
       "label",
-    ],
-    "type": "object",
-  },
-  "RegistrationFormDefinitionInputDto": {
-    "properties": {
-      "fields": {
-        "items": {
-          "$ref": "#/components/schemas/RegistrationFormFieldInputDto",
-        },
-        "minItems": 1,
-        "type": "array",
-      },
-    },
-    "required": [
-      "fields",
-    ],
-    "type": "object",
-  },
-  "RegistrationFormFieldInputDto": {
-    "properties": {
-      "exportable": {
-        "type": "boolean",
-      },
-      "fieldCode": {
-        "maxLength": 64,
-        "minLength": 1,
-        "type": "string",
-      },
-      "helpText": {
-        "maxLength": 500,
-        "nullable": true,
-        "type": "string",
-      },
-      "label": {
-        "maxLength": 200,
-        "minLength": 1,
-        "type": "string",
-      },
-      "maxLength": {
-        "minimum": 0,
-        "nullable": true,
-        "type": "number",
-      },
-      "maxSelections": {
-        "minimum": 1,
-        "nullable": true,
-        "type": "number",
-      },
-      "maxValue": {
-        "nullable": true,
-        "type": "number",
-      },
-      "minLength": {
-        "minimum": 0,
-        "nullable": true,
-        "type": "number",
-      },
-      "minValue": {
-        "nullable": true,
-        "type": "number",
-      },
-      "options": {
-        "items": {
-          "$ref": "#/components/schemas/RegistrationFormChoiceInputDto",
-        },
-        "nullable": true,
-        "type": "array",
-      },
-      "required": {
-        "type": "boolean",
-      },
-      "sortOrder": {
-        "minimum": 0,
-        "type": "number",
-      },
-      "typeCode": {
-        "enum": [
-          "short_text",
-          "long_text",
-          "number",
-          "date",
-          "single_choice",
-          "multi_choice",
-          "file",
-          "confirmation",
-        ],
-        "type": "string",
-      },
-      "visibilityCode": {
-        "enum": [
-          "self_and_registration_staff",
-          "self_and_owner",
-          "self_only",
-        ],
-        "type": "string",
-      },
-    },
-    "required": [
-      "fieldCode",
-      "typeCode",
-      "label",
-      "required",
-      "visibilityCode",
-      "exportable",
-      "sortOrder",
     ],
     "type": "object",
   },
@@ -111927,7 +112134,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                   "data": {
                     "allOf": [
                       {
-                        "$ref": "#/components/schemas/AppRegistrationFormDto",
+                        "$ref": "#/components/schemas/AppManagedRegistrationFormDto",
                       },
                     ],
                     "example": null,
@@ -112170,7 +112377,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                   "data": {
                     "allOf": [
                       {
-                        "$ref": "#/components/schemas/AppRegistrationFormDto",
+                        "$ref": "#/components/schemas/AppManagedRegistrationFormDto",
                       },
                     ],
                     "example": null,

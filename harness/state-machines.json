@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:052a68222e95e492bb09c6d0587f1ca82a84e8353917be037db791362c24176a",
+  "inputDigest": "sha256:dd7a3982cccde47142e91cdb2b091e135184bdcdb433a4a40240ed059aab6535",
   "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 54 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。",
   "entries": [
     {

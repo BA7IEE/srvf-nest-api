@@ -16,6 +16,10 @@ import {
   type ActivityTemplateDefinitionV1,
 } from './activity-template-definition-v1';
 import {
+  parseActivityTemplateDefinitionV2,
+  type ActivityTemplateDefinitionV2,
+} from './activity-template-definition-v2';
+import {
   ActivityAccessService,
   ACTIVITY_STATUS_DRAFT,
   DICT_TYPE_ACTIVITY_TYPE,
@@ -31,6 +35,7 @@ import { ActivityResponseDto } from './activities.dto';
 import { toResponseDto } from './activity-presenter';
 import { matchesActivityTemplateDefinitionHash } from './activity-template-definition';
 import { canonicalize, type CanonicalValue } from './settlement-content-hash';
+import { RegistrationFormVersionService } from './registration-form-version.service';
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const CREATE_FROM_TEMPLATE_OPERATION = 'activity.create.from_template';
@@ -127,6 +132,8 @@ interface MaterializedSession {
   readonly positions: readonly MaterializedSessionPosition[];
 }
 
+type ParsedActivityTemplateDefinition = ActivityTemplateDefinitionV1 | ActivityTemplateDefinitionV2;
+
 function badRequest(): never {
   throw new BizException(BizCode.BAD_REQUEST);
 }
@@ -199,6 +206,7 @@ export class ActivityFromTemplateService {
     private readonly allocationModes: ActivityAllocationModeService,
     private readonly initiationPolicy: ActivityInitiationPolicy,
     private readonly auditRecorder: ActivityAuditRecorder,
+    private readonly registrationForms: RegistrationFormVersionService,
     private readonly images: ActivityImageSigningService,
     @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
   ) {}
@@ -411,6 +419,17 @@ export class ActivityFromTemplateService {
       }
     }
 
+    // V2 owns a new Activity-local draft Form v1. This invocation shares the exact root
+    // transaction with Activity / Session / Position creation, so a governed Form failure cannot
+    // leave a partial Activity behind. V1 intentionally has no registrationForm property.
+    if ('registrationForm' in definition && definition.registrationForm !== null) {
+      await this.registrationForms.materializeTemplateDraft(
+        args.tx,
+        created.id,
+        definition.registrationForm,
+      );
+    }
+
     return { created, templateVersionId: template.id, definitionHash };
   }
 
@@ -512,13 +531,13 @@ export class ActivityFromTemplateService {
   }
 
   private selectDefinitionOrThrow(template: LockedTemplateVersion): {
-    definition: ActivityTemplateDefinitionV1;
+    definition: ParsedActivityTemplateDefinition;
     definitionHash: string;
   } {
     if (
       template.familyId === null ||
       template.statusCode !== 'active' ||
-      template.schemaVersion !== 1 ||
+      (template.schemaVersion !== 1 && template.schemaVersion !== 2) ||
       template.definitionJson === null ||
       template.definitionHash === null ||
       template.effectiveFrom === null ||
@@ -539,7 +558,10 @@ export class ActivityFromTemplateService {
         throw new ActivityTemplateDefinitionV1Error('definitionHash', 'does not match definition');
       }
       return {
-        definition: parseActivityTemplateDefinitionV1(template.definitionJson),
+        definition:
+          template.schemaVersion === 1
+            ? parseActivityTemplateDefinitionV1(template.definitionJson)
+            : parseActivityTemplateDefinitionV2(template.definitionJson),
         definitionHash: template.definitionHash,
       };
     } catch (error) {

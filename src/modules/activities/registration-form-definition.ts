@@ -26,9 +26,49 @@ export const REGISTRATION_FORM_FIELD_VISIBILITIES = [
 ] as const;
 export type RegistrationFormFieldVisibility = (typeof REGISTRATION_FORM_FIELD_VISIBILITIES)[number];
 
+/**
+ * B3 的治理词表只解释报名表 definition；数据库只守五列的 all-or-none 形状，避免
+ * 同一份闭集在 schema / SQL / JSON 三处各自漂移。敏感字段保留在 grammar 中，但 B3
+ * 尚未有读面掩码和清理 SOP，实际 writer 会在下方的 B3 gate 拒绝它。
+ */
+export const REGISTRATION_FORM_GOVERNANCE_PURPOSE_CODES = [
+  'transport_logistics',
+  'accommodation_logistics',
+  'dietary_accommodation',
+  'equipment_clothing',
+  'activity_specific_note',
+  'file_confirmation',
+] as const;
+export type RegistrationFormGovernancePurposeCode =
+  (typeof REGISTRATION_FORM_GOVERNANCE_PURPOSE_CODES)[number];
+
+export const REGISTRATION_FORM_DATA_CLASS_CODES = ['ordinary', 'sensitive'] as const;
+export type RegistrationFormDataClassCode = (typeof REGISTRATION_FORM_DATA_CLASS_CODES)[number];
+
+/** B3 只存在一套普通字段留存 / 掩码执行位；敏感 policy 留待 B3-S 逐题批准。 */
+export const REGISTRATION_FORM_RETENTION_POLICY_CODES = ['activity_lifecycle'] as const;
+export type RegistrationFormRetentionPolicyCode =
+  (typeof REGISTRATION_FORM_RETENTION_POLICY_CODES)[number];
+
+export const REGISTRATION_FORM_MASKING_POLICY_CODES = ['none'] as const;
+export type RegistrationFormMaskingPolicyCode =
+  (typeof REGISTRATION_FORM_MASKING_POLICY_CODES)[number];
+
 export interface RegistrationFormChoiceInput {
   value: string;
   label: string;
+}
+
+/**
+ * Governance 是 definition 级的第二种完整形状。undefined / null 表示 legacy Field；
+ * 真正的对象必须包含五个键且 prefillSourceCode 只能是 null。
+ */
+export interface RegistrationFormFieldGovernanceInput {
+  purposeCode: RegistrationFormGovernancePurposeCode;
+  dataClassCode: RegistrationFormDataClassCode;
+  retentionPolicyCode: RegistrationFormRetentionPolicyCode;
+  maskingPolicyCode: RegistrationFormMaskingPolicyCode;
+  prefillSourceCode: null;
 }
 
 /**
@@ -50,6 +90,7 @@ export interface RegistrationFormFieldInput {
   maxLength?: number | null;
   maxSelections?: number | null;
   options?: RegistrationFormChoiceInput[] | null;
+  governance?: RegistrationFormFieldGovernanceInput | null;
 }
 
 export interface RegistrationFormDefinitionInput {
@@ -59,6 +100,14 @@ export interface RegistrationFormDefinitionInput {
 export interface CanonicalRegistrationFormChoice {
   value: string;
   label: string;
+}
+
+export interface CanonicalRegistrationFormFieldGovernance {
+  purposeCode: RegistrationFormGovernancePurposeCode;
+  dataClassCode: RegistrationFormDataClassCode;
+  retentionPolicyCode: RegistrationFormRetentionPolicyCode;
+  maskingPolicyCode: RegistrationFormMaskingPolicyCode;
+  prefillSourceCode: null;
 }
 
 export interface CanonicalRegistrationFormField {
@@ -76,6 +125,11 @@ export interface CanonicalRegistrationFormField {
   maxLength: number | null;
   maxSelections: number | null;
   options: CanonicalRegistrationFormChoice[] | null;
+  /**
+   * 故意只在 governed definition 出现。legacy 绝不补 `governance: null`，否则既有
+   * canonical JSON / schemaHash 会漂移。
+   */
+  governance?: CanonicalRegistrationFormFieldGovernance;
 }
 
 export interface CanonicalRegistrationFormDefinition {
@@ -86,7 +140,10 @@ export interface CanonicalRegistrationFormResult {
   definition: CanonicalRegistrationFormDefinition;
   canonicalJson: string;
   schemaHash: string;
+  mode: RegistrationFormDefinitionMode;
 }
+
+export type RegistrationFormDefinitionMode = 'legacy' | 'governed';
 
 function invalid(): never {
   throw new BizException(BizCode.BAD_REQUEST);
@@ -94,6 +151,20 @@ function invalid(): never {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasOwn(record: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+/** DTO instance 与 JSON plain object 都可进入 canonicalizer；只拒绝未声明的 enumerable key。 */
+function assertOnlyKeys(value: object, allowed: readonly string[]): void {
+  if (Object.keys(value).some((key) => !allowed.includes(key))) invalid();
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) invalid();
+  return value as Record<string, unknown>;
 }
 
 function nullableInteger(value: unknown): number | null {
@@ -155,17 +226,79 @@ function normalizeOptions(value: unknown): CanonicalRegistrationFormChoice[] | n
   if (!Array.isArray(value) || value.length === 0) invalid();
   const values = new Set<string>();
   return value.map((option) => {
-    if (!option || typeof option !== 'object') invalid();
-    const record = option as Record<string, unknown>;
-    if (!isNonEmptyString(record.value) || !isNonEmptyString(record.label)) invalid();
+    const record = asRecord(option);
+    assertOnlyKeys(record, ['value', 'label']);
+    if (
+      !hasOwn(record, 'value') ||
+      !hasOwn(record, 'label') ||
+      !isNonEmptyString(record.value) ||
+      !isNonEmptyString(record.label)
+    ) {
+      invalid();
+    }
     if (values.has(record.value)) invalid();
     values.add(record.value);
     return { value: record.value, label: record.label };
   });
 }
 
+function normalizeGovernance(value: unknown): CanonicalRegistrationFormFieldGovernance | undefined {
+  if (value === undefined || value === null) return undefined;
+  const record = asRecord(value);
+  const keys = [
+    'purposeCode',
+    'dataClassCode',
+    'retentionPolicyCode',
+    'maskingPolicyCode',
+    'prefillSourceCode',
+  ] as const;
+  assertOnlyKeys(record, keys);
+  if (keys.some((key) => !hasOwn(record, key))) invalid();
+  if (
+    !(REGISTRATION_FORM_GOVERNANCE_PURPOSE_CODES as readonly string[]).includes(
+      record.purposeCode as string,
+    ) ||
+    !(REGISTRATION_FORM_DATA_CLASS_CODES as readonly string[]).includes(
+      record.dataClassCode as string,
+    ) ||
+    !(REGISTRATION_FORM_RETENTION_POLICY_CODES as readonly string[]).includes(
+      record.retentionPolicyCode as string,
+    ) ||
+    !(REGISTRATION_FORM_MASKING_POLICY_CODES as readonly string[]).includes(
+      record.maskingPolicyCode as string,
+    ) ||
+    record.prefillSourceCode !== null
+  ) {
+    invalid();
+  }
+  return {
+    purposeCode: record.purposeCode as RegistrationFormGovernancePurposeCode,
+    dataClassCode: record.dataClassCode as RegistrationFormDataClassCode,
+    retentionPolicyCode: record.retentionPolicyCode as RegistrationFormRetentionPolicyCode,
+    maskingPolicyCode: record.maskingPolicyCode as RegistrationFormMaskingPolicyCode,
+    prefillSourceCode: null,
+  };
+}
+
 function canonicalField(input: RegistrationFormFieldInput): CanonicalRegistrationFormField {
   if (!input || typeof input !== 'object') invalid();
+  assertOnlyKeys(input, [
+    'fieldCode',
+    'typeCode',
+    'label',
+    'helpText',
+    'required',
+    'visibilityCode',
+    'exportable',
+    'sortOrder',
+    'minValue',
+    'maxValue',
+    'minLength',
+    'maxLength',
+    'maxSelections',
+    'options',
+    'governance',
+  ]);
   if (!isNonEmptyString(input.fieldCode) || !isNonEmptyString(input.label)) invalid();
   if (!(REGISTRATION_FORM_FIELD_TYPES as readonly string[]).includes(input.typeCode)) invalid();
   if (!(REGISTRATION_FORM_FIELD_VISIBILITIES as readonly string[]).includes(input.visibilityCode)) {
@@ -187,6 +320,7 @@ function canonicalField(input: RegistrationFormFieldInput): CanonicalRegistratio
   const maxLength = nullableInteger(input.maxLength);
   const maxSelections = nullablePositiveInteger(input.maxSelections);
   const options = normalizeOptions(input.options);
+  const governance = normalizeGovernance(input.governance);
 
   if (minValue !== null && maxValue !== null && compareNormalizedDecimals(minValue, maxValue) > 0) {
     invalid();
@@ -233,7 +367,7 @@ function canonicalField(input: RegistrationFormFieldInput): CanonicalRegistratio
     invalid();
   }
 
-  return {
+  const canonical: CanonicalRegistrationFormField = {
     fieldCode: input.fieldCode,
     typeCode: input.typeCode,
     label: input.label,
@@ -250,12 +384,15 @@ function canonicalField(input: RegistrationFormFieldInput): CanonicalRegistratio
     // Choice order is meaningful and intentionally never sorted.
     options,
   };
+  if (governance !== undefined) canonical.governance = governance;
+  return canonical;
 }
 
 export function canonicalizeRegistrationFormDefinition(
   input: RegistrationFormDefinitionInput,
 ): CanonicalRegistrationFormResult {
   if (!input || !Array.isArray(input.fields) || input.fields.length === 0) invalid();
+  assertOnlyKeys(input, ['fields']);
   const fieldCodes = new Set<string>();
   const fields = input.fields.map((field) => {
     const canonical = canonicalField(field);
@@ -268,12 +405,57 @@ export function canonicalizeRegistrationFormDefinition(
       ? left.fieldCode.localeCompare(right.fieldCode)
       : left.sortOrder - right.sortOrder,
   );
+  const modes = new Set<RegistrationFormDefinitionMode>(
+    fields.map((field) => (field.governance === undefined ? 'legacy' : 'governed')),
+  );
+  if (modes.size !== 1) invalid();
+  const mode = modes.has('governed') ? 'governed' : 'legacy';
   const definition: CanonicalRegistrationFormDefinition = { fields };
   const canonicalJson = canonicalize(definition as unknown as CanonicalValue);
   return {
     definition,
     canonicalJson,
     schemaHash: createHash('sha256').update(canonicalJson, 'utf8').digest('hex'),
+    mode,
+  };
+}
+
+/**
+ * B3 的基础执行位：敏感题目仍可被严格 parser 表达，但没有读面掩码、留存清理与逐题
+ * SOP 前，所有实际 writer 都必须拒绝它。governed 表单也不能开启 exportable。
+ */
+export function canonicalizeRegistrationFormDefinitionForB3(
+  input: RegistrationFormDefinitionInput,
+): CanonicalRegistrationFormResult {
+  const canonical = canonicalizeRegistrationFormDefinition(input);
+  if (canonical.mode === 'legacy') return canonical;
+  for (const field of canonical.definition.fields) {
+    const governance = field.governance;
+    if (
+      governance === undefined ||
+      governance.dataClassCode !== 'ordinary' ||
+      governance.retentionPolicyCode !== 'activity_lifecycle' ||
+      governance.maskingPolicyCode !== 'none' ||
+      governance.prefillSourceCode !== null ||
+      field.exportable
+    ) {
+      invalid();
+    }
+  }
+  return canonical;
+}
+
+/** Public/app read surfaces never expose owner governance metadata. */
+export function registrationFormPublicDefinition(
+  input: RegistrationFormDefinitionInput,
+): CanonicalRegistrationFormDefinition {
+  const canonical = canonicalizeRegistrationFormDefinition(input).definition;
+  return {
+    fields: canonical.fields.map((field) => {
+      const publicField = { ...field };
+      delete publicField.governance;
+      return publicField;
+    }),
   };
 }
 
@@ -294,6 +476,11 @@ export function registrationFormDefinitionFromStoredFields(
     maxLength: number | null;
     maxSelections: number | null;
     optionsJson: Prisma.JsonValue | null;
+    purposeCode?: string | null;
+    dataClassCode?: string | null;
+    retentionPolicyCode?: string | null;
+    maskingPolicyCode?: string | null;
+    prefillSourceCode?: string | null;
   }>,
 ): CanonicalRegistrationFormResult {
   return canonicalizeRegistrationFormDefinition({
@@ -312,6 +499,34 @@ export function registrationFormDefinitionFromStoredFields(
       maxLength: field.maxLength,
       maxSelections: field.maxSelections,
       options: field.optionsJson as RegistrationFormChoiceInput[] | null,
+      governance: storedGovernance(field),
     })),
   });
+}
+
+function storedGovernance(field: {
+  purposeCode?: string | null;
+  dataClassCode?: string | null;
+  retentionPolicyCode?: string | null;
+  maskingPolicyCode?: string | null;
+  prefillSourceCode?: string | null;
+}): RegistrationFormFieldGovernanceInput | null | undefined {
+  const values = [
+    field.purposeCode,
+    field.dataClassCode,
+    field.retentionPolicyCode,
+    field.maskingPolicyCode,
+    field.prefillSourceCode,
+  ];
+  // Unit fixtures from before B3 intentionally have no five-column keys. Real reads select all
+  // five columns; a partially populated persisted row is passed through and rejected below.
+  if (values.every((value) => value === undefined)) return undefined;
+  if (values.every((value) => value === null)) return null;
+  return {
+    purposeCode: field.purposeCode as RegistrationFormGovernancePurposeCode,
+    dataClassCode: field.dataClassCode as RegistrationFormDataClassCode,
+    retentionPolicyCode: field.retentionPolicyCode as RegistrationFormRetentionPolicyCode,
+    maskingPolicyCode: field.maskingPolicyCode as RegistrationFormMaskingPolicyCode,
+    prefillSourceCode: field.prefillSourceCode as null,
+  };
 }
