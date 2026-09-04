@@ -93,6 +93,7 @@ import { ActivityArchivePolicy } from './activity-archive-policy';
 import { ActivityArchiveService } from './activity-archive.service';
 import { RegistrationFormVersionService } from './registration-form-version.service';
 import { QualificationRuleSetVersionService } from './qualification-rule-set-version.service';
+import { ActivityPublishReadinessService } from './activity-publish-readiness.service';
 import { ActivityCapacityBucketProjector } from './activity-capacity-bucket-projector';
 import { ActivityQualificationEvaluatorService } from '../activity-registrations/activity-qualification-evaluator.service';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
@@ -197,6 +198,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityQualificationEvaluatorService,
     RegistrationFormVersionService,
     QualificationRuleSetVersionService,
+    // B4 是内部只读、gate-off 的就绪评估基础；不 export、不接入既有发布审核或 controller。
+    ActivityPublishReadinessService,
     ActivityProposalValidator,
     ActivityProposalApplier,
     ActivityClosurePolicy,
