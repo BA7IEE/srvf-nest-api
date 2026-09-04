@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 与 Release 2 B1、B2、B3、B4、B5 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254/#1257/#1259/#1261/#1264/#1267；B6 评审稿已起草、方案 A 已确认 | B6 review PR 合入后，逐文件确认 D 档 implementation 写集 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 与 Release 2 B1、B2、B3、B4、B5、B6 D1 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254/#1257/#1259/#1261/#1264/#1267/#1270；B6 方案 A 已确认，评审稿已合入 #1269 | B6 D2 三种完整创建与紧急召集流程待落地，开工前复核实际写集与必要红区授权 |
 
 ### 1.1 欠代码的五项
 
@@ -150,13 +150,18 @@ ActivityPublishReadinessService，在一次只读事务内按固定顺序汇总�
 Time / Contribution / Metric 尚无正式模型，相关指针固定为 null。v2-v5 与在途 hash 保持不变；批准时的
 v6 事实写入既有 RuleSnapshot，审核详情只返回安全的 proposal-v6 变更摘要。B5 不改 schema、migration、
 Controller、外部 API/DTO、权限、Audit、Gate、Readiness、Place writer 或生产行为；PR CI 与可信红区审批均已收口。
-**B6 评审稿已于 2026-09-04 起草，方案 A 已确认**：后续将以三个独立 App managed 入口完整落实模板快速、
-专业完整和紧急创建；快速模式显式映射 A6 精确 Version，专业模式只使用现有 canonical 模型，紧急模式以
-草稿、冻结受众、同事务 outbox、专属权限、审计和事后真实清单走 D 档。三种模式均不能直接正式发布，B4
-readiness 仍保持 gate-off。该评审稿只冻结 D 档 implementation 决策与预算，尚未改动 schema、migration、
-seed、API、DTO、权限、通知、审计、Gate 或运行时行为；implementation 仍须独立确认、逐路径授权。
-本次 B6 review PR 不引入 AI 模块、Integration 业务面、权限码或任何 Gate；后续 D 档 implementation
-中的紧急专属权限仍须单独确认与逐路径授权。
+**B6 方案 A 的评审稿已于 2026-09-04 以 #1269 合入，D1 数据地基同日以 #1270 独立合并**：
+第 109 条 migration 纯 additive 新增 `ActivityCreationCommandReceipt`、`ActivityEmergencyInitiation`、
+`ActivityEmergencyFollowUpItem` 三张表，提供专业 / 紧急创建收据、紧急发起记录、七项事后义务及其受控
+CHECK、同活动复合外键、唯一锚点和查询索引；六个外键名已与 Prisma 默认命名对齐。
+`activity.create.emergency.record` 已进入权限目录与 seed，保持 `SUPER_ADMIN_ONLY`，不绑定普通角色；
+权限码为 247，Audit events 仍为 157 总计、152 活跃。D1 的 schema / migration 回归、全套 PR CI 与
+可信红区审批均已收口；未做回填、业务 DML、rename、删除或生产 migration，未引入 API、DTO、业务 writer、
+通知、审计事件或正式发布行为，B4 readiness 与既有生产 Gate 保持关闭。
+**B6 仍有 D2 欠账**：三个独立 App managed 入口分别落实模板快速、专业完整和紧急创建；快速模式显式映射
+A6 精确 Version，专业模式只使用现有 canonical 模型，紧急模式落实草稿、冻结受众、同事务 outbox、
+专属权限判权、审计和事后真实清单。三种模式均不能直接正式发布，紧急召集不能冒充正式发布或事故处置；
+D2 开工前仍须复核实际写集与必要红区授权。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -228,7 +233,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b3-form-blueprint-review.md` | landed · P1-33 | Release 2 / B3 模板报名表蓝图复制与数据治理；已随 #1261 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b4-publish-readiness-review.md` | landed · P1-33 | Release 2 / B4 确定性、只读、gate-off 的发布就绪评审与 implementation 写集预算；已随 #1264 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | open · P1-33 | Release 2 / B6 三种创建 API；方案 A 已确认，D 档 implementation 仍待独立确认 |
+| `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | open · P1-33 | Release 2 / B6 三种创建 API；方案 A 已确认，D1 数据地基已随 #1270 合入，D2 三种完整创建与紧急召集流程仍待落地 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
