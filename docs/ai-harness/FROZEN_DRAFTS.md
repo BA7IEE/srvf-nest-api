@@ -18,7 +18,7 @@
 
 ---
 
-## 1. 还有欠账的冻结稿(10 项 / 涉 20 份文件)
+## 1. 还有欠账的冻结稿(10 项 / 涉 18 份文件)
 
 > **落地度列开头的 `` `↔…` `` 是给判据 6 读的对照标记**,不是装饰 —— 它声明本行与
 > `NEXT_TASKS.md` 同编号条目的状态行**是不是同一把尺子**。取值与写法见 [§4](#4-这份台账由什么守着)。
@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254；Release 2 / B1 评审稿已起草、方案 A 已确认 | B1 评审 PR 合并后再申请 schema / migration 精确授权 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 与 Release 2 B1、B2、B3 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254/#1257/#1259/#1261；B4 评审稿已起草、方案 A 已确认 | B4 评审 PR 合并后，再逐文件确认 implementation 写集 |
 
 ### 1.1 欠代码的五项
 
@@ -134,9 +134,16 @@ AI 零依赖判据、真实 HTTP Journey、A7 Series E2E 串行验收；A7 在�
 v1.1 与 Integration Gate，结束后恢复原环境值。contract、OpenAPI 与前端 client 均零漂移，未伪造 handoff
 或端点；PR CI 与 `package.json` 的可信红区审批均已收口。A8 不改依赖、Jest 配置、CI、API、schema、权限
 或运行时 Gate。Release 2 / B1 及以后仍须逐刀独立立项，A8 的授权不得带入。
-**B1 评审稿已起草、方案 A 已确认**：拟以纯加法的 PlacePreset 与 ActivityPlace 承接地点预设和活动地点
-快照，预设只保留来源、活动与场次必须以复合锚物理同链；当前只完成评审边界与授权预算的冻结，尚未改
-schema、migration、测试基础设施、API、地图、权限、Gate 或旧地点字段。
+**B1 已于 2026-09-03 以 #1257 独立合并**：PlacePreset 与 ActivityPlace 的纯 additive 存储地基和
+第 106 条 migration 已落地；预设只保留来源，活动 / 场次关联以复合锚物理同链。B1 没有抢跑地点
+writer、地图、API、权限、Gate 或旧地点字段投影。**B2 已于 2026-09-03 以 #1259 独立合并**：
+坐标三值闭集、六条数据库约束和纯坐标投影策略已落地，第 107 条 migration 完成非空库 rehearsal；
+没有接入地图、地点 writer、签到路径或旧字段写入。**B3 已于 2026-09-04 以 #1261 独立合并**：
+模板 Definition V2 的报名表蓝图复制、既有八种题型、governed Form canonical / managed 契约及
+v3–v5 Form 兼容已落地，第 108 条 migration 已完成回归；敏感题目仍须逐题治理审批后启用。
+**B4 评审稿已起草、方案 A 已确认**：拟新增只读、确定性、gate-off 的
+ActivityPublishReadinessService；当前只冻结问题合同和 implementation 写集预算，不改现有发布链路、
+schema、migration、API、权限、Gate、快照或生产行为。
 本项不引入 AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
@@ -204,9 +211,10 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r1-a6-from-template-transaction-review.md` | landed · P1-33 | Release 1 / A6 内部从模板创建事务；已随 #1248 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | landed · P1-33 | Release 1 / A7 Series 与手工／按需生成；已随 #1251 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a8-contract-handoff-e2e-gate-review.md` | landed · P1-33 | Release 1 / A8 contract、handoff、No-AI E2E 与 Gate 关闭态；已随 #1254 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r2-b1-place-review.md` | open · P1-33 | Release 2 / B1 PlacePreset 与 ActivityPlace 的 D 档存储地基；方案 A 已确认，实施仍待独立 schema / migration 和测试基础设施授权 |
-| `docs/archive/reviews/activity-os-r2-b2-coordinate-projection-review.md` | open · P1-33 | Release 2 / B2 坐标系与旧字段兼容投影的 D 档评审与授权清单；方案 A 已确认，实施仍待独立 schema / migration 和测试基础设施授权 |
-| `docs/archive/reviews/activity-os-r2-b3-form-blueprint-review.md` | open · P1-33 | Release 2 / B3 模板报名表蓝图复制与数据治理；方案 A 已确认，实施仍待独立 schema / migration / 测试授权 |
+| `docs/archive/reviews/activity-os-r2-b1-place-review.md` | landed · P1-33 | Release 2 / B1 PlacePreset 与 ActivityPlace 的 D 档存储地基；已随 #1257 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r2-b2-coordinate-projection-review.md` | landed · P1-33 | Release 2 / B2 坐标系与旧字段兼容投影；已随 #1259 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r2-b3-form-blueprint-review.md` | landed · P1-33 | Release 2 / B3 模板报名表蓝图复制与数据治理；已随 #1261 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r2-b4-publish-readiness-review.md` | open · P1-33 | Release 2 / B4 确定性、只读、gate-off 的发布就绪评审与 implementation 写集预算；方案 A 已确认，实施仍待独立确认 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
