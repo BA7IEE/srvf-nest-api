@@ -173,6 +173,11 @@ jobs:
       # 冷跑是 lint 的权威口径(本地 agent:check:quick 用缓存换速度)。
       - name: Lint
         if: needs.changeset.outputs.docs_only != 'true'
+        # Keep the repository-wide, cold type-aware lint unchanged. Its working
+        # set now exceeds Node's default hosted-runner heap; 6 GiB is a
+        # verified passing ceiling for this workload.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm lint
 
       - name: Typecheck
