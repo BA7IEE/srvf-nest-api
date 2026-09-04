@@ -32,6 +32,7 @@ import { activitySessionRescheduleEffects } from './activity-session-reschedule-
 import { activitySessionCancellationEffects } from './activity-session-cancellation-effects';
 import { ActivityNotificationProducer } from './activity-notification-producer';
 import { isActivityAllocationModeCode } from './activity-allocation-mode';
+import { LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY } from './activity-type-migration.registry';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type {
@@ -198,6 +199,52 @@ export interface ActivityTemplateResolutionWithQualificationRules extends Activi
   qualificationRuleSets: QualificationRuleSetResolvedConfig[];
 }
 
+export interface PlannedSemanticAssignment {
+  dimensionCode: string;
+  optionCode: string;
+}
+
+/** B1/B2's ActivityPlace local plan snapshot. It deliberately has no PlacePreset relation. */
+export interface ActivityPlaceSnapshot {
+  id: string;
+  sessionId: string | null;
+  roleCode: string;
+  name: string;
+  addressText: string;
+  instruction: string | null;
+  longitude: string | null;
+  latitude: string | null;
+  coordinateSystemCode: string | null;
+  providerCode: string | null;
+  providerPlaceId: string | null;
+  visibilityCode: string;
+  checkInEligible: boolean;
+  radiusMeters: number | null;
+  sourcePresetId: string | null;
+  workflowRevision: number;
+}
+
+export interface ActivityPublishProposalSnapshotV6Fields {
+  categoryCode: string | null;
+  plannedSemanticAssignments: PlannedSemanticAssignment[];
+  /** Raw stored selection, never the A5 fallback-resolved templateVersionId. */
+  selectedTemplateVersionId: string | null;
+  activityPlaces: ActivityPlaceSnapshot[];
+  timePolicyPointers: null;
+  contributionPolicyPointers: null;
+  metricSetPointer: null;
+  contentVisibilitySummary: {
+    visibilityCode: string | null;
+    isPublicRegistration: boolean;
+  };
+}
+
+/** RuleSnapshot's v6 branch freezes all approved V6 facts alongside its compact v5 pointers. */
+export interface ActivityTemplateResolutionWithSnapshotV6
+  extends
+    ActivityTemplateResolutionWithQualificationRules,
+    ActivityPublishProposalSnapshotV6Fields {}
+
 export interface ActivityPublishProposalSnapshotV2 {
   schemaVersion: 2;
   baseWorkflowRevision: number;
@@ -280,11 +327,37 @@ export interface ActivityPublishProposalSnapshotV5 {
   qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
 }
 
+/**
+ * v6 retains the complete v5 envelope and adds the current representable Activity OS facts.
+ * Any later field evolution must use v7 instead of changing this persisted representation.
+ */
+export interface ActivityPublishProposalSnapshotV6 extends ActivityPublishProposalSnapshotV6Fields {
+  schemaVersion: 6;
+  baseWorkflowRevision: number;
+  baseSnapshotHash: string;
+  snapshotHash: string;
+  base: {
+    templateVersionId: string | null;
+    resolvedConfig: ActivityTemplateResolution;
+    activity: ProposalActivity;
+    sessions: ProposalSession[];
+    registrationForm: RegistrationFormTarget | null;
+    qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
+  } & ActivityPublishProposalSnapshotV6Fields;
+  templateVersionId: string | null;
+  resolvedConfig: ActivityTemplateResolution;
+  activity: ProposalActivity;
+  sessions: ProposalSession[];
+  registrationForm: RegistrationFormTarget | null;
+  qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
+}
+
 export type ActivityPublishProposalSnapshot =
   | ActivityPublishProposalSnapshotV2
   | ActivityPublishProposalSnapshotV3
   | ActivityPublishProposalSnapshotV4
-  | ActivityPublishProposalSnapshotV5;
+  | ActivityPublishProposalSnapshotV5
+  | ActivityPublishProposalSnapshotV6;
 
 interface CurrentProposalState {
   workflowRevision: number;
@@ -296,6 +369,7 @@ interface CurrentProposalState {
   resolvedConfig: ActivityTemplateResolution;
   registrationForm: RegistrationFormTarget | null;
   qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
+  activityPlaces: ActivityPlaceSnapshot[];
 }
 
 interface TemplateRow {
@@ -414,6 +488,32 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isCanonicalDecimalString(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    return new Prisma.Decimal(value).toString() === value;
+  } catch {
+    return false;
+  }
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  return (
+    keys.length === expected.length &&
+    keys.every((key) => expected.includes(key)) &&
+    expected.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+  );
+}
+
 function dateInput(
   value: unknown,
   biz: typeof BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID,
@@ -447,6 +547,66 @@ function qualificationScopeKey(scope: QualificationRuleScope): string {
   return JSON.stringify([scope.sessionId, scope.positionId]);
 }
 
+const V6_ROOT_KEYS = [
+  'schemaVersion',
+  'baseWorkflowRevision',
+  'baseSnapshotHash',
+  'snapshotHash',
+  'base',
+  'templateVersionId',
+  'resolvedConfig',
+  'activity',
+  'sessions',
+  'registrationForm',
+  'qualificationRuleSets',
+  'categoryCode',
+  'plannedSemanticAssignments',
+  'selectedTemplateVersionId',
+  'activityPlaces',
+  'timePolicyPointers',
+  'contributionPolicyPointers',
+  'metricSetPointer',
+  'contentVisibilitySummary',
+] as const;
+
+const V6_BASE_KEYS = [
+  'templateVersionId',
+  'resolvedConfig',
+  'activity',
+  'sessions',
+  'registrationForm',
+  'qualificationRuleSets',
+  'categoryCode',
+  'plannedSemanticAssignments',
+  'selectedTemplateVersionId',
+  'activityPlaces',
+  'timePolicyPointers',
+  'contributionPolicyPointers',
+  'metricSetPointer',
+  'contentVisibilitySummary',
+] as const;
+
+const V6_PLANNED_ASSIGNMENT_KEYS = ['dimensionCode', 'optionCode'] as const;
+const V6_ACTIVITY_PLACE_KEYS = [
+  'id',
+  'sessionId',
+  'roleCode',
+  'name',
+  'addressText',
+  'instruction',
+  'longitude',
+  'latitude',
+  'coordinateSystemCode',
+  'providerCode',
+  'providerPlaceId',
+  'visibilityCode',
+  'checkInEligible',
+  'radiusMeters',
+  'sourcePresetId',
+  'workflowRevision',
+] as const;
+const V6_CONTENT_VISIBILITY_SUMMARY_KEYS = ['visibilityCode', 'isPublicRegistration'] as const;
+
 @Injectable()
 export class ActivityPublishProposalV2Service {
   constructor(
@@ -461,26 +621,10 @@ export class ActivityPublishProposalV2Service {
     private readonly auditLogs: AuditLogsService,
   ) {}
 
-  async buildInitial(
-    tx: PrismaTx,
-    activityId: string,
-  ): Promise<ActivityPublishProposalSnapshotV4 | ActivityPublishProposalSnapshotV5> {
-    const current = await this.currentState(tx, activityId);
+  async buildInitial(tx: PrismaTx, activityId: string): Promise<ActivityPublishProposalSnapshotV6> {
+    const current = await this.currentState(tx, activityId, true, true, true);
     this.assertProposalValid(current.activity, current.sessions);
-    // An initial proposal only needs the V5 envelope when there is an actual
-    // qualification target to freeze. Keeping an empty target in V4 would
-    // silently rewrite established, qualification-free initial reviews.
-    if (current.qualificationRuleSets.ruleSets.length === 0) {
-      return this.toSnapshotV4(
-        current,
-        current.activity,
-        current.sessions,
-        current.templateVersionId,
-        current.resolvedConfig,
-        current.registrationForm,
-      );
-    }
-    return this.toSnapshotV5(
+    return this.toSnapshotV6(
       current,
       current.activity,
       current.sessions,
@@ -495,12 +639,10 @@ export class ActivityPublishProposalV2Service {
     tx: PrismaTx,
     activityId: string,
     dto: ChangeReviewDto,
-  ): Promise<ActivityPublishProposalSnapshotV4 | ActivityPublishProposalSnapshotV5> {
-    const includesQualificationRuleSets = dto.qualificationRuleSets !== undefined;
-    // A V4 form/activity proposal has no qualification command and must retain its historical
-    // read/hash envelope. Only the explicit V5 collection command is allowed to read/freeze the
-    // qualification target; this avoids silently changing unrelated established contracts.
-    const current = await this.currentState(tx, activityId, true, includesQualificationRuleSets);
+  ): Promise<ActivityPublishProposalSnapshotV6> {
+    // New submissions always use the complete v6 envelope. Historical v2-v5 snapshots are only
+    // parsed/rebuilt/applied through their own version branches below.
+    const current = await this.currentState(tx, activityId, true, true, true);
     const activity = clone(current.activity);
     const sessions = clone(current.sessions);
     this.applyActivityPatch(activity, dto.activityPatch as unknown as Partial<ProposalActivity>);
@@ -534,50 +676,12 @@ export class ActivityPublishProposalV2Service {
               }
               return { definition: canonical.definition, schemaHash: canonical.schemaHash };
             })();
-    if (!includesQualificationRuleSets) {
-      const cancelledSessionIds = sessions.flatMap((session) =>
-        session.sessionId !== null && session.statusCode === 'cancelled' ? [session.sessionId] : [],
-      );
-      const cancelledPositionIds = sessions.flatMap((session) =>
-        session.positions.flatMap((position) =>
-          position.positionId !== null && position.cancelled ? [position.positionId] : [],
-        ),
-      );
-      if (cancelledSessionIds.length > 0 || cancelledPositionIds.length > 0) {
-        await this.qualificationRules.assertNoActiveRuleSetForCancelledTargets(tx, {
-          activityId,
-          sessionIds: cancelledSessionIds,
-          positionIds: cancelledPositionIds,
-        });
-      }
-      const snapshot = this.toSnapshotV4(
-        current,
-        activity,
-        sessions,
-        template?.id ?? null,
-        resolvedConfig,
-        registrationForm,
-      );
-      if (
-        snapshot.snapshotHash ===
-        this.hashTargetV4(
-          current.activity,
-          current.sessions,
-          current.templateVersionId,
-          current.resolvedConfig,
-          current.registrationForm,
-        )
-      ) {
-        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
-      }
-      return snapshot;
-    }
     const qualificationRuleSets = this.applyQualificationRuleSetCollections(
       sessions,
       dto.qualificationRuleSets,
       current.qualificationRuleSets,
     );
-    const snapshot = this.toSnapshotV5(
+    const snapshot = this.toSnapshotV6(
       current,
       activity,
       sessions,
@@ -588,13 +692,14 @@ export class ActivityPublishProposalV2Service {
     );
     if (
       snapshot.snapshotHash ===
-      this.hashTargetV5(
+      this.hashTargetV6(
         current.activity,
         current.sessions,
         current.templateVersionId,
         current.resolvedConfig,
         current.registrationForm,
         current.qualificationRuleSets,
+        this.v6Fields(current, current.activity),
       )
     ) {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
@@ -605,7 +710,7 @@ export class ActivityPublishProposalV2Service {
   async rebuildCurrent(
     tx: PrismaTx,
     activityId: string,
-    schemaVersion: 2 | 3 | 4 | 5,
+    schemaVersion: 2 | 3 | 4 | 5 | 6,
   ): Promise<{ workflowRevision: number; snapshotHash: string }> {
     // Historical v2 approvals must retain their former read/hashing behavior: do not touch the
     // Form tables at all while reconstructing a v2 stale guard.
@@ -613,7 +718,8 @@ export class ActivityPublishProposalV2Service {
       tx,
       activityId,
       schemaVersion !== 2,
-      schemaVersion === 5,
+      schemaVersion === 5 || schemaVersion === 6,
+      schemaVersion === 6,
     );
     return {
       workflowRevision: current.workflowRevision,
@@ -641,14 +747,24 @@ export class ActivityPublishProposalV2Service {
                   current.resolvedConfig,
                   current.registrationForm,
                 )
-              : this.hashTargetV5(
-                  current.activity,
-                  current.sessions,
-                  current.templateVersionId,
-                  current.resolvedConfig,
-                  current.registrationForm,
-                  current.qualificationRuleSets,
-                ),
+              : schemaVersion === 5
+                ? this.hashTargetV5(
+                    current.activity,
+                    current.sessions,
+                    current.templateVersionId,
+                    current.resolvedConfig,
+                    current.registrationForm,
+                    current.qualificationRuleSets,
+                  )
+                : this.hashTargetV6(
+                    current.activity,
+                    current.sessions,
+                    current.templateVersionId,
+                    current.resolvedConfig,
+                    current.registrationForm,
+                    current.qualificationRuleSets,
+                    this.v6Fields(current, current.activity),
+                  ),
     };
   }
 
@@ -669,7 +785,8 @@ export class ActivityPublishProposalV2Service {
       (row.schemaVersion === 2 ||
         row.schemaVersion === 3 ||
         row.schemaVersion === 4 ||
-        row.schemaVersion === 5) &&
+        row.schemaVersion === 5 ||
+        row.schemaVersion === 6) &&
       typeof row.snapshotHash === 'string'
     );
   }
@@ -678,31 +795,63 @@ export class ActivityPublishProposalV2Service {
     if (!this.isSnapshot(value))
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     const snapshot = value as unknown as ActivityPublishProposalSnapshot;
-    const { snapshotHash, ...unsigned } = snapshot;
-    if (sha256(unsigned) !== snapshotHash) {
-      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    try {
+      if (snapshot.schemaVersion === 6) this.assertSnapshotV6Envelope(snapshot);
+      const { snapshotHash, ...unsigned } = snapshot;
+      if (sha256(unsigned) !== snapshotHash) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      this.assertProposalValid(snapshot.activity, snapshot.sessions);
+      if (
+        snapshot.schemaVersion === 3 ||
+        snapshot.schemaVersion === 4 ||
+        snapshot.schemaVersion === 5 ||
+        snapshot.schemaVersion === 6
+      ) {
+        this.assertSnapshotFormTarget(snapshot.registrationForm);
+        this.assertSnapshotFormTarget(snapshot.base.registrationForm);
+      }
+      if (
+        (snapshot.schemaVersion === 4 ||
+          snapshot.schemaVersion === 5 ||
+          snapshot.schemaVersion === 6) &&
+        (!isActivityAllocationModeCode(snapshot.activity.allocationModeCode) ||
+          !isActivityAllocationModeCode(snapshot.base.activity.allocationModeCode))
+      ) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      if (snapshot.schemaVersion === 5 || snapshot.schemaVersion === 6) {
+        this.assertSnapshotQualificationTarget(snapshot.qualificationRuleSets);
+        this.assertSnapshotQualificationTarget(snapshot.base.qualificationRuleSets);
+      }
+      if (snapshot.schemaVersion === 6) {
+        this.assertProposalValid(snapshot.base.activity, snapshot.base.sessions);
+        this.assertSnapshotV6Fields(snapshot, snapshot.activity);
+        this.assertSnapshotV6Fields(snapshot.base, snapshot.base.activity);
+        if (
+          snapshot.baseSnapshotHash !==
+          this.hashTargetV6(
+            snapshot.base.activity,
+            snapshot.base.sessions,
+            snapshot.base.templateVersionId,
+            snapshot.base.resolvedConfig,
+            snapshot.base.registrationForm,
+            snapshot.base.qualificationRuleSets,
+            snapshot.base,
+          )
+        ) {
+          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+        }
+      }
+      return snapshot;
+    } catch (error) {
+      // New V6 is structurally strict: malformed JSON must never turn a corrupt persisted
+      // snapshot into an unexpected 500. Historical parser behavior is intentionally untouched.
+      if (snapshot.schemaVersion === 6 && !(error instanceof BizException)) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      throw error;
     }
-    this.assertProposalValid(snapshot.activity, snapshot.sessions);
-    if (
-      snapshot.schemaVersion === 3 ||
-      snapshot.schemaVersion === 4 ||
-      snapshot.schemaVersion === 5
-    ) {
-      this.assertSnapshotFormTarget(snapshot.registrationForm);
-      this.assertSnapshotFormTarget(snapshot.base.registrationForm);
-    }
-    if (
-      (snapshot.schemaVersion === 4 || snapshot.schemaVersion === 5) &&
-      (!isActivityAllocationModeCode(snapshot.activity.allocationModeCode) ||
-        !isActivityAllocationModeCode(snapshot.base.activity.allocationModeCode))
-    ) {
-      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
-    }
-    if (snapshot.schemaVersion === 5) {
-      this.assertSnapshotQualificationTarget(snapshot.qualificationRuleSets);
-      this.assertSnapshotQualificationTarget(snapshot.base.qualificationRuleSets);
-    }
-    return snapshot;
   }
 
   /**
@@ -733,7 +882,8 @@ export class ActivityPublishProposalV2Service {
     resolvedConfig:
       | ActivityTemplateResolution
       | ActivityTemplateResolutionWithRegistrationForm
-      | ActivityTemplateResolutionWithQualificationRules;
+      | ActivityTemplateResolutionWithQualificationRules
+      | ActivityTemplateResolutionWithSnapshotV6;
   }> {
     // 「本次由 scheduled 变成 cancelled」的场次必须在 applySessions 落库**之前**读 ——
     // 落库之后 DB 里全是 cancelled,分不出「这次刚取消」与「上次就已经取消」,联动会对
@@ -754,7 +904,7 @@ export class ActivityPublishProposalV2Service {
       tx,
       activityId,
       snapshot.activity,
-      snapshot.schemaVersion === 4 || snapshot.schemaVersion === 5
+      snapshot.schemaVersion === 4 || snapshot.schemaVersion === 5 || snapshot.schemaVersion === 6
         ? snapshot.activity.allocationModeCode
         : undefined,
     );
@@ -770,7 +920,8 @@ export class ActivityPublishProposalV2Service {
     if (
       snapshot.schemaVersion === 3 ||
       snapshot.schemaVersion === 4 ||
-      snapshot.schemaVersion === 5
+      snapshot.schemaVersion === 5 ||
+      snapshot.schemaVersion === 6
     ) {
       const currentActivity = await tx.activity.findUniqueOrThrow({
         where: { id: activityId },
@@ -787,7 +938,7 @@ export class ActivityPublishProposalV2Service {
       await this.applyFormAndRulesPlaceholder(tx, activityId);
     }
     const qualificationRuleSets =
-      snapshot.schemaVersion === 5
+      snapshot.schemaVersion === 5 || snapshot.schemaVersion === 6
         ? await this.qualificationRules.applyPublishedTarget(tx, {
             activityId,
             requestType: input.publish ? 'initial' : 'change',
@@ -857,9 +1008,16 @@ export class ActivityPublishProposalV2Service {
     const resolvedConfig =
       snapshot.schemaVersion === 5
         ? { ...snapshot.resolvedConfig, registrationForm, qualificationRuleSets }
-        : snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4
-          ? { ...snapshot.resolvedConfig, registrationForm }
-          : await this.getTemplateResolution(tx, activityId);
+        : snapshot.schemaVersion === 6
+          ? {
+              ...snapshot.resolvedConfig,
+              registrationForm,
+              qualificationRuleSets,
+              ...this.snapshotV6Fields(snapshot),
+            }
+          : snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4
+            ? { ...snapshot.resolvedConfig, registrationForm }
+            : await this.getTemplateResolution(tx, activityId);
     return { workflowRevision: activity.workflowRevision, resolvedConfig };
   }
 
@@ -868,6 +1026,7 @@ export class ActivityPublishProposalV2Service {
     activityId: string,
     includeRegistrationForm: boolean = true,
     includeQualificationRules: boolean = true,
+    includeV6Facts: boolean = false,
   ): Promise<CurrentProposalState> {
     const row = await tx.activity.findUniqueOrThrow({
       where: { id: activityId },
@@ -969,7 +1128,60 @@ export class ActivityPublishProposalV2Service {
       qualificationRuleSets: includeQualificationRules
         ? await this.qualificationRules.currentTarget(tx, activityId, row.statusCode)
         : { ruleSets: [] },
+      // v2-v5 must not touch ActivityPlace at all. v6 alone reads this minimal local projection;
+      // no PlacePreset relation is selected or dereferenced.
+      activityPlaces: includeV6Facts ? await this.currentActivityPlaces(tx, activityId) : [],
     };
+  }
+
+  private async currentActivityPlaces(
+    tx: PrismaTx,
+    activityId: string,
+  ): Promise<ActivityPlaceSnapshot[]> {
+    const rows = await tx.activityPlace.findMany({
+      where: { activityId },
+      select: {
+        id: true,
+        sessionId: true,
+        roleCode: true,
+        name: true,
+        addressText: true,
+        instruction: true,
+        longitude: true,
+        latitude: true,
+        coordinateSystemCode: true,
+        providerCode: true,
+        providerPlaceId: true,
+        visibilityCode: true,
+        checkInEligible: true,
+        radiusMeters: true,
+        sourcePresetId: true,
+        workflowRevision: true,
+      },
+    });
+    const places = rows.map((place) => ({
+      id: place.id,
+      sessionId: place.sessionId,
+      roleCode: place.roleCode,
+      name: place.name,
+      addressText: place.addressText,
+      instruction: place.instruction,
+      longitude: decimal(place.longitude),
+      latitude: decimal(place.latitude),
+      coordinateSystemCode: place.coordinateSystemCode,
+      providerCode: place.providerCode,
+      providerPlaceId: place.providerPlaceId,
+      visibilityCode: place.visibilityCode,
+      checkInEligible: place.checkInEligible,
+      radiusMeters: place.radiusMeters,
+      sourcePresetId: place.sourcePresetId,
+      workflowRevision: place.workflowRevision,
+    }));
+    return this.sortActivityPlaces(places);
+  }
+
+  private sortActivityPlaces(places: ActivityPlaceSnapshot[]): ActivityPlaceSnapshot[] {
+    return places.sort((left, right) => this.compareActivityPlace(left, right));
   }
 
   private async findTemplate(
@@ -1145,6 +1357,50 @@ export class ActivityPublishProposalV2Service {
     return { ...unsigned, snapshotHash: sha256(unsigned) };
   }
 
+  private toSnapshotV6(
+    current: CurrentProposalState,
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+    qualificationRuleSets: CanonicalQualificationRuleSetsDefinition,
+  ): ActivityPublishProposalSnapshotV6 {
+    const baseV6Fields = this.v6Fields(current, current.activity);
+    const targetV6Fields = this.v6Fields(current, activity);
+    const baseSnapshotHash = this.hashTargetV6(
+      current.activity,
+      current.sessions,
+      current.templateVersionId,
+      current.resolvedConfig,
+      current.registrationForm,
+      current.qualificationRuleSets,
+      baseV6Fields,
+    );
+    const unsigned = {
+      schemaVersion: 6 as const,
+      baseWorkflowRevision: current.workflowRevision,
+      baseSnapshotHash,
+      base: {
+        templateVersionId: current.templateVersionId,
+        resolvedConfig: current.resolvedConfig,
+        activity: current.activity,
+        sessions: current.sessions,
+        registrationForm: current.registrationForm,
+        qualificationRuleSets: current.qualificationRuleSets,
+        ...baseV6Fields,
+      },
+      templateVersionId,
+      resolvedConfig,
+      activity,
+      sessions,
+      registrationForm,
+      qualificationRuleSets,
+      ...targetV6Fields,
+    };
+    return { ...unsigned, snapshotHash: sha256(unsigned) };
+  }
+
   private withoutAllocationMode(
     activity: ProposalActivityInput,
   ): ProposalActivityWithoutAllocationMode {
@@ -1209,6 +1465,250 @@ export class ActivityPublishProposalV2Service {
       registrationForm,
       qualificationRuleSets,
     });
+  }
+
+  private hashTargetV6(
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+    qualificationRuleSets: CanonicalQualificationRuleSetsDefinition,
+    v6Fields: ActivityPublishProposalSnapshotV6Fields,
+  ): string {
+    return sha256({
+      activity,
+      sessions,
+      templateVersionId,
+      resolvedConfig,
+      registrationForm,
+      qualificationRuleSets,
+      categoryCode: v6Fields.categoryCode,
+      plannedSemanticAssignments: v6Fields.plannedSemanticAssignments,
+      selectedTemplateVersionId: v6Fields.selectedTemplateVersionId,
+      activityPlaces: v6Fields.activityPlaces,
+      timePolicyPointers: v6Fields.timePolicyPointers,
+      contributionPolicyPointers: v6Fields.contributionPolicyPointers,
+      metricSetPointer: v6Fields.metricSetPointer,
+      contentVisibilitySummary: v6Fields.contentVisibilitySummary,
+    });
+  }
+
+  private assertSnapshotV6Envelope(snapshot: ActivityPublishProposalSnapshotV6): void {
+    const root = snapshot as unknown as Record<string, unknown>;
+    const base = root.base;
+    if (
+      !hasExactKeys(root, V6_ROOT_KEYS) ||
+      !isRecord(base) ||
+      !hasExactKeys(base, V6_BASE_KEYS) ||
+      !Number.isInteger(root.baseWorkflowRevision) ||
+      (root.baseWorkflowRevision as number) < 0 ||
+      typeof root.baseSnapshotHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(root.baseSnapshotHash) ||
+      typeof root.snapshotHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(root.snapshotHash) ||
+      !isStringOrNull(root.templateVersionId) ||
+      !isRecord(root.resolvedConfig) ||
+      !isRecord(root.activity) ||
+      !Array.isArray(root.sessions) ||
+      !isStringOrNull(base.templateVersionId) ||
+      !isRecord(base.resolvedConfig) ||
+      !isRecord(base.activity) ||
+      !Array.isArray(base.sessions)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+  }
+
+  private assertSnapshotV6Fields(
+    value: ActivityPublishProposalSnapshotV6Fields,
+    activity: ProposalActivity,
+  ): void {
+    if (
+      typeof activity.activityTypeCode !== 'string' ||
+      !isStringOrNull(activity.visibilityCode) ||
+      typeof activity.isPublicRegistration !== 'boolean' ||
+      !isStringOrNull(value.categoryCode) ||
+      !isStringOrNull(value.selectedTemplateVersionId) ||
+      !Array.isArray(value.plannedSemanticAssignments) ||
+      !Array.isArray(value.activityPlaces) ||
+      value.timePolicyPointers !== null ||
+      value.contributionPolicyPointers !== null ||
+      value.metricSetPointer !== null
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+    this.assertSnapshotV6PlannedSemanticAssignments(value.plannedSemanticAssignments);
+    const expected = this.v6SemanticFields(activity.activityTypeCode);
+    if (
+      value.categoryCode !== expected.categoryCode ||
+      canonicalize(value.plannedSemanticAssignments as unknown as CanonicalValue) !==
+        canonicalize(expected.plannedSemanticAssignments as unknown as CanonicalValue)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+    this.assertSnapshotV6ActivityPlaces(value.activityPlaces);
+    const summary = value.contentVisibilitySummary;
+    if (
+      !isRecord(summary) ||
+      !hasExactKeys(summary, V6_CONTENT_VISIBILITY_SUMMARY_KEYS) ||
+      !isStringOrNull(summary.visibilityCode) ||
+      typeof summary.isPublicRegistration !== 'boolean' ||
+      summary.visibilityCode !== activity.visibilityCode ||
+      summary.isPublicRegistration !== activity.isPublicRegistration
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+  }
+
+  private assertSnapshotV6PlannedSemanticAssignments(
+    assignments: PlannedSemanticAssignment[],
+  ): void {
+    let previous: PlannedSemanticAssignment | null = null;
+    for (const assignment of assignments) {
+      const row = assignment as unknown as Record<string, unknown>;
+      if (
+        !isRecord(row) ||
+        !hasExactKeys(row, V6_PLANNED_ASSIGNMENT_KEYS) ||
+        typeof row.dimensionCode !== 'string' ||
+        typeof row.optionCode !== 'string'
+      ) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      if (
+        previous !== null &&
+        (previous.dimensionCode.localeCompare(assignment.dimensionCode) > 0 ||
+          (previous.dimensionCode === assignment.dimensionCode &&
+            previous.optionCode.localeCompare(assignment.optionCode) >= 0))
+      ) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      previous = assignment;
+    }
+  }
+
+  private assertSnapshotV6ActivityPlaces(places: ActivityPlaceSnapshot[]): void {
+    let previous: ActivityPlaceSnapshot | null = null;
+    for (const place of places) {
+      const row = place as unknown as Record<string, unknown>;
+      if (!isRecord(row)) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      const hasCoordinates = typeof row.longitude === 'string';
+      const longitude = hasCoordinates ? Number(row.longitude) : null;
+      const latitude = hasCoordinates ? Number(row.latitude) : null;
+      if (
+        !hasExactKeys(row, V6_ACTIVITY_PLACE_KEYS) ||
+        typeof row.id !== 'string' ||
+        !isStringOrNull(row.sessionId) ||
+        !['primary', 'meeting', 'execution', 'evacuation', 'parking', 'other'].includes(
+          row.roleCode as string,
+        ) ||
+        typeof row.name !== 'string' ||
+        typeof row.addressText !== 'string' ||
+        !isStringOrNull(row.instruction) ||
+        !(row.longitude === null || isCanonicalDecimalString(row.longitude)) ||
+        !(row.latitude === null || isCanonicalDecimalString(row.latitude)) ||
+        !isStringOrNull(row.coordinateSystemCode) ||
+        !isStringOrNull(row.providerCode) ||
+        !isStringOrNull(row.providerPlaceId) ||
+        !['public', 'accepted', 'staff', 'command'].includes(row.visibilityCode as string) ||
+        typeof row.checkInEligible !== 'boolean' ||
+        (row.radiusMeters !== null &&
+          (!Number.isInteger(row.radiusMeters) || (row.radiusMeters as number) < 0)) ||
+        !isStringOrNull(row.sourcePresetId) ||
+        !Number.isInteger(row.workflowRevision) ||
+        (row.workflowRevision as number) < 0 ||
+        hasCoordinates !== (typeof row.latitude === 'string') ||
+        hasCoordinates !== (typeof row.coordinateSystemCode === 'string') ||
+        (typeof row.coordinateSystemCode === 'string' &&
+          !['wgs84', 'gcj02', 'bd09'].includes(row.coordinateSystemCode)) ||
+        (hasCoordinates &&
+          (longitude === null ||
+            latitude === null ||
+            !Number.isFinite(longitude) ||
+            !Number.isFinite(latitude) ||
+            longitude < -180 ||
+            longitude > 180 ||
+            latitude < -90 ||
+            latitude > 90))
+      ) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      if (previous !== null && this.compareActivityPlace(previous, place) >= 0) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      previous = place;
+    }
+  }
+
+  private compareActivityPlace(left: ActivityPlaceSnapshot, right: ActivityPlaceSnapshot): number {
+    if (left.sessionId === null && right.sessionId !== null) return -1;
+    if (left.sessionId !== null && right.sessionId === null) return 1;
+    return (
+      (left.sessionId ?? '').localeCompare(right.sessionId ?? '') ||
+      left.roleCode.localeCompare(right.roleCode) ||
+      left.id.localeCompare(right.id)
+    );
+  }
+
+  private v6SemanticFields(
+    activityTypeCode: string,
+  ): Pick<ActivityPublishProposalSnapshotV6Fields, 'categoryCode' | 'plannedSemanticAssignments'> {
+    const entry = LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY.find(
+      (candidate) => candidate.legacyActivityTypeCode === activityTypeCode,
+    );
+    return {
+      categoryCode: entry?.categoryCode ?? null,
+      plannedSemanticAssignments: (entry?.facets ?? [])
+        .map((facet) => ({
+          dimensionCode: facet.dimensionCode,
+          optionCode: facet.optionCode,
+        }))
+        .sort(
+          (left, right) =>
+            left.dimensionCode.localeCompare(right.dimensionCode) ||
+            left.optionCode.localeCompare(right.optionCode),
+        ),
+    };
+  }
+
+  private v6Fields(
+    current: Pick<CurrentProposalState, 'selectedTemplateVersionId' | 'activityPlaces'>,
+    activity: Pick<
+      ProposalActivity,
+      'activityTypeCode' | 'visibilityCode' | 'isPublicRegistration'
+    >,
+  ): ActivityPublishProposalSnapshotV6Fields {
+    return {
+      ...this.v6SemanticFields(activity.activityTypeCode),
+      selectedTemplateVersionId: current.selectedTemplateVersionId,
+      activityPlaces: this.sortActivityPlaces(
+        current.activityPlaces.map((place) => ({ ...place })),
+      ),
+      timePolicyPointers: null,
+      contributionPolicyPointers: null,
+      metricSetPointer: null,
+      contentVisibilitySummary: {
+        visibilityCode: activity.visibilityCode,
+        isPublicRegistration: activity.isPublicRegistration,
+      },
+    };
+  }
+
+  private snapshotV6Fields(
+    snapshot: ActivityPublishProposalSnapshotV6,
+  ): ActivityPublishProposalSnapshotV6Fields {
+    return {
+      categoryCode: snapshot.categoryCode,
+      plannedSemanticAssignments: snapshot.plannedSemanticAssignments,
+      selectedTemplateVersionId: snapshot.selectedTemplateVersionId,
+      activityPlaces: snapshot.activityPlaces,
+      timePolicyPointers: snapshot.timePolicyPointers,
+      contributionPolicyPointers: snapshot.contributionPolicyPointers,
+      metricSetPointer: snapshot.metricSetPointer,
+      contentVisibilitySummary: snapshot.contentVisibilitySummary,
+    };
   }
 
   private assertSnapshotFormTarget(target: RegistrationFormTarget | null): void {

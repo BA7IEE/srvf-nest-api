@@ -432,7 +432,7 @@ describe('batch4 allocation mode runtime', () => {
     expect(appPatched.body.data.activity.allocationModeCode).toBe('lottery');
   });
 
-  it('freezes a newly submitted proposal as schemaVersion 4', async () => {
+  it('freezes a newly submitted proposal as schemaVersion 6', async () => {
     const activityId = await createDraft('qualification_rank');
     await createLiveSession(activityId);
     const submitted = await request(httpServer(app))
@@ -442,7 +442,7 @@ describe('batch4 allocation mode runtime', () => {
     expect(submitted.status).toBe(200);
     expect(submitted.body.data.snapshot).toEqual(
       expect.objectContaining({
-        schemaVersion: 4,
+        schemaVersion: 6,
         activity: expect.objectContaining({ allocationModeCode: 'qualification_rank' }),
         base: expect.objectContaining({
           activity: expect.objectContaining({ allocationModeCode: 'qualification_rank' }),
@@ -541,7 +541,7 @@ describe('batch4 allocation mode runtime', () => {
     expect(change.status).toBe(200);
     expect(change.body.data.snapshot).toEqual(
       expect.objectContaining({
-        schemaVersion: 4,
+        schemaVersion: 6,
         activity: expect.objectContaining({ allocationModeCode: 'lottery' }),
         base: expect.objectContaining({
           activity: expect.objectContaining({ allocationModeCode: 'first_come' }),
