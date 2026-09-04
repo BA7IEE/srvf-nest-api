@@ -18,7 +18,7 @@
 
 ---
 
-## 1. 还有欠账的冻结稿(10 项 / 涉 17 份文件)
+## 1. 还有欠账的冻结稿(11 项 / 涉 18 份文件)
 
 > **落地度列开头的 `` `↔…` `` 是给判据 6 读的对照标记**,不是装饰 —— 它声明本行与
 > `NEXT_TASKS.md` 同编号条目的状态行**是不是同一把尺子**。取值与写法见 [§4](#4-这份台账由什么守着)。
@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 与 Release 2 B1、B2、B3、B4 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254/#1257/#1259/#1261/#1264 | B5 Snapshot v6 评审稿待起草 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B / Release 1 A1、A2、A3、A4、A5、A6、A7、A8 与 Release 2 B1、B2、B3、B4 已通过并合入 #1237/#1239/#1241/#1244/#1246/#1248/#1251/#1254/#1257/#1259/#1261/#1264；B5 评审稿已起草、方案 A 已确认 | B5 review PR 合入后，逐文件确认 C 档 implementation 写集 |
 
 ### 1.1 欠代码的五项
 
@@ -145,7 +145,11 @@ v3–v5 Form 兼容已落地，第 108 条 migration 已完成回归；敏感题
 ActivityPublishReadinessService，在一次只读事务内按固定顺序汇总结构化问题，不接入现有发布链路；A5
 模板解析、Session / Position 旧字段、canonical Form / Qualification、保险 enforcement 与当前组织 / 发起人
 可解析性均有覆盖。B4 不改 schema、migration、API、DTO、OpenAPI、权限、审计、Gate、快照或生产行为；PR CI
-与可信红区审批均已收口。B5 Snapshot v6 仍须独立评审与授权。
+与可信红区审批均已收口。**B5 评审稿已于 2026-09-04 起草、方案 A 已确认**：拟让新提案使用 v6
+冻结当前可解析的分类 / facet、原始 selectedTemplateVersionId、ActivityPlace 本地快照和最小可见性
+摘要；Time / Contribution / Metric 尚无正式模型，相关指针固定为 null。v2-v5 与在途 hash 不变。
+当前只冻结 v6 canonical、隐私边界和 C 档 implementation 写集预算，不改 schema、migration、API、
+DTO、OpenAPI、权限、Gate、Readiness、Place writer 或生产行为；implementation 仍须独立确认。
 本项不引入 AI 模块、Integration 业务面、权限码或任何 Gate。
 
 ### 1.2 欠运维的四项(代码都写完了)
@@ -217,6 +221,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b2-coordinate-projection-review.md` | landed · P1-33 | Release 2 / B2 坐标系与旧字段兼容投影；已随 #1259 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b3-form-blueprint-review.md` | landed · P1-33 | Release 2 / B3 模板报名表蓝图复制与数据治理；已随 #1261 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b4-publish-readiness-review.md` | landed · P1-33 | Release 2 / B4 确定性、只读、gate-off 的发布就绪评审与 implementation 写集预算；已随 #1264 合入，评审稿冻结不回改 |
+| `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | open · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；方案 A 已确认，实施仍待独立确认 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
