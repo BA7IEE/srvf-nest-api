@@ -180,6 +180,11 @@ B7 无 schema/migration/seed/权限码/AuditLogEvent 变更，未启用 B4 readi
 **仓内实现与交接完成不等于前端或生产上线**：页面发布、灰度人群选定、真实 cutover 稳定观察、
 生产部署与 mode 切换均未执行，仍须独立审批；Release 3 C1 及以后尚未实施，B7 授权不得带入。
 
+**C1 评审与授权清单已起草，方案与 implementation 尚待独立确认**：见
+[`activity-os-r3-c1-metric-definition-set-review.md`](../archive/reviews/activity-os-r3-c1-metric-definition-set-review.md)。
+推荐先做 D1 指标定义/集版本数据地基，再经 D2 独立评审接入目录维护、活动选用、v7 与 Readiness；
+v2–v6 不回改，D1 完成不等于 C1 完成。当前无 C1 代码、schema、migration、权限或 Gate 变更。
+
 ### 1.2 欠运维的四项(代码都写完了)
 
 | 冻结稿 | 还差什么 |
@@ -252,6 +257,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | landed · P1-33 | Release 2 / B6 三种创建 API；方案 A 的 D1 数据地基与 D2 三种完整创建、紧急召集流程已分别随 #1270/#1272 合入，评审稿冻结不回改；不代表生产部署 |
 | `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用 |
+| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 评审及授权清单已起草；D1 数据地基、D2 接入推荐分步，方案与 implementation 待独立确认，未实施 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
