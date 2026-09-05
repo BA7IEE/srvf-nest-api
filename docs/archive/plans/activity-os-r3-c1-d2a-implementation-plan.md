@@ -3,7 +3,7 @@
 基线 main@fc99e8dc；承接 #1279。维护者已明确批准 D2a implementation、81 个精确路径与 app_test/app_test_w1/app_test_w98 测试范围，精确红区授权已核验。
 另批准旧 D1 测试清理语句显式加入 ActivityMetricCommandReceipt，不加 CASCADE、不改行为断言。下列清单保留立项时的基线读数；其中「待确认」描述已由本段授权记录取代，不能当作未来步骤授权。
 
-阶段性跨模型复审延后至整体完成后，尚未通过。3b/4b、可信红区审批、合并及生产部署均须另行满足。
+阶段性跨模型复审延后至整体完成后，尚未通过。3b/4b 已获维护者 2026-09-06 确认重签；CI、可信红区审批、合并及生产部署均须另行满足。
 
 ## 2. 已核验的起点和引用链
 
@@ -309,6 +309,12 @@ P6 收口：真实差值经维护者 3b/4b 签字、可信红区审批后才满�
 - 冷 lint（NODE_OPTIONS=--max-old-space-size=6144）与 build 通过；guards/eslint/hooks 串行自测通过，hooks 68/68，事故回放真触发 14/14、结构断言 12/12。
 - 架构 metadata/debt/new-debt/ids 四闸通过；新增架构违规为 0，基线未改。14 份 migration 计数声明均为 111，原 13 份只发生已授权计数与 D1 清理语句变化。
 - 权限说明绑定及审计登记检查通过：250 个权限码，159 个审计事件总计 / 154 活跃。权限管辖面历史基线条目均未改，仅新增三码。
-- cutover:check:signoff 实跑仍拒绝 3b/4b 旧对拍：migration-total=111；seed-sha256-12=76f7d81e6d82；Audit 159/154。未替维护者重签。
+- 重签前 cutover:check:signoff 实跑拒绝 3b/4b 旧对拍：migration-total=111；seed-sha256-12=76f7d81e6d82；Audit 159/154。当时未替维护者重签。
 
-本次仍未完成：3b/4b 重签、PR CI 冷跑、可信红区审批、合并与后续台账收口；阶段性跨模型复审按维护者决定延后，整体复审仍未通过。C1、D2b/D2c 与生产边界不变。
+### 3b/4b 重签（2026-09-06 已批准）
+
+维护者明确确认「确认重签 3b（C1 D2a，第111条 migration）」及「确认重签 4b（C1 D2a：权限码250；Audit events 159总计、154活跃）」。
+据此只更新 CUTOVER_SIGNOFF 的 3b/4b 当前理由、日期、依据与对拍，保留此前签字历史：migration-total=111、seed-sha256-12=76f7d81e6d82、字典 30 types / 277 items、Audit 159 总计 / 154 活跃。该确认不包含合并或生产部署。
+重签后 `pnpm cutover:check:signoff` 通过：71/71 正对照、10 条签字逐项对拍一致；`docs:counts:check`、`docs:readtax:check` 及冻结台账 6 项测试通过。签字检查通过不等于满足开闸条件。
+
+本次仍未完成：PR CI 冷跑、可信红区审批、合并与后续台账收口；阶段性跨模型复审按维护者决定延后，整体复审仍未通过。C1、D2b/D2c 与生产边界不变。
