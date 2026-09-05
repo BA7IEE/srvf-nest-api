@@ -2492,9 +2492,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B 与 Release 1 A1、A2、A3、A4、A5、A6、A7、A8 已通过；Release 2 / B1 评审稿已起草、方案 A 已确认；实施待独立授权**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B、Release 1 A1–A8 与 Release 2 B1–B6 已通过；B7 待独立评审与授权**
 
-**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251 与 A8 #1254 已合；A8 的 No-AI 串行验收入口、显式 Gate 关闭态、contract / OpenAPI / client 零漂移、PR CI 与可信红区审批均已收口；Release 2 / B1 已完成独立评审稿与方案拍板，尚未获 schema / migration / 测试基础设施写入授权)
+**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272 已合；B6 三种创建与紧急召集的代码、合同、handoff 和 PR 验证已收口；B7 前端交接和控制面灰度尚待独立评审、授权与验收，不代表 Release 2 整体交付或生产部署)
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
@@ -2510,9 +2510,14 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 - **A6 已交付并合入 #1248**:内部从模板创建 façade 以 operationKey 重放优先，首次调用锁定精确 Template Version、复验 A3 canonical/hash 与严格 Definition V1，并在同一事务物化草稿 Activity、Session、Position 和安全审计；第 104 条 migration 只增加两个 nullable 幂等列及唯一索引。Definition V1 不含坐标，要求定位或半径的场次 / 岗位 fail-closed；不新增 HTTP、DTO、Swagger、路由、权限、Gate、seed、回填或生产部署。
 - **A7 已交付并合入 #1251**:Series / immutable Revision、手工／按需幂等生成、`Asia/Shanghai` 时区归属、A6 transaction-bound materializer、批次收据与单期唯一锚点均已落地；第 105 条 migration 为纯 additive 表与约束，单元 / PostgreSQL E2E、PR CI 与红区审批均已收口。负责人 / 资源模型、地点 / 表单、cron、HTTP / Integration 入口、权限码、Gate 和依赖均未改。
 - **A8 已交付并合入 #1254**:冻结合同点名的 `test:business:no-ai` 已按核心 AI 零依赖结构判据、既有真实 HTTP Journey 与 A7 Series E2E 串行验收；A7 E2E 在创建 Nest app 前显式置 `ACTIVITY_V11_WORKFLOW_ENABLED=false` 与 `INTEGRATION_API_ENABLED=false`，结束后恢复原值。A8 不新增 API，contract、OpenAPI 与前端 client 零漂移，因此 handoff 正确地保持零差异；PR CI 与 `package.json` 可信红区审批均已收口。未改依赖、Jest 配置、CI、schema、migration、权限、运行时 Gate 或生产入口。
-- **B1 评审稿已起草、方案 A 已确认**:拟以纯 additive 的 PlacePreset / ActivityPlace 存储地基承接地点预设与活动地点快照；预设来源只作 provenance，场次关联必须以 Activity + Session 的复合锚物理固定。B1 不改旧 Activity / ActivitySession 坐标或投影，不开 API / DTO / 地图 / 权限 / Gate / 模板输入 / Readiness / Snapshot，实施仍待 schema、migration 和 resetDb 的精确 D 档授权及 migration 3b 重签。
-- **后续 Goal / lane / PR 顺序**:Release 1 `A1 → A8` 已完成 → Release 2 `B1 → B7` → Release 3 `C1 → C5` → Release 4 `D1 → D8` → Release 5 `E1 → E5` → Release 6 Incident / Resource 按真实优先级各自另立目标 → Release 7 可永久不开。每一箭头都是独立 PR；Activity 同一 bounded context 串行，schema lane 同时至多一条，前一 PR 合入和验收完成前不启动后一条。
-- **串行约束**:A1、A2、A3、A4、A5、A6、A7、A8 已完成独立评审、实现与 PR 验收；B1 及以后仍须按一条业务轴、additive、gate-off、shadow 对账和独立 handoff 收口，且不得沿用 A8 的授权。
+- **B1 已交付并合入 #1257**:PlacePreset / ActivityPlace 存储地基和第 106 条 migration 纯 additive 落地；预设只作来源记录，活动 / 场次关联以复合锚物理同链。未接入地点 writer、地图、API、权限、Gate 或旧字段投影。
+- **B2 已交付并合入 #1259**:坐标三值闭集、六条数据库约束、纯坐标投影策略与第 107 条 migration 已落地，并完成非空库 rehearsal；未接入地图、地点 writer、签到路径或旧字段写入。
+- **B3 已交付并合入 #1261**:Definition V2 报名表蓝图复制、既有八种题型、受治理 Form canonical / managed 契约、v3–v5 Form 兼容及第 108 条 migration 已落地；敏感题目仍须逐题治理审批后启用。
+- **B4 已交付并合入 #1264**:只读、确定性、gate-off 的发布就绪评估器已落地，在一次只读事务内汇总结构化问题；不接现有发布链，不改 schema、migration、API/DTO、权限、快照或生产 Gate。
+- **B5 已交付并合入 #1267**:新 initial / change 提案统一使用 schemaVersion=6，冻结分类 / facet、原始模板指针、活动本地地点与最小可见性摘要；尚无正式模型的 Time / Contribution / Metric 指针固定为 null。v2–v5 与在途 hash 保持兼容，审核详情使用安全 proposal-v6 变更摘要；不改 schema、migration、API/DTO、权限、Gate 或 Readiness。
+- **B6 D1 / D2 已分别交付并合入 #1270 / #1272**:D1 的第 109 条 migration 新增创建收据、紧急起源及七项事后义务三张表；紧急权限保持 SUPER_ADMIN_ONLY，权限码 247、Audit events 157 总计 / 152 活跃。D2 新增 App managed 模板快速、专业完整、紧急创建三个独立入口，落实地点快照、受治理表单、事务内物化和幂等收据；紧急创建额外校验专属权限，冻结受众、一次 outbox 与草稿同事务提交，事后义务只认权威事实。三种创建不直接正式发布，紧急草稿在既有发布链拒绝正式发布；不冒充事故处置。定向 PostgreSQL E2E、contract、17 项 PR 检查、可信红区审批及跨模型评审处置已收口；评审及裁决证据留在 #1272 评论中。D2 无 schema / migration / seed / 新权限码 / 新审计事件，不开启 B4 readiness 或生产 Gate。
+- **后续 Goal / lane / PR 顺序**:Release 1 `A1 → A8` 与 Release 2 `B1 → B6` 已完成 → Release 2 `B7` → Release 3 `C1 → C5` → Release 4 `D1 → D8` → Release 5 `E1 → E5` → Release 6 Incident / Resource 按真实优先级各自另立目标 → Release 7 可永久不开。每一箭头都是独立 PR；Activity 同一 bounded context 串行，schema lane 同时至多一条，前一 PR 合入和验收完成前不启动后一条。
+- **串行约束**:B7 及以后仍须按一条业务轴、additive、gate-off、shadow 对账和独立 handoff 收口；B6 授权不得带入后续阶段，生产部署与 Gate 开启仍需独立审批。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
