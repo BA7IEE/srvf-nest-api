@@ -461,6 +461,37 @@ export interface ActivityAudienceTagsConfig {
   httpEnabled: boolean;
 }
 
+export type ActivityControlPlaneMode = 'off' | 'shadow' | 'active';
+
+export interface ActivityControlPlaneConfig {
+  mode: ActivityControlPlaneMode;
+}
+
+export function parseActivityControlPlaneMode(
+  raw: string | undefined,
+  env: AppEnv,
+  v11Enabled: boolean,
+): ActivityControlPlaneMode {
+  if (raw === undefined || raw.trim() === '') {
+    if (isProductionLike(env)) {
+      throw new Error(
+        'ACTIVITY_OS_CONTROL_PLANE_MODE 不能为空(production / smoke 必须显式设置 off、shadow 或 active)',
+      );
+    }
+    return 'off';
+  }
+  if (raw !== 'off' && raw !== 'shadow' && raw !== 'active') {
+    throw new Error('ACTIVITY_OS_CONTROL_PLANE_MODE 必须严格为 off、shadow 或 active');
+  }
+  // Only a boot-time interlock; this never enables v1.1 or changes request-time truth.
+  if (isProductionLike(env) && raw === 'active' && !v11Enabled) {
+    throw new Error(
+      'ACTIVITY_OS_CONTROL_PLANE_MODE=active 要求 ACTIVITY_V11_WORKFLOW_ENABLED=true(production / smoke)',
+    );
+  }
+  return raw;
+}
+
 // 活动 v1.1 上线切换闸(合同 §16.2)。**单一 cutover gate**,统一控制三项:
 //   1. 新 Session / Participation / Punch / Settlement / Ledger 写路径是否放行;
 //   2. 旧 ActivityCheckIn / AttendanceSheet 写路径是否拒绝;
@@ -730,6 +761,7 @@ export interface AppConfig {
   activityResponsibilityWorkflow: ActivityResponsibilityWorkflowConfig;
   activityAudienceTags: ActivityAudienceTagsConfig;
   activityV11Workflow: ActivityV11WorkflowConfig;
+  activityOsControlPlane: ActivityControlPlaneConfig;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -1028,6 +1060,14 @@ export default registerAs('app', (): AppConfig => {
     readonlyMaintenance: parseActivityWorkflowReadonly(process.env.ACTIVITY_WORKFLOW_READONLY),
   };
 
+  const activityOsControlPlane: ActivityControlPlaneConfig = {
+    mode: parseActivityControlPlaneMode(
+      process.env.ACTIVITY_OS_CONTROL_PLANE_MODE,
+      env,
+      activityV11Workflow.enabled,
+    ),
+  };
+
   return {
     env,
     port,
@@ -1058,5 +1098,6 @@ export default registerAs('app', (): AppConfig => {
     activityResponsibilityWorkflow,
     activityAudienceTags,
     activityV11Workflow,
+    activityOsControlPlane,
   };
 });

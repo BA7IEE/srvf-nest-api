@@ -30,6 +30,22 @@
 
 紧急 `followUpItems` 固定七项，状态为 pending / verified / unrepresentable。现有场次、岗位和地点事实才可证明对应事项，删除后会恢复 pending；设备、结果、事故关联没有权威模型，当前如实为 unrepresentable，考勤仍 pending。**没有任意“完成”按钮；补齐全部可验证事项也不能正式发布**。App 提审/直发和 Admin 发布/审批均拒绝紧急起源（`20030`）；不要用旧入口重试绕过。B4 readiness 不因本刀启用。
 
+### Activity OS R2 / B7：控制面灰度（生产未部署）
+
+登录后读取 `GET /api/app/v1/my/managed-activities/control-plane/status`。它只要求有效 App member，返回标准信封，`data` 严格为 `{mode,creationAvailability}`。不要求创建权限，不返回组织、角色、权限码或 v1.1 状态；`enabled` 不承诺当前用户能创建。
+
+| mode | creationAvailability | 前端行为 |
+|---|---|---|
+| `off` | `unavailable` | 隐藏 B6 三种新建入口；三个 POST 统一拒绝 `503 / 20163`，不通过旧泛化创建绕过。 |
+| `shadow` | `pilot` | 仅向维护者另行批准的前端试运行人群展示；提交仍走 B6 全部既有校验。 |
+| `active` | `enabled` | 展示常规创建入口；仍按服务端权限、责任制与跨组织结果处理。 |
+
+`shadow` 的人群控制由前端/产品发布管理承担，后端不增加 cohort 安全边界。`shadow` 与 `active` 均只产生 B6 草稿、收据及必要审计/outbox；不得展示为“已发布”“事故已受理”“呼叫已送达”或“时长/贡献已入账”。mode 与创建响应中的 quick/professional/emergency 是不同维度。
+
+状态应在进入创建页和重试提交前重新读取；不可跨会话缓存为授权结论。遇到 `20163` 刷新状态并停止提交，保留原操作键；再次放开后仍按既有幂等协议确认结果。关闭 Gate 同样拒绝旧操作键的 POST 重放，但不倒改既有草稿、审计或 outbox，可经已有 managed detail 查看活动。
+
+服务端默认 `off`。production/smoke 明确配置且 `active` 仅在 v1.1 Gate 为真时允许启动；真实 cutover 完成与稳定观察、前端页面发布、人群选定、部署和生产 mode 切换均另行审批。本仓交付状态 API、OpenAPI 和生成 client，不代表小程序页面已发布。
+
 ### 1.1 登录与令牌(与 admin 全端一致,不在两处各维护)
 
 三种登录(`login` 密码 / `login-sms` 验证码 / `login-wechat` openid,未绑定时返 `bindingRequired` 见 §2)成功时返回同一 `LoginResponseDto`(P0-E 冻结 5 字段)。信封语义、业务失败 = HTTP 4xx、`expiresIn` 时长串 + `refreshExpiresAt` family 绝对死期的**双计时器**、rotation always、错误码(10004/40100/10007/42900)→ 行为映射,统一见 [`admin-web.md §3.1`](admin-web.md)(全端通用)。其中 `logout` 用传入 token 定位并撤销整个 refresh family，成功 `data=null`；只有 `logout-all` 返回 `revokedCount`。App 侧差异只有一条:登录后能力判定调 `GET app/v1/me/capabilities`(产品级),**不**消费 admin 的 raw 权限码出口(§1 铁律)。

@@ -1813,6 +1813,13 @@ export const BizCode = {
     httpStatus: HttpStatus.CONFLICT,
   },
 
+  // Activity OS R2 / B7: three B6 draft creation commands only; not a permission failure.
+  ACTIVITY_CONTROL_PLANE_UNAVAILABLE: {
+    code: 20163,
+    message: '活动新建控制面暂未开放',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+
   // ===== 归档动作的两套开工条件(§6.6 / AC-004 / AC-064;2026-08-25 拍板)=====
   //
   // 🔴 **两套条件各给一个具名码,不合并成一个 ACTIVITY_ARCHIVE_NOT_ELIGIBLE。**

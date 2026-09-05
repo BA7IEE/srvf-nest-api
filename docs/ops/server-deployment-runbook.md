@@ -70,7 +70,7 @@
 ### 2.6 必填环境变量清单(缺任一项**直接拒启**)
 
 `app.config.ts` 在启动期对下列变量 fail-fast。**`smoke` 与 `production` 同等对待**
-(`isProductionLike()`,`app.config.ts:16-18`)⇒ 第一阶段虽然用 smoke,下表 10 条
+(`isProductionLike()`,`app.config.ts:16-18`)⇒ 第一阶段虽然用 smoke,下表 11 条
 **一条都不能少**;另有 2 条只在 `production` 生效,见
 [第二阶段 §1.5](./server-deployment-runbook-stage2.md)。
 
@@ -90,6 +90,7 @@
 | `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` | ✅ | ✅ | `:481` | 严格 `true` / `false`;首次上线填 `false` |
 | `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED` | ✅ | ✅ | `:499` | 同上,首次上线填 `false` |
 | `ACTIVITY_V11_WORKFLOW_ENABLED` | ✅ | ✅ | `:517` | 同上,首次上线填 `false`(切换闸,见 `docs/ops/activity-batch-worker-runbook.md`) |
+| `ACTIVITY_OS_CONTROL_PLANE_MODE` | ✅ | ✅ | `src/config/app.config.ts` 的 `parseActivityControlPlaneMode` | 严格 `off` / `shadow` / `active`，首次填 `off`；`active` 且 v1.1 未开时拒启 |
 | `INSURANCE_ENFORCEMENT_ENABLED` | — | ✅ | `:326` | 第二阶段 §1.5 |
 | `STORAGE_CONSISTENCY_MODE` | — | ✅ | `:542` | 第二阶段 §1.5 |
 

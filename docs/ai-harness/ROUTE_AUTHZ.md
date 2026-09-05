@@ -16,9 +16,9 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:75072b4da8f5909d01c2bd8d5955fef0d1352388e2b78d3fe8474be62b4fdce5 |
-| endpoint count | 573 |
-| legacy [auth] count | 177 |
+| inputDigest | sha256:6c671a2f0f8b55a0efb28758f440048e44c5064b96b5e0f6ef2e982e4689a7ae |
+| endpoint count | 574 |
+| legacy [auth] count | 178 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -30,7 +30,7 @@
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
 | admin | 281 | 281 | 0 |
-| app | 163 | 163 | 0 |
+| app | 164 | 164 | 0 |
 | system | 89 | 89 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
@@ -42,7 +42,7 @@
 |---|---:|
 | public | 33 |
 | rbac | 363 |
-| auth | 177 |
+| auth | 178 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -66,7 +66,7 @@
 | app tag family | Mobile - Activity Registration Upload Sessions (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts:78 |
 | app tag family | Mobile - Activity Registrations (1) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-activity-registrations.controller.ts:29 |
 | app tag family | Mobile - Content (2) | LOGIN_SCOPED; admission=app-member; codes=content.read.record; require=all; scopes=visibility:content-visibility; engine=authz-scoped | code | src/modules/content/content-app.controller.ts:36 |
-| app tag family | Mobile - Managed Activities (38) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1210 |
+| app tag family | Mobile - Managed Activities (39) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1210 |
 | app tag family | Mobile - Managed Activity Allocation Batches (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts:135 |
 | app tag family | Mobile - Managed Activity Attendance QR (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendance-qr.controller.ts:52 |
 | app tag family | Mobile - Managed Activity Attendances (8) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:213 |
@@ -111,7 +111,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:75072b4da8f5909d01c2bd8d5955fef0d1352388e2b78d3fe8474be62b4fdce5",
+  "inputDigest": "sha256:6c671a2f0f8b55a0efb28758f440048e44c5064b96b5e0f6ef2e982e4689a7ae",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -3922,6 +3922,20 @@
           "responsibility"
         ],
         "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/my/managed-activities/control-plane/status",
+      "controller": "AppManagedActivityControlPlaneController",
+      "handler": "status",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [],
+        "engine": "none"
       }
     },
     {
@@ -10943,6 +10957,7 @@
 | GET | /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId | Mobile - Managed Activities | rbac | RBAC; admission=-; codes=activity.settlement-generate.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1055; src/modules/activities/controllers/app-managed-activities.controller.ts:1076 |
 | GET | /api/app/v1/my/managed-activities/:activityId/template-resolution | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1131; src/modules/activities/controllers/app-managed-activities.controller.ts:1151 |
 | GET | /api/app/v1/my/managed-activities/:activityId/visitors | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:147; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:169 |
+| GET | /api/app/v1/my/managed-activities/control-plane/status | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=-; engine=none | code | src/modules/activities/controllers/app-managed-activity-control-plane.controller.ts:27; src/modules/activities/controllers/app-managed-activity-control-plane.controller.ts:33 |
 | GET | /api/app/v1/my/managed-activities/organization-options | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:128; src/modules/activities/controllers/app-managed-activities.controller.ts:146 |
 | GET | /api/app/v1/my/participation-ledger | Mobile - My Participation Ledger | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activities/controllers/app-my-participation-ledger.controller.ts:29; src/modules/activities/controllers/app-my-participation-ledger.controller.ts:43 |
 | GET | /api/app/v1/my/participation-summary | Mobile - My Attendance | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-participation-summary.controller.ts:22; src/modules/attendances/controllers/app-my-participation-summary.controller.ts:38 |
@@ -11229,9 +11244,9 @@
 | POST | /api/app/v1/my/managed-activities/:activityId/unarchive | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:295; src/modules/activities/controllers/app-managed-activities.controller.ts:322 |
 | POST | /api/app/v1/my/managed-activities/:activityId/visitors | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:172; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:196 |
 | POST | /api/app/v1/my/managed-activities/:activityId/withdraw-publish-review | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1415; src/modules/activities/controllers/app-managed-activities.controller.ts:1438 |
-| POST | /api/app/v1/my/managed-activities/emergency | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org,activity.create.emergency.record,activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-creation.controller.ts:97; src/modules/activities/controllers/app-managed-activity-creation.controller.ts:124 |
-| POST | /api/app/v1/my/managed-activities/from-template | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org,activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-creation.controller.ts:38; src/modules/activities/controllers/app-managed-activity-creation.controller.ts:65 |
-| POST | /api/app/v1/my/managed-activities/professional | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org,activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-creation.controller.ts:68; src/modules/activities/controllers/app-managed-activity-creation.controller.ts:94 |
+| POST | /api/app/v1/my/managed-activities/emergency | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org,activity.create.emergency.record,activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-creation.controller.ts:99; src/modules/activities/controllers/app-managed-activity-creation.controller.ts:127 |
+| POST | /api/app/v1/my/managed-activities/from-template | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org,activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-creation.controller.ts:38; src/modules/activities/controllers/app-managed-activity-creation.controller.ts:66 |
+| POST | /api/app/v1/my/managed-activities/professional | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org,activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-creation.controller.ts:69; src/modules/activities/controllers/app-managed-activity-creation.controller.ts:96 |
 | POST | /api/app/v1/my/registrations | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:133; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:167 |
 | POST | /api/app/v1/notifications/:id/read | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:147; src/modules/notifications/notification-app.controller.ts:165 |
 | POST | /api/app/v1/notifications/subscriptions/ack | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:73; src/modules/notifications/notification-app.controller.ts:91 |

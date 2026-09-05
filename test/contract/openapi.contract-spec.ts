@@ -228,6 +228,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities'],
   ['post', '/api/app/v1/my/managed-activities'],
   ['post', '/api/app/v1/my/managed-activities/from-template'],
+  ['get', '/api/app/v1/my/managed-activities/control-plane/status'],
   ['post', '/api/app/v1/my/managed-activities/professional'],
   ['post', '/api/app/v1/my/managed-activities/emergency'],
   // 第 3 批第三刀：App 生命周期命令、配置 clone 与既有 evidence seal 的 HTTP 接线。
@@ -1090,7 +1091,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 573; // Activity OS R2 / B6 D2 +3(App managed creation commands)
+const EXPECTED_ROUTE_COUNT = 574; // Activity OS R2 / B7 +1(App control-plane status)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -2186,6 +2187,31 @@ describe('OpenAPI 契约快照', () => {
       'incident_relation',
     ]);
     expect(Object.keys(followUp.properties ?? {}).sort()).toEqual(['itemCode', 'statusCode']);
+  });
+
+  it('B7 status is a minimal App-only mode DTO and only B6 creation documents its 503', () => {
+    const root = '/api/app/v1/my/managed-activities';
+    const operation = doc.paths[`${root}/control-plane/status`]?.get;
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+    const schema = doc.components?.schemas?.AppActivityControlPlaneStatusDto as OpenApiSchema;
+    expect(schema.required?.slice().sort()).toEqual(['creationAvailability', 'mode']);
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual(['creationAvailability', 'mode']);
+    expect(schema.properties?.mode.enum).toEqual(['off', 'shadow', 'active']);
+    expect(schema.properties?.creationAvailability.enum).toEqual([
+      'unavailable',
+      'pilot',
+      'enabled',
+    ]);
+    for (const path of ['from-template', 'professional', 'emergency']) {
+      const error = doc.paths[`${root}/${path}`]?.post?.responses?.['503'];
+      expect(error?.content?.['application/json']?.schema?.properties?.code.enum).toContain(
+        BizCode.ACTIVITY_CONTROL_PLANE_UNAVAILABLE.code,
+      );
+    }
+    expect(
+      doc.paths[root]?.post?.responses?.['503']?.content?.['application/json']?.schema?.properties
+        ?.code.enum,
+    ).toEqual([BizCode.ACTIVITY_RESPONSIBILITY_WORKFLOW_NOT_ENABLED.code]);
   });
 
   it('canonical 报名命令显式声明性别、岗位与保险准入错误', () => {
