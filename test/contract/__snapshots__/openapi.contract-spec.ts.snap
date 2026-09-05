@@ -3059,6 +3059,33 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppActivityControlPlaneStatusDto": {
+    "properties": {
+      "creationAvailability": {
+        "description": "前端入口展示状态，不是当前用户的创建权限或正式发布资格",
+        "enum": [
+          "unavailable",
+          "pilot",
+          "enabled",
+        ],
+        "type": "string",
+      },
+      "mode": {
+        "description": "B6 新创建控制面模式",
+        "enum": [
+          "off",
+          "shadow",
+          "active",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "mode",
+      "creationAvailability",
+    ],
+    "type": "object",
+  },
   "AppActivityCreationDetailDto": {
     "properties": {
       "activityId": {
@@ -99148,6 +99175,120 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/my/managed-activities/control-plane/status": {
+    "get": {
+      "operationId": "AppManagedActivityControlPlaneController_status",
+      "parameters": [],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityControlPlaneStatusDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "App 新创建控制面状态（非创建权限证明） [auth]",
+      "tags": [
+        "Mobile - Managed Activities",
+      ],
+    },
+  },
   "/api/app/v1/my/managed-activities/emergency": {
     "post": {
       "operationId": "AppManagedActivityCreationController_emergency",
@@ -99294,6 +99435,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             },
           },
           "description": "活动当前状态不允许此操作(code=20030)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20163: 活动新建控制面暂未开放",
+                    "enum": [
+                      20163,
+                    ],
+                    "example": 20163,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动新建控制面暂未开放",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动新建控制面暂未开放(code=20163)",
         },
       },
       "security": [
@@ -99454,6 +99629,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             },
           },
           "description": "活动当前状态不允许此操作(code=20030) / 从模板创建活动的操作键与首次请求不一致(code=20162)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20163: 活动新建控制面暂未开放",
+                    "enum": [
+                      20163,
+                    ],
+                    "example": 20163,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动新建控制面暂未开放",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动新建控制面暂未开放(code=20163)",
         },
       },
       "security": [
@@ -99731,6 +99940,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             },
           },
           "description": "活动当前状态不允许此操作(code=20030)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20163: 活动新建控制面暂未开放",
+                    "enum": [
+                      20163,
+                    ],
+                    "example": 20163,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动新建控制面暂未开放",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动新建控制面暂未开放(code=20163)",
         },
       },
       "security": [

@@ -55,6 +55,7 @@ export class AppManagedActivityCreationController {
     BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_STATUS_INVALID,
     BizCode.ACTIVITY_CREATE_FROM_TEMPLATE_OPERATION_KEY_CONFLICT,
+    BizCode.ACTIVITY_CONTROL_PLANE_UNAVAILABLE,
   )
   async quick(
     @Body() dto: AppQuickActivityCreationDto,
@@ -84,6 +85,7 @@ export class AppManagedActivityCreationController {
     BizCode.FORBIDDEN,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_CONTROL_PLANE_UNAVAILABLE,
   )
   async professional(
     @Body() dto: AppProfessionalActivityCreationDto,
@@ -114,6 +116,7 @@ export class AppManagedActivityCreationController {
     BizCode.FORBIDDEN,
     BizCode.RBAC_FORBIDDEN,
     BizCode.ACTIVITY_STATUS_INVALID,
+    BizCode.ACTIVITY_CONTROL_PLANE_UNAVAILABLE,
   )
   async emergency(
     @Body() dto: AppEmergencyActivityCreationDto,

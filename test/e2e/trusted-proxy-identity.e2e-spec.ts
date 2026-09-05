@@ -71,6 +71,7 @@ function appConfigForProbe(trustedProxyCidrs: string[]): AppConfig {
     insurance: { enforcementEnabled: false },
     activityResponsibilityWorkflow: { enabled: false },
     activityAudienceTags: { httpEnabled: false },
+    activityOsControlPlane: { mode: 'off' },
     // 只读维护态(合同 §16.4):AppConfig 新增必填字段;本 e2e 不关心只读位,仅满足接口。
     activityV11Workflow: { enabled: false, readonlyMaintenance: false },
     // localRoot 跟随 setup-files 的 per-worker 派生值(并行下不得硬编码共享目录)

@@ -34797,6 +34797,120 @@
         ]
       }
     },
+    "/api/app/v1/my/managed-activities/control-plane/status": {
+      "get": {
+        "operationId": "AppManagedActivityControlPlaneController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityControlPlaneStatusDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "App 新创建控制面状态（非创建权限证明） [auth]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
     "/api/app/v1/my/managed-activities/from-template": {
       "post": {
         "operationId": "AppManagedActivityCreationController_quick",
@@ -34934,6 +35048,40 @@
                     "message": {
                       "type": "string",
                       "example": "活动当前状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动新建控制面暂未开放(code=20163)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20163
+                      ],
+                      "description": "20163: 活动新建控制面暂未开放",
+                      "example": 20163
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动新建控制面暂未开放"
                     },
                     "data": {
                       "type": "object",
@@ -35103,6 +35251,40 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "活动新建控制面暂未开放(code=20163)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20163
+                      ],
+                      "description": "20163: 活动新建控制面暂未开放",
+                      "example": 20163
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动新建控制面暂未开放"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -35252,6 +35434,40 @@
                     "message": {
                       "type": "string",
                       "example": "活动当前状态不允许此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "活动新建控制面暂未开放(code=20163)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20163
+                      ],
+                      "description": "20163: 活动新建控制面暂未开放",
+                      "example": 20163
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动新建控制面暂未开放"
                     },
                     "data": {
                       "type": "object",
@@ -126258,6 +126474,33 @@
           "refreshTokensRevoked",
           "residualActivePositionAssignments",
           "residualActiveSupervisions"
+        ]
+      },
+      "AppActivityControlPlaneStatusDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "shadow",
+              "active"
+            ],
+            "description": "B6 新创建控制面模式"
+          },
+          "creationAvailability": {
+            "type": "string",
+            "enum": [
+              "unavailable",
+              "pilot",
+              "enabled"
+            ],
+            "description": "前端入口展示状态，不是当前用户的创建权限或正式发布资格"
+          }
+        },
+        "required": [
+          "mode",
+          "creationAvailability"
         ]
       },
       "AppActivityCreationDetailDto": {

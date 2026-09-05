@@ -18,6 +18,8 @@ import { ActivityStatusCommandService } from './activity-status-command.service'
 import { ActivityWriteService } from './activity-write.service';
 import { ActivityFromTemplateService } from './activity-from-template.service';
 import { ActivityCreationService } from './activity-creation.service';
+import { ActivityControlPlaneGate } from './activity-control-plane.gate';
+import { AppManagedActivityControlPlaneController } from './controllers/app-managed-activity-control-plane.controller';
 import { ActivityCreationQuick } from './activity-creation-quick';
 import { ActivityCreationProfessional } from './activity-creation-professional';
 import { ActivityCreationEmergency } from './activity-creation-emergency';
@@ -154,6 +156,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     forwardRef(() => AttendancesModule),
   ],
   controllers: [
+    AppManagedActivityControlPlaneController,
     AppManagedActivityCreationController,
     ActivitiesController,
     AppActivitiesController,
@@ -170,6 +173,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AdminMemberParticipationLedgerController,
   ],
   providers: [
+    ActivityControlPlaneGate,
     ActivityCreationService,
     ActivityCreationQuick,
     ActivityCreationProfessional,

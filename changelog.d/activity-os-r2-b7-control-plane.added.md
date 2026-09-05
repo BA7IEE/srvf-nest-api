@@ -1,0 +1,2 @@
+- Activity OS R2 / B7：新增 `ACTIVITY_OS_CONTROL_PLANE_MODE=off|shadow|active`，仅控制三种 B6 App 草稿创建；关闭态统一 `503/20163` 且零创建写入，shadow/active 保持原草稿、幂等、责任制与紧急发布禁令。新增 App member 只读状态 GET 与前端交接契约；production/smoke 必填且 active 受 v1.1 启动联锁保护，首次配置 off。
+- B7 implementation 按维护者补充确认归 D 档（涉及 Docker smoke workflow，遵循 process §3，订正 #1274 评审稿的 C 档分级）；无生产部署、模式切换、schema/migration/seed、权限码或审计事件变更。

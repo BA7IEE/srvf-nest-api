@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:a04eb1c846ade456ecb5467ba9fedceccfb8be3673462756a012381075be8d54
+// inputDigest: sha256:6096050df3c2f50940094744ef894b326707443e9f7bf20bf2269024073120c9
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -23,6 +23,7 @@ import type {
   AppActivityArchiveResultDto,
   AppActivityChangePositionDto,
   AppActivityCheckInDto,
+  AppActivityControlPlaneStatusDto,
   AppActivityCreationDetailDto,
   AppActivityCreationPlaceDto,
   AppActivityCreationResultDto,
@@ -475,6 +476,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 正式队员创建本人作为发起人的活动草稿 [auth] */
     AppManagedActivitiesControllerCreate(body: CreateAppManagedActivityDto): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
       return fetcher<AppManagedActivityDetailDto>({ method: "POST", path: "/api/app/v1/my/managed-activities", body });
+    },
+    /** App 新创建控制面状态（非创建权限证明） [auth] */
+    AppManagedActivityControlPlaneControllerStatus(): Promise<ApiEnvelope<AppActivityControlPlaneStatusDto>> {
+      return fetcher<AppActivityControlPlaneStatusDto>({ method: "GET", path: "/api/app/v1/my/managed-activities/control-plane/status" });
     },
     /** App 创建紧急草稿并冻结呼叫受众（不正式发布） [auth] */
     AppManagedActivityCreationControllerEmergency(body: AppEmergencyActivityCreationDto): Promise<ApiEnvelope<AppActivityCreationResultDto>> {

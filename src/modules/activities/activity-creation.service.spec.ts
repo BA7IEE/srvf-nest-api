@@ -13,6 +13,8 @@ import type { ActivityCreationProfessional } from './activity-creation-professio
 import type { ActivityCreationEmergency } from './activity-creation-emergency';
 import type { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivityCreationService } from './activity-creation.service';
+import { ActivityControlPlaneGate } from './activity-control-plane.gate';
+import type { ActivityControlPlaneMode } from '../../config/app.config';
 import {
   mapEmergencyCreation,
   mapProfessionalCreation,
@@ -72,7 +74,7 @@ const commands = {
   }),
 };
 
-function makeHarness(enabled = true) {
+function makeHarness(enabled = true, controlMode: ActivityControlPlaneMode = 'active') {
   // The positive controls must reach this sentinel. No database or creation primitive is run.
   const transactionReached = new Error('root transaction reached');
   const transaction = jest
@@ -96,6 +98,9 @@ function makeHarness(enabled = true) {
     {} as ActivityCreationEmergency,
     {} as ActivityAuditRecorder,
     { activityResponsibilityWorkflow: { enabled } } as ConfigType<typeof appConfig>,
+    new ActivityControlPlaneGate({
+      activityOsControlPlane: { mode: controlMode },
+    } as ConfigType<typeof appConfig>),
   );
   const invoke = (mode: keyof typeof commands, user = actor) => {
     if (mode === 'quick') return service.createQuick(commands.quick, user, auditMeta);
@@ -109,6 +114,32 @@ function makeHarness(enabled = true) {
 describe.each(['quick', 'professional', 'emergency'] as const)(
   'B6 %s access checks precede every root transaction',
   (mode) => {
+    it('B7 off denies an authorized actor without opening a root transaction', async () => {
+      const h = makeHarness(true, 'off');
+      await expect(h.invoke(mode)).rejects.toMatchObject({
+        biz: BizCode.ACTIVITY_CONTROL_PLANE_UNAVAILABLE,
+      });
+      expect(h.assertCanOrThrow.mock.calls).toEqual([
+        [actor, 'activity.create.record'],
+        ...(mode === 'emergency' ? [[actor, 'activity.create.emergency.record']] : []),
+      ]);
+      expect(h.transaction).not.toHaveBeenCalled();
+    });
+
+    it('B7 off preserves permission denial ahead of mode rejection', async () => {
+      const h = makeHarness(true, 'off');
+      const denied = new BizException(BizCode.RBAC_FORBIDDEN);
+      h.assertCanOrThrow.mockRejectedValueOnce(denied);
+      await expect(h.invoke(mode)).rejects.toBe(denied);
+      expect(h.transaction).not.toHaveBeenCalled();
+    });
+
+    it('B7 shadow reaches the same B6 root transaction', async () => {
+      const h = makeHarness(true, 'shadow');
+      await expect(h.invoke(mode)).rejects.toBe(h.transactionReached);
+      expect(h.transaction).toHaveBeenCalledTimes(1);
+    });
+
     it('refuses actors without a member identity before checking permissions or opening a transaction', async () => {
       const h = makeHarness();
       await expect(h.invoke(mode, { ...actor, memberId: null })).rejects.toMatchObject({

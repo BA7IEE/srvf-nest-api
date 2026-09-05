@@ -53,6 +53,7 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
   let childId: string;
   let sequence = 0;
   const previousGate = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+  const previousControlMode = process.env.ACTIVITY_OS_CONTROL_PLANE_MODE;
   const unique = (label: string) => `b6-emergency-${label}-${++sequence}`;
 
   async function member(orgId: string, status: MemberStatus = MemberStatus.ACTIVE) {
@@ -86,6 +87,7 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
 
   beforeAll(async () => {
     process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
+    process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = 'active';
     app = await createTestApp();
     prisma = app.get(PrismaService);
     config = app.get<ConfigType<typeof appConfig>>(appConfig.KEY);
@@ -137,6 +139,8 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
     await app.close();
     if (previousGate === undefined) delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
     else process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousGate;
+    if (previousControlMode === undefined) delete process.env.ACTIVITY_OS_CONTROL_PLANE_MODE;
+    else process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = previousControlMode;
   });
 
   const input = () => ({

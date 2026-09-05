@@ -8,6 +8,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityAccessService } from './activity-access.service';
+import { ActivityControlPlaneGate } from './activity-control-plane.gate';
 import { AppManagedActivitiesService } from './app-managed-activities.service';
 import { ActivityFromTemplateService } from './activity-from-template.service';
 import { ActivityCreationQuick } from './activity-creation-quick';
@@ -42,6 +43,7 @@ export class ActivityCreationService {
     private readonly emergency: ActivityCreationEmergency,
     private readonly audit: ActivityAuditRecorder,
     @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
+    private readonly controlPlane: ActivityControlPlaneGate,
   ) {}
 
   async createQuick(
@@ -50,6 +52,7 @@ export class ActivityCreationService {
     auditMeta: AuditMeta,
   ): Promise<AppActivityCreationResultDto> {
     await this.assertAccess(user);
+    this.controlPlane.assertCreationAvailable();
     const requestHash = creationRequestHash('quick', user.id, command);
     const replay = async (tx: Prisma.TransactionClient) => {
       const activity = await this.templates.findCreationReplayWithinTransaction(
@@ -97,6 +100,7 @@ export class ActivityCreationService {
     auditMeta: AuditMeta,
   ) {
     await this.assertAccess(user);
+    this.controlPlane.assertCreationAvailable();
     return this.runReceiptCommand({ mode: 'professional', command }, user, auditMeta);
   }
 
@@ -107,6 +111,7 @@ export class ActivityCreationService {
   ) {
     await this.assertAccess(user);
     await this.access.assertCanOrThrow(user, 'activity.create.emergency.record');
+    this.controlPlane.assertCreationAvailable();
     const { organizationIds, memberIds } = command;
     if (
       (organizationIds === undefined) === (memberIds === undefined) ||

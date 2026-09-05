@@ -1,10 +1,101 @@
-import {
+import appConfig, {
+  parseActivityControlPlaneMode,
   parseActivityAudienceTagsHttpEnabled,
   parseActivityResponsibilityWorkflowEnabled,
   parseActivityV11WorkflowEnabled,
   parseInsuranceEnforcementEnabled,
   parseTrustedProxyCidrs,
 } from './app.config';
+
+describe('ACTIVITY_OS_CONTROL_PLANE_MODE', () => {
+  it.each(['development', 'test'] as const)(
+    '%s defaults only absent/blank values to off',
+    (env) => {
+      for (const raw of [undefined, '', '   '])
+        expect(parseActivityControlPlaneMode(raw, env, false)).toBe('off');
+      expect(parseActivityControlPlaneMode('active', env, false)).toBe('active');
+    },
+  );
+
+  describe.each(['production', 'smoke'] as const)('%s startup', (env) => {
+    it.each([undefined, '', '   '])('refuses absent/blank mode %j', (raw) => {
+      expect(() => parseActivityControlPlaneMode(raw, env, true)).toThrow('不能为空');
+    });
+    it.each(['off', 'shadow', 'active'] as const)(
+      'accepts explicit %s when v1.1 is enabled',
+      (mode) => {
+        expect(parseActivityControlPlaneMode(mode, env, true)).toBe(mode);
+      },
+    );
+    it.each(['off', 'shadow'] as const)('allows %s without enabling v1.1', (mode) => {
+      expect(parseActivityControlPlaneMode(mode, env, false)).toBe(mode);
+    });
+    it('refuses active when v1.1 is disabled', () => {
+      expect(() => parseActivityControlPlaneMode('active', env, false)).toThrow(
+        '要求 ACTIVITY_V11_WORKFLOW_ENABLED=true',
+      );
+    });
+  });
+
+  describe.each(['development', 'test', 'production', 'smoke'] as const)(
+    '%s strict parsing',
+    (env) => {
+      it.each(['OFF', 'Active', 'true', 'false', '1', 'yes', 'shadow ', ' active', 'unknown'])(
+        'rejects %j',
+        (raw) => {
+          expect(() => parseActivityControlPlaneMode(raw, env, true)).toThrow('必须严格为');
+        },
+      );
+    },
+  );
+});
+
+describe.each(['production', 'smoke'] as const)('B7 %s registered config factory', (env) => {
+  const previousEnv = process.env;
+  beforeEach(() => {
+    // Isolated synthetic environment: no database, real credentials or service startup.
+    process.env = {
+      APP_ENV: env,
+      APP_PORT: '3000',
+      APP_CORS_ORIGIN: 'https://b7.example.test',
+      APP_TRUSTED_PROXY_CIDRS: 'none',
+      STORAGE_CONSISTENCY_MODE: 'STRICT',
+      STORAGE_ENCRYPTION_KEY: 's'.repeat(32),
+      SMS_ENCRYPTION_KEY: 'm'.repeat(32),
+      WECHAT_ENCRYPTION_KEY: 'w'.repeat(32),
+      WECOM_ENCRYPTION_KEY: 'c'.repeat(32),
+      REALNAME_ENCRYPTION_KEY: 'r'.repeat(32),
+      INSURANCE_ENFORCEMENT_ENABLED: 'false',
+      ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED: 'false',
+      ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED: 'false',
+      ACTIVITY_V11_WORKFLOW_ENABLED: 'false',
+      ACTIVITY_OS_CONTROL_PLANE_MODE: 'off',
+    };
+  });
+  afterEach(() => {
+    process.env = previousEnv;
+  });
+
+  it.each(['off', 'shadow'])('assembles %s without opening v1.1', (mode) => {
+    process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = mode;
+    const result = appConfig();
+    expect(result.activityOsControlPlane.mode).toBe(mode);
+    expect(result.activityV11Workflow.enabled).toBe(false);
+  });
+  it('refuses active before startup when v1.1 is false', () => {
+    process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = 'active';
+    expect(() => appConfig()).toThrow('要求 ACTIVITY_V11_WORKFLOW_ENABLED=true');
+  });
+  it('assembles active only when v1.1 is explicitly true', () => {
+    process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = 'active';
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
+    expect(appConfig().activityOsControlPlane.mode).toBe('active');
+  });
+  it('refuses a missing mode in real config assembly', () => {
+    delete process.env.ACTIVITY_OS_CONTROL_PLANE_MODE;
+    expect(() => appConfig()).toThrow('ACTIVITY_OS_CONTROL_PLANE_MODE 不能为空');
+  });
+});
 
 describe('APP_TRUSTED_PROXY_CIDRS', () => {
   it.each(['development', 'test'] as const)('%s missing/empty/blank defaults to none', (env) => {
