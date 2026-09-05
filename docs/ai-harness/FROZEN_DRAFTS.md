@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8 与 Release 2 B1–B6 已完成相应合同、实施与验证；B1–B6 实施已合入 #1257/#1259/#1261/#1264/#1267/#1270/#1272，B6 评审稿为 #1269；B7 方案 A 评审稿已起草 | B7 implementation、前端发布和生产 Gate 仍待独立确认、授权与验收；后续 Release 未完成 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8 与 Release 2 B1–B7 已完成相应仓内合同、实施与验证；B7 评审稿与 implementation 已分别合入 #1274/#1275 | 前端页面发布、灰度人群、生产部署和 Gate 切换仍待独立确认与验收；Release 3 C1 及后续未完成 |
 
 ### 1.1 欠代码的五项
 
@@ -92,7 +92,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8 与 Release 2 B1–B6 已通过，B7 方案 A 评审稿已起草，implementation 待独立推进**
+**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8 与 Release 2 B1–B7 的仓内实施已通过；前端发布、生产 Gate 与后续 Release 未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
@@ -167,7 +167,18 @@ CHECK、同活动复合外键、唯一锚点和查询索引；六个外键名已
 单元、定向 PostgreSQL E2E、contract、PR 全部 17 项检查、可信红区审批与跨模型评审处置均已收口，
 评审及裁决证据留在 #1272 评论中。D2 不新增 schema、migration、
 seed、权限码或审计事件，不开启 B4 readiness 或生产 Gate，不代表已部署或 Release 2 整体交付。
-**B7 方案 A 评审稿已于 2026-09-05 起草**：它只冻结独立 `off|shadow|active` 控制面 Gate、B6 三路新增创建入口的关闭态 fail-closed 与草稿灰度语义、App 只读状态契约和前端 handoff；implementation、前端发布、生产配置和 mode 切换均未开始。B7 仍须独立确认实际写集、取得必要红区授权并完成验收，不能沿用 B6 授权。
+**B7 方案 A 评审稿与 implementation 已于 2026-09-05 分别以 #1274/#1275 合入**：新增独立
+`ACTIVITY_OS_CONTROL_PLANE_MODE=off|shadow|active`，仅控制 B6 三个新建 POST；在既有基础访问检查后、
+创建写事务前拦截，off 统一返回 `503/20163`，包括旧操作键重放，零创建副作用。shadow/active 均复用
+B6 草稿语义，前端试运行人群不是新的后端安全边界。App member 可读的状态 GET 只返回 mode 与
+creationAvailability，不要求或承诺创建权限；旧泛化创建和已有 managed 读写不受此 Gate 影响。
+production/smoke 必须显式配置，active 且 v1.1 未开时在启动装配期拒启，不改变逐请求业务真相。
+OpenAPI、生成客户端、前端 handoff、配置与部署说明均已交付；本地检查、定向 PostgreSQL E2E、
+contract、PR 全量 CI、Docker smoke、可信红区审批与独立跨模型评审均已收口，证据留在
+[#1275](https://github.com/BA7IEE/srvf-nest-api/pull/1275)。冻结稿 §5 的 C 档误标已由维护者批准按 D 档执行，原稿不回改。
+B7 无 schema/migration/seed/权限码/AuditLogEvent 变更，未启用 B4 readiness 或任何生产 Gate。
+**仓内实现与交接完成不等于前端或生产上线**：页面发布、灰度人群选定、真实 cutover 稳定观察、
+生产部署与 mode 切换均未执行，仍须独立审批；Release 3 C1 及以后尚未实施，B7 授权不得带入。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -225,7 +236,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 | 文件 | 分类 | 去向 / 理由 |
 |---|---|---|
-| `docs/archive/reviews/activity-os-t0-terminal-review.md` | open · P1-33 | Activity OS T0-A 冻结合同；T0-B、Release 1 A1–A8 与 Release 2 B1–B6 已落地，B7 方案 A 评审稿已起草，implementation 及后续仍待独立实施与验收 |
+| `docs/archive/reviews/activity-os-t0-terminal-review.md` | open · P1-33 | Activity OS T0-A 冻结合同；T0-B、Release 1 A1–A8 与 Release 2 B1–B7 仓内实施已落地，前端发布、生产 Gate 与 Release 3 C1 及后续仍待独立推进 |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md` | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md` | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md` | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改 |
@@ -240,7 +251,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b4-publish-readiness-review.md` | landed · P1-33 | Release 2 / B4 确定性、只读、gate-off 的发布就绪评审与 implementation 写集预算；已随 #1264 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | landed · P1-33 | Release 2 / B6 三种创建 API；方案 A 的 D1 数据地基与 D2 三种完整创建、紧急召集流程已分别随 #1270/#1272 合入，评审稿冻结不回改；不代表生产部署 |
-| `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | open · P1-33 | Release 2 / B7 前端交接和控制面灰度；方案 A 仅冻结独立三态 Gate、B6 新入口的关闭态和 App 状态契约，implementation、前端发布与生产 Gate 均待维护者独立确认 |
+| `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
