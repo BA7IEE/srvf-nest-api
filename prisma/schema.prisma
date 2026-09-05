@@ -1690,6 +1690,67 @@ model ActivityPublishReview {
 //
 // Family 承载可识别的模板族、分类、归属、范围与生命周期占位；Version 的具体定义仍在
 // ActivityTemplate。A2 只提供储存和 FK / 唯一性，不引入业务写路径、闭集、Version 元数据默认值或 seed。
+// C1 D1 internal metric catalogue. No Activity pointer, runtime writer or public API.
+// CHECKs and triggers live in the additive C1 migration; activated semantics are immutable.
+model ActivityMetricDefinition {
+  id                String   @id @default(cuid())
+  code              String
+  version           Int
+  name              String
+  kindCode          String
+  unit              String?
+  configurationJson Json
+  schemaVersion     Int
+  definitionHash    String
+  statusCode        String
+  activatedAt       DateTime?
+  retiredAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  setItems ActivityMetricSetItem[]
+
+  @@unique([code, version])
+  @@index([statusCode])
+}
+
+model ActivityMetricSetVersion {
+  id             String   @id @default(cuid())
+  code           String
+  version        Int
+  name           String
+  schemaVersion  Int
+  definitionHash String
+  statusCode     String
+  activatedAt    DateTime?
+  retiredAt      DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  items ActivityMetricSetItem[]
+
+  @@unique([code, version])
+  @@index([statusCode])
+}
+
+model ActivityMetricSetItem {
+  id                 String   @id @default(cuid())
+  setVersionId       String
+  metricDefinitionId String
+  key                String
+  sortOrder          Int
+  required           Boolean
+  createdAt          DateTime @default(now())
+
+  setVersion       ActivityMetricSetVersion @relation(fields: [setVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  metricDefinition ActivityMetricDefinition @relation(fields: [metricDefinitionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([setVersionId, key])
+  @@unique([setVersionId, metricDefinitionId])
+  @@unique([setVersionId, sortOrder])
+  @@index([metricDefinitionId])
+}
+
 model ActivityTemplateFamily {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())

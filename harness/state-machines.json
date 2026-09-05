@@ -1,9 +1,41 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:a04cd957cf6670064cc2309195b006603bdbabe666bf77b25b717beee6f24e90",
+  "inputDigest": "sha256:b08b27af344c2391cf298c7572ecb9c65505de2539df66b9f2b08a977ac60c45",
   "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 55 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。2026-09-04 Activity OS R2/B6 D1 新增 `ActivityEmergencyFollowUpItem.statusCode` 三值义务清单；D1 仅有 DB 词表/形状约束，尚无运行时 writer，故保持 L2 inventory。2026-09-05 B6 D2 接入固定义务创建与当前事实核验 writer，补齐实际迁移边，仍不升 governed。",
   "entries": [
+    {
+      "model": "ActivityMetricDefinition",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "layer": "L2",
+      "stateSet": {
+        "values": ["draft", "active", "retired"],
+        "source": "db-check",
+        "sourceRef": "prisma/migrations/20260905160133_activity_os_r3_c1_metric_definition_set"
+      },
+      "transitions": ["(create) -> draft", "draft -> active", "active -> retired"],
+      "wrongStateBizCode": "none",
+      "implementation": "prisma/migrations/20260905160133_activity_os_r3_c1_metric_definition_set/migration.sql (activity_metric_version_guard)",
+      "governedBlockers": ["no-runtime-writer"],
+      "notes": "C1 D1 仅有 DB 生命周期、冻结约束及纯函数复验；未接 HTTP、业务 writer、权限或审计，不声明 governed。"
+    },
+    {
+      "model": "ActivityMetricSetVersion",
+      "field": "statusCode",
+      "governanceStatus": "inventory",
+      "layer": "L2",
+      "stateSet": {
+        "values": ["draft", "active", "retired"],
+        "source": "db-check",
+        "sourceRef": "prisma/migrations/20260905160133_activity_os_r3_c1_metric_definition_set"
+      },
+      "transitions": ["(create) -> draft", "draft -> active", "active -> retired"],
+      "wrongStateBizCode": "none",
+      "implementation": "prisma/migrations/20260905160133_activity_os_r3_c1_metric_definition_set/migration.sql (activity_metric_version_guard / activity_metric_set_item_guard)",
+      "governedBlockers": ["no-runtime-writer"],
+      "notes": "激活要求非空 active 定义引用，父版本写锁串行化集项变更；历史可读不等于可新选用。C1 D2 接入未实施，不声明 governed。"
+    },
     {
       "model": "Activity",
       "field": "allocationModeCode",

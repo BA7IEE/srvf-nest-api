@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:c0f008e27ddb4d66bd4947b7b46a391957040a2e56d328fd13af20d3875365a2",
+  "inputDigest": "sha256:879c3b56a62c50b274c3d8856e4bc01ac8bb435e2371fbc35de46c3a4327fbd4",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -505,6 +505,24 @@
       "confirmed": true
     },
     "ActivityTemplate": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityMetricDefinition": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityMetricSetVersion": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityMetricSetItem": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",
