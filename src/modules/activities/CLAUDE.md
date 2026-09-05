@@ -1,5 +1,13 @@
 # activities — 本地铁律
 
+## C1 D2a 当前目录边界
+
+Human Admin 指标定义/集目录已有独立 Controller、写 Service、查询投影、状态机、审计与命令收据。
+写入及重放均在根事务复验当前用户和 GLOBAL 权限，等待命令锁/父版本锁后再验；RBAC 显式传 tx。
+定义/集只许 draft 编辑，draft→active→retired；激活集先锁父再按 ID 锁定义并复验 canonical/hash。
+收据只返原六字段结果，不返配置或 operationKey；审计与目录/收据同事务。
+D1 解析器仍是唯一值域真源。D2b Activity/Template V3 选择、D2c v7/Readiness 与成果值未实施。
+
 > 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);上下文边界读 [`/docs/participation-bounded-context.md`](../../../docs/participation-bounded-context.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);API surface 边界读 [`/docs/api-surface-policy.md`](../../../docs/api-surface-policy.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
 
 ## Scope

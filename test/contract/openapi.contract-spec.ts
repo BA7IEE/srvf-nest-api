@@ -84,6 +84,18 @@ function documented4xxCodes(operation: OpenApiOperation | undefined): number[] {
 const EXPECTED_ROUTES: ReadonlyArray<
   readonly [Lowercase<'get' | 'post' | 'put' | 'patch' | 'delete'>, string]
 > = [
+  ['get', '/api/admin/v1/activity-metric-definitions'],
+  ['get', '/api/admin/v1/activity-metric-definitions/{id}'],
+  ['post', '/api/admin/v1/activity-metric-definitions'],
+  ['put', '/api/admin/v1/activity-metric-definitions/{id}/draft'],
+  ['post', '/api/admin/v1/activity-metric-definitions/{id}/activate'],
+  ['post', '/api/admin/v1/activity-metric-definitions/{id}/retire'],
+  ['get', '/api/admin/v1/activity-metric-sets'],
+  ['get', '/api/admin/v1/activity-metric-sets/{id}'],
+  ['post', '/api/admin/v1/activity-metric-sets'],
+  ['put', '/api/admin/v1/activity-metric-sets/{id}/draft'],
+  ['post', '/api/admin/v1/activity-metric-sets/{id}/activate'],
+  ['post', '/api/admin/v1/activity-metric-sets/{id}/retire'],
   // Route B Phase 4(2026-06-01;沿 docs/api-surface-migration-plan.md §6 Phase 4):
   // auth → auth/v1、health → system/v1/health 的老 path 已删除(无生产消费者,直接收口);
   // 下列为 canonical 单一前缀。
@@ -1091,7 +1103,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 574; // Activity OS R2 / B7 +1(App control-plane status)
+const EXPECTED_ROUTE_COUNT = 586; // C1 D2a +12 (Admin metric catalogue)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

@@ -8,6 +8,7 @@ import {
   readSeedFactsClosure,
 } from '../../../scripts/docs-counts';
 import { RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET } from './reserved-super-admin-permission-codes';
+import { PERMISSION_CATALOG_METADATA } from './permission-catalog';
 
 // 第七轮评审 R7-D-01(2026-08-21):「权限码必须有持有人」类闸。
 //
@@ -117,10 +118,43 @@ const UNWIRED_RESERVED_PERMISSION_CODES: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
-/** 唯一豁免口 = ① ∪ ②。判据只认这一个入口。 */
+// ③ 维护者批准 C1 D2a：可由人工授予自定义角色，但 seed 不向内建角色分配。
+// 只列这三条；不能按 CUSTOM_ROLE_ALLOWED 全量豁免。真实授码/撤码验证在 D2a HTTP E2E。
+const MANUALLY_ASSIGNED_PERMISSION_CODES = new Set([
+  'activity-metric.read.catalog',
+  'activity-metric.manage.definition',
+  'activity-metric.manage.set',
+]);
+
+/** 唯一豁免口 = ① ∪ ② ∪ 已批准的精确人工授码清单。 */
 const isExempt = (code: string): boolean =>
   RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has(code) ||
-  UNWIRED_RESERVED_PERMISSION_CODES.has(code);
+  UNWIRED_RESERVED_PERMISSION_CODES.has(code) ||
+  MANUALLY_ASSIGNED_PERMISSION_CODES.has(code);
+
+describe('C1 D2a 人工授码例外边界', () => {
+  it('仅三码例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
+    expect([...MANUALLY_ASSIGNED_PERMISSION_CODES].sort()).toEqual([
+      'activity-metric.manage.definition',
+      'activity-metric.manage.set',
+      'activity-metric.read.catalog',
+    ]);
+    for (const code of MANUALLY_ASSIGNED_PERMISSION_CODES) {
+      expect(PERMISSION_UNIVERSE.has(code)).toBe(true);
+      expect(PERMISSION_CATALOG_METADATA[code].grantPolicy).toBe('CUSTOM_ROLE_ALLOWED');
+      expect(PERMISSION_CATALOG_METADATA[code].status).toBe('ACTIVE');
+      expect(isHeld(code)).toBe(false);
+      expect(RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has(code)).toBe(false);
+      expect(UNWIRED_RESERVED_PERMISSION_CODES.has(code)).toBe(false);
+    }
+  });
+  it('不会豁免其他自定义角色权限或同前缀的未批准权限', () => {
+    expect(PERMISSION_CATALOG_METADATA['org.create.node'].grantPolicy).toBe('CUSTOM_ROLE_ALLOWED');
+    expect(isExempt('org.create.node')).toBe(false);
+    expect(isExempt('activity-metric.manage.future')).toBe(false);
+    expect(isExempt('activity-metric.read.future')).toBe(false);
+  });
+});
 
 describe('判据自证:仪器没瞎(先证明扫到了东西,再报数)', () => {
   // 全部用地板锚点(≥N),不用「恰 N 条」—— 写死数量的自证会过期,然后被人顺手改大,

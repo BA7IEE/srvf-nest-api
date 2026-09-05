@@ -27,6 +27,13 @@ import { AppManagedActivityCreationController } from './controllers/app-managed-
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivitySeriesAuditRecorder } from './activity-series-audit-recorder';
 import { ActivitySeriesService } from './activity-series.service';
+import { ActivityMetricCommand } from './activity-metric-command';
+import { ActivityMetricAuditRecorder } from './activity-metric-audit-recorder';
+import { ActivityMetricDefinitionService } from './activity-metric-definition.service';
+import { ActivityMetricSetService } from './activity-metric-set.service';
+import { ActivityMetricCatalogueQueryService } from './activity-metric-catalogue-query.service';
+import { AdminActivityMetricDefinitionsController } from './controllers/admin-activity-metric-definitions.controller';
+import { AdminActivityMetricSetsController } from './controllers/admin-activity-metric-sets.controller';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
 import { ActivityDraftService } from './activity-draft.service';
 import { ActivityStateMachine } from './activity-state-machine';
@@ -164,6 +171,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AdminActivityPositionsController,
     AdminActivityPublishReviewsController,
     AdminActivityResponsibilitiesController,
+    AdminActivityMetricDefinitionsController,
+    AdminActivityMetricSetsController,
     AppManagedActivitiesController,
     AdminAttendanceSettlementsController,
     AppManagedActivityPositionsController,
@@ -189,6 +198,11 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityAuditRecorder,
     ActivitySeriesAuditRecorder,
     ActivitySeriesService,
+    ActivityMetricCommand,
+    ActivityMetricAuditRecorder,
+    ActivityMetricDefinitionService,
+    ActivityMetricSetService,
+    ActivityMetricCatalogueQueryService,
     ActivityDraftAuditRecorder,
     ActivityDraftService,
     ActivityNotificationProducer,

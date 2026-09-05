@@ -27,7 +27,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 95;
 const PREVIOUS_MIGRATION_COUNT = 107;
-const CURRENT_MIGRATION_COUNT = 110;
+const CURRENT_MIGRATION_COUNT = 111;
 const MIGRATION_NAME = '20260904090000_activity_os_r2_b3_form_blueprint_governance';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const GOVERNANCE_CONSTRAINT = 'registration_form_field_governance_shape_check';

@@ -17,6 +17,8 @@
 // - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿或 goal 显式预授权(D6 v1.1 §8.1 / §16)
 
 export type AuditLogEvent =
+  | 'activity.metric-definition.command'
+  | 'activity.metric-set.command'
   | 'profile.read.other' // admin 读他人扩展档案;extra 仅资源 id / operation / maskLevel
   | 'emergency-contact.read.other' // admin 列出他人紧急联系人;extra 仅 count / operation / maskLevel
   | 'emergency-contact.write' // PR #2 接入(emergency-contacts.service: create / update / softDelete 共 3 处)

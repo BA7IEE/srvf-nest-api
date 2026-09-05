@@ -1,4 +1,4 @@
-import { Role, UserStatus } from '@prisma/client';
+import { PrismaClient, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import type { PrismaService } from '../../database/prisma.service';
 import { RbacService } from './rbac.service';
@@ -72,6 +72,81 @@ function setupService(): {
 }
 
 describe('RbacService', () => {
+  describe('C1 D2a 显式事务连接', () => {
+    it('can → judge → 查询仅使用传入连接，并保留 GLOBAL 与任期过滤', async () => {
+      const { prisma, service } = setupService();
+      const tx = new PrismaClient();
+      const query = jest.spyOn(tx.roleBinding, 'findMany').mockResolvedValue([]);
+      await expect(
+        service.can(makeUser(), 'activity-metric.read.catalog', undefined, tx),
+      ).resolves.toBe(false);
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            principalId: 'user-1',
+            principalType: 'USER',
+            scopeType: 'GLOBAL',
+            status: 'ACTIVE',
+            deletedAt: null,
+            role: { deletedAt: null },
+            startedAt: { lte: expect.any(Date) as unknown },
+            OR: [{ endedAt: null }, { endedAt: { gte: expect.any(Date) as unknown } }],
+          },
+        }),
+      );
+      expect(prisma.roleBinding.findMany).not.toHaveBeenCalled();
+      query.mockRestore();
+      await tx.$disconnect();
+    });
+
+    it('事务查询失败不回退到根连接；后续调用重新查询', async () => {
+      const { prisma, service } = setupService();
+      const tx = new PrismaClient();
+      const query = jest
+        .spyOn(tx.roleBinding, 'findMany')
+        .mockRejectedValueOnce(new Error('transaction unavailable'))
+        .mockResolvedValueOnce([]);
+      await expect(service.getUserPermissionCodes('user-1', undefined, tx)).rejects.toThrow(
+        'transaction unavailable',
+      );
+      await expect(service.getUserPermissionCodes('user-1', undefined, tx)).resolves.toEqual(
+        new Set(),
+      );
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(prisma.roleBinding.findMany).not.toHaveBeenCalled();
+      query.mockRestore();
+      await tx.$disconnect();
+    });
+
+    it('显式事务仍保留 SUPER_ADMIN 短路和 .self 所有权规则', async () => {
+      const { prisma, service } = setupService();
+      const tx = new PrismaClient();
+      const query = jest.spyOn(tx.roleBinding, 'findMany').mockResolvedValue([]);
+      await expect(
+        service.can(makeUser({ role: Role.SUPER_ADMIN }), 'test.self', undefined, tx),
+      ).resolves.toBe(true);
+      expect(query).not.toHaveBeenCalled();
+      const codes = jest
+        .spyOn(service, 'getUserPermissionCodes')
+        .mockResolvedValue(new Set(['test.self']));
+      await expect(
+        service.can(makeUser(), 'test.self', { ownerType: 'user', ownerId: 'other' }, tx),
+      ).resolves.toBe(false);
+      await expect(
+        service.can(makeUser(), 'test.self', { ownerType: 'user', ownerId: 'user-1' }, tx),
+      ).resolves.toBe(true);
+      expect(codes).toHaveBeenLastCalledWith('user-1', undefined, tx);
+      codes.mockResolvedValueOnce(new Set());
+      await expect(
+        service.can(makeUser(), 'test.self', { ownerType: 'user', ownerId: 'user-1' }, tx),
+      ).resolves.toBe(false);
+      expect(prisma.roleBinding.findMany).not.toHaveBeenCalled();
+      codes.mockRestore();
+      query.mockRestore();
+      await tx.$disconnect();
+    });
+  });
   describe('SUPER_ADMIN 短路', () => {
     it('can(): SUPER_ADMIN 任何 action 直返 true,不查 RBAC 表', async () => {
       const { prisma, service } = setupService();

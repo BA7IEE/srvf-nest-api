@@ -14,7 +14,7 @@ import {
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
 const SCRATCH_WORKER_ID = 97;
-const CURRENT_MIGRATION_COUNT = 110;
+const CURRENT_MIGRATION_COUNT = 111;
 const PREVIOUS_MIGRATION_COUNT = 109;
 const MIGRATION_NAME = '20260905160133_activity_os_r3_c1_metric_definition_set';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
@@ -184,7 +184,7 @@ describe('C1 D1 PostgreSQL catalogue invariants', () => {
   });
   beforeEach(() => {
     sql(
-      'TRUNCATE "ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition"; ' +
+      'TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition"; ' +
         definitionSql('c1_definition_1', 'served') +
         ';' +
         definitionSql('c1_definition_2', 'trained') +

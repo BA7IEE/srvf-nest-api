@@ -396,12 +396,16 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 但尚未接入业务 writer，故新增 `no-runtime-writer` 2 条；不升 `governed`，
 > 不改变现有状态机、接口或判权规则，C1 D2 接入仍未实施。
 
+> **⑨ C1 D2a 当前更新**：两条指标状态机已接入 Human writer、专属错误码与同事务审计/收据；
+> 移除两处 `no-runtime-writer`。总条目及 inventory/governed 分布不变，不借此升级 governed。
+> D2b 活动/模板选择与 D2c v7/Readiness 仍未实施。
+
 blocker 直方图(2026-09-05 现算;含 A3 future-Version 条件生命周期、A7、B6 D2 与 C1 D1):`no-wrong-state-bizcode` 30 ·
 `no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·
 `edges-partially-derived` 2 · `vocabulary-divergence` 2 · `dictionary-driven` 2 ·
 `retired-value-in-set` 2 · `impl-scattered` 2 · `throws-instead-of-decide` 1 ·
 `decision-shape-divergence` 1 · `conditional-legacy-scope` 1 · `no-service-writer` 1 ·
-`duplicate-constant-definition` 1 · `snapshot-not-lifecycle` 1 · `composite-db-check` 1 · `no-runtime-writer` 2。
+`duplicate-constant-definition` 1 · `snapshot-not-lifecycle` 1 · `composite-db-check` 1 · `no-runtime-writer` 0（C1 D2a 更新）。
 
 **`vacuousGreenIfClosedSetOnly` = 24 是本刀存在的理由的量化**:这 24 条既有已声明的闭集、
 `transitions` 又是 `not-derived` —— 一个「只比闭集 vs CHECK」的判据会**全部放它们过去**。

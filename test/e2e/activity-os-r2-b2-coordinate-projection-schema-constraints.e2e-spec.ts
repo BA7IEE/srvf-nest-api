@@ -18,7 +18,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 94;
 const PREVIOUS_MIGRATION_COUNT = 106;
-const CURRENT_MIGRATION_COUNT = 110;
+const CURRENT_MIGRATION_COUNT = 111;
 const MIGRATION_NAME = '20260903150000_activity_os_r2_b2_coordinate_projection';
 const MIGRATION_PATH = 'prisma/migrations/' + MIGRATION_NAME + '/migration.sql';
 const COLD_MIGRATION_REPLAY_TIMEOUT_MS = 180_000;
