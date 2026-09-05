@@ -15,6 +15,8 @@
 
 ## Local facts
 
+- **Activity OS R3 / C1 D1（内部数据地基）**：`ActivityMetricDefinition`、`ActivityMetricSetVersion` 与 `ActivityMetricSetItem` 仅新增空表；精确 `(code,version)`、Restrict FK、draft→active→retired 与激活后冻结由 DB 约束保护。集项写入同时更新 draft 父版本，使其与激活串行且旧快照事务不能绕过；定义退役不改历史集。两个独立纯函数模块解析五种受控类型、canonical/hash 和激活引用闭包，DB 不复算 hash，未来 writer 必须在根事务锁后复验。无 Activity 指针、业务 writer、HTTP、权限、seed 或 Gate；v6 的 metricSetPointer 仍固定 null，B4 指标 blocker 不变。D1 不等于 C1 完成，D2 接入须独立评审。
+
 - **Activity OS R2 / B6 D2（三种草稿创建）**：App managed 独立 `from-template` / `professional` / `emergency` POST 与物理 App DTO 显式映射封闭命令。`ActivityCreationService` 是唯一根事务所有者；快速模式复用 A6 精确 Version/幂等锚点，并把地点配置与容量确认绑定到请求 hash；专业模式一次物化 Activity、Session/Position、地点、B3 governed Form、既有 Qualification、D1 收据和最小审计。紧急模式叠加独立权限，冻结组织/成员受众，起源、七项义务、一次 `emergency` 定向 outbox 和审计同事务；呼叫不是正式发布。immutable 起源在 App 提审/直发、Admin 两种发布和审核/apply 写边界均拒正式发布，补齐也不解锁。义务仅凭现有事实更新，Session/Position/地点消失会退回 pending；设备/结果/事故关联不伪装为 verified，考勤仍 pending。入口沿既有责任制开关，B4 readiness 仍不接发布 Gate；不新增 schema/migration/权限码/审计事件。
 
 - **Activity OS R2 / B4（内部 gate-off）**：`ActivityPublishReadinessService` 在单个只读事务中把 Activity、live Session/Position、A5 模板解析、Form/Qualification canonical 结果及既有保险开关投影为最小 facts，再由纯 evaluator 按固定域序输出 blocker/warning/suggestion；四个尚无正式模型的 Time/Contribution/Metric/Safety 条件恒报 unrepresentable blocker。它不 export、不接 controller、审核、发布链路、Gate、Audit 或缓存；地点只看当前 Session/Position 的 WGS84 坐标与半径，不读 ActivityPlace/PlacePreset。

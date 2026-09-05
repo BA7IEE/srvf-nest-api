@@ -8,6 +8,8 @@
 
 ## 1. App surface 模型(和 admin 完全不同,先读铁律)
 
+> **Activity OS R3 / C1 D1（内部地基，生产未部署）**：指标定义与集版本尚无 App 选用或成果录入端点；不返回新字段，不改变 v6 指标指针为 null 的合同，也不解除 Readiness blocker。不要展示为已上线功能，D2 接入与 C2/C3 成果链仍待独立实施。
+
 小程序消费 **`/api/app/v1/*`**(队员**本人视角**),不是 admin 面。后端语义锁(`api-surface-policy.md §9`):
 
 - **准入**:App 要求 `User.memberId != null` + `User.status=ACTIVE` + 绑定 `Member.status=ACTIVE`;不满足 → `canUseApp=false`。候选人 / 临时号**进不来** App。

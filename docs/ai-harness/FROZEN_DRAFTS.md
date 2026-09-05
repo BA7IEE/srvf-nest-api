@@ -178,12 +178,17 @@ contract、PR 全量 CI、Docker smoke、可信红区审批与独立跨模型评
 [#1275](https://github.com/BA7IEE/srvf-nest-api/pull/1275)。冻结稿 §5 的 C 档误标已由维护者批准按 D 档执行，原稿不回改。
 B7 无 schema/migration/seed/权限码/AuditLogEvent 变更，未启用 B4 readiness 或任何生产 Gate。
 **仓内实现与交接完成不等于前端或生产上线**：页面发布、灰度人群选定、真实 cutover 稳定观察、
-生产部署与 mode 切换均未执行，仍须独立审批；Release 3 C1 及以后尚未实施，B7 授权不得带入。
+生产部署与 mode 切换均未执行，仍须独立审批；Release 3 C1 及以后尚未合入，B7 授权不得带入。
 
-**C1 评审与授权清单已起草，方案与 implementation 尚待独立确认**：见
+**C1 方案 A 已拍板，D1 implementation 已授权并进入实施，尚未宣告完成**：见
 [`activity-os-r3-c1-metric-definition-set-review.md`](../archive/reviews/activity-os-r3-c1-metric-definition-set-review.md)。
 推荐先做 D1 指标定义/集版本数据地基，再经 D2 独立评审接入目录维护、活动选用、v7 与 Readiness；
-v2–v6 不回改，D1 完成不等于 C1 完成。当前无 C1 代码、schema、migration、权限或 Gate 变更。
+v2–v6 不回改，D1 完成不等于 C1 完成。D1 当前分支新增三表、纯函数及第 110 条 migration；
+验证、3b 重签与 PR 合入分别取证，不把分支代码或本条登记当成已合入/已部署；无权限或 Gate 变更。
+**2026-09-05 维护者调整评审节奏**：「跳过评审，继续推进，等搞完了再整体评审」。本轮阶段性
+跨模型复审据此延后到整体实现完成后统一执行，当前未取得有效独立结论，不记为通过或永久豁免。
+D1 本地单测、220 项定向 E2E、contract 与构建已通过；CI、3b、红区审批和合并仍独立验收，
+D2 的外部契约与实施范围仍须另行拍板，生产边界不变。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -214,7 +219,7 @@ v2–v6 不回改，D1 完成不等于 C1 完成。当前无 C1 代码、schema�
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **247** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 63** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 65** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
@@ -257,7 +262,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | landed · P1-33 | Release 2 / B6 三种创建 API；方案 A 的 D1 数据地基与 D2 三种完整创建、紧急召集流程已分别随 #1270/#1272 合入，评审稿冻结不回改；不代表生产部署 |
 | `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用 |
-| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 评审及授权清单已起草；D1 数据地基、D2 接入推荐分步，方案与 implementation 待独立确认，未实施 |
+| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 方案 A 已拍板；D1 implementation 已授权并实施中，D2 接入仍待独立评审，C1 未完成 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
