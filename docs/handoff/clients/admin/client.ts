@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:6096050df3c2f50940094744ef894b326707443e9f7bf20bf2269024073120c9
+// inputDigest: sha256:0fde43e83d3011a782d38d88dd9752c057dc4aea29ee0ae0ecfd2ae21f86c6ed
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -42,11 +42,26 @@ import type {
   AdminActivityCheckInMemberDto,
   AdminActivityFeedbackListItemDto,
   AdminActivityFeedbackSummaryDto,
+  AdminActivityMetricCommandResponseDto,
+  AdminActivityMetricDefinitionResponseDto,
+  AdminActivityMetricSetResponseDto,
+  AdminActivityMetricVersionCommandDto,
   AdminAttendanceSettlementListItemDto,
   AdminAttendanceSheetExpandedActivityDto,
   AdminAttendanceSheetListItemDto,
+  AdminCreateActivityMetricDefinitionDto,
+  AdminCreateActivityMetricSetDto,
   AdminMeResponseDto,
   AdminMemberAttendanceRecordDto,
+  AdminMetricBooleanConfigurationDto,
+  AdminMetricChoiceConfigurationDto,
+  AdminMetricChoiceOptionDto,
+  AdminMetricDecimalConfigurationDto,
+  AdminMetricDefinitionV1Dto,
+  AdminMetricIntegerConfigurationDto,
+  AdminMetricSetDefinitionV1Dto,
+  AdminMetricSetItemDto,
+  AdminMetricTextConfigurationDto,
   AdminParticipationLedgerEntryDto,
   AdminRegistrationExpandedActivityDto,
   AdminRegistrationExpandedMemberDto,
@@ -60,6 +75,8 @@ import type {
   AdminSettlementReviewResponseDto,
   AdminSettlementReviewVersionDto,
   AdminSettlementSealRevisionDto,
+  AdminUpdateActivityMetricDefinitionDto,
+  AdminUpdateActivityMetricSetDto,
   AnnouncementImportRequestDto,
   AnnouncementImportResultDto,
   ApproveActivityPublishReviewDto,
@@ -513,6 +530,54 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 按会员受众标签发布活动(空数组面向全部有效会员；开关关闭时 503) [rbac: activity.publish.record] */
     ActivitiesControllerPublishWithAudienceTags(id: string, body: PublishActivityWithAudienceTagsDto): Promise<ApiEnvelope<ActivityResponseDto>> {
       return fetcher<ActivityResponseDto>({ method: "PATCH", path: `/api/admin/v1/activities/${id}/publish-with-audience-tags`, body });
+    },
+    /** 分页查询指标定义 [rbac: activity-metric.read.catalog] */
+    AdminActivityMetricDefinitionsControllerList(query?: { "page"?: number; "pageSize"?: number; "code"?: string; "statusCode"?: "draft" | "active" | "retired"; "kindCode"?: "non_negative_integer" | "non_negative_decimal" | "boolean" | "short_text" | "single_choice" }): Promise<ApiEnvelope<PageResultDto & { "items": AdminActivityMetricDefinitionResponseDto[] }>> {
+      return fetcher<PageResultDto & { "items": AdminActivityMetricDefinitionResponseDto[] }>({ method: "GET", path: "/api/admin/v1/activity-metric-definitions", query });
+    },
+    /** create 指标定义版本 [rbac: activity-metric.manage.definition] */
+    AdminActivityMetricDefinitionsControllerCreate(body: AdminCreateActivityMetricDefinitionDto): Promise<ApiEnvelope<AdminActivityMetricCommandResponseDto>> {
+      return fetcher<AdminActivityMetricCommandResponseDto>({ method: "POST", path: "/api/admin/v1/activity-metric-definitions", body });
+    },
+    /** 查看指标定义版本 [rbac: activity-metric.read.catalog] */
+    AdminActivityMetricDefinitionsControllerGet(id: string): Promise<ApiEnvelope<AdminActivityMetricDefinitionResponseDto>> {
+      return fetcher<AdminActivityMetricDefinitionResponseDto>({ method: "GET", path: `/api/admin/v1/activity-metric-definitions/${id}` });
+    },
+    /** activate 指标定义版本 [rbac: activity-metric.manage.definition] */
+    AdminActivityMetricDefinitionsControllerActivate(id: string, body: AdminActivityMetricVersionCommandDto): Promise<ApiEnvelope<AdminActivityMetricCommandResponseDto>> {
+      return fetcher<AdminActivityMetricCommandResponseDto>({ method: "POST", path: `/api/admin/v1/activity-metric-definitions/${id}/activate`, body });
+    },
+    /** update 指标定义版本 [rbac: activity-metric.manage.definition] */
+    AdminActivityMetricDefinitionsControllerUpdate(id: string, body: AdminUpdateActivityMetricDefinitionDto): Promise<ApiEnvelope<AdminActivityMetricCommandResponseDto>> {
+      return fetcher<AdminActivityMetricCommandResponseDto>({ method: "PUT", path: `/api/admin/v1/activity-metric-definitions/${id}/draft`, body });
+    },
+    /** retire 指标定义版本 [rbac: activity-metric.manage.definition] */
+    AdminActivityMetricDefinitionsControllerRetire(id: string, body: AdminActivityMetricVersionCommandDto): Promise<ApiEnvelope<AdminActivityMetricCommandResponseDto>> {
+      return fetcher<AdminActivityMetricCommandResponseDto>({ method: "POST", path: `/api/admin/v1/activity-metric-definitions/${id}/retire`, body });
+    },
+    /** 分页查询指标集 [rbac: activity-metric.read.catalog] */
+    AdminActivityMetricSetsControllerList(query?: { "page"?: number; "pageSize"?: number; "code"?: string; "statusCode"?: "draft" | "active" | "retired" }): Promise<ApiEnvelope<PageResultDto & { "items": AdminActivityMetricSetResponseDto[] }>> {
+      return fetcher<PageResultDto & { "items": AdminActivityMetricSetResponseDto[] }>({ method: "GET", path: "/api/admin/v1/activity-metric-sets", query });
+    },
+    /** create 指标集版本 [rbac: activity-metric.manage.set] */
+    AdminActivityMetricSetsControllerCreate(body: AdminCreateActivityMetricSetDto): Promise<ApiEnvelope<AdminActivityMetricCommandResponseDto>> {
+      return fetcher<AdminActivityMetricCommandResponseDto>({ method: "POST", path: "/api/admin/v1/activity-metric-sets", body });
+    },
+    /** 查看指标集版本 [rbac: activity-metric.read.catalog] */
+    AdminActivityMetricSetsControllerGet(id: string): Promise<ApiEnvelope<AdminActivityMetricSetResponseDto>> {
+      return fetcher<AdminActivityMetricSetResponseDto>({ method: "GET", path: `/api/admin/v1/activity-metric-sets/${id}` });
+    },
+    /** activate 指标集版本 [rbac: activity-metric.manage.set] */
+    AdminActivityMetricSetsControllerActivate(id: string, body: AdminActivityMetricVersionCommandDto): Promise<ApiEnvelope<AdminActivityMetricCommandResponseDto>> {
+      return fetcher<AdminActivityMetricCommandResponseDto>({ method: "POST", path: `/api/admin/v1/activity-metric-sets/${id}/activate`, body });
+    },
+    /** update 指标集版本 [rbac: activity-metric.manage.set] */
+    AdminActivityMetricSetsControllerUpdate(id: string, body: AdminUpdateActivityMetricSetDto): Promise<ApiEnvelope<AdminActivityMetricCommandResponseDto>> {
+      return fetcher<AdminActivityMetricCommandResponseDto>({ method: "PUT", path: `/api/admin/v1/activity-metric-sets/${id}/draft`, body });
+    },
+    /** retire 指标集版本 [rbac: activity-metric.manage.set] */
+    AdminActivityMetricSetsControllerRetire(id: string, body: AdminActivityMetricVersionCommandDto): Promise<ApiEnvelope<AdminActivityMetricCommandResponseDto>> {
+      return fetcher<AdminActivityMetricCommandResponseDto>({ method: "POST", path: `/api/admin/v1/activity-metric-sets/${id}/retire`, body });
     },
     /** 发布审核工作台(按显式 reviewer RoleBinding 的组织范围过滤) [rbac: activity-review.read.request] */
     AdminActivityPublishReviewsControllerList(query?: { "page"?: number; "pageSize"?: number; "status"?: "pending" | "approved" | "returned" | "withdrawn" | "cancelled"; "requestType"?: "initial" | "change"; "organizationId"?: string; "includeDescendants"?: boolean; "initiatorQ"?: string; "activityQ"?: string; "submittedFrom"?: string; "submittedTo"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": ActivityPublishReviewResponseDto[] }>> {

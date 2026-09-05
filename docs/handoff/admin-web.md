@@ -9,7 +9,7 @@
 
 ## 1. 轴模型(最重要,先读这条)
 
-> **Activity OS R3 / C1 D1（内部地基，生产未部署）**：指标定义与集版本仅有存储约束和纯函数校验，Admin 没有目录维护或成果录入新接口。不得据此展示可用功能；活动选用、v7、Readiness 和成果确认仍待各自接入，现有 OpenAPI/client 不变。
+> **Activity OS R3 / C1 D2a（目录接口在制，生产未部署）**：新增 Human Admin 指标定义/集维护接口，详见[目录交付与初始化 SOP](../ops/activity-metric-catalogue-rollout.md)。此处只交付目录版本维护，不含活动选用、v7、Readiness 或成果值录入；前端不得将整条 C1 展示为已完成。
 
 > **Activity OS R2 / B6 D2（生产未部署）**：三个新建活动命令仅在 App managed 面，Admin 不新增同名接口；参数、地点快照与幂等方式见 [`miniapp.md`](miniapp.md)。紧急创建只产草稿与一次定向站内呼叫，不能正式发布；现有普通发布、受众发布和审核批准入口均按紧急起源拒绝（`20030`），旧版审核快照也不例外。补齐事项不解除该限制，不把“呼叫已入队”展示成“已正式发布”。一般活动原有发布行为不变；B4 readiness 仍 gate-off。
 

@@ -1820,6 +1820,57 @@ export const BizCode = {
     httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
   },
 
+  ACTIVITY_METRIC_DEFINITION_INVALID: {
+    code: 20164,
+    message: '指标定义无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_METRIC_SET_INVALID: {
+    code: 20165,
+    message: '指标集配置无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_METRIC_DEFINITION_NOT_FOUND: {
+    code: 20166,
+    message: '指标定义不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_METRIC_SET_NOT_FOUND: {
+    code: 20167,
+    message: '指标集不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_METRIC_VERSION_ALREADY_EXISTS: {
+    code: 20168,
+    message: '指标版本已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_COMMAND_CONFLICT: {
+    code: 20169,
+    message: '命令标识已用于不同请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_VERSION_STALE: {
+    code: 20170,
+    message: '指标版本已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_STATUS_INVALID: {
+    code: 20171,
+    message: '当前指标状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_REFERENCE_UNAVAILABLE: {
+    code: 20172,
+    message: '引用的指标定义不可用，请重新选择',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_RECEIPT_INVALID: {
+    code: 20173,
+    message: '指标命令收据校验失败',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+
   // ===== 归档动作的两套开工条件(§6.6 / AC-004 / AC-064;2026-08-25 拍板)=====
   //
   // 🔴 **两套条件各给一个具名码,不合并成一个 ACTIVITY_ARCHIVE_NOT_ELIGIBLE。**

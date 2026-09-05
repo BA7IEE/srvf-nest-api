@@ -191,10 +191,13 @@ D1 本地单测、220 项定向 E2E、contract 与构建已通过；最终 CI �
 HTTP 500 在原样本地 30 项及最终 CI 分片 1244 项中未复现，根因未定位，不记作已修复或误报；证据留在 #1278。
 D2 的外部契约与实施范围仍须另行拍板，生产边界不变。
 
-**C1 D2 评审已起草，未批准实施**：见
+**C1 D2 方案 A 已批准；D2a implementation 已授权，当前分支在制，尚未合并**：见
 [`activity-os-r3-c1-d2-metric-catalogue-selection-review.md`](../archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md)。
-候选方案 A 按目录维护 → 活动选择/Template V3 与最小 Human 模板维护 → v7/Readiness 串行交付；
-新增权限、三态选择及模板维护入口均是待拍板范围，不视为 D1 授权延伸，C1 仍未完成。
+方案 A 按目录维护 → 活动选择/Template V3 与最小 Human 模板维护 → v7/Readiness 串行交付。
+D2a 授权覆盖目录十二端点、命令收据、三权限、两审计事件及 RBAC 可选事务参数；
+补充批准旧 D1 显式清理收据表和三码治理联动。具体写集见
+[`D2a 实施清单`](../archive/plans/activity-os-r3-c1-d2a-implementation-plan.md)。
+3b/4b、可信红区审批及合并仍待满足；D2b/D2c implementation 未授权，C1 仍未完成。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -222,7 +225,7 @@ D2 的外部契约与实施范围仍须另行拍板，生产边界不变。
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **247** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **250** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
 | 治理 Phase 4:状态列 governed / 登记总数 | **8 / 65** | `harness/state-machines.json` |
@@ -269,7 +272,8 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | landed · P1-33 | Release 2 / B6 三种创建 API；方案 A 的 D1 数据地基与 D2 三种完整创建、紧急召集流程已分别随 #1270/#1272 合入，评审稿冻结不回改；不代表生产部署 |
 | `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用 |
 | `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 方案 A 的 D1 数据地基已随 #1278 合入并验证；D2 接入仍待独立评审与实施，C1 未完成，原冻结稿不回改 |
-| `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md` | open · P1-33 | C1 D2 目录维护、Activity/Template V3 选择、v7 与 Readiness 的候选评审；已获起草授权，方案及各步 implementation 未批准 |
+| `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md` | open · P1-33 | C1 D2 方案 A 已批准；D2a implementation 在制未合并，D2b/D2c implementation 未授权，C1 未完成 |
+| `docs/archive/plans/activity-os-r3-c1-d2a-implementation-plan.md` | open · P1-33 | D2a 指标目录 Human 管理闭环实施清单已批准，含 RBAC 事务参数、测试清理与三码治理联动扩展；实施在制，签字、CI 与合并待收口 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |

@@ -1699,6 +1699,199 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminActivityMetricCommandResponseDto": {
+    "properties": {
+      "code": {
+        "type": "string",
+      },
+      "definitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "schemaVersion": {
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "statusCode": {
+        "enum": [
+          "draft",
+          "active",
+          "retired",
+        ],
+        "type": "string",
+      },
+      "version": {
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "version",
+      "schemaVersion",
+      "statusCode",
+      "definitionHash",
+    ],
+    "type": "object",
+  },
+  "AdminActivityMetricDefinitionResponseDto": {
+    "properties": {
+      "activatedAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "code": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricDefinitionV1Dto",
+      },
+      "definitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "retiredAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "schemaVersion": {
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "statusCode": {
+        "enum": [
+          "draft",
+          "active",
+          "retired",
+        ],
+        "type": "string",
+      },
+      "updatedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "version": {
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "version",
+      "schemaVersion",
+      "statusCode",
+      "definitionHash",
+      "definition",
+      "activatedAt",
+      "retiredAt",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AdminActivityMetricSetResponseDto": {
+    "properties": {
+      "activatedAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "code": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricSetDefinitionV1Dto",
+      },
+      "definitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "retiredAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "schemaVersion": {
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "statusCode": {
+        "enum": [
+          "draft",
+          "active",
+          "retired",
+        ],
+        "type": "string",
+      },
+      "updatedAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "version": {
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "version",
+      "schemaVersion",
+      "statusCode",
+      "definitionHash",
+      "definition",
+      "activatedAt",
+      "retiredAt",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AdminActivityMetricVersionCommandDto": {
+    "properties": {
+      "expectedDefinitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedDefinitionHash",
+    ],
+    "type": "object",
+  },
   "AdminAttendanceSettlementListItemDto": {
     "properties": {
       "activityId": {
@@ -1823,6 +2016,40 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "statusCode",
       "version",
       "createdAt",
+    ],
+    "type": "object",
+  },
+  "AdminCreateActivityMetricDefinitionDto": {
+    "properties": {
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricDefinitionV1Dto",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "definition",
+    ],
+    "type": "object",
+  },
+  "AdminCreateActivityMetricSetDto": {
+    "properties": {
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricSetDefinitionV1Dto",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "definition",
     ],
     "type": "object",
   },
@@ -1986,6 +2213,301 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "attendanceStatusCode",
       "createdAt",
       "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AdminMetricBooleanConfigurationDto": {
+    "properties": {
+      "kindCode": {
+        "enum": [
+          "boolean",
+        ],
+        "type": "string",
+      },
+      "unit": {
+        "enum": [
+          null,
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "kindCode",
+      "unit",
+    ],
+    "type": "object",
+  },
+  "AdminMetricChoiceConfigurationDto": {
+    "properties": {
+      "kindCode": {
+        "enum": [
+          "single_choice",
+        ],
+        "type": "string",
+      },
+      "options": {
+        "items": {
+          "$ref": "#/components/schemas/AdminMetricChoiceOptionDto",
+        },
+        "maxItems": 50,
+        "minItems": 1,
+        "type": "array",
+      },
+      "unit": {
+        "enum": [
+          null,
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "kindCode",
+      "unit",
+      "options",
+    ],
+    "type": "object",
+  },
+  "AdminMetricChoiceOptionDto": {
+    "properties": {
+      "code": {
+        "maxLength": 64,
+        "type": "string",
+      },
+      "label": {
+        "maxLength": 100,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "code",
+      "label",
+    ],
+    "type": "object",
+  },
+  "AdminMetricDecimalConfigurationDto": {
+    "properties": {
+      "kindCode": {
+        "enum": [
+          "non_negative_decimal",
+        ],
+        "type": "string",
+      },
+      "maximum": {
+        "description": "与 scale 一致的非负规范十进制字符串",
+        "type": "string",
+      },
+      "minimum": {
+        "description": "与 scale 一致的非负规范十进制字符串",
+        "type": "string",
+      },
+      "scale": {
+        "maximum": 6,
+        "minimum": 0,
+        "type": "number",
+      },
+      "unit": {
+        "maxLength": 32,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "kindCode",
+      "unit",
+      "scale",
+      "minimum",
+      "maximum",
+    ],
+    "type": "object",
+  },
+  "AdminMetricDefinitionV1Dto": {
+    "properties": {
+      "code": {
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string",
+      },
+      "configuration": {
+        "discriminator": {
+          "propertyName": "kindCode",
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AdminMetricIntegerConfigurationDto",
+          },
+          {
+            "$ref": "#/components/schemas/AdminMetricDecimalConfigurationDto",
+          },
+          {
+            "$ref": "#/components/schemas/AdminMetricBooleanConfigurationDto",
+          },
+          {
+            "$ref": "#/components/schemas/AdminMetricTextConfigurationDto",
+          },
+          {
+            "$ref": "#/components/schemas/AdminMetricChoiceConfigurationDto",
+          },
+        ],
+      },
+      "name": {
+        "maxLength": 100,
+        "minLength": 1,
+        "type": "string",
+      },
+      "schemaVersion": {
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "version": {
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "schemaVersion",
+      "code",
+      "version",
+      "name",
+      "configuration",
+    ],
+    "type": "object",
+  },
+  "AdminMetricIntegerConfigurationDto": {
+    "properties": {
+      "kindCode": {
+        "enum": [
+          "non_negative_integer",
+        ],
+        "type": "string",
+      },
+      "maximum": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "number",
+      },
+      "minimum": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "number",
+      },
+      "unit": {
+        "maxLength": 32,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "kindCode",
+      "unit",
+      "minimum",
+      "maximum",
+    ],
+    "type": "object",
+  },
+  "AdminMetricSetDefinitionV1Dto": {
+    "properties": {
+      "code": {
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string",
+      },
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/AdminMetricSetItemDto",
+        },
+        "maxItems": 100,
+        "type": "array",
+      },
+      "name": {
+        "maxLength": 100,
+        "minLength": 1,
+        "type": "string",
+      },
+      "schemaVersion": {
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "version": {
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "schemaVersion",
+      "code",
+      "version",
+      "name",
+      "items",
+    ],
+    "type": "object",
+  },
+  "AdminMetricSetItemDto": {
+    "properties": {
+      "definitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "key": {
+        "maxLength": 64,
+        "type": "string",
+      },
+      "metricDefinitionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "required": {
+        "type": "boolean",
+      },
+      "sortOrder": {
+        "maximum": 99,
+        "minimum": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "key",
+      "sortOrder",
+      "required",
+      "metricDefinitionId",
+      "definitionHash",
+    ],
+    "type": "object",
+  },
+  "AdminMetricTextConfigurationDto": {
+    "properties": {
+      "kindCode": {
+        "enum": [
+          "short_text",
+        ],
+        "type": "string",
+      },
+      "maxLength": {
+        "maximum": 500,
+        "minimum": 1,
+        "type": "number",
+      },
+      "unit": {
+        "enum": [
+          null,
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "kindCode",
+      "unit",
+      "maxLength",
     ],
     "type": "object",
   },
@@ -2648,6 +3170,50 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "workflowRevision",
       "manualReviewPendingCount",
       "sealedAt",
+    ],
+    "type": "object",
+  },
+  "AdminUpdateActivityMetricDefinitionDto": {
+    "properties": {
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricDefinitionV1Dto",
+      },
+      "expectedDefinitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "definition",
+      "expectedDefinitionHash",
+    ],
+    "type": "object",
+  },
+  "AdminUpdateActivityMetricSetDto": {
+    "properties": {
+      "definition": {
+        "$ref": "#/components/schemas/AdminMetricSetDefinitionV1Dto",
+      },
+      "expectedDefinitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "definition",
+      "expectedDefinitionHash",
     ],
     "type": "object",
   },
@@ -38551,6 +39117,2775 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "按会员受众标签发布活动(空数组面向全部有效会员；开关关闭时 503) [rbac: activity.publish.record]",
       "tags": [
         "Admin - Activities",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-definitions": {
+    "get": {
+      "operationId": "AdminActivityMetricDefinitionsController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "in": "query",
+          "name": "code",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "in": "query",
+          "name": "statusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "draft",
+              "active",
+              "retired",
+            ],
+            "type": "string",
+          },
+        },
+        {
+          "in": "query",
+          "name": "kindCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "non_negative_integer",
+              "non_negative_decimal",
+              "boolean",
+              "short_text",
+              "single_choice",
+            ],
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AdminActivityMetricDefinitionResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页查询指标定义 [rbac: activity-metric.read.catalog]",
+      "tags": [
+        "Admin - Activity Metric Definitions",
+      ],
+    },
+    "post": {
+      "operationId": "AdminActivityMetricDefinitionsController_create",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminCreateActivityMetricDefinitionDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20164: 指标定义无效",
+                    "enum": [
+                      40000,
+                      20164,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 指标定义无效(code=20164)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20166: 指标定义不存在",
+                    "enum": [
+                      20166,
+                    ],
+                    "example": 20166,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标定义不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标定义不存在(code=20166)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20168: 指标版本已存在; 20169: 命令标识已用于不同请求; 20170: 指标版本已变化，请刷新后重试; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败",
+                    "enum": [
+                      20168,
+                      20169,
+                      20170,
+                      20171,
+                      20172,
+                      20173,
+                    ],
+                    "example": 20168,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标版本已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标版本已存在(code=20168) / 命令标识已用于不同请求(code=20169) / 指标版本已变化，请刷新后重试(code=20170) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "create 指标定义版本 [rbac: activity-metric.manage.definition]",
+      "tags": [
+        "Admin - Activity Metric Definitions",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-definitions/{id}": {
+    "get": {
+      "operationId": "AdminActivityMetricDefinitionsController_get",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricDefinitionResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20166: 指标定义不存在",
+                    "enum": [
+                      20166,
+                    ],
+                    "example": 20166,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标定义不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标定义不存在(code=20166)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查看指标定义版本 [rbac: activity-metric.read.catalog]",
+      "tags": [
+        "Admin - Activity Metric Definitions",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-definitions/{id}/activate": {
+    "post": {
+      "operationId": "AdminActivityMetricDefinitionsController_activate",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminActivityMetricVersionCommandDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20164: 指标定义无效",
+                    "enum": [
+                      40000,
+                      20164,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 指标定义无效(code=20164)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20166: 指标定义不存在",
+                    "enum": [
+                      20166,
+                    ],
+                    "example": 20166,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标定义不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标定义不存在(code=20166)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20168: 指标版本已存在; 20169: 命令标识已用于不同请求; 20170: 指标版本已变化，请刷新后重试; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败",
+                    "enum": [
+                      20168,
+                      20169,
+                      20170,
+                      20171,
+                      20172,
+                      20173,
+                    ],
+                    "example": 20168,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标版本已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标版本已存在(code=20168) / 命令标识已用于不同请求(code=20169) / 指标版本已变化，请刷新后重试(code=20170) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "activate 指标定义版本 [rbac: activity-metric.manage.definition]",
+      "tags": [
+        "Admin - Activity Metric Definitions",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-definitions/{id}/draft": {
+    "put": {
+      "operationId": "AdminActivityMetricDefinitionsController_update",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminUpdateActivityMetricDefinitionDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20164: 指标定义无效",
+                    "enum": [
+                      40000,
+                      20164,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 指标定义无效(code=20164)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20166: 指标定义不存在",
+                    "enum": [
+                      20166,
+                    ],
+                    "example": 20166,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标定义不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标定义不存在(code=20166)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20168: 指标版本已存在; 20169: 命令标识已用于不同请求; 20170: 指标版本已变化，请刷新后重试; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败",
+                    "enum": [
+                      20168,
+                      20169,
+                      20170,
+                      20171,
+                      20172,
+                      20173,
+                    ],
+                    "example": 20168,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标版本已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标版本已存在(code=20168) / 命令标识已用于不同请求(code=20169) / 指标版本已变化，请刷新后重试(code=20170) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "update 指标定义版本 [rbac: activity-metric.manage.definition]",
+      "tags": [
+        "Admin - Activity Metric Definitions",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-definitions/{id}/retire": {
+    "post": {
+      "operationId": "AdminActivityMetricDefinitionsController_retire",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminActivityMetricVersionCommandDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20164: 指标定义无效",
+                    "enum": [
+                      40000,
+                      20164,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 指标定义无效(code=20164)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20166: 指标定义不存在",
+                    "enum": [
+                      20166,
+                    ],
+                    "example": 20166,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标定义不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标定义不存在(code=20166)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20168: 指标版本已存在; 20169: 命令标识已用于不同请求; 20170: 指标版本已变化，请刷新后重试; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败",
+                    "enum": [
+                      20168,
+                      20169,
+                      20170,
+                      20171,
+                      20172,
+                      20173,
+                    ],
+                    "example": 20168,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标版本已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标版本已存在(code=20168) / 命令标识已用于不同请求(code=20169) / 指标版本已变化，请刷新后重试(code=20170) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "retire 指标定义版本 [rbac: activity-metric.manage.definition]",
+      "tags": [
+        "Admin - Activity Metric Definitions",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-sets": {
+    "get": {
+      "operationId": "AdminActivityMetricSetsController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "in": "query",
+          "name": "code",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+        {
+          "in": "query",
+          "name": "statusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "draft",
+              "active",
+              "retired",
+            ],
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AdminActivityMetricSetResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页查询指标集 [rbac: activity-metric.read.catalog]",
+      "tags": [
+        "Admin - Activity Metric Sets",
+      ],
+    },
+    "post": {
+      "operationId": "AdminActivityMetricSetsController_create",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminCreateActivityMetricSetDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20165: 指标集配置无效",
+                    "enum": [
+                      40000,
+                      20165,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 指标集配置无效(code=20165)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20167: 指标集不存在",
+                    "enum": [
+                      20167,
+                    ],
+                    "example": 20167,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标集不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标集不存在(code=20167)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20168: 指标版本已存在; 20169: 命令标识已用于不同请求; 20170: 指标版本已变化，请刷新后重试; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败",
+                    "enum": [
+                      20168,
+                      20169,
+                      20170,
+                      20171,
+                      20172,
+                      20173,
+                    ],
+                    "example": 20168,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标版本已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标版本已存在(code=20168) / 命令标识已用于不同请求(code=20169) / 指标版本已变化，请刷新后重试(code=20170) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "create 指标集版本 [rbac: activity-metric.manage.set]",
+      "tags": [
+        "Admin - Activity Metric Sets",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-sets/{id}": {
+    "get": {
+      "operationId": "AdminActivityMetricSetsController_get",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricSetResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20167: 指标集不存在",
+                    "enum": [
+                      20167,
+                    ],
+                    "example": 20167,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标集不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标集不存在(code=20167)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查看指标集版本 [rbac: activity-metric.read.catalog]",
+      "tags": [
+        "Admin - Activity Metric Sets",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-sets/{id}/activate": {
+    "post": {
+      "operationId": "AdminActivityMetricSetsController_activate",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminActivityMetricVersionCommandDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20165: 指标集配置无效",
+                    "enum": [
+                      40000,
+                      20165,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 指标集配置无效(code=20165)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20167: 指标集不存在",
+                    "enum": [
+                      20167,
+                    ],
+                    "example": 20167,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标集不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标集不存在(code=20167)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20168: 指标版本已存在; 20169: 命令标识已用于不同请求; 20170: 指标版本已变化，请刷新后重试; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败",
+                    "enum": [
+                      20168,
+                      20169,
+                      20170,
+                      20171,
+                      20172,
+                      20173,
+                    ],
+                    "example": 20168,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标版本已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标版本已存在(code=20168) / 命令标识已用于不同请求(code=20169) / 指标版本已变化，请刷新后重试(code=20170) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "activate 指标集版本 [rbac: activity-metric.manage.set]",
+      "tags": [
+        "Admin - Activity Metric Sets",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-sets/{id}/draft": {
+    "put": {
+      "operationId": "AdminActivityMetricSetsController_update",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminUpdateActivityMetricSetDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20165: 指标集配置无效",
+                    "enum": [
+                      40000,
+                      20165,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 指标集配置无效(code=20165)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20167: 指标集不存在",
+                    "enum": [
+                      20167,
+                    ],
+                    "example": 20167,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标集不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标集不存在(code=20167)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20168: 指标版本已存在; 20169: 命令标识已用于不同请求; 20170: 指标版本已变化，请刷新后重试; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败",
+                    "enum": [
+                      20168,
+                      20169,
+                      20170,
+                      20171,
+                      20172,
+                      20173,
+                    ],
+                    "example": 20168,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标版本已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标版本已存在(code=20168) / 命令标识已用于不同请求(code=20169) / 指标版本已变化，请刷新后重试(code=20170) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "update 指标集版本 [rbac: activity-metric.manage.set]",
+      "tags": [
+        "Admin - Activity Metric Sets",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-metric-sets/{id}/retire": {
+    "post": {
+      "operationId": "AdminActivityMetricSetsController_retire",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminActivityMetricVersionCommandDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityMetricCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20165: 指标集配置无效",
+                    "enum": [
+                      40000,
+                      20165,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 指标集配置无效(code=20165)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作",
+                    "enum": [
+                      30100,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20167: 指标集不存在",
+                    "enum": [
+                      20167,
+                    ],
+                    "example": 20167,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标集不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标集不存在(code=20167)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20168: 指标版本已存在; 20169: 命令标识已用于不同请求; 20170: 指标版本已变化，请刷新后重试; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败",
+                    "enum": [
+                      20168,
+                      20169,
+                      20170,
+                      20171,
+                      20172,
+                      20173,
+                    ],
+                    "example": 20168,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "指标版本已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "指标版本已存在(code=20168) / 命令标识已用于不同请求(code=20169) / 指标版本已变化，请刷新后重试(code=20170) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "retire 指标集版本 [rbac: activity-metric.manage.set]",
+      "tags": [
+        "Admin - Activity Metric Sets",
       ],
     },
   },

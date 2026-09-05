@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { recordAuthzAssertion } from '../../common/authz/authz-context';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -76,8 +77,12 @@ export class RbacService {
   //   (SUPER_ADMIN 的短路在 `can()` / `getMyPermissions()` 中各自实现,语义不同)
   // - 每次调用都按当前时刻查 DB,不跨请求缓存,确保多实例 grant/revoke 下一请求收敛
   // - 排除已软删的 RbacRole(沿 D7 §13 失效场景:RbacRole 软删时 role_bindings 不联动,join 过滤)
-  async getUserPermissionCodes(userId: string, now: Date = new Date()): Promise<Set<string>> {
-    const bindings = await this.prisma.roleBinding.findMany({
+  async getUserPermissionCodes(
+    userId: string,
+    now: Date = new Date(),
+    tx?: Prisma.TransactionClient,
+  ): Promise<Set<string>> {
+    const bindings = await (tx ?? this.prisma).roleBinding.findMany({
       where: effectiveGlobalUserRoleBindingWhere(userId, now),
       select: {
         role: {
@@ -103,9 +108,14 @@ export class RbacService {
   }
 
   // 判权主函数(沿 D7 §8.2 实现伪代码)。
-  async can(user: CurrentUserPayload, action: string, resource?: RbacResource): Promise<boolean> {
+  async can(
+    user: CurrentUserPayload,
+    action: string,
+    resource?: RbacResource,
+    tx?: Prisma.TransactionClient,
+  ): Promise<boolean> {
     recordAuthzAssertion({ pattern: 'rbac-can', codes: [action], resourceRef: resource });
-    const result = await this.judge(user, action, resource);
+    const result = await this.judge(user, action, resource, tx);
     return result.allowed;
   }
 
@@ -114,6 +124,7 @@ export class RbacService {
     user: CurrentUserPayload,
     action: string,
     resource?: RbacResource,
+    tx?: Prisma.TransactionClient,
   ): Promise<RbacJudgeResult> {
     // 1. SUPER_ADMIN 短路(沿 D7 §7.1 step 1 + §8.2 step 1)
     if (user.role === Role.SUPER_ADMIN) {
@@ -123,7 +134,7 @@ export class RbacService {
     // 2. 取用户的有效权限点(每次直读 DB;沿 D7 §8.2 step 2)。
     //    ADMIN 继承 USER 权限(D7 §7.1 step 2 / §8.2 step 3)由 seed PR #8 实装
     //    (给 ADMIN 内置角色配 USER 级权限点),本函数对 ADMIN 不特判 — 表里有什么就用什么。
-    const permissions = await this.getUserPermissionCodes(user.id);
+    const permissions = await this.getUserPermissionCodes(user.id, undefined, tx);
 
     // 3. 精确匹配(沿 D7 §8.2 step 4)
     if (!permissions.has(action)) {

@@ -2,6 +2,21 @@
   "_comment": "权限说明 ↔ 管辖面绑定基线(P2-13)。派生快照,不是真相源 —— 权威源是 ROUTE_AUTHZ 的 `## Permission code surface` 节与 permission-catalog.ts 的 businessDescription。它不断言当前说明准确,只钉住「面变了必须有人重看说明」。推进方式:pnpm exec tsx scripts/check-permission-surface-binding.ts --write",
   "version": 1,
   "codes": {
+    "activity-metric.manage.definition": {
+      "endpoints": 4,
+      "surface": "sha256:f38c25a0fe81b009676826fe913b3d84c9169cf708cc5668762bc5bb9cd4b46d",
+      "description": "sha256:4b1f1764ae9e7228df93f6abe653d6f8ed331dca33a6e9b3d95eb63a32ccb850"
+    },
+    "activity-metric.manage.set": {
+      "endpoints": 4,
+      "surface": "sha256:4880feae84bc4ec1582dbf5393bb95cd92def3be36af348f1c1e8f8a2d75d2d6",
+      "description": "sha256:db96359dd6038e0d2242274b8cb67f59e8533a313ad31a9be71d7099f336b68b"
+    },
+    "activity-metric.read.catalog": {
+      "endpoints": 4,
+      "surface": "sha256:bbf45cff9d5445b4d1b6cd543cde9ab7bc2f7716278fdb0423f1b1bdb24438c1",
+      "description": "sha256:406bd1af59cb0741033adf8e17c2a48b55612ead4fb77b76eb74c1868dfae942"
+    },
     "activity-registration.approve.record": {
       "endpoints": 2,
       "surface": "sha256:54fa5cfe6035936096d74832f9ef13c6e31bc900cdd36f54c182ce6163c6ddbf",

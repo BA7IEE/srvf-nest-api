@@ -1,5 +1,13 @@
 # permissions — 本地铁律
 
+## C1 D2a 增量边界
+
+`RbacService.can/judge` 第四参数及 `getUserPermissionCodes` 第三参数可显式传 `Prisma.TransactionClient`；
+未传仍使用原 PrismaService，不改变 GLOBAL/任期/软删 role/SUPER_ADMIN/.self 规则，不批迁旧调用。
+新增 `activity-metric.read.catalog`、`activity-metric.manage.definition`、`activity-metric.manage.set`：
+仅 Human GLOBAL，机器/委托 eligibility 均 false；可人工授予自定义角色，不自动给内建角色。
+三码在 permission-code-holders 的精确人工授码清单登记，不豁免其他 CUSTOM_ROLE_ALLOWED 权限。
+
 > 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);API surface 边界读 [`/docs/api-surface-policy.md`](../../../docs/api-surface-policy.md);相关安全章节读 [`/docs/security.md`](../../../docs/security.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
 
 ## Scope
