@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:86f9cc369805fda0fadac811aedafafc0a0198a79727872846c10aff5b04833d
+// inputDigest: sha256:a04eb1c846ade456ecb5467ba9fedceccfb8be3673462756a012381075be8d54
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -23,6 +23,9 @@ import type {
   AppActivityArchiveResultDto,
   AppActivityChangePositionDto,
   AppActivityCheckInDto,
+  AppActivityCreationDetailDto,
+  AppActivityCreationPlaceDto,
+  AppActivityCreationResultDto,
   AppActivityDetailDto,
   AppActivityDetailInvitationDto,
   AppActivityDetailSessionDto,
@@ -60,8 +63,13 @@ import type {
   AppCapabilityTasksDto,
   AppCollaboratorOptionDto,
   AppCollaboratorOptionsResponseDto,
+  AppCreationPlaceCoordinateDto,
+  AppCreationQualificationRuleSetDto,
+  AppEmergencyActivityCreationDto,
+  AppEmergencyCreationFollowUpDto,
   AppEvidenceSealResultDto,
   AppGateStatusDto,
+  AppInlineCreationPlaceDto,
   AppManagedActivityArchiveCommandDto,
   AppManagedActivityCancelCommandDto,
   AppManagedActivityCheckInDto,
@@ -139,6 +147,9 @@ import type {
   AppMyRegistrationDto,
   AppMyRegistrationListItemDto,
   AppParticipationLedgerEntryDto,
+  AppProfessionalActivityCreationDto,
+  AppProfessionalCreationSessionDto,
+  AppQuickActivityCreationDto,
   AppRegistrationFormChoiceDto,
   AppRegistrationFormDto,
   AppRegistrationFormFieldDto,
@@ -465,9 +476,21 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivitiesControllerCreate(body: CreateAppManagedActivityDto): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
       return fetcher<AppManagedActivityDetailDto>({ method: "POST", path: "/api/app/v1/my/managed-activities", body });
     },
+    /** App 创建紧急草稿并冻结呼叫受众（不正式发布） [auth] */
+    AppManagedActivityCreationControllerEmergency(body: AppEmergencyActivityCreationDto): Promise<ApiEnvelope<AppActivityCreationResultDto>> {
+      return fetcher<AppActivityCreationResultDto>({ method: "POST", path: "/api/app/v1/my/managed-activities/emergency", body });
+    },
+    /** App 从精确模板创建草稿（含地点快照、幂等） [auth] */
+    AppManagedActivityCreationControllerQuick(body: AppQuickActivityCreationDto): Promise<ApiEnvelope<AppActivityCreationResultDto>> {
+      return fetcher<AppActivityCreationResultDto>({ method: "POST", path: "/api/app/v1/my/managed-activities/from-template", body });
+    },
     /** App 获取当前队员可发起活动的组织 options [auth] */
     AppManagedActivitiesControllerOrganizationOptions(): Promise<ApiEnvelope<AppActivityInitiationOrganizationOptionDto[]>> {
       return fetcher<AppActivityInitiationOrganizationOptionDto[]>({ method: "GET", path: "/api/app/v1/my/managed-activities/organization-options" });
+    },
+    /** App 原子创建专业活动草稿（场次、岗位、地点、表单、资格） [auth] */
+    AppManagedActivityCreationControllerProfessional(body: AppProfessionalActivityCreationDto): Promise<ApiEnvelope<AppActivityCreationResultDto>> {
+      return fetcher<AppActivityCreationResultDto>({ method: "POST", path: "/api/app/v1/my/managed-activities/professional", body });
     },
     /** App 我管理的活动详情、责任、审核与待办摘要 [auth] */
     AppManagedActivitiesControllerDetail(activityId: string): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {

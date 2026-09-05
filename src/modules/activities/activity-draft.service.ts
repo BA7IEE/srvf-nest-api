@@ -7,6 +7,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
+import { reconcileEmergencyFollowUps } from './activity-emergency-follow-up';
 import type {
   AppManagedActivitySessionDto,
   AppManagedActivitySessionPositionDto,
@@ -130,54 +131,66 @@ export class ActivityDraftService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const activity = await this.lockManagedDraftActivity(activityId, user, tx);
-        await this.assertSessionCodeAvailable(tx, activityId, dto.code);
-        await this.assertSessionNameAvailable(tx, activityId, dto.name);
-        const input = this.createSessionInput(dto);
-        this.assertSessionValid(activity, input);
-
-        const created = await tx.activitySession.create({
-          data: {
-            activityId,
-            code: dto.code,
-            name: dto.name,
-            startAt: input.startAt,
-            endAt: input.endAt,
-            locationText: dto.locationText,
-            meetingPoint: dto.meetingPoint ?? null,
-            executionPoint: dto.executionPoint ?? null,
-            evacuationPoint: dto.evacuationPoint ?? null,
-            longitude: input.longitude,
-            latitude: input.latitude,
-            capacity: input.capacity,
-            checkInOpenAt: input.checkInOpenAt,
-            checkInCloseAt: input.checkInCloseAt,
-            checkOutOpenAt: input.checkOutOpenAt,
-            checkOutCloseAt: input.checkOutCloseAt,
-            preparationStartAt: input.preparationStartAt,
-            locationRequired: input.locationRequired,
-            radiusMeters: input.radiusMeters,
-            locationPolicySourceCode: 'session',
-            lateGraceMinutes: input.lateGraceMinutes,
-            earlyLeaveThresholdMinutes: input.earlyLeaveThresholdMinutes,
-            statusCode: 'scheduled',
-            sortOrder: dto.sortOrder ?? 0,
-          },
-          select: SESSION_SELECT,
-        });
+        const created = await this.createSessionWithinTransaction(tx, activity, dto);
+        await reconcileEmergencyFollowUps(tx, activityId, user.id);
         await this.audit.log({
           activityId,
-          sessionId: created.id,
+          sessionId: created.sessionId,
           operation: 'draft-session-create',
           actorUserId: user.id,
           actorRoleSnap: user.role,
           auditMeta,
           tx,
         });
-        return this.toSessionDto(created);
+        return created;
       });
     } catch (error) {
       this.rethrowConstraint(error, 'session');
     }
+  }
+
+  /** Transaction-bound primitive: caller locks/authorizes the Activity and records its audit. */
+  async createSessionWithinTransaction(
+    tx: PrismaTx,
+    activity: DraftActivityRow,
+    dto: CreateAppManagedActivitySessionDto,
+  ): Promise<AppManagedActivitySessionDto> {
+    const activityId = activity.id;
+    await this.assertSessionCodeAvailable(tx, activityId, dto.code);
+    await this.assertSessionNameAvailable(tx, activityId, dto.name);
+    const input = this.createSessionInput(dto);
+    this.assertSessionValid(activity, input);
+
+    const created = await tx.activitySession.create({
+      data: {
+        activityId,
+        code: dto.code,
+        name: dto.name,
+        startAt: input.startAt,
+        endAt: input.endAt,
+        locationText: dto.locationText,
+        meetingPoint: dto.meetingPoint ?? null,
+        executionPoint: dto.executionPoint ?? null,
+        evacuationPoint: dto.evacuationPoint ?? null,
+        longitude: input.longitude,
+        latitude: input.latitude,
+        capacity: input.capacity,
+        checkInOpenAt: input.checkInOpenAt,
+        checkInCloseAt: input.checkInCloseAt,
+        checkOutOpenAt: input.checkOutOpenAt,
+        checkOutCloseAt: input.checkOutCloseAt,
+        preparationStartAt: input.preparationStartAt,
+        locationRequired: input.locationRequired,
+        radiusMeters: input.radiusMeters,
+        locationPolicySourceCode: 'session',
+        lateGraceMinutes: input.lateGraceMinutes,
+        earlyLeaveThresholdMinutes: input.earlyLeaveThresholdMinutes,
+        statusCode: 'scheduled',
+        sortOrder: dto.sortOrder ?? 0,
+      },
+      select: SESSION_SELECT,
+    });
+    return this.toSessionDto(created);
   }
 
   async updateSession(
@@ -228,6 +241,7 @@ export class ActivityDraftService {
           data,
           select: SESSION_SELECT,
         });
+        await reconcileEmergencyFollowUps(tx, activityId, user.id);
         await this.audit.log({
           activityId,
           sessionId: updated.id,
@@ -270,6 +284,7 @@ export class ActivityDraftService {
         where: { activityId, sessionId, deletedAt: null },
         data: { deletedAt },
       });
+      await reconcileEmergencyFollowUps(tx, activityId, user.id);
       await this.audit.log({
         activityId,
         sessionId,
@@ -324,64 +339,76 @@ export class ActivityDraftService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.lockManagedDraftActivity(activityId, user, tx);
-        const session = await this.findSessionOrThrow(tx, activityId, sessionId);
-        await this.assertPositionCodeAvailable(tx, sessionId, dto.code);
-        await this.assertPositionNameAvailable(tx, sessionId, dto.name);
-        await this.assertDictionaryItemValid(
-          tx,
-          DICT_TYPE_ATTENDANCE_ROLE,
-          dto.attendanceRoleCode,
-          BizCode.ATTENDANCE_ROLE_CODE_INVALID,
-        );
-        if (dto.genderRequirementCode !== undefined && dto.genderRequirementCode !== null) {
-          await this.assertDictionaryItemValid(
-            tx,
-            DICT_TYPE_GENDER_REQUIREMENT,
-            dto.genderRequirementCode,
-            BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
-          );
-        }
-        if (dto.leaderMemberId !== undefined && dto.leaderMemberId !== null) {
-          await this.assertActiveLeader(tx, dto.leaderMemberId);
-        }
-        const input = this.createPositionInput(dto);
-        this.assertPositionValid(session, input);
-
-        const created = await tx.activitySessionPosition.create({
-          data: {
-            activityId,
-            sessionId,
-            code: dto.code,
-            name: dto.name,
-            attendanceRoleCode: dto.attendanceRoleCode,
-            capacity: input.capacity,
-            startAt: input.startAt,
-            endAt: input.endAt,
-            genderRequirementCode: dto.genderRequirementCode ?? null,
-            locationRequired: dto.locationRequired ?? null,
-            radiusMeters: input.radiusMeters,
-            leaderMemberId: dto.leaderMemberId ?? null,
-            description: dto.description ?? null,
-            equipmentNotes: dto.equipmentNotes ?? null,
-            sortOrder: dto.sortOrder ?? 0,
-          },
-          select: SESSION_POSITION_SELECT,
-        });
+        const created = await this.createPositionWithinTransaction(tx, activityId, sessionId, dto);
+        await reconcileEmergencyFollowUps(tx, activityId, user.id);
         await this.audit.log({
           activityId,
           sessionId,
-          positionId: created.id,
+          positionId: created.positionId,
           operation: 'draft-session-position-create',
           actorUserId: user.id,
           actorRoleSnap: user.role,
           auditMeta,
           tx,
         });
-        return this.toPositionDto(created);
+        return created;
       });
     } catch (error) {
       this.rethrowConstraint(error, 'position');
     }
+  }
+
+  /** Transaction-bound primitive: caller locks/authorizes the Activity and records its audit. */
+  async createPositionWithinTransaction(
+    tx: PrismaTx,
+    activityId: string,
+    sessionId: string,
+    dto: CreateAppManagedActivitySessionPositionDto,
+  ): Promise<AppManagedActivitySessionPositionDto> {
+    const session = await this.findSessionOrThrow(tx, activityId, sessionId);
+    await this.assertPositionCodeAvailable(tx, sessionId, dto.code);
+    await this.assertPositionNameAvailable(tx, sessionId, dto.name);
+    await this.assertDictionaryItemValid(
+      tx,
+      DICT_TYPE_ATTENDANCE_ROLE,
+      dto.attendanceRoleCode,
+      BizCode.ATTENDANCE_ROLE_CODE_INVALID,
+    );
+    if (dto.genderRequirementCode !== undefined && dto.genderRequirementCode !== null) {
+      await this.assertDictionaryItemValid(
+        tx,
+        DICT_TYPE_GENDER_REQUIREMENT,
+        dto.genderRequirementCode,
+        BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
+      );
+    }
+    if (dto.leaderMemberId !== undefined && dto.leaderMemberId !== null) {
+      await this.assertActiveLeader(tx, dto.leaderMemberId);
+    }
+    const input = this.createPositionInput(dto);
+    this.assertPositionValid(session, input);
+
+    const created = await tx.activitySessionPosition.create({
+      data: {
+        activityId,
+        sessionId,
+        code: dto.code,
+        name: dto.name,
+        attendanceRoleCode: dto.attendanceRoleCode,
+        capacity: input.capacity,
+        startAt: input.startAt,
+        endAt: input.endAt,
+        genderRequirementCode: dto.genderRequirementCode ?? null,
+        locationRequired: dto.locationRequired ?? null,
+        radiusMeters: input.radiusMeters,
+        leaderMemberId: dto.leaderMemberId ?? null,
+        description: dto.description ?? null,
+        equipmentNotes: dto.equipmentNotes ?? null,
+        sortOrder: dto.sortOrder ?? 0,
+      },
+      select: SESSION_POSITION_SELECT,
+    });
+    return this.toPositionDto(created);
   }
 
   async updatePosition(
@@ -445,6 +472,7 @@ export class ActivityDraftService {
           data,
           select: SESSION_POSITION_SELECT,
         });
+        await reconcileEmergencyFollowUps(tx, activityId, user.id);
         await this.audit.log({
           activityId,
           sessionId,
@@ -485,6 +513,7 @@ export class ActivityDraftService {
         data: { deletedAt: new Date() },
         select: SESSION_POSITION_SELECT,
       });
+      await reconcileEmergencyFollowUps(tx, activityId, user.id);
       await this.audit.log({
         activityId,
         sessionId,

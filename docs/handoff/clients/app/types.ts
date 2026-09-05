@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:86f9cc369805fda0fadac811aedafafc0a0198a79727872846c10aff5b04833d
+// inputDigest: sha256:a04eb1c846ade456ecb5467ba9fedceccfb8be3673462756a012381075be8d54
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -93,6 +93,27 @@ export interface AppActivityCheckInDto {
   "outOfRange": boolean;
   "createdAt": string;
   "updatedAt": string;
+}
+
+export interface AppActivityCreationDetailDto {
+  "activityId": string;
+  "createdAt": string;
+  "createdStatusCode": "draft";
+}
+
+export interface AppActivityCreationPlaceDto {
+  "sessionCode"?: string;
+  "roleCode": "primary" | "meeting" | "execution" | "evacuation" | "parking" | "other";
+  "visibilityCode": "public" | "accepted" | "staff" | "command";
+  "presetId"?: string;
+  "inline"?: AppInlineCreationPlaceDto;
+}
+
+export interface AppActivityCreationResultDto {
+  "activity": AppActivityCreationDetailDto;
+  "mode": "quick" | "professional" | "emergency";
+  "replayed": boolean;
+  "followUpItems": AppEmergencyCreationFollowUpDto[];
 }
 
 export interface AppActivityDetailDto {
@@ -429,6 +450,37 @@ export interface AppCollaboratorOptionsResponseDto {
   "pageSize": number;
 }
 
+export interface AppCreationPlaceCoordinateDto {
+  "longitude": number;
+  "latitude": number;
+  "coordinateSystemCode": "wgs84" | "gcj02" | "bd09";
+}
+
+export interface AppCreationQualificationRuleSetDto {
+  "sessionCode"?: string;
+  "positionCode"?: string;
+  "rules": AppActivityQualificationRuleInputDto[];
+}
+
+export interface AppEmergencyActivityCreationDto {
+  "operationKey": string;
+  "title": string;
+  "organizationId": string;
+  "startAt": string;
+  "endAt": string;
+  "location": string;
+  "initiatorMemberId": string;
+  "activityTypeCode": string;
+  "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
+  "organizationIds"?: string[];
+  "memberIds"?: string[];
+}
+
+export interface AppEmergencyCreationFollowUpDto {
+  "itemCode": "session" | "position" | "detailed_location" | "equipment" | "attendance" | "outcome" | "incident_relation";
+  "statusCode": "pending" | "verified" | "unrepresentable";
+}
+
 export interface AppEvidenceSealResultDto {
   "sealId": string;
   "activityId": string;
@@ -454,6 +506,17 @@ export interface AppGateStatusDto {
   "satisfied": boolean;
   "completionDate"?: Record<string, unknown> | null;
   "extendedUntil"?: Record<string, unknown> | null;
+}
+
+export interface AppInlineCreationPlaceDto {
+  "name": string;
+  "addressText": string;
+  "instruction"?: string;
+  "coordinate"?: AppCreationPlaceCoordinateDto;
+  "providerCode"?: string;
+  "providerPlaceId"?: string;
+  "checkInEligible": boolean;
+  "radiusMeters"?: number;
 }
 
 export interface AppManagedActivityArchiveCommandDto {
@@ -1261,6 +1324,53 @@ export interface AppParticipationLedgerEntryDto {
   "recognizedPointsDelta": number;
   "creditedPointsDelta": number;
   "cappedOutPointsDelta": number;
+}
+
+export interface AppProfessionalActivityCreationDto {
+  "operationKey": string;
+  "title": string;
+  "organizationId": string;
+  "startAt": string;
+  "endAt": string;
+  "location": string;
+  "activityTypeCode": string;
+  "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
+  "initiatorMemberId"?: string;
+  "description"?: string;
+  "capacity"?: number | null;
+  "genderRequirementCode"?: string;
+  "registrationDeadline"?: string | null;
+  "registrationNotes"?: string;
+  "isPublicRegistration"?: boolean;
+  "requiresInsurance"?: boolean;
+  "registrationModeCode"?: "open_apply" | "invitation_only" | "admin_only" | "paused";
+  "visibilityCode"?: "internal" | "invitation";
+  "defaultLocationRequired"?: boolean;
+  "defaultCheckInRadiusMeters"?: number;
+  "archiveWaitingDays"?: number;
+  "sessions": AppProfessionalCreationSessionDto[];
+  "places"?: AppActivityCreationPlaceDto[];
+  "form"?: ManagedRegistrationFormDefinitionInputDto;
+  "qualificationRuleSets"?: AppCreationQualificationRuleSetDto[];
+}
+
+export interface AppProfessionalCreationSessionDto {
+  "session": CreateAppManagedActivitySessionDto;
+  "positions": CreateAppManagedActivitySessionPositionDto[];
+}
+
+export interface AppQuickActivityCreationDto {
+  "operationKey": string;
+  "title": string;
+  "organizationId": string;
+  "startAt": string;
+  "endAt": string;
+  "location": string;
+  "templateVersionId": string;
+  "initiatorMemberId"?: string;
+  "confirmedCapacity"?: number | null;
+  "defaultPlaceVisibilityCode": "public" | "accepted" | "staff" | "command";
+  "places"?: AppActivityCreationPlaceDto[];
 }
 
 export interface AppRegistrationFormChoiceDto {

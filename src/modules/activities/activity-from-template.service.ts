@@ -192,9 +192,17 @@ function buildRequestHash(
   command: NormalizedCreateActivityFromTemplateCommand,
   actorUserId: string,
   definitionHash: string,
+  creationContextHash?: string,
 ): string {
   return createHash('sha256')
-    .update(canonicalize(toHashPayload(command, actorUserId, definitionHash)), 'utf8')
+    .update(
+      canonicalize(
+        creationContextHash === undefined
+          ? toHashPayload(command, actorUserId, definitionHash)
+          : { a6: toHashPayload(command, actorUserId, definitionHash), creationContextHash },
+      ),
+      'utf8',
+    )
     .digest('hex');
 }
 
@@ -273,6 +281,8 @@ export class ActivityFromTemplateService {
     readonly user: CurrentUserPayload;
     readonly initiatorMode: ActivityFromTemplateInitiatorMode;
     readonly expectedDefinitionHash?: string;
+    readonly creationContextHash?: string;
+    readonly confirmedCapacity?: number | null;
   }): Promise<MaterializedActivityFromTemplate> {
     return this.materializeNormalizedWithinTransaction({
       tx: args.tx,
@@ -280,7 +290,23 @@ export class ActivityFromTemplateService {
       user: args.user,
       initiatorMode: args.initiatorMode,
       expectedDefinitionHash: args.expectedDefinitionHash,
+      creationContextHash: args.creationContextHash,
+      confirmedCapacity: args.confirmedCapacity,
     });
+  }
+
+  /** B6 root transaction owns replay, places and the minimal creation audit together. */
+  async findCreationReplayWithinTransaction(
+    tx: Prisma.TransactionClient,
+    command: CreateActivityFromTemplateCommand,
+    actorUserId: string,
+    creationContextHash: string,
+  ): Promise<ActivityFullRow | null> {
+    return this.findReplay(tx, this.normalizeCommand(command), actorUserId, creationContextHash);
+  }
+
+  isCreationOperationKeyConflict(error: unknown): boolean {
+    return this.isOperationKeyConflict(error);
   }
 
   /**
@@ -302,6 +328,8 @@ export class ActivityFromTemplateService {
     readonly user: CurrentUserPayload;
     readonly initiatorMode: ActivityFromTemplateInitiatorMode;
     readonly expectedDefinitionHash?: string;
+    readonly creationContextHash?: string;
+    readonly confirmedCapacity?: number | null;
   }): Promise<MaterializedActivityFromTemplate> {
     const template = await this.lockTemplateVersion(args.tx, args.input.templateVersionId);
     const { definition, definitionHash } = this.selectDefinitionOrThrow(template);
@@ -311,7 +339,18 @@ export class ActivityFromTemplateService {
     ) {
       throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_SELECTABLE);
     }
-    const requestHash = buildRequestHash(args.input, args.user.id, definitionHash);
+    if (
+      args.confirmedCapacity !== undefined &&
+      args.confirmedCapacity !== (definition.activity.capacity ?? null)
+    ) {
+      throw new BizException(BizCode.BAD_REQUEST);
+    }
+    const requestHash = buildRequestHash(
+      args.input,
+      args.user.id,
+      definitionHash,
+      args.creationContextHash,
+    );
 
     this.allocationModes.assertValidMode(definition.activity.allocationModeCode);
     this.access.assertStartEndValid(args.input.startAt, args.input.endAt);
@@ -476,6 +515,7 @@ export class ActivityFromTemplateService {
     tx: Prisma.TransactionClient,
     input: NormalizedCreateActivityFromTemplateCommand,
     actorUserId: string,
+    creationContextHash?: string,
   ): Promise<ActivityFullRow | null> {
     const existing = await tx.activity.findUnique({
       where: { createFromTemplateOperationKey: input.operationKey },
@@ -492,7 +532,12 @@ export class ActivityFromTemplateService {
     if (typeof definitionHash !== 'string') {
       throw new BizException(BizCode.ACTIVITY_CREATE_FROM_TEMPLATE_OPERATION_KEY_CONFLICT);
     }
-    const expectedRequestHash = buildRequestHash(input, actorUserId, definitionHash);
+    const expectedRequestHash = buildRequestHash(
+      input,
+      actorUserId,
+      definitionHash,
+      creationContextHash,
+    );
     if (existing.createFromTemplateRequestHash !== expectedRequestHash) {
       throw new BizException(BizCode.ACTIVITY_CREATE_FROM_TEMPLATE_OPERATION_KEY_CONFLICT);
     }

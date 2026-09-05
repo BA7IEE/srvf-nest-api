@@ -152,6 +152,39 @@ export class ActivityAuditRecorder {
     });
   }
 
+  /** B6 intentionally excludes legacy title/location snapshots and all raw command/audience data. */
+  async logCreationCommand(args: {
+    tx: PrismaTx;
+    activityId: string;
+    organizationId: string;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    operation: 'create_quick' | 'create_professional' | 'create_emergency' | 'emergency_call';
+    requestHash: string;
+    commandId?: string;
+    placeCount?: number;
+    recipientCount?: number;
+  }): Promise<void> {
+    await this.auditLogs.log({
+      event: ACTIVITY_AUDIT_EVENT,
+      actorUserId: args.actorUserId,
+      actorRoleSnap: args.actorRoleSnap,
+      resourceType: AUDIT_RESOURCE_TYPE,
+      resourceId: args.activityId,
+      meta: args.auditMeta,
+      extra: {
+        operation: args.operation,
+        organizationId: args.organizationId,
+        requestHash: args.requestHash,
+        ...(args.commandId === undefined ? {} : { commandId: args.commandId }),
+        ...(args.placeCount === undefined ? {} : { placeCount: args.placeCount }),
+        ...(args.recipientCount === undefined ? {} : { recipientCount: args.recipientCount }),
+      },
+      tx: args.tx,
+    });
+  }
+
   // ============ logCreateFromTemplate(Activity OS R1 / A6) ============
   // 仍复用 activity.publish 伞事件；模板原文、operationKey、请求体均不进入 audit。
   // after 只取既有安全 Activity 快照，extra 仅保留可追溯来源与不可变 definition hash。

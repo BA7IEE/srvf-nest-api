@@ -1,3 +1,4 @@
+import { assertEmergencyFormalPublicationAllowed } from './activity-emergency-publication-policy';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { MemberStatus, Prisma } from '@prisma/client';
@@ -214,6 +215,12 @@ export class ActivityPublishReviewService {
       result = await this.prisma.$transaction(async (tx) => {
         await lockActivity(seed.activityId, tx);
         await this.lockReview(reviewId, tx);
+        assertEmergencyFormalPublicationAllowed(
+          await tx.activityEmergencyInitiation.findUnique({
+            where: { activityId: seed.activityId },
+            select: { id: true },
+          }),
+        );
         const review = await tx.activityPublishReview.findUniqueOrThrow({
           where: { id: reviewId },
         });

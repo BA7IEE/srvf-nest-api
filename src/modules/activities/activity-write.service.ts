@@ -72,6 +72,36 @@ export class ActivityWriteService {
     auditMeta: AuditMeta,
     authorization: 'rbac' | 'managed' = 'rbac',
   ): Promise<ActivityResponseDto> {
+    await this.assertCreateAllowed(dto, currentUser, authorization);
+    return this.prisma.$transaction(async (tx) => {
+      const created = await this.materializeDraft(tx, dto, currentUser);
+      await this.activityAuditRecorder.logCreate({
+        created,
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        nextStatusCode: ACTIVITY_STATUS_DRAFT,
+        auditMeta,
+        tx,
+      });
+      return toResponseDto(created, await this.images.signImages(created));
+    });
+  }
+
+  /** B6 owns the root transaction and its minimal creation audit; no nested transaction/signing. */
+  async createDraftWithinTransaction(
+    tx: Prisma.TransactionClient,
+    dto: CreateActivityDto,
+    currentUser: CurrentUserPayload,
+  ) {
+    await this.assertCreateAllowed(dto, currentUser, 'managed');
+    return this.materializeDraft(tx, dto, currentUser);
+  }
+
+  private async assertCreateAllowed(
+    dto: CreateActivityDto,
+    currentUser: CurrentUserPayload,
+    authorization: 'rbac' | 'managed',
+  ): Promise<void> {
     if (authorization === 'rbac') {
       await this.access.assertCanOrThrow(currentUser, 'activity.create.record');
     } else if (!this.config.activityResponsibilityWorkflow.enabled) {
@@ -88,96 +118,93 @@ export class ActivityWriteService {
       endAt,
     );
     this.access.assertV11DraftConfiguration(dto);
+  }
 
-    return this.prisma.$transaction(async (tx) => {
-      const initiatorMemberId = this.config.activityResponsibilityWorkflow.enabled
-        ? await this.initiationPolicy.resolveInitiator(
-            currentUser,
-            dto.organizationId,
-            dto.initiatorMemberId,
-            tx,
-          )
-        : undefined;
+  private async materializeDraft(
+    tx: Prisma.TransactionClient,
+    dto: CreateActivityDto,
+    currentUser: CurrentUserPayload,
+  ) {
+    const startAt = new Date(dto.startAt);
+    const endAt = new Date(dto.endAt);
+    const initiatorMemberId = this.config.activityResponsibilityWorkflow.enabled
+      ? await this.initiationPolicy.resolveInitiator(
+          currentUser,
+          dto.organizationId,
+          dto.initiatorMemberId,
+          tx,
+        )
+      : undefined;
+    await this.access.assertDictItemValid(
+      DICT_TYPE_ACTIVITY_TYPE,
+      dto.activityTypeCode,
+      BizCode.ACTIVITY_TYPE_CODE_INVALID,
+      tx,
+    );
+    if (dto.genderRequirementCode !== undefined) {
       await this.access.assertDictItemValid(
-        DICT_TYPE_ACTIVITY_TYPE,
-        dto.activityTypeCode,
-        BizCode.ACTIVITY_TYPE_CODE_INVALID,
+        DICT_TYPE_GENDER_REQUIREMENT,
+        dto.genderRequirementCode,
+        BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
         tx,
       );
-      if (dto.genderRequirementCode !== undefined) {
-        await this.access.assertDictItemValid(
-          DICT_TYPE_GENDER_REQUIREMENT,
-          dto.genderRequirementCode,
-          BizCode.ACTIVITY_GENDER_REQUIREMENT_CODE_INVALID,
-          tx,
-        );
-      }
-      await this.access.assertOrganizationValidAndNonRoot(dto.organizationId, tx);
+    }
+    await this.access.assertOrganizationValidAndNonRoot(dto.organizationId, tx);
 
-      const data: Prisma.ActivityUncheckedCreateInput = {
-        title: dto.title,
-        activityTypeCode: dto.activityTypeCode,
-        allocationModeCode: dto.allocationModeCode,
-        organizationId: dto.organizationId,
-        startAt,
-        endAt,
-        location: dto.location,
-        statusCode: ACTIVITY_STATUS_DRAFT,
-        ...(initiatorMemberId ? { initiatorMemberId } : {}),
-      };
-      if (dto.description !== undefined) data.description = dto.description;
-      if (dto.capacity !== undefined) data.capacity = dto.capacity;
-      if (dto.genderRequirementCode !== undefined) {
-        data.genderRequirementCode = dto.genderRequirementCode;
-      }
-      if (dto.registrationDeadline !== undefined) {
-        data.registrationDeadline = nullableDate(dto.registrationDeadline);
-      }
-      if (dto.registrationNotes !== undefined) data.registrationNotes = dto.registrationNotes;
-      if (dto.isPublicRegistration !== undefined) {
-        data.isPublicRegistration = dto.isPublicRegistration;
-      }
-      if (dto.requiresInsurance !== undefined) {
-        data.requiresInsurance = dto.requiresInsurance;
-      }
-      if (dto.registrationModeCode !== undefined) {
-        data.registrationModeCode = dto.registrationModeCode;
-      }
-      if (dto.visibilityCode !== undefined) data.visibilityCode = dto.visibilityCode;
-      if (dto.defaultCheckInRadiusMeters !== undefined) {
-        data.defaultCheckInRadiusMeters = dto.defaultCheckInRadiusMeters;
-      }
-      if (dto.defaultLocationRequired !== undefined) {
-        data.defaultLocationRequired = dto.defaultLocationRequired;
-      }
-      if (dto.archiveWaitingDays !== undefined) {
-        data.archiveWaitingDays = dto.archiveWaitingDays;
-      }
-      if (dto.registrationSchema !== undefined) {
-        data.registrationSchema = dto.registrationSchema as Prisma.InputJsonValue;
-      }
-      if (dto.content !== undefined) {
-        data.content = dto.content as Prisma.InputJsonValue;
-      }
-      if (dto.locationLongitude !== undefined) data.locationLongitude = dto.locationLongitude;
-      if (dto.locationLatitude !== undefined) data.locationLatitude = dto.locationLatitude;
+    const data: Prisma.ActivityUncheckedCreateInput = {
+      title: dto.title,
+      activityTypeCode: dto.activityTypeCode,
+      allocationModeCode: dto.allocationModeCode,
+      organizationId: dto.organizationId,
+      startAt,
+      endAt,
+      location: dto.location,
+      statusCode: ACTIVITY_STATUS_DRAFT,
+      ...(initiatorMemberId ? { initiatorMemberId } : {}),
+    };
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.capacity !== undefined) data.capacity = dto.capacity;
+    if (dto.genderRequirementCode !== undefined) {
+      data.genderRequirementCode = dto.genderRequirementCode;
+    }
+    if (dto.registrationDeadline !== undefined) {
+      data.registrationDeadline = nullableDate(dto.registrationDeadline);
+    }
+    if (dto.registrationNotes !== undefined) data.registrationNotes = dto.registrationNotes;
+    if (dto.isPublicRegistration !== undefined) {
+      data.isPublicRegistration = dto.isPublicRegistration;
+    }
+    if (dto.requiresInsurance !== undefined) {
+      data.requiresInsurance = dto.requiresInsurance;
+    }
+    if (dto.registrationModeCode !== undefined) {
+      data.registrationModeCode = dto.registrationModeCode;
+    }
+    if (dto.visibilityCode !== undefined) data.visibilityCode = dto.visibilityCode;
+    if (dto.defaultCheckInRadiusMeters !== undefined) {
+      data.defaultCheckInRadiusMeters = dto.defaultCheckInRadiusMeters;
+    }
+    if (dto.defaultLocationRequired !== undefined) {
+      data.defaultLocationRequired = dto.defaultLocationRequired;
+    }
+    if (dto.archiveWaitingDays !== undefined) {
+      data.archiveWaitingDays = dto.archiveWaitingDays;
+    }
+    if (dto.registrationSchema !== undefined) {
+      data.registrationSchema = dto.registrationSchema as Prisma.InputJsonValue;
+    }
+    if (dto.content !== undefined) {
+      data.content = dto.content as Prisma.InputJsonValue;
+    }
+    if (dto.locationLongitude !== undefined) data.locationLongitude = dto.locationLongitude;
+    if (dto.locationLatitude !== undefined) data.locationLatitude = dto.locationLatitude;
 
-      const created = await tx.activity.create({
-        data,
-        select: activitySafeSelect,
-      });
-
-      await this.activityAuditRecorder.logCreate({
-        created,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        nextStatusCode: ACTIVITY_STATUS_DRAFT,
-        auditMeta,
-        tx,
-      });
-
-      return toResponseDto(created, await this.images.signImages(created));
+    const created = await tx.activity.create({
+      data,
+      select: activitySafeSelect,
     });
+
+    return created;
   }
 
   async update(

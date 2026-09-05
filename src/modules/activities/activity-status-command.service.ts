@@ -1,3 +1,4 @@
+import { assertEmergencyFormalPublicationAllowed } from './activity-emergency-publication-policy';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -197,6 +198,13 @@ export class ActivityStatusCommandService {
       const current = await this.access.lockAndFindActivityOrThrow(id, tx);
       await this.allocationModes.assertLockedActivityConsistent(tx, current);
 
+      assertEmergencyFormalPublicationAllowed(
+        await tx.activityEmergencyInitiation.findUnique({
+          where: { activityId: id },
+          select: { id: true },
+        }),
+      );
+
       const transition = this.activityStateMachine.decide('publish', current.statusCode);
       if (!transition.allowed) {
         throw new BizException(transition.biz);
@@ -295,6 +303,12 @@ export class ActivityStatusCommandService {
       if (!current.isPublicRegistration) {
         throw new BizException(BizCode.BAD_REQUEST);
       }
+      assertEmergencyFormalPublicationAllowed(
+        await tx.activityEmergencyInitiation.findUnique({
+          where: { activityId: id },
+          select: { id: true },
+        }),
+      );
       await this.allocationModes.assertLockedActivityConsistent(tx, current);
 
       const transition = this.activityStateMachine.decide('publish', current.statusCode);

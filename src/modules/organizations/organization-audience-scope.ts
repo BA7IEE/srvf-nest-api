@@ -1,7 +1,8 @@
-import type { Prisma } from '@prisma/client';
+import { MemberStatus, OrganizationStatus, type Prisma } from '@prisma/client';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 
 type PrismaTx = Prisma.TransactionClient;
@@ -9,7 +10,7 @@ type PrismaTx = Prisma.TransactionClient;
 /**
  * 组织受众范围原语 —— **属主侧导出的 tx 原语**(维护者 2026-08-25 拍板的活动通知组织定向)。
  *
- * ## 为什么这两个函数长在 `organizations/` 而不是调用方那里
+ * ## 为什么这些函数长在 `organizations/` 而不是调用方那里
  *
  * `Organization` / `OrganizationClosure` / `MemberOrganizationMembership` 三张表全属
  * `identity-org` 域(前两张属主 `organizations`,第三张属主 `member-departments`,
@@ -93,4 +94,38 @@ export async function resolveOrganizationSubtreeMemberIds(
     select: { memberId: true },
   });
   return new Set(memberships.map((membership) => membership.memberId));
+}
+
+/**
+ * 在一组**精确组织上界**内筛出当前可联系的会员。
+ *
+ * 这是 emergency 显式点人 / 组织子树候选集的共同末道过滤：会员本人必须 ACTIVE 且未软删，
+ * 并且在调用方已经判定可用的组织集合中至少有一条当前有效任职；任职所指组织也必须仍然
+ * ACTIVE 且未软删。这里刻意不展开组织子树——`authorizedOrganizationIds` 是调用方已经算定的
+ * 精确上界，擅自展开会把无权组织中的人重新放进来。
+ *
+ * 与本文件其他函数一样只接受根事务的 `tx`，让候选校验与通知收件人冻结保持同一事务。
+ */
+export async function resolveActiveMemberIdsWithinExactOrganizationScope(
+  tx: PrismaTx,
+  candidateMemberIds: readonly string[],
+  authorizedOrganizationIds: readonly string[],
+  at: Date,
+): Promise<Set<string>> {
+  if (candidateMemberIds.length === 0 || authorizedOrganizationIds.length === 0) return new Set();
+  const rows = await tx.member.findMany({
+    where: notDeletedWhere({
+      id: { in: [...candidateMemberIds] },
+      status: MemberStatus.ACTIVE,
+      memberOrganizationMemberships: {
+        some: {
+          ...MembershipTermStateMachine.effectiveWhere(at),
+          organizationId: { in: [...authorizedOrganizationIds] },
+          organization: notDeletedWhere({ status: OrganizationStatus.ACTIVE }),
+        },
+      },
+    }),
+    select: { id: true },
+  });
+  return new Set(rows.map((row) => row.id));
 }

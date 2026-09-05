@@ -152,6 +152,22 @@ export class QualificationRuleSetVersionService {
     });
   }
 
+  /** B6 caller owns a newly-created Activity and the root transaction/audit. */
+  async materializeDraftWithinTransaction(
+    tx: PrismaTx,
+    activityId: string,
+    dto: PutAppManagedActivityQualificationRulesDto,
+  ): Promise<void> {
+    const target = canonicalizeQualificationRuleSets(dto);
+    await this.assertDraftScopeTargets(tx, activityId, target.definition);
+    if ((await this.currentVersions(tx, activityId, 'draft')).length > 0) {
+      throw new BizException(BizCode.ACTIVITY_QUALIFICATION_CONFIGURATION_INVALID);
+    }
+    for (const ruleSet of target.definition.ruleSets) {
+      await this.createVersion(tx, activityId, ruleSet, 'draft');
+    }
+  }
+
   async currentTarget(
     tx: PrismaTx,
     activityId: string,

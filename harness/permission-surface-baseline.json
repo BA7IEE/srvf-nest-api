@@ -33,9 +33,9 @@
       "description": "sha256:4cbaacfd1b0b2002d2fc0b81c0c46a9f1bdfcaf9ef9ef69bfe0ed364cd466344"
     },
     "activity-responsibility.override.record": {
-      "endpoints": 20,
-      "surface": "sha256:4853e339a954af4a24cd3c8c55c1238daf1829e28232a2271dd18f808c2ed4b9",
-      "description": "sha256:b09328296de0c9be3c1e25e33e45e3f8069ff06d330c36a8f4b66c8fa345e1b2"
+      "endpoints": 23,
+      "surface": "sha256:3e9fc138c1703e88611f2a4d6d0d6ea6bac35ad73455da926afd0dc8b9fae343",
+      "description": "sha256:58c9a9c7ebc8e3447402297958dc2417f1be6136bf99b9d0822ee8fc585ac257"
     },
     "activity-review.read.request": {
       "endpoints": 2,
@@ -58,19 +58,19 @@
       "description": "sha256:f86286ed596d926337f4b80294a6a5915cdea8582027e68aa67b1d972bb8ec66"
     },
     "activity.create.cross-org": {
-      "endpoints": 4,
-      "surface": "sha256:efb879766bca51ab4c0ae429ba1bb4ae8b5dc07cf6115686e8335496b3ff3ab7",
-      "description": "sha256:945cbd9b2e54ad68bdf9a594e5ad190aa4fc933dd709186dcaff62c49cec25d7"
+      "endpoints": 7,
+      "surface": "sha256:b533865b15177ea7c0bee1e41e4ff07f81d8e84f7372a4e368fcb8eec651bbdb",
+      "description": "sha256:83817527c7b6063f34d814a6337400380fe248ea73f6c5d51e356c3d0a29f9b4"
     },
     "activity.create.emergency.record": {
-      "endpoints": 0,
-      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "description": "sha256:3315a5537f3c2845470ef0bbdcbb7445abf1750f3028fdf227e2a78aaa04aefc"
+      "endpoints": 1,
+      "surface": "sha256:22d0bac4f326c9f89e8d1d3eee0826228dd47733b7565023c06a71c694bc72ed",
+      "description": "sha256:131961e98b947579dc90f4fc0420b38f706280ed319074cd3589e4e0bcddbe3f"
     },
     "activity.create.record": {
-      "endpoints": 1,
-      "surface": "sha256:af14e29a428d3bda282464a88fe16c1696dab80ffa7c3da67d784bde4c03de5e",
-      "description": "sha256:afb4f5f86699e83fea110dfb87f5bbaf7e7b609addf8dec23dc38144c8fb25b0"
+      "endpoints": 4,
+      "surface": "sha256:92538c0ba03494bfe1c3b9866d6c6b4eb0722423301f5071eff074f393804556",
+      "description": "sha256:06e92bcaa99b85602e92dcddb7f48d0a6d917c0cd019e7c9b53e132aa2738507"
     },
     "activity.delete.record": {
       "endpoints": 1,

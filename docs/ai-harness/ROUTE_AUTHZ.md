@@ -16,9 +16,9 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:69984e327ed83003c8d24bbd4113fd6477d164c6673b23cb7809cd96ea09a582 |
-| endpoint count | 570 |
-| legacy [auth] count | 174 |
+| inputDigest | sha256:75072b4da8f5909d01c2bd8d5955fef0d1352388e2b78d3fe8474be62b4fdce5 |
+| endpoint count | 573 |
+| legacy [auth] count | 177 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -30,7 +30,7 @@
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
 | admin | 281 | 281 | 0 |
-| app | 160 | 160 | 0 |
+| app | 163 | 163 | 0 |
 | system | 89 | 89 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
@@ -42,7 +42,7 @@
 |---|---:|
 | public | 33 |
 | rbac | 363 |
-| auth | 174 |
+| auth | 177 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -66,7 +66,7 @@
 | app tag family | Mobile - Activity Registration Upload Sessions (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-registration-upload-sessions.controller.ts:78 |
 | app tag family | Mobile - Activity Registrations (1) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-activity-registrations.controller.ts:29 |
 | app tag family | Mobile - Content (2) | LOGIN_SCOPED; admission=app-member; codes=content.read.record; require=all; scopes=visibility:content-visibility; engine=authz-scoped | code | src/modules/content/content-app.controller.ts:36 |
-| app tag family | Mobile - Managed Activities (35) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1210 |
+| app tag family | Mobile - Managed Activities (38) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1210 |
 | app tag family | Mobile - Managed Activity Allocation Batches (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-allocation-batches.controller.ts:135 |
 | app tag family | Mobile - Managed Activity Attendance QR (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendance-qr.controller.ts:52 |
 | app tag family | Mobile - Managed Activity Attendances (8) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:213 |
@@ -111,7 +111,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:69984e327ed83003c8d24bbd4113fd6477d164c6673b23cb7809cd96ea09a582",
+  "inputDigest": "sha256:75072b4da8f5909d01c2bd8d5955fef0d1352388e2b78d3fe8474be62b4fdce5",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -9142,6 +9142,97 @@
       }
     },
     {
+      "routeKey": "POST /api/app/v1/my/managed-activities/emergency",
+      "controller": "AppManagedActivityCreationController",
+      "handler": "emergency",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [
+          {
+            "code": "activity-responsibility.override.record",
+            "scope": null
+          },
+          {
+            "code": "activity.create.cross-org",
+            "scope": null
+          },
+          {
+            "code": "activity.create.emergency.record",
+            "scope": null
+          },
+          {
+            "code": "activity.create.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "POST /api/app/v1/my/managed-activities/from-template",
+      "controller": "AppManagedActivityCreationController",
+      "handler": "quick",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [
+          {
+            "code": "activity-responsibility.override.record",
+            "scope": null
+          },
+          {
+            "code": "activity.create.cross-org",
+            "scope": null
+          },
+          {
+            "code": "activity.create.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "POST /api/app/v1/my/managed-activities/professional",
+      "controller": "AppManagedActivityCreationController",
+      "handler": "professional",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [
+          {
+            "code": "activity-responsibility.override.record",
+            "scope": null
+          },
+          {
+            "code": "activity.create.cross-org",
+            "scope": null
+          },
+          {
+            "code": "activity.create.record",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
       "routeKey": "POST /api/app/v1/my/registrations",
       "controller": "AppMyRegistrationsController",
       "handler": "createMy",
@@ -10399,7 +10490,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**227 条码有端点;其中 76 条守多于一个端点。**
+> 每条权限码守着哪些端点。**228 条码有端点;其中 77 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -10411,9 +10502,10 @@
 
 | 权限码 | 端点数 | 端点 |
 |---|---:|---|
-| `activity-responsibility.override.record` | 20 | DELETE /api/admin/v1/activities/:activityId/responsibilities/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · GET /api/admin/v1/activities/:activityId/responsibilities · PATCH /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · POST /api/admin/v1/activities/:activityId/responsibilities/assign-initiator · POST /api/admin/v1/activities/:activityId/responsibilities/claim · POST /api/admin/v1/activities/:activityId/responsibilities/collaborators · POST /api/admin/v1/activities/:activityId/responsibilities/transfer · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/archive · POST /api/app/v1/my/managed-activities/:activityId/cancel · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/collaborators · POST /api/app/v1/my/managed-activities/:activityId/evidence-seals · POST /api/app/v1/my/managed-activities/:activityId/positions · POST /api/app/v1/my/managed-activities/:activityId/terminate · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator · POST /api/app/v1/my/managed-activities/:activityId/transfer-owner · POST /api/app/v1/my/managed-activities/:activityId/unarchive |
+| `activity-responsibility.override.record` | 23 | DELETE /api/admin/v1/activities/:activityId/responsibilities/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · GET /api/admin/v1/activities/:activityId/responsibilities · PATCH /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · POST /api/admin/v1/activities/:activityId/responsibilities/assign-initiator · POST /api/admin/v1/activities/:activityId/responsibilities/claim · POST /api/admin/v1/activities/:activityId/responsibilities/collaborators · POST /api/admin/v1/activities/:activityId/responsibilities/transfer · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/archive · POST /api/app/v1/my/managed-activities/:activityId/cancel · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/collaborators · POST /api/app/v1/my/managed-activities/:activityId/evidence-seals · POST /api/app/v1/my/managed-activities/:activityId/positions · POST /api/app/v1/my/managed-activities/:activityId/terminate · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator · POST /api/app/v1/my/managed-activities/:activityId/transfer-owner · POST /api/app/v1/my/managed-activities/:activityId/unarchive · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `attendance.read.sheet` | 19 | GET /api/admin/v1/activities/:activityId/attendance-sheet-draft · GET /api/admin/v1/activities/:activityId/attendance-sheets · GET /api/admin/v1/activities/:activityId/check-ins · GET /api/admin/v1/activities/:activityId/feedback-summary · GET /api/admin/v1/activities/:activityId/feedbacks · GET /api/admin/v1/activities/:activityId/participation-ledger · GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/attendance-settlements · GET /api/admin/v1/attendance-settlements/:id/posting-batch · GET /api/admin/v1/attendance-settlements/:settlementVersionId/review-detail · GET /api/admin/v1/attendance-sheets · GET /api/admin/v1/attendance-sheets/:id · GET /api/admin/v1/attendance-sheets/:id/review-detail · GET /api/admin/v1/members/:memberId/attendance-records · GET /api/admin/v1/members/:memberId/contribution-summary · GET /api/admin/v1/members/:memberId/participation-ledger · GET /api/admin/v1/members/:memberId/participation-summary · GET /api/admin/v1/meta/participation-overview |
 | `activity-registration.read.record` | 7 | GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/activities/:activityId/registrations · GET /api/admin/v1/activities/:activityId/registrations/export · GET /api/admin/v1/members/:memberId/registrations · GET /api/admin/v1/meta/participation-overview · GET /api/admin/v1/registrations |
+| `activity.create.cross-org` | 7 | PATCH /api/app/v1/my/managed-activities/:activityId · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `recruitment-application.read.record` | 7 | GET /api/admin/v1/recruitment/applications · GET /api/admin/v1/recruitment/applications/:applicationId/certificate-claims · GET /api/admin/v1/recruitment/applications/:id · GET /api/admin/v1/recruitment/certificate-claims/:id · GET /api/admin/v1/recruitment/cycles/:id/publicity-list · GET /api/admin/v1/recruitment/cycles/:id/stats · POST /api/admin/v1/recruitment/applications/export |
 | `activity.update.record` | 6 | DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:id · POST /api/admin/v1/activities/:activityId/positions · PUT /api/admin/v1/activities/:id/cover · PUT /api/admin/v1/activities/:id/gallery |
 | `member.read.record` | 6 | GET /api/admin/v1/members · GET /api/admin/v1/members/:id · GET /api/admin/v1/members/:id/audience-tags · GET /api/admin/v1/members/:id/official-portrait · GET /api/admin/v1/members/options · GET /api/admin/v1/organizations/:orgId/members/options |
@@ -10421,7 +10513,7 @@
 | `supervision-assignment.read.record` | 6 | GET /api/admin/v1/members/:memberId/supervision-scope · GET /api/admin/v1/organizations/:orgId/supervisors · GET /api/admin/v1/supervision-assignments · GET /api/admin/v1/supervision-assignments/:id · GET /api/admin/v1/supervision-assignments/page · POST /api/admin/v1/supervision-assignments/coverage-preview |
 | `certificate.read.record` | 5 | GET /api/admin/v1/certificates · GET /api/admin/v1/certificates/stats · GET /api/admin/v1/members/:memberId/certificates · GET /api/admin/v1/members/:memberId/certificates/:id · GET /api/admin/v1/members/:memberId/certificates/qualification-flag |
 | `position-assignment.read.record` | 5 | GET /api/admin/v1/members/:memberId/position-assignments · GET /api/admin/v1/organizations/:orgId/position-assignments · GET /api/admin/v1/position-assignments · GET /api/admin/v1/position-assignments/:id · POST /api/admin/v1/position-assignments/preview |
-| `activity.create.cross-org` | 4 | PATCH /api/app/v1/my/managed-activities/:activityId · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator |
+| `activity.create.record` | 4 | POST /api/admin/v1/activities · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `activity.settlement-generate.record` | 4 | GET /api/app/v1/my/managed-activities/:activityId/settlement · GET /api/app/v1/my/managed-activities/:activityId/settlement/items · GET /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId · POST /api/app/v1/my/managed-activities/:activityId/settlement/generate |
 | `attachment.upload.*` | 4 | POST /api/admin/v1/attachments · POST /api/admin/v1/attachments/confirm-upload · POST /api/admin/v1/attachments/upload-url · POST /api/admin/v1/contents/:id/attachments/upload-url |
 | `content.read.record` | 4 | GET /api/admin/v1/contents · GET /api/admin/v1/contents/:id · GET /api/app/v1/contents · GET /api/app/v1/contents/:id |
@@ -10492,7 +10584,7 @@
 | `activity-review.return.request` | 1 | POST /api/admin/v1/activity-publish-reviews/:id/return |
 | `activity.cancel.record` | 1 | PATCH /api/admin/v1/activities/:id/cancel |
 | `activity.complete.record` | 1 | POST /api/admin/v1/activities/:id/complete |
-| `activity.create.record` | 1 | POST /api/admin/v1/activities |
+| `activity.create.emergency.record` | 1 | POST /api/app/v1/my/managed-activities/emergency |
 | `activity.delete.record` | 1 | DELETE /api/admin/v1/activities/:id |
 | `activity.settlement-close.record` | 1 | POST /api/app/v1/my/managed-activities/:activityId/settlement/close |
 | `activity.settlement-update-draft.record` | 1 | PATCH /api/app/v1/my/managed-activities/:activityId/settlement/items/:identityId |
@@ -11137,6 +11229,9 @@
 | POST | /api/app/v1/my/managed-activities/:activityId/unarchive | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:295; src/modules/activities/controllers/app-managed-activities.controller.ts:322 |
 | POST | /api/app/v1/my/managed-activities/:activityId/visitors | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:172; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:196 |
 | POST | /api/app/v1/my/managed-activities/:activityId/withdraw-publish-review | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1415; src/modules/activities/controllers/app-managed-activities.controller.ts:1438 |
+| POST | /api/app/v1/my/managed-activities/emergency | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org,activity.create.emergency.record,activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-creation.controller.ts:97; src/modules/activities/controllers/app-managed-activity-creation.controller.ts:124 |
+| POST | /api/app/v1/my/managed-activities/from-template | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org,activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-creation.controller.ts:38; src/modules/activities/controllers/app-managed-activity-creation.controller.ts:65 |
+| POST | /api/app/v1/my/managed-activities/professional | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org,activity.create.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-creation.controller.ts:68; src/modules/activities/controllers/app-managed-activity-creation.controller.ts:94 |
 | POST | /api/app/v1/my/registrations | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:133; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:167 |
 | POST | /api/app/v1/notifications/:id/read | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:147; src/modules/notifications/notification-app.controller.ts:165 |
 | POST | /api/app/v1/notifications/subscriptions/ack | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:73; src/modules/notifications/notification-app.controller.ts:91 |

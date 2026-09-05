@@ -2,7 +2,7 @@
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
   "inputDigest": "sha256:a04cd957cf6670064cc2309195b006603bdbabe666bf77b25b717beee6f24e90",
-  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 55 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。2026-09-04 Activity OS R2/B6 D1 新增 `ActivityEmergencyFollowUpItem.statusCode` 三值义务清单；D1 仅有 DB 词表/形状约束，尚无运行时 writer，故保持 L2 inventory。",
+  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 55 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。2026-09-04 Activity OS R2/B6 D1 新增 `ActivityEmergencyFollowUpItem.statusCode` 三值义务清单；D1 仅有 DB 词表/形状约束，尚无运行时 writer，故保持 L2 inventory。2026-09-05 B6 D2 接入固定义务创建与当前事实核验 writer，补齐实际迁移边，仍不升 governed。",
   "entries": [
     {
       "model": "Activity",
@@ -132,15 +132,18 @@
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260904195000_activity_os_r2_b6_creation_data_foundation"
       },
-      "transitions": "not-derived",
+      "transitions": [
+        "(create) -> pending (session / position / detailed_location / attendance)",
+        "(create) -> unrepresentable (equipment / outcome / incident_relation)",
+        "pending -> verified (session / position / detailed_location have current authoritative facts)",
+        "verified -> pending (the corresponding authoritative facts disappear)"
+      ],
       "wrongStateBizCode": "none",
-      "implementation": "B6 D1 migration 数据地基（尚无 service / controller / worker writer）",
+      "implementation": "src/modules/activities/activity-emergency-follow-up.ts（创建与当前事实核验）；ActivityCreationService / ActivityDraftService 在 Activity 根事务内调用",
       "governedBlockers": [
-        "edges-not-derived",
-        "no-service-writer",
         "no-wrong-state-bizcode"
       ],
-      "notes": "B6 D1 只把七项紧急事后义务、三值状态与处理事实形状锁进数据库；无运行时写入口，故不按语义臆造 pending 到终态的迁移边。未来仅已存在、可验证的事实可推进对应义务；无权威模型的事项必须保持 pending 或由后续受控写入如实标为 unrepresentable。"
+      "notes": "B6 D2 创建时登记四项 pending 与设备/结果/事故关联三项 unrepresentable；只有现有 Session/Position/地点权威事实可把对应项变为 verified，事实消失即退回 pending，处理人/时间随状态保持 D1 形状。考勤尚无可用的闭环写入接线，保持 pending；不开放人工任意完成开关，不升 governed。"
     },
     {
       "model": "ActivitySeries",

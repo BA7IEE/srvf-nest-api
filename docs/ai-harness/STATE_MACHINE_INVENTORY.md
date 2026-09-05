@@ -322,21 +322,21 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-09-04(Activity OS R2 / B6 D1 数据地基与按需生成)**
+**取数时点:2026-09-05(Activity OS R2 / B6 D2 义务事实核验 writer)**
 
 | 项 | 值 |
 |---|---:|
 | 总条目 | **63** |
 | `governed` / `inventory` | **8 / 55** |
 | 55 条 inventory 的分层 | L1 **7** · L2 **22** · L3 **26** |
-| 已有机器可读边(`transitions` 是数组)※ | 23 |
-| `transitions: "not-derived"` ※ | 27 |
+| 已有机器可读边(`transitions` 是数组)※ | 24 |
+| `transitions: "not-derived"` ※ | 26 |
 | `transitions: "unconstrained"` ※ | 13 |
 
-> ※ 这三行按**全部 63 条**统计(23+27+13=63),不是按上一行那 55 条 inventory。
+> ※ 这三行按**全部 63 条**统计(24+26+13=63),不是按上一行那 55 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
-| **`vacuousGreenIfClosedSetOnly`** | **25** |
+| **`vacuousGreenIfClosedSetOnly`** | **24** |
 | 零 blocker 但仍 inventory 的升格候选 | **0** |
 
 > 🔴 **历史 true-up、A2 增补、A3 与本次 A7 落地要分开读**:
@@ -384,14 +384,20 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 故新增 `edges-not-derived`、`no-service-writer`、`no-wrong-state-bizcode` 各 1；不把数据库
 > 结构约束冒充为已治理的运行时状态机。
 
-blocker 直方图(2026-09-04 现算;含 A3 future-Version 条件生命周期、A7 与 B6 D1):`no-wrong-state-bizcode` 30 ·
-`no-db-check` 23 · `edges-not-derived` 21 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·
+> **⑦ B6 D2 的当前读数变化**：七项义务在创建事务内按固定事实初始化；Session/Position/
+> 地点的 pending → verified 与事实消失后的 verified → pending 有实际 writer，设备/结果/
+> 事故关联创建为 unrepresentable，考勤保持 pending。条目总数与治理等级不变；数组边
+> 23→24、not-derived 27→26、空绿面 25→24；移除该条目的 edges-not-derived 与
+> no-service-writer。没有任意人工完成入口或专属 wrong-state 错误码，仍为 L2 inventory。
+
+blocker 直方图(2026-09-05 现算;含 A3 future-Version 条件生命周期、A7 与 B6 D2):`no-wrong-state-bizcode` 30 ·
+`no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·
 `edges-partially-derived` 2 · `vocabulary-divergence` 2 · `dictionary-driven` 2 ·
 `retired-value-in-set` 2 · `impl-scattered` 2 · `throws-instead-of-decide` 1 ·
-`decision-shape-divergence` 1 · `conditional-legacy-scope` 1 · `no-service-writer` 2 ·
+`decision-shape-divergence` 1 · `conditional-legacy-scope` 1 · `no-service-writer` 1 ·
 `duplicate-constant-definition` 1 · `snapshot-not-lifecycle` 1 · `composite-db-check` 1。
 
-**`vacuousGreenIfClosedSetOnly` = 25 是本刀存在的理由的量化**:这 25 条既有已声明的闭集、
+**`vacuousGreenIfClosedSetOnly` = 24 是本刀存在的理由的量化**:这 24 条既有已声明的闭集、
 `transitions` 又是 `not-derived` —— 一个「只比闭集 vs CHECK」的判据会**全部放它们过去**。
 selftest 里那条 `空绿负例` 就钉死了这个形状(`ActivityInvitation.statusCode`:闭集 5 值合法、
 零 blocker,但零边零实现 ⇒ 必须被拒)。

@@ -17,6 +17,11 @@ import { ActivityAccessService } from './activity-access.service';
 import { ActivityStatusCommandService } from './activity-status-command.service';
 import { ActivityWriteService } from './activity-write.service';
 import { ActivityFromTemplateService } from './activity-from-template.service';
+import { ActivityCreationService } from './activity-creation.service';
+import { ActivityCreationQuick } from './activity-creation-quick';
+import { ActivityCreationProfessional } from './activity-creation-professional';
+import { ActivityCreationEmergency } from './activity-creation-emergency';
+import { AppManagedActivityCreationController } from './controllers/app-managed-activity-creation.controller';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivitySeriesAuditRecorder } from './activity-series-audit-recorder';
 import { ActivitySeriesService } from './activity-series.service';
@@ -149,6 +154,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     forwardRef(() => AttendancesModule),
   ],
   controllers: [
+    AppManagedActivityCreationController,
     ActivitiesController,
     AppActivitiesController,
     AdminActivityParticipationController,
@@ -164,6 +170,10 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AdminMemberParticipationLedgerController,
   ],
   providers: [
+    ActivityCreationService,
+    ActivityCreationQuick,
+    ActivityCreationProfessional,
+    ActivityCreationEmergency,
     ActivitiesService,
     AppMyActivityBatchJobsService,
     ActivityAccessService,
