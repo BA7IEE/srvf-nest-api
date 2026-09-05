@@ -178,17 +178,23 @@ contract、PR 全量 CI、Docker smoke、可信红区审批与独立跨模型评
 [#1275](https://github.com/BA7IEE/srvf-nest-api/pull/1275)。冻结稿 §5 的 C 档误标已由维护者批准按 D 档执行，原稿不回改。
 B7 无 schema/migration/seed/权限码/AuditLogEvent 变更，未启用 B4 readiness 或任何生产 Gate。
 **仓内实现与交接完成不等于前端或生产上线**：页面发布、灰度人群选定、真实 cutover 稳定观察、
-生产部署与 mode 切换均未执行，仍须独立审批；Release 3 C1 及以后尚未合入，B7 授权不得带入。
+生产部署与 mode 切换均未执行，仍须独立审批；Release 3 C1 D1 已合入 #1278，D2 及后续未完成，B7 授权不得带入。
 
-**C1 方案 A 已拍板，D1 implementation 已授权并进入实施，尚未宣告完成**：见
+**C1 方案 A 已拍板，D1 数据地基已交付并合入 #1278，C1 整体未完成**：见
 [`activity-os-r3-c1-metric-definition-set-review.md`](../archive/reviews/activity-os-r3-c1-metric-definition-set-review.md)。
 推荐先做 D1 指标定义/集版本数据地基，再经 D2 独立评审接入目录维护、活动选用、v7 与 Readiness；
-v2–v6 不回改，D1 完成不等于 C1 完成。D1 当前分支新增三表、纯函数及第 110 条 migration；
-验证、3b 重签与 PR 合入分别取证，不把分支代码或本条登记当成已合入/已部署；无权限或 Gate 变更。
+v2–v6 不回改，D1 完成不等于 C1 完成。D1 的三表、纯函数及第 110 条 migration 已随
+[#1278](https://github.com/BA7IEE/srvf-nest-api/pull/1278) 合入 `3b3e57aa`；3b 重签、18 项 PR 检查和可信红区审批均通过，无权限或 Gate 变更，不代表生产 deploy。
 **2026-09-05 维护者调整评审节奏**：「跳过评审，继续推进，等搞完了再整体评审」。本轮阶段性
 跨模型复审据此延后到整体实现完成后统一执行，当前未取得有效独立结论，不记为通过或永久豁免。
-D1 本地单测、220 项定向 E2E、contract 与构建已通过；CI、3b、红区审批和合并仍独立验收，
+D1 本地单测、220 项定向 E2E、contract 与构建已通过；最终 CI 五个分片均通过。首次 B6 创建
+HTTP 500 在原样本地 30 项及最终 CI 分片 1244 项中未复现，根因未定位，不记作已修复或误报；证据留在 #1278。
 D2 的外部契约与实施范围仍须另行拍板，生产边界不变。
+
+**C1 D2 评审已起草，未批准实施**：见
+[`activity-os-r3-c1-d2-metric-catalogue-selection-review.md`](../archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md)。
+候选方案 A 按目录维护 → 活动选择/Template V3 与最小 Human 模板维护 → v7/Readiness 串行交付；
+新增权限、三态选择及模板维护入口均是待拍板范围，不视为 D1 授权延伸，C1 仍未完成。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -262,7 +268,8 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | landed · P1-33 | Release 2 / B6 三种创建 API；方案 A 的 D1 数据地基与 D2 三种完整创建、紧急召集流程已分别随 #1270/#1272 合入，评审稿冻结不回改；不代表生产部署 |
 | `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用 |
-| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 方案 A 已拍板；D1 implementation 已授权并实施中，D2 接入仍待独立评审，C1 未完成 |
+| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 方案 A 的 D1 数据地基已随 #1278 合入并验证；D2 接入仍待独立评审与实施，C1 未完成，原冻结稿不回改 |
+| `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md` | open · P1-33 | C1 D2 目录维护、Activity/Template V3 选择、v7 与 Readiness 的候选评审；已获起草授权，方案及各步 implementation 未批准 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
