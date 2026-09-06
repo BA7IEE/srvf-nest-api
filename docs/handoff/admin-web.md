@@ -11,7 +11,7 @@
 
 > **Activity OS R3 / C1 D2a（目录接口已合入 #1280，生产未部署）**：新增 Human Admin 指标定义/集维护接口，详见[目录交付与初始化 SOP](../ops/activity-metric-catalogue-rollout.md)。此处只交付目录版本维护，不含活动选用、v7、Readiness 或成果值录入；前端不得将整条 C1 展示为已完成。
 
-> **C1 D2b（本分支已实现，尚未合并或生产部署）**：增加全局模板版本维护和活动草稿指标选择，见[选择与模板交付说明](../ops/activity-metric-selection-template-rollout.md)。模板配置权与活动修改权分离，不自动给内建角色授码；成功收据是历史命令结果，重放后须 GET 刷新当前状态。此步不接成果录入，不改 v2–v6 审核快照，不解除 Readiness blocker。
+> **C1 D2b（已合入 #1282，生产未部署）**：增加全局模板版本维护和活动草稿指标选择，见[选择与模板交付说明](../ops/activity-metric-selection-template-rollout.md)。模板配置权与活动修改权分离，不自动给内建角色授码；成功收据是历史命令结果，重放后须 GET 刷新当前状态。此步不接成果录入，不改 v2–v6 审核快照，不解除 Readiness blocker。
 
 > **Activity OS R2 / B6 D2（生产未部署）**：三个新建活动命令仅在 App managed 面，Admin 不新增同名接口；参数、地点快照与幂等方式见 [`miniapp.md`](miniapp.md)。紧急创建只产草稿与一次定向站内呼叫，不能正式发布；现有普通发布、受众发布和审核批准入口均按紧急起源拒绝（`20030`），旧版审核快照也不例外。补齐事项不解除该限制，不把“呼叫已入队”展示成“已正式发布”。一般活动原有发布行为不变；B4 readiness 仍 gate-off。
 
@@ -49,8 +49,8 @@
 ### 2.1 活动作战室(沿活动轴下钻)— ✅ 后端全就绪,纯前端重组 IA
 | 区块 | 端点 |
 |---|---|
-| 指标选择（C1 D2b，未合并/未部署） | 活动详情内 `GET/PUT /api/admin/v1/activities/:id/metric-selection`；PUT 复用 scoped `activity.update.record`，仍受草稿/发起人及 pending review 限制。unconfigured 与 not_required 不可混同；20175 刷新 revision，20176 不可自动换 key 掩盖冲突；退役指针可历史展示但不可重新选用。 |
-| 全局模板版本目录（C1 D2b，未合并/未部署） | `/api/admin/v1/activity-template-versions` 的列表/详情供模板配置页，创建及 draft/activate/retire 供版本维护；Human GLOBAL 的 `activity-template.read.catalog` 与 `activity-template.manage.version` 独立。显式版本号，V1/V2 只读或作为复制来源，V3 新版本必须显式给指标选择；不可把模板管理码当作活动修改授权。 |
+| 指标选择（C1 D2b，已合入 #1282/未部署） | 活动详情内 `GET/PUT /api/admin/v1/activities/:id/metric-selection`；PUT 复用 scoped `activity.update.record`，仍受草稿/发起人及 pending review 限制。unconfigured 与 not_required 不可混同；20175 刷新 revision，20176 不可自动换 key 掩盖冲突；退役指针可历史展示但不可重新选用。 |
+| 全局模板版本目录（C1 D2b，已合入 #1282/未部署） | `/api/admin/v1/activity-template-versions` 的列表/详情供模板配置页，创建及 draft/activate/retire 供版本维护；Human GLOBAL 的 `activity-template.read.catalog` 与 `activity-template.manage.version` 独立。显式版本号，V1/V2 只读或作为复制来源，V3 新版本必须显式给指标选择；不可把模板管理码当作活动修改授权。 |
 | 活动头部 + 发布/取消/完结 | `GET /api/admin/v1/activities/:id`(含派生 `phase` / `allocationModeCode`) · `POST /api/admin/v1/activities` 必填 `allocationModeCode∈{first_come,qualification_rank,lottery}` · draft `PATCH .../:id` 可改该字段，published 改动固定走 change review · `PATCH .../:id/publish`(body 必填 `{requiresInsuranceConfirmed:true}`) · `PATCH .../:id/publish-with-audience-tags`(B7 定向发布，body `{requiresInsuranceConfirmed:true,audienceTagCodes:string[]}`) · `PATCH .../:id/cancel`(仅 draft|published) · `POST .../:id/complete`(**唯一**完结通路 published→completed) |
 | 负责人 / 协办 tab（v0.62.0；production 未部署） | `GET /api/admin/v1/activities/:activityId/responsibilities` · `POST/DELETE .../collaborators[/:assignmentId]` · `POST .../transfer`；legacy 仅管理员用 `POST .../claim` / `POST .../assign-initiator` |
 | 岗位 tab | `POST/GET /api/admin/v1/activities/:activityId/positions` · `GET/PATCH/DELETE .../positions/:activityPositionId`；读仅登录，写复用 `activity.update.record` + activity scope |
