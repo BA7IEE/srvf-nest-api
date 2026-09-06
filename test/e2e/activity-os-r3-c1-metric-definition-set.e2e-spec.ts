@@ -184,7 +184,7 @@ describe('C1 D1 PostgreSQL catalogue invariants', () => {
   });
   beforeEach(() => {
     sql(
-      'TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition"; ' +
+      'TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition" CASCADE; ' +
         definitionSql('c1_definition_1', 'served') +
         ';' +
         definitionSql('c1_definition_2', 'trained') +
@@ -446,8 +446,18 @@ describe('C1 D1 nonempty migration rehearsal', () => {
         'SELECT row_to_json(a)::text FROM "Activity" a WHERE "id"=\'c1_legacy_activity\'',
       );
       expect(before).toContain('legacy location');
-      deploy();
-      expect(successfulMigrationCount()).toBe(CURRENT_MIGRATION_COUNT);
+      // Preserve the original D1-only 109 -> 110 whole-row equality contract.
+      cpSync(
+        path.join(root, 'migrations', MIGRATION_NAME),
+        path.join(temporary, 'migrations', MIGRATION_NAME),
+        {
+          recursive: true,
+          force: false,
+          errorOnExist: true,
+        },
+      );
+      deploy(path.join(temporary, 'schema.prisma'));
+      expect(successfulMigrationCount()).toBe(PREVIOUS_MIGRATION_COUNT + 1);
       expect(
         sql('SELECT row_to_json(a)::text FROM "Activity" a WHERE "id"=\'c1_legacy_activity\''),
       ).toBe(before);
@@ -458,6 +468,39 @@ describe('C1 D1 nonempty migration rehearsal', () => {
       ).toBe('0');
       deploy();
       expect(successfulMigrationCount()).toBe(CURRENT_MIGRATION_COUNT);
+      // Subsequent migrations may add columns, but must preserve every legacy value.
+      expect(
+        sql(
+          'SELECT (SELECT count(*) FROM "ActivityMetricDefinition") + (SELECT count(*) FROM "ActivityMetricSetVersion") + (SELECT count(*) FROM "ActivityMetricSetItem")',
+        ),
+      ).toBe('0');
+      expect(
+        JSON.parse(
+          sql(
+            "SELECT (to_jsonb(a) - ARRAY['metricRequirementCode','selectedMetricSetVersionId','selectedMetricSetDefinitionHash','metricSelectionRevision'])::text FROM \"Activity\" a WHERE \"id\"='c1_legacy_activity'",
+          ),
+        ),
+      ).toEqual(JSON.parse(before));
+      expect(
+        JSON.parse(
+          sql(
+            'SELECT row_to_json(s)::text FROM (SELECT "metricRequirementCode","selectedMetricSetVersionId","selectedMetricSetDefinitionHash","metricSelectionRevision" FROM "Activity" WHERE "id"=\'c1_legacy_activity\') s',
+          ),
+        ),
+      ).toEqual({
+        metricRequirementCode: null,
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 0,
+      });
+      const afterCurrent = sql(
+        'SELECT row_to_json(a)::text FROM "Activity" a WHERE "id"=\'c1_legacy_activity\'',
+      );
+      deploy();
+      expect(successfulMigrationCount()).toBe(CURRENT_MIGRATION_COUNT);
+      expect(
+        sql('SELECT row_to_json(a)::text FROM "Activity" a WHERE "id"=\'c1_legacy_activity\''),
+      ).toBe(afterCurrent);
     } finally {
       rmSync(temporary, { recursive: true, force: true });
     }
