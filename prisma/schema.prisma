@@ -186,6 +186,7 @@ model User {
   // Activity OS R2 / B6 D1:专业/紧急创建收据与紧急后续清单的独立 actor 边。
   // 只铺数据事实,不在本刀接入创建、通知、审计或清单处理运行时。
   activityCreationCommandReceipts   ActivityCreationCommandReceipt[] @relation("ActivityCreationCommandReceiptActor")
+  activityMetricCommandReceipts     ActivityMetricCommandReceipt[]
   activityEmergencyFollowUpResolved ActivityEmergencyFollowUpItem[]  @relation("ActivityEmergencyFollowUpItemResolver")
 
   // 第 6 批(2026-08-16):离线包签发/作废与异常复核保留独立 actor 边，不能借用
@@ -1709,6 +1710,7 @@ model ActivityMetricDefinition {
   updatedAt         DateTime @updatedAt
 
   setItems ActivityMetricSetItem[]
+  commandReceipts ActivityMetricCommandReceipt[]
 
   @@unique([code, version])
   @@index([statusCode])
@@ -1728,6 +1730,7 @@ model ActivityMetricSetVersion {
   updatedAt      DateTime @updatedAt
 
   items ActivityMetricSetItem[]
+  commandReceipts ActivityMetricCommandReceipt[]
 
   @@unique([code, version])
   @@index([statusCode])
@@ -1749,6 +1752,26 @@ model ActivityMetricSetItem {
   @@unique([setVersionId, metricDefinitionId])
   @@unique([setVersionId, sortOrder])
   @@index([metricDefinitionId])
+}
+
+model ActivityMetricCommandReceipt {
+  id            String   @id @default(cuid())
+  actorUserId   String
+  operationCode String
+  operationKey  String
+  requestHash   String
+  resultJson    Json
+  definitionId  String?
+  setVersionId  String?
+  createdAt     DateTime @default(now())
+
+  actor      User                      @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_metric_receipt_actor_fk")
+  definition ActivityMetricDefinition? @relation(fields: [definitionId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_metric_receipt_definition_fk")
+  setVersion ActivityMetricSetVersion? @relation(fields: [setVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_metric_receipt_set_fk")
+
+  @@unique([actorUserId, operationCode, operationKey], map: "activity_metric_receipt_command_key")
+  @@index([definitionId], map: "activity_metric_receipt_definition_idx")
+  @@index([setVersionId], map: "activity_metric_receipt_set_idx")
 }
 
 model ActivityTemplateFamily {

@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:c861d4b04d82618596100072e52fec01116ca1bc5482245b130a88da06964f7f |
-| endpoint count | 574 |
+| inputDigest | sha256:23e3f385b9a4d3453dabde8aed3e7112c1f2660e24acea6b30e6d1c7cd7a4e3f |
+| endpoint count | 586 |
 | legacy [auth] count | 178 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -29,7 +29,7 @@
 
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
-| admin | 281 | 281 | 0 |
+| admin | 293 | 293 | 0 |
 | app | 164 | 164 | 0 |
 | system | 89 | 89 | 0 |
 | auth | 22 | 22 | 0 |
@@ -41,7 +41,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 363 |
+| rbac | 375 |
 | auth | 178 |
 | unclassified | 0 |
 
@@ -111,7 +111,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:c861d4b04d82618596100072e52fec01116ca1bc5482245b130a88da06964f7f",
+  "inputDigest": "sha256:23e3f385b9a4d3453dabde8aed3e7112c1f2660e24acea6b30e6d1c7cd7a4e3f",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -1211,6 +1211,82 @@
           "visibility:activity-visibility"
         ],
         "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activity-metric-definitions",
+      "controller": "AdminActivityMetricDefinitionsController",
+      "handler": "list",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activity-metric-definitions/:id",
+      "controller": "AdminActivityMetricDefinitionsController",
+      "handler": "get",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activity-metric-sets",
+      "controller": "AdminActivityMetricSetsController",
+      "handler": "list",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activity-metric-sets/:id",
+      "controller": "AdminActivityMetricSetsController",
+      "handler": "get",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
       }
     },
     {
@@ -6554,6 +6630,120 @@
       }
     },
     {
+      "routeKey": "POST /api/admin/v1/activity-metric-definitions",
+      "controller": "AdminActivityMetricDefinitionsController",
+      "handler": "create",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.manage.definition",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/admin/v1/activity-metric-definitions/:id/activate",
+      "controller": "AdminActivityMetricDefinitionsController",
+      "handler": "activate",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.manage.definition",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/admin/v1/activity-metric-definitions/:id/retire",
+      "controller": "AdminActivityMetricDefinitionsController",
+      "handler": "retire",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.manage.definition",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/admin/v1/activity-metric-sets",
+      "controller": "AdminActivityMetricSetsController",
+      "handler": "create",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.manage.set",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/admin/v1/activity-metric-sets/:id/activate",
+      "controller": "AdminActivityMetricSetsController",
+      "handler": "activate",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.manage.set",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/admin/v1/activity-metric-sets/:id/retire",
+      "controller": "AdminActivityMetricSetsController",
+      "handler": "retire",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.manage.set",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
       "routeKey": "POST /api/admin/v1/activity-publish-reviews/:id/approve",
       "controller": "AdminActivityPublishReviewsController",
       "handler": "approve",
@@ -10237,6 +10427,44 @@
       }
     },
     {
+      "routeKey": "PUT /api/admin/v1/activity-metric-definitions/:id/draft",
+      "controller": "AdminActivityMetricDefinitionsController",
+      "handler": "update",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.manage.definition",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "PUT /api/admin/v1/activity-metric-sets/:id/draft",
+      "controller": "AdminActivityMetricSetsController",
+      "handler": "update",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-metric.manage.set",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
       "routeKey": "PUT /api/admin/v1/contents/:id/cover",
       "controller": "ContentAdminController",
       "handler": "setCover",
@@ -10504,7 +10732,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**228 条码有端点;其中 77 条守多于一个端点。**
+> 每条权限码守着哪些端点。**231 条码有端点;其中 80 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -10527,6 +10755,9 @@
 | `supervision-assignment.read.record` | 6 | GET /api/admin/v1/members/:memberId/supervision-scope · GET /api/admin/v1/organizations/:orgId/supervisors · GET /api/admin/v1/supervision-assignments · GET /api/admin/v1/supervision-assignments/:id · GET /api/admin/v1/supervision-assignments/page · POST /api/admin/v1/supervision-assignments/coverage-preview |
 | `certificate.read.record` | 5 | GET /api/admin/v1/certificates · GET /api/admin/v1/certificates/stats · GET /api/admin/v1/members/:memberId/certificates · GET /api/admin/v1/members/:memberId/certificates/:id · GET /api/admin/v1/members/:memberId/certificates/qualification-flag |
 | `position-assignment.read.record` | 5 | GET /api/admin/v1/members/:memberId/position-assignments · GET /api/admin/v1/organizations/:orgId/position-assignments · GET /api/admin/v1/position-assignments · GET /api/admin/v1/position-assignments/:id · POST /api/admin/v1/position-assignments/preview |
+| `activity-metric.manage.definition` | 4 | POST /api/admin/v1/activity-metric-definitions · POST /api/admin/v1/activity-metric-definitions/:id/activate · POST /api/admin/v1/activity-metric-definitions/:id/retire · PUT /api/admin/v1/activity-metric-definitions/:id/draft |
+| `activity-metric.manage.set` | 4 | POST /api/admin/v1/activity-metric-sets · POST /api/admin/v1/activity-metric-sets/:id/activate · POST /api/admin/v1/activity-metric-sets/:id/retire · PUT /api/admin/v1/activity-metric-sets/:id/draft |
+| `activity-metric.read.catalog` | 4 | GET /api/admin/v1/activity-metric-definitions · GET /api/admin/v1/activity-metric-definitions/:id · GET /api/admin/v1/activity-metric-sets · GET /api/admin/v1/activity-metric-sets/:id |
 | `activity.create.record` | 4 | POST /api/admin/v1/activities · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `activity.settlement-generate.record` | 4 | GET /api/app/v1/my/managed-activities/:activityId/settlement · GET /api/app/v1/my/managed-activities/:activityId/settlement/items · GET /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId · POST /api/app/v1/my/managed-activities/:activityId/settlement/generate |
 | `attachment.upload.*` | 4 | POST /api/admin/v1/attachments · POST /api/admin/v1/attachments/confirm-upload · POST /api/admin/v1/attachments/upload-url · POST /api/admin/v1/contents/:id/attachments/upload-url |
@@ -10808,6 +11039,10 @@
 | GET | /api/admin/v1/activities/:activityId/responsibilities | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:52; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:71 |
 | GET | /api/admin/v1/activities/:id | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:141; src/modules/activities/activities.controller.ts:152 |
 | GET | /api/admin/v1/activities/options | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:98; src/modules/activities/activities.controller.ts:109 |
+| GET | /api/admin/v1/activity-metric-definitions | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:38; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:47 |
+| GET | /api/admin/v1/activity-metric-definitions/:id | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:50; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:61 |
+| GET | /api/admin/v1/activity-metric-sets | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:38; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:47 |
+| GET | /api/admin/v1/activity-metric-sets/:id | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:50; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:61 |
 | GET | /api/admin/v1/activity-publish-reviews | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.read.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:54; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:66 |
 | GET | /api/admin/v1/activity-publish-reviews/:id | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.read.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:69; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:85 |
 | GET | /api/admin/v1/attachments | Admin - Attachments | rbac | RBAC; admission=-; codes=attachment.view.*; require=all; scopes=-; engine=rbac-global | code | src/modules/attachments/attachments.controller.ts:110; src/modules/attachments/attachments.controller.ts:122 |
@@ -11101,6 +11336,12 @@
 | POST | /api/admin/v1/activities/:activityId/responsibilities/collaborators | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:74; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:98 |
 | POST | /api/admin/v1/activities/:activityId/responsibilities/transfer | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:132; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:158 |
 | POST | /api/admin/v1/activities/:id/complete | Admin - Activities | rbac | RBAC; admission=-; codes=activity.complete.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:357; src/modules/activities/activities.controller.ts:377 |
+| POST | /api/admin/v1/activity-metric-definitions | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:64; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:89 |
+| POST | /api/admin/v1/activity-metric-definitions/:id/activate | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:130; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:157 |
+| POST | /api/admin/v1/activity-metric-definitions/:id/retire | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:164; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:191 |
+| POST | /api/admin/v1/activity-metric-sets | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:64; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:86 |
+| POST | /api/admin/v1/activity-metric-sets/:id/activate | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:124; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:148 |
+| POST | /api/admin/v1/activity-metric-sets/:id/retire | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:155; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:179 |
 | POST | /api/admin/v1/activity-publish-reviews/:id/approve | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity.publish.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:88; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:116 |
 | POST | /api/admin/v1/activity-publish-reviews/:id/return | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.return.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:119; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:142 |
 | POST | /api/admin/v1/announcement-import/execute | Admin - Announcement Import | rbac | RBAC; admission=-; codes=announcement-import.execute.record; require=all; scopes=-; engine=rbac-global | code | src/modules/announcement-import/announcement-import.controller.ts:58; src/modules/announcement-import/announcement-import.controller.ts:75 |
@@ -11308,6 +11549,8 @@
 | POST | /api/system/v1/wecom-settings/test-connection | Ops - WeCom Settings | rbac | RBAC; admission=-; codes=wecom-setting.test.connection; require=all; scopes=-; engine=rbac-global | code | src/modules/wecom/wecom-settings.controller.ts:103; src/modules/wecom/wecom-settings.controller.ts:118 |
 | PUT | /api/admin/v1/activities/:id/cover | Admin - Activities | rbac | RBAC; admission=-; codes=activity.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:199; src/modules/activities/activities.controller.ts:219 |
 | PUT | /api/admin/v1/activities/:id/gallery | Admin - Activities | rbac | RBAC; admission=-; codes=activity.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:227; src/modules/activities/activities.controller.ts:247 |
+| PUT | /api/admin/v1/activity-metric-definitions/:id/draft | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:96; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:123 |
+| PUT | /api/admin/v1/activity-metric-sets/:id/draft | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:93; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:117 |
 | PUT | /api/admin/v1/contents/:id/cover | Admin - Content | rbac | RBAC; admission=-; codes=content.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:303; src/modules/content/content-admin.controller.ts:323 |
 | PUT | /api/admin/v1/members/:id/audience-tags | Admin - Members | rbac | RBAC; admission=-; codes=member.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:339; src/modules/members/members.controller.ts:356 |
 | PUT | /api/admin/v1/members/:memberId/department | Admin - Member Departments | rbac | RBAC; admission=-; codes=member-department.set.current; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/member-departments.controller.ts:74; src/modules/member-departments/member-departments.controller.ts:98 |

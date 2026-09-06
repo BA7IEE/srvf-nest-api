@@ -19,7 +19,7 @@
 > **三条写库漏斗**(全部 `event: AuditLogEvent` 类型锁,新增事件不进 union 编译不过):
 > `AuditLogsService.log()` · `writeConfigAudit()`(permissions)· `user-roles.service` 内联薄封装。
 
-**审计事件(机器核对):157 个 · 活跃(≥1 次出现):152 · 已退役/零产出:5**
+**审计事件(机器核对):159 个 · 活跃(≥1 次出现):154 · 已退役/零产出:5**
 
 
 ## profile
@@ -87,6 +87,8 @@
 | event | 仓内出现次数 | 备注 |
 |---|---|---|
 | `activity-series.change` | 1 | Activity OS R1 / A7：Series 创建、Revision 追加、生命周期变更与按需生成的安全审计；实例 Activity 仍使用 `activity.publish` |
+| `activity.metric-definition.command` | 1 | C1 D2a：定义版本命令；仅记录操作、code/version、前后 hash/status，和收据、业务写同事务 |
+| `activity.metric-set.command` | 1 | C1 D2a：指标集版本命令；不记录配置全文或 operationKey |
 
 ## registration
 

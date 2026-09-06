@@ -61,6 +61,30 @@ export interface RbacPermissionSeed {
 // 全部绑 ops-admin;ServicePrincipal 自身永远不能持有(§15.3 第 7 条 —— 控制面禁授)。
 // delegation-grant.* 3 码是 PR5 的(§36),本刀不 seed。
 // Integration Foundation v1 PR5(规格书 §36):Delegation 控制面 3 码。绑 ops-admin。
+export const ACTIVITY_METRIC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity-metric.read.catalog',
+    module: 'activity-metric',
+    action: 'read',
+    resourceType: 'catalog',
+    description: '查看指标目录（仅真人 GLOBAL 授权）',
+  },
+  {
+    code: 'activity-metric.manage.definition',
+    module: 'activity-metric',
+    action: 'manage',
+    resourceType: 'definition',
+    description: '管理指标定义（仅真人 GLOBAL 授权）',
+  },
+  {
+    code: 'activity-metric.manage.set',
+    module: 'activity-metric',
+    action: 'manage',
+    resourceType: 'set',
+    description: '管理指标集（仅真人 GLOBAL 授权）',
+  },
+];
+
 export const DELEGATION_GRANT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'delegation-grant.create.record',
@@ -2575,6 +2599,12 @@ export const PERMISSION_CATALOG_SECTIONS: ReadonlyArray<PermissionCatalogSection
 
 export const PERMISSION_CATALOG_GROUPS: ReadonlyArray<PermissionCatalogGroup> = Object.freeze([
   {
+    code: 'activity-metric',
+    sectionCode: 'activity-participation',
+    displayName: '活动指标目录',
+    sortOrder: 95,
+  },
+  {
     code: 'organization-structure',
     sectionCode: 'organization-people',
     displayName: '组织架构',
@@ -2793,6 +2823,42 @@ export const CRITICAL_RISK_TAGS: readonly PermissionRiskTag[] = Object.freeze([
 
 export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCatalogMetadata>> =
   Object.freeze({
+    'activity-metric.read.catalog': {
+      displayName: '查看指标目录',
+      businessDescription: '查看指标目录；仅允许获明确授权的真人操作，不自动授予内置角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity-metric',
+      sortOrder: 10,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity-metric.manage.definition': {
+      displayName: '管理指标定义',
+      businessDescription: '管理指标定义；仅允许获明确授权的真人操作，不自动授予内置角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity-metric',
+      sortOrder: 20,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity-metric.manage.set': {
+      displayName: '管理指标集',
+      businessDescription: '管理指标集；仅允许获明确授权的真人操作，不自动授予内置角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity-metric',
+      sortOrder: 30,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
     // ===== 组织与人员 / 组织架构 =====
     'org.create.node': {
       displayName: '新建分队/小组',

@@ -15,6 +15,7 @@ import * as bcrypt from 'bcryptjs';
 import {
   type RbacPermissionSeed,
   ACTIVITY_CREATE_EMERGENCY_RECORD_CODE,
+  ACTIVITY_METRIC_PERMISSION_SEED,
   ACTIVITY_PERMISSION_SEED,
   ACTIVITY_REGISTRATION_PERMISSION_SEED,
   ACTIVITY_RESPONSIBILITY_WORKFLOW_PERMISSION_SEED,
@@ -1578,6 +1579,18 @@ async function seedIntegrationPermissionEligibility(prisma: PrismaClient): Promi
 // **幂等性**(沿 Q3):全部 upsert(Permission.code / RbacRole.code / RolePermission 复合唯一键),
 // 连续跑两次数量稳定。
 async function seedAttachmentPermissions(prisma: PrismaClient): Promise<void> {
+  // C1 D2a: independent catalogue bucket; no automatic role-permission bindings.
+  for (const permission of ACTIVITY_METRIC_PERMISSION_SEED) {
+    await prisma.permission.upsert({
+      where: { code: permission.code },
+      update: {
+        description: permission.description,
+        servicePrincipalAllowed: false,
+        delegatedAccessAllowed: false,
+      },
+      create: { ...permission, servicePrincipalAllowed: false, delegatedAccessAllowed: false },
+    });
+  }
   // 1. upsert 20 条 attachment.* Permission(沿 D7 §6.1)
   for (const perm of ATTACHMENT_PERMISSION_SEED) {
     await prisma.permission.upsert({
@@ -3004,6 +3017,7 @@ export const RBAC_SEED_CATALOG = Object.freeze({
   //    不要用「加一个 all 桶把全集塞进去」了事:那让分桶失去意义,
   //    且下次新数组照样可以不进任何桶(闸会红,但人会顺手往 all 里塞)。
   permissions: Object.freeze({
+    activityMetric: readonlyPermissionSeeds(ACTIVITY_METRIC_PERMISSION_SEED),
     rbac: readonlyPermissionSeeds(RBAC_PERMISSION_SEED),
     bootstrap: readonlyPermissionSeeds(ALL_PERMISSION_SEED),
     attachment: readonlyPermissionSeeds(ATTACHMENT_PERMISSION_SEED),

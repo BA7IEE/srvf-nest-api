@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:6096050df3c2f50940094744ef894b326707443e9f7bf20bf2269024073120c9
+// inputDigest: sha256:0fde43e83d3011a782d38d88dd9752c057dc4aea29ee0ae0ecfd2ae21f86c6ed
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -314,6 +314,48 @@ export interface AdminActivityFeedbackSummaryDto {
   "feedbackRate": number;
 }
 
+export interface AdminActivityMetricCommandResponseDto {
+  "id": string;
+  "code": string;
+  "version": number;
+  "schemaVersion": 1;
+  "statusCode": "draft" | "active" | "retired";
+  "definitionHash": string;
+}
+
+export interface AdminActivityMetricDefinitionResponseDto {
+  "id": string;
+  "code": string;
+  "version": number;
+  "schemaVersion": 1;
+  "statusCode": "draft" | "active" | "retired";
+  "definitionHash": string;
+  "definition": AdminMetricDefinitionV1Dto;
+  "activatedAt": string | null;
+  "retiredAt": string | null;
+  "createdAt": string;
+  "updatedAt": string;
+}
+
+export interface AdminActivityMetricSetResponseDto {
+  "id": string;
+  "code": string;
+  "version": number;
+  "schemaVersion": 1;
+  "statusCode": "draft" | "active" | "retired";
+  "definitionHash": string;
+  "definition": AdminMetricSetDefinitionV1Dto;
+  "activatedAt": string | null;
+  "retiredAt": string | null;
+  "createdAt": string;
+  "updatedAt": string;
+}
+
+export interface AdminActivityMetricVersionCommandDto {
+  "operationKey": string;
+  "expectedDefinitionHash": string;
+}
+
 export interface AdminAttendanceSettlementListItemDto {
   "settlementVersionId": string;
   "activityId": string;
@@ -342,6 +384,16 @@ export interface AdminAttendanceSheetListItemDto {
   "version": number;
   "createdAt": string;
   "activity"?: AdminAttendanceSheetExpandedActivityDto;
+}
+
+export interface AdminCreateActivityMetricDefinitionDto {
+  "operationKey": string;
+  "definition": AdminMetricDefinitionV1Dto;
+}
+
+export interface AdminCreateActivityMetricSetDto {
+  "operationKey": string;
+  "definition": AdminMetricSetDefinitionV1Dto;
 }
 
 export interface AdminMeResponseDto {
@@ -373,6 +425,67 @@ export interface AdminMemberAttendanceRecordDto {
   "contributionPoints"?: string | null;
   "createdAt": string;
   "updatedAt": string;
+}
+
+export interface AdminMetricBooleanConfigurationDto {
+  "kindCode": "boolean";
+  "unit": null | null;
+}
+
+export interface AdminMetricChoiceConfigurationDto {
+  "kindCode": "single_choice";
+  "unit": null | null;
+  "options": AdminMetricChoiceOptionDto[];
+}
+
+export interface AdminMetricChoiceOptionDto {
+  "code": string;
+  "label": string;
+}
+
+export interface AdminMetricDecimalConfigurationDto {
+  "kindCode": "non_negative_decimal";
+  "unit": string;
+  "scale": number;
+  "minimum": string;
+  "maximum": string;
+}
+
+export interface AdminMetricDefinitionV1Dto {
+  "schemaVersion": 1;
+  "code": string;
+  "version": number;
+  "name": string;
+  "configuration": AdminMetricIntegerConfigurationDto | AdminMetricDecimalConfigurationDto | AdminMetricBooleanConfigurationDto | AdminMetricTextConfigurationDto | AdminMetricChoiceConfigurationDto;
+}
+
+export interface AdminMetricIntegerConfigurationDto {
+  "kindCode": "non_negative_integer";
+  "unit": string;
+  "minimum": number;
+  "maximum": number;
+}
+
+export interface AdminMetricSetDefinitionV1Dto {
+  "schemaVersion": 1;
+  "code": string;
+  "version": number;
+  "name": string;
+  "items": AdminMetricSetItemDto[];
+}
+
+export interface AdminMetricSetItemDto {
+  "key": string;
+  "sortOrder": number;
+  "required": boolean;
+  "metricDefinitionId": string;
+  "definitionHash": string;
+}
+
+export interface AdminMetricTextConfigurationDto {
+  "kindCode": "short_text";
+  "unit": null | null;
+  "maxLength": number;
 }
 
 export interface AdminParticipationLedgerEntryDto {
@@ -521,6 +634,18 @@ export interface AdminSettlementSealRevisionDto {
   "workflowRevision": number;
   "manualReviewPendingCount": number;
   "sealedAt": string;
+}
+
+export interface AdminUpdateActivityMetricDefinitionDto {
+  "operationKey": string;
+  "definition": AdminMetricDefinitionV1Dto;
+  "expectedDefinitionHash": string;
+}
+
+export interface AdminUpdateActivityMetricSetDto {
+  "operationKey": string;
+  "definition": AdminMetricSetDefinitionV1Dto;
+  "expectedDefinitionHash": string;
 }
 
 export interface AnnouncementImportRequestDto {

@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(247 条,按一级域分组)
+### 权限码全集(250 条,按一级域分组)
 
 > 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert + 角色映射) + `src/modules/permissions/permission-catalog.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -54,6 +54,7 @@
 | `supervision-assignment` | 4 | `supervision-assignment.create.record` · `supervision-assignment.read.record` · `supervision-assignment.revoke.record` · `supervision-assignment.update.record` |
 | `team-join-application` | 4 | `team-join-application.evaluate.assessment` · `team-join-application.join.member` · `team-join-application.mark.gate` · `team-join-application.read.record` |
 | `wecom-setting` | 4 | `wecom-setting.read.singleton` · `wecom-setting.reset.credentials` · `wecom-setting.test.connection` · `wecom-setting.update.singleton` |
+| `activity-metric` | 3 | `activity-metric.manage.definition` · `activity-metric.manage.set` · `activity-metric.read.catalog` |
 | `authz` | 3 | `authz.action-state.decision` · `authz.explain-batch.decision` · `authz.explain.decision` |
 | `delegation-grant` | 3 | `delegation-grant.create.record` · `delegation-grant.read.record` · `delegation-grant.revoke.record` |
 | `member-department` | 3 | `member-department.clear.current` · `member-department.read.current` · `member-department.set.current` |
@@ -72,7 +73,7 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### 角色 → 权限码覆盖(15 个内建角色;238/247 条码有持有人)
+### 角色 → 权限码覆盖(15 个内建角色;238/250 条码有持有人)
 
 > 权威源:`prisma/seed.ts` 导出的 `RBAC_SEED_CATALOG.roles`。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 「零持有」= 没有任何内建角色持有该码,只有 SUPER_ADMIN 短路可用;是否合规由
@@ -97,10 +98,13 @@
 | `activity-publish-reviewer` | 3 | `activity-review.read.request` · `activity-review.return.request` · `activity.publish.record` |
 | `activity-cross-org-initiator` | 1 | `activity.create.cross-org` |
 
-#### 零持有权限码(9 条)
+#### 零持有权限码(12 条)
 
 | 权限码 |
 |---|
+| `activity-metric.manage.definition` |
+| `activity-metric.manage.set` |
+| `activity-metric.read.catalog` |
 | `activity-responsibility.override.record` |
 | `activity.create.emergency.record` |
 | `member.delete.record` |
@@ -111,12 +115,12 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(110 个 @Controller)
+### controller × surface 对照(112 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(49 个 controller)
+#### admin/v1(51 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -136,6 +140,8 @@
 | `admin/v1/activities/:activityId/attendance-sheets` | `src/modules/attendances/attendances.controller.ts` |
 | `admin/v1/activities/:activityId/registrations` | `src/modules/activity-registrations/activity-registrations.controller.ts` |
 | `admin/v1/activities/:activityId/responsibilities` | `src/modules/activities/controllers/admin-activity-responsibilities.controller.ts` |
+| `admin/v1/activity-metric-definitions` | `src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts` |
+| `admin/v1/activity-metric-sets` | `src/modules/activities/controllers/admin-activity-metric-sets.controller.ts` |
 | `admin/v1/activity-publish-reviews` | `src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts` |
 | `admin/v1/attachments` | `src/modules/attachments/attachments.controller.ts` |
 | `admin/v1/attendance-settlements` | `src/modules/activities/controllers/admin-attendance-settlements.controller.ts` |

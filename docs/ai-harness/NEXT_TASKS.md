@@ -2520,7 +2520,7 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 - **后续 Goal / lane / PR 顺序**:Release 1 `A1 → A8` 与 Release 2 `B1 → B7` 的仓内实施已完成 → Release 3 `C1 → C5` → Release 4 `D1 → D8` → Release 5 `E1 → E5` → Release 6 Incident / Resource 按真实优先级各自另立目标 → Release 7 可永久不开。每一箭头都是独立 PR；Activity 同一 bounded context 串行，schema lane 同时至多一条，前一 PR 合入和验收完成前不启动后一条。
 - **C1 方案 A 的 D1 数据地基已交付并合入 #1278，C1 整体未完成**:[指标定义与指标集版本评审及授权清单](../archive/reviews/activity-os-r3-c1-metric-definition-set-review.md)已随 #1277 合入；D1 三表、五类强类型校验/hash、DB 冻结与并发约束及第 110 条 migration 已合入 `3b3e57aa`。本地验证、3b 重签、18 项 PR 检查和可信红区审批均通过；首次 B6 创建 HTTP 500 原样本地与最终 CI 未复现，根因未定位，不登记为已修复或误报，证据见 [#1278](https://github.com/BA7IEE/srvf-nest-api/pull/1278)。C1 内部 D2 目录维护与活动选用仍须补外部契约评审和实施授权，新增 v7 而不回改 v2–v6；未接入前不宣称 C1 完成、不自动进入 C2。此 D1/D2 不指 Release 4 时长阶段；D1 无权限或 Gate 变更，未授权或执行生产 deploy。
 - **串行约束**:C1 及以后仍须按一条业务轴、additive、gate-off、shadow 对账和独立 handoff 收口；B7 授权不得带入后续阶段，生产部署与 Gate 开启仍需独立审批。
-- **C1 D2 评审已起草，未批准 implementation**:[目录、活动选用与 v7 接入评审](../archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md)提出 D2a 目录维护与收据 → D2b 三态选择、Template V3 和最小 Human 模板维护 → D2c v7/Readiness/交接。五个候选权限、not_required 决策、模板维护新入口及各步写集均待维护者拍板；不改旧 v2–v6，不以 D1 合入冒称 C1 完成，不提前启动 C2。
+- **C1 D2 方案 A 已批准；D2a implementation 在制未合并**：[实施清单](../archive/plans/activity-os-r3-c1-d2a-implementation-plan.md)覆盖 Human 目录维护、收据、RBAC 可选 tx 及三码治理联动。D2a 本地验证与交付收口中，3b/4b 和可信红区审批/合并待满足；D2b 三态选择、Template V3 和最小 Human 模板维护 → D2c v7/Readiness 的顺序不变，后两步 implementation 未授权。旧 v2–v6 不回改；不以 D1/D2a 冒称 C1 完成，不提前启动 C2。
 - **2026-09-05 评审节奏调整**：维护者明确「跳过评审，继续推进，等搞完了再整体评审」。阶段性跨模型复审延后至整体实现完成后统一执行；C1 D1 当前没有有效独立复审结论，不记为通过或永久豁免。此调整不替代 D2 等后续方案/实施范围拍板、3b 签字、可信红区审批、CI 或合并/生产授权。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
