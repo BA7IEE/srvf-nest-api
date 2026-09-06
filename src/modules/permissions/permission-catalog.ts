@@ -61,6 +61,23 @@ export interface RbacPermissionSeed {
 // 全部绑 ops-admin;ServicePrincipal 自身永远不能持有(§15.3 第 7 条 —— 控制面禁授)。
 // delegation-grant.* 3 码是 PR5 的(§36),本刀不 seed。
 // Integration Foundation v1 PR5(规格书 §36):Delegation 控制面 3 码。绑 ops-admin。
+export const ACTIVITY_TEMPLATE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity-template.read.catalog',
+    module: 'activity-template',
+    action: 'read',
+    resourceType: 'catalog',
+    description: '查看全局活动模板目录（仅真人 GLOBAL 授权）',
+  },
+  {
+    code: 'activity-template.manage.version',
+    module: 'activity-template',
+    action: 'manage',
+    resourceType: 'version',
+    description: '管理全局活动模板版本（仅真人 GLOBAL 授权）',
+  },
+];
+
 export const ACTIVITY_METRIC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'activity-metric.read.catalog',
@@ -2599,6 +2616,12 @@ export const PERMISSION_CATALOG_SECTIONS: ReadonlyArray<PermissionCatalogSection
 
 export const PERMISSION_CATALOG_GROUPS: ReadonlyArray<PermissionCatalogGroup> = Object.freeze([
   {
+    code: 'activity-template',
+    sectionCode: 'activity-participation',
+    displayName: '活动模板目录',
+    sortOrder: 96,
+  },
+  {
     code: 'activity-metric',
     sectionCode: 'activity-participation',
     displayName: '活动指标目录',
@@ -2823,6 +2846,32 @@ export const CRITICAL_RISK_TAGS: readonly PermissionRiskTag[] = Object.freeze([
 
 export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCatalogMetadata>> =
   Object.freeze({
+    'activity-template.read.catalog': {
+      displayName: '查看全局活动模板目录',
+      businessDescription:
+        '查看可见全局模板族与精确版本；仅真人 GLOBAL 授权，不授予活动数据访问权。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity-template',
+      sortOrder: 10,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity-template.manage.version': {
+      displayName: '管理全局活动模板版本',
+      businessDescription:
+        '新建全局模板族和 V3 版本、编辑草稿、激活或退役；仅真人 GLOBAL 授权，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity-template',
+      sortOrder: 20,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
     'activity-metric.read.catalog': {
       displayName: '查看指标目录',
       businessDescription: '查看指标目录；仅允许获明确授权的真人操作，不自动授予内置角色。',
@@ -3596,7 +3645,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.update.record': {
       displayName: '修改活动',
       businessDescription:
-        '改活动的标题、时间、地点、名额这些,顺带也管活动岗位的增删改。改了时间或地点会给所有在报名的人发通知;调大名额会自动把候补的人递补进来。',
+        '改活动的标题、时间、地点、名额这些,顺带也管活动岗位的增删改。改了时间或地点会给所有在报名的人发通知;调大名额会自动把候补的人递补进来。也管草稿活动的指标选择；仍须满足活动范围、草稿管理资格、无待处理发布审核和版本校验。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 20570,

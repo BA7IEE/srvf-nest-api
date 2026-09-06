@@ -34,7 +34,8 @@ describe('C1 D2a real transaction races', () => {
     await resetDb(app);
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     await assertConnectedTestDatabase(prisma);
-    await prisma.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition"`;
+    // Test-only: D2b adds Activity -> metric set; keep FK-related fixture cleanup together.
+    await prisma.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition" CASCADE`;
     user = await createTestUser(app, { username: 'metric_race_root', role: Role.SUPER_ADMIN });
   });
   afterAll(async () => {

@@ -9,6 +9,7 @@ import {
   IsDateString,
   IsIn,
   IsInt,
+  IsObject,
   IsString,
   MaxLength,
   Min,
@@ -17,6 +18,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
+import { AppActivityMetricSelectionInputDto } from './app-activity-metric-selection.dto';
 import {
   AppActivityCreationPlaceDto,
   CREATION_PLACE_VISIBILITIES,
@@ -117,6 +119,16 @@ export class AppQuickActivityCreationDto extends AppActivityCreationRequestDto {
 }
 
 export class AppEmergencyActivityCreationDto extends AppActivityCreationRequestDto {
+  @ApiPropertyOptional({
+    description: '显式指标选择；省略保留 unconfigured，不改变旧请求 hash',
+    type: () => AppActivityMetricSelectionInputDto,
+  })
+  @OmittableOnly()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppActivityMetricSelectionInputDto)
+  metricSelection?: AppActivityMetricSelectionInputDto;
+
   @ApiProperty({
     description: '明确发起人 ID；仍校验本人/代设与目标组织资格',
     minLength: 8,

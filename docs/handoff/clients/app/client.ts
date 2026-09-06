@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:0fde43e83d3011a782d38d88dd9752c057dc4aea29ee0ae0ecfd2ae21f86c6ed
+// inputDigest: sha256:41928153b292e6197dbc08152e81d11968817c8103fb442cc87939ec5559d33f
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -37,6 +37,11 @@ import type {
   AppActivityInitiationOrganizationOptionDto,
   AppActivityInvitationDto,
   AppActivityLifecycleResultDto,
+  AppActivityMetricSelectionInputDto,
+  AppActivityMetricSelectionResponseDto,
+  AppActivityMetricSelectionResultDto,
+  AppActivityMetricSetOptionDto,
+  AppActivityMetricSetPointerDto,
   AppActivityPositionDto,
   AppActivityPunchDto,
   AppActivityPunchReceiptDto,
@@ -53,6 +58,8 @@ import type {
   AppActivityRegistrationCommandDto,
   AppActivityRegistrationCommandReceiptDto,
   AppActivityRegistrationPreferenceCommandDto,
+  AppActivityTemplateFamilyOptionDto,
+  AppActivityTemplateVersionOptionDto,
   AppActivityVisitorDto,
   AppAvailableActivityListItemDto,
   AppCapabilityAccountDto,
@@ -156,6 +163,7 @@ import type {
   AppRegistrationFormFieldDto,
   AppRegistrationUploadAttachmentDto,
   AppRegistrationUploadSessionCreatedDto,
+  AppSelectActivityMetricSetDto,
   AppSelfProfileDto,
   AppSettlementCloseCheckDto,
   AppSettlementCloseCommandDto,
@@ -489,6 +497,10 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivityCreationControllerQuick(body: AppQuickActivityCreationDto): Promise<ApiEnvelope<AppActivityCreationResultDto>> {
       return fetcher<AppActivityCreationResultDto>({ method: "POST", path: "/api/app/v1/my/managed-activities/from-template", body });
     },
+    /** 分页查询可新选指标集；候选超过 1000 条明确报错 [auth] */
+    AppManagedActivityMetricsControllerMetricSetOptions(query: { "page"?: number; "pageSize"?: number; "organizationId": string }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityMetricSetOptionDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppActivityMetricSetOptionDto[] }>({ method: "GET", path: "/api/app/v1/my/managed-activities/metric-set-options", query });
+    },
     /** App 获取当前队员可发起活动的组织 options [auth] */
     AppManagedActivitiesControllerOrganizationOptions(): Promise<ApiEnvelope<AppActivityInitiationOrganizationOptionDto[]>> {
       return fetcher<AppActivityInitiationOrganizationOptionDto[]>({ method: "GET", path: "/api/app/v1/my/managed-activities/organization-options" });
@@ -496,6 +508,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 原子创建专业活动草稿（场次、岗位、地点、表单、资格） [auth] */
     AppManagedActivityCreationControllerProfessional(body: AppProfessionalActivityCreationDto): Promise<ApiEnvelope<AppActivityCreationResultDto>> {
       return fetcher<AppActivityCreationResultDto>({ method: "POST", path: "/api/app/v1/my/managed-activities/professional", body });
+    },
+    /** 分页查询可新选全局模板版本；候选超过 1000 条明确报错 [auth] */
+    AppManagedActivityMetricsControllerTemplateVersionOptions(query: { "page"?: number; "pageSize"?: number; "organizationId": string }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityTemplateVersionOptionDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppActivityTemplateVersionOptionDto[] }>({ method: "GET", path: "/api/app/v1/my/managed-activities/template-version-options", query });
     },
     /** App 我管理的活动详情、责任、审核与待办摘要 [auth] */
     AppManagedActivitiesControllerDetail(activityId: string): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
@@ -616,6 +632,14 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 活动负责人或报名协办撤回未过期的 pending 邀请 [auth] */
     AppManagedActivityGuestsControllerRevokeInvitation(activityId: string, invitationId: string, body: RevokeAppManagedActivityInvitationDto): Promise<ApiEnvelope<AppActivityInvitationDto>> {
       return fetcher<AppActivityInvitationDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/invitations/${invitationId}/revoke`, body });
+    },
+    /** 查询本人 managed 活动指标选择 [auth] */
+    AppManagedActivityMetricsControllerGet(activityId: string): Promise<ApiEnvelope<AppActivityMetricSelectionResponseDto>> {
+      return fetcher<AppActivityMetricSelectionResponseDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/metric-selection` });
+    },
+    /** 完整设置本人 managed 草稿的指标选择 [rbac: activity.update.record] */
+    AppManagedActivityMetricsControllerSelect(activityId: string, body: AppSelectActivityMetricSetDto): Promise<ApiEnvelope<AppActivityMetricSelectionResultDto>> {
+      return fetcher<AppActivityMetricSelectionResultDto>({ method: "PUT", path: `/api/app/v1/my/managed-activities/${activityId}/metric-selection`, body });
     },
     /** App 活动负责人现场临时补录参加并占用容量 [auth] */
     AppManagedActivityOnsiteParticipationsControllerCreate(activityId: string, body: CreateAppManagedActivityOnsiteParticipationDto): Promise<ApiEnvelope<AppManagedActivityOnsiteParticipationReceiptDto>> {

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:c7ff2817b36fea7da92a383d296aed73b2aab3a40c98cd8159d93c59013cac28",
+  "inputDigest": "sha256:ee1a6f659acd6ec455b26a1eaa1d1e2be3410b90ff31707c53533094cfa1a85c",
   "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 55 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。2026-09-04 Activity OS R2/B6 D1 新增 `ActivityEmergencyFollowUpItem.statusCode` 三值义务清单；D1 仅有 DB 词表/形状约束，尚无运行时 writer，故保持 L2 inventory。2026-09-05 B6 D2 接入固定义务创建与当前事实核验 writer，补齐实际迁移边，仍不升 governed。",
   "entries": [
     {
@@ -34,7 +34,7 @@
       "wrongStateBizCode": "ACTIVITY_METRIC_STATUS_INVALID",
       "implementation": "src/modules/activities/activity-metric-set.service.ts + src/modules/activities/activity-metric-state-machine.ts",
       "governedBlockers": [],
-      "notes": "C1 D2a Human writer 先锁父版本再按 ID 锁引用；激活复验非空 active 定义及 hash，历史可读不等于可新选用。D2b/D2c 未实施，不声明 governed。"
+      "notes": "C1 D2a Human writer 先锁父版本再按 ID 锁引用；激活复验非空 active 定义及 hash，历史可读不等于可新选用。C1 D2b 已接入活动选择及 V3 模板的精确引用复验，整体交付仍在收口；D2c 未实施，不声明 governed。"
     },
     {
       "model": "Activity",
@@ -683,17 +683,16 @@
         "sourceRef": "prisma/migrations/20260901110000_activity_os_r1_a3_template_definition_lifecycle_guards (仅 familyId IS NOT NULL)"
       },
       "transitions": [
+        "(create) -> draft",
         "draft -> active",
         "active -> retired"
       ],
-      "wrongStateBizCode": "none",
-      "implementation": "activity_template_family_version_freeze_guard DB trigger + src/modules/activities/activity-template-definition.ts（尚无业务 writer）",
+      "wrongStateBizCode": "ACTIVITY_METRIC_STATUS_INVALID",
+      "implementation": "activity_template_family_version_freeze_guard DB trigger + src/modules/activities/activity-template-version.service.ts + src/modules/activities/activity-template-version-command.ts",
       "governedBlockers": [
-        "conditional-legacy-scope",
-        "no-service-writer",
-        "no-wrong-state-bizcode"
+        "conditional-legacy-scope"
       ],
-      "notes": "A3 只治理 familyId 非空的 future Version；legacy ActivityTemplate 保持原 statusCode/resolver 语义。无 controller/service writer、专属 BizCode、审计或权限面，故仍是 inventory，不能自称 governed。"
+      "notes": "C1 D2b 接入 Human GLOBAL V3 writer、状态错误码、审计及收据；仅 draft 可编辑/激活，active 可退役，历史重放不回改状态。A3 条件 DB 约束仍有效；legacy 不重解释，V1/V2 只读或复制为新 V3，仍是 inventory，不声明 governed。"
     },
     {
       "model": "ActivityTemplateFamily",
@@ -703,11 +702,11 @@
       "stateSet": {
         "values": null,
         "source": "undeclared",
-        "sourceRef": "A2 expand-only:无 CHECK、无 seed、无写路径"
+        "sourceRef": "A2 无 CHECK；C1 D2b 仅创建 active 全局 Family，不定义 Family 生命周期闭集"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
-      "implementation": "无写路径；Family lifecycle 不在 A3 范围，留待后续独立切片",
+      "implementation": "src/modules/activities/activity-template-version.service.ts（仅随 V3 创建 active 全局 Family；无 Family 状态变更入口）",
       "governedBlockers": [
         "no-db-check",
         "closed-set-undeclared",

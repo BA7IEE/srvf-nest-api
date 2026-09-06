@@ -11,6 +11,7 @@ import {
   Role,
   SupervisionScopeMode,
   SupervisionStatus,
+  type Prisma,
 } from '@prisma/client';
 import { recordAuthzAssertion } from '../../common/authz/authz-context';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -132,9 +133,14 @@ export class AuthzService {
   // ============ 公开 API(§5.2 签名)============
 
   // 薄包装:终判布尔。
-  async can(user: CurrentUserPayload, action: string, ref?: ResourceRef): Promise<boolean> {
+  async can(
+    user: CurrentUserPayload,
+    action: string,
+    ref?: ResourceRef,
+    tx?: Prisma.TransactionClient,
+  ): Promise<boolean> {
     recordAuthzAssertion({ pattern: 'authz-can-explain', codes: [action], resourceRef: ref });
-    const decision = await this.explain(user, action, ref);
+    const decision = await this.explain(user, action, ref, tx);
     return decision.allow;
   }
 
@@ -144,14 +150,15 @@ export class AuthzService {
   async getVisibleOrganizationScope(
     user: CurrentUserPayload,
     action: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<VisibleOrganizationScope> {
     if (user.role === Role.SUPER_ADMIN) {
       return { hasPermission: true, global: true, organizationIds: [] };
     }
 
-    const grants = await this.collectGrants(user);
+    const grants = await this.collectGrants(user, tx);
     const roleIds = [...new Set(grants.map((g) => g.roleId))];
-    const rolesWithCode = await this.rbac.getRoleIdsWithPermission(roleIds, action);
+    const rolesWithCode = await this.rbac.getRoleIdsWithPermission(roleIds, action, tx);
     const validWithCode = grants.filter((g) => g.valid && rolesWithCode.has(g.roleId));
     if (validWithCode.length === 0) {
       return { hasPermission: false, global: false, organizationIds: [] };
@@ -160,7 +167,7 @@ export class AuthzService {
       return { hasPermission: true, global: true, organizationIds: [] };
     }
 
-    const orgStates = await this.loadOrgActiveStates(validWithCode);
+    const orgStates = await this.loadOrgActiveStates(validWithCode, tx);
     const exactOrgIds = new Set<string>();
     const treeRootIds = new Set<string>();
     for (const grant of validWithCode) {
@@ -173,7 +180,7 @@ export class AuthzService {
     }
 
     if (treeRootIds.size > 0) {
-      const descendants = await this.prisma.organizationClosure.findMany({
+      const descendants = await (tx ?? this.prisma).organizationClosure.findMany({
         where: { ancestorId: { in: [...treeRootIds] } },
         select: { descendantId: true },
       });
@@ -230,13 +237,14 @@ export class AuthzService {
     user: CurrentUserPayload,
     action: string,
     ref?: ResourceRef,
+    tx?: Prisma.TransactionClient,
   ): Promise<AuthzDecision> {
     recordAuthzAssertion({ pattern: 'authz-can-explain', codes: [action], resourceRef: ref });
     // 0. 身份有效性(ACTIVE + 未软删)已由 JwtStrategy 每请求保证,此处不再查(§5.2 step 0)
 
     // 1. SUPER_ADMIN 全局短路;资源仅为 ActionConstraint 解析(解析失败不掀翻短路,约束判不了则不判)
     if (user.role === Role.SUPER_ADMIN) {
-      const resource = ref ? await this.resolver.resolve(ref) : null;
+      const resource = ref ? await this.resolver.resolve(ref, tx) : null;
       return this.applyConstraints(
         {
           allow: true,
@@ -253,7 +261,7 @@ export class AuthzService {
     // 2. 🔴 无 ref 退化路径:逐字复用 rbac.judge(行为锁;见文件头)。现有约束均依赖 resource 字段,
     //    无 ref 时恒不否决 —— 仍统一过 applyConstraints,保证未来新增无资源约束时两条路径不分叉。
     if (!ref) {
-      const legacy = await this.rbac.judge(user, action);
+      const legacy = await this.rbac.judge(user, action, undefined, tx);
       if (!legacy.allowed) {
         return { allow: false, reason: 'no_permission' };
       }
@@ -270,15 +278,15 @@ export class AuthzService {
     }
 
     // 3. 解析资源:失败即 fail-close(§5.1 表末;含防枚举语义,统一 resource_not_found)
-    const resource = await this.resolver.resolve(ref);
+    const resource = await this.resolver.resolve(ref, tx);
     if (!resource) {
       return { allow: false, reason: 'resource_not_found' };
     }
 
     // 4. 三源归集 + 「角色含码」过滤
-    const grants = await this.collectGrants(user);
+    const grants = await this.collectGrants(user, tx);
     const roleIds = [...new Set(grants.map((g) => g.roleId))];
-    const rolesWithCode = await this.rbac.getRoleIdsWithPermission(roleIds, action);
+    const rolesWithCode = await this.rbac.getRoleIdsWithPermission(roleIds, action, tx);
     const withCode = grants.filter((g) => rolesWithCode.has(g.roleId));
     if (withCode.length === 0) {
       return { allow: false, reason: 'no_permission', resource };
@@ -292,7 +300,7 @@ export class AuthzService {
 
     // 6. scope 覆盖判定(仅 valid 候选可 allow;首个命中即返,顺序确定性见 SOURCE_ORDER/SCOPE_ORDER)
     const candidates = withCode.filter((g) => g.valid).sort(compareGrants);
-    const orgStates = await this.loadOrgActiveStates(withCode);
+    const orgStates = await this.loadOrgActiveStates(withCode, tx);
     let sawInactiveScopeOrg = false;
     for (const g of candidates) {
       const outcome = this.covers(g, resource, user, orgStates);
@@ -334,14 +342,17 @@ export class AuthzService {
 
   // 归集口径:软删行(deletedAt≠null)与软删角色一律不出现;状态/任期失效行保留为 valid=false,
   // 仅用于 deny 归因(expired_grant),绝不参与 allow。全部现查不缓存(文件头性能口径)。
-  private async collectGrants(user: CurrentUserPayload): Promise<InternalGrant[]> {
+  private async collectGrants(
+    user: CurrentUserPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<InternalGrant[]> {
     const now = new Date();
     const grants: InternalGrant[] = [];
     const memberId = user.memberId;
 
     // 任职先取(3a 的 POSITION_ASSIGNMENT 主体 + 3b 职务推导共用);任意 status,软删除外
     const assignments = memberId
-      ? await this.prisma.organizationPositionAssignment.findMany({
+      ? await (tx ?? this.prisma).organizationPositionAssignment.findMany({
           where: { memberId, deletedAt: null },
           select: {
             id: true,
@@ -374,7 +385,7 @@ export class AuthzService {
         principalId: { in: assignments.map((a) => a.id) },
       });
     }
-    const bindings = await this.prisma.roleBinding.findMany({
+    const bindings = await (tx ?? this.prisma).roleBinding.findMany({
       where: { OR: principalOr, deletedAt: null, role: { deletedAt: null } },
       select: {
         id: true,
@@ -415,7 +426,7 @@ export class AuthzService {
     // 3b. 职务推导:任职 × policy(v0.49:正职管理角色 + 副职只读投影角色;
     //     conditionJson 非 null 的行保守跳过 —— seed 全 null,评估器待首个真实条件需求时再落,fail-close 不越权)
     if (assignments.length > 0) {
-      const policies = await this.prisma.organizationPositionRolePolicy.findMany({
+      const policies = await (tx ?? this.prisma).organizationPositionRolePolicy.findMany({
         where: {
           positionId: { in: [...new Set(assignments.map((a) => a.positionId))] },
           deletedAt: null,
@@ -455,7 +466,7 @@ export class AuthzService {
 
     // 3c. 分管推导:SupervisionAssignment → org-supervisor(BD-3 只读;与职务正交,不校验持职务 —— R5)
     if (memberId) {
-      const supervisions = await this.prisma.organizationSupervisionAssignment.findMany({
+      const supervisions = await (tx ?? this.prisma).organizationSupervisionAssignment.findMany({
         where: { supervisorMemberId: memberId, deletedAt: null },
         select: {
           id: true,
@@ -467,7 +478,7 @@ export class AuthzService {
         },
       });
       if (supervisions.length > 0) {
-        const supervisorRole = await this.prisma.rbacRole.findFirst({
+        const supervisorRole = await (tx ?? this.prisma).rbacRole.findFirst({
           where: { code: SUPERVISOR_ROLE_CODE, deletedAt: null },
           select: { id: true, code: true },
         });
@@ -583,12 +594,13 @@ export class AuthzService {
   // scope org 的 ACTIVE/软删状态批量读(covers 用;一次 IN 查询)。
   private async loadOrgActiveStates(
     grants: readonly InternalGrant[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ReadonlyMap<string, boolean>> {
     const orgIds = [
       ...new Set(grants.map((g) => g.scopeOrgId).filter((id): id is string => id !== null)),
     ];
     if (orgIds.length === 0) return new Map();
-    const rows = await this.prisma.organization.findMany({
+    const rows = await (tx ?? this.prisma).organization.findMany({
       where: { id: { in: orgIds } },
       select: { id: true, status: true, deletedAt: true },
     });

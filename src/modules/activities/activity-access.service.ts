@@ -200,10 +200,15 @@ export class ActivityAccessService {
     user: CurrentUserPayload,
     action: string,
     ref?: ResourceRef,
+    tx?: PrismaTx,
   ): Promise<void> {
-    const decision = await this.authz.explain(user, action, ref);
+    const decision = await this.authz.explain(user, action, ref, tx);
     if (decision.allow) return;
-    if (ref && decision.reason === 'resource_not_found' && (await this.rbac.can(user, action))) {
+    if (
+      ref &&
+      decision.reason === 'resource_not_found' &&
+      (await this.rbac.can(user, action, undefined, tx))
+    ) {
       return;
     }
     throw new BizException(BizCode.RBAC_FORBIDDEN);

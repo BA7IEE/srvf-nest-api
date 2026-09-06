@@ -5,7 +5,7 @@ import {
   OrganizationStatus,
   Role,
   UserStatus,
-  type PrismaClient,
+  type Prisma,
 } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -15,7 +15,7 @@ import { AuthzService } from '../authz/authz.service';
 import { isFormalMemberGradeCode } from '../members/member-grade';
 import { RbacService } from '../permissions/rbac.service';
 
-type InitiationClient = Pick<PrismaClient, 'member' | 'organization'>;
+type InitiationClient = Prisma.TransactionClient;
 
 @Injectable()
 export class ActivityInitiationPolicy {
@@ -37,7 +37,9 @@ export class ActivityInitiationPolicy {
       requestedMemberId &&
       requestedMemberId !== user.memberId &&
       user.role !== Role.SUPER_ADMIN &&
-      !(await this.rbac.can(user, 'activity-responsibility.override.record'))
+      !(await (client === this.prisma
+        ? this.rbac.can(user, 'activity-responsibility.override.record')
+        : this.rbac.can(user, 'activity-responsibility.override.record', undefined, client)))
     ) {
       throw new BizException(BizCode.RBAC_FORBIDDEN);
     }
@@ -110,10 +112,15 @@ export class ActivityInitiationPolicy {
       return;
     }
 
-    const decision = await this.authz.explain(user, 'activity.create.cross-org', {
-      type: 'organization',
-      id: targetOrganizationId,
-    });
+    const decision = await this.authz.explain(
+      user,
+      'activity.create.cross-org',
+      {
+        type: 'organization',
+        id: targetOrganizationId,
+      },
+      ...(client === this.prisma ? [] : [client]),
+    );
     if (!decision.allow) throw new BizException(BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN);
   }
 }

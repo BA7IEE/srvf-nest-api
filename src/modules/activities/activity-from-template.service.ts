@@ -36,6 +36,15 @@ import { toResponseDto } from './activity-presenter';
 import { matchesActivityTemplateDefinitionHash } from './activity-template-definition';
 import { canonicalize, type CanonicalValue } from './settlement-content-hash';
 import { RegistrationFormVersionService } from './registration-form-version.service';
+import {
+  parseActivityTemplateDefinitionV3,
+  type ActivityTemplateDefinitionV3,
+} from './activity-template-definition-v3';
+import {
+  ActivityMetricSelectionAccess,
+  lockMetricSelectionReference,
+} from './activity-metric-selection-access';
+import { metricSelectionColumns } from './activity-metric-selection';
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const CREATE_FROM_TEMPLATE_OPERATION = 'activity.create.from_template';
@@ -67,12 +76,15 @@ export type ActivityFromTemplateInitiatorMode = 'resolve' | 'leave-empty-for-ser
 export interface ValidatedActivityTemplateVersion {
   readonly id: string;
   readonly definitionHash: string;
+  /** Only V3 supplies the current identity checked by the caller transaction. */
+  readonly actor?: CurrentUserPayload;
 }
 
 export interface MaterializedActivityFromTemplate {
   readonly created: ActivityFullRow;
   readonly templateVersionId: string;
   readonly definitionHash: string;
+  readonly actor?: CurrentUserPayload;
 }
 
 interface NormalizedCreateActivityFromTemplateCommand {
@@ -132,7 +144,10 @@ interface MaterializedSession {
   readonly positions: readonly MaterializedSessionPosition[];
 }
 
-type ParsedActivityTemplateDefinition = ActivityTemplateDefinitionV1 | ActivityTemplateDefinitionV2;
+type ParsedActivityTemplateDefinition =
+  | ActivityTemplateDefinitionV1
+  | ActivityTemplateDefinitionV2
+  | ActivityTemplateDefinitionV3;
 
 function badRequest(): never {
   throw new BizException(BizCode.BAD_REQUEST);
@@ -217,6 +232,7 @@ export class ActivityFromTemplateService {
     private readonly registrationForms: RegistrationFormVersionService,
     private readonly images: ActivityImageSigningService,
     @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
+    private readonly metricAccess: ActivityMetricSelectionAccess,
   ) {}
 
   /**
@@ -237,7 +253,7 @@ export class ActivityFromTemplateService {
     try {
       row = await this.prisma.$transaction(async (tx) => {
         // 幂等重放必须先于「当前模板是否可选」判定。已成功命令在模板后来 retired 后仍返回原结果。
-        const replay = await this.findReplay(tx, input, user.id);
+        const replay = await this.findReplay(tx, input, user.id, undefined, user);
         if (replay) return replay;
 
         const materialized = await this.materializeNormalizedWithinTransaction({
@@ -249,8 +265,8 @@ export class ActivityFromTemplateService {
 
         await this.auditRecorder.logCreateFromTemplate({
           created: materialized.created,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
+          actorUserId: (materialized.actor ?? user).id,
+          actorRoleSnap: (materialized.actor ?? user).role,
           templateVersionId: materialized.templateVersionId,
           definitionHash: materialized.definitionHash,
           nextStatusCode: ACTIVITY_STATUS_DRAFT,
@@ -261,7 +277,9 @@ export class ActivityFromTemplateService {
       });
     } catch (error) {
       if (!this.isOperationKeyConflict(error)) throw error;
-      const replay = await this.prisma.$transaction((tx) => this.findReplay(tx, input, user.id));
+      const replay = await this.prisma.$transaction((tx) =>
+        this.findReplay(tx, input, user.id, undefined, user),
+      );
       if (!replay) {
         throw new BizException(BizCode.ACTIVITY_CREATE_FROM_TEMPLATE_OPERATION_KEY_CONFLICT);
       }
@@ -301,8 +319,15 @@ export class ActivityFromTemplateService {
     command: CreateActivityFromTemplateCommand,
     actorUserId: string,
     creationContextHash: string,
+    user: CurrentUserPayload,
   ): Promise<ActivityFullRow | null> {
-    return this.findReplay(tx, this.normalizeCommand(command), actorUserId, creationContextHash);
+    return this.findReplay(
+      tx,
+      this.normalizeCommand(command),
+      actorUserId,
+      creationContextHash,
+      user,
+    );
   }
 
   isCreationOperationKeyConflict(error: unknown): boolean {
@@ -316,10 +341,32 @@ export class ActivityFromTemplateService {
   async validateExactTemplateVersionWithinTransaction(args: {
     readonly tx: Prisma.TransactionClient;
     readonly templateVersionId: string;
+    readonly user?: CurrentUserPayload;
+    readonly organizationId?: string;
   }): Promise<ValidatedActivityTemplateVersion> {
     const template = await this.lockTemplateVersion(args.tx, args.templateVersionId);
-    const { definitionHash } = this.selectDefinitionOrThrow(template);
-    return { id: template.id, definitionHash };
+    const { definitionHash, definition } = this.selectDefinitionOrThrow(template);
+    let currentActor: CurrentUserPayload | undefined;
+    if ('metricSelection' in definition) {
+      const actor = args.user;
+      const organizationId = args.organizationId;
+      if (!actor || !organizationId) throw new BizException(BizCode.BAD_REQUEST);
+      const revalidate = async () => {
+        const current = await this.metricAccess.authorizeCreation(
+          args.tx,
+          actor,
+          'admin',
+          organizationId,
+          undefined,
+          false,
+        );
+        currentActor = current.actor;
+        await this.assertV3Family(args.tx, template.familyId);
+      };
+      await revalidate();
+      await lockMetricSelectionReference(args.tx, definition.metricSelection, revalidate);
+    }
+    return { id: template.id, definitionHash, ...(currentActor ? { actor: currentActor } : {}) };
   }
 
   private async materializeNormalizedWithinTransaction(args: {
@@ -333,6 +380,25 @@ export class ActivityFromTemplateService {
   }): Promise<MaterializedActivityFromTemplate> {
     const template = await this.lockTemplateVersion(args.tx, args.input.templateVersionId);
     const { definition, definitionHash } = this.selectDefinitionOrThrow(template);
+    let actor = args.user;
+    let v3Initiator: string | undefined;
+    if ('metricSelection' in definition) {
+      const revalidate = async () => {
+        const current = await this.metricAccess.authorizeCreation(
+          args.tx,
+          args.user,
+          args.creationContextHash === undefined ? 'admin' : 'app',
+          args.input.organizationId,
+          args.input.initiatorMemberId,
+          args.initiatorMode === 'resolve' && this.config.activityResponsibilityWorkflow.enabled,
+        );
+        actor = current.actor;
+        v3Initiator = current.initiatorMemberId;
+        await this.assertV3Family(args.tx, template.familyId);
+      };
+      await revalidate();
+      await lockMetricSelectionReference(args.tx, definition.metricSelection, revalidate);
+    }
     if (
       args.expectedDefinitionHash !== undefined &&
       args.expectedDefinitionHash !== definitionHash
@@ -386,22 +452,29 @@ export class ActivityFromTemplateService {
       args.initiatorMode === 'leave-empty-for-series'
         ? undefined
         : this.config.activityResponsibilityWorkflow.enabled
-          ? await this.initiationPolicy.resolveInitiator(
-              args.user,
-              args.input.organizationId,
-              args.input.initiatorMemberId,
-              args.tx,
-            )
+          ? 'metricSelection' in definition
+            ? v3Initiator
+            : await this.initiationPolicy.resolveInitiator(
+                actor,
+                args.input.organizationId,
+                args.input.initiatorMemberId,
+                args.tx,
+              )
           : undefined;
     const created = await args.tx.activity.create({
-      data: this.activityCreateData({
-        input: args.input,
-        templateVersionId: template.id,
-        activityTypeCode: template.activityTypeCode,
-        definition,
-        requestHash,
-        initiatorMemberId,
-      }),
+      data: {
+        ...this.activityCreateData({
+          input: args.input,
+          templateVersionId: template.id,
+          activityTypeCode: template.activityTypeCode,
+          definition,
+          requestHash,
+          initiatorMemberId,
+        }),
+        ...('metricSelection' in definition
+          ? metricSelectionColumns(definition.metricSelection)
+          : {}),
+      },
       select: activitySafeSelect,
     });
 
@@ -469,7 +542,12 @@ export class ActivityFromTemplateService {
       );
     }
 
-    return { created, templateVersionId: template.id, definitionHash };
+    return {
+      created,
+      templateVersionId: template.id,
+      definitionHash,
+      ...('metricSelection' in definition ? { actor } : {}),
+    };
   }
 
   private normalizeCommand(
@@ -516,6 +594,7 @@ export class ActivityFromTemplateService {
     input: NormalizedCreateActivityFromTemplateCommand,
     actorUserId: string,
     creationContextHash?: string,
+    user?: CurrentUserPayload,
   ): Promise<ActivityFullRow | null> {
     const existing = await tx.activity.findUnique({
       where: { createFromTemplateOperationKey: input.operationKey },
@@ -523,11 +602,24 @@ export class ActivityFromTemplateService {
         ...activitySafeSelect,
         createFromTemplateRequestHash: true,
         selectedTemplateVersion: {
-          select: { definitionHash: true },
+          select: { definitionHash: true, schemaVersion: true },
         },
       },
     });
     if (!existing) return null;
+    if (existing.selectedTemplateVersion?.schemaVersion === 3) {
+      if (!user) throw new BizException(BizCode.UNAUTHORIZED);
+      await tx.$queryRaw`SELECT "id" FROM "Activity" WHERE "id" = ${existing.id} FOR UPDATE`;
+      await this.metricAccess.authorizeCreation(
+        tx,
+        user,
+        creationContextHash === undefined ? 'admin' : 'app',
+        input.organizationId,
+        input.initiatorMemberId,
+        this.config.activityResponsibilityWorkflow.enabled,
+      );
+      // Replay keeps the original materialization; retired references are not newly selected here.
+    }
     const definitionHash = existing.selectedTemplateVersion?.definitionHash;
     if (typeof definitionHash !== 'string') {
       throw new BizException(BizCode.ACTIVITY_CREATE_FROM_TEMPLATE_OPERATION_KEY_CONFLICT);
@@ -582,7 +674,9 @@ export class ActivityFromTemplateService {
     if (
       template.familyId === null ||
       template.statusCode !== 'active' ||
-      (template.schemaVersion !== 1 && template.schemaVersion !== 2) ||
+      (template.schemaVersion !== 1 &&
+        template.schemaVersion !== 2 &&
+        template.schemaVersion !== 3) ||
       template.definitionJson === null ||
       template.definitionHash === null ||
       template.effectiveFrom === null ||
@@ -606,7 +700,9 @@ export class ActivityFromTemplateService {
         definition:
           template.schemaVersion === 1
             ? parseActivityTemplateDefinitionV1(template.definitionJson)
-            : parseActivityTemplateDefinitionV2(template.definitionJson),
+            : template.schemaVersion === 2
+              ? parseActivityTemplateDefinitionV2(template.definitionJson)
+              : parseActivityTemplateDefinitionV3(template.definitionJson),
         definitionHash: template.definitionHash,
       };
     } catch (error) {
@@ -615,6 +711,21 @@ export class ActivityFromTemplateService {
       }
       throw error;
     }
+  }
+
+  private async assertV3Family(tx: Prisma.TransactionClient, familyId: string | null) {
+    const family = familyId
+      ? await tx.activityTemplateFamily.findFirst({
+          where: {
+            id: familyId,
+            scopeTypeCode: 'global',
+            ownerOrganizationId: null,
+            statusCode: 'active',
+          },
+          select: { id: true },
+        })
+      : null;
+    if (!family) throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_SELECTABLE);
   }
 
   private materializeSessions(

@@ -14,6 +14,8 @@
 
 ## Local facts
 
+- **C1 D2b 显式事务透传**：`can/explain(user, action, ref?, tx?)`、`getVisibleOrganizationScope(user, action, tx?)` 与 `ResourceResolverService.resolve(ref, tx?)` 可消费调用者事务；三源 grant、角色含码、组织状态/闭包及全部 14 类资源解析（含 attachment 递归委派）使用同一个 tx。未传 tx 仍走原 PrismaService，不变更 scope、任期、软删、约束或 deny reason。这里只透传、不新建事务、不取隐式锁；等待锁后的当前 User/Member 复验由业务事务编排负责，不能把本接口当作身份刷新器。`getEffectivePermissionCodes` 等旧入口不批迁。
+
 - **🔴 消费者接线进度(改本模块前先核对)**:**PR9(2026-07-02)起首个消费者 = attendances 终审两方法**(`finalApprove`/`finalReject` 走 `authz.explain` + deny→BizCode 映射〔22074/22075/30100,见 attendances/CLAUDE.md〕);**PR12(2026-07-02)起 activities / activity-registrations / attendances 三模块(participation 首批,共 24 处调用位点)全量切 `authz.can`/`authz.explain`**(ref 矩阵见各模块 CLAUDE.md;当前在期 GLOBAL 行为不变,未来/过期 GLOBAL 在 rbac/authz 两引擎均失效;scoped 持有者树内获新点动作能力);members / certificates / content / notifications 等其余业务面仍走 rbac.can,逐面迁移留后续批。**本模块行为调整自 PR9 起影响现网终审面,PR12 起影响 participation 三模块管理端全部动作**;等价矩阵行为锁必须始终成立
 - **🔴 无 ref 退化 = 行为锁(goal 决断①)**:`authz.can(user, action)`〔无 ref〕**逐字复用 `RbacService.judge`** —— 与 `rbac.can` 逐项一致(SUPER_ADMIN 短路 / GLOBAL 码集每请求读当前 DB / `.self` 无 resource fail-close);scoped grant 无 ref 一律不 covers。等价矩阵锁在 `test/e2e/authz-rbac-equivalence.e2e-spec.ts`,改判权流程必跑
 - **GLOBAL 任期真值单一来源(2026-07-13 第二档安全收口)**:`AuthzService` 与 `RbacService` 共用 [`../permissions/role-binding-validity.ts`](../permissions/role-binding-validity.ts);`startedAt<=now` 且 `endedAt=null|>=now` 才有效,边界时刻有效。未来/过期/在期三族在 `authz-rbac-equivalence` 具名 e2e 中同时断言 `rbac.can` / `getEffectiveRoles` / `authz.explain`,禁止两套谓词再次漂移

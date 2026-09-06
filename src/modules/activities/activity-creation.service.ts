@@ -25,6 +25,8 @@ import {
 import { presentActivityCreation } from './activity-creation-presenter';
 import { reconcileEmergencyFollowUps } from './activity-emergency-follow-up';
 import type { AppActivityCreationResultDto } from './dto/app/app-managed-activity-creation.dto';
+import { ActivityMetricSelectionAccess } from './activity-metric-selection-access';
+import { ActivityMetricSelectionService } from './activity-metric-selection.service';
 
 type ReceiptCommand =
   | { mode: 'professional'; command: ProfessionalCreationCommand }
@@ -44,6 +46,8 @@ export class ActivityCreationService {
     private readonly audit: ActivityAuditRecorder,
     @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
     private readonly controlPlane: ActivityControlPlaneGate,
+    private readonly metricAccess: ActivityMetricSelectionAccess,
+    private readonly metricSelection: ActivityMetricSelectionService,
   ) {}
 
   async createQuick(
@@ -60,6 +64,7 @@ export class ActivityCreationService {
         command.template,
         user.id,
         requestHash,
+        user,
       );
       return activity ? presentActivityCreation({ activity, mode: 'quick', replayed: true }) : null;
     };
@@ -68,12 +73,13 @@ export class ActivityCreationService {
         const existing = await replay(tx);
         if (existing) return existing;
         const result = await this.quick.create(tx, command, user, requestHash);
+        const actor = result.actor ?? user; // V3 revalidated identity; V1/V2 preserve their old path.
         await this.audit.logCreationCommand({
           tx,
           activityId: result.activity.id,
           organizationId: command.template.organizationId,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
+          actorUserId: actor.id,
+          actorRoleSnap: actor.role,
           auditMeta,
           operation: 'create_quick',
           requestHash,
@@ -148,6 +154,8 @@ export class ActivityCreationService {
       if (receipt.requestHash !== requestHash) throw new BizException(BizCode.BAD_REQUEST);
       // Receipt is the authority even after subsequent activity edits or soft deletion.
       await tx.$queryRaw`SELECT "id" FROM "Activity" WHERE "id" = ${receipt.activityId} FOR UPDATE`;
+      if (input.command.metricSelection !== undefined)
+        await this.revalidateMetricCreation(tx, input, user);
       if (input.mode === 'emergency')
         await reconcileEmergencyFollowUps(tx, receipt.activityId, user.id);
       return this.result(tx, receipt.activityId, input.mode, true);
@@ -157,13 +165,31 @@ export class ActivityCreationService {
         async (tx) => {
           const existing = await replay(tx);
           if (existing) return existing;
+          let actor =
+            input.command.metricSelection === undefined
+              ? user
+              : await this.revalidateMetricCreation(tx, input, user);
           const result =
             input.mode === 'professional'
-              ? await this.professional.create(tx, input.command, user)
+              ? await this.professional.create(tx, input.command, actor)
               : {
-                  activity: await this.emergency.createDraft(tx, input.command, user),
+                  activity: await this.emergency.createDraft(tx, input.command, actor),
                   placeCount: 0,
                 };
+          if (input.command.metricSelection !== undefined) {
+            await this.metricSelection.initializeWithinTransaction({
+              tx,
+              activityId: result.activity.id,
+              selection: input.command.metricSelection,
+              actor,
+              meta: auditMeta,
+              source: input.mode,
+              revalidate: async () => {
+                actor = await this.revalidateMetricCreation(tx, input, user);
+                return actor;
+              },
+            });
+          }
           const receipt = await tx.activityCreationCommandReceipt.create({
             data: { ...identity, requestHash, activityId: result.activity.id },
           });
@@ -171,21 +197,21 @@ export class ActivityCreationService {
             tx,
             activityId: result.activity.id,
             organizationId: input.command.activity.organizationId,
-            actorUserId: user.id,
-            actorRoleSnap: user.role,
+            actorUserId: actor.id,
+            actorRoleSnap: actor.role,
             auditMeta,
             requestHash,
             commandId: receipt.id,
           };
           if (input.mode === 'emergency') {
             // Existing options implement membership + scoped cross-org authorization; never derive scope from Role.
-            const options = await this.managed.organizationOptions(user, user.memberId!);
+            const options = await this.managed.organizationOptions(actor, actor.memberId!, tx);
             const recipientCount = await this.emergency.queueCall(tx, {
               command: input.command,
               activityId: result.activity.id,
               receiptId: receipt.id,
               requestHash,
-              user,
+              user: actor,
               authorizedOrganizationIds: options.map((option) => option.organizationId),
             });
             await this.audit.logCreationCommand({
@@ -230,5 +256,22 @@ export class ActivityCreationService {
           })
         : [];
     return presentActivityCreation({ activity, mode, replayed, followUpItems });
+  }
+
+  private async revalidateMetricCreation(
+    tx: Prisma.TransactionClient,
+    input: ReceiptCommand,
+    user: CurrentUserPayload,
+  ) {
+    const { actor } = await this.metricAccess.authorizeCreation(
+      tx,
+      user,
+      'app',
+      input.command.activity.organizationId,
+      input.command.activity.initiatorMemberId,
+    );
+    if (input.mode === 'emergency')
+      await this.access.assertCanOrThrow(actor, 'activity.create.emergency.record', undefined, tx);
+    return actor;
   }
 }

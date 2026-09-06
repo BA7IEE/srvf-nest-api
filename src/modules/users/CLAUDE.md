@@ -9,6 +9,8 @@
 
 ## Local facts
 
+- **App 准入事务读取（C1 D2b）**：`AppIdentityResolver.resolve(currentUser, tx?)` 的第二参数可显式传调用者事务，Member 读取使用该 tx；省略时保持原行为。它不重读 User、不取隐式锁；C1 写入编排须先通过 `loadActiveUserIdentityInTx` 取得当前 User，再传入 resolver，不能使用等待锁前的 memberId。未绑定、Member 删除/失效的 reason 与 App 准入规则不变，不增加角色短路或缓存。
+
 - **身份有效性不缓存**:`JwtStrategy.validate()` 每请求查库；本模块禁用/软删下一请求即时失效。
 - **跨域事务身份读取（C1 D2a）**:`user-active-identity.query.ts` 的 `loadActiveUserIdentityInTx(tx, userId)` 是 User 属主公开的只读原语；只返 ACTIVE 且未软删的 id/username/role/status/memberId，无结果返 null。调用者负责事务、显式锁序与后续 `rbac.can(...tx)`；原语不新建事务、不取隐式锁、不缓存，不改旧用户 API。指标命令在等待锁后再次调用，禁止改回跨域直读 User 或拿请求开始时的身份替代。
 - **App 活动能力投影**:`/me/capabilities` 的 `activities.canInitiateActivity/canDirectPublishOwnActivity` 与 `managed.*` 只作产品入口提示；每次按共享 `isFormalMemberGradeCode()`（精确 `level-1`…`level-7`）、当前 authz scope、本人发起记录和 active responsibility 直读 PostgreSQL，零跨请求缓存，写端仍须重新判权。

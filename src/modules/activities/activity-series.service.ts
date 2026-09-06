@@ -9,6 +9,7 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityAccessService } from './activity-access.service';
 import { ActivityFromTemplateService } from './activity-from-template.service';
 import { ActivitySeriesAuditRecorder } from './activity-series-audit-recorder';
+import { ActivityMetricSelectionAccess } from './activity-metric-selection-access';
 import {
   buildActivitySeriesRequestHash,
   isActivitySeriesStatusCode,
@@ -62,6 +63,7 @@ export class ActivitySeriesService {
     private readonly access: ActivityAccessService,
     private readonly fromTemplate: ActivityFromTemplateService,
     private readonly auditRecorder: ActivitySeriesAuditRecorder,
+    private readonly metricAccess: ActivityMetricSelectionAccess,
   ) {}
 
   async create(
@@ -78,13 +80,15 @@ export class ActivitySeriesService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const replay = await this.findReplay(tx, 'create_series', input.operationKey, hash);
+        const replay = await this.findReplay(tx, 'create_series', input.operationKey, hash, user);
         if (replay) return replay;
 
         await this.access.assertOrganizationValidAndNonRoot(input.organizationId, tx);
         const template = await this.fromTemplate.validateExactTemplateVersionWithinTransaction({
           tx,
           templateVersionId: input.templateVersionId,
+          user,
+          organizationId: input.organizationId,
         });
         const series = await tx.activitySeries.create({
           data: { code: input.code, statusCode: 'active' },
@@ -114,15 +118,15 @@ export class ActivitySeriesService {
           seriesId: series.id,
           revision: revision.revision,
           statusCode: series.statusCode,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
+          actorUserId: (template.actor ?? user).id,
+          actorRoleSnap: (template.actor ?? user).role,
           auditMeta,
           tx,
         });
         return result;
       });
     } catch (error) {
-      return this.recoverReplayOrThrow(error, 'create_series', input.operationKey, hash);
+      return this.recoverReplayOrThrow(error, 'create_series', input.operationKey, hash, user);
     }
   }
 
@@ -140,7 +144,7 @@ export class ActivitySeriesService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const replay = await this.findReplay(tx, 'revise_series', input.operationKey, hash);
+        const replay = await this.findReplay(tx, 'revise_series', input.operationKey, hash, user);
         if (replay) return replay;
 
         const series = await this.lockSeries(tx, input.seriesId);
@@ -149,6 +153,7 @@ export class ActivitySeriesService {
           'revise_series',
           input.operationKey,
           hash,
+          user,
         );
         if (replayAfterLock) return replayAfterLock;
         if (series.statusCode === 'terminated') badRequest();
@@ -160,6 +165,8 @@ export class ActivitySeriesService {
         const template = await this.fromTemplate.validateExactTemplateVersionWithinTransaction({
           tx,
           templateVersionId: input.templateVersionId,
+          user,
+          organizationId: input.organizationId,
         });
         const revision = await tx.activitySeriesRevision.create({
           data: this.revisionCreateData({
@@ -185,15 +192,15 @@ export class ActivitySeriesService {
           seriesId: series.id,
           revision: revision.revision,
           statusCode: series.statusCode,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
+          actorUserId: (template.actor ?? user).id,
+          actorRoleSnap: (template.actor ?? user).role,
           auditMeta,
           tx,
         });
         return result;
       });
     } catch (error) {
-      return this.recoverReplayOrThrow(error, 'revise_series', input.operationKey, hash);
+      return this.recoverReplayOrThrow(error, 'revise_series', input.operationKey, hash, user);
     }
   }
 
@@ -271,7 +278,13 @@ export class ActivitySeriesService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const replay = await this.findReplay(tx, 'generate_instances', input.operationKey, hash);
+        const replay = await this.findReplay(
+          tx,
+          'generate_instances',
+          input.operationKey,
+          hash,
+          user,
+        );
         if (replay) return replay;
 
         const series = await this.lockSeries(tx, input.seriesId);
@@ -280,6 +293,7 @@ export class ActivitySeriesService {
           'generate_instances',
           input.operationKey,
           hash,
+          user,
         );
         if (replayAfterLock) return replayAfterLock;
         if (series.statusCode !== 'active') badRequest();
@@ -289,6 +303,8 @@ export class ActivitySeriesService {
         const template = await this.fromTemplate.validateExactTemplateVersionWithinTransaction({
           tx,
           templateVersionId: revision.templateVersionId,
+          user,
+          organizationId: revision.organizationId,
         });
         if (template.definitionHash !== revision.templateDefinitionHash) {
           throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_SELECTABLE);
@@ -312,6 +328,7 @@ export class ActivitySeriesService {
         if (candidates.length !== input.count) badRequest();
 
         const activityIds: string[] = [];
+        let actor = template.actor ?? user;
         for (const candidate of candidates) {
           const existing = await tx.activitySeriesOccurrence.findUnique({
             where: {
@@ -349,6 +366,7 @@ export class ActivitySeriesService {
             initiatorMode: 'leave-empty-for-series',
             expectedDefinitionHash: revision.templateDefinitionHash,
           });
+          actor = materialized.actor ?? actor;
           await tx.activitySeriesOccurrence.create({
             data: {
               seriesId: series.id,
@@ -365,8 +383,8 @@ export class ActivitySeriesService {
             revision: revision.revision,
             occurrenceKey: candidate.occurrenceKey,
             templateVersionId: revision.templateVersionId,
-            actorUserId: user.id,
-            actorRoleSnap: user.role,
+            actorUserId: actor.id,
+            actorRoleSnap: actor.role,
             auditMeta,
             tx,
           });
@@ -387,15 +405,15 @@ export class ActivitySeriesService {
           seriesId: series.id,
           revision: revision.revision,
           statusCode: series.statusCode,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
+          actorUserId: actor.id,
+          actorRoleSnap: actor.role,
           auditMeta,
           tx,
         });
         return result;
       });
     } catch (error) {
-      return this.recoverReplayOrThrow(error, 'generate_instances', input.operationKey, hash);
+      return this.recoverReplayOrThrow(error, 'generate_instances', input.operationKey, hash, user);
     }
   }
 
@@ -435,6 +453,7 @@ export class ActivitySeriesService {
     commandCode: ActivitySeriesCommandCode,
     operationKey: string,
     expectedRequestHash: string,
+    user?: CurrentUserPayload,
   ): Promise<ActivitySeriesCommandResult | null> {
     const receipt = await tx.activitySeriesCommandReceipt.findUnique({
       where: { operationKey },
@@ -445,11 +464,29 @@ export class ActivitySeriesService {
         resultRevision: true,
         resultStatusCode: true,
         activityIds: true,
+        revision: {
+          select: {
+            organizationId: true,
+            templateVersion: { select: { schemaVersion: true } },
+          },
+        },
       },
     });
     if (!receipt) return null;
     if (receipt.commandCode !== commandCode || receipt.requestHash !== expectedRequestHash)
       badRequest();
+    if (receipt.revision?.templateVersion.schemaVersion === 3) {
+      if (!user) throw new BizException(BizCode.UNAUTHORIZED);
+      // Old V1/V2 and status-only receipts keep their original branch. A V3
+      // replay revalidates current Human/organization admission, not the old
+      // template's ability to create new instances after retirement.
+      const organizationId = receipt.revision.organizationId;
+      const revalidate = () =>
+        this.metricAccess.authorizeCreation(tx, user, 'admin', organizationId, undefined, false);
+      await revalidate();
+      await this.lockSeries(tx, receipt.seriesId);
+      await revalidate();
+    }
     return this.result(
       receipt.seriesId,
       receipt.resultRevision,
@@ -582,12 +619,13 @@ export class ActivitySeriesService {
     commandCode: ActivitySeriesCommandCode,
     operationKey: string,
     expectedRequestHash: string,
+    user?: CurrentUserPayload,
   ): Promise<ActivitySeriesCommandResult> {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
       throw error;
     }
     const replay = await this.prisma.$transaction((tx) =>
-      this.findReplay(tx, commandCode, operationKey, expectedRequestHash),
+      this.findReplay(tx, commandCode, operationKey, expectedRequestHash, user),
     );
     if (replay) return replay;
     badRequest();

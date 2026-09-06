@@ -291,6 +291,7 @@ function makeSubject(
     registrationForms as unknown as RegistrationFormVersionService,
     images as unknown as ActivityImageSigningService,
     { activityResponsibilityWorkflow: { enabled: false } } as never,
+    undefined!, // V1/V2 characterization must not enter the V3 identity branch.
   );
   return {
     service,

@@ -54,7 +54,8 @@ describe('C1 D2a catalogue HTTP and PostgreSQL', () => {
     await resetDb(app);
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     await assertConnectedTestDatabase(prisma);
-    await prisma.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition"`;
+    // Test-only: D2b adds Activity -> metric set; keep FK-related fixture cleanup together.
+    await prisma.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition" CASCADE`;
     const root = await createTestUser(app, { username: 'c1_metric_root', role: Role.SUPER_ADMIN });
     rootId = root.id;
     const user = await createTestUser(app, { username: 'c1_metric_plain' });

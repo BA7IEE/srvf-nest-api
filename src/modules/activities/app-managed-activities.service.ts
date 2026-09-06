@@ -68,11 +68,12 @@ export class AppManagedActivitiesService {
   async organizationOptions(
     user: CurrentUserPayload,
     memberId: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<AppActivityInitiationOrganizationOptionDto[]> {
-    await this.assertFormalMember(memberId);
+    await this.assertFormalMember(memberId, tx);
     const now = new Date();
     const [memberships, crossOrgScope] = await Promise.all([
-      this.prisma.memberOrganizationMembership.findMany({
+      (tx ?? this.prisma).memberOrganizationMembership.findMany({
         where: {
           memberId,
           status: MembershipStatus.ACTIVE,
@@ -91,7 +92,7 @@ export class AppManagedActivitiesService {
           organization: { select: { id: true, name: true, parentId: true } },
         },
       }),
-      this.authz.getVisibleOrganizationScope(user, 'activity.create.cross-org'),
+      this.authz.getVisibleOrganizationScope(user, 'activity.create.cross-org', tx),
     ]);
     const membershipByOrg = new Map(memberships.map((row) => [row.organizationId, row]));
     const crossOrgIds = crossOrgScope.hasPermission
@@ -99,7 +100,7 @@ export class AppManagedActivitiesService {
         ? undefined
         : crossOrgScope.organizationIds
       : [];
-    const organizations = await this.prisma.organization.findMany({
+    const organizations = await (tx ?? this.prisma).organization.findMany({
       where: {
         status: OrganizationStatus.ACTIVE,
         deletedAt: null,
@@ -114,7 +115,7 @@ export class AppManagedActivitiesService {
     const closureRows =
       organizations.length === 0
         ? []
-        : await this.prisma.organizationClosure.findMany({
+        : await (tx ?? this.prisma).organizationClosure.findMany({
             where: { descendantId: { in: organizations.map((organization) => organization.id) } },
             select: {
               descendantId: true,
@@ -625,8 +626,8 @@ export class AppManagedActivitiesService {
     }
   }
 
-  private async assertFormalMember(memberId: string): Promise<void> {
-    const member = await this.prisma.member.findFirst({
+  private async assertFormalMember(memberId: string, tx?: Prisma.TransactionClient): Promise<void> {
+    const member = await (tx ?? this.prisma).member.findFirst({
       where: { id: memberId, status: MemberStatus.ACTIVE, deletedAt: null },
       select: { gradeCode: true },
     });

@@ -32,6 +32,17 @@ import { ActivityMetricAuditRecorder } from './activity-metric-audit-recorder';
 import { ActivityMetricDefinitionService } from './activity-metric-definition.service';
 import { ActivityMetricSetService } from './activity-metric-set.service';
 import { ActivityMetricCatalogueQueryService } from './activity-metric-catalogue-query.service';
+import { ActivityMetricSelectionAccess } from './activity-metric-selection-access';
+import { ActivityMetricSelectionService } from './activity-metric-selection.service';
+import { ActivityMetricSelectionAuditRecorder } from './activity-metric-selection-audit-recorder';
+import { ActivityTemplateVersionCommand } from './activity-template-version-command';
+import { ActivityTemplateVersionService } from './activity-template-version.service';
+import { ActivityTemplateVersionAuditRecorder } from './activity-template-version-audit-recorder';
+import { ActivityMetricSelectionQueryService } from './activity-metric-selection-query.service';
+import { ActivityTemplateVersionQueryService } from './activity-template-version-query.service';
+import { AdminActivityMetricSelectionController } from './controllers/admin-activity-metric-selection.controller';
+import { AdminActivityTemplateVersionsController } from './controllers/admin-activity-template-versions.controller';
+import { AppManagedActivityMetricsController } from './controllers/app-managed-activity-metrics.controller';
 import { AdminActivityMetricDefinitionsController } from './controllers/admin-activity-metric-definitions.controller';
 import { AdminActivityMetricSetsController } from './controllers/admin-activity-metric-sets.controller';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
@@ -163,6 +174,9 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     forwardRef(() => AttendancesModule),
   ],
   controllers: [
+    AppManagedActivityMetricsController,
+    AdminActivityMetricSelectionController,
+    AdminActivityTemplateVersionsController,
     AppManagedActivityControlPlaneController,
     AppManagedActivityCreationController,
     ActivitiesController,
@@ -203,6 +217,14 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityMetricDefinitionService,
     ActivityMetricSetService,
     ActivityMetricCatalogueQueryService,
+    ActivityMetricSelectionAccess,
+    ActivityMetricSelectionService,
+    ActivityMetricSelectionAuditRecorder,
+    ActivityTemplateVersionCommand,
+    ActivityTemplateVersionService,
+    ActivityTemplateVersionAuditRecorder,
+    ActivityMetricSelectionQueryService,
+    ActivityTemplateVersionQueryService,
     ActivityDraftAuditRecorder,
     ActivityDraftService,
     ActivityNotificationProducer,

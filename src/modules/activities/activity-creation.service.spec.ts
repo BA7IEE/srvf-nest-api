@@ -101,6 +101,8 @@ function makeHarness(enabled = true, controlMode: ActivityControlPlaneMode = 'ac
     new ActivityControlPlaneGate({
       activityOsControlPlane: { mode: controlMode },
     } as ConfigType<typeof appConfig>),
+    undefined!, // Legacy access checks do not enter the new explicit-selection branch.
+    undefined!,
   );
   const invoke = (mode: keyof typeof commands, user = actor) => {
     if (mode === 'quick') return service.createQuick(commands.quick, user, auditMeta);

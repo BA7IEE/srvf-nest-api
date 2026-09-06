@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AttachmentAccessLevel, MembershipType } from '@prisma/client';
+import { AttachmentAccessLevel, MembershipType, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { MembershipTermStateMachine } from '../member-departments/membership-term-state-machine';
 import type { ResolvedResource, ResourceRef, ResourceSensitivityLevel } from './authz.types';
@@ -49,36 +49,36 @@ export class ResourceResolverService {
   constructor(private readonly prisma: PrismaService) {}
 
   // 统一入口:未知类型 → null(fail-close)。
-  async resolve(ref: ResourceRef): Promise<ResolvedResource | null> {
+  async resolve(ref: ResourceRef, tx?: Prisma.TransactionClient): Promise<ResolvedResource | null> {
     switch (ref.type) {
       case 'organization':
-        return this.resolveOrganization(ref.id);
+        return this.resolveOrganization(ref.id, tx);
       case 'activity':
-        return this.resolveActivity(ref.id);
+        return this.resolveActivity(ref.id, tx);
       case 'activity_publish_review':
-        return this.resolveActivityPublishReview(ref.id);
+        return this.resolveActivityPublishReview(ref.id, tx);
       case 'attendance_sheet':
-        return this.resolveAttendanceSheet(ref.id);
+        return this.resolveAttendanceSheet(ref.id, tx);
       case 'attendance_settlement_version':
-        return this.resolveAttendanceSettlementVersion(ref.id);
+        return this.resolveAttendanceSettlementVersion(ref.id, tx);
       case 'attendance_record':
-        return this.resolveAttendanceRecord(ref.id);
+        return this.resolveAttendanceRecord(ref.id, tx);
       case 'activity_registration':
-        return this.resolveActivityRegistration(ref.id);
+        return this.resolveActivityRegistration(ref.id, tx);
       case 'member':
-        return this.resolveMember(ref.id);
+        return this.resolveMember(ref.id, tx);
       case 'member_profile':
-        return this.resolveMemberProfile(ref.id);
+        return this.resolveMemberProfile(ref.id, tx);
       case 'certificate':
-        return this.resolveCertificate(ref.id);
+        return this.resolveCertificate(ref.id, tx);
       case 'team_join_application':
-        return this.resolveTeamJoinApplication(ref.id);
+        return this.resolveTeamJoinApplication(ref.id, tx);
       case 'recruitment_application':
-        return this.resolveRecruitmentApplication(ref.id);
+        return this.resolveRecruitmentApplication(ref.id, tx);
       case 'notification':
-        return this.resolveNotification(ref.id);
+        return this.resolveNotification(ref.id, tx);
       case 'attachment':
-        return this.resolveAttachment(ref.id);
+        return this.resolveAttachment(ref.id, tx);
       default:
         return null;
     }
@@ -86,8 +86,11 @@ export class ResourceResolverService {
 
   // ============ 逐类 resolver ============
 
-  private async resolveOrganization(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.organization.findFirst({
+  private async resolveOrganization(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).organization.findFirst({
       where: { id, deletedAt: null },
       select: { id: true, status: true },
     });
@@ -96,7 +99,7 @@ export class ResourceResolverService {
       resourceType: 'organization',
       resourceId: row.id,
       organizationId: row.id,
-      organizationPath: await this.organizationPath(row.id),
+      organizationPath: await this.organizationPath(row.id, tx),
       ownerMemberId: null,
       ownerUserId: null,
       activityId: null,
@@ -105,8 +108,11 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveActivity(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.activity.findFirst({
+  private async resolveActivity(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).activity.findFirst({
       where: { id, deletedAt: null },
       select: { id: true, organizationId: true, statusCode: true },
     });
@@ -115,7 +121,7 @@ export class ResourceResolverService {
       resourceType: 'activity',
       resourceId: row.id,
       organizationId: row.organizationId,
-      organizationPath: await this.organizationPath(row.organizationId),
+      organizationPath: await this.organizationPath(row.organizationId, tx),
       ownerMemberId: null,
       ownerUserId: null,
       activityId: row.id,
@@ -124,8 +130,11 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveActivityPublishReview(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.activityPublishReview.findUnique({
+  private async resolveActivityPublishReview(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).activityPublishReview.findUnique({
       where: { id },
       select: {
         id: true,
@@ -142,7 +151,7 @@ export class ResourceResolverService {
       resourceType: 'activity_publish_review',
       resourceId: row.id,
       organizationId: row.activity.organizationId,
-      organizationPath: await this.organizationPath(row.activity.organizationId),
+      organizationPath: await this.organizationPath(row.activity.organizationId, tx),
       ownerMemberId: null,
       ownerUserId: null,
       activityId: row.activityId,
@@ -156,8 +165,11 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveAttendanceSheet(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.attendanceSheet.findFirst({
+  private async resolveAttendanceSheet(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).attendanceSheet.findFirst({
       where: { id, deletedAt: null },
       select: {
         id: true,
@@ -174,7 +186,7 @@ export class ResourceResolverService {
       resourceType: 'attendance_sheet',
       resourceId: row.id,
       organizationId: row.activity.organizationId,
-      organizationPath: await this.organizationPath(row.activity.organizationId),
+      organizationPath: await this.organizationPath(row.activity.organizationId, tx),
       ownerMemberId: null,
       ownerUserId: null,
       activityId: row.activityId,
@@ -192,8 +204,11 @@ export class ResourceResolverService {
   // 一场活动可先后有多个提交版本，入口层的快照只负责快速拒绝，锁后层仍会在同一版本行
   // 上作 authoritative 复判。这里与 SettlementReviewService.readFirstReviewerUserId 的
   // `actedAt asc` 口径一致，避免两层对损坏历史的“第一位审核人”取法不同。
-  private async resolveAttendanceSettlementVersion(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.attendanceSettlementVersion.findFirst({
+  private async resolveAttendanceSettlementVersion(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).attendanceSettlementVersion.findFirst({
       // 沿本 resolver 的统一口径：只看目标版本是否存在；链上的 Activity 即使已软删，
       // 它的组织归属仍是版本的事实属性。HTTP 写入口另有自己的活动存在性闸。
       where: { id },
@@ -220,7 +235,7 @@ export class ResourceResolverService {
       resourceType: 'attendance_settlement_version',
       resourceId: row.id,
       organizationId: row.settlementRun.activity.organizationId,
-      organizationPath: await this.organizationPath(row.settlementRun.activity.organizationId),
+      organizationPath: await this.organizationPath(row.settlementRun.activity.organizationId, tx),
       ownerMemberId: null,
       ownerUserId: null,
       activityId: row.settlementRun.activityId,
@@ -234,8 +249,11 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveAttendanceRecord(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.attendanceRecord.findFirst({
+  private async resolveAttendanceRecord(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).attendanceRecord.findFirst({
       where: { id, deletedAt: null },
       select: {
         id: true,
@@ -249,7 +267,7 @@ export class ResourceResolverService {
       resourceType: 'attendance_record',
       resourceId: row.id,
       organizationId: row.sheet.activity.organizationId,
-      organizationPath: await this.organizationPath(row.sheet.activity.organizationId),
+      organizationPath: await this.organizationPath(row.sheet.activity.organizationId, tx),
       ownerMemberId: row.memberId,
       ownerUserId: null,
       activityId: row.sheet.activityId,
@@ -258,8 +276,11 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveActivityRegistration(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.activityRegistration.findFirst({
+  private async resolveActivityRegistration(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).activityRegistration.findFirst({
       where: { id, deletedAt: null },
       select: {
         id: true,
@@ -274,7 +295,7 @@ export class ResourceResolverService {
       resourceType: 'activity_registration',
       resourceId: row.id,
       organizationId: row.activity.organizationId,
-      organizationPath: await this.organizationPath(row.activity.organizationId),
+      organizationPath: await this.organizationPath(row.activity.organizationId, tx),
       ownerMemberId: row.memberId,
       ownerUserId: null,
       activityId: row.activityId,
@@ -283,11 +304,14 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveMember(id: string): Promise<ResolvedResource | null> {
+  private async resolveMember(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
     // 队员账号闭环 v2:User.memberId 改一对多(partial unique,仅 DB 层保证至多 1 条
     // live),`users` 查询显式收窄 `deletedAt: null` + `take: 1` 取当前 live 关联账号,
     // 与 v1 行为等价(软删账号从不可能是 currentUser,不影响任何 self-scope 判定结果)。
-    const row = await this.prisma.member.findFirst({
+    const row = await (tx ?? this.prisma).member.findFirst({
       where: { id, deletedAt: null },
       select: {
         id: true,
@@ -296,12 +320,12 @@ export class ResourceResolverService {
       },
     });
     if (!row) return null;
-    const organizationId = await this.primaryMembershipOrgId(row.id);
+    const organizationId = await this.primaryMembershipOrgId(row.id, tx);
     return {
       resourceType: 'member',
       resourceId: row.id,
       organizationId,
-      organizationPath: await this.organizationPath(organizationId),
+      organizationPath: await this.organizationPath(organizationId, tx),
       ownerMemberId: row.id,
       ownerUserId: row.users[0]?.id ?? null,
       activityId: null,
@@ -310,18 +334,21 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveMemberProfile(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.memberProfile.findFirst({
+  private async resolveMemberProfile(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).memberProfile.findFirst({
       where: { id, deletedAt: null },
       select: { id: true, memberId: true },
     });
     if (!row) return null;
-    const organizationId = await this.primaryMembershipOrgId(row.memberId);
+    const organizationId = await this.primaryMembershipOrgId(row.memberId, tx);
     return {
       resourceType: 'member_profile',
       resourceId: row.id,
       organizationId,
-      organizationPath: await this.organizationPath(organizationId),
+      organizationPath: await this.organizationPath(organizationId, tx),
       ownerMemberId: row.memberId,
       ownerUserId: null,
       activityId: null,
@@ -330,18 +357,21 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveCertificate(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.certificate.findFirst({
+  private async resolveCertificate(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).certificate.findFirst({
       where: { id, deletedAt: null },
       select: { id: true, memberId: true, certStatusCode: true },
     });
     if (!row) return null;
-    const organizationId = await this.primaryMembershipOrgId(row.memberId);
+    const organizationId = await this.primaryMembershipOrgId(row.memberId, tx);
     return {
       resourceType: 'certificate',
       resourceId: row.id,
       organizationId,
-      organizationPath: await this.organizationPath(organizationId),
+      organizationPath: await this.organizationPath(organizationId, tx),
       ownerMemberId: row.memberId,
       ownerUserId: null,
       activityId: null,
@@ -350,8 +380,11 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveTeamJoinApplication(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.teamJoinApplication.findFirst({
+  private async resolveTeamJoinApplication(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).teamJoinApplication.findFirst({
       where: { id, deletedAt: null },
       select: {
         id: true,
@@ -367,7 +400,7 @@ export class ResourceResolverService {
       resourceType: 'team_join_application',
       resourceId: row.id,
       organizationId,
-      organizationPath: await this.organizationPath(organizationId),
+      organizationPath: await this.organizationPath(organizationId, tx),
       ownerMemberId: row.memberId,
       ownerUserId: null,
       activityId: null,
@@ -377,8 +410,11 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveRecruitmentApplication(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.recruitmentApplication.findFirst({
+  private async resolveRecruitmentApplication(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).recruitmentApplication.findFirst({
       where: { id, deletedAt: null },
       select: { id: true, statusCode: true },
     });
@@ -396,8 +432,11 @@ export class ResourceResolverService {
     };
   }
 
-  private async resolveNotification(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.notification.findFirst({
+  private async resolveNotification(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).notification.findFirst({
       where: { id, deletedAt: null },
       select: {
         id: true,
@@ -409,13 +448,13 @@ export class ResourceResolverService {
     });
     if (!row) return null;
     const organizationId = row.recipientMemberId
-      ? await this.primaryMembershipOrgId(row.recipientMemberId)
+      ? await this.primaryMembershipOrgId(row.recipientMemberId, tx)
       : null;
     return {
       resourceType: 'notification',
       resourceId: row.id,
       organizationId,
-      organizationPath: await this.organizationPath(organizationId),
+      organizationPath: await this.organizationPath(organizationId, tx),
       ownerMemberId: row.recipientMemberId,
       ownerUserId: null,
       activityId: null,
@@ -427,8 +466,11 @@ export class ResourceResolverService {
 
   // attachment:按 ownerType 委派(§5.1 表末行)。Attachment 是硬删模型(无 deletedAt),
   // findUnique 不到即不存在;委派目标不存在 / 已软删 / ownerType 未映射 → 整体 null(fail-close)。
-  private async resolveAttachment(id: string): Promise<ResolvedResource | null> {
-    const row = await this.prisma.attachment.findUnique({
+  private async resolveAttachment(
+    id: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ResolvedResource | null> {
+    const row = await (tx ?? this.prisma).attachment.findUnique({
       where: { id },
       select: { id: true, ownerType: true, ownerId: true, accessLevel: true },
     });
@@ -436,11 +478,11 @@ export class ResourceResolverService {
 
     let delegate: ResolvedResource | null = null;
     if (row.ownerType === 'member') {
-      delegate = await this.resolveMember(row.ownerId);
+      delegate = await this.resolveMember(row.ownerId, tx);
     } else if (row.ownerType === 'certificate') {
-      delegate = await this.resolveCertificate(row.ownerId);
+      delegate = await this.resolveCertificate(row.ownerId, tx);
     } else if (row.ownerType === 'activity') {
-      delegate = await this.resolveActivity(row.ownerId);
+      delegate = await this.resolveActivity(row.ownerId, tx);
     }
     if (!delegate) return null;
 
@@ -462,8 +504,11 @@ export class ResourceResolverService {
 
   // member 的授权归属组织 = active PRIMARY membership(冻结稿 §5.1 member 行;partial unique 保证至多一条)。
   // 无 active PRIMARY 归属 → null(该资源仅 GLOBAL / SELF〔owner 匹配〕可达)。
-  private async primaryMembershipOrgId(memberId: string): Promise<string | null> {
-    const row = await this.prisma.memberOrganizationMembership.findFirst({
+  private async primaryMembershipOrgId(
+    memberId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<string | null> {
+    const row = await (tx ?? this.prisma).memberOrganizationMembership.findFirst({
       where: {
         ...MembershipTermStateMachine.effectiveWhere(new Date()),
         memberId,
@@ -476,9 +521,12 @@ export class ResourceResolverService {
 
   // 祖先链(closure 反查):root 在前、自身在后(closure 自环行 depth=0,PR1 起恒在)。
   // covers(ORGANIZATION_TREE) 即「scopeOrgId ∈ organizationPath」,与 EXISTS closure(ancestor, descendant) 等价。
-  private async organizationPath(organizationId: string | null): Promise<string[] | null> {
+  private async organizationPath(
+    organizationId: string | null,
+    tx?: Prisma.TransactionClient,
+  ): Promise<string[] | null> {
     if (!organizationId) return null;
-    const rows = await this.prisma.organizationClosure.findMany({
+    const rows = await (tx ?? this.prisma).organizationClosure.findMany({
       where: { descendantId: organizationId },
       select: { ancestorId: true },
       orderBy: { depth: 'desc' },

@@ -400,6 +400,16 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 移除两处 `no-runtime-writer`。总条目及 inventory/governed 分布不变，不借此升级 governed。
 > D2b 活动/模板选择与 D2c v7/Readiness 仍未实施。
 
+> **⑩ C1 D2b 当前更新（2026-09-06，分支实施中）**：`ActivityTemplate.statusCode`
+> 已有 Human GLOBAL V3 writer、同事务审计/收据及 `ACTIVITY_METRIC_STATUS_INVALID`；
+> 登记 `(create) → draft → active → retired`，移除该条 `no-service-writer` 与
+> `no-wrong-state-bizcode`，保留 `conditional-legacy-scope`，不升级 governed。
+> `ActivityTemplateFamily` 只接入“随 V3 创建 active 全局 Family”，无 Family 生命周期管理，
+> 其闭集和迁移边仍未声明。总条目 65、governed/inventory 8/57 均不变；
+> 下方 2026-09-05 直方图为历史取数，不能当作 D2b 后的当前值。
+> 活动选择、模板 V3 已有实施及定向验证，不等于 D2b 整体交付：options 和最终契约尚待收口，
+> D2c 的 v7/Readiness 仍未实施。详见 `docs/ops/activity-metric-selection-template-rollout.md`。
+
 blocker 直方图(2026-09-05 现算;含 A3 future-Version 条件生命周期、A7、B6 D2 与 C1 D1):`no-wrong-state-bizcode` 30 ·
 `no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·
 `edges-partially-derived` 2 · `vocabulary-divergence` 2 · `dictionary-driven` 2 ·

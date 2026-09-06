@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { instanceToPlain } from 'class-transformer';
 import { Prisma } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -10,6 +11,18 @@ import type {
 } from './dto/app/app-managed-activity-creation.dto';
 import type { AppProfessionalActivityCreationDto } from './dto/app/app-managed-activity-creation-professional.dto';
 import type { RegistrationFormDefinitionInput } from './registration-form-definition';
+import { parseActivityMetricSelection } from './activity-metric-selection';
+
+function optionalMetricSelection(value: unknown) {
+  if (value === undefined) return {};
+  try {
+    return { metricSelection: parseActivityMetricSelection(instanceToPlain(value)) };
+  } catch (error) {
+    if (error instanceof TypeError)
+      throw new BizException(BizCode.ACTIVITY_METRIC_SELECTION_INVALID);
+    throw error;
+  }
+}
 
 function iso(value: string): string {
   const date = new Date(value);
@@ -188,6 +201,7 @@ export function mapProfessionalCreation(dto: AppProfessionalActivityCreationDto)
     places: (dto.places ?? []).map(mapCreationPlace),
     sessions,
     qualificationRuleSets,
+    ...optionalMetricSelection(dto.metricSelection),
   };
 }
 export type ProfessionalCreationCommand = ReturnType<typeof mapProfessionalCreation>;
@@ -207,6 +221,7 @@ export function mapEmergencyCreation(dto: AppEmergencyActivityCreationDto) {
     },
     organizationIds: dto.organizationIds?.slice().sort(),
     memberIds: dto.memberIds?.slice().sort(),
+    ...optionalMetricSelection(dto.metricSelection),
   };
 }
 export type EmergencyCreationCommand = ReturnType<typeof mapEmergencyCreation>;

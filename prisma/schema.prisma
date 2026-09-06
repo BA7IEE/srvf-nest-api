@@ -1401,6 +1401,11 @@ model Activity {
   // Activity OS R1 / A4：新活动未来会记录一次明确的模板版本选择；本刀只占可空指针，
   // NULL 继续表示历史 activityTypeCode 路径，绝不在这里切换 resolver 或回填旧活动。
   selectedTemplateVersionId          String?
+  // C1 D2b: NULL/revision 0 is unconfigured; explicit selections start at revision 1.
+  metricRequirementCode              String?
+  selectedMetricSetVersionId          String?
+  selectedMetricSetDefinitionHash     String?
+  metricSelectionRevision            Int @default(0)
   // Activity OS R1 / A6：从模板创建成功结果的持久化幂等锚。两列均可空，历史 Activity
   // 零回填；operationKey 全局唯一，requestHash 绑定操作、调用者、精确 Version/hash 与输入。
   // 不能复用 IntegrationCommandReceipt：后者绑定服务主体凭证，安全边界不同。
@@ -1557,6 +1562,8 @@ model Activity {
 
   organization                 Organization                       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   selectedTemplateVersion      ActivityTemplate?                  @relation("ActivitySelectedTemplateVersion", fields: [selectedTemplateVersionId], references: [id], onDelete: Restrict)
+  selectedMetricSetVersion     ActivityMetricSetVersion?          @relation(fields: [selectedMetricSetVersionId, selectedMetricSetDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "activity_selected_metric_set_fk")
+  metricCommandReceipts        ActivityMetricCommandReceipt[]
   seriesOccurrence             ActivitySeriesOccurrence?          @relation("ActivitySeriesOccurrenceActivity")
   creationCommandReceipts      ActivityCreationCommandReceipt[]   @relation("ActivityCreationCommandReceiptActivity")
   emergencyInitiation          ActivityEmergencyInitiation?       @relation("ActivityEmergencyInitiationActivity")
@@ -1628,6 +1635,7 @@ model Activity {
   @@index([organizationId])
   @@index([activityTypeCode])
   @@index([selectedTemplateVersionId])
+  @@index([selectedMetricSetVersionId, selectedMetricSetDefinitionHash], map: "activity_selected_metric_set_idx")
   @@index([startAt])
   @@index([isPublicRegistration])
   @@index([initiatorMemberId])
@@ -1731,8 +1739,10 @@ model ActivityMetricSetVersion {
 
   items ActivityMetricSetItem[]
   commandReceipts ActivityMetricCommandReceipt[]
+  selectedByActivities Activity[]
 
   @@unique([code, version])
+  @@unique([id, definitionHash], map: "activity_metric_set_id_hash_key")
   @@index([statusCode])
 }
 
@@ -1763,15 +1773,21 @@ model ActivityMetricCommandReceipt {
   resultJson    Json
   definitionId  String?
   setVersionId  String?
+  templateVersionId String?
+  activityId    String?
   createdAt     DateTime @default(now())
 
   actor      User                      @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_metric_receipt_actor_fk")
   definition ActivityMetricDefinition? @relation(fields: [definitionId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_metric_receipt_definition_fk")
   setVersion ActivityMetricSetVersion? @relation(fields: [setVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_metric_receipt_set_fk")
+  templateVersion ActivityTemplate? @relation(fields: [templateVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_metric_receipt_template_fk")
+  activity Activity? @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_metric_receipt_activity_fk")
 
   @@unique([actorUserId, operationCode, operationKey], map: "activity_metric_receipt_command_key")
   @@index([definitionId], map: "activity_metric_receipt_definition_idx")
   @@index([setVersionId], map: "activity_metric_receipt_set_idx")
+  @@index([templateVersionId], map: "activity_metric_receipt_template_idx")
+  @@index([activityId], map: "activity_metric_receipt_activity_idx")
 }
 
 model ActivityTemplateFamily {
@@ -1842,6 +1858,7 @@ model ActivityTemplate {
   family        ActivityTemplateFamily? @relation(fields: [familyId], references: [id], onDelete: Restrict)
   // Activity OS R1 / A4：仅供未来 Activity 显式选择 Version 的反向映射；A4 不接入解析或写入路径。
   selectedByActivities Activity[] @relation("ActivitySelectedTemplateVersion")
+  metricCommandReceipts ActivityMetricCommandReceipt[]
   seriesRevisions      ActivitySeriesRevision[] @relation("ActivitySeriesRevisionTemplate")
   ruleSnapshots ActivityRuleSnapshot[]
 
