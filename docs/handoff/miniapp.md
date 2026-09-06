@@ -10,7 +10,7 @@
 
 > **Activity OS R3 / C1 D2b（已合入 #1282，生产未部署）**：已有 App 选用与可选目录入口，见[选择与模板交付说明](../ops/activity-metric-selection-template-rollout.md)。专业/紧急创建省略新选择字段仍沿旧 hash，旧 V1/V2 模板不补造指标事实。成果录入未实施；v2–v6 历史合同不改。
 
-> **C1 D2c（当前分支已实现，待 PR/CI/整体复审）**：新的初发/变更审核由服务端冻结 V7，Readiness 仍完全内部、只读、gate-off。初发前先用既有 `metric-selection` 为草稿显式选择 required/not_required；已发布活动的 `change-reviews` 可选成对传 `metricSelection` 与 `expectedMetricSelectionRevision`，省略两者就是保留。不要传内部 snapshot/hash/`metricSelectionExplicit`，不要用 legacy/直发/PATCH 侧写。详见[交付说明](../ops/activity-metric-proposal-v7-rollout.md)。
+> **C1 D2c（已随 #1284 合入；生产未部署、整体复审待）**：新的初发/变更审核由服务端冻结 V7，Readiness 仍完全内部、只读、gate-off。初发前先用既有 `metric-selection` 为草稿显式选择 required/not_required；已发布活动的 `change-reviews` 可选成对传 `metricSelection` 与 `expectedMetricSelectionRevision`，省略两者就是保留。不要传内部 snapshot/hash/`metricSelectionExplicit`，不要用 legacy/直发/PATCH 侧写。详见[交付说明](../ops/activity-metric-proposal-v7-rollout.md)。PR CI、可信审批与合并后 main CI 已通过。
 
 小程序消费 **`/api/app/v1/*`**(队员**本人视角**),不是 admin 面。后端语义锁(`api-surface-policy.md §9`):
 

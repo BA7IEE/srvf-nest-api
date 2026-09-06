@@ -398,22 +398,23 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 
 > **⑨ C1 D2a 当前更新**：两条指标状态机已接入 Human writer、专属错误码与同事务审计/收据；
 > 移除两处 `no-runtime-writer`。总条目及 inventory/governed 分布不变，不借此升级 governed。
-> D2b 活动/模板选择与 D2c v7/Readiness 仍未实施。
+> D2b 活动/模板选择已实施；D2c 当时尚未实施，最终收口状态见⑪。
 
-> **⑩ C1 D2b 当前更新（2026-09-06，分支实施中）**：`ActivityTemplate.statusCode`
+> **⑩ C1 D2b 当前更新（2026-09-06，实施时点）**：`ActivityTemplate.statusCode`
 > 已有 Human GLOBAL V3 writer、同事务审计/收据及 `ACTIVITY_METRIC_STATUS_INVALID`；
 > 登记 `(create) → draft → active → retired`，移除该条 `no-service-writer` 与
 > `no-wrong-state-bizcode`，保留 `conditional-legacy-scope`，不升级 governed。
 > `ActivityTemplateFamily` 只接入“随 V3 创建 active 全局 Family”，无 Family 生命周期管理，
 > 其闭集和迁移边仍未声明。总条目 65、governed/inventory 8/57 均不变；
 > 下方 2026-09-05 直方图为历史取数，不能当作 D2b 后的当前值。
-> 活动选择、模板 V3 已有实施及定向验证，不等于 D2b 整体交付：options 和最终契约尚待收口，
-> D2c 的 v7/Readiness 仍未实施。详见 `docs/ops/activity-metric-selection-template-rollout.md`。
+> 活动选择、模板 V3 已有实施及定向验证；D2b 的最终收口与之后 D2c 的实现状态均见⑪，
+> 不以本条历史取数替代交付证据。详见 `docs/ops/activity-metric-selection-template-rollout.md`。
 
-> **⑪ C1 D2c 当前更新（当前分支待 PR/CI/整体复审）**：V7 审核仅在既有 Activity 根事务中锁后复验
+> **⑪ C1 D2c 收口更新（#1284 已合；整体复审待）**：V7 审核仅在既有 Activity 根事务中锁后复验
 > `ActivityMetricSetVersion` 与定义闭包；显式选择要求 active，已发布活动省略选择时才可解释历史 retired
 > 引用。它不写指标集 `statusCode`、不增加状态边、不改变两条 inventory/governed 读数。内部 Readiness
-> 只读识别 V3 与当前选择语义，也不成为状态机 writer 或发布 Gate。⑧–⑩ 是当时的历史取数，现以本条为准。
+> 只读识别 V3 与当前选择语义，也不成为状态机 writer 或发布 Gate。PR CI、可信审批和合并后 main CI 已通过；
+> 整体跨模型复审仍待统一完成。⑧–⑩ 是当时的历史取数，现以本条为准。
 
 blocker 直方图(2026-09-05 现算;含 A3 future-Version 条件生命周期、A7、B6 D2 与 C1 D1):`no-wrong-state-bizcode` 30 ·
 `no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·
