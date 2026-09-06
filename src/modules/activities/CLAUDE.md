@@ -1,15 +1,15 @@
 # activities — 本地铁律
 
-## C1 D2b 当前实施边界（本分支未合并）
+## C1 D2b 当前实施边界（已合入 #1282，生产未部署）
 
 Activity 三态选择、Template V3、Human GLOBAL 模板维护、App 可新选 options 和五条物化链
-已在本分支实现；交付、排错及生产限制见 [`activity-metric-selection-template-rollout.md`](../../../docs/ops/activity-metric-selection-template-rollout.md)。
+已随 #1282 合入 `f5b5b226`；交付、排错及生产限制见 [`activity-metric-selection-template-rollout.md`](../../../docs/ops/activity-metric-selection-template-rollout.md)。
 新选择为 required/not_required，旧活动保持 unconfigured/revision=0；历史退役引用仍可解释，不能新选。
 V3 在同一事务、锁等待后重读当前身份/权限/Family/指标闭包；Quick 审计透传该当前身份，
 V1/V2 保留既有 hash/重放行为。App options 只校验当前队员发起组织资格，不隐含 GLOBAL 目录权。
 每目录最多 1000 候选，1001 明确 20183/409；完整 grammar/hash/active 闭包过滤先于分页和 total，
 只读事务固定同一快照，不缓存资格、不返回配置/表单全文。
-既有 activity.update.record 的业务说明及 6→8 管辖面基线已按精确授权同步；组织资格属主原语扩展已获批准并实现，3b/4b 已于 2026-09-06 按维护者确认重签；PR CI 与合并未完成。
+既有 activity.update.record 的业务说明及 6→8 管辖面基线已按精确授权同步；组织资格属主原语扩展已获批准并实现，3b/4b 已于 2026-09-06 按维护者确认重签；18 项 PR 检查、可信审批、合并及 main CI 均完成。
 D2c v7/Readiness 和成果值未实施，不解除 METRIC_SET_UNREPRESENTABLE，不代表生产上线或 C1 完成。
 
 ## C1 D2a 当前目录边界

@@ -8,7 +8,7 @@
 
 ## 1. App surface 模型(和 admin 完全不同,先读铁律)
 
-> **Activity OS R3 / C1 D2b（本分支已实现，尚未合并或生产部署）**：已有 App 选用与可选目录入口，见[选择与模板交付说明](../ops/activity-metric-selection-template-rollout.md)。专业/紧急创建省略新选择字段仍沿旧 hash，旧 V1/V2 模板不补造指标事实。成果录入、v7 与 Readiness 接入未实施；v6 指标指针为 null 的历史合同不改，不解除 blocker，不展示为已上线功能。
+> **Activity OS R3 / C1 D2b（已合入 #1282，生产未部署）**：已有 App 选用与可选目录入口，见[选择与模板交付说明](../ops/activity-metric-selection-template-rollout.md)。专业/紧急创建省略新选择字段仍沿旧 hash，旧 V1/V2 模板不补造指标事实。成果录入、v7 与 Readiness 接入未实施；v6 指标指针为 null 的历史合同不改，不解除 blocker，不展示为已上线功能。
 
 小程序消费 **`/api/app/v1/*`**(队员**本人视角**),不是 admin 面。后端语义锁(`api-surface-policy.md §9`):
 
@@ -18,7 +18,7 @@
 - **capability ≠ raw RBAC**:`GET /api/app/v1/me/capabilities` 返**产品级**能力，不返 raw 权限码。活动新增入口提示为 `activities.canInitiateActivity` / `canDirectPublishOwnActivity`，管理提示为 `managed.canViewManagedActivities` / `canManageManagedRegistrations` / `canSubmitManagedAttendance` / `canReviewActivityPublication` / `canFirstReviewAttendance` / `canFinalReviewAttendance`；它们都不能证明某一活动或组织最终可操作。
 - **L3 永不回**:App 永不返 `passwordHash` / `refreshToken` / `secretKey*` / 完整 signed URL。
 
-### C1 D2b 指标选择与模板 options（未合并/未部署）
+### C1 D2b 指标选择与模板 options（已合入 #1282/未部署）
 
 先确定要发起的组织，再读 managed 前缀下的 `metric-set-options` / `template-version-options`。
 它们按当前 App 队员的组织发起资格过滤，不依赖全局目录读权；不能用 Admin 目录替代。

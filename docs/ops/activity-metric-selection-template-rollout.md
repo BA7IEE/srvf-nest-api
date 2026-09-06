@@ -1,11 +1,11 @@
 # C1 D2b 活动指标选择与 Template V3 交付、验证及回退
 
-状态：本分支实施中，尚未合并；本文不是生产执行授权。D2a 已交付的目录沿用
+状态：已随 [#1282](https://github.com/BA7IEE/srvf-nest-api/pull/1282) 合入 `f5b5b226`；最终 PR HEAD `1ceaedac`，18 项检查与可信红区审批通过，[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34030385503) 通过。本文不是生产执行授权。D2a 已交付的目录沿用
 [`activity-metric-catalogue-rollout.md`](activity-metric-catalogue-rollout.md)。
 本步依据冻结的 [`C1 D2b 实施清单`](../archive/plans/activity-os-r3-c1-d2b-implementation-plan.md)，
 实施授权以维护者后续确认及精确写集为准，冻结稿中的历史“待授权”状态不回改。
 
-## 当前未闭合的交付门
+## D2b 交付证据与后续边界
 
 - 两项补充方案 A 已获维护者确认并实施：两个 App options 先校验当前队员对目标组织的
   发起资格，候选上限 1000，超限明确返回 20183/409；完整可新选过滤先于分页和 total。
@@ -15,7 +15,7 @@
 - 12 操作的 OpenAPI、六个 surface 的客户端及交接文档已同步，contract 的
   1016 项测试和两个 snapshot 通过。组织资格原语改造、权限说明联动及生成物刷新后，
   最终 quick 退出 0：缓存 lint、typecheck、harness 通过，unit 为 323 套、7425 通过、
-  0 失败、5 todo。本次五个变动 TS 文件的无缓存定向 lint 也通过；完整 CI 冷跑仍待执行。
+  0 失败、5 todo。实施阶段五个变动 TS 文件及最终三份旧测试的无缓存定向 lint 均通过；最终 PR CI 五个 E2E 分片全部通过。
 - 2026-09-06 维护者的两条精确授权已包含旧码说明联动；现已补充
   `activity.update.record` 指标选择的 businessDescription，并由生成器同步其 6→8 管辖面
   及两条新模板码的派生权限基线。三文件权限定向测试 22 项通过；基线 diff 仅这三条码。
@@ -33,12 +33,22 @@
   后续四套真实 PostgreSQL 回归 48 项通过，含 A7 在调用者事务内看到未提交的组织停用/软删，
   以及旧 A7 系列生成、V3 身份、五条创建兼容和锁等待竞态；组织测试修改均回滚。
   最终 contract 1016 项及两个 snapshot、build、12 项 docs 检查和 FROZEN 派生闸均通过。
-- 3b/4b 已于 2026-09-06 按维护者确认重签；可信红区审批及 PR CI 尚未收口。
-  本地定向测试通过不代替完整 CI 或明确合并许可。
-- D2c 的新提案 v7、成果登记及指标发布语义未实施。
+- 3b/4b 已于 2026-09-06 按维护者确认重签；最终 PR CI、可信红区审批及明确合并许可均已闭合。
+  PR CI run 34028624264、可信审批 run 34028623344、Docker smoke run 34028624236 均成功。
+- D2c 的新提案 v7/Readiness 未实施；成果登记属 C2/C3，不纳入 D2c。
   Readiness 的 `METRIC_SET_UNREPRESENTABLE` 仍保留；D2b 不代表 C1 整体完成。
 
 ### 维护者已确认重签的核对值（2026-09-06）
+
+最终 CI 曾有两类问题，均已按独立批准处理后复跑成功：R11 把新增 optional metricSelection
+下的 required 子字段误判为旧请求必填，最小复现确认 14 条 finding；fragment 加两条精确
+误报申报，未改比较器、DTO 或旧契约。三份旧 E2E 则遗漏新 FK 的清理适配及跨版本默认列：
+按批准补测试清理 CASCADE，D1 rehearsal 先保留 109→110 原整行等式，再验证 110→112
+旧字段不变和四个新默认值、112 重放整行不变；没有删除测试或放宽行为断言。
+三套本地 57/57 通过，最终 PR CI 五分片通过；实际写集 127 / 已授权 134，越界 0。
+
+以上只记录 D2b 完成交付。后续 [D2c 实施与授权清单](../archive/plans/activity-os-r3-c1-d2c-implementation-plan.md)
+仅已批准起草，v7 与 Readiness 的实施、测试库重建和生产均不由本页授权。
 
 - 3b：第 112 条 `20260906114906_activity_os_r3_c1_metric_selection_template_v3`，
   SQL SHA-256 `7d033165ee7a786c826c49965095be34ffb1722f1d06c624defee82581b5bbbb`。
@@ -143,7 +153,7 @@ contract 与 E2E 不并行；不运行会创建其他 worker/scratch 库的历�
 
 ## 上线与回退硬门
 
-先关闭本节顶部全部交付门，再收集迁移审查、真实 3b/4b、可信审批、CI、明确合并证据。
+D2b 的迁移审查、真实 3b/4b、可信审批、CI 和明确合并证据已齐。阶段性跨模型复审按维护者要求延后至整体完成后，尚未取得独立结论，不记为通过。
 生产部署和首批内容/人员授码仍是独立授权，不由本说明、测试库 deploy 或合并自动授予。
 不新增或自动开启任何 Gate，不执行生产初始化、回填或批量改写。
 
