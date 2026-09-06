@@ -1,6 +1,6 @@
 # C1 D2a 指标目录交付、初始化与回退
 
-状态：D2a 当前分支在制，尚未合并或生产部署。生产 migration、首批内容与人员授码须单独审批。
+状态：D2a 已随 [#1280](https://github.com/BA7IEE/srvf-nest-api/pull/1280) 合入 `48aae003`，PR 与合并后 main CI 均通过；生产尚未部署。生产 migration、首批内容与人员授码须单独审批。
 不新增 Gate；已有 Activity OS 控制面和其他生产开关不变。D2b/D2c 尚未实施。
 
 ## 入口与可达性

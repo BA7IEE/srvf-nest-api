@@ -189,15 +189,21 @@ v2–v6 不回改，D1 完成不等于 C1 完成。D1 的三表、纯函数及�
 跨模型复审据此延后到整体实现完成后统一执行，当前未取得有效独立结论，不记为通过或永久豁免。
 D1 本地单测、220 项定向 E2E、contract 与构建已通过；最终 CI 五个分片均通过。首次 B6 创建
 HTTP 500 在原样本地 30 项及最终 CI 分片 1244 项中未复现，根因未定位，不记作已修复或误报；证据留在 #1278。
-D2 的外部契约与实施范围仍须另行拍板，生产边界不变。
+D2 外部契约方案 A 已批准，D2a 已合入；D2b/D2c 仍须各自实施拍板，生产边界不变。
 
-**C1 D2 方案 A 已批准；D2a implementation 已授权，当前分支在制，尚未合并**：见
+**C1 D2 方案 A 已批准；D2a 已交付并合入 #1280，C1 整体未完成**：见
 [`activity-os-r3-c1-d2-metric-catalogue-selection-review.md`](../archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md)。
 方案 A 按目录维护 → 活动选择/Template V3 与最小 Human 模板维护 → v7/Readiness 串行交付。
 D2a 授权覆盖目录十二端点、命令收据、三权限、两审计事件及 RBAC 可选事务参数；
 补充批准旧 D1 显式清理收据表和三码治理联动。具体写集见
 [`D2a 实施清单`](../archive/plans/activity-os-r3-c1-d2a-implementation-plan.md)。
-3b/4b 已获维护者 2026-09-06 确认重签；CI、可信红区审批及合并仍待满足；D2b/D2c implementation 未授权，C1 仍未完成。
+第 111 条 migration、250 权限、Audit 159 总计 / 154 活跃已随
+[#1280](https://github.com/BA7IEE/srvf-nest-api/pull/1280) 合入 `48aae003`；
+3b/4b 重签、18 项 PR 检查、可信红区审批及[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34009172243)均通过。
+app_test 已验证，不代表生产部署、正式目录初始化或人员授码；整体跨模型复审仍延后。
+维护者已批准本次台账更正与起草 [D2b 实施及授权清单](../archive/plans/activity-os-r3-c1-d2b-implementation-plan.md)：
+三态选择、Template V3、最小 Human 模板维护及真实调用链已列入候选精确写集；
+D2b/D2c implementation 尚未授权，C1 仍未完成。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -271,9 +277,10 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | landed · P1-33 | Release 2 / B6 三种创建 API；方案 A 的 D1 数据地基与 D2 三种完整创建、紧急召集流程已分别随 #1270/#1272 合入，评审稿冻结不回改；不代表生产部署 |
 | `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用 |
-| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 方案 A 的 D1 数据地基已随 #1278 合入并验证；D2 接入仍待独立评审与实施，C1 未完成，原冻结稿不回改 |
-| `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md` | open · P1-33 | C1 D2 方案 A 已批准；D2a implementation 在制未合并，D2b/D2c implementation 未授权，C1 未完成 |
-| `docs/archive/plans/activity-os-r3-c1-d2a-implementation-plan.md` | open · P1-33 | D2a 指标目录 Human 管理闭环实施清单已批准，含 RBAC 事务参数、测试清理与三码治理联动扩展；3b/4b 已确认重签，实施在制，CI 与合并待收口 |
+| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 的 D1 已随 #1278 合入；D2 方案 A 已批准且 D2a 已随 #1280 合入，D2b/D2c implementation 未授权，C1 未完成，原冻结稿不回改 |
+| `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md` | open · P1-33 | C1 D2 方案 A 已批准；D2a 已随 #1280 合入并验证，D2b 实施清单已起草但 implementation 未授权，D2c 未实施，C1 未完成 |
+| `docs/archive/plans/activity-os-r3-c1-d2a-implementation-plan.md` | landed · P1-33 | D2a Human 目录维护、收据、RBAC 事务参数及获批清理/治理扩展已随 #1280 合入；3b/4b、18 项 PR 检查、可信审批和 main CI 均通过，不代表生产部署；冻结稿不回改 |
+| `docs/archive/plans/activity-os-r3-c1-d2b-implementation-plan.md` | open · P1-33 | D2b 三态选择、Template V3、最小 Human 模板维护及五条物化链的实施/精确授权清单；本次仅起草，implementation、测试库、签字、合并和生产均未授权 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
