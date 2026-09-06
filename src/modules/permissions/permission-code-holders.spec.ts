@@ -118,12 +118,14 @@ const UNWIRED_RESERVED_PERMISSION_CODES: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
-// ③ 维护者批准 C1 D2a：可由人工授予自定义角色，但 seed 不向内建角色分配。
-// 只列这三条；不能按 CUSTOM_ROLE_ALLOWED 全量豁免。真实授码/撤码验证在 D2a HTTP E2E。
+// ③ 维护者批准 C1 D2a/D2b：精确五条可人工授予自定义角色，seed 不分配。
+// 不按 CUSTOM_ROLE_ALLOWED 或前缀全量豁免。
 const MANUALLY_ASSIGNED_PERMISSION_CODES = new Set([
   'activity-metric.read.catalog',
   'activity-metric.manage.definition',
   'activity-metric.manage.set',
+  'activity-template.read.catalog',
+  'activity-template.manage.version',
 ]);
 
 /** 唯一豁免口 = ① ∪ ② ∪ 已批准的精确人工授码清单。 */
@@ -132,12 +134,14 @@ const isExempt = (code: string): boolean =>
   UNWIRED_RESERVED_PERMISSION_CODES.has(code) ||
   MANUALLY_ASSIGNED_PERMISSION_CODES.has(code);
 
-describe('C1 D2a 人工授码例外边界', () => {
-  it('仅三码例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
+describe('C1 D2a/D2b 人工授码例外边界', () => {
+  it('仅五条精确例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
     expect([...MANUALLY_ASSIGNED_PERMISSION_CODES].sort()).toEqual([
       'activity-metric.manage.definition',
       'activity-metric.manage.set',
       'activity-metric.read.catalog',
+      'activity-template.manage.version',
+      'activity-template.read.catalog',
     ]);
     for (const code of MANUALLY_ASSIGNED_PERMISSION_CODES) {
       expect(PERMISSION_UNIVERSE.has(code)).toBe(true);
@@ -153,6 +157,7 @@ describe('C1 D2a 人工授码例外边界', () => {
     expect(isExempt('org.create.node')).toBe(false);
     expect(isExempt('activity-metric.manage.future')).toBe(false);
     expect(isExempt('activity-metric.read.future')).toBe(false);
+    expect(isExempt('activity-template.manage.future')).toBe(false);
   });
 });
 

@@ -8,7 +8,7 @@
 
 ## 1. App surface 模型(和 admin 完全不同,先读铁律)
 
-> **Activity OS R3 / C1 D1（内部地基，生产未部署）**：指标定义与集版本尚无 App 选用或成果录入端点；不返回新字段，不改变 v6 指标指针为 null 的合同，也不解除 Readiness blocker。不要展示为已上线功能，D2 接入与 C2/C3 成果链仍待独立实施。
+> **Activity OS R3 / C1 D2b（本分支已实现，尚未合并或生产部署）**：已有 App 选用与可选目录入口，见[选择与模板交付说明](../ops/activity-metric-selection-template-rollout.md)。专业/紧急创建省略新选择字段仍沿旧 hash，旧 V1/V2 模板不补造指标事实。成果录入、v7 与 Readiness 接入未实施；v6 指标指针为 null 的历史合同不改，不解除 blocker，不展示为已上线功能。
 
 小程序消费 **`/api/app/v1/*`**(队员**本人视角**),不是 admin 面。后端语义锁(`api-surface-policy.md §9`):
 
@@ -17,6 +17,19 @@
 - **`/me` vs `/my`**:`/me/*` = 身份/账号/资料/能力;`/my/*` = 本人持有的业务记录。别混。
 - **capability ≠ raw RBAC**:`GET /api/app/v1/me/capabilities` 返**产品级**能力，不返 raw 权限码。活动新增入口提示为 `activities.canInitiateActivity` / `canDirectPublishOwnActivity`，管理提示为 `managed.canViewManagedActivities` / `canManageManagedRegistrations` / `canSubmitManagedAttendance` / `canReviewActivityPublication` / `canFirstReviewAttendance` / `canFinalReviewAttendance`；它们都不能证明某一活动或组织最终可操作。
 - **L3 永不回**:App 永不返 `passwordHash` / `refreshToken` / `secretKey*` / 完整 signed URL。
+
+### C1 D2b 指标选择与模板 options（未合并/未部署）
+
+先确定要发起的组织，再读 managed 前缀下的 `metric-set-options` / `template-version-options`。
+它们按当前 App 队员的组织发起资格过滤，不依赖全局目录读权；不能用 Admin 目录替代。
+超过 1000 候选返回 20183/409，应提示联系管理员整理目录，不自动重试或通过增大 pageSize 绕过。
+模板选项只供展示和选择精确版本，不提供定义/表单原文；敏感题目仍须逐题审批。
+
+活动详情用 `GET/PUT /api/app/v1/my/managed-activities/:activityId/metric-selection`。
+选择先读 revision，再发完整命令；unconfigured 表示尚未配置，not_required 是明确决定不要求指标。
+20175 应刷新后让用户重新决策，20176 不要自动换 key；成功重放不代表资源当前状态，需重新 GET。
+`selectable` 只说明这个选择现在可否新用，不代表有修改权限、已完成成果或允许发布。
+专业/紧急创建只有显式提供选择时才进入新分支；Quick 从精确 V3 模板取得选择，不能另外覆盖。
 
 ### Activity OS R2 / B6 D2：三种受控创建（生产未部署）
 

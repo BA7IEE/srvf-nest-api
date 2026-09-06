@@ -57,6 +57,8 @@ export const SEED_PERMISSION_CODES: readonly string[] = Object.freeze([
   'activity-responsibility.override.record',
   'activity-review.read.request',
   'activity-review.return.request',
+  'activity-template.manage.version',
+  'activity-template.read.catalog',
   'activity.cancel.record',
   'activity.complete.record',
   'activity.create.cross-org',

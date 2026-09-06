@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(250 条,按一级域分组)
+### 权限码全集(252 条,按一级域分组)
 
 > 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert + 角色映射) + `src/modules/permissions/permission-catalog.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -65,6 +65,7 @@
 | `team-join-cycle` | 3 | `team-join-cycle.create.record` · `team-join-cycle.read.record` · `team-join-cycle.update.record` |
 | `wechat-setting` | 3 | `wechat-setting.read.singleton` · `wechat-setting.reset.credentials` · `wechat-setting.update.singleton` |
 | `activity-review` | 2 | `activity-review.read.request` · `activity-review.return.request` |
+| `activity-template` | 2 | `activity-template.manage.version` · `activity-template.read.catalog` |
 | `announcement-import` | 2 | `announcement-import.execute.record` · `announcement-import.preview.record` |
 | `member-insurance` | 2 | `member-insurance.read.other` · `member-insurance.review.record` |
 | `member-portrait` | 2 | `member-portrait.manage.record` · `member-portrait.read.history` |
@@ -73,7 +74,7 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### 角色 → 权限码覆盖(15 个内建角色;238/250 条码有持有人)
+### 角色 → 权限码覆盖(15 个内建角色;238/252 条码有持有人)
 
 > 权威源:`prisma/seed.ts` 导出的 `RBAC_SEED_CATALOG.roles`。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 「零持有」= 没有任何内建角色持有该码,只有 SUPER_ADMIN 短路可用;是否合规由
@@ -98,7 +99,7 @@
 | `activity-publish-reviewer` | 3 | `activity-review.read.request` · `activity-review.return.request` · `activity.publish.record` |
 | `activity-cross-org-initiator` | 1 | `activity.create.cross-org` |
 
-#### 零持有权限码(12 条)
+#### 零持有权限码(14 条)
 
 | 权限码 |
 |---|
@@ -106,6 +107,8 @@
 | `activity-metric.manage.set` |
 | `activity-metric.read.catalog` |
 | `activity-responsibility.override.record` |
+| `activity-template.manage.version` |
+| `activity-template.read.catalog` |
 | `activity.create.emergency.record` |
 | `member.delete.record` |
 | `realname-setting.reset.credentials` |
@@ -115,12 +118,12 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(112 个 @Controller)
+### controller × surface 对照(115 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(51 个 controller)
+#### admin/v1(53 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -133,6 +136,7 @@
 | `admin/v1` | `src/modules/role-bindings/role-bindings.controller.ts` |
 | `admin/v1` | `src/modules/supervision-assignments/supervision-assignments.controller.ts` |
 | `admin/v1/activities` | `src/modules/activities/activities.controller.ts` |
+| `admin/v1/activities` | `src/modules/activities/controllers/admin-activity-metric-selection.controller.ts` |
 | `admin/v1/activities` | `src/modules/activities/controllers/admin-activity-positions.controller.ts` |
 | `admin/v1/activities/:activityId` | `src/modules/activities/controllers/admin-activity-participation.controller.ts` |
 | `admin/v1/activities/:activityId` | `src/modules/activity-feedbacks/controllers/admin-activity-feedbacks.controller.ts` |
@@ -143,6 +147,7 @@
 | `admin/v1/activity-metric-definitions` | `src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts` |
 | `admin/v1/activity-metric-sets` | `src/modules/activities/controllers/admin-activity-metric-sets.controller.ts` |
 | `admin/v1/activity-publish-reviews` | `src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts` |
+| `admin/v1/activity-template-versions` | `src/modules/activities/controllers/admin-activity-template-versions.controller.ts` |
 | `admin/v1/attachments` | `src/modules/attachments/attachments.controller.ts` |
 | `admin/v1/attendance-settlements` | `src/modules/activities/controllers/admin-attendance-settlements.controller.ts` |
 | `admin/v1/attendance-sheets` | `src/modules/attendances/attendances.controller.ts` |
@@ -176,7 +181,7 @@
 | `admin/v1/team-join/cycles` | `src/modules/team-join/team-join-cycles.controller.ts` |
 | `admin/v1/users` | `src/modules/users/users.controller.ts` |
 
-#### app/v1(32 个 controller)
+#### app/v1(33 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -200,6 +205,7 @@
 | `app/v1/my/activity-invitations` | `src/modules/activity-registrations/controllers/app-my-activity-invitations.controller.ts` |
 | `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activities.controller.ts` |
 | `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activity-creation.controller.ts` |
+| `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activity-metrics.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-onsite-participations.controller.ts` |

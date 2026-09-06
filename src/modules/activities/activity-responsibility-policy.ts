@@ -48,7 +48,7 @@ export class ActivityResponsibilityPolicy {
       });
       if (owner) return;
     }
-    await this.assertOverride(activityId, user);
+    await this.assertOverride(activityId, user, tx);
   }
 
   async assertInitiatorOrOverride(
@@ -63,14 +63,20 @@ export class ActivityResponsibilityPolicy {
       });
       if (activity) return;
     }
-    await this.assertOverride(activityId, user);
+    await this.assertOverride(activityId, user, tx);
   }
 
-  async assertOverride(activityId: string, user: CurrentUserPayload): Promise<void> {
-    const decision = await this.authz.explain(user, 'activity-responsibility.override.record', {
-      type: 'activity',
-      id: activityId,
-    });
+  async assertOverride(
+    activityId: string,
+    user: CurrentUserPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const decision = await this.authz.explain(
+      user,
+      'activity-responsibility.override.record',
+      { type: 'activity', id: activityId },
+      tx,
+    );
     if (!decision.allow) {
       throw new BizException(
         decision.reason === 'resource_not_found'

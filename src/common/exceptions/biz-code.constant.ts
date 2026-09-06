@@ -1870,6 +1870,56 @@ export const BizCode = {
     message: '指标命令收据校验失败',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_METRIC_SELECTION_INVALID: {
+    code: 20174,
+    message: '活动指标选择无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_METRIC_SELECTION_STALE: {
+    code: 20175,
+    message: '活动指标选择已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_SELECTION_COMMAND_CONFLICT: {
+    code: 20176,
+    message: '此操作标识已用于其他指标选择',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_SELECTION_RECEIPT_INVALID: {
+    code: 20177,
+    message: '活动指标选择收据无效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TEMPLATE_DEFINITION_INVALID: {
+    code: 20178,
+    message: '模板定义无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_TEMPLATE_VERSION_NOT_FOUND: {
+    code: 20179,
+    message: '模板版本不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_TEMPLATE_VERSION_ALREADY_EXISTS: {
+    code: 20180,
+    message: '模板族或版本已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TEMPLATE_VERSION_STALE: {
+    code: 20181,
+    message: '模板版本已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TEMPLATE_COMMAND_CONFLICT: {
+    code: 20182,
+    message: '此操作标识已用于其他模板命令',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
+    code: 20183,
+    message: '可选目录候选数量超过安全上限，请联系管理员整理目录',
+    httpStatus: HttpStatus.CONFLICT,
+  },
 
   // ===== 归档动作的两套开工条件(§6.6 / AC-004 / AC-064;2026-08-25 拍板)=====
   //

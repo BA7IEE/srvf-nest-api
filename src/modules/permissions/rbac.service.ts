@@ -211,9 +211,10 @@ export class RbacService {
   async getRoleIdsWithPermission(
     roleIds: readonly string[],
     permissionCode: string,
+    tx?: Prisma.TransactionClient,
   ): Promise<Set<string>> {
     if (roleIds.length === 0) return new Set();
-    const rows = await this.prisma.rolePermission.findMany({
+    const rows = await (tx ?? this.prisma).rolePermission.findMany({
       where: {
         roleId: { in: [...roleIds] },
         role: { deletedAt: null },

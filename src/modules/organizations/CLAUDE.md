@@ -10,6 +10,10 @@
 
 ## Local facts
 
+- **C1 D2b 组织资格属主原语**：`getActivityOrganizationEligibility(tx, id)` 仅返回
+  eligible/missing/inactive/root，按不存在（含软删）→停用→根节点顺序判定；只查调用者事务，
+  不另开事务、不取隐式锁、不缓存、不返回组织行。既有 `isActivityOrganizationResolvable`
+  复用同一判定但仍只返回 boolean。活动 A7 调用原因接口映射原有错误码，不在活动域复制组织谓词。
 - membership 计数与删除保护只接受当前有效任期(`ACTIVE + startedAt<=now + endedAt=null + 未软删`)；历史 ENDED / SUSPENDED 不占当前组织归属。
 - **拓扑写串行化(D-ORG,2026-07-17)**:`create/update/updateStatus/move/softDelete` 的事务在第一条 `Organization` / `OrganizationClosure` SQL 前调用 `lockOrganizationTopology(tx)`，共用固定 namespace `srvf:organizations:topology:v1` 派生的 signed 64-bit `pg_advisory_xact_lock`；`rbac.can()` 保持事务外。`announcement-import` 在 request-wide transaction 的第一条拓扑查询前先取同一把锁，随后 `create()` 在同一事务内重入该锁。
 - **audit 留痕(review #484 G18 → NEXT_TASKS P1-16,2026-07-03)**:4 个写点 inline-in-transaction 接入 `AuditLogsService`(沿 `position-assignments`/`supervision-assignments` 范式,`resourceType='organization'`):

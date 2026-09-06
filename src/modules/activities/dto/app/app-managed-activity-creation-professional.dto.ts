@@ -27,6 +27,7 @@ import {
 } from './app-managed-activity-draft.dto';
 import { ManagedRegistrationFormDefinitionInputDto } from './app-registration-form.dto';
 import { AppActivityQualificationRuleInputDto } from './app-activity-qualification-rules.dto';
+import { AppActivityMetricSelectionInputDto } from './app-activity-metric-selection.dto';
 
 export class AppProfessionalCreationSessionDto {
   @ApiProperty({
@@ -89,6 +90,16 @@ export class AppCreationQualificationRuleSetDto {
 }
 
 export class AppProfessionalActivityCreationDto extends AppActivityCreationRequestDto {
+  @ApiPropertyOptional({
+    description: '显式指标选择；省略保留 unconfigured，不改变旧请求 hash',
+    type: () => AppActivityMetricSelectionInputDto,
+  })
+  @OmittableOnly()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppActivityMetricSelectionInputDto)
+  metricSelection?: AppActivityMetricSelectionInputDto;
+
   @ApiProperty({ description: '既有活动类型字典码', minLength: 1, maxLength: 64 })
   @IsString()
   @MinLength(1)

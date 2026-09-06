@@ -19,6 +19,8 @@
 export type AuditLogEvent =
   | 'activity.metric-definition.command'
   | 'activity.metric-set.command'
+  | 'activity.metric-selection.command'
+  | 'activity.template-version.command'
   | 'profile.read.other' // admin 读他人扩展档案;extra 仅资源 id / operation / maskLevel
   | 'emergency-contact.read.other' // admin 列出他人紧急联系人;extra 仅 count / operation / maskLevel
   | 'emergency-contact.write' // PR #2 接入(emergency-contacts.service: create / update / softDelete 共 3 处)

@@ -84,6 +84,19 @@ function documented4xxCodes(operation: OpenApiOperation | undefined): number[] {
 const EXPECTED_ROUTES: ReadonlyArray<
   readonly [Lowercase<'get' | 'post' | 'put' | 'patch' | 'delete'>, string]
 > = [
+  // C1 D2b: global template versions + App initiation options + independent selection surfaces.
+  ['get', '/api/admin/v1/activity-template-versions'],
+  ['get', '/api/admin/v1/activity-template-versions/{id}'],
+  ['post', '/api/admin/v1/activity-template-versions'],
+  ['put', '/api/admin/v1/activity-template-versions/{id}/draft'],
+  ['post', '/api/admin/v1/activity-template-versions/{id}/activate'],
+  ['post', '/api/admin/v1/activity-template-versions/{id}/retire'],
+  ['get', '/api/app/v1/my/managed-activities/metric-set-options'],
+  ['get', '/api/app/v1/my/managed-activities/template-version-options'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
+  ['put', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
+  ['get', '/api/admin/v1/activities/{id}/metric-selection'],
+  ['put', '/api/admin/v1/activities/{id}/metric-selection'],
   ['get', '/api/admin/v1/activity-metric-definitions'],
   ['get', '/api/admin/v1/activity-metric-definitions/{id}'],
   ['post', '/api/admin/v1/activity-metric-definitions'],
@@ -1103,7 +1116,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 586; // C1 D2a +12 (Admin metric catalogue)
+const EXPECTED_ROUTE_COUNT = 598; // C1 D2b +12 (templates, App options, selection)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -2031,6 +2044,132 @@ describe('OpenAPI 契约快照', () => {
 
   it.each(EXPECTED_SCHEMAS)('Schema 仍存在: %s', (schemaName) => {
     expect(doc.components?.schemas?.[schemaName]).toBeDefined();
+  });
+
+  it.each([
+    ['App', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
+    ['Admin', '/api/admin/v1/activities/{id}/metric-selection'],
+  ])(
+    'C1 D2b %s selection has an independent exact request, receipt and three-state read model',
+    (surface, path) => {
+      const schemas = doc.components?.schemas ?? {};
+      const read = schemas[`${surface}ActivityMetricSelectionResponseDto`] as OpenApiSchema;
+      const receipt = schemas[`${surface}ActivityMetricSelectionResultDto`] as OpenApiSchema;
+      const command = schemas[`${surface}SelectActivityMetricSetDto`] as OpenApiSchema;
+      expect(Object.keys(read.properties ?? {}).sort()).toEqual([
+        'activityId',
+        'metricRequirementCode',
+        'metricSelectionRevision',
+        'metricSetName',
+        'metricSetPointer',
+        'selectable',
+      ]);
+      expect(read.properties?.metricRequirementCode.enum).toEqual([
+        'unconfigured',
+        'not_required',
+        'required',
+      ]);
+      expect(Object.keys(receipt.properties ?? {}).sort()).toEqual([
+        'activityId',
+        'metricRequirementCode',
+        'metricSelectionRevision',
+        'metricSetPointer',
+      ]);
+      expect(Object.keys(command.properties ?? {}).sort()).toEqual([
+        'expectedRevision',
+        'metricSelection',
+        'operationKey',
+      ]);
+      expect(command.required?.slice().sort()).toEqual([
+        'expectedRevision',
+        'metricSelection',
+        'operationKey',
+      ]);
+      expect(doc.paths[path].put?.requestBody?.content?.['application/json']?.schema?.$ref).toBe(
+        `#/components/schemas/${surface}SelectActivityMetricSetDto`,
+      );
+      expect(documented4xxCodes(doc.paths[path].put)).toEqual(
+        expect.arrayContaining([
+          BizCode.ACTIVITY_METRIC_SELECTION_INVALID.code,
+          BizCode.ACTIVITY_METRIC_SELECTION_STALE.code,
+          BizCode.ACTIVITY_METRIC_SELECTION_COMMAND_CONFLICT.code,
+          BizCode.ACTIVITY_METRIC_SELECTION_RECEIPT_INVALID.code,
+        ]),
+      );
+    },
+  );
+  it.each(['professional', 'emergency'])(
+    'C1 D2b %s adds optional App selection without changing the creation receipt',
+    (mode) => {
+      const name =
+        mode === 'professional'
+          ? 'AppProfessionalActivityCreationDto'
+          : 'AppEmergencyActivityCreationDto';
+      const schema = doc.components?.schemas?.[name] as OpenApiSchema;
+      expect(schema.properties?.metricSelection).toMatchObject({
+        allOf: [{ $ref: '#/components/schemas/AppActivityMetricSelectionInputDto' }],
+      });
+      expect(schema.required).not.toContain('metricSelection');
+      expect(schema.properties?.metricSelection.nullable).not.toBe(true);
+    },
+  );
+  it.each(['metric-set-options', 'template-version-options'])(
+    'C1 D2b %s is authenticated and documents explicit candidate overflow',
+    (name) => {
+      const operation = doc.paths[`/api/app/v1/my/managed-activities/${name}`].get;
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      expect(documented4xxCodes(operation)).toEqual(
+        expect.arrayContaining([
+          BizCode.ACTIVITY_INITIATION_ORG_FORBIDDEN.code,
+          BizCode.ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED.code,
+        ]),
+      );
+      expect(operation?.responses?.['409']).toBeDefined();
+    },
+  );
+  it('C1 D2b App options never expose full template/form/permission content and keep exact safe summaries', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const metric = schemas.AppActivityMetricSetOptionDto as OpenApiSchema;
+    const template = schemas.AppActivityTemplateVersionOptionDto as OpenApiSchema;
+    expect(Object.keys(metric.properties ?? {}).sort()).toEqual([
+      'code',
+      'definitionHash',
+      'id',
+      'name',
+      'schemaVersion',
+      'version',
+    ]);
+    expect(Object.keys(template.properties ?? {}).sort()).toEqual([
+      'activityTypeCode',
+      'code',
+      'createdAt',
+      'definitionHash',
+      'effectiveFrom',
+      'effectiveTo',
+      'family',
+      'id',
+      'name',
+      'schemaVersion',
+      'statusCode',
+      'updatedAt',
+      'version',
+    ]);
+    expect(template.properties?.schemaVersion.enum).toEqual([1, 2, 3]);
+    expect(template.properties?.statusCode.enum).toEqual(['active']);
+    expect(JSON.stringify(template)).not.toContain('Admin');
+    expect(JSON.stringify(metric)).not.toContain('Admin');
+  });
+  it('C1 D2b definition versions remain independent, with V3 adding only explicit metricSelection', () => {
+    const schemas = doc.components?.schemas ?? {};
+    for (const [version, fields] of [
+      [1, ['activity', 'sessions']],
+      [2, ['activity', 'registrationForm', 'sessions']],
+      [3, ['activity', 'metricSelection', 'registrationForm', 'sessions']],
+    ] as const) {
+      const schema = schemas[`AdminActivityTemplateDefinitionV${version}Dto`] as OpenApiSchema;
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(fields);
+      expect(schema.required?.slice().sort()).toEqual(fields);
+    }
   });
 
   it('logout OpenAPI 明确 family 撤销且成功 data=null', () => {

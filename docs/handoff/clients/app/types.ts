@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:0fde43e83d3011a782d38d88dd9752c057dc4aea29ee0ae0ecfd2ae21f86c6ed
+// inputDigest: sha256:41928153b292e6197dbc08152e81d11968817c8103fb442cc87939ec5559d33f
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -237,6 +237,44 @@ export interface AppActivityLifecycleResultDto {
   "reason"?: Record<string, unknown> | null;
 }
 
+export interface AppActivityMetricSelectionInputDto {
+  "metricRequirementCode": "not_required" | "required";
+  "metricSetPointer": AppActivityMetricSetPointerDto;
+}
+
+export interface AppActivityMetricSelectionResponseDto {
+  "activityId": string;
+  "metricRequirementCode": "unconfigured" | "not_required" | "required";
+  "metricSetPointer": AppActivityMetricSetPointerDto;
+  "metricSelectionRevision": number;
+  "metricSetName": string | null;
+  "selectable": boolean;
+}
+
+export interface AppActivityMetricSelectionResultDto {
+  "activityId": string;
+  "metricRequirementCode": "not_required" | "required";
+  "metricSetPointer": AppActivityMetricSetPointerDto;
+  "metricSelectionRevision": number;
+}
+
+export interface AppActivityMetricSetOptionDto {
+  "id": string;
+  "code": string;
+  "version": number;
+  "schemaVersion": 1;
+  "definitionHash": string;
+  "name": string;
+}
+
+export interface AppActivityMetricSetPointerDto {
+  "id": string;
+  "code": string;
+  "version": number;
+  "schemaVersion": 1;
+  "definitionHash": string;
+}
+
 export interface AppActivityPositionDto {
   "activityPositionId": string;
   "name": string;
@@ -368,6 +406,29 @@ export interface AppActivityRegistrationPreferenceCommandDto {
   "positionIds": string[];
 }
 
+export interface AppActivityTemplateFamilyOptionDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "categoryCode": string;
+}
+
+export interface AppActivityTemplateVersionOptionDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "version": number;
+  "schemaVersion": 1 | 2 | 3;
+  "definitionHash": string;
+  "statusCode": "active";
+  "activityTypeCode": string;
+  "family": AppActivityTemplateFamilyOptionDto;
+  "effectiveFrom": string;
+  "effectiveTo": string | null;
+  "createdAt": string;
+  "updatedAt": string;
+}
+
 export interface AppActivityVisitorDto {
   "visitorId": string;
   "activityId": string;
@@ -474,6 +535,7 @@ export interface AppEmergencyActivityCreationDto {
   "startAt": string;
   "endAt": string;
   "location": string;
+  "metricSelection"?: AppActivityMetricSelectionInputDto;
   "initiatorMemberId": string;
   "activityTypeCode": string;
   "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
@@ -1338,6 +1400,7 @@ export interface AppProfessionalActivityCreationDto {
   "startAt": string;
   "endAt": string;
   "location": string;
+  "metricSelection"?: AppActivityMetricSelectionInputDto;
   "activityTypeCode": string;
   "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
   "initiatorMemberId"?: string;
@@ -1418,6 +1481,12 @@ export interface AppRegistrationUploadSessionCreatedDto {
   "token": string;
   "expiresAt": string;
   "formVersion": number;
+}
+
+export interface AppSelectActivityMetricSetDto {
+  "operationKey": string;
+  "expectedRevision": number;
+  "metricSelection": AppActivityMetricSelectionInputDto;
 }
 
 export interface AppSelfProfileDto {

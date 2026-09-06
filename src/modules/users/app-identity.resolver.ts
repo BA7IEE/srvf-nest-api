@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Member, MemberStatus, User, UserStatus } from '@prisma/client';
+import { Member, MemberStatus, User, UserStatus, type Prisma } from '@prisma/client';
 import { recordAuthzAssertion } from '../../common/authz/authz-context';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../database/prisma.service';
@@ -26,13 +26,16 @@ export interface AppAccessResult {
 export class AppIdentityResolver {
   constructor(private readonly prisma: PrismaService) {}
 
-  async resolve(currentUser: CurrentUserPayload): Promise<AppAccessResult> {
+  async resolve(
+    currentUser: CurrentUserPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<AppAccessResult> {
     recordAuthzAssertion({ pattern: 'app-identity-resolve' });
     if (currentUser.memberId === null) {
       return { canUseApp: false, reason: 'MEMBER_NOT_LINKED', member: null };
     }
 
-    const member = await this.prisma.member.findUnique({
+    const member = await (tx ?? this.prisma).member.findUnique({
       where: { id: currentUser.memberId },
     });
 

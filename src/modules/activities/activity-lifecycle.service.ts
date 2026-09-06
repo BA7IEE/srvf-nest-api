@@ -17,6 +17,9 @@ import { ActivitiesService, type ActivityFullRow } from './activities.service';
 import { EvidenceSealService, type EvidenceSealResult } from './evidence-seal.service';
 import { RegistrationFormVersionService } from './registration-form-version.service';
 import { QualificationRuleSetVersionService } from './qualification-rule-set-version.service';
+import { ActivityMetricSelectionAccess } from './activity-metric-selection-access';
+import { ActivityMetricSelectionService } from './activity-metric-selection.service';
+import { readActivityMetricSelection } from './activity-metric-selection';
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -33,6 +36,10 @@ export interface ActivityCloneCommand {
 }
 
 const cloneSourceSelect = {
+  metricRequirementCode: true,
+  selectedMetricSetVersionId: true,
+  selectedMetricSetDefinitionHash: true,
+  metricSelectionRevision: true,
   id: true,
   title: true,
   activityTypeCode: true,
@@ -162,6 +169,8 @@ export class ActivityLifecycleService {
     private readonly evidenceSeal: EvidenceSealService,
     private readonly registrationForms: RegistrationFormVersionService,
     private readonly qualificationRules: QualificationRuleSetVersionService,
+    private readonly metricAccess: ActivityMetricSelectionAccess,
+    private readonly metricSelection: ActivityMetricSelectionService,
   ) {}
 
   async cancel(
@@ -343,8 +352,36 @@ export class ActivityLifecycleService {
       if (!source) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
 
       const targetOrganizationId = command.organizationId ?? source.organizationId;
+      const set = source.selectedMetricSetVersionId
+        ? await tx.activityMetricSetVersion.findFirst({
+            where: { id: source.selectedMetricSetVersionId },
+            include: {
+              items: {
+                include: { metricDefinition: true },
+                orderBy: { sortOrder: 'asc' },
+                take: 101,
+              },
+            },
+          })
+        : null;
+      let selection;
+      try {
+        selection = readActivityMetricSelection(source, set);
+      } catch (error) {
+        if (error instanceof TypeError)
+          throw new BizException(BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE);
+        throw error;
+      }
+      let actor = user;
+      const revalidateSelection = async () => {
+        actor = await this.metricAccess.current(tx, user, 'app');
+        await this.assertLifecycleAuthority(tx, current, actor);
+        await this.initiationPolicy.resolveInitiator(actor, targetOrganizationId, undefined, tx);
+        return actor;
+      };
+      if (selection) await revalidateSelection();
       const initiatorMemberId = await this.initiationPolicy.resolveInitiator(
-        user,
+        actor,
         targetOrganizationId,
         undefined,
         tx,
@@ -407,6 +444,17 @@ export class ActivityLifecycleService {
         },
         select: cloneCreatedAuditSelect,
       });
+
+      if (selection)
+        await this.metricSelection.initializeWithinTransaction({
+          tx,
+          activityId: created.id,
+          selection,
+          actor,
+          meta: auditMeta,
+          source: 'clone',
+          revalidate: revalidateSelection,
+        });
 
       const sessionIds = new Map<string, string>();
       const positionIds = new Map<string, string>();
@@ -482,8 +530,8 @@ export class ActivityLifecycleService {
       await this.auditRecorder.logClone({
         sourceActivityId: source.id,
         created,
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
+        actorUserId: actor.id,
+        actorRoleSnap: actor.role,
         auditMeta,
         tx,
       });

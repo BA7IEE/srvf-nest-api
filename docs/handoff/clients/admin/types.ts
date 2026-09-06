@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:0fde43e83d3011a782d38d88dd9752c057dc4aea29ee0ae0ecfd2ae21f86c6ed
+// inputDigest: sha256:41928153b292e6197dbc08152e81d11968817c8103fb442cc87939ec5559d33f
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -337,6 +337,35 @@ export interface AdminActivityMetricDefinitionResponseDto {
   "updatedAt": string;
 }
 
+export interface AdminActivityMetricSelectionInputDto {
+  "metricRequirementCode": "not_required" | "required";
+  "metricSetPointer": AdminActivityMetricSetPointerDto;
+}
+
+export interface AdminActivityMetricSelectionResponseDto {
+  "activityId": string;
+  "metricRequirementCode": "unconfigured" | "not_required" | "required";
+  "metricSetPointer": AdminActivityMetricSetPointerDto;
+  "metricSelectionRevision": number;
+  "metricSetName": string | null;
+  "selectable": boolean;
+}
+
+export interface AdminActivityMetricSelectionResultDto {
+  "activityId": string;
+  "metricRequirementCode": "not_required" | "required";
+  "metricSetPointer": AdminActivityMetricSetPointerDto;
+  "metricSelectionRevision": number;
+}
+
+export interface AdminActivityMetricSetPointerDto {
+  "id": string;
+  "code": string;
+  "version": number;
+  "schemaVersion": 1;
+  "definitionHash": string;
+}
+
 export interface AdminActivityMetricSetResponseDto {
   "id": string;
   "code": string;
@@ -354,6 +383,78 @@ export interface AdminActivityMetricSetResponseDto {
 export interface AdminActivityMetricVersionCommandDto {
   "operationKey": string;
   "expectedDefinitionHash": string;
+}
+
+export interface AdminActivityTemplateDefinitionV1Dto {
+  "activity": AdminTemplateActivityDefinitionDto;
+  "sessions": AdminTemplateSessionDefinitionDto[];
+}
+
+export interface AdminActivityTemplateDefinitionV2Dto {
+  "activity": AdminTemplateActivityDefinitionDto;
+  "sessions": AdminTemplateSessionDefinitionDto[];
+  "registrationForm": AdminTemplateRegistrationFormDto;
+}
+
+export interface AdminActivityTemplateDefinitionV3Dto {
+  "activity": AdminTemplateActivityDefinitionDto;
+  "sessions": AdminTemplateSessionDefinitionDto[];
+  "registrationForm": AdminTemplateRegistrationFormDto;
+  "metricSelection": AdminActivityMetricSelectionInputDto;
+}
+
+export interface AdminActivityTemplateFamilySummaryDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "categoryCode": string;
+}
+
+export interface AdminActivityTemplateVersionCommandDto {
+  "operationKey": string;
+  "expectedDefinitionHash": string;
+}
+
+export interface AdminActivityTemplateVersionCommandResultDto {
+  "id": string;
+  "code": string;
+  "version": number;
+  "schemaVersion": 3;
+  "statusCode": "draft" | "active" | "retired";
+  "definitionHash": string;
+}
+
+export interface AdminActivityTemplateVersionResponseDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "version": number;
+  "schemaVersion": 1 | 2 | 3;
+  "definitionHash": string;
+  "statusCode": "draft" | "active" | "retired";
+  "activityTypeCode": string;
+  "family": AdminActivityTemplateFamilySummaryDto;
+  "effectiveFrom": string;
+  "effectiveTo": string | null;
+  "createdAt": string;
+  "updatedAt": string;
+  "definition": AdminActivityTemplateDefinitionV1Dto | AdminActivityTemplateDefinitionV2Dto | AdminActivityTemplateDefinitionV3Dto;
+}
+
+export interface AdminActivityTemplateVersionSummaryDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "version": number;
+  "schemaVersion": 1 | 2 | 3;
+  "definitionHash": string;
+  "statusCode": "draft" | "active" | "retired";
+  "activityTypeCode": string;
+  "family": AdminActivityTemplateFamilySummaryDto;
+  "effectiveFrom": string;
+  "effectiveTo": string | null;
+  "createdAt": string;
+  "updatedAt": string;
 }
 
 export interface AdminAttendanceSettlementListItemDto {
@@ -394,6 +495,22 @@ export interface AdminCreateActivityMetricDefinitionDto {
 export interface AdminCreateActivityMetricSetDto {
   "operationKey": string;
   "definition": AdminMetricSetDefinitionV1Dto;
+}
+
+export interface AdminCreateActivityTemplateVersionDto {
+  "operationKey": string;
+  "familyId"?: string;
+  "code"?: string;
+  "name"?: string;
+  "categoryCode"?: string;
+  "activityTypeCode": string;
+  "version": number;
+  "effectiveFrom": string;
+  "effectiveTo"?: string | null;
+  "definition"?: AdminActivityTemplateDefinitionV3Dto;
+  "copyFromVersionId"?: string;
+  "expectedSourceDefinitionHash"?: string;
+  "metricSelection"?: AdminActivityMetricSelectionInputDto;
 }
 
 export interface AdminMeResponseDto {
@@ -539,6 +656,12 @@ export interface AdminRegistrationListItemDto {
   "activity"?: AdminRegistrationExpandedActivityDto;
 }
 
+export interface AdminSelectActivityMetricSetDto {
+  "operationKey": string;
+  "expectedRevision": number;
+  "metricSelection": AdminActivityMetricSelectionInputDto;
+}
+
 export interface AdminSettlementApproveCommandDto {
   "operationKey": string;
   "evidenceSealId": string;
@@ -636,6 +759,91 @@ export interface AdminSettlementSealRevisionDto {
   "sealedAt": string;
 }
 
+export interface AdminTemplateActivityDefinitionDto {
+  "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
+  "description"?: string | null;
+  "capacity"?: number | null;
+  "genderRequirementCode"?: string | null;
+  "registrationNotes"?: string | null;
+  "isPublicRegistration"?: boolean;
+  "requiresInsurance"?: boolean;
+  "registrationModeCode"?: "open_apply" | "invitation_only" | "admin_only" | "paused" | null;
+  "visibilityCode"?: "internal" | "invitation" | null;
+  "defaultLocationRequired"?: boolean | null;
+  "defaultCheckInRadiusMeters"?: number | null;
+  "archiveWaitingDays"?: number;
+}
+
+export interface AdminTemplateFormChoiceDto {
+  "value": string;
+  "label": string;
+}
+
+export interface AdminTemplateFormFieldDto {
+  "fieldCode": string;
+  "typeCode": "short_text" | "long_text" | "number" | "date" | "single_choice" | "multi_choice" | "file" | "confirmation";
+  "label": string;
+  "helpText"?: string | null;
+  "required": boolean;
+  "visibilityCode": "self_and_registration_staff" | "self_and_owner" | "self_only";
+  "exportable": false;
+  "sortOrder": number;
+  "minValue"?: number | null;
+  "maxValue"?: number | null;
+  "minLength"?: number | null;
+  "maxLength"?: number | null;
+  "maxSelections"?: number | null;
+  "options"?: AdminTemplateFormChoiceDto[] | null;
+  "governance": AdminTemplateFormGovernanceDto;
+}
+
+export interface AdminTemplateFormGovernanceDto {
+  "purposeCode": "transport_logistics" | "accommodation_logistics" | "dietary_accommodation" | "equipment_clothing" | "activity_specific_note" | "file_confirmation";
+  "dataClassCode": "ordinary" | "sensitive";
+  "retentionPolicyCode": "activity_lifecycle";
+  "maskingPolicyCode": "none";
+  "prefillSourceCode": null | null;
+}
+
+export interface AdminTemplatePositionDefinitionDto {
+  "code": string;
+  "name": string;
+  "attendanceRoleCode": string;
+  "capacity"?: number | null;
+  "startOffsetMinutes"?: number | null;
+  "endOffsetMinutes"?: number | null;
+  "genderRequirementCode"?: string | null;
+  "locationRequired"?: false | null | null;
+  "radiusMeters"?: null | null;
+  "description"?: string | null;
+  "equipmentNotes"?: string | null;
+  "sortOrder"?: number;
+}
+
+export interface AdminTemplateRegistrationFormDto {
+  "fields": AdminTemplateFormFieldDto[];
+}
+
+export interface AdminTemplateSessionDefinitionDto {
+  "code": string;
+  "name": string;
+  "startOffsetMinutes": number;
+  "endOffsetMinutes": number;
+  "locationText": string;
+  "capacity"?: number | null;
+  "checkInOpenOffsetMinutes": number;
+  "checkInCloseOffsetMinutes": number;
+  "checkOutOpenOffsetMinutes": number;
+  "checkOutCloseOffsetMinutes": number;
+  "preparationStartOffsetMinutes"?: number | null;
+  "locationRequired"?: false;
+  "radiusMeters"?: null | null;
+  "lateGraceMinutes"?: number;
+  "earlyLeaveThresholdMinutes"?: number;
+  "sortOrder"?: number;
+  "positions": AdminTemplatePositionDefinitionDto[];
+}
+
 export interface AdminUpdateActivityMetricDefinitionDto {
   "operationKey": string;
   "definition": AdminMetricDefinitionV1Dto;
@@ -646,6 +854,12 @@ export interface AdminUpdateActivityMetricSetDto {
   "operationKey": string;
   "definition": AdminMetricSetDefinitionV1Dto;
   "expectedDefinitionHash": string;
+}
+
+export interface AdminUpdateActivityTemplateVersionDto {
+  "operationKey": string;
+  "expectedDefinitionHash": string;
+  "definition": AdminActivityTemplateDefinitionV3Dto;
 }
 
 export interface AnnouncementImportRequestDto {

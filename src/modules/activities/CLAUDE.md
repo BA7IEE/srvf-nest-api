@@ -1,12 +1,24 @@
 # activities — 本地铁律
 
+## C1 D2b 当前实施边界（本分支未合并）
+
+Activity 三态选择、Template V3、Human GLOBAL 模板维护、App 可新选 options 和五条物化链
+已在本分支实现；交付、排错及生产限制见 [`activity-metric-selection-template-rollout.md`](../../../docs/ops/activity-metric-selection-template-rollout.md)。
+新选择为 required/not_required，旧活动保持 unconfigured/revision=0；历史退役引用仍可解释，不能新选。
+V3 在同一事务、锁等待后重读当前身份/权限/Family/指标闭包；Quick 审计透传该当前身份，
+V1/V2 保留既有 hash/重放行为。App options 只校验当前队员发起组织资格，不隐含 GLOBAL 目录权。
+每目录最多 1000 候选，1001 明确 20183/409；完整 grammar/hash/active 闭包过滤先于分页和 total，
+只读事务固定同一快照，不缓存资格、不返回配置/表单全文。
+既有 activity.update.record 的业务说明及 6→8 管辖面基线已按精确授权同步；组织资格属主原语扩展已获批准并实现，3b/4b 已于 2026-09-06 按维护者确认重签；PR CI 与合并未完成。
+D2c v7/Readiness 和成果值未实施，不解除 METRIC_SET_UNREPRESENTABLE，不代表生产上线或 C1 完成。
+
 ## C1 D2a 当前目录边界
 
 Human Admin 指标定义/集目录已有独立 Controller、写 Service、查询投影、状态机、审计与命令收据。
 写入及重放均在根事务复验当前用户和 GLOBAL 权限，等待命令锁/父版本锁后再验；RBAC 显式传 tx。
 定义/集只许 draft 编辑，draft→active→retired；激活集先锁父再按 ID 锁定义并复验 canonical/hash。
 收据只返原六字段结果，不返配置或 operationKey；审计与目录/收据同事务。
-D1 解析器仍是唯一值域真源。D2b Activity/Template V3 选择、D2c v7/Readiness 与成果值未实施。
+D1 解析器仍是唯一值域真源。D2b 当前进展以上节为准，D2c v7/Readiness 与成果值未实施。
 
 > 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);上下文边界读 [`/docs/participation-bounded-context.md`](../../../docs/participation-bounded-context.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);API surface 边界读 [`/docs/api-surface-policy.md`](../../../docs/api-surface-policy.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
 

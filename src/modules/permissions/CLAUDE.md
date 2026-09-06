@@ -8,6 +8,17 @@
 仅 Human GLOBAL，机器/委托 eligibility 均 false；可人工授予自定义角色，不自动给内建角色。
 三码在 permission-code-holders 的精确人工授码清单登记，不豁免其他 CUSTOM_ROLE_ALLOWED 权限。
 
+## C1 D2b 增量边界
+
+`getRoleIdsWithPermission(roleIds, code, tx?)` 可在第三参数消费调用者事务，未传仍用原客户端；
+仅改变查询所属事务，不改变“角色含码”及软删过滤。新增 `activity-template.read.catalog` 与
+`activity-template.manage.version` 两码，读写互不隐含，仅 Human GLOBAL、可人工授予自定义角色，
+机器/委托 eligibility 均 false，seed 不自动给内建角色、绑定或职务策略授码。
+与 D2a 三码合计五条属于 permission-code-holders 的精确人工授码清单；不得扩大成整族豁免。
+模板管理权不授予活动创建/修改权；草稿选择沿活动 scope 的 `activity.update.record` 与既有属主规则。
+维护者已精确授权补充该既有权限的指标选择 businessDescription，并同步 6→8 管辖面及
+两条新模板码的派生基线；仅更新说明，不改该权限的 seed 描述、授码策略或角色映射。
+
 > 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);API surface 边界读 [`/docs/api-surface-policy.md`](../../../docs/api-surface-policy.md);相关安全章节读 [`/docs/security.md`](../../../docs/security.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
 
 ## Scope

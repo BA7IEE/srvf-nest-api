@@ -62,6 +62,16 @@
       "surface": "sha256:b8c5990beb746c7dadd89086ec441c556bcdcd6e036fa5b592adf1d24da5b948",
       "description": "sha256:464a849ba9cddd2868fe7c75a56caae5227613c8033db37f90245516f603dd86"
     },
+    "activity-template.manage.version": {
+      "endpoints": 4,
+      "surface": "sha256:977ea467bd17a48c1170d68af056ef4411e5ce1d630c6ff70ff90fb0118be871",
+      "description": "sha256:89030f8474a0fc6e4903229fbfd73ad57e1e0296942ec43d1a3b3394622f67f7"
+    },
+    "activity-template.read.catalog": {
+      "endpoints": 2,
+      "surface": "sha256:24b3c979cafd301e8c33065a70ab57b72d9aedb1072be5f08a1192358a7c33fd",
+      "description": "sha256:ed98853216323d4a87524906c68503c49522b2d42d980b2dce50a5899c784b9f"
+    },
     "activity.cancel.record": {
       "endpoints": 1,
       "surface": "sha256:9f5299e4fc60aedfb5fe41b1c9e449897686395a2ea3d59b926a56b9d0310484",
@@ -128,9 +138,9 @@
       "description": "sha256:ac398f0a06790e89da1531a06bdccf4f22afb6bb53eb2818d09c80350bbdf386"
     },
     "activity.update.record": {
-      "endpoints": 6,
-      "surface": "sha256:0a5d6cb50968a27873b7aa2b315e728ae8840acff282b8b29db775ae8ffc8681",
-      "description": "sha256:3ee61bc7f1410e6a1b273109713da70fa3214de40e354c65b07aab8db102a4bc"
+      "endpoints": 8,
+      "surface": "sha256:2c10d4c714d369de5b6414056731e33bae918c776a93c7993183be51c43c4834",
+      "description": "sha256:d8729617edc88416ccc1240876c17584c8a46df0a01928f9561656cfbda59709"
     },
     "announcement-import.execute.record": {
       "endpoints": 1,

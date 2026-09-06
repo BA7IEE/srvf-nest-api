@@ -1,7 +1,8 @@
 # C1 D2a 指标目录交付、初始化与回退
 
 状态：D2a 已随 [#1280](https://github.com/BA7IEE/srvf-nest-api/pull/1280) 合入 `48aae003`，PR 与合并后 main CI 均通过；生产尚未部署。生产 migration、首批内容与人员授码须单独审批。
-不新增 Gate；已有 Activity OS 控制面和其他生产开关不变。D2b/D2c 尚未实施。
+不新增 Gate；已有 Activity OS 控制面和其他生产开关不变。D2b 当前实施进展见
+[活动选择与 Template V3 交付说明](activity-metric-selection-template-rollout.md)，尚未合并；D2c 未实施。
 
 ## 入口与可达性
 
@@ -43,7 +44,7 @@ definition 的 code/version/schemaVersion 构成固定身份，更新不可改�
 3. 通过正式角色管理入口创建自定义角色，按职责人工授予上述必要权限并绑定 Human GLOBAL；高风险授码沿既有二次验证。
 4. 通过目录 API 创建定义、逐版本激活，再创建并激活精确引用的指标集。保存成功收据，GET 核对当前定义与 hash。
 5. 检查 activity.metric-definition.command / activity.metric-set.command 审计，确认只含操作、code/version、前后 hash/status，不含 key 或配置全文。
-6. 活动和模板选用入口尚不存在，不继续写 Activity/Template 指标字段，不启动成果登记。
+6. D2a 不提供活动和模板选用。D2b 入口须按其独立交付说明及部署授权接入，禁止直接改库写 Activity/Template 指标字段，不启动成果登记。
 
 ## 错误与停止条件
 
