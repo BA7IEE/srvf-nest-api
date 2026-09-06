@@ -34,7 +34,7 @@
       "wrongStateBizCode": "ACTIVITY_METRIC_STATUS_INVALID",
       "implementation": "src/modules/activities/activity-metric-set.service.ts + src/modules/activities/activity-metric-state-machine.ts",
       "governedBlockers": [],
-      "notes": "C1 D2a Human writer 先锁父版本再按 ID 锁引用；激活复验非空 active 定义及 hash，历史可读不等于可新选用。C1 D2b 已接入活动选择及 V3 模板的精确引用复验，整体交付仍在收口；D2c 未实施，不声明 governed。"
+      "notes": "C1 D2a Human writer 先锁父版本再按 ID 锁引用；激活复验非空 active 定义及 hash，历史可读不等于可新选用。C1 D2b 已接入活动选择及 V3 模板的精确引用复验。C1 D2c 的 V7 审核在既有 Activity 根事务内锁后复验集/定义；显式新选严格 active，省略的已发布历史引用只可解释，且不写本 statusCode 的生命周期。本条不新增状态边或升级 governed。"
     },
     {
       "model": "Activity",

@@ -245,6 +245,15 @@ describe('batch4 activity capacity bucket projection', () => {
       })
       .expect(201);
     const activityId = activity.body.data.id as string;
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
     const sessionId = await createLiveSession(activityId, 'main', sessionCapacity);
     const positionId = includePosition
       ? await createPosition(activityId, sessionId, 'main', positionCapacity)

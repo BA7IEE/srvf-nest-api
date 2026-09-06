@@ -144,6 +144,15 @@ describe('App managed activity registrations', () => {
       });
     expect(created.status).toBe(201);
     const activityId = created.body.data.activity.id as string;
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
     await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/sessions`)
       .set('Authorization', ownerAuth)

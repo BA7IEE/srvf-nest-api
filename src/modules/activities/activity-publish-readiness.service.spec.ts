@@ -118,6 +118,25 @@ function futureTemplate(overrides: Partial<NonNullable<ReadinessTemplate>> = {})
   };
 }
 
+function v3Template(overrides: Partial<NonNullable<ReadinessTemplate>> = {}) {
+  const definitionJson = {
+    ...futureDefinition(),
+    registrationForm: null,
+    metricSelection: { metricRequirementCode: 'not_required', metricSetPointer: null },
+  };
+  return {
+    familyId: 'family-v3',
+    schemaVersion: 3,
+    definitionJson,
+    definitionHash: computeActivityTemplateDefinitionHash({
+      schemaVersion: 3,
+      definition: definitionJson,
+    }),
+    defaultRegistrationModeCode: 'open_apply',
+    ...overrides,
+  };
+}
+
 function facts(
   input: {
     readonly activity?: Partial<ReadinessActivity>;
@@ -125,6 +144,7 @@ function facts(
     readonly sessions?: readonly ReadinessSession[];
     readonly registrationFormValid?: boolean;
     readonly qualificationRuleSet?: ActivityPublishReadinessFacts['qualificationRuleSet'];
+    readonly metricSelection?: ActivityPublishReadinessFacts['metricSelection'];
     readonly insuranceEnforcementEnabled?: boolean;
   } = {},
 ): ActivityPublishReadinessFacts {
@@ -138,6 +158,7 @@ function facts(
       registrationModeCode: 'open_apply',
       visibilityCode: 'internal',
       requiresInsurance: false,
+      statusCode: 'draft',
       organizationResolvable: true,
       initiatorResolvable: true,
       ...input.activity,
@@ -149,6 +170,7 @@ function facts(
       valid: true,
       invalidRuleSetId: null,
     },
+    metricSelection: input.metricSelection ?? 'unconfigured',
     insuranceEnforcementEnabled: input.insuranceEnforcementEnabled ?? true,
   };
 }
@@ -174,11 +196,11 @@ describe('ActivityPublishReadinessService (Activity OS R2 / B4)', () => {
     expect(first).toEqual(second);
     expect(first.blockers).toEqual([
       {
-        code: 'METRIC_SET_UNREPRESENTABLE',
+        code: 'METRIC_SELECTION_MISSING',
         severity: 'blocker',
         fieldPath: 'metrics.requiredSet',
-        message: '当前活动没有可解析的必需指标集。',
-        resolutionHint: '在 Release 3 建立 Metric Definition / Set Version 后重新判定。',
+        message: '当前活动尚未配置指标选择。',
+        resolutionHint: '通过既有活动指标选择受控面明确选择“无需指标”或一份精确指标集。',
       },
       {
         code: 'CONTRIBUTION_POLICY_UNREPRESENTABLE',
@@ -253,7 +275,7 @@ describe('ActivityPublishReadinessService (Activity OS R2 / B4)', () => {
         domain: 'terminalPolicyOutcomeSafety',
         status: 'unrepresentable',
         issueCodes: [
-          'METRIC_SET_UNREPRESENTABLE',
+          'METRIC_SELECTION_MISSING',
           'CONTRIBUTION_POLICY_UNREPRESENTABLE',
           'TIME_POLICY_UNREPRESENTABLE',
           'SAFETY_REQUIREMENTS_UNREPRESENTABLE',
@@ -358,7 +380,7 @@ describe('ActivityPublishReadinessService (Activity OS R2 / B4)', () => {
             code: 'QUALIFICATION_RULE_SCOPE_INVALID',
             fieldPath: 'qualificationRuleSets[rule-set-b4-1]',
           },
-          { code: 'METRIC_SET_UNREPRESENTABLE', fieldPath: 'metrics.requiredSet' },
+          { code: 'METRIC_SELECTION_MISSING', fieldPath: 'metrics.requiredSet' },
           {
             code: 'CONTRIBUTION_POLICY_UNREPRESENTABLE',
             fieldPath: 'policy.contribution',
@@ -404,6 +426,85 @@ describe('ActivityPublishReadinessService (Activity OS R2 / B4)', () => {
       expect.objectContaining({ code: 'TEMPLATE_VERSION_UNRESOLVED' }),
     );
     expect(hashMismatch.blockers).toContainEqual(
+      expect.objectContaining({ code: 'TEMPLATE_DEFINITION_INVALID' }),
+    );
+  });
+
+  it('以活动自身的三态选择替代旧恒定指标 blocker，不把模板默认当成活动选择', () => {
+    const notRequired = evaluateActivityPublishReadiness(
+      facts({
+        template: v3Template(),
+        metricSelection: 'not_required',
+      }),
+      REFERENCE_TIME,
+    );
+    const activeRequired = evaluateActivityPublishReadiness(
+      facts({ metricSelection: 'required_active' }),
+      REFERENCE_TIME,
+    );
+    const invalid = evaluateActivityPublishReadiness(
+      facts({ metricSelection: 'invalid' }),
+      REFERENCE_TIME,
+    );
+
+    expect(notRequired.blockers.map((entry) => entry.code)).not.toEqual(
+      expect.arrayContaining([
+        'METRIC_SELECTION_MISSING',
+        'METRIC_SELECTION_INVALID',
+        'METRIC_REFERENCE_UNAVAILABLE',
+      ]),
+    );
+    expect(activeRequired.blockers.map((entry) => entry.code)).not.toEqual(
+      expect.arrayContaining([
+        'METRIC_SELECTION_MISSING',
+        'METRIC_SELECTION_INVALID',
+        'METRIC_REFERENCE_UNAVAILABLE',
+      ]),
+    );
+    expect(invalid.blockers).toContainEqual(
+      expect.objectContaining({
+        code: 'METRIC_SELECTION_INVALID',
+        fieldPath: 'metrics.requiredSet',
+      }),
+    );
+  });
+
+  it('只允许已发布活动解释退役指标引用，草稿仍要求可新选', () => {
+    const draft = evaluateActivityPublishReadiness(
+      facts({ metricSelection: 'required_historical' }),
+      REFERENCE_TIME,
+    );
+    const published = evaluateActivityPublishReadiness(
+      facts({
+        activity: { statusCode: 'published' },
+        metricSelection: 'required_historical',
+      }),
+      REFERENCE_TIME,
+    );
+
+    expect(draft.blockers).toContainEqual(
+      expect.objectContaining({
+        code: 'METRIC_REFERENCE_UNAVAILABLE',
+        fieldPath: 'metrics.requiredSet',
+      }),
+    );
+    expect(published.blockers.map((entry) => entry.code)).not.toContain(
+      'METRIC_REFERENCE_UNAVAILABLE',
+    );
+  });
+
+  it('识别带 hash 的 Template V3，同时保留 V1/V2/legacy 分支', () => {
+    const valid = evaluateActivityPublishReadiness(
+      facts({ template: v3Template() }),
+      REFERENCE_TIME,
+    );
+    const invalid = evaluateActivityPublishReadiness(
+      facts({ template: v3Template({ definitionHash: '0'.repeat(64) }) }),
+      REFERENCE_TIME,
+    );
+
+    expect(valid.blockers.map((entry) => entry.code)).not.toContain('TEMPLATE_DEFINITION_INVALID');
+    expect(invalid.blockers).toContainEqual(
       expect.objectContaining({ code: 'TEMPLATE_DEFINITION_INVALID' }),
     );
   });
@@ -596,6 +697,11 @@ function loadedActivity(selectedTemplateVersionId: string | null) {
     visibilityCode: 'internal',
     requiresInsurance: false,
     statusCode: 'draft',
+    metricRequirementCode: null,
+    selectedMetricSetVersionId: null,
+    selectedMetricSetDefinitionHash: null,
+    metricSelectionRevision: 0,
+    selectedMetricSetVersion: null,
     sessions: [
       {
         id: 'session-b4',

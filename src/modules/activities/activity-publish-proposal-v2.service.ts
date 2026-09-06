@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { instanceToPlain } from 'class-transformer';
 import { Prisma, type Role } from '@prisma/client';
 import type { AppConfig } from '../../config/app.config';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -34,6 +35,22 @@ import { activitySessionCancellationEffects } from './activity-session-cancellat
 import { ActivityNotificationProducer } from './activity-notification-producer';
 import { isActivityAllocationModeCode } from './activity-allocation-mode';
 import { LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY } from './activity-type-migration.registry';
+import {
+  parseActivityMetricSelection,
+  readActivityMetricSelection,
+  type ActivityMetricSelection,
+} from './activity-metric-selection';
+import { metricInteger } from './activity-metric-definition';
+import { lockActivityPublishMetricSelections } from './activity-publish-metric-selection';
+import {
+  activitySelectionFromV7MetricFields,
+  assertActivityPublishProposalV7MetricTransition,
+  metricFieldsFromActivitySelection,
+  nextActivityPublishProposalV7MetricRevision,
+  parseActivityPublishProposalV7MetricFields,
+  sameActivityPublishProposalV7MetricFields,
+  type ActivityPublishProposalV7MetricFields,
+} from './activity-publish-proposal-v7';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type {
@@ -246,6 +263,18 @@ export interface ActivityTemplateResolutionWithSnapshotV6
     ActivityTemplateResolutionWithQualificationRules,
     ActivityPublishProposalSnapshotV6Fields {}
 
+export type ActivityPublishProposalSnapshotV7Fields = Omit<
+  ActivityPublishProposalSnapshotV6Fields,
+  'metricSetPointer'
+> &
+  ActivityPublishProposalV7MetricFields;
+
+/** RuleSnapshot V7 adds only the Activity-owned metric selection pointer/revision. */
+export interface ActivityTemplateResolutionWithSnapshotV7
+  extends
+    ActivityTemplateResolutionWithQualificationRules,
+    ActivityPublishProposalSnapshotV7Fields {}
+
 export interface ActivityPublishProposalSnapshotV2 {
   schemaVersion: 2;
   baseWorkflowRevision: number;
@@ -353,12 +382,41 @@ export interface ActivityPublishProposalSnapshotV6 extends ActivityPublishPropos
   qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
 }
 
+/** V7 retains the V6 frozen facts and binds the Activity-owned metric selection in both sides. */
+export interface ActivityPublishProposalSnapshotV7 extends ActivityPublishProposalSnapshotV7Fields {
+  schemaVersion: 7;
+  baseWorkflowRevision: number;
+  baseSnapshotHash: string;
+  /**
+   * Hash-bound submission intent, not an Activity field. It distinguishes an omitted published
+   * selection (which may retain a retired historic pointer) from an explicit same-pointer
+   * selection (which must be rechecked as a new selection again during approval).
+   */
+  metricSelectionExplicit: boolean;
+  snapshotHash: string;
+  base: {
+    templateVersionId: string | null;
+    resolvedConfig: ActivityTemplateResolution;
+    activity: ProposalActivity;
+    sessions: ProposalSession[];
+    registrationForm: RegistrationFormTarget | null;
+    qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
+  } & ActivityPublishProposalSnapshotV7Fields;
+  templateVersionId: string | null;
+  resolvedConfig: ActivityTemplateResolution;
+  activity: ProposalActivity;
+  sessions: ProposalSession[];
+  registrationForm: RegistrationFormTarget | null;
+  qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
+}
+
 export type ActivityPublishProposalSnapshot =
   | ActivityPublishProposalSnapshotV2
   | ActivityPublishProposalSnapshotV3
   | ActivityPublishProposalSnapshotV4
   | ActivityPublishProposalSnapshotV5
-  | ActivityPublishProposalSnapshotV6;
+  | ActivityPublishProposalSnapshotV6
+  | ActivityPublishProposalSnapshotV7;
 
 interface CurrentProposalState {
   workflowRevision: number;
@@ -371,6 +429,7 @@ interface CurrentProposalState {
   registrationForm: RegistrationFormTarget | null;
   qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
   activityPlaces: ActivityPlaceSnapshot[];
+  metricSelection?: ActivityPublishProposalV7MetricFields;
 }
 
 interface TemplateRow {
@@ -462,6 +521,29 @@ const proposalActivitySelect = {
     },
   },
 } as const satisfies Prisma.ActivitySelect;
+
+// Kept separate so historical V2–V6 stale-guard reconstruction never acquires a catalogue read
+// dependency. V7 alone snapshots the Activity-owned selection and its bounded exact closure.
+const proposalActivitySelectV7 = {
+  ...proposalActivitySelect,
+  metricRequirementCode: true,
+  selectedMetricSetVersionId: true,
+  selectedMetricSetDefinitionHash: true,
+  metricSelectionRevision: true,
+  selectedMetricSetVersion: {
+    include: {
+      items: {
+        include: { metricDefinition: true },
+        take: 101,
+        orderBy: { sortOrder: 'asc' },
+      },
+    },
+  },
+} as const satisfies Prisma.ActivitySelect;
+
+type ProposalActivityV7Row = Prisma.ActivityGetPayload<{
+  select: typeof proposalActivitySelectV7;
+}>;
 
 function sha256(value: unknown): string {
   return createHash('sha256')
@@ -587,6 +669,14 @@ const V6_BASE_KEYS = [
   'contentVisibilitySummary',
 ] as const;
 
+const V7_ROOT_KEYS = [
+  ...V6_ROOT_KEYS,
+  'metricRequirementCode',
+  'metricSelectionRevision',
+  'metricSelectionExplicit',
+] as const;
+const V7_BASE_KEYS = [...V6_BASE_KEYS, 'metricRequirementCode', 'metricSelectionRevision'] as const;
+
 const V6_PLANNED_ASSIGNMENT_KEYS = ['dimensionCode', 'optionCode'] as const;
 const V6_ACTIVITY_PLACE_KEYS = [
   'id',
@@ -622,10 +712,23 @@ export class ActivityPublishProposalV2Service {
     private readonly auditLogs: AuditLogsService,
   ) {}
 
-  async buildInitial(tx: PrismaTx, activityId: string): Promise<ActivityPublishProposalSnapshotV6> {
-    const current = await this.currentState(tx, activityId, true, true, true);
+  async buildInitial(
+    tx: PrismaTx,
+    activityId: string,
+    revalidate: () => Promise<void> = () => Promise.resolve(),
+  ): Promise<ActivityPublishProposalSnapshotV7> {
+    const current = await this.currentState(tx, activityId, true, true, true, true);
     this.assertProposalValid(current.activity, current.sessions);
-    return this.toSnapshotV6(
+    const metric = this.currentV7MetricSelection(current);
+    if (metric.selection === null) {
+      throw new BizException(BizCode.ACTIVITY_METRIC_SELECTION_INVALID);
+    }
+    await lockActivityPublishMetricSelections(
+      tx,
+      [{ selection: metric.selection, historical: false }],
+      revalidate,
+    );
+    return this.toSnapshotV7(
       current,
       current.activity,
       current.sessions,
@@ -633,6 +736,9 @@ export class ActivityPublishProposalV2Service {
       current.resolvedConfig,
       current.registrationForm,
       current.qualificationRuleSets,
+      metric.fields,
+      metric.fields,
+      true,
     );
   }
 
@@ -640,10 +746,11 @@ export class ActivityPublishProposalV2Service {
     tx: PrismaTx,
     activityId: string,
     dto: ChangeReviewDto,
-  ): Promise<ActivityPublishProposalSnapshotV6> {
-    // New submissions always use the complete v6 envelope. Historical v2-v5 snapshots are only
+    revalidate: () => Promise<void> = () => Promise.resolve(),
+  ): Promise<ActivityPublishProposalSnapshotV7> {
+    // New submissions always use the complete V7 envelope. Historical V2–V6 snapshots are only
     // parsed/rebuilt/applied through their own version branches below.
-    const current = await this.currentState(tx, activityId, true, true, true);
+    const current = await this.currentState(tx, activityId, true, true, true, true);
     const activity = clone(current.activity);
     const sessions = clone(current.sessions);
     this.applyActivityPatch(activity, dto.activityPatch as unknown as Partial<ProposalActivity>);
@@ -682,7 +789,21 @@ export class ActivityPublishProposalV2Service {
       dto.qualificationRuleSets,
       current.qualificationRuleSets,
     );
-    const snapshot = this.toSnapshotV6(
+    const baseMetric = this.currentV7MetricSelection(current);
+    const targetMetric = this.targetV7MetricSelection(baseMetric, dto);
+    await lockActivityPublishMetricSelections(
+      tx,
+      targetMetric.selection === null
+        ? []
+        : [
+            {
+              selection: targetMetric.selection,
+              historical: !targetMetric.explicit,
+            },
+          ],
+      revalidate,
+    );
+    const snapshot = this.toSnapshotV7(
       current,
       activity,
       sessions,
@@ -690,18 +811,20 @@ export class ActivityPublishProposalV2Service {
       resolvedConfig,
       registrationForm,
       qualificationRuleSets,
+      baseMetric.fields,
+      targetMetric.fields,
+      targetMetric.explicit,
     );
     if (
-      snapshot.snapshotHash ===
-      this.hashTargetV6(
-        current.activity,
-        current.sessions,
-        current.templateVersionId,
-        current.resolvedConfig,
-        current.registrationForm,
-        current.qualificationRuleSets,
-        this.v6Fields(current, current.activity),
-      )
+      this.hashTargetV7(
+        activity,
+        sessions,
+        template?.id ?? null,
+        resolvedConfig,
+        registrationForm,
+        qualificationRuleSets,
+        this.v7Fields(current, activity, targetMetric.fields),
+      ) === snapshot.baseSnapshotHash
     ) {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     }
@@ -711,17 +834,23 @@ export class ActivityPublishProposalV2Service {
   async rebuildCurrent(
     tx: PrismaTx,
     activityId: string,
-    schemaVersion: 2 | 3 | 4 | 5 | 6,
+    schemaVersion: 2 | 3 | 4 | 5 | 6 | 7,
   ): Promise<{ workflowRevision: number; snapshotHash: string }> {
     // Historical v2 approvals must retain their former read/hashing behavior: do not touch the
     // Form tables at all while reconstructing a v2 stale guard.
-    const current = await this.currentState(
-      tx,
-      activityId,
-      schemaVersion !== 2,
-      schemaVersion === 5 || schemaVersion === 6,
-      schemaVersion === 6,
-    );
+    // Keep the historic call shapes literal: several old schema branches intentionally prove
+    // which facts they do *not* read. V7 is the only branch that loads the Activity-owned
+    // metric-selection columns and catalogue closure.
+    const current =
+      schemaVersion === 7
+        ? await this.currentState(tx, activityId, true, true, true, true)
+        : await this.currentState(
+            tx,
+            activityId,
+            schemaVersion !== 2,
+            schemaVersion === 5 || schemaVersion === 6,
+            schemaVersion === 6,
+          );
     return {
       workflowRevision: current.workflowRevision,
       snapshotHash:
@@ -757,15 +886,29 @@ export class ActivityPublishProposalV2Service {
                     current.registrationForm,
                     current.qualificationRuleSets,
                   )
-                : this.hashTargetV6(
-                    current.activity,
-                    current.sessions,
-                    current.templateVersionId,
-                    current.resolvedConfig,
-                    current.registrationForm,
-                    current.qualificationRuleSets,
-                    this.v6Fields(current, current.activity),
-                  ),
+                : schemaVersion === 6
+                  ? this.hashTargetV6(
+                      current.activity,
+                      current.sessions,
+                      current.templateVersionId,
+                      current.resolvedConfig,
+                      current.registrationForm,
+                      current.qualificationRuleSets,
+                      this.v6Fields(current, current.activity),
+                    )
+                  : this.hashTargetV7(
+                      current.activity,
+                      current.sessions,
+                      current.templateVersionId,
+                      current.resolvedConfig,
+                      current.registrationForm,
+                      current.qualificationRuleSets,
+                      this.v7Fields(
+                        current,
+                        current.activity,
+                        this.currentV7MetricSelection(current).fields,
+                      ),
+                    ),
     };
   }
 
@@ -787,7 +930,8 @@ export class ActivityPublishProposalV2Service {
         row.schemaVersion === 3 ||
         row.schemaVersion === 4 ||
         row.schemaVersion === 5 ||
-        row.schemaVersion === 6) &&
+        row.schemaVersion === 6 ||
+        row.schemaVersion === 7) &&
       typeof row.snapshotHash === 'string'
     );
   }
@@ -798,6 +942,7 @@ export class ActivityPublishProposalV2Service {
     const snapshot = value as unknown as ActivityPublishProposalSnapshot;
     try {
       if (snapshot.schemaVersion === 6) this.assertSnapshotV6Envelope(snapshot);
+      if (snapshot.schemaVersion === 7) this.assertSnapshotV7Envelope(snapshot);
       const { snapshotHash, ...unsigned } = snapshot;
       if (sha256(unsigned) !== snapshotHash) {
         throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
@@ -807,7 +952,8 @@ export class ActivityPublishProposalV2Service {
         snapshot.schemaVersion === 3 ||
         snapshot.schemaVersion === 4 ||
         snapshot.schemaVersion === 5 ||
-        snapshot.schemaVersion === 6
+        snapshot.schemaVersion === 6 ||
+        snapshot.schemaVersion === 7
       ) {
         this.assertSnapshotFormTarget(snapshot.registrationForm);
         this.assertSnapshotFormTarget(snapshot.base.registrationForm);
@@ -815,13 +961,18 @@ export class ActivityPublishProposalV2Service {
       if (
         (snapshot.schemaVersion === 4 ||
           snapshot.schemaVersion === 5 ||
-          snapshot.schemaVersion === 6) &&
+          snapshot.schemaVersion === 6 ||
+          snapshot.schemaVersion === 7) &&
         (!isActivityAllocationModeCode(snapshot.activity.allocationModeCode) ||
           !isActivityAllocationModeCode(snapshot.base.activity.allocationModeCode))
       ) {
         throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
       }
-      if (snapshot.schemaVersion === 5 || snapshot.schemaVersion === 6) {
+      if (
+        snapshot.schemaVersion === 5 ||
+        snapshot.schemaVersion === 6 ||
+        snapshot.schemaVersion === 7
+      ) {
         this.assertSnapshotQualificationTarget(snapshot.qualificationRuleSets);
         this.assertSnapshotQualificationTarget(snapshot.base.qualificationRuleSets);
       }
@@ -844,11 +995,44 @@ export class ActivityPublishProposalV2Service {
           throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
         }
       }
+      if (snapshot.schemaVersion === 7) {
+        this.assertProposalValid(snapshot.base.activity, snapshot.base.sessions);
+        this.assertSnapshotV7Fields(snapshot, snapshot.activity);
+        this.assertSnapshotV7Fields(snapshot.base, snapshot.base.activity);
+        try {
+          assertActivityPublishProposalV7MetricTransition(
+            this.snapshotV7MetricFields(snapshot.base),
+            this.snapshotV7MetricFields(snapshot),
+          );
+        } catch (error) {
+          if (error instanceof TypeError) {
+            throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+          }
+          throw error;
+        }
+        if (
+          snapshot.baseSnapshotHash !==
+          this.hashTargetV7(
+            snapshot.base.activity,
+            snapshot.base.sessions,
+            snapshot.base.templateVersionId,
+            snapshot.base.resolvedConfig,
+            snapshot.base.registrationForm,
+            snapshot.base.qualificationRuleSets,
+            this.snapshotV7Fields(snapshot.base),
+          )
+        ) {
+          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+        }
+      }
       return snapshot;
     } catch (error) {
-      // New V6 is structurally strict: malformed JSON must never turn a corrupt persisted
+      // New V6/V7 are structurally strict: malformed JSON must never turn a corrupt persisted
       // snapshot into an unexpected 500. Historical parser behavior is intentionally untouched.
-      if (snapshot.schemaVersion === 6 && !(error instanceof BizException)) {
+      if (
+        (snapshot.schemaVersion === 6 || snapshot.schemaVersion === 7) &&
+        !(error instanceof BizException)
+      ) {
         throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
       }
       throw error;
@@ -884,7 +1068,8 @@ export class ActivityPublishProposalV2Service {
       | ActivityTemplateResolution
       | ActivityTemplateResolutionWithRegistrationForm
       | ActivityTemplateResolutionWithQualificationRules
-      | ActivityTemplateResolutionWithSnapshotV6;
+      | ActivityTemplateResolutionWithSnapshotV6
+      | ActivityTemplateResolutionWithSnapshotV7;
   }> {
     if (input.publish) {
       assertEmergencyFormalPublicationAllowed(
@@ -913,8 +1098,14 @@ export class ActivityPublishProposalV2Service {
       tx,
       activityId,
       snapshot.activity,
-      snapshot.schemaVersion === 4 || snapshot.schemaVersion === 5 || snapshot.schemaVersion === 6
+      snapshot.schemaVersion === 4 ||
+        snapshot.schemaVersion === 5 ||
+        snapshot.schemaVersion === 6 ||
+        snapshot.schemaVersion === 7
         ? snapshot.activity.allocationModeCode
+        : undefined,
+      snapshot.schemaVersion === 7 && this.v7MetricSelectionWrites(snapshot)
+        ? this.snapshotV7MetricFields(snapshot)
         : undefined,
     );
     const sessionIds = await this.applySessions(tx, activityId, snapshot.sessions, input.at);
@@ -930,7 +1121,8 @@ export class ActivityPublishProposalV2Service {
       snapshot.schemaVersion === 3 ||
       snapshot.schemaVersion === 4 ||
       snapshot.schemaVersion === 5 ||
-      snapshot.schemaVersion === 6
+      snapshot.schemaVersion === 6 ||
+      snapshot.schemaVersion === 7
     ) {
       const currentActivity = await tx.activity.findUniqueOrThrow({
         where: { id: activityId },
@@ -947,7 +1139,7 @@ export class ActivityPublishProposalV2Service {
       await this.applyFormAndRulesPlaceholder(tx, activityId);
     }
     const qualificationRuleSets =
-      snapshot.schemaVersion === 5 || snapshot.schemaVersion === 6
+      snapshot.schemaVersion === 5 || snapshot.schemaVersion === 6 || snapshot.schemaVersion === 7
         ? await this.qualificationRules.applyPublishedTarget(tx, {
             activityId,
             requestType: input.publish ? 'initial' : 'change',
@@ -1024,9 +1216,16 @@ export class ActivityPublishProposalV2Service {
               qualificationRuleSets,
               ...this.snapshotV6Fields(snapshot),
             }
-          : snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4
-            ? { ...snapshot.resolvedConfig, registrationForm }
-            : await this.getTemplateResolution(tx, activityId);
+          : snapshot.schemaVersion === 7
+            ? {
+                ...snapshot.resolvedConfig,
+                registrationForm,
+                qualificationRuleSets,
+                ...this.snapshotV7Fields(snapshot),
+              }
+            : snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4
+              ? { ...snapshot.resolvedConfig, registrationForm }
+              : await this.getTemplateResolution(tx, activityId);
     return { workflowRevision: activity.workflowRevision, resolvedConfig };
   }
 
@@ -1036,10 +1235,11 @@ export class ActivityPublishProposalV2Service {
     includeRegistrationForm: boolean = true,
     includeQualificationRules: boolean = true,
     includeV6Facts: boolean = false,
+    includeV7Facts: boolean = false,
   ): Promise<CurrentProposalState> {
     const row = await tx.activity.findUniqueOrThrow({
       where: { id: activityId },
-      select: proposalActivitySelect,
+      select: includeV7Facts ? proposalActivitySelectV7 : proposalActivitySelect,
     });
     const activity: ProposalActivity = {
       title: row.title,
@@ -1140,6 +1340,9 @@ export class ActivityPublishProposalV2Service {
       // v2-v5 must not touch ActivityPlace at all. v6 alone reads this minimal local projection;
       // no PlacePreset relation is selected or dereferenced.
       activityPlaces: includeV6Facts ? await this.currentActivityPlaces(tx, activityId) : [],
+      metricSelection: includeV7Facts
+        ? this.v7MetricFieldsFromActivityRow(row as ProposalActivityV7Row)
+        : undefined,
     };
   }
 
@@ -1410,6 +1613,54 @@ export class ActivityPublishProposalV2Service {
     return { ...unsigned, snapshotHash: sha256(unsigned) };
   }
 
+  private toSnapshotV7(
+    current: CurrentProposalState,
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+    qualificationRuleSets: CanonicalQualificationRuleSetsDefinition,
+    baseMetricFields: ActivityPublishProposalV7MetricFields,
+    targetMetricFields: ActivityPublishProposalV7MetricFields,
+    metricSelectionExplicit: boolean,
+  ): ActivityPublishProposalSnapshotV7 {
+    const baseV7Fields = this.v7Fields(current, current.activity, baseMetricFields);
+    const targetV7Fields = this.v7Fields(current, activity, targetMetricFields);
+    const baseSnapshotHash = this.hashTargetV7(
+      current.activity,
+      current.sessions,
+      current.templateVersionId,
+      current.resolvedConfig,
+      current.registrationForm,
+      current.qualificationRuleSets,
+      baseV7Fields,
+    );
+    const unsigned = {
+      schemaVersion: 7 as const,
+      baseWorkflowRevision: current.workflowRevision,
+      baseSnapshotHash,
+      metricSelectionExplicit,
+      base: {
+        templateVersionId: current.templateVersionId,
+        resolvedConfig: current.resolvedConfig,
+        activity: current.activity,
+        sessions: current.sessions,
+        registrationForm: current.registrationForm,
+        qualificationRuleSets: current.qualificationRuleSets,
+        ...baseV7Fields,
+      },
+      templateVersionId,
+      resolvedConfig,
+      activity,
+      sessions,
+      registrationForm,
+      qualificationRuleSets,
+      ...targetV7Fields,
+    };
+    return { ...unsigned, snapshotHash: sha256(unsigned) };
+  }
+
   private withoutAllocationMode(
     activity: ProposalActivityInput,
   ): ProposalActivityWithoutAllocationMode {
@@ -1503,6 +1754,35 @@ export class ActivityPublishProposalV2Service {
     });
   }
 
+  private hashTargetV7(
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+    qualificationRuleSets: CanonicalQualificationRuleSetsDefinition,
+    v7Fields: ActivityPublishProposalSnapshotV7Fields,
+  ): string {
+    return sha256({
+      activity,
+      sessions,
+      templateVersionId,
+      resolvedConfig,
+      registrationForm,
+      qualificationRuleSets,
+      categoryCode: v7Fields.categoryCode,
+      plannedSemanticAssignments: v7Fields.plannedSemanticAssignments,
+      selectedTemplateVersionId: v7Fields.selectedTemplateVersionId,
+      activityPlaces: v7Fields.activityPlaces,
+      timePolicyPointers: v7Fields.timePolicyPointers,
+      contributionPolicyPointers: v7Fields.contributionPolicyPointers,
+      metricRequirementCode: v7Fields.metricRequirementCode,
+      metricSetPointer: v7Fields.metricSetPointer,
+      metricSelectionRevision: v7Fields.metricSelectionRevision,
+      contentVisibilitySummary: v7Fields.contentVisibilitySummary,
+    });
+  }
+
   private assertSnapshotV6Envelope(snapshot: ActivityPublishProposalSnapshotV6): void {
     const root = snapshot as unknown as Record<string, unknown>;
     const base = root.base;
@@ -1512,6 +1792,33 @@ export class ActivityPublishProposalV2Service {
       !hasExactKeys(base, V6_BASE_KEYS) ||
       !Number.isInteger(root.baseWorkflowRevision) ||
       (root.baseWorkflowRevision as number) < 0 ||
+      typeof root.baseSnapshotHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(root.baseSnapshotHash) ||
+      typeof root.snapshotHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(root.snapshotHash) ||
+      !isStringOrNull(root.templateVersionId) ||
+      !isRecord(root.resolvedConfig) ||
+      !isRecord(root.activity) ||
+      !Array.isArray(root.sessions) ||
+      !isStringOrNull(base.templateVersionId) ||
+      !isRecord(base.resolvedConfig) ||
+      !isRecord(base.activity) ||
+      !Array.isArray(base.sessions)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+  }
+
+  private assertSnapshotV7Envelope(snapshot: ActivityPublishProposalSnapshotV7): void {
+    const root = snapshot as unknown as Record<string, unknown>;
+    const base = root.base;
+    if (
+      !hasExactKeys(root, V7_ROOT_KEYS) ||
+      !isRecord(base) ||
+      !hasExactKeys(base, V7_BASE_KEYS) ||
+      !Number.isInteger(root.baseWorkflowRevision) ||
+      (root.baseWorkflowRevision as number) < 0 ||
+      typeof root.metricSelectionExplicit !== 'boolean' ||
       typeof root.baseSnapshotHash !== 'string' ||
       !/^[a-f0-9]{64}$/.test(root.baseSnapshotHash) ||
       typeof root.snapshotHash !== 'string' ||
@@ -1567,6 +1874,25 @@ export class ActivityPublishProposalV2Service {
       summary.isPublicRegistration !== activity.isPublicRegistration
     ) {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+  }
+
+  private assertSnapshotV7Fields(
+    value: ActivityPublishProposalSnapshotV7Fields,
+    activity: ProposalActivity,
+  ): void {
+    this.assertSnapshotV6Fields({ ...value, metricSetPointer: null }, activity);
+    try {
+      parseActivityPublishProposalV7MetricFields({
+        metricRequirementCode: value.metricRequirementCode,
+        metricSetPointer: value.metricSetPointer,
+        metricSelectionRevision: value.metricSelectionRevision,
+      });
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      throw error;
     }
   }
 
@@ -1705,6 +2031,23 @@ export class ActivityPublishProposalV2Service {
     };
   }
 
+  private v7Fields(
+    current: Pick<CurrentProposalState, 'selectedTemplateVersionId' | 'activityPlaces'>,
+    activity: Pick<
+      ProposalActivity,
+      'activityTypeCode' | 'visibilityCode' | 'isPublicRegistration'
+    >,
+    metricFields: ActivityPublishProposalV7MetricFields,
+  ): ActivityPublishProposalSnapshotV7Fields {
+    const parsed = parseActivityPublishProposalV7MetricFields(metricFields);
+    return {
+      ...this.v6Fields(current, activity),
+      metricRequirementCode: parsed.metricRequirementCode,
+      metricSetPointer: parsed.metricSetPointer === null ? null : { ...parsed.metricSetPointer },
+      metricSelectionRevision: parsed.metricSelectionRevision,
+    };
+  }
+
   private snapshotV6Fields(
     snapshot: ActivityPublishProposalSnapshotV6,
   ): ActivityPublishProposalSnapshotV6Fields {
@@ -1718,6 +2061,140 @@ export class ActivityPublishProposalV2Service {
       metricSetPointer: snapshot.metricSetPointer,
       contentVisibilitySummary: snapshot.contentVisibilitySummary,
     };
+  }
+
+  private snapshotV7Fields(
+    snapshot: ActivityPublishProposalSnapshotV7Fields,
+  ): ActivityPublishProposalSnapshotV7Fields {
+    return {
+      categoryCode: snapshot.categoryCode,
+      plannedSemanticAssignments: snapshot.plannedSemanticAssignments,
+      selectedTemplateVersionId: snapshot.selectedTemplateVersionId,
+      activityPlaces: snapshot.activityPlaces,
+      timePolicyPointers: snapshot.timePolicyPointers,
+      contributionPolicyPointers: snapshot.contributionPolicyPointers,
+      metricRequirementCode: snapshot.metricRequirementCode,
+      metricSetPointer: snapshot.metricSetPointer,
+      metricSelectionRevision: snapshot.metricSelectionRevision,
+      contentVisibilitySummary: snapshot.contentVisibilitySummary,
+    };
+  }
+
+  private snapshotV7MetricFields(
+    value: Pick<
+      ActivityPublishProposalSnapshotV7Fields,
+      'metricRequirementCode' | 'metricSetPointer' | 'metricSelectionRevision'
+    >,
+  ): ActivityPublishProposalV7MetricFields {
+    return parseActivityPublishProposalV7MetricFields({
+      metricRequirementCode: value.metricRequirementCode,
+      metricSetPointer: value.metricSetPointer,
+      metricSelectionRevision: value.metricSelectionRevision,
+    });
+  }
+
+  private currentV7MetricSelection(current: CurrentProposalState): {
+    fields: ActivityPublishProposalV7MetricFields;
+    selection: ActivityMetricSelection | null;
+  } {
+    try {
+      if (current.metricSelection === undefined) {
+        throw new TypeError('V7 metric facts were not loaded');
+      }
+      const fields = parseActivityPublishProposalV7MetricFields(current.metricSelection);
+      const selection = activitySelectionFromV7MetricFields(fields);
+      return { fields, selection };
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_METRIC_SELECTION_INVALID);
+      }
+      throw error;
+    }
+  }
+
+  private targetV7MetricSelection(
+    base: {
+      fields: ActivityPublishProposalV7MetricFields;
+      selection: ActivityMetricSelection | null;
+    },
+    dto: ChangeReviewDto,
+  ): {
+    fields: ActivityPublishProposalV7MetricFields;
+    selection: ActivityMetricSelection | null;
+    explicit: boolean;
+  } {
+    if (dto.metricSelection === undefined) {
+      if (dto.expectedMetricSelectionRevision !== undefined) {
+        throw new BizException(BizCode.ACTIVITY_METRIC_SELECTION_INVALID);
+      }
+      return { ...base, explicit: false };
+    }
+    try {
+      const expected = metricInteger(dto.expectedMetricSelectionRevision, 0, 2147483647);
+      if (expected !== base.fields.metricSelectionRevision || expected === 2147483647) {
+        throw new BizException(BizCode.ACTIVITY_METRIC_SELECTION_STALE);
+      }
+      const selection = parseActivityMetricSelection(instanceToPlain(dto.metricSelection));
+      const sameSelectionFields =
+        base.selection === null ? null : metricFieldsFromActivitySelection(selection, expected);
+      return {
+        // An explicit same selection must still obtain the live catalogue lock below, but it is
+        // not a new Activity selection write. Keeping its revision preserves the existing
+        // no-effective-change guard and lets unrelated edits retain their historic reference.
+        fields:
+          sameSelectionFields !== null &&
+          sameActivityPublishProposalV7MetricFields(base.fields, sameSelectionFields)
+            ? sameSelectionFields
+            : metricFieldsFromActivitySelection(
+                selection,
+                nextActivityPublishProposalV7MetricRevision(expected),
+              ),
+        selection,
+        explicit: true,
+      };
+    } catch (error) {
+      if (error instanceof BizException) throw error;
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_METRIC_SELECTION_INVALID);
+      }
+      throw error;
+    }
+  }
+
+  private v7MetricSelectionWrites(snapshot: ActivityPublishProposalSnapshotV7): boolean {
+    try {
+      return assertActivityPublishProposalV7MetricTransition(
+        this.snapshotV7MetricFields(snapshot.base),
+        this.snapshotV7MetricFields(snapshot),
+      );
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      throw error;
+    }
+  }
+
+  private v7MetricFieldsFromActivityRow(
+    row: ProposalActivityV7Row,
+  ): ActivityPublishProposalV7MetricFields {
+    try {
+      const selection = readActivityMetricSelection(
+        {
+          metricRequirementCode: row.metricRequirementCode,
+          selectedMetricSetVersionId: row.selectedMetricSetVersionId,
+          selectedMetricSetDefinitionHash: row.selectedMetricSetDefinitionHash,
+          metricSelectionRevision: row.metricSelectionRevision,
+        },
+        row.selectedMetricSetVersion,
+      );
+      return metricFieldsFromActivitySelection(selection, row.metricSelectionRevision);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_METRIC_SELECTION_INVALID);
+      }
+      throw error;
+    }
   }
 
   private assertSnapshotFormTarget(target: RegistrationFormTarget | null): void {
@@ -2389,6 +2866,7 @@ export class ActivityPublishProposalV2Service {
     activityId: string,
     activity: ProposalActivityInput,
     allocationModeCode: string | undefined,
+    metricSelection: ActivityPublishProposalV7MetricFields | undefined,
   ): Promise<void> {
     await tx.activity.update({
       where: { id: activityId },
@@ -2422,6 +2900,15 @@ export class ActivityPublishProposalV2Service {
         defaultCheckInRadiusMeters: activity.defaultCheckInRadiusMeters,
         defaultLocationRequired: activity.defaultLocationRequired,
         archiveWaitingDays: activity.archiveWaitingDays,
+        ...(metricSelection === undefined
+          ? {}
+          : {
+              metricRequirementCode: metricSelection.metricRequirementCode,
+              selectedMetricSetVersionId: metricSelection.metricSetPointer?.id ?? null,
+              selectedMetricSetDefinitionHash:
+                metricSelection.metricSetPointer?.definitionHash ?? null,
+              metricSelectionRevision: metricSelection.metricSelectionRevision,
+            }),
       },
     });
   }

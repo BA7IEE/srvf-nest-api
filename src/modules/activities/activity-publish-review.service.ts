@@ -9,6 +9,7 @@ import { PrismaService } from '../../database/prisma.service';
 import appConfig from '../../config/app.config';
 import { AuthzService } from '../authz/authz.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
 import {
   ApproveActivityPublishReviewDto,
   ActivityPublishReviewResponseDto,
@@ -42,7 +43,15 @@ import {
   type ActivityTemplateResolutionWithRegistrationForm,
   type ActivityTemplateResolutionWithQualificationRules,
   type ActivityTemplateResolutionWithSnapshotV6,
+  type ActivityTemplateResolutionWithSnapshotV7,
+  type ActivityPublishProposalSnapshotV7,
 } from './activity-publish-proposal-v2.service';
+import { lockActivityPublishMetricSelections } from './activity-publish-metric-selection';
+import {
+  activitySelectionFromV7MetricFields,
+  assertActivityPublishProposalV7MetricTransition,
+  parseActivityPublishProposalV7MetricFields,
+} from './activity-publish-proposal-v7';
 import {
   buildProposalSnapshot,
   ensureInitialPublishable,
@@ -494,6 +503,132 @@ export class ActivityPublishReviewService {
     return result.dto;
   }
 
+  private async lockV7MetricSelectionForApproval(
+    tx: PrismaTx,
+    review: {
+      id: string;
+      activityId: string;
+      requestType: string;
+      baseRevision: number;
+    },
+    snapshot: ActivityPublishProposalSnapshotV7,
+    user: CurrentUserPayload,
+  ): Promise<CurrentUserPayload> {
+    try {
+      let actor = user;
+      const baseMetric = parseActivityPublishProposalV7MetricFields({
+        metricRequirementCode: snapshot.base.metricRequirementCode,
+        metricSetPointer: snapshot.base.metricSetPointer,
+        metricSelectionRevision: snapshot.base.metricSelectionRevision,
+      });
+      const targetMetric = parseActivityPublishProposalV7MetricFields({
+        metricRequirementCode: snapshot.metricRequirementCode,
+        metricSetPointer: snapshot.metricSetPointer,
+        metricSelectionRevision: snapshot.metricSelectionRevision,
+      });
+      const selection = activitySelectionFromV7MetricFields(targetMetric);
+      const writesSelection = assertActivityPublishProposalV7MetricTransition(
+        baseMetric,
+        targetMetric,
+      );
+      if (
+        (review.requestType === 'initial' && !snapshot.metricSelectionExplicit) ||
+        (writesSelection && !snapshot.metricSelectionExplicit)
+      ) {
+        throw new TypeError('V7 selection write lacks explicit submission intent');
+      }
+      if (review.requestType === 'initial' && selection === null) {
+        throw new TypeError('initial V7 proposal carries an unconfigured selection');
+      }
+      // A pending initial proposal and every explicit change-selection write need a live
+      // catalogue reference. A no-op change proposal may retain an already published historic
+      // reference so retirement never erases its interpretation.
+      await lockActivityPublishMetricSelections(
+        tx,
+        selection === null
+          ? []
+          : [
+              {
+                selection,
+                historical: review.requestType === 'change' && !snapshot.metricSelectionExplicit,
+              },
+            ],
+        async () => {
+          actor = await this.revalidateV7Approval(tx, review, snapshot, user);
+        },
+      );
+      return actor;
+    } catch (error) {
+      if (error instanceof BizException) throw error;
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      throw error;
+    }
+  }
+
+  private async revalidateV7Approval(
+    tx: PrismaTx,
+    review: {
+      id: string;
+      activityId: string;
+      requestType: string;
+      baseRevision: number;
+    },
+    snapshot: ActivityPublishProposalSnapshotV7,
+    user: CurrentUserPayload,
+  ): Promise<CurrentUserPayload> {
+    const actor = await loadActiveUserIdentityInTx(tx, user.id);
+    if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
+    const authz = await this.authz.explain(
+      actor,
+      'activity.publish.record',
+      { type: 'activity_publish_review', id: review.id },
+      tx,
+    );
+    if (!authz.allow) {
+      throw new BizException(
+        authz.reason === 'resource_not_found'
+          ? BizCode.ACTIVITY_PUBLISH_REVIEW_NOT_FOUND
+          : BizCode.RBAC_FORBIDDEN,
+      );
+    }
+    const activity = await tx.activity.findUniqueOrThrow({
+      where: { id: review.activityId },
+      select: {
+        statusCode: true,
+        workflowRevision: true,
+        organizationId: true,
+        startAt: true,
+        endAt: true,
+        registrationDeadline: true,
+        allocationModeCode: true,
+      },
+    });
+    this.proposalValidator.assertOrganizationUnchanged(
+      activity.organizationId,
+      snapshot.activity.organizationId,
+    );
+    await this.allocationModes.assertLockedActivityConsistent(tx, {
+      id: review.activityId,
+      allocationModeCode: snapshot.activity.allocationModeCode,
+    });
+    const current = await this.proposalV2.rebuildCurrent(tx, review.activityId, 7);
+    if (
+      review.baseRevision !== activity.workflowRevision ||
+      snapshot.baseWorkflowRevision !== review.baseRevision ||
+      snapshot.baseSnapshotHash !== current.snapshotHash
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_EXPECTED_SNAPSHOT_MISMATCH);
+    }
+    if (review.requestType === 'initial') {
+      ensureInitialPublishable(activity);
+    } else if (review.requestType !== 'change' || activity.statusCode !== 'published') {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_EXPECTED_SNAPSHOT_MISMATCH);
+    }
+    return actor;
+  }
+
   private async approveV2Locked(
     tx: PrismaTx,
     review: {
@@ -533,6 +668,10 @@ export class ActivityPublishReviewService {
       activity.organizationId,
       snapshot.activity.organizationId,
     );
+    const reviewer =
+      snapshot.schemaVersion === 7
+        ? await this.lockV7MetricSelectionForApproval(tx, review, snapshot, user)
+        : user;
     const current = await this.proposalV2.rebuildCurrent(
       tx,
       review.activityId,
@@ -548,7 +687,10 @@ export class ActivityPublishReviewService {
     await this.allocationModes.assertLockedActivityConsistent(tx, {
       id: review.activityId,
       allocationModeCode:
-        snapshot.schemaVersion === 4 || snapshot.schemaVersion === 5 || snapshot.schemaVersion === 6
+        snapshot.schemaVersion === 4 ||
+        snapshot.schemaVersion === 5 ||
+        snapshot.schemaVersion === 6 ||
+        snapshot.schemaVersion === 7
           ? snapshot.activity.allocationModeCode
           : activity.allocationModeCode,
     });
@@ -564,8 +706,8 @@ export class ActivityPublishReviewService {
     const now = new Date();
     const applied = await this.proposalV2.apply(tx, review.activityId, snapshot, {
       publish: review.requestType === 'initial',
-      publishedByUserId: user.id,
-      publishedByUserRole: user.role,
+      publishedByUserId: reviewer.id,
+      publishedByUserRole: reviewer.role,
       at: now,
       // 审核 id 是这批联动效应的稳定批次键:同一次审批重放落在同一个 eventKey / cohortKey 上,
       // 不用墙钟(墙钟每次都是新批次,冻结与去重同时失效)。
@@ -577,9 +719,9 @@ export class ActivityPublishReviewService {
         tx,
         review.activityId,
         activity.initiatorMemberId,
-        user.id,
+        reviewer.id,
         now,
-        user.role,
+        reviewer.role,
         auditMeta,
       );
     }
@@ -596,7 +738,7 @@ export class ActivityPublishReviewService {
       where: { id: review.id },
       data: {
         status: decision.nextStatus,
-        reviewedByUserId: user.id,
+        reviewedByUserId: reviewer.id,
         reviewedAt: now,
         reviewNote: dto.reviewNote ?? null,
         ...(dto.operationKey === undefined || reviewRequestHash === null
@@ -626,8 +768,8 @@ export class ActivityPublishReviewService {
         activityId: review.activityId,
         reviewId: review.id,
         requestVersion: review.requestVersion,
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
+        actorUserId: reviewer.id,
+        actorRoleSnap: reviewer.role,
         audienceTagCodes,
         audienceOrganizationIds,
         recipientCount: audienceRecipientMemberIds.length,
@@ -642,8 +784,8 @@ export class ActivityPublishReviewService {
         requestVersion: review.requestVersion,
         requestType: review.requestType,
         directPublish: false,
-        actorUserId: user.id,
-        actorRoleSnap: user.role,
+        actorUserId: reviewer.id,
+        actorRoleSnap: reviewer.role,
         auditMeta,
         tx,
       });
@@ -940,8 +1082,9 @@ export class ActivityPublishReviewService {
         | ActivityTemplateResolution
         | ActivityTemplateResolutionWithRegistrationForm
         | ActivityTemplateResolutionWithQualificationRules
-        | ActivityTemplateResolutionWithSnapshotV6;
-      schemaVersion?: 2 | 3 | 4 | 5 | 6;
+        | ActivityTemplateResolutionWithSnapshotV6
+        | ActivityTemplateResolutionWithSnapshotV7;
+      schemaVersion?: 2 | 3 | 4 | 5 | 6 | 7;
     } = {},
   ): Promise<void> {
     const activity = await tx.activity.findUniqueOrThrow({

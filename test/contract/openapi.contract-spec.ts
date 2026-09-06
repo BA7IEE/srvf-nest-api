@@ -2172,6 +2172,78 @@ describe('OpenAPI 契约快照', () => {
     }
   });
 
+  it('C1 D2c keeps proposal routes stable while adding only paired App metric-selection input', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const change = schemas.ChangeReviewDto as OpenApiSchema;
+    const selection = schemas.AppActivityMetricSelectionInputDto as OpenApiSchema;
+    const appPrefix = '/api/app/v1/my/managed-activities/{activityId}';
+    const initial = doc.paths[`${appPrefix}/publish-reviews`]?.post;
+    const update = doc.paths[`${appPrefix}/change-reviews`]?.post;
+    const approve = doc.paths['/api/admin/v1/activity-publish-reviews/{id}/approve']?.post;
+
+    expect(Object.keys(change.properties ?? {}).sort()).toEqual([
+      'activityPatch',
+      'confirmation',
+      'expectedMetricSelectionRevision',
+      'metricSelection',
+      'operationKey',
+      'positions',
+      'qualificationRuleSets',
+      'registrationForm',
+      'sessions',
+    ]);
+    expect(change.required?.slice().sort()).toEqual([
+      'activityPatch',
+      'confirmation',
+      'operationKey',
+      'positions',
+      'sessions',
+    ]);
+    expect(change.properties?.metricSelection).toEqual({
+      description: '可选的完整指标选择；传入时必须与 expectedMetricSelectionRevision 成对出现',
+      allOf: [{ $ref: '#/components/schemas/AppActivityMetricSelectionInputDto' }],
+    });
+    expect(change.properties?.expectedMetricSelectionRevision).toMatchObject({
+      type: 'number',
+      minimum: 0,
+      maximum: 2147483647,
+    });
+    expect(change.required).not.toEqual(
+      expect.arrayContaining(['metricSelection', 'expectedMetricSelectionRevision']),
+    );
+    expect(Object.keys(selection.properties ?? {}).sort()).toEqual([
+      'metricRequirementCode',
+      'metricSetPointer',
+    ]);
+    expect(selection.required?.slice().sort()).toEqual([
+      'metricRequirementCode',
+      'metricSetPointer',
+    ]);
+    expect(selection.properties?.metricRequirementCode?.enum).toEqual(['not_required', 'required']);
+    expect(initial?.requestBody?.content?.['application/json']?.schema?.$ref).toBe(
+      '#/components/schemas/SubmitActivityPublishReviewDto',
+    );
+    expect(update?.requestBody?.content?.['application/json']?.schema?.$ref).toBe(
+      '#/components/schemas/ChangeReviewDto',
+    );
+    expect(documented4xxCodes(initial)).toEqual(
+      expect.arrayContaining([
+        BizCode.ACTIVITY_METRIC_SELECTION_INVALID.code,
+        BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE.code,
+      ]),
+    );
+    expect(documented4xxCodes(update)).toEqual(
+      expect.arrayContaining([
+        BizCode.ACTIVITY_METRIC_SELECTION_INVALID.code,
+        BizCode.ACTIVITY_METRIC_SELECTION_STALE.code,
+        BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE.code,
+      ]),
+    );
+    expect(documented4xxCodes(approve)).toEqual(
+      expect.arrayContaining([BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE.code]),
+    );
+  });
+
   it('logout OpenAPI 明确 family 撤销且成功 data=null', () => {
     const operation = doc.paths['/api/auth/v1/logout']?.post;
     const dataSchema =

@@ -294,6 +294,24 @@ describe('Activity OS R2 B5 publish-review snapshot V6', () => {
     return response;
   }
 
+  async function selectNotRequired(activityId: string) {
+    const response = await request(httpServer(app))
+      .put(`/api/app/v1/my/managed-activities/${activityId}/metric-selection`)
+      .set('Authorization', creatorAuth)
+      .send({
+        operationKey: unique('metric-selection'),
+        expectedRevision: 0,
+        metricSelection: { metricRequirementCode: 'not_required', metricSetPointer: null },
+      });
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({
+      activityId,
+      metricRequirementCode: 'not_required',
+      metricSetPointer: null,
+      metricSelectionRevision: 1,
+    });
+  }
+
   async function approve(reviewId: string, operationKey: string) {
     return request(httpServer(app))
       .post(`/api/admin/v1/activity-publish-reviews/${reviewId}/approve`)
@@ -301,21 +319,25 @@ describe('Activity OS R2 B5 publish-review snapshot V6', () => {
       .send({ requiresInsuranceConfirmed: true, operationKey });
   }
 
-  it('freezes canonical V6 local places and ignores later PlacePreset edits when approving', async () => {
+  it('proves V7 new writers while V6 historical compatibility remains unit-covered', async () => {
     const { activityId, sessionId } = await createDraft();
     const { presetId } = await createLocalPlaces(activityId, sessionId);
+    await selectNotRequired(activityId);
     const submitted = await submitInitial(activityId, unique('initial'));
     const snapshot = submitted.body.data.snapshot as Record<string, unknown>;
 
     expect(snapshot).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
+      metricSelectionExplicit: true,
       categoryCode: 'event_support',
       plannedSemanticAssignments: [{ dimensionCode: 'format', optionCode: 'event_support' }],
       selectedTemplateVersionId: null,
       templateVersionId: fallbackTemplateId,
       timePolicyPointers: null,
       contributionPolicyPointers: null,
+      metricRequirementCode: 'not_required',
       metricSetPointer: null,
+      metricSelectionRevision: 1,
       contentVisibilitySummary: { visibilityCode: 'internal', isPublicRegistration: true },
     });
     expect(
@@ -326,7 +348,9 @@ describe('Activity OS R2 B5 publish-review snapshot V6', () => {
       selectedTemplateVersionId: null,
       timePolicyPointers: null,
       contributionPolicyPointers: null,
+      metricRequirementCode: 'not_required',
       metricSetPointer: null,
+      metricSelectionRevision: 1,
     });
     expect(JSON.stringify(snapshot.activityPlaces)).not.toMatch(/activityId|createdAt|updatedAt/u);
 
@@ -348,7 +372,9 @@ describe('Activity OS R2 B5 publish-review snapshot V6', () => {
       selectedTemplateVersionId: null,
       timePolicyPointers: null,
       contributionPolicyPointers: null,
+      metricRequirementCode: 'not_required',
       metricSetPointer: null,
+      metricSelectionRevision: 1,
       contentVisibilitySummary: { visibilityCode: 'internal', isPublicRegistration: true },
     });
     expect((resolvedConfig.activityPlaces as Array<Record<string, unknown>>)[2]).toMatchObject({
@@ -376,8 +402,8 @@ describe('Activity OS R2 B5 publish-review snapshot V6', () => {
       .set('Authorization', reviewerAuth)
       .expect(200);
     expect(detail.body.data.changeDiff).toMatchObject({
-      kind: 'proposal-v6',
-      v6Fields: {
+      kind: 'proposal-v7',
+      v7Fields: {
         changedFields: ['categoryCode', 'contentVisibilitySummary', 'plannedSemanticAssignments'],
       },
     });
@@ -388,9 +414,10 @@ describe('Activity OS R2 B5 publish-review snapshot V6', () => {
     expect(safeDiff).not.toContain('registrationForm');
   });
 
-  it('rejects approval when an ActivityPlace local fact changes after a V6 proposal is submitted', async () => {
+  it('rejects approval when an ActivityPlace local fact changes after a V7 proposal is submitted', async () => {
     const { activityId, sessionId } = await createDraft();
     await createLocalPlaces(activityId, sessionId);
+    await selectNotRequired(activityId);
     const submitted = await submitInitial(activityId, unique('stale-initial'));
     const place = await prisma.activityPlace.findFirstOrThrow({
       where: { activityId, sessionId: null },

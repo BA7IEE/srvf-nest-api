@@ -1,0 +1,1 @@
+新增 C1 D2c 的 V7 发布审核冻结：新 initial/change writer 在 base/target 中绑定 Activity 指标三事实，显式变更以 paired revision 防并发并在审核根事务内复验当前身份、责任和有界指标闭包；历史 v2–v6/legacy 解析、hash 与 apply 保持兼容。审核详情新增安全 `proposal-v7` 字段名摘要，App change DTO 增加可选 paired metric selection 输入；Readiness 识别 V3 并以实际选择状态替换旧指标不可表达 blocker。无 schema/migration/seed、权限码、审计事件、路由或 Gate 变更，未部署生产；整体跨模型复审待后续统一执行。

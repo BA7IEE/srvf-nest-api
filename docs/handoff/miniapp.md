@@ -8,7 +8,9 @@
 
 ## 1. App surface 模型(和 admin 完全不同,先读铁律)
 
-> **Activity OS R3 / C1 D2b（已合入 #1282，生产未部署）**：已有 App 选用与可选目录入口，见[选择与模板交付说明](../ops/activity-metric-selection-template-rollout.md)。专业/紧急创建省略新选择字段仍沿旧 hash，旧 V1/V2 模板不补造指标事实。成果录入、v7 与 Readiness 接入未实施；v6 指标指针为 null 的历史合同不改，不解除 blocker，不展示为已上线功能。
+> **Activity OS R3 / C1 D2b（已合入 #1282，生产未部署）**：已有 App 选用与可选目录入口，见[选择与模板交付说明](../ops/activity-metric-selection-template-rollout.md)。专业/紧急创建省略新选择字段仍沿旧 hash，旧 V1/V2 模板不补造指标事实。成果录入未实施；v2–v6 历史合同不改。
+
+> **C1 D2c（当前分支已实现，待 PR/CI/整体复审）**：新的初发/变更审核由服务端冻结 V7，Readiness 仍完全内部、只读、gate-off。初发前先用既有 `metric-selection` 为草稿显式选择 required/not_required；已发布活动的 `change-reviews` 可选成对传 `metricSelection` 与 `expectedMetricSelectionRevision`，省略两者就是保留。不要传内部 snapshot/hash/`metricSelectionExplicit`，不要用 legacy/直发/PATCH 侧写。详见[交付说明](../ops/activity-metric-proposal-v7-rollout.md)。
 
 小程序消费 **`/api/app/v1/*`**(队员**本人视角**),不是 admin 面。后端语义锁(`api-surface-policy.md §9`):
 
@@ -96,6 +98,7 @@
 
 - **资格错误与 legacy**：canonical 报名的资格 block 返 `21040`，配置漂移返 `21041`，warn 不拦截；legacy 只在没有 live session、active Form 和 active 场次/岗位资格规则时可用，否则继续 `21038`。managed approve 面对旧 legacy pending 无 identity/preference、但后续已出现 active 场次/岗位 RuleSet 时同样返回 `21038`；不要把活动详情的安全投影当作可自行重算的事实来源。
 - **分配方式与发布审核**：draft PATCH、初发/变更提交或审核遇到任一历史 allocation batch mode 不一致时均返 `409/20152`，前端不要静默重试或尝试改历史 batch；v4 review 待审期间若 mode 被旁路修改，approve 返 `409/20144`，应刷新活动后重新提交。分配 command 与安全读面见下一条；本 handoff 不交付新的排队、资格排序、抽签、candidate 或候补 UI。
+- **C1 D2c 指标与发布审核**：已发布活动的 `change-reviews` 若显式传指标选择，必须同时传读取时的 `expectedMetricSelectionRevision`；任一缺失、未知字段或显式 unconfigured 都是 400。`20175` 说明选择已变化，刷新后让用户决定是否重提；`20172` 说明集/定义不能作为新选择，回到既有 options 重选。省略两项只保留当前历史选择；同值显式请求仍按新选资格校验。审核页不会把 V7 指针或指标定义回传给小程序，不能据安全 diff 恢复编辑草稿。Readiness 不新增接口、不启用发布 Gate，也不代表成果已录入。
 - **邀请接受与分配 command（第 4 批）**：本人接受邀请用 `POST /api/app/v1/my/activity-invitations/:invitationId/accept`，body 与 canonical 报名相同，仍必须传 `operationKey`、Form 版本、答案和志愿；同 key+同请求重放原回执，异请求按稳定冲突码处理。`first_come` 不创建 allocation batch，每个场次独立即时得到 `pass` 或 `waitlisted`；一个场次满员不能拖累其他已提交志愿。负责人仅对 `qualification_rank`/`lottery` 使用 `POST /api/app/v1/my/managed-activities/:activityId/allocation-batches` prepare、`POST .../:batchId/commit`、`POST .../:batchId/void` 与 `GET .../:batchId`。prepare 必须在报名截止后；lottery 的 seed 只在 committed 批次回显。客户端只展示服务端返回的结果和四位资格分数，不要自行复算资格或排序；候补递补只会发生在原场次、原岗位，跨岗位须本人重新确认。
 
 ### 1.1.2 自助二维码与现场服务段（第 5 批）

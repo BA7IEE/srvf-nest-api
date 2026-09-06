@@ -410,6 +410,11 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 活动选择、模板 V3 已有实施及定向验证，不等于 D2b 整体交付：options 和最终契约尚待收口，
 > D2c 的 v7/Readiness 仍未实施。详见 `docs/ops/activity-metric-selection-template-rollout.md`。
 
+> **⑪ C1 D2c 当前更新（当前分支待 PR/CI/整体复审）**：V7 审核仅在既有 Activity 根事务中锁后复验
+> `ActivityMetricSetVersion` 与定义闭包；显式选择要求 active，已发布活动省略选择时才可解释历史 retired
+> 引用。它不写指标集 `statusCode`、不增加状态边、不改变两条 inventory/governed 读数。内部 Readiness
+> 只读识别 V3 与当前选择语义，也不成为状态机 writer 或发布 Gate。⑧–⑩ 是当时的历史取数，现以本条为准。
+
 blocker 直方图(2026-09-05 现算;含 A3 future-Version 条件生命周期、A7、B6 D2 与 C1 D1):`no-wrong-state-bizcode` 30 ·
 `no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·
 `edges-partially-derived` 2 · `vocabulary-divergence` 2 · `dictionary-driven` 2 ·

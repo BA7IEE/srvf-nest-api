@@ -212,13 +212,27 @@ describe('App managed activities core', () => {
     };
   }
 
+  async function selectNotRequired(activityId: string): Promise<void> {
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
+  }
+
   async function createManagedDraft(actor: { auth: string }, title: string): Promise<string> {
     const response = await request(httpServer(app))
       .post('/api/app/v1/my/managed-activities')
       .set('Authorization', actor.auth)
       .send(createPayload(title));
     expect(response.status).toBe(201);
-    return response.body.data.activity.id as string;
+    const activityId = response.body.data.activity.id as string;
+    await selectNotRequired(activityId);
+    return activityId;
   }
 
   async function addLiveSession(actor: { auth: string }, activityId: string): Promise<void> {
@@ -559,6 +573,7 @@ describe('App managed activities core', () => {
       .set('Authorization', owner.auth)
       .send(createPayload('Managed direct publish'));
     const activityId = created.body.data.activity.id as string;
+    await selectNotRequired(activityId);
     await addLiveSession(owner, activityId);
     const compatibilitySubmission = await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/direct-publish`)
@@ -633,6 +648,7 @@ describe('App managed activities core', () => {
       .set('Authorization', owner.auth)
       .send(createPayload('Before change'));
     const activityId = created.body.data.activity.id as string;
+    await selectNotRequired(activityId);
     const position = await request(httpServer(app))
       .post(`/api/app/v1/my/managed-activities/${activityId}/positions`)
       .set('Authorization', owner.auth)

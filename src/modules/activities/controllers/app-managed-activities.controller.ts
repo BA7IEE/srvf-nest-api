@@ -1251,6 +1251,8 @@ export class AppManagedActivitiesController {
     BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING,
     BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
     BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
+    BizCode.ACTIVITY_METRIC_SELECTION_INVALID,
+    BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE,
   )
   async createPublishReview(
     @CurrentUser() user: CurrentUserPayload,
@@ -1283,6 +1285,9 @@ export class AppManagedActivitiesController {
     BizCode.ACTIVITY_PUBLISH_REVIEW_OPERATION_KEY_CONFLICT,
     BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID,
     BizCode.ACTIVITY_ALLOCATION_MODE_INCONSISTENT,
+    BizCode.ACTIVITY_METRIC_SELECTION_INVALID,
+    BizCode.ACTIVITY_METRIC_SELECTION_STALE,
+    BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE,
   )
   async createChangeReview(
     @CurrentUser() user: CurrentUserPayload,

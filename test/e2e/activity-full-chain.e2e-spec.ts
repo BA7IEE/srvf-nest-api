@@ -375,6 +375,15 @@ describe('活动全链路贯通(14 站 · 8 条接缝)', () => {
     );
     const activityId = String((draft.activity as { id?: string } | undefined)?.id ?? '');
     expect(activityId).not.toBe('');
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
 
     const workflowRevisionBefore = (
       await prisma.activity.findUniqueOrThrow({

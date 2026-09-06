@@ -35,8 +35,9 @@
   最终 contract 1016 项及两个 snapshot、build、12 项 docs 检查和 FROZEN 派生闸均通过。
 - 3b/4b 已于 2026-09-06 按维护者确认重签；最终 PR CI、可信红区审批及明确合并许可均已闭合。
   PR CI run 34028624264、可信审批 run 34028623344、Docker smoke run 34028624236 均成功。
-- D2c 的新提案 v7/Readiness 未实施；成果登记属 C2/C3，不纳入 D2c。
-  Readiness 的 `METRIC_SET_UNREPRESENTABLE` 仍保留；D2b 不代表 C1 整体完成。
+- D2c 的 v7 提案冻结与内部 Readiness 已在当前分支实现，详见
+  [V7 提案与 Readiness 交付说明](activity-metric-proposal-v7-rollout.md)。它不新增成果登记，
+  不改 D2b 的选择/模板合同，也不代表已合并、生产部署或 C1 整体完成。
 
 ### 维护者已确认重签的核对值（2026-09-06）
 
@@ -47,8 +48,9 @@
 旧字段不变和四个新默认值、112 重放整行不变；没有删除测试或放宽行为断言。
 三套本地 57/57 通过，最终 PR CI 五分片通过；实际写集 127 / 已授权 134，越界 0。
 
-以上只记录 D2b 完成交付。后续 [D2c 实施与授权清单](../archive/plans/activity-os-r3-c1-d2c-implementation-plan.md)
-仅已批准起草，v7 与 Readiness 的实施、测试库重建和生产均不由本页授权。
+以上只记录 D2b 完成交付。D2c 已按其
+[实施与授权清单](../archive/plans/activity-os-r3-c1-d2c-implementation-plan.md)在独立当前分支实现；
+它的 PR、可信审批、整体跨模型复审、合并和生产仍须分别收口，不能由本页的 D2b 历史证据替代。
 
 - 3b：第 112 条 `20260906114906_activity_os_r3_c1_metric_selection_template_v3`，
   SQL SHA-256 `7d033165ee7a786c826c49965095be34ffb1722f1d06c624defee82581b5bbbb`。

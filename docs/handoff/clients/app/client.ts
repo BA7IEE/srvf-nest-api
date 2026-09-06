@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:41928153b292e6197dbc08152e81d11968817c8103fb442cc87939ec5559d33f
+// inputDigest: sha256:efdd1d2435951f10f82bc923e48727ebc3dc893d68167bf4ebed9699b7bff4b8
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理

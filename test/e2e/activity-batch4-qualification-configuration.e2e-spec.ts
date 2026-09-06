@@ -126,7 +126,17 @@ describe('activity batch4 qualification configuration', () => {
         allocationModeCode: 'qualification_rank',
       });
     expect(response.status).toBe(201);
-    return response.body.data.id as string;
+    const activityId = response.body.data.id as string;
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
+    return activityId;
   }
 
   async function createSessionAndPosition(activityId: string): Promise<{
@@ -641,7 +651,7 @@ describe('activity batch4 qualification configuration', () => {
       .send(proposal);
     expect(submitted.status).toBe(200);
     expect(submitted.body.data.snapshot).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
       qualificationRuleSets: {
         ruleSets: expect.arrayContaining([
           expect.objectContaining({
