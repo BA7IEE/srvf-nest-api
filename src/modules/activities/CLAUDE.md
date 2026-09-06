@@ -1,6 +1,6 @@
 # activities — 本地铁律
 
-## C1 D2b/D2c 当前实施边界（D2b 已合入 #1282；D2c 当前分支待收口）
+## C1 D2b/D2c 当前实施边界（D2b 已合入 #1282；D2c 已合入 #1284）
 
 Activity 三态选择、Template V3、Human GLOBAL 模板维护、App 可新选 options 和五条物化链
 已随 #1282 合入 `f5b5b226`；交付、排错及生产限制见 [`activity-metric-selection-template-rollout.md`](../../../docs/ops/activity-metric-selection-template-rollout.md)。
@@ -10,7 +10,7 @@ V1/V2 保留既有 hash/重放行为。App options 只校验当前队员发起�
 每目录最多 1000 候选，1001 明确 20183/409；完整 grammar/hash/active 闭包过滤先于分页和 total，
 只读事务固定同一快照，不缓存资格、不返回配置/表单全文。
 既有 activity.update.record 的业务说明及 6→8 管辖面基线已按精确授权同步；组织资格属主原语扩展已获批准并实现，3b/4b 已于 2026-09-06 按维护者确认重签；18 项 PR 检查、可信审批、合并及 main CI 均完成。
-D2c 的新初发/变更审核写 V7：base/target 都冻结选择三事实，显式选择必须配对 expected revision；省略已发布活动的选择只保留历史引用，显式同值仍按新选资格复验。锁序为 Activity→集→定义，锁等待后重验当前 App 身份、责任和活动状态；仅 approved apply 可写 Activity 选择。旧 v2–v6/legacy 的 parser/hash/apply 不改。审核 diff 只给 `proposal-v7` 的安全字段名；内部 Readiness 识别 V3，按 unconfigured/not_required/active-required/historical-required/invalid 判定，但不接 HTTP、发布 Gate 或成果值。详见 [`activity-metric-proposal-v7-rollout.md`](../../../docs/ops/activity-metric-proposal-v7-rollout.md)。D2c 尚待 PR/CI、整体跨模型复审与合并；不代表生产上线或 C1 完成。
+D2c 的新初发/变更审核写 V7：base/target 都冻结选择三事实，显式选择必须配对 expected revision；省略已发布活动的选择只保留历史引用，显式同值仍按新选资格复验。锁序为 Activity→集→定义，锁等待后重验当前 App 身份、责任和活动状态；仅 approved apply 可写 Activity 选择。旧 v2–v6/legacy 的 parser/hash/apply 不改。审核 diff 只给 `proposal-v7` 的安全字段名；内部 Readiness 识别 V3，按 unconfigured/not_required/active-required/historical-required/invalid 判定，但不接 HTTP、发布 Gate 或成果值。详见 [`activity-metric-proposal-v7-rollout.md`](../../../docs/ops/activity-metric-proposal-v7-rollout.md)。D2c 已随 [#1284](https://github.com/BA7IEE/srvf-nest-api/pull/1284) 合入；PR CI、可信审批及合并后 main CI 均通过。C1 的 D1–D2c 仓内实现已收口，但整体跨模型复审仍待统一完成；不代表生产上线、目录初始化、成果值或 Gate 开启。
 
 ## C1 D2a 当前目录边界
 
@@ -35,7 +35,7 @@ D1 解析器仍是唯一值域真源。D2b/D2c 当前进展以上节为准；成
 
 ## Local facts
 
-- **Activity OS R3 / C1 D1（内部数据地基）**：`ActivityMetricDefinition`、`ActivityMetricSetVersion` 与 `ActivityMetricSetItem` 提供精确 `(code,version)`、Restrict FK、draft→active→retired 与激活后冻结；集项写入同时更新 draft 父版本，使其与激活串行且旧快照事务不能绕过；定义退役不改历史集。纯函数解析五种受控类型、canonical/hash 和激活引用闭包，DB 不复算 hash。D2c 的 V7 审核在既有根事务内使用这些事实做锁后复验，不添加目录状态 writer、HTTP、权限、seed 或 Gate。D1/D2c 均不等于 C1 已完成或生产可用。
+- **Activity OS R3 / C1 D1（内部数据地基）**：`ActivityMetricDefinition`、`ActivityMetricSetVersion` 与 `ActivityMetricSetItem` 提供精确 `(code,version)`、Restrict FK、draft→active→retired 与激活后冻结；集项写入同时更新 draft 父版本，使其与激活串行且旧快照事务不能绕过；定义退役不改历史集。纯函数解析五种受控类型、canonical/hash 和激活引用闭包，DB 不复算 hash。D2c 的 V7 审核在既有根事务内使用这些事实做锁后复验，不添加目录状态 writer、HTTP、权限、seed 或 Gate。D1–D2c 的仓内实现已完成，但整体复审、生产可用性、目录初始化与成果值仍未完成。
 
 - **Activity OS R2 / B6 D2（三种草稿创建）**：App managed 独立 `from-template` / `professional` / `emergency` POST 与物理 App DTO 显式映射封闭命令。`ActivityCreationService` 是唯一根事务所有者；快速模式复用 A6 精确 Version/幂等锚点，并把地点配置与容量确认绑定到请求 hash；专业模式一次物化 Activity、Session/Position、地点、B3 governed Form、既有 Qualification、D1 收据和最小审计。紧急模式叠加独立权限，冻结组织/成员受众，起源、七项义务、一次 `emergency` 定向 outbox 和审计同事务；呼叫不是正式发布。immutable 起源在 App 提审/直发、Admin 两种发布和审核/apply 写边界均拒正式发布，补齐也不解锁。义务仅凭现有事实更新，Session/Position/地点消失会退回 pending；设备/结果/事故关联不伪装为 verified，考勤仍 pending。入口沿既有责任制开关，B4 readiness 仍不接发布 Gate；不新增 schema/migration/权限码/审计事件。
 

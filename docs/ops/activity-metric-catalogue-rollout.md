@@ -2,7 +2,7 @@
 
 状态：D2a 已随 [#1280](https://github.com/BA7IEE/srvf-nest-api/pull/1280) 合入 `48aae003`，PR 与合并后 main CI 均通过；生产尚未部署。生产 migration、首批内容与人员授码须单独审批。
 不新增 Gate；已有 Activity OS 控制面和其他生产开关不变。D2b 当前实施进展见
-[活动选择与 Template V3 交付说明](activity-metric-selection-template-rollout.md)，已随 #1282 合入并验证；D2c 未实施。
+[活动选择与 Template V3 交付说明](activity-metric-selection-template-rollout.md)，已随 #1282 合入并验证；D2c 的 V7/Readiness 已随 #1284 合入并完成 PR 与 main CI 验证。C1 D1–D2c 的仓内实现已闭环，但生产部署、首批内容、人员授码、Gate 与整体跨模型复审仍未完成。
 
 ## 入口与可达性
 
