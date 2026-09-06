@@ -6,11 +6,14 @@ import {
   IsBoolean,
   IsDateString,
   IsDefined,
+  IsInt,
   IsIn,
   IsObject,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateIf,
   ValidateNested,
@@ -20,6 +23,7 @@ import { OmittableOnly } from '../../common/decorators/omittable-only.decorator'
 import { UpdateAppManagedActivityDto } from './dto/app/app-managed-activity.dto';
 import { ManagedRegistrationFormDefinitionInputDto } from './dto/app/app-registration-form.dto';
 import { AppActivityQualificationRuleInputDto } from './dto/app/app-activity-qualification-rules.dto';
+import { AppActivityMetricSelectionInputDto } from './dto/app/app-activity-metric-selection.dto';
 import {
   CreateAppManagedActivitySessionDto,
   CreateAppManagedActivitySessionPositionDto,
@@ -403,7 +407,7 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
   /**
    * Omitted keeps the active Form; explicit null retires it on approval; an object replaces it.
    * The proposal service, not this DTO, canonicalizes and binds it into the generated versioned
-   * proposal snapshot (the current new-proposal envelope is V6).
+   * proposal snapshot (the current new-proposal envelope is V7).
    */
   @ApiPropertyOptional({ nullable: true, type: () => ManagedRegistrationFormDefinitionInputDto })
   @IsOptional()
@@ -419,6 +423,40 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
   @ValidateNested()
   @Type(() => ChangeReviewQualificationRuleSetCollectionsDto)
   qualificationRuleSets?: ChangeReviewQualificationRuleSetCollectionsDto;
+
+  /**
+   * Omitted retains the frozen current selection. An explicit value is a V7 proposal write and
+   * therefore must carry the revision observed by the caller; the service rechecks both after
+   * catalogue-lock waits before it writes anything.
+   */
+  @ApiPropertyOptional({
+    description: '可选的完整指标选择；传入时必须与 expectedMetricSelectionRevision 成对出现',
+    type: () => AppActivityMetricSelectionInputDto,
+  })
+  @ValidateIf(
+    (object: ChangeReviewDto, value: unknown) =>
+      value !== undefined || object.expectedMetricSelectionRevision !== undefined,
+  )
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppActivityMetricSelectionInputDto)
+  metricSelection?: AppActivityMetricSelectionInputDto;
+
+  @ApiPropertyOptional({
+    description: '提交 metricSelection 时读取到的当前指标选择 revision',
+    minimum: 0,
+    maximum: 2147483647,
+  })
+  @ValidateIf(
+    (object: ChangeReviewDto, value: unknown) =>
+      value !== undefined || object.metricSelection !== undefined,
+  )
+  @IsDefined()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
+  expectedMetricSelectionRevision?: number;
 }
 
 export class ActivityTemplateResolutionResponseDto {

@@ -1,6 +1,6 @@
 # activities — 本地铁律
 
-## C1 D2b 当前实施边界（已合入 #1282，生产未部署）
+## C1 D2b/D2c 当前实施边界（D2b 已合入 #1282；D2c 当前分支待收口）
 
 Activity 三态选择、Template V3、Human GLOBAL 模板维护、App 可新选 options 和五条物化链
 已随 #1282 合入 `f5b5b226`；交付、排错及生产限制见 [`activity-metric-selection-template-rollout.md`](../../../docs/ops/activity-metric-selection-template-rollout.md)。
@@ -10,7 +10,7 @@ V1/V2 保留既有 hash/重放行为。App options 只校验当前队员发起�
 每目录最多 1000 候选，1001 明确 20183/409；完整 grammar/hash/active 闭包过滤先于分页和 total，
 只读事务固定同一快照，不缓存资格、不返回配置/表单全文。
 既有 activity.update.record 的业务说明及 6→8 管辖面基线已按精确授权同步；组织资格属主原语扩展已获批准并实现，3b/4b 已于 2026-09-06 按维护者确认重签；18 项 PR 检查、可信审批、合并及 main CI 均完成。
-D2c v7/Readiness 和成果值未实施，不解除 METRIC_SET_UNREPRESENTABLE，不代表生产上线或 C1 完成。
+D2c 的新初发/变更审核写 V7：base/target 都冻结选择三事实，显式选择必须配对 expected revision；省略已发布活动的选择只保留历史引用，显式同值仍按新选资格复验。锁序为 Activity→集→定义，锁等待后重验当前 App 身份、责任和活动状态；仅 approved apply 可写 Activity 选择。旧 v2–v6/legacy 的 parser/hash/apply 不改。审核 diff 只给 `proposal-v7` 的安全字段名；内部 Readiness 识别 V3，按 unconfigured/not_required/active-required/historical-required/invalid 判定，但不接 HTTP、发布 Gate 或成果值。详见 [`activity-metric-proposal-v7-rollout.md`](../../../docs/ops/activity-metric-proposal-v7-rollout.md)。D2c 尚待 PR/CI、整体跨模型复审与合并；不代表生产上线或 C1 完成。
 
 ## C1 D2a 当前目录边界
 
@@ -18,7 +18,7 @@ Human Admin 指标定义/集目录已有独立 Controller、写 Service、查询
 写入及重放均在根事务复验当前用户和 GLOBAL 权限，等待命令锁/父版本锁后再验；RBAC 显式传 tx。
 定义/集只许 draft 编辑，draft→active→retired；激活集先锁父再按 ID 锁定义并复验 canonical/hash。
 收据只返原六字段结果，不返配置或 operationKey；审计与目录/收据同事务。
-D1 解析器仍是唯一值域真源。D2b 当前进展以上节为准，D2c v7/Readiness 与成果值未实施。
+D1 解析器仍是唯一值域真源。D2b/D2c 当前进展以上节为准；成果值仍未实施。
 
 > 全局规则读 [`/AGENTS.md`](../../../AGENTS.md);上下文边界读 [`/docs/participation-bounded-context.md`](../../../docs/participation-bounded-context.md);架构边界读 [`/docs/architecture-boundary.md`](../../../docs/architecture-boundary.md);API surface 边界读 [`/docs/api-surface-policy.md`](../../../docs/api-surface-policy.md)。本文件**只**记录在本目录工作时容易踩雷的本地铁律。
 
@@ -35,11 +35,11 @@ D1 解析器仍是唯一值域真源。D2b 当前进展以上节为准，D2c v7/
 
 ## Local facts
 
-- **Activity OS R3 / C1 D1（内部数据地基）**：`ActivityMetricDefinition`、`ActivityMetricSetVersion` 与 `ActivityMetricSetItem` 仅新增空表；精确 `(code,version)`、Restrict FK、draft→active→retired 与激活后冻结由 DB 约束保护。集项写入同时更新 draft 父版本，使其与激活串行且旧快照事务不能绕过；定义退役不改历史集。两个独立纯函数模块解析五种受控类型、canonical/hash 和激活引用闭包，DB 不复算 hash，未来 writer 必须在根事务锁后复验。无 Activity 指针、业务 writer、HTTP、权限、seed 或 Gate；v6 的 metricSetPointer 仍固定 null，B4 指标 blocker 不变。D1 不等于 C1 完成，D2 接入须独立评审。
+- **Activity OS R3 / C1 D1（内部数据地基）**：`ActivityMetricDefinition`、`ActivityMetricSetVersion` 与 `ActivityMetricSetItem` 提供精确 `(code,version)`、Restrict FK、draft→active→retired 与激活后冻结；集项写入同时更新 draft 父版本，使其与激活串行且旧快照事务不能绕过；定义退役不改历史集。纯函数解析五种受控类型、canonical/hash 和激活引用闭包，DB 不复算 hash。D2c 的 V7 审核在既有根事务内使用这些事实做锁后复验，不添加目录状态 writer、HTTP、权限、seed 或 Gate。D1/D2c 均不等于 C1 已完成或生产可用。
 
 - **Activity OS R2 / B6 D2（三种草稿创建）**：App managed 独立 `from-template` / `professional` / `emergency` POST 与物理 App DTO 显式映射封闭命令。`ActivityCreationService` 是唯一根事务所有者；快速模式复用 A6 精确 Version/幂等锚点，并把地点配置与容量确认绑定到请求 hash；专业模式一次物化 Activity、Session/Position、地点、B3 governed Form、既有 Qualification、D1 收据和最小审计。紧急模式叠加独立权限，冻结组织/成员受众，起源、七项义务、一次 `emergency` 定向 outbox 和审计同事务；呼叫不是正式发布。immutable 起源在 App 提审/直发、Admin 两种发布和审核/apply 写边界均拒正式发布，补齐也不解锁。义务仅凭现有事实更新，Session/Position/地点消失会退回 pending；设备/结果/事故关联不伪装为 verified，考勤仍 pending。入口沿既有责任制开关，B4 readiness 仍不接发布 Gate；不新增 schema/migration/权限码/审计事件。
 
-- **Activity OS R2 / B4（内部 gate-off）**：`ActivityPublishReadinessService` 在单个只读事务中把 Activity、live Session/Position、A5 模板解析、Form/Qualification canonical 结果及既有保险开关投影为最小 facts，再由纯 evaluator 按固定域序输出 blocker/warning/suggestion；四个尚无正式模型的 Time/Contribution/Metric/Safety 条件恒报 unrepresentable blocker。它不 export、不接 controller、审核、发布链路、Gate、Audit 或缓存；地点只看当前 Session/Position 的 WGS84 坐标与半径，不读 ActivityPlace/PlacePreset。
+- **Activity OS R2 / B4（内部 gate-off）**：`ActivityPublishReadinessService` 在单个只读事务中把 Activity、live Session/Position、A5/V3 模板解析、Form/Qualification canonical 结果、指标选择有界闭包及既有保险开关投影为最小 facts，再由纯 evaluator 按固定域序输出 blocker/warning/suggestion。指标仅按 unconfigured/not_required/required active-or-historical/invalid 判定：未配置、坏闭包和草稿退役引用分别给 `METRIC_SELECTION_MISSING`、`METRIC_SELECTION_INVALID`、`METRIC_REFERENCE_UNAVAILABLE`；已发布历史引用可解释。Time/Contribution/Safety 仍 unrepresentable。它不 export、不接 controller、审核、发布链路、Gate、Audit 或缓存；地点只看当前 Session/Position 的 WGS84 坐标与半径，不读 ActivityPlace/PlacePreset。
 - **Activity OS R1 / A2-A6**：A2 的 `ActivityTemplateFamily` 是稳定身份，future Version 的 `familyId`、definition 元数据保持零回填；A3 为其提供 canonical JSON/hash 与 `draft → active → retired` guard，legacy 行不受影响。A4 为 `Activity` 加可空 `selectedTemplateVersionId`，A5 只读时非空指针精确优先、NULL 保留 legacy fallback。A6 的模块内 `ActivityFromTemplateService` 先按 operationKey 重放，再锁定精确 Version、复验 A3 hash 与严格 Definition V1，并在同一事务复制 Activity / Session / Position 与安全审计；成功 Activity 保存选定 Version、operationKey 与 requestHash。它不按 Family 状态或 effective interval 发明“当前可选”规则；V1 不含坐标，要求定位或半径的场次 / 岗位一律 fail-closed。A6 不新增 HTTP、DTO、Swagger、路由、权限码、Gate、seed 或回填。
 - **Activity OS R1 / A1(目录层，非运行时)**：`activity-type-migration.registry.ts` 是旧 `activityTypeCode` 的唯一静态迁移解释；`activity_category` 与 `activity_semantic_facet` 只由 seed 提供受控目录。本 PR 不新增 schema、模板/政策对象、Facet assignment、端点、权限、Gate 或旧值写路径；后续 A2 起必须在本 PR 合并、CI 验收后另立。
 - `activities.service.ts` **1373L**(偏厚,沿 CODEMAP 标 L 体量);活动岗位 CRUD/扩容递补已边界化为 `activity-positions.service.ts`(623L) + `activity-position-audit-recorder.ts`，发布审核边界化为 `activity-publish-review.service.ts`+query/presenter/audit/state-machine,其中**提交/直发命令族**再拆为 `activity-publish-review-submit.service.ts`,两侧共用的事务原语与幂等原语落在纯函数模块 `activity-publish-review-access.ts` / `activity-publish-review-idempotency.ts`(不持 PrismaService、以调用方 `tx` 为入参,故不下放事务所有权、不产生隐式锁序)；责任边界化为 `activity-responsibility.service.ts`(755L)+policy/projector/audit，不继续堆入主 service

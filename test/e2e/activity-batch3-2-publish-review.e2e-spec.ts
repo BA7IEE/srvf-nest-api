@@ -189,6 +189,15 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
       });
     expect(activity.status).toBe(201);
     const activityId = activity.body.data.id as string;
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
     const sessionId = await createLiveSession(activityId, 'main');
     return { activityId, sessionId };
   }
@@ -281,7 +290,7 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
       requestType: 'initial',
       status: 'pending',
       directPublish: false,
-      snapshot: expect.objectContaining({ schemaVersion: 6, snapshotHash: expect.any(String) }),
+      snapshot: expect.objectContaining({ schemaVersion: 7, snapshotHash: expect.any(String) }),
     });
 
     const replay = await request(httpServer(app))
@@ -590,9 +599,9 @@ describe('batch3 slice2 activity publish proposal workflow', () => {
       .expect(200);
     expect(detail.body.data).toMatchObject({
       id: submitted.body.data.id,
-      snapshot: expect.objectContaining({ schemaVersion: 6 }),
+      snapshot: expect.objectContaining({ schemaVersion: 7 }),
       changeDiff: expect.objectContaining({
-        kind: 'proposal-v6',
+        kind: 'proposal-v7',
         activityFields: expect.arrayContaining(['title']),
         sessions: expect.objectContaining({
           create: expect.arrayContaining([expect.objectContaining({ code: 'new-session-0003' })]),

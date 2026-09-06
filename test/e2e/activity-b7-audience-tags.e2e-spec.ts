@@ -149,6 +149,15 @@ describe('activity B7 audience tags over real Admin/System HTTP', () => {
         isPublicRegistration: true,
       });
     expect(activity.status).toBe(201);
+    await prisma.activity.update({
+      where: { id: activity.body.data.id as string },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
 
     const published = await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activity.body.data.id}/publish-with-audience-tags`)
@@ -258,6 +267,15 @@ describe('activity B7 audience tags over real Admin/System HTTP', () => {
       });
     expect(activity.status).toBe(201);
     const activityId = activity.body.data.id as string;
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
 
     const published = await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityId}/publish-with-audience-tags`)
@@ -448,6 +466,15 @@ describe('activity B7 audience tags over real Admin/System HTTP', () => {
         });
       expect(activity.status).toBe(201);
       const activityId = activity.body.data.id as string;
+      await workflowPrisma.activity.update({
+        where: { id: activityId },
+        data: {
+          metricRequirementCode: 'not_required',
+          selectedMetricSetVersionId: null,
+          selectedMetricSetDefinitionHash: null,
+          metricSelectionRevision: 1,
+        },
+      });
       const session = await request(httpServer(workflowApp))
         .post(`/api/app/v1/my/managed-activities/${activityId}/sessions`)
         .set('Authorization', creatorAuth)

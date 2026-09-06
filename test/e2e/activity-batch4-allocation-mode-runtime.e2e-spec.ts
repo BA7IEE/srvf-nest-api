@@ -183,7 +183,17 @@ describe('batch4 allocation mode runtime', () => {
       .set('Authorization', creatorAuth)
       .send(createPayload(`分配方式草稿 ${sequence}`, allocationModeCode));
     expect(response.status).toBe(201);
-    return response.body.data.id as string;
+    const activityId = response.body.data.id as string;
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
+    return activityId;
   }
 
   async function createLiveSession(activityId: string): Promise<string> {
@@ -432,7 +442,7 @@ describe('batch4 allocation mode runtime', () => {
     expect(appPatched.body.data.activity.allocationModeCode).toBe('lottery');
   });
 
-  it('freezes a newly submitted proposal as schemaVersion 6', async () => {
+  it('freezes a newly submitted proposal as schemaVersion 7', async () => {
     const activityId = await createDraft('qualification_rank');
     await createLiveSession(activityId);
     const submitted = await request(httpServer(app))
@@ -442,7 +452,7 @@ describe('batch4 allocation mode runtime', () => {
     expect(submitted.status).toBe(200);
     expect(submitted.body.data.snapshot).toEqual(
       expect.objectContaining({
-        schemaVersion: 6,
+        schemaVersion: 7,
         activity: expect.objectContaining({ allocationModeCode: 'qualification_rank' }),
         base: expect.objectContaining({
           activity: expect.objectContaining({ allocationModeCode: 'qualification_rank' }),
@@ -541,7 +551,7 @@ describe('batch4 allocation mode runtime', () => {
     expect(change.status).toBe(200);
     expect(change.body.data.snapshot).toEqual(
       expect.objectContaining({
-        schemaVersion: 6,
+        schemaVersion: 7,
         activity: expect.objectContaining({ allocationModeCode: 'lottery' }),
         base: expect.objectContaining({
           activity: expect.objectContaining({ allocationModeCode: 'first_come' }),

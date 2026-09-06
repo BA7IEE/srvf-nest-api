@@ -12,7 +12,10 @@ import { ActivityCreationEmergency } from '../../src/modules/activities/activity
 import { ActivityAccessService } from '../../src/modules/activities/activity-access.service';
 import { ActivityDraftService } from '../../src/modules/activities/activity-draft.service';
 import { ActivityNotificationProducer } from '../../src/modules/activities/activity-notification-producer';
-import { ActivityPublishProposalV2Service } from '../../src/modules/activities/activity-publish-proposal-v2.service';
+import {
+  ActivityPublishProposalV2Service,
+  type ActivityPublishProposalSnapshotV6,
+} from '../../src/modules/activities/activity-publish-proposal-v2.service';
 import {
   buildProposalSnapshot,
   lockActivity,
@@ -39,6 +42,27 @@ type CreationResult = {
   followUpItems: { itemCode: string; statusCode: string }[];
 };
 type CreationResponse = { code: number; data: CreationResult };
+type HistoricalV6FixtureState = {
+  activity: unknown;
+  sessions: unknown[];
+  templateVersionId: string | null;
+  resolvedConfig: unknown;
+  registrationForm: unknown;
+  qualificationRuleSets: unknown;
+};
+type HistoricalV6FixtureFactory = {
+  currentState: (
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    includeRegistrationForm?: boolean,
+    includeQualificationRules?: boolean,
+    includeV6Facts?: boolean,
+  ) => Promise<HistoricalV6FixtureState>;
+  toSnapshotV6: (...args: unknown[]) => ActivityPublishProposalSnapshotV6;
+};
+type HistoricalV6FixtureService = HistoricalV6FixtureFactory & {
+  apply: ActivityPublishProposalV2Service['apply'];
+};
 
 describe('B6 emergency creation: frozen calls, real facts and publication refusal', () => {
   let app: INestApplication;
@@ -173,6 +197,27 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
       prisma.notificationOutboxIntent.count(),
       prisma.auditLog.count({ where: { event: 'activity.publish' } }),
     ]);
+  }
+  async function historicalV6Snapshot(
+    activityId: string,
+  ): Promise<ActivityPublishProposalSnapshotV6> {
+    // This is an explicitly historical persisted-envelope fixture. New writers intentionally use
+    // V7 and require a selected metric; B6's emergency boundary must remain independently
+    // covered for an already-pending V6 review.
+    const service: HistoricalV6FixtureFactory = app.get(ActivityPublishProposalV2Service);
+    return prisma.$transaction(async (tx) => {
+      await lockActivity(activityId, tx);
+      const current = await service.currentState(tx, activityId, true, true, true);
+      return service.toSnapshotV6(
+        current,
+        current.activity,
+        current.sessions,
+        current.templateVersionId,
+        current.resolvedConfig,
+        current.registrationForm,
+        current.qualificationRuleSets,
+      );
+    });
   }
 
   it('creates only a draft, seven obligations, a scoped emergency call and two minimal audits atomically', async () => {
@@ -527,12 +572,13 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
     async (kind) => {
       const { result } = await create();
       const id = result.activity.activityId;
-      const snapshot = await prisma.$transaction(async (tx) => {
-        await lockActivity(id, tx);
-        return kind === 'legacy'
-          ? buildProposalSnapshot(id, tx)
-          : app.get(ActivityPublishProposalV2Service).buildInitial(tx, id);
-      });
+      const snapshot =
+        kind === 'legacy'
+          ? await prisma.$transaction(async (tx) => {
+              await lockActivity(id, tx);
+              return buildProposalSnapshot(id, tx);
+            })
+          : await historicalV6Snapshot(id);
       const review = await prisma.activityPublishReview.create({
         data: {
           activityId: id,
@@ -561,12 +607,21 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
   it('proposal application refuses emergency publication at the final write boundary', async () => {
     const { result } = await create();
     const id = result.activity.activityId;
-    const service = app.get(ActivityPublishProposalV2Service);
+    const service: HistoricalV6FixtureService = app.get(ActivityPublishProposalV2Service);
     const before = await counts();
     await expect(
       prisma.$transaction(async (tx) => {
         await lockActivity(id, tx);
-        const snapshot = await service.buildInitial(tx, id);
+        const current = await service.currentState(tx, id, true, true, true);
+        const snapshot = service.toSnapshotV6(
+          current,
+          current.activity,
+          current.sessions,
+          current.templateVersionId,
+          current.resolvedConfig,
+          current.registrationForm,
+          current.qualificationRuleSets,
+        );
         return service.apply(tx, id, snapshot, {
           publish: true,
           publishedByUserId: actor.id,

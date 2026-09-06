@@ -16,6 +16,7 @@ import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 
 const AUDIT_META = { requestId: 'activity-review-e2e', ip: null, ua: null };
+const APP_MANAGED_ACTIVITIES = '/api/app/v1/my/managed-activities';
 
 describe('activity responsibility workflow gate=true publish review', () => {
   let app: INestApplication;
@@ -472,6 +473,15 @@ describe('activity responsibility workflow gate=true publish review', () => {
 
   it('legacy publish only creates a pending review for the initiator; it never direct-publishes', async () => {
     const activityId = await createActivity();
+    await request(httpServer(app))
+      .put(`${APP_MANAGED_ACTIVITIES}/${activityId}/metric-selection`)
+      .set('Authorization', creatorAuth)
+      .send({
+        operationKey: `legacy-publish-metric-selection-${sequence}`,
+        expectedRevision: 0,
+        metricSelection: { metricRequirementCode: 'not_required', metricSetPointer: null },
+      })
+      .expect(200);
     const response = await request(httpServer(app))
       .patch(`/api/admin/v1/activities/${activityId}/publish`)
       .set('Authorization', creatorAuth)

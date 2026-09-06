@@ -6,6 +6,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import {
   ActivityPublishProposalV2Service,
   type ActivityPublishProposalSnapshotV2,
+  type ActivityPublishProposalSnapshotV6,
 } from './activity-publish-proposal-v2.service';
 import { activitySessionCancellationEffects } from './activity-session-cancellation-effects';
 import { canonicalizeRegistrationFormDefinition } from './registration-form-definition';
@@ -354,7 +355,7 @@ describe('ActivityPublishProposalV2Service', () => {
     );
   });
 
-  it('emits V6 for every new initial proposal, including an empty Qualification RuleSet target', async () => {
+  it('emits V7 for every new initial proposal, including an empty Qualification RuleSet target', async () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
@@ -374,25 +375,31 @@ describe('ActivityPublishProposalV2Service', () => {
       qualificationRuleSets: { ruleSets: [] },
       selectedTemplateVersionId: null,
       activityPlaces: [],
+      metricSelection: {
+        metricRequirementCode: 'not_required',
+        metricSetPointer: null,
+        metricSelectionRevision: 1,
+      },
     };
     internals.currentState = jest.fn().mockResolvedValue(state);
     internals.assertProposalValid = jest.fn();
-    internals.toSnapshotV6 = jest.fn().mockReturnValue({ schemaVersion: 6 });
+    internals.toSnapshotV7 = jest.fn().mockReturnValue({ schemaVersion: 7 });
 
     await expect(service.buildInitial({} as never, 'activity-1')).resolves.toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
     });
-    expect(internals.toSnapshotV6).toHaveBeenCalledTimes(1);
+    expect(internals.toSnapshotV7).toHaveBeenCalledTimes(1);
     expect(internals.currentState).toHaveBeenCalledWith(
       expect.anything(),
       'activity-1',
       true,
       true,
       true,
+      true,
     );
   });
 
-  it('freezes the complete V6 base and target with canonical local places and null future pointers', async () => {
+  it('freezes the complete V6 base and target with canonical local places and null future pointers', () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
       registrationForms as never,
@@ -401,7 +408,9 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
     );
-    const internals = service as unknown as { currentState: jest.Mock };
+    const internals = service as unknown as {
+      toSnapshotV6: (...args: unknown[]) => ActivityPublishProposalSnapshotV6;
+    };
     const activity = {
       title: 'V6 local place snapshot',
       activityTypeCode: 'assistance',
@@ -429,7 +438,7 @@ describe('ActivityPublishProposalV2Service', () => {
       defaultLocationRequired: null,
       archiveWaitingDays: 7,
     };
-    internals.currentState = jest.fn().mockResolvedValue({
+    const current = {
       workflowRevision: 18,
       activity,
       sessions: [],
@@ -494,9 +503,20 @@ describe('ActivityPublishProposalV2Service', () => {
           workflowRevision: 2,
         },
       ],
-    });
+    };
 
-    const snapshot = await service.buildInitial({} as never, 'activity-1');
+    // V6 remains parseable/rebuildable for an in-flight historical review. New submissions use
+    // V7, so construct this persisted historical envelope directly rather than routing it through
+    // buildInitial().
+    const snapshot = internals.toSnapshotV6(
+      current,
+      activity,
+      [],
+      'resolved-fallback-template',
+      current.resolvedConfig,
+      null,
+      { ruleSets: [] },
+    );
 
     expect(snapshot).toMatchObject({
       schemaVersion: 6,

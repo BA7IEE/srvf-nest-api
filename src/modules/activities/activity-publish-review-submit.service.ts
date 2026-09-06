@@ -8,6 +8,8 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AppIdentityResolver } from '../users/app-identity.resolver';
+import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
 import {
   ActivityPublishReviewResponseDto,
   ChangeReviewDto,
@@ -67,6 +69,7 @@ export class ActivityPublishReviewSubmitService {
     private readonly proposalValidator: ActivityProposalValidator,
     private readonly proposalV2: ActivityPublishProposalV2Service,
     private readonly allocationModes: ActivityAllocationModeService,
+    private readonly identities: AppIdentityResolver,
   ) {}
 
   async submitInitial(
@@ -263,7 +266,10 @@ export class ActivityPublishReviewSubmitService {
         if (pending > 0) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
         const decision = this.stateMachine.decide('submit');
         if (!decision.allowed) throw new BizException(decision.biz);
-        const snapshot = await this.proposalV2.buildChange(tx, activityId, dto);
+        let actor = user;
+        const snapshot = await this.proposalV2.buildChange(tx, activityId, dto, async () => {
+          actor = await this.revalidateChangeProposalSubmission(tx, activityId, user);
+        });
         await this.allocationModes.assertLockedActivityConsistent(tx, {
           id: activityId,
           allocationModeCode: snapshot.activity.allocationModeCode,
@@ -293,8 +299,8 @@ export class ActivityPublishReviewSubmitService {
           requestVersion: review.requestVersion,
           requestType: review.requestType,
           directPublish: false,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
+          actorUserId: actor.id,
+          actorRoleSnap: actor.role,
           auditMeta,
           tx,
         });
@@ -468,7 +474,16 @@ export class ActivityPublishReviewSubmitService {
         if (pending > 0) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
         const decision = this.stateMachine.decide('submit');
         if (!decision.allowed) throw new BizException(decision.biz);
-        const snapshot = await this.proposalV2.buildInitial(tx, activityId);
+        let actor = user;
+        const snapshot = await this.proposalV2.buildInitial(tx, activityId, async () => {
+          actor = await this.revalidateInitialProposalSubmission(
+            tx,
+            activityId,
+            user,
+            audienceTagCodes,
+            audienceOrganizationIds,
+          );
+        });
         const review = await tx.activityPublishReview.create({
           data: {
             activityId,
@@ -505,8 +520,8 @@ export class ActivityPublishReviewSubmitService {
           requestVersion: review.requestVersion,
           requestType: review.requestType,
           directPublish: false,
-          actorUserId: user.id,
-          actorRoleSnap: user.role,
+          actorUserId: actor.id,
+          actorRoleSnap: actor.role,
           auditMeta,
           tx,
         });
@@ -535,6 +550,86 @@ export class ActivityPublishReviewSubmitService {
       select: { id: true },
     });
     if (!owner) throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+  }
+
+  /** Metric catalogue waits are allowed to outlive a token/ownership change; recheck in-tx. */
+  private async revalidateChangeProposalSubmission(
+    tx: PrismaTx,
+    activityId: string,
+    user: CurrentUserPayload,
+  ): Promise<CurrentUserPayload> {
+    const actor = await loadActiveUserIdentityInTx(tx, user.id);
+    if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
+    if (!(await this.identities.resolve(actor, tx)).canUseApp) {
+      throw new BizException(BizCode.FORBIDDEN);
+    }
+    await this.assertOwnerHidden(tx, activityId, actor);
+    const activity = await tx.activity.findUniqueOrThrow({
+      where: { id: activityId },
+      select: { statusCode: true, allocationModeCode: true },
+    });
+    if (activity.statusCode !== 'published') {
+      throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+    }
+    await this.allocationModes.assertLockedActivityConsistent(tx, {
+      id: activityId,
+      allocationModeCode: activity.allocationModeCode,
+    });
+    const pending = await tx.activityPublishReview.count({
+      where: { activityId, status: 'pending' },
+    });
+    if (pending > 0) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+    return actor;
+  }
+
+  private async revalidateInitialProposalSubmission(
+    tx: PrismaTx,
+    activityId: string,
+    user: CurrentUserPayload,
+    audienceTagCodes: string[] | null,
+    audienceOrganizationIds: string[],
+  ): Promise<CurrentUserPayload> {
+    const actor = await loadActiveUserIdentityInTx(tx, user.id);
+    if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
+    if (!(await this.identities.resolve(actor, tx)).canUseApp) {
+      throw new BizException(BizCode.FORBIDDEN);
+    }
+    const activity = await tx.activity.findUniqueOrThrow({
+      where: { id: activityId },
+      select: {
+        statusCode: true,
+        allocationModeCode: true,
+        initiatorMemberId: true,
+        startAt: true,
+        endAt: true,
+        registrationDeadline: true,
+        isPublicRegistration: true,
+      },
+    });
+    if (!actor.memberId || activity.initiatorMemberId !== actor.memberId) {
+      throw new BizException(BizCode.ACTIVITY_NOT_FOUND);
+    }
+    assertEmergencyFormalPublicationAllowed(
+      await tx.activityEmergencyInitiation.findUnique({
+        where: { activityId },
+        select: { id: true },
+      }),
+    );
+    await this.allocationModes.assertLockedActivityConsistent(tx, {
+      id: activityId,
+      allocationModeCode: activity.allocationModeCode,
+    });
+    ensureInitialPublishable(activity);
+    if (audienceTagCodes !== null) {
+      if (!activity.isPublicRegistration) throw new BizException(BizCode.BAD_REQUEST);
+      await resolveActiveAudienceTagIds(tx, audienceTagCodes);
+      await assertActiveOrganizationIds(tx, audienceOrganizationIds);
+    }
+    const pending = await tx.activityPublishReview.count({
+      where: { activityId, status: 'pending' },
+    });
+    if (pending > 0) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+    return actor;
   }
 
   private async findSubmitReplay(

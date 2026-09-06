@@ -186,6 +186,18 @@ describe('activity single-session cancellation effects (ADV-018 / AC-010)', () =
     return session.body.data.sessionId as string;
   }
 
+  async function selectNotRequired(activityId: string): Promise<void> {
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
+  }
+
   function approveReview(reviewId: string, suffix: string) {
     return request(httpServer(app))
       .post(`/api/admin/v1/activity-publish-reviews/${reviewId}/approve`)
@@ -390,6 +402,7 @@ describe('activity single-session cancellation effects (ADV-018 / AC-010)', () =
         })
         .expect(201);
       activityId = created.body.data.id as string;
+      await selectNotRequired(activityId);
       sessionA = await createSession(activityId, `${suffix}-a`);
       sessionB = await createSession(activityId, `${suffix}-b`);
 
@@ -635,6 +648,7 @@ describe('activity single-session cancellation effects (ADV-018 / AC-010)', () =
       })
       .expect(201);
     const activityId = created.body.data.id as string;
+    await selectNotRequired(activityId);
     const sessionA = await createSession(activityId, `${suffix}-a`);
     await createSession(activityId, `${suffix}-b`);
 
@@ -735,6 +749,7 @@ describe('activity single-session cancellation effects (ADV-018 / AC-010)', () =
         })
         .expect(201);
       activityId = created.body.data.id as string;
+      await selectNotRequired(activityId);
       sessionA = await createSession(activityId, `${suffix}-a`);
       sessionB = await createSession(activityId, `${suffix}-b`);
 

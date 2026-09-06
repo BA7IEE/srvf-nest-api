@@ -207,9 +207,8 @@ app_test 已验证，不代表生产部署、正式目录初始化或人员授�
 测试范围为 app_test deploy/核验及 app_test_w1/app_test_w98，后续已批准三份旧测试适配及 app_test_w97 隔离验证与重建；
 第 112 条 migration 已在测试环境验证。既有 activity.update.record 说明与 6→8 管辖面基线
 已按维护者精确授权同步；组织资格属主原语扩展已获批准并实现，3b/4b 已于 2026-09-06 按维护者确认重签；18 项 PR 检查、可信审批及合并后 main CI（run 34030385503）均通过，生产未部署。
-D2c v7/Readiness 未授权实施，C1 仍未完成；冻结稿中的历史未授权文字不回改。
-维护者已确认 D2b 台账更正及 [D2c 实施与授权清单](../archive/plans/activity-os-r3-c1-d2c-implementation-plan.md)起草。
-本稿覆盖 v7、旧版兼容、指标 Readiness 与 V3 识别的待批准写集；仅起草授权，不含实施、测试库重建或合并。
+D2c 的 v7/Readiness 已按维护者随后确认的 implementation 方案 A 在当前分支实现：新提案写 V7、旧 v2–v6/legacy 保持兼容、审核读面只给安全 `proposal-v7` 摘要，内部 Readiness 识别 V3 与指标三态。无 schema/migration/权限/事件/Gate 增量；app_test 仅 migrate deploy 核验，隔离 E2E 使用获准的 app_test_w1。当前仍待 PR CI、可信审批、合并和延后的整体跨模型复审，不能宣称 C1 已完成或生产可用；冻结稿中的历史未授权文字不回改。
+维护者已确认 D2b 台账更正及 [D2c 实施与授权清单](../archive/plans/activity-os-r3-c1-d2c-implementation-plan.md)起草与 implementation 方案 A。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -283,11 +282,11 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改 |
 | `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | landed · P1-33 | Release 2 / B6 三种创建 API；方案 A 的 D1 数据地基与 D2 三种完整创建、紧急召集流程已分别随 #1270/#1272 合入，评审稿冻结不回改；不代表生产部署 |
 | `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用 |
-| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 的 D1 已随 #1278 合入；D2a 已随 #1280 合入；D2b 已随 #1282 合入并验证，D2c 未授权实施，C1 未完成，原冻结稿不回改 |
-| `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md` | open · P1-33 | C1 D2 方案 A 已批准；D2a 已随 #1280 合入并验证，D2b 已随 #1282 合入并验证，3b/4b 已重签，18 项 PR 检查、可信审批与 main CI 均通过；D2c 未实施，C1 未完成 |
+| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 的 D1/D2a/D2b 已分别随 #1278/#1280/#1282 合入；D2c V7/Readiness 已在当前分支实现，仍待 PR CI、可信审批、合并与整体跨模型复审，C1 未完成，原冻结稿不回改 |
+| `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md` | open · P1-33 | C1 D2 方案 A 已批准；D2a/D2b 已随 #1280/#1282 合入并验证，3b/4b 已重签，18 项 PR 检查、可信审批与 main CI 均通过；D2c 已在当前分支实现，仍待独立收口，C1 未完成 |
 | `docs/archive/plans/activity-os-r3-c1-d2a-implementation-plan.md` | landed · P1-33 | D2a Human 目录维护、收据、RBAC 事务参数及获批清理/治理扩展已随 #1280 合入；3b/4b、18 项 PR 检查、可信审批和 main CI 均通过，不代表生产部署；冻结稿不回改 |
 | `docs/archive/plans/activity-os-r3-c1-d2b-implementation-plan.md` | landed · P1-33 | D2b 及后续精确扩展、契约误报申报、三份旧测试适配已获批准并随 #1282 合入 `f5b5b226`；112 migrations、252 权限、Audit 161 总计 / 156 活跃，3b/4b、18 项 PR 检查、可信审批与 main CI 均通过；未生产部署，冻结稿不回改 |
-| `docs/archive/plans/activity-os-r3-c1-d2c-implementation-plan.md` | open · P1-33 | D2b 台账更正与本稿起草已批准；v7、旧版兼容、指标 Readiness、V3 识别及精确写集为待批准 implementation 方案 A；未实施、未授权测试库重建或生产操作 |
+| `docs/archive/plans/activity-os-r3-c1-d2c-implementation-plan.md` | open · P1-33 | D2b 台账更正、implementation 方案 A、app_test deploy 核验及 app_test_w1/app_test_w98 隔离验证已获精确授权；v7、旧版兼容、指标 Readiness、V3 识别已在当前分支实现。未授权生产操作；PR CI、可信审批、合并与整体跨模型复审仍待收口 |
 | `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
 | `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
 | `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |

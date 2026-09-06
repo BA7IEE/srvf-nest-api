@@ -14,6 +14,68 @@ import {
   ActivityPublishReviewPresenter,
   activityPublishReviewViewSelect,
 } from './activity-publish-review-presenter';
+import { parseActivityPublishProposalV7MetricFields } from './activity-publish-proposal-v7';
+
+const V7_ROOT_KEYS = [
+  'schemaVersion',
+  'baseWorkflowRevision',
+  'baseSnapshotHash',
+  'snapshotHash',
+  'base',
+  'templateVersionId',
+  'resolvedConfig',
+  'activity',
+  'sessions',
+  'registrationForm',
+  'qualificationRuleSets',
+  'categoryCode',
+  'plannedSemanticAssignments',
+  'selectedTemplateVersionId',
+  'activityPlaces',
+  'timePolicyPointers',
+  'contributionPolicyPointers',
+  'metricSetPointer',
+  'contentVisibilitySummary',
+  'metricRequirementCode',
+  'metricSelectionRevision',
+  'metricSelectionExplicit',
+] as const;
+const V7_BASE_KEYS = V7_ROOT_KEYS.filter(
+  (key) =>
+    key !== 'schemaVersion' &&
+    key !== 'baseWorkflowRevision' &&
+    key !== 'baseSnapshotHash' &&
+    key !== 'snapshotHash' &&
+    key !== 'base' &&
+    key !== 'metricSelectionExplicit',
+);
+const V7_SAFE_ACTIVITY_FIELDS = [
+  'activityTypeCode',
+  'allocationModeCode',
+  'archiveWaitingDays',
+  'capacity',
+  'content',
+  'coverImageUrl',
+  'defaultCheckInRadiusMeters',
+  'defaultLocationRequired',
+  'description',
+  'endAt',
+  'galleryImageUrls',
+  'genderRequirementCode',
+  'isPublicRegistration',
+  'location',
+  'locationLatitude',
+  'locationLongitude',
+  'organizationId',
+  'registrationDeadline',
+  'registrationModeCode',
+  'registrationNotes',
+  'registrationSchema',
+  'requiresInsurance',
+  'startAt',
+  'title',
+  'visibilityCode',
+] as const;
 
 @Injectable()
 export class ActivityPublishReviewQueryService {
@@ -128,38 +190,47 @@ export class ActivityPublishReviewQueryService {
       return { kind: 'unparseable' };
     }
     const record = snapshot as Record<string, unknown>;
-    // v3 adds Form, v4 adds allocation mode, v5 adds typed qualification RuleSets, and v6 adds
-    // a separate safe summary for its frozen facts. All proposal generations retain the same
-    // Activity/Session diff envelope.
+    // v3 adds Form, v4 adds allocation mode, v5 adds typed qualification RuleSets, v6 adds
+    // frozen local facts, and V7 adds only a safe metric-selection field summary. All proposal
+    // generations retain the same Activity/Session diff envelope.
     if (
       (record.schemaVersion !== 2 &&
         record.schemaVersion !== 3 &&
         record.schemaVersion !== 4 &&
         record.schemaVersion !== 5 &&
-        record.schemaVersion !== 6) ||
+        record.schemaVersion !== 6 &&
+        record.schemaVersion !== 7) ||
       !this.isRecord(record.base)
     ) {
       return { kind: 'legacy', requestSchemaVersion: record.schemaVersion ?? null };
+    }
+    if (record.schemaVersion === 7 && !this.isSafeV7Snapshot(record)) {
+      return { kind: 'unparseable' };
     }
     const base = record.base;
     const activity = this.isRecord(record.activity) ? record.activity : {};
     const baseActivity = this.isRecord(base.activity) ? base.activity : {};
     return {
       kind:
-        record.schemaVersion === 6
-          ? 'proposal-v6'
-          : record.schemaVersion === 5
-            ? 'proposal-v5'
-            : 'proposal-v2',
-      activityFields: Object.keys(activity)
-        .filter((key) => JSON.stringify(activity[key]) !== JSON.stringify(baseActivity[key]))
-        .sort(),
+        record.schemaVersion === 7
+          ? 'proposal-v7'
+          : record.schemaVersion === 6
+            ? 'proposal-v6'
+            : record.schemaVersion === 5
+              ? 'proposal-v5'
+              : 'proposal-v2',
+      activityFields:
+        record.schemaVersion === 7
+          ? this.v7ActivityChangedFieldNames(baseActivity, activity)
+          : Object.keys(activity)
+              .filter((key) => JSON.stringify(activity[key]) !== JSON.stringify(baseActivity[key]))
+              .sort(),
       sessions: this.collectionDiff(
         Array.isArray(base.sessions) ? base.sessions : [],
         Array.isArray(record.sessions) ? record.sessions : [],
         'sessionId',
       ),
-      ...(record.schemaVersion === 5 || record.schemaVersion === 6
+      ...(record.schemaVersion === 5 || record.schemaVersion === 6 || record.schemaVersion === 7
         ? {
             qualificationRuleSets: this.qualificationRuleSetDiff(
               base.qualificationRuleSets,
@@ -171,6 +242,13 @@ export class ActivityPublishReviewQueryService {
         ? {
             v6Fields: {
               changedFields: this.v6ChangedFieldNames(base, record),
+            },
+          }
+        : {}),
+      ...(record.schemaVersion === 7
+        ? {
+            v7Fields: {
+              changedFields: this.v7ChangedFieldNames(base, record),
             },
           }
         : {}),
@@ -192,6 +270,68 @@ export class ActivityPublishReviewQueryService {
       'selectedTemplateVersionId',
       'timePolicyPointers',
     ].filter((field) => JSON.stringify(base[field]) !== JSON.stringify(target[field]));
+  }
+
+  /** V7 adds only field names for Activity-owned metric selection; never its definition or data. */
+  private v7ChangedFieldNames(
+    base: Record<string, unknown>,
+    target: Record<string, unknown>,
+  ): string[] {
+    return [
+      ...this.v6ChangedFieldNames(base, target).filter((field) => field !== 'metricSetPointer'),
+      ...['metricRequirementCode', 'metricSetPointer', 'metricSelectionRevision'].filter(
+        (field) => JSON.stringify(base[field]) !== JSON.stringify(target[field]),
+      ),
+    ];
+  }
+
+  private v7ActivityChangedFieldNames(
+    base: Record<string, unknown>,
+    target: Record<string, unknown>,
+  ): string[] {
+    return V7_SAFE_ACTIVITY_FIELDS.filter(
+      (field) => JSON.stringify(base[field]) !== JSON.stringify(target[field]),
+    );
+  }
+
+  private isSafeV7Snapshot(record: Record<string, unknown>): boolean {
+    const base = record.base;
+    if (
+      !this.hasExactKeys(record, V7_ROOT_KEYS) ||
+      !this.isRecord(base) ||
+      !this.hasExactKeys(base, V7_BASE_KEYS) ||
+      !this.isRecord(record.activity) ||
+      !this.isRecord(base.activity) ||
+      !Array.isArray(record.sessions) ||
+      !Array.isArray(base.sessions) ||
+      typeof record.metricSelectionExplicit !== 'boolean'
+    ) {
+      return false;
+    }
+    try {
+      parseActivityPublishProposalV7MetricFields({
+        metricRequirementCode: record.metricRequirementCode,
+        metricSetPointer: record.metricSetPointer,
+        metricSelectionRevision: record.metricSelectionRevision,
+      });
+      parseActivityPublishProposalV7MetricFields({
+        metricRequirementCode: base.metricRequirementCode,
+        metricSetPointer: base.metricSetPointer,
+        metricSelectionRevision: base.metricSelectionRevision,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private hasExactKeys(this: void, value: Record<string, unknown>, expected: readonly string[]) {
+    const keys = Object.keys(value);
+    return (
+      keys.length === expected.length &&
+      keys.every((key) => expected.includes(key)) &&
+      expected.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+    );
   }
 
   /** Safe administrative summary: scopes and change kind, never evaluator input facts. */

@@ -10,6 +10,12 @@ import { isActivityOrganizationResolvable } from '../organizations/organization-
 import { matchesActivityTemplateDefinitionHash } from './activity-template-definition';
 import { parseActivityTemplateDefinitionV1 } from './activity-template-definition-v1';
 import { parseActivityTemplateDefinitionV2 } from './activity-template-definition-v2';
+import { parseActivityTemplateDefinitionV3 } from './activity-template-definition-v3';
+import {
+  assertMetricSelectionReference,
+  readActivityMetricSelection,
+} from './activity-metric-selection';
+import type { MetricSetRow } from './activity-metric-presenter';
 import { projectPlaceCoordinate } from './activity-place-coordinate-projection';
 import { LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY } from './activity-type-migration.registry';
 import { QualificationRuleSetVersionService } from './qualification-rule-set-version.service';
@@ -32,6 +38,12 @@ export const ACTIVITY_READINESS_DOMAINS = [
 export type ActivityReadinessDomain = (typeof ACTIVITY_READINESS_DOMAINS)[number];
 export type ActivityReadinessSeverity = 'blocker' | 'warning' | 'suggestion';
 export type ActivityReadinessStatus = 'clear' | 'attention' | 'blocked' | 'unrepresentable';
+export type ActivityReadinessMetricSelectionStatus =
+  | 'unconfigured'
+  | 'not_required'
+  | 'required_active'
+  | 'required_historical'
+  | 'invalid';
 
 export interface ActivityPublishReadinessIssue {
   readonly code: string;
@@ -69,6 +81,7 @@ export interface ActivityPublishReadinessFacts {
     readonly registrationModeCode: string | null;
     readonly visibilityCode: string | null;
     readonly requiresInsurance: boolean;
+    readonly statusCode: string;
     readonly organizationResolvable: boolean;
     readonly initiatorResolvable: boolean;
   };
@@ -105,6 +118,8 @@ export interface ActivityPublishReadinessFacts {
      */
     readonly invalidRuleSetId: string | null;
   };
+  /** Bounded semantic result of the exact current selection + catalogue closure, never raw data. */
+  readonly metricSelection: ActivityReadinessMetricSelectionStatus;
   readonly insuranceEnforcementEnabled: boolean;
 }
 
@@ -230,11 +245,23 @@ const ISSUE_DEFINITIONS = {
     message: '当前活动没有可解析的有效贡献政策指针。',
     resolutionHint: '在 Release 5 建立 ContributionPolicy / Version 与活动选择关系后重新判定。',
   },
-  METRIC_SET_UNREPRESENTABLE: {
+  METRIC_SELECTION_MISSING: {
     domain: 'terminalPolicyOutcomeSafety',
     severity: 'blocker',
-    message: '当前活动没有可解析的必需指标集。',
-    resolutionHint: '在 Release 3 建立 Metric Definition / Set Version 后重新判定。',
+    message: '当前活动尚未配置指标选择。',
+    resolutionHint: '通过既有活动指标选择受控面明确选择“无需指标”或一份精确指标集。',
+  },
+  METRIC_SELECTION_INVALID: {
+    domain: 'terminalPolicyOutcomeSafety',
+    severity: 'blocker',
+    message: '当前活动的指标选择或其精确引用无法完整解析。',
+    resolutionHint: '修复既有活动指标选择与目录引用，不按最新版本猜测替代。',
+  },
+  METRIC_REFERENCE_UNAVAILABLE: {
+    domain: 'terminalPolicyOutcomeSafety',
+    severity: 'blocker',
+    message: '草稿活动引用的指标集当前已不可用于新的发布事实。',
+    resolutionHint: '在既有指标选择受控面重新选择当前有效的精确指标集。',
   },
   SAFETY_REQUIREMENTS_UNREPRESENTABLE: {
     domain: 'terminalPolicyOutcomeSafety',
@@ -341,7 +368,9 @@ function templateDefinitionIsValid(
   // written, so applying future-version validation to them would fabricate a B4 failure.
   if (template.familyId === null) return true;
   if (
-    (template.schemaVersion !== 1 && template.schemaVersion !== 2) ||
+    (template.schemaVersion !== 1 &&
+      template.schemaVersion !== 2 &&
+      template.schemaVersion !== 3) ||
     template.definitionJson === null ||
     template.definitionHash === null
   ) {
@@ -361,8 +390,10 @@ function templateDefinitionIsValid(
     }
     if (template.schemaVersion === 1) {
       parseActivityTemplateDefinitionV1(template.definitionJson);
-    } else {
+    } else if (template.schemaVersion === 2) {
       parseActivityTemplateDefinitionV2(template.definitionJson);
+    } else {
+      parseActivityTemplateDefinitionV3(template.definitionJson);
     }
     return true;
   } catch {
@@ -547,7 +578,13 @@ export function evaluateActivityPublishReadiness(
 
   addIssue(issues, 'TIME_POLICY_UNREPRESENTABLE', 'policy.time');
   addIssue(issues, 'CONTRIBUTION_POLICY_UNREPRESENTABLE', 'policy.contribution');
-  addIssue(issues, 'METRIC_SET_UNREPRESENTABLE', 'metrics.requiredSet');
+  if (facts.metricSelection === 'unconfigured') {
+    addIssue(issues, 'METRIC_SELECTION_MISSING', 'metrics.requiredSet');
+  } else if (facts.metricSelection === 'invalid') {
+    addIssue(issues, 'METRIC_SELECTION_INVALID', 'metrics.requiredSet');
+  } else if (facts.metricSelection === 'required_historical' && activity.statusCode === 'draft') {
+    addIssue(issues, 'METRIC_REFERENCE_UNAVAILABLE', 'metrics.requiredSet');
+  }
   addIssue(issues, 'SAFETY_REQUIREMENTS_UNREPRESENTABLE', 'safety.requirements');
 
   const sorted = [...issues].sort(compareIssues);
@@ -595,6 +632,19 @@ export class ActivityPublishReadinessService {
         visibilityCode: true,
         requiresInsurance: true,
         statusCode: true,
+        metricRequirementCode: true,
+        selectedMetricSetVersionId: true,
+        selectedMetricSetDefinitionHash: true,
+        metricSelectionRevision: true,
+        selectedMetricSetVersion: {
+          include: {
+            items: {
+              include: { metricDefinition: true },
+              take: 101,
+              orderBy: { sortOrder: 'asc' },
+            },
+          },
+        },
         sessions: {
           where: { deletedAt: null },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
@@ -634,6 +684,13 @@ export class ActivityPublishReadinessService {
       activity.organizationId,
     );
     const initiatorResolvable = await isActivityInitiatorResolvable(tx, activity.initiatorMemberId);
+    const metricSelection = this.metricSelectionStatus({
+      metricRequirementCode: activity.metricRequirementCode,
+      selectedMetricSetVersionId: activity.selectedMetricSetVersionId,
+      selectedMetricSetDefinitionHash: activity.selectedMetricSetDefinitionHash,
+      metricSelectionRevision: activity.metricSelectionRevision,
+      selectedMetricSetVersion: activity.selectedMetricSetVersion,
+    });
 
     let registrationFormValid = true;
     try {
@@ -667,6 +724,7 @@ export class ActivityPublishReadinessService {
         registrationModeCode: activity.registrationModeCode,
         visibilityCode: activity.visibilityCode,
         requiresInsurance: activity.requiresInsurance,
+        statusCode: activity.statusCode,
         organizationResolvable,
         // B4 intentionally does not replay the actor-specific cross-organization authorization
         // decision made when the draft was created. Its responsibility fact is the live initiator.
@@ -703,6 +761,7 @@ export class ActivityPublishReadinessService {
         valid: qualificationRuleSetValid,
         invalidRuleSetId: qualificationRuleSetValid ? null : (qualificationRuleSets[0]?.id ?? null),
       },
+      metricSelection,
       insuranceEnforcementEnabled: this.insuranceRequirements.isEnforcementEnabled(),
     };
   }
@@ -738,5 +797,37 @@ export class ActivityPublishReadinessService {
       orderBy: [{ version: 'desc' }, { code: 'asc' }, { id: 'asc' }],
       select,
     });
+  }
+
+  private metricSelectionStatus(input: {
+    readonly metricRequirementCode: string | null;
+    readonly selectedMetricSetVersionId: string | null;
+    readonly selectedMetricSetDefinitionHash: string | null;
+    readonly metricSelectionRevision: number;
+    readonly selectedMetricSetVersion: MetricSetRow | null;
+  }): ActivityReadinessMetricSelectionStatus {
+    try {
+      const selection = readActivityMetricSelection(
+        {
+          metricRequirementCode: input.metricRequirementCode,
+          selectedMetricSetVersionId: input.selectedMetricSetVersionId,
+          selectedMetricSetDefinitionHash: input.selectedMetricSetDefinitionHash,
+          metricSelectionRevision: input.metricSelectionRevision,
+        },
+        input.selectedMetricSetVersion,
+      );
+      if (selection === null) return 'unconfigured';
+      if (selection.metricRequirementCode === 'not_required') return 'not_required';
+      try {
+        assertMetricSelectionReference(selection, input.selectedMetricSetVersion);
+        return 'required_active';
+      } catch {
+        // readActivityMetricSelection already proved the bounded historic closure; this second
+        // strict check only distinguishes active from retired for the draft readiness rule.
+        return 'required_historical';
+      }
+    } catch {
+      return 'invalid';
+    }
   }
 }

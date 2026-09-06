@@ -306,7 +306,17 @@ describe('activity responsibility workflow local acceptance', () => {
       .set('Authorization', actor.auth)
       .send(activityPayload(title, organizationId));
     if (response.status !== 201) throw new Error(JSON.stringify(response.body));
-    return response.body.data.activity.id as string;
+    const activityId = response.body.data.activity.id as string;
+    await prisma.activity.update({
+      where: { id: activityId },
+      data: {
+        metricRequirementCode: 'not_required',
+        selectedMetricSetVersionId: null,
+        selectedMetricSetDefinitionHash: null,
+        metricSelectionRevision: 1,
+      },
+    });
+    return activityId;
   }
 
   async function addPosition(actor: LocalActor, activityId: string): Promise<string> {
