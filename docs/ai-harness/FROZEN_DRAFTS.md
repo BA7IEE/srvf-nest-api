@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7 与 Release 3 C1 D1–D2c 已完成相应仓内合同、实施与验证；C1 D1/D2a/D2b/D2c 已分别合入 #1278/#1280/#1282/#1284 | 前端页面发布、灰度人群、生产部署和 Gate 切换仍待独立确认与验收；C1 整体跨模型复审、C2 及后续未完成 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7 与 Release 3 C1 D1–D2c 已完成相应仓内合同、实施与验证；C1 D1/D2a/D2b/D2c 已分别合入 #1278/#1280/#1282/#1284；C2 评审稿已起草 | 前端页面发布、灰度人群、生产部署和 Gate 切换仍待独立确认与验收；C1 整体跨模型复审、C2 implementation 及后续未完成 |
 
 ### 1.1 欠代码的五项
 
@@ -92,7 +92,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7 与 Release 3 C1 D1–D2c 的仓内实施已通过；前端发布、生产 Gate、C1 整体复审与后续 Release 未完成**
+**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7 与 Release 3 C1 D1–D2c 的仓内实施已通过；C2 评审稿已起草；前端发布、生产 Gate、C1 整体复审与 C2 implementation／后续 Release 未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
@@ -210,6 +210,12 @@ app_test 已验证，不代表生产部署、正式目录初始化或人员授�
 D2c 的 v7/Readiness 已按维护者确认的 implementation 方案 A 随 [#1284](https://github.com/BA7IEE/srvf-nest-api/pull/1284) 合入：新提案写 V7、旧 v2–v6/legacy 保持兼容、审核读面只给安全 `proposal-v7` 摘要，内部 Readiness 识别 V3 与指标三态。无 schema/migration/权限/事件/Gate 增量；app_test 仅 migrate deploy 核验，隔离 E2E 使用获准的 app_test_w1。PR CI、可信审批及[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34047835711)均通过。C1 D1–D2c 的仓内实现已闭环，但整体跨模型复审、生产部署、正式目录初始化与 Gate 仍未完成；冻结稿中的历史未授权文字不回改。
 维护者已确认 D2b 台账更正及 [D2c 实施与授权清单](../archive/plans/activity-os-r3-c1-d2c-implementation-plan.md)起草与 implementation 方案 A；该计划已按批准范围实施，不回改归档正文。
 
+**C2 Outcome／Value revision 评审稿已起草，implementation 尚未开始**：见
+[`activity-os-r3-c2-outcome-value-revision-review.md`](../archive/reviews/activity-os-r3-c2-outcome-value-revision-review.md)。
+推荐先做 D1 的不可变成果头、指标值与证据关系数据地基，再经 D2 独立评审接入 Human manual 草稿／修订；
+confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新增数据、migration、HTTP、权限、审计、
+附件 owner、Readiness、Gate 或生产行为；C1 的已选指标集不等于已有成果。
+
 ### 1.2 欠运维的四项(代码都写完了)
 
 | 冻结稿 | 还差什么 |
@@ -284,6 +290,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用 |
 | `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 的 D1/D2a/D2b/D2c 已分别随 #1278/#1280/#1282/#1284 合入；D2c PR CI、可信审批与 main CI 均通过，C1 整体跨模型复审仍待统一完成，原冻结稿不回改 |
 | `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md` | open · P1-33 | C1 D2 方案 A 已批准；D2a/D2b/D2c 已随 #1280/#1282/#1284 合入并验证，3b/4b 已重签，D2c PR CI、可信审批与 main CI 均通过；C1 整体跨模型复审仍待统一完成 |
+| `docs/archive/reviews/activity-os-r3-c2-outcome-value-revision-review.md` | open · P1-33 | Release 3 / C2 的 Outcome／Value revision 评审与授权清单已起草；仅 docs-only，不代表 D1／D2 implementation、确认、自动指标、import、AI、前端或生产可用 |
 | `docs/archive/plans/activity-os-r3-c1-d2a-implementation-plan.md` | landed · P1-33 | D2a Human 目录维护、收据、RBAC 事务参数及获批清理/治理扩展已随 #1280 合入；3b/4b、18 项 PR 检查、可信审批和 main CI 均通过，不代表生产部署；冻结稿不回改 |
 | `docs/archive/plans/activity-os-r3-c1-d2b-implementation-plan.md` | landed · P1-33 | D2b 及后续精确扩展、契约误报申报、三份旧测试适配已获批准并随 #1282 合入 `f5b5b226`；112 migrations、252 权限、Audit 161 总计 / 156 活跃，3b/4b、18 项 PR 检查、可信审批与 main CI 均通过；未生产部署，冻结稿不回改 |
 | `docs/archive/plans/activity-os-r3-c1-d2c-implementation-plan.md` | landed · P1-33 | D2b 台账更正、implementation 方案 A、app_test deploy 核验及 app_test_w1/app_test_w98 隔离验证已获精确授权；v7、旧版兼容、指标 Readiness、V3 识别已随 #1284 合入。PR CI、可信审批及 main CI 均通过；未授权生产操作，整体跨模型复审仍待收口 |

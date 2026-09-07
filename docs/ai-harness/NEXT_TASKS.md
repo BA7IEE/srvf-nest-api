@@ -2492,9 +2492,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7 与 Release 3 C1 D1–D2c 仓内实施已通过；C2 及后续待独立推进**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7 与 Release 3 C1 D1–D2c 仓内实施已通过；C2 评审稿已起草，implementation 及后续待独立推进**
 
-**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、C1 D1 #1278 / D2a #1280 / D2b #1282 / D2c #1284 已合；C1 的仓内实现、handoff 与 PR/main 验证已收口，整体跨模型复审仍按维护者安排待统一完成；前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，C2 及后续未启动，不宣称 Release 2 或 C1 已上线)
+**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、C1 D1 #1278 / D2a #1280 / D2b #1282 / D2c #1284 已合；C1 的仓内实现、handoff 与 PR/main 验证已收口，整体跨模型复审仍按维护者安排待统一完成；C2 评审稿已起草、implementation 未启动或授权；前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，不宣称 Release 2 或 C1 已上线)
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
@@ -2523,6 +2523,8 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 - **C1 D2a/D2b 已交付并分别合入 #1280/#1282**：[D2a 实施清单](../archive/plans/activity-os-r3-c1-d2a-implementation-plan.md)的 Human 目录维护、收据、RBAC 可选 tx 及获批清理/治理扩展已随 [#1280](https://github.com/BA7IEE/srvf-nest-api/pull/1280) 合入 `48aae003`。第 111 条 migration、250 权限、Audit 159 总计 / 154 活跃与 3b/4b 重签已核验；18 项 PR 检查、可信审批和[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34009172243)均通过，未生产部署。[D2b 实施与授权清单](../archive/plans/activity-os-r3-c1-d2b-implementation-plan.md)列出三态选择、Template V3、最小 Human 模板维护、五条物化链及 scoped 判权 tx 透传的精确预算；D2b implementation 方案 A、指定测试库及后续事务依赖补全、Quick 当前身份审计和 options 上限补充已获批准，已随 [#1282](https://github.com/BA7IEE/srvf-nest-api/pull/1282) 合入 `f5b5b226`（最终 PR HEAD `1ceaedac`，127 个实际路径，134 个授权路径，越界 0）。既有 activity.update.record 的业务说明及 6→8 管辖面派生基线已按维护者精确授权同步；组织资格属主原语扩展已获批准并实现，3b/4b 已于 2026-09-06 按维护者确认重签（112 migrations、252 权限、Audit 161 总计 / 156 活跃）；18 项 PR 检查、可信审批、[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34030385503) 均通过。R11 的 14 条 required-added finding 经最小复现确认来自 optional 父字段扁平化，按批准添加两条误报申报，未修改比较器或契约；三份旧 E2E 按批准适配新 FK 清理和分段迁移，原行为断言保留，57/57 通过，最终全量 CI 通过。D2b → D2c v7/Readiness 的顺序已按 #1284 收口：旧 v2–v6 不回改，D2c 的 PR CI、可信审批和[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34047835711)均通过。C1 的整体跨模型复审仍待统一完成，C2 尚未启动或授权。
 - **2026-09-05 评审节奏调整**：维护者明确「跳过评审，继续推进，等搞完了再整体评审」。阶段性跨模型复审延后至整体实现完成后统一执行；C1 D1 当前没有有效独立复审结论，不记为通过或永久豁免。此调整不替代 D2 等后续方案/实施范围拍板、3b 签字、可信红区审批、CI 或合并/生产授权。
 - **C1 D2c 已交付并合入 #1284**：维护者确认 implementation 方案 A，并精确允许 app_test 的 migrate deploy 核验与 app_test_w1/app_test_w98 隔离验证。V7 新提案、旧 v2–v6/legacy 隔离、锁等待后的当前身份/责任/引用复验、安全 `proposal-v7` changeDiff、V3 Readiness 识别和指标三态语义均已交付；无 schema/migration/seed、权限码、审计事件、路由或 Gate 增量。PR CI、可信审批与[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34047835711)均通过。C1 D1–D2c 的仓内实现已闭环；整体跨模型复审仍待维护者要求的统一执行，未部署生产、不自动进入 C2，也不将仓内实现冒称生产可用。
+
+- **2026-09-07 C2 当前订正**：[Outcome／Value revision 评审及授权清单](../archive/reviews/activity-os-r3-c2-outcome-value-revision-review.md)已起草。上文较早的“C2 尚未启动或授权”仅指 implementation，不能读成没有评审稿；C2 D1／D2 尚未实施或获实施授权，confirmed／system／AI 来源归 C3，import 仍须独立立项。本次没有 schema、migration、API、权限、审计、附件 owner、Readiness、Gate 或生产行为变更。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
