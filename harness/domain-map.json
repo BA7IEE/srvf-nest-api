@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:232bc63577dd6c4290031c9848059fe350f97d9ab195605013b734f019e3387b",
+  "inputDigest": "sha256:42a211c053d6186fd991b1093717d66e009e7bd7da99bb0e4ab2fe0c365dab24",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -511,6 +511,12 @@
       "confirmed": true
     },
     "ActivityOutcomeRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityOutcomeCommandReceipt": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",
@@ -1717,7 +1723,7 @@
       "prismaModel": "OrganizationClosure",
       "operation": "findMany",
       "sourceFile": "src/modules/authz/authz.service.ts",
-      "sourceSymbol": "AuthzService.getVisibleOrganizationScope",
+      "sourceSymbol": "AuthzService.collectVisibleOrganizationScope",
       "accessPath": "OrganizationClosure",
       "observedBy": "Phase 2 docs:boundaries R5/R6 实测",
       "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"

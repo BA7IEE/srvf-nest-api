@@ -123,6 +123,79 @@ function setup() {
   return { service, tx, client, rbac };
 }
 
+describe('C2 explicit organization scope without role bypass', () => {
+  it('keeps the old SUPER_ADMIN entry point unchanged', async () => {
+    const { service, tx, client } = setup();
+    await expect(
+      service.getVisibleOrganizationScope(
+        { ...user, role: Role.SUPER_ADMIN },
+        'activity.outcome.record',
+        client,
+      ),
+    ).resolves.toEqual({ hasPermission: true, global: true, organizationIds: [] });
+    expect(tx.roleBinding.findMany).not.toHaveBeenCalled();
+  });
+
+  it.each([Role.USER, Role.SUPER_ADMIN])('requires actual permission for %s', async (role) => {
+    const { service, tx, client } = setup();
+    tx.rolePermission.findMany.mockResolvedValue([]);
+    await expect(
+      service.getExplicitVisibleOrganizationScope(
+        { ...user, role },
+        'activity.outcome.record',
+        client,
+      ),
+    ).resolves.toEqual({ hasPermission: false, global: false, organizationIds: [] });
+    expect(tx.rolePermission.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          permission: { code: 'activity.outcome.record' },
+        }) as unknown,
+      }),
+    );
+  });
+
+  it.each(['role_binding', 'position', 'supervision'] as const)(
+    'resolves %s for SUPER_ADMIN using caller tx only',
+    async (source) => {
+      const { service, tx, client } = setup();
+      if (source !== 'role_binding') tx.roleBinding.findMany.mockResolvedValue([]);
+      if (source === 'supervision')
+        tx.organizationPositionRolePolicy.findMany.mockResolvedValue([]);
+      tx.organizationClosure.findMany.mockResolvedValue([
+        { descendantId: 'org' },
+        { descendantId: 'child' },
+      ]);
+      await expect(
+        service.getExplicitVisibleOrganizationScope(
+          { ...user, role: Role.SUPER_ADMIN },
+          'activity.outcome.read',
+          client,
+        ),
+      ).resolves.toEqual({ hasPermission: true, global: false, organizationIds: ['child', 'org'] });
+      expect(tx.organizationClosure.findMany).toHaveBeenCalledWith({
+        where: { ancestorId: { in: ['org'] } },
+        select: { descendantId: true },
+      });
+    },
+  );
+
+  it('rereads grants after permission revocation', async () => {
+    const { service, tx, client } = setup();
+    const actor = { ...user, role: Role.SUPER_ADMIN };
+    expect(
+      (await service.getExplicitVisibleOrganizationScope(actor, 'activity.outcome.read', client))
+        .hasPermission,
+    ).toBe(true);
+    tx.rolePermission.findMany.mockResolvedValue([]);
+    expect(
+      (await service.getExplicitVisibleOrganizationScope(actor, 'activity.outcome.read', client))
+        .hasPermission,
+    ).toBe(false);
+    expect(tx.rolePermission.findMany).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('C1 D2b explicit Authz transaction closure', () => {
   it.each(['role_binding', 'position', 'supervision'] as const)(
     'resolves %s from caller delegates, including role and organization checks',

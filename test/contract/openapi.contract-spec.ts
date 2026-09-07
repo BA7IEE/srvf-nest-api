@@ -95,6 +95,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities/template-version-options'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
   ['put', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/outcomes'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/outcomes'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/outcomes/{outcomeRevisionId}'],
   ['get', '/api/admin/v1/activities/{id}/metric-selection'],
   ['put', '/api/admin/v1/activities/{id}/metric-selection'],
   ['get', '/api/admin/v1/activity-metric-definitions'],
@@ -1116,7 +1119,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 598; // C1 D2b +12 (templates, App options, selection)
+const EXPECTED_ROUTE_COUNT = 601; // C2 D2 +3 (manual outcome record, history, detail)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -2907,6 +2910,66 @@ describe('OpenAPI 契约快照', () => {
     });
     expect(positionCreate.properties?.clientRef).toMatchObject({ type: 'string', minLength: 1 });
     expect(JSON.stringify({ input, scope, review, positionCreate })).not.toContain('valueJson');
+  });
+
+  it('C2 D2 exposes only the approved manual outcome command and safe historical projections', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const command = schemas.AppRecordActivityOutcomeDto as OpenApiSchema;
+    const inputFields = [
+      'expectedRevision',
+      'metricSetDefinitionHash',
+      'metricSetVersionId',
+      'operationKey',
+      'values',
+    ];
+    expect(Object.keys(command.properties ?? {}).sort()).toEqual(inputFields);
+    expect(command.required?.slice().sort()).toEqual(inputFields);
+    expect(command.properties?.expectedRevision).toMatchObject({ minimum: 0, maximum: 2147483646 });
+    const value = schemas.AppActivityOutcomeValueInputDto as OpenApiSchema;
+    expect(Object.keys(value.properties ?? {}).sort()).toEqual([
+      'evidenceAttachmentIds',
+      'metricDefinitionId',
+      'value',
+    ]);
+    expect(value.required?.slice().sort()).toEqual(['metricDefinitionId', 'value']);
+    expect(value.properties?.value).toMatchObject({
+      oneOf: [{ type: 'integer' }, { type: 'string' }, { type: 'boolean' }],
+    });
+    const receipt = schemas.AppActivityOutcomeResultDto as OpenApiSchema;
+    expect(Object.keys(receipt.properties ?? {}).sort()).toEqual([
+      'activityId',
+      'createdAt',
+      'createdStatusCode',
+      'evidenceCount',
+      'metricSetDefinitionHash',
+      'metricSetVersionId',
+      'outcomeRevisionId',
+      'revision',
+      'schemaVersion',
+      'sourceCode',
+      'valueCount',
+    ]);
+    expect(receipt.properties?.createdStatusCode.enum).toEqual(['draft']);
+    expect(receipt.properties?.sourceCode.enum).toEqual(['manual']);
+    const summary = schemas.AppActivityOutcomeSummaryDto as OpenApiSchema;
+    expect(Object.keys(summary.properties ?? {}).sort()).toEqual([
+      'activityId',
+      'createdAt',
+      'metricSetDefinitionHash',
+      'metricSetVersionId',
+      'outcomeRevisionId',
+      'priorRevisionId',
+      'revision',
+      'statusCode',
+    ]);
+    const detail = schemas.AppActivityOutcomeDetailDto as OpenApiSchema;
+    expect(Object.keys(detail.properties ?? {}).sort()).toEqual(
+      [...Object.keys(summary.properties ?? {}), 'values'].sort(),
+    );
+    const path = '/api/app/v1/my/managed-activities/{activityId}/outcomes';
+    expect(doc.paths[path].post?.responses?.['201']).toBeDefined();
+    expect(doc.paths[path].get?.responses?.['200']).toBeDefined();
+    expect(doc.paths[`${path}/{outcomeRevisionId}`].get?.responses?.['200']).toBeDefined();
   });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {

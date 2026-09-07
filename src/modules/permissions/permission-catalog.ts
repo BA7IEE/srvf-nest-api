@@ -102,6 +102,23 @@ export const ACTIVITY_METRIC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> 
   },
 ];
 
+export const ACTIVITY_OUTCOME_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity.outcome.record',
+    module: 'activity',
+    action: 'outcome',
+    resourceType: 'record',
+    description: '人工记录活动成果；显式授权、当前责任及组织范围同时满足',
+  },
+  {
+    code: 'activity.outcome.read',
+    module: 'activity',
+    action: 'outcome',
+    resourceType: 'read',
+    description: '读取活动成果历史；显式授权、当前责任及组织范围同时满足',
+  },
+];
+
 export const DELEGATION_GRANT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'delegation-grant.create.record',
@@ -2846,6 +2863,32 @@ export const CRITICAL_RISK_TAGS: readonly PermissionRiskTag[] = Object.freeze([
 
 export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCatalogMetadata>> =
   Object.freeze({
+    'activity.outcome.record': {
+      displayName: '记录活动成果',
+      businessDescription:
+        '真人追加人工成果草稿；显式授权及当前活动责任、组织范围必须同时满足，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 190,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.outcome.read': {
+      displayName: '查看活动成果',
+      businessDescription:
+        '真人查看有权活动的成果历史和明细；无管理员角色直通，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 191,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
     'activity-template.read.catalog': {
       displayName: '查看全局活动模板目录',
       businessDescription:

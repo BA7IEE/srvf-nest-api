@@ -220,6 +220,8 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 
 **2026-09-07 D2 当前更新（覆盖上方历史待确认表述）**：维护者已确认 C2 D2 方案 A，评审随 [#1291](https://github.com/BA7IEE/srvf-nest-api/pull/1291) 合入 `82d28c5c`，[main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34094984817)通过。现按另行批准的四份文档写集起草 [D2 精确实施计划](../archive/plans/activity-os-r3-c2-d2-implementation-plan.md)，允许提交、推送和创建计划 PR；不合并、不实施、不操作数据库、不启用 Gate。D2 仍为 open，方案通过不等于人工成果已经可用。
 
+**C2 D2 implementation 当前进展（覆盖上述仅文档状态，未 landed）**：#1292 计划已合入，维护者已批准 implementation 及附件删除保护、Authz 显式组织授权原语、旧 D1 测试适配。当前分支已接入三个 Human App 成果接口、专用收据、同事务人工完整修订与历史读面；在 app_test/app_test_w1/app_test_w98 的授权范围验证。已有真实 HTTP、两连接池锁等待、附件双向竞争、整笔回滚、非空升级与历史兼容回归证据。客户端其他五个 surface 的 10 个文件已获仅生成摘要刷新授权并完成；3b/4b 已按维护者本轮确认重签。允许完整检查通过后提交、推送并创建 implementation PR；尚未合并，整体复审及部署未完成。C2 总评审与 D2 计划保持 open，C3–C5 不启动。
+
 ### 1.2 欠运维的四项(代码都写完了)
 
 | 冻结稿 | 还差什么 |
@@ -246,7 +248,7 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **252** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **254** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
 | 治理 Phase 4:状态列 governed / 登记总数 | **8 / 66** | `harness/state-machines.json` |

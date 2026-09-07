@@ -14,6 +14,8 @@
 
 ## Local facts
 
+- **C2 D2 显式组织授权**：`getExplicitVisibleOrganizationScope(user, action, tx)` 必传调用者事务，只认实际有效三源授权，SUPER_ADMIN 不自动获得全局范围。与旧 `getVisibleOrganizationScope` 共用归集实现；旧入口的管理员特例和全部旧行为保留。新入口仍不替代当前身份、业务责任或目标组织资格校验。
+
 - **C1 D2b 显式事务透传**：`can/explain(user, action, ref?, tx?)`、`getVisibleOrganizationScope(user, action, tx?)` 与 `ResourceResolverService.resolve(ref, tx?)` 可消费调用者事务；三源 grant、角色含码、组织状态/闭包及全部 14 类资源解析（含 attachment 递归委派）使用同一个 tx。未传 tx 仍走原 PrismaService，不变更 scope、任期、软删、约束或 deny reason。这里只透传、不新建事务、不取隐式锁；等待锁后的当前 User/Member 复验由业务事务编排负责，不能把本接口当作身份刷新器。`getEffectivePermissionCodes` 等旧入口不批迁。
 
 - **🔴 消费者接线进度(改本模块前先核对)**:**PR9(2026-07-02)起首个消费者 = attendances 终审两方法**(`finalApprove`/`finalReject` 走 `authz.explain` + deny→BizCode 映射〔22074/22075/30100,见 attendances/CLAUDE.md〕);**PR12(2026-07-02)起 activities / activity-registrations / attendances 三模块(participation 首批,共 24 处调用位点)全量切 `authz.can`/`authz.explain`**(ref 矩阵见各模块 CLAUDE.md;当前在期 GLOBAL 行为不变,未来/过期 GLOBAL 在 rbac/authz 两引擎均失效;scoped 持有者树内获新点动作能力);members / certificates / content / notifications 等其余业务面仍走 rbac.can,逐面迁移留后续批。**本模块行为调整自 PR9 起影响现网终审面,PR12 起影响 participation 三模块管理端全部动作**;等价矩阵行为锁必须始终成立

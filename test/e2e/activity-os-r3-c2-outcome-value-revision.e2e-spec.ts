@@ -118,7 +118,17 @@ describe('C2 D1 nonempty 112 to 113 upgrade', () => {
       sql(`INSERT INTO "Organization" (id,"updatedAt",name,"nodeTypeCode") VALUES ('legacy-org',CURRENT_TIMESTAMP,'legacy','team');
         INSERT INTO "Activity" (id,"updatedAt",title,"activityTypeCode","organizationId","startAt","endAt",location,"statusCode") VALUES ('legacy',CURRENT_TIMESTAMP,'legacy','test','legacy-org','2099-10-01','2099-10-02','legacy','draft');`);
       const before = sql(`SELECT row_to_json(a)::text FROM "Activity" a WHERE id='legacy'`);
-      deploy(path.join(root, 'schema.prisma'));
+      // Historical D1 upgrade ends at 113 even after later migrations are added.
+      cpSync(
+        path.join(root, 'migrations', MIGRATION),
+        path.join(temporary, 'migrations', MIGRATION),
+        {
+          recursive: true,
+          force: false,
+          errorOnExist: true,
+        },
+      );
+      deploy(path.join(temporary, 'schema.prisma'));
       expect(sql(`SELECT row_to_json(a)::text FROM "Activity" a WHERE id='legacy'`)).toBe(before);
       expect(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL')).toBe(
         '113',
@@ -167,17 +177,17 @@ describe('C2 D1 outcome revision database constraints', () => {
   afterAll(() => dropWorkerDatabase(WORKER));
   beforeEach(() => {
     sql(
-      'TRUNCATE "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision"',
+      'TRUNCATE "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision"',
     );
     sql(outcome('outcome'));
   });
-  it('replays 113 migrations and targets only the derived isolated database', () => {
+  it('replays 114 migrations and targets only the derived isolated database', () => {
     expect(sql('SELECT current_database()')).toBe(database());
     expect(
       sql(
         'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',
       ),
-    ).toBe('113');
+    ).toBe('114');
   });
   it('accepts same-chain values and evidence, preserving the predecessor', () => {
     sql(value());
@@ -230,7 +240,7 @@ describe('C2 D1 outcome revision database constraints', () => {
       '23514',
     );
     sql(
-      'TRUNCATE "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision"',
+      'TRUNCATE "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision"',
     );
     sql(outcome('outcome', 'activity', 1, 'NULL', 'confirmed'));
     rejected(value(), '23514');

@@ -1,5 +1,14 @@
 # activities — 本地铁律
 
+## C2 D2 当前实现边界（实现分支，未合并／部署）
+
+人工成果独立使用 Outcome Service/Query/Presenter/Access/AuditRecorder；仅三个 Human App managed 接口。
+写及重放都复验当前 App 身份、显式 outcome 授权、组织资格与 initiator/owner，SUPER_ADMIN 不直通。
+命令锁→Activity→引用锁，每次等待后重读权限；成果/值/证据、旧 draft→superseded、收据、审计同事务。
+历史明细绑定自身集 id/hash，不读取当前选集替代历史；不返原始行、内部来源引用、操作键或存储凭证。
+草稿完整快照只接非敏感整数／规范小数字符串／布尔／受控选项；不接 short_text、不创建 confirmed。
+C1、发布、Readiness、考勤、时长与贡献行为不变。下方“成果未实施”属于 C1 交付时范围；本节记录当前分支增量，不代表已验收或上线。
+
 ## C1 D2b/D2c 当前实施边界（D2b 已合入 #1282；D2c 已合入 #1284）
 
 Activity 三态选择、Template V3、Human GLOBAL 模板维护、App 可新选 options 和五条物化链
