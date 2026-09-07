@@ -187,6 +187,8 @@ model User {
   // 只铺数据事实,不在本刀接入创建、通知、审计或清单处理运行时。
   activityCreationCommandReceipts   ActivityCreationCommandReceipt[] @relation("ActivityCreationCommandReceiptActor")
   activityMetricCommandReceipts     ActivityMetricCommandReceipt[]
+  activityOutcomesCreated ActivityOutcomeRevision[] @relation("ActivityOutcomeCreator")
+  activityMetricValuesConfirmed ActivityMetricValueRevision[] @relation("ActivityValueConfirmer")
   activityEmergencyFollowUpResolved ActivityEmergencyFollowUpItem[]  @relation("ActivityEmergencyFollowUpItemResolver")
 
   // 第 6 批(2026-08-16):离线包签发/作废与异常复核保留独立 actor 边，不能借用
@@ -1564,6 +1566,7 @@ model Activity {
   selectedTemplateVersion      ActivityTemplate?                  @relation("ActivitySelectedTemplateVersion", fields: [selectedTemplateVersionId], references: [id], onDelete: Restrict)
   selectedMetricSetVersion     ActivityMetricSetVersion?          @relation(fields: [selectedMetricSetVersionId, selectedMetricSetDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "activity_selected_metric_set_fk")
   metricCommandReceipts        ActivityMetricCommandReceipt[]
+  outcomeRevisions ActivityOutcomeRevision[]
   seriesOccurrence             ActivitySeriesOccurrence?          @relation("ActivitySeriesOccurrenceActivity")
   creationCommandReceipts      ActivityCreationCommandReceipt[]   @relation("ActivityCreationCommandReceiptActivity")
   emergencyInitiation          ActivityEmergencyInitiation?       @relation("ActivityEmergencyInitiationActivity")
@@ -1740,6 +1743,7 @@ model ActivityMetricSetVersion {
   items ActivityMetricSetItem[]
   commandReceipts ActivityMetricCommandReceipt[]
   selectedByActivities Activity[]
+  outcomeRevisions ActivityOutcomeRevision[]
 
   @@unique([code, version])
   @@unique([id, definitionHash], map: "activity_metric_set_id_hash_key")
@@ -1755,6 +1759,8 @@ model ActivityMetricSetItem {
   required           Boolean
   createdAt          DateTime @default(now())
 
+  outcomeValues ActivityMetricValueRevision[]
+
   setVersion       ActivityMetricSetVersion @relation(fields: [setVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   metricDefinition ActivityMetricDefinition @relation(fields: [metricDefinitionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
@@ -1762,6 +1768,78 @@ model ActivityMetricSetItem {
   @@unique([setVersionId, metricDefinitionId])
   @@unique([setVersionId, sortOrder])
   @@index([metricDefinitionId])
+}
+
+// C2 D1 data foundation only. Immutable content and closed vocabularies are
+// enforced by the additive migration. No runtime outcome writer is enabled.
+model ActivityOutcomeRevision {
+  id String @id @default(cuid())
+  activityId String
+  revision Int
+  metricSetVersionId String
+  metricSetDefinitionHash String
+  statusCode String
+  priorRevisionId String?
+  createdByUserId String
+  createdAt DateTime @default(now())
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  metricSetVersion ActivityMetricSetVersion @relation(fields: [metricSetVersionId, metricSetDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "activity_outcome_set_fk")
+  creator User @relation("ActivityOutcomeCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  priorRevision ActivityOutcomeRevision? @relation("ActivityOutcomePrior", fields: [priorRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_outcome_prior_fk")
+  subsequentRevisions ActivityOutcomeRevision[] @relation("ActivityOutcomePrior")
+  values ActivityMetricValueRevision[]
+
+  @@unique([activityId, revision], map: "activity_outcome_revision_key")
+  @@unique([id, activityId], map: "activity_outcome_activity_key")
+  @@unique([id, activityId, metricSetVersionId], map: "activity_outcome_chain_key")
+  @@index([metricSetVersionId, metricSetDefinitionHash])
+  @@index([priorRevisionId, activityId])
+  @@index([createdByUserId])
+}
+
+model ActivityMetricValueRevision {
+  id String @id @default(cuid())
+  outcomeRevisionId String
+  activityId String
+  setVersionId String
+  metricDefinitionId String
+  valueJson Json
+  valueHash String
+  sourceCode String
+  sourceReference String?
+  calculatedByRuleVersion String?
+  confirmedByUserId String?
+  confirmedAt DateTime?
+  createdAt DateTime @default(now())
+
+  outcomeRevision ActivityOutcomeRevision @relation(fields: [outcomeRevisionId, activityId, setVersionId], references: [id, activityId, metricSetVersionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_value_outcome_fk")
+  metricSetItem ActivityMetricSetItem @relation(fields: [setVersionId, metricDefinitionId], references: [setVersionId, metricDefinitionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_value_set_item_fk")
+  confirmer User? @relation("ActivityValueConfirmer", fields: [confirmedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  evidence ActivityMetricValueEvidence[]
+
+  @@unique([outcomeRevisionId, metricDefinitionId], map: "activity_value_metric_key")
+  @@unique([id, outcomeRevisionId, activityId, setVersionId], map: "activity_value_chain_key")
+  @@index([setVersionId, metricDefinitionId])
+  @@index([confirmedByUserId])
+}
+
+model ActivityMetricValueEvidence {
+  id String @id @default(cuid())
+  valueRevisionId String
+  outcomeRevisionId String
+  activityId String
+  setVersionId String
+  attachmentId String
+  sortOrder Int
+  createdAt DateTime @default(now())
+
+  valueRevision ActivityMetricValueRevision @relation(fields: [valueRevisionId, outcomeRevisionId, activityId, setVersionId], references: [id, outcomeRevisionId, activityId, setVersionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_value_evidence_chain_fk")
+  attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([valueRevisionId, attachmentId], map: "activity_value_evidence_attachment_key")
+  @@unique([valueRevisionId, sortOrder], map: "activity_value_evidence_order_key")
+  @@index([attachmentId])
 }
 
 model ActivityMetricCommandReceipt {
@@ -2958,6 +3036,7 @@ model Attachment {
   // 活动改造 v1.1 第 1 批第二刀(2026-08-04;合同 §3.12):file 型报名答案的反向 relation。
   // 仅关系映射,零标量字段;FK 在 RegistrationFormAnswer 侧,Restrict。
   registrationFormAnswers RegistrationFormAnswer[] @relation("RegistrationAnswerAttachment")
+  activityMetricValueEvidence ActivityMetricValueEvidence[]
 
   // issue #1055 T1:视觉身份两条 1:1 反向 relation(仅关系映射,零标量字段;FK 在对侧,均 SetNull)。
   // 两边都是 `?` 而非数组 —— 对侧 FK 列带 @unique,一张附件至多被一处引用。

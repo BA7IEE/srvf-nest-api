@@ -19,7 +19,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
 const WORKER = 98;
 const MIGRATION = '20260906114906_activity_os_r3_c1_metric_selection_template_v3';
-const CURRENT_MIGRATION_COUNT = 112;
+const CURRENT_MIGRATION_COUNT = 113;
 const database = () => deriveWorkerTestDbName(WORKER);
 const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
 function url() {
@@ -195,7 +195,7 @@ describe('C1 D2b migration typed selection and receipts', () => {
   beforeEach(() =>
     sql('TRUNCATE "ActivityMetricCommandReceipt"; ' + selection(null, null, null, 0)),
   );
-  it('cold replays all 112 migrations', () => {
+  it('cold replays all 113 migrations', () => {
     expect(
       sql(
         'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',

@@ -210,11 +210,13 @@ app_test 已验证，不代表生产部署、正式目录初始化或人员授�
 D2c 的 v7/Readiness 已按维护者确认的 implementation 方案 A 随 [#1284](https://github.com/BA7IEE/srvf-nest-api/pull/1284) 合入：新提案写 V7、旧 v2–v6/legacy 保持兼容、审核读面只给安全 `proposal-v7` 摘要，内部 Readiness 识别 V3 与指标三态。无 schema/migration/权限/事件/Gate 增量；app_test 仅 migrate deploy 核验，隔离 E2E 使用获准的 app_test_w1。PR CI、可信审批及[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34047835711)均通过。C1 D1–D2c 的仓内实现已闭环，但整体跨模型复审、生产部署、正式目录初始化与 Gate 仍未完成；冻结稿中的历史未授权文字不回改。
 维护者已确认 D2b 台账更正及 [D2c 实施与授权清单](../archive/plans/activity-os-r3-c1-d2c-implementation-plan.md)起草与 implementation 方案 A；该计划已按批准范围实施，不回改归档正文。
 
-**C2 Outcome／Value revision 方案 A 已批准，评审已合入 #1287，implementation 尚未开始**：见
+**C2 Outcome／Value revision 方案 A 已批准，评审已合入 #1287；D1 按 #1288 计划在当前分支实施中，尚未合并**：见
 [`activity-os-r3-c2-outcome-value-revision-review.md`](../archive/reviews/activity-os-r3-c2-outcome-value-revision-review.md)。
 推荐先做 D1 的不可变成果头、指标值与证据关系数据地基，再经 D2 独立评审接入 Human manual 草稿／修订；
 confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新增数据、migration、HTTP、权限、审计、
 附件 owner、Readiness、Gate 或生产行为；C1 的已选指标集不等于已有成果。
+
+**当前实施进展（覆盖下方登记表中的历史待授权表述）**：维护者已批准 C2 D1 implementation、两项订正与 app_test 迁移核验、app_test_w1/app_test_w98 隔离验证。三个模型、单条 additive migration、纯值校验器已在当前分支实现；113 冷回放、112→113 非空旧活动保留与约束测试通过。完整回归、台账校验、3b 重签和 PR 收口尚未完成，不标 landed；D2/C3、生产与 Gate 未授权。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -245,7 +247,7 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **252** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 65** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 66** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
