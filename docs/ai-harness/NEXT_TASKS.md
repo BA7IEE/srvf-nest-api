@@ -2492,7 +2492,7 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7 与 Release 3 C1 D1–D2c 仓内实施已通过；C2 评审稿已起草，implementation 及后续待独立推进**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1 D1–D2c 与 C2 D1 仓内实施已交付；C2 D2 仅起草评审，implementation 及后续待独立推进**
 
 **状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、C1 D1 #1278 / D2a #1280 / D2b #1282 / D2c #1284 已合；C1 的仓内实现、handoff 与 PR/main 验证已收口，整体跨模型复审仍按维护者安排待统一完成；C2 评审稿已起草、implementation 未启动或授权；前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，不宣称 Release 2 或 C1 已上线)
 
@@ -2528,7 +2528,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 - **2026-09-07 C2 D1 计划与已批准订正**：C2 方案 A 已确认，评审 #1287 已合入，main CI 34074014865 通过。[D1 实施计划](../archive/plans/activity-os-r3-c2-d1-implementation-plan.md)已起草。维护者确认 C1 负责定义配置、C2 新增成果值校验并复用 canonical/hash；同时确认 D1 验证成果同链与附件存在、D2 在事务内验证活动归属。原评审历史文字保留，以此订正指导后续实施；D2 归属验收未取消。D1 implementation、测试库操作、生产与 Gate 均未获本次授权。
 
-- **2026-09-07 C2 D1 当前实施状态（覆盖上方历史待授权表述）**：#1288 计划已合入，维护者已批准 implementation 方案 A、两项订正及 app_test/app_test_w1/app_test_w98 验证范围。当前分支已实现三个成果模型、第 113 条 additive migration 和纯成果值校验；113 冷回放、112→113 非空升级与 8 项数据库测试、C1/C2 55 项单测通过。完整回归、治理台账收口、3b 重签及 PR 尚未完成，未合并；不开放 D2/C3、生产或 Gate。
+- **2026-09-07 C2 D1 当前实施状态（覆盖上方历史待授权表述）**：按 #1288 计划及两项获批订正，三个成果模型、第 113 条 additive migration 和纯成果值校验已随 [#1289](https://github.com/BA7IEE/srvf-nest-api/pull/1289) 合入 `c2fa226d`。113 冷回放、112→113 非空升级、8 项数据库测试、C1/C2 55 项单测、兼容回归、contract、18 项 PR 检查和治理校验通过，第 113 条 migration 的 3b 已按维护者确认重签；权限 252、Audit 161 总计／156 活跃未新增。#1289 首轮 main CI 的 B6 创建 500 未定位；获批的 [#1290](https://github.com/BA7IEE/srvf-nest-api/pull/1290) 仅补脱敏诊断，已合入 `22c1ba8f`，15 项 PR 检查及[最终 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34092294387)通过，原用例未复现，不认定为修复或误报。D1 只完成数据地基，不代表人工成果可用、附件活动归属或正式确认已闭环；整体跨模型复审、生产与 Gate 未完成。
+
+- **2026-09-07 C2 D2 文档推进**：维护者批准四处 D1 台账更正及 [D2 人工草稿／修订评审](../archive/reviews/activity-os-r3-c2-d2-manual-outcome-review.md)、独立 changelog 的六份精确文档写集，允许提交、推送和创建 PR，不合并。评审建议 Human App managed 读写、完整不可变修订、专用收据、最小权限与审计，并在事务内验证附件活动归属；C2 D2 方案及 implementation 仍待独立确认。confirmed/system/AI 归 C3，import 另立，不实施 D2、不操作数据库、不启用 Gate。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
