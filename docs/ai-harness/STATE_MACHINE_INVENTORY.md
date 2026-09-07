@@ -1,12 +1,12 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
-## C2 D2 当前分支增量（未合并）
+## C2 D2 当前交付（已合入 #1293）
 
 `ActivityOutcomeRevision.statusCode` 仍为 L2 inventory：数据库闭集 draft/confirmed/superseded 不变。
 人工 Outcome writer 已接入 `(create) -> draft` 与 `draft -> superseded`；追加、旧草稿替代、收据和审计同事务。
 实现为 `activity-outcome.service.ts` 与 `activity-outcome-policy.ts`，旧修订／不可替代状态报 `ACTIVITY_OUTCOME_STALE`。
 不创建或替代 confirmed；C3 的确认迁移与证据完整性仍未实施，因此不升 governed。
-该增量只补当前代码登记，不改下方 Phase 4 历史留痕，也不代表 PR、整体评审或部署完成。
+该增量已随 #1293 合入 `7f4fdbd7`，PR CI、可信审批与 main CI 34118403784 通过；不改下方 Phase 4 历史留痕。C3 仅获评审起草授权，整体跨模型复审、确认迁移和生产部署未完成。
 
 > **性质**:治理报告(写就即固定,不再生);Phase 4-1a 的取证留痕。
 > **权威源**:`docs/archive/reviews/architecture-governance-v4/README.md` v4 §6 R10 + 勘误⑫;[`../architecture-boundary.md`](../architecture-boundary.md) §3.4。

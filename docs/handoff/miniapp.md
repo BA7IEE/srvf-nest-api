@@ -20,7 +20,9 @@
 - **capability ≠ raw RBAC**:`GET /api/app/v1/me/capabilities` 返**产品级**能力，不返 raw 权限码。活动新增入口提示为 `activities.canInitiateActivity` / `canDirectPublishOwnActivity`，管理提示为 `managed.canViewManagedActivities` / `canManageManagedRegistrations` / `canSubmitManagedAttendance` / `canReviewActivityPublication` / `canFirstReviewAttendance` / `canFinalReviewAttendance`；它们都不能证明某一活动或组织最终可操作。
 - **L3 永不回**:App 永不返 `passwordHash` / `refreshToken` / `secretKey*` / 完整 signed URL。
 
-### C2 D2 人工成果（当前实现分支，尚未合并／部署）
+### C2 D2 人工成果（已合入 #1293，尚未部署）
+
+#1293 已合入 `7f4fdbd7`，18 项 PR 检查、可信审批及 main CI 34118403784 通过。下述为已交付接口合同，不代表前端页面、生产部署或 Gate 已启用；C3 自动指标与人工确认仅获评审起草授权，客户端不得提前发送确认或 system 来源。
 
 managed 活动下的 `outcomes` 提供人工草稿录入、分页历史和指定修订明细；字段以 OpenAPI 为准。
 先读取最新成果修订号，再以独立操作键提交完整快照；首次 expectedRevision 为 0。

@@ -4,7 +4,7 @@
 
 ## 本地事实
 
-- **C2 D2 实现分支增量（未合并，优先于下方 D1 时点描述）**：本地共 114 个 migration；新增 `20260907160030_activity_os_r3_c2_outcome_command_receipt`，只增加专用成果收据及反向关系。收据限定操作、请求 hash、结果闭集和同链锚点，禁止改删；结果数量／创建事实与成果一致。app_test deploy、隔离库 113→114 非空升级及 114 冷回放已有测试证据。3b/4b 尚未重签，完整回归及 PR 收口未完成；不代表 main 已有第 114 条，不执行生产迁移、不启用 Gate。D2 当前已在实现，不再是仅文档阶段。
+- **当前 migration 摘要（覆盖下方 D1 及历史长记）**：main 累计 114 个 migration；[#1293](https://github.com/BA7IEE/srvf-nest-api/pull/1293) 已于 2026-09-07 squash 合入 `7f4fdbd7`；18 项 PR 检查、可信红区审批及 [main CI 34118403784](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34118403784) 全部通过。最新 `20260907160030_activity_os_r3_c2_outcome_command_receipt` 只新增专用不可变成果收据及反向关系；app_test deploy 核验、113→114 非空升级及 114 冷回放已验证，3b/4b 已重签。D2 人工 writer 与附件同活动校验已经交付；正式确认、自动来源、确认时证据完整性与 confirmed 更正归 C3。生产迁移与 Gate 未执行；本轮仅授权 C3 评审起草，不新增或预占 migration。
 
 - **当前 migration 摘要（优先于下方历史长记）**：main 累计 113 个 migration；C2 D1 已随 #1289 合入。最新 `20260907103134_activity_os_r3_c2_outcome_value_revision` 新增成果头、指标值和证据三个模型，同链 Restrict FK、唯一约束、状态／来源 CHECK、不可变保护及确认元数据检查；零回填、零旧业务列修改、零 seed／权限／API。113 冷回放、112→113 非空旧活动保留及新约束测试已在获批隔离库验证，3b 已重签，PR 回归通过；#1290 脱敏诊断合入后的 main CI 34092294387 通过，旧 B6 创建 500 未定位，不认定已修复。附件活动归属归 D2，确认完整证据与生命周期归 C3；D2 当前仅文档评审，未实施，未生产 deploy、未启用 writer 或 Gate。下方历史长记不回改。
 - `schema.prisma` 是**数据模型唯一权威源**(字段 / 类型 / 约束 / 索引);Swagger / DTO / docs 任何与之冲突,**以 schema.prisma 为准**。

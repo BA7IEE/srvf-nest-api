@@ -2534,7 +2534,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 - **2026-09-07 C2 D2 方案与计划当前状态（覆盖上方历史待确认表述）**：维护者已确认 D2 方案 A 并批准合并 [#1291](https://github.com/BA7IEE/srvf-nest-api/pull/1291)，main `82d28c5c` 与 [CI 34094984817](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34094984817) 已核验通过。现已获 [D2 精确实施计划](../archive/plans/activity-os-r3-c2-d2-implementation-plan.md)、FROZEN_DRAFTS、NEXT_TASKS 及计划 changelog 四份文档的起草、提交、推送和创建 PR 授权。计划列出 manual 完整修订／历史读写、专用收据、权限/责任/组织、事务内附件归属及测试预算；仅新增计划，不实施 D2、不操作测试库、不合并、不启用 Gate。下一步须核准 implementation 精确写集、迁移路径与数据库授权，不能沿用 D1 令牌。
 
-- **C2 D2 implementation 当前进展（覆盖上述仅文档状态）**：#1292 计划已合入；维护者已批准精确实现及附件保护、Authz 属主原语、旧 D1 测试适配扩展。当前实现分支已有人工成果录入、完整修订、幂等收据、历史读面和事务审计，尚未提交／合并。真实 HTTP、锁后撤权与负责人变化、附件引用／删除竞争、追加失败保留旧草稿、迁移升级和 C1/B5/B6/B7 回归已有测试证据；不据局部通过宣告 landed。客户端 10 个非 App 文件已获仅摘要刷新授权并完成，3b/4b 已按本轮确认重签；维护者允许完整检查通过后提交、推送并创建 PR，不合并。余项为完整检查与交接收口；整体复审、生产及 Gate 未完成。C3–C5 仍另行推进。
+- **C2 D2 收口及 C3 下一步**：[#1293](https://github.com/BA7IEE/srvf-nest-api/pull/1293) 已于 2026-09-07 squash 合入 `7f4fdbd7`；18 项 PR 检查、可信红区审批及 [main CI 34118403784](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34118403784) 全部通过。C2 D1/D2 仓内实现与验证已完成：三个人工成果接口、完整修订、不可变收据、同事务证据及审计，3b/4b 已重签；不是生产可用声明。整体跨模型复审仍待统一进行，B6 历史 500 根因未定位，不借本轮通过宣告修复。当前仅获八份文档内的 C2 台账更正与 C3「自动指标及人工确认」评审起草／提交／推送／开 PR 授权；C3 implementation、C4/C5、合并及 Gate 均须另行确认。
+
+- **C3 评审交付**：[自动指标与人工确认评审及授权清单](../archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md) 已起草。推荐方案 A 串行完成可复现系统候选、人工确认与正式更正，两步全部实现并验收才算 C3 完成；方案尚未批准、implementation 未授权，本轮仅提交文档 PR。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
