@@ -2532,6 +2532,8 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 - **2026-09-07 C2 D2 文档推进**：维护者批准四处 D1 台账更正及 [D2 人工草稿／修订评审](../archive/reviews/activity-os-r3-c2-d2-manual-outcome-review.md)、独立 changelog 的六份精确文档写集，允许提交、推送和创建 PR，不合并。评审建议 Human App managed 读写、完整不可变修订、专用收据、最小权限与审计，并在事务内验证附件活动归属；C2 D2 方案及 implementation 仍待独立确认。confirmed/system/AI 归 C3，import 另立，不实施 D2、不操作数据库、不启用 Gate。
 
+- **2026-09-07 C2 D2 方案与计划当前状态（覆盖上方历史待确认表述）**：维护者已确认 D2 方案 A 并批准合并 [#1291](https://github.com/BA7IEE/srvf-nest-api/pull/1291)，main `82d28c5c` 与 [CI 34094984817](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34094984817) 已核验通过。现已获 [D2 精确实施计划](../archive/plans/activity-os-r3-c2-d2-implementation-plan.md)、FROZEN_DRAFTS、NEXT_TASKS 及计划 changelog 四份文档的起草、提交、推送和创建 PR 授权。计划列出 manual 完整修订／历史读写、专用收据、权限/责任/组织、事务内附件归属及测试预算；仅新增计划，不实施 D2、不操作测试库、不合并、不启用 Gate。下一步须核准 implementation 精确写集、迁移路径与数据库授权，不能沿用 D1 令牌。
+
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
 **状态**:⏸ 挂起(⚠️ **这不是「不做」,是「必须在首次生产上线之前做完,现在时机不对」** —— 触发条件三条见正文「什么时候必须做」;三条齐了就立刻立项,不必再问维护者要不要做,只需拍板合并口径)
