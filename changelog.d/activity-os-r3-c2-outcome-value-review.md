@@ -1,0 +1,1 @@
+- 起草 Activity OS R3/C2 Outcome／Value revision 评审和授权清单：推荐 D1 不可变成果／指标值／证据关系数据地基、D2 独立评审人工草稿／修订，明确 confirmed／system／AI 归 C3、import 另立；仅登记评审，不代表 implementation、数据库部署或生产可用。
