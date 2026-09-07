@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:efdd1d2435951f10f82bc923e48727ebc3dc893d68167bf4ebed9699b7bff4b8
+// inputDigest: sha256:9b1998bc17d363f7dfc8389b68d694ca3b7a7381a5c8697bd852e74a4e6eb980
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';

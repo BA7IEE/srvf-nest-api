@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:efdd1d2435951f10f82bc923e48727ebc3dc893d68167bf4ebed9699b7bff4b8
+// inputDigest: sha256:9b1998bc17d363f7dfc8389b68d694ca3b7a7381a5c8697bd852e74a4e6eb980
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -42,6 +42,13 @@ import type {
   AppActivityMetricSelectionResultDto,
   AppActivityMetricSetOptionDto,
   AppActivityMetricSetPointerDto,
+  AppActivityOutcomeDefinitionDto,
+  AppActivityOutcomeDetailDto,
+  AppActivityOutcomeEvidenceDto,
+  AppActivityOutcomeResultDto,
+  AppActivityOutcomeSummaryDto,
+  AppActivityOutcomeValueDto,
+  AppActivityOutcomeValueInputDto,
   AppActivityPositionDto,
   AppActivityPunchDto,
   AppActivityPunchReceiptDto,
@@ -158,6 +165,7 @@ import type {
   AppProfessionalActivityCreationDto,
   AppProfessionalCreationSessionDto,
   AppQuickActivityCreationDto,
+  AppRecordActivityOutcomeDto,
   AppRegistrationFormChoiceDto,
   AppRegistrationFormDto,
   AppRegistrationFormFieldDto,
@@ -708,6 +716,18 @@ export function createAppClient(fetcher: Fetcher) {
     /** 考勤责任人以受控人工确认追加工作人员现场签到/签退事实 [auth] */
     AppManagedActivityOnsiteOperationsControllerStaffScan(activityId: string, sessionId: string, body: AppManagedStaffScanDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
       return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/staff-scan`, body });
+    },
+    /** 分页读取有权活动的成果历史摘要 [rbac: activity.outcome.read] */
+    AppManagedActivityOutcomesControllerList(activityId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityOutcomeSummaryDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppActivityOutcomeSummaryDto[] }>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/outcomes`, query });
+    },
+    /** 追加完整人工成果草稿，重试返回原创建事实 [rbac: activity.outcome.record] */
+    AppManagedActivityOutcomesControllerRecord(activityId: string, body: AppRecordActivityOutcomeDto): Promise<ApiEnvelope<AppActivityOutcomeResultDto>> {
+      return fetcher<AppActivityOutcomeResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/outcomes`, body });
+    },
+    /** 按历史精确指标集读取同链成果明细 [rbac: activity.outcome.read] */
+    AppManagedActivityOutcomesControllerGet(activityId: string, outcomeRevisionId: string): Promise<ApiEnvelope<AppActivityOutcomeDetailDto>> {
+      return fetcher<AppActivityOutcomeDetailDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/outcomes/${outcomeRevisionId}` });
     },
     /** App 查看我管理活动的岗位 [auth] */
     AppManagedActivityPositionsControllerList(activityId: string): Promise<ApiEnvelope<AppManagedActivityPositionDto[]>> {

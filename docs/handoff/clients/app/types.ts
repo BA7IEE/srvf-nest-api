@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:efdd1d2435951f10f82bc923e48727ebc3dc893d68167bf4ebed9699b7bff4b8
+// inputDigest: sha256:9b1998bc17d363f7dfc8389b68d694ca3b7a7381a5c8697bd852e74a4e6eb980
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -273,6 +273,82 @@ export interface AppActivityMetricSetPointerDto {
   "version": number;
   "schemaVersion": 1;
   "definitionHash": string;
+}
+
+export interface AppActivityOutcomeDefinitionDto {
+  "schemaVersion": 1;
+  "code": string;
+  "version": number;
+  "name": string;
+  "configuration": { "kindCode": "non_negative_integer";
+  "unit": string;
+  "minimum": number;
+  "maximum": number } | { "kindCode": "non_negative_decimal";
+  "unit": string;
+  "scale": number;
+  "minimum": string;
+  "maximum": string } | { "kindCode": "boolean";
+  "unit": null | null } | { "kindCode": "single_choice";
+  "unit": null | null;
+  "options": { "code": string;
+  "label": string }[] };
+}
+
+export interface AppActivityOutcomeDetailDto {
+  "outcomeRevisionId": string;
+  "activityId": string;
+  "revision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "statusCode": "draft" | "confirmed" | "superseded";
+  "priorRevisionId": string | null;
+  "createdAt": string;
+  "values": AppActivityOutcomeValueDto[];
+}
+
+export interface AppActivityOutcomeEvidenceDto {
+  "attachmentId": string;
+  "sortOrder": number;
+}
+
+export interface AppActivityOutcomeResultDto {
+  "schemaVersion": 1;
+  "activityId": string;
+  "outcomeRevisionId": string;
+  "revision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "createdStatusCode": "draft";
+  "sourceCode": "manual";
+  "valueCount": number;
+  "evidenceCount": number;
+  "createdAt": string;
+}
+
+export interface AppActivityOutcomeSummaryDto {
+  "outcomeRevisionId": string;
+  "activityId": string;
+  "revision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "statusCode": "draft" | "confirmed" | "superseded";
+  "priorRevisionId": string | null;
+  "createdAt": string;
+}
+
+export interface AppActivityOutcomeValueDto {
+  "valueRevisionId": string;
+  "metricDefinitionId": string;
+  "definition": AppActivityOutcomeDefinitionDto;
+  "value": number | string | boolean;
+  "sourceCode": "manual" | "system" | "import" | "ai_suggested_confirmed";
+  "evidence": AppActivityOutcomeEvidenceDto[];
+}
+
+export interface AppActivityOutcomeValueInputDto {
+  "metricDefinitionId": string;
+  "value": number | string | boolean;
+  "evidenceAttachmentIds"?: string[];
 }
 
 export interface AppActivityPositionDto {
@@ -1439,6 +1515,14 @@ export interface AppQuickActivityCreationDto {
   "confirmedCapacity"?: number | null;
   "defaultPlaceVisibilityCode": "public" | "accepted" | "staff" | "command";
   "places"?: AppActivityCreationPlaceDto[];
+}
+
+export interface AppRecordActivityOutcomeDto {
+  "operationKey": string;
+  "expectedRevision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "values": AppActivityOutcomeValueInputDto[];
 }
 
 export interface AppRegistrationFormChoiceDto {

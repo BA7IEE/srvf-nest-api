@@ -187,6 +187,7 @@ model User {
   // 只铺数据事实,不在本刀接入创建、通知、审计或清单处理运行时。
   activityCreationCommandReceipts   ActivityCreationCommandReceipt[] @relation("ActivityCreationCommandReceiptActor")
   activityMetricCommandReceipts     ActivityMetricCommandReceipt[]
+  activityOutcomeCommandReceipts    ActivityOutcomeCommandReceipt[]
   activityOutcomesCreated ActivityOutcomeRevision[] @relation("ActivityOutcomeCreator")
   activityMetricValuesConfirmed ActivityMetricValueRevision[] @relation("ActivityValueConfirmer")
   activityEmergencyFollowUpResolved ActivityEmergencyFollowUpItem[]  @relation("ActivityEmergencyFollowUpItemResolver")
@@ -1566,6 +1567,7 @@ model Activity {
   selectedTemplateVersion      ActivityTemplate?                  @relation("ActivitySelectedTemplateVersion", fields: [selectedTemplateVersionId], references: [id], onDelete: Restrict)
   selectedMetricSetVersion     ActivityMetricSetVersion?          @relation(fields: [selectedMetricSetVersionId, selectedMetricSetDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "activity_selected_metric_set_fk")
   metricCommandReceipts        ActivityMetricCommandReceipt[]
+  outcomeCommandReceipts       ActivityOutcomeCommandReceipt[]
   outcomeRevisions ActivityOutcomeRevision[]
   seriesOccurrence             ActivitySeriesOccurrence?          @relation("ActivitySeriesOccurrenceActivity")
   creationCommandReceipts      ActivityCreationCommandReceipt[]   @relation("ActivityCreationCommandReceiptActivity")
@@ -1789,6 +1791,7 @@ model ActivityOutcomeRevision {
   priorRevision ActivityOutcomeRevision? @relation("ActivityOutcomePrior", fields: [priorRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_outcome_prior_fk")
   subsequentRevisions ActivityOutcomeRevision[] @relation("ActivityOutcomePrior")
   values ActivityMetricValueRevision[]
+  commandReceipts ActivityOutcomeCommandReceipt[]
 
   @@unique([activityId, revision], map: "activity_outcome_revision_key")
   @@unique([id, activityId], map: "activity_outcome_activity_key")
@@ -1840,6 +1843,26 @@ model ActivityMetricValueEvidence {
   @@unique([valueRevisionId, attachmentId], map: "activity_value_evidence_attachment_key")
   @@unique([valueRevisionId, sortOrder], map: "activity_value_evidence_order_key")
   @@index([attachmentId])
+}
+
+model ActivityOutcomeCommandReceipt {
+  id String @id @default(cuid())
+  actorUserId String
+  operationCode String
+  operationKey String
+  requestHash String
+  activityId String
+  outcomeRevisionId String
+  resultJson Json
+  createdAt DateTime @default(now())
+
+  actor User @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_outcome_receipt_actor_fk")
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "activity_outcome_receipt_activity_fk")
+  outcomeRevision ActivityOutcomeRevision @relation(fields: [outcomeRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "activity_outcome_receipt_outcome_fk")
+
+  @@unique([actorUserId, operationCode, operationKey], map: "activity_outcome_receipt_command_key")
+  @@index([activityId], map: "activity_outcome_receipt_activity_idx")
+  @@index([outcomeRevisionId, activityId], map: "activity_outcome_receipt_outcome_idx")
 }
 
 model ActivityMetricCommandReceipt {

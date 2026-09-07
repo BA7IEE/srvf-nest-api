@@ -209,6 +209,76 @@ function harness(options: { strict?: boolean; head?: HeadObjectResult; headError
   };
 }
 
+describe('C2 outcome evidence delete fence', () => {
+  const input = {
+    attachmentId: 'evidence-attachment',
+    actorUserId: 'actor',
+    actorRoleSnap: Role.USER,
+    allowAuthorizedJoin: true,
+    scope: 'self' as const,
+    deletedByPath: 'owner' as const,
+    auditMeta: { requestId: 'request', ip: null, ua: null },
+  };
+
+  it('checks the exact reference after the row lock and rejects before any delete intent', async () => {
+    const calls: string[] = [];
+    const queryRaw = jest.fn().mockImplementation(() => {
+      calls.push('lock');
+      return Promise.resolve([]);
+    });
+    const findFirst = jest.fn().mockImplementation(() => {
+      calls.push('reference');
+      return Promise.resolve({ id: input.attachmentId });
+    });
+    const objectFindUnique = jest.fn();
+    const objectUpdate = jest.fn();
+    const operationCreate = jest.fn();
+    const tx = {
+      $queryRaw: queryRaw,
+      attachment: {
+        findUnique: jest.fn().mockResolvedValue({ id: input.attachmentId, key: 'fixture' }),
+        findFirst,
+      },
+      storageObject: { findUnique: objectFindUnique, update: objectUpdate },
+      storageObjectOperation: { create: operationCreate },
+    };
+    await expect(
+      harness().orchestrator.prepareDeleteInTransaction(
+        tx as unknown as Prisma.TransactionClient,
+        input,
+      ),
+    ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING));
+    expect(calls).toEqual(['lock', 'reference']);
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { id: input.attachmentId, activityMetricValueEvidence: { some: {} } },
+      select: { id: true },
+    });
+    expect(objectFindUnique).not.toHaveBeenCalled();
+    expect(objectUpdate).not.toHaveBeenCalled();
+    expect(operationCreate).not.toHaveBeenCalled();
+  });
+
+  it('does not block an unreferenced attachment at the evidence fence', async () => {
+    const nextBoundary = new Error('next storage boundary');
+    const objectFindUnique = jest.fn().mockRejectedValue(nextBoundary);
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      attachment: {
+        findUnique: jest.fn().mockResolvedValue({ id: input.attachmentId, key: 'fixture' }),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      storageObject: { findUnique: objectFindUnique },
+    };
+    await expect(
+      harness().orchestrator.prepareDeleteInTransaction(
+        tx as unknown as Prisma.TransactionClient,
+        input,
+      ),
+    ).rejects.toBe(nextBoundary);
+    expect(objectFindUnique).toHaveBeenCalledWith({ where: { key: 'fixture' } });
+  });
+});
+
 describe('AttachmentStorageOrchestrator JIT locator candidates', () => {
   it('admits only exact unpinned backfill/provider_unknown shapes', () => {
     const unknown = backfillObject();

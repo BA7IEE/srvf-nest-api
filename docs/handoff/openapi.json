@@ -34797,6 +34797,726 @@
         ]
       }
     },
+    "/api/app/v1/my/managed-activities/{activityId}/outcomes": {
+      "post": {
+        "operationId": "AppManagedActivityOutcomesController_record",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "活动 ID",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppRecordActivityOutcomeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityOutcomeResultDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 活动成果内容无效(code=20184)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20184
+                      ],
+                      "description": "40000: 请求参数错误; 20184: 活动成果内容无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动成果引用不存在或不可访问(code=20188)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20188
+                      ],
+                      "description": "20188: 活动成果引用不存在或不可访问",
+                      "example": 20188
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动成果引用不存在或不可访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动成果或指标版本已变化，请刷新后重试(code=20185) / 此操作标识已用于其他成果请求(code=20186) / 活动成果收据无效(code=20187) / 活动当前状态不允许此操作(code=20030) / 引用的指标定义不可用，请重新选择(code=20172)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20185,
+                        20186,
+                        20187,
+                        20030,
+                        20172
+                      ],
+                      "description": "20185: 活动成果或指标版本已变化，请刷新后重试; 20186: 此操作标识已用于其他成果请求; 20187: 活动成果收据无效; 20030: 活动当前状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择",
+                      "example": 20185
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动成果或指标版本已变化，请刷新后重试"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "附件存储操作处理中,请稍后重试(code=13034)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        13034
+                      ],
+                      "description": "13034: 附件存储操作处理中,请稍后重试",
+                      "example": 13034
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "附件存储操作处理中,请稍后重试"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "追加完整人工成果草稿，重试返回原创建事实 [rbac: activity.outcome.record]",
+        "tags": [
+          "Mobile - Managed Activity Outcomes"
+        ]
+      },
+      "get": {
+        "operationId": "AppManagedActivityOutcomesController_list",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "活动 ID",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/AppActivityOutcomeSummaryDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动成果引用不存在或不可访问(code=20188)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20188
+                      ],
+                      "description": "20188: 活动成果引用不存在或不可访问",
+                      "example": 20188
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动成果引用不存在或不可访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "分页读取有权活动的成果历史摘要 [rbac: activity.outcome.read]",
+        "tags": [
+          "Mobile - Managed Activity Outcomes"
+        ]
+      }
+    },
+    "/api/app/v1/my/managed-activities/{activityId}/outcomes/{outcomeRevisionId}": {
+      "get": {
+        "operationId": "AppManagedActivityOutcomesController_get",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "活动 ID",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcomeRevisionId",
+            "required": true,
+            "in": "path",
+            "description": "同一活动的成果修订 ID",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityOutcomeDetailDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动成果引用不存在或不可访问(code=20188)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20188
+                      ],
+                      "description": "20188: 活动成果引用不存在或不可访问",
+                      "example": 20188
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动成果引用不存在或不可访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "按历史精确指标集读取同链成果明细 [rbac: activity.outcome.read]",
+        "tags": [
+          "Mobile - Managed Activity Outcomes"
+        ]
+      }
+    },
     "/api/app/v1/my/managed-activities/metric-set-options": {
       "get": {
         "operationId": "AppManagedActivityMetricsController_metricSetOptions",
@@ -132115,6 +132835,537 @@
           "refreshTokensRevoked",
           "residualActivePositionAssignments",
           "residualActiveSupervisions"
+        ]
+      },
+      "AppActivityOutcomeSummaryDto": {
+        "type": "object",
+        "properties": {
+          "outcomeRevisionId": {
+            "type": "string",
+            "description": "成果修订 ID"
+          },
+          "activityId": {
+            "type": "string",
+            "description": "活动 ID"
+          },
+          "revision": {
+            "type": "number",
+            "description": "成果修订号",
+            "minimum": 1
+          },
+          "metricSetVersionId": {
+            "type": "string",
+            "description": "历史精确指标集版本 ID"
+          },
+          "metricSetDefinitionHash": {
+            "type": "string",
+            "description": "历史精确指标集 hash",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "当前修订状态；草稿不代表正式完成",
+            "enum": [
+              "draft",
+              "confirmed",
+              "superseded"
+            ]
+          },
+          "priorRevisionId": {
+            "type": "string",
+            "description": "被替代的前一修订 ID",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "创建时间",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "outcomeRevisionId",
+          "activityId",
+          "revision",
+          "metricSetVersionId",
+          "metricSetDefinitionHash",
+          "statusCode",
+          "priorRevisionId",
+          "createdAt"
+        ]
+      },
+      "AppActivityOutcomeResultDto": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "description": "安全回执版本",
+            "enum": [
+              1
+            ]
+          },
+          "activityId": {
+            "type": "string",
+            "description": "活动 ID"
+          },
+          "outcomeRevisionId": {
+            "type": "string",
+            "description": "本次创建的成果修订 ID"
+          },
+          "revision": {
+            "type": "number",
+            "description": "本次创建的修订号",
+            "minimum": 1
+          },
+          "metricSetVersionId": {
+            "type": "string",
+            "description": "本次采用的精确指标集版本 ID"
+          },
+          "metricSetDefinitionHash": {
+            "type": "string",
+            "description": "本次采用的精确指标集 hash",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "createdStatusCode": {
+            "type": "string",
+            "description": "创建事实，不代表重放时的当前状态",
+            "enum": [
+              "draft"
+            ]
+          },
+          "sourceCode": {
+            "type": "string",
+            "description": "创建来源",
+            "enum": [
+              "manual"
+            ]
+          },
+          "valueCount": {
+            "type": "number",
+            "description": "成果值数量",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "evidenceCount": {
+            "type": "number",
+            "description": "证据引用数量",
+            "minimum": 0,
+            "maximum": 2000
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "原始创建时间",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "activityId",
+          "outcomeRevisionId",
+          "revision",
+          "metricSetVersionId",
+          "metricSetDefinitionHash",
+          "createdStatusCode",
+          "sourceCode",
+          "valueCount",
+          "evidenceCount",
+          "createdAt"
+        ]
+      },
+      "AppActivityOutcomeValueInputDto": {
+        "type": "object",
+        "properties": {
+          "metricDefinitionId": {
+            "type": "string",
+            "description": "精确指标定义 ID",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "value": {
+            "description": "按精确定义校验的非敏感值；小数用规范字符串，选项用代码",
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "evidenceAttachmentIds": {
+            "description": "本活动附件 ID，顺序保留；省略等价于空数组",
+            "maxItems": 20,
+            "uniqueItems": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "metricDefinitionId",
+          "value"
+        ]
+      },
+      "AppRecordActivityOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "description": "重试复用的操作键，不允许首尾空白",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expectedRevision": {
+            "type": "number",
+            "description": "最新成果 revision；首次为 0",
+            "minimum": 0,
+            "maximum": 2147483646
+          },
+          "metricSetVersionId": {
+            "type": "string",
+            "description": "当前精确指标集版本 ID",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "metricSetDefinitionHash": {
+            "type": "string",
+            "description": "当前精确指标集 hash",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "values": {
+            "description": "完整成果草稿快照；指标 ID 不重复，不要求已填完所有必填指标",
+            "minItems": 1,
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppActivityOutcomeValueInputDto"
+            }
+          }
+        },
+        "required": [
+          "operationKey",
+          "expectedRevision",
+          "metricSetVersionId",
+          "metricSetDefinitionHash",
+          "values"
+        ]
+      },
+      "AppActivityOutcomeDefinitionDto": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "description": "定义格式版本",
+            "enum": [
+              1
+            ]
+          },
+          "code": {
+            "type": "string",
+            "description": "历史指标代码"
+          },
+          "version": {
+            "type": "number",
+            "description": "历史定义版本",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "历史指标名称"
+          },
+          "configuration": {
+            "description": "非敏感指标的封闭配置；不提供自由文本型",
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kindCode",
+                  "unit",
+                  "minimum",
+                  "maximum"
+                ],
+                "properties": {
+                  "kindCode": {
+                    "type": "string",
+                    "enum": [
+                      "non_negative_integer"
+                    ]
+                  },
+                  "unit": {
+                    "type": "string"
+                  },
+                  "minimum": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "maximum": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kindCode",
+                  "unit",
+                  "scale",
+                  "minimum",
+                  "maximum"
+                ],
+                "properties": {
+                  "kindCode": {
+                    "type": "string",
+                    "enum": [
+                      "non_negative_decimal"
+                    ]
+                  },
+                  "unit": {
+                    "type": "string"
+                  },
+                  "scale": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 6
+                  },
+                  "minimum": {
+                    "type": "string"
+                  },
+                  "maximum": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kindCode",
+                  "unit"
+                ],
+                "properties": {
+                  "kindCode": {
+                    "type": "string",
+                    "enum": [
+                      "boolean"
+                    ]
+                  },
+                  "unit": {
+                    "type": "string",
+                    "nullable": true,
+                    "enum": [
+                      null
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kindCode",
+                  "unit",
+                  "options"
+                ],
+                "properties": {
+                  "kindCode": {
+                    "type": "string",
+                    "enum": [
+                      "single_choice"
+                    ]
+                  },
+                  "unit": {
+                    "type": "string",
+                    "nullable": true,
+                    "enum": [
+                      null
+                    ]
+                  },
+                  "options": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "code",
+                        "label"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "code",
+          "version",
+          "name",
+          "configuration"
+        ]
+      },
+      "AppActivityOutcomeEvidenceDto": {
+        "type": "object",
+        "properties": {
+          "attachmentId": {
+            "type": "string",
+            "description": "附件 ID，不包含存储凭证或 URL"
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "证据顺序",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "attachmentId",
+          "sortOrder"
+        ]
+      },
+      "AppActivityOutcomeValueDto": {
+        "type": "object",
+        "properties": {
+          "valueRevisionId": {
+            "type": "string",
+            "description": "成果值修订 ID"
+          },
+          "metricDefinitionId": {
+            "type": "string",
+            "description": "精确指标定义 ID"
+          },
+          "definition": {
+            "description": "该修订对应的历史定义",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppActivityOutcomeDefinitionDto"
+              }
+            ]
+          },
+          "value": {
+            "description": "经历史定义和 hash 核验的值",
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "sourceCode": {
+            "type": "string",
+            "description": "持久化来源类别，不返回内部来源引用；本接口仅创建 manual",
+            "enum": [
+              "manual",
+              "system",
+              "import",
+              "ai_suggested_confirmed"
+            ]
+          },
+          "evidence": {
+            "description": "有序证据引用",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppActivityOutcomeEvidenceDto"
+            }
+          }
+        },
+        "required": [
+          "valueRevisionId",
+          "metricDefinitionId",
+          "definition",
+          "value",
+          "sourceCode",
+          "evidence"
+        ]
+      },
+      "AppActivityOutcomeDetailDto": {
+        "type": "object",
+        "properties": {
+          "outcomeRevisionId": {
+            "type": "string",
+            "description": "成果修订 ID"
+          },
+          "activityId": {
+            "type": "string",
+            "description": "活动 ID"
+          },
+          "revision": {
+            "type": "number",
+            "description": "成果修订号",
+            "minimum": 1
+          },
+          "metricSetVersionId": {
+            "type": "string",
+            "description": "历史精确指标集版本 ID"
+          },
+          "metricSetDefinitionHash": {
+            "type": "string",
+            "description": "历史精确指标集 hash",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "当前修订状态；草稿不代表正式完成",
+            "enum": [
+              "draft",
+              "confirmed",
+              "superseded"
+            ]
+          },
+          "priorRevisionId": {
+            "type": "string",
+            "description": "被替代的前一修订 ID",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "创建时间",
+            "format": "date-time"
+          },
+          "values": {
+            "description": "当前修订的完整成果值快照，不合并其他修订",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppActivityOutcomeValueDto"
+            }
+          }
+        },
+        "required": [
+          "outcomeRevisionId",
+          "activityId",
+          "revision",
+          "metricSetVersionId",
+          "metricSetDefinitionHash",
+          "statusCode",
+          "priorRevisionId",
+          "createdAt",
+          "values"
         ]
       },
       "AppActivityMetricSetOptionDto": {

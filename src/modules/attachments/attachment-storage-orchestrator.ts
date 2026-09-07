@@ -312,6 +312,16 @@ export class AttachmentStorageOrchestrator {
     if (!current) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
+    // C2 evidence is immutable. Check while holding Attachment FOR UPDATE, before
+    // committing a delete intent: the later FK check cannot undo a provider delete.
+    // Outcome writers hold this same row FOR SHARE until their reference commits.
+    const outcomeReference = await tx.attachment.findFirst({
+      where: { id: current.id, activityMetricValueEvidence: { some: {} } },
+      select: { id: true },
+    });
+    if (outcomeReference) {
+      throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
+    }
     await tx.$queryRaw(Prisma.sql`
       SELECT "id" FROM "storage_objects" WHERE "key" = ${current.key} FOR UPDATE
     `);

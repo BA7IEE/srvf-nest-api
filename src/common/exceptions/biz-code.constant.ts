@@ -1915,6 +1915,31 @@ export const BizCode = {
     message: '此操作标识已用于其他模板命令',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_OUTCOME_INVALID: {
+    code: 20184,
+    message: '活动成果内容无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_OUTCOME_STALE: {
+    code: 20185,
+    message: '活动成果或指标版本已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_OUTCOME_COMMAND_CONFLICT: {
+    code: 20186,
+    message: '此操作标识已用于其他成果请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_OUTCOME_RECEIPT_INVALID: {
+    code: 20187,
+    message: '活动成果收据无效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_OUTCOME_REFERENCE_UNAVAILABLE: {
+    code: 20188,
+    message: '活动成果引用不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

@@ -28,6 +28,11 @@ import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivitySeriesAuditRecorder } from './activity-series-audit-recorder';
 import { ActivitySeriesService } from './activity-series.service';
 import { ActivityMetricCommand } from './activity-metric-command';
+import { ActivityOutcomeService } from './activity-outcome.service';
+import { ActivityOutcomeQueryService } from './activity-outcome-query.service';
+import { ActivityOutcomeAccessService } from './activity-outcome-access.service';
+import { ActivityOutcomeAuditRecorder } from './activity-outcome-audit-recorder';
+import { AppManagedActivityOutcomesController } from './controllers/app-managed-activity-outcomes.controller';
 import { ActivityMetricAuditRecorder } from './activity-metric-audit-recorder';
 import { ActivityMetricDefinitionService } from './activity-metric-definition.service';
 import { ActivityMetricSetService } from './activity-metric-set.service';
@@ -174,6 +179,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     forwardRef(() => AttendancesModule),
   ],
   controllers: [
+    AppManagedActivityOutcomesController,
     AppManagedActivityMetricsController,
     AdminActivityMetricSelectionController,
     AdminActivityTemplateVersionsController,
@@ -196,6 +202,10 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AdminMemberParticipationLedgerController,
   ],
   providers: [
+    ActivityOutcomeService,
+    ActivityOutcomeQueryService,
+    ActivityOutcomeAccessService,
+    ActivityOutcomeAuditRecorder,
     ActivityControlPlaneGate,
     ActivityCreationService,
     ActivityCreationQuick,

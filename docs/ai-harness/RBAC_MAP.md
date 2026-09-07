@@ -19,14 +19,14 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(252 条,按一级域分组)
+### 权限码全集(254 条,按一级域分组)
 
 > 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert + 角色映射) + `src/modules/permissions/permission-catalog.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
 | 一级域 | 条数 | 权限码 |
 |---|---|---|
 | `attachment` | 24 | `attachment.delete.activity` · `attachment.delete.certificate.other` · `attachment.delete.certificate.self` · `attachment.delete.content-file` · `attachment.delete.content-image` · `attachment.delete.member.other` · `attachment.delete.member.self` · `attachment.update.activity` · `attachment.update.certificate.other` · `attachment.update.certificate.self` · `attachment.update.member.other` · `attachment.update.member.self` · `attachment.upload.activity` · `attachment.upload.certificate.other` · `attachment.upload.certificate.self` · `attachment.upload.content-file` · `attachment.upload.content-image` · `attachment.upload.member.other` · `attachment.upload.member.self` · `attachment.view.activity` · `attachment.view.certificate.other` · `attachment.view.certificate.self` · `attachment.view.member.other` · `attachment.view.member.self` |
-| `activity` | 14 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.emergency.record` · `activity.create.record` · `activity.delete.record` · `activity.publish.record` · `activity.settlement-close.record` · `activity.settlement-final-review.record` · `activity.settlement-first-review.record` · `activity.settlement-generate.record` · `activity.settlement-submit.record` · `activity.settlement-update-draft.record` · `activity.update.record` |
+| `activity` | 16 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.emergency.record` · `activity.create.record` · `activity.delete.record` · `activity.outcome.read` · `activity.outcome.record` · `activity.publish.record` · `activity.settlement-close.record` · `activity.settlement-final-review.record` · `activity.settlement-first-review.record` · `activity.settlement-generate.record` · `activity.settlement-submit.record` · `activity.settlement-update-draft.record` · `activity.update.record` |
 | `rbac` | 14 | `rbac.config.reload` · `rbac.permission.create` · `rbac.permission.delete` · `rbac.permission.read` · `rbac.permission.update` · `rbac.role-permission.create` · `rbac.role-permission.delete` · `rbac.role.create` · `rbac.role.delete` · `rbac.role.read` · `rbac.role.update` · `rbac.user-role.create` · `rbac.user-role.delete` · `rbac.user-role.read` |
 | `attachment-config` | 12 | `attachment-config.create.mime` · `attachment-config.create.size-limit` · `attachment-config.create.type` · `attachment-config.delete.mime` · `attachment-config.delete.size-limit` · `attachment-config.delete.type` · `attachment-config.read.mime` · `attachment-config.read.size-limit` · `attachment-config.read.type` · `attachment-config.update.mime` · `attachment-config.update.size-limit` · `attachment-config.update.type` |
 | `attendance` | 11 | `attendance.approve.sheet` · `attendance.create.sheet` · `attendance.delete.sheet` · `attendance.final-approve.sheet` · `attendance.final-reject.sheet` · `attendance.final-return.sheet` · `attendance.read.sheet` · `attendance.reject.sheet` · `attendance.reopen.sheet` · `attendance.return.sheet` · `attendance.update.sheet` |
@@ -74,7 +74,7 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### 角色 → 权限码覆盖(15 个内建角色;238/252 条码有持有人)
+### 角色 → 权限码覆盖(15 个内建角色;238/254 条码有持有人)
 
 > 权威源:`prisma/seed.ts` 导出的 `RBAC_SEED_CATALOG.roles`。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 「零持有」= 没有任何内建角色持有该码,只有 SUPER_ADMIN 短路可用;是否合规由
@@ -99,7 +99,7 @@
 | `activity-publish-reviewer` | 3 | `activity-review.read.request` · `activity-review.return.request` · `activity.publish.record` |
 | `activity-cross-org-initiator` | 1 | `activity.create.cross-org` |
 
-#### 零持有权限码(14 条)
+#### 零持有权限码(16 条)
 
 | 权限码 |
 |---|
@@ -110,6 +110,8 @@
 | `activity-template.manage.version` |
 | `activity-template.read.catalog` |
 | `activity.create.emergency.record` |
+| `activity.outcome.read` |
+| `activity.outcome.record` |
 | `member.delete.record` |
 | `realname-setting.reset.credentials` |
 | `sms-setting.reset.credentials` |
@@ -118,7 +120,7 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(115 个 @Controller)
+### controller × surface 对照(116 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
@@ -181,7 +183,7 @@
 | `admin/v1/team-join/cycles` | `src/modules/team-join/team-join-cycles.controller.ts` |
 | `admin/v1/users` | `src/modules/users/users.controller.ts` |
 
-#### app/v1(33 个 controller)
+#### app/v1(34 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -206,6 +208,7 @@
 | `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activities.controller.ts` |
 | `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activity-creation.controller.ts` |
 | `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activity-metrics.controller.ts` |
+| `app/v1/my/managed-activities` | `src/modules/activities/controllers/app-managed-activity-outcomes.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts` |
 | `app/v1/my/managed-activities/:activityId` | `src/modules/activity-registrations/controllers/app-managed-activity-onsite-participations.controller.ts` |

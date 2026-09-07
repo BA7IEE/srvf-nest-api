@@ -155,7 +155,23 @@ export class AuthzService {
     if (user.role === Role.SUPER_ADMIN) {
       return { hasPermission: true, global: true, organizationIds: [] };
     }
+    return this.collectVisibleOrganizationScope(user, action, tx);
+  }
 
+  /** C2: actual grants only, including SUPER_ADMIN. Caller owns identity and business checks. */
+  async getExplicitVisibleOrganizationScope(
+    user: CurrentUserPayload,
+    action: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<VisibleOrganizationScope> {
+    return this.collectVisibleOrganizationScope(user, action, tx);
+  }
+
+  private async collectVisibleOrganizationScope(
+    user: CurrentUserPayload,
+    action: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<VisibleOrganizationScope> {
     const grants = await this.collectGrants(user, tx);
     const roleIds = [...new Set(grants.map((g) => g.roleId))];
     const rolesWithCode = await this.rbac.getRoleIdsWithPermission(roleIds, action, tx);

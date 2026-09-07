@@ -20,6 +20,22 @@
 - **capability ≠ raw RBAC**:`GET /api/app/v1/me/capabilities` 返**产品级**能力，不返 raw 权限码。活动新增入口提示为 `activities.canInitiateActivity` / `canDirectPublishOwnActivity`，管理提示为 `managed.canViewManagedActivities` / `canManageManagedRegistrations` / `canSubmitManagedAttendance` / `canReviewActivityPublication` / `canFirstReviewAttendance` / `canFinalReviewAttendance`；它们都不能证明某一活动或组织最终可操作。
 - **L3 永不回**:App 永不返 `passwordHash` / `refreshToken` / `secretKey*` / 完整 signed URL。
 
+### C2 D2 人工成果（当前实现分支，尚未合并／部署）
+
+managed 活动下的 `outcomes` 提供人工草稿录入、分页历史和指定修订明细；字段以 OpenAPI 为准。
+先读取最新成果修订号，再以独立操作键提交完整快照；首次 expectedRevision 为 0。
+同键重试必须保持原请求，返回原创建事实；回执中的 draft 不代表该历史修订此刻仍为草稿。
+新编辑使用新键及最新修订，不把缺失项自动合并旧成果；省略单项附件列表等价于空数组。
+历史明细按该修订自己的精确指标集解释，不能用当前选集重新解释旧值。列表只有摘要。
+
+需显式授予 `activity.outcome.record/read`，默认不分配内建角色；管理员角色也不直通。
+同时要求当前有效 App 身份、组织范围，以及草稿发起人／非草稿现任 owner；协作者不自动获权。
+新写仅支持 draft/published/completed/terminated；归档可读有权历史，不恢复管理员旁路。
+仅允许已治理的非敏感数字、布尔、受控单选；小数传规范字符串，拒绝自由文本和客户端确认字段。
+20184/400 表示值无效；20185/409 刷新修订或指标选择；20186/409 表示操作键已用于其他请求，不能原键改内容重试。
+20187/409 为回执无效，不自动重试；20188/404 统一表达不存在或当前不可访问。
+成果仍为草稿，不代表正式完成，不改变 Readiness、发布、考勤、时长或贡献；C3 确认另行实施。
+
 ### C1 D2b 指标选择与模板 options（已合入 #1282/未部署）
 
 先确定要发起的组织，再读 managed 前缀下的 `metric-set-options` / `template-version-options`。
