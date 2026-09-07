@@ -2526,6 +2526,8 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 - **2026-09-07 C2 当前订正**：[Outcome／Value revision 评审及授权清单](../archive/reviews/activity-os-r3-c2-outcome-value-revision-review.md)已起草。上文较早的“C2 尚未启动或授权”仅指 implementation，不能读成没有评审稿；C2 D1／D2 尚未实施或获实施授权，confirmed／system／AI 来源归 C3，import 仍须独立立项。本次没有 schema、migration、API、权限、审计、附件 owner、Readiness、Gate 或生产行为变更。
 
+- **2026-09-07 C2 D1 计划与已批准订正**：C2 方案 A 已确认，评审 #1287 已合入，main CI 34074014865 通过。[D1 实施计划](../archive/plans/activity-os-r3-c2-d1-implementation-plan.md)已起草。维护者确认 C1 负责定义配置、C2 新增成果值校验并复用 canonical/hash；同时确认 D1 验证成果同链与附件存在、D2 在事务内验证活动归属。原评审历史文字保留，以此订正指导后续实施；D2 归属验收未取消。D1 implementation、测试库操作、生产与 Gate 均未获本次授权。
+
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 
 **状态**:⏸ 挂起(⚠️ **这不是「不做」,是「必须在首次生产上线之前做完,现在时机不对」** —— 触发条件三条见正文「什么时候必须做」;三条齐了就立刻立项,不必再问维护者要不要做,只需拍板合并口径)
