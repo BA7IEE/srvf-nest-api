@@ -185,7 +185,55 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
       .send(body);
   async function create() {
     const body = { ...input(), memberIds: [actor.memberId!] };
-    const response = await post(body).expect(201);
+    const startedAt = Date.now();
+    const response = await post(body)
+      .expect((response) => {
+        if (response.status === 201) return;
+        // Never log the raw request, response, or exception message: database errors can
+        // contain credentials or fixture data. Only emit bounded, allowlisted signals.
+        const payload: unknown = response.body;
+        const envelope =
+          payload !== null && typeof payload === 'object'
+            ? (payload as Record<string, unknown>)
+            : {};
+        const message = typeof envelope.message === 'string' ? envelope.message : '';
+        const errorHints = [
+          'Unique constraint failed',
+          'Foreign key constraint violated',
+          'Transaction API error',
+          'Unable to start a transaction',
+          'Transaction already closed',
+          'Timed out fetching a new connection',
+          'timeout',
+          'deadlock detected',
+          'write conflict',
+          'Record to update not found',
+        ].filter((hint) => message.toLowerCase().includes(hint.toLowerCase()));
+        const databaseCodes = [
+          'P2002',
+          'P2003',
+          'P2024',
+          'P2028',
+          'P2034',
+          '40P01',
+          '23503',
+          '23505',
+        ].filter((code) => new RegExp(`\\b${code}\\b`).test(message));
+        console.error('B6 emergency creation failed (redacted)', {
+          status: response.status,
+          elapsedMs: Date.now() - startedAt,
+          bizCode:
+            typeof envelope.code === 'number' &&
+            Number.isInteger(envelope.code) &&
+            envelope.code >= 10000 &&
+            envelope.code <= 99999
+              ? envelope.code
+              : null,
+          databaseCodes,
+          errorHints,
+        });
+      })
+      .expect(201);
     return { body, result: (response.body as CreationResponse).data };
   }
   async function counts() {
