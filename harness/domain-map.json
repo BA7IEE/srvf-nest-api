@@ -1723,7 +1723,7 @@
       "prismaModel": "OrganizationClosure",
       "operation": "findMany",
       "sourceFile": "src/modules/authz/authz.service.ts",
-      "sourceSymbol": "AuthzService.getVisibleOrganizationScope",
+      "sourceSymbol": "AuthzService.collectVisibleOrganizationScope",
       "accessPath": "OrganizationClosure",
       "observedBy": "Phase 2 docs:boundaries R5/R6 实测",
       "reviewTrigger": "调用形态、读取字段或属主调整时复核；语义时间窗加状态组合不得以本项豁免。"
