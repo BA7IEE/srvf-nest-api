@@ -642,11 +642,14 @@ describe('活动改造 v1.1 第 1 批第四刀 schema 约束(第 74 migration)',
     it('⑪ CorrectionApplication 放行', async () => {
       await expectAccepted(correctionSql('cr1'));
       await expectAccepted(
-        `INSERT INTO "CorrectionApplication"
+        `WITH request_input AS (
+           UPDATE "AttendanceCorrectionRequest" SET "requestedChangeJson"='{"schemaVersion":1,"results":[],"segments":[]}'::jsonb WHERE id='cr1' RETURNING id
+         ), application AS (INSERT INTO "CorrectionApplication"
          ("id","updatedAt","correctionRequestId","newSettlementVersionId","newResultRevisionIds",
           "newPostingBatchId","statusCode")
-         VALUES ('ca1', ${T(SESSION_START)}, 'cr1', '${versionId2}', '["${resultId}"]'::jsonb,
-          '${batchId2}', 'preparing')`,
+         SELECT 'ca1', ${T(SESSION_START)}, id, '${versionId2}', '["${resultId}"]'::jsonb,
+          '${batchId2}', 'preparing' FROM request_input RETURNING id)
+         INSERT INTO "CorrectionSegmentPreparationReceipt" ("applicationId","preparedSegmentCount") SELECT id,0 FROM application`,
       );
     });
 
@@ -1645,11 +1648,14 @@ describe('活动改造 v1.1 第 1 批第四刀 schema 约束(第 74 migration)',
       await expectAccepted(dayStateSql('ds1'));
       await expectAccepted(correctionSql('cr1'));
       await expectAccepted(
-        `INSERT INTO "CorrectionApplication"
+        `WITH request_input AS (
+           UPDATE "AttendanceCorrectionRequest" SET "requestedChangeJson"='{"schemaVersion":1,"results":[],"segments":[]}'::jsonb WHERE id='cr1' RETURNING id
+         ), application AS (INSERT INTO "CorrectionApplication"
          ("id","updatedAt","correctionRequestId","newSettlementVersionId","newResultRevisionIds",
           "newPostingBatchId","statusCode")
-         VALUES ('ca1', ${T(SESSION_START)}, 'cr1', '${versionId2}', '[]'::jsonb, '${batchId2}',
-          'preparing')`,
+         SELECT 'ca1', ${T(SESSION_START)}, id, '${versionId2}', '[]'::jsonb, '${batchId2}',
+          'preparing' FROM request_input RETURNING id)
+         INSERT INTO "CorrectionSegmentPreparationReceipt" ("applicationId","preparedSegmentCount") SELECT id,0 FROM application`,
       );
       await expectAccepted(closureSql('clo1'));
       await expectAccepted(jobItemSql('it1'));

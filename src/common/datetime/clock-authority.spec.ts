@@ -409,6 +409,16 @@ const NOT_CLOCK_CRITICAL: ReadonlyArray<{
   readonly column: string;
   readonly why: string;
 }> = [
+  {
+    model: 'CorrectionSegmentPreparationReceipt',
+    column: 'preparedAt',
+    why: '首次准备收据留痕；清理与重放依据状态和数量，不与时钟比较',
+  },
+  {
+    model: 'CorrectionSegmentCleanupReceipt',
+    column: 'cleanedAt',
+    why: '受控清理审计时间；不参与资格、超时或保留期计算',
+  },
   // Integration Foundation v1 PR1(schema-only):新 @default(now()) 非 createdAt 列的
   // 处置登记(createdAt 由 AUDIT_COLUMNS 全局豁免)。PR1 零运行时 —— 不与任何时钟
   // 比较;PR3/PR5 接入运行时判定(SUSPENDED 即拒 / Grant 有效期)时若有比较需求,

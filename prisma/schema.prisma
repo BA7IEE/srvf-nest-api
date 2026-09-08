@@ -1282,13 +1282,13 @@ model CertificateRecognitionPolicy {
 // §5.4 认可机构。实例认可靠 issuer id,**不靠机构文字匹配**(D-CERT-021;
 // 中文机构名匹配不可靠)。normalizedName 只用于 DRAFT 内去重,不做模糊匹配。
 model CertificateRecognitionIssuer {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   policyId       String
   name           String
   normalizedName String // trim + 连续空白折叠 + ASCII 大小写归一;不删中文法律名称
   sortOrder      Int       @default(0)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
   deletedAt      DateTime?
 
   policy       CertificateRecognitionPolicy  @relation(fields: [policyId], references: [id], onDelete: Restrict)
@@ -1730,7 +1730,7 @@ model ActivityMetricDefinition {
 }
 
 model ActivityMetricSetVersion {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   code           String
   version        Int
   name           String
@@ -1739,8 +1739,8 @@ model ActivityMetricSetVersion {
   statusCode     String
   activatedAt    DateTime?
   retiredAt      DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   items ActivityMetricSetItem[]
   commandReceipts ActivityMetricCommandReceipt[]
@@ -4659,6 +4659,7 @@ model ActivityParticipationIdentity {
   // 第 1 批第三刀(§3.16 / §3.18):打卡事件与服务段修订的反向 relation。
   punchEvents                AttendancePunchEvent[]
   serviceSegmentRevisions    ParticipantServiceSegmentRevision[]
+  correctionPendingSegments  CorrectionPendingSegmentRevision[]
   offlinePackageParticipants OfflinePackageParticipant[]
   offlinePunchReviewItems    OfflinePunchReviewItem[]
 
@@ -5429,8 +5430,9 @@ model AttendancePunchEvent {
   supersedesEvent AttendancePunchEvent?  @relation("PunchEventSupersede", fields: [supersedesEventId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict)
   supersededBy    AttendancePunchEvent[] @relation("PunchEventSupersede")
 
-  serviceSegmentCheckIns ParticipantServiceSegmentRevision[] @relation("SegmentSourceCheckInEvent")
-  serviceSegmentCloses   ParticipantServiceSegmentRevision[] @relation("SegmentSourceCloseEvent")
+  serviceSegmentCheckIns    ParticipantServiceSegmentRevision[] @relation("SegmentSourceCheckInEvent")
+  correctionPendingSegments CorrectionPendingSegmentRevision[]
+  serviceSegmentCloses      ParticipantServiceSegmentRevision[] @relation("SegmentSourceCloseEvent")
 
   @@unique([eventKey])
   @@unique([offlinePackageId, offlineSequence], map: "attendance_punch_event_offline_package_sequence_key")
@@ -5572,8 +5574,9 @@ model ParticipantServiceSegmentRevision {
   sourceCheckInEvent AttendancePunchEvent          @relation("SegmentSourceCheckInEvent", fields: [sourceCheckInEventId], references: [id], onDelete: Restrict)
   sourceCloseEvent   AttendancePunchEvent?         @relation("SegmentSourceCloseEvent", fields: [sourceCloseEventId], references: [id], onDelete: Restrict)
 
-  baseRevision     ParticipantServiceSegmentRevision?  @relation("SegmentBaseRevision", fields: [baseRevisionId], references: [id], onDelete: Restrict)
-  derivedRevisions ParticipantServiceSegmentRevision[] @relation("SegmentBaseRevision")
+  baseRevision              ParticipantServiceSegmentRevision?  @relation("SegmentBaseRevision", fields: [baseRevisionId], references: [id], onDelete: Restrict)
+  derivedRevisions          ParticipantServiceSegmentRevision[] @relation("SegmentBaseRevision")
+  correctionPendingSegments CorrectionPendingSegmentRevision[]
 
   effectiveBatch LedgerPostingBatch? @relation("SegmentEffectiveBatch", fields: [effectiveBatchId], references: [id], onDelete: Restrict)
 
@@ -6087,6 +6090,10 @@ model CorrectionApplication {
 
   statusCode String // preparing / committed / failed / voided(§3.25 明写四值闭集)
 
+  pendingSegments           CorrectionPendingSegmentRevision[]
+  segmentPreparationReceipt CorrectionSegmentPreparationReceipt?
+  segmentCleanupReceipt     CorrectionSegmentCleanupReceipt?
+
   correctionRequest    AttendanceCorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
   newSettlementVersion AttendanceSettlementVersion @relation("CorrectionApplicationNewVersion", fields: [newSettlementVersionId], references: [id], onDelete: Restrict)
   newPostingBatch      LedgerPostingBatch          @relation("CorrectionApplicationNewBatch", fields: [newPostingBatchId], references: [id], onDelete: Restrict)
@@ -6095,6 +6102,54 @@ model CorrectionApplication {
   @@index([statusCode], map: "correction_application_status_idx")
   @@index([newSettlementVersionId], map: "correction_application_new_version_idx")
   @@index([newPostingBatchId], map: "correction_application_new_batch_idx")
+}
+
+// #1295: temporary approved segment inputs, never a source of committed facts.
+// Immutable while recoverable; controlled cleanup leaves permanent count receipts.
+model CorrectionPendingSegmentRevision {
+  id                      String   @id @default(cuid())
+  createdAt               DateTime @default(now())
+  applicationId           String
+  activityId              String
+  participationIdentityId String
+  segmentKey              String
+  baseRevisionId          String
+  baseRevisionNumber      Int
+  targetRevisionNumber    Int
+  checkInAt               DateTime
+  checkOutAt              DateTime
+  resultCode              String
+  serviceHours            Decimal  @db.Decimal(5, 2)
+  sourceCheckInEventId    String
+  payloadHash             String
+
+  application        CorrectionApplication             @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  identity           ActivityParticipationIdentity     @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  baseRevision       ParticipantServiceSegmentRevision @relation(fields: [baseRevisionId], references: [id], onDelete: Restrict)
+  sourceCheckInEvent AttendancePunchEvent              @relation(fields: [sourceCheckInEventId], references: [id], onDelete: Restrict)
+
+  // Full activity/request/base/source coherence is enforced by migration triggers.
+  @@unique([applicationId, participationIdentityId, segmentKey], map: "correction_pending_application_identity_segment_key")
+  @@index([baseRevisionId], map: "correction_pending_base_idx")
+}
+
+model CorrectionSegmentPreparationReceipt {
+  applicationId        String                @id
+  schemaVersion        Int                   @default(1)
+  preparedSegmentCount Int
+  preparedAt           DateTime              @default(now())
+  application          CorrectionApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+}
+
+model CorrectionSegmentCleanupReceipt {
+  applicationId          String                @id
+  schemaVersion          Int                   @default(1)
+  preparedSegmentCount   Int
+  deletedSegmentCount    Int
+  cleanedAt              DateTime              @default(now())
+  databasePrincipal      String
+  authorizationReference String
+  application            CorrectionApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
 }
 
 // ===== §3.26 ActivitySettlementClosureRevision:关闭版本 =====

@@ -1,5 +1,12 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
+## 服务段更正方案 A（实施中）
+
+新增 pending 与两类收据均无 statusCode，不增加独立状态机，不提升 governed。
+ParticipantServiceSegmentRevision 仍为 draft/committed/superseded；更正 prepare 不再创建正式段，
+commit 在原事务中先替代旧 committed 段、再创建并提交新段。CorrectionApplication 四态不变。
+数据库生命周期与计数收据约束已写入第 115 条迁移；完整验收、合并与部署尚未完成。
+
 ## C2 D2 当前交付（已合入 #1293）
 
 `ActivityOutcomeRevision.statusCode` 仍为 L2 inventory：数据库闭集 draft/confirmed/superseded 不变。

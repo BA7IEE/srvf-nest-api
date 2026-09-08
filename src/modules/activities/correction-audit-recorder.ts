@@ -123,6 +123,7 @@ export class CorrectionAuditRecorder {
     newPostingBatchId: string;
     newResultRevisionIds: readonly string[];
     newSegmentRevisionCount: number;
+    pendingSegmentRevisionCount: number;
     reversalEntryCount: number;
     replacementEntryCount: number;
     batchStatus: string;
@@ -147,6 +148,7 @@ export class CorrectionAuditRecorder {
       //    真名单在 `CorrectionApplication.newResultRevisionIds` 上)。
       newResultRevisionCount: args.newResultRevisionIds.length,
       newSegmentRevisionCount: args.newSegmentRevisionCount,
+      pendingSegmentRevisionCount: args.pendingSegmentRevisionCount,
       reversalEntryCount: args.reversalEntryCount,
       replacementEntryCount: args.replacementEntryCount,
       batchStatus: args.batchStatus,
