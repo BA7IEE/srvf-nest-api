@@ -190,7 +190,13 @@ describe('C2 D2 nonempty 113 to 114 upgrade', () => {
         sql(`SELECT row_to_json(t)::text FROM "${table}" t ORDER BY id`),
       );
       for (const snapshot of snapshots) expect(snapshot.length).toBeGreaterThan(0);
-      deploy(path.join(root, 'schema.prisma'));
+      // Historical D2 upgrade ends at 114 even after later migrations are added.
+      cpSync(
+        path.join(root, 'migrations', migration),
+        path.join(temporary, 'migrations', migration),
+        { recursive: true, force: false, errorOnExist: true },
+      );
+      deploy(path.join(temporary, 'schema.prisma'));
       expect(sql('SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL')).toBe(
         '114',
       );
