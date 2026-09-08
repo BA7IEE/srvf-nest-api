@@ -1,6 +1,6 @@
 # activities — 本地铁律
 
-## 服务段更正方案 A（#1295 后续实施中，未合并）
+## 服务段更正方案 A（#1296 已合并，未部署）
 
 prepare 仅创建 CorrectionPendingSegmentRevision 和首次准备数量收据，不创建正式段。
 commit 同事务内核验精确 base，先 superseded 再物化 draft，复用原 ledger commit。
@@ -8,7 +8,8 @@ commit 同事务内核验精确 base，先 superseded 再物化 draft，复用�
 prepare/commit（含重放）复用 GLOBAL `activity.settlement-final-review.record`；根锁等待后
 经 Users 属主原语重读当前用户，绑定成员失效拒绝，未绑定成员的管理账户沿既有 GLOBAL 规则。
 原更正、主路径、失败回滚、清理竞争和锁等待撤权共 8 组 110 条在 app_test_w98 通过；
-另有非空旧 application 升级及冷回放 5 条通过。全量本地单测通过；PR CI、整体复审和部署未完成。
+另有非空旧 application 升级及冷回放 5 条通过。全量本地单测、#1296 PR CI 与可信审批通过，3b 已重签。
+main `638fc784` 已包含本批；整体复审、部署和真实清理未完成。C3-1 仅起草计划，不代表已实施。
 
 ## C2 D2 当前交付（已合入 #1293，未部署）
 

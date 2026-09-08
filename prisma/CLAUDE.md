@@ -4,7 +4,7 @@
 
 ## 本地事实
 
-- **#1295 方案 A 实施中（优先于下方历史摘要）**：当前分支累计 115 个 migration，main 仍为 114 条。新增 `20260908000000_correction_pending_segment_lifecycle`，三模型为独立暂存、准备收据、清理收据；当前段唯一索引及三态不变。app_test_w98 应用、115 条 SQL 冷回放及非空旧 application 升级均已通过；旧零段重放兼容、异常非空缺收据拒绝，零回填。未重签 3b、未合并、未部署；原摘要中“仅起草”已被本次实施授权替代。
+- **#1296 方案 A 已合并（优先于下方历史摘要）**：main `638fc784` 累计 115 个 migration。新增 `20260908000000_correction_pending_segment_lifecycle`，三模型为独立暂存、准备收据、清理收据；当前段唯一索引及三态不变。app_test_w98 应用、115 条 SQL 冷回放及非空旧 application 升级均通过；旧零段重放兼容、异常非空缺收据拒绝，零回填。3b 已由维护者重签，全部 PR CI 与可信审批通过；未部署、未清理真实数据。C3-1 仅计划，不预占下一条 migration。
 
 - **当前 migration 摘要（覆盖下方 D1 及历史长记）**：main 累计 114 个 migration；[#1293](https://github.com/BA7IEE/srvf-nest-api/pull/1293) 已于 2026-09-07 squash 合入 `7f4fdbd7`；18 项 PR 检查、可信红区审批及 [main CI 34118403784](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34118403784) 全部通过。最新 `20260907160030_activity_os_r3_c2_outcome_command_receipt` 只新增专用不可变成果收据及反向关系；app_test deploy 核验、113→114 非空升级及 114 冷回放已验证，3b/4b 已重签。D2 人工 writer 与附件同活动校验已经交付；正式确认、自动来源、确认时证据完整性与 confirmed 更正归 C3。生产迁移与 Gate 未执行；本轮仅授权 C3 评审起草，不新增或预占 migration。
 
