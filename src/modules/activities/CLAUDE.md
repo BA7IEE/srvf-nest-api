@@ -1,5 +1,15 @@
 # activities — 本地铁律
 
+## 服务段更正方案 A（#1295 后续实施中，未合并）
+
+prepare 仅创建 CorrectionPendingSegmentRevision 和首次准备数量收据，不创建正式段。
+commit 同事务内核验精确 base，先 superseded 再物化 draft，复用原 ledger commit。
+清理仅由独立批准的维护者 CLI 逐 application 执行，默认只读；收据不可变，正式历史不删。
+prepare/commit（含重放）复用 GLOBAL `activity.settlement-final-review.record`；根锁等待后
+经 Users 属主原语重读当前用户，绑定成员失效拒绝，未绑定成员的管理账户沿既有 GLOBAL 规则。
+原更正、主路径、失败回滚、清理竞争和锁等待撤权共 8 组 110 条在 app_test_w98 通过；
+另有非空旧 application 升级及冷回放 5 条通过。全量本地单测通过；PR CI、整体复审和部署未完成。
+
 ## C2 D2 当前交付（已合入 #1293，未部署）
 
 人工成果独立使用 Outcome Service/Query/Presenter/Access/AuditRecorder；仅三个 Human App managed 接口。

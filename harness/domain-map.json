@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:42a211c053d6186fd991b1093717d66e009e7bd7da99bb0e4ab2fe0c365dab24",
+  "inputDigest": "sha256:96d7686fb50683b147e75638c741b9c00bef30bb6d79ca50a285eba5c867c6a8",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -880,6 +880,24 @@
       "domain": "participation",
       "ownerModule": "attendances",
       "subdomain": "attendance",
+      "confirmed": true
+    },
+    "CorrectionPendingSegmentRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "CorrectionSegmentPreparationReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "CorrectionSegmentCleanupReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
       "confirmed": true
     },
     "ContributionRule": {

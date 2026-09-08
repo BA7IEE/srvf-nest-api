@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
@@ -7,6 +8,9 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { runMemberLinearizedTransaction } from '../../common/prisma/member-advisory-lock.util';
 import { PrismaService } from '../../database/prisma.service';
+import { RbacService } from '../permissions/rbac.service';
+import { AppIdentityResolver } from '../users/app-identity.resolver';
+import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityClosureService, type ActivityClosureOutcome } from './activity-closure.service';
 import { CorrectionAuditRecorder } from './correction-audit-recorder';
@@ -35,6 +39,7 @@ import {
 } from './ledger-preparation.service';
 import {
   computeSettlementContentHash,
+  canonicalize,
   decimalToCanonicalString,
   SETTLEMENT_CONTENT_SCHEMA_VERSION,
   type SettlementContentItem,
@@ -94,8 +99,8 @@ import {
 //
 // **`prepare` 写的每一行都对正式读面不可见**,逐条:
 //   - 新 `AttendanceSettlementVersion`:`run.currentPostedVersion` **仍指向旧版本**;
-//   - 新 `ParticipantSettlementResultRevision` / `ParticipantServiceSegmentRevision`:
-//     全部 `draft`,而正式读面只认 `committed`;
+//   - 新 `ParticipantSettlementResultRevision` 为 draft；服务段仅写专用 pending，
+//     不进入正式段表。commit 事务内才替代旧段并物化新段(#1295)。
 //   - 新 `ParticipationLedgerEntry`:挂在 `ready` 批次上 —— §3.22 明写未 committed
 //     的分录对所有正常读面不可见;
 //   - `MemberContributionDayState`:**一行都不写**(那是 commit 的事)。
@@ -122,7 +127,7 @@ import {
 // ## 本刀不做的事
 //
 // ❌ 零端点 / 零 DTO / 零权限码(对外入口归第 ⑧ 刀);判权在调用方。
-// ❌ 零 schema:39 张表已够用。❌ 零 Punch 写路径;❌ 不新增 cron / Redis / queue。
+// #1295 增加 pending 与两类收据；零 Punch 写路径，不新增 cron / Redis / queue。
 // ❌ 不删第五刀那道 `*_reversal` 闸(只按场景放宽,普通批次仍被拒)。
 // ❌ 不改第六刀 `ActivityClosureService` 一行(只调用)。
 
@@ -240,6 +245,7 @@ export interface CorrectionPrepareResult {
   newPostingBatchId: string;
   newResultRevisionIds: string[];
   newSegmentRevisionCount: number;
+  pendingSegmentRevisionCount: number;
   /** 冲回分录条数(= 被冲回的旧分录条数)。 */
   reversalEntryCount: number;
   /** 补记分录条数。 */
@@ -384,6 +390,8 @@ export class CorrectionApplicationService {
     private readonly audit: CorrectionAuditRecorder,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly rbac: RbacService,
+    private readonly identities: AppIdentityResolver,
   ) {}
 
   // =========================================================================
@@ -595,7 +603,11 @@ export class CorrectionApplicationService {
         async (tx) => {
           await this.lockActivity(tx, anchor.activityId);
           const run = await this.lockRun(tx, anchor.activityId);
-          const request = await this.lockRequest(tx, input.correctionRequestId);
+          const request = await this.lockAuthorizedRequest(
+            tx,
+            input.correctionRequestId,
+            currentUser,
+          );
 
           // 幂等:已有 `preparing` / `committed` 的应用 ⇒ 原样返回(不再准备第二遍)。
           const resumable = await this.findResumableApplication(tx, request, run);
@@ -623,7 +635,8 @@ export class CorrectionApplicationService {
             resolved,
           });
           await this.createNewResultRevisions(tx, newVersion.id, request.id, resolved);
-          const newSegmentRevisionCount = await this.createNewSegmentRevisions(tx, changeSet);
+          // No formal segment is written during prepare; retain the original count meaning.
+          const newSegmentRevisionCount = 0;
 
           // ===== §5.14 ④ 新的 PostingBatch =====
           const batch = await this.createPostingBatch(tx, {
@@ -633,7 +646,7 @@ export class CorrectionApplicationService {
             correctionRequestId: request.id,
             operationKey: input.operationKey,
             requestHash: input.requestHash,
-            actorUserId: currentUser.id,
+            actorUserId: request.actor.id,
           });
 
           // 冲回集 = 基础版本下**已生效**的全部 credit 分录。
@@ -678,7 +691,7 @@ export class CorrectionApplicationService {
             batchId: batch.id,
             requestHash: input.requestHash,
             baseline,
-            actorUserId: currentUser.id,
+            actorUserId: request.actor.id,
           });
           await tx.ledgerPostingBatch.update({
             where: { id: batch.id },
@@ -702,6 +715,12 @@ export class CorrectionApplicationService {
             },
             select: { id: true },
           });
+          const pendingSegmentRevisionCount = await this.preparePendingSegments(
+            tx,
+            application.id,
+            anchor.activityId,
+            changeSet,
+          );
 
           await tx.attendanceCorrectionRequest.update({
             where: { id: request.id },
@@ -729,6 +748,7 @@ export class CorrectionApplicationService {
             newPostingBatchId: batch.id,
             newResultRevisionIds,
             newSegmentRevisionCount,
+            pendingSegmentRevisionCount,
             reversalEntryCount,
             replacementEntryCount,
             batchStatus: 'ready',
@@ -738,8 +758,8 @@ export class CorrectionApplicationService {
             ...result,
             operationKey: input.operationKey,
             requestHash: input.requestHash,
-            actorUserId: currentUser.id,
-            actorRoleSnap: currentUser.role,
+            actorUserId: request.actor.id,
+            actorRoleSnap: request.actor.role,
             auditMeta,
             tx,
           });
@@ -778,7 +798,12 @@ export class CorrectionApplicationService {
       await this.lockActivity(tx, anchor.activityId);
       const run = await this.lockRun(tx, anchor.activityId);
       const request = await this.lockRequest(tx, input.correctionRequestId);
-      const application = await this.lockApplication(tx, request.id);
+      const application = await this.lockApplication(
+        tx,
+        request.id,
+        parseCorrectionChangeSet(request.requestedChangeJson),
+        currentUser,
+      );
 
       // 幂等:已 committed ⇒ 原样返回上一次的结论。
       if (application.statusCode === 'committed') {
@@ -792,11 +817,17 @@ export class CorrectionApplicationService {
       //
       // 它自己会取 ④ version → ⑤ batch → ⑥ 恒串行闸 → ⑦ member 锁 → ⑧ day-state,
       // 并做 baseline 比对 / 日合计 0..3 / 零部分生效。本文件**不重复任何一条**。
+      const supersededSegmentRevisionCount = await this.materializePendingSegments(
+        tx,
+        application.id,
+        anchor.activityId,
+        parseCorrectionChangeSet(request.requestedChangeJson),
+      );
       const ledger = await this.ledgerPosting.commitBatchWithin(
         tx,
         anchor.activityId,
         { postingBatchId: application.newPostingBatchId, operationKey: input.operationKey },
-        currentUser,
+        application.actor,
         auditMeta,
       );
 
@@ -810,17 +841,7 @@ export class CorrectionApplicationService {
         WHERE "settlementVersionId" = ${request.baseSettlementVersionId}
           AND "statusCode" = 'committed'
       `;
-      // 被本次更正顶掉的旧段:由**新段自己的 `baseRevisionId`** 指回来定位。
-      // ⚠️ 必须排在 `commitBatchWithin` 之后 —— 新段的 `effectiveBatchId` 是它填的,
-      //    而这里正是靠它把"本批次的新段"与别的段区分开。
-      const supersededSegmentRevisionCount = await tx.$executeRaw`
-        UPDATE "ParticipantServiceSegmentRevision" AS old
-        SET "statusCode" = 'superseded', "updatedAt" = NOW()
-        FROM "ParticipantServiceSegmentRevision" AS fresh
-        WHERE fresh."effectiveBatchId" = ${application.newPostingBatchId}
-          AND fresh."baseRevisionId" = old.id
-          AND old."statusCode" <> 'superseded'
-      `;
+      // Old segments were replaced before ledger commit, inside this transaction.
 
       const supersededClosureRevision = await this.supersedeActiveClosure(
         tx,
@@ -866,8 +887,8 @@ export class CorrectionApplicationService {
         settlementRunId: run.id,
         operationKey: input.operationKey,
         requestHash: input.requestHash,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
+        actorUserId: application.actor.id,
+        actorRoleSnap: application.actor.role,
         auditMeta,
         tx,
       });
@@ -948,7 +969,10 @@ export class CorrectionApplicationService {
   private async lockApplication(
     tx: PrismaTx,
     correctionRequestId: string,
+    changeSet: CorrectionChangeSet,
+    claimed: CurrentUserPayload,
   ): Promise<{
+    actor: CurrentUserPayload;
     id: string;
     statusCode: string;
     newSettlementVersionId: string;
@@ -971,7 +995,8 @@ export class CorrectionApplicationService {
     `;
     const row = rows[0];
     if (row === undefined) throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
-    return row;
+    await this.readPreparedSegmentCount(tx, row.id, changeSet);
+    return { ...row, actor: await this.authorizeApplication(tx, claimed) };
   }
 
   // ===== 读 ================================================================
@@ -1319,6 +1344,11 @@ export class CorrectionApplicationService {
       newPostingBatchId: existing.newPostingBatchId,
       newResultRevisionIds,
       newSegmentRevisionCount: 0,
+      pendingSegmentRevisionCount: await this.readPreparedSegmentCount(
+        tx,
+        existing.id,
+        parseCorrectionChangeSet(request.requestedChangeJson),
+      ),
       reversalEntryCount: counts?.reversalEntryCount ?? 0,
       replacementEntryCount: counts?.replacementEntryCount ?? 0,
       batchStatus: counts?.batchStatus ?? 'ready',
@@ -1455,47 +1485,189 @@ export class CorrectionApplicationService {
     }
   }
 
-  /**
-   * §5.14 ③ 的 Segment revisions:被变更集点名的段**追加一版**,旧版留着不动。
-   *
-   * ⚠️ 新版建成 `draft`;旧版的 `superseded` 投影**在 commit 事务里**才做
-   *    (§5.14 ⑥)—— 在准备阶段就翻旧段会当场改变正式读面(段是关账第 ③/⑥/⑦ 类
-   *    检查的输入),违反 §5.14 末句。
-   */
-  private async createNewSegmentRevisions(
+  private async lockAuthorizedRequest(
     tx: PrismaTx,
+    requestId: string,
+    claimed: CurrentUserPayload,
+  ) {
+    const request = await this.lockRequest(tx, requestId);
+    return { ...request, actor: await this.authorizeApplication(tx, claimed) };
+  }
+
+  private async authorizeApplication(
+    tx: PrismaTx,
+    claimed: CurrentUserPayload,
+  ): Promise<CurrentUserPayload> {
+    const actor = await loadActiveUserIdentityInTx(tx, claimed.id);
+    if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
+    if (actor.memberId !== null && !(await this.identities.resolve(actor, tx)).canUseApp) {
+      throw new BizException(BizCode.FORBIDDEN);
+    }
+    if (!(await this.rbac.can(actor, 'activity.settlement-final-review.record', undefined, tx))) {
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    }
+    return actor;
+  }
+
+  /** Approved segment content digest; fixed decimal scale and UTC instants. */
+  private pendingSegmentHash(change: CorrectionSegmentChange): string {
+    return createHash('sha256')
+      .update(
+        canonicalize({
+          participationIdentityId: change.participationIdentityId,
+          segmentKey: change.segmentKey,
+          checkInAt: change.checkInAt.toISOString(),
+          checkOutAt: change.checkOutAt.toISOString(),
+          resultCode: change.resultCode,
+          serviceHours: decimalToCanonicalString(change.serviceHours),
+        }),
+      )
+      .digest('hex');
+  }
+
+  private async readPreparedSegmentCount(
+    tx: PrismaTx,
+    applicationId: string,
     changeSet: CorrectionChangeSet,
   ): Promise<number> {
-    if (changeSet.segments.length === 0) return 0;
-    let written = 0;
+    const receipt = await tx.correctionSegmentPreparationReceipt.findUnique({
+      where: { applicationId },
+    });
+    if (receipt !== null) {
+      if (
+        receipt.schemaVersion !== 1 ||
+        receipt.preparedSegmentCount !== changeSet.segments.length
+      ) {
+        throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+      }
+      return receipt.preparedSegmentCount;
+    }
+    // Legacy zero-segment applications only. Check that the database still
+    // prevents new applications without a receipt and receipt removal.
+    const [guard] = await tx.$queryRaw<Array<{ valid: boolean }>>`
+      SELECT count(*) = 2 AS valid FROM pg_trigger
+      WHERE NOT tgisinternal AND tgenabled IN ('O', 'A')
+        AND ((tgrelid = '"CorrectionApplication"'::regclass
+              AND tgname = 'correction_application_preparation_receipt_required'
+              AND tgdeferrable AND tginitdeferred)
+          OR (tgrelid = '"CorrectionSegmentPreparationReceipt"'::regclass
+              AND tgname = 'correction_preparation_receipt_immutable'))
+    `;
+    if (!guard?.valid || changeSet.segments.length !== 0) {
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    }
+    return 0;
+  }
+
+  private async preparePendingSegments(
+    tx: PrismaTx,
+    applicationId: string,
+    activityId: string,
+    changeSet: CorrectionChangeSet,
+  ): Promise<number> {
     for (const change of changeSet.segments) {
       const base = await tx.participantServiceSegmentRevision.findFirst({
         where: {
           participationIdentityId: change.participationIdentityId,
           segmentKey: change.segmentKey,
+          statusCode: 'committed',
+          identity: { activityId },
         },
-        orderBy: { revision: 'desc' },
         select: { id: true, revision: true, sourceCheckInEventId: true },
       });
-      // 更正一个不存在的段 ⇒ 无从更正(不发明一条凭空的服务事实)。
       if (base === null) throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
-      await tx.participantServiceSegmentRevision.create({
+      await tx.correctionPendingSegmentRevision.create({
         data: {
+          applicationId,
+          activityId,
           participationIdentityId: change.participationIdentityId,
           segmentKey: change.segmentKey,
-          revision: base.revision + 1,
+          baseRevisionId: base.id,
+          baseRevisionNumber: base.revision,
+          targetRevisionNumber: base.revision + 1,
           sourceCheckInEventId: base.sourceCheckInEventId,
-          resultCode: change.resultCode,
-          statusCode: 'draft',
           checkInAt: change.checkInAt,
           checkOutAt: change.checkOutAt,
-          serviceHours: new Prisma.Decimal(change.serviceHours.toFixed(2)),
-          baseRevisionId: base.id,
+          resultCode: change.resultCode,
+          serviceHours: new Prisma.Decimal(decimalToCanonicalString(change.serviceHours)),
+          payloadHash: this.pendingSegmentHash(change),
         },
       });
-      written += 1;
     }
-    return written;
+    await tx.correctionSegmentPreparationReceipt.create({
+      data: { applicationId, preparedSegmentCount: changeSet.segments.length },
+    });
+    return changeSet.segments.length;
+  }
+
+  private async materializePendingSegments(
+    tx: PrismaTx,
+    applicationId: string,
+    activityId: string,
+    changeSet: CorrectionChangeSet,
+  ): Promise<number> {
+    const pending = await tx.correctionPendingSegmentRevision.findMany({
+      where: { applicationId },
+      orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }],
+    });
+    if (pending.length !== changeSet.segments.length) {
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    }
+    const changes = new Map(
+      changeSet.segments.map((change) => [
+        canonicalize([change.participationIdentityId, change.segmentKey]),
+        change,
+      ]),
+    );
+    for (const row of pending) {
+      const change = changes.get(canonicalize([row.participationIdentityId, row.segmentKey]));
+      if (
+        !change ||
+        row.activityId !== activityId ||
+        row.payloadHash !== this.pendingSegmentHash(change) ||
+        row.checkInAt.getTime() !== change.checkInAt.getTime() ||
+        row.checkOutAt.getTime() !== change.checkOutAt.getTime() ||
+        row.resultCode !== change.resultCode ||
+        row.serviceHours.toFixed(2) !== decimalToCanonicalString(change.serviceHours)
+      ) {
+        throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+      }
+      const base = await tx.participantServiceSegmentRevision.findFirst({
+        where: {
+          id: row.baseRevisionId,
+          participationIdentityId: row.participationIdentityId,
+          segmentKey: row.segmentKey,
+          revision: row.baseRevisionNumber,
+          sourceCheckInEventId: row.sourceCheckInEventId,
+          statusCode: 'committed',
+          identity: { activityId },
+        },
+        select: { id: true },
+      });
+      if (base === null || row.targetRevisionNumber !== row.baseRevisionNumber + 1) {
+        throw new BizException(BizCode.CORRECTION_BASE_VERSION_CHANGED);
+      }
+      const replaced = await tx.participantServiceSegmentRevision.updateMany({
+        where: { id: base.id, statusCode: 'committed' },
+        data: { statusCode: 'superseded' },
+      });
+      if (replaced.count !== 1) throw new BizException(BizCode.CORRECTION_BASE_VERSION_CHANGED);
+      await tx.participantServiceSegmentRevision.create({
+        data: {
+          participationIdentityId: row.participationIdentityId,
+          segmentKey: row.segmentKey,
+          revision: row.targetRevisionNumber,
+          sourceCheckInEventId: row.sourceCheckInEventId,
+          resultCode: row.resultCode,
+          statusCode: 'draft',
+          checkInAt: row.checkInAt,
+          checkOutAt: row.checkOutAt,
+          serviceHours: row.serviceHours,
+          baseRevisionId: row.baseRevisionId,
+        },
+      });
+    }
+    return pending.length;
   }
 
   // ===== §5.14 ④ 更正 posting batch ========================================
