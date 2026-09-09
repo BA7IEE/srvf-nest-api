@@ -251,13 +251,51 @@ describe('C1 D2b five materialization chains and legacy compatibility', () => {
   it.each(['professional', 'emergency'] as const)(
     '%s optional selection is absent for old requests and explicit on new commands',
     async (mode) => {
+      // Observe and rethrow unchanged; never log exception messages, requests or identities.
+      let failure: { kind: string; prismaCode: string | null; bizCode: number | null } | null =
+        null;
+      if (mode === 'emergency') {
+        const service = app.get(ActivityCreationService);
+        const original = service.createEmergency.bind(service);
+        jest.spyOn(service, 'createEmergency').mockImplementation(async (...args) => {
+          try {
+            return await original(...args);
+          } catch (error: unknown) {
+            const code =
+              typeof error === 'object' && error !== null && 'code' in error ? error.code : null;
+            failure = {
+              kind:
+                error instanceof BizException
+                  ? 'business'
+                  : error instanceof Error
+                    ? 'error'
+                    : 'unknown',
+              prismaCode: typeof code === 'string' && /^P\d{4}$/.test(code) ? code : null,
+              bizCode: error instanceof BizException ? error.biz.code : null,
+            };
+            throw error;
+          }
+        });
+      }
       for (const selection of [
         undefined,
         notRequired,
         { metricRequirementCode: 'required', metricSetPointer: await catalogue() } as const,
       ]) {
         const command = input(mode, selection);
-        const first = (await send(`${ROOT}/${mode}`, command).expect(201)).body as CreationBody;
+        failure = null;
+        const first = (
+          await send(`${ROOT}/${mode}`, command)
+            .expect((response) => {
+              if (mode === 'emergency' && response.status !== 201)
+                console.error('C1 D2b emergency creation failure', {
+                  status: response.status,
+                  selection: selection?.metricRequirementCode ?? 'legacy_absent',
+                  serviceFailure: failure,
+                });
+            })
+            .expect(201)
+        ).body as CreationBody;
         const id = first.data.activity.activityId;
         await assertSelection(id, selection ?? null);
         const audits = await prisma.auditLog.count({
