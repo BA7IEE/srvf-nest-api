@@ -55,6 +55,35 @@ describe('C2 outcome current explicit access', () => {
   }
   const unavailable = new BizException(BizCode.ACTIVITY_OUTCOME_REFERENCE_UNAVAILABLE);
 
+  it.each(['activity.outcome.confirm', 'activity.outcome.correct'] as const)(
+    'checks the exact %s permission without falling back to read or record',
+    async (permission) => {
+      const f = fixture();
+      await f.service.authorize(f.tx, actor, 'activity', permission);
+      expect(f.authz.getExplicitVisibleOrganizationScope).toHaveBeenCalledWith(
+        actor,
+        permission,
+        f.tx,
+      );
+      expect(f.authz.can).toHaveBeenCalledWith(
+        actor,
+        permission,
+        { type: 'activity', id: 'activity' },
+        f.tx,
+      );
+      expect(f.responsibility.assertOwner).toHaveBeenCalledWith(f.tx, 'activity', actor);
+      f.authz.getExplicitVisibleOrganizationScope.mockResolvedValue({
+        hasPermission: false,
+        global: false,
+        organizationIds: [],
+      });
+      await expect(f.service.authorize(f.tx, actor, 'activity', permission)).rejects.toThrow(
+        unavailable,
+      );
+      expect(f.db.user.findFirst).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it('uses refreshed identity and the caller transaction at each owner boundary', async () => {
     const f = fixture();
     await expect(f.run()).resolves.toMatchObject({ actor });

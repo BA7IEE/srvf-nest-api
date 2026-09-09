@@ -21,6 +21,7 @@ export type AuditLogEvent =
   | 'activity.metric-set.command'
   | 'activity.metric-selection.command'
   | 'activity.outcome.command'
+  | 'activity.outcome.finalization'
   | 'activity.metric-candidate.command'
   | 'activity.metric-rule-binding.command'
   | 'activity.template-version.command'

@@ -1,5 +1,21 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## C3-2 分支交接（未合并、未部署）
+
+四个新入口均在 `/api/app/v1/my/managed-activities/{activityId}`：
+`POST outcome-confirmations` 确认、`POST outcome-corrections` 准备完整更正草稿、
+`POST outcome-corrections/{outcomeRevisionId}/cancel` 取消草稿、`GET outcome-confirmed` 读取现行正式成果。
+确认要求显式 `activity.outcome.confirm`，准备/取消要求 `activity.outcome.correct`，读取沿 `activity.outcome.read`；管理员角色不直通，当前成员、组织与 owner 资格均须有效。
+
+写入同时提交 expectedLatestRevision/expectedConfirmedRevision 两个锚；首次正式版本为 0。
+confirm 的人工值引用已保存草稿值，系统值引用可复算候选，不提交系统数字或确认人/时间。
+每个 required 指标恰好一项，每项 1–20 个同活动附件，最多 100 项。
+更正草稿可以尚缺 required/附件，但确认必须完整；候选来源变化需重新计算，不能静默使用过期候选。
+`outcome-confirmed` 无正式成果返回 null，不能用最新草稿代替；更正准备与取消都保留旧正式成果。
+成功收据只表示原命令结果，重放后须重新 GET 当前状态；取消不删除任何历史。
+字段以本 PR 的 openapi.json 和生成 App client 为准；旧 C2/C3-1 接口与历史结构保持不变。
+当前仅交付分支实现，完整验收、PR CI、整体复审与生产未完成，不表示前端已实现。
+
 > **本文件服务两类前端**:小程序(前端仓尚未建,能力图按占位骨架先就位,建仓直接填)与**招新 H5(已建仓 `srvf-h5`:报名 / 身份证上传 / OCR 确认 / 进度查询)**——H5 无账号,只消费 §2 中 `open/v1` 招新链各行。
 > canonical 在后端仓;字段真相 = live `/api/docs-json`;见 [`README.md`](README.md)。
 > 活动责任闭环已随 **v0.62.0 release**，但 production 尚未部署；当前仍只做本地前后端联调，不执行迁移、真实人员配置、部署或切换。

@@ -293,14 +293,14 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
   //
   // P1-32 PR 1(2026-08-22)换了下方那条不变量的形状。搬家前:权限定义分居
   // `prisma/seed.ts`(223 条)与 `rbac-seed-facts.ts`(14 条 rbac.*),不变量是「差值恒 14」。
-  // 搬家后**全部 256 条都在 permission-catalog.ts**,`prisma/seed.ts` 里一条都不剩 ——
+  // 搬家后**全部 258 条都在 permission-catalog.ts**,`prisma/seed.ts` 里一条都不剩 ——
   // 于是不变量变成更强的一句:**剔除权限目录后码数恰为 0**。
   //
   // 这正是「权限定义只有一处」这句话的机器形式:seed.ts 但凡漏回一条码(比如有人图省事
   // 直接在角色装配旁边补个 `code: 'x.y.z'`),下面那条 checkEq 就不再是 0,当场红。
   // ⚠️ 0 本身是「空集」形状,单独看会踩本仓登记的「空集恒等于空集」陷阱 ——
-  // 所以它必须与上一条(完整闭包恰 256)成对读:一条钉住总量非空,一条钉住分布只有一处。
-  const CLOSURE_PERMISSION_CODE_COUNT = 256; // C3-1 +2(rule binding / candidate calculation); 已批准的计数联动
+  // 所以它必须与上一条(完整闭包恰 258)成对读:一条钉住总量非空,一条钉住分布只有一处。
+  const CLOSURE_PERMISSION_CODE_COUNT = 258; // C3-2 +2(outcome confirmation / correction); 已批准的计数联动
   const CODES_LEFT_IN_SEED_AFTER_MOVE = 0;
   check(
     `R5-02 权限码:真实 seed 事实闭包双口径一致且为 ${CLOSURE_PERMISSION_CODE_COUNT}`,
@@ -313,7 +313,7 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
   const readClosureFile = (file: string): string =>
     fs.readFileSync(path.resolve(__dirname, '..', file), 'utf-8');
 
-  // 正向:权限目录**独自**就装着全部 256 条 —— 「单一事实源」的正面形式。
+  // 正向:权限目录**独自**就装着全部 258 条 —— 「单一事实源」的正面形式。
   checkEq(
     `R5-02 权限码:权限目录独自装着全部 ${CLOSURE_PERMISSION_CODE_COUNT} 条码`,
     extractSeedFactsPermissionCodesAst([

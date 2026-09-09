@@ -188,6 +188,7 @@ model User {
   activityCreationCommandReceipts   ActivityCreationCommandReceipt[] @relation("ActivityCreationCommandReceiptActor")
   activityMetricCommandReceipts     ActivityMetricCommandReceipt[]
   activityOutcomeCommandReceipts    ActivityOutcomeCommandReceipt[]
+  outcomeFinalizationReceipts ActivityOutcomeFinalizationReceipt[]
   metricRuleBindingsCreated ActivityMetricRuleBinding[] @relation("MetricRuleBindingCreator")
   metricCandidatesCreated ActivityMetricCandidate[] @relation("MetricCandidateCreator")
   metricCandidateReceipts ActivityMetricCandidateCommandReceipt[]
@@ -1855,8 +1856,10 @@ model ActivityMetricCandidateValue {
   candidate ActivityMetricCandidate @relation(fields: [candidateId, activityId, setVersionId], references: [id, activityId, metricSetVersionId], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_value_candidate_fk")
   setItem ActivityMetricSetItem @relation(fields: [setVersionId, definitionId], references: [setVersionId, metricDefinitionId], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_value_set_item_fk")
   binding ActivityMetricRuleBinding @relation(fields: [bindingId, definitionId, definitionHash], references: [id, metricDefinitionId, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_value_binding_fk")
+  outcomeSources ActivityOutcomeValueSource[]
 
   @@unique([candidateId, definitionId], map: "metric_candidate_value_definition_key")
+  @@unique([id, activityId, setVersionId, definitionId], map: "candidate_value_outcome_origin_key")
   @@index([bindingId])
   @@index([setVersionId, definitionId])
 }
@@ -1938,6 +1941,8 @@ model ActivityOutcomeRevision {
   subsequentRevisions ActivityOutcomeRevision[] @relation("ActivityOutcomePrior")
   values ActivityMetricValueRevision[]
   commandReceipts ActivityOutcomeCommandReceipt[]
+  finalizationReceipts ActivityOutcomeFinalizationReceipt[] @relation("OutcomeFinalizationTarget")
+  basedFinalizationReceipts ActivityOutcomeFinalizationReceipt[] @relation("OutcomeFinalizationBase")
 
   @@unique([activityId, revision], map: "activity_outcome_revision_key")
   @@unique([id, activityId], map: "activity_outcome_activity_key")
@@ -1966,9 +1971,13 @@ model ActivityMetricValueRevision {
   metricSetItem ActivityMetricSetItem @relation(fields: [setVersionId, metricDefinitionId], references: [setVersionId, metricDefinitionId], onDelete: Restrict, onUpdate: Restrict, map: "activity_value_set_item_fk")
   confirmer User? @relation("ActivityValueConfirmer", fields: [confirmedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   evidence ActivityMetricValueEvidence[]
+  finalizationSources ActivityOutcomeValueSource[] @relation("OutcomeSourceValue")
+  derivedManualSources ActivityOutcomeValueSource[] @relation("OutcomeSourceManual")
 
   @@unique([outcomeRevisionId, metricDefinitionId], map: "activity_value_metric_key")
   @@unique([id, outcomeRevisionId, activityId, setVersionId], map: "activity_value_chain_key")
+  @@unique([id, outcomeRevisionId, activityId, setVersionId, metricDefinitionId], map: "outcome_value_source_chain_key")
+  @@unique([id, activityId, setVersionId, metricDefinitionId], map: "outcome_value_origin_key")
   @@index([setVersionId, metricDefinitionId])
   @@index([confirmedByUserId])
 }
@@ -2009,6 +2018,48 @@ model ActivityOutcomeCommandReceipt {
   @@unique([actorUserId, operationCode, operationKey], map: "activity_outcome_receipt_command_key")
   @@index([activityId], map: "activity_outcome_receipt_activity_idx")
   @@index([outcomeRevisionId, activityId], map: "activity_outcome_receipt_outcome_idx")
+}
+
+model ActivityOutcomeFinalizationReceipt {
+  id String @id @default(cuid())
+  actorUserId String
+  operationCode String
+  operationKey String
+  requestHash String
+  activityId String
+  outcomeRevisionId String
+  baseConfirmedRevisionId String?
+  resultJson Json
+  createdAt DateTime @default(now())
+
+  actor User @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "outcome_finalization_actor_fk")
+  outcomeRevision ActivityOutcomeRevision @relation("OutcomeFinalizationTarget", fields: [outcomeRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "outcome_finalization_outcome_fk")
+  baseConfirmedRevision ActivityOutcomeRevision? @relation("OutcomeFinalizationBase", fields: [baseConfirmedRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "outcome_finalization_base_fk")
+
+  @@unique([actorUserId, operationCode, operationKey], map: "outcome_finalization_command_key")
+  @@index([outcomeRevisionId, activityId], map: "outcome_finalization_outcome_idx")
+  @@index([baseConfirmedRevisionId, activityId], map: "outcome_finalization_base_idx")
+}
+
+model ActivityOutcomeValueSource {
+  id String @id @default(cuid())
+  valueRevisionId String @unique(map: "outcome_source_value_key")
+  outcomeRevisionId String
+  activityId String
+  setVersionId String
+  metricDefinitionId String
+  sourceKind String
+  manualValueRevisionId String?
+  candidateValueId String?
+  preparedAgainstRevision Int?
+  createdAt DateTime @default(now())
+
+  valueRevision ActivityMetricValueRevision @relation("OutcomeSourceValue", fields: [valueRevisionId, outcomeRevisionId, activityId, setVersionId, metricDefinitionId], references: [id, outcomeRevisionId, activityId, setVersionId, metricDefinitionId], onDelete: Restrict, onUpdate: Restrict, map: "outcome_source_value_fk")
+  manualValueRevision ActivityMetricValueRevision? @relation("OutcomeSourceManual", fields: [manualValueRevisionId, activityId, setVersionId, metricDefinitionId], references: [id, activityId, setVersionId, metricDefinitionId], onDelete: Restrict, onUpdate: Restrict, map: "outcome_source_manual_fk")
+  candidateValue ActivityMetricCandidateValue? @relation(fields: [candidateValueId, activityId, setVersionId, metricDefinitionId], references: [id, activityId, setVersionId, definitionId], onDelete: Restrict, onUpdate: Restrict, map: "outcome_source_candidate_fk")
+
+  @@index([manualValueRevisionId, activityId, setVersionId, metricDefinitionId], map: "outcome_source_manual_idx")
+  @@index([candidateValueId, activityId, setVersionId, metricDefinitionId], map: "outcome_source_candidate_idx")
 }
 
 model ActivityMetricCommandReceipt {

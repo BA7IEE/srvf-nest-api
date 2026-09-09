@@ -29,6 +29,10 @@ import { ActivitySeriesAuditRecorder } from './activity-series-audit-recorder';
 import { ActivitySeriesService } from './activity-series.service';
 import { ActivityMetricCommand } from './activity-metric-command';
 import { ActivityOutcomeService } from './activity-outcome.service';
+import { ActivityOutcomeFinalizationService } from './activity-outcome-finalization.service';
+import { ActivityOutcomeFinalizationAuditRecorder } from './activity-outcome-finalization-audit-recorder';
+import { ActivityOutcomeConfirmedQueryService } from './activity-outcome-confirmed-query.service';
+import { AppManagedActivityOutcomeFinalizationsController } from './controllers/app-managed-activity-outcome-finalizations.controller';
 import { ActivityMetricCandidateService } from './activity-metric-candidate.service';
 import { ActivityMetricCandidateQueryService } from './activity-metric-candidate-query.service';
 import { ActivityMetricCandidateSourceQuery } from './activity-metric-candidate-source.query';
@@ -188,6 +192,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   ],
   controllers: [
     AppManagedActivityOutcomesController,
+    AppManagedActivityOutcomeFinalizationsController,
     AdminActivityMetricRuleBindingsController,
     AppManagedActivityMetricCandidatesController,
     AppManagedActivityMetricsController,
@@ -213,6 +218,9 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   ],
   providers: [
     ActivityOutcomeService,
+    ActivityOutcomeFinalizationService,
+    ActivityOutcomeFinalizationAuditRecorder,
+    ActivityOutcomeConfirmedQueryService,
     ActivityMetricCandidateService,
     ActivityMetricCandidateQueryService,
     ActivityMetricCandidateSourceQuery,

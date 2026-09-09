@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:1da6acea59dbd06c3a03744b5c7cff91c9c8325181b5c6b4380058356e6f578f
+// inputDigest: sha256:e7794240cfaf768cd6be37c9a02d6406deec80a446a4a16a3f9702abc32d6ae2
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -317,6 +317,20 @@ export interface AppActivityMetricSetPointerDto {
   "definitionHash": string;
 }
 
+export interface AppActivityOutcomeConfirmedDto {
+  "outcomeRevisionId": string;
+  "activityId": string;
+  "revision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "statusCode": "draft" | "confirmed" | "superseded";
+  "priorRevisionId": string | null;
+  "createdAt": string;
+  "values": AppActivityOutcomeValueDto[];
+  "isCurrentConfirmed": true;
+  "confirmedAt": string;
+}
+
 export interface AppActivityOutcomeDefinitionDto {
   "schemaVersion": 1;
   "code": string;
@@ -351,6 +365,18 @@ export interface AppActivityOutcomeDetailDto {
 export interface AppActivityOutcomeEvidenceDto {
   "attachmentId": string;
   "sortOrder": number;
+}
+
+export interface AppActivityOutcomeFinalizationResultDto {
+  "schemaVersion": 1;
+  "activityId": string;
+  "outcomeRevisionId": string;
+  "revision": number;
+  "createdStatusCode": "draft" | "confirmed" | "superseded";
+  "valueCount": number;
+  "evidenceCount": number;
+  "createdAt": string;
+  "operationCode": "confirm_outcome" | "prepare_outcome_correction" | "cancel_outcome_correction";
 }
 
 export interface AppActivityOutcomeResultDto {
@@ -642,6 +668,17 @@ export interface AppCollaboratorOptionsResponseDto {
   "total": number;
   "page": number;
   "pageSize": number;
+}
+
+export interface AppConfirmActivityOutcomeDto {
+  "operationKey": string;
+  "expectedLatestRevision": number;
+  "expectedConfirmedRevision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "candidateId"?: string | null;
+  "manualDraftId"?: string | null;
+  "values": AppOutcomeFinalizationSelectionDto[];
 }
 
 export interface AppCreationPlaceCoordinateDto {
@@ -1508,6 +1545,27 @@ export interface AppMyRegistrationListItemDto {
   "createdAt": string;
 }
 
+export interface AppOutcomeCorrectionValueDto {
+  "metricDefinitionId": string;
+  "sourceKind": "manual" | "system";
+  "value"?: number | string | boolean;
+  "sourceValueId"?: string;
+  "evidenceAttachmentIds": string[];
+}
+
+export interface AppOutcomeFinalizationAnchorsDto {
+  "operationKey": string;
+  "expectedLatestRevision": number;
+  "expectedConfirmedRevision": number;
+}
+
+export interface AppOutcomeFinalizationSelectionDto {
+  "metricDefinitionId": string;
+  "sourceKind": "manual" | "system";
+  "sourceValueId": string;
+  "evidenceAttachmentIds": string[];
+}
+
 export interface AppParticipationLedgerEntryDto {
   "entryKey": string;
   "activityId": string;
@@ -1519,6 +1577,16 @@ export interface AppParticipationLedgerEntryDto {
   "recognizedPointsDelta": number;
   "creditedPointsDelta": number;
   "cappedOutPointsDelta": number;
+}
+
+export interface AppPrepareActivityOutcomeCorrectionDto {
+  "operationKey": string;
+  "expectedLatestRevision": number;
+  "expectedConfirmedRevision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "candidateId"?: string | null;
+  "values": AppOutcomeCorrectionValueDto[];
 }
 
 export interface AppProfessionalActivityCreationDto {

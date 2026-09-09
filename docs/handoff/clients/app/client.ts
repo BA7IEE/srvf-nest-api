@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:1da6acea59dbd06c3a03744b5c7cff91c9c8325181b5c6b4380058356e6f578f
+// inputDigest: sha256:e7794240cfaf768cd6be37c9a02d6406deec80a446a4a16a3f9702abc32d6ae2
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -45,9 +45,11 @@ import type {
   AppActivityMetricSelectionResultDto,
   AppActivityMetricSetOptionDto,
   AppActivityMetricSetPointerDto,
+  AppActivityOutcomeConfirmedDto,
   AppActivityOutcomeDefinitionDto,
   AppActivityOutcomeDetailDto,
   AppActivityOutcomeEvidenceDto,
+  AppActivityOutcomeFinalizationResultDto,
   AppActivityOutcomeResultDto,
   AppActivityOutcomeSummaryDto,
   AppActivityOutcomeValueDto,
@@ -82,6 +84,7 @@ import type {
   AppCapabilityTasksDto,
   AppCollaboratorOptionDto,
   AppCollaboratorOptionsResponseDto,
+  AppConfirmActivityOutcomeDto,
   AppCreationPlaceCoordinateDto,
   AppCreationQualificationRuleSetDto,
   AppEmergencyActivityCreationDto,
@@ -165,7 +168,11 @@ import type {
   AppMyParticipationSummaryDto,
   AppMyRegistrationDto,
   AppMyRegistrationListItemDto,
+  AppOutcomeCorrectionValueDto,
+  AppOutcomeFinalizationAnchorsDto,
+  AppOutcomeFinalizationSelectionDto,
   AppParticipationLedgerEntryDto,
+  AppPrepareActivityOutcomeCorrectionDto,
   AppProfessionalActivityCreationDto,
   AppProfessionalCreationSessionDto,
   AppQuickActivityCreationDto,
@@ -728,6 +735,22 @@ export function createAppClient(fetcher: Fetcher) {
     /** 考勤责任人以受控人工确认追加工作人员现场签到/签退事实 [auth] */
     AppManagedActivityOnsiteOperationsControllerStaffScan(activityId: string, sessionId: string, body: AppManagedStaffScanDto): Promise<ApiEnvelope<AppActivityPunchReceiptDto>> {
       return fetcher<AppActivityPunchReceiptDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/onsite/sessions/${sessionId}/staff-scan`, body });
+    },
+    /** 确认完整成果快照 [rbac: activity.outcome.confirm] */
+    AppManagedActivityOutcomeFinalizationsControllerConfirm(activityId: string, body: AppConfirmActivityOutcomeDto): Promise<ApiEnvelope<AppActivityOutcomeFinalizationResultDto>> {
+      return fetcher<AppActivityOutcomeFinalizationResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/outcome-confirmations`, body });
+    },
+    /** 读取当前唯一正式成果，无正式成果返回 null [rbac: activity.outcome.read] */
+    AppManagedActivityOutcomeFinalizationsControllerGet(activityId: string): Promise<ApiEnvelope<AppActivityOutcomeConfirmedDto>> {
+      return fetcher<AppActivityOutcomeConfirmedDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/outcome-confirmed` });
+    },
+    /** 准备完整更正草稿，保留当前正式成果 [rbac: activity.outcome.correct] */
+    AppManagedActivityOutcomeFinalizationsControllerPrepare(activityId: string, body: AppPrepareActivityOutcomeCorrectionDto): Promise<ApiEnvelope<AppActivityOutcomeFinalizationResultDto>> {
+      return fetcher<AppActivityOutcomeFinalizationResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/outcome-corrections`, body });
+    },
+    /** 取消待确认更正，不删除历史数据 [rbac: activity.outcome.correct] */
+    AppManagedActivityOutcomeFinalizationsControllerCancel(activityId: string, outcomeRevisionId: string, body: AppOutcomeFinalizationAnchorsDto): Promise<ApiEnvelope<AppActivityOutcomeFinalizationResultDto>> {
+      return fetcher<AppActivityOutcomeFinalizationResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/outcome-corrections/${outcomeRevisionId}/cancel`, body });
     },
     /** 分页读取有权活动的成果历史摘要 [rbac: activity.outcome.read] */
     AppManagedActivityOutcomesControllerList(activityId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityOutcomeSummaryDto[] }>> {

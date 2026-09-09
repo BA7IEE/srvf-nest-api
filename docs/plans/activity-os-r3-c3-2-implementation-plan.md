@@ -1,5 +1,7 @@
 # Activity OS C3-2 精确实施计划：完整确认、正式更正与现行成果
 
+> **2026-09-09 实施状态更新**：维护者已批准 #1299 完整实施包、app_test_w98 隔离验证与通过后提交/推送/创建 PR；不合并、不操作生产、不启用 Gate、不删除业务数据。另确认保留本轮未提交改动继续，以及 §4 附件锁序说明更正。当前实施与本地验证见 §11；下方“仅文档/不实施/尚未复现”保留为原评审时点记录，不再代表当前授权。3b/4b 已于 2026-09-09 按维护者确认重签并通过机器对拍。
+
 > 2026-09-09；调查基点 main `62abb469`（#1298）。维护者已批准 **C3-1 台账更正、本计划起草及补充 changelog、提交、推送、创建文档评审 PR**；不合并、不实施、不操作数据库。下面均为待批准方案，不是已交付事实或可执行授权。
 > 上位合同：[C3 方案 A §4–§8](../archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md)。C3 只按 C3-1／C3-2 串行交付；本计划包含正式更正，不另拆 C3-3。候选、成果、来源、附件引用和命令收据长期保留，不设计删除或到期清理。
 
@@ -70,7 +72,7 @@ C3-1 候选记录计算时 expectedOutcomeRevision。准备更正会新建 Outco
 
 推荐新增 `activity.outcome.confirm`、`activity.outcome.correct` 两码：分别负责确认与准备／取消更正；read 沿既有 `activity.outcome.read`。均为显式 Human 授权，不自动赋给内建角色，不允许 SP/delegation、SUPER_ADMIN 直通。确认者可为录入者，沿已批准负责人单人确认，不新增双人审批。
 
-锁序：命令 advisory → Activity FOR UPDATE → 按稳定次序的指标引用锁 → Attachment → StorageObject／相关 operation。候选与成果 immutable 子记录在 Activity 锁下读，不能为了确认另开事务。每次可能等待后重验当前用户、成员、显式权限、组织有效性和 owner；只有 completed/terminated 接受新写，cancelled/archived 拒绝。重放先验证当前访问权，再返原收据；不重新要求原创建状态仍存在、不重新执行业务。
+锁序（维护者 2026-09-09 确认更正）：命令 advisory → Activity FOR UPDATE → 按稳定次序的指标引用锁 → Attachment FOR SHARE。确认沿既有附件属主接口，在附件引用锁内校验 StorageObject 的 available、资源归属与删除意图，不额外取得 StorageObject/operation 锁。Attachment → StorageObject → operation 是删除路径的锁序，不是成果确认路径；此前把两者混写，本次不改 Storage 生产代码。候选与成果 immutable 子记录在 Activity 锁下读，不能为了确认另开事务。每次实际锁等待后重验当前用户、成员、显式权限、组织有效性和 owner；只有 completed/terminated 接受新写，cancelled/archived 拒绝。重放先验证当前访问权，再返原收据；不重新要求原创建状态仍存在、不重新执行业务。
 
 附件在最后一次引用锁后重验同活动、可用、未有删除意图；被引用后沿既有 Evidence 删除保护，不改 Storage 私有实现。用两连接分别让确认先拿锁和删除意图先拿锁，证明拒绝方向正确。若发现既有原语不足，先列精确扩展再批准，不复制 Storage 表查询到活动模块。
 
@@ -307,3 +309,22 @@ admin/app 允许获批新接口对应生成定义；shared 按生成器真实分
 被引用表需 Prisma 同名 map unique 与反向 relation；所有 FK ON DELETE/UPDATE RESTRICT。receipt 外键列建普通索引，Source 的 manual/candidate 复合引用列建索引。旧 child immutable trigger 保留；旧头状态守卫新增更严的独立 trigger，不改其函数源；确认 metadata 的旧 BEFORE 约束仍需通过，不能先插不完整 confirmed 再补字段。partial unique 为即时约束，确认更正必须在同一事务先 supersede 旧 confirmed 再插新 confirmed，失败恢复旧头。
 
 事务组装、receipt 封存、旧 C2 交互、canonical 职责和已定位旧测试前置冲突统一按 §9.1。它们尚未通过运行复现；实施时先写失败反例，再写约束实现。合法历史 confirmed 升级夹具必须包含 required/metadata/evidence 全部有效项；异常夹具逐项缺失并验证迁移原子失败。不得补数据让 migration 通过。本稿不输出可执行数据库命令、不提前签第 117 migration。
+
+## 11. 当前本地验证记录（2026-09-09，未提交、未合并）
+
+工作树新增 `20260909092502_activity_os_r3_c3_outcome_finalization`，实际 117 个 migration、151 模型、258 权限、165 审计事件（160 活跃）。所有 HEAD 已有的 117 个迁移文件（116 条 SQL 加 migration_lock.toml）用 git show 与磁盘 Buffer 逐字对比一致；只新增第 117 条 SQL。
+
+| 验证 | 已取得的证据与边界 |
+|---|---|
+| C3-2 HTTP 生命周期 | `activity-os-r3-c3-2-outcome-finalization.e2e-spec.ts` 8 项通过：人工/系统/混合、候选自身更正推进与真实来源变化、正式更正/取消后再更正、归档退队保留、真实 100 值/2000 evidence 及 cap+1 拒绝。 |
+| C3-2 并发与回滚 | `activity-os-r3-c3-2-outcome-concurrency.e2e-spec.ts` 59 项通过：两池幂等/双锚竞争、确认与取消竞争、五类资格变化在五个实际锁点复验（重放覆盖命令与 Activity 锁）、四类存储状态拒绝、附件删除意图双向竞争、值/证据/来源/收据与确认/准备/取消审计故障回滚。 |
+| C3-2 SQL 与升级 | `activity-os-r3-c3-2-outcome-migration.e2e-spec.ts` 26 项及 beforeAll 冷回放/非空升级通过：116→117 保留 C2/C3-1 与合法历史正式事实；异常完整性/数值使新增迁移原子失败，零修数；完整直接 SQL 对照与缺证据/来源/required/错链反例通过。 |
+| C2 旧行为 | 原 `c2-d2-manual-outcomes` 6 项、`c2-d2-outcome-concurrency` 11 项在新库通过，未改这两份源码或断言。 |
+| C3-1 旧行为及预算 | 原 `c3-1-candidate` 30 项、`c3-1-candidate-concurrency` 9 项通过，包含真实 1000/1001 单身份链、2000 人/20000 事件/10000 来源预算及旧参与/结算/更正锁交错；源码与断言未改。 |
+| 单测与编译 | `NODE_OPTIONS=--max-old-space-size=8192 pnpm agent:check:quick` exit 0：350 suites、7859 passed、5 既有 todo；`pnpm build` exit 0；新增测试再次 `tsc --noEmit -p test/tsconfig.test.json` 与定向冷 eslint 通过。完整冷 lint 曾在默认 4GB OOM，单进程 8GB 重跑通过，未修改 package/CI。 |
+| 生成契约兼容 | OpenAPI JSON 的 470 个旧路径及 780 个旧 schema 用 deepStrictEqual 逐项一致；仅新增 4 路径和 7 schema；13 个客户端由既有生成器生成，其他 surface 仅摘要更新。 |
+| 治理 | authz/feclient/codemap/rbacmap/counts/readtax/migcount/openapi 检查通过，boundaries metadata 151 模型/67 状态列齐全，new-debt-check 564 扫描/unknown=0。CODEMAP 的既有提示及本批 837 行服务大小提示保留，没有更改阈值。 |
+
+数据库用例通过受控单进程诊断运行器执行原 spec、Jest expect/mock（旧 HTTP 复用 Jest ModernFakeTimers）、原 Nest/Prisma 与原数据库保护函数；每次先断言实际派生目标严格为 app_test_w98，逐文件串行执行。它不是标准 `pnpm test:e2e` 的 CI 全量结果，也不冒充标准 Jest 超时/泄漏检测。共享 app_test/app_test_w1 未获本批授权，因此未调用会重建共享模板的标准 globalSetup。
+
+本次未做：未提交推送/开 PR，未完成该 PR 的 CI/可信红区审批/合并或 main CI；整体跨模型复审明确后置。未操作生产、开启 Gate、修改 Storage 生产代码、删除业务事实或放宽原测试断言。以上本地证据不代表整份蓝图完成或生产可部署。
