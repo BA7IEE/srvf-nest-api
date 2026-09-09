@@ -1,6 +1,14 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-## C3-2 实施进展（2026-09-09，未提交、未合并）
+## C3-2 当前收口与 C4 起草（2026-09-09）
+
+C3-2 已随 [#1300](https://github.com/BA7IEE/srvf-nest-api/pull/1300) 合入 main `af80fa8e`，18 项 PR 检查及可信审批通过，3b/4b 已重签：117 migration、258 权限、Audit events 165 总计／160 活跃。完整确认、正式更正、取消及现行正式读面已交付；C3-1 已随 #1298 合入，不再登记为分支实施中。
+
+#1300 的 [main CI 34358896437](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34358896437) 曾因 C1 D2b 紧急创建兼容用例返回 500 失败；[#1301](https://github.com/BA7IEE/srvf-nest-api/pull/1301) 仅补脱敏诊断、保持断言，已合入 `36ff609c`，其 PR CI 与 [main CI 34369385145](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34369385145) 通过。**500 根因未定位，不认定已修复**。整体跨模型复审、生产部署及 Gate 未完成。
+
+维护者已确认 [C4 方案 A](../plans/activity-os-r3-c4-ending-workbench-review.md)，并追加授权本轮补 changelog、提交、推送和创建文档评审 PR；不合并、不实施。C4 尚未实施。以下保留历史时点记录，涉及“当前”“剩余”“下一阶段”的旧描述均以上述收口为准。
+
+## C3-2 实施历史（合并前记录）
 
 维护者已批准 #1299 完整实施包、app_test_w98 隔离验证及通过后提交/推送/开 PR；不合并、不操作生产、不启用 Gate、不删除业务数据。另确认保留本轮未提交改动继续，及附件引用锁/删除锁说明更正，不改门禁或 Storage 生产代码。
 当前四个 App managed 入口、确认/准备/取消/正式读面及第 117 条 migration 已在工作树实现；258 权限、165 审计事件（160 活跃），3b/4b 已于 2026-09-09 按维护者确认重签并通过机器对拍。
