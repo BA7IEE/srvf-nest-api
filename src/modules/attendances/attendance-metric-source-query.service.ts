@@ -14,7 +14,11 @@ export class AttendanceMetricSourceQueryService {
     if (maximumEvents !== 20000) throw new RangeError('unsupported metric event budget');
     const events = await tx.attendancePunchEvent.findMany({
       where: { activityId },
-      orderBy: { id: 'asc' },
+      // Must match the existing service-segment materializer.  The projector's
+      // operation-chain resolution receives a stable chronological sequence;
+      // ordering only by random IDs can make a valid replace/void chain look
+      // anomalous when C3 independently replays the same persisted facts.
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
       take: maximumEvents + 1,
       select: {
         id: true,

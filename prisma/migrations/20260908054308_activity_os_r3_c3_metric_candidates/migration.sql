@@ -262,13 +262,14 @@ $$;
 
 CREATE FUNCTION metric_candidate_aggregate_complete() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
-  candidate_id TEXT;
   c "ActivityMetricCandidate"%ROWTYPE;
   prior_revision INTEGER;
 BEGIN
-  IF TG_TABLE_NAME = 'ActivityMetricCandidate' THEN candidate_id := NEW.id;
-  ELSE candidate_id := NEW."candidateId"; END IF;
-  SELECT * INTO STRICT c FROM "ActivityMetricCandidate" WHERE id = candidate_id;
+  -- The candidate command writes its receipt last.  Keep the aggregate scan on
+  -- that one final row: running it for every source snapshot turns a 10k-source
+  -- command into a quadratic commit.  Child insert triggers below prohibit any
+  -- later expansion after this receipt exists.
+  SELECT * INTO STRICT c FROM "ActivityMetricCandidate" WHERE id = NEW."candidateId";
   IF c."priorCandidateId" IS NULL THEN
     IF c."candidateRevision" <> 1 THEN
       RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'invalid first candidate revision';
@@ -310,9 +311,54 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION metric_candidate_source_snapshot_check() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE source "ParticipantServiceSegmentRevision"%ROWTYPE;
+CREATE FUNCTION metric_candidate_receipt_required() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM "ActivityMetricCandidateCommandReceipt" WHERE "candidateId" = NEW.id
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'candidate receipt missing';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION metric_candidate_value_insert_check() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM "ActivityMetricCandidate"
+      WHERE id = NEW."candidateId"
+        AND "activityId" = NEW."activityId"
+        AND "metricSetVersionId" = NEW."setVersionId"
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '23503', MESSAGE = 'candidate value anchor missing';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM "ActivityMetricCandidateCommandReceipt" WHERE "candidateId" = NEW."candidateId"
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'candidate aggregate already sealed';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION metric_candidate_source_snapshot_check() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  source "ParticipantServiceSegmentRevision"%ROWTYPE;
+  c "ActivityMetricCandidate"%ROWTYPE;
+BEGIN
+  SELECT * INTO c FROM "ActivityMetricCandidate"
+    WHERE id = NEW."candidateId" AND "activityId" = NEW."activityId";
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = '23503', MESSAGE = 'candidate source parent missing';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM "ActivityMetricCandidateCommandReceipt" WHERE "candidateId" = c.id
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'candidate aggregate already sealed';
+  END IF;
+  IF NEW."ordinal" >= c."sourceCount" THEN
+    RAISE EXCEPTION USING ERRCODE = '23514', MESSAGE = 'candidate source ordinal exceeds declared count';
+  END IF;
   SELECT * INTO source FROM "ParticipantServiceSegmentRevision"
     WHERE id = NEW."sourceRevisionId" AND "participationIdentityId" = NEW."identityId";
   IF NOT FOUND THEN
@@ -382,13 +428,11 @@ CREATE TRIGGER metric_candidate_receipt_immutable_trg BEFORE UPDATE OR DELETE ON
 
 CREATE TRIGGER metric_binding_receipt_immutable_trg BEFORE UPDATE OR DELETE ON "ActivityMetricRuleBindingCommandReceipt" FOR EACH ROW EXECUTE FUNCTION metric_candidate_fact_immutable();
 
-CREATE CONSTRAINT TRIGGER metric_candidate_complete_trg AFTER INSERT ON "ActivityMetricCandidate" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION metric_candidate_aggregate_complete();
-
-CREATE CONSTRAINT TRIGGER metric_candidate_value_complete_trg AFTER INSERT ON "ActivityMetricCandidateValue" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION metric_candidate_aggregate_complete();
-
-CREATE CONSTRAINT TRIGGER metric_candidate_source_complete_trg AFTER INSERT ON "ActivityMetricCandidateSource" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION metric_candidate_aggregate_complete();
+CREATE CONSTRAINT TRIGGER metric_candidate_complete_trg AFTER INSERT ON "ActivityMetricCandidate" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION metric_candidate_receipt_required();
 
 CREATE CONSTRAINT TRIGGER metric_candidate_receipt_complete_trg AFTER INSERT ON "ActivityMetricCandidateCommandReceipt" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION metric_candidate_aggregate_complete();
+
+CREATE TRIGGER metric_candidate_value_insert_trg BEFORE INSERT ON "ActivityMetricCandidateValue" FOR EACH ROW EXECUTE FUNCTION metric_candidate_value_insert_check();
 
 CREATE TRIGGER metric_candidate_source_insert_trg BEFORE INSERT ON "ActivityMetricCandidateSource" FOR EACH ROW EXECUTE FUNCTION metric_candidate_source_snapshot_check();
 

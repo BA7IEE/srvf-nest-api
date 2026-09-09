@@ -102,6 +102,9 @@ function receipt(change: Record<string, unknown> = {}) {
   }).replaceAll("'", "''");
   return `INSERT INTO "ActivityMetricCandidateCommandReceipt" (id,"actorId",operation,"operationKey","requestHash","candidateId","activityId","resultJson") VALUES ('c3-receipt','c3-actor','calculate_metric_candidate','candidate-key','${hash}','c3-candidate','c3-activity','${result}');`;
 }
+function source(ordinal = 0) {
+  return `INSERT INTO "ActivityMetricCandidateSource" (id,"candidateId","activityId","ordinal","sourceRevisionId","identityId","sessionId","memberGroupOrdinal","checkInAt","checkOutAt","resultCode","sourceFingerprint") VALUES ('c3-source','c3-candidate','c3-activity',${ordinal},'missing-source','missing-identity','missing-session',0,'2025-01-03T00:00:00.000Z','2025-01-03T01:00:00.000Z','valid','${hash}');`;
+}
 
 describe('C3-1 nonempty 115 to 116 upgrade and physical constraints', () => {
   beforeAll(() => {
@@ -170,6 +173,31 @@ describe('C3-1 nonempty 115 to 116 upgrade and physical constraints', () => {
     expect(sql('SELECT current_database()')).toBe(deriveTestDbName());
     sql('BEGIN;' + candidate() + value() + receipt() + 'COMMIT;');
     expect(sql('SELECT count(*) FROM "ActivityMetricCandidate"')).toBe('1');
+  });
+  it('runs the aggregate scan only from the final receipt and seals child facts', () => {
+    const deferred = sql(`SELECT string_agg(tgname, ',' ORDER BY tgname)
+      FROM pg_trigger
+      WHERE tgisinternal = false
+        AND tgdeferrable
+        AND tgrelid IN (
+          '"ActivityMetricCandidate"'::regclass,
+          '"ActivityMetricCandidateValue"'::regclass,
+          '"ActivityMetricCandidateSource"'::regclass,
+          '"ActivityMetricCandidateCommandReceipt"'::regclass
+        )`);
+    expect(deferred).toBe('metric_candidate_complete_trg,metric_candidate_receipt_complete_trg');
+    expect(
+      sql(`SELECT count(*) FROM pg_trigger
+        WHERE tgisinternal = false
+          AND NOT tgdeferrable
+          AND tgname IN ('metric_candidate_value_insert_trg', 'metric_candidate_source_insert_trg')`),
+    ).toBe('2');
+    sql('BEGIN;' + candidate() + value() + receipt() + 'COMMIT;');
+    rejected(value(), '23514');
+    rejected(source(), '23514');
+  });
+  it('rejects a source ordinal beyond its candidate declaration before source lookup', () => {
+    rejected('BEGIN;' + candidate(1, 0) + source() + 'ROLLBACK;', '23514');
   });
   it.each(['value', 'receipt', 'sources'])(
     'rejects an incomplete aggregate missing %s at commit',

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MemberStatus, Prisma, Role, UserStatus } from '@prisma/client';
@@ -137,6 +138,15 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
     await prisma.roleBinding.create({
       data: { principalType: 'USER', principalId, roleId: role.id, scopeType: 'GLOBAL' },
     });
+  }
+  async function inFixtureChunks<T>(
+    rows: readonly T[],
+    write: (chunk: T[]) => Promise<unknown>,
+    size = 500,
+  ) {
+    for (let index = 0; index < rows.length; index += size) {
+      await write(rows.slice(index, index + size));
+    }
   }
   beforeAll(async () => {
     app = await createTestApp();
@@ -1878,7 +1888,7 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
         SELECT "id"
         FROM "AttendancePunchEvent"
         WHERE "activityId" = ${fixture.row.id}
-        ORDER BY "id" ASC
+        ORDER BY "occurredAt" ASC, "id" ASC
         LIMIT 20001`);
       return { segments: segments['QUERY PLAN'], events: events['QUERY PLAN'] };
     });
@@ -1891,6 +1901,323 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
     expect(segmentPlan).not.toContain('Seq Scan');
     expect(eventPlan).not.toContain('Seq Scan');
   });
+
+  it('uses the exact 1,000-event identity budget for a real dense replace/void chain and rejects 1,001', async () => {
+    jest.spyOn(app.get(ActivityWorkflowGate), 'isV11Enabled').mockReturnValue(true);
+    await grant(['activity.outcome.calculate', 'activity.outcome.read']);
+    const row = await activity();
+    const startAt = new Date('2025-01-01T00:00:00.000Z');
+    const endAt = new Date('2025-01-01T02:00:00.000Z');
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: row.id,
+        code: key(),
+        name: 'P12 单身份链',
+        startAt,
+        endAt,
+        locationText: '测试',
+        checkInOpenAt: startAt,
+        checkInCloseAt: endAt,
+        checkOutOpenAt: startAt,
+        checkOutCloseAt: endAt,
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
+    const registration = await prisma.activityRegistration.create({
+      data: { activityId: row.id, memberId, statusCode: 'pass' },
+    });
+    const identity = await prisma.activityParticipationIdentity.create({
+      data: {
+        activityId: row.id,
+        sessionId: session.id,
+        registrationId: registration.id,
+        memberId,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+      },
+    });
+    const checkInId = randomUUID();
+    const checkOutId = randomUUID();
+    const operationIds: string[] = [];
+    const events: Prisma.AttendancePunchEventCreateManyInput[] = [
+      {
+        id: checkInId,
+        activityId: row.id,
+        sessionId: session.id,
+        participationIdentityId: identity.id,
+        memberId,
+        eventTypeCode: 'check_in',
+        sourceCode: 'proxy',
+        occurredAt: startAt,
+        receivedAt: startAt,
+        operatorUserId: actorId,
+        eventKey: key(),
+        requestHash: key(),
+        evidenceRevision: 0,
+      },
+      {
+        id: checkOutId,
+        activityId: row.id,
+        sessionId: session.id,
+        participationIdentityId: identity.id,
+        memberId,
+        eventTypeCode: 'check_out',
+        sourceCode: 'proxy',
+        occurredAt: endAt,
+        receivedAt: endAt,
+        operatorUserId: actorId,
+        eventKey: key(),
+        requestHash: key(),
+        evidenceRevision: 0,
+      },
+    ];
+    for (let index = 0; index < 998; index += 1) {
+      const id = randomUUID();
+      operationIds.push(id);
+      const occurredAt = new Date(endAt.getTime() + (index + 1) * 60_000);
+      events.push({
+        id,
+        activityId: row.id,
+        sessionId: session.id,
+        participationIdentityId: identity.id,
+        memberId,
+        eventTypeCode: index % 2 === 0 ? 'replace' : 'void',
+        sourceCode: 'proxy',
+        occurredAt,
+        receivedAt: occurredAt,
+        operatorUserId: actorId,
+        eventKey: key(),
+        requestHash: key(),
+        supersedesEventId: index === 0 ? checkOutId : operationIds[index - 1],
+        reason: 'P12 密集作废替代链',
+        evidenceRevision: 0,
+      });
+    }
+    await inFixtureChunks(events, (chunk) =>
+      prisma.attendancePunchEvent.createMany({ data: chunk }),
+    );
+    expect(events).toHaveLength(1_000);
+    const projected = app.get(AttendanceSegmentProjectorService).rebuild(
+      events.map((event) => ({
+        id: event.id!,
+        eventTypeCode: event.eventTypeCode,
+        occurredAt: event.occurredAt as Date,
+        supersedesEventId: event.supersedesEventId ?? null,
+      })),
+      {
+        sessionStartAt: startAt,
+        sessionEndAt: endAt,
+        lateGraceMinutes: session.lateGraceMinutes,
+        earlyLeaveThresholdMinutes: session.earlyLeaveThresholdMinutes,
+      },
+    );
+    expect(projected.chainAnomalies).toEqual([]);
+    expect(projected.segments).toHaveLength(1);
+    expect(projected.segments[0].sourceCloseEventId).toBe(checkOutId);
+    const { exceptionFlags, ...segment } = projected.segments[0];
+    await prisma.participantServiceSegmentRevision.create({
+      data: {
+        ...segment,
+        exceptionFlagsJson: exceptionFlags,
+        participationIdentityId: identity.id,
+        revision: 1,
+        statusCode: 'draft',
+      },
+    });
+    const exact = await post(base(row.id), command()).expect(201);
+    expect(exact.body.data).toMatchObject({ sourceCount: 1, valueCount: 1 });
+    expect(await prisma.activityMetricCandidate.count({ where: { activityId: row.id } })).toBe(1);
+    const overflowAt = new Date(endAt.getTime() + 1_000 * 60_000);
+    await prisma.attendancePunchEvent.create({
+      data: {
+        id: randomUUID(),
+        activityId: row.id,
+        sessionId: session.id,
+        participationIdentityId: identity.id,
+        memberId,
+        eventTypeCode: 'replace',
+        sourceCode: 'proxy',
+        occurredAt: overflowAt,
+        receivedAt: overflowAt,
+        operatorUserId: actorId,
+        eventKey: key(),
+        requestHash: key(),
+        supersedesEventId: operationIds.at(-1)!,
+        reason: 'P12 身份事件上限',
+        evidenceRevision: 0,
+      },
+    });
+    expectBizError(
+      await post(base(row.id), command(1)),
+      BizCode.ACTIVITY_METRIC_SOURCE_LIMIT_EXCEEDED,
+    );
+    expect(await prisma.activityMetricCandidate.count({ where: { activityId: row.id } })).toBe(1);
+  }, 120000);
+
+  it('persists the 2,000-member, 20,000-event and 10,000-source candidate within its command budget', async () => {
+    jest.spyOn(app.get(ActivityWorkflowGate), 'isV11Enabled').mockReturnValue(true);
+    await grant(['activity.outcome.calculate', 'activity.outcome.read']);
+    const row = await activity();
+    const sessionStartAt = new Date('2025-01-01T00:00:00.000Z');
+    const sessionEndAt = new Date('2025-01-01T12:00:00.000Z');
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: row.id,
+        code: key(),
+        name: 'P12 满额候选',
+        startAt: sessionStartAt,
+        endAt: sessionEndAt,
+        locationText: '测试',
+        checkInOpenAt: sessionStartAt,
+        checkInCloseAt: sessionEndAt,
+        checkOutOpenAt: sessionStartAt,
+        checkOutCloseAt: sessionEndAt,
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
+    const memberIds: string[] = [];
+    const identityIds: string[] = [];
+    const members: Prisma.MemberCreateManyInput[] = [];
+    const registrations: Prisma.ActivityRegistrationCreateManyInput[] = [];
+    const identities: Prisma.ActivityParticipationIdentityCreateManyInput[] = [];
+    const events: Prisma.AttendancePunchEventCreateManyInput[] = [];
+    const segments: Prisma.ParticipantServiceSegmentRevisionCreateManyInput[] = [];
+    let firstCloseId = '';
+    for (let memberIndex = 0; memberIndex < 2_000; memberIndex += 1) {
+      const scaleMemberId = randomUUID();
+      const registrationId = randomUUID();
+      const identityId = randomUUID();
+      memberIds.push(scaleMemberId);
+      identityIds.push(identityId);
+      members.push({
+        id: scaleMemberId,
+        memberNo: key(),
+        ...memberIdentityData(`P12 规模队员 ${memberIndex}`),
+        gradeCode: 'level-3',
+      });
+      registrations.push({
+        id: registrationId,
+        activityId: row.id,
+        memberId: scaleMemberId,
+        statusCode: 'pass',
+      });
+      identities.push({
+        id: identityId,
+        activityId: row.id,
+        sessionId: session.id,
+        registrationId,
+        memberId: scaleMemberId,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+      });
+      for (let segmentIndex = 0; segmentIndex < 5; segmentIndex += 1) {
+        const checkInId = randomUUID();
+        const checkOutId = randomUUID();
+        if (memberIndex === 0 && segmentIndex === 0) firstCloseId = checkOutId;
+        const checkInAt = new Date(sessionStartAt.getTime() + segmentIndex * 2 * 3_600_000);
+        const checkOutAt = new Date(checkInAt.getTime() + 3_600_000);
+        events.push(
+          {
+            id: checkInId,
+            activityId: row.id,
+            sessionId: session.id,
+            participationIdentityId: identityId,
+            memberId: scaleMemberId,
+            eventTypeCode: 'check_in',
+            sourceCode: 'proxy',
+            occurredAt: checkInAt,
+            receivedAt: checkInAt,
+            operatorUserId: actorId,
+            eventKey: key(),
+            requestHash: key(),
+            evidenceRevision: 0,
+          },
+          {
+            id: checkOutId,
+            activityId: row.id,
+            sessionId: session.id,
+            participationIdentityId: identityId,
+            memberId: scaleMemberId,
+            eventTypeCode: 'check_out',
+            sourceCode: 'proxy',
+            occurredAt: checkOutAt,
+            receivedAt: checkOutAt,
+            operatorUserId: actorId,
+            eventKey: key(),
+            requestHash: key(),
+            evidenceRevision: 0,
+          },
+        );
+        segments.push({
+          id: randomUUID(),
+          participationIdentityId: identityId,
+          segmentKey: String(segmentIndex + 1).padStart(4, '0'),
+          revision: 1,
+          sourceCheckInEventId: checkInId,
+          sourceCloseEventId: checkOutId,
+          resultCode: 'valid',
+          statusCode: 'draft',
+          checkInAt,
+          checkOutAt,
+          serviceHours: 1,
+          exceptionFlagsJson: [],
+        });
+      }
+    }
+    await inFixtureChunks(members, (chunk) => prisma.member.createMany({ data: chunk }));
+    await inFixtureChunks(registrations, (chunk) =>
+      prisma.activityRegistration.createMany({ data: chunk }),
+    );
+    await inFixtureChunks(identities, (chunk) =>
+      prisma.activityParticipationIdentity.createMany({ data: chunk }),
+    );
+    await inFixtureChunks(events, (chunk) =>
+      prisma.attendancePunchEvent.createMany({ data: chunk }),
+    );
+    await inFixtureChunks(segments, (chunk) =>
+      prisma.participantServiceSegmentRevision.createMany({ data: chunk }),
+    );
+    expect(members).toHaveLength(2_000);
+    expect(events).toHaveLength(20_000);
+    expect(segments).toHaveLength(10_000);
+    const startedAt = Date.now();
+    const exact = await post(base(row.id), command()).expect(201);
+    expect(Date.now() - startedAt).toBeLessThan(30_000);
+    const candidateId = (exact.body.data as { candidateId: string }).candidateId;
+    expect(exact.body.data).toMatchObject({ sourceCount: 10_000, valueCount: 1 });
+    expect(await prisma.activityMetricCandidateSource.count({ where: { candidateId } })).toBe(
+      10_000,
+    );
+    const overflowAt = new Date(sessionEndAt.getTime() + 60_000);
+    await prisma.attendancePunchEvent.create({
+      data: {
+        id: randomUUID(),
+        activityId: row.id,
+        sessionId: session.id,
+        participationIdentityId: identityIds[0],
+        memberId: memberIds[0],
+        eventTypeCode: 'void',
+        sourceCode: 'proxy',
+        occurredAt: overflowAt,
+        receivedAt: overflowAt,
+        operatorUserId: actorId,
+        eventKey: key(),
+        requestHash: key(),
+        supersedesEventId: firstCloseId,
+        reason: 'P12 活动事件上限',
+        evidenceRevision: 0,
+      },
+    });
+    expectBizError(
+      await post(base(row.id), command(1)),
+      BizCode.ACTIVITY_METRIC_SOURCE_LIMIT_EXCEEDED,
+    );
+    expect(await prisma.activityMetricCandidate.count({ where: { activityId: row.id } })).toBe(1);
+  }, 180000);
 
   it('keeps a candidate fresh through correction prepare and failed commit, then marks it stale on the real committed correction', async () => {
     jest.spyOn(app.get(ActivityWorkflowGate), 'isV11Enabled').mockReturnValue(true);

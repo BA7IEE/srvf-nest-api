@@ -10,14 +10,14 @@ describe('C3-1 attendance source owner boundary', () => {
     };
     return { db, tx: db as unknown as Prisma.TransactionClient };
   }
-  it('uses the supplied transaction and a minimal, ordered cap+1 event projection', async () => {
+  it('uses the supplied transaction and the materializer-compatible ordered cap+1 event projection', async () => {
     const f = fixture();
     await expect(
       service.readActivityPunchProjectionInputTrusted(f.tx, 'activity', 20000),
     ).resolves.toEqual([]);
     expect(f.db.attendancePunchEvent.findMany).toHaveBeenCalledWith({
       where: { activityId: 'activity' },
-      orderBy: { id: 'asc' },
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
       take: 20001,
       select: {
         id: true,

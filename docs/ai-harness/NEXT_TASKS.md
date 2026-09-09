@@ -9,7 +9,7 @@
 quick 全绿（333 组单测、7577 passed、5 todo），架构债棘轮零新增。两份 C2 旧测试适配分别 17／8 条通过；
 第 115 条 migration 的 3b 已重签，#1296 的全部 PR 检查与可信审批通过；合并后 main CI 34186995204 已核验 success。
 维护者已确认 C3-1 完整方案 A、精确写集、app_test_w98 隔离验证与通过后提交／推送／开 PR；不得合并、操作生产、启用 Gate 或删除业务数据。
-C3-1 按最新“不删除”决定永久保留明细和复算能力；第 116 条 migration、28 条 HTTP／数据库／查询计划、9 条锁等待和 20 条迁移约束用例均已在 w98 通过。既有现场运行 9 条、现场并发 7 条、离线 writer 22 条也在同一隔离库回归通过。真实更正、现场提前离场及现场作废、离线 package 上传、离线 review 批准、结算重投影、现场 identity 创建和发布后场次取消／改期 effect 均有 Activity 锁证据；等价有界 SQL 的 EXPLAIN 仅证明 index path 可用，不是生产规模延时结论。
+C3-1 按最新“不删除”决定永久保留明细和复算能力；第 116 条 migration、30 条 HTTP／数据库／查询计划、9 条锁等待和 22 条迁移约束用例（共 61 条）均已在 w98 通过。P12 已用真实库验证 1000／1001 单身份 replace／void 链，以及 2000 名成员／20000／20001 事件、10000 来源；完整聚合只在末尾 receipt deferred trigger 执行一次，Value／Source 的 BEFORE INSERT 守卫保留同链、封存和 ordinal 保护。既有现场运行 9 条、现场并发 7 条、离线 writer 22 条也在同一隔离库回归通过。真实更正、现场提前离场及现场作废、离线 package 上传、离线 review 批准、结算重投影、现场 identity 创建和发布后场次取消／改期 effect 均有 Activity 锁证据；等价有界 SQL 的 EXPLAIN 仅证明 index path 可用，满额成功只按现有 30 秒命令预算验收，均不是生产规模延时结论。
 整体跨模型复审、部署及 Gate 未完成；C3-2/C3-3 尚未实施，不启用 Gate。
 
 > **性质**:任务提案清单(2026-06-10 Review 产出)。**每项任务仍须按 [`process.md`](../process.md) 单独立项,AI 不自动启动**(process §7)。状态列可由 AI 在 docs PR 中更新。
@@ -2548,7 +2548,7 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 - **C2 D2 收口及 C3 下一步**：[#1293](https://github.com/BA7IEE/srvf-nest-api/pull/1293) 已于 2026-09-07 squash 合入 `7f4fdbd7`；18 项 PR 检查、可信红区审批及 [main CI 34118403784](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34118403784) 全部通过。C2 D1/D2 仓内实现与验证已完成：三个人工成果接口、完整修订、不可变收据、同事务证据及审计，3b/4b 已重签；不是生产可用声明。整体跨模型复审仍待统一进行，B6 历史 500 根因未定位，不借本轮通过宣告修复。此段的 C3 起草授权已被后续 C3 方案 A／C3-1 implementation 授权覆盖；C3-1 可提交、推送和开 PR，但仍不得合并、启用 Gate 或操作生产，C4/C5 另行确认。
 
-- **C3-1 当前实施状态（未合并、未部署）**：[自动指标与人工确认评审及授权清单](../archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md) 的候选阶段按方案 A 实施中：第 116 条 migration 只新增规则绑定、候选／值／来源快照及命令收据六表，零回填、零业务数据删除；新增两条不自动授予的 Human GLOBAL 权限和两条安全审计事件。已在获批 `app_test_w98` 完成 116 条冷回放、115→116 非空升级、28 条 HTTP／数据库／查询计划、9 条锁等待及 20 条迁移约束用例；真实更正、现场提前离场与现场作废、离线 package 上传、离线 review 批准、结算重投影、现场 identity 创建和发布后场次取消／改期 effect 的 Activity 锁交错也已验证。等价有界 SQL 的 EXPLAIN 只确认 index path，不构成生产延时结论；3b/4b、PR CI、可信审批、合并、生产 deploy、Gate 与整体跨模型复审均未发生。C3-2 人工确认及 C3-3 正式更正仍未开始，不能把候选视为正式成果。
+- **C3-1 当前实施状态（未合并、未部署）**：[自动指标与人工确认评审及授权清单](../archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md) 的候选阶段按方案 A 实施中：第 116 条 migration 只新增规则绑定、候选／值／来源快照及命令收据六表，零回填、零业务数据删除；新增两条不自动授予的 Human GLOBAL 权限和两条安全审计事件。已在获批 `app_test_w98` 完成 116 条冷回放、115→116 非空升级、30 条 HTTP／数据库／查询计划、9 条锁等待及 22 条迁移约束用例（共 61 条）；P12 已真实验证 1000／1001 单身份 replace／void 链及 2000 名成员／20000／20001 事件、10000 来源，满额成功只按现有 30 秒命令预算验收。完整聚合只在末尾 receipt deferred trigger 执行一次，Value／Source 的 BEFORE INSERT 守卫保留同链、封存和 ordinal 保护，避免 10000 来源在提交期重复全量聚合。真实更正、现场提前离场与现场作废、离线 package 上传、离线 review 批准、结算重投影、现场 identity 创建和发布后场次取消／改期 effect 的 Activity 锁交错也已验证。等价有界 SQL 的 EXPLAIN 只确认 index path，不构成生产延时结论；3b/4b、PR CI、可信审批、合并、生产 deploy、Gate 与整体跨模型复审均未发生。C3-2 人工确认及 C3-3 正式更正仍未开始，不能把候选视为正式成果。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 

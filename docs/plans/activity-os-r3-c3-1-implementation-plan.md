@@ -1,6 +1,6 @@
 # Activity OS C3-1 精确实施计划：可复现的系统指标候选
 
-> **当前授权（2026-09-08，覆盖下方起草时点的“仅文档／待批准”状态）**：维护者已确认 C3-1 完整方案 A，按本计划实施；允许 app_test_w98 隔离验证与重建；验证通过后提交、推送并创建 PR，包含本轮文档。§7.5 八项精确文件授权已核验存在。不得合并、操作生产、启用 Gate 或删除业务数据；禁止自动 migrate dev/reset/db push。3b／4b 仍按实际结果另行重签。本稿保留起草证据，不把历史措辞当作重复审批要求；实现及 P01–P17 验收尚未完成。
+> **当前授权（2026-09-08，覆盖下方起草时点的“仅文档／待批准”状态）**：维护者已确认 C3-1 完整方案 A，按本计划实施；允许 app_test_w98 隔离验证与重建；验证通过后提交、推送并创建 PR，包含本轮文档。§7.5 八项精确文件授权已核验存在。不得合并、操作生产、启用 Gate 或删除业务数据；禁止自动 migrate dev/reset/db push。3b／4b 仍按实际结果另行重签。本稿保留起草证据，不把历史措辞当作重复审批要求；P12 已完成隔离验证，P01–P17 整体验收尚未完成。
 
 > 2026-09-08，调查基点 main `638fc784`（#1296）。本稿是工作草稿，不是冻结合同或实施授权。
 > 本轮维护者仅授权四份台账更正及起草本计划；不提交、推送、开 PR、操作数据库或实施。
@@ -67,7 +67,7 @@ C3-2 才实现完整成果确认、正式更正与现行 confirmed 选择器。C
 
 据此提出待整体批准的事件输入预算：单活动最多 20000 事件、单 identity 最多 1000 事件；均按预算+1 检出后拒绝，不丢历史、不截断。该上限仅控制一次同步计算，不删除超额事实，也不禁止既有打卡操作。覆盖 2000 人每人五段的上述基准，不代表每个 2000 人活动都必然不超预算；大量历史更正可能明确报超限，届时需要独立规模方案，不能返回少算的成功结果。
 
-属主入口先有界取活动事件，再按身份检查局部上限，使用完整事件链才调用 projector；单身份超限不自动拆链。P12 仍需加入活动 20000/20001、身份 1000/1001、替换／作废密集链和端到端预算；真实数据库的生产形状等价查询已完成索引可用路径核验，但没有生产规模延迟结论。上述两个新事件限额与 §3.3 段数／绑定上限一起评审，不把本轮测量当批准。
+属主入口先有界取活动事件，再按身份检查局部上限，使用完整事件链才调用 projector；单身份超限不自动拆链。P12 已在获批 `app_test_w98` 用真实 HTTP／数据库完成：单 identity 的精确 1000 事件 replace／void 链可计算，1001 明确拒绝；2000 名成员／20000 事件／10000 来源可持久化候选，20001 明确拒绝。满额请求在现有 30 秒命令预算内返回；这只是隔离库回归结果，不构成生产规模延时承诺。真实数据库的生产形状等价查询也已完成索引可用路径核验。
 
 ### 3.4 C1 类型、单位与 C2 canonical 值接缝
 
@@ -98,7 +98,7 @@ C3-2 才实现完整成果确认、正式更正与现行 confirmed 选择器。C
 
 候选保留完整输入、精确规则版本及历史值以长期复算，不只留 hash。来源属于受控参与数据，即使分组序号是伪名也不声称匿名。**敏感字段三问**：用途为历史核验／复算／审计；仅事实属主授权内部通路查看，普通 Outcome DTO 与 Audit 不暴露明细；按维护者“不删除”决定长期保留，退队撤销访问不删除参与历史。本批无到期删除机制。该产品决定不等于法律结论，适用要求仍须上线前独立核对，不据此自行删数据。
 
-数据库约束要证明 activity/set/definition/binding/candidate 同链、不可变、唯一和收据安全结果闭集；不能仅依赖 Service 检查。精确引用键、字段类型、payload 上限、28 个 SQL 拟用名称和 13 个触发器挂载已在本节展开；本稿待整体评审，不授权 schema。
+数据库约束要证明 activity/set/definition/binding/candidate 同链、不可变、唯一和收据安全结果闭集；不能仅依赖 Service 检查。精确引用键、字段类型、payload 上限和 12 个触发器挂载已在本节展开；本稿待整体评审，不授权 schema。
 
 方案 B：仅保留源 ID/hash，复算时读取原段。当前未证明所有原字段不可变及可永久读取，因此不采用 B；不得为了减少表把不可复算快照包装成完整成果候选。
 
@@ -161,8 +161,10 @@ C3-2 才实现完整成果确认、正式更正与现行 confirmed 选择器。C
 | `metric_binding_receipt_operation_key` | BindingReceipt(actorId,operation,operationKey) unique |
 | `metric_binding_receipt_binding_fk` | BindingReceipt 到 Binding FK |
 | `metric_candidate_fact_immutable` | 六表通用 UPDATE/DELETE 拒绝函数 |
-| `metric_candidate_aggregate_complete` | 候选值／来源数量及连续序号的延迟核验函数 |
-| `metric_candidate_source_snapshot_check` | 来源快照插入时与真实输入的一致性函数 |
+| `metric_candidate_aggregate_complete` | 仅在末尾候选收据插入后核验值／来源数量及连续 ordinal 的函数 |
+| `metric_candidate_receipt_required` | Candidate 提交时必须存在候选命令收据的延迟核验函数 |
+| `metric_candidate_value_insert_check` | Value 插入时的候选同链与封存后拒绝函数 |
+| `metric_candidate_source_snapshot_check` | 来源插入时的候选同链、声明 ordinal、封存后拒绝及真实输入一致性函数 |
 | `metric_candidate_receipt_shape_check` | 候选安全收据闭集与锚点核验函数 |
 | `metric_binding_receipt_shape_check` | 绑定安全收据闭集与锚点核验函数 |
 
@@ -226,15 +228,14 @@ bindingIds 为 1–100 个唯一 ID，字典序规范化；同 metricDefinitionI
 | metric_candidate_source_immutable_trg | Source，BEFORE UPDATE OR DELETE | 同上 |
 | metric_candidate_receipt_immutable_trg | CandidateReceipt，BEFORE UPDATE OR DELETE | 同上 |
 | metric_binding_receipt_immutable_trg | BindingReceipt，BEFORE UPDATE OR DELETE | 同上 |
-| metric_candidate_complete_trg | Candidate，AFTER INSERT，DEFERRABLE INITIALLY DEFERRED | metric_candidate_aggregate_complete |
-| metric_candidate_value_complete_trg | Value，AFTER INSERT，DEFERRABLE INITIALLY DEFERRED | 同上，以 NEW.candidateId 定位父行 |
-| metric_candidate_source_complete_trg | Source，AFTER INSERT，DEFERRABLE INITIALLY DEFERRED | 同上 |
-| metric_candidate_receipt_complete_trg | CandidateReceipt，AFTER INSERT，DEFERRABLE INITIALLY DEFERRED | 同上，防绕过命令再给旧候选追加收据 |
+| metric_candidate_complete_trg | Candidate，AFTER INSERT，DEFERRABLE INITIALLY DEFERRED | metric_candidate_receipt_required |
+| metric_candidate_receipt_complete_trg | CandidateReceipt，AFTER INSERT，DEFERRABLE INITIALLY DEFERRED | metric_candidate_aggregate_complete；完整聚合只在末尾收据写入后执行一次 |
+| metric_candidate_value_insert_trg | Value，BEFORE INSERT | metric_candidate_value_insert_check |
 | metric_candidate_source_insert_trg | Source，BEFORE INSERT | metric_candidate_source_snapshot_check |
 | metric_candidate_receipt_insert_trg | CandidateReceipt，BEFORE INSERT | metric_candidate_receipt_shape_check |
 | metric_binding_receipt_insert_trg | BindingReceipt，BEFORE INSERT | metric_binding_receipt_shape_check |
 
-aggregate_complete 在提交态验证原 valueCount/sourceCount、连续 ordinal、同指标唯一及**每候选恰一条创建收据**；actor 与 Candidate.creator 一致，收据锚／数量／时间与父行一致。Binding 可被不同命令复用，故不对每 Binding 强加一条 receipt。候选前驱同活动且 revision 恰加一的检查并入父行核验；max revision 边界先拒绝，不溢出。上述表简称严格对应 §4 的六模型，不能把同一通用触发器误挂到原始服务段或 C2 历史表。
+Candidate 的提交态触发器只核验存在收据；aggregate_complete 仅由末尾 CandidateReceipt 的提交态触发器调用一次，验证 valueCount/sourceCount、连续 ordinal、同指标唯一及收据锚／数量／时间与父行一致。Value／Source 的 BEFORE INSERT 守卫分别核验候选同链，拒绝收据后的追加；Source 还先拒绝超出声明 sourceCount 的 ordinal。这样既保留完整性，又避免每个来源行在提交期重复全量聚合。Binding 可被不同命令复用，故不对每 Binding 强加一条 receipt。候选前驱同活动且 revision 恰加一的检查并入父行核验；max revision 边界先拒绝，不溢出。上述表简称严格对应 §4 的六模型，不能把同一通用触发器误挂到原始服务段或 C2 历史表。
 
 ### 4.3 长期保留与历史复算
 
@@ -624,7 +625,7 @@ AI 本轮没有运行任何 harness:grant，也没有创建上述 migration。�
 | P09 | 原子性 | 候选值／来源／收据／审计任一步失败全部回滚；旧 Outcome 和正式参与／账本无改动 |
 | P10 | PostgreSQL 强约束 | 跨 activity/set/definition/binding 直接 SQL、数量不符、不可变性、安全结果闭集正反例 |
 | P11 | 历史与新 API 隔离 | C2 manual/旧收据逐字保留；旧 112→113、113→114 测试继续固定历史目标 |
-| P12 | 上限 | 30/500/2000 档，段数和绑定 cap+1 显式失败，绝不静默截断 |
+| P12 | 上限 | 已在真实库验证 1000／1001 单身份 replace／void 链及 2000 名成员／20000／20001 事件、10000 来源；cap+1 明确失败，绝不静默截断；满额请求仅按现有 30 秒命令预算验收，不构成生产 SLO。 |
 | P13 | 隐私与无外部依赖 | DTO／audit 不含原始来源清单、区间和凭证；无 AI key／网络仍可纯计算 |
 | P14 | 工具与 CI | quick、build、contract、新债务／引用方向、全部派生检查及 PR CI；main 结果独立核验 |
 | P15 | 历史不可改删 | 数据库直接 UPDATE/DELETE 候选／值／来源／绑定／收据被拒绝；数量始终相符，无清理豁免 |
@@ -679,19 +680,19 @@ P01–P17 不以结构字符串断言代替数据库行为。先跑旧行为 cha
 ### 本轮验证进展与待补授权
 
 - 四个新接口已接入；离线 OpenAPI 对照既有路径／schema 均无语义变化，仅新增四个操作、六个 schema。全量 contract 1026 条、两份快照通过。
-- 仅 app_test_w98：真实 HTTP／数据库／查询计划 28 条、真实锁等待并发 9 条、非空 115→116 升级及约束 20 条，共 57 条通过。新增来源后旧候选明确转 stale，原候选快照仍可复算；候选命令会等待 Activity 锁并在来源 writer 原子提交后只写入完整新来源；迁移升级及重复 deploy 保留旧目录、成果、值和旧收据逐字节不变；六类不可变记录的 UPDATE/DELETE 拒绝已实测。
-- 历史读取／绑定／两类审计四组单测 29 条通过；query 另覆盖指标集退役时 stale、来源暂不可用时仍可历史复算、锁后失效与隐私闭集。类型检查通过；当前阶段不等于 P01–P17 全部完成。
+- 仅 app_test_w98：真实 HTTP／数据库／查询计划 30 条、真实锁等待并发 9 条、非空 115→116 升级及约束 22 条，共 61 条通过。新增来源后旧候选明确转 stale，原候选快照仍可复算；候选命令会等待 Activity 锁并在来源 writer 原子提交后只写入完整新来源；迁移升级及重复 deploy 保留旧目录、成果、值和旧收据逐字节不变；六类不可变记录的 UPDATE/DELETE 拒绝已实测。新增 P12 精确验证 1000／1001 单身份 replace／void 链，以及 2000 名成员／20000／20001 事件、10000 来源的真实 HTTP 候选路径。
+- 历史读取／绑定／两类审计四组单测 29 条通过；query 另覆盖指标集退役时 stale、来源暂不可用时仍可历史复算、锁后失效与隐私闭集。类型检查通过；P12 已完成，当前阶段仍不等于 P01–P17 全部完成。
 - 现算 43 模块、118 controller、605 endpoint、116 migration、523 BizCode、256 权限、164 Audit events（159 活跃、5 零产出）；模型 149、状态列 67，metadata 与新增债务检查通过。3b/4b 尚未重签。
 - quick 曾报三条失败：冻结读数已刷新；权限登记基线缺两新码及两条读码的新增接口；harness 两条真实计数仍固定 254。状态机表总数已同步 67。没有修改或绕过这些检查。
 - **补授权已落实**：`harness/permission-surface-baseline.json` 已由生成器登记两新码及两条既有读码的新增接口面；`scripts/harness-guards.selftest.ts` 仅将真实权限计数与注释 254→256，不改断言。二者均有维护者精确 grant；`changelog.d/activity-os-r3-c3-1-candidates.md` 未获授权，未创建，也未直接改 Unreleased。
-- 已完成 16 份既有迁移测试当前回放计数 115→116 适配，历史 112→113、113→114 升级目标未动；已补候选 Presenter 和 calculate 独立授权单测。P05 的真实更正 prepare、失败 commit 回滚、正式 commit stale 已通过；P06 已覆盖直接来源 writer、真实服务段更正 commit、现场提前离场与现场作废、离线 package 上传、离线 review 批准、结算重投影、真实现场 identity 创建，以及发布后场次取消／改期 effect 的 Activity 锁交错。静态清单确认 identity 的既有 update 只改当前修订／状态／岗位／容量／人口／版本，不改 activity/session/member 锚；草稿场次不能与 identity 共存，已发布会影响来源解释的场次变更收敛到取消／改期 effect，终止签到截止和地点投影不进入来源输入。等价有界 SQL 的真实 `EXPLAIN` 已证明 index path 可用；不把该结论升级为生产规模延时承诺，P12 的 20000/20001、1000/1001 和端到端规模预算仍待完成。
+- 已完成 16 份既有迁移测试当前回放计数 115→116 适配，历史 112→113、113→114 升级目标未动；已补候选 Presenter 和 calculate 独立授权单测。P05 的真实更正 prepare、失败 commit 回滚、正式 commit stale 已通过；P06 已覆盖直接来源 writer、真实服务段更正 commit、现场提前离场与现场作废、离线 package 上传、离线 review 批准、结算重投影、真实现场 identity 创建，以及发布后场次取消／改期 effect 的 Activity 锁交错。静态清单确认 identity 的既有 update 只改当前修订／状态／岗位／容量／人口／版本，不改 activity/session/member 锚；草稿场次不能与 identity 共存，已发布会影响来源解释的场次变更收敛到取消／改期 effect，终止签到截止和地点投影不进入来源输入。等价有界 SQL 的真实 `EXPLAIN` 已证明 index path 可用；P12 进一步以真实库完成 20000／20001、1000／1001 与满额端到端候选验证。满额成功只在现有 30 秒命令预算内验收，不升级为生产规模延时承诺。
 
 - 维护者确认完整方案及 §7.4 写集、app_test_w98 验证与重建、验证后提交／推送／创建 PR；八项红区令牌已核验。本批不合并、不启用 Gate、不操作生产或删除业务数据。
-- 分支 `codex/activity-os-c3-1-candidates`；五份前期计划／台账先保存为 `8c1c8cd9`，随后 global preflight 通过。此提交仅保存起草成果，不代表实现完成；尚未推送或创建 PR。
+- 分支 `codex/activity-os-c3-1-candidates`；五份前期计划／台账先保存为 `8c1c8cd9`，随后 global preflight 通过。此前提交仅保存起草成果，不代表实现完成；实现已推送并创建 [#1298](https://github.com/BA7IEE/srvf-nest-api/pull/1298)，本轮后续更新仍不代表获批合并。
 - 已写入两条纯规则、稳定来源分组和指纹、精确区间并集／单次 HALF_UP、两个独立命令与安全收据解析器。复用 C1/C2 canonical/hash/value 校验，不改旧解析器。
-- 六模型及引用键已进入 schema；Prisma validate 和生成通过。新 migration 为 `20260908054308_activity_os_r3_c3_metric_candidates`，不改旧 migration。新增约束／不可变性与来源、收据、数量触发器仍待完整行为验收。
-- 现场确认 app_test_w98 不存在后，仅创建该隔离库；通过现行 assertTestDatabaseUrl 与精确库名检查后执行 migrate deploy，116 条冷迁移成功，查询确认最新 migration 正确、13 个触发器已挂载。未触碰 app_test、w1、生产或实际业务数据；未运行 migrate dev/reset/db push。
-- 考勤属主新增最小有界查询与模块导出；活动来源查询已经编写，区分 draft 投影与 committed 批次／正式更正。其本地单测现为 10 条：新增“精确前代＋已应用更正链才可读取”和“旁路 stale draft 仍拒绝”两条。真实 Activity 锁交错现覆盖：候选等待来源 writer、候选等待正式更正 commit、现场提前离场、现场作废、离线 package 上传、离线 review 批准、结算重投影和现场 identity 创建，以及候选先持锁时的发布后场次取消／改期 effect；每项在释放后都检查只读到完整事务边界的来源。P05 与 P06 的来源一致性闭包已完成；等价有界 SQL 的真实 EXPLAIN 只证明 index path 可用，P12 规模／延时仍不能据此结案。
+- 六模型及引用键已进入 schema；Prisma validate 和生成通过。新 migration 为 `20260908054308_activity_os_r3_c3_metric_candidates`，不改旧 migration。约束、不可变性与来源、收据、数量触发器已完成定向行为验收；为避免 10000 个来源在提交期重复全量聚合，完整聚合只在末尾 receipt deferred trigger 执行一次，子表插入守卫继续核验同链、封存与来源 ordinal。
+- 现场确认 app_test_w98 不存在后，仅创建该隔离库；通过现行 assertTestDatabaseUrl 与精确库名检查后执行 migrate deploy，116 条冷迁移成功，查询确认最新 migration 正确、12 个触发器已挂载。未触碰 app_test、w1、生产或实际业务数据；未运行 migrate dev/reset/db push。
+- 考勤属主新增最小有界查询与模块导出；活动来源查询已经编写，区分 draft 投影与 committed 批次／正式更正。其事件读取按既有服务段物化器的 `occurredAt, id` 稳定顺序，避免随机 UUID 顺序把有效 replace／void 链误判为异常。其本地单测现为 10 条：新增“精确前代＋已应用更正链才可读取”和“旁路 stale draft 仍拒绝”两条。真实 Activity 锁交错现覆盖：候选等待来源 writer、候选等待正式更正 commit、现场提前离场、现场作废、离线 package 上传、离线 review 批准、结算重投影和现场 identity 创建，以及候选先持锁时的发布后场次取消／改期 effect；每项在释放后都检查只读到完整事务边界的来源。P05 与 P06 的来源一致性闭包已完成；P12 的真实规模和上限拒绝也已完成，但不将其升级为生产延时结论。
 - 首批 6 组定向单测 99 条通过（新规则 23、命令 43、考勤属主 8、旧成果访问／值 25）；另来源查询 9 条通过。初次误用未带仓内配置的 jest，没有执行测试，已改用 pnpm test；新测试日期及类型断言 lint 问题已修复，不改裁判。
-- 已完成快速门禁：lint、三套 typecheck、343 个单测及两套 harness selftest 均通过；`docs:authz:check`、`docs:codemap:check`、边界检查、新债务检查通过。受影响的 C2 当前回放已在 w98 验证；其余旧迁移用例会创建 w86/w87 scratch 库，超出本轮测试库授权，未再运行。曾误启动该批跑，发现仍在后台后立即终止；数据库清点确认未创建 w86/w87，w98 已重建为 116 条迁移。P05/P06 已核验；3b／4b 不预签；当前不是可交付版本，P01–P17、全量 CI 和整体复审尚未完成。
-- 另以同一 w98 重跑既有正式 writer 回归：现场打卡运行 9 条、现场并发 7 条、离线 package／review writer 22 条均通过。该 38 条回归证明本批未破坏既有正式写链；随后新增 P06 交错，把候选请求分别插入离线 package 上传、离线 review 批准、结算重投影和现场 identity 创建事务，并让发布后场次取消／改期 effect 等待候选根锁，均只跨完整事务边界读取来源。等价有界 SQL 的 EXPLAIN probe 也在同一隔离库通过；它不替代 P12 的规模与延时验证。
+- 已完成快速门禁：lint、三套 typecheck、343 个单测及两套 harness selftest 均通过；`docs:authz:check`、`docs:codemap:check`、边界检查、新债务检查通过。受影响的 C2 当前回放已在 w98 验证；其余旧迁移用例会创建 w86/w87 scratch 库，超出本轮测试库授权，未再运行。曾误启动该批跑，发现仍在后台后立即终止；数据库清点确认未创建 w86/w87，w98 已重建为 116 条迁移。P05/P06/P12 已核验；3b／4b 不预签；当前不是可交付版本，P01–P17 整体、全量 CI 和整体复审尚未完成。
+- 另以同一 w98 重跑既有正式 writer 回归：现场打卡运行 9 条、现场并发 7 条、离线 package／review writer 22 条均通过。该 38 条回归证明本批未破坏既有正式写链；随后新增 P06 交错，把候选请求分别插入离线 package 上传、离线 review 批准、结算重投影和现场 identity 创建事务，并让发布后场次取消／改期 effect 等待候选根锁，均只跨完整事务边界读取来源。等价有界 SQL 的 EXPLAIN probe 及 P12 的满额真实候选都在同一隔离库通过；前者只确认 index path，后者只按现有 30 秒命令预算验收，均不替代生产规模延时验证。
