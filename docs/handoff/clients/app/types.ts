@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:9b1998bc17d363f7dfc8389b68d694ca3b7a7381a5c8697bd852e74a4e6eb980
+// inputDigest: sha256:1da6acea59dbd06c3a03744b5c7cff91c9c8325181b5c6b4380058356e6f578f
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -235,6 +235,48 @@ export interface AppActivityLifecycleResultDto {
   "statusCode": "cancelled" | "terminated";
   "occurredAt": string;
   "reason"?: Record<string, unknown> | null;
+}
+
+export interface AppActivityMetricCandidateDetailDto {
+  "schemaVersion": 1;
+  "candidateId": string;
+  "activityId": string;
+  "revision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "createdStatusCode": "candidate";
+  "sourceCode": "system";
+  "valueCount": number;
+  "sourceCount": number;
+  "createdAt": string;
+  "freshness": "fresh" | "stale" | "unavailable";
+  "reproducible": boolean;
+  "values": AppActivityMetricCandidateValueDto[];
+}
+
+export interface AppActivityMetricCandidateResultDto {
+  "schemaVersion": 1;
+  "candidateId": string;
+  "activityId": string;
+  "revision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "createdStatusCode": "candidate";
+  "sourceCode": "system";
+  "valueCount": number;
+  "sourceCount": number;
+  "createdAt": string;
+}
+
+export interface AppActivityMetricCandidateValueDto {
+  "metricDefinitionId": string;
+  "definitionHash": string;
+  "value": number | string;
+  "valueHash": string;
+  "ruleCode": "actual_participant_count_v1" | "actual_participation_hours_v1";
+  "evaluatorVersion": 1;
+  "unitCode": "count" | "hours";
+  "scale": number;
 }
 
 export interface AppActivityMetricSelectionInputDto {
@@ -528,6 +570,16 @@ export interface AppAvailableActivityListItemDto {
   "registrationDeadline"?: Record<string, unknown> | null;
   "coverImageUrl"?: Record<string, unknown> | null;
   "createdAt": string;
+}
+
+export interface AppCalculateActivityMetricCandidateDto {
+  "schemaVersion": 1;
+  "operationKey": string;
+  "expectedCandidateRevision": number;
+  "expectedOutcomeRevision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "bindingIds": string[];
 }
 
 export interface AppCapabilityAccountDto {

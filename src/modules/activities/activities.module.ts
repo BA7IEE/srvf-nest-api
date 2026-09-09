@@ -29,6 +29,14 @@ import { ActivitySeriesAuditRecorder } from './activity-series-audit-recorder';
 import { ActivitySeriesService } from './activity-series.service';
 import { ActivityMetricCommand } from './activity-metric-command';
 import { ActivityOutcomeService } from './activity-outcome.service';
+import { ActivityMetricCandidateService } from './activity-metric-candidate.service';
+import { ActivityMetricCandidateQueryService } from './activity-metric-candidate-query.service';
+import { ActivityMetricCandidateSourceQuery } from './activity-metric-candidate-source.query';
+import { ActivityMetricCandidateAuditRecorder } from './activity-metric-candidate-audit-recorder';
+import { ActivityMetricRuleBindingService } from './activity-metric-rule-binding.service';
+import { ActivityMetricRuleBindingAuditRecorder } from './activity-metric-rule-binding-audit-recorder';
+import { AdminActivityMetricRuleBindingsController } from './controllers/admin-activity-metric-rule-bindings.controller';
+import { AppManagedActivityMetricCandidatesController } from './controllers/app-managed-activity-metric-candidates.controller';
 import { ActivityOutcomeQueryService } from './activity-outcome-query.service';
 import { ActivityOutcomeAccessService } from './activity-outcome-access.service';
 import { ActivityOutcomeAuditRecorder } from './activity-outcome-audit-recorder';
@@ -180,6 +188,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   ],
   controllers: [
     AppManagedActivityOutcomesController,
+    AdminActivityMetricRuleBindingsController,
+    AppManagedActivityMetricCandidatesController,
     AppManagedActivityMetricsController,
     AdminActivityMetricSelectionController,
     AdminActivityTemplateVersionsController,
@@ -203,6 +213,12 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   ],
   providers: [
     ActivityOutcomeService,
+    ActivityMetricCandidateService,
+    ActivityMetricCandidateQueryService,
+    ActivityMetricCandidateSourceQuery,
+    ActivityMetricCandidateAuditRecorder,
+    ActivityMetricRuleBindingService,
+    ActivityMetricRuleBindingAuditRecorder,
     ActivityOutcomeQueryService,
     ActivityOutcomeAccessService,
     ActivityOutcomeAuditRecorder,

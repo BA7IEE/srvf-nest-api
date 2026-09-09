@@ -1,13 +1,16 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-## 服务段更正方案 A 当前进展（#1295 后续实施，未合并）
+## 服务段更正方案 A 与 C3-1 当前进展（#1296 已合并，C3-1 当前分支实施中）
 
 维护者已授权评审稿第 9/11/12 节 38 路径、app_test_w98 验证及通过后开 PR；
 另批两个测试文件的时间登记／收据夹具适配，以及 GLOBAL 结算终审权限与锁后身份复验。
-真实非空段 prepare 唯一冲突已复现；暂存、事务内物化、收据和清理 CLI 已进入工作区。
+真实非空段 prepare 唯一冲突已复现；暂存、事务内物化、收据和清理 CLI 已随 #1296 合入 main `638fc784`。
 8 组定向 E2E 110 条通过，冷回放与非空旧 application 升级 5 条通过，旧夹具适配定向 2 条通过；
-quick 全绿（333 组单测、7577 passed、5 todo），架构债棘轮零新增。仍待 PR CI／可信审批、
-3b 重签及合并；不提前登记 C3-1 完成，不启用 Gate。
+quick 全绿（333 组单测、7577 passed、5 todo），架构债棘轮零新增。两份 C2 旧测试适配分别 17／8 条通过；
+第 115 条 migration 的 3b 已重签，#1296 的全部 PR 检查与可信审批通过；合并后 main CI 34186995204 已核验 success。
+维护者已确认 C3-1 完整方案 A、精确写集、app_test_w98 隔离验证与通过后提交／推送／开 PR；不得合并、操作生产、启用 Gate 或删除业务数据。
+C3-1 按最新“不删除”决定永久保留明细和复算能力；第 116 条 migration、30 条 HTTP／数据库／查询计划、9 条锁等待和 22 条迁移约束用例（共 61 条）均已在 w98 通过。P12 已用真实库验证 1000／1001 单身份 replace／void 链，以及 2000 名成员／20000／20001 事件、10000 来源；完整聚合只在末尾 receipt deferred trigger 执行一次，Value／Source 的 BEFORE INSERT 守卫保留同链、封存和 ordinal 保护。既有现场运行 9 条、现场并发 7 条、离线 writer 22 条也在同一隔离库回归通过。真实更正、现场提前离场及现场作废、离线 package 上传、离线 review 批准、结算重投影、现场 identity 创建和发布后场次取消／改期 effect 均有 Activity 锁证据；等价有界 SQL 的 EXPLAIN 仅证明 index path 可用，满额成功只按现有 30 秒命令预算验收，均不是生产规模延时结论。
+整体跨模型复审、部署及 Gate 未完成；C3-2/C3-3 尚未实施，不启用 Gate。
 
 > **性质**:任务提案清单(2026-06-10 Review 产出)。**每项任务仍须按 [`process.md`](../process.md) 单独立项,AI 不自动启动**(process §7)。状态列可由 AI 在 docs PR 中更新。
 > P0 = 不解决阻碍 AI Harness 落地;P1 = 影响长期维护;P2 = 可优化。
@@ -2501,7 +2504,7 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1 D1–D2c 与 C2 D1 仓内实施已交付；C2 D2 仅起草评审，implementation 及后续待独立推进**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1 D1–D2c 与 C2 D1/D2 已交付；C3-1 当前分支实施中，后续仍待独立推进**
 
 **状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、C1 D1 #1278 / D2a #1280 / D2b #1282 / D2c #1284 已合；C1 的仓内实现、handoff 与 PR/main 验证已收口，整体跨模型复审仍按维护者安排待统一完成；C2 评审稿已起草、implementation 未启动或授权；前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，不宣称 Release 2 或 C1 已上线)
 
@@ -2543,9 +2546,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 - **2026-09-07 C2 D2 方案与计划当前状态（覆盖上方历史待确认表述）**：维护者已确认 D2 方案 A 并批准合并 [#1291](https://github.com/BA7IEE/srvf-nest-api/pull/1291)，main `82d28c5c` 与 [CI 34094984817](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34094984817) 已核验通过。现已获 [D2 精确实施计划](../archive/plans/activity-os-r3-c2-d2-implementation-plan.md)、FROZEN_DRAFTS、NEXT_TASKS 及计划 changelog 四份文档的起草、提交、推送和创建 PR 授权。计划列出 manual 完整修订／历史读写、专用收据、权限/责任/组织、事务内附件归属及测试预算；仅新增计划，不实施 D2、不操作测试库、不合并、不启用 Gate。下一步须核准 implementation 精确写集、迁移路径与数据库授权，不能沿用 D1 令牌。
 
-- **C2 D2 收口及 C3 下一步**：[#1293](https://github.com/BA7IEE/srvf-nest-api/pull/1293) 已于 2026-09-07 squash 合入 `7f4fdbd7`；18 项 PR 检查、可信红区审批及 [main CI 34118403784](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34118403784) 全部通过。C2 D1/D2 仓内实现与验证已完成：三个人工成果接口、完整修订、不可变收据、同事务证据及审计，3b/4b 已重签；不是生产可用声明。整体跨模型复审仍待统一进行，B6 历史 500 根因未定位，不借本轮通过宣告修复。当前仅获八份文档内的 C2 台账更正与 C3「自动指标及人工确认」评审起草／提交／推送／开 PR 授权；C3 implementation、C4/C5、合并及 Gate 均须另行确认。
+- **C2 D2 收口及 C3 下一步**：[#1293](https://github.com/BA7IEE/srvf-nest-api/pull/1293) 已于 2026-09-07 squash 合入 `7f4fdbd7`；18 项 PR 检查、可信红区审批及 [main CI 34118403784](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34118403784) 全部通过。C2 D1/D2 仓内实现与验证已完成：三个人工成果接口、完整修订、不可变收据、同事务证据及审计，3b/4b 已重签；不是生产可用声明。整体跨模型复审仍待统一进行，B6 历史 500 根因未定位，不借本轮通过宣告修复。此段的 C3 起草授权已被后续 C3 方案 A／C3-1 implementation 授权覆盖；C3-1 可提交、推送和开 PR，但仍不得合并、启用 Gate 或操作生产，C4/C5 另行确认。
 
-- **C3 评审交付**：[自动指标与人工确认评审及授权清单](../archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md) 已起草。推荐方案 A 串行完成可复现系统候选、人工确认与正式更正，两步全部实现并验收才算 C3 完成；方案尚未批准、implementation 未授权，本轮仅提交文档 PR。
+- **C3-1 当前实施状态（未合并、未部署）**：[自动指标与人工确认评审及授权清单](../archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md) 的候选阶段按方案 A 实施中：第 116 条 migration 只新增规则绑定、候选／值／来源快照及命令收据六表，零回填、零业务数据删除；新增两条不自动授予的 Human GLOBAL 权限和两条安全审计事件。已在获批 `app_test_w98` 完成 116 条冷回放、115→116 非空升级、30 条 HTTP／数据库／查询计划、9 条锁等待及 22 条迁移约束用例（共 61 条）；P12 已真实验证 1000／1001 单身份 replace／void 链及 2000 名成员／20000／20001 事件、10000 来源，满额成功只按现有 30 秒命令预算验收。完整聚合只在末尾 receipt deferred trigger 执行一次，Value／Source 的 BEFORE INSERT 守卫保留同链、封存和 ordinal 保护，避免 10000 来源在提交期重复全量聚合。真实更正、现场提前离场与现场作废、离线 package 上传、离线 review 批准、结算重投影、现场 identity 创建和发布后场次取消／改期 effect 的 Activity 锁交错也已验证。等价有界 SQL 的 EXPLAIN 只确认 index path，不构成生产延时结论；3b/4b、PR CI、可信审批、合并、生产 deploy、Gate 与整体跨模型复审均未发生。C3-2 人工确认及 C3-3 正式更正仍未开始，不能把候选视为正式成果。
 
 ### P2-21 入队进度看不见活动结算记的分 —— **目标形状:账本是唯一真相**(⚠️ **上线前必做**,不是「先不做」)
 

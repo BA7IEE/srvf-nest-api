@@ -7,15 +7,20 @@
       "surface": "sha256:f38c25a0fe81b009676826fe913b3d84c9169cf708cc5668762bc5bb9cd4b46d",
       "description": "sha256:4b1f1764ae9e7228df93f6abe653d6f8ed331dca33a6e9b3d95eb63a32ccb850"
     },
+    "activity-metric.manage.rule-binding": {
+      "endpoints": 1,
+      "surface": "sha256:1cba7ab851137ea3bece842bc37f8a64ade98dadc3d809bf0ff9c197411d4ba6",
+      "description": "sha256:f3f316cd367a00e7c501bdcaf36d3c62fbdff4ac19a403efea3eda1dd119b888"
+    },
     "activity-metric.manage.set": {
       "endpoints": 4,
       "surface": "sha256:4880feae84bc4ec1582dbf5393bb95cd92def3be36af348f1c1e8f8a2d75d2d6",
       "description": "sha256:db96359dd6038e0d2242274b8cb67f59e8533a313ad31a9be71d7099f336b68b"
     },
     "activity-metric.read.catalog": {
-      "endpoints": 4,
-      "surface": "sha256:bbf45cff9d5445b4d1b6cd543cde9ab7bc2f7716278fdb0423f1b1bdb24438c1",
-      "description": "sha256:406bd1af59cb0741033adf8e17c2a48b55612ead4fb77b76eb74c1868dfae942"
+      "endpoints": 5,
+      "surface": "sha256:e20ecfd16a6e46b454002d0d63b407a79ba517c32ee7e86445dd727dc6c61ff3",
+      "description": "sha256:f18e84e0aae32f045f3b4e05a37b97223713072b70b3ef547a985429cfa2d5e8"
     },
     "activity-registration.approve.record": {
       "endpoints": 2,
@@ -102,10 +107,15 @@
       "surface": "sha256:7a41fd8776db2c1e4a5066d69ae0a40bc548d1f470de4f498fc408ce6c3308d4",
       "description": "sha256:82378d09acbe26fc0593e1e94ca3bec9a002456408a067410af63cf833d5cf9b"
     },
+    "activity.outcome.calculate": {
+      "endpoints": 1,
+      "surface": "sha256:af7c614cda3ae86add794d164f88edd582f8715ee1df6a7437370f1255448f9c",
+      "description": "sha256:85171137c3ee957dfc91827f25f8831c6ee51f4aa8b6eee2a21ac89d8719534d"
+    },
     "activity.outcome.read": {
-      "endpoints": 2,
-      "surface": "sha256:a0b1b8e105ba0ef6f05b2f1d52161ed78da469945f02c276c1e44a05ada56c34",
-      "description": "sha256:2b84e4d958ce2ae22223b213d573cbeccb1fbe0dc5257b4bef4ea6232c4da647"
+      "endpoints": 3,
+      "surface": "sha256:ea32eb31def8847540d6a7a20ff2bf6e70e6ecdc1b6769d3d5bfa31033f33263",
+      "description": "sha256:1a8fa28b5175aee6def1320f4666ec3bbb17560ebf7bd4849e73890dcacceae7"
     },
     "activity.outcome.record": {
       "endpoints": 1,

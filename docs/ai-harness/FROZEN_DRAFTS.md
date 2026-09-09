@@ -33,7 +33,7 @@
 | 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
 | 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
 | 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1 D1–D2c 及 C2 D1/D2 已完成相应仓内实施与验证；C2 D2 已合入 #1293；C3 评审稿已起草，方案未批准 | 前端页面发布、灰度人群、生产部署和 Gate 切换仍待独立确认与验收；整体跨模型复审、C3 implementation 及后续未完成 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1 D1–D2c 及 C2 D1/D2 已完成相应仓内实施与验证；C2 D2 已合入 #1293；C3 方案 A 已批准，C3-1 在独立分支实施和验证中 | 前端页面发布、灰度人群、生产部署和 Gate 切换仍待独立确认与验收；整体跨模型复审、C3-1 PR/CI/合并及后续未完成 |
 
 ### 1.1 欠代码的五项
 
@@ -216,11 +216,11 @@ D2c 的 v7/Readiness 已按维护者确认的 implementation 方案 A 随 [#1284
 confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新增数据、migration、HTTP、权限、审计、
 附件 owner、Readiness、Gate 或生产行为；C1 的已选指标集与 D1 表结构均不等于已有成果业务闭环。
 
-**当前实施进展（覆盖历史待授权表述）**：C2 D1 已随 [#1289](https://github.com/BA7IEE/srvf-nest-api/pull/1289) 合入 `c2fa226d`，三个模型、第 113 条 additive migration 与纯值校验已交付；113 冷回放、112→113 非空保留、8 项数据库测试、C1/C2 55 项单测、兼容回归、contract、18 项 PR 检查及维护者 3b 重签已完成。首次 main CI 的 B6 创建 500 根因未定位；[#1290](https://github.com/BA7IEE/srvf-nest-api/pull/1290) 仅补脱敏诊断，已合入 `22c1ba8f`，15 项 PR 检查与[最终 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34092294387)通过，原失败测试本轮通过，不登记为修复或误报。D1 计划标 landed，C2 总评审因 D2 尚欠保持 open。维护者仅批准 [D2 评审稿](../archive/reviews/activity-os-r3-c2-d2-manual-outcome-review.md)及配套文档的起草、提交、推送和开 PR；D2 implementation、C3、整体跨模型复审、生产与 Gate 未完成或未授权。
+**当前实施进展（覆盖历史待授权表述）**：C2 D1 已随 [#1289](https://github.com/BA7IEE/srvf-nest-api/pull/1289) 合入 `c2fa226d`，三个模型、第 113 条 additive migration 与纯值校验已交付；113 冷回放、112→113 非空保留、8 项数据库测试、C1/C2 55 项单测、兼容回归、contract、18 项 PR 检查及维护者 3b 重签已完成。首次 main CI 的 B6 创建 500 根因未定位；[#1290](https://github.com/BA7IEE/srvf-nest-api/pull/1290) 仅补脱敏诊断，已合入 `22c1ba8f`，15 项 PR 检查与[最终 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34092294387)通过，原失败测试本轮通过，不登记为修复或误报。D1 计划标 landed，C2 总评审因 D2 尚欠保持 open。本段的“C3 未授权”是当时记录；当前 C3-1 已获独立 implementation 授权并在单独分支验证，整体跨模型复审、生产与 Gate 仍未完成。
 
 **2026-09-07 D2 当前更新（覆盖上方历史待确认表述）**：维护者已确认 C2 D2 方案 A，评审随 [#1291](https://github.com/BA7IEE/srvf-nest-api/pull/1291) 合入 `82d28c5c`，[main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34094984817)通过。现按另行批准的四份文档写集起草 [D2 精确实施计划](../archive/plans/activity-os-r3-c2-d2-implementation-plan.md)，允许提交、推送和创建计划 PR；不合并、不实施、不操作数据库、不启用 Gate。D2 仍为 open，方案通过不等于人工成果已经可用。
 
-**C2 D2 当前收口（覆盖上述历史未实施／未合并表述）**：[#1293](https://github.com/BA7IEE/srvf-nest-api/pull/1293) 已于 2026-09-07 squash 合入 `7f4fdbd7`；18 项 PR 检查、可信红区审批及 [main CI 34118403784](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34118403784) 全部通过。人工成果完整草稿／修订、历史读面、专用收据与事务审计已交付，migration 114、权限 254、Audit events 162 总计／157 活跃；3b/4b 已重签。Authz 既有查询登记只对齐方法名，未新增组织域依赖；旧 C1 D2b 当前 seed 计数已按批准更新，历史数据与八操作断言保留。C2 D1/D2 实施完成，C2 总评审因整体跨模型复审未做保持 open；D2 实施计划标 landed。维护者已授权八份文档内的 C2 台账更正及 C3 评审起草、验证后提交推送开 PR；C3 方案、实施、生产与 Gate 未授权。
+**C2 D2 当前收口（覆盖上述历史未实施／未合并表述）**：[#1293](https://github.com/BA7IEE/srvf-nest-api/pull/1293) 已于 2026-09-07 squash 合入 `7f4fdbd7`；18 项 PR 检查、可信红区审批及 [main CI 34118403784](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34118403784) 全部通过。人工成果完整草稿／修订、历史读面、专用收据与事务审计已交付，migration 114、权限 254、Audit events 162 总计／157 活跃；3b/4b 已重签。Authz 既有查询登记只对齐方法名，未新增组织域依赖；旧 C1 D2b 当前 seed 计数已按批准更新，历史数据与八操作断言保留。C2 D1/D2 实施完成，C2 总评审因整体跨模型复审未做保持 open；D2 实施计划标 landed。后续维护者已单独批准 C3 方案 A 与 C3-1 implementation；本段的“C3 未授权”仅保留历史时点，生产与 Gate 仍未授权。
 
 ### 1.2 欠运维的四项(代码都写完了)
 
@@ -248,10 +248,10 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **254** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **256** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 66** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 67** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
@@ -300,8 +300,8 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 | `docs/archive/plans/activity-os-r3-c2-d1-implementation-plan.md` | landed · P1-33 | D1 三表、第 113 条 migration、纯值校验及获批验证已随 #1289 合入，3b 已重签；#1290 诊断后最终 main CI 通过，旧 500 根因仍未定位；D2/生产/Gate 不在已完成范围 |
 | `docs/archive/reviews/activity-os-r3-c2-d2-manual-outcome-review.md` | open · P1-33 | D2 人工草稿／修订、独立收据、附件归属已随 #1293 合入，PR 与 main CI 均通过；实现已完成，整体跨模型复审仍待统一完成，历史评审不回改 |
 | `docs/archive/plans/activity-os-r3-c2-d2-implementation-plan.md` | landed · P1-33 | D2 implementation 及后续精确扩展已随 #1293 合入 7f4fdbd7；3b/4b、18 项 PR 检查、可信审批及 main CI 34118403784 通过。人工修订／历史读面已交付，整体跨模型复审、C3、生产与 Gate 未完成 |
-| `docs/archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md` | open · P1-33 | 方案 A 已获批准，评审随 #1294 合入 2bfb0031，main CI 34125401003 通过；C3-1/C3-2 均未实施，当前只做计划，来源更正冲突须先处理 |
-| `docs/archive/reviews/activity-service-segment-correction-conflict-review.md` | open · P1-33 | 文档已随 #1295 合入，完整实施包 38 路径与 app_test_w98 验证已获批准。非空服务段唯一冲突已真实复现，暂存／事务内物化／两类收据／受控清理 CLI 实施中；基本路径、失败回滚和清理竞争首轮通过。仍待完整验收与治理检查，实施未合并、3b 未重签、未部署或启用 Gate |
+| `docs/archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md` | open · P1-33 | 方案 A 已获批准，评审随 #1294 合入 2bfb0031，main CI 34125401003 通过；C3-1 在独立分支实施中，已完成隔离迁移、候选与锁交错定向验证；C3-2 尚未实施，PR/整体复审/生产仍待后续阶段 |
+| `docs/archive/reviews/activity-service-segment-correction-conflict-review.md` | open · P1-33 | 方案文档 #1295、实现 #1296 已合入 main `638fc784`；暂存、事务内物化、准备／清理收据及受控 CLI 已交付，115 条 migration 的 3b 已重签，全部 PR CI 与可信审批通过。保留 open：整体复审、生产与真实清理未执行；C3-1 正在独立分支验证，不启用 Gate |
 | `docs/archive/plans/activity-os-r3-c1-d2a-implementation-plan.md` | landed · P1-33 | D2a Human 目录维护、收据、RBAC 事务参数及获批清理/治理扩展已随 #1280 合入；3b/4b、18 项 PR 检查、可信审批和 main CI 均通过，不代表生产部署；冻结稿不回改 |
 | `docs/archive/plans/activity-os-r3-c1-d2b-implementation-plan.md` | landed · P1-33 | D2b 及后续精确扩展、契约误报申报、三份旧测试适配已获批准并随 #1282 合入 `f5b5b226`；112 migrations、252 权限、Audit 161 总计 / 156 活跃，3b/4b、18 项 PR 检查、可信审批与 main CI 均通过；未生产部署，冻结稿不回改 |
 | `docs/archive/plans/activity-os-r3-c1-d2c-implementation-plan.md` | landed · P1-33 | D2b 台账更正、implementation 方案 A、app_test deploy 核验及 app_test_w1/app_test_w98 隔离验证已获精确授权；v7、旧版兼容、指标 Readiness、V3 识别已随 #1284 合入。PR CI、可信审批及 main CI 均通过；未授权生产操作，整体跨模型复审仍待收口 |

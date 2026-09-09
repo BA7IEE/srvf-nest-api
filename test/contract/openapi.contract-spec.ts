@@ -84,6 +84,11 @@ function documented4xxCodes(operation: OpenApiOperation | undefined): number[] {
 const EXPECTED_ROUTES: ReadonlyArray<
   readonly [Lowercase<'get' | 'post' | 'put' | 'patch' | 'delete'>, string]
 > = [
+  // C3-1: separate immutable rule bindings and system candidate commands/read model.
+  ['post', '/api/admin/v1/activity-metric-rule-bindings'],
+  ['get', '/api/admin/v1/activity-metric-rule-bindings'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/metric-candidates'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/metric-candidates/{candidateId}'],
   // C1 D2b: global template versions + App initiation options + independent selection surfaces.
   ['get', '/api/admin/v1/activity-template-versions'],
   ['get', '/api/admin/v1/activity-template-versions/{id}'],
@@ -1119,7 +1124,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 601; // C2 D2 +3 (manual outcome record, history, detail)
+const EXPECTED_ROUTE_COUNT = 605; // C3-1 +4 (rule binding create/list, candidate calculate/detail)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -2970,6 +2975,94 @@ describe('OpenAPI 契约快照', () => {
     expect(doc.paths[path].post?.responses?.['201']).toBeDefined();
     expect(doc.paths[path].get?.responses?.['200']).toBeDefined();
     expect(doc.paths[`${path}/{outcomeRevisionId}`].get?.responses?.['200']).toBeDefined();
+  });
+
+  it('C3-1 separates candidate creation facts, safe reads and closed rule binding commands', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const command = schemas.AppCalculateActivityMetricCandidateDto as OpenApiSchema;
+    const fields = [
+      'bindingIds',
+      'expectedCandidateRevision',
+      'expectedOutcomeRevision',
+      'metricSetDefinitionHash',
+      'metricSetVersionId',
+      'operationKey',
+      'schemaVersion',
+    ];
+    expect(Object.keys(command.properties ?? {}).sort()).toEqual(fields);
+    expect(command.required?.slice().sort()).toEqual(fields);
+    expect(command.properties?.bindingIds).toMatchObject({
+      minItems: 1,
+      maxItems: 100,
+      uniqueItems: true,
+    });
+    const binding = schemas.AdminCreateActivityMetricRuleBindingDto as OpenApiSchema;
+    expect(Object.keys(binding.properties ?? {}).sort()).toEqual([
+      'definitionHash',
+      'evaluatorVersion',
+      'metricDefinitionId',
+      'operationKey',
+      'ruleCode',
+      'schemaVersion',
+    ]);
+    expect(binding.properties?.ruleCode.enum).toEqual([
+      'actual_participant_count_v1',
+      'actual_participation_hours_v1',
+    ]);
+    expect(binding.properties?.evaluatorVersion.enum).toEqual([1]);
+    const receipt = schemas.AppActivityMetricCandidateResultDto as OpenApiSchema;
+    const receiptFields = [
+      'activityId',
+      'candidateId',
+      'createdAt',
+      'createdStatusCode',
+      'metricSetDefinitionHash',
+      'metricSetVersionId',
+      'revision',
+      'schemaVersion',
+      'sourceCode',
+      'sourceCount',
+      'valueCount',
+    ];
+    expect(Object.keys(receipt.properties ?? {}).sort()).toEqual(receiptFields);
+    expect(receipt.required?.slice().sort()).toEqual(receiptFields);
+    expect(receipt.properties?.createdStatusCode.enum).toEqual(['candidate']);
+    expect(receipt.properties?.sourceCode.enum).toEqual(['system']);
+    const detail = schemas.AppActivityMetricCandidateDetailDto as OpenApiSchema;
+    expect(Object.keys(detail.properties ?? {}).sort()).toEqual(
+      [...receiptFields, 'freshness', 'reproducible', 'values'].sort(),
+    );
+    expect(detail.properties?.freshness.enum).toEqual(['fresh', 'stale', 'unavailable']);
+    const value = schemas.AppActivityMetricCandidateValueDto as OpenApiSchema;
+    expect(Object.keys(value.properties ?? {}).sort()).toEqual([
+      'definitionHash',
+      'evaluatorVersion',
+      'metricDefinitionId',
+      'ruleCode',
+      'scale',
+      'unitCode',
+      'value',
+      'valueHash',
+    ]);
+    expect(value.properties?.value).toMatchObject({
+      oneOf: [{ type: 'integer' }, { type: 'string' }],
+    });
+    for (const prohibited of [
+      'memberId',
+      'identityId',
+      'sourceRevisionId',
+      'memberGroupOrdinal',
+      'checkInAt',
+      'checkOutAt',
+      'signedUrl',
+    ]) {
+      expect(JSON.stringify({ command, receipt, detail, value, binding })).not.toContain(
+        prohibited,
+      );
+    }
+    const path = '/api/app/v1/my/managed-activities/{activityId}/metric-candidates';
+    expect(doc.paths[path].post?.responses?.['201']).toBeDefined();
+    expect(doc.paths[`${path}/{candidateId}`].get?.responses?.['200']).toBeDefined();
   });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {

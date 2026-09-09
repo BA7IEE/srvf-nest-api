@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:96d7686fb50683b147e75638c741b9c00bef30bb6d79ca50a285eba5c867c6a8",
+  "inputDigest": "sha256:39c78e5972aa7845d249a9467110d8a60ad5677112125385e7293518b298e483",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -505,6 +505,42 @@
       "confirmed": true
     },
     "ActivityTemplate": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityMetricRuleBinding": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityMetricCandidate": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityMetricCandidateValue": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityMetricCandidateSource": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityMetricCandidateCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityMetricRuleBindingCommandReceipt": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",

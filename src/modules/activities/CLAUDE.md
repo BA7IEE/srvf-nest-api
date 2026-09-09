@@ -1,6 +1,16 @@
 # activities — 本地铁律
 
-## 服务段更正方案 A（#1295 后续实施中，未合并）
+## C3-1 指标候选（当前分支，未合并、未部署）
+
+一份 active 指标集只能显式绑定一个受控规则；绑定由 Human GLOBAL `activity-metric.manage.rule-binding` 创建，
+不自动授予内建角色。App managed owner 以独立 `activity.outcome.calculate` 显式授权计算候选，
+每次命令／重放和每次锁等待后都重新核验活动、组织、身份、范围及属主。
+候选按已完成参与事实计算人数和时长；值、来源和计数快照不可变，读面不返回成员、身份、时段或原始来源。
+Gate 关闭时明确拒绝，不用零值代替不可用来源；候选永久留存，不新增删除／过期／清理路径。
+第 116 条 migration、隔离库 116 条冷回放、115→116 非空升级，以及 C3 专属 30 条 HTTP／数据库／查询计划、9 条锁等待、22 条迁移约束用例已在本分支的 app_test_w98 通过（共 61 条）。P12 已以真实库覆盖 1000／1001 单身份 replace／void 链，以及 2000 名成员／20000／20001 事件、10000 来源；满额成功只按现有 30 秒命令预算验收，不是生产延时承诺。
+真实更正 prepare／失败回滚／commit、现场提前离场及现场作废、离线 package 上传、离线 review 批准、结算重投影、现场 identity 创建，以及发布后场次取消／改期 effect 的 Activity 锁交错均有验证。来源读取按既有物化器的 `occurredAt, id` 顺序重放，避免随机 UUID 排序误判有效 replace／void 链。等价有界 SQL 的 EXPLAIN 只证明 index path 可用；PR CI、可信审批、合并、生产 deploy 与整体跨模型复审仍未发生。
+
+## 服务段更正方案 A（#1296 已合并，未部署）
 
 prepare 仅创建 CorrectionPendingSegmentRevision 和首次准备数量收据，不创建正式段。
 commit 同事务内核验精确 base，先 superseded 再物化 draft，复用原 ledger commit。
@@ -8,7 +18,8 @@ commit 同事务内核验精确 base，先 superseded 再物化 draft，复用�
 prepare/commit（含重放）复用 GLOBAL `activity.settlement-final-review.record`；根锁等待后
 经 Users 属主原语重读当前用户，绑定成员失效拒绝，未绑定成员的管理账户沿既有 GLOBAL 规则。
 原更正、主路径、失败回滚、清理竞争和锁等待撤权共 8 组 110 条在 app_test_w98 通过；
-另有非空旧 application 升级及冷回放 5 条通过。全量本地单测通过；PR CI、整体复审和部署未完成。
+另有非空旧 application 升级及冷回放 5 条通过。全量本地单测、#1296 PR CI 与可信审批通过，3b 已重签。
+main `638fc784` 已包含本批；整体复审、部署和真实清理未完成。C3-1 是当前分支的未合并实现，不代表已上线或完成整体复审。
 
 ## C2 D2 当前交付（已合入 #1293，未部署）
 
@@ -17,7 +28,7 @@ prepare/commit（含重放）复用 GLOBAL `activity.settlement-final-review.rec
 命令锁→Activity→引用锁，每次等待后重读权限；成果/值/证据、旧 draft→superseded、收据、审计同事务。
 历史明细绑定自身集 id/hash，不读取当前选集替代历史；不返原始行、内部来源引用、操作键或存储凭证。
 草稿完整快照只接非敏感整数／规范小数字符串／布尔／受控选项；不接 short_text、不创建 confirmed。
-C1、发布、Readiness、考勤、时长与贡献行为不变。#1293 已合入 `7f4fdbd7`，18 项 PR 检查、可信审批及 main CI 34118403784 通过；下方“成果未实施”属于历史交付时点。整体跨模型复审与生产未完成，C3 仅获评审起草授权。
+C1、发布、Readiness、考勤、时长与贡献行为不变。#1293 已合入 `7f4fdbd7`，18 项 PR 检查、可信审批及 main CI 34118403784 通过；下方“成果未实施”属于历史交付时点。整体跨模型复审与生产未完成；C3-1 当前在独立分支实施，范围和验证以本文件顶部为准。
 
 ## C1 D2b/D2c 当前实施边界（D2b 已合入 #1282；D2c 已合入 #1284）
 

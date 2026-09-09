@@ -188,6 +188,10 @@ model User {
   activityCreationCommandReceipts   ActivityCreationCommandReceipt[] @relation("ActivityCreationCommandReceiptActor")
   activityMetricCommandReceipts     ActivityMetricCommandReceipt[]
   activityOutcomeCommandReceipts    ActivityOutcomeCommandReceipt[]
+  metricRuleBindingsCreated ActivityMetricRuleBinding[] @relation("MetricRuleBindingCreator")
+  metricCandidatesCreated ActivityMetricCandidate[] @relation("MetricCandidateCreator")
+  metricCandidateReceipts ActivityMetricCandidateCommandReceipt[]
+  metricBindingReceipts ActivityMetricRuleBindingCommandReceipt[]
   activityOutcomesCreated ActivityOutcomeRevision[] @relation("ActivityOutcomeCreator")
   activityMetricValuesConfirmed ActivityMetricValueRevision[] @relation("ActivityValueConfirmer")
   activityEmergencyFollowUpResolved ActivityEmergencyFollowUpItem[]  @relation("ActivityEmergencyFollowUpItemResolver")
@@ -1569,6 +1573,7 @@ model Activity {
   metricCommandReceipts        ActivityMetricCommandReceipt[]
   outcomeCommandReceipts       ActivityOutcomeCommandReceipt[]
   outcomeRevisions ActivityOutcomeRevision[]
+  metricCandidates ActivityMetricCandidate[]
   seriesOccurrence             ActivitySeriesOccurrence?          @relation("ActivitySeriesOccurrenceActivity")
   creationCommandReceipts      ActivityCreationCommandReceipt[]   @relation("ActivityCreationCommandReceiptActivity")
   emergencyInitiation          ActivityEmergencyInitiation?       @relation("ActivityEmergencyInitiationActivity")
@@ -1724,8 +1729,10 @@ model ActivityMetricDefinition {
 
   setItems ActivityMetricSetItem[]
   commandReceipts ActivityMetricCommandReceipt[]
+  ruleBindings ActivityMetricRuleBinding[]
 
   @@unique([code, version])
+  @@unique([id, definitionHash], map: "metric_definition_id_hash_key")
   @@index([statusCode])
 }
 
@@ -1746,6 +1753,7 @@ model ActivityMetricSetVersion {
   commandReceipts ActivityMetricCommandReceipt[]
   selectedByActivities Activity[]
   outcomeRevisions ActivityOutcomeRevision[]
+  candidates ActivityMetricCandidate[]
 
   @@unique([code, version])
   @@unique([id, definitionHash], map: "activity_metric_set_id_hash_key")
@@ -1762,6 +1770,7 @@ model ActivityMetricSetItem {
   createdAt          DateTime @default(now())
 
   outcomeValues ActivityMetricValueRevision[]
+  candidateValues ActivityMetricCandidateValue[]
 
   setVersion       ActivityMetricSetVersion @relation(fields: [setVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   metricDefinition ActivityMetricDefinition @relation(fields: [metricDefinitionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
@@ -1774,6 +1783,143 @@ model ActivityMetricSetItem {
 
 // C2 D1 data foundation only. Immutable content and closed vocabularies are
 // enforced by the additive migration. No runtime outcome writer is enabled.
+// C3-1 immutable candidate facts. SQL additionally guards completeness and source snapshots.
+model ActivityMetricRuleBinding {
+  id String @id @default(cuid())
+  schemaVersion Int
+  metricDefinitionId String
+  definitionHash String
+  ruleCode String
+  evaluatorVersion Int
+  ruleDigest String
+  unitCode String
+  scale Int
+  bindingHash String
+  createdAt DateTime @default(now())
+  createdByUserId String
+
+  definition ActivityMetricDefinition @relation(fields: [metricDefinitionId, definitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "metric_rule_binding_definition_fk")
+  creator User @relation("MetricRuleBindingCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  values ActivityMetricCandidateValue[]
+  receipts ActivityMetricRuleBindingCommandReceipt[]
+
+  @@unique([bindingHash], map: "metric_rule_binding_hash_key")
+  @@unique([id, metricDefinitionId, definitionHash], map: "metric_rule_binding_definition_key")
+  @@index([metricDefinitionId])
+}
+
+model ActivityMetricCandidate {
+  id String @id @default(cuid())
+  schemaVersion Int
+  activityId String
+  candidateRevision Int
+  priorCandidateId String?
+  metricSetVersionId String
+  metricSetDefinitionHash String
+  expectedOutcomeRevision Int
+  sourceMode String
+  providerVersion Int
+  sourceDigest String
+  bindingsDigest String
+  valueCount Int
+  sourceCount Int
+  createdAt DateTime @default(now())
+  createdByUserId String
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  metricSetVersion ActivityMetricSetVersion @relation(fields: [metricSetVersionId, metricSetDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_set_fk")
+  creator User @relation("MetricCandidateCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  priorCandidate ActivityMetricCandidate? @relation("MetricCandidatePrior", fields: [priorCandidateId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_prior_fk")
+  subsequentCandidates ActivityMetricCandidate[] @relation("MetricCandidatePrior")
+  values ActivityMetricCandidateValue[]
+  sources ActivityMetricCandidateSource[]
+  receipts ActivityMetricCandidateCommandReceipt[]
+
+  @@unique([activityId, candidateRevision], map: "metric_candidate_revision_key")
+  @@unique([id, activityId], map: "metric_candidate_activity_key")
+  @@unique([id, activityId, metricSetVersionId], map: "metric_candidate_chain_key")
+  @@index([metricSetVersionId])
+}
+
+model ActivityMetricCandidateValue {
+  id String @id @default(cuid())
+  candidateId String
+  activityId String
+  setVersionId String
+  definitionId String
+  definitionHash String
+  bindingId String
+  valueJson Json
+  valueHash String
+
+  candidate ActivityMetricCandidate @relation(fields: [candidateId, activityId, setVersionId], references: [id, activityId, metricSetVersionId], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_value_candidate_fk")
+  setItem ActivityMetricSetItem @relation(fields: [setVersionId, definitionId], references: [setVersionId, metricDefinitionId], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_value_set_item_fk")
+  binding ActivityMetricRuleBinding @relation(fields: [bindingId, definitionId, definitionHash], references: [id, metricDefinitionId, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_value_binding_fk")
+
+  @@unique([candidateId, definitionId], map: "metric_candidate_value_definition_key")
+  @@index([bindingId])
+  @@index([setVersionId, definitionId])
+}
+
+model ActivityMetricCandidateSource {
+  id String @id @default(cuid())
+  candidateId String
+  activityId String
+  ordinal Int
+  sourceRevisionId String
+  identityId String
+  sessionId String
+  memberGroupOrdinal Int
+  checkInAt DateTime
+  checkOutAt DateTime
+  resultCode String
+  sourceFingerprint String
+
+  candidate ActivityMetricCandidate @relation(fields: [candidateId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_source_candidate_fk")
+  identity ActivityParticipationIdentity @relation(fields: [identityId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_source_identity_fk")
+  segment ParticipantServiceSegmentRevision @relation(fields: [sourceRevisionId, identityId], references: [id, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_source_segment_fk")
+
+  @@unique([candidateId, ordinal], map: "metric_candidate_source_ordinal_key")
+  @@unique([candidateId, sourceRevisionId], map: "metric_candidate_source_revision_key")
+  @@index([sourceRevisionId, identityId], map: "metric_candidate_source_segment_idx")
+  @@index([identityId, activityId, sessionId], map: "metric_candidate_source_identity_idx")
+}
+
+model ActivityMetricCandidateCommandReceipt {
+  id String @id @default(cuid())
+  actorId String
+  operation String
+  operationKey String
+  requestHash String
+  candidateId String
+  activityId String
+  resultJson Json
+  createdAt DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  candidate ActivityMetricCandidate @relation(fields: [candidateId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "metric_candidate_receipt_candidate_fk")
+
+  @@unique([actorId, operation, operationKey], map: "metric_candidate_receipt_operation_key")
+  @@index([candidateId, activityId], map: "metric_candidate_receipt_candidate_idx")
+}
+
+model ActivityMetricRuleBindingCommandReceipt {
+  id String @id @default(cuid())
+  actorId String
+  operation String
+  operationKey String
+  requestHash String
+  bindingId String
+  resultJson Json
+  createdAt DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  binding ActivityMetricRuleBinding @relation(fields: [bindingId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "metric_binding_receipt_binding_fk")
+
+  @@unique([actorId, operation, operationKey], map: "metric_binding_receipt_operation_key")
+  @@index([bindingId], map: "metric_binding_receipt_binding_idx")
+}
+
 model ActivityOutcomeRevision {
   id String @id @default(cuid())
   activityId String
@@ -4659,6 +4805,7 @@ model ActivityParticipationIdentity {
   // 第 1 批第三刀(§3.16 / §3.18):打卡事件与服务段修订的反向 relation。
   punchEvents                AttendancePunchEvent[]
   serviceSegmentRevisions    ParticipantServiceSegmentRevision[]
+  metricCandidateSources     ActivityMetricCandidateSource[]
   correctionPendingSegments  CorrectionPendingSegmentRevision[]
   offlinePackageParticipants OfflinePackageParticipant[]
   offlinePunchReviewItems    OfflinePunchReviewItem[]
@@ -5579,8 +5726,10 @@ model ParticipantServiceSegmentRevision {
   correctionPendingSegments CorrectionPendingSegmentRevision[]
 
   effectiveBatch LedgerPostingBatch? @relation("SegmentEffectiveBatch", fields: [effectiveBatchId], references: [id], onDelete: Restrict)
+  metricCandidateSources ActivityMetricCandidateSource[]
 
   // model 名 33 字符 ⇒ 复合索引默认名普遍越过 PostgreSQL 63 字符上限,全部显式 map。
+  @@unique([id, participationIdentityId], map: "metric_source_segment_identity_key")
   @@unique([participationIdentityId, segmentKey, revision], map: "participant_service_segment_identity_key_revision_key")
   @@index([participationIdentityId], map: "participant_service_segment_identity_idx")
   @@index([participationIdentityId, statusCode], map: "participant_service_segment_identity_status_idx")

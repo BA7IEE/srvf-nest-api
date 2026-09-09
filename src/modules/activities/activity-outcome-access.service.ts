@@ -9,7 +9,10 @@ import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query'
 import { getActivityOrganizationEligibility } from '../organizations/organization-publish-readiness.primitive';
 import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
 
-export type ActivityOutcomePermission = 'activity.outcome.record' | 'activity.outcome.read';
+export type ActivityOutcomePermission =
+  | 'activity.outcome.record'
+  | 'activity.outcome.read'
+  | 'activity.outcome.calculate';
 
 @Injectable()
 export class ActivityOutcomeAccessService {

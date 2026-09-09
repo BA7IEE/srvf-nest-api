@@ -11,7 +11,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
 const WORKER = 98;
 const MIGRATION = '20260905221158_activity_os_r3_c1_metric_command_receipts';
-const CURRENT_MIGRATION_COUNT = 115;
+const CURRENT_MIGRATION_COUNT = 116;
 const database = () => deriveWorkerTestDbName(WORKER);
 const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
 function url() {
@@ -295,7 +295,7 @@ describe('C1 D2a nonempty upgrade and seed idempotency', () => {
         sql(
           'SELECT count(*) FROM permissions WHERE code LIKE \'activity-metric.%\' AND NOT "servicePrincipalAllowed" AND NOT "delegatedAccessAllowed"',
         ),
-      ).toBe('3');
+      ).toBe('4');
       expect(
         sql(
           'SELECT count(*) FROM role_permissions rp JOIN permissions p ON p.id=rp."permissionId" WHERE p.code LIKE \'activity-metric.%\'',

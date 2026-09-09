@@ -80,6 +80,13 @@ export const ACTIVITY_TEMPLATE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed
 
 export const ACTIVITY_METRIC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
+    code: 'activity-metric.manage.rule-binding',
+    module: 'activity-metric',
+    action: 'manage',
+    resourceType: 'rule-binding',
+    description: '创建受控指标规则绑定（仅真人显式 GLOBAL 授权）',
+  },
+  {
     code: 'activity-metric.read.catalog',
     module: 'activity-metric',
     action: 'read',
@@ -103,6 +110,13 @@ export const ACTIVITY_METRIC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> 
 ];
 
 export const ACTIVITY_OUTCOME_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity.outcome.calculate',
+    module: 'activity',
+    action: 'outcome',
+    resourceType: 'calculate',
+    description: '计算系统指标候选；显式授权、当前责任及组织范围同时满足',
+  },
   {
     code: 'activity.outcome.record',
     module: 'activity',
@@ -2863,6 +2877,30 @@ export const CRITICAL_RISK_TAGS: readonly PermissionRiskTag[] = Object.freeze([
 
 export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCatalogMetadata>> =
   Object.freeze({
+    'activity.outcome.calculate': {
+      displayName: '计算活动指标候选',
+      businessDescription: '真人计算有权活动的系统指标候选；不确认成果，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 192,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity-metric.manage.rule-binding': {
+      displayName: '绑定指标计算规则',
+      businessDescription: '真人以显式 GLOBAL 权限创建精确指标与代码规则绑定；不自动赋予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity-metric',
+      sortOrder: 40,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
     'activity.outcome.record': {
       displayName: '记录活动成果',
       businessDescription:
@@ -2879,7 +2917,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.outcome.read': {
       displayName: '查看活动成果',
       businessDescription:
-        '真人查看有权活动的成果历史和明细；无管理员角色直通，不自动授予内建角色。',
+        '真人查看有权活动的人工成果历史、明细及系统指标候选；无管理员角色直通，不自动授予内建角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 191,
@@ -2917,7 +2955,8 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     },
     'activity-metric.read.catalog': {
       displayName: '查看指标目录',
-      businessDescription: '查看指标目录；仅允许获明确授权的真人操作，不自动授予内置角色。',
+      businessDescription:
+        '真人查看指标定义、指标集及不可变规则绑定目录；仅允许明确 GLOBAL 授权，不自动授予内置角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity-metric',
       sortOrder: 10,

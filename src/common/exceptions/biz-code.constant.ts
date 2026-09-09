@@ -1940,6 +1940,47 @@ export const BizCode = {
     message: '活动成果引用不存在或不可访问',
     httpStatus: HttpStatus.NOT_FOUND,
   },
+  // C3-1: separate invalid input, stale references and unavailable/incomplete sources.
+  ACTIVITY_METRIC_CANDIDATE_INVALID: {
+    code: 20189,
+    message: '系统指标候选请求或取值无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_METRIC_CANDIDATE_STALE: {
+    code: 20190,
+    message: '候选或指标引用已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_CANDIDATE_COMMAND_CONFLICT: {
+    code: 20191,
+    message: '此操作标识已用于其他指标候选请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_CANDIDATE_REFERENCE_UNAVAILABLE: {
+    code: 20192,
+    message: '指标候选引用不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_METRIC_SOURCE_INCOMPLETE: {
+    code: 20193,
+    message: '参与来源尚未完整闭合，暂不能计算',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_SOURCE_UNAVAILABLE: {
+    code: 20194,
+    message: '当前参与来源不可用于系统指标计算',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+  ACTIVITY_METRIC_SOURCE_LIMIT_EXCEEDED: {
+    code: 20195,
+    message: '参与来源超过单次计算上限，未生成候选',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_METRIC_CANDIDATE_RECEIPT_INVALID: {
+    code: 20196,
+    message: '系统指标候选或绑定收据校验失败',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

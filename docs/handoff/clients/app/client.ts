@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:9b1998bc17d363f7dfc8389b68d694ca3b7a7381a5c8697bd852e74a4e6eb980
+// inputDigest: sha256:1da6acea59dbd06c3a03744b5c7cff91c9c8325181b5c6b4380058356e6f578f
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -37,6 +37,9 @@ import type {
   AppActivityInitiationOrganizationOptionDto,
   AppActivityInvitationDto,
   AppActivityLifecycleResultDto,
+  AppActivityMetricCandidateDetailDto,
+  AppActivityMetricCandidateResultDto,
+  AppActivityMetricCandidateValueDto,
   AppActivityMetricSelectionInputDto,
   AppActivityMetricSelectionResponseDto,
   AppActivityMetricSelectionResultDto,
@@ -69,6 +72,7 @@ import type {
   AppActivityTemplateVersionOptionDto,
   AppActivityVisitorDto,
   AppAvailableActivityListItemDto,
+  AppCalculateActivityMetricCandidateDto,
   AppCapabilityAccountDto,
   AppCapabilityActivitiesDto,
   AppCapabilityAttendanceDto,
@@ -640,6 +644,14 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 活动负责人或报名协办撤回未过期的 pending 邀请 [auth] */
     AppManagedActivityGuestsControllerRevokeInvitation(activityId: string, invitationId: string, body: RevokeAppManagedActivityInvitationDto): Promise<ApiEnvelope<AppActivityInvitationDto>> {
       return fetcher<AppActivityInvitationDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/invitations/${invitationId}/revoke`, body });
+    },
+    /** 计算并保留指标候选；不确认成果 [rbac: activity.outcome.calculate] */
+    AppManagedActivityMetricCandidatesControllerCalculate(activityId: string, body: AppCalculateActivityMetricCandidateDto): Promise<ApiEnvelope<AppActivityMetricCandidateResultDto>> {
+      return fetcher<AppActivityMetricCandidateResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/metric-candidates`, body });
+    },
+    /** 读取候选及当前有效性，不返回原始参与明细 [rbac: activity.outcome.read] */
+    AppManagedActivityMetricCandidatesControllerGet(activityId: string, candidateId: string): Promise<ApiEnvelope<AppActivityMetricCandidateDetailDto>> {
+      return fetcher<AppActivityMetricCandidateDetailDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/metric-candidates/${candidateId}` });
     },
     /** 查询本人 managed 活动指标选择 [auth] */
     AppManagedActivityMetricsControllerGet(activityId: string): Promise<ApiEnvelope<AppActivityMetricSelectionResponseDto>> {
