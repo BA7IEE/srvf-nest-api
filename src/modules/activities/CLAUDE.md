@@ -1,5 +1,7 @@
 # activities — 本地铁律
 
+> **C4 当前实施分支（2026-09-10，未合并）**：维护者已授权 #1303 的40路径计划。新增 ending-workbench 只读 GET，沿 outcome.read 的 Human/组织/责任授权，Activity 锁后及返回前复验；复用正式选择器和选择解析，取消草稿不再 pending，摘要不返实际值、附件、身份或操作许可。未改原命令、schema、迁移和 Gate。当前分支进度优先于下方“仅起草 C4”的历史记录。
+
 > **2026-09-09 最新 main 事实**：C3-1 / C3-2 已合入 #1298 / [#1300](https://github.com/BA7IEE/srvf-nest-api/pull/1300)，四个 C3-2 App managed 入口已交付，3b/4b 与 PR 检查已通过。仅脱敏诊断的 #1301 已合入 `36ff609c`，[main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34369385145) 通过；原紧急创建 500 根因未定位。整体复审、部署和 Gate 未完成。当前只起草 C4 评审，不改生产代码；下方“当前分支/未合并”等均为历史记录。
 
 > **C3-2 当前工作树（2026-09-09，未提交、未合并）**：按 #1299 获批实施完整确认、正式更正与现行正式选择器。新增 App managed 四端点；confirm/correct 显式 Human 权限，无 SUPER_ADMIN 直通；read 沿既有码。确认复制新修订，准备/取消更正不替代旧正式成果；所有历史来源、值、证据与收据保留。59 项双池并发/回滚用例在 app_test_w98 通过；全仓 350 组单测（7859 项通过、5 todo）、quick 与 build 通过。3b/4b 已重签；完整验收、PR CI、合并、整体复审与生产未完成。此段覆盖下方旧阶段的“当前分支/仅文档”描述。

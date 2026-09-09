@@ -50692,6 +50692,200 @@
         ]
       }
     },
+    "/api/app/v1/my/managed-activities/{activityId}/ending-workbench": {
+      "get": {
+        "operationId": "AppManagedActivitiesController_getEndingWorkbench",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "活动 ID",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppActivityEndingWorkbenchDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动成果引用不存在或不可访问(code=20188)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20188
+                      ],
+                      "description": "20188: 活动成果引用不存在或不可访问",
+                      "example": 20188
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动成果引用不存在或不可访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "读取活动结束摘要，提示不代表操作权限 [rbac: activity.outcome.read]",
+        "tags": [
+          "Mobile - Managed Activities"
+        ]
+      }
+    },
     "/api/app/v1/my/managed-activities/organization-options": {
       "get": {
         "operationId": "AppManagedActivitiesController_organizationOptions",
@@ -140949,6 +141143,194 @@
           "operationKey",
           "definition",
           "expectedDefinitionHash"
+        ]
+      },
+      "AppActivityEndingConfirmedSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "现行正式成果 ID"
+          },
+          "revision": {
+            "type": "number",
+            "description": "正式成果修订",
+            "minimum": 1
+          },
+          "metricSetVersionId": {
+            "type": "string",
+            "description": "正式成果自身采用的历史指标集版本 ID"
+          },
+          "confirmedAt": {
+            "type": "string",
+            "description": "既有正式确认时间",
+            "format": "date-time"
+          },
+          "valueCount": {
+            "type": "number",
+            "description": "正式指标值数量",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "metricSetVersionId",
+          "confirmedAt",
+          "valueCount"
+        ]
+      },
+      "AppActivityEndingDraftSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "有效草稿 ID"
+          },
+          "revision": {
+            "type": "number",
+            "description": "草稿修订",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "description": "初次草稿或正式更正草稿",
+            "enum": [
+              "initial",
+              "correction"
+            ]
+          },
+          "baseConfirmedRevision": {
+            "type": "number",
+            "description": "更正基于的现行正式修订，初次草稿为 null",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "kind",
+          "baseConfirmedRevision"
+        ]
+      },
+      "AppActivityEndingNoticeDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "事实提示，不构成业务阻断或操作授权",
+            "enum": [
+              "metric_selection_unconfigured",
+              "formal_outcome_missing",
+              "initial_draft_pending",
+              "correction_pending"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "description": "既有功能标识，进入后仍须独立判权",
+            "enum": [
+              "metric_selection",
+              "outcome_history"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "target"
+        ]
+      },
+      "AppActivityEndingWorkbenchDto": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string",
+            "description": "活动 ID"
+          },
+          "activityStatusCode": {
+            "type": "string",
+            "description": "既有活动状态",
+            "enum": [
+              "draft",
+              "published",
+              "completed",
+              "cancelled",
+              "terminated",
+              "archived"
+            ]
+          },
+          "metricRequirementCode": {
+            "type": "string",
+            "description": "当前指标选择状态",
+            "enum": [
+              "unconfigured",
+              "not_required",
+              "required"
+            ]
+          },
+          "metricSelectionRevision": {
+            "type": "number",
+            "description": "当前指标选择修订",
+            "minimum": 0
+          },
+          "selectedMetricSetVersionId": {
+            "type": "string",
+            "description": "当前选择的指标集版本 ID",
+            "nullable": true
+          },
+          "currentConfirmed": {
+            "type": "object",
+            "description": "现行唯一正式成果摘要，无正式成果为 null",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AppActivityEndingConfirmedSummaryDto"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ],
+            "nullable": true
+          },
+          "pendingDraft": {
+            "type": "object",
+            "description": "当前有效草稿，取消或非 draft 为 null",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AppActivityEndingDraftSummaryDto"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ],
+            "nullable": true
+          },
+          "notices": {
+            "description": "固定顺序事实提示，不表示操作可用",
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppActivityEndingNoticeDto"
+            }
+          }
+        },
+        "required": [
+          "activityId",
+          "activityStatusCode",
+          "metricRequirementCode",
+          "metricSelectionRevision",
+          "selectedMetricSetVersionId",
+          "currentConfirmed",
+          "pendingDraft",
+          "notices"
         ]
       },
       "AppActivityInitiationOrganizationOptionDto": {

@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e7794240cfaf768cd6be37c9a02d6406deec80a446a4a16a3f9702abc32d6ae2
+// inputDigest: sha256:772b9b4d49aaa34b66ac00b0f7d31893ba130ef17f8bd8d03e8a96d384de31eb
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -32,6 +32,10 @@ import type {
   AppActivityDetailSessionDto,
   AppActivityDetailSessionPositionDto,
   AppActivityDirectoryListItemDto,
+  AppActivityEndingConfirmedSummaryDto,
+  AppActivityEndingDraftSummaryDto,
+  AppActivityEndingNoticeDto,
+  AppActivityEndingWorkbenchDto,
   AppActivityFeedbackDto,
   AppActivityFeedbackResponseDto,
   AppActivityInitiationOrganizationOptionDto,
@@ -631,6 +635,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 发起人在持有效发布审核 grant 时直接发布 [auth] */
     AppManagedActivitiesControllerDirectPublish(activityId: string): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
       return fetcher<AppManagedActivityDetailDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/direct-publish` });
+    },
+    /** 读取活动结束摘要，提示不代表操作权限 [rbac: activity.outcome.read] */
+    AppManagedActivitiesControllerGetEndingWorkbench(activityId: string): Promise<ApiEnvelope<AppActivityEndingWorkbenchDto>> {
+      return fetcher<AppActivityEndingWorkbenchDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/ending-workbench` });
     },
     /** App 负责人执行机器证据封场；缺口与 seal 结果沿既有服务透传 [auth] */
     AppManagedActivitiesControllerEvidenceSeal(activityId: string): Promise<ApiEnvelope<AppEvidenceSealResultDto>> {

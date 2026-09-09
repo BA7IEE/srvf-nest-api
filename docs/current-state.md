@@ -21,7 +21,7 @@
 |---|---|
 | 模块 | 43 |
 | Controller | 119 |
-| Endpoint | 609 |
+| Endpoint | 610 |
 | Migration | 117 |
 | BizCode | 523 |
 | 权限码 | 258 |

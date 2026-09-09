@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:e7794240cfaf768cd6be37c9a02d6406deec80a446a4a16a3f9702abc32d6ae2
+// inputDigest: sha256:772b9b4d49aaa34b66ac00b0f7d31893ba130ef17f8bd8d03e8a96d384de31eb
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -192,6 +192,37 @@ export interface AppActivityDirectoryListItemDto {
   "location": string;
   "registrationMode"?: Record<string, unknown> | null;
   "createdAt": string;
+}
+
+export interface AppActivityEndingConfirmedSummaryDto {
+  "id": string;
+  "revision": number;
+  "metricSetVersionId": string;
+  "confirmedAt": string;
+  "valueCount": number;
+}
+
+export interface AppActivityEndingDraftSummaryDto {
+  "id": string;
+  "revision": number;
+  "kind": "initial" | "correction";
+  "baseConfirmedRevision": number | null;
+}
+
+export interface AppActivityEndingNoticeDto {
+  "code": "metric_selection_unconfigured" | "formal_outcome_missing" | "initial_draft_pending" | "correction_pending";
+  "target": "metric_selection" | "outcome_history";
+}
+
+export interface AppActivityEndingWorkbenchDto {
+  "activityId": string;
+  "activityStatusCode": "draft" | "published" | "completed" | "cancelled" | "terminated" | "archived";
+  "metricRequirementCode": "unconfigured" | "not_required" | "required";
+  "metricSelectionRevision": number;
+  "selectedMetricSetVersionId": string | null;
+  "currentConfirmed": AppActivityEndingConfirmedSummaryDto | null | null;
+  "pendingDraft": AppActivityEndingDraftSummaryDto | null | null;
+  "notices": AppActivityEndingNoticeDto[];
 }
 
 export interface AppActivityFeedbackDto {

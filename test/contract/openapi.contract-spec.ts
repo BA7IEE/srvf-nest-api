@@ -108,6 +108,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
     '/api/app/v1/my/managed-activities/{activityId}/outcome-corrections/{outcomeRevisionId}/cancel',
   ],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/outcome-confirmed'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/ending-workbench'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/outcomes'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/outcomes/{outcomeRevisionId}'],
   ['get', '/api/admin/v1/activities/{id}/metric-selection'],
@@ -1131,7 +1132,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 609; // C3-2 +4 (confirm, prepare/cancel correction, current formal read)
+const EXPECTED_ROUTE_COUNT = 610; // C4 +1 read-only ending workbench
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -3157,6 +3158,51 @@ describe('OpenAPI 契约快照', () => {
       doc.paths[`${root}/outcome-corrections/{outcomeRevisionId}/cancel`].post?.responses?.['200'],
     ).toBeDefined();
     expect(doc.paths[`${root}/outcome-confirmed`].get?.responses?.['200']).toBeDefined();
+  });
+
+  it('C4 ending workbench is a bounded safe summary, not an action authorization', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const summary = schemas.AppActivityEndingWorkbenchDto as OpenApiSchema;
+    expect(Object.keys(summary.properties ?? {}).sort()).toEqual(
+      [
+        'activityId',
+        'activityStatusCode',
+        'currentConfirmed',
+        'metricRequirementCode',
+        'metricSelectionRevision',
+        'notices',
+        'pendingDraft',
+        'selectedMetricSetVersionId',
+      ].sort(),
+    );
+    expect(summary.properties?.currentConfirmed.nullable).toBe(true);
+    expect(summary.properties?.pendingDraft.nullable).toBe(true);
+    expect(summary.properties?.selectedMetricSetVersionId.nullable).toBe(true);
+    expect(summary.properties?.metricRequirementCode.enum).toEqual([
+      'unconfigured',
+      'not_required',
+      'required',
+    ]);
+    const formal = schemas.AppActivityEndingConfirmedSummaryDto as OpenApiSchema;
+    expect(Object.keys(formal.properties ?? {}).sort()).toEqual(
+      ['id', 'revision', 'metricSetVersionId', 'confirmedAt', 'valueCount'].sort(),
+    );
+    const draft = schemas.AppActivityEndingDraftSummaryDto as OpenApiSchema;
+    expect(Object.keys(draft.properties ?? {}).sort()).toEqual(
+      ['id', 'revision', 'kind', 'baseConfirmedRevision'].sort(),
+    );
+    const notice = schemas.AppActivityEndingNoticeDto as OpenApiSchema;
+    expect(notice.properties?.code.enum).toEqual([
+      'metric_selection_unconfigured',
+      'formal_outcome_missing',
+      'initial_draft_pending',
+      'correction_pending',
+    ]);
+    expect(
+      doc.paths['/api/app/v1/my/managed-activities/{activityId}/ending-workbench'].get?.responses?.[
+        '200'
+      ],
+    ).toBeDefined();
   });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {

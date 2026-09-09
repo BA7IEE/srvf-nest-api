@@ -32,6 +32,9 @@ import type { AuditMeta } from '../../audit-logs/audit-logs.types';
 import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AppManagedActivitiesService } from '../app-managed-activities.service';
 import { ActivityCoverService } from '../activity-cover.service';
+import { ActivityEndingWorkbenchQueryService } from '../activity-ending-workbench-query.service';
+import { AppActivityEndingWorkbenchDto } from '../dto/app/app-ending-workbench.dto';
+import { AppActivityOutcomeParamsDto } from '../dto/app/app-activity-outcome.dto';
 import { ActivityArchiveService } from '../activity-archive.service';
 import { ActivityLifecycleService } from '../activity-lifecycle.service';
 import { ActivitySettlementHttpService } from '../activity-settlement-http.service';
@@ -123,7 +126,30 @@ export class AppManagedActivitiesController {
     private readonly qualificationRules: QualificationRuleSetVersionService,
     // P2-14 刀 A:与 Admin controller 委托的是同一个 service —— 校验只有一份。
     private readonly covers: ActivityCoverService,
+    private readonly endingWorkbench: ActivityEndingWorkbenchQueryService,
   ) {}
+
+  @Get(':activityId/ending-workbench')
+  @RequiresPermission('activity.outcome.read', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+    scopes: ['responsibility'],
+  })
+  @ApiOperation({ summary: '读取活动结束摘要，提示不代表操作权限 [rbac: activity.outcome.read]' })
+  @ApiWrappedOkResponse(AppActivityEndingWorkbenchDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_OUTCOME_REFERENCE_UNAVAILABLE,
+  )
+  getEndingWorkbench(
+    @Param() params: AppActivityOutcomeParamsDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.endingWorkbench.get(params.activityId, user);
+  }
 
   @Get('organization-options')
   @LoginScoped({
