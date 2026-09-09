@@ -3,9 +3,8 @@ import { cpSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } fro
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
-import { deriveWorkerTestDbName } from '../setup/worktree-db';
+import { deriveTestDbName } from '../setup/worktree-db';
 
-const WORKER = 98;
 const hash = 'a'.repeat(64);
 const migration = '20260908054308_activity_os_r3_c3_metric_candidates';
 function sql(statement: string): string {
@@ -23,7 +22,7 @@ function sql(statement: string): string {
       '-U',
       'postgres',
       '-d',
-      deriveWorkerTestDbName(WORKER),
+      deriveTestDbName(),
       '-v',
       'ON_ERROR_STOP=1',
       '-v',
@@ -45,7 +44,7 @@ function rejected(statement: string, state: string) {
 function deploy(schema: string) {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
   const url = new URL(process.env.DATABASE_URL!);
-  url.pathname = '/' + deriveWorkerTestDbName(WORKER);
+  url.pathname = '/' + deriveTestDbName();
   try {
     execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy', '--schema', schema], {
       env: { ...process.env, DATABASE_URL: url.toString() },
@@ -107,11 +106,13 @@ function receipt(change: Record<string, unknown> = {}) {
 describe('C3-1 nonempty 115 to 116 upgrade and physical constraints', () => {
   beforeAll(() => {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
-    // This reserved worker holds test fixtures only. The shared template is never modified.
-    dropWorkerDatabase(WORKER);
+    // This test owns its Jest worker clone; the shared template is never modified.
+    const worker = process.env.JEST_WORKER_ID;
+    if (!worker) throw new Error('C3-1 migration replay requires a Jest worker database');
+    dropWorkerDatabase(worker);
     execFileSync(
       'docker',
-      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveWorkerTestDbName(WORKER)],
+      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
       { stdio: 'pipe' },
     );
     const root = path.resolve('prisma');
@@ -159,14 +160,14 @@ describe('C3-1 nonempty 115 to 116 upgrade and physical constraints', () => {
       rmSync(temporary, { recursive: true, force: true });
     }
   }, 120000);
-  // Keep w98 at the verified latest migration for the next explicitly scoped local suite.
+  // Leave this worker clone at the verified latest migration for the next local suite.
   beforeEach(() => {
     sql(
       'TRUNCATE "ActivityMetricCandidateCommandReceipt", "ActivityMetricCandidateSource", "ActivityMetricCandidateValue", "ActivityMetricCandidate"',
     );
   });
   it('accepts a complete aggregate on the upgraded database', () => {
-    expect(sql('SELECT current_database()')).toBe(deriveWorkerTestDbName(WORKER));
+    expect(sql('SELECT current_database()')).toBe(deriveTestDbName());
     sql('BEGIN;' + candidate() + value() + receipt() + 'COMMIT;');
     expect(sql('SELECT count(*) FROM "ActivityMetricCandidate"')).toBe('1');
   });

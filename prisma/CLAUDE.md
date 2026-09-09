@@ -4,7 +4,7 @@
 
 ## 本地事实
 
-- **C3-1 候选指标实现（当前分支，未合并、未部署）**：当前工作树累计 **116 个 migration**，新增第 116 条 `20260908054308_activity_os_r3_c3_metric_candidates`，仅新增指标规则绑定、不可变候选／值／来源快照及两类命令收据六表；全部外键 Restrict，候选、来源和值均受 append-only trigger 保护，聚合数量与来源完整性由 deferred CHECK trigger 核验。零回填、零既有业务表 DML、零业务数据删除、零 Gate 或生产 deploy。获批 `app_test_w98` 已完成 116 条冷回放、115→116 非空升级、完整性正反例、21 条 HTTP／数据库、9 条锁等待及 20 条迁移约束用例；真实更正与现场 writer 的 Activity 锁交错均在隔离库验证。3b/4b、PR CI、可信审批、合并与整体跨模型复审尚未发生。本条覆盖下方已合并的第 115 条历史摘要，不能把本分支读数当作 main 事实。
+- **C3-1 候选指标实现（当前分支，未合并、未部署）**：当前工作树累计 **116 个 migration**，新增第 116 条 `20260908054308_activity_os_r3_c3_metric_candidates`，仅新增指标规则绑定、不可变候选／值／来源快照及两类命令收据六表；全部外键 Restrict，候选、来源和值均受 append-only trigger 保护，聚合数量与来源完整性由 deferred CHECK trigger 核验。零回填、零既有业务表 DML、零业务数据删除、零 Gate 或生产 deploy。获批 `app_test_w98` 已完成 116 条冷回放、115→116 非空升级、完整性正反例、28 条 HTTP／数据库／查询计划、9 条锁等待及 20 条迁移约束用例；真实更正、现场、离线 package／review、结算重投影、现场 identity 创建和发布后场次取消／改期 effect 的 Activity 锁交错均在隔离库验证。等价有界 SQL 的 EXPLAIN 只确认 index path 可用，不主张生产规模延时；3b/4b、PR CI、可信审批、合并与整体跨模型复审尚未发生。本条覆盖下方已合并的第 115 条历史摘要，不能把本分支读数当作 main 事实。
 
 - **#1296 方案 A 已合并（优先于下方历史摘要）**：main `638fc784` 累计 115 个 migration。新增 `20260908000000_correction_pending_segment_lifecycle`，三模型为独立暂存、准备收据、清理收据；当前段唯一索引及三态不变。app_test_w98 应用、115 条 SQL 冷回放及非空旧 application 升级均通过；旧零段重放兼容、异常非空缺收据拒绝，零回填。3b 已由维护者重签，全部 PR CI 与可信审批通过；未部署、未清理真实数据。C3-1 当前在独立分支实施，第 116 条不属于 main。
 

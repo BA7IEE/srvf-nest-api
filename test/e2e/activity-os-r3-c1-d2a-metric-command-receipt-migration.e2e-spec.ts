@@ -295,7 +295,7 @@ describe('C1 D2a nonempty upgrade and seed idempotency', () => {
         sql(
           'SELECT count(*) FROM permissions WHERE code LIKE \'activity-metric.%\' AND NOT "servicePrincipalAllowed" AND NOT "delegatedAccessAllowed"',
         ),
-      ).toBe('3');
+      ).toBe('4');
       expect(
         sql(
           'SELECT count(*) FROM role_permissions rp JOIN permissions p ON p.id=rp."permissionId" WHERE p.code LIKE \'activity-metric.%\'',

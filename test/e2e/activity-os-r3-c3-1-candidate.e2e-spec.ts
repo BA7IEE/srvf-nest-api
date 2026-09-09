@@ -1,17 +1,31 @@
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { MemberStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import request from 'supertest';
+import type { JwtConfig } from '../../src/config/jwt.config';
 import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { PrismaService } from '../../src/database/prisma.service';
 import { ActivityMetricCandidateAuditRecorder } from '../../src/modules/activities/activity-metric-candidate-audit-recorder';
 import { AttendanceSegmentProjectorService } from '../../src/modules/activities/attendance-segment-projector.service';
+import { activitySessionCancellationEffects } from '../../src/modules/activities/activity-session-cancellation-effects';
+import { ActivityNotificationProducer } from '../../src/modules/activities/activity-notification-producer';
+import { activitySessionRescheduleEffects } from '../../src/modules/activities/activity-session-reschedule-effects';
 import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
+import { SettlementDraftAuditRecorder } from '../../src/modules/activities/settlement-draft-audit-recorder';
+import { SettlementDraftService } from '../../src/modules/activities/settlement-draft.service';
+import { ActivityRegistrationAuditRecorder } from '../../src/modules/activity-registrations/activity-registration-audit-recorder';
 import { AttendancePunchAuditRecorder } from '../../src/modules/attendances/attendance-punch-audit-recorder';
+import { AuditLogsService } from '../../src/modules/audit-logs/audit-logs.service';
+import { signAttendanceMemberCredential } from '../../src/modules/attendances/attendance-member-credential-token';
+import {
+  signAttendanceOfflineEvent,
+  type AttendanceOfflinePackageTokenPayload,
+} from '../../src/modules/attendances/attendance-offline-package-token';
 import { parseMetricCandidateReceipt } from '../../src/modules/activities/activity-metric-candidate-command';
 import { parseMetricRuleBindingReceipt } from '../../src/modules/activities/activity-metric-rule-binding-command';
 import { parseMetricReceipt } from '../../src/modules/activities/activity-metric-command';
@@ -39,6 +53,7 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
   let setId: string;
   let setHash: string;
   let bindingId: string;
+  let jwtSecret: string;
   let correction: CorrectionApplicationService;
   let preparation: LedgerPreparationService;
   let posting: LedgerPostingService;
@@ -67,6 +82,10 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
     metricSetDefinitionHash: setHash,
     bindingIds: [bindingId],
   });
+  type OfflinePackageIssue = {
+    package: { id: string };
+    packageToken: string;
+  };
   const activity = () =>
     prisma.activity.create({
       data: {
@@ -124,6 +143,9 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
     prisma = app.get(PrismaService);
     await assertConnectedTestDatabase(prisma);
     await resetDb(app);
+    const jwt = app.get(ConfigService).get<JwtConfig>('jwt');
+    if (!jwt) throw new Error('jwt config is required for C3-1 offline writer coverage');
+    jwtSecret = jwt.secret;
     correction = app.get(CorrectionApplicationService);
     preparation = app.get(LedgerPreparationService);
     posting = app.get(LedgerPostingService);
@@ -211,6 +233,7 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
   });
   afterEach(() => {
     jest.restoreAllMocks();
+    jest.useRealTimers();
   });
   afterAll(async () => {
     await app?.close();
@@ -512,6 +535,484 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
     return { row, source, checkOut };
   }
 
+  async function createOnsiteIdentityWriterFixture() {
+    const row = await activity();
+    const now = new Date();
+    const startAt = new Date(now.getTime() - 60 * 60_000);
+    const endAt = new Date(now.getTime() + 60 * 60_000);
+    await prisma.activity.update({
+      where: { id: row.id },
+      data: { statusCode: 'published', publishedAt: now, startAt, endAt, capacity: 20 },
+    });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: row.id,
+        memberId,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        status: 'active',
+        assignedByUserId: actorId,
+        source: 'publish',
+      },
+    });
+    await prisma.activityEvidenceState.create({ data: { activityId: row.id } });
+    const existingSource = await addSource(row.id, memberId);
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: row.id,
+        code: key(),
+        name: `身份写者_${key()}`,
+        startAt,
+        endAt,
+        locationText: '测试',
+        capacity: 20,
+        checkInOpenAt: new Date(now.getTime() - 10 * 60_000),
+        checkInCloseAt: new Date(now.getTime() + 10 * 60_000),
+        checkOutOpenAt: new Date(now.getTime() - 10 * 60_000),
+        checkOutCloseAt: new Date(now.getTime() + 10 * 60_000),
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
+    await prisma.activityCapacityBucket.createMany({
+      data: [
+        {
+          activityId: row.id,
+          scopeTypeCode: 'activity_person',
+          scopeId: row.id,
+          capacity: 20,
+        },
+        {
+          activityId: row.id,
+          scopeTypeCode: 'session_participation',
+          scopeId: session.id,
+          capacity: 20,
+        },
+      ],
+    });
+    const target = await prisma.member.create({
+      data: {
+        memberNo: key(),
+        ...memberIdentityData('候选身份写者'),
+        gradeCode: 'level-3',
+        status: MemberStatus.ACTIVE,
+      },
+    });
+    return { row, session, existingSource, target };
+  }
+
+  async function createSessionCancellationWriterFixture() {
+    const row = await activity();
+    const now = new Date();
+    await prisma.activity.update({
+      where: { id: row.id },
+      data: { statusCode: 'published', publishedAt: now },
+    });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: row.id,
+        memberId,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        status: 'active',
+        assignedByUserId: actorId,
+        source: 'publish',
+      },
+    });
+    await prisma.activityEvidenceState.create({ data: { activityId: row.id } });
+    const existingSource = await addSource(row.id, memberId);
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: row.id,
+        code: key(),
+        name: `场次取消写者_${key()}`,
+        startAt: new Date(now.getTime() - 60 * 60_000),
+        endAt: new Date(now.getTime() + 60 * 60_000),
+        locationText: '测试',
+        checkInOpenAt: new Date(now.getTime() - 10 * 60_000),
+        checkInCloseAt: new Date(now.getTime() + 10 * 60_000),
+        checkOutOpenAt: new Date(now.getTime() - 10 * 60_000),
+        checkOutCloseAt: new Date(now.getTime() + 10 * 60_000),
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
+    const target = await prisma.member.create({
+      data: {
+        memberNo: key(),
+        ...memberIdentityData('候选场次取消写者'),
+        gradeCode: 'level-3',
+        status: MemberStatus.ACTIVE,
+      },
+    });
+    const registration = await prisma.activityRegistration.create({
+      data: {
+        activityId: row.id,
+        memberId: target.id,
+        statusCode: 'pending',
+        statusSummaryCode: 'active',
+        currentRevision: 1,
+        sourceCode: 'self',
+        registeredAt: now,
+      },
+    });
+    await prisma.activityRegistrationRevision.create({
+      data: {
+        registrationId: registration.id,
+        revision: 1,
+        sourceCode: 'self',
+        submittedByUserId: actorId,
+        submittedAt: now,
+      },
+    });
+    const identity = await prisma.activityParticipationIdentity.create({
+      data: {
+        activityId: row.id,
+        sessionId: session.id,
+        registrationId: registration.id,
+        memberId: target.id,
+        currentRevision: 1,
+        currentStatusCode: 'pending',
+        populationIncluded: false,
+      },
+    });
+    await prisma.activityParticipationRevision.create({
+      data: {
+        identityId: identity.id,
+        revision: 1,
+        statusCode: 'pending',
+        effectiveAt: now,
+        createdByUserId: actorId,
+        sourceCode: 'self',
+      },
+    });
+    return { row, session, identity, existingSource };
+  }
+
+  async function createSessionRescheduleWriterFixture() {
+    const fixture = await createPublishedCompleteSourceForOnsiteVoid();
+    await prisma.attendanceQrCredential.createMany({
+      data: (['check_in', 'check_out'] as const).map((actionCode) => ({
+        activityId: fixture.row.id,
+        sessionId: fixture.source.session.id,
+        actionCode,
+        credentialVersion: 1,
+        statusCode: 'active',
+        tokenDigest: 'a'.repeat(64),
+        signingKeyVersion: 0,
+        validFrom:
+          actionCode === 'check_in'
+            ? fixture.source.session.checkInOpenAt
+            : fixture.source.session.checkOutOpenAt,
+        validUntil:
+          actionCode === 'check_in'
+            ? fixture.source.session.checkInCloseAt
+            : fixture.source.session.checkOutCloseAt,
+        issuedByUserId: actorId,
+        issuedAt: new Date(),
+      })),
+    });
+    return fixture;
+  }
+
+  function decodeOfflinePackageToken(token: string): AttendanceOfflinePackageTokenPayload {
+    const payloadPart = token.split('.')[0];
+    if (!payloadPart) throw new Error('C3-1 offline package token has no payload');
+    return JSON.parse(
+      Buffer.from(payloadPart, 'base64url').toString('utf8'),
+    ) as AttendanceOfflinePackageTokenPayload;
+  }
+
+  function signedOfflineUpload(
+    issued: OfflinePackageIssue,
+    overrides: Partial<{
+      sequence: number;
+      priorHash: string;
+      eventKey: string;
+      actionCode: 'check_in' | 'check_out';
+      deviceTime: Date;
+    }> = {},
+  ) {
+    const payload = decodeOfflinePackageToken(issued.packageToken);
+    const deviceTime = overrides.deviceTime ?? new Date();
+    const actionCode = overrides.actionCode ?? 'check_in';
+    const memberCredential = signAttendanceMemberCredential(
+      {
+        userId: actorId,
+        memberId,
+        issuedAt: new Date(deviceTime.getTime() - 1_000),
+        expiresAt: new Date(deviceTime.getTime() + 59_000),
+        nonce: `offline_credential_nonce_${key()}`,
+      },
+      jwtSecret,
+    );
+    const event = {
+      packageId: issued.package.id,
+      sequence: overrides.sequence ?? payload.sequenceStart,
+      priorHash: overrides.priorHash ?? payload.chainAnchorHash,
+      eventKey: overrides.eventKey ?? key(),
+      actionCode,
+      deviceTime,
+      memberCredential,
+      longitude: 12.3456789,
+      latitude: 23.456789,
+      accuracy: 7.25,
+    };
+    return {
+      packageToken: issued.packageToken,
+      sequence: event.sequence,
+      priorHash: event.priorHash,
+      eventKey: event.eventKey,
+      actionCode: event.actionCode,
+      deviceTime: event.deviceTime.toISOString(),
+      memberCredential: event.memberCredential,
+      location: {
+        longitude: event.longitude,
+        latitude: event.latitude,
+        accuracy: event.accuracy,
+      },
+      signature: signAttendanceOfflineEvent(issued.packageToken, event),
+    };
+  }
+
+  async function createOfflinePackageCandidateFixture() {
+    const row = await activity();
+    const now = new Date();
+    const startAt = new Date(now.getTime() - 2 * 60 * 60_000);
+    const endAt = new Date(now.getTime() + 2 * 60 * 60_000);
+    await prisma.activity.update({
+      where: { id: row.id },
+      data: { statusCode: 'published', publishedAt: now, startAt, endAt },
+    });
+    const publishReview = await prisma.activityPublishReview.create({
+      data: {
+        activityId: row.id,
+        requestType: 'initial',
+        requestVersion: 1,
+        baseRevision: 0,
+        status: 'approved',
+        snapshot: {},
+        directPublish: true,
+        submittedByUserId: actorId,
+        reviewedByUserId: actorId,
+        reviewedAt: now,
+      },
+    });
+    await prisma.activityRuleSnapshot.create({
+      data: {
+        activityId: row.id,
+        workflowRevision: 0,
+        resolvedConfig: {},
+        snapshotHash: 'a'.repeat(64),
+        createdByReviewId: publishReview.id,
+      },
+    });
+    await prisma.activityEvidenceState.create({ data: { activityId: row.id } });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: row.id,
+        memberId,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        status: 'active',
+        assignedByUserId: actorId,
+        source: 'publish',
+      },
+    });
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: row.id,
+        code: key(),
+        name: `离线写者_${key()}`,
+        startAt,
+        endAt,
+        locationText: '测试',
+        checkInOpenAt: startAt,
+        checkInCloseAt: new Date(now.getTime() + 30 * 60_000),
+        checkOutOpenAt: startAt,
+        checkOutCloseAt: new Date(now.getTime() + 3 * 60 * 60_000),
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
+    const registration = await prisma.activityRegistration.upsert({
+      where: { activityId_memberId: { activityId: row.id, memberId } },
+      update: {},
+      create: { activityId: row.id, memberId, statusCode: 'pass' },
+    });
+    const identity = await prisma.activityParticipationIdentity.create({
+      data: {
+        activityId: row.id,
+        sessionId: session.id,
+        registrationId: registration.id,
+        memberId,
+        currentRevision: 0,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+      },
+    });
+    await prisma.activityParticipationRevision.create({
+      data: {
+        identityId: identity.id,
+        revision: 0,
+        statusCode: 'pass',
+        effectiveAt: now,
+        createdByUserId: actorId,
+        sourceCode: 'C3-1 offline writer fixture',
+      },
+    });
+    const issuedResponse = await request(httpServer(app))
+      .post(
+        `/api/app/v1/my/managed-activities/${row.id}/onsite/sessions/${session.id}` +
+          '/offline-packages',
+      )
+      .set('Authorization', auth)
+      .send({ operationKey: key(), deviceId: key() });
+    if (issuedResponse.status !== 201) {
+      throw new Error(
+        `C3-1 offline package issue failed: ${issuedResponse.status} ${JSON.stringify(issuedResponse.body)}`,
+      );
+    }
+    const issued = issuedResponse.body.data as OfflinePackageIssue;
+    if (!issued.package?.id || !issued.packageToken) {
+      throw new Error('C3-1 offline package issue response is incomplete');
+    }
+    return { row, session, identity, issued };
+  }
+
+  async function createSettlementReprojectionCandidateFixture() {
+    const row = await activity();
+    const startAt = new Date('2020-03-01T00:00:00.000Z');
+    const endAt = new Date('2020-03-01T04:00:00.000Z');
+    await prisma.activity.update({
+      where: { id: row.id },
+      data: { statusCode: 'published', publishedAt: endAt, startAt, endAt },
+    });
+    await prisma.activityResponsibilityAssignment.create({
+      data: {
+        activityId: row.id,
+        memberId,
+        responsibilityType: 'owner',
+        canManageRegistrations: true,
+        canManageAttendance: true,
+        status: 'active',
+        assignedByUserId: actorId,
+        source: 'publish',
+      },
+    });
+    const session = await prisma.activitySession.create({
+      data: {
+        activityId: row.id,
+        code: key(),
+        name: `结算重投影写者_${key()}`,
+        startAt,
+        endAt,
+        locationText: '测试',
+        checkInOpenAt: new Date(startAt.getTime() - 60 * 60_000),
+        checkInCloseAt: new Date(startAt.getTime() + 60 * 60_000),
+        checkOutOpenAt: new Date(startAt.getTime() + 2 * 60 * 60_000),
+        checkOutCloseAt: new Date(endAt.getTime() + 4 * 60 * 60_000),
+        locationRequired: false,
+        locationPolicySourceCode: 'session',
+        statusCode: 'scheduled',
+      },
+    });
+    const registration = await prisma.activityRegistration.upsert({
+      where: { activityId_memberId: { activityId: row.id, memberId } },
+      update: {},
+      create: { activityId: row.id, memberId, statusCode: 'pass' },
+    });
+    const identity = await prisma.activityParticipationIdentity.create({
+      data: {
+        activityId: row.id,
+        sessionId: session.id,
+        registrationId: registration.id,
+        memberId,
+        currentStatusCode: 'pass',
+        populationIncluded: true,
+      },
+    });
+    await prisma.activityEvidenceState.create({ data: { activityId: row.id } });
+    await prisma.evidenceSeal.create({
+      data: {
+        activityId: row.id,
+        sealRevision: 1,
+        evidenceRevision: 0,
+        populationRevision: 0,
+        workflowRevision: 0,
+        allWindowsClosedAt: new Date(endAt.getTime() + 4 * 60 * 60_000),
+        openSegmentCount: 0,
+        manualReviewPendingCount: 0,
+        populationCountDistinct: 1,
+        populationCountBySession: { [session.id]: 1 },
+        contentHash: key(),
+        statusCode: 'active',
+        sealedByUserId: actorId,
+        sealedAt: new Date(endAt.getTime() + 5 * 60 * 60_000),
+      },
+    });
+    for (const [eventTypeCode, occurredAt] of [
+      ['check_in', startAt],
+      ['check_out', new Date(startAt.getTime() + 60 * 60_000)],
+    ] as const) {
+      await prisma.attendancePunchEvent.create({
+        data: {
+          activityId: row.id,
+          sessionId: session.id,
+          participationIdentityId: identity.id,
+          memberId,
+          operatorUserId: actorId,
+          eventTypeCode,
+          sourceCode: 'proxy',
+          occurredAt,
+          receivedAt: occurredAt,
+          eventKey: key(),
+          requestHash: key(),
+          evidenceRevision: 0,
+          reason: null,
+        },
+      });
+    }
+    return { row, identity };
+  }
+
+  function uploadOfflinePackage(
+    activityId: string,
+    packageId: string,
+    body: ReturnType<typeof signedOfflineUpload>,
+  ) {
+    return request(httpServer(app))
+      .post(
+        `/api/app/v1/my/managed-activities/${activityId}/onsite/offline-packages/${packageId}/upload`,
+      )
+      .set('Authorization', auth)
+      .send(body);
+  }
+
+  function freezeSystemTime(now: Date): void {
+    jest.useFakeTimers({
+      doNotFake: [
+        'hrtime',
+        'nextTick',
+        'performance',
+        'queueMicrotask',
+        'setImmediate',
+        'clearImmediate',
+        'setInterval',
+        'clearInterval',
+        'setTimeout',
+        'clearTimeout',
+      ],
+    });
+    jest.setSystemTime(now);
+  }
+
   async function createSettledCorrectableCandidateFixture() {
     const row = await activity();
     await prisma.activityResponsibilityAssignment.create({
@@ -786,6 +1287,609 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
     expect(
       (await get(`${base(fixture.row.id)}/${candidate.id}`).expect(200)).body.data,
     ).toMatchObject({ freshness: 'unavailable', reproducible: true });
+  });
+
+  it('waits for a real offline package upload and then snapshots only its committed service segment', async () => {
+    jest.spyOn(app.get(ActivityWorkflowGate), 'isV11Enabled').mockReturnValue(true);
+    await grant(['activity.outcome.calculate', 'activity.outcome.read']);
+    const fixture = await createOfflinePackageCandidateFixture();
+    const checkInAt = new Date();
+    const checkIn = signedOfflineUpload(fixture.issued, { deviceTime: checkInAt });
+    const checkInResponse = await uploadOfflinePackage(
+      fixture.row.id,
+      fixture.issued.package.id,
+      checkIn,
+    );
+    if (checkInResponse.status !== 201) {
+      throw new Error(
+        `C3-1 offline package check-in failed: ${checkInResponse.status} ${JSON.stringify(checkInResponse.body)}`,
+      );
+    }
+    const packageAfterCheckIn = await prisma.offlinePackage.findUniqueOrThrow({
+      where: { id: fixture.issued.package.id },
+      select: { lastAcceptedHash: true, nextExpectedSequence: true },
+    });
+    const recorder = app.get(AttendancePunchAuditRecorder);
+    const originalLogPunch = recorder.logPunch.bind(recorder);
+    let notifyAudit!: (pid: number) => void;
+    let releaseAudit!: () => void;
+    const auditEntered = new Promise<number>((resolve) => {
+      notifyAudit = resolve;
+    });
+    const auditReleased = new Promise<void>((resolve) => {
+      releaseAudit = resolve;
+    });
+    jest.spyOn(recorder, 'logPunch').mockImplementationOnce(async (args) => {
+      const [backend] = await args.tx.$queryRaw<{ pid: number }[]>`
+        SELECT pg_backend_pid() AS pid`;
+      notifyAudit(backend.pid);
+      await auditReleased;
+      await originalLogPunch(args);
+    });
+    const checkOutAt = new Date(checkInAt.getTime() + 31 * 60_000);
+    freezeSystemTime(checkOutAt);
+    const checkOut = signedOfflineUpload(fixture.issued, {
+      sequence: packageAfterCheckIn.nextExpectedSequence,
+      priorHash: packageAfterCheckIn.lastAcceptedHash,
+      actionCode: 'check_out',
+      deviceTime: checkOutAt,
+    });
+    const uploading = uploadOfflinePackage(
+      fixture.row.id,
+      fixture.issued.package.id,
+      checkOut,
+    ).then((response) => response);
+    const blockerPid = await Promise.race([
+      auditEntered,
+      uploading.then((response) => {
+        throw new Error(
+          `C3-1 offline package upload ended before the audit barrier: ${response.status} ${JSON.stringify(response.body)}`,
+        );
+      }),
+    ]);
+    const calculating = post(base(fixture.row.id), command()).then((response) => response);
+    try {
+      await waitFor(
+        async () => {
+          const [row] = await prisma.$queryRaw<{ count: bigint }[]>`
+            SELECT count(*) FROM pg_stat_activity
+            WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))`;
+          return row.count > 0n;
+        },
+        {
+          timeoutMs: 5000,
+          message: 'candidate did not wait for the real offline package upload activity lock',
+        },
+      );
+    } finally {
+      releaseAudit();
+      expect((await uploading).status).toBe(201);
+    }
+    const response = await calculating;
+    expect(response.status).toBe(201);
+    const candidateId = (response.body.data as { candidateId: string }).candidateId;
+    const source = await prisma.activityMetricCandidateSource.findFirstOrThrow({
+      where: { candidateId },
+    });
+    expect(source).toMatchObject({
+      identityId: fixture.identity.id,
+      resultCode: 'valid',
+    });
+    expect(source.checkOutAt?.getTime()).toBeGreaterThan(source.checkInAt.getTime());
+  });
+
+  it('waits for a real offline review approval and then snapshots only its committed service segment', async () => {
+    jest.spyOn(app.get(ActivityWorkflowGate), 'isV11Enabled').mockReturnValue(true);
+    await grant(['activity.outcome.calculate', 'activity.outcome.read']);
+    const fixture = await createOfflinePackageCandidateFixture();
+    const checkInAt = new Date();
+    const checkIn = signedOfflineUpload(fixture.issued, { deviceTime: checkInAt });
+    const checkInResponse = await uploadOfflinePackage(
+      fixture.row.id,
+      fixture.issued.package.id,
+      checkIn,
+    );
+    if (checkInResponse.status !== 201) {
+      throw new Error(
+        `C3-1 offline review fixture check-in failed: ${checkInResponse.status} ${JSON.stringify(checkInResponse.body)}`,
+      );
+    }
+    const packageAfterCheckIn = await prisma.offlinePackage.findUniqueOrThrow({
+      where: { id: fixture.issued.package.id },
+      select: { lastAcceptedHash: true, nextExpectedSequence: true },
+    });
+    expect(
+      (
+        await request(httpServer(app))
+          .post(
+            `/api/app/v1/my/managed-activities/${fixture.row.id}/onsite/offline-packages/` +
+              `${fixture.issued.package.id}/revoke`,
+          )
+          .set('Authorization', auth)
+          .send({ operationKey: key(), reason: 'C3-1 候选交错复核夹具' })
+      ).status,
+    ).toBe(201);
+    const checkOutAt = new Date(checkInAt.getTime() + 31 * 60_000);
+    freezeSystemTime(checkOutAt);
+    const staged = await uploadOfflinePackage(
+      fixture.row.id,
+      fixture.issued.package.id,
+      signedOfflineUpload(fixture.issued, {
+        sequence: packageAfterCheckIn.nextExpectedSequence,
+        priorHash: packageAfterCheckIn.lastAcceptedHash,
+        actionCode: 'check_out',
+        deviceTime: checkOutAt,
+      }),
+    );
+    expectBizError(staged, BizCode.ATTENDANCE_OFFLINE_REVIEW_REQUIRED);
+    const review = await prisma.offlinePunchReviewItem.findFirstOrThrow({
+      where: { offlinePackageId: fixture.issued.package.id, statusCode: 'pending' },
+      select: { id: true, actionCode: true, approvalPolicyCode: true },
+    });
+    expect(review).toMatchObject({ actionCode: 'check_out', approvalPolicyCode: 'approvable' });
+    const recorder = app.get(AttendancePunchAuditRecorder);
+    const originalLogPunch = recorder.logPunch.bind(recorder);
+    let notifyAudit!: (pid: number) => void;
+    let releaseAudit!: () => void;
+    const auditEntered = new Promise<number>((resolve) => {
+      notifyAudit = resolve;
+    });
+    const auditReleased = new Promise<void>((resolve) => {
+      releaseAudit = resolve;
+    });
+    jest.spyOn(recorder, 'logPunch').mockImplementationOnce(async (args) => {
+      const [backend] = await args.tx.$queryRaw<{ pid: number }[]>`
+        SELECT pg_backend_pid() AS pid`;
+      notifyAudit(backend.pid);
+      await auditReleased;
+      await originalLogPunch(args);
+    });
+    const approving = request(httpServer(app))
+      .post(
+        `/api/app/v1/my/managed-activities/${fixture.row.id}/onsite/offline-review-items/` +
+          `${review.id}/approve`,
+      )
+      .set('Authorization', auth)
+      .send({ operationKey: key(), reason: 'C3-1 候选锁等待离线复核批准' })
+      .then((response) => response);
+    const blockerPid = await Promise.race([
+      auditEntered,
+      approving.then((response) => {
+        throw new Error(
+          `C3-1 offline review approval ended before the audit barrier: ${response.status} ${JSON.stringify(response.body)}`,
+        );
+      }),
+    ]);
+    const calculating = post(base(fixture.row.id), command()).then((response) => response);
+    try {
+      await waitFor(
+        async () => {
+          const [row] = await prisma.$queryRaw<{ count: bigint }[]>`
+            SELECT count(*) FROM pg_stat_activity
+            WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))`;
+          return row.count > 0n;
+        },
+        {
+          timeoutMs: 5000,
+          message: 'candidate did not wait for the real offline review approval activity lock',
+        },
+      );
+    } finally {
+      releaseAudit();
+      expect((await approving).status).toBe(201);
+    }
+    const response = await calculating;
+    expect(response.status).toBe(201);
+    const candidateId = (response.body.data as { candidateId: string }).candidateId;
+    const source = await prisma.activityMetricCandidateSource.findFirstOrThrow({
+      where: { candidateId },
+    });
+    expect(source).toMatchObject({ identityId: fixture.identity.id, resultCode: 'valid' });
+    expect(source.checkOutAt?.getTime()).toBeGreaterThan(source.checkInAt.getTime());
+  });
+
+  it('waits for the real settlement re-projection and then snapshots only its committed segment revision', async () => {
+    jest.spyOn(app.get(ActivityWorkflowGate), 'isV11Enabled').mockReturnValue(true);
+    await grant(['activity.outcome.calculate', 'activity.outcome.read']);
+    const fixture = await createSettlementReprojectionCandidateFixture();
+    const recorder = app.get(SettlementDraftAuditRecorder);
+    const originalLog = recorder.log.bind(recorder);
+    let notifyAudit!: (pid: number) => void;
+    let releaseAudit!: () => void;
+    const auditEntered = new Promise<number>((resolve) => {
+      notifyAudit = resolve;
+    });
+    const auditReleased = new Promise<void>((resolve) => {
+      releaseAudit = resolve;
+    });
+    jest.spyOn(recorder, 'log').mockImplementationOnce(async (args) => {
+      const [backend] = await args.tx.$queryRaw<{ pid: number }[]>`
+        SELECT pg_backend_pid() AS pid`;
+      notifyAudit(backend.pid);
+      await auditReleased;
+      await originalLog(args);
+    });
+    const generating = app.get(SettlementDraftService).generate(fixture.row.id, correctionActor(), {
+      requestId: 'c3-1-settlement-reprojection-candidate',
+      ip: null,
+      ua: null,
+    });
+    const blockerPid = await Promise.race([
+      auditEntered,
+      generating.then((result) => {
+        throw new Error(
+          `C3-1 settlement re-projection ended before the audit barrier: ${JSON.stringify(result)}`,
+        );
+      }),
+    ]);
+    const calculating = post(base(fixture.row.id), command()).then((response) => response);
+    try {
+      await waitFor(
+        async () => {
+          const [row] = await prisma.$queryRaw<{ count: bigint }[]>`
+            SELECT count(*) FROM pg_stat_activity
+            WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))`;
+          return row.count > 0n;
+        },
+        {
+          timeoutMs: 5000,
+          message: 'candidate did not wait for the real settlement re-projection activity lock',
+        },
+      );
+    } finally {
+      releaseAudit();
+    }
+    const generated = await generating;
+    expect(generated.segmentsCreated).toBe(1);
+    const response = await calculating;
+    expect(response.status).toBe(201);
+    const candidateId = (response.body.data as { candidateId: string }).candidateId;
+    const source = await prisma.activityMetricCandidateSource.findFirstOrThrow({
+      where: { candidateId },
+    });
+    expect(source).toMatchObject({ identityId: fixture.identity.id, resultCode: 'valid' });
+    expect(source.checkOutAt?.getTime()).toBeGreaterThan(source.checkInAt.getTime());
+  });
+
+  it('waits for a real onsite identity creation and excludes its not-yet-attended identity', async () => {
+    jest.spyOn(app.get(ActivityWorkflowGate), 'isV11Enabled').mockReturnValue(true);
+    await grant([
+      'activity.outcome.calculate',
+      'activity.outcome.read',
+      'activity-registration.create.record',
+    ]);
+    const fixture = await createOnsiteIdentityWriterFixture();
+    const recorder = app.get(ActivityRegistrationAuditRecorder);
+    const originalLogOnsiteCreate = recorder.logOnsiteCreate.bind(recorder);
+    let notifyAudit!: (pid: number) => void;
+    let releaseAudit!: () => void;
+    const auditEntered = new Promise<number>((resolve) => {
+      notifyAudit = resolve;
+    });
+    const auditReleased = new Promise<void>((resolve) => {
+      releaseAudit = resolve;
+    });
+    jest.spyOn(recorder, 'logOnsiteCreate').mockImplementationOnce(async (args) => {
+      const [backend] = await args.tx.$queryRaw<{ pid: number }[]>`
+        SELECT pg_backend_pid() AS pid`;
+      notifyAudit(backend.pid);
+      await auditReleased;
+      await originalLogOnsiteCreate(args);
+    });
+    const creating = request(httpServer(app))
+      .post(`/api/app/v1/my/managed-activities/${fixture.row.id}/onsite-participations`)
+      .set('Authorization', auth)
+      .send({
+        operationKey: key(),
+        memberId: fixture.target.id,
+        sessionId: fixture.session.id,
+        reason: 'C3-1 候选锁等待身份创建',
+      })
+      .then((response) => response);
+    const blockerPid = await Promise.race([
+      auditEntered,
+      creating.then((response) => {
+        throw new Error(
+          `C3-1 onsite identity creation ended before the audit barrier: ${response.status} ${JSON.stringify(response.body)}`,
+        );
+      }),
+    ]);
+    const calculating = post(base(fixture.row.id), command()).then((response) => response);
+    try {
+      await waitFor(
+        async () => {
+          const [row] = await prisma.$queryRaw<{ count: bigint }[]>`
+            SELECT count(*) FROM pg_stat_activity
+            WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))`;
+          return row.count > 0n;
+        },
+        {
+          timeoutMs: 5000,
+          message: 'candidate did not wait for the real onsite identity creation activity lock',
+        },
+      );
+    } finally {
+      releaseAudit();
+    }
+    const created = await creating;
+    expect(created.status).toBe(201);
+    const createdIdentityId = (created.body.data as { participationIdentityId: string })
+      .participationIdentityId;
+    const response = await calculating;
+    expect(response.status).toBe(201);
+    const candidateId = (response.body.data as { candidateId: string }).candidateId;
+    const candidate = await prisma.activityMetricCandidate.findUniqueOrThrow({
+      where: { id: candidateId },
+      include: { sources: { orderBy: { ordinal: 'asc' } } },
+    });
+    expect(candidate.sources).toHaveLength(1);
+    expect(candidate.sources[0]).toMatchObject({
+      identityId: fixture.existingSource.identity.id,
+      resultCode: 'valid',
+    });
+    expect(candidate.sources.some((source) => source.identityId === createdIdentityId)).toBe(false);
+    expect(
+      (await get(`${base(fixture.row.id)}/${candidateId}`).expect(200)).body.data.values,
+    ).toMatchObject([{ value: 1, unitCode: 'count' }]);
+  });
+
+  it('makes real session-cancellation effects wait behind a candidate and retains historical sources', async () => {
+    jest.spyOn(app.get(ActivityWorkflowGate), 'isV11Enabled').mockReturnValue(true);
+    await grant(['activity.outcome.calculate', 'activity.outcome.read']);
+    const fixture = await createSessionCancellationWriterFixture();
+    const auditLogs = app.get(AuditLogsService);
+    const candidateAudit = app.get(ActivityMetricCandidateAuditRecorder);
+    const originalCandidateLog = candidateAudit.log.bind(candidateAudit);
+    let notifyAudit!: (pid: number) => void;
+    let releaseAudit!: () => void;
+    const auditEntered = new Promise<number>((resolve) => {
+      notifyAudit = resolve;
+    });
+    const auditReleased = new Promise<void>((resolve) => {
+      releaseAudit = resolve;
+    });
+    jest
+      .spyOn(candidateAudit, 'log')
+      .mockImplementationOnce(async (tx, actor, meta, result, priorId) => {
+        const [backend] = await tx.$queryRaw<{ pid: number }[]>`
+        SELECT pg_backend_pid() AS pid`;
+        notifyAudit(backend.pid);
+        await auditReleased;
+        await originalCandidateLog(tx, actor, meta, result, priorId);
+      });
+    const calculating = post(base(fixture.row.id), command()).then((response) => response);
+    const blockerPid = await Promise.race([
+      auditEntered,
+      calculating.then((response) => {
+        throw new Error(
+          `C3-1 candidate ended before the audit barrier: ${response.status} ${JSON.stringify(response.body)}`,
+        );
+      }),
+    ]);
+    const cancelling = prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Activity" WHERE "id" = ${fixture.row.id} FOR UPDATE`;
+      if (locked.length !== 1)
+        throw new Error('C3-1 session cancellation fixture activity is missing');
+      await tx.activitySession.update({
+        where: { id: fixture.session.id },
+        data: { statusCode: 'cancelled' },
+      });
+      return activitySessionCancellationEffects.applyInTransactionTrusted(
+        tx,
+        {
+          notificationProducer: app.get(ActivityNotificationProducer),
+          auditLogs,
+        },
+        {
+          activityId: fixture.row.id,
+          cancelledSessionIds: [fixture.session.id],
+          versionKey: key(),
+          at: new Date(),
+          actorUserId: actorId,
+          actorRoleSnap: Role.SUPER_ADMIN,
+          auditMeta: { requestId: key(), ip: null, ua: null },
+        },
+      );
+    });
+    try {
+      await waitFor(
+        async () => {
+          const [row] = await prisma.$queryRaw<{ count: bigint }[]>`
+            SELECT count(*) FROM pg_stat_activity
+            WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))`;
+          return row.count > 0n;
+        },
+        {
+          timeoutMs: 5000,
+          message: 'real session cancellation did not wait for the candidate activity lock',
+        },
+      );
+    } finally {
+      releaseAudit();
+    }
+    const initial = await calculating;
+    expect(initial.status).toBe(201);
+    const initialCandidateId = (initial.body.data as { candidateId: string }).candidateId;
+    const initialCandidate = await prisma.activityMetricCandidate.findUniqueOrThrow({
+      where: { id: initialCandidateId },
+      include: { sources: { orderBy: { ordinal: 'asc' } } },
+    });
+    expect(initialCandidate.sources).toHaveLength(1);
+    expect(initialCandidate.sources[0]).toMatchObject({
+      identityId: fixture.existingSource.identity.id,
+      resultCode: 'valid',
+    });
+    expect((await cancelling).cancelledIdentityCount).toBe(1);
+    await expect(
+      prisma.activitySession.findUniqueOrThrow({
+        where: { id: fixture.session.id },
+        select: { statusCode: true },
+      }),
+    ).resolves.toEqual({ statusCode: 'cancelled' });
+    await expect(
+      prisma.activityParticipationIdentity.findUniqueOrThrow({
+        where: { id: fixture.identity.id },
+        select: { currentStatusCode: true, populationIncluded: true },
+      }),
+    ).resolves.toEqual({ currentStatusCode: 'cancelled', populationIncluded: false });
+    const retained = await post(base(fixture.row.id), command(1)).expect(201);
+    const retainedCandidateId = (retained.body.data as { candidateId: string }).candidateId;
+    const retainedCandidate = await prisma.activityMetricCandidate.findUniqueOrThrow({
+      where: { id: retainedCandidateId },
+      include: { sources: { orderBy: { ordinal: 'asc' } } },
+    });
+    expect(retainedCandidate.sources).toHaveLength(1);
+    expect(retainedCandidate.sources[0]).toMatchObject({
+      identityId: fixture.existingSource.identity.id,
+      resultCode: 'valid',
+    });
+    expect(
+      retainedCandidate.sources.some((source) => source.identityId === fixture.identity.id),
+    ).toBe(false);
+  });
+
+  it('makes real session-reschedule effects wait behind a candidate and then reads the new window coherently', async () => {
+    jest.spyOn(app.get(ActivityWorkflowGate), 'isV11Enabled').mockReturnValue(true);
+    await grant(['activity.outcome.calculate', 'activity.outcome.read']);
+    const fixture = await createSessionRescheduleWriterFixture();
+    const candidateAudit = app.get(ActivityMetricCandidateAuditRecorder);
+    const originalCandidateLog = candidateAudit.log.bind(candidateAudit);
+    let notifyAudit!: (pid: number) => void;
+    let releaseAudit!: () => void;
+    const auditEntered = new Promise<number>((resolve) => {
+      notifyAudit = resolve;
+    });
+    const auditReleased = new Promise<void>((resolve) => {
+      releaseAudit = resolve;
+    });
+    jest
+      .spyOn(candidateAudit, 'log')
+      .mockImplementationOnce(async (tx, actor, meta, result, priorId) => {
+        const [backend] = await tx.$queryRaw<{ pid: number }[]>`
+        SELECT pg_backend_pid() AS pid`;
+        notifyAudit(backend.pid);
+        await auditReleased;
+        await originalCandidateLog(tx, actor, meta, result, priorId);
+      });
+    const calculating = post(base(fixture.row.id), command()).then((response) => response);
+    const blockerPid = await Promise.race([
+      auditEntered,
+      calculating.then((response) => {
+        throw new Error(
+          `C3-1 candidate ended before the reschedule audit barrier: ${response.status} ${JSON.stringify(response.body)}`,
+        );
+      }),
+    ]);
+    const rescheduledStartAt = new Date(fixture.source.session.startAt.getTime() - 5 * 60_000);
+    const rescheduledEndAt = new Date(fixture.source.session.endAt.getTime() + 5 * 60_000);
+    const rescheduling = prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "Activity" WHERE "id" = ${fixture.row.id} FOR UPDATE`;
+      if (locked.length !== 1)
+        throw new Error('C3-1 session reschedule fixture activity is missing');
+      await tx.activitySession.update({
+        where: { id: fixture.source.session.id },
+        data: {
+          startAt: rescheduledStartAt,
+          endAt: rescheduledEndAt,
+          checkInOpenAt: new Date(fixture.source.session.checkInOpenAt.getTime() - 5 * 60_000),
+          checkInCloseAt: new Date(fixture.source.session.checkInCloseAt.getTime() + 5 * 60_000),
+          checkOutOpenAt: new Date(fixture.source.session.checkOutOpenAt.getTime() - 5 * 60_000),
+          checkOutCloseAt: new Date(fixture.source.session.checkOutCloseAt.getTime() + 5 * 60_000),
+          workflowRevision: { increment: 1 },
+        },
+      });
+      return activitySessionRescheduleEffects.applyInTransactionTrusted(
+        { auditLogs: app.get(AuditLogsService) },
+        tx,
+        {
+          activityId: fixture.row.id,
+          rescheduledSessionIds: [fixture.source.session.id],
+          versionKey: key(),
+          at: new Date(),
+          actorUserId: actorId,
+          actorRoleSnap: Role.SUPER_ADMIN,
+          auditMeta: { requestId: key(), ip: null, ua: null },
+          jwtSecret,
+        },
+      );
+    });
+    try {
+      await waitFor(
+        async () => {
+          const [row] = await prisma.$queryRaw<{ count: bigint }[]>`
+            SELECT count(*) FROM pg_stat_activity
+            WHERE datname = current_database() AND ${blockerPid} = ANY(pg_blocking_pids(pid))`;
+          return row.count > 0n;
+        },
+        {
+          timeoutMs: 5000,
+          message: 'real session reschedule did not wait for the candidate activity lock',
+        },
+      );
+    } finally {
+      releaseAudit();
+    }
+    expect((await calculating).status).toBe(201);
+    expect(await rescheduling).toMatchObject({
+      rescheduledSessionCount: 1,
+      reissuedCredentialCount: 2,
+    });
+    const credentialStates = await prisma.attendanceQrCredential.findMany({
+      where: { activityId: fixture.row.id, sessionId: fixture.source.session.id },
+      select: { actionCode: true, credentialVersion: true, statusCode: true },
+      orderBy: [{ actionCode: 'asc' }, { credentialVersion: 'asc' }],
+    });
+    expect(credentialStates).toEqual([
+      { actionCode: 'check_in', credentialVersion: 1, statusCode: 'revoked' },
+      { actionCode: 'check_in', credentialVersion: 2, statusCode: 'active' },
+      { actionCode: 'check_out', credentialVersion: 1, statusCode: 'revoked' },
+      { actionCode: 'check_out', credentialVersion: 2, statusCode: 'active' },
+    ]);
+    const after = await post(base(fixture.row.id), command(1)).expect(201);
+    const candidateId = (after.body.data as { candidateId: string }).candidateId;
+    const source = await prisma.activityMetricCandidateSource.findFirstOrThrow({
+      where: { candidateId },
+    });
+    expect(source).toMatchObject({ identityId: fixture.source.identity.id, resultCode: 'valid' });
+    expect(source.checkInAt).toEqual(new Date('2025-01-01T00:00:00.000Z'));
+    expect(source.checkOutAt).toEqual(new Date('2025-01-01T01:00:00.000Z'));
+  });
+
+  it('has an index-only-viability plan for the bounded current source reads', async () => {
+    const fixture = await createPublishedCompleteSourceForOnsiteVoid();
+    const plans = await prisma.$transaction(async (tx) => {
+      // This only proves that the production-shaped bounded queries have an available index path.
+      // It deliberately does not claim a latency budget or replace a production-size benchmark.
+      await tx.$executeRaw`SET LOCAL enable_seqscan = off`;
+      const [segments] = await tx.$queryRaw<Array<{ 'QUERY PLAN': unknown }>>(Prisma.sql`
+        EXPLAIN (FORMAT JSON, COSTS OFF)
+        SELECT segment."id"
+        FROM "ParticipantServiceSegmentRevision" AS segment
+        INNER JOIN "ActivityParticipationIdentity" AS identity
+          ON identity."id" = segment."participationIdentityId"
+        WHERE identity."activityId" = ${fixture.row.id}
+          AND segment."statusCode" IN ('draft', 'committed')
+        ORDER BY segment."id" ASC
+        LIMIT 10001`);
+      const [events] = await tx.$queryRaw<Array<{ 'QUERY PLAN': unknown }>>(Prisma.sql`
+        EXPLAIN (FORMAT JSON, COSTS OFF)
+        SELECT "id"
+        FROM "AttendancePunchEvent"
+        WHERE "activityId" = ${fixture.row.id}
+        ORDER BY "id" ASC
+        LIMIT 20001`);
+      return { segments: segments['QUERY PLAN'], events: events['QUERY PLAN'] };
+    });
+    const segmentPlan = JSON.stringify(plans.segments);
+    const eventPlan = JSON.stringify(plans.events);
+    expect(segmentPlan).toContain('Limit');
+    expect(eventPlan).toContain('Limit');
+    expect(segmentPlan).toMatch(/Index Scan|Bitmap Index Scan/);
+    expect(eventPlan).toMatch(/Index Scan|Bitmap Index Scan/);
+    expect(segmentPlan).not.toContain('Seq Scan');
+    expect(eventPlan).not.toContain('Seq Scan');
   });
 
   it('keeps a candidate fresh through correction prepare and failed commit, then marks it stale on the real committed correction', async () => {
