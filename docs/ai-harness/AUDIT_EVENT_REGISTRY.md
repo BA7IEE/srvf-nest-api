@@ -19,7 +19,7 @@
 > **三条写库漏斗**(全部 `event: AuditLogEvent` 类型锁,新增事件不进 union 编译不过):
 > `AuditLogsService.log()` · `writeConfigAudit()`(permissions)· `user-roles.service` 内联薄封装。
 
-**审计事件(机器核对):164 个 · 活跃(≥1 次出现):159 · 已退役/零产出:5**
+**审计事件(机器核对):165 个 · 活跃(≥1 次出现):160 · 已退役/零产出:5**
 
 
 ## profile
@@ -91,6 +91,7 @@
 | `activity.metric-set.command` | 1 | C1 D2a：指标集版本命令；不记录配置全文或 operationKey |
 | `activity.metric-selection.command` | 1 | C1 D2b：草稿选择与创建初选；仅固定来源、前后要求/hash/revision，和选择、收据同事务；不记录配置全文或 operationKey |
 | `activity.outcome.command` | 1 | C2 D2：人工成果草稿追加、旧 draft 替代、收据及审计同事务；仅修订锚点、状态、来源和数量，不记实际值、operationKey、内部来源引用或附件凭证 |
+| `activity.outcome.finalization` | 1 | C3-2：确认、准备更正与取消更正；状态、值、证据、来源、收据及审计同事务。仅记录操作、修订锚点、状态、来源类别和数量，不记录实际值、操作键或凭证 |
 | `activity.metric-candidate.command` | 1 | C3-1：创建不可变系统候选，业务值、来源、收据与审计同事务；仅记候选锚点、修订、状态、来源类别和数量，不记值、参与明细或操作键 |
 | `activity.metric-rule-binding.command` | 1 | C3-1：显式 GLOBAL 授权下创建或复用不可变绑定；记精确定义/hash、规则版本与是否复用，不记操作键 |
 | `activity.template-version.command` | 1 | C1 D2b：V3 创建、草稿编辑、激活、退役；仅固定操作、code/version、前后 hash/status，不记录表单题干或 operationKey |

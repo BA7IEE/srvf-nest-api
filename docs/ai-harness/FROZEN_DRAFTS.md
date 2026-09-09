@@ -1,5 +1,7 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **C3-2 当前增量（2026-09-09，未提交、未合并）**：完整方案已获批准并实施于工作树，按 #1299 及维护者确认的附件锁序更正执行；四个 App managed 入口、第 117 条迁移、258 权限及 165/160 审计读数均已形成。满额确认、归档退队留存与实际锁点/存储状态验证已通过；3b/4b 已重签；完整验收、PR CI 与整体复审未完成，C3 维持 open。旧段落中的“仅文档/未实施 C3-2”属于历史时点，当前进展以 NEXT_TASKS 顶部为准。
+
 > **2026-09-09 当前收口（覆盖下方 C3-1 分支实施／未合并／未重签表述）**：C3-1 已随 [#1298](https://github.com/BA7IEE/srvf-nest-api/pull/1298) squash 合入 main `62abb469`；18 项 PR 检查、可信红区审批、3b（第 116 条 migration）和 4b（权限码 256；审计 164 总计／159 活跃）已完成。第 4 个 E2E 分片首次 25 分钟超时，未改代码或放宽限制，单分片重跑 9 分 18 秒通过；不据此宣告超时根因已修复。[main CI 34329487288](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34329487288) 已于本轮核验 completed/success，结果与 PR CI 分别确认。候选与来源永久保留；生产、Gate 和整体跨模型复审未完成。下一阶段严格为 **C3-2：完整人工确认、正式更正与现行正式选择器**；旧文中的“C3-2/C3-3”拆分不作为执行依据。维护者已授权台账更正及 C3-2 精确计划起草，**仅文档，不实施；已追加授权补 changelog、提交、推送和创建文档评审 PR；不合并**。
 
 > **这份文件回答一个问题**:已经拍板冻结的施工依据,**还有多少没落地**。
@@ -250,7 +252,7 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **256** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **258** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
 | 治理 Phase 4:状态列 governed / 登记总数 | **8 / 67** | `harness/state-machines.json` |

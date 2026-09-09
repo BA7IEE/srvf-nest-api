@@ -12,6 +12,8 @@ import { ActivityResponsibilityPolicy } from './activity-responsibility-policy';
 export type ActivityOutcomePermission =
   | 'activity.outcome.record'
   | 'activity.outcome.read'
+  | 'activity.outcome.confirm'
+  | 'activity.outcome.correct'
   | 'activity.outcome.calculate';
 
 @Injectable()

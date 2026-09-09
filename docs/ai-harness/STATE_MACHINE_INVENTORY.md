@@ -1,5 +1,15 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
+## C3-2 当前实施增量（未提交、未合并）
+
+`ActivityOutcomeRevision.statusCode` 维持 draft/confirmed/superseded 闭集与 L2 inventory。
+新增 `(create) -> confirmed` 和 `confirmed -> superseded`；原 C2 draft writer 保留。
+新确认复制新头与值，更正准备/取消不替代现行 confirmed；取消仅将更正 draft 转 superseded。
+第 117 条 migration 约束唯一正式头、提交期完整性、来源同链、收据封存与合法状态推进。
+新增两表为不可变来源和命令收据，不增加独立状态机，不删除业务事实。
+34 项并发/回滚用例已在 app_test_w98 隔离验证；完整验收、PR CI、整体复审与生产未完成。
+本节覆盖下方历史记录中的“未实施 C3-2”，不将分支实现写成已合并事实。
+
 ## C3-1 当前实施增量（未合并）
 
 `ActivityMetricCandidate.sourceMode` 新增 L1 inventory 登记，闭集仅 `participation_segments`；

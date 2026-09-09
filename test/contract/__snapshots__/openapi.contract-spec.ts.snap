@@ -6058,6 +6058,85 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppActivityOutcomeConfirmedDto": {
+    "properties": {
+      "activityId": {
+        "description": "活动 ID",
+        "type": "string",
+      },
+      "confirmedAt": {
+        "description": "正式确认时间，不返回确认人身份",
+        "format": "date-time",
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "isCurrentConfirmed": {
+        "description": "当前唯一正式成果",
+        "enum": [
+          true,
+        ],
+        "type": "boolean",
+      },
+      "metricSetDefinitionHash": {
+        "description": "历史精确指标集 hash",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "metricSetVersionId": {
+        "description": "历史精确指标集版本 ID",
+        "type": "string",
+      },
+      "outcomeRevisionId": {
+        "description": "成果修订 ID",
+        "type": "string",
+      },
+      "priorRevisionId": {
+        "description": "被替代的前一修订 ID",
+        "nullable": true,
+        "type": "string",
+      },
+      "revision": {
+        "description": "成果修订号",
+        "minimum": 1,
+        "type": "number",
+      },
+      "statusCode": {
+        "description": "当前修订状态；草稿不代表正式完成",
+        "enum": [
+          "draft",
+          "confirmed",
+          "superseded",
+        ],
+        "type": "string",
+      },
+      "values": {
+        "description": "当前修订的完整成果值快照，不合并其他修订",
+        "items": {
+          "$ref": "#/components/schemas/AppActivityOutcomeValueDto",
+        },
+        "maxItems": 100,
+        "type": "array",
+      },
+    },
+    "required": [
+      "outcomeRevisionId",
+      "activityId",
+      "revision",
+      "metricSetVersionId",
+      "metricSetDefinitionHash",
+      "statusCode",
+      "priorRevisionId",
+      "createdAt",
+      "values",
+      "isCurrentConfirmed",
+      "confirmedAt",
+    ],
+    "type": "object",
+  },
   "AppActivityOutcomeDefinitionDto": {
     "properties": {
       "code": {
@@ -6303,6 +6382,77 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     "required": [
       "attachmentId",
       "sortOrder",
+    ],
+    "type": "object",
+  },
+  "AppActivityOutcomeFinalizationResultDto": {
+    "properties": {
+      "activityId": {
+        "description": "活动 ID",
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "原始命令时间",
+        "format": "date-time",
+        "type": "string",
+      },
+      "createdStatusCode": {
+        "description": "原始命令事实，不表示当前状态",
+        "enum": [
+          "draft",
+          "confirmed",
+          "superseded",
+        ],
+        "type": "string",
+      },
+      "evidenceCount": {
+        "description": "证据数量",
+        "maximum": 2000,
+        "minimum": 0,
+        "type": "number",
+      },
+      "operationCode": {
+        "description": "原始命令类别",
+        "enum": [
+          "confirm_outcome",
+          "prepare_outcome_correction",
+          "cancel_outcome_correction",
+        ],
+        "type": "string",
+      },
+      "outcomeRevisionId": {
+        "description": "命令目标成果修订 ID",
+        "type": "string",
+      },
+      "revision": {
+        "description": "目标修订号",
+        "minimum": 1,
+        "type": "number",
+      },
+      "schemaVersion": {
+        "description": "安全回执版本",
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "valueCount": {
+        "description": "成果值数量",
+        "maximum": 100,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "schemaVersion",
+      "activityId",
+      "outcomeRevisionId",
+      "revision",
+      "createdStatusCode",
+      "valueCount",
+      "evidenceCount",
+      "createdAt",
+      "operationCode",
     ],
     "type": "object",
   },
@@ -7778,6 +7928,71 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "total",
       "page",
       "pageSize",
+    ],
+    "type": "object",
+  },
+  "AppConfirmActivityOutcomeDto": {
+    "properties": {
+      "candidateId": {
+        "description": "系统候选 ID；使用系统值时必填",
+        "maxLength": 64,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+      "expectedConfirmedRevision": {
+        "description": "预期当前正式修订号，首次为 0",
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
+      },
+      "expectedLatestRevision": {
+        "description": "预期最新修订号，首次为 0",
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
+      },
+      "manualDraftId": {
+        "description": "当前人工草稿 ID；使用人工值时必填",
+        "maxLength": 64,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+      "metricSetDefinitionHash": {
+        "description": "当前指标集定义 hash",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "metricSetVersionId": {
+        "description": "当前精确指标集版本 ID",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "重试复用的操作键",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+      "values": {
+        "description": "完整确认选择；必须覆盖所有必填指标",
+        "items": {
+          "$ref": "#/components/schemas/AppOutcomeFinalizationSelectionDto",
+        },
+        "maxItems": 100,
+        "minItems": 1,
+        "type": "array",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedLatestRevision",
+      "expectedConfirmedRevision",
+      "metricSetVersionId",
+      "metricSetDefinitionHash",
+      "values",
     ],
     "type": "object",
   },
@@ -11850,6 +12065,132 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppOutcomeCorrectionValueDto": {
+    "properties": {
+      "evidenceAttachmentIds": {
+        "description": "本活动有序证据；准备更正时允许空数组",
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 20,
+        "type": "array",
+        "uniqueItems": true,
+      },
+      "metricDefinitionId": {
+        "description": "精确指标定义 ID",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "sourceKind": {
+        "description": "更正值来源",
+        "enum": [
+          "manual",
+          "system",
+        ],
+        "type": "string",
+      },
+      "sourceValueId": {
+        "description": "系统候选值 ID；系统来源必填，人工来源禁止",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "value": {
+        "description": "人工更正值；人工来源必填，系统来源禁止",
+        "oneOf": [
+          {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+          },
+          {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+          {
+            "type": "boolean",
+          },
+        ],
+      },
+    },
+    "required": [
+      "metricDefinitionId",
+      "sourceKind",
+      "evidenceAttachmentIds",
+    ],
+    "type": "object",
+  },
+  "AppOutcomeFinalizationAnchorsDto": {
+    "properties": {
+      "expectedConfirmedRevision": {
+        "description": "预期当前正式修订号，首次为 0",
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
+      },
+      "expectedLatestRevision": {
+        "description": "预期最新修订号，首次为 0",
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
+      },
+      "operationKey": {
+        "description": "重试复用的操作键",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedLatestRevision",
+      "expectedConfirmedRevision",
+    ],
+    "type": "object",
+  },
+  "AppOutcomeFinalizationSelectionDto": {
+    "properties": {
+      "evidenceAttachmentIds": {
+        "description": "本活动的有序证据附件 ID",
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 20,
+        "minItems": 1,
+        "type": "array",
+        "uniqueItems": true,
+      },
+      "metricDefinitionId": {
+        "description": "精确指标定义 ID",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "sourceKind": {
+        "description": "选定的值来源",
+        "enum": [
+          "manual",
+          "system",
+        ],
+        "type": "string",
+      },
+      "sourceValueId": {
+        "description": "人工草稿值或系统候选值 ID",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "metricDefinitionId",
+      "sourceKind",
+      "sourceValueId",
+      "evidenceAttachmentIds",
+    ],
+    "type": "object",
+  },
   "AppParticipationLedgerEntryDto": {
     "properties": {
       "activityId": {
@@ -11896,6 +12237,64 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "recognizedPointsDelta",
       "creditedPointsDelta",
       "cappedOutPointsDelta",
+    ],
+    "type": "object",
+  },
+  "AppPrepareActivityOutcomeCorrectionDto": {
+    "properties": {
+      "candidateId": {
+        "description": "系统候选 ID；使用系统值时必填",
+        "maxLength": 64,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+      "expectedConfirmedRevision": {
+        "description": "预期当前正式修订号，首次为 0",
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
+      },
+      "expectedLatestRevision": {
+        "description": "预期最新修订号，首次为 0",
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
+      },
+      "metricSetDefinitionHash": {
+        "description": "当前指标集定义 hash",
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "metricSetVersionId": {
+        "description": "当前精确指标集版本 ID",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "重试复用的操作键",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+      "values": {
+        "description": "完整替换草稿，不合并前一修订",
+        "items": {
+          "$ref": "#/components/schemas/AppOutcomeCorrectionValueDto",
+        },
+        "maxItems": 100,
+        "minItems": 1,
+        "type": "array",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedLatestRevision",
+      "expectedConfirmedRevision",
+      "metricSetVersionId",
+      "metricSetDefinitionHash",
+      "values",
     ],
     "type": "object",
   },
@@ -120992,6 +121391,286 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "考勤责任人以受控人工确认追加工作人员现场签到/签退事实 [auth]",
       "tags": [
         "Mobile - Managed Activity Onsite Operations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/outcome-confirmations": {
+    "post": {
+      "operationId": "AppManagedActivityOutcomeFinalizationsController_confirm",
+      "parameters": [
+        {
+          "description": "活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppConfirmActivityOutcomeDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityOutcomeFinalizationResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "确认完整成果快照 [rbac: activity.outcome.confirm]",
+      "tags": [
+        "Mobile - Managed Activity Outcome Finalizations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/outcome-confirmed": {
+    "get": {
+      "operationId": "AppManagedActivityOutcomeFinalizationsController_get",
+      "parameters": [
+        {
+          "description": "活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/AppActivityOutcomeConfirmedDto",
+                      },
+                    ],
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读取当前唯一正式成果，无正式成果返回 null [rbac: activity.outcome.read]",
+      "tags": [
+        "Mobile - Managed Activity Outcome Finalizations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/outcome-corrections": {
+    "post": {
+      "operationId": "AppManagedActivityOutcomeFinalizationsController_prepare",
+      "parameters": [
+        {
+          "description": "活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppPrepareActivityOutcomeCorrectionDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityOutcomeFinalizationResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "准备完整更正草稿，保留当前正式成果 [rbac: activity.outcome.correct]",
+      "tags": [
+        "Mobile - Managed Activity Outcome Finalizations",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/outcome-corrections/{outcomeRevisionId}/cancel": {
+    "post": {
+      "operationId": "AppManagedActivityOutcomeFinalizationsController_cancel",
+      "parameters": [
+        {
+          "description": "活动 ID",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        {
+          "description": "同一活动的成果修订 ID",
+          "in": "path",
+          "name": "outcomeRevisionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppOutcomeFinalizationAnchorsDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityOutcomeFinalizationResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "取消待确认更正，不删除历史数据 [rbac: activity.outcome.correct]",
+      "tags": [
+        "Mobile - Managed Activity Outcome Finalizations",
       ],
     },
   },

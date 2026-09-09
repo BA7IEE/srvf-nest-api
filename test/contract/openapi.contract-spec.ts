@@ -101,6 +101,13 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
   ['put', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcomes'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/outcome-confirmations'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/outcome-corrections'],
+  [
+    'post',
+    '/api/app/v1/my/managed-activities/{activityId}/outcome-corrections/{outcomeRevisionId}/cancel',
+  ],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/outcome-confirmed'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/outcomes'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/outcomes/{outcomeRevisionId}'],
   ['get', '/api/admin/v1/activities/{id}/metric-selection'],
@@ -1124,7 +1131,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 605; // C3-1 +4 (rule binding create/list, candidate calculate/detail)
+const EXPECTED_ROUTE_COUNT = 609; // C3-2 +4 (confirm, prepare/cancel correction, current formal read)
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -3063,6 +3070,93 @@ describe('OpenAPI 契约快照', () => {
     const path = '/api/app/v1/my/managed-activities/{activityId}/metric-candidates';
     expect(doc.paths[path].post?.responses?.['201']).toBeDefined();
     expect(doc.paths[`${path}/{candidateId}`].get?.responses?.['200']).toBeDefined();
+  });
+
+  it('C3-2 fixes source selection, dual revision anchors and identity-free finalization receipts', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const command = schemas.AppConfirmActivityOutcomeDto as OpenApiSchema;
+    expect(Object.keys(command.properties ?? {}).sort()).toEqual([
+      'candidateId',
+      'expectedConfirmedRevision',
+      'expectedLatestRevision',
+      'manualDraftId',
+      'metricSetDefinitionHash',
+      'metricSetVersionId',
+      'operationKey',
+      'values',
+    ]);
+    expect(command.required?.slice().sort()).toEqual([
+      'expectedConfirmedRevision',
+      'expectedLatestRevision',
+      'metricSetDefinitionHash',
+      'metricSetVersionId',
+      'operationKey',
+      'values',
+    ]);
+    const selection = schemas.AppOutcomeFinalizationSelectionDto as OpenApiSchema;
+    expect(Object.keys(selection.properties ?? {}).sort()).toEqual([
+      'evidenceAttachmentIds',
+      'metricDefinitionId',
+      'sourceKind',
+      'sourceValueId',
+    ]);
+    expect(selection.properties?.sourceKind.enum).toEqual(['manual', 'system']);
+    expect(selection.properties?.evidenceAttachmentIds).toMatchObject({
+      minItems: 1,
+      maxItems: 20,
+      uniqueItems: true,
+    });
+    expect(command.properties?.values).toMatchObject({ minItems: 1, maxItems: 100 });
+    const receipt = schemas.AppActivityOutcomeFinalizationResultDto as OpenApiSchema;
+    const receiptFields = [
+      'activityId',
+      'createdAt',
+      'createdStatusCode',
+      'evidenceCount',
+      'operationCode',
+      'outcomeRevisionId',
+      'revision',
+      'schemaVersion',
+      'valueCount',
+    ];
+    expect(Object.keys(receipt.properties ?? {}).sort()).toEqual(receiptFields);
+    expect(receipt.required?.slice().sort()).toEqual(receiptFields);
+    expect(receipt.properties?.operationCode.enum).toEqual([
+      'confirm_outcome',
+      'prepare_outcome_correction',
+      'cancel_outcome_correction',
+    ]);
+    const formal = schemas.AppActivityOutcomeConfirmedDto as OpenApiSchema;
+    const historical = schemas.AppActivityOutcomeDetailDto as OpenApiSchema;
+    expect(Object.keys(formal.properties ?? {}).sort()).toEqual(
+      [...Object.keys(historical.properties ?? {}), 'isCurrentConfirmed', 'confirmedAt'].sort(),
+    );
+    expect(formal.properties?.isCurrentConfirmed.enum).toEqual([true]);
+    const cancellation = schemas.AppOutcomeFinalizationAnchorsDto as OpenApiSchema;
+    expect(Object.keys(cancellation.properties ?? {}).sort()).toEqual([
+      'expectedConfirmedRevision',
+      'expectedLatestRevision',
+      'operationKey',
+    ]);
+    for (const prohibited of [
+      'actorUserId',
+      'confirmedByUserId',
+      'memberId',
+      'sourceRevisionId',
+      'requestHash',
+      'signedUrl',
+    ]) {
+      expect(JSON.stringify({ command, selection, receipt, formal, cancellation })).not.toContain(
+        prohibited,
+      );
+    }
+    const root = '/api/app/v1/my/managed-activities/{activityId}';
+    expect(doc.paths[`${root}/outcome-confirmations`].post?.responses?.['201']).toBeDefined();
+    expect(doc.paths[`${root}/outcome-corrections`].post?.responses?.['201']).toBeDefined();
+    expect(
+      doc.paths[`${root}/outcome-corrections/{outcomeRevisionId}/cancel`].post?.responses?.['200'],
+    ).toBeDefined();
+    expect(doc.paths[`${root}/outcome-confirmed`].get?.responses?.['200']).toBeDefined();
   });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {

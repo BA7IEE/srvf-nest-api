@@ -112,10 +112,20 @@
       "surface": "sha256:af7c614cda3ae86add794d164f88edd582f8715ee1df6a7437370f1255448f9c",
       "description": "sha256:85171137c3ee957dfc91827f25f8831c6ee51f4aa8b6eee2a21ac89d8719534d"
     },
+    "activity.outcome.confirm": {
+      "endpoints": 1,
+      "surface": "sha256:d652601ab6aead7b65b2c591d0fdd3db7b273b16947912d16195fb0aecb2c8c7",
+      "description": "sha256:22157bbd02a0197ab12c1862bb91c70b493134872712c1a74abe4b96334ec36d"
+    },
+    "activity.outcome.correct": {
+      "endpoints": 2,
+      "surface": "sha256:d3c6d8fb34b9107bdc4e0418b95816e81b70b13958b13143d967e14ee5f6bfed",
+      "description": "sha256:eefd258f2909c7216233b3eea239393423b00e1bf65d6f5084ed8a633ea4671f"
+    },
     "activity.outcome.read": {
-      "endpoints": 3,
-      "surface": "sha256:ea32eb31def8847540d6a7a20ff2bf6e70e6ecdc1b6769d3d5bfa31033f33263",
-      "description": "sha256:1a8fa28b5175aee6def1320f4666ec3bbb17560ebf7bd4849e73890dcacceae7"
+      "endpoints": 4,
+      "surface": "sha256:85fec0b4a8485c03931587c077f558b05a8068fe00751ecbfd16c7660f175bc4",
+      "description": "sha256:cd6bd055880d57e8f642ee9375afafb3b74dd9cbb397fa65628b8b91a1621d49"
     },
     "activity.outcome.record": {
       "endpoints": 1,

@@ -111,6 +111,20 @@ export const ACTIVITY_METRIC_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> 
 
 export const ACTIVITY_OUTCOME_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
+    code: 'activity.outcome.confirm',
+    module: 'activity',
+    action: 'outcome',
+    resourceType: 'confirm',
+    description: '确认完整活动成果；显式授权、当前责任及组织范围同时满足',
+  },
+  {
+    code: 'activity.outcome.correct',
+    module: 'activity',
+    action: 'outcome',
+    resourceType: 'correct',
+    description: '准备或取消活动成果更正草稿；不含正式确认，须显式授权及当前责任',
+  },
+  {
     code: 'activity.outcome.calculate',
     module: 'activity',
     action: 'outcome',
@@ -129,7 +143,7 @@ export const ACTIVITY_OUTCOME_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed>
     module: 'activity',
     action: 'outcome',
     resourceType: 'read',
-    description: '读取活动成果历史；显式授权、当前责任及组织范围同时满足',
+    description: '读取活动成果历史与当前正式成果；显式授权、当前责任及组织范围同时满足',
   },
 ];
 
@@ -2889,6 +2903,32 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       status: 'ACTIVE',
       uiVisibility: 'DEFAULT',
     },
+    'activity.outcome.confirm': {
+      displayName: '确认活动成果',
+      businessDescription:
+        '真人确认完整成果或正式更正；显式授权及当前负责人、组织范围同时满足，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 193,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.outcome.correct': {
+      displayName: '准备活动成果更正',
+      businessDescription:
+        '真人准备或取消更正草稿，保留现行正式成果和全部历史；不含确认权限，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 194,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
     'activity-metric.manage.rule-binding': {
       displayName: '绑定指标计算规则',
       businessDescription: '真人以显式 GLOBAL 权限创建精确指标与代码规则绑定；不自动赋予内建角色。',
@@ -2917,7 +2957,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.outcome.read': {
       displayName: '查看活动成果',
       businessDescription:
-        '真人查看有权活动的人工成果历史、明细及系统指标候选；无管理员角色直通，不自动授予内建角色。',
+        '真人查看有权活动的成果历史、明细、当前唯一正式成果及系统指标候选；新更正草稿不替代正式读面。无管理员角色直通，不自动授予内建角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 191,

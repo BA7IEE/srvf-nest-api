@@ -1,5 +1,7 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+> **C3-2 分支交接（未合并、未部署）**：完整确认、准备/取消更正与现行正式读取属于 App managed 面，具体命令见 [小程序交接 C3-2](miniapp.md)。不新增 Admin 确认入口，不允许管理员角色替代显式 confirm/correct 授权或当前 owner 资格。Admin 客户端仅同步生成定义，不能据此开放代办确认。原 Admin 路径/结构逐项对比不变；整体复审、前端实施、部署与 Gate 均未完成。
+
 > **canonical**(本文件在后端仓,改契约同 PR 改本文件;见 [`README.md`](README.md))。
 > 字段级真相 = live `/api/docs-json`;权限码 = [`RBAC_MAP.md`](../ai-harness/RBAC_MAP.md)(总数见 [`current-state.md §1`](../current-state.md),脚本守护,本文不抄数)。
 > 本文件只讲这两样讲不了的:**轴模型 + 任务→端点图 + 踩坑 + 缺口**。

@@ -121,6 +121,8 @@ const UNWIRED_RESERVED_PERMISSION_CODES: ReadonlyMap<string, string> = new Map([
 // ③ 维护者批准 C1 D2a/D2b：精确五条可人工授予自定义角色，seed 不分配。
 // 不按 CUSTOM_ROLE_ALLOWED 或前缀全量豁免。
 const MANUALLY_ASSIGNED_PERMISSION_CODES = new Set([
+  'activity.outcome.confirm',
+  'activity.outcome.correct',
   'activity.outcome.calculate',
   'activity-metric.manage.rule-binding',
   'activity.outcome.read',
@@ -148,6 +150,8 @@ describe('C1 D2a/D2b 人工授码例外边界', () => {
       'activity-template.manage.version',
       'activity-template.read.catalog',
       'activity.outcome.calculate',
+      'activity.outcome.confirm',
+      'activity.outcome.correct',
       'activity.outcome.read',
       'activity.outcome.record',
     ]);

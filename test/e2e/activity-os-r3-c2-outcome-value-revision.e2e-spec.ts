@@ -177,17 +177,17 @@ describe('C2 D1 outcome revision database constraints', () => {
   afterAll(() => dropWorkerDatabase(WORKER));
   beforeEach(() => {
     sql(
-      'TRUNCATE "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision"',
+      'TRUNCATE "ActivityOutcomeFinalizationReceipt", "ActivityOutcomeValueSource", "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision"',
     );
     sql(outcome('outcome'));
   });
-  it('replays 116 migrations and targets only the derived isolated database', () => {
+  it('replays 117 migrations and targets only the derived isolated database', () => {
     expect(sql('SELECT current_database()')).toBe(database());
     expect(
       sql(
         'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',
       ),
-    ).toBe('116');
+    ).toBe('117');
   });
   it('accepts same-chain values and evidence, preserving the predecessor', () => {
     sql(value());
@@ -240,9 +240,13 @@ describe('C2 D1 outcome revision database constraints', () => {
       '23514',
     );
     sql(
-      'TRUNCATE "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision"',
+      'TRUNCATE "ActivityOutcomeFinalizationReceipt", "ActivityOutcomeValueSource", "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision"',
     );
-    sql(outcome('outcome', 'activity', 1, 'NULL', 'confirmed'));
-    rejected(value(), '23514');
+    rejected(
+      `BEGIN; ${outcome('outcome', 'activity', 1, 'NULL', 'confirmed')}; ${value()}; COMMIT;`,
+      '23514',
+    );
+    expect(sql('SELECT count(*) FROM "ActivityOutcomeRevision"')).toBe('0');
+    expect(sql('SELECT count(*) FROM "ActivityMetricValueRevision"')).toBe('0');
   });
 });

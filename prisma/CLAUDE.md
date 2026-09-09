@@ -1,5 +1,7 @@
 # prisma — 本地铁律
 
+> **C3-2 当前工作树（2026-09-09，未提交、未合并）**：维护者已批准 #1299 完整实施包及保留本轮未提交改动继续工作，不修改门禁。当前 117 个 migration、151 个模型；新增 `20260909092502_activity_os_r3_c3_outcome_finalization` 和不可变 `ActivityOutcomeFinalizationReceipt` / `ActivityOutcomeValueSource` 两表。唯一 confirmed、完整性与状态推进均在新增 SQL 中加强，不改旧 migration、不回填或删除业务数据。仅 app_test_w98 隔离验证；3b/4b 已于 2026-09-09 按维护者确认重签并通过机器对拍，完整验收与 PR CI 尚未完成，未操作生产或启用 Gate。本段覆盖下方旧阶段的“当前分支/仅文档”描述，不把工作树读数当作 main 事实。
+
 > **2026-09-09 当前收口（覆盖下方 C3-1 分支实施／未合并／未重签表述）**：C3-1 已随 [#1298](https://github.com/BA7IEE/srvf-nest-api/pull/1298) squash 合入 main `62abb469`；18 项 PR 检查、可信红区审批、3b（第 116 条 migration）和 4b（权限码 256；审计 164 总计／159 活跃）已完成。第 4 个 E2E 分片首次 25 分钟超时，未改代码或放宽限制，单分片重跑 9 分 18 秒通过；不据此宣告超时根因已修复。[main CI 34329487288](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34329487288) 已于本轮核验 completed/success，结果与 PR CI 分别确认。候选与来源永久保留；生产、Gate 和整体跨模型复审未完成。下一阶段严格为 **C3-2：完整人工确认、正式更正与现行正式选择器**；旧文中的“C3-2/C3-3”拆分不作为执行依据。维护者已授权台账更正及 C3-2 精确计划起草，**仅文档，不实施；已追加授权补 changelog、提交、推送和创建文档评审 PR；不合并**。
 
 > 全局规则读 [`/AGENTS.md`](../AGENTS.md);部署 / 迁移流程读 [`/docs/deployment.md`](../docs/deployment.md);开工门禁读 [`/docs/current-state.md §5`](../docs/current-state.md)。
