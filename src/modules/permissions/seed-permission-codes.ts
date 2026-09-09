@@ -46,6 +46,7 @@
 /** seed 事实闭包内的全部权限码,字典序。改动必须与事实源同步,否则漂移哨兵红。 */
 export const SEED_PERMISSION_CODES: readonly string[] = Object.freeze([
   'activity-metric.manage.definition',
+  'activity-metric.manage.rule-binding',
   'activity-metric.manage.set',
   'activity-metric.read.catalog',
   'activity-registration.approve.record',
@@ -65,6 +66,7 @@ export const SEED_PERMISSION_CODES: readonly string[] = Object.freeze([
   'activity.create.emergency.record',
   'activity.create.record',
   'activity.delete.record',
+  'activity.outcome.calculate',
   'activity.outcome.read',
   'activity.outcome.record',
   'activity.publish.record',

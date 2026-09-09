@@ -15,6 +15,8 @@
 
 > **C1 D2c（已随 #1284 合入；生产未部署、整体复审待）**：新发布审核冻结为 V7，既有 Admin 工作台路径不变。详情的 `changeDiff.kind='proposal-v7'` 与 `v7Fields.changedFields` 只可展示受控字段名，绝不展示指标集名称、定义、before/after 值或快照全文；损坏 V7 只显示受控不可解析结果。审批时若显式新选引用已退役，提示 `20172` 后由发起人重新选择。PR CI、可信审批与合并后 main CI 已通过；没有新权限、目录初始化、成果值、生产部署或 Gate。
 
+> **C3-1 指标候选（当前分支，未合并、未部署）**：Admin 仅有全局规则绑定目录，`POST/GET /api/admin/v1/activity-metric-rule-bindings`；创建要求 Human GLOBAL `activity-metric.manage.rule-binding`，不自动授码或绑定角色。候选计算及读取属于 App managed 面，Admin 不得代替负责人调用，更不能展示参与人、身份、时段、原始来源或操作键。候选永久留存，无删除入口；3b/4b、PR CI、可信审批、合并与整体复审未完成。
+
 > **Activity OS R2 / B6 D2（生产未部署）**：三个新建活动命令仅在 App managed 面，Admin 不新增同名接口；参数、地点快照与幂等方式见 [`miniapp.md`](miniapp.md)。紧急创建只产草稿与一次定向站内呼叫，不能正式发布；现有普通发布、受众发布和审核批准入口均按紧急起源拒绝（`20030`），旧版审核快照也不例外。补齐事项不解除该限制，不把“呼叫已入队”展示成“已正式发布”。一般活动原有发布行为不变；B4 readiness 仍 gate-off。
 
 后端把一切建成**沿"所有权轴"嵌套的子资源**——URL 树本身就是一张任务驱动的信息架构图:
@@ -52,6 +54,7 @@
 | 区块 | 端点 |
 |---|---|
 | 指标选择（C1 D2b，已合入 #1282/未部署） | 活动详情内 `GET/PUT /api/admin/v1/activities/:id/metric-selection`；PUT 复用 scoped `activity.update.record`，仍受草稿/发起人及 pending review 限制。unconfigured 与 not_required 不可混同；20175 刷新 revision，20176 不可自动换 key 掩盖冲突；退役指针可历史展示但不可重新选用。D2c 不新增此入口：V7 只在既有审核 approved apply 中写选择。 |
+| 指标规则绑定（C3-1，当前分支未合并） | `POST/GET /api/admin/v1/activity-metric-rule-bindings`；仅 Human GLOBAL `activity-metric.manage.rule-binding`。每个 active 指标集版本至多一个规则绑定；不能从该目录推导、修改或删除已生成候选。 |
 | 全局模板版本目录（C1 D2b，已合入 #1282/未部署） | `/api/admin/v1/activity-template-versions` 的列表/详情供模板配置页，创建及 draft/activate/retire 供版本维护；Human GLOBAL 的 `activity-template.read.catalog` 与 `activity-template.manage.version` 独立。显式版本号，V1/V2 只读或作为复制来源，V3 新版本必须显式给指标选择；不可把模板管理码当作活动修改授权。 |
 | 活动头部 + 发布/取消/完结 | `GET /api/admin/v1/activities/:id`(含派生 `phase` / `allocationModeCode`) · `POST /api/admin/v1/activities` 必填 `allocationModeCode∈{first_come,qualification_rank,lottery}` · draft `PATCH .../:id` 可改该字段，published 改动固定走 change review · `PATCH .../:id/publish`(body 必填 `{requiresInsuranceConfirmed:true}`) · `PATCH .../:id/publish-with-audience-tags`(B7 定向发布，body `{requiresInsuranceConfirmed:true,audienceTagCodes:string[]}`) · `PATCH .../:id/cancel`(仅 draft|published) · `POST .../:id/complete`(**唯一**完结通路 published→completed) |
 | 负责人 / 协办 tab（v0.62.0；production 未部署） | `GET /api/admin/v1/activities/:activityId/responsibilities` · `POST/DELETE .../collaborators[/:assignmentId]` · `POST .../transfer`；legacy 仅管理员用 `POST .../claim` / `POST .../assign-initiator` |

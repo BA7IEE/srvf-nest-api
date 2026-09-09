@@ -21,6 +21,8 @@ export type AuditLogEvent =
   | 'activity.metric-set.command'
   | 'activity.metric-selection.command'
   | 'activity.outcome.command'
+  | 'activity.metric-candidate.command'
+  | 'activity.metric-rule-binding.command'
   | 'activity.template-version.command'
   | 'profile.read.other' // admin 读他人扩展档案;extra 仅资源 id / operation / maskLevel
   | 'emergency-contact.read.other' // admin 列出他人紧急联系人;extra 仅 count / operation / maskLevel

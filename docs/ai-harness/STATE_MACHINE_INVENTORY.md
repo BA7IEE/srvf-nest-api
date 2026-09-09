@@ -1,5 +1,13 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
+## C3-1 当前实施增量（未合并）
+
+`ActivityMetricCandidate.sourceMode` 新增 L1 inventory 登记，闭集仅 `participation_segments`；
+这是创建后不可变的来源类型，不是成果确认状态。读取时派生的 fresh/stale/unavailable
+不落库、不改变历史候选。第 116 条迁移保存绑定、候选、值、来源及两类命令收据，
+业务事实长期保留，数据库拒绝 UPDATE/DELETE，无清理豁免。未提升 governed，未实施 C3-2。
+机读状态列现为 67 项；`docs:boundaries:check` 已通过。下面仍保留各阶段历史记录。
+
 ## 服务段更正方案 A（实施中）
 
 新增 pending 与两类收据均无 statusCode，不增加独立状态机，不提升 governed。
@@ -337,22 +345,22 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-09-07(Activity OS R3 / C2 D1 当前实施分支，未合并)**
+**取数时点:2026-09-08(Activity OS R3 / C3-1 当前实施分支，未合并)**
 
 | 项 | 值 |
 |---|---:|
-| 总条目 | **66** |
-| `governed` / `inventory` | **8 / 58** |
-| 58 条 inventory 的分层 | L1 **7** · L2 **25** · L3 **26** |
-| 已有机器可读边(`transitions` 是数组)※ | 26 |
-| `transitions: "not-derived"` ※ | 27 |
+| 总条目 | **67** |
+| `governed` / `inventory` | **8 / 59** |
+| 59 条 inventory 的分层 | L1 **8** · L2 **25** · L3 **26** |
+| 已有机器可读边(`transitions` 是数组)※ | 28 |
+| `transitions: "not-derived"` ※ | 26 |
 | `transitions: "unconstrained"` ※ | 13 |
 
-> ※ 这三行按**全部 66 条**统计(26+27+13=66),不是按上一行那 58 条 inventory。
+> ※ 这三行按**全部 67 条**统计(28+26+13=67),不是按上一行那 59 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
 | **`vacuousGreenIfClosedSetOnly`** | **24** |
-| 零 blocker 但仍 inventory 的升格候选 | **0** |
+| 零 blocker 但仍 inventory 的升格候选 | **3** |
 
 > 🔴 **历史 true-up、A2 增补、A3 与本次 A7 落地要分开读**:
 >

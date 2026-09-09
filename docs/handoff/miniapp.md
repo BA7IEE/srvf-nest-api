@@ -38,6 +38,15 @@ managed 活动下的 `outcomes` 提供人工草稿录入、分页历史和指定
 20187/409 为回执无效，不自动重试；20188/404 统一表达不存在或当前不可访问。
 成果仍为草稿，不代表正式完成，不改变 Readiness、发布、考勤、时长或贡献；C3 确认另行实施。
 
+### C3-1 系统指标候选（当前分支，未合并、未部署）
+
+负责人在 managed 活动下调用 `POST /api/app/v1/my/managed-activities/:activityId/metric-candidates` 计算，
+再用 `GET /api/app/v1/my/managed-activities/:activityId/metric-candidates/:candidateId` 读取候选。
+需显式 `activity.outcome.calculate`；`activity.outcome.read` 仅用于读取，二者均不自动授予内建角色，管理员也不直通。
+请求不得携带指标值、来源、参与人或时段；服务端按已完成参与事实计算。Gate 关闭或来源不可用时返回拒绝，前端不得以零值填充或自动重试。
+响应只含安全值快照、完整性摘要和 fresh/stale/unavailable；绝不包含成员、身份、服务段、原始来源或操作键。
+候选永久留存且不提供删除入口；它不是人工确认，不改变发布、Readiness、考勤、时长或贡献。
+
 ### C1 D2b 指标选择与模板 options（已合入 #1282/未部署）
 
 先确定要发起的组织，再读 managed 前缀下的 `metric-set-options` / `template-version-options`。

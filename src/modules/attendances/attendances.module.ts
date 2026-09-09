@@ -56,6 +56,7 @@ import { AttendanceOfflineReviewService } from './attendance-offline-review.serv
 import { AttendanceOnsiteBatchJobService } from './attendance-onsite-batch-job.service';
 import { AttendanceImportAttachmentService } from './attendance-import-attachment.service';
 import { AttendanceImportPreviewService } from './attendance-import-preview.service';
+import { AttendanceMetricSourceQueryService } from './attendance-metric-source-query.service';
 import { AppActivityPunchesController } from './controllers/app-activity-punches.controller';
 import { AppManagedActivityAttendanceQrController } from './controllers/app-managed-activity-attendance-qr.controller';
 import { AppManagedActivityOnsitePunchesController } from './controllers/app-managed-activity-onsite-punches.controller';
@@ -112,6 +113,7 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     AppMyAttendanceMemberCredentialController,
   ],
   providers: [
+    AttendanceMetricSourceQueryService,
     AttendanceAccessService,
     AttendanceReadService,
     AttendanceReviewService,
@@ -152,6 +154,10 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     AttendancePunchSegmentRevisionService,
     AttendancePunchAuditRecorder,
   ],
-  exports: [AttendanceOnsiteBatchJobService, AttendanceImportPreviewService],
+  exports: [
+    AttendanceOnsiteBatchJobService,
+    AttendanceImportPreviewService,
+    AttendanceMetricSourceQueryService,
+  ],
 })
 export class AttendancesModule {}

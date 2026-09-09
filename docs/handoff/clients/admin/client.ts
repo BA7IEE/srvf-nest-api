@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:9b1998bc17d363f7dfc8389b68d694ca3b7a7381a5c8697bd852e74a4e6eb980
+// inputDigest: sha256:1da6acea59dbd06c3a03744b5c7cff91c9c8325181b5c6b4380058356e6f578f
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -44,6 +44,7 @@ import type {
   AdminActivityFeedbackSummaryDto,
   AdminActivityMetricCommandResponseDto,
   AdminActivityMetricDefinitionResponseDto,
+  AdminActivityMetricRuleBindingResultDto,
   AdminActivityMetricSelectionInputDto,
   AdminActivityMetricSelectionResponseDto,
   AdminActivityMetricSelectionResultDto,
@@ -62,6 +63,7 @@ import type {
   AdminAttendanceSheetExpandedActivityDto,
   AdminAttendanceSheetListItemDto,
   AdminCreateActivityMetricDefinitionDto,
+  AdminCreateActivityMetricRuleBindingDto,
   AdminCreateActivityMetricSetDto,
   AdminCreateActivityTemplateVersionDto,
   AdminMeResponseDto,
@@ -584,6 +586,14 @@ export function createAdminClient(fetcher: Fetcher) {
     /** retire 指标定义版本 [rbac: activity-metric.manage.definition] */
     AdminActivityMetricDefinitionsControllerRetire(id: string, body: AdminActivityMetricVersionCommandDto): Promise<ApiEnvelope<AdminActivityMetricCommandResponseDto>> {
       return fetcher<AdminActivityMetricCommandResponseDto>({ method: "POST", path: `/api/admin/v1/activity-metric-definitions/${id}/retire`, body });
+    },
+    /** 分页读取安全规则绑定 [rbac: activity-metric.read.catalog] */
+    AdminActivityMetricRuleBindingsControllerList(query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AdminActivityMetricRuleBindingResultDto[] }>> {
+      return fetcher<PageResultDto & { "items": AdminActivityMetricRuleBindingResultDto[] }>({ method: "GET", path: "/api/admin/v1/activity-metric-rule-bindings", query });
+    },
+    /** 创建不可变的指标规则绑定 [rbac: activity-metric.manage.rule-binding] */
+    AdminActivityMetricRuleBindingsControllerCreate(body: AdminCreateActivityMetricRuleBindingDto): Promise<ApiEnvelope<AdminActivityMetricRuleBindingResultDto>> {
+      return fetcher<AdminActivityMetricRuleBindingResultDto>({ method: "POST", path: "/api/admin/v1/activity-metric-rule-bindings", body });
     },
     /** 分页查询指标集 [rbac: activity-metric.read.catalog] */
     AdminActivityMetricSetsControllerList(query?: { "page"?: number; "pageSize"?: number; "code"?: string; "statusCode"?: "draft" | "active" | "retired" }): Promise<ApiEnvelope<PageResultDto & { "items": AdminActivityMetricSetResponseDto[] }>> {

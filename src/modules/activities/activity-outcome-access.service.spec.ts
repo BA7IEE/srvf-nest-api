@@ -51,7 +51,7 @@ describe('C2 outcome current explicit access', () => {
       responsibility as unknown as ActivityResponsibilityPolicy,
     );
     const run = () => service.authorize(tx, actor, 'activity', 'activity.outcome.read');
-    return { db, tx, identities, authz, responsibility, run };
+    return { db, tx, identities, authz, responsibility, service, run };
   }
   const unavailable = new BizException(BizCode.ACTIVITY_OUTCOME_REFERENCE_UNAVAILABLE);
 
@@ -180,6 +180,23 @@ describe('C2 outcome current explicit access', () => {
     await expect(f.run()).rejects.toThrow(unavailable);
     expect(f.db.user.findFirst).toHaveBeenCalledTimes(2);
     expect(f.authz.getExplicitVisibleOrganizationScope).toHaveBeenCalledTimes(2);
+  });
+  it('uses the calculate action as an independent explicit grant', async () => {
+    const f = fixture();
+    await expect(
+      f.service.authorize(f.tx, actor, 'activity', 'activity.outcome.calculate'),
+    ).resolves.toMatchObject({ actor });
+    expect(f.authz.getExplicitVisibleOrganizationScope).toHaveBeenCalledWith(
+      actor,
+      'activity.outcome.calculate',
+      f.tx,
+    );
+    expect(f.authz.can).toHaveBeenCalledWith(
+      actor,
+      'activity.outcome.calculate',
+      { type: 'activity', id: 'activity' },
+      f.tx,
+    );
   });
   it('does not disguise infrastructure failure as denial', async () => {
     const f = fixture();
