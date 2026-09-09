@@ -83,7 +83,7 @@ describe('C2 D2 actual PostgreSQL outcome receipt constraints', () => {
   });
   afterAll(() => dropWorkerDatabase(WORKER));
   beforeEach(() => {
-    sql(`TRUNCATE "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision";
+    sql(`TRUNCATE "ActivityOutcomeFinalizationReceipt", "ActivityOutcomeValueSource", "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision";
       INSERT INTO "ActivityOutcomeRevision" (id,"activityId",revision,"metricSetVersionId","metricSetDefinitionHash","statusCode","createdByUserId","createdAt") VALUES
       ('outcome','outcome-activity',1,'outcome-set','${hash}','draft','outcome-actor','2026-09-07T08:00:00.000Z');
       INSERT INTO "ActivityMetricValueRevision" (id,"outcomeRevisionId","activityId","setVersionId","metricDefinitionId","valueJson","valueHash","sourceCode") VALUES
