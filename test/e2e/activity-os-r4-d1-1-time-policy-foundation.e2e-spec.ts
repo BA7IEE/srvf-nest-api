@@ -88,6 +88,21 @@ function rejected(statement: string, code = '23514') {
 }
 
 describe('D1-1 time policy physical foundation', () => {
+  beforeAll(() => {
+    // A preceding migration rehearsal can leave this worker at an older schema.
+    // Establish this suite's own current-schema precondition; never rely on test order.
+    assertTestDatabaseUrl(process.env.DATABASE_URL);
+    if (!process.env.JEST_WORKER_ID) throw new Error('isolated worker required');
+    try {
+      execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
+        env: { ...process.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch {
+      throw new Error('D1-1 isolated migration deploy failed (connection details suppressed)');
+    }
+  });
+
   it.each(['version', 'receipt'])(
     'serializes conflicting %s inserts across independent connections',
     async (kind) => {
