@@ -77,6 +77,16 @@
       "surface": "sha256:24b3c979cafd301e8c33065a70ab57b72d9aedb1072be5f08a1192358a7c33fd",
       "description": "sha256:ed98853216323d4a87524906c68503c49522b2d42d980b2dce50a5899c784b9f"
     },
+    "activity-time-policy.manage.version": {
+      "endpoints": 4,
+      "surface": "sha256:cb5aed643949a25a60e311256133f2c6ce19204ab4ecad7b3a5aa5fa62781a16",
+      "description": "sha256:371c4f88c1829ec2d9e728c5092230f273b25a716faedf52bd42e7b9daa9443f"
+    },
+    "activity-time-policy.read.catalog": {
+      "endpoints": 4,
+      "surface": "sha256:9a964e886e2fda455e9129c014f00d34a899a975907a0f006a6ef6c2d5eec1c4",
+      "description": "sha256:28782c8fe8debaca98eefff81948ec5bdad59662cf1a1ee053be1332964e2305"
+    },
     "activity.cancel.record": {
       "endpoints": 1,
       "surface": "sha256:9f5299e4fc60aedfb5fe41b1c9e449897686395a2ea3d59b926a56b9d0310484",

@@ -36,6 +36,19 @@ describe('BizCode', () => {
     expect(entries.length).toBeGreaterThan(0);
   });
 
+  it('D1-2 时间政策错误码沿用活动域既有号段', () => {
+    expect([
+      BizCode.ACTIVITY_TIME_POLICY_INVALID.code,
+      BizCode.ACTIVITY_TIME_POLICY_NOT_FOUND.code,
+      BizCode.ACTIVITY_TIME_POLICY_CODE_EXISTS.code,
+      BizCode.ACTIVITY_TIME_POLICY_STALE.code,
+      BizCode.ACTIVITY_TIME_POLICY_STATUS_INVALID.code,
+      BizCode.ACTIVITY_TIME_POLICY_COMMAND_CONFLICT.code,
+      BizCode.ACTIVITY_TIME_POLICY_RECEIPT_INVALID.code,
+      BizCode.ACTIVITY_TIME_POLICY_VERSION_LIMIT.code,
+    ]).toEqual([20197, 20198, 20199, 20023, 20024, 20025, 20026, 20027]);
+  });
+
   describe.each(entries)('%s', (key, entry) => {
     it('key 命名为大写 SNAKE_CASE', () => {
       expect(key).toMatch(KEY_PATTERN);

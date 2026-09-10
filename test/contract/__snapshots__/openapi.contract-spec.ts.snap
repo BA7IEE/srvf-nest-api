@@ -1498,6 +1498,34 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminActivateTimePolicyVersionDto": {
+    "properties": {
+      "expectedDefinitionHash": {
+        "description": "期望的版本摘要",
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string",
+      },
+      "expectedStatusCode": {
+        "description": "期望状态",
+        "enum": [
+          "draft",
+        ],
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "幂等操作标识",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedDefinitionHash",
+      "expectedStatusCode",
+    ],
+    "type": "object",
+  },
   "AdminActivityCheckInListItemDto": {
     "properties": {
       "activityId": {
@@ -2814,6 +2842,84 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminCreateTimePolicyDto": {
+    "properties": {
+      "code": {
+        "description": "稳定政策代码",
+        "pattern": "^[a-z][a-z0-9_]{0,63}$",
+        "type": "string",
+      },
+      "name": {
+        "description": "政策名称",
+        "maxLength": 120,
+        "minLength": 1,
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "幂等操作标识",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "code",
+      "name",
+    ],
+    "type": "object",
+  },
+  "AdminCreateTimePolicyVersionDto": {
+    "properties": {
+      "definition": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimePolicyDefinitionDto",
+          },
+        ],
+        "description": "闭合政策定义，canonical UTF8最多32768字节",
+      },
+      "effectiveFrom": {
+        "description": "生效开始，UTC毫秒ISO文本",
+        "example": "2026-01-01T00:00:00.000Z",
+        "type": "string",
+      },
+      "effectiveUntil": {
+        "description": "生效结束，UTC毫秒ISO文本；无终点显式null",
+        "nullable": true,
+        "type": "string",
+      },
+      "evaluatorVersion": {
+        "description": "解释器版本",
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "operationKey": {
+        "description": "幂等操作标识",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+      "schemaVersion": {
+        "description": "结构版本",
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+    },
+    "required": [
+      "operationKey",
+      "schemaVersion",
+      "evaluatorVersion",
+      "definition",
+      "effectiveFrom",
+      "effectiveUntil",
+    ],
+    "type": "object",
+  },
   "AdminMeResponseDto": {
     "properties": {
       "avatarKey": {
@@ -3500,6 +3606,34 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "waitlistPosition",
       "registeredAt",
       "createdAt",
+    ],
+    "type": "object",
+  },
+  "AdminRetireTimePolicyVersionDto": {
+    "properties": {
+      "expectedDefinitionHash": {
+        "description": "期望的版本摘要",
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string",
+      },
+      "expectedStatusCode": {
+        "description": "期望状态",
+        "enum": [
+          "active",
+        ],
+        "type": "string",
+      },
+      "operationKey": {
+        "description": "幂等操作标识",
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedDefinitionHash",
+      "expectedStatusCode",
     ],
     "type": "object",
   },
@@ -4444,6 +4578,256 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "checkOutOpenOffsetMinutes",
       "checkOutCloseOffsetMinutes",
       "positions",
+    ],
+    "type": "object",
+  },
+  "AdminTimePolicyCommandResponseDto": {
+    "properties": {
+      "createdAt": {
+        "description": "原始命令结果时间",
+        "type": "string",
+      },
+      "definitionHash": {
+        "description": "版本摘要",
+        "nullable": true,
+        "type": "string",
+      },
+      "operationCode": {
+        "description": "命令类型",
+        "enum": [
+          "create_policy",
+          "create_version",
+          "activate_version",
+          "retire_version",
+        ],
+        "type": "string",
+      },
+      "policyId": {
+        "description": "政策ID",
+        "type": "string",
+      },
+      "resultStatusCode": {
+        "description": "原始命令结果状态",
+        "enum": [
+          "draft",
+          "active",
+          "retired",
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+      "schemaVersion": {
+        "description": "收据结构版本",
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "versionId": {
+        "description": "版本ID",
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "schemaVersion",
+      "operationCode",
+      "policyId",
+      "versionId",
+      "definitionHash",
+      "resultStatusCode",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "AdminTimePolicyResponseDto": {
+    "properties": {
+      "code": {
+        "description": "稳定代码",
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "type": "string",
+      },
+      "id": {
+        "description": "政策ID",
+        "type": "string",
+      },
+      "name": {
+        "description": "政策名称",
+        "type": "string",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "code",
+      "name",
+      "createdAt",
+      "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AdminTimePolicyVersionResponseDto": {
+    "properties": {
+      "activatedAt": {
+        "description": "激活时间",
+        "nullable": true,
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "type": "string",
+      },
+      "definition": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimePolicyDefinitionDto",
+          },
+        ],
+        "description": "已校验的完整政策定义",
+      },
+      "definitionHash": {
+        "description": "版本语义摘要",
+        "type": "string",
+      },
+      "effectiveFrom": {
+        "description": "生效开始",
+        "type": "string",
+      },
+      "effectiveUntil": {
+        "description": "生效结束",
+        "nullable": true,
+        "type": "string",
+      },
+      "evaluatorVersion": {
+        "description": "解释器版本",
+        "type": "number",
+      },
+      "id": {
+        "description": "版本ID",
+        "type": "string",
+      },
+      "policyId": {
+        "description": "政策ID",
+        "type": "string",
+      },
+      "retiredAt": {
+        "description": "退役时间",
+        "nullable": true,
+        "type": "string",
+      },
+      "schemaVersion": {
+        "description": "定义结构版本",
+        "type": "number",
+      },
+      "statusCode": {
+        "description": "生命周期状态",
+        "type": "string",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "type": "string",
+      },
+      "version": {
+        "description": "版本号",
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "policyId",
+      "version",
+      "schemaVersion",
+      "evaluatorVersion",
+      "definitionHash",
+      "effectiveFrom",
+      "effectiveUntil",
+      "statusCode",
+      "activatedAt",
+      "retiredAt",
+      "createdAt",
+      "updatedAt",
+      "definition",
+    ],
+    "type": "object",
+  },
+  "AdminTimePolicyVersionSummaryDto": {
+    "properties": {
+      "activatedAt": {
+        "description": "激活时间",
+        "nullable": true,
+        "type": "string",
+      },
+      "createdAt": {
+        "description": "创建时间",
+        "type": "string",
+      },
+      "definitionHash": {
+        "description": "版本语义摘要",
+        "type": "string",
+      },
+      "effectiveFrom": {
+        "description": "生效开始",
+        "type": "string",
+      },
+      "effectiveUntil": {
+        "description": "生效结束",
+        "nullable": true,
+        "type": "string",
+      },
+      "evaluatorVersion": {
+        "description": "解释器版本",
+        "type": "number",
+      },
+      "id": {
+        "description": "版本ID",
+        "type": "string",
+      },
+      "policyId": {
+        "description": "政策ID",
+        "type": "string",
+      },
+      "retiredAt": {
+        "description": "退役时间",
+        "nullable": true,
+        "type": "string",
+      },
+      "schemaVersion": {
+        "description": "定义结构版本",
+        "type": "number",
+      },
+      "statusCode": {
+        "description": "生命周期状态",
+        "type": "string",
+      },
+      "updatedAt": {
+        "description": "更新时间",
+        "type": "string",
+      },
+      "version": {
+        "description": "版本号",
+        "type": "number",
+      },
+    },
+    "required": [
+      "id",
+      "policyId",
+      "version",
+      "schemaVersion",
+      "evaluatorVersion",
+      "definitionHash",
+      "effectiveFrom",
+      "effectiveUntil",
+      "statusCode",
+      "activatedAt",
+      "retiredAt",
+      "createdAt",
+      "updatedAt",
     ],
     "type": "object",
   },
@@ -30221,6 +30605,228 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "TimePolicyDefinitionDto": {
+    "properties": {
+      "allowSplit": {
+        "description": "是否允许按类别拆分",
+        "type": "boolean",
+      },
+      "defaultCategory": {
+        "description": "默认类别",
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+      "evidence": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimePolicyEvidenceDto",
+          },
+        ],
+        "description": "evidence规则",
+      },
+      "manualAdjustment": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimePolicyManualAdjustmentDto",
+          },
+        ],
+        "description": "manualAdjustment规则",
+      },
+      "roleMappings": {
+        "description": "出勤角色映射；无重复角色代码",
+        "items": {
+          "$ref": "#/components/schemas/TimePolicyRoleMappingDto",
+        },
+        "maxItems": 64,
+        "type": "array",
+      },
+      "rounding": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimePolicyRoundingDto",
+          },
+        ],
+        "description": "rounding规则",
+      },
+      "specialIntervals": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimePolicySpecialIntervalsDto",
+          },
+        ],
+        "description": "specialIntervals规则",
+      },
+    },
+    "required": [
+      "defaultCategory",
+      "roleMappings",
+      "allowSplit",
+      "specialIntervals",
+      "rounding",
+      "evidence",
+      "manualAdjustment",
+    ],
+    "type": "object",
+  },
+  "TimePolicyEvidenceDto": {
+    "properties": {
+      "requireManualRecognition": {
+        "description": "要求人工认定",
+        "type": "boolean",
+      },
+      "requiredSources": {
+        "description": "全部要求的证据来源",
+        "items": {
+          "enum": [
+            "punch_event",
+            "service_segment",
+            "attachment",
+          ],
+          "type": "string",
+        },
+        "maxItems": 3,
+        "type": "array",
+      },
+    },
+    "required": [
+      "requiredSources",
+      "requireManualRecognition",
+    ],
+    "type": "object",
+  },
+  "TimePolicyManualAdjustmentDto": {
+    "properties": {
+      "enabled": {
+        "description": "是否允许人工调整",
+        "type": "boolean",
+      },
+      "evidenceRequired": {
+        "description": "enabled=true时必填；false时禁止",
+        "type": "boolean",
+      },
+      "reasonRequired": {
+        "description": "enabled=true时必填且为true；false时禁止",
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "enabled",
+    ],
+    "type": "object",
+  },
+  "TimePolicyRoleMappingDto": {
+    "properties": {
+      "attendanceRoleCode": {
+        "description": "出勤角色代码",
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "category": {
+        "description": "时间类别",
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "attendanceRoleCode",
+      "category",
+    ],
+    "type": "object",
+  },
+  "TimePolicyRoundingDto": {
+    "properties": {
+      "mode": {
+        "description": "取整模式",
+        "enum": [
+          "floor",
+        ],
+        "type": "string",
+      },
+      "quantumSeconds": {
+        "description": "取整量子秒数",
+        "maximum": 3600,
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "mode",
+      "quantumSeconds",
+    ],
+    "type": "object",
+  },
+  "TimePolicySpecialIntervalDto": {
+    "properties": {
+      "category": {
+        "description": "仅category模式必填；其余模式禁止",
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+      "mode": {
+        "description": "区间处理方式",
+        "enum": [
+          "exclude",
+          "category",
+          "manual",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "mode",
+    ],
+    "type": "object",
+  },
+  "TimePolicySpecialIntervalsDto": {
+    "properties": {
+      "duty": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimePolicySpecialIntervalDto",
+          },
+        ],
+        "description": "duty区间规则",
+      },
+      "preparation": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimePolicySpecialIntervalDto",
+          },
+        ],
+        "description": "preparation区间规则",
+      },
+      "travel": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TimePolicySpecialIntervalDto",
+          },
+        ],
+        "description": "travel区间规则",
+      },
+    },
+    "required": [
+      "preparation",
+      "duty",
+      "travel",
+    ],
+    "type": "object",
+  },
   "TransferActivityOwnerDto": {
     "properties": {
       "newOwnerMemberId": {
@@ -48573,6 +49179,2027 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "退役 active V3，保留历史引用 [rbac: activity-template.manage.version]",
       "tags": [
         "Admin - Activity Template Versions",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-time-policies": {
+    "get": {
+      "operationId": "AdminActivityTimePoliciesController_list",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "精确政策代码",
+          "in": "query",
+          "name": "code",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AdminTimePolicyResponseDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      30100,
+                      37017,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20198: 时长政策或版本不存在",
+                    "enum": [
+                      20198,
+                    ],
+                    "example": 20198,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策或版本不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策或版本不存在(code=20198)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20026: 时长政策收据或版本锚校验失败",
+                    "enum": [
+                      20026,
+                    ],
+                    "example": 20026,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策收据或版本锚校验失败",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策收据或版本锚校验失败(code=20026)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页查询时长政策 [rbac: activity-time-policy.read.catalog]",
+      "tags": [
+        "Admin - Activity Time Policies",
+      ],
+    },
+    "post": {
+      "operationId": "AdminActivityTimePoliciesController_createPolicy",
+      "parameters": [],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminCreateTimePolicyDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminTimePolicyCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20197: 时长政策请求或定义无效",
+                    "enum": [
+                      40000,
+                      20197,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 时长政策请求或定义无效(code=20197)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      30100,
+                      37017,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20198: 时长政策或版本不存在",
+                    "enum": [
+                      20198,
+                    ],
+                    "example": 20198,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策或版本不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策或版本不存在(code=20198)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20199: 时长政策代码已存在; 20023: 时长政策版本已变化，请刷新后重试; 20024: 时长政策版本状态不允许此操作; 20025: 此操作标识已用于其他时长政策请求; 20026: 时长政策收据或版本锚校验失败; 20027: 时长政策版本号已达上限",
+                    "enum": [
+                      20199,
+                      20023,
+                      20024,
+                      20025,
+                      20026,
+                      20027,
+                    ],
+                    "example": 20199,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策代码已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策代码已存在(code=20199) / 时长政策版本已变化，请刷新后重试(code=20023) / 时长政策版本状态不允许此操作(code=20024) / 此操作标识已用于其他时长政策请求(code=20025) / 时长政策收据或版本锚校验失败(code=20026) / 时长政策版本号已达上限(code=20027)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "createPolicy 时长政策 [rbac: activity-time-policy.manage.version]",
+      "tags": [
+        "Admin - Activity Time Policies",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-time-policies/{id}": {
+    "get": {
+      "operationId": "AdminActivityTimePoliciesController_get",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminTimePolicyResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      30100,
+                      37017,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20198: 时长政策或版本不存在",
+                    "enum": [
+                      20198,
+                    ],
+                    "example": 20198,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策或版本不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策或版本不存在(code=20198)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20026: 时长政策收据或版本锚校验失败",
+                    "enum": [
+                      20026,
+                    ],
+                    "example": 20026,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策收据或版本锚校验失败",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策收据或版本锚校验失败(code=20026)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查看时长政策 [rbac: activity-time-policy.read.catalog]",
+      "tags": [
+        "Admin - Activity Time Policies",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-time-policies/{id}/versions": {
+    "get": {
+      "operationId": "AdminActivityTimePoliciesController_listVersions",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "版本状态",
+          "in": "query",
+          "name": "statusCode",
+          "required": false,
+          "schema": {
+            "enum": [
+              "draft",
+              "active",
+              "retired",
+            ],
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AdminTimePolicyVersionSummaryDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      30100,
+                      37017,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20198: 时长政策或版本不存在",
+                    "enum": [
+                      20198,
+                    ],
+                    "example": 20198,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策或版本不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策或版本不存在(code=20198)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20026: 时长政策收据或版本锚校验失败",
+                    "enum": [
+                      20026,
+                    ],
+                    "example": 20026,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策收据或版本锚校验失败",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策收据或版本锚校验失败(code=20026)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页查询时长政策版本 [rbac: activity-time-policy.read.catalog]",
+      "tags": [
+        "Admin - Activity Time Policies",
+      ],
+    },
+    "post": {
+      "operationId": "AdminActivityTimePoliciesController_createVersion",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminCreateTimePolicyVersionDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "201": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminTimePolicyCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20197: 时长政策请求或定义无效",
+                    "enum": [
+                      40000,
+                      20197,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 时长政策请求或定义无效(code=20197)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      30100,
+                      37017,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20198: 时长政策或版本不存在",
+                    "enum": [
+                      20198,
+                    ],
+                    "example": 20198,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策或版本不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策或版本不存在(code=20198)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20199: 时长政策代码已存在; 20023: 时长政策版本已变化，请刷新后重试; 20024: 时长政策版本状态不允许此操作; 20025: 此操作标识已用于其他时长政策请求; 20026: 时长政策收据或版本锚校验失败; 20027: 时长政策版本号已达上限",
+                    "enum": [
+                      20199,
+                      20023,
+                      20024,
+                      20025,
+                      20026,
+                      20027,
+                    ],
+                    "example": 20199,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策代码已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策代码已存在(code=20199) / 时长政策版本已变化，请刷新后重试(code=20023) / 时长政策版本状态不允许此操作(code=20024) / 此操作标识已用于其他时长政策请求(code=20025) / 时长政策收据或版本锚校验失败(code=20026) / 时长政策版本号已达上限(code=20027)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "createVersion 时长政策 [rbac: activity-time-policy.manage.version]",
+      "tags": [
+        "Admin - Activity Time Policies",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-time-policies/{id}/versions/{versionId}": {
+    "get": {
+      "operationId": "AdminActivityTimePoliciesController_getVersion",
+      "parameters": [
+        {
+          "description": "政策ID",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "版本ID",
+          "in": "path",
+          "name": "versionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminTimePolicyVersionResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      30100,
+                      37017,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20198: 时长政策或版本不存在",
+                    "enum": [
+                      20198,
+                    ],
+                    "example": 20198,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策或版本不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策或版本不存在(code=20198)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20026: 时长政策收据或版本锚校验失败",
+                    "enum": [
+                      20026,
+                    ],
+                    "example": 20026,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策收据或版本锚校验失败",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策收据或版本锚校验失败(code=20026)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查看时长政策版本 [rbac: activity-time-policy.read.catalog]",
+      "tags": [
+        "Admin - Activity Time Policies",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-time-policies/{id}/versions/{versionId}/activate": {
+    "post": {
+      "operationId": "AdminActivityTimePoliciesController_activate",
+      "parameters": [
+        {
+          "description": "政策ID",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "版本ID",
+          "in": "path",
+          "name": "versionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminActivateTimePolicyVersionDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminTimePolicyCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20197: 时长政策请求或定义无效",
+                    "enum": [
+                      40000,
+                      20197,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 时长政策请求或定义无效(code=20197)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      30100,
+                      37017,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20198: 时长政策或版本不存在",
+                    "enum": [
+                      20198,
+                    ],
+                    "example": 20198,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策或版本不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策或版本不存在(code=20198)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20199: 时长政策代码已存在; 20023: 时长政策版本已变化，请刷新后重试; 20024: 时长政策版本状态不允许此操作; 20025: 此操作标识已用于其他时长政策请求; 20026: 时长政策收据或版本锚校验失败; 20027: 时长政策版本号已达上限",
+                    "enum": [
+                      20199,
+                      20023,
+                      20024,
+                      20025,
+                      20026,
+                      20027,
+                    ],
+                    "example": 20199,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策代码已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策代码已存在(code=20199) / 时长政策版本已变化，请刷新后重试(code=20023) / 时长政策版本状态不允许此操作(code=20024) / 此操作标识已用于其他时长政策请求(code=20025) / 时长政策收据或版本锚校验失败(code=20026) / 时长政策版本号已达上限(code=20027)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "activate 时长政策 [rbac: activity-time-policy.manage.version]",
+      "tags": [
+        "Admin - Activity Time Policies",
+      ],
+    },
+  },
+  "/api/admin/v1/activity-time-policies/{id}/versions/{versionId}/retire": {
+    "post": {
+      "operationId": "AdminActivityTimePoliciesController_retire",
+      "parameters": [
+        {
+          "description": "政策ID",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "版本ID",
+          "in": "path",
+          "name": "versionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminRetireTimePolicyVersionDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminTimePolicyCommandResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20197: 时长政策请求或定义无效",
+                    "enum": [
+                      40000,
+                      20197,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 时长政策请求或定义无效(code=20197)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      30100,
+                      37017,
+                    ],
+                    "example": 30100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权执行此操作",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20198: 时长政策或版本不存在",
+                    "enum": [
+                      20198,
+                    ],
+                    "example": 20198,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策或版本不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策或版本不存在(code=20198)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20199: 时长政策代码已存在; 20023: 时长政策版本已变化，请刷新后重试; 20024: 时长政策版本状态不允许此操作; 20025: 此操作标识已用于其他时长政策请求; 20026: 时长政策收据或版本锚校验失败; 20027: 时长政策版本号已达上限",
+                    "enum": [
+                      20199,
+                      20023,
+                      20024,
+                      20025,
+                      20026,
+                      20027,
+                    ],
+                    "example": 20199,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "时长政策代码已存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "时长政策代码已存在(code=20199) / 时长政策版本已变化，请刷新后重试(code=20023) / 时长政策版本状态不允许此操作(code=20024) / 此操作标识已用于其他时长政策请求(code=20025) / 时长政策收据或版本锚校验失败(code=20026) / 时长政策版本号已达上限(code=20027)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "retire 时长政策 [rbac: activity-time-policy.manage.version]",
+      "tags": [
+        "Admin - Activity Time Policies",
       ],
     },
   },

@@ -19,7 +19,7 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(258 条,按一级域分组)
+### 权限码全集(260 条,按一级域分组)
 
 > 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert + 角色映射) + `src/modules/permissions/permission-catalog.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
@@ -66,6 +66,7 @@
 | `wechat-setting` | 3 | `wechat-setting.read.singleton` · `wechat-setting.reset.credentials` · `wechat-setting.update.singleton` |
 | `activity-review` | 2 | `activity-review.read.request` · `activity-review.return.request` |
 | `activity-template` | 2 | `activity-template.manage.version` · `activity-template.read.catalog` |
+| `activity-time-policy` | 2 | `activity-time-policy.manage.version` · `activity-time-policy.read.catalog` |
 | `announcement-import` | 2 | `announcement-import.execute.record` · `announcement-import.preview.record` |
 | `member-insurance` | 2 | `member-insurance.read.other` · `member-insurance.review.record` |
 | `member-portrait` | 2 | `member-portrait.manage.record` · `member-portrait.read.history` |
@@ -74,7 +75,7 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### 角色 → 权限码覆盖(15 个内建角色;238/258 条码有持有人)
+### 角色 → 权限码覆盖(15 个内建角色;238/260 条码有持有人)
 
 > 权威源:`prisma/seed.ts` 导出的 `RBAC_SEED_CATALOG.roles`。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 「零持有」= 没有任何内建角色持有该码,只有 SUPER_ADMIN 短路可用;是否合规由
@@ -99,7 +100,7 @@
 | `activity-publish-reviewer` | 3 | `activity-review.read.request` · `activity-review.return.request` · `activity.publish.record` |
 | `activity-cross-org-initiator` | 1 | `activity.create.cross-org` |
 
-#### 零持有权限码(20 条)
+#### 零持有权限码(22 条)
 
 | 权限码 |
 |---|
@@ -110,6 +111,8 @@
 | `activity-responsibility.override.record` |
 | `activity-template.manage.version` |
 | `activity-template.read.catalog` |
+| `activity-time-policy.manage.version` |
+| `activity-time-policy.read.catalog` |
 | `activity.create.emergency.record` |
 | `activity.outcome.calculate` |
 | `activity.outcome.confirm` |
@@ -124,12 +127,12 @@
 | `wechat-setting.reset.credentials` |
 | `wecom-setting.reset.credentials` |
 
-### controller × surface 对照(119 个 @Controller)
+### controller × surface 对照(120 个 @Controller)
 
 > 权威源:`src/**/*.controller.ts` 的 `@Controller(...)` 装饰器。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 鉴权模式(R / A / P)与业务语义属人类知识,见本文件标记之外的章节。
 
-#### admin/v1(54 个 controller)
+#### admin/v1(55 个 controller)
 
 | 路由前缀 | 文件 |
 |---|---|
@@ -155,6 +158,7 @@
 | `admin/v1/activity-metric-sets` | `src/modules/activities/controllers/admin-activity-metric-sets.controller.ts` |
 | `admin/v1/activity-publish-reviews` | `src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts` |
 | `admin/v1/activity-template-versions` | `src/modules/activities/controllers/admin-activity-template-versions.controller.ts` |
+| `admin/v1/activity-time-policies` | `src/modules/activities/controllers/admin-activity-time-policies.controller.ts` |
 | `admin/v1/attachments` | `src/modules/attachments/attachments.controller.ts` |
 | `admin/v1/attendance-settlements` | `src/modules/activities/controllers/admin-attendance-settlements.controller.ts` |
 | `admin/v1/attendance-sheets` | `src/modules/attendances/attendances.controller.ts` |

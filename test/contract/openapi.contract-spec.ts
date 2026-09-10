@@ -116,6 +116,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/activities/{id}/metric-selection'],
   ['put', '/api/admin/v1/activities/{id}/metric-selection'],
   ['get', '/api/admin/v1/activity-metric-definitions'],
+  ['get', '/api/admin/v1/activity-time-policies'],
+  ['get', '/api/admin/v1/activity-time-policies/{id}'],
+  ['get', '/api/admin/v1/activity-time-policies/{id}/versions'],
+  ['get', '/api/admin/v1/activity-time-policies/{id}/versions/{versionId}'],
+  ['post', '/api/admin/v1/activity-time-policies'],
+  ['post', '/api/admin/v1/activity-time-policies/{id}/versions'],
+  ['post', '/api/admin/v1/activity-time-policies/{id}/versions/{versionId}/activate'],
+  ['post', '/api/admin/v1/activity-time-policies/{id}/versions/{versionId}/retire'],
   ['get', '/api/admin/v1/activity-metric-definitions/{id}'],
   ['post', '/api/admin/v1/activity-metric-definitions'],
   ['put', '/api/admin/v1/activity-metric-definitions/{id}/draft'],
@@ -1134,7 +1142,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 612; // C5 +2 read-only outcome report routes
+const EXPECTED_ROUTE_COUNT = 620; // D1-2 +8 Human time policy catalogue routes
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

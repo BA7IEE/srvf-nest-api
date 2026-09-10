@@ -61,6 +61,23 @@ export interface RbacPermissionSeed {
 // 全部绑 ops-admin;ServicePrincipal 自身永远不能持有(§15.3 第 7 条 —— 控制面禁授)。
 // delegation-grant.* 3 码是 PR5 的(§36),本刀不 seed。
 // Integration Foundation v1 PR5(规格书 §36):Delegation 控制面 3 码。绑 ops-admin。
+export const ACTIVITY_TIME_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity-time-policy.read.catalog',
+    module: 'activity-time-policy',
+    action: 'read',
+    resourceType: 'catalog',
+    description: '查看时长政策目录（仅真人显式 GLOBAL 授权）',
+  },
+  {
+    code: 'activity-time-policy.manage.version',
+    module: 'activity-time-policy',
+    action: 'manage',
+    resourceType: 'version',
+    description: '管理时长政策版本（仅真人显式 GLOBAL 授权）',
+  },
+];
+
 export const ACTIVITY_TEMPLATE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'activity-template.read.catalog',
@@ -2963,6 +2980,32 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       sortOrder: 191,
       riskLevel: 'LOW',
       riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity-time-policy.read.catalog': {
+      displayName: '查看时长政策目录',
+      businessDescription:
+        '真人以显式GLOBAL权限查看政策和历史版本；超级管理员不直通，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 192,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity-time-policy.manage.version': {
+      displayName: '管理时长政策版本',
+      businessDescription:
+        '真人以显式GLOBAL权限创建政策及不可变版本、激活和退役；不授予读权限，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 193,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',
       status: 'ACTIVE',
       uiVisibility: 'DEFAULT',

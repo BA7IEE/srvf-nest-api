@@ -18,6 +18,7 @@
 
 export type AuditLogEvent =
   | 'activity.metric-definition.command'
+  | 'activity.time-policy.command'
   | 'activity.metric-set.command'
   | 'activity.metric-selection.command'
   | 'activity.outcome.command'

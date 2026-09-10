@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:b47cad5bc6eaa00ceccffcbbfc6a22fc21f6b2f548a023396b7318c7afa2cc57
+// inputDigest: sha256:3170312f6ed8aac0f3afa0608eeff606ef778c11f915b8e3d08642f6ee349374
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -273,6 +273,12 @@ export interface AddTeamInsuranceCoverageDto {
   "memberId": string;
 }
 
+export interface AdminActivateTimePolicyVersionDto {
+  "operationKey": string;
+  "expectedDefinitionHash": string;
+  "expectedStatusCode": "draft";
+}
+
 export interface AdminActivityCheckInListItemDto {
   "id": string;
   "activityId": string;
@@ -535,6 +541,21 @@ export interface AdminCreateActivityTemplateVersionDto {
   "metricSelection"?: AdminActivityMetricSelectionInputDto;
 }
 
+export interface AdminCreateTimePolicyDto {
+  "operationKey": string;
+  "code": string;
+  "name": string;
+}
+
+export interface AdminCreateTimePolicyVersionDto {
+  "operationKey": string;
+  "schemaVersion": 1;
+  "evaluatorVersion": 1;
+  "definition": TimePolicyDefinitionDto;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+}
+
 export interface AdminMeResponseDto {
   "userId": string;
   "username": string;
@@ -676,6 +697,12 @@ export interface AdminRegistrationListItemDto {
   "createdAt": string;
   "member"?: AdminRegistrationExpandedMemberDto;
   "activity"?: AdminRegistrationExpandedActivityDto;
+}
+
+export interface AdminRetireTimePolicyVersionDto {
+  "operationKey": string;
+  "expectedDefinitionHash": string;
+  "expectedStatusCode": "active";
 }
 
 export interface AdminSelectActivityMetricSetDto {
@@ -864,6 +891,57 @@ export interface AdminTemplateSessionDefinitionDto {
   "earlyLeaveThresholdMinutes"?: number;
   "sortOrder"?: number;
   "positions": AdminTemplatePositionDefinitionDto[];
+}
+
+export interface AdminTimePolicyCommandResponseDto {
+  "schemaVersion": 1;
+  "operationCode": "create_policy" | "create_version" | "activate_version" | "retire_version";
+  "policyId": string;
+  "versionId": string | null;
+  "definitionHash": string | null;
+  "resultStatusCode": "draft" | "active" | "retired" | null;
+  "createdAt": string;
+}
+
+export interface AdminTimePolicyResponseDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "createdAt": string;
+  "updatedAt": string;
+}
+
+export interface AdminTimePolicyVersionResponseDto {
+  "id": string;
+  "policyId": string;
+  "version": number;
+  "schemaVersion": number;
+  "evaluatorVersion": number;
+  "definitionHash": string;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+  "statusCode": string;
+  "activatedAt": string | null;
+  "retiredAt": string | null;
+  "createdAt": string;
+  "updatedAt": string;
+  "definition": TimePolicyDefinitionDto;
+}
+
+export interface AdminTimePolicyVersionSummaryDto {
+  "id": string;
+  "policyId": string;
+  "version": number;
+  "schemaVersion": number;
+  "evaluatorVersion": number;
+  "definitionHash": string;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+  "statusCode": string;
+  "activatedAt": string | null;
+  "retiredAt": string | null;
+  "createdAt": string;
+  "updatedAt": string;
 }
 
 export interface AdminUpdateActivityMetricDefinitionDto {
@@ -2959,6 +3037,48 @@ export interface TeamJoinCycleResponseDto {
   "openOrganizationIds"?: string[] | null;
   "maxTargetOrgs"?: number | null;
   "createdAt": string;
+}
+
+export interface TimePolicyDefinitionDto {
+  "defaultCategory": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "roleMappings": TimePolicyRoleMappingDto[];
+  "allowSplit": boolean;
+  "specialIntervals": TimePolicySpecialIntervalsDto;
+  "rounding": TimePolicyRoundingDto;
+  "evidence": TimePolicyEvidenceDto;
+  "manualAdjustment": TimePolicyManualAdjustmentDto;
+}
+
+export interface TimePolicyEvidenceDto {
+  "requiredSources": "punch_event" | "service_segment" | "attachment"[];
+  "requireManualRecognition": boolean;
+}
+
+export interface TimePolicyManualAdjustmentDto {
+  "enabled": boolean;
+  "reasonRequired"?: boolean;
+  "evidenceRequired"?: boolean;
+}
+
+export interface TimePolicyRoleMappingDto {
+  "attendanceRoleCode": string;
+  "category": "volunteer_service" | "training" | "organization" | "non_creditable";
+}
+
+export interface TimePolicyRoundingDto {
+  "mode": "floor";
+  "quantumSeconds": number;
+}
+
+export interface TimePolicySpecialIntervalDto {
+  "mode": "exclude" | "category" | "manual";
+  "category"?: "volunteer_service" | "training" | "organization" | "non_creditable";
+}
+
+export interface TimePolicySpecialIntervalsDto {
+  "preparation": TimePolicySpecialIntervalDto;
+  "duty": TimePolicySpecialIntervalDto;
+  "travel": TimePolicySpecialIntervalDto;
 }
 
 export interface TransferActivityOwnerDto {

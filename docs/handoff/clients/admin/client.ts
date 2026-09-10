@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:b47cad5bc6eaa00ceccffcbbfc6a22fc21f6b2f548a023396b7318c7afa2cc57
+// inputDigest: sha256:3170312f6ed8aac0f3afa0608eeff606ef778c11f915b8e3d08642f6ee349374
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -38,6 +38,7 @@ import type {
   ActivityResponsibilityMemberDto,
   AddAllActiveCoverageResultDto,
   AddTeamInsuranceCoverageDto,
+  AdminActivateTimePolicyVersionDto,
   AdminActivityCheckInListItemDto,
   AdminActivityCheckInMemberDto,
   AdminActivityFeedbackListItemDto,
@@ -66,6 +67,8 @@ import type {
   AdminCreateActivityMetricRuleBindingDto,
   AdminCreateActivityMetricSetDto,
   AdminCreateActivityTemplateVersionDto,
+  AdminCreateTimePolicyDto,
+  AdminCreateTimePolicyVersionDto,
   AdminMeResponseDto,
   AdminMemberAttendanceRecordDto,
   AdminMetricBooleanConfigurationDto,
@@ -81,6 +84,7 @@ import type {
   AdminRegistrationExpandedActivityDto,
   AdminRegistrationExpandedMemberDto,
   AdminRegistrationListItemDto,
+  AdminRetireTimePolicyVersionDto,
   AdminSelectActivityMetricSetDto,
   AdminSettlementApproveCommandDto,
   AdminSettlementPostingBatchDto,
@@ -98,6 +102,10 @@ import type {
   AdminTemplatePositionDefinitionDto,
   AdminTemplateRegistrationFormDto,
   AdminTemplateSessionDefinitionDto,
+  AdminTimePolicyCommandResponseDto,
+  AdminTimePolicyResponseDto,
+  AdminTimePolicyVersionResponseDto,
+  AdminTimePolicyVersionSummaryDto,
   AdminUpdateActivityMetricDefinitionDto,
   AdminUpdateActivityMetricSetDto,
   AdminUpdateActivityTemplateVersionDto,
@@ -342,6 +350,13 @@ import type {
   TeamInsurancePolicyResponseDto,
   TeamJoinApplicationAdminDto,
   TeamJoinCycleResponseDto,
+  TimePolicyDefinitionDto,
+  TimePolicyEvidenceDto,
+  TimePolicyManualAdjustmentDto,
+  TimePolicyRoleMappingDto,
+  TimePolicyRoundingDto,
+  TimePolicySpecialIntervalDto,
+  TimePolicySpecialIntervalsDto,
   TransferActivityOwnerDto,
   TransferMembershipDto,
   UpdateActivityDto,
@@ -658,6 +673,38 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 退役 active V3，保留历史引用 [rbac: activity-template.manage.version] */
     AdminActivityTemplateVersionsControllerRetire(id: string, body: AdminActivityTemplateVersionCommandDto): Promise<ApiEnvelope<AdminActivityTemplateVersionCommandResultDto>> {
       return fetcher<AdminActivityTemplateVersionCommandResultDto>({ method: "POST", path: `/api/admin/v1/activity-template-versions/${id}/retire`, body });
+    },
+    /** 分页查询时长政策 [rbac: activity-time-policy.read.catalog] */
+    AdminActivityTimePoliciesControllerList(query?: { "page"?: number; "pageSize"?: number; "code"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AdminTimePolicyResponseDto[] }>> {
+      return fetcher<PageResultDto & { "items": AdminTimePolicyResponseDto[] }>({ method: "GET", path: "/api/admin/v1/activity-time-policies", query });
+    },
+    /** createPolicy 时长政策 [rbac: activity-time-policy.manage.version] */
+    AdminActivityTimePoliciesControllerCreatePolicy(body: AdminCreateTimePolicyDto): Promise<ApiEnvelope<AdminTimePolicyCommandResponseDto>> {
+      return fetcher<AdminTimePolicyCommandResponseDto>({ method: "POST", path: "/api/admin/v1/activity-time-policies", body });
+    },
+    /** 查看时长政策 [rbac: activity-time-policy.read.catalog] */
+    AdminActivityTimePoliciesControllerGet(id: string): Promise<ApiEnvelope<AdminTimePolicyResponseDto>> {
+      return fetcher<AdminTimePolicyResponseDto>({ method: "GET", path: `/api/admin/v1/activity-time-policies/${id}` });
+    },
+    /** 分页查询时长政策版本 [rbac: activity-time-policy.read.catalog] */
+    AdminActivityTimePoliciesControllerListVersions(id: string, query?: { "page"?: number; "pageSize"?: number; "statusCode"?: "draft" | "active" | "retired" }): Promise<ApiEnvelope<PageResultDto & { "items": AdminTimePolicyVersionSummaryDto[] }>> {
+      return fetcher<PageResultDto & { "items": AdminTimePolicyVersionSummaryDto[] }>({ method: "GET", path: `/api/admin/v1/activity-time-policies/${id}/versions`, query });
+    },
+    /** createVersion 时长政策 [rbac: activity-time-policy.manage.version] */
+    AdminActivityTimePoliciesControllerCreateVersion(id: string, body: AdminCreateTimePolicyVersionDto): Promise<ApiEnvelope<AdminTimePolicyCommandResponseDto>> {
+      return fetcher<AdminTimePolicyCommandResponseDto>({ method: "POST", path: `/api/admin/v1/activity-time-policies/${id}/versions`, body });
+    },
+    /** 查看时长政策版本 [rbac: activity-time-policy.read.catalog] */
+    AdminActivityTimePoliciesControllerGetVersion(id: string, versionId: string): Promise<ApiEnvelope<AdminTimePolicyVersionResponseDto>> {
+      return fetcher<AdminTimePolicyVersionResponseDto>({ method: "GET", path: `/api/admin/v1/activity-time-policies/${id}/versions/${versionId}` });
+    },
+    /** activate 时长政策 [rbac: activity-time-policy.manage.version] */
+    AdminActivityTimePoliciesControllerActivate(id: string, versionId: string, body: AdminActivateTimePolicyVersionDto): Promise<ApiEnvelope<AdminTimePolicyCommandResponseDto>> {
+      return fetcher<AdminTimePolicyCommandResponseDto>({ method: "POST", path: `/api/admin/v1/activity-time-policies/${id}/versions/${versionId}/activate`, body });
+    },
+    /** retire 时长政策 [rbac: activity-time-policy.manage.version] */
+    AdminActivityTimePoliciesControllerRetire(id: string, versionId: string, body: AdminRetireTimePolicyVersionDto): Promise<ApiEnvelope<AdminTimePolicyCommandResponseDto>> {
+      return fetcher<AdminTimePolicyCommandResponseDto>({ method: "POST", path: `/api/admin/v1/activity-time-policies/${id}/versions/${versionId}/retire`, body });
     },
     /** 公告导入执行(逐行落库,幂等可重跑,单行失败不影响其它行)[rbac: announcement-import.execute.record] */
     AnnouncementImportControllerExecute(body: AnnouncementImportRequestDto): Promise<ApiEnvelope<AnnouncementImportResultDto>> {
