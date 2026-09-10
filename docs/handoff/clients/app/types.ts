@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:772b9b4d49aaa34b66ac00b0f7d31893ba130ef17f8bd8d03e8a96d384de31eb
+// inputDigest: sha256:b47cad5bc6eaa00ceccffcbbfc6a22fc21f6b2f548a023396b7318c7afa2cc57
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -408,6 +408,60 @@ export interface AppActivityOutcomeFinalizationResultDto {
   "evidenceCount": number;
   "createdAt": string;
   "operationCode": "confirm_outcome" | "prepare_outcome_correction" | "cancel_outcome_correction";
+}
+
+export interface AppActivityOutcomeReportBatchDto {
+  "items": AppActivityOutcomeReportDto[];
+}
+
+export interface AppActivityOutcomeReportConfirmedDto {
+  "outcomeRevisionId": string;
+  "revision": number;
+  "metricSetVersionId": string;
+  "metricSetDefinitionHash": string;
+  "confirmedAt": string;
+  "metrics": AppActivityOutcomeReportMetricDto[];
+}
+
+export interface AppActivityOutcomeReportDefinitionDto {
+  "schemaVersion": 1;
+  "code": string;
+  "version": number;
+  "name": string;
+  "configuration": { "kindCode": "non_negative_integer";
+  "unit": string;
+  "minimum": number;
+  "maximum": number } | { "kindCode": "non_negative_decimal";
+  "unit": string;
+  "scale": number;
+  "minimum": string;
+  "maximum": string } | { "kindCode": "boolean";
+  "unit": null | null } | { "kindCode": "single_choice";
+  "unit": null | null;
+  "options": { "code": string;
+  "label": string }[] };
+}
+
+export interface AppActivityOutcomeReportDto {
+  "activityId": string;
+  "activityStatusCode": string;
+  "metricRequirementCode": "unconfigured" | "not_required" | "required";
+  "metricSelectionRevision": number;
+  "formalStatus": "confirmed" | "not_confirmed";
+  "currentConfirmed": AppActivityOutcomeReportConfirmedDto | null | null;
+}
+
+export interface AppActivityOutcomeReportMetricDto {
+  "valueRevisionId": string;
+  "metricDefinitionId": string;
+  "definitionHash": string;
+  "definition": AppActivityOutcomeReportDefinitionDto;
+  "value": number | string | boolean;
+  "sourceCode": "manual" | "system";
+}
+
+export interface AppActivityOutcomeReportQueryDto {
+  "activityIds": string[];
 }
 
 export interface AppActivityOutcomeResultDto {
