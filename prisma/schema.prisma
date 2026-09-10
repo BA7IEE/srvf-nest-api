@@ -187,6 +187,7 @@ model User {
   // 只铺数据事实,不在本刀接入创建、通知、审计或清单处理运行时。
   activityCreationCommandReceipts   ActivityCreationCommandReceipt[] @relation("ActivityCreationCommandReceiptActor")
   activityMetricCommandReceipts     ActivityMetricCommandReceipt[]
+  timePolicyCommandReceipts         TimePolicyCommandReceipt[]
   activityOutcomeCommandReceipts    ActivityOutcomeCommandReceipt[]
   outcomeFinalizationReceipts ActivityOutcomeFinalizationReceipt[]
   metricRuleBindingsCreated ActivityMetricRuleBinding[] @relation("MetricRuleBindingCreator")
@@ -1712,6 +1713,62 @@ model ActivityPublishReview {
 // ActivityTemplate。A2 只提供储存和 FK / 唯一性，不引入业务写路径、闭集、Version 元数据默认值或 seed。
 // C1 D1 internal metric catalogue. No Activity pointer, runtime writer or public API.
 // CHECKs and triggers live in the additive C1 migration; activated semantics are immutable.
+model TimePolicy {
+  id        String   @id @default(cuid())
+  code      String   @unique(map: "tp_code_key")
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions TimePolicyVersion[]
+  commandReceipts TimePolicyCommandReceipt[]
+}
+
+model TimePolicyVersion {
+  id               String   @id @default(cuid())
+  policyId         String
+  version          Int
+  schemaVersion    Int
+  definitionJson   Json
+  definitionHash   String
+  evaluatorVersion Int
+  effectiveFrom    DateTime
+  effectiveUntil   DateTime?
+  statusCode       String
+  activatedAt      DateTime?
+  retiredAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  policy TimePolicy @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "tpv_policy_fk")
+  commandReceipts TimePolicyCommandReceipt[]
+
+  @@unique([policyId, version], map: "tpv_policy_version_key")
+  @@unique([id, policyId, definitionHash], map: "tpv_id_policy_hash_key")
+  @@index([policyId, statusCode], map: "tpv_policy_status_idx")
+}
+
+model TimePolicyCommandReceipt {
+  id             String   @id @default(cuid())
+  actorUserId    String
+  operationCode  String
+  operationKey   String
+  requestHash    String
+  policyId       String
+  versionId      String?
+  definitionHash String?
+  resultJson     Json
+  createdAt      DateTime @default(now())
+
+  actor User @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "tpr_actor_fk")
+  policy TimePolicy @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "tpr_policy_fk")
+  version TimePolicyVersion? @relation(fields: [versionId, policyId, definitionHash], references: [id, policyId, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "tpr_version_anchor_fk")
+
+  @@unique([actorUserId, operationCode, operationKey], map: "tpr_command_key")
+  @@index([policyId], map: "tpr_policy_idx")
+  @@index([versionId], map: "tpr_version_idx")
+}
+
 model ActivityMetricDefinition {
   id                String   @id @default(cuid())
   code              String

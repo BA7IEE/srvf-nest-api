@@ -1,0 +1,3 @@
+- D1-1 新增 TimePolicy、不可变 TimePolicyVersion 和永久保留的 TimePolicyCommandReceipt 数据地基；第118条 expand migration 强制生命周期、复合引用同链、唯一性与不可变，不改旧SQL和业务数据。
+- 新增有界强类型政策定义、显式生效区间/evaluator hash封装及纯状态判断；复用旧canonical工具，不产生真实参与秒数，不新增HTTP、权限、审计或Gate。
+- 新增SQL约束、双连接竞争、空库回放和非空升级测试；16份旧回放仅更新当前计数，保留历史升级目标和行为断言。D1-2目录命令及D1-3选择发布未实施。
