@@ -1,6 +1,6 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **D1-1 当前实施（2026-09-10，未合并）**：维护者已批准 #1309 的38路径实施包及ROUTE_AUTHZ.md两处摘要刷新。当前118 migration、154模型，新增TimePolicy/TimePolicyVersion/TimePolicyCommandReceipt；纯规则与生命周期已实现，无HTTP/Module接线。仅app_test_w98已完成冷回放、非空升级和双连接唯一性竞争；本地验证与PR收尾进行中，维护者已确认第118条SQL的3b重签。目录命令、四层选择及发布冻结仍属D1-2/D1-3；不登记整个D1完成，不删除业务数据，不操作生产/Gate。下方旧数量/仅计划授权为历史时点。
+> **D1-1 已落地（2026-09-10）**：[#1310](https://github.com/BA7IEE/srvf-nest-api/pull/1310) 已合并至 main `04699ace`，18项PR检查通过，[合并后main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34474531083)通过。实际39路径，154模型/118迁移；第118条SQL的3b已重签。TimePolicy、TimePolicyVersion、TimePolicyCommandReceipt及纯解析/生命周期已落地，尚无目录HTTP入口。维护者现授权D1-1台账更正及D1-2精确计划起草，仅文档、不实施；整个D1仍未完成，D1-3选择/发布冻结及D2–D8仍待后续。未操作生产、启用Gate或删除业务数据。下方过程记录保留为历史，不代表当前待合并状态。
 
 > **D1 文档追加授权（2026-09-10）**：维护者已确认方案 A 方向，允许补充 changelog、提交、推送并创建文档评审 PR；不合并、不实施。本条覆盖下方起草时“方案待确认/不提交推送”的状态，不授权数据库、Gate 或后续实施。
 
