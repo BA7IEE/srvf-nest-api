@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:772b9b4d49aaa34b66ac00b0f7d31893ba130ef17f8bd8d03e8a96d384de31eb
+// inputDigest: sha256:b47cad5bc6eaa00ceccffcbbfc6a22fc21f6b2f548a023396b7318c7afa2cc57
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -54,6 +54,12 @@ import type {
   AppActivityOutcomeDetailDto,
   AppActivityOutcomeEvidenceDto,
   AppActivityOutcomeFinalizationResultDto,
+  AppActivityOutcomeReportBatchDto,
+  AppActivityOutcomeReportConfirmedDto,
+  AppActivityOutcomeReportDefinitionDto,
+  AppActivityOutcomeReportDto,
+  AppActivityOutcomeReportMetricDto,
+  AppActivityOutcomeReportQueryDto,
   AppActivityOutcomeResultDto,
   AppActivityOutcomeSummaryDto,
   AppActivityOutcomeValueDto,
@@ -528,6 +534,10 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivitiesControllerOrganizationOptions(): Promise<ApiEnvelope<AppActivityInitiationOrganizationOptionDto[]>> {
       return fetcher<AppActivityInitiationOrganizationOptionDto[]>({ method: "GET", path: "/api/app/v1/my/managed-activities/organization-options" });
     },
+    /** 批量读取有权活动的正式成果报告，不跨活动求和 [rbac: activity.outcome.read] */
+    AppManagedActivitiesControllerQueryOutcomeReports(body: AppActivityOutcomeReportQueryDto): Promise<ApiEnvelope<AppActivityOutcomeReportBatchDto>> {
+      return fetcher<AppActivityOutcomeReportBatchDto>({ method: "POST", path: "/api/app/v1/my/managed-activities/outcome-reports/query", body });
+    },
     /** App 原子创建专业活动草稿（场次、岗位、地点、表单、资格） [auth] */
     AppManagedActivityCreationControllerProfessional(body: AppProfessionalActivityCreationDto): Promise<ApiEnvelope<AppActivityCreationResultDto>> {
       return fetcher<AppActivityCreationResultDto>({ method: "POST", path: "/api/app/v1/my/managed-activities/professional", body });
@@ -759,6 +769,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** 取消待确认更正，不删除历史数据 [rbac: activity.outcome.correct] */
     AppManagedActivityOutcomeFinalizationsControllerCancel(activityId: string, outcomeRevisionId: string, body: AppOutcomeFinalizationAnchorsDto): Promise<ApiEnvelope<AppActivityOutcomeFinalizationResultDto>> {
       return fetcher<AppActivityOutcomeFinalizationResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/outcome-corrections/${outcomeRevisionId}/cancel`, body });
+    },
+    /** 读取有权活动的正式成果报告 [rbac: activity.outcome.read] */
+    AppManagedActivitiesControllerGetOutcomeReport(activityId: string): Promise<ApiEnvelope<AppActivityOutcomeReportDto>> {
+      return fetcher<AppActivityOutcomeReportDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/outcome-report` });
     },
     /** 分页读取有权活动的成果历史摘要 [rbac: activity.outcome.read] */
     AppManagedActivityOutcomesControllerList(activityId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityOutcomeSummaryDto[] }>> {

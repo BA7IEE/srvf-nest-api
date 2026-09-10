@@ -1,5 +1,13 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## C5 正式成果报告（2026-09-10 当前分支，未合并、未部署）
+
+新增 `GET /api/app/v1/my/managed-activities/{activityId}/outcome-report` 与 `POST /api/app/v1/my/managed-activities/outcome-reports/query`（200）；POST仅接收 `{ activityIds }`，1–20个不同ID，每项1–64字符，额外字段/查询参数拒绝。两者沿当前显式 `activity.outcome.read`、有效成员和组织、草稿发起人/非草稿owner资格；管理员角色不直接放行。批量按ID排序，任一活动无权或无效则整批失败，不返部分数据或失败ID。
+
+统一响应中的单项字段为 activityId/activityStatusCode/metricRequirementCode/metricSelectionRevision/formalStatus/currentConfirmed。未正式确认时为 `not_confirmed` 和 `null`，不能显示成0；有头时保留历史定义与hash、正式值版本/确认时间，metrics按指标ID排序。false、0及规范小数字符串原样保留；当前选集不覆盖历史定义，准备或取消更正不隐藏旧正式成果。字段类型以本轮生成OpenAPI/App client为准。
+
+不返回附件、身份、内部来源或操作许可，不跨活动求和、不提供时间/部门筛选、导出文件或持久化报告。C5不授予结算/归档权限，不增结束硬门。前端实际页面、生产部署、Gate及整体复审未交付。此处覆盖下方C5“尚无新接口”的历史时点，未修改既有接口合同。
+
 > **main CI 异常补记（2026-09-10）**：[34438228787](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34438228787) 第2组 E2E 已失败：`activity-os-r2-b6-emergency-creation.e2e-spec.ts:236` 创建前置预期201、实际500（调用于601行）；该组72套/1349项通过，1套/1项失败。第1、3、4、5组全部通过，运行最终为failure。下文“仍运行”为早先核验记录，不代表当前或全绿；根因尚未确认，不能认定与C4无关。本轮只读诊断，未重试CI、未改代码或数据库；此异常不阻止仅文档起草，但不能登记验证收口。
 
 > **2026-09-10 C4 交付状态订正**：下方结束工作台接口已随 #1304 合入 main `bab5110e`，不再只是分支实现；18项PR检查通过，合并后main CI 34438228787仍在运行。前端实际页面与生产部署未交付，Gate未启用。C5报表查询只在评审起草，尚无新接口可调用；下方“未合并”均为对应历史时点，不借本条变更旧客户端契约。

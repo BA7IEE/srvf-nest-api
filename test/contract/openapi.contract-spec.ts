@@ -109,6 +109,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/outcome-confirmed'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/ending-workbench'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/outcome-report'],
+  ['post', '/api/app/v1/my/managed-activities/outcome-reports/query'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/outcomes'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/outcomes/{outcomeRevisionId}'],
   ['get', '/api/admin/v1/activities/{id}/metric-selection'],
@@ -1132,7 +1134,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 610; // C4 +1 read-only ending workbench
+const EXPECTED_ROUTE_COUNT = 612; // C5 +2 read-only outcome report routes
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -3203,6 +3205,53 @@ describe('OpenAPI 契约快照', () => {
         '200'
       ],
     ).toBeDefined();
+  });
+
+  it('C5 report schemas expose only formal report fields with a bounded batch', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const report = schemas.AppActivityOutcomeReportDto as OpenApiSchema;
+    expect(Object.keys(report.properties ?? {}).sort()).toEqual(
+      [
+        'activityId',
+        'activityStatusCode',
+        'metricRequirementCode',
+        'metricSelectionRevision',
+        'formalStatus',
+        'currentConfirmed',
+      ].sort(),
+    );
+    expect(report.properties?.formalStatus.enum).toEqual(['confirmed', 'not_confirmed']);
+    expect(report.properties?.currentConfirmed).toMatchObject({
+      oneOf: [
+        { $ref: '#/components/schemas/AppActivityOutcomeReportConfirmedDto' },
+        { type: 'object', nullable: true, enum: [null] },
+      ],
+    });
+    const metric = schemas.AppActivityOutcomeReportMetricDto as OpenApiSchema;
+    expect(Object.keys(metric.properties ?? {}).sort()).toEqual(
+      [
+        'valueRevisionId',
+        'metricDefinitionId',
+        'definitionHash',
+        'definition',
+        'value',
+        'sourceCode',
+      ].sort(),
+    );
+    expect(metric.properties?.sourceCode.enum).toEqual(['manual', 'system']);
+    const batch = schemas.AppActivityOutcomeReportBatchDto as OpenApiSchema;
+    expect(Object.keys(batch.properties ?? {})).toEqual(['items']);
+    expect(batch.properties?.items).toMatchObject({ maxItems: 20 });
+    const input = schemas.AppActivityOutcomeReportQueryDto as OpenApiSchema;
+    expect(Object.keys(input.properties ?? {})).toEqual(['activityIds']);
+    expect(input.properties?.activityIds).toMatchObject({
+      minItems: 1,
+      maxItems: 20,
+      uniqueItems: true,
+    });
+    const operation = doc.paths['/api/app/v1/my/managed-activities/outcome-reports/query'].post;
+    expect(operation?.responses?.['200']).toBeDefined();
+    expect(operation?.responses?.['201']).toBeUndefined();
   });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {

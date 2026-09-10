@@ -3,7 +3,7 @@
 // surface: Auth 登录/令牌(admin 与 app 共用)
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:772b9b4d49aaa34b66ac00b0f7d31893ba130ef17f8bd8d03e8a96d384de31eb
+// inputDigest: sha256:b47cad5bc6eaa00ceccffcbbfc6a22fc21f6b2f548a023396b7318c7afa2cc57
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher } from '../shared/types';

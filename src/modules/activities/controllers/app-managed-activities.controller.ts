@@ -33,6 +33,13 @@ import { AppIdentityResolver } from '../../users/app-identity.resolver';
 import { AppManagedActivitiesService } from '../app-managed-activities.service';
 import { ActivityCoverService } from '../activity-cover.service';
 import { ActivityEndingWorkbenchQueryService } from '../activity-ending-workbench-query.service';
+import { ActivityOutcomeReportQueryService } from '../activity-outcome-report-query.service';
+import {
+  AppActivityOutcomeReportDto,
+  AppActivityOutcomeReportBatchDto,
+  AppActivityOutcomeReportQueryDto,
+  AppActivityOutcomeReportEmptyQueryDto,
+} from '../dto/app/app-activity-outcome-report.dto';
 import { AppActivityEndingWorkbenchDto } from '../dto/app/app-ending-workbench.dto';
 import { AppActivityOutcomeParamsDto } from '../dto/app/app-activity-outcome.dto';
 import { ActivityArchiveService } from '../activity-archive.service';
@@ -127,7 +134,57 @@ export class AppManagedActivitiesController {
     // P2-14 刀 A:与 Admin controller 委托的是同一个 service —— 校验只有一份。
     private readonly covers: ActivityCoverService,
     private readonly endingWorkbench: ActivityEndingWorkbenchQueryService,
+    private readonly outcomeReports: ActivityOutcomeReportQueryService,
   ) {}
+
+  @Post('outcome-reports/query')
+  @HttpCode(HttpStatus.OK)
+  @RequiresPermission('activity.outcome.read', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+    scopes: ['responsibility'],
+  })
+  @ApiOperation({
+    summary: '批量读取有权活动的正式成果报告，不跨活动求和 [rbac: activity.outcome.read]',
+  })
+  @ApiWrappedOkResponse(AppActivityOutcomeReportBatchDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_OUTCOME_REFERENCE_UNAVAILABLE,
+  )
+  queryOutcomeReports(
+    @Body() dto: AppActivityOutcomeReportQueryDto,
+    @Query() _query: AppActivityOutcomeReportEmptyQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.outcomeReports.query(dto.activityIds, user);
+  }
+
+  @Get(':activityId/outcome-report')
+  @RequiresPermission('activity.outcome.read', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+    scopes: ['responsibility'],
+  })
+  @ApiOperation({ summary: '读取有权活动的正式成果报告 [rbac: activity.outcome.read]' })
+  @ApiWrappedOkResponse(AppActivityOutcomeReportDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_OUTCOME_REFERENCE_UNAVAILABLE,
+  )
+  getOutcomeReport(
+    @Param() params: AppActivityOutcomeParamsDto,
+    @Query() _query: AppActivityOutcomeReportEmptyQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.outcomeReports.get(params.activityId, user);
+  }
 
   @Get(':activityId/ending-workbench')
   @RequiresPermission('activity.outcome.read', {
