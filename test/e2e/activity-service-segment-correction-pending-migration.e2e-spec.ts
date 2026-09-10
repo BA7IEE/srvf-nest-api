@@ -19,6 +19,30 @@ import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
 const migration = '20260908000000_correction_pending_segment_lifecycle';
+// Raw SQL replay intentionally has no Prisma migration history. Restore this
+// worker after both suites so subsequent specs can safely run migrate deploy.
+afterAll(() => {
+  assertTestDatabaseUrl(process.env.DATABASE_URL);
+  const worker = process.env.JEST_WORKER_ID;
+  if (!worker) throw new Error('Dedicated worker required');
+  dropWorkerDatabase(worker);
+  execFileSync(
+    'docker',
+    ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
+    { stdio: 'pipe' },
+  );
+  try {
+    execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
+      env: process.env,
+      stdio: 'pipe',
+    });
+  } catch {
+    throw new Error(
+      'Segment migration test worker restoration failed (connection details suppressed)',
+    );
+  }
+}, 120000);
+
 function sql(input: string) {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
   return execFileSync(
