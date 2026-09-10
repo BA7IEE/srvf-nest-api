@@ -1,5 +1,9 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **main CI 异常补记（2026-09-10）**：[34438228787](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34438228787) 第2组 E2E 已失败：`activity-os-r2-b6-emergency-creation.e2e-spec.ts:236` 创建前置预期201、实际500（调用于601行）；该组72套/1349项通过，1套/1项失败。第1、3、4、5组全部通过，运行最终为failure。下文“仍运行”为早先核验记录，不代表当前或全绿；根因尚未确认，不能认定与C4无关。本轮只读诊断，未重试CI、未改代码或数据库；此异常不阻止仅文档起草，但不能登记验证收口。
+
+> **2026-09-10 C4 合并订正**：C4已随 [#1304](https://github.com/BA7IEE/srvf-nest-api/pull/1304) 合入 `bab5110e`，18项PR检查和可信审批通过；合并后main CI 34438228787仍在运行。本轮仅按维护者授权订正台账并起草 [C5](../plans/activity-os-r3-c5-report-query-review.md)，方案A已确认并获准提交文档PR，实施未获授权。C4仓内实现已合并不等于Release 3或整体T0完成；T0仍open。下方C4未合并等保留为历史时点。
+
 > **2026-09-10 C4 实施进展**：#1302/#1303 已合并且各自 main CI 通过；维护者已授权 #1303 精确实施包。C4 当前分支本地实施与定向验收通过，进入提交/PR阶段，不再是仅起草；尚未合并，整体 T0 保持 open。当前事实以 NEXT_TASKS 顶部和 C4 实施计划为准，下方 C4 仅评审起草属于历史时点。
 
 > **2026-09-09 最新收口**：C3-1 / C3-2 已分别合入 #1298 / [#1300](https://github.com/BA7IEE/srvf-nest-api/pull/1300)，C3 仓内实现已交付；3b/4b 已重签，当前 117 migration、258 权限、165/160 审计。#1300 main CI 曾出现紧急创建 500；仅诊断的 #1301 合入后 [main CI 34369385145](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34369385145) 通过，但根因未定位。整体复审和后续 Release 未完成，T0 仍 open。当前仅起草 [C4](../plans/activity-os-r3-c4-ending-workbench-review.md)，不实施。下方旧阶段增量均为历史记录，不再代表当前状态。

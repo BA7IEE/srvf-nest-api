@@ -1,5 +1,9 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
+> **main CI 异常补记（2026-09-10）**：[34438228787](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34438228787) 第2组 E2E 已失败：`activity-os-r2-b6-emergency-creation.e2e-spec.ts:236` 创建前置预期201、实际500（调用于601行）；该组72套/1349项通过，1套/1项失败。第1、3、4、5组全部通过，运行最终为failure。下文“仍运行”为早先核验记录，不代表当前或全绿；根因尚未确认，不能认定与C4无关。本轮只读诊断，未重试CI、未改代码或数据库；此异常不阻止仅文档起草，但不能登记验证收口。
+
+> **2026-09-10 C4 合并与 C5 当前授权**：C4 已随 [#1304](https://github.com/BA7IEE/srvf-nest-api/pull/1304) squash 合入 main `bab5110e`；18项 PR 检查及可信审批通过，合并文件树与 `147dea7a` 一致，任务分支已清理。合并后 [main CI 34438228787](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34438228787) 本轮核验仍在运行，不预写通过。维护者已授权更正C4台账及起草 [C5报表查询评审](../plans/activity-os-r3-c5-report-query-review.md)，仅文档、不实施；C5方案A已由维护者确认，并获准补changelog、提交推送及创建文档评审PR；不合并、不实施。下方“C4未合并/实施中”和C2/C3旧状态为历史记录，不代表当前；整体T0、前端发布、生产、Gate、整体复审未完成。
+
 > **2026-09-10 C4 当前进度**：#1302 评审与 #1303 精确计划均已合并，main CI 分别 34374332752 / 34376313831 已核验 success。维护者已授权40路径实施、app_test_w98 隔离验证及通过后提交推送开 PR；不合并、不操作生产、不启用 Gate、不删除业务数据。当前分支已实现只读摘要，本地 quick、124项定向 E2E、1033项 contract及派生复验通过，进入提交/PR阶段；未合并，不登记为整体已完成。详见 [实施计划](../plans/activity-os-r3-c4-implementation-plan.md)。
 
 ## C3-2 当前收口与 C4 起草（2026-09-09）
