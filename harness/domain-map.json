@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:040d2c4d66ed45bf9398048724c10fec939006ac1d9abc19d519d094ee211b9e",
+  "inputDigest": "sha256:a76954b36d4ce8cea02ef0542d5404f92bd9799c656df921774791e785224fa1",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -299,6 +299,24 @@
     }
   },
   "modelOwnership": {
+    "TimePolicy": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "TimePolicyVersion": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "TimePolicyCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
     "User": {
       "domain": "identity-org",
       "ownerModule": "users",

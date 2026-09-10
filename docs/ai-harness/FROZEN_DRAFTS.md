@@ -1,5 +1,7 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **D1-1 当前实施（2026-09-10，未合并）**：维护者已批准 #1309 的38路径实施包及ROUTE_AUTHZ.md两处摘要刷新。当前118 migration、154模型，新增TimePolicy/TimePolicyVersion/TimePolicyCommandReceipt；纯规则与生命周期已实现，无HTTP/Module接线。仅app_test_w98已完成冷回放、非空升级和双连接唯一性竞争；本地验证与PR收尾进行中，维护者已确认第118条SQL的3b重签。目录命令、四层选择及发布冻结仍属D1-2/D1-3；不登记整个D1完成，不删除业务数据，不操作生产/Gate。下方旧数量/仅计划授权为历史时点。
+
 > **D1 文档追加授权（2026-09-10）**：维护者已确认方案 A 方向，允许补充 changelog、提交、推送并创建文档评审 PR；不合并、不实施。本条覆盖下方起草时“方案待确认/不提交推送”的状态，不授权数据库、Gate 或后续实施。
 
 > **2026-09-10 C5 合并收口与 D1 当前范围**：C5 已随 [#1307](https://github.com/BA7IEE/srvf-nest-api/pull/1307) 合入 main `883d66f9`，18 项 PR 检查通过；合并树与批准的 `3fe29414` 一致。合并后 [main CI 34451593463](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34451593463) 已独立核验 completed/success。当前为 612 端点、117 迁移、258 权限、165 总计/160 活跃审计。维护者仅授权 C5 台账更正及 D1 评审起草；D1 方案尚待确认，不实施、不操作数据库或 Gate，不提交推送。下方 C5 未合并等为历史时点。原紧急创建 500 根因仍未定位，本次 CI 通过不代表已修复；前端发布、生产部署和整体复审未完成。
@@ -271,7 +273,7 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **258** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 67** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 68** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
