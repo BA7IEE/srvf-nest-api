@@ -32,6 +32,7 @@ import { ActivityOutcomeService } from './activity-outcome.service';
 import { ActivityOutcomeFinalizationService } from './activity-outcome-finalization.service';
 import { ActivityOutcomeFinalizationAuditRecorder } from './activity-outcome-finalization-audit-recorder';
 import { ActivityOutcomeConfirmedQueryService } from './activity-outcome-confirmed-query.service';
+import { ActivityEndingWorkbenchQueryService } from './activity-ending-workbench-query.service';
 import { AppManagedActivityOutcomeFinalizationsController } from './controllers/app-managed-activity-outcome-finalizations.controller';
 import { ActivityMetricCandidateService } from './activity-metric-candidate.service';
 import { ActivityMetricCandidateQueryService } from './activity-metric-candidate-query.service';
@@ -221,6 +222,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityOutcomeFinalizationService,
     ActivityOutcomeFinalizationAuditRecorder,
     ActivityOutcomeConfirmedQueryService,
+    ActivityEndingWorkbenchQueryService,
     ActivityMetricCandidateService,
     ActivityMetricCandidateQueryService,
     ActivityMetricCandidateSourceQuery,

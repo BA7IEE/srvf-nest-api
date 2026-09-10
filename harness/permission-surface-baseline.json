@@ -123,9 +123,9 @@
       "description": "sha256:eefd258f2909c7216233b3eea239393423b00e1bf65d6f5084ed8a633ea4671f"
     },
     "activity.outcome.read": {
-      "endpoints": 4,
-      "surface": "sha256:85fec0b4a8485c03931587c077f558b05a8068fe00751ecbfd16c7660f175bc4",
-      "description": "sha256:cd6bd055880d57e8f642ee9375afafb3b74dd9cbb397fa65628b8b91a1621d49"
+      "endpoints": 5,
+      "surface": "sha256:415fca1561fe13b6a0cfb19e7048119416dfa2766d976a6b105324aec4b97243",
+      "description": "sha256:9b04181c83f7359a16154d9aa1ed490b79855890362f023e519e18fe7d381edf"
     },
     "activity.outcome.record": {
       "endpoints": 1,

@@ -2957,7 +2957,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.outcome.read': {
       displayName: '查看活动成果',
       businessDescription:
-        '真人查看有权活动的成果历史、明细、当前唯一正式成果及系统指标候选；新更正草稿不替代正式读面。无管理员角色直通，不自动授予内建角色。',
+        '真人查看有权活动的成果历史、明细、当前唯一正式成果、系统指标候选及结束工作台摘要；新更正草稿不替代正式读面。无管理员角色直通，不自动授予内建角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 191,

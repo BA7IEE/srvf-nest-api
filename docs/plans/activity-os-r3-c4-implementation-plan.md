@@ -1,5 +1,21 @@
 # C4 精确实施计划与授权清单（方案 A）
 
+> **2026-09-10 实施授权更新**：维护者已明确批准 C4 implementation 方案 A、40路径、app_test_w98 隔离验证及测试夹具重建、验证通过后提交推送创建 PR；7条精确红区授权已核验。不合并、不操作生产、不启用 Gate、不删除业务数据。#1303 已合入 main `a9b55067`，main CI 34376313831 已通过。以下“未实施授权”等为原计划时点，不代表当前许可。
+
+### C4 实施验证记录（2026-09-10，未合并）
+
+- 实际写集37路径，逐项比对§4无越界；RBAC_MAP、state-machines、STATE_MACHINE_INVENTORY 三项检查未产生差异，未制造修改。
+- 新增事务查询、纯摘要投影、四个 App DTO 和一个 GET；沿用既有成果访问属主，Activity 锁后及返回前重验；不改旧命令、旧权限策略或旧测试断言。
+- quick 已通过：352套单元测试、7873项通过、5项既有 todo；lint 为缓存口径。TypeScript（生产、测试、脚本）与 Nest build 通过。新增14项单元测试含真实调用参数的 latest1/confirmed2/101/21 上界断言。
+- contract 使用真实 Jest、专用 w98 启动配置验证；最终可空分支更新后以不更新快照模式重跑，1033项及2份快照通过。OpenAPI/snapshot 最终均仅新增382行，逐对象比较旧 paths/schemas 均不变，仅新 GET 和4个 DTO。既有生成器忽略 allOf 外层 nullable，故新 DTO 用显式 oneOf 对象/空值分支（仅本轮 DTO，不改生成器），确保生成客户端允许 null；生成的重复 `null | null` 与单个 null 类型等价。语义比较 breaking0/additive1，旧609路由授权等价，新1条，没有旧路由扩权。
+- w98 新 HTTP 7项通过（真实 Jest）：含真实初次确认、准备、取消、再次准备及替代，双应用连接池在 PostgreSQL 实际锁等待后读取一致摘要；归档及 retired 指标历史仍可读取。另有双连接选择/撤权/发起人变化3项诊断通过。
+- 旧 C3-2 finalization 8项、concurrency 59项在临时串行诊断运行器通过；此口径不冒充标准 Jest 全量。旧 settlement HTTP boundary 2项、archive action 15项在真实 Jest 通过。
+- 旧 C3-1 candidate 整份真实 Jest 初轮29通过、1失败：最大容量用例返回500。单独筛选最大用例因跳过前序 binding 建立而返回400，该次不作为业务结论；补入既有前置后，脱敏诊断捕获 P2028（30000ms 事务预算、177941ms 实际耗时）。只读比对发现模板克隆库第116条 `20260908054308_activity_os_r3_c3_metric_candidates` 校验和与当前文件不同，仍有已移除的 source/value complete 触发器；`migrate deploy` 不会重放已经登记的旧 migration，因此前述克隆库结果不作为最终验收。按既有授权仅从空库重建 w98、重放当前117条迁移并逐条校验和比对后重跑；不修改共享模板、旧测试或迁移文件。
+- **最终定向回归**：空库 w98 的117条 checksum 全部吻合；真实 Jest 串行执行7份 spec、124项全部通过（91.543s）：C4 HTTP 7、C4 concurrency 3、C3-2 finalization 8、C3-2 concurrency 59、C3-1 candidate 30、settlement HTTP boundary 2、archive action 15。隔离配置只负责 w98 空库生命周期及 worker98 定位，不替换断言或修改仓库门禁；全仓 E2E 仍由 PR CI 冷跑。新增锁测试最初漏算间接阻塞，已按当前库及 holder pid 的两级实际阻塞链修正后通过。
+- counts、authz、codemap、rbacmap、客户端新鲜度、权限绑定、边界元数据、台账及 diff check 已核验；读数610 endpoint、117 migration、258权限、165总计/160活跃审计。旧3b/4b登记检查通过，无新增迁移或重签。
+- 本地验收完成，按本轮授权提交、推送并创建实施 PR；PR编号、状态及全量 CI 以 GitHub 实时结果为准，不在提交前预写通过。当前 main 基点仍为 `a9b55067`，没有其他 open PR。
+- 本次未做：尚无本轮 PR CI 全量结论；不合并、不操作生产、不启用 Gate、不删除业务数据、不改前端实际页面。跨模型整体复审仍按维护者要求留待整体完成；旧紧急创建500根因仍未定位，不能由本轮候选测试模板漂移结论替代。共享 app_test 模板仍有历史校验和漂移，未获本轮写授权，未修补或重建。
+
 > 2026-09-10；基点 main `a31d38b7`。[#1302](https://github.com/BA7IEE/srvf-nest-api/pull/1302) 已 squash 合并，10 项检查通过、4 项跳过；不是 E2E 全量通过。原 PR head `82a0a110` 与合并后文件树无差异，远端／本地任务分支已清理，preflight 通过。
 > 维护者已于 2026-09-10 确认本精确计划，并允许补 changelog、提交、推送和创建计划 PR；**不合并、不实施**。上位依据：[已确认 C4 方案 A](activity-os-r3-c4-ending-workbench-review.md)。字段、实现细节和40路径方案已确认，但执行代码及数据库验证仍须实施授权，不借文档批准启动代码。下方“待批准／候选”保留为方案起草时点表述，以本段最新授权边界为准。
 
