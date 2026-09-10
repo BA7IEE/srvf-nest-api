@@ -1,6 +1,12 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
-## C5 正式成果报告（2026-09-10 当前分支，未合并、未部署）
+> **D1 文档追加授权（2026-09-10）**：维护者已确认方案 A 方向，允许补充 changelog、提交、推送并创建文档评审 PR；不合并、不实施。本条覆盖下方起草时“方案待确认/不提交推送”的状态，不授权数据库、Gate 或后续实施。
+
+> **2026-09-10 C5 合并收口与 D1 当前范围**：C5 已随 [#1307](https://github.com/BA7IEE/srvf-nest-api/pull/1307) 合入 main `883d66f9`，18 项 PR 检查通过；合并树与批准的 `3fe29414` 一致。合并后 [main CI 34451593463](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34451593463) 已独立核验 completed/success。当前为 612 端点、117 迁移、258 权限、165 总计/160 活跃审计。维护者仅授权 C5 台账更正及 D1 评审起草；D1 方案尚待确认，不实施、不操作数据库或 Gate，不提交推送。下方 C5 未合并等为历史时点。原紧急创建 500 根因仍未定位，本次 CI 通过不代表已修复；前端发布、生产部署和整体复审未完成。
+
+下一步见 [D1 时长政策评审](../plans/activity-os-r4-d1-time-policy-review.md)：建议先完成可追溯政策版本、受控选择与发布冻结，不改历史时长或现有结算；文档中的候选接口不是现有可调用能力。
+
+## C5 正式成果报告（2026-09-10 已合并、未部署）
 
 新增 `GET /api/app/v1/my/managed-activities/{activityId}/outcome-report` 与 `POST /api/app/v1/my/managed-activities/outcome-reports/query`（200）；POST仅接收 `{ activityIds }`，1–20个不同ID，每项1–64字符，额外字段/查询参数拒绝。两者沿当前显式 `activity.outcome.read`、有效成员和组织、草稿发起人/非草稿owner资格；管理员角色不直接放行。批量按ID排序，任一活动无权或无效则整批失败，不返部分数据或失败ID。
 
