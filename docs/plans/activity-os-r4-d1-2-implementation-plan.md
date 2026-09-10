@@ -1,5 +1,16 @@
 # Activity OS D1-2 精确实施计划与授权清单
 
+> **2026-09-10 补充确认已执行**：维护者批准新增第59路径 `src/modules/permissions/seed-permission-codes.ts`（仅补两码）及第60路径 `scripts/harness-guards.selftest.ts`（仅计数与注释258→260），该脚本精确grant已核验。写/分页/详情SQL上限正式更正为50/12/11，全部授权点和禁止逐条查询约束不变。维护者确认重签4b（260权限，166审计总计/161活跃）；允许保留未提交改动继续验证，验证后提交、推送、创建PR，不合并。下方失败及待确认记录为此前时点，后续以本条及实测结果为准。
+
+## 实施验证发现（2026-09-10，待维护者确认）
+
+- 全量单测：361 suites中360通过；8009项通过、1项失败、5项todo。唯一失败是运行时权限保护清单缺少本刀两码。需扩展第59路径 `src/modules/permissions/seed-permission-codes.ts`，仅按字典序补两码，不修改既有测试或保护规则；当前未改该文件。
+- w98真实SQL观测（不含事务控制语句）：创建政策24、创建版本35、激活45、政策分页11、版本分页11、版本详情10。原§7把嵌套权限关系查询当作一条SQL，低估了物理查询数；当前预算断言保留失败，未擅自调大。建议保留全部当前身份与显式GLOBAL校验，将写/分页/详情物理SQL上限分别更正为50/12/11，仍禁止逐条查询；待维护者确认后实施。
+- 已有80项政策单测、22项HTTP/并发测试通过；新增SQL预算用例失败如上。契约1044项通过，旧paths与schemas结构无变更，仅新增时间政策操作和DTO。全量lint首次在Node默认4GiB堆耗尽，使用命令级8GiB堆重跑，不改仓库CI配置。
+- 本节是实测问题记录，不是写集扩展、预算放宽或4b签字授权；未提交、推送、创建实施PR。
+
+> **实施授权已补齐**：维护者确认按#1311的58路径实施，十项精确红区grant已核验；另确认错误码更正方案A，允许app_test_w98隔离验证及测试夹具重建，验证后提交、推送并创建PR。不合并、不操作生产、不启用Gate、不删除业务数据。#1311已合并为main `2076b9af`，合并后CI34481131855通过；实施前四套基线测试78项通过。首次直接调用jest遗漏仓内配置而解析失败，改用既有pnpm test入口后通过，未修改测试配置或断言。
+
 > **计划已确认，允许发出计划PR**：维护者已明确确认本精确计划，允许补充changelog、提交、推送并创建计划PR，包含本轮七份文档；不合并、不实施。本轮实际写集为七份文档加 `changelog.d/activity-os-r4-d1-2-plan.md`，共八路径。下方“仅起草/待确认/无changelog”及未提交记录保留为起草时点；58路径的实施、数据库验证与未来grant仍未授权，不能执行。
 
 > 2026-09-10，基点 main `04699ace81ff6bfcb3dda9fc7e70e141b15735e7`。维护者仅授权D1-1台账更正和本计划起草。以下是待确认方案，不是实施、数据库、提交或合并许可。
@@ -65,19 +76,19 @@
 
 不同政策无全局串行锁；不同key但同政策版本竞争被政策行锁串行化。同key不同payload冲突，hash包含操作、路径policy/version目标及所有业务输入，不含key/审计时间；canonical复用既有工具。唯一冲突只翻译确切policy code重复，不能把全部P2002当业务重复。锁超时、数据库不可用沿既有基础设施错误处理，不自动重试、不返回原始SQL/连接信息。
 
-建议预算为ReadCommitted、maxWait=2000ms、timeout=5000ms，等待超时即整单失败；这是待实测预算，不是性能结论。事务内不做HTTP/对象存储/文件IO。每次授权最多3次查询（当前User、can、显式码），写命令最多4个授权点；含锁、目标、写/审计/收据的应用SQL目标上限30次，不含BEGIN/COMMIT。读分页目标上限5次，详情4次。必须记录真实计数与锁等待，不能为满足预算省授权；若实际超限，先解释属主内部查询，不擅自放宽预算。
+事务预算为ReadCommitted、maxWait=2000ms、timeout=5000ms，超时整单失败。事务内不做HTTP/对象存储/文件IO。每次授权包含当前User、can、显式码三个逻辑调用；Prisma关系查询会拆成多条物理SQL，写命令最多4个授权点。维护者根据实测确认应用SQL上限写50、分页12、详情11，不含事务控制语句；原30/5/4为已更正的低估。实测创建政策24、创建版本35、激活45、两类分页各11、版本详情10。不得为满足预算省略权限检查或引入逐条查询。
 
 ## 6. 错误、审计与预期计数
 
-新增专用BizCode，候选号20197–20204（实施前再查重，不重编号旧码）：
+新增专用BizCode，20197–20199及20023–20027（维护者确认更正：原20200–20204虽未占用，但超出活动200xx/201xx号段；不扩段、不重编号旧码）：
 - ACTIVITY_TIME_POLICY_INVALID / 20197 / 400：输入或定义无效。
 - ACTIVITY_TIME_POLICY_NOT_FOUND / 20198 / 404：政策或同链版本不存在。
 - ACTIVITY_TIME_POLICY_CODE_EXISTS / 20199 / 409：code已存在。
-- ACTIVITY_TIME_POLICY_STALE / 20200 / 409：expectedHash或expectedStatus不符。
-- ACTIVITY_TIME_POLICY_STATUS_INVALID / 20201 / 409：非法生命周期动作。
-- ACTIVITY_TIME_POLICY_COMMAND_CONFLICT / 20202 / 409：同key不同请求。
-- ACTIVITY_TIME_POLICY_RECEIPT_INVALID / 20203 / 409：存储收据/不可变锚不一致。
-- ACTIVITY_TIME_POLICY_VERSION_LIMIT / 20204 / 409：版本号耗尽。
+- ACTIVITY_TIME_POLICY_STALE / 20023 / 409：expectedHash或expectedStatus不符。
+- ACTIVITY_TIME_POLICY_STATUS_INVALID / 20024 / 409：非法生命周期动作。
+- ACTIVITY_TIME_POLICY_COMMAND_CONFLICT / 20025 / 409：同key不同请求。
+- ACTIVITY_TIME_POLICY_RECEIPT_INVALID / 20026 / 409：存储收据/不可变锚不一致。
+- ACTIVITY_TIME_POLICY_VERSION_LIMIT / 20027 / 409：版本号耗尽。
 
 未认证/当前User失效沿UNAUTHORIZED，无显式权限沿RBAC_FORBIDDEN，机器主体沿既有PRINCIPAL_KIND_FORBIDDEN。普通DTO校验沿BAD_REQUEST，不复用指标错误伪装政策错误。
 

@@ -1,5 +1,7 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+> **D1-2 实施中（2026-09-10，尚未合并）**：按 #1311 及维护者补充确认，当前分支已接入时间政策 Human 管理目录八操作、显式 GLOBAL 读写两码、不可变版本及事务收据/审计。政策列表/详情、版本列表/详情及创建政策/版本、激活/退役均已接线；角色不自动授码，超级管理员也须显式码。当前154模型/118迁移、620端点、260权限、166审计总计/161活跃；4b按维护者确认重签。单测361套8010项通过（5项既有todo），契约1044项、定向HTTP/并发23项通过；不代表全量CI或整个D1完成。D1-3选择/发布冻结、D2–D8、生产与Gate仍未实施。本段优先于下方历史过程记录。
+
 > **C3-2 分支交接（未合并、未部署）**：完整确认、准备/取消更正与现行正式读取属于 App managed 面，具体命令见 [小程序交接 C3-2](miniapp.md)。不新增 Admin 确认入口，不允许管理员角色替代显式 confirm/correct 授权或当前 owner 资格。Admin 客户端仅同步生成定义，不能据此开放代办确认。原 Admin 路径/结构逐项对比不变；整体复审、前端实施、部署与 Gate 均未完成。
 
 > **canonical**(本文件在后端仓,改契约同 PR 改本文件;见 [`README.md`](README.md))。
@@ -8,6 +10,14 @@
 > 活动责任闭环已随 **v0.62.0 release**，但 production 尚未部署；当前仍只做本地前后端联调，不执行未来 Runbook 的迁移、认领、人员配置、部署或切换步骤。
 
 ---
+
+## D1-2 时间政策目录（本分支，待合并）
+
+前缀 `/api/admin/v1/activity-time-policies`。GET目录、政策详情、`/:id/versions`分页和`/:id/versions/:versionId`详情使用 `activity-time-policy.read.catalog`；POST目录创建政策、`/:id/versions`创建版本、版本下`/activate`及`/retire`使用 `activity-time-policy.manage.version`。两个权限独立，均须真人当前显式GLOBAL授予，超级管理员不直通。
+
+列表使用page/pageSize（最大100），版本列表不返回definition；详情返回强类型定义。创建返回201，激活/退役返回200，data为七键命令收据。每次新意图生成operationKey；同意图重试复用原key及完整请求，不能靠新key绕过冲突。激活传expectedStatusCode=draft，退役传active，均携带expectedDefinitionHash。历史重放返回原收据，不代表当前版本状态，应再查询详情。
+
+新版本schemaVersion/evaluatorVersion均为1，生效时间为UTC毫秒字符串，effectiveUntil可为null；定义遵循D1-1闭合grammar。错误码20197–20199及20023–20027见生成客户端。不提供编辑定义、删除政策、删除历史或恢复退役接口。该目录不等于活动已选择/冻结政策，D1-3未接线。
 
 ## 1. 轴模型(最重要,先读这条)
 

@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:762c02cc3c17ab283423413cfb128fc88813f4f2699fa93be3d0014383e71aae |
-| endpoint count | 612 |
+| inputDigest | sha256:81eb9237a522719cbaf412fbe1703fdff82c195bd173602f13de11e0f99b3f32 |
+| endpoint count | 620 |
 | legacy [auth] count | 182 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -29,7 +29,7 @@
 
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
-| admin | 303 | 303 | 0 |
+| admin | 311 | 311 | 0 |
 | app | 180 | 180 | 0 |
 | system | 89 | 89 | 0 |
 | auth | 22 | 22 | 0 |
@@ -41,7 +41,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 397 |
+| rbac | 405 |
 | auth | 182 |
 | unclassified | 0 |
 
@@ -113,7 +113,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:762c02cc3c17ab283423413cfb128fc88813f4f2699fa93be3d0014383e71aae",
+  "inputDigest": "sha256:81eb9237a522719cbaf412fbe1703fdff82c195bd173602f13de11e0f99b3f32",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -1394,6 +1394,82 @@
         "codes": [
           {
             "code": "activity-template.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activity-time-policies",
+      "controller": "AdminActivityTimePoliciesController",
+      "handler": "list",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-time-policy.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activity-time-policies/:id",
+      "controller": "AdminActivityTimePoliciesController",
+      "handler": "get",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-time-policy.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activity-time-policies/:id/versions",
+      "controller": "AdminActivityTimePoliciesController",
+      "handler": "listVersions",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-time-policy.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activity-time-policies/:id/versions/:versionId",
+      "controller": "AdminActivityTimePoliciesController",
+      "handler": "getVersion",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-time-policy.read.catalog",
             "scope": null
           }
         ],
@@ -7107,6 +7183,82 @@
       }
     },
     {
+      "routeKey": "POST /api/admin/v1/activity-time-policies",
+      "controller": "AdminActivityTimePoliciesController",
+      "handler": "createPolicy",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-time-policy.manage.version",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/admin/v1/activity-time-policies/:id/versions",
+      "controller": "AdminActivityTimePoliciesController",
+      "handler": "createVersion",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-time-policy.manage.version",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/admin/v1/activity-time-policies/:id/versions/:versionId/activate",
+      "controller": "AdminActivityTimePoliciesController",
+      "handler": "activate",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-time-policy.manage.version",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/admin/v1/activity-time-policies/:id/versions/:versionId/retire",
+      "controller": "AdminActivityTimePoliciesController",
+      "handler": "retire",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity-time-policy.manage.version",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
       "routeKey": "POST /api/admin/v1/announcement-import/execute",
       "controller": "AnnouncementImportController",
       "handler": "execute",
@@ -11244,7 +11396,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**239 条码有端点;其中 84 条守多于一个端点。**
+> 每条权限码守着哪些端点。**241 条码有端点;其中 86 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -11272,6 +11424,8 @@
 | `activity-metric.manage.definition` | 4 | POST /api/admin/v1/activity-metric-definitions · POST /api/admin/v1/activity-metric-definitions/:id/activate · POST /api/admin/v1/activity-metric-definitions/:id/retire · PUT /api/admin/v1/activity-metric-definitions/:id/draft |
 | `activity-metric.manage.set` | 4 | POST /api/admin/v1/activity-metric-sets · POST /api/admin/v1/activity-metric-sets/:id/activate · POST /api/admin/v1/activity-metric-sets/:id/retire · PUT /api/admin/v1/activity-metric-sets/:id/draft |
 | `activity-template.manage.version` | 4 | POST /api/admin/v1/activity-template-versions · POST /api/admin/v1/activity-template-versions/:id/activate · POST /api/admin/v1/activity-template-versions/:id/retire · PUT /api/admin/v1/activity-template-versions/:id/draft |
+| `activity-time-policy.manage.version` | 4 | POST /api/admin/v1/activity-time-policies · POST /api/admin/v1/activity-time-policies/:id/versions · POST /api/admin/v1/activity-time-policies/:id/versions/:versionId/activate · POST /api/admin/v1/activity-time-policies/:id/versions/:versionId/retire |
+| `activity-time-policy.read.catalog` | 4 | GET /api/admin/v1/activity-time-policies · GET /api/admin/v1/activity-time-policies/:id · GET /api/admin/v1/activity-time-policies/:id/versions · GET /api/admin/v1/activity-time-policies/:id/versions/:versionId |
 | `activity.create.record` | 4 | POST /api/admin/v1/activities · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `activity.settlement-generate.record` | 4 | GET /api/app/v1/my/managed-activities/:activityId/settlement · GET /api/app/v1/my/managed-activities/:activityId/settlement/items · GET /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId · POST /api/app/v1/my/managed-activities/:activityId/settlement/generate |
 | `attachment.upload.*` | 4 | POST /api/admin/v1/attachments · POST /api/admin/v1/attachments/confirm-upload · POST /api/admin/v1/attachments/upload-url · POST /api/admin/v1/contents/:id/attachments/upload-url |
@@ -11569,6 +11723,10 @@
 | GET | /api/admin/v1/activity-publish-reviews/:id | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.read.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:69; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:85 |
 | GET | /api/admin/v1/activity-template-versions | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:37; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:46 |
 | GET | /api/admin/v1/activity-template-versions/:id | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:48; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:60 |
+| GET | /api/admin/v1/activity-time-policies | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:56; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:72 |
+| GET | /api/admin/v1/activity-time-policies/:id | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:75; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:91 |
+| GET | /api/admin/v1/activity-time-policies/:id/versions | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:94; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:114 |
+| GET | /api/admin/v1/activity-time-policies/:id/versions/:versionId | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:117; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:133 |
 | GET | /api/admin/v1/attachments | Admin - Attachments | rbac | RBAC; admission=-; codes=attachment.view.*; require=all; scopes=-; engine=rbac-global | code | src/modules/attachments/attachments.controller.ts:110; src/modules/attachments/attachments.controller.ts:122 |
 | GET | /api/admin/v1/attachments/:id | Admin - Attachments | rbac | RBAC; admission=-; codes=attachment.view.*; require=all; scopes=-; engine=rbac-global | code | src/modules/attachments/attachments.controller.ts:201; src/modules/attachments/attachments.controller.ts:212 |
 | GET | /api/admin/v1/attachments/by-owner | Admin - Attachments | rbac | RBAC; admission=-; codes=attachment.view.*; require=all; scopes=-; engine=rbac-global | code | src/modules/attachments/attachments.controller.ts:181; src/modules/attachments/attachments.controller.ts:198 |
@@ -11881,6 +12039,10 @@
 | POST | /api/admin/v1/activity-template-versions | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:62; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:86 |
 | POST | /api/admin/v1/activity-template-versions/:id/activate | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:113; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:137 |
 | POST | /api/admin/v1/activity-template-versions/:id/retire | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:139; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:162 |
+| POST | /api/admin/v1/activity-time-policies | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:136; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:162 |
+| POST | /api/admin/v1/activity-time-policies/:id/versions | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:169; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:196 |
+| POST | /api/admin/v1/activity-time-policies/:id/versions/:versionId/activate | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:203; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:231 |
+| POST | /api/admin/v1/activity-time-policies/:id/versions/:versionId/retire | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:238; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:266 |
 | POST | /api/admin/v1/announcement-import/execute | Admin - Announcement Import | rbac | RBAC; admission=-; codes=announcement-import.execute.record; require=all; scopes=-; engine=rbac-global | code | src/modules/announcement-import/announcement-import.controller.ts:58; src/modules/announcement-import/announcement-import.controller.ts:75 |
 | POST | /api/admin/v1/announcement-import/preview | Admin - Announcement Import | rbac | RBAC; admission=-; codes=announcement-import.preview.record; require=all; scopes=-; engine=rbac-global | code | src/modules/announcement-import/announcement-import.controller.ts:38; src/modules/announcement-import/announcement-import.controller.ts:55 |
 | POST | /api/admin/v1/attachments | Admin - Attachments | rbac | RBAC; admission=-; codes=attachment.upload.*; require=all; scopes=-; engine=rbac-global | code | src/modules/attachments/attachments.controller.ts:82; src/modules/attachments/attachments.controller.ts:107 |

@@ -28,6 +28,11 @@ import { ActivityAuditRecorder } from './activity-audit-recorder';
 import { ActivitySeriesAuditRecorder } from './activity-series-audit-recorder';
 import { ActivitySeriesService } from './activity-series.service';
 import { ActivityMetricCommand } from './activity-metric-command';
+import { ActivityTimePolicyCommand } from './activity-time-policy-command';
+import { ActivityTimePolicyService } from './activity-time-policy.service';
+import { ActivityTimePolicyCatalogueQueryService } from './activity-time-policy-catalogue-query.service';
+import { ActivityTimePolicyAuditRecorder } from './activity-time-policy-audit-recorder';
+import { AdminActivityTimePoliciesController } from './controllers/admin-activity-time-policies.controller';
 import { ActivityOutcomeService } from './activity-outcome.service';
 import { ActivityOutcomeFinalizationService } from './activity-outcome-finalization.service';
 import { ActivityOutcomeFinalizationAuditRecorder } from './activity-outcome-finalization-audit-recorder';
@@ -209,6 +214,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AdminActivityPublishReviewsController,
     AdminActivityResponsibilitiesController,
     AdminActivityMetricDefinitionsController,
+    AdminActivityTimePoliciesController,
     AdminActivityMetricSetsController,
     AppManagedActivitiesController,
     AdminAttendanceSettlementsController,
@@ -251,6 +257,10 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivitySeriesAuditRecorder,
     ActivitySeriesService,
     ActivityMetricCommand,
+    ActivityTimePolicyCommand,
+    ActivityTimePolicyService,
+    ActivityTimePolicyCatalogueQueryService,
+    ActivityTimePolicyAuditRecorder,
     ActivityMetricAuditRecorder,
     ActivityMetricDefinitionService,
     ActivityMetricSetService,
