@@ -1,5 +1,9 @@
 # Activity OS D1-1 精确实施计划与授权清单
 
+> **D1-1 已落地（2026-09-10）**：[#1310](https://github.com/BA7IEE/srvf-nest-api/pull/1310) 已合并至 main `04699ace`，18项PR检查通过，[合并后main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34474531083)通过。实际39路径，154模型/118迁移；第118条SQL的3b已重签。TimePolicy、TimePolicyVersion、TimePolicyCommandReceipt及纯解析/生命周期已落地，尚无目录HTTP入口。维护者现授权D1-1台账更正及D1-2精确计划起草，仅文档、不实施；整个D1仍未完成，D1-3选择/发布冻结及D2–D8仍待后续。未操作生产、启用Gate或删除业务数据。下方过程记录保留为历史，不代表当前待合并状态。
+
+合并核验：批准head `775c9e9a20f2c51ad539619c3d1d9eff687db9b2` 与squash提交 `04699ace81ff6bfcb3dda9fc7e70e141b15735e7` 的tree同为 `e66d239a8da0caecb48fa7b3125cd77791fdbe71`。main CI运行34474531083在该合并SHA完成SUCCESS。此前foundation缺表的具体前序破坏源仍未最终定位；补准备前置后PR及main CI通过，不将其写成已证明根因。整体跨模型复审仍未完成。下一步为 [D1-2精确计划](activity-os-r4-d1-2-implementation-plan.md)，不沿用D1-1授权实施。
+
 > **#1310 CI补验**：首轮CI的E2E分片2仅新foundation套件失败，30项均为42P01（TimePolicy不存在）；其他4个E2E分片及Fast checks/Harness/事故回放通过。CI日志显示起始曾应用118迁移，但本套件执行时worker缺表，具体前序破坏源未最终定位。仅在已授权的新foundation测试增加本套件migrate deploy准备前置，保留全部断言、不改SQL/生产代码/CI规则。本地仅w98从空库迁移再执行30项通过；此结果不代替更新后完整CI。
 
 > **提交前本地验收**：lint/typecheck/build、356套7938项单测（5项既有todo）、w98新增32项/旧迁移105项/contract1036项及2快照均通过；签字、文档、OpenAPI、客户端和边界元数据检查通过。事故回放实际触发14/14、结构断言12/12通过。quick首次收尾的Harness与并行事故回放临时文件清理相撞而ENOENT；随后单独完整harness:selftest返回0，未修改检查规则。全量E2E仍由PR CI验收，整体跨模型复审仍未完成；不把局部结果写成全仓CI已通过。
