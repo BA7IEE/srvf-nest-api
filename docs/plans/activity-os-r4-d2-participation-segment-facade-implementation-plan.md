@@ -1,8 +1,8 @@
 # Activity OS Release 4 / D2：中性参与服务段 Facade 精确实施计划与授权清单
 
-> **当前状态（2026-09-11）**：D2 方向评审已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入；精确计划 [#1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318) 已 squash 合入 main `c2a687bf2e9e81d1199329021f06abca40d8f8aa`，合并后 [main CI 34597888732](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34597888732) completed/success。维护者随后明确授权本稿 §4 的 10 个路径实施；当前分支已完成该范围内的代码、测试和派生文档，尚未创建 implementation PR。
+> **当前状态（2026-09-11）**：D2 方向评审已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入；精确计划 [#1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318) 已 squash 合入 main `c2a687bf2e9e81d1199329021f06abca40d8f8aa`，合并后 [main CI 34597888732](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34597888732) completed/success。维护者随后明确授权本稿 §4 的 10 个路径实施；代码、测试和派生文档已提交为 [implementation PR #1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319)，当前 CI 运行中，尚未合并。
 
-> **治理新鲜度缺口（本轮发现，尚未写入）**：新增 `src` Facade 与受控 module provider 会机械改变两份治理生成物的输入指纹：`harness/domain-map.json` 与 `docs/ai-harness/ROUTE_AUTHZ.md`。它们不在原 10 路径授权内，且均受保护；已只读确认这一事实，未自行 grant 或修改。完成 PR 前须由维护者单独授权这两条纯派生更新；这不改变 D2 的无 migration、无 API、无权限、无 Gate 边界。
+> **治理新鲜度处置（本轮完成）**：新增 `src` Facade 与受控 module provider 机械改变了 `harness/domain-map.json` 与 `docs/ai-harness/ROUTE_AUTHZ.md` 的输入指纹。维护者已单独授权这两条纯派生更新；实际 diff 仅为三个 inputDigest，`docs:boundaries:check` 与 `docs:authz:check` 均通过，625 个端点、路由策略和域归属语义未变化。这不改变 D2 的无 migration、无 API、无权限、无 Gate 边界。
 
 ## 1. 这次 D2 真正要交付什么
 
@@ -144,7 +144,7 @@ select 仅含段的 `id`、`participationIdentityId`、`segmentKey`、`revision`
 
 ## 6. 档位、授权与回退
 
-这是 **B 档**：只新增内部只读代码、模块 provider/export 和测试，不增加 endpoint、DTO、schema、migration、权限、审计、错误码或外部行为。对 §4 的 10 个路径，`pnpm harness:needs` 为 0 个需要 grant。实施后复核的 12 路径预算显示，业务 10 路径仍无需 grant，但 `harness/domain-map.json` 与 `docs/ai-harness/ROUTE_AUTHZ.md` 因输入指纹变化各需维护者授权；这只说明受保护派生物的更新手续，**不**构成业务范围、数据库重建、提交、PR、合并或 Gate 授权。
+这是 **B 档**：只新增内部只读代码、模块 provider/export 和测试，不增加 endpoint、DTO、schema、migration、权限、审计、错误码或外部行为。对 §4 的 10 个路径，`pnpm harness:needs` 为 0 个需要 grant。实施后复核的 12 路径预算显示，业务 10 路径仍无需 grant；`harness/domain-map.json` 与 `docs/ai-harness/ROUTE_AUTHZ.md` 因输入指纹变化曾各需维护者授权，现已获授权并仅刷新派生 digest。这不构成业务范围、数据库重建、合并或 Gate 授权。
 
 未来实施开始前仍需维护者单独确认：
 
@@ -156,4 +156,4 @@ select 仅含段的 `id`、`participationIdentityId`、`segmentKey`、`revision`
 
 ## 7. 本次未做
 
-本轮没有修改 schema、migration、既有生产消费者、API、DTO、权限、审计、Gate、客户端或部署；没有连接或操作生产，也没有删除业务数据。D2 尚未合入 main，也没有 production caller；D3–D8、生产部署、Gate 和整体跨模型复审仍未完成。两份受保护派生治理文件尚未获额外授权，因而未生成 implementation PR、未合并，亦未启用 Gate。
+本轮没有修改 schema、migration、既有生产消费者、API、DTO、权限、审计、Gate、客户端或部署；没有连接或操作生产，也没有删除业务数据。D2 尚未合入 main，也没有 production caller；D3–D8、生产部署、Gate 和整体跨模型复审仍未完成。[#1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 已创建且 CI 运行中，未合并，亦未启用 Gate。
