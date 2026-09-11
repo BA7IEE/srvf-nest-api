@@ -1,6 +1,6 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **D1-3 实施分支（2026-09-11，验证中、未建 PR）**：[完整实施计划](../plans/activity-os-r4-d1-3-implementation-plan.md)的四层选择、分批 PATCH 不可变修订、模板 V4 / 提案 V8 兼容、Readiness 与发布冻结已写入当前分支。当前为 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃；3b 已重签，4b、隔离库 E2E / contract、PR CI、合并、生产和 Gate 仍未完成。D1-3完成验证前，不启动 D2–D8，也不删除业务数据；此条覆盖下方历史起草授权状态。
+> **D1-3 已合并并完成主干验证（2026-09-11）**：[实施 PR #1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已 squash 合入 main `60414050b99fe661afbf0c87669597ad081a3b43`；批准头 `2e67806722ebb442d98c8cc58dbf43fa3be4ee01` 与合并树一致。18 项 PR 检查及可信红区审批已通过，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 为 completed/success。四层选择、模板 V4 / 提案 V8、Readiness、批准冻结与受控变更已进入 main；当前为 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃，3b / 4b 均已重签。D1 三个批次的仓内实现与主干验证已完成；D2–D8、生产部署、Gate 与整体跨模型复审仍未完成，也不删除业务数据。下方“D1-3 验证中/未建 PR/未合并”均为历史时点。
 
 > **D1-2 已合并并完成主干验证（2026-09-11）**：目录实施 [#1312](https://github.com/BA7IEE/srvf-nest-api/pull/1312) 合入 `c037073b`；合并后测试库初始化失败已由 [#1313](https://github.com/BA7IEE/srvf-nest-api/pull/1313) 修复，当前 main `ba100c1e` 的 [CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34498288827) 成功。修复保留全部断言，隔离顺序回归为旧测试 5/5、D1-2 并发 11/11；修复 PR 五个 E2E 分片均通过。154 模型、118 迁移、620 端点、260 权限、166 审计总计/161 活跃不变。此前“实施中/尚未合并/本分支待合并”均为历史时点，不再代表当前状态。维护者已确认 D1-3 精确计划方案 A，允许本轮八份文档补充 changelog、提交、推送和创建计划 PR；不合并、不实施；D1-3、D2–D8、生产和 Gate 未实施，整个 D1 尚未完成。
 

@@ -1,6 +1,6 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
-> **D1-3 实施分支（2026-09-11，验证中、未建 PR）**：当前分支新增 `GET/PATCH /api/admin/v1/activities/:id/time-policy-selection`。读写均要求显式时间政策权限及当前活动范围；PATCH 是带 `expectedRevision` 的完整不可变选择修订，不可用旧目录接口代替。响应和字段以本分支生成的 OpenAPI / Admin client 为准。该接口尚未合入 main，前端不得把它当作已发布能力；4b、隔离库 E2E / contract、PR CI、合并、生产与 Gate 均未完成。
+> **D1-3 已合入 main、未部署（2026-09-11）**：[#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已合入 `60414050b99fe661afbf0c87669597ad081a3b43`，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 通过。`GET/PATCH /api/admin/v1/activities/:id/time-policy-selection` 现为 main 的后端合同：读写仍要求显式时间政策权限及当前活动范围；PATCH 以 `expectedRevision` 生成完整不可变选择修订，不能用旧目录接口代替。前端本地联调以 main 的 OpenAPI / Admin client 为准；生产部署、Gate、整体跨模型复审及 D2–D8 尚未完成。
 
 > **D1-2 已合并并完成主干验证（2026-09-11）**：目录实施 [#1312](https://github.com/BA7IEE/srvf-nest-api/pull/1312) 合入 `c037073b`；合并后测试库初始化失败已由 [#1313](https://github.com/BA7IEE/srvf-nest-api/pull/1313) 修复，当前 main `ba100c1e` 的 [CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34498288827) 成功。修复保留全部断言，隔离顺序回归为旧测试 5/5、D1-2 并发 11/11；修复 PR 五个 E2E 分片均通过。154 模型、118 迁移、620 端点、260 权限、166 审计总计/161 活跃不变。此前“实施中/尚未合并/本分支待合并”均为历史时点，不再代表当前状态。维护者已确认 D1-3 精确计划方案 A，允许本轮八份文档补充 changelog、提交、推送和创建计划 PR；不合并、不实施；D1-3、D2–D8、生产和 Gate 未实施，整个 D1 尚未完成。
 

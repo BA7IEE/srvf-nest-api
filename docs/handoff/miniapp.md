@@ -1,6 +1,6 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
-> **D1-3 实施分支（2026-09-11，验证中、未建 PR）**：当前分支新增 managed activity 的 `GET/PATCH /api/app/v1/my/managed-activities/:activityId/time-policy-selection` 与 `GET /api/app/v1/my/managed-activities/time-policy-options`。读写均需当前有效成员、显式时间政策权限、组织范围和发起人或责任资格；PATCH 使用 `expectedRevision` 生成完整不可变选择修订。字段以本分支 OpenAPI / App client 为准，尚未合入 main；4b、隔离库 E2E / contract、PR CI、合并、生产和 Gate 均未完成。
+> **D1-3 已合入 main、未部署（2026-09-11）**：[#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已合入 `60414050b99fe661afbf0c87669597ad081a3b43`，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 通过。managed activity 的 `GET/PATCH /api/app/v1/my/managed-activities/:activityId/time-policy-selection` 与 `GET /api/app/v1/my/managed-activities/time-policy-options` 现为 main 的后端合同；读写仍需当前有效成员、显式时间政策权限、组织范围和发起人或责任资格，PATCH 使用 `expectedRevision` 生成完整不可变选择修订。前端本地联调以 main 的 OpenAPI / App client 为准；生产部署、Gate、整体跨模型复审及 D2–D8 尚未完成。
 
 > **D1 文档追加授权（2026-09-10）**：维护者已确认方案 A 方向，允许补充 changelog、提交、推送并创建文档评审 PR；不合并、不实施。本条覆盖下方起草时“方案待确认/不提交推送”的状态，不授权数据库、Gate 或后续实施。
 
