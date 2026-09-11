@@ -1,6 +1,8 @@
 # Activity OS Release 4 / D2：中性参与服务段 Facade 评审与授权清单
 
-> 2026-09-11，基点 main `60414050b99fe661afbf0c87669597ad081a3b43`。本稿只起草 D2 的方向、边界和后续授权清单；不实施、不操作数据库、不启用 Gate、不删除业务数据、不提交推送或创建 PR。文中“推荐”是待维护者确认的方案，不是现有新能力。
+> **评审已合并，精确计划 PR 已创建（2026-09-11）**：本稿已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入 main `2af40878090e44b33c8dce7f68a1ff78c7c18fb9`，合并后 [main CI 34584472085](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34584472085) completed/success。后续的 [D2 精确实施计划](activity-os-r4-d2-participation-segment-facade-implementation-plan.md) 已按维护者授权创建 [计划 PR #1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318)（head `6d51cb2a7b5359a87cd4d7b9b989c5817f08456b`，CI 运行中）；该 PR 尚未合并，不实施、不操作数据库、不启用 Gate，D2 仍未实现。
+
+> **评审形成时的基点**：2026-09-11，main `60414050b99fe661afbf0c87669597ad081a3b43`。本稿当时只起草 D2 的方向、边界和后续授权清单；不实施、不操作数据库、不启用 Gate、不删除业务数据、不提交推送或创建 PR。文中“推荐”是待维护者确认的方案，不是现有新能力。
 
 ## 1. 人话简报与推荐
 
@@ -33,7 +35,7 @@ D1 已把“某活动应按哪一版时长政策解释”固定下来；D2 要�
 ### 3.2 调用与事务边界
 
 1. facade 是内部 application/read contract，不新增 HTTP endpoint、DTO、OpenAPI、客户端、权限码或审计事件。
-2. 调用方须先按现有身份、组织、活动、场次和岗位关系完成资格/范围判断，再把同一事务 `tx` 与已解析的参与身份传入；facade 不接收自由拼装的跨活动 ID 组合。
+2. 调用方须先按现有身份、组织和活动关系完成资格/范围判断，再把同一事务 `tx` 与已解析的活动传入；精确计划收敛为活动级 reader，由持久段关系带出 identity，facade 不接收自由拼装的跨活动 identity / member / 岗位 ID 组合。
 3. facade 必须使用调用方传入的事务，保证后续 D3 写链能够读到同事务中的当前事实；它自身不写、不独立开启事务、不建立跨请求缓存，也不在内存保存“当前段”。
 4. 未来涉及“先读段、再分配/认定”的写命令必须由写命令持有其既有锁并在锁后重读；D2 只定义读取入口，不能在这一阶段凭空调整既有考勤写链的锁序或超时。
 
@@ -70,7 +72,7 @@ D1 已把“某活动应按哪一版时长政策解释”固定下来；D2 要�
 - 既有考勤、结算、成果、证明和 D1 时间政策选择的 HTTP / contract / E2E 行为保持不变；新 facade 自身没有 HTTP 合同漂移。
 - 若未来实现涉及数据库迁移、模块 export 或受保护路径，隔离测试库、rebuild、migration 复现、红区授权、3b/4b 重签、PR CI 与合并后 main CI 分别留证，不以 docs 检查替代。
 
-## 7. 本轮写集与下一次授权
+## 7. 评审阶段写集与下一次授权（历史记录）
 
 本轮精确写集仅为：本稿（新增）、`docs/ai-harness/NEXT_TASKS.md`、`docs/ai-harness/FROZEN_DRAFTS.md`、`docs/plans/activity-os-r4-d1-3-implementation-plan.md`、`docs/plans/activity-os-r4-d1-time-policy-review.md`、`docs/handoff/admin-web.md`、`docs/handoff/miniapp.md`。`pnpm harness:needs` 已核验 7/7 不需授权。
 
@@ -79,6 +81,6 @@ D1 已把“某活动应按哪一版时长政策解释”固定下来；D2 要�
 1. **确认 D2 方案 A；允许补充 changelog、提交、推送并创建 D2 文档评审 PR；不合并、不实施、不操作数据库、不启用 Gate。**
 2. 文档 PR 合并后，再起草 D2 精确实施计划和授权清单；届时才列出真实写集、是否需要 migration、隔离库、红区授权、测试与签字。该步骤不自动授予任何实现权限。
 
-## 8. 本次未做
+## 8. 本次未做（评审阶段）
 
-未实现 D2，没有连接、迁移或重建数据库，没有修改 schema、生产代码、测试、权限、审计、OpenAPI、客户端、Gate 或部署，没有删除业务数据，也没有提交、推送、创建或合并 PR。D3–D8 与整体跨模型复审仍未完成。
+未实现 D2，没有连接、迁移或重建数据库，没有修改 schema、生产代码、测试、权限、审计、OpenAPI、客户端、Gate 或部署，没有删除业务数据，也没有提交、推送、创建或合并 PR。D3–D8 与整体跨模型复审仍未完成。当前精确计划的实际状态以本文顶部和精确计划正文为准。
