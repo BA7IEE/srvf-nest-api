@@ -1,6 +1,6 @@
 # Activity OS Release 4 / D3：时长分配修订评审与授权清单
 
-> **当前阶段（2026-09-12）**：D1 的 TimePolicy、四层选择与发布冻结已随 #1310/#1312/#1316 进入 main；D2 的只读 `ParticipationSegmentFacade` 已随 [#1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 进入 main，并由 [main CI 34625317010](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34625317010) 独立验证。维护者本轮只授权起草本评审稿；没有批准 D3 方案、数据模型、迁移、接口、权限、测试库操作、实现、合并、生产或 Gate。
+> **当前阶段（2026-09-12）**：D1 的 TimePolicy、四层选择与发布冻结已随 #1310/#1312/#1316 进入 main；D2 的只读 `ParticipationSegmentFacade` 已随 [#1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 进入 main，并由 [main CI 34625317010](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34625317010) 独立验证。维护者已确认本稿方案 A，并授权起草 [D3 精确实施计划](activity-os-r4-d3-time-allocation-revision-implementation-plan.md) 与 docs-only PR；没有批准 D3 实现、迁移执行、接口、权限写入、测试库操作、合并、生产或 Gate。
 
 ## 1. 人话简报与推荐
 
@@ -35,7 +35,7 @@ D1 已回答“某个活动、场次或岗位应适用哪一版时长政策”�
 
 1. 每一分类片段采用 `[start, end)` 时间区间，必须完全落在源段 `[checkInAt, checkOutAt)` 内；无效或零长区间拒绝。
 2. 同一 allocation revision 的分类片段不能重叠；所有片段的总秒数不得超过源段实际秒数。是否允许多片及何时可拆分，严格遵从该版本的 `allowSplit`，不以 UI 便利覆盖政策。
-3. 分类仅允许 `volunteer_service`、`training`、`organization`、`non_creditable` 四态；特殊区间、rounding 与证据要求按已经冻结的 TimePolicy definition 解析。先聚合／校验精确时长，再做明确定义的向下取整，不能逐片截断后凭空损失或增加时长。
+3. 分类仅允许 `volunteer_service`、`training`、`organization`、`non_creditable` 四态；特殊区间与证据要求按已经冻结的 TimePolicy definition 解析。D3 只校验并保存精确原始区间，向下取整只在后续 D4 对同参与身份/类别聚合后执行，不能逐片截断后凭空损失或增加时长。
 4. 自动值与人工值不同时，人工路径必须受 policy 的 `manualAdjustment`、理由必填和证据要求约束；AI 最多产生候选，绝不能直接产生正式 allocation revision。
 5. 同一源段、活动、身份或政策在锁内变化时，整笔命令回滚；不得返回部分 allocation、半条收据或半份审计。
 
@@ -54,13 +54,15 @@ D1 已回答“某个活动、场次或岗位应适用哪一版时长政策”�
 | B | 直接改写服务段 `serviceHours` 或借旧结算行保存分类。 | 拒绝：把参与事实、认定与旧兼容投影混在一起，无法保留 policy 与人工调整历史。 |
 | C | 只做纯计算函数，不持久化 revision。 | 拒绝：不能回答历史认定依据，也无法为后续 shadow、ledger 与 correction 提供稳定锚。 |
 
-## 5. 下一份精确计划必须先回答的问题
+## 5. 已由精确计划收敛的问题
 
 1. allocation 的数据库形状：一个 source segment 的完整 revision 与其多个分类片段如何建模、唯一性／复合外键／append-only guard／deferred total 校验分别由数据库还是服务层承担。
 2. 自动认定的逐态输入矩阵：`valid`、`early_departure_zero`、`voided`、`replaced`、开放段、replace/correction 来源锚和 policy special interval 的合法／拒绝／待人工处理结论。
 3. 具体锁序与并发对拍：Activity、服务段 current、选择 revision、policy/version、身份／责任与未来 allocation revision 的排序、锁后重读和超时预算；不得只画单链图而缺反向交错。
 4. 人工认定权限、组织范围、审计事件、收据 operation、错误码、最小安全 DTO 与是否在 D3 暂不开放 HTTP。上述每一项都必须从当前权威码表与访问面取证，不能复用 D1/D2 的授权令牌。
 5. 迁移策略、旧 migration replay、隔离测试库、3b/4b 签字、受保护路径和派生文档的精确写集。D3 预期为 D 档，当前不授权任何 schema 或测试库动作。
+
+上述五项已在 [精确实施计划](activity-os-r4-d3-time-allocation-revision-implementation-plan.md) 中分别固定为四表合同、逐态矩阵、固定锁序、独立权限/收据/审计和第 120 条 migration 预算。该计划没有把这些决定变成当前代码，也不构成任何红区或数据库授权。
 
 ## 6. 未来验收探针（现在不执行）
 
@@ -72,6 +74,6 @@ D1 已回答“某个活动、场次或岗位应适用哪一版时长政策”�
 
 ## 7. 本次写集与后续授权
 
-本轮只新增本评审稿及 changelog，并更正 D2 已合并／main 验证事实的台账与 D2 文档。没有实现 D3、没有操作数据库、没有新增 schema、migration、权限、审计、接口、DTO、测试、Gate 或生产。
+本轮只修改七份文档：本评审稿、D3 精确计划、其 changelog、D2 两份文档以及两份台账。没有实现 D3、没有操作数据库、没有新增 schema、migration、权限、审计、接口、DTO、测试、Gate 或生产。
 
-下一步建议先确认本稿方案 A，随后单独起草 D3 精确实施计划与授权清单；只有计划明确数据模型、访问资格、锁序、写集、迁移、测试库与签字后，才可申请 D3 implementation 授权。
+方案 A 已确认，精确计划现已形成。下一步只能由维护者另行确认 implementation 的实际写集、真实 migration 路径、红区 grant 与隔离测试库许可；计划 PR 的 Ready、合并、生产和 Gate 仍是独立动作。
