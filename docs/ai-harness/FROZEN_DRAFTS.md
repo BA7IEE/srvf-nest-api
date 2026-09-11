@@ -1,5 +1,7 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **D2 精确实施计划已起草并获准建 PR（2026-09-11）**：D2 方向评审 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 已合入 main `2af40878090e44b33c8dce7f68a1ff78c7c18fb9`，合并后 [main CI 34584472085](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34584472085) completed/success。本轮只形成 [精确实施计划](../plans/activity-os-r4-d2-participation-segment-facade-implementation-plan.md)：未来新增考勤域内部只读 `ParticipationSegmentFacade`，以既有服务段修订为唯一事实源并做来源同链校验；没有 schema/migration、双写、外部访问面、权限、审计或 Gate 变更。维护者现允许补 changelog、提交、推送和创建计划 PR；不合并、不实施、不操作数据库、不启用 Gate，D2 仍未实施。
+
 > **D1-3 已合并并完成主干验证（2026-09-11）**：维护者确认的完整方案 A 已随 [#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) squash 合入 main `60414050b99fe661afbf0c87669597ad081a3b43`；批准头 `2e67806722ebb442d98c8cc58dbf43fa3be4ee01` 与合并树一致。18 项 PR 检查及可信红区审批通过，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) completed/success。四层时长政策选择、模板 V4、提案 V8、Readiness、批准冻结、受控变更、三张不可变表与第 119 条 migration 均已进入 main；当前 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃，3b / 4b 已重签。D1 三个批次的仓内实现与主干验证已完成；D2–D8、生产、Gate 与整体跨模型复审仍未完成，不删除业务数据。此条覆盖下方 D1-3 的历史起草授权状态。
 
 > **D1-2 已合并并完成主干验证（2026-09-11）**：目录实施 [#1312](https://github.com/BA7IEE/srvf-nest-api/pull/1312) 合入 `c037073b`；合并后测试库初始化失败已由 [#1313](https://github.com/BA7IEE/srvf-nest-api/pull/1313) 修复，当前 main `ba100c1e` 的 [CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34498288827) 成功。修复保留全部断言，隔离顺序回归为旧测试 5/5、D1-2 并发 11/11；修复 PR 五个 E2E 分片均通过。154 模型、118 迁移、620 端点、260 权限、166 审计总计/161 活跃不变。此前“实施中/尚未合并/本分支待合并”均为历史时点，不再代表当前状态。维护者已确认 D1-3 精确计划方案 A，允许本轮八份文档补充 changelog、提交、推送和创建计划 PR；不合并、不实施；D1-3、D2–D8、生产和 Gate 未实施，整个 D1 尚未完成。
@@ -61,7 +63,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                                                       | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                                                        | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                                                         | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 已完成相应仓内实施；Release 4 的 D1-1/#1310、D1-2/#1312 与 D1-3/#1316 均已合入且 main CI 通过；D2 仅完成本轮评审起草 | 原紧急创建 500 根因未定位；整体跨模型复审、Release 4 D2–D8 及后续、前端发布、生产部署和 Gate 切换未完成                    |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 已完成相应仓内实施；Release 4 的 D1-1/#1310、D1-2/#1312 与 D1-3/#1316 均已合入且 main CI 通过；D2 评审 #1317 已合入、精确计划本轮起草但未提交 | 原紧急创建 500 根因未定位；整体跨模型复审、Release 4 D2–D8 及后续、前端发布、生产部署和 Gate 切换未完成                    |
 
 ### 1.1 欠代码的五项
 
@@ -120,7 +122,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1-1/D1-2/D1-3 的仓内实施已通过；D2 仅完成本轮评审起草；前端发布、生产 Gate、整体跨模型复审与 Release 4 D2–D8／后续 Release 未完成**
+**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1-1/D1-2/D1-3 的仓内实施已通过；D2 评审 #1317 已合入、精确计划本轮起草但未提交；前端发布、生产 Gate、整体跨模型复审与 Release 4 D2–D8／后续 Release 未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖

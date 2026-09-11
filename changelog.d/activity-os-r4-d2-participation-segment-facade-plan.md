@@ -1,0 +1,3 @@
+- 起草 Activity OS Release 4 D2 精确实施计划：未来仅新增考勤域内部、显式传入事务的只读 `ParticipationSegmentFacade`，以既有 `ParticipantServiceSegmentRevision` 为唯一参与事实源，稳定读取 current 服务段并验证来源事件同链。
+- 计划固定 10 个未来路径、2,000 identity / 10,000 segment 拒绝截断边界，以及 replace / 受控更正的历史兼容探针；不新增服务段表、双写、schema/migration、外部 API、权限、审计或 Gate。
+- 本 PR 仅文档计划，不实施 D2、不操作数据库、不删除业务数据；后续 implementation、合并、生产和 Gate 仍须独立确认。
