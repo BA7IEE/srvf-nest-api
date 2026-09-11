@@ -1,6 +1,6 @@
 # prisma — 本地铁律
 
-当前 main 有 **118 个 migration**、154个模型；D1-1已随#1310合并，3b已重签。下方117为历史阶段证据。
+当前 D1-3 实施分支有 **119 个 migration**、157 个模型；main 仍以合并前 118 / 154 为准，直到实施 PR 合并。第119条 `20260911100000_activity_os_r4_d1_3_time_policy_selection` 只新增选择修订、选择明细和命令收据三表及 Activity 历史兼容指针；零回填、零既有业务数据 DML、零业务数据删除。3b 已重签；4b、隔离库 E2E / contract、PR CI、合并、生产与 Gate 未完成。下方117及更早条目为历史阶段证据。
 
 > **D1-1 已落地（2026-09-10）**：[#1310](https://github.com/BA7IEE/srvf-nest-api/pull/1310) 已合并至 main `04699ace`，18项PR检查通过，[合并后main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34474531083)通过。实际39路径，154模型/118迁移；第118条SQL的3b已重签。TimePolicy、TimePolicyVersion、TimePolicyCommandReceipt及纯解析/生命周期已落地，尚无目录HTTP入口。维护者现授权D1-1台账更正及D1-2精确计划起草，仅文档、不实施；整个D1仍未完成，D1-3选择/发布冻结及D2–D8仍待后续。未操作生产、启用Gate或删除业务数据。下方过程记录保留为历史，不代表当前待合并状态。
 

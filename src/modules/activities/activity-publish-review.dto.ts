@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   Equals,
   IsArray,
   IsBoolean,
@@ -11,6 +13,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -155,7 +158,11 @@ export class ApproveActivityPublishReviewDto {
   @Equals(true)
   requiresInsuranceConfirmed!: boolean;
 
-  @ApiPropertyOptional({ description: '审核操作幂等标识', minLength: 8, maxLength: 128 })
+  @ApiPropertyOptional({
+    description: '审核操作幂等标识；V8 时长政策选择提案批准时必填',
+    minLength: 8,
+    maxLength: 128,
+  })
   @OmittableOnly()
   @IsString()
   @MinLength(8)
@@ -381,6 +388,93 @@ export class ChangeReviewQualificationRuleSetCollectionsDto {
 }
 
 /**
+ * V8 keeps the ref kind explicit: an existing row id and a clientRef created by this proposal
+ * are both opaque strings, but they must never be resolved through the same ambiguous field.
+ */
+export class ChangeReviewTimePolicySelectionScopeDto {
+  @ApiProperty({ enum: ['activity', 'session', 'position'] })
+  @IsIn(['activity', 'session', 'position'])
+  layerCode!: 'activity' | 'session' | 'position';
+
+  @ApiPropertyOptional({ minLength: 1, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  sessionId?: string;
+
+  @ApiPropertyOptional({ minLength: 1, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  sessionClientRef?: string;
+
+  @ApiPropertyOptional({ minLength: 1, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  positionId?: string;
+
+  @ApiPropertyOptional({ minLength: 1, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  positionClientRef?: string;
+}
+
+export class ChangeReviewTimePolicyPointerDto {
+  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  policyId!: string;
+
+  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  versionId!: string;
+
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' })
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
+  definitionHash!: string;
+}
+
+export class ChangeReviewTimePolicySelectionValueDto {
+  @ApiProperty({ enum: ['inherit', 'explicit'] })
+  @IsIn(['inherit', 'explicit'])
+  mode!: 'inherit' | 'explicit';
+
+  @ApiProperty({ type: () => ChangeReviewTimePolicyPointerDto, nullable: true })
+  @ValidateIf((_object, value: unknown) => value !== null)
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ChangeReviewTimePolicyPointerDto)
+  pointer!: ChangeReviewTimePolicyPointerDto | null;
+}
+
+export class ChangeReviewTimePolicySelectionChangeDto {
+  @ApiProperty({ type: () => ChangeReviewTimePolicySelectionScopeDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ChangeReviewTimePolicySelectionScopeDto)
+  scope!: ChangeReviewTimePolicySelectionScopeDto;
+
+  @ApiProperty({ type: () => ChangeReviewTimePolicySelectionValueDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ChangeReviewTimePolicySelectionValueDto)
+  selection!: ChangeReviewTimePolicySelectionValueDto;
+}
+
+/**
  * 已发布活动的唯一变更申请。children 三组都是完整集合，故单一场次的改动只是
  * `sessions.update` 只有一项的特例，不另设旁路 endpoint。
  */
@@ -407,7 +501,7 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
   /**
    * Omitted keeps the active Form; explicit null retires it on approval; an object replaces it.
    * The proposal service, not this DTO, canonicalizes and binds it into the generated versioned
-   * proposal snapshot (the current new-proposal envelope is V7).
+   * proposal snapshot (the current new-proposal envelopes are V7 and V8).
    */
   @ApiPropertyOptional({ nullable: true, type: () => ManagedRegistrationFormDefinitionInputDto })
   @IsOptional()
@@ -457,6 +551,42 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
   @Min(0)
   @Max(2147483647)
   expectedMetricSelectionRevision?: number;
+
+  /**
+   * Optional V8 selection patch.  It uses the same bounded command grammar as the standalone
+   * draft endpoint, but clientRef is explicit for targets created in this very proposal.
+   */
+  @ApiPropertyOptional({
+    type: () => [ChangeReviewTimePolicySelectionChangeDto],
+    minItems: 1,
+    maxItems: 100,
+  })
+  @ValidateIf(
+    (object: ChangeReviewDto, value: unknown) =>
+      value !== undefined || object.expectedTimePolicySelectionRevision !== undefined,
+  )
+  @IsDefined()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewTimePolicySelectionChangeDto)
+  timePolicySelectionChanges?: ChangeReviewTimePolicySelectionChangeDto[];
+
+  @ApiPropertyOptional({
+    description: '提交 timePolicySelectionChanges 时读取到的当前时长选择 revision',
+    minimum: 0,
+    maximum: 2147483647,
+  })
+  @ValidateIf(
+    (object: ChangeReviewDto, value: unknown) =>
+      value !== undefined || object.timePolicySelectionChanges !== undefined,
+  )
+  @IsDefined()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
+  expectedTimePolicySelectionRevision?: number;
 }
 
 export class ActivityTemplateResolutionResponseDto {

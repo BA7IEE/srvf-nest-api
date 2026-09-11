@@ -1,5 +1,7 @@
 # Activity OS Release 4 / D1：时长政策评审与授权清单
 
+> **D1-3 实施分支（2026-09-11，验证中、未建 PR）**：方案 A 已按本评审稿和精确计划写入当前分支，包含四层选择、模板 V4、提案 V8、Readiness、批准冻结与变更审批。当前为 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃；3b 已重签，4b 与隔离库 E2E / contract、PR CI、合并、生产和 Gate 尚未完成。下方“未实施”均是计划阶段历史记录，不能覆盖本段。
+
 > **D1-3 精确计划方案 A 已确认（2026-09-11）**：[实施计划与授权清单](activity-os-r4-d1-3-implementation-plan.md)已列140路径、12项未来红区授权及验收要求。小批PATCH生成完整不可变修订，覆盖模板/活动/场次/岗位并在V8批准时冻结。已允许八份文档补充changelog、提交、推送及创建计划PR；不合并、不实施，没有数据库权限。此条覆盖下方历史起草授权状态。
 
 > **D1-2 已合并并完成主干验证（2026-09-11）**：目录实施 [#1312](https://github.com/BA7IEE/srvf-nest-api/pull/1312) 合入 `c037073b`；合并后测试库初始化失败已由 [#1313](https://github.com/BA7IEE/srvf-nest-api/pull/1313) 修复，当前 main `ba100c1e` 的 [CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34498288827) 成功。修复保留全部断言，隔离顺序回归为旧测试 5/5、D1-2 并发 11/11；修复 PR 五个 E2E 分片均通过。154 模型、118 迁移、620 端点、260 权限、166 审计总计/161 活跃不变。此前“实施中/尚未合并/本分支待合并”均为历史时点，不再代表当前状态。维护者已确认 D1-3 精确计划方案 A，允许本轮八份文档补充 changelog、提交、推送和创建计划 PR；不合并、不实施；D1-3、D2–D8、生产和 Gate 未实施，整个 D1 尚未完成。
@@ -32,18 +34,18 @@
 
 ## 2. 权威依据与当前事实
 
-| 来源 | 本稿采用的事实 |
-|---|---|
-| [T0冻结合同§7.1](../archive/reviews/activity-os-t0-terminal-review.md#71-单一参与事实与-timepolicy)、§11 Release顺序 | TimePolicy/Version、不可变版本/hash/evaluator/生效区间/逐级覆盖；单一参与段；独立分类时长账本，禁止与贡献或v1.1同时切换。 |
-| 附件蓝图§12.1–12.10、§13.3、Release 4表 | Activity分类不能直接产生个人时长；首批四类；准备/值守/路程、舍入、证据、调整均需明确规则；D1→D8依次推进。 |
-| `prisma/schema.prisma:5737` ParticipantServiceSegmentRevision | 现有事实含checkInAt/checkOutAt、来源事件和批次；serviceHours不是新引擎的中性时间输入。不得双写另一套参与段。 |
-| `prisma/schema.prisma:2334` ActivityRuleSnapshot | 已有按activityId/workflowRevision唯一的resolvedConfig/snapshotHash；新政策应进入新版本冻结合同，不改旧快照。 |
-| `prisma/schema.prisma:4595,4745` ActivitySession/ActivitySessionPosition | 有活动/场次/岗位锚及现有可覆盖配置；新选择关系必须物理保证同活动/同场次，不能凭散落ID声称同链。 |
-| `activity-template-definition-v3.ts` | 当前模板V3在V2上增加metricSelection；新增政策选择建议新V4分支，保留V1–V3定义/hash解释。数据库版本模型实际为ActivityTemplate，不另造同义TemplateVersion表。 |
-| `activity-publish-proposal-v2.service.ts:251,1851` 与 `activity-publish-proposal-v7.ts` | 既有V6/V7的timePolicyPointers仍为null；V7用于指标选择，不得回改V7承载时长政策。建议新V8提案，具体语法留精确计划。 |
-| `activity-publish-readiness.service.ts:236,579` | TIME_POLICY_UNREPRESENTABLE目前明确报告不可表示；不得仅凭有目录表将其消除。应在D1-3真实选择、解析、冻结链验收后按实际情况判定。 |
-| 本轮schema扫描 | 识别151个model，阳性对照ActivityRuleSnapshot存在；未找到TimePolicy/TimeAllocation/TimeBucket/ParticipationTimeLedger模型。此结论不表示所有时长功能不存在。 |
-| [#1307](https://github.com/BA7IEE/srvf-nest-api/pull/1307) | C5已合入883d66f9，18项PR检查及可信审批通过，合并树与3fe29414一致。合并后main CI独立记录于C5实施计划；不以PR绿替代main结果。 |
+| 来源                                                                                                                 | 本稿采用的事实                                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [T0冻结合同§7.1](../archive/reviews/activity-os-t0-terminal-review.md#71-单一参与事实与-timepolicy)、§11 Release顺序 | TimePolicy/Version、不可变版本/hash/evaluator/生效区间/逐级覆盖；单一参与段；独立分类时长账本，禁止与贡献或v1.1同时切换。                                  |
+| 附件蓝图§12.1–12.10、§13.3、Release 4表                                                                              | Activity分类不能直接产生个人时长；首批四类；准备/值守/路程、舍入、证据、调整均需明确规则；D1→D8依次推进。                                                  |
+| `prisma/schema.prisma:5737` ParticipantServiceSegmentRevision                                                        | 现有事实含checkInAt/checkOutAt、来源事件和批次；serviceHours不是新引擎的中性时间输入。不得双写另一套参与段。                                               |
+| `prisma/schema.prisma:2334` ActivityRuleSnapshot                                                                     | 已有按activityId/workflowRevision唯一的resolvedConfig/snapshotHash；新政策应进入新版本冻结合同，不改旧快照。                                               |
+| `prisma/schema.prisma:4595,4745` ActivitySession/ActivitySessionPosition                                             | 有活动/场次/岗位锚及现有可覆盖配置；新选择关系必须物理保证同活动/同场次，不能凭散落ID声称同链。                                                            |
+| `activity-template-definition-v3.ts`                                                                                 | 当前模板V3在V2上增加metricSelection；新增政策选择建议新V4分支，保留V1–V3定义/hash解释。数据库版本模型实际为ActivityTemplate，不另造同义TemplateVersion表。 |
+| `activity-publish-proposal-v2.service.ts:251,1851` 与 `activity-publish-proposal-v7.ts`                              | 既有V6/V7的timePolicyPointers仍为null；V7用于指标选择，不得回改V7承载时长政策。建议新V8提案，具体语法留精确计划。                                          |
+| `activity-publish-readiness.service.ts:236,579`                                                                      | TIME_POLICY_UNREPRESENTABLE目前明确报告不可表示；不得仅凭有目录表将其消除。应在D1-3真实选择、解析、冻结链验收后按实际情况判定。                            |
+| 本轮schema扫描                                                                                                       | 识别151个model，阳性对照ActivityRuleSnapshot存在；未找到TimePolicy/TimeAllocation/TimeBucket/ParticipationTimeLedger模型。此结论不表示所有时长功能不存在。 |
+| [#1307](https://github.com/BA7IEE/srvf-nest-api/pull/1307)                                                           | C5已合入883d66f9，18项PR检查及可信审批通过，合并树与3fe29414一致。合并后main CI独立记录于C5实施计划；不以PR绿替代main结果。                                |
 
 ## 3. D1终态与不变量
 
@@ -68,16 +70,16 @@
 
 ### 4.2 强类型definition（候选业务语义，须确认）
 
-| 字段组 | 推荐闭合语义 |
-|---|---|
-| 默认类别 | 必选volunteer_service/training/organization/non_creditable之一；不是按Activity.category自动推导。legacy_unclassified仅供历史治理，不给普通新政策选择器提供。 |
-| 岗位映射 | 使用已登记稳定岗位/attendanceRole键而非名称；规则键唯一、有界，精确计划确认最终采用哪种键与解析作用域。跨模板/场次同名不得碰撞或误套；未知映射键在发布解析时拒绝，不忽略。 |
-| 是否拆分 | 显式布尔；false时同一参与区间单一分类，true仅允许后续D3在真实参与段内分割，不授权重叠计时或人为延长时间。 |
-| 准备、值守、路程 | 三类显式处理项：排除/按指定类别认定/需人工认定。无证据或无法确认区间时不自动认定；“排除”不得删除原始参与事实。不得按计划时长或固定路程补出实际时间。 |
-| 舍入 | 建议整数秒为计算基准，显式量子与floor模式，不默认四舍五入/向上进位；按同一参与身份、同一类别聚合后一次舍入。不得让分段累加或舍入导致总秒数超过实际参与时间；量子上限与不足量子处理在精确计划确认。 |
-| 证据 | 显式要求来源类别与是否需人工认定；政策定义只描述证据类型，不存人员资料或附件内容。没有来源不得自动放宽。附件归属/存储可用性在实际认定事务验证，D1不新增附件owner类型。 |
-| 人工调整 | 显式允许/禁止、理由必填与证据要求；允许不等于持有认定权限，不允许突破实际参与区间/互斥/总量约束。具体人员的自由文本理由归D3隐私合同，不在D1先占敏感字段。 |
-| evaluatorVersion | 固定已登记解释器标识，与definition兼容矩阵绑定；未知版本拒绝。D1可提供纯规则解析/解释测试，不对真实成员产出正式秒数。无任意JS、动态SQL、表达式引擎或AI解释。 |
+| 字段组           | 推荐闭合语义                                                                                                                                                                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 默认类别         | 必选volunteer_service/training/organization/non_creditable之一；不是按Activity.category自动推导。legacy_unclassified仅供历史治理，不给普通新政策选择器提供。                                       |
+| 岗位映射         | 使用已登记稳定岗位/attendanceRole键而非名称；规则键唯一、有界，精确计划确认最终采用哪种键与解析作用域。跨模板/场次同名不得碰撞或误套；未知映射键在发布解析时拒绝，不忽略。                         |
+| 是否拆分         | 显式布尔；false时同一参与区间单一分类，true仅允许后续D3在真实参与段内分割，不授权重叠计时或人为延长时间。                                                                                          |
+| 准备、值守、路程 | 三类显式处理项：排除/按指定类别认定/需人工认定。无证据或无法确认区间时不自动认定；“排除”不得删除原始参与事实。不得按计划时长或固定路程补出实际时间。                                               |
+| 舍入             | 建议整数秒为计算基准，显式量子与floor模式，不默认四舍五入/向上进位；按同一参与身份、同一类别聚合后一次舍入。不得让分段累加或舍入导致总秒数超过实际参与时间；量子上限与不足量子处理在精确计划确认。 |
+| 证据             | 显式要求来源类别与是否需人工认定；政策定义只描述证据类型，不存人员资料或附件内容。没有来源不得自动放宽。附件归属/存储可用性在实际认定事务验证，D1不新增附件owner类型。                             |
+| 人工调整         | 显式允许/禁止、理由必填与证据要求；允许不等于持有认定权限，不允许突破实际参与区间/互斥/总量约束。具体人员的自由文本理由归D3隐私合同，不在D1先占敏感字段。                                          |
+| evaluatorVersion | 固定已登记解释器标识，与definition兼容矩阵绑定；未知版本拒绝。D1可提供纯规则解析/解释测试，不对真实成员产出正式秒数。无任意JS、动态SQL、表达式引擎或AI解释。                                       |
 
 候选输入必须闭合键、长度/数组/整数范围、重复键、空值和非法组合；上表尚不是可直接落库的最终JSON grammar。最终字段、预算和样例必须在D1-1精确计划逐项落定，未落定不得实施。合法非志愿分类也是明确政策，不能用“无需时长”null替代全部分类。
 
@@ -95,11 +97,11 @@
 
 以下是评审建议，不是新增路由或权限的授权：
 
-| 面 | 操作与建议权限 | 主体、范围及限制 |
-|---|---|---|
-| Admin政策目录 | create policy/version、activate、retire；拟activity-time-policy.manage.version；list/detail拟activity-time-policy.read.catalog | Human、显式GLOBAL权限；不因SUPER_ADMIN角色自动授予，不新增机器或委托入口。分页、有界详情，历史可读。 |
-| App managed活动 | 草稿选择/继承与查询；拟activity.time-policy.select/read | 当前User/Member有效、显式组织scope、draft initiator或对应阶段owner；Service层逐请求判权，机器/仅结算/仅成果权限不直通。 |
-| 发布与变更审批 | 冻结/重验政策，复用既有审批命令的访问入口 | 新选择能力不替代发布/审批资格；旧审核权限不得被静默扩大。审批人重验当前资格与版本有效性。 |
+| 面              | 操作与建议权限                                                                                                                 | 主体、范围及限制                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Admin政策目录   | create policy/version、activate、retire；拟activity-time-policy.manage.version；list/detail拟activity-time-policy.read.catalog | Human、显式GLOBAL权限；不因SUPER_ADMIN角色自动授予，不新增机器或委托入口。分页、有界详情，历史可读。                    |
+| App managed活动 | 草稿选择/继承与查询；拟activity.time-policy.select/read                                                                        | 当前User/Member有效、显式组织scope、draft initiator或对应阶段owner；Service层逐请求判权，机器/仅结算/仅成果权限不直通。 |
+| 发布与变更审批  | 冻结/重验政策，复用既有审批命令的访问入口                                                                                      | 新选择能力不替代发布/审批资格；旧审核权限不得被静默扩大。审批人重验当前资格与版本有效性。                               |
 
 拟命令均operationKey、expectedRevision/hash、专用不可变收据，重放仍重验主体资格；查询不产审计业务写。create/activate/retire/select等事件及资源字段在精确计划登记，不提前报权限/审计新增数量，不沿用成果事件伪装时长治理。
 
@@ -107,11 +109,11 @@
 
 ## 6. 分批实施建议与交付边界
 
-| 批次 | 必须交付 | 不得冒充完成 |
-|---|---|---|
-| D1-1 数据与定义 | TimePolicy/Version及必要收据基础、完整强类型grammar、hash/evaluator兼容、数据库生命周期/引用约束、冷回放与非空升级、纯测试 | 不宣称有可用管理/选择入口或Readiness已解除。 |
-| D1-2 目录控制面 | 明确Human目录API、显式DTO/权限/审计、命令幂等与并发、保留历史查询、实际HTTP与客户端交接 | 不宣称已冻结活动政策或已产生分类时长。 |
-| D1-3 选择与发布 | 四级引用/覆盖、同链约束、模板V4和新提案V8、旧版本兼容、Readiness与受控变更接线、真实HTTP/锁等待回归 | 不计算正式参与秒数，不替代D2–D8；不能以少支持一层覆盖换取全绿。 |
+| 批次            | 必须交付                                                                                                                   | 不得冒充完成                                                    |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| D1-1 数据与定义 | TimePolicy/Version及必要收据基础、完整强类型grammar、hash/evaluator兼容、数据库生命周期/引用约束、冷回放与非空升级、纯测试 | 不宣称有可用管理/选择入口或Readiness已解除。                    |
+| D1-2 目录控制面 | 明确Human目录API、显式DTO/权限/审计、命令幂等与并发、保留历史查询、实际HTTP与客户端交接                                    | 不宣称已冻结活动政策或已产生分类时长。                          |
+| D1-3 选择与发布 | 四级引用/覆盖、同链约束、模板V4和新提案V8、旧版本兼容、Readiness与受控变更接线、真实HTTP/锁等待回归                        | 不计算正式参与秒数，不替代D2–D8；不能以少支持一层覆盖换取全绿。 |
 
 每批先出精确路径与探针，再由维护者确认implementation；迁移是否分批、实际编号/文件名及签字次数以当时仓库和精确计划为准。当前117迁移不是“已经批准第118条”。若支持完整D1需要更多模型或跨模块原语，必须在精确计划列全，而非施工中靠通配授权。
 

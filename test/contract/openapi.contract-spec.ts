@@ -89,7 +89,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/activity-metric-rule-bindings'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/metric-candidates'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/metric-candidates/{candidateId}'],
-  // C1 D2b: global template versions + App initiation options + independent selection surfaces.
+  // C1 D2b/D1-3: global template versions + App initiation options + independent metric/time selections.
   ['get', '/api/admin/v1/activity-template-versions'],
   ['get', '/api/admin/v1/activity-template-versions/{id}'],
   ['post', '/api/admin/v1/activity-template-versions'],
@@ -97,9 +97,12 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/admin/v1/activity-template-versions/{id}/activate'],
   ['post', '/api/admin/v1/activity-template-versions/{id}/retire'],
   ['get', '/api/app/v1/my/managed-activities/metric-set-options'],
+  ['get', '/api/app/v1/my/managed-activities/time-policy-options'],
   ['get', '/api/app/v1/my/managed-activities/template-version-options'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
   ['put', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/time-policy-selection'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/time-policy-selection'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcomes'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcome-confirmations'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcome-corrections'],
@@ -115,6 +118,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/managed-activities/{activityId}/outcomes/{outcomeRevisionId}'],
   ['get', '/api/admin/v1/activities/{id}/metric-selection'],
   ['put', '/api/admin/v1/activities/{id}/metric-selection'],
+  ['get', '/api/admin/v1/activities/{id}/time-policy-selection'],
+  ['patch', '/api/admin/v1/activities/{id}/time-policy-selection'],
   ['get', '/api/admin/v1/activity-metric-definitions'],
   ['get', '/api/admin/v1/activity-time-policies'],
   ['get', '/api/admin/v1/activity-time-policies/{id}'],
@@ -1142,7 +1147,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 620; // D1-2 +8 Human time policy catalogue routes
+const EXPECTED_ROUTE_COUNT = 625; // D1-3 +5 immutable activity time-policy selection routes
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -2198,7 +2203,7 @@ describe('OpenAPI 契约快照', () => {
     }
   });
 
-  it('C1 D2c keeps proposal routes stable while adding only paired App metric-selection input', () => {
+  it('C1 D2c metric input remains stable and D1-3 adds a paired time-policy change input', () => {
     const schemas = doc.components?.schemas ?? {};
     const change = schemas.ChangeReviewDto as OpenApiSchema;
     const selection = schemas.AppActivityMetricSelectionInputDto as OpenApiSchema;
@@ -2211,12 +2216,14 @@ describe('OpenAPI 契约快照', () => {
       'activityPatch',
       'confirmation',
       'expectedMetricSelectionRevision',
+      'expectedTimePolicySelectionRevision',
       'metricSelection',
       'operationKey',
       'positions',
       'qualificationRuleSets',
       'registrationForm',
       'sessions',
+      'timePolicySelectionChanges',
     ]);
     expect(change.required?.slice().sort()).toEqual([
       'activityPatch',
@@ -2236,6 +2243,17 @@ describe('OpenAPI 契约快照', () => {
     });
     expect(change.required).not.toEqual(
       expect.arrayContaining(['metricSelection', 'expectedMetricSelectionRevision']),
+    );
+    expect(change.properties?.timePolicySelectionChanges).toEqual(
+      expect.objectContaining({ type: 'array', minItems: 1, maxItems: 100 }),
+    );
+    expect(change.properties?.expectedTimePolicySelectionRevision).toMatchObject({
+      type: 'number',
+      minimum: 0,
+      maximum: 2147483647,
+    });
+    expect(change.required).not.toEqual(
+      expect.arrayContaining(['timePolicySelectionChanges', 'expectedTimePolicySelectionRevision']),
     );
     expect(Object.keys(selection.properties ?? {}).sort()).toEqual([
       'metricRequirementCode',

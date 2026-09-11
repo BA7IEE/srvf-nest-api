@@ -182,7 +182,7 @@ describe('D1-1 time policy physical foundation', () => {
         await first.$disconnect();
         await second.$disconnect();
         raw(
-          `BEGIN; TRUNCATE "TimePolicyCommandReceipt", "TimePolicyVersion", "TimePolicy"; DELETE FROM "User" WHERE id='tp-test-user'; COMMIT;`,
+          `BEGIN; TRUNCATE "ActivityTimePolicySelectionItem", "TimePolicyCommandReceipt", "TimePolicyVersion", "TimePolicy"; DELETE FROM "User" WHERE id='tp-test-user'; COMMIT;`,
         );
       }
     },

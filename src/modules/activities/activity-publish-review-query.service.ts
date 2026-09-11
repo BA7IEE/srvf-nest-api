@@ -15,6 +15,7 @@ import {
   activityPublishReviewViewSelect,
 } from './activity-publish-review-presenter';
 import { parseActivityPublishProposalV7MetricFields } from './activity-publish-proposal-v7';
+import { parseActivityPublishProposalV8TimePolicyFields } from './activity-publish-proposal-v8';
 
 const V7_ROOT_KEYS = [
   'schemaVersion',
@@ -49,6 +50,8 @@ const V7_BASE_KEYS = V7_ROOT_KEYS.filter(
     key !== 'base' &&
     key !== 'metricSelectionExplicit',
 );
+const V8_ROOT_KEYS = [...V7_ROOT_KEYS, 'timePolicySelectionExplicit'] as const;
+const V8_BASE_KEYS = V7_BASE_KEYS;
 const V7_SAFE_ACTIVITY_FIELDS = [
   'activityTypeCode',
   'allocationModeCode',
@@ -191,15 +194,16 @@ export class ActivityPublishReviewQueryService {
     }
     const record = snapshot as Record<string, unknown>;
     // v3 adds Form, v4 adds allocation mode, v5 adds typed qualification RuleSets, v6 adds
-    // frozen local facts, and V7 adds only a safe metric-selection field summary. All proposal
-    // generations retain the same Activity/Session diff envelope.
+    // frozen local facts, V7 adds a safe metric-selection field summary, and V8 adds a separate
+    // name-only time-policy summary. All proposal generations retain the same diff envelope.
     if (
       (record.schemaVersion !== 2 &&
         record.schemaVersion !== 3 &&
         record.schemaVersion !== 4 &&
         record.schemaVersion !== 5 &&
         record.schemaVersion !== 6 &&
-        record.schemaVersion !== 7) ||
+        record.schemaVersion !== 7 &&
+        record.schemaVersion !== 8) ||
       !this.isRecord(record.base)
     ) {
       return { kind: 'legacy', requestSchemaVersion: record.schemaVersion ?? null };
@@ -207,20 +211,25 @@ export class ActivityPublishReviewQueryService {
     if (record.schemaVersion === 7 && !this.isSafeV7Snapshot(record)) {
       return { kind: 'unparseable' };
     }
+    if (record.schemaVersion === 8 && !this.isSafeV8Snapshot(record)) {
+      return { kind: 'unparseable' };
+    }
     const base = record.base;
     const activity = this.isRecord(record.activity) ? record.activity : {};
     const baseActivity = this.isRecord(base.activity) ? base.activity : {};
     return {
       kind:
-        record.schemaVersion === 7
-          ? 'proposal-v7'
-          : record.schemaVersion === 6
-            ? 'proposal-v6'
-            : record.schemaVersion === 5
-              ? 'proposal-v5'
-              : 'proposal-v2',
+        record.schemaVersion === 8
+          ? 'proposal-v8'
+          : record.schemaVersion === 7
+            ? 'proposal-v7'
+            : record.schemaVersion === 6
+              ? 'proposal-v6'
+              : record.schemaVersion === 5
+                ? 'proposal-v5'
+                : 'proposal-v2',
       activityFields:
-        record.schemaVersion === 7
+        record.schemaVersion === 7 || record.schemaVersion === 8
           ? this.v7ActivityChangedFieldNames(baseActivity, activity)
           : Object.keys(activity)
               .filter((key) => JSON.stringify(activity[key]) !== JSON.stringify(baseActivity[key]))
@@ -230,7 +239,10 @@ export class ActivityPublishReviewQueryService {
         Array.isArray(record.sessions) ? record.sessions : [],
         'sessionId',
       ),
-      ...(record.schemaVersion === 5 || record.schemaVersion === 6 || record.schemaVersion === 7
+      ...(record.schemaVersion === 5 ||
+      record.schemaVersion === 6 ||
+      record.schemaVersion === 7 ||
+      record.schemaVersion === 8
         ? {
             qualificationRuleSets: this.qualificationRuleSetDiff(
               base.qualificationRuleSets,
@@ -245,10 +257,17 @@ export class ActivityPublishReviewQueryService {
             },
           }
         : {}),
-      ...(record.schemaVersion === 7
+      ...(record.schemaVersion === 7 || record.schemaVersion === 8
         ? {
             v7Fields: {
-              changedFields: this.v7ChangedFieldNames(base, record),
+              changedFields: this.v7ChangedFieldNames(base, record, record.schemaVersion === 8),
+            },
+          }
+        : {}),
+      ...(record.schemaVersion === 8
+        ? {
+            timePolicyFields: {
+              changedFields: this.v8TimePolicyChangedFieldNames(base, record),
             },
           }
         : {}),
@@ -276,13 +295,27 @@ export class ActivityPublishReviewQueryService {
   private v7ChangedFieldNames(
     base: Record<string, unknown>,
     target: Record<string, unknown>,
+    omitTimePolicy = false,
   ): string[] {
     return [
-      ...this.v6ChangedFieldNames(base, target).filter((field) => field !== 'metricSetPointer'),
+      ...this.v6ChangedFieldNames(base, target).filter(
+        (field) =>
+          field !== 'metricSetPointer' && (!omitTimePolicy || field !== 'timePolicyPointers'),
+      ),
       ...['metricRequirementCode', 'metricSetPointer', 'metricSelectionRevision'].filter(
         (field) => JSON.stringify(base[field]) !== JSON.stringify(target[field]),
       ),
     ];
+  }
+
+  /** V8 deliberately discloses only which safe selection-facing fields changed, never pointers. */
+  private v8TimePolicyChangedFieldNames(
+    base: Record<string, unknown>,
+    target: Record<string, unknown>,
+  ): string[] {
+    return ['timePolicyPointers', 'timePolicySelectionExplicit'].filter(
+      (field) => JSON.stringify(base[field]) !== JSON.stringify(target[field]),
+    );
   }
 
   private v7ActivityChangedFieldNames(
@@ -318,6 +351,44 @@ export class ActivityPublishReviewQueryService {
         metricRequirementCode: base.metricRequirementCode,
         metricSetPointer: base.metricSetPointer,
         metricSelectionRevision: base.metricSelectionRevision,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private isSafeV8Snapshot(record: Record<string, unknown>): boolean {
+    const base = record.base;
+    if (
+      !this.hasExactKeys(record, V8_ROOT_KEYS) ||
+      !this.isRecord(base) ||
+      !this.hasExactKeys(base, V8_BASE_KEYS) ||
+      !this.isRecord(record.activity) ||
+      !this.isRecord(base.activity) ||
+      !Array.isArray(record.sessions) ||
+      !Array.isArray(base.sessions) ||
+      typeof record.metricSelectionExplicit !== 'boolean' ||
+      typeof record.timePolicySelectionExplicit !== 'boolean'
+    ) {
+      return false;
+    }
+    try {
+      parseActivityPublishProposalV7MetricFields({
+        metricRequirementCode: record.metricRequirementCode,
+        metricSetPointer: record.metricSetPointer,
+        metricSelectionRevision: record.metricSelectionRevision,
+      });
+      parseActivityPublishProposalV7MetricFields({
+        metricRequirementCode: base.metricRequirementCode,
+        metricSetPointer: base.metricSetPointer,
+        metricSelectionRevision: base.metricSelectionRevision,
+      });
+      parseActivityPublishProposalV8TimePolicyFields({
+        timePolicyPointers: record.timePolicyPointers,
+      });
+      parseActivityPublishProposalV8TimePolicyFields({
+        timePolicyPointers: base.timePolicyPointers,
       });
       return true;
     } catch {

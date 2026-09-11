@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:3170312f6ed8aac0f3afa0608eeff606ef778c11f915b8e3d08642f6ee349374
+// inputDigest: sha256:2aa52aba43f85bfbf899d7b3352f0dab1b627cd7556969cd09d4f2e36ff45033
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -82,6 +82,14 @@ import type {
   AppActivityRegistrationPreferenceCommandDto,
   AppActivityTemplateFamilyOptionDto,
   AppActivityTemplateVersionOptionDto,
+  AppActivityTimePolicyOptionDto,
+  AppActivityTimePolicyPointerDto,
+  AppActivityTimePolicySelectionChangeDto,
+  AppActivityTimePolicySelectionItemDto,
+  AppActivityTimePolicySelectionResponseDto,
+  AppActivityTimePolicySelectionResultDto,
+  AppActivityTimePolicySelectionScopeDto,
+  AppActivityTimePolicySelectionValueDto,
   AppActivityVisitorDto,
   AppAvailableActivityListItemDto,
   AppCalculateActivityMetricCandidateDto,
@@ -97,8 +105,14 @@ import type {
   AppConfirmActivityOutcomeDto,
   AppCreationPlaceCoordinateDto,
   AppCreationQualificationRuleSetDto,
+  AppCreationTimePolicyPointerDto,
+  AppCreationTimePolicyPositionOverrideDto,
+  AppCreationTimePolicySelectionInputDto,
+  AppCreationTimePolicySelectionValueDto,
+  AppCreationTimePolicySessionOverrideDto,
   AppEmergencyActivityCreationDto,
   AppEmergencyCreationFollowUpDto,
+  AppEmergencyTimePolicySelectionInputDto,
   AppEvidenceSealResultDto,
   AppGateStatusDto,
   AppInlineCreationPlaceDto,
@@ -182,6 +196,7 @@ import type {
   AppOutcomeFinalizationAnchorsDto,
   AppOutcomeFinalizationSelectionDto,
   AppParticipationLedgerEntryDto,
+  AppPatchActivityTimePolicySelectionDto,
   AppPrepareActivityOutcomeCorrectionDto,
   AppProfessionalActivityCreationDto,
   AppProfessionalCreationSessionDto,
@@ -241,6 +256,10 @@ import type {
   ChangeReviewSessionPositionCreateDto,
   ChangeReviewSessionPositionUpdateDto,
   ChangeReviewSessionUpdateDto,
+  ChangeReviewTimePolicyPointerDto,
+  ChangeReviewTimePolicySelectionChangeDto,
+  ChangeReviewTimePolicySelectionScopeDto,
+  ChangeReviewTimePolicySelectionValueDto,
   CommitAppManagedActivityAllocationBatchDto,
   ContentAttachmentDto,
   ContentReadDetailDto,
@@ -545,6 +564,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** 分页查询可新选全局模板版本；候选超过 1000 条明确报错 [auth] */
     AppManagedActivityMetricsControllerTemplateVersionOptions(query: { "page"?: number; "pageSize"?: number; "organizationId": string }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityTemplateVersionOptionDto[] }>> {
       return fetcher<PageResultDto & { "items": AppActivityTemplateVersionOptionDto[] }>({ method: "GET", path: "/api/app/v1/my/managed-activities/template-version-options", query });
+    },
+    /** 分页读取当前组织和计划区间内可新选的时长政策版本 [rbac: activity.time-policy.read] */
+    AppManagedActivityTimePolicySelectionControllerOptions(query: { "page"?: number; "pageSize"?: number; "organizationId": string; "plannedFrom": string; "plannedUntil": string }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityTimePolicyOptionDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppActivityTimePolicyOptionDto[] }>({ method: "GET", path: "/api/app/v1/my/managed-activities/time-policy-options", query });
     },
     /** App 我管理的活动详情、责任、审核与待办摘要 [auth] */
     AppManagedActivitiesControllerDetail(activityId: string): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
@@ -953,6 +976,14 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 负责人提前终止已开始的 published 活动 [auth] */
     AppManagedActivitiesControllerTerminate(activityId: string, body: AppManagedActivityTerminateCommandDto): Promise<ApiEnvelope<AppActivityLifecycleResultDto>> {
       return fetcher<AppActivityLifecycleResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/terminate`, body });
+    },
+    /** 分页读取本人 managed 活动的时长政策选择 [rbac: activity.time-policy.read] */
+    AppManagedActivityTimePolicySelectionControllerGet(activityId: string, query?: { "page"?: number; "pageSize"?: number; "revision"?: number }): Promise<ApiEnvelope<AppActivityTimePolicySelectionResponseDto>> {
+      return fetcher<AppActivityTimePolicySelectionResponseDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-policy-selection`, query });
+    },
+    /** 增量设置本人 managed 草稿的时长政策选择 [rbac: activity.time-policy.select] */
+    AppManagedActivityTimePolicySelectionControllerPatch(activityId: string, body: AppPatchActivityTimePolicySelectionDto): Promise<ApiEnvelope<AppActivityTimePolicySelectionResultDto>> {
+      return fetcher<AppActivityTimePolicySelectionResultDto>({ method: "PATCH", path: `/api/app/v1/my/managed-activities/${activityId}/time-policy-selection`, body });
     },
     /** App 草稿活动移交发起人(当前发起人或 responsibility override) [auth] */
     AppManagedActivityResponsibilitiesControllerTransferInitiator(activityId: string, body: TransferAppManagedActivityInitiatorDto): Promise<ApiEnvelope<AppManagedResponsibilitiesDto>> {

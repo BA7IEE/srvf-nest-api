@@ -67,6 +67,12 @@ import { ActivityTemplateVersionQueryService } from './activity-template-version
 import { AdminActivityMetricSelectionController } from './controllers/admin-activity-metric-selection.controller';
 import { AdminActivityTemplateVersionsController } from './controllers/admin-activity-template-versions.controller';
 import { AppManagedActivityMetricsController } from './controllers/app-managed-activity-metrics.controller';
+import { AdminActivityTimePolicySelectionController } from './controllers/admin-activity-time-policy-selection.controller';
+import { AppManagedActivityTimePolicySelectionController } from './controllers/app-managed-activity-time-policy-selection.controller';
+import { ActivityTimePolicySelectionAccess } from './activity-time-policy-selection-access';
+import { ActivityTimePolicySelectionAuditRecorder } from './activity-time-policy-selection-audit-recorder';
+import { ActivityTimePolicySelectionQueryService } from './activity-time-policy-selection-query.service';
+import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
 import { AdminActivityMetricDefinitionsController } from './controllers/admin-activity-metric-definitions.controller';
 import { AdminActivityMetricSetsController } from './controllers/admin-activity-metric-sets.controller';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
@@ -203,7 +209,9 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AdminActivityMetricRuleBindingsController,
     AppManagedActivityMetricCandidatesController,
     AppManagedActivityMetricsController,
+    AppManagedActivityTimePolicySelectionController,
     AdminActivityMetricSelectionController,
+    AdminActivityTimePolicySelectionController,
     AdminActivityTemplateVersionsController,
     AppManagedActivityControlPlaneController,
     AppManagedActivityCreationController,
@@ -261,6 +269,10 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityTimePolicyService,
     ActivityTimePolicyCatalogueQueryService,
     ActivityTimePolicyAuditRecorder,
+    ActivityTimePolicySelectionAccess,
+    ActivityTimePolicySelectionAuditRecorder,
+    ActivityTimePolicySelectionService,
+    ActivityTimePolicySelectionQueryService,
     ActivityMetricAuditRecorder,
     ActivityMetricDefinitionService,
     ActivityMetricSetService,

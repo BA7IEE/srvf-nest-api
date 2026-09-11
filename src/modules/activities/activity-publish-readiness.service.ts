@@ -11,12 +11,21 @@ import { matchesActivityTemplateDefinitionHash } from './activity-template-defin
 import { parseActivityTemplateDefinitionV1 } from './activity-template-definition-v1';
 import { parseActivityTemplateDefinitionV2 } from './activity-template-definition-v2';
 import { parseActivityTemplateDefinitionV3 } from './activity-template-definition-v3';
+import { parseActivityTemplateDefinitionV4 } from './activity-template-definition-v4';
 import {
   assertMetricSelectionReference,
   readActivityMetricSelection,
 } from './activity-metric-selection';
 import type { MetricSetRow } from './activity-metric-presenter';
 import { projectPlaceCoordinate } from './activity-place-coordinate-projection';
+import { fingerprintTimePolicyVersion } from './activity-time-policy-definition';
+import {
+  activityTimePolicySelectionHash,
+  activityTimePolicySelectionScopeKey,
+  parseActivityTimePolicySelectionDocument,
+  resolveActivityTimePolicySelection,
+  type ActivityTimePolicySelectionScope,
+} from './activity-time-policy-selection';
 import { LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY } from './activity-type-migration.registry';
 import { QualificationRuleSetVersionService } from './qualification-rule-set-version.service';
 import { RegistrationFormVersionService } from './registration-form-version.service';
@@ -44,6 +53,34 @@ export type ActivityReadinessMetricSelectionStatus =
   | 'required_active'
   | 'required_historical'
   | 'invalid';
+export type ActivityReadinessTimePolicySelectionIssue =
+  | 'unconfigured'
+  | 'target_invalid'
+  | 'reference_unavailable'
+  | 'coverage_incomplete';
+
+interface TimePolicyReadinessRevision {
+  readonly id: string;
+  readonly activityId: string;
+  readonly revision: number;
+  readonly selectionHash: string;
+  readonly selectionJson: Prisma.JsonValue;
+  readonly itemCount: number;
+}
+
+interface TimePolicyReadinessPosition {
+  readonly id: string;
+  readonly startAt: Date | null;
+  readonly endAt: Date | null;
+  readonly attendanceRoleCode: string;
+}
+
+interface TimePolicyReadinessSession {
+  readonly id: string;
+  readonly startAt: Date;
+  readonly endAt: Date;
+  readonly positions: readonly TimePolicyReadinessPosition[];
+}
 
 export interface ActivityPublishReadinessIssue {
   readonly code: string;
@@ -105,6 +142,9 @@ export interface ActivityPublishReadinessFacts {
     readonly positions: readonly {
       readonly id: string;
       readonly capacity: number | null;
+      readonly startAt: Date | null;
+      readonly endAt: Date | null;
+      readonly attendanceRoleCode: string;
       readonly locationRequired: boolean | null;
       readonly radiusMeters: number | null;
     }[];
@@ -120,6 +160,8 @@ export interface ActivityPublishReadinessFacts {
   };
   /** Bounded semantic result of the exact current selection + catalogue closure, never raw data. */
   readonly metricSelection: ActivityReadinessMetricSelectionStatus;
+  /** Empty only when every live target has a current, valid and interval-covering policy pointer. */
+  readonly timePolicySelectionIssues: readonly ActivityReadinessTimePolicySelectionIssue[];
   readonly insuranceEnforcementEnabled: boolean;
 }
 
@@ -238,6 +280,24 @@ const ISSUE_DEFINITIONS = {
     severity: 'blocker',
     message: '当前活动没有可解析的有效时长政策指针。',
     resolutionHint: '在 Release 4 建立 TimePolicy / Version 与活动选择关系后重新判定。',
+  },
+  TIME_POLICY_TARGET_INVALID: {
+    domain: 'terminalPolicyOutcomeSafety',
+    severity: 'blocker',
+    message: '当前时长政策选择中的场次或岗位目标无法与活动链一致解析。',
+    resolutionHint: '通过既有时长政策选择受控面修复目标范围后重新判定。',
+  },
+  TIME_POLICY_REFERENCE_UNAVAILABLE: {
+    domain: 'terminalPolicyOutcomeSafety',
+    severity: 'blocker',
+    message: '当前时长政策选择引用的政策版本已不可用或其冻结身份不一致。',
+    resolutionHint: '重新选择当前有效且哈希一致的时长政策版本。',
+  },
+  TIME_POLICY_COVERAGE_INCOMPLETE: {
+    domain: 'terminalPolicyOutcomeSafety',
+    severity: 'blocker',
+    message: '当前时长政策选择未覆盖活动、场次或岗位的完整有效时间段。',
+    resolutionHint: '补齐每个目标的有效政策选择，或选择覆盖其实际时段的版本。',
   },
   CONTRIBUTION_POLICY_UNREPRESENTABLE: {
     domain: 'terminalPolicyOutcomeSafety',
@@ -370,7 +430,8 @@ function templateDefinitionIsValid(
   if (
     (template.schemaVersion !== 1 &&
       template.schemaVersion !== 2 &&
-      template.schemaVersion !== 3) ||
+      template.schemaVersion !== 3 &&
+      template.schemaVersion !== 4) ||
     template.definitionJson === null ||
     template.definitionHash === null
   ) {
@@ -392,8 +453,10 @@ function templateDefinitionIsValid(
       parseActivityTemplateDefinitionV1(template.definitionJson);
     } else if (template.schemaVersion === 2) {
       parseActivityTemplateDefinitionV2(template.definitionJson);
-    } else {
+    } else if (template.schemaVersion === 3) {
       parseActivityTemplateDefinitionV3(template.definitionJson);
+    } else {
+      parseActivityTemplateDefinitionV4(template.definitionJson);
     }
     return true;
   } catch {
@@ -576,7 +639,20 @@ export function evaluateActivityPublishReadiness(
     addIssue(issues, 'INSURANCE_REQUIREMENT_UNVERIFIABLE', 'activity.requiresInsurance');
   }
 
-  addIssue(issues, 'TIME_POLICY_UNREPRESENTABLE', 'policy.time');
+  if (facts.timePolicySelectionIssues.includes('unconfigured')) {
+    // Keep the historical code and wording so old, genuinely unconfigured Activity rows retain
+    // their exact externally visible readiness contract.
+    addIssue(issues, 'TIME_POLICY_UNREPRESENTABLE', 'policy.time');
+  }
+  if (facts.timePolicySelectionIssues.includes('target_invalid')) {
+    addIssue(issues, 'TIME_POLICY_TARGET_INVALID', 'policy.time.selection');
+  }
+  if (facts.timePolicySelectionIssues.includes('reference_unavailable')) {
+    addIssue(issues, 'TIME_POLICY_REFERENCE_UNAVAILABLE', 'policy.time.references');
+  }
+  if (facts.timePolicySelectionIssues.includes('coverage_incomplete')) {
+    addIssue(issues, 'TIME_POLICY_COVERAGE_INCOMPLETE', 'policy.time.coverage');
+  }
   addIssue(issues, 'CONTRIBUTION_POLICY_UNREPRESENTABLE', 'policy.contribution');
   if (facts.metricSelection === 'unconfigured') {
     addIssue(issues, 'METRIC_SELECTION_MISSING', 'metrics.requiredSet');
@@ -636,6 +712,18 @@ export class ActivityPublishReadinessService {
         selectedMetricSetVersionId: true,
         selectedMetricSetDefinitionHash: true,
         metricSelectionRevision: true,
+        timePolicySelectionRevision: true,
+        currentTimePolicySelectionRevisionId: true,
+        currentTimePolicySelectionRevision: {
+          select: {
+            id: true,
+            activityId: true,
+            revision: true,
+            selectionHash: true,
+            selectionJson: true,
+            itemCount: true,
+          },
+        },
         selectedMetricSetVersion: {
           include: {
             items: {
@@ -664,6 +752,9 @@ export class ActivityPublishReadinessService {
               select: {
                 id: true,
                 capacity: true,
+                startAt: true,
+                endAt: true,
+                attendanceRoleCode: true,
                 locationRequired: true,
                 radiusMeters: true,
               },
@@ -690,6 +781,14 @@ export class ActivityPublishReadinessService {
       selectedMetricSetDefinitionHash: activity.selectedMetricSetDefinitionHash,
       metricSelectionRevision: activity.metricSelectionRevision,
       selectedMetricSetVersion: activity.selectedMetricSetVersion,
+    });
+    const timePolicySelectionIssues = await this.timePolicySelectionIssues(tx, activityId, {
+      startAt: activity.startAt,
+      endAt: activity.endAt,
+      revision: activity.timePolicySelectionRevision,
+      currentRevisionId: activity.currentTimePolicySelectionRevisionId,
+      currentRevision: activity.currentTimePolicySelectionRevision,
+      sessions: activity.sessions,
     });
 
     let registrationFormValid = true;
@@ -752,6 +851,9 @@ export class ActivityPublishReadinessService {
         positions: session.positions.map((position) => ({
           id: position.id,
           capacity: position.capacity,
+          startAt: position.startAt,
+          endAt: position.endAt,
+          attendanceRoleCode: position.attendanceRoleCode,
           locationRequired: position.locationRequired,
           radiusMeters: position.radiusMeters,
         })),
@@ -762,6 +864,7 @@ export class ActivityPublishReadinessService {
         invalidRuleSetId: qualificationRuleSetValid ? null : (qualificationRuleSets[0]?.id ?? null),
       },
       metricSelection,
+      timePolicySelectionIssues,
       insuranceEnforcementEnabled: this.insuranceRequirements.isEnforcementEnabled(),
     };
   }
@@ -829,5 +932,222 @@ export class ActivityPublishReadinessService {
     } catch {
       return 'invalid';
     }
+  }
+
+  /**
+   * Reads only the immutable selection anchor and its referenced catalogue rows, then reduces
+   * them to bounded facts for the pure evaluator.  No policy definition, target title or other
+   * potentially sensitive payload escapes this method.
+   */
+  private async timePolicySelectionIssues(
+    tx: PrismaTx,
+    activityId: string,
+    input: {
+      readonly startAt: Date;
+      readonly endAt: Date;
+      readonly revision: number;
+      readonly currentRevisionId: string | null;
+      readonly currentRevision: TimePolicyReadinessRevision | null;
+      readonly sessions: readonly TimePolicyReadinessSession[];
+    },
+  ): Promise<readonly ActivityReadinessTimePolicySelectionIssue[]> {
+    if (input.revision === 0 && input.currentRevisionId === null) return ['unconfigured'];
+    const revision = input.currentRevision;
+    if (
+      !Number.isInteger(input.revision) ||
+      input.revision < 1 ||
+      input.currentRevisionId === null ||
+      revision === null ||
+      revision.id !== input.currentRevisionId ||
+      revision.activityId !== activityId ||
+      revision.revision !== input.revision
+    ) {
+      return ['target_invalid'];
+    }
+
+    let selection;
+    try {
+      selection = parseActivityTimePolicySelectionDocument(revision.selectionJson);
+      if (
+        activityTimePolicySelectionHash(selection) !== revision.selectionHash ||
+        Object.keys(selection.items).length !== revision.itemCount
+      ) {
+        return ['target_invalid'];
+      }
+    } catch {
+      return ['target_invalid'];
+    }
+
+    const sessionsById = new Map(input.sessions.map((session) => [session.id, session]));
+    const positionsById = new Map<
+      string,
+      { readonly sessionId: string; readonly position: TimePolicyReadinessPosition }
+    >();
+    for (const session of input.sessions) {
+      for (const position of session.positions) {
+        if (positionsById.has(position.id)) return ['target_invalid'];
+        positionsById.set(position.id, { sessionId: session.id, position });
+      }
+    }
+    for (const item of Object.values(selection.items)) {
+      if (item.scope.layerCode === 'session' && !sessionsById.has(item.scope.sessionId!)) {
+        return ['target_invalid'];
+      }
+      if (item.scope.layerCode === 'position') {
+        const position = positionsById.get(item.scope.positionId!);
+        if (!position || position.sessionId !== item.scope.sessionId) return ['target_invalid'];
+      }
+    }
+
+    let resolved;
+    try {
+      resolved = resolveActivityTimePolicySelection(
+        selection,
+        input.sessions.map((session) => ({
+          sessionId: session.id,
+          positionIds: session.positions.map((position) => position.id),
+        })),
+      );
+    } catch {
+      return ['target_invalid'];
+    }
+
+    const intervalByScope = this.timePolicyIntervals(input.startAt, input.endAt, input.sessions);
+    const issues = new Set<ActivityReadinessTimePolicySelectionIssue>();
+    const pointers = new Map<
+      string,
+      { readonly policyId: string; readonly definitionHash: string }
+    >();
+    for (const entry of resolved) {
+      if (entry.pointer === null || entry.sourceScope === null) {
+        issues.add('coverage_incomplete');
+        continue;
+      }
+      const interval = intervalByScope.get(activityTimePolicySelectionScopeKey(entry.scope));
+      if (
+        !interval ||
+        !isValidDate(interval.startAt) ||
+        !isValidDate(interval.endAt) ||
+        interval.startAt >= interval.endAt
+      ) {
+        issues.add('coverage_incomplete');
+        continue;
+      }
+      pointers.set(entry.pointer.versionId, {
+        policyId: entry.pointer.policyId,
+        definitionHash: entry.pointer.definitionHash,
+      });
+    }
+
+    const versionIds = [...pointers.keys()].sort();
+    const versions = versionIds.length
+      ? await tx.timePolicyVersion.findMany({
+          where: { id: { in: versionIds } },
+          select: {
+            id: true,
+            policyId: true,
+            definitionHash: true,
+            schemaVersion: true,
+            evaluatorVersion: true,
+            definitionJson: true,
+            effectiveFrom: true,
+            effectiveUntil: true,
+            statusCode: true,
+          },
+        })
+      : [];
+    const versionsById = new Map(versions.map((version) => [version.id, version]));
+    for (const entry of resolved) {
+      if (entry.pointer === null) continue;
+      const expected = pointers.get(entry.pointer.versionId)!;
+      const version = versionsById.get(entry.pointer.versionId);
+      if (
+        !version ||
+        version.policyId !== expected.policyId ||
+        version.definitionHash !== expected.definitionHash ||
+        version.statusCode !== 'active'
+      ) {
+        issues.add('reference_unavailable');
+        continue;
+      }
+      try {
+        if (
+          fingerprintTimePolicyVersion({
+            schemaVersion: version.schemaVersion,
+            evaluatorVersion: version.evaluatorVersion,
+            definition: version.definitionJson,
+            effectiveFrom: version.effectiveFrom.toISOString(),
+            effectiveUntil: version.effectiveUntil?.toISOString() ?? null,
+          }).definitionHash !== entry.pointer.definitionHash
+        ) {
+          issues.add('reference_unavailable');
+          continue;
+        }
+      } catch {
+        issues.add('reference_unavailable');
+        continue;
+      }
+      const interval = intervalByScope.get(activityTimePolicySelectionScopeKey(entry.scope));
+      if (
+        !interval ||
+        version.effectiveFrom > interval.startAt ||
+        (version.effectiveUntil !== null && version.effectiveUntil < interval.endAt)
+      ) {
+        issues.add('coverage_incomplete');
+      }
+    }
+
+    const order: readonly ActivityReadinessTimePolicySelectionIssue[] = [
+      'target_invalid',
+      'reference_unavailable',
+      'coverage_incomplete',
+    ];
+    return order.filter((issue) => issues.has(issue));
+  }
+
+  private timePolicyIntervals(
+    startAt: Date,
+    endAt: Date,
+    sessions: readonly TimePolicyReadinessSession[],
+  ): ReadonlyMap<string, { readonly startAt: Date; readonly endAt: Date }> {
+    const intervals = new Map<string, { readonly startAt: Date; readonly endAt: Date }>();
+    const add = (
+      scope: ActivityTimePolicySelectionScope,
+      interval: { startAt: Date; endAt: Date },
+    ) => {
+      intervals.set(activityTimePolicySelectionScopeKey(scope), interval);
+    };
+    add({ layerCode: 'activity', sessionId: null, positionId: null }, { startAt, endAt });
+    for (const session of sessions) {
+      const sessionScope = {
+        layerCode: 'session' as const,
+        sessionId: session.id,
+        positionId: null,
+      };
+      const sessionInterval = { startAt: session.startAt, endAt: session.endAt };
+      add(sessionScope, sessionInterval);
+      for (const position of session.positions) {
+        // Position-local intervals are optional, but only as an all-or-nothing inherited pair.
+        // A malformed half-pair remains a coverage problem; existing graph Readiness reports the
+        // broader activity shape independently.
+        const interval =
+          position.startAt === null || position.endAt === null
+            ? sessionInterval
+            : { startAt: position.startAt, endAt: position.endAt };
+        if (position.attendanceRoleCode.trim().length === 0) {
+          // Do not make an empty role look like a successfully resolved evaluator target.
+          intervals.delete(
+            activityTimePolicySelectionScopeKey({
+              layerCode: 'position',
+              sessionId: session.id,
+              positionId: position.id,
+            }),
+          );
+          continue;
+        }
+        add({ layerCode: 'position', sessionId: session.id, positionId: position.id }, interval);
+      }
+    }
+    return intervals;
   }
 }

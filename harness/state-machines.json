@@ -1,8 +1,8 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:07f1086fa168ab7db873a90d79ab65f97ce69278793f20c4cf6a8ce9a4893f42",
-  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 55 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。2026-09-04 Activity OS R2/B6 D1 新增 `ActivityEmergencyFollowUpItem.statusCode` 三值义务清单；D1 仅有 DB 词表/形状约束，尚无运行时 writer，故保持 L2 inventory。2026-09-05 B6 D2 接入固定义务创建与当前事实核验 writer，补齐实际迁移边，仍不升 governed。",
+  "inputDigest": "sha256:a8c33190729f2d4389fc7adc79333b19c8a7561515544b1e19eed281fc74a1b9",
+  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 61 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。2026-09-04 Activity OS R2/B6 D1 新增 `ActivityEmergencyFollowUpItem.statusCode` 三值义务清单；D1 仅有 DB 词表/形状约束，尚无运行时 writer，故保持 L2 inventory。2026-09-05 B6 D2 接入固定义务创建与当前事实核验 writer，补齐实际迁移边，仍不升 governed。2026-09-11 D1-3 登记不可变时长选择明细的 inherit/explicit 配置模式；其闭集嵌在同链指针形状约束中，保留 L1 inventory，不借复合 CHECK 冒称 governed。",
   "entries": [
     {
       "model": "TimePolicyVersion",
@@ -15,10 +15,26 @@
         "sourceRef": "prisma/migrations/20260910100000_activity_os_r4_d1_time_policy_foundation"
       },
       "transitions": ["(create) -> draft", "draft -> active", "active -> retired"],
-      "wrongStateBizCode": "not-applicable",
+      "wrongStateBizCode": "ACTIVITY_TIME_POLICY_STATUS_INVALID",
       "implementation": "src/modules/activities/activity-time-policy-state-machine.ts",
-      "governedBlockers": ["D1-1仅数据地基与纯判断；D1-2目录HTTP权限/审计命令尚未实施"],
-      "notes": "版本语义自创建不可变，永久保留；SQL拒绝删除、跳跃和复活，updatedAt无业务更新不作为迁移边。不声明governed。"
+      "governedBlockers": ["no-governed-evidence"],
+      "notes": "D1-2 已接入目录命令及锁后复验；版本语义自创建不可变，永久保留；SQL拒绝删除、跳跃和复活，updatedAt无业务更新不作为迁移边。现有纯状态判断与专属错误码已登记，但尚未提升 governed。"
+    },
+    {
+      "model": "ActivityTimePolicySelectionItem",
+      "field": "mode",
+      "governanceStatus": "inventory",
+      "layer": "L1",
+      "stateSet": {
+        "values": ["inherit", "explicit"],
+        "source": "db-check",
+        "sourceRef": "prisma/migrations/20260911100000_activity_os_r4_d1_3_time_policy_selection"
+      },
+      "transitions": ["(create) -> inherit", "(create) -> explicit"],
+      "wrongStateBizCode": "ACTIVITY_TIME_POLICY_SELECTION_INVALID",
+      "implementation": "src/modules/activities/activity-time-policy-selection.ts + src/modules/activities/activity-time-policy-selection.service.ts",
+      "governedBlockers": ["closed-set-is-embedded-in-composite-shape-check"],
+      "notes": "D1-3 选择明细创建后永久留存，不提供状态转换或删除入口；inherit 必须无政策指针，explicit 必须携带同链 policy/version/hash。该闭集由复合形状 CHECK 与清单触发器共同约束，不能按当前 L1 声明闸冒称 governed。"
     },
     {
       "model": "ActivityMetricCandidate",

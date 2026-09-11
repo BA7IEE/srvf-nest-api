@@ -1,6 +1,8 @@
 # Activity OS D1-3：四级时长政策选择与发布冻结实施计划（评审草案）
 
-> 2026-09-11，依据 main `ba100c1e`。维护者已确认 D1-3 精确计划方案 A，允许补充 changelog、提交、推送并创建计划 PR；不合并、不实施。本次写集仅八份文档，140路径为后续实施清单，不是本轮写入许可。本文不能充当红区 grant 或数据库授权。
+> **当前实施状态（2026-09-11，验证中、未建 PR）**：维护者已确认完整方案 A，计划中的四层选择、模板 V4、提案 V8、Readiness、批准冻结、变更审批、三张不可变表和第 119 条 migration 已写入当前分支。当前为 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃。3b 已重签；4b、隔离库 E2E / contract、PR CI、合并、生产和 Gate 未完成。本文后续“待确认/未实施”均为计划形成时的历史记录，不覆盖本段。
+
+> **历史计划确认**：2026-09-11，依据 main `ba100c1e`。维护者已确认 D1-3 精确计划方案 A，允许补充 changelog、提交、推送并创建计划 PR；不合并、不实施。本次写集仅八份文档，140路径为后续实施清单，不是当时写入许可。本文不能充当红区 grant 或数据库授权。
 
 > **历史续写授权**：维护者此前允许保留七份未提交文档继续完善计划，不修改门禁规则；当前文档提交权限以上条追加确认为准。下文“推荐/待确认”描述方案起草过程，方案 A 已确认，但实施、数据库操作和合并仍未获批准。
 
@@ -12,15 +14,15 @@ D1-3 必须完整交付模板→活动→场次→场次岗位四级选择、最
 
 ## 2. 已核验的接入点
 
-| 当前入口 | 事实与实施要求 |
-|---|---|
-| `activity-template-definition-v3.ts` | V3 严格四根键，复用 V2 并加入 metricSelection。V4 必须独立分支，不放宽 V1–V3。 |
-| `activity-publish-proposal-v2.service.ts` | 当前支持 V2–V7；timePolicyPointers 类型及校验仍限定 null。所有分支应按语义逐一接入 V8，禁止字符串批量替换版本号。 |
-| `activity-publish-proposal-v7.ts` | 指标选择、revision 与历史零版本有独立兼容合同。V8 保持这些语义，不修改 V7。 |
-| `activity-publish-readiness.service.ts` | 当前无条件增加 TIME_POLICY_UNREPRESENTABLE；只有完成本批真实解析才可对有效新选择取消此项，其他问题照常保留。 |
-| `activity-metric-selection-access.ts` | 现有指标写资格复用 activity.update.record，且有 SA 例外。这不是本批权限批准依据，不能原封照搬成时长选择访问合同。 |
-| `prisma/schema.prisma` 的 ActivitySessionPosition | 岗位持有 activityId/sessionId，已有场次复合 FK；必须使用场次岗位，不能使用旧 ActivityPosition。 |
-| TimePolicyVersion | 已有 `(id, policyId, definitionHash)` 唯一锚、不可变定义和 active/retired 生命周期，可复用；不新增同义政策模型或第二套 hash。 |
+| 当前入口                                          | 事实与实施要求                                                                                                                |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `activity-template-definition-v3.ts`              | V3 严格四根键，复用 V2 并加入 metricSelection。V4 必须独立分支，不放宽 V1–V3。                                                |
+| `activity-publish-proposal-v2.service.ts`         | 当前支持 V2–V7；timePolicyPointers 类型及校验仍限定 null。所有分支应按语义逐一接入 V8，禁止字符串批量替换版本号。             |
+| `activity-publish-proposal-v7.ts`                 | 指标选择、revision 与历史零版本有独立兼容合同。V8 保持这些语义，不修改 V7。                                                   |
+| `activity-publish-readiness.service.ts`           | 当前无条件增加 TIME_POLICY_UNREPRESENTABLE；只有完成本批真实解析才可对有效新选择取消此项，其他问题照常保留。                  |
+| `activity-metric-selection-access.ts`             | 现有指标写资格复用 activity.update.record，且有 SA 例外。这不是本批权限批准依据，不能原封照搬成时长选择访问合同。             |
+| `prisma/schema.prisma` 的 ActivitySessionPosition | 岗位持有 activityId/sessionId，已有场次复合 FK；必须使用场次岗位，不能使用旧 ActivityPosition。                               |
+| TimePolicyVersion                                 | 已有 `(id, policyId, definitionHash)` 唯一锚、不可变定义和 active/retired 生命周期，可复用；不新增同义政策模型或第二套 hash。 |
 
 ## 3. 推荐数据合同 A
 
@@ -74,25 +76,25 @@ D1-3 必须完整交付模板→活动→场次→场次岗位四级选择、最
 
 为避免数据库63字符标识符截断，新增自定义约束/函数统一使用短前缀，推荐精确名称如下：
 
-| 名称 | 职责 |
-|---|---|
-| `atps_revision_activity_revision_key` / `atps_revision_id_activity_key` / `atps_revision_id_activity_revision_key` | 三个修订唯一锚。 |
-| `atps_item_template_key` / `atps_item_activity_key` / `atps_item_session_key` / `atps_item_position_key` | 按layer的部分唯一索引。 |
-| `atps_item_revision_idx` | selectionRevisionId普通索引，提交计数/读明细不扫描全部历史，不能误认为部分唯一索引覆盖所有层查询。 |
-| `atps_receipt_actor_operation_key` | 专用收据幂等唯一键。 |
-| `atps_receipt_revision_activity_key` | (selectionRevisionId,activityId)唯一；同一standalone修订只有一份专用收据，也支持反向查找。 |
-| `activity_template_id_definition_hash_key` | 模板来源hash复合锚。 |
-| `atps_review_id_activity_key` / `atps_occurrence_id_activity_key` | 既有Review/Occurrence上的来源复合锚。 |
-| `atps_current_shape_check` / `atps_revision_shape_check` / `atps_item_shape_check` / `atps_receipt_shape_check` | 各自闭合形状，统一以IS TRUE拒绝NULL/UNKNOWN。 |
-| `atps_current_revision_fkey` / `atps_item_revision_fkey` / `atps_receipt_revision_fkey` / `atps_snapshot_revision_fkey` | 当前指针/明细/收据/快照的同活动复合引用。 |
-| `atps_item_session_fkey` / `atps_item_position_fkey` / `atps_item_policy_version_fkey` | 场次、岗位、政策版本同链引用。 |
-| `atps_revision_template_fkey` / `atps_revision_creation_fkey` / `atps_revision_occurrence_fkey` / `atps_revision_review_fkey` | 四种真实来源复合引用。 |
-| `atps_reject_mutation` | 三表UPDATE/DELETE拒绝函数；各表触发器分别 `atps_revision_immutable` / `atps_item_immutable` / `atps_receipt_immutable`。 |
-| `atps_check_item_manifest` / `atps_item_manifest_guard` | item BEFORE INSERT与父manifest对应项相等。 |
-| `atps_check_revision_complete` / `atps_revision_complete_guard` | 父修订延迟完整性、来源成功状态、当前指针及专用收据分支核验。 |
-| `atps_check_current_revision` / `atps_current_revision_guard` | 当前修订形状及单步递增，不逐份核验历史是否current。 |
-| `atps_check_snapshot_reference` / `atps_snapshot_reference_guard` | Snapshot列/JSON引用及审核同活动一致；V8配置态不得无修订引用。 |
-| `atps_check_template_receipt` / `atps_template_receipt_guard` | 模板操作收据schemaVersion与实际模板相等，既有其他operation不参与该新分支。 |
+| 名称                                                                                                                          | 职责                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `atps_revision_activity_revision_key` / `atps_revision_id_activity_key` / `atps_revision_id_activity_revision_key`            | 三个修订唯一锚。                                                                                                         |
+| `atps_item_template_key` / `atps_item_activity_key` / `atps_item_session_key` / `atps_item_position_key`                      | 按layer的部分唯一索引。                                                                                                  |
+| `atps_item_revision_idx`                                                                                                      | selectionRevisionId普通索引，提交计数/读明细不扫描全部历史，不能误认为部分唯一索引覆盖所有层查询。                       |
+| `atps_receipt_actor_operation_key`                                                                                            | 专用收据幂等唯一键。                                                                                                     |
+| `atps_receipt_revision_activity_key`                                                                                          | (selectionRevisionId,activityId)唯一；同一standalone修订只有一份专用收据，也支持反向查找。                               |
+| `activity_template_id_definition_hash_key`                                                                                    | 模板来源hash复合锚。                                                                                                     |
+| `atps_review_id_activity_key` / `atps_occurrence_id_activity_key`                                                             | 既有Review/Occurrence上的来源复合锚。                                                                                    |
+| `atps_current_shape_check` / `atps_revision_shape_check` / `atps_item_shape_check` / `atps_receipt_shape_check`               | 各自闭合形状，统一以IS TRUE拒绝NULL/UNKNOWN。                                                                            |
+| `atps_current_revision_fkey` / `atps_item_revision_fkey` / `atps_receipt_revision_fkey` / `atps_snapshot_revision_fkey`       | 当前指针/明细/收据/快照的同活动复合引用。                                                                                |
+| `atps_item_session_fkey` / `atps_item_position_fkey` / `atps_item_policy_version_fkey`                                        | 场次、岗位、政策版本同链引用。                                                                                           |
+| `atps_revision_template_fkey` / `atps_revision_creation_fkey` / `atps_revision_occurrence_fkey` / `atps_revision_review_fkey` | 四种真实来源复合引用。                                                                                                   |
+| `atps_reject_mutation`                                                                                                        | 三表UPDATE/DELETE拒绝函数；各表触发器分别 `atps_revision_immutable` / `atps_item_immutable` / `atps_receipt_immutable`。 |
+| `atps_check_item_manifest` / `atps_item_manifest_guard`                                                                       | item BEFORE INSERT与父manifest对应项相等。                                                                               |
+| `atps_check_revision_complete` / `atps_revision_complete_guard`                                                               | 父修订延迟完整性、来源成功状态、当前指针及专用收据分支核验。                                                             |
+| `atps_check_current_revision` / `atps_current_revision_guard`                                                                 | 当前修订形状及单步递增，不逐份核验历史是否current。                                                                      |
+| `atps_check_snapshot_reference` / `atps_snapshot_reference_guard`                                                             | Snapshot列/JSON引用及审核同活动一致；V8配置态不得无修订引用。                                                            |
+| `atps_check_template_receipt` / `atps_template_receipt_guard`                                                                 | 模板操作收据schemaVersion与实际模板相等，既有其他operation不参与该新分支。                                               |
 
 可由Prisma表达的FK/unique全部登记在schema，不能只在SQL添加后让diff下次建议DROP；部分索引、CHECK与触发器留SQL并以独立数据库探针维护。`activity_metric_receipt_result_check`在新migration中完整保留旧operation分支，仅模板版本允许3/4；不修改第112条SQL。语义hash仍归应用重算，不给上述函数虚构此能力。
 
@@ -102,11 +104,11 @@ D1-3 必须完整交付模板→活动→场次→场次岗位四级选择、最
 
 推荐四个活动读写操作及一个 App 选项查询，共五个新增 operation：
 
-| 面 | 路径（均带 /api 前缀） | 资格建议 |
-|---|---|---|
-| Admin | GET/PATCH `/admin/v1/activities/:id/time-policy-selection` | 显式 read/select 码 + 当前活动范围；写仅合法草稿。 |
+| 面          | 路径（均带 /api 前缀）                                                      | 资格建议                                                                                       |
+| ----------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Admin       | GET/PATCH `/admin/v1/activities/:id/time-policy-selection`                  | 显式 read/select 码 + 当前活动范围；写仅合法草稿。                                             |
 | App managed | GET/PATCH `/app/v1/my/managed-activities/:activityId/time-policy-selection` | 当前 User/Member ACTIVE，显式 read/select 码、组织范围、发起人或已登记责任资格；写仅合法草稿。 |
-| App managed | GET `/app/v1/my/managed-activities/time-policy-options` | organizationId + 计划区间 + 分页；当前发起资格和目标组织资格，不因此开放 GLOBAL 目录。 |
+| App managed | GET `/app/v1/my/managed-activities/time-policy-options`                     | organizationId + 计划区间 + 分页；当前发起资格和目标组织资格，不因此开放 GLOBAL 目录。         |
 
 推荐新增权限固定为 `activity.time-policy.read`、`activity.time-policy.select`；SA不绕过显式授权，机器/委托不开放，成果/结算权限不直通，read/select不互相隐含。两码均CUSTOM_ROLE_ALLOWED、ACTIVE，不自动分配内建角色；业务元数据排序194/195，读LOW/READ、写HIGH/WRITE。Admin/App DTO独立，不继承另一面DTO。此为待确认权限合同，当前不新增或授码。
 
@@ -126,16 +128,16 @@ GET 按 page/pageSize（默认20、最大100）返回原始层项、全活动解
 
 错误编号推荐如下；已扫描531条现有BizCode，20197为阳性对照，下列八码均未占用。实施前若main前进再次核验，不覆盖他人新增编号：
 
-| BizCode 后缀（统一 `ACTIVITY_TIME_POLICY_SELECTION_`） | 编号 / HTTP | 语义 |
-|---|---|---|
-| INVALID | 20205 / 400 | 闭合语法、目标形状、重复scope或64KiB预算非法。 |
-| REFERENCE_UNAVAILABLE | 20206 / 404 | 不存在/已删/越权的活动或场次岗位统一不可用，避免枚举。 |
-| STALE | 20207 / 409 | expectedRevision与当前不符。 |
-| COMMAND_CONFLICT | 20208 / 409 | 同actor/operationKey但请求指纹不同。 |
-| RECEIPT_INVALID | 20209 / 409 | 持久化收据形状、内容或同链损坏。 |
-| POLICY_UNAVAILABLE | 20210 / 409 | 新显式引用不是可选active/hash/evaluator/区间组合。 |
-| UNCHANGED | 20211 / 409 | 规范化后没有语义变化。 |
-| REVISION_LIMIT | 20212 / 409 | 已到Int版本上限，不回绕。 |
+| BizCode 后缀（统一 `ACTIVITY_TIME_POLICY_SELECTION_`） | 编号 / HTTP | 语义                                                   |
+| ------------------------------------------------------ | ----------- | ------------------------------------------------------ |
+| INVALID                                                | 20205 / 400 | 闭合语法、目标形状、重复scope或64KiB预算非法。         |
+| REFERENCE_UNAVAILABLE                                  | 20206 / 404 | 不存在/已删/越权的活动或场次岗位统一不可用，避免枚举。 |
+| STALE                                                  | 20207 / 409 | expectedRevision与当前不符。                           |
+| COMMAND_CONFLICT                                       | 20208 / 409 | 同actor/operationKey但请求指纹不同。                   |
+| RECEIPT_INVALID                                        | 20209 / 409 | 持久化收据形状、内容或同链损坏。                       |
+| POLICY_UNAVAILABLE                                     | 20210 / 409 | 新显式引用不是可选active/hash/evaluator/区间组合。     |
+| UNCHANGED                                              | 20211 / 409 | 规范化后没有语义变化。                                 |
+| REVISION_LIMIT                                         | 20212 / 409 | 已到Int版本上限，不回绕。                              |
 
 未登录/停用使用现有UNAUTHORIZED；无该操作权限使用FORBIDDEN；已发布普通写用ACTIVITY_CHANGE_REVIEW_REQUIRED；待审用ACTIVITY_PUBLISH_REVIEW_PENDING；其余不合法活动状态用ACTIVITY_STATUS_INVALID。只在已通过活动访问资格后报告状态差异，数据库异常不透传SQL/连接信息。
 
@@ -197,22 +199,22 @@ Readiness 不只改 evaluator：`activity-publish-readiness.service.ts:619–780
 
 以下均在 `test/e2e/`，下一步须按调用链逐例分类；命中版本数字只代表候选，不可机械替换：
 
-| 文件 | 必须核对的边界 |
-|---|---|
-| activity-os-r3-c1-d2c-proposal-v7.e2e-spec.ts | 新提案端到端与 V7 历史语法测试必须拆清，历史 V7 不改成 V8 冒充兼容。 |
-| activity-os-r3-c1-d2c-proposal-compatibility.e2e-spec.ts | V2–V7 历史、在途、零修订升级夹具永久保留；无关变更行为不放宽。 |
-| activity-os-r3-c1-d2c-proposal-concurrency.e2e-spec.ts | 指标并发断言不变；新创建提案是否需补时长选择前置逐例确认。 |
-| activity-os-r3-c1-d2c-readiness.e2e-spec.ts | 已核对 206–209 行仅提取 metrics.requiredSet；269–280 行检查指标状态、V3 模板、同输入重复读取一致性，后段核验活动/审计未写。保留原断言，不为时长选择新增字段重写指标期望；时长 Readiness 用新增测试覆盖。 |
-| activity-os-r3-c1-d2b-template-catalogue.e2e-spec.ts | V3 收据与模板定义继续保留；新 V4 另加真实调用，不改历史 hash。 |
-| activity-os-r3-c1-d2b-creation-compatibility.e2e-spec.ts | 快速/专业/紧急的旧来源、访问面及重放保持；新选择仅新版本接入。 |
-| activity-batch3-2-publish-review.e2e-spec.ts | 审批/变更行为与新提案版本断言分离。 |
-| activity-batch4-form-runtime.e2e-spec.ts | 保留表单运行时行为断言，只评估新提案前置。 |
-| activity-batch4-allocation-mode-runtime.e2e-spec.ts | 不改既有分配模式行为及其冻结证据。 |
-| activity-batch4-qualification-configuration.e2e-spec.ts | 不改资格配置合同，只核对发布前置。 |
-| activity-os-r2-b7-control-plane.e2e-spec.ts | 第 302 行的 7 是前后计数差，不是提案版本；排除该数字命中，控制面资格保持不变。 |
-| activity-os-r2-b5-snapshot-v6.e2e-spec.ts | V6 历史快照仍按 V6；新 HTTP 返回版本另列。 |
-| activity-settlement-closure.e2e-spec.ts | 已核对第 574 行命中为 archiveWaitingDays=7，与提案 V7 无关；不因该命中纳入版本适配写集，结算业务断言保持。 |
-| activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts | 已核对第 564 行命中为 d87ArtifactCount=7，与提案 V7 无关；不因该命中纳入版本适配写集，迁移历史断言保持。 |
+| 文件                                                                           | 必须核对的边界                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| activity-os-r3-c1-d2c-proposal-v7.e2e-spec.ts                                  | 新提案端到端与 V7 历史语法测试必须拆清，历史 V7 不改成 V8 冒充兼容。                                                                                                                                     |
+| activity-os-r3-c1-d2c-proposal-compatibility.e2e-spec.ts                       | V2–V7 历史、在途、零修订升级夹具永久保留；无关变更行为不放宽。                                                                                                                                           |
+| activity-os-r3-c1-d2c-proposal-concurrency.e2e-spec.ts                         | 指标并发断言不变；新创建提案是否需补时长选择前置逐例确认。                                                                                                                                               |
+| activity-os-r3-c1-d2c-readiness.e2e-spec.ts                                    | 已核对 206–209 行仅提取 metrics.requiredSet；269–280 行检查指标状态、V3 模板、同输入重复读取一致性，后段核验活动/审计未写。保留原断言，不为时长选择新增字段重写指标期望；时长 Readiness 用新增测试覆盖。 |
+| activity-os-r3-c1-d2b-template-catalogue.e2e-spec.ts                           | V3 收据与模板定义继续保留；新 V4 另加真实调用，不改历史 hash。                                                                                                                                           |
+| activity-os-r3-c1-d2b-creation-compatibility.e2e-spec.ts                       | 快速/专业/紧急的旧来源、访问面及重放保持；新选择仅新版本接入。                                                                                                                                           |
+| activity-batch3-2-publish-review.e2e-spec.ts                                   | 审批/变更行为与新提案版本断言分离。                                                                                                                                                                      |
+| activity-batch4-form-runtime.e2e-spec.ts                                       | 保留表单运行时行为断言，只评估新提案前置。                                                                                                                                                               |
+| activity-batch4-allocation-mode-runtime.e2e-spec.ts                            | 不改既有分配模式行为及其冻结证据。                                                                                                                                                                       |
+| activity-batch4-qualification-configuration.e2e-spec.ts                        | 不改资格配置合同，只核对发布前置。                                                                                                                                                                       |
+| activity-os-r2-b7-control-plane.e2e-spec.ts                                    | 第 302 行的 7 是前后计数差，不是提案版本；排除该数字命中，控制面资格保持不变。                                                                                                                           |
+| activity-os-r2-b5-snapshot-v6.e2e-spec.ts                                      | V6 历史快照仍按 V6；新 HTTP 返回版本另列。                                                                                                                                                               |
+| activity-settlement-closure.e2e-spec.ts                                        | 已核对第 574 行命中为 archiveWaitingDays=7，与提案 V7 无关；不因该命中纳入版本适配写集，结算业务断言保持。                                                                                               |
+| activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts | 已核对第 564 行命中为 d87ArtifactCount=7，与提案 V7 无关；不因该命中纳入版本适配写集，迁移历史断言保持。                                                                                                 |
 
 候选分类以本表、下方实际新HTTP断言及§9.3为准；只有列入140路径的旧E2E才申请适配。未列入的旧模板目录、创建兼容、指标Readiness及误命中计数用例保持原文件并运行回归。当前没有修改旧测试的授权。
 
@@ -244,22 +246,22 @@ docs/handoff/admin-web.md
 
 以下路径已现场核实存在，补足此前影响面段落的省略；仍是未来实施计划，不授权当前修改：
 
-| 路径 | 允许的未来改动 |
-|---|---|
-| `src/modules/activities/dto/admin/activity-template-version.dto.ts` | 独立 V4 请求分支、3/4 收据及列表/详情 schema 枚举；不缩窄 V3 输入。 |
-| `src/modules/activities/dto/app/app-managed-activity-creation.dto.ts` | 紧急创建可选活动层时长选择；不把专业/模板层 DTO 混入 App。 |
-| `src/modules/activities/dto/app/app-managed-activity-creation-professional.dto.ts` | 可选按本次稳定 code 的四层选择；既有创建字段不变。 |
-| `src/modules/activities/activity-creation-professional.ts` | 在现有创建结果内部保留本次 code→ID 映射供选择物化；不新增对外返回字段、不改场次/岗位创建语义。 |
-| `src/modules/activities/activity-creation-dto.spec.ts` | 可选字段显式映射、旧输入 hash 不变及拒绝跨面字段。 |
-| `src/modules/permissions/permission-catalog.ts` | 两码及真实 scope/主体/ActionConstraint 元数据。 |
-| `src/modules/permissions/seed-permission-codes.ts` | 运行时清单仅补两码。 |
-| `src/modules/permissions/permission-code-holders.spec.ts` | 人工授予例外精确登记，不扩角色默认权限。 |
-| `scripts/harness-guards.selftest.ts` | 仅 CLOSURE_PERMISSION_CODE_COUNT 与对应注释 260→262，不改守护裁决。 |
-| `src/modules/audit-logs/audit-logs.types.ts` | 单个具名事件及安全资源类型。 |
-| `src/common/exceptions/biz-code.constant.ts` | 本批明确业务错误，不把目录错误强行兼作选择错误。 |
-| `src/common/exceptions/biz-code.constant.spec.ts` | 新错误编号及状态语义登记。 |
-| `src/common/datetime/clock-authority.spec.ts` | 新修订/收据 createdAt 的时钟来源登记，不放宽断言。 |
-| `prisma/CLAUDE.md` | 实施后按真实模型/迁移更新摘要；本轮不动。 |
+| 路径                                                                               | 允许的未来改动                                                                                 |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `src/modules/activities/dto/admin/activity-template-version.dto.ts`                | 独立 V4 请求分支、3/4 收据及列表/详情 schema 枚举；不缩窄 V3 输入。                            |
+| `src/modules/activities/dto/app/app-managed-activity-creation.dto.ts`              | 紧急创建可选活动层时长选择；不把专业/模板层 DTO 混入 App。                                     |
+| `src/modules/activities/dto/app/app-managed-activity-creation-professional.dto.ts` | 可选按本次稳定 code 的四层选择；既有创建字段不变。                                             |
+| `src/modules/activities/activity-creation-professional.ts`                         | 在现有创建结果内部保留本次 code→ID 映射供选择物化；不新增对外返回字段、不改场次/岗位创建语义。 |
+| `src/modules/activities/activity-creation-dto.spec.ts`                             | 可选字段显式映射、旧输入 hash 不变及拒绝跨面字段。                                             |
+| `src/modules/permissions/permission-catalog.ts`                                    | 两码及真实 scope/主体/ActionConstraint 元数据。                                                |
+| `src/modules/permissions/seed-permission-codes.ts`                                 | 运行时清单仅补两码。                                                                           |
+| `src/modules/permissions/permission-code-holders.spec.ts`                          | 人工授予例外精确登记，不扩角色默认权限。                                                       |
+| `scripts/harness-guards.selftest.ts`                                               | 仅 CLOSURE_PERMISSION_CODE_COUNT 与对应注释 260→262，不改守护裁决。                            |
+| `src/modules/audit-logs/audit-logs.types.ts`                                       | 单个具名事件及安全资源类型。                                                                   |
+| `src/common/exceptions/biz-code.constant.ts`                                       | 本批明确业务错误，不把目录错误强行兼作选择错误。                                               |
+| `src/common/exceptions/biz-code.constant.spec.ts`                                  | 新错误编号及状态语义登记。                                                                     |
+| `src/common/datetime/clock-authority.spec.ts`                                      | 新修订/收据 createdAt 的时钟来源登记，不放宽断言。                                             |
+| `prisma/CLAUDE.md`                                                                 | 实施后按真实模型/迁移更新摘要；本轮不动。                                                      |
 
 ### 9.2 旧迁移测试的精确适配边界
 
@@ -286,7 +288,6 @@ activity-os-r3-c2-outcome-value-revision.e2e-spec.ts
 ```
 
 共15份明确 CURRENT_MIGRATION_COUNT=118（含名称不带migration的schema/data-foundation测试）；D1-1 第 108/115 行是当前全量冷回放标题/断言，更新为119，但第137行以后的117→118历史升级与第173行历史计数118保持。C1 D2b 第496行还需独立申请当前 seed 权限260→262。§8排除 allocation-candidate 文件中的数字7仅指“不是提案版本”；不排除该文件真实迁移计数联动。不能把两种筛选理由混为同一结论。C2 D1 `activity-os-r3-c2-outcome-value-revision.e2e-spec.ts:184/190` 的当前冷回放标题/计数118→119，89行历史migration索引112及原112→113升级断言保持；不因文件名不带migration而遗漏。
-
 
 ### 9.3 精确实施路径清单（140项，待维护者确认）
 
@@ -468,14 +469,14 @@ changelog.d/activity-os-r4-d1-3-implementation.md
 
 补充六份测试都有真实新提案成功前置，并非仅命中字符串；只在下列初次发布前通过测试辅助增加合法政策选择及必要人工授码，不动后续行为断言：
 
-| test/e2e/ 文件 | 接入锚点（main基线行） | 保留行为 |
-|---|---|---|
-| activity-full-chain.e2e-spec.ts | 446，新提案第4站 | 全链所有站点、账本与结束断言。 |
-| activity-session-cancel-effects.e2e-spec.ts | 410/656/757，初次发布；217/792是后续变更 | 取消/改期影响、报名、二维码失效与并发反例。 |
-| app-managed-activity-registrations.e2e-spec.ts | 173，发布fixture | 报名资格及名额行为。 |
-| activity-batch4-capacity-projection.e2e-spec.ts | 277，approveInitial；295后续变更 | 容量投影与审批行为。 |
-| app-managed-activity-attendances.e2e-spec.ts | 160，发布fixture | 考勤权限与事实。 |
-| app-managed-activities.e2e-spec.ts | 260，publishThroughReview | managed可见性、资格及后续操作。 |
+| test/e2e/ 文件                                  | 接入锚点（main基线行）                   | 保留行为                                    |
+| ----------------------------------------------- | ---------------------------------------- | ------------------------------------------- |
+| activity-full-chain.e2e-spec.ts                 | 446，新提案第4站                         | 全链所有站点、账本与结束断言。              |
+| activity-session-cancel-effects.e2e-spec.ts     | 410/656/757，初次发布；217/792是后续变更 | 取消/改期影响、报名、二维码失效与并发反例。 |
+| app-managed-activity-registrations.e2e-spec.ts  | 173，发布fixture                         | 报名资格及名额行为。                        |
+| activity-batch4-capacity-projection.e2e-spec.ts | 277，approveInitial；295后续变更         | 容量投影与审批行为。                        |
+| app-managed-activity-attendances.e2e-spec.ts    | 160，发布fixture                         | 考勤权限与事实。                            |
+| app-managed-activities.e2e-spec.ts              | 260，publishThroughReview                | managed可见性、资格及后续操作。             |
 
 ## 10. 核验记录、预计计数与授权分段
 

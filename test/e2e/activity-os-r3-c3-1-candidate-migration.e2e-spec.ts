@@ -163,7 +163,22 @@ describe('C3-1 nonempty 115 to 116 upgrade and physical constraints', () => {
       rmSync(temporary, { recursive: true, force: true });
     }
   }, 120000);
-  // Leave this worker clone at the verified latest migration for the next local suite.
+
+  // This replay deliberately leaves its worker on migration 116. Restore the
+  // shared Jest worker clone so every following E2E suite sees the current
+  // Prisma surface, including migrations introduced after C3-1.
+  afterAll(() => {
+    const worker = process.env.JEST_WORKER_ID;
+    if (!worker) throw new Error('C3-1 migration replay requires a Jest worker database');
+    dropWorkerDatabase(worker);
+    execFileSync(
+      'docker',
+      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
+      { stdio: 'pipe' },
+    );
+    deploy(path.resolve('prisma/schema.prisma'));
+  }, 120000);
+
   beforeEach(() => {
     sql(
       'TRUNCATE "ActivityMetricCandidateCommandReceipt", "ActivityMetricCandidateSource", "ActivityMetricCandidateValue", "ActivityMetricCandidate"',

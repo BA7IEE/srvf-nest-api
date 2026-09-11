@@ -203,6 +203,21 @@ beforeAll(() => {
   }
 }, 120000);
 
+// This replay deliberately leaves its worker on migration 117. Restore the
+// shared Jest worker clone so every following E2E suite sees the current
+// Prisma surface, including migrations introduced after C3-2.
+afterAll(() => {
+  const worker = process.env.JEST_WORKER_ID;
+  if (!worker) throw new Error('C3-2 migration upgrade requires an isolated worker');
+  dropWorkerDatabase(worker);
+  execFileSync(
+    'docker',
+    ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
+    { stdio: 'pipe' },
+  );
+  deploy(path.resolve('prisma/schema.prisma'));
+}, 120000);
+
 function rejected(statement: string, state: string, message: string): void {
   let stderr = '';
   try {

@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:3170312f6ed8aac0f3afa0608eeff606ef778c11f915b8e3d08642f6ee349374
+// inputDigest: sha256:2aa52aba43f85bfbf899d7b3352f0dab1b627cd7556969cd09d4f2e36ff45033
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -422,6 +422,14 @@ export interface AdminActivityTemplateDefinitionV3Dto {
   "metricSelection": AdminActivityMetricSelectionInputDto;
 }
 
+export interface AdminActivityTemplateDefinitionV4Dto {
+  "activity": AdminTemplateActivityDefinitionDto;
+  "sessions": AdminTemplateSessionDefinitionDto[];
+  "registrationForm": AdminTemplateRegistrationFormDto;
+  "metricSelection": AdminActivityMetricSelectionInputDto;
+  "timePolicySelection": AdminTemplateTimePolicySelectionDto;
+}
+
 export interface AdminActivityTemplateFamilySummaryDto {
   "id": string;
   "code": string;
@@ -432,13 +440,14 @@ export interface AdminActivityTemplateFamilySummaryDto {
 export interface AdminActivityTemplateVersionCommandDto {
   "operationKey": string;
   "expectedDefinitionHash": string;
+  "schemaVersion"?: 4;
 }
 
 export interface AdminActivityTemplateVersionCommandResultDto {
   "id": string;
   "code": string;
   "version": number;
-  "schemaVersion": 3;
+  "schemaVersion": 3 | 4;
   "statusCode": "draft" | "active" | "retired";
   "definitionHash": string;
 }
@@ -448,7 +457,7 @@ export interface AdminActivityTemplateVersionResponseDto {
   "code": string;
   "name": string;
   "version": number;
-  "schemaVersion": 1 | 2 | 3;
+  "schemaVersion": 1 | 2 | 3 | 4;
   "definitionHash": string;
   "statusCode": "draft" | "active" | "retired";
   "activityTypeCode": string;
@@ -457,7 +466,7 @@ export interface AdminActivityTemplateVersionResponseDto {
   "effectiveTo": string | null;
   "createdAt": string;
   "updatedAt": string;
-  "definition": AdminActivityTemplateDefinitionV1Dto | AdminActivityTemplateDefinitionV2Dto | AdminActivityTemplateDefinitionV3Dto;
+  "definition": AdminActivityTemplateDefinitionV1Dto | AdminActivityTemplateDefinitionV2Dto | AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
 }
 
 export interface AdminActivityTemplateVersionSummaryDto {
@@ -465,7 +474,7 @@ export interface AdminActivityTemplateVersionSummaryDto {
   "code": string;
   "name": string;
   "version": number;
-  "schemaVersion": 1 | 2 | 3;
+  "schemaVersion": 1 | 2 | 3 | 4;
   "definitionHash": string;
   "statusCode": "draft" | "active" | "retired";
   "activityTypeCode": string;
@@ -474,6 +483,54 @@ export interface AdminActivityTemplateVersionSummaryDto {
   "effectiveTo": string | null;
   "createdAt": string;
   "updatedAt": string;
+}
+
+export interface AdminActivityTimePolicyPointerDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+}
+
+export interface AdminActivityTimePolicySelectionChangeDto {
+  "scope": AdminActivityTimePolicySelectionScopeDto;
+  "selection": AdminActivityTimePolicySelectionValueDto;
+}
+
+export interface AdminActivityTimePolicySelectionItemDto {
+  "scope": AdminActivityTimePolicySelectionScopeDto;
+  "selection": AdminActivityTimePolicySelectionValueDto;
+}
+
+export interface AdminActivityTimePolicySelectionResponseDto {
+  "activityId": string;
+  "selectionRevisionId": string | null;
+  "revision": number;
+  "selectionHash": string | null;
+  "createdAt": string | null;
+  "items": AdminActivityTimePolicySelectionItemDto[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+  "resolutionSummary": Record<string, unknown>;
+}
+
+export interface AdminActivityTimePolicySelectionResultDto {
+  "activityId": string;
+  "selectionRevisionId": string;
+  "revision": number;
+  "selectionHash": string;
+  "createdAt": string;
+}
+
+export interface AdminActivityTimePolicySelectionScopeDto {
+  "layerCode": "activity" | "session" | "position";
+  "sessionId": Record<string, unknown> | null;
+  "positionId": Record<string, unknown> | null;
+}
+
+export interface AdminActivityTimePolicySelectionValueDto {
+  "mode": "inherit" | "explicit";
+  "pointer": AdminActivityTimePolicyPointerDto;
 }
 
 export interface AdminAttendanceSettlementListItemDto {
@@ -535,7 +592,8 @@ export interface AdminCreateActivityTemplateVersionDto {
   "version": number;
   "effectiveFrom": string;
   "effectiveTo"?: string | null;
-  "definition"?: AdminActivityTemplateDefinitionV3Dto;
+  "schemaVersion"?: 4;
+  "definition"?: AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
   "copyFromVersionId"?: string;
   "expectedSourceDefinitionHash"?: string;
   "metricSelection"?: AdminActivityMetricSelectionInputDto;
@@ -662,6 +720,12 @@ export interface AdminParticipationLedgerEntryDto {
   "recognizedPointsDelta": number;
   "creditedPointsDelta": number;
   "cappedOutPointsDelta": number;
+}
+
+export interface AdminPatchActivityTimePolicySelectionDto {
+  "operationKey": string;
+  "expectedRevision": number;
+  "changes": AdminActivityTimePolicySelectionChangeDto[];
 }
 
 export interface AdminRegistrationExpandedActivityDto {
@@ -893,6 +957,23 @@ export interface AdminTemplateSessionDefinitionDto {
   "positions": AdminTemplatePositionDefinitionDto[];
 }
 
+export interface AdminTemplateTimePolicyPositionOverrideDto {
+  "sessionCode": string;
+  "selection": AdminActivityTimePolicySelectionValueDto;
+  "positionCode": string;
+}
+
+export interface AdminTemplateTimePolicySelectionDto {
+  "default": AdminActivityTimePolicySelectionValueDto;
+  "sessionOverrides": AdminTemplateTimePolicySessionOverrideDto[];
+  "positionOverrides": AdminTemplateTimePolicyPositionOverrideDto[];
+}
+
+export interface AdminTemplateTimePolicySessionOverrideDto {
+  "sessionCode": string;
+  "selection": AdminActivityTimePolicySelectionValueDto;
+}
+
 export interface AdminTimePolicyCommandResponseDto {
   "schemaVersion": 1;
   "operationCode": "create_policy" | "create_version" | "activate_version" | "retire_version";
@@ -959,7 +1040,8 @@ export interface AdminUpdateActivityMetricSetDto {
 export interface AdminUpdateActivityTemplateVersionDto {
   "operationKey": string;
   "expectedDefinitionHash": string;
-  "definition": AdminActivityTemplateDefinitionV3Dto;
+  "schemaVersion"?: 4;
+  "definition": AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
 }
 
 export interface AnnouncementImportRequestDto {

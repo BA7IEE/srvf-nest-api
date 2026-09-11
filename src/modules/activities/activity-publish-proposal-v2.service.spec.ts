@@ -41,6 +41,11 @@ describe('ActivityPublishProposalV2Service', () => {
     auditMeta: { requestId: 'req-proposal-v2-spec', ip: null, ua: null },
   } as const;
 
+  const timePolicySelections = {
+    assertPointersAvailableWithinTransaction: jest.fn(),
+    applyPublishReviewSelectionWithinTransaction: jest.fn(),
+  };
+
   it('keeps governed Form targets canonical and hash-bound in every existing v3-v5 slot without changing the envelope', async () => {
     const service = new ActivityPublishProposalV2Service(
       { get: jest.fn() } as never,
@@ -49,6 +54,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const governed = canonicalizeRegistrationFormDefinition({
       fields: [
@@ -141,6 +147,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
 
     expect(
@@ -159,6 +166,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const internals = service as unknown as ProposalV2Internals;
     const activity = {
@@ -255,6 +263,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const internals = service as unknown as { currentState: jest.Mock };
     const state = {
@@ -295,6 +304,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const internals = service as unknown as { currentState: jest.Mock };
     const state = {
@@ -363,6 +373,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     const state = {
@@ -380,6 +391,7 @@ describe('ActivityPublishProposalV2Service', () => {
         metricSetPointer: null,
         metricSelectionRevision: 1,
       },
+      timePolicySelection: null,
     };
     internals.currentState = jest.fn().mockResolvedValue(state);
     internals.assertProposalValid = jest.fn();
@@ -396,7 +408,65 @@ describe('ActivityPublishProposalV2Service', () => {
       true,
       true,
       true,
+      true,
     );
+  });
+
+  it('moves a configured activity to V8 while retaining the exact V7 branch for legacy null', async () => {
+    const service = new ActivityPublishProposalV2Service(
+      { get: jest.fn() } as never,
+      registrationForms as never,
+      qualificationRules as never,
+      { apply: jest.fn() } as never,
+      { enqueueSessionCancellation: jest.fn() } as never,
+      { log: jest.fn() } as never,
+      timePolicySelections as never,
+    );
+    const internals = service as unknown as Record<string, jest.Mock>;
+    const state = {
+      workflowRevision: 12,
+      activity: { title: 'configured time policy', allocationModeCode: 'qualification_rank' },
+      sessions: [],
+      templateVersionId: null,
+      resolvedConfig: { templateVersionId: null },
+      registrationForm: null,
+      qualificationRuleSets: { ruleSets: [] },
+      selectedTemplateVersionId: null,
+      activityPlaces: [],
+      metricSelection: {
+        metricRequirementCode: 'not_required',
+        metricSetPointer: null,
+        metricSelectionRevision: 1,
+      },
+      timePolicySelection: { id: 'selection-revision', revision: 1 },
+    };
+    internals.currentState = jest.fn().mockResolvedValue(state);
+    internals.assertProposalValid = jest.fn();
+    internals.currentV7MetricSelection = jest.fn().mockReturnValue({
+      selection: { metricRequirementCode: 'not_required', metricSetPointer: null },
+      fields: {
+        metricRequirementCode: 'not_required',
+        metricSetPointer: null,
+        metricSelectionRevision: 1,
+      },
+    });
+    internals.currentV8TimePolicySelection = jest.fn().mockResolvedValue({
+      fields: { timePolicyPointers: null },
+    });
+    internals.toSnapshotV8 = jest.fn().mockReturnValue({ schemaVersion: 8 });
+    internals.toSnapshotV7 = jest.fn().mockReturnValue({ schemaVersion: 7 });
+
+    await expect(service.buildInitial({} as never, 'activity-1')).resolves.toMatchObject({
+      schemaVersion: 8,
+    });
+    expect(internals.toSnapshotV8).toHaveBeenCalledTimes(1);
+    expect(internals.toSnapshotV7).not.toHaveBeenCalled();
+
+    internals.currentV8TimePolicySelection.mockResolvedValue(null);
+    await expect(service.buildInitial({} as never, 'activity-1')).resolves.toMatchObject({
+      schemaVersion: 7,
+    });
+    expect(internals.toSnapshotV7).toHaveBeenCalledTimes(1);
   });
 
   it('freezes the complete V6 base and target with canonical local places and null future pointers', () => {
@@ -407,6 +477,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const internals = service as unknown as {
       toSnapshotV6: (...args: unknown[]) => ActivityPublishProposalSnapshotV6;
@@ -612,6 +683,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const internals = service as unknown as { currentState: jest.Mock };
     const state = {
@@ -677,6 +749,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     const appliedAllocationModes: Array<string | undefined> = [];
@@ -787,6 +860,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     internals.currentState = jest
@@ -812,6 +886,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const selected = {
       id: 'selected-retired-version',
@@ -858,6 +933,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { apply: jest.fn() } as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const fallback = {
       id: 'latest-active-legacy-version',
@@ -906,6 +982,7 @@ describe('ActivityPublishProposalV2Service', () => {
       capacityBuckets as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const calls: string[] = [];
     const internals = service as unknown as Record<string, jest.Mock>;
@@ -1002,6 +1079,7 @@ describe('ActivityPublishProposalV2Service', () => {
       capacityBuckets as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const calls: string[] = [];
     const internals = service as unknown as Record<string, jest.Mock>;
@@ -1087,6 +1165,7 @@ describe('ActivityPublishProposalV2Service', () => {
       capacityBuckets as never,
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
+      timePolicySelections as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     internals.applyActivity = jest.fn().mockResolvedValue(undefined);

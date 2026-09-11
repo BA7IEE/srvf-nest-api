@@ -19,6 +19,10 @@ import {
   type ActivityTemplateDefinitionV3,
 } from './activity-template-definition-v3';
 import {
+  parseActivityTemplateDefinitionV4,
+  type ActivityTemplateDefinitionV4,
+} from './activity-template-definition-v4';
+import {
   ActivityTemplateVersionCommand,
   parseTemplateVersionReceipt,
 } from './activity-template-version-command';
@@ -30,6 +34,9 @@ import {
 import { canonicalizeRegistrationFormDefinitionForB3 } from './registration-form-definition';
 import { canonicalize, type CanonicalValue } from './settlement-content-hash';
 import { ActivityTemplateDefinitionV1Error } from './activity-template-definition-v1';
+import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
+import type { ActivityTimePolicyPointer } from './activity-time-policy-selection';
+import { ActivityTimePolicyCommand } from './activity-time-policy-command';
 
 export interface CreateTemplateVersionCommand {
   operationKey: string;
@@ -41,6 +48,7 @@ export interface CreateTemplateVersionCommand {
   version: number;
   effectiveFrom: string;
   effectiveTo?: string | null;
+  schemaVersion?: number;
   definition?: unknown;
   copyFromVersionId?: string;
   expectedSourceDefinitionHash?: string;
@@ -58,10 +66,23 @@ function windowFromInput(from: string, to: string | null | undefined) {
     throw new TypeError('invalid template effective window');
   return { effectiveFrom, effectiveTo };
 }
-function assertV3Form(definition: ActivityTemplateDefinitionV3) {
-  fingerprintActivityTemplateDefinition({ schemaVersion: 3, definition });
+type WritableTemplateDefinition = ActivityTemplateDefinitionV3 | ActivityTemplateDefinitionV4;
+
+function assertTemplateForm(schemaVersion: 3 | 4, definition: WritableTemplateDefinition) {
+  fingerprintActivityTemplateDefinition({ schemaVersion, definition });
   if (definition.registrationForm)
     canonicalizeRegistrationFormDefinitionForB3(definition.registrationForm);
+}
+
+function timePolicyPointers(
+  definition: WritableTemplateDefinition,
+): readonly ActivityTimePolicyPointer[] {
+  if (!('timePolicySelection' in definition)) return [];
+  return [
+    definition.timePolicySelection.default,
+    ...definition.timePolicySelection.sessionOverrides.map((item) => item.selection),
+    ...definition.timePolicySelection.positionOverrides.map((item) => item.selection),
+  ].flatMap((selection) => (selection.pointer ? [selection.pointer] : []));
 }
 
 @Injectable()
@@ -70,14 +91,17 @@ export class ActivityTemplateVersionService {
     private readonly commands: ActivityTemplateVersionCommand,
     private readonly audit: ActivityTemplateVersionAuditRecorder,
     private readonly access: ActivityAccessService,
+    private readonly timePolicySelections: ActivityTimePolicySelectionService,
+    private readonly timePolicyCommands: ActivityTimePolicyCommand,
   ) {}
 
   create(command: CreateTemplateVersionCommand, user: CurrentUserPayload, meta: AuditMeta) {
     let familyId: string | null;
     let familyInput: { code: string; name: string; categoryCode: string } | null;
-    let definition: ActivityTemplateDefinitionV3 | null;
+    let definition: WritableTemplateDefinition | null;
     let copy: { id: string; hash: string; selection: ActivityMetricSelection } | null;
     let version: number;
+    let schemaVersion: 3 | 4;
     let activityTypeCode: string;
     let window: ReturnType<typeof windowFromInput>;
     try {
@@ -96,6 +120,9 @@ export class ActivityTemplateVersionService {
           };
       activityTypeCode = metricText(command.activityTypeCode, 64);
       version = metricInteger(command.version, 1, 2147483647);
+      if (command.schemaVersion !== undefined && command.schemaVersion !== 4)
+        throw new TypeError('only explicit V4 is accepted; V3 remains omitted');
+      schemaVersion = command.schemaVersion === 4 ? 4 : 3;
       window = windowFromInput(command.effectiveFrom, command.effectiveTo);
       if (command.definition !== undefined) {
         if (
@@ -108,10 +135,15 @@ export class ActivityTemplateVersionService {
           throw new TypeError('mutually exclusive template inputs');
         // Class fields create undefined own keys for omitted HTTP properties.
         // Preserve JSON omission semantics without relaxing the V1/V2 parser.
-        definition = parseActivityTemplateDefinitionV3(
-          instanceToPlain(command.definition, { exposeUnsetFields: false }),
-        );
-        assertV3Form(definition);
+        definition =
+          schemaVersion === 4
+            ? parseActivityTemplateDefinitionV4(
+                instanceToPlain(command.definition, { exposeUnsetFields: false }),
+              )
+            : parseActivityTemplateDefinitionV3(
+                instanceToPlain(command.definition, { exposeUnsetFields: false }),
+              );
+        assertTemplateForm(schemaVersion, definition);
         copy = null;
       } else {
         definition = null;
@@ -139,12 +171,22 @@ export class ActivityTemplateVersionService {
         familyId,
         familyInput,
         version,
+        schemaVersion,
         activityTypeCode,
         effectiveFrom: window.effectiveFrom.toISOString(),
         effectiveTo: window.effectiveTo?.toISOString() ?? null,
         definition,
         copy,
       } as unknown as CanonicalValue),
+      revalidateReplay: async (tx, actor, result) => {
+        if (result.schemaVersion === 4) {
+          await this.timePolicyCommands.assertAccess(
+            tx,
+            actor,
+            'activity-time-policy.read.catalog',
+          );
+        }
+      },
       execute: async (tx, actor) => {
         let sourceFamilyId: string | null = null;
         let targetFamilyId: string | null = null;
@@ -166,14 +208,27 @@ export class ActivityTemplateVersionService {
             throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_STALE);
           try {
             const sourceDefinition = parseStoredTemplateVersion(source);
-            definition = parseActivityTemplateDefinitionV3({
-              activity: sourceDefinition.activity,
-              sessions: sourceDefinition.sessions,
-              registrationForm:
-                'registrationForm' in sourceDefinition ? sourceDefinition.registrationForm : null,
-              metricSelection: copy.selection,
-            });
-            assertV3Form(definition);
+            if (schemaVersion === 4) {
+              if (!('timePolicySelection' in sourceDefinition))
+                throw new TypeError('V4 copy requires a V4 source');
+              definition = parseActivityTemplateDefinitionV4({
+                activity: sourceDefinition.activity,
+                sessions: sourceDefinition.sessions,
+                registrationForm:
+                  'registrationForm' in sourceDefinition ? sourceDefinition.registrationForm : null,
+                metricSelection: copy.selection,
+                timePolicySelection: sourceDefinition.timePolicySelection,
+              });
+            } else {
+              definition = parseActivityTemplateDefinitionV3({
+                activity: sourceDefinition.activity,
+                sessions: sourceDefinition.sessions,
+                registrationForm:
+                  'registrationForm' in sourceDefinition ? sourceDefinition.registrationForm : null,
+                metricSelection: copy.selection,
+              });
+            }
+            assertTemplateForm(schemaVersion, definition);
           } catch (error) {
             if (
               error instanceof TypeError ||
@@ -200,6 +255,20 @@ export class ActivityTemplateVersionService {
         );
         // No receipt or Family survives a reference, identity or audit failure.
         await lockMetricSelectionReference(tx, definition.metricSelection, revalidate);
+        await this.timePolicySelections.assertPointersAvailableWithinTransaction(
+          tx,
+          timePolicyPointers(definition),
+          async () => {
+            await revalidate();
+            if (timePolicyPointers(definition!).length > 0) {
+              actor = await this.timePolicyCommands.assertAccess(
+                tx,
+                user,
+                'activity-time-policy.read.catalog',
+              );
+            }
+          },
+        );
         if (!family && familyInput)
           family = await tx.activityTemplateFamily.create({
             data: {
@@ -210,7 +279,7 @@ export class ActivityTemplateVersionService {
             },
           });
         if (!family) throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_FOUND);
-        const fingerprint = fingerprintActivityTemplateDefinition({ schemaVersion: 3, definition });
+        const fingerprint = fingerprintActivityTemplateDefinition({ schemaVersion, definition });
         const row = await tx.activityTemplate.create({
           data: {
             code: family.code,
@@ -219,7 +288,7 @@ export class ActivityTemplateVersionService {
             version,
             activityTypeCode,
             statusCode: 'draft',
-            schemaVersion: 3,
+            schemaVersion,
             definitionJson: definition as unknown as Prisma.InputJsonValue,
             definitionHash: fingerprint.definitionHash,
             ...window,
@@ -235,19 +304,23 @@ export class ActivityTemplateVersionService {
   change(
     action: 'update' | 'activate' | 'retire',
     id: string,
-    command: { operationKey: string; expectedDefinitionHash: string; definition?: unknown },
+    command: {
+      operationKey: string;
+      expectedDefinitionHash: string;
+      schemaVersion?: number;
+      definition?: unknown;
+    },
     user: CurrentUserPayload,
     meta: AuditMeta,
   ) {
     let expectedHash: string;
-    let definition: ActivityTemplateDefinitionV3 | null = null;
+    let rawDefinition: unknown = null;
     try {
       expectedHash = metricHash(command.expectedDefinitionHash);
+      if (command.schemaVersion !== undefined && command.schemaVersion !== 4)
+        throw new TypeError('only explicit V4 is accepted');
       if (action === 'update') {
-        definition = parseActivityTemplateDefinitionV3(
-          instanceToPlain(command.definition, { exposeUnsetFields: false }),
-        );
-        assertV3Form(definition);
+        rawDefinition = instanceToPlain(command.definition, { exposeUnsetFields: false });
       } else if (command.definition !== undefined)
         throw new TypeError('lifecycle command cannot change definition');
     } catch (error) {
@@ -265,7 +338,23 @@ export class ActivityTemplateVersionService {
       operation,
       operationKey: command.operationKey,
       targetId: id,
-      canonicalInput: canonicalize({ expectedHash, definition } as unknown as CanonicalValue),
+      // V3 receipts predate schemaVersion and must keep their exact canonical payload.  V4 needs
+      // its explicit marker in the idempotency hash, otherwise a later omitted marker could replay
+      // a V4 lifecycle command while bypassing the target-schema requirement below.
+      canonicalInput: canonicalize(
+        (command.schemaVersion === 4
+          ? { expectedHash, rawDefinition, schemaVersion: 4 }
+          : { expectedHash, rawDefinition }) as CanonicalValue,
+      ),
+      revalidateReplay: async (tx, actor, result) => {
+        if (result.schemaVersion === 4) {
+          await this.timePolicyCommands.assertAccess(
+            tx,
+            actor,
+            'activity-time-policy.read.catalog',
+          );
+        }
+      },
       execute: async (tx, actor) => {
         await tx.$queryRaw`SELECT "id" FROM "ActivityTemplate" WHERE "id" = ${id} FOR UPDATE`;
         actor = await this.commands.assertAccess(tx, user);
@@ -274,8 +363,13 @@ export class ActivityTemplateVersionService {
           include: { family: true },
         });
         if (!before) throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_FOUND);
-        if (before.schemaVersion !== 3)
+        if (before.schemaVersion !== 3 && before.schemaVersion !== 4)
           throw new BizException(BizCode.ACTIVITY_METRIC_STATUS_INVALID);
+        if (
+          (before.schemaVersion === 4 && command.schemaVersion !== 4) ||
+          (command.schemaVersion !== undefined && command.schemaVersion !== before.schemaVersion)
+        )
+          throw new BizException(BizCode.ACTIVITY_TEMPLATE_DEFINITION_INVALID);
         if (before.definitionHash !== expectedHash)
           throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_STALE);
         if (
@@ -283,12 +377,22 @@ export class ActivityTemplateVersionService {
           (action !== 'retire' && before.statusCode !== 'draft')
         )
           throw new BizException(BizCode.ACTIVITY_METRIC_STATUS_INVALID);
-        let next = definition;
+        let next: WritableTemplateDefinition | null = null;
+        if (action === 'update') {
+          next =
+            before.schemaVersion === 4
+              ? parseActivityTemplateDefinitionV4(rawDefinition)
+              : parseActivityTemplateDefinitionV3(rawDefinition);
+          assertTemplateForm(before.schemaVersion, next);
+        }
         if (action === 'activate') {
           try {
             parseStoredTemplateVersion(before);
-            next = parseActivityTemplateDefinitionV3(before.definitionJson);
-            assertV3Form(next);
+            next =
+              before.schemaVersion === 4
+                ? parseActivityTemplateDefinitionV4(before.definitionJson)
+                : parseActivityTemplateDefinitionV3(before.definitionJson);
+            assertTemplateForm(before.schemaVersion, next);
             if (!before.effectiveFrom) throw new TypeError('missing template window');
             windowFromInput(before.effectiveFrom.toISOString(), before.effectiveTo?.toISOString());
           } catch (error) {
@@ -311,13 +415,28 @@ export class ActivityTemplateVersionService {
             actor = await this.commands.assertAccess(tx, user);
             await this.assertVisibleFamily(tx, before.family!.id);
           });
+          await this.timePolicySelections.assertPointersAvailableWithinTransaction(
+            tx,
+            timePolicyPointers(next),
+            async () => {
+              actor = await this.commands.assertAccess(tx, user);
+              await this.assertVisibleFamily(tx, before.family!.id);
+              if (timePolicyPointers(next).length > 0) {
+                actor = await this.timePolicyCommands.assertAccess(
+                  tx,
+                  user,
+                  'activity-time-policy.read.catalog',
+                );
+              }
+            },
+          );
         }
         const data: Prisma.ActivityTemplateUpdateInput =
           action === 'update' && next
             ? {
                 definitionJson: next as unknown as Prisma.InputJsonValue,
                 definitionHash: fingerprintActivityTemplateDefinition({
-                  schemaVersion: 3,
+                  schemaVersion: before.schemaVersion,
                   definition: next,
                 }).definitionHash,
               }

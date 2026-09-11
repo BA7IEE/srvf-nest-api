@@ -3,7 +3,10 @@ import type { Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
-import type { ProfessionalCreationCommand } from './activity-creation-command';
+import {
+  materializeCreationTimePolicySelection,
+  type ProfessionalCreationCommand,
+} from './activity-creation-command';
 import { ActivityWriteService } from './activity-write.service';
 import { ActivityDraftService } from './activity-draft.service';
 import { RegistrationFormVersionService } from './registration-form-version.service';
@@ -27,6 +30,11 @@ export class ActivityCreationProfessional {
   ) {
     const activity = await this.activities.createDraftWithinTransaction(tx, command.activity, user);
     const sessions: CreationSessionPlaceScope[] = [];
+    const timePolicySessions: {
+      id: string;
+      code: string;
+      positions: { id: string; code: string }[];
+    }[] = [];
     const positions = new Map<string, string>();
     for (const input of command.sessions) {
       const session = await this.drafts.createSessionWithinTransaction(tx, activity, input.session);
@@ -35,6 +43,7 @@ export class ActivityCreationProfessional {
         code: input.session.code,
         locationText: input.session.locationText,
       });
+      const timePolicyPositions: { id: string; code: string }[] = [];
       for (const position of input.positions) {
         const created = await this.drafts.createPositionWithinTransaction(
           tx,
@@ -43,7 +52,13 @@ export class ActivityCreationProfessional {
           position,
         );
         positions.set(JSON.stringify([input.session.code, position.code]), created.positionId);
+        timePolicyPositions.push({ id: created.positionId, code: position.code });
       }
+      timePolicySessions.push({
+        id: session.sessionId,
+        code: input.session.code,
+        positions: timePolicyPositions,
+      });
     }
     const placeCount = await writeCreationPlaces(tx, {
       activityId: activity.id,
@@ -73,6 +88,13 @@ export class ActivityCreationProfessional {
         return { scope: { sessionId, positionId }, rules: set.rules };
       }),
     });
-    return { activity, placeCount };
+    return {
+      activity,
+      placeCount,
+      timePolicySelection:
+        command.timePolicySelection === undefined
+          ? undefined
+          : materializeCreationTimePolicySelection(command.timePolicySelection, timePolicySessions),
+    };
   }
 }

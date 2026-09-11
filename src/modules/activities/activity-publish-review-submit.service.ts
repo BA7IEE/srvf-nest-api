@@ -27,6 +27,7 @@ import type { UpdateActivityDto } from './activities.dto';
 import type { AppActivityChangePositionDto } from './dto/app/app-managed-activity.dto';
 import { ActivityProposalValidator } from './activity-proposal-validator';
 import { ActivityAllocationModeService } from './activity-allocation-mode.service';
+import { ActivityTimePolicySelectionAccess } from './activity-time-policy-selection-access';
 import {
   ActivityPublishProposalV2Service,
   type ActivityTemplateResolution,
@@ -70,6 +71,7 @@ export class ActivityPublishReviewSubmitService {
     private readonly proposalV2: ActivityPublishProposalV2Service,
     private readonly allocationModes: ActivityAllocationModeService,
     private readonly identities: AppIdentityResolver,
+    private readonly timePolicySelections: ActivityTimePolicySelectionAccess,
   ) {}
 
   async submitInitial(
@@ -155,10 +157,26 @@ export class ActivityPublishReviewSubmitService {
         await lockActivity(activityId, tx);
         const activity = await tx.activity.findUniqueOrThrow({
           where: { id: activityId },
-          select: { statusCode: true, workflowRevision: true, allocationModeCode: true },
+          select: {
+            statusCode: true,
+            workflowRevision: true,
+            allocationModeCode: true,
+            timePolicySelectionRevision: true,
+            currentTimePolicySelectionRevisionId: true,
+          },
         });
         if (activity.statusCode !== 'published') {
           throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+        }
+        // This compatibility endpoint produces a pre-V8 snapshot and therefore cannot preserve
+        // an Activity-owned time-policy selection in the later RuleSnapshot. Once a selection
+        // exists, callers must use the current full change-review route instead of silently
+        // submitting an old envelope that omits the immutable fact.
+        if (
+          activity.timePolicySelectionRevision !== 0 ||
+          activity.currentTimePolicySelectionRevisionId !== null
+        ) {
+          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
         }
         await this.allocationModes.assertLockedActivityConsistent(tx, {
           id: activityId,
@@ -258,6 +276,15 @@ export class ActivityPublishReviewSubmitService {
         if (activity.statusCode !== 'published') {
           throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
         }
+        if (dto.timePolicySelectionChanges !== undefined) {
+          await this.timePolicySelections.authorize(
+            tx,
+            user,
+            'app',
+            activityId,
+            'activity.time-policy.select',
+          );
+        }
         const replay = await this.findSubmitReplay(tx, dto.operationKey, requestHash);
         if (replay) return replay;
         const pending = await tx.activityPublishReview.count({
@@ -268,7 +295,12 @@ export class ActivityPublishReviewSubmitService {
         if (!decision.allowed) throw new BizException(decision.biz);
         let actor = user;
         const snapshot = await this.proposalV2.buildChange(tx, activityId, dto, async () => {
-          actor = await this.revalidateChangeProposalSubmission(tx, activityId, user);
+          actor = await this.revalidateChangeProposalSubmission(
+            tx,
+            activityId,
+            user,
+            dto.timePolicySelectionChanges !== undefined,
+          );
         });
         await this.allocationModes.assertLockedActivityConsistent(tx, {
           id: activityId,
@@ -557,6 +589,7 @@ export class ActivityPublishReviewSubmitService {
     tx: PrismaTx,
     activityId: string,
     user: CurrentUserPayload,
+    requiresTimePolicySelection = false,
   ): Promise<CurrentUserPayload> {
     const actor = await loadActiveUserIdentityInTx(tx, user.id);
     if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
@@ -579,6 +612,15 @@ export class ActivityPublishReviewSubmitService {
       where: { activityId, status: 'pending' },
     });
     if (pending > 0) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_PENDING);
+    if (requiresTimePolicySelection) {
+      await this.timePolicySelections.authorize(
+        tx,
+        actor,
+        'app',
+        activityId,
+        'activity.time-policy.select',
+      );
+    }
     return actor;
   }
 

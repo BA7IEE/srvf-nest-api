@@ -18,6 +18,9 @@ function position(overrides: Partial<ReadinessPosition> = {}): ReadinessPosition
   return {
     id: 'position-a',
     capacity: 5,
+    startAt: null,
+    endAt: null,
+    attendanceRoleCode: 'support',
     locationRequired: null,
     radiusMeters: null,
     ...overrides,
@@ -145,6 +148,7 @@ function facts(
     readonly registrationFormValid?: boolean;
     readonly qualificationRuleSet?: ActivityPublishReadinessFacts['qualificationRuleSet'];
     readonly metricSelection?: ActivityPublishReadinessFacts['metricSelection'];
+    readonly timePolicySelectionIssues?: ActivityPublishReadinessFacts['timePolicySelectionIssues'];
     readonly insuranceEnforcementEnabled?: boolean;
   } = {},
 ): ActivityPublishReadinessFacts {
@@ -171,6 +175,7 @@ function facts(
       invalidRuleSetId: null,
     },
     metricSelection: input.metricSelection ?? 'unconfigured',
+    timePolicySelectionIssues: input.timePolicySelectionIssues ?? ['unconfigured'],
     insuranceEnforcementEnabled: input.insuranceEnforcementEnabled ?? true,
   };
 }
@@ -282,6 +287,44 @@ describe('ActivityPublishReadinessService (Activity OS R2 / B4)', () => {
         ],
       },
     ]);
+  });
+
+  it('将时长政策的未配置、目标错链、失效引用和时间覆盖缺口分别报告', () => {
+    const cases: readonly [
+      ActivityPublishReadinessFacts['timePolicySelectionIssues'],
+      string,
+      string,
+    ][] = [
+      [['unconfigured'], 'TIME_POLICY_UNREPRESENTABLE', 'policy.time'],
+      [['target_invalid'], 'TIME_POLICY_TARGET_INVALID', 'policy.time.selection'],
+      [['reference_unavailable'], 'TIME_POLICY_REFERENCE_UNAVAILABLE', 'policy.time.references'],
+      [['coverage_incomplete'], 'TIME_POLICY_COVERAGE_INCOMPLETE', 'policy.time.coverage'],
+    ];
+
+    for (const [timePolicySelectionIssues, code, fieldPath] of cases) {
+      const result = evaluateActivityPublishReadiness(
+        facts({ timePolicySelectionIssues, metricSelection: 'not_required' }),
+        REFERENCE_TIME,
+      );
+      expect(result.blockers).toContainEqual(expect.objectContaining({ code, fieldPath }));
+    }
+
+    const resolved = evaluateActivityPublishReadiness(
+      facts({ timePolicySelectionIssues: [], metricSelection: 'not_required' }),
+      REFERENCE_TIME,
+    );
+    expect(resolved.blockers.map((entry) => entry.code)).not.toContain(
+      'TIME_POLICY_UNREPRESENTABLE',
+    );
+    expect(resolved.blockers.map((entry) => entry.code)).not.toContain(
+      'TIME_POLICY_TARGET_INVALID',
+    );
+    expect(resolved.blockers.map((entry) => entry.code)).not.toContain(
+      'TIME_POLICY_REFERENCE_UNAVAILABLE',
+    );
+    expect(resolved.blockers.map((entry) => entry.code)).not.toContain(
+      'TIME_POLICY_COVERAGE_INCOMPLETE',
+    );
   });
 
   it('按固定域、fieldPath、code 排序，并只回显固定安全问题字典', () => {
@@ -702,6 +745,9 @@ function loadedActivity(selectedTemplateVersionId: string | null) {
     selectedMetricSetDefinitionHash: null,
     metricSelectionRevision: 0,
     selectedMetricSetVersion: null,
+    timePolicySelectionRevision: 0,
+    currentTimePolicySelectionRevisionId: null,
+    currentTimePolicySelectionRevision: null,
     sessions: [
       {
         id: 'session-b4',
@@ -717,6 +763,9 @@ function loadedActivity(selectedTemplateVersionId: string | null) {
           {
             id: 'position-b4',
             capacity: 5,
+            startAt: null,
+            endAt: null,
+            attendanceRoleCode: 'support',
             locationRequired: null,
             radiusMeters: null,
           },

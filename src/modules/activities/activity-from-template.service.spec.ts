@@ -292,6 +292,8 @@ function makeSubject(
     images as unknown as ActivityImageSigningService,
     { activityResponsibilityWorkflow: { enabled: false } } as never,
     undefined!, // V1/V2 characterization must not enter the V3 identity branch.
+    undefined!, // V1-V3 templates have no D1-3 time-policy selection branch.
+    undefined!,
   );
   return {
     service,
