@@ -1,0 +1,1 @@
+- 起草 Activity OS Release 4 D3 时长分配修订评审：D3 将只消费 D1 已冻结时长政策与 D2 当前参与段，后续以不可变 allocation revision 记录可解释的分类认定；不改旧 `serviceHours`、结算、账本、证明、生产或 Gate。

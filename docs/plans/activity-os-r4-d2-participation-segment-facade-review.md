@@ -1,6 +1,6 @@
 # Activity OS Release 4 / D2：中性参与服务段 Facade 评审与授权清单
 
-> **评审与计划均已合并，实施已获授权（2026-09-11）**：本稿已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入；后续 [D2 精确实施计划](activity-os-r4-d2-participation-segment-facade-implementation-plan.md) 已随 [#1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318) squash 合入 main `c2a687bf2e9e81d1199329021f06abca40d8f8aa`，合并后 [main CI 34597888732](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34597888732) completed/success。维护者已按该计划的 10 个精确路径授权 implementation；代码与本地隔离验证已完成，并已创建 [implementation PR #1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319)。两份受保护派生治理文件已获单独授权并仅刷新 inputDigest；当前 PR CI 运行中，D2 仍未合入、未部署或启用 Gate。
+> **D2 已合并并完成主干验证（2026-09-12）**：本稿已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入，后续 [D2 精确实施计划](activity-os-r4-d2-participation-segment-facade-implementation-plan.md) 已随 [#1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318) 合入。维护者授权的 10 个路径 implementation [#1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 已以 17 项 PR 检查及可信红区审批成功后 squash 至 main `c0140c6efdfcbf1060b99ef8626b56ec8b65234c`。首次 main CI 的唯一失败是陈旧日期棘轮基线；独立 [#1320](https://github.com/BA7IEE/srvf-nest-api/pull/1320) 修复后，含 D2 树的 main `bcc297495c42f8a37ed06e946abe96db99d49d64` 在 [CI 34625317010](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34625317010) completed/success。D2 未部署、未启用 Gate；D3 仅在本轮起草评审稿。
 
 > **评审形成时的基点**：2026-09-11，main `60414050b99fe661afbf0c87669597ad081a3b43`。本稿当时只起草 D2 的方向、边界和后续授权清单；不实施、不操作数据库、不启用 Gate、不删除业务数据、不提交推送或创建 PR。文中“推荐”是待维护者确认的方案，不是现有新能力。
 
@@ -83,4 +83,4 @@ D1 已把“某活动应按哪一版时长政策解释”固定下来；D2 要�
 
 ## 8. 本次未做（评审阶段）
 
-未实现 D2，没有连接、迁移或重建数据库，没有修改 schema、生产代码、测试、权限、审计、OpenAPI、客户端、Gate 或部署，没有删除业务数据，也没有提交、推送、创建或合并 PR。D3–D8 与整体跨模型复审仍未完成。当前精确计划的实际状态以本文顶部和精确计划正文为准。
+本节记录的是评审形成时点，不能覆盖顶部的 D2 已合并事实。D2 没有连接生产、部署或启用 Gate，也没有删除业务数据；D3–D8 与整体跨模型复审仍未完成。当前 D2 状态以本文顶部和精确计划正文为准。
