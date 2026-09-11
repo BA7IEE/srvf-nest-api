@@ -438,11 +438,15 @@ jobs:
     #   差 43–53%,单 spec 硬地板 notification-outbox 205s / allocation-command-replay
     #   169s 落在哪片哪片就慢。故五分片的预期是「最慢片 e2e ~7–9m、墙钟 ~9m」而非
     #   理想商 6.2m;若实测显著差于此,下一刀是按耗时加权分片,不是继续加片。
-    #   timeout 25m 不动:对预期最慢片 ~9m 是 2.7x 余量,与历史校准一致。
+    #   timeout 原定 25m:对预期最慢片 ~9m 是 2.7x 余量,与历史校准一致。
     #
-    # ⚠️ 改 timeout 之前先看**实际耗时趋势**:本 job 每次都打印各步骤时长,
-    # 撞线前通常已有连续多次逼近的读数。抬 timeout 是治标,套件继续长就会有第四次。
-    timeout-minutes: 25
+    # 2026-09-11 PR #1316 的 D1-3 回放 spec 进入原生 jest --shard 后,第 5 片的
+    # 文件级分配发生变化。run 34570013410 在 25m job 上限被 GitHub 取消,而本次
+    # 新增的 activity-service-segment-correction-pending-migration spec 已 PASS(130.983s),
+    # 因此这是执行预算不足而非断言失败。先升至 35m 保留完整回归证据;五分片、2 worker
+    # 与 gate 均不变。后续仍须观察各片时长,若负载继续漂移应单独做按耗时加权分片,不能靠
+    # 无限抬高 timeout 掩盖问题。
+    timeout-minutes: 35
     needs: changeset
     if: needs.changeset.outputs.docs_only != 'true'
     env:

@@ -41,10 +41,22 @@ import {
   type ActivityTemplateDefinitionV3,
 } from './activity-template-definition-v3';
 import {
+  materializeActivityTemplateTimePolicySelection,
+  parseActivityTemplateDefinitionV4,
+  type ActivityTemplateDefinitionV4,
+  type ActivityTemplateTimePolicyMaterializationSession,
+} from './activity-template-definition-v4';
+import {
   ActivityMetricSelectionAccess,
   lockMetricSelectionReference,
 } from './activity-metric-selection-access';
 import { metricSelectionColumns } from './activity-metric-selection';
+import { ActivityTimePolicySelectionAccess } from './activity-time-policy-selection-access';
+import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
+import type {
+  ActivityTimePolicyPointer,
+  ActivityTimePolicySelectionDocument,
+} from './activity-time-policy-selection';
 
 const DICT_TYPE_ATTENDANCE_ROLE = 'attendance_role';
 const CREATE_FROM_TEMPLATE_OPERATION = 'activity.create.from_template';
@@ -85,6 +97,13 @@ export interface MaterializedActivityFromTemplate {
   readonly templateVersionId: string;
   readonly definitionHash: string;
   readonly actor?: CurrentUserPayload;
+  /** The outer command supplies its real source receipt/review before persisting this fact. */
+  readonly timePolicySelectionInitialization?: {
+    readonly selection: ActivityTimePolicySelectionDocument;
+    readonly templateId: string;
+    readonly templateDefinitionHash: string;
+    readonly revalidate: () => Promise<CurrentUserPayload>;
+  };
 }
 
 interface NormalizedCreateActivityFromTemplateCommand {
@@ -147,7 +166,39 @@ interface MaterializedSession {
 type ParsedActivityTemplateDefinition =
   | ActivityTemplateDefinitionV1
   | ActivityTemplateDefinitionV2
-  | ActivityTemplateDefinitionV3;
+  | ActivityTemplateDefinitionV3
+  | ActivityTemplateDefinitionV4;
+
+function templateTimePolicyPointers(
+  definition: ActivityTemplateDefinitionV4,
+): readonly ActivityTimePolicyPointer[] {
+  return [
+    definition.timePolicySelection.default,
+    ...definition.timePolicySelection.sessionOverrides.map((item) => item.selection),
+    ...definition.timePolicySelection.positionOverrides.map((item) => item.selection),
+  ].flatMap((selection) => (selection.pointer ? [selection.pointer] : []));
+}
+
+function hasMetricSelection(
+  definition: ParsedActivityTemplateDefinition,
+): definition is ActivityTemplateDefinitionV3 | ActivityTemplateDefinitionV4 {
+  return 'metricSelection' in definition;
+}
+
+function isTemplateDefinitionV4(
+  definition: ParsedActivityTemplateDefinition,
+): definition is ActivityTemplateDefinitionV4 {
+  return 'timePolicySelection' in definition;
+}
+
+function hasRegistrationForm(
+  definition: ParsedActivityTemplateDefinition,
+): definition is
+  | ActivityTemplateDefinitionV2
+  | ActivityTemplateDefinitionV3
+  | ActivityTemplateDefinitionV4 {
+  return 'registrationForm' in definition;
+}
 
 function badRequest(): never {
   throw new BizException(BizCode.BAD_REQUEST);
@@ -233,6 +284,8 @@ export class ActivityFromTemplateService {
     private readonly images: ActivityImageSigningService,
     @Inject(appConfig.KEY) private readonly config: ConfigType<typeof appConfig>,
     private readonly metricAccess: ActivityMetricSelectionAccess,
+    private readonly timePolicyAccess: ActivityTimePolicySelectionAccess,
+    private readonly timePolicySelections: ActivityTimePolicySelectionService,
   ) {}
 
   /**
@@ -262,6 +315,23 @@ export class ActivityFromTemplateService {
           user,
           initiatorMode: 'resolve',
         });
+
+        if (materialized.timePolicySelectionInitialization) {
+          await this.timePolicySelections.initializeWithinTransaction({
+            tx,
+            activityId: materialized.created.id,
+            selection: materialized.timePolicySelectionInitialization.selection,
+            actor: materialized.actor ?? user,
+            meta: auditMeta,
+            source: {
+              originCode: 'template_creation',
+              templateId: materialized.timePolicySelectionInitialization.templateId,
+              templateDefinitionHash:
+                materialized.timePolicySelectionInitialization.templateDefinitionHash,
+            },
+            revalidate: materialized.timePolicySelectionInitialization.revalidate,
+          });
+        }
 
         await this.auditRecorder.logCreateFromTemplate({
           created: materialized.created,
@@ -347,24 +417,45 @@ export class ActivityFromTemplateService {
     const template = await this.lockTemplateVersion(args.tx, args.templateVersionId);
     const { definitionHash, definition } = this.selectDefinitionOrThrow(template);
     let currentActor: CurrentUserPayload | undefined;
-    if ('metricSelection' in definition) {
+    if (hasMetricSelection(definition) || isTemplateDefinitionV4(definition)) {
       const actor = args.user;
       const organizationId = args.organizationId;
       if (!actor || !organizationId) throw new BizException(BizCode.BAD_REQUEST);
       const revalidate = async () => {
-        const current = await this.metricAccess.authorizeCreation(
-          args.tx,
-          actor,
-          'admin',
-          organizationId,
-          undefined,
-          false,
-        );
-        currentActor = current.actor;
-        await this.assertV3Family(args.tx, template.familyId);
+        if (hasMetricSelection(definition)) {
+          const current = await this.metricAccess.authorizeCreation(
+            args.tx,
+            actor,
+            'admin',
+            organizationId,
+            undefined,
+            false,
+          );
+          currentActor = current.actor;
+        }
+        if (isTemplateDefinitionV4(definition)) {
+          currentActor = await this.timePolicyAccess.authorizeCreation(
+            args.tx,
+            actor,
+            'admin',
+            organizationId,
+            undefined,
+            false,
+          );
+        }
+        await this.assertGovernedTemplateFamily(args.tx, template.familyId);
       };
       await revalidate();
-      await lockMetricSelectionReference(args.tx, definition.metricSelection, revalidate);
+      if (hasMetricSelection(definition)) {
+        await lockMetricSelectionReference(args.tx, definition.metricSelection, revalidate);
+      }
+      if (isTemplateDefinitionV4(definition)) {
+        await this.timePolicySelections.assertPointersAvailableWithinTransaction(
+          args.tx,
+          templateTimePolicyPointers(definition),
+          revalidate,
+        );
+      }
     }
     return { id: template.id, definitionHash, ...(currentActor ? { actor: currentActor } : {}) };
   }
@@ -382,22 +473,53 @@ export class ActivityFromTemplateService {
     const { definition, definitionHash } = this.selectDefinitionOrThrow(template);
     let actor = args.user;
     let v3Initiator: string | undefined;
-    if ('metricSelection' in definition) {
+    let timePolicyRevalidate: (() => Promise<CurrentUserPayload>) | undefined;
+    if (hasMetricSelection(definition) || isTemplateDefinitionV4(definition)) {
       const revalidate = async () => {
-        const current = await this.metricAccess.authorizeCreation(
-          args.tx,
-          args.user,
-          args.creationContextHash === undefined ? 'admin' : 'app',
-          args.input.organizationId,
-          args.input.initiatorMemberId,
-          args.initiatorMode === 'resolve' && this.config.activityResponsibilityWorkflow.enabled,
-        );
-        actor = current.actor;
-        v3Initiator = current.initiatorMemberId;
-        await this.assertV3Family(args.tx, template.familyId);
+        const surface = args.creationContextHash === undefined ? 'admin' : 'app';
+        const requireInitiator =
+          args.initiatorMode === 'resolve' && this.config.activityResponsibilityWorkflow.enabled;
+        if (hasMetricSelection(definition)) {
+          const current = await this.metricAccess.authorizeCreation(
+            args.tx,
+            args.user,
+            surface,
+            args.input.organizationId,
+            args.input.initiatorMemberId,
+            requireInitiator,
+          );
+          actor = current.actor;
+          v3Initiator = current.initiatorMemberId;
+        }
+        if (isTemplateDefinitionV4(definition)) {
+          actor = await this.timePolicyAccess.authorizeCreation(
+            args.tx,
+            args.user,
+            surface,
+            args.input.organizationId,
+            args.input.initiatorMemberId,
+            requireInitiator,
+          );
+        }
+        await this.assertGovernedTemplateFamily(args.tx, template.familyId);
+        return actor;
       };
+      timePolicyRevalidate = revalidate;
       await revalidate();
-      await lockMetricSelectionReference(args.tx, definition.metricSelection, revalidate);
+      if (hasMetricSelection(definition)) {
+        await lockMetricSelectionReference(args.tx, definition.metricSelection, async () => {
+          await revalidate();
+        });
+      }
+      if (isTemplateDefinitionV4(definition)) {
+        await this.timePolicySelections.assertPointersAvailableWithinTransaction(
+          args.tx,
+          templateTimePolicyPointers(definition),
+          async () => {
+            await revalidate();
+          },
+        );
+      }
     }
     if (
       args.expectedDefinitionHash !== undefined &&
@@ -452,7 +574,7 @@ export class ActivityFromTemplateService {
       args.initiatorMode === 'leave-empty-for-series'
         ? undefined
         : this.config.activityResponsibilityWorkflow.enabled
-          ? 'metricSelection' in definition
+          ? hasMetricSelection(definition)
             ? v3Initiator
             : await this.initiationPolicy.resolveInitiator(
                 actor,
@@ -471,13 +593,14 @@ export class ActivityFromTemplateService {
           requestHash,
           initiatorMemberId,
         }),
-        ...('metricSelection' in definition
+        ...(hasMetricSelection(definition)
           ? metricSelectionColumns(definition.metricSelection)
           : {}),
       },
       select: activitySafeSelect,
     });
 
+    const timePolicySessions: ActivityTemplateTimePolicyMaterializationSession[] = [];
     for (const session of sessions) {
       const createdSession = await args.tx.activitySession.create({
         data: {
@@ -508,8 +631,9 @@ export class ActivityFromTemplateService {
         },
         select: { id: true },
       });
+      const positions: { id: string; code: string }[] = [];
       for (const position of session.positions) {
-        await args.tx.activitySessionPosition.create({
+        const createdPosition = await args.tx.activitySessionPosition.create({
           data: {
             activityId: created.id,
             sessionId: createdSession.id,
@@ -527,14 +651,17 @@ export class ActivityFromTemplateService {
             equipmentNotes: position.equipmentNotes,
             sortOrder: position.sortOrder,
           },
+          select: { id: true },
         });
+        positions.push({ id: createdPosition.id, code: position.code });
       }
+      timePolicySessions.push({ id: createdSession.id, code: session.code, positions });
     }
 
     // V2 owns a new Activity-local draft Form v1. This invocation shares the exact root
     // transaction with Activity / Session / Position creation, so a governed Form failure cannot
     // leave a partial Activity behind. V1 intentionally has no registrationForm property.
-    if ('registrationForm' in definition && definition.registrationForm !== null) {
+    if (hasRegistrationForm(definition) && definition.registrationForm !== null) {
       await this.registrationForms.materializeTemplateDraft(
         args.tx,
         created.id,
@@ -542,11 +669,24 @@ export class ActivityFromTemplateService {
       );
     }
 
+    const timePolicySelectionInitialization = isTemplateDefinitionV4(definition)
+      ? {
+          selection: materializeActivityTemplateTimePolicySelection(
+            definition.timePolicySelection,
+            timePolicySessions,
+          ),
+          templateId: template.id,
+          templateDefinitionHash: definitionHash,
+          revalidate: timePolicyRevalidate ?? (() => Promise.resolve(actor)),
+        }
+      : undefined;
+
     return {
       created,
       templateVersionId: template.id,
       definitionHash,
-      ...('metricSelection' in definition ? { actor } : {}),
+      ...(hasMetricSelection(definition) ? { actor } : {}),
+      ...(timePolicySelectionInitialization ? { timePolicySelectionInitialization } : {}),
     };
   }
 
@@ -607,17 +747,31 @@ export class ActivityFromTemplateService {
       },
     });
     if (!existing) return null;
-    if (existing.selectedTemplateVersion?.schemaVersion === 3) {
+    if (
+      existing.selectedTemplateVersion?.schemaVersion === 3 ||
+      existing.selectedTemplateVersion?.schemaVersion === 4
+    ) {
       if (!user) throw new BizException(BizCode.UNAUTHORIZED);
       await tx.$queryRaw`SELECT "id" FROM "Activity" WHERE "id" = ${existing.id} FOR UPDATE`;
+      const surface = creationContextHash === undefined ? 'admin' : 'app';
       await this.metricAccess.authorizeCreation(
         tx,
         user,
-        creationContextHash === undefined ? 'admin' : 'app',
+        surface,
         input.organizationId,
         input.initiatorMemberId,
         this.config.activityResponsibilityWorkflow.enabled,
       );
+      if (existing.selectedTemplateVersion.schemaVersion === 4) {
+        await this.timePolicyAccess.authorizeCreation(
+          tx,
+          user,
+          surface,
+          input.organizationId,
+          input.initiatorMemberId,
+          this.config.activityResponsibilityWorkflow.enabled,
+        );
+      }
       // Replay keeps the original materialization; retired references are not newly selected here.
     }
     const definitionHash = existing.selectedTemplateVersion?.definitionHash;
@@ -676,7 +830,8 @@ export class ActivityFromTemplateService {
       template.statusCode !== 'active' ||
       (template.schemaVersion !== 1 &&
         template.schemaVersion !== 2 &&
-        template.schemaVersion !== 3) ||
+        template.schemaVersion !== 3 &&
+        template.schemaVersion !== 4) ||
       template.definitionJson === null ||
       template.definitionHash === null ||
       template.effectiveFrom === null ||
@@ -702,7 +857,9 @@ export class ActivityFromTemplateService {
             ? parseActivityTemplateDefinitionV1(template.definitionJson)
             : template.schemaVersion === 2
               ? parseActivityTemplateDefinitionV2(template.definitionJson)
-              : parseActivityTemplateDefinitionV3(template.definitionJson),
+              : template.schemaVersion === 3
+                ? parseActivityTemplateDefinitionV3(template.definitionJson)
+                : parseActivityTemplateDefinitionV4(template.definitionJson),
         definitionHash: template.definitionHash,
       };
     } catch (error) {
@@ -713,7 +870,10 @@ export class ActivityFromTemplateService {
     }
   }
 
-  private async assertV3Family(tx: Prisma.TransactionClient, familyId: string | null) {
+  private async assertGovernedTemplateFamily(
+    tx: Prisma.TransactionClient,
+    familyId: string | null,
+  ) {
     const family = familyId
       ? await tx.activityTemplateFamily.findFirst({
           where: {

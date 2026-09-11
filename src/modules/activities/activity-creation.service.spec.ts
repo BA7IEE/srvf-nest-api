@@ -103,6 +103,8 @@ function makeHarness(enabled = true, controlMode: ActivityControlPlaneMode = 'ac
     } as ConfigType<typeof appConfig>),
     undefined!, // Legacy access checks do not enter the new explicit-selection branch.
     undefined!,
+    undefined!, // Legacy fixtures carry no D1-3 time-policy selection input.
+    undefined!,
   );
   const invoke = (mode: keyof typeof commands, user = actor) => {
     if (mode === 'quick') return service.createQuick(commands.quick, user, auditMeta);

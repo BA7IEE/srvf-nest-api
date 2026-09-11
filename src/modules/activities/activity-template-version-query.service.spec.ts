@@ -86,14 +86,14 @@ describe('C1 D2b template catalogue query scope and pagination', () => {
       tx.activityTemplate.count.mock.invocationCallOrder[0],
     );
   });
-  it('omitted schema filter includes only V1/V2/V3 and still excludes legacy/non-global/inactive Families', async () => {
+  it('omitted schema filter includes V1–V4 and still excludes legacy/non-global/inactive Families', async () => {
     const { service, tx } = setup();
     await service.list({ page: 1, pageSize: 20 }, actor);
     const where = {
       family: visibleFamily,
       familyId: undefined,
       statusCode: undefined,
-      schemaVersion: { in: [1, 2, 3] },
+      schemaVersion: { in: [1, 2, 3, 4] },
     };
     expect(tx.activityTemplate.findMany).toHaveBeenCalledWith({
       where,
@@ -117,14 +117,14 @@ describe('C1 D2b template catalogue query scope and pagination', () => {
       for (const query of Object.values(tx.activityTemplate)) expect(query).not.toHaveBeenCalled();
     },
   );
-  it('detail lookup applies the same Family and schema boundary after explicit read authorization', async () => {
+  it('detail lookup applies the same Family and V1–V4 schema boundary after explicit read authorization', async () => {
     const { service, tx, client, assertAccess } = setup();
     await expect(service.get('missing', actor)).rejects.toMatchObject({
       biz: BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_FOUND,
     });
     expect(assertAccess).toHaveBeenCalledWith(client, actor, 'activity-template.read.catalog');
     expect(tx.activityTemplate.findFirst).toHaveBeenCalledWith({
-      where: { id: 'missing', family: visibleFamily, schemaVersion: { in: [1, 2, 3] } },
+      where: { id: 'missing', family: visibleFamily, schemaVersion: { in: [1, 2, 3, 4] } },
       include: { family: true },
     });
     expect(assertAccess.mock.invocationCallOrder[0]).toBeLessThan(

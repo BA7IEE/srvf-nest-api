@@ -12,6 +12,15 @@ import type {
 import type { AppProfessionalActivityCreationDto } from './dto/app/app-managed-activity-creation-professional.dto';
 import type { RegistrationFormDefinitionInput } from './registration-form-definition';
 import { parseActivityMetricSelection } from './activity-metric-selection';
+import {
+  createActivityTimePolicySelectionDocument,
+  parseActivityTimePolicySelectionValue,
+  type ActivityTimePolicyPointer,
+  type ActivityTimePolicySelectionDocument,
+  type ActivityTimePolicySelectionItem,
+  type ActivityTimePolicySelectionValue,
+} from './activity-time-policy-selection';
+import { timePolicyObject, timePolicyText } from './activity-time-policy-command';
 
 function optionalMetricSelection(value: unknown) {
   if (value === undefined) return {};
@@ -22,6 +31,157 @@ function optionalMetricSelection(value: unknown) {
       throw new BizException(BizCode.ACTIVITY_METRIC_SELECTION_INVALID);
     throw error;
   }
+}
+
+export interface CreationTimePolicySessionOverride {
+  readonly sessionCode: string;
+  readonly selection: ActivityTimePolicySelectionValue;
+}
+
+export interface CreationTimePolicyPositionOverride {
+  readonly sessionCode: string;
+  readonly positionCode: string;
+  readonly selection: ActivityTimePolicySelectionValue;
+}
+
+export interface CreationTimePolicySelection {
+  readonly activity: ActivityTimePolicySelectionValue;
+  readonly sessionOverrides: readonly CreationTimePolicySessionOverride[];
+  readonly positionOverrides: readonly CreationTimePolicyPositionOverride[];
+}
+
+export interface CreationTimePolicyMaterializationSession {
+  readonly id: string;
+  readonly code: string;
+  readonly positions: readonly { id: string; code: string }[];
+}
+
+function creationTimePolicyCode(value: unknown): string {
+  const parsed = timePolicyText(value, 64);
+  if (!/^[a-z][a-z0-9_]*$/u.test(parsed)) throw new TypeError('invalid creation time-policy code');
+  return parsed;
+}
+
+function parseCreationTimePolicySelection(value: unknown): CreationTimePolicySelection {
+  const root = timePolicyObject(value, ['activity', 'sessionOverrides', 'positionOverrides']);
+  if (!Array.isArray(root.sessionOverrides) || !Array.isArray(root.positionOverrides)) {
+    throw new TypeError('creation time-policy overrides must be arrays');
+  }
+  if (root.sessionOverrides.length > 100 || root.positionOverrides.length > 10_000) {
+    throw new TypeError('creation time-policy overrides exceed their bounded input size');
+  }
+  const sessionOverrides = root.sessionOverrides.map((raw) => {
+    const item = timePolicyObject(raw, ['sessionCode', 'selection']);
+    return {
+      sessionCode: creationTimePolicyCode(item.sessionCode),
+      selection: parseActivityTimePolicySelectionValue(item.selection),
+    };
+  });
+  const positionOverrides = root.positionOverrides.map((raw) => {
+    const item = timePolicyObject(raw, ['sessionCode', 'positionCode', 'selection']);
+    return {
+      sessionCode: creationTimePolicyCode(item.sessionCode),
+      positionCode: creationTimePolicyCode(item.positionCode),
+      selection: parseActivityTimePolicySelectionValue(item.selection),
+    };
+  });
+  if (new Set(sessionOverrides.map((item) => item.sessionCode)).size !== sessionOverrides.length) {
+    throw new TypeError('duplicate creation session selection');
+  }
+  if (
+    new Set(positionOverrides.map((item) => JSON.stringify([item.sessionCode, item.positionCode])))
+      .size !== positionOverrides.length
+  ) {
+    throw new TypeError('duplicate creation position selection');
+  }
+  return {
+    activity: parseActivityTimePolicySelectionValue(root.activity),
+    sessionOverrides: [...sessionOverrides].sort((left, right) =>
+      left.sessionCode.localeCompare(right.sessionCode),
+    ),
+    positionOverrides: [...positionOverrides].sort(
+      (left, right) =>
+        left.sessionCode.localeCompare(right.sessionCode) ||
+        left.positionCode.localeCompare(right.positionCode),
+    ),
+  };
+}
+
+function optionalTimePolicySelection(value: unknown) {
+  if (value === undefined) return {};
+  try {
+    return {
+      timePolicySelection: parseCreationTimePolicySelection(
+        instanceToPlain(value, { exposeUnsetFields: false }),
+      ),
+    };
+  } catch (error) {
+    if (error instanceof TypeError)
+      throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_INVALID);
+    throw error;
+  }
+}
+
+export function creationTimePolicyPointers(
+  selection: CreationTimePolicySelection,
+): readonly ActivityTimePolicyPointer[] {
+  return [
+    selection.activity,
+    ...selection.sessionOverrides.map((item) => item.selection),
+    ...selection.positionOverrides.map((item) => item.selection),
+  ].flatMap((item) => (item.pointer ? [item.pointer] : []));
+}
+
+export function materializeCreationTimePolicySelection(
+  selection: CreationTimePolicySelection,
+  sessions: readonly CreationTimePolicyMaterializationSession[],
+): ActivityTimePolicySelectionDocument {
+  const sessionsByCode = new Map<string, CreationTimePolicyMaterializationSession>();
+  const positionsByCode = new Map<string, { sessionId: string; positionId: string }>();
+  for (const session of sessions) {
+    if (sessionsByCode.has(session.code)) {
+      throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_INVALID);
+    }
+    sessionsByCode.set(session.code, session);
+    for (const position of session.positions) {
+      const key = JSON.stringify([session.code, position.code]);
+      if (positionsByCode.has(key)) {
+        throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_INVALID);
+      }
+      positionsByCode.set(key, { sessionId: session.id, positionId: position.id });
+    }
+  }
+  const items: ActivityTimePolicySelectionItem[] = [
+    {
+      scope: { layerCode: 'activity', sessionId: null, positionId: null },
+      selection: selection.activity,
+    },
+  ];
+  for (const override of selection.sessionOverrides) {
+    const session = sessionsByCode.get(override.sessionCode);
+    if (!session) throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_INVALID);
+    if (override.selection.mode === 'inherit') continue;
+    items.push({
+      scope: { layerCode: 'session', sessionId: session.id, positionId: null },
+      selection: override.selection,
+    });
+  }
+  for (const override of selection.positionOverrides) {
+    const position = positionsByCode.get(
+      JSON.stringify([override.sessionCode, override.positionCode]),
+    );
+    if (!position) throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_INVALID);
+    if (override.selection.mode === 'inherit') continue;
+    items.push({
+      scope: {
+        layerCode: 'position',
+        sessionId: position.sessionId,
+        positionId: position.positionId,
+      },
+      selection: override.selection,
+    });
+  }
+  return createActivityTimePolicySelectionDocument(items, { allowTemplate: false });
 }
 
 function iso(value: string): string {
@@ -202,6 +362,7 @@ export function mapProfessionalCreation(dto: AppProfessionalActivityCreationDto)
     sessions,
     qualificationRuleSets,
     ...optionalMetricSelection(dto.metricSelection),
+    ...optionalTimePolicySelection(dto.timePolicySelection),
   };
 }
 export type ProfessionalCreationCommand = ReturnType<typeof mapProfessionalCreation>;
@@ -222,6 +383,15 @@ export function mapEmergencyCreation(dto: AppEmergencyActivityCreationDto) {
     organizationIds: dto.organizationIds?.slice().sort(),
     memberIds: dto.memberIds?.slice().sort(),
     ...optionalMetricSelection(dto.metricSelection),
+    ...optionalTimePolicySelection(
+      dto.timePolicySelection === undefined
+        ? undefined
+        : {
+            activity: dto.timePolicySelection.activity,
+            sessionOverrides: [],
+            positionOverrides: [],
+          },
+    ),
   };
 }
 export type EmergencyCreationCommand = ReturnType<typeof mapEmergencyCreation>;

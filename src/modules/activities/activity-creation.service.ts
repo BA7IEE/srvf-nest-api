@@ -17,7 +17,9 @@ import { ActivityCreationEmergency } from './activity-creation-emergency';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import {
   creationRequestHash,
+  creationTimePolicyPointers,
   isCreationReceiptConflict,
+  materializeCreationTimePolicySelection,
   type QuickCreationCommand,
   type ProfessionalCreationCommand,
   type EmergencyCreationCommand,
@@ -25,8 +27,13 @@ import {
 import { presentActivityCreation } from './activity-creation-presenter';
 import { reconcileEmergencyFollowUps } from './activity-emergency-follow-up';
 import type { AppActivityCreationResultDto } from './dto/app/app-managed-activity-creation.dto';
-import { ActivityMetricSelectionAccess } from './activity-metric-selection-access';
+import {
+  ActivityMetricSelectionAccess,
+  lockMetricSelectionReference,
+} from './activity-metric-selection-access';
 import { ActivityMetricSelectionService } from './activity-metric-selection.service';
+import { ActivityTimePolicySelectionAccess } from './activity-time-policy-selection-access';
+import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
 
 type ReceiptCommand =
   | { mode: 'professional'; command: ProfessionalCreationCommand }
@@ -48,6 +55,8 @@ export class ActivityCreationService {
     private readonly controlPlane: ActivityControlPlaneGate,
     private readonly metricAccess: ActivityMetricSelectionAccess,
     private readonly metricSelection: ActivityMetricSelectionService,
+    private readonly timePolicyAccess: ActivityTimePolicySelectionAccess,
+    private readonly timePolicySelection: ActivityTimePolicySelectionService,
   ) {}
 
   async createQuick(
@@ -73,7 +82,26 @@ export class ActivityCreationService {
         const existing = await replay(tx);
         if (existing) return existing;
         const result = await this.quick.create(tx, command, user, requestHash);
-        const actor = result.actor ?? user; // V3 revalidated identity; V1/V2 preserve their old path.
+        let actor = result.actor ?? user; // V3 revalidated identity; V1/V2 preserve their old path.
+        if (result.timePolicySelectionInitialization) {
+          await this.timePolicySelection.initializeWithinTransaction({
+            tx,
+            activityId: result.activity.id,
+            selection: result.timePolicySelectionInitialization.selection,
+            actor,
+            meta: auditMeta,
+            source: {
+              originCode: 'template_creation',
+              templateId: result.timePolicySelectionInitialization.templateId,
+              templateDefinitionHash:
+                result.timePolicySelectionInitialization.templateDefinitionHash,
+            },
+            revalidate: async () => {
+              actor = await result.timePolicySelectionInitialization!.revalidate();
+              return actor;
+            },
+          });
+        }
         await this.audit.logCreationCommand({
           tx,
           activityId: result.activity.id,
@@ -156,6 +184,8 @@ export class ActivityCreationService {
       await tx.$queryRaw`SELECT "id" FROM "Activity" WHERE "id" = ${receipt.activityId} FOR UPDATE`;
       if (input.command.metricSelection !== undefined)
         await this.revalidateMetricCreation(tx, input, user);
+      if (input.command.timePolicySelection !== undefined)
+        await this.revalidateTimePolicyCreation(tx, input, user);
       if (input.mode === 'emergency')
         await reconcileEmergencyFollowUps(tx, receipt.activityId, user.id);
       return this.result(tx, receipt.activityId, input.mode, true);
@@ -165,17 +195,55 @@ export class ActivityCreationService {
         async (tx) => {
           const existing = await replay(tx);
           if (existing) return existing;
-          let actor =
-            input.command.metricSelection === undefined
-              ? user
-              : await this.revalidateMetricCreation(tx, input, user);
-          const result =
-            input.mode === 'professional'
-              ? await this.professional.create(tx, input.command, actor)
-              : {
-                  activity: await this.emergency.createDraft(tx, input.command, actor),
-                  placeCount: 0,
-                };
+          let actor = user;
+          if (input.command.metricSelection !== undefined) {
+            actor = await this.revalidateMetricCreation(tx, input, user);
+          }
+          if (input.command.timePolicySelection !== undefined) {
+            actor = await this.revalidateTimePolicyCreation(tx, input, user);
+          }
+          const revalidateCreation = async () => {
+            if (input.command.metricSelection !== undefined) {
+              actor = await this.revalidateMetricCreation(tx, input, user);
+            }
+            if (input.command.timePolicySelection !== undefined) {
+              actor = await this.revalidateTimePolicyCreation(tx, input, user);
+            }
+            return actor;
+          };
+          if (input.command.metricSelection !== undefined) {
+            await lockMetricSelectionReference(tx, input.command.metricSelection, async () => {
+              await revalidateCreation();
+            });
+          }
+          if (input.command.timePolicySelection !== undefined) {
+            await this.timePolicySelection.assertPointersAvailableWithinTransaction(
+              tx,
+              creationTimePolicyPointers(input.command.timePolicySelection),
+              async () => {
+                await revalidateCreation();
+              },
+            );
+          }
+          let result: {
+            activity: Awaited<ReturnType<ActivityCreationEmergency['createDraft']>>;
+            placeCount: number;
+          };
+          let timePolicySelection;
+          if (input.mode === 'professional') {
+            const professional = await this.professional.create(tx, input.command, actor);
+            result = professional;
+            timePolicySelection = professional.timePolicySelection;
+          } else {
+            result = {
+              activity: await this.emergency.createDraft(tx, input.command, actor),
+              placeCount: 0,
+            };
+            timePolicySelection =
+              input.command.timePolicySelection === undefined
+                ? undefined
+                : materializeCreationTimePolicySelection(input.command.timePolicySelection, []);
+          }
           if (input.command.metricSelection !== undefined) {
             await this.metricSelection.initializeWithinTransaction({
               tx,
@@ -185,14 +253,24 @@ export class ActivityCreationService {
               meta: auditMeta,
               source: input.mode,
               revalidate: async () => {
-                actor = await this.revalidateMetricCreation(tx, input, user);
-                return actor;
+                return revalidateCreation();
               },
             });
           }
           const receipt = await tx.activityCreationCommandReceipt.create({
             data: { ...identity, requestHash, activityId: result.activity.id },
           });
+          if (timePolicySelection !== undefined) {
+            await this.timePolicySelection.initializeWithinTransaction({
+              tx,
+              activityId: result.activity.id,
+              selection: timePolicySelection,
+              actor,
+              meta: auditMeta,
+              source: { originCode: 'creation_receipt', creationReceiptId: receipt.id },
+              revalidate: revalidateCreation,
+            });
+          }
           const auditBase = {
             tx,
             activityId: result.activity.id,
@@ -264,6 +342,23 @@ export class ActivityCreationService {
     user: CurrentUserPayload,
   ) {
     const { actor } = await this.metricAccess.authorizeCreation(
+      tx,
+      user,
+      'app',
+      input.command.activity.organizationId,
+      input.command.activity.initiatorMemberId,
+    );
+    if (input.mode === 'emergency')
+      await this.access.assertCanOrThrow(actor, 'activity.create.emergency.record', undefined, tx);
+    return actor;
+  }
+
+  private async revalidateTimePolicyCreation(
+    tx: Prisma.TransactionClient,
+    input: ReceiptCommand,
+    user: CurrentUserPayload,
+  ) {
+    const actor = await this.timePolicyAccess.authorizeCreation(
       tx,
       user,
       'app',

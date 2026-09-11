@@ -18,7 +18,7 @@ export interface TemplateVersionCommandResult {
   id: string;
   code: string;
   version: number;
-  schemaVersion: 3;
+  schemaVersion: 3 | 4;
   statusCode: ActivityMetricStatus;
   definitionHash: string;
 }
@@ -37,7 +37,10 @@ export function parseTemplateVersionReceipt(
       'definitionHash',
     ]);
     const id = metricText(v.id, 64);
-    if (v.schemaVersion !== 3 || (targetId !== undefined && targetId !== id))
+    if (
+      (v.schemaVersion !== 3 && v.schemaVersion !== 4) ||
+      (targetId !== undefined && targetId !== id)
+    )
       throw new TypeError('invalid template receipt');
     const statusCode = metricStatus(v.statusCode);
     if (
@@ -54,7 +57,7 @@ export function parseTemplateVersionReceipt(
       id,
       code: metricText(v.code, 64),
       version: metricInteger(v.version, 1, 2147483647),
-      schemaVersion: 3,
+      schemaVersion: v.schemaVersion,
       statusCode,
       definitionHash: metricHash(v.definitionHash),
     };
@@ -88,6 +91,12 @@ export class ActivityTemplateVersionCommand {
       tx: Prisma.TransactionClient,
       actor: CurrentUserPayload,
     ) => Promise<TemplateVersionCommandResult>;
+    /** V4 callers can require their additional catalogue qualification even on an idempotent replay. */
+    revalidateReplay?: (
+      tx: Prisma.TransactionClient,
+      actor: CurrentUserPayload,
+      result: TemplateVersionCommandResult,
+    ) => Promise<void>;
   }) {
     let key: string;
     try {
@@ -134,7 +143,9 @@ export class ActivityTemplateVersionCommand {
             select: { id: true },
           });
           if (!target) throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_FOUND);
-          return parseTemplateVersionReceipt(prior.resultJson, target.id, args.operation);
+          const result = parseTemplateVersionReceipt(prior.resultJson, target.id, args.operation);
+          await args.revalidateReplay?.(tx, actor, result);
+          return result;
         }
         const result = parseTemplateVersionReceipt(
           await args.execute(tx, actor),

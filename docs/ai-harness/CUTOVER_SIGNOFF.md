@@ -11,7 +11,7 @@
 
 ```ts
 function eviSub(id, kind, title, evidence): SubCheck {
-  return { id, kind, title, verdict: 'pending', evidence };   // ← 写死
+  return { id, kind, title, verdict: 'pending', evidence }; // ← 写死
 }
 ```
 
@@ -25,13 +25,13 @@ function eviSub(id, kind, title, evidence): SubCheck {
 「名单 / 腐烂检测是摆设」(#1184 豁免名单指着已删文件;#1195 把腐烂检测改成恒返回空照样全绿)。
 所以结局是**不对称**的 —— **逐条签字四种,外加登记表自身一种**:
 
-| # | 情形 | 结论 | 影响退出码 |
-|---|---|---|---|
-| 逐条 ① | 签了,且签字里记的读数与机器现读**逐字相等** | ☑ 已签字确认 | 否 |
-| 逐条 ② | 签了,但与机器现读**矛盾** | ❌ 签字与机器读数矛盾 | **是** |
-| 逐条 ③ | 没签 | ⏸ 待维护者确认(现状) | 否 |
-| 逐条 ④ | 签了一条闸里**不存在**、或**不接受签字**(A 类)的编号 | ❌ | **是** |
-| 表级 | 登记表不存在 / 声明条数与解析条数不符 / 块头被改坏 | ❌ | **是** |
+| #      | 情形                                                 | 结论                  | 影响退出码 |
+| ------ | ---------------------------------------------------- | --------------------- | ---------- |
+| 逐条 ① | 签了,且签字里记的读数与机器现读**逐字相等**          | ☑ 已签字确认          | 否         |
+| 逐条 ② | 签了,但与机器现读**矛盾**                            | ❌ 签字与机器读数矛盾 | **是**     |
+| 逐条 ③ | 没签                                                 | ⏸ 待维护者确认(现状)  | 否         |
+| 逐条 ④ | 签了一条闸里**不存在**、或**不接受签字**(A 类)的编号 | ❌                    | **是**     |
+| 表级   | 登记表不存在 / 声明条数与解析条数不符 / 块头被改坏   | ❌                    | **是**     |
 
 ⚠️ **表级那一行不是第五种签字结局**,它管的是「这张表本身还可不可信」——
 表塌了的时候逐条判决全部作废,所以它必须能单独把闸卡住。
@@ -74,20 +74,20 @@ function eviSub(id, kind, title, evidence): SubCheck {
 签字里写的每个读数键都必须在这张表里。**键打错一个字母就红** ——
 若判据只是「查得到就比、查不到就跳过」,那条对拍会静默失效,这正是本仓栽过两次的形状。
 
-| 键 | 读的是什么 | 它一变说明什么 |
-|---|---|---|
-| `migration-total` | `prisma/migrations/` 下的目录数 | 新落了一条 migration ⇒ ③-b「经审查」的覆盖面变了,得重签 |
-| `backend-contract-version` | `package.json#version` | 后端发过版 ⇒ ⑤-b「五端同一版本」的前提变了,得重签 |
-| `contract-registry-rows` | 契约版本登记表解析出的行数 | 有人删了一行 ⇒ 缺口被洗掉 |
-| `contract-version-mismatch-count` | 登记表里与后端版本**不一致**的端数 | 0 → N ⇒ 五端不再对齐,而签字还在 |
-| `review-report-sha256-12` | ①-b 那份复核报告的内容摘要 | 报告被改 / 被删 ⇒ 那次签字所依据的东西已不在 |
-| `gate-read-files` | C3 文件粒度:接了读面闸的生产文件数 | 多 / 少一个读面 ⇒ ⑥-b 签的那个「闭包」不再是同一个集合 |
-| `gate-settlement-read-faces` | C8 函数粒度:被判为「对外产出结算量」的读面数 | 冒出第 N+1 处结算量读面 ⇒ ⑥-b 得重签 |
-| `instance-env-flag-count` | 合同 ⑧ 点名的 per-instance env 开关数 | 3 → 4 ⇒ 实例间漂移面变大,⑧-b 的「已知晓」覆盖不到新那个 |
-| `worker-lease-columns` | `ActivityBatchJob` 上**且被 worker 真用到**的 lease 列数 | 少一列 ⇒ ⑦-c 签字接受的那个「lease 恢复代偿」机制变了 |
-| `worker-runbook-sha256-12` | ⑦-d 那份 runbook 的内容摘要 | runbook 被改 ⇒ ⑦-c 签字写进去的那份「明确不设 + 四个盲区」已不是原样 |
-| `seed-sha256-12` | 字典 seed 文件的内容摘要 | 字典 seed 变了 ⇒ ④-b 签的「接受当前状态」里的那个「当前」已经不是了 |
-| `scale-tiers-passing` | **真会跑起来**的规模档,逗号分隔 | `30,500,2000` → `30,500` ⇒ 有人把 2000 档删掉了,而 ⑨-b 签的「三档通过」还挂着 |
+| 键                                | 读的是什么                                               | 它一变说明什么                                                                |
+| --------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `migration-total`                 | `prisma/migrations/` 下的目录数                          | 新落了一条 migration ⇒ ③-b「经审查」的覆盖面变了,得重签                       |
+| `backend-contract-version`        | `package.json#version`                                   | 后端发过版 ⇒ ⑤-b「五端同一版本」的前提变了,得重签                             |
+| `contract-registry-rows`          | 契约版本登记表解析出的行数                               | 有人删了一行 ⇒ 缺口被洗掉                                                     |
+| `contract-version-mismatch-count` | 登记表里与后端版本**不一致**的端数                       | 0 → N ⇒ 五端不再对齐,而签字还在                                               |
+| `review-report-sha256-12`         | ①-b 那份复核报告的内容摘要                               | 报告被改 / 被删 ⇒ 那次签字所依据的东西已不在                                  |
+| `gate-read-files`                 | C3 文件粒度:接了读面闸的生产文件数                       | 多 / 少一个读面 ⇒ ⑥-b 签的那个「闭包」不再是同一个集合                        |
+| `gate-settlement-read-faces`      | C8 函数粒度:被判为「对外产出结算量」的读面数             | 冒出第 N+1 处结算量读面 ⇒ ⑥-b 得重签                                          |
+| `instance-env-flag-count`         | 合同 ⑧ 点名的 per-instance env 开关数                    | 3 → 4 ⇒ 实例间漂移面变大,⑧-b 的「已知晓」覆盖不到新那个                       |
+| `worker-lease-columns`            | `ActivityBatchJob` 上**且被 worker 真用到**的 lease 列数 | 少一列 ⇒ ⑦-c 签字接受的那个「lease 恢复代偿」机制变了                         |
+| `worker-runbook-sha256-12`        | ⑦-d 那份 runbook 的内容摘要                              | runbook 被改 ⇒ ⑦-c 签字写进去的那份「明确不设 + 四个盲区」已不是原样          |
+| `seed-sha256-12`                  | 字典 seed 文件的内容摘要                                 | 字典 seed 变了 ⇒ ④-b 签的「接受当前状态」里的那个「当前」已经不是了           |
+| `scale-tiers-passing`             | **真会跑起来**的规模档,逗号分隔                          | `30,500,2000` → `30,500` ⇒ 有人把 2000 档删掉了,而 ⑨-b 签的「三档通过」还挂着 |
 
 当前读数由 `pnpm cutover:check` 在「签字登记」一节逐行打印 —— **别在本文件里抄读数**,
 抄一份就是第二处声明,它会随发版静默过期。
@@ -116,13 +116,13 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 **为什么必须挂在这个 job**(逐 job 实测触发条件,不是凭印象挑落点):
 
-| job | job 级 `if` | 带 `docs_only` 的 step |
-|---|---|---|
-| `fast`(Fast checks) | — | Lint · Typecheck · Build · Run unit tests |
-| `slow`(Contract + E2E) | `docs_only != 'true'` | — |
-| `journeys`(Golden journeys) | `docs_only != 'true'` | — |
-| `harness-selftest` / `harness-replay` | — | — |
-| **`redzone-scan`(Diff guards)** | **—** | **—** |
+| job                                   | job 级 `if`           | 带 `docs_only` 的 step                    |
+| ------------------------------------- | --------------------- | ----------------------------------------- |
+| `fast`(Fast checks)                   | —                     | Lint · Typecheck · Build · Run unit tests |
+| `slow`(Contract + E2E)                | `docs_only != 'true'` | —                                         |
+| `journeys`(Golden journeys)           | `docs_only != 'true'` | —                                         |
+| `harness-selftest` / `harness-replay` | —                     | —                                         |
+| **`redzone-scan`(Diff guards)**       | **—**                 | **—**                                     |
 
 本登记表是一份 `.md`,**只改它的 PR 恰恰就是 docs-only** —— 挂进 `fast` 的那四步、或
 `slow` / `journeys`,判据都会恰好在最该拦的那批 PR 上一次都不跑。
@@ -158,10 +158,10 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 两个模式,只有一个接 CI
 
-| 命令 | 判什么 | 今天绿不绿 | 接没接 CI |
-|---|---|---|---|
-| `pnpm cutover:check` | 十条切换前检查的**结论** | ❌ 不绿(9a 尚有 `it.todo`;⑩ 要部署侧产物) | **不接** —— 接了等于全仓永久红 |
-| `pnpm cutover:check:signoff` | **本表本身可不可信**(读数非退化 · 逐条对拍 · 签了不存在/A 类编号 · 规模档登记闭合 ⑨-c) | ✅ 绿(本机 1.9s) | ✅ **已接** `Diff guards` |
+| 命令                         | 判什么                                                                                 | 今天绿不绿                                | 接没接 CI                      |
+| ---------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------ |
+| `pnpm cutover:check`         | 十条切换前检查的**结论**                                                               | ❌ 不绿(9a 尚有 `it.todo`;⑩ 要部署侧产物) | **不接** —— 接了等于全仓永久红 |
+| `pnpm cutover:check:signoff` | **本表本身可不可信**(读数非退化 · 逐条对拍 · 签了不存在/A 类编号 · 规模档登记闭合 ⑨-c) | ✅ 绿(本机 1.9s)                          | ✅ **已接** `Diff guards`      |
 
 `--signoff` 不连库、不需要生成 Prisma client、不读 git 历史(刻意不跑验收套件、
 不跑生成物对账、不解析 migration 基线),对该 job 的 `timeout-minutes: 5` 是三位数倍余量。
@@ -221,24 +221,40 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **当前重签（2026-09-11）**：维护者已确认 D1-3 第 119 条 migration。当前 SQL 为
+> `20260911100000_activity_os_r4_d1_3_time_policy_selection`，SHA-256
+> `3a0ad50cb34a4b79ebe3a80e8e6b3760b573c0392343b7a93711e0d42eaa4ff1`；新增空选择修订、选择明细和
+> 命令收据三表，以及 Activity 的历史兼容指针。无回填、无既有业务数据 DML、无业务数据删除，所有
+> 外键为 Restrict。后续隔离库回放与 E2E 是 PR 验收，不等同于生产或 Gate 授权。本段覆盖下方 D1-1
+> 的旧时点理由；其余历史签字叙事保留作证据。
+
 - **结论**:认可
 - **理由**:118 条 migration；2026-09-10 按维护者确认重签 D1-1 第118条 `20260910100000_activity_os_r4_d1_time_policy_foundation`：新增政策、不可变版本及命令收据三表，限制生命周期、同链引用和永久留存；不改历史SQL、不删除业务数据。SQL SHA-256 `39442e60fdbb47f8f6e4ae28baf746d81a860920c4f51ed1d02ef0d5d0491f4e`。w98冷回放/非空升级2项、SQL约束及并发30项通过。本签不代替整体跨模型复审、PR CI、可信审批、合并或生产授权。前签历史：117 条 migration；2026-09-09 按维护者确认重签 C3-2 第 117 条 `20260909092502_activity_os_r3_c3_outcome_finalization`：新增成果确认收据与来源模型及完整性、同链、不可变约束；不改历史 SQL，不删除业务数据。SQL SHA-256 `4f5da8a957ba527a53a684e59bf5fa7ef89daa94d46cc96eb3e8dca973d99a2e`。本签不代替整体跨模型评审、PR CI、可信红区审批、合并或生产授权。前签历史：116 条 migration；2026-09-09 按维护者确认重签 C3-1 第 116 条 `20260908054308_activity_os_r3_c3_metric_candidates`：新增指标规则绑定、系统候选、候选值、来源及两类命令收据六模型，约束同链、不可变留存与聚合完整性；不改历史 SQL，不删除业务数据。SQL SHA-256 `052c7f1504ed60cb3ac7ce154d279ed4cd77b26cb34fb84ab24c5a7ab38f8870`。本签不替代整体跨模型评审、PR CI、可信红区审批、合并或生产执行授权。前签历史：115 条 migration；2026-09-08 按维护者确认重签服务段更正方案 A 第 115 条 `20260908000000_correction_pending_segment_lifecycle`：新增暂存服务段、准备收据和清理收据三模型，约束同链、数量与不可变性，并新增 SECURITY INVOKER 受控清理函数；migration 不执行历史回填或业务数据清理、不改历史 SQL。SQL SHA-256 `95fd598ac6f301b8fef01603739649f1e3c4a56b63bca371ff279804637bc365`；app_test_w98 冷 SQL 回放及 114→115 非空旧 application 升级 5 项通过，服务段更正及账本关账定向 E2E 110 项通过，contract 1021 项 / 2 快照通过。本签不代替整体跨模型评审、PR CI、可信审批、合并、实际业务清理或生产执行授权。前签历史：114 条 migration；2026-09-07 按维护者确认重签 C2 D2 第 114 条 `20260907160030_activity_os_r3_c2_outcome_command_receipt`：纯新增成果命令收据，命令唯一键、同链 Restrict FK、安全结果闭集与不可改删保护；零回填、不改历史 SQL。SQL SHA-256 `c6f45e8d8ebb4ab347f1062bd1a1732ffee60f17b380d683197ad0ab0ef3231b`；114 冷回放、113→114 非空升级与约束验证 17 项通过。本签不代替整体跨模型评审、PR CI、合并或生产执行授权。前签历史：113 条 migration；2026-09-07 按维护者确认重签 C2 D1 第 113 条 `20260907103134_activity_os_r3_c2_outcome_value_revision`：纯新增成果头、指标值与证据三表，同链 Restrict FK、唯一／状态／来源约束、不可变内容保护及确认元数据检查；零回填、不改历史 SQL，不开放 writer/API/权限/Gate。SQL SHA-256 `44ef4b16bd5b5f051f34f7b109ced8c5a01aec99dddb551fb76769220f8fabdd`；113 冷回放、112→113 非空旧活动逐字保留及约束验证共 8 项通过，7 套既有兼容回归 84 项与 contract 1017 项／2 快照通过。附件活动归属留 D2，正式确认完整证据留 C3；本签不代替整体跨模型评审、PR CI、合并或生产执行授权。前签历史：112 条 migration；2026-09-06 按维护者确认重签 C1 D2b 第 112 条 `20260906114906_activity_os_r3_c1_metric_selection_template_v3`：additive 扩展 Activity 四列、指标集 id/hash 唯一锚点与复合 Restrict FK、既有收据两个目标列及对应 CHECK；保留旧八操作收据兼容与 append-only trigger，无回填、不改旧 migration。SQL SHA-256 `7d033165ee7a786c826c49965095be34ffb1722f1d06c624defee82581b5bbbb`；app_test 已完成且未回滚、checksum 一致，112 冷回放及 111→112 非空升级 63 项迁移测试通过。本签不代替跨模型整体评审、可信审批、PR CI、合并或生产执行授权。前签历史：111 条 migration；2026-09-06 按维护者确认重签 C1 D2a 第 111 条 `20260905221158_activity_os_r3_c1_metric_command_receipts`：仅新增空 ActivityMetricCommandReceipt 表，以八操作闭集、结果形状 CHECK、三条 Restrict FK、命令唯一键与 append-only trigger 约束收据；零既有业务表 DML、回填、物理删除、历史 SQL 修改或生产部署。SQL SHA-256 `0c90d4ca50ba5a5b6d4c8553983bab3aa86609f4b56dd707656e721a88f99023`；获授权隔离库已验证 111 条空库回放、110→111 非空升级、seed 二跑与 CHECK/FK/不可改删正反例（34 项 migration E2E）。本步实现的目录命令及既有权限/审计回归共 140 项定向 E2E、7160 项单测、contract 996 项 / 2 快照、quick、冷 lint、build 均通过；本地无新增 schema 漂移，旧漂移不在本次修复范围。阶段性跨模型复审继续依维护者决定延后至整体完成后，不记为通过或永久豁免；PR CI、可信红区审批、合并与生产 deploy 仍独立验收。此前签字说明（历史读数）：110 条 migration；2026-09-05 按维护者确认重签 C1 D1 第 110 条 `20260905160133_activity_os_r3_c1_metric_definition_set`：仅新增 ActivityMetricDefinition、ActivityMetricSetVersion、ActivityMetricSetItem 三张空表，UNIQUE / CHECK / Restrict FK 与 trigger 保护身份、draft→active→retired、激活后语义和集项冻结，并由父版本锁串行化集项变更及激活；零 seed、回填、既有业务表 DML、物理删除、API / DTO / 权限 / 审计 / Gate / 生产部署，DB 不复算 canonical/hash，未来 writer 必须锁后调用纯函数复验。SQL SHA-256 `431449453b1059b40dd7c5e311617ac4e786a7e48c373d754b6000b8e9b4b97c`；授权隔离测试库已验证 110 条冷回放、109→110 非空 Activity rehearsal、冻结/引用反例及真实竞态。C1/B5/B6 地基 42 项、历史迁移 90 项、B6/B7/参与统计 88 项定向 E2E 均通过；7068 项单测、contract 984 项 / 2 快照、quick、冷 lint、build、事故回放通过。阶段性跨模型复审按维护者同日「跳过评审，继续推进，等搞完了再整体评审」决定延后，尚无有效独立结论，不记为通过或永久豁免；PR CI、可信红区审批、合并与生产 deploy 仍独立验收。此前签字说明（历史读数）：108 条 migration;第 101 条 `20260901100000_activity_os_r1_a2_template_family_version_expand` 为纯 expand：新建空 ActivityTemplateFamily，并向既有 ActivityTemplate 增加六个可空 Version 元数据，零回填、seed 或运行时切换。第 102 条 `20260901110000_activity_os_r1_a3_template_definition_lifecycle_guards` 只为 `familyId IS NOT NULL` 的 future Version 增加条件字段 CHECK 与 `draft → active → retired` 冻结 trigger；零回填、seed、legacy resolver/API 或生产部署。第 103 条 `20260901120000_activity_os_r1_a4_explicit_template_version` 只为 `Activity` 增加 nullable `selectedTemplateVersionId`、单列索引和指向 `ActivityTemplate.id` 的 `ON DELETE RESTRICT` FK；零 default、零 UPDATE、零回填、seed、runtime/API/resolver 切换，legacy `activityTypeCode` fallback 不变。第 104 条 `20260902143000_activity_os_r1_a6_from_template_transaction` 只为 `Activity` 增加 nullable `createFromTemplateOperationKey` / `createFromTemplateRequestHash` 和前者的全局唯一索引；零 default、零 UPDATE、零回填、seed、删除、既有行重解释或生产部署。第 105 条 `20260902190221_activity_os_r1_a7_series_generation` 只新增 ActivitySeries、Revision、通用命令收据与 Occurrence 四张表，以及 9 条 Restrict FK、索引、CHECK 和不可变 trigger；Receipt / Occurrence 用 `(revisionId, seriesId)` 复合 FK 锁住同链 Revision，零 default、零 UPDATE、零回填、seed、删除或生产部署。第 106 条 `20260903131800_activity_os_r2_b1_place_expand` 只新增空 `PlacePreset` / `ActivityPlace` 两表、三条 `ON DELETE RESTRICT` FK、三项查询索引及 `roleCode` 六值 / `visibilityCode` 四值 CHECK；零 ALTER 既有 Activity / ActivitySession 地点列、零 default 业务语义、零 UPDATE、回填、seed、删除、runtime/API/writer 切换或生产部署。B1 已完成 SQL 逐行审查、隔离测试库 106 条 migration 空库回放、105→106 非空库 rehearsal、B1 E2E（7 个用例）、8 个受影响历史 migration E2E（69 个用例）与 contract（975 个断言、2 个快照）。2026-08-26 首签时为 99 条；第 100 条(Integration Foundation v1 PR1 schema 地基,#1217)落地后曾按本表机制重签。第 107 条 `20260903150000_activity_os_r2_b2_coordinate_projection` 仅在 B1 新增的 `PlacePreset` / `ActivityPlace` 上新增六条已验证 CHECK：允许三列全空的文字地点；完整坐标必须成对、坐标系限 `wgs84` / `gcj02` / `bd09`、且在全球范围内。SQL 单事务、零 DML / 回填 / seed / 删除 / trigger / `NOT VALID`，零 ALTER 既有 `Activity` / `ActivitySession` 地点列、runtime / API / writer 切换或生产部署。SQL SHA-256 `c15f31e1c6240e097d68f7786482f338fe626d840315b4cce78e5578099a18f3`；隔离测试库已完成 107 冷回放、106→107 合法非空 rehearsal 与 B1 时代脏数据 fail-closed（6 个 B2 E2E）；B1 合同更正和既有签到/打卡/场次回归共 66 项、其余 8 个 migration rehearsal 共 69 项，以及 contract 975 断言 / 2 快照均通过。第 108 条 `20260904090000_activity_os_r2_b3_form_blueprint_governance` 只为既有 `RegistrationFormField` 增加五个 nullable 治理元数据列(`purposeCode`、`dataClassCode`、`retentionPolicyCode`、`maskingPolicyCode`、`prefillSourceCode`)及一个 all-legacy / all-governed 形状 CHECK；允许五列全 NULL 的既有表单字段，受控形状要求前四列非 NULL 且 `prefillSourceCode` 为 NULL。零 default、DML、UPDATE、回填、seed、删除、trigger、既有行重解释或生产部署。隔离测试库已完成 108 冷回放、107→108 含非空 legacy Form / Field / Answer 的 rehearsal、部分治理形状 fail-closed 与 migration rollback 行为验证；B3 governed V2 模板物化、敏感字段拒绝回退、v3-v5 表单兼容与公开投影回归均已验证。PR CI 的五个 Contract + E2E 分片、contract 975 断言 / 2 快照、Docker smoke、harness selftest 与事故回放均已通过。**2026-09-04 再次重签**：第 109 条 `20260904195000_activity_os_r2_b6_creation_data_foundation` 纯新增 `ActivityCreationCommandReceipt`、`ActivityEmergencyInitiation`、`ActivityEmergencyFollowUpItem` 三张空表，以命名 UNIQUE / CHECK / `ON DELETE RESTRICT` FK 锁定专业 / 紧急创建收据、起源与收据同活动、七项固定后续义务及 pending / verified / unrepresentable 的处理事实形状；零 DML、回填、删除、既有 Activity 重解释、API / DTO / 通知 / 审计 / 发布或事故域运行时行为。隔离测试库已完成 109 条冷回放、108→109 非空 legacy Activity rehearsal、首表冲突的整条 migration 回滚验证，以及 6 个 D1 PostgreSQL E2E；contract 975 断言 / 2 快照、完整单测、lint、typecheck、build、harness selftest 与事故回放均通过。
 - **签字人**:维护者
-- **日期**:2026-09-10
+- **日期**:2026-09-11
 - **依据**:维护者2026-09-10对话确认「确认重签 3b（D1-1，第118条 migration）」；前签依据：维护者 2026-09-09 对话确认「确认重签 3b（C3-2，第117条 migration）」；前签依据：维护者 2026-09-09 对话确认「确认重签 3b（C3-1，第116条 migration）」；PR https://github.com/BA7IEE/srvf-nest-api/pull/1298；前签依据：维护者 2026-09-08 对话确认「确认重签 3b（服务段更正方案 A，第115条 migration），允许更新签字登记并提交推送至 #1296」；PR https://github.com/BA7IEE/srvf-nest-api/pull/1296；前签依据：维护者 2026-09-07 对话确认「确认重签 3b（C2 D2，第114条 migration）」；前签依据：维护者 2026-09-07 对话确认「确认重签 3b（C2 D1，第113条 migration）」；前签依据为维护者 2026-09-06 对话确认「确认重签 3b（C1 D2b，第112条 migration）」；前签依据为维护者 2026-09-06 对话确认「确认重签 3b（C1 D2a，第111条 migration）」；前签依据为维护者 2026-09-05 对话确认「确认重签 3b（C1 D1，第110条 migration）」；前签依据为维护者 2026-09-04 对话确认「确认重签 3b（B6 D1，第109条 migration）」；前签依据为维护者 2026-09-04 对话确认「确认重签 3b（B3，第108条 migration）」；前签依据为维护者 2026-09-03 对话确认「确认重签 3b（B2，第107条 migration）」；前签依据为维护者 2026-09-03 对话确认「确认重签 3b（B1，第106条 migration）」；前签依据为维护者 2026-09-02 对话确认「确认重签 3b（A7，第105条 migration）」、2026-09-02 对话确认「确认重签3b（A6，第104条 migration）」、2026-09-02 对话确认「确认重签3b（A4，第103条 migration）」、2026-09-01 对话确认「确认重签3b（A3，第102条 migration）」、2026-09-01 对话确认重签3b(A2)、2026-08-28 对话批准重签(「批准签」)，首签依据为 2026-08-26 拍板「直接用新的上线」
-- **对拍**:有 —— `migration-total` = `118`
+- **对拍**:有 —— `migration-total` = `119`
 
 > ⭐ 这条对拍的价值在于它**会过期**:再落一条 migration ⇒ 机器读数与签字里的值不等 ⇒ 当场红,
 > 维护者必须为**新增的那条**重新签字。「经审查」的覆盖面因此不会随时间静默扩大。
 
 ### 4b — 「字典、Audit events」的对账
 
+> **D1-3 已重签（2026-09-11）**：维护者确认当前权限码为 262，Audit events 为 167 总计 /
+> 162 活跃；新增 `activity.time-policy.read`、`activity.time-policy.select` 与
+> `activity.time-policy.selection`。本签只确认这组权限、字典与审计读数，不自动授码，不授权
+> 合并、生产或 Gate。
+>
+> **本次理由与依据**：维护者 2026-09-11 对话确认「确认重签 4b（D1-3：权限码262；Audit
+> events 167总计、162活跃）」；两条新增权限不自动绑定角色、职务、Service Principal 或
+> delegation，新增审计事件只记录安全选择摘要，不记录 operationKey 或敏感业务内容。
+
 - **结论**:认可
 - **理由**:**2026-09-10 D1-2 重签**：维护者确认权限码260、Audit events166总计/161活跃，新增时间政策读写两码及 `activity.time-policy.command`，不自动授码；seed指纹为 `a6202b18d484`，字典30 types/277 items不变。不授权合并、生产或Gate。前签历史：**2026-09-09 C3-2 重签**：权限码 256→258，新增成果 confirm/correct 显式权限；Audit events 164→165 总计、159→160 活跃、5 退役，新增 `activity.outcome.finalization`。字典及 seed 指纹不变；不自动授码，不授权 Gate、合并或生产部署。前签历史：**2026-09-09 C3-1 重签**：权限码 254→256，新增 `activity-metric.manage.rule-binding`、`activity.outcome.calculate`；Audit events 162→164 总计、157→159 活跃、5 退役。字典仍为 30 types / 277 items；seed-sha256-12 仍为 `29b1abc5a415`。本签不授权人员授码、Gate、合并或生产部署。前签历史：**2026-09-07 C2 D2 重签**：权限码 252→254，仅新增 `activity.outcome.record/read`，不自动绑定角色，Service Principal / delegation 均不允许；Audit events 161→162 总计、156→157 活跃、5 退役，新增 `activity.outcome.command`，仅记录安全结果摘要，不记录实际值、操作键或附件凭证。字典仍为 30 types / 277 items；seed-sha256-12 为 `29b1abc5a415`。本签不授权人员授码、Gate、合并或生产部署。前签历史：**2026-09-06 C1 D2b 重签**：权限码 250→252，仅新增 `activity-template.read.catalog`、`activity-template.manage.version` 两条 Human / GLOBAL 权限，不自动授予角色、绑定或职务策略，不开放机器或委托；既有 `activity.update.record` 仅更新业务说明及 6→8 派生管辖面，不改权限语义。Audit events 159→161 总计、154→156 活跃、5 退役，新增 `activity.metric-selection.command` 与 `activity.template-version.command`；字典仍为 30 types / 277 items，登记表判据通过。seed-sha256-12 为 `5f6250db794f`，按现有脚本指纹口径登记；本签不授权初始化业务内容、人员授码、Gate 开启、合并或生产部署。前签历史：**2026-09-06 C1 D2a 重签**：权限码 247→250，仅新增 `activity-metric.read.catalog`、`activity-metric.manage.definition`、`activity-metric.manage.set` 三条 Human / GLOBAL 目录权限；允许按既有流程手工授予自定义角色，seed 不自动绑定角色，不开放 Service Principal 或 delegation。新增 `activity.metric-definition.command`、`activity.metric-set.command` 两个有运行时产出者的审计事件，总计 159 / 活跃 154 / 已退役 5；日志仅记白名单命令结果，不记录题目配置、敏感内容或 operationKey。字典仍为 30 types / 277 items；认可该增量的权限、seed 与审计口径，`seed-sha256-12` 更新为 `76f7d81e6d82`。此前签字说明（历史读数）：**已逐条核对**。字典(28 type / 242 item)与 Audit events(156 事件:151 活跃 + 5 已退役/零产出)均已有登记表 + 红区判据双向对拍(#1202 / #1203;判据收编 #1206),④-c 已升 A 类机器判;五个零产出事件均已显式处置。本条签的是判据覆盖不了的余下判断:登记表口径符合合同 v1.1 意图、零产出处置认可。2026-08-26 首签时的「接受现状」局限自此闭合。**2026-08-29 三次重签**:PR5 新增 `delegation-grant.*` 三条权限码，并将既有 `service-principal.*` 五项、`delegation-grant.*` 两项及 Token 两项审计事件补齐至登记表；`seed-sha256-12` 与 `audit-event-registry-total/active` 均已按机器现读更新。**2026-08-30 再次重签**:PR7 仅为既有 `dict.read.item` 写入 Service Principal eligibility(`servicePrincipalAllowed=true`、`delegatedAccessAllowed=false`)，未新增字典项、Audit event、权限码或内建角色；本条对该 seed 变动的余下判断一并认可。**2026-09-01 再次重签**:Activity OS A1 新增 `activity_category` 10 条，以及 `activity_semantic_facet` 6 个维度与 19 个受控选项，共 35 条字典项；无新增或变更 Audit event、权限码、内建角色、schema 或运行时消费切换。本条对该增量 seed 的余下判断一并认可。**2026-09-02 再次重签**:Activity OS A7 新增 `activity-series.change` 一个活跃审计事件；无字典、权限码、内建角色或 seed 变更。本条对这项审计语义增量及登记表口径继续认可。**2026-09-04 再次重签**:B6 D1 新增 `activity.create.emergency.record` 一条 SUPER_ADMIN-only 紧急创建权限码，初始零角色绑定；未新增或变更字典项、Audit event 或内建角色。对新的 seed 指纹、权限目录分类与既有 Audit events 157 总计 / 152 活跃的登记口径继续认可。
 - **签字人**:维护者
-- **日期**:2026-09-10
+- **日期**:2026-09-11
 - **依据**:维护者2026-09-10对话确认「确认重签4b（D1-2：权限码260，Audit events 166总计、161活跃）」；前签依据：维护者 2026-09-09 对话确认「确认重签 4b（权限码258；Audit events 165总计、160活跃）」；前签依据：维护者 2026-09-09 对话确认「确认重签 4b（权限码256；Audit events 164总计、159活跃）」；PR https://github.com/BA7IEE/srvf-nest-api/pull/1298；前签依据：维护者 2026-09-07 对话确认「确认重签 4b（权限码254，Audit events 162总计、157活跃）」；前签依据：维护者 2026-09-06 对话确认「确认重签 4b（C1 D2b：权限码252；Audit events 161总计、156活跃）」；前签依据为维护者 2026-09-06 对话确认「确认重签 4b（C1 D2a：权限码250；Audit events 159总计、154活跃）」；前签依据为维护者 2026-09-04 对话确认重签(「确认重签 4b（B6 D1：权限码247；Audit events 157 总计、152 活跃）」);前签为维护者 2026-09-02 对话确认重签(「确认重签 4b（A7：Audit events 157 总计、152 活跃）」)
-- **对拍**:有 —— `seed-sha256-12` = `a6202b18d484`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `166`;`audit-event-registry-active` = `161`
+- **对拍**:有 —— `seed-sha256-12` = `a6202b18d484`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `167`;`audit-event-registry-active` = `162`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。

@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:3170312f6ed8aac0f3afa0608eeff606ef778c11f915b8e3d08642f6ee349374
+// inputDigest: sha256:2aa52aba43f85bfbf899d7b3352f0dab1b627cd7556969cd09d4f2e36ff45033
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -658,6 +658,64 @@ export interface AppActivityTemplateVersionOptionDto {
   "updatedAt": string;
 }
 
+export interface AppActivityTimePolicyOptionDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+  "policyCode": string;
+  "policyName": string;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+}
+
+export interface AppActivityTimePolicyPointerDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+}
+
+export interface AppActivityTimePolicySelectionChangeDto {
+  "scope": AppActivityTimePolicySelectionScopeDto;
+  "selection": AppActivityTimePolicySelectionValueDto;
+}
+
+export interface AppActivityTimePolicySelectionItemDto {
+  "scope": AppActivityTimePolicySelectionScopeDto;
+  "selection": AppActivityTimePolicySelectionValueDto;
+}
+
+export interface AppActivityTimePolicySelectionResponseDto {
+  "activityId": string;
+  "selectionRevisionId": string | null;
+  "revision": number;
+  "selectionHash": string | null;
+  "createdAt": string | null;
+  "items": AppActivityTimePolicySelectionItemDto[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+  "resolutionSummary": Record<string, unknown>;
+}
+
+export interface AppActivityTimePolicySelectionResultDto {
+  "activityId": string;
+  "selectionRevisionId": string;
+  "revision": number;
+  "selectionHash": string;
+  "createdAt": string;
+}
+
+export interface AppActivityTimePolicySelectionScopeDto {
+  "layerCode": "activity" | "session" | "position";
+  "sessionId": Record<string, unknown> | null;
+  "positionId": Record<string, unknown> | null;
+}
+
+export interface AppActivityTimePolicySelectionValueDto {
+  "mode": "inherit" | "explicit";
+  "pointer": AppActivityTimePolicyPointerDto;
+}
+
 export interface AppActivityVisitorDto {
   "visitorId": string;
   "activityId": string;
@@ -778,6 +836,34 @@ export interface AppCreationQualificationRuleSetDto {
   "rules": AppActivityQualificationRuleInputDto[];
 }
 
+export interface AppCreationTimePolicyPointerDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+}
+
+export interface AppCreationTimePolicyPositionOverrideDto {
+  "sessionCode": string;
+  "positionCode": string;
+  "selection": AppCreationTimePolicySelectionValueDto;
+}
+
+export interface AppCreationTimePolicySelectionInputDto {
+  "activity": AppCreationTimePolicySelectionValueDto;
+  "sessionOverrides": AppCreationTimePolicySessionOverrideDto[];
+  "positionOverrides": AppCreationTimePolicyPositionOverrideDto[];
+}
+
+export interface AppCreationTimePolicySelectionValueDto {
+  "mode": "inherit" | "explicit";
+  "pointer": AppCreationTimePolicyPointerDto;
+}
+
+export interface AppCreationTimePolicySessionOverrideDto {
+  "sessionCode": string;
+  "selection": AppCreationTimePolicySelectionValueDto;
+}
+
 export interface AppEmergencyActivityCreationDto {
   "operationKey": string;
   "title": string;
@@ -786,6 +872,7 @@ export interface AppEmergencyActivityCreationDto {
   "endAt": string;
   "location": string;
   "metricSelection"?: AppActivityMetricSelectionInputDto;
+  "timePolicySelection"?: AppEmergencyTimePolicySelectionInputDto;
   "initiatorMemberId": string;
   "activityTypeCode": string;
   "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
@@ -796,6 +883,10 @@ export interface AppEmergencyActivityCreationDto {
 export interface AppEmergencyCreationFollowUpDto {
   "itemCode": "session" | "position" | "detailed_location" | "equipment" | "attendance" | "outcome" | "incident_relation";
   "statusCode": "pending" | "verified" | "unrepresentable";
+}
+
+export interface AppEmergencyTimePolicySelectionInputDto {
+  "activity": AppCreationTimePolicySelectionValueDto;
 }
 
 export interface AppEvidenceSealResultDto {
@@ -1664,6 +1755,12 @@ export interface AppParticipationLedgerEntryDto {
   "cappedOutPointsDelta": number;
 }
 
+export interface AppPatchActivityTimePolicySelectionDto {
+  "operationKey": string;
+  "expectedRevision": number;
+  "changes": AppActivityTimePolicySelectionChangeDto[];
+}
+
 export interface AppPrepareActivityOutcomeCorrectionDto {
   "operationKey": string;
   "expectedLatestRevision": number;
@@ -1682,6 +1779,7 @@ export interface AppProfessionalActivityCreationDto {
   "endAt": string;
   "location": string;
   "metricSelection"?: AppActivityMetricSelectionInputDto;
+  "timePolicySelection"?: AppCreationTimePolicySelectionInputDto;
   "activityTypeCode": string;
   "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
   "initiatorMemberId"?: string;
@@ -2095,6 +2193,8 @@ export interface ChangeReviewDto {
   "qualificationRuleSets"?: ChangeReviewQualificationRuleSetCollectionsDto;
   "metricSelection"?: AppActivityMetricSelectionInputDto;
   "expectedMetricSelectionRevision"?: number;
+  "timePolicySelectionChanges"?: ChangeReviewTimePolicySelectionChangeDto[];
+  "expectedTimePolicySelectionRevision"?: number;
 }
 
 export interface ChangeReviewQualificationRuleScopeDto {
@@ -2220,6 +2320,30 @@ export interface ChangeReviewSessionUpdateDto {
   "earlyLeaveThresholdMinutes"?: number;
   "sortOrder"?: number;
   "sessionId": string;
+}
+
+export interface ChangeReviewTimePolicyPointerDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+}
+
+export interface ChangeReviewTimePolicySelectionChangeDto {
+  "scope": ChangeReviewTimePolicySelectionScopeDto;
+  "selection": ChangeReviewTimePolicySelectionValueDto;
+}
+
+export interface ChangeReviewTimePolicySelectionScopeDto {
+  "layerCode": "activity" | "session" | "position";
+  "sessionId"?: string;
+  "sessionClientRef"?: string;
+  "positionId"?: string;
+  "positionClientRef"?: string;
+}
+
+export interface ChangeReviewTimePolicySelectionValueDto {
+  "mode": "inherit" | "explicit";
+  "pointer": ChangeReviewTimePolicyPointerDto;
 }
 
 export interface CommitAppManagedActivityAllocationBatchDto {

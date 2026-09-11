@@ -374,7 +374,7 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
   });
 
   describe('§3.4 ActivityRuleSnapshot:形状、FK 与唯一版本锚点', () => {
-    it('结构:不可变表没有 updatedAt/deletedAt，且合同字段全为必填', async () => {
+    it('结构:不可变表没有 updatedAt/deletedAt，既有合同字段必填且 D1-3 历史兼容指针可空', async () => {
       const cols = await prisma.$queryRaw<
         Array<{ column_name: string; data_type: string; is_nullable: string }>
       >`
@@ -391,6 +391,11 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
         { column_name: 'resolvedConfig', data_type: 'jsonb', is_nullable: 'NO' },
         { column_name: 'snapshotHash', data_type: 'text', is_nullable: 'NO' },
         { column_name: 'createdByReviewId', data_type: 'text', is_nullable: 'NO' },
+        {
+          column_name: 'timePolicySelectionRevisionId',
+          data_type: 'text',
+          is_nullable: 'YES',
+        },
       ]);
 
       const fks = await prisma.$queryRaw<Array<{ conname: string; target: string }>>`
@@ -406,6 +411,10 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
           target: 'activity_publish_reviews',
         },
         { conname: 'ActivityRuleSnapshot_templateVersionId_fkey', target: '"ActivityTemplate"' },
+        {
+          conname: 'atps_snapshot_revision_fkey',
+          target: '"ActivityTimePolicySelectionRevision"',
+        },
       ]);
     });
 
@@ -427,7 +436,7 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
       expect(rows).toEqual([{ id: 'snapshot-without-template', templateVersionId: null }]);
     });
 
-    it('三根 FK 分别拒绝不存在的活动、模板版本与审核请求', async () => {
+    it('既有三根 FK 分别拒绝不存在的活动、模板版本与审核请求', async () => {
       await expectAccepted(templateSql('template-1'));
       await expectAccepted(snapshotSql('snapshot-ok'));
       await expectRejected(
@@ -512,7 +521,10 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
           AND NOT tgisinternal
         ORDER BY tgname
       `;
-      expect(triggers).toEqual([{ tgname: 'trg_activity_rule_snapshot_10_append_only' }]);
+      expect(triggers).toEqual([
+        { tgname: 'atps_snapshot_reference_guard' },
+        { tgname: 'trg_activity_rule_snapshot_10_append_only' },
+      ]);
     });
   });
 

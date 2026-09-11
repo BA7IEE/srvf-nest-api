@@ -49,6 +49,19 @@ describe('BizCode', () => {
     ]).toEqual([20197, 20198, 20199, 20023, 20024, 20025, 20026, 20027]);
   });
 
+  it('D1-3 时长政策选择错误码固定为连续的八项合同', () => {
+    expect([
+      BizCode.ACTIVITY_TIME_POLICY_SELECTION_INVALID.code,
+      BizCode.ACTIVITY_TIME_POLICY_SELECTION_REFERENCE_UNAVAILABLE.code,
+      BizCode.ACTIVITY_TIME_POLICY_SELECTION_STALE.code,
+      BizCode.ACTIVITY_TIME_POLICY_SELECTION_COMMAND_CONFLICT.code,
+      BizCode.ACTIVITY_TIME_POLICY_SELECTION_RECEIPT_INVALID.code,
+      BizCode.ACTIVITY_TIME_POLICY_SELECTION_POLICY_UNAVAILABLE.code,
+      BizCode.ACTIVITY_TIME_POLICY_SELECTION_UNCHANGED.code,
+      BizCode.ACTIVITY_TIME_POLICY_SELECTION_REVISION_LIMIT.code,
+    ]).toEqual([20205, 20206, 20207, 20208, 20209, 20210, 20211, 20212]);
+  });
+
   describe.each(entries)('%s', (key, entry) => {
     it('key 命名为大写 SNAKE_CASE', () => {
       expect(key).toMatch(KEY_PATTERN);

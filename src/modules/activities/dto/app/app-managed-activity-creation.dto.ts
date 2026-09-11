@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
+  IsDefined,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -11,6 +12,7 @@ import {
   IsInt,
   IsObject,
   IsString,
+  Matches,
   MaxLength,
   Min,
   MinLength,
@@ -23,6 +25,109 @@ import {
   AppActivityCreationPlaceDto,
   CREATION_PLACE_VISIBILITIES,
 } from './app-managed-activity-creation-place.dto';
+
+export class AppCreationTimePolicyPointerDto {
+  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  policyId!: string;
+
+  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  versionId!: string;
+
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' })
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
+  definitionHash!: string;
+}
+
+export class AppCreationTimePolicySelectionValueDto {
+  @ApiProperty({ enum: ['inherit', 'explicit'] })
+  @IsIn(['inherit', 'explicit'])
+  mode!: 'inherit' | 'explicit';
+
+  @ApiProperty({ type: () => AppCreationTimePolicyPointerDto, nullable: true })
+  @ValidateIf((_, value: unknown) => value !== null)
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppCreationTimePolicyPointerDto)
+  pointer!: AppCreationTimePolicyPointerDto | null;
+}
+
+export class AppCreationTimePolicySessionOverrideDto {
+  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  sessionCode!: string;
+
+  @ApiProperty({ type: () => AppCreationTimePolicySelectionValueDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppCreationTimePolicySelectionValueDto)
+  selection!: AppCreationTimePolicySelectionValueDto;
+}
+
+export class AppCreationTimePolicyPositionOverrideDto {
+  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  sessionCode!: string;
+
+  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  positionCode!: string;
+
+  @ApiProperty({ type: () => AppCreationTimePolicySelectionValueDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppCreationTimePolicySelectionValueDto)
+  selection!: AppCreationTimePolicySelectionValueDto;
+}
+
+/** Stable codes are resolved only after the root transaction creates this Activity's targets. */
+export class AppCreationTimePolicySelectionInputDto {
+  @ApiProperty({ type: () => AppCreationTimePolicySelectionValueDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppCreationTimePolicySelectionValueDto)
+  activity!: AppCreationTimePolicySelectionValueDto;
+
+  @ApiProperty({ type: () => [AppCreationTimePolicySessionOverrideDto], maxItems: 100 })
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => AppCreationTimePolicySessionOverrideDto)
+  sessionOverrides!: AppCreationTimePolicySessionOverrideDto[];
+
+  @ApiProperty({ type: () => [AppCreationTimePolicyPositionOverrideDto], maxItems: 10000 })
+  @IsArray()
+  @ArrayMaxSize(10000)
+  @ValidateNested({ each: true })
+  @Type(() => AppCreationTimePolicyPositionOverrideDto)
+  positionOverrides!: AppCreationTimePolicyPositionOverrideDto[];
+}
+
+/** Emergency creation has no Session rows yet, so it can only establish the Activity root. */
+export class AppEmergencyTimePolicySelectionInputDto {
+  @ApiProperty({ type: () => AppCreationTimePolicySelectionValueDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppCreationTimePolicySelectionValueDto)
+  activity!: AppCreationTimePolicySelectionValueDto;
+}
 
 /** App-only request value; never derived from an Admin DTO. */
 export class AppActivityCreationRequestDto {
@@ -128,6 +233,16 @@ export class AppEmergencyActivityCreationDto extends AppActivityCreationRequestD
   @ValidateNested()
   @Type(() => AppActivityMetricSelectionInputDto)
   metricSelection?: AppActivityMetricSelectionInputDto;
+
+  @ApiPropertyOptional({
+    description: '可选活动级时长政策选择；紧急创建不接受尚不存在的场次或岗位覆盖',
+    type: () => AppEmergencyTimePolicySelectionInputDto,
+  })
+  @OmittableOnly()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppEmergencyTimePolicySelectionInputDto)
+  timePolicySelection?: AppEmergencyTimePolicySelectionInputDto;
 
   @ApiProperty({
     description: '明确发起人 ID；仍校验本人/代设与目标组织资格',

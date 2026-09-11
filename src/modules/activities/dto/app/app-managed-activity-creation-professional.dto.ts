@@ -19,7 +19,10 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
-import { AppActivityCreationRequestDto } from './app-managed-activity-creation.dto';
+import {
+  AppActivityCreationRequestDto,
+  AppCreationTimePolicySelectionInputDto,
+} from './app-managed-activity-creation.dto';
 import { AppActivityCreationPlaceDto } from './app-managed-activity-creation-place.dto';
 import {
   CreateAppManagedActivitySessionDto,
@@ -99,6 +102,16 @@ export class AppProfessionalActivityCreationDto extends AppActivityCreationReque
   @ValidateNested()
   @Type(() => AppActivityMetricSelectionInputDto)
   metricSelection?: AppActivityMetricSelectionInputDto;
+
+  @ApiPropertyOptional({
+    description: '可选四层时长政策选择；场次和岗位使用本次请求内的稳定 code，省略保持历史未配置',
+    type: () => AppCreationTimePolicySelectionInputDto,
+  })
+  @OmittableOnly()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppCreationTimePolicySelectionInputDto)
+  timePolicySelection?: AppCreationTimePolicySelectionInputDto;
 
   @ApiProperty({ description: '既有活动类型字典码', minLength: 1, maxLength: 64 })
   @IsString()

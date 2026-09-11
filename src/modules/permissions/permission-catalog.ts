@@ -63,6 +63,20 @@ export interface RbacPermissionSeed {
 // Integration Foundation v1 PR5(规格书 §36):Delegation 控制面 3 码。绑 ops-admin。
 export const ACTIVITY_TIME_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
+    code: 'activity.time-policy.read',
+    module: 'activity',
+    action: 'time-policy',
+    resourceType: 'read',
+    description: '查看活动时长政策选择；显式授权、当前活动范围及活动资格同时满足',
+  },
+  {
+    code: 'activity.time-policy.select',
+    module: 'activity',
+    action: 'time-policy',
+    resourceType: 'select',
+    description: '设置活动时长政策选择；显式授权、当前活动范围及活动资格同时满足',
+  },
+  {
     code: 'activity-time-policy.read.catalog',
     module: 'activity-time-policy',
     action: 'read',
@@ -2980,6 +2994,32 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       sortOrder: 191,
       riskLevel: 'LOW',
       riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.time-policy.read': {
+      displayName: '查看活动时长政策选择',
+      businessDescription:
+        '真人查看有权活动的时长政策选择和解析摘要；显式授权、当前组织范围及活动资格同时满足，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 194,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.time-policy.select': {
+      displayName: '设置活动时长政策选择',
+      businessDescription:
+        '真人在有权草稿活动中设置时长政策选择；显式授权、当前组织范围及活动资格同时满足，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 195,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',
       status: 'ACTIVE',
       uiVisibility: 'DEFAULT',

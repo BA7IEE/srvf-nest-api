@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:3170312f6ed8aac0f3afa0608eeff606ef778c11f915b8e3d08642f6ee349374
+// inputDigest: sha256:2aa52aba43f85bfbf899d7b3352f0dab1b627cd7556969cd09d4f2e36ff45033
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -55,11 +55,19 @@ import type {
   AdminActivityTemplateDefinitionV1Dto,
   AdminActivityTemplateDefinitionV2Dto,
   AdminActivityTemplateDefinitionV3Dto,
+  AdminActivityTemplateDefinitionV4Dto,
   AdminActivityTemplateFamilySummaryDto,
   AdminActivityTemplateVersionCommandDto,
   AdminActivityTemplateVersionCommandResultDto,
   AdminActivityTemplateVersionResponseDto,
   AdminActivityTemplateVersionSummaryDto,
+  AdminActivityTimePolicyPointerDto,
+  AdminActivityTimePolicySelectionChangeDto,
+  AdminActivityTimePolicySelectionItemDto,
+  AdminActivityTimePolicySelectionResponseDto,
+  AdminActivityTimePolicySelectionResultDto,
+  AdminActivityTimePolicySelectionScopeDto,
+  AdminActivityTimePolicySelectionValueDto,
   AdminAttendanceSettlementListItemDto,
   AdminAttendanceSheetExpandedActivityDto,
   AdminAttendanceSheetListItemDto,
@@ -81,6 +89,7 @@ import type {
   AdminMetricSetItemDto,
   AdminMetricTextConfigurationDto,
   AdminParticipationLedgerEntryDto,
+  AdminPatchActivityTimePolicySelectionDto,
   AdminRegistrationExpandedActivityDto,
   AdminRegistrationExpandedMemberDto,
   AdminRegistrationListItemDto,
@@ -102,6 +111,9 @@ import type {
   AdminTemplatePositionDefinitionDto,
   AdminTemplateRegistrationFormDto,
   AdminTemplateSessionDefinitionDto,
+  AdminTemplateTimePolicyPositionOverrideDto,
+  AdminTemplateTimePolicySelectionDto,
+  AdminTemplateTimePolicySessionOverrideDto,
   AdminTimePolicyCommandResponseDto,
   AdminTimePolicyResponseDto,
   AdminTimePolicyVersionResponseDto,
@@ -578,6 +590,14 @@ export function createAdminClient(fetcher: Fetcher) {
     ActivitiesControllerPublishWithAudienceTags(id: string, body: PublishActivityWithAudienceTagsDto): Promise<ApiEnvelope<ActivityResponseDto>> {
       return fetcher<ActivityResponseDto>({ method: "PATCH", path: `/api/admin/v1/activities/${id}/publish-with-audience-tags`, body });
     },
+    /** 分页读取活动时长政策选择及解析摘要 [rbac: activity.time-policy.read] */
+    AdminActivityTimePolicySelectionControllerGet(id: string, query?: { "page"?: number; "pageSize"?: number; "revision"?: number }): Promise<ApiEnvelope<AdminActivityTimePolicySelectionResponseDto>> {
+      return fetcher<AdminActivityTimePolicySelectionResponseDto>({ method: "GET", path: `/api/admin/v1/activities/${id}/time-policy-selection`, query });
+    },
+    /** 增量设置草稿活动的时长政策选择 [rbac: activity.time-policy.select] */
+    AdminActivityTimePolicySelectionControllerPatch(id: string, body: AdminPatchActivityTimePolicySelectionDto): Promise<ApiEnvelope<AdminActivityTimePolicySelectionResultDto>> {
+      return fetcher<AdminActivityTimePolicySelectionResultDto>({ method: "PATCH", path: `/api/admin/v1/activities/${id}/time-policy-selection`, body });
+    },
     /** 分页查询指标定义 [rbac: activity-metric.read.catalog] */
     AdminActivityMetricDefinitionsControllerList(query?: { "page"?: number; "pageSize"?: number; "code"?: string; "statusCode"?: "draft" | "active" | "retired"; "kindCode"?: "non_negative_integer" | "non_negative_decimal" | "boolean" | "short_text" | "single_choice" }): Promise<ApiEnvelope<PageResultDto & { "items": AdminActivityMetricDefinitionResponseDto[] }>> {
       return fetcher<PageResultDto & { "items": AdminActivityMetricDefinitionResponseDto[] }>({ method: "GET", path: "/api/admin/v1/activity-metric-definitions", query });
@@ -651,10 +671,10 @@ export function createAdminClient(fetcher: Fetcher) {
       return fetcher<ActivityPublishReviewResponseDto>({ method: "POST", path: `/api/admin/v1/activity-publish-reviews/${id}/return`, body });
     },
     /** 分页读取全局模板版本目录 [rbac: activity-template.read.catalog] */
-    AdminActivityTemplateVersionsControllerList(query?: { "page"?: number; "pageSize"?: number; "familyId"?: string; "statusCode"?: "draft" | "active" | "retired"; "schemaVersion"?: 1 | 2 | 3 }): Promise<ApiEnvelope<PageResultDto & { "items": AdminActivityTemplateVersionSummaryDto[] }>> {
+    AdminActivityTemplateVersionsControllerList(query?: { "page"?: number; "pageSize"?: number; "familyId"?: string; "statusCode"?: "draft" | "active" | "retired"; "schemaVersion"?: 1 | 2 | 3 | 4 }): Promise<ApiEnvelope<PageResultDto & { "items": AdminActivityTemplateVersionSummaryDto[] }>> {
       return fetcher<PageResultDto & { "items": AdminActivityTemplateVersionSummaryDto[] }>({ method: "GET", path: "/api/admin/v1/activity-template-versions", query });
     },
-    /** 新建全局模板 V3 或从精确版本复制 [rbac: activity-template.manage.version] */
+    /** 新建全局模板 V3/V4 或从精确版本复制 [rbac: activity-template.manage.version] */
     AdminActivityTemplateVersionsControllerCreate(body: AdminCreateActivityTemplateVersionDto): Promise<ApiEnvelope<AdminActivityTemplateVersionCommandResultDto>> {
       return fetcher<AdminActivityTemplateVersionCommandResultDto>({ method: "POST", path: "/api/admin/v1/activity-template-versions", body });
     },
@@ -662,15 +682,15 @@ export function createAdminClient(fetcher: Fetcher) {
     AdminActivityTemplateVersionsControllerGet(id: string): Promise<ApiEnvelope<AdminActivityTemplateVersionResponseDto>> {
       return fetcher<AdminActivityTemplateVersionResponseDto>({ method: "GET", path: `/api/admin/v1/activity-template-versions/${id}` });
     },
-    /** 复验并激活 draft V3 [rbac: activity-template.manage.version] */
+    /** 复验并激活 draft V3/V4 [rbac: activity-template.manage.version] */
     AdminActivityTemplateVersionsControllerActivate(id: string, body: AdminActivityTemplateVersionCommandDto): Promise<ApiEnvelope<AdminActivityTemplateVersionCommandResultDto>> {
       return fetcher<AdminActivityTemplateVersionCommandResultDto>({ method: "POST", path: `/api/admin/v1/activity-template-versions/${id}/activate`, body });
     },
-    /** 整份更新 draft V3 定义 [rbac: activity-template.manage.version] */
+    /** 整份更新 draft V3/V4 定义 [rbac: activity-template.manage.version] */
     AdminActivityTemplateVersionsControllerUpdate(id: string, body: AdminUpdateActivityTemplateVersionDto): Promise<ApiEnvelope<AdminActivityTemplateVersionCommandResultDto>> {
       return fetcher<AdminActivityTemplateVersionCommandResultDto>({ method: "PUT", path: `/api/admin/v1/activity-template-versions/${id}/draft`, body });
     },
-    /** 退役 active V3，保留历史引用 [rbac: activity-template.manage.version] */
+    /** 退役 active V3/V4，保留历史引用 [rbac: activity-template.manage.version] */
     AdminActivityTemplateVersionsControllerRetire(id: string, body: AdminActivityTemplateVersionCommandDto): Promise<ApiEnvelope<AdminActivityTemplateVersionCommandResultDto>> {
       return fetcher<AdminActivityTemplateVersionCommandResultDto>({ method: "POST", path: `/api/admin/v1/activity-template-versions/${id}/retire`, body });
     },

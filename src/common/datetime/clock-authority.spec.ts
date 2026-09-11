@@ -49,7 +49,8 @@ const SCHEMA = path.join(REPO_ROOT, 'prisma', 'schema.prisma');
 const SRC = path.join(REPO_ROOT, 'src');
 
 /** 审计列:只被展示/审计,从不参与判定。豁免必须具名,不能靠「看起来像 createdAt」。 */
-// D1-1: TimePolicy/TimePolicyVersion/TimePolicyCommandReceipt.createdAt 均为审计留痕，
+// D1-1/D1-3: TimePolicy/TimePolicyVersion/TimePolicyCommandReceipt 与
+// ActivityTimePolicySelectionRevision/ActivityTimePolicySelectionCommandReceipt.createdAt 均为审计留痕，
 // 沿此既有豁免；effectiveFrom/Until、activatedAt/retiredAt 无默认now，不用库时钟判业务生效。
 const AUDIT_COLUMNS: ReadonlySet<string> = new Set(['createdAt']);
 

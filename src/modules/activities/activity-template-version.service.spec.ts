@@ -45,6 +45,8 @@ describe('C1 D2b template HTTP DTO → strict domain parser', () => {
     { run } as unknown as ActivityTemplateVersionCommand,
     undefined!,
     undefined!,
+    undefined!, // DTO characterization covers the V3 branch only.
+    undefined!,
   );
   beforeEach(() => run.mockReset());
 

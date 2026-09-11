@@ -2021,6 +2021,46 @@ export const BizCode = {
     message: '时长政策版本号已达上限',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_TIME_POLICY_SELECTION_INVALID: {
+    code: 20205,
+    message: '活动时长政策选择无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_TIME_POLICY_SELECTION_REFERENCE_UNAVAILABLE: {
+    code: 20206,
+    message: '活动时长政策选择引用不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_TIME_POLICY_SELECTION_STALE: {
+    code: 20207,
+    message: '活动时长政策选择已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_POLICY_SELECTION_COMMAND_CONFLICT: {
+    code: 20208,
+    message: '此操作标识已用于其他时长政策选择',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_POLICY_SELECTION_RECEIPT_INVALID: {
+    code: 20209,
+    message: '活动时长政策选择收据无效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_POLICY_SELECTION_POLICY_UNAVAILABLE: {
+    code: 20210,
+    message: '当前时长政策引用不可用于新的选择',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_POLICY_SELECTION_UNCHANGED: {
+    code: 20211,
+    message: '活动时长政策选择没有实际变化',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_POLICY_SELECTION_REVISION_LIMIT: {
+    code: 20212,
+    message: '活动时长政策选择修订号已达上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

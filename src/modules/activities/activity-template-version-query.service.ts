@@ -35,7 +35,7 @@ export class ActivityTemplateVersionQueryService {
         family: globalTemplateFamilyWhere(),
         familyId: query.familyId,
         statusCode: query.statusCode,
-        schemaVersion: query.schemaVersion ?? { in: [1, 2, 3] },
+        schemaVersion: query.schemaVersion ?? { in: [1, 2, 3, 4] },
       };
       const [rows, total] = await Promise.all([
         tx.activityTemplate.findMany({
@@ -60,7 +60,7 @@ export class ActivityTemplateVersionQueryService {
     return this.prisma.$transaction(async (tx) => {
       await this.commands.assertAccess(tx, user, 'activity-template.read.catalog');
       const row = await tx.activityTemplate.findFirst({
-        where: { id, family: globalTemplateFamilyWhere(), schemaVersion: { in: [1, 2, 3] } },
+        where: { id, family: globalTemplateFamilyWhere(), schemaVersion: { in: [1, 2, 3, 4] } },
         include: { family: true },
       });
       if (!row) throw new BizException(BizCode.ACTIVITY_TEMPLATE_VERSION_NOT_FOUND);

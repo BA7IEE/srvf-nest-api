@@ -10,6 +10,7 @@ import { ActivityAccessService } from './activity-access.service';
 import { ActivityFromTemplateService } from './activity-from-template.service';
 import { ActivitySeriesAuditRecorder } from './activity-series-audit-recorder';
 import { ActivityMetricSelectionAccess } from './activity-metric-selection-access';
+import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
 import {
   buildActivitySeriesRequestHash,
   isActivitySeriesStatusCode,
@@ -64,6 +65,7 @@ export class ActivitySeriesService {
     private readonly fromTemplate: ActivityFromTemplateService,
     private readonly auditRecorder: ActivitySeriesAuditRecorder,
     private readonly metricAccess: ActivityMetricSelectionAccess,
+    private readonly timePolicySelection: ActivityTimePolicySelectionService,
   ) {}
 
   async create(
@@ -367,7 +369,7 @@ export class ActivitySeriesService {
             expectedDefinitionHash: revision.templateDefinitionHash,
           });
           actor = materialized.actor ?? actor;
-          await tx.activitySeriesOccurrence.create({
+          const occurrence = await tx.activitySeriesOccurrence.create({
             data: {
               seriesId: series.id,
               revisionId: revision.id,
@@ -376,7 +378,25 @@ export class ActivitySeriesService {
               startAt: candidate.startAt,
               endAt: candidate.endAt,
             },
+            select: { id: true },
           });
+          if (materialized.timePolicySelectionInitialization) {
+            await this.timePolicySelection.initializeWithinTransaction({
+              tx,
+              activityId: materialized.created.id,
+              selection: materialized.timePolicySelectionInitialization.selection,
+              actor: materialized.actor ?? actor,
+              meta: auditMeta,
+              source: {
+                originCode: 'series_occurrence',
+                seriesOccurrenceId: occurrence.id,
+                templateId: materialized.timePolicySelectionInitialization.templateId,
+                templateDefinitionHash:
+                  materialized.timePolicySelectionInitialization.templateDefinitionHash,
+              },
+              revalidate: materialized.timePolicySelectionInitialization.revalidate,
+            });
+          }
           await this.auditRecorder.logGeneratedOccurrence({
             activityId: materialized.created.id,
             seriesId: series.id,

@@ -19,7 +19,7 @@
 > **三条写库漏斗**(全部 `event: AuditLogEvent` 类型锁,新增事件不进 union 编译不过):
 > `AuditLogsService.log()` · `writeConfigAudit()`(permissions)· `user-roles.service` 内联薄封装。
 
-**审计事件(机器核对):166 个 · 活跃(≥1 次出现):161 · 已退役/零产出:5**
+**审计事件(机器核对):167 个 · 活跃(≥1 次出现):162 · 已退役/零产出:5**
 
 
 ## profile
@@ -89,6 +89,7 @@
 | `activity-series.change` | 1 | Activity OS R1 / A7：Series 创建、Revision 追加、生命周期变更与按需生成的安全审计；实例 Activity 仍使用 `activity.publish` |
 | `activity.metric-definition.command` | 1 | C1 D2a：定义版本命令；仅记录操作、code/version、前后 hash/status，和收据、业务写同事务 |
 | `activity.time-policy.command` | 1 | D1-2：政策目录创建/版本激活退役；仅操作、版本ID及前后hash/status，与业务及收据同事务，不记录定义或幂等键 |
+| `activity.time-policy.selection` | 1 | D1-3：活动四层选择修订；仅记录activityId、revision、selectionHash、operationCode与目标数量，和选择、收据同事务；不记录完整定义、用户身份、operationKey或requestHash |
 | `activity.metric-set.command` | 1 | C1 D2a：指标集版本命令；不记录配置全文或 operationKey |
 | `activity.metric-selection.command` | 1 | C1 D2b：草稿选择与创建初选；仅固定来源、前后要求/hash/revision，和选择、收据同事务；不记录配置全文或 operationKey |
 | `activity.outcome.command` | 1 | C2 D2：人工成果草稿追加、旧 draft 替代、收据及审计同事务；仅修订锚点、状态、来源和数量，不记实际值、operationKey、内部来源引用或附件凭证 |

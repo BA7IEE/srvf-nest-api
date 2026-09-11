@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:792aa4c41a482763d1accc3567ddceac6fe67eae51661fa548d9efc2a649d5f3",
+  "inputDigest": "sha256:ad18b67f47dd9c9136318378a001d8e48706d234f8f84925099c018dcc6a9a4a",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -312,6 +312,24 @@
       "confirmed": true
     },
     "TimePolicyCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityTimePolicySelectionRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityTimePolicySelectionItem": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityTimePolicySelectionCommandReceipt": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",

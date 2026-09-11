@@ -37,6 +37,11 @@ export class ActivityCreationQuick {
         visibilityCode: command.defaultPlaceVisibilityCode,
       },
     });
-    return { activity: materialized.created, placeCount, actor: materialized.actor };
+    return {
+      activity: materialized.created,
+      placeCount,
+      actor: materialized.actor,
+      timePolicySelectionInitialization: materialized.timePolicySelectionInitialization,
+    };
   }
 }

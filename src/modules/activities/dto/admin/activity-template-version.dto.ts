@@ -23,6 +23,7 @@ import {
   AdminActivityTemplateDefinitionV2Dto,
   AdminActivityTemplateDefinitionV3Dto,
 } from './activity-template-definition-v3.dto';
+import { AdminActivityTemplateDefinitionV4Dto } from './activity-template-definition-v4.dto';
 
 export class AdminCreateActivityTemplateVersionDto {
   @ApiProperty({ description: '客户端幂等键；首尾不得空白', minLength: 1, maxLength: 128 })
@@ -86,14 +87,30 @@ export class AdminCreateActivityTemplateVersionDto {
   @IsDateString()
   effectiveTo?: string | null;
   @ApiPropertyOptional({
-    description: '完整 V3 定义；与复制来源形状互斥',
-    type: () => AdminActivityTemplateDefinitionV3Dto,
+    description: '仅 V4 显式传 4；省略保持历史 V3 创建合同',
+    enum: [4],
+  })
+  @OmittableOnly()
+  @Type(() => Number)
+  @IsIn([4])
+  schemaVersion?: 4;
+  @ApiPropertyOptional({
+    description:
+      '完整定义；省略 schemaVersion 为 V3，显式 schemaVersion=4 为 V4；与复制来源形状互斥',
+    oneOf: [
+      { $ref: getSchemaPath(AdminActivityTemplateDefinitionV3Dto) },
+      { $ref: getSchemaPath(AdminActivityTemplateDefinitionV4Dto) },
+    ],
   })
   @OmittableOnly()
   @IsObject()
   @ValidateNested()
-  @Type(() => AdminActivityTemplateDefinitionV3Dto)
-  definition?: AdminActivityTemplateDefinitionV3Dto;
+  @Type((options) =>
+    (options?.object as { schemaVersion?: number } | undefined)?.schemaVersion === 4
+      ? AdminActivityTemplateDefinitionV4Dto
+      : AdminActivityTemplateDefinitionV3Dto,
+  )
+  definition?: AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
   @ApiPropertyOptional({
     description: '复制来源的精确 V1/V2/V3 版本；仅全局可见 Family',
     minLength: 1,
@@ -130,17 +147,33 @@ export class AdminActivityTemplateVersionCommandDto {
   @IsString()
   @Matches(/^[0-9a-f]{64}$/)
   expectedDefinitionHash!: string;
+
+  @ApiPropertyOptional({
+    description: 'V4 生命周期命令必须显式传 4；V3 省略保持历史重放合同',
+    enum: [4],
+  })
+  @OmittableOnly()
+  @Type(() => Number)
+  @IsIn([4])
+  schemaVersion?: 4;
 }
 export class AdminUpdateActivityTemplateVersionDto extends AdminActivityTemplateVersionCommandDto {
   @ApiProperty({
-    description: '整份替换的 V3 定义，仅 draft 可写',
-    type: () => AdminActivityTemplateDefinitionV3Dto,
+    description: '整份替换的目标同版本定义，仅 draft 可写',
+    oneOf: [
+      { $ref: getSchemaPath(AdminActivityTemplateDefinitionV3Dto) },
+      { $ref: getSchemaPath(AdminActivityTemplateDefinitionV4Dto) },
+    ],
   })
   @IsDefined()
   @IsObject()
   @ValidateNested()
-  @Type(() => AdminActivityTemplateDefinitionV3Dto)
-  definition!: AdminActivityTemplateDefinitionV3Dto;
+  @Type((options) =>
+    (options?.object as { schemaVersion?: number } | undefined)?.schemaVersion === 4
+      ? AdminActivityTemplateDefinitionV4Dto
+      : AdminActivityTemplateDefinitionV3Dto,
+  )
+  definition!: AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
 }
 export class AdminListActivityTemplateVersionsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: 'Family ID 过滤', minLength: 1, maxLength: 64 })
@@ -153,17 +186,17 @@ export class AdminListActivityTemplateVersionsQueryDto extends PaginationQueryDt
   @OmittableOnly()
   @IsIn(['draft', 'active', 'retired'])
   statusCode?: 'draft' | 'active' | 'retired';
-  @ApiPropertyOptional({ description: 'schema 版本过滤', enum: [1, 2, 3] })
+  @ApiPropertyOptional({ description: 'schema 版本过滤', enum: [1, 2, 3, 4] })
   @OmittableOnly()
   @Type(() => Number)
-  @IsIn([1, 2, 3])
+  @IsIn([1, 2, 3, 4])
   schemaVersion?: number;
 }
 export class AdminActivityTemplateVersionCommandResultDto {
   @ApiProperty({ description: '精确模板 Version ID' }) id!: string;
   @ApiProperty({ description: '稳定模板 code' }) code!: string;
   @ApiProperty({ description: '显式 Version', minimum: 1, maximum: 2147483647 }) version!: number;
-  @ApiProperty({ description: '新命令仅写 V3', enum: [3] }) schemaVersion!: 3;
+  @ApiProperty({ description: '新命令写入的版本', enum: [3, 4] }) schemaVersion!: 3 | 4;
   @ApiProperty({ description: '命令记录的状态', enum: ['draft', 'active', 'retired'] })
   statusCode!: string;
   @ApiProperty({ description: '命令记录的定义 hash', pattern: '^[0-9a-f]{64}$' })
@@ -180,7 +213,7 @@ export class AdminActivityTemplateVersionSummaryDto {
   @ApiProperty({ description: 'Version code' }) code!: string;
   @ApiProperty({ description: '版本名称' }) name!: string;
   @ApiProperty({ description: '显式版本号' }) version!: number;
-  @ApiProperty({ description: '解释版本', enum: [1, 2, 3] }) schemaVersion!: number;
+  @ApiProperty({ description: '解释版本', enum: [1, 2, 3, 4] }) schemaVersion!: number;
   @ApiProperty({ description: '定义 hash', pattern: '^[0-9a-f]{64}$' }) definitionHash!: string;
   @ApiProperty({ description: '版本状态', enum: ['draft', 'active', 'retired'] })
   statusCode!: string;
@@ -206,6 +239,7 @@ export class AdminActivityTemplateVersionSummaryDto {
   AdminActivityTemplateDefinitionV1Dto,
   AdminActivityTemplateDefinitionV2Dto,
   AdminActivityTemplateDefinitionV3Dto,
+  AdminActivityTemplateDefinitionV4Dto,
 )
 export class AdminActivityTemplateVersionResponseDto extends AdminActivityTemplateVersionSummaryDto {
   @ApiProperty({
@@ -214,10 +248,12 @@ export class AdminActivityTemplateVersionResponseDto extends AdminActivityTempla
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV1Dto) },
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV2Dto) },
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV3Dto) },
+      { $ref: getSchemaPath(AdminActivityTemplateDefinitionV4Dto) },
     ],
   })
   definition!:
     | AdminActivityTemplateDefinitionV1Dto
     | AdminActivityTemplateDefinitionV2Dto
-    | AdminActivityTemplateDefinitionV3Dto;
+    | AdminActivityTemplateDefinitionV3Dto
+    | AdminActivityTemplateDefinitionV4Dto;
 }

@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { instanceToPlain } from 'class-transformer';
 import { Prisma, type Role } from '@prisma/client';
 import type { AppConfig } from '../../config/app.config';
+import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { canonicalize, type CanonicalValue } from './settlement-content-hash';
@@ -51,6 +52,27 @@ import {
   sameActivityPublishProposalV7MetricFields,
   type ActivityPublishProposalV7MetricFields,
 } from './activity-publish-proposal-v7';
+import {
+  assertActivityPublishProposalV8TimePolicyTransition,
+  parseActivityPublishProposalV8TimePolicyFields,
+  type ActivityPublishProposalV8TimePolicyFields,
+  type ActivityPublishProposalV8TimePolicyPointers,
+  type ActivityRuleSnapshotV8TimePolicyPointers,
+} from './activity-publish-proposal-v8';
+import {
+  activityTimePolicySelectionHash,
+  activityTimePolicySelectionScopeKey,
+  applyActivityTimePolicySelectionChanges,
+  createActivityTimePolicySelectionDocument,
+  emptyActivityTimePolicySelectionDocument,
+  parseActivityTimePolicySelectionDocument,
+  parseActivityTimePolicySelectionValue,
+  resolveActivityTimePolicySelection,
+  type ActivityTimePolicySelectionDocument,
+  type ActivityTimePolicySelectionScope,
+} from './activity-time-policy-selection';
+import { timePolicyVersionDocument } from './activity-time-policy-presenter';
+import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import type {
@@ -62,6 +84,7 @@ import type {
   ChangeReviewSessionPositionCreateDto,
   ChangeReviewSessionPositionUpdateDto,
   ChangeReviewSessionUpdateDto,
+  ChangeReviewTimePolicySelectionScopeDto,
 } from './activity-publish-review.dto';
 
 type PrismaTx = Prisma.TransactionClient;
@@ -275,6 +298,15 @@ export interface ActivityTemplateResolutionWithSnapshotV7
     ActivityTemplateResolutionWithQualificationRules,
     ActivityPublishProposalSnapshotV7Fields {}
 
+/** V8's RuleSnapshot adds the database identity of the immutable selection revision.  The
+ * proposal envelope intentionally does not expose that physical id before approval. */
+export interface ActivityTemplateResolutionWithSnapshotV8 extends Omit<
+  ActivityTemplateResolutionWithSnapshotV7,
+  'timePolicyPointers'
+> {
+  timePolicyPointers: ActivityRuleSnapshotV8TimePolicyPointers | null;
+}
+
 export interface ActivityPublishProposalSnapshotV2 {
   schemaVersion: 2;
   baseWorkflowRevision: number;
@@ -410,13 +442,44 @@ export interface ActivityPublishProposalSnapshotV7 extends ActivityPublishPropos
   qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
 }
 
+export type ActivityPublishProposalSnapshotV8Fields = Omit<
+  ActivityPublishProposalSnapshotV7Fields,
+  'timePolicyPointers'
+> & {
+  readonly timePolicyPointers: ActivityPublishProposalV8TimePolicyPointers | null;
+};
+
+/** V8 keeps every V7 field byte-for-byte and freezes the Activity selection fact separately. */
+export interface ActivityPublishProposalSnapshotV8 extends ActivityPublishProposalSnapshotV8Fields {
+  schemaVersion: 8;
+  baseWorkflowRevision: number;
+  baseSnapshotHash: string;
+  timePolicySelectionExplicit: boolean;
+  snapshotHash: string;
+  base: {
+    templateVersionId: string | null;
+    resolvedConfig: ActivityTemplateResolution;
+    activity: ProposalActivity;
+    sessions: ProposalSession[];
+    registrationForm: RegistrationFormTarget | null;
+    qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
+  } & ActivityPublishProposalSnapshotV8Fields;
+  templateVersionId: string | null;
+  resolvedConfig: ActivityTemplateResolution;
+  activity: ProposalActivity;
+  sessions: ProposalSession[];
+  registrationForm: RegistrationFormTarget | null;
+  qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
+}
+
 export type ActivityPublishProposalSnapshot =
   | ActivityPublishProposalSnapshotV2
   | ActivityPublishProposalSnapshotV3
   | ActivityPublishProposalSnapshotV4
   | ActivityPublishProposalSnapshotV5
   | ActivityPublishProposalSnapshotV6
-  | ActivityPublishProposalSnapshotV7;
+  | ActivityPublishProposalSnapshotV7
+  | ActivityPublishProposalSnapshotV8;
 
 interface CurrentProposalState {
   workflowRevision: number;
@@ -430,6 +493,13 @@ interface CurrentProposalState {
   qualificationRuleSets: CanonicalQualificationRuleSetsDefinition;
   activityPlaces: ActivityPlaceSnapshot[];
   metricSelection?: ActivityPublishProposalV7MetricFields;
+  timePolicySelection?: {
+    readonly id: string;
+    readonly revision: number;
+    readonly selectionHash: string;
+    readonly selectionJson: Prisma.JsonValue;
+    readonly itemCount: number;
+  } | null;
 }
 
 interface TemplateRow {
@@ -676,6 +746,8 @@ const V7_ROOT_KEYS = [
   'metricSelectionExplicit',
 ] as const;
 const V7_BASE_KEYS = [...V6_BASE_KEYS, 'metricRequirementCode', 'metricSelectionRevision'] as const;
+const V8_ROOT_KEYS = [...V7_ROOT_KEYS, 'timePolicySelectionExplicit'] as const;
+const V8_BASE_KEYS = [...V7_BASE_KEYS] as const;
 
 const V6_PLANNED_ASSIGNMENT_KEYS = ['dimensionCode', 'optionCode'] as const;
 const V6_ACTIVITY_PLACE_KEYS = [
@@ -710,14 +782,15 @@ export class ActivityPublishProposalV2Service {
     // inputDigest 覆盖全部 *.module.ts ⇒ 动一行 module 就要改红区。
     private readonly notificationProducer: ActivityNotificationProducer,
     private readonly auditLogs: AuditLogsService,
+    private readonly timePolicySelections: ActivityTimePolicySelectionService,
   ) {}
 
   async buildInitial(
     tx: PrismaTx,
     activityId: string,
     revalidate: () => Promise<void> = () => Promise.resolve(),
-  ): Promise<ActivityPublishProposalSnapshotV7> {
-    const current = await this.currentState(tx, activityId, true, true, true, true);
+  ): Promise<ActivityPublishProposalSnapshotV7 | ActivityPublishProposalSnapshotV8> {
+    const current = await this.currentState(tx, activityId, true, true, true, true, true);
     this.assertProposalValid(current.activity, current.sessions);
     const metric = this.currentV7MetricSelection(current);
     if (metric.selection === null) {
@@ -728,6 +801,32 @@ export class ActivityPublishProposalV2Service {
       [{ selection: metric.selection, historical: false }],
       revalidate,
     );
+    const timePolicy = await this.currentV8TimePolicySelection(
+      tx,
+      current,
+      current.activity,
+      current.sessions,
+      revalidate,
+    );
+    // Legacy activities still use their exact V7 write path.  Once an Activity owns a
+    // time-policy selection, V8 is mandatory so the later RuleSnapshot cannot lose that fact.
+    if (timePolicy !== null) {
+      return this.toSnapshotV8(
+        current,
+        current.activity,
+        current.sessions,
+        current.templateVersionId,
+        current.resolvedConfig,
+        current.registrationForm,
+        current.qualificationRuleSets,
+        metric.fields,
+        metric.fields,
+        true,
+        timePolicy.fields,
+        timePolicy.fields,
+        true,
+      );
+    }
     return this.toSnapshotV7(
       current,
       current.activity,
@@ -747,10 +846,10 @@ export class ActivityPublishProposalV2Service {
     activityId: string,
     dto: ChangeReviewDto,
     revalidate: () => Promise<void> = () => Promise.resolve(),
-  ): Promise<ActivityPublishProposalSnapshotV7> {
-    // New submissions always use the complete V7 envelope. Historical V2–V6 snapshots are only
-    // parsed/rebuilt/applied through their own version branches below.
-    const current = await this.currentState(tx, activityId, true, true, true, true);
+  ): Promise<ActivityPublishProposalSnapshotV7 | ActivityPublishProposalSnapshotV8> {
+    // Legacy activities retain the complete V7 envelope.  A configured time-policy selection is
+    // an Activity-owned fact, so its next review must use V8 rather than silently dropping it.
+    const current = await this.currentState(tx, activityId, true, true, true, true, true);
     const activity = clone(current.activity);
     const sessions = clone(current.sessions);
     this.applyActivityPatch(activity, dto.activityPatch as unknown as Partial<ProposalActivity>);
@@ -803,6 +902,55 @@ export class ActivityPublishProposalV2Service {
           ],
       revalidate,
     );
+    const baseTimePolicy = await this.currentV8TimePolicySelection(
+      tx,
+      current,
+      current.activity,
+      current.sessions,
+      revalidate,
+    );
+    const targetTimePolicy = await this.targetV8TimePolicySelection(
+      tx,
+      baseTimePolicy,
+      dto,
+      activity,
+      sessions,
+      revalidate,
+    );
+    if (baseTimePolicy !== null || targetTimePolicy !== null) {
+      if (targetTimePolicy === null) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      const snapshot = this.toSnapshotV8(
+        current,
+        activity,
+        sessions,
+        template?.id ?? null,
+        resolvedConfig,
+        registrationForm,
+        qualificationRuleSets,
+        baseMetric.fields,
+        targetMetric.fields,
+        targetMetric.explicit,
+        baseTimePolicy?.fields ?? { timePolicyPointers: null },
+        targetTimePolicy.fields,
+        targetTimePolicy.explicit,
+      );
+      if (
+        this.hashTargetV8(
+          activity,
+          sessions,
+          template?.id ?? null,
+          resolvedConfig,
+          registrationForm,
+          qualificationRuleSets,
+          this.v8Fields(current, activity, targetMetric.fields, targetTimePolicy.fields),
+        ) === snapshot.baseSnapshotHash
+      ) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      return snapshot;
+    }
     const snapshot = this.toSnapshotV7(
       current,
       activity,
@@ -834,7 +982,7 @@ export class ActivityPublishProposalV2Service {
   async rebuildCurrent(
     tx: PrismaTx,
     activityId: string,
-    schemaVersion: 2 | 3 | 4 | 5 | 6 | 7,
+    schemaVersion: 2 | 3 | 4 | 5 | 6 | 7 | 8,
   ): Promise<{ workflowRevision: number; snapshotHash: string }> {
     // Historical v2 approvals must retain their former read/hashing behavior: do not touch the
     // Form tables at all while reconstructing a v2 stale guard.
@@ -842,8 +990,8 @@ export class ActivityPublishProposalV2Service {
     // which facts they do *not* read. V7 is the only branch that loads the Activity-owned
     // metric-selection columns and catalogue closure.
     const current =
-      schemaVersion === 7
-        ? await this.currentState(tx, activityId, true, true, true, true)
+      schemaVersion === 7 || schemaVersion === 8
+        ? await this.currentState(tx, activityId, true, true, true, true, schemaVersion === 8)
         : await this.currentState(
             tx,
             activityId,
@@ -896,19 +1044,41 @@ export class ActivityPublishProposalV2Service {
                       current.qualificationRuleSets,
                       this.v6Fields(current, current.activity),
                     )
-                  : this.hashTargetV7(
-                      current.activity,
-                      current.sessions,
-                      current.templateVersionId,
-                      current.resolvedConfig,
-                      current.registrationForm,
-                      current.qualificationRuleSets,
-                      this.v7Fields(
-                        current,
+                  : schemaVersion === 7
+                    ? this.hashTargetV7(
                         current.activity,
-                        this.currentV7MetricSelection(current).fields,
+                        current.sessions,
+                        current.templateVersionId,
+                        current.resolvedConfig,
+                        current.registrationForm,
+                        current.qualificationRuleSets,
+                        this.v7Fields(
+                          current,
+                          current.activity,
+                          this.currentV7MetricSelection(current).fields,
+                        ),
+                      )
+                    : this.hashTargetV8(
+                        current.activity,
+                        current.sessions,
+                        current.templateVersionId,
+                        current.resolvedConfig,
+                        current.registrationForm,
+                        current.qualificationRuleSets,
+                        this.v8Fields(
+                          current,
+                          current.activity,
+                          this.currentV7MetricSelection(current).fields,
+                          (
+                            await this.currentV8TimePolicySelection(
+                              tx,
+                              current,
+                              current.activity,
+                              current.sessions,
+                            )
+                          )?.fields ?? { timePolicyPointers: null },
+                        ),
                       ),
-                    ),
     };
   }
 
@@ -931,7 +1101,8 @@ export class ActivityPublishProposalV2Service {
         row.schemaVersion === 4 ||
         row.schemaVersion === 5 ||
         row.schemaVersion === 6 ||
-        row.schemaVersion === 7) &&
+        row.schemaVersion === 7 ||
+        row.schemaVersion === 8) &&
       typeof row.snapshotHash === 'string'
     );
   }
@@ -943,6 +1114,7 @@ export class ActivityPublishProposalV2Service {
     try {
       if (snapshot.schemaVersion === 6) this.assertSnapshotV6Envelope(snapshot);
       if (snapshot.schemaVersion === 7) this.assertSnapshotV7Envelope(snapshot);
+      if (snapshot.schemaVersion === 8) this.assertSnapshotV8Envelope(snapshot);
       const { snapshotHash, ...unsigned } = snapshot;
       if (sha256(unsigned) !== snapshotHash) {
         throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
@@ -953,7 +1125,8 @@ export class ActivityPublishProposalV2Service {
         snapshot.schemaVersion === 4 ||
         snapshot.schemaVersion === 5 ||
         snapshot.schemaVersion === 6 ||
-        snapshot.schemaVersion === 7
+        snapshot.schemaVersion === 7 ||
+        snapshot.schemaVersion === 8
       ) {
         this.assertSnapshotFormTarget(snapshot.registrationForm);
         this.assertSnapshotFormTarget(snapshot.base.registrationForm);
@@ -962,7 +1135,8 @@ export class ActivityPublishProposalV2Service {
         (snapshot.schemaVersion === 4 ||
           snapshot.schemaVersion === 5 ||
           snapshot.schemaVersion === 6 ||
-          snapshot.schemaVersion === 7) &&
+          snapshot.schemaVersion === 7 ||
+          snapshot.schemaVersion === 8) &&
         (!isActivityAllocationModeCode(snapshot.activity.allocationModeCode) ||
           !isActivityAllocationModeCode(snapshot.base.activity.allocationModeCode))
       ) {
@@ -971,7 +1145,8 @@ export class ActivityPublishProposalV2Service {
       if (
         snapshot.schemaVersion === 5 ||
         snapshot.schemaVersion === 6 ||
-        snapshot.schemaVersion === 7
+        snapshot.schemaVersion === 7 ||
+        snapshot.schemaVersion === 8
       ) {
         this.assertSnapshotQualificationTarget(snapshot.qualificationRuleSets);
         this.assertSnapshotQualificationTarget(snapshot.base.qualificationRuleSets);
@@ -1025,12 +1200,51 @@ export class ActivityPublishProposalV2Service {
           throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
         }
       }
+      if (snapshot.schemaVersion === 8) {
+        this.assertProposalValid(snapshot.base.activity, snapshot.base.sessions);
+        this.assertSnapshotV8Fields(snapshot, snapshot.activity);
+        this.assertSnapshotV8Fields(snapshot.base, snapshot.base.activity);
+        try {
+          assertActivityPublishProposalV7MetricTransition(
+            this.snapshotV7MetricFields(snapshot.base),
+            this.snapshotV7MetricFields(snapshot),
+          );
+          this.assertV8TimePolicyTransition(snapshot.base, snapshot);
+          this.assertV8TimePolicyTargets(
+            snapshot.base,
+            snapshot.base.activity,
+            snapshot.base.sessions,
+          );
+          this.assertV8TimePolicyTargets(snapshot, snapshot.activity, snapshot.sessions);
+        } catch (error) {
+          if (error instanceof TypeError) {
+            throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+          }
+          throw error;
+        }
+        if (
+          snapshot.baseSnapshotHash !==
+          this.hashTargetV8(
+            snapshot.base.activity,
+            snapshot.base.sessions,
+            snapshot.base.templateVersionId,
+            snapshot.base.resolvedConfig,
+            snapshot.base.registrationForm,
+            snapshot.base.qualificationRuleSets,
+            this.snapshotV8Fields(snapshot.base),
+          )
+        ) {
+          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+        }
+      }
       return snapshot;
     } catch (error) {
       // New V6/V7 are structurally strict: malformed JSON must never turn a corrupt persisted
       // snapshot into an unexpected 500. Historical parser behavior is intentionally untouched.
       if (
-        (snapshot.schemaVersion === 6 || snapshot.schemaVersion === 7) &&
+        (snapshot.schemaVersion === 6 ||
+          snapshot.schemaVersion === 7 ||
+          snapshot.schemaVersion === 8) &&
         !(error instanceof BizException)
       ) {
         throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
@@ -1061,6 +1275,13 @@ export class ActivityPublishProposalV2Service {
       /** 稳定批次键(审核 id),让取消通知的 eventKey / cohortKey 在重放时不漂。 */
       versionKey: string;
       auditMeta: AuditMeta;
+      timePolicyPublishReview?: {
+        readonly reviewId: string;
+        readonly expectedSelectionRevision: number;
+        readonly proposalSelectionHash: string;
+        readonly actor: CurrentUserPayload;
+        readonly revalidate: () => Promise<CurrentUserPayload>;
+      };
     },
   ): Promise<{
     workflowRevision: number;
@@ -1069,7 +1290,8 @@ export class ActivityPublishProposalV2Service {
       | ActivityTemplateResolutionWithRegistrationForm
       | ActivityTemplateResolutionWithQualificationRules
       | ActivityTemplateResolutionWithSnapshotV6
-      | ActivityTemplateResolutionWithSnapshotV7;
+      | ActivityTemplateResolutionWithSnapshotV7
+      | ActivityTemplateResolutionWithSnapshotV8;
   }> {
     if (input.publish) {
       assertEmergencyFormalPublicationAllowed(
@@ -1101,10 +1323,12 @@ export class ActivityPublishProposalV2Service {
       snapshot.schemaVersion === 4 ||
         snapshot.schemaVersion === 5 ||
         snapshot.schemaVersion === 6 ||
-        snapshot.schemaVersion === 7
+        snapshot.schemaVersion === 7 ||
+        snapshot.schemaVersion === 8
         ? snapshot.activity.allocationModeCode
         : undefined,
-      snapshot.schemaVersion === 7 && this.v7MetricSelectionWrites(snapshot)
+      (snapshot.schemaVersion === 7 || snapshot.schemaVersion === 8) &&
+        this.v7MetricSelectionWrites(snapshot)
         ? this.snapshotV7MetricFields(snapshot)
         : undefined,
     );
@@ -1116,13 +1340,69 @@ export class ActivityPublishProposalV2Service {
       sessionIds,
       input.at,
     );
+    let v8TimePolicyPointers: ActivityRuleSnapshotV8TimePolicyPointers | null = null;
+    if (snapshot.schemaVersion === 8) {
+      const proposal = this.snapshotV8Fields(snapshot).timePolicyPointers;
+      if (proposal !== null) {
+        if (!input.timePolicyPublishReview) {
+          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+        }
+        const physicalSelection = this.materializeV8Selection(
+          proposal.selection,
+          proposal.referenceKinds,
+          sessionIds,
+          positionIds,
+        );
+        const frozen = await this.timePolicySelections.applyPublishReviewSelectionWithinTransaction(
+          {
+            tx,
+            activityId,
+            selection: physicalSelection,
+            expectedSelectionRevision: input.timePolicyPublishReview.expectedSelectionRevision,
+            actor: input.timePolicyPublishReview.actor,
+            meta: input.auditMeta,
+            publishReviewId: input.timePolicyPublishReview.reviewId,
+            proposalSelectionHash: input.timePolicyPublishReview.proposalSelectionHash,
+            revalidate: input.timePolicyPublishReview.revalidate,
+          },
+        );
+        const physicalSessions = this.materializeV8Sessions(
+          snapshot.sessions,
+          sessionIds,
+          positionIds,
+        );
+        const physical = await this.resolveV8TimePolicySelection(
+          tx,
+          frozen.selection,
+          frozen.revision,
+          snapshot.activity,
+          physicalSessions,
+          async () => {
+            await input.timePolicyPublishReview!.revalidate();
+          },
+        );
+        const resolved = physical.fields.timePolicyPointers;
+        if (resolved === null) {
+          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+        }
+        v8TimePolicyPointers = {
+          ...resolved,
+          proposalSelectionHash: proposal.proposalSelectionHash,
+          selectionRevisionId: frozen.selectionRevisionId,
+          selectionRevision: frozen.revision,
+          selectionHash: frozen.selectionHash,
+          selection: frozen.selection,
+        };
+      }
+    }
     let registrationForm: RegistrationFormResolvedConfig | null = null;
     if (
       snapshot.schemaVersion === 3 ||
       snapshot.schemaVersion === 4 ||
       snapshot.schemaVersion === 5 ||
       snapshot.schemaVersion === 6 ||
-      snapshot.schemaVersion === 7
+      snapshot.schemaVersion === 7 ||
+      snapshot.schemaVersion === 8
     ) {
       const currentActivity = await tx.activity.findUniqueOrThrow({
         where: { id: activityId },
@@ -1139,7 +1419,10 @@ export class ActivityPublishProposalV2Service {
       await this.applyFormAndRulesPlaceholder(tx, activityId);
     }
     const qualificationRuleSets =
-      snapshot.schemaVersion === 5 || snapshot.schemaVersion === 6 || snapshot.schemaVersion === 7
+      snapshot.schemaVersion === 5 ||
+      snapshot.schemaVersion === 6 ||
+      snapshot.schemaVersion === 7 ||
+      snapshot.schemaVersion === 8
         ? await this.qualificationRules.applyPublishedTarget(tx, {
             activityId,
             requestType: input.publish ? 'initial' : 'change',
@@ -1223,9 +1506,17 @@ export class ActivityPublishProposalV2Service {
                 qualificationRuleSets,
                 ...this.snapshotV7Fields(snapshot),
               }
-            : snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4
-              ? { ...snapshot.resolvedConfig, registrationForm }
-              : await this.getTemplateResolution(tx, activityId);
+            : snapshot.schemaVersion === 8
+              ? {
+                  ...snapshot.resolvedConfig,
+                  registrationForm,
+                  qualificationRuleSets,
+                  ...this.snapshotV8Fields(snapshot),
+                  timePolicyPointers: v8TimePolicyPointers,
+                }
+              : snapshot.schemaVersion === 3 || snapshot.schemaVersion === 4
+                ? { ...snapshot.resolvedConfig, registrationForm }
+                : await this.getTemplateResolution(tx, activityId);
     return { workflowRevision: activity.workflowRevision, resolvedConfig };
   }
 
@@ -1236,6 +1527,7 @@ export class ActivityPublishProposalV2Service {
     includeQualificationRules: boolean = true,
     includeV6Facts: boolean = false,
     includeV7Facts: boolean = false,
+    includeV8Facts: boolean = false,
   ): Promise<CurrentProposalState> {
     const row = await tx.activity.findUniqueOrThrow({
       where: { id: activityId },
@@ -1324,6 +1616,44 @@ export class ActivityPublishProposalV2Service {
       row.selectedTemplateVersionId,
       activity.activityTypeCode,
     );
+    let timePolicySelection: CurrentProposalState['timePolicySelection'];
+    if (includeV8Facts) {
+      const pointer = await tx.activity.findUniqueOrThrow({
+        where: { id: activityId },
+        select: {
+          timePolicySelectionRevision: true,
+          currentTimePolicySelectionRevisionId: true,
+        },
+      });
+      if (
+        (pointer.timePolicySelectionRevision === 0) !==
+        (pointer.currentTimePolicySelectionRevisionId === null)
+      ) {
+        throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_REFERENCE_UNAVAILABLE);
+      }
+      if (pointer.timePolicySelectionRevision === 0) {
+        timePolicySelection = null;
+      } else {
+        const revision = await tx.activityTimePolicySelectionRevision.findFirst({
+          where: {
+            id: pointer.currentTimePolicySelectionRevisionId!,
+            activityId,
+            revision: pointer.timePolicySelectionRevision,
+          },
+          select: {
+            id: true,
+            revision: true,
+            selectionHash: true,
+            selectionJson: true,
+            itemCount: true,
+          },
+        });
+        if (!revision) {
+          throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_REFERENCE_UNAVAILABLE);
+        }
+        timePolicySelection = revision;
+      }
+    }
     return {
       workflowRevision: row.workflowRevision,
       activity,
@@ -1343,6 +1673,7 @@ export class ActivityPublishProposalV2Service {
       metricSelection: includeV7Facts
         ? this.v7MetricFieldsFromActivityRow(row as ProposalActivityV7Row)
         : undefined,
+      timePolicySelection,
     };
   }
 
@@ -1661,6 +1992,596 @@ export class ActivityPublishProposalV2Service {
     return { ...unsigned, snapshotHash: sha256(unsigned) };
   }
 
+  private toSnapshotV8(
+    current: CurrentProposalState,
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+    qualificationRuleSets: CanonicalQualificationRuleSetsDefinition,
+    baseMetricFields: ActivityPublishProposalV7MetricFields,
+    targetMetricFields: ActivityPublishProposalV7MetricFields,
+    metricSelectionExplicit: boolean,
+    baseTimePolicyFields: ActivityPublishProposalV8TimePolicyFields,
+    targetTimePolicyFields: ActivityPublishProposalV8TimePolicyFields,
+    timePolicySelectionExplicit: boolean,
+  ): ActivityPublishProposalSnapshotV8 {
+    const baseV8Fields = this.v8Fields(
+      current,
+      current.activity,
+      baseMetricFields,
+      baseTimePolicyFields,
+    );
+    const targetV8Fields = this.v8Fields(
+      current,
+      activity,
+      targetMetricFields,
+      targetTimePolicyFields,
+    );
+    const baseSnapshotHash = this.hashTargetV8(
+      current.activity,
+      current.sessions,
+      current.templateVersionId,
+      current.resolvedConfig,
+      current.registrationForm,
+      current.qualificationRuleSets,
+      baseV8Fields,
+    );
+    const unsigned = {
+      schemaVersion: 8 as const,
+      baseWorkflowRevision: current.workflowRevision,
+      baseSnapshotHash,
+      metricSelectionExplicit,
+      timePolicySelectionExplicit,
+      base: {
+        templateVersionId: current.templateVersionId,
+        resolvedConfig: current.resolvedConfig,
+        activity: current.activity,
+        sessions: current.sessions,
+        registrationForm: current.registrationForm,
+        qualificationRuleSets: current.qualificationRuleSets,
+        ...baseV8Fields,
+      },
+      templateVersionId,
+      resolvedConfig,
+      activity,
+      sessions,
+      registrationForm,
+      qualificationRuleSets,
+      ...targetV8Fields,
+    };
+    return { ...unsigned, snapshotHash: sha256(unsigned) };
+  }
+
+  /**
+   * Reads the current immutable selection only for a V8 path.  A missing selection is the one
+   * legitimate legacy shape; every other malformed pointer/hash combination is fail-closed.
+   */
+  private async currentV8TimePolicySelection(
+    tx: PrismaTx,
+    current: CurrentProposalState,
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    revalidate: () => Promise<void> = () => Promise.resolve(),
+  ): Promise<{
+    readonly selectionRevisionId: string;
+    readonly revision: number;
+    readonly selectionHash: string;
+    readonly document: ActivityTimePolicySelectionDocument;
+    readonly fields: ActivityPublishProposalV8TimePolicyFields;
+  } | null> {
+    if (current.timePolicySelection === undefined) {
+      throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_REFERENCE_UNAVAILABLE);
+    }
+    if (current.timePolicySelection === null) return null;
+    try {
+      const document = parseActivityTimePolicySelectionDocument(
+        current.timePolicySelection.selectionJson,
+      );
+      const selectionHash = activityTimePolicySelectionHash(document);
+      if (
+        selectionHash !== current.timePolicySelection.selectionHash ||
+        Object.keys(document.items).length !== current.timePolicySelection.itemCount
+      ) {
+        throw new TypeError('stored V8 selection is inconsistent');
+      }
+      const resolved = await this.resolveV8TimePolicySelection(
+        tx,
+        document,
+        current.timePolicySelection.revision,
+        activity,
+        sessions,
+        revalidate,
+      );
+      return {
+        selectionRevisionId: current.timePolicySelection.id,
+        revision: current.timePolicySelection.revision,
+        selectionHash,
+        document,
+        fields: resolved.fields,
+      };
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_REFERENCE_UNAVAILABLE);
+      }
+      throw error;
+    }
+  }
+
+  private async targetV8TimePolicySelection(
+    tx: PrismaTx,
+    base: {
+      readonly revision: number;
+      readonly document: ActivityTimePolicySelectionDocument;
+      readonly fields: ActivityPublishProposalV8TimePolicyFields;
+    } | null,
+    dto: ChangeReviewDto,
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    revalidate: () => Promise<void>,
+  ): Promise<{
+    readonly fields: ActivityPublishProposalV8TimePolicyFields;
+    readonly explicit: boolean;
+  } | null> {
+    if (dto.timePolicySelectionChanges === undefined) {
+      if (dto.expectedTimePolicySelectionRevision !== undefined) {
+        throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_STALE);
+      }
+      if (base === null) return null;
+      return {
+        fields: (
+          await this.resolveV8TimePolicySelection(
+            tx,
+            base.document,
+            base.revision,
+            activity,
+            sessions,
+            revalidate,
+          )
+        ).fields,
+        explicit: false,
+      };
+    }
+    const expectedRevision = dto.expectedTimePolicySelectionRevision;
+    const currentRevision = base?.revision ?? 0;
+    if (
+      expectedRevision === undefined ||
+      expectedRevision !== currentRevision ||
+      expectedRevision >= 2147483647
+    ) {
+      throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_STALE);
+    }
+    const currentDocument = base?.document ?? emptyActivityTimePolicySelectionDocument();
+    let next: ActivityTimePolicySelectionDocument;
+    try {
+      const changes = dto.timePolicySelectionChanges.map((change) => ({
+        scope: this.resolveV8ChangeScope(sessions, change.scope),
+        // Nested DTOs are class instances on the real HTTP path.  The selection canonicalizer
+        // intentionally accepts only plain JSON, so normalize here just as the standalone PATCH
+        // command does before it hashes the immutable selection document.
+        selection: parseActivityTimePolicySelectionValue(
+          instanceToPlain(change.selection, { exposeUnsetFields: false }),
+        ),
+      }));
+      next = applyActivityTimePolicySelectionChanges(currentDocument, changes);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      throw error;
+    }
+    if (
+      activityTimePolicySelectionHash(next) === activityTimePolicySelectionHash(currentDocument)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_UNCHANGED);
+    }
+    return {
+      fields: (
+        await this.resolveV8TimePolicySelection(
+          tx,
+          next,
+          currentRevision + 1,
+          activity,
+          sessions,
+          revalidate,
+        )
+      ).fields,
+      explicit: true,
+    };
+  }
+
+  private resolveV8ChangeScope(
+    sessions: ProposalSession[],
+    input: ChangeReviewTimePolicySelectionScopeDto,
+  ): ActivityTimePolicySelectionScope {
+    const exactKeys = (expected: readonly string[]): void => {
+      const inputRecord = input as unknown as Record<string, unknown>;
+      const keys = Object.keys(input).filter((key) => inputRecord[key] !== undefined);
+      if (
+        keys.length !== expected.length ||
+        keys.some((key) => !expected.includes(key)) ||
+        expected.some((key) => !keys.includes(key))
+      ) {
+        throw new TypeError('invalid V8 time-policy scope keys');
+      }
+    };
+    if (input.layerCode === 'activity') {
+      exactKeys(['layerCode']);
+      return { layerCode: 'activity', sessionId: null, positionId: null };
+    }
+    const pick = (
+      id: string | undefined,
+      clientRef: string | undefined,
+      field: string,
+    ): { readonly value: string; readonly kind: 'id' | 'clientRef' } => {
+      if ((id === undefined) === (clientRef === undefined)) {
+        throw new TypeError(`V8 ${field} reference is ambiguous`);
+      }
+      return id === undefined
+        ? { value: clientRef!, kind: 'clientRef' }
+        : { value: id, kind: 'id' };
+    };
+    const sessionRef = pick(input.sessionId, input.sessionClientRef, 'session');
+    const session = sessions.find((candidate) =>
+      sessionRef.kind === 'id'
+        ? candidate.sessionId === sessionRef.value
+        : candidate.clientRef === sessionRef.value,
+    );
+    if (!session) throw new TypeError('V8 time-policy session target is unknown');
+    if (input.layerCode === 'session') {
+      exactKeys(['layerCode', sessionRef.kind === 'id' ? 'sessionId' : 'sessionClientRef']);
+      return { layerCode: 'session', sessionId: sessionRef.value, positionId: null };
+    }
+    if (input.layerCode !== 'position') throw new TypeError('unknown V8 time-policy layer');
+    const positionRef = pick(input.positionId, input.positionClientRef, 'position');
+    exactKeys([
+      'layerCode',
+      sessionRef.kind === 'id' ? 'sessionId' : 'sessionClientRef',
+      positionRef.kind === 'id' ? 'positionId' : 'positionClientRef',
+    ]);
+    const position = session.positions.find((candidate) =>
+      positionRef.kind === 'id'
+        ? candidate.positionId === positionRef.value
+        : candidate.clientRef === positionRef.value,
+    );
+    if (!position) throw new TypeError('V8 time-policy position target is unknown');
+    return {
+      layerCode: 'position',
+      sessionId: sessionRef.value,
+      positionId: positionRef.value,
+    };
+  }
+
+  /** Validates and freezes every runtime target after policy/version shared locks. */
+  private async resolveV8TimePolicySelection(
+    tx: PrismaTx,
+    document: ActivityTimePolicySelectionDocument,
+    revision: number,
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    revalidate: () => Promise<void>,
+  ): Promise<{ readonly fields: ActivityPublishProposalV8TimePolicyFields }> {
+    let resolved;
+    try {
+      resolved = resolveActivityTimePolicySelection(
+        document,
+        sessions.map((session) => ({
+          sessionId: this.sessionReference(session),
+          positionIds: session.positions.map((position) => this.positionReference(position)),
+        })),
+      );
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_REFERENCE_UNAVAILABLE);
+      }
+      throw error;
+    }
+    if (resolved.some((entry) => entry.pointer === null || entry.sourceScope === null)) {
+      throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_POLICY_UNAVAILABLE);
+    }
+    const pointers = resolved.map((entry) => entry.pointer!);
+    // This is intentionally after the V7 metric lock in both submit and approval callers.
+    await this.timePolicySelections.assertPointersAvailableWithinTransaction(
+      tx,
+      pointers,
+      revalidate,
+    );
+    const versionIds = [...new Set(pointers.map((pointer) => pointer.versionId))];
+    const versions = versionIds.length
+      ? await tx.timePolicyVersion.findMany({ where: { id: { in: versionIds } } })
+      : [];
+    const versionsById = new Map(versions.map((version) => [version.id, version]));
+    const intervalByScope = this.v8Intervals(activity, sessions);
+    const frozen = resolved.map((entry) => {
+      const pointer = entry.pointer!;
+      const sourceScope = entry.sourceScope!;
+      const interval = intervalByScope.get(this.v8ScopeKey(entry.scope));
+      const version = versionsById.get(pointer.versionId);
+      if (!interval || !version) {
+        throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_POLICY_UNAVAILABLE);
+      }
+      try {
+        const versionDocument = timePolicyVersionDocument(version);
+        if (
+          version.policyId !== pointer.policyId ||
+          versionDocument.definitionHash !== pointer.definitionHash ||
+          version.effectiveFrom > interval.startAt ||
+          (version.effectiveUntil !== null && version.effectiveUntil < interval.endAt)
+        ) {
+          throw new TypeError('time-policy pointer does not cover target interval');
+        }
+      } catch (error) {
+        if (error instanceof TypeError || error instanceof BizException) {
+          throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_POLICY_UNAVAILABLE);
+        }
+        throw error;
+      }
+      return {
+        scope: entry.scope,
+        pointer,
+        evaluatorVersion: 1 as const,
+        sourceScope,
+        effectiveFrom: interval.startAt.toISOString(),
+        effectiveUntil: interval.endAt.toISOString(),
+      };
+    });
+    const selection = parseActivityTimePolicySelectionDocument(document);
+    return {
+      fields: {
+        timePolicyPointers: {
+          schemaVersion: 1,
+          selectionRevision: revision,
+          proposalSelectionHash: activityTimePolicySelectionHash(selection),
+          selection,
+          // The V8 envelope parser normalizes resolved targets by scope key.  Freeze them in
+          // that same order before snapshot hashing, otherwise a real session/position pair
+          // can submit successfully yet fail its own later approval as a false stale snapshot.
+          resolved: [...frozen].sort((left, right) =>
+            activityTimePolicySelectionScopeKey(left.scope).localeCompare(
+              activityTimePolicySelectionScopeKey(right.scope),
+            ),
+          ),
+          referenceKinds: this.v8ReferenceKinds(selection, frozen, sessions),
+        },
+      },
+    };
+  }
+
+  /** Approval owns the actor revalidation; this public wrapper keeps parsing and catalogue
+   * validation in the proposal service so submission and approval cannot drift. */
+  async assertV8TimePolicySnapshotAvailable(
+    tx: PrismaTx,
+    snapshot: ActivityPublishProposalSnapshotV8,
+    revalidate: () => Promise<void>,
+  ): Promise<void> {
+    const fields = this.snapshotV8Fields(snapshot);
+    if (fields.timePolicyPointers === null) {
+      throw new BizException(BizCode.ACTIVITY_TIME_POLICY_SELECTION_POLICY_UNAVAILABLE);
+    }
+    const frozen = await this.resolveV8TimePolicySelection(
+      tx,
+      fields.timePolicyPointers.selection,
+      fields.timePolicyPointers.selectionRevision,
+      snapshot.activity,
+      snapshot.sessions,
+      revalidate,
+    );
+    // `resolveV8TimePolicySelection` deliberately returns the V8 time-policy fragment only;
+    // compare it with the same fragment from the full proposal, not with unrelated V7 fields
+    // such as metric selection and content visibility.
+    if (
+      canonicalize(frozen.fields as unknown as CanonicalValue) !==
+      canonicalize({ timePolicyPointers: fields.timePolicyPointers } as unknown as CanonicalValue)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+  }
+
+  private sessionReference(session: ProposalSession): string {
+    const reference = session.sessionId ?? session.clientRef;
+    if (reference === null) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+    return reference;
+  }
+
+  private positionReference(position: ProposalPosition): string {
+    const reference = position.positionId ?? position.clientRef;
+    if (reference === null) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+    return reference;
+  }
+
+  private v8ScopeKey(scope: ActivityTimePolicySelectionScope): string {
+    return JSON.stringify([scope.layerCode, scope.sessionId, scope.positionId]);
+  }
+
+  private v8Intervals(
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+  ): Map<string, { startAt: Date; endAt: Date }> {
+    const result = new Map<string, { startAt: Date; endAt: Date }>();
+    result.set(this.v8ScopeKey({ layerCode: 'activity', sessionId: null, positionId: null }), {
+      startAt: new Date(activity.startAt),
+      endAt: new Date(activity.endAt),
+    });
+    for (const session of sessions) {
+      const sessionId = this.sessionReference(session);
+      const sessionInterval = {
+        startAt: new Date(session.startAt),
+        endAt: new Date(session.endAt),
+      };
+      result.set(
+        this.v8ScopeKey({ layerCode: 'session', sessionId, positionId: null }),
+        sessionInterval,
+      );
+      for (const position of session.positions) {
+        const positionId = this.positionReference(position);
+        result.set(this.v8ScopeKey({ layerCode: 'position', sessionId, positionId }), {
+          startAt: position.startAt === null ? sessionInterval.startAt : new Date(position.startAt),
+          endAt: position.endAt === null ? sessionInterval.endAt : new Date(position.endAt),
+        });
+      }
+    }
+    return result;
+  }
+
+  private v8ReferenceKinds(
+    selection: ActivityTimePolicySelectionDocument,
+    resolved: readonly {
+      scope: ActivityTimePolicySelectionScope;
+      sourceScope: ActivityTimePolicySelectionScope;
+    }[],
+    sessions: ProposalSession[],
+  ): Readonly<
+    Record<
+      string,
+      { sessionRefKind: 'id' | 'clientRef' | null; positionRefKind: 'id' | 'clientRef' | null }
+    >
+  > {
+    const scopes = new Map<string, ActivityTimePolicySelectionScope>();
+    for (const item of Object.values(selection.items)) {
+      scopes.set(activityTimePolicySelectionScopeKey(item.scope), item.scope);
+    }
+    for (const entry of resolved) {
+      scopes.set(activityTimePolicySelectionScopeKey(entry.scope), entry.scope);
+      scopes.set(activityTimePolicySelectionScopeKey(entry.sourceScope), entry.sourceScope);
+    }
+    const result: Record<
+      string,
+      { sessionRefKind: 'id' | 'clientRef' | null; positionRefKind: 'id' | 'clientRef' | null }
+    > = {};
+    for (const [key, scope] of [...scopes.entries()].sort(([left], [right]) =>
+      left.localeCompare(right),
+    )) {
+      let session: ProposalSession | null = null;
+      if (scope.sessionId !== null) {
+        session =
+          sessions.find(
+            (candidate) =>
+              candidate.sessionId === scope.sessionId || candidate.clientRef === scope.sessionId,
+          ) ?? null;
+        if (session === null) {
+          throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+        }
+      }
+      const position =
+        scope.positionId === null || session === null
+          ? null
+          : session.positions.find(
+              (candidate) =>
+                candidate.positionId === scope.positionId ||
+                candidate.clientRef === scope.positionId,
+            );
+      if (scope.positionId !== null && !position) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      result[key] = {
+        sessionRefKind:
+          scope.sessionId === null
+            ? null
+            : session!.sessionId === scope.sessionId
+              ? 'id'
+              : 'clientRef',
+        positionRefKind:
+          scope.positionId === null
+            ? null
+            : position!.positionId === scope.positionId
+              ? 'id'
+              : 'clientRef',
+      };
+    }
+    return result;
+  }
+
+  private materializeV8Selection(
+    selection: ActivityTimePolicySelectionDocument,
+    referenceKinds: Readonly<
+      Record<
+        string,
+        { sessionRefKind: 'id' | 'clientRef' | null; positionRefKind: 'id' | 'clientRef' | null }
+      >
+    >,
+    sessionIds: ReadonlyMap<string, string>,
+    positionIds: ReadonlyMap<string, string>,
+  ): ActivityTimePolicySelectionDocument {
+    try {
+      const materializeReference = (
+        value: string | null,
+        kind: 'id' | 'clientRef' | null,
+        ids: ReadonlyMap<string, string>,
+        label: 'session' | 'position',
+      ): string | null => {
+        if (value === null) {
+          if (kind !== null) throw new TypeError(`V8 ${label} reference kind has no value`);
+          return null;
+        }
+        if (kind === null) throw new TypeError(`V8 ${label} reference lacks a kind`);
+        const materialized = ids.get(value);
+        if (!materialized) throw new TypeError(`V8 ${label} reference did not materialize`);
+        // Existing IDs must remain an identity mapping. This prevents a clientRef-shaped value
+        // from being silently accepted as an existing row when the proposal is materialised.
+        if (kind === 'id' && materialized !== value) {
+          throw new TypeError(`V8 ${label} id reference materialized to another row`);
+        }
+        return materialized;
+      };
+      const items = Object.values(selection.items).map((item) => {
+        const kinds = referenceKinds[activityTimePolicySelectionScopeKey(item.scope)];
+        if (!kinds) throw new TypeError('V8 selection scope lacks reference kind');
+        const sessionId = materializeReference(
+          item.scope.sessionId,
+          kinds.sessionRefKind,
+          sessionIds,
+          'session',
+        );
+        const positionId = materializeReference(
+          item.scope.positionId,
+          kinds.positionRefKind,
+          positionIds,
+          'position',
+        );
+        return {
+          scope: { layerCode: item.scope.layerCode, sessionId, positionId },
+          selection: item.selection,
+        };
+      });
+      return createActivityTimePolicySelectionDocument(items, { allowTemplate: true });
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      throw error;
+    }
+  }
+
+  private materializeV8Sessions(
+    sessions: ProposalSession[],
+    sessionIds: ReadonlyMap<string, string>,
+    positionIds: ReadonlyMap<string, string>,
+  ): ProposalSession[] {
+    return sessions.map((session) => {
+      const sessionRef = this.sessionReference(session);
+      const sessionId = sessionIds.get(sessionRef);
+      if (!sessionId) throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      return {
+        ...session,
+        sessionId,
+        clientRef: null,
+        positions: session.positions.map((position) => {
+          const positionRef = this.positionReference(position);
+          const positionId = positionIds.get(positionRef);
+          if (!positionId) {
+            throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+          }
+          return { ...position, positionId, clientRef: null };
+        }),
+      };
+    });
+  }
+
   private withoutAllocationMode(
     activity: ProposalActivityInput,
   ): ProposalActivityWithoutAllocationMode {
@@ -1783,6 +2704,35 @@ export class ActivityPublishProposalV2Service {
     });
   }
 
+  private hashTargetV8(
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+    templateVersionId: string | null,
+    resolvedConfig: ActivityTemplateResolution,
+    registrationForm: RegistrationFormTarget | null,
+    qualificationRuleSets: CanonicalQualificationRuleSetsDefinition,
+    v8Fields: ActivityPublishProposalSnapshotV8Fields,
+  ): string {
+    return sha256({
+      activity,
+      sessions,
+      templateVersionId,
+      resolvedConfig,
+      registrationForm,
+      qualificationRuleSets,
+      categoryCode: v8Fields.categoryCode,
+      plannedSemanticAssignments: v8Fields.plannedSemanticAssignments,
+      selectedTemplateVersionId: v8Fields.selectedTemplateVersionId,
+      activityPlaces: v8Fields.activityPlaces,
+      timePolicyPointers: v8Fields.timePolicyPointers,
+      contributionPolicyPointers: v8Fields.contributionPolicyPointers,
+      metricRequirementCode: v8Fields.metricRequirementCode,
+      metricSetPointer: v8Fields.metricSetPointer,
+      metricSelectionRevision: v8Fields.metricSelectionRevision,
+      contentVisibilitySummary: v8Fields.contentVisibilitySummary,
+    });
+  }
+
   private assertSnapshotV6Envelope(snapshot: ActivityPublishProposalSnapshotV6): void {
     const root = snapshot as unknown as Record<string, unknown>;
     const base = root.base;
@@ -1819,6 +2769,34 @@ export class ActivityPublishProposalV2Service {
       !Number.isInteger(root.baseWorkflowRevision) ||
       (root.baseWorkflowRevision as number) < 0 ||
       typeof root.metricSelectionExplicit !== 'boolean' ||
+      typeof root.baseSnapshotHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(root.baseSnapshotHash) ||
+      typeof root.snapshotHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(root.snapshotHash) ||
+      !isStringOrNull(root.templateVersionId) ||
+      !isRecord(root.resolvedConfig) ||
+      !isRecord(root.activity) ||
+      !Array.isArray(root.sessions) ||
+      !isStringOrNull(base.templateVersionId) ||
+      !isRecord(base.resolvedConfig) ||
+      !isRecord(base.activity) ||
+      !Array.isArray(base.sessions)
+    ) {
+      throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+    }
+  }
+
+  private assertSnapshotV8Envelope(snapshot: ActivityPublishProposalSnapshotV8): void {
+    const root = snapshot as unknown as Record<string, unknown>;
+    const base = root.base;
+    if (
+      !hasExactKeys(root, V8_ROOT_KEYS) ||
+      !isRecord(base) ||
+      !hasExactKeys(base, V8_BASE_KEYS) ||
+      !Number.isInteger(root.baseWorkflowRevision) ||
+      (root.baseWorkflowRevision as number) < 0 ||
+      typeof root.metricSelectionExplicit !== 'boolean' ||
+      typeof root.timePolicySelectionExplicit !== 'boolean' ||
       typeof root.baseSnapshotHash !== 'string' ||
       !/^[a-f0-9]{64}$/.test(root.baseSnapshotHash) ||
       typeof root.snapshotHash !== 'string' ||
@@ -1887,6 +2865,24 @@ export class ActivityPublishProposalV2Service {
         metricRequirementCode: value.metricRequirementCode,
         metricSetPointer: value.metricSetPointer,
         metricSelectionRevision: value.metricSelectionRevision,
+      });
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      throw error;
+    }
+  }
+
+  private assertSnapshotV8Fields(
+    value: ActivityPublishProposalSnapshotV8Fields,
+    activity: ProposalActivity,
+  ): void {
+    // V8 retains every V7 field except the old hard-coded `timePolicyPointers: null` invariant.
+    this.assertSnapshotV7Fields({ ...value, timePolicyPointers: null }, activity);
+    try {
+      parseActivityPublishProposalV8TimePolicyFields({
+        timePolicyPointers: value.timePolicyPointers,
       });
     } catch (error) {
       if (error instanceof TypeError) {
@@ -2048,6 +3044,22 @@ export class ActivityPublishProposalV2Service {
     };
   }
 
+  private v8Fields(
+    current: Pick<CurrentProposalState, 'selectedTemplateVersionId' | 'activityPlaces'>,
+    activity: Pick<
+      ProposalActivity,
+      'activityTypeCode' | 'visibilityCode' | 'isPublicRegistration'
+    >,
+    metricFields: ActivityPublishProposalV7MetricFields,
+    timePolicyFields: ActivityPublishProposalV8TimePolicyFields,
+  ): ActivityPublishProposalSnapshotV8Fields {
+    const parsed = parseActivityPublishProposalV8TimePolicyFields(timePolicyFields);
+    return {
+      ...this.v7Fields(current, activity, metricFields),
+      timePolicyPointers: parsed.timePolicyPointers,
+    };
+  }
+
   private snapshotV6Fields(
     snapshot: ActivityPublishProposalSnapshotV6,
   ): ActivityPublishProposalSnapshotV6Fields {
@@ -2080,6 +3092,17 @@ export class ActivityPublishProposalV2Service {
     };
   }
 
+  private snapshotV8Fields(
+    snapshot: ActivityPublishProposalSnapshotV8Fields,
+  ): ActivityPublishProposalSnapshotV8Fields {
+    return {
+      ...this.snapshotV7Fields({ ...snapshot, timePolicyPointers: null }),
+      timePolicyPointers: parseActivityPublishProposalV8TimePolicyFields({
+        timePolicyPointers: snapshot.timePolicyPointers,
+      }).timePolicyPointers,
+    };
+  }
+
   private snapshotV7MetricFields(
     value: Pick<
       ActivityPublishProposalSnapshotV7Fields,
@@ -2091,6 +3114,62 @@ export class ActivityPublishProposalV2Service {
       metricSetPointer: value.metricSetPointer,
       metricSelectionRevision: value.metricSelectionRevision,
     });
+  }
+
+  private assertV8TimePolicyTransition(
+    base: ActivityPublishProposalSnapshotV8Fields,
+    target: ActivityPublishProposalSnapshotV8Fields,
+  ): void {
+    assertActivityPublishProposalV8TimePolicyTransition(
+      { timePolicyPointers: base.timePolicyPointers },
+      { timePolicyPointers: target.timePolicyPointers },
+    );
+  }
+
+  private assertV8TimePolicyTargets(
+    fields: ActivityPublishProposalSnapshotV8Fields,
+    activity: ProposalActivity,
+    sessions: ProposalSession[],
+  ): void {
+    const parsed = parseActivityPublishProposalV8TimePolicyFields({
+      timePolicyPointers: fields.timePolicyPointers,
+    }).timePolicyPointers;
+    if (parsed === null) return;
+    const resolved = resolveActivityTimePolicySelection(
+      parsed.selection,
+      sessions.map((session) => ({
+        sessionId: this.sessionReference(session),
+        positionIds: session.positions.map((position) => this.positionReference(position)),
+      })),
+    );
+    if (resolved.some((entry) => entry.pointer === null || entry.sourceScope === null)) {
+      throw new TypeError('V8 selection leaves a runtime target unresolved');
+    }
+    const intervals = this.v8Intervals(activity, sessions);
+    const expected = resolved
+      .map((entry) => {
+        const interval = intervals.get(this.v8ScopeKey(entry.scope));
+        if (!interval) throw new TypeError('V8 target interval is missing');
+        return {
+          scope: entry.scope,
+          pointer: entry.pointer,
+          evaluatorVersion: 1,
+          sourceScope: entry.sourceScope,
+          effectiveFrom: interval.startAt.toISOString(),
+          effectiveUntil: interval.endAt.toISOString(),
+        };
+      })
+      .sort((left, right) =>
+        activityTimePolicySelectionScopeKey(left.scope).localeCompare(
+          activityTimePolicySelectionScopeKey(right.scope),
+        ),
+      );
+    if (
+      canonicalize(expected as unknown as CanonicalValue) !==
+      canonicalize(parsed.resolved as unknown as CanonicalValue)
+    ) {
+      throw new TypeError('V8 resolved selection does not match its target graph');
+    }
   }
 
   private currentV7MetricSelection(current: CurrentProposalState): {
@@ -2161,7 +3240,9 @@ export class ActivityPublishProposalV2Service {
     }
   }
 
-  private v7MetricSelectionWrites(snapshot: ActivityPublishProposalSnapshotV7): boolean {
+  private v7MetricSelectionWrites(
+    snapshot: ActivityPublishProposalSnapshotV7 | ActivityPublishProposalSnapshotV8,
+  ): boolean {
     try {
       return assertActivityPublishProposalV7MetricTransition(
         this.snapshotV7MetricFields(snapshot.base),

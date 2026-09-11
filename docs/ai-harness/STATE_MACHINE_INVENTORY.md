@@ -1,10 +1,18 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
-## D1-1 当前实施增量（未合并）
+## D1-3 当前实施增量（分支验证中，未合并）
+
+`ActivityTimePolicySelectionItem.mode` 新增 L1 inventory 登记，闭集仅 `inherit` / `explicit`；
+它是创建时的不可变选择方式，不是可流转生命周期。第 119 条 migration 以复合 shape CHECK 与
+同链 trigger 约束指针、版本和哈希；选择明细、选择修订与命令收据均禁止 UPDATE/DELETE，
+不删除业务事实。该闭集嵌在复合约束中，不能按 L1 声明闸冒称 `governed`。当前机读状态列为
+69 项；`docs:boundaries:check` 已通过。下方仍保留各阶段历史记录。
+
+## D1-1 当前实施增量（已合入 #1310）
 
 TimePolicyVersion.statusCode 新增 draft→active→retired 的 L2 inventory 登记；第118条迁移约束新建draft、内容不可变、合法状态时间与永久留存。TimePolicy与命令收据无独立状态列。纯状态判断不是HTTP授权，目录命令留D1-2，不提升governed。w98冷回放与非空升级通过，完整并发/全仓验收仍进行中。
 
-## C3-2 当前实施增量（未提交、未合并）
+## C3-2 当前实施增量（已合入 #1300）
 
 `ActivityOutcomeRevision.statusCode` 维持 draft/confirmed/superseded 闭集与 L2 inventory。
 新增 `(create) -> confirmed` 和 `confirmed -> superseded`；原 C2 draft writer 保留。
@@ -14,15 +22,15 @@ TimePolicyVersion.statusCode 新增 draft→active→retired 的 L2 inventory �
 34 项并发/回滚用例已在 app_test_w98 隔离验证；完整验收、PR CI、整体复审与生产未完成。
 本节覆盖下方历史记录中的“未实施 C3-2”，不将分支实现写成已合并事实。
 
-## C3-1 当前实施增量（未合并）
+## C3-1 当前实施增量（已合入 #1298）
 
 `ActivityMetricCandidate.sourceMode` 新增 L1 inventory 登记，闭集仅 `participation_segments`；
 这是创建后不可变的来源类型，不是成果确认状态。读取时派生的 fresh/stale/unavailable
 不落库、不改变历史候选。第 116 条迁移保存绑定、候选、值、来源及两类命令收据，
 业务事实长期保留，数据库拒绝 UPDATE/DELETE，无清理豁免。未提升 governed，未实施 C3-2。
-机读状态列现为 67 项；`docs:boundaries:check` 已通过。下面仍保留各阶段历史记录。
+本节是历史实施记录；当前机读状态列见上方 D1-3 段落。下面仍保留各阶段历史记录。
 
-## 服务段更正方案 A（实施中）
+## 服务段更正方案 A（已合入 #1296）
 
 新增 pending 与两类收据均无 statusCode，不增加独立状态机，不提升 governed。
 ParticipantServiceSegmentRevision 仍为 draft/committed/superseded；更正 prepare 不再创建正式段，
@@ -53,12 +61,12 @@ commit 在原事务中先替代旧 committed 段、再创建并提交新段。Co
 
 ## 1. 口径与方法(先看这节,否则下面的数会被误读)
 
-| 项 | 口径 |
-|---|---|
-| 总体 | `harness/state-machines.json` 的 56 条 = `prisma/schema.prisma` 中**类型为 `String`** 且列名匹配 `/(status\|state\|stage\|phase\|lifecycle\|mode)(Code)?$/i` 的列(减去 `maritalStatusCode` / `politicalStatusCode` 两个字典属性豁免)。判据在 [`scripts/check-boundaries.ts`](../../scripts/check-boundaries.ts) `stateLikeString()` / `listStringStateColumns()`。 |
-| 闭集"有 DB CHECK" | 指该列存在一条**整体形如** `CHECK ("col" IN (...))` 或 `CHECK ("col" IS NULL OR "col" IN (...))` 的约束。**复合 shape 约束里出现的 `IN (…)` 分支不算**(见 §1.1)。 |
-| 迁移边 | 只记**代码里真的有判定**的边。无判定的一律记 `not-derived`,**不按语义臆造**。 |
-| 层次 | L1 = 配置 / 标注列,取值由配置或 CRUD 决定、无流程语义;L2 = 简单流程(≤3 活跃态、线性或近线性);L3 = 复杂流程(≥4 态,或含审核 / 退回 / 回退语义)。 |
+| 项                | 口径                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 总体              | `harness/state-machines.json` 的 56 条 = `prisma/schema.prisma` 中**类型为 `String`** 且列名匹配 `/(status\|state\|stage\|phase\|lifecycle\|mode)(Code)?$/i` 的列(减去 `maritalStatusCode` / `politicalStatusCode` 两个字典属性豁免)。判据在 [`scripts/check-boundaries.ts`](../../scripts/check-boundaries.ts) `stateLikeString()` / `listStringStateColumns()`。 |
+| 闭集"有 DB CHECK" | 指该列存在一条**整体形如** `CHECK ("col" IN (...))` 或 `CHECK ("col" IS NULL OR "col" IN (...))` 的约束。**复合 shape 约束里出现的 `IN (…)` 分支不算**(见 §1.1)。                                                                                                                                                                                                  |
+| 迁移边            | 只记**代码里真的有判定**的边。无判定的一律记 `not-derived`,**不按语义臆造**。                                                                                                                                                                                                                                                                                      |
+| 层次              | L1 = 配置 / 标注列,取值由配置或 CRUD 决定、无流程语义;L2 = 简单流程(≤3 活跃态、线性或近线性);L3 = 复杂流程(≥4 态,或含审核 / 退回 / 回退语义)。                                                                                                                                                                                                                     |
 
 ### 1.1 ⚠️ 本刀自己踩到的量具缺陷(必须记,否则下轮重犯)
 
@@ -76,11 +84,11 @@ commit 在原事务中先替代旧 committed 段、再创建并提交新段。Co
 
 ## 2. 三层分布
 
-| 层 | 条数 | 含义 | 4-1b 取向 |
-|---|---:|---|---|
+| 层                   |   条数 | 含义                                | 4-1b 取向                     |
+| -------------------- | -----: | ----------------------------------- | ----------------------------- |
 | **L1 配置 / 标注列** | **13** | 无流程语义,边=任意(`unconstrained`) | 只需闭集,**不需要**边与迁移码 |
-| **L2 简单流程** | **19** | ≤3 活跃态,线性/近线性 | 闭集 + 边成本低,可批量 |
-| **L3 复杂流程** | **24** | ≥4 态或含审核/退回/回退 | 真正的治理对象,单条评估 |
+| **L2 简单流程**      | **19** | ≤3 活跃态,线性/近线性               | 闭集 + 边成本低,可批量        |
+| **L3 复杂流程**      | **24** | ≥4 态或含审核/退回/回退             | 真正的治理对象,单条评估       |
 
 > **对 goal 的一处口径偏离(已如实标注)**:goal 把 L1 写作"**配置二态**"。实际有 3 条配置列是 3–4 值
 > (`allocationModeCode` 3 值 / `registrationModeCode` 4 值 / `ActivityAllocationBatch.modeCode` 3 值),
@@ -89,21 +97,21 @@ commit 在原事务中先替代旧 committed 段、再创建并提交新段。Co
 
 ### 2.1 L1 清单(13)
 
-| 列 | 闭集 | 来源 | governedBlockers |
-|---|---|---|---|
-| `Activity.allocationModeCode` | 3 值 | db-check | — |
-| `Activity.registrationModeCode` | 4 值 | db-check | — |
-| `ActivityAllocationBatch.modeCode` | 3 值 | db-check | — |
-| `ActivityReservedQuotaGroup.fallbackMode` | 2 值 | db-check | — |
-| `ActivityTemplate.defaultRegistrationModeCode` | 未声明 | undeclared | no-db-check |
-| `AttendanceRecord.attendanceStatusCode` | 字典 | dictionary | no-db-check, dictionary-driven |
-| `AttendanceSettlementVersion.returnFromStage` | 2 值 | db-check | — |
-| `AttendanceSheet.returnedFromStageCode` | 2 值 | db-check | — |
-| `Organization.establishmentStatusCode` | 字典 | dictionary | no-db-check, dictionary-driven |
-| `QualificationEvaluationSnapshot.evaluationPhaseCode` | 3 值 | db-check | — |
-| `RecruitmentApplication.eliminationStage` | 4 值 | ts-constant | no-db-check, retired-value-in-set |
-| `SettlementReviewAction.stageCode` | 2 值 | db-check | — |
-| `TeamJoinApplication.eliminationStage` | 3 值 | ts-constant | no-db-check |
+| 列                                                    | 闭集   | 来源        | governedBlockers                  |
+| ----------------------------------------------------- | ------ | ----------- | --------------------------------- |
+| `Activity.allocationModeCode`                         | 3 值   | db-check    | —                                 |
+| `Activity.registrationModeCode`                       | 4 值   | db-check    | —                                 |
+| `ActivityAllocationBatch.modeCode`                    | 3 值   | db-check    | —                                 |
+| `ActivityReservedQuotaGroup.fallbackMode`             | 2 值   | db-check    | —                                 |
+| `ActivityTemplate.defaultRegistrationModeCode`        | 未声明 | undeclared  | no-db-check                       |
+| `AttendanceRecord.attendanceStatusCode`               | 字典   | dictionary  | no-db-check, dictionary-driven    |
+| `AttendanceSettlementVersion.returnFromStage`         | 2 值   | db-check    | —                                 |
+| `AttendanceSheet.returnedFromStageCode`               | 2 值   | db-check    | —                                 |
+| `Organization.establishmentStatusCode`                | 字典   | dictionary  | no-db-check, dictionary-driven    |
+| `QualificationEvaluationSnapshot.evaluationPhaseCode` | 3 值   | db-check    | —                                 |
+| `RecruitmentApplication.eliminationStage`             | 4 值   | ts-constant | no-db-check, retired-value-in-set |
+| `SettlementReviewAction.stageCode`                    | 2 值   | db-check    | —                                 |
+| `TeamJoinApplication.eliminationStage`                | 3 值   | ts-constant | no-db-check                       |
 
 两个 `eliminationStage` 是**淘汰原因标注**(仅 rejected 时记),不是生命周期列 —— 归 L1 是刻意的。
 
@@ -122,52 +130,52 @@ commit 在原事务中先替代旧 committed 段、再创建并提交新段。Co
 
 ### 2.3 L3 清单(24)
 
-| 列 | 闭集 | 有专属状态机? | governedBlockers |
-|---|---:|---|---|
-| `Activity.statusCode` | 5 | ✅ | no-db-check |
-| `ActivityRegistration.statusCode` | 5 | ✅ | no-db-check, vocabulary-divergence |
-| `AttendanceSheet.statusCode` | 6 | ✅ | no-db-check |
-| `ActivityPublishReview.status` | 5 | ✅ | decision-shape-divergence |
-| `ActivityParticipationIdentity.currentStatusCode` | 14 | 部分 | edges-partially-derived, impl-scattered, vocabulary-divergence |
-| `ActivityParticipationRevision.statusCode` | 14 | 部分 | throws-instead-of-decide, edges-partially-derived |
-| `ActivityBatchJob.statusCode` | 7 | ❌ | edges-not-derived, no-state-machine, no-wrong-state-bizcode |
-| `ActivityBatchJobItem.statusCode` | 3 | ❌ | +closed-set-undeclared, no-db-check |
-| `ActivityInvitation.statusCode` | 5 | ❌ | edges-not-derived, no-state-machine |
-| `AttendanceCorrectionRequest.statusCode` | 7 | ❌ | edges-not-derived, no-state-machine |
-| `AttendanceSettlementRun.statusCode` | 9 | ❌ | edges-not-derived, no-state-machine |
-| `AttendanceSettlementVersion.statusCode` | 5 | ❌ | edges-not-derived, no-state-machine |
-| `CorrectionApplication.statusCode` | 4 | ❌ | edges-not-derived, no-state-machine |
-| `LedgerPostingBatch.statusCode` | 5 | ❌ | edges-not-derived, no-state-machine |
-| `StorageObject.state` | 10 | ❌ | +no-wrong-state-bizcode |
-| `StorageObjectOperation.status` | 4 | ❌ | +no-wrong-state-bizcode |
-| `StorageObjectOperation.effectState` | 6 | ❌ | +no-wrong-state-bizcode |
-| `Certificate.certStatusCode` | 4 | ❌ | +no-db-check, no-wrong-state-bizcode |
-| `Content.statusCode` | 3 | ❌ | no-db-check, edges-not-derived, no-state-machine |
-| `Notification.statusCode` | 3 | ❌ | no-db-check, edges-not-derived, no-state-machine |
-| `NotificationOutboxIntent.status` | 4 | ❌ | +closed-set-undeclared, no-wrong-state-bizcode |
-| `RecruitmentApplication.statusCode` | 8 | ❌ | +retired-value-in-set, duplicate-constant-definition |
-| `TeamJoinApplication.statusCode` | 5 | ❌ | no-db-check, edges-not-derived, no-state-machine |
-| `WecomAuthAttempt.status` | 5 | ❌ | +no-wrong-state-bizcode |
+| 列                                                | 闭集 | 有专属状态机? | governedBlockers                                               |
+| ------------------------------------------------- | ---: | ------------- | -------------------------------------------------------------- |
+| `Activity.statusCode`                             |    5 | ✅            | no-db-check                                                    |
+| `ActivityRegistration.statusCode`                 |    5 | ✅            | no-db-check, vocabulary-divergence                             |
+| `AttendanceSheet.statusCode`                      |    6 | ✅            | no-db-check                                                    |
+| `ActivityPublishReview.status`                    |    5 | ✅            | decision-shape-divergence                                      |
+| `ActivityParticipationIdentity.currentStatusCode` |   14 | 部分          | edges-partially-derived, impl-scattered, vocabulary-divergence |
+| `ActivityParticipationRevision.statusCode`        |   14 | 部分          | throws-instead-of-decide, edges-partially-derived              |
+| `ActivityBatchJob.statusCode`                     |    7 | ❌            | edges-not-derived, no-state-machine, no-wrong-state-bizcode    |
+| `ActivityBatchJobItem.statusCode`                 |    3 | ❌            | +closed-set-undeclared, no-db-check                            |
+| `ActivityInvitation.statusCode`                   |    5 | ❌            | edges-not-derived, no-state-machine                            |
+| `AttendanceCorrectionRequest.statusCode`          |    7 | ❌            | edges-not-derived, no-state-machine                            |
+| `AttendanceSettlementRun.statusCode`              |    9 | ❌            | edges-not-derived, no-state-machine                            |
+| `AttendanceSettlementVersion.statusCode`          |    5 | ❌            | edges-not-derived, no-state-machine                            |
+| `CorrectionApplication.statusCode`                |    4 | ❌            | edges-not-derived, no-state-machine                            |
+| `LedgerPostingBatch.statusCode`                   |    5 | ❌            | edges-not-derived, no-state-machine                            |
+| `StorageObject.state`                             |   10 | ❌            | +no-wrong-state-bizcode                                        |
+| `StorageObjectOperation.status`                   |    4 | ❌            | +no-wrong-state-bizcode                                        |
+| `StorageObjectOperation.effectState`              |    6 | ❌            | +no-wrong-state-bizcode                                        |
+| `Certificate.certStatusCode`                      |    4 | ❌            | +no-db-check, no-wrong-state-bizcode                           |
+| `Content.statusCode`                              |    3 | ❌            | no-db-check, edges-not-derived, no-state-machine               |
+| `Notification.statusCode`                         |    3 | ❌            | no-db-check, edges-not-derived, no-state-machine               |
+| `NotificationOutboxIntent.status`                 |    4 | ❌            | +closed-set-undeclared, no-wrong-state-bizcode                 |
+| `RecruitmentApplication.statusCode`               |    8 | ❌            | +retired-value-in-set, duplicate-constant-definition           |
+| `TeamJoinApplication.statusCode`                  |    5 | ❌            | no-db-check, edges-not-derived, no-state-machine               |
+| `WecomAuthAttempt.status`                         |    5 | ❌            | +no-wrong-state-bizcode                                        |
 
 **24 条 L3 里只有 6 条有专属状态机**(其中 2 条只覆盖部分边)—— 这是本刀最重要的单条读数。
 
 ## 3. governedBlockers 聚合(决定 4-1b 守什么)
 
-| blocker | 命中 | 含义 |
-|---|---:|---|
-| `no-wrong-state-bizcode` | **25** | 非法迁移没有专属 BizCode(报通用错或不报) |
-| `no-db-check` | **22** | 闭集只活在应用层,DB 不兜底 |
-| `edges-not-derived` | **20** | 合法迁移边没有任何机器可读声明 |
-| `no-state-machine` | **18** | 无具名状态机模块,判定散在 service 裸 `if/throw` |
-| `closed-set-undeclared` | 5 | 连一个具名常量/数组都没有,只有散落字面量 |
-| `edges-partially-derived` | 2 | 有判定但只覆盖部分边 |
-| `vocabulary-divergence` | 2 | 姊妹列同概念不同拼法(见 §5.1) |
-| `dictionary-driven` | 2 | 闭集在 DictItem 表里,不在代码/DB 约束里 |
-| `retired-value-in-set` | 2 | 闭集含自述"已退役、不再写入"的值 |
-| `impl-scattered` | 1 | 同一列的边散在多个 command service |
-| `throws-instead-of-decide` | 1 | 直接 `throw` 而非返回 decision(与其余机范式相反) |
-| `decision-shape-divergence` | 1 | 返回字段名与同族机不一致 |
-| `duplicate-constant-definition` | 1 | 同一闭集成员在两处独立定义(见 §5.2) |
+| blocker                         |   命中 | 含义                                             |
+| ------------------------------- | -----: | ------------------------------------------------ |
+| `no-wrong-state-bizcode`        | **25** | 非法迁移没有专属 BizCode(报通用错或不报)         |
+| `no-db-check`                   | **22** | 闭集只活在应用层,DB 不兜底                       |
+| `edges-not-derived`             | **20** | 合法迁移边没有任何机器可读声明                   |
+| `no-state-machine`              | **18** | 无具名状态机模块,判定散在 service 裸 `if/throw`  |
+| `closed-set-undeclared`         |      5 | 连一个具名常量/数组都没有,只有散落字面量         |
+| `edges-partially-derived`       |      2 | 有判定但只覆盖部分边                             |
+| `vocabulary-divergence`         |      2 | 姊妹列同概念不同拼法(见 §5.1)                    |
+| `dictionary-driven`             |      2 | 闭集在 DictItem 表里,不在代码/DB 约束里          |
+| `retired-value-in-set`          |      2 | 闭集含自述"已退役、不再写入"的值                 |
+| `impl-scattered`                |      1 | 同一列的边散在多个 command service               |
+| `throws-instead-of-decide`      |      1 | 直接 `throw` 而非返回 decision(与其余机范式相反) |
+| `decision-shape-divergence`     |      1 | 返回字段名与同族机不一致                         |
+| `duplicate-constant-definition` |      1 | 同一闭集成员在两处独立定义(见 §5.2)              |
 
 **9 条零 blocker**(4-1b 可最先升 `governed` 的候选):`Activity.allocationModeCode` ·
 `Activity.registrationModeCode` · `ActivityAllocationBatch.modeCode` · `ActivityReservedQuotaGroup.fallbackMode` ·
@@ -184,16 +192,16 @@ commit 在原事务中先替代旧 committed 段、再创建并提交新段。Co
 
 ## 4. 8 个既有状态机的形状差异(约 5 种形状,零共享抽象)
 
-| # | 文件 | 形状 | 治理的列 |
-|---|---|---|---|
-| 1 | `activities/activity-state-machine.ts` | **A**:`@Injectable` class,`decide(action, status='')` → `{allowed,nextStatusCode}\|{allowed,biz}` | `Activity.statusCode` |
-| 2 | `attendances/attendance-sheet-state-machine.ts` | **A**(status 必填) | `AttendanceSheet.statusCode` |
-| 3 | `activity-registrations/activity-registration-state-machine.ts` | **A** + 另导出等价自由函数 `decideActivityRegistrationTransition` | `ActivityRegistration.statusCode` |
-| 4 | `activities/activity-publish-review-state-machine.ts` | **A′**:同签名,但返回 **`nextStatus`** 而非 `nextStatusCode`,且 `status` 可选 | `ActivityPublishReview.status` |
-| 5 | `activity-registrations/onsite-participation-state-machine.ts` | **B**:自由函数,**无 action 参数**,只判一条边;返回 `{allowed,nextStatusCode}\|{allowed:false}`(**无 biz**) | `ActivityParticipationIdentity.currentStatusCode` |
-| 6 | `activity-registrations/participation-revision-state-machine.ts` | **C**:自由函数,**直接 `throw BizException`**;另一个返回 `{kind:'append'\|'noop'}`(不是 allowed/next) | `ActivityParticipationRevision.statusCode` |
-| 7 | `member-departments/membership-term-state-machine.ts` | **D**:全 `static` 方法,入参是 `{status,startedAt,endedAt}` **对象**不是 status 串;直接 `throw`;抛**通用 `BizCode.BAD_REQUEST`** | `MemberOrganizationMembership.status`(**enum,不在登记表内**) |
-| 8 | `recruitment/recruitment-certificate-claim-state-machine.ts` | **E**:一组 `assert*` 自由函数(直接 `throw`)+ 派生计算 `recalcApplicationStatusForThresholds` | `RecruitmentCertificateClaim.status`(**enum,不在登记表内**) |
+| #   | 文件                                                             | 形状                                                                                                                            | 治理的列                                                     |
+| --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| 1   | `activities/activity-state-machine.ts`                           | **A**:`@Injectable` class,`decide(action, status='')` → `{allowed,nextStatusCode}\|{allowed,biz}`                               | `Activity.statusCode`                                        |
+| 2   | `attendances/attendance-sheet-state-machine.ts`                  | **A**(status 必填)                                                                                                              | `AttendanceSheet.statusCode`                                 |
+| 3   | `activity-registrations/activity-registration-state-machine.ts`  | **A** + 另导出等价自由函数 `decideActivityRegistrationTransition`                                                               | `ActivityRegistration.statusCode`                            |
+| 4   | `activities/activity-publish-review-state-machine.ts`            | **A′**:同签名,但返回 **`nextStatus`** 而非 `nextStatusCode`,且 `status` 可选                                                    | `ActivityPublishReview.status`                               |
+| 5   | `activity-registrations/onsite-participation-state-machine.ts`   | **B**:自由函数,**无 action 参数**,只判一条边;返回 `{allowed,nextStatusCode}\|{allowed:false}`(**无 biz**)                       | `ActivityParticipationIdentity.currentStatusCode`            |
+| 6   | `activity-registrations/participation-revision-state-machine.ts` | **C**:自由函数,**直接 `throw BizException`**;另一个返回 `{kind:'append'\|'noop'}`(不是 allowed/next)                            | `ActivityParticipationRevision.statusCode`                   |
+| 7   | `member-departments/membership-term-state-machine.ts`            | **D**:全 `static` 方法,入参是 `{status,startedAt,endedAt}` **对象**不是 status 串;直接 `throw`;抛**通用 `BizCode.BAD_REQUEST`** | `MemberOrganizationMembership.status`(**enum,不在登记表内**) |
+| 8   | `recruitment/recruitment-certificate-claim-state-machine.ts`     | **E**:一组 `assert*` 自由函数(直接 `throw`)+ 派生计算 `recalcApplicationStatusForThresholds`                                    | `RecruitmentCertificateClaim.status`(**enum,不在登记表内**)  |
 
 **共用 `decide(action, status)` 的是 #1–#4 四个**(与 goal 预判一致),但其中 #4 的返回字段名就已经和另外三个不一致 ——
 即"四个同签名"只在**入参**上成立,**出参**已经分叉。#5–#8 各是一种形状。
@@ -234,20 +242,20 @@ commit 在原事务中先替代旧 committed 段、再创建并提交新段。Co
 
 22 条无闭集 CHECK 的列中,**下列 L3 流程列的闭集完全没有 DB 兜底** —— 直连 SQL 或绕过应用的写入可以写进任意字符串:
 
-| 列 | 表 | 闭集只在 |
-|---|---|---|
-| `Activity.statusCode` | `Activity` | `activity-state-machine.ts` |
-| `ActivityRegistration.statusCode` | `activity_registrations` | `ACTIVITY_REGISTRATION_STATUS` 常量 |
-| `AttendanceSheet.statusCode` | `attendance_sheets` | `ATTENDANCE_SHEET_STATUS` 常量 |
-| `Content.statusCode` | `contents` | `CONTENT_STATUSES` 常量 |
-| `Notification.statusCode` | `notifications` | `NOTIFICATION_STATUSES` 常量 |
-| `RecruitmentApplication.statusCode` | `recruitment_applications` | `APP_STATUS_*` 散常量(且被定义两次,见 §5.2) |
-| `TeamJoinApplication.statusCode` | `team_join_applications` | `APP_STATUS_*` 散常量 |
-| `Certificate.certStatusCode` | `Certificate` | `CERT_STATUS_CODES`(DTO 内 **非导出**常量) |
-| `WecomAuthAttempt.status` | `wecom_auth_attempts` | `WECOM_ATTEMPT_STATUS` 常量 |
-| `NotificationOutboxIntent.status` | `notification_outbox_intents` | `OUTBOX_STATUS_*` 四个散常量,**无聚合数组** |
-| `ActivityBatchJobItem.statusCode` | `ActivityBatchJobItem` | 仅 service 内散落字面量,**无任何具名常量** |
-| `MemberInsurance.reviewStatusCode` | `member_insurances` | 仅 `default 'pending'` + 散落字面量 |
+| 列                                  | 表                            | 闭集只在                                    |
+| ----------------------------------- | ----------------------------- | ------------------------------------------- |
+| `Activity.statusCode`               | `Activity`                    | `activity-state-machine.ts`                 |
+| `ActivityRegistration.statusCode`   | `activity_registrations`      | `ACTIVITY_REGISTRATION_STATUS` 常量         |
+| `AttendanceSheet.statusCode`        | `attendance_sheets`           | `ATTENDANCE_SHEET_STATUS` 常量              |
+| `Content.statusCode`                | `contents`                    | `CONTENT_STATUSES` 常量                     |
+| `Notification.statusCode`           | `notifications`               | `NOTIFICATION_STATUSES` 常量                |
+| `RecruitmentApplication.statusCode` | `recruitment_applications`    | `APP_STATUS_*` 散常量(且被定义两次,见 §5.2) |
+| `TeamJoinApplication.statusCode`    | `team_join_applications`      | `APP_STATUS_*` 散常量                       |
+| `Certificate.certStatusCode`        | `Certificate`                 | `CERT_STATUS_CODES`(DTO 内 **非导出**常量)  |
+| `WecomAuthAttempt.status`           | `wecom_auth_attempts`         | `WECOM_ATTEMPT_STATUS` 常量                 |
+| `NotificationOutboxIntent.status`   | `notification_outbox_intents` | `OUTBOX_STATUS_*` 四个散常量,**无聚合数组** |
+| `ActivityBatchJobItem.statusCode`   | `ActivityBatchJobItem`        | 仅 service 内散落字面量,**无任何具名常量**  |
+| `MemberInsurance.reviewStatusCode`  | `member_insurances`           | 仅 `default 'pending'` + 散落字面量         |
 
 前 5 行正是 goal 点名的老核心表(activities / activity_registrations / attendance_sheets / contents / notifications),
 **实测确认它们零状态闭集 CHECK**。这与"新表(2026-08 起)大量带 CHECK"形成对照:34 条有 CHECK 的列绝大多数属于
@@ -309,10 +317,10 @@ commit 在原事务中先替代旧 committed 段、再创建并提交新段。Co
 判据的优先级由 §3.1 的实测决定,不是拍脑袋:**先守闭集是错的**(闭集已有 34/56 被 DB 兜住,
 而边有 20 条零机器声明),所以门槛的核心是**边与实现映射**。
 
-| 类 | 管什么 | 阻断? | 载体 |
-|---|---|---|---|
-| **A**(登记完整性 + `governed` 声明闸) | 逐条字段完备性;`governanceStatus` 只认 `inventory` \| `governed`;声明 `governed` 必须拿得出 `governedEvidence` | **是** | `pnpm docs:boundaries:check`(`--metadata`),CI `Architecture governance A-metadata gate` 内,**无 `|| true`** |
-| **B**(存量分布 / 升格候选) | `stateGovernance` 报告块:分层分布、blocker 直方图、空绿面读数 | 否(恒 report) | `pnpm docs:boundaries`(`--violations`),CI 内被 `|| true` 兜住 |
+| 类                                    | 管什么                                                                                                         | 阻断?         | 载体                                                                                                |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------- | --- | ---------- |
+| **A**(登记完整性 + `governed` 声明闸) | 逐条字段完备性;`governanceStatus` 只认 `inventory` \| `governed`;声明 `governed` 必须拿得出 `governedEvidence` | **是**        | `pnpm docs:boundaries:check`(`--metadata`),CI `Architecture governance A-metadata gate` 内,\*\*无 ` |     | true`\*\*  |
+| **B**(存量分布 / 升格候选)            | `stateGovernance` 报告块:分层分布、blocker 直方图、空绿面读数                                                  | 否(恒 report) | `pnpm docs:boundaries`(`--violations`),CI 内被 `                                                    |     | true` 兜住 |
 
 **`governedEvidence` 是新增的可选字段**,只有 `governed` 才要求;`inventory` 条目**禁止携带**
 (半截声明 / 陈旧证据会让下一个人误以为门槛已经过了)。因为它对既有 56 条全是可选的、
@@ -333,8 +341,8 @@ goal 原写的 ①「实现模块路径可解析」**对 L1 套错了对象**:13
 - **L2 / L3 流程列**(`edgeModel: "enumerated"`):
   ① `implementationFile` 是存在的 `src/**.ts`,`implementationSymbol` 在该文件里**真有顶层声明**;
   ② `edges` 逐条 `{from,to,action?}`,端点 ⊆ 闭集,并**双向对账**:
-     正向 —— 每个端点 / 动作必须是该模块里的**字符串字面量**(堵「登记表写了、代码里没有」);
-     反向 —— 该模块里出现的、属于本列闭集的字面量必须被某条边覆盖(堵「只登了一半的边」);
+  正向 —— 每个端点 / 动作必须是该模块里的**字符串字面量**(堵「登记表写了、代码里没有」);
+  反向 —— 该模块里出现的、属于本列闭集的字面量必须被某条边覆盖(堵「只登了一半的边」);
   ③ `wrongStateBizCodes` 非空,且每条都是 `BizCode` 里**真实存在**的成员。
 
 三处实现细节直接**承接 §1.1 记录的量具缺陷**,不是重新发明:
@@ -359,22 +367,22 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-09-10(Activity OS R4 / D1-1 当前实施分支，未合并)**
+**取数时点:2026-09-11(Activity OS R4 / D1-3 当前实施分支，未合并)**
 
-| 项 | 值 |
-|---|---:|
-| 总条目 | **68** |
-| `governed` / `inventory` | **8 / 60** |
-| 60 条 inventory 的分层 | L1 **8** · L2 **26** · L3 **26** |
-| 已有机器可读边(`transitions` 是数组)※ | 29 |
-| `transitions: "not-derived"` ※ | 26 |
-| `transitions: "unconstrained"` ※ | 13 |
+| 项                                    |                               值 |
+| ------------------------------------- | -------------------------------: |
+| 总条目                                |                           **69** |
+| `governed` / `inventory`              |                       **8 / 61** |
+| 61 条 inventory 的分层                | L1 **9** · L2 **26** · L3 **26** |
+| 已有机器可读边(`transitions` 是数组)※ |                               30 |
+| `transitions: "not-derived"` ※        |                               26 |
+| `transitions: "unconstrained"` ※      |                               13 |
 
-> ※ 这三行按**全部 68 条**统计(29+26+13=68),不是按上一行那 60 条 inventory。
+> ※ 这三行按**全部 69 条**统计(30+26+13=69),不是按上一行那 61 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
-| **`vacuousGreenIfClosedSetOnly`** | **24** |
-| 零 blocker 但仍 inventory 的升格候选 | **3** |
+> | **`vacuousGreenIfClosedSetOnly`** | **24** |
+> | 零 blocker 但仍 inventory 的升格候选 | **3** |
 
 > 🔴 **历史 true-up、A2 增补、A3 与本次 A7 落地要分开读**:
 >
@@ -452,6 +460,12 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用。它不写指标集 `statusCode`、不增加状态边、不改变两条 inventory/governed 读数。内部 Readiness
 > 只读识别 V3 与当前选择语义，也不成为状态机 writer 或发布 Gate。PR CI、可信审批和合并后 main CI 已通过；
 > 整体跨模型复审仍待统一完成。⑧–⑩ 是当时的历史取数，现以本条为准。
+
+> **⑫ D1-3 当前读数变化（分支验证中）**：新增
+> `ActivityTimePolicySelectionItem.mode` 一条 L1 inventory；总条目 68→69、inventory 60→61、
+> inventory L1 8→9、数组边 29→30。`inherit` / `explicit` 的合法性还依赖政策指针、版本和哈希的
+> 复合形状约束，因此登记 `closed-set-is-embedded-in-composite-shape-check`，不升 `governed`。
+> 选择明细不可变，不存在状态转换或业务数据清理入口。
 
 blocker 直方图(2026-09-05 现算;含 A3 future-Version 条件生命周期、A7、B6 D2 与 C1 D1):`no-wrong-state-bizcode` 30 ·
 `no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·
@@ -549,13 +563,13 @@ never appears as a string literal in src/modules/activities/ledger-preparation.s
 这是**补真相,不是放宽** —— 它此前是 `inventory`、不执行任何判据,补 blocker 不解除任何约束,
 只让机器字段与 §10.6 的散文对上。A/B 读数(`pnpm docs:boundaries`):
 
-| 读数 | 补之前 | 补之后 |
-|---|---|---|
-| `upgradeCandidates` | `["ParticipantSettlementResultRevision.statusCode"]` | `[]` |
-| `blockerHistogram["impl-scattered"]` | 1 | 2 |
-| `byStatus`(`governed` / `inventory`) | 8 / 50 | 8 / 50(不变) |
-| `--violations` findings 总数 | 634 | 634(不变) |
-| `pnpm docs:boundaries:check` | exit 0 | exit 0 |
+| 读数                                 | 补之前                                               | 补之后       |
+| ------------------------------------ | ---------------------------------------------------- | ------------ |
+| `upgradeCandidates`                  | `["ParticipantSettlementResultRevision.statusCode"]` | `[]`         |
+| `blockerHistogram["impl-scattered"]` | 1                                                    | 2            |
+| `byStatus`(`governed` / `inventory`) | 8 / 50                                               | 8 / 50(不变) |
+| `--violations` findings 总数         | 634                                                  | 634(不变)    |
+| `pnpm docs:boundaries:check`         | exit 0                                               | exit 0       |
 
 ⇒ **Phase 4 当前的真实升格候选 = 0 条。** 「50 条 inventory 里有 1 条够得着门槛」这句话
 从今天起不成立;要恢复候选,只能靠**还债**(收口散落实现 / 回填 DB CHECK / 补 wrong-state 码),

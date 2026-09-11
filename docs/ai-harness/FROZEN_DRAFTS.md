@@ -1,6 +1,6 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **D1-3 精确计划方案 A 已确认（2026-09-11）**：[140路径计划](../plans/activity-os-r4-d1-3-implementation-plan.md)已获方案确认，允许八份文档补充changelog、提交、推送及创建计划PR；不合并、不实施。选择/冻结尚未落地，不增加本台账落地度；本轮无归档或计数变更。此条覆盖下方历史起草授权状态。
+> **D1-3 实施分支（2026-09-11，验证中、未建 PR）**：维护者已确认完整方案 A；四层时长政策选择、模板 V4、提案 V8、Readiness、批准冻结、受控变更、三张不可变表与第 119 条 migration 已写入当前分支。当前为 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃。3b 已重签；4b 尚待维护者按新读数重签。隔离库 E2E / contract、PR CI、合并、生产和 Gate 均未完成；不删除业务数据。此条覆盖下方 D1-3 的历史起草授权状态。
 
 > **D1-2 已合并并完成主干验证（2026-09-11）**：目录实施 [#1312](https://github.com/BA7IEE/srvf-nest-api/pull/1312) 合入 `c037073b`；合并后测试库初始化失败已由 [#1313](https://github.com/BA7IEE/srvf-nest-api/pull/1313) 修复，当前 main `ba100c1e` 的 [CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34498288827) 成功。修复保留全部断言，隔离顺序回归为旧测试 5/5、D1-2 并发 11/11；修复 PR 五个 E2E 分片均通过。154 模型、118 迁移、620 端点、260 权限、166 审计总计/161 活跃不变。此前“实施中/尚未合并/本分支待合并”均为历史时点，不再代表当前状态。维护者已确认 D1-3 精确计划方案 A，允许本轮八份文档补充 changelog、提交、推送和创建计划 PR；不合并、不实施；D1-3、D2–D8、生产和 Gate 未实施，整个 D1 尚未完成。
 
@@ -51,17 +51,17 @@
 > **落地度列开头的 `` `↔…` `` 是给判据 6 读的对照标记**,不是装饰 —— 它声明本行与
 > `NEXT_TASKS.md` 同编号条目的状态行**是不是同一把尺子**。取值与写法见 [§4](#4-这份台账由什么守着)。
 
-| # | 冻结稿 | 台账 | 落地度 | 卡在谁 |
-|---|---|---|---|---|
-| 1 | Integration Foundation v1 T0 | P1-30 | `↔进行中` **1 / 8 PR**(PR1 schema 已交付 2026-08-28) | 维护者 2026-08-28 拍板开工(条件②③齐、④建议级;`D-IF-2` 的「上线后」理由已于 2026-08-20 换成四条件表,见 NEXT_TASKS P1-30) |
-| 2 | RBAC 权限目录终态 | P1-32 | `↔进行中 7/9` **完整落地 7 / 9 PR**(PR 4 两半齐全;PR 5 已合 #1175;PR 8 **只落了前一半**) | 剩 PR 6–7(都等前端 srvf-admin-web 投用)+ PR 8 后一半「Permission 写 CRUD 退役」待维护者拍板 |
-| 3 | 活动业务 v1.1 合同(6 份) | P1-28 | `↔进行中` 8 批:6 批主体完 / 2 批部分 | 施工中 |
-| 4 | 架构治理 v4(3 份) | P1-29 | `↔另尺(NEXT_TASKS 的 P1-29 条目只覆盖 Phase 0,本行覆盖 v4 全 11 阶段)` 11 阶段:6 个完 + Phase 6 部分 | 施工中 |
-| 5 | 企业微信 T0 | P1-25 | `↔⏸ 挂起` 代码 100%,运维 0% | 备案 |
-| 6 | 证书标准库 T0(2 份) | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分 | 维护者执行 |
-| 7 | D-INSURANCE v3 | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0% | 运维窗口 |
-| 8 | 活动责任闭环 v2 | — | `↔无台账` 代码 100%,闸未开 | 维护者执行 |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 已完成相应仓内实施；C4 #1304、C5 #1307 已合并，C5 main CI 34451593463 通过；D1 仅评审起草 | 原紧急创建 500 根因未定位；整体跨模型复审、Release 4 及后续、前端发布、生产部署和 Gate 切换未完成 |
+| #   | 冻结稿                       | 台账  | 落地度                                                                                                                                                             | 卡在谁                                                                                                                  |
+| --- | ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| 1   | Integration Foundation v1 T0 | P1-30 | `↔进行中` **1 / 8 PR**(PR1 schema 已交付 2026-08-28)                                                                                                               | 维护者 2026-08-28 拍板开工(条件②③齐、④建议级;`D-IF-2` 的「上线后」理由已于 2026-08-20 换成四条件表,见 NEXT_TASKS P1-30) |
+| 2   | RBAC 权限目录终态            | P1-32 | `↔进行中 7/9` **完整落地 7 / 9 PR**(PR 4 两半齐全;PR 5 已合 #1175;PR 8 **只落了前一半**)                                                                           | 剩 PR 6–7(都等前端 srvf-admin-web 投用)+ PR 8 后一半「Permission 写 CRUD 退役」待维护者拍板                             |
+| 3   | 活动业务 v1.1 合同(6 份)     | P1-28 | `↔进行中` 8 批:6 批主体完 / 2 批部分                                                                                                                               | 施工中                                                                                                                  |
+| 4   | 架构治理 v4(3 份)            | P1-29 | `↔另尺(NEXT_TASKS 的 P1-29 条目只覆盖 Phase 0,本行覆盖 v4 全 11 阶段)` 11 阶段:6 个完 + Phase 6 部分                                                               | 施工中                                                                                                                  |
+| 5   | 企业微信 T0                  | P1-25 | `↔⏸ 挂起` 代码 100%,运维 0%                                                                                                                                        | 备案                                                                                                                    |
+| 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                                                       | 维护者执行                                                                                                              |
+| 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                                                        | 运维窗口                                                                                                                |
+| 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                                                         | 维护者执行                                                                                                              |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 已完成相应仓内实施；C4 #1304、C5 #1307 已合并，C5 main CI 34451593463 通过；D1 仅评审起草 | 原紧急创建 500 根因未定位；整体跨模型复审、Release 4 及后续、前端发布、生产部署和 Gate 切换未完成                       |
 
 ### 1.1 欠代码的五项
 
@@ -252,12 +252,12 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 
 ### 1.2 欠运维的四项(代码都写完了)
 
-| 冻结稿 | 还差什么 |
-|---|---|
-| **企业微信 T0** | 后台配置 / 凭证录入 / `migrate deploy` / 开 `loginEnabled`+`messageEnabled` / 工作台实跑 / 签两张 GO 单。⏸ 卡备案;之后还有一轮总评审才谈开关 |
+| 冻结稿                         | 还差什么                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **企业微信 T0**                | 后台配置 / 凭证录入 / `migrate deploy` / 开 `loginEnabled`+`messageEnabled` / 工作台实跑 / 签两张 GO 单。⏸ 卡备案;之后还有一轮总评审才谈开关                 |
 | **证书标准库 T0 + amendments** | ① 第 67 migration(**不可逆**,DROP 七列)生产未部署 ② 首批标准:法规定义的那批已内置 seed(业余无线电 A/B/C,2026-08-25 拍板),**队内认定的仍未建** ③ 前端适配未做 |
-| **D-INSURANCE v3** | PR3 `INSURANCE_ENFORCEMENT_ENABLED` 未启用、PR4 migration 未 deploy;开关前须证明旧 server=0、禁混跑 |
-| **活动责任闭环 v2** | `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 生产未开;legacy 认领须业务负责人逐条指定(禁止从 `publishedBy` 猜) |
+| **D-INSURANCE v3**             | PR3 `INSURANCE_ENFORCEMENT_ENABLED` 未启用、PR4 migration 未 deploy;开关前须证明旧 server=0、禁混跑                                                          |
+| **活动责任闭环 v2**            | `ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED` 生产未开;legacy 认领须业务负责人逐条指定(禁止从 `publishedBy` 猜)                                                 |
 
 > 这四项的**代码侧**是否真的到位,由 §2 末条读数(三条开关是否在配置里)给地板证明;
 > **是否开启**属现实运维态,机器判不了,恒以 `current-state.md` §1 / §4 为准。
@@ -276,10 +276,10 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **260** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **262** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 68** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 69** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
@@ -304,131 +304,131 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 发现某行定性错了,**直接改那一行**,不必走评审 —— 本闸保证的是"没有未分类项"与"读数不过期",
 **不保证历史定性正确**。`open` 那 16 份是本次逐条核过的。
 
-| 文件 | 分类 | 去向 / 理由 |
-|---|---|---|
-| `docs/archive/reviews/activity-os-t0-terminal-review.md` | open · P1-33 | Activity OS T0-A 冻结合同；T0-B、Release 1 A1–A8 与 Release 2 B1–B7 仓内实施已落地，前端发布、生产 Gate 与 Release 3 C1 及后续仍待独立推进 |
-| `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md` | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md` | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md` | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a4-explicit-template-version-review.md` | landed · P1-33 | Release 1 / A4 D 档显式 Template Version 指针纯 expand；已随 #1244 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a5-fallback-read-projection-review.md` | landed · P1-33 | Release 1 / A5 显式 Template Version fallback / 只读投影；已随 #1246 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a6-from-template-transaction-review.md` | landed · P1-33 | Release 1 / A6 内部从模板创建事务；已随 #1248 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md` | landed · P1-33 | Release 1 / A7 Series 与手工／按需生成；已随 #1251 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r1-a8-contract-handoff-e2e-gate-review.md` | landed · P1-33 | Release 1 / A8 contract、handoff、No-AI E2E 与 Gate 关闭态；已随 #1254 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r2-b1-place-review.md` | landed · P1-33 | Release 2 / B1 PlacePreset 与 ActivityPlace 的 D 档存储地基；已随 #1257 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r2-b2-coordinate-projection-review.md` | landed · P1-33 | Release 2 / B2 坐标系与旧字段兼容投影；已随 #1259 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r2-b3-form-blueprint-review.md` | landed · P1-33 | Release 2 / B3 模板报名表蓝图复制与数据治理；已随 #1261 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r2-b4-publish-readiness-review.md` | landed · P1-33 | Release 2 / B4 确定性、只读、gate-off 的发布就绪评审与 implementation 写集预算；已随 #1264 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md` | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改 |
-| `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md` | landed · P1-33 | Release 2 / B6 三种创建 API；方案 A 的 D1 数据地基与 D2 三种完整创建、紧急召集流程已分别随 #1270/#1272 合入，评审稿冻结不回改；不代表生产部署 |
-| `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md` | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用 |
-| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md` | open · P1-33 | Release 3 / C1 的 D1/D2a/D2b/D2c 已分别随 #1278/#1280/#1282/#1284 合入；D2c PR CI、可信审批与 main CI 均通过，C1 整体跨模型复审仍待统一完成，原冻结稿不回改 |
-| `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md` | open · P1-33 | C1 D2 方案 A 已批准；D2a/D2b/D2c 已随 #1280/#1282/#1284 合入并验证，3b/4b 已重签，D2c PR CI、可信审批与 main CI 均通过；C1 整体跨模型复审仍待统一完成 |
-| `docs/archive/reviews/activity-os-r3-c2-outcome-value-revision-review.md` | open · P1-33 | C2 D1/D2 已随 #1289/#1293 合入，人工读写、修订及附件活动归属已验证；整体跨模型复审仍待统一完成，故总评审保持 open，不回改历史冻结稿 |
-| `docs/archive/plans/activity-os-r3-c2-d1-implementation-plan.md` | landed · P1-33 | D1 三表、第 113 条 migration、纯值校验及获批验证已随 #1289 合入，3b 已重签；#1290 诊断后最终 main CI 通过，旧 500 根因仍未定位；D2/生产/Gate 不在已完成范围 |
-| `docs/archive/reviews/activity-os-r3-c2-d2-manual-outcome-review.md` | open · P1-33 | D2 人工草稿／修订、独立收据、附件归属已随 #1293 合入，PR 与 main CI 均通过；实现已完成，整体跨模型复审仍待统一完成，历史评审不回改 |
-| `docs/archive/plans/activity-os-r3-c2-d2-implementation-plan.md` | landed · P1-33 | D2 implementation 及后续精确扩展已随 #1293 合入 7f4fdbd7；3b/4b、18 项 PR 检查、可信审批及 main CI 34118403784 通过。人工修订／历史读面已交付，整体跨模型复审、C3、生产与 Gate 未完成 |
-| `docs/archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md` | open · P1-33 | 方案 A 已获批准，评审随 #1294 合入 2bfb0031，main CI 34125401003 通过；C3-1 在独立分支实施中，已完成隔离迁移、候选与锁交错定向验证；C3-2 尚未实施，PR/整体复审/生产仍待后续阶段 |
-| `docs/archive/reviews/activity-service-segment-correction-conflict-review.md` | open · P1-33 | 方案文档 #1295、实现 #1296 已合入 main `638fc784`；暂存、事务内物化、准备／清理收据及受控 CLI 已交付，115 条 migration 的 3b 已重签，全部 PR CI 与可信审批通过。保留 open：整体复审、生产与真实清理未执行；C3-1 正在独立分支验证，不启用 Gate |
-| `docs/archive/plans/activity-os-r3-c1-d2a-implementation-plan.md` | landed · P1-33 | D2a Human 目录维护、收据、RBAC 事务参数及获批清理/治理扩展已随 #1280 合入；3b/4b、18 项 PR 检查、可信审批和 main CI 均通过，不代表生产部署；冻结稿不回改 |
-| `docs/archive/plans/activity-os-r3-c1-d2b-implementation-plan.md` | landed · P1-33 | D2b 及后续精确扩展、契约误报申报、三份旧测试适配已获批准并随 #1282 合入 `f5b5b226`；112 migrations、252 权限、Audit 161 总计 / 156 活跃，3b/4b、18 项 PR 检查、可信审批与 main CI 均通过；未生产部署，冻结稿不回改 |
-| `docs/archive/plans/activity-os-r3-c1-d2c-implementation-plan.md` | landed · P1-33 | D2b 台账更正、implementation 方案 A、app_test deploy 核验及 app_test_w1/app_test_w98 隔离验证已获精确授权；v7、旧版兼容、指标 Readiness、V3 识别已随 #1284 合入。PR CI、可信审批及 main CI 均通过；未授权生产操作，整体跨模型复审仍待收口 |
-| `docs/archive/plans/api-client-boundary-design-period.md` | superseded | 设计期 v0,被 api-surface-policy 取代 |
-| `docs/archive/plans/api-client-boundary-migration-plan.md` | landed | 五 surface 边界已成型 |
-| `docs/archive/plans/architecture-v2-first-stage-blueprint.md` | superseded | archived historical material |
-| `docs/archive/plans/first-release-bizcode-mapping.md` | superseded | 契约真相已改为 handoff/ + openapi.json |
-| `docs/archive/plans/first-release-bootstrap-sop.md` | superseded | current-state 明标已漂移勿用;改用 ops/server-deployment-runbook.md |
-| `docs/archive/plans/first-release-frontend-scope.md` | landed | 第一版联调范围已交付 |
-| `docs/archive/plans/first-release-readiness-plan.md` | report | 第一版上线前规划总账,非技术方案 |
-| `docs/archive/plans/harness-3.0-blueprint.md` | landed | P1–P7 全量落地 |
-| `docs/archive/plans/harness-3.0-p3-rule-classification.md` | report | 恒读层重写的语义零放宽证明附件 |
-| `docs/archive/plans/harness-3.0-rule-enforcement-matrix.md` | landed | P2/P3 施工依据,已随蓝图落地 |
-| `docs/archive/plans/system-foundation-governance-period.md` | superseded | 治理期已退场归档 |
-| `docs/archive/plans/v1.3-plan.md` | landed | V1.3 契约加固已落 |
-| `docs/archive/plans/v1.4-prisma7-evaluation.md` | report | 只评估,明确不升级 |
-| `docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md` | report | V2 设计期候选模型草案 |
-| `docs/archive/plans/v2-design-phase/srvf-foundation-interview-brief.md` | report | V2 设计期访谈清单 |
-| `docs/archive/plans/v2-design-phase/srvf-foundation-research.md` | report | V2 设计期研究文档 |
-| `docs/archive/plans/v2-design-phase/tasks.md` | superseded | TASKS.md V2 设计期段落归档 |
-| `docs/archive/plans/v2-first-stage-plan.md` | landed | V2 第一阶段已落 |
-| `docs/archive/reviews/activity-business-overhaul-v1.1-lock-probe.md` | report | 万人 member lock 实测报告 |
-| `docs/archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md` | open · P1-28 | 修订件 v1.1.1;冲突以它为准 |
-| `docs/archive/reviews/activity-business-overhaul-v1.1/README.md` | open · P1-28 | 合同目录索引 |
-| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务全流程修正方案_正式版_v1.1.md` | open · P1-28 | 业务合同正文;AC/ADV 编号定义源 |
-| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务全流程改造_详细开发文档_v1.1.md` | open · P1-28 | 开发合同正文;§14 分 0–7 批 |
-| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务文档_v1.1_修订说明.md` | open · P1-28 | 合同修订说明,与正文并列生效 |
-| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务文档_系统性对抗性复核报告_v1.0.md` | report | 合同对抗性复核报告 |
-| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务规则_355项追踪矩阵_v1.1.md` | open · P1-28 | 355 项规则追踪矩阵 |
-| `docs/archive/reviews/activity-feedback-t0-review.md` | landed | activity-feedbacks 模块已上 |
-| `docs/archive/reviews/activity-positions-t0-review.md` | landed | positions / 时段已上 |
-| `docs/archive/reviews/activity-responsibility-workflow-v2-review.md` | open · - | 代码已落;ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED 生产未开,legacy 认领待业务负责人逐条指定 |
-| `docs/archive/reviews/activity-self-checkin-t0-review.md` | landed | activity-check-in-location-policy 等已上 |
-| `docs/archive/reviews/activity-waitlist-t0-review.md` | landed | 候补递补链已上 |
-| `docs/archive/reviews/admin-api-fe-integration-roadmap.md` | landed | F1–F5 全量落地(#502–#506) |
-| `docs/archive/reviews/api-client-boundary-inventory.md` | report | Phase 0 客户端边界盘点 |
-| `docs/archive/reviews/api-client-boundary-phase-1-review.md` | landed | Swagger tag + path alias 已落 |
-| `docs/archive/reviews/app-api-p2-2-profile-review.md` | landed | P2-2 已落 |
-| `docs/archive/reviews/app-api-p2-3-password-review.md` | landed | P2-3 已落 |
-| `docs/archive/reviews/app-api-p2-4-activities-review.md` | landed | P2-4 已落 |
-| `docs/archive/reviews/app-api-p2-5-registrations-review.md` | landed | P2-5 已落 |
-| `docs/archive/reviews/app-api-p2-6-attendance-records-review.md` | landed | P2-6 已落 |
-| `docs/archive/reviews/app-api-p2-7-my-certificates-review.md` | landed | P2-7 已落 |
-| `docs/archive/reviews/app-api-phase-2-review.md` | landed | App API Phase 2 已落 |
-| `docs/archive/reviews/app-permission-boundary-review.md` | report | Phase 0.5 专项盘点 |
-| `docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-09.md` | open · P1-29 | 维护者拍板纪要(Phase 0) |
-| `docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-13.md` | open · P1-29 | 维护者拍板纪要(Phase 5) |
-| `docs/archive/reviews/architecture-governance-v4/README.md` | open · P1-29 | Phase 0–8;6-B / 7 未完,8 条件触发 |
-| `docs/archive/reviews/auth-session-linearization-v0.60-review.md` | landed | v0.60 remediation 已落 |
-| `docs/archive/reviews/certificate-standard-library-t0-amendments.md` | open · P1-24 | post-freeze 修正,与冻结稿并列生效 |
-| `docs/archive/reviews/certificate-standard-library-t0-review.md` | open · P1-24 | 代码全落;剩 migration 67 部署 / 首批初始化 / 前端适配 |
-| `docs/archive/reviews/code-architecture-boundary-review.md` | report | Phase 0.7 设计期盘点 |
-| `docs/archive/reviews/concurrency-write-path-audit-codex.md` | report | 并发写路径审计(跨模型) |
-| `docs/archive/reviews/concurrency-write-path-audit.md` | report | 并发写路径审计(report-only) |
-| `docs/archive/reviews/content-module-review.md` | landed | CMS 第 28 模块已上 |
-| `docs/archive/reviews/data-access-lifecycle-boundary-review.md` | report | Phase 0.6 专项盘点 |
-| `docs/archive/reviews/department-data-scope-v0.49.0-review.md` | landed | v0.49.0 已发 |
-| `docs/archive/reviews/expiry-reminder-attendance-reopen-v0.47.0-review.md` | landed | v0.47.0 已发 |
-| `docs/archive/reviews/first-release-p0d-change-my-password-review.md` | landed | #115–#118 已落 |
-| `docs/archive/reviews/first-release-p0e-refresh-token-review.md` | landed | refresh 轮换已落并冻结 |
-| `docs/archive/reviews/first-release-p0f-pr2-config-rbac-review.md` | landed | P0-F PR-2 已落 |
-| `docs/archive/reviews/first-release-p0f-pr3-users-rbac-review.md` | landed | P0-F PR-3 已落 |
-| `docs/archive/reviews/first-release-p0f-pr4-audit-logs-rbac-review.md` | landed | P0-F PR-4 已落 |
-| `docs/archive/reviews/full-repo-fifth-review-v0.57.0.md` | report | 第五轮全仓 review |
-| `docs/archive/reviews/full-repo-first-principles-adversarial-review-v0.38.0.md` | report | 第三轮全仓 review |
-| `docs/archive/reviews/full-repo-fourth-review-v0.56.0.md` | report | 第四轮全仓 review |
-| `docs/archive/reviews/full-repo-systematic-review-v0.26.0.md` | report | 第一轮全仓 review |
-| `docs/archive/reviews/full-repo-systematic-review-v0.34.0.md` | report | 第二轮全仓 review |
-| `docs/archive/reviews/harness-2.0-t0-review.md` | landed | Harness 2.0 已落,后被 3.0 接续 |
-| `docs/archive/reviews/identity-session-p0-step-up-logout-review.md` | landed | step-up + refresh-family logout 已落 |
-| `docs/archive/reviews/insurance-module-review.md` | open · P1-10 | PR1–PR4 代码已交付;PR3 enable + PR4 deploy 待运维窗口 |
-| `docs/archive/reviews/integration-foundation-v1-t0-terminal-review.md` | open · P1-30 | PR1 已交付(2026-08-28);余 PR2–PR8 严格串行 |
-| `docs/archive/reviews/jwt-ttl-startup-validation-v0.60-review.md` | landed | v0.60 已落 |
-| `docs/archive/reviews/log-query-redaction-v0.60-review.md` | landed | v0.60 已落 |
-| `docs/archive/reviews/member-account-loop-v2-review.md` | landed | P1-18 队员账号闭环已落 |
-| `docs/archive/reviews/member-notification-review.md` | landed | GAP-005 S1–S5 已发;余项诉求触发 |
-| `docs/archive/reviews/openapi-http-parity-v0.60-review.md` | landed | v0.60 已落 |
-| `docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md` | landed | PR1–PR12 + 摘码微刀全序列已落 |
-| `docs/archive/reviews/password-reset-by-sms-review.md` | landed | 短信找回密码已落 |
-| `docs/archive/reviews/postgresql-consistency-hardening-review.md` | landed | D-ORG/SMS/RBAC/Throttle/Outbox 五条全落 |
-| `docs/archive/reviews/pre-go-live-readiness-review-v0.35.0.md` | report | 上线前就绪审计 |
-| `docs/archive/reviews/queue-b-otp-birthday-infra-review.md` | landed | Storage 迁移 / SMS retention / OTP / 生日祝福已落 |
-| `docs/archive/reviews/rbac-permission-catalog-t0-review.md` | open · P1-32 | PR0–PR8 九项,已落 PR 0/1/2/3(4 只落 4a) |
-| `docs/archive/reviews/recruitment-ocr-anti-forgery-enrichment-review.md` | landed | 鉴伪字段已落 |
-| `docs/archive/reviews/recruitment-phase1-review.md` | landed | P1-11 招新一期已落 |
-| `docs/archive/reviews/recruitment-phase1-systematic-review.md` | report | 招新一期开报名前终检 |
-| `docs/archive/reviews/recruitment-phase2-review.md` | landed | P1-12 招新二期已落 |
-| `docs/archive/reviews/recruitment-phase3-review.md` | landed | P1-13 招新三期已落 |
-| `docs/archive/reviews/recruitment-phase4-loop-optimization-review.md` | landed | 闭环优化各切片已落(v0.41–v0.43) |
-| `docs/archive/reviews/recruitment-realname-ocr-review.md` | landed | 腾讯云 OCR 改造已落 |
-| `docs/archive/reviews/recruitment-usability-closeout-review.md` | landed | v0.41.0 可用性收口已落 |
-| `docs/archive/reviews/security-concurrency-hardening-review-v0.44.0.md` | landed | v0.44.0 已发 |
-| `docs/archive/reviews/slow4-rbac-business-face-review.md` | landed | P1-3 Slow-4 已落 |
-| `docs/archive/reviews/sms-verification-infra-review.md` | landed | 验证码基础设施已落 |
-| `docs/archive/reviews/storage-bootstrap-recovery-v0.60-review.md` | landed | v0.60 已落 |
-| `docs/archive/reviews/systematic-security-hardening-review-v0.45-v0.46.md` | landed | v0.45–v0.46 四统一收口已落 |
-| `docs/archive/reviews/unified-notification-dispatcher-review.md` | landed | 统一派发已落 |
-| `docs/archive/reviews/wechat-mini-login-review.md` | landed | P1-8 小程序登录已落 |
-| `docs/archive/reviews/wecom-integration-t0-terminal-review.md` | open · P1-25 | 代码全落;T6 全部是维护者动作,卡备案 |
+| 文件                                                                                                  | 分类           | 去向 / 理由                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；T0-B、Release 1 A1–A8 与 Release 2 B1–B7 仓内实施已落地，前端发布、生产 Gate 与 Release 3 C1 及后续仍待独立推进                                                                                                    |
+| `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md`                                  | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改                                                                                                                                                       |
+| `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md`                            | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改                                                                                                                                                                |
+| `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md`                      | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改                                                                                                                                             |
+| `docs/archive/reviews/activity-os-r1-a4-explicit-template-version-review.md`                          | landed · P1-33 | Release 1 / A4 D 档显式 Template Version 指针纯 expand；已随 #1244 合入，评审稿冻结不回改                                                                                                                                                     |
+| `docs/archive/reviews/activity-os-r1-a5-fallback-read-projection-review.md`                           | landed · P1-33 | Release 1 / A5 显式 Template Version fallback / 只读投影；已随 #1246 合入，评审稿冻结不回改                                                                                                                                                   |
+| `docs/archive/reviews/activity-os-r1-a6-from-template-transaction-review.md`                          | landed · P1-33 | Release 1 / A6 内部从模板创建事务；已随 #1248 合入，评审稿冻结不回改                                                                                                                                                                          |
+| `docs/archive/reviews/activity-os-r1-a7-series-generation-review.md`                                  | landed · P1-33 | Release 1 / A7 Series 与手工／按需生成；已随 #1251 合入，评审稿冻结不回改                                                                                                                                                                     |
+| `docs/archive/reviews/activity-os-r1-a8-contract-handoff-e2e-gate-review.md`                          | landed · P1-33 | Release 1 / A8 contract、handoff、No-AI E2E 与 Gate 关闭态；已随 #1254 合入，评审稿冻结不回改                                                                                                                                                 |
+| `docs/archive/reviews/activity-os-r2-b1-place-review.md`                                              | landed · P1-33 | Release 2 / B1 PlacePreset 与 ActivityPlace 的 D 档存储地基；已随 #1257 合入，评审稿冻结不回改                                                                                                                                                |
+| `docs/archive/reviews/activity-os-r2-b2-coordinate-projection-review.md`                              | landed · P1-33 | Release 2 / B2 坐标系与旧字段兼容投影；已随 #1259 合入，评审稿冻结不回改                                                                                                                                                                      |
+| `docs/archive/reviews/activity-os-r2-b3-form-blueprint-review.md`                                     | landed · P1-33 | Release 2 / B3 模板报名表蓝图复制与数据治理；已随 #1261 合入，评审稿冻结不回改                                                                                                                                                                |
+| `docs/archive/reviews/activity-os-r2-b4-publish-readiness-review.md`                                  | landed · P1-33 | Release 2 / B4 确定性、只读、gate-off 的发布就绪评审与 implementation 写集预算；已随 #1264 合入，评审稿冻结不回改                                                                                                                             |
+| `docs/archive/reviews/activity-os-r2-b5-snapshot-v6-review.md`                                        | landed · P1-33 | Release 2 / B5 v6 canonical、历史兼容、最小化泄露与 C 档 implementation 写集预算；已随 #1267 合入，评审稿冻结不回改                                                                                                                           |
+| `docs/archive/reviews/activity-os-r2-b6-creation-apis-review.md`                                      | landed · P1-33 | Release 2 / B6 三种创建 API；方案 A 的 D1 数据地基与 D2 三种完整创建、紧急召集流程已分别随 #1270/#1272 合入，评审稿冻结不回改；不代表生产部署                                                                                                 |
+| `docs/archive/reviews/activity-os-r2-b7-control-plane-rollout-review.md`                              | landed · P1-33 | Release 2 / B7 仓内三态 Gate、App 状态契约与前端交接已随 #1275 合入并验证；workflow 变更经维护者确认按 D 档执行，原冻结稿不回改；不代表前端发布或生产 Gate 启用                                                                               |
+| `docs/archive/reviews/activity-os-r3-c1-metric-definition-set-review.md`                              | open · P1-33   | Release 3 / C1 的 D1/D2a/D2b/D2c 已分别随 #1278/#1280/#1282/#1284 合入；D2c PR CI、可信审批与 main CI 均通过，C1 整体跨模型复审仍待统一完成，原冻结稿不回改                                                                                   |
+| `docs/archive/reviews/activity-os-r3-c1-d2-metric-catalogue-selection-review.md`                      | open · P1-33   | C1 D2 方案 A 已批准；D2a/D2b/D2c 已随 #1280/#1282/#1284 合入并验证，3b/4b 已重签，D2c PR CI、可信审批与 main CI 均通过；C1 整体跨模型复审仍待统一完成                                                                                         |
+| `docs/archive/reviews/activity-os-r3-c2-outcome-value-revision-review.md`                             | open · P1-33   | C2 D1/D2 已随 #1289/#1293 合入，人工读写、修订及附件活动归属已验证；整体跨模型复审仍待统一完成，故总评审保持 open，不回改历史冻结稿                                                                                                           |
+| `docs/archive/plans/activity-os-r3-c2-d1-implementation-plan.md`                                      | landed · P1-33 | D1 三表、第 113 条 migration、纯值校验及获批验证已随 #1289 合入，3b 已重签；#1290 诊断后最终 main CI 通过，旧 500 根因仍未定位；D2/生产/Gate 不在已完成范围                                                                                   |
+| `docs/archive/reviews/activity-os-r3-c2-d2-manual-outcome-review.md`                                  | open · P1-33   | D2 人工草稿／修订、独立收据、附件归属已随 #1293 合入，PR 与 main CI 均通过；实现已完成，整体跨模型复审仍待统一完成，历史评审不回改                                                                                                            |
+| `docs/archive/plans/activity-os-r3-c2-d2-implementation-plan.md`                                      | landed · P1-33 | D2 implementation 及后续精确扩展已随 #1293 合入 7f4fdbd7；3b/4b、18 项 PR 检查、可信审批及 main CI 34118403784 通过。人工修订／历史读面已交付，整体跨模型复审、C3、生产与 Gate 未完成                                                         |
+| `docs/archive/reviews/activity-os-r3-c3-automatic-metrics-confirmation-review.md`                     | open · P1-33   | 方案 A 已获批准，评审随 #1294 合入 2bfb0031，main CI 34125401003 通过；C3-1 在独立分支实施中，已完成隔离迁移、候选与锁交错定向验证；C3-2 尚未实施，PR/整体复审/生产仍待后续阶段                                                               |
+| `docs/archive/reviews/activity-service-segment-correction-conflict-review.md`                         | open · P1-33   | 方案文档 #1295、实现 #1296 已合入 main `638fc784`；暂存、事务内物化、准备／清理收据及受控 CLI 已交付，115 条 migration 的 3b 已重签，全部 PR CI 与可信审批通过。保留 open：整体复审、生产与真实清理未执行；C3-1 正在独立分支验证，不启用 Gate |
+| `docs/archive/plans/activity-os-r3-c1-d2a-implementation-plan.md`                                     | landed · P1-33 | D2a Human 目录维护、收据、RBAC 事务参数及获批清理/治理扩展已随 #1280 合入；3b/4b、18 项 PR 检查、可信审批和 main CI 均通过，不代表生产部署；冻结稿不回改                                                                                      |
+| `docs/archive/plans/activity-os-r3-c1-d2b-implementation-plan.md`                                     | landed · P1-33 | D2b 及后续精确扩展、契约误报申报、三份旧测试适配已获批准并随 #1282 合入 `f5b5b226`；112 migrations、252 权限、Audit 161 总计 / 156 活跃，3b/4b、18 项 PR 检查、可信审批与 main CI 均通过；未生产部署，冻结稿不回改                            |
+| `docs/archive/plans/activity-os-r3-c1-d2c-implementation-plan.md`                                     | landed · P1-33 | D2b 台账更正、implementation 方案 A、app_test deploy 核验及 app_test_w1/app_test_w98 隔离验证已获精确授权；v7、旧版兼容、指标 Readiness、V3 识别已随 #1284 合入。PR CI、可信审批及 main CI 均通过；未授权生产操作，整体跨模型复审仍待收口     |
+| `docs/archive/plans/api-client-boundary-design-period.md`                                             | superseded     | 设计期 v0,被 api-surface-policy 取代                                                                                                                                                                                                          |
+| `docs/archive/plans/api-client-boundary-migration-plan.md`                                            | landed         | 五 surface 边界已成型                                                                                                                                                                                                                         |
+| `docs/archive/plans/architecture-v2-first-stage-blueprint.md`                                         | superseded     | archived historical material                                                                                                                                                                                                                  |
+| `docs/archive/plans/first-release-bizcode-mapping.md`                                                 | superseded     | 契约真相已改为 handoff/ + openapi.json                                                                                                                                                                                                        |
+| `docs/archive/plans/first-release-bootstrap-sop.md`                                                   | superseded     | current-state 明标已漂移勿用;改用 ops/server-deployment-runbook.md                                                                                                                                                                            |
+| `docs/archive/plans/first-release-frontend-scope.md`                                                  | landed         | 第一版联调范围已交付                                                                                                                                                                                                                          |
+| `docs/archive/plans/first-release-readiness-plan.md`                                                  | report         | 第一版上线前规划总账,非技术方案                                                                                                                                                                                                               |
+| `docs/archive/plans/harness-3.0-blueprint.md`                                                         | landed         | P1–P7 全量落地                                                                                                                                                                                                                                |
+| `docs/archive/plans/harness-3.0-p3-rule-classification.md`                                            | report         | 恒读层重写的语义零放宽证明附件                                                                                                                                                                                                                |
+| `docs/archive/plans/harness-3.0-rule-enforcement-matrix.md`                                           | landed         | P2/P3 施工依据,已随蓝图落地                                                                                                                                                                                                                   |
+| `docs/archive/plans/system-foundation-governance-period.md`                                           | superseded     | 治理期已退场归档                                                                                                                                                                                                                              |
+| `docs/archive/plans/v1.3-plan.md`                                                                     | landed         | V1.3 契约加固已落                                                                                                                                                                                                                             |
+| `docs/archive/plans/v1.4-prisma7-evaluation.md`                                                       | report         | 只评估,明确不升级                                                                                                                                                                                                                             |
+| `docs/archive/plans/v2-design-phase/srvf-foundation-data-model-draft.md`                              | report         | V2 设计期候选模型草案                                                                                                                                                                                                                         |
+| `docs/archive/plans/v2-design-phase/srvf-foundation-interview-brief.md`                               | report         | V2 设计期访谈清单                                                                                                                                                                                                                             |
+| `docs/archive/plans/v2-design-phase/srvf-foundation-research.md`                                      | report         | V2 设计期研究文档                                                                                                                                                                                                                             |
+| `docs/archive/plans/v2-design-phase/tasks.md`                                                         | superseded     | TASKS.md V2 设计期段落归档                                                                                                                                                                                                                    |
+| `docs/archive/plans/v2-first-stage-plan.md`                                                           | landed         | V2 第一阶段已落                                                                                                                                                                                                                               |
+| `docs/archive/reviews/activity-business-overhaul-v1.1-lock-probe.md`                                  | report         | 万人 member lock 实测报告                                                                                                                                                                                                                     |
+| `docs/archive/reviews/activity-business-overhaul-v1.1/AMENDMENTS-v1.1.1.md`                           | open · P1-28   | 修订件 v1.1.1;冲突以它为准                                                                                                                                                                                                                    |
+| `docs/archive/reviews/activity-business-overhaul-v1.1/README.md`                                      | open · P1-28   | 合同目录索引                                                                                                                                                                                                                                  |
+| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务全流程修正方案_正式版_v1.1.md`     | open · P1-28   | 业务合同正文;AC/ADV 编号定义源                                                                                                                                                                                                                |
+| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务全流程改造_详细开发文档_v1.1.md`   | open · P1-28   | 开发合同正文;§14 分 0–7 批                                                                                                                                                                                                                    |
+| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务文档_v1.1_修订说明.md`             | open · P1-28   | 合同修订说明,与正文并列生效                                                                                                                                                                                                                   |
+| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务文档_系统性对抗性复核报告_v1.0.md` | report         | 合同对抗性复核报告                                                                                                                                                                                                                            |
+| `docs/archive/reviews/activity-business-overhaul-v1.1/SRVF_活动业务规则_355项追踪矩阵_v1.1.md`        | open · P1-28   | 355 项规则追踪矩阵                                                                                                                                                                                                                            |
+| `docs/archive/reviews/activity-feedback-t0-review.md`                                                 | landed         | activity-feedbacks 模块已上                                                                                                                                                                                                                   |
+| `docs/archive/reviews/activity-positions-t0-review.md`                                                | landed         | positions / 时段已上                                                                                                                                                                                                                          |
+| `docs/archive/reviews/activity-responsibility-workflow-v2-review.md`                                  | open · -       | 代码已落;ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED 生产未开,legacy 认领待业务负责人逐条指定                                                                                                                                                    |
+| `docs/archive/reviews/activity-self-checkin-t0-review.md`                                             | landed         | activity-check-in-location-policy 等已上                                                                                                                                                                                                      |
+| `docs/archive/reviews/activity-waitlist-t0-review.md`                                                 | landed         | 候补递补链已上                                                                                                                                                                                                                                |
+| `docs/archive/reviews/admin-api-fe-integration-roadmap.md`                                            | landed         | F1–F5 全量落地(#502–#506)                                                                                                                                                                                                                     |
+| `docs/archive/reviews/api-client-boundary-inventory.md`                                               | report         | Phase 0 客户端边界盘点                                                                                                                                                                                                                        |
+| `docs/archive/reviews/api-client-boundary-phase-1-review.md`                                          | landed         | Swagger tag + path alias 已落                                                                                                                                                                                                                 |
+| `docs/archive/reviews/app-api-p2-2-profile-review.md`                                                 | landed         | P2-2 已落                                                                                                                                                                                                                                     |
+| `docs/archive/reviews/app-api-p2-3-password-review.md`                                                | landed         | P2-3 已落                                                                                                                                                                                                                                     |
+| `docs/archive/reviews/app-api-p2-4-activities-review.md`                                              | landed         | P2-4 已落                                                                                                                                                                                                                                     |
+| `docs/archive/reviews/app-api-p2-5-registrations-review.md`                                           | landed         | P2-5 已落                                                                                                                                                                                                                                     |
+| `docs/archive/reviews/app-api-p2-6-attendance-records-review.md`                                      | landed         | P2-6 已落                                                                                                                                                                                                                                     |
+| `docs/archive/reviews/app-api-p2-7-my-certificates-review.md`                                         | landed         | P2-7 已落                                                                                                                                                                                                                                     |
+| `docs/archive/reviews/app-api-phase-2-review.md`                                                      | landed         | App API Phase 2 已落                                                                                                                                                                                                                          |
+| `docs/archive/reviews/app-permission-boundary-review.md`                                              | report         | Phase 0.5 专项盘点                                                                                                                                                                                                                            |
+| `docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-09.md`                             | open · P1-29   | 维护者拍板纪要(Phase 0)                                                                                                                                                                                                                       |
+| `docs/archive/reviews/architecture-governance-v4/DECISIONS-2026-08-13.md`                             | open · P1-29   | 维护者拍板纪要(Phase 5)                                                                                                                                                                                                                       |
+| `docs/archive/reviews/architecture-governance-v4/README.md`                                           | open · P1-29   | Phase 0–8;6-B / 7 未完,8 条件触发                                                                                                                                                                                                             |
+| `docs/archive/reviews/auth-session-linearization-v0.60-review.md`                                     | landed         | v0.60 remediation 已落                                                                                                                                                                                                                        |
+| `docs/archive/reviews/certificate-standard-library-t0-amendments.md`                                  | open · P1-24   | post-freeze 修正,与冻结稿并列生效                                                                                                                                                                                                             |
+| `docs/archive/reviews/certificate-standard-library-t0-review.md`                                      | open · P1-24   | 代码全落;剩 migration 67 部署 / 首批初始化 / 前端适配                                                                                                                                                                                         |
+| `docs/archive/reviews/code-architecture-boundary-review.md`                                           | report         | Phase 0.7 设计期盘点                                                                                                                                                                                                                          |
+| `docs/archive/reviews/concurrency-write-path-audit-codex.md`                                          | report         | 并发写路径审计(跨模型)                                                                                                                                                                                                                        |
+| `docs/archive/reviews/concurrency-write-path-audit.md`                                                | report         | 并发写路径审计(report-only)                                                                                                                                                                                                                   |
+| `docs/archive/reviews/content-module-review.md`                                                       | landed         | CMS 第 28 模块已上                                                                                                                                                                                                                            |
+| `docs/archive/reviews/data-access-lifecycle-boundary-review.md`                                       | report         | Phase 0.6 专项盘点                                                                                                                                                                                                                            |
+| `docs/archive/reviews/department-data-scope-v0.49.0-review.md`                                        | landed         | v0.49.0 已发                                                                                                                                                                                                                                  |
+| `docs/archive/reviews/expiry-reminder-attendance-reopen-v0.47.0-review.md`                            | landed         | v0.47.0 已发                                                                                                                                                                                                                                  |
+| `docs/archive/reviews/first-release-p0d-change-my-password-review.md`                                 | landed         | #115–#118 已落                                                                                                                                                                                                                                |
+| `docs/archive/reviews/first-release-p0e-refresh-token-review.md`                                      | landed         | refresh 轮换已落并冻结                                                                                                                                                                                                                        |
+| `docs/archive/reviews/first-release-p0f-pr2-config-rbac-review.md`                                    | landed         | P0-F PR-2 已落                                                                                                                                                                                                                                |
+| `docs/archive/reviews/first-release-p0f-pr3-users-rbac-review.md`                                     | landed         | P0-F PR-3 已落                                                                                                                                                                                                                                |
+| `docs/archive/reviews/first-release-p0f-pr4-audit-logs-rbac-review.md`                                | landed         | P0-F PR-4 已落                                                                                                                                                                                                                                |
+| `docs/archive/reviews/full-repo-fifth-review-v0.57.0.md`                                              | report         | 第五轮全仓 review                                                                                                                                                                                                                             |
+| `docs/archive/reviews/full-repo-first-principles-adversarial-review-v0.38.0.md`                       | report         | 第三轮全仓 review                                                                                                                                                                                                                             |
+| `docs/archive/reviews/full-repo-fourth-review-v0.56.0.md`                                             | report         | 第四轮全仓 review                                                                                                                                                                                                                             |
+| `docs/archive/reviews/full-repo-systematic-review-v0.26.0.md`                                         | report         | 第一轮全仓 review                                                                                                                                                                                                                             |
+| `docs/archive/reviews/full-repo-systematic-review-v0.34.0.md`                                         | report         | 第二轮全仓 review                                                                                                                                                                                                                             |
+| `docs/archive/reviews/harness-2.0-t0-review.md`                                                       | landed         | Harness 2.0 已落,后被 3.0 接续                                                                                                                                                                                                                |
+| `docs/archive/reviews/identity-session-p0-step-up-logout-review.md`                                   | landed         | step-up + refresh-family logout 已落                                                                                                                                                                                                          |
+| `docs/archive/reviews/insurance-module-review.md`                                                     | open · P1-10   | PR1–PR4 代码已交付;PR3 enable + PR4 deploy 待运维窗口                                                                                                                                                                                         |
+| `docs/archive/reviews/integration-foundation-v1-t0-terminal-review.md`                                | open · P1-30   | PR1 已交付(2026-08-28);余 PR2–PR8 严格串行                                                                                                                                                                                                    |
+| `docs/archive/reviews/jwt-ttl-startup-validation-v0.60-review.md`                                     | landed         | v0.60 已落                                                                                                                                                                                                                                    |
+| `docs/archive/reviews/log-query-redaction-v0.60-review.md`                                            | landed         | v0.60 已落                                                                                                                                                                                                                                    |
+| `docs/archive/reviews/member-account-loop-v2-review.md`                                               | landed         | P1-18 队员账号闭环已落                                                                                                                                                                                                                        |
+| `docs/archive/reviews/member-notification-review.md`                                                  | landed         | GAP-005 S1–S5 已发;余项诉求触发                                                                                                                                                                                                               |
+| `docs/archive/reviews/openapi-http-parity-v0.60-review.md`                                            | landed         | v0.60 已落                                                                                                                                                                                                                                    |
+| `docs/archive/reviews/org-position-scoped-authz-terminal-design-review.md`                            | landed         | PR1–PR12 + 摘码微刀全序列已落                                                                                                                                                                                                                 |
+| `docs/archive/reviews/password-reset-by-sms-review.md`                                                | landed         | 短信找回密码已落                                                                                                                                                                                                                              |
+| `docs/archive/reviews/postgresql-consistency-hardening-review.md`                                     | landed         | D-ORG/SMS/RBAC/Throttle/Outbox 五条全落                                                                                                                                                                                                       |
+| `docs/archive/reviews/pre-go-live-readiness-review-v0.35.0.md`                                        | report         | 上线前就绪审计                                                                                                                                                                                                                                |
+| `docs/archive/reviews/queue-b-otp-birthday-infra-review.md`                                           | landed         | Storage 迁移 / SMS retention / OTP / 生日祝福已落                                                                                                                                                                                             |
+| `docs/archive/reviews/rbac-permission-catalog-t0-review.md`                                           | open · P1-32   | PR0–PR8 九项,已落 PR 0/1/2/3(4 只落 4a)                                                                                                                                                                                                       |
+| `docs/archive/reviews/recruitment-ocr-anti-forgery-enrichment-review.md`                              | landed         | 鉴伪字段已落                                                                                                                                                                                                                                  |
+| `docs/archive/reviews/recruitment-phase1-review.md`                                                   | landed         | P1-11 招新一期已落                                                                                                                                                                                                                            |
+| `docs/archive/reviews/recruitment-phase1-systematic-review.md`                                        | report         | 招新一期开报名前终检                                                                                                                                                                                                                          |
+| `docs/archive/reviews/recruitment-phase2-review.md`                                                   | landed         | P1-12 招新二期已落                                                                                                                                                                                                                            |
+| `docs/archive/reviews/recruitment-phase3-review.md`                                                   | landed         | P1-13 招新三期已落                                                                                                                                                                                                                            |
+| `docs/archive/reviews/recruitment-phase4-loop-optimization-review.md`                                 | landed         | 闭环优化各切片已落(v0.41–v0.43)                                                                                                                                                                                                               |
+| `docs/archive/reviews/recruitment-realname-ocr-review.md`                                             | landed         | 腾讯云 OCR 改造已落                                                                                                                                                                                                                           |
+| `docs/archive/reviews/recruitment-usability-closeout-review.md`                                       | landed         | v0.41.0 可用性收口已落                                                                                                                                                                                                                        |
+| `docs/archive/reviews/security-concurrency-hardening-review-v0.44.0.md`                               | landed         | v0.44.0 已发                                                                                                                                                                                                                                  |
+| `docs/archive/reviews/slow4-rbac-business-face-review.md`                                             | landed         | P1-3 Slow-4 已落                                                                                                                                                                                                                              |
+| `docs/archive/reviews/sms-verification-infra-review.md`                                               | landed         | 验证码基础设施已落                                                                                                                                                                                                                            |
+| `docs/archive/reviews/storage-bootstrap-recovery-v0.60-review.md`                                     | landed         | v0.60 已落                                                                                                                                                                                                                                    |
+| `docs/archive/reviews/systematic-security-hardening-review-v0.45-v0.46.md`                            | landed         | v0.45–v0.46 四统一收口已落                                                                                                                                                                                                                    |
+| `docs/archive/reviews/unified-notification-dispatcher-review.md`                                      | landed         | 统一派发已落                                                                                                                                                                                                                                  |
+| `docs/archive/reviews/wechat-mini-login-review.md`                                                    | landed         | P1-8 小程序登录已落                                                                                                                                                                                                                           |
+| `docs/archive/reviews/wecom-integration-t0-terminal-review.md`                                        | open · P1-25   | 代码全落;T6 全部是维护者动作,卡备案                                                                                                                                                                                                           |
 
 ---
 
@@ -453,14 +453,14 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 > selfGuard glob(`check-*` / `generate-*` / `replay-*` / `*.selftest.*`),实测 `harness:needs`
 > **0 需授权**,即零保护。「搬进 `scripts/`」不够,必须**搬成 `check-*.ts`**;2026-08-23 改名收编。
 
-| # | 判据 | 会在什么时候红 |
-|---|---|---|
-| 1 | **分类完整性(双向集合相等)** | 新增一份归档评审稿却没在 §3 登记 → 红;§3 登记了已删除的文件 → 红 |
-| 2 | **分类闭集** | 出现四值以外的分类 → 红;`open` 行没写台账编号 → 红 |
-| 3 | **欠账表 ↔ 分类表互证** | §1 表里出现的台账编号在 §3 没有对应 `open` 行(或反过来)→ 红 |
-| 4 | **读数新鲜度(逐字节)** | 手改读数、或真源变了没跑 `--write` → 红,并打印应有的块 |
-| 5 | **自证非空** | 扫描面 < 80 份 / 活动编号解析不出 / 读数条数不足 → 红。**判据失去输入 ≠ 通过** |
-| 6 | **跨台账落地度对照** | §1 某行对 `NEXT_TASKS` 的状态**沉默**(没有 `` `↔…` `` 标记)→ 红;标了同尺却与那边的状态种类 / 进度分数**不一致**→ 红,并**同时打印两边原文**;§1 表塌空(< 6 行)或同尺对照行数 < 4 → 红 |
+| #   | 判据                         | 会在什么时候红                                                                                                                                                                      |
+| --- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **分类完整性(双向集合相等)** | 新增一份归档评审稿却没在 §3 登记 → 红;§3 登记了已删除的文件 → 红                                                                                                                    |
+| 2   | **分类闭集**                 | 出现四值以外的分类 → 红;`open` 行没写台账编号 → 红                                                                                                                                  |
+| 3   | **欠账表 ↔ 分类表互证**      | §1 表里出现的台账编号在 §3 没有对应 `open` 行(或反过来)→ 红                                                                                                                         |
+| 4   | **读数新鲜度(逐字节)**       | 手改读数、或真源变了没跑 `--write` → 红,并打印应有的块                                                                                                                              |
+| 5   | **自证非空**                 | 扫描面 < 80 份 / 活动编号解析不出 / 读数条数不足 → 红。**判据失去输入 ≠ 通过**                                                                                                      |
+| 6   | **跨台账落地度对照**         | §1 某行对 `NEXT_TASKS` 的状态**沉默**(没有 `` `↔…` `` 标记)→ 红;标了同尺却与那边的状态种类 / 进度分数**不一致**→ 红,并**同时打印两边原文**;§1 表塌空(< 6 行)或同尺对照行数 < 4 → 红 |
 
 ### 4.1 判据 6 的对照标记(§1 落地度列开头那个 `` `↔…` ``)
 
@@ -468,12 +468,12 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 ⇒ 存在**刻意不同的合法情形**,做成数值相等会当场误伤台账里最用心写的那一条。
 本闸沿 `NEXT_TASKS` 状态闸同一路子:**治的是「沉默」,不是「不一致」。**
 
-| 标记 | 什么时候用 | 闸做什么 |
-|---|---|---|
-| `` `↔待办` `` / `` `↔进行中` `` / `` `↔待拍板` `` / `` `↔⏸ 挂起` `` / `` `↔已收口` `` | 本行与 `NEXT_TASKS` 同编号条目**量同一件事** | 状态种类必须**逐字相等**;不等即红并打印两边原文 |
-| `` `↔<状态种类> a/b` `` | 同上,且本行给得出**进度分数** | 额外要求与 `NEXT_TASKS` 状态括号**开头**的 `a/b` 相等 |
-| `` `↔另尺(<说明>)` `` | 本行**刻意用另一把尺子** | 放行;说明必须有实质内容(`另尺(3/9)` 这种把数字再写一遍的会被拒) |
-| `` `↔无台账` `` | 台账列是 `—`,没有 `NEXT_TASKS` 编号 | 放行,计入「射程外」;**有编号的行不许走这条通道** |
+| 标记                                                                                  | 什么时候用                                   | 闸做什么                                                        |
+| ------------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------- |
+| `` `↔待办` `` / `` `↔进行中` `` / `` `↔待拍板` `` / `` `↔⏸ 挂起` `` / `` `↔已收口` `` | 本行与 `NEXT_TASKS` 同编号条目**量同一件事** | 状态种类必须**逐字相等**;不等即红并打印两边原文                 |
+| `` `↔<状态种类> a/b` ``                                                               | 同上,且本行给得出**进度分数**                | 额外要求与 `NEXT_TASKS` 状态括号**开头**的 `a/b` 相等           |
+| `` `↔另尺(<说明>)` ``                                                                 | 本行**刻意用另一把尺子**                     | 放行;说明必须有实质内容(`另尺(3/9)` 这种把数字再写一遍的会被拒) |
+| `` `↔无台账` ``                                                                       | 台账列是 `—`,没有 `NEXT_TASKS` 编号          | 放行,计入「射程外」;**有编号的行不许走这条通道**                |
 
 ⚠️ 状态种类的白名单**直接取自** `scripts/check-next-tasks-state.ts` 的 `STATUS_KINDS`,
 本文件不抄第二份 —— 抄一份的话两处漂移时「一边认一边不认」没有任何症状。
