@@ -1,3 +1,3 @@
 - D2 implementation：新增考勤域内部、显式事务的只读 `ParticipationSegmentFacade`，只读取现有 current `ParticipantServiceSegmentRevision`，并逐段校验 identity、活动、场次、成员及来源打卡锚同链。
 - 读取固定 10,000 段／2,000 身份上限，超限拒绝截断；保留 `draft`／`committed`、四种结果态、开放段和历史 check-in 岗位锚，不把 `serviceHours`、当前岗位或原始事件资料当作新事实。
-- 不新增 schema、migration、外部 API、DTO、权限、审计、Gate 或生产消费者；业务数据永久保留。[implementation PR #1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 已创建、CI 运行中，尚未合并或启用 Gate。
+- 不新增 schema、migration、外部 API、DTO、权限、审计、Gate 或生产消费者；业务数据永久保留。[implementation PR #1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 已 squash 合入 main，PR 检查和其后 main CI 均已验证通过；未部署或启用 Gate。

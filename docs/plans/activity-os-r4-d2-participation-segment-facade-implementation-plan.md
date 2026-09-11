@@ -1,6 +1,6 @@
 # Activity OS Release 4 / D2：中性参与服务段 Facade 精确实施计划与授权清单
 
-> **当前状态（2026-09-11）**：D2 方向评审已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入；精确计划 [#1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318) 已 squash 合入 main `c2a687bf2e9e81d1199329021f06abca40d8f8aa`，合并后 [main CI 34597888732](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34597888732) completed/success。维护者随后明确授权本稿 §4 的 10 个路径实施；代码、测试和派生文档已提交为 [implementation PR #1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319)，当前 CI 运行中，尚未合并。
+> **当前状态（2026-09-12）**：D2 方向评审已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入，精确计划 [#1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318) 已合入 main `c2a687bf2e9e81d1199329021f06abca40d8f8aa`。维护者授权本稿 §4 的 10 个路径后，[implementation PR #1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 已以 17 项 PR 检查及可信红区审批成功后 squash 至 main `c0140c6efdfcbf1060b99ef8626b56ec8b65234c`。其首次 main CI 只因过期日期棘轮基线失败；独立 [#1320](https://github.com/BA7IEE/srvf-nest-api/pull/1320) 修复基线后，含 D2 的 main `bcc297495c42f8a37ed06e946abe96db99d49d64` 在 [CI 34625317010](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34625317010) completed/success。D2 已完成仓内交付和主干验证，仍未部署或启用 Gate。
 
 > **治理新鲜度处置（本轮完成）**：新增 `src` Facade 与受控 module provider 机械改变了 `harness/domain-map.json` 与 `docs/ai-harness/ROUTE_AUTHZ.md` 的输入指纹。维护者已单独授权这两条纯派生更新；实际 diff 仅为三个 inputDigest，`docs:boundaries:check` 与 `docs:authz:check` 均通过，625 个端点、路由策略和域归属语义未变化。这不改变 D2 的无 migration、无 API、无权限、无 Gate 边界。
 
@@ -156,4 +156,4 @@ select 仅含段的 `id`、`participationIdentityId`、`segmentKey`、`revision`
 
 ## 7. 本次未做
 
-本轮没有修改 schema、migration、既有生产消费者、API、DTO、权限、审计、Gate、客户端或部署；没有连接或操作生产，也没有删除业务数据。D2 尚未合入 main，也没有 production caller；D3–D8、生产部署、Gate 和整体跨模型复审仍未完成。[#1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 已创建且 CI 运行中，未合并，亦未启用 Gate。
+本轮没有修改 schema、migration、既有生产消费者、API、DTO、权限、审计、Gate、客户端或部署；没有连接或操作生产，也没有删除业务数据。D2 已合入 main，但仍没有 production caller；D3–D8、生产部署、Gate 和整体跨模型复审仍未完成。D2 的合并与 main 验证证据以上文为准，未启用 Gate。
