@@ -1,6 +1,6 @@
 # Activity OS Release 4 / D2：中性参与服务段 Facade 评审与授权清单
 
-> **评审已合并，精确计划 PR 已创建（2026-09-11）**：本稿已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入 main `2af40878090e44b33c8dce7f68a1ff78c7c18fb9`，合并后 [main CI 34584472085](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34584472085) completed/success。后续的 [D2 精确实施计划](activity-os-r4-d2-participation-segment-facade-implementation-plan.md) 已按维护者授权创建 [计划 PR #1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318)（head `6d51cb2a7b5359a87cd4d7b9b989c5817f08456b`，CI 运行中）；该 PR 尚未合并，不实施、不操作数据库、不启用 Gate，D2 仍未实现。
+> **评审与计划均已合并，实施已获授权（2026-09-11）**：本稿已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入；后续 [D2 精确实施计划](activity-os-r4-d2-participation-segment-facade-implementation-plan.md) 已随 [#1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318) squash 合入 main `c2a687bf2e9e81d1199329021f06abca40d8f8aa`，合并后 [main CI 34597888732](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34597888732) completed/success。维护者已按该计划的 10 个精确路径授权 implementation；代码与本地隔离验证已完成，并已创建 [implementation PR #1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319)。两份受保护派生治理文件已获单独授权并仅刷新 inputDigest；当前 PR CI 运行中，D2 仍未合入、未部署或启用 Gate。
 
 > **评审形成时的基点**：2026-09-11，main `60414050b99fe661afbf0c87669597ad081a3b43`。本稿当时只起草 D2 的方向、边界和后续授权清单；不实施、不操作数据库、不启用 Gate、不删除业务数据、不提交推送或创建 PR。文中“推荐”是待维护者确认的方案，不是现有新能力。
 
@@ -14,14 +14,14 @@ D1 已把“某活动应按哪一版时长政策解释”固定下来；D2 要�
 
 ## 2. 已核验依据
 
-| 依据 | 当前事实 | D2 必须遵守的结论 |
-| --- | --- | --- |
-| [T0 冻结合同 §7.1](../archive/reviews/activity-os-t0-terminal-review.md#71-单一参与事实与-timepolicy) | `AttendancePunchEvent → ParticipantServiceSegmentRevision` 是唯一参与段事实。 | 先建中性 facade，再让政策消费；禁止长期双写第二套 ParticipationSegment。 |
-| [T0 Release 4 顺序](../archive/reviews/activity-os-t0-terminal-review.md#11-release-1-至-7-的最终-pr-边界) | D2 位于 D1 TimePolicy 之后、D3 Allocation revision 之前。 | D2 不偷跑 allocation、bucket、ledger、correction 或 proof。 |
-| `prisma/schema.prisma` 的 `ParticipantServiceSegmentRevision` | 已保存参与身份、segmentKey、revision、来源事件、结果码、状态码、入/离场时间及 legacy `serviceHours`。 | 段、版本、来源和状态必须原样可解释；`serviceHours` 不是新的分类时长真相。 |
-| `src/modules/attendances/attendance-punch-segment-revision.service.ts:41-132` | 当前写链在调用方事务内重建投影，先把同 key 的旧修订标为 `superseded`，再 append 新修订。 | 新 facade 只能读当前修订，不能绕开这条写链或把旧修订重新视作 current。 |
-| `src/modules/activities/attendance-segment-projector.service.ts:11-17` | `AttendanceSegmentProjectorService` 已是公开的纯投影包装。 | D2 不把这个纯 projector 冒充为持久参与事实读取接口，也不深引其实现。 |
-| `src/modules/activities/activities.module.ts:398-429` | ActivitiesModule 已导出 `AttendanceSegmentProjectorService`；考勤与活动模块已有受控模块关系。 | D2 必须在精确计划中按真实 import/export 链定落点，不能凭同名服务新增深层跨模块引用。 |
+| 依据                                                                                                       | 当前事实                                                                                              | D2 必须遵守的结论                                                                    |
+| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [T0 冻结合同 §7.1](../archive/reviews/activity-os-t0-terminal-review.md#71-单一参与事实与-timepolicy)      | `AttendancePunchEvent → ParticipantServiceSegmentRevision` 是唯一参与段事实。                         | 先建中性 facade，再让政策消费；禁止长期双写第二套 ParticipationSegment。             |
+| [T0 Release 4 顺序](../archive/reviews/activity-os-t0-terminal-review.md#11-release-1-至-7-的最终-pr-边界) | D2 位于 D1 TimePolicy 之后、D3 Allocation revision 之前。                                             | D2 不偷跑 allocation、bucket、ledger、correction 或 proof。                          |
+| `prisma/schema.prisma` 的 `ParticipantServiceSegmentRevision`                                              | 已保存参与身份、segmentKey、revision、来源事件、结果码、状态码、入/离场时间及 legacy `serviceHours`。 | 段、版本、来源和状态必须原样可解释；`serviceHours` 不是新的分类时长真相。            |
+| `src/modules/attendances/attendance-punch-segment-revision.service.ts:41-132`                              | 当前写链在调用方事务内重建投影，先把同 key 的旧修订标为 `superseded`，再 append 新修订。              | 新 facade 只能读当前修订，不能绕开这条写链或把旧修订重新视作 current。               |
+| `src/modules/activities/attendance-segment-projector.service.ts:11-17`                                     | `AttendanceSegmentProjectorService` 已是公开的纯投影包装。                                            | D2 不把这个纯 projector 冒充为持久参与事实读取接口，也不深引其实现。                 |
+| `src/modules/activities/activities.module.ts:398-429`                                                      | ActivitiesModule 已导出 `AttendanceSegmentProjectorService`；考勤与活动模块已有受控模块关系。         | D2 必须在精确计划中按真实 import/export 链定落点，不能凭同名服务新增深层跨模块引用。 |
 
 ## 3. 方案 A 的数据与读取合同
 
@@ -47,14 +47,14 @@ D1 已把“某活动应按哪一版时长政策解释”固定下来；D2 要�
 
 ## 4. 明确不做
 
-| 不做项 | 原因与后续归属 |
-| --- | --- |
-| 新服务段表、双写、回填、清库或物理删除 | 违反单一参与事实；历史资产永久保留。 |
-| `ParticipantTimeAllocationRevision`、类别桶或人工认定 | 属于 D3 / D4，且需要另行确认互斥、总量和证据合同。 |
-| shadow、独立 Time Ledger、冲回/更正、证明或正式切换 | 分别属于 D5–D8。 |
-| 更改既有 `serviceHours`、结算、贡献、成果、证明读数或 Gate | D2 只是中性读取，不改变既有业务结果。 |
-| 新 HTTP、Admin/App/Integration/AI 访问面、权限、审计、DTO 或生成客户端 | 当前没有对外业务命令，不能先占用访问面。 |
-| Redis、队列、缓存、定时同步或通用 Command Bus | 不需要，且不符合当前基础设施冻结和 facade 原则。 |
+| 不做项                                                                 | 原因与后续归属                                     |
+| ---------------------------------------------------------------------- | -------------------------------------------------- |
+| 新服务段表、双写、回填、清库或物理删除                                 | 违反单一参与事实；历史资产永久保留。               |
+| `ParticipantTimeAllocationRevision`、类别桶或人工认定                  | 属于 D3 / D4，且需要另行确认互斥、总量和证据合同。 |
+| shadow、独立 Time Ledger、冲回/更正、证明或正式切换                    | 分别属于 D5–D8。                                   |
+| 更改既有 `serviceHours`、结算、贡献、成果、证明读数或 Gate             | D2 只是中性读取，不改变既有业务结果。              |
+| 新 HTTP、Admin/App/Integration/AI 访问面、权限、审计、DTO 或生成客户端 | 当前没有对外业务命令，不能先占用访问面。           |
+| Redis、队列、缓存、定时同步或通用 Command Bus                          | 不需要，且不符合当前基础设施冻结和 facade 原则。   |
 
 ## 5. 后续精确计划必须先回答的问题
 
