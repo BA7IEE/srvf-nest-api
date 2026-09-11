@@ -112,6 +112,15 @@ describe('pending segment nonempty legacy upgrade', () => {
       if (name === 'migration_lock.toml' || name >= migration) continue;
       sql(readFileSync(join('prisma/migrations', name, 'migration.sql'), 'utf8'));
     }
+    // This replay intentionally stops before migration 115, while the checked-in
+    // Prisma client is generated from migration 119. Keep the real closure and
+    // correction services on the legacy fixture by adding only their two required
+    // readback columns; this does not record or execute the D1-3 migration.
+    sql(`
+      ALTER TABLE "Activity"
+        ADD COLUMN "timePolicySelectionRevision" INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN "currentTimePolicySelectionRevisionId" TEXT;
+    `);
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
@@ -165,18 +174,16 @@ describe('pending segment nonempty legacy upgrade', () => {
     sequence += 1;
     const tag = `correction-${sequence}`;
 
-    const activity = await prisma.activity.create({
-      data: {
-        title: `更正活动 ${sequence}`,
-        activityTypeCode: `activity-correction-type-${sequence}`,
-        organizationId,
-        startAt: SESSION_START,
-        endAt: SESSION_END,
-        location: '深圳',
-        statusCode: 'published',
-      },
-      select: { id: true },
-    });
+    // This fixture intentionally runs against the schema before migration 115.
+    // The current generated Prisma model includes D1-3's migration-119 column,
+    // so seed only the legacy Activity shape with a parameterized local query.
+    const activity = { id: randomUUID() };
+    await prisma.$executeRaw`
+      INSERT INTO "Activity"
+        ("id", "updatedAt", "title", "activityTypeCode", "organizationId", "startAt", "endAt", "location", "statusCode")
+      VALUES
+        (${activity.id}, CURRENT_TIMESTAMP, ${`更正活动 ${sequence}`}, ${`activity-correction-type-${sequence}`}, ${organizationId}, ${SESSION_START}, ${SESSION_END}, ${'深圳'}, ${'published'})
+    `;
 
     const session = await prisma.activitySession.create({
       data: {
