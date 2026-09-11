@@ -2,7 +2,7 @@
 
 > **当前状态（2026-09-11）**：基点为 main `2af40878090e44b33c8dce7f68a1ff78c7c18fb9`。D2 方向评审已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入，合并后 [main CI 34584472085](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34584472085) completed/success。本稿只把已确认方向收敛为后续实施的精确写集、数据合同、探针和授权项；它不是 implementation 授权，不操作数据库、不启用 Gate、不删除业务数据或合并 PR。
 
-> **文档 PR 授权（2026-09-11）**：维护者已确认方案 A，允许补充 changelog、提交、推送并创建本计划 PR；不合并、不实施、不操作数据库、不启用 Gate。该授权不改变 §6 的未来 implementation 授权要求。
+> **计划 PR（2026-09-11）**：本稿已按维护者确认的方案 A 创建 [#1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318)，head 为 `6d51cb2a7b5359a87cd4d7b9b989c5817f08456b`，当前 CI 运行中且尚未合并。该文档 PR 授权不改变 §6 的未来 implementation 授权要求；本轮不实施、不操作数据库、不启用 Gate。
 
 ## 1. 这次 D2 真正要交付什么
 
@@ -156,4 +156,4 @@ select 仅含段的 `id`、`participationIdentityId`、`segmentKey`、`revision`
 
 ## 7. 本次未做
 
-本轮只处理本计划、关联台账和计划 changelog；没有新增 Facade、模块 provider、测试，没有连接、迁移、重建数据库，没有修改 schema、现有生产消费者、API、DTO、权限、审计、Gate、客户端或部署，也没有删除业务数据。按顶部授权可提交、推送并创建计划 PR；D2 implementation、D3–D8、生产部署、Gate 和整体跨模型复审仍未完成。
+本轮只处理本计划、关联台账和计划 changelog；没有新增 Facade、模块 provider、测试，没有连接、迁移、重建数据库，没有修改 schema、现有生产消费者、API、DTO、权限、审计、Gate、客户端或部署，也没有删除业务数据。按顶部授权已创建计划 PR #1318，尚未合并；D2 implementation、D3–D8、生产部署、Gate 和整体跨模型复审仍未完成。

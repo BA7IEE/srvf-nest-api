@@ -1,6 +1,6 @@
 # Activity OS Release 4 / D2：中性参与服务段 Facade 评审与授权清单
 
-> **评审已合并，精确计划获准提交（2026-09-11）**：本稿已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入 main `2af40878090e44b33c8dce7f68a1ff78c7c18fb9`，合并后 [main CI 34584472085](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34584472085) completed/success。后续的 [D2 精确实施计划](activity-os-r4-d2-participation-segment-facade-implementation-plan.md) 已获维护者允许补 changelog、提交、推送和创建计划 PR；不合并、不实施、不操作数据库、不启用 Gate，D2 仍未实现。
+> **评审已合并，精确计划 PR 已创建（2026-09-11）**：本稿已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入 main `2af40878090e44b33c8dce7f68a1ff78c7c18fb9`，合并后 [main CI 34584472085](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34584472085) completed/success。后续的 [D2 精确实施计划](activity-os-r4-d2-participation-segment-facade-implementation-plan.md) 已按维护者授权创建 [计划 PR #1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318)（head `6d51cb2a7b5359a87cd4d7b9b989c5817f08456b`，CI 运行中）；该 PR 尚未合并，不实施、不操作数据库、不启用 Gate，D2 仍未实现。
 
 > **评审形成时的基点**：2026-09-11，main `60414050b99fe661afbf0c87669597ad081a3b43`。本稿当时只起草 D2 的方向、边界和后续授权清单；不实施、不操作数据库、不启用 Gate、不删除业务数据、不提交推送或创建 PR。文中“推荐”是待维护者确认的方案，不是现有新能力。
 
