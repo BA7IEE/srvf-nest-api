@@ -1,6 +1,6 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **D3 implementation（2026-09-12）**：D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。
+> **D3 implementation（2026-09-12）**：D3 已随 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323) 合入 main `921a6bf3fac66067e5232768d5c5d32bf92765fc`；批准 HEAD 为 `c3a969a22b4f59b2e2ca51a46660c04d10d53b41`，18 项 PR 检查及可信审批通过，[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34677507039) 在该合并 SHA 上 completed/success。仓内基线为 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），3b/4b 已重签；零内建角色默认授码。维护者本轮只授权 D3 台账更正及 D4 [评审](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-review.md)／[精确计划](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-implementation-plan.md)合并起草、验证后提交推送并创建 docs-only PR；D4 方案和实施仍待确认。本轮不合并、不实施、不操作数据库、不启用 Gate；整体跨模型复审、前端发布与生产验收尚未完成。下方较早阶段描述保留为历史，以本条为当前状态。
 
 > **D1-3 已合并并完成主干验证（2026-09-11）**：维护者确认的完整方案 A 已随 [#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) squash 合入 main `60414050b99fe661afbf0c87669597ad081a3b43`；批准头 `2e67806722ebb442d98c8cc58dbf43fa3be4ee01` 与合并树一致。18 项 PR 检查及可信红区审批通过，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) completed/success。四层时长政策选择、模板 V4、提案 V8、Readiness、批准冻结、受控变更、三张不可变表与第 119 条 migration 均已进入 main；当前 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃，3b / 4b 已重签。D1 三个批次的仓内实现与主干验证已完成；D2–D8、生产、Gate 与整体跨模型复审仍未完成，不删除业务数据。此条覆盖下方 D1-3 的历史起草授权状态。
 
@@ -63,7 +63,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                                                                                                                                                              | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                                                                                                                                                               | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                                                                                                                                                                | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 已完成相应仓内实施；Release 4 的 D1-1/#1310、D1-2/#1312、D1-3/#1316 与 D2/#1319 均已合入并完成 main CI 验证；D3 implementation 已在当前分支完成定向验证，非生命周期 inventory 已按补充授权登记，PR 与后续签收尚未完成 | 原紧急创建 500 根因未定位；整体跨模型复审、Release 4 D3–D8 及后续、前端发布、生产部署和 Gate 切换未完成                 |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 已完成相应仓内实施；Release 4 D1-1/#1310、D1-2/#1312、D1-3/#1316、D2/#1319、D3/#1323 均已合入并通过 main CI；D4 评审与精确计划合并起草，方案及实施待确认 | 原紧急创建 500 根因未定位；整体跨模型复审、Release 4 D4–D8 及后续、前端发布、生产部署和 Gate 切换未完成 |
 
 ### 1.1 欠代码的五项
 
@@ -122,7 +122,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1-1/D1-2/D1-3/D2 的仓内实施已通过；D2/#1319 已合入且 main CI 已由 `bcc29749` 的成功运行独立验证；D3 implementation 在当前分支完成定向验证，非生命周期 inventory 已登记，仍待 PR、签收与合并；前端发布、生产 Gate、整体跨模型复审与 Release 4 D3–D8／后续 Release 未完成**
+**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1-1/D1-2/D1-3/D2/D3 的仓内实施已通过；D3/#1323 合入 `921a6bf3`，main CI 34677507039 成功；D4 仅合并起草评审及精确计划，待方案与实施授权；前端发布、生产 Gate、整体跨模型复审与 Release 4 D4–D8／后续 Release 未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
