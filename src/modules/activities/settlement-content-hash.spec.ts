@@ -2,11 +2,40 @@ import {
   buildSettlementContentCanonicalText,
   canonicalize,
   computeSettlementContentHash,
+  computeTimeSettlementContentHash,
   decimalToCanonicalString,
   SETTLEMENT_CONTENT_SCHEMA_VERSION,
   type SettlementContentItem,
   type SettlementContentPayload,
 } from './settlement-content-hash';
+import { createHash } from 'node:crypto';
+
+describe('D4 separately versioned content fingerprint', () => {
+  const input = {
+    originalContentHash: 'a'.repeat(64),
+    bucketContentHash: 'b'.repeat(64),
+    sourceSetHash: 'c'.repeat(64),
+  };
+  it('retains V1 and hashes the explicit V2 domain with three independently fenced facts', () => {
+    expect(SETTLEMENT_CONTENT_SCHEMA_VERSION).toBe(1);
+    const text = `{"bucketContentHash":"${'b'.repeat(64)}","domain":"activity-time-settlement-content-v2","originalContentHash":"${'a'.repeat(64)}","schemaVersion":2,"sourceSetHash":"${'c'.repeat(64)}"}`;
+    expect(computeTimeSettlementContentHash(input)).toBe(
+      createHash('sha256').update(text).digest('hex'),
+    );
+    expect(computeTimeSettlementContentHash(input)).not.toBe(input.originalContentHash);
+  });
+  it.each(['originalContentHash', 'bucketContentHash', 'sourceSetHash'] as const)(
+    '%s changes the fingerprint',
+    (field) => {
+      expect(computeTimeSettlementContentHash({ ...input, [field]: 'd'.repeat(64) })).not.toBe(
+        computeTimeSettlementContentHash(input),
+      );
+      expect(() => computeTimeSettlementContentHash({ ...input, [field]: 'invalid' })).toThrow(
+        TypeError,
+      );
+    },
+  );
+});
 
 // ===== 第 2 批第三刀 DoD 4:canonical contentHash 的三条判据 =====
 //

@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:2aa52aba43f85bfbf899d7b3352f0dab1b627cd7556969cd09d4f2e36ff45033
+// inputDigest: sha256:98f479dbd76ca2d9123b1b44b82326463f695dcfdf3d00991e05c35c62eec5bc
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -198,9 +198,11 @@ import type {
   AppParticipationLedgerEntryDto,
   AppPatchActivityTimePolicySelectionDto,
   AppPrepareActivityOutcomeCorrectionDto,
+  AppPrepareTimeSettlementDto,
   AppProfessionalActivityCreationDto,
   AppProfessionalCreationSessionDto,
   AppQuickActivityCreationDto,
+  AppRecognizeTimeSettlementDto,
   AppRecordActivityOutcomeDto,
   AppRegistrationFormChoiceDto,
   AppRegistrationFormDto,
@@ -234,7 +236,29 @@ import type {
   AppSettlementVersionPointerDto,
   AppSettlementWorkbenchResponseDto,
   AppSubmitActivityChangeReviewDto,
+  AppSubmitTimeSettlementDto,
   AppTeamJoinApplicationDto,
+  AppTimeSettlementAllocationDetailDto,
+  AppTimeSettlementAllocationResultDto,
+  AppTimeSettlementBlockerDto,
+  AppTimeSettlementBucketDto,
+  AppTimeSettlementBucketSourceDto,
+  AppTimeSettlementDraftDto,
+  AppTimeSettlementEvidenceDto,
+  AppTimeSettlementEvidencePolicyDto,
+  AppTimeSettlementManualPolicyDto,
+  AppTimeSettlementManualSliceDto,
+  AppTimeSettlementPolicyDto,
+  AppTimeSettlementResultDto,
+  AppTimeSettlementRevisionDto,
+  AppTimeSettlementRoleMappingDto,
+  AppTimeSettlementRoundingDto,
+  AppTimeSettlementRunDto,
+  AppTimeSettlementSliceDto,
+  AppTimeSettlementSourceDto,
+  AppTimeSettlementSpecialIntervalDto,
+  AppTimeSettlementSpecialIntervalsDto,
+  AppTimeSettlementWorkbenchDto,
   ApproveAppManagedRegistrationDto,
   BindMyPhoneDto,
   BindMyWechatDto,
@@ -984,6 +1008,38 @@ export function createAppClient(fetcher: Fetcher) {
     /** 增量设置本人 managed 草稿的时长政策选择 [rbac: activity.time-policy.select] */
     AppManagedActivityTimePolicySelectionControllerPatch(activityId: string, body: AppPatchActivityTimePolicySelectionDto): Promise<ApiEnvelope<AppActivityTimePolicySelectionResultDto>> {
       return fetcher<AppActivityTimePolicySelectionResultDto>({ method: "PATCH", path: `/api/app/v1/my/managed-activities/${activityId}/time-policy-selection`, body });
+    },
+    /** 读取分类时长结算工作台及阻塞计数 [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeSettlementControllerWorkbench(activityId: string): Promise<ApiEnvelope<AppTimeSettlementWorkbenchDto>> {
+      return fetcher<AppTimeSettlementWorkbenchDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement` });
+    },
+    /** 显式认定有当前封印证明的草稿参与段 [rbac: activity.time-allocation.recognize] */
+    AppManagedActivityTimeSettlementControllerAllocate(activityId: string, body: AppRecognizeTimeSettlementDto): Promise<ApiEnvelope<AppTimeSettlementAllocationResultDto>> {
+      return fetcher<AppTimeSettlementAllocationResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/allocations`, body });
+    },
+    /** 读取一个冻结认定及政策理由证据 [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeSettlementControllerAllocation(activityId: string, allocationRevisionId: string): Promise<ApiEnvelope<AppTimeSettlementAllocationDetailDto>> {
+      return fetcher<AppTimeSettlementAllocationDetailDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/allocations/${allocationRevisionId}` });
+    },
+    /** 准备完整不可变分类时长草稿 [rbac: activity.time-settlement.prepare] */
+    AppManagedActivityTimeSettlementControllerPrepare(activityId: string, body: AppPrepareTimeSettlementDto): Promise<ApiEnvelope<AppTimeSettlementResultDto>> {
+      return fetcher<AppTimeSettlementResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/prepare`, body });
+    },
+    /** 分页读取指定不可变分类版本的桶 [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeSettlementControllerBuckets(activityId: string, timeRevisionId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AppTimeSettlementBucketDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppTimeSettlementBucketDto[] }>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/revisions/${timeRevisionId}/buckets`, query });
+    },
+    /** 分页追溯指定分类版本的来源，可筛选 bucketId [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeSettlementControllerBucketSources(activityId: string, timeRevisionId: string, query?: { "page"?: number; "pageSize"?: number; "bucketId"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AppTimeSettlementBucketSourceDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppTimeSettlementBucketSourceDto[] }>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/revisions/${timeRevisionId}/sources`, query });
+    },
+    /** 分页读取分类结算当前来源与认定缺口 [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeSettlementControllerSources(activityId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AppTimeSettlementSourceDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppTimeSettlementSourceDto[] }>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/sources`, query });
+    },
+    /** 分类送审（另需 activity.settlement-submit.record） [rbac: activity.time-settlement.prepare] */
+    AppManagedActivityTimeSettlementControllerSubmit(activityId: string, body: AppSubmitTimeSettlementDto): Promise<ApiEnvelope<AppTimeSettlementResultDto>> {
+      return fetcher<AppTimeSettlementResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/submit`, body });
     },
     /** App 草稿活动移交发起人(当前发起人或 responsibility override) [auth] */
     AppManagedActivityResponsibilitiesControllerTransferInitiator(activityId: string, body: TransferAppManagedActivityInitiatorDto): Promise<ApiEnvelope<AppManagedResponsibilitiesDto>> {

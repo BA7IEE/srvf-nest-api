@@ -14,6 +14,7 @@ export class ActivityTimeAllocationAuditRecorder {
     actor: CurrentUserPayload,
     meta: AuditMeta,
     result: ActivityTimeAllocationReceiptResult,
+    operationCode?: 'recognize_settlement_time_allocation',
   ): Promise<void> {
     await this.audit.log({
       event: 'activity.time-allocation.command',
@@ -24,6 +25,7 @@ export class ActivityTimeAllocationAuditRecorder {
       tx,
       meta,
       extra: {
+        ...(operationCode === undefined ? {} : { operationCode }),
         allocationRevisionId: result.allocationRevisionId,
         revision: result.revision,
         sourceSegmentId: result.sourceSegmentId,

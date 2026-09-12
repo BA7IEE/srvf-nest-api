@@ -1,6 +1,10 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **草稿依赖独立交付（2026-09-13，未合并）**：维护者已授权保留全部现有改动，在122路径内先草稿依赖、后D4分别验证、提交并创建两个关联Draft PR。本候选基于 #1325 / `eef0bbe4`，仅补大规模草稿后台执行链及必要兼容测试、说明；schema、migration、权限和HTTP合同保持D3基线（120条迁移、263权限、625端点）。D4实现留在下游PR，未计入本候选验收。7c已按摘要 `e53f7b4cedc8` 重签；D4的3b/4b仅随下游实现登记。未合并、不操作生产、不启用Gate、不删除业务数据。下方较早阶段状态为历史记录，以本条为本候选边界。
+> **当前交付状态（2026-09-13，拆分验证中）**：维护者已批准在122路径联合范围内保留全部现有改动，先草稿依赖、后D4分别完成独立验证、拆分提交、推送及两个关联Draft PR。草稿依赖保持D3的120条迁移／263权限／625端点；本D4下游实现为121条迁移／265权限／633端点、审计169总计／164活跃。3b（第121条）、4b（265／169／164）和7c（runbook摘要e53f7b4cedc8）已按维护者确认登记并通过对拍，不再是待授权项。预算120／400／950、kindCode检查器、封印查询等价优化、G6不同请求各留审计、既有测试前置与围栏适配均已批准；下文待确认／待签字的早期记录只保留历史证据。独立验证结果见计划后续登记；尚未合并、未操作生产、未启用Gate、未删除业务数据，整体跨模型复审、前端发布和生产验收仍未完成。
+
+> **D4 补充授权已落实（2026-09-12）**：维护者已批准总 SQL 预算120／400／950及 kindCode 精确检查器扩展；两项精确令牌已核验，写集为原101+1共102路径。metadata 71项通过，普通成员1／100／2000人的并发及计数组6项通过，查询40／334／805且不随人数增长。下方“预算／kindCode待补充确认”为此前时点，已解除；完整有效源规模、角色及历史版本矩阵、CI与3b/4b仍未完成。未提交、推送、开PR、合并或操作生产、Gate、业务数据。
+
+> **D4 implementation（2026-09-12，未提交、未合并）**：[#1325](https://github.com/BA7IEE/srvf-nest-api/pull/1325) 计划已合入起点 main `eef0bbe4`，维护者明确授权 101 路径 implementation、仅 app_test_w98 隔离验证和测试夹具重建，以及验证后的提交／推送／创建 PR。D4 正在实施与补验，不再是“方案待确认”；当前工作树 165 模型／121 migration／633 端点／265 权限／169 审计总计、164 活跃，不冒充 main 或生产读数。原查询预算未通过；kindCode 的 L1 登记与检查器识别范围不一致，待补充确认，未改裁判。3b/4b、完整验收及 PR CI 未完成，不合并、不操作生产、不启用 Gate、不删除业务数据。下方各阶段授权仅代表当时时点。
 
 > **D3 implementation（2026-09-12）**：D3 已随 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323) 合入 main `921a6bf3fac66067e5232768d5c5d32bf92765fc`；批准 HEAD 为 `c3a969a22b4f59b2e2ca51a46660c04d10d53b41`，18 项 PR 检查及可信审批通过，[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34677507039) 在该合并 SHA 上 completed/success。仓内基线为 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），3b/4b 已重签；零内建角色默认授码。维护者本轮只授权 D3 台账更正及 D4 [评审](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-review.md)／[精确计划](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-implementation-plan.md)合并起草、验证后提交推送并创建 docs-only PR；D4 方案和实施仍待确认。本轮不合并、不实施、不操作数据库、不启用 Gate；整体跨模型复审、前端发布与生产验收尚未完成。下方较早阶段描述保留为历史，以本条为当前状态。
 
@@ -65,7 +69,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                                                                                                                                                              | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                                                                                                                                                               | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                                                                                                                                                                | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 已完成相应仓内实施；Release 4 D1-1/#1310、D1-2/#1312、D1-3/#1316、D2/#1319、D3/#1323 均已合入并通过 main CI；D4 评审与精确计划合并起草，方案及实施待确认 | 原紧急创建 500 根因未定位；整体跨模型复审、Release 4 D4–D8 及后续、前端发布、生产部署和 Gate 切换未完成 |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 已完成相应仓内实施；Release 4 D1-1/#1310、D1-2/#1312、D1-3/#1316、D2/#1319、D3/#1323 均已合入并通过 main CI；D4 计划 #1325 已合入，101 路径实施已授权，当前未提交、验证中 | D4 查询预算及 kindCode 检查器范围待补充确认；原紧急创建 500 根因未定位；整体跨模型复审、Release 4 D4–D8 及后续、前端发布、生产部署和 Gate 切换未完成 |
 
 ### 1.1 欠代码的五项
 
@@ -124,7 +128,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1-1/D1-2/D1-3/D2/D3 的仓内实施已通过；D3/#1323 合入 `921a6bf3`，main CI 34677507039 成功；D4 仅合并起草评审及精确计划，待方案与实施授权；前端发布、生产 Gate、整体跨模型复审与 Release 4 D4–D8／后续 Release 未完成**
+**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1-1/D1-2/D1-3/D2/D3 的仓内实施已通过；D3/#1323 合入 `921a6bf3`，main CI 34677507039 成功；D4 计划 #1325 已合入，101 路径 implementation 已授权、验证中；前端发布、生产 Gate、整体跨模型复审与 Release 4 D4–D8／后续 Release 未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
@@ -280,10 +284,10 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **263** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **265** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 70** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 71** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |

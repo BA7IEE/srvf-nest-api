@@ -45,6 +45,7 @@ interface OpenApiResponse {
 interface OpenApiOperation {
   operationId?: string;
   summary?: string;
+  tags?: string[];
   security?: Array<Record<string, unknown[]>>;
   responses?: Record<string, OpenApiResponse>;
   requestBody?: {
@@ -84,6 +85,24 @@ function documented4xxCodes(operation: OpenApiOperation | undefined): number[] {
 const EXPECTED_ROUTES: ReadonlyArray<
   readonly [Lowercase<'get' | 'post' | 'put' | 'patch' | 'delete'>, string]
 > = [
+  // D4: explicit Human/App classified-settlement commands and bounded frozen read models.
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/time-settlement'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/sources'],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/allocations/{allocationRevisionId}',
+  ],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/buckets',
+  ],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/sources',
+  ],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/allocations'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/prepare'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/submit'],
   // C3-1: separate immutable rule bindings and system candidate commands/read model.
   ['post', '/api/admin/v1/activity-metric-rule-bindings'],
   ['get', '/api/admin/v1/activity-metric-rule-bindings'],
@@ -1147,7 +1166,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 625; // D1-3 +5 immutable activity time-policy selection routes
+const EXPECTED_ROUTE_COUNT = 633; // D4 +8 explicit classified-settlement routes; existing 625 unchanged.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -3278,6 +3297,166 @@ describe('OpenAPI 契约快照', () => {
     const operation = doc.paths['/api/app/v1/my/managed-activities/outcome-reports/query'].post;
     expect(operation?.responses?.['200']).toBeDefined();
     expect(operation?.responses?.['201']).toBeUndefined();
+  });
+
+  it('D4 八个分类结算入口仅属 Human App，三个显式写命令返回 200', () => {
+    const prefix = '/api/app/v1/my/managed-activities/{activityId}/time-settlement';
+    const routes = [
+      [prefix, 'get'],
+      [prefix + '/sources', 'get'],
+      [prefix + '/allocations/{allocationRevisionId}', 'get'],
+      [prefix + '/revisions/{timeRevisionId}/buckets', 'get'],
+      [prefix + '/revisions/{timeRevisionId}/sources', 'get'],
+      [prefix + '/allocations', 'post'],
+      [prefix + '/prepare', 'post'],
+      [prefix + '/submit', 'post'],
+    ] as const;
+    expect(
+      Object.keys(doc.paths)
+        .filter((path) => path.includes('/time-settlement'))
+        .sort(),
+    ).toEqual(routes.map(([path]) => path).sort());
+    for (const [path, method] of routes) {
+      const operation = doc.paths[path][method];
+      expect(operation?.tags).toEqual(['Mobile - Managed Activity Time Settlement']);
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      expect(operation?.responses?.['200']).toBeDefined();
+      expect(operation?.responses?.['201']).toBeUndefined();
+      expect(operation?.responses?.['401']).toBeDefined();
+      expect(operation?.responses?.['403']).toBeDefined();
+      if (method === 'post') expect(operation?.responses?.['503']).toBeDefined();
+    }
+  });
+
+  it('D4 自动未知保持 nullable，原始毫秒是十进制字符串，分页不泄露理由', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const bucket = schemas.AppTimeSettlementBucketDto as OpenApiSchema;
+    expect(bucket.properties?.categoryCode.enum).toEqual([
+      'volunteer_service',
+      'training',
+      'organization',
+      'non_creditable',
+    ]);
+    expect(bucket.properties?.calculatedSeconds).toMatchObject({ type: 'number', nullable: true });
+    expect(bucket.properties?.emptyReasonCode).toMatchObject({
+      nullable: true,
+      enum: ['no_valid_segment'],
+    });
+    for (const name of ['AppTimeSettlementBucketDto', 'AppTimeSettlementBucketSourceDto']) {
+      const schema = schemas[name] as OpenApiSchema;
+      expect(schema.properties?.rawCalculatedMilliseconds).toEqual({
+        type: 'string',
+        nullable: true,
+        pattern: '^[0-9]+$',
+      });
+      expect(schema.properties?.rawRecognizedMilliseconds).toEqual({
+        type: 'string',
+        pattern: '^[0-9]+$',
+      });
+    }
+    for (const name of [
+      'AppTimeSettlementSourceDto',
+      'AppTimeSettlementBucketDto',
+      'AppTimeSettlementBucketSourceDto',
+      'AppTimeSettlementWorkbenchDto',
+    ]) {
+      const schema = schemas[name] as OpenApiSchema;
+      for (const field of [
+        'manualReason',
+        'adjustmentReason',
+        'phone',
+        'idCard',
+        'signedUrl',
+        'createdByUserId',
+        'actorUserId',
+      ]) {
+        expect(schema.properties).not.toHaveProperty(field);
+      }
+    }
+    const detail = schemas.AppTimeSettlementAllocationDetailDto as OpenApiSchema;
+    expect(detail.properties?.manualReason).toEqual({ type: 'string', nullable: true });
+    expect(detail.properties?.slices).toMatchObject({ maxItems: 500 });
+    expect(detail.properties?.evidence).toMatchObject({ maxItems: 500 });
+    expect((schemas.AppTimeSettlementEvidenceDto as OpenApiSchema).properties).toEqual({
+      attachmentId: { type: 'string' },
+      ordinal: { type: 'number' },
+    });
+  });
+
+  it('D4 人工输入只接收区间，不接收计算秒数；收据字段为安全闭集', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const inputSlice = schemas.AppTimeSettlementManualSliceDto as OpenApiSchema;
+    expect(Object.keys(inputSlice.properties ?? {}).sort()).toEqual([
+      'categoryCode',
+      'endAt',
+      'startAt',
+    ]);
+    const outputSlice = schemas.AppTimeSettlementSliceDto as OpenApiSchema;
+    expect(Object.keys(outputSlice.properties ?? {}).sort()).toEqual([
+      'categoryCode',
+      'endAt',
+      'intervalKindCode',
+      'startAt',
+    ]);
+    const recognize = schemas.AppRecognizeTimeSettlementDto as OpenApiSchema;
+    expect(recognize.properties?.slices).toMatchObject({
+      items: { $ref: '#/components/schemas/AppTimeSettlementManualSliceDto' },
+      minItems: 1,
+      maxItems: 500,
+    });
+    expect(recognize.properties?.evidenceAttachmentIds).toMatchObject({ maxItems: 500 });
+    expect(recognize.properties?.manualReason).toMatchObject({ minLength: 1, maxLength: 1024 });
+    expect(
+      Object.keys((schemas.AppPrepareTimeSettlementDto as OpenApiSchema).properties ?? {}).sort(),
+    ).toEqual([
+      'expectedDraftVersion',
+      'expectedEvidenceSealId',
+      'expectedTimeRevision',
+      'operationKey',
+    ]);
+    expect(
+      Object.keys((schemas.AppSubmitTimeSettlementDto as OpenApiSchema).properties ?? {}).sort(),
+    ).toEqual([
+      'expectedBucketContentHash',
+      'expectedDraftVersion',
+      'expectedEvidenceSealId',
+      'operationKey',
+      'timeRevisionId',
+    ]);
+    expect(
+      Object.keys((schemas.AppTimeSettlementResultDto as OpenApiSchema).properties ?? {}).sort(),
+    ).toEqual([
+      'activityId',
+      'bucketContentHash',
+      'bucketCount',
+      'contentHash',
+      'createdAt',
+      'kindCode',
+      'revision',
+      'schemaVersion',
+      'settlementRunId',
+      'settlementVersion',
+      'settlementVersionId',
+      'sourceCount',
+      'timeRevisionId',
+    ]);
+    expect(
+      Object.keys(
+        (schemas.AppTimeSettlementAllocationResultDto as OpenApiSchema).properties ?? {},
+      ).sort(),
+    ).toEqual([
+      'activityId',
+      'allocationHash',
+      'allocationRevisionId',
+      'createdAt',
+      'evidenceCount',
+      'recognitionModeCode',
+      'revision',
+      'schemaVersion',
+      'sliceCount',
+      'sourceSegmentId',
+      'sourceSegmentRevision',
+    ]);
   });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {

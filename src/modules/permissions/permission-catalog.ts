@@ -100,7 +100,26 @@ export const ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED: ReadonlyArray<RbacPermiss
     module: 'activity',
     action: 'time-allocation',
     resourceType: 'recognize',
-    description: '认定活动参与时长原始区间；显式授权、当前责任及组织范围同时满足',
+    description:
+      '认定已提交参与段或有当前封印证明的结算草稿段；显式授权、当前责任及组织范围同时满足',
+  },
+];
+
+// D4: explicit custom-role grants only; neither permission implies the other.
+export const ACTIVITY_TIME_SETTLEMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity.time-settlement.read',
+    module: 'activity',
+    action: 'time-settlement',
+    resourceType: 'read',
+    description: '查看有权活动的分类时长结算与冻结证据；显式范围及当前负责人或审核资格同时满足',
+  },
+  {
+    code: 'activity.time-settlement.prepare',
+    module: 'activity',
+    action: 'time-settlement',
+    resourceType: 'prepare',
+    description: '准备活动分类时长结算；显式范围及当前负责人资格同时满足，提交另需既有提交权限',
   },
 ];
 
@@ -3039,10 +3058,36 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.time-allocation.recognize': {
       displayName: '认定活动参与时长',
       businessDescription:
-        '真人基于已提交参与时段和冻结时长政策认定原始区间；不结算、不累计、不自动授予内建角色。',
+        '真人基于已提交参与段或有当前封印证明的结算草稿段及冻结政策认定原始区间；不累计、不自动授予内建角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 196,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.time-settlement.read': {
+      displayName: '查看分类时长结算',
+      businessDescription:
+        '真人凭显式范围和当前负责人或实际审核资格读取冻结分类桶及证据；不隐含准备权限，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 197,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.time-settlement.prepare': {
+      displayName: '准备分类时长结算',
+      businessDescription:
+        '真人凭显式范围和当前负责人资格准备冻结分类桶；提交还须既有结算提交权限，不隐含读取权限，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 198,
       riskLevel: 'HIGH',
       riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',
