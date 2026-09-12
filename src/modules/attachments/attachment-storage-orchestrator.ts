@@ -312,14 +312,20 @@ export class AttachmentStorageOrchestrator {
     if (!current) {
       throw new BizException(BizCode.ATTACHMENT_NOT_FOUND);
     }
-    // C2 evidence is immutable. Check while holding Attachment FOR UPDATE, before
+    // C2/D3 evidence is immutable. Check while holding Attachment FOR UPDATE, before
     // committing a delete intent: the later FK check cannot undo a provider delete.
-    // Outcome writers hold this same row FOR SHARE until their reference commits.
-    const outcomeReference = await tx.attachment.findFirst({
-      where: { id: current.id, activityMetricValueEvidence: { some: {} } },
+    // Outcome and time-allocation writers hold this same row FOR SHARE until their reference commits.
+    const immutableEvidenceReference = await tx.attachment.findFirst({
+      where: {
+        id: current.id,
+        OR: [
+          { activityMetricValueEvidence: { some: {} } },
+          { participantTimeAllocationEvidence: { some: {} } },
+        ],
+      },
       select: { id: true },
     });
-    if (outcomeReference) {
+    if (immutableEvidenceReference) {
       throw new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING);
     }
     await tx.$queryRaw(Prisma.sql`

@@ -1,6 +1,6 @@
 # Activity OS Release 4 / D3：时长分配修订评审与授权清单
 
-> **当前阶段（2026-09-12）**：D1 的 TimePolicy、四层选择与发布冻结已随 #1310/#1312/#1316 进入 main；D2 的只读 `ParticipationSegmentFacade` 已随 [#1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 进入 main，并由 [main CI 34625317010](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34625317010) 独立验证。维护者已确认本稿方案 A，并授权起草 [D3 精确实施计划](activity-os-r4-d3-time-allocation-revision-implementation-plan.md) 与 docs-only PR；没有批准 D3 实现、迁移执行、接口、权限写入、测试库操作、合并、生产或 Gate。
+> **当前阶段（2026-09-12）**：D3 implementation 已在当前分支落地，处于提交收口阶段、未合并。维护者已确认原精确写集、第 120 条 migration、`app_test_w98` 隔离验证，并补充授权 `prisma/seed.ts` 的单码 seed 闭包及两份 Harness inventory 登记。`recognitionModeCode` 已登记为 L1 inventory、`not-derived` 的不可变配置，没有新增生命周期或状态边。当前 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃）；零内建角色默认授码。D3 应用 E2E 18 项与迁移 E2E 3 项已通过，包含真实锁等待撤权、源段更正、选择变更、政策退役、附件删除双向竞争与失败回滚；其余本地验证见实施计划。3b/4b 重签、可信红区审批、PR CI、合并后 main CI、生产、Gate 与整体跨模型复审仍未完成。
 
 ## 1. 人话简报与推荐
 
@@ -62,18 +62,18 @@ D1 已回答“某个活动、场次或岗位应适用哪一版时长政策”�
 4. 人工认定权限、组织范围、审计事件、收据 operation、错误码、最小安全 DTO 与是否在 D3 暂不开放 HTTP。上述每一项都必须从当前权威码表与访问面取证，不能复用 D1/D2 的授权令牌。
 5. 迁移策略、旧 migration replay、隔离测试库、3b/4b 签字、受保护路径和派生文档的精确写集。D3 预期为 D 档，当前不授权任何 schema 或测试库动作。
 
-上述五项已在 [精确实施计划](activity-os-r4-d3-time-allocation-revision-implementation-plan.md) 中分别固定为四表合同、逐态矩阵、固定锁序、独立权限/收据/审计和第 120 条 migration 预算。该计划没有把这些决定变成当前代码，也不构成任何红区或数据库授权。
+上述五项已在 [精确实施计划](activity-os-r4-d3-time-allocation-revision-implementation-plan.md) 中分别固定并在当前工作树兑现为四表合同、逐态矩阵、固定锁序、独立权限／收据／审计和第 120 条 migration。隔离 E2E、定向单测、typecheck、build、contract 与 lint 已通过；Harness inventory 已按补充授权完成；本地结果不替代签字、可信审批、PR CI 或 main CI。
 
-## 6. 未来验收探针（现在不执行）
+## 6. 实施验收探针（当前分支已定向执行）
 
 - 源段同链、当前语义、开放／作废／替换／早退零值和跨活动／成员／场次错配逐项 fail-closed；D3 不读取或写入 `serviceHours`。
 - 自动 policy 解释、special interval、rounding、`allowSplit`、类别闭集、片段互斥与总量上限各有独立正反向探针；不得把多个不变量塞进一个首错即停断言。
 - 同键同 payload 重放、异 payload 冲突、活动锁并发、政策退役／选择变更／段重建／资格撤回交错均无半写，并保留历史 revision。
 - 旧考勤、结算、贡献、成果、证明、D1 选择和 D2 Facade 回归不变；D3 阶段不产生外部 contract、客户端、Gate 或生产行为漂移。
-- 未来 D 档实施需分别完成 migration 冷回放、隔离 PostgreSQL E2E、可信红区审批、3b/4b、PR CI 与合并后 main CI；这些证据不能由本次 docs-only PR 替代。
+- 当前分支已完成 migration 冷回放、隔离 PostgreSQL E2E 和定向回归；可信红区审批、3b/4b、PR CI 与合并后 main CI 仍须分别完成，定向结果不能替代它们。
 
 ## 7. 本次写集与后续授权
 
-本轮只修改七份文档：本评审稿、D3 精确计划、其 changelog、D2 两份文档以及两份台账。没有实现 D3、没有操作数据库、没有新增 schema、migration、权限、审计、接口、DTO、测试、Gate 或生产。
+本轮已按维护者确认的 D3 写集实现 schema／migration、内部 command、权限／审计／错误码、附件删除保护、D2 窄桥和测试，并只在获批隔离测试链验证。没有新增外部接口、DTO、客户端、Gate、生产操作或业务数据删除；`prisma/seed.ts` 的扩展仅纳入新权限码 seed 闭包，未改变任何内建角色默认授权。
 
-方案 A 已确认，精确计划现已形成。下一步只能由维护者另行确认 implementation 的实际写集、真实 migration 路径、红区 grant 与隔离测试库许可；计划 PR 的 Ready、合并、生产和 Gate 仍是独立动作。
+方案 A 与原 implementation、seed、inventory 精确扩展均已确认；两份 Harness 登记已完成。按既有授权完成本地收口后提交、推送并创建 Draft PR；本轮 3b/4b 重签和可信审批仍需维护者处理。Ready、合并、生产和 Gate 不在本次授权内。

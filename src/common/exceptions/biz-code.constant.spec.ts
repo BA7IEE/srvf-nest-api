@@ -62,6 +62,16 @@ describe('BizCode', () => {
     ]).toEqual([20205, 20206, 20207, 20208, 20209, 20210, 20211, 20212]);
   });
 
+  it('D3 参与时长认定错误码固定为连续的五项合同', () => {
+    expect([
+      BizCode.ACTIVITY_TIME_ALLOCATION_INVALID.code,
+      BizCode.ACTIVITY_TIME_ALLOCATION_REFERENCE_UNAVAILABLE.code,
+      BizCode.ACTIVITY_TIME_ALLOCATION_STALE.code,
+      BizCode.ACTIVITY_TIME_ALLOCATION_COMMAND_CONFLICT.code,
+      BizCode.ACTIVITY_TIME_ALLOCATION_POLICY_UNAVAILABLE.code,
+    ]).toEqual([20213, 20214, 20215, 20216, 20217]);
+  });
+
   describe.each(entries)('%s', (key, entry) => {
     it('key 命名为大写 SNAKE_CASE', () => {
       expect(key).toMatch(KEY_PATTERN);

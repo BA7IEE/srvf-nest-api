@@ -250,7 +250,13 @@ describe('C2 outcome evidence delete fence', () => {
     ).rejects.toEqual(new BizException(BizCode.ATTACHMENT_STORAGE_OPERATION_PENDING));
     expect(calls).toEqual(['lock', 'reference']);
     expect(findFirst).toHaveBeenCalledWith({
-      where: { id: input.attachmentId, activityMetricValueEvidence: { some: {} } },
+      where: {
+        id: input.attachmentId,
+        OR: [
+          { activityMetricValueEvidence: { some: {} } },
+          { participantTimeAllocationEvidence: { some: {} } },
+        ],
+      },
       select: { id: true },
     });
     expect(objectFindUnique).not.toHaveBeenCalled();

@@ -51,6 +51,9 @@ import { AppManagedActivityMetricCandidatesController } from './controllers/app-
 import { ActivityOutcomeQueryService } from './activity-outcome-query.service';
 import { ActivityOutcomeAccessService } from './activity-outcome-access.service';
 import { ActivityOutcomeAuditRecorder } from './activity-outcome-audit-recorder';
+import { ActivityTimeAllocationAccessService } from './activity-time-allocation-access.service';
+import { ActivityTimeAllocationAuditRecorder } from './activity-time-allocation-audit-recorder';
+import { ActivityTimeAllocationService } from './activity-time-allocation.service';
 import { AppManagedActivityOutcomesController } from './controllers/app-managed-activity-outcomes.controller';
 import { ActivityMetricAuditRecorder } from './activity-metric-audit-recorder';
 import { ActivityMetricDefinitionService } from './activity-metric-definition.service';
@@ -248,6 +251,9 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityOutcomeQueryService,
     ActivityOutcomeAccessService,
     ActivityOutcomeAuditRecorder,
+    ActivityTimeAllocationAccessService,
+    ActivityTimeAllocationAuditRecorder,
+    ActivityTimeAllocationService,
     ActivityControlPlaneGate,
     ActivityCreationService,
     ActivityCreationQuick,
