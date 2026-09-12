@@ -1,11 +1,13 @@
 import type { Prisma } from '@prisma/client';
+import { AttendanceAccessService } from './attendance-access.service';
 import {
   PARTICIPATION_SEGMENT_FACADE_LIMITS,
   ParticipationSegmentFacade,
 } from './participation-segment.facade';
 
 describe('ParticipationSegmentFacade', () => {
-  const service = new ParticipationSegmentFacade();
+  const access = { lockActivityForAttendanceWrite: jest.fn().mockResolvedValue(undefined) };
+  const service = new ParticipationSegmentFacade(access as unknown as AttendanceAccessService);
 
   function row(overrides: Record<string, unknown> = {}) {
     return {
@@ -69,6 +71,12 @@ describe('ParticipationSegmentFacade', () => {
     };
     return { db, tx: db as unknown as Prisma.TransactionClient };
   }
+
+  it('exposes only the D3 narrow activity lock bridge', async () => {
+    const tx = {} as Prisma.TransactionClient;
+    await service.lockActivityForTimeAllocationWrite(tx, 'activity');
+    expect(access.lockActivityForAttendanceWrite).toHaveBeenCalledWith('activity', tx);
+  });
 
   it('uses the supplied transaction and the exact bounded current projection', async () => {
     const f = fixture();

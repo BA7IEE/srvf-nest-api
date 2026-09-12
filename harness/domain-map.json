@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:7c1782e2e41a5c1fabf7850a436c0bf8367f56e4425dae279c20d1c12142deb6",
+  "inputDigest": "sha256:66fd4c0461fee6002e48a93314167cc024b6a2e4f5d9139e60d8fdc96f9a8b35",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -703,6 +703,30 @@
       "confirmed": true
     },
     "ParticipantServiceSegmentRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipantTimeAllocationRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipantTimeAllocationSlice": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipantTimeAllocationEvidence": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipantTimeAllocationCommandReceipt": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",

@@ -1,8 +1,8 @@
 # Activity OS Release 4 / D3：时长分配修订精确实施计划与授权清单
 
-> **当前状态（2026-09-12）**：维护者已确认 D3 方案 A，并授权本计划及台账的 docs-only PR。本计划的基点是 main 84e96f9135f2adc8585d0af6839cf856ade4ef01。本文只定义未来 D 档实施的合同、探针和精确候选写集；当前没有 D3 代码、schema、migration、数据库操作、Gate、合并或生产授权。
+> **当前状态（2026-09-12）**：D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。
 
-> **不把计划当能力**：以下模型名、错误码、权限、审计事件、锁序和未来路径，是实施前必须逐项兑现并验证的约束，不是当前仓库已经提供的功能。未来实施前如 main 已变化，必须重新 preflight、逐路径运行 harness:needs，并把实际生成的 migration 路径重新报维护者确认。
+> **不把分支当能力**：以下模型名、错误码、权限、审计事件、锁序和路径已在当前工作树按计划兑现，但未合并分支不是 main 或生产能力。红区登记及 3b/4b 重签已完成；可信审批、PR CI 与合并后 main CI 必须各自完成，不能以当前定向验证替代。
 
 ## 1. D3 要交付什么，以及绝不交付什么
 
@@ -35,7 +35,7 @@ D1 已固定活动在发布时选择的 TimePolicy，D2 已提供当前参与事
 | ActivityParticipationIdentity 与服务段复合锚 | identity 绑定 activity/session/member；服务段可用 sourceSegmentId 与 identity 组合证明来源。 | allocation 必须使用复合 FK 闭合活动、场次、成员、identity 与源段，不能只存裸 ID。 |
 | Attachment 现状 | Attachment 是 ownerType/ownerId 多态归属；既有成果证据已经采用 owner/storage 双锁。 | D3 证据须在同一事务锁定活动 owner 与存储边界，并扩展删除保护。 |
 
-当前仓库读数为 157 个模型、119 条 migration、262 个权限码、167 个 AuditLogEvent（162 个活跃）、625 个端点。若本计划完整实施且 main 未先变化，预期为 161 个模型、120 条 migration、263 个权限码、168 个 AuditLogEvent（163 个活跃）、625 个端点；这是预算，不是当前事实或提前签字。
+当前工作树读数为 161 个模型、120 条 migration、263 个权限码、168 个 AuditLogEvent（163 个活跃）、625 个端点；main 尚未接收本分支，不能把这些读数写成 main、生产或提前签字事实。
 
 ## 3. 方案 A：不可变 allocation revision 合同
 
@@ -105,7 +105,7 @@ D3 仅持久化原始片段与原始秒数验证，不做逐片或逐段 roundin
 
 ## 5. 访问、错误和审计
 
-未来新增一个独立权限 activity.time-allocation.recognize，建议元数据为 module=activity、action=time-allocation、resourceType=recognize。它不是 activity.time-policy.select、目录管理权限或 activity.settlement-final-review.record 的别名，也不自动授予任何内建角色。
+本分支新增一个独立权限 activity.time-allocation.recognize，元数据为 module=activity、action=time-allocation、resourceType=recognize。它不是 activity.time-policy.select、目录管理权限或 activity.settlement-final-review.record 的别名，也不自动授予任何内建角色。
 
 调用者必须同时满足：活跃 User、可用 App 身份、显式可见组织范围、对活动资源的 authz.can 通过，以及当前 Activity responsibility owner。没有“全局管理员天然绕过”的捷径；每次锁后都重验这些资格。实现采用新的 ActivityTimeAllocationAccessService，沿既有 Outcome access 的同一资格顺序，但不深引其私有实现。
 
@@ -132,32 +132,46 @@ D3 仅持久化原始片段与原始秒数验证，不做逐片或逐段 roundin
 
 ## 7. migration、Storage 保护与验证策略
 
-未来 migration 是 main 的第 120 条。实际目录只能在实施时由维护者生成并逐文件确认，命名格式为 prisma/migrations/<timestamp>_activity_os_r4_d3_time_allocation_revision/migration.sql；本文不授权生成或执行它。
+本分支实际第 120 条 migration 为 `prisma/migrations/20260912090000_activity_os_r4_d3_time_allocation_revision/migration.sql`。它只做 expand：建四张空表、必要 unique/FK/index/check/trigger，并在 SQL 层核验 snapshot 的 source session／position 仍属于冻结历史图；没有 DML、回填、删除、旧服务段或旧时长更新。
 
-迁移只做 expand：建四张空表、必要 unique/FK/index/check/trigger、Attachment 删除保护与权限/审计相关声明，不回填、不删除、不更新旧服务段或旧时长。所有业务关联 Restrict。必须同时验证空库完整回放、历史非空库升级、同链失败、append-only、防重叠、总量、receipt replay 和 Attachment 被引用后删除拒绝。
+所有业务关联均为 Restrict。获批隔离验证已经覆盖冷回放、历史非空升级、同链失败、append-only、防重叠、总量、receipt replay、snapshot source target 错配和 Attachment 被引用后删除拒绝；这些结果不代替最终 Harness、签字、可信审批或 CI。
 
 Storage 的改动限于 AttachmentStorageOrchestrator 的已存在删除引用查询：在已锁定 Attachment 下，除现有 activityMetricValueEvidence 外，再拒绝任何 ParticipantTimeAllocationEvidence 引用。D3 不改 Storage 上传、Provider、密钥、签名 URL 或删除流程其它语义。
 
-## 8. 后续 implementation 的精确候选写集
+## 8. D3 implementation 的精确写集
 
-下表是下一次 D3 implementation 授权时的候选白名单，不是本轮写入许可。任何少列或新增路径都要先逐路径复核 harness:needs；实际 migration 目录不以占位符获得授权。
+下表是维护者已经确认的 D3 implementation 白名单；后续扩展为 `prisma/seed.ts`，以及 `harness/state-machines.json`、`docs/ai-harness/STATE_MACHINE_INVENTORY.md` 的精确 inventory 登记。任何其它新增路径仍须先逐路径复核并由维护者明确授权。
 
-| 分类 | 未来路径 | 允许范围 |
+维护者 2026-09-12 另已确认 #1323 的五份旧 E2E 适配及 3b/4b 重签，精确增量如下；不改生产代码或门禁，不放宽历史升级与业务断言。
+
+| 已确认路径 | 本轮唯一改动 |
+| --- | --- |
+| test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts | 当前全链回放标题与总数 119→120；保留历史 117→118 升级、SQL checksum 与历史迁移锚。 |
+| test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts | 当前全链标题与总数 119→120；D1-3 锚固定为第 119 条 `names[118]`，保留 118→119 历史升级。 |
+| test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts | 当前全链标题与总数 119→120；保留 112→113 历史升级及全部成果行为断言。 |
+| test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts | 在原计数适配外，仅将当前 seed 权限总数 262→263；保留旧收据逐字一致、seed 二跑、零默认授码与历史 111→112。 |
+| test/e2e/activity-os-r4-d1-1-time-policy-foundation.e2e-spec.ts | 测试清理 TRUNCATE 显式加入四张 ParticipantTimeAllocation 表，不使用 CASCADE，不改行为断言。 |
+| docs/ai-harness/CUTOVER_SIGNOFF.md | 按维护者当轮确认重签 3b 第 120 条及 4b 权限 263、审计 168/163，保留历史签字依据。 |
+
+验证只使用 `app_test_w98`，每套串行重建测试夹具；不运行会写入 `app_test` / `app_test_w1` 的默认全局初始化，不修改仓库 test/setup 或 Jest 门禁配置。验证后与下表已授权的计划、台账及 changelog 一次提交推送更新 #1323；检查通过后才可 Ready，不合并。
+
+| 分类 | 实施路径 | 允许范围 |
 | --- | --- | --- |
 | schema | prisma/schema.prisma | 四个不可变模型、复合锚与已有 Attachment 关系；不改既有服务段语义。 |
-| migration | prisma/migrations/<timestamp>_activity_os_r4_d3_time_allocation_revision/migration.sql | 仅第 120 条 expand/guard SQL；无 DML、无回填、无删除。 |
+| migration | prisma/migrations/20260912090000_activity_os_r4_d3_time_allocation_revision/migration.sql | 仅第 120 条 expand/guard SQL；无 DML、无回填、无删除。 |
 | activities 实现 | src/modules/activities/activity-time-allocation-command.ts、activity-time-allocation-policy.ts、activity-time-allocation.service.ts、activity-time-allocation-access.service.ts、activity-time-allocation-audit-recorder.ts、activity-time-allocation.presenter.ts、activities.module.ts | 新内部 command、纯解析、访问、审计与 provider 接线；无 controller/DTO。 |
 | activities 单测 | 上述六个新实现对应的 .spec.ts | 每项不变量、错误、重放、资格、锁后重验和安全展示的独立断言。 |
 | attendance 桥 | src/modules/attendances/participation-segment.facade.ts 及其 .spec.ts | 只增加窄活动锁桥；不改 reader 字段、服务段 writer 或既有消费者。 |
 | attachments | src/modules/attachments/attachment-storage-orchestrator.ts 及其 .spec.ts | 只补 D3 evidence 删除保护，保持现有锁点和 Storage 行为。 |
-| permission | src/modules/permissions/permission-catalog.ts、seed-permission-codes.ts、permission-code-holders.spec.ts | 仅一枚新码、显式持码登记、零内建角色默认授予。 |
+| permission / seed | src/modules/permissions/permission-catalog.ts、seed-permission-codes.ts、permission-code-holders.spec.ts、prisma/seed.ts | 仅一枚新码、显式持码登记；`prisma/seed.ts` 只纳入该码的 seed 闭包与目录，零内建角色默认授予。 |
 | audit/error | src/modules/audit-logs/audit-logs.types.ts、audit-event-registry.spec.ts、src/common/exceptions/biz-code.constant.ts、biz-code.constant.spec.ts | 一个活跃事件与五个确有语义的 BizCode；不改全局异常行为。 |
 | time registry | src/common/datetime/clock-authority.spec.ts | 仅登记新 receipt/revision 时间字段，保留既有断言。 |
+| 非生命周期 inventory（维护者后续扩展） | harness/state-machines.json、docs/ai-harness/STATE_MACHINE_INVENTORY.md | 仅登记 recognitionModeCode 为 L1 inventory / not-derived，并刷新派生摘要；不新增状态边或改变裁决规则。 |
 | 新 E2E | test/e2e/activity-os-r4-d3-time-allocation-revision.e2e-spec.ts、activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts | 隔离库端到端、冷回放、非空升级、SQL/事务/并发反例。 |
 | 旧 migration 计数 | test/e2e/activity-os-r1-a3-template-definition-lifecycle-guards.e2e-spec.ts、activity-os-r1-a4-explicit-template-version-pointer.e2e-spec.ts、activity-os-r2-b1-place-schema-constraints.e2e-spec.ts、activity-os-r2-b2-coordinate-projection-schema-constraints.e2e-spec.ts、activity-os-r2-b3-form-blueprint-governance.e2e-spec.ts、activity-os-r2-b6-creation-data-foundation.e2e-spec.ts、activity-os-r3-c1-d2a-metric-command-receipt-migration.e2e-spec.ts、activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts、activity-os-r3-c1-metric-definition-set.e2e-spec.ts、activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts、activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts、activity-v11-batch4-allocation-determinism-migration.e2e-spec.ts、activity-v11-batch4-allocation-mode-migration.e2e-spec.ts、activity-v11-batch4-qualification-contract-migration.e2e-spec.ts、insurance-evidence-registration-revision-migration.e2e-spec.ts | 仅 CURRENT_MIGRATION_COUNT 119→120；所有历史世代基线和行为断言保持不变。 |
 | harness/生成/台账 | scripts/harness-guards.selftest.ts、harness/domain-map.json、harness/authz-assertion-patterns.json、harness/authz-implication-graph.json、harness/permission-surface-baseline.json、docs/current-state.md、CODEMAP.md、docs/ai-harness/RBAC_MAP.md、docs/ai-harness/ROUTE_AUTHZ.md、docs/ai-harness/AUDIT_EVENT_REGISTRY.md、docs/ai-harness/FROZEN_DRAFTS.md、docs/ai-harness/NEXT_TASKS.md、src/modules/activities/CLAUDE.md、prisma/CLAUDE.md、changelog.d/activity-os-r4-d3-time-allocation-revision-implementation.md、docs/plans/activity-os-r4-d3-time-allocation-revision-review.md、本文 | 仅真实派生读数、D3 状态、实施证据和未做项；生成物必须由对应脚本刷新，守护只改计数/登记，不改裁决。 |
 
-明确不在未来候选写集内：controller、DTO、OpenAPI/contract snapshot、客户端、Gate、global guard、Activity/Attendance 既有 writer、旧 serviceHours 投影、结算/账本/证明、test/setup、生产配置、Redis/queue/cron、任何业务数据清理。D3 没有 statusCode 生命周期，故 harness/state-machines.json 与 STATE_MACHINE_INVENTORY.md 不在写集，不能为了“文档齐全”虚构状态机登记。
+明确不在 D3 写集内：controller、DTO、OpenAPI/contract snapshot、客户端、Gate、global guard、Activity/Attendance 既有 writer、旧 serviceHours 投影、结算/账本/证明、test/setup、生产配置、Redis/queue/cron、任何业务数据清理。D3 没有 statusCode 生命周期；本仓扫描把 recognitionModeCode 识别为需显式分类的 string-state 字段，现已按维护者确认登记为 L1 inventory、`not-derived` 的 immutable configuration。不虚构生命周期，也不提升为 governed。
 
 ## 9. 必过探针与签收
 
@@ -170,14 +184,34 @@ Storage 的改动限于 AttachmentStorageOrchestrator 的已存在删除引用�
 | migration | 空库全链回放、非空历史升级、120 条计数、每条 SQL guard 的正反变异；不把旧固定 migration 基线改成 120。 |
 | 安全 | 未持码、无显式组织范围、非 owner、失效成员、跨活动附件、附件已被 Storage 删除、AI/外部来源和未锁重读都 fail-closed。 |
 
-实施时只可在维护者当场许可的 app_test 与 app_test_w98 隔离库上做 migration 验证和测试夹具重建。AI 不自动运行 prisma migrate dev、migrate reset 或 db push；生产只可能由维护者后续独立审批。完成后仍需：3b 对真实第 120 条 migration 重签、4b 对真实权限/审计读数重签、PR CI、可信红区审批、合并后 main CI；其中任一未完成，D3 不登记完成。
+本轮补验只使用 `app_test_w98`，从空库部署当前 migration 文件；临时验证入口保留测试环境护栏，跳过会重建其它模板／worker 库的通用全局初始化。没有运行 `prisma migrate dev`、`migrate reset` 或 `db push`。3b/4b 已按维护者 2026-09-12 确认重签并通过对拍：migration 120，权限 263、seed 摘要 `9f305e80d3f5`，审计 168 总计／163 活跃。可信审批、PR CI 与合并后 main CI 未完成前，不登记 D3 收口。
 
-## 10. 本轮 docs-only 授权与下一步
+### 9.1 本地补验证据（2026-09-12）
 
-本轮只允许以下七个文档路径：FROZEN_DRAFTS.md、NEXT_TASKS.md、D2 review、D2 implementation plan、D3 review、本文和 D3 plan changelog。它们只记录 D3 方案 A 已确认、精确计划已起草和后续边界；不产生实现能力。
+| 验证 | 结果与范围 |
+| --- | --- |
+| 全仓单测 | 376 套、8174 项通过；5 项既有 todo。未以定向单测替代全仓单测。 |
+| D3 application E2E | 18/18；真实 PostgreSQL 同键重放、revision 竞争、六类锁等待后身份停用、组织撤权、源段更正、政策退役、选择变更、附件删除双向竞争和最终审计失败回滚。 |
+| D3 migration E2E | 3/3；120 条冷回放、119→120 非空升级、SQL 同链／不可变／manifest／evidence／receipt 正反例。SQL SHA-256 为 `caee91d1e8f2d1dae5e79d7789cd3473e886f23693ec200fd057f6a23d71ca54`。 |
+| 五份旧 E2E 兼容补验 | 全部通过，共 106 项：D1-1 migration 2、D1-3 migration 3、C2 D1 8、C1 D2b 63、D1-1 foundation 30。逐套仅在 app_test_w98 从空库串行验证，历史升级与业务断言保留；结束仅回收该测试夹具库。 |
+| 类型、构建与 lint | 完整 typecheck 通过；build 与全仓 lint 在本轮前段通过，后续变动的 TypeScript 已再次 lint；没有修改 lint 内存配置或裁决规则。 |
+| 契约 | 1049 项、2 个快照通过；未更新 snapshot。 |
+| Harness selftest | guards 543 通过、eslint 138 通过、hooks 68 通过，各组失败均为 0；保留脚本明确报告的已知缺口，不把它们宣称为已覆盖。 |
+| 派生检查 | metadata、authz、counts、migration count、RBAC map、CODEMAP、readtax 与 FROZEN 台账通过；CODEMAP 保留 2 项既有非阻断 warning。 |
+| 签字对拍 | 维护者明确确认后更新 3b/4b，`pnpm cutover:check:signoff` 已通过；不替代可信审批、PR CI、整体复审、合并或生产授权。 |
 
-下一步必须由维护者另行明确确认完整 implementation 写集、实际 migration 路径与每条红区 grant，并当场许可隔离数据库验证。届时才能开始 D3 代码；计划 PR 的创建、Ready、合并、生产和 Gate 仍是彼此独立的动作。
+**验证执行范围偏差**：D3 补验由测试自身重建 `app_test_w98`。契约验证误用默认 global setup，对 `app_test` 执行了无待迁移的 deploy 核验，并创建／回收 `app_test_w1`，超出本轮限定的 w98 范围；已向维护者说明并停止该入口。只读复核确认 w1 与 w98 均已回收，未触及生产。没有将此偏差解释为新的授权，也不为此放宽测试库护栏。
+
+本地没有执行全量 E2E；`agent:check:full` 的全仓 E2E 冷跑仍由 PR CI 验证。
+
+首轮 [CI 34672472993](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34672472993) 已结束：Diff guards 因 3b/4b 旧读数失败，E2E 第 2/3/4 组因 §8 五份旧测试的当前读数及清理前置失败，第 1/5 组通过。上述 106 项本地补验及签字对拍已通过；本次提交后仍须由新 SHA 的完整 PR CI 独立裁决，不能沿用旧运行或宣称全量已绿。
+
+## 10. 实施授权与剩余动作
+
+维护者已授权本表中的 implementation 路径、实际第 120 条 migration、`app_test_w98` 隔离验证及 `prisma/seed.ts` 的精确 seed 闭包扩展。实施没有增加内建角色默认授予，也没有把 D3 变成对外能力。
+
+原写集、seed 闭包、inventory 扩展及 §8 的旧测试适配均已获得维护者确认；#1323 已创建。本轮 3b/4b 已重签，验证后允许提交推送更新 PR，检查通过后允许标记 Ready。可信红区审批仍须维护者独立完成；没有合并、生产或 Gate 授权。
 
 ## 11. 本次未做
 
-本轮没有修改生产代码、schema、migration、权限、审计、Storage、接口、DTO、测试、Gate 或客户端；没有连接、重建或操作任何数据库；没有删除、清理、回填或更改业务数据；没有启用 Gate、部署、合并或执行跨模型复审。D3 仅完成方案 A 的精确计划起草，D3 implementation 和 Release 4 D4-D8 仍未完成。
+本轮没有新增 controller、DTO、OpenAPI／contract snapshot、客户端、Gate、队列、cron、AI 写入口、结算／账本／证明接线或旧 `serviceHours` 投影；没有操作生产、删除／清理／回填业务数据，也没有启用 Gate、部署、合并或执行整体跨模型复审。D3 implementation 尚未完成签收，Release 4 D4-D8 仍未开始。

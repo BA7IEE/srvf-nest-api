@@ -177,6 +177,11 @@
       "surface": "sha256:0c704e7339d4b355c862532fc6f550d3b8c66e165ecadb67d4b39675c7fc4cd1",
       "description": "sha256:ac398f0a06790e89da1531a06bdccf4f22afb6bb53eb2818d09c80350bbdf386"
     },
+    "activity.time-allocation.recognize": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:db2b8869ef2abbcadc54918ffab183c053ef20b7a8bcdaac3562c1b891fcec93"
+    },
     "activity.time-policy.read": {
       "endpoints": 3,
       "surface": "sha256:28859a65ee21b6c45344d3ef21b7274b1b538d54c2d65c8e45416b9e6882ca0f",

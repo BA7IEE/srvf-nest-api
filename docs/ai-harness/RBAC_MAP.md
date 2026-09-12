@@ -19,14 +19,14 @@
 
 ## 派生对照表(生成物)
 
-### 权限码全集(262 条,按一级域分组)
+### 权限码全集(263 条,按一级域分组)
 
 > 权威源 seed 事实闭包：`prisma/seed.ts`(幂等 upsert + 角色映射) + `src/modules/permissions/permission-catalog.ts`(权限定义)。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 
 | 一级域 | 条数 | 权限码 |
 |---|---|---|
 | `attachment` | 24 | `attachment.delete.activity` · `attachment.delete.certificate.other` · `attachment.delete.certificate.self` · `attachment.delete.content-file` · `attachment.delete.content-image` · `attachment.delete.member.other` · `attachment.delete.member.self` · `attachment.update.activity` · `attachment.update.certificate.other` · `attachment.update.certificate.self` · `attachment.update.member.other` · `attachment.update.member.self` · `attachment.upload.activity` · `attachment.upload.certificate.other` · `attachment.upload.certificate.self` · `attachment.upload.content-file` · `attachment.upload.content-image` · `attachment.upload.member.other` · `attachment.upload.member.self` · `attachment.view.activity` · `attachment.view.certificate.other` · `attachment.view.certificate.self` · `attachment.view.member.other` · `attachment.view.member.self` |
-| `activity` | 21 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.emergency.record` · `activity.create.record` · `activity.delete.record` · `activity.outcome.calculate` · `activity.outcome.confirm` · `activity.outcome.correct` · `activity.outcome.read` · `activity.outcome.record` · `activity.publish.record` · `activity.settlement-close.record` · `activity.settlement-final-review.record` · `activity.settlement-first-review.record` · `activity.settlement-generate.record` · `activity.settlement-submit.record` · `activity.settlement-update-draft.record` · `activity.time-policy.read` · `activity.time-policy.select` · `activity.update.record` |
+| `activity` | 22 | `activity.cancel.record` · `activity.complete.record` · `activity.create.cross-org` · `activity.create.emergency.record` · `activity.create.record` · `activity.delete.record` · `activity.outcome.calculate` · `activity.outcome.confirm` · `activity.outcome.correct` · `activity.outcome.read` · `activity.outcome.record` · `activity.publish.record` · `activity.settlement-close.record` · `activity.settlement-final-review.record` · `activity.settlement-first-review.record` · `activity.settlement-generate.record` · `activity.settlement-submit.record` · `activity.settlement-update-draft.record` · `activity.time-allocation.recognize` · `activity.time-policy.read` · `activity.time-policy.select` · `activity.update.record` |
 | `rbac` | 14 | `rbac.config.reload` · `rbac.permission.create` · `rbac.permission.delete` · `rbac.permission.read` · `rbac.permission.update` · `rbac.role-permission.create` · `rbac.role-permission.delete` · `rbac.role.create` · `rbac.role.delete` · `rbac.role.read` · `rbac.role.update` · `rbac.user-role.create` · `rbac.user-role.delete` · `rbac.user-role.read` |
 | `attachment-config` | 12 | `attachment-config.create.mime` · `attachment-config.create.size-limit` · `attachment-config.create.type` · `attachment-config.delete.mime` · `attachment-config.delete.size-limit` · `attachment-config.delete.type` · `attachment-config.read.mime` · `attachment-config.read.size-limit` · `attachment-config.read.type` · `attachment-config.update.mime` · `attachment-config.update.size-limit` · `attachment-config.update.type` |
 | `attendance` | 11 | `attendance.approve.sheet` · `attendance.create.sheet` · `attendance.delete.sheet` · `attendance.final-approve.sheet` · `attendance.final-reject.sheet` · `attendance.final-return.sheet` · `attendance.read.sheet` · `attendance.reject.sheet` · `attendance.reopen.sheet` · `attendance.return.sheet` · `attendance.update.sheet` |
@@ -75,7 +75,7 @@
 | `meta` | 1 | `meta.resolve.label` |
 | `sms-send-log` | 1 | `sms-send-log.read.list` |
 
-### 角色 → 权限码覆盖(15 个内建角色;238/262 条码有持有人)
+### 角色 → 权限码覆盖(15 个内建角色;238/263 条码有持有人)
 
 > 权威源:`prisma/seed.ts` 导出的 `RBAC_SEED_CATALOG.roles`。本表由 `pnpm docs:rbacmap` 生成,**禁手改**。
 > 「零持有」= 没有任何内建角色持有该码,只有 SUPER_ADMIN 短路可用;是否合规由
@@ -100,7 +100,7 @@
 | `activity-publish-reviewer` | 3 | `activity-review.read.request` · `activity-review.return.request` · `activity.publish.record` |
 | `activity-cross-org-initiator` | 1 | `activity.create.cross-org` |
 
-#### 零持有权限码(24 条)
+#### 零持有权限码(25 条)
 
 | 权限码 |
 |---|
@@ -119,6 +119,7 @@
 | `activity.outcome.correct` |
 | `activity.outcome.read` |
 | `activity.outcome.record` |
+| `activity.time-allocation.recognize` |
 | `activity.time-policy.read` |
 | `activity.time-policy.select` |
 | `member.delete.record` |

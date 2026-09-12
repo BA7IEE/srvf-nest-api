@@ -191,6 +191,8 @@ model User {
   activityTimePolicySelectionRevisions ActivityTimePolicySelectionRevision[]       @relation("ActivityTimePolicySelectionCreator")
   activityTimePolicySelectionReceipts  ActivityTimePolicySelectionCommandReceipt[]
   activityOutcomeCommandReceipts       ActivityOutcomeCommandReceipt[]
+  participantTimeAllocationRevisions   ParticipantTimeAllocationRevision[]         @relation("ParticipantTimeAllocationRevisionCreator")
+  participantTimeAllocationReceipts    ParticipantTimeAllocationCommandReceipt[]   @relation("ParticipantTimeAllocationReceiptActor")
   outcomeFinalizationReceipts          ActivityOutcomeFinalizationReceipt[]
   metricRuleBindingsCreated            ActivityMetricRuleBinding[]                 @relation("MetricRuleBindingCreator")
   metricCandidatesCreated              ActivityMetricCandidate[]                   @relation("MetricCandidateCreator")
@@ -646,10 +648,11 @@ model Member {
   directedNotifications Notification[]
 
   // 活动改造 v1.1 第 1 批第一刀(2026-08-04;合同 §3.3 / §3.8):仅关系映射,零标量字段。
-  activitySessionPositionsLed ActivitySessionPosition[]       @relation("SessionPositionLeader")
-  activityParticipations      ActivityParticipationIdentity[]
+  activitySessionPositionsLed        ActivitySessionPosition[]           @relation("SessionPositionLeader")
+  activityParticipations             ActivityParticipationIdentity[]
+  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
   // 第 4 批前置微刀(第 78 migration):activity-person capacity reservation 的直接锚点。
-  capacityReservations        CapacityReservation[]
+  capacityReservations               CapacityReservation[]
 
   // 活动改造 v1.1 第 1 批第二刀(2026-08-04;合同 §3.12 / §3.14):同上,零标量字段。
   // ⚠️ §3.14 ActivityVisitor **刻意不在此列** —— 合同明写访客与 Member 无 relation,
@@ -1583,6 +1586,8 @@ model Activity {
   timePolicySelectionRevisions       ActivityTimePolicySelectionRevision[]       @relation("ActivityTimePolicySelectionActivity")
   currentTimePolicySelectionRevision ActivityTimePolicySelectionRevision?        @relation("ActivityCurrentTimePolicySelection", fields: [currentTimePolicySelectionRevisionId, id, timePolicySelectionRevision], references: [id, activityId, revision], onDelete: Restrict, onUpdate: Restrict, map: "atps_current_revision_fkey")
   timePolicySelectionReceipts        ActivityTimePolicySelectionCommandReceipt[]
+  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]         @relation("ParticipantTimeAllocationRevisionActivity")
+  participantTimeAllocationReceipts  ParticipantTimeAllocationCommandReceipt[]   @relation("ParticipantTimeAllocationReceiptActivity")
   outcomeCommandReceipts             ActivityOutcomeCommandReceipt[]
   outcomeRevisions                   ActivityOutcomeRevision[]
   metricCandidates                   ActivityMetricCandidate[]
@@ -1733,8 +1738,9 @@ model TimePolicy {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  versions        TimePolicyVersion[]
-  commandReceipts TimePolicyCommandReceipt[]
+  versions                           TimePolicyVersion[]
+  commandReceipts                    TimePolicyCommandReceipt[]
+  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
 }
 
 model TimePolicyVersion {
@@ -1753,9 +1759,10 @@ model TimePolicyVersion {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  policy                           TimePolicy                        @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "tpv_policy_fk")
-  commandReceipts                  TimePolicyCommandReceipt[]
-  activityTimePolicySelectionItems ActivityTimePolicySelectionItem[]
+  policy                             TimePolicy                          @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "tpv_policy_fk")
+  commandReceipts                    TimePolicyCommandReceipt[]
+  activityTimePolicySelectionItems   ActivityTimePolicySelectionItem[]
+  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
 
   @@unique([policyId, version], map: "tpv_policy_version_key")
   @@unique([id, policyId, definitionHash], map: "tpv_id_policy_hash_key")
@@ -2422,12 +2429,13 @@ model ActivityRuleSnapshot {
   snapshotHash                  String
   createdByReviewId             String
 
-  activity                    Activity                             @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  templateVersion             ActivityTemplate?                    @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
-  timePolicySelectionRevision ActivityTimePolicySelectionRevision? @relation("ActivityTimePolicySelectionRuleSnapshot", fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_snapshot_revision_fkey")
-  createdByReview             ActivityPublishReview                @relation(fields: [createdByReviewId], references: [id], onDelete: Restrict)
-  allocationBatches           ActivityAllocationBatch[]
-  offlinePackages             OfflinePackage[]
+  activity                           Activity                             @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  templateVersion                    ActivityTemplate?                    @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  timePolicySelectionRevision        ActivityTimePolicySelectionRevision? @relation("ActivityTimePolicySelectionRuleSnapshot", fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_snapshot_revision_fkey")
+  createdByReview                    ActivityPublishReview                @relation(fields: [createdByReviewId], references: [id], onDelete: Restrict)
+  allocationBatches                  ActivityAllocationBatch[]
+  offlinePackages                    OfflinePackage[]
+  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
 
   // 一个活动的一个 workflow revision 只能对应一份最终规则快照。createdByReviewId
   // 只保存审核来源，不假定合同未声明的“一审核请求至多一快照”。
@@ -2463,16 +2471,17 @@ model ActivityTimePolicySelectionRevision {
   createdAt              DateTime @default(now())
   createdByUserId        String
 
-  activity             Activity                                   @relation("ActivityTimePolicySelectionActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  creator              User                                       @relation("ActivityTimePolicySelectionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  template             ActivityTemplate?                          @relation("ActivityTimePolicySelectionTemplate", fields: [templateId, templateDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "atps_revision_template_fkey")
-  creationReceipt      ActivityCreationCommandReceipt?            @relation("ActivityTimePolicySelectionCreationReceipt", fields: [creationReceiptId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_revision_creation_fkey")
-  seriesOccurrence     ActivitySeriesOccurrence?                  @relation("ActivityTimePolicySelectionOccurrence", fields: [seriesOccurrenceId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_revision_occurrence_fkey")
-  publishReview        ActivityPublishReview?                     @relation("ActivityTimePolicySelectionPublishReview", fields: [publishReviewId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_revision_review_fkey")
-  currentForActivities Activity[]                                 @relation("ActivityCurrentTimePolicySelection")
-  items                ActivityTimePolicySelectionItem[]
-  commandReceipt       ActivityTimePolicySelectionCommandReceipt?
-  ruleSnapshots        ActivityRuleSnapshot[]                     @relation("ActivityTimePolicySelectionRuleSnapshot")
+  activity                           Activity                                   @relation("ActivityTimePolicySelectionActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  creator                            User                                       @relation("ActivityTimePolicySelectionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  template                           ActivityTemplate?                          @relation("ActivityTimePolicySelectionTemplate", fields: [templateId, templateDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "atps_revision_template_fkey")
+  creationReceipt                    ActivityCreationCommandReceipt?            @relation("ActivityTimePolicySelectionCreationReceipt", fields: [creationReceiptId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_revision_creation_fkey")
+  seriesOccurrence                   ActivitySeriesOccurrence?                  @relation("ActivityTimePolicySelectionOccurrence", fields: [seriesOccurrenceId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_revision_occurrence_fkey")
+  publishReview                      ActivityPublishReview?                     @relation("ActivityTimePolicySelectionPublishReview", fields: [publishReviewId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_revision_review_fkey")
+  currentForActivities               Activity[]                                 @relation("ActivityCurrentTimePolicySelection")
+  items                              ActivityTimePolicySelectionItem[]
+  commandReceipt                     ActivityTimePolicySelectionCommandReceipt?
+  ruleSnapshots                      ActivityRuleSnapshot[]                     @relation("ActivityTimePolicySelectionRuleSnapshot")
+  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
 
   @@unique([activityId, revision], map: "atps_revision_activity_revision_key")
   @@unique([id, activityId], map: "atps_revision_id_activity_key")
@@ -2522,6 +2531,124 @@ model ActivityTimePolicySelectionCommandReceipt {
   @@unique([actorUserId, operationCode, operationKey], map: "atps_receipt_actor_operation_key")
   @@unique([selectionRevisionId, activityId], map: "atps_receipt_revision_activity_key")
   @@index([activityId, createdAt], map: "atps_receipt_activity_created_idx")
+}
+
+// ===== Activity OS R4 / D3: immutable participant time-allocation facts =====
+//
+// D3 is an interpretation layer over one closed D2 service-segment revision and one frozen
+// D1 selection anchor.  It deliberately has no `updatedAt`, soft-delete field or mutable current
+// pointer: the current allocation is derived under the Activity lock from the current source
+// segment plus this append-only revision chain.
+model ParticipantTimeAllocationRevision {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  activityId                   String
+  sessionId                    String
+  memberId                     String
+  participationIdentityId      String
+  segmentKey                   String
+  revision                     Int
+  previousAllocationRevisionId String?
+
+  sourceSegmentId       String
+  sourceSegmentRevision Int
+  sourcePositionId      String?
+
+  ruleSnapshotId                String
+  ruleSnapshotHash              String
+  timePolicySelectionRevisionId String
+  selectionHash                 String
+  policyId                      String
+  policyVersionId               String
+  definitionHash                String
+  evaluatorVersion              Int
+
+  recognitionModeCode String
+  manualReason        String?
+  allocationJson      Json
+  allocationHash      String
+  sliceCount          Int
+  createdByUserId     String
+
+  activity                    Activity                                 @relation("ParticipantTimeAllocationRevisionActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_activity_fkey")
+  session                     ActivitySession                          @relation("ParticipantTimeAllocationRevisionSession", fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_session_fkey")
+  member                      Member                                   @relation(fields: [memberId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_member_fkey")
+  participationIdentity       ActivityParticipationIdentity            @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_identity_fkey")
+  sourceSegment               ParticipantServiceSegmentRevision        @relation(fields: [sourceSegmentId, participationIdentityId], references: [id, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_source_segment_fkey")
+  sourcePosition              ActivitySessionPosition?                 @relation("ParticipantTimeAllocationRevisionSourcePosition", fields: [sourcePositionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_source_position_fkey")
+  ruleSnapshot                ActivityRuleSnapshot                     @relation(fields: [ruleSnapshotId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_snapshot_fkey")
+  timePolicySelectionRevision ActivityTimePolicySelectionRevision      @relation(fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_selection_fkey")
+  policy                      TimePolicy                               @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_policy_fkey")
+  policyVersion               TimePolicyVersion                        @relation(fields: [policyVersionId, policyId, definitionHash], references: [id, policyId, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "ptar_policy_version_fkey")
+  previousAllocationRevision  ParticipantTimeAllocationRevision?       @relation("ParticipantTimeAllocationRevisionPrevious", fields: [previousAllocationRevisionId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_previous_fkey")
+  nextAllocationRevisions     ParticipantTimeAllocationRevision[]      @relation("ParticipantTimeAllocationRevisionPrevious")
+  creator                     User                                     @relation("ParticipantTimeAllocationRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_creator_fkey")
+  slices                      ParticipantTimeAllocationSlice[]
+  evidence                    ParticipantTimeAllocationEvidence[]
+  commandReceipt              ParticipantTimeAllocationCommandReceipt?
+
+  @@unique([participationIdentityId, segmentKey, revision], map: "ptar_identity_segment_revision_key")
+  @@unique([id, activityId], map: "ptar_id_activity_key")
+  @@unique([id, activityId, sessionId, memberId], map: "ptar_id_activity_session_member_key")
+  @@index([activityId, createdAt], map: "ptar_activity_created_idx")
+  @@index([sourceSegmentId], map: "ptar_source_segment_idx")
+  @@index([ruleSnapshotId], map: "ptar_snapshot_idx")
+  @@index([timePolicySelectionRevisionId], map: "ptar_selection_idx")
+  @@index([policyVersionId], map: "ptar_policy_version_idx")
+  @@index([previousAllocationRevisionId], map: "ptar_previous_idx")
+}
+
+model ParticipantTimeAllocationSlice {
+  id                   String   @id @default(cuid())
+  allocationRevisionId String
+  activityId           String
+  ordinal              Int
+  categoryCode         String
+  intervalKindCode     String
+  startAt              DateTime
+  endAt                DateTime
+
+  allocationRevision ParticipantTimeAllocationRevision @relation(fields: [allocationRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptas_revision_fkey")
+
+  @@unique([allocationRevisionId, ordinal], map: "ptas_revision_ordinal_key")
+  @@index([activityId], map: "ptas_activity_idx")
+}
+
+model ParticipantTimeAllocationEvidence {
+  id                   String @id @default(cuid())
+  allocationRevisionId String
+  activityId           String
+  attachmentId         String
+  ordinal              Int
+
+  allocationRevision ParticipantTimeAllocationRevision @relation(fields: [allocationRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptae_revision_fkey")
+  attachment         Attachment                        @relation(fields: [attachmentId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptae_attachment_fkey")
+
+  @@unique([allocationRevisionId, attachmentId], map: "ptae_revision_attachment_key")
+  @@unique([allocationRevisionId, ordinal], map: "ptae_revision_ordinal_key")
+  @@index([activityId], map: "ptae_activity_idx")
+  @@index([attachmentId], map: "ptae_attachment_idx")
+}
+
+model ParticipantTimeAllocationCommandReceipt {
+  id                   String   @id @default(cuid())
+  actorUserId          String
+  activityId           String
+  operationCode        String
+  operationKey         String
+  requestHash          String
+  allocationRevisionId String
+  resultJson           Json
+  createdAt            DateTime @default(now())
+
+  actor              User                              @relation("ParticipantTimeAllocationReceiptActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptacr_actor_fkey")
+  activity           Activity                          @relation("ParticipantTimeAllocationReceiptActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptacr_activity_fkey")
+  allocationRevision ParticipantTimeAllocationRevision @relation(fields: [allocationRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptacr_revision_fkey")
+
+  @@unique([actorUserId, operationCode, operationKey], map: "ptacr_actor_operation_key")
+  @@unique([allocationRevisionId, activityId], map: "ptacr_revision_activity_key")
+  @@index([activityId, createdAt], map: "ptacr_activity_created_idx")
 }
 
 // ===== 活动责任闭环 PR1:负责人 / 协办历史 =====
@@ -3421,8 +3548,9 @@ model Attachment {
 
   // 活动改造 v1.1 第 1 批第二刀(2026-08-04;合同 §3.12):file 型报名答案的反向 relation。
   // 仅关系映射,零标量字段;FK 在 RegistrationFormAnswer 侧,Restrict。
-  registrationFormAnswers     RegistrationFormAnswer[]      @relation("RegistrationAnswerAttachment")
-  activityMetricValueEvidence ActivityMetricValueEvidence[]
+  registrationFormAnswers           RegistrationFormAnswer[]            @relation("RegistrationAnswerAttachment")
+  activityMetricValueEvidence       ActivityMetricValueEvidence[]
+  participantTimeAllocationEvidence ParticipantTimeAllocationEvidence[]
 
   // issue #1055 T1:视觉身份两条 1:1 反向 relation(仅关系映射,零标量字段;FK 在对侧,均 SetNull)。
   // 两边都是 `?` 而非数组 —— 对侧 FK 列带 @unique,一张附件至多被一处引用。
@@ -4823,9 +4951,10 @@ model ActivitySession {
   batchJobs     ActivityBatchJob[]
 
   // 第 1 批第五刀反向 relation(合同 §3.11):仅关系映射,零标量字段。
-  positionPreferences              ActivityPositionPreference[]
-  allocationBatches                ActivityAllocationBatch[]
-  activityTimePolicySelectionItems ActivityTimePolicySelectionItem[]
+  positionPreferences                ActivityPositionPreference[]
+  allocationBatches                  ActivityAllocationBatch[]
+  activityTimePolicySelectionItems   ActivityTimePolicySelectionItem[]
+  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[] @relation("ParticipantTimeAllocationRevisionSession")
 
   // 复合 FK 的被引用侧:让子表 (activityId, sessionId) 双锚点由 **DB** 保证
   // 「session 属于 activity」,而不是只靠 service 自觉(合同 §3.3 原话:
@@ -4966,6 +5095,7 @@ model ActivitySessionPosition {
   allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPosition")
   offlinePackageParticipants       OfflinePackageParticipant[]
   activityTimePolicySelectionItems ActivityTimePolicySelectionItem[]
+  sourceTimeAllocationRevisions    ParticipantTimeAllocationRevision[]       @relation("ParticipantTimeAllocationRevisionSourcePosition")
 
   @@unique([activityId, sessionId, id], map: "activity_session_position_activity_session_id_key")
   @@index([activityId])
@@ -5035,8 +5165,9 @@ model ActivityParticipationIdentity {
   correctionRequests        AttendanceCorrectionRequest[]
 
   // 第 1 批第五刀反向 relation(合同 §3.11):仅关系映射,零标量字段。
-  allocationCandidates             ActivityAllocationCandidate[]
-  allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionIdentity")
+  allocationCandidates               ActivityAllocationCandidate[]
+  allocationApplicationProjections   ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionIdentity")
+  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
 
   @@unique([activityId, sessionId, memberId])
   // 第 85 migration：AllocationCandidate 以 identity + registration 复合 FK
@@ -5944,8 +6075,9 @@ model ParticipantServiceSegmentRevision {
   derivedRevisions          ParticipantServiceSegmentRevision[] @relation("SegmentBaseRevision")
   correctionPendingSegments CorrectionPendingSegmentRevision[]
 
-  effectiveBatch         LedgerPostingBatch?             @relation("SegmentEffectiveBatch", fields: [effectiveBatchId], references: [id], onDelete: Restrict)
-  metricCandidateSources ActivityMetricCandidateSource[]
+  effectiveBatch                     LedgerPostingBatch?                 @relation("SegmentEffectiveBatch", fields: [effectiveBatchId], references: [id], onDelete: Restrict)
+  metricCandidateSources             ActivityMetricCandidateSource[]
+  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
 
   // model 名 33 字符 ⇒ 复合索引默认名普遍越过 PostgreSQL 63 字符上限,全部显式 map。
   @@unique([id, participationIdentityId], map: "metric_source_segment_identity_key")

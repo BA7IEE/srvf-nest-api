@@ -2061,6 +2061,31 @@ export const BizCode = {
     message: '活动时长政策选择修订号已达上限',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_TIME_ALLOCATION_INVALID: {
+    code: 20213,
+    message: '活动参与时长认定请求无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_TIME_ALLOCATION_REFERENCE_UNAVAILABLE: {
+    code: 20214,
+    message: '活动参与时长认定引用不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_TIME_ALLOCATION_STALE: {
+    code: 20215,
+    message: '活动参与时段或认定修订已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_ALLOCATION_COMMAND_CONFLICT: {
+    code: 20216,
+    message: '此操作标识已用于其他参与时长认定请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_ALLOCATION_POLICY_UNAVAILABLE: {
+    code: 20217,
+    message: '冻结时长政策不可用于参与时长认定',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

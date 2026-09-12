@@ -92,6 +92,18 @@ export const ACTIVITY_TIME_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionS
   },
 ];
 
+// D3: this command is deliberately registered but never attached to a built-in role.
+// A maintainer must grant it to a custom role before any internal caller can recognize time.
+export const ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity.time-allocation.recognize',
+    module: 'activity',
+    action: 'time-allocation',
+    resourceType: 'recognize',
+    description: '认定活动参与时长原始区间；显式授权、当前责任及组织范围同时满足',
+  },
+];
+
 export const ACTIVITY_TEMPLATE_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'activity-template.read.catalog',
@@ -3018,6 +3030,19 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 195,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.time-allocation.recognize': {
+      displayName: '认定活动参与时长',
+      businessDescription:
+        '真人基于已提交参与时段和冻结时长政策认定原始区间；不结算、不累计、不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 196,
       riskLevel: 'HIGH',
       riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',

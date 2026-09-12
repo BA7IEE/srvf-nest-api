@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { AttendanceAccessService } from './attendance-access.service';
 
 export const PARTICIPATION_SEGMENT_FACADE_LIMITS = Object.freeze({
   identities: 2000,
@@ -45,6 +46,20 @@ function isCurrentStatusCode(value: string): value is CurrentParticipationSegmen
  */
 @Injectable()
 export class ParticipationSegmentFacade {
+  constructor(private readonly access: AttendanceAccessService) {}
+
+  /**
+   * Narrow D3 bridge: consumers that already own their authorization may serialize their later
+   * allocation write with the same Activity aggregate lock as attendance writers.  It deliberately
+   * exposes neither an attendance writer nor any mutable service-segment operation.
+   */
+  async lockActivityForTimeAllocationWrite(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+  ): Promise<void> {
+    await this.access.lockActivityForAttendanceWrite(activityId, tx);
+  }
+
   async readActivityCurrentSegmentsTrusted(
     tx: Prisma.TransactionClient,
     activityId: string,
