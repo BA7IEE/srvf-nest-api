@@ -154,7 +154,7 @@ describe('P2-23b 审计事件登记表 —— 真源对拍(union ↔ 登记表 �
     expect(dims.D1).toEqual([]);
   });
 
-  it('B2 声明行:156/151/5 与实测相等', () => {
+  it('B2 声明行:169/164/5 与实测相等', () => {
     expect(dims.D2).toEqual([]);
   });
 

@@ -366,7 +366,13 @@ function schemaModels(): SchemaModel[] {
           continue;
         }
         scalarFields.push(field.name);
-        if (field.type === 'String' && stateLikeString(field.name)) stateFields.push(field.name);
+        // D4 immutable configuration inventory only: do not generalize kindCode to
+        // other models or change the lifecycle/status-predicate discovery below.
+        const d4RevisionKind =
+          model.name === 'ActivitySettlementTimeRevision' && field.name === 'kindCode';
+        if (field.type === 'String' && (stateLikeString(field.name) || d4RevisionKind)) {
+          stateFields.push(field.name);
+        }
         if (stateLikeString(field.name)) statusPredicateFields.push(field.name);
         if (field.type === 'DateTime') dateFields.push(field.name);
       }

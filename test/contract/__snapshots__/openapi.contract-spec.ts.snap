@@ -13998,6 +13998,37 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppPrepareTimeSettlementDto": {
+    "properties": {
+      "expectedDraftVersion": {
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+      "expectedEvidenceSealId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "expectedTimeRevision": {
+        "maximum": 2147483646,
+        "minimum": 0,
+        "type": "number",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedDraftVersion",
+      "expectedEvidenceSealId",
+      "expectedTimeRevision",
+    ],
+    "type": "object",
+  },
   "AppProfessionalActivityCreationDto": {
     "properties": {
       "activityTypeCode": {
@@ -14296,6 +14327,92 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "location",
       "templateVersionId",
       "defaultPlaceVisibilityCode",
+    ],
+    "type": "object",
+  },
+  "AppRecognizeTimeSettlementDto": {
+    "properties": {
+      "evidenceAttachmentIds": {
+        "items": {
+          "type": "string",
+        },
+        "maxItems": 500,
+        "type": "array",
+      },
+      "expectedDraftVersion": {
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+      "expectedEvidenceRevision": {
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
+      },
+      "expectedEvidenceSealId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "expectedPopulationRevision": {
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
+      },
+      "expectedRevision": {
+        "maximum": 2147483646,
+        "minimum": 0,
+        "type": "number",
+      },
+      "expectedWorkflowRevision": {
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
+      },
+      "manualReason": {
+        "description": "人工认定必填；自动认定禁止携带",
+        "maxLength": 1024,
+        "minLength": 1,
+        "type": "string",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+      "recognitionModeCode": {
+        "enum": [
+          "automatic",
+          "manual",
+        ],
+        "type": "string",
+      },
+      "slices": {
+        "description": "人工认定必填；自动认定禁止携带",
+        "items": {
+          "$ref": "#/components/schemas/AppTimeSettlementManualSliceDto",
+        },
+        "maxItems": 500,
+        "minItems": 1,
+        "type": "array",
+      },
+      "sourceSegmentId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedDraftVersion",
+      "expectedEvidenceSealId",
+      "sourceSegmentId",
+      "expectedRevision",
+      "expectedEvidenceRevision",
+      "expectedPopulationRevision",
+      "expectedWorkflowRevision",
+      "recognitionModeCode",
+      "evidenceAttachmentIds",
     ],
     "type": "object",
   },
@@ -15666,6 +15783,42 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppSubmitTimeSettlementDto": {
+    "properties": {
+      "expectedBucketContentHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "expectedDraftVersion": {
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+      "expectedEvidenceSealId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+      "timeRevisionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedDraftVersion",
+      "expectedEvidenceSealId",
+      "timeRevisionId",
+      "expectedBucketContentHash",
+    ],
+    "type": "object",
+  },
   "AppTeamJoinApplicationDto": {
     "properties": {
       "contributionPoints": {
@@ -15757,6 +15910,881 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "contributionPoints",
       "contributionSatisfied",
       "createdAt",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementAllocationDetailDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "allocationHash": {
+        "type": "string",
+      },
+      "allocationRevisionId": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "definitionHash": {
+        "type": "string",
+      },
+      "effectiveFrom": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "effectiveUntil": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "evaluatorVersion": {
+        "type": "number",
+      },
+      "evidence": {
+        "items": {
+          "$ref": "#/components/schemas/AppTimeSettlementEvidenceDto",
+        },
+        "maxItems": 500,
+        "type": "array",
+      },
+      "manualReason": {
+        "nullable": true,
+        "type": "string",
+      },
+      "participationIdentityId": {
+        "type": "string",
+      },
+      "policy": {
+        "$ref": "#/components/schemas/AppTimeSettlementPolicyDto",
+      },
+      "policyVersionId": {
+        "type": "string",
+      },
+      "recognitionModeCode": {
+        "enum": [
+          "automatic",
+          "manual",
+        ],
+        "type": "string",
+      },
+      "revision": {
+        "type": "number",
+      },
+      "settlementDraftVersionId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "settlementEvidenceSealId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "sliceCount": {
+        "type": "number",
+      },
+      "slices": {
+        "items": {
+          "$ref": "#/components/schemas/AppTimeSettlementSliceDto",
+        },
+        "maxItems": 500,
+        "type": "array",
+      },
+      "sourceSegmentId": {
+        "type": "string",
+      },
+      "sourceSegmentRevision": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "allocationRevisionId",
+      "activityId",
+      "sourceSegmentId",
+      "sourceSegmentRevision",
+      "revision",
+      "recognitionModeCode",
+      "allocationHash",
+      "sliceCount",
+      "createdAt",
+      "slices",
+      "evidence",
+      "participationIdentityId",
+      "manualReason",
+      "settlementDraftVersionId",
+      "settlementEvidenceSealId",
+      "policyVersionId",
+      "definitionHash",
+      "evaluatorVersion",
+      "policy",
+      "effectiveFrom",
+      "effectiveUntil",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementAllocationResultDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "allocationHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "allocationRevisionId": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "evidenceCount": {
+        "type": "number",
+      },
+      "recognitionModeCode": {
+        "enum": [
+          "automatic",
+          "manual",
+        ],
+        "type": "string",
+      },
+      "revision": {
+        "type": "number",
+      },
+      "schemaVersion": {
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "sliceCount": {
+        "type": "number",
+      },
+      "sourceSegmentId": {
+        "type": "string",
+      },
+      "sourceSegmentRevision": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "schemaVersion",
+      "activityId",
+      "allocationRevisionId",
+      "revision",
+      "sourceSegmentId",
+      "sourceSegmentRevision",
+      "recognitionModeCode",
+      "allocationHash",
+      "sliceCount",
+      "evidenceCount",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementBlockerDto": {
+    "properties": {
+      "code": {
+        "type": "string",
+      },
+      "count": {
+        "minimum": 1,
+        "type": "number",
+      },
+    },
+    "required": [
+      "code",
+      "count",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementBucketDto": {
+    "properties": {
+      "bucketId": {
+        "type": "string",
+      },
+      "calculatedSeconds": {
+        "nullable": true,
+        "type": "number",
+      },
+      "categoryCode": {
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+      "definitionHash": {
+        "nullable": true,
+        "type": "string",
+      },
+      "emptyReasonCode": {
+        "enum": [
+          "no_valid_segment",
+        ],
+        "nullable": true,
+        "type": "string",
+      },
+      "evaluatorVersion": {
+        "nullable": true,
+        "type": "number",
+      },
+      "hasAdjustment": {
+        "type": "boolean",
+      },
+      "participationIdentityId": {
+        "type": "string",
+      },
+      "quantumSeconds": {
+        "nullable": true,
+        "type": "number",
+      },
+      "rawCalculatedMilliseconds": {
+        "nullable": true,
+        "pattern": "^[0-9]+$",
+        "type": "string",
+      },
+      "rawRecognizedMilliseconds": {
+        "pattern": "^[0-9]+$",
+        "type": "string",
+      },
+      "recognizedSeconds": {
+        "type": "number",
+      },
+      "timePolicyVersionId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "timeRevisionId": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "bucketId",
+      "timeRevisionId",
+      "participationIdentityId",
+      "categoryCode",
+      "calculatedSeconds",
+      "recognizedSeconds",
+      "rawCalculatedMilliseconds",
+      "rawRecognizedMilliseconds",
+      "timePolicyVersionId",
+      "definitionHash",
+      "evaluatorVersion",
+      "quantumSeconds",
+      "hasAdjustment",
+      "emptyReasonCode",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementBucketSourceDto": {
+    "properties": {
+      "allocationRevisionId": {
+        "type": "string",
+      },
+      "bucketId": {
+        "type": "string",
+      },
+      "rawCalculatedMilliseconds": {
+        "nullable": true,
+        "pattern": "^[0-9]+$",
+        "type": "string",
+      },
+      "rawRecognizedMilliseconds": {
+        "pattern": "^[0-9]+$",
+        "type": "string",
+      },
+      "sourceId": {
+        "type": "string",
+      },
+      "sourceSegmentId": {
+        "type": "string",
+      },
+      "sourceSegmentRevision": {
+        "type": "number",
+      },
+      "timeRevisionId": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "sourceId",
+      "bucketId",
+      "timeRevisionId",
+      "allocationRevisionId",
+      "sourceSegmentId",
+      "sourceSegmentRevision",
+      "rawCalculatedMilliseconds",
+      "rawRecognizedMilliseconds",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementDraftDto": {
+    "properties": {
+      "evidenceRevision": {
+        "nullable": true,
+        "type": "number",
+      },
+      "evidenceSealId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "populationRevision": {
+        "nullable": true,
+        "type": "number",
+      },
+      "sealCurrent": {
+        "type": "boolean",
+      },
+      "settlementVersionId": {
+        "type": "string",
+      },
+      "version": {
+        "type": "number",
+      },
+      "workflowRevision": {
+        "nullable": true,
+        "type": "number",
+      },
+    },
+    "required": [
+      "settlementVersionId",
+      "version",
+      "evidenceSealId",
+      "evidenceRevision",
+      "populationRevision",
+      "workflowRevision",
+      "sealCurrent",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementEvidenceDto": {
+    "properties": {
+      "attachmentId": {
+        "type": "string",
+      },
+      "ordinal": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "attachmentId",
+      "ordinal",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementEvidencePolicyDto": {
+    "properties": {
+      "requireManualRecognition": {
+        "type": "boolean",
+      },
+      "requiredSources": {
+        "items": {
+          "enum": [
+            "punch_event",
+            "service_segment",
+            "attachment",
+          ],
+          "type": "string",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "requiredSources",
+      "requireManualRecognition",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementManualPolicyDto": {
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+      },
+      "evidenceRequired": {
+        "type": "boolean",
+      },
+      "reasonRequired": {
+        "enum": [
+          true,
+        ],
+        "type": "boolean",
+      },
+    },
+    "required": [
+      "enabled",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementManualSliceDto": {
+    "properties": {
+      "categoryCode": {
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+      "endAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "startAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "categoryCode",
+      "startAt",
+      "endAt",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementPolicyDto": {
+    "properties": {
+      "allowSplit": {
+        "type": "boolean",
+      },
+      "defaultCategory": {
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+      "evidence": {
+        "$ref": "#/components/schemas/AppTimeSettlementEvidencePolicyDto",
+      },
+      "manualAdjustment": {
+        "$ref": "#/components/schemas/AppTimeSettlementManualPolicyDto",
+      },
+      "roleMappings": {
+        "items": {
+          "$ref": "#/components/schemas/AppTimeSettlementRoleMappingDto",
+        },
+        "type": "array",
+      },
+      "rounding": {
+        "$ref": "#/components/schemas/AppTimeSettlementRoundingDto",
+      },
+      "specialIntervals": {
+        "$ref": "#/components/schemas/AppTimeSettlementSpecialIntervalsDto",
+      },
+    },
+    "required": [
+      "defaultCategory",
+      "roleMappings",
+      "allowSplit",
+      "specialIntervals",
+      "rounding",
+      "evidence",
+      "manualAdjustment",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementResultDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "bucketContentHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "bucketCount": {
+        "type": "number",
+      },
+      "contentHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "kindCode": {
+        "enum": [
+          "draft",
+          "submitted",
+        ],
+        "type": "string",
+      },
+      "revision": {
+        "type": "number",
+      },
+      "schemaVersion": {
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "settlementRunId": {
+        "type": "string",
+      },
+      "settlementVersion": {
+        "type": "number",
+      },
+      "settlementVersionId": {
+        "type": "string",
+      },
+      "sourceCount": {
+        "type": "number",
+      },
+      "timeRevisionId": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "schemaVersion",
+      "activityId",
+      "timeRevisionId",
+      "revision",
+      "kindCode",
+      "settlementRunId",
+      "settlementVersionId",
+      "settlementVersion",
+      "contentHash",
+      "bucketContentHash",
+      "bucketCount",
+      "sourceCount",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementRevisionDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "bucketContentHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "bucketCount": {
+        "type": "number",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "evidenceRevision": {
+        "type": "number",
+      },
+      "evidenceSealId": {
+        "type": "string",
+      },
+      "kindCode": {
+        "enum": [
+          "draft",
+          "submitted",
+        ],
+        "type": "string",
+      },
+      "populationRevision": {
+        "type": "number",
+      },
+      "revision": {
+        "type": "number",
+      },
+      "settlementRunId": {
+        "type": "string",
+      },
+      "settlementVersionId": {
+        "type": "string",
+      },
+      "sourceCount": {
+        "type": "number",
+      },
+      "sourceDraftTimeRevisionId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "timeRevisionId": {
+        "type": "string",
+      },
+      "workflowRevision": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "activityId",
+      "timeRevisionId",
+      "settlementRunId",
+      "settlementVersionId",
+      "revision",
+      "kindCode",
+      "sourceDraftTimeRevisionId",
+      "evidenceSealId",
+      "evidenceRevision",
+      "populationRevision",
+      "workflowRevision",
+      "bucketContentHash",
+      "bucketCount",
+      "sourceCount",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementRoleMappingDto": {
+    "properties": {
+      "attendanceRoleCode": {
+        "type": "string",
+      },
+      "category": {
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "attendanceRoleCode",
+      "category",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementRoundingDto": {
+    "properties": {
+      "mode": {
+        "enum": [
+          "floor",
+        ],
+        "type": "string",
+      },
+      "quantumSeconds": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "mode",
+      "quantumSeconds",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementRunDto": {
+    "properties": {
+      "currentDraftVersion": {
+        "nullable": true,
+        "type": "number",
+      },
+      "currentSubmittedVersion": {
+        "nullable": true,
+        "type": "number",
+      },
+      "settlementRunId": {
+        "type": "string",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "settlementRunId",
+      "statusCode",
+      "currentDraftVersion",
+      "currentSubmittedVersion",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementSliceDto": {
+    "properties": {
+      "categoryCode": {
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+      "endAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "intervalKindCode": {
+        "enum": [
+          "service_segment",
+        ],
+        "type": "string",
+      },
+      "startAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "categoryCode",
+      "startAt",
+      "endAt",
+      "intervalKindCode",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementSourceDto": {
+    "properties": {
+      "allocationRevision": {
+        "type": "number",
+      },
+      "allocationRevisionId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "blockerCode": {
+        "nullable": true,
+        "type": "string",
+      },
+      "checkInAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "checkOutAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "exclusionReasonCode": {
+        "nullable": true,
+        "type": "string",
+      },
+      "participationIdentityId": {
+        "type": "string",
+      },
+      "resultCode": {
+        "type": "string",
+      },
+      "sessionId": {
+        "type": "string",
+      },
+      "sourceSegmentId": {
+        "type": "string",
+      },
+      "sourceSegmentRevision": {
+        "type": "number",
+      },
+      "statusCode": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "sourceSegmentId",
+      "participationIdentityId",
+      "sessionId",
+      "sourceSegmentRevision",
+      "statusCode",
+      "resultCode",
+      "checkInAt",
+      "checkOutAt",
+      "allocationRevisionId",
+      "allocationRevision",
+      "exclusionReasonCode",
+      "blockerCode",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementSpecialIntervalDto": {
+    "properties": {
+      "category": {
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+      "mode": {
+        "enum": [
+          "exclude",
+          "manual",
+          "category",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "mode",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementSpecialIntervalsDto": {
+    "properties": {
+      "duty": {
+        "$ref": "#/components/schemas/AppTimeSettlementSpecialIntervalDto",
+      },
+      "preparation": {
+        "$ref": "#/components/schemas/AppTimeSettlementSpecialIntervalDto",
+      },
+      "travel": {
+        "$ref": "#/components/schemas/AppTimeSettlementSpecialIntervalDto",
+      },
+    },
+    "required": [
+      "preparation",
+      "duty",
+      "travel",
+    ],
+    "type": "object",
+  },
+  "AppTimeSettlementWorkbenchDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "blockers": {
+        "items": {
+          "$ref": "#/components/schemas/AppTimeSettlementBlockerDto",
+        },
+        "type": "array",
+      },
+      "draft": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppTimeSettlementDraftDto",
+          },
+        ],
+        "nullable": true,
+        "type": "object",
+      },
+      "latestRevision": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppTimeSettlementRevisionDto",
+          },
+        ],
+        "nullable": true,
+        "type": "object",
+      },
+      "ready": {
+        "type": "boolean",
+      },
+      "run": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppTimeSettlementRunDto",
+          },
+        ],
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "activityId",
+      "run",
+      "draft",
+      "latestRevision",
+      "ready",
+      "blockers",
     ],
     "type": "object",
   },
@@ -138228,6 +139256,2205 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "增量设置本人 managed 草稿的时长政策选择 [rbac: activity.time-policy.select]",
       "tags": [
         "Mobile - Managed Activity Time Policy Selection",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement": {
+    "get": {
+      "operationId": "AppManagedActivityTimeSettlementController_workbench",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppTimeSettlementWorkbenchDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20218: 活动分类结算请求无效",
+                    "enum": [
+                      40000,
+                      20218,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动分类结算请求无效(code=20218)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问",
+                    "enum": [
+                      20219,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20220: 分类结算草稿、封印或来源已变化，请刷新后重试; 20221: 此操作标识已用于其他分类结算请求; 20222: 分类结算参与来源尚未就绪; 20223: 同一参与身份的时长政策不一致，不能合并结算; 20224: 同一成员的参与时段重叠，不能重复结算; 20225: 活动分类结算规模超过本次处理上限",
+                    "enum": [
+                      20220,
+                      20221,
+                      20222,
+                      20223,
+                      20224,
+                      20225,
+                    ],
+                    "example": 20220,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分类结算草稿、封印或来源已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分类结算草稿、封印或来源已变化，请刷新后重试(code=20220) / 此操作标识已用于其他分类结算请求(code=20221) / 分类结算参与来源尚未就绪(code=20222) / 同一参与身份的时长政策不一致，不能合并结算(code=20223) / 同一成员的参与时段重叠，不能重复结算(code=20224) / 活动分类结算规模超过本次处理上限(code=20225)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读取分类时长结算工作台及阻塞计数 [rbac: activity.time-settlement.read]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement/allocations": {
+    "post": {
+      "operationId": "AppManagedActivityTimeSettlementController_allocate",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppRecognizeTimeSettlementDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppTimeSettlementAllocationResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20218: 活动分类结算请求无效",
+                    "enum": [
+                      40000,
+                      20218,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动分类结算请求无效(code=20218)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问",
+                    "enum": [
+                      20219,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20220: 分类结算草稿、封印或来源已变化，请刷新后重试; 20221: 此操作标识已用于其他分类结算请求; 20222: 分类结算参与来源尚未就绪; 20223: 同一参与身份的时长政策不一致，不能合并结算; 20224: 同一成员的参与时段重叠，不能重复结算; 20225: 活动分类结算规模超过本次处理上限",
+                    "enum": [
+                      20220,
+                      20221,
+                      20222,
+                      20223,
+                      20224,
+                      20225,
+                    ],
+                    "example": 20220,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分类结算草稿、封印或来源已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分类结算草稿、封印或来源已变化，请刷新后重试(code=20220) / 此操作标识已用于其他分类结算请求(code=20221) / 分类结算参与来源尚未就绪(code=20222) / 同一参与身份的时长政策不一致，不能合并结算(code=20223) / 同一成员的参与时段重叠，不能重复结算(code=20224) / 活动分类结算规模超过本次处理上限(code=20225)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20153: 活动 v1.1 工作流未启用; 20158: 本实例处于活动结算只读维护态,暂不接受考勤与结算写入",
+                    "enum": [
+                      20153,
+                      20158,
+                    ],
+                    "example": 20153,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动 v1.1 工作流未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动 v1.1 工作流未启用(code=20153) / 本实例处于活动结算只读维护态,暂不接受考勤与结算写入(code=20158)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "显式认定有当前封印证明的草稿参与段 [rbac: activity.time-allocation.recognize]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement/allocations/{allocationRevisionId}": {
+    "get": {
+      "operationId": "AppManagedActivityTimeSettlementController_allocation",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "allocationRevisionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppTimeSettlementAllocationDetailDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20218: 活动分类结算请求无效",
+                    "enum": [
+                      40000,
+                      20218,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动分类结算请求无效(code=20218)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问",
+                    "enum": [
+                      20219,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20220: 分类结算草稿、封印或来源已变化，请刷新后重试; 20221: 此操作标识已用于其他分类结算请求; 20222: 分类结算参与来源尚未就绪; 20223: 同一参与身份的时长政策不一致，不能合并结算; 20224: 同一成员的参与时段重叠，不能重复结算; 20225: 活动分类结算规模超过本次处理上限",
+                    "enum": [
+                      20220,
+                      20221,
+                      20222,
+                      20223,
+                      20224,
+                      20225,
+                    ],
+                    "example": 20220,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分类结算草稿、封印或来源已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分类结算草稿、封印或来源已变化，请刷新后重试(code=20220) / 此操作标识已用于其他分类结算请求(code=20221) / 分类结算参与来源尚未就绪(code=20222) / 同一参与身份的时长政策不一致，不能合并结算(code=20223) / 同一成员的参与时段重叠，不能重复结算(code=20224) / 活动分类结算规模超过本次处理上限(code=20225)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读取一个冻结认定及政策理由证据 [rbac: activity.time-settlement.read]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement/prepare": {
+    "post": {
+      "operationId": "AppManagedActivityTimeSettlementController_prepare",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppPrepareTimeSettlementDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppTimeSettlementResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20218: 活动分类结算请求无效",
+                    "enum": [
+                      40000,
+                      20218,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动分类结算请求无效(code=20218)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问",
+                    "enum": [
+                      20219,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20220: 分类结算草稿、封印或来源已变化，请刷新后重试; 20221: 此操作标识已用于其他分类结算请求; 20222: 分类结算参与来源尚未就绪; 20223: 同一参与身份的时长政策不一致，不能合并结算; 20224: 同一成员的参与时段重叠，不能重复结算; 20225: 活动分类结算规模超过本次处理上限",
+                    "enum": [
+                      20220,
+                      20221,
+                      20222,
+                      20223,
+                      20224,
+                      20225,
+                    ],
+                    "example": 20220,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分类结算草稿、封印或来源已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分类结算草稿、封印或来源已变化，请刷新后重试(code=20220) / 此操作标识已用于其他分类结算请求(code=20221) / 分类结算参与来源尚未就绪(code=20222) / 同一参与身份的时长政策不一致，不能合并结算(code=20223) / 同一成员的参与时段重叠，不能重复结算(code=20224) / 活动分类结算规模超过本次处理上限(code=20225)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20153: 活动 v1.1 工作流未启用; 20158: 本实例处于活动结算只读维护态,暂不接受考勤与结算写入",
+                    "enum": [
+                      20153,
+                      20158,
+                    ],
+                    "example": 20153,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动 v1.1 工作流未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动 v1.1 工作流未启用(code=20153) / 本实例处于活动结算只读维护态,暂不接受考勤与结算写入(code=20158)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "准备完整不可变分类时长草稿 [rbac: activity.time-settlement.prepare]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/buckets": {
+    "get": {
+      "operationId": "AppManagedActivityTimeSettlementController_buckets",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "timeRevisionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppTimeSettlementBucketDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20218: 活动分类结算请求无效",
+                    "enum": [
+                      40000,
+                      20218,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动分类结算请求无效(code=20218)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问",
+                    "enum": [
+                      20219,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20220: 分类结算草稿、封印或来源已变化，请刷新后重试; 20221: 此操作标识已用于其他分类结算请求; 20222: 分类结算参与来源尚未就绪; 20223: 同一参与身份的时长政策不一致，不能合并结算; 20224: 同一成员的参与时段重叠，不能重复结算; 20225: 活动分类结算规模超过本次处理上限",
+                    "enum": [
+                      20220,
+                      20221,
+                      20222,
+                      20223,
+                      20224,
+                      20225,
+                    ],
+                    "example": 20220,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分类结算草稿、封印或来源已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分类结算草稿、封印或来源已变化，请刷新后重试(code=20220) / 此操作标识已用于其他分类结算请求(code=20221) / 分类结算参与来源尚未就绪(code=20222) / 同一参与身份的时长政策不一致，不能合并结算(code=20223) / 同一成员的参与时段重叠，不能重复结算(code=20224) / 活动分类结算规模超过本次处理上限(code=20225)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页读取指定不可变分类版本的桶 [rbac: activity.time-settlement.read]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/sources": {
+    "get": {
+      "operationId": "AppManagedActivityTimeSettlementController_bucketSources",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "timeRevisionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "in": "query",
+          "name": "bucketId",
+          "required": false,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppTimeSettlementBucketSourceDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20218: 活动分类结算请求无效",
+                    "enum": [
+                      40000,
+                      20218,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动分类结算请求无效(code=20218)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问",
+                    "enum": [
+                      20219,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20220: 分类结算草稿、封印或来源已变化，请刷新后重试; 20221: 此操作标识已用于其他分类结算请求; 20222: 分类结算参与来源尚未就绪; 20223: 同一参与身份的时长政策不一致，不能合并结算; 20224: 同一成员的参与时段重叠，不能重复结算; 20225: 活动分类结算规模超过本次处理上限",
+                    "enum": [
+                      20220,
+                      20221,
+                      20222,
+                      20223,
+                      20224,
+                      20225,
+                    ],
+                    "example": 20220,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分类结算草稿、封印或来源已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分类结算草稿、封印或来源已变化，请刷新后重试(code=20220) / 此操作标识已用于其他分类结算请求(code=20221) / 分类结算参与来源尚未就绪(code=20222) / 同一参与身份的时长政策不一致，不能合并结算(code=20223) / 同一成员的参与时段重叠，不能重复结算(code=20224) / 活动分类结算规模超过本次处理上限(code=20225)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页追溯指定分类版本的来源，可筛选 bucketId [rbac: activity.time-settlement.read]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement/sources": {
+    "get": {
+      "operationId": "AppManagedActivityTimeSettlementController_sources",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppTimeSettlementSourceDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20218: 活动分类结算请求无效",
+                    "enum": [
+                      40000,
+                      20218,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动分类结算请求无效(code=20218)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问",
+                    "enum": [
+                      20219,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20220: 分类结算草稿、封印或来源已变化，请刷新后重试; 20221: 此操作标识已用于其他分类结算请求; 20222: 分类结算参与来源尚未就绪; 20223: 同一参与身份的时长政策不一致，不能合并结算; 20224: 同一成员的参与时段重叠，不能重复结算; 20225: 活动分类结算规模超过本次处理上限",
+                    "enum": [
+                      20220,
+                      20221,
+                      20222,
+                      20223,
+                      20224,
+                      20225,
+                    ],
+                    "example": 20220,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分类结算草稿、封印或来源已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分类结算草稿、封印或来源已变化，请刷新后重试(code=20220) / 此操作标识已用于其他分类结算请求(code=20221) / 分类结算参与来源尚未就绪(code=20222) / 同一参与身份的时长政策不一致，不能合并结算(code=20223) / 同一成员的参与时段重叠，不能重复结算(code=20224) / 活动分类结算规模超过本次处理上限(code=20225)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页读取分类结算当前来源与认定缺口 [rbac: activity.time-settlement.read]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement/submit": {
+    "post": {
+      "operationId": "AppManagedActivityTimeSettlementController_submit",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppSubmitTimeSettlementDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppTimeSettlementResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20218: 活动分类结算请求无效",
+                    "enum": [
+                      40000,
+                      20218,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动分类结算请求无效(code=20218)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问; 20001: 活动不存在",
+                    "enum": [
+                      20219,
+                      20001,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219) / 活动不存在(code=20001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20220: 分类结算草稿、封印或来源已变化，请刷新后重试; 20221: 此操作标识已用于其他分类结算请求; 20222: 分类结算参与来源尚未就绪; 20223: 同一参与身份的时长政策不一致，不能合并结算; 20224: 同一成员的参与时段重叠，不能重复结算; 20225: 活动分类结算规模超过本次处理上限; 20052: 当前结算状态不允许提交送审; 20054: 封场凭证已失效,请重新封场后再提交; 20055: 封场凭证与当前证据/人口版本不一致,请重新封场并重新生成草稿; 20053: 尚无结算草稿可提交,请先生成草稿; 20061: 相同操作标识已用于不同的提交内容,请更换操作标识; 20114: 结算草稿版本已变化,请刷新后重新确认提交; 20115: 结算草稿引用的封场凭证已变化,请刷新后重新确认提交; 20160: 活动尚未结束,只允许整理结算草稿,不能提交; 20056: 仍有队员的结算结果未认定,请先逐一认定后再提交; 20057: 结算项数与应结算人口不一致,请重新生成草稿; 20058: 结算项存在重复的参与身份,请重新生成草稿; 20059: 仍有未闭合的服务段,请先处理签退后再提交; 20060: 存在缺少有效贡献规则的结算项,请先补齐规则后再提交",
+                    "enum": [
+                      20220,
+                      20221,
+                      20222,
+                      20223,
+                      20224,
+                      20225,
+                      20052,
+                      20054,
+                      20055,
+                      20053,
+                      20061,
+                      20114,
+                      20115,
+                      20160,
+                      20056,
+                      20057,
+                      20058,
+                      20059,
+                      20060,
+                    ],
+                    "example": 20220,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分类结算草稿、封印或来源已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分类结算草稿、封印或来源已变化，请刷新后重试(code=20220) / 此操作标识已用于其他分类结算请求(code=20221) / 分类结算参与来源尚未就绪(code=20222) / 同一参与身份的时长政策不一致，不能合并结算(code=20223) / 同一成员的参与时段重叠，不能重复结算(code=20224) / 活动分类结算规模超过本次处理上限(code=20225) / 当前结算状态不允许提交送审(code=20052) / 封场凭证已失效,请重新封场后再提交(code=20054) / 封场凭证与当前证据/人口版本不一致,请重新封场并重新生成草稿(code=20055) / 尚无结算草稿可提交,请先生成草稿(code=20053) / 相同操作标识已用于不同的提交内容,请更换操作标识(code=20061) / 结算草稿版本已变化,请刷新后重新确认提交(code=20114) / 结算草稿引用的封场凭证已变化,请刷新后重新确认提交(code=20115) / 活动尚未结束,只允许整理结算草稿,不能提交(code=20160) / 仍有队员的结算结果未认定,请先逐一认定后再提交(code=20056) / 结算项数与应结算人口不一致,请重新生成草稿(code=20057) / 结算项存在重复的参与身份,请重新生成草稿(code=20058) / 仍有未闭合的服务段,请先处理签退后再提交(code=20059) / 存在缺少有效贡献规则的结算项,请先补齐规则后再提交(code=20060)",
+        },
+        "503": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20153: 活动 v1.1 工作流未启用; 20158: 本实例处于活动结算只读维护态,暂不接受考勤与结算写入",
+                    "enum": [
+                      20153,
+                      20158,
+                    ],
+                    "example": 20153,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动 v1.1 工作流未启用",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动 v1.1 工作流未启用(code=20153) / 本实例处于活动结算只读维护态,暂不接受考勤与结算写入(code=20158)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分类送审（另需 activity.settlement-submit.record） [rbac: activity.time-settlement.prepare]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
       ],
     },
   },
