@@ -123,6 +123,11 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
         clockSource: '同方法内 const now = new Date()(应用时钟)',
       },
       {
+        file: 'src/modules/activities/settlement-draft-batch.service.ts',
+        valueExpr: 'new Date(now.getTime() + input.retryBackoffMs)',
+        clockSource: '后台失败事务中的应用时钟 + worker 既有退避间隔，与领取判定同源',
+      },
+      {
         file: 'src/modules/attendances/attendance-import-preview.service.ts',
         valueExpr: 'new Date()',
         clockSource: '应用时钟(入队即可领)',

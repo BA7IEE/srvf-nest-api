@@ -20,7 +20,7 @@
 **它不是一个独立服务。** 它是一个 `@Injectable()` 类,由两个**既有** worker 进程各起一份
 `run()` 循环;全仓零新增 cron、Redis、外部队列、新进程(`activity-batch.worker.ts:43-57`)。
 
-它认四个任务家族(候选谓词 `activity-batch.worker.ts:396-412`):
+本轮大规模草稿补齐后认以下五类 action（候选谓词见 `activity-batch.worker.ts` 的 `claimJob`；草稿交付状态与恢复边界见 §5.5）:
 
 | `jobTypeCode` | 来源 | 领取优先级 |
 |---|---|---:|
@@ -28,6 +28,7 @@
 | `reconciliation` | 活动开始后的 pending/waitlisted/邀请过期对账 | 1 |
 | `bulk_proxy`(`payload.action='onsite_bulk_punch'`) | B6 现场批量打卡 | 2 |
 | `import_execute`(`payload.action='onsite_import_execute'`) | B6 考勤导入执行 | 2 |
+| `bulk_proxy`(`payload.action='settlement_draft_generate'` 且 `executionMode='async'`) | 大规模结算草稿生成 | 2 |
 
 同优先级内按 `availableAt ASC, createdAt ASC`(`:417-424`)。
 
@@ -521,6 +522,26 @@ ORDER BY j."attempts" DESC, j."availableAt" ASC;
 杀掉反而制造 §2.3 盲区 ① 的局面(没有活着的 worker ⇒ 零恢复)。
 
 ---
+
+### 5.5 大规模结算草稿（D4 依赖补齐，尚未发布）
+
+本节只适用于 `bulk_proxy / settlement_draft_generate / async`，不套用 §5.3.1 的手工 SQL 恢复步骤。它复用两个既有 worker，不增加进程、cron、队列或健康检查。§2、§6 的既有健康检查决策及四个盲区全部保留；本轮 7c 重签仍待维护者确认，本文不是部署或开 Gate 授权。
+
+执行边界由 `settlement-draft-dispatch.service.ts` 的 `reserve`、`settlement-draft-batch.service.ts` 的 `process/recordFailure` 和 `activity-batch.worker.ts` 的 `claimJob/sweepDead` 决定：
+
+- 500 人口以内沿同步路径；超过 500 才入异步任务。后台上限为 2000 人口、40000 事件、10000 投影段；超限整次拒绝，不截断生成。一个任务只有一个 `generate` item，业务生成与成功回执同事务，事务预算 30 秒；它不是逐人领取的任务。
+- 新异步任务 `payloadVersion=2`，冻结原执行人的 User/Member 及封印、evidence/population/workflow 版本。执行时重新查询当前资格，等待 Activity 锁后也必须重新判定。重试人有权点重试，不代表可以替代原执行人。
+- 任务成功后刷新结算工作台：任务 detail/items 只按既有 DTO 展示任务状态和安全项目信息，不返回内部 `resultReference`，也不新增结果指针字段。客户端调用 `GET /api/app/v1/my/managed-activities/{activityId}/settlement` 读取当前结算；这是当前状态，不保证仍是某个历史任务生成时的版本。相同 operationKey 重放不重复生成；不同请求号各留生成审计，但相同内容复用版本。不要为了消除失败记录删除旧任务、审计或版本。
+- 临时失败会退回 `pending` 并退避；确定性业务拒绝为 `failed`。尝试次数用尽为 `dead`，且有失败 item/计数，可按现有接口的资格检查手动重试。关闭工作流或只读维护也不会绕过 Gate；不能为了让任务变绿自行开闸。
+- 处理器缺失会抛 `SettlementDraftHandlerUnavailable`，任务保留处理中租约；先核验两个 worker 的构建版本与装配。健康 worker 可在租约过期后接管；禁止直接改 payload、租约或成功指针。恢复以另有健康 worker 为前提，不是存活性检测。
+- v1 异步任务没有所需凭据，领取后失败 `DraftJobProofMissing`。保留记录，按当前事实重新发起新请求，不手填旧 payload 冒充可信快照。v1 同步任务不由此处理器消费，原请求回放协议保留。
+- 封印被替代或版本变化时，旧任务失败；先按业务流程确认当前事实与有效封印，再用新 operationKey 发起。不得自动改键无限重试。已送审的结算拒绝重生成，不能把 run 改回 drafting。
+
+排查从既有 `GET /api/app/v1/my/activity-batch-jobs/{jobId}` 及 items 读面开始，按权限查看安全错误信息。需要数据库诊断时先确认目标环境并获得相应只读授权，查询只投影 job/item 状态、计数、错误码和结果指针，不输出完整 payload、身份原值或日志堆栈。§5.0 的旧统一盘点不包含 `failed` 状态，因此不能单独用于判定草稿没有失败任务。
+
+错因修复后，符合当前资格的操作者通过 `POST /api/app/v1/my/activity-batch-jobs/{jobId}/retry-failed` 手动重试；取消走同路径下 `/cancel`。取消与生成竞争 Activity 锁，生成先提交则不能再用取消覆盖成功结果。不得将成功草稿理解为送审、入账或关账完成。
+
+本地证据见实施计划 §16.5：真实两个 worker context、租约恢复、缺处理器恢复、不同重试人、四种 Gate、取消先后赢锁、普通成员资格变化及真实送审后的拒绝已分别验证。另以测试自己启动的子进程在未提交版本写入后自发SIGKILL，核验回滚，并由新子进程恢复为单份结果；仅推进隔离任务租约过期，不改五分钟租约配置。尚未完成全部资源矩阵、部署环境节点重启/OOM演练及最终 CI，不把本地进程恢复称为生产部署验收。
 
 ## 6. 已拍板:健康检查的形态 = **A(接受由 lease 恢复代偿)**
 

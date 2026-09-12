@@ -173,6 +173,9 @@ export class EvidenceSealService {
   // EXISTS / NOT EXISTS 恒二值;`supersedesEventId` 可空但 `= NULL` 只会让 EXISTS 取假,
   // 不会塌成 NULL(且 supersede shape CHECK 已保证 void/replace 行必有该值)。
   private async countUnprocessedEventEffects(tx: PrismaTx, activityId: string): Promise<number> {
+    // Keep the two event-reference indexes independently usable: NOT EXISTS(A OR B)
+    // equals NOT EXISTS(A) AND NOT EXISTS(B), while EXISTS(A OR B) equals either EXISTS.
+    // This preserves NULL and superseded semantics without a per-event OR scan of all segments.
     const rows = await tx.$queryRaw<Array<{ count: number }>>`
       SELECT count(*)::int AS "count"
       FROM "AttendancePunchEvent" e
@@ -183,19 +186,25 @@ export class EvidenceSealService {
             AND NOT EXISTS (
               SELECT 1 FROM "ParticipantServiceSegmentRevision" s
               WHERE s."statusCode" <> 'superseded'
-                AND (s."sourceCheckInEventId" = e.id OR s."sourceCloseEventId" = e.id)
+                AND s."sourceCheckInEventId" = e.id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM "ParticipantServiceSegmentRevision" s
+              WHERE s."statusCode" <> 'superseded'
+                AND s."sourceCloseEventId" = e.id
             )
           )
           OR (
             e."eventTypeCode" IN ('void', 'replace')
-            AND EXISTS (
+            AND (EXISTS (
               SELECT 1 FROM "ParticipantServiceSegmentRevision" s
               WHERE s."statusCode" <> 'superseded'
-                AND (
-                  s."sourceCheckInEventId" = e."supersedesEventId"
-                  OR s."sourceCloseEventId" = e."supersedesEventId"
-                )
-            )
+                AND s."sourceCheckInEventId" = e."supersedesEventId"
+            ) OR EXISTS (
+              SELECT 1 FROM "ParticipantServiceSegmentRevision" s
+              WHERE s."statusCode" <> 'superseded'
+                AND s."sourceCloseEventId" = e."supersedesEventId"
+            ))
           )
         )
     `;
