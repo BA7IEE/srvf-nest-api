@@ -1,6 +1,6 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **D3 implementation（2026-09-12）**：D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。
+> **D3 implementation（2026-09-12）**：D3 已随 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323) 合入 main `921a6bf3fac66067e5232768d5c5d32bf92765fc`；批准 HEAD 为 `c3a969a22b4f59b2e2ca51a46660c04d10d53b41`，18 项 PR 检查及可信审批通过，[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34677507039) 在该合并 SHA 上 completed/success。仓内基线为 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），3b/4b 已重签；零内建角色默认授码。维护者本轮只授权 D3 台账更正及 D4 [评审](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-review.md)／[精确计划](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-implementation-plan.md)合并起草、验证后提交推送并创建 docs-only PR；D4 方案和实施仍待确认。本轮不合并、不实施、不操作数据库、不启用 Gate；整体跨模型复审、前端发布与生产验收尚未完成。下方较早阶段描述保留为历史，以本条为当前状态。
 
 > **D1-3 已合并并完成主干验证（2026-09-11）**：[实施 PR #1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已 squash 合入 main `60414050b99fe661afbf0c87669597ad081a3b43`；批准头 `2e67806722ebb442d98c8cc58dbf43fa3be4ee01` 与合并树一致。18 项 PR 检查及可信红区审批已通过，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 为 completed/success。四层选择、模板 V4 / 提案 V8、Readiness、批准冻结与受控变更已进入 main；当前为 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃，3b / 4b 均已重签。D1 三个批次的仓内实现与主干验证已完成；D2–D8、生产部署、Gate 与整体跨模型复审仍未完成，也不删除业务数据。下方“D1-3 验证中/未建 PR/未合并”均为历史时点。
 
@@ -2552,9 +2552,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1-1/D1-2/D1-3/D2 已完成仓内交付；D3 implementation 在当前分支完成定向验证，inventory 已登记，待 PR 签收**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1-1/D1-2/D1-3/D2/D3 已完成仓内交付；D4 评审与精确计划待确认**
 
-**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、Release 3 C1–C5、Release 4 D1-1 #1310 / D1-2 #1312 / D1-3 #1316 / D2 #1319 已完成相应 PR 与 main 验证；D3 implementation 已在当前分支完成隔离 E2E、定向单测、typecheck、build、contract 与 lint，inventory 登记已按补充授权完成，进入本地收口与 PR 阶段；3b/4b、可信审批和 CI 未完成；整体跨模型复审、前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，不宣称任何 Release 已上线)
+**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、Release 3 C1–C5、Release 4 D1-1 #1310 / D1-2 #1312 / D1-3 #1316 / D2 #1319 / D3 #1323 已完成相应 PR 与 main 验证；D3 的 3b/4b、可信审批和最终 CI 已完成，D4 仅起草评审与精确计划，方案及 implementation 待确认；整体跨模型复审、前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，不宣称任何 Release 已上线)
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 

@@ -1,6 +1,6 @@
 # Activity OS Release 4 / D3：时长分配修订评审与授权清单
 
-> **当前阶段（2026-09-12）**：D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。
+> **当前阶段（2026-09-12）**：D3 已随 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323) 合入 main `921a6bf3fac66067e5232768d5c5d32bf92765fc`；批准 HEAD 为 `c3a969a22b4f59b2e2ca51a46660c04d10d53b41`，18 项 PR 检查及可信审批通过，[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34677507039) 在该合并 SHA 上 completed/success。仓内基线为 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），3b/4b 已重签；零内建角色默认授码。维护者本轮只授权 D3 台账更正及 D4 [评审](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-review.md)／[精确计划](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-implementation-plan.md)合并起草、验证后提交推送并创建 docs-only PR；D4 方案和实施仍待确认。本轮不合并、不实施、不操作数据库、不启用 Gate；整体跨模型复审、前端发布与生产验收尚未完成。下方较早阶段描述保留为历史，以本条为当前状态。
 
 ## 1. 人话简报与推荐
 
@@ -74,6 +74,6 @@ D1 已回答“某个活动、场次或岗位应适用哪一版时长政策”�
 
 ## 7. 本次写集与后续授权
 
-本轮已按维护者确认的 D3 写集实现 schema／migration、内部 command、权限／审计／错误码、附件删除保护、D2 窄桥和测试，并只在获批隔离测试链验证。没有新增外部接口、DTO、客户端、Gate、生产操作或业务数据删除；`prisma/seed.ts` 的扩展仅纳入新权限码 seed 闭包，未改变任何内建角色默认授权。
+D3 在 #1323 按维护者确认写集实现 schema／migration、内部 command、权限／审计／错误码、附件删除保护、D2 窄桥和测试。验证及一次测试初始化范围偏差详见[实施计划 §9.1](activity-os-r4-d3-time-allocation-revision-implementation-plan.md#91-本地补验证据2026-09-12)，不将偏差抹成“全部只在获批库执行”。D3 没有新增外部接口、DTO、客户端、Gate、生产操作或业务数据删除；`prisma/seed.ts` 仅纳入新码 seed 闭包，未改变内建角色默认授权。本轮只是台账更正及 D4 候选文档起草，没有实施 D4。
 
 方案 A 与原 implementation、seed、inventory 精确扩展均已确认；两份 Harness 登记及 3b/4b 重签已完成，#1323 已创建。维护者 2026-09-12 已批准五份旧 E2E 精确适配及计划、台账、changelog 更新，仅在 app_test_w98 串行验证，保留历史升级与业务断言，不改生产代码或门禁；验证后提交推送更新 #1323，检查通过后允许 Ready。可信审批仍须维护者完成，不合并、不操作生产、不启用 Gate、不删除业务数据。逐路径边界见实施计划 §8。
