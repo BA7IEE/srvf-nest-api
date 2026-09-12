@@ -2,6 +2,8 @@
 
 > **当前状态（2026-09-12）**：D2 方向评审已随 [#1317](https://github.com/BA7IEE/srvf-nest-api/pull/1317) 合入，精确计划 [#1318](https://github.com/BA7IEE/srvf-nest-api/pull/1318) 已合入 main `c2a687bf2e9e81d1199329021f06abca40d8f8aa`。维护者授权本稿 §4 的 10 个路径后，[implementation PR #1319](https://github.com/BA7IEE/srvf-nest-api/pull/1319) 已以 17 项 PR 检查及可信红区审批成功后 squash 至 main `c0140c6efdfcbf1060b99ef8626b56ec8b65234c`。其首次 main CI 只因过期日期棘轮基线失败；独立 [#1320](https://github.com/BA7IEE/srvf-nest-api/pull/1320) 修复基线后，含 D2 的 main `bcc297495c42f8a37ed06e946abe96db99d49d64` 在 [CI 34625317010](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34625317010) completed/success。D2 已完成仓内交付和主干验证，仍未部署或启用 Gate。
 
+> **D3 后续状态**：维护者已确认 D3 方案 A，且 [D3 精确实施计划](activity-os-r4-d3-time-allocation-revision-implementation-plan.md) 已形成 docs-only PR 依据。D2 仍只提供内部只读参与事实；D3 implementation、任何测试库操作、合并、生产和 Gate 均须单独授权。
+
 > **治理新鲜度处置（本轮完成）**：新增 `src` Facade 与受控 module provider 机械改变了 `harness/domain-map.json` 与 `docs/ai-harness/ROUTE_AUTHZ.md` 的输入指纹。维护者已单独授权这两条纯派生更新；实际 diff 仅为三个 inputDigest，`docs:boundaries:check` 与 `docs:authz:check` 均通过，625 个端点、路由策略和域归属语义未变化。这不改变 D2 的无 migration、无 API、无权限、无 Gate 边界。
 
 ## 1. 这次 D2 真正要交付什么
