@@ -705,6 +705,8 @@ pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason '维护者确认 D4
 
 ### 17.2 D4下游独立复验
 
+> **空白检查未通过，签字原件保留**：暂存新增SQL后，`git diff --cached --check`首次完整覆盖到第121条migration，在第593行发现一个空行尾空格，退出2；此前未暂存时的`git diff --check`不覆盖该untracked SQL，不能作为它的空白检查证据。检查失败后本地提交仍生成，是命令串接没有阻断后续commit的执行疏漏。未据此宣称全部检查通过；该格式项随Draft PR公开保留，不能当作Ready或合并验收完成。未改SQL字节、预算、断言或门禁，已确认3b的SHA-256仍为`c86dfd72b0d68a01669991694cf1544e85fdcd78a33c96548dc562ceb337187b`，迁移及业务／契约测试通过结论不变。
+
 - 契约差异逐块核对：OpenAPI解析后仅新增24个DTO schema和8个路径，原对象无删除或语义变化；Jest快照按schema／path顶层块切分，原843个schema块及486个path块逐字未变，仅新增同一24／8集合。Git的大行数差异不代表旧合同变化；没有盲更新快照。快照是pretty-format文本而非严格JSON，初次通用解析失败后改用块原文对拍，再与真实OpenAPI对象互证，不将解析失败当作零差异。
 
 - D4候选的实际生产代码、测试、schema、SQL和治理产物与实施工作树逐文件核对；仍使用独立D4 Prisma生成物，不借用依赖候选的120条生成物。
