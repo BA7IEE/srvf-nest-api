@@ -59,7 +59,7 @@
 - **snapshot diff 必须逐行可解释**;L3 字段(passwordHash / *token* / secret* / 完整 signed URL)出现即拒。
 - **不输出任何 secret**(.env / bucket / APPID / SecretId / SecretKey / signed URL / JWT 内容),调研与报告中亦然。
 - **不擅自调和文档冲突**;不主动展开未授权的次要任务。
-- **受影响范围**:改哪个模块跑哪组 e2e;动依赖枢纽(permissions / audit-logs / `common/*`)或全局横切 → 先列引用链、直接 `agent:check:full`。(CI 恒跑全量兜底,这条只决定红在本地还是 CI。)
+- **受影响范围**:改哪个模块跑哪组 e2e;动依赖枢纽(permissions / audit-logs / `common/*`)或全局横切,先列引用链并覆盖直接受影响的定向 e2e。本地验证口径统一按 [process §3](docs/process.md):`quick` + 定向 e2e;`agent:check:full` 的执行体为 PR CI 冷跑,全量要求不减。
 
 ---
 
