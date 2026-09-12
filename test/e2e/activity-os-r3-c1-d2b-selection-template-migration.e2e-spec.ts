@@ -498,7 +498,7 @@ describe('C1 D2b nonempty 111 to 112 upgrade', () => {
           'SELECT count(*) FROM role_permissions rp JOIN permissions p ON p.id=rp."permissionId" WHERE p.code LIKE \'activity-template.%\'',
         ),
       ).toBe('0');
-      expect(sql('SELECT count(*) FROM permissions')).toBe('262');
+      expect(sql('SELECT count(*) FROM permissions')).toBe('263');
       expect(
         sql(
           "SELECT (to_jsonb(r) - ARRAY['templateVersionId','activityId'])::text FROM \"ActivityMetricCommandReceipt\" r ORDER BY id",

@@ -1,6 +1,6 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **D3 implementation（2026-09-12）**：D3 implementation 已在当前分支落地，处于提交收口阶段、未合并。维护者已确认原精确写集、第 120 条 migration、`app_test_w98` 隔离验证，并补充授权 `prisma/seed.ts` 的单码 seed 闭包及两份 Harness inventory 登记。`recognitionModeCode` 已登记为 L1 inventory、`not-derived` 的不可变配置，没有新增生命周期或状态边。当前 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃）；零内建角色默认授码。D3 应用 E2E 18 项与迁移 E2E 3 项已通过，包含真实锁等待撤权、源段更正、选择变更、政策退役、附件删除双向竞争与失败回滚；其余本地验证见实施计划。3b/4b 重签、可信红区审批、PR CI、合并后 main CI、生产、Gate 与整体跨模型复审仍未完成。
+> **D3 implementation（2026-09-12）**：D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。
 
 > **D1-3 已合并并完成主干验证（2026-09-11）**：[实施 PR #1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已 squash 合入 main `60414050b99fe661afbf0c87669597ad081a3b43`；批准头 `2e67806722ebb442d98c8cc58dbf43fa3be4ee01` 与合并树一致。18 项 PR 检查及可信红区审批已通过，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 为 completed/success。四层选择、模板 V4 / 提案 V8、Readiness、批准冻结与受控变更已进入 main；当前为 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃，3b / 4b 均已重签。D1 三个批次的仓内实现与主干验证已完成；D2–D8、生产部署、Gate 与整体跨模型复审仍未完成，也不删除业务数据。下方“D1-3 验证中/未建 PR/未合并”均为历史时点。
 

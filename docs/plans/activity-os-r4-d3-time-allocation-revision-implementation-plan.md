@@ -1,8 +1,8 @@
 # Activity OS Release 4 / D3：时长分配修订精确实施计划与授权清单
 
-> **当前状态（2026-09-12）**：D3 implementation 已在当前分支落地，处于提交收口阶段、未合并。维护者已确认原精确写集、第 120 条 migration、`app_test_w98` 隔离验证，并补充授权 `prisma/seed.ts` 的单码 seed 闭包及两份 Harness inventory 登记。`recognitionModeCode` 已登记为 L1 inventory、`not-derived` 的不可变配置，没有新增生命周期或状态边。当前 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃）；零内建角色默认授码。D3 应用 E2E 18 项与迁移 E2E 3 项已通过，包含真实锁等待撤权、源段更正、选择变更、政策退役、附件删除双向竞争与失败回滚；其余本地验证见实施计划。3b/4b 重签、可信红区审批、PR CI、合并后 main CI、生产、Gate 与整体跨模型复审仍未完成。
+> **当前状态（2026-09-12）**：D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。
 
-> **不把分支当能力**：以下模型名、错误码、权限、审计事件、锁序和路径已在当前工作树按计划兑现，但未合并分支不是 main 或生产能力。剩余红区登记项、签字、可信审批、PR CI 与合并后 main CI 必须各自完成，不能以当前定向验证替代。
+> **不把分支当能力**：以下模型名、错误码、权限、审计事件、锁序和路径已在当前工作树按计划兑现，但未合并分支不是 main 或生产能力。红区登记及 3b/4b 重签已完成；可信审批、PR CI 与合并后 main CI 必须各自完成，不能以当前定向验证替代。
 
 ## 1. D3 要交付什么，以及绝不交付什么
 
@@ -142,6 +142,19 @@ Storage 的改动限于 AttachmentStorageOrchestrator 的已存在删除引用�
 
 下表是维护者已经确认的 D3 implementation 白名单；后续扩展为 `prisma/seed.ts`，以及 `harness/state-machines.json`、`docs/ai-harness/STATE_MACHINE_INVENTORY.md` 的精确 inventory 登记。任何其它新增路径仍须先逐路径复核并由维护者明确授权。
 
+维护者 2026-09-12 另已确认 #1323 的五份旧 E2E 适配及 3b/4b 重签，精确增量如下；不改生产代码或门禁，不放宽历史升级与业务断言。
+
+| 已确认路径 | 本轮唯一改动 |
+| --- | --- |
+| test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts | 当前全链回放标题与总数 119→120；保留历史 117→118 升级、SQL checksum 与历史迁移锚。 |
+| test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts | 当前全链标题与总数 119→120；D1-3 锚固定为第 119 条 `names[118]`，保留 118→119 历史升级。 |
+| test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts | 当前全链标题与总数 119→120；保留 112→113 历史升级及全部成果行为断言。 |
+| test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts | 在原计数适配外，仅将当前 seed 权限总数 262→263；保留旧收据逐字一致、seed 二跑、零默认授码与历史 111→112。 |
+| test/e2e/activity-os-r4-d1-1-time-policy-foundation.e2e-spec.ts | 测试清理 TRUNCATE 显式加入四张 ParticipantTimeAllocation 表，不使用 CASCADE，不改行为断言。 |
+| docs/ai-harness/CUTOVER_SIGNOFF.md | 按维护者当轮确认重签 3b 第 120 条及 4b 权限 263、审计 168/163，保留历史签字依据。 |
+
+验证只使用 `app_test_w98`，每套串行重建测试夹具；不运行会写入 `app_test` / `app_test_w1` 的默认全局初始化，不修改仓库 test/setup 或 Jest 门禁配置。验证后与下表已授权的计划、台账及 changelog 一次提交推送更新 #1323；检查通过后才可 Ready，不合并。
+
 | 分类 | 实施路径 | 允许范围 |
 | --- | --- | --- |
 | schema | prisma/schema.prisma | 四个不可变模型、复合锚与已有 Attachment 关系；不改既有服务段语义。 |
@@ -171,7 +184,7 @@ Storage 的改动限于 AttachmentStorageOrchestrator 的已存在删除引用�
 | migration | 空库全链回放、非空历史升级、120 条计数、每条 SQL guard 的正反变异；不把旧固定 migration 基线改成 120。 |
 | 安全 | 未持码、无显式组织范围、非 owner、失效成员、跨活动附件、附件已被 Storage 删除、AI/外部来源和未锁重读都 fail-closed。 |
 
-本轮补验使用由 D3 测试自行管理的 `app_test_w98`，从空库部署当前 migration 文件；临时验证入口保留测试环境护栏，跳过会重建其它模板／worker 库的通用全局初始化。没有运行 `prisma migrate dev`、`migrate reset` 或 `db push`。3b/4b 对拍已确认仍需维护者重签：migration 119→120，权限 262→263、seed 摘要变化，审计 167→168 总计／162→163 活跃。可信审批、PR CI 与合并后 main CI 未完成前，不登记 D3 收口。
+本轮补验只使用 `app_test_w98`，从空库部署当前 migration 文件；临时验证入口保留测试环境护栏，跳过会重建其它模板／worker 库的通用全局初始化。没有运行 `prisma migrate dev`、`migrate reset` 或 `db push`。3b/4b 已按维护者 2026-09-12 确认重签并通过对拍：migration 120，权限 263、seed 摘要 `9f305e80d3f5`，审计 168 总计／163 活跃。可信审批、PR CI 与合并后 main CI 未完成前，不登记 D3 收口。
 
 ### 9.1 本地补验证据（2026-09-12）
 
@@ -180,21 +193,24 @@ Storage 的改动限于 AttachmentStorageOrchestrator 的已存在删除引用�
 | 全仓单测 | 376 套、8174 项通过；5 项既有 todo。未以定向单测替代全仓单测。 |
 | D3 application E2E | 18/18；真实 PostgreSQL 同键重放、revision 竞争、六类锁等待后身份停用、组织撤权、源段更正、政策退役、选择变更、附件删除双向竞争和最终审计失败回滚。 |
 | D3 migration E2E | 3/3；120 条冷回放、119→120 非空升级、SQL 同链／不可变／manifest／evidence／receipt 正反例。SQL SHA-256 为 `caee91d1e8f2d1dae5e79d7789cd3473e886f23693ec200fd057f6a23d71ca54`。 |
+| 五份旧 E2E 兼容补验 | 全部通过，共 106 项：D1-1 migration 2、D1-3 migration 3、C2 D1 8、C1 D2b 63、D1-1 foundation 30。逐套仅在 app_test_w98 从空库串行验证，历史升级与业务断言保留；结束仅回收该测试夹具库。 |
 | 类型、构建与 lint | 完整 typecheck 通过；build 与全仓 lint 在本轮前段通过，后续变动的 TypeScript 已再次 lint；没有修改 lint 内存配置或裁决规则。 |
 | 契约 | 1049 项、2 个快照通过；未更新 snapshot。 |
 | Harness selftest | guards 543 通过、eslint 138 通过、hooks 68 通过，各组失败均为 0；保留脚本明确报告的已知缺口，不把它们宣称为已覆盖。 |
 | 派生检查 | metadata、authz、counts、migration count、RBAC map、CODEMAP、readtax 与 FROZEN 台账通过；CODEMAP 保留 2 项既有非阻断 warning。 |
-| 签字对拍 | 未通过：3b migration 119→120；4b seed 指纹变化、Audit 167/162→168/163。不能把测试通过记作维护者已签字。 |
+| 签字对拍 | 维护者明确确认后更新 3b/4b，`pnpm cutover:check:signoff` 已通过；不替代可信审批、PR CI、整体复审、合并或生产授权。 |
 
 **验证执行范围偏差**：D3 补验由测试自身重建 `app_test_w98`。契约验证误用默认 global setup，对 `app_test` 执行了无待迁移的 deploy 核验，并创建／回收 `app_test_w1`，超出本轮限定的 w98 范围；已向维护者说明并停止该入口。只读复核确认 w1 与 w98 均已回收，未触及生产。没有将此偏差解释为新的授权，也不为此放宽测试库护栏。
 
 本地没有执行全量 E2E；`agent:check:full` 的全仓 E2E 冷跑仍由 PR CI 验证。
 
+首轮 [CI 34672472993](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34672472993) 已结束：Diff guards 因 3b/4b 旧读数失败，E2E 第 2/3/4 组因 §8 五份旧测试的当前读数及清理前置失败，第 1/5 组通过。上述 106 项本地补验及签字对拍已通过；本次提交后仍须由新 SHA 的完整 PR CI 独立裁决，不能沿用旧运行或宣称全量已绿。
+
 ## 10. 实施授权与剩余动作
 
 维护者已授权本表中的 implementation 路径、实际第 120 条 migration、`app_test_w98` 隔离验证及 `prisma/seed.ts` 的精确 seed 闭包扩展。实施没有增加内建角色默认授予，也没有把 D3 变成对外能力。
 
-原写集、seed 闭包与 inventory 扩展均已获得维护者确认；已授权范围内继续自检、提交、推送并创建 Draft PR，不再重复索要实施授权。尚需维护者独立完成本轮 3b/4b 重签和可信审批；Ready、合并、生产和 Gate 仍是彼此独立的动作。
+原写集、seed 闭包、inventory 扩展及 §8 的旧测试适配均已获得维护者确认；#1323 已创建。本轮 3b/4b 已重签，验证后允许提交推送更新 PR，检查通过后允许标记 Ready。可信红区审批仍须维护者独立完成；没有合并、生产或 Gate 授权。
 
 ## 11. 本次未做
 
