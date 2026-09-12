@@ -1,5 +1,17 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## 大规模草稿依赖（独立候选，未合并、未部署）
+
+### 大规模草稿任务接线（不新增接口字段）
+
+沿既有 `POST /api/app/v1/my/managed-activities/{activityId}/settlement/generate` 发起。以响应 `outcome` 分支，不根据前端人数估算结果：`draft` 表示同步生成完成；`job` 仅表示任务已受理，应保留 `jobId` 并展示处理中，不能据此显示草稿已完成、已送审或已入账。
+
+通过既有 `GET /api/app/v1/my/activity-batch-jobs/{jobId}` 查询任务状态，必要时调用 `/items` 查看项目；页面离开或任务进入终态后停止轮询，读取失败不自动重发生成命令。任务成功后刷新结算工作台，即 `GET /api/app/v1/my/managed-activities/{activityId}/settlement`；任务接口不返回内部 `resultReference`，不新增结果指针字段。工作台返回当前结算状态，不能当作历史 job 的不可变回执；若期间另有生成或送审，以刷新结果为准。
+
+失败后展示既有安全错误信息及 `retryFailedAllowed`、`cancelAllowed` 提示；按钮提示不替代后端当前资格检查。由操作者明确触发既有 `/retry-failed` 或 `/cancel`，不能后台无限重试。重试仍使用原任务执行身份，不因重试人不同而换人执行。封印/输入变化时先刷新业务事实，确认重新生成后才使用新 operationKey；网络超时或同意图重放保留原键，不自动改键。旧v1异步任务缺少可信凭据时保留失败记录，确认当前事实后重新发起，不要求客户端补内部payload。
+
+读面按当前活动责任范围判定，不保证任务创建人一直可见；无权或不存在时停止轮询，不以本地缓存冒充授权。草稿单任务的进度不是逐人进度，不用 `total=1` 推导活动只有一名参与人。以上仅为后端实施分支的接线说明，前端页面和生产部署尚未验收。
+
 > **D1-3 已合入 main、未部署（2026-09-11）**：[#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已合入 `60414050b99fe661afbf0c87669597ad081a3b43`，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 通过。managed activity 的 `GET/PATCH /api/app/v1/my/managed-activities/:activityId/time-policy-selection` 与 `GET /api/app/v1/my/managed-activities/time-policy-options` 现为 main 的后端合同；读写仍需当前有效成员、显式时间政策权限、组织范围和发起人或责任资格，PATCH 使用 `expectedRevision` 生成完整不可变选择修订。前端本地联调以 main 的 OpenAPI / App client 为准；生产部署、Gate、整体跨模型复审及 D2–D8 尚未完成。
 
 > **D1 文档追加授权（2026-09-10）**：维护者已确认方案 A 方向，允许补充 changelog、提交、推送并创建文档评审 PR；不合并、不实施。本条覆盖下方起草时“方案待确认/不提交推送”的状态，不授权数据库、Gate 或后续实施。

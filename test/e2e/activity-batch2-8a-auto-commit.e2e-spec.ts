@@ -87,9 +87,24 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
     submitter = await makeActor('batch2-8a-submitter');
     firstReviewer = await makeActor('batch2-8a-first');
     finalReviewer = await makeActor('batch2-8a-final');
-    const organization = await prisma.organization.create({
-      data: { name: '第 ⑧a 刀测试组织', nodeTypeCode: 'activity-batch2-8a-team' },
+    const root = await prisma.organization.create({
+      data: { name: '第 ⑧a 刀测试根组织', nodeTypeCode: 'activity-batch2-8a-root' },
       select: { id: true },
+    });
+    const organization = await prisma.organization.create({
+      data: {
+        name: '第 ⑧a 刀测试组织',
+        nodeTypeCode: 'activity-batch2-8a-team',
+        parentId: root.id,
+      },
+      select: { id: true },
+    });
+    await prisma.organizationClosure.createMany({
+      data: [
+        { ancestorId: root.id, descendantId: root.id, depth: 0 },
+        { ancestorId: root.id, descendantId: organization.id, depth: 1 },
+        { ancestorId: organization.id, descendantId: organization.id, depth: 0 },
+      ],
     });
     organizationId = organization.id;
 
@@ -409,6 +424,36 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
     };
   }
 
+  async function consumeDraftPrerequisite(
+    worker: ActivityBatchWorker,
+    jobId: string,
+    activityId: string,
+  ) {
+    expect(await worker.drainOnce()).toMatchObject({
+      jobClaimed: true,
+      jobId,
+      itemsProcessed: 1,
+      itemsFailed: 0,
+    });
+    const job = await prisma.activityBatchJob.findUniqueOrThrow({
+      where: { id: jobId },
+      include: { items: true },
+    });
+    expect(job).toMatchObject({ statusCode: 'succeeded', total: 1, succeeded: 1, failed: 0 });
+    expect(job.items).toHaveLength(1);
+    expect(job.settlementVersionId).not.toBeNull();
+    expect(job.items[0]).toMatchObject({
+      statusCode: 'succeeded',
+      resultReference: job.settlementVersionId,
+    });
+    expect(
+      await prisma.attendanceSettlementVersion.findMany({
+        where: { settlementRun: { activityId } },
+        select: { id: true, sessionParticipationCount: true },
+      }),
+    ).toEqual([{ id: job.settlementVersionId, sessionParticipationCount: 501 }]);
+  }
+
   async function drainUntilClaimed(worker: ActivityBatchWorker) {
     const first = await worker.drainOnce();
     if (first.jobClaimed) return { rounds: 1, result: first };
@@ -445,6 +490,8 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
       );
     expect(conflict).toBeInstanceOf(BizException);
     expect((conflict as BizException).biz).toBe(BizCode.SETTLEMENT_DRAFT_OPERATION_KEY_CONFLICT);
+    if (first.outcome !== 'job') throw new Error('large draft job required');
+    await consumeDraftPrerequisite(storageActivityWorker, first.jobId, fixture.activityId);
   });
 
   it('storage worker 真领 job：含 >500 分流；生成→提交→一审→终审→准备→自动提交→关账', async () => {
@@ -457,6 +504,11 @@ describe('第 2 批第 ⑧a 刀 —— generate dispatch → worker auto commit 
       .send({ operationKey: `${large.tag}-generate` });
     expect(largeGenerated.status).toBe(200);
     expect(largeGenerated.body.data).toMatchObject({ outcome: 'job', statusCode: 'pending' });
+    const largeJob = await prisma.activityBatchJob.findUniqueOrThrow({
+      where: { operationKey: `${large.tag}-generate` },
+      select: { id: true },
+    });
+    await consumeDraftPrerequisite(storageActivityWorker, largeJob.id, large.activityId);
 
     const fixture = await createInitialFixture(1, { withPunches: true, withCapacity: true });
     const reviewed = await generateSubmitAndReview(fixture);

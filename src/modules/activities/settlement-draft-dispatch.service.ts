@@ -116,7 +116,7 @@ export class SettlementDraftDispatchService {
       });
       if (existing !== null) return await this.resolveExisting(tx, existing, input);
 
-      await this.requireActiveSeal(tx, input.activityId, activity.workflowRevision);
+      const seal = await this.requireActiveSeal(tx, input.activityId, activity.workflowRevision);
       const run = await tx.attendanceSettlementRun.findUnique({
         where: { activityId: input.activityId },
         select: { statusCode: true },
@@ -142,12 +142,22 @@ export class SettlementDraftDispatchService {
           statusCode: asyncMode ? 'pending' : 'processing',
           operationKey: input.operationKey,
           requestHash: input.requestHash,
-          payloadVersion: 1,
+          payloadVersion: asyncMode ? 2 : 1,
           payload: {
             action: SETTLEMENT_DRAFT_GENERATE_JOB_ACTION,
             executionMode: asyncMode ? 'async' : 'sync',
             activityId: input.activityId,
             populationSize,
+            ...(asyncMode
+              ? {
+                  actorUserId: currentUser.id,
+                  actorMemberId: currentUser.memberId,
+                  evidenceSealId: seal.id,
+                  evidenceRevision: seal.evidenceRevision,
+                  populationRevision: seal.populationRevision,
+                  workflowRevision: seal.workflowRevision,
+                }
+              : {}),
           },
           total: 1,
           attempts: asyncMode ? 0 : 1,
@@ -341,15 +351,12 @@ export class SettlementDraftDispatchService {
     return row;
   }
 
-  private async requireActiveSeal(
-    tx: PrismaTx,
-    activityId: string,
-    workflowRevision: number,
-  ): Promise<void> {
+  private async requireActiveSeal(tx: PrismaTx, activityId: string, workflowRevision: number) {
     const seal = await tx.evidenceSeal.findFirst({
       where: { activityId, statusCode: 'active' },
       orderBy: { sealRevision: 'desc' },
       select: {
+        id: true,
         evidenceRevision: true,
         populationRevision: true,
         workflowRevision: true,
@@ -374,6 +381,7 @@ export class SettlementDraftDispatchService {
     ) {
       throw new BizException(BizCode.SETTLEMENT_DRAFT_EVIDENCE_SEAL_STALE);
     }
+    return seal;
   }
 }
 
