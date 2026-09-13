@@ -698,15 +698,22 @@ CREATE FUNCTION astr_bucket_content_hash(revision_id TEXT) RETURNS TEXT LANGUAGE
     ), '[]'::jsonb)
   )), 'UTF8')), 'hex')
   FROM "ParticipantSettlementTimeBucket" b
-  LEFT JOIN (
-    SELECT "bucketId", jsonb_agg(jsonb_build_object(
+  -- Keep source lookup bounded by this bucket even when fresh-revision statistics estimate
+  -- one row. The existing (bucketId, allocationRevisionId) index bounds the lookup;
+  -- do not repeatedly join the entire revision's grouped sources under a nested-loop plan.
+  LEFT JOIN LATERAL (
+    SELECT jsonb_agg(jsonb_build_object(
       'allocationRevisionId', "allocationRevisionId", 'sourceSegmentId', "sourceSegmentId",
       'sourceSegmentRevision', "sourceSegmentRevision",
       'rawCalculatedMilliseconds', "rawCalculatedMilliseconds"::TEXT,
       'rawRecognizedMilliseconds', "rawRecognizedMilliseconds"::TEXT
-    ) ORDER BY "allocationRevisionId" COLLATE "C") AS items
-    FROM "ParticipantSettlementTimeBucketSource" WHERE "timeRevisionId" = revision_id GROUP BY "bucketId"
-  ) s ON s."bucketId" = b.id WHERE b."timeRevisionId" = revision_id;
+    ) ORDER BY "allocationRevisionId" COLLATE "C")
+      FILTER (WHERE "timeRevisionId" = revision_id) AS items
+    FROM "ParticipantSettlementTimeBucketSource"
+    -- Retain the revision filter in the aggregate, not as a competing scan key: a fresh
+    -- revision estimated as one row must not select pstbs_revision_idx once per bucket.
+    WHERE "bucketId" = b.id
+  ) s ON true WHERE b."timeRevisionId" = revision_id;
 $$;
 
 -- SQL independently reconstructs the same closed source envelope that the application builds

@@ -415,6 +415,59 @@ describe('D4 classified settlement: real App HTTP and immutable PostgreSQL truth
     });
   }
 
+  // Frozen pre-optimization SQL reference. Keep its grouped join independent of the new
+  // per-bucket lookup so equal hashes prove the closed JSON envelope did not change.
+  async function assertLegacyBucketHash(revisionId: unknown) {
+    if (typeof revisionId !== 'string' || revisionId.length === 0)
+      throw new Error('expected prepared time revision id');
+    const rows = await f.db.$transaction(
+      async (tx) => {
+        // Read-only oracle after the timed business transaction: do not repeat the legacy
+        // pathological join plan. These settings cannot escape this reference transaction.
+        await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+        await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
+        await tx.$executeRaw`SET LOCAL statement_timeout = 30000`;
+        return tx.$queryRaw<{ oldHash: string; currentHash: string; storedHash: string }[]>`
+      SELECT legacy.hash AS "oldHash", astr_bucket_content_hash(${revisionId}) AS "currentHash",
+        (SELECT "bucketContentHash" FROM "ActivitySettlementTimeRevision" WHERE id=${revisionId}) AS "storedHash"
+      FROM (
+        SELECT encode(sha256(convert_to(astr_canonical_json(jsonb_build_object(
+          'domain', 'activity-time-settlement-buckets-v1', 'definition', coalesce(jsonb_agg(
+            jsonb_build_object(
+              'participationIdentityId', b."participationIdentityId", 'categoryCode', b."categoryCode",
+              'calculatedSeconds', b."calculatedSeconds", 'recognizedSeconds', b."recognizedSeconds",
+              'rawCalculatedMilliseconds', b."rawCalculatedMilliseconds"::TEXT,
+              'rawRecognizedMilliseconds', b."rawRecognizedMilliseconds"::TEXT,
+              'timePolicyVersionId', b."timePolicyVersionId", 'definitionHash', b."definitionHash",
+              'evaluatorVersion', b."evaluatorVersion", 'quantumSeconds', b."quantumSeconds",
+              'adjustmentReason', b."adjustmentReason",
+              'emptyReasonCode', CASE WHEN b."timePolicyVersionId" IS NULL THEN 'no_valid_segment' ELSE NULL END,
+              'sources', coalesce(s.items, '[]'::jsonb)
+            ) ORDER BY b."participationIdentityId" COLLATE "C", CASE b."categoryCode"
+              WHEN 'volunteer_service' THEN 1 WHEN 'training' THEN 2 WHEN 'organization' THEN 3 ELSE 4 END
+          ), '[]'::jsonb)
+        )), 'UTF8')), 'hex') AS hash
+        FROM "ParticipantSettlementTimeBucket" b
+        LEFT JOIN (
+          SELECT "bucketId", jsonb_agg(jsonb_build_object(
+            'allocationRevisionId', "allocationRevisionId", 'sourceSegmentId', "sourceSegmentId",
+            'sourceSegmentRevision', "sourceSegmentRevision",
+            'rawCalculatedMilliseconds', "rawCalculatedMilliseconds"::TEXT,
+            'rawRecognizedMilliseconds', "rawRecognizedMilliseconds"::TEXT
+          ) ORDER BY "allocationRevisionId" COLLATE "C") AS items
+          FROM "ParticipantSettlementTimeBucketSource" WHERE "timeRevisionId"=${revisionId} GROUP BY "bucketId"
+        ) s ON s."bucketId"=b.id WHERE b."timeRevisionId"=${revisionId}
+      ) legacy
+      `;
+      },
+      { timeout: 30000 },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].currentHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(rows[0].currentHash).toBe(rows[0].oldHash);
+    expect(rows[0].currentHash).toBe(rows[0].storedHash);
+  }
+
   it('real seal/draft → App recognition → prepare → formal submit → frozen paged drilldown; preserves legacy values', async () => {
     const p = await prepareSource();
     const prior = await f.db.participantSettlementResultRevision.findFirstOrThrow({
@@ -1023,6 +1076,9 @@ describe('D4 classified settlement: real App HTTP and immutable PostgreSQL truth
       expect(submitQueries).toBeGreaterThan(0);
       expect(submitQueries).toBeLessThanOrEqual(950);
       expect(prepareMs).toBeLessThan(30000);
+      // Separate client, after all measured commands: parity must not distort query budgets.
+      await assertLegacyBucketHash(prepared.timeRevisionId);
+      await assertLegacyBucketHash(submitted.timeRevisionId);
     } finally {
       await f.db.user.update({ where: { id: actor.id }, data: { role: Role.SUPER_ADMIN } });
       await observed.$disconnect();
@@ -1191,6 +1247,41 @@ describe('D4 classified settlement: real App HTTP and immutable PostgreSQL truth
         emptyReasonCode: 'no_valid_segment',
         timePolicyVersionId: null,
       });
+    await assertLegacyBucketHash(prepared.timeRevisionId);
+  }, 60000);
+
+  it('bucket hash remains byte-identical for unknown values and escaped multilingual manual reasons', async () => {
+    const p = await prepareSource({
+      definition: {
+        ...DEFINITION,
+        evidence: { requiredSources: [], requireManualRecognition: true },
+      },
+    });
+    if (!p.source) throw new Error('source expected');
+    const reason = '理由 "quoted" \\ 路径 志愿者🙂';
+    await post(`${p.url}/allocations`, {
+      ...p.proof,
+      operationKey: f.key('hash_parity'),
+      sourceSegmentId: p.source.id,
+      expectedRevision: 0,
+      recognitionModeCode: 'manual',
+      manualReason: reason,
+      evidenceAttachmentIds: [],
+      slices: [
+        { categoryCode: 'training', startAt: START.toISOString(), endAt: END.toISOString() },
+      ],
+    });
+    const prepared = await post(`${p.url}/prepare`, prepareCommand(p));
+    const buckets = await f.db.participantSettlementTimeBucket.findMany({
+      where: { timeRevisionId: prepared.timeRevisionId },
+    });
+    expect(buckets).toHaveLength(4);
+    expect(buckets.every((bucket) => bucket.rawCalculatedMilliseconds === null)).toBe(true);
+    for (const bucket of buckets)
+      expect(bucket.adjustmentReason).toEqual([
+        { allocationRevisionId: expect.any(String), manualReason: reason },
+      ]);
+    await assertLegacyBucketHash(prepared.timeRevisionId);
   }, 60000);
 
   it('same-key replay is exact, different payload conflicts, and audit failure rolls all four new tables back', async () => {

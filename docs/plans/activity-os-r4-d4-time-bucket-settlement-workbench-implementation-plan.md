@@ -756,6 +756,24 @@ pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason '维护者确认 D4
 
 验证通过后按授权提交推送#1327，保持Draft；本轮不Ready、不合并、不操作生产、不启用Gate、不改已签SQL，也不宣称满额性能稳定性已经彻底验收。新HEAD的CI和可信审批独立核验，全仓E2E未在本地重跑，不把47项seed回归当作全仓通过。
 
+### 17.2.3 D4桶摘要方案A：计划敏感的来源聚合
+
+维护者确认按诊断报告六路径实施；只允许w98隔离验证及测试夹具重建，验证后更新#1327，保持Draft。新SQL摘要另行确认重签3b，不将实施批准写成签字批准。写集为第121条SQL、本阶段settlement与migration两份E2E、本计划、implementation changelog及CUTOVER_SIGNOFF（最后一份等待新摘要明确确认）。
+
+`beb55626` CI run `34744519372` 第4组1210项通过，旧权限计数修复已获验证；第2组满额prepare在写收据时事务过期（30000ms预算，33529ms已耗时）。本地诊断单例prepare9407ms、完整原顺序14611ms，收据阶段由3017ms增至7814ms；不能据此消去CI失败。收据前只读计划将8000桶／40000来源各估成1行，选择嵌套循环；稳定数据后同一函数体改为Hash Join、1575.788ms。额外ANALYZE诊断因过慢取消，未充当业务验收结果，亦未取得失败CI内部的逐段耗时。
+
+方案A只调整`astr_bucket_content_hash`：来源在单条SQL内按桶LATERAL聚合，利用既有`pstbs_bucket_allocation_key`；`timeRevisionId`放入聚合FILTER，避免新修订误估1行时选择修订索引逐桶扫描全部来源。FILTER仍剔除所有异修订来源，空集合仍coalesce为空数组；外层对象、排序、COLLATE C、NULL、字符串时长、人工理由及canonical算法不变。无新索引、无新migration，旧120条SQL及schema不变；不顺带修原签字SQL空白项。
+
+新旧摘要对拍放在原业务计时与SQL预算断言之后，使用独立只读事务；仅对旧SQL参考查询`SET LOCAL enable_nestloop=off`并限制30秒，防止参考工具重复触发旧慢计划。该设置不进入prepare/submit事务，不改变被测生产计划，不宣称对拍为冷态性能验收。新增空桶、未知值、Unicode/引号/反斜杠理由及SQL canonical控制字符对拍，保留全部原断言。业务manualReason禁止控制字符，新HTTP正例不包含换行/tab，SQL canonical正例仍保留两者。
+
+开发中失败如实保留：首版LATERAL的修订WHERE条件仍发生满额47188ms超时；新增HTTP夹具因控制字符被既有20218拒绝；两个套件同进程衔接时迁移重建被连接守护拒绝；随后改为独立进程验证，不改守护。初版参考旧SQL耗时过长被取消。修订FILTER版本满额prepare10223ms、SQL340/41/811通过，但该次参考查询失败不算完整通过。最终验证结果另补，不因局部成功提前提交或重签。
+
+最终本地验证（本次SQL SHA-256 `76871985ab0ff7e0f66afd4c543910b485c2c905fa885947c3f06f9144023051`）：w98冷回放121条；主链17项、独立进程迁移3项（含120→121历史升级）、既有并发6项全部通过。完整原顺序满额prepare12723ms；重新完成迁移恢复后的独立满额复跑10106ms（1通过／16未选择，非新增覆盖）；两次SQL均340/41/811。满额draft与submitted、空桶及带转义的未知基线人工理由，新SQL／冻结旧SQL／已存摘要三方相等。单独只读执行计划实测桶索引`pstbs_bucket_allocation_key`8000次、每次5来源，共40000来源，未发生逐桶全revision来源扫描。
+
+最终quick全部通过：385组单测8476通过／5既有todo，缓存lint、typecheck及harness自测通过；额外两份变动E2E冷lint通过。counts通过；CODEMAP检查0失败、2警告（未引用CLAUDE与god-service候选，未在本轮扩修）。当前diff空白检查通过，原第593行已登记空白项仍保留。签字检查命令通过只证明既有登记形状，不证明旧3b覆盖新SQL；**新摘要仍待维护者明确确认，不提前更改CUTOVER_SIGNOFF或提交推送**。4b/7c不变，未合并、不操作生产、不启用Gate，新HEAD全量CI仍待推送后验证。
+
+本轮收口更新（2026-09-13）：维护者已明确确认3b新SQL完整摘要`76871985ab0ff7e0f66afd4c543910b485c2c905fa885947c3f06f9144023051`，CUTOVER_SIGNOFF已登记；覆盖17.2.3最后的待签状态，不改历史失败或诊断记录。六路径按原授权提交推送更新#1327，保持Draft；新HEAD CI独立核验，不合并、不启用Gate、不操作生产。
+
 ### 17.3 拆分前联合changelog证据留存
 
 以下逐字保留拆分前草稿changelog的阶段记录；其待办措辞属于当时时点，由17.1/17.2的新证据覆盖。独立草稿changelog在D4中保持第一提交内容不变，避免D4反向改写依赖PR的独立交付记录。

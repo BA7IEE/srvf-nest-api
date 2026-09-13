@@ -546,6 +546,23 @@ describe('D4 time-bucket migration replay and nonempty upgrade', () => {
     ).toBe('15');
   }, 120000);
 
+  it('keeps canonical nulls, duration strings, array order and escaped Unicode exact after replay', () => {
+    const values = ['理由 "quoted" \\ 路径\n第二行\t🙂', 'z', 'a'];
+    const expected = JSON.stringify({
+      a: null,
+      b: '9007199254740993',
+      c: values,
+      d: [],
+    });
+    const input = JSON.stringify({
+      d: [],
+      c: values,
+      b: '9007199254740993',
+      a: null,
+    });
+    expect(sql(`SELECT astr_canonical_json(${literal(input)}::jsonb)`)).toBe(expected);
+  });
+
   it('preserves a complete committed D3 chain byte-for-byte through 120→121 and still accepts V1 commands', () => {
     recreate();
     const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-d4-pre121-'));

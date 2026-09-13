@@ -221,6 +221,15 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **本次重签（2026-09-13，D4桶摘要优化）**：维护者明确确认「确认重签 3b（D4 第121条 migration，摘要 76871985ab0ff7e0f66afd4c543910b485c2c905fa885947c3f06f9144023051）」。
+> 当前SQL为`20260913090000_activity_os_r4_d4_time_bucket_settlement`，SHA-256为
+> `76871985ab0ff7e0f66afd4c543910b485c2c905fa885947c3f06f9144023051`。
+> 仅等价调整`astr_bucket_content_hash`的来源聚合为按桶LATERAL查询，保留修订FILTER、
+> canonical/hash语义、全部约束及30秒事务预算；不新增迁移、索引、权限或业务数据操作。
+> w98主链17项、迁移3项、并发6项及独立满额复跑通过，新旧SQL和存储摘要相等；quick通过。
+> 本签覆盖下方D4旧摘要`c86dfd72…`，旧记录保留为历史证据；4b/7c不变。
+> 本签不替代新HEAD全量CI、可信审批、整体复审、合并或生产/Gate授权；#1327保持Draft。
+
 > **前次重签（2026-09-12，D3）**：维护者对话确认「确认 D3 重签 3b（第120条 migration）」；
 > SQL 为 `20260912090000_activity_os_r4_d3_time_allocation_revision`，SHA-256
 > `caee91d1e8f2d1dae5e79d7789cd3473e886f23693ec200fd057f6a23d71ca54`。新增 allocation
