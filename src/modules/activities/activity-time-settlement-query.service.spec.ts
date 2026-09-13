@@ -1,9 +1,13 @@
-import type { ParticipantTimeAllocationRevision } from '@prisma/client';
+import { Prisma, Role, UserStatus, type ParticipantTimeAllocationRevision } from '@prisma/client';
+import type { PrismaService } from '../../database/prisma.service';
+import type { ParticipationSegmentFacade } from '../attendances/participation-segment.facade';
+import type { ActivityTimeSettlementAccessService } from './activity-time-settlement-access.service';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { CurrentParticipationSegment } from '../attendances/participation-segment.facade';
 import {
   allocationMatchesTimeSettlementSource,
+  ActivityTimeSettlementQueryService,
   requireTimeSettlementDraft,
   timeSettlementError,
   timeSettlementReadinessBlockers,
@@ -12,6 +16,7 @@ import {
 } from './activity-time-settlement-query.service';
 import {
   TimeSettlementPolicyError,
+  TIME_SETTLEMENT_CATEGORIES,
   timeSettlementSourceSetHash,
 } from './activity-time-settlement-policy';
 
@@ -317,6 +322,164 @@ describe('D4 source-set fence', () => {
       hash(sourceSet({ latest: [allocation(), { ...allocation(), id: 'duplicate' }] })),
     ).toThrow(new TimeSettlementPolicyError('invalid'));
   });
+});
+
+describe('D5 shadow transaction and explicit version query', () => {
+  const actor = {
+    id: 'actor',
+    memberId: 'member',
+    username: 'actor',
+    role: Role.USER,
+    status: UserStatus.ACTIVE,
+  };
+  function setup() {
+    const revision = {
+      settlementVersionId: 'submitted',
+      settlementRunId: 'run',
+      kindCode: 'submitted',
+      draftContentHash: 'a'.repeat(64),
+      sourceSetHash: 'b'.repeat(64),
+      bucketContentHash: 'c'.repeat(64),
+    };
+    const db = {
+      activitySettlementTimeRevision: { findFirst: jest.fn().mockResolvedValue(revision) },
+      attendanceSettlementVersion: {
+        findFirst: jest.fn().mockResolvedValue({ contentHash: 'd'.repeat(64) }),
+      },
+      participantSettlementResultRevision: {
+        findMany: jest.fn().mockResolvedValue(
+          ['A', 'B'].map((id) => ({
+            participationIdentityId: id,
+            calculatedServiceHours: new Prisma.Decimal('1.00'),
+            recognizedServiceHours: new Prisma.Decimal('1.00'),
+            adjustmentReason: 'PRIVATE LEGACY REASON',
+          })),
+        ),
+      },
+      participantSettlementTimeBucket: {
+        findMany: jest.fn().mockResolvedValue(
+          ['A', 'B'].flatMap((id) =>
+            TIME_SETTLEMENT_CATEGORIES.map((categoryCode) => ({
+              id: id + categoryCode,
+              participationIdentityId: id,
+              categoryCode,
+              calculatedSeconds: categoryCode === 'volunteer_service' ? 3600 : 0,
+              recognizedSeconds: categoryCode === 'volunteer_service' ? 3600 : 0,
+              adjustmentReason: [{ manualReason: 'PRIVATE BUCKET REASON' }],
+            })),
+          ),
+        ),
+      },
+    };
+    const tx = db as unknown as Prisma.TransactionClient;
+    const prisma = {
+      $transaction: jest.fn(
+        async (work: (client: Prisma.TransactionClient) => Promise<unknown>) => await work(tx),
+      ),
+    };
+    const access = { authorize: jest.fn().mockResolvedValue(undefined) };
+    const service = new ActivityTimeSettlementQueryService(
+      prisma as unknown as PrismaService,
+      access as unknown as ActivityTimeSettlementAccessService,
+      {} as ParticipationSegmentFacade,
+    );
+    return { db, tx, prisma, access, service };
+  }
+  it('uses one same-version bounded collection per side and rechecks authorization before returning', async () => {
+    const f = setup();
+    const report = await f.service.shadow('activity', 'time', { page: 1, pageSize: 1 }, actor);
+    expect(f.db.activitySettlementTimeRevision.findFirst).toHaveBeenNthCalledWith(1, {
+      where: { id: 'time', activityId: 'activity' },
+      select: { settlementVersionId: true },
+    });
+    expect(f.db.activitySettlementTimeRevision.findFirst).toHaveBeenNthCalledWith(2, {
+      where: { id: 'time', activityId: 'activity', kindCode: 'submitted' },
+    });
+    expect(f.db.attendanceSettlementVersion.findFirst).toHaveBeenCalledWith({
+      where: { id: 'submitted', settlementRunId: 'run', submittedAt: { not: null } },
+      select: { contentHash: true },
+    });
+    expect(f.db.participantSettlementResultRevision.findMany).toHaveBeenCalledTimes(1);
+    expect(f.db.participantSettlementResultRevision.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { settlementVersionId: 'submitted' },
+        take: 2001,
+      }),
+    );
+    expect(f.db.participantSettlementTimeBucket.findMany).toHaveBeenCalledTimes(1);
+    expect(f.db.participantSettlementTimeBucket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { timeRevisionId: 'time', activityId: 'activity' },
+        take: 8001,
+      }),
+    );
+    expect(f.access.authorize).toHaveBeenCalledTimes(2);
+    expect(f.access.authorize).toHaveBeenNthCalledWith(
+      1,
+      f.tx,
+      actor,
+      'activity',
+      'read',
+      'submitted',
+    );
+    expect(f.access.authorize).toHaveBeenNthCalledWith(
+      2,
+      f.tx,
+      actor,
+      'activity',
+      'read',
+      'submitted',
+    );
+    expect(f.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      timeout: 30000,
+    });
+    expect(report.summary).toEqual({
+      total: 2,
+      matched: 2,
+      different: 0,
+      notComparable: 0,
+      empty: false,
+    });
+    expect(report.resultPage).toMatchObject({ total: 2, page: 1, pageSize: 1 });
+    expect(report.resultPage.items).toHaveLength(1);
+    expect(JSON.stringify(report)).not.toContain('PRIVATE');
+    const second = await f.service.shadow('activity', 'time', { page: 2, pageSize: 1 }, actor);
+    expect(second.inputFingerprint).toBe(report.inputFingerprint);
+    expect(second.summary).toEqual(report.summary);
+    expect(second.resultPage.items[0].participationIdentityId).toBe('B');
+  });
+  it('rejects loss of authorization after reading, without returning a cached report', async () => {
+    const f = setup();
+    f.access.authorize
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new BizException(BizCode.FORBIDDEN));
+    await expect(
+      f.service.shadow('activity', 'time', { page: 1, pageSize: 20 }, actor),
+    ).rejects.toThrow(new BizException(BizCode.FORBIDDEN));
+    expect(f.db.participantSettlementTimeBucket.findMany).toHaveBeenCalledTimes(1);
+  });
+  it('does not load values when initial authorization fails', async () => {
+    const f = setup();
+    f.access.authorize.mockRejectedValue(new BizException(BizCode.FORBIDDEN));
+    await expect(
+      f.service.shadow('activity', 'time', { page: 1, pageSize: 20 }, actor),
+    ).rejects.toThrow(new BizException(BizCode.FORBIDDEN));
+    expect(f.db.participantSettlementResultRevision.findMany).not.toHaveBeenCalled();
+  });
+  it.each(['revision', 'version'])(
+    'rejects a missing same-chain submitted %s without consulting latest',
+    async (missing) => {
+      const f = setup();
+      if (missing === 'revision')
+        f.db.activitySettlementTimeRevision.findFirst.mockResolvedValue(null);
+      else f.db.attendanceSettlementVersion.findFirst.mockResolvedValue(null);
+      await expect(
+        f.service.shadow('activity', 'time', { page: 1, pageSize: 20 }, actor),
+      ).rejects.toThrow(new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE));
+      expect(f.db.participantSettlementResultRevision.findMany).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('D4 declared error mapping', () => {

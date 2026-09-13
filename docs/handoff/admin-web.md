@@ -1,5 +1,9 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+## D5 只读时长对账（本轮新增，未上线）
+
+新增入口只属于 Human App，不新增 Admin 权限或写命令。管理端不得借 Admin 身份绕过 App 当前身份、显式组织范围及负责人/实际审核资格。完整接口与人工留存边界见 [影子对账 SOP](../ops/activity-time-shadow-reconciliation.md)。本轮不交付前端页面，不代表生产可用。
+
 ## D4 分类时长结算对接边界（本轮实施分支，未合并、未部署）
 
 大规模草稿生成仍沿既有 Human App 入口，不新增 Admin 任务入口或结果指针字段。响应 `outcome=job` 只代表任务受理；在有权 App 身份下查询既有任务状态，成功后刷新 `GET /api/app/v1/my/managed-activities/{activityId}/settlement`。任务 detail/items 不返回内部 `resultReference`，不得要求客户端从 payload、任务ID或内部数据库字段拼接结果引用。当前工作台可能已被后续操作推进，不等同于历史任务生成时的版本。

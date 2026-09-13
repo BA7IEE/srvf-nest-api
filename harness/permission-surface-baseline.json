@@ -198,8 +198,8 @@
       "description": "sha256:08f9e0ed7725d2661ce9d993c5f84c0ced9e67da78a433532a8184c344c0ccca"
     },
     "activity.time-settlement.read": {
-      "endpoints": 5,
-      "surface": "sha256:6cf89a2e01dd70201c73f4da41e996b87cf7dfb44b5e20f355c42667b27afaaf",
+      "endpoints": 6,
+      "surface": "sha256:599f265ea7c155a4fbd7b7d480be1ab1a6cef2685225e6404e12a1d2d52f4f5f",
       "description": "sha256:9005ae47b4d291500e167b41cfc727fbe5a00f84f77a81b9ada82278e03fae50"
     },
     "activity.update.record": {

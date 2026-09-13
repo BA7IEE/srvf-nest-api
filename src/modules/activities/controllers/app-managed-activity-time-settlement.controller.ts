@@ -30,6 +30,7 @@ import {
   AppSubmitTimeSettlementDto,
   AppTimeSettlementAllocationResultDto,
   AppTimeSettlementResultDto,
+  AppTimeShadowReportDto,
 } from '../dto/app/app-activity-time-settlement.dto';
 
 const ERRORS = [
@@ -154,6 +155,26 @@ export class AppManagedActivityTimeSettlementController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.queries.buckets(params.activityId, params.timeRevisionId, query, user);
+  }
+
+  @Get('revisions/:timeRevisionId/shadow')
+  @RequiresPermission('activity.time-settlement.read', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+    scopes: ['responsibility', 'org-scope'],
+  })
+  @ApiOperation({
+    summary: '读取指定提交版本的新旧时长影子对账 [rbac: activity.time-settlement.read]',
+  })
+  @ApiWrappedOkResponse(AppTimeShadowReportDto)
+  @ApiBizErrorResponse(...ERRORS)
+  shadow(
+    @Param() params: AppTimeSettlementRevisionParamsDto,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.queries.shadow(params.activityId, params.timeRevisionId, query, user);
   }
 
   @Get('revisions/:timeRevisionId/sources')
