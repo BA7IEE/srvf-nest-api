@@ -268,7 +268,9 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **签字人**:维护者
 - **日期**:2026-09-13
 - **依据**:维护者本轮对话确认「4b（权限265，审计169总计、164活跃）」。 前签依据：维护者2026-09-10对话确认「确认重签4b（D1-2：权限码260，Audit events 166总计、161活跃）」；前签依据：维护者 2026-09-09 对话确认「确认重签 4b（权限码258；Audit events 165总计、160活跃）」；前签依据：维护者 2026-09-09 对话确认「确认重签 4b（权限码256；Audit events 164总计、159活跃）」；PR https://github.com/BA7IEE/srvf-nest-api/pull/1298；前签依据：维护者 2026-09-07 对话确认「确认重签 4b（权限码254，Audit events 162总计、157活跃）」；前签依据：维护者 2026-09-06 对话确认「确认重签 4b（C1 D2b：权限码252；Audit events 161总计、156活跃）」；前签依据为维护者 2026-09-06 对话确认「确认重签 4b（C1 D2a：权限码250；Audit events 159总计、154活跃）」；前签依据为维护者 2026-09-04 对话确认重签(「确认重签 4b（B6 D1：权限码247；Audit events 157 总计、152 活跃）」);前签为维护者 2026-09-02 对话确认重签(「确认重签 4b（A7：Audit events 157 总计、152 活跃）」)
-- **对拍**:有 —— `seed-sha256-12` = `03f30502685b`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `169`;`audit-event-registry-active` = `164`
+- **对拍**:有 —— `seed-sha256-12` = `b484cbc013d5`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `169`;`audit-event-registry-active` = `164`
+
+> 2026-09-13 #1327方案A补签：维护者明确确认「确认方案 A及4b摘要 b484cbc013d5；已执行，继续」。仅将已登记的两枚D4权限接入既有seed写库循环，不新增权限码、不默认授予内建角色；265权限、169审计总计／164活跃及字典读数不变。前次seed摘要`03f30502685b`保留为历史依据；本次不替代CI、合并或生产／Gate授权。
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。

@@ -1590,6 +1590,7 @@ async function seedAttachmentPermissions(prisma: PrismaClient): Promise<void> {
     ...ACTIVITY_OUTCOME_PERMISSION_SEED,
     ...ACTIVITY_TEMPLATE_PERMISSION_SEED,
     ...ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED,
+    ...ACTIVITY_TIME_SETTLEMENT_PERMISSION_SEED,
     ...ACTIVITY_TIME_POLICY_PERMISSION_SEED,
   ]) {
     await prisma.permission.upsert({

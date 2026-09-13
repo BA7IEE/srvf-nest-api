@@ -746,6 +746,16 @@ pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason '维护者确认 D4
 
 原D4提交`4d837bde`的CI第2组另有3套件5项失败，不属于身份锁抽取已消除的两项跨域错误：D1-1前置假定TimePolicy为0但实测16；seed运行时缺`activity.time-settlement.prepare/read`两码（目录有登记，实际upsert循环漏接）；满额prepare在写收据时超出30秒，实耗33536ms。这些失败保留，未改断言、未加超时、未改已签SQL或seed；本轮定向身份回归不代替这些D4验收。两PR保持Draft，新HEAD CI、可信审批与整体D4修复验收仍须分别核验。
 
+### 17.2.2 方案A：seed写库闭包与旧测试隔离前置
+
+维护者确认「确认方案 A及4b摘要 b484cbc013d5；已执行，继续」。精确写集为`prisma/seed.ts`、`test/e2e/activity-os-r4-d1-1-time-policy-foundation.e2e-spec.ts`、本计划、D4 implementation changelog及`docs/ai-harness/CUTOVER_SIGNOFF.md`五份文件。实际seed只在既有upsert数组补`ACTIVITY_TIME_SETTLEMENT_PERMISSION_SEED`，不改任何角色授予清单；完整SHA256为`b484cbc013d5d4107fcc82fee4cb067d42110c47b2ffc326150863c27ba13728`，与维护者确认摘要一致。4b读数仍为265权限、169审计总计／164活跃、字典30／277；3b及第121条SQL不变。
+
+最新旧HEAD `80b2cad8` CI的第2组为1套件2失败／1401通过，仅seed实际写库缺两码；D1-1及D4满额本轮通过，prepare16914ms，SQL340／42／811。历史顺序依赖和33536ms超时证据保留，不因本轮通过抹除。方案A在D1-1 beforeAll复用原finally的清理SQL，既有SQL行为断言、并发锁断言、超时及历史升级验证不改。`app_test_w98`121条迁移冷回放后显式插入16条合法政策，核验数据库名与计数，再执行旧套件：30项全部通过（8.761秒）。只清隔离测试夹具，不删除实际业务数据。
+
+本轮验证：完整单测385组／8476通过／5既有todo（86.138秒）；类型检查、构建及两份变更代码的ESLint通过。既有seed E2E八组47项通过（290.367秒），覆盖权限目录、RBAC、岗位及配置初始化；契约1060项／2快照通过（3.681秒）。运行后对w98只读核验，两枚D4权限确实存在（2条），对应role_permissions行数为0，未将空库的零绑定误作证明。counts、CODEMAP、ROUTE_AUTHZ及签字对拍均通过，不需扩展派生文件写集。报告前缀`/tmp/srvf-draft-split.HfqIUC/seed-fix-`。
+
+验证通过后按授权提交推送#1327，保持Draft；本轮不Ready、不合并、不操作生产、不启用Gate、不改已签SQL，也不宣称满额性能稳定性已经彻底验收。新HEAD的CI和可信审批独立核验，全仓E2E未在本地重跑，不把47项seed回归当作全仓通过。
+
 ### 17.3 拆分前联合changelog证据留存
 
 以下逐字保留拆分前草稿changelog的阶段记录；其待办措辞属于当时时点，由17.1/17.2的新证据覆盖。独立草稿changelog在D4中保持第一提交内容不变，避免D4反向改写依赖PR的独立交付记录。
