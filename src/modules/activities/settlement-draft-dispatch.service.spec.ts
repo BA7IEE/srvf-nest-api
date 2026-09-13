@@ -5,6 +5,10 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { SettlementDraftDispatchService } from './settlement-draft-dispatch.service';
 
+function partial(value: Record<string, unknown>): unknown {
+  return expect.objectContaining(value);
+}
+
 /**
  * 活动 v1.1 cutover gate 的测试替身。**显式传 true** = 本 spec 断言的是
  * 「闸开」下的行为;闸关时新结算真相链改为拒绝,由专属用例覆盖。
@@ -118,6 +122,55 @@ describe('SettlementDraftDispatchService', () => {
     });
     expect(tx.activityBatchJob.create.mock.calls[0]?.[0].data.jobTypeCode).toBe('bulk_proxy');
     expect(drafts.generate).not.toHaveBeenCalled();
+  });
+
+  it('async payload v2 binds the server seal and original actor without token or profile data', async () => {
+    const { service, tx } = harness(501);
+    await service.generate(
+      { activityId: 'activity-1', operationKey: 'v2', requestHash: 'hash-1' },
+      { ...actor, memberId: 'member-1' },
+      auditMeta,
+    );
+    expect(tx.activityBatchJob.create).toHaveBeenCalledWith({
+      data: partial({
+        payloadVersion: 2,
+        payload: {
+          action: 'settlement_draft_generate',
+          executionMode: 'async',
+          activityId: 'activity-1',
+          populationSize: 501,
+          actorUserId: 'actor-1',
+          actorMemberId: 'member-1',
+          evidenceSealId: 'seal-1',
+          evidenceRevision: 0,
+          populationRevision: 0,
+          workflowRevision: 0,
+        },
+      }),
+      select: { id: true, statusCode: true, total: true },
+    });
+  });
+
+  it('500 remains synchronous and retains the original payload version', async () => {
+    const { service, tx, drafts } = harness(500);
+    await service.generate(
+      { activityId: 'activity-1', operationKey: 'sync-500', requestHash: 'hash-1' },
+      actor,
+      auditMeta,
+    );
+    expect(drafts.generate).toHaveBeenCalledTimes(1);
+    expect(tx.activityBatchJob.create).toHaveBeenCalledWith({
+      data: partial({
+        payloadVersion: 1,
+        payload: {
+          action: 'settlement_draft_generate',
+          executionMode: 'sync',
+          activityId: 'activity-1',
+          populationSize: 500,
+        },
+      }),
+      select: { id: true, statusCode: true, total: true },
+    });
   });
 
   it('同 key 不同 requestHash 用具名 BizCode 拒绝', async () => {

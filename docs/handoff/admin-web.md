@@ -1,5 +1,11 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+## 大规模草稿依赖（独立候选，未合并、未部署）
+
+大规模草稿生成仍沿既有 Human App 入口，不新增 Admin 任务入口或结果指针字段。响应 `outcome=job` 只代表任务受理；在有权 App 身份下查询既有任务状态，成功后刷新 `GET /api/app/v1/my/managed-activities/{activityId}/settlement`。任务 detail/items 不返回内部 `resultReference`，不得要求客户端从 payload、任务ID或内部数据库字段拼接结果引用。当前工作台可能已被后续操作推进，不等同于历史任务生成时的版本。
+
+具体轮询、失败重试与原执行身份边界见 [大规模草稿任务接线](miniapp.md#大规模草稿任务接线不新增接口字段)。管理端角色名称不代表 App 当前责任资格；不通过新增 Admin 旁路解决不可见，不把后台草稿成功显示成送审、终审或入账完成。
+
 > **D1-3 已合入 main、未部署（2026-09-11）**：[#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已合入 `60414050b99fe661afbf0c87669597ad081a3b43`，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 通过。`GET/PATCH /api/admin/v1/activities/:id/time-policy-selection` 现为 main 的后端合同：读写仍要求显式时间政策权限及当前活动范围；PATCH 以 `expectedRevision` 生成完整不可变选择修订，不能用旧目录接口代替。前端本地联调以 main 的 OpenAPI / Admin client 为准；生产部署、Gate、整体跨模型复审及 D2–D8 尚未完成。
 
 > **D1-2 已合并并完成主干验证（2026-09-11）**：目录实施 [#1312](https://github.com/BA7IEE/srvf-nest-api/pull/1312) 合入 `c037073b`；合并后测试库初始化失败已由 [#1313](https://github.com/BA7IEE/srvf-nest-api/pull/1313) 修复，当前 main `ba100c1e` 的 [CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34498288827) 成功。修复保留全部断言，隔离顺序回归为旧测试 5/5、D1-2 并发 11/11；修复 PR 五个 E2E 分片均通过。154 模型、118 迁移、620 端点、260 权限、166 审计总计/161 活跃不变。此前“实施中/尚未合并/本分支待合并”均为历史时点，不再代表当前状态。维护者已确认 D1-3 精确计划方案 A，允许本轮八份文档补充 changelog、提交、推送和创建计划 PR；不合并、不实施；D1-3、D2–D8、生产和 Gate 未实施，整个 D1 尚未完成。

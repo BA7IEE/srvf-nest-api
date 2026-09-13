@@ -106,7 +106,39 @@ const FENCE_EXEMPTIONS: readonly FenceExemption[] = [
       '`OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lte: now } }]`,只碰租约已释放/' +
       '已过期的行。调用方是**尚未领取任何任务**的取活前置,手上没有围栏。',
   },
+  {
+    site: 'sweepDead → raw UPDATE "ActivityBatchJobItem" [exact expired-draft CTE]',
+    why:
+      '仅认可下方固定SQL合同：同语句先将精确草稿action/async、processing、尝试用尽且已过期的job更新为dead，' +
+      '再通过其RETURNING id更新generate且非succeeded的item。job更新取得行锁，子项范围只来自本次成功更新的job，' +
+      '不依赖旧持有者快照。这不是普通worker收尾写；任何非空白合同变化均撤销本标记，回到未围栏判定。',
+  },
 ];
+
+// Deliberately an exact, fail-closed contract, not a general SQL parser or a method-wide exemption.
+// Keep interpolation expressions and quoted contents intact: changing a predicate, parameter,
+// CTE link, target or SET operation must not inherit this narrow authorization.
+const EXPIRED_DRAFT_CTE = `
+  WITH expired AS (
+    UPDATE "ActivityBatchJob" SET "statusCode" = 'dead', "failed" = 1,
+      "succeeded" = 0, "skipped" = 0, "completedAt" = \${now},
+      "leaseOwner" = NULL, "leaseExpiresAt" = NULL, "lastErrorCode" = 'DraftJobAttemptsExhausted'
+    WHERE "jobTypeCode" = \${SETTLEMENT_DRAFT_GENERATE_JOB_TYPE}
+      AND "payload"->>'action' = \${SETTLEMENT_DRAFT_GENERATE_JOB_ACTION}
+      AND "payload"->>'executionMode' = 'async'
+      AND "statusCode" = 'processing' AND "attempts" >= \${ACTIVITY_BATCH_MAX_ATTEMPTS}
+      AND "leaseExpiresAt" <= \${now} RETURNING id
+  ) UPDATE "ActivityBatchJobItem" SET "statusCode" = 'failed',
+    "lastErrorCode" = 'DraftJobAttemptsExhausted', "safeMessage" = '草稿生成重试次数已用尽'
+    WHERE "jobId" IN (SELECT id FROM expired) AND "itemKey" = 'generate' AND "statusCode" <> 'succeeded'
+`;
+
+function normalizeSqlSpacing(sql: string): string {
+  // Match quoted tokens first so that 'pro cessing' cannot normalize to 'processing'.
+  return sql
+    .replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|\s+/g, (token) => (/^\s+$/.test(token) ? ' ' : token))
+    .trim();
+}
 
 // ---------------------------------------------------------------------------
 // 分析器
@@ -236,9 +268,14 @@ export function scanFencedWrites(fileLabel: string, source: string): DiscoveredW
         const updates = new RegExp(`UPDATE\\s+"${table}"`, 'i');
         if (!updates.test(text)) continue;
         const verdict = rawSqlVerdict(text);
+        const exactExpiredDraftItem =
+          fileLabel === WORKER_REL &&
+          table === 'ActivityBatchJobItem' &&
+          enclosingName(node) === 'sweepDead' &&
+          normalizeSqlSpacing(text.slice(1, -1)) === normalizeSqlSpacing(EXPIRED_DRAFT_CTE);
         out.push({
           line: lineOf(node),
-          site: `${enclosingName(node)} → raw UPDATE "${table}"`,
+          site: `${enclosingName(node)} → raw UPDATE "${table}"${exactExpiredDraftItem ? ' [exact expired-draft CTE]' : ''}`,
           ...verdict,
         });
       }
@@ -254,6 +291,76 @@ export function scanFencedWrites(fileLabel: string, source: string): DiscoveredW
 // ---------------------------------------------------------------------------
 
 describe('批任务租约围栏 —— 「过期 worker 覆盖新一代」缺陷类的执行位', () => {
+  describe('受限过期草稿CTE识别', () => {
+    function scanCte(sql: string, method = 'sweepDead', file = WORKER_REL) {
+      return scanFencedWrites(
+        file,
+        `class W { async ${method}() { await tx.$executeRaw(Prisma.sql\`${sql}\`); } }`,
+      ).filter((write) => write.site.includes('ActivityBatchJobItem'));
+    }
+
+    it('仅完整固定合同获得有理由的专用标记，不冒称持有者围栏', () => {
+      const writes = scanCte(EXPIRED_DRAFT_CTE);
+      expect(writes).toHaveLength(1);
+      expect(writes[0].fenced).toBe(false);
+      expect(FENCE_EXEMPTIONS.some((entry) => entry.site === writes[0].site)).toBe(true);
+      expect(writes[0].site).toContain('[exact expired-draft CTE]');
+    });
+
+    it('允许SQL外部空白变化，保留字符串内部空白', () => {
+      expect(scanCte(EXPIRED_DRAFT_CTE.replace(/\n/g, '\n  '))[0].site).toContain(
+        '[exact expired-draft CTE]',
+      );
+      expect(normalizeSqlSpacing("  'pro cessing'  ")).toBe("'pro cessing'");
+    });
+
+    it.each([
+      ['过期条件', 'AND "leaseExpiresAt" <= ${now}', ''],
+      ['过期方向', '"leaseExpiresAt" <= ${now}', '"leaseExpiresAt" >= ${now}'],
+      ['尝试上限', 'AND "attempts" >= ${ACTIVITY_BATCH_MAX_ATTEMPTS}', ''],
+      ['上限参数', '${ACTIVITY_BATCH_MAX_ATTEMPTS}', '${otherLimit}'],
+      ['action范围', 'AND "payload"->>\'action\' = ${SETTLEMENT_DRAFT_GENERATE_JOB_ACTION}', ''],
+      ['async范围', "AND \"payload\"->>'executionMode' = 'async'", ''],
+      ['processing范围', '"statusCode" = \'processing\' AND ', ''],
+      ['返回来源', 'RETURNING id', 'RETURNING other_id AS id'],
+      ['同次更新关联', '(SELECT id FROM expired)', '(SELECT id FROM "ActivityBatchJob")'],
+      ['成功项保护', 'AND "statusCode" <> \'succeeded\'', ''],
+      ['项目范围', 'AND "itemKey" = \'generate\'', ''],
+      ['OR绕过', 'WHERE "jobId" IN', 'WHERE true OR "jobId" IN'],
+      ['改写内容', '"failed" = 1', '"failed" = 0'],
+      ['字符串空白', "'processing'", "'pro cessing'"],
+      ['SQL注释', 'RETURNING id', 'RETURNING id /* changed */'],
+    ])('删除或改变%s必须恢复为未获豁免写点', (_label, from, to) => {
+      expect(EXPIRED_DRAFT_CTE.split(from)).toHaveLength(2);
+      const mutated = EXPIRED_DRAFT_CTE.replace(from, to);
+      expect(mutated).not.toBe(EXPIRED_DRAFT_CTE);
+      const writes = scanCte(mutated);
+      expect(writes).toHaveLength(1);
+      expect(writes[0].fenced).toBe(false);
+      expect(writes[0].site).toBe('sweepDead → raw UPDATE "ActivityBatchJobItem"');
+      expect(FENCE_EXEMPTIONS.some((entry) => entry.site === writes[0].site)).toBe(false);
+    });
+
+    it('同名方法里的额外裸写不能继承专用标记', () => {
+      const writes = scanCte(
+        EXPIRED_DRAFT_CTE +
+          '; UPDATE "ActivityBatchJobItem" SET "statusCode" = \'failed\' WHERE true',
+      );
+      expect(writes).toHaveLength(1);
+      expect(writes[0].fenced).toBe(false);
+      expect(FENCE_EXEMPTIONS.some((entry) => entry.site === writes[0].site)).toBe(false);
+    });
+
+    it.each([
+      ['releaseForRetry', WORKER_REL],
+      ['sweepDead', 'other-worker.ts'],
+    ])('不扩散到其他上下文 %s / %s', (method, file) => {
+      const writes = scanCte(EXPIRED_DRAFT_CTE, method, file);
+      expect(writes).toHaveLength(1);
+      expect(writes[0].fenced).toBe(false);
+      expect(FENCE_EXEMPTIONS.some((entry) => entry.site === writes[0].site)).toBe(false);
+    });
+  });
   // ===== ① 扫描面自证:文件在、分析器真的看见了东西 =====
   it('①被扫文件存在,且分析器在其中真的发现了受管辖的写点(空集不许恒绿)', () => {
     expect({ [WORKER_REL]: fs.existsSync(WORKER_FULL) }).toEqual({ [WORKER_REL]: true });

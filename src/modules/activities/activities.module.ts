@@ -126,6 +126,7 @@ import { ContributionCalculator } from '../attendances/contribution-calculator';
 import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
 import { SettlementDraftService } from './settlement-draft.service';
 import { SettlementDraftDispatchService } from './settlement-draft-dispatch.service';
+import { SettlementDraftBatchService } from './settlement-draft-batch.service';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
 import { SettlementReviewAuditRecorder } from './settlement-review-audit-recorder';
 import { SettlementReviewService } from './settlement-review.service';
@@ -348,6 +349,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     SettlementDraftAuditRecorder,
     SettlementDraftService,
     SettlementDraftDispatchService,
+    SettlementDraftBatchService,
     // 活动改造 v1.1 第 2 批第三刀(合同 §5.10):提交不可变 SettlementVersion。
     // 同样零端点 —— 消费方是第四刀(一审/终审)。
     SettlementNotificationProducer,

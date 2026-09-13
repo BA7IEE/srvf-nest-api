@@ -13,6 +13,12 @@ import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
 import { LedgerPostingService } from './ledger-posting.service';
 import { LedgerPreparationService } from './ledger-preparation.service';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
+import { AuthzModule } from '../authz/authz.module';
+import { UsersModule } from '../users/users.module';
+import { ContributionCalculator } from '../attendances/contribution-calculator';
+import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
+import { SettlementDraftService } from './settlement-draft.service';
+import { SettlementDraftBatchService } from './settlement-draft-batch.service';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
 
 // 两个独立 worker 进程共用的最小活动任务依赖图。不 import ActivitiesModule，因而不装配
@@ -21,7 +27,14 @@ import { SettlementNotificationProducer } from './settlement-notification-produc
   // 活动 v1.1 cutover gate:两个 worker 进程各建**独立 application context**,
   // 拿不到 HTTP 侧的注入图 —— 账本 prepare / commit 也是受闸的写路径,故必须在这里也 import。
   // (漏掉时单测全绿,只有真起 Nest 的 e2e 会在 createApplicationContext 处炸;判据 C5 已就位。)
-  imports: [DatabaseModule, AuditLogsModule, AttendancesModule, ActivityWorkflowModule],
+  imports: [
+    DatabaseModule,
+    AuditLogsModule,
+    AttendancesModule,
+    ActivityWorkflowModule,
+    AuthzModule,
+    UsersModule,
+  ],
   providers: [
     NotificationOutboxService,
     SettlementNotificationProducer,
@@ -29,6 +42,10 @@ import { SettlementNotificationProducer } from './settlement-notification-produc
     LedgerPostingService,
     LedgerPreparationService,
     LedgerReadyBatchCommitter,
+    ContributionCalculator,
+    SettlementDraftAuditRecorder,
+    SettlementDraftService,
+    SettlementDraftBatchService,
     // Reconciliation is worker-only.  Importing ActivityRegistrationsModule would also construct
     // its HTTP/notification graph in the two independent worker application contexts.
     ActivityRegistrationAuditRecorder,
