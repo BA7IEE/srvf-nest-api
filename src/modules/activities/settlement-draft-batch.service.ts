@@ -6,7 +6,10 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
-import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
+import {
+  loadActiveUserIdentityInTx,
+  lockUserMemberIdentityInTx,
+} from '../users/user-active-identity.query';
 import { getActivityOrganizationEligibility } from '../organizations/organization-publish-readiness.primitive';
 import { SettlementDraftService, type SettlementDraftBatchProof } from './settlement-draft.service';
 import {
@@ -151,8 +154,7 @@ export class SettlementDraftBatchService {
 
   private async authorize(tx: Tx, activityId: string, payload: Payload) {
     // Lock the same identity rows used by the existing bulk handler; never cache a JWT role.
-    await tx.$queryRaw`SELECT u.id FROM "User" u JOIN "Member" m ON m.id = u."memberId"
-      WHERE u.id = ${payload.actorUserId} AND m.id = ${payload.actorMemberId} FOR SHARE OF u, m`;
+    await lockUserMemberIdentityInTx(tx, payload);
     const actor = await loadActiveUserIdentityInTx(tx, payload.actorUserId);
     if (
       !actor ||

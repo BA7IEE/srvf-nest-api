@@ -4,6 +4,27 @@
 
 > **状态（2026-09-12）**：方案 A 与 101 路径 implementation 已获维护者明确授权。计划 [#1325](https://github.com/BA7IEE/srvf-nest-api/pull/1325) 已合并；本轮从 main `eef0bbe4eb46dbb546da7e460a9e3e72fa3447cc` 独立实施。仅允许 `app_test_w98` 隔离验证及测试夹具重建，验证后提交、推送、创建 PR；不合并、不操作生产、不启用 Gate、不删除业务数据。3b/4b 仍须按实际读数由维护者重签。
 
+## 0. 草稿依赖独立候选验收（2026-09-13）
+
+> 本节仅记录前置依赖#1326的120迁移基线证据；D4仍为121迁移，不能合并两者通过计数。当前维护者已批准的联合写集为124路径（原122加两个Users路径），本轮仅同步身份锁属主修复，不调整D4 SQL、预算、权限或断言。
+
+### 身份锁属主修复追加授权与验证
+
+维护者明确扩展 `src/modules/users/user-active-identity.query.ts` 及 `.spec.ts`，联合授权清单由122增至124路径；依赖候选由27增至29路径。只抽出原有联合共享锁到Users属主，保留原SQL及参数模板、Activity→job→run之后的调用位置、调用方事务和锁后判权。原读取原语不增加隐式锁或缓存，既有测试断言不变；仅补3项精确锁合同测试。ROUTE_AUTHZ与CODEMAP只刷新派生摘要，不改门禁。
+
+原提交 `1ded3e7e` 的CI五组E2E通过，但新债务检查真实失败两项跨域身份表访问；此前本地自检通过不代表该独立检查通过。修复后 `identity-lock-newdebt.log` 扫描564项、未知0，完整单测378组／8230通过／5既有todo，typecheck、build、全仓lint通过。隔离E2E首次因macOS `/tmp` 与 `/private/tmp` 路径不一致未发现测试，未记为通过；改用实际物理路径执行同一测试，不修改检查配置或断言。`app_test_w98` 120条迁移冷回放通过，`identity-lock-e2e.json`完整56项通过（375.682秒），`identity-lock-contract.json`1049项／2快照通过（3.883秒）。授权摘要、CODEMAP和边界metadata检查通过；保留CODEMAP两类既有警告。按授权先更新#1326，再同步#1327；均保持Draft，不合并、不启用Gate，新HEAD的CI另行核验。
+
+独立候选从 `eef0bbe4` 导出，独立依赖副本和 Prisma 生成物；实际改动27路径，均在已批准122路径内。除§16的草稿依赖及三项追加授权外，`harness/domain-map.json`仅刷新该候选模块接线产生的摘要。schema、120条历史migration、seed、权限目录、contract、OpenAPI及客户端与基线逐字一致，D4新表／第121条migration／接口不在本候选。
+
+- `prisma:generate`、完整typecheck、build、6GiB配置下的原lint命令通过；未修改内存配置或检查规则。
+- `dependency-unit-configured.json`：378组／8227通过／0失败／5既有todo，154.950秒。首次裸Jest漏带仓库配置导致测试未执行，原失败报告`dependency-unit.json`保留；按原`pnpm test`配置复跑，不改断言。
+- `app_test_w98`独立重建后120条migration冷回放通过；`dependency-batch.json`完整56项通过，395.802秒，覆盖真实HTTP／worker、授权锁等待、双worker竞争、子进程SIGKILL回滚恢复、重试取消、五档资源规模。
+- `dependency-compat.json`旧草稿、封印及并发、HTTP边界、任务读面、自动提交、导入、过期与账本9组124项全部通过，60.248秒；保留全部旧断言。
+- `dependency-contract.json`1049项／2快照通过，22.997秒；OpenAPI、客户端、权限地图、计数、CODEMAP、授权摘要及冻结台账检查通过，7c和其他既有签字对拍通过。CODEMAP既有2条报告级警告保留。
+- 完整`harness:selftest`退出0；`harness:replay`真触发14/14、结构断言12/12分别通过，INC-02／INC-12未覆盖和INC-13既有接受项原样保留。
+
+报告保留在本机`/tmp/srvf-draft-split.HfqIUC/`。以上为独立候选本地证据，不是全量E2E CI或生产验收。验证后按已授权顺序创建依赖Draft PR，再创建以该依赖为base的D4 Draft PR；不Ready、不合并、不部署、不启用Gate、不删除业务数据。下文联合工作树的历史探针和失败记录保留，不混入本候选通过计数。
+
 ## 1. 起点、目标与交付边界
 
 > 补充授权现已落实：原101+1共102路径，查询总次数120／400／950及 kindCode 精确识别／正反例已批准。metadata、完整 Harness、并发／计数6项、串行完整 typecheck及改动 E2E 的 ESLint 均通过；原增量预算失败仅保留历史证据，不再是待审批项。D4 整体验收及最终重签未完成。
@@ -714,6 +735,16 @@ pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason '维护者确认 D4
 - 仅app_test_w98重新冷回放121条migration；`d4-e2e.json`三组24项全部通过，156.256秒，覆盖分类工作台主链、并发、满额和迁移升级；`d4-contract.json`1060项／2快照通过，3.728秒。历史120条SQL保持不变，没有migrate dev/reset/db push。
 - 本轮只补交付文档，不改变已确认3b的SQL摘要、4b的265权限／169总计164活跃、7c的e53f7b4cedc8及风险接受。不同请求各留审计、同任务重放不重复，相同内容复用版本；早期G6冲突待确认记录由维护者已确认口径覆盖。
 - 真实全量E2E、可信审批和最终CI仍由各自Draft PR执行并单独记录；不Ready、不合并、不操作生产、不启用Gate、不删除业务数据，前端发布、整体跨模型复审与后续业务轴仍未完成。
+
+### 17.2.1 身份锁依赖同步与独立CI缺口（2026-09-13）
+
+本轮完整单测385组／8476通过／5既有todo（77.107秒），typecheck、build及三份变更TS的ESLint通过。以下隔离回归与完整单测均针对本轮同步后的源代码；不沿用旧8473计数作为新提交证据。
+
+按维护者明确授权同步#1326的`5707a31c`，以普通分支集成保留两条历史，不改写远端历史，不执行PR合并。生产改动只有原身份联合锁的属主抽取及3项原语测试；原SQL模板、参数、事务、锁序和行为断言不变。CODEMAP与ROUTE_AUTHZ重新生成，计划同时保留前置依赖证据和D4边界。相对更新后的依赖仍为94路径，联合授权124路径。
+
+本轮独立D4副本核对1951个匹配代码／测试／schema／SQL／治理文件，无差异（集合摘要`bbd09eda6735f1ffb5fa33f9ef52bcf093e18fc470b43a73d8c2557630b375b4`；筛选口径不同于旧1952文件清单，不混用旧摘要）。`app_test_w98`冷回放121迁移通过；身份／资格失效与锁等待定向E2E20通过、36未选择（92.119秒），契约1060项／2快照通过（3.591秒）。新债务未知0；生成文档、边界metadata与签字对拍通过。第121条SQL的已签完整SHA256仍为`c86dfd72b0d68a01669991694cf1544e85fdcd78a33c96548dc562ceb337187b`，原空白项未改。
+
+原D4提交`4d837bde`的CI第2组另有3套件5项失败，不属于身份锁抽取已消除的两项跨域错误：D1-1前置假定TimePolicy为0但实测16；seed运行时缺`activity.time-settlement.prepare/read`两码（目录有登记，实际upsert循环漏接）；满额prepare在写收据时超出30秒，实耗33536ms。这些失败保留，未改断言、未加超时、未改已签SQL或seed；本轮定向身份回归不代替这些D4验收。两PR保持Draft，新HEAD CI、可信审批与整体D4修复验收仍须分别核验。
 
 ### 17.3 拆分前联合changelog证据留存
 
