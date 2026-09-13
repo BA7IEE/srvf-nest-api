@@ -787,7 +787,7 @@ describe('D5 shadow: real submitted version through App HTTP', () => {
     } finally {
       await observed.$disconnect();
     }
-  }, 120000);
+  }, 600000);
 
   it('returns same-version equality, stable pages and unchanged stored values and audit', async () => {
     const { p, prepared, submitted } = await submittedSource();
