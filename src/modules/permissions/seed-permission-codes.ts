@@ -83,6 +83,8 @@ export const SEED_PERMISSION_CODES: readonly string[] = Object.freeze([
   'activity.time-allocation.recognize',
   'activity.time-policy.read',
   'activity.time-policy.select',
+  'activity.time-settlement.prepare',
+  'activity.time-settlement.read',
   'activity.update.record',
   'announcement-import.execute.record',
   'announcement-import.preview.record',

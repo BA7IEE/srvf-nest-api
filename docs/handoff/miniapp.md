@@ -1,6 +1,6 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
-## 大规模草稿依赖（独立候选，未合并、未部署）
+## D4 分类时长结算工作台（本轮实施分支，未合并、未部署）
 
 ### 大规模草稿任务接线（不新增接口字段）
 
@@ -11,6 +11,29 @@
 失败后展示既有安全错误信息及 `retryFailedAllowed`、`cancelAllowed` 提示；按钮提示不替代后端当前资格检查。由操作者明确触发既有 `/retry-failed` 或 `/cancel`，不能后台无限重试。重试仍使用原任务执行身份，不因重试人不同而换人执行。封印/输入变化时先刷新业务事实，确认重新生成后才使用新 operationKey；网络超时或同意图重放保留原键，不自动改键。旧v1异步任务缺少可信凭据时保留失败记录，确认当前事实后重新发起，不要求客户端补内部payload。
 
 读面按当前活动责任范围判定，不保证任务创建人一直可见；无权或不存在时停止轮询，不以本地缓存冒充授权。草稿单任务的进度不是逐人进度，不用 `total=1` 推导活动只有一名参与人。以上仅为后端实施分支的接线说明，前端页面和生产部署尚未验收。
+
+### 分类工作台接线
+
+本段是 D4 分支的对接增量，不表示下方历史阶段已上线。字段与调用签名以本分支生成的 `openapi.json` 和 App client 为准；前端页面、完整验收、生产部署和 Gate 启用均未完成。
+
+在活动详情内嵌结算任务，沿 `/api/app/v1/my/managed-activities/{activityId}/time-settlement` 操作：
+
+| 页面任务 | 调用 |
+|---|---|
+| 看当前草稿与阻塞，定位待认定来源 | GET 根路径、GET `/sources` |
+| 逐段自动或人工认定，查看冻结政策及理由 | POST `/allocations`、GET `/allocations/{allocationRevisionId}` |
+| 生成完整分类草稿；确认后显式送审 | POST `/prepare`、POST `/submit` |
+| 按不可变版本回看四类桶与来源 | GET `/revisions/{timeRevisionId}/buckets`、GET `/revisions/{timeRevisionId}/sources` |
+
+三个写命令返回 200。认定仍使用既有 recognize 权限；读和 prepare 是两个独立的新权限，提交另需旧 settlement-submit 权限。均要求有效 App 成员、显式组织范围及实际责任或审核资格；Admin 身份或角色名称不能代替这些条件。按钮提示不构成授权。只读维护态仍可读取有权历史，写入及写命令重放沿既有 Gate 拒绝。
+
+历史桶／来源及带封印草稿证明的认定详情，按所请求记录绑定的结算版本核验当前审核资格，不借较新版本决定旧版本是否可见；较新版本由本人提交时，其自审限制仍成立，但不会误封其他有权旧版本。返回前仍复核当前资格，撤权后旧详情也不可再读；不要在前端缓存“曾经有权”作为访问依据。既有无草稿证明的 D3 认定仍沿原活动资格判断。
+
+自动时长为 null 时显示“未知／需认定”，不能显示 0。没有有效来源的身份只有通过阻塞检查后才生成四个零桶。四类先汇总原始毫秒再按冻结政策取整；毫秒在接口中为十进制字符串，不转换成 JavaScript Number。列表不含人工理由，需按认定详情下钻；附件只返回 ID，不返回地址或存储凭证。
+
+客户端传来源区间及期望版本，不传认定秒数、政策定义或内部内容 hash。prepare 返回的 bucketContentHash 才用于后续 submit。版本或封印过期须刷新工作台并由操作者重新确认，不能后台覆盖。相同意图重试沿用原 operationKey 和原 payload；改请求须用新键。重放是原命令收据，不代表当前业务状态，成功后应重新查询。
+
+正式提交创建新版本并保留分类草稿，历史桶只读；分类版本使用新的内容指纹域，旧提交的 V1 指纹及小时／贡献结果保持原义。D4 不生成分类账本、证明或旧小时投影，不自动切换结算入口。认定、桶、理由与收据持续保留，无删除入口。
 
 > **D1-3 已合入 main、未部署（2026-09-11）**：[#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已合入 `60414050b99fe661afbf0c87669597ad081a3b43`，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 通过。managed activity 的 `GET/PATCH /api/app/v1/my/managed-activities/:activityId/time-policy-selection` 与 `GET /api/app/v1/my/managed-activities/time-policy-options` 现为 main 的后端合同；读写仍需当前有效成员、显式时间政策权限、组织范围和发起人或责任资格，PATCH 使用 `expectedRevision` 生成完整不可变选择修订。前端本地联调以 main 的 OpenAPI / App client 为准；生产部署、Gate、整体跨模型复审及 D2–D8 尚未完成。
 

@@ -11,6 +11,7 @@ import { freezeResponsibility } from './activity-recipient-freeze';
 import { SettlementSubmitAuditRecorder } from './settlement-submit-audit-recorder';
 import {
   computeSettlementContentHash,
+  computeTimeSettlementContentHash,
   decimalToCanonicalString,
   SETTLEMENT_CONTENT_SCHEMA_VERSION,
   type CanonicalValue,
@@ -138,6 +139,21 @@ export interface SettlementSubmitInput {
   expectedDraftVersion?: number;
   /** §6.14 HTTP 看到的草稿封场凭证;缺省时保持既有内部调用语义。 */
   expectedEvidenceSealId?: string;
+}
+
+export interface TimeSettlementSubmissionContext {
+  readonly bucketContentHash: string;
+  readonly sourceSetHash: string;
+  reauthorize(): Promise<CurrentUserPayload>;
+  copyPrepared(
+    tx: PrismaTx,
+    target: {
+      settlementVersionId: string;
+      settlementVersion: number;
+      draftVersionId: string;
+      contentHash: string;
+    },
+  ): Promise<void>;
 }
 
 export interface SettlementSubmitResult {
@@ -550,266 +566,297 @@ export class SettlementSubmitService {
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
   ): Promise<SettlementSubmitResult> {
-    // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
-    // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
-    const { activityId, operationKey, requestHash } = input;
     return await this.prisma.$transaction(
-      async (tx) => {
-        // ①② 锁序固定,不得倒置。`lockRun` 只加锁不判状态 —— 状态判定见下。
-        const activity = await this.lockActivity(tx, activityId);
-        const run = await this.lockRun(tx, activityId);
-
-        // ⑥ 幂等**排在状态闸之前**,这一点很容易写反:
-        //    重放请求打过来时,run 早已被第一次提交推到 `pending_first_review`。
-        //    先判"只有 drafting 能提交"就会把一次合法重放判成非法 —— 而重放正是
-        //    幂等要保护的那种请求(客户端超时后原样重发)。
-        //    重放也**不再跑五条校验**:它要的是"把上次那个版本原样返回",不是
-        //    "拿现在的事实重验一遍"——现在的事实可能已经变了,那不影响
-        //    "上次提交过什么"这个既成事实。
-        const replay = await this.resolveIdempotency(tx, {
-          settlementRunId: run.id,
-          operationKey,
-          requestHash,
-        });
-        if (replay !== null) {
-          const replayed = await tx.attendanceSettlementVersion.findUniqueOrThrow({
-            where: { id: replay.id },
-            select: {
-              contentHash: true,
-              evidenceSealId: true,
-              personCount: true,
-              sessionParticipationCount: true,
-              serviceSegmentCount: true,
-              evidenceRevision: true,
-              populationRevision: true,
-              workflowRevision: true,
-              evidenceSeal: { select: { sealRevision: true } },
-            },
-          });
-          const resultRowCount = await tx.participantSettlementResultRevision.count({
-            where: { settlementVersionId: replay.id },
-          });
-          // 重放路径**不要求**当前还存在草稿版本(退回/重生成后它可能已换过一版),
-          // 所以这里是可空查询,不是 `readDraftVersion` 那条会抛 DRAFT_MISSING 的路。
-          const currentDraft = await tx.attendanceSettlementVersion.findFirst({
-            where: { settlementRunId: run.id, statusCode: 'draft' },
-            orderBy: { version: 'desc' },
-            select: { id: true },
-          });
-          await this.audit.log({
-            activityId,
-            settlementRunId: run.id,
-            settlementVersionId: replay.id,
-            settlementVersion: replay.version,
-            priorVersionId: replay.priorVersionId,
-            draftVersionId: currentDraft?.id ?? null,
-            evidenceSealId: replayed.evidenceSealId,
-            sealRevision: replayed.evidenceSeal.sealRevision,
-            evidenceRevision: replayed.evidenceRevision,
-            populationRevision: replayed.populationRevision,
-            workflowRevision: replayed.workflowRevision,
-            personCount: replayed.personCount,
-            sessionParticipationCount: replayed.sessionParticipationCount,
-            serviceSegmentCount: replayed.serviceSegmentCount,
-            resultRowCount,
-            contentHash: replayed.contentHash,
-            operationKey,
-            requestHash,
-            replayed: true,
-            actorUserId: currentUser.id,
-            actorRoleSnap: currentUser.role,
-            auditMeta,
-            tx,
-          });
-          return {
-            activityId,
-            settlementRunId: run.id,
-            settlementVersionId: replay.id,
-            settlementVersion: replay.version,
-            priorVersionId: replay.priorVersionId,
-            draftVersionId: currentDraft?.id ?? null,
-            evidenceSealId: replayed.evidenceSealId,
-            sealRevision: replayed.evidenceSeal.sealRevision,
-            personCount: replayed.personCount,
-            sessionParticipationCount: replayed.sessionParticipationCount,
-            serviceSegmentCount: replayed.serviceSegmentCount,
-            resultRowCount,
-            contentHash: replayed.contentHash,
-            replayed: true,
-          };
-        }
-
-        // 不是重放 ⇒ 这是一次**真正的新提交**,状态闸在这里落下。
-        this.assertRunDrafting(run);
-        const draft = await this.readDraftVersion(tx, run.id);
-
-        // ③ EvidenceSeal 复验。
-        const seal = await this.recheckEvidenceSeal(
-          tx,
-          activityId,
-          draft,
-          activity.workflowRevision,
-        );
-
-        // §6.14 HTTP 版本锚点。必须在既有 Activity → Run 锁和幂等重放之后,并且使用
-        // 本事务刚读到的 draft / active seal 比对:Controller 锁外预查在这里不能替代。
-        // 两项缺省时不进入分支，既有内部调用的语义与查询/写入序列保持不变。
-        if (
-          input.expectedDraftVersion !== undefined &&
-          draft.version !== input.expectedDraftVersion
-        ) {
-          throw new BizException(BizCode.SETTLEMENT_SUBMIT_EXPECTED_DRAFT_VERSION_MISMATCH);
-        }
-        if (
-          input.expectedEvidenceSealId !== undefined &&
-          seal.id !== input.expectedEvidenceSealId
-        ) {
-          throw new BizException(BizCode.SETTLEMENT_SUBMIT_EXPECTED_EVIDENCE_SEAL_MISMATCH);
-        }
-
-        // ④ 五条校验。任一不过 ⇒ 具名码拒绝,整个事务回滚(零副作用)。
-        const facts = await this.readSubmissionFacts(tx, activityId, draft.id);
-        const rejection = validateSettlementSubmission(facts);
-        if (rejection !== null) throw new BizException(REJECTION_TO_BIZ_CODE[rejection]);
-
-        // AC-047(合同「活动未结束……只允许整理草稿,不能提交」)的独立执行位,
-        // 刻意排在**全部既有拒绝之后**(状态闸 / 封印复验 / 版本锚点 / 五条校验):
-        // 新闸不得改变任何既有场景的裁决码(batch5 并发 spec 期望 20055 的场景实测
-        // 被前置位抢答过,CI 抓出后移到这里)。此前「窗口未关闭 / 无开放段」各有判据,
-        // 唯独「活动未结束」全链无闸 —— 零 live 场次时两道既有闸双双真空,活动结束前
-        // 即可整链提交。判定用**应用时钟**(clock-authority);重放路径不经过
-        // (幂等保护的是"上次提交过什么"的既成事实)。
-        if (new Date().getTime() < activity.endAt.getTime()) {
-          throw new BizException(BizCode.SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED);
-        }
-
-        // ⑤ canonical contentHash。
-        const contentHash = await this.computeContentHash(tx, {
-          activityId,
-          settlementRunId: run.id,
-          draftVersionId: draft.id,
-          evidenceSealId: seal.id,
-          sealRevision: seal.sealRevision,
-          draft,
-        });
-
-        // ⑦ 写不可变版本 + 结果行快照。
-        //
-        // `priorVersionId` 串**提交链**:上一个已提交/已退回/已批准的版本(不是草稿)。
-        const priorSubmitted = await tx.attendanceSettlementVersion.findFirst({
-          where: {
-            settlementRunId: run.id,
-            statusCode: { in: ['submitted', 'returned', 'approved'] },
-          },
-          orderBy: { version: 'desc' },
-          select: { id: true },
-        });
-        const maxVersion = await tx.attendanceSettlementVersion.aggregate({
-          where: { settlementRunId: run.id },
-          _max: { version: true },
-        });
-        const settlementVersion = (maxVersion._max.version ?? 0) + 1;
-
-        const created = await this.createSubmittedVersion(tx, {
-          settlementRunId: run.id,
-          version: settlementVersion,
-          evidenceSealId: seal.id,
-          draft,
-          contentHash,
-          createdByUserId: currentUser.id,
-          priorVersionId: priorSubmitted?.id ?? null,
-          operationKey,
-          requestHash,
-        });
-
-        const resultRowCount = await this.copyResultRows(tx, draft.id, created.id);
-        // 固化的行数必须与刚刚验过的项数逐一对上 —— 对不上说明"验的"和"写的"不是
-        // 同一批事实(例如有并发绕过锁改了草稿)。fail-closed,不留一个半截版本。
-        if (resultRowCount !== facts.resultRowCount) {
-          throw new BizException(BizCode.SETTLEMENT_SUBMIT_ITEM_COUNT_MISMATCH);
-        }
-
-        // ⑧ 更新 run 指针与状态。
-        //
-        // 目标态取 `pending_first_review` 而不是 `submitted`:§5.10 ⑨ 要求同事务
-        // 「写 Review 待办」,而合同没有给"待办"另立一张表 —— §3.19 明写 run 的
-        // statusCode「是页面投影和流程根」,所以**一审待办就是这个状态本身**。
-        // 停在 `submitted` 会让待办没有任何机器可见的落点。
-        await tx.attendanceSettlementRun.update({
-          where: { id: run.id },
-          data: {
-            statusCode: 'pending_first_review',
-            currentSubmittedVersion: settlementVersion,
-            version: { increment: 1 },
-          },
-        });
-
-        // ⑨ 通知 intent —— **必须在本事务内**(本仓 Outbox 铁律)。
-        await this.notifications.enqueueSubmitted(tx, {
-          activityId,
-          activityTitle: activity.title,
-          settlementVersionId: created.id,
-          settlementVersion,
-          personCount: draft.personCount,
-          cohort: await freezeResponsibility(tx, {
-            cohortKey: `settlement-submit:${created.id}`,
-            aggregateType: 'activity',
-            aggregateIds: [activityId],
-            basisRef: [`settlementVersion:${created.id}`],
-            memberIds: [await this.readOwnerMemberId(tx, activityId)],
-            // 列可空,但本路径上一步刚显式写过它;`?? new Date()` 只是类型收敛的兜底,
-            // 实际取不到 null。冻结是否成立取决于 `cohortKey`(纯 versionId,确定性),
-            // 不取决于这个时刻 —— 重放时快照是回读的,这里根本不会被用到。
-            at: created.submittedAt ?? new Date(),
-          }),
-        });
-
-        await this.audit.log({
-          activityId,
-          settlementRunId: run.id,
-          settlementVersionId: created.id,
-          settlementVersion,
-          priorVersionId: priorSubmitted?.id ?? null,
-          draftVersionId: draft.id,
-          evidenceSealId: seal.id,
-          sealRevision: seal.sealRevision,
-          evidenceRevision: draft.evidenceRevision,
-          populationRevision: draft.populationRevision,
-          workflowRevision: draft.workflowRevision,
-          personCount: draft.personCount,
-          sessionParticipationCount: draft.sessionParticipationCount,
-          serviceSegmentCount: draft.serviceSegmentCount,
-          resultRowCount,
-          contentHash,
-          operationKey,
-          requestHash,
-          replayed: false,
-          actorUserId: currentUser.id,
-          actorRoleSnap: currentUser.role,
-          auditMeta,
-          tx,
-        });
-
-        return {
-          activityId,
-          settlementRunId: run.id,
-          settlementVersionId: created.id,
-          settlementVersion,
-          priorVersionId: priorSubmitted?.id ?? null,
-          draftVersionId: draft.id,
-          evidenceSealId: seal.id,
-          sealRevision: seal.sealRevision,
-          personCount: draft.personCount,
-          sessionParticipationCount: draft.sessionParticipationCount,
-          serviceSegmentCount: draft.serviceSegmentCount,
-          resultRowCount,
-          contentHash,
-          replayed: false,
-        };
-      },
+      async (tx) => await this.submitInTx(tx, input, currentUser, auditMeta),
       { timeout: SETTLEMENT_SUBMIT_TX_TIMEOUT_MS },
     );
+  }
+
+  /** D4 only: caller owns the transaction and operation lock. No default caller passes context. */
+  async submitTimeSettlementInTx(
+    tx: PrismaTx,
+    input: SettlementSubmitInput,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+    classified: TimeSettlementSubmissionContext,
+  ): Promise<SettlementSubmitResult> {
+    this.activityWorkflowGate.assertV11WriteAllowed();
+    return await this.submitInTx(tx, input, currentUser, auditMeta, classified);
+  }
+
+  private async submitInTx(
+    tx: PrismaTx,
+    input: SettlementSubmitInput,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+    classified?: TimeSettlementSubmissionContext,
+  ): Promise<SettlementSubmitResult> {
+    const { activityId, operationKey, requestHash } = input;
+    // ①② 锁序固定,不得倒置。`lockRun` 只加锁不判状态 —— 状态判定见下。
+    const activity = await this.lockActivity(tx, activityId);
+    if (classified) currentUser = await classified.reauthorize();
+    const run = await this.lockRun(tx, activityId);
+    if (classified) currentUser = await classified.reauthorize();
+
+    // ⑥ 幂等**排在状态闸之前**,这一点很容易写反:
+    //    重放请求打过来时,run 早已被第一次提交推到 `pending_first_review`。
+    //    先判"只有 drafting 能提交"就会把一次合法重放判成非法 —— 而重放正是
+    //    幂等要保护的那种请求(客户端超时后原样重发)。
+    //    重放也**不再跑五条校验**:它要的是"把上次那个版本原样返回",不是
+    //    "拿现在的事实重验一遍"——现在的事实可能已经变了,那不影响
+    //    "上次提交过什么"这个既成事实。
+    const replay = await this.resolveIdempotency(tx, {
+      settlementRunId: run.id,
+      operationKey,
+      requestHash,
+    });
+    if (replay !== null) {
+      if (classified) throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID);
+      const replayed = await tx.attendanceSettlementVersion.findUniqueOrThrow({
+        where: { id: replay.id },
+        select: {
+          contentHash: true,
+          evidenceSealId: true,
+          personCount: true,
+          sessionParticipationCount: true,
+          serviceSegmentCount: true,
+          evidenceRevision: true,
+          populationRevision: true,
+          workflowRevision: true,
+          evidenceSeal: { select: { sealRevision: true } },
+        },
+      });
+      const resultRowCount = await tx.participantSettlementResultRevision.count({
+        where: { settlementVersionId: replay.id },
+      });
+      // 重放路径**不要求**当前还存在草稿版本(退回/重生成后它可能已换过一版),
+      // 所以这里是可空查询,不是 `readDraftVersion` 那条会抛 DRAFT_MISSING 的路。
+      const currentDraft = await tx.attendanceSettlementVersion.findFirst({
+        where: { settlementRunId: run.id, statusCode: 'draft' },
+        orderBy: { version: 'desc' },
+        select: { id: true },
+      });
+      await this.audit.log({
+        activityId,
+        settlementRunId: run.id,
+        settlementVersionId: replay.id,
+        settlementVersion: replay.version,
+        priorVersionId: replay.priorVersionId,
+        draftVersionId: currentDraft?.id ?? null,
+        evidenceSealId: replayed.evidenceSealId,
+        sealRevision: replayed.evidenceSeal.sealRevision,
+        evidenceRevision: replayed.evidenceRevision,
+        populationRevision: replayed.populationRevision,
+        workflowRevision: replayed.workflowRevision,
+        personCount: replayed.personCount,
+        sessionParticipationCount: replayed.sessionParticipationCount,
+        serviceSegmentCount: replayed.serviceSegmentCount,
+        resultRowCount,
+        contentHash: replayed.contentHash,
+        operationKey,
+        requestHash,
+        replayed: true,
+        actorUserId: currentUser.id,
+        actorRoleSnap: currentUser.role,
+        auditMeta,
+        tx,
+      });
+      return {
+        activityId,
+        settlementRunId: run.id,
+        settlementVersionId: replay.id,
+        settlementVersion: replay.version,
+        priorVersionId: replay.priorVersionId,
+        draftVersionId: currentDraft?.id ?? null,
+        evidenceSealId: replayed.evidenceSealId,
+        sealRevision: replayed.evidenceSeal.sealRevision,
+        personCount: replayed.personCount,
+        sessionParticipationCount: replayed.sessionParticipationCount,
+        serviceSegmentCount: replayed.serviceSegmentCount,
+        resultRowCount,
+        contentHash: replayed.contentHash,
+        replayed: true,
+      };
+    }
+
+    // 不是重放 ⇒ 这是一次**真正的新提交**,状态闸在这里落下。
+    this.assertRunDrafting(run);
+    const draft = await this.readDraftVersion(tx, run.id);
+
+    // ③ EvidenceSeal 复验。
+    const seal = await this.recheckEvidenceSeal(tx, activityId, draft, activity.workflowRevision);
+
+    // §6.14 HTTP 版本锚点。必须在既有 Activity → Run 锁和幂等重放之后,并且使用
+    // 本事务刚读到的 draft / active seal 比对:Controller 锁外预查在这里不能替代。
+    // 两项缺省时不进入分支，既有内部调用的语义与查询/写入序列保持不变。
+    if (input.expectedDraftVersion !== undefined && draft.version !== input.expectedDraftVersion) {
+      throw new BizException(BizCode.SETTLEMENT_SUBMIT_EXPECTED_DRAFT_VERSION_MISMATCH);
+    }
+    if (input.expectedEvidenceSealId !== undefined && seal.id !== input.expectedEvidenceSealId) {
+      throw new BizException(BizCode.SETTLEMENT_SUBMIT_EXPECTED_EVIDENCE_SEAL_MISMATCH);
+    }
+
+    // ④ 五条校验。任一不过 ⇒ 具名码拒绝,整个事务回滚(零副作用)。
+    const facts = await this.readSubmissionFacts(tx, activityId, draft.id);
+    const rejection = validateSettlementSubmission(facts);
+    if (rejection !== null) throw new BizException(REJECTION_TO_BIZ_CODE[rejection]);
+
+    // AC-047(合同「活动未结束……只允许整理草稿,不能提交」)的独立执行位,
+    // 刻意排在**全部既有拒绝之后**(状态闸 / 封印复验 / 版本锚点 / 五条校验):
+    // 新闸不得改变任何既有场景的裁决码(batch5 并发 spec 期望 20055 的场景实测
+    // 被前置位抢答过,CI 抓出后移到这里)。此前「窗口未关闭 / 无开放段」各有判据,
+    // 唯独「活动未结束」全链无闸 —— 零 live 场次时两道既有闸双双真空,活动结束前
+    // 即可整链提交。判定用**应用时钟**(clock-authority);重放路径不经过
+    // (幂等保护的是"上次提交过什么"的既成事实)。
+    if (new Date().getTime() < activity.endAt.getTime()) {
+      throw new BizException(BizCode.SETTLEMENT_SUBMIT_ACTIVITY_NOT_ENDED);
+    }
+
+    // ⑤ canonical contentHash。
+    const originalContentHash = await this.computeContentHash(tx, {
+      activityId,
+      settlementRunId: run.id,
+      draftVersionId: draft.id,
+      evidenceSealId: seal.id,
+      sealRevision: seal.sealRevision,
+      draft,
+    });
+
+    const contentHash = classified
+      ? computeTimeSettlementContentHash({
+          originalContentHash,
+          bucketContentHash: classified.bucketContentHash,
+          sourceSetHash: classified.sourceSetHash,
+        })
+      : originalContentHash;
+    if (classified) currentUser = await classified.reauthorize();
+
+    // ⑦ 写不可变版本 + 结果行快照。
+    //
+    // `priorVersionId` 串**提交链**:上一个已提交/已退回/已批准的版本(不是草稿)。
+    const priorSubmitted = await tx.attendanceSettlementVersion.findFirst({
+      where: {
+        settlementRunId: run.id,
+        statusCode: { in: ['submitted', 'returned', 'approved'] },
+      },
+      orderBy: { version: 'desc' },
+      select: { id: true },
+    });
+    const maxVersion = await tx.attendanceSettlementVersion.aggregate({
+      where: { settlementRunId: run.id },
+      _max: { version: true },
+    });
+    const settlementVersion = (maxVersion._max.version ?? 0) + 1;
+
+    const created = await this.createSubmittedVersion(tx, {
+      settlementRunId: run.id,
+      version: settlementVersion,
+      evidenceSealId: seal.id,
+      draft,
+      contentHash,
+      createdByUserId: currentUser.id,
+      priorVersionId: priorSubmitted?.id ?? null,
+      operationKey,
+      requestHash,
+    });
+
+    const resultRowCount = await this.copyResultRows(tx, draft.id, created.id);
+    // 固化的行数必须与刚刚验过的项数逐一对上 —— 对不上说明"验的"和"写的"不是
+    // 同一批事实(例如有并发绕过锁改了草稿)。fail-closed,不留一个半截版本。
+    if (resultRowCount !== facts.resultRowCount) {
+      throw new BizException(BizCode.SETTLEMENT_SUBMIT_ITEM_COUNT_MISMATCH);
+    }
+
+    if (classified) {
+      currentUser = await classified.reauthorize();
+      await classified.copyPrepared(tx, {
+        settlementVersionId: created.id,
+        settlementVersion,
+        draftVersionId: draft.id,
+        contentHash,
+      });
+      currentUser = await classified.reauthorize();
+    }
+
+    // ⑧ 更新 run 指针与状态。
+    //
+    // 目标态取 `pending_first_review` 而不是 `submitted`:§5.10 ⑨ 要求同事务
+    // 「写 Review 待办」,而合同没有给"待办"另立一张表 —— §3.19 明写 run 的
+    // statusCode「是页面投影和流程根」,所以**一审待办就是这个状态本身**。
+    // 停在 `submitted` 会让待办没有任何机器可见的落点。
+    await tx.attendanceSettlementRun.update({
+      where: { id: run.id },
+      data: {
+        statusCode: 'pending_first_review',
+        currentSubmittedVersion: settlementVersion,
+        version: { increment: 1 },
+      },
+    });
+
+    // ⑨ 通知 intent —— **必须在本事务内**(本仓 Outbox 铁律)。
+    await this.notifications.enqueueSubmitted(tx, {
+      activityId,
+      activityTitle: activity.title,
+      settlementVersionId: created.id,
+      settlementVersion,
+      personCount: draft.personCount,
+      cohort: await freezeResponsibility(tx, {
+        cohortKey: `settlement-submit:${created.id}`,
+        aggregateType: 'activity',
+        aggregateIds: [activityId],
+        basisRef: [`settlementVersion:${created.id}`],
+        memberIds: [await this.readOwnerMemberId(tx, activityId)],
+        // 列可空,但本路径上一步刚显式写过它;`?? new Date()` 只是类型收敛的兜底,
+        // 实际取不到 null。冻结是否成立取决于 `cohortKey`(纯 versionId,确定性),
+        // 不取决于这个时刻 —— 重放时快照是回读的,这里根本不会被用到。
+        at: created.submittedAt ?? new Date(),
+      }),
+    });
+
+    if (classified) currentUser = await classified.reauthorize();
+    await this.audit.log({
+      activityId,
+      settlementRunId: run.id,
+      settlementVersionId: created.id,
+      settlementVersion,
+      priorVersionId: priorSubmitted?.id ?? null,
+      draftVersionId: draft.id,
+      evidenceSealId: seal.id,
+      sealRevision: seal.sealRevision,
+      evidenceRevision: draft.evidenceRevision,
+      populationRevision: draft.populationRevision,
+      workflowRevision: draft.workflowRevision,
+      personCount: draft.personCount,
+      sessionParticipationCount: draft.sessionParticipationCount,
+      serviceSegmentCount: draft.serviceSegmentCount,
+      resultRowCount,
+      contentHash,
+      operationKey,
+      requestHash,
+      replayed: false,
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      auditMeta,
+      tx,
+    });
+
+    return {
+      activityId,
+      settlementRunId: run.id,
+      settlementVersionId: created.id,
+      settlementVersion,
+      priorVersionId: priorSubmitted?.id ?? null,
+      draftVersionId: draft.id,
+      evidenceSealId: seal.id,
+      sealRevision: seal.sealRevision,
+      personCount: draft.personCount,
+      sessionParticipationCount: draft.sessionParticipationCount,
+      serviceSegmentCount: draft.serviceSegmentCount,
+      resultRowCount,
+      contentHash,
+      replayed: false,
+    };
   }
 
   // 版本行的写入单独成方法:P2002 在这里翻成具名业务码。

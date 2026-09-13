@@ -11,7 +11,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
 const WORKER = 98;
 const MIGRATION = '20260905221158_activity_os_r3_c1_metric_command_receipts';
-const CURRENT_MIGRATION_COUNT = 120;
+const CURRENT_MIGRATION_COUNT = 121;
 const database = () => deriveWorkerTestDbName(WORKER);
 const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
 function url() {

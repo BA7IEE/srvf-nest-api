@@ -293,14 +293,14 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
   //
   // P1-32 PR 1(2026-08-22)换了下方那条不变量的形状。搬家前:权限定义分居
   // `prisma/seed.ts`(223 条)与 `rbac-seed-facts.ts`(14 条 rbac.*),不变量是「差值恒 14」。
-  // 搬家后**全部 263 条都在 permission-catalog.ts**,`prisma/seed.ts` 里一条都不剩 ——
+  // 搬家后**全部 265 条都在 permission-catalog.ts**,`prisma/seed.ts` 里一条都不剩 ——
   // 于是不变量变成更强的一句:**剔除权限目录后码数恰为 0**。
   //
   // 这正是「权限定义只有一处」这句话的机器形式:seed.ts 但凡漏回一条码(比如有人图省事
   // 直接在角色装配旁边补个 `code: 'x.y.z'`),下面那条 checkEq 就不再是 0,当场红。
   // ⚠️ 0 本身是「空集」形状,单独看会踩本仓登记的「空集恒等于空集」陷阱 ——
-  // 所以它必须与上一条(完整闭包恰 263)成对读:一条钉住总量非空,一条钉住分布只有一处。
-  const CLOSURE_PERMISSION_CODE_COUNT = 263; // D1-3 +2，再加 D3 time-allocation recognize；已批准的计数联动
+  // 所以它必须与上一条(完整闭包恰 265)成对读:一条钉住总量非空,一条钉住分布只有一处。
+  const CLOSURE_PERMISSION_CODE_COUNT = 265; // D4 +2 time-settlement read/prepare；已批准的计数联动
   const CODES_LEFT_IN_SEED_AFTER_MOVE = 0;
   check(
     `R5-02 权限码:真实 seed 事实闭包双口径一致且为 ${CLOSURE_PERMISSION_CODE_COUNT}`,
@@ -313,7 +313,7 @@ const list = [{ code: 'c.d' }, { code: 'e.f-g' }];
   const readClosureFile = (file: string): string =>
     fs.readFileSync(path.resolve(__dirname, '..', file), 'utf-8');
 
-  // 正向:权限目录**独自**就装着全部 263 条 —— 「单一事实源」的正面形式。
+  // 正向:权限目录**独自**就装着全部 265 条 —— 「单一事实源」的正面形式。
   checkEq(
     `R5-02 权限码:权限目录独自装着全部 ${CLOSURE_PERMISSION_CODE_COUNT} 条码`,
     extractSeedFactsPermissionCodesAst([
@@ -1995,6 +1995,59 @@ checkEq(
     };
     const saidThat = (result: { errors: string[] }, needle: string): boolean =>
       result.errors.some((message) => message.includes(needle));
+    // D4 maintainer-approved exact model/field inventory. Every probe invokes the
+    // shipped scanner in the isolated fixture; no copied discovery implementation.
+    const d4Kind = pick(liveStateRegistry.entries, 'ActivitySettlementTimeRevision', 'kindCode');
+    const d4KindBaseline = runStateRegistry(() => {});
+    check(
+      'D4 kindCode 正例:精确配置登记通过，保持 L1 inventory / not-derived',
+      d4KindBaseline.code === 0 &&
+        d4KindBaseline.errors.length === 0 &&
+        d4Kind.layer === 'L1' &&
+        d4Kind.governanceStatus === 'inventory' &&
+        d4Kind.transitions === 'not-derived',
+      d4KindBaseline.out,
+    );
+    const missingD4Kind = runStateRegistry((entries) => {
+      entries.splice(
+        entries.indexOf(pick(entries, 'ActivitySettlementTimeRevision', 'kindCode')),
+        1,
+      );
+    });
+    check(
+      'D4 kindCode 负例:删除精确登记必报覆盖缺失',
+      missingD4Kind.code !== 0 && saidThat(missingD4Kind, 'coverage mismatch'),
+      missingD4Kind.out,
+    );
+    const otherModelKind = runStateRegistry((entries) => {
+      // ActivityMetricDefinition.kindCode really exists, but is outside this approval.
+      pick(entries, 'ActivitySettlementTimeRevision', 'kindCode').model =
+        'ActivityMetricDefinition';
+    });
+    check(
+      'D4 kindCode 负例:同名真实字段换成其他模型仍被拒，不只比较条数',
+      otherModelKind.code !== 0 && saidThat(otherModelKind, 'coverage mismatch'),
+      otherModelKind.out,
+    );
+    const otherFieldKind = runStateRegistry((entries) => {
+      pick(entries, 'ActivitySettlementTimeRevision', 'kindCode').field = 'kind';
+    });
+    check(
+      'D4 kindCode 负例:同模型字段名不精确仍被拒',
+      otherFieldKind.code !== 0 && saidThat(otherFieldKind, 'coverage mismatch'),
+      otherFieldKind.out,
+    );
+    const broadenedKinds = runStateRegistry((entries) => {
+      entries.push({
+        ...pick(entries, 'ActivitySettlementTimeRevision', 'kindCode'),
+        model: 'ActivityMetricDefinition',
+      });
+    });
+    check(
+      'D4 kindCode 负例:额外登记既有其他模型 kindCode 必被拒，禁止泛化全仓',
+      broadenedKinds.code !== 0 && saidThat(broadenedKinds, 'coverage mismatch'),
+      broadenedKinds.out,
+    );
     /** L3 `Activity.statusCode` 的完整合法证据 —— enumerated 路径的正例底座。 */
     const activityEvidence = (): FixtureStateEntry['governedEvidence'] => ({
       edgeModel: 'enumerated',

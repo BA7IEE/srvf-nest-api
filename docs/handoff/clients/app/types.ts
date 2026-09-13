@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:2aa52aba43f85bfbf899d7b3352f0dab1b627cd7556969cd09d4f2e36ff45033
+// inputDigest: sha256:98f479dbd76ca2d9123b1b44b82326463f695dcfdf3d00991e05c35c62eec5bc
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -1771,6 +1771,13 @@ export interface AppPrepareActivityOutcomeCorrectionDto {
   "values": AppOutcomeCorrectionValueDto[];
 }
 
+export interface AppPrepareTimeSettlementDto {
+  "operationKey": string;
+  "expectedDraftVersion": number;
+  "expectedEvidenceSealId": string;
+  "expectedTimeRevision": number;
+}
+
 export interface AppProfessionalActivityCreationDto {
   "operationKey": string;
   "title": string;
@@ -1818,6 +1825,21 @@ export interface AppQuickActivityCreationDto {
   "confirmedCapacity"?: number | null;
   "defaultPlaceVisibilityCode": "public" | "accepted" | "staff" | "command";
   "places"?: AppActivityCreationPlaceDto[];
+}
+
+export interface AppRecognizeTimeSettlementDto {
+  "operationKey": string;
+  "expectedDraftVersion": number;
+  "expectedEvidenceSealId": string;
+  "sourceSegmentId": string;
+  "expectedRevision": number;
+  "expectedEvidenceRevision": number;
+  "expectedPopulationRevision": number;
+  "expectedWorkflowRevision": number;
+  "recognitionModeCode": "automatic" | "manual";
+  "evidenceAttachmentIds": string[];
+  "manualReason"?: string;
+  "slices"?: AppTimeSettlementManualSliceDto[];
 }
 
 export interface AppRecordActivityOutcomeDto {
@@ -2125,6 +2147,14 @@ export interface AppSubmitActivityChangeReviewDto {
   "positions"?: AppActivityChangePositionDto[];
 }
 
+export interface AppSubmitTimeSettlementDto {
+  "operationKey": string;
+  "expectedDraftVersion": number;
+  "expectedEvidenceSealId": string;
+  "timeRevisionId": string;
+  "expectedBucketContentHash": string;
+}
+
 export interface AppTeamJoinApplicationDto {
   "id": string;
   "cycleId": string;
@@ -2142,6 +2172,212 @@ export interface AppTeamJoinApplicationDto {
   "evaluationNote"?: Record<string, unknown> | null;
   "eliminationStage"?: Record<string, unknown> | null;
   "createdAt": string;
+}
+
+export interface AppTimeSettlementAllocationDetailDto {
+  "allocationRevisionId": string;
+  "activityId": string;
+  "sourceSegmentId": string;
+  "sourceSegmentRevision": number;
+  "revision": number;
+  "recognitionModeCode": "automatic" | "manual";
+  "allocationHash": string;
+  "sliceCount": number;
+  "createdAt": string;
+  "slices": AppTimeSettlementSliceDto[];
+  "evidence": AppTimeSettlementEvidenceDto[];
+  "participationIdentityId": string;
+  "manualReason": string | null;
+  "settlementDraftVersionId": string | null;
+  "settlementEvidenceSealId": string | null;
+  "policyVersionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+  "policy": AppTimeSettlementPolicyDto;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+}
+
+export interface AppTimeSettlementAllocationResultDto {
+  "schemaVersion": 1;
+  "activityId": string;
+  "allocationRevisionId": string;
+  "revision": number;
+  "sourceSegmentId": string;
+  "sourceSegmentRevision": number;
+  "recognitionModeCode": "automatic" | "manual";
+  "allocationHash": string;
+  "sliceCount": number;
+  "evidenceCount": number;
+  "createdAt": string;
+}
+
+export interface AppTimeSettlementBlockerDto {
+  "code": string;
+  "count": number;
+}
+
+export interface AppTimeSettlementBucketDto {
+  "bucketId": string;
+  "timeRevisionId": string;
+  "participationIdentityId": string;
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "calculatedSeconds": number | null;
+  "recognizedSeconds": number;
+  "rawCalculatedMilliseconds": string | null;
+  "rawRecognizedMilliseconds": string;
+  "timePolicyVersionId": string | null;
+  "definitionHash": string | null;
+  "evaluatorVersion": number | null;
+  "quantumSeconds": number | null;
+  "hasAdjustment": boolean;
+  "emptyReasonCode": "no_valid_segment" | null;
+}
+
+export interface AppTimeSettlementBucketSourceDto {
+  "sourceId": string;
+  "bucketId": string;
+  "timeRevisionId": string;
+  "allocationRevisionId": string;
+  "sourceSegmentId": string;
+  "sourceSegmentRevision": number;
+  "rawCalculatedMilliseconds": string | null;
+  "rawRecognizedMilliseconds": string;
+}
+
+export interface AppTimeSettlementDraftDto {
+  "settlementVersionId": string;
+  "version": number;
+  "evidenceSealId": string | null;
+  "evidenceRevision": number | null;
+  "populationRevision": number | null;
+  "workflowRevision": number | null;
+  "sealCurrent": boolean;
+}
+
+export interface AppTimeSettlementEvidenceDto {
+  "attachmentId": string;
+  "ordinal": number;
+}
+
+export interface AppTimeSettlementEvidencePolicyDto {
+  "requiredSources": "punch_event" | "service_segment" | "attachment"[];
+  "requireManualRecognition": boolean;
+}
+
+export interface AppTimeSettlementManualPolicyDto {
+  "enabled": boolean;
+  "reasonRequired"?: true;
+  "evidenceRequired"?: boolean;
+}
+
+export interface AppTimeSettlementManualSliceDto {
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "startAt": string;
+  "endAt": string;
+}
+
+export interface AppTimeSettlementPolicyDto {
+  "defaultCategory": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "roleMappings": AppTimeSettlementRoleMappingDto[];
+  "allowSplit": boolean;
+  "specialIntervals": AppTimeSettlementSpecialIntervalsDto;
+  "rounding": AppTimeSettlementRoundingDto;
+  "evidence": AppTimeSettlementEvidencePolicyDto;
+  "manualAdjustment": AppTimeSettlementManualPolicyDto;
+}
+
+export interface AppTimeSettlementResultDto {
+  "schemaVersion": 1;
+  "activityId": string;
+  "timeRevisionId": string;
+  "revision": number;
+  "kindCode": "draft" | "submitted";
+  "settlementRunId": string;
+  "settlementVersionId": string;
+  "settlementVersion": number;
+  "contentHash": string;
+  "bucketContentHash": string;
+  "bucketCount": number;
+  "sourceCount": number;
+  "createdAt": string;
+}
+
+export interface AppTimeSettlementRevisionDto {
+  "activityId": string;
+  "timeRevisionId": string;
+  "settlementRunId": string;
+  "settlementVersionId": string;
+  "revision": number;
+  "kindCode": "draft" | "submitted";
+  "sourceDraftTimeRevisionId": string | null;
+  "evidenceSealId": string;
+  "evidenceRevision": number;
+  "populationRevision": number;
+  "workflowRevision": number;
+  "bucketContentHash": string;
+  "bucketCount": number;
+  "sourceCount": number;
+  "createdAt": string;
+}
+
+export interface AppTimeSettlementRoleMappingDto {
+  "attendanceRoleCode": string;
+  "category": "volunteer_service" | "training" | "organization" | "non_creditable";
+}
+
+export interface AppTimeSettlementRoundingDto {
+  "mode": "floor";
+  "quantumSeconds": number;
+}
+
+export interface AppTimeSettlementRunDto {
+  "settlementRunId": string;
+  "statusCode": string;
+  "currentDraftVersion": number | null;
+  "currentSubmittedVersion": number | null;
+}
+
+export interface AppTimeSettlementSliceDto {
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "startAt": string;
+  "endAt": string;
+  "intervalKindCode": "service_segment";
+}
+
+export interface AppTimeSettlementSourceDto {
+  "sourceSegmentId": string;
+  "participationIdentityId": string;
+  "sessionId": string;
+  "sourceSegmentRevision": number;
+  "statusCode": string;
+  "resultCode": string;
+  "checkInAt": string;
+  "checkOutAt": string | null;
+  "allocationRevisionId": string | null;
+  "allocationRevision": number;
+  "exclusionReasonCode": string | null;
+  "blockerCode": string | null;
+}
+
+export interface AppTimeSettlementSpecialIntervalDto {
+  "mode": "exclude" | "manual" | "category";
+  "category"?: "volunteer_service" | "training" | "organization" | "non_creditable";
+}
+
+export interface AppTimeSettlementSpecialIntervalsDto {
+  "preparation": AppTimeSettlementSpecialIntervalDto;
+  "duty": AppTimeSettlementSpecialIntervalDto;
+  "travel": AppTimeSettlementSpecialIntervalDto;
+}
+
+export interface AppTimeSettlementWorkbenchDto {
+  "activityId": string;
+  "run": AppTimeSettlementRunDto;
+  "draft": AppTimeSettlementDraftDto;
+  "latestRevision": AppTimeSettlementRevisionDto;
+  "ready": boolean;
+  "blockers": AppTimeSettlementBlockerDto[];
 }
 
 export interface ApproveAppManagedRegistrationDto {

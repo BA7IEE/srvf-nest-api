@@ -144,3 +144,25 @@ export function computeSettlementContentHash(payload: SettlementContentPayload):
     .update(buildSettlementContentCanonicalText(payload), 'utf8')
     .digest('hex');
 }
+
+/** Explicit D4 domain. The original V1 function and every default submit caller stay unchanged. */
+export function computeTimeSettlementContentHash(input: {
+  originalContentHash: string;
+  bucketContentHash: string;
+  sourceSetHash: string;
+}): string {
+  if (Object.values(input).some((value) => !/^[0-9a-f]{64}$/u.test(value)))
+    throw new TypeError('classified settlement content hash requires canonical SHA-256 anchors');
+  return createHash('sha256')
+    .update(
+      canonicalize({
+        domain: 'activity-time-settlement-content-v2',
+        schemaVersion: 2,
+        originalContentHash: input.originalContentHash,
+        bucketContentHash: input.bucketContentHash,
+        sourceSetHash: input.sourceSetHash,
+      }),
+      'utf8',
+    )
+    .digest('hex');
+}

@@ -1,28 +1,39 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:ad630ba94252cd6609d3a279c7485c251b8c2b0ba5091fd680d9bf8db9972373",
-  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 62 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。2026-09-04 Activity OS R2/B6 D1 新增 `ActivityEmergencyFollowUpItem.statusCode` 三值义务清单；D1 仅有 DB 词表/形状约束，尚无运行时 writer，故保持 L2 inventory。2026-09-05 B6 D2 接入固定义务创建与当前事实核验 writer，补齐实际迁移边，仍不升 governed。2026-09-11 D1-3 登记不可变时长选择明细的 inherit/explicit 配置模式；其闭集嵌在同链指针形状约束中，保留 L1 inventory，不借复合 CHECK 冒称 governed。",
+  "inputDigest": "sha256:73bcce0b017169f51ebaa40e92148bc86b346551fd45ed5d6be598c646c1d3af",
+  "headerNote": "登记≠已治理。Phase 4-1a 为每条补 layer(L1 配置/L2 简单流程/L3 复杂流程)、stateSet(含真值来源)、transitions、wrongStateBizCode、implementation 与 governedBlockers;governedBlockers = 「离 governed 还差什么」,空数组表示当前无已知阻塞。Phase 4-1b 起 governanceStatus 可取 inventory | governed,并由 scripts/check-boundaries.ts --metadata 的**声明闸**把关:声明 governed 必须另附 governedEvidence,L1 走「闭集 = 在册 DB CHECK」、L2/L3 走「具名实现模块 + 逐条边 + 专属 BizCode」,任一条拿不出证据即拒(fail-closed)。当前 governed 8 条(全为 L1 配置列),其余 63 条仍为 inventory;本刀不升任何 L3(它们缺的正是边与实现映射)。声明闸只判「敢不敢自称已治理」,不声称被治理的代码是对的。2026-08-25 活动归档刀:`Activity.statusCode` 闭集扩到 6 值并补两条边(archive / unarchive),同时新增登记 `Activity.archivedFromStatusCode`(归档时冻下来的来源状态快照,不是独立状态机)。2026-09-01 Activity OS R1/A2 登记 `ActivityTemplateFamily.statusCode` 为无闭集、边或写路径的 L2 inventory；A3 仅为 familyId 非空的 ActivityTemplate Version 登记 draft→active→retired DB 约束与 trigger，legacy 行仍旁路，尚无业务 writer。2026-09-02 Activity OS R1/A7 登记 `ActivitySeries.statusCode` 的 active / paused / terminated 生命周期与 `ActivitySeriesCommandReceipt.resultStatusCode` 的安全结果快照；两者均不升 governed。2026-09-04 Activity OS R2/B6 D1 新增 `ActivityEmergencyFollowUpItem.statusCode` 三值义务清单；D1 仅有 DB 词表/形状约束，尚无运行时 writer，故保持 L2 inventory。2026-09-05 B6 D2 接入固定义务创建与当前事实核验 writer，补齐实际迁移边，仍不升 governed。2026-09-11 D1-3 登记不可变时长选择明细的 inherit/explicit 配置模式；其闭集嵌在同链指针形状约束中，保留 L1 inventory，不借复合 CHECK 冒称 governed。",
   "entries": [
+    {
+      "model": "ActivitySettlementTimeRevision",
+      "field": "kindCode",
+      "governanceStatus": "inventory",
+      "layer": "L1",
+      "stateSet": {
+        "values": ["draft", "submitted"],
+        "source": "db-check",
+        "sourceRef": "prisma/migrations/20260913090000_activity_os_r4_d4_time_bucket_settlement"
+      },
+      "transitions": "not-derived",
+      "wrongStateBizCode": "ACTIVITY_TIME_SETTLEMENT_INVALID",
+      "implementation": "src/modules/activities/activity-time-settlement.service.ts",
+      "governedBlockers": ["closed-set-is-embedded-in-composite-shape-check"],
+      "notes": "D4 创建时固定的 draft/submitted 类型，不是可变生命周期。正式提交追加新父版本及完整副本，绝不把草稿原地改为正式。复合形状约束与不可变触发器已登记，保持 L1 inventory、not-derived，不新增状态边、不提升 governed。"
+    },
     {
       "model": "ParticipantTimeAllocationRevision",
       "field": "recognitionModeCode",
       "governanceStatus": "inventory",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "automatic",
-          "manual"
-        ],
+        "values": ["automatic", "manual"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260912090000_activity_os_r4_d3_time_allocation_revision"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "ACTIVITY_TIME_ALLOCATION_INVALID",
       "implementation": "src/modules/activities/activity-time-allocation-command.ts + src/modules/activities/activity-time-allocation.service.ts",
-      "governedBlockers": [
-        "closed-set-is-embedded-in-composite-shape-check"
-      ],
+      "governedBlockers": ["closed-set-is-embedded-in-composite-shape-check"],
       "notes": "D3 创建时固定 automatic/manual 认定方式；它是不可变配置，不是可流转生命周期。ptar_shape_check 同时约束模式与人工理由，append-only trigger 拒绝原地修改和删除。仅登记 L1 inventory、not-derived；不新增状态边，不提升 governed。"
     },
     {
@@ -132,11 +143,7 @@
       "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "first_come",
-          "qualification_rank",
-          "lottery"
-        ],
+        "values": ["first_come", "qualification_rank", "lottery"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260812100000_activity_v11_batch4_activity_allocation_mode"
       },
@@ -157,12 +164,7 @@
       "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "open_apply",
-          "invitation_only",
-          "admin_only",
-          "paused"
-        ],
+        "values": ["open_apply", "invitation_only", "admin_only", "paused"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804020000_activity_v11_slice1_sessions_participation_capacity"
       },
@@ -183,21 +185,14 @@
       "governanceStatus": "inventory",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "draft",
-          "published",
-          "completed",
-          "terminated"
-        ],
+        "values": ["draft", "published", "completed", "terminated"],
         "source": "ts-constant",
         "sourceRef": "ACTIVITY_ARCHIVABLE_FROM_STATUS_CODES @ src/modules/activities/activity-state-machine.ts"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "ACTIVITY_STATUS_INVALID",
       "implementation": "src/modules/activities/activity-archive.service.ts(归档时一次性写入 current.statusCode;撤销归档时**刻意不清空**)",
-      "governedBlockers": [
-        "no-db-check"
-      ],
+      "governedBlockers": ["no-db-check"],
       "notes": "2026-08-25 归档刀新增。它**不是独立状态机**,是归档那一刻 `Activity.statusCode` 的快照 —— 撤销归档要退回哪里全靠它,没有它就只能猜一个常量、静默改写活动状态。闭集因此与 `statusCode` 的可归档子集逐字相同(不含 cancelled / archived 自身)。边不成立(快照列没有流程语义),故 transitions 取 not-derived;越界值由 ActivityStateMachine 的 unarchive 分支当场拒(ACTIVITY_STATUS_INVALID),不是 DB CHECK —— 与姊妹列 statusCode 同样零 DB 执行位,单给它加会造出「同一张表两个同形状态列一严一松」的第二份真相。"
     },
     {
@@ -206,14 +201,7 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "draft",
-          "published",
-          "cancelled",
-          "terminated",
-          "completed",
-          "archived"
-        ],
+        "values": ["draft", "published", "cancelled", "terminated", "completed", "archived"],
         "source": "state-machine",
         "sourceRef": "src/modules/activities/activity-state-machine.ts"
       },
@@ -235,9 +223,7 @@
       ],
       "wrongStateBizCode": "ACTIVITY_STATUS_INVALID",
       "implementation": "src/modules/activities/activity-state-machine.ts (ActivityStateMachine.decide)",
-      "governedBlockers": [
-        "no-db-check"
-      ],
+      "governedBlockers": ["no-db-check"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。2026-08-25 归档刀扩到第 6 值 `archived` 并补 8 条边:四条 archive 入边(cancelled **刻意不在内** —— 维护者只拍了「长期无人处理草稿」与「结算已关账且过等待期」两套开工条件,取消掉的活动两套都不属于),四条 unarchive 出边(目标恒等于 `archivedFromStatusCode`,拿不到就拒,不猜常量)。⚠️ 四条 unarchive 边在实现里是**同一个分支**,展开成四行只是让闭集在这张表里可读 —— 别据此以为有四段代码。归档还带一条**量**的闸(ActivityArchivePolicy 的两套开工条件),那不是状态边,不登记在此。"
     },
     {
@@ -246,11 +232,7 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "pending",
-          "verified",
-          "unrepresentable"
-        ],
+        "values": ["pending", "verified", "unrepresentable"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260904195000_activity_os_r2_b6_creation_data_foundation"
       },
@@ -262,9 +244,7 @@
       ],
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activities/activity-emergency-follow-up.ts（创建与当前事实核验）；ActivityCreationService / ActivityDraftService 在 Activity 根事务内调用",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "B6 D2 创建时登记四项 pending 与设备/结果/事故关联三项 unrepresentable；只有现有 Session/Position/地点权威事实可把对应项变为 verified，事实消失即退回 pending，处理人/时间随状态保持 D1 形状。考勤尚无可用的闭环写入接线，保持 pending；不开放人工任意完成开关，不升 governed。"
     },
     {
@@ -273,11 +253,7 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "active",
-          "paused",
-          "terminated"
-        ],
+        "values": ["active", "paused", "terminated"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260902190221_activity_os_r1_a7_series_generation"
       },
@@ -290,10 +266,7 @@
       ],
       "wrongStateBizCode": "BAD_REQUEST",
       "implementation": "src/modules/activities/activity-series.service.ts (ActivitySeriesService.setStatus)",
-      "governedBlockers": [
-        "no-state-machine",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-state-machine", "no-wrong-state-bizcode"],
       "notes": "A7 的唯一可变 Series 字段。migration 守三值闭集与除 statusCode/updatedAt 外不可更新；服务在锁定 Series 后拒绝终止态恢复和同态写入。错误仍复用通用 BAD_REQUEST，且没有独立 StateMachine，故保持 inventory。"
     },
     {
@@ -302,21 +275,14 @@
       "governanceStatus": "inventory",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "active",
-          "paused",
-          "terminated"
-        ],
+        "values": ["active", "paused", "terminated"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260902190221_activity_os_r1_a7_series_generation"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activities/activity-series.service.ts (ActivitySeriesService.persistReceipt / findReplay)",
-      "governedBlockers": [
-        "snapshot-not-lifecycle",
-        "composite-db-check"
-      ],
+      "governedBlockers": ["snapshot-not-lifecycle", "composite-db-check"],
       "notes": "这是写命令成功时的安全结果快照，不是可迁移的独立生命周期；重放必须原样返回当时的 Series 状态，不能按当前状态重新计算。闭集由 receipt 形状 CHECK 同时守住，但该 CHECK 不是独立状态机执行位。"
     },
     {
@@ -325,21 +291,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "pass",
-          "waitlisted",
-          "not_selected"
-        ],
+        "values": ["pass", "waitlisted", "not_selected"],
         "source": "ts-constant",
         "sourceRef": "TS 联合类型 @ activity-allocation.service.ts:160"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activity-registrations/activity-allocation.service.ts(投影,commit 时一次性写)",
-      "governedBlockers": [
-        "no-db-check",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-db-check", "no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -348,11 +307,7 @@
       "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "first_come",
-          "qualification_rank",
-          "lottery"
-        ],
+        "values": ["first_come", "qualification_rank", "lottery"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804100000_activity_v11_slice5_allocation_waitlist_reserved_quota"
       },
@@ -373,24 +328,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "preparing",
-          "committed",
-          "voided"
-        ],
+        "values": ["preparing", "committed", "voided"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804100000_activity_v11_slice5_allocation_waitlist_reserved_quota"
       },
-      "transitions": [
-        "preparing -> committed",
-        "preparing -> voided",
-        "committed -> voided"
-      ],
+      "transitions": ["preparing -> committed", "preparing -> voided", "committed -> voided"],
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activity-registrations/activity-allocation.service.ts",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -414,11 +359,7 @@
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
       "implementation": "settlement / batch-job dispatch service 内裸写",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine", "no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -427,11 +368,7 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "processing",
-          "succeeded",
-          "failed"
-        ],
+        "values": ["processing", "succeeded", "failed"],
         "source": "service-literal",
         "sourceRef": "src/modules/activities/settlement-draft-dispatch.service.ts(散落字面量,取值集合未经声明)"
       },
@@ -453,23 +390,14 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "pending",
-          "accepted",
-          "declined",
-          "revoked",
-          "expired"
-        ],
+        "values": ["pending", "accepted", "declined", "revoked", "expired"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804040000_activity_v11_slice2_form_qualification_invitation"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "ACTIVITY_INVITATION_STATUS_INVALID",
       "implementation": "activity-invitation 相关 service 内裸 if/throw",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -504,11 +432,7 @@
       ],
       "wrongStateBizCode": "ACTIVITY_REGISTRATION_STATUS_INVALID (onsite); ACTIVITY_CAPACITY_RECONCILIATION_FAILED (activity-start expiry fail-closed)",
       "implementation": "src/modules/activity-registrations/onsite-participation-state-machine.ts(onsite→pass);src/modules/activity-registrations/participation-revision-state-machine.ts(decideActivityStartExpiry);其余边散落于 activity-allocation.service.ts / 各 command service",
-      "governedBlockers": [
-        "edges-partially-derived",
-        "impl-scattered",
-        "vocabulary-divergence"
-      ],
+      "governedBlockers": ["edges-partially-derived", "impl-scattered", "vocabulary-divergence"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。14 值闭集有 DB CHECK;onsite→pass 与 activity-start expiry 两条边有具名判定,其余迁移由各 command service 裸判。"
     },
     {
@@ -544,10 +468,7 @@
       ],
       "wrongStateBizCode": "ACTIVITY_REGISTRATION_STATUS_INVALID (existing revision commands); ACTIVITY_CAPACITY_RECONCILIATION_FAILED (activity-start expiry fail-closed)",
       "implementation": "src/modules/activity-registrations/participation-revision-state-machine.ts(自由函数：command 校验直接 throw；reopen/cancel 与 activity-start expiry 返回 append/noop decision)",
-      "governedBlockers": [
-        "throws-instead-of-decide",
-        "edges-partially-derived"
-      ],
+      "governedBlockers": ["throws-instead-of-decide", "edges-partially-derived"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -556,13 +477,7 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "pending",
-          "approved",
-          "returned",
-          "withdrawn",
-          "cancelled"
-        ],
+        "values": ["pending", "approved", "returned", "withdrawn", "cancelled"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260723225802_activity_responsibility_workflow_expand",
         "alsoDeclaredIn": "activity_publish_reviews status check"
@@ -576,9 +491,7 @@
       ],
       "wrongStateBizCode": "ACTIVITY_PUBLISH_REVIEW_STATUS_INVALID",
       "implementation": "src/modules/activities/activity-publish-review-state-machine.ts (返回字段名为 nextStatus,与其余三机的 nextStatusCode 不一致)",
-      "governedBlockers": [
-        "decision-shape-divergence"
-      ],
+      "governedBlockers": ["decision-shape-divergence"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -587,23 +500,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "draft",
-          "active",
-          "retired"
-        ],
+        "values": ["draft", "active", "retired"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260809223000_activity_v11_batch4_qualification_contract_guards"
       },
-      "transitions": [
-        "draft -> active",
-        "active -> retired"
-      ],
+      "transitions": ["draft -> active", "active -> retired"],
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activities/qualification-rule-set-version.service.ts",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -612,13 +516,7 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "pending",
-          "pass",
-          "reject",
-          "cancelled",
-          "waitlisted"
-        ],
+        "values": ["pending", "pass", "reject", "cancelled", "waitlisted"],
         "source": "ts-constant",
         "sourceRef": "ACTIVITY_REGISTRATION_STATUS @ activity-registration-state-machine.ts:29"
       },
@@ -634,10 +532,7 @@
       ],
       "wrongStateBizCode": "ACTIVITY_REGISTRATION_STATUS_INVALID",
       "implementation": "src/modules/activity-registrations/activity-registration-state-machine.ts (decideActivityRegistrationTransition)",
-      "governedBlockers": [
-        "no-db-check",
-        "vocabulary-divergence"
-      ],
+      "governedBlockers": ["no-db-check", "vocabulary-divergence"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。 闭集用 'reject';姊妹表 ActivityParticipationIdentity.currentStatusCode 用 'rejected' —— 两拼法并存,如实记录不调和。"
     },
     {
@@ -646,10 +541,7 @@
       "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "release_to_public_pool",
-          "void_on_expiry"
-        ],
+        "values": ["release_to_public_pool", "void_on_expiry"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260808133500_activity_v11_batch4_allocation_contract_guards"
       },
@@ -670,23 +562,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "active",
-          "ended",
-          "revoked"
-        ],
+        "values": ["active", "ended", "revoked"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260723225802_activity_responsibility_workflow_expand"
       },
-      "transitions": [
-        "active -> ended",
-        "active -> revoked"
-      ],
+      "transitions": ["active -> ended", "active -> revoked"],
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activities/activity-responsibility.service.ts",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -695,23 +578,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "scheduled",
-          "cancelled",
-          "terminated"
-        ],
+        "values": ["scheduled", "cancelled", "terminated"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804020000_activity_v11_slice1_sessions_participation_capacity"
       },
-      "transitions": [
-        "scheduled -> cancelled",
-        "scheduled -> terminated"
-      ],
+      "transitions": ["scheduled -> cancelled", "scheduled -> terminated"],
       "wrongStateBizCode": "none",
       "implementation": "activity session service 内裸判",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -720,23 +594,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "active",
-          "superseded",
-          "voided"
-        ],
+        "values": ["active", "superseded", "voided"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job"
       },
-      "transitions": [
-        "active -> superseded",
-        "active -> voided"
-      ],
+      "transitions": ["active -> superseded", "active -> voided"],
       "wrongStateBizCode": "none",
       "implementation": "settlement closure service",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -752,9 +617,7 @@
       "transitions": "unconstrained",
       "wrongStateBizCode": "none",
       "implementation": "模板配置默认值",
-      "governedBlockers": [
-        "no-db-check"
-      ],
+      "governedBlockers": ["no-db-check"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
@@ -764,24 +627,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "draft",
-          "active",
-          "retired"
-        ],
+        "values": ["draft", "active", "retired"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260901110000_activity_os_r1_a3_template_definition_lifecycle_guards (仅 familyId IS NOT NULL)"
       },
-      "transitions": [
-        "(create) -> draft",
-        "draft -> active",
-        "active -> retired"
-      ],
+      "transitions": ["(create) -> draft", "draft -> active", "active -> retired"],
       "wrongStateBizCode": "ACTIVITY_METRIC_STATUS_INVALID",
       "implementation": "activity_template_family_version_freeze_guard DB trigger + src/modules/activities/activity-template-version.service.ts + src/modules/activities/activity-template-version-command.ts",
-      "governedBlockers": [
-        "conditional-legacy-scope"
-      ],
+      "governedBlockers": ["conditional-legacy-scope"],
       "notes": "C1 D2b 接入 Human GLOBAL V3 writer、状态错误码、审计及收据；仅 draft 可编辑/激活，active 可退役，历史重放不回改状态。A3 条件 DB 约束仍有效；legacy 不重解释，V1/V2 只读或复制为新 V3，仍是 inventory，不声明 governed。"
     },
     {
@@ -811,25 +664,14 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "pending",
-          "returned",
-          "approved",
-          "rejected",
-          "applying",
-          "applied",
-          "voided"
-        ],
+        "values": ["pending", "returned", "approved", "rejected", "applying", "applied", "voided"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "CORRECTION_REVIEW_STATUS_INVALID / CORRECTION_APPLY_STATUS_INVALID",
       "implementation": "src/modules/activities/correction-application.service.ts 内裸 if/throw",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -838,23 +680,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "active",
-          "revoked",
-          "expired"
-        ],
+        "values": ["active", "revoked", "expired"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804060000_activity_v11_slice3_punch_evidence"
       },
-      "transitions": [
-        "active -> revoked",
-        "active -> expired"
-      ],
+      "transitions": ["active -> revoked", "active -> expired"],
       "wrongStateBizCode": "none",
       "implementation": "attendance QR service",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -870,10 +703,7 @@
       "transitions": "unconstrained",
       "wrongStateBizCode": "ATTENDANCE_STATUS_CODE_INVALID(字典值校验码,非迁移码)",
       "implementation": "考勤明细的结果分类,由字典校验",
-      "governedBlockers": [
-        "no-db-check",
-        "dictionary-driven"
-      ],
+      "governedBlockers": ["no-db-check", "dictionary-driven"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
@@ -900,10 +730,7 @@
       "transitions": "not-derived",
       "wrongStateBizCode": "SETTLEMENT_{DRAFT,SUBMIT,REVIEW,DRAFT_UPDATE}_RUN_STATUS_INVALID(4 码)",
       "implementation": "attendance settlement service 族内裸 if/throw",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -912,10 +739,7 @@
       "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "first",
-          "final"
-        ],
+        "values": ["first", "final"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job"
       },
@@ -936,23 +760,14 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "draft",
-          "submitted",
-          "returned",
-          "approved",
-          "voided"
-        ],
+        "values": ["draft", "submitted", "returned", "approved", "voided"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "SETTLEMENT_REVIEW_VERSION_STATUS_INVALID / LEDGER_COMMIT_VERSION_STATUS_INVALID",
       "implementation": "attendance settlement service 族内裸 if/throw",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -961,10 +776,7 @@
       "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "first",
-          "final"
-        ],
+        "values": ["first", "final"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260723225802_activity_responsibility_workflow_expand"
       },
@@ -1008,9 +820,7 @@
       ],
       "wrongStateBizCode": "ATTENDANCE_SHEET_STATUS_INVALID (+ FINAL_REVIEW / RESUBMIT / *_NOT_EDITABLE 变体共 6 码)",
       "implementation": "src/modules/attendances/attendance-sheet-state-machine.ts (AttendanceSheetStateMachine.decide)",
-      "governedBlockers": [
-        "no-db-check"
-      ],
+      "governedBlockers": ["no-db-check"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1019,21 +829,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "active",
-          "released"
-        ],
+        "values": ["active", "released"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804020000_activity_v11_slice1_sessions_participation_capacity"
       },
-      "transitions": [
-        "active -> released"
-      ],
+      "transitions": ["active -> released"],
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activity-registrations/ capacity reservation 内核",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1042,12 +845,7 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "pending",
-          "verified",
-          "expired",
-          "rejected"
-        ],
+        "values": ["pending", "verified", "expired", "rejected"],
         "source": "ts-constant",
         "sourceRef": "CERT_STATUS_CODES @ certificates-workbench.dto.ts:34"
       },
@@ -1068,22 +866,14 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "draft",
-          "published",
-          "archived"
-        ],
+        "values": ["draft", "published", "archived"],
         "source": "ts-constant",
         "sourceRef": "CONTENT_STATUSES @ content.constants.ts:10"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "CONTENT_INVALID_STATUS_TRANSITION",
       "implementation": "src/modules/content/ service 内裸 if/throw",
-      "governedBlockers": [
-        "no-db-check",
-        "edges-not-derived",
-        "no-state-machine"
-      ],
+      "governedBlockers": ["no-db-check", "edges-not-derived", "no-state-machine"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1092,22 +882,14 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "preparing",
-          "committed",
-          "failed",
-          "voided"
-        ],
+        "values": ["preparing", "committed", "failed", "voided"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "CORRECTION_SUBMIT_RUN_STATUS_INVALID",
       "implementation": "src/modules/activities/correction-application.service.ts",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1116,21 +898,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "active",
-          "superseded"
-        ],
+        "values": ["active", "superseded"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804060000_activity_v11_slice3_punch_evidence"
       },
-      "transitions": [
-        "active -> superseded"
-      ],
+      "transitions": ["active -> superseded"],
       "wrongStateBizCode": "none",
       "implementation": "evidence seal service",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1139,23 +914,14 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "preparing",
-          "ready",
-          "committed",
-          "failed",
-          "voided"
-        ],
+        "values": ["preparing", "ready", "committed", "failed", "voided"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "LEDGER_{PREPARE,COMMIT}_BATCH_STATUS_INVALID",
       "implementation": "src/modules/activities/ledger-preparation.service.ts 等",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1171,11 +937,7 @@
       "transitions": "not-derived",
       "wrongStateBizCode": "MEMBER_INSURANCE_REVIEW_STATE_INVALID",
       "implementation": "src/modules/insurances/ service 族",
-      "governedBlockers": [
-        "no-db-check",
-        "closed-set-undeclared",
-        "edges-not-derived"
-      ],
+      "governedBlockers": ["no-db-check", "closed-set-undeclared", "edges-not-derived"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1184,22 +946,14 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "draft",
-          "published",
-          "archived"
-        ],
+        "values": ["draft", "published", "archived"],
         "source": "ts-constant",
         "sourceRef": "NOTIFICATION_STATUSES @ notification.constants.ts:22"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "NOTIFICATION_INVALID_STATUS_TRANSITION",
       "implementation": "src/modules/notifications/ service 内裸 if/throw",
-      "governedBlockers": [
-        "no-db-check",
-        "edges-not-derived",
-        "no-state-machine"
-      ],
+      "governedBlockers": ["no-db-check", "edges-not-derived", "no-state-machine"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1208,22 +962,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "sent",
-          "failed",
-          "skipped"
-        ],
+        "values": ["sent", "failed", "skipped"],
         "source": "ts-constant",
         "sourceRef": "DELIVERY_STATUS_* @ notification.constants.ts:104-106(逐值散常量,无聚合数组)"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
       "implementation": "src/modules/notifications/notification-*-dispatch.service.ts(一次性写入投递结果)",
-      "governedBlockers": [
-        "no-db-check",
-        "closed-set-undeclared",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-db-check", "closed-set-undeclared", "no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1232,12 +978,7 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "pending",
-          "processing",
-          "succeeded",
-          "dead"
-        ],
+        "values": ["pending", "processing", "succeeded", "dead"],
         "source": "ts-constant",
         "sourceRef": "OUTBOX_STATUS_* @ notification.constants.ts:165-168(逐值散常量,无聚合数组)"
       },
@@ -1259,12 +1000,7 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "active",
-          "review_required",
-          "revoked",
-          "expired"
-        ],
+        "values": ["active", "review_required", "revoked", "expired"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260816183000_activity_v11_batch6_staff_import_offline"
       },
@@ -1278,10 +1014,7 @@
       ],
       "wrongStateBizCode": "BAD_REQUEST / ATTENDANCE_OFFLINE_PACKAGE_INVALID / ATTENDANCE_OFFLINE_PACKAGE_EXPIRED / ATTENDANCE_OFFLINE_REVIEW_REQUIRED",
       "implementation": "src/modules/attendances/attendance-offline-package.service.ts（Activity 根事务内 issue/revoke/upload/review；正式事件委托 AttendancePunchCommandService）",
-      "governedBlockers": [
-        "no-state-machine",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-state-machine", "no-wrong-state-bizcode"],
       "notes": "B6-2 补充合同 v2 已兑现六条 HTTP wire；DB CHECK 继续守闭集/撤销形状/live-device，service 在 Activity→Package 锁序内守迁移边。仍无独立 StateMachine 类，故保持 inventory。"
     },
     {
@@ -1290,24 +1023,14 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "pending",
-          "approved",
-          "rejected"
-        ],
+        "values": ["pending", "approved", "rejected"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260816183000_activity_v11_batch6_staff_import_offline"
       },
-      "transitions": [
-        "pending -> approved (approve)",
-        "pending -> rejected (reject)"
-      ],
+      "transitions": ["pending -> approved (approve)", "pending -> rejected (reject)"],
       "wrongStateBizCode": "BAD_REQUEST / ATTENDANCE_PUNCH_IDEMPOTENCY_CONFLICT",
       "implementation": "src/modules/attendances/attendance-offline-package.service.ts（pending approve/reject 原子决议；approve 复用 AttendancePunchCommandService）",
-      "governedBlockers": [
-        "no-state-machine",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-state-machine", "no-wrong-state-bizcode"],
       "notes": "B6-2 补充合同 v2 已兑现安全列表与 approve/reject；DB CHECK 守决议形状和正式事件一对一锚，service 保证正式事件/segment/evidence/audit 同事务。仍无独立 StateMachine 类，故保持 inventory。"
     },
     {
@@ -1323,10 +1046,7 @@
       "transitions": "unconstrained",
       "wrongStateBizCode": "none",
       "implementation": "组织成立状态属性,由字典校验",
-      "governedBlockers": [
-        "no-db-check",
-        "dictionary-driven"
-      ],
+      "governedBlockers": ["no-db-check", "dictionary-driven"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
@@ -1336,23 +1056,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "draft",
-          "committed",
-          "superseded"
-        ],
+        "values": ["draft", "committed", "superseded"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804060000_activity_v11_slice3_punch_evidence"
       },
-      "transitions": [
-        "draft -> committed",
-        "committed -> superseded"
-      ],
+      "transitions": ["draft -> committed", "committed -> superseded"],
       "wrongStateBizCode": "none",
       "implementation": "settlement / ledger service 族",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1361,23 +1072,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "draft",
-          "committed",
-          "superseded"
-        ],
+        "values": ["draft", "committed", "superseded"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job"
       },
-      "transitions": [
-        "draft -> committed",
-        "committed -> superseded"
-      ],
+      "transitions": ["draft -> committed", "committed -> superseded"],
       "wrongStateBizCode": "LEDGER_PREPARE_RESULT_REVISION_STATUS_INVALID",
       "implementation": "settlement / ledger service 族",
-      "governedBlockers": [
-        "impl-scattered"
-      ],
+      "governedBlockers": ["impl-scattered"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。2026-08-24 订正:原先 governedBlockers 为空,于是它是全仓唯一一条被 --violations 报成 upgradeCandidates 的条目 —— 那是**假读数**。实测把它升 governed,L2 声明闸当场拒:`edge endpoint \"committed\" never appears as a string literal in src/modules/activities/ledger-preparation.service.ts`。根因是这台状态机物理散在 4 个文件(settlement-draft 写 draft / ledger-posting 裸 SQL 写 committed / correction-application 裸 SQL 写 superseded),L2 闸要求的单一 implementationFile 结构上给不出。⚠️ 另有三个文件(correction-application / settlement-draft / activity-settlement-http)恰好同时含 draft/committed/superseded 三个字面量,填进去闸会绿 —— 但那些字面量属于兄弟模型(ActivitySettlementClosureRevision / ParticipantServiceSegmentRevision 同为三值闭集),那是为了让闸变绿而挑文件,已否决。故按实测补 impl-scattered。"
     },
     {
@@ -1386,11 +1088,7 @@
       "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "display",
-          "submit",
-          "review"
-        ],
+        "values": ["display", "submit", "review"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260809223000_activity_v11_batch4_qualification_contract_guards"
       },
@@ -1411,22 +1109,14 @@
       "governanceStatus": "inventory",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "realname",
-          "manual",
-          "evaluation",
-          "threshold-timeout"
-        ],
+        "values": ["realname", "manual", "evaluation", "threshold-timeout"],
         "source": "ts-constant",
         "sourceRef": "ELIM_STAGE_* @ recruitment.constants.ts:57-62"
       },
       "transitions": "unconstrained",
       "wrongStateBizCode": "none",
       "implementation": "rejected 时记录淘汰环节的标注列(非生命周期)",
-      "governedBlockers": [
-        "no-db-check",
-        "retired-value-in-set"
-      ],
+      "governedBlockers": ["no-db-check", "retired-value-in-set"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。 ELIM_STAGE_REALNAME='realname' 自述「退役,不再写入」仍在闭集内。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
@@ -1467,20 +1157,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "open",
-          "closed"
-        ],
+        "values": ["open", "closed"],
         "source": "ts-constant",
         "sourceRef": "CYCLE_STATUS_* @ recruitment.constants.ts:11-12"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
       "implementation": "recruitment cycle service(后台开关)",
-      "governedBlockers": [
-        "no-db-check",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-db-check", "no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1489,23 +1173,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "draft",
-          "active",
-          "retired"
-        ],
+        "values": ["draft", "active", "retired"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804040000_activity_v11_slice2_form_qualification_invitation"
       },
-      "transitions": [
-        "draft -> active",
-        "active -> retired"
-      ],
+      "transitions": ["draft -> active", "active -> retired"],
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activities/registration-form-version.service.ts",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1514,23 +1189,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "active",
-          "consumed",
-          "revoked"
-        ],
+        "values": ["active", "consumed", "revoked"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260807183000_activity_v11_batch4_form_closed_sets"
       },
-      "transitions": [
-        "active -> consumed",
-        "active -> revoked"
-      ],
+      "transitions": ["active -> consumed", "active -> revoked"],
       "wrongStateBizCode": "none",
       "implementation": "src/modules/activity-registrations/ upload session 路径",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1539,10 +1205,7 @@
       "governanceStatus": "governed",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "first",
-          "final"
-        ],
+        "values": ["first", "final"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260804080000_activity_v11_slice4_settlement_ledger_correction_closure_job"
       },
@@ -1582,11 +1245,7 @@
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
       "implementation": "src/modules/storage/ 一致性协调器内裸判",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine", "no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1610,11 +1269,7 @@
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
       "implementation": "src/modules/storage/",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine", "no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1623,12 +1278,7 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "pending",
-          "processing",
-          "succeeded",
-          "dead"
-        ],
+        "values": ["pending", "processing", "succeeded", "dead"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260718233000_attachment_storage_operations",
         "alsoDeclaredIn": "STORAGE_OPERATION_STATUSES @ storage-consistency.types.ts:38(与 DB CHECK 一致)"
@@ -1636,11 +1286,7 @@
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
       "implementation": "src/modules/storage/",
-      "governedBlockers": [
-        "edges-not-derived",
-        "no-state-machine",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["edges-not-derived", "no-state-machine", "no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1649,20 +1295,14 @@
       "governanceStatus": "inventory",
       "layer": "L1",
       "stateSet": {
-        "values": [
-          "evaluation",
-          "gate-timeout",
-          "already-enrolled"
-        ],
+        "values": ["evaluation", "gate-timeout", "already-enrolled"],
         "source": "ts-constant",
         "sourceRef": "ELIM_STAGE_* @ team-join.constants.ts:23-30"
       },
       "transitions": "unconstrained",
       "wrongStateBizCode": "none",
       "implementation": "rejected 时记录淘汰环节的标注列(非生命周期)",
-      "governedBlockers": [
-        "no-db-check"
-      ],
+      "governedBlockers": ["no-db-check"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。",
       "transitionsRationale": "L1 配置/标注列:取值由配置或 CRUD 决定,无流程语义,故不声明迁移边。"
     },
@@ -1672,24 +1312,14 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "joining",
-          "pending_evaluation",
-          "approved",
-          "joined",
-          "rejected"
-        ],
+        "values": ["joining", "pending_evaluation", "approved", "joined", "rejected"],
         "source": "ts-constant",
         "sourceRef": "APP_STATUS_* @ team-join.constants.ts:16-20"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "TEAM_JOIN_APPLICATION_WRONG_STATE",
       "implementation": "src/modules/team-join/team-join-applications.service.ts 内裸 if/throw",
-      "governedBlockers": [
-        "no-db-check",
-        "edges-not-derived",
-        "no-state-machine"
-      ],
+      "governedBlockers": ["no-db-check", "edges-not-derived", "no-state-machine"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1698,20 +1328,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "open",
-          "closed"
-        ],
+        "values": ["open", "closed"],
         "source": "ts-constant",
         "sourceRef": "CYCLE_STATUS_* @ team-join.constants.ts:9-10"
       },
       "transitions": "not-derived",
       "wrongStateBizCode": "none",
       "implementation": "team-join cycle service(后台开关)",
-      "governedBlockers": [
-        "no-db-check",
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-db-check", "no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     },
     {
@@ -1720,13 +1344,7 @@
       "governanceStatus": "inventory",
       "layer": "L3",
       "stateSet": {
-        "values": [
-          "pending",
-          "state_consumed",
-          "binding_required",
-          "completed",
-          "failed"
-        ],
+        "values": ["pending", "state_consumed", "binding_required", "completed", "failed"],
         "source": "ts-constant",
         "sourceRef": "WECOM_ATTEMPT_STATUS @ wecom.types.ts:152"
       },
@@ -1747,21 +1365,14 @@
       "governanceStatus": "inventory",
       "layer": "L2",
       "stateSet": {
-        "values": [
-          "active",
-          "revoked"
-        ],
+        "values": ["active", "revoked"],
         "source": "db-check",
         "sourceRef": "prisma/migrations/20260801093000_wecom_identity_foundation"
       },
-      "transitions": [
-        "active -> revoked"
-      ],
+      "transitions": ["active -> revoked"],
       "wrongStateBizCode": "none",
       "implementation": "src/modules/wecom/",
-      "governedBlockers": [
-        "no-wrong-state-bizcode"
-      ],
+      "governedBlockers": ["no-wrong-state-bizcode"],
       "notes": "登记≠已治理;Phase 4-1a 补全闭集/边/错误码/实现映射与 governedBlockers,governanceStatus 恒为 inventory。"
     }
   ]

@@ -54,6 +54,11 @@ import { ActivityOutcomeAuditRecorder } from './activity-outcome-audit-recorder'
 import { ActivityTimeAllocationAccessService } from './activity-time-allocation-access.service';
 import { ActivityTimeAllocationAuditRecorder } from './activity-time-allocation-audit-recorder';
 import { ActivityTimeAllocationService } from './activity-time-allocation.service';
+import { ActivityTimeSettlementAccessService } from './activity-time-settlement-access.service';
+import { ActivityTimeSettlementAuditRecorder } from './activity-time-settlement-audit-recorder';
+import { ActivityTimeSettlementQueryService } from './activity-time-settlement-query.service';
+import { ActivityTimeSettlementService } from './activity-time-settlement.service';
+import { AppManagedActivityTimeSettlementController } from './controllers/app-managed-activity-time-settlement.controller';
 import { AppManagedActivityOutcomesController } from './controllers/app-managed-activity-outcomes.controller';
 import { ActivityMetricAuditRecorder } from './activity-metric-audit-recorder';
 import { ActivityMetricDefinitionService } from './activity-metric-definition.service';
@@ -208,6 +213,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     forwardRef(() => AttendancesModule),
   ],
   controllers: [
+    AppManagedActivityTimeSettlementController,
     AppManagedActivityOutcomesController,
     AppManagedActivityOutcomeFinalizationsController,
     AdminActivityMetricRuleBindingsController,
@@ -255,6 +261,10 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityTimeAllocationAccessService,
     ActivityTimeAllocationAuditRecorder,
     ActivityTimeAllocationService,
+    ActivityTimeSettlementAccessService,
+    ActivityTimeSettlementAuditRecorder,
+    ActivityTimeSettlementQueryService,
+    ActivityTimeSettlementService,
     ActivityControlPlaneGate,
     ActivityCreationService,
     ActivityCreationQuick,

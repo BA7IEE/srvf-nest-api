@@ -2086,6 +2086,46 @@ export const BizCode = {
     message: '冻结时长政策不可用于参与时长认定',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_TIME_SETTLEMENT_INVALID: {
+    code: 20218,
+    message: '活动分类结算请求无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE: {
+    code: 20219,
+    message: '活动分类结算引用不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_TIME_SETTLEMENT_STALE: {
+    code: 20220,
+    message: '分类结算草稿、封印或来源已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_COMMAND_CONFLICT: {
+    code: 20221,
+    message: '此操作标识已用于其他分类结算请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY: {
+    code: 20222,
+    message: '分类结算参与来源尚未就绪',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_POLICY_MIXED: {
+    code: 20223,
+    message: '同一参与身份的时长政策不一致，不能合并结算',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_OVERLAP: {
+    code: 20224,
+    message: '同一成员的参与时段重叠，不能重复结算',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT: {
+    code: 20225,
+    message: '活动分类结算规模超过本次处理上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

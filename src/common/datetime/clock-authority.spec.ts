@@ -53,6 +53,8 @@ const SRC = path.join(REPO_ROOT, 'src');
 // ActivityTimePolicySelectionRevision/ActivityTimePolicySelectionCommandReceipt，以及
 // ParticipantTimeAllocationRevision/ParticipantTimeAllocationCommandReceipt.createdAt 均为审计留痕，
 // 沿此既有豁免；effectiveFrom/Until、activatedAt/retiredAt 无默认now，不用库时钟判业务生效。
+// D4: ActivitySettlementTimeRevision/ActivitySettlementTimeCommandReceipt.createdAt 也仅审计留痕；
+// 生效与 stale 判断由冻结源时间、封印和 revision 决定，不使用上述留痕时间作授权依据。
 const AUDIT_COLUMNS: ReadonlySet<string> = new Set(['createdAt']);
 
 interface WriteSite {

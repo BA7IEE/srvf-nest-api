@@ -543,15 +543,15 @@ describe('D3 immutable time-allocation migration', () => {
     else process.env[name] = value;
   }
 
-  it('replays all 120 migrations from empty and exposes only the D3 append-only surface', () => {
+  it('replays all 121 migrations from empty and verifies the D3 append-only surface', () => {
     recreate();
     deploy(path.join(root, 'schema.prisma'));
     const names = readdirSync(path.join(root, 'migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(120);
-    expect(names.at(-1)).toBe(MIGRATION);
+    expect(names).toHaveLength(121);
+    expect(names[119]).toBe(MIGRATION);
     expect(
       sql(
         'SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations" WHERE finished_at IS NOT NULL ORDER BY migration_name',

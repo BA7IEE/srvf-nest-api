@@ -101,6 +101,11 @@ describe('D1-1 time policy physical foundation', () => {
     } catch {
       throw new Error('D1-1 isolated migration deploy failed (connection details suppressed)');
     }
+    // Establish the same isolated-fixture baseline as the existing finally cleanup.
+    // A preceding suite may leave valid policies; keep the empty-table assertions intact.
+    raw(
+      `BEGIN; TRUNCATE "ActivitySettlementTimeCommandReceipt", "ParticipantSettlementTimeBucketSource", "ParticipantSettlementTimeBucket", "ActivitySettlementTimeRevision", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationRevision", "ActivityTimePolicySelectionItem", "TimePolicyCommandReceipt", "TimePolicyVersion", "TimePolicy"; DELETE FROM "User" WHERE id='tp-test-user'; COMMIT;`,
+    );
   });
 
   it.each(['version', 'receipt'])(
@@ -182,7 +187,7 @@ describe('D1-1 time policy physical foundation', () => {
         await first.$disconnect();
         await second.$disconnect();
         raw(
-          `BEGIN; TRUNCATE "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationRevision", "ActivityTimePolicySelectionItem", "TimePolicyCommandReceipt", "TimePolicyVersion", "TimePolicy"; DELETE FROM "User" WHERE id='tp-test-user'; COMMIT;`,
+          `BEGIN; TRUNCATE "ActivitySettlementTimeCommandReceipt", "ParticipantSettlementTimeBucketSource", "ParticipantSettlementTimeBucket", "ActivitySettlementTimeRevision", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationRevision", "ActivityTimePolicySelectionItem", "TimePolicyCommandReceipt", "TimePolicyVersion", "TimePolicy"; DELETE FROM "User" WHERE id='tp-test-user'; COMMIT;`,
         );
       }
     },

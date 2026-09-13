@@ -193,6 +193,8 @@ model User {
   activityOutcomeCommandReceipts       ActivityOutcomeCommandReceipt[]
   participantTimeAllocationRevisions   ParticipantTimeAllocationRevision[]         @relation("ParticipantTimeAllocationRevisionCreator")
   participantTimeAllocationReceipts    ParticipantTimeAllocationCommandReceipt[]   @relation("ParticipantTimeAllocationReceiptActor")
+  settlementTimeRevisionsCreated       ActivitySettlementTimeRevision[]            @relation("SettlementTimeRevisionCreator")
+  settlementTimeCommandReceipts        ActivitySettlementTimeCommandReceipt[]
   outcomeFinalizationReceipts          ActivityOutcomeFinalizationReceipt[]
   metricRuleBindingsCreated            ActivityMetricRuleBinding[]                 @relation("MetricRuleBindingCreator")
   metricCandidatesCreated              ActivityMetricCandidate[]                   @relation("MetricCandidateCreator")
@@ -1588,6 +1590,8 @@ model Activity {
   timePolicySelectionReceipts        ActivityTimePolicySelectionCommandReceipt[]
   participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]         @relation("ParticipantTimeAllocationRevisionActivity")
   participantTimeAllocationReceipts  ParticipantTimeAllocationCommandReceipt[]   @relation("ParticipantTimeAllocationReceiptActivity")
+  settlementTimeRevisions            ActivitySettlementTimeRevision[]
+  settlementTimeCommandReceipts      ActivitySettlementTimeCommandReceipt[]
   outcomeCommandReceipts             ActivityOutcomeCommandReceipt[]
   outcomeRevisions                   ActivityOutcomeRevision[]
   metricCandidates                   ActivityMetricCandidate[]
@@ -1763,9 +1767,11 @@ model TimePolicyVersion {
   commandReceipts                    TimePolicyCommandReceipt[]
   activityTimePolicySelectionItems   ActivityTimePolicySelectionItem[]
   participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
+  settlementTimeBuckets              ParticipantSettlementTimeBucket[]
 
   @@unique([policyId, version], map: "tpv_policy_version_key")
   @@unique([id, policyId, definitionHash], map: "tpv_id_policy_hash_key")
+  @@unique([id, definitionHash, evaluatorVersion], map: "tpv_id_hash_evaluator_key")
   @@index([policyId, statusCode], map: "tpv_policy_status_idx")
 }
 
@@ -2564,6 +2570,15 @@ model ParticipantTimeAllocationRevision {
   definitionHash                String
   evaluatorVersion              Int
 
+  // D4 sealed-draft proof: all six null for original committed-only V1 allocations.
+  // Migration 121 checks the current run, active seal and independent receipt operation.
+  settlementDraftVersionId     String?
+  settlementEvidenceSealId     String?
+  settlementEvidenceRevision   Int?
+  settlementPopulationRevision Int?
+  settlementWorkflowRevision   Int?
+  settlementDraftContentHash   String?
+
   recognitionModeCode String
   manualReason        String?
   allocationJson      Json
@@ -2587,16 +2602,21 @@ model ParticipantTimeAllocationRevision {
   slices                      ParticipantTimeAllocationSlice[]
   evidence                    ParticipantTimeAllocationEvidence[]
   commandReceipt              ParticipantTimeAllocationCommandReceipt?
+  settlementDraftVersion      AttendanceSettlementVersion?             @relation("TimeAllocationSettlementDraft", fields: [settlementDraftVersionId, settlementEvidenceSealId, settlementEvidenceRevision, settlementPopulationRevision, settlementWorkflowRevision, settlementDraftContentHash], references: [id, evidenceSealId, evidenceRevision, populationRevision, workflowRevision, contentHash], onDelete: Restrict, onUpdate: Restrict, map: "ptar_settlement_draft_fkey")
+  settlementEvidenceSeal      EvidenceSeal?                            @relation("TimeAllocationSettlementSeal", fields: [settlementEvidenceSealId, activityId, settlementEvidenceRevision, settlementPopulationRevision, settlementWorkflowRevision], references: [id, activityId, evidenceRevision, populationRevision, workflowRevision], onDelete: Restrict, onUpdate: Restrict, map: "ptar_settlement_seal_fkey")
+  settlementBucketSources     ParticipantSettlementTimeBucketSource[]
 
   @@unique([participationIdentityId, segmentKey, revision], map: "ptar_identity_segment_revision_key")
   @@unique([id, activityId], map: "ptar_id_activity_key")
   @@unique([id, activityId, sessionId, memberId], map: "ptar_id_activity_session_member_key")
+  @@unique([id, sourceSegmentId, sourceSegmentRevision, activityId], map: "ptar_id_source_revision_activity_key")
   @@index([activityId, createdAt], map: "ptar_activity_created_idx")
   @@index([sourceSegmentId], map: "ptar_source_segment_idx")
   @@index([ruleSnapshotId], map: "ptar_snapshot_idx")
   @@index([timePolicySelectionRevisionId], map: "ptar_selection_idx")
   @@index([policyVersionId], map: "ptar_policy_version_idx")
   @@index([previousAllocationRevisionId], map: "ptar_previous_idx")
+  @@index([settlementDraftVersionId], map: "ptar_settlement_draft_idx")
 }
 
 model ParticipantTimeAllocationSlice {
@@ -2649,6 +2669,116 @@ model ParticipantTimeAllocationCommandReceipt {
   @@unique([actorUserId, operationCode, operationKey], map: "ptacr_actor_operation_key")
   @@unique([allocationRevisionId, activityId], map: "ptacr_revision_activity_key")
   @@index([activityId, createdAt], map: "ptacr_activity_created_idx")
+}
+
+// ===== Activity OS R4 / D4: permanently retained classified settlement snapshots =====
+// These are submitted review materials, not time-ledger entries. No mutable current pointer,
+// updatedAt, soft deletion, expiry, backfill or compatibility-hours projection is introduced.
+model ActivitySettlementTimeRevision {
+  id                        String   @id @default(cuid())
+  activityId                String
+  settlementRunId           String
+  settlementVersionId       String
+  revision                  Int
+  previousTimeRevisionId    String?
+  kindCode                  String
+  sourceDraftTimeRevisionId String?
+  evidenceSealId            String
+  evidenceRevision          Int
+  populationRevision        Int
+  workflowRevision          Int
+  draftContentHash          String
+  sourceSetHash             String
+  bucketContentHash         String
+  bucketCount               Int
+  sourceCount               Int
+  createdAt                 DateTime @default(now())
+  createdByUserId           String
+
+  activity                Activity                              @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "astr_activity_fkey")
+  settlementRun           AttendanceSettlementRun               @relation(fields: [settlementRunId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astr_run_fkey")
+  settlementVersion       AttendanceSettlementVersion           @relation(fields: [settlementVersionId, settlementRunId], references: [id, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "astr_version_fkey")
+  evidenceSeal            EvidenceSeal                          @relation(fields: [evidenceSealId, activityId, evidenceRevision, populationRevision, workflowRevision], references: [id, activityId, evidenceRevision, populationRevision, workflowRevision], onDelete: Restrict, onUpdate: Restrict, map: "astr_seal_fkey")
+  previousTimeRevision    ActivitySettlementTimeRevision?       @relation("SettlementTimeRevisionPrevious", fields: [previousTimeRevisionId, settlementRunId, activityId], references: [id, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astr_previous_fkey")
+  nextTimeRevisions       ActivitySettlementTimeRevision[]      @relation("SettlementTimeRevisionPrevious")
+  sourceDraftTimeRevision ActivitySettlementTimeRevision?       @relation("SettlementTimeRevisionSourceDraft", fields: [sourceDraftTimeRevisionId, settlementRunId, activityId], references: [id, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astr_source_draft_fkey")
+  submittedTimeRevisions  ActivitySettlementTimeRevision[]      @relation("SettlementTimeRevisionSourceDraft")
+  creator                 User                                  @relation("SettlementTimeRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "astr_creator_fkey")
+  buckets                 ParticipantSettlementTimeBucket[]
+  commandReceipt          ActivitySettlementTimeCommandReceipt?
+
+  @@unique([settlementRunId, revision], map: "astr_run_revision_key")
+  @@unique([id, activityId], map: "astr_id_activity_key")
+  @@unique([id, settlementRunId, activityId], map: "astr_id_run_activity_key")
+  // The submitted-only version uniqueness is a partial index in migration 121.
+  @@index([settlementVersionId], map: "astr_version_idx")
+  @@index([activityId, createdAt], map: "astr_activity_created_idx")
+  @@index([sourceDraftTimeRevisionId], map: "astr_source_draft_idx")
+}
+
+model ParticipantSettlementTimeBucket {
+  id                        String  @id @default(cuid())
+  timeRevisionId            String
+  activityId                String
+  participationIdentityId   String
+  categoryCode              String
+  calculatedSeconds         Int?
+  recognizedSeconds         Int
+  adjustmentReason          Json?
+  timePolicyVersionId       String?
+  definitionHash            String?
+  evaluatorVersion          Int?
+  quantumSeconds            Int?
+  rawCalculatedMilliseconds BigInt?
+  rawRecognizedMilliseconds BigInt
+
+  timeRevision          ActivitySettlementTimeRevision          @relation(fields: [timeRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "pstb_revision_fkey")
+  participationIdentity ActivityParticipationIdentity           @relation(fields: [participationIdentityId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "pstb_identity_fkey")
+  policyVersion         TimePolicyVersion?                      @relation(fields: [timePolicyVersionId, definitionHash, evaluatorVersion], references: [id, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "pstb_policy_fkey")
+  sources               ParticipantSettlementTimeBucketSource[]
+
+  @@unique([timeRevisionId, participationIdentityId, categoryCode], map: "pstb_revision_identity_category_key")
+  @@unique([id, timeRevisionId, activityId], map: "pstb_id_revision_activity_key")
+  @@index([activityId, participationIdentityId], map: "pstb_activity_identity_idx")
+}
+
+model ParticipantSettlementTimeBucketSource {
+  id                        String  @id @default(cuid())
+  bucketId                  String
+  timeRevisionId            String
+  activityId                String
+  allocationRevisionId      String
+  sourceSegmentId           String
+  sourceSegmentRevision     Int
+  rawCalculatedMilliseconds BigInt?
+  rawRecognizedMilliseconds BigInt
+
+  bucket             ParticipantSettlementTimeBucket   @relation(fields: [bucketId, timeRevisionId, activityId], references: [id, timeRevisionId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "pstbs_bucket_fkey")
+  allocationRevision ParticipantTimeAllocationRevision @relation(fields: [allocationRevisionId, sourceSegmentId, sourceSegmentRevision, activityId], references: [id, sourceSegmentId, sourceSegmentRevision, activityId], onDelete: Restrict, onUpdate: Restrict, map: "pstbs_allocation_source_fkey")
+
+  @@unique([bucketId, allocationRevisionId], map: "pstbs_bucket_allocation_key")
+  @@index([timeRevisionId], map: "pstbs_revision_idx")
+  @@index([allocationRevisionId], map: "pstbs_allocation_idx")
+}
+
+model ActivitySettlementTimeCommandReceipt {
+  id             String   @id @default(cuid())
+  actorUserId    String
+  activityId     String
+  operationCode  String
+  operationKey   String
+  requestHash    String
+  timeRevisionId String
+  resultJson     Json
+  createdAt      DateTime @default(now())
+
+  actor        User                           @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "astcr_actor_fkey")
+  activity     Activity                       @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "astcr_activity_fkey")
+  timeRevision ActivitySettlementTimeRevision @relation(fields: [timeRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astcr_revision_fkey")
+
+  @@unique([actorUserId, operationCode, operationKey], map: "astcr_actor_operation_key")
+  @@unique([timeRevisionId, activityId], map: "astcr_revision_activity_key")
+  @@index([activityId, createdAt], map: "astcr_activity_created_idx")
 }
 
 // ===== 活动责任闭环 PR1:负责人 / 协办历史 =====
@@ -5168,7 +5298,9 @@ model ActivityParticipationIdentity {
   allocationCandidates               ActivityAllocationCandidate[]
   allocationApplicationProjections   ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionIdentity")
   participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
+  settlementTimeBuckets              ParticipantSettlementTimeBucket[]
 
+  @@unique([id, activityId], map: "api_id_activity_key")
   @@unique([activityId, sessionId, memberId])
   // 第 85 migration：AllocationCandidate 以 identity + registration 复合 FK
   // 证明候选身份与永久报名头同锚；id 单列主键不能替代 PostgreSQL 的被引用复合 unique。
@@ -6013,9 +6145,12 @@ model EvidenceSeal {
   sealedBy User?    @relation("EvidenceSealSealer", fields: [sealedByUserId], references: [id], onDelete: Restrict)
 
   // 第 1 批第四刀反向 relation(合同 §3.19 / §3.26):仅关系映射,零标量字段。
-  settlementVersions AttendanceSettlementVersion[]
-  closureRevisions   ActivitySettlementClosureRevision[]
+  settlementVersions        AttendanceSettlementVersion[]
+  closureRevisions          ActivitySettlementClosureRevision[]
+  settlementTimeRevisions   ActivitySettlementTimeRevision[]
+  timeAllocationDraftProofs ParticipantTimeAllocationRevision[] @relation("TimeAllocationSettlementSeal")
 
+  @@unique([id, activityId, evidenceRevision, populationRevision, workflowRevision], map: "seal_id_activity_revisions_key")
   @@unique([activityId, sealRevision])
   @@index([activityId])
   @@index([statusCode])
@@ -6162,10 +6297,12 @@ model AttendanceSettlementRun {
 
   activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
 
-  versions           AttendanceSettlementVersion[]
-  postingBatches     LedgerPostingBatch[]
-  correctionRequests AttendanceCorrectionRequest[]
+  versions                AttendanceSettlementVersion[]
+  postingBatches          LedgerPostingBatch[]
+  correctionRequests      AttendanceCorrectionRequest[]
+  settlementTimeRevisions ActivitySettlementTimeRevision[]
 
+  @@unique([id, activityId], map: "asr_id_activity_key")
   @@index([statusCode], map: "attendance_settlement_run_status_idx")
 }
 
@@ -6212,14 +6349,18 @@ model AttendanceSettlementVersion {
   priorVersion    AttendanceSettlementVersion?  @relation("SettlementVersionPrior", fields: [priorVersionId], references: [id], onDelete: Restrict)
   derivedVersions AttendanceSettlementVersion[] @relation("SettlementVersionPrior")
 
-  reviewActions      SettlementReviewAction[]
-  resultRevisions    ParticipantSettlementResultRevision[]
-  postingBatches     LedgerPostingBatch[]
-  closureRevisions   ActivitySettlementClosureRevision[]
-  correctionRequests AttendanceCorrectionRequest[]         @relation("CorrectionRequestBaseVersion")
-  correctionApplied  CorrectionApplication[]               @relation("CorrectionApplicationNewVersion")
-  batchJobs          ActivityBatchJob[]
+  reviewActions             SettlementReviewAction[]
+  resultRevisions           ParticipantSettlementResultRevision[]
+  postingBatches            LedgerPostingBatch[]
+  closureRevisions          ActivitySettlementClosureRevision[]
+  correctionRequests        AttendanceCorrectionRequest[]         @relation("CorrectionRequestBaseVersion")
+  correctionApplied         CorrectionApplication[]               @relation("CorrectionApplicationNewVersion")
+  batchJobs                 ActivityBatchJob[]
+  settlementTimeRevisions   ActivitySettlementTimeRevision[]
+  timeAllocationDraftProofs ParticipantTimeAllocationRevision[]   @relation("TimeAllocationSettlementDraft")
 
+  @@unique([id, settlementRunId], map: "asv_id_run_key")
+  @@unique([id, evidenceSealId, evidenceRevision, populationRevision, workflowRevision, contentHash], map: "asv_id_seal_revisions_hash_key")
   @@unique([settlementRunId, version], map: "attendance_settlement_version_run_version_key")
   @@index([settlementRunId], map: "attendance_settlement_version_run_idx")
   @@index([statusCode], map: "attendance_settlement_version_status_idx")

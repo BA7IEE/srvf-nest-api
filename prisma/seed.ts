@@ -19,6 +19,7 @@ import {
   ACTIVITY_OUTCOME_PERMISSION_SEED,
   ACTIVITY_TEMPLATE_PERMISSION_SEED,
   ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED,
+  ACTIVITY_TIME_SETTLEMENT_PERMISSION_SEED,
   ACTIVITY_TIME_POLICY_PERMISSION_SEED,
   ACTIVITY_PERMISSION_SEED,
   ACTIVITY_REGISTRATION_PERMISSION_SEED,
@@ -1589,6 +1590,7 @@ async function seedAttachmentPermissions(prisma: PrismaClient): Promise<void> {
     ...ACTIVITY_OUTCOME_PERMISSION_SEED,
     ...ACTIVITY_TEMPLATE_PERMISSION_SEED,
     ...ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED,
+    ...ACTIVITY_TIME_SETTLEMENT_PERMISSION_SEED,
     ...ACTIVITY_TIME_POLICY_PERMISSION_SEED,
   ]) {
     await prisma.permission.upsert({
@@ -3031,6 +3033,7 @@ export const RBAC_SEED_CATALOG = Object.freeze({
     activityOutcome: readonlyPermissionSeeds(ACTIVITY_OUTCOME_PERMISSION_SEED),
     activityTemplate: readonlyPermissionSeeds(ACTIVITY_TEMPLATE_PERMISSION_SEED),
     activityTimeAllocation: readonlyPermissionSeeds(ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED),
+    activityTimeSettlement: readonlyPermissionSeeds(ACTIVITY_TIME_SETTLEMENT_PERMISSION_SEED),
     activityTimePolicy: readonlyPermissionSeeds(ACTIVITY_TIME_POLICY_PERMISSION_SEED),
     rbac: readonlyPermissionSeeds(RBAC_PERMISSION_SEED),
     bootstrap: readonlyPermissionSeeds(ALL_PERMISSION_SEED),

@@ -72,6 +72,19 @@ describe('BizCode', () => {
     ]).toEqual([20213, 20214, 20215, 20216, 20217]);
   });
 
+  it('D4 分类时长结算错误码固定为连续八项且不复用旧错误', () => {
+    expect([
+      BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID.code,
+      BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE.code,
+      BizCode.ACTIVITY_TIME_SETTLEMENT_STALE.code,
+      BizCode.ACTIVITY_TIME_SETTLEMENT_COMMAND_CONFLICT.code,
+      BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY.code,
+      BizCode.ACTIVITY_TIME_SETTLEMENT_POLICY_MIXED.code,
+      BizCode.ACTIVITY_TIME_SETTLEMENT_OVERLAP.code,
+      BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT.code,
+    ]).toEqual([20218, 20219, 20220, 20221, 20222, 20223, 20224, 20225]);
+  });
+
   describe.each(entries)('%s', (key, entry) => {
     it('key 命名为大写 SNAKE_CASE', () => {
       expect(key).toMatch(KEY_PATTERN);

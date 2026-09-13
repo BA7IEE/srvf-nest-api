@@ -10,6 +10,16 @@ import type { TimePolicyCategory } from './activity-time-policy-definition';
 export const ACTIVITY_TIME_ALLOCATION_OPERATION = 'recognize_time_allocation' as const;
 export const ACTIVITY_TIME_ALLOCATION_SCHEMA_VERSION = 1 as const;
 
+/** Server-resolved D4 proof, never accepted by the original V1 parser. */
+export interface ActivityTimeAllocationSettlementProof {
+  readonly settlementDraftVersionId: string;
+  readonly settlementEvidenceSealId: string;
+  readonly settlementEvidenceRevision: number;
+  readonly settlementPopulationRevision: number;
+  readonly settlementWorkflowRevision: number;
+  readonly settlementDraftContentHash: string;
+}
+
 export interface ActivityTimeAllocationSliceInput {
   readonly categoryCode: TimePolicyCategory;
   readonly intervalKindCode: 'service_segment';
