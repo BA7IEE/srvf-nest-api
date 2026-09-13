@@ -8,6 +8,12 @@
 
 ## 0. 草稿依赖独立候选验收（2026-09-13）
 
+### 身份锁属主修复追加授权与验证
+
+维护者明确扩展 `src/modules/users/user-active-identity.query.ts` 及 `.spec.ts`，联合授权清单由122增至124路径；依赖候选由27增至29路径。只抽出原有联合共享锁到Users属主，保留原SQL及参数模板、Activity→job→run之后的调用位置、调用方事务和锁后判权。原读取原语不增加隐式锁或缓存，既有测试断言不变；仅补3项精确锁合同测试。ROUTE_AUTHZ与CODEMAP只刷新派生摘要，不改门禁。
+
+原提交 `1ded3e7e` 的CI五组E2E通过，但新债务检查真实失败两项跨域身份表访问；此前本地自检通过不代表该独立检查通过。修复后 `identity-lock-newdebt.log` 扫描564项、未知0，完整单测378组／8230通过／5既有todo，typecheck、build、全仓lint通过。隔离E2E首次因macOS `/tmp` 与 `/private/tmp` 路径不一致未发现测试，未记为通过；改用实际物理路径执行同一测试，不修改检查配置或断言。`app_test_w98` 120条迁移冷回放通过，`identity-lock-e2e.json`完整56项通过（375.682秒），`identity-lock-contract.json`1049项／2快照通过（3.883秒）。授权摘要、CODEMAP和边界metadata检查通过；保留CODEMAP两类既有警告。按授权先更新#1326，再同步#1327；均保持Draft，不合并、不启用Gate，新HEAD的CI另行核验。
+
 独立候选从 `eef0bbe4` 导出，独立依赖副本和 Prisma 生成物；实际改动27路径，均在已批准122路径内。除§16的草稿依赖及三项追加授权外，`harness/domain-map.json`仅刷新该候选模块接线产生的摘要。schema、120条历史migration、seed、权限目录、contract、OpenAPI及客户端与基线逐字一致，D4新表／第121条migration／接口不在本候选。
 
 - `prisma:generate`、完整typecheck、build、6GiB配置下的原lint命令通过；未修改内存配置或检查规则。
