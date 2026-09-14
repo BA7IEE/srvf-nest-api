@@ -36,7 +36,7 @@ const { ActivityBatchWorker } = require('./src/modules/activities/activity-batch
 const db = new PrismaService();
 (async () => {
   try {
-    if (process.env.JEST_WORKER_ID !== '98') throw new Error('isolated worker required');
+    if (!/^[1-9][0-9]?$/.test(process.env.JEST_WORKER_ID || '')) throw new Error('isolated worker required');
     await assertConnectedTestDatabase(db);
     const start = new Promise(resolve => process.once('message', resolve));
     process.send({ kind: 'ready' });

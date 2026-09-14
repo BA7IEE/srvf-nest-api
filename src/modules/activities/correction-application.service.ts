@@ -612,7 +612,9 @@ export class CorrectionApplicationService {
           );
 
           // 幂等:已有 `preparing` / `committed` 的应用 ⇒ 原样返回(不再准备第二遍)。
-          await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
+          {
+            await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
+          }
           const resumable = await this.findResumableApplication(tx, request, run);
           if (resumable !== null) return resumable;
 
@@ -801,7 +803,9 @@ export class CorrectionApplicationService {
       await this.lockActivity(tx, anchor.activityId);
       const run = await this.lockRun(tx, anchor.activityId);
       const request = await this.lockRequest(tx, input.correctionRequestId);
-      await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
+      {
+        await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
+      }
       const application = await this.lockApplication(
         tx,
         request.id,

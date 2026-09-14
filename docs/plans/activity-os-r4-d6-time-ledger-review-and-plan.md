@@ -548,3 +548,15 @@ copyBuckets补齐后单档2000通过（`d6-copy-buckets-2000.log`，84.424秒，
 生成物刷新后的完整harness自测已退出0（`d6-copy-map-harness-final.log`），三组分别553通过/0失败/1已知缺口、138通过/0失败/5已知缺口、68通过/0失败；分组性质不同，不合成一种保证。现有本地收尾证据齐：七套联动65项、契约1063项/2快照、unit8594项/5 todo、冷lint/typecheck/build及生成物/守护检查。尚未重签3b/4b，未提交、推送或创建D6 PR，最终SHA CI及整体复审/真实业务验收未完成；Gate与生产未动。此为本地验证完成，不是D6已合并或T0完成。
 
 2026-09-15维护者已明确确认D6重签3b（第122条，摘要2a5249bcf8bd）及4b（权限265、审计169总计/164活跃、既有read权限覆盖已提交分类账本，目录摘要3db338e67bc5）。现场核验两文件完整SHA-256与上一条一致后更新CUTOVER_SIGNOFF日期、理由、依据及migration-total=122，保留旧签历史；`d6-signed-check.log`签字门禁退出0。本轮实际写集101/授权102，RBAC_MAP无内容变化；进入已批准的提交、推送、Draft PR流程。不合并、不Ready、不操作生产或Gate，跨模型整体复审仍按维护者决定延后、不记为通过。开工预检仅报已获准保留的当前脏树及既有#1324 Draft，不将该预检写成全绿。
+
+### 14.1 PR #1331 首轮 CI 兼容修复（2026-09-15）
+
+首版提交`b1cb705a`已创建Draft PR #1331。CI 34869605126失败：C2 D1当前全量迁移计数仍为121；D6独立子进程错误地限定本地worker98；服务段115前历史夹具无法读取当前D6所需的空分类表；三处既有更正写调用的AST定位随新增前置校验变化。可信红区审批已通过，不替代上述失败。
+
+维护者批准追加两份旧测试`test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts`、`test/e2e/activity-service-segment-correction-pending-migration.e2e-spec.ts`及两份身份登记`harness/architecture-debt.json`、`harness/architecture-debt-baseline.json`；授权总范围由102到106路径。随后明确批准在原写集`correction-application.service.ts`中仅将新增两处校验包入独立代码块，恢复原三条登记。最终两份架构登记与HEAD逐字一致，无基线替换、新增豁免或裁判改动。`ids:check`208条当前身份全部匹配；`newdebt:check`未知0；`debt:check`229条登记完整，三命令链退出0。
+
+旧C2仅改当前计数及标题121→122，历史112→113验证不变。服务段夹具仍回放到115前，先清理真实历史schema，再建立两张CHECK(false)的空读表以供当前服务判断无分类事实；不执行121/122 migration，不mock服务、不改变历史升级及业务断言。首轮夹具空表过早建立导致具名清理触发器检查拒绝，已调整建立顺序而未放宽清理器。一次合跑被C2专用w98测试结束删库影响后续同w98测试；改为显式串行执行历史恢复→并发→C2专用库，15项通过（40.627/15.475/15.005秒），不将前两次失败记为通过。
+
+子进程改为校验有效worker编号，并继续由`assertConnectedTestDatabase`核验实际库名与派生名完全一致；本地运行仍只准w98，CI仍沿既有worker派生。生产校验的参数、await顺序、事务位置、拒绝行为和全部断言不变；独立块只避免新增ExpressionStatement挤占旧调用结构定位。保留原架构身份及历史，无新增别名集合。代码地图由生成器刷新，最终SHA CI另行判定。
+
+当前代码w98串行复核正常退出0（`d6-ci-alignment-e2e.log`）：服务段历史升级5项/95.728秒；D6主链、独立进程和既有结算更正3套53项/235.570秒；C2当前/历史迁移8项/19.485秒。合计5套66项全部通过，包括D6满额档和两处分类更正拒绝；无超时或断言调整。全仓unit390套8594项通过、5 todo不变；lint和typecheck均0，测试类型检查、build、签字、counts、readtax及CODEMAP通过。该次quick整体仍退出1，因为两处ROUTE_AUTHZ生成摘要陈旧；随后由原生成器刷新两处摘要，635条声明完全不变，独立完整harness复核退出0：guards 553通过/0失败/1已知缺口，eslint 138通过/0失败/5已知缺口，不将原quick改写为通过。原102路径加本轮四项授权共106路径，当前实际103路径、越界0；三份获准但未改的文件为RBAC_MAP和两份架构身份登记。
