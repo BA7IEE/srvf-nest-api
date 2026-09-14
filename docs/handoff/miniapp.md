@@ -1,5 +1,9 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## D5 只读时长对账（本轮新增，未上线）
+
+`GET /api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/shadow` 使用明确 submitted 修订和既有 `activity.time-settlement.read`。响应 `data.resultPage` 是标准分页，`data.summary` 是完整分母；两项差额按新减旧、秒为单位，null 不得显示为零。`matched` 不等于审批或入账。翻页/导出须核验每页 inputFingerprint 一致；历史版本也实时检查撤权。其余分类单独展示，无自动调整按钮。安全导出和永久保留见 [影子对账 SOP](../ops/activity-time-shadow-reconciliation.md)。本轮只交付接口及客户端类型，未实现或发布前端页面。
+
 ## D4 分类时长结算工作台（本轮实施分支，未合并、未部署）
 
 ### 大规模草稿任务接线（不新增接口字段）

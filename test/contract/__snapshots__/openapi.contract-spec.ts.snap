@@ -16788,6 +16788,252 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppTimeShadowCategoryDto": {
+    "properties": {
+      "bucketId": {
+        "description": "指定时长修订中的桶 ID，可用于既有来源下钻",
+        "type": "string",
+      },
+      "calculatedSeconds": {
+        "description": "新计算秒数；未知保留 null",
+        "nullable": true,
+        "type": "number",
+      },
+      "categoryCode": {
+        "description": "冻结分类；非志愿类别不并入志愿时长",
+        "type": "string",
+      },
+      "manuallyAdjusted": {
+        "description": "存在人工认定，不返回原始理由",
+        "type": "boolean",
+      },
+      "recognizedSeconds": {
+        "description": "新认定秒数",
+        "type": "number",
+      },
+    },
+    "required": [
+      "bucketId",
+      "categoryCode",
+      "calculatedSeconds",
+      "recognizedSeconds",
+      "manuallyAdjusted",
+    ],
+    "type": "object",
+  },
+  "AppTimeShadowItemDto": {
+    "properties": {
+      "calculatedDifferenceSeconds": {
+        "description": "新志愿计算秒减旧计算秒；不可比较为 null",
+        "nullable": true,
+        "type": "number",
+      },
+      "categories": {
+        "description": "该身份各分类桶，不混合非志愿类别",
+        "items": {
+          "$ref": "#/components/schemas/AppTimeShadowCategoryDto",
+        },
+        "type": "array",
+      },
+      "legacyCalculatedSeconds": {
+        "description": "旧计算小时精确换算为秒；缺项为 null",
+        "nullable": true,
+        "type": "number",
+      },
+      "legacyRecognizedSeconds": {
+        "description": "旧认定小时精确换算为秒；缺项为 null",
+        "nullable": true,
+        "type": "number",
+      },
+      "participationIdentityId": {
+        "description": "参与身份 ID，不按成员合并",
+        "type": "string",
+      },
+      "reasons": {
+        "description": "已证事实或 unexplained；不自动接受差异",
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "recognizedDifferenceSeconds": {
+        "description": "新志愿认定秒减旧认定秒；不可比较为 null",
+        "nullable": true,
+        "type": "number",
+      },
+      "status": {
+        "description": "数值比较结果，不构成放行",
+        "enum": [
+          "matched",
+          "different",
+          "not_comparable",
+        ],
+        "type": "string",
+      },
+    },
+    "required": [
+      "participationIdentityId",
+      "status",
+      "reasons",
+      "legacyCalculatedSeconds",
+      "legacyRecognizedSeconds",
+      "calculatedDifferenceSeconds",
+      "recognizedDifferenceSeconds",
+      "categories",
+    ],
+    "type": "object",
+  },
+  "AppTimeShadowPageDto": {
+    "properties": {
+      "items": {
+        "description": "按参与身份稳定排序的本页结果",
+        "items": {
+          "$ref": "#/components/schemas/AppTimeShadowItemDto",
+        },
+        "type": "array",
+      },
+      "page": {
+        "description": "当前页码",
+        "example": 1,
+        "type": "number",
+      },
+      "pageSize": {
+        "description": "每页数量",
+        "example": 20,
+        "type": "number",
+      },
+      "total": {
+        "description": "总记录数",
+        "example": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "items",
+      "total",
+      "page",
+      "pageSize",
+    ],
+    "type": "object",
+  },
+  "AppTimeShadowReportDto": {
+    "properties": {
+      "activityId": {
+        "description": "活动 ID",
+        "type": "string",
+      },
+      "bucketContentHash": {
+        "description": "D4 桶集合 hash",
+        "type": "string",
+      },
+      "comparatorVersion": {
+        "description": "比较器版本",
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "draftContentHash": {
+        "description": "D4 冻结草稿 hash，与旧提交 hash 分开",
+        "type": "string",
+      },
+      "formatVersion": {
+        "description": "报告格式版本",
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "inputFingerprint": {
+        "description": "完整比较输入指纹；跨页不一致必须拒绝拼接",
+        "type": "string",
+      },
+      "legacyContentHash": {
+        "description": "旧版本已存内容 hash，仅作版本锚，不声称已重算验证",
+        "type": "string",
+      },
+      "resultPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppTimeShadowPageDto",
+          },
+        ],
+        "description": "标准分页结果",
+      },
+      "settlementRunId": {
+        "description": "同链结算 run ID",
+        "type": "string",
+      },
+      "settlementVersionId": {
+        "description": "明确旧提交版本 ID，绝不各取 latest",
+        "type": "string",
+      },
+      "sourceSetHash": {
+        "description": "D4 来源集合 hash",
+        "type": "string",
+      },
+      "summary": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppTimeShadowSummaryDto",
+          },
+        ],
+        "description": "完整集合摘要，非当前页摘要",
+      },
+      "timeRevisionId": {
+        "description": "明确 submitted 时长修订 ID",
+        "type": "string",
+      },
+    },
+    "required": [
+      "formatVersion",
+      "comparatorVersion",
+      "activityId",
+      "settlementRunId",
+      "settlementVersionId",
+      "timeRevisionId",
+      "legacyContentHash",
+      "draftContentHash",
+      "sourceSetHash",
+      "bucketContentHash",
+      "inputFingerprint",
+      "summary",
+      "resultPage",
+    ],
+    "type": "object",
+  },
+  "AppTimeShadowSummaryDto": {
+    "properties": {
+      "different": {
+        "description": "可比较但存在差额身份数",
+        "type": "number",
+      },
+      "empty": {
+        "description": "双方皆空，不能作为零差异验收",
+        "type": "boolean",
+      },
+      "matched": {
+        "description": "精确相等身份数，不代表政策批准",
+        "type": "number",
+      },
+      "notComparable": {
+        "description": "不可比较身份数",
+        "type": "number",
+      },
+      "total": {
+        "description": "双方身份并集总数",
+        "type": "number",
+      },
+    },
+    "required": [
+      "total",
+      "matched",
+      "different",
+      "notComparable",
+      "empty",
+    ],
+    "type": "object",
+  },
   "ApproveActivityPublishReviewDto": {
     "properties": {
       "operationKey": {
@@ -140580,6 +140826,275 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "分页读取指定不可变分类版本的桶 [rbac: activity.time-settlement.read]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/shadow": {
+    "get": {
+      "operationId": "AppManagedActivityTimeSettlementController_shadow",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "timeRevisionId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppTimeShadowReportDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20218: 活动分类结算请求无效",
+                    "enum": [
+                      40000,
+                      20218,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动分类结算请求无效(code=20218)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问",
+                    "enum": [
+                      20219,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20220: 分类结算草稿、封印或来源已变化，请刷新后重试; 20221: 此操作标识已用于其他分类结算请求; 20222: 分类结算参与来源尚未就绪; 20223: 同一参与身份的时长政策不一致，不能合并结算; 20224: 同一成员的参与时段重叠，不能重复结算; 20225: 活动分类结算规模超过本次处理上限",
+                    "enum": [
+                      20220,
+                      20221,
+                      20222,
+                      20223,
+                      20224,
+                      20225,
+                    ],
+                    "example": 20220,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "分类结算草稿、封印或来源已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "分类结算草稿、封印或来源已变化，请刷新后重试(code=20220) / 此操作标识已用于其他分类结算请求(code=20221) / 分类结算参与来源尚未就绪(code=20222) / 同一参与身份的时长政策不一致，不能合并结算(code=20223) / 同一成员的参与时段重叠，不能重复结算(code=20224) / 活动分类结算规模超过本次处理上限(code=20225)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读取指定提交版本的新旧时长影子对账 [rbac: activity.time-settlement.read]",
       "tags": [
         "Mobile - Managed Activity Time Settlement",
       ],

@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:98f479dbd76ca2d9123b1b44b82326463f695dcfdf3d00991e05c35c62eec5bc
+// inputDigest: sha256:85f5b84bda53b11e497cd1bd513934b8b132abdf2ec613bfd6c636007597d266
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -2378,6 +2378,56 @@ export interface AppTimeSettlementWorkbenchDto {
   "latestRevision": AppTimeSettlementRevisionDto;
   "ready": boolean;
   "blockers": AppTimeSettlementBlockerDto[];
+}
+
+export interface AppTimeShadowCategoryDto {
+  "bucketId": string;
+  "categoryCode": string;
+  "calculatedSeconds": number | null;
+  "recognizedSeconds": number;
+  "manuallyAdjusted": boolean;
+}
+
+export interface AppTimeShadowItemDto {
+  "participationIdentityId": string;
+  "status": "matched" | "different" | "not_comparable";
+  "reasons": string[];
+  "legacyCalculatedSeconds": number | null;
+  "legacyRecognizedSeconds": number | null;
+  "calculatedDifferenceSeconds": number | null;
+  "recognizedDifferenceSeconds": number | null;
+  "categories": AppTimeShadowCategoryDto[];
+}
+
+export interface AppTimeShadowPageDto {
+  "items": AppTimeShadowItemDto[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+}
+
+export interface AppTimeShadowReportDto {
+  "formatVersion": 1;
+  "comparatorVersion": 1;
+  "activityId": string;
+  "settlementRunId": string;
+  "settlementVersionId": string;
+  "timeRevisionId": string;
+  "legacyContentHash": string;
+  "draftContentHash": string;
+  "sourceSetHash": string;
+  "bucketContentHash": string;
+  "inputFingerprint": string;
+  "summary": AppTimeShadowSummaryDto;
+  "resultPage": AppTimeShadowPageDto;
+}
+
+export interface AppTimeShadowSummaryDto {
+  "total": number;
+  "matched": number;
+  "different": number;
+  "notComparable": number;
+  "empty": boolean;
 }
 
 export interface ApproveAppManagedRegistrationDto {

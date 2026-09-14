@@ -11,6 +11,7 @@ import {
 } from '../attendances/participation-segment.facade';
 import { historicalAttendanceRoleFromRuleSnapshot } from './activity-time-allocation-policy';
 import { ActivityTimeSettlementAccessService } from './activity-time-settlement-access.service';
+import { compareTimeShadow } from './activity-time-shadow-policy';
 import {
   buildTimeSettlementBuckets,
   timeSettlementSourceSetHash,
@@ -588,6 +589,97 @@ export class ActivityTimeSettlementQueryService {
           take: page.pageSize,
         });
         return pageResult(rows.map(presentTimeSettlementBucket), revision.bucketCount, page);
+      },
+      { kind: 'time-revision', id: timeRevisionId },
+    );
+  }
+
+  async shadow(
+    activityId: string,
+    timeRevisionId: string,
+    page: TimeSettlementPage,
+    user: CurrentUserPayload,
+  ) {
+    return await this.read(
+      activityId,
+      user,
+      async (tx, checkVersion) => {
+        const revision = await tx.activitySettlementTimeRevision.findFirst({
+          where: { id: timeRevisionId, activityId, kindCode: 'submitted' },
+        });
+        if (!revision)
+          throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE);
+        checkVersion(revision.settlementVersionId);
+        const version = await tx.attendanceSettlementVersion.findFirst({
+          where: {
+            id: revision.settlementVersionId,
+            settlementRunId: revision.settlementRunId,
+            submittedAt: { not: null },
+          },
+          select: { contentHash: true },
+        });
+        if (!version)
+          throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE);
+        // One bounded collection per side. Never join independently selected "latest" versions.
+        const legacy = await tx.participantSettlementResultRevision.findMany({
+          where: { settlementVersionId: revision.settlementVersionId },
+          select: {
+            participationIdentityId: true,
+            calculatedServiceHours: true,
+            recognizedServiceHours: true,
+            adjustmentReason: true,
+          },
+          orderBy: { participationIdentityId: 'asc' },
+          take: TIME_SETTLEMENT_LIMITS.identities + 1,
+        });
+        const buckets = await tx.participantSettlementTimeBucket.findMany({
+          where: { timeRevisionId, activityId },
+          select: {
+            id: true,
+            participationIdentityId: true,
+            categoryCode: true,
+            calculatedSeconds: true,
+            recognizedSeconds: true,
+            adjustmentReason: true,
+          },
+          orderBy: [{ participationIdentityId: 'asc' }, { categoryCode: 'asc' }],
+          take: TIME_SETTLEMENT_LIMITS.buckets + 1,
+        });
+        const { items, ...report } = compareTimeShadow(
+          {
+            activityId,
+            timeRevisionId,
+            settlementRunId: revision.settlementRunId,
+            settlementVersionId: revision.settlementVersionId,
+            legacyContentHash: version.contentHash,
+            draftContentHash: revision.draftContentHash,
+            sourceSetHash: revision.sourceSetHash,
+            bucketContentHash: revision.bucketContentHash,
+          },
+          legacy.map((row) => ({
+            participationIdentityId: row.participationIdentityId,
+            calculatedServiceHours: row.calculatedServiceHours.toString(),
+            recognizedServiceHours: row.recognizedServiceHours.toString(),
+            manuallyAdjusted: row.adjustmentReason !== null,
+          })),
+          buckets.map((row) => ({
+            id: row.id,
+            participationIdentityId: row.participationIdentityId,
+            categoryCode: row.categoryCode,
+            calculatedSeconds: row.calculatedSeconds,
+            recognizedSeconds: row.recognizedSeconds,
+            manuallyAdjusted:
+              Array.isArray(row.adjustmentReason) && row.adjustmentReason.length > 0,
+          })),
+        );
+        return {
+          ...report,
+          resultPage: pageResult(
+            items.slice((page.page - 1) * page.pageSize, page.page * page.pageSize),
+            items.length,
+            page,
+          ),
+        };
       },
       { kind: 'time-revision', id: timeRevisionId },
     );

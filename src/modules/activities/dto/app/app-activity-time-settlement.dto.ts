@@ -18,10 +18,103 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
-import { PaginationQueryDto } from '../../../../common/dto/pagination.dto';
+import { PageResultDto, PaginationQueryDto } from '../../../../common/dto/pagination.dto';
 import { AppManagedActivityParamsDto } from './app-managed-activity.dto';
 
 const CATEGORIES = ['volunteer_service', 'training', 'organization', 'non_creditable'] as const;
+
+export class AppTimeShadowCategoryDto {
+  @ApiProperty({ description: '指定时长修订中的桶 ID，可用于既有来源下钻' })
+  bucketId!: string;
+  @ApiProperty({ description: '冻结分类；非志愿类别不并入志愿时长' })
+  categoryCode!: string;
+  @ApiProperty({ description: '新计算秒数；未知保留 null', type: Number, nullable: true })
+  calculatedSeconds!: number | null;
+  @ApiProperty({ description: '新认定秒数' })
+  recognizedSeconds!: number;
+  @ApiProperty({ description: '存在人工认定，不返回原始理由' })
+  manuallyAdjusted!: boolean;
+}
+
+export class AppTimeShadowItemDto {
+  @ApiProperty({ description: '参与身份 ID，不按成员合并' })
+  participationIdentityId!: string;
+  @ApiProperty({
+    description: '数值比较结果，不构成放行',
+    enum: ['matched', 'different', 'not_comparable'],
+  })
+  status!: string;
+  @ApiProperty({ description: '已证事实或 unexplained；不自动接受差异', type: [String] })
+  reasons!: string[];
+  @ApiProperty({ description: '旧计算小时精确换算为秒；缺项为 null', type: Number, nullable: true })
+  legacyCalculatedSeconds!: number | null;
+  @ApiProperty({ description: '旧认定小时精确换算为秒；缺项为 null', type: Number, nullable: true })
+  legacyRecognizedSeconds!: number | null;
+  @ApiProperty({
+    description: '新志愿计算秒减旧计算秒；不可比较为 null',
+    type: Number,
+    nullable: true,
+  })
+  calculatedDifferenceSeconds!: number | null;
+  @ApiProperty({
+    description: '新志愿认定秒减旧认定秒；不可比较为 null',
+    type: Number,
+    nullable: true,
+  })
+  recognizedDifferenceSeconds!: number | null;
+  @ApiProperty({
+    description: '该身份各分类桶，不混合非志愿类别',
+    type: [AppTimeShadowCategoryDto],
+  })
+  categories!: AppTimeShadowCategoryDto[];
+}
+
+export class AppTimeShadowPageDto extends PageResultDto<AppTimeShadowItemDto> {
+  @ApiProperty({ description: '按参与身份稳定排序的本页结果', type: [AppTimeShadowItemDto] })
+  declare items: AppTimeShadowItemDto[];
+}
+
+export class AppTimeShadowSummaryDto {
+  @ApiProperty({ description: '双方身份并集总数' })
+  total!: number;
+  @ApiProperty({ description: '精确相等身份数，不代表政策批准' })
+  matched!: number;
+  @ApiProperty({ description: '可比较但存在差额身份数' })
+  different!: number;
+  @ApiProperty({ description: '不可比较身份数' })
+  notComparable!: number;
+  @ApiProperty({ description: '双方皆空，不能作为零差异验收' })
+  empty!: boolean;
+}
+
+export class AppTimeShadowReportDto {
+  @ApiProperty({ description: '报告格式版本', enum: [1] })
+  formatVersion!: number;
+  @ApiProperty({ description: '比较器版本', enum: [1] })
+  comparatorVersion!: number;
+  @ApiProperty({ description: '活动 ID' })
+  activityId!: string;
+  @ApiProperty({ description: '同链结算 run ID' })
+  settlementRunId!: string;
+  @ApiProperty({ description: '明确旧提交版本 ID，绝不各取 latest' })
+  settlementVersionId!: string;
+  @ApiProperty({ description: '明确 submitted 时长修订 ID' })
+  timeRevisionId!: string;
+  @ApiProperty({ description: '旧版本已存内容 hash，仅作版本锚，不声称已重算验证' })
+  legacyContentHash!: string;
+  @ApiProperty({ description: 'D4 冻结草稿 hash，与旧提交 hash 分开' })
+  draftContentHash!: string;
+  @ApiProperty({ description: 'D4 来源集合 hash' })
+  sourceSetHash!: string;
+  @ApiProperty({ description: 'D4 桶集合 hash' })
+  bucketContentHash!: string;
+  @ApiProperty({ description: '完整比较输入指纹；跨页不一致必须拒绝拼接' })
+  inputFingerprint!: string;
+  @ApiProperty({ description: '完整集合摘要，非当前页摘要', type: AppTimeShadowSummaryDto })
+  summary!: AppTimeShadowSummaryDto;
+  @ApiProperty({ description: '标准分页结果', type: AppTimeShadowPageDto })
+  resultPage!: AppTimeShadowPageDto;
+}
 
 export class AppTimeSettlementAllocationParamsDto extends AppManagedActivityParamsDto {
   @ApiProperty({ minLength: 1, maxLength: 64 })

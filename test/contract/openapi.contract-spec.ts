@@ -101,6 +101,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
     '/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/sources',
   ],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/allocations'],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/shadow',
+  ],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/prepare'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/submit'],
   // C3-1: separate immutable rule bindings and system candidate commands/read model.
@@ -1166,7 +1170,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 633; // D4 +8 explicit classified-settlement routes; existing 625 unchanged.
+const EXPECTED_ROUTE_COUNT = 634; // D5 +1 read-only shadow route; existing 633 unchanged.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -3299,7 +3303,7 @@ describe('OpenAPI 契约快照', () => {
     expect(operation?.responses?.['201']).toBeUndefined();
   });
 
-  it('D4 八个分类结算入口仅属 Human App，三个显式写命令返回 200', () => {
+  it('D4 八个入口及 D5 对账入口仅属 Human App，三个显式写命令返回 200', () => {
     const prefix = '/api/app/v1/my/managed-activities/{activityId}/time-settlement';
     const routes = [
       [prefix, 'get'],
@@ -3307,6 +3311,7 @@ describe('OpenAPI 契约快照', () => {
       [prefix + '/allocations/{allocationRevisionId}', 'get'],
       [prefix + '/revisions/{timeRevisionId}/buckets', 'get'],
       [prefix + '/revisions/{timeRevisionId}/sources', 'get'],
+      [prefix + '/revisions/{timeRevisionId}/shadow', 'get'],
       [prefix + '/allocations', 'post'],
       [prefix + '/prepare', 'post'],
       [prefix + '/submit', 'post'],
@@ -3456,6 +3461,43 @@ describe('OpenAPI 契约快照', () => {
       'sliceCount',
       'sourceSegmentId',
       'sourceSegmentRevision',
+    ]);
+  });
+
+  it('D5 报告严格区分未知与零，完整摘要和分页同在只读响应内', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const row = schemas.AppTimeShadowItemDto as OpenApiSchema;
+    expect(row.properties?.status.enum).toEqual(['matched', 'different', 'not_comparable']);
+    for (const key of [
+      'legacyCalculatedSeconds',
+      'legacyRecognizedSeconds',
+      'calculatedDifferenceSeconds',
+      'recognizedDifferenceSeconds',
+    ]) {
+      expect(row.properties?.[key]).toMatchObject({ type: 'number', nullable: true });
+    }
+    expect(Object.keys(row.properties ?? {}).sort()).toEqual(
+      [
+        'participationIdentityId',
+        'status',
+        'reasons',
+        'legacyCalculatedSeconds',
+        'legacyRecognizedSeconds',
+        'calculatedDifferenceSeconds',
+        'recognizedDifferenceSeconds',
+        'categories',
+      ].sort(),
+    );
+    const report = schemas.AppTimeShadowReportDto as OpenApiSchema;
+    expect(report.properties?.resultPage).toBeDefined();
+    expect(report.properties?.summary).toBeDefined();
+    expect(report.properties?.inputFingerprint).toMatchObject({ type: 'string' });
+    const page = schemas.AppTimeShadowPageDto as OpenApiSchema;
+    expect(Object.keys(page.properties ?? {}).sort()).toEqual([
+      'items',
+      'page',
+      'pageSize',
+      'total',
     ]);
   });
 

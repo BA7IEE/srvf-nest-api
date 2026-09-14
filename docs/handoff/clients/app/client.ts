@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:98f479dbd76ca2d9123b1b44b82326463f695dcfdf3d00991e05c35c62eec5bc
+// inputDigest: sha256:85f5b84bda53b11e497cd1bd513934b8b132abdf2ec613bfd6c636007597d266
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -259,6 +259,11 @@ import type {
   AppTimeSettlementSpecialIntervalDto,
   AppTimeSettlementSpecialIntervalsDto,
   AppTimeSettlementWorkbenchDto,
+  AppTimeShadowCategoryDto,
+  AppTimeShadowItemDto,
+  AppTimeShadowPageDto,
+  AppTimeShadowReportDto,
+  AppTimeShadowSummaryDto,
   ApproveAppManagedRegistrationDto,
   BindMyPhoneDto,
   BindMyWechatDto,
@@ -1028,6 +1033,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** 分页读取指定不可变分类版本的桶 [rbac: activity.time-settlement.read] */
     AppManagedActivityTimeSettlementControllerBuckets(activityId: string, timeRevisionId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AppTimeSettlementBucketDto[] }>> {
       return fetcher<PageResultDto & { "items": AppTimeSettlementBucketDto[] }>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/revisions/${timeRevisionId}/buckets`, query });
+    },
+    /** 读取指定提交版本的新旧时长影子对账 [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeSettlementControllerShadow(activityId: string, timeRevisionId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<AppTimeShadowReportDto>> {
+      return fetcher<AppTimeShadowReportDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/revisions/${timeRevisionId}/shadow`, query });
     },
     /** 分页追溯指定分类版本的来源，可筛选 bucketId [rbac: activity.time-settlement.read] */
     AppManagedActivityTimeSettlementControllerBucketSources(activityId: string, timeRevisionId: string, query?: { "page"?: number; "pageSize"?: number; "bucketId"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AppTimeSettlementBucketSourceDto[] }>> {
