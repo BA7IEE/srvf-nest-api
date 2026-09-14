@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -160,7 +161,11 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
     preparation = app.get(LedgerPreparationService);
     posting = app.get(LedgerPostingService);
     // Catalogs do not cascade from User; clear only this worker's prior test fixtures.
-    await prisma.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+      }),
+    );
     const actor = await createTestUser(app, { username: key(), role: Role.SUPER_ADMIN });
     actorId = actor.id;
     actorUsername = actor.username;

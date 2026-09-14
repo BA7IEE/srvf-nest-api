@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 
@@ -160,11 +161,19 @@ describe('Activity OS R1 A7 周期 Series 与按需生成', () => {
 
   beforeEach(async () => {
     await resetDb(app);
-    await prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries" RESTART IDENTITY CASCADE',
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries" RESTART IDENTITY CASCADE',
+        );
+      }),
     );
-    await prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+        );
+      }),
     );
 
     const admin = await prisma.user.create({

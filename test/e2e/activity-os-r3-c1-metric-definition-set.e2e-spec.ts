@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { timeLedgerFixtureTriggerSql } from '../setup/time-ledger-fixture-cleanup';
 import { execFileSync } from 'node:child_process';
 import { cpSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,7 +15,7 @@ import {
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
 const SCRATCH_WORKER_ID = 97;
-const CURRENT_MIGRATION_COUNT = 121;
+const CURRENT_MIGRATION_COUNT = 122;
 const PREVIOUS_MIGRATION_COUNT = 109;
 const MIGRATION_NAME = '20260905160133_activity_os_r3_c1_metric_definition_set';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
@@ -183,8 +184,12 @@ describe('C1 D1 PostgreSQL catalogue invariants', () => {
     dropWorkerDatabase(SCRATCH_WORKER_ID);
   });
   beforeEach(() => {
+    const cleanup = timeLedgerFixtureTriggerSql(databaseName());
     sql(
-      'TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition" CASCADE; ' +
+      'BEGIN; ' +
+        cleanup.before +
+        ' TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition" CASCADE; ' +
+        cleanup.after +
         definitionSql('c1_definition_1', 'served') +
         ';' +
         definitionSql('c1_definition_2', 'trained') +
@@ -193,7 +198,8 @@ describe('C1 D1 PostgreSQL catalogue invariants', () => {
         ';' +
         setSql('c1_set_2', 'training') +
         ';' +
-        itemSql(),
+        itemSql() +
+        '; COMMIT;',
     );
   });
 

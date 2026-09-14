@@ -1,5 +1,9 @@
 # prisma — 本地铁律
 
+当前 D6 implementation 工作树为 **122 个 migration、167 个模型**，新增 `ParticipationTimeLedgerManifest` / `ParticipationTimeLedgerEntry`。第122条为 `20260914120000_activity_os_r4_d6_time_ledger`；两表不可变、Restrict复合同链引用，旧121条SQL不改，无存量回填或业务数据删除。D6处于实施验收中，最终3b签字、非空升级、满额及最终CI尚未全部完成，不代表已提交、合并或部署。隔离测试仅获准使用app_test_w98；不操作生产、不启用Gate。
+
+## D4 历史实施记录（不是当前待办或计数）
+
 当前 D4 实施分支有 **121 个 migration**、165 个模型，起点 main `eef0bbe4` 已含 D3/#1323；本轮未提交、未合并。第 121 条 `20260913090000_activity_os_r4_d4_time_bucket_settlement` 新增分类修订、桶、来源及命令收据四张不可变表，并为 D3 认定增加六个可空草稿证明字段；零存量回填、零业务数据删除、旧 120 条 SQL 不改。四表 Restrict 同链外键及完整性触发器独立验证证明、聚合、指纹、数量、收据和不可变性；旧 D3 行六字段全空，原 committed-only 合同保留。本轮已在 app_test_w98 验证空库 121 条校验和及非空 120→121 升级，旧认定、切片、收据和参与段保持不变；完整验证与查询预算尚未通过，3b/4b 待维护者重签。仅授权 w98 测试夹具重建及验证后提交、推送、开 PR；不合并、不操作生产、不启用 Gate、不删除业务数据。下方内容保留为历史时点。
 
 > **D1-1 已落地（2026-09-10）**：[#1310](https://github.com/BA7IEE/srvf-nest-api/pull/1310) 已合并至 main `04699ace`，18项PR检查通过，[合并后main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34474531083)通过。实际39路径，154模型/118迁移；第118条SQL的3b已重签。TimePolicy、TimePolicyVersion、TimePolicyCommandReceipt及纯解析/生命周期已落地，尚无目录HTTP入口。维护者现授权D1-1台账更正及D1-2精确计划起草，仅文档、不实施；整个D1仍未完成，D1-3选择/发布冻结及D2–D8仍待后续。未操作生产、启用Gate或删除业务数据。下方过程记录保留为历史，不代表当前待合并状态。

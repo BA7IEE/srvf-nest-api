@@ -2706,7 +2706,9 @@ model ActivitySettlementTimeRevision {
   creator                 User                                  @relation("SettlementTimeRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "astr_creator_fkey")
   buckets                 ParticipantSettlementTimeBucket[]
   commandReceipt          ActivitySettlementTimeCommandReceipt?
+  timeLedgerManifests     ParticipationTimeLedgerManifest[]
 
+  @@unique([id, settlementVersionId, settlementRunId, activityId], map: "astr_id_version_run_activity_key")
   @@unique([settlementRunId, revision], map: "astr_run_revision_key")
   @@unique([id, activityId], map: "astr_id_activity_key")
   @@unique([id, settlementRunId, activityId], map: "astr_id_run_activity_key")
@@ -2736,7 +2738,9 @@ model ParticipantSettlementTimeBucket {
   participationIdentity ActivityParticipationIdentity           @relation(fields: [participationIdentityId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "pstb_identity_fkey")
   policyVersion         TimePolicyVersion?                      @relation(fields: [timePolicyVersionId, definitionHash, evaluatorVersion], references: [id, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "pstb_policy_fkey")
   sources               ParticipantSettlementTimeBucketSource[]
+  timeLedgerEntries     ParticipationTimeLedgerEntry[]
 
+  @@unique([id, timeRevisionId, activityId, participationIdentityId, categoryCode, recognizedSeconds], map: "pstb_id_rev_activity_identity_category_seconds_key")
   @@unique([timeRevisionId, participationIdentityId, categoryCode], map: "pstb_revision_identity_category_key")
   @@unique([id, timeRevisionId, activityId], map: "pstb_id_revision_activity_key")
   @@index([activityId, participationIdentityId], map: "pstb_activity_identity_idx")
@@ -6533,18 +6537,65 @@ model LedgerPostingBatch {
   preparedBy        User?                       @relation("LedgerPostingBatchPreparer", fields: [preparedByUserId], references: [id], onDelete: Restrict)
   committedBy       User?                       @relation("LedgerPostingBatchCommitter", fields: [committedByUserId], references: [id], onDelete: Restrict)
 
-  ledgerEntries     ParticipationLedgerEntry[]
-  dayStates         MemberContributionDayState[]
-  closureRevisions  ActivitySettlementClosureRevision[]
-  correctionApplied CorrectionApplication[]             @relation("CorrectionApplicationNewBatch")
-  batchJobs         ActivityBatchJob[]
-  effectiveSegments ParticipantServiceSegmentRevision[] @relation("SegmentEffectiveBatch")
+  ledgerEntries       ParticipationLedgerEntry[]
+  dayStates           MemberContributionDayState[]
+  closureRevisions    ActivitySettlementClosureRevision[]
+  correctionApplied   CorrectionApplication[]             @relation("CorrectionApplicationNewBatch")
+  batchJobs           ActivityBatchJob[]
+  effectiveSegments   ParticipantServiceSegmentRevision[] @relation("SegmentEffectiveBatch")
+  timeLedgerManifests ParticipationTimeLedgerManifest[]
 
+  @@unique([id, settlementVersionId, settlementRunId], map: "lpb_id_version_run_key")
   @@unique([settlementVersionId, batchRevision], map: "ledger_posting_batch_version_revision_key")
   // §11.3 点名的两条:
   @@index([statusCode, createdAt], map: "ledger_posting_batch_status_created_idx")
   @@index([settlementVersionId], map: "ledger_posting_batch_version_idx")
   @@index([settlementRunId], map: "ledger_posting_batch_run_idx")
+}
+
+// D6: immutable classified seconds, visible only with the existing committed batch.
+model ParticipationTimeLedgerManifest {
+  id                     String   @id @default(cuid())
+  postingBatchId         String   @unique(map: "ptlm_batch_key")
+  activityId             String
+  settlementRunId        String
+  settlementVersionId    String
+  timeRevisionId         String
+  bucketContentHash      String
+  sourceSetHash          String
+  contentHash            String
+  expectedEntryCount     Int
+  recognizedSecondsTotal BigInt
+  formatVersion          Int
+  createdAt              DateTime @default(now())
+
+  postingBatch LedgerPostingBatch             @relation(fields: [postingBatchId, settlementVersionId, settlementRunId], references: [id, settlementVersionId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_batch_fkey")
+  timeRevision ActivitySettlementTimeRevision @relation(fields: [timeRevisionId, settlementVersionId, settlementRunId, activityId], references: [id, settlementVersionId, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_revision_fkey")
+  entries      ParticipationTimeLedgerEntry[]
+
+  @@unique([id, postingBatchId, timeRevisionId, activityId], map: "ptlm_id_batch_revision_activity_key")
+  @@index([timeRevisionId, postingBatchId], map: "ptlm_revision_idx")
+}
+
+model ParticipationTimeLedgerEntry {
+  id                      String   @id @default(cuid())
+  manifestId              String
+  postingBatchId          String
+  activityId              String
+  timeRevisionId          String
+  bucketId                String
+  participationIdentityId String
+  categoryCode            String
+  recognizedSeconds       Int
+  entryKey                String   @unique(map: "ptle_entry_key")
+  contentHash             String
+  createdAt               DateTime @default(now())
+
+  manifest ParticipationTimeLedgerManifest @relation(fields: [manifestId, postingBatchId, timeRevisionId, activityId], references: [id, postingBatchId, timeRevisionId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptle_manifest_fkey")
+  bucket   ParticipantSettlementTimeBucket @relation(fields: [bucketId, timeRevisionId, activityId, participationIdentityId, categoryCode, recognizedSeconds], references: [id, timeRevisionId, activityId, participationIdentityId, categoryCode, recognizedSeconds], onDelete: Restrict, onUpdate: Restrict, map: "ptle_bucket_fkey")
+
+  @@unique([manifestId, bucketId], map: "ptle_manifest_bucket_key")
+  @@index([manifestId, participationIdentityId, categoryCode, id], map: "ptle_manifest_identity_category_idx")
 }
 
 // ===== §3.23 ParticipationLedgerEntry:正式账本 =====

@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
@@ -168,8 +169,12 @@ describe('ActivityRegistrationsService audit characterization', () => {
 
   async function truncateActivityRegistrations(): Promise<void> {
     await assertConnectedTestDatabase(ctx.prisma);
-    await ctx.prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+    await ctx.prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+        );
+      }),
     );
   }
 

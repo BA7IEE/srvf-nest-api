@@ -1,6 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
 import { assertConnectedTestDatabase, assertTestDatabaseUrl } from './test-db';
+import { withTimeLedgerFixtureCleanup } from './time-ledger-fixture-cleanup';
 
 // 每个 spec 文件 beforeAll 调用一次,在 createTestApp() 之后,
 // 把 User 表清空,保证文件间互不干扰(隔离粒度到 spec 文件级,
@@ -205,7 +206,14 @@ export async function resetDb(app: INestApplication): Promise<void> {
   // (DNS 劫持 / 端口转发都能让一条合规 URL 落到别的机器上),而下面这条是
   // 69 张业务表的 TRUNCATE —— 判错一次就是不可逆的数据破坏。
   await assertConnectedTestDatabase(prisma);
-  await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "activity_publish_reviews", "activity_responsibility_assignments", "insurance_eligibility_evidences", "notification_outbox_intents", "throttler_buckets", "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "storage_settings", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "wecom_settings", "wecom_identities", "wecom_auth_attempts", "realname_verification_settings", "RecruitmentCertificateClaim", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "storage_object_operations", "storage_objects", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "activity_positions", "ActivityPlace", "PlacePreset", "ActivityEmergencyFollowUpItem", "ActivityEmergencyInitiation", "ActivityCreationCommandReceipt", "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "CertificateRecognitionIssuer", "CertificateRecognitionPolicy", "CertificateStandard", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "MemberNoReservation", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+  await prisma.$transaction(
+    (tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "activity_publish_reviews", "activity_responsibility_assignments", "insurance_eligibility_evidences", "notification_outbox_intents", "throttler_buckets", "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "storage_settings", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "wecom_settings", "wecom_identities", "wecom_auth_attempts", "realname_verification_settings", "RecruitmentCertificateClaim", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "storage_object_operations", "storage_objects", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "activity_positions", "ActivityPlace", "PlacePreset", "ActivityEmergencyFollowUpItem", "ActivityEmergencyInitiation", "ActivityCreationCommandReceipt", "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "CertificateRecognitionIssuer", "CertificateRecognitionPolicy", "CertificateStandard", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "MemberNoReservation", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE',
+        );
+      }),
+    // Full fixture cleanup only; production transaction budgets are unchanged.
+    { timeout: 30_000 },
   );
 }

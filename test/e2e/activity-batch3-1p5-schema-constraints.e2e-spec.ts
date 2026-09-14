@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -244,7 +245,11 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
     // A4 后 Activity.selectedTemplateVersionId 会反向引用 ActivityTemplate；但 resetDb 已在
     // 当前 worker 清掉 Activity（公共清单不列 ActivityTemplate）。因此这里再局部 TRUNCATE
     // 自己的 Template fixture 仍成立，避免跨 it 残留；不触碰任何其它数据库。
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "ActivityTemplate" RESTART IDENTITY CASCADE');
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe('TRUNCATE TABLE "ActivityTemplate" RESTART IDENTITY CASCADE');
+      }),
+    );
 
     organizationId = (
       await prisma.organization.create({

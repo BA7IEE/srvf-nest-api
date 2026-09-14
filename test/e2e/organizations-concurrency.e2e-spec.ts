@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
@@ -97,7 +98,11 @@ describe('organizations topology serialization', () => {
   });
 
   beforeEach(async () => {
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+      }),
+    );
     await prisma.auditLog.deleteMany({ where: { resourceType: 'organization' } });
   });
 

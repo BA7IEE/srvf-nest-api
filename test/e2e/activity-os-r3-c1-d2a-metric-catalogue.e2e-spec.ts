@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import request from 'supertest';
@@ -55,7 +56,11 @@ describe('C1 D2a catalogue HTTP and PostgreSQL', () => {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     await assertConnectedTestDatabase(prisma);
     // Test-only: D2b adds Activity -> metric set; keep FK-related fixture cleanup together.
-    await prisma.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition" CASCADE`;
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt","ActivityMetricSetItem","ActivityMetricSetVersion","ActivityMetricDefinition" CASCADE`;
+      }),
+    );
     const root = await createTestUser(app, { username: 'c1_metric_root', role: Role.SUPER_ADMIN });
     rootId = root.id;
     const user = await createTestUser(app, { username: 'c1_metric_plain' });

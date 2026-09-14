@@ -370,7 +370,13 @@ function schemaModels(): SchemaModel[] {
         // other models or change the lifecycle/status-predicate discovery below.
         const d4RevisionKind =
           model.name === 'ActivitySettlementTimeRevision' && field.name === 'kindCode';
-        if (field.type === 'String' && (stateLikeString(field.name) || d4RevisionKind)) {
+        // D6 exact immutable category inventory only; do not generalize categoryCode discovery.
+        const d6LedgerCategory =
+          model.name === 'ParticipationTimeLedgerEntry' && field.name === 'categoryCode';
+        if (
+          field.type === 'String' &&
+          (stateLikeString(field.name) || d4RevisionKind || d6LedgerCategory)
+        ) {
           stateFields.push(field.name);
         }
         if (stateLikeString(field.name)) statusPredicateFields.push(field.name);

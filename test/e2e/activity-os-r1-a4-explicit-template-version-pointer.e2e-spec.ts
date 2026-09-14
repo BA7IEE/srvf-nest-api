@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
@@ -17,7 +18,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 92;
 const A3_MIGRATION_COUNT = 102;
-const CURRENT_MIGRATION_COUNT = 121;
+const CURRENT_MIGRATION_COUNT = 122;
 const MIGRATION_NAME = '20260901120000_activity_os_r1_a4_explicit_template_version';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const COLD_MIGRATION_REPLAY_TIMEOUT_MS = 180_000;
@@ -167,8 +168,12 @@ describe('Activity OS R1 A4 Activity 显式 Template Version 指针', () => {
     await resetDb(app);
     // resetDb 已清当前 worker 的 Activity；公共清表不负责可独立存在的 Template，故本 spec
     // 只在 reset 之后清自己的 Template / Family fixture，避免跨 it 残留。
-    await prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+        );
+      }),
     );
     organizationId = (
       await prisma.organization.create({

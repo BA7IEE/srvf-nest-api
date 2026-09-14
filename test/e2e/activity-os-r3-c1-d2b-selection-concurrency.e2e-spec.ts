@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma, Role, UserStatus, MemberStatus, OrganizationStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
@@ -33,7 +34,11 @@ describe('C1 D2b real lock-wait selection races with independent pools', () => {
     prisma = app.get(PrismaService);
     await resetDb(app);
     await assertConnectedTestDatabase(prisma);
-    await prisma.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+      }),
+    );
     peer = await createTestApp();
     writer = app.get(ActivityMetricSelectionService);
     otherWriter = peer.get(ActivityMetricSelectionService);

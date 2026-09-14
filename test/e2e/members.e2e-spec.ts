@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { DictItemStatus, MemberStatus, Role } from '@prisma/client';
 import request from 'supertest';
@@ -427,7 +428,11 @@ describe('members 模块', () => {
       // 自包含:清空 Organization(级联清 memberships/closure),重建根+子两级(D7 includeDescendants 用)。
       // TRUNCATE ... CASCADE 会同时清空带 organizationId 外键的整张 RoleBinding 表，
       // 包括本 spec 的 GLOBAL biz-admin 绑定；重绑后再验证列表契约。
-      await prisma.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+      await prisma.$transaction((tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+        }),
+      );
       await grantBizAdminToUser(app, adminId, bizAdminRoleId);
       rootOrgId = await createOrg('F1成员搜索根');
       childOrgId = await createOrg('F1成员搜索子', rootOrgId);

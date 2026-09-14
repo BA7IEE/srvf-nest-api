@@ -2126,6 +2126,31 @@ export const BizCode = {
     message: '活动分类结算规模超过本次处理上限',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_TIME_LEDGER_SOURCE_INVALID: {
+    code: 20226,
+    message: '分类时长账本来源不完整或不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_LEDGER_CONTENT_CONFLICT: {
+    code: 20227,
+    message: '分类时长账本幂等内容冲突',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_LEDGER_NOT_READY: {
+    code: 20228,
+    message: '分类时长账本尚未准备完整',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_LEDGER_CORRECTION_UNAVAILABLE: {
+    code: 20229,
+    message: '分类时长账本更正尚未开放',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_LEDGER_REFERENCE_UNAVAILABLE: {
+    code: 20230,
+    message: '分类时长账本不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -175,7 +176,11 @@ describe('Activity OS R1 A2 TemplateFamily / TemplateVersion schema 约束', () 
     await resetDb(app);
     // resetDb 会清掉有 Organization FK 的 Family；legacy Template 可没有 familyId，
     // 因而本 spec 只清自己的原表，避免跨 it 的 legacy fixture 残留。
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "ActivityTemplate" RESTART IDENTITY CASCADE');
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe('TRUNCATE TABLE "ActivityTemplate" RESTART IDENTITY CASCADE');
+      }),
+    );
     organizationId = (
       await prisma.organization.create({
         data: { name: uniq('org'), nodeTypeCode: 'team' },

@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma, Role, UserStatus, MemberStatus, OrganizationStatus } from '@prisma/client';
 import request from 'supertest';
@@ -101,7 +102,11 @@ describe('C3-1 candidate database lock races', () => {
     await assertConnectedTestDatabase(prisma);
     await resetDb(app);
     // Catalogs do not cascade from User; clear only this worker's prior test fixtures.
-    await prisma.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+      }),
+    );
     const actor = await createTestUser(app, { username: key(), role: Role.SUPER_ADMIN });
     actorId = actor.id;
     const member = await prisma.member.create({

@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:c16c031b0ca5a7766711c807c9ca9b8a881f96c52ea1ed6cd50aa4278fafaf69 |
-| endpoint count | 634 |
+| inputDigest | sha256:36527ed7b38b86b9e44dcf347b7347041c140b378532259e1d459377b49670af |
+| endpoint count | 635 |
 | legacy [auth] count | 182 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -30,7 +30,7 @@
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
 | admin | 313 | 313 | 0 |
-| app | 192 | 192 | 0 |
+| app | 193 | 193 | 0 |
 | system | 89 | 89 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
@@ -41,7 +41,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 419 |
+| rbac | 420 |
 | auth | 182 |
 | unclassified | 0 |
 
@@ -113,7 +113,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:c16c031b0ca5a7766711c807c9ca9b8a881f96c52ea1ed6cd50aa4278fafaf69",
+  "inputDigest": "sha256:36527ed7b38b86b9e44dcf347b7347041c140b378532259e1d459377b49670af",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -4365,6 +4365,28 @@
       "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/buckets",
       "controller": "AppManagedActivityTimeSettlementController",
       "handler": "buckets",
+      "legacy": "rbac",
+      "policy": {
+        "admission": "app-member",
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity.time-settlement.read",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [
+          "org-scope",
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/ledger",
+      "controller": "AppManagedActivityTimeSettlementController",
+      "handler": "ledger",
       "legacy": "rbac",
       "policy": {
         "admission": "app-member",
@@ -11717,8 +11739,8 @@
 | `activity-registration.read.record` | 7 | GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/activities/:activityId/registrations · GET /api/admin/v1/activities/:activityId/registrations/export · GET /api/admin/v1/members/:memberId/registrations · GET /api/admin/v1/meta/participation-overview · GET /api/admin/v1/registrations |
 | `activity.create.cross-org` | 7 | PATCH /api/app/v1/my/managed-activities/:activityId · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
 | `activity.outcome.read` | 7 | GET /api/app/v1/my/managed-activities/:activityId/ending-workbench · GET /api/app/v1/my/managed-activities/:activityId/metric-candidates/:candidateId · GET /api/app/v1/my/managed-activities/:activityId/outcome-confirmed · GET /api/app/v1/my/managed-activities/:activityId/outcome-report · GET /api/app/v1/my/managed-activities/:activityId/outcomes · GET /api/app/v1/my/managed-activities/:activityId/outcomes/:outcomeRevisionId · POST /api/app/v1/my/managed-activities/outcome-reports/query |
+| `activity.time-settlement.read` | 7 | GET /api/app/v1/my/managed-activities/:activityId/time-settlement · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/allocations/:allocationRevisionId · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/buckets · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/ledger · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/shadow · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/sources · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/sources |
 | `recruitment-application.read.record` | 7 | GET /api/admin/v1/recruitment/applications · GET /api/admin/v1/recruitment/applications/:applicationId/certificate-claims · GET /api/admin/v1/recruitment/applications/:id · GET /api/admin/v1/recruitment/certificate-claims/:id · GET /api/admin/v1/recruitment/cycles/:id/publicity-list · GET /api/admin/v1/recruitment/cycles/:id/stats · POST /api/admin/v1/recruitment/applications/export |
-| `activity.time-settlement.read` | 6 | GET /api/app/v1/my/managed-activities/:activityId/time-settlement · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/allocations/:allocationRevisionId · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/buckets · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/shadow · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/sources · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/sources |
 | `member.read.record` | 6 | GET /api/admin/v1/members · GET /api/admin/v1/members/:id · GET /api/admin/v1/members/:id/audience-tags · GET /api/admin/v1/members/:id/official-portrait · GET /api/admin/v1/members/options · GET /api/admin/v1/organizations/:orgId/members/options |
 | `org.read.node` | 6 | GET /api/admin/v1/organizations · GET /api/admin/v1/organizations/:id · GET /api/admin/v1/organizations/options · GET /api/admin/v1/organizations/tree · GET /api/admin/v1/organizations/tree-options · GET /api/admin/v1/organizations/tree-with-summary |
 | `supervision-assignment.read.record` | 6 | GET /api/admin/v1/members/:memberId/supervision-scope · GET /api/admin/v1/organizations/:orgId/supervisors · GET /api/admin/v1/supervision-assignments · GET /api/admin/v1/supervision-assignments/:id · GET /api/admin/v1/supervision-assignments/page · POST /api/admin/v1/supervision-assignments/coverage-preview |
@@ -12190,12 +12212,13 @@
 | GET | /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId | Mobile - Managed Activities | rbac | RBAC; admission=-; codes=activity.settlement-generate.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1138; src/modules/activities/controllers/app-managed-activities.controller.ts:1159 |
 | GET | /api/app/v1/my/managed-activities/:activityId/template-resolution | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1214; src/modules/activities/controllers/app-managed-activities.controller.ts:1234 |
 | GET | /api/app/v1/my/managed-activities/:activityId/time-policy-selection | Mobile - Managed Activity Time Policy Selection | rbac | RBAC; admission=app-member; codes=activity.time-policy.read; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-policy-selection.controller.ts:69; src/modules/activities/controllers/app-managed-activity-time-policy-selection.controller.ts:91 |
-| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:89; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:102 |
-| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/allocations/:allocationRevisionId | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:125; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:139 |
-| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/buckets | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:142; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:157 |
-| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/shadow | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:160; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:177 |
-| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/sources | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:180; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:197 |
-| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/sources | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:105; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:122 |
+| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:92; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:105 |
+| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/allocations/:allocationRevisionId | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:128; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:142 |
+| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/buckets | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:145; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:160 |
+| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/ledger | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:163; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:187 |
+| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/shadow | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:190; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:207 |
+| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/sources | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:210; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:227 |
+| GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/sources | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:108; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:125 |
 | GET | /api/app/v1/my/managed-activities/:activityId/visitors | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:147; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:169 |
 | GET | /api/app/v1/my/managed-activities/control-plane/status | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=-; engine=none | code | src/modules/activities/controllers/app-managed-activity-control-plane.controller.ts:27; src/modules/activities/controllers/app-managed-activity-control-plane.controller.ts:33 |
 | GET | /api/app/v1/my/managed-activities/metric-set-options | Mobile - Managed Activity Metrics | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-metrics.controller.ts:37; src/modules/activities/controllers/app-managed-activity-metrics.controller.ts:61 |
@@ -12503,9 +12526,9 @@
 | POST | /api/app/v1/my/managed-activities/:activityId/submit-change-review | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1470; src/modules/activities/controllers/app-managed-activities.controller.ts:1498 |
 | POST | /api/app/v1/my/managed-activities/:activityId/submit-publish-review | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1415; src/modules/activities/controllers/app-managed-activities.controller.ts:1439 |
 | POST | /api/app/v1/my/managed-activities/:activityId/terminate | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:309; src/modules/activities/controllers/app-managed-activities.controller.ts:336 |
-| POST | /api/app/v1/my/managed-activities/:activityId/time-settlement/allocations | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-allocation.recognize; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:200; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:219 |
-| POST | /api/app/v1/my/managed-activities/:activityId/time-settlement/prepare | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.prepare; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:226; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:243 |
-| POST | /api/app/v1/my/managed-activities/:activityId/time-settlement/submit | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.settlement-submit.record,activity.time-settlement.prepare; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:250; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:270 |
+| POST | /api/app/v1/my/managed-activities/:activityId/time-settlement/allocations | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-allocation.recognize; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:230; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:249 |
+| POST | /api/app/v1/my/managed-activities/:activityId/time-settlement/prepare | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.prepare; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:256; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:273 |
+| POST | /api/app/v1/my/managed-activities/:activityId/time-settlement/submit | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.settlement-submit.record,activity.time-settlement.prepare; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:280; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:300 |
 | POST | /api/app/v1/my/managed-activities/:activityId/transfer-initiator | Mobile - Managed Activity Responsibilities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record,activity.create.cross-org; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:172; src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:206 |
 | POST | /api/app/v1/my/managed-activities/:activityId/transfer-owner | Mobile - Managed Activity Responsibilities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:217; src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:243 |
 | POST | /api/app/v1/my/managed-activities/:activityId/unarchive | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:378; src/modules/activities/controllers/app-managed-activities.controller.ts:405 |

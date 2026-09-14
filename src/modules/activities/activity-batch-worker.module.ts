@@ -12,6 +12,8 @@ import { ACTIVITY_BATCH_AUTO_COMMIT_ENABLED, ActivityBatchWorker } from './activ
 import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
 import { LedgerPostingService } from './ledger-posting.service';
 import { LedgerPreparationService } from './ledger-preparation.service';
+import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
+import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
 import { AuthzModule } from '../authz/authz.module';
 import { UsersModule } from '../users/users.module';
@@ -41,6 +43,8 @@ import { SettlementNotificationProducer } from './settlement-notification-produc
     LedgerPostingAuditRecorder,
     LedgerPostingService,
     LedgerPreparationService,
+    ParticipationTimeLedgerService,
+    ParticipationTimeLedgerAccessService,
     LedgerReadyBatchCommitter,
     ContributionCalculator,
     SettlementDraftAuditRecorder,
