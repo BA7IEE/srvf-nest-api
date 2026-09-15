@@ -241,7 +241,7 @@ HTTP满额不能只测内部Service。当前 `main.ts` 使用Nest默认body pars
 
 ### 10.4 数据库函数与可见性
 
-新migration固定候选 `20260915180000_activity_os_r4_d7_2_fact_correction/migration.sql`（本轮只验证路径未存在，未来排序预期124；不创建文件，不预签SQL hash）。
+新migration固定候选 `20260915180000_activity_os_r4_d7_2_fact_correction/migration.sql`（D7-1 SQL修复前置追加124后，未来排序预期125；实施前重新核验，不创建文件，不预签SQL hash）。
 
 - 新增 `cpta_insert_guard`：pending仅application preparing、请求approved/applying，逐项匹配已批准v3 JSON与base来源；预生成ID不碰真实表。
 - `cptae_insert_guard`：证据与pending同活动、ordinal完整；附件属主Service复核，加FK禁止已引用内容被硬删。
@@ -253,7 +253,7 @@ HTTP满额不能只测内部Service。当前 `main.ts` 使用Nest默认body pars
 - 四表各具名immutable/no_truncate；延迟闭合挂proof、binding、batch/receipt实际插入或状态变化，事务终态必须application committed、request applied、batch committed、receipt齐全，否则回滚。prepared证明允许无bindings；ready receipt不允许单独提交。
 - CHECK/unique/FK名称使用cpta/cptae/ctsp/ctab前缀，SQL错误只映射明确集合；未知SQLSTATE、连接、deadlock不得吞成业务成功。
 
-旧SQL文件0修改；新列全nullable、四新表空，不回填旧业务，不DROP旧列/表。冻结前123条checksum清单，冷回放124与有值123→124分别验证；旧历史阶段计数保持原值，只有“当前全量”123→124。
+旧SQL文件0修改；新列全nullable、四新表空，不回填旧业务，不DROP旧列/表。先完成独立D7-1 SQL修复，再冻结前124条checksum清单，冷回放125与有值124→125分别验证；旧历史阶段计数保持原值，只有“当前全量”124→125。前文123基线为评审初稿历史，不代表修复后的实施基线。
 
 ### 10.5 退回重提与幂等
 
@@ -418,7 +418,7 @@ HTTP submit hash域 `attendance-correction-human-submit-v1`，v3业务正文cano
 123. `test/e2e/activity-service-segment-correction-concurrency.e2e-spec.ts`
 124. `src/modules/activities/CLAUDE.md`
 
-旧测试适配细则：所有CURRENT_MIGRATION_COUNT=123及当前全回放length/title更新为124；D7-1历史122→123测试仍停在123、保留原校验，不让“恢复到current”污染历史目标。D3/D4/D6固定索引119/120/121、D7-1固定122不动。清理时显式纳入新四表的合法测试夹具，按现有具名测试触发器处理，不删除原断言、不改全局超时。115旧schema空壳仅补新查询实际需要的列与CHECK(false)，不能让旧库提前拥有124功能。此写集不包含主库重建、生产SQL或业务清理。
+旧测试适配细则：D7-1 SQL修复后，CURRENT_MIGRATION_COUNT=124及当前全回放length/title更新为125；D7-1历史122→123测试仍停在123、保留原校验，不让“恢复到current”污染历史目标。D3/D4/D6固定索引119/120/121、D7-1固定122不动。清理时显式纳入新四表的合法测试夹具，按现有具名测试触发器处理，不删除原断言、不改全局超时。115旧schema空壳仅补新查询实际需要的列与CHECK(false)，不能让旧库提前拥有125功能。此写集不包含主库重建、生产SQL或业务清理。
 
 ## 12. 授权与最终验收包
 
@@ -445,7 +445,7 @@ pnpm harness:grant 'src/bootstrap/apply-global-setup.ts' --reason "维护者确�
 pnpm harness:grant 'src/bootstrap/apply-global-setup.spec.ts' --reason "维护者确认 D7-2 最终计划第10–13节；仅该精确路径"
 ```
 
-只在实际执行worktree发放，换worktree必须重新核验；AI不运行grant。SQL完成后请求3b（预期124条、实际完整摘要）；权限仍265、Audit169总计/164活跃，但Human访问范围说明已变，必须用实际目录hash重签4b。是否需要其它签字按实际SQL/依赖摘要核查，不提前填通过。
+只在实际执行worktree发放，换worktree必须重新核验；AI不运行grant。SQL完成后请求3b（预期125条、实际完整摘要）；权限仍265、Audit169总计/164活跃，但Human访问范围说明已变，必须用实际目录hash重签4b。是否需要其它签字按实际SQL/依赖摘要核查，不提前填通过。
 
 最终DoD：第5节P0–P6逐条证据，加四表互链/整表缺失、附件删除竞态、退回→重提失败回滚、v3→v2直接证明继承、零/作废段、旧hash不变、满额HTTP及非目标路由限制、普通worker与独立模块启动。query预算实测、生成物与contract逐行解释全部完成后才允许创建Draft PR；全量由CI冷跑。禁止降低断言/擅自重试掩盖失败，红区审批绑最终SHA，Ready后新审批仍独立，合并不随implementation自动授权。
 

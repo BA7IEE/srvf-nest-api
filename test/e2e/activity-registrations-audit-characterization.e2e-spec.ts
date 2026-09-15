@@ -169,12 +169,14 @@ describe('ActivityRegistrationsService audit characterization', () => {
 
   async function truncateActivityRegistrations(): Promise<void> {
     await assertConnectedTestDatabase(ctx.prisma);
-    await ctx.prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await ctx.prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 30_000 },
     );
   }
 
