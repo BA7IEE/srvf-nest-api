@@ -1,5 +1,9 @@
 # Activity OS R4 D7 分类时长更正与冲回：评审及分阶段精确计划
 
+> **D7-1精确计划已确认，文档更新获准（2026-09-15）**：维护者确认第10–12节及90路径精确计划，允许本轮四份文档提交、推送更新#1333，保持Draft，不实施。下方“仅本地/计划待确认/未获更新PR授权”是历史时点；当前仍未获实施、数据库、Ready、合并或Gate权限。计划批准不等于D7-1实现或整个D7完成。
+
+> **方案 A 已确认，精确计划细化（2026-09-15）**：维护者确认 D7 分阶段方案 A，允许继续完善精确计划，仅文档。第10–12节补齐此前工程闭包，以这些章节为当前下发候选；下文“方案尚未选择”保留为初稿历史，不再重复索要方向确认。本次未获得实施、数据库、Ready或合并许可；本轮文档修改先留本地待审。
+
 > 2026-09-15，**仅文档，方案 A 待维护者选择；不是可执行 implementation goal**。本轮允许 D6 台账更正、D7 评审和计划起草，验证后提交、推送、创建 Draft PR；不合并、不实施、不操作数据库、不启用 Gate。下述未来路径不是本轮写权限。
 
 ## 1. 基线与人话简报
@@ -60,7 +64,7 @@ items 每项固定 rootEntryId、recognizedSeconds；rootEntryId 必须属于原
 
 Manifest 与请求的 base/version/run/activity、替代 batch 的 version/run、root manifest 的 activity/run 必须同链；前驱为空仅在 base 就是 root manifest 版本时合法，否则前驱必须是 base 版本唯一 committed 的更正 manifest，且 root 一致。禁止选择 latest 或跳过中间版本。rootEntry 与 identity/category/rootManifest 必须同链，前驱 entry 必须与 rootEntry、activity 同链。通过精确复合 FK + 具名约束落实，不能仅列几个独立 FK。
 
-唯一性：manifest.postingBatchId；manifest.correctionRequestId；entry.entryKey；entry(manifestId,rootEntryId,entryTypeCode)；receipt.manifestId；receipt(baseSettlementVersionId)。receipt 的 base 唯一键只在 commit 时占用，避免失败准备永久占死原账。不同准备结果可以留存但不能同时生效；同请求重放复用原准备。所有 FK 为 Restrict，禁止 CASCADE 删除。
+唯一性：manifest.postingBatchId；manifest的correctionRequestId仅建索引（允许失败后追加新application，不删除旧凭证）；entry.entryKey；entry(manifestId,rootEntryId,entryTypeCode)；receipt.manifestId；receipt(baseSettlementVersionId)。receipt 的 base 唯一键只在 commit 时占用，避免失败准备永久占死原账。不同准备结果可以留存但不能同时生效；同请求重放复用原准备。所有 FK 为 Restrict，禁止 CASCADE 删除。
 
 ### 3.3 数据库与恢复协议
 
@@ -80,7 +84,7 @@ prepare 仍复用既有 Activity→Run→Request 锁和旧更正 prepare 事务�
 
 commit/apply 的重放出口之前识别 D7 manifest，核验当前用户与 GLOBAL `activity.settlement-final-review.record`；等待 member/day-state 等锁后再次核验。沿已批准的更正请求绑定 application actor，不要求替代版存在普通 final-review decision，也不自动换人代签。原请求提交/审核分离、base drift、关账失效与贡献日上限不变。新增校验失败必须使旧账、分类账、receipt、结果、关账指针与最后审计整体回滚。
 
-公共 LedgerPostingService 必须按初始D6 / D7更正 / legacy 三分支核验，不能只修改 correction.prepare。普通worker不得自动提交更正批次并绕过 application 收尾；保持既有 correction posting shape 的排除规则。独立worker模块仍能启动，DI 两处一起覆盖。conversion 继续拒绝任何 D6/D7 分类来源，不给历史数据自动分类。
+公共 LedgerPostingService 必须按初始D6 / D7更正 / legacy 三分支核验，不能只修改 correction.prepare。普通worker不得自动提交更正批次并绕过 application 收尾；既有 correction posting shape 只核对旧账冲补集合，不排除自动提交，须新增第10节明确防护。独立worker模块仍能启动，DI 两处一起覆盖。conversion 继续拒绝任何 D6/D7 分类来源，不给历史数据自动分类。
 
 新增 Human App 查询建议路径：`GET /api/app/v1/my/managed-activities/{activityId}/time-settlement/versions/{settlementVersionId}/correction-ledger`。仅返回确切目标版本 committed 的 correction manifest 和 receipt；preparing/ready/failed/voided 与跨活动统一不可访问。入口复用显式 time-settlement.read、当前App准入及活动组织资格；版本资格沿该链原 D6 冻结版本的既有负责人/审核资格核验，不以 latest 或“知道ID”放行。该授权范围须作为方案选择的一部分确认，权限说明同步并重签4b，不因权限数量不变免审。
 
@@ -216,3 +220,97 @@ lane preflight 通过，main基线与D6合并/CI状态已从GitHub重读。保�
 `docs:codemap:check`、`docs:rbacmap:check`、`check-frozen-drafts-ledger.ts`、`docs:counts:check`、`docs:readtax:check` 通过；CODEMAP既有2项WARN/1项INFO、RBAC动态权限INFO与readtax容量提醒保留。冻结台账检查只证明对照一致，不证明D7实现完成。新文档首次格式检查失败，仅格式化本稿后复核，不回改历史长文格式。
 
 未运行unit/contract/E2E或数据库命令，因本轮只有Markdown变更且明确禁止数据库操作；后续PR CI结果须按实际SHA另报，不把本地文档检查称为全量测试通过。
+
+## 10. 方案 A 的工程闭包与修正
+
+### 10.1 三条提交链不能混用
+
+当前 `ledger-posting.service.ts:274–284` 和 `:341–347` 分别在重放之前、member/day-state 等待之后核验 D6；这两处同时扩展三分支，不能只移除20229。初始D6仍按原manifest与final-review资格；D7必须绑定已批准请求、application、替代版、根manifest和当前实际操作者；legacy原样。D7调用 `assertComplete` 时不走 D6 的 `source()`，因为替代版没有新的 submitted timeRevision，不能将其误判成无分类。
+
+D7更正commit在既有外层事务中先锁Activity→Run→Request→Application，完成当前资格检查，再调用共享账本协议。Receipt只能由这条应用事务写入；公共提交只验证，不代为补建receipt。普通 `commitBatch` 与 conversion 不得通过传一个boolean绕开；数据库延迟校验还必须要求对应CorrectionApplication为committed、Request为applied且关联batch/version完全相等，核验的是事务结束时的行状态。这样内部直接调 `commitBatchWithin` 即使伪造actor也无法只提交半条链。
+
+当前 `ledger-ready-batch-committer.service.ts:23` 后只查batch与final-review决定，没有显式更正排除；不是原稿所称“已有排除规则”。计划新增对D7更正manifest/application的明确拒绝，并补其现有单测；不改变legacy自动提交。`correction-posting-shape.ts` 的旧集合规则继续保留，不能拿它替代入口保护。worker编排本体不改。
+
+D6数据库 `ptl_visibility_guard` 在没有初始manifest且没有submitted timeRevision时返回，D7-1正是这类替代版。新增独立 `ptc_visibility_guard`，不改122条函数；两者各管自己的清单。新guard须从CorrectionApplication/已批准v2请求识别“应有D7清单”，不能仅在新manifest存在时才校验，防止缺整份manifest直接逃过。prepare将application创建提前到ready之前，仍在同一事务；不提前物化业务段。不得依赖同事件trigger的名称执行顺序。
+
+Receipt插入时允许ready；批次转committed时同步检查receipt存在且金额/集合一致；事务结束时由挂在receipt插入和batch状态变动两侧的DEFERRABLE INITIALLY DEFERRED约束再查询最终状态，并核验application/request已收尾。prepared、failed、voided不能留receipt；同一事务插receipt后出错必须整体回滚。收据不是提前占位或异步补账，不新增清理路径。
+
+### 10.2 输入、重复与引用的精确落点
+
+submit在锁住实际posted基础版之后核对v2的baseSettlementVersionId与baseTimeLedgerHash，不信调用者传来的基础版；review按现有base漂移和审核分离规则；prepare再核对完整根集及前驱committed状态；commit和重放再核对所绑定不可变内容，不重新选latest。空更正继续原语义：只有原因不同而结果和分类认定完全相同，仍拒绝20102；这是沿用既有空更正规则，不新增原因编辑业务。
+
+v2的requestHash必须覆盖既有请求主体和完整规范化timeCorrection；v1的canonical/hash保持原算法，不为新格式重签历史请求。条目排序rootEntryId；entryKey基于formatVersion/manifest确定性输入/rootEntryId/type组成的canonical对象，不能随机生成去绕过幂等。首次reversal的前驱是D6根行，后续是指定前驱manifest的credit，严格核对金额相反数；零值用type区分，不靠正负号推断类型。
+
+最终FK目标按以下元组建立必要冗余unique，不做旧数据回填：Manifest的batch引用(id,settlementVersionId,settlementRunId)；root引用(id,activityId,settlementRunId)；request引用(id,baseSettlementVersionId,activityId,settlementRunId)（已核验AttendanceCorrectionRequest直接持有settlementRunId）；Entry的manifest引用(id,postingBatchId,activityId)，root引用(id,participationIdentityId,categoryCode)，前驱引用(id,rootEntryId,activityId)；Receipt引用manifest(id,postingBatchId,activityId,settlementRunId,baseSettlementVersionId,settlementVersionId)。前驱类型、manifest根一致和跨父表推导由集合触发器验证，不以单列FK冒充全部同链。
+
+三表SQL命名：`ptcm_immutable/ptce_immutable/ptcr_immutable`、`ptcm_no_truncate/ptce_no_truncate/ptcr_no_truncate`；插入guard分别`ptcm_insert_guard/ptce_insert_guard/ptcr_insert_guard`；金额/配对完整性统一`ptc_visibility_guard`；延迟提交闭合`ptc_commit_closure_guard`。unique与FK以同前缀加字段语义命名，长度<63；反例断言精确名称，禁止宽泛吞P2002或未知SQL错误。
+
+### 10.3 查询与鉴权复用，不扩属主模块
+
+新query在同一tx内查指定version对应manifest、receipt和committed batch；先用既有ActivityTimeSettlementAccessService做当前App/read范围校验，再以manifest.rootManifest所绑定的历史原D6版本做版本资格核验，锁batch后重读当前资格。该helper已有tx入口，不新增缓存、不修改组织/users/authz属主文件。D7写授权沿原更正GLOBAL终审资格，在现有ParticipationTimeLedgerAccessService新增独立更正方法并补单测；不能复用原方法要求新版本存在普通final-review决定。
+
+列表不返原因，源依据访问仍走已有权限；原因保留于已有申请JSON，不复制至Entry或审计payload。本阶段不扩大CorrectionAuditRecorder的审计字段，沿原请求/批次标识可关联新清单，因此不修改该文件、不新增审计event。新增GET说明与permission-catalog、生成surface基线一致，4b仍按实际语义摘要签字。
+
+### 10.4 旧测试的真实影响
+
+当前20份测试命中CURRENT_MIGRATION_COUNT=122或当前回放长度122，另C2 D1 `activity-os-r3-c2-outcome-value-revision.e2e-spec.ts:184–190`有字符串122。D6测试已在5.1，其余19份和C2 D1列入第11节。C2 D2 outcome-receipt迁移测试明确113→114历史升级且动态恢复当前，不存在待改122，本轮不纳入写集。
+
+D6迁移测试`:337–364`标题称121→122但实际deploy当前schema；计划在临时迁移目录中只追加原D6 migration完成历史122断言，再在finally恢复当前全量schema。首条current回放更新123，`names[121]`仍锚定原D6。D4的`names[120]`和120→121历史升级保持不变；禁止把所有122替换为123。
+
+局部TRUNCATE的26份helper调用者中，多数已由固定helper处理存在的新表，CASCADE沿父FK带入，无需逐份改调用者。只有D1-1 foundation两处不带CASCADE的静态表清单须显式加入新三表；其余25份为回归执行范围，不为凑数扩写集。helper必须同步更新TS名单、psql VALUES和恢复允许名单三处；不存在新表的历史库跳过，存在但缺具名trigger仍报错。新模型没有新业务表以外的清理目标。
+
+115条服务段旧schema测试`:130–154`在reset之后创建CHECK(false)的空D4/D6表；D7新增来源探测会再读取CorrectionManifest，须在同一位置补禁止INSERT的只读空表及查询需要的准确列，不跑123 migration、不把旧库当新库验收。所有原服务段准备/物化/重放断言保持。D1-1无CASCADE清理、115旧库与新helper回滚恢复均列为独立兼容验收。
+
+### 10.5 容量与验证范围
+
+旧createNewResultRevisions为单次unnest插入，buildReplacementDayRows遍历纯内存，readWeightBearingSpans在segments为空时批量查库；D7-1不进入逐段写循环。满额仍需测完整旧贡献/日分配和新分类链，不能只测新helper。保持G10新增准备≤24、提交≤24、GET总≤40的待审批预算及既有业务事务上限；若实测失败优化同写集实现，禁止默默抬预算或改断言。
+
+本地未来需完整agent:check:full（触及权限/公共提交依赖），不是只跑quick后把全量责任留给CI；数据库执行必须先取得w98独立授权并确认该命令的所有worker派生实际仍在获准库范围，不能让默认全量脚本创建其他库。若脚本不支持这项隔离，先报告运行方式而非改测试基础设施。最终PR CI另跑全量。当前docs-only轮不运行这些命令。
+
+## 11. 最终补充写集（与5.1、5.2去重合并）
+
+以下19份只适配current全量回放计数/标题与结束恢复，历史目标、checksum和业务断言保留。路径均已在当前仓库存在，不用通配符授权。
+
+```text
+test/e2e/activity-v11-batch4-allocation-mode-migration.e2e-spec.ts
+test/e2e/activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts
+test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts
+test/e2e/activity-v11-batch4-allocation-determinism-migration.e2e-spec.ts
+test/e2e/activity-os-r3-c1-d2a-metric-command-receipt-migration.e2e-spec.ts
+test/e2e/activity-os-r1-a4-explicit-template-version-pointer.e2e-spec.ts
+test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts
+test/e2e/activity-os-r2-b2-coordinate-projection-schema-constraints.e2e-spec.ts
+test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts
+test/e2e/insurance-evidence-registration-revision-migration.e2e-spec.ts
+test/e2e/activity-os-r2-b3-form-blueprint-governance.e2e-spec.ts
+test/e2e/activity-v11-batch4-qualification-contract-migration.e2e-spec.ts
+test/e2e/activity-os-r3-c1-metric-definition-set.e2e-spec.ts
+test/e2e/activity-os-r2-b1-place-schema-constraints.e2e-spec.ts
+test/e2e/activity-os-r2-b6-creation-data-foundation.e2e-spec.ts
+test/e2e/activity-os-r1-a3-template-definition-lifecycle-guards.e2e-spec.ts
+test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d4-time-bucket-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts
+```
+
+另补五个精确路径，分别对应C2 D1当前回放、D1-1非CASCADE清理、115旧schema只读空表、自动提交明确拒绝及其单测：
+
+```text
+test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts
+test/e2e/activity-os-r4-d1-1-time-policy-foundation.e2e-spec.ts
+test/e2e/activity-service-segment-correction-pending-migration.e2e-spec.ts
+src/modules/activities/ledger-ready-batch-committer.service.ts
+src/modules/activities/ledger-ready-batch-committer.service.spec.ts
+```
+
+5.1、5.2、11节合计90个唯一精确路径，新增11个、既有79个；未来实现必须逐项比对此集合，未变化的文件不为凑齐而修改。不得扩大到src/modules/users、organizations、authz、storage、workflow、package、历史migration或架构登记裁判。原66路径及13个红区读数是初稿，最终预算另行逐路径核验。
+
+## 12. 下发条件与授权清单
+
+方案A方向已确认；第10–11节完成本轮代码可查的工程闭包。D7-1精确实施包仍须维护者整体确认，不把文档编辑权转换成生产代码写权。完整包包含v2严格形状、仅认定不改段、三个追加模型、单批次原子更正、明确阻止旁路、旧回放/夹具前置适配、读权限说明和生成物；不再附带“实现者自行选方案”的未决产品问题。来源模型字段、约束SQL与性能只能在未来实施时验证，计划不伪造实测。
+
+建议实施授权应一次包含：按5.1/5.2/11节90路径和第10节修正实施；允许app_test_w98隔离验证及测试夹具重建，且仅固定具名no_truncate触发器的同事务测试处理；验证后提交、推送并创建Draft PR；不合并、不操作生产、不启用Gate、不删除业务数据。该段是待批准文字，不是当前已授予权限。
+
+红区由维护者在实施工作树逐路径发放，AI不执行harness:grant；SQL完成后重签3b（预计第123条，最终完整hash），权限说明完成后重签4b（预计265权限、169审计/164活跃，最终实际语义hash）；不预签未知摘要。无新事件/角色默认授予，若确需新增则另行报告，不能借原数量目标改守护过关。
+
+本轮只保留四份本地文档改动：本稿、NEXT_TASKS、FROZEN_DRAFTS及已有review changelog。#1333远端625a0686的CI成功仅代表旧稿；新稿未提交推送，须验证后另获更新PR授权。不Ready、不合并。后续D7-2继续独立完整计划，D7-1通过不等于D7全部完成。
