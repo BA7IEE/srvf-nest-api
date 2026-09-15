@@ -15913,6 +15913,219 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppTimeCorrectionCategoryDto": {
+    "properties": {
+      "categoryCode": {
+        "description": "时长分类",
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+      "netSecondsDelta": {
+        "description": "本次净变化秒数，精确十进制字符串",
+        "pattern": "^-?[0-9]+$",
+        "type": "string",
+      },
+      "replacementSecondsTotal": {
+        "description": "补记秒数，精确十进制字符串",
+        "pattern": "^[0-9]+$",
+        "type": "string",
+      },
+      "reversalSecondsTotal": {
+        "description": "冲回秒数，精确十进制字符串",
+        "pattern": "^-?[0-9]+$",
+        "type": "string",
+      },
+    },
+    "required": [
+      "categoryCode",
+      "reversalSecondsTotal",
+      "replacementSecondsTotal",
+      "netSecondsDelta",
+    ],
+    "type": "object",
+  },
+  "AppTimeCorrectionEntryDto": {
+    "properties": {
+      "categoryCode": {
+        "description": "时长分类",
+        "enum": [
+          "volunteer_service",
+          "training",
+          "organization",
+          "non_creditable",
+        ],
+        "type": "string",
+      },
+      "entryTypeCode": {
+        "description": "分录类型，零值也明确区分冲回与补记",
+        "enum": [
+          "reversal",
+          "credit",
+        ],
+        "type": "string",
+      },
+      "id": {
+        "description": "不可变更正分录 ID",
+        "type": "string",
+      },
+      "participationIdentityId": {
+        "description": "参与身份 ID",
+        "type": "string",
+      },
+      "reversesCorrectionEntryId": {
+        "description": "直接前驱补记分录 ID，首次冲回或本次补记为 null",
+        "nullable": true,
+        "type": "string",
+      },
+      "rootEntryId": {
+        "description": "原始分类根分录 ID",
+        "type": "string",
+      },
+      "secondsDelta": {
+        "description": "精确秒数变化",
+        "maximum": 2147483647,
+        "minimum": -2147483647,
+        "type": "integer",
+      },
+    },
+    "required": [
+      "id",
+      "rootEntryId",
+      "reversesCorrectionEntryId",
+      "participationIdentityId",
+      "categoryCode",
+      "entryTypeCode",
+      "secondsDelta",
+    ],
+    "type": "object",
+  },
+  "AppTimeCorrectionPageDto": {
+    "properties": {
+      "items": {
+        "description": "稳定排序的冲回与补记分录",
+        "items": {
+          "$ref": "#/components/schemas/AppTimeCorrectionEntryDto",
+        },
+        "type": "array",
+      },
+      "page": {
+        "description": "页码",
+        "minimum": 1,
+        "type": "number",
+      },
+      "pageSize": {
+        "description": "每页条数",
+        "maximum": 100,
+        "minimum": 1,
+        "type": "number",
+      },
+      "total": {
+        "description": "分录总数",
+        "maximum": 16000,
+        "minimum": 0,
+        "type": "number",
+      },
+    },
+    "required": [
+      "page",
+      "pageSize",
+      "total",
+      "items",
+    ],
+    "type": "object",
+  },
+  "AppTimeCorrectionReportDto": {
+    "properties": {
+      "baseSettlementVersionId": {
+        "description": "本次基础结算版本 ID",
+        "type": "string",
+      },
+      "categories": {
+        "description": "固定四类汇总，含零值",
+        "items": {
+          "$ref": "#/components/schemas/AppTimeCorrectionCategoryDto",
+        },
+        "type": "array",
+      },
+      "contentHash": {
+        "description": "完整内容摘要",
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string",
+      },
+      "formatVersion": {
+        "description": "格式版本",
+        "enum": [
+          1,
+        ],
+        "type": "number",
+      },
+      "manifestId": {
+        "description": "不可变更正清单 ID",
+        "type": "string",
+      },
+      "netSecondsDelta": {
+        "description": "本次净变化，不等同于志愿服务时长",
+        "pattern": "^-?[0-9]+$",
+        "type": "string",
+      },
+      "postingBatchId": {
+        "description": "同一原子更正批次 ID",
+        "type": "string",
+      },
+      "predecessorManifestId": {
+        "description": "直接前驱更正清单 ID，首次为 null",
+        "nullable": true,
+        "type": "string",
+      },
+      "replacementSecondsTotal": {
+        "description": "补记秒数合计",
+        "pattern": "^[0-9]+$",
+        "type": "string",
+      },
+      "resultPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppTimeCorrectionPageDto",
+          },
+        ],
+        "description": "分页分录，不包含更正原因",
+      },
+      "reversalSecondsTotal": {
+        "description": "冲回秒数合计",
+        "pattern": "^-?[0-9]+$",
+        "type": "string",
+      },
+      "rootManifestId": {
+        "description": "原始分类账本清单 ID",
+        "type": "string",
+      },
+      "settlementVersionId": {
+        "description": "确切结算版本 ID",
+        "type": "string",
+      },
+    },
+    "required": [
+      "manifestId",
+      "postingBatchId",
+      "settlementVersionId",
+      "baseSettlementVersionId",
+      "rootManifestId",
+      "predecessorManifestId",
+      "formatVersion",
+      "contentHash",
+      "reversalSecondsTotal",
+      "replacementSecondsTotal",
+      "netSecondsDelta",
+      "categories",
+      "resultPage",
+    ],
+    "type": "object",
+  },
   "AppTimeLedgerCategoryTotalDto": {
     "properties": {
       "categoryCode": {
@@ -142397,6 +142610,269 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
         },
       ],
       "summary": "分类送审（另需 activity.settlement-submit.record） [rbac: activity.time-settlement.prepare]",
+      "tags": [
+        "Mobile - Managed Activity Time Settlement",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/time-settlement/versions/{settlementVersionId}/correction-ledger": {
+    "get": {
+      "operationId": "AppManagedActivityTimeSettlementController_correctionLedger",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "确切结算版本 ID",
+          "in": "path",
+          "name": "settlementVersionId",
+          "required": true,
+          "schema": {
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppTimeCorrectionReportDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20219: 活动分类结算引用不存在或不可访问; 20230: 分类时长账本不存在或不可访问",
+                    "enum": [
+                      20219,
+                      20230,
+                    ],
+                    "example": 20219,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算引用不存在或不可访问(code=20219) / 分类时长账本不存在或不可访问(code=20230)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20225: 活动分类结算规模超过本次处理上限",
+                    "enum": [
+                      20225,
+                    ],
+                    "example": 20225,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动分类结算规模超过本次处理上限",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动分类结算规模超过本次处理上限(code=20225)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "读取指定已提交版本的分类时长更正账本 [rbac: activity.time-settlement.read]",
       "tags": [
         "Mobile - Managed Activity Time Settlement",
       ],

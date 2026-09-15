@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
+import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
+import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import { createHash } from 'node:crypto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
@@ -392,6 +394,7 @@ export class CorrectionApplicationService {
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
     private readonly timeLedger: ParticipationTimeLedgerService,
+    private readonly timeCorrection: ParticipationTimeCorrectionService,
     private readonly rbac: RbacService,
     private readonly identities: AppIdentityResolver,
   ) {}
@@ -412,6 +415,17 @@ export class CorrectionApplicationService {
     }
     // 形状校验放在事务**之前**:纯函数、不读库,没有理由占着行锁做。
     const changeSet = parseCorrectionChangeSet(input.requestedChangeJson);
+    if (changeSet.timeCorrection) {
+      const { requestHash: claimedHash, ...body } = input;
+      void claimedHash;
+      input = {
+        ...input,
+        requestHash: fingerprintMetricEnvelope('attendance-correction-request-v2', {
+          ...body,
+          requestedChangeJson: changeSet,
+        }).definitionHash,
+      };
+    }
 
     return await this.prisma.$transaction(async (tx) => {
       const activity = await this.lockActivity(tx, input.activityId);
@@ -436,6 +450,24 @@ export class CorrectionApplicationService {
       // 变更集引用的每个 identity 都必须**属于本活动且在基础版本里有结果行** ——
       // 否则更正会给一个不在这场账里的人凭空造一条结果。
       await this.assertChangeSetResolvable(tx, baseVersion.id, input.activityId, changeSet);
+      if (changeSet.timeCorrection) {
+        const contents = await this.timeCorrection.source(
+          tx,
+          {
+            correctionRequestId: 'validation',
+            postingBatchId: 'validation',
+            activityId: input.activityId,
+            settlementRunId: run.id,
+            baseSettlementVersionId: baseVersion.id,
+            settlementVersionId: `${baseVersion.id}:next`,
+            requestHash: input.requestHash,
+          },
+          changeSet.timeCorrection,
+        );
+        const baseResults = await this.readBaseResults(tx, baseVersion.id);
+        if (!contents.changed && !correctionResultsChanged(baseResults, changeSet))
+          throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+      }
 
       const baseResultRevisionId =
         input.participationIdentityId === null
@@ -612,11 +644,20 @@ export class CorrectionApplicationService {
           );
 
           // 幂等:已有 `preparing` / `committed` 的应用 ⇒ 原样返回(不再准备第二遍)。
-          {
+          const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
+          if (!changeSet.timeCorrection) {
             await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
           }
           const resumable = await this.findResumableApplication(tx, request, run);
-          if (resumable !== null) return resumable;
+          if (resumable !== null) {
+            if (changeSet.timeCorrection)
+              await this.timeCorrection.assertComplete(
+                tx,
+                resumable.newPostingBatchId,
+                resumable.batchStatus === 'committed',
+              );
+            return resumable;
+          }
 
           if (request.statusCode !== 'approved') {
             throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
@@ -627,7 +668,6 @@ export class CorrectionApplicationService {
           const drift = await this.detectBaseDrift(tx, anchor.activityId, run, request);
           if (drift !== null) throw new CorrectionBaseDriftSignal(request.id);
 
-          const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
           const baseVersion = await this.readVersionById(tx, request.baseSettlementVersionId);
           const baseResults = await this.readBaseResults(tx, baseVersion.id);
 
@@ -653,6 +693,26 @@ export class CorrectionApplicationService {
             requestHash: input.requestHash,
             actorUserId: request.actor.id,
           });
+          if (changeSet.timeCorrection) {
+            if (!request.requestHash)
+              throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+            const contents = await this.timeCorrection.source(
+              tx,
+              {
+                correctionRequestId: request.id,
+                postingBatchId: batch.id,
+                activityId: anchor.activityId,
+                settlementRunId: run.id,
+                baseSettlementVersionId: baseVersion.id,
+                settlementVersionId: newVersion.id,
+                requestHash: request.requestHash,
+              },
+              changeSet.timeCorrection,
+            );
+            if (!contents.changed && !correctionResultsChanged(baseResults, changeSet))
+              throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+            await this.timeCorrection.prepare(tx, contents);
+          }
 
           // 冲回集 = 基础版本下**已生效**的全部 credit 分录。
           const originals = await this.readReversibleOriginals(tx, baseVersion.id);
@@ -698,17 +758,6 @@ export class CorrectionApplicationService {
             baseline,
             actorUserId: request.actor.id,
           });
-          await tx.ledgerPostingBatch.update({
-            where: { id: batch.id },
-            data: {
-              statusCode: 'ready',
-              preparedAt: new Date(),
-              preparedCount: baseVersion.personCount,
-              baselineJsonHash: ledgerBaselineDigest(baseline),
-              version: { increment: 1 },
-            },
-          });
-
           const newResultRevisionIds = resolved.map((row) => row.newResultRevisionId);
           const application = await tx.correctionApplication.create({
             data: {
@@ -726,6 +775,16 @@ export class CorrectionApplicationService {
             anchor.activityId,
             changeSet,
           );
+          await tx.ledgerPostingBatch.update({
+            where: { id: batch.id },
+            data: {
+              statusCode: 'ready',
+              preparedAt: new Date(),
+              preparedCount: baseVersion.personCount,
+              baselineJsonHash: ledgerBaselineDigest(baseline),
+              version: { increment: 1 },
+            },
+          });
 
           await tx.attendanceCorrectionRequest.update({
             where: { id: request.id },
@@ -781,7 +840,7 @@ export class CorrectionApplicationService {
           });
           throw new BizException(BizCode.CORRECTION_BASE_VERSION_CHANGED);
         }
-        throw error;
+        this.timeCorrection.rethrowConstraint(error);
       });
   }
 
@@ -803,7 +862,8 @@ export class CorrectionApplicationService {
       await this.lockActivity(tx, anchor.activityId);
       const run = await this.lockRun(tx, anchor.activityId);
       const request = await this.lockRequest(tx, input.correctionRequestId);
-      {
+      const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
+      if (!changeSet.timeCorrection) {
         await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
       }
       const application = await this.lockApplication(
@@ -815,6 +875,8 @@ export class CorrectionApplicationService {
 
       // 幂等:已 committed ⇒ 原样返回上一次的结论。
       if (application.statusCode === 'committed') {
+        if (changeSet.timeCorrection)
+          await this.timeCorrection.assertComplete(tx, application.newPostingBatchId, true);
         return replayCommitResult(anchor.activityId, request, application);
       }
       if (request.statusCode !== 'applying' || application.statusCode !== 'preparing') {
@@ -831,6 +893,8 @@ export class CorrectionApplicationService {
         anchor.activityId,
         parseCorrectionChangeSet(request.requestedChangeJson),
       );
+      if (changeSet.timeCorrection)
+        await this.timeCorrection.createCommitReceipt(tx, application.newPostingBatchId);
       const ledger = await this.ledgerPosting.commitBatchWithin(
         tx,
         anchor.activityId,
@@ -2265,6 +2329,25 @@ function toSubmitResult(request: LockedRequest): Omit<CorrectionSubmitResult, 'r
  * 未被点名的人**逐字沿用**基础值(只换版本与前驱指针)—— 见
  * `createNewResultRevisions` 的注释:整份复制是重新关账能成功的前提。
  */
+function correctionResultsChanged(
+  baseResults: readonly BaseResultRow[],
+  changeSet: CorrectionChangeSet,
+): boolean {
+  const byIdentity = new Map(baseResults.map((row) => [row.participationIdentityId, row]));
+  return changeSet.results.some((change) => {
+    const base = byIdentity.get(change.participationIdentityId);
+    return (
+      !base ||
+      base.resultCode !== change.resultCode ||
+      base.lateFlag !== change.lateFlag ||
+      base.earlyLeaveFlag !== change.earlyLeaveFlag ||
+      base.adjustmentReason !== change.adjustmentReason ||
+      Number(base.recognizedServiceHours.toString()) !== change.recognizedServiceHours ||
+      Number(base.recognizedContributionPoints.toString()) !== change.recognizedContributionPoints
+    );
+  });
+}
+
 function resolveNewResults(
   baseResults: readonly BaseResultRow[],
   changeSet: CorrectionChangeSet,

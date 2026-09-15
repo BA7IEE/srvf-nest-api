@@ -1,6 +1,6 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **D7-1精确计划已确认，文档更新获准（2026-09-15）**：维护者确认第10–12节及90路径精确计划，允许本轮四份文档提交、推送更新#1333，保持Draft，不实施。下方“仅本地/计划待确认/未获更新PR授权”是历史时点；当前仍未获实施、数据库、Ready、合并或Gate权限。计划批准不等于D7-1实现或整个D7完成。
+> **D7-1本地定向验证完成（2026-09-15，待远端全量CI）**：按#1333的90路径及第10–12节实施，实际85路径。w98迁移、1/100/2000身份连续三轮、并发及兼容验证已执行，详细通过结果与夹具超时后单项复跑记录见计划第13节，不宣称单轮全绿。3b第123条SQL摘要c2f06bcf6e19及4b目录摘要871a4c9d426d已获维护者确认。按授权提交、推送并创建Draft PR，状态以GitHub为准；不合并、不操作生产、不启用Gate、不删除业务数据。下方待实施/待重签为历史时点；D7-2及整个D7仍未完成。
 
 > **D7方案A方向已确认（2026-09-15）**：维护者允许继续完善精确计划，仅文档。D7-1计划第10–12节补齐三分支提交、收据/应用原子闭合、旧迁移与夹具兼容及90路径待审批实施包；D7-2仍须独立完成事实重新分配和业务写接口，整个D7未完成。下方方案待选择为历史时点。本轮四份文档先保留本地，未实施、未操作数据库、未更新远端PR、未合并或启用Gate。
 
@@ -309,7 +309,7 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **265** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 72** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 74** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |

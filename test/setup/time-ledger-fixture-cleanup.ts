@@ -7,6 +7,9 @@ import {
 import { deriveTestDbName } from './worktree-db';
 
 const TRUNCATE_TRIGGERS = [
+  { table: 'ParticipationTimeCorrectionCommitReceipt', trigger: 'ptcr_no_truncate' },
+  { table: 'ParticipationTimeCorrectionEntry', trigger: 'ptce_no_truncate' },
+  { table: 'ParticipationTimeCorrectionManifest', trigger: 'ptcm_no_truncate' },
   { table: 'ParticipationTimeLedgerEntry', trigger: 'ptle_no_truncate' },
   { table: 'ParticipationTimeLedgerManifest', trigger: 'ptlm_no_truncate' },
 ] as const;
@@ -23,7 +26,7 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         IF current_database() <> ${dbLiteral} THEN RAISE EXCEPTION 'Wrong fixture database'; END IF;
         FOR item IN
           SELECT c.relname AS tbl, names.trg, t.tgenabled::text AS enabled
-          FROM (VALUES ('ParticipationTimeLedgerEntry','ptle_no_truncate'), ('ParticipationTimeLedgerManifest','ptlm_no_truncate')) names(tbl,trg)
+          FROM (VALUES ('ParticipationTimeCorrectionCommitReceipt','ptcr_no_truncate'), ('ParticipationTimeCorrectionEntry','ptce_no_truncate'), ('ParticipationTimeCorrectionManifest','ptcm_no_truncate'), ('ParticipationTimeLedgerEntry','ptle_no_truncate'), ('ParticipationTimeLedgerManifest','ptlm_no_truncate')) names(tbl,trg)
           JOIN pg_class c ON c.relname=names.tbl JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
           LEFT JOIN pg_trigger t ON t.tgrelid=c.oid AND t.tgname=names.trg AND NOT t.tgisinternal
           ORDER BY names.tbl
@@ -41,6 +44,9 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         FOR item IN SELECT value FROM jsonb_array_elements(current_setting('srvf.d6_fixture_trigger_states')::jsonb)
         LOOP
           IF NOT ((item->>'table'='ParticipationTimeLedgerEntry' AND item->>'trigger'='ptle_no_truncate') OR
+                  (item->>'table'='ParticipationTimeCorrectionCommitReceipt' AND item->>'trigger'='ptcr_no_truncate') OR
+                  (item->>'table'='ParticipationTimeCorrectionEntry' AND item->>'trigger'='ptce_no_truncate') OR
+                  (item->>'table'='ParticipationTimeCorrectionManifest' AND item->>'trigger'='ptcm_no_truncate') OR
                   (item->>'table'='ParticipationTimeLedgerManifest' AND item->>'trigger'='ptlm_no_truncate')) THEN
             RAISE EXCEPTION 'Unexpected fixture trigger';
           END IF;
@@ -71,7 +77,7 @@ export async function withTimeLedgerFixtureCleanup<T>(
     const enabled = rows[0].enabled;
     if (enabled === null) throw new Error('Expected fixture trigger is missing');
     if (!['O', 'A', 'R', 'D'].includes(enabled)) throw new Error('Unknown fixture trigger state');
-    // Both identifiers are from the fixed two-element list above, never caller data.
+    // Both identifiers are from the fixed list above, never caller data.
     await tx.$executeRawUnsafe(`ALTER TABLE "${table}" DISABLE TRIGGER "${trigger}"`);
     changed.push({ table, trigger, enabled });
   }

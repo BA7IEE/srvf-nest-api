@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
+import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
 import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
@@ -173,6 +174,7 @@ export class LedgerPostingService {
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
     private readonly timeLedger: ParticipationTimeLedgerService,
+    private readonly timeCorrection: ParticipationTimeCorrectionService,
     private readonly timeLedgerAccess: ParticipationTimeLedgerAccessService,
   ) {}
 
@@ -271,8 +273,13 @@ export class LedgerPostingService {
       const run = await this.lockRun(tx, activityId);
       const version = await this.lockVersion(tx, run.id);
       const batch = await this.lockBatch(tx, input.postingBatchId);
-      await this.timeLedger.assertNotClassifiedCorrectionBatch(tx, batch.id);
-      const classified = await this.timeLedger.hasClassifiedSource(tx, batch);
+      const correction = await this.timeCorrection.isCorrectionBatch(tx, batch.id);
+      if (correction) {
+        if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+        await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
+        await this.timeCorrection.assertComplete(tx, batch.id, true);
+      }
+      const classified = !correction && (await this.timeLedger.hasClassifiedSource(tx, batch));
       if (classified) {
         if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
         await this.timeLedgerAccess.authorize(
@@ -337,6 +344,10 @@ export class LedgerPostingService {
       this.assertDailyCapRespected(deltas, current);
 
       // ===== ⑩ 原子切换:以下全部在同一事务内 =====
+      if (correction) {
+        await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
+        await this.timeCorrection.assertComplete(tx, batch.id, true);
+      }
       if (classified) {
         await this.timeLedgerAccess.authorize(
           tx,

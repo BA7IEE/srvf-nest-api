@@ -109,6 +109,10 @@ const EXPECTED_ROUTES: ReadonlyArray<
     'get',
     '/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/ledger',
   ],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/versions/{settlementVersionId}/correction-ledger',
+  ],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/prepare'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/submit'],
   // C3-1: separate immutable rule bindings and system candidate commands/read model.
@@ -1174,7 +1178,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 635; // D6 +1 committed time-ledger GET; existing 634 unchanged.
+const EXPECTED_ROUTE_COUNT = 636; // D7-1 +1 exact-version committed correction GET; existing 635 unchanged.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -3307,7 +3311,7 @@ describe('OpenAPI 契约快照', () => {
     expect(operation?.responses?.['201']).toBeUndefined();
   });
 
-  it('D4 八个入口及 D5 对账、D6 账本入口仅属 Human App，三个显式写命令返回 200', () => {
+  it('D4 八个入口及 D5 对账、D6 账本、D7-1 更正查询仅属 Human App，三个显式写命令返回 200', () => {
     const prefix = '/api/app/v1/my/managed-activities/{activityId}/time-settlement';
     const routes = [
       [prefix, 'get'],
@@ -3317,6 +3321,7 @@ describe('OpenAPI 契约快照', () => {
       [prefix + '/revisions/{timeRevisionId}/sources', 'get'],
       [prefix + '/revisions/{timeRevisionId}/shadow', 'get'],
       [prefix + '/revisions/{timeRevisionId}/ledger', 'get'],
+      [prefix + '/versions/{settlementVersionId}/correction-ledger', 'get'],
       [prefix + '/allocations', 'post'],
       [prefix + '/prepare', 'post'],
       [prefix + '/submit', 'post'],

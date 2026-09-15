@@ -13,9 +13,11 @@ import { LedgerPostingAuditRecorder } from './ledger-posting-audit-recorder';
 import { LedgerPostingService } from './ledger-posting.service';
 import { LedgerPreparationService } from './ledger-preparation.service';
 import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
+import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
 import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
 import { AuthzModule } from '../authz/authz.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 import { UsersModule } from '../users/users.module';
 import { ContributionCalculator } from '../attendances/contribution-calculator';
 import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
@@ -35,6 +37,7 @@ import { SettlementNotificationProducer } from './settlement-notification-produc
     AttendancesModule,
     ActivityWorkflowModule,
     AuthzModule,
+    PermissionsModule,
     UsersModule,
   ],
   providers: [
@@ -44,6 +47,7 @@ import { SettlementNotificationProducer } from './settlement-notification-produc
     LedgerPostingService,
     LedgerPreparationService,
     ParticipationTimeLedgerService,
+    ParticipationTimeCorrectionService,
     ParticipationTimeLedgerAccessService,
     LedgerReadyBatchCommitter,
     ContributionCalculator,

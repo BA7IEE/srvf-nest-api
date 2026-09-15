@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:4d927343f7c99e65b87bac0eaed36011a7f42cf87ca2317fccfc198275f61eac
+// inputDigest: sha256:54572a261ffcb84373490d41bbfd2d766d84f6e05d54cc0fcd51d0fe7231f40c
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -238,6 +238,10 @@ import type {
   AppSubmitActivityChangeReviewDto,
   AppSubmitTimeSettlementDto,
   AppTeamJoinApplicationDto,
+  AppTimeCorrectionCategoryDto,
+  AppTimeCorrectionEntryDto,
+  AppTimeCorrectionPageDto,
+  AppTimeCorrectionReportDto,
   AppTimeLedgerCategoryTotalDto,
   AppTimeLedgerEntryDto,
   AppTimeLedgerPageDto,
@@ -1057,6 +1061,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** 分类送审（另需 activity.settlement-submit.record） [rbac: activity.time-settlement.prepare] */
     AppManagedActivityTimeSettlementControllerSubmit(activityId: string, body: AppSubmitTimeSettlementDto): Promise<ApiEnvelope<AppTimeSettlementResultDto>> {
       return fetcher<AppTimeSettlementResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/submit`, body });
+    },
+    /** 读取指定已提交版本的分类时长更正账本 [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeSettlementControllerCorrectionLedger(activityId: string, settlementVersionId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<AppTimeCorrectionReportDto>> {
+      return fetcher<AppTimeCorrectionReportDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/versions/${settlementVersionId}/correction-ledger`, query });
     },
     /** App 草稿活动移交发起人(当前发起人或 responsibility override) [auth] */
     AppManagedActivityResponsibilitiesControllerTransferInitiator(activityId: string, body: TransferAppManagedActivityInitiatorDto): Promise<ApiEnvelope<AppManagedResponsibilitiesDto>> {

@@ -55,25 +55,32 @@ describe('D6 scoped fixture trigger handling', () => {
   });
   const states = () => db.$queryRaw<{ name: string; enabled: string }[]>`
     SELECT tgname AS name, tgenabled::text AS enabled FROM pg_trigger
-    WHERE tgrelid IN ('"ParticipationTimeLedgerEntry"'::regclass, '"ParticipationTimeLedgerManifest"'::regclass)
+    WHERE tgrelid IN ('"ParticipationTimeLedgerEntry"'::regclass, '"ParticipationTimeLedgerManifest"'::regclass,
+      '"ParticipationTimeCorrectionManifest"'::regclass, '"ParticipationTimeCorrectionEntry"'::regclass,
+      '"ParticipationTimeCorrectionCommitReceipt"'::regclass)
     AND NOT tgisinternal ORDER BY tgname
   `;
   it('refuses ordinary truncate outside the controlled fixture transaction', async () => {
     await expect(
       db.$transaction(async (tx) => {
         await assertConnectedTestDatabase(tx);
-        await tx.$executeRawUnsafe('TRUNCATE "ParticipationTimeLedgerEntry"');
+        await tx.$executeRawUnsafe('TRUNCATE "ParticipationTimeLedgerEntry" CASCADE');
       }),
     ).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
   });
   it('restores every trigger state after successful same-connection fixture cleanup', async () => {
     const before = await states();
-    expect(before.filter((row) => row.name.endsWith('no_truncate'))).toHaveLength(2);
+    expect(
+      before.filter((row) => row.name.startsWith('ptl') && row.name.endsWith('no_truncate')),
+    ).toHaveLength(2);
+    expect(
+      before.filter((row) => row.name.startsWith('ptc') && row.name.endsWith('no_truncate')),
+    ).toHaveLength(3);
     await db.$transaction((tx) =>
       withTimeLedgerFixtureCleanup(tx, async (inner) => {
         expect(inner).toBe(tx);
         await inner.$executeRawUnsafe(
-          'TRUNCATE "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest"',
+          'TRUNCATE "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeCorrectionCommitReceipt"',
         );
       }),
     );

@@ -1,5 +1,16 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## D7-1 分类认定更正（分支验收中，未上线）
+
+新增 `GET /api/app/v1/my/managed-activities/{activityId}/time-settlement/versions/{settlementVersionId}/correction-ledger`，
+使用既有 `activity.time-settlement.read`。必须明确版本，只有 committed 批次且提交收据同链时可见；
+历史访问沿根 D6 版本重新校验当前资格。明细保留零值冲回/补记，分页上限100，汇总为精确十进制字符串。
+四类单列展示，不把合计当贡献积分；不返回更正原因。404 不等于零，也不触发自动补账。
+
+本轮 V2 更正仅在既有内部更正 Service 落地，不提供 HTTP 写入口、前端编辑页或 Integration 入口。
+V1 不变；已分类版本的 V1 更正及自动提交旁路仍返回20229。更正原因永久留在原申请中，旧分录不修改或删除。
+完整容量和最终 CI 尚未验收，不代表可上线。见[分类账本说明](../ops/activity-time-ledger.md)。
+
 ## D6 正式分类时长账本（实施验收中，未上线）
 
 新增明确分类修订的 `ledger` GET，使用既有 `activity.time-settlement.read`，仅返回 committed 批次；ready 不代表正式入账。客户端使用生成的 App client，字段以 OpenAPI 为准，汇总十进制字符串不得转成32位整数；四类分别展示，全部分类总秒数不能当作志愿服务时长或贡献积分。

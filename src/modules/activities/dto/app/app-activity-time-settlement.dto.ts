@@ -427,6 +427,72 @@ export class AppTimeLedgerReportDto {
   resultPage!: AppTimeLedgerPageDto;
 }
 
+export class AppTimeCorrectionVersionParamsDto extends AppManagedActivityParamsDto {
+  @ApiProperty({ description: '确切结算版本 ID' })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(64)
+  settlementVersionId!: string;
+}
+export class AppTimeCorrectionCategoryDto {
+  @ApiProperty({ description: '时长分类', enum: CATEGORIES }) categoryCode!: string;
+  @ApiProperty({ description: '冲回秒数，精确十进制字符串', pattern: '^-?[0-9]+$' })
+  reversalSecondsTotal!: string;
+  @ApiProperty({ description: '补记秒数，精确十进制字符串', pattern: '^[0-9]+$' })
+  replacementSecondsTotal!: string;
+  @ApiProperty({ description: '本次净变化秒数，精确十进制字符串', pattern: '^-?[0-9]+$' })
+  netSecondsDelta!: string;
+}
+export class AppTimeCorrectionEntryDto {
+  @ApiProperty({ description: '不可变更正分录 ID' }) id!: string;
+  @ApiProperty({ description: '原始分类根分录 ID' }) rootEntryId!: string;
+  @ApiProperty({
+    description: '直接前驱补记分录 ID，首次冲回或本次补记为 null',
+    type: String,
+    nullable: true,
+  })
+  reversesCorrectionEntryId!: string | null;
+  @ApiProperty({ description: '参与身份 ID' }) participationIdentityId!: string;
+  @ApiProperty({ description: '时长分类', enum: CATEGORIES }) categoryCode!: string;
+  @ApiProperty({ description: '分录类型，零值也明确区分冲回与补记', enum: ['reversal', 'credit'] })
+  entryTypeCode!: string;
+  @ApiProperty({
+    description: '精确秒数变化',
+    type: 'integer',
+    minimum: -2147483647,
+    maximum: 2147483647,
+  })
+  secondsDelta!: number;
+}
+export class AppTimeCorrectionPageDto {
+  @ApiProperty({ description: '页码', minimum: 1 }) page!: number;
+  @ApiProperty({ description: '每页条数', minimum: 1, maximum: 100 }) pageSize!: number;
+  @ApiProperty({ description: '分录总数', minimum: 0, maximum: 16000 }) total!: number;
+  @ApiProperty({ description: '稳定排序的冲回与补记分录', type: () => [AppTimeCorrectionEntryDto] })
+  items!: AppTimeCorrectionEntryDto[];
+}
+export class AppTimeCorrectionReportDto {
+  @ApiProperty({ description: '不可变更正清单 ID' }) manifestId!: string;
+  @ApiProperty({ description: '同一原子更正批次 ID' }) postingBatchId!: string;
+  @ApiProperty({ description: '确切结算版本 ID' }) settlementVersionId!: string;
+  @ApiProperty({ description: '本次基础结算版本 ID' }) baseSettlementVersionId!: string;
+  @ApiProperty({ description: '原始分类账本清单 ID' }) rootManifestId!: string;
+  @ApiProperty({ description: '直接前驱更正清单 ID，首次为 null', type: String, nullable: true })
+  predecessorManifestId!: string | null;
+  @ApiProperty({ description: '格式版本', enum: [1] }) formatVersion!: number;
+  @ApiProperty({ description: '完整内容摘要', pattern: '^[a-f0-9]{64}$' }) contentHash!: string;
+  @ApiProperty({ description: '冲回秒数合计', pattern: '^-?[0-9]+$' })
+  reversalSecondsTotal!: string;
+  @ApiProperty({ description: '补记秒数合计', pattern: '^[0-9]+$' })
+  replacementSecondsTotal!: string;
+  @ApiProperty({ description: '本次净变化，不等同于志愿服务时长', pattern: '^-?[0-9]+$' })
+  netSecondsDelta!: string;
+  @ApiProperty({ description: '固定四类汇总，含零值', type: () => [AppTimeCorrectionCategoryDto] })
+  categories!: AppTimeCorrectionCategoryDto[];
+  @ApiProperty({ description: '分页分录，不包含更正原因', type: () => AppTimeCorrectionPageDto })
+  resultPage!: AppTimeCorrectionPageDto;
+}
+
 export class AppTimeSettlementEvidenceDto {
   @ApiProperty() attachmentId!: string;
   @ApiProperty() ordinal!: number;

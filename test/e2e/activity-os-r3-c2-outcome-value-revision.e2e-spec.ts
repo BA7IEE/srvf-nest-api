@@ -181,13 +181,13 @@ describe('C2 D1 outcome revision database constraints', () => {
     );
     sql(outcome('outcome'));
   });
-  it('replays 122 migrations and targets only the derived isolated database', () => {
+  it('replays 123 migrations and targets only the derived isolated database', () => {
     expect(sql('SELECT current_database()')).toBe(database());
     expect(
       sql(
         'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',
       ),
-    ).toBe('122');
+    ).toBe('123');
   });
   it('accepts same-chain values and evidence, preserving the predecessor', () => {
     sql(value());

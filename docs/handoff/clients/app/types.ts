@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:4d927343f7c99e65b87bac0eaed36011a7f42cf87ca2317fccfc198275f61eac
+// inputDigest: sha256:54572a261ffcb84373490d41bbfd2d766d84f6e05d54cc0fcd51d0fe7231f40c
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -2172,6 +2172,46 @@ export interface AppTeamJoinApplicationDto {
   "evaluationNote"?: Record<string, unknown> | null;
   "eliminationStage"?: Record<string, unknown> | null;
   "createdAt": string;
+}
+
+export interface AppTimeCorrectionCategoryDto {
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "reversalSecondsTotal": string;
+  "replacementSecondsTotal": string;
+  "netSecondsDelta": string;
+}
+
+export interface AppTimeCorrectionEntryDto {
+  "id": string;
+  "rootEntryId": string;
+  "reversesCorrectionEntryId": string | null;
+  "participationIdentityId": string;
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "entryTypeCode": "reversal" | "credit";
+  "secondsDelta": number;
+}
+
+export interface AppTimeCorrectionPageDto {
+  "page": number;
+  "pageSize": number;
+  "total": number;
+  "items": AppTimeCorrectionEntryDto[];
+}
+
+export interface AppTimeCorrectionReportDto {
+  "manifestId": string;
+  "postingBatchId": string;
+  "settlementVersionId": string;
+  "baseSettlementVersionId": string;
+  "rootManifestId": string;
+  "predecessorManifestId": string | null;
+  "formatVersion": 1;
+  "contentHash": string;
+  "reversalSecondsTotal": string;
+  "replacementSecondsTotal": string;
+  "netSecondsDelta": string;
+  "categories": AppTimeCorrectionCategoryDto[];
+  "resultPage": AppTimeCorrectionPageDto;
 }
 
 export interface AppTimeLedgerCategoryTotalDto {

@@ -19,15 +19,15 @@ import {
 } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
-const MIGRATION = '20260914120000_activity_os_r4_d6_time_ledger';
+const MIGRATION = '20260915120000_activity_os_r4_d7_time_correction';
 function target() {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
   const worker = process.env.JEST_WORKER_ID;
-  if (!worker) throw new Error('D6 migration tests require an isolated worker');
+  if (!worker) throw new Error('D7-1 migration tests require an isolated worker');
   const database = deriveTestDbName();
   assertDroppableTestDbName(database);
   if (!process.env.DATABASE_URL || new URL(process.env.DATABASE_URL).pathname !== '/' + database)
-    throw new Error('D6 migration worker and configured database do not match');
+    throw new Error('D7-1 migration worker and configured database do not match');
   return { database, worker };
 }
 function sql(statement: string): string {
@@ -57,7 +57,8 @@ function recreate() {
     ['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'],
     { encoding: 'utf8' },
   ).trim();
-  if (!engine.startsWith('unix://')) throw new Error('D6 migration requires a local Docker socket');
+  if (!engine.startsWith('unix://'))
+    throw new Error('D7-1 migration requires a local Docker socket');
   const active = execFileSync(
     'docker',
     [
@@ -80,13 +81,23 @@ function recreate() {
       stdio: ['pipe', 'pipe', 'pipe'],
     },
   ).trim();
-  if (active !== '0') throw new Error('D6 migration worker is in use; refusing reconstruction');
+  if (active !== '0') {
+    // Only aggregate backend kinds/states: no SQL, addresses, IDs or connection URLs.
+    const summary = sql(
+      "SELECT backend_type, COALESCE(state, 'unknown'), count(*) FROM pg_stat_activity " +
+        'WHERE datname = current_database() AND pid <> pg_backend_pid() ' +
+        'GROUP BY backend_type, state ORDER BY backend_type, state',
+    );
+    throw new Error(
+      'D7-1 migration worker is in use; refusing reconstruction; backend summary: ' + summary,
+    );
+  }
   dropWorkerDatabase(worker);
   execFileSync('docker', ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', database], {
     stdio: 'pipe',
   });
   if (sql('SELECT current_database()') !== database)
-    throw new Error('D6 migration connected target mismatch');
+    throw new Error('D7-1 migration connected target mismatch');
 }
 function deploy(schema: string) {
   target();
@@ -98,7 +109,7 @@ function deploy(schema: string) {
   } catch {
     // Never expose a child-process environment or database URL in assertion output.
     throw new Error(
-      'D6 isolated migration deploy failed; inspect the approved worker migration state',
+      'D7-1 isolated migration deploy failed; inspect the approved worker migration state',
     );
   }
 }
@@ -116,7 +127,7 @@ async function seedLegacy() {
         data: { username: 'd6-migration-user', passwordHash: 'fixture' },
       });
       const org = await tx.organization.create({
-        data: { name: 'D6 fixture', nodeTypeCode: 'team' },
+        data: { name: 'D7-1 fixture', nodeTypeCode: 'team' },
       });
       const member = await tx.member.create({
         data: {
@@ -128,7 +139,7 @@ async function seedLegacy() {
       });
       const activity = await tx.activity.create({
         data: {
-          title: 'D6 historical fixture',
+          title: 'D7-1 historical fixture',
           activityTypeCode: 'fixture',
           organizationId: org.id,
           startAt: at,
@@ -286,7 +297,7 @@ async function seedLegacy() {
   }
 }
 
-describe('D6 migration cold replay and nonempty legacy upgrade', () => {
+describe('D7-1 migration cold replay and nonempty legacy upgrade', () => {
   const root = path.resolve('prisma');
   const schema = path.join(root, 'schema.prisma');
   const names = readdirSync(path.join(root, 'migrations'), { withFileTypes: true })
@@ -315,11 +326,11 @@ describe('D6 migration cold replay and nonempty legacy upgrade', () => {
     deploy(schema);
   }, 120000);
 
-  it('replays 123 exact SQL files and leaves both D6 tables empty', () => {
+  it('replays 123 exact SQL files and leaves both D7-1 tables empty', () => {
     recreate();
     deploy(schema);
     expect(names).toHaveLength(123);
-    expect(names[121]).toBe(MIGRATION);
+    expect(names[122]).toBe(MIGRATION);
     expect(checksums()).toEqual(
       names.map(
         (name) =>
@@ -330,13 +341,14 @@ describe('D6 migration cold replay and nonempty legacy upgrade', () => {
             .digest('hex'),
       ),
     );
-    expect(sql('SELECT count(*) FROM "ParticipationTimeLedgerManifest"')).toBe('0');
-    expect(sql('SELECT count(*) FROM "ParticipationTimeLedgerEntry"')).toBe('0');
+    expect(sql('SELECT count(*) FROM "ParticipationTimeCorrectionManifest"')).toBe('0');
+    expect(sql('SELECT count(*) FROM "ParticipationTimeCorrectionEntry"')).toBe('0');
+    expect(sql('SELECT count(*) FROM "ParticipationTimeCorrectionCommitReceipt"')).toBe('0');
   }, 120000);
 
-  it('preserves nonempty legacy ledger and reviews byte-for-byte through 121 to 122', async () => {
+  it('preserves nonempty legacy ledger and reviews byte-for-byte through 122 to 123', async () => {
     recreate();
-    const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-d6-pre122-'));
+    const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-d7-pre123-'));
     try {
       mkdirSync(path.join(temporary, 'migrations'));
       copyFileSync(schema, path.join(temporary, 'schema.prisma'));
@@ -344,15 +356,15 @@ describe('D6 migration cold replay and nonempty legacy upgrade', () => {
         path.join(root, 'migrations/migration_lock.toml'),
         path.join(temporary, 'migrations/migration_lock.toml'),
       );
-      expect(names.indexOf(MIGRATION)).toBe(121);
-      for (const name of names.slice(0, 121))
+      expect(names.indexOf(MIGRATION)).toBe(122);
+      for (const name of names.slice(0, 122))
         cpSync(path.join(root, 'migrations', name), path.join(temporary, 'migrations', name), {
           recursive: true,
           errorOnExist: true,
           force: false,
         });
       deploy(path.join(temporary, 'schema.prisma'));
-      expect(checksums()).toHaveLength(121);
+      expect(checksums()).toHaveLength(122);
       await seedLegacy();
       // Nonempty denominators are checked independently before comparing snapshots.
       expect(tables.map((table) => Number(sql('SELECT count(*) FROM "' + table + '"')))).toEqual([
@@ -370,11 +382,12 @@ describe('D6 migration cold replay and nonempty legacy upgrade', () => {
         },
       );
       deploy(path.join(temporary, 'schema.prisma'));
-      expect(checksums()).toHaveLength(122);
-      expect(checksums().slice(0, 121)).toEqual(oldChecksums);
+      expect(checksums()).toHaveLength(123);
+      expect(checksums().slice(0, 122)).toEqual(oldChecksums);
       expect(snapshot()).toEqual(before);
-      expect(sql('SELECT count(*) FROM "ParticipationTimeLedgerManifest"')).toBe('0');
-      expect(sql('SELECT count(*) FROM "ParticipationTimeLedgerEntry"')).toBe('0');
+      expect(sql('SELECT count(*) FROM "ParticipationTimeCorrectionManifest"')).toBe('0');
+      expect(sql('SELECT count(*) FROM "ParticipationTimeCorrectionEntry"')).toBe('0');
+      expect(sql('SELECT count(*) FROM "ParticipationTimeCorrectionCommitReceipt"')).toBe('0');
     } finally {
       rmSync(temporary, { recursive: true, force: true });
       deploy(schema);

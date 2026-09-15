@@ -198,9 +198,9 @@
       "description": "sha256:08f9e0ed7725d2661ce9d993c5f84c0ced9e67da78a433532a8184c344c0ccca"
     },
     "activity.time-settlement.read": {
-      "endpoints": 7,
-      "surface": "sha256:f6b3c47a61bd53d96d2432ea8b9a6f97933916e9e3bec5240e87336c65c5f8f6",
-      "description": "sha256:77d0852b5b0331c256720a9b913e1c0efa7f981b9e12f218c3d491a6c2104880"
+      "endpoints": 8,
+      "surface": "sha256:a050b2d0b43c9c1ff348f4485beb9a35b02cad2cecbe80eaa36fc57da62b2607",
+      "description": "sha256:7496bb9195d380aba963b3b9271303b4550b08c02e9bd10ef1da01324be1fc92"
     },
     "activity.update.record": {
       "endpoints": 8,
