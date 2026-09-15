@@ -80,7 +80,28 @@ function recreate() {
       stdio: ['pipe', 'pipe', 'pipe'],
     },
   ).trim();
-  if (active !== '0') throw new Error('D6 migration worker is in use; refusing reconstruction');
+  if (active !== '0') {
+    // Counts only: never log SQL text, identities, addresses or connection strings.
+    let diagnostics = 'unavailable';
+    try {
+      diagnostics = sql(`SELECT json_build_object(
+        'connections', count(*),
+        'clientBackends', count(*) FILTER (WHERE backend_type = 'client backend'),
+        'autovacuumWorkers', count(*) FILTER (WHERE backend_type = 'autovacuum worker'),
+        'otherBackends', count(*) FILTER (WHERE backend_type NOT IN ('client backend', 'autovacuum worker')),
+        'active', count(*) FILTER (WHERE state = 'active'),
+        'idle', count(*) FILTER (WHERE state = 'idle'),
+        'idleInTransaction', count(*) FILTER (WHERE state IN ('idle in transaction', 'idle in transaction (aborted)')),
+        'waitingOnLock', count(*) FILTER (WHERE wait_event_type = 'Lock')
+      ) FROM pg_stat_activity
+      WHERE datname = current_database() AND pid <> pg_backend_pid()`);
+    } catch {
+      // A failed diagnostic must not replace or bypass the original refusal.
+    }
+    throw new Error(
+      'D6 migration worker is in use; refusing reconstruction; connection counts=' + diagnostics,
+    );
+  }
   dropWorkerDatabase(worker);
   execFileSync('docker', ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', database], {
     stdio: 'pipe',
