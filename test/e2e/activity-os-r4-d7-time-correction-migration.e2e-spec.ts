@@ -81,7 +81,17 @@ function recreate() {
       stdio: ['pipe', 'pipe', 'pipe'],
     },
   ).trim();
-  if (active !== '0') throw new Error('D7-1 migration worker is in use; refusing reconstruction');
+  if (active !== '0') {
+    // Only aggregate backend kinds/states: no SQL, addresses, IDs or connection URLs.
+    const summary = sql(
+      "SELECT backend_type, COALESCE(state, 'unknown'), count(*) FROM pg_stat_activity " +
+        'WHERE datname = current_database() AND pid <> pg_backend_pid() ' +
+        'GROUP BY backend_type, state ORDER BY backend_type, state',
+    );
+    throw new Error(
+      'D7-1 migration worker is in use; refusing reconstruction; backend summary: ' + summary,
+    );
+  }
   dropWorkerDatabase(worker);
   execFileSync('docker', ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', database], {
     stdio: 'pipe',
