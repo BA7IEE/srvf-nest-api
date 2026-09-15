@@ -373,9 +373,15 @@ function schemaModels(): SchemaModel[] {
         // D6 exact immutable category inventory only; do not generalize categoryCode discovery.
         const d6LedgerCategory =
           model.name === 'ParticipationTimeLedgerEntry' && field.name === 'categoryCode';
+        const d7CorrectionConfiguration =
+          model.name === 'ParticipationTimeCorrectionEntry' &&
+          (field.name === 'categoryCode' || field.name === 'entryTypeCode');
         if (
           field.type === 'String' &&
-          (stateLikeString(field.name) || d4RevisionKind || d6LedgerCategory)
+          (stateLikeString(field.name) ||
+            d4RevisionKind ||
+            d6LedgerCategory ||
+            d7CorrectionConfiguration)
         ) {
           stateFields.push(field.name);
         }

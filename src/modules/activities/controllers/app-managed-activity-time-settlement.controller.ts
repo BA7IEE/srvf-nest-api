@@ -16,6 +16,7 @@ import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { ActivityTimeSettlementService } from '../activity-time-settlement.service';
 import { ActivityTimeSettlementQueryService } from '../activity-time-settlement-query.service';
 import { ParticipationTimeLedgerQueryService } from '../participation-time-ledger-query.service';
+import { ParticipationTimeCorrectionQueryService } from '../participation-time-correction-query.service';
 import { AppManagedActivityParamsDto } from '../dto/app/app-managed-activity.dto';
 import {
   AppTimeSettlementWorkbenchDto,
@@ -33,6 +34,8 @@ import {
   AppTimeSettlementResultDto,
   AppTimeShadowReportDto,
   AppTimeLedgerReportDto,
+  AppTimeCorrectionReportDto,
+  AppTimeCorrectionVersionParamsDto,
 } from '../dto/app/app-activity-time-settlement.dto';
 
 const ERRORS = [
@@ -87,6 +90,7 @@ export class AppManagedActivityTimeSettlementController {
     private readonly service: ActivityTimeSettlementService,
     private readonly queries: ActivityTimeSettlementQueryService,
     private readonly timeLedgerQueries: ParticipationTimeLedgerQueryService,
+    private readonly timeCorrectionQueries: ParticipationTimeCorrectionQueryService,
   ) {}
 
   @Get()
@@ -185,6 +189,38 @@ export class AppManagedActivityTimeSettlementController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.timeLedgerQueries.report(params.activityId, params.timeRevisionId, query, user);
+  }
+
+  @Get('versions/:settlementVersionId/correction-ledger')
+  @RequiresPermission('activity.time-settlement.read', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+    scopes: ['responsibility', 'org-scope'],
+  })
+  @ApiOperation({
+    summary: '读取指定已提交版本的分类时长更正账本 [rbac: activity.time-settlement.read]',
+  })
+  @ApiWrappedOkResponse(AppTimeCorrectionReportDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE,
+    BizCode.ACTIVITY_TIME_LEDGER_REFERENCE_UNAVAILABLE,
+    BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT,
+  )
+  correctionLedger(
+    @Param() params: AppTimeCorrectionVersionParamsDto,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.timeCorrectionQueries.report(
+      params.activityId,
+      params.settlementVersionId,
+      query,
+      user,
+    );
   }
 
   @Get('revisions/:timeRevisionId/shadow')

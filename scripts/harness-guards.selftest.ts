@@ -2105,6 +2105,46 @@ checkEq(
       broadenedD6.code !== 0 && saidThat(broadenedD6, 'coverage mismatch'),
       broadenedD6.out,
     );
+    for (const field of ['categoryCode', 'entryTypeCode']) {
+      const entry = pick(liveStateRegistry.entries, 'ParticipationTimeCorrectionEntry', field);
+      const baseline = runStateRegistry(() => {});
+      check(
+        `D7 ${field} 精确配置登记正例`,
+        baseline.code === 0 &&
+          entry.layer === 'L1' &&
+          entry.governanceStatus === 'inventory' &&
+          entry.transitions === 'not-derived',
+        baseline.out,
+      );
+      const missing = runStateRegistry((entries) => {
+        entries.splice(
+          entries.indexOf(pick(entries, 'ParticipationTimeCorrectionEntry', field)),
+          1,
+        );
+      });
+      check(
+        `D7 ${field} 漏登记拒绝`,
+        missing.code !== 0 && saidThat(missing, 'coverage mismatch'),
+        missing.out,
+      );
+      const wrongModel = runStateRegistry((entries) => {
+        pick(entries, 'ParticipationTimeCorrectionEntry', field).model =
+          'ParticipantSettlementTimeBucket';
+      });
+      check(
+        `D7 ${field} 不泛化其他模型`,
+        wrongModel.code !== 0 && saidThat(wrongModel, 'coverage mismatch'),
+        wrongModel.out,
+      );
+      const wrongField = runStateRegistry((entries) => {
+        pick(entries, 'ParticipationTimeCorrectionEntry', field).field = 'contentHash';
+      });
+      check(
+        `D7 ${field} 不泛化其他字段`,
+        wrongField.code !== 0 && saidThat(wrongField, 'coverage mismatch'),
+        wrongField.out,
+      );
+    }
     /** L3 `Activity.statusCode` 的完整合法证据 —— enumerated 路径的正例底座。 */
     const activityEvidence = (): FixtureStateEntry['governedEvidence'] => ({
       edgeModel: 'enumerated',

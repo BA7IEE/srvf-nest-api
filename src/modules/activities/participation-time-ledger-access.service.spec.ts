@@ -2,6 +2,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
+import { RbacService } from '../permissions/rbac.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import * as activeIdentity from '../users/user-active-identity.query';
 import * as organizationEligibility from '../organizations/organization-publish-readiness.primitive';
@@ -24,6 +25,7 @@ describe('D6 classified ledger exact-version current access', () => {
     Parameters<AuthzService['getExplicitVisibleOrganizationScope']>
   >();
   const can = jest.fn<ReturnType<AuthzService['can']>, Parameters<AuthzService['can']>>();
+  const globalCan = jest.fn<ReturnType<RbacService['can']>, Parameters<RbacService['can']>>();
   const decisions = jest.fn<
     Promise<Array<{ actorUserId: string; actionCode: string }>>,
     [unknown]
@@ -40,6 +42,7 @@ describe('D6 classified ledger exact-version current access', () => {
         ParticipationTimeLedgerAccessService,
         { provide: AppIdentityResolver, useValue: { resolve } },
         { provide: AuthzService, useValue: { getExplicitVisibleOrganizationScope: scope, can } },
+        { provide: RbacService, useValue: { can: globalCan } },
         {
           provide: PrismaService,
           useValue: {
@@ -64,6 +67,7 @@ describe('D6 classified ledger exact-version current access', () => {
     activity.mockResolvedValue({ organizationId: 'org' });
     scope.mockResolvedValue({ hasPermission: true, global: false, organizationIds: ['org'] });
     can.mockResolvedValue(true);
+    globalCan.mockResolvedValue(true);
   });
   afterAll(async () => {
     jest.restoreAllMocks();
@@ -94,6 +98,32 @@ describe('D6 classified ledger exact-version current access', () => {
       { type: 'attendance_settlement_version', id: 'historical-version' },
       tx,
     );
+  });
+
+  it('D7 uses current GLOBAL correction authority without inventing a normal final decision', async () => {
+    await expect(service.authorizeCorrection(tx, actor.id)).resolves.toEqual(actor);
+    expect(activeIdentity.loadActiveUserIdentityInTx).toHaveBeenCalledWith(tx, actor.id);
+    expect(globalCan).toHaveBeenCalledWith(
+      actor,
+      'activity.settlement-final-review.record',
+      undefined,
+      tx,
+    );
+    expect(decisions).not.toHaveBeenCalled();
+    expect(scope).not.toHaveBeenCalled();
+  });
+  it('D7 refuses a revoked GLOBAL grant on replay', async () => {
+    await service.authorizeCorrection(tx, actor.id);
+    globalCan.mockResolvedValue(false);
+    await expect(service.authorizeCorrection(tx, actor.id)).rejects.toThrow();
+    expect(globalCan).toHaveBeenCalledTimes(2);
+  });
+  it('D7 refuses an inactive bound member even with a GLOBAL grant', async () => {
+    resolve.mockResolvedValue({ canUseApp: false, reason: 'MEMBER_INACTIVE', member: null });
+    await expect(service.authorizeCorrection(tx, actor.id)).rejects.toMatchObject({
+      biz: { code: 40300 },
+    });
+    expect(globalCan).not.toHaveBeenCalled();
   });
 
   it('does not reuse a previous successful identity check', async () => {

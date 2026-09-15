@@ -96,10 +96,14 @@ export class ParticipationTimeLedgerService {
 
   async assertLegacyCorrection(tx: Prisma.TransactionClient, baseSettlementVersionId: string) {
     if (
-      await tx.participationTimeLedgerManifest.findFirst({
+      (await tx.participationTimeLedgerManifest.findFirst({
         where: { settlementVersionId: baseSettlementVersionId },
         select: { id: true },
-      })
+      })) ||
+      (await tx.participationTimeCorrectionManifest.findFirst({
+        where: { settlementVersionId: baseSettlementVersionId },
+        select: { id: true },
+      }))
     ) {
       throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_CORRECTION_UNAVAILABLE);
     }
@@ -113,10 +117,14 @@ export class ParticipationTimeLedgerService {
     const bases = applications.map((row) => row.correctionRequest.baseSettlementVersionId);
     if (
       bases.length &&
-      (await tx.participationTimeLedgerManifest.findFirst({
+      ((await tx.participationTimeLedgerManifest.findFirst({
         where: { settlementVersionId: { in: bases } },
         select: { id: true },
-      }))
+      })) ||
+        (await tx.participationTimeCorrectionManifest.findFirst({
+          where: { settlementVersionId: { in: bases } },
+          select: { id: true },
+        })))
     ) {
       throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_CORRECTION_UNAVAILABLE);
     }

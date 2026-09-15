@@ -6537,13 +6537,14 @@ model LedgerPostingBatch {
   preparedBy        User?                       @relation("LedgerPostingBatchPreparer", fields: [preparedByUserId], references: [id], onDelete: Restrict)
   committedBy       User?                       @relation("LedgerPostingBatchCommitter", fields: [committedByUserId], references: [id], onDelete: Restrict)
 
-  ledgerEntries       ParticipationLedgerEntry[]
-  dayStates           MemberContributionDayState[]
-  closureRevisions    ActivitySettlementClosureRevision[]
-  correctionApplied   CorrectionApplication[]             @relation("CorrectionApplicationNewBatch")
-  batchJobs           ActivityBatchJob[]
-  effectiveSegments   ParticipantServiceSegmentRevision[] @relation("SegmentEffectiveBatch")
-  timeLedgerManifests ParticipationTimeLedgerManifest[]
+  ledgerEntries           ParticipationLedgerEntry[]
+  dayStates               MemberContributionDayState[]
+  closureRevisions        ActivitySettlementClosureRevision[]
+  correctionApplied       CorrectionApplication[]               @relation("CorrectionApplicationNewBatch")
+  batchJobs               ActivityBatchJob[]
+  effectiveSegments       ParticipantServiceSegmentRevision[]   @relation("SegmentEffectiveBatch")
+  timeLedgerManifests     ParticipationTimeLedgerManifest[]
+  timeCorrectionManifests ParticipationTimeCorrectionManifest[]
 
   @@unique([id, settlementVersionId, settlementRunId], map: "lpb_id_version_run_key")
   @@unique([settlementVersionId, batchRevision], map: "ledger_posting_batch_version_revision_key")
@@ -6569,10 +6570,12 @@ model ParticipationTimeLedgerManifest {
   formatVersion          Int
   createdAt              DateTime @default(now())
 
-  postingBatch LedgerPostingBatch             @relation(fields: [postingBatchId, settlementVersionId, settlementRunId], references: [id, settlementVersionId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_batch_fkey")
-  timeRevision ActivitySettlementTimeRevision @relation(fields: [timeRevisionId, settlementVersionId, settlementRunId, activityId], references: [id, settlementVersionId, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_revision_fkey")
+  postingBatch LedgerPostingBatch                    @relation(fields: [postingBatchId, settlementVersionId, settlementRunId], references: [id, settlementVersionId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_batch_fkey")
+  timeRevision ActivitySettlementTimeRevision        @relation(fields: [timeRevisionId, settlementVersionId, settlementRunId, activityId], references: [id, settlementVersionId, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_revision_fkey")
   entries      ParticipationTimeLedgerEntry[]
+  corrections  ParticipationTimeCorrectionManifest[]
 
+  @@unique([id, activityId, settlementRunId], map: "ptlm_id_activity_run_key")
   @@unique([id, postingBatchId, timeRevisionId, activityId], map: "ptlm_id_batch_revision_activity_key")
   @@index([timeRevisionId, postingBatchId], map: "ptlm_revision_idx")
 }
@@ -6591,11 +6594,94 @@ model ParticipationTimeLedgerEntry {
   contentHash             String
   createdAt               DateTime @default(now())
 
-  manifest ParticipationTimeLedgerManifest @relation(fields: [manifestId, postingBatchId, timeRevisionId, activityId], references: [id, postingBatchId, timeRevisionId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptle_manifest_fkey")
-  bucket   ParticipantSettlementTimeBucket @relation(fields: [bucketId, timeRevisionId, activityId, participationIdentityId, categoryCode, recognizedSeconds], references: [id, timeRevisionId, activityId, participationIdentityId, categoryCode, recognizedSeconds], onDelete: Restrict, onUpdate: Restrict, map: "ptle_bucket_fkey")
+  manifest    ParticipationTimeLedgerManifest    @relation(fields: [manifestId, postingBatchId, timeRevisionId, activityId], references: [id, postingBatchId, timeRevisionId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptle_manifest_fkey")
+  bucket      ParticipantSettlementTimeBucket    @relation(fields: [bucketId, timeRevisionId, activityId, participationIdentityId, categoryCode, recognizedSeconds], references: [id, timeRevisionId, activityId, participationIdentityId, categoryCode, recognizedSeconds], onDelete: Restrict, onUpdate: Restrict, map: "ptle_bucket_fkey")
+  corrections ParticipationTimeCorrectionEntry[]
 
+  @@unique([id, participationIdentityId, categoryCode], map: "ptle_id_identity_category_key")
   @@unique([manifestId, bucketId], map: "ptle_manifest_bucket_key")
   @@index([manifestId, participationIdentityId, categoryCode, id], map: "ptle_manifest_identity_category_idx")
+}
+
+// D7-1: same-fact recognition corrections are permanent append-only contents.
+// Their visibility and commit receipt share the existing correction transaction.
+model ParticipationTimeCorrectionManifest {
+  id                      String   @id @default(cuid())
+  correctionRequestId     String
+  postingBatchId          String   @unique(map: "ptcm_batch_key")
+  activityId              String
+  settlementRunId         String
+  baseSettlementVersionId String
+  settlementVersionId     String
+  rootManifestId          String
+  predecessorManifestId   String?
+  baseContentHash         String
+  requestHash             String
+  contentHash             String
+  expectedRootCount       Int
+  expectedEntryCount      Int
+  reversalSecondsTotal    BigInt
+  replacementSecondsTotal BigInt
+  formatVersion           Int
+  createdAt               DateTime @default(now())
+
+  postingBatch      LedgerPostingBatch                        @relation(fields: [postingBatchId, settlementVersionId, settlementRunId], references: [id, settlementVersionId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_batch_fkey")
+  rootManifest      ParticipationTimeLedgerManifest           @relation(fields: [rootManifestId, activityId, settlementRunId], references: [id, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_root_fkey")
+  correctionRequest AttendanceCorrectionRequest               @relation(fields: [correctionRequestId, baseSettlementVersionId, activityId, settlementRunId], references: [id, baseSettlementVersionId, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_request_fkey")
+  predecessor       ParticipationTimeCorrectionManifest?      @relation("TimeCorrectionPredecessor", fields: [predecessorManifestId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_predecessor_fkey")
+  successors        ParticipationTimeCorrectionManifest[]     @relation("TimeCorrectionPredecessor")
+  entries           ParticipationTimeCorrectionEntry[]
+  commitReceipt     ParticipationTimeCorrectionCommitReceipt?
+
+  @@unique([id, postingBatchId, activityId], map: "ptcm_id_batch_activity_key")
+  @@unique([id, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], map: "ptcm_receipt_anchor_key")
+  @@index([correctionRequestId], map: "ptcm_request_idx")
+  @@index([activityId, settlementVersionId], map: "ptcm_activity_version_idx")
+  @@index([rootManifestId], map: "ptcm_root_idx")
+  @@index([predecessorManifestId], map: "ptcm_predecessor_idx")
+}
+
+model ParticipationTimeCorrectionEntry {
+  id                        String   @id @default(cuid())
+  manifestId                String
+  postingBatchId            String
+  activityId                String
+  rootEntryId               String
+  participationIdentityId   String
+  categoryCode              String
+  entryTypeCode             String
+  secondsDelta              Int
+  reversesCorrectionEntryId String?
+  entryKey                  String   @unique(map: "ptce_entry_key")
+  contentHash               String
+  createdAt                 DateTime @default(now())
+
+  manifest      ParticipationTimeCorrectionManifest @relation(fields: [manifestId, postingBatchId, activityId], references: [id, postingBatchId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptce_manifest_fkey")
+  rootEntry     ParticipationTimeLedgerEntry        @relation(fields: [rootEntryId, participationIdentityId, categoryCode], references: [id, participationIdentityId, categoryCode], onDelete: Restrict, onUpdate: Restrict, map: "ptce_root_fkey")
+  reversesEntry ParticipationTimeCorrectionEntry?   @relation("TimeCorrectionReversal", fields: [reversesCorrectionEntryId, rootEntryId, activityId], references: [id, rootEntryId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptce_reverses_fkey")
+  reversals     ParticipationTimeCorrectionEntry[]  @relation("TimeCorrectionReversal")
+
+  @@unique([id, rootEntryId, activityId], map: "ptce_id_root_activity_key")
+  @@unique([manifestId, rootEntryId, entryTypeCode], map: "ptce_manifest_root_type_key")
+  @@index([manifestId, participationIdentityId, categoryCode, entryTypeCode, id], map: "ptce_manifest_page_idx")
+  @@index([reversesCorrectionEntryId], map: "ptce_reverses_idx")
+}
+
+model ParticipationTimeCorrectionCommitReceipt {
+  id                      String   @id @default(cuid())
+  manifestId              String   @unique(map: "ptcr_manifest_key")
+  postingBatchId          String
+  activityId              String
+  settlementRunId         String
+  baseSettlementVersionId String   @unique(map: "ptcr_base_version_key")
+  settlementVersionId     String
+  contentHash             String
+  createdAt               DateTime @default(now())
+
+  manifest ParticipationTimeCorrectionManifest @relation(fields: [manifestId, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], references: [id, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "ptcr_manifest_fkey")
+
+  @@unique([manifestId, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], map: "ptcr_manifest_anchor_key")
+  @@index([postingBatchId], map: "ptcr_batch_idx")
 }
 
 // ===== §3.23 ParticipationLedgerEntry:正式账本 =====
@@ -6755,11 +6841,13 @@ model AttendanceCorrectionRequest {
   submittedBy           User?                          @relation("CorrectionRequestSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
   reviewedBy            User?                          @relation("CorrectionRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
 
-  applications      CorrectionApplication[]
-  resultRevisions   ParticipantSettlementResultRevision[]
-  supersededClosure ActivitySettlementClosureRevision[]   @relation("ClosureSupersededByCorrection")
+  applications            CorrectionApplication[]
+  timeCorrectionManifests ParticipationTimeCorrectionManifest[]
+  resultRevisions         ParticipantSettlementResultRevision[]
+  supersededClosure       ActivitySettlementClosureRevision[]   @relation("ClosureSupersededByCorrection")
 
   // §11.3 点名的两条:
+  @@unique([id, baseSettlementVersionId, activityId, settlementRunId], map: "acr_id_base_activity_run_key")
   @@index([activityId, statusCode], map: "attendance_correction_request_activity_status_idx")
   @@index([participationIdentityId, statusCode], map: "attendance_correction_request_identity_status_idx")
   @@index([settlementRunId], map: "attendance_correction_request_run_idx")

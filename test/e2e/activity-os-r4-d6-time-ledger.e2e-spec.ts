@@ -27,6 +27,7 @@ import {
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerPostingAuditRecorder } from '../../src/modules/activities/ledger-posting-audit-recorder';
 import { ParticipationTimeLedgerService } from '../../src/modules/activities/participation-time-ledger.service';
+import { ParticipationTimeCorrectionService } from '../../src/modules/activities/participation-time-correction.service';
 import { LedgerReadyBatchCommitter } from '../../src/modules/activities/ledger-ready-batch-committer.service';
 import { ActivityTimeSettlementAccessService } from '../../src/modules/activities/activity-time-settlement-access.service';
 import { ActivityTimeSettlementService } from '../../src/modules/activities/activity-time-settlement.service';
@@ -914,6 +915,7 @@ describe('D6 classified ledger through real preparation and commit', () => {
         f.app.get(SettlementNotificationProducer),
         f.app.get(ActivityWorkflowGate),
         ledger,
+        f.app.get(ParticipationTimeCorrectionService),
         access,
       );
       const queries = new ParticipationTimeLedgerQueryService(

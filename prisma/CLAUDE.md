@@ -1,6 +1,6 @@
 # prisma — 本地铁律
 
-当前 D6 implementation 工作树为 **122 个 migration、167 个模型**，新增 `ParticipationTimeLedgerManifest` / `ParticipationTimeLedgerEntry`。第122条为 `20260914120000_activity_os_r4_d6_time_ledger`；两表不可变、Restrict复合同链引用，旧121条SQL不改，无存量回填或业务数据删除。D6处于实施验收中，最终3b签字、非空升级、满额及最终CI尚未全部完成，不代表已提交、合并或部署。隔离测试仅获准使用app_test_w98；不操作生产、不启用Gate。
+当前 D7-1 implementation 工作树为 **123 个 migration、170 个模型**，新增 `ParticipationTimeCorrectionManifest` / `ParticipationTimeCorrectionEntry` / `ParticipationTimeCorrectionCommitReceipt`。第123条为 `20260915120000_activity_os_r4_d7_time_correction`；三表永久追加、Restrict复合同链引用、同一更正事务闭合，旧122条SQL不改，无存量回填或业务数据删除。当前仍在实施验收，3b/4b签字、满额及最终CI未完成，不代表已提交、合并或部署。隔离测试仅使用app_test_w98；不操作生产、不启用Gate。下方保留历史时点。
 
 ## D4 历史实施记录（不是当前待办或计数）
 

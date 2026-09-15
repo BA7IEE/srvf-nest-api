@@ -34,6 +34,7 @@ import { BizException } from '../../common/exceptions/biz.exception';
 
 /** 本闭集的版本。日后扩展必须递增,**不得**在同一版本号下悄悄加键。 */
 export const CORRECTION_CHANGE_SCHEMA_VERSION = 1;
+export const TIME_CORRECTION_CHANGE_SCHEMA_VERSION = 2;
 
 /** §3.20 十值闭集,与 `participant_settlement_result_result_code_check` 逐字一致。 */
 export const CORRECTION_RESULT_CODES = [
@@ -85,6 +86,17 @@ export interface CorrectionChangeSet {
   readonly schemaVersion: number;
   readonly results: readonly CorrectionResultChange[];
   readonly segments: readonly CorrectionSegmentChange[];
+  readonly timeCorrection?: CorrectionTimeChange;
+}
+
+export interface CorrectionTimeChange {
+  readonly baseSettlementVersionId: string;
+  readonly baseTimeLedgerHash: string;
+  readonly reason: string;
+  readonly items: readonly {
+    readonly rootEntryId: string;
+    readonly recognizedSeconds: number;
+  }[];
 }
 
 /**
@@ -95,19 +107,72 @@ export interface CorrectionChangeSet {
  */
 export function parseCorrectionChangeSet(raw: unknown): CorrectionChangeSet {
   if (!isPlainObject(raw)) throw invalid();
-  if (raw.schemaVersion !== CORRECTION_CHANGE_SCHEMA_VERSION) throw invalid();
+  const v2 = raw.schemaVersion === TIME_CORRECTION_CHANGE_SCHEMA_VERSION;
+  if (raw.schemaVersion !== CORRECTION_CHANGE_SCHEMA_VERSION && !v2) throw invalid();
 
   // 顶层键闭集:多一个键就拒。守的是"调用方以为自己传了某个字段、而我们默默丢掉了"。
-  assertExactKeys(raw, ['schemaVersion', 'results', 'segments']);
+  assertExactKeys(
+    raw,
+    v2
+      ? ['schemaVersion', 'results', 'segments', 'timeCorrection']
+      : ['schemaVersion', 'results', 'segments'],
+  );
 
   const results = parseResults(raw.results);
   const segments = parseSegments(raw.segments);
+  if (v2) {
+    if (segments.length !== 0) throw invalid();
+    return {
+      schemaVersion: TIME_CORRECTION_CHANGE_SCHEMA_VERSION,
+      results,
+      segments,
+      timeCorrection: parseTimeCorrection(raw.timeCorrection),
+    };
+  }
 
   // 空更正没有意义:它会生成一个与旧版逐字相同的新版本 + 一整轮冲回补记,
   // 白白在账上留两倍分录却什么都没改。
   if (results.length === 0 && segments.length === 0) throw invalid();
 
   return { schemaVersion: CORRECTION_CHANGE_SCHEMA_VERSION, results, segments };
+}
+
+function parseTimeCorrection(raw: unknown): CorrectionTimeChange {
+  if (!isPlainObject(raw)) throw invalid();
+  assertExactKeys(raw, ['baseSettlementVersionId', 'baseTimeLedgerHash', 'reason', 'items']);
+  const baseSettlementVersionId = requireId(raw.baseSettlementVersionId);
+  if (!baseSettlementVersionId.trim()) throw invalid();
+  if (typeof raw.baseTimeLedgerHash !== 'string' || !/^[a-f0-9]{64}$/u.test(raw.baseTimeLedgerHash))
+    throw invalid();
+  if (typeof raw.reason !== 'string' || !raw.reason.trim() || raw.reason.length > 500)
+    throw invalid();
+  if (!Array.isArray(raw.items) || raw.items.length === 0 || raw.items.length > 8000)
+    throw invalid();
+  const seen = new Set<string>();
+  const items = raw.items
+    .map((item: unknown) => {
+      if (!isPlainObject(item)) throw invalid();
+      assertExactKeys(item, ['rootEntryId', 'recognizedSeconds']);
+      const rootEntryId = requireId(item.rootEntryId);
+      if (!rootEntryId.trim() || seen.has(rootEntryId)) throw invalid();
+      seen.add(rootEntryId);
+      const recognizedSeconds = item.recognizedSeconds;
+      if (
+        typeof recognizedSeconds !== 'number' ||
+        !Number.isInteger(recognizedSeconds) ||
+        recognizedSeconds < 0 ||
+        recognizedSeconds > 2147483647
+      )
+        throw invalid();
+      return { rootEntryId, recognizedSeconds: recognizedSeconds === 0 ? 0 : recognizedSeconds };
+    })
+    .sort((a, b) => (a.rootEntryId < b.rootEntryId ? -1 : a.rootEntryId > b.rootEntryId ? 1 : 0));
+  return {
+    baseSettlementVersionId,
+    baseTimeLedgerHash: raw.baseTimeLedgerHash,
+    reason: raw.reason,
+    items,
+  };
 }
 
 function parseResults(raw: unknown): CorrectionResultChange[] {

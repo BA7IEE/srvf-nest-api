@@ -127,6 +127,9 @@ describe('pending segment nonempty legacy upgrade', () => {
     // Reset the historical schema first; the readback-only tables below are not
     // real D6 tables and must not enter its named-trigger cleanup protocol.
     sql(`
+      CREATE TABLE "ParticipationTimeCorrectionManifest" (
+        "id" TEXT PRIMARY KEY, "settlementVersionId" TEXT NOT NULL, CHECK (false)
+      );
       CREATE TABLE "ActivitySettlementTimeRevision" (
         "id" TEXT PRIMARY KEY, "activityId" TEXT NOT NULL,
         "settlementRunId" TEXT NOT NULL, "settlementVersionId" TEXT NOT NULL,

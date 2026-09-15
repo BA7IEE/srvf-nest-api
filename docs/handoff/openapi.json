@@ -36109,6 +36109,269 @@
         ]
       }
     },
+    "/api/app/v1/my/managed-activities/{activityId}/time-settlement/versions/{settlementVersionId}/correction-ledger": {
+      "get": {
+        "operationId": "AppManagedActivityTimeSettlementController_correctionLedger",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "settlementVersionId",
+            "required": true,
+            "in": "path",
+            "description": "确切结算版本 ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppTimeCorrectionReportDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动分类结算引用不存在或不可访问(code=20219) / 分类时长账本不存在或不可访问(code=20230)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20219,
+                        20230
+                      ],
+                      "description": "20219: 活动分类结算引用不存在或不可访问; 20230: 分类时长账本不存在或不可访问",
+                      "example": 20219
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动分类结算引用不存在或不可访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动分类结算规模超过本次处理上限(code=20225)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20225
+                      ],
+                      "description": "20225: 活动分类结算规模超过本次处理上限",
+                      "example": 20225
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动分类结算规模超过本次处理上限"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "读取指定已提交版本的分类时长更正账本 [rbac: activity.time-settlement.read]",
+        "tags": [
+          "Mobile - Managed Activity Time Settlement"
+        ]
+      }
+    },
     "/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/shadow": {
       "get": {
         "operationId": "AppManagedActivityTimeSettlementController_shadow",
@@ -141551,6 +141814,219 @@
           "contentHash",
           "entryCount",
           "recognizedSecondsTotal",
+          "categories",
+          "resultPage"
+        ]
+      },
+      "AppTimeCorrectionCategoryDto": {
+        "type": "object",
+        "properties": {
+          "categoryCode": {
+            "type": "string",
+            "description": "时长分类",
+            "enum": [
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          },
+          "reversalSecondsTotal": {
+            "type": "string",
+            "description": "冲回秒数，精确十进制字符串",
+            "pattern": "^-?[0-9]+$"
+          },
+          "replacementSecondsTotal": {
+            "type": "string",
+            "description": "补记秒数，精确十进制字符串",
+            "pattern": "^[0-9]+$"
+          },
+          "netSecondsDelta": {
+            "type": "string",
+            "description": "本次净变化秒数，精确十进制字符串",
+            "pattern": "^-?[0-9]+$"
+          }
+        },
+        "required": [
+          "categoryCode",
+          "reversalSecondsTotal",
+          "replacementSecondsTotal",
+          "netSecondsDelta"
+        ]
+      },
+      "AppTimeCorrectionEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "不可变更正分录 ID"
+          },
+          "rootEntryId": {
+            "type": "string",
+            "description": "原始分类根分录 ID"
+          },
+          "reversesCorrectionEntryId": {
+            "type": "string",
+            "description": "直接前驱补记分录 ID，首次冲回或本次补记为 null",
+            "nullable": true
+          },
+          "participationIdentityId": {
+            "type": "string",
+            "description": "参与身份 ID"
+          },
+          "categoryCode": {
+            "type": "string",
+            "description": "时长分类",
+            "enum": [
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          },
+          "entryTypeCode": {
+            "type": "string",
+            "description": "分录类型，零值也明确区分冲回与补记",
+            "enum": [
+              "reversal",
+              "credit"
+            ]
+          },
+          "secondsDelta": {
+            "type": "integer",
+            "description": "精确秒数变化",
+            "minimum": -2147483647,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "id",
+          "rootEntryId",
+          "reversesCorrectionEntryId",
+          "participationIdentityId",
+          "categoryCode",
+          "entryTypeCode",
+          "secondsDelta"
+        ]
+      },
+      "AppTimeCorrectionPageDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "页码",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页条数",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "number",
+            "description": "分录总数",
+            "minimum": 0,
+            "maximum": 16000
+          },
+          "items": {
+            "description": "稳定排序的冲回与补记分录",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppTimeCorrectionEntryDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "pageSize",
+          "total",
+          "items"
+        ]
+      },
+      "AppTimeCorrectionReportDto": {
+        "type": "object",
+        "properties": {
+          "manifestId": {
+            "type": "string",
+            "description": "不可变更正清单 ID"
+          },
+          "postingBatchId": {
+            "type": "string",
+            "description": "同一原子更正批次 ID"
+          },
+          "settlementVersionId": {
+            "type": "string",
+            "description": "确切结算版本 ID"
+          },
+          "baseSettlementVersionId": {
+            "type": "string",
+            "description": "本次基础结算版本 ID"
+          },
+          "rootManifestId": {
+            "type": "string",
+            "description": "原始分类账本清单 ID"
+          },
+          "predecessorManifestId": {
+            "type": "string",
+            "description": "直接前驱更正清单 ID，首次为 null",
+            "nullable": true
+          },
+          "formatVersion": {
+            "type": "number",
+            "description": "格式版本",
+            "enum": [
+              1
+            ]
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "完整内容摘要",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "reversalSecondsTotal": {
+            "type": "string",
+            "description": "冲回秒数合计",
+            "pattern": "^-?[0-9]+$"
+          },
+          "replacementSecondsTotal": {
+            "type": "string",
+            "description": "补记秒数合计",
+            "pattern": "^[0-9]+$"
+          },
+          "netSecondsDelta": {
+            "type": "string",
+            "description": "本次净变化，不等同于志愿服务时长",
+            "pattern": "^-?[0-9]+$"
+          },
+          "categories": {
+            "description": "固定四类汇总，含零值",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppTimeCorrectionCategoryDto"
+            }
+          },
+          "resultPage": {
+            "description": "分页分录，不包含更正原因",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppTimeCorrectionPageDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "manifestId",
+          "postingBatchId",
+          "settlementVersionId",
+          "baseSettlementVersionId",
+          "rootManifestId",
+          "predecessorManifestId",
+          "formatVersion",
+          "contentHash",
+          "reversalSecondsTotal",
+          "replacementSecondsTotal",
+          "netSecondsDelta",
           "categories",
           "resultPage"
         ]

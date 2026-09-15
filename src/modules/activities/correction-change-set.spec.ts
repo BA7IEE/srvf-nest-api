@@ -46,6 +46,120 @@ function expectRejected(raw: unknown): void {
   throw new Error('期望被拒绝,实际解析通过');
 }
 
+describe('D7-1 V2 分类认定更正闭集', () => {
+  const timeCorrection = () => ({
+    baseSettlementVersionId: 'base-version',
+    baseTimeLedgerHash: 'a'.repeat(64),
+    reason: '复核后更正分类认定',
+    items: [{ rootEntryId: 'root-1', recognizedSeconds: 0 }],
+  });
+  const v2 = (overrides: Record<string, unknown> = {}) => ({
+    schemaVersion: 2,
+    results: [],
+    segments: [],
+    timeCorrection: timeCorrection(),
+    ...overrides,
+  });
+  it('允许仅更正分类认定，明确保留零值', () => {
+    expect(parseCorrectionChangeSet(v2())).toEqual(v2());
+  });
+  it('分类条目规范排序，不改变原因或既有结果解析', () => {
+    const parsed = parseCorrectionChangeSet(
+      v2({
+        results: [validResult()],
+        timeCorrection: {
+          ...timeCorrection(),
+          items: [
+            { rootEntryId: 'z', recognizedSeconds: 2147483647 },
+            { rootEntryId: 'a', recognizedSeconds: 0 },
+          ],
+        },
+      }),
+    );
+    expect(parsed.timeCorrection?.items.map((item) => item.rootEntryId)).toEqual(['a', 'z']);
+    expect(parsed.results[0].recognizedServiceHours).toBe(4);
+    expect(parsed.timeCorrection?.reason).toBe(timeCorrection().reason);
+  });
+  it('V1 返回结构不增加字段，禁止夹带新内容', () => {
+    expect(Object.keys(parseCorrectionChangeSet(changeSet()))).toEqual([
+      'schemaVersion',
+      'results',
+      'segments',
+    ]);
+    expectRejected(changeSet({ timeCorrection: timeCorrection() }));
+  });
+  it.each([
+    { timeCorrection: undefined },
+    { timeCorrection: { ...timeCorrection(), extra: true } },
+    { timeCorrection: { ...timeCorrection(), reason: ' ' } },
+    { timeCorrection: { ...timeCorrection(), reason: 'x'.repeat(501) } },
+    { timeCorrection: { ...timeCorrection(), baseTimeLedgerHash: 'invalid' } },
+    { timeCorrection: { ...timeCorrection(), baseSettlementVersionId: ' ' } },
+    { timeCorrection: { ...timeCorrection(), items: [] } },
+    {
+      timeCorrection: {
+        ...timeCorrection(),
+        items: [timeCorrection().items[0], timeCorrection().items[0]],
+      },
+    },
+    {
+      timeCorrection: {
+        ...timeCorrection(),
+        items: [{ rootEntryId: 'root', recognizedSeconds: 0, extra: true }],
+      },
+    },
+    { extra: true },
+    { schemaVersion: 3 },
+  ])('拒绝缺失、未知或含糊的 V2 字段 %#', (overrides) => expectRejected(v2(overrides)));
+  it.each([-1, 0.1, 2147483648, NaN, Infinity, '1', null])(
+    '不修约或转换秒数 %s',
+    (recognizedSeconds) => {
+      expectRejected(
+        v2({
+          timeCorrection: {
+            ...timeCorrection(),
+            items: [{ rootEntryId: 'root', recognizedSeconds }],
+          },
+        }),
+      );
+    },
+  );
+  it('即使服务段本身合法，V2 仍禁止更正事实', () => {
+    expectRejected(
+      v2({
+        segments: [
+          {
+            participationIdentityId: 'person',
+            segmentKey: 'segment',
+            checkInAt: '2020-03-01T01:00:00.000Z',
+            checkOutAt: '2020-03-01T02:00:00.000Z',
+            resultCode: 'valid',
+            serviceHours: '1.00',
+          },
+        ],
+      }),
+    );
+  });
+  it('严格限定 8000 个条目', () => {
+    const items = Array.from({ length: 8000 }, (_, i) => ({
+      rootEntryId: `root-${i}`,
+      recognizedSeconds: 0,
+    }));
+    expect(
+      parseCorrectionChangeSet(v2({ timeCorrection: { ...timeCorrection(), items } }))
+        .timeCorrection?.items,
+    ).toHaveLength(8000);
+    expectRejected(
+      v2({
+        timeCorrection: {
+          ...timeCorrection(),
+          items: [...items, { rootEntryId: 'overflow', recognizedSeconds: 0 }],
+        },
+      }),
+    );
+  });
+});
+
 describe('更正内容形状 (合同 §3.25 `requestedChangeJson`;字段表由本刀补齐)', () => {
   // ===== ① 正对照 =========================================================
   describe('① 合规内容解析通过', () => {
