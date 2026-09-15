@@ -112,6 +112,44 @@ describe('D7 correction source and commit ownership', () => {
     };
     expect(await service.source(makeDb() as never, withDatabaseFields, change)).toEqual(plain);
   });
+  it('keeps all predecessor keys inside the lateral probe and binds a null predecessor', async () => {
+    const db = makeDb();
+    await service.source(db as never, anchor, change);
+    const [parts, predecessor, root] = db.$queryRaw.mock.calls[1];
+    const sql = parts.join('?');
+    expect(predecessor).toBeNull();
+    expect(root).toBe('root');
+    expect(sql).toContain('LEFT JOIN LATERAL');
+    for (const predicate of [
+      'prior."manifestId" = ?',
+      'prior."rootEntryId" = e."id"',
+      'prior."entryTypeCode" = \'credit\'',
+      'prior."participationIdentityId" = e."participationIdentityId"',
+      'prior."categoryCode" = e."categoryCode"',
+    ]) {
+      expect(sql.indexOf(predicate)).toBeGreaterThan(sql.indexOf('LEFT JOIN LATERAL'));
+      expect(sql.indexOf(predicate)).toBeLessThan(sql.indexOf('OFFSET 0'));
+    }
+    expect(sql).toContain(') p ON TRUE');
+    expect(sql).toContain('ORDER BY e."id" LIMIT 8001');
+  });
+  it.each(['identity', 'category'])(
+    'rejects a predecessor filtered out by its %s key',
+    async () => {
+      // SQL filtering leaves a null predecessor: policy must not fall back to root amounts.
+      const db = makeDb();
+      db.$queryRaw.mockResolvedValueOnce([
+        {
+          id: 'root',
+          settlementVersionId: 'base',
+          expectedEntryCount: 1,
+          baseContentHash: 'b'.repeat(64),
+          predecessorManifestId: 'previous',
+        },
+      ]);
+      await expect(service.source(db as never, anchor, change)).rejects.toThrow();
+    },
+  );
   it('rejects missing roots even if the request has the expected number of items', async () => {
     const db = makeDb();
     db.$queryRaw

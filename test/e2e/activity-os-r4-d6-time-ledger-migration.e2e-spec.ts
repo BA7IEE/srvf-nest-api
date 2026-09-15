@@ -315,10 +315,10 @@ describe('D6 migration cold replay and nonempty legacy upgrade', () => {
     deploy(schema);
   }, 120000);
 
-  it('replays 123 exact SQL files and leaves both D6 tables empty', () => {
+  it('replays 124 exact SQL files and leaves both D6 tables empty', () => {
     recreate();
     deploy(schema);
-    expect(names).toHaveLength(123);
+    expect(names).toHaveLength(124);
     expect(names[121]).toBe(MIGRATION);
     expect(checksums()).toEqual(
       names.map(
