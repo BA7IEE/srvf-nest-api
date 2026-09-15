@@ -387,6 +387,46 @@ export class AppTimeSettlementBucketSourceDto {
   @ApiProperty({ pattern: '^[0-9]+$' }) rawRecognizedMilliseconds!: string;
 }
 
+export class AppTimeLedgerCategoryTotalDto {
+  @ApiProperty({ description: '时长分类', enum: CATEGORIES }) categoryCode!: string;
+  @ApiProperty({ description: '分类总秒数（精确十进制字符串）', pattern: '^[0-9]+$' })
+  recognizedSecondsTotal!: string;
+}
+export class AppTimeLedgerEntryDto {
+  @ApiProperty({ description: '不可变分录ID' }) id!: string;
+  @ApiProperty({ description: '冻结来源桶ID' }) bucketId!: string;
+  @ApiProperty({ description: '参与身份ID' }) participationIdentityId!: string;
+  @ApiProperty({ description: '时长分类', enum: CATEGORIES }) categoryCode!: string;
+  @ApiProperty({
+    description: '认定秒数，含零值',
+    type: 'integer',
+    minimum: 0,
+    maximum: 2147483647,
+  })
+  recognizedSeconds!: number;
+}
+export class AppTimeLedgerPageDto {
+  @ApiProperty({ description: '页码', minimum: 1 }) page!: number;
+  @ApiProperty({ description: '每页条数', minimum: 1, maximum: 100 }) pageSize!: number;
+  @ApiProperty({ description: '分录总条数', minimum: 0, maximum: 8000 }) total!: number;
+  @ApiProperty({ description: '分录列表', type: () => [AppTimeLedgerEntryDto] })
+  items!: AppTimeLedgerEntryDto[];
+}
+export class AppTimeLedgerReportDto {
+  @ApiProperty({ description: '已提交账本批次ID' }) postingBatchId!: string;
+  @ApiProperty({ description: '不可变清单ID' }) manifestId!: string;
+  @ApiProperty({ description: '确切分类修订ID' }) timeRevisionId!: string;
+  @ApiProperty({ description: '内容格式版本', enum: [1] }) formatVersion!: number;
+  @ApiProperty({ description: '账本完整内容指纹', pattern: '^[a-f0-9]{64}$' }) contentHash!: string;
+  @ApiProperty({ description: '完整分录条数', minimum: 0, maximum: 8000 }) entryCount!: number;
+  @ApiProperty({ description: '全部分类总秒数（不等同于志愿服务时长）', pattern: '^[0-9]+$' })
+  recognizedSecondsTotal!: string;
+  @ApiProperty({ description: '固定四类汇总，含零值', type: () => [AppTimeLedgerCategoryTotalDto] })
+  categories!: AppTimeLedgerCategoryTotalDto[];
+  @ApiProperty({ description: '稳定分页的分录', type: () => AppTimeLedgerPageDto })
+  resultPage!: AppTimeLedgerPageDto;
+}
+
 export class AppTimeSettlementEvidenceDto {
   @ApiProperty() attachmentId!: string;
   @ApiProperty() ordinal!: number;

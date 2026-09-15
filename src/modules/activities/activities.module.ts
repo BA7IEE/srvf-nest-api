@@ -143,6 +143,9 @@ import { LedgerPostingService } from './ledger-posting.service';
 import { LegacyConversionRegistrationHeadService } from '../activity-registrations/legacy-conversion-registration-head.service';
 import { LegacyLedgerConversionService } from './legacy-ledger-conversion.service';
 import { LedgerPreparationService } from './ledger-preparation.service';
+import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
+import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
+import { ParticipationTimeLedgerQueryService } from './participation-time-ledger-query.service';
 import { LedgerQueryService } from './ledger-query.service';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
 import { ActivityClosureAuditRecorder } from './activity-closure-audit-recorder';
@@ -378,6 +381,9 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     // 保留 provider 只供显式 service/e2e 调用,不自启动。全仓仍零新增 cron、Redis、
     // 外部 queue 或新进程。
     LedgerPreparationService,
+    ParticipationTimeLedgerService,
+    ParticipationTimeLedgerAccessService,
+    ParticipationTimeLedgerQueryService,
     LedgerReadyBatchCommitter,
     // HTTP application context 不启动 worker daemon；保留显式 drain 的第五刀测试探针为
     // prepare-only。两个真实 worker process 的专用 module 把本 token 置 true。

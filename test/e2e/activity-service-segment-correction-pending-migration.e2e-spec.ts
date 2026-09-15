@@ -113,9 +113,9 @@ describe('pending segment nonempty legacy upgrade', () => {
       sql(readFileSync(join('prisma/migrations', name, 'migration.sql'), 'utf8'));
     }
     // This replay intentionally stops before migration 115, while the checked-in
-    // Prisma client is generated from migration 119. Keep the real closure and
-    // correction services on the legacy fixture by adding only their two required
-    // readback columns; this does not record or execute the D1-3 migration.
+    // Prisma client is generated from migration 122. Keep the real services on
+    // the legacy fixture with readback-only columns/tables. The empty classified
+    // tables reject every INSERT: this is not a D4/D6 migration or classified fixture.
     sql(`
       ALTER TABLE "Activity"
         ADD COLUMN "timePolicySelectionRevision" INTEGER NOT NULL DEFAULT 0,
@@ -124,6 +124,31 @@ describe('pending segment nonempty legacy upgrade', () => {
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
     await resetDb(app);
+    // Reset the historical schema first; the readback-only tables below are not
+    // real D6 tables and must not enter its named-trigger cleanup protocol.
+    sql(`
+      CREATE TABLE "ActivitySettlementTimeRevision" (
+        "id" TEXT PRIMARY KEY, "activityId" TEXT NOT NULL,
+        "settlementRunId" TEXT NOT NULL, "settlementVersionId" TEXT NOT NULL,
+        "revision" INTEGER NOT NULL, "previousTimeRevisionId" TEXT,
+        "kindCode" TEXT NOT NULL, "sourceDraftTimeRevisionId" TEXT,
+        "evidenceSealId" TEXT NOT NULL, "evidenceRevision" INTEGER NOT NULL,
+        "populationRevision" INTEGER NOT NULL, "workflowRevision" INTEGER NOT NULL,
+        "draftContentHash" TEXT NOT NULL, "sourceSetHash" TEXT NOT NULL,
+        "bucketContentHash" TEXT NOT NULL, "bucketCount" INTEGER NOT NULL,
+        "sourceCount" INTEGER NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL,
+        "createdByUserId" TEXT NOT NULL, CHECK (false)
+      );
+      CREATE TABLE "ParticipationTimeLedgerManifest" (
+        "id" TEXT PRIMARY KEY, "postingBatchId" TEXT NOT NULL UNIQUE,
+        "activityId" TEXT NOT NULL, "settlementRunId" TEXT NOT NULL,
+        "settlementVersionId" TEXT NOT NULL, "timeRevisionId" TEXT NOT NULL,
+        "bucketContentHash" TEXT NOT NULL, "sourceSetHash" TEXT NOT NULL,
+        "contentHash" TEXT NOT NULL, "expectedEntryCount" INTEGER NOT NULL,
+        "recognizedSecondsTotal" BIGINT NOT NULL, "formatVersion" INTEGER NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL, CHECK (false)
+      );
+    `);
     prisma = app.get(PrismaService);
     preparation = app.get(LedgerPreparationService);
     posting = app.get(LedgerPostingService);

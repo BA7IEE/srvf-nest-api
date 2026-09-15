@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
 import { createHash } from 'node:crypto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
@@ -390,6 +391,7 @@ export class CorrectionApplicationService {
     private readonly audit: CorrectionAuditRecorder,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly timeLedger: ParticipationTimeLedgerService,
     private readonly rbac: RbacService,
     private readonly identities: AppIdentityResolver,
   ) {}
@@ -610,6 +612,9 @@ export class CorrectionApplicationService {
           );
 
           // 幂等:已有 `preparing` / `committed` 的应用 ⇒ 原样返回(不再准备第二遍)。
+          {
+            await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
+          }
           const resumable = await this.findResumableApplication(tx, request, run);
           if (resumable !== null) return resumable;
 
@@ -798,6 +803,9 @@ export class CorrectionApplicationService {
       await this.lockActivity(tx, anchor.activityId);
       const run = await this.lockRun(tx, anchor.activityId);
       const request = await this.lockRequest(tx, input.correctionRequestId);
+      {
+        await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
+      }
       const application = await this.lockApplication(
         tx,
         request.id,

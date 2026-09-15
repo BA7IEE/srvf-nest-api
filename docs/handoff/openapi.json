@@ -35845,6 +35845,270 @@
         ]
       }
     },
+    "/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/ledger": {
+      "get": {
+        "operationId": "AppManagedActivityTimeSettlementController_ledger",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeRevisionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppTimeLedgerReportDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "活动分类结算引用不存在或不可访问(code=20219) / 分类时长账本不存在或不可访问(code=20230)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20219,
+                        20230
+                      ],
+                      "description": "20219: 活动分类结算引用不存在或不可访问; 20230: 分类时长账本不存在或不可访问",
+                      "example": 20219
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动分类结算引用不存在或不可访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "活动分类结算规模超过本次处理上限(code=20225)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20225
+                      ],
+                      "description": "20225: 活动分类结算规模超过本次处理上限",
+                      "example": 20225
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "活动分类结算规模超过本次处理上限"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "读取指定分类修订的已提交正式时长账本 [rbac: activity.time-settlement.read]",
+        "tags": [
+          "Mobile - Managed Activity Time Settlement"
+        ]
+      }
+    },
     "/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/shadow": {
       "get": {
         "operationId": "AppManagedActivityTimeSettlementController_shadow",
@@ -141124,6 +141388,171 @@
           "policy",
           "effectiveFrom",
           "effectiveUntil"
+        ]
+      },
+      "AppTimeLedgerCategoryTotalDto": {
+        "type": "object",
+        "properties": {
+          "categoryCode": {
+            "type": "string",
+            "description": "时长分类",
+            "enum": [
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          },
+          "recognizedSecondsTotal": {
+            "type": "string",
+            "description": "分类总秒数（精确十进制字符串）",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": [
+          "categoryCode",
+          "recognizedSecondsTotal"
+        ]
+      },
+      "AppTimeLedgerEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "不可变分录ID"
+          },
+          "bucketId": {
+            "type": "string",
+            "description": "冻结来源桶ID"
+          },
+          "participationIdentityId": {
+            "type": "string",
+            "description": "参与身份ID"
+          },
+          "categoryCode": {
+            "type": "string",
+            "description": "时长分类",
+            "enum": [
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          },
+          "recognizedSeconds": {
+            "type": "integer",
+            "description": "认定秒数，含零值",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        },
+        "required": [
+          "id",
+          "bucketId",
+          "participationIdentityId",
+          "categoryCode",
+          "recognizedSeconds"
+        ]
+      },
+      "AppTimeLedgerPageDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "description": "页码",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "description": "每页条数",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "number",
+            "description": "分录总条数",
+            "minimum": 0,
+            "maximum": 8000
+          },
+          "items": {
+            "description": "分录列表",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppTimeLedgerEntryDto"
+            }
+          }
+        },
+        "required": [
+          "page",
+          "pageSize",
+          "total",
+          "items"
+        ]
+      },
+      "AppTimeLedgerReportDto": {
+        "type": "object",
+        "properties": {
+          "postingBatchId": {
+            "type": "string",
+            "description": "已提交账本批次ID"
+          },
+          "manifestId": {
+            "type": "string",
+            "description": "不可变清单ID"
+          },
+          "timeRevisionId": {
+            "type": "string",
+            "description": "确切分类修订ID"
+          },
+          "formatVersion": {
+            "type": "number",
+            "description": "内容格式版本",
+            "enum": [
+              1
+            ]
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "账本完整内容指纹",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "entryCount": {
+            "type": "number",
+            "description": "完整分录条数",
+            "minimum": 0,
+            "maximum": 8000
+          },
+          "recognizedSecondsTotal": {
+            "type": "string",
+            "description": "全部分类总秒数（不等同于志愿服务时长）",
+            "pattern": "^[0-9]+$"
+          },
+          "categories": {
+            "description": "固定四类汇总，含零值",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppTimeLedgerCategoryTotalDto"
+            }
+          },
+          "resultPage": {
+            "description": "稳定分页的分录",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppTimeLedgerPageDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "postingBatchId",
+          "manifestId",
+          "timeRevisionId",
+          "formatVersion",
+          "contentHash",
+          "entryCount",
+          "recognizedSecondsTotal",
+          "categories",
+          "resultPage"
         ]
       },
       "AppTimeShadowSummaryDto": {

@@ -575,17 +575,26 @@ export class ActivityTimeSettlementService {
         "evaluatorVersion", "quantumSeconds", "rawCalculatedMilliseconds", "rawRecognizedMilliseconds"
       FROM "ParticipantSettlementTimeBucket" WHERE "timeRevisionId" = ${source.id} AND "activityId" = ${source.activityId}
     `;
+    // Each map is one statement-local row; avoid repeatedly joining bulk children
+    // when freshly inserted revisions still have single-row planner estimates.
     const sourceCount = await tx.$executeRaw`
+      WITH target_bucket_map AS MATERIALIZED (
+        SELECT jsonb_object_agg(jsonb_build_array("participationIdentityId", "categoryCode")::text, id) AS ids
+        FROM "ParticipantSettlementTimeBucket"
+        WHERE "timeRevisionId" = ${target.id} AND "activityId" = ${source.activityId}
+      ), bucket_map AS MATERIALIZED (
+        SELECT jsonb_object_agg(old_bucket.id,
+          target_bucket_map.ids ->> jsonb_build_array(old_bucket."participationIdentityId", old_bucket."categoryCode")::text) AS ids
+        FROM "ParticipantSettlementTimeBucket" old_bucket CROSS JOIN target_bucket_map
+        WHERE old_bucket."timeRevisionId" = ${source.id} AND old_bucket."activityId" = ${source.activityId}
+      )
       INSERT INTO "ParticipantSettlementTimeBucketSource" (id, "bucketId", "timeRevisionId", "activityId",
         "allocationRevisionId", "sourceSegmentId", "sourceSegmentRevision", "rawCalculatedMilliseconds", "rawRecognizedMilliseconds")
-      SELECT gen_random_uuid()::text, target_bucket.id, ${target.id}, s."activityId", s."allocationRevisionId",
+      SELECT gen_random_uuid()::text, bucket_map.ids ->> s."bucketId", ${target.id}, s."activityId", s."allocationRevisionId",
         s."sourceSegmentId", s."sourceSegmentRevision", s."rawCalculatedMilliseconds", s."rawRecognizedMilliseconds"
-      FROM "ParticipantSettlementTimeBucketSource" s
-      JOIN "ParticipantSettlementTimeBucket" old_bucket ON old_bucket.id = s."bucketId"
-      JOIN "ParticipantSettlementTimeBucket" target_bucket ON target_bucket."timeRevisionId" = ${target.id}
-        AND target_bucket."participationIdentityId" = old_bucket."participationIdentityId"
-        AND target_bucket."categoryCode" = old_bucket."categoryCode" AND target_bucket."activityId" = s."activityId"
+      FROM "ParticipantSettlementTimeBucketSource" s CROSS JOIN bucket_map
       WHERE s."timeRevisionId" = ${source.id} AND s."activityId" = ${source.activityId}
+        AND bucket_map.ids ->> s."bucketId" IS NOT NULL
     `;
     if (bucketCount !== target.bucketCount || sourceCount !== target.sourceCount)
       throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID);

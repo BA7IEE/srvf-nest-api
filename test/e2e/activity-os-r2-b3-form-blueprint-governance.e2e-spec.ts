@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
@@ -27,7 +28,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 95;
 const PREVIOUS_MIGRATION_COUNT = 107;
-const CURRENT_MIGRATION_COUNT = 121;
+const CURRENT_MIGRATION_COUNT = 122;
 const MIGRATION_NAME = '20260904090000_activity_os_r2_b3_form_blueprint_governance';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const GOVERNANCE_CONSTRAINT = 'registration_form_field_governance_shape_check';
@@ -577,8 +578,12 @@ describe('Activity OS R2 B3 template Form materialization', () => {
 
   beforeEach(async () => {
     await resetDb(app);
-    await prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+        );
+      }),
     );
     const admin = await prisma.user.create({
       data: {

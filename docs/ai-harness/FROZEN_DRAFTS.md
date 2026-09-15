@@ -1,5 +1,7 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **D6 当前实施状态（2026-09-15）**：已按#1330及补充授权实施，原98路径加检查器两项、失败清理helper一项、copyBuckets集合复制优化一项，共102路径；当前101路径有改动，未超写集，本地验证和重签完成，进入提交及Draft PR流程，远端状态以GitHub为准。最新D4/D5/D6七套正式联动65项一次通过，含1/100/2000容量、权限与完整性反例、独立进程竞争和真实SIGKILL接管；契约1063项及2份快照通过。此前失败保留，不代表生产性能或真实业务验收。最终静态复核已通过，详见[D6计划第14节](../plans/activity-os-r4-d6-time-ledger-review-and-plan.md#14-implementation-阶段验证记录未完成不代表交付)。下方“仅计划/未实施”为历史时点。3b/4b已按确认摘要重签；最终SHA CI、整体复审及真实业务验收未完成；不合并、不操作生产、不启用Gate、不删除业务数据。
+
 > **D6 精确计划确认与文档交付授权（2026-09-14）**：维护者已确认 D6 精确计划方案 A（D6 计划第11–13节及98个去重实施路径），允许本轮五份文档（D5计划、D6计划、NEXT_TASKS、FROZEN_DRAFTS、D6 changelog）提交、推送并创建计划 PR；不合并、不实施。本条覆盖下方“精确计划待审批”“仅四份文档”“未获提交推送/PR授权”等历史时点。计划确认不等于98路径实施权限、数据库操作许可或红区令牌；D6仍未实施，生产、Gate、业务数据删除及独立整体复审均未获本轮执行授权。
 
 > **D6 方案 A 方向确认与精确计划细化（2026-09-14）**：维护者允许保留本轮四份未提交文档继续完善，不修改门禁。D6 计划第11–13节已补两表字段/复合FK/触发器、普通/自动/转换/更正提交链、分类批次当前actor复核、五个候选错误码、正式账本读权限说明和隔离测试清理边界；最终待审批写集98个唯一路径（11个红区），包括19份当前迁移回放和25份局部TRUNCATE关联测试（4份重复，已去重）。这些是未来实施的待审批范围，不是本轮写权限；本轮仍仅四份Markdown，未实施、未操作数据库、未提交推送或开PR。D5已合并与main CI成功的事实不变，D6及T0仍未完成。
@@ -83,7 +85,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                                                                                                                                                              | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                                                                                                                                                               | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                                                                                                                                                                | 维护者执行                                                                                                              |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 及 Release 4 D1–D5 已完成相应仓内实施；D4 #1327、D5 #1329 已合并并通过 main CI | D6 仅评审与精确计划草案，未实施；D6–D8、后续 Release、整体跨模型复审、真实业务验收、前端发布、生产部署和 Gate 切换未完成；原紧急创建间歇 500 不据此认定已修复 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 及 Release 4 D1–D5 已完成相应仓内实施；D4 #1327、D5 #1329 已合并并通过 main CI；D6已实施并处于本地验证阶段 | D6最终签字、PR及CI未完成；D7–D8、后续 Release、整体跨模型复审、真实业务验收、前端发布、生产部署和 Gate 切换未完成；间歇性500/P2028不据单独复核认定已修复 |
 
 ### 1.1 欠代码的五项
 
@@ -142,7 +144,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1–D5 仓内实施已合入并通过相应 main CI；D5 #1329 合入 `2609856e`，main CI 34795854470 成功；D6 仅起草，D6–D8、后续 Release、真实业务验收、整体跨模型复审、前端与生产 Gate 未完成**
+**⑤ Activity OS T0-A —— T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1–D5 仓内实施已合入并通过相应 main CI；D5 #1329 合入 `2609856e`，main CI 34795854470 成功；D6实施验证中，最终签字和实施PR/CI未完成；D7–D8、后续 Release、真实业务验收、整体跨模型复审、前端与生产 Gate 未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
@@ -301,7 +303,7 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **265** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 71** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 72** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |

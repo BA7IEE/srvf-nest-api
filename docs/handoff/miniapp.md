@@ -1,5 +1,11 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## D6 正式分类时长账本（实施验收中，未上线）
+
+新增明确分类修订的 `ledger` GET，使用既有 `activity.time-settlement.read`，仅返回 committed 批次；ready 不代表正式入账。客户端使用生成的 App client，字段以 OpenAPI 为准，汇总十进制字符串不得转成32位整数；四类分别展示，全部分类总秒数不能当作志愿服务时长或贡献积分。
+
+历史版本也检查当前身份、组织范围和该版本审核资格；404不能展示为零或触发自动补账。同批重试不创建新分录，20227内容冲突不能通过覆盖处理，20229表示D7前分类更正未开放。沿旧任务恢复，不提供复制批次或删除分录按钮。操作边界见[分类账本说明](../ops/activity-time-ledger.md)。本轮不交付前端页面、不代表生产已可用。
+
 ## D5 只读时长对账（本轮新增，未上线）
 
 `GET /api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/shadow` 使用明确 submitted 修订和既有 `activity.time-settlement.read`。响应 `data.resultPage` 是标准分页，`data.summary` 是完整分母；两项差额按新减旧、秒为单位，null 不得显示为零。`matched` 不等于审批或入账。翻页/导出须核验每页 inputFingerprint 一致；历史版本也实时检查撤权。其余分类单独展示，无自动调整按钮。安全导出和永久保留见 [影子对账 SOP](../ops/activity-time-shadow-reconciliation.md)。本轮只交付接口及客户端类型，未实现或发布前端页面。

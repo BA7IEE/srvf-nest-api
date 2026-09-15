@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
+import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
 import {
   allocateDailyCredit,
   decimalToHundredths,
@@ -184,6 +185,7 @@ export class LedgerPreparationService {
     private readonly prisma: PrismaService,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly timeLedger: ParticipationTimeLedgerService,
   ) {}
 
   // =========================================================================
@@ -209,6 +211,7 @@ export class LedgerPreparationService {
       }
 
       const operationKey = `${LEDGER_PREPARE_JOB_TYPE}:${postingBatchId}`;
+      await this.timeLedger.ensureManifest(tx, batch);
       const existing = await tx.activityBatchJob.findUnique({
         where: { operationKey },
         select: { id: true, total: true },
@@ -351,6 +354,11 @@ export class LedgerPreparationService {
 
         const dayRowsWritten = await this.writeSettlementDays(tx, splitRows);
         const entriesInserted = await this.writeLedgerEntries(tx, batch, splitRows);
+        await this.timeLedger.prepareIdentities(
+          tx,
+          batch,
+          revisions.map((row) => row.participationIdentityId),
+        );
 
         // 基线并进 job payload(job 行已加锁 ⇒ 读-改-写安全)。
         await this.mergeBaselineIntoJob(tx, job, baselineByKey);
@@ -463,6 +471,7 @@ export class LedgerPreparationService {
       }
 
       const baseline = readBaselineFromPayload(job.payload);
+      await this.timeLedger.assertComplete(tx, batch);
       const baselineJsonHash = ledgerBaselineDigest(baseline);
       const now = new Date();
 
@@ -470,16 +479,18 @@ export class LedgerPreparationService {
         where: { id: jobId },
         data: { statusCode: 'succeeded', completedAt: now, lastErrorCode: null },
       });
-      const ready = await tx.ledgerPostingBatch.update({
-        where: { id: batch.id },
-        data: {
-          statusCode: 'ready',
-          preparedAt: now,
-          baselineJsonHash,
-          version: { increment: 1 },
-        },
-        select: { statusCode: true, preparedCount: true, totalCount: true },
-      });
+      const ready = await tx.ledgerPostingBatch
+        .update({
+          where: { id: batch.id },
+          data: {
+            statusCode: 'ready',
+            preparedAt: now,
+            baselineJsonHash,
+            version: { increment: 1 },
+          },
+          select: { statusCode: true, preparedCount: true, totalCount: true },
+        })
+        .catch((error: unknown) => this.timeLedger.rethrowConstraint(error));
 
       return {
         jobId,

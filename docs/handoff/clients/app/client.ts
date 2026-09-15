@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:85f5b84bda53b11e497cd1bd513934b8b132abdf2ec613bfd6c636007597d266
+// inputDigest: sha256:4d927343f7c99e65b87bac0eaed36011a7f42cf87ca2317fccfc198275f61eac
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -238,6 +238,10 @@ import type {
   AppSubmitActivityChangeReviewDto,
   AppSubmitTimeSettlementDto,
   AppTeamJoinApplicationDto,
+  AppTimeLedgerCategoryTotalDto,
+  AppTimeLedgerEntryDto,
+  AppTimeLedgerPageDto,
+  AppTimeLedgerReportDto,
   AppTimeSettlementAllocationDetailDto,
   AppTimeSettlementAllocationResultDto,
   AppTimeSettlementBlockerDto,
@@ -1033,6 +1037,10 @@ export function createAppClient(fetcher: Fetcher) {
     /** 分页读取指定不可变分类版本的桶 [rbac: activity.time-settlement.read] */
     AppManagedActivityTimeSettlementControllerBuckets(activityId: string, timeRevisionId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": AppTimeSettlementBucketDto[] }>> {
       return fetcher<PageResultDto & { "items": AppTimeSettlementBucketDto[] }>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/revisions/${timeRevisionId}/buckets`, query });
+    },
+    /** 读取指定分类修订的已提交正式时长账本 [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeSettlementControllerLedger(activityId: string, timeRevisionId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<AppTimeLedgerReportDto>> {
+      return fetcher<AppTimeLedgerReportDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-settlement/revisions/${timeRevisionId}/ledger`, query });
     },
     /** 读取指定提交版本的新旧时长影子对账 [rbac: activity.time-settlement.read] */
     AppManagedActivityTimeSettlementControllerShadow(activityId: string, timeRevisionId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<AppTimeShadowReportDto>> {

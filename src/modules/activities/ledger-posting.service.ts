@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
+import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
@@ -170,6 +172,8 @@ export class LedgerPostingService {
     private readonly notifications: SettlementNotificationProducer,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly timeLedger: ParticipationTimeLedgerService,
+    private readonly timeLedgerAccess: ParticipationTimeLedgerAccessService,
   ) {}
 
   async commitBatch(
@@ -223,7 +227,7 @@ export class LedgerPostingService {
     this.activityWorkflowGate.assertV11WriteAllowed();
     return this.commitBatchProtocol(tx, activityId, input, currentUser, auditMeta, {
       conversion: false,
-    });
+    }).catch((error: unknown) => this.timeLedger.rethrowConstraint(error));
   }
 
   /**
@@ -249,7 +253,7 @@ export class LedgerPostingService {
     this.activityWorkflowGate.assertLegacyLedgerConversionAllowed();
     return this.commitBatchProtocol(tx, activityId, input, currentUser, auditMeta, {
       conversion: true,
-    });
+    }).catch((error: unknown) => this.timeLedger.rethrowConstraint(error));
   }
 
   /** `commitBatchWithin` / `commitConvertedBatchWithin` 的共享协议体(逐字,判闸位已外置)。 */
@@ -267,6 +271,18 @@ export class LedgerPostingService {
       const run = await this.lockRun(tx, activityId);
       const version = await this.lockVersion(tx, run.id);
       const batch = await this.lockBatch(tx, input.postingBatchId);
+      await this.timeLedger.assertNotClassifiedCorrectionBatch(tx, batch.id);
+      const classified = await this.timeLedger.hasClassifiedSource(tx, batch);
+      if (classified) {
+        if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+        await this.timeLedgerAccess.authorize(
+          tx,
+          currentUser.id,
+          activityId,
+          batch.settlementVersionId,
+        );
+        await this.timeLedger.assertComplete(tx, batch);
+      }
 
       // 幂等:批次已生效 ⇒ 原样返回上一次的结论(不是错误,也不再写第二遍)。
       if (batch.statusCode === 'committed') {
@@ -321,6 +337,15 @@ export class LedgerPostingService {
       this.assertDailyCapRespected(deltas, current);
 
       // ===== ⑩ 原子切换:以下全部在同一事务内 =====
+      if (classified) {
+        await this.timeLedgerAccess.authorize(
+          tx,
+          currentUser.id,
+          activityId,
+          batch.settlementVersionId,
+        );
+        await this.timeLedger.assertComplete(tx, batch);
+      }
       const now = new Date();
       await this.advanceDayStates(tx, batch.id, deltas);
       const entryCount = deltas.reduce((sum, row) => sum + row.entryCount, 0);

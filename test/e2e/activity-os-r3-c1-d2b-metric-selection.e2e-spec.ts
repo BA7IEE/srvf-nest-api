@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Role, type Activity, type Prisma } from '@prisma/client';
 import request from 'supertest';
@@ -37,7 +38,11 @@ describe('C1 D2b metric selection HTTP boundary and rollback', () => {
     prisma = app.get(PrismaService);
     await resetDb(app);
     await assertConnectedTestDatabase(prisma);
-    await prisma.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+      }),
+    );
     const root = await createTestUser(app, { username: key(), role: Role.SUPER_ADMIN });
     rootId = root.id;
     rootAuth = (await loginAs(app, root.username)).authHeader;

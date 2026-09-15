@@ -1,5 +1,7 @@
 # Activity OS R4 D6 正式分类时长账本：评审与精确实施计划草案
 
+> **D6 implementation 已授权并开工（2026-09-14）**：#1330 已合并至 `ce85663a`，main CI 34802958459 通过。维护者批准第11–13节及98个去重路径完整实施，含权限说明、错误码、访问复核、兼容测试及具名测试触发器处理；仅允许 app_test_w98 隔离验证及测试夹具重建，验证后提交、推送并创建 PR；不合并、不操作生产、不启用 Gate、不删除业务数据。11项本工作树 D6 红区令牌已核验。以下“待审批/不实施”属于历史过程；本段不表示实现或验收已完成。跨模型独立整体复审仍未完成。
+
 > **D6 精确计划确认与文档交付授权（2026-09-14）**：维护者已确认 D6 精确计划方案 A（D6 计划第11–13节及98个去重实施路径），允许本轮五份文档（D5计划、D6计划、NEXT_TASKS、FROZEN_DRAFTS、D6 changelog）提交、推送并创建计划 PR；不合并、不实施。本条覆盖下方“精确计划待审批”“仅四份文档”“未获提交推送/PR授权”等历史时点。计划确认不等于98路径实施权限、数据库操作许可或红区令牌；D6仍未实施，生产、Gate、业务数据删除及独立整体复审均未获本轮执行授权。
 
 > **方案方向已确认，精确计划待审批（2026-09-14）**：维护者确认方案 A 方向，并允许保留本轮四份未提交文档继续完善，不修改门禁。第 11–13 节是本轮补齐后的具体合同与写集；第 7 节的 68 路径和待核事项为初稿记录，以第 12 节去重后的完整清单为准。本轮仍只有四份 Markdown 写权限；没有实施、数据库、提交推送或 PR 授权。
@@ -83,7 +85,7 @@ D4 保存审核材料，D5 检查新旧差异，D6 才让分类时长成为可�
 
 读取复用 `activity.time-settlement.read`；写入继续现有 final-review / worker 资格，不新增权限码、不默认授予任何角色。新行为若现有权限说明无法准确涵盖，须显式扩权评审，不能把更新 baseline 当成已批准语义。
 
-目标预算（待实测而非现有达标事实）：GET 总查询≤120、业务≤30秒；各块额外分类 SQL≤8（不含旧链已有语句，测试同时报告含原链总数）、finalize 额外≤8、commit 额外≤6。member advisory 锁和旧事务时间预算原样保留，不为通过测试扩大。1/100/2000 档必须同口径测量。满额 E2E 整体最多600秒只用于构造/验证夹具，不能据此放宽业务事务。
+目标预算（实施阶段维护者已批准更正commit预算，验收证据见第14节）：GET 总查询≤120、业务≤30秒；各块额外分类 SQL≤8（不含旧链已有语句，测试同时报告含原链总数）、finalize 额外≤8、commit 额外≤56且总业务查询≤85。事务控制语句与单独记录的SELECT 1健康探针不算业务查询；两轮当前权限和完整性复核保留。原commit额外≤6的失败记录在第14节保留，不追认旧测试通过。member advisory 锁和旧业务事务时间预算原样保留。1/100/2000 档必须同口径测量。满额 E2E 整体最多600秒只用于构造/验证夹具，不能据此放宽业务事务。
 
 错误优先复用含义一致的既有 unavailable/stale/conflict/scale-limit 与 ledger prepare/commit 拒绝码；逐分支做映射表。确需新码时先列真实编号、HTTP 状态与准确 message，再冻结写集，不借用含义不符的旧码掩盖错误。错误分支及新码的具体映射已在第11.6节补齐，尚未实施。
 
@@ -415,3 +417,146 @@ schema/permission/error/common接线属于枢纽影响；本地quick和授权w98
 建议单个D6 implementation包按“schema与纯policy→worker准备与提交保护→GET→兼容测试/生成物→全量CI”串行实施，仍只处理分类时长一条业务轴；不是拆成多个无人授权的小任务。最终授权须同时覆盖第7及第12节去重写集、五个错误码、分类actor复核、D7前拒绝、具名测试trigger临时处理、权限说明、w98与提交推送边界。若不接受其中任一业务限制，先改计划，不开工后再选。
 
 本轮没有对新TRUNCATE触发器、actor拒绝或新错误码做运行验证，因为代码尚不存在；文档检查不能替代这些验收。只保留四份Markdown改动，不提交、不推送、不创建PR、不操作数据库、不启用Gate。计划评审PR也需下一条明确授权，changelog未在本轮写入。
+
+## 14. Implementation 阶段验证记录（未完成，不代表交付）
+
+维护者补充授权：允许扩展 `scripts/check-boundaries.ts`、`scripts/harness-guards.selftest.ts`，仅识别 `ParticipationTimeLedgerEntry.categoryCode` 并补正反例；不泛化其他字段、不放宽门禁。两份维护者本地授权已核验，原98路径加这两项形成100路径实施范围，其余禁止域不变。此前第7/12/13节98路径读数保留为原计划历史。
+
+该扩展验证通过：`harness-d6-final.log` 三组自检分别553/138/68项通过、零失败；前两组仍分别报告1/5项已知缺口，不能合并成同一种行为覆盖保证。新增D6正例及四个负例均实际执行检查器。元数据、授权路由、权限说明管辖面、客户端新鲜度和CODEMAP检查通过；CODEMAP保留2条WARN及1条INFO。状态登记实测72项（8 governed、64 inventory），只增L1不可变配置；read权限管辖面6→7，说明已同步且基线只变该码。没有新增角色授权、生命周期或状态边。
+
+以下是维护者批准完整实施包后的本地工作树证据，不回写第13节计划起草时的历史事实。全部数据库运行限定 `app_test_w98` 测试夹具；尚无最终提交 SHA、D6 PR 或生产验收。
+
+- D4 当前全量回放计数更新为122；维护者另行批准以 `names[120]` 锚定原第121条D4 migration，历史120→121升级的计数和内容断言保留。D4/A7定向复跑2套12项通过；此前一次A7失败发生在夹具清理5秒事务超时，复跑未复现，未调整超时或业务断言。
+- D6 policy/service/query 三套单测30项通过。1/100/2000身份、至多8000桶验证的是纯计算完整性、确定性与边界，不等于数据库G11性能验收。
+- 新D6真实来源、准备与提交E2E通过；涵盖四类含零秒桶、ready不可见、同批重放、伪造终审actor、当前用户停用/成员失效、提交后撤权拒绝重放。读取资格绑定实际历史版本，并在批次锁后复核；单测的锁后撤权不冒充真实并发撤权证据。
+- 分类提交最后一步审计故障注入后，批次、run、结果revision和日汇总逐行与提交前相等，HTTP仍404。双连接提交用独立事务持有批次锁，并通过 `pg_blocking_pids` 确认实际阻塞；释放后仅一次生效、一次重放。该证据不是worker租约恢复证据。
+- 两张新表UPDATE/DELETE被23514拒绝且内容不变；具名TRUNCATE保护及同事务临时关闭后恢复、失败回滚恢复的测试通过。尚未以此宣称所有跨锚点与晚到INSERT并发负例完成。
+- 本地日志位于 `/tmp/srvf-d6-tests.618UPL/`：`compatibility-recheck.log`、`unit-expanded.log`、`classified-immutability.log`、`classified-lock-barrier.log`。临时日志不是永久验收归档；最终PR须按最终源码重新整理可复现证据。
+
+后续补证：`classified-completeness-final.log` 5项真实数据库E2E通过（30.369秒），每项重建独立夹具。缺一条分录在finalize得到20228；同数量但contentHash错误或entryKey错误分别得到20227；秒数与原桶不符由复合外键P2003拒绝，分块分录为0且preparedCount保持0。前三项坏账均仍preparing且HTTP不可见。故障数据通过测试替身写入真实数据库，未关闭任何完整性触发器；这不代表正常生产写入会生成此类数据。
+
+同轮真实锁后撤权证据：独立连接持有成员advisory lock，提交已通过首次授权并实际等待（`pg_blocking_pids`确认）；此时撤销终审人的显式角色绑定，释放锁后提交403，批次及日汇总与之前逐行相同。恢复仅限测试夹具。它覆盖角色撤权，不冒充停用/组织变化在锁等待期间的并发覆盖。该轮测试类型检查和定向lint通过。
+
+准备任务补证：`classified-worker-recovery.log` 定向正常路径1项通过、其他4项未重跑（10.025秒）。旧leaseOwner/leaseGeneration在首次写入及成功item重放时均被拒绝；当前代际重放分录逐行不变。测试再构造“最后一个分块已提交、processing任务租约过期”的持久状态，真实 `ActivityBatchWorker.drainOnce` 领取新代际并收尾到ready，分录逐行不变且不自动提交。这里没有启动/杀死独立进程，不能据此宣称独立进程崩溃恢复全部完成。
+
+自动提交补证：`classified-auto-commit.log` 定向1项通过。使用真实worker类和真实committer，仅测试实例启用autoCommit；最后审计失败后同一job退回pending、batch保持ready、日汇总为0，按该job的availableAt推进下一轮后成功committed，四条分类分录逐行未变，GET总秒数3600。未改生产配置或部署Gate。测试收尾已改用公开onModuleDestroy接口，类型复查通过。
+
+契约补证：`contract-full.log` 完整1063项及2个快照通过。635路由为原634加一个ledger GET；快照仅新增429行（264行路径、165行四个DTO），逐项核对无旧路径/字段删除或改写。scope仍Human App，四分类闭集、汇总十进制字符串、分页上限及错误码与实现一致。此次本地通过仍不代表最终SHA CI、handoff客户端或其余派生物已完成。
+
+可见性补证：`classified-invisibility.log` 两项独立真实HTTP负例通过（21.949秒，其余6项未重跑）。各自在完整四条分录已准备后构造failed/voided测试状态，GET均返回404/20230且data为null；不新增状态切换接口。此前已覆盖preparing/ready不可见及committed可见，历史版本不受后续latest污染的HTTP证据仍待补齐。
+
+全仓lint首轮因Node默认堆上限耗尽以134退出，不计作代码检查通过；按现有CI的 `NODE_OPTIONS=--max-old-space-size=6144` 在本地重新运行后退出码0，日志 `d6-lint-6144.log`。未修改工作流或lint规则；后续新增源码仍须继续复查，不把该次结果当作最终SHA证据。
+
+历史版本补证：`classified-historical-counterexample.log` 正常链路定向1项通过（10.585秒，其余7项未重跑）。给原终审人显式read权限后，先读取已提交分类账本；再创建由其本人起草的后续版本并推进currentDraftVersion。对照断言证明按latest判read资格会返回20219，但明确旧timeRevisionId的HTTP仍200，响应data逐项等于后续版本出现之前。该场景证明历史指针和实际版本资格不被latest污染，不提供任何真实业务的人工改版本入口。
+
+更正入口补证：`classified-and-legacy-correction.log` 三套35项全过（56.697秒），包含D6八项、具名清理三项及原更正24项，均在w98运行。新增测试显式授予既有GLOBAL终审权限，先确认更正内容解析合法，再调用真实prepare和commit，均返回409/20229，批次、run、日汇总、分类分录和申请逐行不变。另在事务内构造满足延迟约束的更正应用与准备收据，通过共享内部commitBatchWithin尝试已提交批次重放，同样409/20229，事务回滚且未留下应用。没有关闭约束或修改生产代码；这补齐G9入口证据，不代替最终SHA全量CI。测试类型检查及定向lint退出码0。
+
+迁移补证：`d6-migration-rehearsal.log` 两项通过（18.905秒）。w98从空库回放122条，逐条核对磁盘SQL SHA-256与迁移登记；121条旧schema下建立非空旧贡献账本、审核、日汇总、批次、版本、run、结果夹具，七表行数分别2/2/1/1/1/1/1。应用第122条后，这七表按id排序的完整JSON逐行相等、前121条checksum不变，两张新表为空。夹具直接构造历史数据，不冒充旧业务流程端到端验证；原流程另有回归证据。测试结束已重建并恢复当前122条schema，不触及其他库；新增测试类型检查及lint通过。
+
+跨锚点补证：`classified-cross-anchors.log` 九个独立用例通过（60.276秒）。每例建立两条真实来源链，先验证正确组合可INSERT并主动回滚，再只替换一个引用。分录覆盖batch/activity/timeRevision/identity/category，清单覆盖settlementVersion/run/activity/timeRevision，错误均为复合FK的P2003，原清单不变、无残余分录。替换ID真实存在，分类取另一合法值，不用不存在ID或非法枚举冒充同链验证。
+
+晚到INSERT补证：`classified-late-insert.log` 两项通过（12.526秒）。清单和分录分别做成功写入后回滚的正对照；独立连接持批次锁并改为failed，实际插入通过pg_blocking_pids确认阻塞，释放后均23514拒绝且无残留。没有唯一键冲突代替批次状态检查，没有放宽约束。该证据覆盖退出preparing到failed时的晚到写入，不冒称ready/committed状态的独立并发场景；后两者已有完整性/可见性测试。类型检查、定向lint与diff空白检查通过。
+
+本轮合跑：`d6-all-current.log` 三套24项全部通过（129.796秒），覆盖当前19项准备/提交/关联/并发用例、3项具名清理和2项迁移。该次为同一工作树源码下串行w98执行，无跳过项；CODEMAP检查零失败，保留既有2条WARN、1条INFO。它不是全仓E2E或最终SHA CI。
+
+错误映射补证：清单/分录写入、finalize批次ready写入、普通及转换内部commit协议，仅捕获本次具名ptl约束；唯一键字段按具体写入对象精确匹配。未知错误、其他约束及死锁原样抛出，不重试、不返回成功。三套D6单测47项通过（含service 24项）；真实分录FK故障通过实际prepareIdentities写入，被映射为409/20226，分块回滚且preparedCount为0（`constraint-mapping-real-db.log`，1项、8.376秒）。源码和测试类型检查、定向lint、CODEMAP检查通过。
+
+本轮旧链回归保留失败事实：`error-mapping-regression.log` 六套86项中79通过、7失败（174.554秒），失败均在beforeEach/beforeAll的resetDb五秒事务，未进入业务断言。D6三项实耗8.998–13.740秒，旧并发套初始化5.092秒；现场w98无阻塞连接，不据此断言超时根因已定位。结果结束后Jest因残留连接不退出，显式停止本轮PID12499，runner退出143。原超时/断言不变，随后对同7项单独复核全过（`constraint-isolated-recheck.log`，25.728秒，其余17项跳过），不能将79+7称为一次全绿合跑。另发现`test/helpers/activity-time-policy.fixture.ts`在createTestApp之后resetDb失败无app.close兜底；该既有helper不在写集，未修改，后续如修复须补精确授权。
+
+锁后资格补证：`current-eligibility-wait.log` 三项通过（21.849秒）。与既有角色撤销场景使用同一真实成员锁屏障，分别在确认提交请求实际阻塞后停用终审User、使其Member失效、停用活动Organization，释放锁后分别401/403/403；批次、日汇总、run和结果revision逐行不变。仅测试夹具变更，未改生产判权逻辑或超时。
+
+同计数集合补证：`equal-count-bucket-set.log` 新反例通过。先以四条正确分录INSERT成功并回滚，再将其中一条bucketId替换为另一真实活动同分类的合法桶，仍四条且bucketId互异；真实批量INSERT被复合FK的P2003拒绝，四条全部回滚，manifest逐行不变、preparedCount为0、HTTP不可见。同次正常链前置D4 prepare返回500，原因为未知（未到D6）。新增固定字段诊断只记Prisma错误码/类型和是否过期事务，不输出SQL、ID或原始message；`normal-chain-prepare-diagnostic.log` 单独正常链复核通过（8.947秒），不据此宣称该500根因已解决。类型、lint及diff检查通过。
+
+上述四个新增场景在保留诊断的最终测试源码下再次合跑全过（`eligibility-and-set-final.log`，25.393秒，其余20项未重跑）。这不抵消上面的偶发失败记录。
+
+访问单测补证：新增计划中`participation-time-ledger-access.service.spec.ts`，14项验证每项调用透传同一tx与历史version、再次调用重读当前身份、成员失效、缺失/错误actor/退回/重复终审、组织缺失/停用/root、缺失活动、无权限/跨组织、GLOBAL仍执行版本资格判定。DI测试替身只模拟当前访问服务边界，显式断言实际查询参数，不冒充PostgreSQL或并发证明；后者见上文真实w98证据。四套D6单测共61项合跑通过（`d6-four-unit-suites.log`，1.389秒），测试类型检查及lint通过；CODEMAP已刷新并通过检查，保留既有2条WARN、1条INFO。
+
+G11开始真实数据库分档验收：新增1/100/2000身份用例，复用既有D5满额来源构造方式，实际执行分类prepare/submit、worker分块及finalize、commit与GET；保留原查询预算断言。1/100档均到达正式读取，commit总查询均85次、耗时分别86/149毫秒，但新增查询预算6次断言失败（`scale-one-actual.log`、`scale-100-isolated.log`）。初次仪器记录新增55次，其中授权44次；随后发现漏计`assertNotClassifiedCorrectionBatch`，已补计量，该55次不作为最终新增查询结论。没有删除二次授权或集合核验来满足预算。
+
+2000档首次已构造满额来源并运行worker，在finalize批次ready更新时报5000毫秒事务过期（实耗10087毫秒，`scale-2000-isolated.log`，整例59.546秒），未到commit/GET。新增脱敏逐步SQL次数及耗时采集，并在失败收尾输出已经完成步骤；不输出SQL参数或业务ID。首次带诊断复测又在resetDb夹具初始化超时（9438毫秒），未进入D6；结果结束后显式停止残留测试PID18638，runner退出143（`scale-2000-timing.log`）。该失败不计作业务性能结果，也不宣称环境根因已解决。当前测试类型检查及定向lint通过；未调整生产事务预算或业务断言。
+
+2000档带逐查询耗时复测再次在finalize失败（`scale-2000-timing-recheck.log`，整例78.065秒）：ensure 362毫秒，四个chunk分别622/621/586/656毫秒，各新增6次查询；finalize 9539毫秒，新增5次查询，但事务过期，未到commit/GET。只输出次数与毫秒，不输出SQL文本/参数。随后增加仅含SQL首词与相对时间的时间线；该轮又在resetDb前置5700毫秒超时，未进入D6（`scale-2000-timeline.log`），终止已结束但残留连接的测试PID19359，runner退出143。未将反复重跑未复现误写为修复，最终耗时归因仍待完成。
+
+验证命令更正：一次类型检查误用不存在的`test/tsconfig.json`，TS5058且不计通过；使用实际`test/tsconfig.test.json`重新执行，`scale-timing-types-current.log`退出0。最新时间线源码的类型检查及定向lint串行`&&`执行同样退出0（`scale-timeline-types.log`、`scale-timeline-lint.log`），diff空白检查通过。
+
+满额保留夹具诊断：确认w98无其他连接且保留8000分录后，不重建夹具，READ ONLY事务执行实际`assertComplete`返回true、243毫秒（`readonly-assert-complete.log`）；对应集合查询EXPLAIN ANALYZE为21.044毫秒，原migration的PL/pgSQL条件块只读执行12.472毫秒（`readonly-visibility-block.log`）。这不证明刚写入数据时的查询计划或负载相同，不能据此排除SQL性能问题。
+
+在同一保留夹具上调用真实finalize，以外层默认5秒事务承载原回调并强制回滚：tsx对照到ready耗时273毫秒（`finalize-rollback-diagnostic.log`），独立Jest诊断到ready耗时412毫秒、1项通过（`finalize-jest-diagnostic.log`，整套1.409秒）。测试实例Gate放行仅用于w98隔离操作，未更改任何部署配置；回滚后未保留ready状态。该对照没有执行整条满额准备链，不能替代失败的G11验收，也尚未确定测试运行方式、刚写入后的数据库状态或其他负载哪项是根因。未动未获扩展授权的fixture helper，未加大任何超时。
+
+维护者补充批准`test/helpers/activity-time-policy.fixture.ts`，仅关闭初始化失败后的应用和连接，不改断言或超时；原100路径扩为101路径。`harness:needs`判定该路径不需红区令牌。实现只为既有初始化体增加try/catch，失败时await app.close并重抛原错误；若关闭亦失败，用AggregateError保留两项错误。忽略缩进后的diff确认成功路径无改动。真实应用故障注入覆盖reset失败及首个用户创建失败，两项均核验app.close与Prisma.$disconnect各调用一次、原错误对象保持；`helper-cleanup-failures.log`两项通过、其余三项未跑，4.684秒且进程正常退出0。类型检查与定向lint通过。该修复解决失败收尾，不宣称解决原事务超时。
+
+失败收尾修复后满额复测仍在finalize失败，但runner正常退出1、无手动终止（`scale-2000-after-cleanup.log`，69.893秒）。时间线显示四个分块各639–693毫秒；finalize在344毫秒完成任务UPDATE，随后ready更新未成功完成，ROLLBACK于9758毫秒返回。不能将该失败归为已解决。随后复制8000分录/16000桶到仅限w98会话的临时表，保持索引并执行原集合条件块，冷统计48.553毫秒、显式ANALYZE后38.414毫秒，最终全部ROLLBACK（`visibility-cold-statistics.log`）。该对照未复现9秒耗时，不能确认“统计未更新”根因；没有修改正式表统计或生产SQL。
+
+共享夹具修复后的成功路径回归：`helper-success-and-cleanup.log`两套定向共6项通过（正常完整分类账本链1项、初始化失败清理2项、具名触发器清理3项），11.696秒，其他26项未跑；runner正常退出0。类型、lint及diff检查通过。它验证本次失败清理改动未破坏该正常链与既有清理断言，不替代G11满额失败或全量E2E。
+
+ready执行计划采集尝试两次均在初始化resetDb超时，未到临时诊断SQL（`scale-ready-explain.log`、`scale-ready-explain-recheck.log`，20.214/23.471秒，均正常退出1）。临时诊断钩子已完整撤去，未留下额外UPDATE、预热步骤或新的测试超时设置。直接调用现有resetDb并采集查询时间线，在同一w98完成一次真实夹具清理：TRUNCATE 3001毫秒，事务提交前3120毫秒，总3258毫秒，其余前置SELECT/ALTER单条1–8毫秒（`reset-query-timeline.log`，退出0）。这表明默认5秒清理事务余量较小，但不证明每次20秒失败均由同一原因造成，也不解释ready业务更新超时。
+
+待维护者审批的清理预算方案（本段仅提案，未实施）：仅`test/setup/reset-db.ts`，将包裹现有具名触发器关闭、原TRUNCATE及恢复的测试事务显式设为30秒；不改业务事务5秒、不改测试断言、不改触发器清单或目标库校验、不重试失败事务。验证仍仅w98。原因是该事务承载全表测试夹具清理而非业务性能要求；先稳定初始化，才能继续采集满额业务失败现场。当前文件仍保持默认5秒。
+
+维护者随后明确批准上述清理预算方案。已核验本工作树原D6精确路径令牌覆盖`test/setup/reset-db.ts`；新增的语义仅为该清理事务`timeout: 30_000`，目标库校验、原TRUNCATE和具名触发器恢复均不变，未改业务事务。类型检查及定向lint退出0。`scale-2000-reset-budget.log`已通过初始化和满额分块，仍在finalize的ready更新触发原5秒业务事务过期（69.407秒，正常退出1），不宣称本次清理调整解决业务性能。同期一次限时只读活动查询采样未命中在执行语句，不能以零采样证明没有慢查询。
+
+刚写完满额分录后的实际ready UPDATE执行计划已采到（`scale-ready-explain-with-cleanup-budget.log`）：总执行8981.476毫秒，唯一报告的`ptl_visibility_guard`触发器8980.262毫秒、调用一次。诊断UPDATE全部回滚，随后原业务finalize仍过期；不把该轮视为性能验收。与稍后独立对照不同，该证据直接覆盖满额写入后的慢现场。临时诊断钩子已撤去。
+
+在原已授权第122条D6 migration内，将两侧相关NOT EXISTS集合检查等价改为EXCEPT双向集合差异；数量和总秒数校验、过滤锚点、唯一键、FK及拒绝错误保持不变，没有提高业务超时。`d6-except-migration.log`冷回放及非空旧数据升级两项通过（21.392秒），结束恢复新SQL的w98；新摘要仍需最终3b签字。新增缺分录直接UPDATE ready的数据库拒绝断言，并继续真实满额验证，尚不据迁移通过宣称性能修复完成。
+
+EXCEPT改写后的首次完整2000身份链已到达正式GET（`scale-2000-except-validation.log`）：worker3698毫秒，四分块各697–1048毫秒、额外6次SQL；finalize399毫秒、额外5次；commit1558毫秒、总85/额外56次；GET58毫秒、总31次，8000条结果及分页断言通过。缺分录的直接ready UPDATE反例也通过，数据库返回23514且原业务拒绝断言保留。整套1通过/1失败，失败仍是原commit额外SQL≤6预算（实际56），并非本轮事务超时；不得记为整套通过。此轮已移除临时EXPLAIN/UPDATE预热钩子。新的migration SHA-256为`2a5249bcf8bd1932411ab0faea2f1df784609590b2570e7984e5e7dd7ece4037`，尚未重签3b。
+
+同源码及改正后的计量，1/100身份各到达GET后因同一预算断言失败（`scale-1-100-except-validation.log`，16.767秒）：commit总85/额外56次，权限复核占44次，耗时97/170毫秒；finalize12/32毫秒、额外5次；GET26/34毫秒、总31次。三档新增查询数均固定56（权限44、分类账本核验及更正保护12），尚不证明更复杂授权数据下的最坏分支。最新类型检查及定向lint通过；成功阶段只输出紧凑计数和耗时，逐查询时间线仅在未完成步骤的失败诊断中保留。
+
+待维护者审批的G11提交查询预算更正（仅提案，未改断言）：commit新增SQL上限6→56，同时增加完整提交业务SQL总数≤85；事务控制语句及单独记录的SELECT 1健康探针不算业务SQL。保留两轮当前权限和完整集合校验，不扩大权限、不缓存身份、不改SQL/事务边界来规避计量。chunk/finalize额外≤8、GET≤120和原业务耗时/事务限制全部保持。批准后须在1/100/2000档及权限负例复验，不凭本段提案记作通过。
+
+维护者已明确批准G11提交查询预算更正：新增≤56、总业务查询≤85，两轮权限和完整性复核及其余预算/断言/禁止域不变。测试已更新该阈值并新增总数上限；事务控制语句及单独计量的健康探针不计入业务SQL，真实权限查询全部计入。开始对三档容量、正常链、全部现有D6权限/完整性反例及清理测试合跑，未以旧失败记录代替新预算验收。
+
+新预算首次合跑（`d6-approved-budget-full.log`，213.752秒）：两套32项中31通过、1失败。1/100身份分别commit72/177毫秒，均额外56/总85，GET26/25毫秒、31次SQL，原预算以外的现有断言亦通过；全部24项D6行为反例/正常场景和5项清理测试通过。唯一失败为2000身份在D6开始前调用D4 prepare时HTTP500，既有脱敏诊断捕获P2028过期事务；没有得到该档D6性能数据。只读核验D4 prepare原代码传入30000毫秒预算，该生产文件不在本轮写集，未修改。新诊断只补提取错误中的超时/实耗毫秒数字，不输出原始错误文本。正在单独复核该档，不把31+复跑计作一次32项全绿。
+
+2000身份按批准预算单独复核通过（`d6-approved-budget-2000.log`，1通过/26未跑，85.252秒，退出0）：worker5144毫秒为多事务总耗时；各chunk657–1650毫秒、额外6次；finalize475毫秒、额外5次；commit2151毫秒、额外56/总85次，其中44次权限复核；GET55毫秒/31次。该次到达全部容量及预算断言，无诊断UPDATE或预热钩子，业务事务预算不变。三档均有新预算通过证据，但仍不是一次32项全绿合跑，D4前置偶发P2028不据复跑通过结案。补充数字诊断的最新测试源码类型检查及lint通过。
+
+G4独立进程补证：计划内新增`activity-os-r4-d6-time-ledger-concurrency.e2e-spec.ts`，两项通过（`d6-g4-independent-workers.log`，16.098秒，runner正常退出0）。子进程沿既有ts-node/SWC配置加载真实ActivityBatchWorker、LedgerPreparationService和分类账本服务，数据库再次核验w98；测试实例Gate及禁用autoCommit仅限该进程，不启动生产部署或新的常驻worker。真实来源构造沿既有D6 fixture，测试人口1、分类分录4；它不替代G11容量验证。
+
+竞争场景用IPC暂停点确认第一进程已领取且仍存活、job=processing而分录为0；第二独立进程此时尝试领取并返回无任务，之后放行第一进程完成一次分块到ready。该屏障证明有效租约期间不能被第二worker重复领取，不声称测到了两条领取SQL同一瞬间的行锁争用。崩溃场景在真实分块事务提交后暂停，通过父进程持有的子进程句柄SIGKILL并确认退出信号；仅将该测试job租约设过期，接管进程以更高leaseGeneration到ready，itemsProcessed=0，分录完整行快照不变。两例均无自动提交、无日汇总、GET仍404。子进程原始stdout/stderr不转发，结束后全部回收。
+
+新文件类型检查及lint通过；CODEMAP已刷新并检查零失败，保留2 WARN/1 INFO。NEXT_TASKS与FROZEN_DRAFTS按原实施包授权改为实施验证中，历史计划时点保留；没有登记D6完成。四份D6 E2E已开始同工作树串行合跑，最终结果尚待确认。
+
+剩余收口不得省略：前置prepare偶发P2028及最终全量稳定性复验；G12全部生成物、重签及最终SHA CI。当前不标记D6完成，不合并、不启用Gate、不删除业务数据。
+
+本轮四文件串行复验发现另一条前置慢查询：w98 的 `activity-time-settlement.service.ts` 中 `copyBuckets` 复制来源 INSERT 连续运行超过约590秒，`pg_blocking_pids` 为空，尚未进入D6提交；600秒测试预算到期后清理等待该事务。只取消本次明确PID、库名和SQL形状匹配的测试查询以允许回滚，不提高测试或业务超时。此现象不能由D6新增56/总85查询预算更正解决，也不能归类为已通过。最终runner结果另记。
+
+只读定位显示现有复制JOIN仅按旧桶id关联来源；非执行EXPLAIN对诊断目标得到嵌套循环，旧桶使用 `(activityId, participationIdentityId)` 索引但仅以第二列作Index Cond。该计划不是被取消语句的实际执行计划，仅支持待验证假设。现有 `pstbs_bucket_fkey` 已将bucketId/timeRevisionId/activityId绑定同链，因此推荐在旧桶JOIN显式补齐来源revision与activity条件，以便规划器利用既有复合索引；不新增索引、不改数据语义、权限或事务预算。该生产文件不在101路径写集，尚未实施，须维护者明确扩展。验证应先记录原查询与候选查询在同一w98满额夹具下的只读SELECT计划和结果集合，再执行原1/100/2000容量及全部行为断言；不得用单次复跑绿替代稳定性结论。
+
+收口静态检查首次运行：lint和typecheck通过；unit为8593通过、5 todo、1失败，唯一失败是FROZEN_DRAFTS派生读数陈旧；harness为551通过、2失败、1已知缺口，两失败均关联ROUTE_AUTHZ摘要新鲜度。已在批准路径内通过生成器刷新两份文档，未修改守护或断言；冻结读数6项复核通过，完整quick正在重跑。
+
+四文件最终结果（`d6-four-e2e-current.log`）：34通过、2失败，共36项，975.436秒，退出1；并发、迁移、清理专项三套通过。主套失败为2000身份复制超过600秒（随后afterEach超过30秒）及后续complete用例的初始化TRUNCATE事务超过30秒、实耗36928毫秒。未提高任何超时，不把先前单档通过替代本次失败。刷新后全仓unit为390套通过、8594项通过、5 todo；单独ROUTE_AUTHZ检查通过，quick的完整守护结果仍待收尾。当前不满足提交建PR的验证条件。
+
+静态复验已正常结束：`d6-current-quick-refreshed.log`退出0，lint为缓存口径、typecheck、390套unit及守护自测通过；守护已知缺口照旧，不代表最终冷lint或CI完成。随后维护者批准扩展 `src/modules/activities/activity-time-settlement.service.ts`，总授权写集102路径；只在copyBuckets旧桶JOIN增加timeRevisionId和activityId与来源相等的两个条件。复合外键已保证这两个相等关系，原SQL其余部分、两次计数校验、业务事务和测试超时均不变。开始满额复验及查询结果对照；原失败不删除。
+
+copyBuckets补齐后单档2000通过（`d6-copy-buckets-2000.log`，84.424秒，1通过/26未跑，退出0）：真实prepare→submit→worker→commit→GET完整到达，worker3335毫秒，finalize401毫秒，commit1747毫秒/额外56/总85/权限44，GET36毫秒/31次查询；所有原断言和超时不变。随后同一满额落盘夹具的只读事务中，新旧来源SELECT各40000行，双向EXCEPT ALL差异0；EXPLAIN ANALYZE分别73.483/24.176毫秒，均Hash Join（`copy-buckets-readonly-compare.log`）。该落盘后计划不能替代原事务中的慢计划，不宣称根因已被直接测到或稳定性已结案。局部lint通过，继续四套36项整组复验。
+
+补齐后整组复验仍失败（`d6-copy-buckets-four-e2e.log`，323.423秒，35通过/1失败，退出1）。数据库已核实正在执行的复制SQL包含新增两个条件，但持续超过业务预算；仅取消明确属于此次w98测试的复制查询，使其回滚，2000档以HTTP500失败，其余35项通过。此次不是自然600秒超时，不能掩去人工取消因素。结论是新增条件语义一致但不足以保证稳定性能，尚未修复完成。最新source/test/scripts类型检查通过。随后开启仅临时诊断的同事务EXPLAIN（不执行EXPLAIN ANALYZE、不改返回或断言、不改超时，仅输出脱敏计划节点/估算行数/索引名）；该诊断运行不作为正式性能验收。
+
+同事务计划诊断结束（`d6-copy-plan-diagnostic.log`）：3档通过、24未跑，107.131秒，正常退出0。2000档复制前的EXPLAIN计划仍为Nested Loop、连接估算1行，实际满额输入为8000桶/40000来源；源桶与来源扫描存在BitmapAnd，目标桶采用activity/identity索引。EXPLAIN未执行被解释的INSERT，之后仍运行原INSERT与原业务断言；计划读数证明估算与真实规模显著不符，但本次成功，且EXPLAIN与后续预备语句的规划不能保证完全一致，因此不冒称已捕获此前被取消执行的真实慢计划。临时探针位于/tmp、未写入仓库，正式测试不加载该探针。建议下一步只在同一copyBuckets方法内优化集合复制SQL，保留行集合、原子性、计数与权限检查以及所有预算，须另获维护者许可；当前“仅补JOIN条件”授权已实施验证，不擅自扩大。
+
+维护者已批准copyBuckets内集合SQL优化（不限补JOIN），禁止域与全部预算不变。采用两张语句内MATERIALIZED单行JSONB映射：先按目标版本/活动将(identity,category)映射到目标桶，再按来源版本/活动将源桶id映射到目标桶id；键用jsonb_build_array序列化，避免拼接歧义。最后只扫描一次来源集合，以源桶id查映射，缺映射仍不复制、由原sourceCount守护拒绝；原bucketCount守护、两个INSERT顺序、UUID生成、BigInt原始值、业务事务和判权不变。映射不是数据库表、持久缓存或跨请求身份缓存；规模沿原8000桶上限，不新增查询或索引。单行聚合使Nested Loop的另一端始终只有一行，不再反复连接整批桶。
+
+写生产SQL前，同一w98满额夹具只读对照（`copy-map-candidate.log`）：候选SELECT40000行、68.153毫秒，旧/新各40000行，双向EXCEPT ALL差异0；计划证明两个映射各actual rows=1/loops=1，来源扫描actual rows=40000/loops=1。此为落盘SELECT对照，不替代真实事务INSERT验收。已将候选替换到唯一授权方法，正在不带临时诊断探针的四文件36项正式复验。
+
+语句内映射正式四套结果（`d6-copy-map-four-e2e.log`）：35通过/1失败，232.134秒，退出1。主套27项（含1/100/2000容量、权限与完整性反例）、迁移和清理专项通过，复制慢查询未再次阻塞。唯一失败为本轮新建G4测试的崩溃子进程在SIGKILL前以code=0退出；代码审查确认暂停使用永不resolve的Promise但没有保活句柄。仅在原批准的新G4文件中，于chunk_committed发送前ref已有IPC通道；不加timer、不改等待超时或SIGKILL退出信号断言。G4单独复核2通过（`d6-g4-ipc-lifetime.log`，14.760秒，退出0）。当前正在D4结算/并发、D5影子账本、D6四套共七文件联动回归；不将分次通过拼成一次全绿。
+
+最终七文件正式联动回归通过（`d6-copy-map-d4-d5-d6-final.log`）：7套/65项全部通过，475.303秒，runner正常退出0。覆盖D4结算/并发、D5影子账本及D6主链/清理/独立进程/迁移，含真实满额prepare→submit→worker→commit→GET、全部原权限与完整性断言、真实SIGKILL和接管。该次没有临时EXPLAIN、取消查询、重试或超时改动，是一次整组通过；此前失败记录仍保留。counts检查通过（122 migration、265权限、169审计总计/164活跃），GitHub只读核验无重复D6 PR、#1324仍Draft。签字闸现唯一机器失败为3b仍记121；D6第122条migration摘要`2a5249bcf8bd1932411ab0faea2f1df784609590b2570e7984e5e7dd7ece4037`未变，须维护者重签。4b还需按计划确认既有read码覆盖正式分类账本的语义说明，权限目录摘要`3db338e67bc505faa91e9a6a257e84da1588440da767c821b6e4955d8f3d170e`，seed摘要仍`b484cbc013d5`。不自行签字；最终契约、冷lint/typecheck/build及unit/守护复核继续执行。
+
+最终契约1063项、2份快照通过（`d6-copy-map-contract-final.log`）；冷lint→全类型检查→build命令链退出0。最终unit390套、8594项通过、5 todo（100.966秒）。该次quick退出1，lint/typecheck/unit均0，但harness两个CODEMAP新鲜度/幂等检查失败，原因为集合SQL修改增加9行后CODEMAP仍记76841行；不是路由摘要漂移。已通过原生成器刷新到76850，CODEMAP复核0 FAIL/2 WARN/1 INFO；RBAC_MAP、readtax、OpenAPI和ROUTE_AUTHZ检查通过。完整harness自测正在生成物刷新后独立复核，不冒称原quick退出0。按#1330原文第7/12节五个代码块去重98，再加四项明确扩集，允许102路径、实际100路径、越界0（`d6-copy-map-scope-final.log`）；CUTOVER_SIGNOFF待重签未写、RBAC_MAP现算不变。
+
+生成物刷新后的完整harness自测已退出0（`d6-copy-map-harness-final.log`），三组分别553通过/0失败/1已知缺口、138通过/0失败/5已知缺口、68通过/0失败；分组性质不同，不合成一种保证。现有本地收尾证据齐：七套联动65项、契约1063项/2快照、unit8594项/5 todo、冷lint/typecheck/build及生成物/守护检查。尚未重签3b/4b，未提交、推送或创建D6 PR，最终SHA CI及整体复审/真实业务验收未完成；Gate与生产未动。此为本地验证完成，不是D6已合并或T0完成。
+
+2026-09-15维护者已明确确认D6重签3b（第122条，摘要2a5249bcf8bd）及4b（权限265、审计169总计/164活跃、既有read权限覆盖已提交分类账本，目录摘要3db338e67bc5）。现场核验两文件完整SHA-256与上一条一致后更新CUTOVER_SIGNOFF日期、理由、依据及migration-total=122，保留旧签历史；`d6-signed-check.log`签字门禁退出0。本轮实际写集101/授权102，RBAC_MAP无内容变化；进入已批准的提交、推送、Draft PR流程。不合并、不Ready、不操作生产或Gate，跨模型整体复审仍按维护者决定延后、不记为通过。开工预检仅报已获准保留的当前脏树及既有#1324 Draft，不将该预检写成全绿。
+
+### 14.1 PR #1331 首轮 CI 兼容修复（2026-09-15）
+
+首版提交`b1cb705a`已创建Draft PR #1331。CI 34869605126失败：C2 D1当前全量迁移计数仍为121；D6独立子进程错误地限定本地worker98；服务段115前历史夹具无法读取当前D6所需的空分类表；三处既有更正写调用的AST定位随新增前置校验变化。可信红区审批已通过，不替代上述失败。
+
+维护者批准追加两份旧测试`test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts`、`test/e2e/activity-service-segment-correction-pending-migration.e2e-spec.ts`及两份身份登记`harness/architecture-debt.json`、`harness/architecture-debt-baseline.json`；授权总范围由102到106路径。随后明确批准在原写集`correction-application.service.ts`中仅将新增两处校验包入独立代码块，恢复原三条登记。最终两份架构登记与HEAD逐字一致，无基线替换、新增豁免或裁判改动。`ids:check`208条当前身份全部匹配；`newdebt:check`未知0；`debt:check`229条登记完整，三命令链退出0。
+
+旧C2仅改当前计数及标题121→122，历史112→113验证不变。服务段夹具仍回放到115前，先清理真实历史schema，再建立两张CHECK(false)的空读表以供当前服务判断无分类事实；不执行121/122 migration，不mock服务、不改变历史升级及业务断言。首轮夹具空表过早建立导致具名清理触发器检查拒绝，已调整建立顺序而未放宽清理器。一次合跑被C2专用w98测试结束删库影响后续同w98测试；改为显式串行执行历史恢复→并发→C2专用库，15项通过（40.627/15.475/15.005秒），不将前两次失败记为通过。
+
+子进程改为校验有效worker编号，并继续由`assertConnectedTestDatabase`核验实际库名与派生名完全一致；本地运行仍只准w98，CI仍沿既有worker派生。生产校验的参数、await顺序、事务位置、拒绝行为和全部断言不变；独立块只避免新增ExpressionStatement挤占旧调用结构定位。保留原架构身份及历史，无新增别名集合。代码地图由生成器刷新，最终SHA CI另行判定。
+
+当前代码w98串行复核正常退出0（`d6-ci-alignment-e2e.log`）：服务段历史升级5项/95.728秒；D6主链、独立进程和既有结算更正3套53项/235.570秒；C2当前/历史迁移8项/19.485秒。合计5套66项全部通过，包括D6满额档和两处分类更正拒绝；无超时或断言调整。全仓unit390套8594项通过、5 todo不变；lint和typecheck均0，测试类型检查、build、签字、counts、readtax及CODEMAP通过。该次quick整体仍退出1，因为两处ROUTE_AUTHZ生成摘要陈旧；随后由原生成器刷新两处摘要，635条声明完全不变，独立完整harness复核退出0：guards 553通过/0失败/1已知缺口，eslint 138通过/0失败/5已知缺口，不将原quick改写为通过。原102路径加本轮四项授权共106路径，当前实际103路径、越界0；三份获准但未改的文件为RBAC_MAP和两份架构身份登记。

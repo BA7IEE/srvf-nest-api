@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
@@ -131,8 +132,12 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
   async function truncateActivityRegistrations(): Promise<void> {
     await assertConnectedTestDatabase(prisma);
-    await prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+        );
+      }),
     );
   }
 

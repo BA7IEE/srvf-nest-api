@@ -15,6 +15,7 @@ import { PaginationQueryDto, PageResultDto } from '../../../common/dto/paginatio
 import { BizCode } from '../../../common/exceptions/biz-code.constant';
 import { ActivityTimeSettlementService } from '../activity-time-settlement.service';
 import { ActivityTimeSettlementQueryService } from '../activity-time-settlement-query.service';
+import { ParticipationTimeLedgerQueryService } from '../participation-time-ledger-query.service';
 import { AppManagedActivityParamsDto } from '../dto/app/app-managed-activity.dto';
 import {
   AppTimeSettlementWorkbenchDto,
@@ -31,6 +32,7 @@ import {
   AppTimeSettlementAllocationResultDto,
   AppTimeSettlementResultDto,
   AppTimeShadowReportDto,
+  AppTimeLedgerReportDto,
 } from '../dto/app/app-activity-time-settlement.dto';
 
 const ERRORS = [
@@ -84,6 +86,7 @@ export class AppManagedActivityTimeSettlementController {
   constructor(
     private readonly service: ActivityTimeSettlementService,
     private readonly queries: ActivityTimeSettlementQueryService,
+    private readonly timeLedgerQueries: ParticipationTimeLedgerQueryService,
   ) {}
 
   @Get()
@@ -155,6 +158,33 @@ export class AppManagedActivityTimeSettlementController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.queries.buckets(params.activityId, params.timeRevisionId, query, user);
+  }
+
+  @Get('revisions/:timeRevisionId/ledger')
+  @RequiresPermission('activity.time-settlement.read', {
+    admission: 'app-member',
+    require: 'all',
+    engine: 'authz-scoped',
+    scopes: ['responsibility', 'org-scope'],
+  })
+  @ApiOperation({
+    summary: '读取指定分类修订的已提交正式时长账本 [rbac: activity.time-settlement.read]',
+  })
+  @ApiWrappedOkResponse(AppTimeLedgerReportDto)
+  @ApiBizErrorResponse(
+    BizCode.BAD_REQUEST,
+    BizCode.UNAUTHORIZED,
+    BizCode.FORBIDDEN,
+    BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE,
+    BizCode.ACTIVITY_TIME_LEDGER_REFERENCE_UNAVAILABLE,
+    BizCode.ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT,
+  )
+  ledger(
+    @Param() params: AppTimeSettlementRevisionParamsDto,
+    @Query() query: PaginationQueryDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.timeLedgerQueries.report(params.activityId, params.timeRevisionId, query, user);
   }
 
   @Get('revisions/:timeRevisionId/shadow')

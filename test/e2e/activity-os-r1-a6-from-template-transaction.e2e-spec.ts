@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import { readFile } from 'node:fs/promises';
@@ -136,8 +137,12 @@ describe('Activity OS R1 A6 从模板创建活动事务', () => {
   beforeEach(async () => {
     await resetDb(app);
     // resetDb 不主动清可独立存在的 Template / Family；本 spec 每例都建自己的闭合 fixture。
-    await prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+        );
+      }),
     );
 
     const admin = await prisma.user.create({

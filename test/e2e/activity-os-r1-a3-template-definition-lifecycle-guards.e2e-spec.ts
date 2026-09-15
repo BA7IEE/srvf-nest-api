@@ -1,3 +1,4 @@
+import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -18,7 +19,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 const SCRATCH_WORKER_ID = 91;
 const A2_MIGRATION_COUNT = 101;
-const CURRENT_MIGRATION_COUNT = 121;
+const CURRENT_MIGRATION_COUNT = 122;
 const MIGRATION_NAME = '20260901110000_activity_os_r1_a3_template_definition_lifecycle_guards';
 const MIGRATION_PATH = `prisma/migrations/${MIGRATION_NAME}/migration.sql`;
 const COLD_MIGRATION_REPLAY_TIMEOUT_MS = 180_000;
@@ -327,8 +328,12 @@ describe('Activity OS R1 A3 TemplateDefinition / lifecycle DB guards', () => {
 
   beforeEach(async () => {
     await resetDb(app);
-    await prisma.$executeRawUnsafe(
-      'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+    await prisma.$transaction((tx) =>
+      withTimeLedgerFixtureCleanup(tx, async (tx) => {
+        await tx.$executeRawUnsafe(
+          'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+        );
+      }),
     );
   });
 

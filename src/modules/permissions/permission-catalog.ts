@@ -112,7 +112,8 @@ export const ACTIVITY_TIME_SETTLEMENT_PERMISSION_SEED: ReadonlyArray<RbacPermiss
     module: 'activity',
     action: 'time-settlement',
     resourceType: 'read',
-    description: '查看有权活动的分类时长结算与冻结证据；显式范围及当前负责人或审核资格同时满足',
+    description:
+      '查看有权活动的分类时长结算、冻结证据及已提交分类时长账本；显式范围及当前负责人或审核资格同时满足',
   },
   {
     code: 'activity.time-settlement.prepare',
@@ -3071,7 +3072,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.time-settlement.read': {
       displayName: '查看分类时长结算',
       businessDescription:
-        '真人凭显式范围和当前负责人或实际审核资格读取冻结分类桶及证据；不隐含准备权限，不自动授予内建角色。',
+        '真人凭显式范围和当前负责人或实际审核资格读取冻结分类桶、证据及其已提交分类时长账本；不隐含准备权限，不自动授予内建角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 197,
