@@ -340,3 +340,7 @@ src/modules/activities/ledger-ready-batch-committer.service.spec.ts
 - 维护者已确认优化后3b（第123条，c2f06bcf6e19），已按完整摘要登记；4b沿用871a4c9d426d。按已确认验收方式完成本地定向验证，后续提交/推送并创建Draft PR，全量以PR CI冷跑为准；不得登记已合并或D7整体完成。
 
 本次未做：全量可信CI、Ready/合并、D7-2、整体跨模型复审、生产/Gate和任何业务数据删除。提交/推送/Draft PR状态以GitHub为准。
+
+### 13.1 Draft PR CI修复
+
+#1334首轮容器恢复冒烟在独立worker启动时报ParticipationTimeLedgerAccessService无法解析RbacService。AuthzModule仅导出AuthzService，间接导入PermissionsModule不使RbacService对worker可见。于既有授权ActivityBatchWorkerModule显式导入PermissionsModule，复用同一provider；SQL、权限语义及签字摘要均未变。w98定向执行既有双worker真实context构建与领取草稿用例，2项通过、54项未运行（15.735秒），未修改任何测试断言。完整容器恢复与全量CI仍须在修复提交重新核验。
