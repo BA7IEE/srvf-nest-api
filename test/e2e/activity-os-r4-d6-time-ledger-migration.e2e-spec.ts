@@ -92,7 +92,15 @@ function recreate() {
         'active', count(*) FILTER (WHERE state = 'active'),
         'idle', count(*) FILTER (WHERE state = 'idle'),
         'idleInTransaction', count(*) FILTER (WHERE state IN ('idle in transaction', 'idle in transaction (aborted)')),
-        'waitingOnLock', count(*) FILTER (WHERE wait_event_type = 'Lock')
+        'waitingOnLock', count(*) FILTER (WHERE wait_event_type = 'Lock'),
+        'startedUnder5Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start < interval '5 seconds'),
+        'started5To30Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start >= interval '5 seconds' AND clock_timestamp() - backend_start < interval '30 seconds'),
+        'started30To120Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start >= interval '30 seconds' AND clock_timestamp() - backend_start < interval '120 seconds'),
+        'startedOver120Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start >= interval '120 seconds'),
+        'applicationNamePresent', count(*) FILTER (WHERE NULLIF(application_name, '') IS NOT NULL),
+        'applicationNameAbsent', count(*) FILTER (WHERE NULLIF(application_name, '') IS NULL),
+        'transactionOpen', count(*) FILTER (WHERE xact_start IS NOT NULL),
+        'transactionOpenOver5Seconds', count(*) FILTER (WHERE xact_start IS NOT NULL AND clock_timestamp() - xact_start >= interval '5 seconds')
       ) FROM pg_stat_activity
       WHERE datname = current_database() AND pid <> pg_backend_pid()`);
     } catch {
