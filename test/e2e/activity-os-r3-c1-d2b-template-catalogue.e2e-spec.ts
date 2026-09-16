@@ -70,10 +70,12 @@ describe('C1 D2b App options HTTP eligibility and exact pagination', () => {
   beforeEach(async () => {
     // Only the authorized worker database; each case starts with its own catalogue.
     await assertConnectedTestDatabase(prisma);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition", "ActivityTemplate", "ActivityTemplateFamily" CASCADE`;
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition", "ActivityTemplate", "ActivityTemplateFamily" CASCADE`;
+        }),
+      { timeout: 30_000 },
     );
   });
   afterAll(async () => {

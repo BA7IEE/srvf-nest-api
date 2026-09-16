@@ -91,9 +91,13 @@ export class ParticipationTimeCorrectionService {
       SELECT e."id", e."manifestId", e."participationIdentityId", e."categoryCode", e."recognizedSeconds",
         p."id" AS "previousEntryId", p."secondsDelta" AS "previousSeconds"
       FROM "ParticipationTimeLedgerEntry" e
-      LEFT JOIN "ParticipationTimeCorrectionEntry" p ON p."manifestId" = ${root.predecessorManifestId}
-        AND p."rootEntryId" = e."id" AND p."entryTypeCode" = 'credit'
-        AND p."participationIdentityId" = e."participationIdentityId" AND p."categoryCode" = e."categoryCode"
+      LEFT JOIN LATERAL (
+        SELECT prior."id", prior."secondsDelta" FROM "ParticipationTimeCorrectionEntry" prior
+        WHERE prior."manifestId" = ${root.predecessorManifestId}
+          AND prior."rootEntryId" = e."id" AND prior."entryTypeCode" = 'credit'
+          AND prior."participationIdentityId" = e."participationIdentityId" AND prior."categoryCode" = e."categoryCode"
+        OFFSET 0
+      ) p ON TRUE
       WHERE e."manifestId" = ${root.id} ORDER BY e."id" LIMIT 8001
     `;
     const previous = root.predecessorManifestId
