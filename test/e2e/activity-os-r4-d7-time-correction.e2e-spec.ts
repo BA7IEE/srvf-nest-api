@@ -1414,6 +1414,37 @@ describe('D7-1 recognition correction real transaction', () => {
         expectedBindingCount: sources.length,
         expectedSliceCount,
       });
+      let commitFailure = 'none';
+      const correction = f.app.get(CorrectionApplicationService);
+      const commit = correction.commit.bind(correction);
+      jest.spyOn(correction, 'commit').mockImplementation(async (...args) => {
+        try {
+          return await commit(...args);
+        } catch (error) {
+          if (population === 2000) {
+            // Fixed diagnostic fields only; never expose SQL, IDs, URLs or raw error messages.
+            commitFailure = JSON.stringify({
+              prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
+              expiredTransaction:
+                error instanceof Error &&
+                /expired transaction|Transaction already closed/u.test(error.message),
+              transactionTimeoutMs:
+                error instanceof Error
+                  ? Number(
+                      error.message.match(/timeout for this transaction was (\d+) ms/u)?.[1],
+                    ) || null
+                  : null,
+              transactionElapsedMs:
+                error instanceof Error
+                  ? Number(error.message.match(/however (\d+) ms passed/u)?.[1]) || null
+                  : null,
+              knownPrisma: error instanceof Prisma.PrismaClientKnownRequestError,
+              unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
+            });
+          }
+          throw error;
+        }
+      });
       const committed = await request(httpServer(f.app))
         .post(`${correctionUrl}/${submittedData.requestId}/commit`)
         .set('Authorization', f.reviewer.auth)
@@ -1429,6 +1460,7 @@ describe('D7-1 recognition correction real transaction', () => {
             console.error('D7 2000-identity commit failure', {
               status: response.status,
               code: typeof response.body?.code === 'number' ? response.body.code : null,
+              commitFailure,
             });
           }
         })
