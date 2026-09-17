@@ -85,7 +85,7 @@ describe('D6 scoped fixture trigger handling', () => {
       withTimeLedgerFixtureCleanup(tx, async (inner) => {
         expect(inner).toBe(tx);
         await inner.$executeRawUnsafe(
-          'TRUNCATE "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeCorrectionCommitReceipt"',
+          'TRUNCATE "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipantSettlementTimeBucketSource", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationRevision", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeCorrectionCommitReceipt"',
         );
       }),
     );

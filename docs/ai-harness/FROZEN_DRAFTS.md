@@ -1,6 +1,6 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **D7-2 实施中（2026-09-16）**：[#1335](https://github.com/BA7IEE/srvf-nest-api/pull/1335) 的方案 A / 第10–13节 / 124个精确路径已合入 `main`，维护者已授权在隔离工作树实施。事实更正的数据模型、Human 写链与回归用例正在收口；当前已完成一轮 TypeScript 与 Human command 定向单元验证。仅 `app_test_w98` 获本地数据库验证授权，但第125条 migration 尚待本轮3b重签，故尚未运行 D7-2 的迁移、数据库 E2E 或 contract；尚未创建 PR、跑 CI、Ready、合并、操作生产或启用 Gate。D7-1 的 #1334 与 #1336 已合入 main；#1334 的既知2000身份审计回滚超时根因仍未定，不冒称已修复。
+> **D7-2 V1兼容修复待推送（2026-09-17）**：[#1335](https://github.com/BA7IEE/srvf-nest-api/pull/1335) 的方案 A / 第10–13节 / 124个精确路径已合入 `main`，维护者已授权在隔离工作树实施；[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 已存在且保持 Draft。第125条对历史 V1 无时间更正路径的兼容修复已在唯一获准的 `app_test_w98` 验证：迁移 E2E 2/2、既有 D7 全链 E2E 7/7、Golden journey 1/1、contract 1072/1072（2 份快照）通过；维护者已按摘要 `7741a700…cec13df0` 重签 3b。当前修复尚待提交、推送至 #1337 并由 PR CI 冷跑；尚未 Ready、合并、操作生产或启用 Gate。D7-1 的 #1334 与 #1336 已合入 main；#1334 的既知2000身份审计回滚超时根因仍未定，不冒称已修复。
 
 > **D6 仓内交付已合并 / D7 仅评审与计划（2026-09-15）**：[#1331](https://github.com/BA7IEE/srvf-nest-api/pull/1331) 已 Squash 合入 `e3eadddffc0f2c49ec27e3c34fa36df94043eec7`，最终 PR HEAD `032951a4` 的 CI 与 Ready 后可信审批通过；[main CI 34920687573](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34920687573) completed/success，五组 Contract + E2E 成功，main report-only 审批 skipped。D6 签字、PR 与合并验证已完成；早先“验证中/未提交/未合并”为历史时点，原失败记录保留。当前获准 D6 台账更正与 D7 评审、精确计划起草，仅文档，验证后提交推送创建PR，不合并、不实施、不操作数据库、不启用Gate。D7分阶段方案尚待选择，D7–D8、整体跨模型复审、真实业务验收、前端及生产切换仍未完成。
 

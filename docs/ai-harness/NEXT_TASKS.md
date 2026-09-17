@@ -2580,7 +2580,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 ### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D6 已完成仓内交付；D7-1已合并，D7-2实施中**
 
-**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、Release 3 C1–C5、Release 4 D1-1 #1310 / D1-2 #1312 / D1-3 #1316 / D2 #1319 / D3 #1323 / D4 #1327 / D5 #1329 / D6 #1331 已完成相应 PR 与 main 验证；D6 main 为 `e3eadddf`、CI 34920687573 成功；D7-1 #1334 与 #1336 已合入 main，#1334 的2000身份审计回滚超时根因仍未定；D7-2按 #1335 第10–13节 / 124路径在隔离工作树实施中，已完成一轮 TypeScript 和 Human command 定向单元验证，待第125条3b重签后仅以 app_test_w98 运行迁移、数据库 E2E 与 contract；PR、CI、Ready、合并、生产与 Gate 均未完成。D7–D8 及后续 Release 尚未完成。整体跨模型复审、前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，不宣称任何 Release 已上线)
+**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、Release 3 C1–C5、Release 4 D1-1 #1310 / D1-2 #1312 / D1-3 #1316 / D2 #1319 / D3 #1323 / D4 #1327 / D5 #1329 / D6 #1331 已完成相应 PR 与 main 验证；D6 main 为 `e3eadddf`、CI 34920687573 成功；D7-1 #1334 与 #1336 已合入 main，#1334 的2000身份审计回滚超时根因仍未定；D7-2按 #1335 第10–13节 / 124路径在隔离工作树实施。第125条 V1 无时间更正兼容修复已在 `app_test_w98` 完成迁移 E2E、既有 D7 全链 E2E、Golden journey 与 contract 验证，维护者已按摘要 `7741a700…cec13df0` 重签 3b；当前修复尚待提交、推送和 PR CI 冷跑，Ready、合并、生产与 Gate 均未完成。D7–D8 及后续 Release 尚未完成。整体跨模型复审、前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，不宣称任何 Release 已上线)
+
+- **D7-2 当前 Draft PR（2026-09-17）**：[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 保持 Draft；本轮 V1 兼容修复尚待提交、推送并由 PR CI 冷跑，不表示 Ready、合并、生产或 Gate 授权。
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 

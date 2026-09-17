@@ -1305,6 +1305,15 @@ BEGIN
     JOIN "AttendanceCorrectionRequest" q ON q.id = a."correctionRequestId"
     WHERE a."newPostingBatchId" = batch_id;
   IF schema_version IS NULL THEN RETURN; END IF;
+  IF schema_version = 1 THEN
+    IF EXISTS (
+      SELECT 1 FROM "ParticipationTimeCorrectionManifest" WHERE "postingBatchId" = batch_id
+    ) THEN
+      RAISE EXCEPTION 'legacy V1 correction must not contain a time correction manifest'
+        USING ERRCODE = '23514', CONSTRAINT = 'ptc_visibility_guard';
+    END IF;
+    RETURN;
+  END IF;
   IF schema_version = 2 THEN
     PERFORM ptc_assert_complete_v2(batch_id);
     RETURN;

@@ -221,16 +221,17 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
-> **当前重签（2026-09-17，D7-2）**：维护者确认第125条
+> **当前重签（2026-09-17，D7-2 V1兼容修复）**：维护者确认第125条
 > `20260915180000_activity_os_r4_d7_2_fact_correction`，SQL SHA-256
-> `d1511100bdb0ce9b4b3875f4f756a8a25c8c811504b7939234b67d66dcbd6abe`。
-> 相对前一摘要 `e8145168cd6db329885f2e57fb668f66f38bb78adf1f2926b15c9360fbcd42fb`，仅将来源完整性
-> 核验收敛为一次精确多重集合对拍，并按既有唯一键对每个根分录定向查询，消除容量上限上的二次扫描；
-> 同活动复合锚点、`ptar_receipt_guard` 的 CASE 括号修复、500/20 上限及所有 fail-closed 约束不变。
+> `7741a700fb043caf5fe81f7f68b21de27fe129bb4f997694d0b64423cec13df0`。
+> 相对前一摘要 `d1511100bdb0ce9b4b3875f4f756a8a25c8c811504b7939234b67d66dcbd6abe`，仅在
+> `ptc_assert_complete` 明确放行历史 `schemaVersion=1` 的无时间更正路径：若该批次存在
+> `ParticipationTimeCorrectionManifest` 仍明确拒绝；V2/V3、同活动复合锚点、
+> `ptar_receipt_guard` 的 CASE 括号修复、500/20 上限及所有 fail-closed 约束不变。
 > 完整 migration 仍只落既定的四张不可变 D7-2 事实表及配套既有列/约束扩展；零 DML、回填、删除、
 > 权限或业务范围扩展。`migration-total` 对拍为125；仅授权按既定范围进行 `app_test_w98` 隔离迁移、
 > 定向 E2E 与 contract 验证，不授权生产、Gate、Ready 或合并。
-> **本轮依据**：维护者本轮明确确认上述 `d1511100…` 摘要及等价性能修复范围。
+> **本轮依据**：维护者本轮明确确认上述 `7741a700…` 摘要及 V1 兼容修复范围。
 
 > **当前重签（2026-09-15，D7-1 SQL配对修复）**：维护者明确确认「确认第124条3b重签，摘要1c3b46326ce85」。第124条 `20260915170000_activity_os_r4_d7_pairing_index_probe` 的完整SQL SHA-256为 `1c3b46326ce8504e835908d85041f8ebb5e87db15b09496e50e6712a0b082c0a`。仅等价替换完整性函数的三处关联，旧123条SQL不改，无业务数据改写或删除。原完整E2E两轮无采样各3/3、124冷回放及历史升级2/2通过；前置prepare曾超时，三轮诊断未复现，根因仍未定位。其余兼容验证及最终CI尚未完成。本签不替代验证、整体复审、合并、生产或Gate授权；下方为历史签字。
 

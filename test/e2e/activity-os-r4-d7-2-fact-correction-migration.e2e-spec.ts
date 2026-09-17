@@ -26,6 +26,8 @@ const PREVIOUS_MIGRATION_COUNT = 124;
 const CURRENT_MIGRATION_COUNT = 125;
 const WORKER = 98;
 const USE_DEDICATED_W98 = process.env.SRVF_D7_2_W98 === '1';
+const LEGACY_V1_REQUEST_ID = 'd7-2-migration-v1-request';
+const LEGACY_V1_BATCH_ID = 'd7-2-migration-v1-batch';
 
 function target() {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
@@ -258,6 +260,38 @@ async function seedLegacyFact(): Promise<void> {
           )
         `,
       );
+      const legacyV1ChangeJson = {
+        schemaVersion: 1,
+        results: [
+          {
+            participationIdentityId: identity.id,
+            resultCode: 'present',
+            recognizedServiceHours: '1.00',
+            recognizedContributionPoints: '0.00',
+            adjustmentReason: 'legacy V1 fact',
+            lateFlag: false,
+            earlyLeaveFlag: false,
+          },
+        ],
+        segments: [],
+      };
+      await tx.$executeRaw(
+        Prisma.sql`
+          INSERT INTO "AttendanceCorrectionRequest" (
+            "id", "createdAt", "updatedAt", "activityId", "settlementRunId",
+            "participationIdentityId", "baseSettlementVersionId", "baseResultRevisionId",
+            "baseClosureRevision", "requestTypeCode", "requestedChangeJson", "reason",
+            "attachmentIds", "statusCode", "submittedByUserId", "submittedAt",
+            "reviewedByUserId", "reviewedAt", "reviewNote", "operationKey", "requestHash"
+          ) VALUES (
+            ${LEGACY_V1_REQUEST_ID}, ${end}, ${end}, ${activity.id}, ${run.id},
+            ${null}, ${version.id}, ${null}, ${0}, ${'time'},
+            ${JSON.stringify(legacyV1ChangeJson)}::jsonb, ${'legacy V1 fact'}, ${JSON.stringify([])}::jsonb,
+            ${'approved'}, ${user.id}, ${end}, ${user.id}, ${end}, ${'legacy V1 review'},
+            ${LEGACY_V1_REQUEST_ID}, ${'c'.repeat(64)}
+          )
+        `,
+      );
     });
   } finally {
     await db.$disconnect();
@@ -325,6 +359,54 @@ describe('D7-2 immutable fact-correction migration', () => {
     );
   }
 
+  function exerciseLegacyV1NoTimeCorrectionPath(): void {
+    sql(
+      `INSERT INTO "LedgerPostingBatch" (
+        "id", "createdAt", "updatedAt", "settlementRunId", "settlementVersionId",
+        "batchRevision", "statusCode", "requestKey", "preparedByUserId"
+      ) SELECT ${quote(LEGACY_V1_BATCH_ID)}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+        q."settlementRunId", q."baseSettlementVersionId", 1, 'preparing',
+        'd7-2-migration-v1-batch', q."submittedByUserId"
+      FROM "AttendanceCorrectionRequest" q WHERE q.id = ${quote(LEGACY_V1_REQUEST_ID)}`,
+    );
+    expect(
+      sql(`SELECT count(*) FROM "LedgerPostingBatch" WHERE id = ${quote(LEGACY_V1_BATCH_ID)}`),
+    ).toBe('1');
+    sql(`
+      BEGIN;
+      WITH application AS (
+        INSERT INTO "CorrectionApplication" (
+          "id", "createdAt", "updatedAt", "correctionRequestId", "newSettlementVersionId",
+          "newResultRevisionIds", "newPostingBatchId", "statusCode"
+        ) SELECT 'd7-2-migration-v1-application', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+          q.id, q."baseSettlementVersionId", '[]'::jsonb, ${quote(LEGACY_V1_BATCH_ID)}, 'preparing'
+        FROM "AttendanceCorrectionRequest" q WHERE q.id = ${quote(LEGACY_V1_REQUEST_ID)}
+        RETURNING id
+      )
+      INSERT INTO "CorrectionSegmentPreparationReceipt" ("applicationId", "preparedSegmentCount")
+      SELECT id, 0 FROM application;
+      COMMIT;
+    `);
+    expect(
+      sql(
+        `SELECT count(*) FROM "CorrectionApplication"
+         WHERE "newPostingBatchId" = ${quote(LEGACY_V1_BATCH_ID)}`,
+      ),
+    ).toBe('1');
+    sql(
+      `UPDATE "LedgerPostingBatch" SET "statusCode" = 'ready', "preparedAt" = CURRENT_TIMESTAMP,
+        "preparedCount" = 1 WHERE id = ${quote(LEGACY_V1_BATCH_ID)}`,
+    );
+    expect(
+      sql(
+        `SELECT b."statusCode" || chr(9) || (
+          SELECT count(*)::text FROM "ParticipationTimeCorrectionManifest" m
+          WHERE m."postingBatchId" = b.id
+        ) FROM "LedgerPostingBatch" b WHERE b.id = ${quote(LEGACY_V1_BATCH_ID)}`,
+      ),
+    ).toBe('ready\t0');
+  }
+
   it('cold replays all 125 migrations and installs the four immutable fact tables', () => {
     recreate();
     deploy(schema);
@@ -382,7 +464,7 @@ describe('D7-2 immutable fact-correction migration', () => {
       deploy(path.join(temporary, 'schema.prisma'));
       expect(checksums()).toHaveLength(PREVIOUS_MIGRATION_COUNT);
       await seedLegacyFact();
-      expect(sql('SELECT count(*) FROM "AttendanceCorrectionRequest"')).toBe('1');
+      expect(sql('SELECT count(*) FROM "AttendanceCorrectionRequest"')).toBe('2');
       const before = snapshot();
       const oldChecksums = checksums();
       cpSync(
@@ -399,7 +481,14 @@ describe('D7-2 immutable fact-correction migration', () => {
           'SELECT "statusCode" || chr(9) || COALESCE("resubmittedFromRequestId", \'NULL\') ' +
             'FROM "AttendanceCorrectionRequest"',
         ),
-      ).toBe('returned\tNULL');
+      ).toBe('returned\tNULL\napproved\tNULL');
+      expect(
+        sql(
+          `SELECT "statusCode" || chr(9) || ("requestedChangeJson"->>'schemaVersion')
+           FROM "AttendanceCorrectionRequest" WHERE id = ${quote(LEGACY_V1_REQUEST_ID)}`,
+        ),
+      ).toBe('approved\t1');
+      exerciseLegacyV1NoTimeCorrectionPath();
       expect(
         sql(
           'SELECT count(*) FROM "CorrectionPendingTimeAllocation" UNION ALL ' +
