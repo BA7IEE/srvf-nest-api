@@ -1027,7 +1027,7 @@ describe('D7-1 recognition correction real transaction', () => {
   }
 
   it('runs the Human V3 submit, returned-resubmit, review, prepare and commit chain', async () => {
-    const { p, timeRevision, root, roots, source, allocation, sources, allocations } =
+    const { p, timeRevision, root, roots, source, allocation } =
       await createCommittedFactCorrectionBase();
     if (source.checkOutAt === null) throw new Error('closed source segment required');
     expect(roots.map((entry) => entry.categoryCode).sort()).toEqual([
@@ -1218,37 +1218,29 @@ describe('D7-1 recognition correction real transaction', () => {
     };
 
     // The guard must reject an otherwise FK-valid binding when it claims the
-    // changed pending allocation for an unchanged source. This exercises the
-    // statement-level path before normal materialization creates any binding.
+    // changed pending allocation with the source's unchanged base allocation.
+    // This exercises the statement-level path before normal materialization
+    // creates any binding.
     const sourceProof = await f.db.correctionTimeSourceProof.findUniqueOrThrow({
       where: { applicationId: preparedData.applicationId },
     });
     const pendingAllocation = await f.db.correctionPendingTimeAllocation.findFirstOrThrow({
       where: { applicationId: preparedData.applicationId },
     });
-    const unchangedSource = sources.find((row) => row.id !== source.id);
-    if (!unchangedSource) throw new Error('unchanged source required');
-    const unchangedAllocation = allocations.find(
-      (row) =>
-        row.sourceSegmentId === unchangedSource.id &&
-        row.sourceSegmentRevision === unchangedSource.revision &&
-        row.participationIdentityId === unchangedSource.participationIdentityId &&
-        row.segmentKey === unchangedSource.segmentKey,
-    );
-    if (!unchangedAllocation) throw new Error('unchanged source allocation required');
     const snapshots = sourceProof.sourceSnapshotJson;
     if (!Array.isArray(snapshots)) throw new Error('source proof snapshots required');
-    const unchangedSnapshot = snapshots.find((value): value is Prisma.JsonObject => {
+    const sourceSnapshot = snapshots.find((value): value is Prisma.JsonObject => {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
       return (
-        value.participationIdentityId === unchangedSource.participationIdentityId &&
-        value.segmentKey === unchangedSource.segmentKey &&
-        value.sourceSegmentId === unchangedSource.id &&
-        value.sourceSegmentRevision === unchangedSource.revision
+        value.participationIdentityId === source.participationIdentityId &&
+        value.segmentKey === source.segmentKey &&
+        value.baseSegmentRevisionId === source.id &&
+        value.baseAllocationRevisionId === allocation.id &&
+        value.pendingAllocationId === pendingAllocation.id
       );
     });
-    const sourceHash = unchangedSnapshot?.sourceHash;
-    if (typeof sourceHash !== 'string') throw new Error('unchanged source hash required');
+    const sourceHash = sourceSnapshot?.sourceHash;
+    if (typeof sourceHash !== 'string') throw new Error('base source hash required');
     await expect(
       f.db.$executeRaw(
         Prisma.sql`
@@ -1258,8 +1250,8 @@ describe('D7-1 recognition correction real transaction', () => {
             "pendingAllocationId", "sourceHash"
           ) VALUES (
             ${f.key('binding_guard_mismatch')}, ${sourceProof.id}, ${p.activityId},
-            ${unchangedSource.participationIdentityId}, ${unchangedSource.segmentKey},
-            ${unchangedAllocation.id}, ${unchangedSource.id}, ${unchangedSource.revision},
+            ${source.participationIdentityId}, ${source.segmentKey},
+            ${allocation.id}, ${source.id}, ${source.revision},
             ${pendingAllocation.id}, ${sourceHash}
           )
         `,
