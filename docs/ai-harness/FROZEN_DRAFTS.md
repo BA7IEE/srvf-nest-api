@@ -1,6 +1,6 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **D7-2 V1兼容修复待推送（2026-09-17）**：[#1335](https://github.com/BA7IEE/srvf-nest-api/pull/1335) 的方案 A / 第10–13节 / 124个精确路径已合入 `main`，维护者已授权在隔离工作树实施；[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 已存在且保持 Draft。第125条对历史 V1 无时间更正路径的兼容修复已在唯一获准的 `app_test_w98` 验证：迁移 E2E 2/2、既有 D7 全链 E2E 7/7、Golden journey 1/1、contract 1072/1072（2 份快照）通过；维护者已按摘要 `7741a700…cec13df0` 重签 3b。当前修复尚待提交、推送至 #1337 并由 PR CI 冷跑；尚未 Ready、合并、操作生产或启用 Gate。D7-1 的 #1334 与 #1336 已合入 main；#1334 的既知2000身份审计回滚超时根因仍未定，不冒称已修复。
+> **D7-2 当前状态（2026-09-17）**：[#1335](https://github.com/BA7IEE/srvf-nest-api/pull/1335) 的方案 A / 第10–13节 / 124个精确路径已合入 `main`；[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 保持 Draft。本轮第125条 V1 兼容、第126条满额绑定守护及 CI 适配均在唯一获准的 `app_test_w98` 完成定向验证；当前仅更新台账读数和状态，随后由 #1337 新 HEAD 的 PR CI 冷跑验收。尚未 Ready、合并、操作生产或启用 Gate；整体跨模型复审、真实业务验收、前端与生产切换仍未完成。D7-1 的 #1334 与 #1336 已合入 main；#1334 的既知2000身份审计回滚超时根因仍未定，不冒称已修复。
 
 > **D6 仓内交付已合并 / D7 仅评审与计划（2026-09-15）**：[#1331](https://github.com/BA7IEE/srvf-nest-api/pull/1331) 已 Squash 合入 `e3eadddffc0f2c49ec27e3c34fa36df94043eec7`，最终 PR HEAD `032951a4` 的 CI 与 Ready 后可信审批通过；[main CI 34920687573](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34920687573) completed/success，五组 Contract + E2E 成功，main report-only 审批 skipped。D6 签字、PR 与合并验证已完成；早先“验证中/未提交/未合并”为历史时点，原失败记录保留。当前获准 D6 台账更正与 D7 评审、精确计划起草，仅文档，验证后提交推送创建PR，不合并、不实施、不操作数据库、不启用Gate。D7分阶段方案尚待选择，D7–D8、整体跨模型复审、真实业务验收、前端及生产切换仍未完成。
 
@@ -306,7 +306,7 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **265** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
-| 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
+| 治理 Phase 7:债务身份证待清偿条数 | **221** | `harness/architecture-debt.json` |
 | 治理 Phase 4:状态列 governed / 登记总数 | **8 / 75** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
