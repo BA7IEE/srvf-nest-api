@@ -20,6 +20,7 @@ import type { CurrentUserPayload } from '../../src/common/decorators/current-use
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
 import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
+import { CorrectionTimeAllocationService } from '../../src/modules/activities/correction-time-allocation.service';
 import { ParticipationTimeCorrectionService } from '../../src/modules/activities/participation-time-correction.service';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
@@ -1419,11 +1420,14 @@ describe('D7-1 recognition correction real transaction', () => {
       // aggregates.  Never print SQL, IDs, request bodies, URLs or raw errors.
       const commitPhaseMs = {
         correctionCommit: null as number | null,
+        timeAllocationMaterialization: null as number | null,
         correctionReceipt: null as number | null,
         ledgerCommit: null as number | null,
       };
       const queryTiming = {
         pendingMaterialization: { count: 0, durationMs: 0 },
+        timeAllocationMaterialization: { count: 0, durationMs: 0 },
+        segmentMaterialization: { count: 0, durationMs: 0 },
         correctionReceipt: { count: 0, durationMs: 0 },
         ledgerDeltas: { count: 0, durationMs: 0 },
         draftSegmentMembers: { count: 0, durationMs: 0 },
@@ -1435,6 +1439,19 @@ describe('D7-1 recognition correction real transaction', () => {
       const classifyCommitQuery = (query: string): QueryTimingBucket => {
         if (query.includes('pg_advisory_xact_lock')) return 'memberLocks';
         if (query.includes('"CorrectionPendingSegmentRevision"')) return 'pendingMaterialization';
+        if (
+          [
+            '"CorrectionTimeSourceProof"',
+            '"CorrectionPendingTimeAllocation"',
+            '"ParticipantTimeAllocationRevision"',
+            '"ParticipantTimeAllocationSlice"',
+            '"ParticipantTimeAllocationEvidence"',
+            '"ParticipantTimeAllocationCommandReceipt"',
+            '"CorrectionTimeAllocationBinding"',
+          ].some((table) => query.includes(table))
+        ) {
+          return 'timeAllocationMaterialization';
+        }
         if (
           query.includes('"ParticipationTimeCorrectionManifest"') ||
           query.includes('"ParticipationTimeCorrectionCommitReceipt"')
@@ -1449,6 +1466,9 @@ describe('D7-1 recognition correction real transaction', () => {
           query.includes('SELECT DISTINCT')
         ) {
           return 'draftSegmentMembers';
+        }
+        if (query.includes('"ParticipantServiceSegmentRevision"')) {
+          return 'segmentMaterialization';
         }
         if (query.includes('"MemberContributionDayState"')) return 'dayStates';
         return 'other';
@@ -1479,6 +1499,18 @@ describe('D7-1 recognition correction real transaction', () => {
         : undefined;
       const correction = f.app.get(CorrectionApplicationService);
       const commit = correction.commit.bind(correction);
+      const correctionTimeAllocation = f.app.get(CorrectionTimeAllocationService);
+      const materializeTimeAllocations =
+        correctionTimeAllocation.materialize.bind(correctionTimeAllocation);
+      const timeAllocationSpy = observed
+        ? jest
+            .spyOn(correctionTimeAllocation, 'materialize')
+            .mockImplementation((...args) =>
+              measureCommitPhase('timeAllocationMaterialization', () =>
+                materializeTimeAllocations(...args),
+              ),
+            )
+        : undefined;
       const timeCorrection = f.app.get(ParticipationTimeCorrectionService);
       const createCommitReceipt = timeCorrection.createCommitReceipt.bind(timeCorrection);
       const receiptSpy = observed
@@ -1556,6 +1588,7 @@ describe('D7-1 recognition correction real transaction', () => {
             .expect(200);
         } finally {
           transactionSpy?.mockRestore();
+          timeAllocationSpy?.mockRestore();
           receiptSpy?.mockRestore();
           ledgerSpy?.mockRestore();
           if (observed) await observed.$disconnect();
