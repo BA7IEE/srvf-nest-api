@@ -1415,13 +1415,95 @@ describe('D7-1 recognition correction real transaction', () => {
         expectedSliceCount,
       });
       let commitFailure = 'none';
+      // CI-only failure diagnosis: retain only fixed stage names and numeric timing
+      // aggregates.  Never print SQL, IDs, request bodies, URLs or raw errors.
+      const commitPhaseMs = {
+        correctionCommit: null as number | null,
+        correctionReceipt: null as number | null,
+        ledgerCommit: null as number | null,
+      };
+      const queryTiming = {
+        pendingMaterialization: { count: 0, durationMs: 0 },
+        correctionReceipt: { count: 0, durationMs: 0 },
+        ledgerDeltas: { count: 0, durationMs: 0 },
+        draftSegmentMembers: { count: 0, durationMs: 0 },
+        memberLocks: { count: 0, durationMs: 0 },
+        dayStates: { count: 0, durationMs: 0 },
+        other: { count: 0, durationMs: 0 },
+      };
+      type QueryTimingBucket = keyof typeof queryTiming;
+      const classifyCommitQuery = (query: string): QueryTimingBucket => {
+        if (query.includes('pg_advisory_xact_lock')) return 'memberLocks';
+        if (query.includes('"CorrectionPendingSegmentRevision"')) return 'pendingMaterialization';
+        if (
+          query.includes('"ParticipationTimeCorrectionManifest"') ||
+          query.includes('"ParticipationTimeCorrectionCommitReceipt"')
+        ) {
+          return 'correctionReceipt';
+        }
+        if (query.includes('"ParticipationLedgerEntry"') && query.includes('GROUP BY')) {
+          return 'ledgerDeltas';
+        }
+        if (
+          query.includes('"ParticipantServiceSegmentRevision"') &&
+          query.includes('SELECT DISTINCT')
+        ) {
+          return 'draftSegmentMembers';
+        }
+        if (query.includes('"MemberContributionDayState"')) return 'dayStates';
+        return 'other';
+      };
+      const measureCommitPhase = async <T>(
+        phase: keyof typeof commitPhaseMs,
+        work: () => Promise<T>,
+      ): Promise<T> => {
+        const startedAt = performance.now();
+        try {
+          return await work();
+        } finally {
+          commitPhaseMs[phase] = Math.round(performance.now() - startedAt);
+        }
+      };
+      const observed =
+        population === 2000 ? new PrismaClient({ log: [{ emit: 'event', level: 'query' }] }) : null;
+      if (observed) {
+        await observed.$connect();
+        observed.$on('query', (event) => {
+          const bucket = queryTiming[classifyCommitQuery(event.query)];
+          bucket.count++;
+          bucket.durationMs += Math.round(event.duration);
+        });
+      }
+      const transactionSpy = observed
+        ? jest.spyOn(f.db, '$transaction').mockImplementation(observed.$transaction.bind(observed))
+        : undefined;
       const correction = f.app.get(CorrectionApplicationService);
       const commit = correction.commit.bind(correction);
+      const timeCorrection = f.app.get(ParticipationTimeCorrectionService);
+      const createCommitReceipt = timeCorrection.createCommitReceipt.bind(timeCorrection);
+      const receiptSpy = observed
+        ? jest
+            .spyOn(timeCorrection, 'createCommitReceipt')
+            .mockImplementation((...args) =>
+              measureCommitPhase('correctionReceipt', () => createCommitReceipt(...args)),
+            )
+        : undefined;
+      const ledgerPosting = f.app.get(LedgerPostingService);
+      const commitBatchWithin = ledgerPosting.commitBatchWithin.bind(ledgerPosting);
+      const ledgerSpy = observed
+        ? jest
+            .spyOn(ledgerPosting, 'commitBatchWithin')
+            .mockImplementation((...args) =>
+              measureCommitPhase('ledgerCommit', () => commitBatchWithin(...args)),
+            )
+        : undefined;
       jest.spyOn(correction, 'commit').mockImplementation(async (...args) => {
+        const startedAt = performance.now();
         try {
           return await commit(...args);
         } catch (error) {
           if (population === 2000) {
+            commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
             // Fixed diagnostic fields only; never expose SQL, IDs, URLs or raw error messages.
             commitFailure = JSON.stringify({
               prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
@@ -1440,31 +1522,45 @@ describe('D7-1 recognition correction real transaction', () => {
                   : null,
               knownPrisma: error instanceof Prisma.PrismaClientKnownRequestError,
               unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
+              commitPhaseMs,
+              queryTiming,
             });
           }
           throw error;
+        } finally {
+          if (commitPhaseMs.correctionCommit === null)
+            commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
         }
       });
-      const committed = await request(httpServer(f.app))
-        .post(`${correctionUrl}/${submittedData.requestId}/commit`)
-        .set('Authorization', f.reviewer.auth)
-        .send({
-          expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
-          correctionApplicationId: preparedData.applicationId,
-          postingBatchId: preparedData.postingBatchId,
-          operationKey: f.key(`human_capacity_${population}_commit`),
-        })
-        .expect((response) => {
-          if (response.status !== 200) {
-            // Fixed diagnostic fields only; never expose raw response content, IDs, URLs or errors.
-            console.error('D7 2000-identity commit failure', {
-              status: response.status,
-              code: typeof response.body?.code === 'number' ? response.body.code : null,
-              commitFailure,
-            });
-          }
-        })
-        .expect(200);
+      const committed = await (async () => {
+        try {
+          return await request(httpServer(f.app))
+            .post(`${correctionUrl}/${submittedData.requestId}/commit`)
+            .set('Authorization', f.reviewer.auth)
+            .send({
+              expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+              correctionApplicationId: preparedData.applicationId,
+              postingBatchId: preparedData.postingBatchId,
+              operationKey: f.key(`human_capacity_${population}_commit`),
+            })
+            .expect((response) => {
+              if (response.status !== 200) {
+                // Fixed diagnostic fields only; never expose raw response content, IDs, URLs or errors.
+                console.error('D7 2000-identity commit failure', {
+                  status: response.status,
+                  code: typeof response.body?.code === 'number' ? response.body.code : null,
+                  commitFailure,
+                });
+              }
+            })
+            .expect(200);
+        } finally {
+          transactionSpy?.mockRestore();
+          receiptSpy?.mockRestore();
+          ledgerSpy?.mockRestore();
+          if (observed) await observed.$disconnect();
+        }
+      })();
       expect(committed.body.data).toMatchObject({
         requestId: submittedData.requestId,
         applicationId: preparedData.applicationId,
