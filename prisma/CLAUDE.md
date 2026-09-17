@@ -1,13 +1,15 @@
 # prisma — 本地铁律
 
-当前 D7-2 事实更正实现工作树为 **125 个 migration、174 个模型**。第123条仍为
+当前 D7-2 事实更正实现工作树为 **126 个 migration、174 个模型**。第123条仍为
 `20260915120000_activity_os_r4_d7_time_correction`，第124条
-`20260915170000_activity_os_r4_d7_pairing_index_probe` 保留 D7-1 的等价 SQL 修复；新增第125条
+`20260915170000_activity_os_r4_d7_pairing_index_probe` 保留 D7-1 的等价 SQL 修复；第125条
 `20260915180000_activity_os_r4_d7_2_fact_correction` 只追加四张永久事实表、既有表的可空证明字段与
-同链完整性约束，旧124条 SQL 不改、无存量回填或业务数据删除。D7-2 最终 3b 尚待维护者按实际
-SQL 摘要重签；在此之前不运行任何迁移或隔离库 E2E。静态类型、lint 和定向单测已通过，但不把它们
-写成迁移或完整链路验收。隔离验证仅允许 app_test_w98，13份其他固定 scratch 测试留 PR CI 冷跑。
-不操作生产、不启用 Gate、不提交、合并或部署；下方保留历史时点。
+同链完整性约束，旧124条 SQL 不改、无存量回填或业务数据删除。新增第126条
+`20260917194000_activity_os_r4_d7_2_binding_guard_set` 只将 D7-2 的 `ctab_insert_guard` 改为
+插入语句级集合守护：同一证明、申请、请求、批次、分配和待物化链仍逐项锁定并 fail-closed，
+`ctsp_assert_complete` 的完整来源集合校验不变；不新增表、列、权限、DML、回填或业务数据删除。
+D7-2 第126条的 3b 已由维护者按实际 SQL 摘要重签。隔离验证仅允许 app_test_w98，13份其他固定
+scratch 测试留 PR CI 冷跑；#1337 保持 Draft，未 Ready、合并、部署或启用 Gate；下方保留历史时点。
 
 ## D4 历史实施记录（不是当前待办或计数）
 

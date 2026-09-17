@@ -221,6 +221,17 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **当前重签（2026-09-18，D7-2 满额绑定守护）**：维护者确认第126条
+> `20260917194000_activity_os_r4_d7_2_binding_guard_set`，SQL SHA-256
+> `2edacb914acb207265b42447ef180e5e294c426d61a9d9651d7daf1fc6f79dd3`。
+> 仅将 `CorrectionTimeAllocationBinding` 的插入守护由逐行校验改为插入语句级集合校验，
+> 同一证明、申请、请求、批次、分配和待物化链仍按既有顺序锁定并 fail-closed；
+> 同活动复合锚点、准备／应用／就绪状态、待物化分配精确匹配及
+> `ctsp_assert_complete` 的来源集合完整性校验不变。第126条不新增表、列、权限、DML、
+> 回填、删除或业务范围。`migration-total` 对拍为126；不授权生产、Gate、Ready 或合并。
+> **本轮依据**：维护者本轮明确确认「确认重签 3b（D7-2 满额绑定守护，第126条 migration，
+> 摘要 2edacb914acb207265b42447ef180e5e294c426d61a9d9651d7daf1fc6f79dd3）」。
+
 > **当前重签（2026-09-17，D7-2 V1兼容修复）**：维护者确认第125条
 > `20260915180000_activity_os_r4_d7_2_fact_correction`，SQL SHA-256
 > `7741a700fb043caf5fe81f7f68b21de27fe129bb4f997694d0b64423cec13df0`。
@@ -270,6 +281,17 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 > ⭐ 这条对拍的价值在于它**会过期**:再落一条 migration ⇒ 机器读数与签字里的值不等 ⇒ 当场红,
 > 维护者必须为**新增的那条**重新签字。「经审查」的覆盖面因此不会随时间静默扩大。
+
+> **当前正式签字（2026-09-18，覆盖上方第123条历史字段）**：D7-2 满额绑定守护的第126条
+> `20260917194000_activity_os_r4_d7_2_binding_guard_set` 已由维护者按下列字段重签；上方字段仅保留
+> 第123条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:2026-09-18 D7-2满额绑定守护重签：第126条仅将 `CorrectionTimeAllocationBinding` 的插入守护改为语句级集合校验，保留同活动复合锚点、既有锁序、准备／应用／就绪状态、待物化分配精确匹配与 `ctsp_assert_complete` 的完整性校验；不新增表、列、权限、DML、回填、删除或业务范围。app_test_w98 的第126条冷回放和125→126非空升级共3项通过；本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-18
+- **依据**:维护者本轮明确确认「确认重签 3b（D7-2 满额绑定守护，第126条 migration，摘要 2edacb914acb207265b42447ef180e5e294c426d61a9d9651d7daf1fc6f79dd3）」。
+- **对拍**:有 —— `migration-total` = `126`
 
 ### 4b — 「字典、Audit events」的对账
 
