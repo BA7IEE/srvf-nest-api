@@ -1,6 +1,7 @@
-import { Controller, Get, Logger, Req, type INestApplication } from '@nestjs/common';
+import { Body, Controller, Get, Logger, Post, Req, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { Server } from 'node:http';
+import { gzipSync } from 'node:zlib';
 import type { Request, Response } from 'express';
 import { LoggerModule } from 'nestjs-pino';
 import request from 'supertest';
@@ -19,6 +20,27 @@ class ClientIdentityProbeController {
   probe(@Req() req: Request): { ip: string | undefined; ips: string[] } {
     ClientIdentityProbeController.calls += 1;
     return { ip: req.ip, ips: req.ips };
+  }
+}
+
+@Controller('app/v1/my/managed-activities/:activityId/time-corrections')
+class FactCorrectionBodyProbeController {
+  @Post()
+  submit(@Body() body: { value?: string }): { length: number } {
+    return { length: body.value?.length ?? 0 };
+  }
+
+  @Post(':requestId/resubmit')
+  resubmit(@Body() body: { value?: string }): { length: number } {
+    return { length: body.value?.length ?? 0 };
+  }
+}
+
+@Controller('system/v1/body-limit-probe')
+class OrdinaryBodyProbeController {
+  @Post()
+  post(@Body() body: { value?: string }): { length: number } {
+    return { length: body.value?.length ?? 0 };
   }
 }
 
@@ -398,6 +420,96 @@ describe('canonical client identity', () => {
       expect(observedByLaterMiddleware).toEqual([]);
     } finally {
       warnSpy.mockRestore();
+      await app.close();
+    }
+  });
+});
+
+describe('D7-2 scoped fact-correction JSON envelope', () => {
+  async function createBodyProbe(): Promise<INestApplication> {
+    const config = fakeConfig([]);
+    const moduleRef = await Test.createTestingModule({
+      imports: [LoggerModule.forRoot(buildLoggerModuleParams(config))],
+      controllers: [FactCorrectionBodyProbeController, OrdinaryBodyProbeController],
+    }).compile();
+    const app = moduleRef.createNestApplication();
+    app.useLogger(false);
+    applyGlobalSetup(app, config);
+    await app.init();
+    await app.listen(0, '127.0.0.1');
+    return app;
+  }
+
+  it.each([
+    '/api/app/v1/my/managed-activities/activity-one/time-corrections',
+    '/api/app/v1/my/managed-activities/activity-one/time-corrections/request-one/resubmit',
+  ])('accepts a bounded 32 MiB JSON envelope only on %s', async (path) => {
+    const app = await createBodyProbe();
+    const value = 'x'.repeat(150 * 1024);
+    try {
+      const response = await request(app.getHttpServer() as Server)
+        .post(path)
+        .send({ value });
+
+      expect(response.status).toBe(201);
+      expect(JSON.parse(response.text) as unknown).toEqual({
+        code: 0,
+        message: 'ok',
+        data: { length: value.length },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('rejects a fact-correction JSON envelope above the explicit 32 MiB ceiling', async () => {
+    const app = await createBodyProbe();
+    try {
+      // JSON framing makes this request strictly larger than the configured
+      // 32 MiB payload ceiling; acceptance of a merely 150 KiB probe is not
+      // evidence that the upper bound itself remains enforced.
+      const response = await request(app.getHttpServer() as Server)
+        .post('/api/app/v1/my/managed-activities/activity-one/time-corrections')
+        .send({ value: 'x'.repeat(32 * 1024 * 1024) });
+
+      expect(response.status).toBe(413);
+      expect(JSON.parse(response.text) as unknown).toEqual({
+        code: BizCode.BAD_REQUEST.code,
+        message: BizCode.BAD_REQUEST.message,
+        data: null,
+      });
+    } finally {
+      await app.close();
+    }
+  }, 30000);
+
+  it('leaves an unrelated JSON route at the existing default limit', async () => {
+    const app = await createBodyProbe();
+    try {
+      const response = await request(app.getHttpServer() as Server)
+        .post('/api/system/v1/body-limit-probe')
+        .send({ value: 'x'.repeat(150 * 1024) });
+
+      // The ordinary route must not inherit this lane's 32 MiB parser.  Its
+      // existing parser/filter combination owns the exact rejection envelope.
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(response.status).toBeLessThan(600);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('rejects compressed fact-correction bodies instead of inflating an unbounded wire payload', async () => {
+    const app = await createBodyProbe();
+    try {
+      const response = await request(app.getHttpServer() as Server)
+        .post('/api/app/v1/my/managed-activities/activity-one/time-corrections')
+        .set('content-type', 'application/json')
+        .set('content-encoding', 'gzip')
+        .send(gzipSync(JSON.stringify({ value: 'small' })));
+
+      expect(response.status).toBe(415);
+    } finally {
       await app.close();
     }
   });

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:fa50fb92b41a893e9880752e16e43fc9e496abf42ec9446e903504e0e7c37849",
+  "inputDigest": "sha256:cb3cb3827ef3de44af41155c3918e025678dc14a0ae2ac152067b3d58e06096d",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -1050,6 +1050,18 @@
       "subdomain": "lifecycle",
       "confirmed": true
     },
+    "CorrectionPendingTimeAllocation": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "CorrectionPendingTimeAllocationEvidence": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
     "CorrectionSegmentPreparationReceipt": {
       "domain": "participation",
       "ownerModule": "activities",
@@ -1057,6 +1069,18 @@
       "confirmed": true
     },
     "CorrectionSegmentCleanupReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "CorrectionTimeAllocationBinding": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "CorrectionTimeSourceProof": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",

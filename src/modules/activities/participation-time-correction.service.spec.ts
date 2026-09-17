@@ -112,6 +112,52 @@ describe('D7 correction source and commit ownership', () => {
     };
     expect(await service.source(makeDb() as never, withDatabaseFields, change)).toEqual(plain);
   });
+  it('carries a D7-2 source proof into format 2 without changing the exact source query', async () => {
+    const db = makeDb();
+    const result = await service.source(
+      db as never,
+      { ...anchor, sourceProofId: 'proof', sourceProofHash: 'c'.repeat(64) },
+      change,
+    );
+    expect(result.manifest.formatVersion).toBe(2);
+    if (result.manifest.formatVersion !== 2) throw new Error('expected format 2 manifest');
+    expect(result.manifest.sourceProofId).toBe('proof');
+    expect(result.manifest.sourceProofHash).toBe('c'.repeat(64));
+    expect(db.$queryRaw).toHaveBeenCalledTimes(2);
+  });
+  it('inherits the immediate V3 proof when a later V2 correction uses that version as its base', async () => {
+    const db = makeDb();
+    db.$queryRaw
+      .mockResolvedValueOnce([
+        {
+          id: 'root',
+          settlementVersionId: 'root-version',
+          expectedEntryCount: 1,
+          baseContentHash: 'b'.repeat(64),
+          predecessorManifestId: 'previous-manifest',
+          sourceProofId: 'proof-from-v3',
+          sourceProofHash: 'c'.repeat(64),
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'root-entry',
+          manifestId: 'root',
+          participationIdentityId: 'person',
+          categoryCode: 'training',
+          recognizedSeconds: 300,
+          previousEntryId: 'previous-credit',
+          previousSeconds: 300,
+        },
+      ]);
+
+    const result = await service.source(db as never, anchor, change);
+
+    expect(result.manifest.formatVersion).toBe(2);
+    if (result.manifest.formatVersion !== 2) throw new Error('expected inherited format 2 proof');
+    expect(result.manifest.sourceProofId).toBe('proof-from-v3');
+    expect(result.manifest.sourceProofHash).toBe('c'.repeat(64));
+  });
   it('keeps all predecessor keys inside the lateral probe and binds a null predecessor', async () => {
     const db = makeDb();
     await service.source(db as never, anchor, change);

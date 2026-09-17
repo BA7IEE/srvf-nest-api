@@ -422,12 +422,12 @@ HTTP submit hash域 `attendance-correction-human-submit-v1`，v3业务正文cano
 
 ## 12. 授权与最终验收包
 
-当前仅四份Markdown的继续编辑已获准；尚未获提交/推送/PR或实施授权。未来实施整包需明确包含：四模型、v3及format2、returned→voided关联重提、7个Human接口及准备人绑定、路由定向32MiB解析、暂存附件删除保护、124路径、查询预算和既有120秒/7秒事务限制。认可方案方向不等于默认批准这些实现写入。
+本节以下“仅文档/未来实施”是 #1335 计划阶段的历史时点。维护者随后已确认方案 A 的完整实施，授权按本稿第10–13节及124个精确路径在隔离工作树推进，并只允许 `app_test_w98` 做本地数据库验证；不授权合并、生产操作、Gate 或删除业务数据。当前工作树已核验原15条精确红区令牌；第125条 migration 仍须实际SQL摘要的3b重签后才可运行迁移、数据库E2E或contract。
 
-静态 `harness:needs` 已逐文件核验124路径：15红区、109非红区。该结果不是已有令牌。工具输出的prisma/**及bootstrap/**聚合不可直接当本稿精确授权，维护者在未来实施批准后仅逐一执行下列命令；**本轮不要执行**：
+静态 `harness:needs` 的124路径预算为15红区、109非红区。聚合输出的 `prisma/**` / `src/bootstrap/**` 不能替代精确令牌；以下命令是本实施工作树的逐条授权记录，AI不运行grant：
 
 ```bash
-cd /Users/dengwang/Documents/coding/srvf-nest-api
+cd /Users/dengwang/Documents/coding/srvf-nest-api-r4-d7-2-implementation
 pnpm harness:grant 'prisma/schema.prisma' --reason "维护者确认 D7-2 最终计划第10–13节；仅该精确路径"
 pnpm harness:grant 'prisma/migrations/20260915180000_activity_os_r4_d7_2_fact_correction/migration.sql' --reason "维护者确认 D7-2 最终计划第10–13节；仅该精确路径"
 pnpm harness:grant 'src/modules/permissions/permission-catalog.ts' --reason "维护者确认 D7-2 最终计划第10–13节；仅该精确路径"
@@ -445,17 +445,19 @@ pnpm harness:grant 'src/bootstrap/apply-global-setup.ts' --reason "维护者确�
 pnpm harness:grant 'src/bootstrap/apply-global-setup.spec.ts' --reason "维护者确认 D7-2 最终计划第10–13节；仅该精确路径"
 ```
 
-只在实际执行worktree发放，换worktree必须重新核验；AI不运行grant。SQL完成后请求3b（预期125条、实际完整摘要）；权限仍265、Audit169总计/164活跃，但Human访问范围说明已变，必须用实际目录hash重签4b。是否需要其它签字按实际SQL/依赖摘要核查，不提前填通过。
+只在实际执行worktree发放，换worktree必须重新核验；AI不运行grant。路由生成器会原子处理 `docs/ai-harness/ROUTE_AUTHZ.md` 与 `harness/authz-assertion-patterns.json`，后者不在原124路径内且当前未获令牌；在维护者显式追加该单一路径授权前，只可运行check，不可运行写入生成器。SQL完成后请求3b（预期125条、实际完整摘要）；权限仍265、Audit169总计/164活跃，但Human访问范围说明已变，必须用实际目录hash重签4b。是否需要其它签字按实际SQL/依赖摘要核查，不提前填通过。
 
 最终DoD：第5节P0–P6逐条证据，加四表互链/整表缺失、附件删除竞态、退回→重提失败回滚、v3→v2直接证明继承、零/作废段、旧hash不变、满额HTTP及非目标路由限制、普通worker与独立模块启动。query预算实测、生成物与contract逐行解释全部完成后才允许创建Draft PR；全量由CI冷跑。禁止降低断言/擅自重试掩盖失败，红区审批绑最终SHA，Ready后新审批仍独立，合并不随implementation自动授权。
 
 ## 13. 新基线风险与本轮收尾
 
+> **实施状态（2026-09-16）**：D7-2 已在本隔离工作树按本稿实施；一轮 TypeScript、Human command 定向单元和生成物一致性检查已完成。第125条 migration 尚未3b重签，因此尚未运行 `app_test_w98` 迁移、数据库E2E或contract，尚未创建PR、跑CI、Ready、合并、操作生产或启用Gate。静态架构债棘轮当前报告13条新写入候选；不得通过扩充债务基线掩盖，需先以属主事务原语或维护者明确的架构决定消除。
+
 D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts:944` 的2000身份最终审计回滚探针：预期D7 final audit rollback probe，实际在 `ledger-posting.service.ts:364` 的batch.update之前得到P2028，7000ms事务已耗时9989ms。第5组77套/1263项通过、1套/1项失败，其余四组通过。只能证明该次未到预期最后审计故障点，不能判为已修复、必属CI噪声或证明原子性失效；本轮不改代码、不重跑CI、不连测试库。
 
 原稿“prepare/commit均5秒”不符合当前源码，现按 `CORRECTION_PREPARE_TX_TIMEOUT_MS=120000` 与 `MEMBER_TX_TIMEOUT_MS=4000+3000` 更正；不修改代码或抬超时。该main回归须独立诊断/授权处置，作为D7-2实施前基线风险，不能用旧PR绿色覆盖main红色。
 
-最终下发候选已列齐合同与写集，但当前仍仅本地文档；维护者可先评审这四份文档。后续提交/推送/开PR需另获changelog及提交授权；D7-1回归诊断可独立并行只读推进，修复与数据库复现另授权。生产、Gate、业务数据删除、整体跨模型复审、遗漏身份/新段/政策替换及D8均未做。
+最终合同与写集已获实施授权，当前代码和派生文档在隔离工作树收口；通过最终静态、3b后限定的w98验证以及4b后，才可按既有授权提交、推送并创建Draft PR。D7-1回归诊断可独立并行只读推进，修复与数据库复现另授权。生产、Gate、业务数据删除、整体跨模型复审、遗漏身份/新段/政策替换及D8均未做。
 
 本轮核验：第11节独立解析得到124条、124唯一、107存在，未来迁移路径未占用；四份实际改动needs为0红区，未来写集15红区/109非红区。文档地图、权限地图、冻结台账、counts、readtax、Prettier和git diff --check分别退出0；既有WARN/INFO保留。首次干净lane preflight通过；本轮重跑因同四份已授权未提交文档报dirty，未将该退出1写成通过，未修改门禁或清除本轮工作。沿维护者本轮明确继续完善这四份文档的授权保留编辑，不开启新实现任务。未运行quick/contract/e2e，本轮没有代码修改。
 

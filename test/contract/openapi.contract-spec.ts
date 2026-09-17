@@ -85,6 +85,16 @@ function documented4xxCodes(operation: OpenApiOperation | undefined): number[] {
 const EXPECTED_ROUTES: ReadonlyArray<
   readonly [Lowercase<'get' | 'post' | 'put' | 'patch' | 'delete'>, string]
 > = [
+  // D7-2: Human/App fact-correction lifecycle.  Submit/resubmit create a new
+  // immutable request; review/prepare/commit deliberately remain separate
+  // actions so a client cannot collapse the approval and posting boundaries.
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/time-corrections'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/review'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/resubmit'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/prepare'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit'],
   // D4: explicit Human/App classified-settlement commands and bounded frozen read models.
   ['get', '/api/app/v1/my/managed-activities/{activityId}/time-settlement'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/sources'],
@@ -1178,7 +1188,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 636; // D7-1 +1 exact-version committed correction GET; existing 635 unchanged.
+const EXPECTED_ROUTE_COUNT = 643; // D7-2 Human fact correction +7; D7-1's 636 routes remain unchanged.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -3341,6 +3351,90 @@ describe('OpenAPI 契约快照', () => {
       expect(operation?.responses?.['403']).toBeDefined();
       if (method === 'post') expect(operation?.responses?.['503']).toBeDefined();
     }
+  });
+
+  it('D7-2 Human 事实更正严格保留提交、审核、准备、提交四个独立边界', () => {
+    const prefix = '/api/app/v1/my/managed-activities/{activityId}/time-corrections';
+    const routes = [
+      [prefix, 'post', '201'],
+      [prefix, 'get', '200'],
+      [prefix + '/{requestId}', 'get', '200'],
+      [prefix + '/{requestId}/review', 'post', '200'],
+      [prefix + '/{requestId}/resubmit', 'post', '201'],
+      [prefix + '/{requestId}/prepare', 'post', '200'],
+      [prefix + '/{requestId}/commit', 'post', '200'],
+    ] as const;
+    expect(
+      Object.keys(doc.paths)
+        .filter((path) => path.includes('/time-corrections'))
+        .sort(),
+    ).toEqual([...new Set(routes.map(([path]) => path))].sort());
+    for (const [path, method, success] of routes) {
+      const operation = doc.paths[path][method];
+      expect(operation?.tags).toEqual(['Mobile - Managed Activity Fact Corrections']);
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      expect(operation?.responses?.[success]).toBeDefined();
+      expect(operation?.responses?.['401']).toBeDefined();
+      expect(operation?.responses?.['403']).toBeDefined();
+      if (method === 'post') expect(operation?.responses?.['503']).toBeDefined();
+    }
+
+    const schemas = doc.components?.schemas ?? {};
+    const submit = schemas.AppSubmitActivityTimeCorrectionDto as OpenApiSchema;
+    expect(Object.keys(submit.properties ?? {}).sort()).toEqual([
+      'attachmentIds',
+      'operationKey',
+      'participationIdentityId',
+      'reason',
+      'requestTypeCode',
+      'requestedChangeJson',
+    ]);
+    expect(submit.required).toEqual([
+      'participationIdentityId',
+      'requestTypeCode',
+      'requestedChangeJson',
+      'reason',
+      'operationKey',
+    ]);
+    for (const forbidden of ['actorUserId', 'requestHash', 'trusted', 'calculatedSeconds']) {
+      expect(submit.properties).not.toHaveProperty(forbidden);
+    }
+
+    const prepare = schemas.AppPrepareActivityTimeCorrectionDto as OpenApiSchema;
+    expect(Object.keys(prepare.properties ?? {}).sort()).toEqual([
+      'expectedBaseSettlementVersionId',
+      'operationKey',
+    ]);
+    const commit = schemas.AppCommitActivityTimeCorrectionDto as OpenApiSchema;
+    expect(Object.keys(commit.properties ?? {}).sort()).toEqual([
+      'correctionApplicationId',
+      'expectedBaseSettlementVersionId',
+      'operationKey',
+      'postingBatchId',
+    ]);
+    const detail = schemas.AppActivityTimeCorrectionDetailDto as OpenApiSchema;
+    expect(detail.properties?.evidenceStatusCode.enum).toEqual(['not_frozen', 'frozen']);
+    expect(detail.properties?.sourceProofHash).toEqual({
+      type: 'object',
+      pattern: '^[0-9a-f]{64}$',
+      nullable: true,
+    });
+    for (const forbidden of ['actorUserId', 'preparedByUserId', 'signedUrl']) {
+      expect(detail.properties).not.toHaveProperty(forbidden);
+    }
+    const result = schemas.AppActivityTimeCorrectionCommitResultDto as OpenApiSchema;
+    expect(result.required).toEqual([
+      'requestId',
+      'applicationId',
+      'postingBatchId',
+      'settlementVersionId',
+      'settlementVersion',
+      'correctionStatus',
+      'applicationStatus',
+      'replayed',
+    ]);
+    expect(result.properties?.correctionStatus.enum).toEqual(['applied']);
+    expect(result.properties?.applicationStatus.enum).toEqual(['committed']);
   });
 
   it('D4 自动未知保持 nullable，原始毫秒是十进制字符串，分页不泄露理由', () => {

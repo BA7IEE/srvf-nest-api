@@ -1,8 +1,11 @@
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import {
   CORRECTION_CHANGE_SCHEMA_VERSION,
+  FACT_CORRECTION_CHANGE_SCHEMA_VERSION,
   parseCorrectionChangeSet,
+  serializeCorrectionChangeSetForHash,
 } from './correction-change-set';
 import { evaluateCorrectionReviewSeparation } from './correction-review-separation';
 
@@ -80,6 +83,27 @@ describe('D7-1 V2 分类认定更正闭集', () => {
     expect(parsed.results[0].recognizedServiceHours).toBe(4);
     expect(parsed.timeCorrection?.reason).toBe(timeCorrection().reason);
   });
+  it('V2 的现有指纹输入逐字保持不变', () => {
+    const parsed = parseCorrectionChangeSet(v2());
+    const body = {
+      activityId: 'activity',
+      participationIdentityId: null,
+      requestTypeCode: 'time',
+      reason: '分类认定复核',
+      operationKey: 'operation-key',
+    };
+    expect(
+      fingerprintMetricEnvelope('attendance-correction-request-v2', {
+        ...body,
+        requestedChangeJson: serializeCorrectionChangeSetForHash(parsed),
+      }).definitionHash,
+    ).toBe(
+      fingerprintMetricEnvelope('attendance-correction-request-v2', {
+        ...body,
+        requestedChangeJson: parsed,
+      }).definitionHash,
+    );
+  });
   it('V1 返回结构不增加字段，禁止夹带新内容', () => {
     expect(Object.keys(parseCorrectionChangeSet(changeSet()))).toEqual([
       'schemaVersion',
@@ -155,6 +179,255 @@ describe('D7-1 V2 分类认定更正闭集', () => {
           ...timeCorrection(),
           items: [...items, { rootEntryId: 'overflow', recognizedSeconds: 0 }],
         },
+      }),
+    );
+  });
+});
+
+describe('D7-2 V3 事实更正闭集', () => {
+  const allocation = (overrides: Record<string, unknown> = {}) => ({
+    participationIdentityId: 'identity-a',
+    segmentKey: 'segment-a',
+    baseSegmentRevisionId: 'base-segment-a',
+    baseAllocationRevisionId: 'base-allocation-a',
+    recognitionModeCode: 'manual',
+    manualReason: '依据现场记录调整分类',
+    slices: [
+      {
+        categoryCode: 'volunteer_service',
+        startAt: '2020-03-01T01:00:00.000Z',
+        endAt: '2020-03-01T02:00:00.000Z',
+      },
+    ],
+    evidenceAttachmentIds: ['attachment-b', 'attachment-a'],
+    ...overrides,
+  });
+  const segment = (overrides: Record<string, unknown> = {}) => ({
+    participationIdentityId: 'identity-a',
+    segmentKey: 'segment-a',
+    checkInAt: '2020-03-01T01:00:00.000Z',
+    checkOutAt: '2020-03-01T03:00:00.000Z',
+    resultCode: 'valid',
+    serviceHours: '2.00',
+    ...overrides,
+  });
+  const v3 = (overrides: Record<string, unknown> = {}) => ({
+    schemaVersion: FACT_CORRECTION_CHANGE_SCHEMA_VERSION,
+    results: [],
+    segments: [segment()],
+    timeCorrection: {
+      baseSettlementVersionId: 'base-version',
+      baseTimeLedgerHash: 'a'.repeat(64),
+      reason: '更正服务段事实后重新认定',
+      items: [{ rootEntryId: 'root-1', recognizedSeconds: 3600 }],
+    },
+    allocations: [allocation()],
+    ...overrides,
+  });
+
+  it('只接受 v3 的完整闭集，并为 hash 输入作稳定排序', () => {
+    const parsed = parseCorrectionChangeSet(
+      v3({
+        results: [
+          validResult({ participationIdentityId: 'identity-z' }),
+          validResult({ participationIdentityId: 'identity-b' }),
+        ],
+        segments: [
+          segment({ participationIdentityId: 'identity-z', segmentKey: 'segment-z' }),
+          segment({ participationIdentityId: 'identity-a', segmentKey: 'segment-a' }),
+        ],
+        allocations: [
+          allocation({ participationIdentityId: 'identity-z', segmentKey: 'segment-z' }),
+          allocation({ participationIdentityId: 'identity-a', segmentKey: 'segment-a' }),
+        ],
+      }),
+    );
+    expect(parsed.schemaVersion).toBe(3);
+    expect(parsed.results.map((row) => row.participationIdentityId)).toEqual([
+      'identity-b',
+      'identity-z',
+    ]);
+    expect(parsed.segments.map((row) => row.participationIdentityId)).toEqual([
+      'identity-a',
+      'identity-z',
+    ]);
+    expect(parsed.allocations?.map((row) => row.participationIdentityId)).toEqual([
+      'identity-a',
+      'identity-z',
+    ]);
+    expect(parsed.allocations?.[0].evidenceAttachmentIds).toEqual(['attachment-a', 'attachment-b']);
+  });
+
+  it('零时长或零事实段只能使用没有 slice 的 automatic 分配', () => {
+    const parsed = parseCorrectionChangeSet(
+      v3({
+        segments: [
+          segment({
+            resultCode: 'early_departure_zero',
+            checkOutAt: '2020-03-01T01:00:00.000Z',
+            serviceHours: '0.00',
+          }),
+        ],
+        allocations: [
+          allocation({ recognitionModeCode: 'automatic', manualReason: null, slices: [] }),
+        ],
+      }),
+    );
+    expect(parsed.allocations?.[0]).toMatchObject({
+      recognitionModeCode: 'automatic',
+      manualReason: null,
+      slices: [],
+    });
+  });
+
+  it('将 V3 时间事实固定成 UTC 文本，避免 Date 在指纹中退化为空对象', () => {
+    const serialized = serializeCorrectionChangeSetForHash(parseCorrectionChangeSet(v3()));
+    expect(serialized).toMatchObject({
+      schemaVersion: 3,
+      segments: [
+        {
+          checkInAt: '2020-03-01T01:00:00.000Z',
+          checkOutAt: '2020-03-01T03:00:00.000Z',
+        },
+      ],
+      allocations: [
+        {
+          slices: [
+            {
+              startAt: '2020-03-01T01:00:00.000Z',
+              endAt: '2020-03-01T02:00:00.000Z',
+            },
+          ],
+        },
+      ],
+    });
+    expect(JSON.stringify(serialized)).not.toContain('{}');
+  });
+
+  it('V3 规范化后仍是可再次解析的闭集，并保留十进制字符串入口', () => {
+    const parsed = parseCorrectionChangeSet(v3({ results: [validResult()] }));
+    const serialized = serializeCorrectionChangeSetForHash(parsed);
+    expect(serialized).toMatchObject({
+      results: [
+        {
+          recognizedServiceHours: '4.00',
+          recognizedContributionPoints: '1.20',
+        },
+      ],
+      segments: [{ serviceHours: '2.00' }],
+    });
+    expect(parseCorrectionChangeSet(serialized)).toEqual(parsed);
+  });
+
+  it('两个不同 V3 时间事实不能得到相同的业务指纹', () => {
+    const body = {
+      activityId: 'activity',
+      participationIdentityId: null,
+      requestTypeCode: 'time',
+      reason: '事实更正',
+      operationKey: 'operation-key',
+    };
+    const first = parseCorrectionChangeSet(v3());
+    const moved = parseCorrectionChangeSet(
+      v3({
+        segments: [segment({ checkOutAt: '2020-03-01T04:00:00.000Z', serviceHours: '3.00' })],
+        allocations: [
+          allocation({
+            slices: [
+              {
+                categoryCode: 'volunteer_service',
+                startAt: '2020-03-01T01:00:00.000Z',
+                endAt: '2020-03-01T03:00:00.000Z',
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    const hash = (changeSet: ReturnType<typeof parseCorrectionChangeSet>) =>
+      fingerprintMetricEnvelope('attendance-correction-request-v3', {
+        ...body,
+        requestedChangeJson: serializeCorrectionChangeSetForHash(changeSet),
+      }).definitionHash;
+    expect(hash(moved)).not.toBe(hash(first));
+  });
+
+  it.each([
+    ['缺少 allocations', v3({ allocations: undefined })],
+    ['顶层未知字段', v3({ unexpected: true })],
+    ['没有真实服务段', v3({ segments: [], allocations: [] })],
+    [
+      '分配遗漏一个段',
+      v3({
+        segments: [
+          segment(),
+          segment({ participationIdentityId: 'identity-b', segmentKey: 'segment-b' }),
+        ],
+      }),
+    ],
+    ['分配指向未声明段', v3({ allocations: [allocation({ segmentKey: 'not-declared' })] })],
+    ['同一段有两份分配', v3({ allocations: [allocation(), allocation()] })],
+    [
+      'automatic 携带人工理由',
+      v3({
+        allocations: [
+          allocation({ recognitionModeCode: 'automatic', slices: [], manualReason: '不允许' }),
+        ],
+      }),
+    ],
+    [
+      'automatic 携带 slice',
+      v3({ allocations: [allocation({ recognitionModeCode: 'automatic', manualReason: null })] }),
+    ],
+    ['manual 缺少理由', v3({ allocations: [allocation({ manualReason: null })] })],
+    ['manual 没有 slice', v3({ allocations: [allocation({ slices: [] })] })],
+    [
+      '人工分配写入零事实段',
+      v3({ segments: [segment({ resultCode: 'voided', serviceHours: '0.00' })] }),
+    ],
+    [
+      '一段重复附件',
+      v3({
+        allocations: [allocation({ evidenceAttachmentIds: ['attachment-a', 'attachment-a'] })],
+      }),
+    ],
+    [
+      'slice 不得由调用方指定 intervalKindCode',
+      v3({
+        allocations: [
+          allocation({
+            slices: [{ ...allocation().slices[0], intervalKindCode: 'service_segment' }],
+          }),
+        ],
+      }),
+    ],
+    [
+      'slice 空区间',
+      v3({
+        allocations: [
+          allocation({
+            slices: [{ ...allocation().slices[0], endAt: '2020-03-01T01:00:00.000Z' }],
+          }),
+        ],
+      }),
+    ],
+  ])('%s ⇒ 拒绝', (_label, raw) => expectRejected(raw));
+
+  it('限制每分配的证据与全请求的结果规模', () => {
+    expectRejected(
+      v3({
+        allocations: [
+          allocation({
+            evidenceAttachmentIds: Array.from({ length: 21 }, (_, index) => `attachment-${index}`),
+          }),
+        ],
+      }),
+    );
+    expectRejected(
+      v3({
+        results: Array.from({ length: 2001 }, (_, index) =>
+          validResult({ participationIdentityId: `identity-${index}` }),
+        ),
       }),
     );
   });

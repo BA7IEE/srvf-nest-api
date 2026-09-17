@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:54572a261ffcb84373490d41bbfd2d766d84f6e05d54cc0fcd51d0fe7231f40c
+// inputDigest: sha256:fa8040cf0194b7e1317b17eb95315bd16bd970487b47c8264f7739ebbe2590f1
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -658,6 +658,91 @@ export interface AppActivityTemplateVersionOptionDto {
   "updatedAt": string;
 }
 
+export interface AppActivityTimeCorrectionCommitResultDto {
+  "requestId": string;
+  "applicationId": string;
+  "postingBatchId": string;
+  "settlementVersionId": string;
+  "settlementVersion": number;
+  "correctionStatus": "applied";
+  "applicationStatus": "committed";
+  "replayed": boolean;
+}
+
+export interface AppActivityTimeCorrectionDetailDto {
+  "requestId": string;
+  "requestVersion": number;
+  "baseSettlementVersionId": string;
+  "statusCode": string;
+  "submittedAt": string;
+  "reviewedAt"?: Record<string, unknown> | null;
+  "requestTypeCode": string;
+  "requestedChangeJson": Record<string, unknown> | null;
+  "reason": Record<string, unknown> | null;
+  "attachmentIds": string[] | null;
+  "reviewNote"?: Record<string, unknown> | null;
+  "resubmittedFromRequestId"?: Record<string, unknown> | null;
+  "resubmittedSuccessorRequestId"?: Record<string, unknown> | null;
+  "sourceProofHash"?: Record<string, unknown> | null;
+  "evidenceStatusCode": "not_frozen" | "frozen";
+  "sourcePage"?: Record<string, unknown> | null;
+}
+
+export interface AppActivityTimeCorrectionListItemDto {
+  "requestId": string;
+  "requestVersion": number;
+  "baseSettlementVersionId": string;
+  "statusCode": string;
+  "submittedAt": string;
+  "reviewedAt"?: Record<string, unknown> | null;
+}
+
+export interface AppActivityTimeCorrectionPrepareResultDto {
+  "requestId": string;
+  "applicationId": string;
+  "postingBatchId": string;
+  "settlementVersionId": string;
+  "requestHash": string;
+  "sourceProofHash"?: Record<string, unknown> | null;
+  "replayed": boolean;
+}
+
+export interface AppActivityTimeCorrectionResubmitResultDto {
+  "outcome": "resubmitted" | "voided";
+  "requestId": string;
+  "requestVersion"?: number;
+  "activityId"?: string;
+  "settlementRunId"?: string;
+  "baseSettlementVersionId"?: string;
+  "baseResultRevisionId"?: Record<string, unknown> | null;
+  "baseClosureRevision"?: number;
+  "statusCode"?: "pending";
+  "replayed"?: boolean;
+  "currentSettlementVersionId"?: Record<string, unknown> | null;
+}
+
+export interface AppActivityTimeCorrectionReviewResultDto {
+  "outcome": "reviewed" | "voided";
+  "requestId": string;
+  "statusCode"?: string;
+  "runStatus"?: string;
+  "reviewedByUserId"?: string;
+  "currentSettlementVersionId"?: Record<string, unknown> | null;
+  "replayed"?: boolean;
+}
+
+export interface AppActivityTimeCorrectionSubmitResultDto {
+  "requestId": string;
+  "requestVersion": number;
+  "activityId": string;
+  "settlementRunId": string;
+  "baseSettlementVersionId": string;
+  "baseResultRevisionId": Record<string, unknown> | null;
+  "baseClosureRevision": number;
+  "statusCode": "pending";
+  "replayed": boolean;
+}
+
 export interface AppActivityTimePolicyOptionDto {
   "policyId": string;
   "versionId": string;
@@ -811,6 +896,13 @@ export interface AppCollaboratorOptionsResponseDto {
   "total": number;
   "page": number;
   "pageSize": number;
+}
+
+export interface AppCommitActivityTimeCorrectionDto {
+  "expectedBaseSettlementVersionId": string;
+  "operationKey": string;
+  "correctionApplicationId": string;
+  "postingBatchId": string;
 }
 
 export interface AppConfirmActivityOutcomeDto {
@@ -1771,6 +1863,11 @@ export interface AppPrepareActivityOutcomeCorrectionDto {
   "values": AppOutcomeCorrectionValueDto[];
 }
 
+export interface AppPrepareActivityTimeCorrectionDto {
+  "expectedBaseSettlementVersionId": string;
+  "operationKey": string;
+}
+
 export interface AppPrepareTimeSettlementDto {
   "operationKey": string;
   "expectedDraftVersion": number;
@@ -1890,6 +1987,12 @@ export interface AppRegistrationUploadSessionCreatedDto {
   "token": string;
   "expiresAt": string;
   "formVersion": number;
+}
+
+export interface AppReviewActivityTimeCorrectionDto {
+  "actionCode": "approve" | "return" | "reject";
+  "expectedRequestVersion": number;
+  "note"?: string;
 }
 
 export interface AppSelectActivityMetricSetDto {
@@ -2145,6 +2248,15 @@ export interface AppSettlementWorkbenchResponseDto {
 export interface AppSubmitActivityChangeReviewDto {
   "activity": UpdateAppManagedActivityDto;
   "positions"?: AppActivityChangePositionDto[];
+}
+
+export interface AppSubmitActivityTimeCorrectionDto {
+  "participationIdentityId": Record<string, unknown> | null;
+  "requestTypeCode": "result" | "service" | "time" | "points" | "person_identity" | "other";
+  "requestedChangeJson": Record<string, unknown>;
+  "reason": string;
+  "attachmentIds"?: string[];
+  "operationKey": string;
 }
 
 export interface AppSubmitTimeSettlementDto {

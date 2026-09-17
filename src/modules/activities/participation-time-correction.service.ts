@@ -16,6 +16,9 @@ interface CorrectionSourceAnchor {
   baseSettlementVersionId: string;
   settlementVersionId: string;
   requestHash: string;
+  /** D7-2 V3 proof, or an inherited proof for a later V2 correction. */
+  sourceProofId?: string | null;
+  sourceProofHash?: string | null;
 }
 
 /** The caller owns Activity/run/version/batch locks and the entire correction transaction. */
@@ -28,7 +31,10 @@ export class ParticipationTimeCorrectionService {
         JOIN "AttendanceCorrectionRequest" q ON q."id" = a."correctionRequestId"
         WHERE a."newPostingBatchId" = ${postingBatchId}
       )
-      SELECT EXISTS(SELECT 1 FROM applications WHERE "requestedChangeJson"->'schemaVersion' = '2'::jsonb) AS required,
+      SELECT EXISTS(
+        SELECT 1 FROM applications
+        WHERE "requestedChangeJson"->>'schemaVersion' IN ('2', '3')
+      ) AS required,
         EXISTS(SELECT 1 FROM applications a WHERE
           EXISTS(SELECT 1 FROM "ParticipationTimeLedgerManifest" m WHERE m."settlementVersionId" = a."baseSettlementVersionId")
           OR EXISTS(SELECT 1 FROM "ParticipationTimeCorrectionManifest" m WHERE m."settlementVersionId" = a."baseSettlementVersionId")
@@ -54,16 +60,20 @@ export class ParticipationTimeCorrectionService {
         expectedEntryCount: number;
         baseContentHash: string;
         predecessorManifestId: string | null;
+        sourceProofId: string | null;
+        sourceProofHash: string | null;
       }[]
     >`
       SELECT root."id", root."settlementVersionId", root."expectedEntryCount",
-        root."contentHash" AS "baseContentHash", NULL::text AS "predecessorManifestId"
+        root."contentHash" AS "baseContentHash", NULL::text AS "predecessorManifestId",
+        NULL::text AS "sourceProofId", NULL::text AS "sourceProofHash"
       FROM "ParticipationTimeLedgerManifest" root
       JOIN "LedgerPostingBatch" b ON b."id" = root."postingBatchId" AND b."statusCode" = 'committed'
       WHERE root."settlementVersionId" = ${anchor.baseSettlementVersionId}
         AND root."activityId" = ${anchor.activityId} AND root."settlementRunId" = ${anchor.settlementRunId}
       UNION ALL
-      SELECT root."id", root."settlementVersionId", root."expectedEntryCount", m."contentHash", m."id"
+      SELECT root."id", root."settlementVersionId", root."expectedEntryCount", m."contentHash", m."id",
+        m."sourceProofId", m."sourceProofHash"
       FROM "ParticipationTimeCorrectionManifest" m
       JOIN "ParticipationTimeCorrectionCommitReceipt" r ON r."manifestId" = m."id" AND r."contentHash" = m."contentHash"
       JOIN "LedgerPostingBatch" b ON b."id" = m."postingBatchId" AND b."statusCode" = 'committed'
@@ -131,6 +141,12 @@ export class ParticipationTimeCorrectionService {
           rootSettlementVersionId: root.settlementVersionId,
           predecessorManifestId: root.predecessorManifestId,
           baseContentHash: change.baseTimeLedgerHash,
+          // A later V2 correction must keep the immediate V3 proof in the
+          // format-2 hash domain.  A fresh V3 correction supplies its own
+          // proof through anchor and deliberately replaces the predecessor's
+          // source set with a newly frozen complete one.
+          sourceProofId: anchor.sourceProofId ?? root.sourceProofId,
+          sourceProofHash: anchor.sourceProofHash ?? root.sourceProofHash,
         },
         roots,
         change.items,
@@ -149,8 +165,11 @@ export class ParticipationTimeCorrectionService {
   async prepare(
     tx: Prisma.TransactionClient,
     source: Awaited<ReturnType<ParticipationTimeCorrectionService['source']>>,
+    options: { id?: string } = {},
   ) {
-    const manifest = await tx.participationTimeCorrectionManifest.create({ data: source.manifest });
+    const manifest = await tx.participationTimeCorrectionManifest.create({
+      data: options.id ? { ...source.manifest, id: options.id } : source.manifest,
+    });
     const created = await tx.participationTimeCorrectionEntry.createMany({
       data: source.entries.map((entry) => ({ ...entry, manifestId: manifest.id })),
     });

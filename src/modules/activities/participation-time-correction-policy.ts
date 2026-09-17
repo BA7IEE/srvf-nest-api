@@ -16,6 +16,12 @@ export interface TimeCorrectionAnchor {
   readonly predecessorManifestId: string | null;
   readonly baseContentHash: string;
   readonly requestHash: string;
+  /**
+   * D7-2 frozen source proof. Both values are either absent (legacy format 1)
+   * or present (format 2); an existing V1 hash domain is never rewritten.
+   */
+  readonly sourceProofId?: string | null;
+  readonly sourceProofHash?: string | null;
 }
 
 export interface TimeCorrectionRoot {
@@ -67,7 +73,12 @@ export function buildParticipationTimeCorrection(
   values: readonly TimeCorrectionValue[],
   predecessors: readonly TimeCorrectionPredecessor[],
 ) {
-  const { rootSettlementVersionId, ...manifestAnchor } = anchor;
+  const {
+    rootSettlementVersionId,
+    sourceProofId = null,
+    sourceProofHash = null,
+    ...manifestAnchor
+  } = anchor;
   for (const id of [
     anchor.correctionRequestId,
     anchor.postingBatchId,
@@ -82,6 +93,15 @@ export function buildParticipationTimeCorrection(
   if (anchor.settlementVersionId === anchor.baseSettlementVersionId) invalid();
   for (const hash of [anchor.baseContentHash, anchor.requestHash]) {
     if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/u.test(hash)) invalid();
+  }
+  if ((sourceProofId === null) !== (sourceProofHash === null)) invalid();
+  if (
+    sourceProofId !== null &&
+    (!validId(sourceProofId) ||
+      typeof sourceProofHash !== 'string' ||
+      !/^[a-f0-9]{64}$/u.test(sourceProofHash))
+  ) {
+    invalid();
   }
   const first = anchor.predecessorManifestId === null;
   if (first !== (anchor.baseSettlementVersionId === rootSettlementVersionId)) invalid();
@@ -197,7 +217,13 @@ export function buildParticipationTimeCorrection(
   const replacementSecondsTotal = [...totals.values()].reduce((sum, t) => sum + t.replacement, 0n);
   const contents = {
     ...manifestAnchor,
-    formatVersion: 1,
+    ...(sourceProofId === null
+      ? { formatVersion: 1 as const }
+      : {
+          formatVersion: 2 as const,
+          sourceProofId,
+          sourceProofHash: sourceProofHash as string,
+        }),
     expectedRootCount: roots.length,
     expectedEntryCount: entries.length,
     reversalSecondsTotal: reversalSecondsTotal.toString(),
@@ -208,10 +234,15 @@ export function buildParticipationTimeCorrection(
       ...contents,
       reversalSecondsTotal,
       replacementSecondsTotal,
-      contentHash: fingerprintMetricEnvelope('participation-time-correction-manifest-v1', {
-        ...contents,
-        entries,
-      }).definitionHash,
+      contentHash: fingerprintMetricEnvelope(
+        sourceProofId === null
+          ? 'participation-time-correction-manifest-v1'
+          : 'participation-time-correction-manifest-v2',
+        {
+          ...contents,
+          entries,
+        },
+      ).definitionHash,
     },
     entries,
     changed,

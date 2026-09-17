@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:54572a261ffcb84373490d41bbfd2d766d84f6e05d54cc0fcd51d0fe7231f40c
+// inputDigest: sha256:fa8040cf0194b7e1317b17eb95315bd16bd970487b47c8264f7739ebbe2590f1
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -82,6 +82,13 @@ import type {
   AppActivityRegistrationPreferenceCommandDto,
   AppActivityTemplateFamilyOptionDto,
   AppActivityTemplateVersionOptionDto,
+  AppActivityTimeCorrectionCommitResultDto,
+  AppActivityTimeCorrectionDetailDto,
+  AppActivityTimeCorrectionListItemDto,
+  AppActivityTimeCorrectionPrepareResultDto,
+  AppActivityTimeCorrectionResubmitResultDto,
+  AppActivityTimeCorrectionReviewResultDto,
+  AppActivityTimeCorrectionSubmitResultDto,
   AppActivityTimePolicyOptionDto,
   AppActivityTimePolicyPointerDto,
   AppActivityTimePolicySelectionChangeDto,
@@ -102,6 +109,7 @@ import type {
   AppCapabilityTasksDto,
   AppCollaboratorOptionDto,
   AppCollaboratorOptionsResponseDto,
+  AppCommitActivityTimeCorrectionDto,
   AppConfirmActivityOutcomeDto,
   AppCreationPlaceCoordinateDto,
   AppCreationQualificationRuleSetDto,
@@ -198,6 +206,7 @@ import type {
   AppParticipationLedgerEntryDto,
   AppPatchActivityTimePolicySelectionDto,
   AppPrepareActivityOutcomeCorrectionDto,
+  AppPrepareActivityTimeCorrectionDto,
   AppPrepareTimeSettlementDto,
   AppProfessionalActivityCreationDto,
   AppProfessionalCreationSessionDto,
@@ -209,6 +218,7 @@ import type {
   AppRegistrationFormFieldDto,
   AppRegistrationUploadAttachmentDto,
   AppRegistrationUploadSessionCreatedDto,
+  AppReviewActivityTimeCorrectionDto,
   AppSelectActivityMetricSetDto,
   AppSelfProfileDto,
   AppSettlementCloseCheckDto,
@@ -236,6 +246,7 @@ import type {
   AppSettlementVersionPointerDto,
   AppSettlementWorkbenchResponseDto,
   AppSubmitActivityChangeReviewDto,
+  AppSubmitActivityTimeCorrectionDto,
   AppSubmitTimeSettlementDto,
   AppTeamJoinApplicationDto,
   AppTimeCorrectionCategoryDto,
@@ -1013,6 +1024,34 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 负责人提前终止已开始的 published 活动 [auth] */
     AppManagedActivitiesControllerTerminate(activityId: string, body: AppManagedActivityTerminateCommandDto): Promise<ApiEnvelope<AppActivityLifecycleResultDto>> {
       return fetcher<AppActivityLifecycleResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/terminate`, body });
+    },
+    /** 分页读取事实更正申请摘要 [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeCorrectionControllerList(activityId: string, query?: { "page"?: number; "pageSize"?: number; "baseSettlementVersionId"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityTimeCorrectionListItemDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppActivityTimeCorrectionListItemDto[] }>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections`, query });
+    },
+    /** 提交冻结事实更正；v3 另在服务层要求 activity.time-allocation.recognize [rbac: activity.time-settlement.prepare] */
+    AppManagedActivityTimeCorrectionControllerSubmit(activityId: string, body: AppSubmitActivityTimeCorrectionDto): Promise<ApiEnvelope<AppActivityTimeCorrectionSubmitResultDto>> {
+      return fetcher<AppActivityTimeCorrectionSubmitResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections`, body });
+    },
+    /** 读取一条事实更正及可见范围内的冻结差异 [rbac: activity.time-settlement.read] */
+    AppManagedActivityTimeCorrectionControllerDetail(activityId: string, requestId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<AppActivityTimeCorrectionDetailDto>> {
+      return fetcher<AppActivityTimeCorrectionDetailDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections/${requestId}`, query });
+    },
+    /** 提交精确 prepared application；仅原准备人可重放 [rbac: activity.settlement-final-review.record] */
+    AppManagedActivityTimeCorrectionControllerCommit(activityId: string, requestId: string, body: AppCommitActivityTimeCorrectionDto): Promise<ApiEnvelope<AppActivityTimeCorrectionCommitResultDto>> {
+      return fetcher<AppActivityTimeCorrectionCommitResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections/${requestId}/commit`, body });
+    },
+    /** 准备已批准事实更正，保留准备人绑定 [rbac: activity.settlement-final-review.record] */
+    AppManagedActivityTimeCorrectionControllerPrepare(activityId: string, requestId: string, body: AppPrepareActivityTimeCorrectionDto): Promise<ApiEnvelope<AppActivityTimeCorrectionPrepareResultDto>> {
+      return fetcher<AppActivityTimeCorrectionPrepareResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections/${requestId}/prepare`, body });
+    },
+    /** 将 returned 申请前向作废并创建新申请；另需 activity.settlement-submit.record；v3 另在服务层要求 activity.time-allocation.recognize [rbac: activity.time-settlement.prepare] */
+    AppManagedActivityTimeCorrectionControllerResubmit(activityId: string, requestId: string, body: AppSubmitActivityTimeCorrectionDto): Promise<ApiEnvelope<AppActivityTimeCorrectionResubmitResultDto>> {
+      return fetcher<AppActivityTimeCorrectionResubmitResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections/${requestId}/resubmit`, body });
+    },
+    /** 审核事实更正；提交人不得自审 [rbac: activity.settlement-final-review.record] */
+    AppManagedActivityTimeCorrectionControllerReview(activityId: string, requestId: string, body: AppReviewActivityTimeCorrectionDto): Promise<ApiEnvelope<AppActivityTimeCorrectionReviewResultDto>> {
+      return fetcher<AppActivityTimeCorrectionReviewResultDto>({ method: "POST", path: `/api/app/v1/my/managed-activities/${activityId}/time-corrections/${requestId}/review`, body });
     },
     /** 分页读取本人 managed 活动的时长政策选择 [rbac: activity.time-policy.read] */
     AppManagedActivityTimePolicySelectionControllerGet(activityId: string, query?: { "page"?: number; "pageSize"?: number; "revision"?: number }): Promise<ApiEnvelope<AppActivityTimePolicySelectionResponseDto>> {

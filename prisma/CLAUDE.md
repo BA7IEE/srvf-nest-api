@@ -1,6 +1,13 @@
 # prisma — 本地铁律
 
-当前 D7-1 SQL 修复工作树为 **124 个 migration、170 个模型**。第123条仍为 `20260915120000_activity_os_r4_d7_time_correction`；追加第124条 `20260915170000_activity_os_r4_d7_pairing_index_probe` 仅等价替换 `ptc_assert_complete` 的三处关联，不增表、字段、索引或触发器，旧123条SQL不改，无存量回填或业务数据删除。本轮3b已按摘要1c3b46326ce85确认，本地迁移及完整链路验证通过，最终CI尚未执行，不代表已提交、合并或部署。本地隔离测试仅使用app_test_w98；13份其他固定scratch测试经确认留PR CI。不操作生产、不启用Gate。下方保留历史时点。
+当前 D7-2 事实更正实现工作树为 **125 个 migration、174 个模型**。第123条仍为
+`20260915120000_activity_os_r4_d7_time_correction`，第124条
+`20260915170000_activity_os_r4_d7_pairing_index_probe` 保留 D7-1 的等价 SQL 修复；新增第125条
+`20260915180000_activity_os_r4_d7_2_fact_correction` 只追加四张永久事实表、既有表的可空证明字段与
+同链完整性约束，旧124条 SQL 不改、无存量回填或业务数据删除。D7-2 最终 3b 尚待维护者按实际
+SQL 摘要重签；在此之前不运行任何迁移或隔离库 E2E。静态类型、lint 和定向单测已通过，但不把它们
+写成迁移或完整链路验收。隔离验证仅允许 app_test_w98，13份其他固定 scratch 测试留 PR CI 冷跑。
+不操作生产、不启用 Gate、不提交、合并或部署；下方保留历史时点。
 
 ## D4 历史实施记录（不是当前待办或计数）
 

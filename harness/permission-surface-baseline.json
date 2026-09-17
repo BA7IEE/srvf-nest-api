@@ -153,9 +153,9 @@
       "description": "sha256:e9f672b8e3359d066420ea31c1472fac49058fe78b580178da135da99b1a34db"
     },
     "activity.settlement-final-review.record": {
-      "endpoints": 2,
-      "surface": "sha256:30be7e675d6a4eb4d4af3b0df67e89669d65310440b995522909c64af9632ebd",
-      "description": "sha256:060b3dc1732c61bae9b789fffd63e2b824269921aa1f30eb1b1b348ae92192c9"
+      "endpoints": 5,
+      "surface": "sha256:2d76a0617db3b9c2177decf80f161c8cf7231c264d31eab81b103a592bf2fc68",
+      "description": "sha256:c5f69867bffa5cda685611e9981bc6ab1e144cc4b736dcc0bc5d9f01f38dbb3d"
     },
     "activity.settlement-first-review.record": {
       "endpoints": 2,
@@ -168,9 +168,9 @@
       "description": "sha256:72a8c3998f967813b34d482ee15ba4425d5a96c4aa98dd89e1cb8cbb3becf51a"
     },
     "activity.settlement-submit.record": {
-      "endpoints": 3,
-      "surface": "sha256:3f860566bfb084c1e676bb0b07db40d262f71f6abad509ade2fdc15fd228e6d8",
-      "description": "sha256:aba6b7abd2f31611be715bcce37916b05ded51e9200c9484e730b1bf343fc553"
+      "endpoints": 5,
+      "surface": "sha256:6853dbd22b28b1ad41c0479482f52bee744afe866d760cf7db938ad1b0c5010b",
+      "description": "sha256:a25b200ce82643c44533e80d729f58e26f433ad41d5968c7922d47013a5b8e08"
     },
     "activity.settlement-update-draft.record": {
       "endpoints": 1,
@@ -193,14 +193,14 @@
       "description": "sha256:1e7c0df4722f122eab5c4c8fbeb99e67fd5d720e8e8d0e8fc0eb2f423546f737"
     },
     "activity.time-settlement.prepare": {
-      "endpoints": 2,
-      "surface": "sha256:42ec1114aa5a3dd0e7e03feff711453dc3806c293a93e3ceabaa73e6cad735e0",
-      "description": "sha256:08f9e0ed7725d2661ce9d993c5f84c0ced9e67da78a433532a8184c344c0ccca"
+      "endpoints": 4,
+      "surface": "sha256:32a65d46939196897cc942022a430f7fa81f7254b131d1724dcd934290216c55",
+      "description": "sha256:c23023cf57b0f74cb2b8852e1d4c9acb62f5bfb2c06a643b575b028c26a6e2ec"
     },
     "activity.time-settlement.read": {
-      "endpoints": 8,
-      "surface": "sha256:a050b2d0b43c9c1ff348f4485beb9a35b02cad2cecbe80eaa36fc57da62b2607",
-      "description": "sha256:7496bb9195d380aba963b3b9271303b4550b08c02e9bd10ef1da01324be1fc92"
+      "endpoints": 10,
+      "surface": "sha256:70147ad3276ea07f8168caad17cf199dfdc2ce25b4657558c12e7909a880efff",
+      "description": "sha256:bc3a10aa1294516041efd6512b658c503384b172610374fdd39a3efafd6bd616"
     },
     "activity.update.record": {
       "endpoints": 8,

@@ -57,6 +57,7 @@ import { AttendanceOnsiteBatchJobService } from './attendance-onsite-batch-job.s
 import { AttendanceImportAttachmentService } from './attendance-import-attachment.service';
 import { AttendanceImportPreviewService } from './attendance-import-preview.service';
 import { AttendanceMetricSourceQueryService } from './attendance-metric-source-query.service';
+import { AttendanceCorrectionWriteService } from './attendance-correction-write.service';
 import { ParticipationSegmentFacade } from './participation-segment.facade';
 import { AppActivityPunchesController } from './controllers/app-activity-punches.controller';
 import { AppManagedActivityAttendanceQrController } from './controllers/app-managed-activity-attendance-qr.controller';
@@ -115,6 +116,7 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
   ],
   providers: [
     AttendanceMetricSourceQueryService,
+    AttendanceCorrectionWriteService,
     ParticipationSegmentFacade,
     AttendanceAccessService,
     AttendanceReadService,
@@ -160,6 +162,7 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     AttendanceOnsiteBatchJobService,
     AttendanceImportPreviewService,
     AttendanceMetricSourceQueryService,
+    AttendanceCorrectionWriteService,
     ParticipationSegmentFacade,
   ],
 })

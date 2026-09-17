@@ -1,5 +1,12 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
+## D7-2 当前实施增量（分支验证中，未提交）
+
+`CorrectionPendingTimeAllocation.recognitionModeCode` 新增为 L1 inventory、not-derived
+配置，闭集仅 `automatic` / `manual`。它在 prepare 时冻结，commit 只将同一事实物化为正式
+分配；不是可流转生命周期，不增加状态边或提升 governed。四张 D7-2 事实表长期保留，当前
+登记 75 项，其中 8 项 governed、67 项 inventory；下方阶段记录保留其原历史时点。
+
 ## D7-1 当前实施增量（分支验证中，未提交）
 
 新增 `ParticipationTimeCorrectionEntry.categoryCode` 与 `entryTypeCode` 两项 L1 inventory、
@@ -399,21 +406,21 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-09-15(Activity OS R4 / D7-1 当前实施分支，未合并)**
+**取数时点:2026-09-15(Activity OS R4 / D7-2 当前实施分支，未合并)**
 
-| 项                                    |                               值 |
-| ------------------------------------- | -------------------------------: |
-| 总条目                                |                           **74** |
-| `governed` / `inventory`              |                       **8 / 66** |
-| 66 条 inventory 的分层                | L1 **14** · L2 **26** · L3 **26** |
-| 已有机器可读边(`transitions` 是数组)※ |                               30 |
-| `transitions: "not-derived"` ※        |                               31 |
-| `transitions: "unconstrained"` ※      |                               13 |
+| 项                                    |                                值 |
+| ------------------------------------- | --------------------------------: |
+| 总条目                                |                            **75** |
+| `governed` / `inventory`              |                        **8 / 67** |
+| 67 条 inventory 的分层                | L1 **15** · L2 **26** · L3 **26** |
+| 已有机器可读边(`transitions` 是数组)※ |                                30 |
+| `transitions: "not-derived"` ※        |                                32 |
+| `transitions: "unconstrained"` ※      |                                13 |
 
-> ※ 这三行按**全部 74 条**统计(30+31+13=74),不是按上一行那 66 条 inventory。
+> ※ 这三行按**全部 75 条**统计(30+32+13=75),不是按上一行那 67 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
-> | **`vacuousGreenIfClosedSetOnly`** | **24** |
+> | **`vacuousGreenIfClosedSetOnly`** | **30** |
 > | 零 blocker 但仍 inventory 的升格候选 | **3** |
 
 > 🔴 **历史 true-up、A2 增补、A3 与本次 A7 落地要分开读**:
@@ -498,6 +505,11 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > inventory L1 8→9、数组边 29→30。`inherit` / `explicit` 的合法性还依赖政策指针、版本和哈希的
 > 复合形状约束，因此登记 `closed-set-is-embedded-in-composite-shape-check`，不升 `governed`。
 > 选择明细不可变，不存在状态转换或业务数据清理入口。
+>
+> **⑬ D7-2 当前读数变化（分支验证中）**：新增
+> `CorrectionPendingTimeAllocation.recognitionModeCode` 一条 L1 inventory、not-derived 配置；
+> 总条目 74→75、inventory 66→67、inventory L1 14→15、not-derived 31→32。
+> `automatic` / `manual` 是冻结分配配置而非生命周期，不新增状态边、不升 governed。
 
 blocker 直方图(2026-09-05 现算;含 A3 future-Version 条件生命周期、A7、B6 D2 与 C1 D1):`no-wrong-state-bizcode` 30 ·
 `no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·

@@ -243,6 +243,43 @@ export function buildActivityTimeAllocationManifest(
   };
 }
 
+/**
+ * D7-2 has one deliberately narrow exception to the D3 command grammar: a
+ * zero/voided corrected segment has no allocatable interval, so its frozen
+ * correction fact carries an empty slice object.  Keep this separate from the
+ * public D3 builder above: callers of the original command still require one
+ * to 500 slices and cannot silently acquire the exception.
+ */
+export function buildCorrectionTimeAllocationManifest(
+  slices: readonly ActivityTimeAllocationSliceInput[],
+): { manifest: ActivityTimeAllocationManifest; allocationHash: string } {
+  if (slices.length > 500) return allocationTypeError('correction slice count is invalid');
+  const ordered = sortSlices(slices);
+  const mapped = Object.fromEntries(
+    ordered.map((slice, ordinal) => [
+      String(ordinal),
+      {
+        ordinal,
+        categoryCode: slice.categoryCode,
+        intervalKindCode: slice.intervalKindCode,
+        startAt: slice.startAt,
+        endAt: slice.endAt,
+      },
+    ]),
+  ) as Record<string, ActivityTimeAllocationSliceManifest>;
+  const manifest: ActivityTimeAllocationManifest = {
+    schemaVersion: ACTIVITY_TIME_ALLOCATION_SCHEMA_VERSION,
+    slices: mapped,
+  };
+  return {
+    manifest,
+    allocationHash: fingerprintMetricEnvelope(
+      'activity-time-allocation-correction-manifest-v1',
+      manifest,
+    ).definitionHash,
+  };
+}
+
 export function parseActivityTimeAllocationReceipt(
   input: unknown,
   activityId: string,
