@@ -1423,6 +1423,15 @@ describe('D7-1 recognition correction real transaction', () => {
           postingBatchId: preparedData.postingBatchId,
           operationKey: f.key(`human_capacity_${population}_commit`),
         })
+        .expect((response) => {
+          if (response.status !== 200) {
+            // Fixed diagnostic fields only; never expose raw response content, IDs, URLs or errors.
+            console.error('D7 2000-identity commit failure', {
+              status: response.status,
+              code: typeof response.body?.code === 'number' ? response.body.code : null,
+            });
+          }
+        })
         .expect(200);
       expect(committed.body.data).toMatchObject({
         requestId: submittedData.requestId,
