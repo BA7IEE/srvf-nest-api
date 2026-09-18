@@ -50,15 +50,8 @@ function sql(statement: string): string {
     { input: statement, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
   ).trim();
 }
-function recreate() {
-  const { database, worker } = target();
-  const engine = execFileSync(
-    'docker',
-    ['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'],
-    { encoding: 'utf8' },
-  ).trim();
-  if (!engine.startsWith('unix://')) throw new Error('D6 migration requires a local Docker socket');
-  const active = execFileSync(
+function maintenanceSql(statement: string): string {
+  return execFileSync(
     'docker',
     [
       'exec',
@@ -74,35 +67,52 @@ function recreate() {
       '-v',
       'ON_ERROR_STOP=1',
     ],
-    {
-      input: 'SELECT count(*) FROM pg_stat_activity WHERE datname = ' + literal(database),
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    },
+    { input: statement, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
   ).trim();
+}
+function connectionCount(database: string): string {
+  return maintenanceSql(
+    'SELECT count(*) FROM pg_stat_activity WHERE datname = ' + literal(database),
+  );
+}
+function connectionDiagnostics(database: string): string {
+  return maintenanceSql(`SELECT json_build_object(
+    'connections', count(*),
+    'clientBackends', count(*) FILTER (WHERE backend_type = 'client backend'),
+    'autovacuumWorkers', count(*) FILTER (WHERE backend_type = 'autovacuum worker'),
+    'otherBackends', count(*) FILTER (WHERE backend_type NOT IN ('client backend', 'autovacuum worker')),
+    'active', count(*) FILTER (WHERE state = 'active'),
+    'idle', count(*) FILTER (WHERE state = 'idle'),
+    'idleInTransaction', count(*) FILTER (WHERE state IN ('idle in transaction', 'idle in transaction (aborted)')),
+    'waitingOnLock', count(*) FILTER (WHERE wait_event_type = 'Lock'),
+    'startedUnder5Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start < interval '5 seconds'),
+    'started5To30Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start >= interval '5 seconds' AND clock_timestamp() - backend_start < interval '30 seconds'),
+    'started30To120Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start >= interval '30 seconds' AND clock_timestamp() - backend_start < interval '120 seconds'),
+    'startedOver120Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start >= interval '120 seconds'),
+    'applicationNamePresent', count(*) FILTER (WHERE NULLIF(application_name, '') IS NOT NULL),
+    'applicationNameAbsent', count(*) FILTER (WHERE NULLIF(application_name, '') IS NULL),
+    'transactionOpen', count(*) FILTER (WHERE xact_start IS NOT NULL),
+    'transactionOpenOver5Seconds', count(*) FILTER (WHERE xact_start IS NOT NULL AND clock_timestamp() - xact_start >= interval '5 seconds')
+  ) FROM pg_stat_activity
+  WHERE datname = ${literal(database)}`);
+}
+function recreate() {
+  const { database, worker } = target();
+  const engine = execFileSync(
+    'docker',
+    ['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'],
+    { encoding: 'utf8' },
+  ).trim();
+  if (!engine.startsWith('unix://')) throw new Error('D6 migration requires a local Docker socket');
+  let active = connectionCount(database);
+  // The first maintenance probe can catch a connection that has already gone away by the
+  // time diagnostics run. Recheck from the same database before deciding whether it is safe.
+  if (active !== '0') active = connectionCount(database);
   if (active !== '0') {
     // Counts only: never log SQL text, identities, addresses or connection strings.
     let diagnostics = 'unavailable';
     try {
-      diagnostics = sql(`SELECT json_build_object(
-        'connections', count(*),
-        'clientBackends', count(*) FILTER (WHERE backend_type = 'client backend'),
-        'autovacuumWorkers', count(*) FILTER (WHERE backend_type = 'autovacuum worker'),
-        'otherBackends', count(*) FILTER (WHERE backend_type NOT IN ('client backend', 'autovacuum worker')),
-        'active', count(*) FILTER (WHERE state = 'active'),
-        'idle', count(*) FILTER (WHERE state = 'idle'),
-        'idleInTransaction', count(*) FILTER (WHERE state IN ('idle in transaction', 'idle in transaction (aborted)')),
-        'waitingOnLock', count(*) FILTER (WHERE wait_event_type = 'Lock'),
-        'startedUnder5Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start < interval '5 seconds'),
-        'started5To30Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start >= interval '5 seconds' AND clock_timestamp() - backend_start < interval '30 seconds'),
-        'started30To120Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start >= interval '30 seconds' AND clock_timestamp() - backend_start < interval '120 seconds'),
-        'startedOver120Seconds', count(*) FILTER (WHERE clock_timestamp() - backend_start >= interval '120 seconds'),
-        'applicationNamePresent', count(*) FILTER (WHERE NULLIF(application_name, '') IS NOT NULL),
-        'applicationNameAbsent', count(*) FILTER (WHERE NULLIF(application_name, '') IS NULL),
-        'transactionOpen', count(*) FILTER (WHERE xact_start IS NOT NULL),
-        'transactionOpenOver5Seconds', count(*) FILTER (WHERE xact_start IS NOT NULL AND clock_timestamp() - xact_start >= interval '5 seconds')
-      ) FROM pg_stat_activity
-      WHERE datname = current_database() AND pid <> pg_backend_pid()`);
+      diagnostics = connectionDiagnostics(database);
     } catch {
       // A failed diagnostic must not replace or bypass the original refusal.
     }
