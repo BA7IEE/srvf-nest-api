@@ -704,56 +704,83 @@ export class LedgerPostingService {
         JOIN "ParticipantSettlementResultRevision" prior ON prior.id = rr."baseResultRevisionId"
         WHERE rr."settlementVersionId" = ${settlementVersionId}
       ),
-      mine AS (
-        SELECT e.* FROM "ParticipationLedgerEntry" e WHERE e."postingBatchId" = ${batch.id}
-      )
-      SELECT
-        (SELECT count(*) FROM mine
-          WHERE "entryTypeCode" IN ('service_credit', 'contribution_credit'))::int
-          AS "creditEntryCount",
-        (SELECT count(DISTINCT ("resultRevisionId", "ledgerDate")) FROM mine
-          WHERE "entryTypeCode" IN ('service_credit', 'contribution_credit'))::int
-          AS "creditPairCount",
-        (SELECT count(*) FROM "ParticipantSettlementDay" d
-           JOIN "ParticipantSettlementResultRevision" rr ON rr.id = d."resultRevisionId"
-          WHERE rr."settlementVersionId" = ${settlementVersionId})::int
-          AS "settlementDayCount",
-        (SELECT count(*) FROM mine
-          WHERE "entryTypeCode" IN ('service_reversal', 'contribution_reversal'))::int
-          AS "reversalEntryCount",
-        (SELECT count(DISTINCT ("resultRevisionId", "ledgerDate")) FROM mine
-          WHERE "entryTypeCode" IN ('service_reversal', 'contribution_reversal'))::int
-          AS "reversalPairCount",
-        (SELECT count(*) FROM mine
-           JOIN "LedgerEntryReversalClaim" c ON c."originalEntryId" = mine."reversesEntryId"
-          WHERE mine."entryTypeCode" IN ('service_reversal', 'contribution_reversal'))::int
-          AS "reversalClaimCount",
+      -- Keep this batch scan narrow and perform the four independent shape counts
+      -- in one pass.  The prior shared CTE selected every ledger column and was
+      -- scanned repeatedly during the 2,000-identity correction commit.
+      mine_facts AS (
+        SELECT
+          (count(*) FILTER (
+            WHERE e."entryTypeCode" IN ('service_credit', 'contribution_credit')
+          ))::int AS "creditEntryCount",
+          (count(DISTINCT (e."resultRevisionId", e."ledgerDate")) FILTER (
+            WHERE e."entryTypeCode" IN ('service_credit', 'contribution_credit')
+          ))::int AS "creditPairCount",
+          (count(*) FILTER (
+            WHERE e."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
+          ))::int AS "reversalEntryCount",
+          (count(DISTINCT (e."resultRevisionId", e."ledgerDate")) FILTER (
+            WHERE e."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
+          ))::int AS "reversalPairCount"
+        FROM "ParticipationLedgerEntry" e
+        WHERE e."postingBatchId" = ${batch.id}
+      ),
+      settlement_facts AS (
+        SELECT count(*)::int AS "settlementDayCount"
+        FROM "ParticipantSettlementDay" d
+        JOIN "ParticipantSettlementResultRevision" rr ON rr.id = d."resultRevisionId"
+        WHERE rr."settlementVersionId" = ${settlementVersionId}
+      ),
+      reversal_facts AS (
+        SELECT
+          count(c."originalEntryId")::int AS "reversalClaimCount",
+          (count(o.id) FILTER (WHERE ob."statusCode" <> 'committed'))::int
+            AS "reversalOfUncommittedCount",
+          -- 🔴 四列逐列取反。光"有一条冲回"不够:冲 1.2 分的账只冲 0.2 分,配对计数
+          --    完全正确,而队员账上凭空多出 1.0 分。
+          (count(o.id) FILTER (
+            WHERE r."serviceHoursDelta" <> -o."serviceHoursDelta"
+              OR r."recognizedPointsDelta" <> -o."recognizedPointsDelta"
+              OR r."creditedPointsDelta" <> -o."creditedPointsDelta"
+              OR r."cappedOutPointsDelta" <> -o."cappedOutPointsDelta"
+          ))::int AS "mismatchedReversalAmountCount"
+        FROM "ParticipationLedgerEntry" r
+        LEFT JOIN "LedgerEntryReversalClaim" c ON c."originalEntryId" = r."reversesEntryId"
+        LEFT JOIN "ParticipationLedgerEntry" o ON o.id = r."reversesEntryId"
+        LEFT JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
+        WHERE r."postingBatchId" = ${batch.id}
+          AND r."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
+      ),
+      unreversed_facts AS (
         -- 🔴「只补不冲」的执行位:基础版本下已生效的 credit 分录,只要有一条没被本批次
-        --    冲回,那笔钱就在队员账上留了两遍。
-        (SELECT count(*) FROM "ParticipationLedgerEntry" o
-           JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
-           JOIN "ParticipantSettlementResultRevision" orr ON orr.id = o."resultRevisionId"
-          WHERE orr."settlementVersionId" IN (SELECT id FROM base)
-            AND ob."statusCode" = 'committed'
-            AND o."entryTypeCode" IN ('service_credit', 'contribution_credit')
-            AND NOT EXISTS (SELECT 1 FROM mine WHERE mine."reversesEntryId" = o.id))::int
-          AS "unreversedOriginalCount",
-        (SELECT count(*) FROM mine
-           JOIN "ParticipationLedgerEntry" o ON o.id = mine."reversesEntryId"
-           JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
-          WHERE mine."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
-            AND ob."statusCode" <> 'committed')::int
-          AS "reversalOfUncommittedCount",
-        -- 🔴 四列逐列取反。光"有一条冲回"不够:冲 1.2 分的账只冲 0.2 分,配对计数
-        --    完全正确,而队员账上凭空多出 1.0 分。
-        (SELECT count(*) FROM mine
-           JOIN "ParticipationLedgerEntry" o ON o.id = mine."reversesEntryId"
-          WHERE mine."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
-            AND (mine."serviceHoursDelta" <> -o."serviceHoursDelta"
-              OR mine."recognizedPointsDelta" <> -o."recognizedPointsDelta"
-              OR mine."creditedPointsDelta" <> -o."creditedPointsDelta"
-              OR mine."cappedOutPointsDelta" <> -o."cappedOutPointsDelta"))::int
-          AS "mismatchedReversalAmountCount"
+        --    冲回,那笔钱就在队员账上留了两遍。反连接避免物化并反复扫描整批分录,
+        --    语义仍是“本批次任意一条记录指向原 entry 即视为已冲回”。
+        SELECT count(*)::int AS "unreversedOriginalCount"
+        FROM "ParticipationLedgerEntry" o
+        JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
+        JOIN "ParticipantSettlementResultRevision" orr ON orr.id = o."resultRevisionId"
+        WHERE orr."settlementVersionId" IN (SELECT id FROM base)
+          AND ob."statusCode" = 'committed'
+          AND o."entryTypeCode" IN ('service_credit', 'contribution_credit')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "ParticipationLedgerEntry" r
+            WHERE r."postingBatchId" = ${batch.id}
+              AND r."reversesEntryId" = o.id
+          )
+      )
+      SELECT mine_facts."creditEntryCount",
+             mine_facts."creditPairCount",
+             settlement_facts."settlementDayCount",
+             mine_facts."reversalEntryCount",
+             mine_facts."reversalPairCount",
+             reversal_facts."reversalClaimCount",
+             unreversed_facts."unreversedOriginalCount",
+             reversal_facts."reversalOfUncommittedCount",
+             reversal_facts."mismatchedReversalAmountCount"
+      FROM mine_facts
+      CROSS JOIN settlement_facts
+      CROSS JOIN reversal_facts
+      CROSS JOIN unreversed_facts
     `;
     if (facts === undefined) throw new BizException(BizCode.LEDGER_COMMIT_ENTRY_SET_MISMATCH);
 
