@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import type { AttachmentsService } from '../attachments/attachments.service';
+import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import { fingerprintTimePolicyVersion } from './activity-time-policy-definition';
 import {
   activityTimePolicySelectionHash,
@@ -176,6 +177,7 @@ function fixture() {
   let pendingCreateData: unknown[] | undefined;
   let allocationCreateData: unknown[] | undefined;
   let bindingCreateData: unknown[] | undefined;
+  const bindingCreateBatches: unknown[][] = [];
   const tx = {
     $queryRaw: jest
       .fn()
@@ -210,6 +212,7 @@ function fixture() {
     correctionTimeAllocationBinding: {
       createMany: jest.fn(({ data }: { data: unknown[] }) => {
         bindingCreateData = data;
+        bindingCreateBatches.push(data);
         return { count: data.length };
       }),
     },
@@ -228,6 +231,7 @@ function fixture() {
     pendingCreateData: () => pendingCreateData,
     allocationCreateData: () => allocationCreateData,
     bindingCreateData: () => bindingCreateData,
+    bindingCreateBatches: () => bindingCreateBatches,
   };
 }
 
@@ -319,6 +323,72 @@ describe('D7-2 full correction-time source proof', () => {
         }),
       ]),
     );
+  });
+
+  it('materializes immutable source bindings in fixed 1,000-row batches without dropping facts', async () => {
+    const f = fixture();
+    const prepared = await prepare(f);
+    const [pending] = f.pendingCreateData() ?? [];
+    if (!isRecord(pending)) throw new Error('pending allocation row must be a record');
+    const snapshots = prepared.proofData.sourceSnapshotJson as Array<Record<string, unknown>>;
+    const unchanged = snapshots.find(
+      (snapshot) => snapshot.participationIdentityId === 'identity-b',
+    );
+    if (!unchanged) throw new Error('unchanged source fact is required');
+    const additions = Array.from({ length: 1000 }, (_, index) => {
+      const suffix = String(index).padStart(4, '0');
+      const sourceWithoutHash = { ...unchanged };
+      delete sourceWithoutHash.sourceHash;
+      const source = {
+        ...sourceWithoutHash,
+        participationIdentityId: `identity-c-${suffix}`,
+        segmentKey: `segment-c-${suffix}`,
+        baseSegmentRevisionId: `base-c-${suffix}`,
+        sourceSegmentId: `source-c-${suffix}`,
+        baseAllocationRevisionId: `allocation-base-c-${suffix}`,
+        allocationRevisionId: `allocation-target-c-${suffix}`,
+        pendingAllocationId: null,
+        sliceCount: 0,
+        slices: [],
+      };
+      return {
+        ...source,
+        sourceHash: fingerprintMetricEnvelope('correction-time-source-row-v1', source)
+          .definitionHash,
+      };
+    });
+    const expandedSnapshots = [...snapshots, ...additions];
+    f.tx.correctionTimeSourceProof.findUnique.mockResolvedValue({
+      id: prepared.sourceProofId,
+      sourceSnapshotJson: expandedSnapshots,
+      expectedSegmentCount: expandedSnapshots.length,
+      expectedPendingCount: prepared.proofData.expectedPendingCount,
+      expectedSliceCount: prepared.proofData.expectedSliceCount,
+      expectedBindingCount: expandedSnapshots.length,
+    });
+    f.tx.correctionPendingTimeAllocation.findMany.mockResolvedValue([
+      { ...pending, evidence: [], baseAllocationRevision: f.changedAllocation },
+    ]);
+
+    await expect(
+      f.service.materialize(f.tx as unknown as Prisma.TransactionClient, {
+        applicationId: 'application-one',
+        activityId,
+        actorUserId: 'reviewer-one',
+      }),
+    ).resolves.toBe(1);
+
+    const batches = f.bindingCreateBatches();
+    expect(batches.map((batch) => batch.length)).toEqual([1000, 2]);
+    const identityIds = batches.flat().map((row) => {
+      if (!isRecord(row) || typeof row.participationIdentityId !== 'string') {
+        throw new Error('binding identity must be materialized');
+      }
+      return row.participationIdentityId;
+    });
+    expect(identityIds).toHaveLength(expandedSnapshots.length);
+    expect(new Set(identityIds).size).toBe(expandedSnapshots.length);
+    expect(identityIds).toContain('identity-c-0999');
   });
 });
 

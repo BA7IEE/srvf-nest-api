@@ -36,6 +36,27 @@ type Tx = Prisma.TransactionClient;
 // that boundary.  Keep reads set-based, but issue bounded 1,000-row reads.
 const CORRECTION_ALLOCATION_READ_BATCH_SIZE = 1000;
 
+// D7-2's correction commit retains the same immutable fact contract at the
+// 2,000-identity acceptance scale.  Bound each source-shaped write so Prisma
+// does not construct one oversized parameter payload inside the 7-second
+// transaction.  Slices and evidence are child rows and use their separately
+// approved 5,000-row ceiling.
+const CORRECTION_ALLOCATION_SOURCE_WRITE_BATCH_SIZE = 1000;
+const CORRECTION_ALLOCATION_CHILD_WRITE_BATCH_SIZE = 5000;
+
+async function createManyInFixedBatches<T>(
+  rows: readonly T[],
+  batchSize: number,
+  createMany: (data: T[]) => Promise<{ count: number }>,
+): Promise<void> {
+  let createdCount = 0;
+  for (let offset = 0; offset < rows.length; offset += batchSize) {
+    const result = await createMany(rows.slice(offset, offset + batchSize));
+    createdCount += result.count;
+  }
+  if (createdCount !== rows.length) return invalidCorrectionFact();
+}
+
 type BaseAllocation = Prisma.ParticipantTimeAllocationRevisionGetPayload<{
   include: {
     sourceSegment: true;
@@ -607,24 +628,35 @@ export class CorrectionTimeAllocationService {
       });
     }
 
-    const created = await tx.participantTimeAllocationRevision.createMany({ data: allocationRows });
-    if (created.count !== allocationRows.length) return invalidCorrectionFact();
+    await createManyInFixedBatches(
+      allocationRows,
+      CORRECTION_ALLOCATION_SOURCE_WRITE_BATCH_SIZE,
+      (data) => tx.participantTimeAllocationRevision.createMany({ data }),
+    );
     if (sliceRows.length > 0) {
-      const slices = await tx.participantTimeAllocationSlice.createMany({ data: sliceRows });
-      if (slices.count !== sliceRows.length) return invalidCorrectionFact();
+      await createManyInFixedBatches(
+        sliceRows,
+        CORRECTION_ALLOCATION_CHILD_WRITE_BATCH_SIZE,
+        (data) => tx.participantTimeAllocationSlice.createMany({ data }),
+      );
     }
     if (evidenceRows.length > 0) {
-      const evidence = await tx.participantTimeAllocationEvidence.createMany({
-        data: evidenceRows,
-      });
-      if (evidence.count !== evidenceRows.length) return invalidCorrectionFact();
+      await createManyInFixedBatches(
+        evidenceRows,
+        CORRECTION_ALLOCATION_CHILD_WRITE_BATCH_SIZE,
+        (data) => tx.participantTimeAllocationEvidence.createMany({ data }),
+      );
     }
-    const receipts = await tx.participantTimeAllocationCommandReceipt.createMany({
-      data: receiptRows,
-    });
-    if (receipts.count !== receiptRows.length) return invalidCorrectionFact();
-    const bindings = await tx.correctionTimeAllocationBinding.createMany({ data: bindingRows });
-    if (bindings.count !== bindingRows.length) return invalidCorrectionFact();
+    await createManyInFixedBatches(
+      receiptRows,
+      CORRECTION_ALLOCATION_SOURCE_WRITE_BATCH_SIZE,
+      (data) => tx.participantTimeAllocationCommandReceipt.createMany({ data }),
+    );
+    await createManyInFixedBatches(
+      bindingRows,
+      CORRECTION_ALLOCATION_SOURCE_WRITE_BATCH_SIZE,
+      (data) => tx.correctionTimeAllocationBinding.createMany({ data }),
+    );
     return pending.length;
   }
 

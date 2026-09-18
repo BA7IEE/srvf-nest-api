@@ -1,6 +1,6 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **D7-2 当前状态（2026-09-17）**：[#1335](https://github.com/BA7IEE/srvf-nest-api/pull/1335) 的方案 A / 第10–13节 / 124个精确路径已合入 `main`；[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 已创建并保持 Draft。第125条 V1 兼容、第126条满额绑定守护及 CI 适配已在唯一获准的 `app_test_w98` 完成定向验证；当前仅补齐台账读数和状态，随后由 #1337 新 HEAD 的 PR CI 冷跑验收。尚未 Ready、合并、操作生产或启用 Gate；整体跨模型复审、真实业务验收、前端与生产切换仍未完成。D7-1 的 #1334 与 #1336 已合入 main；#1334 的既知2000身份审计回滚超时根因仍未定，不冒称已修复。
+> **D7-2 当前状态（2026-09-18）**：[#1335](https://github.com/BA7IEE/srvf-nest-api/pull/1335) 的方案 A / 第10–13节 / 124个精确路径已合入 `main`；[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 已创建并保持 Draft，远端当前 HEAD 的两条 P2028 CI 失败尚未被新提交替换。本工作树已按维护者确认完成 7 秒事务修复：完整来源证明物化按来源最多1,000、子行最多5,000分批追加并精确计数，跨活动重叠校验改为等价 `EXISTS` 集合查询；未改业务超时或既有 E2E 断言。唯一获准的 `app_test_w98` 冷回放126条 migration、原2,000身份 Human V3写链（139.191秒）及原8,192人账本规模用例（commit 1,111ms、28条SQL）均通过；静态 typecheck、lint 与对应单测也通过。下一步仅是提交/推送 #1337、对新 SHA 重新取得可信审批并由 PR CI 冷跑；尚未 Ready、合并、操作生产或启用 Gate。D7-1 的 #1334 与 #1336 已合入 main；#1334 的既知2000身份审计回滚超时根因仍未定，不冒称已修复。
 
 > **D6 仓内交付已合并 / D7 仅评审与计划（2026-09-15）**：[#1331](https://github.com/BA7IEE/srvf-nest-api/pull/1331) 已 Squash 合入 `e3eadddffc0f2c49ec27e3c34fa36df94043eec7`，最终 PR HEAD `032951a4` 的 CI 与 Ready 后可信审批通过；[main CI 34920687573](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34920687573) completed/success，五组 Contract + E2E 成功，main report-only 审批 skipped。D6 签字、PR 与合并验证已完成；早先“验证中/未提交/未合并”为历史时点，原失败记录保留。当前获准 D6 台账更正与 D7 评审、精确计划起草，仅文档，验证后提交推送创建PR，不合并、不实施、不操作数据库、不启用Gate。D7分阶段方案尚待选择，D7–D8、整体跨模型复审、真实业务验收、前端及生产切换仍未完成。
 

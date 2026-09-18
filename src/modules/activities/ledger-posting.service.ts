@@ -550,20 +550,23 @@ export class LedgerPostingService {
       FROM "ParticipantServiceSegmentRevision" candidate
       JOIN "ActivityParticipationIdentity" candidate_identity
         ON candidate_identity.id = candidate."participationIdentityId"
-      JOIN "ActivityParticipationIdentity" existing_identity
-        ON existing_identity."memberId" = candidate_identity."memberId"
-       AND existing_identity."activityId" <> candidate_identity."activityId"
-      JOIN "ParticipantServiceSegmentRevision" existing
-        ON existing."participationIdentityId" = existing_identity.id
       WHERE candidate_identity."activityId" = ${activityId}
         AND candidate."statusCode" = 'draft'
         AND candidate."resultCode" NOT IN ('voided', 'replaced')
         AND candidate."checkOutAt" IS NOT NULL
-        AND existing."statusCode" = 'committed'
-        AND existing."resultCode" NOT IN ('voided', 'replaced')
-        AND existing."checkOutAt" IS NOT NULL
-        AND candidate."checkInAt" < existing."checkOutAt"
-        AND existing."checkInAt" < candidate."checkOutAt"
+        AND EXISTS (
+          SELECT 1
+          FROM "ActivityParticipationIdentity" existing_identity
+          JOIN "ParticipantServiceSegmentRevision" existing
+            ON existing."participationIdentityId" = existing_identity.id
+          WHERE existing_identity."memberId" = candidate_identity."memberId"
+            AND existing_identity."activityId" <> candidate_identity."activityId"
+            AND existing."statusCode" = 'committed'
+            AND existing."resultCode" NOT IN ('voided', 'replaced')
+            AND existing."checkOutAt" IS NOT NULL
+            AND candidate."checkInAt" < existing."checkOutAt"
+            AND existing."checkInAt" < candidate."checkOutAt"
+        )
       LIMIT 1
     `;
     if (rows.length > 0) throw new BizException(BizCode.ATTENDANCE_TIME_OVERLAP);
