@@ -325,7 +325,7 @@ describe('D7-2 full correction-time source proof', () => {
     );
   });
 
-  it('materializes immutable source bindings in fixed 1,000-row batches without dropping facts', async () => {
+  it('materializes all 10,000 immutable source bindings in fixed 5,000-row batches without dropping facts', async () => {
     const f = fixture();
     const prepared = await prepare(f);
     const [pending] = f.pendingCreateData() ?? [];
@@ -335,7 +335,7 @@ describe('D7-2 full correction-time source proof', () => {
       (snapshot) => snapshot.participationIdentityId === 'identity-b',
     );
     if (!unchanged) throw new Error('unchanged source fact is required');
-    const additions = Array.from({ length: 1000 }, (_, index) => {
+    const additions = Array.from({ length: 9998 }, (_, index) => {
       const suffix = String(index).padStart(4, '0');
       const sourceWithoutHash = { ...unchanged };
       delete sourceWithoutHash.sourceHash;
@@ -379,7 +379,8 @@ describe('D7-2 full correction-time source proof', () => {
     ).resolves.toBe(1);
 
     const batches = f.bindingCreateBatches();
-    expect(batches.map((batch) => batch.length)).toEqual([1000, 2]);
+    expect(expandedSnapshots).toHaveLength(10_000);
+    expect(batches.map((batch) => batch.length)).toEqual([5000, 5000]);
     const identityIds = batches.flat().map((row) => {
       if (!isRecord(row) || typeof row.participationIdentityId !== 'string') {
         throw new Error('binding identity must be materialized');

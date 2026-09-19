@@ -1,6 +1,6 @@
 # Activity OS R4 D7-2 事实更正与 Human 写链：评审及精确计划草案
 
-> 2026-09-15，仅文档，方案 A 方向已确认；第10–13节为最终待审实施合同。当前授权仅允许 D7-1 台账更正和本稿起草，不含提交、推送、PR、实施、数据库、Gate 或业务数据删除。本稿的候选写集不是执行授权。第3–8节保留初稿取证历史；以第10–13节为最终待审口径，未获实施授权。
+> 2026-09-15，仅文档，方案 A 方向已确认；第10–13节为最终待审实施合同。第3–8节保留初稿取证历史；以第10–13节为最终待审口径。后续 D7-2 实施、验证、Draft PR 与 CI 的实际进展以第13–14节和台账顶部当前状态为准。
 
 ## 1. 基线与问题
 
@@ -462,3 +462,70 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 本轮核验：第11节独立解析得到124条、124唯一、107存在，未来迁移路径未占用；四份实际改动needs为0红区，未来写集15红区/109非红区。文档地图、权限地图、冻结台账、counts、readtax、Prettier和git diff --check分别退出0；既有WARN/INFO保留。首次干净lane preflight通过；本轮重跑因同四份已授权未提交文档报dirty，未将该退出1写成通过，未修改门禁或清除本轮工作。沿维护者本轮明确继续完善这四份文档的授权保留编辑，不开启新实现任务。未运行quick/contract/e2e，本轮没有代码修改。
 
 路由解析实现注意：使用独立命名包装中间件调用局部JSON parser，不能让Nest按全局jsonParser名称检测误判为已安装默认parser；测试必须证明其它路由仍能解析合法JSON、仍按原上限拒绝超大输入。实际登记位置及顺序由apply-global-setup的HTTP集成测试验证，不凭单测mock宣称生产启动等价。
+
+## 14. #1337 CI 性能修复评审（2026-09-19，仅文档）
+
+### 14.1 已证实的现象与边界
+
+[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 当前保持 Draft，HEAD 为 `f779191d`。其 [PR CI 35449265173](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35449265173) 已完成，可信扫描与该 SHA 的维护者审批通过；两个失败分片仍不能登记为绿：
+
+| 面                             | 远端事实                                                                                      | `app_test_w98` 隔离诊断                                                                                                 | 可得出的结论                                                                                                 |
+| ------------------------------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 结算 prepare 的 2,000 身份配对 | `activity-os-r4-d7-pairing-index-probe` 在 30,000ms 事务预算内得到 P2028，已记录耗时 36,786ms | 干净重建模板后的目标路径通过（整项148.158s，含夹具、submit和回放）；`/prepare` 9.210s，P-Guard三段回滚计划合计632.284ms | 不是断言漂移；P-Guard在暖 w98 中不足以单独解释36.786s，仍须保留30秒预算并定位 prepare 其余工作或 CI 资源差异 |
+| Human V3 的 2,000 身份更正提交 | `activity-os-r4-d7-time-correction` 在 7 秒事务预算内 P2028                                   | 相同目标本地通过约 5.8s；账本提交和事务内其它查询占主要时间                                                             | 不是可接受的“偶发绿”；7 秒业务预算不改，必须把事务内重复工作收敛到安全的最小集合                             |
+| audit migration 清理           | 当前四项隔离诊断本地通过，耗时主要在 `TRUNCATE`                                               | `truncateActivityRegistrations()` 自己没有测试夹具 30 秒事务配置；`resetDb` 已有同类配置                                | 这是独立的测试夹具敏感性，不能混为业务事务超时或产品性能修复                                                 |
+| A2 TemplateFamily 清理         | 当前四项隔离诊断本地通过                                                                      | 该 spec 的 `resetDb` 和局部 `ActivityTemplate` 清理均已有 30 秒测试夹具配置                                             | 没有已证实的独立代码缺陷；本轮禁止为了“凑四项”修改它                                                         |
+
+源代码定位只支持下列方向，不预先宣称根因已经唯一确定：
+
+- `ActivityTimeSettlementService.prepare()` 写入桶后才写 command receipt；D4 的 `astr_receipt_complete_guard` 在 receipt 插入时独立重建来源/桶规范化哈希、来源完整性、分配与规模约束。该守卫不能跳过、不能改为信任应用层 hash，也不能改 30 秒预算。
+- `activity-os-r4-d7-pairing-index-probe` 的 2,000 身份路径先调用结算 `/prepare`、`/submit`，随后才进入更正申请/提交。因此 P-Guard 的取证对象精确限定为 `ActivitySettlementTimeCommandReceipt` 的 `astr_receipt_complete_guard`；D7 的 `ptar_receipt_guard`（分配收据）和 `ptc_assert_complete`（更正批次）不在这一次 prepare 红点的修复面，不能借机修改。
+- `CorrectionApplicationService.commit()` 的 Human 链必须在等待锁后复核当前资格；`LedgerPostingService.commitBatchWithin()` 又承担更正批次的完整性和账本原子提交。任何收敛都必须保留锁后资格、完整性、member/day 锁序和全事务回滚，不能把先前读取当作最终结论。
+- `audit-logs-migrations.e2e-spec.ts` 的局部清理是测试夹具，不是业务写链；若进入实施，测试夹具的 30 秒只覆盖该清理事务，业务 5 秒、7 秒、30 秒预算均保持不变。
+
+**本轮 P-Guard 实测（仅 w98、回滚式 `EXPLAIN (ANALYZE, BUFFERS)`，临时代码已还原）**：在干净第125条 migration 模板克隆的2,000身份夹具上，`astr_receipt_complete_guard` 的 `source_ready` 为42.804ms、`bucket_source` 为405.783ms、`bucket_total` 为183.697ms，合计632.284ms；三段均为 `Shared Read Blocks=0` 的暖缓存读数。`bucket_source` 确有40,000来源行、40,000次桶/分配/服务段索引关联和163,760次切片索引命中，是三段中最重者，但该证据不支持把它单独认定为36.786秒 CI P2028的根因。整项通过耗时148.158秒含夹具生成、submit和回放，不能被误写为 prepare 单事务耗时。
+
+### 14.2 方案 A：三组独立候选包，不互相掩盖
+
+1. **P-Guard：本轮不选实施包。** 已取得回滚式计划证据，当前暖 w98 读数不足以支持“第121条守卫本身就是30秒根因”或猜测性加索引。除非后续同一受控夹具的分段时序或冷态证据证明等价 SQL/索引能缩短真实 prepare 工作量，否则不改 `astr_receipt_complete_guard`、不新增第127条 migration；所有 fail-closed、4类桶、来源/规模上限、不可变 receipt 和约束触发器继续原样保留。
+2. **P-Commit：Human V3 更正提交的安全重复读收敛。** 只允许在同一 member-linearized transaction 中收敛已被证明重复、且不承担锁后重新授权意义的查询。最终资格复核、`assertComplete` 的生效侧复核、账本原子提交、审计末步和重放语义均保留；不得缓存跨请求身份或把 prepare 结果直接当 commit 结论。
+3. **P-Fixture：审计迁移夹具隔离。** 只给 `truncateActivityRegistrations()` 的 fixture transaction 显式设置 30 秒；保留所有清理安全检查、业务断言和 Jest 用例时限。A2 不在该包内。
+
+未来实际选中的包可在同一 D7-2 CI 修复 PR 串行落地；当前 P-Guard 不在实施包内。不得把 P-Fixture 的超时设置解释为 P-Guard/P-Commit 已修复，也不得用未来 P-Guard 的数据库变更扩大到产品接口、权限、Gate 或业务数据。
+
+### 14.3 风险表与回退条件
+
+| 包                    | 主要风险                                              | 不可变约束                                                                           | 失败时如何处理                                                      |
+| --------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| P-Guard（如后续重提） | 错误的 SQL 等价化会漏掉伪造来源、桶合计或规模越界     | 所有现有 guard 分支、异常约束名、不可变性和 30 秒预算                                | 任何反例不一致即不提交 SQL；保留现状并将 `EXPLAIN` 结论写入复审记录 |
+| P-Commit              | 误删锁后复核会让停用/撤权用户从等待后的重放或提交逃逸 | Activity→Run→Request→Application→Version/Batch→member/day 锁序；最终资格与完整性复核 | characterization 或并发反例变化即不提交代码；不改业务预算           |
+| P-Fixture             | 把测试夹具配置扩大成全局或业务超时                    | 仅一处局部 `TRUNCATE` transaction；全部既有断言                                      | 若不能稳定复现，只保留诊断结论，不改全局 Jest/Prisma 配置           |
+
+### 14.4 候选写集与后续授权清单
+
+本节是**候选**，不是本轮写权限；实施时只选择实际被第14.2节证据支持的包，并逐文件运行 `pnpm harness:needs`。禁止以目录通配符代替精确路径。
+
+| 包              | 候选路径                                                                                                                                                                                                                                                                                                            | 预期授权/签字                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| P-Guard（未选） | 本轮无生产写集。若未来新的分段证据推翻当前结论，才重新提出新建 `prisma/migrations/<第127条目录>/migration.sql`、`prisma/schema.prisma`（仅实际新增索引时）、`src/modules/activities/activity-time-settlement.service.ts`、其spec及两份具名E2E的精确清单                                                             | 重新取得精确红区令牌；若新增 migration，实际 SQL 摘要的3b重签；不新增权限或审计事件则不要求4b |
+| P-Commit        | `src/modules/activities/correction-application.service.ts`、`src/modules/activities/ledger-posting.service.ts`、`src/modules/activities/participation-time-correction.service.ts`、`src/modules/activities/participation-time-correction.service.spec.ts`、`test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts` | 非红区路径仍需独立实施确认；不得新增 schema、权限、接口或 Gate                                |
+| P-Fixture       | `test/e2e/audit-logs-migrations.e2e-spec.ts`                                                                                                                                                                                                                                                                        | 测试专用最小写集；不动 `test/setup`、Jest 配置或业务超时                                      |
+| 共同登记        | `docs/plans/activity-os-r4-d7-2-fact-correction-review-and-plan.md`、`docs/ai-harness/FROZEN_DRAFTS.md`、`docs/ai-harness/NEXT_TASKS.md`，以及实施后按实际需要的 changelog、migration 摘要/计数生成物                                                                                                               | 生成物只在最终写操作后刷新；不预填通过、PR、Ready 或合并结论                                  |
+
+上述 P-Commit / P-Fixture 六个候选实现路径已逐一运行 `pnpm harness:needs`，静态结果均为非红区；这只说明不需要 `harness:grant`，不替代维护者对实际修复包、验证、提交推送和 Draft PR 的业务确认。
+
+未来实施前必须一次性获得：选中的包、最终精确路径、是否允许 `app_test_w98` 重建与定向验证、是否允许提交/推送更新 #1337、以及若有第127条 migration 的实际 3b 摘要。实施后仍须由 #1337 PR CI 冷跑裁决；Ready、合并、生产、Gate 和业务数据操作继续各自独立授权。
+
+### 14.5 本轮完成与未做
+
+本轮仅补充本节及两份当前台账：既有四项隔离诊断之外，已完成并还原 P-Guard 回滚式计划取证；已记录其分段耗时、修复边界、风险表和候选写集。未修改生产代码、schema、migration、测试断言、任何超时、Gate、CI 配置或数据库；未提交、推送、Ready、合并或操作生产。
+
+### 14.6 当前 #1337 CI 修复授权（2026-09-19）
+
+维护者已确认以下独立、精确的实施包，并允许仅 `app_test_w98` 的定向验证及测试夹具重建、验证后提交推送更新 #1337（保持 Draft）：
+
+1. `test/setup/reset-db.ts` 的全局 `withTimeLedgerFixtureCleanup` transaction 与 `test/e2e/activity-os-r1-a7-series-generation.e2e-spec.ts` 的 `beforeEach` 两段受控 `TRUNCATE` transaction 均设置 Prisma `timeout: 60_000`。它们不是业务事务；`resetDb` 的当前库校验和精确清理 SQL、所有业务超时、断言、生产代码与 Jest 配置保持不变。
+2. `src/modules/activities/correction-time-allocation.service.ts` 及其 `.spec.ts`：只把 `CorrectionTimeAllocationBinding` 的专用写批次改为 5,000。allocation／receipt 的 1,000 上限和 child 的 5,000 上限不变；10 个显式字段 × 5,000 行为 50,000 参数，低于 PostgreSQL 65,535 参数上限。单测必须用完整 10,000 来源断言恰好两个 5,000 行批次、零遗漏。
+3. 只允许刷新 `CODEMAP.md`、现有 changelog、本评审稿与两个台账顶部当前状态。不得修改 schema、migration、API、DTO、权限、Gate、生产数据；不得 Ready、合并或操作生产。
+
+本包不以超时掩盖 Human 写链：`MEMBER_TX_TIMEOUT_MS=7,000` 保持不变。若上述最小减少写批次的措施在冷跑仍不足，必须另行给出实际 SQL、精确 migration 写集和新的 3b 摘要；禁止盲目重跑、固定等待或放宽断言。

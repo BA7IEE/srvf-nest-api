@@ -37,11 +37,14 @@ type Tx = Prisma.TransactionClient;
 const CORRECTION_ALLOCATION_READ_BATCH_SIZE = 1000;
 
 // D7-2's correction commit retains the same immutable fact contract at the
-// 2,000-identity acceptance scale.  Bound each source-shaped write so Prisma
-// does not construct one oversized parameter payload inside the 7-second
-// transaction.  Slices and evidence are child rows and use their separately
-// approved 5,000-row ceiling.
+// 2,000-identity acceptance scale.  Keep allocation and receipt rows bounded
+// at 1,000, but source bindings have exactly ten explicit columns: a 5,000-row
+// binding batch stays at 50,000 parameters, below PostgreSQL's 65,535 protocol
+// ceiling while avoiding ten separate writes for the 10,000-source contract.
+// Slices and evidence are child rows and use their separately approved 5,000-row
+// ceiling.
 const CORRECTION_ALLOCATION_SOURCE_WRITE_BATCH_SIZE = 1000;
+const CORRECTION_ALLOCATION_BINDING_WRITE_BATCH_SIZE = 5000;
 const CORRECTION_ALLOCATION_CHILD_WRITE_BATCH_SIZE = 5000;
 
 async function createManyInFixedBatches<T>(
@@ -654,7 +657,7 @@ export class CorrectionTimeAllocationService {
     );
     await createManyInFixedBatches(
       bindingRows,
-      CORRECTION_ALLOCATION_SOURCE_WRITE_BATCH_SIZE,
+      CORRECTION_ALLOCATION_BINDING_WRITE_BATCH_SIZE,
       (data) => tx.correctionTimeAllocationBinding.createMany({ data }),
     );
     return pending.length;

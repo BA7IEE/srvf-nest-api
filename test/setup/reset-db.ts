@@ -214,6 +214,6 @@ export async function resetDb(app: INestApplication): Promise<void> {
         );
       }),
     // Full fixture cleanup only; production transaction budgets are unchanged.
-    { timeout: 30_000 },
+    { timeout: 60_000 },
   );
 }
