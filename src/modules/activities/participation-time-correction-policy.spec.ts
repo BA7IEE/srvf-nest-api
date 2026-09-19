@@ -96,6 +96,42 @@ describe('D7-1 immutable correction contents', () => {
     expect(next.entries[1].contentHash).not.toBe(build().entries[1].contentHash);
     expect(next.manifest.contentHash).not.toBe(build().manifest.contentHash);
   });
+  it('keeps legacy chains in the exact V1 hash domain when no source proof exists', () => {
+    const legacy = build();
+    const explicitLegacy = buildParticipationTimeCorrection(
+      { ...anchor, sourceProofId: null, sourceProofHash: null },
+      [root],
+      [value],
+      [],
+    );
+    expect(explicitLegacy.manifest).toEqual(legacy.manifest);
+    expect(explicitLegacy.manifest.formatVersion).toBe(1);
+    expect('sourceProofId' in explicitLegacy.manifest).toBe(false);
+    expect('sourceProofHash' in explicitLegacy.manifest).toBe(false);
+  });
+  it('binds a frozen source proof into the isolated format 2 hash domain', () => {
+    const format2 = buildParticipationTimeCorrection(
+      { ...anchor, sourceProofId: 'proof', sourceProofHash: 'c'.repeat(64) },
+      [root],
+      [value],
+      [],
+    );
+    expect(format2.manifest.formatVersion).toBe(2);
+    if (format2.manifest.formatVersion !== 2) throw new Error('expected format 2 proof');
+    expect(format2.manifest.sourceProofId).toBe('proof');
+    expect(format2.manifest.sourceProofHash).toBe('c'.repeat(64));
+    expect(format2.manifest.contentHash).not.toBe(build().manifest.contentHash);
+  });
+  it.each([
+    { sourceProofId: 'proof', sourceProofHash: null },
+    { sourceProofId: null, sourceProofHash: 'c'.repeat(64) },
+    { sourceProofId: '', sourceProofHash: 'c'.repeat(64) },
+    { sourceProofId: 'proof', sourceProofHash: 'not-a-hash' },
+  ])('rejects an incomplete or malformed source proof %#', (sourceProof) => {
+    expect(() =>
+      buildParticipationTimeCorrection({ ...anchor, ...sourceProof }, [root], [value], []),
+    ).toThrow(TimeCorrectionPolicyError);
+  });
   it.each([-1, 0.5, NaN, Infinity, 2147483648])(
     'rejects invalid replacement seconds %s',
     (seconds) => {

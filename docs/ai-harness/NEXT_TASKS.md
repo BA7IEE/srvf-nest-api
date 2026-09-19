@@ -1,12 +1,6 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **D7-1 SQL修复实施中（2026-09-15）**：#1335计划及后续补充累计36路径已获批准，两处ROUTE_AUTHZ摘要刷新和第124条3b已完成。原完整E2E两轮、新回归完整键计划探针、9份w98迁移120项及quick通过；13份其他scratch旧测试经确认留PR CI冷跑。原前置prepare的32621ms超时保留，三轮诊断未复现，根因仍未定位；不登记整体修复已完成。暂未提交或创建Draft；D7-2不实施。下方为历史阶段记录，当前精确状态见[SQL修复计划](../plans/activity-os-r4-d7-1-sql-pairing-fix-plan.md)。
-
-> **D7-1 已合并 / D7-2 仅文档起草（2026-09-15）**：[#1334](https://github.com/BA7IEE/srvf-nest-api/pull/1334) 已 Squash 合入 `28d74f3d413fa79f7cb1018295f0e0949f9bb7df`；最终 PR 提交 `0f89ddfc` 的全量 CI、Docker Smoke 和 Ready 后可信审批通过。main CI 34955332231 已失败：第5组2000身份最终审计回滚探针提前发生7秒事务超时，其余分组通过，根因未定。当前授权仅台账更正与 [D7-2 评审及精确计划草案](../plans/activity-os-r4-d7-2-fact-correction-review-and-plan.md) 起草；未授权实施、数据库或提交推送。下方未提交/待重签/未合并文字均为历史时点，D7-2、整个D7及D8仍未完成。
-
-> **D7-1本地定向验证完成（2026-09-15，待远端全量CI）**：按#1333的90路径及第10–12节实施，实际85路径。w98迁移、1/100/2000身份连续三轮、并发及兼容验证已执行，详细通过结果与夹具超时后单项复跑记录见计划第13节，不宣称单轮全绿。3b第123条SQL摘要c2f06bcf6e19及4b目录摘要871a4c9d426d已获维护者确认。按授权提交、推送并创建Draft PR，状态以GitHub为准；不合并、不操作生产、不启用Gate、不删除业务数据。下方待实施/待重签为历史时点；D7-2及整个D7仍未完成。
-
-> **D7方案A方向已确认（2026-09-15）**：维护者允许继续完善精确计划，仅文档。D7-1计划第10–12节补齐三分支提交、收据/应用原子闭合、旧迁移与夹具兼容及90路径待审批实施包；D7-2仍须独立完成事实重新分配和业务写接口，整个D7未完成。下方方案待选择为历史时点。本轮四份文档先保留本地，未实施、未操作数据库、未更新远端PR、未合并或启用Gate。
+> **D7-2 当前状态（2026-09-20）**：[#1335](https://github.com/BA7IEE/srvf-nest-api/pull/1335) 的方案 A / 第10–13节 / 124个精确路径已合入 `main`；[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 保持 Draft，等待本次更新后的新 SHA CI 裁决。维护者已按实际 SHA-256 `86497e019c94a25aeae295721df8bf5e4ee7d0c0a8a3191dd2ea688dd1c5e9c2` 重签第127条 migration；签字机器对拍 `migration-total=127` 通过。受控 `app_test_w98` 冷回放/126→127 非空升级及守卫/历史校验共4/4通过，单身份 FK 合法锚点错配 fail-closed 链与原 2,000 身份 Human V3 链亦通过；运行只自建并回收 w98，不触碰模板库或其他 scratch worker。TypeScript、lint、Harness 自检、代码地图与签字对拍均已完成；上述本地结果不替代新 SHA 的 PR CI，未 Ready、合并、操作生产或启用 Gate。
 
 > **D6 仓内交付已合并 / D7 仅评审与计划（2026-09-15）**：[#1331](https://github.com/BA7IEE/srvf-nest-api/pull/1331) 已 Squash 合入 `e3eadddffc0f2c49ec27e3c34fa36df94043eec7`，最终 PR HEAD `032951a4` 的 CI 与 Ready 后可信审批通过；[main CI 34920687573](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34920687573) completed/success，五组 Contract + E2E 成功，main report-only 审批 skipped。D6 签字、PR 与合并验证已完成；早先“验证中/未提交/未合并”为历史时点，原失败记录保留。当前获准 D6 台账更正与 D7 评审、精确计划起草，仅文档，验证后提交推送创建PR，不合并、不实施、不操作数据库、不启用Gate。D7分阶段方案尚待选择，D7–D8、整体跨模型复审、真实业务验收、前端及生产切换仍未完成。
 
@@ -2584,9 +2578,11 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D6 已完成仓内交付；D7-1已合并，D7-2仅评审与计划起草**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D6 已完成仓内交付；D7-1已合并，D7-2实施中**
 
-**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、Release 3 C1–C5、Release 4 D1-1 #1310 / D1-2 #1312 / D1-3 #1316 / D2 #1319 / D3 #1323 / D4 #1327 / D5 #1329 / D6 #1331 已完成相应 PR 与 main 验证；D6 main 为 `e3eadddf`、CI 34920687573 成功；D7-1 #1334 已合并至28d74f3d，main CI 34955332231第5组容量回滚探针超时失败，根因未定；D7-2方案A方向已确认，最终合同与124路径待整包审批，未实施；D7–D8 及后续 Release 尚未完成。整体跨模型复审、前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，不宣称任何 Release 已上线)
+**状态**:进行中(T0-B #1236、A1 #1237、A2 #1239、A3 #1241、A4 #1244、A5 #1246、A6 #1248、A7 #1251、A8 #1254 与 B1 #1257、B2 #1259、B3 #1261、B4 #1264、B5 #1267、B6 D1 #1270 / D2 #1272、B7 #1275、Release 3 C1–C5、Release 4 D1-1 #1310 / D1-2 #1312 / D1-3 #1316 / D2 #1319 / D3 #1323 / D4 #1327 / D5 #1329 / D6 #1331 已完成相应 PR 与 main 验证；D6 main 为 `e3eadddf`、CI 34920687573 成功；D7-1 #1334 与 #1336 已合入 main，#1334 的2000身份审计回滚超时根因仍未定；D7-2按 #1335 第10–13节 / 124路径在隔离工作树实施。第127条在 `app_test_w98` 完成冷回放、126→127非空升级、完整D7-2 E2E 7/7与contract验证；当前 SQL 摘要 `d76418fb…8aeaf51d` 已重签3b，待提交、推送和PR CI冷跑，Ready、合并、生产与Gate均未完成。D7–D8 及后续 Release 尚未完成。整体跨模型复审、前端页面发布、灰度人群、生产部署与 Gate 切换仍未执行，不宣称任何 Release 已上线)
+
+- **D7-2 当前 Draft PR（2026-09-20）**：[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 保持 Draft；第127条当前 SQL 的等价集合优化已获3b重签并完成获准w98验证，待提交、推送并由 PR CI 冷跑，不表示 Ready、合并、生产或 Gate 授权。
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 

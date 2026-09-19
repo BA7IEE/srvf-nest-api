@@ -3072,7 +3072,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.time-settlement.read': {
       displayName: '查看分类时长结算',
       businessDescription:
-        '真人凭显式范围和当前负责人或实际审核资格读取冻结分类桶、证据及其已提交分类时长账本和指定版本更正账本；更正查询沿根版本复核资格，不返回原因，不隐含准备权限，不自动授予内建角色。',
+        '真人凭显式范围和当前负责人或实际审核资格读取冻结分类桶、证据、已提交分类时长账本、指定版本更正账本及事实更正申请摘要与可见差异；更正详情的原因与证据仅由申请人或审核资格另行复核后返回，不隐含准备权限，不自动授予内建角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 197,
@@ -3085,7 +3085,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.time-settlement.prepare': {
       displayName: '准备分类时长结算',
       businessDescription:
-        '真人凭显式范围和当前负责人资格准备冻结分类桶；提交还须既有结算提交权限，不隐含读取权限，不自动授予内建角色。',
+        '真人凭显式范围和当前负责人资格准备冻结分类桶；与既有结算提交权限共同才可提交或重提事实更正申请，不隐含读取权限，不自动授予内建角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 198,
@@ -4212,7 +4212,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.settlement-final-review.record': {
       displayName: '结算终审',
       businessDescription:
-        '这项功能当前未启用。开启后:对一审通过的结算做最后一道确认,通过之后系统才开始准备把服务时长和贡献值记到每个人账上。不能审自己提交的,也不能审自己一审过的。',
+        '这项功能当前未启用。开启后:对一审通过的结算做最后一道确认,通过之后系统才开始准备把服务时长和贡献值记到每个人账上。不能审自己提交的,也不能审自己一审过的；同一权限还用于审核、准备及提交已批准的事实更正，申请人不得自审且每一步仍须复核当前活动和目标资格。',
       sectionCode: 'activity-participation',
       groupCode: 'activity-settlement',
       sortOrder: 23520,
@@ -4251,7 +4251,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.settlement-submit.record': {
       displayName: '提交结算送审',
       businessDescription:
-        '这项功能当前未启用。开启后:把当前的结算草稿定稿送审。送出去这一版就锁死了,自己改不动,要改只能等审核的人退回来重走一遍。',
+        '这项功能当前未启用。开启后:把当前的结算草稿定稿送审。送出去这一版就锁死了,自己改不动,要改只能等审核的人退回来重走一遍；同一权限须与“准备分类时长结算”共同满足，才可提交或重提事实更正申请，申请仍须另经审核且不会直接记账。',
       sectionCode: 'activity-participation',
       groupCode: 'activity-settlement',
       sortOrder: 23550,

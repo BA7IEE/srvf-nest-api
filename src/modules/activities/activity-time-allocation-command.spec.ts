@@ -1,6 +1,7 @@
 import {
   activityTimeAllocationRequestHash,
   buildActivityTimeAllocationManifest,
+  buildCorrectionTimeAllocationManifest,
   parseActivityTimeAllocationCommand,
   parseActivityTimeAllocationReceipt,
 } from './activity-time-allocation-command';
@@ -150,5 +151,35 @@ describe('D3 canonical manifest and receipt', () => {
         ),
       ).toThrow(TypeError);
     }
+  });
+});
+
+describe('D7-2 correction-only zero-slice manifest', () => {
+  it('admits an empty immutable manifest without weakening the public D3 builder', () => {
+    const correction = buildCorrectionTimeAllocationManifest([]);
+    expect(correction.manifest).toEqual({ schemaVersion: 1, slices: {} });
+    expect(correction.allocationHash).toMatch(/^[a-f0-9]{64}$/u);
+    expect(() => buildActivityTimeAllocationManifest([])).toThrow(TypeError);
+  });
+
+  it('uses a separate hash domain and still fixes deterministic ordinals', () => {
+    const slices = [
+      {
+        categoryCode: 'training' as const,
+        intervalKindCode: 'service_segment' as const,
+        startAt: '2026-09-12T09:00:00.000Z',
+        endAt: '2026-09-12T10:00:00.000Z',
+      },
+      {
+        categoryCode: 'volunteer_service' as const,
+        intervalKindCode: 'service_segment' as const,
+        startAt: '2026-09-12T08:00:00.000Z',
+        endAt: '2026-09-12T09:00:00.000Z',
+      },
+    ];
+    const correction = buildCorrectionTimeAllocationManifest(slices);
+    const ordinary = buildActivityTimeAllocationManifest(slices);
+    expect(correction.manifest.slices['0'].startAt).toBe('2026-09-12T08:00:00.000Z');
+    expect(correction.allocationHash).not.toBe(ordinary.allocationHash);
   });
 });

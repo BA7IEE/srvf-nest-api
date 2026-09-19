@@ -1,6 +1,22 @@
 # prisma — 本地铁律
 
-当前 D7-1 SQL 修复工作树为 **124 个 migration、170 个模型**。第123条仍为 `20260915120000_activity_os_r4_d7_time_correction`；追加第124条 `20260915170000_activity_os_r4_d7_pairing_index_probe` 仅等价替换 `ptc_assert_complete` 的三处关联，不增表、字段、索引或触发器，旧123条SQL不改，无存量回填或业务数据删除。本轮3b已按摘要1c3b46326ce85确认，本地迁移及完整链路验证通过，最终CI尚未执行，不代表已提交、合并或部署。本地隔离测试仅使用app_test_w98；13份其他固定scratch测试经确认留PR CI。不操作生产、不启用Gate。下方保留历史时点。
+当前 D7-2 事实更正实现工作树为 **127 个 migration、174 个模型**。第123条仍为
+`20260915120000_activity_os_r4_d7_time_correction`，第124条
+`20260915170000_activity_os_r4_d7_pairing_index_probe` 保留 D7-1 的等价 SQL 修复；第125条
+`20260915180000_activity_os_r4_d7_2_fact_correction` 只追加四张永久事实表、既有表的可空证明字段与
+同链完整性约束，旧124条 SQL 不改、无存量回填或业务数据删除。第126条
+`20260917194000_activity_os_r4_d7_2_binding_guard_set` 只将 D7-2 的 `ctab_insert_guard` 改为
+插入语句级集合守护：同一证明、申请、请求、批次、分配和待物化链仍逐项锁定并 fail-closed，
+`ctsp_assert_complete` 的完整来源集合校验不变；不新增表、列、权限、DML、回填或业务数据删除。
+D7-2 第126条的 3b 已由维护者按实际 SQL 摘要重签。新增第127条
+`20260920090000_activity_os_r4_d7_2_allocation_guard_set` 仅把 correction allocation 从
+`ptar_parent_anchor_guard` 的逐行分支换成 AFTER INSERT 语句级集合守护；D3/D4 路径及
+`ptar_receipt_guard` 不变，待物化分配、申请、请求、批次、目标段、基础分配和政策仍锁定并
+fail-closed；当前 SQL 仅把五次重复 immutable-chain 拒绝查询收敛为一次集合聚合，以去重输入维持
+原四段锁序及拒绝优先级，不新增表、列、权限、DML、回填或业务数据删除。第127条的实际 SQL 摘要
+`d76418fb2b837a6ff264c4d061b43e7c0b476d3b71b238480b2ce67a8aeaf51d` 已获3b重签；随后仅在
+app_test_w98 通过第127条冷回放、126→127 非空升级及完整D7-2 E2E 7/7。13份其他固定 scratch
+测试留 PR CI 冷跑；#1337 保持 Draft，未 Ready、合并、部署或启用 Gate；下方保留历史时点。
 
 ## D4 历史实施记录（不是当前待办或计数）
 

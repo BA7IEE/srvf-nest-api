@@ -1767,10 +1767,14 @@ model TimePolicyVersion {
   commandReceipts                    TimePolicyCommandReceipt[]
   activityTimePolicySelectionItems   ActivityTimePolicySelectionItem[]
   participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
+  correctionPendingTimeAllocations   CorrectionPendingTimeAllocation[]
   settlementTimeBuckets              ParticipantSettlementTimeBucket[]
 
   @@unique([policyId, version], map: "tpv_policy_version_key")
   @@unique([id, policyId, definitionHash], map: "tpv_id_policy_hash_key")
+  // D7-2 uses the immutable version id + definition digest as a composite
+  // anchor without repeating policyId in the pending allocation fact.
+  @@unique([id, definitionHash], map: "tpv_id_hash_key")
   @@unique([id, definitionHash, evaluatorVersion], map: "tpv_id_hash_evaluator_key")
   @@index([policyId, statusCode], map: "tpv_policy_status_idx")
 }
@@ -2442,6 +2446,7 @@ model ActivityRuleSnapshot {
   allocationBatches                  ActivityAllocationBatch[]
   offlinePackages                    OfflinePackage[]
   participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
+  correctionPendingTimeAllocations   CorrectionPendingTimeAllocation[]
 
   // 一个活动的一个 workflow revision 只能对应一份最终规则快照。createdByReviewId
   // 只保存审核来源，不假定合同未声明的“一审核请求至多一快照”。
@@ -2488,6 +2493,7 @@ model ActivityTimePolicySelectionRevision {
   commandReceipt                     ActivityTimePolicySelectionCommandReceipt?
   ruleSnapshots                      ActivityRuleSnapshot[]                     @relation("ActivityTimePolicySelectionRuleSnapshot")
   participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
+  correctionPendingTimeAllocations   CorrectionPendingTimeAllocation[]
 
   @@unique([activityId, revision], map: "atps_revision_activity_revision_key")
   @@unique([id, activityId], map: "atps_revision_id_activity_key")
@@ -2572,12 +2578,16 @@ model ParticipantTimeAllocationRevision {
 
   // D4 sealed-draft proof: all six null for original committed-only V1 allocations.
   // Migration 121 checks the current run, active seal and independent receipt operation.
-  settlementDraftVersionId     String?
-  settlementEvidenceSealId     String?
-  settlementEvidenceRevision   Int?
-  settlementPopulationRevision Int?
-  settlementWorkflowRevision   Int?
-  settlementDraftContentHash   String?
+  settlementDraftVersionId      String?
+  settlementEvidenceSealId      String?
+  settlementEvidenceRevision    Int?
+  settlementPopulationRevision  Int?
+  settlementWorkflowRevision    Int?
+  settlementDraftContentHash    String?
+  // D7-2 materializes an approved V3 fact from a separately immutable pending
+  // allocation.  It is mutually exclusive with the six D4 sealed-draft fields;
+  // migration 125 owns that cross-column invariant.
+  correctionPendingAllocationId String?
 
   recognitionModeCode String
   manualReason        String?
@@ -2586,30 +2596,35 @@ model ParticipantTimeAllocationRevision {
   sliceCount          Int
   createdByUserId     String
 
-  activity                    Activity                                 @relation("ParticipantTimeAllocationRevisionActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_activity_fkey")
-  session                     ActivitySession                          @relation("ParticipantTimeAllocationRevisionSession", fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_session_fkey")
-  member                      Member                                   @relation(fields: [memberId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_member_fkey")
-  participationIdentity       ActivityParticipationIdentity            @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_identity_fkey")
-  sourceSegment               ParticipantServiceSegmentRevision        @relation(fields: [sourceSegmentId, participationIdentityId], references: [id, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_source_segment_fkey")
-  sourcePosition              ActivitySessionPosition?                 @relation("ParticipantTimeAllocationRevisionSourcePosition", fields: [sourcePositionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_source_position_fkey")
-  ruleSnapshot                ActivityRuleSnapshot                     @relation(fields: [ruleSnapshotId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_snapshot_fkey")
-  timePolicySelectionRevision ActivityTimePolicySelectionRevision      @relation(fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_selection_fkey")
-  policy                      TimePolicy                               @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_policy_fkey")
-  policyVersion               TimePolicyVersion                        @relation(fields: [policyVersionId, policyId, definitionHash], references: [id, policyId, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "ptar_policy_version_fkey")
-  previousAllocationRevision  ParticipantTimeAllocationRevision?       @relation("ParticipantTimeAllocationRevisionPrevious", fields: [previousAllocationRevisionId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_previous_fkey")
-  nextAllocationRevisions     ParticipantTimeAllocationRevision[]      @relation("ParticipantTimeAllocationRevisionPrevious")
-  creator                     User                                     @relation("ParticipantTimeAllocationRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_creator_fkey")
-  slices                      ParticipantTimeAllocationSlice[]
-  evidence                    ParticipantTimeAllocationEvidence[]
-  commandReceipt              ParticipantTimeAllocationCommandReceipt?
-  settlementDraftVersion      AttendanceSettlementVersion?             @relation("TimeAllocationSettlementDraft", fields: [settlementDraftVersionId, settlementEvidenceSealId, settlementEvidenceRevision, settlementPopulationRevision, settlementWorkflowRevision, settlementDraftContentHash], references: [id, evidenceSealId, evidenceRevision, populationRevision, workflowRevision, contentHash], onDelete: Restrict, onUpdate: Restrict, map: "ptar_settlement_draft_fkey")
-  settlementEvidenceSeal      EvidenceSeal?                            @relation("TimeAllocationSettlementSeal", fields: [settlementEvidenceSealId, activityId, settlementEvidenceRevision, settlementPopulationRevision, settlementWorkflowRevision], references: [id, activityId, evidenceRevision, populationRevision, workflowRevision], onDelete: Restrict, onUpdate: Restrict, map: "ptar_settlement_seal_fkey")
-  settlementBucketSources     ParticipantSettlementTimeBucketSource[]
+  activity                           Activity                                 @relation("ParticipantTimeAllocationRevisionActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_activity_fkey")
+  session                            ActivitySession                          @relation("ParticipantTimeAllocationRevisionSession", fields: [activityId, sessionId], references: [activityId, id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_session_fkey")
+  member                             Member                                   @relation(fields: [memberId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_member_fkey")
+  participationIdentity              ActivityParticipationIdentity            @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_identity_fkey")
+  sourceSegment                      ParticipantServiceSegmentRevision        @relation(fields: [sourceSegmentId, participationIdentityId], references: [id, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_source_segment_fkey")
+  sourcePosition                     ActivitySessionPosition?                 @relation("ParticipantTimeAllocationRevisionSourcePosition", fields: [sourcePositionId, activityId, sessionId], references: [id, activityId, sessionId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_source_position_fkey")
+  ruleSnapshot                       ActivityRuleSnapshot                     @relation(fields: [ruleSnapshotId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_snapshot_fkey")
+  timePolicySelectionRevision        ActivityTimePolicySelectionRevision      @relation(fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_selection_fkey")
+  policy                             TimePolicy                               @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_policy_fkey")
+  policyVersion                      TimePolicyVersion                        @relation(fields: [policyVersionId, policyId, definitionHash], references: [id, policyId, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "ptar_policy_version_fkey")
+  previousAllocationRevision         ParticipantTimeAllocationRevision?       @relation("ParticipantTimeAllocationRevisionPrevious", fields: [previousAllocationRevisionId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_previous_fkey")
+  nextAllocationRevisions            ParticipantTimeAllocationRevision[]      @relation("ParticipantTimeAllocationRevisionPrevious")
+  creator                            User                                     @relation("ParticipantTimeAllocationRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptar_creator_fkey")
+  slices                             ParticipantTimeAllocationSlice[]
+  evidence                           ParticipantTimeAllocationEvidence[]
+  commandReceipt                     ParticipantTimeAllocationCommandReceipt?
+  settlementDraftVersion             AttendanceSettlementVersion?             @relation("TimeAllocationSettlementDraft", fields: [settlementDraftVersionId, settlementEvidenceSealId, settlementEvidenceRevision, settlementPopulationRevision, settlementWorkflowRevision, settlementDraftContentHash], references: [id, evidenceSealId, evidenceRevision, populationRevision, workflowRevision, contentHash], onDelete: Restrict, onUpdate: Restrict, map: "ptar_settlement_draft_fkey")
+  settlementEvidenceSeal             EvidenceSeal?                            @relation("TimeAllocationSettlementSeal", fields: [settlementEvidenceSealId, activityId, settlementEvidenceRevision, settlementPopulationRevision, settlementWorkflowRevision], references: [id, activityId, evidenceRevision, populationRevision, workflowRevision], onDelete: Restrict, onUpdate: Restrict, map: "ptar_settlement_seal_fkey")
+  correctionPendingAllocation        CorrectionPendingTimeAllocation?         @relation("CorrectionPendingAllocationMaterialized", fields: [correctionPendingAllocationId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptar_correction_pending_fkey")
+  settlementBucketSources            ParticipantSettlementTimeBucketSource[]
+  correctionPendingAllocationsAsBase CorrectionPendingTimeAllocation[]        @relation("CorrectionPendingAllocationBase")
+  correctionTimeAllocationBindings   CorrectionTimeAllocationBinding[]
 
   @@unique([participationIdentityId, segmentKey, revision], map: "ptar_identity_segment_revision_key")
   @@unique([id, activityId], map: "ptar_id_activity_key")
   @@unique([id, activityId, sessionId, memberId], map: "ptar_id_activity_session_member_key")
   @@unique([id, sourceSegmentId, sourceSegmentRevision, activityId], map: "ptar_id_source_revision_activity_key")
+  @@unique([id, activityId, participationIdentityId, segmentKey], map: "ptar_id_activity_identity_segment_key")
+  @@unique([correctionPendingAllocationId, activityId], map: "ptar_correction_pending_key")
   @@index([activityId, createdAt], map: "ptar_activity_created_idx")
   @@index([sourceSegmentId], map: "ptar_source_segment_idx")
   @@index([ruleSnapshotId], map: "ptar_snapshot_idx")
@@ -3682,9 +3697,10 @@ model Attachment {
 
   // 活动改造 v1.1 第 1 批第二刀(2026-08-04;合同 §3.12):file 型报名答案的反向 relation。
   // 仅关系映射,零标量字段;FK 在 RegistrationFormAnswer 侧,Restrict。
-  registrationFormAnswers           RegistrationFormAnswer[]            @relation("RegistrationAnswerAttachment")
-  activityMetricValueEvidence       ActivityMetricValueEvidence[]
-  participantTimeAllocationEvidence ParticipantTimeAllocationEvidence[]
+  registrationFormAnswers                 RegistrationFormAnswer[]                  @relation("RegistrationAnswerAttachment")
+  activityMetricValueEvidence             ActivityMetricValueEvidence[]
+  participantTimeAllocationEvidence       ParticipantTimeAllocationEvidence[]
+  correctionPendingTimeAllocationEvidence CorrectionPendingTimeAllocationEvidence[]
 
   // issue #1055 T1:视觉身份两条 1:1 反向 relation(仅关系映射,零标量字段;FK 在对侧,均 SetNull)。
   // 两边都是 `?` 而非数组 —— 对侧 FK 列带 @unique,一张附件至多被一处引用。
@@ -5286,12 +5302,12 @@ model ActivityParticipationIdentity {
   qualificationSnapshots QualificationEvaluationSnapshot[]
 
   // 第 1 批第三刀(§3.16 / §3.18):打卡事件与服务段修订的反向 relation。
-  punchEvents                AttendancePunchEvent[]
-  serviceSegmentRevisions    ParticipantServiceSegmentRevision[]
-  metricCandidateSources     ActivityMetricCandidateSource[]
-  correctionPendingSegments  CorrectionPendingSegmentRevision[]
-  offlinePackageParticipants OfflinePackageParticipant[]
-  offlinePunchReviewItems    OfflinePunchReviewItem[]
+  punchEvents                      AttendancePunchEvent[]
+  serviceSegmentRevisions          ParticipantServiceSegmentRevision[]
+  metricCandidateSources           ActivityMetricCandidateSource[]
+  correctionPendingSegments        CorrectionPendingSegmentRevision[]
+  offlinePackageParticipants       OfflinePackageParticipant[]
+  offlinePunchReviewItems          OfflinePunchReviewItem[]
 
   // 第 1 批第四刀反向 relation(合同 §3.20 / §3.23 / §3.25):仅关系映射,零标量字段。
   settlementResultRevisions ParticipantSettlementResultRevision[]
@@ -6217,6 +6233,7 @@ model ParticipantServiceSegmentRevision {
   effectiveBatch                     LedgerPostingBatch?                 @relation("SegmentEffectiveBatch", fields: [effectiveBatchId], references: [id], onDelete: Restrict)
   metricCandidateSources             ActivityMetricCandidateSource[]
   participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
+  correctionTimeAllocationBindings   CorrectionTimeAllocationBinding[]
 
   // model 名 33 字符 ⇒ 复合索引默认名普遍越过 PostgreSQL 63 字符上限,全部显式 map。
   @@unique([id, participationIdentityId], map: "metric_source_segment_identity_key")
@@ -6574,6 +6591,7 @@ model ParticipationTimeLedgerManifest {
   timeRevision ActivitySettlementTimeRevision        @relation(fields: [timeRevisionId, settlementVersionId, settlementRunId, activityId], references: [id, settlementVersionId, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_revision_fkey")
   entries      ParticipationTimeLedgerEntry[]
   corrections  ParticipationTimeCorrectionManifest[]
+  sourceProofs CorrectionTimeSourceProof[]
 
   @@unique([id, activityId, settlementRunId], map: "ptlm_id_activity_run_key")
   @@unique([id, postingBatchId, timeRevisionId, activityId], map: "ptlm_id_batch_revision_activity_key")
@@ -6615,6 +6633,8 @@ model ParticipationTimeCorrectionManifest {
   settlementVersionId     String
   rootManifestId          String
   predecessorManifestId   String?
+  sourceProofId           String?  @unique(map: "ptcm_source_proof_key")
+  sourceProofHash         String?
   baseContentHash         String
   requestHash             String
   contentHash             String
@@ -6630,11 +6650,14 @@ model ParticipationTimeCorrectionManifest {
   correctionRequest AttendanceCorrectionRequest               @relation(fields: [correctionRequestId, baseSettlementVersionId, activityId, settlementRunId], references: [id, baseSettlementVersionId, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_request_fkey")
   predecessor       ParticipationTimeCorrectionManifest?      @relation("TimeCorrectionPredecessor", fields: [predecessorManifestId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_predecessor_fkey")
   successors        ParticipationTimeCorrectionManifest[]     @relation("TimeCorrectionPredecessor")
+  sourceProof       CorrectionTimeSourceProof?                @relation("TimeCorrectionManifestSourceProof", fields: [sourceProofId, rootManifestId, activityId, settlementRunId, sourceProofHash], references: [id, rootManifestId, activityId, settlementRunId, sourceSetHash], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_source_proof_fkey")
+  correctionProof   CorrectionTimeSourceProof?                @relation("CorrectionTimeSourceProofManifest")
   entries           ParticipationTimeCorrectionEntry[]
   commitReceipt     ParticipationTimeCorrectionCommitReceipt?
 
   @@unique([id, postingBatchId, activityId], map: "ptcm_id_batch_activity_key")
   @@unique([id, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], map: "ptcm_receipt_anchor_key")
+  @@unique([sourceProofId, rootManifestId, activityId, settlementRunId, sourceProofHash], map: "ptcm_source_proof_anchor_key")
   @@index([correctionRequestId], map: "ptcm_request_idx")
   @@index([activityId, settlementVersionId], map: "ptcm_activity_version_idx")
   @@index([rootManifestId], map: "ptcm_root_idx")
@@ -6830,9 +6853,12 @@ model AttendanceCorrectionRequest {
   reviewedAt        DateTime?
   reviewNote        String?
 
-  operationKey String?
-  requestHash  String?
-  version      Int     @default(0) // CAS
+  operationKey             String?
+  requestHash              String?
+  version                  Int     @default(0) // CAS
+  // Returned requests are preserved forever.  A resubmission only points
+  // forward, and a partial unique in the physical schema permits one successor.
+  resubmittedFromRequestId String?
 
   activity              Activity                       @relation(fields: [activityId], references: [id], onDelete: Restrict)
   settlementRun         AttendanceSettlementRun        @relation(fields: [settlementRunId], references: [id], onDelete: Restrict)
@@ -6840,6 +6866,8 @@ model AttendanceCorrectionRequest {
   baseSettlementVersion AttendanceSettlementVersion    @relation("CorrectionRequestBaseVersion", fields: [baseSettlementVersionId], references: [id], onDelete: Restrict)
   submittedBy           User?                          @relation("CorrectionRequestSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
   reviewedBy            User?                          @relation("CorrectionRequestReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  resubmittedFrom       AttendanceCorrectionRequest?   @relation("AttendanceCorrectionRequestResubmission", fields: [resubmittedFromRequestId, activityId, settlementRunId], references: [id, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "acr_resubmitted_from_fkey")
+  resubmittedSuccessor  AttendanceCorrectionRequest?   @relation("AttendanceCorrectionRequestResubmission")
 
   applications            CorrectionApplication[]
   timeCorrectionManifests ParticipationTimeCorrectionManifest[]
@@ -6848,6 +6876,8 @@ model AttendanceCorrectionRequest {
 
   // §11.3 点名的两条:
   @@unique([id, baseSettlementVersionId, activityId, settlementRunId], map: "acr_id_base_activity_run_key")
+  @@unique([id, activityId, settlementRunId], map: "acr_id_activity_run_key")
+  @@unique([resubmittedFromRequestId, activityId, settlementRunId], map: "acr_resubmitted_from_request_key")
   @@index([activityId, statusCode], map: "attendance_correction_request_activity_status_idx")
   @@index([participationIdentityId, statusCode], map: "attendance_correction_request_identity_status_idx")
   @@index([settlementRunId], map: "attendance_correction_request_run_idx")
@@ -6871,13 +6901,16 @@ model CorrectionApplication {
   statusCode String // preparing / committed / failed / voided(§3.25 明写四值闭集)
 
   pendingSegments           CorrectionPendingSegmentRevision[]
+  pendingTimeAllocations    CorrectionPendingTimeAllocation[]
   segmentPreparationReceipt CorrectionSegmentPreparationReceipt?
   segmentCleanupReceipt     CorrectionSegmentCleanupReceipt?
+  timeSourceProof           CorrectionTimeSourceProof?
 
   correctionRequest    AttendanceCorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
   newSettlementVersion AttendanceSettlementVersion @relation("CorrectionApplicationNewVersion", fields: [newSettlementVersionId], references: [id], onDelete: Restrict)
   newPostingBatch      LedgerPostingBatch          @relation("CorrectionApplicationNewBatch", fields: [newPostingBatchId], references: [id], onDelete: Restrict)
 
+  @@unique([id, newPostingBatchId, newSettlementVersionId], map: "correction_application_id_batch_version_key")
   @@index([correctionRequestId], map: "correction_application_request_idx")
   @@index([statusCode], map: "correction_application_status_idx")
   @@index([newSettlementVersionId], map: "correction_application_new_version_idx")
@@ -6903,14 +6936,149 @@ model CorrectionPendingSegmentRevision {
   sourceCheckInEventId    String
   payloadHash             String
 
-  application        CorrectionApplication             @relation(fields: [applicationId], references: [id], onDelete: Restrict)
-  identity           ActivityParticipationIdentity     @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
-  baseRevision       ParticipantServiceSegmentRevision @relation(fields: [baseRevisionId], references: [id], onDelete: Restrict)
-  sourceCheckInEvent AttendancePunchEvent              @relation(fields: [sourceCheckInEventId], references: [id], onDelete: Restrict)
+  application            CorrectionApplication             @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  identity               ActivityParticipationIdentity     @relation(fields: [participationIdentityId], references: [id], onDelete: Restrict)
+  baseRevision           ParticipantServiceSegmentRevision @relation(fields: [baseRevisionId], references: [id], onDelete: Restrict)
+  sourceCheckInEvent     AttendancePunchEvent              @relation(fields: [sourceCheckInEventId], references: [id], onDelete: Restrict)
+  pendingTimeAllocations CorrectionPendingTimeAllocation[]
 
   // Full activity/request/base/source coherence is enforced by migration triggers.
   @@unique([applicationId, participationIdentityId, segmentKey], map: "correction_pending_application_identity_segment_key")
+  @@unique([id, applicationId, activityId, participationIdentityId, segmentKey], map: "cpsr_id_application_activity_identity_segment_key")
   @@index([baseRevisionId], map: "correction_pending_base_idx")
+}
+
+// D7-2: immutable pre-materialization allocation facts for an approved V3
+// correction.  They deliberately survive success, failure and voiding; no
+// cleanup routine is introduced for business facts or their evidence.
+model CorrectionPendingTimeAllocation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  applicationId              String
+  activityId                 String
+  participationIdentityId    String
+  segmentKey                 String
+  pendingSegmentId           String
+  baseAllocationRevisionId   String
+  targetAllocationRevisionId String
+  targetSegmentRevisionId    String
+
+  targetAllocationRevision      Int
+  ruleSnapshotId                String
+  ruleSnapshotHash              String
+  timePolicySelectionRevisionId String
+  selectionHash                 String
+  policyVersionId               String
+  definitionHash                String
+  evaluatorVersion              Int
+
+  recognitionModeCode String
+  manualReason        String?
+  allocationJson      Json
+  allocationHash      String
+  sliceCount          Int
+
+  application                     CorrectionApplication                     @relation(fields: [applicationId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpta_application_fkey")
+  pendingSegment                  CorrectionPendingSegmentRevision          @relation(fields: [pendingSegmentId, applicationId, activityId, participationIdentityId, segmentKey], references: [id, applicationId, activityId, participationIdentityId, segmentKey], onDelete: Restrict, onUpdate: Restrict, map: "cpta_pending_segment_fkey")
+  baseAllocationRevision          ParticipantTimeAllocationRevision         @relation("CorrectionPendingAllocationBase", fields: [baseAllocationRevisionId, activityId, participationIdentityId, segmentKey], references: [id, activityId, participationIdentityId, segmentKey], onDelete: Restrict, onUpdate: Restrict, map: "cpta_base_allocation_fkey")
+  ruleSnapshot                    ActivityRuleSnapshot                      @relation(fields: [ruleSnapshotId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "cpta_snapshot_fkey")
+  timePolicySelection             ActivityTimePolicySelectionRevision       @relation(fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "cpta_selection_fkey")
+  policyVersion                   TimePolicyVersion                         @relation(fields: [policyVersionId, definitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "cpta_policy_version_fkey")
+  materializedAllocationRevision  ParticipantTimeAllocationRevision?        @relation("CorrectionPendingAllocationMaterialized")
+  evidence                        CorrectionPendingTimeAllocationEvidence[]
+  bindings                        CorrectionTimeAllocationBinding[]
+
+  @@unique([applicationId, participationIdentityId, segmentKey], map: "cpta_application_identity_segment_key")
+  @@unique([targetAllocationRevisionId], map: "cpta_target_allocation_key")
+  @@unique([targetSegmentRevisionId], map: "cpta_target_segment_key")
+  @@unique([id, activityId], map: "cpta_id_activity_key")
+  @@index([applicationId], map: "cpta_application_idx")
+  @@index([baseAllocationRevisionId], map: "cpta_base_allocation_idx")
+  @@index([pendingSegmentId], map: "cpta_pending_segment_idx")
+  @@index([policyVersionId], map: "cpta_policy_version_idx")
+}
+
+model CorrectionPendingTimeAllocationEvidence {
+  id                  String   @id @default(cuid())
+  createdAt           DateTime @default(now())
+  pendingAllocationId String
+  activityId          String
+  attachmentId        String
+  ordinal             Int
+
+  pendingAllocation CorrectionPendingTimeAllocation @relation(fields: [pendingAllocationId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "cptae_pending_fkey")
+  attachment        Attachment                      @relation(fields: [attachmentId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cptae_attachment_fkey")
+
+  @@unique([pendingAllocationId, attachmentId], map: "cptae_pending_attachment_key")
+  @@unique([pendingAllocationId, ordinal], map: "cptae_pending_ordinal_key")
+  @@index([activityId], map: "cptae_activity_idx")
+  @@index([attachmentId], map: "cptae_attachment_idx")
+}
+
+// D7-2 source proof is created in the prepare transaction.  It captures the
+// exact source set before any target segment/allocation exists, while bindings
+// appear only after commit materializes those targets.
+model CorrectionTimeSourceProof {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  applicationId           String
+  correctionManifestId    String
+  activityId              String
+  settlementRunId         String
+  rootManifestId          String
+  baseSettlementVersionId String
+  settlementVersionId     String
+  postingBatchId          String
+  sourceSetHash           String
+  calculationHash         String
+  sourceSnapshotJson      Json
+  calculatedBucketsJson   Json
+  expectedSegmentCount    Int
+  expectedPendingCount    Int
+  expectedSliceCount      Int
+  expectedBindingCount    Int
+  formatVersion           Int    @default(1)
+
+  application        CorrectionApplication                @relation(fields: [applicationId, postingBatchId, settlementVersionId], references: [id, newPostingBatchId, newSettlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "ctsp_application_fkey")
+  correctionManifest ParticipationTimeCorrectionManifest  @relation("CorrectionTimeSourceProofManifest", fields: [correctionManifestId, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], references: [id, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "ctsp_manifest_fkey")
+  rootManifest       ParticipationTimeLedgerManifest      @relation(fields: [rootManifestId, activityId, settlementRunId], references: [id, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ctsp_root_fkey")
+  sourceManifest     ParticipationTimeCorrectionManifest? @relation("TimeCorrectionManifestSourceProof")
+  bindings           CorrectionTimeAllocationBinding[]
+
+  @@unique([applicationId], map: "ctsp_application_key")
+  @@unique([applicationId, postingBatchId, settlementVersionId], map: "ctsp_application_anchor_key")
+  @@unique([correctionManifestId], map: "ctsp_manifest_key")
+  @@unique([correctionManifestId, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], map: "ctsp_manifest_anchor_ref_key")
+  @@unique([id, activityId], map: "ctsp_id_activity_key")
+  @@unique([id, rootManifestId, activityId, settlementRunId, sourceSetHash], map: "ctsp_manifest_anchor_key")
+  @@index([postingBatchId], map: "ctsp_batch_idx")
+  @@index([rootManifestId], map: "ctsp_root_idx")
+}
+
+model CorrectionTimeAllocationBinding {
+  id                      String   @id @default(cuid())
+  createdAt               DateTime @default(now())
+  proofId                 String
+  activityId              String
+  participationIdentityId String
+  segmentKey              String
+  allocationRevisionId    String
+  sourceSegmentId         String
+  sourceSegmentRevision   Int
+  pendingAllocationId     String?
+  sourceHash              String
+
+  proof                           CorrectionTimeSourceProof         @relation(fields: [proofId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_proof_fkey")
+  allocationRevision              ParticipantTimeAllocationRevision @relation(fields: [allocationRevisionId, sourceSegmentId, sourceSegmentRevision, activityId], references: [id, sourceSegmentId, sourceSegmentRevision, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_allocation_fkey")
+  sourceSegment                   ParticipantServiceSegmentRevision @relation(fields: [sourceSegmentId, participationIdentityId], references: [id, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_source_segment_fkey")
+  pendingAllocation               CorrectionPendingTimeAllocation?  @relation(fields: [pendingAllocationId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_pending_fkey")
+
+  @@unique([proofId, participationIdentityId, segmentKey], map: "ctab_proof_identity_segment_key")
+  @@index([allocationRevisionId], map: "ctab_allocation_idx")
+  @@index([pendingAllocationId], map: "ctab_pending_idx")
+  @@index([sourceSegmentId], map: "ctab_source_segment_idx")
 }
 
 model CorrectionSegmentPreparationReceipt {

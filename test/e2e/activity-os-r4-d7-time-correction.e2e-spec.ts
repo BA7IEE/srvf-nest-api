@@ -6,17 +6,22 @@ import {
   Prisma,
   PrismaClient,
 } from '@prisma/client';
+import { execFileSync } from 'node:child_process';
 import { ParticipationTimeLedgerAccessService } from '../../src/modules/activities/participation-time-ledger-access.service';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import {
+  activityTimeAllocationRequestHash,
   buildActivityTimeAllocationManifest,
+  type ActivityTimeAllocationCommand,
   type ActivityTimeAllocationSliceInput,
 } from '../../src/modules/activities/activity-time-allocation-command';
+import { ActivityTimeAllocationService } from '../../src/modules/activities/activity-time-allocation.service';
 import request from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
-import { ActivityTimeSettlementService } from '../../src/modules/activities/activity-time-settlement.service';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import { CorrectionApplicationService } from '../../src/modules/activities/correction-application.service';
 import { CorrectionAuditRecorder } from '../../src/modules/activities/correction-audit-recorder';
+import { CorrectionTimeAllocationService } from '../../src/modules/activities/correction-time-allocation.service';
 import { ParticipationTimeCorrectionService } from '../../src/modules/activities/participation-time-correction.service';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
@@ -38,8 +43,13 @@ import {
   type D13Fixture,
 } from '../helpers/activity-time-policy.fixture';
 import { httpServer } from '../helpers/http-server';
+import { loadTestEnv } from '../setup/load-env';
+import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { deriveTestDbName } from '../setup/worktree-db';
 const START = new Date('2020-03-01T08:00:00.000Z');
 const END = new Date('2020-03-01T09:00:00.000Z');
+const WORKER = 98;
+const USE_DEDICATED_W98 = process.env.SRVF_D7_2_W98 === '1';
 const DEFINITION: TimePolicyDefinition = {
   defaultCategory: 'volunteer_service',
   roleMappings: [],
@@ -57,41 +67,38 @@ const DEFINITION: TimePolicyDefinition = {
 describe('D7-1 recognition correction real transaction', () => {
   let f: D13Fixture;
   let actor: CurrentUserPayload;
-  let prepareFailure = 'none';
   const meta = { requestId: 'd5-e2e', ip: null, ua: null };
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+  const originalEnvironment = {
+    worker: process.env.JEST_WORKER_ID,
+    databaseUrl: process.env.DATABASE_URL,
+    storageRoot: process.env.STORAGE_LOCAL_ROOT,
+  };
+  beforeAll(() => {
+    // Direct maintenance validation uses only the approved w98 clone. CI keeps
+    // its assigned worker and its existing lifecycle unchanged.
+    if (USE_DEDICATED_W98) {
+      process.env.JEST_WORKER_ID = String(WORKER);
+      loadTestEnv();
+      process.env.STORAGE_LOCAL_ROOT = `./tmp/storage-w${WORKER}`;
+      assertTestDatabaseUrl(process.env.DATABASE_URL);
+      dropWorkerDatabase(WORKER);
+      execFileSync(
+        'docker',
+        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
+        { stdio: 'pipe' },
+      );
+      execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
+        env: process.env,
+        stdio: 'pipe',
+      });
+    }
+    assertTestDatabaseUrl(process.env.DATABASE_URL);
+  }, 120000);
   beforeEach(async () => {
     // Test-process configuration only. Never changes an application instance or deployment Gate.
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     f = await createD13Fixture();
-    prepareFailure = 'none';
-    const timeSettlement = f.app.get(ActivityTimeSettlementService);
-    const prepare = timeSettlement.prepare.bind(timeSettlement);
-    jest.spyOn(timeSettlement, 'prepare').mockImplementation(async (...args) => {
-      try {
-        return await prepare(...args);
-      } catch (error) {
-        // Fixed diagnostic fields only; never expose SQL, IDs, URLs or raw error messages.
-        prepareFailure = JSON.stringify({
-          prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
-          expiredTransaction:
-            error instanceof Error &&
-            /expired transaction|Transaction already closed/u.test(error.message),
-          transactionTimeoutMs:
-            error instanceof Error
-              ? Number(error.message.match(/timeout for this transaction was (\d+) ms/u)?.[1]) ||
-                null
-              : null,
-          transactionElapsedMs:
-            error instanceof Error
-              ? Number(error.message.match(/however (\d+) ms passed/u)?.[1]) || null
-              : null,
-          knownPrisma: error instanceof Prisma.PrismaClientKnownRequestError,
-          unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
-        });
-        throw error;
-      }
-    });
     actor = {
       id: f.creator.id,
       memberId: f.creator.memberId,
@@ -145,6 +152,21 @@ describe('D7-1 recognition correction real transaction', () => {
     if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
     else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
   });
+  afterAll(() => {
+    if (!USE_DEDICATED_W98) return;
+    try {
+      dropWorkerDatabase(WORKER);
+    } finally {
+      restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
+      restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
+      restoreEnvironment('STORAGE_LOCAL_ROOT', originalEnvironment.storageRoot);
+    }
+  }, 120000);
+
+  function restoreEnvironment(name: string, value: string | undefined) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 
   async function prepareSource(
     options: {
@@ -404,8 +426,7 @@ describe('D7-1 recognition correction real transaction', () => {
       status: response.status,
       code: response.body.code,
       message: response.body.message,
-      prepareFailure,
-    }).toEqual({ status: 200, code: 0, message: expect.any(String), prepareFailure: 'none' });
+    }).toEqual({ status: 200, code: 0, message: expect.any(String) });
     return response.body.data;
   }
   function prepareCommand(p: Awaited<ReturnType<typeof prepareSource>>, expectedTimeRevision = 0) {
@@ -749,6 +770,1094 @@ describe('D7-1 recognition correction real transaction', () => {
     });
     return { timeRevision, finalActor, finalRole, batch };
   }
+
+  /**
+   * A D4 sealed-draft allocation proves a draft calculation, while D7-2 deliberately accepts
+   * only the later committed-source allocation chain.  Build that real D3-shaped predecessor
+   * after the initial ledger commit: the creator goes through its service command, and the
+   * remaining scale fixture rows copy their already-validated allocation/slice/evidence facts
+   * into a new immutable revision with a matching committed-source receipt.
+   */
+  async function materializeCommittedAllocationFacts(p: Awaited<ReturnType<typeof prepareSource>>) {
+    const sources = await f.db.participantServiceSegmentRevision.findMany({
+      where: {
+        identity: { activityId: p.activityId },
+        statusCode: 'committed',
+        resultCode: 'valid',
+      },
+      select: { id: true, participationIdentityId: true },
+      orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }],
+    });
+    const sourceIds = sources.map((row) => row.id);
+    const readDraftAllocations = (sourceSegmentIds: string[]) =>
+      f.db.participantTimeAllocationRevision.findMany({
+        where: {
+          activityId: p.activityId,
+          sourceSegmentId: { in: sourceSegmentIds },
+          settlementDraftVersionId: { not: null },
+        },
+        include: {
+          slices: { orderBy: { ordinal: 'asc' } },
+          evidence: { orderBy: { ordinal: 'asc' } },
+        },
+        orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }, { revision: 'asc' }],
+      });
+    const draftAllocations: Awaited<ReturnType<typeof readDraftAllocations>> = [];
+    // 2,000 人满额夹具会有 10,000 个来源段；单条 IN 参数列表会越过本地
+    // Postgres 的栈深上限。仅分批读取同一冻结来源集，不改变任何业务调用或断言。
+    for (let offset = 0; offset < sourceIds.length; offset += 500) {
+      draftAllocations.push(...(await readDraftAllocations(sourceIds.slice(offset, offset + 500))));
+    }
+    const bySourceId = new Map(draftAllocations.map((row) => [row.sourceSegmentId, row]));
+    if (sources.length === 0 || bySourceId.size !== sources.length)
+      throw new Error('complete sealed-draft allocation source set required');
+    const creatorSource = sources.find((row) => row.participationIdentityId === p.identityId);
+    if (!creatorSource) throw new Error('creator committed source required');
+    const creatorDraftAllocation = bySourceId.get(creatorSource.id);
+    if (!creatorDraftAllocation) throw new Error('creator sealed-draft allocation required');
+
+    const creatorCommitted = await f.app.get(ActivityTimeAllocationService).recognize(
+      p.activityId,
+      {
+        operationKey: f.key('committed_allocation'),
+        sourceSegmentId: creatorSource.id,
+        expectedRevision: creatorDraftAllocation.revision,
+        recognitionModeCode: 'automatic',
+        evidenceAttachmentIds: [],
+      },
+      actor,
+      meta,
+    );
+    if (creatorCommitted.revision !== creatorDraftAllocation.revision + 1)
+      throw new Error('creator committed allocation revision required');
+
+    const remaining = draftAllocations.filter((row) => row.id !== creatorDraftAllocation.id);
+    for (let offset = 0; offset < remaining.length; offset += 100) {
+      const parents: Prisma.ParticipantTimeAllocationRevisionCreateManyInput[] = [];
+      const slices: Prisma.ParticipantTimeAllocationSliceCreateManyInput[] = [];
+      const evidence: Prisma.ParticipantTimeAllocationEvidenceCreateManyInput[] = [];
+      const receipts: Prisma.ParticipantTimeAllocationCommandReceiptCreateManyInput[] = [];
+      const createdAt = new Date();
+      for (const row of remaining.slice(offset, offset + 100)) {
+        const id = f.key('committed_allocation');
+        const operationKey = f.key('committed_allocation_command');
+        const evidenceAttachmentIds = row.evidence.map((item) => item.attachmentId).sort();
+        const manualSlices: ActivityTimeAllocationSliceInput[] = row.slices.map((slice) => {
+          if (
+            slice.intervalKindCode !== 'service_segment' ||
+            !['volunteer_service', 'training', 'organization', 'non_creditable'].includes(
+              slice.categoryCode,
+            )
+          ) {
+            throw new Error('canonical committed allocation slice required');
+          }
+          return {
+            categoryCode: slice.categoryCode as ActivityTimeAllocationSliceInput['categoryCode'],
+            intervalKindCode: 'service_segment',
+            startAt: slice.startAt.toISOString(),
+            endAt: slice.endAt.toISOString(),
+          };
+        });
+        const command: ActivityTimeAllocationCommand =
+          row.recognitionModeCode === 'automatic'
+            ? {
+                operationKey,
+                sourceSegmentId: row.sourceSegmentId,
+                expectedRevision: row.revision,
+                recognitionModeCode: 'automatic',
+                manualReason: null,
+                slices: [],
+                evidenceAttachmentIds,
+              }
+            : row.recognitionModeCode === 'manual' && row.manualReason !== null
+              ? {
+                  operationKey,
+                  sourceSegmentId: row.sourceSegmentId,
+                  expectedRevision: row.revision,
+                  recognitionModeCode: 'manual',
+                  manualReason: row.manualReason,
+                  slices: manualSlices,
+                  evidenceAttachmentIds,
+                }
+              : (() => {
+                  throw new Error('valid committed allocation recognition mode required');
+                })();
+        parents.push({
+          id,
+          createdAt,
+          activityId: row.activityId,
+          sessionId: row.sessionId,
+          memberId: row.memberId,
+          participationIdentityId: row.participationIdentityId,
+          segmentKey: row.segmentKey,
+          revision: row.revision + 1,
+          previousAllocationRevisionId: row.id,
+          sourceSegmentId: row.sourceSegmentId,
+          sourceSegmentRevision: row.sourceSegmentRevision,
+          sourcePositionId: row.sourcePositionId,
+          ruleSnapshotId: row.ruleSnapshotId,
+          ruleSnapshotHash: row.ruleSnapshotHash,
+          timePolicySelectionRevisionId: row.timePolicySelectionRevisionId,
+          selectionHash: row.selectionHash,
+          policyId: row.policyId,
+          policyVersionId: row.policyVersionId,
+          definitionHash: row.definitionHash,
+          evaluatorVersion: row.evaluatorVersion,
+          settlementDraftVersionId: null,
+          settlementEvidenceSealId: null,
+          settlementEvidenceRevision: null,
+          settlementPopulationRevision: null,
+          settlementWorkflowRevision: null,
+          settlementDraftContentHash: null,
+          correctionPendingAllocationId: null,
+          recognitionModeCode: row.recognitionModeCode,
+          manualReason: row.manualReason,
+          allocationJson: row.allocationJson as Prisma.InputJsonValue,
+          allocationHash: row.allocationHash,
+          sliceCount: row.sliceCount,
+          createdByUserId: row.createdByUserId,
+        });
+        slices.push(
+          ...row.slices.map((slice) => ({
+            id: f.key('committed_allocation_slice'),
+            allocationRevisionId: id,
+            activityId: row.activityId,
+            ordinal: slice.ordinal,
+            categoryCode: slice.categoryCode,
+            intervalKindCode: slice.intervalKindCode,
+            startAt: slice.startAt,
+            endAt: slice.endAt,
+          })),
+        );
+        evidence.push(
+          ...row.evidence.map((item) => ({
+            id: f.key('committed_allocation_evidence'),
+            allocationRevisionId: id,
+            activityId: row.activityId,
+            attachmentId: item.attachmentId,
+            ordinal: item.ordinal,
+          })),
+        );
+        receipts.push({
+          id: f.key('committed_allocation_receipt'),
+          actorUserId: row.createdByUserId,
+          activityId: row.activityId,
+          operationCode: 'recognize_time_allocation',
+          operationKey,
+          requestHash: activityTimeAllocationRequestHash(
+            row.activityId,
+            row.createdByUserId,
+            command,
+          ),
+          allocationRevisionId: id,
+          resultJson: {
+            schemaVersion: 1,
+            activityId: row.activityId,
+            allocationRevisionId: id,
+            revision: row.revision + 1,
+            sourceSegmentId: row.sourceSegmentId,
+            sourceSegmentRevision: row.sourceSegmentRevision,
+            recognitionModeCode: row.recognitionModeCode,
+            allocationHash: row.allocationHash,
+            sliceCount: row.sliceCount,
+            evidenceCount: evidenceAttachmentIds.length,
+            createdAt: createdAt.toISOString(),
+          },
+          createdAt,
+        });
+      }
+      await f.db.$transaction(
+        async (tx) => {
+          await tx.participantTimeAllocationRevision.createMany({ data: parents });
+          await tx.participantTimeAllocationSlice.createMany({ data: slices });
+          if (evidence.length > 0)
+            await tx.participantTimeAllocationEvidence.createMany({ data: evidence });
+          await tx.participantTimeAllocationCommandReceipt.createMany({ data: receipts });
+        },
+        { timeout: 30000 },
+      );
+    }
+  }
+
+  /**
+   * D7-2 deliberately starts from the same committed, classified source as
+   * D7-1.  This keeps the Human HTTP contract tied to real settlement, ledger,
+   * allocation and final-review facts instead of creating a partial shortcut.
+   */
+  async function createCommittedFactCorrectionBase(population = 1) {
+    const p = population === 1 ? await prepareSource() : await createCapacitySource(population);
+    if (population === 1) await recognize(p);
+    const preparedTime = await post(p.url + '/prepare', prepareCommand(p));
+    const submittedTime = await post(p.url + '/submit', {
+      operationKey: f.key('submit_time'),
+      expectedDraftVersion: p.proof.expectedDraftVersion,
+      expectedEvidenceSealId: p.proof.expectedEvidenceSealId,
+      timeRevisionId: preparedTime.timeRevisionId,
+      expectedBucketContentHash: preparedTime.bucketContentHash,
+    });
+    const { timeRevision, finalActor, finalRole, batch } = await createClassifiedPostingFixture(
+      submittedTime.timeRevisionId as string,
+      population,
+    );
+    const preparation = f.app.get(LedgerPreparationService);
+    const job = await preparation.ensurePrepareJob(batch.id);
+    const items = await f.db.activityBatchJobItem.findMany({ where: { jobId: job.jobId } });
+    for (const item of items) await preparation.prepareChunk(job.jobId, item.id);
+    await preparation.finalize(job.jobId);
+    await f.app
+      .get(LedgerPostingService)
+      .commitBatch(
+        { postingBatchId: batch.id, operationKey: f.key('initial_commit') },
+        finalActor,
+        meta,
+      );
+    await materializeCommittedAllocationFacts(p);
+    await f.db.roleBinding.create({
+      data: {
+        principalType: PrincipalType.USER,
+        principalId: finalActor.id,
+        roleId: finalRole.id,
+        scopeType: BindingScopeType.GLOBAL,
+      },
+    });
+    const root = await f.db.participationTimeLedgerManifest.findUniqueOrThrow({
+      where: { postingBatchId: batch.id },
+    });
+    const roots = await f.db.participationTimeLedgerEntry.findMany({
+      where: { manifestId: root.id },
+      orderBy: { id: 'asc' },
+    });
+    const sources = await f.db.participantServiceSegmentRevision.findMany({
+      where: {
+        identity: { activityId: p.activityId },
+        statusCode: 'committed',
+        resultCode: 'valid',
+      },
+      select: {
+        id: true,
+        participationIdentityId: true,
+        segmentKey: true,
+        revision: true,
+        checkInAt: true,
+        checkOutAt: true,
+        resultCode: true,
+        serviceHours: true,
+      },
+      orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }],
+    });
+    const allocations = await f.db.participantTimeAllocationRevision.findMany({
+      where: {
+        activityId: p.activityId,
+        sourceSegmentId: { in: sources.map((row) => row.id) },
+        settlementDraftVersionId: null,
+      },
+      select: {
+        id: true,
+        sourceSegmentId: true,
+        sourceSegmentRevision: true,
+        participationIdentityId: true,
+        segmentKey: true,
+        sliceCount: true,
+      },
+    });
+    const source = sources.find((row) => row.participationIdentityId === p.identityId);
+    if (!source) throw new Error('creator source required');
+    const allocation = allocations.find(
+      (row) =>
+        row.sourceSegmentId === source.id &&
+        row.sourceSegmentRevision === source.revision &&
+        row.participationIdentityId === source.participationIdentityId &&
+        row.segmentKey === source.segmentKey,
+    );
+    if (!allocation) throw new Error('creator source allocation required');
+    return { p, timeRevision, root, roots, source, allocation, sources, allocations };
+  }
+
+  it('runs the Human V3 submit, returned-resubmit, review, prepare and commit chain', async () => {
+    const { p, timeRevision, root, roots, source, allocation } =
+      await createCommittedFactCorrectionBase();
+    if (source.checkOutAt === null) throw new Error('closed source segment required');
+    expect(roots.map((entry) => entry.categoryCode).sort()).toEqual([
+      'non_creditable',
+      'organization',
+      'training',
+      'volunteer_service',
+    ]);
+
+    const correctedCheckOutAt = new Date(source.checkOutAt.getTime() - 60_000);
+    const correctionUrl = `${D13_APP}/${p.activityId}/time-corrections`;
+    const requestBody = (operationKey: string, reason: string) => ({
+      participationIdentityId: source.participationIdentityId,
+      requestTypeCode: 'time',
+      requestedChangeJson: {
+        schemaVersion: 3,
+        results: [],
+        segments: [
+          {
+            participationIdentityId: source.participationIdentityId,
+            segmentKey: source.segmentKey,
+            checkInAt: source.checkInAt.toISOString(),
+            checkOutAt: correctedCheckOutAt.toISOString(),
+            resultCode: source.resultCode,
+            serviceHours: '0.98',
+          },
+        ],
+        timeCorrection: {
+          baseSettlementVersionId: timeRevision.settlementVersionId,
+          baseTimeLedgerHash: root.contentHash,
+          reason: '核验后更正服务段终止时刻',
+          items: roots.map((entry) => ({
+            rootEntryId: entry.id,
+            recognizedSeconds:
+              entry.categoryCode === 'volunteer_service' ? 3540 : entry.recognizedSeconds,
+          })),
+        },
+        allocations: [
+          {
+            participationIdentityId: source.participationIdentityId,
+            segmentKey: source.segmentKey,
+            baseSegmentRevisionId: source.id,
+            baseAllocationRevisionId: allocation.id,
+            recognitionModeCode: 'automatic',
+            manualReason: null,
+            slices: [],
+            evidenceAttachmentIds: [],
+          },
+        ],
+      },
+      reason,
+      operationKey,
+    });
+
+    const first = await request(httpServer(f.app))
+      .post(correctionUrl)
+      .set('Authorization', f.creator.auth)
+      .send(requestBody(f.key('human_submit'), '发现服务段结束时刻需核实'))
+      .expect(201);
+    expect(first.body).toMatchObject({
+      code: 0,
+      data: {
+        activityId: p.activityId,
+        baseSettlementVersionId: timeRevision.settlementVersionId,
+        statusCode: 'pending',
+        replayed: false,
+      },
+    });
+    const firstData = first.body.data as { requestId: string; requestVersion: number };
+
+    const wrongActivityId = p.activityId.slice(0, -1) + (p.activityId.endsWith('0') ? '1' : '0');
+    const wrongRouteReview = await request(httpServer(f.app))
+      .post(`${D13_APP}/${wrongActivityId}/time-corrections/${firstData.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        actionCode: 'approve',
+        expectedRequestVersion: firstData.requestVersion,
+        note: '错误活动路径不得处理该申请',
+      });
+    expect({ status: wrongRouteReview.status, code: wrongRouteReview.body.code }).toEqual({
+      status: BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE.httpStatus,
+      code: BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE.code,
+    });
+    await expect(
+      f.db.attendanceCorrectionRequest.findUniqueOrThrow({ where: { id: firstData.requestId } }),
+    ).resolves.toMatchObject({ statusCode: 'pending' });
+
+    const initialDetail = await request(httpServer(f.app))
+      .get(`${correctionUrl}/${firstData.requestId}`)
+      .set('Authorization', f.creator.auth)
+      .query({ page: 1, pageSize: 1 })
+      .expect(200);
+    expect(initialDetail.body.data).toMatchObject({
+      requestId: firstData.requestId,
+      evidenceStatusCode: 'not_frozen',
+      sourceProofHash: null,
+      sourcePage: null,
+    });
+
+    const returned = await request(httpServer(f.app))
+      .post(`${correctionUrl}/${firstData.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        actionCode: 'return',
+        expectedRequestVersion: firstData.requestVersion,
+        note: '请补齐核验说明后重提',
+      })
+      .expect(200);
+    expect(returned.body.data).toMatchObject({
+      outcome: 'reviewed',
+      requestId: firstData.requestId,
+      statusCode: 'returned',
+      replayed: false,
+    });
+
+    const wrongRouteResubmit = await request(httpServer(f.app))
+      .post(`${D13_APP}/${wrongActivityId}/time-corrections/${firstData.requestId}/resubmit`)
+      .set('Authorization', f.creator.auth)
+      .send(requestBody(f.key('human_resubmit_wrong_activity'), '错误活动路径不得重提该申请'));
+    expect({ status: wrongRouteResubmit.status, code: wrongRouteResubmit.body.code }).toEqual({
+      status: BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE.httpStatus,
+      code: BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE.code,
+    });
+    await expect(
+      f.db.attendanceCorrectionRequest.findUniqueOrThrow({ where: { id: firstData.requestId } }),
+    ).resolves.toMatchObject({ statusCode: 'returned' });
+
+    const resubmitted = await request(httpServer(f.app))
+      .post(`${correctionUrl}/${firstData.requestId}/resubmit`)
+      .set('Authorization', f.creator.auth)
+      .send(requestBody(f.key('human_resubmit'), '已补齐服务段时间核验依据'))
+      .expect(201);
+    expect(resubmitted.body.data).toMatchObject({
+      outcome: 'resubmitted',
+      statusCode: 'pending',
+      replayed: false,
+    });
+    const resubmittedData = resubmitted.body.data as { requestId: string; requestVersion: number };
+    const oldRequest = await f.db.attendanceCorrectionRequest.findUniqueOrThrow({
+      where: { id: firstData.requestId },
+    });
+    expect(oldRequest).toMatchObject({
+      statusCode: 'voided',
+      reviewNote: '请补齐核验说明后重提',
+    });
+    expect(
+      await f.db.attendanceCorrectionRequest.findUniqueOrThrow({
+        where: { id: resubmittedData.requestId },
+      }),
+    ).toMatchObject({ resubmittedFromRequestId: firstData.requestId, statusCode: 'pending' });
+
+    const approved = await request(httpServer(f.app))
+      .post(`${correctionUrl}/${resubmittedData.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        actionCode: 'approve',
+        expectedRequestVersion: resubmittedData.requestVersion,
+        note: '复核通过',
+      })
+      .expect(200);
+    expect(approved.body.data).toMatchObject({
+      outcome: 'reviewed',
+      requestId: resubmittedData.requestId,
+      statusCode: 'approved',
+    });
+
+    const prepared = await request(httpServer(f.app))
+      .post(`${correctionUrl}/${resubmittedData.requestId}/prepare`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+        operationKey: f.key('human_prepare'),
+      })
+      .expect(200);
+    expect(prepared.body).toMatchObject({
+      code: 0,
+      data: {
+        requestId: resubmittedData.requestId,
+        replayed: false,
+        sourceProofHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      },
+    });
+    const preparedData = prepared.body.data as {
+      applicationId: string;
+      postingBatchId: string;
+      settlementVersionId: string;
+      sourceProofHash: string;
+    };
+
+    // The guard must reject an otherwise FK-valid binding when it claims the
+    // changed pending allocation with the source's unchanged base allocation.
+    // This exercises the statement-level path before normal materialization
+    // creates any binding.
+    const sourceProof = await f.db.correctionTimeSourceProof.findUniqueOrThrow({
+      where: { applicationId: preparedData.applicationId },
+    });
+    const pendingAllocation = await f.db.correctionPendingTimeAllocation.findFirstOrThrow({
+      where: { applicationId: preparedData.applicationId },
+    });
+    const snapshots = sourceProof.sourceSnapshotJson;
+    if (!Array.isArray(snapshots)) throw new Error('source proof snapshots required');
+    const sourceSnapshot = snapshots.find((value): value is Prisma.JsonObject => {
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+      return (
+        value.participationIdentityId === source.participationIdentityId &&
+        value.segmentKey === source.segmentKey &&
+        value.baseSegmentRevisionId === source.id &&
+        value.baseAllocationRevisionId === allocation.id &&
+        value.pendingAllocationId === pendingAllocation.id
+      );
+    });
+    const sourceHash = sourceSnapshot?.sourceHash;
+    if (typeof sourceHash !== 'string') throw new Error('base source hash required');
+    await expect(
+      f.db.$executeRaw(
+        Prisma.sql`
+          INSERT INTO "CorrectionTimeAllocationBinding" (
+            "id", "proofId", "activityId", "participationIdentityId", "segmentKey",
+            "allocationRevisionId", "sourceSegmentId", "sourceSegmentRevision",
+            "pendingAllocationId", "sourceHash"
+          ) VALUES (
+            ${f.key('binding_guard_mismatch')}, ${sourceProof.id}, ${p.activityId},
+            ${source.participationIdentityId}, ${source.segmentKey},
+            ${allocation.id}, ${source.id}, ${source.revision},
+            ${pendingAllocation.id}, ${sourceHash}
+          )
+        `,
+      ),
+    ).rejects.toThrow('binding does not match its pending allocation fact');
+    expect(
+      await f.db.correctionTimeAllocationBinding.count({ where: { proofId: sourceProof.id } }),
+    ).toBe(0);
+
+    // The allocation counterpart must fail closed through the new AFTER
+    // statement guard as well.  It is FK-valid but deliberately retains the
+    // base allocation anchors instead of the pending V3 target anchors.
+    const baseAllocation = await f.db.participantTimeAllocationRevision.findUniqueOrThrow({
+      where: { id: allocation.id },
+    });
+    await expect(
+      f.db.participantTimeAllocationRevision.create({
+        data: {
+          ...baseAllocation,
+          id: f.key('allocation_guard_mismatch'),
+          revision: pendingAllocation.targetAllocationRevision,
+          previousAllocationRevisionId: baseAllocation.id,
+          correctionPendingAllocationId: pendingAllocation.id,
+          settlementDraftVersionId: null,
+          settlementEvidenceSealId: null,
+          settlementEvidenceRevision: null,
+          settlementPopulationRevision: null,
+          settlementWorkflowRevision: null,
+          settlementDraftContentHash: null,
+          allocationJson: baseAllocation.allocationJson as Prisma.InputJsonValue,
+        },
+      }),
+    ).rejects.toThrow('correction allocation differs from its pending fact');
+    expect(
+      await f.db.participantTimeAllocationRevision.count({
+        where: { correctionPendingAllocationId: pendingAllocation.id },
+      }),
+    ).toBe(0);
+
+    const frozenDetail = await request(httpServer(f.app))
+      .get(`${correctionUrl}/${resubmittedData.requestId}`)
+      .set('Authorization', f.creator.auth)
+      .query({ page: 1, pageSize: 1 })
+      .expect(200);
+    expect(frozenDetail.body.data).toMatchObject({
+      requestId: resubmittedData.requestId,
+      evidenceStatusCode: 'frozen',
+      sourceProofHash: preparedData.sourceProofHash,
+      sourcePage: { total: 1, page: 1, pageSize: 1 },
+    });
+    expect(frozenDetail.body.data.sourcePage.items).toHaveLength(1);
+
+    const commitPayload = {
+      expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+      correctionApplicationId: preparedData.applicationId,
+      postingBatchId: preparedData.postingBatchId,
+      operationKey: f.key('human_commit'),
+    };
+    const committed = await request(httpServer(f.app))
+      .post(`${correctionUrl}/${resubmittedData.requestId}/commit`)
+      .set('Authorization', f.reviewer.auth)
+      .send(commitPayload)
+      .expect(200);
+    expect(committed.body.data).toMatchObject({
+      requestId: resubmittedData.requestId,
+      applicationId: preparedData.applicationId,
+      postingBatchId: preparedData.postingBatchId,
+      settlementVersionId: preparedData.settlementVersionId,
+      correctionStatus: 'applied',
+      applicationStatus: 'committed',
+      replayed: false,
+    });
+
+    // A same-task replay must report the same immutable target IDs, without
+    // adding a second audit/ledger result or substituting placeholder values.
+    const replayed = await request(httpServer(f.app))
+      .post(`${correctionUrl}/${resubmittedData.requestId}/commit`)
+      .set('Authorization', f.reviewer.auth)
+      .send(commitPayload)
+      .expect(200);
+    expect(replayed.body.data).toMatchObject({
+      requestId: resubmittedData.requestId,
+      applicationId: preparedData.applicationId,
+      postingBatchId: preparedData.postingBatchId,
+      settlementVersionId: preparedData.settlementVersionId,
+      replayed: true,
+    });
+
+    const proof = await f.db.correctionTimeSourceProof.findUniqueOrThrow({
+      where: { applicationId: preparedData.applicationId },
+    });
+    const [pending, bindings, materialized, receipt, manifest, currentRoot] = await Promise.all([
+      f.db.correctionPendingTimeAllocation.findMany({
+        where: { applicationId: preparedData.applicationId },
+      }),
+      f.db.correctionTimeAllocationBinding.findMany({ where: { proofId: proof.id } }),
+      f.db.participantTimeAllocationRevision.findMany({
+        where: { correctionPendingAllocationId: { not: null } },
+      }),
+      f.db.participantTimeAllocationCommandReceipt.findMany({
+        where: { operationCode: 'recognize_correction_time_allocation' },
+      }),
+      f.db.participationTimeCorrectionManifest.findUniqueOrThrow({
+        where: { postingBatchId: preparedData.postingBatchId },
+      }),
+      f.db.participationTimeLedgerManifest.findUniqueOrThrow({ where: { id: root.id } }),
+    ]);
+    expect(proof.sourceSetHash).toBe(preparedData.sourceProofHash);
+    expect(pending).toHaveLength(1);
+    expect(bindings).toHaveLength(1);
+    expect(materialized).toHaveLength(1);
+    expect(receipt).toHaveLength(1);
+    expect(materialized[0].correctionPendingAllocationId).toBe(pending[0].id);
+    expect(bindings[0].pendingAllocationId).toBe(pending[0].id);
+    expect(manifest).toMatchObject({
+      sourceProofId: proof.id,
+      sourceProofHash: proof.sourceSetHash,
+      formatVersion: 2,
+    });
+    expect(currentRoot.contentHash).toBe(root.contentHash);
+  }, 120000);
+
+  it.each([100, 2000])(
+    'runs the Human V3 write chain against a complete %i-identity source proof',
+    async (population) => {
+      const { p, timeRevision, root, roots, sources, allocations } =
+        await createCommittedFactCorrectionBase(population);
+      expect(sources).toHaveLength(population * 5);
+      const source =
+        sources.find((row) => row.participationIdentityId !== p.identityId) ?? sources[0];
+      if (
+        !source ||
+        source.checkInAt === null ||
+        source.checkOutAt === null ||
+        source.serviceHours === null
+      ) {
+        throw new Error('closed correction source required');
+      }
+      const allocation = allocations.find(
+        (row) =>
+          row.sourceSegmentId === source.id &&
+          row.sourceSegmentRevision === source.revision &&
+          row.participationIdentityId === source.participationIdentityId &&
+          row.segmentKey === source.segmentKey,
+      );
+      if (!allocation) throw new Error('source allocation required');
+      const correctedCheckOutAt = new Date(source.checkOutAt.getTime() - 1_000);
+      const correctionUrl = `${D13_APP}/${p.activityId}/time-corrections`;
+      const submitted = await request(httpServer(f.app))
+        .post(correctionUrl)
+        .set('Authorization', f.creator.auth)
+        .send({
+          participationIdentityId: source.participationIdentityId,
+          requestTypeCode: 'time',
+          requestedChangeJson: {
+            schemaVersion: 3,
+            results: [],
+            segments: [
+              {
+                participationIdentityId: source.participationIdentityId,
+                segmentKey: source.segmentKey,
+                checkInAt: source.checkInAt.toISOString(),
+                checkOutAt: correctedCheckOutAt.toISOString(),
+                resultCode: source.resultCode,
+                // This one-second source correction stays within the existing
+                // two-decimal service-hour representation, so it exercises a
+                // real V3 fact change without fabricating a rounded value.
+                serviceHours: source.serviceHours.toString(),
+              },
+            ],
+            timeCorrection: {
+              baseSettlementVersionId: timeRevision.settlementVersionId,
+              baseTimeLedgerHash: root.contentHash,
+              reason: '满额来源集合中的一条服务段经核验后更正',
+              items: roots.map((entry) => ({
+                rootEntryId: entry.id,
+                // V3 的事实变化即使落在同一量化桶，也不得被当作空更正拒绝。
+                recognizedSeconds: entry.recognizedSeconds,
+              })),
+            },
+            allocations: [
+              {
+                participationIdentityId: source.participationIdentityId,
+                segmentKey: source.segmentKey,
+                baseSegmentRevisionId: source.id,
+                baseAllocationRevisionId: allocation.id,
+                recognitionModeCode: 'automatic',
+                manualReason: null,
+                slices: [],
+                evidenceAttachmentIds: [],
+              },
+            ],
+          },
+          reason: '满额事实更正验收',
+          operationKey: f.key(`human_capacity_${population}_submit`),
+        })
+        .expect(201);
+      const submittedData = submitted.body.data as { requestId: string; requestVersion: number };
+      await request(httpServer(f.app))
+        .post(`${correctionUrl}/${submittedData.requestId}/review`)
+        .set('Authorization', f.reviewer.auth)
+        .send({
+          actionCode: 'approve',
+          expectedRequestVersion: submittedData.requestVersion,
+          note: '满额事实来源复核通过',
+        })
+        .expect(200);
+      const prepared = await request(httpServer(f.app))
+        .post(`${correctionUrl}/${submittedData.requestId}/prepare`)
+        .set('Authorization', f.reviewer.auth)
+        .send({
+          expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+          operationKey: f.key(`human_capacity_${population}_prepare`),
+        })
+        .expect(200);
+      const preparedData = prepared.body.data as {
+        applicationId: string;
+        postingBatchId: string;
+        settlementVersionId: string;
+      };
+      const sourceProof = await f.db.correctionTimeSourceProof.findUniqueOrThrow({
+        where: { applicationId: preparedData.applicationId },
+      });
+      const pendingAllocations = await f.db.correctionPendingTimeAllocation.findMany({
+        where: { applicationId: preparedData.applicationId },
+      });
+      expect(pendingAllocations).toHaveLength(1);
+      const expectedSliceCount =
+        allocations.reduce((total, row) => total + row.sliceCount, 0) -
+        allocation.sliceCount +
+        pendingAllocations[0].sliceCount;
+      expect(sourceProof).toMatchObject({
+        expectedSegmentCount: sources.length,
+        expectedPendingCount: 1,
+        expectedBindingCount: sources.length,
+        expectedSliceCount,
+      });
+      let commitFailure = 'none';
+      // CI-only failure diagnosis: retain only fixed stage names and numeric timing
+      // aggregates.  Never print SQL, IDs, request bodies, URLs or raw errors.
+      const commitPhaseMs = {
+        correctionCommit: null as number | null,
+        timeAllocationMaterialization: null as number | null,
+        correctionReceipt: null as number | null,
+        ledgerCommit: null as number | null,
+      };
+      const queryTiming = {
+        pendingMaterialization: { count: 0, durationMs: 0 },
+        timeAllocationMaterialization: { count: 0, durationMs: 0 },
+        segmentMaterialization: { count: 0, durationMs: 0 },
+        correctionReceipt: { count: 0, durationMs: 0 },
+        ledgerDeltas: { count: 0, durationMs: 0 },
+        draftSegmentMembers: { count: 0, durationMs: 0 },
+        memberLocks: { count: 0, durationMs: 0 },
+        dayStates: { count: 0, durationMs: 0 },
+        other: { count: 0, durationMs: 0 },
+      };
+      type QueryTimingBucket = keyof typeof queryTiming;
+      const classifyCommitQuery = (query: string): QueryTimingBucket => {
+        if (query.includes('pg_advisory_xact_lock')) return 'memberLocks';
+        if (query.includes('"CorrectionPendingSegmentRevision"')) return 'pendingMaterialization';
+        if (
+          [
+            '"CorrectionTimeSourceProof"',
+            '"CorrectionPendingTimeAllocation"',
+            '"ParticipantTimeAllocationRevision"',
+            '"ParticipantTimeAllocationSlice"',
+            '"ParticipantTimeAllocationEvidence"',
+            '"ParticipantTimeAllocationCommandReceipt"',
+            '"CorrectionTimeAllocationBinding"',
+          ].some((table) => query.includes(table))
+        ) {
+          return 'timeAllocationMaterialization';
+        }
+        if (
+          query.includes('"ParticipationTimeCorrectionManifest"') ||
+          query.includes('"ParticipationTimeCorrectionCommitReceipt"')
+        ) {
+          return 'correctionReceipt';
+        }
+        if (query.includes('"ParticipationLedgerEntry"') && query.includes('GROUP BY')) {
+          return 'ledgerDeltas';
+        }
+        if (
+          query.includes('"ParticipantServiceSegmentRevision"') &&
+          query.includes('SELECT DISTINCT')
+        ) {
+          return 'draftSegmentMembers';
+        }
+        if (query.includes('"ParticipantServiceSegmentRevision"')) {
+          return 'segmentMaterialization';
+        }
+        if (query.includes('"MemberContributionDayState"')) return 'dayStates';
+        return 'other';
+      };
+      const measureCommitPhase = async <T>(
+        phase: keyof typeof commitPhaseMs,
+        work: () => Promise<T>,
+      ): Promise<T> => {
+        const startedAt = performance.now();
+        try {
+          return await work();
+        } finally {
+          commitPhaseMs[phase] = Math.round(performance.now() - startedAt);
+        }
+      };
+      const observed =
+        population === 2000 ? new PrismaClient({ log: [{ emit: 'event', level: 'query' }] }) : null;
+      if (observed) {
+        await observed.$connect();
+        observed.$on('query', (event) => {
+          const bucket = queryTiming[classifyCommitQuery(event.query)];
+          bucket.count++;
+          bucket.durationMs += Math.round(event.duration);
+        });
+      }
+      const transactionSpy = observed
+        ? jest.spyOn(f.db, '$transaction').mockImplementation(observed.$transaction.bind(observed))
+        : undefined;
+      const correction = f.app.get(CorrectionApplicationService);
+      const commit = correction.commit.bind(correction);
+      const correctionTimeAllocation = f.app.get(CorrectionTimeAllocationService);
+      const materializeTimeAllocations =
+        correctionTimeAllocation.materialize.bind(correctionTimeAllocation);
+      const timeAllocationSpy = observed
+        ? jest
+            .spyOn(correctionTimeAllocation, 'materialize')
+            .mockImplementation((...args) =>
+              measureCommitPhase('timeAllocationMaterialization', () =>
+                materializeTimeAllocations(...args),
+              ),
+            )
+        : undefined;
+      const timeCorrection = f.app.get(ParticipationTimeCorrectionService);
+      const createCommitReceipt = timeCorrection.createCommitReceipt.bind(timeCorrection);
+      const receiptSpy = observed
+        ? jest
+            .spyOn(timeCorrection, 'createCommitReceipt')
+            .mockImplementation((...args) =>
+              measureCommitPhase('correctionReceipt', () => createCommitReceipt(...args)),
+            )
+        : undefined;
+      const ledgerPosting = f.app.get(LedgerPostingService);
+      const commitBatchWithin = ledgerPosting.commitBatchWithin.bind(ledgerPosting);
+      const ledgerSpy = observed
+        ? jest
+            .spyOn(ledgerPosting, 'commitBatchWithin')
+            .mockImplementation((...args) =>
+              measureCommitPhase('ledgerCommit', () => commitBatchWithin(...args)),
+            )
+        : undefined;
+      jest.spyOn(correction, 'commit').mockImplementation(async (...args) => {
+        const startedAt = performance.now();
+        try {
+          return await commit(...args);
+        } catch (error) {
+          if (population === 2000) {
+            commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
+            // Fixed diagnostic fields only; never expose SQL, IDs, URLs or raw error messages.
+            commitFailure = JSON.stringify({
+              prismaCode: error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null,
+              expiredTransaction:
+                error instanceof Error &&
+                /expired transaction|Transaction already closed/u.test(error.message),
+              transactionTimeoutMs:
+                error instanceof Error
+                  ? Number(
+                      error.message.match(/timeout for this transaction was (\d+) ms/u)?.[1],
+                    ) || null
+                  : null,
+              transactionElapsedMs:
+                error instanceof Error
+                  ? Number(error.message.match(/however (\d+) ms passed/u)?.[1]) || null
+                  : null,
+              knownPrisma: error instanceof Prisma.PrismaClientKnownRequestError,
+              unknownPrisma: error instanceof Prisma.PrismaClientUnknownRequestError,
+              commitPhaseMs,
+              queryTiming,
+            });
+          }
+          throw error;
+        } finally {
+          if (commitPhaseMs.correctionCommit === null)
+            commitPhaseMs.correctionCommit = Math.round(performance.now() - startedAt);
+        }
+      });
+      const committed = await (async () => {
+        try {
+          return await request(httpServer(f.app))
+            .post(`${correctionUrl}/${submittedData.requestId}/commit`)
+            .set('Authorization', f.reviewer.auth)
+            .send({
+              expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+              correctionApplicationId: preparedData.applicationId,
+              postingBatchId: preparedData.postingBatchId,
+              operationKey: f.key(`human_capacity_${population}_commit`),
+            })
+            .expect((response) => {
+              if (response.status !== 200) {
+                // Fixed diagnostic fields only; never expose raw response content, IDs, URLs or errors.
+                console.error('D7 2000-identity commit failure', {
+                  status: response.status,
+                  code: typeof response.body?.code === 'number' ? response.body.code : null,
+                  commitFailure,
+                });
+              }
+            })
+            .expect(200);
+        } finally {
+          transactionSpy?.mockRestore();
+          timeAllocationSpy?.mockRestore();
+          receiptSpy?.mockRestore();
+          ledgerSpy?.mockRestore();
+          if (observed) await observed.$disconnect();
+        }
+      })();
+      expect(committed.body.data).toMatchObject({
+        requestId: submittedData.requestId,
+        applicationId: preparedData.applicationId,
+        postingBatchId: preparedData.postingBatchId,
+        settlementVersionId: preparedData.settlementVersionId,
+        correctionStatus: 'applied',
+        applicationStatus: 'committed',
+      });
+      const [pendingCount, bindingCount, materializedCount, receiptCount] = await Promise.all([
+        f.db.correctionPendingTimeAllocation.count({
+          where: { applicationId: preparedData.applicationId },
+        }),
+        f.db.correctionTimeAllocationBinding.count({ where: { proofId: sourceProof.id } }),
+        f.db.participantTimeAllocationRevision.count({
+          where: { correctionPendingAllocationId: { not: null } },
+        }),
+        f.db.participantTimeAllocationCommandReceipt.count({
+          where: { operationCode: 'recognize_correction_time_allocation' },
+        }),
+      ]);
+      expect([pendingCount, bindingCount, materializedCount, receiptCount]).toEqual([
+        1,
+        sources.length,
+        1,
+        1,
+      ]);
+    },
+    600000,
+  );
+
+  it('serializes concurrent Human commits into one effect and one exact replay', async () => {
+    const { p, timeRevision, root, roots, source, allocation } =
+      await createCommittedFactCorrectionBase();
+    if (source.checkInAt === null || source.checkOutAt === null) {
+      throw new Error('closed correction source required');
+    }
+    const correctionUrl = `${D13_APP}/${p.activityId}/time-corrections`;
+    const submitted = await request(httpServer(f.app))
+      .post(correctionUrl)
+      .set('Authorization', f.creator.auth)
+      .send({
+        participationIdentityId: source.participationIdentityId,
+        requestTypeCode: 'time',
+        requestedChangeJson: {
+          schemaVersion: 3,
+          results: [],
+          segments: [
+            {
+              participationIdentityId: source.participationIdentityId,
+              segmentKey: source.segmentKey,
+              checkInAt: source.checkInAt.toISOString(),
+              checkOutAt: new Date(source.checkOutAt.getTime() - 60_000).toISOString(),
+              resultCode: source.resultCode,
+              serviceHours: '0.98',
+            },
+          ],
+          timeCorrection: {
+            baseSettlementVersionId: timeRevision.settlementVersionId,
+            baseTimeLedgerHash: root.contentHash,
+            reason: '并发提交仍只应生效一条事实链',
+            items: roots.map((entry) => ({
+              rootEntryId: entry.id,
+              recognizedSeconds:
+                entry.categoryCode === 'volunteer_service' ? 3540 : entry.recognizedSeconds,
+            })),
+          },
+          allocations: [
+            {
+              participationIdentityId: source.participationIdentityId,
+              segmentKey: source.segmentKey,
+              baseSegmentRevisionId: source.id,
+              baseAllocationRevisionId: allocation.id,
+              recognitionModeCode: 'automatic',
+              manualReason: null,
+              slices: [],
+              evidenceAttachmentIds: [],
+            },
+          ],
+        },
+        reason: '并发提交验收',
+        operationKey: f.key('human_concurrent_submit'),
+      })
+      .expect(201);
+    const submittedData = submitted.body.data as { requestId: string; requestVersion: number };
+    await request(httpServer(f.app))
+      .post(`${correctionUrl}/${submittedData.requestId}/review`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        actionCode: 'approve',
+        expectedRequestVersion: submittedData.requestVersion,
+        note: '并发提交前复核通过',
+      })
+      .expect(200);
+    const prepared = await request(httpServer(f.app))
+      .post(`${correctionUrl}/${submittedData.requestId}/prepare`)
+      .set('Authorization', f.reviewer.auth)
+      .send({
+        expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+        operationKey: f.key('human_concurrent_prepare'),
+      })
+      .expect(200);
+    const preparedData = prepared.body.data as {
+      applicationId: string;
+      postingBatchId: string;
+      settlementVersionId: string;
+    };
+    const commitPayload = {
+      expectedBaseSettlementVersionId: timeRevision.settlementVersionId,
+      correctionApplicationId: preparedData.applicationId,
+      postingBatchId: preparedData.postingBatchId,
+      operationKey: f.key('human_concurrent_commit'),
+    };
+    const responses = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        request(httpServer(f.app))
+          .post(`${correctionUrl}/${submittedData.requestId}/commit`)
+          .set('Authorization', f.reviewer.auth)
+          .send(commitPayload)
+          .expect(200),
+      ),
+    );
+    expect(responses.map((response) => response.body.data.replayed).sort()).toEqual([false, true]);
+    for (const response of responses) {
+      expect(response.body.data).toMatchObject({
+        requestId: submittedData.requestId,
+        applicationId: preparedData.applicationId,
+        postingBatchId: preparedData.postingBatchId,
+        settlementVersionId: preparedData.settlementVersionId,
+        correctionStatus: 'applied',
+        applicationStatus: 'committed',
+      });
+    }
+    expect(
+      await f.db.participationTimeCorrectionCommitReceipt.count({
+        where: { postingBatchId: preparedData.postingBatchId },
+      }),
+    ).toBe(1);
+    expect(
+      await f.db.participantTimeAllocationCommandReceipt.count({
+        where: { operationCode: 'recognize_correction_time_allocation' },
+      }),
+    ).toBe(1);
+  }, 120000);
 
   it.each([1, 100, 2000])(
     'commits complete pairs and replays within budget for %i identities',

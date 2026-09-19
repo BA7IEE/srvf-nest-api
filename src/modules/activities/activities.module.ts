@@ -55,10 +55,14 @@ import { ActivityTimeAllocationAccessService } from './activity-time-allocation-
 import { ActivityTimeAllocationAuditRecorder } from './activity-time-allocation-audit-recorder';
 import { ActivityTimeAllocationService } from './activity-time-allocation.service';
 import { ActivityTimeSettlementAccessService } from './activity-time-settlement-access.service';
+import { ActivityTimeCorrectionAccessService } from './activity-time-correction-access.service';
+import { ActivityTimeCorrectionCommandService } from './activity-time-correction-command.service';
+import { ActivityTimeCorrectionQueryService } from './activity-time-correction-query.service';
 import { ActivityTimeSettlementAuditRecorder } from './activity-time-settlement-audit-recorder';
 import { ActivityTimeSettlementQueryService } from './activity-time-settlement-query.service';
 import { ActivityTimeSettlementService } from './activity-time-settlement.service';
 import { AppManagedActivityTimeSettlementController } from './controllers/app-managed-activity-time-settlement.controller';
+import { AppManagedActivityTimeCorrectionController } from './controllers/app-managed-activity-time-correction.controller';
 import { AppManagedActivityOutcomesController } from './controllers/app-managed-activity-outcomes.controller';
 import { ActivityMetricAuditRecorder } from './activity-metric-audit-recorder';
 import { ActivityMetricDefinitionService } from './activity-metric-definition.service';
@@ -155,6 +159,7 @@ import { ActivityClosureNotificationProducer } from './activity-closure-notifica
 import { ActivityClosureService } from './activity-closure.service';
 import { CorrectionApplicationService } from './correction-application.service';
 import { CorrectionAuditRecorder } from './correction-audit-recorder';
+import { CorrectionTimeAllocationService } from './correction-time-allocation.service';
 import { ActivitySettlementHttpService } from './activity-settlement-http.service';
 import { ActivityLifecycleService } from './activity-lifecycle.service';
 // 归档 / 撤销归档(2026-08-25 拍板;§6.6 + AC-004 / AC-064)。
@@ -219,6 +224,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   ],
   controllers: [
     AppManagedActivityTimeSettlementController,
+    AppManagedActivityTimeCorrectionController,
     AppManagedActivityOutcomesController,
     AppManagedActivityOutcomeFinalizationsController,
     AdminActivityMetricRuleBindingsController,
@@ -267,6 +273,9 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityTimeAllocationAuditRecorder,
     ActivityTimeAllocationService,
     ActivityTimeSettlementAccessService,
+    ActivityTimeCorrectionAccessService,
+    ActivityTimeCorrectionCommandService,
+    ActivityTimeCorrectionQueryService,
     ActivityTimeSettlementAuditRecorder,
     ActivityTimeSettlementQueryService,
     ActivityTimeSettlementService,
@@ -421,6 +430,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     //    重新关账走第六刀 `ActivityClosureService` —— 本刀两者都只调用,不复制。
     // 同样零端点 / 零 DTO / 零权限码 —— 消费方是第 ⑧ 刀。
     CorrectionAuditRecorder,
+    CorrectionTimeAllocationService,
     CorrectionApplicationService,
   ],
   exports: [

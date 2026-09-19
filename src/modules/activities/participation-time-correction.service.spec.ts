@@ -112,6 +112,52 @@ describe('D7 correction source and commit ownership', () => {
     };
     expect(await service.source(makeDb() as never, withDatabaseFields, change)).toEqual(plain);
   });
+  it('carries a D7-2 source proof into format 2 without changing the exact source query', async () => {
+    const db = makeDb();
+    const result = await service.source(
+      db as never,
+      { ...anchor, sourceProofId: 'proof', sourceProofHash: 'c'.repeat(64) },
+      change,
+    );
+    expect(result.manifest.formatVersion).toBe(2);
+    if (result.manifest.formatVersion !== 2) throw new Error('expected format 2 manifest');
+    expect(result.manifest.sourceProofId).toBe('proof');
+    expect(result.manifest.sourceProofHash).toBe('c'.repeat(64));
+    expect(db.$queryRaw).toHaveBeenCalledTimes(2);
+  });
+  it('inherits the immediate V3 proof when a later V2 correction uses that version as its base', async () => {
+    const db = makeDb();
+    db.$queryRaw
+      .mockResolvedValueOnce([
+        {
+          id: 'root',
+          settlementVersionId: 'root-version',
+          expectedEntryCount: 1,
+          baseContentHash: 'b'.repeat(64),
+          predecessorManifestId: 'previous-manifest',
+          sourceProofId: 'proof-from-v3',
+          sourceProofHash: 'c'.repeat(64),
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'root-entry',
+          manifestId: 'root',
+          participationIdentityId: 'person',
+          categoryCode: 'training',
+          recognizedSeconds: 300,
+          previousEntryId: 'previous-credit',
+          previousSeconds: 300,
+        },
+      ]);
+
+    const result = await service.source(db as never, anchor, change);
+
+    expect(result.manifest.formatVersion).toBe(2);
+    if (result.manifest.formatVersion !== 2) throw new Error('expected inherited format 2 proof');
+    expect(result.manifest.sourceProofId).toBe('proof-from-v3');
+    expect(result.manifest.sourceProofHash).toBe('c'.repeat(64));
+  });
   it('keeps all predecessor keys inside the lateral probe and binds a null predecessor', async () => {
     const db = makeDb();
     await service.source(db as never, anchor, change);
@@ -183,10 +229,27 @@ describe('D7 correction source and commit ownership', () => {
   });
   it('uses the bound application and exact JSON version to identify D7, not the presence of a manifest', async () => {
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue([{ required: false }]);
+    db.$queryRaw.mockResolvedValue([
+      { required: false, hasApplication: false, classifiedBase: false },
+    ]);
     expect(await service.isCorrectionBatch(db as never, 'batch')).toBe(false);
-    db.$queryRaw.mockResolvedValue([{ required: true }]);
+    db.$queryRaw.mockResolvedValue([
+      { required: true, hasApplication: true, classifiedBase: false },
+    ]);
     expect(await service.isCorrectionBatch(db as never, 'batch')).toBe(true);
+    expect(db.$queryRaw).toHaveBeenCalledWith(expect.any(Array), 'batch');
+  });
+  it('shares one DB-derived batch fact while preserving a legacy application shape branch', async () => {
+    const db = makeDb();
+    db.$queryRaw.mockResolvedValue([
+      { required: false, hasApplication: true, classifiedBase: false },
+    ]);
+
+    await expect(service.classifyBatch(db as never, 'batch')).resolves.toEqual({
+      required: false,
+      hasApplication: true,
+    });
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
     expect(db.$queryRaw).toHaveBeenCalledWith(expect.any(Array), 'batch');
   });
   it('propagates unknown failures unchanged', () => {
@@ -195,7 +258,9 @@ describe('D7 correction source and commit ownership', () => {
   });
   it('retains the legacy classified-base exclusion in the combined application probe', async () => {
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue([{ required: false, classifiedBase: true }]);
+    db.$queryRaw.mockResolvedValue([
+      { required: false, hasApplication: false, classifiedBase: true },
+    ]);
     await expect(service.isCorrectionBatch(db as never, 'batch')).rejects.toMatchObject({
       biz: { code: 20229 },
     });

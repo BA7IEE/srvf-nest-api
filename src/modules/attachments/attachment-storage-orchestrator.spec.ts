@@ -255,6 +255,7 @@ describe('C2 outcome evidence delete fence', () => {
         OR: [
           { activityMetricValueEvidence: { some: {} } },
           { participantTimeAllocationEvidence: { some: {} } },
+          { correctionPendingTimeAllocationEvidence: { some: {} } },
         ],
       },
       select: { id: true },
