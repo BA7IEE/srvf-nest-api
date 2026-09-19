@@ -1,5 +1,6 @@
 ## D7-2 冻结事实更正与 Human 写链（实施中）
 
+- 第127条 `20260920090000_activity_os_r4_d7_2_allocation_guard_set` 只把 correction allocation 从既有父行守卫的逐行分支迁为 AFTER INSERT 语句级集合校验；D3/D4 路径与 `ptar_receipt_guard` 保持不变。维护者已按实际 SQL SHA-256 `86497e019c94a25aeae295721df8bf5e4ee7d0c0a8a3191dd2ea688dd1c5e9c2` 重签 3b。仅 app_test_w98 的第127条冷回放、126→127 非空升级、单身份 fail-closed 反例和 2,000 身份 Human V3 链已通过；#1337 仍为 Draft，新的 PR CI、Ready、合并、生产和 Gate 均未完成。
 - 修复 #1337 CI 暴露的 7 秒事务预算路径：更正时长事实物化的 allocation／receipt 写入仍按最多 1,000 行，子行最多 5,000 行；10,000 条冻结来源的 `CorrectionTimeAllocationBinding` 改为独立的最多 5,000 行批次（每批十个显式字段，共 50,000 参数），避免十次绑定写入。每类累计写入数仍须与完整冻结证明精确相等；跨活动服务段重叠判定改为等价的 `EXISTS` 集合查询，避免已有连接的结果倍增；更正账本的九项 fail-closed 形状事实改为一次主聚合、一次冲回聚合和一次反连接复核，避免物化后反复扫描同一批分录。未改业务超时、schema、migration、API、DTO、权限、Gate 或既有 E2E 断言。唯一获准的 `app_test_w98` 上，原 2,000 身份 Human V3 写链通过（81.287 秒），原 8,192 人账本规模用例通过（commit 1,111ms、28 条 SQL）。
 - 修复 #1337 冷跑的 A7 旧夹具：仅将 `resetDb` 的全局受控 `TRUNCATE` fixture transaction 与两个 `beforeEach` 受控 `TRUNCATE` fixture transaction 的 Prisma timeout 设为 60 秒；保留当前库校验和精确清理 SQL，不改生产代码、业务事务预算、断言或 Jest 配置。
 - 修复 D6 旧迁移冷回放的测试库连接守卫：首次非零探针会从同一个维护库立即复核；复核仍非零才保留 fail-closed 拒绝并输出脱敏聚合诊断，复核为零才重建。未增加固定等待、重试或超时，也未改业务代码、schema、migration、API、DTO、权限、Gate 或既有业务断言。

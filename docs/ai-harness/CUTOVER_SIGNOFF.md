@@ -221,6 +221,19 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **当前重签（2026-09-20，D7-2 correction allocation 集合守护）**：维护者确认第127条
+> `20260920090000_activity_os_r4_d7_2_allocation_guard_set`，SQL SHA-256
+> `86497e019c94a25aeae295721df8bf5e4ee7d0c0a8a3191dd2ea688dd1c5e9c2`。
+> 第127条只将 correction allocation 从既有 `ptar_parent_anchor_guard` 的逐行分支迁到
+> AFTER INSERT 语句级集合校验；D3/D4 原触发器主体仍由 null 条件路径运行，
+> `ptar_receipt_guard` 继续逐条复核同一 immutable proof。待物化分配、申请、请求、批次、
+> 目标段、基础分配与政策版本仍按既有锁序和 fail-closed 条件核验，保留 V3、同活动复合锚点、
+> 全部形状/来源分支与7秒预算；不新增表、列、权限、DML、回填、删除或业务范围。
+> `migration-total` 对拍为127；随后仅在 `app_test_w98` 完成第127条冷回放、126→127 非空升级及
+> D7-2 定向业务验证。本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+> **本轮依据**：维护者本轮明确确认「确认重签 3b（D7-2，第127条 migration，摘要
+> 86497e019c94a25aeae295721df8bf5e4ee7d0c0a8a3191dd2ea688dd1c5e9c2）」。
+
 > **当前重签（2026-09-18，D7-2 满额绑定守护）**：维护者确认第126条
 > `20260917194000_activity_os_r4_d7_2_binding_guard_set`，SQL SHA-256
 > `2edacb914acb207265b42447ef180e5e294c426d61a9d9651d7daf1fc6f79dd3`。
@@ -292,6 +305,17 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **日期**:2026-09-18
 - **依据**:维护者本轮明确确认「确认重签 3b（D7-2 满额绑定守护，第126条 migration，摘要 2edacb914acb207265b42447ef180e5e294c426d61a9d9651d7daf1fc6f79dd3）」。
 - **对拍**:有 —— `migration-total` = `126`
+
+> **当前正式签字（2026-09-20，覆盖上方第126条及更早历史字段）**：D7-2 correction allocation
+> 集合守护的第127条 `20260920090000_activity_os_r4_d7_2_allocation_guard_set` 已由维护者按下列字段重签；
+> 上方字段仅保留第126条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:2026-09-20 D7-2 correction allocation 集合守护重签：第127条只将 correction allocation 从既有 `ptar_parent_anchor_guard` 的逐行分支迁到 AFTER INSERT 语句级集合校验；D3/D4 原触发器主体仍由 null 条件路径运行，`ptar_receipt_guard` 继续逐条复核同一 immutable proof。待物化分配、申请、请求、批次、目标段、基础分配与政策版本仍按既有锁序和 fail-closed 条件核验，保留 V3、同活动复合锚点、全部形状/来源分支与7秒预算；不新增表、列、权限、DML、回填、删除或业务范围。签字时隔离验证尚待进行，随后已在本段上方登记完成结果；本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-20
+- **依据**:维护者本轮明确确认「确认重签 3b（D7-2，第127条 migration，摘要 86497e019c94a25aeae295721df8bf5e4ee7d0c0a8a3191dd2ea688dd1c5e9c2）」。
+- **对拍**:有 —— `migration-total` = `127`
 
 ### 4b — 「字典、Audit events」的对账
 

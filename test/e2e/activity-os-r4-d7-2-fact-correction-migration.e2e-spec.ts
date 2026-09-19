@@ -22,10 +22,12 @@ import {
 import { deriveTestDbName } from '../setup/worktree-db';
 
 const D7_2_FACT_MIGRATION = '20260915180000_activity_os_r4_d7_2_fact_correction';
-const MIGRATION = '20260917194000_activity_os_r4_d7_2_binding_guard_set';
+const BINDING_GUARD_MIGRATION = '20260917194000_activity_os_r4_d7_2_binding_guard_set';
+const MIGRATION = '20260920090000_activity_os_r4_d7_2_allocation_guard_set';
 const PREVIOUS_MIGRATION_COUNT = 124;
 const D7_2_FACT_MIGRATION_COUNT = 125;
-const CURRENT_MIGRATION_COUNT = 126;
+const BINDING_GUARD_MIGRATION_COUNT = 126;
+const CURRENT_MIGRATION_COUNT = 127;
 const WORKER = 98;
 const USE_DEDICATED_W98 = process.env.SRVF_D7_2_W98 === '1';
 const LEGACY_V1_REQUEST_ID = 'd7-2-migration-v1-request';
@@ -409,7 +411,7 @@ describe('D7-2 immutable fact-correction migration', () => {
     ).toBe('ready\t0');
   }
 
-  it('cold replays all 126 migrations and installs the four immutable fact tables', () => {
+  it('cold replays all 127 migrations and installs the four immutable fact tables', () => {
     recreate();
     deploy(schema);
     expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
@@ -528,12 +530,12 @@ describe('D7-2 immutable fact-correction migration', () => {
       const before = snapshot();
       const oldChecksums = checksums();
       cpSync(
-        path.join(root, 'migrations', MIGRATION),
-        path.join(temporary, 'migrations', MIGRATION),
+        path.join(root, 'migrations', BINDING_GUARD_MIGRATION),
+        path.join(temporary, 'migrations', BINDING_GUARD_MIGRATION),
         { recursive: true, errorOnExist: true, force: false },
       );
       deploy(path.join(temporary, 'schema.prisma'));
-      expect(checksums()).toHaveLength(CURRENT_MIGRATION_COUNT);
+      expect(checksums()).toHaveLength(BINDING_GUARD_MIGRATION_COUNT);
       expect(checksums().slice(0, D7_2_FACT_MIGRATION_COUNT)).toEqual(oldChecksums);
       expect(snapshot()).toEqual(before);
       expect(
@@ -544,6 +546,62 @@ describe('D7-2 immutable fact-correction migration', () => {
             "AND tgname = 'ctab_insert_guard'",
         ),
       ).toBe('4\tctab_new_rows');
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  }, 180000);
+
+  it('upgrades a nonempty 126-migration database without rewriting facts and installs a statement allocation guard', async () => {
+    recreate();
+    const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-d7-2-allocation-pre127-'));
+    try {
+      mkdirSync(path.join(temporary, 'migrations'));
+      copyFileSync(schema, path.join(temporary, 'schema.prisma'));
+      copyFileSync(
+        path.join(root, 'migrations/migration_lock.toml'),
+        path.join(temporary, 'migrations/migration_lock.toml'),
+      );
+      expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
+      for (const name of names.slice(0, BINDING_GUARD_MIGRATION_COUNT)) {
+        cpSync(path.join(root, 'migrations', name), path.join(temporary, 'migrations', name), {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        });
+      }
+      deploy(path.join(temporary, 'schema.prisma'));
+      expect(checksums()).toHaveLength(BINDING_GUARD_MIGRATION_COUNT);
+      await seedLegacyFact();
+      const before = snapshot();
+      const oldChecksums = checksums();
+      cpSync(
+        path.join(root, 'migrations', MIGRATION),
+        path.join(temporary, 'migrations', MIGRATION),
+        {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        },
+      );
+      deploy(path.join(temporary, 'schema.prisma'));
+      expect(checksums()).toHaveLength(CURRENT_MIGRATION_COUNT);
+      expect(checksums().slice(0, BINDING_GUARD_MIGRATION_COUNT)).toEqual(oldChecksums);
+      expect(snapshot()).toEqual(before);
+      expect(
+        sql(
+          "SELECT tgtype::integer::text || chr(9) || COALESCE(tgnewtable, '') " +
+            'FROM pg_trigger ' +
+            'WHERE tgrelid = \'"ParticipantTimeAllocationRevision"\'::regclass ' +
+            "AND tgname = 'ptar_correction_insert_guard'",
+        ),
+      ).toBe('4\tptar_new_rows');
+      expect(
+        sql(
+          'SELECT (tgqual IS NOT NULL)::text FROM pg_trigger ' +
+            'WHERE tgrelid = \'"ParticipantTimeAllocationRevision"\'::regclass ' +
+            "AND tgname = 'ptar_parent_anchor_guard'",
+        ),
+      ).toBe('true');
     } finally {
       rmSync(temporary, { recursive: true, force: true });
     }

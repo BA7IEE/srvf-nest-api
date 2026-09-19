@@ -529,3 +529,14 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 3. 只允许刷新 `CODEMAP.md`、现有 changelog、本评审稿与两个台账顶部当前状态。不得修改 schema、migration、API、DTO、权限、Gate、生产数据；不得 Ready、合并或操作生产。
 
 本包不以超时掩盖 Human 写链：`MEMBER_TX_TIMEOUT_MS=7,000` 保持不变。若上述最小减少写批次的措施在冷跑仍不足，必须另行给出实际 SQL、精确 migration 写集和新的 3b 摘要；禁止盲目重跑、固定等待或放宽断言。
+
+### 14.7 第127条 correction allocation 集合守护（2026-09-20）
+
+第126条将 `CorrectionTimeAllocationBinding` 改为语句级集合守护后，#1337 的 Human V3 2,000 身份链仍在更正 allocation 物化阶段触发 7 秒 `P2028`。本轮只在新建的第127条
+`prisma/migrations/20260920090000_activity_os_r4_d7_2_allocation_guard_set/migration.sql` 中，把 correction allocation 从既有 `ptar_parent_anchor_guard` 的逐行分支迁为 AFTER INSERT 的新行集合校验；D3/D4 原触发器主体仍由 `correctionPendingAllocationId IS NULL` 条件路径运行，`ptar_receipt_guard` 继续逐条复核同一 immutable proof。
+
+守卫仍以既有锁序锁定待物化分配、申请、请求、批次、目标段、基础分配和政策版本，并保持 V3、同活动复合锚点、完整形状/来源分支、所有 fail-closed 错误和 7 秒业务预算。无新表、列、权限、DML、回填、删除、API、DTO、Gate 或生产操作。维护者已按实际 SHA-256 `86497e019c94a25aeae295721df8bf5e4ee7d0c0a8a3191dd2ea688dd1c5e9c2` 重签第127条 3b；该签字已通过 `migration-total=127` 的机器对拍。
+
+仅使用显式 `SRVF_D7_2_W98=1` 的受控单进程入口，跳过通用 global setup，由测试自身重建并回收本工作树的 `app_test_w98`。第127条冷回放、126→127 非空升级与两项守卫/历史校验共4/4通过（29.136秒）；含 FK 合法但目标锚点不匹配的单身份 fail-closed 链通过（111秒）；原 2,000 身份 Human V3 完整来源证明链通过（150.323秒）。这只证明上述定向本地结果，不能替代新 SHA 的 PR CI；13份使用其他 scratch worker 的旧迁移测试仍只由 PR CI 冷跑。
+
+本节覆盖 §14.6 中“若仍需 migration”的历史前提，不扩大其余 CI 修复写集。TypeScript、lint、Harness 自检、代码地图与签字对拍已完成；#1337 新 SHA 的 PR CI仍待裁决。PR保持 Draft，未 Ready、合并、操作生产或启用 Gate。

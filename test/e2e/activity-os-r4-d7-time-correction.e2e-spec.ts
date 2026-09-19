@@ -6,6 +6,7 @@ import {
   Prisma,
   PrismaClient,
 } from '@prisma/client';
+import { execFileSync } from 'node:child_process';
 import { ParticipationTimeLedgerAccessService } from '../../src/modules/activities/participation-time-ledger-access.service';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import {
@@ -42,8 +43,13 @@ import {
   type D13Fixture,
 } from '../helpers/activity-time-policy.fixture';
 import { httpServer } from '../helpers/http-server';
+import { loadTestEnv } from '../setup/load-env';
+import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { deriveTestDbName } from '../setup/worktree-db';
 const START = new Date('2020-03-01T08:00:00.000Z');
 const END = new Date('2020-03-01T09:00:00.000Z');
+const WORKER = 98;
+const USE_DEDICATED_W98 = process.env.SRVF_D7_2_W98 === '1';
 const DEFINITION: TimePolicyDefinition = {
   defaultCategory: 'volunteer_service',
   roleMappings: [],
@@ -63,6 +69,32 @@ describe('D7-1 recognition correction real transaction', () => {
   let actor: CurrentUserPayload;
   const meta = { requestId: 'd5-e2e', ip: null, ua: null };
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+  const originalEnvironment = {
+    worker: process.env.JEST_WORKER_ID,
+    databaseUrl: process.env.DATABASE_URL,
+    storageRoot: process.env.STORAGE_LOCAL_ROOT,
+  };
+  beforeAll(() => {
+    // Direct maintenance validation uses only the approved w98 clone. CI keeps
+    // its assigned worker and its existing lifecycle unchanged.
+    if (USE_DEDICATED_W98) {
+      process.env.JEST_WORKER_ID = String(WORKER);
+      loadTestEnv();
+      process.env.STORAGE_LOCAL_ROOT = `./tmp/storage-w${WORKER}`;
+      assertTestDatabaseUrl(process.env.DATABASE_URL);
+      dropWorkerDatabase(WORKER);
+      execFileSync(
+        'docker',
+        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
+        { stdio: 'pipe' },
+      );
+      execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
+        env: process.env,
+        stdio: 'pipe',
+      });
+    }
+    assertTestDatabaseUrl(process.env.DATABASE_URL);
+  }, 120000);
   beforeEach(async () => {
     // Test-process configuration only. Never changes an application instance or deployment Gate.
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
@@ -120,6 +152,21 @@ describe('D7-1 recognition correction real transaction', () => {
     if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
     else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
   });
+  afterAll(() => {
+    if (!USE_DEDICATED_W98) return;
+    try {
+      dropWorkerDatabase(WORKER);
+    } finally {
+      restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
+      restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
+      restoreEnvironment('STORAGE_LOCAL_ROOT', originalEnvironment.storageRoot);
+    }
+  }, 120000);
+
+  function restoreEnvironment(name: string, value: string | undefined) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 
   async function prepareSource(
     options: {
@@ -1259,6 +1306,36 @@ describe('D7-1 recognition correction real transaction', () => {
     ).rejects.toThrow('binding does not match its pending allocation fact');
     expect(
       await f.db.correctionTimeAllocationBinding.count({ where: { proofId: sourceProof.id } }),
+    ).toBe(0);
+
+    // The allocation counterpart must fail closed through the new AFTER
+    // statement guard as well.  It is FK-valid but deliberately retains the
+    // base allocation anchors instead of the pending V3 target anchors.
+    const baseAllocation = await f.db.participantTimeAllocationRevision.findUniqueOrThrow({
+      where: { id: allocation.id },
+    });
+    await expect(
+      f.db.participantTimeAllocationRevision.create({
+        data: {
+          ...baseAllocation,
+          id: f.key('allocation_guard_mismatch'),
+          revision: pendingAllocation.targetAllocationRevision,
+          previousAllocationRevisionId: baseAllocation.id,
+          correctionPendingAllocationId: pendingAllocation.id,
+          settlementDraftVersionId: null,
+          settlementEvidenceSealId: null,
+          settlementEvidenceRevision: null,
+          settlementPopulationRevision: null,
+          settlementWorkflowRevision: null,
+          settlementDraftContentHash: null,
+          allocationJson: baseAllocation.allocationJson as Prisma.InputJsonValue,
+        },
+      }),
+    ).rejects.toThrow('correction allocation differs from its pending fact');
+    expect(
+      await f.db.participantTimeAllocationRevision.count({
+        where: { correctionPendingAllocationId: pendingAllocation.id },
+      }),
     ).toBe(0);
 
     const frozenDetail = await request(httpServer(f.app))
