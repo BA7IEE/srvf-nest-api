@@ -535,8 +535,8 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 第126条将 `CorrectionTimeAllocationBinding` 改为语句级集合守护后，#1337 的 Human V3 2,000 身份链仍在更正 allocation 物化阶段触发 7 秒 `P2028`。本轮只在新建的第127条
 `prisma/migrations/20260920090000_activity_os_r4_d7_2_allocation_guard_set/migration.sql` 中，把 correction allocation 从既有 `ptar_parent_anchor_guard` 的逐行分支迁为 AFTER INSERT 的新行集合校验；D3/D4 原触发器主体仍由 `correctionPendingAllocationId IS NULL` 条件路径运行，`ptar_receipt_guard` 继续逐条复核同一 immutable proof。
 
-守卫仍以既有锁序锁定待物化分配、申请、请求、批次、目标段、基础分配和政策版本，并保持 V3、同活动复合锚点、完整形状/来源分支、所有 fail-closed 错误和 7 秒业务预算。无新表、列、权限、DML、回填、删除、API、DTO、Gate 或生产操作。维护者已按实际 SHA-256 `86497e019c94a25aeae295721df8bf5e4ee7d0c0a8a3191dd2ea688dd1c5e9c2` 重签第127条 3b；该签字已通过 `migration-total=127` 的机器对拍。
+守卫仍以既有锁序锁定待物化分配、申请、请求、批次、目标段、基础分配和政策版本，并保持 V3、同活动复合锚点、完整形状/来源分支、所有 fail-closed 错误和 7 秒业务预算。CI 首次冷跑仍在该集合守护的重复链读取阶段触发 `P2028` 后，本轮只把五个同一 immutable chain 的拒绝查询收敛为一次语句级集合聚合；四段锁查询以去重 transition-table 输入保留相同锁定集合与顺序，错误仍按 application-not-ready → pending-fact-mismatch → valid-nonempty → zero-source → unsupported-source 的既有优先级逐一抛出。无新表、列、权限、DML、回填、删除、API、DTO、Gate 或生产操作。维护者已按实际 SHA-256 `d76418fb2b837a6ff264c4d061b43e7c0b476d3b71b238480b2ce67a8aeaf51d` 重签第127条 3b；该签字已通过 `migration-total=127` 的机器对拍。
 
-仅使用显式 `SRVF_D7_2_W98=1` 的受控单进程入口，跳过通用 global setup，由测试自身重建并回收本工作树的 `app_test_w98`。第127条冷回放、126→127 非空升级与两项守卫/历史校验共4/4通过（29.136秒）；含 FK 合法但目标锚点不匹配的单身份 fail-closed 链通过（111秒）；原 2,000 身份 Human V3 完整来源证明链通过（150.323秒）。这只证明上述定向本地结果，不能替代新 SHA 的 PR CI；13份使用其他 scratch worker 的旧迁移测试仍只由 PR CI 冷跑。
+仅使用显式 `SRVF_D7_2_W98=1` 的受控单进程入口，跳过通用 global setup，由测试自身重建并回收本工作树的 `app_test_w98`。当前 SQL 的第127条冷回放、126→127 非空升级与两项守卫/历史校验共4/4通过（25.346秒）；含 FK 合法但目标锚点不匹配的单身份 fail-closed 链通过；2,000 身份 Human V3 完整来源证明链通过（129.67秒）；完整 `activity-os-r4-d7-time-correction` 套件7/7通过（362.357秒）。typecheck、lint、Harness自检与1,072项contract也通过。这只证明上述定向本地结果，不能替代新 SHA 的 PR CI；13份使用其他 scratch worker 的旧迁移测试仍只由 PR CI 冷跑。
 
 本节覆盖 §14.6 中“若仍需 migration”的历史前提，不扩大其余 CI 修复写集。TypeScript、lint、Harness 自检、代码地图与签字对拍已完成；#1337 新 SHA 的 PR CI仍待裁决。PR保持 Draft，未 Ready、合并、操作生产或启用 Gate。
