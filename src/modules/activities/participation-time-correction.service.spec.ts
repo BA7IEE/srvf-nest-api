@@ -229,10 +229,27 @@ describe('D7 correction source and commit ownership', () => {
   });
   it('uses the bound application and exact JSON version to identify D7, not the presence of a manifest', async () => {
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue([{ required: false }]);
+    db.$queryRaw.mockResolvedValue([
+      { required: false, hasApplication: false, classifiedBase: false },
+    ]);
     expect(await service.isCorrectionBatch(db as never, 'batch')).toBe(false);
-    db.$queryRaw.mockResolvedValue([{ required: true }]);
+    db.$queryRaw.mockResolvedValue([
+      { required: true, hasApplication: true, classifiedBase: false },
+    ]);
     expect(await service.isCorrectionBatch(db as never, 'batch')).toBe(true);
+    expect(db.$queryRaw).toHaveBeenCalledWith(expect.any(Array), 'batch');
+  });
+  it('shares one DB-derived batch fact while preserving a legacy application shape branch', async () => {
+    const db = makeDb();
+    db.$queryRaw.mockResolvedValue([
+      { required: false, hasApplication: true, classifiedBase: false },
+    ]);
+
+    await expect(service.classifyBatch(db as never, 'batch')).resolves.toEqual({
+      required: false,
+      hasApplication: true,
+    });
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
     expect(db.$queryRaw).toHaveBeenCalledWith(expect.any(Array), 'batch');
   });
   it('propagates unknown failures unchanged', () => {
@@ -241,7 +258,9 @@ describe('D7 correction source and commit ownership', () => {
   });
   it('retains the legacy classified-base exclusion in the combined application probe', async () => {
     const db = makeDb();
-    db.$queryRaw.mockResolvedValue([{ required: false, classifiedBase: true }]);
+    db.$queryRaw.mockResolvedValue([
+      { required: false, hasApplication: false, classifiedBase: true },
+    ]);
     await expect(service.isCorrectionBatch(db as never, 'batch')).rejects.toMatchObject({
       biz: { code: 20229 },
     });

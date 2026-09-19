@@ -21,17 +21,36 @@ interface CorrectionSourceAnchor {
   sourceProofHash?: string | null;
 }
 
+export interface CorrectionBatchClassification {
+  /** The bound request is a V2/V3 classified-time correction. */
+  required: boolean;
+  /** A CorrectionApplication owns this batch, including legacy V1 applications. */
+  hasApplication: boolean;
+}
+
 /** The caller owns Activity/run/version/batch locks and the entire correction transaction. */
 @Injectable()
 export class ParticipationTimeCorrectionService {
-  async isCorrectionBatch(tx: Prisma.TransactionClient, postingBatchId: string) {
-    const [result] = await tx.$queryRaw<{ required: boolean; classifiedBase: boolean }[]>`
+  /**
+   * Read the one DB-derived correction fact shared by the commit protocol and
+   * its posting-shape branch. This is intentionally transaction-local: it is
+   * not a cross-request identity cache and never replaces later authorization
+   * or complete-set rechecks.
+   */
+  async classifyBatch(
+    tx: Prisma.TransactionClient,
+    postingBatchId: string,
+  ): Promise<CorrectionBatchClassification> {
+    const [result] = await tx.$queryRaw<
+      { required: boolean; hasApplication: boolean; classifiedBase: boolean }[]
+    >`
       WITH applications AS (
         SELECT q."requestedChangeJson", q."baseSettlementVersionId" FROM "CorrectionApplication" a
         JOIN "AttendanceCorrectionRequest" q ON q."id" = a."correctionRequestId"
         WHERE a."newPostingBatchId" = ${postingBatchId}
       )
-      SELECT EXISTS(
+      SELECT EXISTS(SELECT 1 FROM applications) AS "hasApplication",
+        EXISTS(
         SELECT 1 FROM applications
         WHERE "requestedChangeJson"->>'schemaVersion' IN ('2', '3')
       ) AS required,
@@ -44,7 +63,12 @@ export class ParticipationTimeCorrectionService {
     // bounded probe: ordinary D6 posting must not pay for a second application read.
     if (!result.required && result.classifiedBase)
       throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_CORRECTION_UNAVAILABLE);
-    return result.required;
+    return { required: result.required, hasApplication: result.hasApplication };
+  }
+
+  /** Compatibility helper for callers that need only the V2/V3 classification. */
+  async isCorrectionBatch(tx: Prisma.TransactionClient, postingBatchId: string) {
+    return (await this.classifyBatch(tx, postingBatchId)).required;
   }
 
   async source(

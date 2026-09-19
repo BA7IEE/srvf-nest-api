@@ -273,7 +273,8 @@ export class LedgerPostingService {
       const run = await this.lockRun(tx, activityId);
       const version = await this.lockVersion(tx, run.id);
       const batch = await this.lockBatch(tx, input.postingBatchId);
-      const correction = await this.timeCorrection.isCorrectionBatch(tx, batch.id);
+      const correctionFact = await this.timeCorrection.classifyBatch(tx, batch.id);
+      const correction = correctionFact.required;
       if (correction) {
         if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
         await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
@@ -315,7 +316,13 @@ export class LedgerPostingService {
 
       // ===== 分录集合复核(§5.12 ⑧ 的生效侧复验)=====
       const deltas = await this.readBatchDayDeltas(tx, batch.id);
-      await this.assertPreparedSetConsistent(tx, batch, version.id, deltas);
+      await this.assertPreparedSetConsistent(
+        tx,
+        batch,
+        version.id,
+        deltas,
+        correctionFact.hasApplication,
+      );
 
       const memberIds = [...new Set(deltas.map((row) => row.memberId))].sort();
       // AC-058:不能只锁有账本分录的人。零积分/零时长成员仍可能有一条即将正式生效的
@@ -615,6 +622,7 @@ export class LedgerPostingService {
     batch: LockedBatch,
     settlementVersionId: string,
     deltas: readonly DayDelta[],
+    hasCorrectionApplication: boolean,
   ): Promise<void> {
     // ⭐⭐ 第七刀(更正应用,§5.14 ④)按场景**放宽**下面那条 `nonCreditCount !== 0`。
     //
@@ -623,11 +631,11 @@ export class LedgerPostingService {
     //     它**比本判据更严**(冲回必须成对、等额、有 claim、把旧账冲干净);
     //   - 否则 ⇒ **逐字**走本判据,普通结算批次里出现任何 `*_reversal` 仍然 20089。
     //
-    // 判别式取自 **DB 上的事实**(`CorrectionApplication` 行),不是调用方传进来的
-    // flag —— flag 是"调用方说自己是更正",事实是"确实有一份更正申请把这条批次登记
-    // 成了自己的产物"。前者任何调用点都能伪造,后者不行。
+    // 判别式取自本事务内、已锁批次之后的一次 **DB 事实**(`CorrectionApplication` 行),
+    // 不是调用方传进来的 flag。它与上方 V2/V3 分类共用同一个事实探针，避免再做一条
+    // 重复的 application 存在性查询；锁后资格和完整性复核仍在各自原位独立执行。
     // 判据:e2e「普通批次里塞一条 reversal 仍然被拒」那一条(卸掉判别式即变红)。
-    if (await this.isCorrectionBatch(tx, batch.id)) {
+    if (hasCorrectionApplication) {
       return await this.assertCorrectionSetConsistent(tx, batch, settlementVersionId);
     }
 
@@ -662,15 +670,6 @@ export class LedgerPostingService {
   }
 
   // ===== 更正批次的判别式与配对判据(第七刀,§5.14 ④ + §3.23.5)=============
-
-  /** 事实判别:有没有一条 `CorrectionApplication` 把本批次登记成自己的产物。 */
-  private async isCorrectionBatch(tx: PrismaTx, postingBatchId: string): Promise<boolean> {
-    const application = await tx.correctionApplication.findFirst({
-      where: { newPostingBatchId: postingBatchId },
-      select: { id: true },
-    });
-    return application !== null;
-  }
 
   /**
    * 更正批次的形状判据。判定本身是纯函数(`correction-posting-shape.ts`),

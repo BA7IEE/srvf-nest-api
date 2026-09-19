@@ -46,12 +46,14 @@ describe('audit-logs 写入迁移', () => {
 
   async function truncateActivityRegistrations(): Promise<void> {
     await assertConnectedTestDatabase(prisma);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 30_000 },
     );
   }
 
