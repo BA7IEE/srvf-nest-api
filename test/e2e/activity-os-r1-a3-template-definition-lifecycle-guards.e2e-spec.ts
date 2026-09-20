@@ -328,12 +328,14 @@ describe('Activity OS R1 A3 TemplateDefinition / lifecycle DB guards', () => {
 
   beforeEach(async () => {
     await resetDb(app);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 60_000 },
     );
   });
 
