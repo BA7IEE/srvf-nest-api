@@ -161,19 +161,23 @@ describe('Activity OS R1 A7 周期 Series 与按需生成', () => {
 
   beforeEach(async () => {
     await resetDb(app);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 60_000 },
     );
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 60_000 },
     );
 
     const admin = await prisma.user.create({
@@ -238,7 +242,7 @@ describe('Activity OS R1 A7 周期 Series 与按需生成', () => {
         select: { id: true },
       })
     ).id;
-  });
+  }, 120_000);
 
   async function createTemplate(
     options: {

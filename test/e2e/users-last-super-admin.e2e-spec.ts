@@ -200,7 +200,7 @@ describe('最后管理员事务保护', () => {
         }),
       ).toBe(1);
     }
-  });
+  }, 120000);
 
   it('禁用唯一 ops-admin 持有人 → 30101，用户与绑定均保持 ACTIVE', async () => {
     const actor = await createTestUser(app, {

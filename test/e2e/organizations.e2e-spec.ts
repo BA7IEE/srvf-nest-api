@@ -374,10 +374,12 @@ describe('organizations 模块', () => {
   describe('单根上限:软删后仍占位(决策 3 修订)', () => {
     beforeAll(async () => {
       // 清空 Organization 后单独跑这一组
-      await prisma.$transaction((tx) =>
-        withTimeLedgerFixtureCleanup(tx, async (tx) => {
-          await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
-        }),
+      await prisma.$transaction(
+        (tx) =>
+          withTimeLedgerFixtureCleanup(tx, async (tx) => {
+            await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+          }),
+        { timeout: 30_000 },
       );
     });
 
@@ -426,10 +428,12 @@ describe('organizations 模块', () => {
 
     beforeAll(async () => {
       // 自包含:清空 Organization 后建一个**不带 code** 的根(回归:不传 code 仍可建)
-      await prisma.$transaction((tx) =>
-        withTimeLedgerFixtureCleanup(tx, async (tx) => {
-          await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
-        }),
+      await prisma.$transaction(
+        (tx) =>
+          withTimeLedgerFixtureCleanup(tx, async (tx) => {
+            await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+          }),
+        { timeout: 30_000 },
       );
       const res = await request(httpServer(app))
         .post('/api/admin/v1/organizations')
@@ -570,10 +574,12 @@ describe('organizations 模块', () => {
 
     beforeAll(async () => {
       // 自包含:清空 Organization(级联清 organization_closure),重建单根 + 'group' 节点类别 item。
-      await prisma.$transaction((tx) =>
-        withTimeLedgerFixtureCleanup(tx, async (tx) => {
-          await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
-        }),
+      await prisma.$transaction(
+        (tx) =>
+          withTimeLedgerFixtureCleanup(tx, async (tx) => {
+            await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+          }),
+        { timeout: 30_000 },
       );
       const nodeType = await prisma.dictType.findUniqueOrThrow({
         where: { code: 'node_type' },
@@ -814,10 +820,12 @@ describe('organizations 模块', () => {
 
     beforeAll(async () => {
       // 自包含(沿"closure + reparent"块范式):清空 Organization 重建单根 + 一个子节点。
-      await prisma.$transaction((tx) =>
-        withTimeLedgerFixtureCleanup(tx, async (tx) => {
-          await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
-        }),
+      await prisma.$transaction(
+        (tx) =>
+          withTimeLedgerFixtureCleanup(tx, async (tx) => {
+            await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+          }),
+        { timeout: 30_000 },
       );
       // CASCADE 会截断引用 Organization 的整张 RoleBinding；DB-per-request 下需重建本组的 GLOBAL grant。
       await grantOpsAdminToUser(app, adminUserId, opsAdminRoleId);

@@ -97,6 +97,7 @@ function detail(): ParticipantTimeAllocationDetailRow & { policyVersion: TimePol
     segmentKey: 'segment-key',
     revision: 1,
     previousAllocationRevisionId: null,
+    correctionPendingAllocationId: null,
     sourceSegmentId: 'segment',
     sourceSegmentRevision: 2,
     sourcePositionId: 'position',

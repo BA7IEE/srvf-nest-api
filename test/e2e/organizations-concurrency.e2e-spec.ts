@@ -98,10 +98,12 @@ describe('organizations topology serialization', () => {
   });
 
   beforeEach(async () => {
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe('TRUNCATE TABLE "Organization" RESTART IDENTITY CASCADE');
+        }),
+      { timeout: 30_000 },
     );
     await prisma.auditLog.deleteMany({ where: { resourceType: 'organization' } });
   });

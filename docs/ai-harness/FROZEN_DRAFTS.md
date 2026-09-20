@@ -1,10 +1,6 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **D7-1 已合并 / D7-2 仅文档起草（2026-09-15）**：[#1334](https://github.com/BA7IEE/srvf-nest-api/pull/1334) 已 Squash 合入 `28d74f3d413fa79f7cb1018295f0e0949f9bb7df`；最终 PR 提交 `0f89ddfc` 的全量 CI、Docker Smoke 和 Ready 后可信审批通过。main CI 34955332231 已失败：第5组2000身份最终审计回滚探针提前发生7秒事务超时，其余分组通过，根因未定。当前授权仅台账更正与 [D7-2 评审及精确计划草案](../plans/activity-os-r4-d7-2-fact-correction-review-and-plan.md) 起草；未授权实施、数据库或提交推送。下方未提交/待重签/未合并文字均为历史时点，D7-2、整个D7及D8仍未完成。
-
-> **D7-1本地定向验证完成（2026-09-15，待远端全量CI）**：按#1333的90路径及第10–12节实施，实际85路径。w98迁移、1/100/2000身份连续三轮、并发及兼容验证已执行，详细通过结果与夹具超时后单项复跑记录见计划第13节，不宣称单轮全绿。3b第123条SQL摘要c2f06bcf6e19及4b目录摘要871a4c9d426d已获维护者确认。按授权提交、推送并创建Draft PR，状态以GitHub为准；不合并、不操作生产、不启用Gate、不删除业务数据。下方待实施/待重签为历史时点；D7-2及整个D7仍未完成。
-
-> **D7方案A方向已确认（2026-09-15）**：维护者允许继续完善精确计划，仅文档。D7-1计划第10–12节补齐三分支提交、收据/应用原子闭合、旧迁移与夹具兼容及90路径待审批实施包；D7-2仍须独立完成事实重新分配和业务写接口，整个D7未完成。下方方案待选择为历史时点。本轮四份文档先保留本地，未实施、未操作数据库、未更新远端PR、未合并或启用Gate。
+> **D7-2 当前状态（2026-09-20）**：[#1335](https://github.com/BA7IEE/srvf-nest-api/pull/1335) 的方案 A / 第10–13节 / 124个精确路径已合入 `main`；[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 保持 Draft。第128条 `20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set` 的 SHA `a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b` 已获3b重签，`ab570301` 的可信审批已完成；该远端 SHA 仅第5组 E2E 在2,000身份 Human V3 写链中以 `P2028` 7,454ms 失败，其余检查通过。本地已在获准 P-Commit 范围删除仅锁前的重复 Human 资格读取，锁后及账本提交后复核保持；typecheck、目标 lint、w98 Human 链/并发链2/2、2,000身份链1/1和内部重放1/1通过，w98已回收。待提交推送后的新 SHA 可信审批与PR CI冷跑；不 Ready、不合并、不操作生产或启用 Gate。
 
 > **D6 仓内交付已合并 / D7 仅评审与计划（2026-09-15）**：[#1331](https://github.com/BA7IEE/srvf-nest-api/pull/1331) 已 Squash 合入 `e3eadddffc0f2c49ec27e3c34fa36df94043eec7`，最终 PR HEAD `032951a4` 的 CI 与 Ready 后可信审批通过；[main CI 34920687573](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34920687573) completed/success，五组 Contract + E2E 成功，main report-only 审批 skipped。D6 签字、PR 与合并验证已完成；早先“验证中/未提交/未合并”为历史时点，原失败记录保留。当前获准 D6 台账更正与 D7 评审、精确计划起草，仅文档，验证后提交推送创建PR，不合并、不实施、不操作数据库、不启用Gate。D7分阶段方案尚待选择，D7–D8、整体跨模型复审、真实业务验收、前端及生产切换仍未完成。
 
@@ -93,7 +89,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                                                                                                                                                              | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                                                                                                                                                               | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                                                                                                                                                                | 维护者执行                                                                                                              |
-| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 及 Release 4 D1–D6 已完成相应仓内实施；D6 #1331 已合并并通过 main CI 34920687573；D7-1 #1334 已合并（28d74f3d），main CI 34955332231 第5组容量回滚探针超时失败，根因未定；D7-2仅文档起草 | D7-2方案A方向已确认，第10–13节最终合同及124路径待整包审批；D7–D8、后续 Release、整体跨模型复审、真实业务验收、前端发布、生产部署和 Gate 切换未完成；间歇性500/P2028不据单独复核认定已修复 |
+| 9 | Activity OS T0-A 终态合同 | P1-33 | `↔进行中` T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 及 Release 4 D1–D6 已完成相应仓内实施；D6 #1331 已合并并通过 main CI 34920687573；D7-1 #1334、#1336 已合并，#1334 的2000身份审计回滚超时根因仍未定；D7-2在隔离工作树实施中，已完成一轮 TypeScript 与 Human command 定向单元验证 | D7-2待第125条3b重签后仅以 app_test_w98 做迁移、数据库 E2E 与 contract；PR、CI、Ready、合并、整体跨模型复审、真实业务验收、前端发布、生产部署和 Gate 切换未完成；间歇性500/P2028不据单独复核认定已修复 |
 
 ### 1.1 欠代码的五项
 
@@ -152,7 +148,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1–D6 仓内实施已合入并通过相应 main CI；D6 #1331 合入 `e3eadddf`，main CI 34920687573 成功；D7-1 #1334 已合并（28d74f3d），main CI 34955332231 第5组容量回滚探针超时失败，根因未定；D7-2方案A方向已确认，最终合同与124路径待整包审批；D7–D8、后续 Release、真实业务验收、整体跨模型复审、前端与生产 Gate 未完成**
+**⑤ Activity OS T0-A —— T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1–D6 仓内实施已合入并通过相应 main CI；D6 #1331 合入 `e3eadddf`，main CI 34920687573 成功；D7-1 #1334 与 #1336 已合并，#1334 的2000身份审计回滚超时根因仍未定；D7-2按#1335第10–13节/124路径在隔离工作树实施中，已完成一轮 TypeScript 与 Human command 定向单元验证，待第125条3b重签后仅以 app_test_w98 运行迁移、数据库 E2E 与 contract；D7–D8、后续 Release、真实业务验收、整体跨模型复审、前端与生产 Gate 未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
@@ -310,8 +306,8 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **265** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
-| 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 74** | `harness/state-machines.json` |
+| 治理 Phase 7:债务身份证待清偿条数 | **221** | `harness/architecture-debt.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 75** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |

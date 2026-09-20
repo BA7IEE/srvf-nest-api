@@ -221,6 +221,56 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **当前重签（2026-09-20，D7-2 更正收据集合守护）**：维护者确认第128条
+> `20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set`，SQL SHA-256
+> `a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b`。
+> 第128条仅将 `recognize_correction_time_allocation` 的收据分支从逐行 immutable-proof
+> 重读收敛为 AFTER INSERT 语句级集合守护；D3/D4、非该 operationCode 与错误 operationCode
+> 仍走历史 `ptar_receipt_guard`。父行／子项／proof、同活动复合锚点、既有锁序、拒绝优先级、
+> fail-closed 约束及7秒预算不变；不新增表、列、权限、DML、回填、删除、API、DTO 或 Gate。
+> `migration-total` 对拍为128；获准 `app_test_w98` 已完成第128条冷回放、127→128 非空升级和
+> 2,000 身份 Human V3 定向链，`pnpm test:contract` 在受控非生产测试库通过1,072项契约。
+> 本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+> **本轮依据**：维护者本轮明确确认「确认重签 3b（D7-2，第128条 migration，摘要
+> a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b）」。
+
+> **当前重签（2026-09-20，D7-2 correction allocation 集合守护）**：维护者确认第127条
+> `20260920090000_activity_os_r4_d7_2_allocation_guard_set`，SQL SHA-256
+> `d76418fb2b837a6ff264c4d061b43e7c0b476d3b71b238480b2ce67a8aeaf51d`。
+> 第127条只将 correction allocation 从既有 `ptar_parent_anchor_guard` 的逐行分支迁到
+> AFTER INSERT 语句级集合校验；D3/D4 原触发器主体仍由 null 条件路径运行，
+> `ptar_receipt_guard` 继续逐条复核同一 immutable proof。待物化分配、申请、请求、批次、
+> 目标段、基础分配与政策版本仍按既有锁序和 fail-closed 条件核验，保留 V3、同活动复合锚点、
+> 全部形状/来源分支与7秒预算；相对前一已签摘要，只把五次重复的 immutable-chain 校验收敛为
+> 一次语句级集合聚合，并以去重输入关系维持原四段锁序，不新增表、列、权限、DML、回填、删除或业务范围。
+> `migration-total` 对拍为127；仅在 `app_test_w98` 完成第127条冷回放、126→127 非空升级、完整D7-2
+> E2E与contract验证。本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+> **本轮依据**：维护者本轮明确确认「确认重签 3b（D7-2，第127条 migration，摘要
+> d76418fb2b837a6ff264c4d061b43e7c0b476d3b71b238480b2ce67a8aeaf51d）」。
+
+> **当前重签（2026-09-18，D7-2 满额绑定守护）**：维护者确认第126条
+> `20260917194000_activity_os_r4_d7_2_binding_guard_set`，SQL SHA-256
+> `2edacb914acb207265b42447ef180e5e294c426d61a9d9651d7daf1fc6f79dd3`。
+> 仅将 `CorrectionTimeAllocationBinding` 的插入守护由逐行校验改为插入语句级集合校验，
+> 同一证明、申请、请求、批次、分配和待物化链仍按既有顺序锁定并 fail-closed；
+> 同活动复合锚点、准备／应用／就绪状态、待物化分配精确匹配及
+> `ctsp_assert_complete` 的来源集合完整性校验不变。第126条不新增表、列、权限、DML、
+> 回填、删除或业务范围。`migration-total` 对拍为126；不授权生产、Gate、Ready 或合并。
+> **本轮依据**：维护者本轮明确确认「确认重签 3b（D7-2 满额绑定守护，第126条 migration，
+> 摘要 2edacb914acb207265b42447ef180e5e294c426d61a9d9651d7daf1fc6f79dd3）」。
+
+> **当前重签（2026-09-17，D7-2 V1兼容修复）**：维护者确认第125条
+> `20260915180000_activity_os_r4_d7_2_fact_correction`，SQL SHA-256
+> `7741a700fb043caf5fe81f7f68b21de27fe129bb4f997694d0b64423cec13df0`。
+> 相对前一摘要 `d1511100bdb0ce9b4b3875f4f756a8a25c8c811504b7939234b67d66dcbd6abe`，仅在
+> `ptc_assert_complete` 明确放行历史 `schemaVersion=1` 的无时间更正路径：若该批次存在
+> `ParticipationTimeCorrectionManifest` 仍明确拒绝；V2/V3、同活动复合锚点、
+> `ptar_receipt_guard` 的 CASE 括号修复、500/20 上限及所有 fail-closed 约束不变。
+> 完整 migration 仍只落既定的四张不可变 D7-2 事实表及配套既有列/约束扩展；零 DML、回填、删除、
+> 权限或业务范围扩展。`migration-total` 对拍为125；仅授权按既定范围进行 `app_test_w98` 隔离迁移、
+> 定向 E2E 与 contract 验证，不授权生产、Gate、Ready 或合并。
+> **本轮依据**：维护者本轮明确确认上述 `7741a700…` 摘要及 V1 兼容修复范围。
+
 > **当前重签（2026-09-15，D7-1 SQL配对修复）**：维护者明确确认「确认第124条3b重签，摘要1c3b46326ce85」。第124条 `20260915170000_activity_os_r4_d7_pairing_index_probe` 的完整SQL SHA-256为 `1c3b46326ce8504e835908d85041f8ebb5e87db15b09496e50e6712a0b082c0a`。仅等价替换完整性函数的三处关联，旧123条SQL不改，无业务数据改写或删除。原完整E2E两轮无采样各3/3、124冷回放及历史升级2/2通过；前置prepare曾超时，三轮诊断未复现，根因仍未定位。其余兼容验证及最终CI尚未完成。本签不替代验证、整体复审、合并、生产或Gate授权；下方为历史签字。
 
 > **当前重签（2026-09-15，D7-1优化后）**：维护者明确确认「确认 D7-1 优化后3b重签，第123条，摘要 c2f06bcf6e19」。完整SQL SHA-256为 `c2f06bcf6e190f4eaafee23687b31d458197c1803a9057116251c04f6ec96627`。仅优化完整配对检查的查询计划；原检查、5秒事务及24/24/40查询预算不变。w98迁移2项和1/100/2000身份3项通过。下方 `9e922fefdb03` 为前签历史，本段覆盖其当前SQL摘要；不替代远端全量CI、整体复审、合并或生产/Gate授权。
@@ -252,14 +302,54 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **结论**:认可
 - **理由**:2026-09-15 D7-1重签：维护者确认第123条migration，SQL SHA-256 9e922fefdb032441c31ec31bf2d892787be00f9ca87a17f337695d9badecafe1；定向验收仍在进行，2000人用例事务超时尚未通过。本签不替代验证、整体复审、合并或生产/Gate授权。 前签历史：2026-09-15 D6重签：维护者确认第122条migration，SQL为20260914120000_activity_os_r4_d6_time_ledger，SHA-256 2a5249bcf8bd1932411ab0faea2f1df784609590b2570e7984e5e7dd7ece4037。新增分类时长账本Manifest/Entry两表及同链、不可变、完整性和批次可见性约束，保留旧121条SQL；w98冷回放/非空升级和D4/D5/D6七套65项回归通过。本签不替代最终SHA CI、整体复审、合并或生产/Gate授权。 前签历史：2026-09-13 D4重签：维护者明确确认第121条migration。SQL为20260913090000_activity_os_r4_d4_time_bucket_settlement，SHA-256 c86dfd72b0d68a01669991694cf1544e85fdcd78a33c96548dc562ceb337187b；分类时长结算版本、桶、来源及命令收据的同链、不可变和完整性约束，保留旧120条SQL，无生产执行或业务数据删除。本签不替代CI、合并或生产/Gate授权。 前签历史：118 条 migration；2026-09-10 按维护者确认重签 D1-1 第118条 `20260910100000_activity_os_r4_d1_time_policy_foundation`：新增政策、不可变版本及命令收据三表，限制生命周期、同链引用和永久留存；不改历史SQL、不删除业务数据。SQL SHA-256 `39442e60fdbb47f8f6e4ae28baf746d81a860920c4f51ed1d02ef0d5d0491f4e`。w98冷回放/非空升级2项、SQL约束及并发30项通过。本签不代替整体跨模型复审、PR CI、可信审批、合并或生产授权。前签历史：117 条 migration；2026-09-09 按维护者确认重签 C3-2 第 117 条 `20260909092502_activity_os_r3_c3_outcome_finalization`：新增成果确认收据与来源模型及完整性、同链、不可变约束；不改历史 SQL，不删除业务数据。SQL SHA-256 `4f5da8a957ba527a53a684e59bf5fa7ef89daa94d46cc96eb3e8dca973d99a2e`。本签不代替整体跨模型评审、PR CI、可信红区审批、合并或生产授权。前签历史：116 条 migration；2026-09-09 按维护者确认重签 C3-1 第 116 条 `20260908054308_activity_os_r3_c3_metric_candidates`：新增指标规则绑定、系统候选、候选值、来源及两类命令收据六模型，约束同链、不可变留存与聚合完整性；不改历史 SQL，不删除业务数据。SQL SHA-256 `052c7f1504ed60cb3ac7ce154d279ed4cd77b26cb34fb84ab24c5a7ab38f8870`。本签不替代整体跨模型评审、PR CI、可信红区审批、合并或生产执行授权。前签历史：115 条 migration；2026-09-08 按维护者确认重签服务段更正方案 A 第 115 条 `20260908000000_correction_pending_segment_lifecycle`：新增暂存服务段、准备收据和清理收据三模型，约束同链、数量与不可变性，并新增 SECURITY INVOKER 受控清理函数；migration 不执行历史回填或业务数据清理、不改历史 SQL。SQL SHA-256 `95fd598ac6f301b8fef01603739649f1e3c4a56b63bca371ff279804637bc365`；app_test_w98 冷 SQL 回放及 114→115 非空旧 application 升级 5 项通过，服务段更正及账本关账定向 E2E 110 项通过，contract 1021 项 / 2 快照通过。本签不代替整体跨模型评审、PR CI、可信审批、合并、实际业务清理或生产执行授权。前签历史：114 条 migration；2026-09-07 按维护者确认重签 C2 D2 第 114 条 `20260907160030_activity_os_r3_c2_outcome_command_receipt`：纯新增成果命令收据，命令唯一键、同链 Restrict FK、安全结果闭集与不可改删保护；零回填、不改历史 SQL。SQL SHA-256 `c6f45e8d8ebb4ab347f1062bd1a1732ffee60f17b380d683197ad0ab0ef3231b`；114 冷回放、113→114 非空升级与约束验证 17 项通过。本签不代替整体跨模型评审、PR CI、合并或生产执行授权。前签历史：113 条 migration；2026-09-07 按维护者确认重签 C2 D1 第 113 条 `20260907103134_activity_os_r3_c2_outcome_value_revision`：纯新增成果头、指标值与证据三表，同链 Restrict FK、唯一／状态／来源约束、不可变内容保护及确认元数据检查；零回填、不改历史 SQL，不开放 writer/API/权限/Gate。SQL SHA-256 `44ef4b16bd5b5f051f34f7b109ced8c5a01aec99dddb551fb76769220f8fabdd`；113 冷回放、112→113 非空旧活动逐字保留及约束验证共 8 项通过，7 套既有兼容回归 84 项与 contract 1017 项／2 快照通过。附件活动归属留 D2，正式确认完整证据留 C3；本签不代替整体跨模型评审、PR CI、合并或生产执行授权。前签历史：112 条 migration；2026-09-06 按维护者确认重签 C1 D2b 第 112 条 `20260906114906_activity_os_r3_c1_metric_selection_template_v3`：additive 扩展 Activity 四列、指标集 id/hash 唯一锚点与复合 Restrict FK、既有收据两个目标列及对应 CHECK；保留旧八操作收据兼容与 append-only trigger，无回填、不改旧 migration。SQL SHA-256 `7d033165ee7a786c826c49965095be34ffb1722f1d06c624defee82581b5bbbb`；app_test 已完成且未回滚、checksum 一致，112 冷回放及 111→112 非空升级 63 项迁移测试通过。本签不代替跨模型整体评审、可信审批、PR CI、合并或生产执行授权。前签历史：111 条 migration；2026-09-06 按维护者确认重签 C1 D2a 第 111 条 `20260905221158_activity_os_r3_c1_metric_command_receipts`：仅新增空 ActivityMetricCommandReceipt 表，以八操作闭集、结果形状 CHECK、三条 Restrict FK、命令唯一键与 append-only trigger 约束收据；零既有业务表 DML、回填、物理删除、历史 SQL 修改或生产部署。SQL SHA-256 `0c90d4ca50ba5a5b6d4c8553983bab3aa86609f4b56dd707656e721a88f99023`；获授权隔离库已验证 111 条空库回放、110→111 非空升级、seed 二跑与 CHECK/FK/不可改删正反例（34 项 migration E2E）。本步实现的目录命令及既有权限/审计回归共 140 项定向 E2E、7160 项单测、contract 996 项 / 2 快照、quick、冷 lint、build 均通过；本地无新增 schema 漂移，旧漂移不在本次修复范围。阶段性跨模型复审继续依维护者决定延后至整体完成后，不记为通过或永久豁免；PR CI、可信红区审批、合并与生产 deploy 仍独立验收。此前签字说明（历史读数）：110 条 migration；2026-09-05 按维护者确认重签 C1 D1 第 110 条 `20260905160133_activity_os_r3_c1_metric_definition_set`：仅新增 ActivityMetricDefinition、ActivityMetricSetVersion、ActivityMetricSetItem 三张空表，UNIQUE / CHECK / Restrict FK 与 trigger 保护身份、draft→active→retired、激活后语义和集项冻结，并由父版本锁串行化集项变更及激活；零 seed、回填、既有业务表 DML、物理删除、API / DTO / 权限 / 审计 / Gate / 生产部署，DB 不复算 canonical/hash，未来 writer 必须锁后调用纯函数复验。SQL SHA-256 `431449453b1059b40dd7c5e311617ac4e786a7e48c373d754b6000b8e9b4b97c`；授权隔离测试库已验证 110 条冷回放、109→110 非空 Activity rehearsal、冻结/引用反例及真实竞态。C1/B5/B6 地基 42 项、历史迁移 90 项、B6/B7/参与统计 88 项定向 E2E 均通过；7068 项单测、contract 984 项 / 2 快照、quick、冷 lint、build、事故回放通过。阶段性跨模型复审按维护者同日「跳过评审，继续推进，等搞完了再整体评审」决定延后，尚无有效独立结论，不记为通过或永久豁免；PR CI、可信红区审批、合并与生产 deploy 仍独立验收。此前签字说明（历史读数）：108 条 migration;第 101 条 `20260901100000_activity_os_r1_a2_template_family_version_expand` 为纯 expand：新建空 ActivityTemplateFamily，并向既有 ActivityTemplate 增加六个可空 Version 元数据，零回填、seed 或运行时切换。第 102 条 `20260901110000_activity_os_r1_a3_template_definition_lifecycle_guards` 只为 `familyId IS NOT NULL` 的 future Version 增加条件字段 CHECK 与 `draft → active → retired` 冻结 trigger；零回填、seed、legacy resolver/API 或生产部署。第 103 条 `20260901120000_activity_os_r1_a4_explicit_template_version` 只为 `Activity` 增加 nullable `selectedTemplateVersionId`、单列索引和指向 `ActivityTemplate.id` 的 `ON DELETE RESTRICT` FK；零 default、零 UPDATE、零回填、seed、runtime/API/resolver 切换，legacy `activityTypeCode` fallback 不变。第 104 条 `20260902143000_activity_os_r1_a6_from_template_transaction` 只为 `Activity` 增加 nullable `createFromTemplateOperationKey` / `createFromTemplateRequestHash` 和前者的全局唯一索引；零 default、零 UPDATE、零回填、seed、删除、既有行重解释或生产部署。第 105 条 `20260902190221_activity_os_r1_a7_series_generation` 只新增 ActivitySeries、Revision、通用命令收据与 Occurrence 四张表，以及 9 条 Restrict FK、索引、CHECK 和不可变 trigger；Receipt / Occurrence 用 `(revisionId, seriesId)` 复合 FK 锁住同链 Revision，零 default、零 UPDATE、零回填、seed、删除或生产部署。第 106 条 `20260903131800_activity_os_r2_b1_place_expand` 只新增空 `PlacePreset` / `ActivityPlace` 两表、三条 `ON DELETE RESTRICT` FK、三项查询索引及 `roleCode` 六值 / `visibilityCode` 四值 CHECK；零 ALTER 既有 Activity / ActivitySession 地点列、零 default 业务语义、零 UPDATE、回填、seed、删除、runtime/API/writer 切换或生产部署。B1 已完成 SQL 逐行审查、隔离测试库 106 条 migration 空库回放、105→106 非空库 rehearsal、B1 E2E（7 个用例）、8 个受影响历史 migration E2E（69 个用例）与 contract（975 个断言、2 个快照）。2026-08-26 首签时为 99 条；第 100 条(Integration Foundation v1 PR1 schema 地基,#1217)落地后曾按本表机制重签。第 107 条 `20260903150000_activity_os_r2_b2_coordinate_projection` 仅在 B1 新增的 `PlacePreset` / `ActivityPlace` 上新增六条已验证 CHECK：允许三列全空的文字地点；完整坐标必须成对、坐标系限 `wgs84` / `gcj02` / `bd09`、且在全球范围内。SQL 单事务、零 DML / 回填 / seed / 删除 / trigger / `NOT VALID`，零 ALTER 既有 `Activity` / `ActivitySession` 地点列、runtime / API / writer 切换或生产部署。SQL SHA-256 `c15f31e1c6240e097d68f7786482f338fe626d840315b4cce78e5578099a18f3`；隔离测试库已完成 107 冷回放、106→107 合法非空 rehearsal 与 B1 时代脏数据 fail-closed（6 个 B2 E2E）；B1 合同更正和既有签到/打卡/场次回归共 66 项、其余 8 个 migration rehearsal 共 69 项，以及 contract 975 断言 / 2 快照均通过。第 108 条 `20260904090000_activity_os_r2_b3_form_blueprint_governance` 只为既有 `RegistrationFormField` 增加五个 nullable 治理元数据列(`purposeCode`、`dataClassCode`、`retentionPolicyCode`、`maskingPolicyCode`、`prefillSourceCode`)及一个 all-legacy / all-governed 形状 CHECK；允许五列全 NULL 的既有表单字段，受控形状要求前四列非 NULL 且 `prefillSourceCode` 为 NULL。零 default、DML、UPDATE、回填、seed、删除、trigger、既有行重解释或生产部署。隔离测试库已完成 108 冷回放、107→108 含非空 legacy Form / Field / Answer 的 rehearsal、部分治理形状 fail-closed 与 migration rollback 行为验证；B3 governed V2 模板物化、敏感字段拒绝回退、v3-v5 表单兼容与公开投影回归均已验证。PR CI 的五个 Contract + E2E 分片、contract 975 断言 / 2 快照、Docker smoke、harness selftest 与事故回放均已通过。**2026-09-04 再次重签**：第 109 条 `20260904195000_activity_os_r2_b6_creation_data_foundation` 纯新增 `ActivityCreationCommandReceipt`、`ActivityEmergencyInitiation`、`ActivityEmergencyFollowUpItem` 三张空表，以命名 UNIQUE / CHECK / `ON DELETE RESTRICT` FK 锁定专业 / 紧急创建收据、起源与收据同活动、七项固定后续义务及 pending / verified / unrepresentable 的处理事实形状；零 DML、回填、删除、既有 Activity 重解释、API / DTO / 通知 / 审计 / 发布或事故域运行时行为。隔离测试库已完成 109 条冷回放、108→109 非空 legacy Activity rehearsal、首表冲突的整条 migration 回滚验证，以及 6 个 D1 PostgreSQL E2E；contract 975 断言 / 2 快照、完整单测、lint、typecheck、build、harness selftest 与事故回放均通过。
 - **签字人**:维护者
-- **日期**:2026-09-15
+- **日期**:2026-09-17
 - **依据**:维护者本轮明确回复「确认上述 D7-1 3b、4b 重签」，确认对象为上述确切摘要及计数。 前签依据：维护者本轮明确确认「确认重签3b（D6，第122条 migration，摘要2a5249bcf8bd）」。 前签依据：维护者本轮对话确认「确认 D4 重签 3b（第121条）」。 前签依据：维护者2026-09-10对话确认「确认重签 3b（D1-1，第118条 migration）」；前签依据：维护者 2026-09-09 对话确认「确认重签 3b（C3-2，第117条 migration）」；前签依据：维护者 2026-09-09 对话确认「确认重签 3b（C3-1，第116条 migration）」；PR https://github.com/BA7IEE/srvf-nest-api/pull/1298；前签依据：维护者 2026-09-08 对话确认「确认重签 3b（服务段更正方案 A，第115条 migration），允许更新签字登记并提交推送至 #1296」；PR https://github.com/BA7IEE/srvf-nest-api/pull/1296；前签依据：维护者 2026-09-07 对话确认「确认重签 3b（C2 D2，第114条 migration）」；前签依据：维护者 2026-09-07 对话确认「确认重签 3b（C2 D1，第113条 migration）」；前签依据为维护者 2026-09-06 对话确认「确认重签 3b（C1 D2b，第112条 migration）」；前签依据为维护者 2026-09-06 对话确认「确认重签 3b（C1 D2a，第111条 migration）」；前签依据为维护者 2026-09-05 对话确认「确认重签 3b（C1 D1，第110条 migration）」；前签依据为维护者 2026-09-04 对话确认「确认重签 3b（B6 D1，第109条 migration）」；前签依据为维护者 2026-09-04 对话确认「确认重签 3b（B3，第108条 migration）」；前签依据为维护者 2026-09-03 对话确认「确认重签 3b（B2，第107条 migration）」；前签依据为维护者 2026-09-03 对话确认「确认重签 3b（B1，第106条 migration）」；前签依据为维护者 2026-09-02 对话确认「确认重签 3b（A7，第105条 migration）」、2026-09-02 对话确认「确认重签3b（A6，第104条 migration）」、2026-09-02 对话确认「确认重签3b（A4，第103条 migration）」、2026-09-01 对话确认「确认重签3b（A3，第102条 migration）」、2026-09-01 对话确认重签3b(A2)、2026-08-28 对话批准重签(「批准签」)，首签依据为 2026-08-26 拍板「直接用新的上线」
-- **对拍**:有 —— `migration-total` = `124`
+- **对拍**:有 —— `migration-total` = `125`
 
 > ⭐ 这条对拍的价值在于它**会过期**:再落一条 migration ⇒ 机器读数与签字里的值不等 ⇒ 当场红,
 > 维护者必须为**新增的那条**重新签字。「经审查」的覆盖面因此不会随时间静默扩大。
 
+> **当前正式签字（2026-09-18，覆盖上方第123条历史字段）**：D7-2 满额绑定守护的第126条
+> `20260917194000_activity_os_r4_d7_2_binding_guard_set` 已由维护者按下列字段重签；上方字段仅保留
+> 第123条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:2026-09-18 D7-2满额绑定守护重签：第126条仅将 `CorrectionTimeAllocationBinding` 的插入守护改为语句级集合校验，保留同活动复合锚点、既有锁序、准备／应用／就绪状态、待物化分配精确匹配与 `ctsp_assert_complete` 的完整性校验；不新增表、列、权限、DML、回填、删除或业务范围。app_test_w98 的第126条冷回放和125→126非空升级共3项通过；本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-18
+- **依据**:维护者本轮明确确认「确认重签 3b（D7-2 满额绑定守护，第126条 migration，摘要 2edacb914acb207265b42447ef180e5e294c426d61a9d9651d7daf1fc6f79dd3）」。
+- **对拍**:有 —— `migration-total` = `126`
+
+> **当前正式签字（2026-09-20，覆盖上方第126条及更早历史字段）**：D7-2 correction allocation
+> 集合守护的第127条 `20260920090000_activity_os_r4_d7_2_allocation_guard_set` 已由维护者按下列字段重签；
+> 上方字段仅保留第126条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:2026-09-20 D7-2 correction allocation 集合守护重签：第127条只将 correction allocation 从既有 `ptar_parent_anchor_guard` 的逐行分支迁到 AFTER INSERT 语句级集合校验；D3/D4 原触发器主体仍由 null 条件路径运行，`ptar_receipt_guard` 继续逐条复核同一 immutable proof。待物化分配、申请、请求、批次、目标段、基础分配与政策版本仍按既有锁序和 fail-closed 条件核验，保留 V3、同活动复合锚点、全部形状/来源分支与7秒预算。相对前一已签摘要，本轮只把五次重复 immutable-chain 校验收敛为一次语句级集合聚合，并以去重输入关系维持原四段锁序；不新增表、列、权限、DML、回填、删除或业务范围。签字前已完成获准 w98 冷回放/升级、完整D7-2 E2E与contract验证；本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-20
+- **依据**:维护者本轮明确确认「确认重签 3b（D7-2，第127条 migration，摘要 d76418fb2b837a6ff264c4d061b43e7c0b476d3b71b238480b2ce67a8aeaf51d）」。
+- **对拍**:有 —— `migration-total` = `127`
+
+> **当前正式签字（2026-09-20，覆盖上方第127条及更早历史字段）**：D7-2 更正收据集合守护的第128条
+> `20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set` 已由维护者按下列字段重签；
+> 上方字段仅保留第127条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:2026-09-20 D7-2 更正收据集合守护重签：第128条仅将 `recognize_correction_time_allocation` 的收据插入从逐行 immutable-proof 重读改为 AFTER INSERT 语句级集合校验；D3/D4、非该 operationCode 与错误 operationCode 仍走历史 `ptar_receipt_guard`。父行／子项／proof、同活动复合锚点、既有锁序、拒绝优先级、fail-closed 约束和7秒预算不变；不新增表、列、权限、DML、回填、删除、API、DTO 或 Gate。签字前已在获准 `app_test_w98` 完成第128条冷回放、127→128 非空升级、单身份和2,000身份 Human V3 定向链，`pnpm test:contract` 在受控非生产测试库通过1,072项契约；本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-20
+- **依据**:维护者本轮明确确认「确认重签 3b（D7-2，第128条 migration，摘要 a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b）」。
+- **对拍**:有 —— `migration-total` = `128`
+
 ### 4b — 「字典、Audit events」的对账
+
+> **当前重签（2026-09-16，D7-2）**：维护者确认权限码265、Audit events 169总计／164活跃；
+> 既有 `activity.time-settlement.read`、`activity.time-settlement.prepare`、
+> `activity.settlement-final-review.record`、`activity.settlement-submit.record` 的 Human 访问面说明
+> 已复核。权限目录 SHA-256 为
+> `9d28dd0345d089679b61650f3cc8a1cd972b40948a91c6473723268847d24b52`；不新增权限码、
+> 默认授予、Service Principal 或 delegation。本签不替代验证、Ready、合并、生产或 Gate 授权。
 
 > **前次重签（2026-09-12，D3）**：维护者对话确认「4b（权限263；审计168总计、163活跃）」；
 > 仅新增 `activity.time-allocation.recognize` 与 `activity.time-allocation.command`。权限
@@ -279,7 +369,7 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **结论**:认可
 - **理由**:2026-09-15 D7-1重签：维护者确认权限265、审计169总计/164活跃，既有read权限覆盖指定版本更正账本；权限目录SHA-256 871a4c9d426d1208223472d3db4de400eaf54c904af7a0d615e7a4ee4dfb7ce9。不新增权限码或默认授予；本签不替代验证、合并或生产/Gate授权。 前签历史：2026-09-15 D6重签：维护者确认权限265、审计169总计/164活跃，以及既有activity.time-settlement.read权限覆盖已提交分类时长账本的说明扩展；权限目录SHA-256 3db338e67bc505faa91e9a6a257e84da1588440da767c821b6e4955d8f3d170e。当前显式范围和负责人/实际审核资格约束不变，不新增码、不默认授予角色；字典30类277项、seed摘要b484cbc013d5不变。本签不替代最终SHA CI、整体复审、合并或生产/Gate授权。 前签历史：2026-09-13 D4重签：维护者明确确认权限265、Audit events169总计/164活跃、5退役；字典30 types/277 items不变，seed-sha256-12为03f30502685b。不授权人员授码、提交推送、合并、生产或Gate。 前签历史：**2026-09-10 D1-2 重签**：维护者确认权限码260、Audit events166总计/161活跃，新增时间政策读写两码及 `activity.time-policy.command`，不自动授码；seed指纹为 `a6202b18d484`，字典30 types/277 items不变。不授权合并、生产或Gate。前签历史：**2026-09-09 C3-2 重签**：权限码 256→258，新增成果 confirm/correct 显式权限；Audit events 164→165 总计、159→160 活跃、5 退役，新增 `activity.outcome.finalization`。字典及 seed 指纹不变；不自动授码，不授权 Gate、合并或生产部署。前签历史：**2026-09-09 C3-1 重签**：权限码 254→256，新增 `activity-metric.manage.rule-binding`、`activity.outcome.calculate`；Audit events 162→164 总计、157→159 活跃、5 退役。字典仍为 30 types / 277 items；seed-sha256-12 仍为 `29b1abc5a415`。本签不授权人员授码、Gate、合并或生产部署。前签历史：**2026-09-07 C2 D2 重签**：权限码 252→254，仅新增 `activity.outcome.record/read`，不自动绑定角色，Service Principal / delegation 均不允许；Audit events 161→162 总计、156→157 活跃、5 退役，新增 `activity.outcome.command`，仅记录安全结果摘要，不记录实际值、操作键或附件凭证。字典仍为 30 types / 277 items；seed-sha256-12 为 `29b1abc5a415`。本签不授权人员授码、Gate、合并或生产部署。前签历史：**2026-09-06 C1 D2b 重签**：权限码 250→252，仅新增 `activity-template.read.catalog`、`activity-template.manage.version` 两条 Human / GLOBAL 权限，不自动授予角色、绑定或职务策略，不开放机器或委托；既有 `activity.update.record` 仅更新业务说明及 6→8 派生管辖面，不改权限语义。Audit events 159→161 总计、154→156 活跃、5 退役，新增 `activity.metric-selection.command` 与 `activity.template-version.command`；字典仍为 30 types / 277 items，登记表判据通过。seed-sha256-12 为 `5f6250db794f`，按现有脚本指纹口径登记；本签不授权初始化业务内容、人员授码、Gate 开启、合并或生产部署。前签历史：**2026-09-06 C1 D2a 重签**：权限码 247→250，仅新增 `activity-metric.read.catalog`、`activity-metric.manage.definition`、`activity-metric.manage.set` 三条 Human / GLOBAL 目录权限；允许按既有流程手工授予自定义角色，seed 不自动绑定角色，不开放 Service Principal 或 delegation。新增 `activity.metric-definition.command`、`activity.metric-set.command` 两个有运行时产出者的审计事件，总计 159 / 活跃 154 / 已退役 5；日志仅记白名单命令结果，不记录题目配置、敏感内容或 operationKey。字典仍为 30 types / 277 items；认可该增量的权限、seed 与审计口径，`seed-sha256-12` 更新为 `76f7d81e6d82`。此前签字说明（历史读数）：**已逐条核对**。字典(28 type / 242 item)与 Audit events(156 事件:151 活跃 + 5 已退役/零产出)均已有登记表 + 红区判据双向对拍(#1202 / #1203;判据收编 #1206),④-c 已升 A 类机器判;五个零产出事件均已显式处置。本条签的是判据覆盖不了的余下判断:登记表口径符合合同 v1.1 意图、零产出处置认可。2026-08-26 首签时的「接受现状」局限自此闭合。**2026-08-29 三次重签**:PR5 新增 `delegation-grant.*` 三条权限码，并将既有 `service-principal.*` 五项、`delegation-grant.*` 两项及 Token 两项审计事件补齐至登记表；`seed-sha256-12` 与 `audit-event-registry-total/active` 均已按机器现读更新。**2026-08-30 再次重签**:PR7 仅为既有 `dict.read.item` 写入 Service Principal eligibility(`servicePrincipalAllowed=true`、`delegatedAccessAllowed=false`)，未新增字典项、Audit event、权限码或内建角色；本条对该 seed 变动的余下判断一并认可。**2026-09-01 再次重签**:Activity OS A1 新增 `activity_category` 10 条，以及 `activity_semantic_facet` 6 个维度与 19 个受控选项，共 35 条字典项；无新增或变更 Audit event、权限码、内建角色、schema 或运行时消费切换。本条对该增量 seed 的余下判断一并认可。**2026-09-02 再次重签**:Activity OS A7 新增 `activity-series.change` 一个活跃审计事件；无字典、权限码、内建角色或 seed 变更。本条对这项审计语义增量及登记表口径继续认可。**2026-09-04 再次重签**:B6 D1 新增 `activity.create.emergency.record` 一条 SUPER_ADMIN-only 紧急创建权限码，初始零角色绑定；未新增或变更字典项、Audit event 或内建角色。对新的 seed 指纹、权限目录分类与既有 Audit events 157 总计 / 152 活跃的登记口径继续认可。
 - **签字人**:维护者
-- **日期**:2026-09-15
+- **日期**:2026-09-16
 - **依据**:维护者本轮明确回复「确认上述 D7-1 3b、4b 重签」，确认对象为上述确切摘要及计数。 前签依据：维护者本轮明确确认「确认重签4b（权限265；审计169总计、164活跃；既有read权限覆盖已提交分类账本，权限目录摘要3db338e67bc5）」。 前签依据：维护者本轮对话确认「4b（权限265，审计169总计、164活跃）」。 前签依据：维护者2026-09-10对话确认「确认重签4b（D1-2：权限码260，Audit events 166总计、161活跃）」；前签依据：维护者 2026-09-09 对话确认「确认重签 4b（权限码258；Audit events 165总计、160活跃）」；前签依据：维护者 2026-09-09 对话确认「确认重签 4b（权限码256；Audit events 164总计、159活跃）」；PR https://github.com/BA7IEE/srvf-nest-api/pull/1298；前签依据：维护者 2026-09-07 对话确认「确认重签 4b（权限码254，Audit events 162总计、157活跃）」；前签依据：维护者 2026-09-06 对话确认「确认重签 4b（C1 D2b：权限码252；Audit events 161总计、156活跃）」；前签依据为维护者 2026-09-06 对话确认「确认重签 4b（C1 D2a：权限码250；Audit events 159总计、154活跃）」；前签依据为维护者 2026-09-04 对话确认重签(「确认重签 4b（B6 D1：权限码247；Audit events 157 总计、152 活跃）」);前签为维护者 2026-09-02 对话确认重签(「确认重签 4b（A7：Audit events 157 总计、152 活跃）」)
 - **对拍**:有 —— `seed-sha256-12` = `b484cbc013d5`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `169`;`audit-event-registry-active` = `164`
 

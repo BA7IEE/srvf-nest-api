@@ -1874,6 +1874,7 @@ describe('D6 classified ledger through real preparation and commit', () => {
             segments: [],
           },
           reason: 'D6 classified correction guard fixture',
+          requestHash: 'd6-classified-correction-guard-fixture',
           statusCode: 'approved',
           submittedByUserId: actor.id,
           submittedAt: START,
