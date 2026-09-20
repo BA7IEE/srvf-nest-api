@@ -212,6 +212,7 @@ function fixture() {
       findMany: jest.fn(),
     },
     correctionPendingTimeAllocationEvidence: { createMany: jest.fn() },
+    correctionApplication: { findFirst: jest.fn() },
     correctionTimeSourceProof: { findUnique: jest.fn() },
     participantTimeAllocationSlice: { createMany: jest.fn() },
     participantTimeAllocationEvidence: { createMany: jest.fn() },
@@ -250,6 +251,21 @@ async function prepare(f: ReturnType<typeof fixture>) {
     changeSet: f.changeSet,
     calculatedBuckets: [],
   });
+}
+
+function frozenProof(prepared: Awaited<ReturnType<typeof prepare>>) {
+  return {
+    id: prepared.sourceProofId,
+    applicationId: 'application-one',
+    activityId,
+    sourceSetHash: prepared.sourceProofHash,
+    sourceSnapshotJson: prepared.proofData.sourceSnapshotJson,
+    expectedSegmentCount: prepared.proofData.expectedSegmentCount,
+    expectedPendingCount: prepared.proofData.expectedPendingCount,
+    expectedSliceCount: prepared.proofData.expectedSliceCount,
+    expectedBindingCount: prepared.proofData.expectedBindingCount,
+    formatVersion: 1,
+  };
 }
 
 describe('D7-2 full correction-time source proof', () => {
@@ -325,6 +341,94 @@ describe('D7-2 full correction-time source proof', () => {
         }),
       ]),
     );
+  });
+
+  it('reuses a matching frozen-proof prevalidation after the transaction re-reads its anchor', async () => {
+    const f = fixture();
+    const prepared = await prepare(f);
+    const proof = frozenProof(prepared);
+    const [pending] = f.pendingCreateData() ?? [];
+    if (!isRecord(pending)) throw new Error('pending allocation row must be a record');
+    f.tx.correctionApplication.findFirst.mockResolvedValue({
+      id: 'application-one',
+      timeSourceProof: proof,
+    });
+
+    const prevalidatedProof = await f.service.prevalidateFrozenSourceProof(
+      f.tx as unknown as Prisma.TransactionClient,
+      { correctionRequestId: 'request-one', activityId },
+    );
+    expect(prevalidatedProof).toEqual(
+      expect.objectContaining({
+        proofId: prepared.sourceProofId,
+        sourceSetHash: prepared.sourceProofHash,
+        expectedSegmentCount: 2,
+      }),
+    );
+    if (!prevalidatedProof) throw new Error('matching proof must be prevalidated');
+
+    const { sourceSnapshotJson, ...anchor } = proof;
+    expect(sourceSnapshotJson).toBeDefined();
+    f.tx.correctionTimeSourceProof.findUnique.mockResolvedValue(anchor);
+    f.tx.correctionPendingTimeAllocation.findMany.mockResolvedValue([
+      { ...pending, evidence: [], baseAllocationRevision: f.changedAllocation },
+    ]);
+
+    await expect(
+      f.service.materialize(f.tx as unknown as Prisma.TransactionClient, {
+        applicationId: 'application-one',
+        activityId,
+        actorUserId: 'reviewer-one',
+        prevalidatedProof,
+      }),
+    ).resolves.toBe(1);
+
+    expect(f.tx.correctionTimeSourceProof.findUnique).toHaveBeenCalledTimes(1);
+    const [anchorRead] = f.tx.correctionTimeSourceProof.findUnique.mock.calls[0] as [
+      { select: Record<string, unknown> },
+    ];
+    expect(anchorRead.select.sourceSnapshotJson).toBeUndefined();
+  });
+
+  it('falls back to the original full proof validation when the transaction anchor differs', async () => {
+    const f = fixture();
+    const prepared = await prepare(f);
+    const proof = frozenProof(prepared);
+    const [pending] = f.pendingCreateData() ?? [];
+    if (!isRecord(pending)) throw new Error('pending allocation row must be a record');
+    f.tx.correctionApplication.findFirst.mockResolvedValue({
+      id: 'application-one',
+      timeSourceProof: proof,
+    });
+    const prevalidatedProof = await f.service.prevalidateFrozenSourceProof(
+      f.tx as unknown as Prisma.TransactionClient,
+      { correctionRequestId: 'request-one', activityId },
+    );
+    if (!prevalidatedProof) throw new Error('matching proof must be prevalidated');
+
+    const { sourceSnapshotJson, ...staleAnchor } = proof;
+    expect(sourceSnapshotJson).toBeDefined();
+    f.tx.correctionTimeSourceProof.findUnique
+      .mockResolvedValueOnce({ ...staleAnchor, sourceSetHash: hash('d') })
+      .mockResolvedValueOnce(proof);
+    f.tx.correctionPendingTimeAllocation.findMany.mockResolvedValue([
+      { ...pending, evidence: [], baseAllocationRevision: f.changedAllocation },
+    ]);
+
+    await expect(
+      f.service.materialize(f.tx as unknown as Prisma.TransactionClient, {
+        applicationId: 'application-one',
+        activityId,
+        actorUserId: 'reviewer-one',
+        prevalidatedProof,
+      }),
+    ).resolves.toBe(1);
+
+    expect(f.tx.correctionTimeSourceProof.findUnique).toHaveBeenCalledTimes(2);
+    const [fullRead] = f.tx.correctionTimeSourceProof.findUnique.mock.calls[1] as [
+      { select: Record<string, unknown> },
+    ];
+    expect(fullRead.select.sourceSnapshotJson).toBe(true);
   });
 
   it('fails closed when the one-statement binding write reports an incomplete count', async () => {

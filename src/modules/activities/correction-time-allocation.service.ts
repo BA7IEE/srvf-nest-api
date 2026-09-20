@@ -132,6 +132,27 @@ interface SourceSnapshotRow {
   readonly sourceHash: string;
 }
 
+/**
+ * A fully parsed source proof prepared before the short Human commit
+ * transaction starts.  It is only an optimization: materialization accepts it
+ * after a fresh, locked transaction read proves that the immutable proof
+ * anchor is unchanged.
+ */
+export interface CorrectionTimeAllocationProofPrevalidation {
+  readonly proofId: string;
+  readonly applicationId: string;
+  readonly activityId: string;
+  readonly sourceSetHash: string;
+  readonly expectedSegmentCount: number;
+  readonly expectedPendingCount: number;
+  readonly expectedSliceCount: number;
+  readonly expectedBindingCount: number;
+  readonly formatVersion: number;
+  readonly sourceSnapshots: readonly SourceSnapshotRow[];
+}
+
+type CorrectionTimeAllocationProofReader = Pick<Prisma.TransactionClient, 'correctionApplication'>;
+
 export interface CorrectionTimeAllocationPreparation {
   readonly sourceProofId: string;
   readonly sourceProofHash: string;
@@ -165,6 +186,84 @@ export interface CorrectionTimeAllocationPreparation {
 @Injectable()
 export class CorrectionTimeAllocationService {
   constructor(private readonly attachments: AttachmentsService) {}
+
+  /**
+   * Parse the large, immutable V3 source proof before the 7-second Human
+   * commit transaction.  This is deliberately advisory: a missing, malformed
+   * or stale prevalidation is never a reason to trust it inside the
+   * transaction.  `materialize` re-reads its compact anchor after the caller
+   * holds the application lock, and otherwise follows the original complete
+   * in-transaction parse path.
+   */
+  async prevalidateFrozenSourceProof(
+    reader: CorrectionTimeAllocationProofReader,
+    input: { correctionRequestId: string; activityId: string },
+  ): Promise<CorrectionTimeAllocationProofPrevalidation | undefined> {
+    const application = await reader.correctionApplication.findFirst({
+      where: {
+        correctionRequestId: input.correctionRequestId,
+        statusCode: 'preparing',
+        timeSourceProof: { isNot: null },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        timeSourceProof: {
+          select: {
+            id: true,
+            applicationId: true,
+            activityId: true,
+            sourceSetHash: true,
+            sourceSnapshotJson: true,
+            expectedSegmentCount: true,
+            expectedPendingCount: true,
+            expectedSliceCount: true,
+            expectedBindingCount: true,
+            formatVersion: true,
+          },
+        },
+      },
+    });
+    const proof = application?.timeSourceProof;
+    if (
+      !proof ||
+      application.id !== proof.applicationId ||
+      proof.activityId !== input.activityId ||
+      proof.formatVersion !== 1
+    ) {
+      return undefined;
+    }
+
+    let sourceSnapshots: readonly SourceSnapshotRow[];
+    try {
+      sourceSnapshots = parseSourceSnapshots(proof.sourceSnapshotJson);
+    } catch (error) {
+      if (error instanceof BizException) return undefined;
+      throw error;
+    }
+    if (
+      fingerprintMetricEnvelope('correction-time-source-set-v1', proof.sourceSnapshotJson)
+        .definitionHash !== proof.sourceSetHash ||
+      sourceSnapshots.length !== proof.expectedSegmentCount ||
+      proof.expectedBindingCount !== sourceSnapshots.length ||
+      sourceSnapshots.reduce((total, source) => total + source.sliceCount, 0) !==
+        proof.expectedSliceCount
+    ) {
+      return undefined;
+    }
+    return {
+      proofId: proof.id,
+      applicationId: proof.applicationId,
+      activityId: proof.activityId,
+      sourceSetHash: proof.sourceSetHash,
+      expectedSegmentCount: proof.expectedSegmentCount,
+      expectedPendingCount: proof.expectedPendingCount,
+      expectedSliceCount: proof.expectedSliceCount,
+      expectedBindingCount: proof.expectedBindingCount,
+      formatVersion: proof.formatVersion,
+      sourceSnapshots,
+    };
+  }
 
   async prepare(
     tx: Tx,
@@ -498,21 +597,73 @@ export class CorrectionTimeAllocationService {
 
   async materialize(
     tx: Tx,
-    input: { applicationId: string; activityId: string; actorUserId: string },
+    input: {
+      applicationId: string;
+      activityId: string;
+      actorUserId: string;
+      prevalidatedProof?: CorrectionTimeAllocationProofPrevalidation;
+    },
   ): Promise<number> {
-    const proof = await tx.correctionTimeSourceProof.findUnique({
-      where: { applicationId: input.applicationId },
-      select: {
-        id: true,
-        sourceSnapshotJson: true,
-        expectedSegmentCount: true,
-        expectedPendingCount: true,
-        expectedSliceCount: true,
-        expectedBindingCount: true,
-      },
-    });
-    if (!proof) return invalidCorrectionFact();
-    const sourceSnapshots = parseSourceSnapshots(proof.sourceSnapshotJson);
+    let proof:
+      | {
+          id: string;
+          applicationId: string;
+          activityId: string;
+          sourceSetHash: string;
+          expectedSegmentCount: number;
+          expectedPendingCount: number;
+          expectedSliceCount: number;
+          expectedBindingCount: number;
+          formatVersion: number;
+        }
+      | undefined;
+    let sourceSnapshots: readonly SourceSnapshotRow[] | undefined;
+
+    // The enclosing caller has already locked Activity → Run → Request →
+    // Application.  Re-read this compact immutable anchor only after those
+    // locks.  A plan never replaces that check; any mismatch falls through to
+    // the historical full proof read and validation below.
+    if (input.prevalidatedProof) {
+      const lockedProof = await tx.correctionTimeSourceProof.findUnique({
+        where: { applicationId: input.applicationId },
+        select: {
+          id: true,
+          applicationId: true,
+          activityId: true,
+          sourceSetHash: true,
+          expectedSegmentCount: true,
+          expectedPendingCount: true,
+          expectedSliceCount: true,
+          expectedBindingCount: true,
+          formatVersion: true,
+        },
+      });
+      if (lockedProof && proofPrevalidationMatches(input.prevalidatedProof, lockedProof, input)) {
+        proof = lockedProof;
+        sourceSnapshots = input.prevalidatedProof.sourceSnapshots;
+      }
+    }
+
+    if (!proof || !sourceSnapshots) {
+      const fullProof = await tx.correctionTimeSourceProof.findUnique({
+        where: { applicationId: input.applicationId },
+        select: {
+          id: true,
+          applicationId: true,
+          activityId: true,
+          sourceSetHash: true,
+          sourceSnapshotJson: true,
+          expectedSegmentCount: true,
+          expectedPendingCount: true,
+          expectedSliceCount: true,
+          expectedBindingCount: true,
+          formatVersion: true,
+        },
+      });
+      if (!fullProof) return invalidCorrectionFact();
+      proof = fullProof;
+      sourceSnapshots = parseSourceSnapshots(fullProof.sourceSnapshotJson);
+    }
     const sourceByKey = new Map(sourceSnapshots.map((source) => [sourcePairKey(source), source]));
     const pending = await tx.correctionPendingTimeAllocation.findMany({
       where: { applicationId: input.applicationId, activityId: input.activityId },
@@ -981,6 +1132,36 @@ function canonicalStoredSlices(
     startAt: slice.startAt.toISOString(),
     endAt: slice.endAt.toISOString(),
   }));
+}
+
+function proofPrevalidationMatches(
+  prevalidation: CorrectionTimeAllocationProofPrevalidation,
+  proof: {
+    id: string;
+    applicationId: string;
+    activityId: string;
+    sourceSetHash: string;
+    expectedSegmentCount: number;
+    expectedPendingCount: number;
+    expectedSliceCount: number;
+    expectedBindingCount: number;
+    formatVersion: number;
+  },
+  input: { applicationId: string; activityId: string },
+): boolean {
+  return (
+    proof.id === prevalidation.proofId &&
+    proof.applicationId === input.applicationId &&
+    proof.applicationId === prevalidation.applicationId &&
+    proof.activityId === input.activityId &&
+    proof.activityId === prevalidation.activityId &&
+    proof.sourceSetHash === prevalidation.sourceSetHash &&
+    proof.expectedSegmentCount === prevalidation.expectedSegmentCount &&
+    proof.expectedPendingCount === prevalidation.expectedPendingCount &&
+    proof.expectedSliceCount === prevalidation.expectedSliceCount &&
+    proof.expectedBindingCount === prevalidation.expectedBindingCount &&
+    proof.formatVersion === prevalidation.formatVersion
+  );
 }
 
 function parseSourceSnapshots(value: Prisma.JsonValue): readonly SourceSnapshotRow[] {

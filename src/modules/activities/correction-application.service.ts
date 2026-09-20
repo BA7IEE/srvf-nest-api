@@ -18,7 +18,10 @@ import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query'
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityClosureService, type ActivityClosureOutcome } from './activity-closure.service';
 import { CorrectionAuditRecorder } from './correction-audit-recorder';
-import { CorrectionTimeAllocationService } from './correction-time-allocation.service';
+import {
+  CorrectionTimeAllocationService,
+  type CorrectionTimeAllocationProofPrevalidation,
+} from './correction-time-allocation.service';
 import { ActivityTimeCorrectionAccessService } from './activity-time-correction-access.service';
 import {
   parseCorrectionChangeSet,
@@ -1192,6 +1195,13 @@ export class CorrectionApplicationService {
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
     const anchor = await this.readRequestAnchor(input.correctionRequestId);
+    const prevalidatedTimeProof = await this.correctionTimeAllocation.prevalidateFrozenSourceProof(
+      this.prisma,
+      {
+        correctionRequestId: input.correctionRequestId,
+        activityId: anchor.activityId,
+      },
+    );
 
     return await runMemberLinearizedTransaction(this.prisma, async (tx) => {
       // ① Activity → ② run → ③ correction request(本刀新增的唯一一把,插在 run 之后)
@@ -1262,6 +1272,7 @@ export class CorrectionApplicationService {
         anchor.activityId,
         parseCorrectionChangeSet(request.requestedChangeJson),
         application.actor.id,
+        prevalidatedTimeProof,
       );
       if (changeSet.timeCorrection)
         await this.timeCorrection.createCommitReceipt(tx, application.newPostingBatchId);
@@ -2204,6 +2215,7 @@ export class CorrectionApplicationService {
     activityId: string,
     changeSet: CorrectionChangeSet,
     actorUserId: string,
+    prevalidatedTimeProof: CorrectionTimeAllocationProofPrevalidation | undefined,
   ): Promise<number> {
     if (changeSet.schemaVersion === 3) {
       return await this.materializeV3PendingSegments(
@@ -2212,6 +2224,7 @@ export class CorrectionApplicationService {
         activityId,
         changeSet,
         actorUserId,
+        prevalidatedTimeProof,
       );
     }
     const pending = await tx.correctionPendingSegmentRevision.findMany({
@@ -2290,6 +2303,7 @@ export class CorrectionApplicationService {
     activityId: string,
     changeSet: CorrectionChangeSet,
     actorUserId: string,
+    prevalidatedTimeProof: CorrectionTimeAllocationProofPrevalidation | undefined,
   ): Promise<number> {
     if (!changeSet.allocations || changeSet.allocations.length !== changeSet.segments.length) {
       throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
@@ -2397,6 +2411,7 @@ export class CorrectionApplicationService {
       applicationId,
       activityId,
       actorUserId,
+      prevalidatedProof: prevalidatedTimeProof,
     });
     if (materialized !== pending.length) {
       throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
