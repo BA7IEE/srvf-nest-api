@@ -37,14 +37,11 @@ type Tx = Prisma.TransactionClient;
 const CORRECTION_ALLOCATION_READ_BATCH_SIZE = 1000;
 
 // D7-2's correction commit retains the same immutable fact contract at the
-// 2,000-identity acceptance scale.  Keep allocation and receipt rows bounded
-// at 1,000, but source bindings have exactly ten explicit columns: a 5,000-row
-// binding batch stays at 50,000 parameters, below PostgreSQL's 65,535 protocol
-// ceiling while avoiding ten separate writes for the 10,000-source contract.
-// Slices and evidence are child rows and use their separately approved 5,000-row
-// ceiling.
+// 2,000-identity acceptance scale. Keep allocation and receipt rows bounded
+// at 1,000; source bindings instead travel as one parameterized JSON recordset.
+// That keeps the 10,000-row contract below PostgreSQL's bind ceiling and makes
+// its statement-level guard run once, without weakening any database constraint.
 const CORRECTION_ALLOCATION_SOURCE_WRITE_BATCH_SIZE = 1000;
-const CORRECTION_ALLOCATION_BINDING_WRITE_BATCH_SIZE = 5000;
 const CORRECTION_ALLOCATION_CHILD_WRITE_BATCH_SIZE = 5000;
 
 async function createManyInFixedBatches<T>(
@@ -58,6 +55,57 @@ async function createManyInFixedBatches<T>(
     createdCount += result.count;
   }
   if (createdCount !== rows.length) return invalidCorrectionFact();
+}
+
+/**
+ * A correction proof can carry 10,000 immutable source bindings. A Prisma
+ * `createMany` needs two 5,000-row statements at that scale, so the exact same
+ * statement-level database guard executes twice. The JSON payload remains a
+ * bound value; `jsonb_to_recordset` only turns that fixed in-memory fact into
+ * typed rows inside the existing transaction.
+ */
+async function createCorrectionBindingsInOneStatement(
+  tx: Tx,
+  rows: readonly Prisma.CorrectionTimeAllocationBindingCreateManyInput[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  const insertedCount = await tx.$executeRaw`
+    INSERT INTO "CorrectionTimeAllocationBinding" (
+      id,
+      "proofId",
+      "activityId",
+      "participationIdentityId",
+      "segmentKey",
+      "allocationRevisionId",
+      "sourceSegmentId",
+      "sourceSegmentRevision",
+      "pendingAllocationId",
+      "sourceHash"
+    )
+    SELECT binding.id,
+           binding."proofId",
+           binding."activityId",
+           binding."participationIdentityId",
+           binding."segmentKey",
+           binding."allocationRevisionId",
+           binding."sourceSegmentId",
+           binding."sourceSegmentRevision",
+           binding."pendingAllocationId",
+           binding."sourceHash"
+    FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS binding(
+      id text,
+      "proofId" text,
+      "activityId" text,
+      "participationIdentityId" text,
+      "segmentKey" text,
+      "allocationRevisionId" text,
+      "sourceSegmentId" text,
+      "sourceSegmentRevision" integer,
+      "pendingAllocationId" text,
+      "sourceHash" text
+    )
+  `;
+  if (insertedCount !== rows.length) return invalidCorrectionFact();
 }
 
 type BaseAllocation = Prisma.ParticipantTimeAllocationRevisionGetPayload<{
@@ -655,11 +703,7 @@ export class CorrectionTimeAllocationService {
       CORRECTION_ALLOCATION_SOURCE_WRITE_BATCH_SIZE,
       (data) => tx.participantTimeAllocationCommandReceipt.createMany({ data }),
     );
-    await createManyInFixedBatches(
-      bindingRows,
-      CORRECTION_ALLOCATION_BINDING_WRITE_BATCH_SIZE,
-      (data) => tx.correctionTimeAllocationBinding.createMany({ data }),
-    );
+    await createCorrectionBindingsInOneStatement(tx, bindingRows);
     return pending.length;
   }
 

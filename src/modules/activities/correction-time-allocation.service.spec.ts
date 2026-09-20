@@ -1,4 +1,6 @@
 import { Prisma } from '@prisma/client';
+import { BizCode } from '../../common/exceptions/biz-code.constant';
+import { BizException } from '../../common/exceptions/biz.exception';
 import type { AttachmentsService } from '../attachments/attachments.service';
 import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import { fingerprintTimePolicyVersion } from './activity-time-policy-definition';
@@ -177,13 +179,20 @@ function fixture() {
   let pendingCreateData: unknown[] | undefined;
   let allocationCreateData: unknown[] | undefined;
   let bindingCreateData: unknown[] | undefined;
-  const bindingCreateBatches: unknown[][] = [];
+  const bindingStatementPayloads: unknown[][] = [];
   const tx = {
     $queryRaw: jest
       .fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: changedAllocation.id }, { id: unchangedAllocation.id }])
       .mockResolvedValueOnce([]),
+    $executeRaw: jest.fn((_strings: TemplateStringsArray, serializedRows: string) => {
+      const rows: unknown = JSON.parse(serializedRows);
+      if (!Array.isArray(rows)) throw new Error('binding recordset must be an array');
+      bindingCreateData = rows;
+      bindingStatementPayloads.push(rows);
+      return rows.length;
+    }),
     correctionPendingSegmentRevision: { findMany: jest.fn().mockResolvedValue([pendingSegment]) },
     participantServiceSegmentRevision: {
       findMany: jest.fn().mockResolvedValue([sourceChanged, sourceUnchanged]),
@@ -209,13 +218,6 @@ function fixture() {
     participantTimeAllocationCommandReceipt: {
       createMany: jest.fn(({ data }: { data: unknown[] }) => ({ count: data.length })),
     },
-    correctionTimeAllocationBinding: {
-      createMany: jest.fn(({ data }: { data: unknown[] }) => {
-        bindingCreateData = data;
-        bindingCreateBatches.push(data);
-        return { count: data.length };
-      }),
-    },
   };
   const attachments = {
     lockOwnerReferenceStorageBoundaryTrusted: jest.fn(),
@@ -231,7 +233,7 @@ function fixture() {
     pendingCreateData: () => pendingCreateData,
     allocationCreateData: () => allocationCreateData,
     bindingCreateData: () => bindingCreateData,
-    bindingCreateBatches: () => bindingCreateBatches,
+    bindingStatementPayloads: () => bindingStatementPayloads,
   };
 }
 
@@ -325,7 +327,34 @@ describe('D7-2 full correction-time source proof', () => {
     );
   });
 
-  it('materializes all 10,000 immutable source bindings in fixed 5,000-row batches without dropping facts', async () => {
+  it('fails closed when the one-statement binding write reports an incomplete count', async () => {
+    const f = fixture();
+    const prepared = await prepare(f);
+    const [pending] = f.pendingCreateData() ?? [];
+    if (!isRecord(pending)) throw new Error('pending allocation row must be a record');
+    f.tx.correctionTimeSourceProof.findUnique.mockResolvedValue({
+      id: prepared.sourceProofId,
+      sourceSnapshotJson: prepared.proofData.sourceSnapshotJson,
+      expectedSegmentCount: prepared.proofData.expectedSegmentCount,
+      expectedPendingCount: prepared.proofData.expectedPendingCount,
+      expectedSliceCount: prepared.proofData.expectedSliceCount,
+      expectedBindingCount: prepared.proofData.expectedBindingCount,
+    });
+    f.tx.correctionPendingTimeAllocation.findMany.mockResolvedValue([
+      { ...pending, evidence: [], baseAllocationRevision: f.changedAllocation },
+    ]);
+    f.tx.$executeRaw.mockReturnValueOnce(1);
+
+    await expect(
+      f.service.materialize(f.tx as unknown as Prisma.TransactionClient, {
+        applicationId: 'application-one',
+        activityId,
+        actorUserId: 'reviewer-one',
+      }),
+    ).rejects.toThrow(new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID));
+  });
+
+  it('materializes all 10,000 immutable source bindings in one parameterized statement without dropping facts', async () => {
     const f = fixture();
     const prepared = await prepare(f);
     const [pending] = f.pendingCreateData() ?? [];
@@ -378,10 +407,15 @@ describe('D7-2 full correction-time source proof', () => {
       }),
     ).resolves.toBe(1);
 
-    const batches = f.bindingCreateBatches();
+    const statements = f.bindingStatementPayloads();
     expect(expandedSnapshots).toHaveLength(10_000);
-    expect(batches.map((batch) => batch.length)).toEqual([5000, 5000]);
-    const identityIds = batches.flat().map((row) => {
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toHaveLength(expandedSnapshots.length);
+    expect(f.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    const [template, serializedRows] = f.tx.$executeRaw.mock.calls[0];
+    expect(template.join(' ')).toContain('jsonb_to_recordset');
+    expect(typeof serializedRows).toBe('string');
+    const identityIds = statements[0].map((row) => {
       if (!isRecord(row) || typeof row.participationIdentityId !== 'string') {
         throw new Error('binding identity must be materialized');
       }
