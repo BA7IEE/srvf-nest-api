@@ -168,12 +168,14 @@ describe('Activity OS R1 A4 Activity 显式 Template Version 指针', () => {
     await resetDb(app);
     // resetDb 已清当前 worker 的 Activity；公共清表不负责可独立存在的 Template，故本 spec
     // 只在 reset 之后清自己的 Template / Family fixture，避免跨 it 残留。
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 60_000 },
     );
     organizationId = (
       await prisma.organization.create({

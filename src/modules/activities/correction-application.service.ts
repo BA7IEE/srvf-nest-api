@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
-import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
+import {
+  ParticipationTimeCorrectionService,
+  type ReadyV3CorrectionReceiptAnchor,
+} from './participation-time-correction.service';
 import { fingerprintMetricEnvelope } from './activity-metric-definition';
 import { createHash, randomUUID } from 'node:crypto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
@@ -1274,14 +1277,21 @@ export class CorrectionApplicationService {
         application.actor.id,
         prevalidatedTimeProof,
       );
-      if (changeSet.timeCorrection)
-        await this.timeCorrection.createCommitReceipt(tx, application.newPostingBatchId);
+      let readyV3CorrectionReceipt: ReadyV3CorrectionReceiptAnchor | undefined;
+      if (changeSet.timeCorrection) {
+        const receipt = await this.timeCorrection.createCommitReceipt(
+          tx,
+          application.newPostingBatchId,
+        );
+        if (changeSet.schemaVersion === 3) readyV3CorrectionReceipt = receipt;
+      }
       const ledger = await this.ledgerPosting.commitBatchWithin(
         tx,
         anchor.activityId,
         { postingBatchId: application.newPostingBatchId, operationKey: input.operationKey },
         application.actor,
         auditMeta,
+        readyV3CorrectionReceipt,
       );
       // The shared committer may wait on member/day serialization locks.  A
       // Human commit that loses its live qualification during that wait must
