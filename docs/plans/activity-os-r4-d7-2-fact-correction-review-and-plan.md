@@ -548,3 +548,11 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 该 migration 仅重建 `ptacr_receipt_guard`：已识别的 `recognize_correction_time_allocation` receipt 由新 AFTER INSERT transition-table 守卫处理；D3/D4、其他 receipt 及 correction parent 的错误 operationCode 仍逐行进入原 `ptar_receipt_guard`。新守卫按原优先级复核父行存在、operation、result JSON、slice/evidence/manifest 完整性、correction proof shape，并以去重输入先锁 parent，再锁 pending/application/request/batch/segment、source、base、policy，随后一次集合聚合保留 application-not-ready → pending-fact-mismatch → valid-nonempty → zero-source → unsupported-source 的拒绝顺序。所有路径保持 fail-closed 与既有 7 秒预算。
 
 获准 `app_test_w98` 已完成第128条冷回放、127→128 非空升级、单身份 Human V3 链和 2,000 身份 Human V3 链，运行后确认 w98 已回收；`pnpm test:contract` 另在本工作树受控 `app_test_*` 测试库应用第128条并通过1,072项契约，非生产库。旧迁移测试中使用其他 scratch worker 的13份仍由 PR CI 冷跑，不扩大本地数据库授权。最终 SQL SHA-256 计算后必须获得维护者第128条3b重签，才可更新 `CUTOVER_SIGNOFF.md` 并依既有授权提交、推送 #1337；PR仍保持 Draft，Ready、合并、生产与 Gate 不在本轮范围。
+
+### 14.9 锁前 Human 资格重复读取收敛（2026-09-20）
+
+第128条经维护者按 SHA-256 `a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b` 重签并推送后的远端 `ab570301`，可信审批已完成；其 PR CI 仅第5组 E2E 失败。失败的2,000身份 Human V3 写链在7,454ms得到 `P2028`，其中当次分段为 materialization 4,310ms、receipt 662ms、ledger 2,298ms。此前同一冷跑路径的三个阶段读数并不稳定，故不能断言第128条集合守护是唯一根因，也不据此再改 SQL、schema、migration 或预算。
+
+在已批准的 P-Commit 候选写集内，本轮仅把 Human `authorizeCommit` 的首次调用从 `lockApplication` 之前移到之后，并把 `lockApplication` 收窄为返回已锁定的申请数据：等待锁期间只发生读取/锁定，锁后立即取得当前资格，之后才可进入重放或写入路径。锁后一次以及账本提交后的第二次 Human 实时资格复核仍保留；内部路径仍在锁后调用既有 `authorizeApplication`。因此不缓存身份、不把 prepare 资格当作 commit 结论，也不移除锁后失效成员的拒绝与事务回滚能力。
+
+未改测试断言、业务7秒/30秒预算、schema、migration、API、DTO、权限、Gate 或生产数据。受控 `app_test_w98` 的 Human 主链与并发链2/2通过、2,000身份链1/1通过、内部重放链1/1通过，运行后已确认测试库回收；`pnpm typecheck` 和目标文件 lint 通过。该本地结果只证明定向路径，13份使用其他 scratch 库的旧迁移测试继续仅由 PR CI 冷跑。第128条 SQL 未变化，故不产生新的3b或4b；待提交推送后的新 SHA 重新经过可信审批与PR CI，#1337继续 Draft。

@@ -1204,39 +1204,28 @@ export class CorrectionApplicationService {
         throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
       }
       this.assertHumanExpectedBaseVersion(options, request);
-      const humanActor = options?.human
-        ? await this.humanAccess.authorizeCommit(
-            tx,
-            currentUser,
-            anchor.activityId,
-            request.baseSettlementVersionId,
-          )
-        : undefined;
       const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
       if (!changeSet.timeCorrection) {
         await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
       }
-      const lockedApplication = await this.lockApplication(
-        tx,
-        request.id,
-        changeSet,
-        currentUser,
-        humanActor,
-      );
+      const lockedApplication = await this.lockApplication(tx, request.id, changeSet);
       // `lockApplication` may itself wait on another prepare/commit.  The
-      // Human route therefore repeats the exact current qualification after
-      // that lock before either a replay result or any write can escape.
-      const application = options?.human
-        ? {
-            ...lockedApplication,
-            actor: await this.humanAccess.authorizeCommit(
+      // Human route takes its first qualification only after that lock: before
+      // this point the transaction has only read/locked rows, so the earlier
+      // qualification was duplicate work.  The post-lock and post-ledger
+      // qualifications remain the authoritative live checks before a replay
+      // or write can escape.
+      const application = {
+        ...lockedApplication,
+        actor: options?.human
+          ? await this.humanAccess.authorizeCommit(
               tx,
               currentUser,
               anchor.activityId,
               request.baseSettlementVersionId,
-            ),
-          }
-        : lockedApplication;
+            )
+          : await this.authorizeApplication(tx, currentUser),
+      };
       this.assertHumanCommitTarget(options, application);
       if (options?.human && application.preparedByUserId !== application.actor.id) {
         throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
@@ -1429,10 +1418,7 @@ export class CorrectionApplicationService {
     tx: PrismaTx,
     correctionRequestId: string,
     changeSet: CorrectionChangeSet,
-    claimed: CurrentUserPayload,
-    authorizedActor?: CurrentUserPayload,
   ): Promise<{
-    actor: CurrentUserPayload;
     id: string;
     statusCode: string;
     newSettlementVersionId: string;
@@ -1460,7 +1446,7 @@ export class CorrectionApplicationService {
     const row = rows[0];
     if (row === undefined) throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
     await this.readPreparedSegmentCount(tx, row.id, changeSet);
-    return { ...row, actor: authorizedActor ?? (await this.authorizeApplication(tx, claimed)) };
+    return row;
   }
 
   // ===== 读 ================================================================
