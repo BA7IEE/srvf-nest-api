@@ -153,6 +153,22 @@ export interface CorrectionTimeAllocationProofPrevalidation {
 
 type CorrectionTimeAllocationProofReader = Pick<Prisma.TransactionClient, 'correctionApplication'>;
 
+interface CorrectionTimeAllocationProofPrevalidationCandidate {
+  readonly id: string;
+  readonly timeSourceProof: {
+    readonly id: string;
+    readonly applicationId: string;
+    readonly activityId: string;
+    readonly sourceSetHash: string;
+    readonly sourceSnapshotJson: Prisma.JsonValue;
+    readonly expectedSegmentCount: number;
+    readonly expectedPendingCount: number;
+    readonly expectedSliceCount: number;
+    readonly expectedBindingCount: number;
+    readonly formatVersion: number;
+  } | null;
+}
+
 export interface CorrectionTimeAllocationPreparation {
   readonly sourceProofId: string;
   readonly sourceProofHash: string;
@@ -199,32 +215,44 @@ export class CorrectionTimeAllocationService {
     reader: CorrectionTimeAllocationProofReader,
     input: { correctionRequestId: string; activityId: string },
   ): Promise<CorrectionTimeAllocationProofPrevalidation | undefined> {
-    const application = await reader.correctionApplication.findFirst({
-      where: {
-        correctionRequestId: input.correctionRequestId,
-        statusCode: 'preparing',
-        timeSourceProof: { isNot: null },
-      },
-      orderBy: { createdAt: 'asc' },
-      select: {
-        id: true,
-        timeSourceProof: {
-          select: {
-            id: true,
-            applicationId: true,
-            activityId: true,
-            sourceSetHash: true,
-            sourceSnapshotJson: true,
-            expectedSegmentCount: true,
-            expectedPendingCount: true,
-            expectedSliceCount: true,
-            expectedBindingCount: true,
-            formatVersion: true,
+    let application: CorrectionTimeAllocationProofPrevalidationCandidate | null;
+    try {
+      application = await reader.correctionApplication.findFirst({
+        where: {
+          correctionRequestId: input.correctionRequestId,
+          statusCode: 'preparing',
+          timeSourceProof: { isNot: null },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          timeSourceProof: {
+            select: {
+              id: true,
+              applicationId: true,
+              activityId: true,
+              sourceSetHash: true,
+              sourceSnapshotJson: true,
+              expectedSegmentCount: true,
+              expectedPendingCount: true,
+              expectedSliceCount: true,
+              expectedBindingCount: true,
+              formatVersion: true,
+            },
           },
         },
-      },
-    });
-    const proof = application?.timeSourceProof;
+      });
+    } catch (error) {
+      // Migration replays intentionally execute pre-D7 schemas, where the
+      // optional proof table does not exist yet. This hint must never prevent
+      // their historical commit/replay path from using its original checks.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2021') {
+        return undefined;
+      }
+      throw error;
+    }
+    if (!application) return undefined;
+    const proof = application.timeSourceProof;
     if (
       !proof ||
       application.id !== proof.applicationId ||

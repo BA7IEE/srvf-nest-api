@@ -431,6 +431,23 @@ describe('D7-2 full correction-time source proof', () => {
     expect(fullRead.select.sourceSnapshotJson).toBe(true);
   });
 
+  it('leaves historical replay on its original path when the future proof table is absent', async () => {
+    const f = fixture();
+    f.tx.correctionApplication.findFirst.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('missing future proof table', {
+        code: 'P2021',
+        clientVersion: 'test',
+      }),
+    );
+
+    await expect(
+      f.service.prevalidateFrozenSourceProof(f.tx as unknown as Prisma.TransactionClient, {
+        correctionRequestId: 'request-one',
+        activityId,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it('fails closed when the one-statement binding write reports an incomplete count', async () => {
     const f = fixture();
     const prepared = await prepare(f);
