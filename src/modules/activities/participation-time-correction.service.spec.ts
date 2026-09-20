@@ -227,6 +227,72 @@ describe('D7 correction source and commit ownership', () => {
       expect(db.participationTimeCorrectionCommitReceipt.create).not.toHaveBeenCalled();
     }
   });
+  it('reuses only the exact fresh V3 receipt anchor before the later locked full check', async () => {
+    const db = makeDb();
+    const manifest = {
+      id: 'manifest',
+      correctionRequestId: 'request',
+      postingBatchId: 'batch',
+      activityId: 'activity',
+      settlementRunId: 'run',
+      baseSettlementVersionId: 'base',
+      settlementVersionId: 'next',
+      requestHash: 'a'.repeat(64),
+      contentHash: 'c'.repeat(64),
+      batchStatus: 'ready',
+    };
+    db.$queryRaw
+      .mockResolvedValueOnce([manifest])
+      .mockResolvedValueOnce([{ receiptId: 'receipt' }]);
+    db.participationTimeCorrectionCommitReceipt.create.mockResolvedValue({ id: 'receipt' });
+
+    const receipt = await service.createCommitReceipt(db as never, 'batch');
+
+    expect(receipt).toEqual({
+      receiptId: 'receipt',
+      manifestId: 'manifest',
+      correctionRequestId: 'request',
+      postingBatchId: 'batch',
+      activityId: 'activity',
+      settlementRunId: 'run',
+      baseSettlementVersionId: 'base',
+      settlementVersionId: 'next',
+      requestHash: 'a'.repeat(64),
+      contentHash: 'c'.repeat(64),
+    });
+    await expect(service.hasReadyV3CommitReceiptAnchor(db as never, receipt)).resolves.toBe(true);
+
+    const [parts] = db.$queryRaw.mock.calls[1] as [TemplateStringsArray];
+    const sql = parts.join('?');
+    for (const condition of [
+      "q.\"requestedChangeJson\"->'schemaVersion' = '3'::jsonb",
+      'm."formatVersion" = 2',
+      'm."sourceProofId" IS NOT NULL',
+      'm."sourceProofHash" IS NOT NULL',
+      'q."requestHash" = m."requestHash"',
+      'a."statusCode" = \'preparing\'',
+      'q."statusCode" = \'applying\'',
+      'b."statusCode" = \'ready\'',
+    ])
+      expect(sql).toContain(condition);
+  });
+  it('does not reuse a missing or stale receipt anchor', async () => {
+    const db = makeDb();
+    await expect(
+      service.hasReadyV3CommitReceiptAnchor(db as never, {
+        receiptId: 'receipt',
+        manifestId: 'manifest',
+        correctionRequestId: 'request',
+        postingBatchId: 'batch',
+        activityId: 'activity',
+        settlementRunId: 'run',
+        baseSettlementVersionId: 'base',
+        settlementVersionId: 'next',
+        requestHash: 'a'.repeat(64),
+        contentHash: 'c'.repeat(64),
+      }),
+    ).resolves.toBe(false);
+  });
   it('uses the bound application and exact JSON version to identify D7, not the presence of a manifest', async () => {
     const db = makeDb();
     db.$queryRaw.mockResolvedValue([

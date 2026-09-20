@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
-import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
+import {
+  ParticipationTimeCorrectionService,
+  type ReadyV3CorrectionReceiptAnchor,
+} from './participation-time-correction.service';
 import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
@@ -223,12 +226,14 @@ export class LedgerPostingService {
     input: LedgerCommitInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    readyV3CorrectionReceipt?: ReadyV3CorrectionReceiptAnchor,
   ): Promise<LedgerCommitResult> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
     return this.commitBatchProtocol(tx, activityId, input, currentUser, auditMeta, {
       conversion: false,
+      readyV3CorrectionReceipt,
     }).catch((error: unknown) => this.timeLedger.rethrowConstraint(error));
   }
 
@@ -265,7 +270,7 @@ export class LedgerPostingService {
     input: LedgerCommitInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
-    options: { conversion: boolean },
+    options: { conversion: boolean; readyV3CorrectionReceipt?: ReadyV3CorrectionReceiptAnchor },
   ): Promise<LedgerCommitResult> {
     {
       // ===== ①②③④ 固定锁序 =====
@@ -278,7 +283,18 @@ export class LedgerPostingService {
       if (correction) {
         if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
         await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
-        await this.timeCorrection.assertComplete(tx, batch.id, true);
+        // A fresh V3 outer correction has just inserted its receipt in this
+        // transaction.  That INSERT trigger already validated the full set;
+        // reuse only its compact immutable anchor here.  Every other entry
+        // point, stale anchor and replay keeps the historical full check.
+        const readyV3ReceiptMatches =
+          batch.statusCode === 'ready' &&
+          options.readyV3CorrectionReceipt !== undefined &&
+          (await this.timeCorrection.hasReadyV3CommitReceiptAnchor(
+            tx,
+            options.readyV3CorrectionReceipt,
+          ));
+        if (!readyV3ReceiptMatches) await this.timeCorrection.assertComplete(tx, batch.id, true);
       }
       const classified = !correction && (await this.timeLedger.hasClassifiedSource(tx, batch));
       if (classified) {

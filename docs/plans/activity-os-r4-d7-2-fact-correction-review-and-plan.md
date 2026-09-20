@@ -556,3 +556,11 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 在已批准的 P-Commit 候选写集内，本轮仅把 Human `authorizeCommit` 的首次调用从 `lockApplication` 之前移到之后，并把 `lockApplication` 收窄为返回已锁定的申请数据：等待锁期间只发生读取/锁定，锁后立即取得当前资格，之后才可进入重放或写入路径。锁后一次以及账本提交后的第二次 Human 实时资格复核仍保留；内部路径仍在锁后调用既有 `authorizeApplication`。因此不缓存身份、不把 prepare 资格当作 commit 结论，也不移除锁后失效成员的拒绝与事务回滚能力。
 
 未改测试断言、业务7秒/30秒预算、schema、migration、API、DTO、权限、Gate 或生产数据。受控 `app_test_w98` 的 Human 主链与并发链2/2通过、2,000身份链1/1通过、内部重放链1/1通过，运行后已确认测试库回收；`pnpm typecheck` 和目标文件 lint 通过。该本地结果只证明定向路径，13份使用其他 scratch 库的旧迁移测试继续仅由 PR CI 冷跑。第128条 SQL 未变化，故不产生新的3b或4b；待提交推送后的新 SHA 重新经过可信审批与PR CI，#1337继续 Draft。
+
+### 14.10 P-Commit 主干冷跑修复（2026-09-20）
+
+[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 已 squash 合入 `main` 的 `f6f8adb47c2e38f1572771c489676109ba07483c`。合并后 [main CI 35515131360](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35515131360) 只有第5组 E2E 的 2,000 身份 Human V3 提交链失败，其他已完成 job 均通过；因此不能把 #1337 的 PR 绿误登记为主干验证成功。
+
+本修复只对同一事务内刚写入、且 receipt 触发器已验证的**新鲜 V3**收据传递紧凑锚点。共享账本提交在 member/day 锁之前重新读取该锚点，只有收据、manifest、申请、请求、批次、活动、版本、hash、V3 格式和 ready/preparing/applying 状态全部精确相符时，才跳过这一处锁前的重复 `assertComplete`。锁后完整 `assertComplete`、两轮 `authorizeCorrection`、重放原路径、数据库守卫、原子提交和 7 秒预算全部保留；V1/V2、没有锚点、锚点陈旧或非 ready 批次一律回退原全量校验。
+
+本地只用获准的 `app_test_w98` 执行：2,000 身份新鲜 V3 定向链 1/1 通过（146.072 秒），完整 `activity-os-r4-d7-time-correction` 7/7 通过（245.715 秒）。目标单测 17/17、`pnpm typecheck` 和目标 lint 均通过。维护者已为 `docs/ai-harness/ROUTE_AUTHZ.md` 在本工作树发放最小授权，`CODEMAP.md` 与 `docs/ai-harness/ROUTE_AUTHZ.md` 已刷新，`pnpm docs:codemap:check`、`pnpm docs:authz:check` 与 `pnpm harness:selftest` 均通过；待提交、推送并创建修复 Draft PR。没有新 migration，因此不产生新的 3b/4b；未 Ready、合并、操作生产或启用 Gate。

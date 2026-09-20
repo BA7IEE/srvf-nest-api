@@ -28,6 +28,24 @@ export interface CorrectionBatchClassification {
   hasApplication: boolean;
 }
 
+/**
+ * A V3 receipt just inserted by the outer correction transaction.  It is an
+ * optimization hint only: callers must re-read this compact anchor after the
+ * batch lock, and the locked final full-set verification still decides commit.
+ */
+export interface ReadyV3CorrectionReceiptAnchor {
+  readonly receiptId: string;
+  readonly manifestId: string;
+  readonly correctionRequestId: string;
+  readonly postingBatchId: string;
+  readonly activityId: string;
+  readonly settlementRunId: string;
+  readonly baseSettlementVersionId: string;
+  readonly settlementVersionId: string;
+  readonly requestHash: string;
+  readonly contentHash: string;
+}
+
 /** The caller owns Activity/run/version/batch locks and the entire correction transaction. */
 @Injectable()
 export class ParticipationTimeCorrectionService {
@@ -255,7 +273,10 @@ export class ParticipationTimeCorrectionService {
   }
 
   /** Only the outer CorrectionApplicationService calls this, never the shared ledger committer. */
-  async createCommitReceipt(tx: Prisma.TransactionClient, postingBatchId: string) {
+  async createCommitReceipt(
+    tx: Prisma.TransactionClient,
+    postingBatchId: string,
+  ): Promise<ReadyV3CorrectionReceiptAnchor> {
     const locked = await tx.$queryRaw<
       (ParticipationTimeCorrectionManifest & { batchStatus: string })[]
     >`
@@ -266,9 +287,9 @@ export class ParticipationTimeCorrectionService {
     if (locked.length !== 1 || locked[0].batchStatus !== 'ready')
       throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_NOT_READY);
     // The receipt INSERT trigger checks complete pairing here. The shared commit
-    // protocol still performs both independent canonical and authorization checks.
+    // protocol later performs its locked final canonical and authorization checks.
     const manifest = locked[0];
-    return tx.participationTimeCorrectionCommitReceipt.create({
+    const receipt = await tx.participationTimeCorrectionCommitReceipt.create({
       data: {
         manifestId: manifest.id,
         postingBatchId,
@@ -279,6 +300,68 @@ export class ParticipationTimeCorrectionService {
         contentHash: manifest.contentHash,
       },
     });
+    return {
+      receiptId: receipt.id,
+      manifestId: manifest.id,
+      correctionRequestId: manifest.correctionRequestId,
+      postingBatchId,
+      activityId: manifest.activityId,
+      settlementRunId: manifest.settlementRunId,
+      baseSettlementVersionId: manifest.baseSettlementVersionId,
+      settlementVersionId: manifest.settlementVersionId,
+      requestHash: manifest.requestHash,
+      contentHash: manifest.contentHash,
+    };
+  }
+
+  /**
+   * A compact, transaction-local re-read for the one fresh V3 receipt written
+   * immediately before shared ledger commit.  It never establishes complete
+   * pairing by itself: the receipt trigger already did that, and the shared
+   * protocol still calls `assertComplete` after member/day locks.
+   */
+  async hasReadyV3CommitReceiptAnchor(
+    tx: Prisma.TransactionClient,
+    anchor: ReadyV3CorrectionReceiptAnchor,
+  ): Promise<boolean> {
+    const rows = await tx.$queryRaw<{ receiptId: string }[]>`
+      SELECT r.id AS "receiptId"
+      FROM "ParticipationTimeCorrectionCommitReceipt" r
+      JOIN "ParticipationTimeCorrectionManifest" m
+        ON m.id = r."manifestId"
+          AND m."postingBatchId" = r."postingBatchId"
+          AND m."activityId" = r."activityId"
+          AND m."settlementRunId" = r."settlementRunId"
+          AND m."baseSettlementVersionId" = r."baseSettlementVersionId"
+          AND m."settlementVersionId" = r."settlementVersionId"
+      JOIN "LedgerPostingBatch" b ON b.id = m."postingBatchId"
+      JOIN "CorrectionApplication" a
+        ON a."newPostingBatchId" = b.id
+          AND a."newSettlementVersionId" = m."settlementVersionId"
+          AND a."correctionRequestId" = m."correctionRequestId"
+      JOIN "AttendanceCorrectionRequest" q ON q.id = a."correctionRequestId"
+      WHERE r.id = ${anchor.receiptId}
+        AND m.id = ${anchor.manifestId}
+        AND m."correctionRequestId" = ${anchor.correctionRequestId}
+        AND b.id = ${anchor.postingBatchId}
+        AND m."activityId" = ${anchor.activityId}
+        AND m."settlementRunId" = ${anchor.settlementRunId}
+        AND m."baseSettlementVersionId" = ${anchor.baseSettlementVersionId}
+        AND m."settlementVersionId" = ${anchor.settlementVersionId}
+        AND m."requestHash" = ${anchor.requestHash}
+        AND r."contentHash" = ${anchor.contentHash}
+        AND m."contentHash" = ${anchor.contentHash}
+        AND b."statusCode" = 'ready'
+        AND a."statusCode" = 'preparing'
+        AND q."statusCode" = 'applying'
+        AND q."requestHash" = m."requestHash"
+        AND q."requestedChangeJson"->'schemaVersion' = '3'::jsonb
+        AND m."formatVersion" = 2
+        AND m."sourceProofId" IS NOT NULL
+        AND m."sourceProofHash" IS NOT NULL
+      LIMIT 2
+    `;
+    return rows.length === 1;
   }
 
   rethrowConstraint(error: unknown): never {
