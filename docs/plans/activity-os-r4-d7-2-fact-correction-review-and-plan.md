@@ -540,3 +540,11 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 仅使用显式 `SRVF_D7_2_W98=1` 的受控单进程入口，跳过通用 global setup，由测试自身重建并回收本工作树的 `app_test_w98`。当前 SQL 的第127条冷回放、126→127 非空升级与两项守卫/历史校验共4/4通过（25.346秒）；含 FK 合法但目标锚点不匹配的单身份 fail-closed 链通过；2,000 身份 Human V3 完整来源证明链通过（129.67秒）；完整 `activity-os-r4-d7-time-correction` 套件7/7通过（362.357秒）。typecheck、lint、Harness自检与1,072项contract也通过。这只证明上述定向本地结果，不能替代新 SHA 的 PR CI；13份使用其他 scratch worker 的旧迁移测试仍只由 PR CI 冷跑。
 
 本节覆盖 §14.6 中“若仍需 migration”的历史前提，不扩大其余 CI 修复写集。TypeScript、lint、Harness 自检、代码地图与签字对拍已完成；#1337 新 SHA 的 PR CI仍待裁决。PR保持 Draft，未 Ready、合并、操作生产或启用 Gate。
+
+### 14.8 第128条 correction receipt 集合守护（2026-09-20）
+
+第127条将 correction allocation 本身改为语句级集合守护后，#1337 冷跑的 2,000 身份 Human V3 链仍在 receipt 写入阶段触发 7 秒 `P2028`。分段诊断显示这批 receipt 已在同一 bounded `createMany` 内写入，而第125条 `ptar_receipt_guard` 会对每一行再次执行整条 immutable correction proof；因此本轮只新增第128条 `20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set`，不改表、列、索引、schema、权限、DML、回填、删除、API、DTO、Gate 或业务预算。
+
+该 migration 仅重建 `ptacr_receipt_guard`：已识别的 `recognize_correction_time_allocation` receipt 由新 AFTER INSERT transition-table 守卫处理；D3/D4、其他 receipt 及 correction parent 的错误 operationCode 仍逐行进入原 `ptar_receipt_guard`。新守卫按原优先级复核父行存在、operation、result JSON、slice/evidence/manifest 完整性、correction proof shape，并以去重输入先锁 parent，再锁 pending/application/request/batch/segment、source、base、policy，随后一次集合聚合保留 application-not-ready → pending-fact-mismatch → valid-nonempty → zero-source → unsupported-source 的拒绝顺序。所有路径保持 fail-closed 与既有 7 秒预算。
+
+获准 `app_test_w98` 已完成第128条冷回放、127→128 非空升级、单身份 Human V3 链和 2,000 身份 Human V3 链，运行后确认 w98 已回收；`pnpm test:contract` 另在本工作树受控 `app_test_*` 测试库应用第128条并通过1,072项契约，非生产库。旧迁移测试中使用其他 scratch worker 的13份仍由 PR CI 冷跑，不扩大本地数据库授权。最终 SQL SHA-256 计算后必须获得维护者第128条3b重签，才可更新 `CUTOVER_SIGNOFF.md` 并依既有授权提交、推送 #1337；PR仍保持 Draft，Ready、合并、生产与 Gate 不在本轮范围。

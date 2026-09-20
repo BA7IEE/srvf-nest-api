@@ -221,6 +221,19 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **当前重签（2026-09-20，D7-2 更正收据集合守护）**：维护者确认第128条
+> `20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set`，SQL SHA-256
+> `a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b`。
+> 第128条仅将 `recognize_correction_time_allocation` 的收据分支从逐行 immutable-proof
+> 重读收敛为 AFTER INSERT 语句级集合守护；D3/D4、非该 operationCode 与错误 operationCode
+> 仍走历史 `ptar_receipt_guard`。父行／子项／proof、同活动复合锚点、既有锁序、拒绝优先级、
+> fail-closed 约束及7秒预算不变；不新增表、列、权限、DML、回填、删除、API、DTO 或 Gate。
+> `migration-total` 对拍为128；获准 `app_test_w98` 已完成第128条冷回放、127→128 非空升级和
+> 2,000 身份 Human V3 定向链，`pnpm test:contract` 在受控非生产测试库通过1,072项契约。
+> 本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+> **本轮依据**：维护者本轮明确确认「确认重签 3b（D7-2，第128条 migration，摘要
+> a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b）」。
+
 > **当前重签（2026-09-20，D7-2 correction allocation 集合守护）**：维护者确认第127条
 > `20260920090000_activity_os_r4_d7_2_allocation_guard_set`，SQL SHA-256
 > `d76418fb2b837a6ff264c4d061b43e7c0b476d3b71b238480b2ce67a8aeaf51d`。
@@ -317,6 +330,17 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **日期**:2026-09-20
 - **依据**:维护者本轮明确确认「确认重签 3b（D7-2，第127条 migration，摘要 d76418fb2b837a6ff264c4d061b43e7c0b476d3b71b238480b2ce67a8aeaf51d）」。
 - **对拍**:有 —— `migration-total` = `127`
+
+> **当前正式签字（2026-09-20，覆盖上方第127条及更早历史字段）**：D7-2 更正收据集合守护的第128条
+> `20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set` 已由维护者按下列字段重签；
+> 上方字段仅保留第127条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:2026-09-20 D7-2 更正收据集合守护重签：第128条仅将 `recognize_correction_time_allocation` 的收据插入从逐行 immutable-proof 重读改为 AFTER INSERT 语句级集合校验；D3/D4、非该 operationCode 与错误 operationCode 仍走历史 `ptar_receipt_guard`。父行／子项／proof、同活动复合锚点、既有锁序、拒绝优先级、fail-closed 约束和7秒预算不变；不新增表、列、权限、DML、回填、删除、API、DTO 或 Gate。签字前已在获准 `app_test_w98` 完成第128条冷回放、127→128 非空升级、单身份和2,000身份 Human V3 定向链，`pnpm test:contract` 在受控非生产测试库通过1,072项契约；本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-20
+- **依据**:维护者本轮明确确认「确认重签 3b（D7-2，第128条 migration，摘要 a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b）」。
+- **对拍**:有 —— `migration-total` = `128`
 
 ### 4b — 「字典、Audit events」的对账
 
