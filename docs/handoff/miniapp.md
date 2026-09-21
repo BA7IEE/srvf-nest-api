@@ -1,5 +1,20 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## D8-1 我的正式参与时长证明（候选分支，未上线）
+
+新增 `GET /api/app/v1/my/participation-time-proof`，不接收 `memberId`，后端只从当前登录用户解析 active App member。
+查询必须传 `dateFrom`、`dateTo`，区间最多366天；`page` 从1开始，`pageSize` 为1..100。这个入口与
+`/participation-ledger` 是两份不同语义的合同：后者仍是原始兼容参与/贡献账本，不得用它在客户端拼凑正式时长证明。
+
+页面建议分开显示：历史已认定服务时长、切换后志愿服务、培训、组织和不计入秒数。
+`eligibleServiceSeconds` 只是历史已认定 + 切换后志愿服务，不包含其它三类。明细中
+`legacy_recognized_service` 不得翻译成“志愿服务”，建议显示为“历史已认定服务时长”。
+`proofSetHash` 基于完整区间，不受当前页影响；`isPubliclyVerifiable=false`，本期不提供对外公开验真或 PDF 签章。
+
+`20235` 表示切换收据尚不存在，应显示“正式证明尚未启用”，不是零时长；`20236` 表示证据链不完整，
+`20237` 表示查询集合超上限，`20238` 表示范围错误。任一具名错误都不得在屏幕上降级成旧汇总假冒正式证明。
+当前仅后端候选分支与生成 client；前端页面、PR 合并、部署、Gate、D8-2 官方统计接线和 D8-OPS 生产切换都未完成。
+
 ## D7-1 分类认定更正（分支验收中，未上线）
 
 新增 `GET /api/app/v1/my/managed-activities/{activityId}/time-settlement/versions/{settlementVersionId}/correction-ledger`，

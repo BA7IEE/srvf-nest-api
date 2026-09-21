@@ -1,5 +1,14 @@
 # prisma — 本地铁律
 
+> **D8-1 当前实施工作树（2026-09-21，未提交、未合并、未部署）**：当前累计 **129 个 migration、176 个模型**；第129条
+> `20260921180000_activity_os_r4_d8_proof_cutover` 只新增不可变单例切换收据和切换后根账绑定两表，
+> 以同一 PostgreSQL advisory shared/exclusive 事务锁线性化普通账本提交与切换。旧根账不回填、
+> 不重分类，correction 继承根账制度；切换后普通 committed batch 必须由数据库触发器同事务生成完整
+> binding，缺根清单或锚点不一致即 fail-closed 回滚。两表禁止 UPDATE、DELETE、TRUNCATE，不改旧
+> 128条 SQL，不删除、回填或重解释业务数据。`app_test_w98` 已通过 129 条冷回放、128→129 非空升级、
+> 不可变/锚点反例和两种真并发顺序。3b 尚待维护者按最终 SQL SHA-256 重签；签字不代替 PR CI、
+> 合并或 D8-OPS 生产切换授权。下文 D7-2 描述保留为历史时点。
+
 当前 D7-2 事实更正实现工作树为 **128 个 migration、174 个模型**。第123条仍为
 `20260915120000_activity_os_r4_d7_time_correction`，第124条
 `20260915170000_activity_os_r4_d7_pairing_index_probe` 保留 D7-1 的等价 SQL 修复；第125条

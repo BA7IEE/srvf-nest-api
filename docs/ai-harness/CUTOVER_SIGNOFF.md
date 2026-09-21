@@ -221,6 +221,17 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **当前重签（2026-09-22，D8-1 proof cutover）**：维护者确认第129条
+> `20260921180000_activity_os_r4_d8_proof_cutover`，SQL SHA-256
+> `bdfaeae5029b113c66cc85923a2e1b5307c69fe892a1c232edf3281c5672305e`。
+> 第129条只新增不可变单例 `ActivityTimeCutoverReceipt`、切换后根账绑定
+> `ParticipationTimeCutoverBinding` 及配套同活动、完整性、不可改删和 advisory fence 约束；
+> 不执行 DML、回填、删除、历史重分类、生产 cutover 或 Gate 切换。获准 `app_test_w98` 已完成
+> 第129条冷回放、128→129 非空升级、数据库约束 3/3、cutover 3/3、并发 2/2 和正式证明 HTTP 1/1。
+> 本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+> **本轮依据**：维护者明确确认「确认重签 3b（D8-1，第129条 migration，摘要
+> bdfaeae5029b113c66cc85923a2e1b5307c69fe892a1c232edf3281c5672305e）」。
+
 > **当前重签（2026-09-20，D7-2 更正收据集合守护）**：维护者确认第128条
 > `20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set`，SQL SHA-256
 > `a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b`。
@@ -342,7 +353,26 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者本轮明确确认「确认重签 3b（D7-2，第128条 migration，摘要 a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b）」。
 - **对拍**:有 —— `migration-total` = `128`
 
+> **当前正式签字（2026-09-22，覆盖上方第128条及更早历史字段）**：D8-1 proof cutover 的
+> 第129条 `20260921180000_activity_os_r4_d8_proof_cutover` 已由维护者按上方实际摘要重签；
+> 上方字段保留第128条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:2026-09-22 D8-1 proof cutover 重签：第129条只新增不可变单例切换收据、切换后根账绑定及其同活动、完整性、不可改删和 advisory fence 约束；零 DML、回填、删除、历史重分类、生产 cutover 或 Gate 切换。获准 app_test_w98 已完成第129条冷回放、128→129 非空升级、数据库约束、cutover、并发和正式证明 HTTP 定向验证；本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-22
+- **依据**:维护者本轮明确确认「确认重签 3b（D8-1，第129条 migration，摘要 bdfaeae5029b113c66cc85923a2e1b5307c69fe892a1c232edf3281c5672305e）」。
+- **对拍**:有 —— `migration-total` = `129`
+
 ### 4b — 「字典、Audit events」的对账
+
+> **当前重签（2026-09-22，D8-1）**：维护者确认权限码265、Audit events 170总计／165活跃，
+> 字典30类／277项，`seed-sha256-12` 为 `b484cbc013d5`。既有
+> `activity.settlement-final-review.record` GLOBAL 权限覆盖 cutover，既有
+> `attendance.read.sheet` 覆盖 scoped／GLOBAL 正式证明；权限目录 SHA-256 为
+> `46fa3fa72c4759465bccc541f3c5647c287d2df89eae2ff425772c4fc9fc8a27`。
+> 本轮只新增活跃审计事件 `activity.time-cutover.command`，不新增权限码、默认授予、
+> Service Principal 或 delegation。本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
 
 > **当前重签（2026-09-16，D7-2）**：维护者确认权限码265、Audit events 169总计／164活跃；
 > 既有 `activity.time-settlement.read`、`activity.time-settlement.prepare`、
@@ -374,6 +404,16 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **对拍**:有 —— `seed-sha256-12` = `b484cbc013d5`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `169`;`audit-event-registry-active` = `164`
 
 > 2026-09-13 #1327方案A补签：维护者明确确认「确认方案 A及4b摘要 b484cbc013d5；已执行，继续」。仅将已登记的两枚D4权限接入既有seed写库循环，不新增权限码、不默认授予内建角色；265权限、169审计总计／164活跃及字典读数不变。前次seed摘要`03f30502685b`保留为历史依据；本次不替代CI、合并或生产／Gate授权。
+
+> **当前正式签字（2026-09-22，覆盖本节此前历史字段）**：D8-1 的权限、审计、字典、seed
+> 与既有访问面已由维护者按上方实际读数重签。
+
+- **结论**:认可
+- **理由**:2026-09-22 D8-1重签：权限码仍为265；Audit events为170总计／165活跃，只新增 `activity.time-cutover.command`；字典仍为30类／277项，seed摘要仍为b484cbc013d5。既有 `activity.settlement-final-review.record` GLOBAL权限覆盖cutover，既有 `attendance.read.sheet` 覆盖scoped／GLOBAL正式证明；权限目录SHA-256为46fa3fa72c4759465bccc541f3c5647c287d2df89eae2ff425772c4fc9fc8a27。不新增权限码、默认授予、Service Principal或delegation；本签不替代Draft PR CI、Ready、合并、生产或Gate授权。
+- **签字人**:维护者
+- **日期**:2026-09-22
+- **依据**:维护者本轮明确确认「确认重签 4b（D8-1：权限码265；Audit events 170总计、165活跃；字典30类、277项，seed摘要 b484cbc013d5；既有 activity.settlement-final-review.record GLOBAL 权限覆盖 cutover，既有 attendance.read.sheet 覆盖 scoped/GLOBAL 正式证明；权限目录摘要 46fa3fa72c4759465bccc541f3c5647c287d2df89eae2ff425772c4fc9fc8a27）」。
+- **对拍**:有 —— `seed-sha256-12` = `b484cbc013d5`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `170`;`audit-event-registry-active` = `165`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。

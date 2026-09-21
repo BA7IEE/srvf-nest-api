@@ -1,5 +1,13 @@
 # activities — 本地铁律
 
+> **D8-1 实施候选（2026-09-21，未提交、未合并、未上线）**：按 D8 方案 A 建立不可逆切换收据、
+> 切换后根账 binding、统一 `ParticipationTimeTruthQueryService`、只读预检/执行 CLI，以及 App self 和
+> Admin scoped/GLOBAL 两个正式参与时长证明入口。无收据时证明具名不可用，不改现有统计口径；
+> 有收据后旧制度行明示为 `legacy_recognized_service`，切换后根账从分类账本及 committed 更正链
+> 读取，异常链 fail-closed，不把旧数据冒充为 `volunteer_service`。不新增权限码或默认授权；
+> Admin 读复用 `attendance.read.sheet` 并在 service 内做 member resource scoped/GLOBAL 复核。本刀只是 D8-1；
+> D8-2 官方统计/关账接线、D8-OPS 生产切换、Gate、部署与整体跨模型复审仍未做。
+
 > **当前交付状态（2026-09-13，拆分验证中）**：维护者已批准在122路径联合范围内保留全部现有改动，先草稿依赖、后D4分别完成独立验证、拆分提交、推送及两个关联Draft PR。草稿依赖保持D3的120条迁移／263权限／625端点；本D4下游实现为121条迁移／265权限／633端点、审计169总计／164活跃。3b（第121条）、4b（265／169／164）和7c（runbook摘要e53f7b4cedc8）已按维护者确认登记并通过对拍，不再是待授权项。预算120／400／950、kindCode检查器、封印查询等价优化、G6不同请求各留审计、既有测试前置与围栏适配均已批准；下文待确认／待签字的早期记录只保留历史证据。独立验证结果见计划后续登记；尚未合并、未操作生产、未启用Gate、未删除业务数据，整体跨模型复审、前端发布和生产验收仍未完成。
 
 > **D4 implementation（2026-09-12，未提交、未合并）**：按 [#1325 精确计划](../../../docs/plans/activity-os-r4-d4-time-bucket-settlement-workbench-implementation-plan.md) 的 101 路径授权实施；起点 main `eef0bbe4` 已包含 D3/#1323。新增 8 个 Human App 分类结算入口、4 个不可变模型、2 个显式权限和 1 个审计事件；工作树读数为 165 模型／121 migration／633 端点／265 权限／169 审计总计（164 活跃），不是生产或 main 读数。新命令支持有完整封印证明的 draft 认定、prepare 和同原结算事务的显式 submit；原 D3 V1 committed-only、旧提交和 V1 contentHash 不变。桶 kindCode 只登记 L1 inventory / not-derived；零内建角色默认授码。当前在 app_test_w98 串行验证，性能查询预算尚未通过、3b/4b 待维护者重签；完整验证、PR CI、可信审批、整体跨模型复审及生产验收尚未完成。不合并、不启用 Gate、不删除业务数据。

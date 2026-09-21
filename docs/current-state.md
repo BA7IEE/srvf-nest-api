@@ -15,17 +15,22 @@
 | 版本 / 卫生 | 现场查:`pnpm agent:preflight` |
 | 本版 footprint | 即下方计数块(生成物) |
 
+> **D8-1 候选分支边界（2026-09-21）**：仓内正在验证正式参与时长证明和不可逆切换地基，
+> 不代表 main、部署或生产已切换。新收据不存在时既有统计仍按原口径，新证明入口 fail-closed；
+> D8-2 尚未接入官方统计和新关账。即使 D8-1/D8-2 未来合并，生产 CLI `--execute`、
+> v1.1 Gate、结算只读窗口和 D8-OPS 仍需 exact deployed SHA 下的独立实时授权，AI 不得自行执行。
+
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
 | 计数项 | 值 |
 |---|---|
 | 模块 | 43 |
 | Controller | 124 |
-| Endpoint | 643 |
-| Migration | 128 |
-| BizCode | 557 |
+| Endpoint | 645 |
+| Migration | 129 |
+| BizCode | 565 |
 | 权限码 | 265 |
-| AuditLogEvent | 169 |
+| AuditLogEvent | 170 |
 | 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->

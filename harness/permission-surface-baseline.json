@@ -448,8 +448,8 @@
       "description": "sha256:4a5c0681c1c7d2cefdeffcd1091448a8139b94f0d0d86260ba1bfadfbc5c2e18"
     },
     "attendance.read.sheet": {
-      "endpoints": 19,
-      "surface": "sha256:e91fabfcd5d5bbf5199799d3bd41016b1629b6cc1d5211e6819c337a48e96f80",
+      "endpoints": 20,
+      "surface": "sha256:e0261ef9b58eacade1f8e920cc9dc27280c0295830ac900f431be83d596fbf41",
       "description": "sha256:efdfcdb3d7291a58a8bbdb0cf1c537ee6734e9fab0aa9558b3a916c1f693cbf8"
     },
     "attendance.reject.sheet": {

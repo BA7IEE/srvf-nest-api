@@ -29,7 +29,7 @@ const PREVIOUS_MIGRATION_COUNT = 124;
 const D7_2_FACT_MIGRATION_COUNT = 125;
 const BINDING_GUARD_MIGRATION_COUNT = 126;
 const ALLOCATION_GUARD_MIGRATION_COUNT = 127;
-const CURRENT_MIGRATION_COUNT = 128;
+const CURRENT_MIGRATION_COUNT = 129;
 const WORKER = 98;
 const USE_DEDICATED_W98 = process.env.SRVF_D7_2_W98 === '1';
 const LEGACY_V1_REQUEST_ID = 'd7-2-migration-v1-request';
@@ -413,7 +413,7 @@ describe('D7-2 immutable fact-correction migration', () => {
     ).toBe('ready\t0');
   }
 
-  it('cold replays all 128 migrations and installs the four immutable fact tables', () => {
+  it('cold replays all 129 migrations and installs the four immutable fact tables', () => {
     recreate();
     deploy(schema);
     expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);

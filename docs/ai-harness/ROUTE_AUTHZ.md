@@ -16,9 +16,9 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:5c5206c4f62ca79f1fee04eea165adbb2fb8227073c5ac73fb919803ff39d845 |
-| endpoint count | 643 |
-| legacy [auth] count | 182 |
+| inputDigest | sha256:85cf691a85d5d30326e6821558efb967f5d4efd064a477d85719074e05c34e1e |
+| endpoint count | 645 |
+| legacy [auth] count | 183 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
 | per-route truth source | code |
@@ -29,8 +29,8 @@
 
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
-| admin | 313 | 313 | 0 |
-| app | 201 | 201 | 0 |
+| admin | 314 | 314 | 0 |
+| app | 202 | 202 | 0 |
 | system | 89 | 89 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
@@ -41,8 +41,8 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 428 |
-| auth | 182 |
+| rbac | 429 |
+| auth | 183 |
 | unclassified | 0 |
 
 ## Phase 0 decision record
@@ -89,7 +89,7 @@
 | app tag family | Mobile - My Attendance Member Credential (1) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-attendance-member-credential.controller.ts:25 |
 | app tag family | Mobile - My Certificates (1) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/certificates/controllers/app-my-certificates.controller.ts:44 |
 | app tag family | Mobile - My Insurances (4) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/insurances/controllers/app-me-insurances.controller.ts:124 |
-| app tag family | Mobile - My Participation Ledger (1) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activities/controllers/app-my-participation-ledger.controller.ts:29 |
+| app tag family | Mobile - My Participation Ledger (2) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activities/controllers/app-my-participation-ledger.controller.ts:38 |
 | app tag family | Mobile - My Registrations (5) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:110 |
 | app tag family | Mobile - My Team Join (3) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:75 |
 | app tag family | Mobile - Notifications (6) | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:52 |
@@ -113,7 +113,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:5c5206c4f62ca79f1fee04eea165adbb2fb8227073c5ac73fb919803ff39d845",
+  "inputDigest": "sha256:85cf691a85d5d30326e6821558efb967f5d4efd064a477d85719074e05c34e1e",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -2230,6 +2230,25 @@
       "routeKey": "GET /api/admin/v1/members/:memberId/participation-summary",
       "controller": "AdminMemberAttendanceController",
       "handler": "participationSummary",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "attendance.read.sheet",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/members/:memberId/participation-time-proof",
+      "controller": "AdminMemberParticipationLedgerController",
+      "handler": "proof",
       "legacy": "rbac",
       "policy": {
         "admission": null,
@@ -4656,6 +4675,22 @@
       "routeKey": "GET /api/app/v1/my/participation-summary",
       "controller": "AppMyParticipationSummaryController",
       "handler": "participationSummary",
+      "legacy": "auth",
+      "policy": {
+        "admission": "app-member",
+        "mode": "LOGIN_SCOPED",
+        "codes": [],
+        "require": "all",
+        "scopes": [
+          "self"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/my/participation-time-proof",
+      "controller": "AppMyParticipationLedgerController",
+      "handler": "proof",
       "legacy": "auth",
       "policy": {
         "admission": "app-member",
@@ -11915,7 +11950,7 @@
 | 权限码 | 端点数 | 端点 |
 |---|---:|---|
 | `activity-responsibility.override.record` | 23 | DELETE /api/admin/v1/activities/:activityId/responsibilities/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/collaborators/:assignmentId · DELETE /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · GET /api/admin/v1/activities/:activityId/responsibilities · PATCH /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId · POST /api/admin/v1/activities/:activityId/responsibilities/assign-initiator · POST /api/admin/v1/activities/:activityId/responsibilities/claim · POST /api/admin/v1/activities/:activityId/responsibilities/collaborators · POST /api/admin/v1/activities/:activityId/responsibilities/transfer · POST /api/app/v1/my/managed-activities · POST /api/app/v1/my/managed-activities/:activityId/archive · POST /api/app/v1/my/managed-activities/:activityId/cancel · POST /api/app/v1/my/managed-activities/:activityId/clone · POST /api/app/v1/my/managed-activities/:activityId/collaborators · POST /api/app/v1/my/managed-activities/:activityId/evidence-seals · POST /api/app/v1/my/managed-activities/:activityId/positions · POST /api/app/v1/my/managed-activities/:activityId/terminate · POST /api/app/v1/my/managed-activities/:activityId/transfer-initiator · POST /api/app/v1/my/managed-activities/:activityId/transfer-owner · POST /api/app/v1/my/managed-activities/:activityId/unarchive · POST /api/app/v1/my/managed-activities/emergency · POST /api/app/v1/my/managed-activities/from-template · POST /api/app/v1/my/managed-activities/professional |
-| `attendance.read.sheet` | 19 | GET /api/admin/v1/activities/:activityId/attendance-sheet-draft · GET /api/admin/v1/activities/:activityId/attendance-sheets · GET /api/admin/v1/activities/:activityId/check-ins · GET /api/admin/v1/activities/:activityId/feedback-summary · GET /api/admin/v1/activities/:activityId/feedbacks · GET /api/admin/v1/activities/:activityId/participation-ledger · GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/attendance-settlements · GET /api/admin/v1/attendance-settlements/:id/posting-batch · GET /api/admin/v1/attendance-settlements/:settlementVersionId/review-detail · GET /api/admin/v1/attendance-sheets · GET /api/admin/v1/attendance-sheets/:id · GET /api/admin/v1/attendance-sheets/:id/review-detail · GET /api/admin/v1/members/:memberId/attendance-records · GET /api/admin/v1/members/:memberId/contribution-summary · GET /api/admin/v1/members/:memberId/participation-ledger · GET /api/admin/v1/members/:memberId/participation-summary · GET /api/admin/v1/meta/participation-overview |
+| `attendance.read.sheet` | 20 | GET /api/admin/v1/activities/:activityId/attendance-sheet-draft · GET /api/admin/v1/activities/:activityId/attendance-sheets · GET /api/admin/v1/activities/:activityId/check-ins · GET /api/admin/v1/activities/:activityId/feedback-summary · GET /api/admin/v1/activities/:activityId/feedbacks · GET /api/admin/v1/activities/:activityId/participation-ledger · GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/attendance-settlements · GET /api/admin/v1/attendance-settlements/:id/posting-batch · GET /api/admin/v1/attendance-settlements/:settlementVersionId/review-detail · GET /api/admin/v1/attendance-sheets · GET /api/admin/v1/attendance-sheets/:id · GET /api/admin/v1/attendance-sheets/:id/review-detail · GET /api/admin/v1/members/:memberId/attendance-records · GET /api/admin/v1/members/:memberId/contribution-summary · GET /api/admin/v1/members/:memberId/participation-ledger · GET /api/admin/v1/members/:memberId/participation-summary · GET /api/admin/v1/members/:memberId/participation-time-proof · GET /api/admin/v1/meta/participation-overview |
 | `activity.time-settlement.read` | 10 | GET /api/app/v1/my/managed-activities/:activityId/time-corrections · GET /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId · GET /api/app/v1/my/managed-activities/:activityId/time-settlement · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/allocations/:allocationRevisionId · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/buckets · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/ledger · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/shadow · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/revisions/:timeRevisionId/sources · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/sources · GET /api/app/v1/my/managed-activities/:activityId/time-settlement/versions/:settlementVersionId/correction-ledger |
 | `activity.update.record` | 8 | DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:activityId/positions/:activityPositionId · PATCH /api/admin/v1/activities/:id · POST /api/admin/v1/activities/:activityId/positions · PUT /api/admin/v1/activities/:id/cover · PUT /api/admin/v1/activities/:id/gallery · PUT /api/admin/v1/activities/:id/metric-selection · PUT /api/app/v1/my/managed-activities/:activityId/metric-selection |
 | `activity-registration.read.record` | 7 | GET /api/admin/v1/activities/:activityId/participation-summary · GET /api/admin/v1/activities/:activityId/reconciliation · GET /api/admin/v1/activities/:activityId/registrations · GET /api/admin/v1/activities/:activityId/registrations/export · GET /api/admin/v1/members/:memberId/registrations · GET /api/admin/v1/meta/participation-overview · GET /api/admin/v1/registrations |
@@ -12276,8 +12311,9 @@
 | GET | /api/admin/v1/members/:memberId/insurances | Admin - Member Insurances | rbac | RBAC; admission=-; codes=member-insurance.read.other; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/admin-member-insurances.controller.ts:43; src/modules/insurances/admin-member-insurances.controller.ts:61 |
 | GET | /api/admin/v1/members/:memberId/insurances/overview | Admin - Member Insurances | rbac | RBAC; admission=-; codes=member-insurance.read.other; require=all; scopes=-; engine=rbac-global | code | src/modules/insurances/admin-member-insurances.controller.ts:65; src/modules/insurances/admin-member-insurances.controller.ts:83 |
 | GET | /api/admin/v1/members/:memberId/memberships | Admin - Member Memberships | rbac | RBAC; admission=-; codes=membership.list.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/memberships.controller.ts:40; src/modules/member-departments/memberships.controller.ts:56 |
-| GET | /api/admin/v1/members/:memberId/participation-ledger | Admin - Participation Ledger | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:30; src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:47 |
+| GET | /api/admin/v1/members/:memberId/participation-ledger | Admin - Participation Ledger | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:39; src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:56 |
 | GET | /api/admin/v1/members/:memberId/participation-summary | Admin - Attendances | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/admin-member-attendance.controller.ts:83; src/modules/attendances/controllers/admin-member-attendance.controller.ts:100 |
+| GET | /api/admin/v1/members/:memberId/participation-time-proof | Admin - Participation Ledger | rbac | RBAC; admission=-; codes=attendance.read.sheet; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:59; src/modules/activities/controllers/admin-member-participation-ledger.controller.ts:80 |
 | GET | /api/admin/v1/members/:memberId/position-assignments | Admin - Position Assignments | rbac | RBAC; admission=-; codes=position-assignment.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/position-assignments/position-assignments.controller.ts:113; src/modules/position-assignments/position-assignments.controller.ts:129 |
 | GET | /api/admin/v1/members/:memberId/profile | Admin - Member Profiles | rbac | RBAC; admission=-; codes=member-profile.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/member-profiles/member-profiles.controller.ts:47; src/modules/member-profiles/member-profiles.controller.ts:65 |
 | GET | /api/admin/v1/members/:memberId/registrations | Admin - Registrations | rbac | RBAC; admission=-; codes=activity-registration.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-registrations/controllers/admin-registrations.controller.ts:65; src/modules/activity-registrations/controllers/admin-registrations.controller.ts:86 |
@@ -12409,8 +12445,9 @@
 | GET | /api/app/v1/my/managed-activities/organization-options | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:211; src/modules/activities/controllers/app-managed-activities.controller.ts:229 |
 | GET | /api/app/v1/my/managed-activities/template-version-options | Mobile - Managed Activity Metrics | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-metrics.controller.ts:64; src/modules/activities/controllers/app-managed-activity-metrics.controller.ts:88 |
 | GET | /api/app/v1/my/managed-activities/time-policy-options | Mobile - Managed Activity Time Policy Selection | rbac | RBAC; admission=app-member; codes=activity.time-policy.read; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-policy-selection.controller.ts:38; src/modules/activities/controllers/app-managed-activity-time-policy-selection.controller.ts:59 |
-| GET | /api/app/v1/my/participation-ledger | Mobile - My Participation Ledger | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activities/controllers/app-my-participation-ledger.controller.ts:29; src/modules/activities/controllers/app-my-participation-ledger.controller.ts:43 |
+| GET | /api/app/v1/my/participation-ledger | Mobile - My Participation Ledger | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activities/controllers/app-my-participation-ledger.controller.ts:38; src/modules/activities/controllers/app-my-participation-ledger.controller.ts:52 |
 | GET | /api/app/v1/my/participation-summary | Mobile - My Attendance | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/attendances/controllers/app-my-participation-summary.controller.ts:22; src/modules/attendances/controllers/app-my-participation-summary.controller.ts:38 |
+| GET | /api/app/v1/my/participation-time-proof | Mobile - My Participation Ledger | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activities/controllers/app-my-participation-ledger.controller.ts:55; src/modules/activities/controllers/app-my-participation-ledger.controller.ts:77 |
 | GET | /api/app/v1/my/registrations | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:62; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:78 |
 | GET | /api/app/v1/my/registrations/:id | Mobile - My Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:83; src/modules/activity-registrations/controllers/app-my-registrations.controller.ts:105 |
 | GET | /api/app/v1/notifications | Mobile - Notifications | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/notifications/notification-app.controller.ts:52; src/modules/notifications/notification-app.controller.ts:68 |

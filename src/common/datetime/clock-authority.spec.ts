@@ -430,6 +430,11 @@ const NOT_CLOCK_CRITICAL: ReadonlyArray<{
     column: 'cleanedAt',
     why: '受控清理审计时间；不参与资格、超时或保留期计算',
   },
+  {
+    model: 'ActivityTimeCutoverReceipt',
+    column: 'cutoverAt',
+    why: '由数据库触发器写入并封进不可变收据；制度归属以逐根 binding 为准，不拿该时间与墙钟比较',
+  },
   // Integration Foundation v1 PR1(schema-only):新 @default(now()) 非 createdAt 列的
   // 处置登记(createdAt 由 AUDIT_COLUMNS 全局豁免)。PR1 零运行时 —— 不与任何时钟
   // 比较;PR3/PR5 接入运行时判定(SUSPENDED 即拒 / Grant 有效期)时若有比较需求,

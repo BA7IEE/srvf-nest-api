@@ -1,10 +1,13 @@
 # Activity OS R4 D8 证明读面与正式切换：评审及精确实施计划
 
-> 2026-09-21，仅文档。基线为 `main@bc428bd6b4d09d8ff0a347af7abe589cf1611997`；
+> 2026-09-21，D8-1 实施候选已在独立工作树按本计划开工。基线为 `main@2af4462556f8bf13b4b73b971de8da5bc35b5a0e`；
 > [#1339](https://github.com/BA7IEE/srvf-nest-api/pull/1339) 已合并，合并后
 > [CI 35598127219](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35598127219)
-> completed/success，五个 Contract + E2E 分片全部通过。本文把外部终态蓝图当设计输入，
-> 当前代码、`docs/current-state.md` 与 GitHub 现场事实仍是执行权威；文档中的未来路径不是实施授权。
+> completed/success，五个 Contract + E2E 分片全部通过。维护者已确认本文第4–6、8.1、9、11节及
+> 原87个去重路径的 D8-1 方案 A，以及后续明确扩展的两个治理登记路径，共89个去重路径；仅授权
+> `app_test_w98` 隔离验证、验证后提交/推送/创建 Draft PR。
+> 当前代码、`docs/current-state.md` 与 GitHub 现场事实仍是执行权威；本授权不包含 Ready、合并、
+> 生产、Gate、D8-2 或 D8-OPS。
 
 ## 1. 结论先说
 
@@ -287,66 +290,68 @@ DoD：
 33. `test/contract/__snapshots__/openapi.contract-spec.ts.snap`
 34. `harness/permission-surface-baseline.json`
 35. `harness/authz-assertion-patterns.json`
-36. `CODEMAP.md`
-37. `docs/current-state.md`
-38. `docs/ai-harness/AUDIT_EVENT_REGISTRY.md`
-39. `docs/ai-harness/ROUTE_AUTHZ.md`
-40. `docs/ai-harness/RBAC_MAP.md`
-41. `docs/ai-harness/CUTOVER_SIGNOFF.md`
-42. `docs/handoff/openapi.json`
-43. `docs/handoff/contract-version-registry.md`
-44. `docs/handoff/admin-web.md`
-45. `docs/handoff/miniapp.md`
-46. `docs/handoff/clients/admin/client.ts`
-47. `docs/handoff/clients/admin/types.ts`
-48. `docs/handoff/clients/app/client.ts`
-49. `docs/handoff/clients/app/types.ts`
-50. `docs/handoff/clients/auth/client.ts`
-51. `docs/handoff/clients/auth/types.ts`
-52. `docs/handoff/clients/integration/client.ts`
-53. `docs/handoff/clients/integration/types.ts`
-54. `docs/handoff/clients/open/client.ts`
-55. `docs/handoff/clients/open/types.ts`
-56. `docs/handoff/clients/shared/types.ts`
-57. `docs/handoff/clients/system/client.ts`
-58. `docs/handoff/clients/system/types.ts`
-59. `docs/ops/activity-time-cutover.md`（新增）
-60. `docs/ops/activity-time-ledger.md`
-61. `docs/plans/activity-os-r4-d8-proof-cutover-review-and-plan.md`
-62. `changelog.d/activity-os-r4-d8-proof-cutover-review.md`
-63. `docs/ai-harness/NEXT_TASKS.md`
-64. `docs/ai-harness/FROZEN_DRAFTS.md`
+36. `harness/domain-map.json`
+37. `harness/state-machines.json`
+38. `CODEMAP.md`
+39. `docs/current-state.md`
+40. `docs/ai-harness/AUDIT_EVENT_REGISTRY.md`
+41. `docs/ai-harness/ROUTE_AUTHZ.md`
+42. `docs/ai-harness/RBAC_MAP.md`
+43. `docs/ai-harness/CUTOVER_SIGNOFF.md`
+44. `docs/handoff/openapi.json`
+45. `docs/handoff/contract-version-registry.md`
+46. `docs/handoff/admin-web.md`
+47. `docs/handoff/miniapp.md`
+48. `docs/handoff/clients/admin/client.ts`
+49. `docs/handoff/clients/admin/types.ts`
+50. `docs/handoff/clients/app/client.ts`
+51. `docs/handoff/clients/app/types.ts`
+52. `docs/handoff/clients/auth/client.ts`
+53. `docs/handoff/clients/auth/types.ts`
+54. `docs/handoff/clients/integration/client.ts`
+55. `docs/handoff/clients/integration/types.ts`
+56. `docs/handoff/clients/open/client.ts`
+57. `docs/handoff/clients/open/types.ts`
+58. `docs/handoff/clients/shared/types.ts`
+59. `docs/handoff/clients/system/client.ts`
+60. `docs/handoff/clients/system/types.ts`
+61. `docs/ops/activity-time-cutover.md`（新增）
+62. `docs/ops/activity-time-ledger.md`
+63. `docs/plans/activity-os-r4-d8-proof-cutover-review-and-plan.md`
+64. `changelog.d/activity-os-r4-d8-proof-cutover-review.md`
+65. `docs/ai-harness/NEXT_TASKS.md`
+66. `docs/ai-harness/FROZEN_DRAFTS.md`
 
 ### 9.2 当前迁移总数 128→129 的既有测试适配
 
 只改“当前总数／冷回放到 current”的数字和标题；各历史升级目标、固定索引、业务断言与失败语义保留：
 
-65. `test/e2e/activity-os-r1-a3-template-definition-lifecycle-guards.e2e-spec.ts`
-66. `test/e2e/activity-os-r1-a4-explicit-template-version-pointer.e2e-spec.ts`
-67. `test/e2e/activity-os-r2-b1-place-schema-constraints.e2e-spec.ts`
-68. `test/e2e/activity-os-r2-b2-coordinate-projection-schema-constraints.e2e-spec.ts`
-69. `test/e2e/activity-os-r2-b3-form-blueprint-governance.e2e-spec.ts`
-70. `test/e2e/activity-os-r2-b6-creation-data-foundation.e2e-spec.ts`
-71. `test/e2e/activity-os-r3-c1-d2a-metric-command-receipt-migration.e2e-spec.ts`
-72. `test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts`
-73. `test/e2e/activity-os-r3-c1-metric-definition-set.e2e-spec.ts`
-74. `test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts`
-75. `test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts`
-76. `test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts`
-77. `test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts`
-78. `test/e2e/activity-os-r4-d4-time-bucket-migration.e2e-spec.ts`
-79. `test/e2e/activity-os-r4-d6-time-ledger-migration.e2e-spec.ts`
-80. `test/e2e/activity-os-r4-d7-2-fact-correction-migration.e2e-spec.ts`
-81. `test/e2e/activity-os-r4-d7-time-correction-migration.e2e-spec.ts`
-82. `test/e2e/activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts`
-83. `test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts`
-84. `test/e2e/activity-v11-batch4-allocation-determinism-migration.e2e-spec.ts`
-85. `test/e2e/activity-v11-batch4-allocation-mode-migration.e2e-spec.ts`
-86. `test/e2e/activity-v11-batch4-qualification-contract-migration.e2e-spec.ts`
-87. `test/e2e/insurance-evidence-registration-revision-migration.e2e-spec.ts`
+67. `test/e2e/activity-os-r1-a3-template-definition-lifecycle-guards.e2e-spec.ts`
+68. `test/e2e/activity-os-r1-a4-explicit-template-version-pointer.e2e-spec.ts`
+69. `test/e2e/activity-os-r2-b1-place-schema-constraints.e2e-spec.ts`
+70. `test/e2e/activity-os-r2-b2-coordinate-projection-schema-constraints.e2e-spec.ts`
+71. `test/e2e/activity-os-r2-b3-form-blueprint-governance.e2e-spec.ts`
+72. `test/e2e/activity-os-r2-b6-creation-data-foundation.e2e-spec.ts`
+73. `test/e2e/activity-os-r3-c1-d2a-metric-command-receipt-migration.e2e-spec.ts`
+74. `test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts`
+75. `test/e2e/activity-os-r3-c1-metric-definition-set.e2e-spec.ts`
+76. `test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts`
+77. `test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts`
+78. `test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts`
+79. `test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts`
+80. `test/e2e/activity-os-r4-d4-time-bucket-migration.e2e-spec.ts`
+81. `test/e2e/activity-os-r4-d6-time-ledger-migration.e2e-spec.ts`
+82. `test/e2e/activity-os-r4-d7-2-fact-correction-migration.e2e-spec.ts`
+83. `test/e2e/activity-os-r4-d7-time-correction-migration.e2e-spec.ts`
+84. `test/e2e/activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts`
+85. `test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts`
+86. `test/e2e/activity-v11-batch4-allocation-determinism-migration.e2e-spec.ts`
+87. `test/e2e/activity-v11-batch4-allocation-mode-migration.e2e-spec.ts`
+88. `test/e2e/activity-v11-batch4-qualification-contract-migration.e2e-spec.ts`
+89. `test/e2e/insurance-evidence-registration-revision-migration.e2e-spec.ts`
 
-D8-1 共 87 个去重候选路径。新 migration 和既有 schema／seed 读数以实施时 main 为准；
-本稿不预写 SQL 摘要、不预签3b，也不把生成器可能零 diff 的文件冒充必改。
+D8-1 共 89 个去重候选路径：原计划87个，另有维护者明确扩写并授权的两份治理登记。
+新 migration 和既有 schema／seed 读数以实施时 main 为准；生成器可能零 diff 的文件仍不冒充必改。
 
 ## 10. D8-2 精确候选写集
 
@@ -398,20 +403,23 @@ D8-2 共 25 个去重候选路径。若实现发现必须动 DTO、module、Gate
 
 ## 12. 一次性授权清单
 
-### 12.1 当前 docs-only PR
+### 12.1 已完成的 docs-only PR
 
 维护者已授权的当前写集只有本文、两份台账和 changelog 共四份；`harness:needs` 为零红区。
 允许验证、提交、推送并创建 docs-only Draft PR；不实施 D8、不操作数据库、不 Ready、不合并、不启用 Gate。
 
-### 12.2 D8-1 将来实施需单独确认
+### 12.2 D8-1 当前授权与实施状态
 
 推荐确认语句：
 
-> 确认 D8-1 方案 A，按 D8 计划第4–6、8.1、9、11节及87个去重路径执行；允许 app_test_w98
+> 确认 D8-1 方案 A，按 D8 计划第4–6、8.1、9、11节及89个去重路径执行；允许 app_test_w98
 > 隔离验证及测试夹具重建；验证后提交、推送并创建 Draft PR。不合并、不操作生产、不启用 Gate、不删除业务数据。
 
-确认后仍须由维护者在**实际实施 worktree**运行精确红区 grant；AI 不运行 grant。SQL完成后另做第129条实际 SHA-256 的3b重签；
-权限预计仍265，新审计事件使总计预计170／活跃165，须以实际生成读数和目录摘要重签4b，不能拿预计值签字。
+维护者先确认原87路径方案 A，随后明确扩展 `harness/domain-map.json` 与
+`harness/state-machines.json`，并已在**实际实施 worktree**运行精确红区 grant；AI 未运行 grant。
+当前已完成第129条 migration、切换服务/CLI、统一真相选择器、两个正式证明入口、配套单测与
+`app_test_w98` 的冷回放/非空升级/并发/真实 HTTP 定向验证。第129条实际 SQL SHA-256 的3b，
+以及权限265、审计170总计／165活跃、字典30类／277项、seed与权限目录实际摘要的4b均已由维护者重签。
 
 ### 12.3 D8-2 将来实施需单独确认
 
@@ -442,15 +450,29 @@ AI 不自行部署、不修改生产环境、不执行生产 CLI。
 | 证明泄露敏感信息             | self/scoped authz，DTO闭集，不返理由/附件/signed URL    | contract diff + 越权 E2E                     |
 | D8 又变成多日超大 PR         | D8-1、D8-2、D8-OPS 串行拆分                             | 每刀独立 write set、CI、合并证据             |
 
-## 14. 本次未做
+## 14. D8-1 实施验收记录
 
-本轮只起草评审与精确计划并更正 D7-2 台账。没有修改生产代码、schema、migration、API、DTO、权限、审计事件、
-Gate、CI 或测试；没有连接、重建或操作任何数据库；没有 Ready、合并、部署、生产切换、历史回填、重分类或删除业务数据。
+当前候选已实测：第129条冷回放、128→129非空升级和数据库约束 3/3；cutover 业务链 3/3；
+两种真并发顺序 2/2；正式证明 HTTP 真链 1/1；D8-1 新增单测 41/41。真 HTTP 已覆盖 App self、
+Admin scoped 跨 member、撤权、GLOBAL 回退和 member 停用；选择器在 1／100／2,000 身份及
+10,000 行时固定为 5 条业务 SQL，合并集合 10,001 行具名拒绝。实测期间抓出并修复四个真问题：
+数据库具名约束错误的应用层映射不完整；无更正根账的 `null` proof 被误判为存在 proof；legacy 根账
+遗漏 D7 链/收据校验；D7-2 冻结 slice 缺失时错误回退 root slice。修复后保留 fail-closed，并将
+根账、更正和 slice 分组从逐项扫描收敛为集合映射。OpenAPI 差异已逐项审查，只新增两条路由和四个 DTO；
+`rootManifestId` / `latestCorrectionManifestId` 的 nullable string 形状已显式锁定，定向 contract 1,074 项通过。
+
+最终代码回归又抓出并修复两项架构偏差：cutover 检查结果不再复用只读配置的受保护字段名；北京日拆分
+改为调用 `splitSpanByBeijingDay` 单一原语，不保留第二套时区算法。修复后全仓单测 405/405 套、
+8,809 项通过（另有 5 项既有 todo），build 与 6 GiB CI 同口径 lint 通过；上述四套 w98 E2E 已重新
+冷建并 9/9 通过。维护者随后扩写并授权原87路径漏列的 `harness/domain-map.json` 与
+`harness/state-machines.json`：前者仅登记两个新增模型属主并刷新输入摘要，后者仅刷新 schema 输入摘要，
+未新增状态机或生命周期；3b/4b 也已按实际读数重签。最终 Harness 自证 561／138／68 项全部通过，
+build、6 GiB CI 同口径 lint、OpenAPI／客户端／权限／审计／台账／派生文档检查均通过；89 路径授权上限内
+实际变更87路径、零越界，`RBAC_MAP.md` 与 `authz-assertion-patterns.json` 经生成器确认零 diff。
+本地收口完成，下一步仅提交、推送并创建 Draft PR，完整 Contract + E2E 冷跑仍由 PR CI 验收。
+
+## 15. 本次未做
+
+本轮没有实施 D8-2，没有改动现有官方统计、直方图、新关账或历史 closure 语义；没有开启 Gate、
+没有生产部署或执行 cutover CLI，没有 Ready、合并、历史回填、重分类或删除业务数据。
 整体跨模型复审仍按维护者此前决定留到仓内整体实现完成后统一执行，不把本计划评审冒充独立复审通过。
-
-本轮实际验证：fresh worktree 安装与 Prisma generate 已完成；lane preflight 通过且 #1324 五个路径与本轮零交集；
-四份实际写集 `harness:needs` 为0红区；D8-1／D8-2 清单分别87／25项且各自零重复，当前基线下非新增路径均存在
-（D8-2 五个前置路径由 D8-1 创建）。Prettier、`git diff --check`、readtax、counts、codemap、rbacmap、authz manifest、
-migration count、冻结台账、NEXT_TASKS 状态闸和 lint 均通过；codemap 保留既有2 WARN／1 INFO，rbacmap保留既有1 INFO。
-首次默认4GiB lint 在约122秒发生 Node OOM，未改代码或规则，随后仅以本地
-`NODE_OPTIONS=--max-old-space-size=8192` 原样重跑通过；这不表示修改了 CI 内存或豁免 lint。
