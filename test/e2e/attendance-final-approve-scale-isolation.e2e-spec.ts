@@ -392,18 +392,12 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
         { memberId, points: '1.00', checkInAt: DAY_C },
       ]);
 
-      let release!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      // 占住键的时间**超过** MEMBER_LOCK_WAIT_BUDGET_MS(4s),逼终审真的等到超时。
-      const holder = prisma.$transaction(
-        async (tx) => {
-          await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${memberId}))::text AS locked`;
-          await gate;
-        },
-        { timeout: 60_000, maxWait: 60_000 },
+      // 必须等占位事务真正拿到键，再放终审进来；否则这个用例会退化成调度竞态，
+      // 终审偶尔会先通过，无法证明有界锁等待的行为。
+      const holder = holdLock(
+        (tx) => tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${memberId}))::text AS locked`,
       );
+      await holder.acquired;
 
       const startedAt = Date.now();
       let caught: unknown;
@@ -413,8 +407,8 @@ describe('考勤终审:规模、隔离级别与有界锁等待(M3)', () => {
         caught = err;
       }
       const elapsedMs = Date.now() - startedAt;
-      release();
-      await holder;
+      holder.release();
+      await holder.done;
 
       // 修复前:一直等到 Prisma 5s 事务预算耗尽 → P2028 → 全局过滤器 50000。
       expect(caught).toBeInstanceOf(BizException);

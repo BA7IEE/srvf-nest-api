@@ -161,10 +161,12 @@ describe('C3-1 candidate HTTP and real transaction closure', () => {
     preparation = app.get(LedgerPreparationService);
     posting = app.get(LedgerPostingService);
     // Catalogs do not cascade from User; clear only this worker's prior test fixtures.
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+        }),
+      { timeout: 60_000 },
     );
     const actor = await createTestUser(app, { username: key(), role: Role.SUPER_ADMIN });
     actorId = actor.id;

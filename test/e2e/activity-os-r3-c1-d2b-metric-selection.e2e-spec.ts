@@ -38,10 +38,12 @@ describe('C1 D2b metric selection HTTP boundary and rollback', () => {
     prisma = app.get(PrismaService);
     await resetDb(app);
     await assertConnectedTestDatabase(prisma);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+        }),
+      { timeout: 60_000 },
     );
     const root = await createTestUser(app, { username: key(), role: Role.SUPER_ADMIN });
     rootId = root.id;

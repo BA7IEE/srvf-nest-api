@@ -482,10 +482,12 @@ describe('C1 D2b Human template catalogue HTTP contract', () => {
     prisma = app.get(PrismaService);
     await resetDb(app);
     await assertConnectedTestDatabase(prisma);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition", "ActivityTemplate", "ActivityTemplateFamily" CASCADE`;
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition", "ActivityTemplate", "ActivityTemplateFamily" CASCADE`;
+        }),
+      { timeout: 60_000 },
     );
     const root = await prisma.organization.create({ data: { name: key(), nodeTypeCode: 'root' } });
     organizationId = (

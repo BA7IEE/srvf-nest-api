@@ -81,23 +81,27 @@ describe('D6 scoped fixture trigger handling', () => {
     expect(
       before.filter((row) => /^(cpta|cptae|ctsp|ctab)_no_truncate$/u.test(row.name)),
     ).toHaveLength(4);
-    await db.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (inner) => {
-        expect(inner).toBe(tx);
-        await inner.$executeRawUnsafe(
-          'TRUNCATE "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipantSettlementTimeBucketSource", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationRevision", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeCorrectionCommitReceipt"',
-        );
-      }),
+    await db.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (inner) => {
+          expect(inner).toBe(tx);
+          await inner.$executeRawUnsafe(
+            'TRUNCATE "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipantSettlementTimeBucketSource", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationRevision", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeCorrectionCommitReceipt"',
+          );
+        }),
+      { timeout: 60_000 },
     );
     expect(await states()).toEqual(before);
   });
   it('rolls back trigger changes when fixture construction throws', async () => {
     const before = await states();
     await expect(
-      db.$transaction((tx) =>
-        withTimeLedgerFixtureCleanup(tx, async () => {
-          throw new Error('deliberate fixture failure');
-        }),
+      db.$transaction(
+        (tx) =>
+          withTimeLedgerFixtureCleanup(tx, async () => {
+            throw new Error('deliberate fixture failure');
+          }),
+        { timeout: 60_000 },
       ),
     ).rejects.toThrow('deliberate fixture failure');
     expect(await states()).toEqual(before);

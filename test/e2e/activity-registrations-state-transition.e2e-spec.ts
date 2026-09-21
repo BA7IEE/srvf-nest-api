@@ -416,12 +416,14 @@ describe('ActivityRegistrationsService state transitions (characterization)', ()
     // immutability deliberately rejects DELETE, so this spec-local isolation must use the same
     // guarded TRUNCATE shape as resetDb rather than weakening the production trigger.
     await assertConnectedTestDatabase(ctx.prisma);
-    await ctx.prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await ctx.prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 60_000 },
     );
     await ctx.prisma.auditLog.deleteMany({});
   }

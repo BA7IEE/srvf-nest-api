@@ -578,12 +578,14 @@ describe('Activity OS R2 B3 template Form materialization', () => {
 
   beforeEach(async () => {
     await resetDb(app);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivityTemplate", "ActivityTemplateFamily" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 60_000 },
     );
     const admin = await prisma.user.create({
       data: {

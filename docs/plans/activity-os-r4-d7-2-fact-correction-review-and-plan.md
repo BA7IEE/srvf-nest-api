@@ -566,3 +566,47 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 本地只用获准的 `app_test_w98` 执行：2,000 身份新鲜 V3 定向链 1/1 通过（146.072 秒），完整 `activity-os-r4-d7-time-correction` 7/7 通过（245.715 秒）。目标单测 17/17、`pnpm typecheck` 和目标 lint 均通过。维护者已为 `docs/ai-harness/ROUTE_AUTHZ.md` 在本工作树发放最小授权，`CODEMAP.md` 与 `docs/ai-harness/ROUTE_AUTHZ.md` 已刷新，`pnpm docs:codemap:check`、`pnpm docs:authz:check` 与 `pnpm harness:selftest` 均通过；待提交、推送并创建修复 Draft PR。没有新 migration，因此不产生新的 3b/4b；未 Ready、合并、操作生产或启用 Gate。
 
 后续 Draft [#1338](https://github.com/BA7IEE/srvf-nest-api/pull/1338) 的首轮 CI 除 Contract + E2E 第1组外均通过。唯一失败发生在未改的 A4 旧 E2E：其 `beforeEach` Template／Family fixture 清理于5,792ms耗尽默认5秒 Prisma transaction timeout，业务断言尚未开始。经本轮精确授权，仅在该局部 transaction 增加 `{ timeout: 60_000 }`，与既有 A7 同类清理对齐；测试总时限、业务超时、断言、生产代码、schema、migration、API、DTO、权限和 Gate 均未改。普通模板库、w1 与 w92 的 A4 全套5/5通过，目标 lint、生成物一致性检查与 Harness 自测通过。新 SHA 推送后仍须重新经过可信审批和 PR CI；#1338保持 Draft，未 Ready、合并、操作生产或启用 Gate。
+
+### 14.11 #1339 账本提交重叠判定冷跑修复（2026-09-21）
+
+[#1338](https://github.com/BA7IEE/srvf-nest-api/pull/1338) 已合入 `562ee0350b67f9887de0c5edd689a8437d153c27`；其后 Draft [#1339](https://github.com/BA7IEE/srvf-nest-api/pull/1339) 的首轮 CI 只有 Contract + E2E 第3组失败。79个套件中78个、1,196项中1,195项通过；唯一失败是 `activity-ledger-posting-scale` 的8,192人提交。异常发生在 `LedgerPostingService.assertNoCrossActivitySegmentOverlap()`，事务已运行7,318ms后因7,000ms member budget关闭。#1339 原本的 A3/C1 D2b fixture 清理改动不触及这个路径，不能把真实账本提交边界误报为夹具波动或用重跑掩盖。
+
+经维护者批准，本轮仅把这条查询从“逐个本活动 draft candidate 做相关 `EXISTS`”改为“从其他活动 committed 段出发，再按同成员连接本活动 candidate”的等价内连接。候选身份已经限定为本次 `activityId`，所以原来的 `existing.activityId <> candidate.activityId` 与新的 `existing.activityId <> activityId` 等价；同成员、draft／committed、非 `voided/replaced`、`checkOutAt IS NOT NULL` 和 `[checkInAt, checkOutAt)` 两个严格重叠条件均原样保留，`LIMIT 1` 仍只回答是否存在冲突。查询仍在既有 Activity→Run→Version→Batch→member advisory lock 之后执行；没有移动锁、删除复核或改变回滚语义。
+
+获准的 `app_test_w98` 验证分两轮完成：`activity-ledger-posting` 与规模套件合计29/29通过；冷重建后的规模套件再次1/1通过，8,192人 commit 为912ms、27条事务语句／17条裸SQL。唯一随人数增长的8,192 bind仍是既有 `lockMembersForWrite`，其余裸SQL保持列数级 bind；7秒业务预算、用例断言和用例总时限均未改。目标 Prettier 与 ESLint 已通过；后续仍须完成全量静态复核、生成物核验、提交推送和新 SHA 的 PR CI。#1339保持 Draft，未 Ready、合并、操作生产或启用 Gate；无 schema、migration、API、DTO、权限、业务数据或3b/4b变更。
+
+### 14.12 #1339 M3 convoy 夹具竞态修复（2026-09-21）
+
+账本查询修复提交 `62802990e439854081af9b6ff0ce4849552e1c40` 的可信红区扫描与审批均通过；PR CI 的非 E2E-5 检查及 E2E 第1–4组均成功。唯一红点是未在 #1339 变更过的 `attendance-final-approve-scale-isolation`：79 个套件中 78 个、1,270 项中 1,269 项通过，② convoy 位的 `finalApprove` 偶尔先于占锁事务取得同一 member 键，导致 `caught` 为 `undefined`，不是预期的 40901。
+
+该用例已存在的 `holdLock()` 明确提供 `acquired` 信号；同文件其他锁竞争用例已在被测操作前等待它。②此前自行启动裸 transaction 却未等待实际拿锁，因而把“应证明的有界锁等待”退化为调度竞态。本轮只复用既有 helper，并在 `finalApprove` 前 `await holder.acquired`，释放时改用其既有 `release()`／`done` 协议；未改任何断言、测试总时限、业务超时或生产路径。
+
+按获准的 `app_test_w98` 克隆库冷建后，该文件完整 6/6 通过。当前补丁尚待提交、推送后的新 SHA PR CI；#1339继续保持 Draft，不 Ready、不合并、不操作生产、不启用 Gate，也不产生 migration、3b 或4b变更。
+
+### 14.13 #1339 B6 紧急创建 500 脱敏取证（2026-09-21）
+
+维护者批准对同一 SHA `206ccd737a9e90030a8df1a012fb6e34247fbf59` 的失败 CI 链重跑一次。[run 35564304216 attempt 2](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35564304216) 中，上一轮 B4 与 D7 红点均通过，唯一失败转为 B6 的 `App publish-reviews refuses emergency formal publication with no side effects`：预期 201、实际 500，响应侧只有 `bizCode=50000`，没有数据库码或可用错误提示。历史两次同类 B6 500 分别落在隐藏属主和 Admin 工作流测试，本次又落在 App 路由；同一文件自 `bab5110e` 后没有行为改动，因此现有证据只能证明失败位置漂移，不能证明固定第 N 次调用、单一路由或某个确定产品根因。
+
+本轮只修改 B6 E2E：为意外 `create()` 失败增加短时启用的 Nest 服务端 logger，输出被限制为异常类型、明确允许名单内的数据库码和最多八个 `src/`／`test/` 仓内相对栈位置；原始 message、完整 stack、请求、响应、body、业务 ID、环境变量和 secret 均不输出。既有预期 500 的 rollback 测试不触发该取证，所有原断言与 30 秒业务测试时限保持不变。另增加显式 `SRVF_B6_W98=1` 隔离入口，由该文件只重建、迁移并回收本工作树的 `app_test_w98`，避免通用 global setup 触碰模板库、w1 或其他 scratch worker。
+
+在全新迁移的 `app_test_w98` 上，完整 B6 文件 30/30 通过（21.807 秒），未产生服务端异常取证；套件结束后已确认 w98 被回收。这个结果只说明本地隔离运行没有复现，既不是根因证明，也不是产品修复。待本补丁提交推送后的新 SHA 由 PR CI 冷跑采证；#1339继续保持 Draft，不 Ready、不合并、不操作生产、不启用 Gate。没有修改生产代码、schema、migration、API、DTO、权限、业务数据或既有断言，也不产生3b/4b变更。
+
+### 14.14 #1339 fresh-V3 锁后重复全量重算收敛（2026-09-21）
+
+提交 `e0b0bcafdfd9c8af9ad98fe0c0f95acd6e2d8898` 的 [PR CI 35573141915](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35573141915) 已证明 B6 冷跑通过，唯一红点回到 D7-2 的 2,000 身份 fresh-V3 提交：事务在 7,052ms 关闭，外层记录的 correctionCommit 为 10,001ms，其中 materialization 1,871ms、receipt 593ms、ledgerCommit 3,469ms。它不是 B6 取证、断言漂移或 migration 变化造成的失败。
+
+获准的 w98 分阶段诊断中，同一 2,000 身份目标通过（整项 137.392 秒；correctionCommit 4,095ms，其中 materialization 623ms、receipt 412ms、ledgerCommit 1,263ms）。`ParticipationTimeCorrectionService.assertComplete` 的锁后应用层复核墙钟 592ms、数据库查询合计仅 33ms，其中 nested source 355ms；它会在 Node 再次重建并比较约 8,000 个 root 与 16,000 条更正分录。与此同时，账本批次的 `ready -> committed` 更新本就位于同一事务的 member/day locks 之后，数据库 `ptc_visibility_guard` 会执行 `ptc_assert_complete` 与 `ctsp_assert_complete(TRUE)`，再决定是否允许事实可见。重复的应用层全量重算在本地尚能通过，但会放大 CI CPU 共享时的 P2028 风险。
+
+方案 A 只收敛这个重复点：外层 fresh-V3 首次提交传入的 receipt anchor 必须在锁前精确匹配 ready 批次、申请、请求、活动、版本、manifest 与 hash；锁后仍重新执行 `authorizeCorrection`。只有该锚点保持精确匹配时，应用层才跳过第二次完整 `assertComplete`，随后仍由同一事务、member/day locks 后的 committed 状态触发器完成最终 fail-closed 全量校验。V2、重放、直接提交以及缺失、陈旧或不匹配锚点全部保留原应用层完整复核。没有移动锁、缓存身份、删除两轮权限复核或放宽 7 秒预算。
+
+E2E 新增两项互补证明：在尚无物化关系和 receipt 时直接把 V3 posting batch 切为 committed，数据库必须以 `23514` 和 `V3 correction proof bindings are incomplete or mismatched` 拒绝且批次仍为 ready；合法 fresh-V3 链则明确证明锁后应用层 `assertComplete` 调用次数为 0。获准 w98 的 100 身份链 1/1 通过（17.347 秒），2,000 身份链 1/1 通过（131.288 秒）。完整 D7 文件同一进程为 6/7，唯一失败是未修改的旧 V2 2,000 身份用例在 prepare 阶段得到泛化 500；只读 PostgreSQL 日志显示同一时段发生 60.707 秒、约 530,912kB 的 WAL checkpoint，随后该用例独立冷跑 1/1 通过（135.698 秒）。因此不加超时、不改夹具或断言，也不把 6/7 写成全绿；最终单进程冷跑由新 SHA 的 PR CI 验收。
+
+目标 Prettier、6GB CI 同档全仓 ESLint、三套 typecheck、`git diff --check`、生成物新鲜度、台账一致性与 Harness 自测均已通过；默认4GB lint曾因本机堆上限 OOM，按CI既有 `--max-old-space-size=6144` 原样重跑成功，不登记为代码失败。无 schema、migration、API、DTO、权限、Gate 或业务数据变更，不产生新的 3b/4b。验证后只推送更新 Draft #1339；不 Ready、不合并、不操作生产、不启用 Gate。
+
+### 14.15 #1339 E2E 第4组夹具事务全量闭合（2026-09-21）
+
+`e85e6edddfea004c52a3efb3597ab130642a9530` 的 [PR CI 35579292574](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35579292574) 已证明 D7 所在 Contract + E2E 第5组通过。第4组首次冷跑命中7份旧 E2E 的夹具清理事务失败后，在维护者只允许同 SHA 重跑一次的边界内执行 attempt 2；该轮有60份 suite通过、6份失败，随后仍在35分钟 job上限被取消，聚合失败。两轮失败均发生在业务断言开始前：`withTimeLedgerFixtureCleanup` 的外层 Prisma transaction 沿用默认5秒，而共享 runner 上实际约10.45–11.05秒。
+
+为避免只修当轮随机命中的7份继续抽奖，本轮以 TypeScript AST 扫描全部 `test/**/*.ts`：31处 `withTimeLedgerFixtureCleanup` 外层事务中16处已有明确30/60秒，剩余15处默认值分布于14份旧 E2E。逐处复核确认这些回调只执行受控 `TRUNCATE` 或故意抛错验证夹具回滚，不含业务写入、权限判断或生产事务。维护者因此批准全量方案A：仅给这15处外层夹具事务显式设置 `{ timeout: 60_000 }`；既有30秒和60秒调用保持原值，Jest总时限、全部断言、业务5/7/30/120秒预算、生产代码、测试基础设施、schema、migration、API、DTO、权限与Gate均不改。
+
+写集为14份既有 E2E 加本评审稿、现有changelog及两份顶部台账，共18路径；逐文件 `pnpm harness:needs` 为0红区。实施后的typed-AST复核为31处调用、默认0。四并发探针有7份通过、6份仅因共享负载命中既有30秒Jest hook上限；未修改时限，改用单worker串行冷跑后同批13/13 suites、255/255 tests通过（353.636秒）。B3只运行命中本轮事务的Form materialization分组并3/3通过（20.341秒），其固定使用w95的5个migration rehearsal用例超出本轮数据库授权，明确留给PR CI冷跑。全程只使用本工作树隔离模板库 `app_test_srvf_nest_api_d269ef` 和w1，验证后worker库已回收，w95未创建。完成静态与台账检查后提交推送新SHA更新Draft #1339；新SHA仍须可信红区审批和PR CI冷跑，本轮不Ready、不合并、不操作生产、不启用Gate，也不产生3b/4b。
