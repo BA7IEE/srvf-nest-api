@@ -566,3 +566,11 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 本地只用获准的 `app_test_w98` 执行：2,000 身份新鲜 V3 定向链 1/1 通过（146.072 秒），完整 `activity-os-r4-d7-time-correction` 7/7 通过（245.715 秒）。目标单测 17/17、`pnpm typecheck` 和目标 lint 均通过。维护者已为 `docs/ai-harness/ROUTE_AUTHZ.md` 在本工作树发放最小授权，`CODEMAP.md` 与 `docs/ai-harness/ROUTE_AUTHZ.md` 已刷新，`pnpm docs:codemap:check`、`pnpm docs:authz:check` 与 `pnpm harness:selftest` 均通过；待提交、推送并创建修复 Draft PR。没有新 migration，因此不产生新的 3b/4b；未 Ready、合并、操作生产或启用 Gate。
 
 后续 Draft [#1338](https://github.com/BA7IEE/srvf-nest-api/pull/1338) 的首轮 CI 除 Contract + E2E 第1组外均通过。唯一失败发生在未改的 A4 旧 E2E：其 `beforeEach` Template／Family fixture 清理于5,792ms耗尽默认5秒 Prisma transaction timeout，业务断言尚未开始。经本轮精确授权，仅在该局部 transaction 增加 `{ timeout: 60_000 }`，与既有 A7 同类清理对齐；测试总时限、业务超时、断言、生产代码、schema、migration、API、DTO、权限和 Gate 均未改。普通模板库、w1 与 w92 的 A4 全套5/5通过，目标 lint、生成物一致性检查与 Harness 自测通过。新 SHA 推送后仍须重新经过可信审批和 PR CI；#1338保持 Draft，未 Ready、合并、操作生产或启用 Gate。
+
+### 14.11 #1339 账本提交重叠判定冷跑修复（2026-09-21）
+
+[#1338](https://github.com/BA7IEE/srvf-nest-api/pull/1338) 已合入 `562ee0350b67f9887de0c5edd689a8437d153c27`；其后 Draft [#1339](https://github.com/BA7IEE/srvf-nest-api/pull/1339) 的首轮 CI 只有 Contract + E2E 第3组失败。79个套件中78个、1,196项中1,195项通过；唯一失败是 `activity-ledger-posting-scale` 的8,192人提交。异常发生在 `LedgerPostingService.assertNoCrossActivitySegmentOverlap()`，事务已运行7,318ms后因7,000ms member budget关闭。#1339 原本的 A3/C1 D2b fixture 清理改动不触及这个路径，不能把真实账本提交边界误报为夹具波动或用重跑掩盖。
+
+经维护者批准，本轮仅把这条查询从“逐个本活动 draft candidate 做相关 `EXISTS`”改为“从其他活动 committed 段出发，再按同成员连接本活动 candidate”的等价内连接。候选身份已经限定为本次 `activityId`，所以原来的 `existing.activityId <> candidate.activityId` 与新的 `existing.activityId <> activityId` 等价；同成员、draft／committed、非 `voided/replaced`、`checkOutAt IS NOT NULL` 和 `[checkInAt, checkOutAt)` 两个严格重叠条件均原样保留，`LIMIT 1` 仍只回答是否存在冲突。查询仍在既有 Activity→Run→Version→Batch→member advisory lock 之后执行；没有移动锁、删除复核或改变回滚语义。
+
+获准的 `app_test_w98` 验证分两轮完成：`activity-ledger-posting` 与规模套件合计29/29通过；冷重建后的规模套件再次1/1通过，8,192人 commit 为912ms、27条事务语句／17条裸SQL。唯一随人数增长的8,192 bind仍是既有 `lockMembersForWrite`，其余裸SQL保持列数级 bind；7秒业务预算、用例断言和用例总时限均未改。目标 Prettier 与 ESLint 已通过；后续仍须完成全量静态复核、生成物核验、提交推送和新 SHA 的 PR CI。#1339保持 Draft，未 Ready、合并、操作生产或启用 Gate；无 schema、migration、API、DTO、权限、业务数据或3b/4b变更。

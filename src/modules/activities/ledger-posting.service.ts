@@ -563,6 +563,11 @@ export class LedgerPostingService {
   /**
    * AC-058:成员锁内比较“本活动待生效段”与“其他活动已生效段”。区间统一按
    * [checkInAt, checkOutAt) 左闭右开;同活动修订由既有 correction 流程处理,不在此误杀。
+   *
+   * 从已生效段出发再连接本活动候选段，和原来的候选段相关 EXISTS 是同一存在性关系：
+   * 候选身份已限定为 activityId，故另一个身份的 activityId 不等于候选活动，等价于
+   * 不等于这里的 activityId。这样在没有其他活动已生效段时，status 索引可直接空返回，
+   * 不会对每个待生效候选重复做一次相关探测。
    */
   private async assertNoCrossActivitySegmentOverlap(
     tx: PrismaTx,
@@ -570,26 +575,23 @@ export class LedgerPostingService {
   ): Promise<void> {
     const rows = await tx.$queryRaw<Array<{ conflict: number }>>`
       SELECT 1 AS conflict
-      FROM "ParticipantServiceSegmentRevision" candidate
+      FROM "ParticipantServiceSegmentRevision" existing
+      JOIN "ActivityParticipationIdentity" existing_identity
+        ON existing_identity.id = existing."participationIdentityId"
       JOIN "ActivityParticipationIdentity" candidate_identity
-        ON candidate_identity.id = candidate."participationIdentityId"
-      WHERE candidate_identity."activityId" = ${activityId}
+        ON candidate_identity."memberId" = existing_identity."memberId"
+          AND candidate_identity."activityId" = ${activityId}
+      JOIN "ParticipantServiceSegmentRevision" candidate
+        ON candidate."participationIdentityId" = candidate_identity.id
+      WHERE existing_identity."activityId" <> ${activityId}
+        AND existing."statusCode" = 'committed'
+        AND existing."resultCode" NOT IN ('voided', 'replaced')
+        AND existing."checkOutAt" IS NOT NULL
         AND candidate."statusCode" = 'draft'
         AND candidate."resultCode" NOT IN ('voided', 'replaced')
         AND candidate."checkOutAt" IS NOT NULL
-        AND EXISTS (
-          SELECT 1
-          FROM "ActivityParticipationIdentity" existing_identity
-          JOIN "ParticipantServiceSegmentRevision" existing
-            ON existing."participationIdentityId" = existing_identity.id
-          WHERE existing_identity."memberId" = candidate_identity."memberId"
-            AND existing_identity."activityId" <> candidate_identity."activityId"
-            AND existing."statusCode" = 'committed'
-            AND existing."resultCode" NOT IN ('voided', 'replaced')
-            AND existing."checkOutAt" IS NOT NULL
-            AND candidate."checkInAt" < existing."checkOutAt"
-            AND existing."checkInAt" < candidate."checkOutAt"
-        )
+        AND candidate."checkInAt" < existing."checkOutAt"
+        AND existing."checkInAt" < candidate."checkOutAt"
       LIMIT 1
     `;
     if (rows.length > 0) throw new BizException(BizCode.ATTENDANCE_TIME_OVERLAP);
