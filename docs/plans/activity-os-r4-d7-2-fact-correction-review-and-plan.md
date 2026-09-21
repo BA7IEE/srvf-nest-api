@@ -574,3 +574,11 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 经维护者批准，本轮仅把这条查询从“逐个本活动 draft candidate 做相关 `EXISTS`”改为“从其他活动 committed 段出发，再按同成员连接本活动 candidate”的等价内连接。候选身份已经限定为本次 `activityId`，所以原来的 `existing.activityId <> candidate.activityId` 与新的 `existing.activityId <> activityId` 等价；同成员、draft／committed、非 `voided/replaced`、`checkOutAt IS NOT NULL` 和 `[checkInAt, checkOutAt)` 两个严格重叠条件均原样保留，`LIMIT 1` 仍只回答是否存在冲突。查询仍在既有 Activity→Run→Version→Batch→member advisory lock 之后执行；没有移动锁、删除复核或改变回滚语义。
 
 获准的 `app_test_w98` 验证分两轮完成：`activity-ledger-posting` 与规模套件合计29/29通过；冷重建后的规模套件再次1/1通过，8,192人 commit 为912ms、27条事务语句／17条裸SQL。唯一随人数增长的8,192 bind仍是既有 `lockMembersForWrite`，其余裸SQL保持列数级 bind；7秒业务预算、用例断言和用例总时限均未改。目标 Prettier 与 ESLint 已通过；后续仍须完成全量静态复核、生成物核验、提交推送和新 SHA 的 PR CI。#1339保持 Draft，未 Ready、合并、操作生产或启用 Gate；无 schema、migration、API、DTO、权限、业务数据或3b/4b变更。
+
+### 14.12 #1339 M3 convoy 夹具竞态修复（2026-09-21）
+
+账本查询修复提交 `62802990e439854081af9b6ff0ce4849552e1c40` 的可信红区扫描与审批均通过；PR CI 的非 E2E-5 检查及 E2E 第1–4组均成功。唯一红点是未在 #1339 变更过的 `attendance-final-approve-scale-isolation`：79 个套件中 78 个、1,270 项中 1,269 项通过，② convoy 位的 `finalApprove` 偶尔先于占锁事务取得同一 member 键，导致 `caught` 为 `undefined`，不是预期的 40901。
+
+该用例已存在的 `holdLock()` 明确提供 `acquired` 信号；同文件其他锁竞争用例已在被测操作前等待它。②此前自行启动裸 transaction 却未等待实际拿锁，因而把“应证明的有界锁等待”退化为调度竞态。本轮只复用既有 helper，并在 `finalApprove` 前 `await holder.acquired`，释放时改用其既有 `release()`／`done` 协议；未改任何断言、测试总时限、业务超时或生产路径。
+
+按获准的 `app_test_w98` 克隆库冷建后，该文件完整 6/6 通过。当前补丁尚待提交、推送后的新 SHA PR CI；#1339继续保持 Draft，不 Ready、不合并、不操作生产、不启用 Gate，也不产生 migration、3b 或4b变更。
