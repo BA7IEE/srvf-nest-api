@@ -1,13 +1,13 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **D8-1 Draft #1341 首轮 CI 兼容修复已完成本地验证（2026-09-22）**：方案 A 的原87个去重路径、后续两份治理登记扩写和 `app_test_w98` 已获维护者确认，最终精确上限为89路径，
+> **D8-1 Draft #1341 第二轮 CI 兼容修复已完成本地验证（2026-09-22）**：方案 A 的原87个去重路径、后续两份治理登记及两份旧夹具兼容扩写均获维护者确认，最终精确上限为91路径，
 > 第129条 migration、不可逆 cutover 收据/根账 binding、统一真相选择器、CLI 与 App/Admin 正式证明已实现。
 > w98 的冷回放、非空升级、真并发和真实 HTTP 链9项已通过；新增单测41项、定向 contract 1,074项通过。
 > 1／100／2,000身份及10,000行保持5条业务SQL，10,001行具名拒绝。全仓405/405套、8,810项单测
 > （5项既有todo）、build、CI同口径lint及w98最终9/9通过；cutover结果字段与北京日拆分两项架构偏差
 > 已在原写集内修复。`domain-map` 已仅补两个新模型属主并刷新摘要，`state-machines` 已仅刷新 schema
 > 输入摘要，没有新增状态机或生命周期；3b/4b 已按第129条及实际权限／审计／字典读数重签。最终 Harness、build、lint、
-> 派生文档与89路径范围审计均通过，最终实际86路径零越界。Draft [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 首轮冷跑中可信红区、Docker、Harness、第1组E2E等已通过；Fast checks 与第2–5组暴露架构读取、Prisma时钟默认值、旧夹具外键清理及历史迁移索引问题。修复保持第129条SQL及其3b摘要不变，本地unit 20/20、C1迁移63/63、D7升级5/5、D8 9/9、B6 30/30、contract 1,074/1,074及静态门禁通过；B6 500未复现，仍待新SHA冷跑。当前只待提交推送更新Draft及PR CI，不 Ready、不合并。D8-2、整体跨模型复审、真实业务验收、前端发布、生产部署、v1.1 Gate 与
+> 派生文档检查通过，当前实际88路径零越界。Draft [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 的 `0913cad9` 第二轮冷跑已通过可信红区、Fast checks、Docker、Harness、Golden journeys及E2E第1／4／5组；第2／3组只留下两份旧夹具未把D8新表放进同一条`TRUNCATE`的确定性失败，以及8192人规模用例一次12.288秒超时。两份夹具已按扩写授权修复，本工作树隔离库2/2 suites、35/35 tests通过；规模用例首轮同一D8实现2.646秒通过、本地原样复现1.039秒通过，故不改7秒预算或生产代码，交新SHA冷跑复核。第129条SQL及3b摘要不变；当前只待提交推送更新Draft及PR CI，不 Ready、不合并。D8-2、整体跨模型复审、真实业务验收、前端发布、生产部署、v1.1 Gate 与
 > D8-OPS 切换未完成；不 Ready、不合并、不操作生产、不删除或重分类业务数据，T0 保持 open。
 
 > **#1339 E2E 第4组夹具事务全量闭合已完成本地验证（2026-09-21）**：`e85e6edddfea004c52a3efb3597ab130642a9530` 的 [PR CI 35579292574](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35579292574) 中，D7 所在第5组成功；第4组两次均在35分钟 job 上限被取消。首次冷跑命中7份旧 E2E，获准的同 SHA attempt 2 有60份 suite通过、6份失败，失败均发生在业务断言前的 `withTimeLedgerFixtureCleanup` 外层事务：Prisma 默认5秒，实际约10–11秒。全仓 typed-AST 盘点确认31处调用中16处已有30/60秒，剩余15处默认值分布于14份旧 E2E，且回调只含受控清理或故意失败的夹具验证。本轮已将这15处统一显式设为60秒，结构复核为31处、默认0。四并发探针中7份通过、6份仅因共享负载触发既有30秒 Jest hook上限；同批13份改用单worker后13/13 suites、255/255 tests通过（353.636秒）。B3只运行命中改动的Form materialization分组并3/3通过（20.341秒），固定使用未授权w95的5个migration rehearsal用例明确留给PR CI；验证全程只使用授权模板库和w1，结束后worker库已回收、w95未创建。未改断言、Jest总时限、业务预算、生产代码、schema/migration/API/DTO/权限/Gate；下一步提交推送新SHA更新Draft #1339并交PR CI冷跑，不Ready、不合并、不操作生产。

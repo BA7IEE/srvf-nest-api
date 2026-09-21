@@ -4,8 +4,8 @@
 > [#1339](https://github.com/BA7IEE/srvf-nest-api/pull/1339) 已合并，合并后
 > [CI 35598127219](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35598127219)
 > completed/success，五个 Contract + E2E 分片全部通过。维护者已确认本文第4–6、8.1、9、11节及
-> 原87个去重路径的 D8-1 方案 A，以及后续明确扩展的两个治理登记路径，共89个去重路径；仅授权
-> `app_test_w98` 隔离验证、验证后提交/推送/创建 Draft PR。
+> 原87个去重路径的 D8-1 方案 A、后续明确扩展的两个治理登记路径，以及第二轮 PR CI 精确暴露并获准
+> 适配的两份旧夹具，共91个去重路径；仅授权隔离验证、验证后提交/推送/更新 Draft PR。
 > 当前代码、`docs/current-state.md` 与 GitHub 现场事实仍是执行权威；本授权不包含 Ready、合并、
 > 生产、Gate、D8-2 或 D8-OPS。
 
@@ -350,7 +350,14 @@ DoD：
 88. `test/e2e/activity-v11-batch4-qualification-contract-migration.e2e-spec.ts`
 89. `test/e2e/insurance-evidence-registration-revision-migration.e2e-spec.ts`
 
-D8-1 共 89 个去重候选路径：原计划87个，另有维护者明确扩写并授权的两份治理登记。
+### 9.3 第二轮 PR CI 精确暴露的旧夹具兼容
+
+只把 D8 两张新表补入既有同一条 `TRUNCATE`，并补齐新 `no_truncate` 触发器恢复校验；保留全部业务断言与超时：
+
+90. `test/e2e/activity-os-r4-d1-1-time-policy-foundation.e2e-spec.ts`
+91. `test/e2e/activity-os-r4-d6-time-ledger-fixture-cleanup.e2e-spec.ts`
+
+D8-1 共 91 个去重候选路径：原计划87个、两份治理登记，以及维护者明确扩写并授权的两份旧夹具兼容。
 新 migration 和既有 schema／seed 读数以实施时 main 为准；生成器可能零 diff 的文件仍不冒充必改。
 
 ## 10. D8-2 精确候选写集
@@ -410,21 +417,25 @@ D8-2 共 25 个去重候选路径。若实现发现必须动 DTO、module、Gate
 
 ### 12.2 D8-1 当前授权与实施状态
 
-推荐确认语句：
+首次 implementation 确认语句：
 
 > 确认 D8-1 方案 A，按 D8 计划第4–6、8.1、9、11节及89个去重路径执行；允许 app_test_w98
 > 隔离验证及测试夹具重建；验证后提交、推送并创建 Draft PR。不合并、不操作生产、不启用 Gate、不删除业务数据。
 
 维护者先确认原87路径方案 A，随后明确扩展 `harness/domain-map.json` 与
 `harness/state-machines.json`，并已在**实际实施 worktree**运行精确红区 grant；AI 未运行 grant。
+第二轮 PR CI 后，维护者又明确扩展上述两份旧夹具兼容路径；当前精确候选写集因此为91路径。
 当前已完成第129条 migration、切换服务/CLI、统一真相选择器、两个正式证明入口、配套单测与
 `app_test_w98` 的冷回放/非空升级/并发/真实 HTTP 定向验证。第129条实际 SQL SHA-256 的3b，
 以及权限265、审计170总计／165活跃、字典30类／277项、seed与权限目录实际摘要的4b均已由维护者重签。
 Draft [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 首轮冷跑暴露的架构读取、Prisma时钟默认值、
-D8新外键下旧夹具清理与D7历史迁移索引问题，已在本节授权路径内完成修复；migration SQL 未改，3b摘要仍为
-`bdfaeae5029b113c66cc85923a2e1b5307c69fe892a1c232edf3281c5672305e`。本地unit 20/20、C1旧迁移63/63、
-D7历史升级5/5、D8四套9/9、B6 30/30、contract 1,074/1,074及静态门禁通过；B6首轮CI 500未本地复现，
-下一步提交推送新SHA并交#1341冷跑，不据一次本地通过宣称根因已修，不Ready、不合并。
+D8新外键下旧夹具清理与D7历史迁移索引问题，已在原授权路径内完成修复；migration SQL 未改，3b摘要仍为
+`bdfaeae5029b113c66cc85923a2e1b5307c69fe892a1c232edf3281c5672305e`。提交 `0913cad9` 的第二轮
+[CI 35632563010](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35632563010) 已通过可信红区、Fast checks、
+Docker、Harness、Golden journeys 及 E2E 第1／4／5组；第2／3组只留下两份旧夹具未把 D8 新 binding／receipt
+纳入同一 `TRUNCATE` 的确定性外键失败，以及8192人规模用例一次12.288秒的7秒预算超时。后者在首轮同一D8
+实现上以2.646秒通过，本地原样复现为1.039秒通过，故不改生产代码或超时，交下一SHA冷跑复核。两份获准夹具
+已在本工作树隔离库2/2 suites、35/35 tests通过；下一步更新文档、提交推送并交#1341冷跑，不Ready、不合并。
 
 ### 12.3 D8-2 将来实施需单独确认
 
@@ -472,9 +483,11 @@ Admin scoped 跨 member、撤权、GLOBAL 回退和 member 停用；选择器在
 冷建并 9/9 通过。维护者随后扩写并授权原87路径漏列的 `harness/domain-map.json` 与
 `harness/state-machines.json`：前者仅登记两个新增模型属主并刷新输入摘要，后者仅刷新 schema 输入摘要，
 未新增状态机或生命周期；3b/4b 也已按实际读数重签。最终 Harness 自证 561／138／68 项全部通过，
-build、6 GiB CI 同口径 lint、OpenAPI／客户端／权限／审计／台账／派生文档检查均通过；89 路径授权上限内
-最终实际变更86路径、零越界，`RBAC_MAP.md`、`authz-assertion-patterns.json` 与 `reset-db.ts` 最终相对基线零 diff。
-Draft #1341 首轮冷跑后的兼容修复已完成本地收口，下一步提交推送新 SHA；完整 Contract + E2E 冷跑仍由 PR CI 验收。
+build、6 GiB CI 同口径 lint、OpenAPI／客户端／权限／审计／台账／派生文档检查均通过。第二轮 PR CI 进一步
+精确暴露并获准适配两份旧夹具；修复后本工作树隔离库2/2 suites、35/35 tests通过，8192人规模用例在不改
+7秒预算下以1.039秒通过。91路径授权上限内最终实际变更88路径、零越界，`RBAC_MAP.md`、
+`authz-assertion-patterns.json` 与 `reset-db.ts` 最终相对基线零 diff。下一步提交推送新 SHA；完整 Contract + E2E
+冷跑仍由 PR CI 验收。
 
 ## 15. 本次未做
 

@@ -55,7 +55,8 @@ describe('D6 scoped fixture trigger handling', () => {
   });
   const states = () => db.$queryRaw<{ name: string; enabled: string }[]>`
     SELECT tgname AS name, tgenabled::text AS enabled FROM pg_trigger
-    WHERE tgrelid IN ('"ParticipationTimeLedgerEntry"'::regclass, '"ParticipationTimeLedgerManifest"'::regclass,
+    WHERE tgrelid IN ('"ParticipationTimeCutoverBinding"'::regclass, '"ActivityTimeCutoverReceipt"'::regclass,
+      '"ParticipationTimeLedgerEntry"'::regclass, '"ParticipationTimeLedgerManifest"'::regclass,
       '"ParticipationTimeCorrectionManifest"'::regclass, '"ParticipationTimeCorrectionEntry"'::regclass,
       '"ParticipationTimeCorrectionCommitReceipt"'::regclass, '"CorrectionPendingTimeAllocation"'::regclass,
       '"CorrectionPendingTimeAllocationEvidence"'::regclass, '"CorrectionTimeSourceProof"'::regclass,
@@ -75,18 +76,19 @@ describe('D6 scoped fixture trigger handling', () => {
     expect(
       before.filter((row) => row.name.startsWith('ptl') && row.name.endsWith('no_truncate')),
     ).toHaveLength(2);
-    expect(
-      before.filter((row) => row.name.startsWith('ptc') && row.name.endsWith('no_truncate')),
-    ).toHaveLength(3);
+    expect(before.filter((row) => /^(ptce|ptcm|ptcr)_no_truncate$/u.test(row.name))).toHaveLength(
+      3,
+    );
     expect(
       before.filter((row) => /^(cpta|cptae|ctsp|ctab)_no_truncate$/u.test(row.name)),
     ).toHaveLength(4);
+    expect(before.filter((row) => /^(atcr|ptcb)_no_truncate$/u.test(row.name))).toHaveLength(2);
     await db.$transaction(
       (tx) =>
         withTimeLedgerFixtureCleanup(tx, async (inner) => {
           expect(inner).toBe(tx);
           await inner.$executeRawUnsafe(
-            'TRUNCATE "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipantSettlementTimeBucketSource", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationRevision", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeCorrectionCommitReceipt"',
+            'TRUNCATE "ParticipationTimeCutoverBinding", "ActivityTimeCutoverReceipt", "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipantSettlementTimeBucketSource", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationRevision", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeCorrectionCommitReceipt"',
           );
         }),
       { timeout: 60_000 },
