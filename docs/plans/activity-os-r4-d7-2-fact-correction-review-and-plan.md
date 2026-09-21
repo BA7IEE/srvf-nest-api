@@ -590,3 +590,15 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 本轮只修改 B6 E2E：为意外 `create()` 失败增加短时启用的 Nest 服务端 logger，输出被限制为异常类型、明确允许名单内的数据库码和最多八个 `src/`／`test/` 仓内相对栈位置；原始 message、完整 stack、请求、响应、body、业务 ID、环境变量和 secret 均不输出。既有预期 500 的 rollback 测试不触发该取证，所有原断言与 30 秒业务测试时限保持不变。另增加显式 `SRVF_B6_W98=1` 隔离入口，由该文件只重建、迁移并回收本工作树的 `app_test_w98`，避免通用 global setup 触碰模板库、w1 或其他 scratch worker。
 
 在全新迁移的 `app_test_w98` 上，完整 B6 文件 30/30 通过（21.807 秒），未产生服务端异常取证；套件结束后已确认 w98 被回收。这个结果只说明本地隔离运行没有复现，既不是根因证明，也不是产品修复。待本补丁提交推送后的新 SHA 由 PR CI 冷跑采证；#1339继续保持 Draft，不 Ready、不合并、不操作生产、不启用 Gate。没有修改生产代码、schema、migration、API、DTO、权限、业务数据或既有断言，也不产生3b/4b变更。
+
+### 14.14 #1339 fresh-V3 锁后重复全量重算收敛（2026-09-21）
+
+提交 `e0b0bcafdfd9c8af9ad98fe0c0f95acd6e2d8898` 的 [PR CI 35573141915](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35573141915) 已证明 B6 冷跑通过，唯一红点回到 D7-2 的 2,000 身份 fresh-V3 提交：事务在 7,052ms 关闭，外层记录的 correctionCommit 为 10,001ms，其中 materialization 1,871ms、receipt 593ms、ledgerCommit 3,469ms。它不是 B6 取证、断言漂移或 migration 变化造成的失败。
+
+获准的 w98 分阶段诊断中，同一 2,000 身份目标通过（整项 137.392 秒；correctionCommit 4,095ms，其中 materialization 623ms、receipt 412ms、ledgerCommit 1,263ms）。`ParticipationTimeCorrectionService.assertComplete` 的锁后应用层复核墙钟 592ms、数据库查询合计仅 33ms，其中 nested source 355ms；它会在 Node 再次重建并比较约 8,000 个 root 与 16,000 条更正分录。与此同时，账本批次的 `ready -> committed` 更新本就位于同一事务的 member/day locks 之后，数据库 `ptc_visibility_guard` 会执行 `ptc_assert_complete` 与 `ctsp_assert_complete(TRUE)`，再决定是否允许事实可见。重复的应用层全量重算在本地尚能通过，但会放大 CI CPU 共享时的 P2028 风险。
+
+方案 A 只收敛这个重复点：外层 fresh-V3 首次提交传入的 receipt anchor 必须在锁前精确匹配 ready 批次、申请、请求、活动、版本、manifest 与 hash；锁后仍重新执行 `authorizeCorrection`。只有该锚点保持精确匹配时，应用层才跳过第二次完整 `assertComplete`，随后仍由同一事务、member/day locks 后的 committed 状态触发器完成最终 fail-closed 全量校验。V2、重放、直接提交以及缺失、陈旧或不匹配锚点全部保留原应用层完整复核。没有移动锁、缓存身份、删除两轮权限复核或放宽 7 秒预算。
+
+E2E 新增两项互补证明：在尚无物化关系和 receipt 时直接把 V3 posting batch 切为 committed，数据库必须以 `23514` 和 `V3 correction proof bindings are incomplete or mismatched` 拒绝且批次仍为 ready；合法 fresh-V3 链则明确证明锁后应用层 `assertComplete` 调用次数为 0。获准 w98 的 100 身份链 1/1 通过（17.347 秒），2,000 身份链 1/1 通过（131.288 秒）。完整 D7 文件同一进程为 6/7，唯一失败是未修改的旧 V2 2,000 身份用例在 prepare 阶段得到泛化 500；只读 PostgreSQL 日志显示同一时段发生 60.707 秒、约 530,912kB 的 WAL checkpoint，随后该用例独立冷跑 1/1 通过（135.698 秒）。因此不加超时、不改夹具或断言，也不把 6/7 写成全绿；最终单进程冷跑由新 SHA 的 PR CI 验收。
+
+目标 Prettier、6GB CI 同档全仓 ESLint、三套 typecheck、`git diff --check`、生成物新鲜度、台账一致性与 Harness 自测均已通过；默认4GB lint曾因本机堆上限 OOM，按CI既有 `--max-old-space-size=6144` 原样重跑成功，不登记为代码失败。无 schema、migration、API、DTO、权限、Gate 或业务数据变更，不产生新的 3b/4b。验证后只推送更新 Draft #1339；不 Ready、不合并、不操作生产、不启用 Gate。

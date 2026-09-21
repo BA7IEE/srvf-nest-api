@@ -273,6 +273,7 @@ export class LedgerPostingService {
     options: { conversion: boolean; readyV3CorrectionReceipt?: ReadyV3CorrectionReceiptAnchor },
   ): Promise<LedgerCommitResult> {
     {
+      let readyV3ReceiptMatches = false;
       // ===== ①②③④ 固定锁序 =====
       const activity = await this.lockActivity(tx, activityId);
       const run = await this.lockRun(tx, activityId);
@@ -287,7 +288,7 @@ export class LedgerPostingService {
         // transaction.  That INSERT trigger already validated the full set;
         // reuse only its compact immutable anchor here.  Every other entry
         // point, stale anchor and replay keeps the historical full check.
-        const readyV3ReceiptMatches =
+        readyV3ReceiptMatches =
           batch.statusCode === 'ready' &&
           options.readyV3CorrectionReceipt !== undefined &&
           (await this.timeCorrection.hasReadyV3CommitReceiptAnchor(
@@ -369,7 +370,15 @@ export class LedgerPostingService {
       // ===== ⑩ 原子切换:以下全部在同一事务内 =====
       if (correction) {
         await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
-        await this.timeCorrection.assertComplete(tx, batch.id, true);
+        // The exact fresh-V3 receipt anchor was validated before the member/day
+        // locks, and all of its fact rows are immutable.  Do not rebuild and
+        // compare the 8k-root/16k-entry set in Node a second time here.  The
+        // upcoming LedgerPostingBatch ready -> committed write still runs the
+        // database ptc_visibility_guard under these locks; that guard executes
+        // ptc_assert_complete + ctsp_assert_complete(TRUE) before visibility.
+        // Every stale/missing/mismatched anchor and every V2/direct/replay path
+        // keeps the historical application-side complete-set recheck.
+        if (!readyV3ReceiptMatches) await this.timeCorrection.assertComplete(tx, batch.id, true);
       }
       if (classified) {
         await this.timeLedgerAccess.authorize(

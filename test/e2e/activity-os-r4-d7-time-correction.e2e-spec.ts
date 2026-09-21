@@ -1536,6 +1536,31 @@ describe('D7-1 recognition correction real transaction', () => {
         expectedBindingCount: sources.length,
         expectedSliceCount,
       });
+      if (population === 100) {
+        // The application optimization below never becomes the only complete-set
+        // guard.  Before materialization and its immutable receipt exist, the
+        // database visibility trigger must reject the final status transition
+        // and leave the batch ready for the real atomic commit.
+        let finalGuardError: unknown;
+        try {
+          await f.db.ledgerPostingBatch.update({
+            where: { id: preparedData.postingBatchId },
+            data: { statusCode: 'committed', committedAt: new Date() },
+          });
+        } catch (error) {
+          finalGuardError = error;
+        }
+        expect(finalGuardError).toBeInstanceOf(Prisma.PrismaClientUnknownRequestError);
+        expect((finalGuardError as Error).message).toContain('code: "23514"');
+        expect((finalGuardError as Error).message).toContain(
+          'V3 correction proof bindings are incomplete or mismatched',
+        );
+        expect(
+          await f.db.ledgerPostingBatch.findUniqueOrThrow({
+            where: { id: preparedData.postingBatchId },
+          }),
+        ).toMatchObject({ statusCode: 'ready', committedAt: null });
+      }
       let commitFailure = 'none';
       // CI-only failure diagnosis: retain only fixed stage names and numeric timing
       // aggregates.  Never print SQL, IDs, request bodies, URLs or raw errors.
@@ -1641,6 +1666,14 @@ describe('D7-1 recognition correction real transaction', () => {
               measureCommitPhase('correctionReceipt', () => createCommitReceipt(...args)),
             )
         : undefined;
+      let lockedCompleteCalls = 0;
+      const assertComplete = timeCorrection.assertComplete.bind(timeCorrection);
+      const assertCompleteSpy = jest
+        .spyOn(timeCorrection, 'assertComplete')
+        .mockImplementation((...args) => {
+          lockedCompleteCalls++;
+          return assertComplete(...args);
+        });
       const ledgerPosting = f.app.get(LedgerPostingService);
       const commitBatchWithin = ledgerPosting.commitBatchWithin.bind(ledgerPosting);
       const ledgerSpy = observed
@@ -1711,10 +1744,12 @@ describe('D7-1 recognition correction real transaction', () => {
           transactionSpy?.mockRestore();
           timeAllocationSpy?.mockRestore();
           receiptSpy?.mockRestore();
+          assertCompleteSpy.mockRestore();
           ledgerSpy?.mockRestore();
           if (observed) await observed.$disconnect();
         }
       })();
+      expect(lockedCompleteCalls).toBe(0);
       expect(committed.body.data).toMatchObject({
         requestId: submittedData.requestId,
         applicationId: preparedData.applicationId,
