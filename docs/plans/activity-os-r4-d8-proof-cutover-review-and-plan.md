@@ -420,6 +420,11 @@ D8-2 共 25 个去重候选路径。若实现发现必须动 DTO、module、Gate
 当前已完成第129条 migration、切换服务/CLI、统一真相选择器、两个正式证明入口、配套单测与
 `app_test_w98` 的冷回放/非空升级/并发/真实 HTTP 定向验证。第129条实际 SQL SHA-256 的3b，
 以及权限265、审计170总计／165活跃、字典30类／277项、seed与权限目录实际摘要的4b均已由维护者重签。
+Draft [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 首轮冷跑暴露的架构读取、Prisma时钟默认值、
+D8新外键下旧夹具清理与D7历史迁移索引问题，已在本节授权路径内完成修复；migration SQL 未改，3b摘要仍为
+`bdfaeae5029b113c66cc85923a2e1b5307c69fe892a1c232edf3281c5672305e`。本地unit 20/20、C1旧迁移63/63、
+D7历史升级5/5、D8四套9/9、B6 30/30、contract 1,074/1,074及静态门禁通过；B6首轮CI 500未本地复现，
+下一步提交推送新SHA并交#1341冷跑，不据一次本地通过宣称根因已修，不Ready、不合并。
 
 ### 12.3 D8-2 将来实施需单独确认
 
@@ -463,13 +468,13 @@ Admin scoped 跨 member、撤权、GLOBAL 回退和 member 停用；选择器在
 
 最终代码回归又抓出并修复两项架构偏差：cutover 检查结果不再复用只读配置的受保护字段名；北京日拆分
 改为调用 `splitSpanByBeijingDay` 单一原语，不保留第二套时区算法。修复后全仓单测 405/405 套、
-8,809 项通过（另有 5 项既有 todo），build 与 6 GiB CI 同口径 lint 通过；上述四套 w98 E2E 已重新
+8,810 项通过（另有 5 项既有 todo），build 与 6 GiB CI 同口径 lint 通过；上述四套 w98 E2E 已重新
 冷建并 9/9 通过。维护者随后扩写并授权原87路径漏列的 `harness/domain-map.json` 与
 `harness/state-machines.json`：前者仅登记两个新增模型属主并刷新输入摘要，后者仅刷新 schema 输入摘要，
 未新增状态机或生命周期；3b/4b 也已按实际读数重签。最终 Harness 自证 561／138／68 项全部通过，
 build、6 GiB CI 同口径 lint、OpenAPI／客户端／权限／审计／台账／派生文档检查均通过；89 路径授权上限内
-实际变更87路径、零越界，`RBAC_MAP.md` 与 `authz-assertion-patterns.json` 经生成器确认零 diff。
-本地收口完成，下一步仅提交、推送并创建 Draft PR，完整 Contract + E2E 冷跑仍由 PR CI 验收。
+最终实际变更86路径、零越界，`RBAC_MAP.md`、`authz-assertion-patterns.json` 与 `reset-db.ts` 最终相对基线零 diff。
+Draft #1341 首轮冷跑后的兼容修复已完成本地收口，下一步提交推送新 SHA；完整 Contract + E2E 冷跑仍由 PR CI 验收。
 
 ## 15. 本次未做
 

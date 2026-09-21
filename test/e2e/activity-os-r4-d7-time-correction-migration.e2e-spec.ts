@@ -76,7 +76,10 @@ function recreate() {
       'ON_ERROR_STOP=1',
     ],
     {
-      input: 'SELECT count(*) FROM pg_stat_activity WHERE datname = ' + literal(database),
+      input:
+        'SELECT count(*) FROM pg_stat_activity WHERE datname = ' +
+        literal(database) +
+        " AND backend_type = 'client backend'",
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     },

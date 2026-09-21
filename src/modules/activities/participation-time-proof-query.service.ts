@@ -90,13 +90,8 @@ export class ParticipationTimeProofQueryService {
     validateParticipationTimeProofRange(query);
     return this.prisma.$transaction(
       async (tx) => {
-        await this.assertCanReadMember(tx, currentUser, memberId);
-        const member = await tx.member.findFirst({
-          where: { id: memberId, deletedAt: null },
-          select: { id: true },
-        });
-        if (!member) throw new BizException(BizCode.MEMBER_NOT_FOUND);
-        return this.presentInTx(tx, member.id, query);
+        const authorizedMemberId = await this.assertCanReadMember(tx, currentUser, memberId);
+        return this.presentInTx(tx, authorizedMemberId, query);
       },
       {
         isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
@@ -130,19 +125,29 @@ export class ParticipationTimeProofQueryService {
     tx: Prisma.TransactionClient,
     currentUser: CurrentUserPayload,
     memberId: string,
-  ): Promise<void> {
+  ): Promise<string> {
     const decision = await this.authz.explain(
       currentUser,
       PROOF_READ_ACTION,
       { type: 'member', id: memberId },
       tx,
     );
-    if (decision.allow) return;
+    if (decision.allow) {
+      if (
+        decision.resource?.resourceType === 'member' &&
+        decision.resource.resourceId === memberId
+      ) {
+        return decision.resource.resourceId;
+      }
+      // SUPER_ADMIN can pass before the resolver returns a resource. Preserve the
+      // endpoint's existing missing-member result without a second cross-domain read.
+      throw new BizException(BizCode.MEMBER_NOT_FOUND);
+    }
     if (
       decision.reason === 'resource_not_found' &&
       (await this.rbac.can(currentUser, PROOF_READ_ACTION, undefined, tx))
     ) {
-      return;
+      throw new BizException(BizCode.MEMBER_NOT_FOUND);
     }
     throw new BizException(BizCode.RBAC_FORBIDDEN);
   }

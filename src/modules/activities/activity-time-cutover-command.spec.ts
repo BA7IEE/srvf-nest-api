@@ -91,6 +91,7 @@ describe('D8-1 cutover command contract', () => {
     };
     const command = new ActivityTimeCutoverCommand(rbac as never);
     await expect(command.lockAndAuthorize(tx as never, actor)).resolves.toEqual(actor);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(rbac.getUserPermissionCodes).toHaveBeenCalledWith(actor.id, undefined, tx);
   });
 

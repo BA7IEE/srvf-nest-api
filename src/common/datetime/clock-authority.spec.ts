@@ -13,10 +13,11 @@ import * as ts from 'typescript';
 //
 // 本 spec 不修实例,它让这个类**长不回来**。四道断言:
 //
-//   ① 完整性硬闸:`prisma/schema.prisma` 里每一个非审计的 `@default(now())` 列,必须**要么**
+//   ① 完整性硬闸:`prisma/schema.prisma` 里每一个非审计的数据库时钟默认列
+//      (`@default(now())` / `dbgenerated("clock_timestamp()")`),必须**要么**
 //      登记在 CLOCK_CRITICAL_COLUMNS(参与判定),**要么**登记在 NOT_CLOCK_CRITICAL(不参与,
 //      附理由)。清单从 schema **反推**,不写「恰 N 条」—— 本仓栽过:少登记一条不产生坏链接,
-//      既有守护看不见它。新加一个 `@default(now())` 列 ⇒ 本条当场红,逼人做一次决定。
+//      既有守护看不见它。新加一个数据库时钟默认列 ⇒ 本条当场红,逼人做一次决定。
 //
 //   ② 判定点仍在:每条登记项声明自己的判定点(文件 + 判定表达式原文 + 时钟来源)。判定点
 //      被删/被改写 ⇒ 红。防的是「把判定悄悄换成库时钟、登记表还写着应用时钟」。
@@ -413,7 +414,7 @@ const CLOCK_CRITICAL_COLUMNS: readonly ClockCriticalColumn[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// 登记表 ②:非审计但**不参与判定**的 `@default(now())` 列 —— 显式豁免,附理由
+// 登记表 ②:非审计但**不参与判定**的数据库时钟默认列 —— 显式豁免,附理由
 // ---------------------------------------------------------------------------
 const NOT_CLOCK_CRITICAL: ReadonlyArray<{
   readonly model: string;
@@ -473,7 +474,7 @@ const NOT_CLOCK_CRITICAL: ReadonlyArray<{
 // ---------------------------------------------------------------------------
 // schema 解析(纯函数 —— 阳性对照可以直接喂字符串)
 // ---------------------------------------------------------------------------
-export function parseDefaultNowColumns(
+export function parseDatabaseClockDefaultColumns(
   schemaSource: string,
 ): Array<{ model: string; column: string }> {
   const out: Array<{ model: string; column: string }> = [];
@@ -489,7 +490,10 @@ export function parseDefaultNowColumns(
       model = null;
       continue;
     }
-    if (model === null || !line.includes('@default(now())')) continue;
+    const hasDatabaseClockDefault =
+      line.includes('@default(now())') ||
+      line.includes('@default(dbgenerated("clock_timestamp()"))');
+    if (model === null || !hasDatabaseClockDefault) continue;
     const column = /^([A-Za-z0-9_]+)/.exec(line);
     if (column) out.push({ model, column: column[1] });
   }
@@ -658,8 +662,8 @@ function discoverAll(entry: Omit<ClockCriticalColumn, 'writeSites'>): Discovered
 
 describe('统一时间权威 —— 「写用库时钟、判用应用时钟」缺陷类的执行位', () => {
   // ===== ① 完整性硬闸:登记表从 schema 反推,不写「恰 N 条」 =====
-  it('①schema 里每个非审计的 @default(now()) 列都已做过一次决定(判定列 / 显式豁免)', () => {
-    const declared = parseDefaultNowColumns(fs.readFileSync(SCHEMA, 'utf8')).filter(
+  it('①schema 里每个非审计的数据库时钟默认列都已做过一次决定(判定列 / 显式豁免)', () => {
+    const declared = parseDatabaseClockDefaultColumns(fs.readFileSync(SCHEMA, 'utf8')).filter(
       ({ column }) => !AUDIT_COLUMNS.has(column),
     );
     const key = (model: string, column: string): string => `${model}.${column}`;
@@ -885,15 +889,17 @@ describe('统一时间权威 —— 「写用库时钟、判用应用时钟」�
       expect(found.filter((w) => w.kind === 'update' && w.valueExpr === null)).toHaveLength(1);
     });
 
-    it('正对照 H:schema 新增一个 @default(now()) 判定列 ⇒ 完整性闸看得见它', () => {
+    it('正对照 H:schema 新增一个数据库时钟默认判定列 ⇒ 完整性闸看得见它', () => {
       const fixture = `
 model Widget {
   id        String   @id
   createdAt DateTime @default(now())
-  readyAt   DateTime @default(now())
+  readyAt   DateTime @default(dbgenerated("clock_timestamp()"))
 }
 `;
-      const parsed = parseDefaultNowColumns(fixture).filter((c) => !AUDIT_COLUMNS.has(c.column));
+      const parsed = parseDatabaseClockDefaultColumns(fixture).filter(
+        (c) => !AUDIT_COLUMNS.has(c.column),
+      );
       expect(parsed).toEqual([{ model: 'Widget', column: 'readyAt' }]);
     });
   });

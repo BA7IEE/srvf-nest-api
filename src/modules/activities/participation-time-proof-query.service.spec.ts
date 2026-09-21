@@ -16,11 +16,21 @@ const user = {
 const query = { dateFrom: '2099-01-01', dateTo: '2099-12-31', page: 1, pageSize: 20 };
 
 function adminHarness(decision: { allow: boolean; reason: string }, globalAllowed = false) {
-  const tx = {
-    member: { findFirst: jest.fn().mockResolvedValue({ id: 'target-member' }) },
-  };
+  const tx = {};
   const prisma = { $transaction: jest.fn((run: (client: object) => unknown) => run(tx)) };
-  const authz = { explain: jest.fn().mockResolvedValue(decision) };
+  const authz = {
+    explain: jest.fn().mockResolvedValue({
+      ...decision,
+      ...(decision.allow
+        ? {
+            resource: {
+              resourceType: 'member',
+              resourceId: 'target-member',
+            },
+          }
+        : {}),
+    }),
+  };
   const rbac = { can: jest.fn().mockResolvedValue(globalAllowed) };
   const truth = { readMemberTruthInTx: jest.fn().mockResolvedValue({ items: [] }) };
   const presenter = { present: jest.fn().mockReturnValue({ proofVersion: 1 }) };
@@ -109,10 +119,6 @@ describe('D8-1 proof query orchestration', () => {
       setup.tx,
     );
     expect(setup.rbac.can).not.toHaveBeenCalled();
-    expect(setup.tx.member.findFirst).toHaveBeenCalledWith({
-      where: { id: 'target-member', deletedAt: null },
-      select: { id: true },
-    });
     expect(setup.truth.readMemberTruthInTx).toHaveBeenCalledWith(setup.tx, {
       memberId: 'target-member',
       dateFrom: query.dateFrom,
@@ -120,15 +126,15 @@ describe('D8-1 proof query orchestration', () => {
     });
   });
 
-  it('uses the existing GLOBAL permission only for a resource_not_found fallback', async () => {
+  it('uses the existing GLOBAL permission before returning member-not-found', async () => {
     const setup = adminHarness({ allow: false, reason: 'resource_not_found' }, true);
 
-    await expect(setup.service.forAdminMember('target-member', query, user)).resolves.toEqual({
-      proofVersion: 1,
+    await expect(setup.service.forAdminMember('target-member', query, user)).rejects.toMatchObject({
+      biz: BizCode.MEMBER_NOT_FOUND,
     });
 
     expect(setup.rbac.can).toHaveBeenCalledWith(user, 'attendance.read.sheet', undefined, setup.tx);
-    expect(setup.truth.readMemberTruthInTx).toHaveBeenCalled();
+    expect(setup.truth.readMemberTruthInTx).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -142,13 +148,16 @@ describe('D8-1 proof query orchestration', () => {
     });
 
     if (decision.reason === 'out_of_scope') expect(setup.rbac.can).not.toHaveBeenCalled();
-    expect(setup.tx.member.findFirst).not.toHaveBeenCalled();
     expect(setup.truth.readMemberTruthInTx).not.toHaveBeenCalled();
   });
 
-  it('returns member-not-found only after authorization and never reads proof truth', async () => {
+  it('rejects a mismatched resolved member anchor before reading proof truth', async () => {
     const setup = adminHarness({ allow: true, reason: 'matched' });
-    setup.tx.member.findFirst.mockResolvedValue(null);
+    setup.authz.explain.mockResolvedValue({
+      allow: true,
+      reason: 'matched',
+      resource: { resourceType: 'member', resourceId: 'other-member' },
+    });
 
     await expect(setup.service.forAdminMember('missing-member', query, user)).rejects.toMatchObject(
       { biz: BizCode.MEMBER_NOT_FOUND },
@@ -160,6 +169,19 @@ describe('D8-1 proof query orchestration', () => {
       { type: 'member', id: 'missing-member' },
       setup.tx,
     );
+    expect(setup.rbac.can).not.toHaveBeenCalled();
+    expect(setup.truth.readMemberTruthInTx).not.toHaveBeenCalled();
+  });
+
+  it('returns member-not-found when SUPER_ADMIN passes without a resolved member', async () => {
+    const setup = adminHarness({ allow: true, reason: 'super_admin_pass' });
+    setup.authz.explain.mockResolvedValue({ allow: true, reason: 'super_admin_pass' });
+
+    await expect(setup.service.forAdminMember('missing-member', query, user)).rejects.toMatchObject(
+      { biz: BizCode.MEMBER_NOT_FOUND },
+    );
+
+    expect(setup.rbac.can).not.toHaveBeenCalled();
     expect(setup.truth.readMemberTruthInTx).not.toHaveBeenCalled();
   });
 });

@@ -6721,10 +6721,10 @@ model ActivityTimeCutoverReceipt {
   deployedMainSha    String
   evidenceBundleHash String
   actorUserId        String
-  cutoverAt          DateTime @default(now()) @db.Timestamptz(3)
+  cutoverAt          DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
   formatVersion      Int      @default(1)
   contentHash        String
-  createdAt          DateTime @default(now()) @db.Timestamptz(3)
+  createdAt          DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
 
   actor    User                              @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "atcr_actor_fkey")
   bindings ParticipationTimeCutoverBinding[]
@@ -6746,7 +6746,7 @@ model ParticipationTimeCutoverBinding {
   settlementVersionId String
   rootContentHash     String
   formatVersion       Int      @default(1)
-  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  createdAt           DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
 
   cutoverReceipt ActivityTimeCutoverReceipt      @relation(fields: [cutoverReceiptId, formatVersion], references: [id, formatVersion], onDelete: Restrict, onUpdate: Restrict, map: "ptcb_receipt_fkey")
   rootManifest   ParticipationTimeLedgerManifest @relation(fields: [rootManifestId, postingBatchId, activityId, settlementRunId, settlementVersionId, rootContentHash], references: [id, postingBatchId, activityId, settlementRunId, settlementVersionId, contentHash], onDelete: Restrict, onUpdate: Restrict, map: "ptcb_root_manifest_fkey")

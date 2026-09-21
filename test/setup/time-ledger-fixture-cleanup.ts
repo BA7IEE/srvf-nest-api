@@ -41,6 +41,12 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
           states := states || jsonb_build_array(jsonb_build_object('table',item.tbl,'trigger',item.trg,'enabled',item.enabled));
           EXECUTE format('ALTER TABLE %I DISABLE TRIGGER %I',item.tbl,item.trg);
         END LOOP;
+        IF to_regclass('public."ParticipationTimeCutoverBinding"') IS NOT NULL THEN
+          IF to_regclass('public."ActivityTimeCutoverReceipt"') IS NULL THEN
+            RAISE EXCEPTION 'Incomplete cutover fixture tables';
+          END IF;
+          EXECUTE 'TRUNCATE TABLE "ParticipationTimeCutoverBinding", "ActivityTimeCutoverReceipt" RESTART IDENTITY';
+        END IF;
         PERFORM set_config('srvf.d6_fixture_trigger_states',states::text,true);
       END $d6_fixture$;`,
     after: `DO $d6_fixture$
@@ -92,6 +98,19 @@ export async function withTimeLedgerFixtureCleanup<T>(
     // Both identifiers are from the fixed list above, never caller data.
     await tx.$executeRawUnsafe(`ALTER TABLE "${table}" DISABLE TRIGGER "${trigger}"`);
     changed.push({ table, trigger, enabled });
+  }
+  const cutoverTables = new Set(
+    changed
+      .filter(({ table }) =>
+        ['ParticipationTimeCutoverBinding', 'ActivityTimeCutoverReceipt'].includes(table),
+      )
+      .map(({ table }) => table),
+  );
+  if (cutoverTables.size !== 0) {
+    if (cutoverTables.size !== 2) throw new Error('Incomplete cutover fixture tables');
+    await tx.$executeRawUnsafe(
+      'TRUNCATE TABLE "ParticipationTimeCutoverBinding", "ActivityTimeCutoverReceipt" RESTART IDENTITY',
+    );
   }
   const result = await cleanup(tx);
   for (const { table, trigger, enabled } of changed) {

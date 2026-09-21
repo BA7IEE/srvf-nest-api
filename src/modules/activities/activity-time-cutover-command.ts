@@ -5,6 +5,7 @@ import type { ActivityTimeCutoverReceipt, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
+import { lockAuthSessionUser } from '../auth/auth-session-lock';
 import { RbacService } from '../permissions/rbac.service';
 import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
 import { canonicalize } from './settlement-content-hash';
@@ -183,10 +184,9 @@ export class ActivityTimeCutoverCommand {
     tx: Prisma.TransactionClient,
     currentUser: CurrentUserPayload,
   ): Promise<CurrentUserPayload> {
-    const locked = await tx.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "User" WHERE id = ${currentUser.id} FOR UPDATE
-    `;
-    if (locked.length !== 1) throw new BizException(BizCode.UNAUTHORIZED);
+    if (!(await lockAuthSessionUser(tx, currentUser.id))) {
+      throw new BizException(BizCode.UNAUTHORIZED);
+    }
 
     const actor = await loadActiveUserIdentityInTx(tx, currentUser.id);
     if (!actor) throw new BizException(BizCode.UNAUTHORIZED);
