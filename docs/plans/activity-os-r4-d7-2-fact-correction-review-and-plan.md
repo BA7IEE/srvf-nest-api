@@ -582,3 +582,11 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 该用例已存在的 `holdLock()` 明确提供 `acquired` 信号；同文件其他锁竞争用例已在被测操作前等待它。②此前自行启动裸 transaction 却未等待实际拿锁，因而把“应证明的有界锁等待”退化为调度竞态。本轮只复用既有 helper，并在 `finalApprove` 前 `await holder.acquired`，释放时改用其既有 `release()`／`done` 协议；未改任何断言、测试总时限、业务超时或生产路径。
 
 按获准的 `app_test_w98` 克隆库冷建后，该文件完整 6/6 通过。当前补丁尚待提交、推送后的新 SHA PR CI；#1339继续保持 Draft，不 Ready、不合并、不操作生产、不启用 Gate，也不产生 migration、3b 或4b变更。
+
+### 14.13 #1339 B6 紧急创建 500 脱敏取证（2026-09-21）
+
+维护者批准对同一 SHA `206ccd737a9e90030a8df1a012fb6e34247fbf59` 的失败 CI 链重跑一次。[run 35564304216 attempt 2](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35564304216) 中，上一轮 B4 与 D7 红点均通过，唯一失败转为 B6 的 `App publish-reviews refuses emergency formal publication with no side effects`：预期 201、实际 500，响应侧只有 `bizCode=50000`，没有数据库码或可用错误提示。历史两次同类 B6 500 分别落在隐藏属主和 Admin 工作流测试，本次又落在 App 路由；同一文件自 `bab5110e` 后没有行为改动，因此现有证据只能证明失败位置漂移，不能证明固定第 N 次调用、单一路由或某个确定产品根因。
+
+本轮只修改 B6 E2E：为意外 `create()` 失败增加短时启用的 Nest 服务端 logger，输出被限制为异常类型、明确允许名单内的数据库码和最多八个 `src/`／`test/` 仓内相对栈位置；原始 message、完整 stack、请求、响应、body、业务 ID、环境变量和 secret 均不输出。既有预期 500 的 rollback 测试不触发该取证，所有原断言与 30 秒业务测试时限保持不变。另增加显式 `SRVF_B6_W98=1` 隔离入口，由该文件只重建、迁移并回收本工作树的 `app_test_w98`，避免通用 global setup 触碰模板库、w1 或其他 scratch worker。
+
+在全新迁移的 `app_test_w98` 上，完整 B6 文件 30/30 通过（21.807 秒），未产生服务端异常取证；套件结束后已确认 w98 被回收。这个结果只说明本地隔离运行没有复现，既不是根因证明，也不是产品修复。待本补丁提交推送后的新 SHA 由 PR CI 冷跑采证；#1339继续保持 Draft，不 Ready、不合并、不操作生产、不启用 Gate。没有修改生产代码、schema、migration、API、DTO、权限、业务数据或既有断言，也不产生3b/4b变更。

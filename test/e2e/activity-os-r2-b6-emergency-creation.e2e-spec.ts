@@ -1,6 +1,7 @@
-import type { INestApplication } from '@nestjs/common';
+import type { INestApplication, LoggerService } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { MemberStatus, Prisma, Role } from '@prisma/client';
+import { execFileSync } from 'node:child_process';
 import request from 'supertest';
 import appConfig from '../../src/config/app.config';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
@@ -28,13 +29,18 @@ import { grantBizAdminToUser, seedBizAdminPermissionsAndRole } from '../fixtures
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
+import { loadTestEnv } from '../setup/load-env';
 import { resetDb } from '../setup/reset-db';
+import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
+import { deriveTestDbName } from '../setup/worktree-db';
 
 const ROOT = '/api/app/v1/my/managed-activities';
 const START = '2099-09-01T08:00:00.000Z';
 const END = '2099-09-01T12:00:00.000Z';
 const META = { requestId: 'b6-emergency-e2e', ip: null, ua: 'jest' };
+const WORKER = 98;
+const USE_DEDICATED_W98 = process.env.SRVF_B6_W98 === '1';
 type CreationResult = {
   activity: { activityId: string; createdAt: string; createdStatusCode: string };
   mode: string;
@@ -64,6 +70,75 @@ type HistoricalV6FixtureService = HistoricalV6FixtureFactory & {
   apply: ActivityPublishProposalV2Service['apply'];
 };
 
+const SAFE_DATABASE_CODES = [
+  'P2002',
+  'P2003',
+  'P2010',
+  'P2024',
+  'P2028',
+  'P2034',
+  '23502',
+  '23503',
+  '23505',
+  '23514',
+  '40001',
+  '40P01',
+  '53200',
+  '53300',
+  '57P01',
+  '57P02',
+  '57P03',
+] as const;
+
+function createRedactedServerExceptionCapture() {
+  let active = false;
+  let emitted = false;
+  const noop = () => undefined;
+  const logger: LoggerService = {
+    log: noop,
+    warn: noop,
+    debug: noop,
+    verbose: noop,
+    fatal: noop,
+    error: (_message: unknown, ...optionalParams: unknown[]) => {
+      if (!active || emitted) return;
+      const stack = optionalParams.find(
+        (value): value is string => typeof value === 'string' && value.includes('\n'),
+      );
+      if (stack === undefined) return;
+      emitted = true;
+      const errorType =
+        /^([A-Za-z_$][A-Za-z0-9_$]{0,79})(?=:)/.exec(stack.split('\n', 1)[0] ?? '')?.[1] ??
+        'UnknownError';
+      const databaseCodes = SAFE_DATABASE_CODES.filter((code) => stack.includes(code));
+      const repositoryLocations = [
+        ...new Set(
+          [...stack.matchAll(/\b((?:src|test)\/[A-Za-z0-9_./-]+\.ts):(\d+):(\d+)\b/g)].map(
+            (match) => `${match[1]}:${match[2]}:${match[3]}`,
+          ),
+        ),
+      ].slice(0, 8);
+      console.error('B6 emergency server exception (redacted)', {
+        errorType,
+        databaseCodes,
+        repositoryLocations,
+      });
+    },
+  };
+  return {
+    logger,
+    async capture<T>(work: () => Promise<T>): Promise<T> {
+      active = true;
+      emitted = false;
+      try {
+        return await work();
+      } finally {
+        active = false;
+      }
+    },
+  };
+}
+
 describe('B6 emergency creation: frozen calls, real facts and publication refusal', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -76,8 +151,14 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
   let organizationId: string;
   let childId: string;
   let sequence = 0;
+  const serverExceptionCapture = createRedactedServerExceptionCapture();
   const previousGate = process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
   const previousControlMode = process.env.ACTIVITY_OS_CONTROL_PLANE_MODE;
+  const originalEnvironment = {
+    worker: process.env.JEST_WORKER_ID,
+    databaseUrl: process.env.DATABASE_URL,
+    storageRoot: process.env.STORAGE_LOCAL_ROOT,
+  };
   const unique = (label: string) => `b6-emergency-${label}-${++sequence}`;
 
   async function member(orgId: string, status: MemberStatus = MemberStatus.ACTIVE) {
@@ -110,9 +191,27 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
   }
 
   beforeAll(async () => {
+    if (USE_DEDICATED_W98) {
+      process.env.JEST_WORKER_ID = String(WORKER);
+      loadTestEnv();
+      process.env.STORAGE_LOCAL_ROOT = `./tmp/storage-w${WORKER}`;
+      assertTestDatabaseUrl(process.env.DATABASE_URL);
+      dropWorkerDatabase(WORKER);
+      execFileSync(
+        'docker',
+        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
+        { stdio: 'pipe' },
+      );
+      execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
+        env: process.env,
+        stdio: 'pipe',
+      });
+    }
+    assertTestDatabaseUrl(process.env.DATABASE_URL);
     process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = 'true';
     process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = 'active';
     app = await createTestApp();
+    app.useLogger(serverExceptionCapture.logger);
     prisma = app.get(PrismaService);
     config = app.get<ConfigType<typeof appConfig>>(appConfig.KEY);
     await resetDb(app);
@@ -154,18 +253,35 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
     });
     const role = await prisma.dictType.create({ data: { code: 'attendance_role', label: '岗位' } });
     await prisma.dictItem.create({ data: { typeId: role.id, code: 'b6-support', label: '保障' } });
-  });
+  }, 120000);
   afterEach(() => {
     jest.restoreAllMocks();
     config.activityResponsibilityWorkflow.enabled = true;
   });
   afterAll(async () => {
-    await app.close();
-    if (previousGate === undefined) delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
-    else process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousGate;
-    if (previousControlMode === undefined) delete process.env.ACTIVITY_OS_CONTROL_PLANE_MODE;
-    else process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = previousControlMode;
-  });
+    try {
+      await app.close();
+    } finally {
+      if (previousGate === undefined) delete process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_RESPONSIBILITY_WORKFLOW_ENABLED = previousGate;
+      if (previousControlMode === undefined) delete process.env.ACTIVITY_OS_CONTROL_PLANE_MODE;
+      else process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = previousControlMode;
+      if (USE_DEDICATED_W98) {
+        try {
+          dropWorkerDatabase(WORKER);
+        } finally {
+          restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
+          restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
+          restoreEnvironment('STORAGE_LOCAL_ROOT', originalEnvironment.storageRoot);
+        }
+      }
+    }
+  }, 120000);
+
+  function restoreEnvironment(name: string, value: string | undefined) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 
   const input = () => ({
     operationKey: unique('command'),
@@ -186,54 +302,47 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
   async function create() {
     const body = { ...input(), memberIds: [actor.memberId!] };
     const startedAt = Date.now();
-    const response = await post(body)
-      .expect((response) => {
-        if (response.status === 201) return;
-        // Never log the raw request, response, or exception message: database errors can
-        // contain credentials or fixture data. Only emit bounded, allowlisted signals.
-        const payload: unknown = response.body;
-        const envelope =
-          payload !== null && typeof payload === 'object'
-            ? (payload as Record<string, unknown>)
-            : {};
-        const message = typeof envelope.message === 'string' ? envelope.message : '';
-        const errorHints = [
-          'Unique constraint failed',
-          'Foreign key constraint violated',
-          'Transaction API error',
-          'Unable to start a transaction',
-          'Transaction already closed',
-          'Timed out fetching a new connection',
-          'timeout',
-          'deadlock detected',
-          'write conflict',
-          'Record to update not found',
-        ].filter((hint) => message.toLowerCase().includes(hint.toLowerCase()));
-        const databaseCodes = [
-          'P2002',
-          'P2003',
-          'P2024',
-          'P2028',
-          'P2034',
-          '40P01',
-          '23503',
-          '23505',
-        ].filter((code) => new RegExp(`\\b${code}\\b`).test(message));
-        console.error('B6 emergency creation failed (redacted)', {
-          status: response.status,
-          elapsedMs: Date.now() - startedAt,
-          bizCode:
-            typeof envelope.code === 'number' &&
-            Number.isInteger(envelope.code) &&
-            envelope.code >= 10000 &&
-            envelope.code <= 99999
-              ? envelope.code
-              : null,
-          databaseCodes,
-          errorHints,
-        });
-      })
-      .expect(201);
+    const response = await serverExceptionCapture.capture(() =>
+      post(body)
+        .expect((response) => {
+          if (response.status === 201) return;
+          // Never log the raw request, response, or exception message: database errors can
+          // contain credentials or fixture data. Only emit bounded, allowlisted signals.
+          const payload: unknown = response.body;
+          const envelope =
+            payload !== null && typeof payload === 'object'
+              ? (payload as Record<string, unknown>)
+              : {};
+          const message = typeof envelope.message === 'string' ? envelope.message : '';
+          const errorHints = [
+            'Unique constraint failed',
+            'Foreign key constraint violated',
+            'Transaction API error',
+            'Unable to start a transaction',
+            'Transaction already closed',
+            'Timed out fetching a new connection',
+            'timeout',
+            'deadlock detected',
+            'write conflict',
+            'Record to update not found',
+          ].filter((hint) => message.toLowerCase().includes(hint.toLowerCase()));
+          const databaseCodes = SAFE_DATABASE_CODES.filter((code) => message.includes(code));
+          console.error('B6 emergency creation failed (redacted)', {
+            status: response.status,
+            elapsedMs: Date.now() - startedAt,
+            bizCode:
+              typeof envelope.code === 'number' &&
+              Number.isInteger(envelope.code) &&
+              envelope.code >= 10000 &&
+              envelope.code <= 99999
+                ? envelope.code
+                : null,
+            databaseCodes,
+            errorHints,
+          });
+        })
+        .expect(201),
+    );
     return { body, result: (response.body as CreationResponse).data };
   }
   async function counts() {
