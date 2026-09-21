@@ -60,12 +60,14 @@ describe('C1 D2b five materialization chains and legacy compatibility', () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
     await resetDb(app);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition", "ActivityTemplate", "ActivityTemplateFamily", "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition", "ActivityTemplate", "ActivityTemplateFamily", "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 60_000 },
     );
     const root = await prisma.organization.create({
       data: { name: unique('root'), nodeTypeCode: 'root' },

@@ -602,3 +602,11 @@ D7-1 main CI 34955332231已失败。失败用例位于 `test/e2e/activity-os-r4-
 E2E 新增两项互补证明：在尚无物化关系和 receipt 时直接把 V3 posting batch 切为 committed，数据库必须以 `23514` 和 `V3 correction proof bindings are incomplete or mismatched` 拒绝且批次仍为 ready；合法 fresh-V3 链则明确证明锁后应用层 `assertComplete` 调用次数为 0。获准 w98 的 100 身份链 1/1 通过（17.347 秒），2,000 身份链 1/1 通过（131.288 秒）。完整 D7 文件同一进程为 6/7，唯一失败是未修改的旧 V2 2,000 身份用例在 prepare 阶段得到泛化 500；只读 PostgreSQL 日志显示同一时段发生 60.707 秒、约 530,912kB 的 WAL checkpoint，随后该用例独立冷跑 1/1 通过（135.698 秒）。因此不加超时、不改夹具或断言，也不把 6/7 写成全绿；最终单进程冷跑由新 SHA 的 PR CI 验收。
 
 目标 Prettier、6GB CI 同档全仓 ESLint、三套 typecheck、`git diff --check`、生成物新鲜度、台账一致性与 Harness 自测均已通过；默认4GB lint曾因本机堆上限 OOM，按CI既有 `--max-old-space-size=6144` 原样重跑成功，不登记为代码失败。无 schema、migration、API、DTO、权限、Gate 或业务数据变更，不产生新的 3b/4b。验证后只推送更新 Draft #1339；不 Ready、不合并、不操作生产、不启用 Gate。
+
+### 14.15 #1339 E2E 第4组夹具事务全量闭合（2026-09-21）
+
+`e85e6edddfea004c52a3efb3597ab130642a9530` 的 [PR CI 35579292574](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35579292574) 已证明 D7 所在 Contract + E2E 第5组通过。第4组首次冷跑命中7份旧 E2E 的夹具清理事务失败后，在维护者只允许同 SHA 重跑一次的边界内执行 attempt 2；该轮有60份 suite通过、6份失败，随后仍在35分钟 job上限被取消，聚合失败。两轮失败均发生在业务断言开始前：`withTimeLedgerFixtureCleanup` 的外层 Prisma transaction 沿用默认5秒，而共享 runner 上实际约10.45–11.05秒。
+
+为避免只修当轮随机命中的7份继续抽奖，本轮以 TypeScript AST 扫描全部 `test/**/*.ts`：31处 `withTimeLedgerFixtureCleanup` 外层事务中16处已有明确30/60秒，剩余15处默认值分布于14份旧 E2E。逐处复核确认这些回调只执行受控 `TRUNCATE` 或故意抛错验证夹具回滚，不含业务写入、权限判断或生产事务。维护者因此批准全量方案A：仅给这15处外层夹具事务显式设置 `{ timeout: 60_000 }`；既有30秒和60秒调用保持原值，Jest总时限、全部断言、业务5/7/30/120秒预算、生产代码、测试基础设施、schema、migration、API、DTO、权限与Gate均不改。
+
+写集为14份既有 E2E 加本评审稿、现有changelog及两份顶部台账，共18路径；逐文件 `pnpm harness:needs` 为0红区。实施后的typed-AST复核为31处调用、默认0。四并发探针有7份通过、6份仅因共享负载命中既有30秒Jest hook上限；未修改时限，改用单worker串行冷跑后同批13/13 suites、255/255 tests通过（353.636秒）。B3只运行命中本轮事务的Form materialization分组并3/3通过（20.341秒），其固定使用w95的5个migration rehearsal用例超出本轮数据库授权，明确留给PR CI冷跑。全程只使用本工作树隔离模板库 `app_test_srvf_nest_api_d269ef` 和w1，验证后worker库已回收，w95未创建。完成静态与台账检查后提交推送新SHA更新Draft #1339；新SHA仍须可信红区审批和PR CI冷跑，本轮不Ready、不合并、不操作生产、不启用Gate，也不产生3b/4b。

@@ -34,10 +34,12 @@ describe('C1 D2b real lock-wait selection races with independent pools', () => {
     prisma = app.get(PrismaService);
     await resetDb(app);
     await assertConnectedTestDatabase(prisma);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityMetricSetItem", "ActivityMetricSetVersion", "ActivityMetricDefinition" CASCADE`;
+        }),
+      { timeout: 60_000 },
     );
     peer = await createTestApp();
     writer = app.get(ActivityMetricSelectionService);

@@ -38,10 +38,12 @@ describe('C1 D2b V3 creation and replay current identity', () => {
     prisma = app.get(PrismaService);
     await resetDb(app);
     await assertConnectedTestDatabase(prisma);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityTemplate", "ActivityTemplateFamily", "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries" CASCADE`;
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRaw`TRUNCATE "ActivityMetricCommandReceipt", "ActivityTemplate", "ActivityTemplateFamily", "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries" CASCADE`;
+        }),
+      { timeout: 60_000 },
     );
     const root = await prisma.organization.create({ data: { name: key(), nodeTypeCode: 'root' } });
     organizationId = (

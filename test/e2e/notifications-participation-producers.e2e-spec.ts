@@ -132,12 +132,14 @@ describe('统一通知 S4 活动/考勤 producer 定向触发 e2e', () => {
 
   async function truncateActivityRegistrations(): Promise<void> {
     await assertConnectedTestDatabase(prisma);
-    await prisma.$transaction((tx) =>
-      withTimeLedgerFixtureCleanup(tx, async (tx) => {
-        await tx.$executeRawUnsafe(
-          'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
-        );
-      }),
+    await prisma.$transaction(
+      (tx) =>
+        withTimeLedgerFixtureCleanup(tx, async (tx) => {
+          await tx.$executeRawUnsafe(
+            'TRUNCATE TABLE "ActivityRegistration" RESTART IDENTITY CASCADE',
+          );
+        }),
+      { timeout: 60_000 },
     );
   }
 
