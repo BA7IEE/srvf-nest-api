@@ -1,5 +1,33 @@
 # 分类时长账本操作说明（D6，实施验收中）
 
+## D8-1 增量：正式证明与根账制度归属（候选分支，未上线）
+
+D8-1 不改 D6 分类账本内容，而是给每个根账固定制度归属：切换前 committed 的根账永久是历史旧制度；
+切换后普通 committed 根账必须在同事务由数据库生成 `ParticipationTimeCutoverBinding`，永久使用分类制度。
+更正不按更正时间重判，只继承 `rootManifestId` 的制度。
+
+正式证明读取统一真相选择器：
+
+- 历史旧账以 `legacy_recognized_service` 呈现，不冒充四类中的 `volunteer_service`。
+- 切换后根账按根分录、committed correction delta 与冻结切片精确拆分到北京自然日。
+- `eligibleServiceSeconds = legacyRecognizedSeconds + volunteerServiceSeconds`；培训、组织和不计入秒数单独展示，不丢失。
+- 缺 receipt、binding、commit receipt、source proof，或更正 predecessor 分叉时 fail-closed；不回退旧账猜测。
+- 完整区间最多 10,000 行，超限具名拒绝。`proofSetHash` 覆盖完整区间集合，不受当前页影响。
+
+新读入口：
+
+```text
+GET /api/app/v1/my/participation-time-proof
+GET /api/admin/v1/members/{memberId}/participation-time-proof
+```
+
+两者都需 `dateFrom` / `dateTo`，最多 366 天；`pageSize` 为 1..100。App 只读当前 active member 本人；Admin 复用
+`attendance.read.sheet`，service 层仍按目标 member 做 scoped authz，仅在既有 GLOBAL 授权下 fallback。返回值不包含理由原文、
+附件内容、签名 URL 或新 PII。切换收据不存在时两入口返回具名不可用，不把 shadow 数据包装成正式证明。
+
+生产预检、不可逆执行和故障处置见 [D8 切换运维说明](activity-time-cutover.md)。D8-2 尚未实施，因此现有官方统计、
+直方图和新关账尚未改用该选择器。本说明不授权部署、开 Gate 或执行生产切换。
+
 ## D7-1 增量：仅更正认定，不改来源事实（分支验收中）
 
 V2 更正须提供明确基础版本、基础账本摘要、非空原因和完整根分录认定快照，最多8000条。

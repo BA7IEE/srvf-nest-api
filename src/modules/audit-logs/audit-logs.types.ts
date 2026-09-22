@@ -22,6 +22,7 @@ export type AuditLogEvent =
   | 'activity.time-policy.selection'
   | 'activity.time-allocation.command'
   | 'activity.time-settlement.command'
+  | 'activity.time-cutover.command'
   | 'activity.metric-set.command'
   | 'activity.metric-selection.command'
   | 'activity.outcome.command'

@@ -152,6 +152,12 @@ import { ParticipationTimeCorrectionService } from './participation-time-correct
 import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { ParticipationTimeLedgerQueryService } from './participation-time-ledger-query.service';
 import { ParticipationTimeCorrectionQueryService } from './participation-time-correction-query.service';
+import { ActivityTimeCutoverCommand } from './activity-time-cutover-command';
+import { ActivityTimeCutoverAuditRecorder } from './activity-time-cutover-audit-recorder';
+import { ActivityTimeCutoverService } from './activity-time-cutover.service';
+import { ParticipationTimeTruthQueryService } from './participation-time-truth-query.service';
+import { ParticipationTimeProofQueryService } from './participation-time-proof-query.service';
+import { ParticipationTimeProofPresenter } from './participation-time-proof.presenter';
 import { LedgerQueryService } from './ledger-query.service';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
 import { ActivityClosureAuditRecorder } from './activity-closure-audit-recorder';
@@ -397,6 +403,12 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ParticipationTimeLedgerAccessService,
     ParticipationTimeLedgerQueryService,
     ParticipationTimeCorrectionQueryService,
+    ActivityTimeCutoverCommand,
+    ActivityTimeCutoverAuditRecorder,
+    ActivityTimeCutoverService,
+    ParticipationTimeTruthQueryService,
+    ParticipationTimeProofQueryService,
+    ParticipationTimeProofPresenter,
     LedgerReadyBatchCommitter,
     // HTTP application context 不启动 worker daemon；保留显式 drain 的第五刀测试探针为
     // prepare-only。两个真实 worker process 的专用 module 把本 token 置 true。
@@ -413,6 +425,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     LegacyConversionRegistrationHeadService,
     LegacyLedgerConversionService,
     LedgerQueryService,
+    ActivityTimeCutoverService,
+    ParticipationTimeTruthQueryService,
     // 活动改造 v1.1 第 2 批第六刀(合同 §5.15 + §3.26):机器关账。
     //
     // 🔴 关账是"这场活动的账算完了"的唯一权威(合同 §1.2 把它从负责人**声明**

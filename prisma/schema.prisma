@@ -195,6 +195,7 @@ model User {
   participantTimeAllocationReceipts    ParticipantTimeAllocationCommandReceipt[]   @relation("ParticipantTimeAllocationReceiptActor")
   settlementTimeRevisionsCreated       ActivitySettlementTimeRevision[]            @relation("SettlementTimeRevisionCreator")
   settlementTimeCommandReceipts        ActivitySettlementTimeCommandReceipt[]
+  activityTimeCutoverReceipts          ActivityTimeCutoverReceipt[]
   outcomeFinalizationReceipts          ActivityOutcomeFinalizationReceipt[]
   metricRuleBindingsCreated            ActivityMetricRuleBinding[]                 @relation("MetricRuleBindingCreator")
   metricCandidatesCreated              ActivityMetricCandidate[]                   @relation("MetricCandidateCreator")
@@ -5302,12 +5303,12 @@ model ActivityParticipationIdentity {
   qualificationSnapshots QualificationEvaluationSnapshot[]
 
   // 第 1 批第三刀(§3.16 / §3.18):打卡事件与服务段修订的反向 relation。
-  punchEvents                      AttendancePunchEvent[]
-  serviceSegmentRevisions          ParticipantServiceSegmentRevision[]
-  metricCandidateSources           ActivityMetricCandidateSource[]
-  correctionPendingSegments        CorrectionPendingSegmentRevision[]
-  offlinePackageParticipants       OfflinePackageParticipant[]
-  offlinePunchReviewItems          OfflinePunchReviewItem[]
+  punchEvents                AttendancePunchEvent[]
+  serviceSegmentRevisions    ParticipantServiceSegmentRevision[]
+  metricCandidateSources     ActivityMetricCandidateSource[]
+  correctionPendingSegments  CorrectionPendingSegmentRevision[]
+  offlinePackageParticipants OfflinePackageParticipant[]
+  offlinePunchReviewItems    OfflinePunchReviewItem[]
 
   // 第 1 批第四刀反向 relation(合同 §3.20 / §3.23 / §3.25):仅关系映射,零标量字段。
   settlementResultRevisions ParticipantSettlementResultRevision[]
@@ -6587,14 +6588,16 @@ model ParticipationTimeLedgerManifest {
   formatVersion          Int
   createdAt              DateTime @default(now())
 
-  postingBatch LedgerPostingBatch                    @relation(fields: [postingBatchId, settlementVersionId, settlementRunId], references: [id, settlementVersionId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_batch_fkey")
-  timeRevision ActivitySettlementTimeRevision        @relation(fields: [timeRevisionId, settlementVersionId, settlementRunId, activityId], references: [id, settlementVersionId, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_revision_fkey")
-  entries      ParticipationTimeLedgerEntry[]
-  corrections  ParticipationTimeCorrectionManifest[]
-  sourceProofs CorrectionTimeSourceProof[]
+  postingBatch   LedgerPostingBatch                    @relation(fields: [postingBatchId, settlementVersionId, settlementRunId], references: [id, settlementVersionId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_batch_fkey")
+  timeRevision   ActivitySettlementTimeRevision        @relation(fields: [timeRevisionId, settlementVersionId, settlementRunId, activityId], references: [id, settlementVersionId, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ptlm_revision_fkey")
+  entries        ParticipationTimeLedgerEntry[]
+  corrections    ParticipationTimeCorrectionManifest[]
+  sourceProofs   CorrectionTimeSourceProof[]
+  cutoverBinding ParticipationTimeCutoverBinding?
 
   @@unique([id, activityId, settlementRunId], map: "ptlm_id_activity_run_key")
   @@unique([id, postingBatchId, timeRevisionId, activityId], map: "ptlm_id_batch_revision_activity_key")
+  @@unique([id, postingBatchId, activityId, settlementRunId, settlementVersionId, contentHash], map: "ptlm_cutover_anchor_key")
   @@index([timeRevisionId, postingBatchId], map: "ptlm_revision_idx")
 }
 
@@ -6705,6 +6708,52 @@ model ParticipationTimeCorrectionCommitReceipt {
 
   @@unique([manifestId, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], map: "ptcr_manifest_anchor_key")
   @@index([postingBatchId], map: "ptcr_batch_idx")
+}
+
+// D8-1: the irreversible database fact that classifies subsequently committed
+// ordinary roots.  The physical migration owns DB-clock generation, hashing,
+// singleton enforcement and append-only guards; the application never supplies
+// a trusted cutover instant or content hash.
+model ActivityTimeCutoverReceipt {
+  id                 String   @id
+  operationKey       String   @unique(map: "atcr_operation_key")
+  requestHash        String
+  deployedMainSha    String
+  evidenceBundleHash String
+  actorUserId        String
+  cutoverAt          DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+  formatVersion      Int      @default(1)
+  contentHash        String
+  createdAt          DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+
+  actor    User                              @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "atcr_actor_fkey")
+  bindings ParticipationTimeCutoverBinding[]
+
+  @@unique([id, formatVersion], map: "atcr_id_format_key")
+  @@index([actorUserId], map: "atcr_actor_idx")
+}
+
+// D8-1: immutable regime ownership of one post-cutover ordinary D6 root.
+// Corrections deliberately do not receive another binding; every later
+// correction follows its rootManifestId back to this one row.
+model ParticipationTimeCutoverBinding {
+  id                  String   @id
+  cutoverReceiptId    String
+  rootManifestId      String   @unique(map: "ptcb_root_manifest_key")
+  postingBatchId      String   @unique(map: "ptcb_posting_batch_key")
+  activityId          String
+  settlementRunId     String
+  settlementVersionId String
+  rootContentHash     String
+  formatVersion       Int      @default(1)
+  createdAt           DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(3)
+
+  cutoverReceipt ActivityTimeCutoverReceipt      @relation(fields: [cutoverReceiptId, formatVersion], references: [id, formatVersion], onDelete: Restrict, onUpdate: Restrict, map: "ptcb_receipt_fkey")
+  rootManifest   ParticipationTimeLedgerManifest @relation(fields: [rootManifestId, postingBatchId, activityId, settlementRunId, settlementVersionId, rootContentHash], references: [id, postingBatchId, activityId, settlementRunId, settlementVersionId, contentHash], onDelete: Restrict, onUpdate: Restrict, map: "ptcb_root_manifest_fkey")
+
+  @@unique([rootManifestId, postingBatchId, activityId, settlementRunId, settlementVersionId, rootContentHash], map: "ptcb_root_anchor_key")
+  @@index([cutoverReceiptId], map: "ptcb_receipt_idx")
+  @@index([activityId, settlementVersionId], map: "ptcb_activity_version_idx")
 }
 
 // ===== §3.23 ParticipationLedgerEntry:正式账本 =====
@@ -6979,15 +7028,15 @@ model CorrectionPendingTimeAllocation {
   allocationHash      String
   sliceCount          Int
 
-  application                     CorrectionApplication                     @relation(fields: [applicationId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpta_application_fkey")
-  pendingSegment                  CorrectionPendingSegmentRevision          @relation(fields: [pendingSegmentId, applicationId, activityId, participationIdentityId, segmentKey], references: [id, applicationId, activityId, participationIdentityId, segmentKey], onDelete: Restrict, onUpdate: Restrict, map: "cpta_pending_segment_fkey")
-  baseAllocationRevision          ParticipantTimeAllocationRevision         @relation("CorrectionPendingAllocationBase", fields: [baseAllocationRevisionId, activityId, participationIdentityId, segmentKey], references: [id, activityId, participationIdentityId, segmentKey], onDelete: Restrict, onUpdate: Restrict, map: "cpta_base_allocation_fkey")
-  ruleSnapshot                    ActivityRuleSnapshot                      @relation(fields: [ruleSnapshotId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "cpta_snapshot_fkey")
-  timePolicySelection             ActivityTimePolicySelectionRevision       @relation(fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "cpta_selection_fkey")
-  policyVersion                   TimePolicyVersion                         @relation(fields: [policyVersionId, definitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "cpta_policy_version_fkey")
-  materializedAllocationRevision  ParticipantTimeAllocationRevision?        @relation("CorrectionPendingAllocationMaterialized")
-  evidence                        CorrectionPendingTimeAllocationEvidence[]
-  bindings                        CorrectionTimeAllocationBinding[]
+  application                    CorrectionApplication                     @relation(fields: [applicationId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpta_application_fkey")
+  pendingSegment                 CorrectionPendingSegmentRevision          @relation(fields: [pendingSegmentId, applicationId, activityId, participationIdentityId, segmentKey], references: [id, applicationId, activityId, participationIdentityId, segmentKey], onDelete: Restrict, onUpdate: Restrict, map: "cpta_pending_segment_fkey")
+  baseAllocationRevision         ParticipantTimeAllocationRevision         @relation("CorrectionPendingAllocationBase", fields: [baseAllocationRevisionId, activityId, participationIdentityId, segmentKey], references: [id, activityId, participationIdentityId, segmentKey], onDelete: Restrict, onUpdate: Restrict, map: "cpta_base_allocation_fkey")
+  ruleSnapshot                   ActivityRuleSnapshot                      @relation(fields: [ruleSnapshotId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "cpta_snapshot_fkey")
+  timePolicySelection            ActivityTimePolicySelectionRevision       @relation(fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "cpta_selection_fkey")
+  policyVersion                  TimePolicyVersion                         @relation(fields: [policyVersionId, definitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "cpta_policy_version_fkey")
+  materializedAllocationRevision ParticipantTimeAllocationRevision?        @relation("CorrectionPendingAllocationMaterialized")
+  evidence                       CorrectionPendingTimeAllocationEvidence[]
+  bindings                       CorrectionTimeAllocationBinding[]
 
   @@unique([applicationId, participationIdentityId, segmentKey], map: "cpta_application_identity_segment_key")
   @@unique([targetAllocationRevisionId], map: "cpta_target_allocation_key")
@@ -7070,10 +7119,10 @@ model CorrectionTimeAllocationBinding {
   pendingAllocationId     String?
   sourceHash              String
 
-  proof                           CorrectionTimeSourceProof         @relation(fields: [proofId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_proof_fkey")
-  allocationRevision              ParticipantTimeAllocationRevision @relation(fields: [allocationRevisionId, sourceSegmentId, sourceSegmentRevision, activityId], references: [id, sourceSegmentId, sourceSegmentRevision, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_allocation_fkey")
-  sourceSegment                   ParticipantServiceSegmentRevision @relation(fields: [sourceSegmentId, participationIdentityId], references: [id, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_source_segment_fkey")
-  pendingAllocation               CorrectionPendingTimeAllocation?  @relation(fields: [pendingAllocationId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_pending_fkey")
+  proof              CorrectionTimeSourceProof         @relation(fields: [proofId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_proof_fkey")
+  allocationRevision ParticipantTimeAllocationRevision @relation(fields: [allocationRevisionId, sourceSegmentId, sourceSegmentRevision, activityId], references: [id, sourceSegmentId, sourceSegmentRevision, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_allocation_fkey")
+  sourceSegment      ParticipantServiceSegmentRevision @relation(fields: [sourceSegmentId, participationIdentityId], references: [id, participationIdentityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_source_segment_fkey")
+  pendingAllocation  CorrectionPendingTimeAllocation?  @relation(fields: [pendingAllocationId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "ctab_pending_fkey")
 
   @@unique([proofId, participationIdentityId, segmentKey], map: "ctab_proof_identity_segment_key")
   @@index([allocationRevisionId], map: "ctab_allocation_idx")

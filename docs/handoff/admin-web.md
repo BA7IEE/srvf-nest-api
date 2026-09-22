@@ -1,5 +1,22 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+## D8-1 正式参与时长证明（候选分支，未上线）
+
+新增 `GET /api/admin/v1/members/{memberId}/participation-time-proof`，入参为 `dateFrom`、`dateTo`、`page`、
+`pageSize`。前端必须传入 ISO 日期，区间最多366天，每页1..100条。路由复用 `attendance.read.sheet`，
+但页面可见性和权限码不代表已可读目标成员；后端在 service 内对 member resource 做 scoped/GLOBAL 复核，
+撤权或目标不可见时须按错误处理，不得在前端降级为空证明。
+
+响应合计全部是整数秒：历史旧制度、志愿服务、培训、组织、不计入以及 eligible 分开返回。明细的
+`sourceCategoryCode=legacy_recognized_service` 是诚实历史标签，不是 `volunteer_service`。`proofSetHash`
+是整个查询区间的摘要，切页后仍相同；前端不得对当前页自行求哈希冒充完整证明。
+`isPubliclyVerifiable=false`，本期不得显示“公开验真”、法律证书或签章 PDF 文案。
+
+收据不存在时返回 `20235`，表示 D8 尚未正式切换，不是“无数据”；`20236` 是来源不完整或不一致，
+`20237` 是完整集合超上限，`20238` 是日期/分页范围无效。对 20235–20237 都不得改调旧 `participation-summary`
+伪造正式证明。D8-2 尚未实施，因此旧汇总卡、直方图和新关账尚未改口径。当前生成 client 仅用于候选联调，
+不代表 PR 已合并或后端已部署。
+
 ## D7-1 分类认定更正（分支验收中，未上线）
 
 新增查询只属于 Human App，路径及精确字段见[小程序交接](miniapp.md#d7-1-分类认定更正分支验收中未上线)。

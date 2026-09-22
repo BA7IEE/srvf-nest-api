@@ -2,7 +2,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:fa8040cf0194b7e1317b17eb95315bd16bd970487b47c8264f7739ebbe2590f1
+// inputDigest: sha256:c28fe3a39203ee908962df83731ac202787b9178364124ad2543b0ba6afe517c
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -89,6 +89,8 @@ import type {
   AdminMetricSetItemDto,
   AdminMetricTextConfigurationDto,
   AdminParticipationLedgerEntryDto,
+  AdminParticipationTimeProofItemDto,
+  AdminParticipationTimeProofResponseDto,
   AdminPatchActivityTimePolicySelectionDto,
   AdminRegistrationExpandedActivityDto,
   AdminRegistrationExpandedMemberDto,
@@ -1169,6 +1171,10 @@ export function createAdminClient(fetcher: Fetcher) {
     /** 某队员参与累计(approved 时长/活动次数/记录数/生涯封顶贡献；member ref 点判) [rbac: attendance.read.sheet] */
     AdminMemberAttendanceControllerParticipationSummary(memberId: string): Promise<ApiEnvelope<MemberParticipationSummaryDto>> {
       return fetcher<MemberParticipationSummaryDto>({ method: "GET", path: `/api/admin/v1/members/${memberId}/participation-summary` });
+    },
+    /** 某队员正式参与时长证明（scoped/GLOBAL） [rbac: attendance.read.sheet] */
+    AdminMemberParticipationLedgerControllerProof(memberId: string, query: { "page"?: number; "pageSize"?: number; "dateFrom": string; "dateTo": string }): Promise<ApiEnvelope<AdminParticipationTimeProofResponseDto>> {
+      return fetcher<AdminParticipationTimeProofResponseDto>({ method: "GET", path: `/api/admin/v1/members/${memberId}/participation-time-proof`, query });
     },
     /** 列出某队员任职(含 ENDED / REVOKED 历史) [rbac: position-assignment.read.record] */
     PositionAssignmentsControllerListByMember(memberId: string): Promise<ApiEnvelope<PositionAssignmentResponseDto[]>> {

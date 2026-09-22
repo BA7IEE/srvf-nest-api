@@ -518,6 +518,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/participation-summary'],
   // 活动业务改造 v1.1 第 2 批第 ⑨b 刀：本人已生效账本；只经 LedgerQueryService 查询 committed 批次。
   ['get', '/api/app/v1/my/participation-ledger'],
+  // Activity OS R4 D8-1：本人正式时长证明；切换收据不存在时 fail-closed 503。
+  ['get', '/api/app/v1/my/participation-time-proof'],
 
   // 活动自助 GPS 签到 F2 + D-GPS fail-closed：canonical App self surface；当前 pass
   // registration 锚定，首次 POST 仅合法范围内位置写入，合法 winner 重试仍 200；GET 只读本人
@@ -877,6 +879,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/members/{memberId}/participation-summary'],
   // 活动业务改造 v1.1 第 2 批第 ⑨b 刀：队员轴已生效账本。
   ['get', '/api/admin/v1/members/{memberId}/participation-ledger'],
+  // Activity OS R4 D8-1：队员轴正式时长证明，复用 attendance.read.sheet 访问面。
+  ['get', '/api/admin/v1/members/{memberId}/participation-time-proof'],
   ['post', '/api/admin/v1/attachments'],
   ['get', '/api/admin/v1/attachments'],
   ['post', '/api/admin/v1/attachments/upload-url'],
@@ -1188,7 +1192,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 643; // D7-2 Human fact correction +7; D7-1's 636 routes remain unchanged.
+const EXPECTED_ROUTE_COUNT = 645; // D8-1 proof +2; D7-2's 643 routes remain unchanged.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

@@ -74674,6 +74674,270 @@
         ]
       }
     },
+    "/api/app/v1/my/participation-time-proof": {
+      "get": {
+        "operationId": "AppMyParticipationLedgerController_proof",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "dateFrom",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateTo",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-12-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AppParticipationTimeProofResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 正式参与时长证明日期范围无效(code=20238)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20238
+                      ],
+                      "description": "40000: 请求参数错误; 20238: 正式参与时长证明日期范围无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限访问(code=40300)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40300
+                      ],
+                      "description": "40300: 无权限访问",
+                      "example": 40300
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权限访问"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "正式参与时长证明来源不完整或不一致(code=20236) / 正式参与时长证明集合超过处理上限(code=20237)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20236,
+                        20237
+                      ],
+                      "description": "20236: 正式参与时长证明来源不完整或不一致; 20237: 正式参与时长证明集合超过处理上限",
+                      "example": 20236
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "正式参与时长证明来源不完整或不一致"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "正式参与时长证明尚未启用(code=20235)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20235
+                      ],
+                      "description": "20235: 正式参与时长证明尚未启用",
+                      "example": 20235
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "正式参与时长证明尚未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "我的正式参与时长证明（切换后可用） [auth]",
+        "tags": [
+          "Mobile - My Participation Ledger"
+        ]
+      }
+    },
     "/api/admin/v1/members/{memberId}/participation-ledger": {
       "get": {
         "operationId": "AdminMemberParticipationLedgerController_list",
@@ -74929,6 +75193,315 @@
           }
         ],
         "summary": "某队员已生效参与账本（分页，可选 ledgerDate 区间） [rbac: attendance.read.sheet]",
+        "tags": [
+          "Admin - Participation Ledger"
+        ]
+      }
+    },
+    "/api/admin/v1/members/{memberId}/participation-time-proof": {
+      "get": {
+        "operationId": "AdminMemberParticipationLedgerController_proof",
+        "parameters": [
+          {
+            "name": "memberId",
+            "required": true,
+            "in": "path",
+            "description": "Member.id",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "dateFrom",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateTo",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-12-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AdminParticipationTimeProofResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 正式参与时长证明日期范围无效(code=20238)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20238
+                      ],
+                      "description": "40000: 请求参数错误; 20238: 正式参与时长证明日期范围无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "队员不存在(code=15001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        15001
+                      ],
+                      "description": "15001: 队员不存在",
+                      "example": 15001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "队员不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "正式参与时长证明来源不完整或不一致(code=20236) / 正式参与时长证明集合超过处理上限(code=20237)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20236,
+                        20237
+                      ],
+                      "description": "20236: 正式参与时长证明来源不完整或不一致; 20237: 正式参与时长证明集合超过处理上限",
+                      "example": 20236
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "正式参与时长证明来源不完整或不一致"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "正式参与时长证明尚未启用(code=20235)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20235
+                      ],
+                      "description": "20235: 正式参与时长证明尚未启用",
+                      "example": 20235
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "正式参与时长证明尚未启用"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "某队员正式参与时长证明（scoped/GLOBAL） [rbac: attendance.read.sheet]",
         "tags": [
           "Admin - Participation Ledger"
         ]
@@ -158585,6 +159158,342 @@
           "recognizedPointsDelta",
           "creditedPointsDelta",
           "cappedOutPointsDelta"
+        ]
+      },
+      "AppParticipationTimeProofItemDto": {
+        "type": "object",
+        "properties": {
+          "ledgerDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "activityId": {
+            "type": "string"
+          },
+          "rootManifestId": {
+            "type": "string",
+            "nullable": true,
+            "description": "历史旧账可能早于分类根账，因此可为 null"
+          },
+          "participationIdentityId": {
+            "type": "string"
+          },
+          "sourceCategoryCode": {
+            "type": "string",
+            "enum": [
+              "legacy_recognized_service",
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          },
+          "sourceEntryId": {
+            "type": "string"
+          },
+          "latestCorrectionManifestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceMode": {
+            "type": "string",
+            "enum": [
+              "legacy_ledger",
+              "classified_time_ledger"
+            ]
+          },
+          "recognizedSeconds": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ledgerDate",
+          "activityId",
+          "rootManifestId",
+          "participationIdentityId",
+          "sourceCategoryCode",
+          "sourceEntryId",
+          "latestCorrectionManifestId",
+          "sourceMode",
+          "recognizedSeconds"
+        ]
+      },
+      "AppParticipationTimeProofResponseDto": {
+        "type": "object",
+        "properties": {
+          "proofVersion": {
+            "type": "number",
+            "example": 1
+          },
+          "cutoverReceiptId": {
+            "type": "string",
+            "example": "activity-time-v1"
+          },
+          "cutoverAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "dateFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "dateTo": {
+            "type": "string",
+            "format": "date"
+          },
+          "legacyRecognizedSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "volunteerServiceSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "trainingSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "organizationSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "nonCreditableSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "eligibleServiceSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "proofSetHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "isPubliclyVerifiable": {
+            "type": "boolean",
+            "example": false
+          },
+          "provenance": {
+            "type": "string",
+            "example": "database_cutover_root_binding_v1"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppParticipationTimeProofItemDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "minimum": 0
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "proofVersion",
+          "cutoverReceiptId",
+          "cutoverAt",
+          "asOf",
+          "memberId",
+          "dateFrom",
+          "dateTo",
+          "legacyRecognizedSeconds",
+          "volunteerServiceSeconds",
+          "trainingSeconds",
+          "organizationSeconds",
+          "nonCreditableSeconds",
+          "eligibleServiceSeconds",
+          "proofSetHash",
+          "isPubliclyVerifiable",
+          "provenance",
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "AdminParticipationTimeProofItemDto": {
+        "type": "object",
+        "properties": {
+          "ledgerDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "activityId": {
+            "type": "string"
+          },
+          "rootManifestId": {
+            "type": "string",
+            "nullable": true,
+            "description": "历史旧账可能早于分类根账，因此可为 null"
+          },
+          "participationIdentityId": {
+            "type": "string"
+          },
+          "sourceCategoryCode": {
+            "type": "string",
+            "enum": [
+              "legacy_recognized_service",
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          },
+          "sourceEntryId": {
+            "type": "string"
+          },
+          "latestCorrectionManifestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceMode": {
+            "type": "string",
+            "enum": [
+              "legacy_ledger",
+              "classified_time_ledger"
+            ]
+          },
+          "recognizedSeconds": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ledgerDate",
+          "activityId",
+          "rootManifestId",
+          "participationIdentityId",
+          "sourceCategoryCode",
+          "sourceEntryId",
+          "latestCorrectionManifestId",
+          "sourceMode",
+          "recognizedSeconds"
+        ]
+      },
+      "AdminParticipationTimeProofResponseDto": {
+        "type": "object",
+        "properties": {
+          "proofVersion": {
+            "type": "number",
+            "example": 1
+          },
+          "cutoverReceiptId": {
+            "type": "string",
+            "example": "activity-time-v1"
+          },
+          "cutoverAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "dateFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "dateTo": {
+            "type": "string",
+            "format": "date"
+          },
+          "legacyRecognizedSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "volunteerServiceSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "trainingSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "organizationSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "nonCreditableSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "eligibleServiceSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "proofSetHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "isPubliclyVerifiable": {
+            "type": "boolean",
+            "example": false
+          },
+          "provenance": {
+            "type": "string",
+            "example": "database_cutover_root_binding_v1"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminParticipationTimeProofItemDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "minimum": 0
+          },
+          "page": {
+            "type": "number",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "proofVersion",
+          "cutoverReceiptId",
+          "cutoverAt",
+          "asOf",
+          "memberId",
+          "dateFrom",
+          "dateTo",
+          "legacyRecognizedSeconds",
+          "volunteerServiceSeconds",
+          "trainingSeconds",
+          "organizationSeconds",
+          "nonCreditableSeconds",
+          "eligibleServiceSeconds",
+          "proofSetHash",
+          "isPubliclyVerifiable",
+          "provenance",
+          "items",
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "TeamInsurancePolicyResponseDto": {

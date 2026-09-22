@@ -2151,6 +2151,46 @@ export const BizCode = {
     message: '分类时长账本不存在或不可访问',
     httpStatus: HttpStatus.NOT_FOUND,
   },
+  ACTIVITY_TIME_CUTOVER_INVALID: {
+    code: 20231,
+    message: '正式时长切换请求无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_TIME_CUTOVER_COMMAND_CONFLICT: {
+    code: 20232,
+    message: '此操作标识已用于其他正式时长切换请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_CUTOVER_NOT_READY: {
+    code: 20233,
+    message: '正式时长切换条件尚未满足',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_CUTOVER_RECEIPT_INVALID: {
+    code: 20234,
+    message: '正式时长切换收据校验失败',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_PROOF_UNAVAILABLE: {
+    code: 20235,
+    message: '正式参与时长证明尚未启用',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+  ACTIVITY_TIME_PROOF_INVALID: {
+    code: 20236,
+    message: '正式参与时长证明来源不完整或不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_PROOF_SCALE_LIMIT: {
+    code: 20237,
+    message: '正式参与时长证明集合超过处理上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_PROOF_RANGE_INVALID: {
+    code: 20238,
+    message: '正式参与时长证明日期范围无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

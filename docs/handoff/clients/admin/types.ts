@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:fa8040cf0194b7e1317b17eb95315bd16bd970487b47c8264f7739ebbe2590f1
+// inputDigest: sha256:c28fe3a39203ee908962df83731ac202787b9178364124ad2543b0ba6afe517c
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -720,6 +720,41 @@ export interface AdminParticipationLedgerEntryDto {
   "recognizedPointsDelta": number;
   "creditedPointsDelta": number;
   "cappedOutPointsDelta": number;
+}
+
+export interface AdminParticipationTimeProofItemDto {
+  "ledgerDate": string;
+  "activityId": string;
+  "rootManifestId": string | null;
+  "participationIdentityId": string;
+  "sourceCategoryCode": "legacy_recognized_service" | "volunteer_service" | "training" | "organization" | "non_creditable";
+  "sourceEntryId": string;
+  "latestCorrectionManifestId": string | null;
+  "sourceMode": "legacy_ledger" | "classified_time_ledger";
+  "recognizedSeconds": number;
+}
+
+export interface AdminParticipationTimeProofResponseDto {
+  "proofVersion": number;
+  "cutoverReceiptId": string;
+  "cutoverAt": string;
+  "asOf": string;
+  "memberId": string;
+  "dateFrom": string;
+  "dateTo": string;
+  "legacyRecognizedSeconds": number;
+  "volunteerServiceSeconds": number;
+  "trainingSeconds": number;
+  "organizationSeconds": number;
+  "nonCreditableSeconds": number;
+  "eligibleServiceSeconds": number;
+  "proofSetHash": string;
+  "isPubliclyVerifiable": boolean;
+  "provenance": string;
+  "items": AdminParticipationTimeProofItemDto[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
 }
 
 export interface AdminPatchActivityTimePolicySelectionDto {

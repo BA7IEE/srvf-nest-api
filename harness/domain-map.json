@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:cb3cb3827ef3de44af41155c3918e025678dc14a0ae2ac152067b3d58e06096d",
+  "inputDigest": "sha256:72682cf092cf137e26cab36f3694cba7a7e79348c19d61e2258cae706f123f2f",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -709,6 +709,18 @@
       "confirmed": true
     },
     "ActivitySettlementTimeRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityTimeCutoverReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipationTimeCutoverBinding": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",
