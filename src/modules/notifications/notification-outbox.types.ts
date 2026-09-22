@@ -750,9 +750,23 @@ const FORBIDDEN_PAYLOAD_SHAPE = new RegExp(
   'i',
 );
 
+const SHA256_HEX = /^[a-f0-9]{64}$/;
+const RECIPIENT_FREEZE_BASIS_REF_PATH = /^\$\.recipientFreeze\.basisRef\[\d+\]$/;
+
+/**
+ * `recipientFreeze.basisRef` 可以保存内部 SHA-256 事实锚。摘要里的随机数字片段偶尔会
+ * 长得像手机号；那不是 PII，继续走自由文本 redactor 会把合法 intent 非确定性硬拒。
+ *
+ * 豁免刻意同时锁死「已登记的结构化路径 + 完整小写 SHA-256」：裸手机号、其他路径、
+ * 非 64 位值以及 title/body 自由文本仍走原来的 fail-closed 检查。
+ */
+function isOpaqueRecipientFreezeDigest(path: string, value: string): boolean {
+  return RECIPIENT_FREEZE_BASIS_REF_PATH.test(path) && SHA256_HEX.test(value);
+}
+
 function walkPayload(value: unknown, path: string): void {
   if (typeof value === 'string') {
-    if (containsSensitiveValue(value)) {
+    if (!isOpaqueRecipientFreezeDigest(path, value) && containsSensitiveValue(value)) {
       throw new NotificationOutboxInvariantError(`payload contains sensitive value at ${path}`);
     }
     return;

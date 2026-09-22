@@ -1,9 +1,18 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **Release 5 / E1-1 数据与定义地基本地验收完成（2026-09-23）**：E1 计划
+> **Release 5 / E1-1 下一步为推送哈希误判修复并冷跑 #1345 CI（2026-09-23）**：E1 计划
 > [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已 squash 合入
 > `db580471f94d94300ff30ef7f8925515fc15c0c6`，对应
-> [main CI 35726170176](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35726170176) completed/success。当前独立工作树按
+> [main CI 35726170176](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35726170176) completed/success。Draft
+> [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 当前远端 head `c51f76a75431116ef90d47460f0114823bdce75e`；
+> [PR CI 35754360849](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35754360849) 仅第 2 组 E2E 的既有 B6 紧急创建红，
+> 其余检查通过。脱敏栈和纯函数复现已定位：合法 `creationRequestHash` 的 SHA-256 偶然含手机号形状数字串时，
+> `recipientFreeze.basisRef[0]` 被通知守卫误拒。维护者已确认方案 A；本地只对该精确路径的完整小写 64 位摘要
+> 做语义豁免，裸手机号、其他字段与自由文本仍按原规则拒绝。守卫单测 41/41、通知单测 207/207、冷建
+> `app_test_w98` 完整 B6 30/30、全仓单测 407/407 suites（8,874 passed／5 todo）、contract 1,074/1,074、
+> typecheck、build、8 GiB lint、Harness 561／138／68 及派生文档／台账校验均通过，生成摘要已刷新。
+> 下一步是提交推送更新 #1345，并由新 SHA 冷跑 PR CI；
+> #1345 保持 Draft，不 Ready、不合并。E1-1 原实现按
 > 已批准的 46 路径及后续精确扩写的 1 个夹具清理路径实施第 130 条纯 additive migration、三张永久保留表、V1 强类型 definition、fingerprint、
 > 纯 evaluator 和 draft→active→retired 生命周期；没有 provider、route、writer，不接旧 `ContributionRule`、
 > 考勤、账本、Readiness 或 Gate。当前工作树为 130 migration／179 model；定义与状态机单测 56/56、
@@ -11,7 +20,7 @@
 > `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00` 的 3b 已重签并通过登记对拍；
 > E1-1 没有新增权限码或审计事件，4b 不需要重签，现有 265 权限／170 AuditLogEvent 不变。获准的
 > `app_test_w98` 已通过冷回放／非空升级 2/2、数据库守卫 36/36、旧行为 31/31 和夹具恢复 5/5；固定使用
-> 其他 scratch 库的历史 rehearsal 留给 Draft PR CI 冷跑。最终静态门禁与签字对拍已通过；下一步提交推送并创建 Draft PR；
+> 其他 scratch 库的历史 rehearsal 留给 Draft PR CI 冷跑。原实现静态门禁与签字对拍已通过；
 > 不 Ready、不合并。E1-2／E1-3、E2–E5、D8-OPS、生产、Gate、
 > 历史转换、数据删除或重算均未授权。
 

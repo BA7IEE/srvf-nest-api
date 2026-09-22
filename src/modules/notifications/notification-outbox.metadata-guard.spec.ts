@@ -29,6 +29,8 @@ import {
 // 写成字面量而非现场生成 —— 随机样本会让这条判据偶尔不触发,当场退化成 flake。
 const FALSE_POSITIVE_CUID = 'c8ob12qafrq354c5ptvjtoken';
 const PLAIN_CUID = 'cmt38187b00abcdefghijklm';
+// 由真实 creationRequestHash 输入确定性搜索得到；中段 `14004586116` 会被手机号正则命中。
+const PHONE_SHAPED_SHA256 = 'de0e9bf6b7a22063a3a7d29a14004586116df41b6e025784684dc8261a60de03';
 
 function targetedInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -47,6 +49,24 @@ function targetedInput(overrides: Record<string, unknown> = {}) {
     destinationType: 'member',
     destinationRef: FALSE_POSITIVE_CUID,
     ...overrides,
+  };
+}
+
+function targetedInputWithFreeze(basisRef: string[], cohortKey = `cohort:${PLAIN_CUID}`) {
+  const input = targetedInput();
+  return {
+    ...input,
+    payload: {
+      ...(input.payload as unknown as Record<string, unknown>),
+      recipientFreeze: {
+        cohortKey,
+        algorithmVersion: 1,
+        basisKind: 'emergency-members',
+        basisRef,
+        computedAt: '2026-09-23T00:00:00.000Z',
+        cohortSize: 1,
+      },
+    } as unknown as Prisma.InputJsonValue,
   };
 }
 
@@ -112,6 +132,40 @@ describe('assertSafeMetadata —— envelope 元数据闸', () => {
         assertStoredNotificationOutboxIntentSafe(targetedInput({ destinationRef: '13900001111' })),
       ).toThrow(SENSITIVE_MATERIAL);
     });
+  });
+});
+
+describe('recipientFreeze.basisRef —— 结构化 SHA-256 事实锚', () => {
+  it('摘要偶然含手机号形状时 producer 与 worker 都放行', () => {
+    const input = targetedInputWithFreeze([PHONE_SHAPED_SHA256]);
+
+    expect(PHONE_SHAPED_SHA256).toMatch(/1[3-9]\d{9}/);
+    // 自由文本 redactor 仍会识别这一数字片段；放行只来自 basisRef 的精确语义路径。
+    expect(redactNotificationOutboxText(PHONE_SHAPED_SHA256)).not.toBe(PHONE_SHAPED_SHA256);
+    expect(() => normalizeNotificationOutboxInput(input)).not.toThrow();
+    expect(() => assertStoredNotificationOutboxIntentSafe(input)).not.toThrow();
+  });
+
+  it('basisRef 中的裸手机号仍被拒绝', () => {
+    const input = targetedInputWithFreeze(['13900001111']);
+
+    expect(() => normalizeNotificationOutboxInput(input)).toThrow(
+      /payload contains sensitive value at \$\.recipientFreeze\.basisRef\[0\]/,
+    );
+    expect(() => assertStoredNotificationOutboxIntentSafe(input)).toThrow(
+      /payload contains sensitive value at \$\.recipientFreeze\.basisRef\[0\]/,
+    );
+  });
+
+  it('同一摘要放到 cohortKey 仍被拒绝，豁免不扩散到其他字段', () => {
+    const input = targetedInputWithFreeze(['a'.repeat(64)], PHONE_SHAPED_SHA256);
+
+    expect(() => normalizeNotificationOutboxInput(input)).toThrow(
+      /payload contains sensitive value at \$\.recipientFreeze\.cohortKey/,
+    );
+    expect(() => assertStoredNotificationOutboxIntentSafe(input)).toThrow(
+      /payload contains sensitive value at \$\.recipientFreeze\.cohortKey/,
+    );
   });
 });
 

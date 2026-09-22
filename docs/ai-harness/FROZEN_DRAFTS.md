@@ -1,16 +1,26 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **Release 5 / E1-1 数据与定义地基本地验收完成（2026-09-23）**：E1 计划
+> **Release 5 / E1-1 Draft #1345 CI 哈希误判修复本地通过（2026-09-23）**：E1 计划
 > [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已 squash 合入
 > `db580471f94d94300ff30ef7f8925515fc15c0c6`，对应
-> [main CI 35726170176](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35726170176) completed/success。当前独立工作树按
+> [main CI 35726170176](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35726170176) completed/success。Draft
+> [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 当前远端 head `c51f76a75431116ef90d47460f0114823bdce75e`；
+> [PR CI 35754360849](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35754360849) 仅第 2 组 E2E 红，其他四组、
+> Fast checks、Docker、Diff guards、Golden journeys、Harness 与可信红区均通过。唯一失败是既有 B6 紧急创建
+> 在通知 Outbox payload 守卫返回 500；脱敏栈与纯函数复现证明合法 SHA-256 请求哈希偶然含手机号形状数字串时，
+> `recipientFreeze.basisRef[0]` 被当作 PII 误拒。维护者已确认方案 A，本地只对该精确结构路径的完整小写 64 位
+> SHA-256 做语义豁免；裸手机号、其他路径和自由文本仍 fail-closed。守卫单测 41/41、通知单测 207/207、
+> 冷建 `app_test_w98` 完整 B6 30/30、全仓单测 407/407 suites（8,874 passed／5 todo）、contract 1,074/1,074、
+> typecheck、build、8 GiB lint、Harness 561／138／68 及派生文档／台账校验均通过；生成摘要已刷新。
+> 尚未提交推送本修复，新一轮 PR CI 未运行，#1345 保持 Draft。
+> E1-1 原实现按
 > 46 路径授权及后续 1 路径精确扩写新增第 130 条纯 additive migration、政策／不可变版本／命令收据三表、闭合 V1 definition、
 > fingerprint、纯 evaluator 与生命周期判断；旧规则、考勤、账本、Readiness、API、权限、审计和 Gate 均未接线。
 > 工作树读数为 130 migration／179 model；56 项目标单测、schema、typecheck、全仓 lint 和 18 份 migration
 > 计数同步已通过。SQL 摘要 `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00`
 > 的 3b 已重签并通过登记对拍；4b 因权限／审计零变化不需重签。`app_test_w98` 已通过迁移 2/2、数据库
 > 守卫 36/36、旧行为 31/31 和夹具恢复 5/5；固定其他 scratch 库的历史 rehearsal 交 Draft PR CI 冷跑。
-> 尚未提交、推送或创建 Draft PR。E1-2／E1-3、E2–E5、D8-OPS、生产、Gate、数据转换、删除或
+> E1-2／E1-3、E2–E5、D8-OPS、生产、Gate、数据转换、删除或
 > 重算仍未实施或授权。
 
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
