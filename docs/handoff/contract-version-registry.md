@@ -1,8 +1,9 @@
 # 契约版本回执登记表(contract version registry)
 
-> **D8-1 候选提示（2026-09-21）**：本分支新增 App/Admin 正式参与时长证明路由并已重生成两个 surface 的
-> client/types，但尚未合并或部署，也没有收到外部端的新回执。下表因此保持原值；不能用候选生成物
-> 把“未回执”改成“已对齐”。
+> **D8 合并提示（2026-09-22）**：D8-1 [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 与
+> D8-2 [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 已合入 main，并已重生成 App/Admin 两个 surface
+> 的 client/types；后端仍未部署，也没有收到外部端的新回执。下表因此保持原值；不能用仓库生成物把
+> “未回执”改成“已对齐”。
 
 > 合同 §16.1 第 ⑤ 条:「App、Admin、worker、管理后台和手机端支持**同一 contract version**」。
 >

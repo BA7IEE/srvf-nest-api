@@ -1,22 +1,21 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **D8-2 official read cutover 实施与定向验证中（2026-09-22）**：D8-1 [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341)
-> 已 squash 合入 `65b26523393bb08c68d727852608432af58a5360`，合并后
-> [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) completed/success，五个
-> Contract + E2E 分片均成功。维护者已确认 D8-2 方案 A、原25路径、`activities.module.ts` 既有 selector
-> 导出、`LedgerQueryService` owner facade、四份派生治理摘要及首轮 CI 后获批的一份旧迁移夹具兼容补项，
-> 当前精确写集32路径。已实现
-> receipt-aware 批量聚合、成员／活动／月度／直方图／新 closure
-> 五消费者接线；receipt absent 保持旧口径，present 后只以 legacy + volunteer eligible 秒数覆盖官方工时，
-> meta 只经既有 owner query facade 调用 selector，新增架构债务2项已归零；贡献、参与事实、原始 ledger 和
-> 历史 closure 不漂移。全仓单测405/405套、8,815项通过（5项既有todo），typecheck、build、lint、
-> contract 1,074项／2份快照通过；此前六套 w98 定向56/56，owner facade 接线后重跑 D8-2 真链1/1通过。
-> Harness 561／138／68项、派生及客户端检查均通过。Draft [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342)
-> 首轮 CI 15项通过，唯一旧迁移夹具红点已按授权补永久空 readback 表，派生 w1 整文件5/5通过；32路径授权
-> 上限内实际变更24路径、零越界。待提交推送新 SHA，完整冷跑交 PR CI。不 Ready、不合并、
-> 不操作生产、不启用 Gate、不执行 cutover、不删除业务数据；D8-OPS、前端、真实业务验收和整体跨模型复审未完成。
+> **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
+> [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
+> [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) 成功。D8-2
+> [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 最终 head `b768edfc5234e3e196370202e3e738d398baf63e`
+> 的 [PR CI 35699808977](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35699808977) 与
+> [可信红区 35701772130](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701772130) 成功，已 squash 合入
+> `802a636a19575c3e64016a56c469aed12b2d5035`；合并后
+> [main CI 35701932991](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701932991) completed/success，五个
+> Contract + E2E 分片均成功。最终32路径授权上限内实际变更24路径、零越界。当前只能判
+> `repositoryReady=yes`；部署 exact SHA／fleet 同版、v1.1 独立稳定窗、证据包、只读窗、worker 排空、actor
+> 与不可逆执行授权均未提供，所以 `deploymentReady` 未证明、`operationalReady=no`、`executeAuthorized=no`。
+> 当前获准在 [D8 评审稿](../plans/activity-os-r4-d8-proof-cutover-review-and-plan.md) 第17.1节登记的十份文档中
+> 更正 D8-1／D8-2 合并状态并起草 D8-OPS 精确清单；不实施、不操作数据库、不启用 Gate。D8-OPS、整体复审、
+> 前端、真实业务验收和生产仍未完成，契约版本外部端仍未回执。
 
-> **D8-1 Draft #1341 第二轮 CI 兼容修复待推送（2026-09-22）**：维护者已确认 [D8 方案 A](../plans/activity-os-r4-d8-proof-cutover-review-and-plan.md)
+> **历史过程记录：D8-1 Draft #1341 第二轮 CI 兼容修复待推送（2026-09-22）**：维护者已确认 [D8 方案 A](../plans/activity-os-r4-d8-proof-cutover-review-and-plan.md)
 > 的第4–6、8.1、9、11节和原87个去重路径，并明确扩写两份治理登记及两份旧夹具兼容，最终精确上限为91路径；独立工作树基于 `main@2af4462556f8bf13b4b73b971de8da5bc35b5a0e`，
 > 精确红区 grant 由维护者执行。第129条 migration、不可逆 cutover 收据/根账 binding、统一真相选择器、
 > 只读预检/执行 CLI、App self 与 Admin scoped/GLOBAL 正式证明已实现。`app_test_w98` 已通过冷回放、
@@ -2615,13 +2614,16 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D7 与 D8-1 已完成仓内交付；D8-2 实施中**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D7 与 D8-1／D8-2 已完成仓内交付；D8-OPS 评审起草中**
 
-**状态**:进行中(D8-1 已合 #1341 且 main CI 全绿；D8-2 已获32路径精确授权，本地实现、w98定向、Harness及门禁通过，首轮CI唯一旧夹具红点已修并在派生w1通过，实际24路径零越界，待新SHA PR CI；在飞PR见本条正文；D8-OPS、整体复审、前端、生产和Gate未完成)
+**状态**:进行中(D8-1 #1341 与 D8-2 #1342 已合，D8-2 最终32路径授权／24路径实际／零越界，PR CI、可信红区与 main CI 全绿；当前只起草 D8-OPS 评审，部署、v1.1 独立稳定窗、证据包、生产预检、不可逆执行、整体复审、前端与真实业务验收均未完成)
 
-- **D8-2 当前范围（2026-09-22）**：已授权方案 A 的25路径、module 单一导出、owner query facade、
-  四份派生治理摘要及一份旧迁移夹具兼容补项，共32路径；允许 `app_test_w98` 与本工作树派生 w1
-  验证，验证后更新 Draft #1342。不得 Ready、合并、生产、开 Gate、执行 cutover 或删除业务数据。
+- **D8-2 最终状态（2026-09-22）**：方案 A 的25路径、module 单一导出、owner query facade、四份派生治理摘要及
+  一份旧迁移夹具兼容补项，共32路径；实际24路径、零越界，已随 #1342 合入 `802a636a` 并通过最终 main CI。
+  这只完成仓库交付，不代表部署、开 Gate、执行 cutover 或真实业务验收。
+- **D8-OPS 当前边界（2026-09-22）**：评审稿把现场动作收敛为“预检窗口授权”和“正式执行授权”两次拍板；
+  正式窗口的仓库写集为零，必须现场提供 exact deployed SHA、fleet 同版、v1.1 更早独立稳定、证据包摘要、
+  只读与 worker 排空、ACTIVE GLOBAL actor 及实时签字。当前四份文档仅为计划，不构成任何生产权限。
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 

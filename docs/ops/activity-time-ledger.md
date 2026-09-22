@@ -1,6 +1,6 @@
 # 分类时长账本操作说明（D6，实施验收中）
 
-## D8 增量：正式证明、根账制度归属与官方读面（D8-2 候选，未上线）
+## D8 增量：正式证明、根账制度归属与官方读面（D8-2 已合入 main，未部署）
 
 D8-1 不改 D6 分类账本内容，而是给每个根账固定制度归属：切换前 committed 的根账永久是历史旧制度；
 切换后普通 committed 根账必须在同事务由数据库生成 `ParticipationTimeCutoverBinding`，永久使用分类制度。
@@ -25,11 +25,11 @@ GET /api/admin/v1/members/{memberId}/participation-time-proof
 `attendance.read.sheet`，service 层仍按目标 member 做 scoped authz，仅在既有 GLOBAL 授权下 fallback。返回值不包含理由原文、
 附件内容、签名 URL 或新 PII。切换收据不存在时两入口返回具名不可用，不把 shadow 数据包装成正式证明。
 
-生产预检、不可逆执行和故障处置见 [D8 切换运维说明](activity-time-cutover.md)。D8-2 候选已把成员累计、
+生产预检、不可逆执行和故障处置见 [D8 切换运维说明](activity-time-cutover.md)。D8-2 已把成员累计、
 逐活动／逐成员、月度总览、精确秒直方图和新 closure 接入同一选择器：只有 receipt 存在才启用；
 历史 `legacy_recognized_service` 与切换后 `volunteer_service` 计入 eligible，另外三类不计入但永久保留。
 秒数先按查询范围求和，再一次转换成既有两位小时形状。贡献账本、报名／到场／反馈、原始 ledger 和历史
-closure 不改语义。该候选尚未合并或部署，本说明不授权开 Gate 或执行生产切换。
+closure 不改语义。D8-2 已合入 main 但尚未部署，本说明不授权开 Gate 或执行生产切换。
 
 ## D7-1 增量：仅更正认定，不改来源事实（分支验收中）
 

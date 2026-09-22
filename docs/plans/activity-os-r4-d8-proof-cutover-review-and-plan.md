@@ -1,13 +1,15 @@
 # Activity OS R4 D8 证明读面与正式切换：评审及精确实施计划
 
 > 2026-09-22，D8-1 [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已 squash 合入
-> `65b26523393bb08c68d727852608432af58a5360`；合并后
-> [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448)
-> completed/success，五个 Contract + E2E 分片全部通过。维护者随后确认 D8-2 方案 A、原25路径，
-> `activities.module.ts` 的既有服务导出补项，以及 owner query facade 与四份派生治理摘要补项；
-> 当前精确写集为31路径；允许 `app_test_w98`
-> 隔离验证、验证后提交／推送并创建 Draft PR。当前代码、`docs/current-state.md` 与 GitHub 现场事实仍是
-> 执行权威；本授权不包含 D8-2 Ready／合并、生产、Gate 或 D8-OPS。
+> `65b26523393bb08c68d727852608432af58a5360`，其
+> [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) 成功；D8-2
+> [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 已 squash 合入
+> `802a636a19575c3e64016a56c469aed12b2d5035`，最终
+> [PR CI 35699808977](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35699808977)、Ready 后
+> [可信红区 35701772130](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701772130) 与合并后
+> [main CI 35701932991](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701932991) 均成功，五个
+> Contract + E2E 分片全部通过。D8-1／D8-2 的**仓库交付已完成**；这不证明任何生产部署、v1.1 Gate、
+> 只读维护窗或 D8-OPS 已完成。当前代码、`docs/current-state.md` 与 GitHub 现场事实仍是执行权威。
 
 ## 1. 结论先说
 
@@ -238,6 +240,15 @@ DoD：
 
 ### 8.3 D8-OPS：独立生产切换
 
+当前判定必须逐层表述，不能用“代码已合并”代替生产结论：
+
+| 层级                | 当前结论       | 证据或缺口                                                                                      |
+| ------------------- | -------------- | ----------------------------------------------------------------------------------------------- |
+| `repositoryReady`   | **是**         | D8-1／D8-2 已合入；当前仓库基线为 `802a636a19575c3e64016a56c469aed12b2d5035`，对应 main CI 成功 |
+| `deploymentReady`   | **未证明**     | 没有 exact deployed SHA、镜像／fleet 同版和旧二进制清零证据                                     |
+| `operationalReady`  | **否／未证明** | `docs/current-state.md` 仍声明生产 Gate NO-GO；v1.1 稳定窗、证据包、只读窗和 worker 排空均未验  |
+| `executeAuthorized` | **否**         | 尚无针对现场 SHA、证据摘要、actor、operation key 与不可逆写入的实时授权                         |
+
 硬顺序：
 
 1. D8-1、D8-2 均已合入并部署同一 exact main SHA，PR CI 与最终 main CI 成功。
@@ -365,8 +376,8 @@ D8-1 共 91 个去重候选路径：原计划87个、两份治理登记，以及
 D8-2 只接官方消费者，不新增 schema、migration、权限、审计事件或 API 路由。它可以再次修改 D8-1 的统一原语，
 但不得复制 SQL 到调用方。
 
-下列 `activity-time-cutover*`、`participation-time-truth-query*` 与 cutover runbook 在当前 main 尚不存在，
-它们由 D8-1 创建；D8-2 必须在 D8-1 合入后开工，因此在 D8-2 中属于既有路径，不重复标“新增”。
+下列 `activity-time-cutover*`、`participation-time-truth-query*` 与 cutover runbook 在最初计划时尚不存在，
+随后由 D8-1 创建；D8-2 在 D8-1 合入后开工，因此在 D8-2 中属于既有路径，不重复标“新增”。
 
 1. `src/modules/activities/activity-time-cutover.service.ts`
 2. `src/modules/activities/activity-time-cutover.service.spec.ts`
@@ -399,8 +410,9 @@ D8-2 只接官方消费者，不新增 schema、migration、权限、审计事�
 29. `changelog.d/activity-os-r4-d8-proof-cutover-review.md`
 30. `docs/ai-harness/NEXT_TASKS.md`
 31. `docs/ai-harness/FROZEN_DRAFTS.md`
+32. `test/e2e/activity-service-segment-correction-pending-migration.e2e-spec.ts`（首轮 CI 后获批：只补永久空、拒绝写入的 cutover receipt readback 表）
 
-D8-2 共 31 个去重候选路径。module 补项只允许导出既有 `ParticipationTimeTruthQueryService`，不新增
+D8-2 最终共 32 个去重候选路径。module 补项只允许导出既有 `ParticipationTimeTruthQueryService`，不新增
 provider；`LedgerQueryService` 补项只做代理，不复制 selector SQL 或另开事务；四份派生治理文件只允许
 刷新既有摘要，不新增属主、状态机、鉴权声明或业务语义。若实现发现还必须动 DTO、其它 module、Gate、
 schema 或迁移，视为方案冲突，先停下更正计划，不得以“顺手接线”继续扩写集。
@@ -465,10 +477,20 @@ official 聚合、五消费者接线、精确秒直方图、跨模块导出、�
 `authz-assertion-patterns.json` 相对基线零 diff。Harness 561／138／68 项及本地全套门禁均通过。
 D8-2 无新 migration／权限／审计，仍需最终 SHA 的 Draft PR CI；不 Ready、不合并、不操作生产、不启用 Gate。
 
+最终状态：[#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 的最终 head
+`b768edfc5234e3e196370202e3e738d398baf63e` 已通过
+[PR CI 35699808977](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35699808977)；Ready 事件对应的
+[可信红区 35701772130](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701772130) 也已成功。PR 随后
+squash 合入 `802a636a19575c3e64016a56c469aed12b2d5035`，合并后
+[main CI 35701932991](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701932991) completed/success，五个
+Contract + E2E 分片均成功。最终32路径授权上限内实际变更24路径、零越界。上段“仍需 CI／不 Ready／不合并”
+保留为实施过程证据，不再代表当前 D8-2 状态。
+
 ### 12.4 D8-OPS 永远独立
 
 即使 D8-1／D8-2 都合并，也没有生产切换权限。届时必须以 exact deployed SHA、证据摘要、只读窗口和命令参数另行请示；
-AI 不自行部署、不修改生产环境、不执行生产 CLI。
+AI 不自行部署、不修改生产环境、不执行生产 CLI。当前只有仓库交付就绪，部署、运维和执行三层均未获证明或授权；
+精确前置、两次现场授权点与失败边界见第17节。
 
 ## 13. 风险表
 
@@ -506,7 +528,7 @@ build、6 GiB CI 同口径 lint、OpenAPI／客户端／权限／审计／台账
 精确暴露并获准适配两份旧夹具；修复后本工作树隔离库2/2 suites、35/35 tests通过，8192人规模用例在不改
 7秒预算下以1.039秒通过。91路径授权上限内最终实际变更88路径、零越界，`RBAC_MAP.md`、
 `authz-assertion-patterns.json` 与 `reset-db.ts` 最终相对基线零 diff。下一步提交推送新 SHA；完整 Contract + E2E
-冷跑仍由 PR CI 验收。
+冷跑仍由 PR CI 验收。以上为合并前过程记录；最终 #1341 合并及 main CI 结论见第12.2节，不再把本句当当前待办。
 
 ## 15. D8-2 implementation 阶段验收记录
 
@@ -537,11 +559,97 @@ CODEMAP、读税和 migration 计数检查均通过。原31路径授权上限内
 Fast checks、Docker、Harness、Golden journeys 及 E2E 第1–4组通过；第5组唯一失败是旧服务段更正迁移
 夹具停在 D8 前却调用新关账读面，缺少 `ActivityTimeCutoverReceipt` 表。获批修复只在该历史夹具增加
 永久为空且拒绝写入的 readback 表，不改生产代码、schema、migration、断言或超时；授权派生 w1 整文件
-1/1 suite、5/5 tests通过。当前32路径授权上限内实际变更24路径、零越界；下一步提交推送新 SHA，完整
-冷跑仍由 #1342 PR CI 验收。
+1/1 suite、5/5 tests通过。当前32路径授权上限内实际变更24路径、零越界；当时下一步为提交推送新 SHA，完整
+冷跑交 #1342 PR CI 验收。该过程已由下段最终验收覆盖。
+
+最终验收：最终 head `b768edfc5234e3e196370202e3e738d398baf63e` 的
+[PR CI 35699808977](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35699808977) 成功，Ready 后
+[可信红区 35701772130](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701772130) 成功；[#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342)
+已 squash 合入 `802a636a19575c3e64016a56c469aed12b2d5035`，合并后
+[main CI 35701932991](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701932991) 成功。该 run 的 Incident replay、
+Change set、Docker、Diff guards、Harness、Golden journeys、Fast checks、五个 Contract + E2E 分片及聚合均成功。
+这完成 D8-2 仓库交付，不构成部署或生产切换证据。
 
 ## 16. 本次未做
 
 本轮没有新增 schema、migration、API、DTO、权限、审计事件或 Gate，没有修改原始参与账本、贡献、报名、
 到场、no-show、反馈或历史 closure，也没有生产部署、执行 cutover CLI、历史回填、重分类或删除业务数据。
-D8-2 尚未 Ready 或合并；D8-OPS、前端发布、真实业务验收和整体跨模型复审仍未执行。
+D8-2 已完成 Ready、可信审批、合并与 main CI；D8-OPS、前端发布、真实业务验收和整体跨模型复审仍未执行。
+
+## 17. D8-OPS 评审结论与精确授权清单
+
+### 17.1 结论与边界
+
+D8-OPS 不是第三个代码 PR，而是一次不可逆的生产运维窗口。现有 CLI、服务、数据库围栏与 runbook 已随 D8-1
+进入 main，D8-2 官方消费者也已进入 main；未来真实窗口的**仓库写集为零路径**。生产写入只能经既有
+`ActivityTimeCutoverService` 形成唯一 `ActivityTimeCutoverReceipt` 和对应审计，之后由受控普通根账提交链
+自动形成 binding；禁止 direct SQL、手工补 binding、修改收据或把证据写回本仓充当现场真相。
+
+本次 docs-only 台账刀经合并前一致性审计扩展为以下十个既有文件：
+
+1. `docs/plans/activity-os-r4-d8-proof-cutover-review-and-plan.md`
+2. `docs/ai-harness/NEXT_TASKS.md`
+3. `docs/ai-harness/FROZEN_DRAFTS.md`
+4. `changelog.d/activity-os-r4-d8-proof-cutover-review.md`
+5. `docs/current-state.md`
+6. `docs/ops/activity-time-cutover.md`
+7. `docs/ops/activity-time-ledger.md`
+8. `docs/handoff/contract-version-registry.md`
+9. `docs/handoff/miniapp.md`
+10. `docs/handoff/admin-web.md`
+
+后六份只把“候选／Draft／未合并”更正为“已合入 main、尚未部署”；生产 NO-GO、Gate 未启用、D8-OPS
+未执行、前端未发布及外部端未回执边界不变，契约版本回执登记表数值不变。
+
+本刀不提交真实 actor ID、operation key、生产数据库地址、secret 或伪造的 `evidenceBundleHash`；也不运行生产
+`--check-only`／`--execute`。文档合并仍不等于部署、Gate、只读窗或生产执行授权。
+
+### 17.2 正式窗口的七项硬前置
+
+| #   | 必须现场提供的事实                      | 合格证据                                                                                                      | 当前状态           |
+| --- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 1   | D8-1／D8-2 已随同一 exact main SHA 部署 | 部署记录、运行版本／镜像摘要、健康探针互证 exact SHA                                                          | **未提供**         |
+| 2   | fleet 全部同版且旧二进制为零            | API、worker 与定时执行体逐实例清单；无旧 SHA                                                                  | **未提供**         |
+| 3   | v1.1 Gate 已在更早的独立窗口启用并稳定  | 独立窗口签字与稳定验收；本窗口不切 Gate 或贡献口径                                                            | **未满足／未证明** |
+| 4   | 证据包完整                              | D5 shadow、D6／D7 满额、migration、权限、审计、业务抽样和整体复审归档；产出64位小写十六进制摘要               | **未提供**         |
+| 5   | 结算只读且 worker 排空                  | `ACTIVITY_WORKFLOW_READONLY=true`；无 preparing／ready batch，无 pending／processing `settlement_prepare` job | **未进入窗口**     |
+| 6   | actor 当下有资格                        | ACTIVE 人类用户，锁后仍持 GLOBAL `activity.settlement-final-review.record`；过期绑定不算                      | **未指定／未核验** |
+| 7   | 不可逆执行实时签字                      | 维护者逐项确认 deployed SHA、证据摘要、actor、operation key、预检结果和一次性执行                             | **未授权**         |
+
+七项必须同时满足。仓库 SHA `802a636a…` 只证明 D8-2 已进入 main；现场部署可以发生在包含该提交的后续
+exact main SHA 上，因此不得把 `802a636a…` 自动填进生产命令，也不得用 CI 绿替代 fleet、Gate 或数据状态。
+
+### 17.3 现场硬顺序
+
+1. **只读核验部署。** 读取部署版本、镜像摘要、fleet 和运行时 Gate；任何实例不一致即停，不修改生产。
+2. **封存证据。** 归档上述证据包，计算真实 `evidenceBundleHash`；摘要必须能回到不可变归档，不把明细或 secret 放进命令输出。
+3. **进入维护窗。** 维护者按独立授权设置结算只读、排空 worker，并确认两类未完成 batch／job 都为零；不关闭 v1.1 Gate。
+4. **只跑预检。** 执行 `pnpm exec tsx scripts/activity-time-cutover.ts --check-only`，保存脱敏结果；`status=ready` 只表示机器条件当下满足。
+5. **第二次实时拍板。** 维护者看到预检、deployed SHA、证据摘要、actor 与 operation key 后，才可明确授权一次 `--execute`。
+6. **执行一次。** 用既有 CLI 的四个显式参数执行；未知错误、状态变化或参数不一致即 fail-closed，不自动重试或换 key。
+7. **保持只读验收。** 立即重跑 check，确认 `already_cut_over` 与收据 hash；抽验 App self／Admin proof、官方统计与 proof 对账、
+   新 closure、原始 ledger／贡献／历史 closure 零漂移，并以一笔另行纳入窗口授权的受控普通根账验证唯一 binding。
+8. **先归档再退出。** 收据、审计、抽验和 binding 证据归档完整后，才按维护者授权退出只读窗。
+9. **失败只前向修。** 任一阶段失败都保持只读；禁止删收据、改 `cutoverAt`、关 Gate 假回滚、回旧二进制、手工改业务数据或删除证据。
+
+### 17.4 只保留两个现场授权点
+
+为减少无意义停顿，同时保住不可逆边界，真实窗口只拆成两次明确授权：
+
+1. **D8-OPS 预检窗口授权。** 允许核验 exact deployed SHA／fleet／Gate，进入结算只读、排空 worker，并运行一次生产
+   `--check-only`；不写 cutover 收据，不退出只读，不运行 `--execute`。预检结果和所有阻断项原样上报。
+2. **D8-OPS 正式执行授权。** 只有第一步证据完整后，维护者以现场真实 deployed SHA、64位证据摘要、ACTIVE actor、
+   稳定 operation key 和 `status=ready` 结果再次确认；授权范围可一次覆盖单次 `--execute`、同版本后验、受控根账 binding
+   验证、证据归档及成功后退出只读。任何前置变化都会使该授权失效并回到第一步，不继承旧参数。
+
+这两次授权都必须发生在真实窗口；当前“起草 D8-OPS 评审与精确授权清单”不等于其中任何一次。CLI 的正式形状保持：
+
+```bash
+pnpm exec tsx scripts/activity-time-cutover.ts --execute \
+  --actor-user-id '<ACTIVE user id>' \
+  --operation-key '<one stable operation key>' \
+  --deployed-main-sha '<40 lower-hex exact deployed SHA>' \
+  --evidence-bundle-hash '<64 lower-hex evidence digest>'
+```
+
+占位符不得提前替换为猜测值；正式值只在现场授权与受控执行环境中使用，不写入本文。
