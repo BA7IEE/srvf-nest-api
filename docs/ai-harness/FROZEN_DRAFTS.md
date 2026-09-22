@@ -1,5 +1,17 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **D8-2 implementation 进行中（2026-09-22）**：D8-1 [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341)
+> 已 squash 合入 `65b26523393bb08c68d727852608432af58a5360`，合并后
+> [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) completed/success。维护者确认
+> 原25路径方案 A，并补充确认 `activities.module.ts` 既有 selector 导出、`LedgerQueryService` owner facade
+> 及四份派生治理摘要，最终31路径。当前已接通 receipt-aware official aggregate、成员／活动／月度／直方图／
+> 新 closure 五消费者；meta 不再深引 selector，新增架构债务2项已归零；全仓单测405/405套、8,815项通过
+> （5项既有todo），typecheck、build、lint、contract 1,074项／2份快照通过；此前六套 w98 定向56/56，
+> owner facade 接线后重跑 D8-2 真链1/1通过。Harness 561／138／68项和派生检查全部通过；31路径授权上限内
+> 实际变更23路径、零越界，`domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新摘要，`state-machines.json` 与
+> `authz-assertion-patterns.json` 零diff。待提交、推送、创建 Draft PR 并由 PR CI 完整冷跑；不 Ready、
+> 不合并、不操作生产、不启用 Gate、不执行 cutover、不删除业务数据。D8-OPS、前端、真实业务验收与整体跨模型复审未完成。
+
 > **D8-1 Draft #1341 第二轮 CI 兼容修复已完成本地验证（2026-09-22）**：方案 A 的原87个去重路径、后续两份治理登记及两份旧夹具兼容扩写均获维护者确认，最终精确上限为91路径，
 > 第129条 migration、不可逆 cutover 收据/根账 binding、统一真相选择器、CLI 与 App/Admin 正式证明已实现。
 > w98 的冷回放、非空升级、真并发和真实 HTTP 链9项已通过；新增单测41项、定向 contract 1,074项通过。
@@ -107,7 +119,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                                                                              | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                                                                               | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                                                                                | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 及 Release 4 D1–D7 已完成相应仓内实施；D8-1 实施候选已完成主体、w98 定向验证、3b/4b重签及本地最终检查，待 Draft PR | D8-1 尚未合并；D8-2、整体跨模型复审、真实业务验收、前端发布、生产部署、v1.1 Gate 与 D8-OPS 正式切换未完成               |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D7 及 D8-1 已完成仓内实施；D8-2 已完成主体与 w98 定向验证，待完整门禁、Draft PR 和 PR CI | D8-2、整体跨模型复审、真实业务验收、前端发布、生产部署、v1.1 Gate 与 D8-OPS 正式切换未完成               |
 
 ### 1.1 欠代码的五项
 

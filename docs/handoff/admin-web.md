@@ -1,6 +1,6 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
-## D8-1 正式参与时长证明（候选分支，未上线）
+## D8 正式参与时长证明与官方汇总（D8-2 候选，未上线）
 
 新增 `GET /api/admin/v1/members/{memberId}/participation-time-proof`，入参为 `dateFrom`、`dateTo`、`page`、
 `pageSize`。前端必须传入 ISO 日期，区间最多366天，每页1..100条。路由复用 `attendance.read.sheet`，
@@ -14,8 +14,21 @@
 
 收据不存在时返回 `20235`，表示 D8 尚未正式切换，不是“无数据”；`20236` 是来源不完整或不一致，
 `20237` 是完整集合超上限，`20238` 是日期/分页范围无效。对 20235–20237 都不得改调旧 `participation-summary`
-伪造正式证明。D8-2 尚未实施，因此旧汇总卡、直方图和新关账尚未改口径。当前生成 client 仅用于候选联调，
-不代表 PR 已合并或后端已部署。
+伪造正式证明。
+
+D8-2 不新增路由或 DTO。receipt 存在后，以下既有读面中的 `totalServiceHours` 改为统一证明链的 eligible 秒数
+一次换算；逐活动和月度 `durationHistogram` 改为每个 `(activityId, memberId)` 计一次，精确秒边界为
+`[0,7200)`、`[7200,14400)`、`[14400,28800)`、`[28800,+∞)`：
+
+- `GET /api/admin/v1/members/{memberId}/participation-summary`
+- `GET /api/admin/v1/activities/{activityId}/reconciliation`
+- `GET /api/admin/v1/activities/{activityId}/participation-summary`
+- `GET /api/admin/v1/meta/participation-overview`
+
+报名、到场、no-show、反馈、贡献、活动/记录计数和原始 `participation-ledger` 保持现行来源；已有 closure
+不回写。receipt 不存在时上述接口保持旧口径。receipt 已存在而证明链损坏时后端 fail-closed，不允许前端回退
+旧小时数掩盖错误。当前 D8-1 已入 main，D8-2 仍是 Draft 候选；生成 client、前端页面、部署、Gate 和
+D8-OPS 均未因此完成。
 
 ## D7-1 分类认定更正（分支验收中，未上线）
 

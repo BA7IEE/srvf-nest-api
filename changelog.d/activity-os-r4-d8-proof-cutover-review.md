@@ -10,3 +10,13 @@
 - 最终 Harness 自证561／138／68项、OpenAPI／客户端／权限／审计／台账／派生文档检查均通过。第二轮 CI 后维护者精确扩写两份旧夹具兼容路径，当前91路径授权上限内最终实际变更88路径、零越界；`RBAC_MAP.md`、`authz-assertion-patterns.json` 与 `reset-db.ts` 最终相对基线零diff。完整 Contract + E2E 冷跑仍由 Draft PR CI 验收。
 - Draft [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 首轮冷跑暴露架构棘轮、Prisma 默认值映射、D8 新外键下的旧夹具清理及 D7 历史迁移索引四类兼容问题；均在既有授权路径内修复。第129条 SQL 未改，3b 摘要仍为 `bdfaeae5029b113c66cc85923a2e1b5307c69fe892a1c232edf3281c5672305e`。修复后本地全仓单测405/405套、8,810项通过（5项既有todo），C1旧迁移63/63、D7历史升级5/5、D8四套9/9、B6 30/30、contract 1,074/1,074，以及 lint/typecheck/build/Harness/派生检查通过；B6 的首轮 CI 500 本地未复现，仍交新 SHA 的 PR CI 冷跑，不把一次本地通过写成根因已修。
 - 提交 `0913cad9` 的第二轮 [PR CI 35632563010](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35632563010) 已通过可信红区、Fast checks、Docker、Harness、Golden journeys 及 E2E 第1／4／5组；第2／3组确定性失败收敛为两份旧夹具未把 D8 binding／receipt 放进同一条 `TRUNCATE`，现已按授权补齐并在本工作树隔离库2/2 suites、35/35 tests通过。另一次8192人提交12.288秒超时在首轮同一D8实现上2.646秒通过、本地原样复现1.039秒通过，故不抬7秒预算、不改生产代码，交新SHA冷跑复核。
+
+## Activity OS R4 D8-2 官方统计与关账接线
+
+- D8-1 [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已 squash 合入 `65b26523393bb08c68d727852608432af58a5360`；合并后 [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) completed/success，五个 Contract + E2E 分片均成功。
+- 新增 receipt-aware 批量 official aggregate：切换前返回 `null` 让既有来源保持不变；切换后在同一 repeatable-read snapshot 内复用 legacy/classified 更正链、来源证明和冻结切片校验，按 `(activityId, memberId)` 输出 eligible 整数秒。查询数不随1／100／2,000身份逐人增长。
+- 成员累计、活动逐人对账、活动总计、月度总览和新 closure 统一使用该聚合；小时只在各查询范围出口由整数秒一次换成两位兼容小时。直方图改为每个活动成员对计一次，并按0／7200／14400／28800秒精确分桶，零 eligible 仍落第一桶。
+- 贡献、报名、到场、no-show、反馈、原始参与账本、活动/记录计数和既有 immutable closure 保持现行语义。链不完整继续具名 fail-closed，不回退旧账。
+- 为跨模块消费者仅导出既有 `ParticipationTimeTruthQueryService`；meta 通过既有 `LedgerQueryService` 的 transaction-bound owner facade 调用，不复制 SQL、不另开事务，新增架构债务保持为零；不新增 provider、路由、DTO、schema、migration、权限、审计事件、Gate 或内建角色授权。
+- 本地已通过新增/改动单测22/22、全仓单测405/405套（8,815项通过、5项既有todo）、typecheck、build、lint、contract 1,074项／2份快照；此前 receipt-absent／关账／并发等六套定向 E2E 56/56，owner facade 接线后重跑真实 D8-2 w98 真链1/1。完整 PR CI 仍由 Draft PR 冷跑，不把本地通过冒充合并或上线。
+- Harness 自证561／138／68项以及OpenAPI、客户端、权限、边界、计数和派生检查全部通过；31路径授权上限内实际变更23路径、零越界。`domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新输入摘要，`state-machines.json` 与 `authz-assertion-patterns.json` 相对基线零diff。

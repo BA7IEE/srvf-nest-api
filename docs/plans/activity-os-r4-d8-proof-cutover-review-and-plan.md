@@ -1,13 +1,13 @@
 # Activity OS R4 D8 证明读面与正式切换：评审及精确实施计划
 
-> 2026-09-21，D8-1 实施候选已在独立工作树按本计划开工。基线为 `main@2af4462556f8bf13b4b73b971de8da5bc35b5a0e`；
-> [#1339](https://github.com/BA7IEE/srvf-nest-api/pull/1339) 已合并，合并后
-> [CI 35598127219](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35598127219)
-> completed/success，五个 Contract + E2E 分片全部通过。维护者已确认本文第4–6、8.1、9、11节及
-> 原87个去重路径的 D8-1 方案 A、后续明确扩展的两个治理登记路径，以及第二轮 PR CI 精确暴露并获准
-> 适配的两份旧夹具，共91个去重路径；仅授权隔离验证、验证后提交/推送/更新 Draft PR。
-> 当前代码、`docs/current-state.md` 与 GitHub 现场事实仍是执行权威；本授权不包含 Ready、合并、
-> 生产、Gate、D8-2 或 D8-OPS。
+> 2026-09-22，D8-1 [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已 squash 合入
+> `65b26523393bb08c68d727852608432af58a5360`；合并后
+> [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448)
+> completed/success，五个 Contract + E2E 分片全部通过。维护者随后确认 D8-2 方案 A、原25路径，
+> `activities.module.ts` 的既有服务导出补项，以及 owner query facade 与四份派生治理摘要补项；
+> 当前精确写集为31路径；允许 `app_test_w98`
+> 隔离验证、验证后提交／推送并创建 Draft PR。当前代码、`docs/current-state.md` 与 GitHub 现场事实仍是
+> 执行权威；本授权不包含 D8-2 Ready／合并、生产、Gate 或 D8-OPS。
 
 ## 1. 结论先说
 
@@ -372,30 +372,38 @@ D8-2 只接官方消费者，不新增 schema、migration、权限、审计事�
 2. `src/modules/activities/activity-time-cutover.service.spec.ts`
 3. `src/modules/activities/participation-time-truth-query.service.ts`
 4. `src/modules/activities/participation-time-truth-query.service.spec.ts`
-5. `src/modules/attendances/participation-summary-query.service.ts`
-6. `src/modules/activities/activity-participation-query.service.ts`
-7. `src/modules/activities/activity-participation-query.service.spec.ts`
-8. `src/modules/meta/participation-overview-query.service.ts`
-9. `src/modules/activities/activity-closure.service.ts`
-10. `src/modules/activities/activity-participation-metrics.ts`
-11. `test/e2e/activity-v11-participation-read-consistency.e2e-spec.ts`
-12. `test/e2e/participation-metrics.e2e-spec.ts`
-13. `test/e2e/participation-overview.e2e-spec.ts`
-14. `test/e2e/activity-settlement-closure.e2e-spec.ts`
-15. `test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts`
-16. `test/e2e/activity-os-r4-d8-official-time-cutover.e2e-spec.ts`（新增）
-17. `docs/ops/activity-time-cutover.md`
-18. `docs/ops/activity-time-ledger.md`
-19. `docs/handoff/admin-web.md`
-20. `docs/handoff/miniapp.md`
-21. `CODEMAP.md`
-22. `docs/plans/activity-os-r4-d8-proof-cutover-review-and-plan.md`
-23. `changelog.d/activity-os-r4-d8-proof-cutover-review.md`
-24. `docs/ai-harness/NEXT_TASKS.md`
-25. `docs/ai-harness/FROZEN_DRAFTS.md`
+5. `src/modules/activities/ledger-query.service.ts`（维护者补充确认：仅提供 transaction-bound owner facade，不复制 SQL）
+6. `src/modules/activities/activities.module.ts`（维护者补充确认：仅导出既有 selector）
+7. `src/modules/attendances/participation-summary-query.service.ts`
+8. `src/modules/activities/activity-participation-query.service.ts`
+9. `src/modules/activities/activity-participation-query.service.spec.ts`
+10. `src/modules/meta/participation-overview-query.service.ts`
+11. `src/modules/activities/activity-closure.service.ts`
+12. `src/modules/activities/activity-participation-metrics.ts`
+13. `test/e2e/activity-v11-participation-read-consistency.e2e-spec.ts`
+14. `test/e2e/participation-metrics.e2e-spec.ts`
+15. `test/e2e/participation-overview.e2e-spec.ts`
+16. `test/e2e/activity-settlement-closure.e2e-spec.ts`
+17. `test/e2e/activity-settlement-closure-concurrency.e2e-spec.ts`
+18. `test/e2e/activity-os-r4-d8-official-time-cutover.e2e-spec.ts`（新增）
+19. `docs/ops/activity-time-cutover.md`
+20. `docs/ops/activity-time-ledger.md`
+21. `docs/handoff/admin-web.md`
+22. `docs/handoff/miniapp.md`
+23. `CODEMAP.md`
+24. `harness/domain-map.json`（仅刷新既有输入摘要）
+25. `harness/state-machines.json`（仅刷新既有输入摘要）
+26. `harness/authz-assertion-patterns.json`（仅由既有生成器刷新）
+27. `docs/ai-harness/ROUTE_AUTHZ.md`（仅由既有生成器刷新）
+28. `docs/plans/activity-os-r4-d8-proof-cutover-review-and-plan.md`
+29. `changelog.d/activity-os-r4-d8-proof-cutover-review.md`
+30. `docs/ai-harness/NEXT_TASKS.md`
+31. `docs/ai-harness/FROZEN_DRAFTS.md`
 
-D8-2 共 25 个去重候选路径。若实现发现必须动 DTO、module、Gate、schema 或迁移，视为方案冲突，先停下更正计划，
-不得以“顺手接线”扩写集。
+D8-2 共 31 个去重候选路径。module 补项只允许导出既有 `ParticipationTimeTruthQueryService`，不新增
+provider；`LedgerQueryService` 补项只做代理，不复制 selector SQL 或另开事务；四份派生治理文件只允许
+刷新既有摘要，不新增属主、状态机、鉴权声明或业务语义。若实现发现还必须动 DTO、其它 module、Gate、
+schema 或迁移，视为方案冲突，先停下更正计划，不得以“顺手接线”继续扩写集。
 
 ## 11. 验证预算与失败处理
 
@@ -437,14 +445,24 @@ Docker、Harness、Golden journeys 及 E2E 第1／4／5组；第2／3组只留�
 实现上以2.646秒通过，本地原样复现为1.039秒通过，故不改生产代码或超时，交下一SHA冷跑复核。两份获准夹具
 已在本工作树隔离库2/2 suites、35/35 tests通过；下一步更新文档、提交推送并交#1341冷跑，不Ready、不合并。
 
-### 12.3 D8-2 将来实施需单独确认
+最终 #1341 已在批准后 squash 合并为 `65b26523393bb08c68d727852608432af58a5360`；精确 main run
+[35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) completed/success。
+本节较早的 Draft／待推送／不合并描述保留为过程证据，不再代表当前 D8-1 状态。
+
+### 12.3 D8-2 当前实施授权与状态
 
 推荐确认语句：
 
 > 确认 D8-2 方案 A，按 D8 计划第7、8.2、10、11节及25个去重路径执行；允许 app_test_w98
 > 隔离验证及测试夹具重建；验证后提交、推送并创建 Draft PR。不合并、不操作生产、不启用 Gate、不删除业务数据。
 
-D8-2 无新 migration／权限／审计，仍需行为合同和最终 SHA 的正常 PR／可信审批；D8-1 的数据库授权不得跨 worktree 继承。
+维护者已确认上述方案，并补充确认 `activities.module.ts` 仅导出既有 selector、`LedgerQueryService` 仅提供
+transaction-bound owner facade，以及四份派生治理摘要的精确刷新；当前候选写集31路径。隔离工作树基于
+D8-1 合并 SHA，preflight 已通过；owner facade 接线后架构新增债务已由2项归零。当前已完成统一批量
+official 聚合、五消费者接线、精确秒直方图、跨模块导出、单测和 w98 定向 E2E。最终实际变更23路径，
+未超出31路径授权；`domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新输入摘要，`state-machines.json` 与
+`authz-assertion-patterns.json` 相对基线零 diff。Harness 561／138／68 项及本地全套门禁均通过。
+D8-2 无新 migration／权限／审计，仍需最终 SHA 的 Draft PR CI；不 Ready、不合并、不操作生产、不启用 Gate。
 
 ### 12.4 D8-OPS 永远独立
 
@@ -489,8 +507,35 @@ build、6 GiB CI 同口径 lint、OpenAPI／客户端／权限／审计／台账
 `authz-assertion-patterns.json` 与 `reset-db.ts` 最终相对基线零 diff。下一步提交推送新 SHA；完整 Contract + E2E
 冷跑仍由 PR CI 验收。
 
-## 15. 本次未做
+## 15. D8-2 implementation 阶段验收记录
 
-本轮没有实施 D8-2，没有改动现有官方统计、直方图、新关账或历史 closure 语义；没有开启 Gate、
-没有生产部署或执行 cutover CLI，没有 Ready、合并、历史回填、重分类或删除业务数据。
-整体跨模型复审仍按维护者此前决定留到仓内整体实现完成后统一执行，不把本计划评审冒充独立复审通过。
+当前实现增加一个 receipt-aware 批量聚合入口，所有 SQL 仍收敛在
+`ParticipationTimeTruthQueryService`；meta 跨域调用只经过既有 `LedgerQueryService` 的 transaction-bound
+owner facade，不复制查询或另开事务。receipt 不存在时返回 `null`，五个消费者继续原来源；存在后一次读取
+legacy 与 classified 根账，复用 D7 前驱链、commit receipt、source proof 与冻结 slice 校验，最后按
+`(activityId, memberId)` 聚合 eligible 整数秒。只有 legacy 与 `volunteer_service` 计入 eligible；仅有
+training／organization／non-creditable 的人仍以0秒保留，用于直方图第一桶。
+
+小时在成员、活动、月份或 closure 各自查询范围出口一次 half-up 到两位；直方图直接用整数秒按
+0／7200／14400／28800边界，每个活动成员对只计一次。新 closure 只替换 `serviceHours`；贡献、人数、结果
+计数和 checks 仍来自原事实，合法重放在读取 selector 前返回既有 immutable closure。
+
+本地阶段证据：架构新增债务检查2项归零；新增／改动单测22/22；全仓单测405/405套、8,815项通过
+（另有5项既有todo）；typecheck、build、8 GiB Node堆冷跑lint及contract 1,074项／2份快照通过。
+此前六套 receipt-absent／official／关账／并发定向 E2E 56/56；owner facade 接线后又重新冷建 w98，
+覆盖真实 classified-training 根账证明、成员累计、活动汇总、逐人对账、月度总览和零秒直方图的 D8-2
+真链1/1通过。简单 classified 集合的 selector 为1条 receipt 读取加4条固定业务 SQL，1／100／2,000身份
+不增长；带更正／proof 的附加查询只随链形状变化，不按人员 N+1。Harness、四份派生摘要和 PR CI 仍以
+本分支最终结果及 Draft PR 为准。
+
+最终本地收口：Harness 自证561／138／68项全部通过，OpenAPI、前端客户端、权限、边界、计数、
+CODEMAP、读税和 migration 计数检查均通过。31路径授权上限内实际变更23路径、零越界；
+`domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新输入摘要，`state-machines.json` 与
+`authz-assertion-patterns.json` 相对基线零 diff。下一步按既有授权提交、推送并创建 Draft PR；完整
+Contract + E2E 冷跑仍由该 PR CI 验收。
+
+## 16. 本次未做
+
+本轮没有新增 schema、migration、API、DTO、权限、审计事件或 Gate，没有修改原始参与账本、贡献、报名、
+到场、no-show、反馈或历史 closure，也没有生产部署、执行 cutover CLI、历史回填、重分类或删除业务数据。
+D8-2 尚未 Ready 或合并；D8-OPS、前端发布、真实业务验收和整体跨模型复审仍未执行。

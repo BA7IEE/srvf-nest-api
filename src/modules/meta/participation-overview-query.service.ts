@@ -6,10 +6,16 @@ import { BizException } from '../../common/exceptions/biz.exception';
 import { PrismaService } from '../../database/prisma.service';
 import {
   buildActivityParticipationMetrics,
+  buildOfficialDurationHistogram,
   type DurationHistogramMetric,
 } from '../activities/activity-participation-metrics';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
-import { LedgerQueryService } from '../activities/ledger-query.service';
+import {
+  LedgerQueryService,
+  eligibleSecondsToServiceHours,
+  sumOfficialEligibleSeconds,
+  type OfficialParticipationTimeTotal,
+} from '../activities/ledger-query.service';
 import { AuthzService } from '../authz/authz.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import {
@@ -22,6 +28,7 @@ interface MonthAccumulator {
   completedActivityCount: number;
   participationCount: number;
   totalServiceHours: Prisma.Decimal;
+  officialEligibleSeconds: number;
   completedPassCount: number;
   completedAttendeeCount: number;
   completedNoShowCount: number;
@@ -38,6 +45,13 @@ export class ParticipationOverviewQueryService {
     // 活动 v1.1 cutover gate —— 统计读面取数源的判闸依据(合同 §16.2 单轨第三项)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
+
+  private async readOfficialTime(activityIds: readonly string[]) {
+    return this.prisma.$transaction(
+      (tx) => this.ledgerQuery.readOfficialParticipationTimeTotalsInTx(tx, { activityIds }),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
 
   private async resolveVisibleOrganizationIds(
     currentUser: CurrentUserPayload,
@@ -79,11 +93,13 @@ export class ParticipationOverviewQueryService {
   /**
    * 闸开后的取数:逐活动服务时长来自**已 committed 的账本分录**。
    *
-   * 🔴 **只切「结算量」这一轴**。月度的 `participationCount` / `averageAttendanceRate` /
-   *    `noShowRate` / `durationHistogram` **刻意不随闸切换** —— 闸控范围经拍板收窄为
+   * 🔴 **D8 receipt 之前只切「结算量」这一轴**。月度的 `participationCount` /
+   *    `averageAttendanceRate` / `noShowRate` / `durationHistogram` 当时刻意不随闸切换 ——
+   *    闸控范围经拍板收窄为
    *    「结算真相链」,不含 Session / Participation / Registration;而「参与活动数 /
    *    记录条数在账本口径下如何定义」是已登记的悬案 D1(维护者明文「不在无数据时
-   *    凭空发明语义」)。与 `activity-participation-query` 的取舍逐字同源。
+   *    凭空发明语义」)。D8-2 receipt 存在后仅工时与直方图改读统一 selector，
+   *    participation/no-show 等事实继续不变。
    */
   private async loadCommittedServiceHoursByActivity(
     activityIds: readonly string[],
@@ -125,8 +141,8 @@ export class ParticipationOverviewQueryService {
     if (activities.length === 0) return { months: [] };
 
     const activityIds = activities.map((activity) => activity.id);
-    // 正常命中路径固定 3 次业务查询：activities + registrations(IN) + records(IN)。
-    const [registrations, records] = await Promise.all([
+    // registrations/records 仍是两次 IN 批量读取；D8-2 selector 以固定查询数判定 official time。
+    const [registrations, records, officialTime] = await Promise.all([
       this.prisma.activityRegistration.findMany({
         where: { activityId: { in: activityIds }, deletedAt: null },
         select: { id: true, activityId: true, memberId: true, statusCode: true },
@@ -143,6 +159,7 @@ export class ParticipationOverviewQueryService {
           sheet: { select: { activityId: true, statusCode: true } },
         },
       }),
+      this.readOfficialTime(activityIds),
     ]);
 
     const registrationsByActivity = new Map<string, typeof registrations>();
@@ -160,9 +177,16 @@ export class ParticipationOverviewQueryService {
 
     // 取数源由闸决定,不是两套并存(合同 §16.2 第三项)。闸关(默认)= 今天的行为。
     const committedByActivity =
+      officialTime === null &&
       this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
         ? await this.loadCommittedServiceHoursByActivity(activityIds)
         : null;
+    const officialByActivity = new Map<string, OfficialParticipationTimeTotal[]>();
+    for (const row of officialTime?.totals ?? []) {
+      const rows = officialByActivity.get(row.activityId) ?? [];
+      rows.push(row);
+      officialByActivity.set(row.activityId, rows);
+    }
 
     const months = new Map<string, MonthAccumulator>();
     for (const activity of activities) {
@@ -177,6 +201,7 @@ export class ParticipationOverviewQueryService {
         completedActivityCount: 0,
         participationCount: 0,
         totalServiceHours: new Prisma.Decimal(0),
+        officialEligibleSeconds: 0,
         completedPassCount: 0,
         completedAttendeeCount: 0,
         completedNoShowCount: 0,
@@ -189,15 +214,27 @@ export class ParticipationOverviewQueryService {
       };
       accumulator.activityCount += 1;
       accumulator.participationCount += metrics.attendeeCount;
-      accumulator.totalServiceHours = accumulator.totalServiceHours.add(
-        committedByActivity === null
-          ? metrics.totalServiceHours
-          : (committedByActivity.get(activity.id) ?? new Prisma.Decimal(0)),
-      );
-      accumulator.durationHistogram.under2Hours += metrics.durationHistogram.under2Hours;
-      accumulator.durationHistogram.from2To4Hours += metrics.durationHistogram.from2To4Hours;
-      accumulator.durationHistogram.from4To8Hours += metrics.durationHistogram.from4To8Hours;
-      accumulator.durationHistogram.atLeast8Hours += metrics.durationHistogram.atLeast8Hours;
+      const officialRows = officialByActivity.get(activity.id) ?? [];
+      if (officialTime === null) {
+        accumulator.totalServiceHours = accumulator.totalServiceHours.add(
+          committedByActivity === null
+            ? metrics.totalServiceHours
+            : (committedByActivity.get(activity.id) ?? new Prisma.Decimal(0)),
+        );
+      } else {
+        accumulator.officialEligibleSeconds = sumOfficialEligibleSeconds([
+          { eligibleSeconds: accumulator.officialEligibleSeconds },
+          ...officialRows,
+        ]);
+      }
+      const histogram =
+        officialTime === null
+          ? metrics.durationHistogram
+          : buildOfficialDurationHistogram(officialRows);
+      accumulator.durationHistogram.under2Hours += histogram.under2Hours;
+      accumulator.durationHistogram.from2To4Hours += histogram.from2To4Hours;
+      accumulator.durationHistogram.from4To8Hours += histogram.from4To8Hours;
+      accumulator.durationHistogram.atLeast8Hours += histogram.atLeast8Hours;
       if (activity.statusCode === 'completed') {
         accumulator.completedActivityCount += 1;
         accumulator.completedPassCount += metrics.registrationCounts.pass;
@@ -213,7 +250,10 @@ export class ParticipationOverviewQueryService {
         activityCount: value.activityCount,
         completedActivityCount: value.completedActivityCount,
         participationCount: value.participationCount,
-        totalServiceHours: value.totalServiceHours.toString(),
+        totalServiceHours:
+          officialTime === null
+            ? value.totalServiceHours.toString()
+            : eligibleSecondsToServiceHours(value.officialEligibleSeconds).toString(),
         averageAttendanceRate:
           value.completedPassCount === 0
             ? 0
