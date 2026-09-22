@@ -10,9 +10,10 @@
 > [main CI 35701932991](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701932991) completed/success，五个
 > Contract + E2E 分片均成功。最终32路径授权上限内实际变更24路径、零越界。当前
 > `repositoryReady=yes`，但 exact deployed SHA／fleet 同版、v1.1 独立稳定窗、证据包、只读窗、worker 排空、
-> actor 与不可逆执行授权均未提供，所以部署未证明、运维未就绪、执行未授权。本轮仅更正台账并在
-> [D8 评审稿](../plans/activity-os-r4-d8-proof-cutover-review-and-plan.md) 起草两阶段现场授权清单；不实施、
-> 不操作数据库、不启用 Gate。D8-OPS、前端、真实业务验收与整体跨模型复审未完成。
+> actor 与不可逆执行授权均未提供，所以部署未证明、运维未就绪、执行未授权。本轮在
+> [D8 评审稿](../plans/activity-os-r4-d8-proof-cutover-review-and-plan.md) 第17.1节登记的十份文档中更正合并状态并
+> 起草两阶段现场授权清单；不实施、不操作数据库、不启用 Gate。D8-OPS、前端、真实业务验收、外部端回执与
+> 整体跨模型复审未完成。
 
 > **历史过程记录：D8-1 Draft #1341 第二轮 CI 兼容修复已完成本地验证（2026-09-22）**：方案 A 的原87个去重路径、后续两份治理登记及两份旧夹具兼容扩写均获维护者确认，最终精确上限为91路径，
 > 第129条 migration、不可逆 cutover 收据/根账 binding、统一真相选择器、CLI 与 App/Admin 正式证明已实现。

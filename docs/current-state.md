@@ -15,10 +15,11 @@
 | 版本 / 卫生 | 现场查:`pnpm agent:preflight` |
 | 本版 footprint | 即下方计数块(生成物) |
 
-> **D8-1 候选分支边界（2026-09-21）**：仓内正在验证正式参与时长证明和不可逆切换地基，
-> 不代表 main、部署或生产已切换。新收据不存在时既有统计仍按原口径，新证明入口 fail-closed；
-> D8-2 尚未接入官方统计和新关账。即使 D8-1/D8-2 未来合并，生产 CLI `--execute`、
-> v1.1 Gate、结算只读窗口和 D8-OPS 仍需 exact deployed SHA 下的独立实时授权，AI 不得自行执行。
+> **D8 仓库交付与生产边界（2026-09-22）**：D8-1 [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341)
+> 与 D8-2 [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 已合入 main，仓库侧正式参与时长证明、
+> 不可逆切换地基、官方统计和新关账接线已完成；仍未部署或切换生产。新收据不存在时既有统计继续按原口径，
+> 正式证明入口 fail-closed。生产 Gate 仍是 NO-GO；v1.1 独立稳定窗、exact deployed SHA／fleet、证据包、
+> 结算只读、worker 排空及 D8-OPS 两次现场授权仍须另行完成，AI 不得自行运行 `--execute`。
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->

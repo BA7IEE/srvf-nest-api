@@ -27,4 +27,4 @@
 
 - 将当前状态分为 `repositoryReady=yes`、`deploymentReady=unproven`、`operationalReady=no`、`executeAuthorized=no`；生产 Gate 仍以 `docs/current-state.md` 的 NO-GO 为准，不能用 #1342 或 CI 绿替代 exact deployed SHA、fleet 同版、v1.1 独立稳定窗、证据包、只读窗、worker 排空和 actor 资格。
 - 正式窗口只保留两次现场拍板：先授权进入只读窗、排空 worker 和运行生产 `--check-only`，再由维护者看到真实预检和四个执行参数后授权一次 `--execute` 及同窗后验。失败保持只读并前向修复；禁止删收据、改 `cutoverAt`、关 Gate 假回滚、回旧二进制、direct SQL 或删除业务证据。
-- 真实 D8-OPS 的仓库写集为零。本轮只更新既有 D8 评审稿、NEXT_TASKS、FROZEN_DRAFTS 和本 changelog；未部署、未操作数据库、未启用 Gate、未运行生产 CLI，也未生成 actor、operation key 或证据摘要。
+- 真实 D8-OPS 的仓库写集为零。本轮经合并前一致性审计，将 docs-only 写集从四份扩为十份：除既有 D8 评审稿、NEXT_TASKS、FROZEN_DRAFTS 和本 changelog 外，只在 current-state、两份时长运维说明及三份 handoff 中把 D8-1／D8-2 更正为已合入 main、尚未部署；生产 NO-GO、Gate、D8-OPS、前端和外部回执边界及登记表数值不变。未操作数据库、未运行生产 CLI，也未生成 actor、operation key 或证据摘要。

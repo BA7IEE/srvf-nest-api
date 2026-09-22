@@ -1,6 +1,6 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
-## D8 正式参与时长证明与官方汇总（D8-2 候选，未上线）
+## D8 正式参与时长证明与官方汇总（D8-2 已合入 main，未部署）
 
 新增 `GET /api/admin/v1/members/{memberId}/participation-time-proof`，入参为 `dateFrom`、`dateTo`、`page`、
 `pageSize`。前端必须传入 ISO 日期，区间最多366天，每页1..100条。路由复用 `attendance.read.sheet`，
@@ -27,7 +27,7 @@ D8-2 不新增路由或 DTO。receipt 存在后，以下既有读面中的 `tota
 
 报名、到场、no-show、反馈、贡献、活动/记录计数和原始 `participation-ledger` 保持现行来源；已有 closure
 不回写。receipt 不存在时上述接口保持旧口径。receipt 已存在而证明链损坏时后端 fail-closed，不允许前端回退
-旧小时数掩盖错误。当前 D8-1 已入 main，D8-2 仍是 Draft 候选；生成 client、前端页面、部署、Gate 和
+旧小时数掩盖错误。D8-1／D8-2 已合入 main，生成的 Admin client 是当前仓库合同；前端页面、部署、Gate 和
 D8-OPS 均未因此完成。
 
 ## D7-1 分类认定更正（分支验收中，未上线）

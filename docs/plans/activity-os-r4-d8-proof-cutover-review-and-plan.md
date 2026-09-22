@@ -585,12 +585,21 @@ D8-OPS 不是第三个代码 PR，而是一次不可逆的生产运维窗口。�
 `ActivityTimeCutoverService` 形成唯一 `ActivityTimeCutoverReceipt` 和对应审计，之后由受控普通根账提交链
 自动形成 binding；禁止 direct SQL、手工补 binding、修改收据或把证据写回本仓充当现场真相。
 
-本次 docs-only 台账刀的精确写集只有以下四个既有文件：
+本次 docs-only 台账刀经合并前一致性审计扩展为以下十个既有文件：
 
 1. `docs/plans/activity-os-r4-d8-proof-cutover-review-and-plan.md`
 2. `docs/ai-harness/NEXT_TASKS.md`
 3. `docs/ai-harness/FROZEN_DRAFTS.md`
 4. `changelog.d/activity-os-r4-d8-proof-cutover-review.md`
+5. `docs/current-state.md`
+6. `docs/ops/activity-time-cutover.md`
+7. `docs/ops/activity-time-ledger.md`
+8. `docs/handoff/contract-version-registry.md`
+9. `docs/handoff/miniapp.md`
+10. `docs/handoff/admin-web.md`
+
+后六份只把“候选／Draft／未合并”更正为“已合入 main、尚未部署”；生产 NO-GO、Gate 未启用、D8-OPS
+未执行、前端未发布及外部端未回执边界不变，契约版本回执登记表数值不变。
 
 本刀不提交真实 actor ID、operation key、生产数据库地址、secret 或伪造的 `evidenceBundleHash`；也不运行生产
 `--check-only`／`--execute`。文档合并仍不等于部署、Gate、只读窗或生产执行授权。

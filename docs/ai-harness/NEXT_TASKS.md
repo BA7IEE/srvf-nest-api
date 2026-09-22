@@ -11,8 +11,9 @@
 > Contract + E2E 分片均成功。最终32路径授权上限内实际变更24路径、零越界。当前只能判
 > `repositoryReady=yes`；部署 exact SHA／fleet 同版、v1.1 独立稳定窗、证据包、只读窗、worker 排空、actor
 > 与不可逆执行授权均未提供，所以 `deploymentReady` 未证明、`operationalReady=no`、`executeAuthorized=no`。
-> 当前只获准更正 D8-2 台账并在既有 D8 评审稿、NEXT_TASKS、FROZEN_DRAFTS 和 changelog 中起草 D8-OPS
-> 精确清单；不实施、不操作数据库、不启用 Gate。D8-OPS、整体复审、前端、真实业务验收和生产仍未完成。
+> 当前获准在 [D8 评审稿](../plans/activity-os-r4-d8-proof-cutover-review-and-plan.md) 第17.1节登记的十份文档中
+> 更正 D8-1／D8-2 合并状态并起草 D8-OPS 精确清单；不实施、不操作数据库、不启用 Gate。D8-OPS、整体复审、
+> 前端、真实业务验收和生产仍未完成，契约版本外部端仍未回执。
 
 > **历史过程记录：D8-1 Draft #1341 第二轮 CI 兼容修复待推送（2026-09-22）**：维护者已确认 [D8 方案 A](../plans/activity-os-r4-d8-proof-cutover-review-and-plan.md)
 > 的第4–6、8.1、9、11节和原87个去重路径，并明确扩写两份治理登记及两份旧夹具兼容，最终精确上限为91路径；独立工作树基于 `main@2af4462556f8bf13b4b73b971de8da5bc35b5a0e`，
