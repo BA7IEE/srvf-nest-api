@@ -1,5 +1,13 @@
 # activities — 本地铁律
 
+> **E1-1 当前实施工作树（2026-09-22，未提交、未合并、未上线）**：只建立贡献政策的数据与定义地基。
+> 新增 `ContributionPolicy`、不可变 `ContributionPolicyVersion`、`ContributionPolicyCommandReceipt`，以及闭合
+> V1 parser／fingerprint／纯 evaluator 和 draft→active→retired 纯状态判断。evaluator 只返回规范分值与稳定
+> explanation code，不查库、不猜版本、不执行每日封顶；所有未知键、重复 role/category、错类型、越界秒数、
+> 非规范小数或未知 evaluator 均 fail-closed。E1-1 没有 provider、route、writer，不接 `ContributionRule`、
+> 考勤、账本、Readiness、proposal 或 Gate；权限与审计零变化。56 项目标单测、schema、typecheck、全仓 lint
+> 已通过；第 130 条 migration 待 3b 重签后再在 `app_test_w98` 验证。E1-2／E1-3、生产与 D8-OPS 未实施。
+
 > **D8-1 实施候选（2026-09-21，未提交、未合并、未上线）**：按 D8 方案 A 建立不可逆切换收据、
 > 切换后根账 binding、统一 `ParticipationTimeTruthQueryService`、只读预检/执行 CLI，以及 App self 和
 > Admin scoped/GLOBAL 两个正式参与时长证明入口。无收据时证明具名不可用，不改现有统计口径；

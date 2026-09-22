@@ -1,13 +1,17 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **Release 4 仓库交付已收口，Release 5 / E1 评审起草中（2026-09-22）**：D8-OPS 文档
-> [#1343](https://github.com/BA7IEE/srvf-nest-api/pull/1343) 已 squash 合入
-> `fc7471efadaf22834d5effb0b92a9fdd034bea2b`，对应
-> [main CI 35715601951](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35715601951) completed/success。
-> 这不代表部署、开 Gate 或执行 D8-OPS。当前只起草
-> [Release 5 / E1 贡献政策评审与精确计划](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)：
-> 推荐 E1-1 数据与定义地基、E1-2 System 目录、E1-3 选择与发布冻结三刀，并登记 E1-1 的 46 个候选路径。
-> 本轮无 schema、代码、数据库、权限、审计、Gate 或旧贡献行为变化；E1–E5 实施均未开始。
+> **Release 5 / E1-1 数据与定义地基本地验收完成（2026-09-23）**：E1 计划
+> [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已 squash 合入
+> `db580471f94d94300ff30ef7f8925515fc15c0c6`，对应
+> [main CI 35726170176](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35726170176) completed/success。当前独立工作树按
+> 46 路径授权及后续 1 路径精确扩写新增第 130 条纯 additive migration、政策／不可变版本／命令收据三表、闭合 V1 definition、
+> fingerprint、纯 evaluator 与生命周期判断；旧规则、考勤、账本、Readiness、API、权限、审计和 Gate 均未接线。
+> 工作树读数为 130 migration／179 model；56 项目标单测、schema、typecheck、全仓 lint 和 18 份 migration
+> 计数同步已通过。SQL 摘要 `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00`
+> 的 3b 已重签并通过登记对拍；4b 因权限／审计零变化不需重签。`app_test_w98` 已通过迁移 2/2、数据库
+> 守卫 36/36、旧行为 31/31 和夹具恢复 5/5；固定其他 scratch 库的历史 rehearsal 交 Draft PR CI 冷跑。
+> 尚未提交、推送或创建 Draft PR。E1-2／E1-3、E2–E5、D8-OPS、生产、Gate、数据转换、删除或
+> 重算仍未实施或授权。
 
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
 > [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
@@ -121,17 +125,17 @@
 > **落地度列开头的 `` `↔…` `` 是给判据 6 读的对照标记**,不是装饰 —— 它声明本行与
 > `NEXT_TASKS.md` 同编号条目的状态行**是不是同一把尺子**。取值与写法见 [§4](#4-这份台账由什么守着)。
 
-| #   | 冻结稿                       | 台账  | 落地度                                                                                                                         | 卡在谁                                                                                                                  |
-| --- | ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| 1   | Integration Foundation v1 T0 | P1-30 | `↔进行中` **1 / 8 PR**(PR1 schema 已交付 2026-08-28)                                                                           | 维护者 2026-08-28 拍板开工(条件②③齐、④建议级;`D-IF-2` 的「上线后」理由已于 2026-08-20 换成四条件表,见 NEXT_TASKS P1-30) |
-| 2   | RBAC 权限目录终态            | P1-32 | `↔进行中 7/9` **完整落地 7 / 9 PR**(PR 4 两半齐全;PR 5 已合 #1175;PR 8 **只落了前一半**)                                       | 剩 PR 6–7(都等前端 srvf-admin-web 投用)+ PR 8 后一半「Permission 写 CRUD 退役」待维护者拍板                             |
-| 3   | 活动业务 v1.1 合同(6 份)     | P1-28 | `↔进行中` 8 批:6 批主体完 / 2 批部分                                                                                           | 施工中                                                                                                                  |
-| 4   | 架构治理 v4(3 份)            | P1-29 | `↔另尺(NEXT_TASKS 的 P1-29 条目只覆盖 Phase 0,本行覆盖 v4 全 11 阶段)` 11 阶段:6 个完 + Phase 6 部分                           | 施工中                                                                                                                  |
-| 5   | 企业微信 T0                  | P1-25 | `↔⏸ 挂起` 代码 100%,运维 0%                                                                                                    | 备案                                                                                                                    |
-| 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                   | 维护者执行                                                                                                              |
-| 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                    | 运维窗口                                                                                                                |
-| 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                     | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 仓内交付已完成；Release 5 / E1 评审与 E1-1 精确候选写集起草中                                            | E1–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                                 |
+| #   | 冻结稿                       | 台账  | 落地度                                                                                               | 卡在谁                                                                                                                  |
+| --- | ---------------------------- | ----- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 1   | Integration Foundation v1 T0 | P1-30 | `↔进行中` **1 / 8 PR**(PR1 schema 已交付 2026-08-28)                                                 | 维护者 2026-08-28 拍板开工(条件②③齐、④建议级;`D-IF-2` 的「上线后」理由已于 2026-08-20 换成四条件表,见 NEXT_TASKS P1-30) |
+| 2   | RBAC 权限目录终态            | P1-32 | `↔进行中 7/9` **完整落地 7 / 9 PR**(PR 4 两半齐全;PR 5 已合 #1175;PR 8 **只落了前一半**)             | 剩 PR 6–7(都等前端 srvf-admin-web 投用)+ PR 8 后一半「Permission 写 CRUD 退役」待维护者拍板                             |
+| 3   | 活动业务 v1.1 合同(6 份)     | P1-28 | `↔进行中` 8 批:6 批主体完 / 2 批部分                                                                 | 施工中                                                                                                                  |
+| 4   | 架构治理 v4(3 份)            | P1-29 | `↔另尺(NEXT_TASKS 的 P1-29 条目只覆盖 Phase 0,本行覆盖 v4 全 11 阶段)` 11 阶段:6 个完 + Phase 6 部分 | 施工中                                                                                                                  |
+| 5   | 企业微信 T0                  | P1-25 | `↔⏸ 挂起` 代码 100%,运维 0%                                                                          | 备案                                                                                                                    |
+| 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                         | 维护者执行                                                                                                              |
+| 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                          | 运维窗口                                                                                                                |
+| 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                           | 维护者执行                                                                                                              |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 仓内交付已完成；Release 5 / E1 评审与 E1-1 精确候选写集起草中                  | E1–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                                 |
 
 ### 1.1 欠代码的五项
 
@@ -340,20 +344,20 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 <!-- 由 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` 生成;禁止手改。
      判据 `src/frozen-drafts-ledger.criteria.spec.ts` 逐字节比对,手改即红。 -->
 
-| 读数 | 值 | 取自 |
-|---|---|---|
-| IF v1:ServicePrincipal / DelegationGrant 建表数 | **3** | `prisma/schema.prisma` |
-| IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
-| P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
-| P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **265** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
-| 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
-| 治理 Phase 7:债务身份证待清偿条数 | **221** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 75** | `harness/state-machines.json` |
-| 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
-| 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
-| 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
-| 三条"代码已落、闸未开"的开关在配置里的数量 | **3 / 3** | `src/config/app.config.ts` |
+| 读数                                                    | 值                          | 取自                                                         |
+| ------------------------------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| IF v1:ServicePrincipal / DelegationGrant 建表数         | **3**                       | `prisma/schema.prisma`                                       |
+| IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3**                       | `src/**/*.ts(不含 .spec.ts)`                                 |
+| P1-32 PR1:`permission-catalog*` 运行时文件数            | **2**                       | `src/modules/permissions/`                                   |
+| P1-32:授码 / 撤码两侧是否复用控制面闸谓词               | **已接**                    | `src/modules/permissions/role-permissions.service.ts`        |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表)     | **265**                     | `scripts/docs-counts.ts 的 typed-AST 闭包`                   |
+| 活动 v1.1 验收编号:已绑真实证据 / 合同定义              | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
+| 治理 Phase 7:债务身份证待清偿条数                       | **221**                     | `harness/architecture-debt.json`                             |
+| 治理 Phase 4:状态列 governed / 登记总数                 | **8 / 76**                  | `harness/state-machines.json`                                |
+| 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC)       | **21**                      | `harness/service-size-baseline.json`                         |
+| 治理 Phase 1D:声明 Guard 模式                           | **enforce**                 | `src/common/guards/authz-declaration.guard.ts`               |
+| 治理 Phase 1J:跨域金路径 journey 数                     | **6**                       | `test/journeys/`                                             |
+| 三条"代码已落、闸未开"的开关在配置里的数量              | **3 / 3**                   | `src/config/app.config.ts`                                   |
 
 <!-- frozen-drafts:readings:end -->
 

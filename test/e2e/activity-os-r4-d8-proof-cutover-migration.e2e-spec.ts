@@ -21,8 +21,10 @@ import {
 import { deriveTestDbName } from '../setup/worktree-db';
 
 const MIGRATION = '20260921180000_activity_os_r4_d8_proof_cutover';
+const LATEST_MIGRATION = '20260922194000_activity_os_r5_e1_contribution_policy_foundation';
 const PREVIOUS_MIGRATION_COUNT = 128;
-const CURRENT_MIGRATION_COUNT = 129;
+const D8_MIGRATION_COUNT = 129;
+const CURRENT_MIGRATION_COUNT = 130;
 const WORKER = 98;
 const prismaRoot = path.resolve(__dirname, '..', '..', 'prisma');
 const schema = path.join(prismaRoot, 'schema.prisma');
@@ -149,7 +151,8 @@ describe('D8-1 proof cutover migration', () => {
     deploy(schema);
     const expected = migrationNames();
     expect(expected).toHaveLength(CURRENT_MIGRATION_COUNT);
-    expect(expected.at(-1)).toBe(MIGRATION);
+    expect(expected[D8_MIGRATION_COUNT - 1]).toBe(MIGRATION);
+    expect(expected.at(-1)).toBe(LATEST_MIGRATION);
     expect(appliedNames()).toEqual(expected);
     const migrationHash = createHash('sha256')
       .update(readFileSync(path.join(prismaRoot, 'migrations', MIGRATION, 'migration.sql')))
@@ -216,7 +219,7 @@ describe('D8-1 proof cutover migration', () => {
         { recursive: true, errorOnExist: true, force: false },
       );
       deploy(path.join(temporary, 'schema.prisma'));
-      expect(appliedNames()).toHaveLength(CURRENT_MIGRATION_COUNT);
+      expect(appliedNames()).toHaveLength(D8_MIGRATION_COUNT);
       expect(sql(`SELECT id || chr(9) || username FROM "User" WHERE id='d8-pre129-user'`)).toBe(
         before,
       );

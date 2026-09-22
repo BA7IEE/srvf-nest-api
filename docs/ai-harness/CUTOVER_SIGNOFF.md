@@ -221,6 +221,17 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **当前重签（2026-09-22，E1-1 贡献政策地基）**：维护者确认第130条
+> `20260922194000_activity_os_r5_e1_contribution_policy_foundation`，SQL SHA-256
+> `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00`。
+> 第130条只新增 `ContributionPolicy`、不可变版本 `ContributionPolicyVersion` 与
+> `ContributionPolicyCommandReceipt` 三张空表，以及复合版本锚、生命周期、不可改删、hash、
+> 生效区间和收据结果形状约束；零 DML、回填、删除、旧表修改、API、DTO、权限、审计或 Gate 接线。
+> 本签仅解开已授权 `app_test_w98` 的冷回放、129→130 非空升级与数据库守卫验证，不替代
+> Draft PR CI、Ready、合并、生产或 Gate 授权。
+> **本轮依据**：维护者本轮明确确认「确认重签 3b（E1-1，第130条 migration，摘要
+> a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00）」。
+
 > **当前重签（2026-09-22，D8-1 proof cutover）**：维护者确认第129条
 > `20260921180000_activity_os_r4_d8_proof_cutover`，SQL SHA-256
 > `bdfaeae5029b113c66cc85923a2e1b5307c69fe892a1c232edf3281c5672305e`。
@@ -363,6 +374,17 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **日期**:2026-09-22
 - **依据**:维护者本轮明确确认「确认重签 3b（D8-1，第129条 migration，摘要 bdfaeae5029b113c66cc85923a2e1b5307c69fe892a1c232edf3281c5672305e）」。
 - **对拍**:有 —— `migration-total` = `129`
+
+> **当前正式签字（2026-09-22，覆盖上方第129条及更早历史字段）**：E1-1 贡献政策地基的
+> 第130条 `20260922194000_activity_os_r5_e1_contribution_policy_foundation` 已由维护者按上方实际摘要重签；
+> 上方字段保留第129条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:2026-09-22 E1-1 贡献政策地基重签：第130条只新增政策、不可变版本和命令收据三张空表，以及复合版本锚、生命周期、不可改删、hash、生效区间和收据结果形状约束；零 DML、回填、删除、旧表修改、API、DTO、权限、审计或 Gate 接线。本签仅允许按既定范围继续 app_test_w98 隔离验证，不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-22
+- **依据**:维护者本轮明确确认「确认重签 3b（E1-1，第130条 migration，摘要 a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00）」。
+- **对拍**:有 —— `migration-total` = `130`
 
 ### 4b — 「字典、Audit events」的对账
 

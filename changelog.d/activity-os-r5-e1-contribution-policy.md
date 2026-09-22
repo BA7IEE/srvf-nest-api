@@ -1,0 +1,4 @@
+- 新增 Activity OS Release 5 / E1-1 贡献政策数据与定义地基：稳定政策、不可变版本、命令收据及精确版本锚。
+- 新增闭合 V1 definition parser、规范 fingerprint、纯 evaluator 和 draft→active→retired 生命周期守卫；未知输入一律 fail-closed。
+- 保持旧 ContributionRule、考勤、正式账本、Readiness、API、权限、审计和 Gate 行为不变；不回填、转换、删除或重算历史业务数据。
+- 将三张新表及其不可截断守卫纳入既有受控测试夹具清理，并严格恢复触发器原状态；不改变生产守卫或业务断言。

@@ -1,5 +1,15 @@
 # prisma — 本地铁律
 
+> **E1-1 当前实施工作树（2026-09-22，未提交、未合并、未部署）**：当前累计 **130 个 migration、179 个模型**；
+> 第 130 条 `20260922194000_activity_os_r5_e1_contribution_policy_foundation` 只新增稳定政策、不可变版本与
+> 命令收据三表及对应约束／守卫，纯 additive，零 DML、回填、删除或旧表修改。版本固定
+> `(id, policyId, definitionHash, evaluatorVersion)` 精确锚，只允许 draft→active→retired；三表永久保留，
+> 禁止业务 UPDATE／DELETE／TRUNCATE。SQL 完整摘要为
+> `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00`，待维护者 3b 重签；签字前不写
+> `CUTOVER_SIGNOFF`、不运行 migration E2E。schema validate、typecheck、全仓 lint、18/18 migration 计数
+> 已通过；数据库冷回放与非空升级尚待 `app_test_w98`。本刀没有权限或审计变化，4b 不需要重签；不接 API、
+> 旧贡献规则、正式账本、Readiness、Gate、D8-OPS 或生产。下文 D8/D7-2 描述保留为历史时点。
+
 > **D8-1 当前实施工作树（2026-09-21，未提交、未合并、未部署）**：当前累计 **129 个 migration、176 个模型**；第129条
 > `20260921180000_activity_os_r4_d8_proof_cutover` 只新增不可变单例切换收据和切换后根账绑定两表，
 > 以同一 PostgreSQL advisory shared/exclusive 事务锁线性化普通账本提交与切换。旧根账不回填、

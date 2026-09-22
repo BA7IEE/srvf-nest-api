@@ -26,12 +26,13 @@ const BINDING_GUARD_MIGRATION = '20260917194000_activity_os_r4_d7_2_binding_guar
 const ALLOCATION_GUARD_MIGRATION = '20260920090000_activity_os_r4_d7_2_allocation_guard_set';
 const MIGRATION = '20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set';
 const D8_1_MIGRATION = '20260921180000_activity_os_r4_d8_proof_cutover';
+const E1_1_MIGRATION = '20260922194000_activity_os_r5_e1_contribution_policy_foundation';
 const PREVIOUS_MIGRATION_COUNT = 124;
 const D7_2_FACT_MIGRATION_COUNT = 125;
 const BINDING_GUARD_MIGRATION_COUNT = 126;
 const ALLOCATION_GUARD_MIGRATION_COUNT = 127;
 const CORRECTION_RECEIPT_GUARD_MIGRATION_COUNT = 128;
-const CURRENT_MIGRATION_COUNT = 129;
+const CURRENT_MIGRATION_COUNT = 130;
 const WORKER = 98;
 const USE_DEDICATED_W98 = process.env.SRVF_D7_2_W98 === '1';
 const LEGACY_V1_REQUEST_ID = 'd7-2-migration-v1-request';
@@ -417,12 +418,13 @@ describe('D7-2 immutable fact-correction migration', () => {
     ).toBe('ready\t0');
   }
 
-  it('cold replays all 129 migrations and installs the four immutable fact tables', () => {
+  it('cold replays all 130 migrations and installs the four immutable fact tables', () => {
     recreate();
     deploy(schema);
     expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[CORRECTION_RECEIPT_GUARD_MIGRATION_COUNT - 1]).toBe(MIGRATION);
-    expect(names[CURRENT_MIGRATION_COUNT - 1]).toBe(D8_1_MIGRATION);
+    expect(names[128]).toBe(D8_1_MIGRATION);
+    expect(names[CURRENT_MIGRATION_COUNT - 1]).toBe(E1_1_MIGRATION);
     expect(checksums()).toEqual(
       names.map(
         (name) =>
