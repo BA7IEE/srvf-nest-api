@@ -20,3 +20,4 @@
 - 为跨模块消费者仅导出既有 `ParticipationTimeTruthQueryService`；meta 通过既有 `LedgerQueryService` 的 transaction-bound owner facade 调用，不复制 SQL、不另开事务，新增架构债务保持为零；不新增 provider、路由、DTO、schema、migration、权限、审计事件、Gate 或内建角色授权。
 - 本地已通过新增/改动单测22/22、全仓单测405/405套（8,815项通过、5项既有todo）、typecheck、build、lint、contract 1,074项／2份快照；此前 receipt-absent／关账／并发等六套定向 E2E 56/56，owner facade 接线后重跑真实 D8-2 w98 真链1/1。完整 PR CI 仍由 Draft PR 冷跑，不把本地通过冒充合并或上线。
 - Harness 自证561／138／68项以及OpenAPI、客户端、权限、边界、计数和派生检查全部通过；31路径授权上限内实际变更23路径、零越界。`domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新输入摘要，`state-machines.json` 与 `authz-assertion-patterns.json` 相对基线零diff。
+- Draft [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 首轮 CI 的可信红区、Fast checks、Docker、Harness、Golden journeys 及 E2E 第1–4组通过；第5组唯一失败来自旧服务段更正迁移夹具停在 D8 前却调用新关账读面。获批兼容修复只在该历史夹具补一张永久为空、拒绝写入的 `ActivityTimeCutoverReceipt` readback 表，保持全部原断言和超时，不改生产代码、schema 或 migration；授权派生 w1 整文件5/5通过。扩写后32路径授权上限内实际变更24路径、零越界，待新 SHA PR CI 冷跑。

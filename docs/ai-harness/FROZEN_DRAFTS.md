@@ -4,12 +4,14 @@
 > 已 squash 合入 `65b26523393bb08c68d727852608432af58a5360`，合并后
 > [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) completed/success。维护者确认
 > 原25路径方案 A，并补充确认 `activities.module.ts` 既有 selector 导出、`LedgerQueryService` owner facade
-> 及四份派生治理摘要，最终31路径。当前已接通 receipt-aware official aggregate、成员／活动／月度／直方图／
+> 及四份派生治理摘要；#1342 首轮 CI 后再精确扩写一份旧迁移夹具兼容路径，最终32路径。当前已接通 receipt-aware official aggregate、成员／活动／月度／直方图／
 > 新 closure 五消费者；meta 不再深引 selector，新增架构债务2项已归零；全仓单测405/405套、8,815项通过
 > （5项既有todo），typecheck、build、lint、contract 1,074项／2份快照通过；此前六套 w98 定向56/56，
-> owner facade 接线后重跑 D8-2 真链1/1通过。Harness 561／138／68项和派生检查全部通过；31路径授权上限内
-> 实际变更23路径、零越界，`domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新摘要，`state-machines.json` 与
-> `authz-assertion-patterns.json` 零diff。待提交、推送、创建 Draft PR 并由 PR CI 完整冷跑；不 Ready、
+> owner facade 接线后重跑 D8-2 真链1/1通过。Harness 561／138／68项和派生检查全部通过。Draft
+> [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 首轮 CI 15项通过，唯一红点为旧迁移夹具缺少
+> D8 receipt readback 表；获批修复只补永久空、拒绝写入的夹具表，派生 w1 整文件5/5通过。32路径授权上限内
+> 实际变更24路径、零越界，`domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新摘要，`state-machines.json` 与
+> `authz-assertion-patterns.json` 零diff。待提交、推送新 SHA 并由 PR CI 完整冷跑；不 Ready、
 > 不合并、不操作生产、不启用 Gate、不执行 cutover、不删除业务数据。D8-OPS、前端、真实业务验收与整体跨模型复审未完成。
 
 > **D8-1 Draft #1341 第二轮 CI 兼容修复已完成本地验证（2026-09-22）**：方案 A 的原87个去重路径、后续两份治理登记及两份旧夹具兼容扩写均获维护者确认，最终精确上限为91路径，

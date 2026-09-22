@@ -457,10 +457,11 @@ Docker、Harness、Golden journeys 及 E2E 第1／4／5组；第2／3组只留�
 > 隔离验证及测试夹具重建；验证后提交、推送并创建 Draft PR。不合并、不操作生产、不启用 Gate、不删除业务数据。
 
 维护者已确认上述方案，并补充确认 `activities.module.ts` 仅导出既有 selector、`LedgerQueryService` 仅提供
-transaction-bound owner facade，以及四份派生治理摘要的精确刷新；当前候选写集31路径。隔离工作树基于
+transaction-bound owner facade，以及四份派生治理摘要的精确刷新；原候选写集31路径。Draft #1342 首轮
+CI 后，维护者又精确扩写一份旧迁移夹具兼容路径，当前候选写集32路径。隔离工作树基于
 D8-1 合并 SHA，preflight 已通过；owner facade 接线后架构新增债务已由2项归零。当前已完成统一批量
-official 聚合、五消费者接线、精确秒直方图、跨模块导出、单测和 w98 定向 E2E。最终实际变更23路径，
-未超出31路径授权；`domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新输入摘要，`state-machines.json` 与
+official 聚合、五消费者接线、精确秒直方图、跨模块导出、单测和 w98 定向 E2E。当前实际变更24路径，
+未超出32路径授权；`domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新输入摘要，`state-machines.json` 与
 `authz-assertion-patterns.json` 相对基线零 diff。Harness 561／138／68 项及本地全套门禁均通过。
 D8-2 无新 migration／权限／审计，仍需最终 SHA 的 Draft PR CI；不 Ready、不合并、不操作生产、不启用 Gate。
 
@@ -529,10 +530,15 @@ training／organization／non-creditable 的人仍以0秒保留，用于直方�
 本分支最终结果及 Draft PR 为准。
 
 最终本地收口：Harness 自证561／138／68项全部通过，OpenAPI、前端客户端、权限、边界、计数、
-CODEMAP、读税和 migration 计数检查均通过。31路径授权上限内实际变更23路径、零越界；
+CODEMAP、读税和 migration 计数检查均通过。原31路径授权上限内实际变更23路径、零越界；
 `domain-map.json` 与 `ROUTE_AUTHZ.md` 仅刷新输入摘要，`state-machines.json` 与
-`authz-assertion-patterns.json` 相对基线零 diff。下一步按既有授权提交、推送并创建 Draft PR；完整
-Contract + E2E 冷跑仍由该 PR CI 验收。
+`authz-assertion-patterns.json` 相对基线零 diff。Draft [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342)
+首轮 [PR CI 35697330846](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35697330846) 的可信红区、
+Fast checks、Docker、Harness、Golden journeys 及 E2E 第1–4组通过；第5组唯一失败是旧服务段更正迁移
+夹具停在 D8 前却调用新关账读面，缺少 `ActivityTimeCutoverReceipt` 表。获批修复只在该历史夹具增加
+永久为空且拒绝写入的 readback 表，不改生产代码、schema、migration、断言或超时；授权派生 w1 整文件
+1/1 suite、5/5 tests通过。当前32路径授权上限内实际变更24路径、零越界；下一步提交推送新 SHA，完整
+冷跑仍由 #1342 PR CI 验收。
 
 ## 16. 本次未做
 

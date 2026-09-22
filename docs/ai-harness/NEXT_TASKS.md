@@ -4,14 +4,16 @@
 > 已 squash 合入 `65b26523393bb08c68d727852608432af58a5360`，合并后
 > [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) completed/success，五个
 > Contract + E2E 分片均成功。维护者已确认 D8-2 方案 A、原25路径、`activities.module.ts` 既有 selector
-> 导出、`LedgerQueryService` owner facade 及四份派生治理摘要补项，当前精确写集31路径。已实现
+> 导出、`LedgerQueryService` owner facade、四份派生治理摘要及首轮 CI 后获批的一份旧迁移夹具兼容补项，
+> 当前精确写集32路径。已实现
 > receipt-aware 批量聚合、成员／活动／月度／直方图／新 closure
 > 五消费者接线；receipt absent 保持旧口径，present 后只以 legacy + volunteer eligible 秒数覆盖官方工时，
 > meta 只经既有 owner query facade 调用 selector，新增架构债务2项已归零；贡献、参与事实、原始 ledger 和
 > 历史 closure 不漂移。全仓单测405/405套、8,815项通过（5项既有todo），typecheck、build、lint、
 > contract 1,074项／2份快照通过；此前六套 w98 定向56/56，owner facade 接线后重跑 D8-2 真链1/1通过。
-> Harness 561／138／68项、派生及客户端检查均通过；31路径授权上限内实际变更23路径、零越界。正在按授权
-> 提交、推送、创建 Draft PR，完整冷跑交 PR CI。不 Ready、不合并、
+> Harness 561／138／68项、派生及客户端检查均通过。Draft [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342)
+> 首轮 CI 15项通过，唯一旧迁移夹具红点已按授权补永久空 readback 表，派生 w1 整文件5/5通过；32路径授权
+> 上限内实际变更24路径、零越界。待提交推送新 SHA，完整冷跑交 PR CI。不 Ready、不合并、
 > 不操作生产、不启用 Gate、不执行 cutover、不删除业务数据；D8-OPS、前端、真实业务验收和整体跨模型复审未完成。
 
 > **D8-1 Draft #1341 第二轮 CI 兼容修复待推送（2026-09-22）**：维护者已确认 [D8 方案 A](../plans/activity-os-r4-d8-proof-cutover-review-and-plan.md)
@@ -2615,11 +2617,11 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 
 ### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D7 与 D8-1 已完成仓内交付；D8-2 实施中**
 
-**状态**:进行中(D8-1 已合 #1341 且 main CI 全绿；D8-2 已获31路径精确实施授权，本地实现、w98定向、Harness及完整门禁通过，实际23路径零越界，待Draft PR与PR CI；D8-OPS、整体复审、前端、生产和Gate未完成)
+**状态**:进行中(D8-1 已合 #1341 且 main CI 全绿；D8-2 #1342 已获32路径精确授权，本地实现、w98定向、Harness及门禁通过，首轮CI唯一旧夹具红点已修并在派生w1通过，实际24路径零越界，待新SHA PR CI；D8-OPS、整体复审、前端、生产和Gate未完成)
 
-- **D8-2 当前范围（2026-09-22）**：已授权方案 A 的25路径、module 单一导出、owner query facade 及
-  四份派生治理摘要补项，共31路径；允许
-  `app_test_w98` 验证及验证后 Draft PR。不得 Ready、合并、生产、开 Gate、执行 cutover 或删除业务数据。
+- **D8-2 当前范围（2026-09-22）**：已授权方案 A 的25路径、module 单一导出、owner query facade、
+  四份派生治理摘要及一份旧迁移夹具兼容补项，共32路径；允许 `app_test_w98` 与本工作树派生 w1
+  验证，验证后更新 Draft #1342。不得 Ready、合并、生产、开 Gate、执行 cutover 或删除业务数据。
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
