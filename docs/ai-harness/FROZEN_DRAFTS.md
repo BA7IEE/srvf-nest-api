@@ -1,5 +1,14 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **Release 4 仓库交付已收口，Release 5 / E1 评审起草中（2026-09-22）**：D8-OPS 文档
+> [#1343](https://github.com/BA7IEE/srvf-nest-api/pull/1343) 已 squash 合入
+> `fc7471efadaf22834d5effb0b92a9fdd034bea2b`，对应
+> [main CI 35715601951](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35715601951) completed/success。
+> 这不代表部署、开 Gate 或执行 D8-OPS。当前只起草
+> [Release 5 / E1 贡献政策评审与精确计划](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)：
+> 推荐 E1-1 数据与定义地基、E1-2 System 目录、E1-3 选择与发布冻结三刀，并登记 E1-1 的 46 个候选路径。
+> 本轮无 schema、代码、数据库、权限、审计、Gate 或旧贡献行为变化；E1–E5 实施均未开始。
+
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
 > [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
 > [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) 成功。D8-2
@@ -122,7 +131,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                   | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                    | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                     | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D7 及 D8-1／D8-2 已完成仓内实施与 main CI | D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                                             |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 仓内交付已完成；Release 5 / E1 评审与 E1-1 精确候选写集起草中                                            | E1–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                                 |
 
 ### 1.1 欠代码的五项
 
@@ -181,7 +190,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D7 与 D8-1／D8-2 仓内实施已合入并完成 main CI；D8-OPS、真实业务验收、整体跨模型复审、前端、部署与 v1.1 Gate 均未完成**
+**⑤ Activity OS T0-A —— Release 1–4 仓内交付已合入并完成 main CI；Release 5 / E1 仅起草评审，E1–E5 实施、D8-OPS、真实业务验收、整体跨模型复审、前端、部署与 v1.1 Gate 均未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
@@ -367,7 +376,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 | 文件                                                                                                  | 分类           | 去向 / 理由                                                                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；T0-B、Release 1 A1–A8 与 Release 2 B1–B7 仓内实施已落地，前端发布、生产 Gate 与 Release 3 C1 及后续仍待独立推进                                                                                                    |
+| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 仓内交付已完成，Release 5 / E1 仅起草评审；E1–E5 实施、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                                                    |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md`                                  | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改                                                                                                                                                       |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md`                            | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改                                                                                                                                                                |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md`                      | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改                                                                                                                                             |

@@ -1,5 +1,15 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
+> **Release 4 仓库交付已收口，Release 5 / E1 评审起草中（2026-09-22）**：D8-OPS 文档
+> [#1343](https://github.com/BA7IEE/srvf-nest-api/pull/1343) 已 squash 合入
+> `fc7471efadaf22834d5effb0b92a9fdd034bea2b`，对应
+> [main CI 35715601951](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35715601951) completed/success。
+> 这只完成 D8-OPS 运维计划，未部署、未开 Gate、未执行预检或正式 cutover。下一条仓内顺序为
+> Release 5 `E1 → E5`；当前只起草 [E1 贡献政策评审与精确计划](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)，
+> 推荐拆为 E1-1 数据与定义地基、E1-2 System 目录、E1-3 选择与发布冻结，并为 E1-1 列出 46 个精确候选路径。
+> 本轮不改 schema、代码、数据库、权限、审计、Gate 或旧贡献行为。唯一 open Draft #1324 与本 lane 零交叉；
+> E 档 release 的 global 0 open PR 要求仍未满足，未被本轮豁免。
+
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
 > [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
 > [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) 成功。D8-2
@@ -2614,16 +2624,20 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **T0-A/T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5、Release 4 D1–D7 与 D8-1／D8-2 已完成仓内交付；D8-OPS 评审起草中**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **Release 1–4 仓内交付完成；Release 5 / E1 评审起草中**
 
-**状态**:进行中(D8-1 #1341 与 D8-2 #1342 已合，D8-2 最终32路径授权／24路径实际／零越界，PR CI、可信红区与 main CI 全绿；当前只起草 D8-OPS 评审，部署、v1.1 独立稳定窗、证据包、生产预检、不可逆执行、整体复审、前端与真实业务验收均未完成)
+**状态**:进行中(Release 4 的 D8-1 #1341、D8-2 #1342 与 D8-OPS 文档 #1343 均已合并且最终 main CI 全绿；D8-OPS 未执行。当前只起草 Release 5 / E1 评审与 E1-1 精确候选写集，E1–E5 实施、部署、v1.1 独立稳定窗、生产预检与不可逆执行、整体复审、前端及真实业务验收均未完成)
 
 - **D8-2 最终状态（2026-09-22）**：方案 A 的25路径、module 单一导出、owner query facade、四份派生治理摘要及
   一份旧迁移夹具兼容补项，共32路径；实际24路径、零越界，已随 #1342 合入 `802a636a` 并通过最终 main CI。
   这只完成仓库交付，不代表部署、开 Gate、执行 cutover 或真实业务验收。
 - **D8-OPS 当前边界（2026-09-22）**：评审稿把现场动作收敛为“预检窗口授权”和“正式执行授权”两次拍板；
   正式窗口的仓库写集为零，必须现场提供 exact deployed SHA、fleet 同版、v1.1 更早独立稳定、证据包摘要、
-  只读与 worker 排空、ACTIVE GLOBAL actor 及实时签字。当前四份文档仅为计划，不构成任何生产权限。
+  只读与 worker 排空、ACTIVE GLOBAL actor 及实时签字。计划已随 #1343 合入，但不构成任何生产权限。
+- **E1 当前边界（2026-09-22）**：推荐方案 A 把贡献政策拆为 E1-1 数据与定义地基、E1-2 System 目录、
+  E1-3 选择与发布冻结；当前 docs-only 评审只冻结强类型 V1 definition、三刀 DoD、E1-1 的 46 个候选路径、
+  验证与未来授权语句。旧 `ContributionRule`、考勤预填、正式账本、每日上限、V2–V8 历史快照和 Readiness
+  行为均不改变；E2 旧规则转换、E3 shadow、E4 结算接线、E5 正式切换必须继续独立立项。
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 
