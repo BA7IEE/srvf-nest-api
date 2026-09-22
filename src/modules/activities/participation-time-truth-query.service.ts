@@ -44,13 +44,34 @@ interface LegacyRow {
   recognizedSeconds: bigint;
 }
 
+interface OfficialLegacyRow extends LegacyRow {
+  memberId: string;
+}
+
 interface ClassifiedRootRow {
   rootEntryId: string;
   rootManifestId: string;
   activityId: string;
   participationIdentityId: string;
+  memberId: string;
   categoryCode: string;
   recognizedSeconds: number;
+}
+
+export interface OfficialParticipationTimeTotal {
+  activityId: string;
+  memberId: string;
+  eligibleSeconds: number;
+}
+
+export interface OfficialParticipationTimeSnapshot {
+  receipt: ActivityTimeCutoverReceiptResult;
+  totals: OfficialParticipationTimeTotal[];
+}
+
+export interface OfficialParticipationTimeScope {
+  activityIds?: readonly string[];
+  memberIds?: readonly string[];
 }
 
 interface CorrectionManifestRow {
@@ -190,6 +211,33 @@ function sliceGroupKey(first: string, second: string, third: string): string {
   return `${first}\u0000${second}\u0000${third}`;
 }
 
+function activityMemberKey(activityId: string, memberId: string): string {
+  return `${activityId}\u0000${memberId}`;
+}
+
+function hasEmptyOfficialScope(input: OfficialParticipationTimeScope): boolean {
+  return input.activityIds?.length === 0 || input.memberIds?.length === 0;
+}
+
+export function eligibleSecondsToServiceHours(eligibleSeconds: number): Prisma.Decimal {
+  if (!Number.isSafeInteger(eligibleSeconds) || eligibleSeconds < 0) invalidTruth();
+  return new Prisma.Decimal(eligibleSeconds)
+    .div(3_600)
+    .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+}
+
+export function sumOfficialEligibleSeconds(
+  totals: readonly Pick<OfficialParticipationTimeTotal, 'eligibleSeconds'>[],
+): number {
+  let result = 0;
+  for (const row of totals) {
+    if (!Number.isSafeInteger(row.eligibleSeconds) || row.eligibleSeconds < 0) invalidTruth();
+    result += row.eligibleSeconds;
+    if (!Number.isSafeInteger(result)) invalidTruth();
+  }
+  return result;
+}
+
 function groupSlices(
   rows: readonly SliceRow[],
   keyOf: (row: SliceRow) => string | null,
@@ -270,7 +318,11 @@ export class ParticipationTimeTruthQueryService {
     const verifiedReceipt = verifyActivityTimeCutoverReceipt(receipt);
     const [legacyRows, roots, clock] = await Promise.all([
       this.readLegacy(tx, input),
-      this.readClassifiedRoots(tx, input.memberId),
+      this.readClassifiedRoots(
+        tx,
+        { memberIds: [input.memberId] },
+        PARTICIPATION_TIME_PROOF_MAX_ROWS,
+      ),
       tx.$queryRaw<Array<{ asOf: Date }>>`SELECT transaction_timestamp() AS "asOf"`,
     ]);
     const legacy = await this.validateLegacyCorrectionChains(tx, legacyRows);
@@ -283,6 +335,88 @@ export class ParticipationTimeTruthQueryService {
       receipt: verifiedReceipt,
       asOf: (clock[0]?.asOf ?? new Date(0)).toISOString(),
       items,
+    };
+  }
+
+  /**
+   * D8-2 official aggregate selector.
+   *
+   * Absence of the singleton receipt deliberately returns `null`: callers then keep their
+   * pre-cutover source byte-for-byte.  Once the receipt exists, every root is validated by the
+   * same legacy/classified correction-chain rules as the formal proof and no caller may fall
+   * back to the compatibility ledger on malformed evidence.
+   */
+  async readOfficialTotalsInTx(
+    tx: Prisma.TransactionClient,
+    input: OfficialParticipationTimeScope = {},
+  ): Promise<OfficialParticipationTimeSnapshot | null> {
+    const receipt = await tx.activityTimeCutoverReceipt.findUnique({
+      where: { id: ACTIVITY_TIME_CUTOVER_RECEIPT_ID },
+    });
+    if (!receipt) return null;
+    const verifiedReceipt = verifyActivityTimeCutoverReceipt(receipt);
+    if (hasEmptyOfficialScope(input)) return { receipt: verifiedReceipt, totals: [] };
+
+    const [legacyRows, roots] = await Promise.all([
+      this.readOfficialLegacy(tx, input),
+      this.readClassifiedRoots(tx, input),
+    ]);
+    const legacyItems = legacyRows.map((row) => ({
+      ledgerDate: row.ledgerDate,
+      activityId: row.activityId,
+      rootManifestId: row.rootManifestId,
+      participationIdentityId: row.participationIdentityId,
+      sourceCategoryCode: 'legacy_recognized_service' as const,
+      sourceEntryId: row.sourceEntryId,
+      latestCorrectionManifestId: null,
+      sourceMode: 'legacy_ledger' as const,
+      recognizedSeconds: toSafeSeconds(row.recognizedSeconds),
+    }));
+    const [legacy, classified] = await Promise.all([
+      this.validateLegacyCorrectionChains(tx, legacyItems),
+      this.materializeClassified(
+        tx,
+        roots,
+        { dateFrom: '0001-01-01', dateTo: '9999-12-31' },
+        undefined,
+      ),
+    ]);
+
+    const memberByIdentity = new Map<string, string>();
+    const totals = new Map<string, OfficialParticipationTimeTotal>();
+    const register = (activityId: string, memberId: string, participationIdentityId: string) => {
+      const priorMemberId = memberByIdentity.get(participationIdentityId);
+      if (priorMemberId !== undefined && priorMemberId !== memberId) invalidTruth();
+      memberByIdentity.set(participationIdentityId, memberId);
+      const key = activityMemberKey(activityId, memberId);
+      if (!totals.has(key)) totals.set(key, { activityId, memberId, eligibleSeconds: 0 });
+    };
+    for (const row of legacyRows)
+      register(row.activityId, row.memberId, row.participationIdentityId);
+    for (const row of roots) register(row.activityId, row.memberId, row.participationIdentityId);
+
+    const add = (item: ParticipationTimeTruthItem) => {
+      const memberId = memberByIdentity.get(item.participationIdentityId);
+      if (memberId === undefined) invalidTruth();
+      const key = activityMemberKey(item.activityId, memberId);
+      const total = totals.get(key);
+      if (!total) invalidTruth();
+      const next = total.eligibleSeconds + item.recognizedSeconds;
+      if (!Number.isSafeInteger(next) || next < 0) invalidTruth();
+      total.eligibleSeconds = next;
+    };
+    for (const item of legacy) add(item);
+    for (const item of classified) {
+      if (item.sourceCategoryCode === 'volunteer_service') add(item);
+    }
+
+    return {
+      receipt: verifiedReceipt,
+      totals: [...totals.values()].sort(
+        (left, right) =>
+          left.activityId.localeCompare(right.activityId) ||
+          left.memberId.localeCompare(right.memberId),
+      ),
     };
   }
 
@@ -332,13 +466,63 @@ export class ParticipationTimeTruthQueryService {
     }));
   }
 
+  private async readOfficialLegacy(
+    tx: Prisma.TransactionClient,
+    input: OfficialParticipationTimeScope,
+  ): Promise<OfficialLegacyRow[]> {
+    const predicates: Prisma.Sql[] = [];
+    if (input.memberIds !== undefined) {
+      predicates.push(Prisma.sql`entry."memberId" IN (${Prisma.join(input.memberIds)})`);
+    }
+    if (input.activityIds !== undefined) {
+      predicates.push(Prisma.sql`entry."activityId" IN (${Prisma.join(input.activityIds)})`);
+    }
+    const scope =
+      predicates.length === 0 ? Prisma.empty : Prisma.sql`AND ${Prisma.join(predicates, ' AND ')}`;
+    return tx.$queryRaw<OfficialLegacyRow[]>(Prisma.sql`
+      SELECT to_char(min(entry."ledgerDate"), 'YYYY-MM-DD') AS "ledgerDate",
+        entry."activityId", entry."memberId",
+        COALESCE(correction."rootManifestId", ordinary.id) AS "rootManifestId",
+        entry."participationIdentityId", min(entry.id) AS "sourceEntryId",
+        ((sum(entry."serviceHoursDelta") * 100)::bigint * 36) AS "recognizedSeconds"
+      FROM "ParticipationLedgerEntry" entry
+      JOIN "LedgerPostingBatch" batch
+        ON batch.id = entry."postingBatchId" AND batch."statusCode" = 'committed'
+      LEFT JOIN "ParticipationTimeLedgerManifest" ordinary
+        ON ordinary."postingBatchId" = batch.id
+      LEFT JOIN "ParticipationTimeCorrectionManifest" correction
+        ON correction."postingBatchId" = batch.id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM "ParticipationTimeCutoverBinding" binding
+        WHERE binding."rootManifestId" = COALESCE(correction."rootManifestId", ordinary.id)
+      )
+      ${scope}
+      GROUP BY entry."activityId", entry."memberId",
+        COALESCE(correction."rootManifestId", ordinary.id), entry."participationIdentityId"
+      ORDER BY entry."activityId", entry."memberId",
+        COALESCE(correction."rootManifestId", ordinary.id), entry."participationIdentityId"
+    `);
+  }
+
   private async readClassifiedRoots(
     tx: Prisma.TransactionClient,
-    memberId: string,
+    input: OfficialParticipationTimeScope,
+    maxRows?: number,
   ): Promise<ClassifiedRootRow[]> {
-    const rows = await tx.$queryRaw<ClassifiedRootRow[]>`
+    const predicates: Prisma.Sql[] = [];
+    if (input.memberIds !== undefined) {
+      predicates.push(Prisma.sql`identity."memberId" IN (${Prisma.join(input.memberIds)})`);
+    }
+    if (input.activityIds !== undefined) {
+      predicates.push(Prisma.sql`entry."activityId" IN (${Prisma.join(input.activityIds)})`);
+    }
+    const scope =
+      predicates.length === 0 ? Prisma.empty : Prisma.sql`AND ${Prisma.join(predicates, ' AND ')}`;
+    const limit = maxRows === undefined ? Prisma.empty : Prisma.sql`LIMIT ${maxRows + 1}`;
+    const rows = await tx.$queryRaw<ClassifiedRootRow[]>(Prisma.sql`
       SELECT entry.id AS "rootEntryId", entry."manifestId" AS "rootManifestId",
-        entry."activityId", entry."participationIdentityId", entry."categoryCode",
+        entry."activityId", entry."participationIdentityId", identity."memberId",
+        entry."categoryCode",
         entry."recognizedSeconds"
       FROM "ParticipationTimeLedgerEntry" entry
       JOIN "ParticipationTimeLedgerManifest" root ON root.id = entry."manifestId"
@@ -354,11 +538,12 @@ export class ParticipationTimeTruthQueryService {
       JOIN "ActivityParticipationIdentity" identity
         ON identity.id = entry."participationIdentityId"
         AND identity."activityId" = entry."activityId"
-      WHERE identity."memberId" = ${memberId}
+      WHERE TRUE
+      ${scope}
       ORDER BY root.id, entry.id
-      LIMIT ${PARTICIPATION_TIME_PROOF_MAX_ROWS + 1}
-    `;
-    if (rows.length > PARTICIPATION_TIME_PROOF_MAX_ROWS) {
+      ${limit}
+    `);
+    if (maxRows !== undefined && rows.length > maxRows) {
       throw new BizException(BizCode.ACTIVITY_TIME_PROOF_SCALE_LIMIT);
     }
     if (
@@ -428,6 +613,7 @@ export class ParticipationTimeTruthQueryService {
     tx: Prisma.TransactionClient,
     roots: readonly ClassifiedRootRow[],
     input: { dateFrom: string; dateTo: string },
+    maxRows: number | undefined = PARTICIPATION_TIME_PROOF_MAX_ROWS,
   ): Promise<ParticipationTimeTruthItem[]> {
     if (roots.length === 0) return [];
     const rootIds = [...new Set(roots.map((row) => row.rootManifestId))];
@@ -560,7 +746,7 @@ export class ParticipationTimeTruthQueryService {
         });
       }
     }
-    if (output.length > PARTICIPATION_TIME_PROOF_MAX_ROWS) {
+    if (maxRows !== undefined && output.length > maxRows) {
       throw new BizException(BizCode.ACTIVITY_TIME_PROOF_SCALE_LIMIT);
     }
     return output;

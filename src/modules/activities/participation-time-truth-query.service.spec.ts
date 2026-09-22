@@ -8,6 +8,7 @@ import {
 import {
   ParticipationTimeTruthQueryService,
   allocateSecondsByDate,
+  eligibleSecondsToServiceHours,
   splitIntervalByBeijingDate,
 } from './participation-time-truth-query.service';
 
@@ -33,6 +34,7 @@ function classifiedRoots(count: number) {
     rootManifestId: `root-manifest-${index.toString().padStart(5, '0')}`,
     activityId: 'activity',
     participationIdentityId: `identity-${index.toString().padStart(5, '0')}`,
+    memberId: `member-${index.toString().padStart(5, '0')}`,
     categoryCode: 'volunteer_service',
     recognizedSeconds: 1,
   }));
@@ -76,6 +78,12 @@ function correctionManifest(
 }
 
 describe('D8-1 truth selector', () => {
+  it('converts exact eligible seconds to the existing two-decimal service-hours shape', () => {
+    expect(eligibleSecondsToServiceHours(5_400).toString()).toBe('1.5');
+    expect(eligibleSecondsToServiceHours(18).toString()).toBe('0.01');
+    expect(eligibleSecondsToServiceHours(17).toString()).toBe('0');
+  });
+
   it('splits at Beijing midnight and uses deterministic largest remainder', () => {
     const startAt = new Date('2099-09-20T15:59:30.000Z');
     const endAt = new Date('2099-09-20T16:00:30.000Z');
@@ -584,5 +592,90 @@ describe('D8-1 truth selector', () => {
         dateTo: '2099-12-31',
       }),
     ).rejects.toMatchObject({ biz: BizCode.ACTIVITY_TIME_PROOF_INVALID });
+  });
+
+  it('keeps legacy eligible time, counts classified non-eligible-only pairs as zero, and folds by activity/member', async () => {
+    const roots = [
+      {
+        rootEntryId: 'root-volunteer',
+        rootManifestId: 'manifest-volunteer',
+        activityId: 'activity-1',
+        participationIdentityId: 'identity-1',
+        memberId: 'member-1',
+        categoryCode: 'volunteer_service',
+        recognizedSeconds: 7_200,
+      },
+      {
+        rootEntryId: 'root-training',
+        rootManifestId: 'manifest-training',
+        activityId: 'activity-2',
+        participationIdentityId: 'identity-2',
+        memberId: 'member-2',
+        categoryCode: 'training',
+        recognizedSeconds: 3_600,
+      },
+    ];
+    const tx = {
+      activityTimeCutoverReceipt: { findUnique: jest.fn().mockResolvedValue(receipt()) },
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            ledgerDate: '2099-09-20',
+            activityId: 'activity-1',
+            memberId: 'member-1',
+            rootManifestId: null,
+            participationIdentityId: 'identity-1',
+            sourceEntryId: 'legacy-entry',
+            recognizedSeconds: 3_600n,
+          },
+        ])
+        .mockResolvedValueOnce(roots)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(rootSlices(roots)),
+    };
+
+    await expect(
+      new ParticipationTimeTruthQueryService().readOfficialTotalsInTx(tx as never),
+    ).resolves.toMatchObject({
+      totals: [
+        { activityId: 'activity-1', memberId: 'member-1', eligibleSeconds: 10_800 },
+        { activityId: 'activity-2', memberId: 'member-2', eligibleSeconds: 0 },
+      ],
+    });
+  });
+
+  it('keeps official aggregate query count constant for 1, 100, and 2,000 identities', async () => {
+    for (const count of [1, 100, 2_000]) {
+      const roots = classifiedRoots(count);
+      const tx = {
+        activityTimeCutoverReceipt: { findUnique: jest.fn().mockResolvedValue(receipt()) },
+        $queryRaw: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce(roots)
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce(rootSlices(roots)),
+      };
+      const result = await new ParticipationTimeTruthQueryService().readOfficialTotalsInTx(
+        tx as never,
+        { activityIds: ['activity'] },
+      );
+      expect(result?.totals).toHaveLength(count);
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(4);
+    }
+  });
+
+  it('returns null before cutover without touching either ledger regime', async () => {
+    const tx = {
+      activityTimeCutoverReceipt: { findUnique: jest.fn().mockResolvedValue(null) },
+      $queryRaw: jest.fn(),
+    };
+    await expect(
+      new ParticipationTimeTruthQueryService().readOfficialTotalsInTx(tx as never, {
+        memberIds: ['member'],
+      }),
+    ).resolves.toBeNull();
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
   });
 });

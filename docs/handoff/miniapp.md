@@ -1,6 +1,6 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
-## D8-1 我的正式参与时长证明（候选分支，未上线）
+## D8 我的正式参与时长证明与累计（D8-2 候选，未上线）
 
 新增 `GET /api/app/v1/my/participation-time-proof`，不接收 `memberId`，后端只从当前登录用户解析 active App member。
 查询必须传 `dateFrom`、`dateTo`，区间最多366天；`page` 从1开始，`pageSize` 为1..100。这个入口与
@@ -13,7 +13,10 @@
 
 `20235` 表示切换收据尚不存在，应显示“正式证明尚未启用”，不是零时长；`20236` 表示证据链不完整，
 `20237` 表示查询集合超上限，`20238` 表示范围错误。任一具名错误都不得在屏幕上降级成旧汇总假冒正式证明。
-当前仅后端候选分支与生成 client；前端页面、PR 合并、部署、Gate、D8-2 官方统计接线和 D8-OPS 生产切换都未完成。
+receipt 存在后，既有 `GET /api/app/v1/my/participation-summary` 的 `totalServiceHours` 改为本人全部根账的
+eligible 秒数一次换算；`activityCount`、`recordCount`、`contributionPoints` 和嵌套 `ledgerTotals` 不改来源。
+receipt 不存在时保持旧口径；链不完整时 fail-closed，客户端不得降级回旧小时数。D8-1 已入 main，当前
+D8-2 仍是 Draft 候选；前端页面、PR 合并、部署、Gate 和 D8-OPS 生产切换都未完成。
 
 ## D7-1 分类认定更正（分支验收中，未上线）
 

@@ -18,6 +18,7 @@ import {
 } from '../../src/modules/activities/activity-closure.service';
 import { LedgerPostingService } from '../../src/modules/activities/ledger-posting.service';
 import { LedgerPreparationService } from '../../src/modules/activities/ledger-preparation.service';
+import { ParticipationTimeTruthQueryService } from '../../src/modules/activities/participation-time-truth-query.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -585,6 +586,58 @@ describe('机器关账 —— 十二步 / 八类硬检查 (合同 §5.15 + §3.2
       expect(intents).toHaveLength(1);
       expect(intents[0].destinationRef).toBe(fixture.ownerMemberId);
       expect(intents[0].aggregateId).toBe(fixture.activityId);
+    });
+
+    it('D8-2 receipt-present 新 closure 只替换 eligible 工时，贡献不漂移且重放不回写历史', async () => {
+      const fixture = await createClosureFixture({ memberCount: 2 });
+      await createConsistentCapacityBucket(fixture);
+      const truth = app.get(ParticipationTimeTruthQueryService);
+      const official = jest.spyOn(truth, 'readOfficialTotalsInTx').mockResolvedValue({
+        receipt: {} as never,
+        totals: [
+          {
+            activityId: fixture.activityId,
+            memberId: fixture.ownerMemberId,
+            eligibleSeconds: 5_400,
+          },
+        ],
+      });
+
+      try {
+        const first = await runClose(fixture);
+        if (first.outcome !== 'closed') {
+          throw new Error(`期望关账成功,实际缺口:${JSON.stringify(first.gaps)}`);
+        }
+        expect(first.closure.serviceHours).toBe('1.50');
+        expect(first.closure.contributionPoints).toBe('2.40');
+
+        official.mockResolvedValue({
+          receipt: {} as never,
+          totals: [
+            {
+              activityId: fixture.activityId,
+              memberId: fixture.ownerMemberId,
+              eligibleSeconds: 32_400,
+            },
+          ],
+        });
+        const replay = await runClose(fixture);
+        if (replay.outcome !== 'closed') throw new Error('合法重放不应被关账缺口阻断');
+        expect(replay.closure).toMatchObject({
+          closureRevisionId: first.closure.closureRevisionId,
+          serviceHours: '1.50',
+          contributionPoints: '2.40',
+          replayed: true,
+        });
+        expect(official).toHaveBeenCalledTimes(1);
+        await expect(
+          prisma.activitySettlementClosureRevision.count({
+            where: { activityId: fixture.activityId },
+          }),
+        ).resolves.toBe(1);
+      } finally {
+        official.mockRestore();
+      }
     });
   });
 

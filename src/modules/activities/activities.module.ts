@@ -461,6 +461,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityBatchWorker,
     LedgerPostingService,
     LedgerQueryService,
+    // D8-2 official consumers in attendances/meta reuse the one receipt-aware truth selector.
+    ParticipationTimeTruthQueryService,
     ActivityClosureService,
     CorrectionApplicationService,
     // 存量考勤账本化转换刀(P1-28 第 7 批② A 案,2026-08-27 拍板):零端点 / 零 DTO /

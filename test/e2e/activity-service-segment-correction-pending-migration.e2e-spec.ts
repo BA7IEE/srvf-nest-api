@@ -113,7 +113,7 @@ describe('pending segment nonempty legacy upgrade', () => {
       sql(readFileSync(join('prisma/migrations', name, 'migration.sql'), 'utf8'));
     }
     // This replay intentionally stops before migration 115, while the checked-in
-    // Prisma client is generated from migration 125. Keep the real services on
+    // Prisma client is generated from migration 129. Keep the real services on
     // the legacy fixture with readback-only columns/tables. The empty classified
     // tables reject every INSERT: this is not a D4/D6 migration or classified fixture.
     sql(`
@@ -152,6 +152,15 @@ describe('pending segment nonempty legacy upgrade', () => {
         "contentHash" TEXT NOT NULL, "expectedEntryCount" INTEGER NOT NULL,
         "recognizedSecondsTotal" BIGINT NOT NULL, "formatVersion" INTEGER NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL, CHECK (false)
+      );
+      CREATE TABLE "ActivityTimeCutoverReceipt" (
+        "id" TEXT PRIMARY KEY, "operationKey" TEXT NOT NULL UNIQUE,
+        "requestHash" TEXT NOT NULL, "deployedMainSha" TEXT NOT NULL,
+        "evidenceBundleHash" TEXT NOT NULL, "actorUserId" TEXT NOT NULL,
+        "cutoverAt" TIMESTAMPTZ(3) NOT NULL DEFAULT clock_timestamp(),
+        "formatVersion" INTEGER NOT NULL DEFAULT 1, "contentHash" TEXT NOT NULL,
+        "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT clock_timestamp(),
+        CHECK (false)
       );
     `);
     prisma = app.get(PrismaService);
