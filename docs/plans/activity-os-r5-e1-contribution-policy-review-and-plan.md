@@ -151,7 +151,7 @@ V1–V4 模板、V2–V8 提案／快照及其 hash 不回改。批准时冻结�
 ### 6.1 数据、实现与新增测试（9 路径）
 
 1. `prisma/schema.prisma`
-2. `prisma/migrations/<第130条_activity_os_r5_e1_contribution_policy_foundation>/migration.sql`
+2. `prisma/migrations/20260922194000_activity_os_r5_e1_contribution_policy_foundation/migration.sql`
 3. `src/common/datetime/clock-authority.spec.ts`
 4. `src/modules/activities/activity-contribution-policy-definition.ts`
 5. `src/modules/activities/activity-contribution-policy-definition.spec.ts`
