@@ -9,8 +9,8 @@
 > Human 权限、两类闭合审计和四类命令收据；`SUPER_ADMIN` 不短路，ServicePrincipal 禁止访问，写命令在同一事务内
 > 完成两轮身份／权限复核、锁定、事实、收据与审计。工作树读数为 653 Endpoint／267 权限／172 AuditLogEvent；
 > 不接旧 `ContributionRule`、考勤、账本、Readiness、proposal 或 Gate，不改 schema/migration。目标单测、contract
-> 与两份定向 E2E、治理登记和最终检查均已通过，4b 已按最终读数重签；当前待提交、推送并创建 Draft PR。
-> E1-3、生产与 D8-OPS 未实施。
+> 与两份定向 E2E、治理登记和最终检查均已通过，4b 已按最终读数重签。Draft
+> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 已创建并等待 CI；E1-3、生产与 D8-OPS 未实施。
 
 > **D8-1 实施候选（2026-09-21，未提交、未合并、未上线）**：按 D8 方案 A 建立不可逆切换收据、
 > 切换后根账 binding、统一 `ParticipationTimeTruthQueryService`、只读预检/执行 CLI，以及 App self 和

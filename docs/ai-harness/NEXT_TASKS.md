@@ -12,8 +12,10 @@
 > [精确计划](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)第 11–15 节实施 8 个 Human System 目录接口、
 > 两项显式 GLOBAL 权限、两类审计、四命令收据、锁后复核与八个 BizCode。工作树为 130 migration／179 model／
 > 653 Endpoint／267 权限／172 AuditLogEvent；目标单测、contract、两份定向 E2E、lint、typecheck、build、Harness
-> 与 docs guards 已通过，4b 已按最终权限目录摘要重签，当前待提交、推送并创建 Draft PR。不改 schema/migration，
-> 不执行 D8-OPS，不启用 Gate。
+> 与 docs guards 已通过，4b 已按最终权限目录摘要重签。Draft
+> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 已创建，首个 head
+> `dcf06767af6cb2c309962946556c4626a7e0c119`，当前等待 PR CI 冷跑。不改 schema/migration，不执行 D8-OPS，
+> 不启用 Gate、不 Ready、不合并。
 > E1-3、E2–E5、前端发布、生产、历史转换、数据删除或重算仍未授权。
 
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1

@@ -564,8 +564,9 @@ DoD：准确登记 #1345 merge／最终 main CI；冻结 E1-2 的 API、DTO、�
   172 AuditLogEvent（167 active）；目标单测、contract 以及目录／并发两份定向 E2E 已通过。
 - 治理登记、OpenAPI 和前端客户端已按真实差异刷新；最终 lint、typecheck、build、Harness、docs guards 均通过。
   4b 已按权限267、Audit events 172总计／167活跃、字典30类／277项、seed摘要 `9a62f918affc` 及权限目录完整摘要
-  `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签；当前待提交、推送并创建 Draft PR，
-  不 Ready、不合并、不操作生产、不启用 Gate。
+  `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签。Draft
+  [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 已创建，首个 head
+  `dcf06767af6cb2c309962946556c4626a7e0c119`，当前等待 PR CI 冷跑；不 Ready、不合并、不操作生产、不启用 Gate。
 
 本次未做：E1-3、E2–E5、旧 `ContributionRule` 转换、考勤／账本／Readiness 接线、角色默认授码、前端发布、
 D8-OPS、生产部署、Gate、数据删除、回填、转换、重分类或重算。

@@ -10,7 +10,8 @@
 > [main CI 35822456365](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35822456365) 成功。E1-2 复用三表，
 > **不改 schema/migration**，只为 System 目录控制面新增两项零默认授予权限与两类审计；当前工作树读数为
 > 267 权限／172 AuditLogEvent；4b 已按 seed 摘要 `9a62f918affc` 与权限目录摘要
-> `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签。仍未接旧贡献规则、正式账本、Readiness、Gate、
+> `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签。Draft
+> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 已创建并等待 CI。仍未接旧贡献规则、正式账本、Readiness、Gate、
 > D8-OPS 或生产，不删除或重算任何业务数据。下文 D8/D7-2 描述保留为历史时点。
 
 > **D8-1 当前实施工作树（2026-09-21，未提交、未合并、未部署）**：当前累计 **129 个 migration、176 个模型**；第129条
