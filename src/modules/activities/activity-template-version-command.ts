@@ -18,7 +18,7 @@ export interface TemplateVersionCommandResult {
   id: string;
   code: string;
   version: number;
-  schemaVersion: 3 | 4;
+  schemaVersion: 3 | 4 | 5;
   statusCode: ActivityMetricStatus;
   definitionHash: string;
 }
@@ -38,7 +38,7 @@ export function parseTemplateVersionReceipt(
     ]);
     const id = metricText(v.id, 64);
     if (
-      (v.schemaVersion !== 3 && v.schemaVersion !== 4) ||
+      (v.schemaVersion !== 3 && v.schemaVersion !== 4 && v.schemaVersion !== 5) ||
       (targetId !== undefined && targetId !== id)
     )
       throw new TypeError('invalid template receipt');
@@ -91,7 +91,7 @@ export class ActivityTemplateVersionCommand {
       tx: Prisma.TransactionClient,
       actor: CurrentUserPayload,
     ) => Promise<TemplateVersionCommandResult>;
-    /** V4 callers can require their additional catalogue qualification even on an idempotent replay. */
+    /** V4/V5 callers can require their additional catalogue qualifications on replay. */
     revalidateReplay?: (
       tx: Prisma.TransactionClient,
       actor: CurrentUserPayload,

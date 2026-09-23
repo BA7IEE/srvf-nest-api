@@ -403,6 +403,11 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
           data_type: 'text',
           is_nullable: 'YES',
         },
+        {
+          column_name: 'contributionPolicySelectionRevisionId',
+          data_type: 'text',
+          is_nullable: 'YES',
+        },
       ]);
 
       const fks = await prisma.$queryRaw<Array<{ conname: string; target: string }>>`
@@ -418,6 +423,10 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
           target: 'activity_publish_reviews',
         },
         { conname: 'ActivityRuleSnapshot_templateVersionId_fkey', target: '"ActivityTemplate"' },
+        {
+          conname: 'acps_snapshot_revision_fkey',
+          target: '"ActivityContributionPolicySelectionRevision"',
+        },
         {
           conname: 'atps_snapshot_revision_fkey',
           target: '"ActivityTimePolicySelectionRevision"',
@@ -529,6 +538,7 @@ describe('活动改造 v1.1 第 3 批①.5 schema 约束(第 76 migration)', () 
         ORDER BY tgname
       `;
       expect(triggers).toEqual([
+        { tgname: 'acps_snapshot_reference_guard' },
         { tgname: 'atps_snapshot_reference_guard' },
         { tgname: 'trg_activity_rule_snapshot_10_append_only' },
       ]);

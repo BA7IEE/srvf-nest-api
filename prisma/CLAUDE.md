@@ -1,5 +1,15 @@
 # prisma — 本地铁律
 
+> **E1-3 implementation 当前工作树（2026-09-24，未提交、未建 PR）**：现为 **131 个 migration、182 个模型**。
+> 第131条 `20260923190000_activity_os_r5_e1_3_contribution_policy_selection` 只新增不可变选择 revision、item、
+> command receipt 三表，向 Activity／发布快照增加可空同活动指针，并补复合外键、完整性、当前指针、收据结果及
+> 不可改删守卫；模板命令收据只扩展接受 schemaVersion 5。零 DML、回填、删除或旧 migration 修改；三张新表和
+> 历史选择永久留存。最终 SQL SHA-256 `11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5`
+> 的 3b 已重签；获准 `app_test_w98` 的131条冷回放、130→131非空升级及数据库正反例已通过。
+> 4b 已按269权限、173/168审计、30/277字典、seed摘要 `d2f330814b0a` 及权限目录摘要
+> `7685760467fbe0c06640c58805f8c15ef917b38f0edc7800abc21b2b17614203` 重签；本地最终门禁已通过，
+> Draft PR CI 尚未运行。未操作生产、启用 Gate、转换旧 `ContributionRule`、接正式贡献结算或删除／重算数据。
+
 > **E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：当前仍为 **130 个 migration、179 个模型**；第 130 条
 > `20260922194000_activity_os_r5_e1_contribution_policy_foundation` 只新增稳定政策、不可变版本与命令收据三表及
 > 对应约束／守卫，纯 additive，零 DML、回填、删除或旧表修改。版本固定

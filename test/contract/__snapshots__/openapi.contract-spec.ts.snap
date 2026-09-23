@@ -1639,6 +1639,212 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminActivityContributionPolicyPointerDto": {
+    "properties": {
+      "definitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "evaluatorVersion": {
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+      "policyId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "versionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "policyId",
+      "versionId",
+      "definitionHash",
+      "evaluatorVersion",
+    ],
+    "type": "object",
+  },
+  "AdminActivityContributionPolicySelectionChangeDto": {
+    "properties": {
+      "scope": {
+        "$ref": "#/components/schemas/AdminActivityContributionPolicySelectionScopeDto",
+      },
+      "selection": {
+        "$ref": "#/components/schemas/AdminActivityContributionPolicySelectionValueDto",
+      },
+    },
+    "required": [
+      "scope",
+      "selection",
+    ],
+    "type": "object",
+  },
+  "AdminActivityContributionPolicySelectionItemDto": {
+    "properties": {
+      "scope": {
+        "$ref": "#/components/schemas/AdminActivityContributionPolicySelectionScopeDto",
+      },
+      "selection": {
+        "$ref": "#/components/schemas/AdminActivityContributionPolicySelectionValueDto",
+      },
+    },
+    "required": [
+      "scope",
+      "selection",
+    ],
+    "type": "object",
+  },
+  "AdminActivityContributionPolicySelectionResponseDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/AdminActivityContributionPolicySelectionItemDto",
+        },
+        "type": "array",
+      },
+      "page": {
+        "type": "number",
+      },
+      "pageSize": {
+        "type": "number",
+      },
+      "resolutionSummary": {
+        "type": "object",
+      },
+      "resolved": {
+        "items": {
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "revision": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "selectionHash": {
+        "nullable": true,
+        "type": "string",
+      },
+      "selectionRevisionId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "total": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "activityId",
+      "selectionRevisionId",
+      "revision",
+      "selectionHash",
+      "createdAt",
+      "items",
+      "resolved",
+      "total",
+      "page",
+      "pageSize",
+      "resolutionSummary",
+    ],
+    "type": "object",
+  },
+  "AdminActivityContributionPolicySelectionResultDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "revision": {
+        "minimum": 1,
+        "type": "number",
+      },
+      "selectionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "selectionRevisionId": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "activityId",
+      "selectionRevisionId",
+      "revision",
+      "selectionHash",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "AdminActivityContributionPolicySelectionScopeDto": {
+    "properties": {
+      "layerCode": {
+        "enum": [
+          "activity",
+          "position",
+        ],
+        "type": "string",
+      },
+      "positionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+      "sessionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "layerCode",
+      "sessionId",
+      "positionId",
+    ],
+    "type": "object",
+  },
+  "AdminActivityContributionPolicySelectionValueDto": {
+    "properties": {
+      "mode": {
+        "enum": [
+          "inherit",
+          "explicit",
+        ],
+        "type": "string",
+      },
+      "pointer": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminActivityContributionPolicyPointerDto",
+          },
+        ],
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "mode",
+      "pointer",
+    ],
+    "type": "object",
+  },
   "AdminActivityFeedbackListItemDto": {
     "properties": {
       "comment": {
@@ -2296,6 +2502,58 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminActivityTemplateDefinitionV5Dto": {
+    "properties": {
+      "activity": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminTemplateActivityDefinitionDto",
+          },
+        ],
+        "description": "完整活动蓝图",
+      },
+      "contributionPolicySelection": {
+        "$ref": "#/components/schemas/AdminTemplateContributionPolicySelectionDto",
+      },
+      "metricSelection": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminActivityMetricSelectionInputDto",
+          },
+        ],
+        "description": "显式指标选择",
+      },
+      "registrationForm": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminTemplateRegistrationFormDto",
+          },
+        ],
+        "description": "完整 governed 表单；显式 null 表示不建自定义表单",
+        "nullable": true,
+        "type": "object",
+      },
+      "sessions": {
+        "description": "完整场次蓝图，允许空",
+        "items": {
+          "$ref": "#/components/schemas/AdminTemplateSessionDefinitionDto",
+        },
+        "type": "array",
+      },
+      "timePolicySelection": {
+        "$ref": "#/components/schemas/AdminTemplateTimePolicySelectionDto",
+      },
+    },
+    "required": [
+      "activity",
+      "sessions",
+      "registrationForm",
+      "metricSelection",
+      "timePolicySelection",
+      "contributionPolicySelection",
+    ],
+    "type": "object",
+  },
   "AdminActivityTemplateFamilySummaryDto": {
     "properties": {
       "categoryCode": {
@@ -2337,9 +2595,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "schemaVersion": {
-        "description": "V4 生命周期命令必须显式传 4；V3 省略保持历史重放合同",
+        "description": "V4/V5 生命周期命令必须显式传对应版本；V3 省略保持历史重放合同",
         "enum": [
           4,
+          5,
         ],
         "type": "number",
       },
@@ -2370,6 +2629,7 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "enum": [
           3,
           4,
+          5,
         ],
         "type": "number",
       },
@@ -2428,6 +2688,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           },
           {
             "$ref": "#/components/schemas/AdminActivityTemplateDefinitionV4Dto",
+          },
+          {
+            "$ref": "#/components/schemas/AdminActivityTemplateDefinitionV5Dto",
           },
         ],
       },
@@ -3033,13 +3296,16 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "definition": {
-        "description": "完整定义；省略 schemaVersion 为 V3，显式 schemaVersion=4 为 V4；与复制来源形状互斥",
+        "description": "完整定义；省略 schemaVersion 为 V3，显式 4/5 对应 V4/V5；与复制来源形状互斥",
         "oneOf": [
           {
             "$ref": "#/components/schemas/AdminActivityTemplateDefinitionV3Dto",
           },
           {
             "$ref": "#/components/schemas/AdminActivityTemplateDefinitionV4Dto",
+          },
+          {
+            "$ref": "#/components/schemas/AdminActivityTemplateDefinitionV5Dto",
           },
         ],
       },
@@ -3086,9 +3352,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "schemaVersion": {
-        "description": "仅 V4 显式传 4；省略保持历史 V3 创建合同",
+        "description": "V4/V5 显式传对应版本；省略保持历史 V3 创建合同",
         "enum": [
           4,
+          5,
         ],
         "type": "number",
       },
@@ -3872,6 +4139,34 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminPatchActivityContributionPolicySelectionDto": {
+    "properties": {
+      "changes": {
+        "items": {
+          "$ref": "#/components/schemas/AdminActivityContributionPolicySelectionChangeDto",
+        },
+        "maxItems": 10001,
+        "minItems": 1,
+        "type": "array",
+      },
+      "expectedRevision": {
+        "maximum": 2147483646,
+        "minimum": 0,
+        "type": "number",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedRevision",
+      "changes",
+    ],
+    "type": "object",
+  },
   "AdminPatchActivityTimePolicySelectionDto": {
     "properties": {
       "changes": {
@@ -4646,6 +4941,65 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AdminTemplateContributionPolicyExplicitSelectionDto": {
+    "properties": {
+      "mode": {
+        "enum": [
+          "explicit",
+        ],
+        "type": "string",
+      },
+      "pointer": {
+        "$ref": "#/components/schemas/AdminActivityContributionPolicyPointerDto",
+      },
+    },
+    "required": [
+      "mode",
+      "pointer",
+    ],
+    "type": "object",
+  },
+  "AdminTemplateContributionPolicyPositionOverrideDto": {
+    "properties": {
+      "positionCode": {
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string",
+      },
+      "selection": {
+        "$ref": "#/components/schemas/AdminTemplateContributionPolicyExplicitSelectionDto",
+      },
+      "sessionCode": {
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string",
+      },
+    },
+    "required": [
+      "sessionCode",
+      "positionCode",
+      "selection",
+    ],
+    "type": "object",
+  },
+  "AdminTemplateContributionPolicySelectionDto": {
+    "properties": {
+      "activityDefault": {
+        "$ref": "#/components/schemas/AdminActivityContributionPolicySelectionValueDto",
+      },
+      "positionOverrides": {
+        "items": {
+          "$ref": "#/components/schemas/AdminTemplateContributionPolicyPositionOverrideDto",
+        },
+        "type": "array",
+      },
+    },
+    "required": [
+      "activityDefault",
+      "positionOverrides",
+    ],
+    "type": "object",
+  },
   "AdminTemplateFormChoiceDto": {
     "properties": {
       "label": {
@@ -5413,6 +5767,9 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
           {
             "$ref": "#/components/schemas/AdminActivityTemplateDefinitionV4Dto",
           },
+          {
+            "$ref": "#/components/schemas/AdminActivityTemplateDefinitionV5Dto",
+          },
         ],
       },
       "expectedDefinitionHash": {
@@ -5427,9 +5784,10 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "type": "string",
       },
       "schemaVersion": {
-        "description": "V4 生命周期命令必须显式传 4；V3 省略保持历史重放合同",
+        "description": "V4/V5 生命周期命令必须显式传对应版本；V3 省略保持历史重放合同",
         "enum": [
           4,
+          5,
         ],
         "type": "number",
       },
@@ -5846,6 +6204,256 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "outOfRange",
       "createdAt",
       "updatedAt",
+    ],
+    "type": "object",
+  },
+  "AppActivityContributionPolicyOptionDto": {
+    "properties": {
+      "definitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "effectiveFrom": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "effectiveUntil": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "evaluatorVersion": {
+        "minimum": 1,
+        "type": "number",
+      },
+      "policyCode": {
+        "type": "string",
+      },
+      "policyId": {
+        "type": "string",
+      },
+      "policyName": {
+        "type": "string",
+      },
+      "versionId": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "policyId",
+      "versionId",
+      "definitionHash",
+      "evaluatorVersion",
+      "policyCode",
+      "policyName",
+      "effectiveFrom",
+      "effectiveUntil",
+    ],
+    "type": "object",
+  },
+  "AppActivityContributionPolicyPointerDto": {
+    "properties": {
+      "definitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "evaluatorVersion": {
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+      "policyId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "versionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "policyId",
+      "versionId",
+      "definitionHash",
+      "evaluatorVersion",
+    ],
+    "type": "object",
+  },
+  "AppActivityContributionPolicySelectionChangeDto": {
+    "properties": {
+      "scope": {
+        "$ref": "#/components/schemas/AppActivityContributionPolicySelectionScopeDto",
+      },
+      "selection": {
+        "$ref": "#/components/schemas/AppActivityContributionPolicySelectionValueDto",
+      },
+    },
+    "required": [
+      "scope",
+      "selection",
+    ],
+    "type": "object",
+  },
+  "AppActivityContributionPolicySelectionItemDto": {
+    "properties": {
+      "scope": {
+        "$ref": "#/components/schemas/AppActivityContributionPolicySelectionScopeDto",
+      },
+      "selection": {
+        "$ref": "#/components/schemas/AppActivityContributionPolicySelectionValueDto",
+      },
+    },
+    "required": [
+      "scope",
+      "selection",
+    ],
+    "type": "object",
+  },
+  "AppActivityContributionPolicySelectionResponseDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/AppActivityContributionPolicySelectionItemDto",
+        },
+        "type": "array",
+      },
+      "page": {
+        "type": "number",
+      },
+      "pageSize": {
+        "type": "number",
+      },
+      "resolutionSummary": {
+        "type": "object",
+      },
+      "resolved": {
+        "items": {
+          "type": "object",
+        },
+        "type": "array",
+      },
+      "revision": {
+        "minimum": 0,
+        "type": "number",
+      },
+      "selectionHash": {
+        "nullable": true,
+        "type": "string",
+      },
+      "selectionRevisionId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "total": {
+        "type": "number",
+      },
+    },
+    "required": [
+      "activityId",
+      "selectionRevisionId",
+      "revision",
+      "selectionHash",
+      "createdAt",
+      "items",
+      "resolved",
+      "total",
+      "page",
+      "pageSize",
+      "resolutionSummary",
+    ],
+    "type": "object",
+  },
+  "AppActivityContributionPolicySelectionResultDto": {
+    "properties": {
+      "activityId": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "revision": {
+        "minimum": 1,
+        "type": "number",
+      },
+      "selectionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "selectionRevisionId": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "activityId",
+      "selectionRevisionId",
+      "revision",
+      "selectionHash",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "AppActivityContributionPolicySelectionScopeDto": {
+    "properties": {
+      "layerCode": {
+        "enum": [
+          "activity",
+          "position",
+        ],
+        "type": "string",
+      },
+      "positionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+      "sessionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "layerCode",
+      "sessionId",
+      "positionId",
+    ],
+    "type": "object",
+  },
+  "AppActivityContributionPolicySelectionValueDto": {
+    "properties": {
+      "mode": {
+        "enum": [
+          "inherit",
+          "explicit",
+        ],
+        "type": "string",
+      },
+      "pointer": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppActivityContributionPolicyPointerDto",
+          },
+        ],
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "mode",
+      "pointer",
     ],
     "type": "object",
   },
@@ -10065,6 +10673,50 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppCreationContributionPolicyPositionOverrideDto": {
+    "properties": {
+      "positionCode": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string",
+      },
+      "selection": {
+        "$ref": "#/components/schemas/AppActivityContributionPolicySelectionValueDto",
+      },
+      "sessionCode": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "type": "string",
+      },
+    },
+    "required": [
+      "sessionCode",
+      "positionCode",
+      "selection",
+    ],
+    "type": "object",
+  },
+  "AppCreationContributionPolicySelectionInputDto": {
+    "properties": {
+      "activity": {
+        "$ref": "#/components/schemas/AppActivityContributionPolicySelectionValueDto",
+      },
+      "positionOverrides": {
+        "items": {
+          "$ref": "#/components/schemas/AppCreationContributionPolicyPositionOverrideDto",
+        },
+        "maxItems": 10000,
+        "type": "array",
+      },
+    },
+    "required": [
+      "activity",
+      "positionOverrides",
+    ],
+    "type": "object",
+  },
   "AppCreationPlaceCoordinateDto": {
     "properties": {
       "coordinateSystemCode": {
@@ -10257,6 +10909,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         ],
         "type": "string",
       },
+      "contributionPolicySelection": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppEmergencyContributionPolicySelectionInputDto",
+          },
+        ],
+        "description": "可选活动级贡献政策选择；紧急创建不接受尚不存在的岗位覆盖",
+      },
       "endAt": {
         "description": "结束时间，必须晚于开始时间",
         "format": "date-time",
@@ -10342,6 +11002,17 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
       "initiatorMemberId",
       "activityTypeCode",
       "allocationModeCode",
+    ],
+    "type": "object",
+  },
+  "AppEmergencyContributionPolicySelectionInputDto": {
+    "properties": {
+      "activity": {
+        "$ref": "#/components/schemas/AppActivityContributionPolicySelectionValueDto",
+      },
+    },
+    "required": [
+      "activity",
     ],
     "type": "object",
   },
@@ -14612,6 +15283,34 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "AppPatchActivityContributionPolicySelectionDto": {
+    "properties": {
+      "changes": {
+        "items": {
+          "$ref": "#/components/schemas/AppActivityContributionPolicySelectionChangeDto",
+        },
+        "maxItems": 10001,
+        "minItems": 1,
+        "type": "array",
+      },
+      "expectedRevision": {
+        "maximum": 2147483646,
+        "minimum": 0,
+        "type": "number",
+      },
+      "operationKey": {
+        "maxLength": 128,
+        "minLength": 8,
+        "type": "string",
+      },
+    },
+    "required": [
+      "operationKey",
+      "expectedRevision",
+      "changes",
+    ],
+    "type": "object",
+  },
   "AppPatchActivityTimePolicySelectionDto": {
     "properties": {
       "changes": {
@@ -14776,6 +15475,14 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "minimum": 1,
         "nullable": true,
         "type": "number",
+      },
+      "contributionPolicySelection": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AppCreationContributionPolicySelectionInputDto",
+          },
+        ],
+        "description": "可选活动／岗位贡献政策选择；岗位使用本次请求内稳定 code",
       },
       "defaultCheckInRadiusMeters": {
         "description": "默认签到半径（米）；沿既有校验",
@@ -20606,6 +21313,111 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "ChangeReviewContributionPolicyPointerDto": {
+    "properties": {
+      "definitionHash": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string",
+      },
+      "evaluatorVersion": {
+        "maximum": 2147483647,
+        "minimum": 1,
+        "type": "number",
+      },
+      "policyId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "versionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "policyId",
+      "versionId",
+      "definitionHash",
+      "evaluatorVersion",
+    ],
+    "type": "object",
+  },
+  "ChangeReviewContributionPolicySelectionChangeDto": {
+    "properties": {
+      "scope": {
+        "$ref": "#/components/schemas/ChangeReviewContributionPolicySelectionScopeDto",
+      },
+      "selection": {
+        "$ref": "#/components/schemas/ChangeReviewContributionPolicySelectionValueDto",
+      },
+    },
+    "required": [
+      "scope",
+      "selection",
+    ],
+    "type": "object",
+  },
+  "ChangeReviewContributionPolicySelectionScopeDto": {
+    "properties": {
+      "layerCode": {
+        "enum": [
+          "activity",
+          "position",
+        ],
+        "type": "string",
+      },
+      "positionClientRef": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "positionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "sessionClientRef": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+      "sessionId": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string",
+      },
+    },
+    "required": [
+      "layerCode",
+    ],
+    "type": "object",
+  },
+  "ChangeReviewContributionPolicySelectionValueDto": {
+    "properties": {
+      "mode": {
+        "enum": [
+          "inherit",
+          "explicit",
+        ],
+        "type": "string",
+      },
+      "pointer": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChangeReviewContributionPolicyPointerDto",
+          },
+        ],
+        "nullable": true,
+        "type": "object",
+      },
+    },
+    "required": [
+      "mode",
+      "pointer",
+    ],
+    "type": "object",
+  },
   "ChangeReviewDto": {
     "properties": {
       "activityPatch": {
@@ -20615,6 +21427,21 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
         "description": "提交发布审核的明确确认；只能为 true",
         "example": true,
         "type": "boolean",
+      },
+      "contributionPolicySelectionChanges": {
+        "description": "按活动／岗位增量修改贡献政策选择；岗位可引用现有 ID 或本提案 clientRef",
+        "items": {
+          "$ref": "#/components/schemas/ChangeReviewContributionPolicySelectionChangeDto",
+        },
+        "maxItems": 10001,
+        "minItems": 1,
+        "type": "array",
+      },
+      "expectedContributionPolicySelectionRevision": {
+        "description": "提交 contributionPolicySelectionChanges 时读取到的当前贡献选择 revision",
+        "maximum": 2147483647,
+        "minimum": 0,
+        "type": "number",
       },
       "expectedMetricSelectionRevision": {
         "description": "提交 metricSelection 时读取到的当前指标选择 revision",
@@ -46043,6 +46870,479 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/admin/v1/activities/{id}/contribution-policy-selection": {
+    "get": {
+      "operationId": "AdminActivityContributionPolicySelectionController_get",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "in": "query",
+          "name": "revision",
+          "required": false,
+          "schema": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityContributionPolicySelectionResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20248: 活动贡献政策选择引用不存在或不可访问",
+                    "enum": [
+                      20248,
+                    ],
+                    "example": 20248,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动贡献政策选择引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动贡献政策选择引用不存在或不可访问(code=20248)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页读取活动贡献政策选择、解析来源与问题 [rbac: activity.contribution-policy.read]",
+      "tags": [
+        "Admin - Activity Contribution Policy Selection",
+      ],
+    },
+    "patch": {
+      "operationId": "AdminActivityContributionPolicySelectionController_patch",
+      "parameters": [
+        {
+          "description": "资源主键(cuid 字符串)",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "example": "cl9z3a8b00000abcd1234efgh",
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AdminPatchActivityContributionPolicySelectionDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AdminActivityContributionPolicySelectionResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20247: 活动贡献政策选择无效",
+                    "enum": [
+                      40000,
+                      20247,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动贡献政策选择无效(code=20247)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20248: 活动贡献政策选择引用不存在或不可访问",
+                    "enum": [
+                      20248,
+                    ],
+                    "example": 20248,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动贡献政策选择引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动贡献政策选择引用不存在或不可访问(code=20248)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20249: 活动贡献政策选择已变化，请刷新后重试; 20250: 此操作标识已用于其他贡献政策选择; 20251: 活动贡献政策选择收据无效; 20252: 当前贡献政策引用不可用于新的选择; 20253: 活动贡献政策选择没有实际变化; 20254: 活动贡献政策选择修订号已达上限",
+                    "enum": [
+                      20249,
+                      20250,
+                      20251,
+                      20252,
+                      20253,
+                      20254,
+                    ],
+                    "example": 20249,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动贡献政策选择已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动贡献政策选择已变化，请刷新后重试(code=20249) / 此操作标识已用于其他贡献政策选择(code=20250) / 活动贡献政策选择收据无效(code=20251) / 当前贡献政策引用不可用于新的选择(code=20252) / 活动贡献政策选择没有实际变化(code=20253) / 活动贡献政策选择修订号已达上限(code=20254)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "增量设置草稿活动的贡献政策选择 [rbac: activity.contribution-policy.select]",
+      "tags": [
+        "Admin - Activity Contribution Policy Selection",
+      ],
+    },
+  },
   "/api/admin/v1/activities/{id}/cover": {
     "put": {
       "operationId": "ActivitiesController_setCover",
@@ -52197,6 +53497,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               2,
               3,
               4,
+              5,
             ],
             "type": "number",
           },
@@ -52553,7 +53854,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20180: 模板族或版本已存在; 20181: 模板版本已变化，请刷新后重试; 20182: 此操作标识已用于其他模板命令; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败; 20210: 当前时长政策引用不可用于新的选择",
+                    "description": "20180: 模板族或版本已存在; 20181: 模板版本已变化，请刷新后重试; 20182: 此操作标识已用于其他模板命令; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败; 20210: 当前时长政策引用不可用于新的选择; 20252: 当前贡献政策引用不可用于新的选择",
                     "enum": [
                       20180,
                       20181,
@@ -52561,6 +53862,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                       20172,
                       20173,
                       20210,
+                      20252,
                     ],
                     "example": 20180,
                     "type": "integer",
@@ -52584,7 +53886,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "模板族或版本已存在(code=20180) / 模板版本已变化，请刷新后重试(code=20181) / 此操作标识已用于其他模板命令(code=20182) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173) / 当前时长政策引用不可用于新的选择(code=20210)",
+          "description": "模板族或版本已存在(code=20180) / 模板版本已变化，请刷新后重试(code=20181) / 此操作标识已用于其他模板命令(code=20182) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173) / 当前时长政策引用不可用于新的选择(code=20210) / 当前贡献政策引用不可用于新的选择(code=20252)",
         },
       },
       "security": [
@@ -52592,7 +53894,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "新建全局模板 V3/V4 或从精确版本复制 [rbac: activity-template.manage.version]",
+      "summary": "新建全局模板 V3/V4/V5 或从精确版本复制 [rbac: activity-template.manage.version]",
       "tags": [
         "Admin - Activity Template Versions",
       ],
@@ -52995,7 +54297,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20181: 模板版本已变化，请刷新后重试; 20182: 此操作标识已用于其他模板命令; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败; 20210: 当前时长政策引用不可用于新的选择",
+                    "description": "20181: 模板版本已变化，请刷新后重试; 20182: 此操作标识已用于其他模板命令; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败; 20210: 当前时长政策引用不可用于新的选择; 20252: 当前贡献政策引用不可用于新的选择",
                     "enum": [
                       20181,
                       20182,
@@ -53003,6 +54305,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                       20172,
                       20173,
                       20210,
+                      20252,
                     ],
                     "example": 20181,
                     "type": "integer",
@@ -53026,7 +54329,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "模板版本已变化，请刷新后重试(code=20181) / 此操作标识已用于其他模板命令(code=20182) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173) / 当前时长政策引用不可用于新的选择(code=20210)",
+          "description": "模板版本已变化，请刷新后重试(code=20181) / 此操作标识已用于其他模板命令(code=20182) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173) / 当前时长政策引用不可用于新的选择(code=20210) / 当前贡献政策引用不可用于新的选择(code=20252)",
         },
       },
       "security": [
@@ -53241,7 +54544,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "20181: 模板版本已变化，请刷新后重试; 20182: 此操作标识已用于其他模板命令; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败; 20210: 当前时长政策引用不可用于新的选择",
+                    "description": "20181: 模板版本已变化，请刷新后重试; 20182: 此操作标识已用于其他模板命令; 20171: 当前指标状态不允许此操作; 20172: 引用的指标定义不可用，请重新选择; 20173: 指标命令收据校验失败; 20210: 当前时长政策引用不可用于新的选择; 20252: 当前贡献政策引用不可用于新的选择",
                     "enum": [
                       20181,
                       20182,
@@ -53249,6 +54552,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
                       20172,
                       20173,
                       20210,
+                      20252,
                     ],
                     "example": 20181,
                     "type": "integer",
@@ -53272,7 +54576,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "模板版本已变化，请刷新后重试(code=20181) / 此操作标识已用于其他模板命令(code=20182) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173) / 当前时长政策引用不可用于新的选择(code=20210)",
+          "description": "模板版本已变化，请刷新后重试(code=20181) / 此操作标识已用于其他模板命令(code=20182) / 当前指标状态不允许此操作(code=20171) / 引用的指标定义不可用，请重新选择(code=20172) / 指标命令收据校验失败(code=20173) / 当前时长政策引用不可用于新的选择(code=20210) / 当前贡献政策引用不可用于新的选择(code=20252)",
         },
       },
       "security": [
@@ -53280,7 +54584,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "整份更新 draft V3/V4 定义 [rbac: activity-template.manage.version]",
+      "summary": "整份更新 draft V3/V4/V5 定义 [rbac: activity-template.manage.version]",
       "tags": [
         "Admin - Activity Template Versions",
       ],
@@ -53522,7 +54826,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
           "bearer": [],
         },
       ],
-      "summary": "退役 active V3/V4，保留历史引用 [rbac: activity-template.manage.version]",
+      "summary": "退役 active V3/V4/V5，保留历史引用 [rbac: activity-template.manage.version]",
       "tags": [
         "Admin - Activity Template Versions",
       ],
@@ -115489,6 +116793,263 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       ],
     },
   },
+  "/api/app/v1/my/managed-activities/contribution-policy-options": {
+    "get": {
+      "operationId": "AppManagedActivityContributionPolicySelectionController_options",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "in": "query",
+          "name": "organizationId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "in": "query",
+          "name": "plannedFrom",
+          "required": true,
+          "schema": {
+            "format": "date-time",
+            "type": "string",
+          },
+        },
+        {
+          "in": "query",
+          "name": "plannedUntil",
+          "required": true,
+          "schema": {
+            "format": "date-time",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/AppActivityContributionPolicyOptionDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20248: 活动贡献政策选择引用不存在或不可访问",
+                    "enum": [
+                      20248,
+                    ],
+                    "example": 20248,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动贡献政策选择引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动贡献政策选择引用不存在或不可访问(code=20248)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页读取当前组织与计划区间可新选的贡献政策版本 [rbac: activity.contribution-policy.read]",
+      "tags": [
+        "Mobile - Managed Activity Contribution Policy Selection",
+      ],
+    },
+  },
   "/api/app/v1/my/managed-activities/control-plane/status": {
     "get": {
       "operationId": "AppManagedActivityControlPlaneController_status",
@@ -122509,6 +124070,477 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "App 活动负责人结束协办职责 [auth]",
       "tags": [
         "Mobile - Managed Activity Responsibilities",
+      ],
+    },
+  },
+  "/api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection": {
+    "get": {
+      "operationId": "AppManagedActivityContributionPolicySelectionController_get",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "in": "query",
+          "name": "revision",
+          "required": false,
+          "schema": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityContributionPolicySelectionResponseDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20248: 活动贡献政策选择引用不存在或不可访问",
+                    "enum": [
+                      20248,
+                    ],
+                    "example": 20248,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动贡献政策选择引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动贡献政策选择引用不存在或不可访问(code=20248)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页读取本人负责活动的贡献政策选择 [rbac: activity.contribution-policy.read]",
+      "tags": [
+        "Mobile - Managed Activity Contribution Policy Selection",
+      ],
+    },
+    "patch": {
+      "operationId": "AppManagedActivityContributionPolicySelectionController_patch",
+      "parameters": [
+        {
+          "description": "Activity.id",
+          "in": "path",
+          "name": "activityId",
+          "required": true,
+          "schema": {
+            "maxLength": 64,
+            "minLength": 8,
+            "type": "string",
+          },
+        },
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/AppPatchActivityContributionPolicySelectionDto",
+            },
+          },
+        },
+        "required": true,
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/AppActivityContributionPolicySelectionResultDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误; 20247: 活动贡献政策选择无效",
+                    "enum": [
+                      40000,
+                      20247,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000) / 活动贡献政策选择无效(code=20247)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问",
+                    "enum": [
+                      40300,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20248: 活动贡献政策选择引用不存在或不可访问",
+                    "enum": [
+                      20248,
+                    ],
+                    "example": 20248,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动贡献政策选择引用不存在或不可访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动贡献政策选择引用不存在或不可访问(code=20248)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "20249: 活动贡献政策选择已变化，请刷新后重试; 20250: 此操作标识已用于其他贡献政策选择; 20251: 活动贡献政策选择收据无效; 20252: 当前贡献政策引用不可用于新的选择; 20253: 活动贡献政策选择没有实际变化; 20254: 活动贡献政策选择修订号已达上限",
+                    "enum": [
+                      20249,
+                      20250,
+                      20251,
+                      20252,
+                      20253,
+                      20254,
+                    ],
+                    "example": 20249,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "活动贡献政策选择已变化，请刷新后重试",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "活动贡献政策选择已变化，请刷新后重试(code=20249) / 此操作标识已用于其他贡献政策选择(code=20250) / 活动贡献政策选择收据无效(code=20251) / 当前贡献政策引用不可用于新的选择(code=20252) / 活动贡献政策选择没有实际变化(code=20253) / 活动贡献政策选择修订号已达上限(code=20254)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "增量设置本人负责草稿活动的贡献政策选择 [rbac: activity.contribution-policy.select]",
+      "tags": [
+        "Mobile - Managed Activity Contribution Policy Selection",
       ],
     },
   },

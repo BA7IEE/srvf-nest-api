@@ -2231,6 +2231,46 @@ export const BizCode = {
     message: '贡献政策版本数量已达上限',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_INVALID: {
+    code: 20247,
+    message: '活动贡献政策选择无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_REFERENCE_UNAVAILABLE: {
+    code: 20248,
+    message: '活动贡献政策选择引用不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_STALE: {
+    code: 20249,
+    message: '活动贡献政策选择已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_COMMAND_CONFLICT: {
+    code: 20250,
+    message: '此操作标识已用于其他贡献政策选择',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_RECEIPT_INVALID: {
+    code: 20251,
+    message: '活动贡献政策选择收据无效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_POLICY_UNAVAILABLE: {
+    code: 20252,
+    message: '当前贡献政策引用不可用于新的选择',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_UNCHANGED: {
+    code: 20253,
+    message: '活动贡献政策选择没有实际变化',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_REVISION_LIMIT: {
+    code: 20254,
+    message: '活动贡献政策选择修订号已达上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

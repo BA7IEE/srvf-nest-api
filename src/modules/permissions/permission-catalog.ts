@@ -111,6 +111,25 @@ export const CONTRIBUTION_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSe
   },
 ];
 
+// E1-3: Human-only scoped activity selection. Custom roles may grant these independently;
+// all built-in roles deliberately receive zero defaults.
+export const ACTIVITY_CONTRIBUTION_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity.contribution-policy.read',
+    module: 'activity',
+    action: 'contribution-policy',
+    resourceType: 'read',
+    description: '查看活动贡献政策选择；显式授权、当前活动范围及活动资格同时满足',
+  },
+  {
+    code: 'activity.contribution-policy.select',
+    module: 'activity',
+    action: 'contribution-policy',
+    resourceType: 'select',
+    description: '设置活动贡献政策选择；显式授权、当前活动范围及活动资格同时满足',
+  },
+];
+
 // D3: this command is deliberately registered but never attached to a built-in role.
 // A maintainer must grant it to a custom role before any internal caller can recognize time.
 export const ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
@@ -3045,6 +3064,32 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       sortOrder: 191,
       riskLevel: 'LOW',
       riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.contribution-policy.read': {
+      displayName: '查看活动贡献政策选择',
+      businessDescription:
+        '真人查看有权活动的贡献政策选择、解析来源与问题；显式授权、当前组织范围及活动资格同时满足，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 201,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.contribution-policy.select': {
+      displayName: '设置活动贡献政策选择',
+      businessDescription:
+        '真人在有权草稿活动中设置贡献政策选择；显式授权、当前组织范围及活动资格同时满足，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 202,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',
       status: 'ACTIVE',
       uiVisibility: 'DEFAULT',

@@ -17,6 +17,7 @@ type ReadinessPosition = ReadinessSession['positions'][number];
 function position(overrides: Partial<ReadinessPosition> = {}): ReadinessPosition {
   return {
     id: 'position-a',
+    code: 'support',
     capacity: 5,
     startAt: null,
     endAt: null,
@@ -30,6 +31,7 @@ function position(overrides: Partial<ReadinessPosition> = {}): ReadinessPosition
 function session(overrides: Partial<ReadinessSession> = {}): ReadinessSession {
   return {
     id: 'session-a',
+    code: 'morning',
     statusCode: 'scheduled',
     startAt: new Date('2099-05-01T08:00:00.000Z'),
     endAt: new Date('2099-05-01T10:00:00.000Z'),
@@ -149,6 +151,7 @@ function facts(
     readonly qualificationRuleSet?: ActivityPublishReadinessFacts['qualificationRuleSet'];
     readonly metricSelection?: ActivityPublishReadinessFacts['metricSelection'];
     readonly timePolicySelectionIssues?: ActivityPublishReadinessFacts['timePolicySelectionIssues'];
+    readonly contributionPolicySelectionIssues?: ActivityPublishReadinessFacts['contributionPolicySelectionIssues'];
     readonly insuranceEnforcementEnabled?: boolean;
   } = {},
 ): ActivityPublishReadinessFacts {
@@ -176,6 +179,7 @@ function facts(
     },
     metricSelection: input.metricSelection ?? 'unconfigured',
     timePolicySelectionIssues: input.timePolicySelectionIssues ?? ['unconfigured'],
+    contributionPolicySelectionIssues: input.contributionPolicySelectionIssues ?? ['unconfigured'],
     insuranceEnforcementEnabled: input.insuranceEnforcementEnabled ?? true,
   };
 }
@@ -324,6 +328,54 @@ describe('ActivityPublishReadinessService (Activity OS R2 / B4)', () => {
     );
     expect(resolved.blockers.map((entry) => entry.code)).not.toContain(
       'TIME_POLICY_COVERAGE_INCOMPLETE',
+    );
+  });
+
+  it('将贡献政策的未配置、目标错链、失效引用和时间覆盖缺口分别报告', () => {
+    const cases: readonly [
+      ActivityPublishReadinessFacts['contributionPolicySelectionIssues'],
+      string,
+      string,
+    ][] = [
+      [['unconfigured'], 'CONTRIBUTION_POLICY_UNREPRESENTABLE', 'policy.contribution'],
+      [['target_invalid'], 'CONTRIBUTION_POLICY_TARGET_INVALID', 'policy.contribution.selection'],
+      [
+        ['reference_unavailable'],
+        'CONTRIBUTION_POLICY_REFERENCE_UNAVAILABLE',
+        'policy.contribution.references',
+      ],
+      [
+        ['coverage_incomplete'],
+        'CONTRIBUTION_POLICY_COVERAGE_INCOMPLETE',
+        'policy.contribution.coverage',
+      ],
+    ];
+    for (const [contributionPolicySelectionIssues, code, fieldPath] of cases) {
+      const result = evaluateActivityPublishReadiness(
+        facts({
+          contributionPolicySelectionIssues,
+          timePolicySelectionIssues: [],
+          metricSelection: 'not_required',
+        }),
+        REFERENCE_TIME,
+      );
+      expect(result.blockers).toContainEqual(expect.objectContaining({ code, fieldPath }));
+    }
+    const resolved = evaluateActivityPublishReadiness(
+      facts({
+        contributionPolicySelectionIssues: [],
+        timePolicySelectionIssues: [],
+        metricSelection: 'not_required',
+      }),
+      REFERENCE_TIME,
+    );
+    expect(resolved.blockers.map((entry) => entry.code)).not.toEqual(
+      expect.arrayContaining([
+        'CONTRIBUTION_POLICY_UNREPRESENTABLE',
+        'CONTRIBUTION_POLICY_TARGET_INVALID',
+        'CONTRIBUTION_POLICY_REFERENCE_UNAVAILABLE',
+        'CONTRIBUTION_POLICY_COVERAGE_INCOMPLETE',
+      ]),
     );
   });
 
@@ -748,9 +800,13 @@ function loadedActivity(selectedTemplateVersionId: string | null) {
     timePolicySelectionRevision: 0,
     currentTimePolicySelectionRevisionId: null,
     currentTimePolicySelectionRevision: null,
+    contributionPolicySelectionRevision: 0,
+    currentContributionPolicySelectionRevisionId: null,
+    currentContributionPolicySelectionRevision: null,
     sessions: [
       {
         id: 'session-b4',
+        code: 'session_b4',
         statusCode: 'scheduled',
         startAt: new Date('2099-05-01T08:00:00.000Z'),
         endAt: new Date('2099-05-01T10:00:00.000Z'),
@@ -762,6 +818,7 @@ function loadedActivity(selectedTemplateVersionId: string | null) {
         positions: [
           {
             id: 'position-b4',
+            code: 'position_b4',
             capacity: 5,
             startAt: null,
             endAt: null,
@@ -803,6 +860,7 @@ function makeServiceSubject(selectedTemplateVersionId: string | null) {
     activityQualificationRuleSet: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    contributionPolicyVersion: { findMany: jest.fn().mockResolvedValue([]) },
   };
   const prisma = {
     $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>

@@ -25,6 +25,7 @@ import {
   AppActivityCreationPlaceDto,
   CREATION_PLACE_VISIBILITIES,
 } from './app-managed-activity-creation-place.dto';
+import { AppActivityContributionPolicySelectionValueDto } from './app-activity-contribution-policy-selection.dto';
 
 export class AppCreationTimePolicyPointerDto {
   @ApiProperty({ minLength: 1, maxLength: 64 })
@@ -127,6 +128,62 @@ export class AppEmergencyTimePolicySelectionInputDto {
   @ValidateNested()
   @Type(() => AppCreationTimePolicySelectionValueDto)
   activity!: AppCreationTimePolicySelectionValueDto;
+}
+
+export class AppCreationContributionPolicyPositionOverrideDto {
+  @ApiProperty({ pattern: '^[a-z][a-z0-9_]*$', minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  @Matches(/^[a-z][a-z0-9_]*$/)
+  sessionCode!: string;
+
+  @ApiProperty({ pattern: '^[a-z][a-z0-9_]*$', minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  @Matches(/^[a-z][a-z0-9_]*$/)
+  positionCode!: string;
+
+  @ApiProperty({ type: () => AppActivityContributionPolicySelectionValueDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppActivityContributionPolicySelectionValueDto)
+  selection!: AppActivityContributionPolicySelectionValueDto;
+}
+
+/** Stable position codes are resolved only after the root transaction creates the targets. */
+export class AppCreationContributionPolicySelectionInputDto {
+  @ApiProperty({ type: () => AppActivityContributionPolicySelectionValueDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppActivityContributionPolicySelectionValueDto)
+  activity!: AppActivityContributionPolicySelectionValueDto;
+
+  @ApiProperty({
+    type: () => [AppCreationContributionPolicyPositionOverrideDto],
+    maxItems: 10000,
+  })
+  @IsArray()
+  @ArrayMaxSize(10000)
+  @ArrayUnique(
+    (value: AppCreationContributionPolicyPositionOverrideDto) =>
+      `${value.sessionCode}\u0000${value.positionCode}`,
+  )
+  @ValidateNested({ each: true })
+  @Type(() => AppCreationContributionPolicyPositionOverrideDto)
+  positionOverrides!: AppCreationContributionPolicyPositionOverrideDto[];
+}
+
+export class AppEmergencyContributionPolicySelectionInputDto {
+  @ApiProperty({ type: () => AppActivityContributionPolicySelectionValueDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppActivityContributionPolicySelectionValueDto)
+  activity!: AppActivityContributionPolicySelectionValueDto;
 }
 
 /** App-only request value; never derived from an Admin DTO. */
@@ -243,6 +300,16 @@ export class AppEmergencyActivityCreationDto extends AppActivityCreationRequestD
   @ValidateNested()
   @Type(() => AppEmergencyTimePolicySelectionInputDto)
   timePolicySelection?: AppEmergencyTimePolicySelectionInputDto;
+
+  @ApiPropertyOptional({
+    description: '可选活动级贡献政策选择；紧急创建不接受尚不存在的岗位覆盖',
+    type: () => AppEmergencyContributionPolicySelectionInputDto,
+  })
+  @OmittableOnly()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppEmergencyContributionPolicySelectionInputDto)
+  contributionPolicySelection?: AppEmergencyContributionPolicySelectionInputDto;
 
   @ApiProperty({
     description: '明确发起人 ID；仍校验本人/代设与目标组织资格',

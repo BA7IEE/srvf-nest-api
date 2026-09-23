@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:939bb38c85178c12c6fc38fab09dec5f5d4963b7c3d80cf74385733a60fccfdd |
-| endpoint count | 653 |
+| inputDigest | sha256:96cc01c07d40e66b75d1c6bbe7aa0d613e0b63628508abbfa861340ccff3d05c |
+| endpoint count | 658 |
 | legacy [auth] count | 183 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -29,8 +29,8 @@
 
 | surface | routes | declared in code | undeclared |
 |---|---:|---:|---:|
-| admin | 314 | 314 | 0 |
-| app | 202 | 202 | 0 |
+| admin | 316 | 316 | 0 |
+| app | 205 | 205 | 0 |
 | system | 97 | 97 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
@@ -41,7 +41,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 437 |
+| rbac | 442 |
 | auth | 183 |
 | unclassified | 0 |
 
@@ -113,7 +113,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:939bb38c85178c12c6fc38fab09dec5f5d4963b7c3d80cf74385733a60fccfdd",
+  "inputDigest": "sha256:96cc01c07d40e66b75d1c6bbe7aa0d613e0b63628508abbfa861340ccff3d05c",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -1196,6 +1196,25 @@
         "scopes": [
           "visibility:activity-visibility"
         ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/admin/v1/activities/:id/contribution-policy-selection",
+      "controller": "AdminActivityContributionPolicySelectionController",
+      "handler": "get",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity.contribution-policy.read",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
         "engine": "authz-scoped"
       }
     },
@@ -3909,6 +3928,27 @@
       }
     },
     {
+      "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection",
+      "controller": "AppManagedActivityContributionPolicySelectionController",
+      "handler": "get",
+      "legacy": "rbac",
+      "policy": {
+        "admission": "app-member",
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity.contribution-policy.read",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
       "routeKey": "GET /api/app/v1/my/managed-activities/:activityId/ending-workbench",
       "controller": "AppManagedActivitiesController",
       "handler": "getEndingWorkbench",
@@ -4565,6 +4605,27 @@
         "admission": "app-member",
         "mode": "LOGIN_SCOPED",
         "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "GET /api/app/v1/my/managed-activities/contribution-policy-options",
+      "controller": "AppManagedActivityContributionPolicySelectionController",
+      "handler": "options",
+      "legacy": "rbac",
+      "policy": {
+        "admission": "app-member",
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity.contribution-policy.read",
+            "scope": null
+          }
+        ],
         "require": "all",
         "scopes": [
           "responsibility"
@@ -5821,6 +5882,25 @@
       }
     },
     {
+      "routeKey": "PATCH /api/admin/v1/activities/:id/contribution-policy-selection",
+      "controller": "AdminActivityContributionPolicySelectionController",
+      "handler": "patch",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity.contribution-policy.select",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "authz-scoped"
+      }
+    },
+    {
       "routeKey": "PATCH /api/admin/v1/activities/:id/publish",
       "controller": "ActivitiesController",
       "handler": "publish",
@@ -6639,6 +6719,27 @@
         "admission": "app-member",
         "mode": "LOGIN_SCOPED",
         "codes": [],
+        "require": "all",
+        "scopes": [
+          "responsibility"
+        ],
+        "engine": "authz-scoped"
+      }
+    },
+    {
+      "routeKey": "PATCH /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection",
+      "controller": "AppManagedActivityContributionPolicySelectionController",
+      "handler": "patch",
+      "legacy": "rbac",
+      "policy": {
+        "admission": "app-member",
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "activity.contribution-policy.select",
+            "scope": null
+          }
+        ],
         "require": "all",
         "scopes": [
           "responsibility"
@@ -12089,7 +12190,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**248 条码有端点;其中 92 条守多于一个端点。**
+> 每条权限码守着哪些端点。**250 条码有端点;其中 94 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -12133,6 +12234,7 @@
 | `membership.list.record` | 4 | GET /api/admin/v1/members/:memberId/memberships · GET /api/admin/v1/memberships · GET /api/admin/v1/memberships/conflicts · GET /api/admin/v1/organizations/:orgId/memberships |
 | `rbac.role.read` | 4 | GET /api/system/v1/roles · GET /api/system/v1/roles/:id · GET /api/system/v1/roles/:id/permissions · GET /api/system/v1/roles/options |
 | `role-binding.read.record` | 4 | GET /api/admin/v1/role-bindings · GET /api/admin/v1/role-bindings/:id · GET /api/admin/v1/role-bindings/page · GET /api/admin/v1/role-bindings/preview |
+| `activity.contribution-policy.read` | 3 | GET /api/admin/v1/activities/:id/contribution-policy-selection · GET /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection · GET /api/app/v1/my/managed-activities/contribution-policy-options |
 | `activity.publish.record` | 3 | PATCH /api/admin/v1/activities/:id/publish · PATCH /api/admin/v1/activities/:id/publish-with-audience-tags · POST /api/admin/v1/activity-publish-reviews/:id/approve |
 | `activity.time-policy.read` | 3 | GET /api/admin/v1/activities/:id/time-policy-selection · GET /api/app/v1/my/managed-activities/:activityId/time-policy-selection · GET /api/app/v1/my/managed-activities/time-policy-options |
 | `attachment.view.*` | 3 | GET /api/admin/v1/attachments · GET /api/admin/v1/attachments/:id · GET /api/admin/v1/attachments/by-owner |
@@ -12152,6 +12254,7 @@
 | `activity-registration.reject.record` | 2 | PATCH /api/admin/v1/activities/:activityId/registrations/:id/reject · PATCH /api/admin/v1/activities/:activityId/registrations/bulk-reject |
 | `activity-review.read.request` | 2 | GET /api/admin/v1/activity-publish-reviews · GET /api/admin/v1/activity-publish-reviews/:id |
 | `activity-template.read.catalog` | 2 | GET /api/admin/v1/activity-template-versions · GET /api/admin/v1/activity-template-versions/:id |
+| `activity.contribution-policy.select` | 2 | PATCH /api/admin/v1/activities/:id/contribution-policy-selection · PATCH /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection |
 | `activity.outcome.correct` | 2 | POST /api/app/v1/my/managed-activities/:activityId/outcome-corrections · POST /api/app/v1/my/managed-activities/:activityId/outcome-corrections/:outcomeRevisionId/cancel |
 | `activity.settlement-first-review.record` | 2 | POST /api/admin/v1/attendance-settlements/:id/first-approve · POST /api/admin/v1/attendance-settlements/:id/first-return |
 | `activity.time-policy.select` | 2 | PATCH /api/admin/v1/activities/:id/time-policy-selection · PATCH /api/app/v1/my/managed-activities/:activityId/time-policy-selection |
@@ -12412,6 +12515,7 @@
 | GET | /api/admin/v1/activities/:activityId/registrations/export | Admin - Registrations | rbac | RBAC; admission=-; codes=activity-registration.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-registrations/activity-registrations.controller.ts:161; src/modules/activity-registrations/activity-registrations.controller.ts:185 |
 | GET | /api/admin/v1/activities/:activityId/responsibilities | Admin - Activity Responsibilities | rbac | RBAC; admission=-; codes=activity-responsibility.override.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:52; src/modules/activities/controllers/admin-activity-responsibilities.controller.ts:71 |
 | GET | /api/admin/v1/activities/:id | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:141; src/modules/activities/activities.controller.ts:152 |
+| GET | /api/admin/v1/activities/:id/contribution-policy-selection | Admin - Activity Contribution Policy Selection | rbac | RBAC; admission=-; codes=activity.contribution-policy.read; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-contribution-policy-selection.controller.ts:33; src/modules/activities/controllers/admin-activity-contribution-policy-selection.controller.ts:53 |
 | GET | /api/admin/v1/activities/:id/metric-selection | Admin - Activity Metric Selection | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:31; src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:42 |
 | GET | /api/admin/v1/activities/:id/time-policy-selection | Admin - Activity Time Policy Selection | rbac | RBAC; admission=-; codes=activity.time-policy.read; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-time-policy-selection.controller.ts:33; src/modules/activities/controllers/admin-activity-time-policy-selection.controller.ts:48 |
 | GET | /api/admin/v1/activities/options | Admin - Activities | auth | LOGIN_SCOPED; admission=-; codes=-; require=all; scopes=visibility:activity-visibility; engine=authz-scoped | code | src/modules/activities/activities.controller.ts:98; src/modules/activities/activities.controller.ts:109 |
@@ -12559,6 +12663,7 @@
 | GET | /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:158; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:180 |
 | GET | /api/app/v1/my/managed-activities/:activityId/check-ins | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:57; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:79 |
 | GET | /api/app/v1/my/managed-activities/:activityId/collaborator-options | Mobile - Managed Activity Responsibilities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:73; src/modules/activities/controllers/app-managed-activity-responsibilities.controller.ts:96 |
+| GET | /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection | Mobile - Managed Activity Contribution Policy Selection | rbac | RBAC; admission=app-member; codes=activity.contribution-policy.read; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:70; src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:92 |
 | GET | /api/app/v1/my/managed-activities/:activityId/ending-workbench | Mobile - Managed Activities | rbac | RBAC; admission=app-member; codes=activity.outcome.read; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:189; src/modules/activities/controllers/app-managed-activities.controller.ts:208 |
 | GET | /api/app/v1/my/managed-activities/:activityId/invitations | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:57; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:79 |
 | GET | /api/app/v1/my/managed-activities/:activityId/metric-candidates/:candidateId | Mobile - Managed Activity Metric Candidates | rbac | RBAC; admission=app-member; codes=activity.outcome.read; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-metric-candidates.controller.ts:71; src/modules/activities/controllers/app-managed-activity-metric-candidates.controller.ts:93 |
@@ -12594,6 +12699,7 @@
 | GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/sources | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:112; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:129 |
 | GET | /api/app/v1/my/managed-activities/:activityId/time-settlement/versions/:settlementVersionId/correction-ledger | Mobile - Managed Activity Time Settlement | rbac | RBAC; admission=app-member; codes=activity.time-settlement.read; require=all; scopes=org-scope,responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:194; src/modules/activities/controllers/app-managed-activity-time-settlement.controller.ts:218 |
 | GET | /api/app/v1/my/managed-activities/:activityId/visitors | Mobile - Managed Activity Guests | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:147; src/modules/activity-registrations/controllers/app-managed-activity-guests.controller.ts:169 |
+| GET | /api/app/v1/my/managed-activities/contribution-policy-options | Mobile - Managed Activity Contribution Policy Selection | rbac | RBAC; admission=app-member; codes=activity.contribution-policy.read; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:38; src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:60 |
 | GET | /api/app/v1/my/managed-activities/control-plane/status | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=-; engine=none | code | src/modules/activities/controllers/app-managed-activity-control-plane.controller.ts:27; src/modules/activities/controllers/app-managed-activity-control-plane.controller.ts:33 |
 | GET | /api/app/v1/my/managed-activities/metric-set-options | Mobile - Managed Activity Metrics | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-metrics.controller.ts:37; src/modules/activities/controllers/app-managed-activity-metrics.controller.ts:61 |
 | GET | /api/app/v1/my/managed-activities/organization-options | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:211; src/modules/activities/controllers/app-managed-activities.controller.ts:229 |
@@ -12664,6 +12770,7 @@
 | PATCH | /api/admin/v1/activities/:activityId/registrations/bulk-reject | Admin - Registrations | rbac | RBAC; admission=-; codes=activity-registration.reject.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activity-registrations/activity-registrations.controller.ts:220; src/modules/activity-registrations/activity-registrations.controller.ts:237 |
 | PATCH | /api/admin/v1/activities/:id | Admin - Activities | rbac | RBAC; admission=-; codes=activity.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:155; src/modules/activities/activities.controller.ts:186 |
 | PATCH | /api/admin/v1/activities/:id/cancel | Admin - Activities | rbac | RBAC; admission=-; codes=activity.cancel.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:333; src/modules/activities/activities.controller.ts:353 |
+| PATCH | /api/admin/v1/activities/:id/contribution-policy-selection | Admin - Activity Contribution Policy Selection | rbac | RBAC; admission=-; codes=activity.contribution-policy.select; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-contribution-policy-selection.controller.ts:56; src/modules/activities/controllers/admin-activity-contribution-policy-selection.controller.ts:84 |
 | PATCH | /api/admin/v1/activities/:id/publish | Admin - Activities | rbac | RBAC; admission=-; codes=activity.publish.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:277; src/modules/activities/activities.controller.ts:299 |
 | PATCH | /api/admin/v1/activities/:id/publish-with-audience-tags | Admin - Activities | rbac | RBAC; admission=-; codes=activity.publish.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/activities.controller.ts:302; src/modules/activities/activities.controller.ts:325 |
 | PATCH | /api/admin/v1/activities/:id/time-policy-selection | Admin - Activity Time Policy Selection | rbac | RBAC; admission=-; codes=activity.time-policy.select; require=all; scopes=-; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-time-policy-selection.controller.ts:51; src/modules/activities/controllers/admin-activity-time-policy-selection.controller.ts:73 |
@@ -12708,6 +12815,7 @@
 | PATCH | /api/app/v1/me/team-join/applications/:id/targets | Mobile - My Team Join | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=self; engine=authz-scoped | code | src/modules/team-join/team-join-applications.app.controller.ts:95; src/modules/team-join/team-join-applications.app.controller.ts:123 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId | Mobile - Managed Activities | auth | LOGIN_SCOPED; admission=app-member; codes=activity.create.cross-org; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activities.controller.ts:1259; src/modules/activities/controllers/app-managed-activities.controller.ts:1290 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId/attendance-sheets/:sheetId | Mobile - Managed Activity Attendances | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:183; src/modules/attendances/controllers/app-managed-activity-attendances.controller.ts:210 |
+| PATCH | /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection | Mobile - Managed Activity Contribution Policy Selection | rbac | RBAC; admission=app-member; codes=activity.contribution-policy.select; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:95; src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts:125 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId/positions/:activityPositionId | Mobile - Managed Activity Positions | auth | LOGIN_SCOPED; admission=app-member; codes=activity-responsibility.override.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/app-managed-activity-positions.controller.ts:106; src/modules/activities/controllers/app-managed-activity-positions.controller.ts:130 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId/registrations/:registrationId/approve | Mobile - Managed Activity Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts:118; src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts:150 |
 | PATCH | /api/app/v1/my/managed-activities/:activityId/registrations/:registrationId/cancel | Mobile - Managed Activity Registrations | auth | LOGIN_SCOPED; admission=app-member; codes=-; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts:192; src/modules/activity-registrations/controllers/app-managed-activity-registrations.controller.ts:217 |
@@ -12757,9 +12865,9 @@
 | POST | /api/admin/v1/activity-metric-sets/:id/retire | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:155; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:179 |
 | POST | /api/admin/v1/activity-publish-reviews/:id/approve | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity.publish.record; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:88; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:120 |
 | POST | /api/admin/v1/activity-publish-reviews/:id/return | Admin - Activity Publish Reviews | rbac | RBAC; admission=-; codes=activity-review.return.request; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:123; src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts:146 |
-| POST | /api/admin/v1/activity-template-versions | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:62; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:87 |
-| POST | /api/admin/v1/activity-template-versions/:id/activate | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:115; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:140 |
-| POST | /api/admin/v1/activity-template-versions/:id/retire | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:142; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:165 |
+| POST | /api/admin/v1/activity-template-versions | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:62; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:88 |
+| POST | /api/admin/v1/activity-template-versions/:id/activate | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:119; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:145 |
+| POST | /api/admin/v1/activity-template-versions/:id/retire | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:147; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:170 |
 | POST | /api/admin/v1/activity-time-policies | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:136; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:162 |
 | POST | /api/admin/v1/activity-time-policies/:id/versions | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:169; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:196 |
 | POST | /api/admin/v1/activity-time-policies/:id/versions/:versionId/activate | Admin - Activity Time Policies | rbac | RBAC; admission=-; codes=activity-time-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-time-policies.controller.ts:203; src/modules/activities/controllers/admin-activity-time-policies.controller.ts:231 |
@@ -12990,7 +13098,7 @@
 | PUT | /api/admin/v1/activities/:id/metric-selection | Admin - Activity Metric Selection | rbac | RBAC; admission=-; codes=activity.update.record; require=all; scopes=responsibility; engine=authz-scoped | code | src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:44; src/modules/activities/controllers/admin-activity-metric-selection.controller.ts:72 |
 | PUT | /api/admin/v1/activity-metric-definitions/:id/draft | Admin - Activity Metric Definitions | rbac | RBAC; admission=-; codes=activity-metric.manage.definition; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:96; src/modules/activities/controllers/admin-activity-metric-definitions.controller.ts:123 |
 | PUT | /api/admin/v1/activity-metric-sets/:id/draft | Admin - Activity Metric Sets | rbac | RBAC; admission=-; codes=activity-metric.manage.set; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:93; src/modules/activities/controllers/admin-activity-metric-sets.controller.ts:117 |
-| PUT | /api/admin/v1/activity-template-versions/:id/draft | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:89; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:113 |
+| PUT | /api/admin/v1/activity-template-versions/:id/draft | Admin - Activity Template Versions | rbac | RBAC; admission=-; codes=activity-template.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/admin-activity-template-versions.controller.ts:90; src/modules/activities/controllers/admin-activity-template-versions.controller.ts:117 |
 | PUT | /api/admin/v1/contents/:id/cover | Admin - Content | rbac | RBAC; admission=-; codes=content.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/content/content-admin.controller.ts:303; src/modules/content/content-admin.controller.ts:323 |
 | PUT | /api/admin/v1/members/:id/audience-tags | Admin - Members | rbac | RBAC; admission=-; codes=member.update.record; require=all; scopes=-; engine=rbac-global | code | src/modules/members/members.controller.ts:339; src/modules/members/members.controller.ts:356 |
 | PUT | /api/admin/v1/members/:memberId/department | Admin - Member Departments | rbac | RBAC; admission=-; codes=member-department.set.current; require=all; scopes=-; engine=rbac-global | code | src/modules/member-departments/member-departments.controller.ts:74; src/modules/member-departments/member-departments.controller.ts:98 |

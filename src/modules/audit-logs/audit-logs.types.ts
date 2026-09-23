@@ -19,6 +19,7 @@
 export type AuditLogEvent =
   | 'activity.contribution-policy.command'
   | 'activity.contribution-policy-version.command'
+  | 'activity.contribution-policy.selection'
   | 'activity.metric-definition.command'
   | 'activity.time-policy.command'
   | 'activity.time-policy.selection'

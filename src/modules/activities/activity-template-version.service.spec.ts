@@ -47,6 +47,8 @@ describe('C1 D2b template HTTP DTO → strict domain parser', () => {
     undefined!,
     undefined!, // DTO characterization covers the V3 branch only.
     undefined!,
+    undefined!,
+    undefined!,
   );
   beforeEach(() => run.mockReset());
 

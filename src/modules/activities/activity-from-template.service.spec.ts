@@ -294,6 +294,8 @@ function makeSubject(
     undefined!, // V1/V2 characterization must not enter the V3 identity branch.
     undefined!, // V1-V3 templates have no D1-3 time-policy selection branch.
     undefined!,
+    undefined!, // V1-V4 templates have no E1-3 contribution-policy selection branch.
+    undefined!,
   );
   return {
     service,

@@ -1,5 +1,23 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）
+
+Human App managed 面新增三项：
+
+- `GET /api/app/v1/my/managed-activities/contribution-policy-options`：按 `organizationId + plannedFrom + plannedUntil`
+  分页读取当前可新选的 active 版本；
+- `GET /api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection`：读取指定或当前不可变修订、解析来源与问题；
+- `PATCH /api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection`：以 `expectedRevision` 追加完整新修订。
+
+读使用 `activity.contribution-policy.read`，写使用 `activity.contribution-policy.select`；还必须是当前 ACTIVE 用户／成员、具有显式
+组织范围并实际负责该活动。权限提示不能代替服务端判权。活动根选择始终存在；岗位 `inherit` 表示新修订不再保留该岗位覆盖，
+不会删除历史。`explicit` 使用完整 policy/version/hash/evaluator 指针，客户端不得只传 ID 后让后端猜版本。
+
+quick／professional 可在创建时附带活动根及岗位覆盖，紧急创建只接受活动根；V5 模板创建和 series 生成会物化同样的第一版选择。
+发布审核会冻结 Proposal V9，审批前引用退役、时段覆盖不足、岗位拓扑或 revision 漂移都 fail-closed。`20247–20254` 不得降级为空配置，
+幂等重试复用原 operationKey 和完整载荷，修改意图才换新键。本候选尚未合入或部署；前端页面、正式贡献结算、Gate、D8-OPS、
+历史 `ContributionRule` 转换和生产验收均未完成。
+
 ## D8 我的正式参与时长证明与累计（D8-2 已合入 main，未部署）
 
 新增 `GET /api/app/v1/my/participation-time-proof`，不接收 `memberId`，后端只从当前登录用户解析 active App member。
@@ -57,12 +75,12 @@ V1 不变；已分类版本的 V1 更正及自动提交旁路仍返回20229。�
 
 在活动详情内嵌结算任务，沿 `/api/app/v1/my/managed-activities/{activityId}/time-settlement` 操作：
 
-| 页面任务 | 调用 |
-|---|---|
-| 看当前草稿与阻塞，定位待认定来源 | GET 根路径、GET `/sources` |
-| 逐段自动或人工认定，查看冻结政策及理由 | POST `/allocations`、GET `/allocations/{allocationRevisionId}` |
-| 生成完整分类草稿；确认后显式送审 | POST `/prepare`、POST `/submit` |
-| 按不可变版本回看四类桶与来源 | GET `/revisions/{timeRevisionId}/buckets`、GET `/revisions/{timeRevisionId}/sources` |
+| 页面任务                               | 调用                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------ |
+| 看当前草稿与阻塞，定位待认定来源       | GET 根路径、GET `/sources`                                                           |
+| 逐段自动或人工认定，查看冻结政策及理由 | POST `/allocations`、GET `/allocations/{allocationRevisionId}`                       |
+| 生成完整分类草稿；确认后显式送审       | POST `/prepare`、POST `/submit`                                                      |
+| 按不可变版本回看四类桶与来源           | GET `/revisions/{timeRevisionId}/buckets`、GET `/revisions/{timeRevisionId}/sources` |
 
 三个写命令返回 200。认定仍使用既有 recognize 权限；读和 prepare 是两个独立的新权限，提交另需旧 settlement-submit 权限。均要求有效 App 成员、显式组织范围及实际责任或审核资格；Admin 身份或角色名称不能代替这些条件。按钮提示不构成授权。只读维护态仍可读取有权历史，写入及写命令重放沿既有 Gate 拒绝。
 

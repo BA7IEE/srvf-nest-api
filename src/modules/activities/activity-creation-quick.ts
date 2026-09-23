@@ -42,6 +42,8 @@ export class ActivityCreationQuick {
       placeCount,
       actor: materialized.actor,
       timePolicySelectionInitialization: materialized.timePolicySelectionInitialization,
+      contributionPolicySelectionInitialization:
+        materialized.contributionPolicySelectionInitialization,
     };
   }
 }

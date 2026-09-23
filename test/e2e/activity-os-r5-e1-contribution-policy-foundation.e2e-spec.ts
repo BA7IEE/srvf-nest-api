@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { fingerprintContributionPolicyVersion } from '../../src/modules/activities/activity-contribution-policy-definition';
 import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { timeLedgerFixtureTriggerSql } from '../setup/time-ledger-fixture-cleanup';
 import { deriveTestDbName } from '../setup/worktree-db';
 
 const WORKER = 98;
@@ -154,14 +155,14 @@ function rejected(statement: string, code = '23514'): void {
 }
 
 function fixtureCleanup(): void {
+  const triggerSql = timeLedgerFixtureTriggerSql();
   raw(`BEGIN;
-    ALTER TABLE "ContributionPolicyCommandReceipt" DISABLE TRIGGER cpr_no_truncate;
-    ALTER TABLE "ContributionPolicyVersion" DISABLE TRIGGER cpv_no_truncate;
-    ALTER TABLE "ContributionPolicy" DISABLE TRIGGER cp_no_truncate;
-    TRUNCATE "ContributionPolicyCommandReceipt", "ContributionPolicyVersion", "ContributionPolicy";
-    ALTER TABLE "ContributionPolicyCommandReceipt" ENABLE TRIGGER cpr_no_truncate;
-    ALTER TABLE "ContributionPolicyVersion" ENABLE TRIGGER cpv_no_truncate;
-    ALTER TABLE "ContributionPolicy" ENABLE TRIGGER cp_no_truncate;
+    ${triggerSql.before}
+    TRUNCATE "ActivityContributionPolicySelectionCommandReceipt",
+      "ActivityContributionPolicySelectionItem",
+      "ActivityContributionPolicySelectionRevision",
+      "Activity" CASCADE;
+    ${triggerSql.after}
     DELETE FROM "User" WHERE id IN ('cp-test-user','cp-test-user-2');
     COMMIT;`);
 }

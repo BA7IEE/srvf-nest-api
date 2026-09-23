@@ -118,7 +118,7 @@ const UNWIRED_RESERVED_PERMISSION_CODES: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
-// ③ 维护者批准 C1 D2a/D2b、D1-3、D3 与 D4：精确人工授予自定义角色，seed 不分配。
+// ③ 维护者批准 C1 D2a/D2b、D1-3、D3、D4、E1-2 与 E1-3：精确人工授予自定义角色，seed 不分配。
 // 不按 CUSTOM_ROLE_ALLOWED 或前缀全量豁免。
 const MANUALLY_ASSIGNED_PERMISSION_CODES = new Set([
   'activity-time-policy.read.catalog',
@@ -141,6 +141,8 @@ const MANUALLY_ASSIGNED_PERMISSION_CODES = new Set([
   'activity-template.manage.version',
   'contribution-policy.read.catalog',
   'contribution-policy.manage.version',
+  'activity.contribution-policy.read',
+  'activity.contribution-policy.select',
 ]);
 
 /** 唯一豁免口 = ① ∪ ② ∪ 已批准的精确人工授码清单。 */
@@ -149,8 +151,8 @@ const isExempt = (code: string): boolean =>
   UNWIRED_RESERVED_PERMISSION_CODES.has(code) ||
   MANUALLY_ASSIGNED_PERMISSION_CODES.has(code);
 
-describe('C1 D2a/D2b、D1-3、D3、D4 与 E1-2 人工授码例外边界', () => {
-  it('仅二十条精确例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
+describe('C1 D2a/D2b、D1-3、D3、D4、E1-2 与 E1-3 人工授码例外边界', () => {
+  it('仅二十二条精确例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
     expect([...MANUALLY_ASSIGNED_PERMISSION_CODES].sort()).toEqual([
       'activity-metric.manage.definition',
       'activity-metric.manage.rule-binding',
@@ -160,6 +162,8 @@ describe('C1 D2a/D2b、D1-3、D3、D4 与 E1-2 人工授码例外边界', () => 
       'activity-template.read.catalog',
       'activity-time-policy.manage.version',
       'activity-time-policy.read.catalog',
+      'activity.contribution-policy.read',
+      'activity.contribution-policy.select',
       'activity.outcome.calculate',
       'activity.outcome.confirm',
       'activity.outcome.correct',

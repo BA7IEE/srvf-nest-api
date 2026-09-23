@@ -19,7 +19,7 @@
 > **三条写库漏斗**(全部 `event: AuditLogEvent` 类型锁,新增事件不进 union 编译不过):
 > `AuditLogsService.log()` · `writeConfigAudit()`(permissions)· `user-roles.service` 内联薄封装。
 
-**审计事件(机器核对):172 个 · 活跃(≥1 次出现):167 · 已退役/零产出:5**
+**审计事件(机器核对):173 个 · 活跃(≥1 次出现):168 · 已退役/零产出:5**
 
 
 ## profile
@@ -83,6 +83,7 @@
 | `activity.publish` | 22 | AC-010 改期联动 +1(2026-08-28,extra.operation=activity-session-reschedule)；A7 生成独立 Activity 复用该事件，以 `extra.operation=generate_series_instance` 区分 |
 | `activity.contribution-policy.command` | 1 | E1-2：创建稳定政策；仅记录命令、政策 ID 及闭合结果锚，和事实、收据同事务；不记录 code、name、description、definition、幂等键或请求哈希 |
 | `activity.contribution-policy-version.command` | 1 | E1-2：创建、激活或退役不可变政策版本；仅记录政策／版本 ID、definition hash、evaluator 与前后状态，和事实、收据同事务；不记录 definition、幂等键或请求哈希 |
+| `activity.contribution-policy.selection` | 1 | E1-3：活动贡献政策选择修订；仅记录 activityId、revision、selectionHash、operationCode 与目标数量，和选择、收据同事务；不记录完整政策定义、operationKey、requestHash 或人员明细 |
 
 ## activity-series
 

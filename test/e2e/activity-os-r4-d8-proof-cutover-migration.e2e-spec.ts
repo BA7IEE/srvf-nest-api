@@ -21,10 +21,10 @@ import {
 import { deriveTestDbName } from '../setup/worktree-db';
 
 const MIGRATION = '20260921180000_activity_os_r4_d8_proof_cutover';
-const LATEST_MIGRATION = '20260922194000_activity_os_r5_e1_contribution_policy_foundation';
+const LATEST_MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
 const PREVIOUS_MIGRATION_COUNT = 128;
 const D8_MIGRATION_COUNT = 129;
-const CURRENT_MIGRATION_COUNT = 130;
+const CURRENT_MIGRATION_COUNT = 131;
 const WORKER = 98;
 const prismaRoot = path.resolve(__dirname, '..', '..', 'prisma');
 const schema = path.join(prismaRoot, 'schema.prisma');

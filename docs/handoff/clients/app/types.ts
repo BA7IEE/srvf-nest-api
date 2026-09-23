@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:a8b1ef0910229217d032b319d64fe21c19afd5aa0896160143828a7c7eef2f01
+// inputDigest: sha256:1c9f5c7405152fcf803c7bc8822a9ec1f5b9a658a191964ff568b44782970499
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -93,6 +93,67 @@ export interface AppActivityCheckInDto {
   "outOfRange": boolean;
   "createdAt": string;
   "updatedAt": string;
+}
+
+export interface AppActivityContributionPolicyOptionDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+  "policyCode": string;
+  "policyName": string;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+}
+
+export interface AppActivityContributionPolicyPointerDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+}
+
+export interface AppActivityContributionPolicySelectionChangeDto {
+  "scope": AppActivityContributionPolicySelectionScopeDto;
+  "selection": AppActivityContributionPolicySelectionValueDto;
+}
+
+export interface AppActivityContributionPolicySelectionItemDto {
+  "scope": AppActivityContributionPolicySelectionScopeDto;
+  "selection": AppActivityContributionPolicySelectionValueDto;
+}
+
+export interface AppActivityContributionPolicySelectionResponseDto {
+  "activityId": string;
+  "selectionRevisionId": string | null;
+  "revision": number;
+  "selectionHash": string | null;
+  "createdAt": string | null;
+  "items": AppActivityContributionPolicySelectionItemDto[];
+  "resolved": Record<string, unknown>[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+  "resolutionSummary": Record<string, unknown>;
+}
+
+export interface AppActivityContributionPolicySelectionResultDto {
+  "activityId": string;
+  "selectionRevisionId": string;
+  "revision": number;
+  "selectionHash": string;
+  "createdAt": string;
+}
+
+export interface AppActivityContributionPolicySelectionScopeDto {
+  "layerCode": "activity" | "position";
+  "sessionId": string | null;
+  "positionId": string | null;
+}
+
+export interface AppActivityContributionPolicySelectionValueDto {
+  "mode": "inherit" | "explicit";
+  "pointer": AppActivityContributionPolicyPointerDto;
 }
 
 export interface AppActivityControlPlaneStatusDto {
@@ -916,6 +977,17 @@ export interface AppConfirmActivityOutcomeDto {
   "values": AppOutcomeFinalizationSelectionDto[];
 }
 
+export interface AppCreationContributionPolicyPositionOverrideDto {
+  "sessionCode": string;
+  "positionCode": string;
+  "selection": AppActivityContributionPolicySelectionValueDto;
+}
+
+export interface AppCreationContributionPolicySelectionInputDto {
+  "activity": AppActivityContributionPolicySelectionValueDto;
+  "positionOverrides": AppCreationContributionPolicyPositionOverrideDto[];
+}
+
 export interface AppCreationPlaceCoordinateDto {
   "longitude": number;
   "latitude": number;
@@ -965,11 +1037,16 @@ export interface AppEmergencyActivityCreationDto {
   "location": string;
   "metricSelection"?: AppActivityMetricSelectionInputDto;
   "timePolicySelection"?: AppEmergencyTimePolicySelectionInputDto;
+  "contributionPolicySelection"?: AppEmergencyContributionPolicySelectionInputDto;
   "initiatorMemberId": string;
   "activityTypeCode": string;
   "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
   "organizationIds"?: string[];
   "memberIds"?: string[];
+}
+
+export interface AppEmergencyContributionPolicySelectionInputDto {
+  "activity": AppActivityContributionPolicySelectionValueDto;
 }
 
 export interface AppEmergencyCreationFollowUpDto {
@@ -1882,6 +1959,12 @@ export interface AppParticipationTimeProofResponseDto {
   "pageSize": number;
 }
 
+export interface AppPatchActivityContributionPolicySelectionDto {
+  "operationKey": string;
+  "expectedRevision": number;
+  "changes": AppActivityContributionPolicySelectionChangeDto[];
+}
+
 export interface AppPatchActivityTimePolicySelectionDto {
   "operationKey": string;
   "expectedRevision": number;
@@ -1919,6 +2002,7 @@ export interface AppProfessionalActivityCreationDto {
   "location": string;
   "metricSelection"?: AppActivityMetricSelectionInputDto;
   "timePolicySelection"?: AppCreationTimePolicySelectionInputDto;
+  "contributionPolicySelection"?: AppCreationContributionPolicySelectionInputDto;
   "activityTypeCode": string;
   "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
   "initiatorMemberId"?: string;
@@ -2688,6 +2772,31 @@ export interface ChangeMyPasswordDto {
   "newPassword": string;
 }
 
+export interface ChangeReviewContributionPolicyPointerDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+}
+
+export interface ChangeReviewContributionPolicySelectionChangeDto {
+  "scope": ChangeReviewContributionPolicySelectionScopeDto;
+  "selection": ChangeReviewContributionPolicySelectionValueDto;
+}
+
+export interface ChangeReviewContributionPolicySelectionScopeDto {
+  "layerCode": "activity" | "position";
+  "sessionId"?: string;
+  "sessionClientRef"?: string;
+  "positionId"?: string;
+  "positionClientRef"?: string;
+}
+
+export interface ChangeReviewContributionPolicySelectionValueDto {
+  "mode": "inherit" | "explicit";
+  "pointer": ChangeReviewContributionPolicyPointerDto;
+}
+
 export interface ChangeReviewDto {
   "operationKey": string;
   "confirmation": boolean;
@@ -2700,6 +2809,8 @@ export interface ChangeReviewDto {
   "expectedMetricSelectionRevision"?: number;
   "timePolicySelectionChanges"?: ChangeReviewTimePolicySelectionChangeDto[];
   "expectedTimePolicySelectionRevision"?: number;
+  "contributionPolicySelectionChanges"?: ChangeReviewContributionPolicySelectionChangeDto[];
+  "expectedContributionPolicySelectionRevision"?: number;
 }
 
 export interface ChangeReviewQualificationRuleScopeDto {

@@ -968,3 +968,25 @@ main CI、部署和 Gate 是彼此独立的动作，前一步通过不自动授�
 > 不转换旧 `ContributionRule`、不接正式贡献结算、不删除或重算业务数据。
 
 这段授权在维护者明确确认前不生效；本轮 docs-only PR 也不继承 E1-2 的实现 grant、Ready、合并或红区审批。
+
+## 26. E1-3 implementation 当前记录（2026-09-24）
+
+- 维护者已确认第18–24节方案 A、137路径精确写集、仅 `app_test_w98` 隔离验证及 Draft PR 边界，并已执行红区 grant；
+  保留 #1324 仅豁免本 lane 的唯一 open PR 要求。
+- 已实现三层选择、Template V5、quick／professional／series 一致物化、Proposal V9、批准冻结、Readiness、五个端点、
+  两项 scoped Human 权限、闭合审计与八个 BizCode。未接旧 `ContributionRule`、考勤或正式贡献账本。
+- 当前机器读数为43 module／127 controller／658 endpoint／131 migration／182 model／581 BizCode／269 permission／
+  173 AuditLogEvent（168 active）。第131条 SQL SHA-256 为
+  `11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5`，3b 已由维护者重签。
+- `app_test_w98` 已通过131条冷回放、130→131非空升级、跨活动／跨版本／hash-evaluator／集合完整性／当前指针／收据锚／
+  UPDATE／DELETE／TRUNCATE 负例，以及新增六份功能 E2E；OpenAPI contract 1,087项及2份快照通过。
+- 权限、审计和字典机器对拍为269、173/168、30/277；seed摘要 `d2f330814b0a`，权限目录完整摘要
+  `7685760467fbe0c06640c58805f8c15ef917b38f0edc7800abc21b2b17614203`，4b 已由维护者按最终格式更正重签。
+- lint、typecheck、build、Harness selftest/replay、边界与全部 docs guards 已通过；新增单测32项、contract 1,087项／
+  2快照通过。三份既有兼容E2E首轮串跑暴露一处手写trigger清理漏接D6守卫及本机连续清库I/O超时；改为既有
+  统一cleanup helper后未改断言或业务超时，逐套重建w98最终36／17／5项全过。
+- 137路径清单内实际改动129路径、清单外0；8个候选路径零diff未伪造。当前按既有授权提交、推送并创建
+  Draft PR，随后由PR CI冷跑；不得据本地通过登记 Ready、合并、部署或 Gate。
+
+本记录不授权生产操作、D8-OPS、E2–E5、前端发布、旧规则转换、正式贡献结算、业务数据删除／回填／重分类／重算；
+新增选择修订、收据和历史指针永久保留。

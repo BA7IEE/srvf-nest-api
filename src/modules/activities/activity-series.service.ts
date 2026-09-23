@@ -11,6 +11,7 @@ import { ActivityFromTemplateService } from './activity-from-template.service';
 import { ActivitySeriesAuditRecorder } from './activity-series-audit-recorder';
 import { ActivityMetricSelectionAccess } from './activity-metric-selection-access';
 import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
+import { ActivityContributionPolicySelectionService } from './activity-contribution-policy-selection.service';
 import {
   buildActivitySeriesRequestHash,
   isActivitySeriesStatusCode,
@@ -66,6 +67,7 @@ export class ActivitySeriesService {
     private readonly auditRecorder: ActivitySeriesAuditRecorder,
     private readonly metricAccess: ActivityMetricSelectionAccess,
     private readonly timePolicySelection: ActivityTimePolicySelectionService,
+    private readonly contributionPolicySelection: ActivityContributionPolicySelectionService,
   ) {}
 
   async create(
@@ -395,6 +397,25 @@ export class ActivitySeriesService {
                   materialized.timePolicySelectionInitialization.templateDefinitionHash,
               },
               revalidate: materialized.timePolicySelectionInitialization.revalidate,
+            });
+          }
+          if (materialized.contributionPolicySelectionInitialization) {
+            await this.contributionPolicySelection.initializeWithinTransaction({
+              tx,
+              activityId: materialized.created.id,
+              selection: materialized.contributionPolicySelectionInitialization.selection,
+              templateSelection:
+                materialized.contributionPolicySelectionInitialization.templateSelection,
+              actor: materialized.actor ?? actor,
+              meta: auditMeta,
+              source: {
+                originCode: 'series_occurrence',
+                seriesOccurrenceId: occurrence.id,
+                templateId: materialized.contributionPolicySelectionInitialization.templateId,
+                templateDefinitionHash:
+                  materialized.contributionPolicySelectionInitialization.templateDefinitionHash,
+              },
+              revalidate: materialized.contributionPolicySelectionInitialization.revalidate,
             });
           }
           await this.auditRecorder.logGeneratedOccurrence({
