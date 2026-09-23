@@ -3,3 +3,4 @@
 - 保持旧 ContributionRule、考勤、正式账本、Readiness、API、权限、审计和 Gate 行为不变；不回填、转换、删除或重算历史业务数据。
 - 将三张新表及其不可截断守卫纳入既有受控测试夹具清理，并严格恢复触发器原状态；不改变生产守卫或业务断言。
 - 修复通知 Outbox 对冻结快照 SHA-256 事实锚的随机误判：仅在 `recipientFreeze.basisRef[]` 的精确结构路径放行完整小写 64 位摘要；裸手机号、其他路径和自由文本仍按原规则 fail-closed。
+- 修复通知 Outbox 对结构化 CUID 的手机号形状误判：仅在 envelope ID、冻结受众锚及已解析 payload 的精确 CUID ID 路径中遮蔽完整 CUID 后继续敏感值扫描；裸手机号、自由文本、近似 CUID 与 payload 形状守卫仍 fail-closed。

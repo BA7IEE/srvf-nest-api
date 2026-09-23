@@ -274,14 +274,18 @@ E1-2、E1-3、E2–E5、生产部署和任何正式切换均不继承 E1-1 授�
   4b 不需要重签。
 - 实际写集为批准的 46 路径加维护者后续精确扩写的夹具清理 1 路径，共 47 路径；没有修改历史 migration、
   生产守卫或既有业务断言。固定使用其他 scratch 库的历史迁移 rehearsal 不在本地扩大权限，交 Draft PR CI 冷跑。
-- Draft [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 已创建；head `c51f76a75431116ef90d47460f0114823bdce75e`
-  的 [PR CI 35754360849](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35754360849) 除第 2 组 E2E 外全部通过，
-  第 2 组唯一失败为既有 B6 紧急创建用例返回 500。脱敏栈落在 `notification-outbox.types.ts` 的 payload
-  敏感值守卫；纯函数复现证明合法 `creationRequestHash` 的 64 位摘要若偶然包含手机号形状数字串，会在
-  `recipientFreeze.basisRef[0]` 被误拒，确定性样本 445 次即命中。
-- 维护者已确认精确修复方案 A：只在 `recipientFreeze.basisRef[]` 放行完整小写 SHA-256，其他路径、裸手机号、
-  title/body 自由文本及既有 fail-closed 条件均不放宽。守卫单测 41/41、通知单测 207/207、冷建
-  `app_test_w98` 的完整 B6 30/30、全仓单测 407/407 suites（8,874 passed／5 todo）、contract 1,074/1,074、
-  typecheck、build、8 GiB lint、Harness 561／138／68 及派生文档／台账校验均已通过；生成摘要已刷新，
-  仍需提交推送及新一轮 PR CI。
+- Draft [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 已创建。初始 head `c51f76a75431116ef90d47460f0114823bdce75e`
+  的 [PR CI 35754360849](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35754360849) 暴露合法 SHA-256 冻结锚被手机号形状
+  正则误拒；精确 SHA 路径修复已随 head `8f0b8988f211e1fc1db892df117fd3d25938c6c3` 推送。
+- head `8f0b8988f211e1fc1db892df117fd3d25938c6c3` 的
+  [PR CI 35760162619](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35760162619) 进一步暴露同类 CUID 误判：Contract + E2E
+  第 1 组的 Activity registrations 前置发布返回 500、活动仍为 draft。确定性 HTTP 探针使用合法但含手机号形状数字串的
+  CUID，修复前稳定复现 201 create／500 publish，证明 envelope ID、冻结受众锚和已解析 payload 的结构化不透明 ID
+  进入了通用 PII 正则。
+- 维护者已确认 CUID 元数据误判修复方案 A：仅在 envelope ID 槽位、`recipientFreeze.cohortKey/basisRef[]` 及已解析
+  payload 的精确 CUID ID 路径中遮蔽完整 CUID 后继续敏感值扫描；裸手机号、自由文本、近似／不完整 CUID 及原 payload
+  形状守卫仍 fail-closed。修复后同一 HTTP 探针为 201 create／200 publish，活动状态为 published；守卫单测 48/48、
+  通知模块 18 suites／327 tests、冷建 `app_test_w98` 的 Activity registrations 与完整 B6 4 suites／104 tests、全仓单测
+  407/407 suites（8,881 passed／5 todo）、contract 1,074/1,074、typecheck、build、8 GiB lint、Harness 561／138／68
+  均已通过；`CODEMAP.md` 与 `ROUTE_AUTHZ.md` 已由既有生成器刷新，仍需提交推送及新一轮 PR CI。
 - 本节不宣称 #1345 PR CI 已全绿、Ready、合并、部署、D8-OPS、Gate、E1-2／E1-3 或 E2–E5 已完成。
