@@ -139,6 +139,8 @@ const MANUALLY_ASSIGNED_PERMISSION_CODES = new Set([
   'activity-metric.manage.set',
   'activity-template.read.catalog',
   'activity-template.manage.version',
+  'contribution-policy.read.catalog',
+  'contribution-policy.manage.version',
 ]);
 
 /** 唯一豁免口 = ① ∪ ② ∪ 已批准的精确人工授码清单。 */
@@ -147,8 +149,8 @@ const isExempt = (code: string): boolean =>
   UNWIRED_RESERVED_PERMISSION_CODES.has(code) ||
   MANUALLY_ASSIGNED_PERMISSION_CODES.has(code);
 
-describe('C1 D2a/D2b、D1-3、D3 与 D4 人工授码例外边界', () => {
-  it('仅十八条精确例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
+describe('C1 D2a/D2b、D1-3、D3、D4 与 E1-2 人工授码例外边界', () => {
+  it('仅二十条精确例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
     expect([...MANUALLY_ASSIGNED_PERMISSION_CODES].sort()).toEqual([
       'activity-metric.manage.definition',
       'activity-metric.manage.rule-binding',
@@ -168,6 +170,8 @@ describe('C1 D2a/D2b、D1-3、D3 与 D4 人工授码例外边界', () => {
       'activity.time-policy.select',
       'activity.time-settlement.prepare',
       'activity.time-settlement.read',
+      'contribution-policy.manage.version',
+      'contribution-policy.read.catalog',
     ]);
     for (const code of MANUALLY_ASSIGNED_PERMISSION_CODES) {
       expect(PERMISSION_UNIVERSE.has(code)).toBe(true);

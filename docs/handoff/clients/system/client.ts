@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:c28fe3a39203ee908962df83731ac202787b9178364124ad2543b0ba6afe517c
+// inputDigest: sha256:a8b1ef0910229217d032b319d64fe21c19afd5aa0896160143828a7c7eef2f01
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -21,6 +21,11 @@ import type {
   AttachmentTypeConfigResponseDto,
   AuditContextDto,
   AuditLogResponseDto,
+  ContributionPolicyCategoryRuleDto,
+  ContributionPolicyDefinitionDto,
+  ContributionPolicyDurationBandDto,
+  ContributionPolicyResultDto,
+  ContributionPolicyRoleRuleDto,
   ContributionRuleResponseDto,
   CreateAttachmentMimeConfigDto,
   CreateAttachmentSizeLimitConfigDto,
@@ -77,6 +82,14 @@ import type {
   SmsSendLogResponseDto,
   SmsSettingsResponseDto,
   StorageSettingsResponseDto,
+  SystemActivateContributionPolicyVersionDto,
+  SystemContributionPolicyCommandResponseDto,
+  SystemContributionPolicyResponseDto,
+  SystemContributionPolicyVersionResponseDto,
+  SystemContributionPolicyVersionSummaryDto,
+  SystemCreateContributionPolicyDto,
+  SystemCreateContributionPolicyVersionDto,
+  SystemRetireContributionPolicyVersionDto,
   UpdateAttachmentMimeConfigDto,
   UpdateAttachmentMimeConfigStatusDto,
   UpdateAttachmentSizeLimitConfigDto,
@@ -186,6 +199,38 @@ export function createSystemClient(fetcher: Fetcher) {
     /** 查当前用户三源授权合并后的有效权限码(直接绑定 + 职务策略 + 分管;SUPER_ADMIN 返全集) [auth] */
     EffectivePermissionsControllerGetEffectivePermissions(): Promise<ApiEnvelope<EffectivePermissionsResponseDto>> {
       return fetcher<EffectivePermissionsResponseDto>({ method: "GET", path: "/api/system/v1/authz/me/effective-permissions" });
+    },
+    /** 分页查询贡献政策 [rbac: contribution-policy.read.catalog] */
+    SystemContributionPoliciesControllerList(query?: { "page"?: number; "pageSize"?: number; "code"?: string }): Promise<ApiEnvelope<PageResultDto & { "items": SystemContributionPolicyResponseDto[] }>> {
+      return fetcher<PageResultDto & { "items": SystemContributionPolicyResponseDto[] }>({ method: "GET", path: "/api/system/v1/contribution-policies", query });
+    },
+    /** 创建贡献政策 [rbac: contribution-policy.manage.version] */
+    SystemContributionPoliciesControllerCreatePolicy(body: SystemCreateContributionPolicyDto): Promise<ApiEnvelope<SystemContributionPolicyCommandResponseDto>> {
+      return fetcher<SystemContributionPolicyCommandResponseDto>({ method: "POST", path: "/api/system/v1/contribution-policies", body });
+    },
+    /** 查看贡献政策 [rbac: contribution-policy.read.catalog] */
+    SystemContributionPoliciesControllerGet(id: string): Promise<ApiEnvelope<SystemContributionPolicyResponseDto>> {
+      return fetcher<SystemContributionPolicyResponseDto>({ method: "GET", path: `/api/system/v1/contribution-policies/${id}` });
+    },
+    /** 分页查询贡献政策版本 [rbac: contribution-policy.read.catalog] */
+    SystemContributionPoliciesControllerListVersions(id: string, query?: { "page"?: number; "pageSize"?: number; "statusCode"?: "draft" | "active" | "retired" }): Promise<ApiEnvelope<PageResultDto & { "items": SystemContributionPolicyVersionSummaryDto[] }>> {
+      return fetcher<PageResultDto & { "items": SystemContributionPolicyVersionSummaryDto[] }>({ method: "GET", path: `/api/system/v1/contribution-policies/${id}/versions`, query });
+    },
+    /** 创建贡献政策版本 [rbac: contribution-policy.manage.version] */
+    SystemContributionPoliciesControllerCreateVersion(id: string, body: SystemCreateContributionPolicyVersionDto): Promise<ApiEnvelope<SystemContributionPolicyCommandResponseDto>> {
+      return fetcher<SystemContributionPolicyCommandResponseDto>({ method: "POST", path: `/api/system/v1/contribution-policies/${id}/versions`, body });
+    },
+    /** 查看贡献政策版本 [rbac: contribution-policy.read.catalog] */
+    SystemContributionPoliciesControllerGetVersion(id: string, versionId: string): Promise<ApiEnvelope<SystemContributionPolicyVersionResponseDto>> {
+      return fetcher<SystemContributionPolicyVersionResponseDto>({ method: "GET", path: `/api/system/v1/contribution-policies/${id}/versions/${versionId}` });
+    },
+    /** 激活贡献政策版本 [rbac: contribution-policy.manage.version] */
+    SystemContributionPoliciesControllerActivate(id: string, versionId: string, body: SystemActivateContributionPolicyVersionDto): Promise<ApiEnvelope<SystemContributionPolicyCommandResponseDto>> {
+      return fetcher<SystemContributionPolicyCommandResponseDto>({ method: "POST", path: `/api/system/v1/contribution-policies/${id}/versions/${versionId}/activate`, body });
+    },
+    /** 退役贡献政策版本 [rbac: contribution-policy.manage.version] */
+    SystemContributionPoliciesControllerRetire(id: string, versionId: string, body: SystemRetireContributionPolicyVersionDto): Promise<ApiEnvelope<SystemContributionPolicyCommandResponseDto>> {
+      return fetcher<SystemContributionPolicyCommandResponseDto>({ method: "POST", path: `/api/system/v1/contribution-policies/${id}/versions/${versionId}/retire`, body });
     },
     /** 列出贡献值规则(分页 + 过滤 activityTypeCode / attendanceRoleCode / status;沿基础稳定排序) [rbac: contribution.read.rule] */
     ContributionRulesControllerList(query?: { "page"?: number; "pageSize"?: number; "activityTypeCode"?: string; "attendanceRoleCode"?: string; "status"?: "ACTIVE" | "INACTIVE" }): Promise<ApiEnvelope<PageResultDto & { "items": ContributionRuleResponseDto[] }>> {

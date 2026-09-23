@@ -17,6 +17,8 @@
 // - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿或 goal 显式预授权(D6 v1.1 §8.1 / §16)
 
 export type AuditLogEvent =
+  | 'activity.contribution-policy.command'
+  | 'activity.contribution-policy-version.command'
   | 'activity.metric-definition.command'
   | 'activity.time-policy.command'
   | 'activity.time-policy.selection'

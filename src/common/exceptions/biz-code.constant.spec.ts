@@ -85,6 +85,19 @@ describe('BizCode', () => {
     ]).toEqual([20218, 20219, 20220, 20221, 20222, 20223, 20224, 20225]);
   });
 
+  it('E1-2 贡献政策控制面错误码固定为连续八项合同', () => {
+    expect([
+      BizCode.ACTIVITY_CONTRIBUTION_POLICY_INVALID.code,
+      BizCode.ACTIVITY_CONTRIBUTION_POLICY_NOT_FOUND.code,
+      BizCode.ACTIVITY_CONTRIBUTION_POLICY_CODE_EXISTS.code,
+      BizCode.ACTIVITY_CONTRIBUTION_POLICY_STALE.code,
+      BizCode.ACTIVITY_CONTRIBUTION_POLICY_STATUS_INVALID.code,
+      BizCode.ACTIVITY_CONTRIBUTION_POLICY_COMMAND_CONFLICT.code,
+      BizCode.ACTIVITY_CONTRIBUTION_POLICY_RECEIPT_INVALID.code,
+      BizCode.ACTIVITY_CONTRIBUTION_POLICY_VERSION_LIMIT.code,
+    ]).toEqual([20239, 20240, 20241, 20242, 20243, 20244, 20245, 20246]);
+  });
+
   describe.each(entries)('%s', (key, entry) => {
     it('key 命名为大写 SNAKE_CASE', () => {
       expect(key).toMatch(KEY_PATTERN);

@@ -1,8 +1,8 @@
 # Activity OS Release 5 / E1：贡献政策评审与精确实施计划
 
-> 2026-09-23，当前基点为 `main@48596844bbb194f541404b36d74a98dc2aa7ec32`。Release 4 的
+> 2026-09-23，E1-2 implementation 基点为 `main@801e097735227b5cb7c577dea97e31141d0d7640`。Release 4 的
 > D1–D8 仓内实现已完成，D8-OPS 仍是未获执行授权的独立生产动作。本稿只启动下一条仓库开发轴
-> Release 5 / E1；E1-1 已合入 main，本轮只更正台账并冻结 E1-2 的精确计划，不部署、不切 Gate、
+> Release 5 / E1；E1-1 与 E1-2 计划已合入 main，当前按第 11–15 节实施 E1-2，不部署、不切 Gate、
 > 不执行 D8-OPS，也不把蓝图正文当作命令或跨阶段授权。
 
 ## 1. 结论先说
@@ -553,3 +553,19 @@ DoD：准确登记 #1345 merge／最终 main CI；冻结 E1-2 的 API、DTO、�
 
 该语句若获确认，仍先由机器一次性预算红区 glob，再由维护者本人执行 grant；E1-3、E2–E5、前端发布、生产部署和任何正式切换
 均不继承 E1-2 授权。
+
+## 17. E1-2 当前实施记录（2026-09-23）
+
+- 维护者已确认第 11–15 节方案 A、60 路径精确写集、`app_test_w98` 隔离验证及 Draft PR 边界，并已执行红区 grant；
+  保留 #1324 仅豁免本 lane 的唯一 open PR 要求。
+- 已实现 8 个 Human System 路由、两项零默认授予 GLOBAL 权限、两类闭合审计、8 个 BizCode、四命令事务收据、
+  锁后身份／权限复核、Repeatable Read 目录读取及强类型安全投影。E1-1 三表和第 130 条 migration 不变。
+- 当前机器读数为 43 module／125 controller／653 endpoint／130 migration／179 model／573 BizCode／267 permission／
+  172 AuditLogEvent（167 active）；目标单测、contract 以及目录／并发两份定向 E2E 已通过。
+- 治理登记、OpenAPI 和前端客户端已按真实差异刷新；最终 lint、typecheck、build、Harness、docs guards 均通过。
+  4b 已按权限267、Audit events 172总计／167活跃、字典30类／277项、seed摘要 `9a62f918affc` 及权限目录完整摘要
+  `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签；当前待提交、推送并创建 Draft PR，
+  不 Ready、不合并、不操作生产、不启用 Gate。
+
+本次未做：E1-3、E2–E5、旧 `ContributionRule` 转换、考勤／账本／Readiness 接线、角色默认授码、前端发布、
+D8-OPS、生产部署、Gate、数据删除、回填、转换、重分类或重算。

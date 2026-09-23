@@ -592,6 +592,16 @@
       "surface": "sha256:e6bbb32cafad1b69bf8ae086a5cc639223907581237eb2d4aa8433e1ee1140ea",
       "description": "sha256:9edb32ab43138317af5eefd74d986699990c076ca0d81e86ac1cb5462167d34a"
     },
+    "contribution-policy.manage.version": {
+      "endpoints": 4,
+      "surface": "sha256:bf6c3ed1dc244a07b8f57a1664cce81dcce74a2555094b5d030dee43438d816b",
+      "description": "sha256:5b93800deaf4003c3ca56b0a156df1523ff9f3e7344771b99452b913a622bdc5"
+    },
+    "contribution-policy.read.catalog": {
+      "endpoints": 4,
+      "surface": "sha256:64efe60fc4e270ab814a2a145f39e6386c714e6a6c65349215b2395330ebd487",
+      "description": "sha256:601ff843cb16b3fcbce77058ede02f8d3c4f0e7d3c005b61ecf7ea3c273192cb"
+    },
     "contribution.create.rule": {
       "endpoints": 1,
       "surface": "sha256:ece74d183099e0900af23d0f230716fbc0cbc78ce09e0c2517c0a647fc9a6cc0",

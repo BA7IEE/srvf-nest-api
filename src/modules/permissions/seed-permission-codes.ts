@@ -159,6 +159,8 @@ export const SEED_PERMISSION_CODES: readonly string[] = Object.freeze([
   'content.publish.record',
   'content.read.record',
   'content.update.record',
+  'contribution-policy.manage.version',
+  'contribution-policy.read.catalog',
   'contribution.create.rule',
   'contribution.delete.rule',
   'contribution.read.rule',

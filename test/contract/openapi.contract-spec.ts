@@ -541,7 +541,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 行为契约沿 D-P2-7-15 + §11.1 锁定。
   ['get', '/api/app/v1/my/certificates'],
 
-  // System surface(Ops-* tag;57 路由):终态前缀 /api/system/v1/*
+  // System surface(Ops-* tag;65 路由):终态前缀 /api/system/v1/*
   // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   ['get', '/api/system/v1/dict-types'],
   ['post', '/api/system/v1/dict-types'],
@@ -556,6 +556,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/dict-items/{id}'],
   ['patch', '/api/system/v1/dict-items/{id}/status'],
   ['delete', '/api/system/v1/dict-items/{id}'],
+  ['get', '/api/system/v1/contribution-policies'],
+  ['post', '/api/system/v1/contribution-policies'],
+  ['get', '/api/system/v1/contribution-policies/{id}'],
+  ['get', '/api/system/v1/contribution-policies/{id}/versions'],
+  ['post', '/api/system/v1/contribution-policies/{id}/versions'],
+  ['get', '/api/system/v1/contribution-policies/{id}/versions/{versionId}'],
+  ['post', '/api/system/v1/contribution-policies/{id}/versions/{versionId}/activate'],
+  ['post', '/api/system/v1/contribution-policies/{id}/versions/{versionId}/retire'],
   ['get', '/api/system/v1/contribution-rules'],
   ['post', '/api/system/v1/contribution-rules'],
   ['get', '/api/system/v1/contribution-rules/{id}'],
@@ -1192,7 +1200,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 645; // D8-1 proof +2; D7-2's 643 routes remain unchanged.
+const EXPECTED_ROUTE_COUNT = 653; // E1-2 contribution-policy System catalogue +8.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

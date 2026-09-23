@@ -3,7 +3,7 @@
 // surface: System 系统面
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:c28fe3a39203ee908962df83731ac202787b9178364124ad2543b0ba6afe517c
+// inputDigest: sha256:a8b1ef0910229217d032b319d64fe21c19afd5aa0896160143828a7c7eef2f01
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto } from '../shared/types';
@@ -82,6 +82,32 @@ export interface AuditLogResponseDto {
   "event": string;
   "context": AuditContextDto;
   "success": boolean;
+}
+
+export interface ContributionPolicyCategoryRuleDto {
+  "timeCategoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "durationBands": ContributionPolicyDurationBandDto[];
+}
+
+export interface ContributionPolicyDefinitionDto {
+  "defaultResult": ContributionPolicyResultDto;
+  "roleRules": ContributionPolicyRoleRuleDto[];
+}
+
+export interface ContributionPolicyDurationBandDto {
+  "recognizedPoints": string;
+  "explanationCode": string;
+  "maxSecondsInclusive": number | null;
+}
+
+export interface ContributionPolicyResultDto {
+  "recognizedPoints": string;
+  "explanationCode": string;
+}
+
+export interface ContributionPolicyRoleRuleDto {
+  "attendanceRoleCode": string;
+  "categoryRules": ContributionPolicyCategoryRuleDto[];
 }
 
 export interface ContributionRuleResponseDto {
@@ -553,6 +579,87 @@ export interface StorageSettingsResponseDto {
   "updatedBy"?: Record<string, unknown> | null;
   "updatedAt": string;
   "createdAt": string;
+}
+
+export interface SystemActivateContributionPolicyVersionDto {
+  "operationKey": string;
+  "expectedDefinitionHash": string;
+  "expectedStatusCode": "draft";
+}
+
+export interface SystemContributionPolicyCommandResponseDto {
+  "schemaVersion": 1;
+  "operationCode": "create_policy" | "create_version" | "activate_version" | "retire_version";
+  "policyId": string;
+  "versionId": string | null;
+  "definitionHash": string | null;
+  "evaluatorVersion": number | null;
+  "resultStatusCode": "draft" | "active" | "retired" | null;
+  "createdAt": string;
+}
+
+export interface SystemContributionPolicyResponseDto {
+  "id": string;
+  "code": string;
+  "name": string;
+  "description": string | null;
+  "createdAt": string;
+  "updatedAt": string;
+}
+
+export interface SystemContributionPolicyVersionResponseDto {
+  "id": string;
+  "policyId": string;
+  "version": number;
+  "schemaVersion": number;
+  "evaluatorVersion": number;
+  "definitionHash": string;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+  "statusCode": "draft" | "active" | "retired";
+  "activatedAt": string | null;
+  "retiredAt": string | null;
+  "createdAt": string;
+  "updatedAt": string;
+  "definition": ContributionPolicyDefinitionDto;
+}
+
+export interface SystemContributionPolicyVersionSummaryDto {
+  "id": string;
+  "policyId": string;
+  "version": number;
+  "schemaVersion": number;
+  "evaluatorVersion": number;
+  "definitionHash": string;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+  "statusCode": "draft" | "active" | "retired";
+  "activatedAt": string | null;
+  "retiredAt": string | null;
+  "createdAt": string;
+  "updatedAt": string;
+}
+
+export interface SystemCreateContributionPolicyDto {
+  "operationKey": string;
+  "code": string;
+  "name": string;
+  "description"?: string;
+}
+
+export interface SystemCreateContributionPolicyVersionDto {
+  "operationKey": string;
+  "schemaVersion": 1;
+  "evaluatorVersion": 1;
+  "definition": ContributionPolicyDefinitionDto;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+}
+
+export interface SystemRetireContributionPolicyVersionDto {
+  "operationKey": string;
+  "expectedDefinitionHash": string;
+  "expectedStatusCode": "active";
 }
 
 export interface UpdateAttachmentMimeConfigDto {

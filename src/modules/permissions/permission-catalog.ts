@@ -92,6 +92,25 @@ export const ACTIVITY_TIME_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionS
   },
 ];
 
+// E1-2: contribution-policy catalogue is a Human-only GLOBAL control plane.
+// Both permissions are deliberately left unbound to built-in roles.
+export const CONTRIBUTION_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'contribution-policy.read.catalog',
+    module: 'contribution-policy',
+    action: 'read',
+    resourceType: 'catalog',
+    description: '查看贡献政策目录（仅真人显式 GLOBAL 授权）',
+  },
+  {
+    code: 'contribution-policy.manage.version',
+    module: 'contribution-policy',
+    action: 'manage',
+    resourceType: 'version',
+    description: '管理贡献政策版本（仅真人显式 GLOBAL 授权）',
+  },
+];
+
 // D3: this command is deliberately registered but never attached to a built-in role.
 // A maintainer must grant it to a custom role before any internal caller can recognize time.
 export const ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
@@ -3115,6 +3134,32 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 193,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'contribution-policy.read.catalog': {
+      displayName: '查看贡献政策目录',
+      businessDescription:
+        '真人以显式GLOBAL权限查看贡献政策和历史版本；超级管理员不直通，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 199,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'contribution-policy.manage.version': {
+      displayName: '管理贡献政策版本',
+      businessDescription:
+        '真人以显式GLOBAL权限创建贡献政策及不可变版本、激活和退役；不授予读权限，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 200,
       riskLevel: 'HIGH',
       riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',

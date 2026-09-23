@@ -1,17 +1,20 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **Release 5 / E1-1 仓内交付完成；E1-2 仅冻结精确计划（2026-09-23）**：E1 计划
+> **Release 5 / E1-2 当前实现工作树（2026-09-23，未提交、未合并、未部署）**：E1 计划
 > [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已合入 `db580471f94d94300ff30ef7f8925515fc15c0c6`；
 > E1-1 实现 [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 最终 head
 > `f02065123eca7bea909e9bc4714d1bae71a2eef1` 的全部要求检查成功，已 squash 合入
 > `48596844bbb194f541404b36d74a98dc2aa7ec32`。合并后
 > [main CI 35822456365](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35822456365) completed/success，五个
 > Contract + E2E 分片均成功。第 130 条纯 additive migration、政策／不可变版本／命令收据三表、闭合 V1 definition、
-> fingerprint、纯 evaluator 与生命周期数据地基已进入 main；旧规则、考勤、账本、Readiness、API、权限、审计和 Gate
-> 均未接线。当前为 130 migration／179 model／645 Endpoint／265 权限／170 AuditLogEvent；3b 已重签，E1-1 不需 4b。
-> 当前[评审稿](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)第 11–16 节仅冻结 E1-2 的 8 个 Human
-> System 接口、两项显式 GLOBAL 权限、两类审计、四命令收据、锁后复核、8 个 BizCode 和 60 路径写集；
-> **E1-2 尚未实施或获实施授权**。E1-3、E2–E5、D8-OPS、生产、Gate、数据转换、删除或重算仍未实施或授权。
+> fingerprint、纯 evaluator 与生命周期数据地基已进入 main。E1-2 精确计划
+> [#1346](https://github.com/BA7IEE/srvf-nest-api/pull/1346) 已合入 `801e097735227b5cb7c577dea97e31141d0d7640`；E1-2 现按
+> [评审稿](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)第 11–15 节实施 8 个 Human System 接口、
+> 两项显式 GLOBAL 权限、两类审计、四命令收据、锁后复核和 8 个 BizCode；内建角色零默认授予，
+> `SUPER_ADMIN` 不短路。工作树读数为 130 migration／179 model／653 Endpoint／267 权限／172 AuditLogEvent；
+> 目标单测、contract、两份定向 E2E、lint、typecheck、build、Harness 与 docs guards 已通过；4b 已按最终
+> 权限目录摘要重签，当前待提交、推送并创建 Draft PR。
+> E1-3、E2–E5、D8-OPS、生产、Gate、数据转换、删除或重算仍未实施或授权。
 
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
 > [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
@@ -135,7 +138,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                         | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                          | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                           | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 与 E1-1 仓内交付已完成；E1-2 精确计划评审中                                    | E1-2／E1-3 与 E2–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                   |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 与 E1-1 仓内交付已完成；E1-2 分支实现验证中                                    | E1-2 合并、E1-3 与 E2–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成              |
 
 ### 1.1 欠代码的五项
 
@@ -344,20 +347,20 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 <!-- 由 `pnpm exec tsx scripts/check-frozen-drafts-ledger.ts --write` 生成;禁止手改。
      判据 `src/frozen-drafts-ledger.criteria.spec.ts` 逐字节比对,手改即红。 -->
 
-| 读数 | 值 | 取自 |
-|---|---|---|
-| IF v1:ServicePrincipal / DelegationGrant 建表数 | **3** | `prisma/schema.prisma` |
-| IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
-| P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
-| P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **265** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
-| 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
-| 治理 Phase 7:债务身份证待清偿条数 | **221** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 76** | `harness/state-machines.json` |
-| 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
-| 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
-| 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
-| 三条"代码已落、闸未开"的开关在配置里的数量 | **3 / 3** | `src/config/app.config.ts` |
+| 读数                                                    | 值                          | 取自                                                         |
+| ------------------------------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| IF v1:ServicePrincipal / DelegationGrant 建表数         | **3**                       | `prisma/schema.prisma`                                       |
+| IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3**                       | `src/**/*.ts(不含 .spec.ts)`                                 |
+| P1-32 PR1:`permission-catalog*` 运行时文件数            | **2**                       | `src/modules/permissions/`                                   |
+| P1-32:授码 / 撤码两侧是否复用控制面闸谓词               | **已接**                    | `src/modules/permissions/role-permissions.service.ts`        |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表)     | **265**                     | `scripts/docs-counts.ts 的 typed-AST 闭包`                   |
+| 活动 v1.1 验收编号:已绑真实证据 / 合同定义              | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
+| 治理 Phase 7:债务身份证待清偿条数                       | **221**                     | `harness/architecture-debt.json`                             |
+| 治理 Phase 4:状态列 governed / 登记总数                 | **8 / 76**                  | `harness/state-machines.json`                                |
+| 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC)       | **21**                      | `harness/service-size-baseline.json`                         |
+| 治理 Phase 1D:声明 Guard 模式                           | **enforce**                 | `src/common/guards/authz-declaration.guard.ts`               |
+| 治理 Phase 1J:跨域金路径 journey 数                     | **6**                       | `test/journeys/`                                             |
+| 三条"代码已落、闸未开"的开关在配置里的数量              | **3 / 3**                   | `src/config/app.config.ts`                                   |
 
 <!-- frozen-drafts:readings:end -->
 
@@ -380,7 +383,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 | 文件                                                                                                  | 分类           | 去向 / 理由                                                                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 与 E1-1 仓内交付已完成，E1-2 仅冻结精确计划；E1-2／E1-3 与 E2–E5 实施、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                                    |
+| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 与 E1-1 仓内交付已完成，E1-2 分支实现验证中；E1-2 合并、E1-3 与 E2–E5 实施、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                               |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md`                                  | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改                                                                                                                                                       |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md`                            | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改                                                                                                                                                                |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md`                      | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改                                                                                                                                             |
