@@ -1,22 +1,16 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **Release 5 / E1-2 当前实现工作树（2026-09-23，未提交、未合并、未部署）**：E1 计划
-> [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已合入 `db580471f94d94300ff30ef7f8925515fc15c0c6`；
-> E1-1 实现 [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 最终 head
-> `f02065123eca7bea909e9bc4714d1bae71a2eef1` 的全部要求检查成功，已 squash 合入
-> `48596844bbb194f541404b36d74a98dc2aa7ec32`。合并后
-> [main CI 35822456365](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35822456365) completed/success，五个
-> Contract + E2E 分片均成功。第 130 条纯 additive migration、三张永久保留表、V1 强类型 definition、fingerprint、
-> 纯 evaluator 和 draft→active→retired 数据／纯状态地基现已在 main。E1-2 精确计划
-> [#1346](https://github.com/BA7IEE/srvf-nest-api/pull/1346) 已合入 `801e097735227b5cb7c577dea97e31141d0d7640`；E1-2 现按
-> [精确计划](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)第 11–15 节实施 8 个 Human System 目录接口、
-> 两项显式 GLOBAL 权限、两类审计、四命令收据、锁后复核与八个 BizCode。工作树为 130 migration／179 model／
-> 653 Endpoint／267 权限／172 AuditLogEvent；目标单测、contract、两份定向 E2E、lint、typecheck、build、Harness
-> 与 docs guards 已通过，4b 已按最终权限目录摘要重签。Draft
-> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 已创建，首个 head
-> `dcf06767af6cb2c309962946556c4626a7e0c119`，当前等待 PR CI 冷跑。不改 schema/migration，不执行 D8-OPS，
-> 不启用 Gate、不 Ready、不合并。
-> E1-3、E2–E5、前端发布、生产、历史转换、数据删除或重算仍未授权。
+> **Release 5 / E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：E1-2 最终 head
+> `0cc3938ce2471f1e56571f728f651e53d8566e88` 的全部 PR 检查成功，已随
+> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) squash 合入
+> `09e7101f51d5a00e63bbdb8210cf00815563e12a`。合并后
+> [main CI 35854133319](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35854133319) 首轮仅
+> Contract + E2E (3) 失败；不改代码、不改超时的同 SHA attempt 2 已 completed/success，五个 Contract + E2E
+> 分片及聚合全部成功。当前事实为 43 module／125 controller／653 endpoint／130 migration／179 model／
+> 573 BizCode／267 permission／172 AuditLogEvent（167 active）。E1-2 已进入 main、尚未部署；当前仅按
+> [精确计划](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)起草 E1-3 模板／活动／岗位三层选择、
+> 发布冻结及 137 路径实施上限。本轮不实施 E1-3、不操作数据库、不启用 Gate。
+> E2–E5、D8-OPS、前端发布、生产部署、历史转换、数据删除或重算仍未授权。
 
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
 > [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
@@ -2632,9 +2626,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **Release 1–4 与 E1-1 仓内交付完成；E1-2 分支实现验证中**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **Release 1–4 与 E1-1／E1-2 仓内交付完成；E1-3 仅起草精确计划**
 
-**状态**:进行中(Release 4 的 D8-1 #1341、D8-2 #1342 与 D8-OPS 文档 #1343 均已合并且最终 main CI 全绿；D8-OPS 未执行。Release 5 / E1-1 已随 #1345 合入并通过最终 main CI；E1-2 当前在独立分支实施和验证，尚未提交或合并；E1-3 与 E2–E5、部署、v1.1 独立稳定窗、生产预检与不可逆执行、整体复审、前端及真实业务验收均未完成)
+**状态**:进行中(Release 4 的 D8-1 #1341、D8-2 #1342 与 D8-OPS 文档 #1343 均已合并且最终 main CI 全绿；D8-OPS 未执行。Release 5 / E1-1 #1345 与 E1-2 #1347 均已合入并通过最终 main CI；E1-3 仅起草精确计划，E1-3 实施与 E2–E5、部署、v1.1 独立稳定窗、生产预检与不可逆执行、整体复审、前端及真实业务验收均未完成)
 
 - **D8-2 最终状态（2026-09-22）**：方案 A 的25路径、module 单一导出、owner query facade、四份派生治理摘要及
   一份旧迁移夹具兼容补项，共32路径；实际24路径、零越界，已随 #1342 合入 `802a636a` 并通过最终 main CI。
@@ -2643,10 +2637,11 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
   正式窗口的仓库写集为零，必须现场提供 exact deployed SHA、fleet 同版、v1.1 更早独立稳定、证据包摘要、
   只读与 worker 排空、ACTIVE GLOBAL actor 及实时签字。计划已随 #1343 合入，但不构成任何生产权限。
 - **E1 当前边界（2026-09-23）**：推荐方案 A 仍按 E1-1 数据与定义地基、E1-2 System 目录、E1-3 选择与发布冻结
-  三刀推进。E1-1 已随 #1345 合入 main；E1-2 已获准按 60 路径实施 8 个 Human System 接口、两项显式
-  GLOBAL 权限、两类审计、四命令收据、锁后复核和 8 个 BizCode，当前分支验证中、尚未提交或合并。旧
-  `ContributionRule`、考勤预填、正式账本、每日上限、V2–V8 历史快照和 Readiness 行为仍不改变；E1-3、E2 旧规则
-  转换、E3 shadow、E4 结算接线、E5 正式切换必须继续独立立项。
+  三刀推进。E1-1 #1345 与 E1-2 #1347 均已合入 main；E1-2 合并后同 SHA main CI attempt 2 全绿，仓内读数为
+  130 migration／179 model／653 endpoint／267 permission／172 audit（167 active）。E1-3 当前只冻结模板／活动／岗位
+  三层选择、V5 模板、V9 提案、发布快照和 Readiness 闭环的 137 路径上限，尚未实施。旧 `ContributionRule`、考勤预填、
+  正式账本、每日上限、V2–V8 历史快照和既有 Readiness 行为仍不改变；E2 旧规则转换、E3 shadow、E4 结算接线、
+  E5 正式切换必须继续独立立项。
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 

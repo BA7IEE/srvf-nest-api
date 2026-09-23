@@ -1,6 +1,6 @@
 # prisma — 本地铁律
 
-> **E1-2 当前实现工作树（2026-09-23，未提交、未合并、未部署）**：当前仍为 **130 个 migration、179 个模型**；第 130 条
+> **E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：当前仍为 **130 个 migration、179 个模型**；第 130 条
 > `20260922194000_activity_os_r5_e1_contribution_policy_foundation` 只新增稳定政策、不可变版本与命令收据三表及
 > 对应约束／守卫，纯 additive，零 DML、回填、删除或旧表修改。版本固定
 > `(id, policyId, definitionHash, evaluatorVersion)` 精确锚，只允许 draft→active→retired；三表永久保留，禁止业务
@@ -8,11 +8,15 @@
 > `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00` 的 3b 已重签；实现随
 > [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 合入 `48596844`，
 > [main CI 35822456365](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35822456365) 成功。E1-2 复用三表，
-> **不改 schema/migration**，只为 System 目录控制面新增两项零默认授予权限与两类审计；当前工作树读数为
+> **不改 schema/migration**，只为 System 目录控制面新增两项零默认授予权限与两类审计；最终读数为
 > 267 权限／172 AuditLogEvent；4b 已按 seed 摘要 `9a62f918affc` 与权限目录摘要
-> `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签。Draft
-> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 已创建并等待 CI。仍未接旧贡献规则、正式账本、Readiness、Gate、
-> D8-OPS 或生产，不删除或重算任何业务数据。下文 D8/D7-2 描述保留为历史时点。
+> `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签。最终 head
+> `0cc3938ce2471f1e56571f728f651e53d8566e88` 已随
+> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 合入 `09e7101f51d5a00e63bbdb8210cf00815563e12a`；
+> [main CI 35854133319](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35854133319) 同 SHA attempt 2 全绿。
+> E1-3 计划候选会新增第 131 条 additive migration 和三张永久选择事实表，但本轮只写计划，**未改 schema/migration、
+> 未操作数据库**。仍未接旧贡献规则、正式账本、Gate、D8-OPS 或生产，不删除或重算任何业务数据。下文 D8/D7-2
+> 描述保留为历史时点。
 
 > **D8-1 当前实施工作树（2026-09-21，未提交、未合并、未部署）**：当前累计 **129 个 migration、176 个模型**；第129条
 > `20260921180000_activity_os_r4_d8_proof_cutover` 只新增不可变单例切换收据和切换后根账绑定两表，

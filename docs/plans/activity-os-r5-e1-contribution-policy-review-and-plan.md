@@ -1,9 +1,9 @@
 # Activity OS Release 5 / E1：贡献政策评审与精确实施计划
 
-> 2026-09-23，E1-2 implementation 基点为 `main@801e097735227b5cb7c577dea97e31141d0d7640`。Release 4 的
-> D1–D8 仓内实现已完成，D8-OPS 仍是未获执行授权的独立生产动作。本稿只启动下一条仓库开发轴
-> Release 5 / E1；E1-1 与 E1-2 计划已合入 main，当前按第 11–15 节实施 E1-2，不部署、不切 Gate、
-> 不执行 D8-OPS，也不把蓝图正文当作命令或跨阶段授权。
+> 2026-09-23，当前基点为 `main@09e7101f51d5a00e63bbdb8210cf00815563e12a`。Release 4 的 D1–D8
+> 仓内实现已完成，D8-OPS 仍是未获执行授权的独立生产动作。E1-1 与 E1-2 已分别随 #1345／#1347 合入 main；
+> 本稿在保留前两刀历史计划的同时，新增 E1-3 选择与发布冻结的精确方案。当前仅起草计划，不实施 E1-3，
+> 不部署、不切 Gate、不执行 D8-OPS，也不把蓝图正文当作命令或跨阶段授权。
 
 ## 1. 结论先说
 
@@ -31,13 +31,13 @@ E1 任一子刀通过都不能冒充 Release 5 完成。
 
 | 现场事实     | 证据与结论                                                                                                                                                                      |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 仓库基线     | `pnpm docs:counts:check`：43 模块、124 Controller、645 Endpoint、130 migration、565 BizCode、265 权限、170 AuditLogEvent；schema 实测 179 个 model。                            |
+| 仓库基线     | `main@09e7101f`：43 module、125 Controller、653 Endpoint、130 migration、573 BizCode、267 权限、172 AuditLogEvent（167 active）；schema 实测 179 个 model。                     |
 | 旧规则真相   | `prisma/schema.prisma` 的 `ContributionRule` 仍以活动类型、考勤角色、单阈值和上下档分值表达；`dailyCap` 已废弃但保留。                                                          |
 | 当前预填     | `src/modules/attendances/contribution-calculator.ts` 只按 `(activityTypeCode, attendanceRoleCode)` 批量查 ACTIVE 规则；无匹配保守为 0，数据库漂移出现重复 pair 时 fail-closed。 |
 | 正式贡献事实 | `ParticipationLedgerEntry`、`MemberContributionDayState` 已保存 recognized／credited／cappedOut 和每日物化状态；全局日上限仍是既有 `GLOBAL_DAILY_CONTRIBUTION_CAP=3`。          |
 | 发布合同     | V6–V8 提案和快照中的 `contributionPolicyPointers` 仍固定为 `null`；不得回改这些历史 schema/hash。                                                                               |
 | Readiness    | `ActivityPublishReadinessService` 当前始终登记 `CONTRIBUTION_POLICY_UNREPRESENTABLE`；只有 E1-3 的真实选择、解析和冻结闭环才有资格改变它。                                      |
-| 迁移联动     | E1-1 已把当前完整回放推进到 130；E1-2 不改 schema/migration，不刷新 migration 计数，也不继承 E1-1 的 3b。                                                                       |
+| 迁移联动     | E1-1 已把当前完整回放推进到 130；E1-2 未改 schema/migration。E1-3 若获授权才新增第 131 条 additive migration，且须独立 3b 重签。                                                |
 | 并行状态     | 唯一 open PR #1324 只修改流程文件，与本稿六份文档零交叉；维护者已对本 lane 豁免唯一 open PR 要求，E 档 release 的 global 0 open PR 规则不变。                                   |
 
 蓝图是需求来源，不是执行指令。它明确要求贡献与时长解耦、System 集中管理、强类型 evaluator、旧规则先 shadow
@@ -554,7 +554,7 @@ DoD：准确登记 #1345 merge／最终 main CI；冻结 E1-2 的 API、DTO、�
 该语句若获确认，仍先由机器一次性预算红区 glob，再由维护者本人执行 grant；E1-3、E2–E5、前端发布、生产部署和任何正式切换
 均不继承 E1-2 授权。
 
-## 17. E1-2 当前实施记录（2026-09-23）
+## 17. E1-2 最终仓内记录（2026-09-23）
 
 - 维护者已确认第 11–15 节方案 A、60 路径精确写集、`app_test_w98` 隔离验证及 Draft PR 边界，并已执行红区 grant；
   保留 #1324 仅豁免本 lane 的唯一 open PR 要求。
@@ -564,9 +564,407 @@ DoD：准确登记 #1345 merge／最终 main CI；冻结 E1-2 的 API、DTO、�
   172 AuditLogEvent（167 active）；目标单测、contract 以及目录／并发两份定向 E2E 已通过。
 - 治理登记、OpenAPI 和前端客户端已按真实差异刷新；最终 lint、typecheck、build、Harness、docs guards 均通过。
   4b 已按权限267、Audit events 172总计／167活跃、字典30类／277项、seed摘要 `9a62f918affc` 及权限目录完整摘要
-  `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签。Draft
-  [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 已创建，首个 head
-  `dcf06767af6cb2c309962946556c4626a7e0c119`，当前等待 PR CI 冷跑；不 Ready、不合并、不操作生产、不启用 Gate。
+  `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签。最终 head
+  `0cc3938ce2471f1e56571f728f651e53d8566e88` 的全部 PR 检查成功，已随
+  [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) squash 合入
+  `09e7101f51d5a00e63bbdb8210cf00815563e12a`。
+- 合并后 [main CI 35854133319](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35854133319) attempt 1 仅
+  Contract + E2E (3) 失败；维护者授权同 SHA 重跑后，attempt 2 completed/success，五个 Contract + E2E 分片及聚合
+  全部成功。两次之间没有代码、断言或超时变化；这证明当前 SHA 冷跑通过，不把首轮红点改写成已定位缺陷。
 
-本次未做：E1-3、E2–E5、旧 `ContributionRule` 转换、考勤／账本／Readiness 接线、角色默认授码、前端发布、
-D8-OPS、生产部署、Gate、数据删除、回填、转换、重分类或重算。
+E1-2 仓内交付不等于已部署。E1-3、E2–E5、旧 `ContributionRule` 转换、考勤／账本接线、前端发布、D8-OPS、
+生产部署、Gate、数据删除、回填、转换、重分类或重算均未完成。
+
+## 18. E1-3 结论：三层完整引用，不照搬时长四层
+
+E1-3 推荐继续采用方案 A，但贡献政策的业务层级与时长政策不同，不能复制 D1-3 的 Activity／Session／Position／
+Member 四层结构。本刀只有三个选择层：
+
+1. **Template**：模板版本提供活动默认政策，并可按稳定的 `sessionCode + positionCode` 给岗位预设覆盖；
+2. **Activity**：活动根可显式覆盖模板默认；未覆盖时继承模板；
+3. **ActivitySessionPosition**：活动岗位可显式覆盖活动根；未覆盖时继承活动根。
+
+不存在 session 级贡献政策，也不存在 member 级贡献政策。解析遵循“离目标最近的一份完整指针覆盖上层”，不对 definition
+或指针字段做 JSON merge。每份显式指针必须同时固定 `policyId`、`versionId`、`definitionHash`、`evaluatorVersion`；任何一项
+缺失、跨 policy、hash/evaluator 不匹配、版本非 active 或有效期不覆盖目标，均 fail-closed。
+
+E1-3 只让模板、草稿活动、发布提案和不可变快照能稳定引用 E1-1／E1-2 已治理的政策版本，并让 Readiness 基于真实解析结果
+判断是否还存在 blocker。它不调用 evaluator 写贡献值，不替换 `ContributionRule`，不接考勤预填、正式贡献账本、每日上限或
+correction。E2 转换旧规则、E3 shadow、E4 结算接线、E5 正式切换仍是四个独立阶段。
+
+## 19. E1-3 最终数据合同
+
+### 19.1 三张永久事实表
+
+未来第 131 条 migration 候选名固定为
+`20260923190000_activity_os_r5_e1_3_contribution_policy_selection`，只做 additive DDL，新增：
+
+1. `ActivityContributionPolicySelectionRevision`：活动的一次完整选择修订。核心锚为 `activityId + revision`；保存
+   schemaVersion、来源、actor、创建时刻和 canonical/fingerprint。修订只增不改、不删、不截断。
+2. `ActivityContributionPolicySelectionItem`：修订内的 activity 或 position 层条目。`layerCode` 只允许
+   `activity | position`；position 层必须同时带 `activityId + sessionId + positionId`，并由复合 FK 证明岗位属于同一活动和场次。
+   `modeCode` 只允许 `inherit | explicit`；只有 explicit 可携带且必须携带完整政策指针四元组。
+3. `ActivityContributionPolicySelectionCommandReceipt`：稳定 `actor + operationKey` 的幂等收据，保存 request hash、
+   activity/revision 锚和闭合安全响应。相同 key+payload 返回原结果；相同 key+不同 payload 稳定冲突；不可更新、删除或截断。
+
+三表均永久保留。它们不包含自由公式、成员身份、考勤事实、recognized points 或附件内容；收据和审计不保存原始 definition、
+operationKey、requestHash、用户资料或自由文本。
+
+### 19.2 既有表的最小扩展
+
+- `Activity` 新增 `contributionPolicySelectionRevision Int @default(0)` 与可空
+  `currentContributionPolicySelectionRevisionId`；指针必须与同活动、同 revision 的事实一致。
+- `ActivityRuleSnapshot` 新增可空 `contributionPolicySelectionRevisionId`。V1–V8 历史快照保持 NULL；V9 审批成功后固定
+  当次选择修订，并由复合 FK 证明快照与修订属于同一活动。
+- `ActivityTemplate`、`ActivityCreationCommandReceipt`、`ActivitySeriesOccurrence`、`ActivityPublishReview`、
+  `ActivitySessionPosition`、`ContributionPolicyVersion` 只补必要反向关系或复合引用，不新增第二套业务身份。
+
+复用既有唯一锚：Template `[id, definitionHash]`、creation receipt `[id, activityId]`、series occurrence
+`[id, activityId]`、review `[id, activityId]`、position `[activityId, sessionId, id]`、policy version
+`[id, policyId, definitionHash, evaluatorVersion]`。若实施时发现任何锚不存在，必须停下报告，不能用单列 FK 或应用层检查代替。
+
+### 19.3 迁移与数据库守卫
+
+- 第 131 条只新增空表、可空指针、revision 默认值、索引、复合 FK、CHECK 和 trigger；零 DML、零回填、零删除、零旧行重解释。
+- revision/item/receipt 均禁止业务 UPDATE、DELETE、TRUNCATE；Activity 当前指针只能指向自身最新完整修订。
+- 数据库验证 layer/mode/pointer 的闭合组合、同活动复合锚、revision/item 集合完整性、receipt 响应锚和历史不可变。
+- 模板命令收据只扩展接受 schemaVersion 5；不修改任何历史 migration，也不让 V1–V4 definition/hash 重新 canonicalize。
+- migration 定稿后必须按最终 SQL 单独重签 3b；本计划不预签摘要，不运行 `migrate dev`、`migrate reset` 或 `db push`。
+
+## 20. Template V5、Proposal V9 与 Readiness
+
+### 20.1 Template V5
+
+`ActivityTemplateDefinitionV5` 只在 V4 上新增闭合的 `contributionPolicySelection`：
+
+- `activityDefault` 为 `inherit | explicit`；explicit 固定完整指针四元组；
+- `positionOverrides` 以模板内稳定 `sessionCode + positionCode` 定位，只允许完整 explicit 指针；
+- 不支持 session 级覆盖，不允许重复岗位键、未知键、自由 JSON 或内嵌公式；
+- canonical/hash 继续复用现有工具。V1–V4 的解析、hash、查询和创建回放逐字保持。
+
+从模板创建活动时，V5 选择物化为活动第一个 selection revision；quick／professional／series 三种创建必须得到相同结果。
+V1–V4 模板仍走 legacy 未配置分支，不伪造默认政策，不因 E1-3 改变创建结果。
+
+### 20.2 Activity 选择命令
+
+PATCH 使用增量意图、完整修订落库：activity 根必有一项，position 只记录当前显式覆盖。对 position 发送 `inherit` 表示在新修订中
+移除该岗位的覆盖，不删除历史 item。事务锁序固定为当前身份／权限预检 → Activity 根 → 当前 selection revision → live sessions／
+positions → policy/version；锁后重读当前 Human/App 准入、责任资格、权限、Activity draft 状态、拓扑、政策 active 状态及有效期。
+canonical 无变化返回专属 unchanged，不写 revision、receipt 或审计。
+
+### 20.3 Proposal V9 与不可变快照
+
+- initial／change proposal 的新选择分支使用 schemaVersion 9，在 proposal 和 snapshot 中冻结完整解析结果、来源层、目标、
+  selection revision 及每个政策版本四元组；V2–V8 类型、canonical/hash 和历史夹具不改。
+- 对未配置的 legacy 活动继续产生既有兼容形状；一旦 Activity 已有 contribution selection，后续 change proposal 不得回退旧版
+  schema 或静默把选择置空。
+- submit 时生成 V9；approve 在 Activity→review 锁序下重新解析并比对 selection revision、岗位拓扑、政策状态／有效期和 hash，
+  任何漂移拒绝，不能信任提交时 JSON。审批成功才把 selection revision 固定到 `ActivityRuleSnapshot`。
+- retire 只禁止新选择或新审批；已经批准的历史 snapshot 仍可按固定 version/hash/evaluator 解释，不改写。
+
+### 20.4 Readiness
+
+贡献政策检查只产生闭合原因：`unconfigured`、`target_invalid`、`reference_unavailable`、`coverage_incomplete`。活动根以 Activity
+`startAt/endAt` 检查覆盖；岗位若有自身时段用岗位时段，否则用所属 session 时段。软删岗位不再是目标；零岗位活动仍必须解析出
+活动根政策。只有所有 live 目标都得到同活动、active、时间覆盖完整的精确版本，才有资格移除
+`CONTRIBUTION_POLICY_UNREPRESENTABLE`。E1-3 不新增“假通过”开关，也不启用 v1.1 Gate。
+
+## 21. API、权限、审计与错误合同
+
+### 21.1 五个端点
+
+| Surface | Method / path                                                                       | 用途                                       |
+| ------- | ----------------------------------------------------------------------------------- | ------------------------------------------ |
+| Admin   | `GET /api/admin/v1/activities/:id/contribution-policy-selection`                    | 读取选择、解析结果与问题                   |
+| Admin   | `PATCH /api/admin/v1/activities/:id/contribution-policy-selection`                  | 增量修改草稿活动选择                       |
+| App     | `GET /api/app/v1/my/managed-activities/contribution-policy-options`                 | 读取当前组织／计划区间可新选的 active 版本 |
+| App     | `GET /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection`   | 读取本人负责活动的选择                     |
+| App     | `PATCH /api/app/v1/my/managed-activities/:activityId/contribution-policy-selection` | 增量修改本人负责的草稿活动                 |
+
+Admin/App 使用物理分离 Controller 和 DTO；App DTO 不继承 Admin DTO。五路均更新 Swagger、contract snapshot、OpenAPI 和同 PR
+前端交接；没有 System writer、Integration、Auth 或 Open surface 新端点。
+
+### 21.2 两项权限与访问资格
+
+- `activity.contribution-policy.read`
+- `activity.contribution-policy.select`
+
+两码均是显式 Human scoped 权限，自定义角色可授，15 个内建角色零默认授予；`SUPER_ADMIN` 不直通，Service Principal 与
+delegation 均不允许。Admin 复用既有组织 scope；App 还必须满足 ACTIVE User + ACTIVE Member 准入，并且是活动 initiator 或当前
+有效 owner/responsibility。写命令锁前、锁后各复核一次，不能把 capability 当权限码或缓存身份／权限结果。
+
+### 21.3 审计与八个 BizCode
+
+新增一个 active 事件 `activity.contribution-policy.selection`。每个不同成功请求各留一条审计；同一成功命令的 exact replay 不重复。
+审计 extra 只含 operation、activityId、revision、变更层数量、目标数量和政策版本 ID/hash/evaluator 的闭合摘要。
+
+实施前机器复核以下号段仍空闲：
+
+| 常量                                                           | code / HTTP | 用途                                            |
+| -------------------------------------------------------------- | ----------- | ----------------------------------------------- |
+| `ACTIVITY_CONTRIBUTION_POLICY_SELECTION_INVALID`               | 20247 / 400 | DTO 之外的层级、mode、pointer 或 canonical 无效 |
+| `ACTIVITY_CONTRIBUTION_POLICY_SELECTION_REFERENCE_UNAVAILABLE` | 20248 / 404 | 活动、岗位、政策或版本不存在／不可见            |
+| `ACTIVITY_CONTRIBUTION_POLICY_SELECTION_STALE`                 | 20249 / 409 | expected revision/hash 与锁后事实不一致         |
+| `ACTIVITY_CONTRIBUTION_POLICY_SELECTION_COMMAND_CONFLICT`      | 20250 / 409 | 同 actor/key 已绑定不同请求                     |
+| `ACTIVITY_CONTRIBUTION_POLICY_SELECTION_RECEIPT_INVALID`       | 20251 / 409 | 收据或结果锚不可信                              |
+| `ACTIVITY_CONTRIBUTION_POLICY_SELECTION_POLICY_UNAVAILABLE`    | 20252 / 409 | 版本非 active、退役或时段不覆盖新选择           |
+| `ACTIVITY_CONTRIBUTION_POLICY_SELECTION_UNCHANGED`             | 20253 / 409 | canonical 选择没有实际变化                      |
+| `ACTIVITY_CONTRIBUTION_POLICY_SELECTION_REVISION_LIMIT`        | 20254 / 409 | Activity revision 达到 INT 上限                 |
+
+### 21.4 预期读数（实施时必须重算）
+
+| 项            |            当前 |       E1-3 预期 |   增量 |
+| ------------- | --------------: | --------------: | -----: |
+| module        |              43 |              43 |      0 |
+| controller    |             125 |             127 |     +2 |
+| endpoint      |             653 |             658 |     +5 |
+| migration     |             130 |             131 |     +1 |
+| model         |             179 |             182 |     +3 |
+| BizCode       |             573 |             581 |     +8 |
+| permission    |             267 |             269 |     +2 |
+| AuditLogEvent | 172／167 active | 173／168 active | +1／+1 |
+
+权限、审计、字典和 seed 的实际摘要定稿后必须独立重签 4b；本表只是当前基线上的预算，不能作为签字值。
+
+## 22. E1-3 implementation 精确候选写集（137 路径）
+
+下面是未来 implementation 的路径上限，不是本轮写权限。实施发现清单外必需路径时必须先报告并重新授权，禁止把目录 glob 当授权。
+
+### 22.1 新增生产实现与单元测试（21 路径）
+
+1. `src/modules/activities/activity-contribution-policy-selection.ts`
+2. `src/modules/activities/activity-contribution-policy-selection.spec.ts`
+3. `src/modules/activities/activity-contribution-policy-selection-access.ts`
+4. `src/modules/activities/activity-contribution-policy-selection-access.spec.ts`
+5. `src/modules/activities/activity-contribution-policy-selection.service.ts`
+6. `src/modules/activities/activity-contribution-policy-selection.service.spec.ts`
+7. `src/modules/activities/activity-contribution-policy-selection-query.service.ts`
+8. `src/modules/activities/activity-contribution-policy-selection-query.service.spec.ts`
+9. `src/modules/activities/activity-contribution-policy-selection-presenter.ts`
+10. `src/modules/activities/activity-contribution-policy-selection-presenter.spec.ts`
+11. `src/modules/activities/activity-contribution-policy-selection-audit-recorder.ts`
+12. `src/modules/activities/activity-contribution-policy-selection-audit-recorder.spec.ts`
+13. `src/modules/activities/activity-template-definition-v5.ts`
+14. `src/modules/activities/activity-template-definition-v5.spec.ts`
+15. `src/modules/activities/activity-publish-proposal-v9.ts`
+16. `src/modules/activities/activity-publish-proposal-v9.spec.ts`
+17. `src/modules/activities/controllers/admin-activity-contribution-policy-selection.controller.ts`
+18. `src/modules/activities/controllers/app-managed-activity-contribution-policy-selection.controller.ts`
+19. `src/modules/activities/dto/admin/activity-contribution-policy-selection.dto.ts`
+20. `src/modules/activities/dto/app/app-activity-contribution-policy-selection.dto.ts`
+21. `src/modules/activities/dto/admin/activity-template-definition-v5.dto.ts`
+
+### 22.2 既有 Activities 编排与版本接线（34 路径）
+
+22. `src/modules/activities/activities.module.ts`
+23. `src/modules/activities/activity-template-version-command.ts`
+24. `src/modules/activities/activity-template-version-command.spec.ts`
+25. `src/modules/activities/activity-template-version.service.ts`
+26. `src/modules/activities/activity-template-version.service.spec.ts`
+27. `src/modules/activities/activity-template-version-query.service.ts`
+28. `src/modules/activities/activity-template-version-query.service.spec.ts`
+29. `src/modules/activities/activity-template-version-presenter.ts`
+30. `src/modules/activities/activity-template-version-presenter.spec.ts`
+31. `src/modules/activities/activity-from-template.service.ts`
+32. `src/modules/activities/activity-from-template.service.spec.ts`
+33. `src/modules/activities/activity-creation-command.ts`
+34. `src/modules/activities/activity-creation-quick.ts`
+35. `src/modules/activities/activity-creation-professional.ts`
+36. `src/modules/activities/activity-creation.service.ts`
+37. `src/modules/activities/activity-creation.service.spec.ts`
+38. `src/modules/activities/activity-creation-dto.spec.ts`
+39. `src/modules/activities/activity-series.service.ts`
+40. `src/modules/activities/activity-series-command.spec.ts`
+41. `src/modules/activities/activity-publish-proposal-v2.service.ts`
+42. `src/modules/activities/activity-publish-proposal-v2.service.spec.ts`
+43. `src/modules/activities/activity-publish-review.dto.ts`
+44. `src/modules/activities/activity-publish-review-submit.service.ts`
+45. `src/modules/activities/activity-publish-review.service.ts`
+46. `src/modules/activities/activity-publish-review-query.service.ts`
+47. `src/modules/activities/activity-publish-readiness.service.ts`
+48. `src/modules/activities/activity-publish-readiness.service.spec.ts`
+49. `src/modules/activities/dto/admin/activity-template-version.dto.ts`
+50. `src/modules/activities/dto/app/app-managed-activity-creation.dto.ts`
+51. `src/modules/activities/dto/app/app-managed-activity-creation-professional.dto.ts`
+52. `src/modules/activities/controllers/admin-activity-template-versions.controller.ts`
+53. `src/modules/activities/controllers/app-managed-activities.controller.ts`
+54. `src/modules/activities/controllers/admin-activity-publish-reviews.controller.ts`
+55. `src/modules/activities/controllers/app-managed-activity-creation.controller.ts`
+
+### 22.3 Schema、权限、审计、治理与 contract（16 路径）
+
+56. `prisma/schema.prisma`
+57. `prisma/migrations/20260923190000_activity_os_r5_e1_3_contribution_policy_selection/migration.sql`
+58. `src/modules/permissions/permission-catalog.ts`
+59. `src/modules/permissions/seed-permission-codes.ts`
+60. `prisma/seed.ts`
+61. `src/modules/permissions/permission-code-holders.spec.ts`
+62. `scripts/harness-guards.selftest.ts`
+63. `src/modules/audit-logs/audit-logs.types.ts`
+64. `src/common/exceptions/biz-code.constant.ts`
+65. `src/common/exceptions/biz-code.constant.spec.ts`
+66. `src/common/datetime/clock-authority.spec.ts`
+67. `harness/domain-map.json`
+68. `harness/state-machines.json`
+69. `harness/permission-surface-baseline.json`
+70. `test/contract/openapi.contract-spec.ts`
+71. `test/contract/__snapshots__/openapi.contract-spec.ts.snap`
+
+`prisma/seed.ts` 只把新的活动贡献选择权限 seed 数组接入现有 RBAC seed catalog；两项新权限进入
+`seed-permission-codes.ts` 事实闭包，十五个内建角色零默认授予。不得创建政策、版本、选择或其他业务数据。
+
+### 22.4 既有 migration 当前总数 130→131（25 路径）
+
+72. `test/e2e/activity-os-r1-a3-template-definition-lifecycle-guards.e2e-spec.ts`
+73. `test/e2e/activity-os-r1-a4-explicit-template-version-pointer.e2e-spec.ts`
+74. `test/e2e/activity-os-r2-b1-place-schema-constraints.e2e-spec.ts`
+75. `test/e2e/activity-os-r2-b2-coordinate-projection-schema-constraints.e2e-spec.ts`
+76. `test/e2e/activity-os-r2-b3-form-blueprint-governance.e2e-spec.ts`
+77. `test/e2e/activity-os-r2-b6-creation-data-foundation.e2e-spec.ts`
+78. `test/e2e/activity-os-r3-c1-d2a-metric-command-receipt-migration.e2e-spec.ts`
+79. `test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts`
+80. `test/e2e/activity-os-r3-c1-metric-definition-set.e2e-spec.ts`
+81. `test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts`
+82. `test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts`
+83. `test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts`
+84. `test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts`
+85. `test/e2e/activity-os-r4-d4-time-bucket-migration.e2e-spec.ts`
+86. `test/e2e/activity-os-r4-d6-time-ledger-migration.e2e-spec.ts`
+87. `test/e2e/activity-os-r4-d7-time-correction-migration.e2e-spec.ts`
+88. `test/e2e/activity-os-r4-d7-2-fact-correction-migration.e2e-spec.ts`
+89. `test/e2e/activity-os-r4-d8-proof-cutover-migration.e2e-spec.ts`
+90. `test/e2e/activity-os-r5-e1-contribution-policy-migration.e2e-spec.ts`
+91. `test/e2e/activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts`
+92. `test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts`
+93. `test/e2e/activity-v11-batch4-allocation-determinism-migration.e2e-spec.ts`
+94. `test/e2e/activity-v11-batch4-allocation-mode-migration.e2e-spec.ts`
+95. `test/e2e/activity-v11-batch4-qualification-contract-migration.e2e-spec.ts`
+96. `test/e2e/insurance-evidence-registration-revision-migration.e2e-spec.ts`
+
+这 25 份只刷新“当前完整回放”总数和末条标题；各自的历史升级起点、历史目标 migration 和业务断言全部保留。
+
+### 22.5 新验收、夹具与兼容回归（12 路径）
+
+97. `test/e2e/activity-os-r5-e1-3-contribution-policy-selection-migration.e2e-spec.ts`
+98. `test/e2e/activity-os-r5-e1-3-contribution-policy-selection-http.e2e-spec.ts`
+99. `test/e2e/activity-os-r5-e1-3-contribution-policy-selection-concurrency.e2e-spec.ts`
+100.  `test/e2e/activity-os-r5-e1-3-contribution-policy-template-v5.e2e-spec.ts`
+101.  `test/e2e/activity-os-r5-e1-3-contribution-policy-proposal-v9.e2e-spec.ts`
+102.  `test/e2e/activity-os-r5-e1-3-contribution-policy-history-compatibility.e2e-spec.ts`
+103.  `test/e2e/activity-os-r5-e1-3-contribution-policy-readiness.e2e-spec.ts`
+104.  `test/helpers/activity-contribution-policy.fixture.ts`
+105.  `test/setup/time-ledger-fixture-cleanup.ts`
+106.  `test/e2e/activity-os-r5-e1-contribution-policy-foundation.e2e-spec.ts`
+107.  `test/e2e/activity-batch3-1p5-schema-constraints.e2e-spec.ts`
+108.  `test/e2e/activity-service-segment-correction-pending-migration.e2e-spec.ts`
+
+后三份既有 E2E 只补新表清理、nullable snapshot pointer／约束或旧 schema 夹具兼容；不删除测试、不放宽断言、不改历史回放语义。
+
+### 22.6 派生文档、交接与 changelog（29 路径）
+
+109. `docs/current-state.md`
+110. `CODEMAP.md`
+111. `docs/ai-harness/RBAC_MAP.md`
+112. `docs/ai-harness/ROUTE_AUTHZ.md`
+113. `docs/ai-harness/AUDIT_EVENT_REGISTRY.md`
+114. `docs/ai-harness/STATE_MACHINE_INVENTORY.md`
+115. `docs/ai-harness/CUTOVER_SIGNOFF.md`
+116. `docs/ai-harness/FROZEN_DRAFTS.md`
+117. `docs/ai-harness/NEXT_TASKS.md`
+118. `docs/plans/activity-os-r5-e1-contribution-policy-review-and-plan.md`
+119. `prisma/CLAUDE.md`
+120. `src/modules/activities/CLAUDE.md`
+121. `docs/handoff/admin-web.md`
+122. `docs/handoff/miniapp.md`
+123. `docs/handoff/openapi.json`
+124. `docs/handoff/clients/system/client.ts`
+125. `docs/handoff/clients/system/types.ts`
+126. `docs/handoff/clients/admin/client.ts`
+127. `docs/handoff/clients/admin/types.ts`
+128. `docs/handoff/clients/app/client.ts`
+129. `docs/handoff/clients/app/types.ts`
+130. `docs/handoff/clients/auth/client.ts`
+131. `docs/handoff/clients/auth/types.ts`
+132. `docs/handoff/clients/open/client.ts`
+133. `docs/handoff/clients/open/types.ts`
+134. `docs/handoff/clients/integration/client.ts`
+135. `docs/handoff/clients/integration/types.ts`
+136. `docs/handoff/clients/shared/types.ts`
+137. `changelog.d/activity-os-r5-e1-3-contribution-policy-selection.md`
+
+OpenAPI 和客户端必须由既有生成器刷新；零 diff 不伪造文件，真实 diff 必须逐行解释。Admin／miniapp 交接明确 API、权限、
+版本兼容、错误码、尚未部署和前端未发布边界。
+
+## 23. 验收、并发与性能预算
+
+### 23.1 先锁旧行为
+
+实现前先跑 V1–V4 template、V2–V8 proposal/snapshot、三种创建、发布审核和 Readiness characterization。任何历史 hash、
+响应形状或行为变化都必须停下报告；不得通过更新旧断言、刷新历史 snapshot 或给测试加 sleep 解决。
+
+### 23.2 数据库验收
+
+- 131 条冷回放与 130→131 非空升级都通过；旧 migration checksum 不变。
+- 逐条负例证明跨活动 position、跨 policy version、hash/evaluator 不匹配、item 集合残缺、current pointer 漂移、receipt 锚漂移、
+  UPDATE／DELETE／TRUNCATE 均被具名约束或 trigger 拒绝。
+- 旧行保持 revision=0／pointer=NULL，旧 V1–V8 夹具逐字兼容；不做回填、转换或清理业务数据。
+
+### 23.3 服务、HTTP 与并发验收
+
+- 单元覆盖 V5/V9 parser/canonical/hash、三层解析、inherit/explicit、完整指针、presenter 最小投影、权限双检和审计白名单。
+- 五个端点覆盖 400/401/403/404/409 与成功路径；Admin scoped/GLOBAL、App current member+responsibility、无权限
+  SUPER_ADMIN、Service Principal、delegation、失效用户／成员均有正反例。
+- 同 key 同载荷只写一个 revision／receipt／audit；异载荷冲突；并发 PATCH 只允许一个 expected revision 胜出。
+- 锁等待期间撤权、用户失效、成员失效、责任变化、活动离开 draft、岗位增删／软删、政策 retire 或有效期变化，全部在锁后拒绝且零部分写。
+- quick／professional／series 从同一 V5 模板得到相同选择；V1–V4、V2–V8 历史行为不变；V9 approve 冻结精确修订。
+
+### 23.4 规模与查询预算
+
+在 1／100／10,000 岗位三档验证批量读取、写入和解析，禁止逐岗位查库。候选预算先定为 PATCH 总业务查询 ≤160、分页 GET ≤48、
+options GET ≤32；实现时必须采集真实 SQL 计数和阶段耗时，能更低就收紧，不能靠放宽业务事务预算、Jest 总时限或删断言过关。
+本地只在未来明确授权的 `app_test_w98` 做隔离验证；全量由 Draft PR CI 冷跑。
+
+### 23.5 门禁与签字
+
+必过 lint、typecheck、build、目标单测、新增／兼容 E2E、contract、Harness selftest/replay、边界检查、migration count 与全部 docs guards。
+第 131 条最终 SQL 摘要单独重签 3b；最终权限269、审计173/168及实际目录摘要单独重签 4b。Draft PR、Ready、红区审批、合并、
+main CI、部署和 Gate 是彼此独立的动作，前一步通过不自动授权后一步。
+
+## 24. 风险、回退与禁止域
+
+| 风险                       | 防线                                                               | 回退                                             |
+| -------------------------- | ------------------------------------------------------------------ | ------------------------------------------------ |
+| 三层误做成四层或字段 merge | grammar 只允许 template/activity/position，完整指针最近层覆盖      | 回退应用二进制；保留已写永久修订                 |
+| 历史模板／提案 hash 漂移   | V5/V9 新类型，V1–V4/V2–V8 characterization 逐字锁定                | 不 Ready，修 parser/serializer；不改历史数据     |
+| 跨活动岗位或跨 policy 版本 | 复合 FK + DB 负例 + 锁后重读                                       | 事务回滚；禁止应用层补偿写                       |
+| retire／撤权／拓扑竞态     | 固定锁序与锁后第二次资格、状态、拓扑复核                           | 请求失败且零部分写，使用原 operationKey 安全重试 |
+| 新目录被误当成正式结算     | 本刀不调用 evaluator 写账、不接 ContributionRule/attendance/ledger | 停止授予两码或回退应用；永久事实不删             |
+| 大岗位集 N+1／超时         | 批量 SQL、1/100/10k 查询计数与阶段耗时预算                         | 优化集合查询，不提高业务预算掩盖问题             |
+| 权限／审计／客户端漏登记   | 生成器、contract、handoff 同 PR，3b/4b 后签                        | 不 Ready，补齐登记后重跑                         |
+
+禁止域：不改旧 migration，不回填或转换 `ContributionRule`，不写考勤／贡献账本／每日上限，不执行 E2–E5，不默认授码，
+不启用 Gate，不执行 D8-OPS，不改 CI 配置，不操作生产，不删除、重分类或重算业务数据。回退不是删三张新表、删修订、删收据或
+清空历史指针；未部署时回退应用提交，已产生的永久事实继续保留。
+
+## 25. 本轮 docs-only 范围与下一轮授权
+
+### 25.1 本轮六路径
+
+1. `changelog.d/activity-os-r5-e1-3-contribution-policy-selection-plan.md`
+2. `docs/ai-harness/FROZEN_DRAFTS.md`
+3. `docs/ai-harness/NEXT_TASKS.md`
+4. `docs/plans/activity-os-r5-e1-contribution-policy-review-and-plan.md`
+5. `prisma/CLAUDE.md`
+6. `src/modules/activities/CLAUDE.md`
+
+本轮只更正 E1-2 最终状态，并冻结 E1-3 数据合同、API、权限、审计、错误码、迁移、兼容、性能、风险和 137 路径上限。
+不修改任何 TypeScript、schema、migration、seed、测试、OpenAPI、生成客户端或 Gate；不操作数据库；不实施 E1-3。
+
+### 25.2 建议的下一轮一次性授权语句
+
+> 确认 E1-3 implementation 方案 A，按 E1 评审稿第 18–24 节及 137 个精确路径执行；允许 `app_test_w98`
+> 隔离验证及测试夹具重建；migration SQL 定稿后另行重签 3b，权限／审计／目录摘要定稿后另行重签 4b；验证后提交、
+> 推送并创建 Draft PR。保留 #1324，豁免本 lane 唯一 open PR；不合并、不操作生产、不启用 Gate、不执行 D8-OPS、
+> 不转换旧 `ContributionRule`、不接正式贡献结算、不删除或重算业务数据。
+
+这段授权在维护者明确确认前不生效；本轮 docs-only PR 也不继承 E1-2 的实现 grant、Ready、合并或红区审批。
