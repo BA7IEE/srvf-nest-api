@@ -1,21 +1,17 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **Release 5 / E1-2 当前实现工作树（2026-09-23，未提交、未合并、未部署）**：E1 计划
-> [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已合入 `db580471f94d94300ff30ef7f8925515fc15c0c6`；
-> E1-1 实现 [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 最终 head
-> `f02065123eca7bea909e9bc4714d1bae71a2eef1` 的全部要求检查成功，已 squash 合入
-> `48596844bbb194f541404b36d74a98dc2aa7ec32`。合并后
-> [main CI 35822456365](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35822456365) completed/success，五个
-> Contract + E2E 分片均成功。第 130 条纯 additive migration、政策／不可变版本／命令收据三表、闭合 V1 definition、
-> fingerprint、纯 evaluator 与生命周期数据地基已进入 main。E1-2 精确计划
-> [#1346](https://github.com/BA7IEE/srvf-nest-api/pull/1346) 已合入 `801e097735227b5cb7c577dea97e31141d0d7640`；E1-2 现按
-> [评审稿](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)第 11–15 节实施 8 个 Human System 接口、
-> 两项显式 GLOBAL 权限、两类审计、四命令收据、锁后复核和 8 个 BizCode；内建角色零默认授予，
-> `SUPER_ADMIN` 不短路。工作树读数为 130 migration／179 model／653 Endpoint／267 权限／172 AuditLogEvent；
-> 目标单测、contract、两份定向 E2E、lint、typecheck、build、Harness 与 docs guards 已通过；4b 已按最终
-> 权限目录摘要重签。Draft [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 已创建，首个 head
-> `dcf06767af6cb2c309962946556c4626a7e0c119`，当前等待 PR CI 冷跑；不 Ready、不合并。
-> E1-3、E2–E5、D8-OPS、生产、Gate、数据转换、删除或重算仍未实施或授权。
+> **Release 5 / E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：E1-2 最终 head
+> `0cc3938ce2471f1e56571f728f651e53d8566e88` 的全部 PR 检查成功，已随
+> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) squash 合入
+> `09e7101f51d5a00e63bbdb8210cf00815563e12a`。合并后
+> [main CI 35854133319](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35854133319) 首轮仅
+> Contract + E2E (3) 失败；不改代码、不改超时的同 SHA attempt 2 已 completed/success，五个 Contract + E2E
+> 分片及聚合全部成功。当前事实为 43 module／125 controller／653 endpoint／130 migration／179 model／
+> 573 BizCode／267 permission／172 AuditLogEvent（167 active）。E1-2 的 8 个 Human System 目录接口、两项显式
+> GLOBAL Human 权限、两类闭合审计与四类命令收据已进入 main，但仍未部署。当前只按
+> [E1 评审稿](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)起草 E1-3 模板／活动／岗位三层选择、
+> 发布冻结及 137 路径实施上限；本轮不实施 E1-3，不操作数据库，不启用 Gate。
+> E2–E5、D8-OPS、前端发布、生产部署、历史转换、删除或重算仍未实施或授权。
 
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
 > [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
@@ -139,7 +135,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                         | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                          | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                           | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 与 E1-1 仓内交付已完成；E1-2 分支实现验证中                                    | E1-2 合并、E1-3 与 E2–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成              |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 与 E1-1／E1-2 仓内交付已完成；E1-3 仅完成精确计划起草                          | E1-3 与 E2–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                         |
 
 ### 1.1 欠代码的五项
 
@@ -384,7 +380,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 | 文件                                                                                                  | 分类           | 去向 / 理由                                                                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 与 E1-1 仓内交付已完成，E1-2 分支实现验证中；E1-2 合并、E1-3 与 E2–E5 实施、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                               |
+| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 与 E1-1／E1-2 仓内交付已完成，E1-3 仅起草精确计划；E1-3 与 E2–E5 实施、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                                    |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md`                                  | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改                                                                                                                                                       |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md`                            | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改                                                                                                                                                                |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md`                      | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改                                                                                                                                             |
