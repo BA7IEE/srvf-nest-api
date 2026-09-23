@@ -1,28 +1,17 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **Release 5 / E1-1 Draft #1345 CUID 元数据误判修复本地通过（2026-09-23）**：E1 计划
-> [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已 squash 合入
-> `db580471f94d94300ff30ef7f8925515fc15c0c6`，对应
-> [main CI 35726170176](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35726170176) completed/success。Draft
-> [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 上一远端 head `8f0b8988f211e1fc1db892df117fd3d25938c6c3` 的
-> [PR CI 35760162619](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35760162619) 仅 Contract + E2E 第 1 组红；失败落在
-> `activity-registrations.e2e-spec.ts` 的前置 Activity 发布，返回 500 且状态仍为 draft。确定性 HTTP 探针已证明：合法
-> CUID 内恰含手机号形状数字串时，通知 Outbox 会把 envelope ID、冻结受众锚等结构化不透明标识误当成 PII。
-> 维护者已确认方案 A：仅在 envelope ID 槽位、`recipientFreeze.cohortKey/basisRef[]` 及已解析 payload 的精确 CUID
-> ID 路径中遮蔽完整 CUID 后继续敏感值扫描；裸手机号、自由文本、近似／不完整 CUID 及原 payload 形状守卫仍 fail-closed。
-> 本地守卫单测 48/48、通知模块 18 suites／327 tests、冷建 `app_test_w98` 的 Activity registrations 与完整 B6
-> 4 suites／104 tests、全仓单测 407/407 suites（8,881 passed／5 todo）、contract 1,074/1,074、typecheck、build、
-> 8 GiB lint、Harness 561／138／68 均通过；`CODEMAP.md` 与 `ROUTE_AUTHZ.md` 已由既有生成器刷新。
-> 本修复尚未提交推送，新一轮 PR CI 未运行，#1345 保持 Draft。
-> E1-1 原实现按
-> 46 路径授权及后续 1 路径精确扩写新增第 130 条纯 additive migration、政策／不可变版本／命令收据三表、闭合 V1 definition、
-> fingerprint、纯 evaluator 与生命周期判断；旧规则、考勤、账本、Readiness、API、权限、审计和 Gate 均未接线。
-> 工作树读数为 130 migration／179 model；56 项目标单测、schema、typecheck、全仓 lint 和 18 份 migration
-> 计数同步已通过。SQL 摘要 `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00`
-> 的 3b 已重签并通过登记对拍；4b 因权限／审计零变化不需重签。`app_test_w98` 已通过迁移 2/2、数据库
-> 守卫 36/36、旧行为 31/31 和夹具恢复 5/5；固定其他 scratch 库的历史 rehearsal 交 Draft PR CI 冷跑。
-> E1-2／E1-3、E2–E5、D8-OPS、生产、Gate、数据转换、删除或
-> 重算仍未实施或授权。
+> **Release 5 / E1-1 仓内交付完成；E1-2 仅冻结精确计划（2026-09-23）**：E1 计划
+> [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已合入 `db580471f94d94300ff30ef7f8925515fc15c0c6`；
+> E1-1 实现 [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 最终 head
+> `f02065123eca7bea909e9bc4714d1bae71a2eef1` 的全部要求检查成功，已 squash 合入
+> `48596844bbb194f541404b36d74a98dc2aa7ec32`。合并后
+> [main CI 35822456365](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35822456365) completed/success，五个
+> Contract + E2E 分片均成功。第 130 条纯 additive migration、政策／不可变版本／命令收据三表、闭合 V1 definition、
+> fingerprint、纯 evaluator 与生命周期数据地基已进入 main；旧规则、考勤、账本、Readiness、API、权限、审计和 Gate
+> 均未接线。当前为 130 migration／179 model／645 Endpoint／265 权限／170 AuditLogEvent；3b 已重签，E1-1 不需 4b。
+> 当前[评审稿](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)第 11–16 节仅冻结 E1-2 的 8 个 Human
+> System 接口、两项显式 GLOBAL 权限、两类审计、四命令收据、锁后复核、8 个 BizCode 和 60 路径写集；
+> **E1-2 尚未实施或获实施授权**。E1-3、E2–E5、D8-OPS、生产、Gate、数据转换、删除或重算仍未实施或授权。
 
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
 > [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
@@ -146,7 +135,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                         | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                          | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                           | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 仓内交付已完成；Release 5 / E1 评审与 E1-1 精确候选写集起草中                  | E1–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                                 |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 与 E1-1 仓内交付已完成；E1-2 精确计划评审中                                    | E1-2／E1-3 与 E2–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                   |
 
 ### 1.1 欠代码的五项
 
@@ -391,7 +380,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 | 文件                                                                                                  | 分类           | 去向 / 理由                                                                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 仓内交付已完成，Release 5 / E1 仅起草评审；E1–E5 实施、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                                                    |
+| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 与 E1-1 仓内交付已完成，E1-2 仅冻结精确计划；E1-2／E1-3 与 E2–E5 实施、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                                    |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md`                                  | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改                                                                                                                                                       |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md`                            | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改                                                                                                                                                                |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md`                      | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改                                                                                                                                             |

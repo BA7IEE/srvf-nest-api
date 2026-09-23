@@ -1,30 +1,19 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **Release 5 / E1-1 下一步为推送 CUID 元数据误判修复并冷跑 #1345 CI（2026-09-23）**：E1 计划
-> [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已 squash 合入
-> `db580471f94d94300ff30ef7f8925515fc15c0c6`，对应
-> [main CI 35726170176](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35726170176) completed/success。Draft
-> [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 上一远端 head `8f0b8988f211e1fc1db892df117fd3d25938c6c3` 的
-> [PR CI 35760162619](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35760162619) 仅 Contract + E2E 第 1 组红；失败为 Activity
-> registrations 前置发布返回 500。确定性 HTTP 探针已定位：合法 CUID 内恰含手机号形状数字串时，通知 Outbox 会误拒
-> envelope ID、冻结受众锚等结构化不透明标识。维护者已确认方案 A；仅在 envelope ID 槽位、
-> `recipientFreeze.cohortKey/basisRef[]` 及已解析 payload 的精确 CUID ID 路径中遮蔽完整 CUID 后继续扫描；裸手机号、
-> 自由文本、近似／不完整 CUID 和原 payload 形状守卫仍 fail-closed。守卫单测 48/48、通知模块 18 suites／327 tests、
-> 冷建 `app_test_w98` 的 Activity registrations 与完整 B6 4 suites／104 tests、全仓单测 407/407 suites
-> （8,881 passed／5 todo）、contract 1,074/1,074、typecheck、build、8 GiB lint、Harness 561／138／68 均通过；
-> `CODEMAP.md` 与 `ROUTE_AUTHZ.md` 已由既有生成器刷新。
-> 下一步是提交推送更新 #1345，并由新 SHA 冷跑 PR CI；
-> #1345 保持 Draft，不 Ready、不合并。E1-1 原实现按
-> 已批准的 46 路径及后续精确扩写的 1 个夹具清理路径实施第 130 条纯 additive migration、三张永久保留表、V1 强类型 definition、fingerprint、
-> 纯 evaluator 和 draft→active→retired 生命周期；没有 provider、route、writer，不接旧 `ContributionRule`、
-> 考勤、账本、Readiness 或 Gate。当前工作树为 130 migration／179 model；定义与状态机单测 56/56、
-> schema validate、typecheck、build、全仓 lint、18/18 migration 计数同步已通过。SQL 摘要
-> `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00` 的 3b 已重签并通过登记对拍；
-> E1-1 没有新增权限码或审计事件，4b 不需要重签，现有 265 权限／170 AuditLogEvent 不变。获准的
-> `app_test_w98` 已通过冷回放／非空升级 2/2、数据库守卫 36/36、旧行为 31/31 和夹具恢复 5/5；固定使用
-> 其他 scratch 库的历史 rehearsal 留给 Draft PR CI 冷跑。原实现静态门禁与签字对拍已通过；
-> 不 Ready、不合并。E1-2／E1-3、E2–E5、D8-OPS、生产、Gate、
-> 历史转换、数据删除或重算均未授权。
+> **Release 5 / E1-1 仓内交付完成；当前只评审 E1-2 精确计划（2026-09-23）**：E1 计划
+> [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已合入 `db580471f94d94300ff30ef7f8925515fc15c0c6`；
+> E1-1 实现 [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 最终 head
+> `f02065123eca7bea909e9bc4714d1bae71a2eef1` 的全部要求检查成功，已 squash 合入
+> `48596844bbb194f541404b36d74a98dc2aa7ec32`。合并后
+> [main CI 35822456365](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35822456365) completed/success，五个
+> Contract + E2E 分片均成功。第 130 条纯 additive migration、三张永久保留表、V1 强类型 definition、fingerprint、
+> 纯 evaluator 和 draft→active→retired 数据／纯状态地基现已在 main；仍没有 provider、route、writer，不接旧
+> `ContributionRule`、考勤、账本、Readiness 或 Gate。当前为 130 migration／179 model／645 Endpoint／265 权限／
+> 170 AuditLogEvent；3b 已重签，E1-1 因权限／审计零变化不需 4b。
+> 本轮只按[精确计划](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)第 11–16 节冻结 E1-2：
+> 8 个 Human System 目录接口、两项显式 GLOBAL 权限、两类审计、四命令收据、锁后复核、八个 BizCode 和 60 路径写集。
+> **E1-2 尚未实施或获实施授权**；不改 schema/migration，不操作数据库，不执行 D8-OPS，不启用 Gate。
+> E1-3、E2–E5、前端发布、生产、历史转换、数据删除或重算仍未授权。
 
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
 > [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
@@ -2640,9 +2629,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **Release 1–4 仓内交付完成；Release 5 / E1 评审起草中**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **Release 1–4 与 E1-1 仓内交付完成；E1-2 精确计划评审中**
 
-**状态**:进行中(Release 4 的 D8-1 #1341、D8-2 #1342 与 D8-OPS 文档 #1343 均已合并且最终 main CI 全绿；D8-OPS 未执行。当前只起草 Release 5 / E1 评审与 E1-1 精确候选写集，E1–E5 实施、部署、v1.1 独立稳定窗、生产预检与不可逆执行、整体复审、前端及真实业务验收均未完成)
+**状态**:进行中(Release 4 的 D8-1 #1341、D8-2 #1342 与 D8-OPS 文档 #1343 均已合并且最终 main CI 全绿；D8-OPS 未执行。Release 5 / E1-1 已随 #1345 合入并通过最终 main CI；当前仅起草 E1-2 精确计划，E1-2／E1-3 与 E2–E5、部署、v1.1 独立稳定窗、生产预检与不可逆执行、整体复审、前端及真实业务验收均未完成)
 
 - **D8-2 最终状态（2026-09-22）**：方案 A 的25路径、module 单一导出、owner query facade、四份派生治理摘要及
   一份旧迁移夹具兼容补项，共32路径；实际24路径、零越界，已随 #1342 合入 `802a636a` 并通过最终 main CI。
@@ -2650,10 +2639,11 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 - **D8-OPS 当前边界（2026-09-22）**：评审稿把现场动作收敛为“预检窗口授权”和“正式执行授权”两次拍板；
   正式窗口的仓库写集为零，必须现场提供 exact deployed SHA、fleet 同版、v1.1 更早独立稳定、证据包摘要、
   只读与 worker 排空、ACTIVE GLOBAL actor 及实时签字。计划已随 #1343 合入，但不构成任何生产权限。
-- **E1 当前边界（2026-09-22）**：推荐方案 A 把贡献政策拆为 E1-1 数据与定义地基、E1-2 System 目录、
-  E1-3 选择与发布冻结；当前 docs-only 评审只冻结强类型 V1 definition、三刀 DoD、E1-1 的 46 个候选路径、
-  验证与未来授权语句。旧 `ContributionRule`、考勤预填、正式账本、每日上限、V2–V8 历史快照和 Readiness
-  行为均不改变；E2 旧规则转换、E3 shadow、E4 结算接线、E5 正式切换必须继续独立立项。
+- **E1 当前边界（2026-09-23）**：推荐方案 A 仍按 E1-1 数据与定义地基、E1-2 System 目录、E1-3 选择与发布冻结
+  三刀推进。E1-1 已随 #1345 合入 main；当前 docs-only 计划把 E1-2 冻结为 8 个 Human System 接口、两项显式
+  GLOBAL 权限、两类审计、四命令收据、锁后复核、8 个 BizCode 与 60 个候选路径，尚未实施。旧
+  `ContributionRule`、考勤预填、正式账本、每日上限、V2–V8 历史快照和 Readiness 行为仍不改变；E1-3、E2 旧规则
+  转换、E3 shadow、E4 结算接线、E5 正式切换必须继续独立立项。
 
 > 冻结稿：[Activity OS T0-A 终态合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 

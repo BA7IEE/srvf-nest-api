@@ -1,0 +1,3 @@
+- 更正 Activity OS Release 5 / E1-1 台账：#1345 已合入 main，合并后 CI 与五个 Contract + E2E 分片均成功。
+- 冻结 E1-2 方案 A：8 个 Human System 目录接口、两项显式 GLOBAL 权限、两类审计、四种命令收据、锁后身份复核和八个专属 BizCode。
+- 列明 E1-2 的 60 路径候选写集、验收、回退和后续一次性授权边界；本轮仅文档，不实施、不操作数据库、不启用 Gate。
