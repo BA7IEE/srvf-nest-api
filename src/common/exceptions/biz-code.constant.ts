@@ -2191,6 +2191,46 @@ export const BizCode = {
     message: '正式参与时长证明日期范围无效',
     httpStatus: HttpStatus.BAD_REQUEST,
   },
+  ACTIVITY_CONTRIBUTION_POLICY_INVALID: {
+    code: 20239,
+    message: '贡献政策请求无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_NOT_FOUND: {
+    code: 20240,
+    message: '贡献政策或版本不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_CODE_EXISTS: {
+    code: 20241,
+    message: '贡献政策代码已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_STALE: {
+    code: 20242,
+    message: '贡献政策版本已变化',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_STATUS_INVALID: {
+    code: 20243,
+    message: '贡献政策版本状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_COMMAND_CONFLICT: {
+    code: 20244,
+    message: '此操作标识已用于其他贡献政策请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_RECEIPT_INVALID: {
+    code: 20245,
+    message: '贡献政策命令收据校验失败',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_VERSION_LIMIT: {
+    code: 20246,
+    message: '贡献政策版本数量已达上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

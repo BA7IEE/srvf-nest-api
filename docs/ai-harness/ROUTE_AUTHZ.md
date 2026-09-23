@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:6a02b210105524fab91e012f68a9ebac0cb615c17b464ac9158902afc8d34720 |
-| endpoint count | 645 |
+| inputDigest | sha256:939bb38c85178c12c6fc38fab09dec5f5d4963b7c3d80cf74385733a60fccfdd |
+| endpoint count | 653 |
 | legacy [auth] count | 183 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -31,7 +31,7 @@
 |---|---:|---:|---:|
 | admin | 314 | 314 | 0 |
 | app | 202 | 202 | 0 |
-| system | 89 | 89 | 0 |
+| system | 97 | 97 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
 | integration | 2 | 2 | 0 |
@@ -41,7 +41,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 429 |
+| rbac | 437 |
 | auth | 183 |
 | unclassified | 0 |
 
@@ -113,7 +113,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:6a02b210105524fab91e012f68a9ebac0cb615c17b464ac9158902afc8d34720",
+  "inputDigest": "sha256:939bb38c85178c12c6fc38fab09dec5f5d4963b7c3d80cf74385733a60fccfdd",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -5059,6 +5059,82 @@
         "require": "all",
         "scopes": [],
         "engine": null
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/contribution-policies",
+      "controller": "SystemContributionPoliciesController",
+      "handler": "list",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-policy.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/contribution-policies/:id",
+      "controller": "SystemContributionPoliciesController",
+      "handler": "get",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-policy.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/contribution-policies/:id/versions",
+      "controller": "SystemContributionPoliciesController",
+      "handler": "listVersions",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-policy.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/contribution-policies/:id/versions/:versionId",
+      "controller": "SystemContributionPoliciesController",
+      "handler": "getVersion",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-policy.read.catalog",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
       }
     },
     {
@@ -11168,6 +11244,82 @@
       }
     },
     {
+      "routeKey": "POST /api/system/v1/contribution-policies",
+      "controller": "SystemContributionPoliciesController",
+      "handler": "createPolicy",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-policy.manage.version",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/system/v1/contribution-policies/:id/versions",
+      "controller": "SystemContributionPoliciesController",
+      "handler": "createVersion",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-policy.manage.version",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/system/v1/contribution-policies/:id/versions/:versionId/activate",
+      "controller": "SystemContributionPoliciesController",
+      "handler": "activate",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-policy.manage.version",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "POST /api/system/v1/contribution-policies/:id/versions/:versionId/retire",
+      "controller": "SystemContributionPoliciesController",
+      "handler": "retire",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-policy.manage.version",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
       "routeKey": "POST /api/system/v1/contribution-rules",
       "controller": "ContributionRulesController",
       "handler": "create",
@@ -11937,7 +12089,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**246 条码有端点;其中 90 条守多于一个端点。**
+> 每条权限码守着哪些端点。**248 条码有端点;其中 92 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -11975,6 +12127,8 @@
 | `activity.time-settlement.prepare` | 4 | POST /api/app/v1/my/managed-activities/:activityId/time-corrections · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/resubmit · POST /api/app/v1/my/managed-activities/:activityId/time-settlement/prepare · POST /api/app/v1/my/managed-activities/:activityId/time-settlement/submit |
 | `attachment.upload.*` | 4 | POST /api/admin/v1/attachments · POST /api/admin/v1/attachments/confirm-upload · POST /api/admin/v1/attachments/upload-url · POST /api/admin/v1/contents/:id/attachments/upload-url |
 | `content.read.record` | 4 | GET /api/admin/v1/contents · GET /api/admin/v1/contents/:id · GET /api/app/v1/contents · GET /api/app/v1/contents/:id |
+| `contribution-policy.manage.version` | 4 | POST /api/system/v1/contribution-policies · POST /api/system/v1/contribution-policies/:id/versions · POST /api/system/v1/contribution-policies/:id/versions/:versionId/activate · POST /api/system/v1/contribution-policies/:id/versions/:versionId/retire |
+| `contribution-policy.read.catalog` | 4 | GET /api/system/v1/contribution-policies · GET /api/system/v1/contribution-policies/:id · GET /api/system/v1/contribution-policies/:id/versions · GET /api/system/v1/contribution-policies/:id/versions/:versionId |
 | `dict.read.item` | 4 | GET /api/integration/v1/reference/activity-types · GET /api/system/v1/dict-items · GET /api/system/v1/dict-items/:id · GET /api/system/v1/dict-items/tree |
 | `membership.list.record` | 4 | GET /api/admin/v1/members/:memberId/memberships · GET /api/admin/v1/memberships · GET /api/admin/v1/memberships/conflicts · GET /api/admin/v1/organizations/:orgId/memberships |
 | `rbac.role.read` | 4 | GET /api/system/v1/roles · GET /api/system/v1/roles/:id · GET /api/system/v1/roles/:id/permissions · GET /api/system/v1/roles/options |
@@ -12469,6 +12623,10 @@
 | GET | /api/system/v1/audit-logs | Ops - Audit Logs | rbac | RBAC; admission=-; codes=audit-log.read.entry; require=all; scopes=-; engine=rbac-global | code | src/modules/audit-logs/audit-logs.controller.ts:38; src/modules/audit-logs/audit-logs.controller.ts:50 |
 | GET | /api/system/v1/audit-logs/:id | Ops - Audit Logs | rbac | RBAC; admission=-; codes=audit-log.read.entry; require=all; scopes=-; engine=rbac-global | code | src/modules/audit-logs/audit-logs.controller.ts:53; src/modules/audit-logs/audit-logs.controller.ts:71 |
 | GET | /api/system/v1/authz/me/effective-permissions | Ops - Authz | auth | LOGIN_ONLY; admission=-; codes=-; require=all; scopes=-; engine=- | code | src/modules/authz/effective-permissions.controller.ts:22; src/modules/authz/effective-permissions.controller.ts:33 |
+| GET | /api/system/v1/contribution-policies | System - Contribution Policies | rbac | RBAC; admission=-; codes=contribution-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/system-contribution-policies.controller.ts:60; src/modules/activities/controllers/system-contribution-policies.controller.ts:79 |
+| GET | /api/system/v1/contribution-policies/:id | System - Contribution Policies | rbac | RBAC; admission=-; codes=contribution-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/system-contribution-policies.controller.ts:82; src/modules/activities/controllers/system-contribution-policies.controller.ts:98 |
+| GET | /api/system/v1/contribution-policies/:id/versions | System - Contribution Policies | rbac | RBAC; admission=-; codes=contribution-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/system-contribution-policies.controller.ts:101; src/modules/activities/controllers/system-contribution-policies.controller.ts:121 |
+| GET | /api/system/v1/contribution-policies/:id/versions/:versionId | System - Contribution Policies | rbac | RBAC; admission=-; codes=contribution-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/system-contribution-policies.controller.ts:124; src/modules/activities/controllers/system-contribution-policies.controller.ts:143 |
 | GET | /api/system/v1/contribution-rules | Ops - Contribution Rules | rbac | RBAC; admission=-; codes=contribution.read.rule; require=all; scopes=-; engine=rbac-global | code | src/modules/contribution-rules/contribution-rules.controller.ts:65; src/modules/contribution-rules/contribution-rules.controller.ts:77 |
 | GET | /api/system/v1/contribution-rules/:id | Ops - Contribution Rules | rbac | RBAC; admission=-; codes=contribution.read.rule; require=all; scopes=-; engine=rbac-global | code | src/modules/contribution-rules/contribution-rules.controller.ts:104; src/modules/contribution-rules/contribution-rules.controller.ts:118 |
 | GET | /api/system/v1/delegation-grants | system/delegation-grants | rbac | RBAC; admission=-; codes=delegation-grant.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/delegation-grants/delegation-grants.controller.ts:66; src/modules/delegation-grants/delegation-grants.controller.ts:75 |
@@ -12804,6 +12962,10 @@
 | POST | /api/system/v1/attachment-mime-configs | Ops - Attachment Configs | rbac | RBAC; admission=-; codes=attachment-config.create.mime; require=all; scopes=-; engine=rbac-global | code | src/modules/attachment-configs/attachment-mime-configs.controller.ts:75; src/modules/attachment-configs/attachment-mime-configs.controller.ts:95 |
 | POST | /api/system/v1/attachment-size-limit-configs | Ops - Attachment Configs | rbac | RBAC; admission=-; codes=attachment-config.create.size-limit; require=all; scopes=-; engine=rbac-global | code | src/modules/attachment-configs/attachment-size-limit-configs.controller.ts:74; src/modules/attachment-configs/attachment-size-limit-configs.controller.ts:93 |
 | POST | /api/system/v1/attachment-type-configs | Ops - Attachment Configs | rbac | RBAC; admission=-; codes=attachment-config.create.type; require=all; scopes=-; engine=rbac-global | code | src/modules/attachment-configs/attachment-type-configs.controller.ts:75; src/modules/attachment-configs/attachment-type-configs.controller.ts:94 |
+| POST | /api/system/v1/contribution-policies | System - Contribution Policies | rbac | RBAC; admission=-; codes=contribution-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/system-contribution-policies.controller.ts:146; src/modules/activities/controllers/system-contribution-policies.controller.ts:172 |
+| POST | /api/system/v1/contribution-policies/:id/versions | System - Contribution Policies | rbac | RBAC; admission=-; codes=contribution-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/system-contribution-policies.controller.ts:179; src/modules/activities/controllers/system-contribution-policies.controller.ts:206 |
+| POST | /api/system/v1/contribution-policies/:id/versions/:versionId/activate | System - Contribution Policies | rbac | RBAC; admission=-; codes=contribution-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/system-contribution-policies.controller.ts:213; src/modules/activities/controllers/system-contribution-policies.controller.ts:241 |
+| POST | /api/system/v1/contribution-policies/:id/versions/:versionId/retire | System - Contribution Policies | rbac | RBAC; admission=-; codes=contribution-policy.manage.version; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/system-contribution-policies.controller.ts:248; src/modules/activities/controllers/system-contribution-policies.controller.ts:276 |
 | POST | /api/system/v1/contribution-rules | Ops - Contribution Rules | rbac | RBAC; admission=-; codes=contribution.create.rule; require=all; scopes=-; engine=rbac-global | code | src/modules/contribution-rules/contribution-rules.controller.ts:80; src/modules/contribution-rules/contribution-rules.controller.ts:101 |
 | POST | /api/system/v1/delegation-grants | system/delegation-grants | rbac | RBAC; admission=-; codes=delegation-grant.create.record; require=all; scopes=-; engine=rbac-global | code | src/modules/delegation-grants/delegation-grants.controller.ts:44; src/modules/delegation-grants/delegation-grants.controller.ts:63 |
 | POST | /api/system/v1/delegation-grants/:id/revoke | system/delegation-grants | rbac | RBAC; admission=-; codes=delegation-grant.revoke.record; require=all; scopes=-; engine=rbac-global | code | src/modules/delegation-grants/delegation-grants.controller.ts:94; src/modules/delegation-grants/delegation-grants.controller.ts:110 |

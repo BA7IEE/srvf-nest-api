@@ -33,6 +33,11 @@ import { ActivityTimePolicyService } from './activity-time-policy.service';
 import { ActivityTimePolicyCatalogueQueryService } from './activity-time-policy-catalogue-query.service';
 import { ActivityTimePolicyAuditRecorder } from './activity-time-policy-audit-recorder';
 import { AdminActivityTimePoliciesController } from './controllers/admin-activity-time-policies.controller';
+import { ActivityContributionPolicyCommand } from './activity-contribution-policy-command';
+import { ActivityContributionPolicyService } from './activity-contribution-policy.service';
+import { ActivityContributionPolicyCatalogueQueryService } from './activity-contribution-policy-catalogue-query.service';
+import { ActivityContributionPolicyAuditRecorder } from './activity-contribution-policy-audit-recorder';
+import { SystemContributionPoliciesController } from './controllers/system-contribution-policies.controller';
 import { ActivityOutcomeService } from './activity-outcome.service';
 import { ActivityOutcomeFinalizationService } from './activity-outcome-finalization.service';
 import { ActivityOutcomeFinalizationAuditRecorder } from './activity-outcome-finalization-audit-recorder';
@@ -250,6 +255,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AdminActivityResponsibilitiesController,
     AdminActivityMetricDefinitionsController,
     AdminActivityTimePoliciesController,
+    SystemContributionPoliciesController,
     AdminActivityMetricSetsController,
     AppManagedActivitiesController,
     AdminAttendanceSettlementsController,
@@ -306,6 +312,10 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityTimePolicyService,
     ActivityTimePolicyCatalogueQueryService,
     ActivityTimePolicyAuditRecorder,
+    ActivityContributionPolicyCommand,
+    ActivityContributionPolicyService,
+    ActivityContributionPolicyCatalogueQueryService,
+    ActivityContributionPolicyAuditRecorder,
     ActivityTimePolicySelectionAccess,
     ActivityTimePolicySelectionAuditRecorder,
     ActivityTimePolicySelectionService,

@@ -57587,6 +57587,2027 @@
         ]
       }
     },
+    "/api/system/v1/contribution-policies": {
+      "get": {
+        "operationId": "SystemContributionPoliciesController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "code",
+            "required": false,
+            "in": "query",
+            "description": "精确政策代码",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/SystemContributionPolicyResponseDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37017
+                      ],
+                      "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献政策或版本不存在(code=20240)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20240
+                      ],
+                      "description": "20240: 贡献政策或版本不存在",
+                      "example": 20240
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策或版本不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "贡献政策命令收据校验失败(code=20245)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20245
+                      ],
+                      "description": "20245: 贡献政策命令收据校验失败",
+                      "example": 20245
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策命令收据校验失败"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "分页查询贡献政策 [rbac: contribution-policy.read.catalog]",
+        "tags": [
+          "System - Contribution Policies"
+        ]
+      },
+      "post": {
+        "operationId": "SystemContributionPoliciesController_createPolicy",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemCreateContributionPolicyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SystemContributionPolicyCommandResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 贡献政策请求无效(code=20239)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20239
+                      ],
+                      "description": "40000: 请求参数错误; 20239: 贡献政策请求无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37017
+                      ],
+                      "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献政策或版本不存在(code=20240)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20240
+                      ],
+                      "description": "20240: 贡献政策或版本不存在",
+                      "example": 20240
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策或版本不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "贡献政策代码已存在(code=20241) / 贡献政策版本已变化(code=20242) / 贡献政策版本状态不允许此操作(code=20243) / 此操作标识已用于其他贡献政策请求(code=20244) / 贡献政策命令收据校验失败(code=20245) / 贡献政策版本数量已达上限(code=20246)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20241,
+                        20242,
+                        20243,
+                        20244,
+                        20245,
+                        20246
+                      ],
+                      "description": "20241: 贡献政策代码已存在; 20242: 贡献政策版本已变化; 20243: 贡献政策版本状态不允许此操作; 20244: 此操作标识已用于其他贡献政策请求; 20245: 贡献政策命令收据校验失败; 20246: 贡献政策版本数量已达上限",
+                      "example": 20241
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策代码已存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "创建贡献政策 [rbac: contribution-policy.manage.version]",
+        "tags": [
+          "System - Contribution Policies"
+        ]
+      }
+    },
+    "/api/system/v1/contribution-policies/{id}": {
+      "get": {
+        "operationId": "SystemContributionPoliciesController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SystemContributionPolicyResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37017
+                      ],
+                      "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献政策或版本不存在(code=20240)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20240
+                      ],
+                      "description": "20240: 贡献政策或版本不存在",
+                      "example": 20240
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策或版本不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "贡献政策命令收据校验失败(code=20245)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20245
+                      ],
+                      "description": "20245: 贡献政策命令收据校验失败",
+                      "example": 20245
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策命令收据校验失败"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "查看贡献政策 [rbac: contribution-policy.read.catalog]",
+        "tags": [
+          "System - Contribution Policies"
+        ]
+      }
+    },
+    "/api/system/v1/contribution-policies/{id}/versions": {
+      "get": {
+        "operationId": "SystemContributionPoliciesController_listVersions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "statusCode",
+            "required": false,
+            "in": "query",
+            "description": "版本状态",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "active",
+                "retired"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/SystemContributionPolicyVersionSummaryDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37017
+                      ],
+                      "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献政策或版本不存在(code=20240)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20240
+                      ],
+                      "description": "20240: 贡献政策或版本不存在",
+                      "example": 20240
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策或版本不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "贡献政策命令收据校验失败(code=20245)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20245
+                      ],
+                      "description": "20245: 贡献政策命令收据校验失败",
+                      "example": 20245
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策命令收据校验失败"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "分页查询贡献政策版本 [rbac: contribution-policy.read.catalog]",
+        "tags": [
+          "System - Contribution Policies"
+        ]
+      },
+      "post": {
+        "operationId": "SystemContributionPoliciesController_createVersion",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemCreateContributionPolicyVersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SystemContributionPolicyCommandResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 贡献政策请求无效(code=20239)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20239
+                      ],
+                      "description": "40000: 请求参数错误; 20239: 贡献政策请求无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37017
+                      ],
+                      "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献政策或版本不存在(code=20240)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20240
+                      ],
+                      "description": "20240: 贡献政策或版本不存在",
+                      "example": 20240
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策或版本不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "贡献政策代码已存在(code=20241) / 贡献政策版本已变化(code=20242) / 贡献政策版本状态不允许此操作(code=20243) / 此操作标识已用于其他贡献政策请求(code=20244) / 贡献政策命令收据校验失败(code=20245) / 贡献政策版本数量已达上限(code=20246)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20241,
+                        20242,
+                        20243,
+                        20244,
+                        20245,
+                        20246
+                      ],
+                      "description": "20241: 贡献政策代码已存在; 20242: 贡献政策版本已变化; 20243: 贡献政策版本状态不允许此操作; 20244: 此操作标识已用于其他贡献政策请求; 20245: 贡献政策命令收据校验失败; 20246: 贡献政策版本数量已达上限",
+                      "example": 20241
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策代码已存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "创建贡献政策版本 [rbac: contribution-policy.manage.version]",
+        "tags": [
+          "System - Contribution Policies"
+        ]
+      }
+    },
+    "/api/system/v1/contribution-policies/{id}/versions/{versionId}": {
+      "get": {
+        "operationId": "SystemContributionPoliciesController_getVersion",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "政策ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "versionId",
+            "required": true,
+            "in": "path",
+            "description": "版本ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SystemContributionPolicyVersionResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37017
+                      ],
+                      "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献政策或版本不存在(code=20240)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20240
+                      ],
+                      "description": "20240: 贡献政策或版本不存在",
+                      "example": 20240
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策或版本不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "贡献政策命令收据校验失败(code=20245)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20245
+                      ],
+                      "description": "20245: 贡献政策命令收据校验失败",
+                      "example": 20245
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策命令收据校验失败"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "查看贡献政策版本 [rbac: contribution-policy.read.catalog]",
+        "tags": [
+          "System - Contribution Policies"
+        ]
+      }
+    },
+    "/api/system/v1/contribution-policies/{id}/versions/{versionId}/activate": {
+      "post": {
+        "operationId": "SystemContributionPoliciesController_activate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "政策ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "versionId",
+            "required": true,
+            "in": "path",
+            "description": "版本ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemActivateContributionPolicyVersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SystemContributionPolicyCommandResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 贡献政策请求无效(code=20239)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20239
+                      ],
+                      "description": "40000: 请求参数错误; 20239: 贡献政策请求无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37017
+                      ],
+                      "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献政策或版本不存在(code=20240)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20240
+                      ],
+                      "description": "20240: 贡献政策或版本不存在",
+                      "example": 20240
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策或版本不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "贡献政策代码已存在(code=20241) / 贡献政策版本已变化(code=20242) / 贡献政策版本状态不允许此操作(code=20243) / 此操作标识已用于其他贡献政策请求(code=20244) / 贡献政策命令收据校验失败(code=20245) / 贡献政策版本数量已达上限(code=20246)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20241,
+                        20242,
+                        20243,
+                        20244,
+                        20245,
+                        20246
+                      ],
+                      "description": "20241: 贡献政策代码已存在; 20242: 贡献政策版本已变化; 20243: 贡献政策版本状态不允许此操作; 20244: 此操作标识已用于其他贡献政策请求; 20245: 贡献政策命令收据校验失败; 20246: 贡献政策版本数量已达上限",
+                      "example": 20241
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策代码已存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "激活贡献政策版本 [rbac: contribution-policy.manage.version]",
+        "tags": [
+          "System - Contribution Policies"
+        ]
+      }
+    },
+    "/api/system/v1/contribution-policies/{id}/versions/{versionId}/retire": {
+      "post": {
+        "operationId": "SystemContributionPoliciesController_retire",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "政策ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "versionId",
+            "required": true,
+            "in": "path",
+            "description": "版本ID",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemRetireContributionPolicyVersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SystemContributionPolicyCommandResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 贡献政策请求无效(code=20239)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        20239
+                      ],
+                      "description": "40000: 请求参数错误; 20239: 贡献政策请求无效",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100) / 当前主体类型不能访问该接口(code=37017)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100,
+                        37017
+                      ],
+                      "description": "30100: 无权执行此操作; 37017: 当前主体类型不能访问该接口",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献政策或版本不存在(code=20240)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20240
+                      ],
+                      "description": "20240: 贡献政策或版本不存在",
+                      "example": 20240
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策或版本不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "贡献政策代码已存在(code=20241) / 贡献政策版本已变化(code=20242) / 贡献政策版本状态不允许此操作(code=20243) / 此操作标识已用于其他贡献政策请求(code=20244) / 贡献政策命令收据校验失败(code=20245) / 贡献政策版本数量已达上限(code=20246)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        20241,
+                        20242,
+                        20243,
+                        20244,
+                        20245,
+                        20246
+                      ],
+                      "description": "20241: 贡献政策代码已存在; 20242: 贡献政策版本已变化; 20243: 贡献政策版本状态不允许此操作; 20244: 此操作标识已用于其他贡献政策请求; 20245: 贡献政策命令收据校验失败; 20246: 贡献政策版本数量已达上限",
+                      "example": 20241
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献政策代码已存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "退役贡献政策版本 [rbac: contribution-policy.manage.version]",
+        "tags": [
+          "System - Contribution Policies"
+        ]
+      }
+    },
     "/api/admin/v1/activity-metric-sets": {
       "get": {
         "operationId": "AdminActivityMetricSetsController_list",
@@ -153665,6 +155686,538 @@
         ]
       },
       "AdminRetireTimePolicyVersionDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "description": "幂等操作标识",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expectedDefinitionHash": {
+            "type": "string",
+            "description": "期望的版本摘要",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expectedStatusCode": {
+            "type": "string",
+            "description": "期望状态",
+            "enum": [
+              "active"
+            ]
+          }
+        },
+        "required": [
+          "operationKey",
+          "expectedDefinitionHash",
+          "expectedStatusCode"
+        ]
+      },
+      "SystemContributionPolicyResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "政策ID"
+          },
+          "code": {
+            "type": "string",
+            "description": "稳定代码"
+          },
+          "name": {
+            "type": "string",
+            "description": "政策名称"
+          },
+          "description": {
+            "type": "string",
+            "description": "政策说明",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "创建时间"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "更新时间"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "description",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "SystemContributionPolicyVersionSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "版本ID"
+          },
+          "policyId": {
+            "type": "string",
+            "description": "政策ID"
+          },
+          "version": {
+            "type": "number",
+            "description": "版本号"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "description": "定义结构版本"
+          },
+          "evaluatorVersion": {
+            "type": "number",
+            "description": "解释器版本"
+          },
+          "definitionHash": {
+            "type": "string",
+            "description": "版本语义摘要"
+          },
+          "effectiveFrom": {
+            "type": "string",
+            "description": "生效开始"
+          },
+          "effectiveUntil": {
+            "type": "string",
+            "description": "生效结束",
+            "nullable": true
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "生命周期状态",
+            "enum": [
+              "draft",
+              "active",
+              "retired"
+            ]
+          },
+          "activatedAt": {
+            "type": "string",
+            "description": "激活时间",
+            "nullable": true
+          },
+          "retiredAt": {
+            "type": "string",
+            "description": "退役时间",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "创建时间"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "更新时间"
+          }
+        },
+        "required": [
+          "id",
+          "policyId",
+          "version",
+          "schemaVersion",
+          "evaluatorVersion",
+          "definitionHash",
+          "effectiveFrom",
+          "effectiveUntil",
+          "statusCode",
+          "activatedAt",
+          "retiredAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ContributionPolicyResultDto": {
+        "type": "object",
+        "properties": {
+          "recognizedPoints": {
+            "type": "string",
+            "description": "确认积分，固定两位小数，范围0.00–999.99",
+            "example": "1.50"
+          },
+          "explanationCode": {
+            "type": "string",
+            "description": "稳定解释代码",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+          }
+        },
+        "required": [
+          "recognizedPoints",
+          "explanationCode"
+        ]
+      },
+      "ContributionPolicyDurationBandDto": {
+        "type": "object",
+        "properties": {
+          "recognizedPoints": {
+            "type": "string",
+            "description": "确认积分，固定两位小数，范围0.00–999.99",
+            "example": "1.50"
+          },
+          "explanationCode": {
+            "type": "string",
+            "description": "稳定解释代码",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+          },
+          "maxSecondsInclusive": {
+            "type": "number",
+            "description": "包含式时长上限（秒）；最后一档固定为null",
+            "nullable": true
+          }
+        },
+        "required": [
+          "recognizedPoints",
+          "explanationCode",
+          "maxSecondsInclusive"
+        ]
+      },
+      "ContributionPolicyCategoryRuleDto": {
+        "type": "object",
+        "properties": {
+          "timeCategoryCode": {
+            "type": "string",
+            "description": "时长分类代码",
+            "enum": [
+              "volunteer_service",
+              "training",
+              "organization",
+              "non_creditable"
+            ]
+          },
+          "durationBands": {
+            "description": "严格递增的时长档；最后一档必须无上限",
+            "minItems": 1,
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContributionPolicyDurationBandDto"
+            }
+          }
+        },
+        "required": [
+          "timeCategoryCode",
+          "durationBands"
+        ]
+      },
+      "ContributionPolicyRoleRuleDto": {
+        "type": "object",
+        "properties": {
+          "attendanceRoleCode": {
+            "type": "string",
+            "description": "出勤角色代码",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "categoryRules": {
+            "description": "该角色的分类规则；同一分类不得重复",
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContributionPolicyCategoryRuleDto"
+            }
+          }
+        },
+        "required": [
+          "attendanceRoleCode",
+          "categoryRules"
+        ]
+      },
+      "ContributionPolicyDefinitionDto": {
+        "type": "object",
+        "properties": {
+          "defaultResult": {
+            "description": "无匹配规则时的默认结果",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContributionPolicyResultDto"
+              }
+            ]
+          },
+          "roleRules": {
+            "description": "按出勤角色定义的贡献规则；角色代码不得重复",
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContributionPolicyRoleRuleDto"
+            }
+          }
+        },
+        "required": [
+          "defaultResult",
+          "roleRules"
+        ]
+      },
+      "SystemContributionPolicyVersionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "版本ID"
+          },
+          "policyId": {
+            "type": "string",
+            "description": "政策ID"
+          },
+          "version": {
+            "type": "number",
+            "description": "版本号"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "description": "定义结构版本"
+          },
+          "evaluatorVersion": {
+            "type": "number",
+            "description": "解释器版本"
+          },
+          "definitionHash": {
+            "type": "string",
+            "description": "版本语义摘要"
+          },
+          "effectiveFrom": {
+            "type": "string",
+            "description": "生效开始"
+          },
+          "effectiveUntil": {
+            "type": "string",
+            "description": "生效结束",
+            "nullable": true
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "生命周期状态",
+            "enum": [
+              "draft",
+              "active",
+              "retired"
+            ]
+          },
+          "activatedAt": {
+            "type": "string",
+            "description": "激活时间",
+            "nullable": true
+          },
+          "retiredAt": {
+            "type": "string",
+            "description": "退役时间",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "创建时间"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "更新时间"
+          },
+          "definition": {
+            "description": "已校验的完整政策定义",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContributionPolicyDefinitionDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "policyId",
+          "version",
+          "schemaVersion",
+          "evaluatorVersion",
+          "definitionHash",
+          "effectiveFrom",
+          "effectiveUntil",
+          "statusCode",
+          "activatedAt",
+          "retiredAt",
+          "createdAt",
+          "updatedAt",
+          "definition"
+        ]
+      },
+      "SystemContributionPolicyCommandResponseDto": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "description": "收据结构版本",
+            "enum": [
+              1
+            ]
+          },
+          "operationCode": {
+            "type": "string",
+            "description": "命令类型",
+            "enum": [
+              "create_policy",
+              "create_version",
+              "activate_version",
+              "retire_version"
+            ]
+          },
+          "policyId": {
+            "type": "string",
+            "description": "政策ID"
+          },
+          "versionId": {
+            "type": "string",
+            "description": "版本ID",
+            "nullable": true
+          },
+          "definitionHash": {
+            "type": "string",
+            "description": "版本摘要",
+            "nullable": true
+          },
+          "evaluatorVersion": {
+            "type": "number",
+            "description": "解释器版本",
+            "nullable": true
+          },
+          "resultStatusCode": {
+            "type": "string",
+            "description": "原始命令结果状态",
+            "nullable": true,
+            "enum": [
+              "draft",
+              "active",
+              "retired"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "原始命令结果时间"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "operationCode",
+          "policyId",
+          "versionId",
+          "definitionHash",
+          "evaluatorVersion",
+          "resultStatusCode",
+          "createdAt"
+        ]
+      },
+      "SystemCreateContributionPolicyDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "description": "幂等操作标识",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "code": {
+            "type": "string",
+            "description": "稳定政策代码",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "name": {
+            "type": "string",
+            "description": "政策名称",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "description": "政策说明",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "operationKey",
+          "code",
+          "name"
+        ]
+      },
+      "SystemCreateContributionPolicyVersionDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "description": "幂等操作标识",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "schemaVersion": {
+            "type": "number",
+            "description": "结构版本",
+            "enum": [
+              1
+            ]
+          },
+          "evaluatorVersion": {
+            "type": "number",
+            "description": "解释器版本",
+            "enum": [
+              1
+            ]
+          },
+          "definition": {
+            "description": "闭合贡献政策定义，canonical UTF8最多32768字节",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContributionPolicyDefinitionDto"
+              }
+            ]
+          },
+          "effectiveFrom": {
+            "type": "string",
+            "description": "生效开始，UTC毫秒ISO文本",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "effectiveUntil": {
+            "type": "string",
+            "description": "生效结束，UTC毫秒ISO文本；无终点显式null",
+            "nullable": true
+          }
+        },
+        "required": [
+          "operationKey",
+          "schemaVersion",
+          "evaluatorVersion",
+          "definition",
+          "effectiveFrom",
+          "effectiveUntil"
+        ]
+      },
+      "SystemActivateContributionPolicyVersionDto": {
+        "type": "object",
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "description": "幂等操作标识",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expectedDefinitionHash": {
+            "type": "string",
+            "description": "期望的版本摘要",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expectedStatusCode": {
+            "type": "string",
+            "description": "期望状态",
+            "enum": [
+              "draft"
+            ]
+          }
+        },
+        "required": [
+          "operationKey",
+          "expectedDefinitionHash",
+          "expectedStatusCode"
+        ]
+      },
+      "SystemRetireContributionPolicyVersionDto": {
         "type": "object",
         "properties": {
           "operationKey": {

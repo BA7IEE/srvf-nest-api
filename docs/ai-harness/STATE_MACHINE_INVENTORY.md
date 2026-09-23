@@ -1,12 +1,13 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
-## E1-1 当前实施增量（分支验证中，未提交）
+## E1-2 当前实施增量（分支验证中，未提交）
 
-`ContributionPolicyVersion.statusCode` 新增为 L2 inventory，闭集与合法边为
-`(create) → draft → active → retired`。第 130 条 migration 负责创建态、不可变语义、
-actor 锚、合法迁移与永久留存；纯状态函数不执行权限或业务命令。E1-1 没有 HTTP／service
-writer、专属 BizCode、权限或审计事件，因此不提升 governed。当前登记 76 项，其中 8 项
-governed、68 项 inventory；下方阶段记录保留其原历史时点。
+`ContributionPolicyVersion.statusCode` 仍为 L2 inventory，闭集与合法边为
+`(create) → draft → active → retired`。第 130 条 migration 继续负责创建态、不可变语义、
+actor 锚、合法迁移与永久留存；E1-2 新增 Human System runtime writer、锁后身份和显式权限复核、
+专属 `ACTIVITY_CONTRIBUTION_POLICY_STATUS_INVALID` 及闭合审计。当前 blocker 只剩
+`no-governed-evidence`，本刀仍不提升 governed。当前登记 76 项，其中 8 项 governed、68 项
+inventory；下方阶段记录保留其原历史时点。
 
 ## D7-2 当前实施增量（分支验证中，未提交）
 

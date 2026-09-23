@@ -1,5 +1,18 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+## E1-2 贡献政策 System 目录（后端分支实现中，前端未发布）
+
+后端新增 `/api/system/v1/contribution-policies` 下 8 个 Human System 接口：政策列表／详情、版本列表／详情，
+以及创建政策、创建版本、激活和退役版本。生成的 System client 是唯一可调用入口；Admin/App/Auth/Open/Integration
+client 只因共享类型摘要刷新，不新增同类路由。前端接入前必须给当前 ACTIVE Human 用户显式授予 GLOBAL
+`contribution-policy.read.catalog` 或 `contribution-policy.manage.version`；两码互不蕴含、内建角色零默认授予，
+`SUPER_ADMIN` 也不直通，ServicePrincipal 不可使用。
+
+写响应是 8 字段命令收据，读面不返回 actor、operationKey、requestHash、原始 JSON 或审计元数据。列表分页默认 20、
+最大 100；版本详情才返回强类型 V1 definition。`20240` 表示政策或同政策版本不存在，`20242` 是并发锚已变化，
+`20243` 是版本状态不允许该操作，`20244` 是同操作键绑定了不同请求，`20245` 是既有收据锚失真。
+本刀只完成后端仓内能力；前端页面、角色授码、部署、E1-3 选择／发布冻结、账本消费与 Gate 均未完成。
+
 ## D8 正式参与时长证明与官方汇总（D8-2 已合入 main，未部署）
 
 新增 `GET /api/admin/v1/members/{memberId}/participation-time-proof`，入参为 `dateFrom`、`dateTo`、`page`、

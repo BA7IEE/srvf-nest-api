@@ -388,7 +388,16 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 4b — 「字典、Audit events」的对账
 
-> **当前重签（2026-09-22，D8-1）**：维护者确认权限码265、Audit events 170总计／165活跃，
+> **当前重签（2026-09-23，E1-2）**：维护者确认权限码267、Audit events 172总计／167活跃，
+> 字典30类／277项，`seed-sha256-12` 为 `9a62f918affc`。新增
+> `contribution-policy.read.catalog` 与 `contribution-policy.manage.version` 均为显式 GLOBAL Human、
+> 自定义角色可授，十五个内建角色零默认授予，`SUPER_ADMIN` 不直通，Service Principal 与 delegation
+> 均不允许；权限目录 SHA-256 为
+> `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314`。
+> 本轮新增活跃审计事件 `activity.contribution-policy.command` 与
+> `activity.contribution-policy-version.command`；本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+
+> **前次重签（2026-09-22，D8-1）**：维护者确认权限码265、Audit events 170总计／165活跃，
 > 字典30类／277项，`seed-sha256-12` 为 `b484cbc013d5`。既有
 > `activity.settlement-final-review.record` GLOBAL 权限覆盖 cutover，既有
 > `attendance.read.sheet` 覆盖 scoped／GLOBAL 正式证明；权限目录 SHA-256 为
@@ -436,6 +445,16 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **日期**:2026-09-22
 - **依据**:维护者本轮明确确认「确认重签 4b（D8-1：权限码265；Audit events 170总计、165活跃；字典30类、277项，seed摘要 b484cbc013d5；既有 activity.settlement-final-review.record GLOBAL 权限覆盖 cutover，既有 attendance.read.sheet 覆盖 scoped/GLOBAL 正式证明；权限目录摘要 46fa3fa72c4759465bccc541f3c5647c287d2df89eae2ff425772c4fc9fc8a27）」。
 - **对拍**:有 —— `seed-sha256-12` = `b484cbc013d5`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `170`;`audit-event-registry-active` = `165`
+
+> **当前正式签字（2026-09-23，覆盖本节此前历史字段）**：E1-2 的权限、审计、字典、seed
+> 与 Human 访问面已由维护者按上方实际读数重签。
+
+- **结论**:认可
+- **理由**:2026-09-23 E1-2重签：权限码为267；Audit events为172总计／167活跃，新增 `activity.contribution-policy.command` 与 `activity.contribution-policy-version.command`；字典仍为30类／277项，seed摘要为9a62f918affc。新增 `contribution-policy.read.catalog` 与 `contribution-policy.manage.version` 均为显式GLOBAL Human、自定义角色可授、十五个内建角色零默认授予，SUPER_ADMIN不直通，Service Principal与delegation均不允许；权限目录SHA-256为d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314。本签不替代Draft PR CI、Ready、合并、生产或Gate授权。
+- **签字人**:维护者
+- **日期**:2026-09-23
+- **依据**:维护者本轮明确确认「确认重签 4b（E1-2：权限码267；Audit events 172总计、167活跃；字典30类、277项；seed摘要9a62f918affc；新增 contribution-policy.read.catalog / contribution-policy.manage.version 均为显式 GLOBAL Human、自定义角色可授、15个内建角色零默认授予、SUPER_ADMIN不直通、Service Principal与delegation均不允许；权限目录摘要 d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314）」。
+- **对拍**:有 —— `seed-sha256-12` = `9a62f918affc`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `172`;`audit-event-registry-active` = `167`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。
