@@ -7,6 +7,9 @@ import {
 import { deriveTestDbName } from './worktree-db';
 
 const TRUNCATE_TRIGGERS = [
+  { table: 'ContributionPolicyCommandReceipt', trigger: 'cpr_no_truncate' },
+  { table: 'ContributionPolicyVersion', trigger: 'cpv_no_truncate' },
+  { table: 'ContributionPolicy', trigger: 'cp_no_truncate' },
   { table: 'ParticipationTimeCutoverBinding', trigger: 'ptcb_no_truncate' },
   { table: 'ActivityTimeCutoverReceipt', trigger: 'atcr_no_truncate' },
   { table: 'CorrectionPendingTimeAllocation', trigger: 'cpta_no_truncate' },
@@ -32,7 +35,7 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         IF current_database() <> ${dbLiteral} THEN RAISE EXCEPTION 'Wrong fixture database'; END IF;
         FOR item IN
           SELECT c.relname AS tbl, names.trg, t.tgenabled::text AS enabled
-          FROM (VALUES ('ParticipationTimeCutoverBinding','ptcb_no_truncate'), ('ActivityTimeCutoverReceipt','atcr_no_truncate'), ('CorrectionPendingTimeAllocation','cpta_no_truncate'), ('CorrectionPendingTimeAllocationEvidence','cptae_no_truncate'), ('CorrectionTimeAllocationBinding','ctab_no_truncate'), ('CorrectionTimeSourceProof','ctsp_no_truncate'), ('ParticipationTimeCorrectionCommitReceipt','ptcr_no_truncate'), ('ParticipationTimeCorrectionEntry','ptce_no_truncate'), ('ParticipationTimeCorrectionManifest','ptcm_no_truncate'), ('ParticipationTimeLedgerEntry','ptle_no_truncate'), ('ParticipationTimeLedgerManifest','ptlm_no_truncate')) names(tbl,trg)
+          FROM (VALUES ('ContributionPolicyCommandReceipt','cpr_no_truncate'), ('ContributionPolicyVersion','cpv_no_truncate'), ('ContributionPolicy','cp_no_truncate'), ('ParticipationTimeCutoverBinding','ptcb_no_truncate'), ('ActivityTimeCutoverReceipt','atcr_no_truncate'), ('CorrectionPendingTimeAllocation','cpta_no_truncate'), ('CorrectionPendingTimeAllocationEvidence','cptae_no_truncate'), ('CorrectionTimeAllocationBinding','ctab_no_truncate'), ('CorrectionTimeSourceProof','ctsp_no_truncate'), ('ParticipationTimeCorrectionCommitReceipt','ptcr_no_truncate'), ('ParticipationTimeCorrectionEntry','ptce_no_truncate'), ('ParticipationTimeCorrectionManifest','ptcm_no_truncate'), ('ParticipationTimeLedgerEntry','ptle_no_truncate'), ('ParticipationTimeLedgerManifest','ptlm_no_truncate')) names(tbl,trg)
           JOIN pg_class c ON c.relname=names.tbl JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
           LEFT JOIN pg_trigger t ON t.tgrelid=c.oid AND t.tgname=names.trg AND NOT t.tgisinternal
           ORDER BY names.tbl
@@ -47,6 +50,16 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
           END IF;
           EXECUTE 'TRUNCATE TABLE "ParticipationTimeCutoverBinding", "ActivityTimeCutoverReceipt" RESTART IDENTITY';
         END IF;
+        IF to_regclass('public."ContributionPolicy"') IS NOT NULL OR
+           to_regclass('public."ContributionPolicyVersion"') IS NOT NULL OR
+           to_regclass('public."ContributionPolicyCommandReceipt"') IS NOT NULL THEN
+          IF to_regclass('public."ContributionPolicy"') IS NULL OR
+             to_regclass('public."ContributionPolicyVersion"') IS NULL OR
+             to_regclass('public."ContributionPolicyCommandReceipt"') IS NULL THEN
+            RAISE EXCEPTION 'Incomplete contribution policy fixture tables';
+          END IF;
+          EXECUTE 'TRUNCATE TABLE "ContributionPolicyCommandReceipt", "ContributionPolicyVersion", "ContributionPolicy" RESTART IDENTITY';
+        END IF;
         PERFORM set_config('srvf.d6_fixture_trigger_states',states::text,true);
       END $d6_fixture$;`,
     after: `DO $d6_fixture$
@@ -55,7 +68,10 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         IF current_database() <> ${dbLiteral} THEN RAISE EXCEPTION 'Wrong fixture database'; END IF;
         FOR item IN SELECT value FROM jsonb_array_elements(current_setting('srvf.d6_fixture_trigger_states')::jsonb)
         LOOP
-          IF NOT ((item->>'table'='ParticipationTimeCutoverBinding' AND item->>'trigger'='ptcb_no_truncate') OR
+          IF NOT ((item->>'table'='ContributionPolicyCommandReceipt' AND item->>'trigger'='cpr_no_truncate') OR
+                  (item->>'table'='ContributionPolicyVersion' AND item->>'trigger'='cpv_no_truncate') OR
+                  (item->>'table'='ContributionPolicy' AND item->>'trigger'='cp_no_truncate') OR
+                  (item->>'table'='ParticipationTimeCutoverBinding' AND item->>'trigger'='ptcb_no_truncate') OR
                   (item->>'table'='ActivityTimeCutoverReceipt' AND item->>'trigger'='atcr_no_truncate') OR
                   (item->>'table'='CorrectionPendingTimeAllocation' AND item->>'trigger'='cpta_no_truncate') OR
                   (item->>'table'='CorrectionPendingTimeAllocationEvidence' AND item->>'trigger'='cptae_no_truncate') OR
@@ -110,6 +126,25 @@ export async function withTimeLedgerFixtureCleanup<T>(
     if (cutoverTables.size !== 2) throw new Error('Incomplete cutover fixture tables');
     await tx.$executeRawUnsafe(
       'TRUNCATE TABLE "ParticipationTimeCutoverBinding", "ActivityTimeCutoverReceipt" RESTART IDENTITY',
+    );
+  }
+  const contributionPolicyTables = new Set(
+    changed
+      .filter(({ table }) =>
+        [
+          'ContributionPolicyCommandReceipt',
+          'ContributionPolicyVersion',
+          'ContributionPolicy',
+        ].includes(table),
+      )
+      .map(({ table }) => table),
+  );
+  if (contributionPolicyTables.size !== 0) {
+    if (contributionPolicyTables.size !== 3) {
+      throw new Error('Incomplete contribution policy fixture tables');
+    }
+    await tx.$executeRawUnsafe(
+      'TRUNCATE TABLE "ContributionPolicyCommandReceipt", "ContributionPolicyVersion", "ContributionPolicy" RESTART IDENTITY',
     );
   }
   const result = await cleanup(tx);

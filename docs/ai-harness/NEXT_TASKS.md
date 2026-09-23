@@ -1,14 +1,30 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **Release 4 仓库交付已收口，Release 5 / E1 评审起草中（2026-09-22）**：D8-OPS 文档
-> [#1343](https://github.com/BA7IEE/srvf-nest-api/pull/1343) 已 squash 合入
-> `fc7471efadaf22834d5effb0b92a9fdd034bea2b`，对应
-> [main CI 35715601951](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35715601951) completed/success。
-> 这只完成 D8-OPS 运维计划，未部署、未开 Gate、未执行预检或正式 cutover。下一条仓内顺序为
-> Release 5 `E1 → E5`；当前只起草 [E1 贡献政策评审与精确计划](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)，
-> 推荐拆为 E1-1 数据与定义地基、E1-2 System 目录、E1-3 选择与发布冻结，并为 E1-1 列出 46 个精确候选路径。
-> 本轮不改 schema、代码、数据库、权限、审计、Gate 或旧贡献行为。唯一 open Draft #1324 与本 lane 零交叉；
-> E 档 release 的 global 0 open PR 要求仍未满足，未被本轮豁免。
+> **Release 5 / E1-1 下一步为推送 CUID 元数据误判修复并冷跑 #1345 CI（2026-09-23）**：E1 计划
+> [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已 squash 合入
+> `db580471f94d94300ff30ef7f8925515fc15c0c6`，对应
+> [main CI 35726170176](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35726170176) completed/success。Draft
+> [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 上一远端 head `8f0b8988f211e1fc1db892df117fd3d25938c6c3` 的
+> [PR CI 35760162619](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35760162619) 仅 Contract + E2E 第 1 组红；失败为 Activity
+> registrations 前置发布返回 500。确定性 HTTP 探针已定位：合法 CUID 内恰含手机号形状数字串时，通知 Outbox 会误拒
+> envelope ID、冻结受众锚等结构化不透明标识。维护者已确认方案 A；仅在 envelope ID 槽位、
+> `recipientFreeze.cohortKey/basisRef[]` 及已解析 payload 的精确 CUID ID 路径中遮蔽完整 CUID 后继续扫描；裸手机号、
+> 自由文本、近似／不完整 CUID 和原 payload 形状守卫仍 fail-closed。守卫单测 48/48、通知模块 18 suites／327 tests、
+> 冷建 `app_test_w98` 的 Activity registrations 与完整 B6 4 suites／104 tests、全仓单测 407/407 suites
+> （8,881 passed／5 todo）、contract 1,074/1,074、typecheck、build、8 GiB lint、Harness 561／138／68 均通过；
+> `CODEMAP.md` 与 `ROUTE_AUTHZ.md` 已由既有生成器刷新。
+> 下一步是提交推送更新 #1345，并由新 SHA 冷跑 PR CI；
+> #1345 保持 Draft，不 Ready、不合并。E1-1 原实现按
+> 已批准的 46 路径及后续精确扩写的 1 个夹具清理路径实施第 130 条纯 additive migration、三张永久保留表、V1 强类型 definition、fingerprint、
+> 纯 evaluator 和 draft→active→retired 生命周期；没有 provider、route、writer，不接旧 `ContributionRule`、
+> 考勤、账本、Readiness 或 Gate。当前工作树为 130 migration／179 model；定义与状态机单测 56/56、
+> schema validate、typecheck、build、全仓 lint、18/18 migration 计数同步已通过。SQL 摘要
+> `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00` 的 3b 已重签并通过登记对拍；
+> E1-1 没有新增权限码或审计事件，4b 不需要重签，现有 265 权限／170 AuditLogEvent 不变。获准的
+> `app_test_w98` 已通过冷回放／非空升级 2/2、数据库守卫 36/36、旧行为 31/31 和夹具恢复 5/5；固定使用
+> 其他 scratch 库的历史 rehearsal 留给 Draft PR CI 冷跑。原实现静态门禁与签字对拍已通过；
+> 不 Ready、不合并。E1-2／E1-3、E2–E5、D8-OPS、生产、Gate、
+> 历史转换、数据删除或重算均未授权。
 
 > **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
 > [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，

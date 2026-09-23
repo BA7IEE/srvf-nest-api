@@ -146,7 +146,7 @@ V1–V4 模板、V2–V8 提案／快照及其 hash 不回改。批准时冻结�
 退役或撤权竞态必须锁后重验。只有该闭环完成后，Readiness 才按真实选择消除 `CONTRIBUTION_POLICY_UNREPRESENTABLE`；
 仍不接正式贡献结算。
 
-## 6. E1-1 精确候选写集（46 路径）
+## 6. E1-1 精确候选写集（47 路径）
 
 ### 6.1 数据、实现与新增测试（9 路径）
 
@@ -206,6 +206,11 @@ V1–V4 模板、V2–V8 提案／快照及其 hash 不回改。批准时冻结�
 12. `prisma/CLAUDE.md`
 13. `src/modules/activities/CLAUDE.md`
 
+### 6.4 既有测试夹具兼容（1 路径）
+
+1. `test/setup/time-ledger-fixture-cleanup.ts`：仅将三张 E1-1 新表及其 `no-truncate` trigger 纳入既有受控
+   清理与原状态恢复；生产守卫、业务断言和业务超时不变。
+
 若实际生成器证明某个派生文件零 diff，则不伪造改动；若实现产生本清单外必需路径，必须先上报扩写，不能靠通配授权夹带。
 E1-1 不修改 `ContributionRule` 模型／模块、`contribution-calculator.ts`、考勤、账本、settlement、proposal、Readiness、
 contract snapshot、客户端、seed、权限或审计目录。
@@ -217,7 +222,7 @@ contract snapshot、客户端、seed、权限或审计目录。
 1. 先运行定义／状态机单测、lint、typecheck、build 和治理自证。
 2. 再在 w98 做第 130 条冷回放、129→130 非空升级、DB 约束／不可变／并发与旧行为 characterization；
    只允许重建测试夹具，不运行 `migrate dev|reset|db push`。
-3. `pnpm docs:migcount:check` 必须证明 17 处具名常量全部为 130；另逐行核验 7 份直接当前总数文件，不能用自动替换改历史目标。
+3. `pnpm docs:migcount:check` 必须证明 18 处具名常量全部为 130；另逐行核验 7 份直接当前总数文件，不能用自动替换改历史目标。
 4. migration SQL 定稿后计算完整 SHA-256，再请求 3b 重签；签字前不得写 `CUTOVER_SIGNOFF` 或运行迁移 E2E。
 5. E1-1 不新增权限或 AuditLogEvent，4b 应明确“不需要重签”，不能复制旧计数冒充新增审批。
 6. 本地不跑全量 E2E；Draft PR CI 冷跑完整 Contract + E2E。Ready、可信红区审批、合并和最终 main CI 分别授权／记录。
@@ -252,3 +257,35 @@ E1-2、E1-3、E2–E5、生产部署和任何正式切换均不继承 E1-1 授�
 本轮不实施 E1，不修改 schema/migration/TypeScript/测试/派生生成物，不操作数据库，不 Ready、不合并；
 不执行 D8-OPS，不部署，不启用任何 Gate，不删除、回填、重分类或重算业务数据。整体跨模型复审、前端发布、
 真实业务验收和生产仍未完成。
+
+## 10. E1-1 implementation 当前记录（2026-09-23）
+
+- 计划 PR [#1344](https://github.com/BA7IEE/srvf-nest-api/pull/1344) 已 squash 合入
+  `db580471f94d94300ff30ef7f8925515fc15c0c6`；
+  [main CI 35726170176](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35726170176) completed/success。
+- 独立工作树已实现第 130 条纯 additive migration、三模型、复合版本锚、永久留存／不可变／生命周期守卫、
+  V1 parser／fingerprint／纯 evaluator 及数据库和 migration E2E；没有 provider、route、writer 或旧链接线。
+- 当前 130 migration／179 model；目标单测 56/56、全仓单测 407 suites（8,871 passed、5 todo）、
+  schema validate、typecheck、build、全仓 lint 及 `docs:migcount:check` 的 18/18 声明已通过。migration SQL 完整 SHA-256 为
+  `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00`。
+- 维护者已按上述摘要完成 3b 重签，`CUTOVER_SIGNOFF` 对拍通过。获准的 `app_test_w98` 已通过第 130 条
+  冷回放与 129→130 非空升级 2/2、数据库约束／不可变／并发 36/36、旧贡献与提案／Readiness 行为
+  9 suites／31 tests，以及受控夹具 trigger 成功／失败恢复 5/5。E1-1 没有新增权限码或 AuditLogEvent，
+  4b 不需要重签。
+- 实际写集为批准的 46 路径加维护者后续精确扩写的夹具清理 1 路径，共 47 路径；没有修改历史 migration、
+  生产守卫或既有业务断言。固定使用其他 scratch 库的历史迁移 rehearsal 不在本地扩大权限，交 Draft PR CI 冷跑。
+- Draft [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 已创建。初始 head `c51f76a75431116ef90d47460f0114823bdce75e`
+  的 [PR CI 35754360849](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35754360849) 暴露合法 SHA-256 冻结锚被手机号形状
+  正则误拒；精确 SHA 路径修复已随 head `8f0b8988f211e1fc1db892df117fd3d25938c6c3` 推送。
+- head `8f0b8988f211e1fc1db892df117fd3d25938c6c3` 的
+  [PR CI 35760162619](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35760162619) 进一步暴露同类 CUID 误判：Contract + E2E
+  第 1 组的 Activity registrations 前置发布返回 500、活动仍为 draft。确定性 HTTP 探针使用合法但含手机号形状数字串的
+  CUID，修复前稳定复现 201 create／500 publish，证明 envelope ID、冻结受众锚和已解析 payload 的结构化不透明 ID
+  进入了通用 PII 正则。
+- 维护者已确认 CUID 元数据误判修复方案 A：仅在 envelope ID 槽位、`recipientFreeze.cohortKey/basisRef[]` 及已解析
+  payload 的精确 CUID ID 路径中遮蔽完整 CUID 后继续敏感值扫描；裸手机号、自由文本、近似／不完整 CUID 及原 payload
+  形状守卫仍 fail-closed。修复后同一 HTTP 探针为 201 create／200 publish，活动状态为 published；守卫单测 48/48、
+  通知模块 18 suites／327 tests、冷建 `app_test_w98` 的 Activity registrations 与完整 B6 4 suites／104 tests、全仓单测
+  407/407 suites（8,881 passed／5 todo）、contract 1,074/1,074、typecheck、build、8 GiB lint、Harness 561／138／68
+  均已通过；`CODEMAP.md` 与 `ROUTE_AUTHZ.md` 已由既有生成器刷新，仍需提交推送及新一轮 PR CI。
+- 本节不宣称 #1345 PR CI 已全绿、Ready、合并、部署、D8-OPS、Gate、E1-2／E1-3 或 E2–E5 已完成。

@@ -188,6 +188,10 @@ model User {
   activityCreationCommandReceipts      ActivityCreationCommandReceipt[]            @relation("ActivityCreationCommandReceiptActor")
   activityMetricCommandReceipts        ActivityMetricCommandReceipt[]
   timePolicyCommandReceipts            TimePolicyCommandReceipt[]
+  contributionPolicyVersionsCreated    ContributionPolicyVersion[]                 @relation("ContributionPolicyVersionCreator")
+  contributionPolicyVersionsActivated  ContributionPolicyVersion[]                 @relation("ContributionPolicyVersionActivator")
+  contributionPolicyVersionsRetired    ContributionPolicyVersion[]                 @relation("ContributionPolicyVersionRetirer")
+  contributionPolicyCommandReceipts    ContributionPolicyCommandReceipt[]
   activityTimePolicySelectionRevisions ActivityTimePolicySelectionRevision[]       @relation("ActivityTimePolicySelectionCreator")
   activityTimePolicySelectionReceipts  ActivityTimePolicySelectionCommandReceipt[]
   activityOutcomeCommandReceipts       ActivityOutcomeCommandReceipt[]
@@ -1799,6 +1803,77 @@ model TimePolicyCommandReceipt {
   @@unique([actorUserId, operationCode, operationKey], map: "tpr_command_key")
   @@index([policyId], map: "tpr_policy_idx")
   @@index([versionId], map: "tpr_version_idx")
+}
+
+// ===== Activity OS R5 / E1-1:contribution policy definition foundation =====
+//
+// E1-1 only establishes stable policy identity, immutable version semantics and command receipts.
+// It does not replace ContributionRule, wire attendance/settlement, resolve readiness or expose APIs.
+model ContributionPolicy {
+  id          String   @id @default(cuid())
+  code        String   @unique(map: "cp_code_key")
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions        ContributionPolicyVersion[]
+  commandReceipts ContributionPolicyCommandReceipt[]
+}
+
+model ContributionPolicyVersion {
+  id                String    @id @default(cuid())
+  policyId          String
+  version           Int
+  schemaVersion     Int
+  definitionJson    Json
+  definitionHash    String
+  evaluatorVersion  Int
+  effectiveFrom     DateTime
+  effectiveUntil    DateTime?
+  statusCode        String
+  createdByUserId   String
+  activatedByUserId String?
+  retiredByUserId   String?
+  activatedAt       DateTime?
+  retiredAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  policy          ContributionPolicy                 @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_policy_fk")
+  createdBy       User                               @relation("ContributionPolicyVersionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_creator_fk")
+  activatedBy     User?                              @relation("ContributionPolicyVersionActivator", fields: [activatedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_activator_fk")
+  retiredBy       User?                              @relation("ContributionPolicyVersionRetirer", fields: [retiredByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_retirer_fk")
+  commandReceipts ContributionPolicyCommandReceipt[]
+
+  @@unique([policyId, version], map: "cpv_policy_version_key")
+  @@unique([id, policyId, definitionHash, evaluatorVersion], map: "cpv_exact_anchor_key")
+  @@index([policyId, statusCode], map: "cpv_policy_status_idx")
+  @@index([createdByUserId], map: "cpv_creator_idx")
+  @@index([activatedByUserId], map: "cpv_activator_idx")
+  @@index([retiredByUserId], map: "cpv_retirer_idx")
+}
+
+model ContributionPolicyCommandReceipt {
+  id               String   @id @default(cuid())
+  actorUserId      String
+  operationCode    String
+  operationKey     String
+  requestHash      String
+  policyId         String
+  versionId        String?
+  definitionHash   String?
+  evaluatorVersion Int?
+  resultJson       Json
+  createdAt        DateTime @default(now())
+
+  actor   User                       @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpr_actor_fk")
+  policy  ContributionPolicy         @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpr_policy_fk")
+  version ContributionPolicyVersion? @relation(fields: [versionId, policyId, definitionHash, evaluatorVersion], references: [id, policyId, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "cpr_version_anchor_fk")
+
+  @@unique([actorUserId, operationCode, operationKey], map: "cpr_command_key")
+  @@index([policyId], map: "cpr_policy_idx")
+  @@index([versionId], map: "cpr_version_idx")
 }
 
 model ActivityMetricDefinition {

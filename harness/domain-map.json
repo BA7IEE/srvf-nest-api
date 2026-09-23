@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:fac46c8b498dc4a5f34fe6754c5e438f85450ac2d3fb84202ef2951d50d61b6d",
+  "inputDigest": "sha256:894af01afefc6156f732a728f1940aad5c449b54df4d1055c73763d2da1069fe",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -315,6 +315,24 @@
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ContributionPolicy": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ContributionPolicyVersion": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ContributionPolicyCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
       "confirmed": true
     },
     "ActivityTimePolicySelectionRevision": {

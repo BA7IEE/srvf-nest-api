@@ -126,6 +126,7 @@ export type KnownNotificationOutboxPayload =
   | AdminSmsOutboxPayload;
 
 const CUID = /^c[a-z0-9]{20,31}$/;
+const CUID_TOKEN = /(?<![a-z0-9])c[a-z0-9]{20,31}(?![a-z0-9])/g;
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -714,10 +715,27 @@ function assertSafeMetadata(input: NotificationOutboxSafetyInput): void {
     ['destinationType', input.destinationType],
     ['destinationRef', input.destinationRef],
   ] as const) {
-    if (containsSensitiveValue(value) || FORBIDDEN_PAYLOAD_SHAPE.test(value)) {
+    if (containsSensitiveMetadataValue(field, value) || FORBIDDEN_PAYLOAD_SHAPE.test(value)) {
       throw new NotificationOutboxInvariantError(`${field} contains forbidden sensitive material`);
     }
   }
+}
+
+/**
+ * envelope 的 `eventKey` / `aggregateId` / `destinationRef` 是内部结构化标识槽，而非
+ * 通知自由文本。合法 CUID 的随机字符可能恰好含 11 位手机号形状数字；只在这三个槽中
+ * 遮掉**完整 CUID token**后再做敏感值扫描，裸手机号、伪 CUID 及类型字段仍原样受检。
+ * 后续 exact parser + envelope/payload coherence 继续负责事件形状和两侧身份一致性。
+ */
+function containsSensitiveMetadataValue(
+  field: 'eventKey' | 'aggregateType' | 'aggregateId' | 'destinationType' | 'destinationRef',
+  value: string,
+): boolean {
+  const candidate =
+    field === 'eventKey' || field === 'aggregateId' || field === 'destinationRef'
+      ? maskOpaqueCuidTokens(value)
+      : value;
+  return containsSensitiveValue(candidate);
 }
 
 const FORBIDDEN_WORDS =
@@ -750,9 +768,44 @@ const FORBIDDEN_PAYLOAD_SHAPE = new RegExp(
   'i',
 );
 
+const SHA256_HEX = /^[a-f0-9]{64}$/;
+const RECIPIENT_FREEZE_BASIS_REF_PATH = /^\$\.recipientFreeze\.basisRef\[\d+\]$/;
+const RECIPIENT_FREEZE_STRUCTURED_ID_PATH = /^\$\.recipientFreeze\.(?:cohortKey|basisRef\[\d+\])$/;
+const PAYLOAD_CUID_PATHS = new Set(['$.recipientMemberId', '$.notificationId', '$.memberId']);
+const OPAQUE_CUID_PLACEHOLDER = '[OPAQUE_CUID]';
+
+/**
+ * `recipientFreeze.basisRef` 可以保存内部 SHA-256 事实锚。摘要里的随机数字片段偶尔会
+ * 长得像手机号；那不是 PII，继续走自由文本 redactor 会把合法 intent 非确定性硬拒。
+ *
+ * 豁免刻意同时锁死「已登记的结构化路径 + 完整小写 SHA-256」：裸手机号、其他路径、
+ * 非 64 位值以及 title/body 自由文本仍走原来的 fail-closed 检查。
+ */
+function isOpaqueRecipientFreezeDigest(path: string, value: string): boolean {
+  return RECIPIENT_FREEZE_BASIS_REF_PATH.test(path) && SHA256_HEX.test(value);
+}
+
+function maskOpaqueCuidTokens(value: string): string {
+  return value.replace(CUID_TOKEN, OPAQUE_CUID_PLACEHOLDER);
+}
+
+/**
+ * payload 已先经过 event-specific exact parser；只有 parser 明确声明的 CUID 字段，以及
+ * recipientFreeze 的结构化 key/ref，才可遮掉完整 CUID token。title/body、basisKind、
+ * computedAt 和任何未知路径都不走这条分支。
+ */
+function payloadValueForSensitiveScan(path: string, value: string): string {
+  if (PAYLOAD_CUID_PATHS.has(path) && CUID.test(value)) return OPAQUE_CUID_PLACEHOLDER;
+  if (RECIPIENT_FREEZE_STRUCTURED_ID_PATH.test(path)) return maskOpaqueCuidTokens(value);
+  return value;
+}
+
 function walkPayload(value: unknown, path: string): void {
   if (typeof value === 'string') {
-    if (containsSensitiveValue(value)) {
+    if (
+      !isOpaqueRecipientFreezeDigest(path, value) &&
+      containsSensitiveValue(payloadValueForSensitiveScan(path, value))
+    ) {
       throw new NotificationOutboxInvariantError(`payload contains sensitive value at ${path}`);
     }
     return;
