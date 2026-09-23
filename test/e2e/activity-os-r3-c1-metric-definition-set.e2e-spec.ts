@@ -483,7 +483,7 @@ describe('C1 D1 nonempty migration rehearsal', () => {
       expect(
         JSON.parse(
           sql(
-            "SELECT (to_jsonb(a) - ARRAY['metricRequirementCode','selectedMetricSetVersionId','selectedMetricSetDefinitionHash','metricSelectionRevision','timePolicySelectionRevision','currentTimePolicySelectionRevisionId'])::text FROM \"Activity\" a WHERE \"id\"='c1_legacy_activity'",
+            "SELECT (to_jsonb(a) - ARRAY['metricRequirementCode','selectedMetricSetVersionId','selectedMetricSetDefinitionHash','metricSelectionRevision','timePolicySelectionRevision','currentTimePolicySelectionRevisionId','contributionPolicySelectionRevision','currentContributionPolicySelectionRevisionId'])::text FROM \"Activity\" a WHERE \"id\"='c1_legacy_activity'",
           ),
         ),
       ).toEqual(JSON.parse(before));

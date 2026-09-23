@@ -156,17 +156,16 @@ async function seedLegacyFact(): Promise<void> {
           memberOriginCode: 'fixture',
         },
       });
-      const activity = await tx.activity.create({
-        data: {
-          title: 'D7-2 migration activity',
-          activityTypeCode: 'fixture',
-          organizationId: organization.id,
-          startAt: at,
-          endAt: end,
-          location: 'fixture',
-          statusCode: 'published',
-        },
-      });
+      const activity = { id: 'd7-2-migration-activity' };
+      await tx.$executeRaw`
+        INSERT INTO "Activity" (
+          id, "updatedAt", title, "activityTypeCode", "organizationId",
+          "startAt", "endAt", location, "statusCode"
+        ) VALUES (
+          ${activity.id}, CURRENT_TIMESTAMP, 'D7-2 migration activity', 'fixture',
+          ${organization.id}, ${at}, ${end}, 'fixture', 'published'
+        )
+      `;
       const session = await tx.activitySession.create({
         data: {
           activityId: activity.id,

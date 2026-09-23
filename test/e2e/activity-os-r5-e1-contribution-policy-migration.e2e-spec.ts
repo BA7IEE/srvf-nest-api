@@ -108,18 +108,15 @@ async function seedExistingFacts(): Promise<void> {
     const organization = await db.organization.create({
       data: { id: 'e11-org', name: 'E1-1 migration fixture', nodeTypeCode: 'team' },
     });
-    const activity = await db.activity.create({
-      data: {
-        id: 'e11-activity',
-        title: 'E1-1 migration fixture',
-        activityTypeCode: 'e11_activity',
-        organizationId: organization.id,
-        startAt: new Date('2099-09-22T09:00:00.000Z'),
-        endAt: new Date('2099-09-22T17:00:00.000Z'),
-        location: 'fixture',
-        statusCode: 'draft',
-      },
-    });
+    const activity = { id: 'e11-activity' };
+    // This fixture runs against the pre-E1-3 schema; the current Prisma Client
+    // includes columns that do not exist until migration 131.
+    await db.$executeRaw`
+      INSERT INTO "Activity" ("id", "updatedAt", "title", "activityTypeCode", "organizationId", "startAt", "endAt", "location", "statusCode")
+      VALUES (${activity.id}, ${new Date()}, ${'E1-1 migration fixture'}, ${'e11_activity'}, ${organization.id},
+              ${new Date('2099-09-22T09:00:00.000Z')}, ${new Date('2099-09-22T17:00:00.000Z')},
+              ${'fixture'}, ${'draft'})
+    `;
     const member = await db.member.create({
       data: { id: 'e11-member', memberNo: 'E11-MEMBER', ...memberIdentityData('E1-1 Member') },
     });
