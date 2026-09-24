@@ -210,7 +210,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— Release 1–4 仓内交付已合入并完成 main CI；Release 5 / E1 仅起草评审，E1–E5 实施、D8-OPS、真实业务验收、整体跨模型复审、前端、部署与 v1.1 Gate 均未完成**
+**⑤ Activity OS T0-A —— Release 1–4 与 E1-1／E1-2／E1-3 仓内交付已合入并完成 main CI；E2 仅起草评审，E2–E5、D8-OPS、真实业务验收、整体跨模型复审、前端、部署与 v1.1 Gate 均未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
