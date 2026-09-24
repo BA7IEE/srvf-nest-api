@@ -1,6 +1,6 @@
 # Activity OS Release 5 / E2 旧 ContributionRule 转换：评审与精确授权清单
 
-> 状态：仅评审草稿，2026-09-24。E1-3 已随 #1349 合入 main，未部署。本稿不授权实施转换、运行数据库命令、操作生产或启用 Gate；E2 不继承 E1-3 的实施授权。
+> 状态：精确实施计划草稿，2026-09-24。E1-3 已随 #1349、E2 映射评审已随 #1351 合入 main，均未据此部署。本稿不授权实施转换、运行数据库命令、操作生产或启用 Gate；E2 不继承 E1-3 的实施授权。
 
 ## 1. 目标与阶段边界
 
@@ -107,7 +107,7 @@ E2 的目标是把旧 `ContributionRule` 的业务含义整理为可追溯的版
 
 ## 5. 下一轮实施前的精确授权清单
 
-本稿**不提交实施写集**：活动类型→时长分类、默认结果和时长来源尚未拍板，此时给出“完整实施路径数”会是假精确。下一轮先仅授权下列**只读定稿工作**，其输入和交付物明确，不含数据库操作：
+下表是形成 §7–§11 候选实施计划的**只读输入**，不含数据库操作。§10 列出逐路径候选写集，但活动类型→时长分类、默认结果和时长来源尚未拍板，因此它不是可直接执行的最终写集；未决条件在 §7 明列，不能把候选路径数冒充实施授权。
 
 | 只读工作           | 精确输入路径                                                                                                                                                                                                                                                                | 交付物                                                            |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -125,6 +125,108 @@ E2 的目标是把旧 `ContributionRule` 的业务含义整理为可追溯的版
 
 生产盘点、生产转换、部署、D8-OPS、E3–E5、v1.1 Gate、旧规则只读化、业务数据删除或重算均在本清单之外，必须另立授权。
 
-## 6. 本轮允许写集与验证
+## 6. 13 组映射续稿的已完成记录（#1351）
 
-原 E2 评审稿已随 #1350 合入 main。本次续稿仅编辑本文件，新增上述 13 组、31 条评审映射；不改 `NEXT_TASKS`、`FROZEN_DRAFTS`、TypeScript、Prisma、测试或门禁。已用目录逐条核对组选择器、条数及人工治理原文，并通过 `pnpm docs:readtax:check`、`pnpm docs:counts:check`、本稿 Prettier 检查和 `git diff --check`。此处的文档定稿不构成 E2 实施、数据库盘点或转换授权。
+原 E2 评审稿已随 #1350 合入 main；映射续稿 #1351 也已合入。#1351 仅编辑本文件，新增上述 13 组、31 条评审映射；未改 `NEXT_TASKS`、`FROZEN_DRAFTS`、TypeScript、Prisma、测试或门禁。该轮已用目录逐条核对组选择器、条数及人工治理原文，并通过 `pnpm docs:readtax:check`、`pnpm docs:counts:check`、本稿 Prettier 检查和 `git diff --check`。此处的文档定稿不构成 E2 实施、数据库盘点或转换授权。
+
+## 7. E2 实施方案 A：逐类型候选，不按 13 组自动合并
+
+1. **一旧类型一候选政策身份**：13 组只作评审排班；建议以 `legacy_<activityTypeCode>` 生成候选 `ContributionPolicy.code`（31 个目录 code 的最长结果为 36 字符，符合现有 64 字符上限）。若该 code 已占用、旧类型不在冻结目录、角色不在已签字对照表、ACTIVE pair 重复或来源发生变更，全部列异常并拒绝写入；不得覆盖、复用或猜测已有政策身份。多个类型共享政策身份只能另行签字。
+2. **先签映射，再生成定义**：每个类型须明确 E1 的 `timeCategoryCode`（四选一）、旧角色→E1 角色、时长来源、`defaultResult` 及解释码、是否可转换；G04、G05 默认 `hold`，G13 的 `zero` 须单独签“政策结果为零而培训事实保留”。未签类型没有正式候选版本，绝不由目录选择器自动推成 `volunteer_service`。
+3. **只为有合法 ACTIVE 规则的类型建立 draft 候选**；没有旧规则不批量合成 zero-policy。历史 INACTIVE／软删规则继续留在旧表；若维护者选择归档映射，只产生非生效来源证据，不激活、不回填旧业务。E2 不把 draft 变为 active，也不写活动选择、考勤、结算、账本、每日上限或统计。
+4. `ContributionPolicyDefinition` 建议每个 ACTIVE 旧角色产生一个 `roleRule`，仅在已签时长分类下建档；无匹配角色的 `defaultResult` 候选为 `{ recognizedPoints: '0.00', explanationCode: 'legacy_no_rule' }`，**此值与解释码仍需业务拍板**。定义和版本一律走 E1 的 parser、canonical/hash、`schemaVersion=1`、`evaluatorVersion=1`；`effectiveFrom` 由签字清单给定，不能用运行时 `now()` 补空。
+5. `durationThreshold=null` → 一个末档；非空时 `Decimal(5,2)` 小时按十进制定点运算 `× 3600` 得到包含边界的整数秒档（0.01 小时 = 36 秒），高档使用 `pointsAbove ?? pointsBelow`。旧计算器实际上比较 `serviceHours: number` 与 `Number(threshold)`；**只有证明旧输入精度和新秒数来源在边界一致后**才能宣称同输入等价。旧 Decimal 可能存在 E1 `recognizedPoints` 不接受的负值／越界值，须列异常并拒绝，不能夹取或重写。若时长不一致，记录差异并停在 E3 对照，不改旧断言来掩盖。
+6. 推荐一份未来的受控实现 PR 包含 dry-run 与候选写入能力，但正式写入入口必须显式 `--commit` 且绑定已签映射指纹、操作者和目标环境；默认 dry-run 零写入。生产运行、生产盘点、部署及开 Gate 均另立现场授权。
+
+### 实施前须一次拍板的选择（当前均未获批）
+
+| 决策                                    | 推荐 A                                                                                                     | 未签字时的处理               |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| 31 类到 E1 四类的映射、角色与时长来源   | 每类型／角色逐项签字，G04/G05 hold、G13 单签                                                               | 不生成该类型的版本           |
+| 政策身份与碰撞                          | 每类型一新 code；既有 code 绝不覆盖                                                                        | 碰撞列异常并停止该批         |
+| 无规则与默认结果                        | 不为无规则类型造版本；有规则类型未匹配角色返回 `0.00` 候选                                                 | 不写版本，保持旧行为         |
+| 历史 INACTIVE／软删来源                 | 旧表永久保留；非生效来源索引可选                                                                           | 不激活、不删除、不重算       |
+| `effectiveFrom`、解释码、证据可见与留存 | 由维护者签字的不可变清单给定，不用当前时钟猜                                                               | 拒绝写入                     |
+| 操作者、授权与审计                      | 复用显式 GLOBAL Human `contribution-policy.manage.version`，锁后重读 ACTIVE 身份；建议新增独立转换审计事件 | 无操作者或授权则拒绝         |
+| 执行与回放                              | dry-run 默认；提交同事务写 draft、来源收据和审计，重放仅返回原结果                                         | 指纹变更／缺收据 fail-closed |
+
+## 8. 候选数据合同与事务边界（待 schema／SQL 评审，不是实施授权）
+
+建议只**追加** `ContributionRuleConversionReceipt`，不修改或删除 `ContributionRule`，也不改 E1 既有版本合同。每条收据锚定 `sourceRuleId`、`sourceFingerprint`、`converterVersion`、`mappingFingerprint`、`batchFingerprint`、结果状态、操作者与时间；生成候选时再锚定 `policyId`、`versionId`、`definitionHash`、`evaluatorVersion`。源快照只保留类型、角色、阈值、上下档分值、状态、软删和更新时间等必要字段；`remark`、用户姓名等不复制。来源旧表永久留存。建议 `(sourceRuleId, sourceFingerprint, converterVersion)` 唯一，旧规则与 E1 版本的 FK 均 `Restrict`，目标版本以 E1 已有复合锚点校验；收据写后不可 UPDATE／DELETE／TRUNCATE。归档历史来源若获批，可用 nullable 目标锚点和独立非生效状态，但不能混同已创建候选。
+
+一类型的全部 ACTIVE 角色构成同一候选版本和批次指纹：按业务键及源 ID 排序后 canonical/hash，避免查询顺序影响回放。只读盘点可分批游标扫描；写入在**同一事务**中先锁来源行、按固定顺序锁／占用目标政策身份，锁后重读来源指纹和操作者 GLOBAL 权限，再创建政策、draft 版本、逐源收据与审计。不得调用会另起事务的 HTTP 命令拼装原子性；E1 写者须提供可复用的事务内属主原语。重复的相同批次核对收据、源指纹、映射指纹、版本复合锚点与定义 hash 后返回原结果，不能新建版本；映射变更须明确提升转换器版本并重新签字，不能覆盖原收据。缺项、P2002、陈旧指纹或目标 code 冲突都回滚并报脱敏异常，不把冲突当成功。一次事务的规则数、锁等待和超时预算须用隔离规模样本核定，不得盲目扩大 5 秒业务预算。
+
+迁移只建新表、FK、索引与守卫，**零历史 DML／回填／删除**；非空库升级先只读证明现有规则、E1 版本与 FK 无冲突，失败时整条 migration 回滚。回退应用不能物理删掉已经产生的候选与收据；停用转换入口并保留旧计算器为唯一正式路径，数据修正须另走审计流程。
+
+## 9. 未来实现顺序与验收矩阵（本轮一项也不执行）
+
+| 顺序                  | 实现探针与交付                                                                                                                                           | 失败时的闭锁                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| A. 签字清单和只读盘点 | 核对 31 个目录类型、真实旧 type／role 分布、ACTIVE pair、软删、阈值精度、G04/G05/G13；输出脱敏数量、逐项决定、映射指纹；未知类型也必须列出               | 无已签映射、来源精度无法证明、重复 pair 或敏感数据治理未完成则不实施 B／C |
+| B. 纯转换器与 dry-run | 固定 manifest → 逐类型定义／来源 hash／异常清单；不建版本、不写收据；检验 64 角色上限、两个时长档上限、阈值 `<=`、`pointsAbove=null`、无规则 0、顺序无关 | 任何一例不等价或不满足 E1 parser／hash 即拒绝候选                         |
+| C. additive 数据地基  | 一条新 migration 只建收据与约束，无 DML；131 条历史 checksum 不变；132 条冷回放与 131→132 含旧规则、E1 版本的非空升级                                    | migration 失败整体回滚；不修脏数据、不跳过守卫                            |
+| D. 隔离环境提交       | 显式 `--commit`：锁来源、锁后复核权限与指纹，同事务建新政策／draft 版本／逐源收据／审计；相同输入重放零新增，冲突回滚                                    | P2002、版本／来源／权限变化不得转换成成功；不覆盖既有政策                 |
+| E. 回归与交付         | `ContributionCalculator`、考勤预填、旧规则管理和结算 characterization 不变；新候选不进入选择／发布／正式账本；CI 全量冷跑                                | 既有断言变更或正式路径分值变化立即停下报告                                |
+
+性能预算须在获批隔离测试库测量并随实施 PR 写明，包括盘点分页上限、每类型最大角色数、锁等待、事务查询数和批量写入耗时；不得靠提高既有 5 秒业务事务超时或删断言求绿。盘点脚本不得输出姓名、备注、原始敏感内容或真实业务主键到 PR／CI 日志。新收据在测试夹具库的清理范围也须单列；测试库重建不等于业务数据删除授权。
+
+## 10. 逐路径候选写集（实施前须按实际数据合同再冻结）
+
+以下 41 项均是**具体路径**（27 个既有、14 个拟新增），不是目录 glob；只列能从当前代码引用链确定的候选。新增路径以“新”标识。本轮仅编辑本评审稿。A/B 项以第 7 节业务签字为前提，C 项仅在相应生成器／迁移兼容探针命中时刷新；未列文件若成为必需，先扩写集并重新拍板，不“顺手”带入。路径数是候选上限，**不是最终获批实施路径数**。
+
+| 组  | 精确路径                                                                                              | 预期作用                                                             |
+| --- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| A   | `prisma/schema.prisma`                                                                                | additive 收据模型、复合锚点与 Restrict 关系；不改旧规则列            |
+| A   | `prisma/migrations/20260924180000_activity_os_r5_e2_contribution_rule_conversion/migration.sql`（新） | 第 132 条候选 migration；仅 DDL、约束与不可变守卫；SQL 定稿后另签 3b |
+| A   | `harness/domain-map.json`                                                                             | 新模型属主登记                                                       |
+| A   | `harness/state-machines.json`                                                                         | 若收据结果闭集落库，仅登记不可变结果配置，不造生命周期               |
+| A   | `src/modules/activities/activity-contribution-rule-conversion.mapping.ts`（新）                       | 逐类型已签映射与映射版本指纹；未签值不得填充                         |
+| A   | `src/modules/activities/activity-contribution-rule-conversion.ts`（新）                               | 纯来源规范化、十进制阈值换算、E1 定义和 hash                         |
+| A   | `src/modules/activities/activity-contribution-rule-conversion.service.ts`（新）                       | dry-run、锁序、同事务提交和收据回放                                  |
+| A   | `src/modules/activities/activity-contribution-rule-conversion-audit-recorder.ts`（新）                | 转换提交专属脱敏审计；事件定稿后另签 4b                              |
+| A   | `src/modules/activities/activity-contribution-policy-command.ts`                                      | 提供事务内属主原语；四种 E1 既有命令行为不变                         |
+| A   | `src/modules/activities/activities.module.ts`                                                         | 只注册内部 provider，不新增 controller／route                        |
+| A   | `src/modules/audit-logs/audit-logs.types.ts`                                                          | 若采用独立事件，仅加评审通过的一项，不借旧事件冒充                   |
+| A   | `scripts/activity-contribution-rule-conversion.ts`（新）                                              | 默认 dry-run、显式提交开关和目标库／操作者 fail-closed 预检          |
+| B   | `src/modules/activities/activity-contribution-rule-conversion.mapping.spec.ts`（新）                  | 31 条覆盖、hold、未知类型与签字指纹                                  |
+| B   | `src/modules/activities/activity-contribution-rule-conversion.spec.ts`（新）                          | 旧阈值、精度、无规则／无档位、上下档及 canonical/hash 正反例         |
+| B   | `src/modules/activities/activity-contribution-rule-conversion.service.spec.ts`（新）                  | 幂等、锁后复核、冲突、回滚、权限失效与零副作用                       |
+| B   | `src/modules/activities/activity-contribution-rule-conversion-audit-recorder.spec.ts`（新）           | 审计事件、字段白名单和脱敏                                           |
+| B   | `src/modules/activities/activity-contribution-policy-command.spec.ts`                                 | E1 既有命令 characterization 不变                                    |
+| B   | `src/modules/audit-logs/audit-event-registry.spec.ts`                                                 | 新事件登记正反例；若复用现有事件则不改                               |
+| B   | `test/e2e/activity-os-r5-e2-contribution-rule-conversion.e2e-spec.ts`（新）                           | 隔离库 dry-run／提交／重放／并发／旧路径不变                         |
+| B   | `test/e2e/activity-os-r5-e2-contribution-rule-migration.e2e-spec.ts`（新）                            | 132 冷回放、131→132 非空升级、FK／守卫负例                           |
+| B   | `test/setup/time-ledger-fixture-cleanup.ts`                                                           | 新收据测试夹具受控清理及 no-truncate 守卫恢复                        |
+| B   | `test/setup/reset-db.ts`                                                                              | 仅隔离测试库清理依赖闭包，不触及业务数据                             |
+| B   | `test/e2e/activity-os-r5-e1-3-contribution-policy-selection-migration.e2e-spec.ts`                    | 当前总数 131→132，历史 130→131 目标不改                              |
+| B   | `test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts`                                      | 当前总数适配，历史断言不变                                           |
+| B   | `test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts`                                        | 同上                                                                 |
+| B   | `test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts`                           | 同上                                                                 |
+| B   | `test/e2e/activity-os-r4-d4-time-bucket-migration.e2e-spec.ts`                                        | 同上                                                                 |
+| B   | `test/e2e/activity-os-r4-d6-time-ledger-migration.e2e-spec.ts`                                        | 同上                                                                 |
+| B   | `test/e2e/activity-os-r4-d7-time-correction-migration.e2e-spec.ts`                                    | 同上                                                                 |
+| C   | `docs/ops/activity-contribution-rule-conversion.md`（新）                                             | dry-run、授权、隔离库、异常、重放和生产 NO-GO SOP                    |
+| C   | `docs/plans/activity-os-r5-e2-legacy-contribution-rule-conversion-review-and-plan.md`                 | 记录最终签字、实测和 PR／CI 状态                                     |
+| C   | `changelog.d/activity-os-r5-e2-legacy-contribution-rule-conversion.md`（新）                          | 仅登记仓内事实，不声称部署／业务切换                                 |
+| C   | `prisma/CLAUDE.md`                                                                                    | 当前模型与 migration 摘要                                            |
+| C   | `src/modules/activities/CLAUDE.md`                                                                    | 新属主职责摘要                                                       |
+| C   | `CODEMAP.md`                                                                                          | 运行既有生成器刷新摘要                                               |
+| C   | `docs/current-state.md`                                                                               | 仅运行 `docs:counts` 刷新 migration 等生成计数                       |
+| C   | `docs/ai-harness/STATE_MACHINE_INVENTORY.md`                                                          | 新结果闭集 inventory（若适用）                                       |
+| C   | `docs/ai-harness/AUDIT_EVENT_REGISTRY.md`                                                             | 新审计事件目录（若采用），配 4b                                      |
+| C   | `docs/ai-harness/CUTOVER_SIGNOFF.md`                                                                  | SQL 与权限／审计最终摘要签字；不得预签                               |
+| C   | `docs/ai-harness/FROZEN_DRAFTS.md`                                                                    | 仅顶部当前 E2 状态和派生读数                                         |
+| C   | `docs/ai-harness/NEXT_TASKS.md`                                                                       | 仅顶部 E2 进度与下一授权点                                           |
+
+`prisma/seed.ts`、权限码目录、API／DTO／OpenAPI snapshot、`ContributionRule` 旧写路径、`ContributionCalculator`、E1 已生效选择／模板和账本不在候选写集。若真实盘点发现必须扩展上述任一路径，不把它视为本计划的隐含授权。七份旧 migration 测试只允许刷新“当前总数”，不得改变各自历史升级目标和业务断言。
+
+## 11. 执行授权包与验收边界（下一轮再确认）
+
+1. **业务签字**：批准逐类型四类时长映射、角色对照、hold／zero 决定、`defaultResult` 与解释码、`effectiveFrom`、来源精度、证据可见和留存；31 条目录只是候选索引，不代替签字。
+2. **数据库与写集**：先单独批准目标**只读**数据库盘点及脱敏结果位置；看完真实分布后批准第 8 节模型、SQL、逐路径写集与指定隔离测试库。维护者本人发红区令牌，SQL 最终 SHA-256 再签 3b；审计事件／目录最终摘要再签 4b。不得用测试库令牌推导生产授权。
+3. **验证与交付**：隔离库定向 E2E、迁移冷回放与非空升级、旧 `ContributionCalculator`／考勤预填／结算 characterization、contract、lint／typecheck／build、Harness 与 docs 守护、PR CI 冷跑。提交／推送／Draft PR、Ready、可信红区审批、合并、main CI 分阶段记录；若 #1324 仍 open，再单独确认该次唯一 open PR 例外。
+4. **操作禁区**：本计划不执行任何数据库查询或写入；未来实施 PR 也不自动运行生产盘点／转换、`migrate dev|reset`、`db push`、生产 `migrate deploy`、D8-OPS、E3–E5、Gate、旧规则只读化、业务数据删除或重算。
+
+## 12. 本次计划稿的独立验收
+
+本次只编辑本文件；以上字段、目录与路径基于 `schema.prisma`、旧计算器、E1 定义／命令、旧 partial unique migration、13 组目录和测试引用链只读核对。41 个候选路径经存在性与重复检查（27 个既有、14 个明确标为新，零意外缺失）；`pnpm docs:readtax:check`、`pnpm docs:counts:check`、本稿 Prettier 与 `git diff --check` 已通过。#1351 合并提交 `d4c0f188` 的 main CI `35994894996` completed/success；该结果不验证本轮未提交计划稿。未访问任何数据库，未创建 migration 或 CLI，未选择实际 `timeCategoryCode`、操作者及正式分值。计划 PR 和实施 PR 均未由本次授权自动获准。
