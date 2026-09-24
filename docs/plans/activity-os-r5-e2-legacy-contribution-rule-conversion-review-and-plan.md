@@ -127,4 +127,4 @@ E2 的目标是把旧 `ContributionRule` 的业务含义整理为可追溯的版
 
 ## 6. 本轮允许写集与验证
 
-原 E2 评审稿已随 #1350 合入 main。本次续稿仅编辑本文件，新增上述 13 组、31 条评审映射；不改 `NEXT_TASKS`、`FROZEN_DRAFTS`、TypeScript、Prisma、测试或门禁。已用目录逐条核对组选择器、条数及人工治理原文，并通过 `pnpm docs:readtax:check`、`pnpm docs:counts:check`、本稿 Prettier 检查和 `git diff --check`。本次续稿尚未提交、推送或创建 PR，也未实施 E2。
+原 E2 评审稿已随 #1350 合入 main。本次续稿仅编辑本文件，新增上述 13 组、31 条评审映射；不改 `NEXT_TASKS`、`FROZEN_DRAFTS`、TypeScript、Prisma、测试或门禁。已用目录逐条核对组选择器、条数及人工治理原文，并通过 `pnpm docs:readtax:check`、`pnpm docs:counts:check`、本稿 Prettier 检查和 `git diff --check`。此处的文档定稿不构成 E2 实施、数据库盘点或转换授权。
