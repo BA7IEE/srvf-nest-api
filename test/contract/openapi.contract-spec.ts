@@ -144,6 +144,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['put', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/time-policy-selection'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}/time-policy-selection'],
+  ['get', '/api/app/v1/my/managed-activities/contribution-policy-options'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcomes'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcome-confirmations'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcome-corrections'],
@@ -161,6 +164,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['put', '/api/admin/v1/activities/{id}/metric-selection'],
   ['get', '/api/admin/v1/activities/{id}/time-policy-selection'],
   ['patch', '/api/admin/v1/activities/{id}/time-policy-selection'],
+  ['get', '/api/admin/v1/activities/{id}/contribution-policy-selection'],
+  ['patch', '/api/admin/v1/activities/{id}/contribution-policy-selection'],
   ['get', '/api/admin/v1/activity-metric-definitions'],
   ['get', '/api/admin/v1/activity-time-policies'],
   ['get', '/api/admin/v1/activity-time-policies/{id}'],
@@ -1200,7 +1205,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 653; // E1-2 contribution-policy System catalogue +8.
+const EXPECTED_ROUTE_COUNT = 658; // E1-3 contribution-policy activity selection +5.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -2243,12 +2248,24 @@ describe('OpenAPI 契约快照', () => {
     expect(JSON.stringify(template)).not.toContain('Admin');
     expect(JSON.stringify(metric)).not.toContain('Admin');
   });
-  it('C1 D2b definition versions remain independent, with V3 adding only explicit metricSelection', () => {
+  it('definition versions remain independent through V5 additive policy selections', () => {
     const schemas = doc.components?.schemas ?? {};
     for (const [version, fields] of [
       [1, ['activity', 'sessions']],
       [2, ['activity', 'registrationForm', 'sessions']],
       [3, ['activity', 'metricSelection', 'registrationForm', 'sessions']],
+      [4, ['activity', 'metricSelection', 'registrationForm', 'sessions', 'timePolicySelection']],
+      [
+        5,
+        [
+          'activity',
+          'contributionPolicySelection',
+          'metricSelection',
+          'registrationForm',
+          'sessions',
+          'timePolicySelection',
+        ],
+      ],
     ] as const) {
       const schema = schemas[`AdminActivityTemplateDefinitionV${version}Dto`] as OpenApiSchema;
       expect(Object.keys(schema.properties ?? {}).sort()).toEqual(fields);
@@ -2256,7 +2273,7 @@ describe('OpenAPI 契约快照', () => {
     }
   });
 
-  it('C1 D2c metric input remains stable and D1-3 adds a paired time-policy change input', () => {
+  it('change review keeps metric input stable and pairs time/contribution policy revisions', () => {
     const schemas = doc.components?.schemas ?? {};
     const change = schemas.ChangeReviewDto as OpenApiSchema;
     const selection = schemas.AppActivityMetricSelectionInputDto as OpenApiSchema;
@@ -2268,6 +2285,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(change.properties ?? {}).sort()).toEqual([
       'activityPatch',
       'confirmation',
+      'contributionPolicySelectionChanges',
+      'expectedContributionPolicySelectionRevision',
       'expectedMetricSelectionRevision',
       'expectedTimePolicySelectionRevision',
       'metricSelection',
@@ -2307,6 +2326,20 @@ describe('OpenAPI 契约快照', () => {
     });
     expect(change.required).not.toEqual(
       expect.arrayContaining(['timePolicySelectionChanges', 'expectedTimePolicySelectionRevision']),
+    );
+    expect(change.properties?.contributionPolicySelectionChanges).toEqual(
+      expect.objectContaining({ type: 'array', minItems: 1, maxItems: 10001 }),
+    );
+    expect(change.properties?.expectedContributionPolicySelectionRevision).toMatchObject({
+      type: 'number',
+      minimum: 0,
+      maximum: 2147483647,
+    });
+    expect(change.required).not.toEqual(
+      expect.arrayContaining([
+        'contributionPolicySelectionChanges',
+        'expectedContributionPolicySelectionRevision',
+      ]),
     );
     expect(Object.keys(selection.properties ?? {}).sort()).toEqual([
       'metricRequirementCode',

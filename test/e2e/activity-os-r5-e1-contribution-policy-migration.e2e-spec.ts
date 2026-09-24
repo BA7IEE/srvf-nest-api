@@ -23,8 +23,10 @@ import {
 import { deriveTestDbName } from '../setup/worktree-db';
 
 const MIGRATION = '20260922194000_activity_os_r5_e1_contribution_policy_foundation';
+const LATEST_MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
 const PREVIOUS_MIGRATION_COUNT = 129;
-const CURRENT_MIGRATION_COUNT = 130;
+const FOUNDATION_MIGRATION_COUNT = 130;
+const CURRENT_MIGRATION_COUNT = 131;
 const WORKER = 98;
 const prismaRoot = path.resolve(__dirname, '..', '..', 'prisma');
 const schema = path.join(prismaRoot, 'schema.prisma');
@@ -106,18 +108,15 @@ async function seedExistingFacts(): Promise<void> {
     const organization = await db.organization.create({
       data: { id: 'e11-org', name: 'E1-1 migration fixture', nodeTypeCode: 'team' },
     });
-    const activity = await db.activity.create({
-      data: {
-        id: 'e11-activity',
-        title: 'E1-1 migration fixture',
-        activityTypeCode: 'e11_activity',
-        organizationId: organization.id,
-        startAt: new Date('2099-09-22T09:00:00.000Z'),
-        endAt: new Date('2099-09-22T17:00:00.000Z'),
-        location: 'fixture',
-        statusCode: 'draft',
-      },
-    });
+    const activity = { id: 'e11-activity' };
+    // This fixture runs against the pre-E1-3 schema; the current Prisma Client
+    // includes columns that do not exist until migration 131.
+    await db.$executeRaw`
+      INSERT INTO "Activity" ("id", "updatedAt", "title", "activityTypeCode", "organizationId", "startAt", "endAt", "location", "statusCode")
+      VALUES (${activity.id}, ${new Date()}, ${'E1-1 migration fixture'}, ${'e11_activity'}, ${organization.id},
+              ${new Date('2099-09-22T09:00:00.000Z')}, ${new Date('2099-09-22T17:00:00.000Z')},
+              ${'fixture'}, ${'draft'})
+    `;
     const member = await db.member.create({
       data: { id: 'e11-member', memberNo: 'E11-MEMBER', ...memberIdentityData('E1-1 Member') },
     });
@@ -294,12 +293,13 @@ describe('E1-1 contribution policy migration', () => {
     else process.env[name] = value;
   }
 
-  it('cold replays 130 exact migrations and installs the contribution policy surface', () => {
+  it('cold replays 131 exact migrations and installs the contribution policy surface', () => {
     recreate();
     deploy(schema);
     const names = migrationNames();
     expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
-    expect(names.at(-1)).toBe(MIGRATION);
+    expect(names[FOUNDATION_MIGRATION_COUNT - 1]).toBe(MIGRATION);
+    expect(names.at(-1)).toBe(LATEST_MIGRATION);
     expect(appliedNames()).toEqual(names);
     const records = sql(
       'SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations" ' +
@@ -355,7 +355,7 @@ describe('E1-1 contribution policy migration', () => {
         { recursive: true, errorOnExist: true, force: false },
       );
       deploy(temporarySchema);
-      expect(appliedNames()).toHaveLength(CURRENT_MIGRATION_COUNT);
+      expect(appliedNames()).toHaveLength(FOUNDATION_MIGRATION_COUNT);
       expect(snapshotExistingFacts()).toEqual(before);
       expect(
         sql(

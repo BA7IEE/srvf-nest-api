@@ -45,8 +45,10 @@ import {
   type ActivityTemplateResolutionWithSnapshotV6,
   type ActivityTemplateResolutionWithSnapshotV7,
   type ActivityTemplateResolutionWithSnapshotV8,
+  type ActivityTemplateResolutionWithSnapshotV9,
   type ActivityPublishProposalSnapshotV7,
   type ActivityPublishProposalSnapshotV8,
+  type ActivityPublishProposalSnapshotV9,
 } from './activity-publish-proposal-v2.service';
 import { lockActivityPublishMetricSelections } from './activity-publish-metric-selection';
 import {
@@ -58,6 +60,10 @@ import {
   assertActivityPublishProposalV8TimePolicyTransition,
   parseActivityPublishProposalV8TimePolicyFields,
 } from './activity-publish-proposal-v8';
+import {
+  assertActivityPublishProposalV9ContributionPolicyTransition,
+  parseActivityPublishProposalV9ContributionPolicyFields,
+} from './activity-publish-proposal-v9';
 import {
   buildProposalSnapshot,
   ensureInitialPublishable,
@@ -581,7 +587,10 @@ export class ActivityPublishReviewService {
       requestType: string;
       baseRevision: number;
     },
-    snapshot: ActivityPublishProposalSnapshotV7 | ActivityPublishProposalSnapshotV8,
+    snapshot:
+      | ActivityPublishProposalSnapshotV7
+      | ActivityPublishProposalSnapshotV8
+      | ActivityPublishProposalSnapshotV9,
     user: CurrentUserPayload,
   ): Promise<CurrentUserPayload> {
     const actor = await this.revalidatePublishApprovalActor(tx, review.id, user);
@@ -698,6 +707,86 @@ export class ActivityPublishReviewService {
     }
   }
 
+  /** V9 keeps V7 metric and V8 time-policy approval locks, then re-resolves the contribution
+   * selection against the locked Activity topology and active policy catalogue. */
+  private async lockV9ContributionPolicySelectionForApproval(
+    tx: PrismaTx,
+    review: {
+      id: string;
+      activityId: string;
+      requestType: string;
+      baseRevision: number;
+    },
+    snapshot: ActivityPublishProposalSnapshotV9,
+    user: CurrentUserPayload,
+  ): Promise<CurrentUserPayload> {
+    try {
+      let actor = await this.lockV7MetricSelectionForApproval(
+        tx,
+        review,
+        snapshot as unknown as ActivityPublishProposalSnapshotV7,
+        user,
+      );
+      const baseTime = parseActivityPublishProposalV8TimePolicyFields({
+        timePolicyPointers: snapshot.base.timePolicyPointers,
+      });
+      const targetTime = parseActivityPublishProposalV8TimePolicyFields({
+        timePolicyPointers: snapshot.timePolicyPointers,
+      });
+      const writesTime = assertActivityPublishProposalV8TimePolicyTransition(baseTime, targetTime);
+      if (
+        (targetTime.timePolicyPointers !== null &&
+          review.requestType === 'initial' &&
+          !snapshot.timePolicySelectionExplicit) ||
+        (writesTime && !snapshot.timePolicySelectionExplicit)
+      ) {
+        throw new TypeError('V9 time-policy selection lacks explicit submission intent');
+      }
+      if (targetTime.timePolicyPointers !== null) {
+        await this.proposalV2.assertV8TimePolicySnapshotAvailable(
+          tx,
+          snapshot as unknown as ActivityPublishProposalSnapshotV8,
+          async () => {
+            actor = await this.revalidateV7Approval(tx, review, snapshot, user);
+          },
+        );
+      }
+      const base = parseActivityPublishProposalV9ContributionPolicyFields({
+        contributionPolicyPointers: snapshot.base.contributionPolicyPointers,
+      });
+      const target = parseActivityPublishProposalV9ContributionPolicyFields({
+        contributionPolicyPointers: snapshot.contributionPolicyPointers,
+      });
+      const writesSelection = assertActivityPublishProposalV9ContributionPolicyTransition(
+        base,
+        target,
+      );
+      if (
+        (review.requestType === 'initial' &&
+          (!snapshot.contributionPolicySelectionExplicit ||
+            target.contributionPolicyPointers === null)) ||
+        (writesSelection && !snapshot.contributionPolicySelectionExplicit)
+      ) {
+        throw new TypeError('V9 contribution-policy selection lacks explicit submission intent');
+      }
+      await this.proposalV2.assertV9ContributionPolicySnapshotAvailable(
+        tx,
+        review.activityId,
+        snapshot,
+        async () => {
+          actor = await this.revalidateV7Approval(tx, review, snapshot, user);
+        },
+      );
+      return actor;
+    } catch (error) {
+      if (error instanceof BizException) throw error;
+      if (error instanceof TypeError) {
+        throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
+      }
+      throw error;
+    }
+  }
+
   private async approveV2Locked(
     tx: PrismaTx,
     review: {
@@ -733,12 +822,10 @@ export class ActivityPublishReviewService {
       throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
     }
     const snapshot = this.proposalV2.parseSnapshot(review.snapshot);
-    // The V8 selection revision is database-anchored to this approval's idempotent review
-    // receipt. Historical V2-V7 approvals retain their optional operationKey contract, but a V8
-    // approval without one would be rejected late by the deferred source guard and lose a clear
-    // API-level error.
+    // V8/V9 selection revisions are database-anchored to this approval's idempotent review
+    // receipt. Historical V2-V7 approvals retain their optional operationKey contract.
     if (
-      snapshot.schemaVersion === 8 &&
+      (snapshot.schemaVersion === 8 || snapshot.schemaVersion === 9) &&
       (dto.operationKey === undefined || reviewRequestHash === null)
     ) {
       throw new BizException(BizCode.BAD_REQUEST);
@@ -748,11 +835,13 @@ export class ActivityPublishReviewService {
       snapshot.activity.organizationId,
     );
     const reviewer =
-      snapshot.schemaVersion === 8
-        ? await this.lockV8TimePolicySelectionForApproval(tx, review, snapshot, user)
-        : snapshot.schemaVersion === 7
-          ? await this.lockV7MetricSelectionForApproval(tx, review, snapshot, user)
-          : user;
+      snapshot.schemaVersion === 9
+        ? await this.lockV9ContributionPolicySelectionForApproval(tx, review, snapshot, user)
+        : snapshot.schemaVersion === 8
+          ? await this.lockV8TimePolicySelectionForApproval(tx, review, snapshot, user)
+          : snapshot.schemaVersion === 7
+            ? await this.lockV7MetricSelectionForApproval(tx, review, snapshot, user)
+            : user;
     const current = await this.proposalV2.rebuildCurrent(
       tx,
       review.activityId,
@@ -772,7 +861,8 @@ export class ActivityPublishReviewService {
         snapshot.schemaVersion === 5 ||
         snapshot.schemaVersion === 6 ||
         snapshot.schemaVersion === 7 ||
-        snapshot.schemaVersion === 8
+        snapshot.schemaVersion === 8 ||
+        snapshot.schemaVersion === 9
           ? snapshot.activity.allocationModeCode
           : activity.allocationModeCode,
     });
@@ -786,11 +876,12 @@ export class ActivityPublishReviewService {
     }
 
     const now = new Date();
-    // A V8 revision uses the review itself as its immutable origin. The migration validates the
+    // V8/V9 revisions use the review itself as their immutable origin. Migrations validate the
     // approved reviewer/key/hash at commit, so mark this review first in the same transaction;
     // any later failure rolls this state back together with the selection and RuleSnapshot.
     let updatedReview =
-      snapshot.schemaVersion === 8 && snapshot.timePolicyPointers !== null
+      (snapshot.schemaVersion === 8 && snapshot.timePolicyPointers !== null) ||
+      snapshot.schemaVersion === 9
         ? await tx.activityPublishReview.update({
             where: { id: review.id },
             data: {
@@ -814,12 +905,24 @@ export class ActivityPublishReviewService {
       // 不用墙钟(墙钟每次都是新批次,冻结与去重同时失效)。
       versionKey: `review:${review.id}`,
       auditMeta,
-      ...(snapshot.schemaVersion === 8 && snapshot.timePolicyPointers !== null
+      ...((snapshot.schemaVersion === 8 || snapshot.schemaVersion === 9) &&
+      snapshot.timePolicyPointers !== null
         ? {
             timePolicyPublishReview: {
               reviewId: review.id,
               expectedSelectionRevision: snapshot.timePolicyPointers.selectionRevision,
               proposalSelectionHash: snapshot.timePolicyPointers.proposalSelectionHash,
+              actor: reviewer,
+              revalidate: () => this.revalidatePublishApprovalActor(tx, review.id, user),
+            },
+          }
+        : {}),
+      ...(snapshot.schemaVersion === 9 && snapshot.contributionPolicyPointers !== null
+        ? {
+            contributionPolicyPublishReview: {
+              reviewId: review.id,
+              expectedSelectionRevision: snapshot.contributionPolicyPointers.selectionRevision,
+              proposalSelectionHash: snapshot.contributionPolicyPointers.proposalSelectionHash,
               actor: reviewer,
               revalidate: () => this.revalidatePublishApprovalActor(tx, review.id, user),
             },
@@ -1196,8 +1299,9 @@ export class ActivityPublishReviewService {
         | ActivityTemplateResolutionWithQualificationRules
         | ActivityTemplateResolutionWithSnapshotV6
         | ActivityTemplateResolutionWithSnapshotV7
-        | ActivityTemplateResolutionWithSnapshotV8;
-      schemaVersion?: 2 | 3 | 4 | 5 | 6 | 7 | 8;
+        | ActivityTemplateResolutionWithSnapshotV8
+        | ActivityTemplateResolutionWithSnapshotV9;
+      schemaVersion?: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
     } = {},
   ): Promise<void> {
     const activity = await tx.activity.findUniqueOrThrow({
@@ -1213,8 +1317,12 @@ export class ActivityPublishReviewService {
     const resolvedConfig =
       options.resolvedConfig ?? (await this.proposalV2.getTemplateResolution(tx, activityId));
     const v8Config =
-      options.schemaVersion === 8
+      options.schemaVersion === 8 || options.schemaVersion === 9
         ? (resolvedConfig as ActivityTemplateResolutionWithSnapshotV8)
+        : null;
+    const v9Config =
+      options.schemaVersion === 9
+        ? (resolvedConfig as ActivityTemplateResolutionWithSnapshotV9)
         : null;
     await tx.activityRuleSnapshot.create({
       data: {
@@ -1222,6 +1330,8 @@ export class ActivityPublishReviewService {
         workflowRevision: activity.workflowRevision,
         templateVersionId: resolvedConfig.templateVersionId,
         timePolicySelectionRevisionId: v8Config?.timePolicyPointers?.selectionRevisionId ?? null,
+        contributionPolicySelectionRevisionId:
+          v9Config?.contributionPolicyPointers?.selectionRevisionId ?? null,
         resolvedConfig: JSON.parse(JSON.stringify(resolvedConfig)) as Prisma.InputJsonValue,
         snapshotHash: hashCanonical({ schemaVersion: options.schemaVersion ?? 2, resolvedConfig }),
         createdByReviewId: reviewId,

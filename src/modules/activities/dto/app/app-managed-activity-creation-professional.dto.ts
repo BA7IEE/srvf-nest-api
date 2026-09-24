@@ -21,6 +21,7 @@ import {
 import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
 import {
   AppActivityCreationRequestDto,
+  AppCreationContributionPolicySelectionInputDto,
   AppCreationTimePolicySelectionInputDto,
 } from './app-managed-activity-creation.dto';
 import { AppActivityCreationPlaceDto } from './app-managed-activity-creation-place.dto';
@@ -112,6 +113,16 @@ export class AppProfessionalActivityCreationDto extends AppActivityCreationReque
   @ValidateNested()
   @Type(() => AppCreationTimePolicySelectionInputDto)
   timePolicySelection?: AppCreationTimePolicySelectionInputDto;
+
+  @ApiPropertyOptional({
+    description: '可选活动／岗位贡献政策选择；岗位使用本次请求内稳定 code',
+    type: () => AppCreationContributionPolicySelectionInputDto,
+  })
+  @OmittableOnly()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AppCreationContributionPolicySelectionInputDto)
+  contributionPolicySelection?: AppCreationContributionPolicySelectionInputDto;
 
   @ApiProperty({ description: '既有活动类型字典码', minLength: 1, maxLength: 64 })
   @IsString()

@@ -1,5 +1,15 @@
 # activities — 本地铁律
 
+> **E1-3 implementation 当前工作树（2026-09-24，未提交、未建 PR）**：已实现 Template V5 的闭合贡献政策
+> 选择、quick／professional／series 一致物化、Admin/App 活动选择与 App options 五端点、Proposal V9、批准时锁后
+> 重解与精确修订冻结，以及 `unconfigured / target_invalid / reference_unavailable / coverage_incomplete`
+> 四类 Readiness。选择只允许 activity 根与 position 覆盖，不引入 session 层；`inherit` 不携带指针，`explicit`
+> 固定 policy/version/hash/evaluator 四元组。两项新权限均为显式 scoped Human，内建角色零默认授予；选择修订、
+> 收据与审计同事务且永久留存。旧 V1–V4 template、V2–V8 proposal 和 legacy 未配置活动保持兼容。
+> 当前658 Endpoint／269权限／173 AuditLogEvent（168 active）；3b／4b 已按最终实数与摘要重签，本地最终门禁已通过，
+> Draft PR CI 尚未运行。未接旧
+> `ContributionRule`、考勤／正式贡献账本、生产 Gate 或 D8-OPS，未删除或重算业务数据。
+
 > **E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：`ContributionPolicy`、不可变 `ContributionPolicyVersion`、
 > `ContributionPolicyCommandReceipt`，以及闭合 V1 parser／fingerprint／纯 evaluator 和 draft→active→retired
 > 纯状态判断已随 [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 合入 `48596844`；

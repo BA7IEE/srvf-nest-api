@@ -185,29 +185,31 @@ model User {
 
   // Activity OS R2 / B6 D1:专业/紧急创建收据与紧急后续清单的独立 actor 边。
   // 只铺数据事实,不在本刀接入创建、通知、审计或清单处理运行时。
-  activityCreationCommandReceipts      ActivityCreationCommandReceipt[]            @relation("ActivityCreationCommandReceiptActor")
-  activityMetricCommandReceipts        ActivityMetricCommandReceipt[]
-  timePolicyCommandReceipts            TimePolicyCommandReceipt[]
-  contributionPolicyVersionsCreated    ContributionPolicyVersion[]                 @relation("ContributionPolicyVersionCreator")
-  contributionPolicyVersionsActivated  ContributionPolicyVersion[]                 @relation("ContributionPolicyVersionActivator")
-  contributionPolicyVersionsRetired    ContributionPolicyVersion[]                 @relation("ContributionPolicyVersionRetirer")
-  contributionPolicyCommandReceipts    ContributionPolicyCommandReceipt[]
-  activityTimePolicySelectionRevisions ActivityTimePolicySelectionRevision[]       @relation("ActivityTimePolicySelectionCreator")
-  activityTimePolicySelectionReceipts  ActivityTimePolicySelectionCommandReceipt[]
-  activityOutcomeCommandReceipts       ActivityOutcomeCommandReceipt[]
-  participantTimeAllocationRevisions   ParticipantTimeAllocationRevision[]         @relation("ParticipantTimeAllocationRevisionCreator")
-  participantTimeAllocationReceipts    ParticipantTimeAllocationCommandReceipt[]   @relation("ParticipantTimeAllocationReceiptActor")
-  settlementTimeRevisionsCreated       ActivitySettlementTimeRevision[]            @relation("SettlementTimeRevisionCreator")
-  settlementTimeCommandReceipts        ActivitySettlementTimeCommandReceipt[]
-  activityTimeCutoverReceipts          ActivityTimeCutoverReceipt[]
-  outcomeFinalizationReceipts          ActivityOutcomeFinalizationReceipt[]
-  metricRuleBindingsCreated            ActivityMetricRuleBinding[]                 @relation("MetricRuleBindingCreator")
-  metricCandidatesCreated              ActivityMetricCandidate[]                   @relation("MetricCandidateCreator")
-  metricCandidateReceipts              ActivityMetricCandidateCommandReceipt[]
-  metricBindingReceipts                ActivityMetricRuleBindingCommandReceipt[]
-  activityOutcomesCreated              ActivityOutcomeRevision[]                   @relation("ActivityOutcomeCreator")
-  activityMetricValuesConfirmed        ActivityMetricValueRevision[]               @relation("ActivityValueConfirmer")
-  activityEmergencyFollowUpResolved    ActivityEmergencyFollowUpItem[]             @relation("ActivityEmergencyFollowUpItemResolver")
+  activityCreationCommandReceipts              ActivityCreationCommandReceipt[]                    @relation("ActivityCreationCommandReceiptActor")
+  activityMetricCommandReceipts                ActivityMetricCommandReceipt[]
+  timePolicyCommandReceipts                    TimePolicyCommandReceipt[]
+  contributionPolicyVersionsCreated            ContributionPolicyVersion[]                         @relation("ContributionPolicyVersionCreator")
+  contributionPolicyVersionsActivated          ContributionPolicyVersion[]                         @relation("ContributionPolicyVersionActivator")
+  contributionPolicyVersionsRetired            ContributionPolicyVersion[]                         @relation("ContributionPolicyVersionRetirer")
+  contributionPolicyCommandReceipts            ContributionPolicyCommandReceipt[]
+  activityTimePolicySelectionRevisions         ActivityTimePolicySelectionRevision[]               @relation("ActivityTimePolicySelectionCreator")
+  activityTimePolicySelectionReceipts          ActivityTimePolicySelectionCommandReceipt[]
+  activityContributionPolicySelectionRevisions ActivityContributionPolicySelectionRevision[]       @relation("ActivityContributionPolicySelectionCreator")
+  activityContributionPolicySelectionReceipts  ActivityContributionPolicySelectionCommandReceipt[]
+  activityOutcomeCommandReceipts               ActivityOutcomeCommandReceipt[]
+  participantTimeAllocationRevisions           ParticipantTimeAllocationRevision[]                 @relation("ParticipantTimeAllocationRevisionCreator")
+  participantTimeAllocationReceipts            ParticipantTimeAllocationCommandReceipt[]           @relation("ParticipantTimeAllocationReceiptActor")
+  settlementTimeRevisionsCreated               ActivitySettlementTimeRevision[]                    @relation("SettlementTimeRevisionCreator")
+  settlementTimeCommandReceipts                ActivitySettlementTimeCommandReceipt[]
+  activityTimeCutoverReceipts                  ActivityTimeCutoverReceipt[]
+  outcomeFinalizationReceipts                  ActivityOutcomeFinalizationReceipt[]
+  metricRuleBindingsCreated                    ActivityMetricRuleBinding[]                         @relation("MetricRuleBindingCreator")
+  metricCandidatesCreated                      ActivityMetricCandidate[]                           @relation("MetricCandidateCreator")
+  metricCandidateReceipts                      ActivityMetricCandidateCommandReceipt[]
+  metricBindingReceipts                        ActivityMetricRuleBindingCommandReceipt[]
+  activityOutcomesCreated                      ActivityOutcomeRevision[]                           @relation("ActivityOutcomeCreator")
+  activityMetricValuesConfirmed                ActivityMetricValueRevision[]                       @relation("ActivityValueConfirmer")
+  activityEmergencyFollowUpResolved            ActivityEmergencyFollowUpItem[]                     @relation("ActivityEmergencyFollowUpItemResolver")
 
   // 第 6 批(2026-08-16):离线包签发/作废与异常复核保留独立 actor 边，不能借用
   // AttendancePunchEvent 的 operator 边（后者指正式事件操作者）。
@@ -1417,54 +1419,58 @@ model Activity {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  title                                String
-  activityTypeCode                     String
+  title                                        String
+  activityTypeCode                             String
   // Activity OS R1 / A4：新活动未来会记录一次明确的模板版本选择；本刀只占可空指针，
   // NULL 继续表示历史 activityTypeCode 路径，绝不在这里切换 resolver 或回填旧活动。
-  selectedTemplateVersionId            String?
+  selectedTemplateVersionId                    String?
   // C1 D2b: NULL/revision 0 is unconfigured; explicit selections start at revision 1.
-  metricRequirementCode                String?
-  selectedMetricSetVersionId           String?
-  selectedMetricSetDefinitionHash      String?
-  metricSelectionRevision              Int       @default(0)
+  metricRequirementCode                        String?
+  selectedMetricSetVersionId                   String?
+  selectedMetricSetDefinitionHash              String?
+  metricSelectionRevision                      Int       @default(0)
   // D1-3: 0/null remains the only historical unconfigured shape.  A configured selection is an
   // immutable revision anchored by all three fields below; SQL additionally rejects a reset,
   // skip or cross-activity pointer.
-  timePolicySelectionRevision          Int       @default(0)
-  currentTimePolicySelectionRevisionId String?
+  timePolicySelectionRevision                  Int       @default(0)
+  currentTimePolicySelectionRevisionId         String?
+  // E1-3: 0/null remains the legacy unconfigured shape. Every configured change appends one
+  // immutable complete revision and advances the compound current pointer by exactly one.
+  contributionPolicySelectionRevision          Int       @default(0)
+  currentContributionPolicySelectionRevisionId String?
   // Activity OS R1 / A6：从模板创建成功结果的持久化幂等锚。两列均可空，历史 Activity
   // 零回填；operationKey 全局唯一，requestHash 绑定操作、调用者、精确 Version/hash 与输入。
   // 不能复用 IntegrationCommandReceipt：后者绑定服务主体凭证，安全边界不同。
-  createFromTemplateOperationKey       String?   @unique(map: "activity_create_from_template_operation_key_key")
-  createFromTemplateRequestHash        String?
-  organizationId                       String
-  startAt                              DateTime
-  endAt                                DateTime
-  location                             String
-  description                          String? // v0.5 修订(Q-D14 v1.4):NOT NULL → String? 可空
-  capacity                             Int?
-  genderRequirementCode                String?
-  registrationDeadline                 DateTime?
-  registrationNotes                    String?
-  statusCode                           String
-  initiatorMemberId                    String?
-  workflowRevision                     Int       @default(0)
-  publishedBy                          String?
-  publishedAt                          DateTime?
-  startReminderSentAt                  DateTime?
-  cancelledBy                          String?
-  cancelledAt                          DateTime?
-  cancelReason                         String?
-  isPublicRegistration                 Boolean   @default(true)
+  createFromTemplateOperationKey               String?   @unique(map: "activity_create_from_template_operation_key_key")
+  createFromTemplateRequestHash                String?
+  organizationId                               String
+  startAt                                      DateTime
+  endAt                                        DateTime
+  location                                     String
+  description                                  String? // v0.5 修订(Q-D14 v1.4):NOT NULL → String? 可空
+  capacity                                     Int?
+  genderRequirementCode                        String?
+  registrationDeadline                         DateTime?
+  registrationNotes                            String?
+  statusCode                                   String
+  initiatorMemberId                            String?
+  workflowRevision                             Int       @default(0)
+  publishedBy                                  String?
+  publishedAt                                  DateTime?
+  startReminderSentAt                          DateTime?
+  cancelledBy                                  String?
+  cancelledAt                                  DateTime?
+  cancelReason                                 String?
+  isPublicRegistration                         Boolean   @default(true)
   // 保险模块(2026-06-13):报名保险门槛开关;default false = 迁移安全,既有活动 /
   // 测试零影响,新活动发布时显式开(评审稿 insurance-module-review.md D-INS-1)。
-  requiresInsurance                    Boolean   @default(false)
+  requiresInsurance                            Boolean   @default(false)
   // 第 4 批⑫前置 D84:每个 Activity 只保存一个当前分配方式。
   // default 仅作旧 server / 存量兼容桥；新活动显式选择由紧接的 C 刀 DTO + 发布硬门完成。
-  allocationModeCode                   String    @default("first_come") // first_come / qualification_rank / lottery
-  registrationSchema                   Json? // v0.2 D12 报名表自定义字段 schema 字段位预留
-  attendanceDeclaredCompleteAt         DateTime?
-  attendanceDeclaredCompleteByUserId   String?
+  allocationModeCode                           String    @default("first_come") // first_come / qualification_rank / lottery
+  registrationSchema                           Json? // v0.2 D12 报名表自定义字段 schema 字段位预留
+  attendanceDeclaredCompleteAt                 DateTime?
+  attendanceDeclaredCompleteByUserId           String?
 
   // v0.2 展示内容字段(Q-D11 / Q-D12 / Q-D13)
   //
@@ -1586,37 +1592,40 @@ model Activity {
   unarchiveOperationKey String?   @unique(map: "activity_unarchive_operation_key_key")
   unarchiveRequestHash  String?
 
-  organization                       Organization                                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  selectedTemplateVersion            ActivityTemplate?                           @relation("ActivitySelectedTemplateVersion", fields: [selectedTemplateVersionId], references: [id], onDelete: Restrict)
-  selectedMetricSetVersion           ActivityMetricSetVersion?                   @relation(fields: [selectedMetricSetVersionId, selectedMetricSetDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "activity_selected_metric_set_fk")
-  metricCommandReceipts              ActivityMetricCommandReceipt[]
-  timePolicySelectionRevisions       ActivityTimePolicySelectionRevision[]       @relation("ActivityTimePolicySelectionActivity")
-  currentTimePolicySelectionRevision ActivityTimePolicySelectionRevision?        @relation("ActivityCurrentTimePolicySelection", fields: [currentTimePolicySelectionRevisionId, id, timePolicySelectionRevision], references: [id, activityId, revision], onDelete: Restrict, onUpdate: Restrict, map: "atps_current_revision_fkey")
-  timePolicySelectionReceipts        ActivityTimePolicySelectionCommandReceipt[]
-  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]         @relation("ParticipantTimeAllocationRevisionActivity")
-  participantTimeAllocationReceipts  ParticipantTimeAllocationCommandReceipt[]   @relation("ParticipantTimeAllocationReceiptActivity")
-  settlementTimeRevisions            ActivitySettlementTimeRevision[]
-  settlementTimeCommandReceipts      ActivitySettlementTimeCommandReceipt[]
-  outcomeCommandReceipts             ActivityOutcomeCommandReceipt[]
-  outcomeRevisions                   ActivityOutcomeRevision[]
-  metricCandidates                   ActivityMetricCandidate[]
-  seriesOccurrence                   ActivitySeriesOccurrence?                   @relation("ActivitySeriesOccurrenceActivity")
-  creationCommandReceipts            ActivityCreationCommandReceipt[]            @relation("ActivityCreationCommandReceiptActivity")
-  emergencyInitiation                ActivityEmergencyInitiation?                @relation("ActivityEmergencyInitiationActivity")
-  initiator                          Member?                                     @relation("ActivityInitiator", fields: [initiatorMemberId], references: [id], onDelete: Restrict)
-  publisher                          User?                                       @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
-  canceller                          User?                                       @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
-  attendanceDeclaredCompleteBy       User?                                       @relation("ActivityAttendanceDeclaration", fields: [attendanceDeclaredCompleteByUserId], references: [id], onDelete: Restrict)
-  terminatedBy                       User?                                       @relation("ActivityTerminator", fields: [terminatedByUserId], references: [id], onDelete: Restrict)
-  archivedBy                         User?                                       @relation("ActivityArchiver", fields: [archivedByUserId], references: [id], onDelete: Restrict)
-  unarchivedBy                       User?                                       @relation("ActivityUnarchiver", fields: [unarchivedByUserId], references: [id], onDelete: Restrict)
-  registrations                      ActivityRegistration[]
-  activityPositions                  ActivityPosition[]
-  activityCheckIns                   ActivityCheckIn[]
-  activityFeedbacks                  ActivityFeedback[]
-  attendanceSheets                   AttendanceSheet[]
-  publishReviews                     ActivityPublishReview[]
-  responsibilityAssignments          ActivityResponsibilityAssignment[]
+  organization                               Organization                                        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  selectedTemplateVersion                    ActivityTemplate?                                   @relation("ActivitySelectedTemplateVersion", fields: [selectedTemplateVersionId], references: [id], onDelete: Restrict)
+  selectedMetricSetVersion                   ActivityMetricSetVersion?                           @relation(fields: [selectedMetricSetVersionId, selectedMetricSetDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "activity_selected_metric_set_fk")
+  metricCommandReceipts                      ActivityMetricCommandReceipt[]
+  timePolicySelectionRevisions               ActivityTimePolicySelectionRevision[]               @relation("ActivityTimePolicySelectionActivity")
+  currentTimePolicySelectionRevision         ActivityTimePolicySelectionRevision?                @relation("ActivityCurrentTimePolicySelection", fields: [currentTimePolicySelectionRevisionId, id, timePolicySelectionRevision], references: [id, activityId, revision], onDelete: Restrict, onUpdate: Restrict, map: "atps_current_revision_fkey")
+  timePolicySelectionReceipts                ActivityTimePolicySelectionCommandReceipt[]
+  contributionPolicySelectionRevisions       ActivityContributionPolicySelectionRevision[]       @relation("ActivityContributionPolicySelectionActivity")
+  currentContributionPolicySelectionRevision ActivityContributionPolicySelectionRevision?        @relation("ActivityCurrentContributionPolicySelection", fields: [currentContributionPolicySelectionRevisionId, id, contributionPolicySelectionRevision], references: [id, activityId, revision], onDelete: Restrict, onUpdate: Restrict, map: "acps_current_revision_fkey")
+  contributionPolicySelectionReceipts        ActivityContributionPolicySelectionCommandReceipt[]
+  participantTimeAllocationRevisions         ParticipantTimeAllocationRevision[]                 @relation("ParticipantTimeAllocationRevisionActivity")
+  participantTimeAllocationReceipts          ParticipantTimeAllocationCommandReceipt[]           @relation("ParticipantTimeAllocationReceiptActivity")
+  settlementTimeRevisions                    ActivitySettlementTimeRevision[]
+  settlementTimeCommandReceipts              ActivitySettlementTimeCommandReceipt[]
+  outcomeCommandReceipts                     ActivityOutcomeCommandReceipt[]
+  outcomeRevisions                           ActivityOutcomeRevision[]
+  metricCandidates                           ActivityMetricCandidate[]
+  seriesOccurrence                           ActivitySeriesOccurrence?                           @relation("ActivitySeriesOccurrenceActivity")
+  creationCommandReceipts                    ActivityCreationCommandReceipt[]                    @relation("ActivityCreationCommandReceiptActivity")
+  emergencyInitiation                        ActivityEmergencyInitiation?                        @relation("ActivityEmergencyInitiationActivity")
+  initiator                                  Member?                                             @relation("ActivityInitiator", fields: [initiatorMemberId], references: [id], onDelete: Restrict)
+  publisher                                  User?                                               @relation("ActivityPublisher", fields: [publishedBy], references: [id], onDelete: Restrict)
+  canceller                                  User?                                               @relation("ActivityCanceller", fields: [cancelledBy], references: [id], onDelete: Restrict)
+  attendanceDeclaredCompleteBy               User?                                               @relation("ActivityAttendanceDeclaration", fields: [attendanceDeclaredCompleteByUserId], references: [id], onDelete: Restrict)
+  terminatedBy                               User?                                               @relation("ActivityTerminator", fields: [terminatedByUserId], references: [id], onDelete: Restrict)
+  archivedBy                                 User?                                               @relation("ActivityArchiver", fields: [archivedByUserId], references: [id], onDelete: Restrict)
+  unarchivedBy                               User?                                               @relation("ActivityUnarchiver", fields: [unarchivedByUserId], references: [id], onDelete: Restrict)
+  registrations                              ActivityRegistration[]
+  activityPositions                          ActivityPosition[]
+  activityCheckIns                           ActivityCheckIn[]
+  activityFeedbacks                          ActivityFeedback[]
+  attendanceSheets                           AttendanceSheet[]
+  publishReviews                             ActivityPublishReview[]
+  responsibilityAssignments                  ActivityResponsibilityAssignment[]
 
   // 活动改造 v1.1 第 1 批第一刀反向 relation(合同 §3.2 / §3.3 / §3.8 / §3.10)。
   sessions                ActivitySession[]
@@ -1719,11 +1728,12 @@ model ActivityPublishReview {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activity                     Activity                              @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  submittedBy                  User                                  @relation("ActivityPublishReviewSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
-  reviewedBy                   User?                                 @relation("ActivityPublishReviewReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
-  ruleSnapshots                ActivityRuleSnapshot[]
-  timePolicySelectionRevisions ActivityTimePolicySelectionRevision[] @relation("ActivityTimePolicySelectionPublishReview")
+  activity                             Activity                                      @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  submittedBy                          User                                          @relation("ActivityPublishReviewSubmitter", fields: [submittedByUserId], references: [id], onDelete: Restrict)
+  reviewedBy                           User?                                         @relation("ActivityPublishReviewReviewer", fields: [reviewedByUserId], references: [id], onDelete: Restrict)
+  ruleSnapshots                        ActivityRuleSnapshot[]
+  timePolicySelectionRevisions         ActivityTimePolicySelectionRevision[]         @relation("ActivityTimePolicySelectionPublishReview")
+  contributionPolicySelectionRevisions ActivityContributionPolicySelectionRevision[] @relation("ActivityContributionPolicySelectionPublishReview")
 
   @@unique([activityId, requestVersion])
   @@unique([id, activityId], map: "atps_review_id_activity_key")
@@ -1840,11 +1850,12 @@ model ContributionPolicyVersion {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  policy          ContributionPolicy                 @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_policy_fk")
-  createdBy       User                               @relation("ContributionPolicyVersionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_creator_fk")
-  activatedBy     User?                              @relation("ContributionPolicyVersionActivator", fields: [activatedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_activator_fk")
-  retiredBy       User?                              @relation("ContributionPolicyVersionRetirer", fields: [retiredByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_retirer_fk")
-  commandReceipts ContributionPolicyCommandReceipt[]
+  policy                                   ContributionPolicy                        @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_policy_fk")
+  createdBy                                User                                      @relation("ContributionPolicyVersionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_creator_fk")
+  activatedBy                              User?                                     @relation("ContributionPolicyVersionActivator", fields: [activatedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_activator_fk")
+  retiredBy                                User?                                     @relation("ContributionPolicyVersionRetirer", fields: [retiredByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_retirer_fk")
+  commandReceipts                          ContributionPolicyCommandReceipt[]
+  activityContributionPolicySelectionItems ActivityContributionPolicySelectionItem[]
 
   @@unique([policyId, version], map: "cpv_policy_version_key")
   @@unique([id, policyId, definitionHash, evaluatorVersion], map: "cpv_exact_anchor_key")
@@ -2317,13 +2328,14 @@ model ActivityTemplate {
   // 常用岗位模板:数组元素结构由第 3 批第二刀的 template-resolution 合同定义。
   commonPositionTemplates           Json?
 
-  family                       ActivityTemplateFamily?               @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  family                               ActivityTemplateFamily?                       @relation(fields: [familyId], references: [id], onDelete: Restrict)
   // Activity OS R1 / A4：仅供未来 Activity 显式选择 Version 的反向映射；A4 不接入解析或写入路径。
-  selectedByActivities         Activity[]                            @relation("ActivitySelectedTemplateVersion")
-  metricCommandReceipts        ActivityMetricCommandReceipt[]
-  timePolicySelectionRevisions ActivityTimePolicySelectionRevision[] @relation("ActivityTimePolicySelectionTemplate")
-  seriesRevisions              ActivitySeriesRevision[]              @relation("ActivitySeriesRevisionTemplate")
-  ruleSnapshots                ActivityRuleSnapshot[]
+  selectedByActivities                 Activity[]                                    @relation("ActivitySelectedTemplateVersion")
+  metricCommandReceipts                ActivityMetricCommandReceipt[]
+  timePolicySelectionRevisions         ActivityTimePolicySelectionRevision[]         @relation("ActivityTimePolicySelectionTemplate")
+  contributionPolicySelectionRevisions ActivityContributionPolicySelectionRevision[] @relation("ActivityContributionPolicySelectionTemplate")
+  seriesRevisions                      ActivitySeriesRevision[]                      @relation("ActivitySeriesRevisionTemplate")
+  ruleSnapshots                        ActivityRuleSnapshot[]
 
   @@unique([code, version])
   @@unique([id, definitionHash], map: "activity_template_id_definition_hash_key")
@@ -2426,10 +2438,11 @@ model ActivitySeriesOccurrence {
   startAt       DateTime
   endAt         DateTime
 
-  series                       ActivitySeries                        @relation(fields: [seriesId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  revision                     ActivitySeriesRevision                @relation(fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict, onUpdate: Restrict)
-  activity                     Activity                              @relation("ActivitySeriesOccurrenceActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  timePolicySelectionRevisions ActivityTimePolicySelectionRevision[] @relation("ActivityTimePolicySelectionOccurrence")
+  series                               ActivitySeries                                @relation(fields: [seriesId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  revision                             ActivitySeriesRevision                        @relation(fields: [revisionId, seriesId], references: [id, seriesId], onDelete: Restrict, onUpdate: Restrict)
+  activity                             Activity                                      @relation("ActivitySeriesOccurrenceActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  timePolicySelectionRevisions         ActivityTimePolicySelectionRevision[]         @relation("ActivityTimePolicySelectionOccurrence")
+  contributionPolicySelectionRevisions ActivityContributionPolicySelectionRevision[] @relation("ActivityContributionPolicySelectionOccurrence")
 
   @@unique([seriesId, occurrenceKey])
   @@unique([id, activityId], map: "atps_occurrence_id_activity_key")
@@ -2450,10 +2463,11 @@ model ActivityCreationCommandReceipt {
   requestHash  String
   activityId   String   @unique(map: "activity_creation_command_receipt_activity_id_key")
 
-  activity                     Activity                              @relation("ActivityCreationCommandReceiptActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  actor                        User                                  @relation("ActivityCreationCommandReceiptActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  emergencyInitiation          ActivityEmergencyInitiation?          @relation("ActivityEmergencyInitiationReceipt")
-  timePolicySelectionRevisions ActivityTimePolicySelectionRevision[] @relation("ActivityTimePolicySelectionCreationReceipt")
+  activity                             Activity                                      @relation("ActivityCreationCommandReceiptActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  actor                                User                                          @relation("ActivityCreationCommandReceiptActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  emergencyInitiation                  ActivityEmergencyInitiation?                  @relation("ActivityEmergencyInitiationReceipt")
+  timePolicySelectionRevisions         ActivityTimePolicySelectionRevision[]         @relation("ActivityTimePolicySelectionCreationReceipt")
+  contributionPolicySelectionRevisions ActivityContributionPolicySelectionRevision[] @relation("ActivityContributionPolicySelectionCreationReceipt")
 
   @@unique([actorUserId, commandCode, operationKey], map: "activity_creation_command_receipt_actor_command_key")
   // 紧急起源通过 (receiptId, activityId) 引用本锚，数据库证明二者属于同一活动。
@@ -2504,25 +2518,28 @@ model ActivityRuleSnapshot {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
-  activityId                    String
-  workflowRevision              Int
-  templateVersionId             String?
+  activityId                            String
+  workflowRevision                      Int
+  templateVersionId                     String?
   // V8 snapshots pin the exact immutable selection revision.  Historical V2–V7 rows retain
   // null and remain readable with their original snapshot hashes.
-  timePolicySelectionRevisionId String?
+  timePolicySelectionRevisionId         String?
+  // V9 snapshots pin the contribution-policy selection revision. V1-V8 rows remain NULL.
+  contributionPolicySelectionRevisionId String?
   // canonical JSON 的完整解析配置,含活动默认及每个 session / position 的最终值。
-  resolvedConfig                Json
-  snapshotHash                  String
-  createdByReviewId             String
+  resolvedConfig                        Json
+  snapshotHash                          String
+  createdByReviewId                     String
 
-  activity                           Activity                             @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  templateVersion                    ActivityTemplate?                    @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
-  timePolicySelectionRevision        ActivityTimePolicySelectionRevision? @relation("ActivityTimePolicySelectionRuleSnapshot", fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_snapshot_revision_fkey")
-  createdByReview                    ActivityPublishReview                @relation(fields: [createdByReviewId], references: [id], onDelete: Restrict)
-  allocationBatches                  ActivityAllocationBatch[]
-  offlinePackages                    OfflinePackage[]
-  participantTimeAllocationRevisions ParticipantTimeAllocationRevision[]
-  correctionPendingTimeAllocations   CorrectionPendingTimeAllocation[]
+  activity                            Activity                                     @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  templateVersion                     ActivityTemplate?                            @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  timePolicySelectionRevision         ActivityTimePolicySelectionRevision?         @relation("ActivityTimePolicySelectionRuleSnapshot", fields: [timePolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "atps_snapshot_revision_fkey")
+  contributionPolicySelectionRevision ActivityContributionPolicySelectionRevision? @relation("ActivityContributionPolicySelectionRuleSnapshot", fields: [contributionPolicySelectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_snapshot_revision_fkey")
+  createdByReview                     ActivityPublishReview                        @relation(fields: [createdByReviewId], references: [id], onDelete: Restrict)
+  allocationBatches                   ActivityAllocationBatch[]
+  offlinePackages                     OfflinePackage[]
+  participantTimeAllocationRevisions  ParticipantTimeAllocationRevision[]
+  correctionPendingTimeAllocations    CorrectionPendingTimeAllocation[]
 
   // 一个活动的一个 workflow revision 只能对应一份最终规则快照。createdByReviewId
   // 只保存审核来源，不假定合同未声明的“一审核请求至多一快照”。
@@ -2532,6 +2549,7 @@ model ActivityRuleSnapshot {
   @@unique([id, activityId], map: "activity_rule_snapshot_id_activity_key")
   @@index([templateVersionId])
   @@index([timePolicySelectionRevisionId], map: "atps_snapshot_revision_idx")
+  @@index([contributionPolicySelectionRevisionId], map: "acps_snapshot_revision_idx")
 }
 
 // ===== Activity OS R4 / D1-3: immutable four-level time-policy selection =====
@@ -2619,6 +2637,90 @@ model ActivityTimePolicySelectionCommandReceipt {
   @@unique([actorUserId, operationCode, operationKey], map: "atps_receipt_actor_operation_key")
   @@unique([selectionRevisionId, activityId], map: "atps_receipt_revision_activity_key")
   @@index([activityId, createdAt], map: "atps_receipt_activity_created_idx")
+}
+
+// ===== Activity OS R5 / E1-3: immutable contribution-policy selections =====
+//
+// A revision stores only Activity and Position intent. Template defaults remain anchored to an
+// immutable V5 template version so source-layer provenance is never collapsed into an Activity
+// override. SQL owns partial uniques, append-only guards and deferred completeness checks.
+model ActivityContributionPolicySelectionRevision {
+  id                     String   @id @default(cuid())
+  activityId             String
+  revision               Int
+  schemaVersion          Int      @default(1)
+  selectionHash          String
+  selectionJson          Json
+  itemCount              Int
+  templateId             String?
+  templateDefinitionHash String?
+  originCode             String
+  creationReceiptId      String?
+  seriesOccurrenceId     String?
+  publishReviewId        String?
+  proposalSelectionHash  String?
+  createdAt              DateTime @default(now())
+  createdByUserId        String
+
+  activity             Activity                                           @relation("ActivityContributionPolicySelectionActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  creator              User                                               @relation("ActivityContributionPolicySelectionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  template             ActivityTemplate?                                  @relation("ActivityContributionPolicySelectionTemplate", fields: [templateId, templateDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_template_fkey")
+  creationReceipt      ActivityCreationCommandReceipt?                    @relation("ActivityContributionPolicySelectionCreationReceipt", fields: [creationReceiptId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_creation_fkey")
+  seriesOccurrence     ActivitySeriesOccurrence?                          @relation("ActivityContributionPolicySelectionOccurrence", fields: [seriesOccurrenceId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_occurrence_fkey")
+  publishReview        ActivityPublishReview?                             @relation("ActivityContributionPolicySelectionPublishReview", fields: [publishReviewId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_review_fkey")
+  currentForActivities Activity[]                                         @relation("ActivityCurrentContributionPolicySelection")
+  items                ActivityContributionPolicySelectionItem[]
+  commandReceipt       ActivityContributionPolicySelectionCommandReceipt?
+  ruleSnapshots        ActivityRuleSnapshot[]                             @relation("ActivityContributionPolicySelectionRuleSnapshot")
+
+  @@unique([activityId, revision], map: "acps_revision_activity_revision_key")
+  @@unique([id, activityId], map: "acps_revision_id_activity_key")
+  @@unique([id, activityId, revision], map: "acps_revision_id_activity_revision_key")
+  @@index([activityId, createdAt], map: "acps_revision_activity_created_idx")
+  @@index([templateId], map: "acps_revision_template_idx")
+  @@index([publishReviewId], map: "acps_revision_review_idx")
+}
+
+model ActivityContributionPolicySelectionItem {
+  id                  String  @id @default(cuid())
+  selectionRevisionId String
+  activityId          String
+  layerCode           String
+  sessionId           String?
+  positionId          String?
+  mode                String
+  policyId            String?
+  versionId           String?
+  definitionHash      String?
+  evaluatorVersion    Int?
+
+  revision ActivityContributionPolicySelectionRevision @relation(fields: [selectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_revision_fkey")
+  position ActivitySessionPosition?                    @relation(fields: [activityId, sessionId, positionId], references: [activityId, sessionId, id], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_position_fkey")
+  version  ContributionPolicyVersion?                  @relation(fields: [versionId, policyId, definitionHash, evaluatorVersion], references: [id, policyId, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_policy_version_fkey")
+
+  @@index([selectionRevisionId], map: "acps_item_revision_idx")
+  @@index([activityId, sessionId], map: "acps_item_session_idx")
+  @@index([versionId], map: "acps_item_version_idx")
+}
+
+model ActivityContributionPolicySelectionCommandReceipt {
+  id                  String   @id @default(cuid())
+  actorUserId         String
+  activityId          String
+  operationCode       String
+  operationKey        String
+  requestHash         String
+  selectionRevisionId String
+  resultJson          Json
+  createdAt           DateTime @default(now())
+
+  actor    User                                        @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "acps_receipt_actor_fkey")
+  activity Activity                                    @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "acps_receipt_activity_fkey")
+  revision ActivityContributionPolicySelectionRevision @relation(fields: [selectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_receipt_revision_fkey")
+
+  @@unique([actorUserId, operationCode, operationKey], map: "acps_receipt_actor_operation_key")
+  @@unique([selectionRevisionId, activityId], map: "acps_receipt_revision_activity_key")
+  @@index([activityId, createdAt], map: "acps_receipt_activity_created_idx")
 }
 
 // ===== Activity OS R4 / D3: immutable participant time-allocation facts =====
@@ -5315,13 +5417,14 @@ model ActivitySessionPosition {
   punchEvents AttendancePunchEvent[] @relation("PunchEventPosition")
 
   // 第 1 批第五刀(§3.11):岗位志愿与岗位级分配批次。
-  positionPreferences              ActivityPositionPreference[]
-  allocationBatches                ActivityAllocationBatch[]                 @relation("AllocationBatchPosition")
-  allocationWaitlistCandidates     ActivityAllocationCandidate[]             @relation("AllocationCandidateWaitlistPosition")
-  allocationApplicationProjections ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPosition")
-  offlinePackageParticipants       OfflinePackageParticipant[]
-  activityTimePolicySelectionItems ActivityTimePolicySelectionItem[]
-  sourceTimeAllocationRevisions    ParticipantTimeAllocationRevision[]       @relation("ParticipantTimeAllocationRevisionSourcePosition")
+  positionPreferences                      ActivityPositionPreference[]
+  allocationBatches                        ActivityAllocationBatch[]                 @relation("AllocationBatchPosition")
+  allocationWaitlistCandidates             ActivityAllocationCandidate[]             @relation("AllocationCandidateWaitlistPosition")
+  allocationApplicationProjections         ActivityAllocationApplicationProjection[] @relation("AllocationApplicationProjectionPosition")
+  offlinePackageParticipants               OfflinePackageParticipant[]
+  activityTimePolicySelectionItems         ActivityTimePolicySelectionItem[]
+  activityContributionPolicySelectionItems ActivityContributionPolicySelectionItem[]
+  sourceTimeAllocationRevisions            ParticipantTimeAllocationRevision[]       @relation("ParticipantTimeAllocationRevisionSourcePosition")
 
   @@unique([activityId, sessionId, id], map: "activity_session_position_activity_session_id_key")
   @@index([activityId])

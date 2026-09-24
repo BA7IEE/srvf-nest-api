@@ -27,12 +27,13 @@ const ALLOCATION_GUARD_MIGRATION = '20260920090000_activity_os_r4_d7_2_allocatio
 const MIGRATION = '20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set';
 const D8_1_MIGRATION = '20260921180000_activity_os_r4_d8_proof_cutover';
 const E1_1_MIGRATION = '20260922194000_activity_os_r5_e1_contribution_policy_foundation';
+const E1_3_MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
 const PREVIOUS_MIGRATION_COUNT = 124;
 const D7_2_FACT_MIGRATION_COUNT = 125;
 const BINDING_GUARD_MIGRATION_COUNT = 126;
 const ALLOCATION_GUARD_MIGRATION_COUNT = 127;
 const CORRECTION_RECEIPT_GUARD_MIGRATION_COUNT = 128;
-const CURRENT_MIGRATION_COUNT = 130;
+const CURRENT_MIGRATION_COUNT = 131;
 const WORKER = 98;
 const USE_DEDICATED_W98 = process.env.SRVF_D7_2_W98 === '1';
 const LEGACY_V1_REQUEST_ID = 'd7-2-migration-v1-request';
@@ -155,17 +156,16 @@ async function seedLegacyFact(): Promise<void> {
           memberOriginCode: 'fixture',
         },
       });
-      const activity = await tx.activity.create({
-        data: {
-          title: 'D7-2 migration activity',
-          activityTypeCode: 'fixture',
-          organizationId: organization.id,
-          startAt: at,
-          endAt: end,
-          location: 'fixture',
-          statusCode: 'published',
-        },
-      });
+      const activity = { id: 'd7-2-migration-activity' };
+      await tx.$executeRaw`
+        INSERT INTO "Activity" (
+          id, "updatedAt", title, "activityTypeCode", "organizationId",
+          "startAt", "endAt", location, "statusCode"
+        ) VALUES (
+          ${activity.id}, CURRENT_TIMESTAMP, 'D7-2 migration activity', 'fixture',
+          ${organization.id}, ${at}, ${end}, 'fixture', 'published'
+        )
+      `;
       const session = await tx.activitySession.create({
         data: {
           activityId: activity.id,
@@ -418,13 +418,14 @@ describe('D7-2 immutable fact-correction migration', () => {
     ).toBe('ready\t0');
   }
 
-  it('cold replays all 130 migrations and installs the four immutable fact tables', () => {
+  it('cold replays all 131 migrations and installs the four immutable fact tables', () => {
     recreate();
     deploy(schema);
     expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[CORRECTION_RECEIPT_GUARD_MIGRATION_COUNT - 1]).toBe(MIGRATION);
     expect(names[128]).toBe(D8_1_MIGRATION);
-    expect(names[CURRENT_MIGRATION_COUNT - 1]).toBe(E1_1_MIGRATION);
+    expect(names[129]).toBe(E1_1_MIGRATION);
+    expect(names[CURRENT_MIGRATION_COUNT - 1]).toBe(E1_3_MIGRATION);
     expect(checksums()).toEqual(
       names.map(
         (name) =>

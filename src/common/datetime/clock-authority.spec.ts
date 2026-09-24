@@ -56,6 +56,9 @@ const SRC = path.join(REPO_ROOT, 'src');
 // 沿此既有豁免；effectiveFrom/Until、activatedAt/retiredAt 无默认now，不用库时钟判业务生效。
 // E1-1: ContributionPolicy/ContributionPolicyVersion/ContributionPolicyCommandReceipt.createdAt
 // 同样只做留痕；生效区间和激活/退役时间由未来命令显式写入，不把数据库默认时钟当判定输入。
+// E1-3: ActivityContributionPolicySelectionRevision/
+// ActivityContributionPolicySelectionCommandReceipt.createdAt 只做不可变留痕；政策有效期、活动计划区间和
+// 锁后资格复核由应用命令显式判定，不把数据库默认时钟作为选择或授权输入。
 // D4: ActivitySettlementTimeRevision/ActivitySettlementTimeCommandReceipt.createdAt 也仅审计留痕；
 // 生效与 stale 判断由冻结源时间、封印和 revision 决定，不使用上述留痕时间作授权依据。
 const AUDIT_COLUMNS: ReadonlySet<string> = new Set(['createdAt']);

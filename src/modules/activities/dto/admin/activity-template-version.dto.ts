@@ -24,6 +24,7 @@ import {
   AdminActivityTemplateDefinitionV3Dto,
 } from './activity-template-definition-v3.dto';
 import { AdminActivityTemplateDefinitionV4Dto } from './activity-template-definition-v4.dto';
+import { AdminActivityTemplateDefinitionV5Dto } from './activity-template-definition-v5.dto';
 
 export class AdminCreateActivityTemplateVersionDto {
   @ApiProperty({ description: '客户端幂等键；首尾不得空白', minLength: 1, maxLength: 128 })
@@ -87,30 +88,35 @@ export class AdminCreateActivityTemplateVersionDto {
   @IsDateString()
   effectiveTo?: string | null;
   @ApiPropertyOptional({
-    description: '仅 V4 显式传 4；省略保持历史 V3 创建合同',
-    enum: [4],
+    description: 'V4/V5 显式传对应版本；省略保持历史 V3 创建合同',
+    enum: [4, 5],
   })
   @OmittableOnly()
   @Type(() => Number)
-  @IsIn([4])
-  schemaVersion?: 4;
+  @IsIn([4, 5])
+  schemaVersion?: 4 | 5;
   @ApiPropertyOptional({
-    description:
-      '完整定义；省略 schemaVersion 为 V3，显式 schemaVersion=4 为 V4；与复制来源形状互斥',
+    description: '完整定义；省略 schemaVersion 为 V3，显式 4/5 对应 V4/V5；与复制来源形状互斥',
     oneOf: [
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV3Dto) },
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV4Dto) },
+      { $ref: getSchemaPath(AdminActivityTemplateDefinitionV5Dto) },
     ],
   })
   @OmittableOnly()
   @IsObject()
   @ValidateNested()
   @Type((options) =>
-    (options?.object as { schemaVersion?: number } | undefined)?.schemaVersion === 4
-      ? AdminActivityTemplateDefinitionV4Dto
-      : AdminActivityTemplateDefinitionV3Dto,
+    (options?.object as { schemaVersion?: number } | undefined)?.schemaVersion === 5
+      ? AdminActivityTemplateDefinitionV5Dto
+      : (options?.object as { schemaVersion?: number } | undefined)?.schemaVersion === 4
+        ? AdminActivityTemplateDefinitionV4Dto
+        : AdminActivityTemplateDefinitionV3Dto,
   )
-  definition?: AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
+  definition?:
+    | AdminActivityTemplateDefinitionV3Dto
+    | AdminActivityTemplateDefinitionV4Dto
+    | AdminActivityTemplateDefinitionV5Dto;
   @ApiPropertyOptional({
     description: '复制来源的精确 V1/V2/V3 版本；仅全局可见 Family',
     minLength: 1,
@@ -149,13 +155,13 @@ export class AdminActivityTemplateVersionCommandDto {
   expectedDefinitionHash!: string;
 
   @ApiPropertyOptional({
-    description: 'V4 生命周期命令必须显式传 4；V3 省略保持历史重放合同',
-    enum: [4],
+    description: 'V4/V5 生命周期命令必须显式传对应版本；V3 省略保持历史重放合同',
+    enum: [4, 5],
   })
   @OmittableOnly()
   @Type(() => Number)
-  @IsIn([4])
-  schemaVersion?: 4;
+  @IsIn([4, 5])
+  schemaVersion?: 4 | 5;
 }
 export class AdminUpdateActivityTemplateVersionDto extends AdminActivityTemplateVersionCommandDto {
   @ApiProperty({
@@ -163,17 +169,23 @@ export class AdminUpdateActivityTemplateVersionDto extends AdminActivityTemplate
     oneOf: [
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV3Dto) },
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV4Dto) },
+      { $ref: getSchemaPath(AdminActivityTemplateDefinitionV5Dto) },
     ],
   })
   @IsDefined()
   @IsObject()
   @ValidateNested()
   @Type((options) =>
-    (options?.object as { schemaVersion?: number } | undefined)?.schemaVersion === 4
-      ? AdminActivityTemplateDefinitionV4Dto
-      : AdminActivityTemplateDefinitionV3Dto,
+    (options?.object as { schemaVersion?: number } | undefined)?.schemaVersion === 5
+      ? AdminActivityTemplateDefinitionV5Dto
+      : (options?.object as { schemaVersion?: number } | undefined)?.schemaVersion === 4
+        ? AdminActivityTemplateDefinitionV4Dto
+        : AdminActivityTemplateDefinitionV3Dto,
   )
-  definition!: AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
+  definition!:
+    | AdminActivityTemplateDefinitionV3Dto
+    | AdminActivityTemplateDefinitionV4Dto
+    | AdminActivityTemplateDefinitionV5Dto;
 }
 export class AdminListActivityTemplateVersionsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: 'Family ID 过滤', minLength: 1, maxLength: 64 })
@@ -186,17 +198,18 @@ export class AdminListActivityTemplateVersionsQueryDto extends PaginationQueryDt
   @OmittableOnly()
   @IsIn(['draft', 'active', 'retired'])
   statusCode?: 'draft' | 'active' | 'retired';
-  @ApiPropertyOptional({ description: 'schema 版本过滤', enum: [1, 2, 3, 4] })
+  @ApiPropertyOptional({ description: 'schema 版本过滤', enum: [1, 2, 3, 4, 5] })
   @OmittableOnly()
   @Type(() => Number)
-  @IsIn([1, 2, 3, 4])
+  @IsIn([1, 2, 3, 4, 5])
   schemaVersion?: number;
 }
 export class AdminActivityTemplateVersionCommandResultDto {
   @ApiProperty({ description: '精确模板 Version ID' }) id!: string;
   @ApiProperty({ description: '稳定模板 code' }) code!: string;
   @ApiProperty({ description: '显式 Version', minimum: 1, maximum: 2147483647 }) version!: number;
-  @ApiProperty({ description: '新命令写入的版本', enum: [3, 4] }) schemaVersion!: 3 | 4;
+  @ApiProperty({ description: '新命令写入的版本', enum: [3, 4, 5] })
+  schemaVersion!: 3 | 4 | 5;
   @ApiProperty({ description: '命令记录的状态', enum: ['draft', 'active', 'retired'] })
   statusCode!: string;
   @ApiProperty({ description: '命令记录的定义 hash', pattern: '^[0-9a-f]{64}$' })
@@ -240,6 +253,7 @@ export class AdminActivityTemplateVersionSummaryDto {
   AdminActivityTemplateDefinitionV2Dto,
   AdminActivityTemplateDefinitionV3Dto,
   AdminActivityTemplateDefinitionV4Dto,
+  AdminActivityTemplateDefinitionV5Dto,
 )
 export class AdminActivityTemplateVersionResponseDto extends AdminActivityTemplateVersionSummaryDto {
   @ApiProperty({
@@ -249,11 +263,13 @@ export class AdminActivityTemplateVersionResponseDto extends AdminActivityTempla
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV2Dto) },
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV3Dto) },
       { $ref: getSchemaPath(AdminActivityTemplateDefinitionV4Dto) },
+      { $ref: getSchemaPath(AdminActivityTemplateDefinitionV5Dto) },
     ],
   })
   definition!:
     | AdminActivityTemplateDefinitionV1Dto
     | AdminActivityTemplateDefinitionV2Dto
     | AdminActivityTemplateDefinitionV3Dto
-    | AdminActivityTemplateDefinitionV4Dto;
+    | AdminActivityTemplateDefinitionV4Dto
+    | AdminActivityTemplateDefinitionV5Dto;
 }

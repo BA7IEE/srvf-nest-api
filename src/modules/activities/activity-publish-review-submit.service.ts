@@ -163,18 +163,20 @@ export class ActivityPublishReviewSubmitService {
             allocationModeCode: true,
             timePolicySelectionRevision: true,
             currentTimePolicySelectionRevisionId: true,
+            contributionPolicySelectionRevision: true,
+            currentContributionPolicySelectionRevisionId: true,
           },
         });
         if (activity.statusCode !== 'published') {
           throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
         }
-        // This compatibility endpoint produces a pre-V8 snapshot and therefore cannot preserve
-        // an Activity-owned time-policy selection in the later RuleSnapshot. Once a selection
-        // exists, callers must use the current full change-review route instead of silently
-        // submitting an old envelope that omits the immutable fact.
+        // This compatibility endpoint produces a pre-V8/V9 snapshot and therefore cannot
+        // preserve Activity-owned time/contribution selections in the later RuleSnapshot.
         if (
           activity.timePolicySelectionRevision !== 0 ||
-          activity.currentTimePolicySelectionRevisionId !== null
+          activity.currentTimePolicySelectionRevisionId !== null ||
+          activity.contributionPolicySelectionRevision !== 0 ||
+          activity.currentContributionPolicySelectionRevisionId !== null
         ) {
           throw new BizException(BizCode.ACTIVITY_PUBLISH_REVIEW_SNAPSHOT_INVALID);
         }

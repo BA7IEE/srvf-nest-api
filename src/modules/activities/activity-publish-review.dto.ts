@@ -474,6 +474,95 @@ export class ChangeReviewTimePolicySelectionChangeDto {
   selection!: ChangeReviewTimePolicySelectionValueDto;
 }
 
+export class ChangeReviewContributionPolicySelectionScopeDto {
+  @ApiProperty({ enum: ['activity', 'position'] })
+  @IsIn(['activity', 'position'])
+  layerCode!: 'activity' | 'position';
+
+  @ApiPropertyOptional({ minLength: 1, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  sessionId?: string;
+
+  @ApiPropertyOptional({ minLength: 1, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  sessionClientRef?: string;
+
+  @ApiPropertyOptional({ minLength: 1, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  positionId?: string;
+
+  @ApiPropertyOptional({ minLength: 1, maxLength: 64 })
+  @OmittableOnly()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  positionClientRef?: string;
+}
+
+export class ChangeReviewContributionPolicyPointerDto {
+  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  policyId!: string;
+
+  @ApiProperty({ minLength: 1, maxLength: 64 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(64)
+  versionId!: string;
+
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' })
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
+  definitionHash!: string;
+
+  @ApiProperty({ minimum: 1, maximum: 2147483647 })
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  evaluatorVersion!: number;
+}
+
+export class ChangeReviewContributionPolicySelectionValueDto {
+  @ApiProperty({ enum: ['inherit', 'explicit'] })
+  @IsIn(['inherit', 'explicit'])
+  mode!: 'inherit' | 'explicit';
+
+  @ApiProperty({ type: () => ChangeReviewContributionPolicyPointerDto, nullable: true })
+  @ValidateIf((_, value: unknown) => value !== null)
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ChangeReviewContributionPolicyPointerDto)
+  pointer!: ChangeReviewContributionPolicyPointerDto | null;
+}
+
+export class ChangeReviewContributionPolicySelectionChangeDto {
+  @ApiProperty({ type: () => ChangeReviewContributionPolicySelectionScopeDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ChangeReviewContributionPolicySelectionScopeDto)
+  scope!: ChangeReviewContributionPolicySelectionScopeDto;
+
+  @ApiProperty({ type: () => ChangeReviewContributionPolicySelectionValueDto })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ChangeReviewContributionPolicySelectionValueDto)
+  selection!: ChangeReviewContributionPolicySelectionValueDto;
+}
+
 /**
  * 已发布活动的唯一变更申请。children 三组都是完整集合，故单一场次的改动只是
  * `sessions.update` 只有一项的特例，不另设旁路 endpoint。
@@ -587,6 +676,39 @@ export class ChangeReviewDto extends SubmitActivityPublishReviewDto {
   @Min(0)
   @Max(2147483647)
   expectedTimePolicySelectionRevision?: number;
+
+  @ApiPropertyOptional({
+    description: '按活动／岗位增量修改贡献政策选择；岗位可引用现有 ID 或本提案 clientRef',
+    type: () => [ChangeReviewContributionPolicySelectionChangeDto],
+    minItems: 1,
+    maxItems: 10001,
+  })
+  @ValidateIf(
+    (object: ChangeReviewDto, value: unknown) =>
+      value !== undefined || object.expectedContributionPolicySelectionRevision !== undefined,
+  )
+  @IsDefined()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(10001)
+  @ValidateNested({ each: true })
+  @Type(() => ChangeReviewContributionPolicySelectionChangeDto)
+  contributionPolicySelectionChanges?: ChangeReviewContributionPolicySelectionChangeDto[];
+
+  @ApiPropertyOptional({
+    description: '提交 contributionPolicySelectionChanges 时读取到的当前贡献选择 revision',
+    minimum: 0,
+    maximum: 2147483647,
+  })
+  @ValidateIf(
+    (object: ChangeReviewDto, value: unknown) =>
+      value !== undefined || object.contributionPolicySelectionChanges !== undefined,
+  )
+  @IsDefined()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
+  expectedContributionPolicySelectionRevision?: number;
 }
 
 export class ActivityTemplateResolutionResponseDto {

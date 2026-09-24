@@ -1,5 +1,17 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **Release 5 / E1-3 implementation 当前工作树（2026-09-24，未提交、未建 PR）**：已按维护者确认的
+> 方案 A 与 137 路径上限实现模板／活动／岗位三层贡献政策选择、Template V5、Proposal V9、发布批准冻结和
+> Readiness。当前工作树机器读数为 43 module／127 controller／658 endpoint／131 migration／182 model／
+> 581 BizCode／269 permission／173 AuditLogEvent（168 active）。第131条 migration 为纯 additive，零 DML、
+> 回填或删除；SQL 摘要 `11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5`
+> 的 3b 已由维护者重签。`app_test_w98` 已通过131条冷回放、130→131非空升级、新增数据库负例及六份功能
+> E2E；OpenAPI contract 1,087项／2快照通过。4b 已按269权限、173/168审计、30/277字典及实际摘要重签；
+> lint／typecheck／build、Harness selftest/replay、边界与全部派生文档检查均通过。137路径上限内实际改动129路径、
+> 清单外0，8个候选零diff未伪造；三份既有兼容E2E在逐套重建w98后58/58通过。当前只待提交推送并创建
+> Draft PR，再由PR CI冷跑。未 Ready、合并、部署、操作生产、启用 Gate、执行 D8-OPS、转换旧
+> `ContributionRule`、接正式贡献结算或删除／重算业务数据。
+
 > **Release 5 / E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：E1-2 最终 head
 > `0cc3938ce2471f1e56571f728f651e53d8566e88` 的全部 PR 检查成功，已随
 > [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) squash 合入
@@ -135,7 +147,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                         | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                          | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                           | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 与 E1-1／E1-2 仓内交付已完成；E1-3 仅完成精确计划起草                          | E1-3 与 E2–E5 实施、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                         |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 与 E1-1／E1-2 已合；E1-3 implementation 工作树验证中，尚无 PR／合并            | E1-3 PR CI／合并及 E2–E5、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成                   |
 
 ### 1.1 欠代码的五项
 
@@ -350,10 +362,10 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **267** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **269** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **221** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 76** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 77** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
@@ -380,7 +392,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 | 文件                                                                                                  | 分类           | 去向 / 理由                                                                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 与 E1-1／E1-2 仓内交付已完成，E1-3 仅起草精确计划；E1-3 与 E2–E5 实施、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                                    |
+| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 与 E1-1／E1-2 已合，E1-3 implementation 工作树验证中但尚无 PR／合并；E2–E5、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                               |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md`                                  | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改                                                                                                                                                       |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md`                            | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改                                                                                                                                                                |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md`                      | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改                                                                                                                                             |

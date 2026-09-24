@@ -97,6 +97,16 @@
       "surface": "sha256:4d6c491d1717052603670b24a326bf16820ed5205c850f52274f5706c73a901d",
       "description": "sha256:f86286ed596d926337f4b80294a6a5915cdea8582027e68aa67b1d972bb8ec66"
     },
+    "activity.contribution-policy.read": {
+      "endpoints": 3,
+      "surface": "sha256:207390ccb514c9462a65b9fd9618bc5f2968ca205461f09a4e8df35d7703573b",
+      "description": "sha256:d104328e9a16252d7b27e375f8812427c8a2f253cc32fdf4269a31959cdeb943"
+    },
+    "activity.contribution-policy.select": {
+      "endpoints": 2,
+      "surface": "sha256:76940df59188f983c2ab675d7d9a9bda1942bae4c08b9aee979ab817272bde01",
+      "description": "sha256:b883b9d7fd457df24900a88b1e951513f11ab00013fbee25c7d369ab96bff690"
+    },
     "activity.create.cross-org": {
       "endpoints": 7,
       "surface": "sha256:b533865b15177ea7c0bee1e41e4ff07f81d8e84f7372a4e368fcb8eec651bbdb",

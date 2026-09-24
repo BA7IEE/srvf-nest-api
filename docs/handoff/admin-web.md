@@ -1,5 +1,21 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）
+
+Admin 新增 `GET/PATCH /api/admin/v1/activities/{id}/contribution-policy-selection`。GET 使用
+`activity.contribution-policy.read`，PATCH 使用独立的 `activity.contribution-policy.select`；两者均要求当前 ACTIVE Human、
+显式 scoped 授权及活动可见／可操作资格，`SUPER_ADMIN`、Service Principal、delegation 或角色名称都不直通。
+前端不能用 E1-2 的 GLOBAL 目录权限代替活动选择权限。
+
+PATCH 传 `operationKey`、`expectedRevision` 与增量 `changes`；活动根必须存在，岗位 `inherit` 表示在新修订中不再保留该覆盖，
+不是删除历史。`explicit` 必须提交完整 policy/version/hash/evaluator 指针。成功后应重新 GET 当前修订；同键同载荷重放返回原收据，
+不代表当前页面仍是该状态。`20247–20254` 依次覆盖选择形状、引用不可见、revision 过期、幂等冲突、收据失真、政策不可新选、
+无实际变化及 revision 上限，不能自动换 operationKey 绕过冲突。
+
+模板维护新增 schema V5，只在 V4 上增加闭合 `contributionPolicySelection`；发布审核详情可出现 proposal V9 的受控差异，
+不得展示政策定义全文或把 Readiness 通过解释为正式贡献已结算。本候选尚未合入或部署，生成 Admin client 仅用于联调；
+前端页面、角色授予、D8-OPS、正式贡献结算、Gate 和生产验收均未完成。
+
 ## E1-2 贡献政策 System 目录（后端分支实现中，前端未发布）
 
 后端新增 `/api/system/v1/contribution-policies` 下 8 个 Human System 接口：政策列表／详情、版本列表／详情，

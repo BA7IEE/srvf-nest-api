@@ -90,6 +90,12 @@ import { ActivityTimePolicySelectionAccess } from './activity-time-policy-select
 import { ActivityTimePolicySelectionAuditRecorder } from './activity-time-policy-selection-audit-recorder';
 import { ActivityTimePolicySelectionQueryService } from './activity-time-policy-selection-query.service';
 import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
+import { AdminActivityContributionPolicySelectionController } from './controllers/admin-activity-contribution-policy-selection.controller';
+import { AppManagedActivityContributionPolicySelectionController } from './controllers/app-managed-activity-contribution-policy-selection.controller';
+import { ActivityContributionPolicySelectionAccess } from './activity-contribution-policy-selection-access';
+import { ActivityContributionPolicySelectionAuditRecorder } from './activity-contribution-policy-selection-audit-recorder';
+import { ActivityContributionPolicySelectionQueryService } from './activity-contribution-policy-selection-query.service';
+import { ActivityContributionPolicySelectionService } from './activity-contribution-policy-selection.service';
 import { AdminActivityMetricDefinitionsController } from './controllers/admin-activity-metric-definitions.controller';
 import { AdminActivityMetricSetsController } from './controllers/admin-activity-metric-sets.controller';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
@@ -242,8 +248,10 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AppManagedActivityMetricCandidatesController,
     AppManagedActivityMetricsController,
     AppManagedActivityTimePolicySelectionController,
+    AppManagedActivityContributionPolicySelectionController,
     AdminActivityMetricSelectionController,
     AdminActivityTimePolicySelectionController,
+    AdminActivityContributionPolicySelectionController,
     AdminActivityTemplateVersionsController,
     AppManagedActivityControlPlaneController,
     AppManagedActivityCreationController,
@@ -320,6 +328,10 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityTimePolicySelectionAuditRecorder,
     ActivityTimePolicySelectionService,
     ActivityTimePolicySelectionQueryService,
+    ActivityContributionPolicySelectionAccess,
+    ActivityContributionPolicySelectionAuditRecorder,
+    ActivityContributionPolicySelectionService,
+    ActivityContributionPolicySelectionQueryService,
     ActivityMetricAuditRecorder,
     ActivityMetricDefinitionService,
     ActivityMetricSetService,

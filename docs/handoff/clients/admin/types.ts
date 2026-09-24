@@ -3,7 +3,7 @@
 // surface: Admin 管理后台
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:a8b1ef0910229217d032b319d64fe21c19afd5aa0896160143828a7c7eef2f01
+// inputDigest: sha256:1c9f5c7405152fcf803c7bc8822a9ec1f5b9a658a191964ff568b44782970499
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -302,6 +302,56 @@ export interface AdminActivityCheckInMemberDto {
   "label": string;
 }
 
+export interface AdminActivityContributionPolicyPointerDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+}
+
+export interface AdminActivityContributionPolicySelectionChangeDto {
+  "scope": AdminActivityContributionPolicySelectionScopeDto;
+  "selection": AdminActivityContributionPolicySelectionValueDto;
+}
+
+export interface AdminActivityContributionPolicySelectionItemDto {
+  "scope": AdminActivityContributionPolicySelectionScopeDto;
+  "selection": AdminActivityContributionPolicySelectionValueDto;
+}
+
+export interface AdminActivityContributionPolicySelectionResponseDto {
+  "activityId": string;
+  "selectionRevisionId": string | null;
+  "revision": number;
+  "selectionHash": string | null;
+  "createdAt": string | null;
+  "items": AdminActivityContributionPolicySelectionItemDto[];
+  "resolved": Record<string, unknown>[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+  "resolutionSummary": Record<string, unknown>;
+}
+
+export interface AdminActivityContributionPolicySelectionResultDto {
+  "activityId": string;
+  "selectionRevisionId": string;
+  "revision": number;
+  "selectionHash": string;
+  "createdAt": string;
+}
+
+export interface AdminActivityContributionPolicySelectionScopeDto {
+  "layerCode": "activity" | "position";
+  "sessionId": string | null;
+  "positionId": string | null;
+}
+
+export interface AdminActivityContributionPolicySelectionValueDto {
+  "mode": "inherit" | "explicit";
+  "pointer": AdminActivityContributionPolicyPointerDto;
+}
+
 export interface AdminActivityFeedbackListItemDto {
   "memberNo": string;
   "realName": string;
@@ -430,6 +480,15 @@ export interface AdminActivityTemplateDefinitionV4Dto {
   "timePolicySelection": AdminTemplateTimePolicySelectionDto;
 }
 
+export interface AdminActivityTemplateDefinitionV5Dto {
+  "activity": AdminTemplateActivityDefinitionDto;
+  "sessions": AdminTemplateSessionDefinitionDto[];
+  "registrationForm": AdminTemplateRegistrationFormDto;
+  "metricSelection": AdminActivityMetricSelectionInputDto;
+  "timePolicySelection": AdminTemplateTimePolicySelectionDto;
+  "contributionPolicySelection": AdminTemplateContributionPolicySelectionDto;
+}
+
 export interface AdminActivityTemplateFamilySummaryDto {
   "id": string;
   "code": string;
@@ -440,14 +499,14 @@ export interface AdminActivityTemplateFamilySummaryDto {
 export interface AdminActivityTemplateVersionCommandDto {
   "operationKey": string;
   "expectedDefinitionHash": string;
-  "schemaVersion"?: 4;
+  "schemaVersion"?: 4 | 5;
 }
 
 export interface AdminActivityTemplateVersionCommandResultDto {
   "id": string;
   "code": string;
   "version": number;
-  "schemaVersion": 3 | 4;
+  "schemaVersion": 3 | 4 | 5;
   "statusCode": "draft" | "active" | "retired";
   "definitionHash": string;
 }
@@ -466,7 +525,7 @@ export interface AdminActivityTemplateVersionResponseDto {
   "effectiveTo": string | null;
   "createdAt": string;
   "updatedAt": string;
-  "definition": AdminActivityTemplateDefinitionV1Dto | AdminActivityTemplateDefinitionV2Dto | AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
+  "definition": AdminActivityTemplateDefinitionV1Dto | AdminActivityTemplateDefinitionV2Dto | AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto | AdminActivityTemplateDefinitionV5Dto;
 }
 
 export interface AdminActivityTemplateVersionSummaryDto {
@@ -592,8 +651,8 @@ export interface AdminCreateActivityTemplateVersionDto {
   "version": number;
   "effectiveFrom": string;
   "effectiveTo"?: string | null;
-  "schemaVersion"?: 4;
-  "definition"?: AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
+  "schemaVersion"?: 4 | 5;
+  "definition"?: AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto | AdminActivityTemplateDefinitionV5Dto;
   "copyFromVersionId"?: string;
   "expectedSourceDefinitionHash"?: string;
   "metricSelection"?: AdminActivityMetricSelectionInputDto;
@@ -755,6 +814,12 @@ export interface AdminParticipationTimeProofResponseDto {
   "total": number;
   "page": number;
   "pageSize": number;
+}
+
+export interface AdminPatchActivityContributionPolicySelectionDto {
+  "operationKey": string;
+  "expectedRevision": number;
+  "changes": AdminActivityContributionPolicySelectionChangeDto[];
 }
 
 export interface AdminPatchActivityTimePolicySelectionDto {
@@ -922,6 +987,22 @@ export interface AdminTemplateActivityDefinitionDto {
   "archiveWaitingDays"?: number;
 }
 
+export interface AdminTemplateContributionPolicyExplicitSelectionDto {
+  "mode": "explicit";
+  "pointer": AdminActivityContributionPolicyPointerDto;
+}
+
+export interface AdminTemplateContributionPolicyPositionOverrideDto {
+  "sessionCode": string;
+  "positionCode": string;
+  "selection": AdminTemplateContributionPolicyExplicitSelectionDto;
+}
+
+export interface AdminTemplateContributionPolicySelectionDto {
+  "activityDefault": AdminActivityContributionPolicySelectionValueDto;
+  "positionOverrides": AdminTemplateContributionPolicyPositionOverrideDto[];
+}
+
 export interface AdminTemplateFormChoiceDto {
   "value": string;
   "label": string;
@@ -1075,8 +1156,8 @@ export interface AdminUpdateActivityMetricSetDto {
 export interface AdminUpdateActivityTemplateVersionDto {
   "operationKey": string;
   "expectedDefinitionHash": string;
-  "schemaVersion"?: 4;
-  "definition": AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto;
+  "schemaVersion"?: 4 | 5;
+  "definition": AdminActivityTemplateDefinitionV3Dto | AdminActivityTemplateDefinitionV4Dto | AdminActivityTemplateDefinitionV5Dto;
 }
 
 export interface AnnouncementImportRequestDto {

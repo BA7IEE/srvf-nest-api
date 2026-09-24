@@ -25,7 +25,7 @@ const MIGRATION_86_COUNT = 86;
 // ⚠️ 与上面的 MIGRATION_<N>_COUNT 是**两件事**:那些是固定的历史世代基线(冷库重放的起点),
 // 随仓库增长**永不变**;这个是仓库当前的 migration 总数,每加一刀就要 +1。
 // 混改任何一个都会把冷库重放用例的语义整个改坏(issue #1055 T1 加第 91 刀时逐个复核过)。
-const CURRENT_MIGRATION_COUNT = 130;
+const CURRENT_MIGRATION_COUNT = 131;
 const COLD_REPLAY_TIMEOUT_MS = 300_000;
 const RESPONSE_SCHEMA_VERSION = 'allocation-command-response-v1';
 const HASH_A = 'a'.repeat(64);
@@ -40,6 +40,8 @@ const ACCEPTED_AT = '2099-08-13 08:30:00';
 // OfflinePackageParticipant 的 identity / position 与 OfflinePunchReviewItem 的
 // formal_event / identity 四条外键被整条 DROP 并重建为复合外键,不再需要"改名",
 // 于是从已知漂移里消失。**这是减少、不是放宽** —— 其余 19 条一字未动。
+// E1-3 第131条新增索引及长外键名带来两条已逐项核对的 Prisma 映射差异；
+// 当前精确基线为 21 条，不接受任意新增 drift。
 // D86 本身不能新增、删除或重命名任何 schema / migration 物理对象。
 const EXPECTED_PRISMA_CURRENT_DIFF = `-- DropForeignKey
 ALTER TABLE "ActivityQualificationRuleSet" DROP CONSTRAINT "ActivityQualificationRuleSet_positionId_fkey";
@@ -48,7 +50,13 @@ ALTER TABLE "ActivityQualificationRuleSet" DROP CONSTRAINT "ActivityQualificatio
 ALTER TABLE "ActivitySessionPosition" DROP CONSTRAINT "ActivitySessionPosition_qualificationRuleSetId_fkey";
 
 -- DropIndex
+DROP INDEX "acps_activity_current_revision_idx";
+
+-- DropIndex
 DROP INDEX "activity_qualification_rule_set_scope_version_unique";
+
+-- RenameForeignKey
+ALTER TABLE "ActivityContributionPolicySelectionRevision" RENAME CONSTRAINT "ActivityContributionPolicySelectionRevision_createdByUserId_fke" TO "ActivityContributionPolicySelectionRevision_createdByUserI_fkey";
 
 -- RenameForeignKey
 ALTER TABLE "ActivityQualificationRuleSet" RENAME CONSTRAINT "activity_qualification_rule_set_activity_session_position_fkey" TO "ActivityQualificationRuleSet_activityId_sessionId_position_fkey";

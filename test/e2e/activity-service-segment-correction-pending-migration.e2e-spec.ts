@@ -113,13 +113,15 @@ describe('pending segment nonempty legacy upgrade', () => {
       sql(readFileSync(join('prisma/migrations', name, 'migration.sql'), 'utf8'));
     }
     // This replay intentionally stops before migration 115, while the checked-in
-    // Prisma client is generated from migration 129. Keep the real services on
+    // Prisma client is generated from migration 131. Keep the real services on
     // the legacy fixture with readback-only columns/tables. The empty classified
     // tables reject every INSERT: this is not a D4/D6 migration or classified fixture.
     sql(`
       ALTER TABLE "Activity"
         ADD COLUMN "timePolicySelectionRevision" INTEGER NOT NULL DEFAULT 0,
-        ADD COLUMN "currentTimePolicySelectionRevisionId" TEXT;
+        ADD COLUMN "currentTimePolicySelectionRevisionId" TEXT,
+        ADD COLUMN "contributionPolicySelectionRevision" INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN "currentContributionPolicySelectionRevisionId" TEXT;
       ALTER TABLE "AttendanceCorrectionRequest"
         ADD COLUMN "resubmittedFromRequestId" TEXT;
     `);

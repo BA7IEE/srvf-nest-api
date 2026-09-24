@@ -165,17 +165,16 @@ async function seedLegacy() {
           memberOriginCode: 'fixture',
         },
       });
-      const activity = await tx.activity.create({
-        data: {
-          title: 'D6 historical fixture',
-          activityTypeCode: 'fixture',
-          organizationId: org.id,
-          startAt: at,
-          endAt: end,
-          location: 'fixture',
-          statusCode: 'published',
-        },
-      });
+      const activity = { id: 'd6-migration-activity' };
+      await tx.$executeRaw`
+        INSERT INTO "Activity" (
+          id, "updatedAt", title, "activityTypeCode", "organizationId",
+          "startAt", "endAt", location, "statusCode"
+        ) VALUES (
+          ${activity.id}, CURRENT_TIMESTAMP, 'D6 historical fixture', 'fixture',
+          ${org.id}, ${at}, ${end}, 'fixture', 'published'
+        )
+      `;
       const session = await tx.activitySession.create({
         data: {
           activityId: activity.id,
@@ -354,10 +353,10 @@ describe('D6 migration cold replay and nonempty legacy upgrade', () => {
     deploy(schema);
   }, 120000);
 
-  it('replays 130 exact SQL files and leaves both D6 tables empty', () => {
+  it('replays 131 exact SQL files and leaves both D6 tables empty', () => {
     recreate();
     deploy(schema);
-    expect(names).toHaveLength(130);
+    expect(names).toHaveLength(131);
     expect(names[121]).toBe(MIGRATION);
     expect(checksums()).toEqual(
       names.map(

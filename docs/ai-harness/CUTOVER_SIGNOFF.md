@@ -221,6 +221,17 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **当前重签（2026-09-24，E1-3 贡献政策选择与发布冻结）**：维护者确认第131条
+> `20260923190000_activity_os_r5_e1_3_contribution_policy_selection`，SQL SHA-256
+> `11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5`。
+> 第131条只新增不可变选择 revision／item／command receipt 三张空表，向 Activity 与发布快照增加
+> 可空同活动指针，并补复合外键、集合完整性、当前指针、收据结果及不可改删守卫；模板命令收据只扩展
+> 接受 schemaVersion 5。零 DML、回填、删除、旧 migration 修改、生产操作或 Gate 切换。
+> 获准 `app_test_w98` 已完成131条冷回放、130→131非空升级及数据库正反例验证；本签不替代
+> Draft PR CI、Ready、合并、生产或 Gate 授权。
+> **本轮依据**：维护者明确确认「确认重签 3b（E1-3，第131条 migration，摘要
+> 11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5）」。
+
 > **当前重签（2026-09-22，E1-1 贡献政策地基）**：维护者确认第130条
 > `20260922194000_activity_os_r5_e1_contribution_policy_foundation`，SQL SHA-256
 > `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00`。
@@ -386,7 +397,28 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者本轮明确确认「确认重签 3b（E1-1，第130条 migration，摘要 a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00）」。
 - **对拍**:有 —— `migration-total` = `130`
 
+> **当前正式签字（2026-09-24，覆盖上方第130条及更早历史字段）**：E1-3 贡献政策选择与发布冻结的
+> 第131条 `20260923190000_activity_os_r5_e1_3_contribution_policy_selection` 已由维护者按上方实际摘要重签；
+> 上方字段保留第130条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:2026-09-24 E1-3 贡献政策选择与发布冻结重签：第131条只新增不可变选择 revision／item／command receipt 三张空表，向 Activity 与发布快照增加可空同活动指针，并补复合外键、集合完整性、当前指针、收据结果及不可改删守卫；模板命令收据只扩展接受 schemaVersion 5。零 DML、回填、删除、旧 migration 修改、生产操作或 Gate 切换。获准 app_test_w98 已完成131条冷回放、130→131非空升级及数据库正反例验证；本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-24
+- **依据**:维护者本轮明确确认「确认重签 3b（E1-3，第131条 migration，摘要 11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5）」。
+- **对拍**:有 —— `migration-total` = `131`
+
 ### 4b — 「字典、Audit events」的对账
+
+> **当前重签（2026-09-24，E1-3）**：维护者确认权限码269、Audit events 173总计／168活跃，
+> 字典30类／277项，`seed-sha256-12` 为 `d2f330814b0a`。新增
+> `activity.contribution-policy.read` 与 `activity.contribution-policy.select` 均为显式 scoped Human、
+> 自定义角色可授，十五个内建角色零默认授予，`SUPER_ADMIN` 不直通，Service Principal 与 delegation
+> 均不允许；权限目录 SHA-256 为
+> `7685760467fbe0c06640c58805f8c15ef917b38f0edc7800abc21b2b17614203`；相对本轮首次确认，
+> 仅 Prettier 合并两条 `description` 的换行，权限码、说明文本、访问面和其余 4b 读数均未变化。
+> 本轮新增活跃审计事件 `activity.contribution-policy.selection`；本签不替代 Draft PR CI、Ready、
+> 合并、生产或 Gate 授权。
 
 > **当前重签（2026-09-23，E1-2）**：维护者确认权限码267、Audit events 172总计／167活跃，
 > 字典30类／277项，`seed-sha256-12` 为 `9a62f918affc`。新增
@@ -455,6 +487,16 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **日期**:2026-09-23
 - **依据**:维护者本轮明确确认「确认重签 4b（E1-2：权限码267；Audit events 172总计、167活跃；字典30类、277项；seed摘要9a62f918affc；新增 contribution-policy.read.catalog / contribution-policy.manage.version 均为显式 GLOBAL Human、自定义角色可授、15个内建角色零默认授予、SUPER_ADMIN不直通、Service Principal与delegation均不允许；权限目录摘要 d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314）」。
 - **对拍**:有 —— `seed-sha256-12` = `9a62f918affc`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `172`;`audit-event-registry-active` = `167`
+
+> **当前正式签字（2026-09-24，覆盖本节此前历史字段）**：E1-3 的权限、审计、字典、seed
+> 与 Human scoped 访问面已由维护者按上方实际读数重签。
+
+- **结论**:认可
+- **理由**:2026-09-24 E1-3重签：权限码为269；Audit events为173总计／168活跃，新增 `activity.contribution-policy.selection`；字典仍为30类／277项，seed摘要为d2f330814b0a。新增 `activity.contribution-policy.read` 与 `activity.contribution-policy.select` 均为显式scoped Human、自定义角色可授、十五个内建角色零默认授予，SUPER_ADMIN不直通，Service Principal与delegation均不允许；权限目录SHA-256为7685760467fbe0c06640c58805f8c15ef917b38f0edc7800abc21b2b17614203，相对首次确认仅由Prettier合并两条description换行。本签不替代Draft PR CI、Ready、合并、生产或Gate授权。
+- **签字人**:维护者
+- **日期**:2026-09-24
+- **依据**:维护者本轮明确确认「确认更正 E1-3 4b 权限目录摘要为 7685760467fbe0c06640c58805f8c15ef917b38f0edc7800abc21b2b17614203；仅 Prettier 合并两条 description 的换行，权限码269、权限说明文本、访问面、seed d2f330814b0a、审计173/168及其余4b结论均不变。」
+- **对拍**:有 —— `seed-sha256-12` = `d2f330814b0a`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `173`;`audit-event-registry-active` = `168`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。

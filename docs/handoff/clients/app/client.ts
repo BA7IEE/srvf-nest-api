@@ -2,7 +2,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:a8b1ef0910229217d032b319d64fe21c19afd5aa0896160143828a7c7eef2f01
+// inputDigest: sha256:1c9f5c7405152fcf803c7bc8822a9ec1f5b9a658a191964ff568b44782970499
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -23,6 +23,14 @@ import type {
   AppActivityArchiveResultDto,
   AppActivityChangePositionDto,
   AppActivityCheckInDto,
+  AppActivityContributionPolicyOptionDto,
+  AppActivityContributionPolicyPointerDto,
+  AppActivityContributionPolicySelectionChangeDto,
+  AppActivityContributionPolicySelectionItemDto,
+  AppActivityContributionPolicySelectionResponseDto,
+  AppActivityContributionPolicySelectionResultDto,
+  AppActivityContributionPolicySelectionScopeDto,
+  AppActivityContributionPolicySelectionValueDto,
   AppActivityControlPlaneStatusDto,
   AppActivityCreationDetailDto,
   AppActivityCreationPlaceDto,
@@ -111,6 +119,8 @@ import type {
   AppCollaboratorOptionsResponseDto,
   AppCommitActivityTimeCorrectionDto,
   AppConfirmActivityOutcomeDto,
+  AppCreationContributionPolicyPositionOverrideDto,
+  AppCreationContributionPolicySelectionInputDto,
   AppCreationPlaceCoordinateDto,
   AppCreationQualificationRuleSetDto,
   AppCreationTimePolicyPointerDto,
@@ -119,6 +129,7 @@ import type {
   AppCreationTimePolicySelectionValueDto,
   AppCreationTimePolicySessionOverrideDto,
   AppEmergencyActivityCreationDto,
+  AppEmergencyContributionPolicySelectionInputDto,
   AppEmergencyCreationFollowUpDto,
   AppEmergencyTimePolicySelectionInputDto,
   AppEvidenceSealResultDto,
@@ -206,6 +217,7 @@ import type {
   AppParticipationLedgerEntryDto,
   AppParticipationTimeProofItemDto,
   AppParticipationTimeProofResponseDto,
+  AppPatchActivityContributionPolicySelectionDto,
   AppPatchActivityTimePolicySelectionDto,
   AppPrepareActivityOutcomeCorrectionDto,
   AppPrepareActivityTimeCorrectionDto,
@@ -293,6 +305,10 @@ import type {
   CancelAppManagedRegistrationDto,
   CancelAppMyRegistrationDto,
   ChangeMyPasswordDto,
+  ChangeReviewContributionPolicyPointerDto,
+  ChangeReviewContributionPolicySelectionChangeDto,
+  ChangeReviewContributionPolicySelectionScopeDto,
+  ChangeReviewContributionPolicySelectionValueDto,
   ChangeReviewDto,
   ChangeReviewQualificationRuleScopeDto,
   ChangeReviewQualificationRuleSetCancelDto,
@@ -583,6 +599,10 @@ export function createAppClient(fetcher: Fetcher) {
     AppManagedActivitiesControllerCreate(body: CreateAppManagedActivityDto): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {
       return fetcher<AppManagedActivityDetailDto>({ method: "POST", path: "/api/app/v1/my/managed-activities", body });
     },
+    /** 分页读取当前组织与计划区间可新选的贡献政策版本 [rbac: activity.contribution-policy.read] */
+    AppManagedActivityContributionPolicySelectionControllerOptions(query: { "page"?: number; "pageSize"?: number; "organizationId": string; "plannedFrom": string; "plannedUntil": string }): Promise<ApiEnvelope<PageResultDto & { "items": AppActivityContributionPolicyOptionDto[] }>> {
+      return fetcher<PageResultDto & { "items": AppActivityContributionPolicyOptionDto[] }>({ method: "GET", path: "/api/app/v1/my/managed-activities/contribution-policy-options", query });
+    },
     /** App 新创建控制面状态（非创建权限证明） [auth] */
     AppManagedActivityControlPlaneControllerStatus(): Promise<ApiEnvelope<AppActivityControlPlaneStatusDto>> {
       return fetcher<AppActivityControlPlaneStatusDto>({ method: "GET", path: "/api/app/v1/my/managed-activities/control-plane/status" });
@@ -706,6 +726,14 @@ export function createAppClient(fetcher: Fetcher) {
     /** App 活动负责人结束协办职责 [auth] */
     AppManagedActivityResponsibilitiesControllerEndCollaborator(activityId: string, assignmentId: string): Promise<ApiEnvelope<AppManagedResponsibilityAssignmentDto>> {
       return fetcher<AppManagedResponsibilityAssignmentDto>({ method: "DELETE", path: `/api/app/v1/my/managed-activities/${activityId}/collaborators/${assignmentId}` });
+    },
+    /** 分页读取本人负责活动的贡献政策选择 [rbac: activity.contribution-policy.read] */
+    AppManagedActivityContributionPolicySelectionControllerGet(activityId: string, query?: { "page"?: number; "pageSize"?: number; "revision"?: number }): Promise<ApiEnvelope<AppActivityContributionPolicySelectionResponseDto>> {
+      return fetcher<AppActivityContributionPolicySelectionResponseDto>({ method: "GET", path: `/api/app/v1/my/managed-activities/${activityId}/contribution-policy-selection`, query });
+    },
+    /** 增量设置本人负责草稿活动的贡献政策选择 [rbac: activity.contribution-policy.select] */
+    AppManagedActivityContributionPolicySelectionControllerPatch(activityId: string, body: AppPatchActivityContributionPolicySelectionDto): Promise<ApiEnvelope<AppActivityContributionPolicySelectionResultDto>> {
+      return fetcher<AppActivityContributionPolicySelectionResultDto>({ method: "PATCH", path: `/api/app/v1/my/managed-activities/${activityId}/contribution-policy-selection`, body });
     },
     /** App 设 / 清本人 managed 活动封面(attachmentId 须为本活动附件;null 清空) [auth] */
     AppManagedActivitiesControllerSetCover(activityId: string, body: SetAppManagedActivityCoverDto): Promise<ApiEnvelope<AppManagedActivityDetailDto>> {

@@ -19,7 +19,7 @@ import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
 const WORKER = 98;
 const MIGRATION = '20260906114906_activity_os_r3_c1_metric_selection_template_v3';
-const CURRENT_MIGRATION_COUNT = 130;
+const CURRENT_MIGRATION_COUNT = 131;
 const database = () => deriveWorkerTestDbName(WORKER);
 const quote = (value: string) => "'" + value.replaceAll("'", "''") + "'";
 function url() {
@@ -202,7 +202,7 @@ describe('C1 D2b migration typed selection and receipts', () => {
       ),
     ).toBe(String(CURRENT_MIGRATION_COUNT));
   });
-  it('adds no Prisma schema drift beyond the checked-in nineteen-statement baseline', () => {
+  it('adds no Prisma schema drift beyond the checked-in twenty-one-statement baseline', () => {
     expect(sql('SELECT current_database()')).toBe(database());
     const source = readFileSync(
       path.resolve('test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts'),
@@ -215,7 +215,7 @@ describe('C1 D2b migration typed selection and receipts', () => {
       .slice(start + marker.length)
       .split('`;')[0]
       .trim();
-    expect(baseline.split(';').filter((s) => s.trim())).toHaveLength(19);
+    expect(baseline.split(';').filter((s) => s.trim())).toHaveLength(21);
     let actual: string;
     try {
       // Read only. The approved w98 URL stays in env, not in command arguments/output.
@@ -454,7 +454,7 @@ describe('C1 D2b nonempty 111 to 112 upgrade', () => {
       deploy();
       expect(
         sql(
-          "SELECT (to_jsonb(a) - ARRAY['metricRequirementCode','selectedMetricSetVersionId','selectedMetricSetDefinitionHash','metricSelectionRevision','timePolicySelectionRevision','currentTimePolicySelectionRevisionId'])::text FROM \"Activity\" a ORDER BY id",
+          "SELECT (to_jsonb(a) - ARRAY['metricRequirementCode','selectedMetricSetVersionId','selectedMetricSetDefinitionHash','metricSelectionRevision','timePolicySelectionRevision','currentTimePolicySelectionRevisionId','contributionPolicySelectionRevision','currentContributionPolicySelectionRevisionId'])::text FROM \"Activity\" a ORDER BY id",
         ),
       ).toBe(before);
       expect(
@@ -498,7 +498,7 @@ describe('C1 D2b nonempty 111 to 112 upgrade', () => {
           'SELECT count(*) FROM role_permissions rp JOIN permissions p ON p.id=rp."permissionId" WHERE p.code LIKE \'activity-template.%\'',
         ),
       ).toBe('0');
-      expect(sql('SELECT count(*) FROM permissions')).toBe('267');
+      expect(sql('SELECT count(*) FROM permissions')).toBe('269');
       expect(
         sql(
           "SELECT (to_jsonb(r) - ARRAY['templateVersionId','activityId'])::text FROM \"ActivityMetricCommandReceipt\" r ORDER BY id",

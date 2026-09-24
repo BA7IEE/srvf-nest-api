@@ -15,7 +15,7 @@ import {
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
 const SCRATCH_WORKER_ID = 97;
-const CURRENT_MIGRATION_COUNT = 130;
+const CURRENT_MIGRATION_COUNT = 131;
 const PREVIOUS_MIGRATION_COUNT = 109;
 const MIGRATION_NAME = '20260905160133_activity_os_r3_c1_metric_definition_set';
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
@@ -483,7 +483,7 @@ describe('C1 D1 nonempty migration rehearsal', () => {
       expect(
         JSON.parse(
           sql(
-            "SELECT (to_jsonb(a) - ARRAY['metricRequirementCode','selectedMetricSetVersionId','selectedMetricSetDefinitionHash','metricSelectionRevision','timePolicySelectionRevision','currentTimePolicySelectionRevisionId'])::text FROM \"Activity\" a WHERE \"id\"='c1_legacy_activity'",
+            "SELECT (to_jsonb(a) - ARRAY['metricRequirementCode','selectedMetricSetVersionId','selectedMetricSetDefinitionHash','metricSelectionRevision','timePolicySelectionRevision','currentTimePolicySelectionRevisionId','contributionPolicySelectionRevision','currentContributionPolicySelectionRevisionId'])::text FROM \"Activity\" a WHERE \"id\"='c1_legacy_activity'",
           ),
         ),
       ).toEqual(JSON.parse(before));
