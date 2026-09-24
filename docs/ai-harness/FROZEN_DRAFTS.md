@@ -1,5 +1,15 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **Release 5 / E2 仍处评审与计划阶段（2026-09-25 核对）**：[#1350](https://github.com/BA7IEE/srvf-nest-api/pull/1350)
+> 评审、[#1351](https://github.com/BA7IEE/srvf-nest-api/pull/1351) 13 组／31 类映射及
+> [#1352](https://github.com/BA7IEE/srvf-nest-api/pull/1352) 精确计划已合入 main；#1352 的 Squash 提交
+> `873c873bd14891a6ca7468a455d763d9c6295879` 对应
+> [main CI 36015416210](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36015416210) completed/success。
+> docs-only 检查跳过 Contract + E2E／Golden journeys，不代表转换验收。下方 E1-3 段落的“当前仅起草
+> E2 评审”是历史时点；E2 的候选收据模型、迁移与 41 路径均未实施，真实旧规则未盘点，逐类型映射待签字。
+> 维护者确认系统尚未上线；不预设生产数据库目标，也不以测试库代替真实存量。未部署、未操作生产、未启用 Gate，
+> 旧规则及业务证据不删除、不重算。
+
 > **Release 5 / E1-3 仓内交付已完成（2026-09-24）**：[#1349](https://github.com/BA7IEE/srvf-nest-api/pull/1349)
 > 已 Squash 合入 main `279ed416800a778023a84edfaa640bf0d47092ff`；[main CI 35964179524](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35964179524)
 > 在该 SHA 上 completed/success，五组 Contract + E2E 均通过。下方本地候选与待 PR 记载仅为历史时点。

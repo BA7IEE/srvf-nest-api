@@ -1,5 +1,15 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
+> **Release 5 / E2 评审与精确计划已合入，转换未实施（2026-09-25 核对）**：评审 [#1350](https://github.com/BA7IEE/srvf-nest-api/pull/1350)、
+> 13 组／31 类目录映射 [#1351](https://github.com/BA7IEE/srvf-nest-api/pull/1351)、精确计划
+> [#1352](https://github.com/BA7IEE/srvf-nest-api/pull/1352) 已依次 Squash 合入 main；#1352 合并提交为
+> `873c873bd14891a6ca7468a455d763d9c6295879`，[main CI 36015416210](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36015416210)
+> 在该 SHA 上 completed/success（docs-only 的 Contract + E2E／Golden journeys 按规则跳过）。下方 E1-3
+> 段落所写“当前只起草 E2”是历史时点。E2 计划中的 41 路径只是待业务映射与真实规则分布确认的候选写集，
+> 不是实施授权；旧 `ContributionRule` 尚未盘点或转换。维护者确认系统尚未上线，故不预设生产盘点目标、
+> 不以测试库冒充真实存量。E2–E5、D8-OPS、整体跨模型复审、前端发布、生产部署与 Gate 均未因此完成或获准，
+> 业务数据不删除、不重算。
+
 > **Release 5 / E1-3 仓内交付已完成（2026-09-24）**：[#1349](https://github.com/BA7IEE/srvf-nest-api/pull/1349)
 > 已 Squash 合入 main `279ed416800a778023a84edfaa640bf0d47092ff`；[main CI 35964179524](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35964179524)
 > 在该 SHA 上 completed/success，五组 Contract + E2E 均通过。下方本地候选与待 PR 记载仅为历史时点。
