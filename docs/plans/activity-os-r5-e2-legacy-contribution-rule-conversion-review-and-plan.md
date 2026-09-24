@@ -58,4 +58,4 @@ E2 的目标是把旧 `ContributionRule` 的业务含义整理为可追溯的版
 
 ## 6. 本轮允许写集与验证
 
-仅本稿及 `docs/ai-harness/NEXT_TASKS.md`、`docs/ai-harness/FROZEN_DRAFTS.md` 三份 Markdown；不改任何 TypeScript、Prisma、测试、生成物或门禁。已通过 `pnpm docs:readtax:check`、`pnpm docs:counts:check`、三份文件的 Prettier 检查、`git diff --check` 与精确路径复核。尚未提交、推送或创建 PR。
+仅本稿及 `docs/ai-harness/NEXT_TASKS.md`、`docs/ai-harness/FROZEN_DRAFTS.md` 三份 Markdown；不改任何 TypeScript、Prisma、测试或门禁。已通过 `pnpm docs:readtax:check`、`pnpm docs:counts:check`、本稿与 `NEXT_TASKS` 的 Prettier 检查、`git diff --check` 与精确路径复核。`FROZEN_DRAFTS` 的生成读数块以 `scripts/check-frozen-drafts-ledger.ts` 逐字节检查为准，不能再由 Prettier 改写。本轮已创建 docs-only Draft PR；不 Ready、不合并。
