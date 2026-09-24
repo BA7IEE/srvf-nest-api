@@ -19,6 +19,63 @@ E2 的目标是把旧 `ContributionRule` 的业务含义整理为可追溯的版
 
 **关键语义缺口**：旧规则只有活动类型与角色，旧计算输入是浮点小时；E1 定义按角色、`volunteer_service`／`training`／`organization`／`non_creditable` 四类及整数秒档位求值，且有必填 `defaultResult`。当前没有代码可证明旧活动类型到这四类的一一映射。因此“旧规则逐行转成政策版本”并非已确定的数据合同；未经映射拍板与等价测试，不得批量写入或宣称 shadow 可比较。`Decimal(5,2)` 小时阈值转整数秒理论上可精确换算（0.01 小时 = 36 秒），但旧记录的 `serviceHours` 输入精度、边界舍入与新时长来源仍须用真实样本和正反例证明。
 
+### 旧活动类型 13 组、31 条逐项映射（仅评审索引）
+
+按 `LEGACY_ACTIVITY_TYPE_MIGRATION_REGISTRY` 的「时长选择器 → 贡献选择器」相同分组。组号只是评审索引，不是政策身份、版本、E1 四类时长分类或等价结论。每条目录记录均带人工治理要求；同组不同类型、角色的实际旧规则仍须分别盘点和签字，不得自动合并。
+
+| 组       | 时长选择器 → 贡献选择器                           |   条数 | 旧 `activityTypeCode` 与 `categoryCode`                                                                                           |
+| -------- | ------------------------------------------------- | -----: | --------------------------------------------------------------------------------------------------------------------------------- |
+| G01      | `duty` → `duty`                                   |      5 | `futian_ustation`、`wutongshan_duty`、`icc_duty`、`helicopter_duty`、`department_duty`：`duty_readiness`                          |
+| G02      | `incident_response` → `incident_response`         |      2 | `rescue_mission`、`disaster_relief`：`emergency_response`                                                                         |
+| G03      | `logistics` → `logistics`                         |      3 | `daily_supplies`、`event_support_supplies`、`rescue_relief_supplies`：`logistics_support`                                         |
+| G04      | `manual_recognition` → `manual_recognition`       |      1 | `assembled_no_action`：`emergency_response`                                                                                       |
+| G05      | `none_until_classified` → `none_until_classified` |      3 | `assistance`、`psychological_assessment`、`transportation`：`pending_classification`                                              |
+| G06      | `organization` → `organization_operation`         |      2 | `key_meeting`、`general_meeting`：`organization_operation`                                                                        |
+| G07      | `public_service` → `public_service`               |      1 | `special_social_service`：`public_service`                                                                                        |
+| G08      | `role_based` → `cooperation_exchange`             |      1 | `competition_exchange`：`cooperation_exchange`                                                                                    |
+| G09      | `role_based` → `event_support`                    |      1 | `event_support`：`event_support`                                                                                                  |
+| G10      | `role_based` → `organization_operation`           |      2 | `team_activity_support`、`department_team_building`：`organization_operation`                                                     |
+| G11      | `role_based` → `outreach`                         |      4 | `external_lecture`、`external_promotion_federation`、`external_promotion_department`、`interview`：`outreach_communication`       |
+| G12      | `training` → `training`                           |      5 | `external_training`、`team_training`、`external_course`、`external_joint_drill`、`internal_multi_dept_drill`：`training_exercise` |
+| G13      | `training` → `zero`                               |      1 | `no_contribution_training`：`training_exercise`                                                                                   |
+| **合计** | **13 个评审组，不是 13 个正式政策**               | **31** | **逐项要求见下表**                                                                                                                |
+
+| 组  | 旧 `activityTypeCode`           | 目录原文：逐条人工治理要求               |
+| --- | ------------------------------- | ---------------------------------------- |
+| G01 | `futian_ustation`               | 核验站点、岗位和实际值守段。             |
+| G01 | `wutongshan_duty`               | 核验站点、岗位和实际值守段。             |
+| G01 | `icc_duty`                      | 核验站点、岗位和实际值守段。             |
+| G01 | `helicopter_duty`               | 专业资格、地点和安全要求必核。           |
+| G01 | `department_duty`               | 核验所属组织、地点和岗位。               |
+| G02 | `rescue_mission`                | 核验关联 Incident 与正式结果。           |
+| G02 | `disaster_relief`               | 核验关联 Incident 与正式结果。           |
+| G03 | `daily_supplies`                | 核验物资事实归资源域。                   |
+| G03 | `event_support_supplies`        | 核验保障上下文；不把物资当成果真相。     |
+| G03 | `rescue_relief_supplies`        | 核验 Incident link 和资源事实。          |
+| G04 | `assembled_no_action`           | 结果不得自动推出时长或贡献。             |
+| G05 | `assistance`                    | 必填，禁止标题猜测。                     |
+| G05 | `psychological_assessment`      | 必须先通过用途、可见性、掩码和留存治理。 |
+| G05 | `transportation`                | 必填，运输不能自行充当 category。        |
+| G06 | `key_meeting`                   | 核验是否为正式组织运行。                 |
+| G06 | `general_meeting`               | 核验是否为正式组织运行。                 |
+| G07 | `special_social_service`        | 核验服务对象、证据和特殊限制。           |
+| G08 | `competition_exchange`          | 核验参赛、组织、保障身份。               |
+| G09 | `event_support`                 | 核验岗位与受益对象。                     |
+| G10 | `team_activity_support`         | 抽样核验是否实际为对外保障。             |
+| G10 | `department_team_building`      | 核验组织运行与非计入情形。               |
+| G11 | `external_lecture`              | 核验讲师、学员、保障身份。               |
+| G11 | `external_promotion_federation` | 核验外部主体与活动目的。                 |
+| G11 | `external_promotion_department` | 核验外部主体与活动目的。                 |
+| G11 | `interview`                     | 核验采访对象、发布责任和参与身份。       |
+| G12 | `external_training`             | 核验学员、讲师、保障身份。               |
+| G12 | `team_training`                 | 核验学员、讲师、保障身份。               |
+| G12 | `external_course`               | 核验课程和实际参与身份。                 |
+| G12 | `external_joint_drill`          | 核验联合主体、岗位和科目。               |
+| G12 | `internal_multi_dept_drill`     | 核验联合部门、岗位和科目。               |
+| G13 | `no_contribution_training`      | 无贡献是政策结果，不删除培训事实。       |
+
+这张表只证明目录覆盖，不证明旧库存在相应规则，也不填分值、角色、政策版本或生效状态。G05 的分类和敏感信息治理、G04 的单独认定均须先完成；G13 的 `zero` 不等于“无旧规则时返回 0”，不能删除培训事实。目录选择器到 E1 四类 `timeCategoryCode` 尚无获批映射；未映射或证据冲突保持待定、拒绝写入。真实分布和数值等价证明留待另行授权的只读数据库盘点与业务签字。
+
 ## 3. 待评审方案 A：先形成候选与证明，不切换读写
 
 1. 先做**只读盘点**：按状态、软删、活动类型、角色、阈值和上下分值分组；输出脱敏数量、异常分类与来源指纹。盘点脚本、目标数据库和结果保存位置须先另行审批，本轮不运行。
@@ -70,4 +127,4 @@ E2 的目标是把旧 `ContributionRule` 的业务含义整理为可追溯的版
 
 ## 6. 本轮允许写集与验证
 
-仅本稿及 `docs/ai-harness/NEXT_TASKS.md`、`docs/ai-harness/FROZEN_DRAFTS.md` 三份 Markdown；不改任何 TypeScript、Prisma、测试或门禁。已通过 `pnpm docs:readtax:check`、`pnpm docs:counts:check`、本稿与 `NEXT_TASKS` 的 Prettier 检查、`git diff --check` 与精确路径复核。`FROZEN_DRAFTS` 的生成读数块以 `scripts/check-frozen-drafts-ledger.ts` 逐字节检查为准，不能再由 Prettier 改写。本轮已创建 docs-only Draft PR；不 Ready、不合并。
+原 E2 评审稿已随 #1350 合入 main。本次续稿仅编辑本文件，新增上述 13 组、31 条评审映射；不改 `NEXT_TASKS`、`FROZEN_DRAFTS`、TypeScript、Prisma、测试或门禁。已用目录逐条核对组选择器、条数及人工治理原文，并通过 `pnpm docs:readtax:check`、`pnpm docs:counts:check`、本稿 Prettier 检查和 `git diff --check`。此处的文档定稿不构成 E2 实施、数据库盘点或转换授权。
