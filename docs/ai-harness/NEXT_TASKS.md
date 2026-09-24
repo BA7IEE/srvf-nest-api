@@ -1,13 +1,16 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **Release 5 / E1-3 implementation 当前工作树（2026-09-24，未提交、未建 PR）**：方案 A 已在
+> **Release 5 / E1-3 仓内交付已完成（2026-09-24）**：[#1349](https://github.com/BA7IEE/srvf-nest-api/pull/1349)
+> 已 Squash 合入 main `279ed416800a778023a84edfaa640bf0d47092ff`；[main CI 35964179524](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35964179524)
+> 在该 SHA 上 completed/success，五组 Contract + E2E 均通过。下方本地候选与待 PR 记载仅为历史时点。
+> 方案 A 已在
 > 137 路径授权边界内形成 Template V5、Proposal V9、活动贡献政策选择五端点、不可变选择／收据、批准冻结与
 > Readiness 闭环。当前为 43 module／127 controller／658 endpoint／131 migration／182 model／581 BizCode／
 > 269 permission／173 AuditLogEvent（168 active）。第131条 SQL 摘要 `11b29ca8…de5` 的 3b 已重签；
 > w98 冷回放／非空升级／约束、新增六份功能 E2E、三份既有兼容E2E 58项与 contract 1,087项均已通过，
 > 4b也已按最终实数和摘要更正重签。全套Harness／lint／typecheck／build／docs守卫通过；137路径上限内实际
-> 改动129路径、清单外0，8个候选零diff未伪造。当前下一步是按既有授权提交、推送并创建 Draft PR，交PR CI冷跑。
-> Draft PR 不等于 Ready 或合并；E2–E5、D8-OPS、整体跨模型复审、前端发布、生产部署、Gate、旧规则转换、
+> 改动129路径、清单外0，8个候选零diff未伪造。当前只起草 [E2 旧规则转换评审与授权清单](../plans/activity-os-r5-e2-legacy-contribution-rule-conversion-review-and-plan.md)，
+> E2 实施须另行拍板，不继承 E1-3 授权；E2–E5、D8-OPS、整体跨模型复审、前端发布、生产部署、Gate、旧规则转换、
 > 正式贡献结算以及数据删除／重算均未完成或未授权。
 
 > **Release 5 / E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：E1-2 最终 head
@@ -2636,9 +2639,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **Release 1–4 与 E1-1／E1-2 已合；E1-3 implementation 工作树验证中**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **Release 1–4 与 E1-1／E1-2／E1-3 已合；E2 仅起草评审**
 
-**状态**:进行中(Release 4 的 D8-1 #1341、D8-2 #1342 与 D8-OPS 文档 #1343 均已合并且最终 main CI 全绿；D8-OPS 未执行。Release 5 / E1-1 #1345 与 E1-2 #1347 均已合入并通过最终 main CI；E1-3 implementation 已形成工作树候选并完成3b/4b及定向数据库、功能 E2E 与 contract，仍待全套门禁、Draft PR CI和合并。E2–E5、部署、v1.1 独立稳定窗、生产预检与不可逆执行、整体复审、前端及真实业务验收均未完成)
+**状态**:进行中(Release 4 的 D8-1 #1341、D8-2 #1342 与 D8-OPS 文档 #1343 均已合并且最终 main CI 全绿；D8-OPS 未执行。Release 5 / E1-1 #1345、E1-2 #1347、E1-3 #1349 均已合入并通过最终 main CI。E2 仅起草评审、未实施；E3–E5、部署、v1.1 独立稳定窗、生产预检与不可逆执行、整体复审、前端及真实业务验收均未完成)
 
 - **D8-2 最终状态（2026-09-22）**：方案 A 的25路径、module 单一导出、owner query facade、四份派生治理摘要及
   一份旧迁移夹具兼容补项，共32路径；实际24路径、零越界，已随 #1342 合入 `802a636a` 并通过最终 main CI。
@@ -2649,8 +2652,8 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 - **E1 当前边界（2026-09-24）**：推荐方案 A 仍按 E1-1 数据与定义地基、E1-2 System 目录、E1-3 选择与发布冻结
   三刀推进。E1-1 #1345 与 E1-2 #1347 均已合入 main；E1-2 合并后同 SHA main CI attempt 2 全绿，仓内读数为
   130 migration／179 model／653 endpoint／267 permission／172 audit（167 active）。E1-3 已按137路径上限形成
-  131 migration／182 model／658 endpoint／269 permission／173 audit（168 active）的工作树候选，3b／4b和定向验证已完成，
-  但尚未提交、建 PR、合并或部署。旧 `ContributionRule`、考勤预填、
+  131 migration／182 model／658 endpoint／269 permission／173 audit（168 active）的实现，3b／4b和定向验证已完成，
+  已随 #1349 合入并通过 main CI，但尚未部署。旧 `ContributionRule`、考勤预填、
   正式账本、每日上限、V2–V8 历史快照和既有 Readiness 行为仍不改变；E2 旧规则转换、E3 shadow、E4 结算接线、
   E5 正式切换必须继续独立立项。
 
