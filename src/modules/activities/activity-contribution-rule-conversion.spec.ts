@@ -31,6 +31,7 @@ const rule: LegacyContributionSourceRule = {
   pointsAbove: '2.50',
   status: 'ACTIVE',
   deletedAt: null,
+  updatedAt: '2026-09-25T00:00:00.000Z',
 };
 
 function candidate(
@@ -144,6 +145,13 @@ describe('E2 pure legacy contribution conversion', () => {
     expect(b).toEqual(a);
   });
 
+  it('source fingerprint changes when the old row revision changes', () => {
+    const original = candidate();
+    const revised = candidate({ ...rule, updatedAt: '2026-09-25T00:00:01.000Z' });
+    expect(revised.definition).toEqual(original.definition);
+    expect(revised.sourceFingerprint).not.toBe(original.sourceFingerprint);
+  });
+
   it.each([
     ['inactive', { ...rule, status: 'INACTIVE' as const }],
     ['soft deleted', { ...rule, deletedAt: '2026-01-01T00:00:00.000Z' }],
@@ -152,6 +160,7 @@ describe('E2 pure legacy contribution conversion', () => {
     ['subcent threshold', { ...rule, durationThreshold: '1.001' }],
     ['negative points', { ...rule, pointsBelow: '-1.00' }],
     ['out-of-range points', { ...rule, pointsAbove: '1000.00' }],
+    ['invalid revision timestamp', { ...rule, updatedAt: '2026-02-30T00:00:00.000Z' }],
   ])('rejects %s without silently converting', (_name, source) => {
     expect(() => candidate(source)).toThrow(TypeError);
   });

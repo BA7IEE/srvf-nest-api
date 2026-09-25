@@ -19,6 +19,7 @@ export interface LegacyContributionSourceRule {
   pointsAbove: string | null;
   status: 'ACTIVE' | 'INACTIVE';
   deletedAt: string | null;
+  updatedAt: string;
 }
 
 export interface LegacyContributionRoleMapping {
@@ -84,6 +85,15 @@ function points(value: unknown): string {
   return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
 }
 
+function instant(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)) {
+    return invalid();
+  }
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) return invalid();
+  return value;
+}
+
 /**
  * Builds an uncommitted definition only. The caller must supply every business mapping;
  * no policy identity, effective date, version hash, receipt or database write is created.
@@ -132,6 +142,7 @@ export function buildLegacyContributionCandidate(
       'pointsAbove',
       'status',
       'deletedAt',
+      'updatedAt',
     ]);
     const id = role(source.id);
     const attendanceRoleCode = role(source.attendanceRoleCode);
@@ -157,6 +168,9 @@ export function buildLegacyContributionCandidate(
       durationThreshold: thresholdHundredths,
       pointsBelow: below,
       pointsAbove: above,
+      status: 'ACTIVE',
+      deletedAt: null,
+      updatedAt: instant(source.updatedAt),
     };
   });
   normalizedSources.sort((a, b) => {
