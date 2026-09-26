@@ -1,5 +1,14 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **Release 5 / E2 第一层隔离能力仓内验收完成（2026-09-27）**：[#1356](https://github.com/BA7IEE/srvf-nest-api/pull/1356)
+> 已 Squash 合入 main `5510c43cefbe4f5e6f2fda506355c04a83efd975`；
+> [main CI 36260037114](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36260037114) completed/success，
+> 五组 Contract + E2E 全部通过。下方 E2“实施中／未提交／未开 PR／CI 尚未发生”均为历史时点。
+> 第 132 条 migration 与固定 `e2_fixture_*` 的收据、提交及重放已交付，但 31 个真实目录类型仍全部
+> `hold`；真实目标未确定，旧规则未盘点或转换，业务映射未逐项签字。E3–E5、整体跨模型复审、前端发布、
+> 生产部署及 Gate 均未完成。本轮仅起草 [E3 评审稿](../plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md)，
+> 不实施、不查库、不操作生产或真实数据。
+
 > **E2 第一层隔离能力实施中（2026-09-27，本工作树，未提交）**：#1355 纯转换器已合入
 > main；维护者随后批准 #1352 第 8–11 节的 41 路径上限、`w98` 隔离验证和 Draft PR。
 > 新收据、第 132 条候选 migration、固定夹具提交／重放与审计正在实现；31 个真实目录类型
@@ -169,7 +178,7 @@
 | 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                         | 维护者执行                                                                                                              |
 | 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                          | 运维窗口                                                                                                                |
 | 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                           | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4 与 E1-1／E1-2／E1-3 已合；E2 仅评审未实施 | E2–E5、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成 |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4、E1 与 E2 第一层已合；E3 待评审                                           | E2 真实映射／转换、E3–E5、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成               |
 
 ### 1.1 欠代码的五项
 
@@ -414,7 +423,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 | 文件                                                                                                  | 分类           | 去向 / 理由                                                                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4 与 E1-1／E1-2／E1-3 已合；E2 仅评审未实施，E3–E5、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                               |
+| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4、E1 与 E2 第一层已合；真实映射／转换、E3–E5、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                                                           |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md`                                  | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改                                                                                                                                                       |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md`                            | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改                                                                                                                                                                |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md`                      | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改                                                                                                                                             |
