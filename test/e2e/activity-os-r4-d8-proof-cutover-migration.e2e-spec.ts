@@ -152,7 +152,7 @@ describe('D8-1 proof cutover migration', () => {
     const expected = migrationNames();
     expect(expected).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(expected[D8_MIGRATION_COUNT - 1]).toBe(MIGRATION);
-    expect(expected.at(-1)).toBe(LATEST_MIGRATION);
+    expect(expected[130]).toBe(LATEST_MIGRATION);
     expect(appliedNames()).toEqual(expected);
     const migrationHash = createHash('sha256')
       .update(readFileSync(path.join(prismaRoot, 'migrations', MIGRATION, 'migration.sql')))

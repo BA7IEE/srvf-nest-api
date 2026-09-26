@@ -187,7 +187,7 @@ describe('C2 D1 outcome revision database constraints', () => {
       sql(
         'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',
       ),
-    ).toBe('131');
+    ).toBe('132');
   });
   it('accepts same-chain values and evidence, preserving the predecessor', () => {
     sql(value());

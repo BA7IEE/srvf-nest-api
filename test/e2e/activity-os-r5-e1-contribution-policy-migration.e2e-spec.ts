@@ -299,7 +299,7 @@ describe('E1-1 contribution policy migration', () => {
     const names = migrationNames();
     expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[FOUNDATION_MIGRATION_COUNT - 1]).toBe(MIGRATION);
-    expect(names.at(-1)).toBe(LATEST_MIGRATION);
+    expect(names[130]).toBe(LATEST_MIGRATION);
     expect(appliedNames()).toEqual(names);
     const records = sql(
       'SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations" ' +

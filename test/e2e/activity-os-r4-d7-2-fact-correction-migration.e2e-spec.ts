@@ -425,7 +425,7 @@ describe('D7-2 immutable fact-correction migration', () => {
     expect(names[CORRECTION_RECEIPT_GUARD_MIGRATION_COUNT - 1]).toBe(MIGRATION);
     expect(names[128]).toBe(D8_1_MIGRATION);
     expect(names[129]).toBe(E1_1_MIGRATION);
-    expect(names[CURRENT_MIGRATION_COUNT - 1]).toBe(E1_3_MIGRATION);
+    expect(names[130]).toBe(E1_3_MIGRATION);
     expect(checksums()).toEqual(
       names.map(
         (name) =>

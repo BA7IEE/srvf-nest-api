@@ -258,3 +258,11 @@ E2 的目标是把旧 `ContributionRule` 的业务含义整理为可追溯的版
 属主模块接入后，离线 OpenAPI 生成器的模块遍历顺序改变。维护者仅批准扩展 `docs/handoff/openapi.json`：运行既有生成器刷新条目排列，不改接口、DTO、鉴权声明或契约断言。刷新前后 JSON 深度语义相等，路径均为 514 条、schema 均为 936 项；`pnpm docs:openapi:check` 通过。这是顺序差异，不是 tag 或字段变更。
 
 `cutover:check` 随后指出前端 client 的输入摘要陈旧。维护者又精确批准 `docs/handoff/clients/shared/types.ts` 与六个 surface 各自的 `types.ts`、`client.ts` 共 13 个生成路径；运行 `pnpm docs:feclient` 后逐文件 diff 仅有同一行 `inputDigest` 更新，类型和调用签名未变。生成器、业务代码、接口及断言均未因此改动。
+
+### 13.4 Draft PR 首轮 CI 回归
+
+#1356 首轮 SHA `9e159bab` 的 Change set、Incident replay、Harness selftests、Diff guards、Docker image build、Fast checks、Golden journeys 与 Contract + E2E (1) 通过；Contract + E2E (2)–(5) 中 (2)、(3)、(4)、(5) 报红。已在原获批写集内修正四类兼容问题：D7-2、D8-1、E1-1 冷回放把历史 E1-3 错绑到“当前最后一条”，现固定为第 131 条（数组索引 130）；C2 D1 当前回放计数 `131→132`；通用 `resetDb` 不再在旧 schema 上无条件引用 E2 收据表，改由已存在的同事务清理 helper 按表存在性处理；E2 新 E2E 始终切入其业务能力限定的 w98，而不误用 CI 分片默认 worker。D7-2 5/5、D8-1 3/3、E1/C2/E2 合计 12/12、旧服务段迁移 5/5 的 w98 定向测试通过。
+
+旧 D6 触发器测试首轮失败，是其回调未清空 E1 政策选择三表，helper 的 fail-closed 守护正确拒绝。维护者先批准将三表加入原受控 TRUNCATE，保留断言和超时；w98 实测被 `Activity`、`ActivityRuleSnapshot` 等外键结构以 PostgreSQL `0A000` 拒绝。只读 FK 递归盘点显示 `CASCADE` 会覆盖约 98 张**隔离测试库**关联表；相关禁止 TRUNCATE 触发器均在原 helper 的同事务禁用／恢复清单中。维护者随后明确批准仅在 w98 隔离库的同一受控清理 SQL 末尾加 `CASCADE`。旧 D6 5/5 通过，原断言和超时未改；不涉及真实业务库。
+
+以上是本地修复与定向证据，不代表 #1356 新 SHA 的全量 CI 已通过；红区 trusted approval 仍需维护者在本轮提交对应的 workflow 中逐次批准。Gate 仍 NO-GO。

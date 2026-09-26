@@ -16,7 +16,8 @@ import {
 } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
-const USE_DEDICATED_W98 = process.env.SRVF_E2_W98 === '1';
+// The capability is deliberately restricted to w98; CI workers must use that fixture too.
+const USE_DEDICATED_W98 = true;
 const meta = { requestId: 'e2-fixture-e2e', ip: null, ua: null };
 
 describe('E2 isolated fixture conversion', () => {
