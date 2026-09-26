@@ -234,3 +234,27 @@ E2 的目标是把旧 `ContributionRule` 的业务含义整理为可追溯的版
 ## 12. 本次计划稿的独立验收
 
 本次只编辑本文件；以上字段、目录与路径基于 `schema.prisma`、旧计算器、E1 定义／命令、旧 partial unique migration、13 组目录和测试引用链只读核对。41 个候选路径经存在性与重复检查（27 个既有、14 个明确标为新，零意外缺失）；`pnpm docs:readtax:check`、`pnpm docs:counts:check`、本稿 Prettier 与 `git diff --check` 已通过。#1351 合并提交 `d4c0f188` 的 main CI `35994894996` completed/success；该结果不验证本轮未提交计划稿。未访问任何数据库，未创建 migration 或 CLI，未选择实际 `timeCategoryCode`、操作者及正式分值。计划 PR 和实施 PR 均未由本次授权自动获准。
+
+## 13. 第一层隔离能力实施授权（2026-09-25）
+
+维护者确认按第 8–11 节实施，且第 10 节 41 个精确路径为写集上限。#1355 的纯转换器已合入 main；本轮只补隔离能力，不把 13 组、31 条目录解释为已签业务映射。全部真实类型保持 `hold`，不得从目录选择器推断 E1 四类时长、角色、默认结果、生效时间或正式政策身份。隔离库中可使用明确标为测试夹具的虚构类型，验证非空提交、重放与约束；测试成功不代表任何真实旧规则已转换或数值等价已获业务认可。
+
+本轮只允许 `app_test_w98` 隔离验证及测试夹具重建，验证后提交、推送、创建 Draft PR。migration SQL 与审计目录定稿后分别另请维护者确认 3b／4b 重签；未重签前不得伪造签字结论。不得查询或转换真实业务数据，不操作生产，不启用 Gate，不删除或重算旧数据，也不自动 Ready 或合并。
+
+### 13.1 本工作树验证与补充写集
+
+维护者已确认第 132 条 SQL SHA-256 `9bbb043c06e024f926b1056075966d5b5c81254888fe6525b47cf0c20296efe5` 的 3b，以及权限码 269、审计 174 总计／169 活跃的 4b；签字已登记并由 `cutover:check` 对拍。`app_test_w98` 完成 132 条冷回放、131→132 含旧规则与政策版本的非空升级 2/2，以及固定合成夹具 dry-run／提交／重放 2/2。首次迁移负例被来源唯一键先行拦截，已仅更换该负例的测试指纹，使其实际命中版本复合外键；migration SQL 和生产代码未因此变更。
+
+维护者另确认将第 10 节漏列的 19 份旧 migration E2E 扩入本轮写集，仅刷新当前总数／冷回放标题 131→132，保留各自历史升级目标、业务断言与生产代码。`docs/ai-harness/ROUTE_AUTHZ.md` 的单项红区令牌已由维护者发放，已用既有生成器刷新摘要，仍是 658 个端点。`cutover:check` 此前除该派生摘要外，仍报告原有 5 条 `it.todo`；刷新后须重跑对拍，且无论如何不宣称 T0-A Gate 可开。
+
+首轮全量单测 424 套中 423 套通过，1 套旧结构测试失败：`settlement-draft.service.spec.ts` 禁止 activities 模块直接读取 `ContributionRule`，而本轮转换服务的来源查询触发了该约束。维护者随后批准第 13.2 节属主查询原语方案；修复后全量单测 425 套、9060 条通过，5 条历史 `todo` 保持原状。原结构断言逐字保留，未靠改写语法规避；E2 `w98` 转换用例重跑 2/2 通过。
+
+### 13.2 属主查询原语（2026-09-27 已批准并在本工作树实施）
+
+精确新增 `src/modules/contribution-rules/contribution-rule-conversion-source.query.ts` 与同名 `.spec.ts`，并修改 `src/modules/contribution-rules/contribution-rules.module.ts` 导出该 provider；第 10 节已列的 `activities.module.ts` 导入属主模块，E2 转换服务与夹具 CLI 只调用公开 provider。查询原语接收调用者既有 `Prisma.TransactionClient` 与固定夹具类型，按 `activityTypeCode`、`ACTIVE`、`deletedAt: null` 过滤，按角色码和 ID 排序，返回 E2 来源指纹需要的原字段；不自行开启事务、判权、写入或缓存。调用者仍负责两轮 GLOBAL Human 权限复核、来源锁、锁后重读和同事务政策／收据／审计提交。属主单测覆盖过滤、排序、字段投影和同一事务对象透传；原 `settlement-draft.service.spec.ts` 结构断言逐字保留。此方案未改 schema、migration、seed、API、DTO、权限、Gate 或旧规则业务行为；第 132 条 3b SQL 摘要不受影响。
+
+### 13.3 OpenAPI 生成顺序（2026-09-27 已批准）
+
+属主模块接入后，离线 OpenAPI 生成器的模块遍历顺序改变。维护者仅批准扩展 `docs/handoff/openapi.json`：运行既有生成器刷新条目排列，不改接口、DTO、鉴权声明或契约断言。刷新前后 JSON 深度语义相等，路径均为 514 条、schema 均为 936 项；`pnpm docs:openapi:check` 通过。这是顺序差异，不是 tag 或字段变更。
+
+`cutover:check` 随后指出前端 client 的输入摘要陈旧。维护者又精确批准 `docs/handoff/clients/shared/types.ts` 与六个 surface 各自的 `types.ts`、`client.ts` 共 13 个生成路径；运行 `pnpm docs:feclient` 后逐文件 diff 仅有同一行 `inputDigest` 更新，类型和调用签名未变。生成器、业务代码、接口及断言均未因此改动。

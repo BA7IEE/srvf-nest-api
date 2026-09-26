@@ -164,14 +164,14 @@ describe('D1-3 time-policy selection migration', () => {
     deploy(path.join(root, 'schema.prisma'));
   }, 120000);
 
-  it('replays all 131 migrations from empty and exposes the immutable selection database surface', () => {
+  it('replays all 132 migrations from empty and exposes the immutable selection database surface', () => {
     recreate();
     deploy(path.join(root, 'schema.prisma'));
     const names = readdirSync(path.join(root, 'migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(131);
+    expect(names).toHaveLength(132);
     expect(names[118]).toBe(MIGRATION);
     expect(
       sql(

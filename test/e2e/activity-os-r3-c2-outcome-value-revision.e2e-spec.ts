@@ -181,7 +181,7 @@ describe('C2 D1 outcome revision database constraints', () => {
     );
     sql(outcome('outcome'));
   });
-  it('replays 131 migrations and targets only the derived isolated database', () => {
+  it('replays 132 migrations and targets only the derived isolated database', () => {
     expect(sql('SELECT current_database()')).toBe(database());
     expect(
       sql(

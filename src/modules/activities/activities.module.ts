@@ -4,6 +4,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { ActivityFeedbacksModule } from '../activity-feedbacks/activity-feedbacks.module';
 import { AuthzModule } from '../authz/authz.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { ContributionRulesModule } from '../contribution-rules/contribution-rules.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { InsurancesModule } from '../insurances/insurances.module';
@@ -37,6 +38,8 @@ import { ActivityContributionPolicyCommand } from './activity-contribution-polic
 import { ActivityContributionPolicyService } from './activity-contribution-policy.service';
 import { ActivityContributionPolicyCatalogueQueryService } from './activity-contribution-policy-catalogue-query.service';
 import { ActivityContributionPolicyAuditRecorder } from './activity-contribution-policy-audit-recorder';
+import { ActivityContributionRuleConversionService } from './activity-contribution-rule-conversion.service';
+import { ActivityContributionRuleConversionAuditRecorder } from './activity-contribution-rule-conversion-audit-recorder';
 import { SystemContributionPoliciesController } from './controllers/system-contribution-policies.controller';
 import { ActivityOutcomeService } from './activity-outcome.service';
 import { ActivityOutcomeFinalizationService } from './activity-outcome-finalization.service';
@@ -231,6 +234,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     MemberProfilesModule,
     NotificationsModule,
     OrganizationsModule,
+    ContributionRulesModule,
     ActivityFeedbacksModule,
     // P2-14 刀 A:封面 / 图集改附件制 —— 归属校验、存储边界锁与签 URL 全部复用
     // attachments 模块的既有实现(与内容模块同一份),本模块不另写一套。
@@ -324,6 +328,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityContributionPolicyService,
     ActivityContributionPolicyCatalogueQueryService,
     ActivityContributionPolicyAuditRecorder,
+    ActivityContributionRuleConversionService,
+    ActivityContributionRuleConversionAuditRecorder,
     ActivityTimePolicySelectionAccess,
     ActivityTimePolicySelectionAuditRecorder,
     ActivityTimePolicySelectionService,

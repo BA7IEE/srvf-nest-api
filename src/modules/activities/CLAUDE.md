@@ -1,5 +1,11 @@
 # activities — 本地铁律
 
+> **E2 第一层隔离能力工作树（2026-09-25，尚未提交／建 PR）**：E1 事务内属主原语可创建
+> draft 政策版本；E2 服务仅在已核准 `w98` 库接受 `e2_fixture_*` 虚构类型，锁后重读来源和 GLOBAL
+> Human 权限，在单事务内写 draft、逐源不可变收据和脱敏审计；相同收据重放零新增。31 个真实类型
+> 全部 hold，旧考勤预填、贡献规则写者、正式选择与结算不接入。SQL 3b、审计 4b 与隔离库验证尚待完成；
+> 未操作生产、Gate 或真实业务数据。下方 E1-3“当前工作树”为历史时点。
+
 > **E1-3 implementation 当前工作树（2026-09-24，未提交、未建 PR）**：已实现 Template V5 的闭合贡献政策
 > 选择、quick／professional／series 一致物化、Admin/App 活动选择与 App options 五端点、Proposal V9、批准时锁后
 > 重解与精确修订冻结，以及 `unconfigured / target_invalid / reference_unavailable / coverage_incomplete`

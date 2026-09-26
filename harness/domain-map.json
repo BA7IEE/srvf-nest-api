@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:6c5ba5bc97efa84ad21803e6eeac0fbd467fb32cdf74737e34932cb534f98383",
+  "inputDigest": "sha256:e336589c7411ee4ecab85bc0b9850246d6370c4cabe0d38e6158c3f5e3a14588",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -330,6 +330,12 @@
       "confirmed": true
     },
     "ContributionPolicyCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ContributionRuleConversionReceipt": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "settlement-ledger",

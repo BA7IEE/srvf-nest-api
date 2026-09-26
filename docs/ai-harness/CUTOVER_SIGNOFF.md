@@ -221,6 +221,13 @@ function eviSub(id, kind, title, evidence): SubCheck {
 
 ### 3b — 「新 schema migrations 经审查」
 
+> **当前重签（2026-09-25，E2 旧规则转换第一层隔离能力）**：维护者确认第132条
+> `20260924180000_activity_os_r5_e2_contribution_rule_conversion`，SQL SHA-256
+> `9bbb043c06e024f926b1056075966d5b5c81254888fe6525b47cf0c20296efe5`。
+> 第132条仅新增不可变转换收据空表、同链外键和唯一性约束；不转换真实业务数据，
+> 不执行 DML、回填、删除、生产操作或 Gate 切换。隔离库冷回放与 E2E 尚待验证；
+> 本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+
 > **当前重签（2026-09-24，E1-3 贡献政策选择与发布冻结）**：维护者确认第131条
 > `20260923190000_activity_os_r5_e1_3_contribution_policy_selection`，SQL SHA-256
 > `11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5`。
@@ -408,7 +415,24 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者本轮明确确认「确认重签 3b（E1-3，第131条 migration，摘要 11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5）」。
 - **对拍**:有 —— `migration-total` = `131`
 
+> **当前正式签字（2026-09-25，覆盖上方第131条及更早历史字段）**：E2 第一层隔离能力的
+> 第132条 `20260924180000_activity_os_r5_e2_contribution_rule_conversion` 已由维护者按上方实际摘要重签；
+> 上方字段保留第131条及更早签字的历史证据。
+
+- **结论**:认可
+- **理由**:第132条仅新增不可变转换收据空表、同链外键和唯一性约束；零真实数据转换、DML、回填、删除、生产操作或 Gate 切换。隔离验证尚未完成，本签不替代 Draft PR CI、Ready、合并、生产或 Gate 授权。
+- **签字人**:维护者
+- **日期**:2026-09-25
+- **依据**:维护者本轮确认 E2 第132条 3b 重签，SQL SHA-256 为 `9bbb043c06e024f926b1056075966d5b5c81254888fe6525b47cf0c20296efe5`。
+- **对拍**:有 —— `migration-total` = `132`
+
 ### 4b — 「字典、Audit events」的对账
+
+> **当前重签（2026-09-25，E2 第一层隔离能力）**：维护者确认权限码仍为269，
+> Audit events 174总计／169活跃，字典30类／277项，既有 seed 与权限目录摘要不变。
+> 仅新增活跃审计事件 `activity.contribution-rule.conversion`；合成夹具转换沿用既有
+> `contribution-policy.manage.version` GLOBAL Human 权限，不新增默认授予、Service Principal
+> 或 delegation。本签不替代隔离验证、Draft PR CI、Ready、合并、生产或 Gate 授权。
 
 > **当前重签（2026-09-24，E1-3）**：维护者确认权限码269、Audit events 173总计／168活跃，
 > 字典30类／277项，`seed-sha256-12` 为 `d2f330814b0a`。新增
@@ -497,6 +521,16 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **日期**:2026-09-24
 - **依据**:维护者本轮明确确认「确认更正 E1-3 4b 权限目录摘要为 7685760467fbe0c06640c58805f8c15ef917b38f0edc7800abc21b2b17614203；仅 Prettier 合并两条 description 的换行，权限码269、权限说明文本、访问面、seed d2f330814b0a、审计173/168及其余4b结论均不变。」
 - **对拍**:有 —— `seed-sha256-12` = `d2f330814b0a`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `173`;`audit-event-registry-active` = `168`
+
+> **当前正式签字（2026-09-25，覆盖本节此前历史字段）**：E2 第一层隔离能力的权限、审计、
+> 字典、seed 与合成夹具 Human 访问面已由维护者按上方实际读数重签。
+
+- **结论**:认可
+- **理由**:权限码仍为269；Audit events为174总计／169活跃，仅新增 `activity.contribution-rule.conversion`。字典仍为30类／277项，seed摘要为d2f330814b0a，权限目录摘要仍为7685760467fbe0c06640c58805f8c15ef917b38f0edc7800abc21b2b17614203。合成夹具转换沿用既有 `contribution-policy.manage.version` GLOBAL Human 权限，不新增码、默认授予、Service Principal或delegation。本签不替代隔离验证、Draft PR CI、Ready、合并、生产或Gate授权。
+- **签字人**:维护者
+- **日期**:2026-09-25
+- **依据**:维护者本轮确认 E2 4b 重签：权限码269、Audit events 174总计／169活跃，沿用既有 GLOBAL Human 管理权限。
+- **对拍**:有 —— `seed-sha256-12` = `d2f330814b0a`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `174`;`audit-event-registry-active` = `169`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。
