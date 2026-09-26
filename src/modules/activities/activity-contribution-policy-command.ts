@@ -10,6 +10,10 @@ import {
   canonicalizeActivityTemplateDefinition,
   computeActivityTemplateDefinitionHash,
 } from './activity-template-definition';
+import {
+  fingerprintContributionPolicyVersion,
+  type ContributionPolicyDefinition,
+} from './activity-contribution-policy-definition';
 
 export type ContributionPolicyOperation =
   | 'create_policy'
@@ -145,6 +149,48 @@ export class ActivityContributionPolicyCommand {
     private readonly prisma: PrismaService,
     private readonly rbac: RbacService,
   ) {}
+
+  /** E2 owner primitive: caller owns the transaction, locks, authorization and audit. */
+  async createDraftCandidateInTx(
+    tx: Prisma.TransactionClient,
+    actor: CurrentUserPayload,
+    input: {
+      code: string;
+      name: string;
+      definition: ContributionPolicyDefinition;
+      effectiveFrom: string;
+    },
+  ) {
+    const code = contributionPolicyText(input.code, 64);
+    if (!/^[a-z][a-z0-9_]{0,63}$/u.test(code))
+      throw new BizException(BizCode.ACTIVITY_CONTRIBUTION_POLICY_INVALID);
+    const name = contributionPolicyText(input.name, 120);
+    const version = fingerprintContributionPolicyVersion({
+      schemaVersion: 1,
+      evaluatorVersion: 1,
+      definition: input.definition,
+      effectiveFrom: input.effectiveFrom,
+      effectiveUntil: null,
+    });
+    if (await tx.contributionPolicy.findUnique({ where: { code }, select: { id: true } }))
+      throw new BizException(BizCode.ACTIVITY_CONTRIBUTION_POLICY_CODE_EXISTS);
+    const policy = await tx.contributionPolicy.create({ data: { code, name } });
+    const draft = await tx.contributionPolicyVersion.create({
+      data: {
+        policyId: policy.id,
+        version: 1,
+        schemaVersion: 1,
+        evaluatorVersion: 1,
+        definitionJson: { ...version.definition } as unknown as Prisma.InputJsonValue,
+        definitionHash: version.definitionHash,
+        effectiveFrom: new Date(version.effectiveFrom),
+        effectiveUntil: null,
+        statusCode: 'draft',
+        createdByUserId: actor.id,
+      },
+    });
+    return { policy, draft };
+  }
 
   async assertAccess(
     tx: Prisma.TransactionClient,

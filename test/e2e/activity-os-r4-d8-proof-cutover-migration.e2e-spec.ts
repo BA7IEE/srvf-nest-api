@@ -24,7 +24,7 @@ const MIGRATION = '20260921180000_activity_os_r4_d8_proof_cutover';
 const LATEST_MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
 const PREVIOUS_MIGRATION_COUNT = 128;
 const D8_MIGRATION_COUNT = 129;
-const CURRENT_MIGRATION_COUNT = 131;
+const CURRENT_MIGRATION_COUNT = 132;
 const WORKER = 98;
 const prismaRoot = path.resolve(__dirname, '..', '..', 'prisma');
 const schema = path.join(prismaRoot, 'schema.prisma');
@@ -152,7 +152,7 @@ describe('D8-1 proof cutover migration', () => {
     const expected = migrationNames();
     expect(expected).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(expected[D8_MIGRATION_COUNT - 1]).toBe(MIGRATION);
-    expect(expected.at(-1)).toBe(LATEST_MIGRATION);
+    expect(expected[130]).toBe(LATEST_MIGRATION);
     expect(appliedNames()).toEqual(expected);
     const migrationHash = createHash('sha256')
       .update(readFileSync(path.join(prismaRoot, 'migrations', MIGRATION, 'migration.sql')))

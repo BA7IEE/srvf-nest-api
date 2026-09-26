@@ -26,7 +26,7 @@ const MIGRATION = '20260922194000_activity_os_r5_e1_contribution_policy_foundati
 const LATEST_MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
 const PREVIOUS_MIGRATION_COUNT = 129;
 const FOUNDATION_MIGRATION_COUNT = 130;
-const CURRENT_MIGRATION_COUNT = 131;
+const CURRENT_MIGRATION_COUNT = 132;
 const WORKER = 98;
 const prismaRoot = path.resolve(__dirname, '..', '..', 'prisma');
 const schema = path.join(prismaRoot, 'schema.prisma');
@@ -293,13 +293,13 @@ describe('E1-1 contribution policy migration', () => {
     else process.env[name] = value;
   }
 
-  it('cold replays 131 exact migrations and installs the contribution policy surface', () => {
+  it('cold replays 132 exact migrations and installs the contribution policy surface', () => {
     recreate();
     deploy(schema);
     const names = migrationNames();
     expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[FOUNDATION_MIGRATION_COUNT - 1]).toBe(MIGRATION);
-    expect(names.at(-1)).toBe(LATEST_MIGRATION);
+    expect(names[130]).toBe(LATEST_MIGRATION);
     expect(appliedNames()).toEqual(names);
     const records = sql(
       'SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations" ' +

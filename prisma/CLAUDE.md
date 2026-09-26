@@ -1,5 +1,12 @@
 # prisma — 本地铁律
 
+> **E2 第一层隔离能力工作树（2026-09-25，未提交／未建 PR）**：当前 132 个 migration；拟新增第 132 条
+> `20260924180000_activity_os_r5_e2_contribution_rule_conversion` 和第 183 个模型
+> `ContributionRuleConversionReceipt`，仅追加不可变来源收据、复合目标版本锚、唯一键与测试夹具清理闭包；
+> 不修改旧 `ContributionRule` 列，不含历史 DML、回填或删除。31 个真实活动类型均 hold，服务只允许
+> `w98` 的 `e2_fixture_*` 虚构来源。SQL 尚未 3b 重签或运行，审计尚未 4b 重签；未转换真实业务数据，
+> 未操作生产或启用 Gate。下方 E1-3“当前工作树”是历史时点，不是本轮状态。
+
 > **E1-3 implementation 当前工作树（2026-09-24，未提交、未建 PR）**：现为 **131 个 migration、182 个模型**。
 > 第131条 `20260923190000_activity_os_r5_e1_3_contribution_policy_selection` 只新增不可变选择 revision、item、
 > command receipt 三表，向 Activity／发布快照增加可空同活动指针，并补复合外键、完整性、当前指针、收据结果及

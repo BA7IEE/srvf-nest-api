@@ -88,7 +88,7 @@ describe('D6 scoped fixture trigger handling', () => {
         withTimeLedgerFixtureCleanup(tx, async (inner) => {
           expect(inner).toBe(tx);
           await inner.$executeRawUnsafe(
-            'TRUNCATE "ParticipationTimeCutoverBinding", "ActivityTimeCutoverReceipt", "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipantSettlementTimeBucketSource", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationRevision", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeCorrectionCommitReceipt"',
+            'TRUNCATE "ActivityContributionPolicySelectionCommandReceipt", "ActivityContributionPolicySelectionItem", "ActivityContributionPolicySelectionRevision", "ParticipationTimeCutoverBinding", "ActivityTimeCutoverReceipt", "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipantSettlementTimeBucketSource", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationRevision", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeCorrectionCommitReceipt" CASCADE',
           );
         }),
       { timeout: 60_000 },

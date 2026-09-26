@@ -4,6 +4,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { ContributionRulesController } from './contribution-rules.controller';
 import { ContributionRulesService } from './contribution-rules.service';
+import { ContributionRuleConversionSourceQuery } from './contribution-rule-conversion-source.query';
 
 // V2 批次 6 PR #3(D6 v1.1 §8 / 第二波第一步):导入 AuditLogsModule 以注入 AuditLogsService,
 // contribution-rules 写操作(create / update / softDelete)调 log() 替代 auditPlaceholder。
@@ -13,6 +14,7 @@ import { ContributionRulesService } from './contribution-rules.service';
 @Module({
   imports: [DatabaseModule, AuditLogsModule, PermissionsModule],
   controllers: [ContributionRulesController],
-  providers: [ContributionRulesService],
+  providers: [ContributionRulesService, ContributionRuleConversionSourceQuery],
+  exports: [ContributionRuleConversionSourceQuery],
 })
 export class ContributionRulesModule {}

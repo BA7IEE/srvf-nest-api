@@ -192,6 +192,7 @@ model User {
   contributionPolicyVersionsActivated          ContributionPolicyVersion[]                         @relation("ContributionPolicyVersionActivator")
   contributionPolicyVersionsRetired            ContributionPolicyVersion[]                         @relation("ContributionPolicyVersionRetirer")
   contributionPolicyCommandReceipts            ContributionPolicyCommandReceipt[]
+  contributionRuleConversionReceipts            ContributionRuleConversionReceipt[]
   activityTimePolicySelectionRevisions         ActivityTimePolicySelectionRevision[]               @relation("ActivityTimePolicySelectionCreator")
   activityTimePolicySelectionReceipts          ActivityTimePolicySelectionCommandReceipt[]
   activityContributionPolicySelectionRevisions ActivityContributionPolicySelectionRevision[]       @relation("ActivityContributionPolicySelectionCreator")
@@ -1829,6 +1830,7 @@ model ContributionPolicy {
 
   versions        ContributionPolicyVersion[]
   commandReceipts ContributionPolicyCommandReceipt[]
+  conversionReceipts ContributionRuleConversionReceipt[]
 }
 
 model ContributionPolicyVersion {
@@ -1855,6 +1857,7 @@ model ContributionPolicyVersion {
   activatedBy                              User?                                     @relation("ContributionPolicyVersionActivator", fields: [activatedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_activator_fk")
   retiredBy                                User?                                     @relation("ContributionPolicyVersionRetirer", fields: [retiredByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cpv_retirer_fk")
   commandReceipts                          ContributionPolicyCommandReceipt[]
+  conversionReceipts                       ContributionRuleConversionReceipt[]
   activityContributionPolicySelectionItems ActivityContributionPolicySelectionItem[]
 
   @@unique([policyId, version], map: "cpv_policy_version_key")
@@ -1885,6 +1888,34 @@ model ContributionPolicyCommandReceipt {
   @@unique([actorUserId, operationCode, operationKey], map: "cpr_command_key")
   @@index([policyId], map: "cpr_policy_idx")
   @@index([versionId], map: "cpr_version_idx")
+}
+
+// E2 first layer: immutable provenance for an isolated draft candidate. No legacy rule is
+// modified, and the receipt cannot make the candidate active or selectable.
+model ContributionRuleConversionReceipt {
+  id                 String   @id @default(cuid())
+  sourceRuleId       String
+  sourceFingerprint  String
+  converterVersion   Int
+  mappingFingerprint String
+  batchFingerprint   String
+  sourceSnapshotJson Json
+  actorUserId        String
+  policyId           String
+  versionId          String
+  definitionHash     String
+  evaluatorVersion   Int
+  createdAt          DateTime @default(now())
+
+  sourceRule ContributionRule          @relation(fields: [sourceRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "crcr_source_fk")
+  actor      User                      @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "crcr_actor_fk")
+  policy     ContributionPolicy        @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "crcr_policy_fk")
+  version    ContributionPolicyVersion @relation(fields: [versionId, policyId, definitionHash, evaluatorVersion], references: [id, policyId, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "crcr_version_anchor_fk")
+
+  @@unique([sourceRuleId, sourceFingerprint, converterVersion], map: "crcr_source_revision_key")
+  @@index([policyId], map: "crcr_policy_idx")
+  @@index([versionId], map: "crcr_version_idx")
+  @@index([actorUserId], map: "crcr_actor_idx")
 }
 
 model ActivityMetricDefinition {
@@ -3386,6 +3417,7 @@ model ContributionRule {
   createdBy User? @relation("ContributionRuleCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
   updatedBy User? @relation("ContributionRuleUpdater", fields: [updatedByUserId], references: [id], onDelete: Restrict)
   deletedBy User? @relation("ContributionRuleDeleter", fields: [deletedByUserId], references: [id], onDelete: Restrict)
+  conversionReceipts ContributionRuleConversionReceipt[]
 
   @@index([activityTypeCode])
   @@index([attendanceRoleCode])

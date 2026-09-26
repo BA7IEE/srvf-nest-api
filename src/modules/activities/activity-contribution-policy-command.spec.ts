@@ -218,3 +218,43 @@ describe('D1-2 receipt and current access', () => {
     );
   });
 });
+
+describe('E2 transaction-bound policy owner primitive', () => {
+  it('creates only a draft version on the caller transaction without opening another transaction', async () => {
+    const prisma = { $transaction: jest.fn() };
+    const command = new ActivityContributionPolicyCommand(
+      prisma as unknown as PrismaService,
+      {} as RbacService,
+    );
+    const tx = {
+      contributionPolicy: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'policy' }),
+      },
+      contributionPolicyVersion: {
+        create: jest.fn().mockResolvedValue({ id: 'version', statusCode: 'draft' }),
+      },
+    };
+    await expect(
+      command.createDraftCandidateInTx(tx as never, { id: 'actor' } as never, {
+        code: 'e2_fixture_policy',
+        name: 'E2 fixture',
+        definition: {
+          defaultResult: { recognizedPoints: '0.00', explanationCode: 'fixture_no_rule' },
+          roleRules: [],
+        },
+        effectiveFrom: '2026-09-25T00:00:00.000Z',
+      }),
+    ).resolves.toEqual({ policy: { id: 'policy' }, draft: { id: 'version', statusCode: 'draft' } });
+    const createCalls = tx.contributionPolicyVersion.create.mock.calls as unknown as Array<
+      [{ data: Record<string, unknown> }]
+    >;
+    expect(createCalls[0][0].data).toMatchObject({
+      policyId: 'policy',
+      version: 1,
+      statusCode: 'draft',
+      createdByUserId: 'actor',
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});

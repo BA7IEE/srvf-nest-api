@@ -91552,6 +91552,1027 @@
         ]
       }
     },
+    "/api/system/v1/contribution-rules": {
+      "get": {
+        "operationId": "ContributionRulesController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "页码",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "每页数量",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "activityTypeCode",
+            "required": false,
+            "in": "query",
+            "description": "按活动类型字典 code 过滤",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "attendanceRoleCode",
+            "required": false,
+            "in": "query",
+            "description": "按考勤角色字典 code 过滤",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "按规则状态过滤",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "INACTIVE"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PageResultDto"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "total",
+                            "page",
+                            "pageSize"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/ContributionRuleResponseDto"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "列出贡献值规则(分页 + 过滤 activityTypeCode / attendanceRoleCode / status;沿基础稳定排序) [rbac: contribution.read.rule]",
+        "tags": [
+          "Ops - Contribution Rules"
+        ]
+      },
+      "post": {
+        "operationId": "ContributionRulesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateContributionRuleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ContributionRuleResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 分值字段组合非法(code=23010) / 活动类型字典 code 不存在或已停用(code=23011) / 考勤角色字典 code 不存在或已停用(code=23012)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        23010,
+                        23011,
+                        23012
+                      ],
+                      "description": "40000: 请求参数错误; 23010: 分值字段组合非法; 23011: 活动类型字典 code 不存在或已停用; 23012: 考勤角色字典 code 不存在或已停用",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "该维度已存在生效中的规则(code=23002)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        23002
+                      ],
+                      "description": "23002: 该维度已存在生效中的规则",
+                      "example": 23002
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "该维度已存在生效中的规则"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "创建贡献值规则(字典校验 + 字段语义 + ACTIVE 唯一性兜底含 NULL durationThreshold) [rbac: contribution.create.rule]",
+        "tags": [
+          "Ops - Contribution Rules"
+        ]
+      }
+    },
+    "/api/system/v1/contribution-rules/{id}": {
+      "get": {
+        "operationId": "ContributionRulesController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ContributionRuleResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献值规则不存在(code=23001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        23001
+                      ],
+                      "description": "23001: 贡献值规则不存在",
+                      "example": 23001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献值规则不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "贡献值规则详情(含软删返 404) [rbac: contribution.read.rule]",
+        "tags": [
+          "Ops - Contribution Rules"
+        ]
+      },
+      "patch": {
+        "operationId": "ContributionRulesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateContributionRuleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "example": 0,
+                      "description": "业务码,0 表示成功"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ContributionRuleResponseDto"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求参数错误(code=40000) / 分值字段组合非法(code=23010)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000,
+                        23010
+                      ],
+                      "description": "40000: 请求参数错误; 23010: 分值字段组合非法",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献值规则不存在(code=23001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        23001
+                      ],
+                      "description": "23001: 贡献值规则不存在",
+                      "example": 23001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献值规则不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "该维度已存在生效中的规则(code=23002)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        23002
+                      ],
+                      "description": "23002: 该维度已存在生效中的规则",
+                      "example": 23002
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "该维度已存在生效中的规则"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "部分更新贡献值规则(白名单仅 pointsBelow / pointsAbove / status / remark;禁改 activityTypeCode / attendanceRoleCode / durationThreshold,由 ValidationPipe 拦截抛 40000) [rbac: contribution.update.rule]",
+        "tags": [
+          "Ops - Contribution Rules"
+        ]
+      },
+      "delete": {
+        "operationId": "ContributionRulesController_softDelete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "资源主键(cuid 字符串)",
+            "schema": {
+              "minLength": 8,
+              "maxLength": 64,
+              "example": "cl9z3a8b00000abcd1234efgh",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "400": {
+            "description": "请求参数错误(code=40000)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40000
+                      ],
+                      "description": "40000: 请求参数错误",
+                      "example": 40000
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "请求参数错误"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或登录已失效(code=40100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        40100
+                      ],
+                      "description": "40100: 未登录或登录已失效",
+                      "example": 40100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "未登录或登录已失效"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权执行此操作(code=30100)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        30100
+                      ],
+                      "description": "30100: 无权执行此操作",
+                      "example": 30100
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "无权执行此操作"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "贡献值规则不存在(code=23001)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        23001
+                      ],
+                      "description": "23001: 贡献值规则不存在",
+                      "example": 23001
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "贡献值规则不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "软删贡献值规则(写 deletedAt + deletedByUserId;不强制改 status;删完该维度 attendance 预填走 22048 不抛错路径) [rbac: contribution.delete.rule]",
+        "tags": [
+          "Ops - Contribution Rules"
+        ]
+      }
+    },
     "/api/app/v1/my/activities/{activityId}/feedback": {
       "put": {
         "operationId": "AppActivityFeedbacksController_upsertMine",
@@ -118449,1027 +119470,6 @@
         "summary": "负责人读取安全的分配批次与结果 [auth]",
         "tags": [
           "Mobile - Managed Activity Allocation Batches"
-        ]
-      }
-    },
-    "/api/system/v1/contribution-rules": {
-      "get": {
-        "operationId": "ContributionRulesController_list",
-        "parameters": [
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "description": "页码",
-            "schema": {
-              "minimum": 1,
-              "default": 1,
-              "example": 1,
-              "type": "number"
-            }
-          },
-          {
-            "name": "pageSize",
-            "required": false,
-            "in": "query",
-            "description": "每页数量",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20,
-              "example": 20,
-              "type": "number"
-            }
-          },
-          {
-            "name": "activityTypeCode",
-            "required": false,
-            "in": "query",
-            "description": "按活动类型字典 code 过滤",
-            "schema": {
-              "maxLength": 64,
-              "type": "string"
-            }
-          },
-          {
-            "name": "attendanceRoleCode",
-            "required": false,
-            "in": "query",
-            "description": "按考勤角色字典 code 过滤",
-            "schema": {
-              "maxLength": 64,
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "required": false,
-            "in": "query",
-            "description": "按规则状态过滤",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "ACTIVE",
-                "INACTIVE"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "example": 0,
-                      "description": "业务码,0 表示成功"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "data": {
-                      "allOf": [
-                        {
-                          "$ref": "#/components/schemas/PageResultDto"
-                        },
-                        {
-                          "type": "object",
-                          "required": [
-                            "items",
-                            "total",
-                            "page",
-                            "pageSize"
-                          ],
-                          "properties": {
-                            "items": {
-                              "type": "array",
-                              "items": {
-                                "$ref": "#/components/schemas/ContributionRuleResponseDto"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求参数错误(code=40000)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40000
-                      ],
-                      "description": "40000: 请求参数错误",
-                      "example": 40000
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "请求参数错误"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或登录已失效(code=40100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40100
-                      ],
-                      "description": "40100: 未登录或登录已失效",
-                      "example": 40100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "未登录或登录已失效"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "无权执行此操作(code=30100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        30100
-                      ],
-                      "description": "30100: 无权执行此操作",
-                      "example": 30100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "无权执行此操作"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "列出贡献值规则(分页 + 过滤 activityTypeCode / attendanceRoleCode / status;沿基础稳定排序) [rbac: contribution.read.rule]",
-        "tags": [
-          "Ops - Contribution Rules"
-        ]
-      },
-      "post": {
-        "operationId": "ContributionRulesController_create",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateContributionRuleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "example": 0,
-                      "description": "业务码,0 表示成功"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/ContributionRuleResponseDto"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求参数错误(code=40000) / 分值字段组合非法(code=23010) / 活动类型字典 code 不存在或已停用(code=23011) / 考勤角色字典 code 不存在或已停用(code=23012)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40000,
-                        23010,
-                        23011,
-                        23012
-                      ],
-                      "description": "40000: 请求参数错误; 23010: 分值字段组合非法; 23011: 活动类型字典 code 不存在或已停用; 23012: 考勤角色字典 code 不存在或已停用",
-                      "example": 40000
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "请求参数错误"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或登录已失效(code=40100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40100
-                      ],
-                      "description": "40100: 未登录或登录已失效",
-                      "example": 40100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "未登录或登录已失效"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "无权执行此操作(code=30100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        30100
-                      ],
-                      "description": "30100: 无权执行此操作",
-                      "example": 30100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "无权执行此操作"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "该维度已存在生效中的规则(code=23002)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        23002
-                      ],
-                      "description": "23002: 该维度已存在生效中的规则",
-                      "example": 23002
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "该维度已存在生效中的规则"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "创建贡献值规则(字典校验 + 字段语义 + ACTIVE 唯一性兜底含 NULL durationThreshold) [rbac: contribution.create.rule]",
-        "tags": [
-          "Ops - Contribution Rules"
-        ]
-      }
-    },
-    "/api/system/v1/contribution-rules/{id}": {
-      "get": {
-        "operationId": "ContributionRulesController_findOne",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "资源主键(cuid 字符串)",
-            "schema": {
-              "minLength": 8,
-              "maxLength": 64,
-              "example": "cl9z3a8b00000abcd1234efgh",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "example": 0,
-                      "description": "业务码,0 表示成功"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/ContributionRuleResponseDto"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求参数错误(code=40000)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40000
-                      ],
-                      "description": "40000: 请求参数错误",
-                      "example": 40000
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "请求参数错误"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或登录已失效(code=40100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40100
-                      ],
-                      "description": "40100: 未登录或登录已失效",
-                      "example": 40100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "未登录或登录已失效"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "无权执行此操作(code=30100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        30100
-                      ],
-                      "description": "30100: 无权执行此操作",
-                      "example": 30100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "无权执行此操作"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "贡献值规则不存在(code=23001)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        23001
-                      ],
-                      "description": "23001: 贡献值规则不存在",
-                      "example": 23001
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "贡献值规则不存在"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "贡献值规则详情(含软删返 404) [rbac: contribution.read.rule]",
-        "tags": [
-          "Ops - Contribution Rules"
-        ]
-      },
-      "patch": {
-        "operationId": "ContributionRulesController_update",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "资源主键(cuid 字符串)",
-            "schema": {
-              "minLength": 8,
-              "maxLength": 64,
-              "example": "cl9z3a8b00000abcd1234efgh",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateContributionRuleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "example": 0,
-                      "description": "业务码,0 表示成功"
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "ok"
-                    },
-                    "data": {
-                      "$ref": "#/components/schemas/ContributionRuleResponseDto"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "请求参数错误(code=40000) / 分值字段组合非法(code=23010)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40000,
-                        23010
-                      ],
-                      "description": "40000: 请求参数错误; 23010: 分值字段组合非法",
-                      "example": 40000
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "请求参数错误"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或登录已失效(code=40100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40100
-                      ],
-                      "description": "40100: 未登录或登录已失效",
-                      "example": 40100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "未登录或登录已失效"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "无权执行此操作(code=30100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        30100
-                      ],
-                      "description": "30100: 无权执行此操作",
-                      "example": 30100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "无权执行此操作"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "贡献值规则不存在(code=23001)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        23001
-                      ],
-                      "description": "23001: 贡献值规则不存在",
-                      "example": 23001
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "贡献值规则不存在"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "该维度已存在生效中的规则(code=23002)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        23002
-                      ],
-                      "description": "23002: 该维度已存在生效中的规则",
-                      "example": 23002
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "该维度已存在生效中的规则"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "部分更新贡献值规则(白名单仅 pointsBelow / pointsAbove / status / remark;禁改 activityTypeCode / attendanceRoleCode / durationThreshold,由 ValidationPipe 拦截抛 40000) [rbac: contribution.update.rule]",
-        "tags": [
-          "Ops - Contribution Rules"
-        ]
-      },
-      "delete": {
-        "operationId": "ContributionRulesController_softDelete",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "资源主键(cuid 字符串)",
-            "schema": {
-              "minLength": 8,
-              "maxLength": 64,
-              "example": "cl9z3a8b00000abcd1234efgh",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No content"
-          },
-          "400": {
-            "description": "请求参数错误(code=40000)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40000
-                      ],
-                      "description": "40000: 请求参数错误",
-                      "example": 40000
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "请求参数错误"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或登录已失效(code=40100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        40100
-                      ],
-                      "description": "40100: 未登录或登录已失效",
-                      "example": 40100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "未登录或登录已失效"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "无权执行此操作(code=30100)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        30100
-                      ],
-                      "description": "30100: 无权执行此操作",
-                      "example": 30100
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "无权执行此操作"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "贡献值规则不存在(code=23001)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "message",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "enum": [
-                        23001
-                      ],
-                      "description": "23001: 贡献值规则不存在",
-                      "example": 23001
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "贡献值规则不存在"
-                    },
-                    "data": {
-                      "type": "object",
-                      "nullable": true,
-                      "example": null
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "软删贡献值规则(写 deletedAt + deletedByUserId;不强制改 status;删完该维度 attendance 预填走 22048 不抛错路径) [rbac: contribution.delete.rule]",
-        "tags": [
-          "Ops - Contribution Rules"
         ]
       }
     },
@@ -167249,6 +167249,170 @@
           }
         }
       },
+      "ContributionRuleResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "主键(cuid)",
+            "example": "cl9z3a8b00000abcd1234efgh"
+          },
+          "activityTypeCode": {
+            "type": "string",
+            "description": "活动类型字典 code(typeCode=activity_type)",
+            "maxLength": 64,
+            "example": "demo_type"
+          },
+          "attendanceRoleCode": {
+            "type": "string",
+            "description": "考勤角色字典 code(typeCode=attendance_role)",
+            "maxLength": 64,
+            "example": "commander"
+          },
+          "durationThreshold": {
+            "type": "number",
+            "description": "时长档位阈值(小时;Decimal(5,2);null = 无档位,该规则对所有服务时长使用 pointsBelow)",
+            "nullable": true,
+            "example": 2.5
+          },
+          "pointsBelow": {
+            "type": "number",
+            "description": "≤ 阈值(或无档位)的预填分值(Decimal(5,2))",
+            "example": 1
+          },
+          "pointsAbove": {
+            "type": "number",
+            "description": "> 阈值的预填分值(Decimal(5,2);非 null 时要求 durationThreshold 非 null 且 pointsAbove > pointsBelow)",
+            "nullable": true,
+            "example": 1.5
+          },
+          "dailyCap": {
+            "type": "number",
+            "description": "已废弃的历史每日上限字段(Decimal(5,2);attendance 预填与贡献聚合均不读取;全局上限由 GLOBAL_DAILY_CONTRIBUTION_CAP 决定)",
+            "nullable": true,
+            "example": null
+          },
+          "status": {
+            "type": "string",
+            "description": "规则状态(ACTIVE 参与 attendance 预填;INACTIVE 不参与)",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ],
+            "example": "ACTIVE"
+          },
+          "remark": {
+            "type": "object",
+            "description": "运营备注",
+            "nullable": true,
+            "maxLength": 500
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "创建时间"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "更新时间"
+          },
+          "createdByUserId": {
+            "type": "object",
+            "description": "创建人 User.id",
+            "nullable": true
+          },
+          "updatedByUserId": {
+            "type": "object",
+            "description": "最近更新人 User.id",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "activityTypeCode",
+          "attendanceRoleCode",
+          "pointsBelow",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateContributionRuleDto": {
+        "type": "object",
+        "properties": {
+          "activityTypeCode": {
+            "type": "string",
+            "description": "活动类型字典 code(必填;typeCode=activity_type)",
+            "maxLength": 64
+          },
+          "attendanceRoleCode": {
+            "type": "string",
+            "description": "考勤角色字典 code(必填;typeCode=attendance_role)",
+            "maxLength": 64
+          },
+          "durationThreshold": {
+            "type": "number",
+            "description": "时长档位阈值(小时;Decimal(5,2);可省略 / 显式 null = 无档位)",
+            "nullable": true
+          },
+          "pointsBelow": {
+            "type": "number",
+            "description": "≤ 阈值(或无档位)的预填分值(Decimal(5,2);必填;≥ 0)"
+          },
+          "pointsAbove": {
+            "type": "number",
+            "description": "> 阈值的预填分值(Decimal(5,2);可省略 / 显式 null;非 null 时要求 durationThreshold 非 null 且 > pointsBelow,否则 23010)",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "description": "规则状态(可省略,默认 ACTIVE)",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ]
+          },
+          "remark": {
+            "type": "string",
+            "description": "运营备注",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "activityTypeCode",
+          "attendanceRoleCode",
+          "pointsBelow"
+        ]
+      },
+      "UpdateContributionRuleDto": {
+        "type": "object",
+        "properties": {
+          "pointsBelow": {
+            "type": "number",
+            "description": "≤ 阈值(或无档位)的预填分值"
+          },
+          "pointsAbove": {
+            "type": "number",
+            "description": "> 阈值的预填分值(显式 null = 清空;非 null 时校验 durationThreshold 与 > pointsBelow)",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "description": "规则状态(ACTIVE ↔ INACTIVE 切换)",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ]
+          },
+          "remark": {
+            "type": "object",
+            "description": "运营备注(显式 null = 清空)",
+            "nullable": true,
+            "maxLength": 500
+          }
+        }
+      },
       "AppActivityFeedbackDto": {
         "type": "object",
         "properties": {
@@ -172597,170 +172761,6 @@
           "operationKey",
           "reason"
         ]
-      },
-      "ContributionRuleResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "主键(cuid)",
-            "example": "cl9z3a8b00000abcd1234efgh"
-          },
-          "activityTypeCode": {
-            "type": "string",
-            "description": "活动类型字典 code(typeCode=activity_type)",
-            "maxLength": 64,
-            "example": "demo_type"
-          },
-          "attendanceRoleCode": {
-            "type": "string",
-            "description": "考勤角色字典 code(typeCode=attendance_role)",
-            "maxLength": 64,
-            "example": "commander"
-          },
-          "durationThreshold": {
-            "type": "number",
-            "description": "时长档位阈值(小时;Decimal(5,2);null = 无档位,该规则对所有服务时长使用 pointsBelow)",
-            "nullable": true,
-            "example": 2.5
-          },
-          "pointsBelow": {
-            "type": "number",
-            "description": "≤ 阈值(或无档位)的预填分值(Decimal(5,2))",
-            "example": 1
-          },
-          "pointsAbove": {
-            "type": "number",
-            "description": "> 阈值的预填分值(Decimal(5,2);非 null 时要求 durationThreshold 非 null 且 pointsAbove > pointsBelow)",
-            "nullable": true,
-            "example": 1.5
-          },
-          "dailyCap": {
-            "type": "number",
-            "description": "已废弃的历史每日上限字段(Decimal(5,2);attendance 预填与贡献聚合均不读取;全局上限由 GLOBAL_DAILY_CONTRIBUTION_CAP 决定)",
-            "nullable": true,
-            "example": null
-          },
-          "status": {
-            "type": "string",
-            "description": "规则状态(ACTIVE 参与 attendance 预填;INACTIVE 不参与)",
-            "enum": [
-              "ACTIVE",
-              "INACTIVE"
-            ],
-            "example": "ACTIVE"
-          },
-          "remark": {
-            "type": "object",
-            "description": "运营备注",
-            "nullable": true,
-            "maxLength": 500
-          },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string",
-            "description": "创建时间"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string",
-            "description": "更新时间"
-          },
-          "createdByUserId": {
-            "type": "object",
-            "description": "创建人 User.id",
-            "nullable": true
-          },
-          "updatedByUserId": {
-            "type": "object",
-            "description": "最近更新人 User.id",
-            "nullable": true
-          }
-        },
-        "required": [
-          "id",
-          "activityTypeCode",
-          "attendanceRoleCode",
-          "pointsBelow",
-          "status",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "CreateContributionRuleDto": {
-        "type": "object",
-        "properties": {
-          "activityTypeCode": {
-            "type": "string",
-            "description": "活动类型字典 code(必填;typeCode=activity_type)",
-            "maxLength": 64
-          },
-          "attendanceRoleCode": {
-            "type": "string",
-            "description": "考勤角色字典 code(必填;typeCode=attendance_role)",
-            "maxLength": 64
-          },
-          "durationThreshold": {
-            "type": "number",
-            "description": "时长档位阈值(小时;Decimal(5,2);可省略 / 显式 null = 无档位)",
-            "nullable": true
-          },
-          "pointsBelow": {
-            "type": "number",
-            "description": "≤ 阈值(或无档位)的预填分值(Decimal(5,2);必填;≥ 0)"
-          },
-          "pointsAbove": {
-            "type": "number",
-            "description": "> 阈值的预填分值(Decimal(5,2);可省略 / 显式 null;非 null 时要求 durationThreshold 非 null 且 > pointsBelow,否则 23010)",
-            "nullable": true
-          },
-          "status": {
-            "type": "string",
-            "description": "规则状态(可省略,默认 ACTIVE)",
-            "enum": [
-              "ACTIVE",
-              "INACTIVE"
-            ]
-          },
-          "remark": {
-            "type": "string",
-            "description": "运营备注",
-            "maxLength": 500
-          }
-        },
-        "required": [
-          "activityTypeCode",
-          "attendanceRoleCode",
-          "pointsBelow"
-        ]
-      },
-      "UpdateContributionRuleDto": {
-        "type": "object",
-        "properties": {
-          "pointsBelow": {
-            "type": "number",
-            "description": "≤ 阈值(或无档位)的预填分值"
-          },
-          "pointsAbove": {
-            "type": "number",
-            "description": "> 阈值的预填分值(显式 null = 清空;非 null 时校验 durationThreshold 与 > pointsBelow)",
-            "nullable": true
-          },
-          "status": {
-            "type": "string",
-            "description": "规则状态(ACTIVE ↔ INACTIVE 切换)",
-            "enum": [
-              "ACTIVE",
-              "INACTIVE"
-            ]
-          },
-          "remark": {
-            "type": "object",
-            "description": "运营备注(显式 null = 清空)",
-            "nullable": true,
-            "maxLength": 500
-          }
-        }
       },
       "ServicePrincipalResponseDto": {
         "type": "object",
