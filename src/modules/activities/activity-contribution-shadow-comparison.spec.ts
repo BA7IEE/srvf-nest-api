@@ -131,6 +131,13 @@ describe('E3-1 offline contribution shadow comparison', () => {
     expect(compareContributionShadow(input).classification).toBe('input_source_mismatch');
   });
 
+  it('rejects a hidden sub-cent hour offset instead of treating it as the threshold', () => {
+    const input = fixture();
+    input.fact.legacyServiceHours = 4.00000000001;
+    input.legacy.serviceHours = 4.00000000001;
+    expect(compareContributionShadow(input).classification).toBe('input_source_mismatch');
+  });
+
   it('holds an unsigned mapping even if the synthetic values happen to match', () => {
     const input = fixture();
     input.mapping.approved = false;

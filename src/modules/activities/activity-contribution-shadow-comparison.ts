@@ -137,7 +137,7 @@ export function compareContributionShadow(
   }
   if (
     !Number.isSafeInteger(Math.round(legacy.serviceHours * 100)) ||
-    Math.abs(legacy.serviceHours * 100 - Math.round(legacy.serviceHours * 100)) > 1e-8 ||
+    legacy.serviceHours !== Number(legacy.serviceHours.toFixed(2)) ||
     legacy.serviceHours < 0
   ) {
     return result('input_source_mismatch');
