@@ -1,5 +1,7 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **Release 5 / E3-2 设计已合入、实施未授权（2026-09-27）**：[#1361](https://github.com/BA7IEE/srvf-nest-api/pull/1361)、[#1362](https://github.com/BA7IEE/srvf-nest-api/pull/1362) 已合入 main `318f493290de34e818341dbbdc303e3129e39ad8`；[main CI 36313672482](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36313672482) 同 SHA completed/success（docs-only，行为测试未运行）。既有审计仅作保守定位，独立不可变收据才作证据；旧事务先提交，收据后写，缺口人工核对；资格锚点采用受控窗口内成功旧写的保守候选集合，不改变审计 `extra`。本轮只补精确计划，未建表、未接 shadow、未查真实业务库；31 类真实映射全部 `hold`，生产与 Gate 仍 NO-GO。下方 E3-1 顶部记录为其当时状态。
+
 > **Release 5 / E3-1 离线比较合同已合入，E3-2 仅起草评审（2026-09-27）**：[#1358](https://github.com/BA7IEE/srvf-nest-api/pull/1358)
 > Squash 合入 `c0f9f07548a018ee039610212d310a39ca884541`；
 > [main CI 36295160818](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36295160818) 同 SHA attempt 2
