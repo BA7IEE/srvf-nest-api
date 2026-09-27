@@ -1,11 +1,13 @@
 # prisma — 本地铁律
 
-> **E2 第一层隔离能力工作树（2026-09-25，未提交／未建 PR）**：当前 132 个 migration；拟新增第 132 条
-> `20260924180000_activity_os_r5_e2_contribution_rule_conversion` 和第 183 个模型
-> `ContributionRuleConversionReceipt`，仅追加不可变来源收据、复合目标版本锚、唯一键与测试夹具清理闭包；
-> 不修改旧 `ContributionRule` 列，不含历史 DML、回填或删除。31 个真实活动类型均 hold，服务只允许
-> `w98` 的 `e2_fixture_*` 虚构来源。SQL 尚未 3b 重签或运行，审计尚未 4b 重签；未转换真实业务数据，
-> 未操作生产或启用 Gate。下方 E1-3“当前工作树”是历史时点，不是本轮状态。
+> **E2 第一层隔离能力已合入 main（2026-09-27，[#1356](https://github.com/BA7IEE/srvf-nest-api/pull/1356)）**：
+> 当前 132 个 migration、183 个模型；第 132 条
+> `20260924180000_activity_os_r5_e2_contribution_rule_conversion` 已新增不可变来源收据
+> `ContributionRuleConversionReceipt`、复合目标版本锚、唯一键与测试夹具清理闭包。
+> 不修改旧 `ContributionRule` 列，不含历史 DML、回填或删除。第 132 条 SQL 已按
+> [`CUTOVER_SIGNOFF`](../docs/ai-harness/CUTOVER_SIGNOFF.md) 重签 3b；4b 为权限码 269、审计
+> 174 总计／169 活跃。31 个真实活动类型仍全部 hold，只验证 `e2_fixture_*` 合成来源；
+> 未转换真实业务数据，未操作生产或启用 Gate。下方 E1-3“当前工作树”均为历史时点。
 
 > **E1-3 implementation 当前工作树（2026-09-24，未提交、未建 PR）**：现为 **131 个 migration、182 个模型**。
 > 第131条 `20260923190000_activity_os_r5_e1_3_contribution_policy_selection` 只新增不可变选择 revision、item、

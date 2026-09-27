@@ -349,3 +349,65 @@ test/e2e/insurance-evidence-registration-revision-migration.e2e-spec.ts
 顺序：①已确认方案 A 和 D0 数据合同；受限写入等待／故障预算仍须定稿；②冻结上表实际路径、SQL 与权限／审计影响面，明确指定隔离库和测试清理范围；③分别取得红区令牌、3b SQL 与 4b 权限／审计重签，再获完整 D 档实施授权；④D1/D2/D3 各自验证和 PR CI，合并与同 SHA main CI 另核；⑤真实目标存在后才逐类型签 31 类映射，真实 shadow、生产 Gate 和部署另行授权。未完成任一步，不把夹具演示写成真实对账。
 
 本轮没有实施：`schema.prisma`、migration、seed、权限、接口、审计、业务代码、测试及数据库均零改动；也未提交、推送或创建 PR。
+
+## 20. E3-2 D1 数据地基精确方案草案（2026-09-28；仅文档，未授权实施）
+
+本节沿已确认的 D0 最小证据与 §19.4 System Human 读面方向，进一步收敛 D1。维护者已确认本节**文档方案 A**，但未授权实施。它**不**给运行时开 `shadow`、不查真实业务库、不创建表、不提交 SQL，也不把 31 类 `hold` 改成已签。下列模型名、字段与 SQL 约束仍须在实施前冻结实际 migration 全文、逐路径令牌和 3b 签字。
+
+### 20.1 先固定同链证明，不能只堆独立单列外键
+
+现状：`AttendanceRecord` 只有 `sheetId`、`memberId`，不存 `activityId`；`AttendanceSheet` 有 `activityId`，但没有 `(id, activityId)` 复合唯一锚。`ActivityContributionPolicySelectionRevision` 已有 `(id, activityId)` 唯一锚，`ContributionPolicyVersion` 已有 `(id, policyId, definitionHash, evaluatorVersion)` 精确锚。`audit_logs` 的成功 submit/edit 都以 `resourceType=attendance_sheet`、`resourceId=sheetId` 定位；`attendance-sheet.edit` 同时覆盖带 records、无 records 与 resubmit，不能只按 event 名纳入分母。
+
+| 方案                                                  | 数据库如何证明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 代价与回退                                                                                                                                                       |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A（文档方向已确认，实施未授权）复合锚点＋定向守卫** | 只给旧 `AttendanceSheet` 增 `(id, activityId)` 唯一键、旧 `AttendanceRecord` 增 `(id, sheetId, memberId)` 唯一键，并给既有政策选择 Item 增供新收据引用的 `(id, selectionRevisionId, activityId)` 唯一键；新收据用复合 FK 将 record→sheet→activity、item→revision→activity 固定为同一链，`ON DELETE/UPDATE RESTRICT`。`AuditLog` 以 ID 做 FK，INSERT 守卫再核验其 `event/resourceType/resourceId/success` 与 sheet、`context.extra.operation` 的 submit/edit 分支；政策版本用现有精确复合键，并校验与所选 Item 的版本元组一致。旧行不更新、不回填。 | 增旧表索引和写入时的定向读锁；必须在非空隔离库测建索引、锁与写入预算。关联旧审计后，测试清理 helper 必须适配。回退只能关功能并保留新证据及索引，不用删数据回退。 |
+| B 写入时联查触发器                                    | 不给旧表增复合键；收据各自 FK 到单列 ID，INSERT 触发器联查 record、sheet、activity、audit。                                                                                                                                                                                                                                                                                                                                                                                                                                                        | 旧行日后若被直接 SQL 改锚点，单次 INSERT 校验不足以保持长期同链；还需给旧表 UPDATE 加反向守卫，扩大旧写影响面。因此不推荐在本刀采用。                            |
+
+复合 FK 本身只保证 ID 关系；它**不**证明旧 `serviceHours`、规则内容、政策批准态、选择 Item 的版本元组或同一秒数来源。D2 必须在旧事务提交后按精确 ID 重读，并把当次值的脱敏指纹、签字版本与结果写入不可变收据；D1 定向守卫至少检查 Item 的政策四元组与收据一致。直接 SQL 负例须证明串活动／串 sheet／串 member／串选择 Item／串版本被拒。旧 edit 的历史 record 可软删但不得被证据 FK 物理删除；sheet 版本可继续递增，收据只留当次版本快照，不能用 FK 锁死以后正常 edit。
+
+旧审计的 `after.records` 确有 record ID，可在受限守卫里**只读**核验该次 audit 的记录 ID 集合与预期数量；不得将其中的 `note` 等原文复制进 E3 表或日志。`audit_logs` 目前没有数据库级禁 UPDATE 守卫，所以即使新表 FK 防删除，后续直接 SQL 改其 `context` 仍可能使定位线索漂移；新收据只能保留当次脱敏指纹并在复核时显式报 `source_drift`，不能据此声称“全部历史旧写不可篡改”。若将来要求数据库级完整性保证，须另评旧审计不可变性或同事务资格锚点，不能夹在 D1 里。
+
+### 20.2 推荐的五类只追加证据与不变量（字段提案，不是 schema）
+
+| 模型候选                               | 最小字段和唯一／引用约束                                                                                                                                                                                                                                                       | 缺口语义                                                                                                          |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `ContributionShadowObservationWindow`  | 内部 ID、预登记起止、登记人 ID、部署／配置摘要、签字映射版本、登记时间；起点必须早于终点，数据库守卫以当前数据库时钟拒绝启动后倒填。推荐所有窗口按 `[start,end)` 全局不重叠（range exclusion 或同等并发安全约束），SQL 定稿前另签。                                            | 仅登记范围，不表示有真实样本或开了 `shadow`。                                                                     |
+| `ContributionShadowAttemptReceipt`     | 内部 ID、窗口 ID、精确旧 `auditLogId`、sheet/activity 锚、当次 sheet 版本、确定性重放键、已提交事实指纹、签字版本、预期 record 数、创建时间；`(windowId,auditLogId)` 唯一，FK 与 §20.1 守卫成立。                                                                              | 有合格旧审计而无本行＝资格到尝试的缺口；本行不能靠旧 audit `context` 原文补写。                                   |
+| `ContributionShadowComparisonReceipt`  | 内部 ID、attempt ID、record/sheet/member/activity 复合锚、可空旧规则 ID、可空但必须成组的政策选择 revision／item 与版本精确锚、事实／规则指纹、旧／新点数、比较分类及脱敏错误类别、创建时间；`(attemptId,recordId)` 唯一。无政策或未签时只能记录 hold，不可伪造选择或版本 FK。 | 每个新 record 最多一个原始结果；同键重放读旧行，不能覆盖分类或点数。                                              |
+| `ContributionShadowTerminalReceipt`    | 内部 ID、attempt ID 唯一、结果状态、预期／已写结果数及各分类计数、脱敏失败类别、创建时间；提交前由同事务守卫核对 comparison 集合完整性。失败终态可明确不完整，但不得算 comparable 完成。                                                                                       | attempt 无终态＝尝试未闭合；终态不能在完成后再补 comparison 偷改分母。                                            |
+| `ContributionShadowDispositionReceipt` | 内部 ID、窗口／审计候选 ID、关联 attempt 可空、人工处理分类、依据摘要、签字人 ID、不可变修订号、前驱收据 ID 可空、创建时间；同候选修订号唯一、前驱同候选且连续。                                                                                                               | “不适用”或缺口处置必须留证；证据不足只写未决，不允许覆盖／删除旧判断。正式 Human 写入权限与审计留到 D3 独立审批。 |
+
+新表字段禁存姓名、手机号、证件号、备注、旧审计完整 `context`、原始请求体和完整签名 URL。所有摘要按定稿的 canonical 输入、算法及版本在 D1 SQL／D2 属主实现中逐项列明，不能把任意字符串误当可复算指纹。开始／比较／终态／处置均用数据库级 UPDATE、DELETE、TRUNCATE 拒绝触发器；`RESTRICT` 引用保护已经落证据的旧锚点。仅 `off` 可以作为功能回退，证据长期保留。
+
+**可复算性硬停**：旧 `ContributionRule` 仍可变更或软删，单存旧规则 ID 与 hash 不能恢复当时阈值和分值。若找不到与当次旧写同源、不可变且字段足够的规则快照（例如经逐项核验的 E2 转换收据），该记录只能 `hold/source_drift`，不能进入 `equal`／`points_mismatch`。如业务要求所有已签类型均可独立复算，须先另拍板允许在新证据存最小非个人规则元组；这超出当前 D0 字段许可，不得在 D1 偷加。
+
+### 20.3 SQL 顺序、反例与测试清理
+
+建议单条第 133 条 additive migration：①对旧 Sheet／Record／政策选择 Item 增复合唯一索引（各自 `id` 已唯一，建索引仍须验证锁与非空数据）；②创建五张新表、复合及精确版本 FK、唯一键、CHECK 和查询索引；③创建定向同链／审计分支／所选版本／终态集合守卫；④创建五表不可改删／不可截断触发器。不得改已合入的 132 条历史 SQL；不执行旧表 DML、回填、删除、`migrate dev/reset` 或 `db push`。所有 SQL 名称、锁序、是否需要 deferred constraint trigger、窗口重叠策略和结果计数判据须在 3b 前定稿，不能凭本段伪代码签字。
+
+隔离 E2E 至少覆盖：非空旧库升级；合法 submit/edit 各一例及 2,000 record 基数；串 activity、sheet、member、audit resource／operation、政策版本 hash 的直接 SQL 负例；缺开始、缺终态、重复／并发同键、终态后补结果、前驱修订错链；五表 UPDATE／DELETE／TRUNCATE 拒绝；旧审计清理与触发器恢复；旧记录软删后收据仍可读。`edit-no-records`、resubmit、`off` 和未签映射都不得误入相等分母。D1 只可用**获准的隔离测试库**，非空升级不等于查询真实业务库。
+
+关联 `audit_logs` 的 FK 会使 `test/helpers/audit-logs-cleanup.ts` 原有“无其他表引用”注释失真，且直接 `TRUNCATE ... CASCADE` 可触发新表的 no-truncate 守卫；不能只给 `test/setup/reset-db.ts` 加表名。`test/setup/time-ledger-fixture-cleanup.ts` 的固定触发器清单、验证和恢复 SQL 也要同步，且仅在断言测试库名／非生产环境后暂时处理测试夹具。§19.3 所列八份审计 E2E 逐份复现，优先修共用 helper，确需改动才逐路径扩写集；不删断言、不关闭生产守卫。
+
+### 20.4 D1 精确候选写集与授权顺序
+
+**D1 基础路径**：`prisma/schema.prisma`；实施时确定的 `prisma/migrations/<YYYYMMDDHHMMSS>_activity_os_r5_e3_shadow_evidence/migration.sql`（新）；`test/e2e/activity-os-r5-e3-contribution-shadow-migration.e2e-spec.ts`（新）；`test/setup/reset-db.ts`；`test/setup/time-ledger-fixture-cleanup.ts`；`test/helpers/audit-logs-cleanup.ts`；`harness/domain-map.json`；`harness/state-machines.json`（仅确有派生摘要变化时）；`prisma/CLAUDE.md`；`CODEMAP.md`；`docs/current-state.md`（只刷新生成计数）；`docs/ai-harness/CUTOVER_SIGNOFF.md`；本评审稿；`changelog.d/activity-os-r5-e3-contribution-shadow-d1.md`（新）。§19.3 的 27 份旧迁移 E2E 仅同步“当前总数／当前冷回放”到 133，不改历史升级目标和业务断言。`docs/ai-harness/FROZEN_DRAFTS.md`、`NEXT_TASKS.md` 只作本刀状态登记。生成摘要变化须在最终写后逐项查证，不凭猜测预改。
+
+**条件扩展**：§19.3 的八份旧审计 E2E 仅在共用 helper 无法保留原测试行为且隔离复现证明必要时逐份批准；`prisma/seed.ts`、权限目录、AuditLogEvent、controller/DTO、OpenAPI、handoff 与前端生成 client 均不属于 D1，留给 D3 读面与 4b。D1 不接旧 submit/edit 运行时，不开 `shadow`，也不引入第三个 cron、队列、Redis 或生产数据操作。
+
+正式实施前仍需维护者单独拍板：五类证据的最终字段、窗口不重叠的并发 SQL、完整 migration／精确文件清单、指定隔离测试库及重建范围、红区逐路径令牌、定稿 3b 摘要和 PR 边界。方案 A 的文档确认不代替这些实施签字。D1 验证须分本地定向与 PR CI 冷跑，合并与同 SHA main CI 另签；D2 的事务后写入等待／失败预算、D3 的 Human 权限与 4b、真实 31 类映射和 D8-OPS 均不由 D1 授权继承。
+
+### 20.5 D1 风险表与本稿验收
+
+| 风险项                 | D1 方案结论                                                                         |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| `prisma/schema.prisma` | 未来需新增五个证据模型、旧表复合唯一锚及反向 relation；本稿未改。                   |
+| migration              | 未来新增第 133 条加法 SQL；不改历史 migration，定稿 SQL 单独 3b。                   |
+| `prisma/seed.ts`       | D1 不改；D3 新 Human 权限及内建角色零默认授予另签 4b。                              |
+| 现有数据／不可逆性     | 旧表仅增索引，不改行；新证据长期保留且不可删，不能靠删除回滚。                      |
+| OpenAPI／contract      | D1 不新增端点或 DTO；D3 System 读面再改 snapshot、交接和客户端。                    |
+| 鉴权／审计             | D1 不新增权限码或 AuditLogEvent，也不改旧审计形状；仅把旧审计 ID 作受约束的定位锚。 |
+| BizCode                | D1 无对外 API，不新增；D2/D3 若出现错误码需求须另评。                               |
+| 用户拍板               | 本稿仅设计；schema、migration、隔离库重建、3b、红区和 PR 流程均待独立授权。         |
+
+本稿仅编辑这一份评审文档，验证限于格式、差异和派生文档守护；未创建或执行 SQL、未运行迁移／E2E、未查询真实业务库，也未确认 31 类真实映射。上述验收项目是**未来 D1 实施的标准**，不是本次已通过的检查。
