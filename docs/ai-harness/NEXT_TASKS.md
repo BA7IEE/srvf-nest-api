@@ -1,5 +1,7 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
+> **Release 5 / E3-2 精确计划起草中（2026-09-27）**：[#1361](https://github.com/BA7IEE/srvf-nest-api/pull/1361) 与 [#1362](https://github.com/BA7IEE/srvf-nest-api/pull/1362) 的证据边界、事务顺序和资格锚点方案 A 已合入 main `318f493290de34e818341dbbdc303e3129e39ad8`；[main CI 36313672482](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36313672482) 同 SHA completed/success（docs-only，Contract + E2E 与 Golden journeys 未运行）。本轮仅将已拍板设计整理为精确实施计划与待签清单；E3-2 未实施、未获实施授权，31 个真实类型全部 `hold`，不查询真实业务库、不部署、不启用 Gate。下方 E3-1 顶部记录保留其历史交付时点。
+
 > **Release 5 / E3-1 仓内验收完成；E3-2 仅待评审（2026-09-27）**：[#1358](https://github.com/BA7IEE/srvf-nest-api/pull/1358)
 > 已 Squash 合入 main `c0f9f07548a018ee039610212d310a39ca884541`；
 > [main CI 36295160818](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36295160818) 同 SHA attempt 2
