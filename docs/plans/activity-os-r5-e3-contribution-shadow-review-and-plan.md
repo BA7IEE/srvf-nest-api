@@ -251,3 +251,101 @@ E3-1 的交付物是 `activity-contribution-shadow-comparison.ts` 纯比较器�
 §13 的路径只是候选，不是冻结写集。下一份**实施授权包**须按 D0–D3 输出逐路径、逐生成物及测试清理引用链；特别核对 `prisma/schema.prisma`、新 migration、属主 service/spec、既有考勤 characterization、受控 E2E、`prisma/seed.ts`、权限目录、AuditLogEvent union、OpenAPI／前端生成物是否真的受影响。未证明必要的路径不得列入，也不得在实施中顺手扩写。此文档阶段对 schema、migration、seed、数据、OpenAPI、权限、审计和 BizCode 的实际改动均为零。
 
 **停止条件**：D0 任一隐私／访问／留存问题未签、候选与同链事实无法可靠关联、旧响应或审计形状漂移、旧提交因新收据失败而失败、数据库守卫未通过负例、缺口无法逐项列报、测试需删减断言或提高业务超时，均停止实施并重新评审。当前不查询真实业务库、不操作生产、不启用 Gate、不合并本计划 PR；也不删除、重算或转换旧业务数据。
+
+## 19. D0 已确认合同及实施写集核对（2026-09-27；本轮仅起草）
+
+维护者确认 D0 推荐合同：新证据只存对账必需的内部锚点、签字版本、同链来源指纹、结果及脱敏失败类别；不存姓名、手机号、证件号、备注、原始请求体或旧审计完整 `context`。业务证据长期保留，退队不因节省空间物理删除；功能回退只关 `shadow`。只允许**显式授权的 Human 复核人员**读取，不默认授予内建角色、不向 Service Principal 或 delegation 开放。观察窗口在启动前登记起止、操作人、配置和签字版本；窗口内成功旧 submit 与带 records 的 edit 全部列为保守候选，证据不足的“不适用”保持未决。31 个真实类型仍全部 `hold`，本确认不含真实库查询、实施、开关启用或生产操作。
+
+### 19.1 只读引用链发现及不可跳过的设计缺口
+
+| 事实                                                                                                                                                                      | 实施后果                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AttendancesService.submit`、带 records 的 `edit` 在 `runMemberLinearizedTransaction` 内预填、创建新记录并写旧审计，然后直接返回 DTO；无 records 的 edit 走独立审计分支。 | 事务后新收据必须放在旧事务返回之后，携带已提交结果；旧响应体、旧审计 `extra`、原权限和旧提交是否成功均不能漂移。必须定出受限的收据写入等待／失败预算，不可用未捕获的 fire-and-forget Promise。                                  |
+| `AttendanceAuditRecorder.logSubmit/logEdit` 与 `AuditLogsService.log()` 当前均返回 `void`，审计创建结果被丢弃。                                                           | 不能事后按时间、sheet ID 或排序猜审计 ID。若收据要引用精确审计行，须在审计属主新增返回 ID 的窄接口，旧 `log()` 行为及其他调用方不变，并给审计与考勤单测补零漂移证明；这使 `audit-logs.service.ts` 等成为**新增候选写集**。      |
+| 旧 edit 先软删旧 records，再 `createMany` 新 records，回查新 ID；`AttendanceRecord` 自身没有活动 ID，活动归属来自 Sheet。                                                 | 收据的 record／sheet／activity 同链必须由数据库 FK 或同事务验证约束，不能把旧软删记录误作新版本、按姓名或数组顺序配对；来源与精度不足时只记 `hold`。                                                                            |
+| `AuditLog` 有敏感 `context`，现有读取权限和读面属于通用审计，且未提供数据库级不可改删保证。                                                                               | 审计仅作当前可见成功旧写的保守定位，不能作为 E3-2 的不可变收据或专用读面；新收据必须数据库级禁 UPDATE／DELETE／TRUNCATE，直接 SQL 正反例自证。                                                                                  |
+| 当前 `ContributionRule` 的 ACTIVE pair 是 partial unique；预填查询仅选 role、阈值和点数，不选规则 ID；E1 政策版本和 E1-3 选择修订已独立存在。                             | 若同链证据要固定旧规则 ID／来源指纹，须扩充旧计算器的内部来源结果或增加属主查询，不能从点数反推规则；不得修改正式预填结果或把 `dailyCap` 旧列重新纳入计算。E1 精确政策版本由 activities 属主公开原语取得，缺失或未签就 `hold`。 |
+| 新增一条 migration 会把当前 132 条改为 133 条；多个旧 E2E 手写当前总数，且冷回放测试使用固定隔离库。                                                                      | 只能刷新“当前总数／当前冷回放”断言，历史升级目标与业务断言不动；`pnpm docs:migcount:check` 仅守常量，不覆盖所有裸数字，见下方逐文件清单。测试库逐个取得授权，不自动重建或 CASCADE。                                             |
+
+测试清理引用链还涉及 `test/setup/time-ledger-fixture-cleanup.ts` 的不可截断触发器清单，以及 `test/helpers/audit-logs-cleanup.ts` 对 `audit_logs` 无外键引用的现有假设。若最终采用新收据到旧审计的外键，这两处均须纳入 D1 候选写集并在获批的隔离库验证；不能仅调整 `reset-db.ts`，也不能据此放宽生产触发器。现有直接或经 helper 清理 `audit_logs` 的八份 E2E 列于 §19.3，是否需要逐个改动取决于最终外键和受控清理方案，不能预先扩大写集。
+
+### 19.2 D 档风险表（**未来实施**，本轮实际改动仅此文档）
+
+| 项                     | 结论                                                                                                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `prisma/schema.prisma` | 未来拟新增只追加开始、终态及人工处置证据模型和必要关系；本轮不改。模型字段、唯一键、同链约束和 SQL 尚未定稿。                           |
+| migration              | 预计新增第 133 条 additive migration；不回改 132 条历史 SQL，不删表列、不回填旧规则，最终 SQL 另签 3b。                                 |
+| `prisma/seed.ts`       | 已选独立 Human 读取权限；实施前必须核对 seed 闭包及 15 个内建角色零默认授予，另签 4b；本轮不改。                                        |
+| 现有数据／不可逆性     | 旧业务与旧审计不改；新增证据长期保存，禁止用删库删表回退。非空库迁移必须 fail-closed 验证。                                             |
+| OpenAPI／contract      | 写入地基本身不改；若采用独立 HTTP 复核读面，则新增 System surface endpoint、DTO、snapshot、前端交接及生成 client，单独按 C/D 档评审。   |
+| 鉴权／审计             | 新收据读取仅显式 Human；通用 `audit-log.read.entry` 不可直接复用。读取动作是否新增审计事件、权限码与目录摘要须在读面方案定案后另签 4b。 |
+| BizCode                | 写入错误不得改变旧请求结果；如开新 HTTP 读面，未授权、未找到、证据链异常的既有码可否复用须逐码核对，未证实前不新增。                    |
+| 用户拍板               | §19.4 读面方向已确认；仍需收据字段／SQL、单次写入预算、完整精确写集、隔离库与 PR 边界的独立实施授权；本 D0 签字不自动覆盖。             |
+
+### 19.3 按属主分段的**候选**写集（路径逐项列出，不是写入许可）
+
+下列是以当前 main 和维护者已确认的“新增独立 System 读面”核出的**上界**文件预算；实施前仍须按实际生成器结果逐项冻结增减。新增路径均用 `（新）` 标识，不允许以“相关文件”为由扩散。
+
+表中的 `.spec.ts`、`dto/system/...` 等相对写法只是排版简写，**不能直接充当红区授权 glob 或实施写集**。例如审计属主单测的完整路径是 `src/modules/audit-logs/audit-logs.service.spec.ts`，考勤属主单测是 `src/modules/attendances/attendances.service.spec.ts`，读面 DTO 候选完整路径为 `src/modules/attendances/dto/system/contribution-shadow-evidence.dto.ts`；权限目录已有测试路径是 `src/modules/permissions/permission-catalog-closure.spec.ts` 与 `src/modules/permissions/permission-catalog-metadata.criteria.spec.ts`，不是凭空假定的 `permission-catalog.spec.ts`。实施授权前须把每个简写和生成物展开为完整实际路径并复核文件存在性；路径尚未确定的新增文件先按候选处理，不可借此写入。
+
+| 分段                                                 | 精确候选路径                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | 理由／禁止域                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1 数据地基                                          | `prisma/schema.prisma`；`prisma/migrations/<定稿时间戳>_activity_os_r5_e3_shadow_evidence/migration.sql`（新）；`test/e2e/activity-os-r5-e3-contribution-shadow-migration.e2e-spec.ts`（新）；`test/setup/reset-db.ts`；`harness/domain-map.json`；`harness/state-machines.json`；`prisma/CLAUDE.md`；`CODEMAP.md`；`docs/current-state.md`；`docs/ai-harness/CUTOVER_SIGNOFF.md`                                                                                                                                                                                                                                                                                                                                                                             | 加法 DDL、数据库级只追加与同链守卫、非空升级和直接 SQL 负例；模型属主及生成摘要只按实际变化刷新。无旧表 DML、无删除或回填。迁移名须以实施时真实时间戳确定。                                                                                                                           |
+| D2 旧事务与收据写者                                  | `src/modules/audit-logs/audit-logs.service.ts`、`.spec.ts`；`src/modules/attendances/attendance-audit-recorder.ts`、`attendances.service.ts`、`attendances.service.spec.ts`、`attendances.module.ts`、`contribution-calculator.ts`、`contribution-calculator.spec.ts`；`src/modules/attendances/contribution-shadow.service.ts`、`.spec.ts`、`contribution-shadow-evidence.write.service.ts`、`.spec.ts`（四个新文件）；`src/modules/activities/activity-contribution-policy-shadow.query.ts`、`.spec.ts`（两个新文件）、`activities.module.ts`；`src/config/app.config.ts`、`.spec.ts`；`test/e2e/attendances-contribution-prefill.e2e-spec.ts`、`attendances-audit-characterization.e2e-spec.ts`、`activity-os-r5-e3-contribution-shadow.e2e-spec.ts`（新） | 精确审计 ID、旧规则来源、已提交事实、E1 同链政策原语、off/shadow 默认 off、两类缺口与重放；旧正式值、响应、旧审计形状、旧行为断言及既有考勤事务预算均不放宽（当前为单次锁等待 4 秒＋业务工作 3 秒、总 7 秒；见 `member-advisory-lock.util.ts`）。若无需某候选原语，实施前从写集删去。 |
+| D3 独立 Human 复核读面（**方向已确认，实施未授权**） | `src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts`（新）、`dto/system/contribution-shadow-evidence.dto.ts`（新）、`contribution-shadow-evidence.query.service.ts`、`.spec.ts`（新）、`attendances.module.ts`；`src/modules/permissions/permission-catalog.ts`、`seed-permission-codes.ts`、对应 `.spec.ts`；`prisma/seed.ts`；`src/modules/audit-logs/audit-logs.types.ts`；`test/e2e/activity-os-r5-e3-contribution-shadow-review.e2e-spec.ts`（新）；`test/contract/openapi.contract-spec.ts`、`test/contract/__snapshots__/openapi.contract-spec.ts.snap`；`docs/handoff/admin-web.md`、`contract-version-registry.md`                                                                                                | 只读最小脱敏投影、显式 GLOBAL Human 授权、15 个内建角色零默认、Service Principal/delegation 拒绝、读取留痕；新路径必须落 canonical System surface，具体 controller 命名／tag 在 API surface 评审后冻结。不得借既有通用审计返回完整 `context`。                                        |
+| 派生与台账（随实际变动）                             | `docs/ai-harness/ROUTE_AUTHZ.md`、`RBAC_MAP.md`、`FROZEN_DRAFTS.md`、`NEXT_TASKS.md`；`docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`；`src/modules/attendances/CLAUDE.md`、`src/modules/activities/CLAUDE.md`、`src/modules/audit-logs/CLAUDE.md`；`changelog.d/activity-os-r5-e3-contribution-shadow.md`（新）；`docs/ops/activity-contribution-shadow.md`（新）；`docs/handoff/clients/shared/types.ts` 及 `docs/handoff/clients/{admin,app,auth,system,open,integration}/{types,client}.ts`                                                                                                                                                                                                                                         | 仅运行既有生成器并逐文件确认摘要／签名差异；生成物不是预授权的业务改动。若不做新读面，OpenAPI／handoff／权限／seed 等条件项全部剔除。                                                                                                                                                 |
+
+**D1 测试清理候选增补（条件项）**：`test/setup/time-ledger-fixture-cleanup.ts`、`test/helpers/audit-logs-cleanup.ts`。若定稿外键使既有审计清理受阻，须先以隔离测试证明，再把确需适配的下列路径逐项写入实施授权；保留原断言、清理范围和触发器恢复检查，不对真实业务库执行清理：
+
+```text
+test/e2e/app-me-password.e2e-spec.ts
+test/e2e/app-my-registrations-write.e2e-spec.ts
+test/e2e/attachment-configs.audit.e2e-spec.ts
+test/e2e/attachments-audit-characterization.e2e-spec.ts
+test/e2e/attachments.audit.e2e-spec.ts
+test/e2e/attachments.upload.e2e-spec.ts
+test/e2e/audit-logs-migrations.e2e-spec.ts
+test/e2e/audit-logs.e2e-spec.ts
+```
+
+**27 份当前 132→133 兼容候选 E2E**（只改当前计数／冷回放标题，保留历史升级目标和业务断言）：
+
+```text
+test/e2e/activity-os-r1-a3-template-definition-lifecycle-guards.e2e-spec.ts
+test/e2e/activity-os-r1-a4-explicit-template-version-pointer.e2e-spec.ts
+test/e2e/activity-os-r2-b1-place-schema-constraints.e2e-spec.ts
+test/e2e/activity-os-r2-b2-coordinate-projection-schema-constraints.e2e-spec.ts
+test/e2e/activity-os-r2-b3-form-blueprint-governance.e2e-spec.ts
+test/e2e/activity-os-r2-b6-creation-data-foundation.e2e-spec.ts
+test/e2e/activity-os-r3-c1-d2a-metric-command-receipt-migration.e2e-spec.ts
+test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts
+test/e2e/activity-os-r3-c1-metric-definition-set.e2e-spec.ts
+test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts
+test/e2e/activity-os-r4-d1-1-time-policy-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d1-3-selection-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d4-time-bucket-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d6-time-ledger-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d7-2-fact-correction-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d7-time-correction-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d8-proof-cutover-migration.e2e-spec.ts
+test/e2e/activity-os-r5-e1-3-contribution-policy-selection-migration.e2e-spec.ts
+test/e2e/activity-os-r5-e1-contribution-policy-migration.e2e-spec.ts
+test/e2e/activity-os-r5-e2-contribution-rule-migration.e2e-spec.ts
+test/e2e/activity-v11-batch4-allocation-candidate-position-anchor-migration.e2e-spec.ts
+test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts
+test/e2e/activity-v11-batch4-allocation-determinism-migration.e2e-spec.ts
+test/e2e/activity-v11-batch4-allocation-mode-migration.e2e-spec.ts
+test/e2e/activity-v11-batch4-qualification-contract-migration.e2e-spec.ts
+test/e2e/insurance-evidence-registration-revision-migration.e2e-spec.ts
+```
+
+### 19.4 读面方案拍板与后续授权顺序
+
+**方案 A（维护者 2026-09-28 已确认，本轮仅冻结方向）**：新建独立的 System surface 只读复核入口，使用新 GLOBAL 权限码；必须登录 Human、显式自定义角色授予、15 个内建角色零默认、SUPER_ADMIN 不直通、Service Principal 与 delegation 均拒绝。只返回最小脱敏收据和缺口计数，读取动作留审计；前端只做审核交接，不自动发布。优点是访问控制及复核操作可由仓内 E2E 证明；代价是 API／权限／审计／OpenAPI／handoff 扩大写集，须单独 C/D 档与 4b 审批。此确认不等于实施授权。
+
+**方案 B（备选）**：本刀不新增 HTTP／权限；仅在隔离环境用受控维护窗口和具名人工操作产生脱敏报告。优点是先验证数据地基和写入链，缺点是仓内无法证明“仅显式授权 Human 可读”，因此不能称 E3-2 读面或人工核对终态完成；之后仍须另立读面审批。**不允许**用通用审计接口或直接 SQL 作为正式 Human 读面。
+
+顺序：①已确认方案 A 和 D0 数据合同；受限写入等待／故障预算仍须定稿；②冻结上表实际路径、SQL 与权限／审计影响面，明确指定隔离库和测试清理范围；③分别取得红区令牌、3b SQL 与 4b 权限／审计重签，再获完整 D 档实施授权；④D1/D2/D3 各自验证和 PR CI，合并与同 SHA main CI 另核；⑤真实目标存在后才逐类型签 31 类映射，真实 shadow、生产 Gate 和部署另行授权。未完成任一步，不把夹具演示写成真实对账。
+
+本轮没有实施：`schema.prisma`、migration、seed、权限、接口、审计、业务代码、测试及数据库均零改动；也未提交、推送或创建 PR。
