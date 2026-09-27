@@ -1,5 +1,14 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
+> **Release 5 / E3-1 仓内验收完成；E3-2 仅待评审（2026-09-27）**：[#1358](https://github.com/BA7IEE/srvf-nest-api/pull/1358)
+> 已 Squash 合入 main `c0f9f07548a018ee039610212d310a39ca884541`；
+> [main CI 36295160818](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36295160818) 同 SHA attempt 2
+> completed/success。首次运行仅 D4 旧迁移测试因隔离 worker 库仍有连接而被安全守卫拒绝，获准单次重跑通过；
+> 连接未退出的根因未查明、未修复。E3-1 只交付离线纯比较器与固定夹具，**不是**真实类型映射、运行时
+> shadow 或真实差异归零。31 个真实类型继续全部 `hold`，E3-2 的数据合同、证据留存、访问面和完整写集
+> 仍须单独评审、拍板；本轮仅更正台账并完善 [E3 评审稿](../plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md)，
+> 不实施、不查真实业务库、不部署、不启用 Gate。下方 E2 顶部记录是其当时交付状态，并非 E3 的当前状态。
+
 > **Release 5 / E2 第一层隔离能力已合入并通过主干 CI（2026-09-27）**：[#1356](https://github.com/BA7IEE/srvf-nest-api/pull/1356)
 > Squash 合入 `5510c43cefbe4f5e6f2fda506355c04a83efd975`；[main CI 36260037114](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36260037114)
 > completed/success，五组 Contract + E2E 均通过。第 132 条 migration、隔离夹具 dry-run／提交／重放、不可变来源收据和审计已交付；
@@ -2665,9 +2674,9 @@ CRITICAL 五族里,提权 / 凭证 / 账本 / 硬删各自对应一个冻结稿 
 8 个 PR,动 schema、动 236 条权限元数据、动控制面策略、动前端 ——
 **比 issue #1048 与 #1055 加起来还大**。不要一次性启动;逐档立项,每档单独 goal。
 
-### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **Release 1–4、E1 与 E2 第一层已合；E3 待评审**
+### P1-33 Activity OS 终态边界、数据所有权、Integration 安全与 AI 独立性 —— **Release 1–4、E1/E2 第一层及 E3-1 已合；E3-2 待评审**
 
-**状态**:进行中(Release 4 的 D8-1 #1341、D8-2 #1342 与 D8-OPS 文档 #1343 均已合并且最终 main CI 全绿；D8-OPS 未执行。Release 5 / E1-1 #1345、E1-2 #1347、E1-3 #1349 与 E2 第一层 #1356 均已合入并通过最终 main CI。E2 的真实类型映射／真实目标转换仍未获批或执行；E3–E5、部署、v1.1 独立稳定窗、生产预检与不可逆执行、整体复审、前端及真实业务验收均未完成)
+**状态**:进行中(Release 4 的 D8-1 #1341、D8-2 #1342 与 D8-OPS 文档 #1343 均已合并且最终 main CI 全绿；D8-OPS 未执行。Release 5 / E1-1 #1345、E1-2 #1347、E1-3 #1349、E2 第一层 #1356 与 E3-1 离线比较 #1358 已合入；#1358 同 SHA main CI attempt 2 全绿，首次 D4 旧迁移夹具连接拒绝的根因未修。E2 真实映射／转换未获批；E3-2 运行时 shadow 与差异证据、E4–E5、部署、v1.1 独立稳定窗、生产预检与不可逆执行、整体复审、前端及真实业务验收均未完成)
 
 - **D8-2 最终状态（2026-09-22）**：方案 A 的25路径、module 单一导出、owner query facade、四份派生治理摘要及
   一份旧迁移夹具兼容补项，共32路径；实际24路径、零越界，已随 #1342 合入 `802a636a` 并通过最终 main CI。

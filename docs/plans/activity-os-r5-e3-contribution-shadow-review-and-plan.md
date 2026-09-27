@@ -97,3 +97,58 @@ E3-2 的证据写者、审计事件／权限目录、生成文档、旧迁移 E2
 E3-1 的输入全部由调用方显式提供：夹具事实锚点、同源旧小时与新秒数、签字映射版本、旧规则快照与来源指纹、已批准政策版本和 definition hash。比较器不查库、不取“最新版”、不写正式账本，也不持久化差异。`equal`／`points_mismatch` 才进入可比较分母；未签映射、角色／类别缺失、来源不同、精度边界、版本／来源漂移、重复 pair 和求值错误均单独分桶。旧小时严格按两位小数换算为 36 秒单位；相差至多 18 秒记为精度边界，更大差异记为来源不一致。签字输入在本轮仅是固定夹具证明，**不是** 31 个真实类型的签字，也不是运行时可信采集链。
 
 E3-1 只校验调用方提供的旧来源指纹 `expected`／`observed` 相等；它不负责从数据库快照独立重算该指纹。E3-2 若推进，必须在属主查询和同事务事实锚点上重新证明来源真实性、规则状态及版本批准，不能拿 E3-1 的夹具布尔值当生产授权。当前无真实目标或真实数据，不能宣称差异归零。
+
+## 10. E3-1 主干验收与 E3-2 计划基点（2026-09-27）
+
+[#1358](https://github.com/BA7IEE/srvf-nest-api/pull/1358) 已 Squash 合入 main `c0f9f07548a018ee039610212d310a39ca884541`。
+[main CI 36295160818](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36295160818) 对同一 SHA 的 attempt 2 为 completed/success：失败的 Contract + E2E (4) 与汇总均在维护者授权的单次重跑后通过，其他检查沿用首轮成功结果。首轮 D4 旧迁移回放在重建隔离 worker 库时因仍有连接而被安全守卫拒绝；重跑通过**不证明**连接未退出的根因已修复，亦不能把该故障夹进 E3-2 范围顺手修改。
+
+E3-1 的交付物是 `activity-contribution-shadow-comparison.ts` 纯比较器及固定夹具测试，运行时、DB、权限、正式结果均未接线。以下 §11–14 是**评审提案与候选写集，不是 E3-2 实施授权**；未签决策仍为 hold。
+
+## 11. E3-2 必须先签的数据与行为合同
+
+| 决策点       | 推荐评审方向                                                                                                                                                                                                          | 签字前的硬边界                                                                                                                                                                                  |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 真实类型映射 | 对 31 类逐类型／角色签旧规则、政策版本、四类时长、来源、旧小时精度、零分与有效期；G04／G05 默认 hold，G13 的 zero 单签。映射须有不可变版本和签字人。                                                                  | 现有 `LEGACY_CONTRIBUTION_MAPPING_HOLDS` 全部仍是 hold；不得把目录候选、E2 `e2_fixture_*` 或 E3-1 `mapping.approved` 夹具布尔值当签字。                                                         |
+| 同一事实锚点 | 对每个旧 submit/edit 的旧 `AttendanceRecord`、Activity、Member、旧规则快照与 E1 选择 revision／version/hash 建同链关系；从属主查询取 ACTIVE 未软删规则，重算来源指纹，锁后核对。                                      | 新 submit 的记录 ID 在当前预填调用点尚未生成；edit 的旧记录之后被软删。须在精确接线设计里证明新旧记录及重放的稳定锚点，不可用姓名或顺序猜配。                                                   |
+| 时间与分数   | 保留旧 `serviceHours Decimal(5,2)` 原值和来源；新 `durationSeconds` 只能来自已签同源事实，精度边界单列不可比较；新政策固定 `(id, policyId, definitionHash, evaluatorVersion)`，不得读“最新版”。                       | `checkOutAt-checkInAt` 不自动等于可手工填写的旧 `serviceHours`；来源或精度无法证明时不做等价断言。旧预填、每日封顶和正式账本输出不变。                                                          |
+| 证据与可见面 | 推荐持久、只追加的 run／comparison 收据：精确来源和签字版本、脱敏事实锚点、旧／新点数、分类、异常、时间与重放键；不保存姓名、手机号、证件号、备注。仅明确授权的 Human 复核面读取，按签字的脱敏／审计规则呈现。        | 需维护者回答业务用途、谁可看／如何掩码、保留多久与退队后如何处理；未签不得占位建表、开放查询或宣称真实差异归零。用户此前已明确业务证据不因省空间自动删除。                                      |
+| 故障与事务   | 在设计评审中选择“旧写绝不因 shadow 失败回滚”如何与“每次 shadow 尝试都有可追踪证据”同时成立，给出写前／写后时序、幂等键、失败补偿和告警闭环。可优先审查既有考勤审计事实是否足以提供持久来源，再决定是否需要新 intent。 | 当前旧预填位于业务事务内；同事务新增证据写若失败会回滚旧请求，纯事务后写若失败又可能无持久证据。两者不能靠一句“异步 best effort”调和；未定案不接运行时。不得引入第三个 cron、Redis 或新 queue。 |
+| 开关和规模   | 仅 `off`／`shadow`，默认 off；分别测 submit/edit 的 1／100／2000 记录批量查询、事务时长、证据写入和并发／重放预算，最后在隔离库非空回放与 PR CI 验收。                                                                | 不预填一个未经测量的 SQL／时延上限；不得提高既有业务超时、删测试或放宽断言。不加 active 模式，不启用生产 Gate。                                                                                 |
+
+上述是需维护者/业务负责人拍板的合同，不因本稿写成“推荐”就成为事实。真实目标尚未选定，也没有获准查询真实旧规则；若目标确实零来源，只能签“零来源／不适用”，不能制造样本或把固定夹具报告写成差异归零。
+
+## 12. D 档风险表与回退边界
+
+| 项                         | 本轮文档／未来 E3-2 候选                                                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema.prisma`、migration | 本轮零改动；持久证据方案若签，拟加只追加模型与一条 additive migration，旧 SQL 不回改，DDL／触发器定稿后另签 3b。                                   |
+| seed、权限、审计           | 本轮零改动；若证据读面或新审计事件获批，须逐码说明 Human／scope／内建角色默认授予与 Service Principal 边界，另签 4b；不能假定 SUPER_ADMIN 直通。   |
+| 现有数据与不可逆性         | 本轮零改动；候选仅追加新证据，不回填、不转换旧规则、不改正式账本。新增证据长期保留，不能以物理删除作为回滚；功能回退只能关闭 shadow 并保留证据。   |
+| OpenAPI、DTO、BizCode      | 推荐本刀无新 HTTP／DTO／BizCode；一旦决定开放复核查询，必须另评 API surface、RBAC、审计、OpenAPI snapshot 和前后端 handoff，不能借本候选写集实施。 |
+| soft-delete／unique／P2002 | 旧规则查询继续 `status=ACTIVE AND deletedAt IS NULL`，数据库现有 ACTIVE pair 约束不放宽；新证据的幂等唯一键和冲突重放语义待 SQL 评审定案。         |
+| 人工审批                   | §11 六项合同、完整精确写集、红区令牌、3b／4b、隔离测试目标和 PR 流程均须独立批准；本轮文档授权不包含这些动作。                                     |
+
+## 13. 候选写集核对清单（不是实施许可）
+
+下面逐项列出**已可定位的候选路径**，避免“只批三文件”后在实施中无限扩写；新文件名是提案，必须随 §11 决策冻结，未列出的后果面须重新列项授权。
+
+| 写集组        | 精确候选路径                                                                                                                                                                                                                                                                                                               | 前置／限制                                                                                                                                                                             |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 数据地基      | `prisma/schema.prisma`；拟新增 `prisma/migrations/20260927180000_activity_os_r5_e3_contribution_shadow_evidence/migration.sql`                                                                                                                                                                                             | 仅在证据字段、唯一键、保留与事务策略签字后；SQL 仅 additive、同链 FK Restrict、不可改删及重放守卫，另签 3b。实际迁移时间戳若冲突须重新确认路径。                                       |
+| 旧预填属主    | `src/modules/attendances/contribution-calculator.ts`、`src/modules/attendances/attendances.service.ts`、`src/modules/attendances/attendances.service.spec.ts`、`src/modules/attendances/attendances.module.ts`                                                                                                             | submit/edit 两处均接入；正式 `contributionPoints` 与旧异常、锁序、事务和返回逐字不变。先跑旧计算器 characterization。                                                                  |
+| shadow 与证据 | 拟新增 `src/modules/attendances/contribution-shadow.service.ts`、`src/modules/attendances/contribution-shadow.service.spec.ts`、`src/modules/attendances/contribution-shadow-evidence.write.service.ts`、`src/modules/attendances/contribution-shadow-evidence.write.service.spec.ts`                                      | 具体拆分取决于 §11 事务／故障决策；证据模型属主与幂等写者须在代码评审中一一对应。复用 E3-1 `src/modules/activities/activity-contribution-shadow-comparison.ts`，不预授权改纯比较合同。 |
+| E1 属主查询   | 拟新增 `src/modules/activities/activity-contribution-policy-shadow.query.ts`、`src/modules/activities/activity-contribution-policy-shadow.query.spec.ts`；`src/modules/activities/activities.module.ts`                                                                                                                    | 仅公开精确版本、批准态及同链选择查询，不从 attendances 深引 activities 私有实现；是否需要该新增原语须以现有公开服务不足为证。                                                          |
+| 配置          | `src/config/app.config.ts`、`src/config/app.config.spec.ts`                                                                                                                                                                                                                                                                | 仅 off／shadow 且默认 off，配置来源和禁用行为做正反例；不预授权修改全局 bootstrap。                                                                                                    |
+| 回归          | `src/modules/attendances/contribution-calculator.spec.ts`、`test/e2e/attendances-contribution-prefill.e2e-spec.ts`；拟新增 `test/e2e/activity-os-r5-e3-contribution-shadow.e2e-spec.ts`、`test/e2e/activity-os-r5-e3-contribution-shadow-migration.e2e-spec.ts`                                                            | 旧断言一条不删不放宽；覆盖 off 零副作用、同源对照、hold、来源漂移、事务故障、并发重放、不可变证据及历史非空升级。                                                                      |
+| 治理和运维    | `test/setup/reset-db.ts`、`harness/domain-map.json`、`CODEMAP.md`、`docs/current-state.md`、`docs/ai-harness/ROUTE_AUTHZ.md`、`docs/ai-harness/CUTOVER_SIGNOFF.md`、`docs/ai-harness/NEXT_TASKS.md`、`docs/ai-harness/FROZEN_DRAFTS.md`；拟新增 `docs/ops/activity-contribution-shadow.md` 和独立 implementation changelog | 仅随实际模型／路由／计数刷新对应生成块；`test/setup` 与红区文档需逐路径令牌。若没有新路由，ROUTE_AUTHZ 只检摘要变化。                                                                  |
+
+`prisma/seed.ts`、权限目录、AuditLogEvent union、OpenAPI/前端生成物和旧迁移测试的**精确文件清单目前不能冻结**：取决于 §11 的访问面、证据字段及新增 migration 的最终形态。它们不在上表实施许可内；先做只读引用链与生成器后果扫描，再补路径并重审，不允许实施时“顺手”补。未获业务映射签字时，运行时真实类型必须全部保持 hold；不能把缩成 fixture-only 的能力冒充 E3-2 完成。
+
+## 14. 下一次授权与验收顺序
+
+1. 先请维护者确认 §11 六项合同（含证据三问和故障／事务取舍）及真实目标。若暂时无真实来源，可以先评审数据合同与隔离环境，但不得宣称真实对账完成。
+2. 再依据签字结果，做只读符号／引用链、schema 和派生文件后果扫描，冻结 §13 的增删与完整精确路径、SQL／查询／时延预算，提交单独 D 档实施授权清单。schema/migration/seed/权限/审计任何一项定稿后仍需对应 3b／4b、红区令牌；禁止 AI 自发授权。
+3. 实施必须独立 PR：本地定向验证与获准隔离库冷回放、非空升级、旧 submit/edit 零漂移、正反例与规模；PR CI 冷跑；独立确认合并、同 SHA main CI。D8-OPS、真实转换、E4／E5、前端、生产与 Gate 都不继承该 PR 的许可。
+
+本轮四文档编辑只验文档格式、台账状态、链接和 `git diff --check`；没有运行数据库、迁移或 E3-2 的任何行为测试。审查通过也只表示**计划可供拍板**，不表示 E3-2 数据合同已签或开发完成。
