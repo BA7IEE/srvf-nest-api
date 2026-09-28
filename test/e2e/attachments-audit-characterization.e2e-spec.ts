@@ -21,6 +21,7 @@ import type { AuditMeta } from '../../src/modules/audit-logs/audit-logs.types';
 import { STORAGE_PROVIDER } from '../../src/modules/storage/storage.constants';
 import type { PinnedStorageProvider } from '../../src/modules/storage/storage.interface';
 import { conformingAttachmentKey } from '../helpers/attachment-key';
+import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import { attachmentBytesForMime } from '../helpers/file-fixtures';
 import { createTestUser } from '../fixtures/users.fixture';
 import { resetDb } from '../setup/reset-db';
@@ -242,7 +243,7 @@ describe('AttachmentsService audit characterization', () => {
     await prisma.$executeRawUnsafe('DELETE FROM "storage_object_operations"');
     await prisma.$executeRawUnsafe('DELETE FROM "storage_objects"');
     await prisma.$executeRawUnsafe('DELETE FROM "attachments"');
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
+    await truncateAuditLogsTestOnly(app);
   }
 
   // 沿 attachments.audit.e2e-spec.ts buildBody 范式(legacy create DTO)
@@ -445,7 +446,7 @@ describe('AttachmentsService audit characterization', () => {
       // selfPayload 上传(uploadedBy = selfId)
       const created = await service.create(buildCreateDto({ size: 2048 }), selfPayload, AUDIT_META);
       // 清 audit,留 delete audit 单独断言
-      await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
+      await truncateAuditLogsTestOnly(app);
 
       // superPayload 删 → currentUser.id !== uploadedBy(selfId)→ deletedByPath='admin'
       await service.delete(created.id, superPayload, AUDIT_META);
@@ -498,7 +499,7 @@ describe('AttachmentsService audit characterization', () => {
 
     it('C2. deletedByPath=owner(selfPayload 删自己上传的)', async () => {
       const created = await service.create(buildCreateDto(), selfPayload, AUDIT_META);
-      await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
+      await truncateAuditLogsTestOnly(app);
 
       // selfPayload 删 → currentUser.id === uploadedBy(selfId)→ deletedByPath='owner'
       await service.delete(created.id, selfPayload, AUDIT_META);
@@ -566,7 +567,7 @@ describe('AttachmentsService audit characterization', () => {
     it('D3. delete audit 失败保持 durable pending；同 eventKey replay 终结且原 actor 幂等重放', async () => {
       const created = await service.create(buildCreateDto(), selfPayload, AUDIT_META);
       // 清掉 create 路径的 upload audit,保证 D3 起始时 audit 表是干净的
-      await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
+      await truncateAuditLogsTestOnly(app);
 
       const deleteObjectAtSpy = jest.spyOn(storageProvider, 'deleteObjectAt');
       const logSpy = jest
