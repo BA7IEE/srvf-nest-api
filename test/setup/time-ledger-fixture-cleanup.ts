@@ -7,6 +7,11 @@ import {
 import { deriveTestDbName } from './worktree-db';
 
 const TRUNCATE_TRIGGERS = [
+  { table: 'ContributionShadowObservationWindow', trigger: 'csow_no_truncate' },
+  { table: 'ContributionShadowAttemptReceipt', trigger: 'csar_no_truncate' },
+  { table: 'ContributionShadowComparisonReceipt', trigger: 'cscr_no_truncate' },
+  { table: 'ContributionShadowTerminalReceipt', trigger: 'cstr_no_truncate' },
+  { table: 'ContributionShadowDispositionReceipt', trigger: 'csdr_no_truncate' },
   { table: 'ContributionRuleConversionReceipt', trigger: 'crcr_no_truncate' },
   {
     table: 'ActivityContributionPolicySelectionCommandReceipt',
@@ -42,7 +47,7 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         IF current_database() <> ${dbLiteral} THEN RAISE EXCEPTION 'Wrong fixture database'; END IF;
         FOR item IN
           SELECT c.relname AS tbl, names.trg, t.tgenabled::text AS enabled
-          FROM (VALUES ('ContributionRuleConversionReceipt','crcr_no_truncate'), ('ActivityContributionPolicySelectionCommandReceipt','acps_receipt_no_truncate'), ('ActivityContributionPolicySelectionItem','acps_item_no_truncate'), ('ActivityContributionPolicySelectionRevision','acps_revision_no_truncate'), ('ContributionPolicyCommandReceipt','cpr_no_truncate'), ('ContributionPolicyVersion','cpv_no_truncate'), ('ContributionPolicy','cp_no_truncate'), ('ParticipationTimeCutoverBinding','ptcb_no_truncate'), ('ActivityTimeCutoverReceipt','atcr_no_truncate'), ('CorrectionPendingTimeAllocation','cpta_no_truncate'), ('CorrectionPendingTimeAllocationEvidence','cptae_no_truncate'), ('CorrectionTimeAllocationBinding','ctab_no_truncate'), ('CorrectionTimeSourceProof','ctsp_no_truncate'), ('ParticipationTimeCorrectionCommitReceipt','ptcr_no_truncate'), ('ParticipationTimeCorrectionEntry','ptce_no_truncate'), ('ParticipationTimeCorrectionManifest','ptcm_no_truncate'), ('ParticipationTimeLedgerEntry','ptle_no_truncate'), ('ParticipationTimeLedgerManifest','ptlm_no_truncate')) names(tbl,trg)
+          FROM (VALUES ('ContributionShadowObservationWindow','csow_no_truncate'), ('ContributionShadowAttemptReceipt','csar_no_truncate'), ('ContributionShadowComparisonReceipt','cscr_no_truncate'), ('ContributionShadowTerminalReceipt','cstr_no_truncate'), ('ContributionShadowDispositionReceipt','csdr_no_truncate'), ('ContributionRuleConversionReceipt','crcr_no_truncate'), ('ActivityContributionPolicySelectionCommandReceipt','acps_receipt_no_truncate'), ('ActivityContributionPolicySelectionItem','acps_item_no_truncate'), ('ActivityContributionPolicySelectionRevision','acps_revision_no_truncate'), ('ContributionPolicyCommandReceipt','cpr_no_truncate'), ('ContributionPolicyVersion','cpv_no_truncate'), ('ContributionPolicy','cp_no_truncate'), ('ParticipationTimeCutoverBinding','ptcb_no_truncate'), ('ActivityTimeCutoverReceipt','atcr_no_truncate'), ('CorrectionPendingTimeAllocation','cpta_no_truncate'), ('CorrectionPendingTimeAllocationEvidence','cptae_no_truncate'), ('CorrectionTimeAllocationBinding','ctab_no_truncate'), ('CorrectionTimeSourceProof','ctsp_no_truncate'), ('ParticipationTimeCorrectionCommitReceipt','ptcr_no_truncate'), ('ParticipationTimeCorrectionEntry','ptce_no_truncate'), ('ParticipationTimeCorrectionManifest','ptcm_no_truncate'), ('ParticipationTimeLedgerEntry','ptle_no_truncate'), ('ParticipationTimeLedgerManifest','ptlm_no_truncate')) names(tbl,trg)
           JOIN pg_class c ON c.relname=names.tbl JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
           LEFT JOIN pg_trigger t ON t.tgrelid=c.oid AND t.tgname=names.trg AND NOT t.tgisinternal
           ORDER BY names.tbl
@@ -93,7 +98,12 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         END IF;
         FOR item IN SELECT value FROM jsonb_array_elements(current_setting('srvf.d6_fixture_trigger_states')::jsonb)
         LOOP
-          IF NOT ((item->>'table'='ContributionRuleConversionReceipt' AND item->>'trigger'='crcr_no_truncate') OR
+          IF NOT ((item->>'table'='ContributionShadowObservationWindow' AND item->>'trigger'='csow_no_truncate') OR
+                  (item->>'table'='ContributionShadowAttemptReceipt' AND item->>'trigger'='csar_no_truncate') OR
+                  (item->>'table'='ContributionShadowComparisonReceipt' AND item->>'trigger'='cscr_no_truncate') OR
+                  (item->>'table'='ContributionShadowTerminalReceipt' AND item->>'trigger'='cstr_no_truncate') OR
+                  (item->>'table'='ContributionShadowDispositionReceipt' AND item->>'trigger'='csdr_no_truncate') OR
+                  (item->>'table'='ContributionRuleConversionReceipt' AND item->>'trigger'='crcr_no_truncate') OR
                   (item->>'table'='ActivityContributionPolicySelectionCommandReceipt' AND item->>'trigger'='acps_receipt_no_truncate') OR
                   (item->>'table'='ActivityContributionPolicySelectionItem' AND item->>'trigger'='acps_item_no_truncate') OR
                   (item->>'table'='ActivityContributionPolicySelectionRevision' AND item->>'trigger'='acps_revision_no_truncate') OR

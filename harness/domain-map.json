@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:e336589c7411ee4ecab85bc0b9850246d6370c4cabe0d38e6158c3f5e3a14588",
+  "inputDigest": "sha256:8010c9cdc0a69063a0edea7d0ba515295f8608294f9bde85634b2e739282de0d",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -339,6 +339,36 @@
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ContributionShadowObservationWindow": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowAttemptReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowComparisonReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowTerminalReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowDispositionReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
       "confirmed": true
     },
     "ActivityContributionPolicySelectionRevision": {
