@@ -1,5 +1,9 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
+> **Release 5 / E3-2 D1 已提交至 Draft PR（2026-09-29，未合并）**：[#1366](https://github.com/BA7IEE/srvf-nest-api/pull/1366) 的第 133 条 migration 仅交付五张不可变证据空表及数据约束；SQL 摘要 `8f615e62a20a2207a9c0e2315f46e3a25bccff703b9bffae00857c41d02bff2b` 已获维护者 3b 重签。`app_test_w98` 已完成空库冷回放、132→133 非空升级和定向验证；附件夹具兼容修复已纳入该 PR。修复提交 `e159ccb057f48ed7341c78d850605c93738a378a` 的 18 项 PR 检查全部通过；本段状态更正推送后仍须对新提交重新检查。D1 尚未合入 main 或部署；D2 写者、D3 Human 复核、真实 31 类映射、生产和 Gate 均未实施或授权。下方“精确计划起草中”是此前时点。
+
+> 状态清单已按维护者本轮授权补入 D1 不可变终态收据的 L1 inventory 登记；当前 78 项（8 governed、70 inventory），`docs:boundaries:check` 已通过。第 133 条 3b 签字另见 `CUTOVER_SIGNOFF.md`。
+
 > **Release 5 / E3-2 精确计划起草中（2026-09-27）**：[#1361](https://github.com/BA7IEE/srvf-nest-api/pull/1361) 与 [#1362](https://github.com/BA7IEE/srvf-nest-api/pull/1362) 的证据边界、事务顺序和资格锚点方案 A 已合入 main `318f493290de34e818341dbbdc303e3129e39ad8`；[main CI 36313672482](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36313672482) 同 SHA completed/success（docs-only，Contract + E2E 与 Golden journeys 未运行）。本轮仅将已拍板设计整理为精确实施计划与待签清单；E3-2 未实施、未获实施授权，31 个真实类型全部 `hold`，不查询真实业务库、不部署、不启用 Gate。下方 E3-1 顶部记录保留其历史交付时点。
 
 > **Release 5 / E3-1 仓内验收完成；E3-2 仅待评审（2026-09-27）**：[#1358](https://github.com/BA7IEE/srvf-nest-api/pull/1358)

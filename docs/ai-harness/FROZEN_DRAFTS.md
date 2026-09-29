@@ -1,5 +1,15 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **Release 5 / E3-2 D1 已提交至 Draft PR（2026-09-29，未合并）**：维护者按评审稿第 21.3–21.4 节批准
+> 基础写集及仅 `app_test_w98` 隔离验证与夹具重建；[#1366](https://github.com/BA7IEE/srvf-nest-api/pull/1366)
+> 包含五张不可变证据空表、第 133 条 migration 及附件夹具兼容修复。`w98` 空库冷回放、132→133
+> 非空升级和定向验证已完成；第 133 条 SQL 摘要
+> `8f615e62a20a2207a9c0e2315f46e3a25bccff703b9bffae00857c41d02bff2b` 已获维护者 3b 重签。
+> 修复提交 `e159ccb057f48ed7341c78d850605c93738a378a` 的 18 项 PR 检查全部通过；本段状态更正推送后
+> 须重新核验新提交。D1 尚未合入 main 或部署。D2 写者、D3 Human 读面、31 类真实映射、真实数据盘点、
+> 生产部署和 Gate 均未授权或未完成。
+> 下方“E3-2 实施未授权”是上一设计阶段的历史状态。
+
 > **Release 5 / E3-2 设计已合入、实施未授权（2026-09-27）**：[#1361](https://github.com/BA7IEE/srvf-nest-api/pull/1361)、[#1362](https://github.com/BA7IEE/srvf-nest-api/pull/1362) 已合入 main `318f493290de34e818341dbbdc303e3129e39ad8`；[main CI 36313672482](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36313672482) 同 SHA completed/success（docs-only，行为测试未运行）。既有审计仅作保守定位，独立不可变收据才作证据；旧事务先提交，收据后写，缺口人工核对；资格锚点采用受控窗口内成功旧写的保守候选集合，不改变审计 `extra`。本轮只补精确计划，未建表、未接 shadow、未查真实业务库；31 类真实映射全部 `hold`，生产与 Gate 仍 NO-GO。下方 E3-1 顶部记录为其当时状态。
 
 > **Release 5 / E3-1 离线比较合同已合入，E3-2 仅起草评审（2026-09-27）**：[#1358](https://github.com/BA7IEE/srvf-nest-api/pull/1358)
@@ -406,7 +416,7 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **269** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
 | 治理 Phase 7:债务身份证待清偿条数 | **221** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 77** | `harness/state-machines.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 78** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |

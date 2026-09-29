@@ -1,5 +1,13 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
+## E3-2 D1 当前实施增量（本地候选，未提交）
+
+新增 `ContributionShadowTerminalReceipt.statusCode` 为 L1 inventory，闭集仅 `complete` /
+`failed`。它是每次尝试创建时写定的不可变结果分类，不存在原地状态迁移；第 133 条候选
+migration 的复合 CHECK 还约束失败类别与计数，提交触发器核对逐条对照集合。D1 尚无业务写者、
+专属错误码或 Human 读面，不提升 governed，也不表示运行时 shadow 已开启。当前登记 78 项，
+其中 8 项 governed、70 项 inventory；下方各阶段计数保留其历史时点。第 133 条 3b 尚待重签。
+
 ## E1-3 当前实施增量（分支验证中，未提交）
 
 新增 `ActivityContributionPolicySelectionItem.mode` 为 L1 inventory，闭集为
@@ -423,21 +431,21 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-09-24(Activity OS R5 / E1-3 当前实施分支，未合并)**
+**取数时点:2026-09-28(Activity OS R5 / E3-2 D1 本地候选，未提交)**
 
 | 项                                    |                                值 |
 | ------------------------------------- | --------------------------------: |
-| 总条目                                |                            **77** |
-| `governed` / `inventory`              |                        **8 / 69** |
-| 69 条 inventory 的分层                | L1 **16** · L2 **27** · L3 **26** |
+| 总条目                                |                            **78** |
+| `governed` / `inventory`              |                        **8 / 70** |
+| 70 条 inventory 的分层                | L1 **17** · L2 **27** · L3 **26** |
 | 已有机器可读边(`transitions` 是数组)※ |                                32 |
-| `transitions: "not-derived"` ※        |                                32 |
+| `transitions: "not-derived"` ※        |                                33 |
 | `transitions: "unconstrained"` ※      |                                13 |
 
-> ※ 这三行按**全部 77 条**统计(32+32+13=77),不是按上一行那 69 条 inventory。
+> ※ 这三行按**全部 78 条**统计(32+33+13=78),不是按上一行那 70 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
-> | **`vacuousGreenIfClosedSetOnly`** | **30** |
+> | **`vacuousGreenIfClosedSetOnly`** | **31** |
 > | 零 blocker 但仍 inventory 的升格候选 | **3** |
 
 > 🔴 **历史 true-up、A2 增补、A3 与本次 A7 落地要分开读**:

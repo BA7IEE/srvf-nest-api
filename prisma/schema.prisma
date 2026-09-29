@@ -233,6 +233,8 @@ model User {
   delegationGrantsSubject            DelegationGrant[]            @relation("DelegationSubject")
   integrationReceiptsSubject         IntegrationCommandReceipt[]  @relation("IntegrationReceiptSubject")
   auditLogsOnBehalfOf                AuditLog[]                   @relation("AuditOnBehalfOfUser")
+  contributionShadowWindowsRegistered ContributionShadowObservationWindow[] @relation("ContributionShadowWindowRegistrar")
+  contributionShadowDispositionsSigned ContributionShadowDispositionReceipt[] @relation("ContributionShadowDispositionSigner")
 
   @@index([deletedAt])
   @@index([status])
@@ -1859,6 +1861,7 @@ model ContributionPolicyVersion {
   commandReceipts                          ContributionPolicyCommandReceipt[]
   conversionReceipts                       ContributionRuleConversionReceipt[]
   activityContributionPolicySelectionItems ActivityContributionPolicySelectionItem[]
+  contributionShadowComparisons             ContributionShadowComparisonReceipt[] @relation("ContributionShadowPolicyVersion")
 
   @@unique([policyId, version], map: "cpv_policy_version_key")
   @@unique([id, policyId, definitionHash, evaluatorVersion], map: "cpv_exact_anchor_key")
@@ -2728,7 +2731,9 @@ model ActivityContributionPolicySelectionItem {
   revision ActivityContributionPolicySelectionRevision @relation(fields: [selectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_revision_fkey")
   position ActivitySessionPosition?                    @relation(fields: [activityId, sessionId, positionId], references: [activityId, sessionId, id], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_position_fkey")
   version  ContributionPolicyVersion?                  @relation(fields: [versionId, policyId, definitionHash, evaluatorVersion], references: [id, policyId, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_policy_version_fkey")
+  shadowComparisons ContributionShadowComparisonReceipt[] @relation("ContributionShadowSelectionItem")
 
+  @@unique([id, selectionRevisionId, activityId], map: "acps_item_id_revision_activity_key")
   @@index([selectionRevisionId], map: "acps_item_revision_idx")
   @@index([activityId, sessionId], map: "acps_item_session_idx")
   @@index([versionId], map: "acps_item_version_idx")
@@ -2752,6 +2757,139 @@ model ActivityContributionPolicySelectionCommandReceipt {
   @@unique([actorUserId, operationCode, operationKey], map: "acps_receipt_actor_operation_key")
   @@unique([selectionRevisionId, activityId], map: "acps_receipt_revision_activity_key")
   @@index([activityId, createdAt], map: "acps_receipt_activity_created_idx")
+}
+
+// Activity OS R5 / E3-2 D1: additive evidence foundation only. No runtime shadow writer or reader.
+// SQL migration owns append-only, window exclusion, exact audit/record guards and terminal counts.
+model ContributionShadowObservationWindow {
+  id                   String   @id @default(cuid())
+  startsAt             DateTime @db.Timestamptz(3)
+  endsAt               DateTime @db.Timestamptz(3)
+  registeredByUserId   String
+  deploymentDigest     String
+  configDigest         String
+  signedMappingVersion String
+  hashAlgorithmCode    String
+  canonicalVersion     Int
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+
+  registrar    User                                   @relation("ContributionShadowWindowRegistrar", fields: [registeredByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csow_registrar_fk")
+  attempts     ContributionShadowAttemptReceipt[]
+  dispositions ContributionShadowDispositionReceipt[]
+
+  @@index([startsAt, endsAt], map: "csow_range_idx")
+}
+
+model ContributionShadowAttemptReceipt {
+  id                   String   @id @default(cuid())
+  windowId             String
+  auditLogId           String
+  sheetId              String
+  activityId           String
+  sheetVersion         Int
+  replayKey            String   @unique(map: "csar_replay_key")
+  committedFactHash    String
+  signedMappingVersion String
+  expectedRecordCount  Int
+  hashAlgorithmCode    String
+  canonicalVersion     Int
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+
+  window      ContributionShadowObservationWindow    @relation(fields: [windowId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csar_window_fk")
+  auditLog    AuditLog                                @relation("ContributionShadowAttemptAudit", fields: [auditLogId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csar_audit_fk")
+  sheet       AttendanceSheet                        @relation("ContributionShadowAttemptSheet", fields: [sheetId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "csar_sheet_activity_fk")
+  comparisons ContributionShadowComparisonReceipt[]
+  terminal    ContributionShadowTerminalReceipt?
+  dispositions ContributionShadowDispositionReceipt[] @relation("ContributionShadowDispositionAttempt")
+
+  @@unique([auditLogId], map: "csar_audit_key")
+  @@unique([windowId, auditLogId], map: "csar_window_audit_key")
+  @@unique([id, sheetId, activityId], map: "csar_id_sheet_activity_key")
+  @@unique([id, windowId, auditLogId], map: "csar_id_window_audit_key")
+  @@index([sheetId, activityId], map: "csar_sheet_activity_idx")
+}
+
+model ContributionShadowComparisonReceipt {
+  id                  String   @id @default(cuid())
+  attemptId           String
+  recordId            String
+  sheetId             String
+  memberId            String
+  activityId          String
+  classificationCode  String
+  comparable          Boolean
+  factHash            String
+  legacySourceHash    String
+  policySourceHash    String?
+  legacyRuleId        String?
+  selectionRevisionId String?
+  selectionItemId     String?
+  policyVersionId     String?
+  policyId            String?
+  definitionHash      String?
+  evaluatorVersion    Int?
+  legacyServiceHours  Decimal? @db.Decimal(5, 2)
+  durationSeconds     Int?
+  legacyPoints        Decimal? @db.Decimal(5, 2)
+  policyPoints        Decimal? @db.Decimal(5, 2)
+  failureCode         String?
+  hashAlgorithmCode   String
+  canonicalVersion    Int
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+
+  attempt       ContributionShadowAttemptReceipt             @relation(fields: [attemptId, sheetId, activityId], references: [id, sheetId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "cscr_attempt_chain_fk")
+  record        AttendanceRecord                             @relation("ContributionShadowComparisonRecord", fields: [recordId, sheetId, memberId], references: [id, sheetId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "cscr_record_chain_fk")
+  selectionItem ActivityContributionPolicySelectionItem?    @relation("ContributionShadowSelectionItem", fields: [selectionItemId, selectionRevisionId, activityId], references: [id, selectionRevisionId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "cscr_selection_chain_fk")
+  policyVersion ContributionPolicyVersion?                  @relation("ContributionShadowPolicyVersion", fields: [policyVersionId, policyId, definitionHash, evaluatorVersion], references: [id, policyId, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "cscr_policy_version_fk")
+  legacyRule    ContributionRule?                            @relation("ContributionShadowLegacyRule", fields: [legacyRuleId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cscr_legacy_rule_fk")
+
+  @@unique([attemptId, recordId], map: "cscr_attempt_record_key")
+  @@index([recordId, sheetId, memberId], map: "cscr_record_chain_idx")
+  @@index([selectionItemId, selectionRevisionId, activityId], map: "cscr_selection_chain_idx")
+  @@index([policyVersionId, policyId, definitionHash, evaluatorVersion], map: "cscr_policy_version_idx")
+}
+
+model ContributionShadowTerminalReceipt {
+  id                  String   @id @default(cuid())
+  attemptId           String   @unique(map: "cstr_attempt_key")
+  statusCode          String
+  expectedRecordCount Int
+  writtenRecordCount  Int
+  equalCount          Int
+  mismatchCount       Int
+  holdCount           Int
+  errorCount          Int
+  failureCode         String?
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+
+  attempt ContributionShadowAttemptReceipt @relation(fields: [attemptId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cstr_attempt_fk")
+}
+
+model ContributionShadowDispositionReceipt {
+  id                    String   @id @default(cuid())
+  windowId              String
+  auditLogId            String
+  attemptId             String?
+  revision              Int
+  previousDispositionId String?
+  decisionCode          String
+  evidenceHash          String
+  signedByUserId        String
+  hashAlgorithmCode     String
+  canonicalVersion      Int
+  createdAt             DateTime @default(now()) @db.Timestamptz(3)
+
+  window      ContributionShadowObservationWindow @relation(fields: [windowId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csdr_window_fk")
+  auditLog    AuditLog                             @relation("ContributionShadowDispositionAudit", fields: [auditLogId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csdr_audit_fk")
+  attempt     ContributionShadowAttemptReceipt?   @relation("ContributionShadowDispositionAttempt", fields: [attemptId, windowId, auditLogId], references: [id, windowId, auditLogId], onDelete: Restrict, onUpdate: Restrict, map: "csdr_attempt_chain_fk")
+  signer      User                                 @relation("ContributionShadowDispositionSigner", fields: [signedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csdr_signer_fk")
+  previous    ContributionShadowDispositionReceipt?  @relation("ContributionShadowDispositionChain", fields: [previousDispositionId, windowId, auditLogId], references: [id, windowId, auditLogId], onDelete: Restrict, onUpdate: Restrict, map: "csdr_previous_chain_fk")
+  successors  ContributionShadowDispositionReceipt[] @relation("ContributionShadowDispositionChain")
+
+  @@unique([windowId, auditLogId, revision], map: "csdr_candidate_revision_key")
+  @@unique([id, windowId, auditLogId], map: "csdr_id_candidate_key")
+  @@index([auditLogId], map: "csdr_audit_idx")
+  @@index([attemptId, windowId, auditLogId], map: "csdr_attempt_chain_idx")
 }
 
 // ===== Activity OS R4 / D3: immutable participant time-allocation facts =====
@@ -3291,7 +3429,9 @@ model AttendanceSheet {
   lastSubmitter User?              @relation("AttendanceSheetLastSubmitter", fields: [lastSubmittedByUserId], references: [id], onDelete: Restrict)
   returnedBy    User?              @relation("AttendanceSheetReturner", fields: [returnedByUserId], references: [id], onDelete: Restrict)
   records       AttendanceRecord[]
+  contributionShadowAttempts ContributionShadowAttemptReceipt[] @relation("ContributionShadowAttemptSheet")
 
+  @@unique([id, activityId], map: "attendance_sheet_id_activity_key")
   @@index([activityId])
   @@index([submitterUserId])
   @@index([reviewerUserId])
@@ -3345,7 +3485,9 @@ model AttendanceRecord {
   sheet        AttendanceSheet       @relation(fields: [sheetId], references: [id], onDelete: Restrict)
   member       Member                @relation(fields: [memberId], references: [id], onDelete: Restrict)
   registration ActivityRegistration? @relation(fields: [registrationId], references: [id], onDelete: Restrict) // Q-S21:Restrict 不是 SetNull
+  contributionShadowComparisons ContributionShadowComparisonReceipt[] @relation("ContributionShadowComparisonRecord")
 
+  @@unique([id, sheetId, memberId], map: "attendance_record_id_sheet_member_key")
   @@index([sheetId])
   @@index([memberId])
   @@index([registrationId])
@@ -3418,6 +3560,7 @@ model ContributionRule {
   updatedBy User? @relation("ContributionRuleUpdater", fields: [updatedByUserId], references: [id], onDelete: Restrict)
   deletedBy User? @relation("ContributionRuleDeleter", fields: [deletedByUserId], references: [id], onDelete: Restrict)
   conversionReceipts ContributionRuleConversionReceipt[]
+  shadowComparisons ContributionShadowComparisonReceipt[] @relation("ContributionShadowLegacyRule")
 
   @@index([activityTypeCode])
   @@index([attendanceRoleCode])
@@ -3475,6 +3618,8 @@ model AuditLog {
   success Boolean @default(true)
 
   actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  contributionShadowAttempts ContributionShadowAttemptReceipt[] @relation("ContributionShadowAttemptAudit")
+  contributionShadowDispositions ContributionShadowDispositionReceipt[] @relation("ContributionShadowDispositionAudit")
 
   // Integration Foundation v1 双主体审计(规格书 §22;语义矩阵见 T0 冻结稿 §12.1):
   // 真人直接=actorUser;机器自身=actorServicePrincipal;机器代表真人=SP+onBehalfOfUser;

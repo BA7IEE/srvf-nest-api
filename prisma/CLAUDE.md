@@ -1,5 +1,12 @@
 # prisma — 本地铁律
 
+> **E3-2 D1 本地实施中（2026-09-28，未提交）**：当前工作树候选为 133 个 migration、188 个模型；
+> 第 133 条 `20260928095832_activity_os_r5_e3_shadow_evidence` 只新增五张不可变 shadow 证据表、
+> 三个既有表复合唯一 FK 靶点和同链／窗口／终态守卫。仅 `app_test_w98` 已完成从空库 133 条冷回放，
+> 定向正反例仍在补齐；SQL 尚未获 3b 重签，不可提交、部署或用于生产。无旧业务行 DML、回填、
+> 删除、seed、权限、审计事件、API 或 Gate 变更；31 类真实映射继续 `hold`。下方 E2 段落是已合入
+> main 的上一个正式时点，不代表第 133 条已签收。
+
 > **E2 第一层隔离能力已合入 main（2026-09-27，[#1356](https://github.com/BA7IEE/srvf-nest-api/pull/1356)）**：
 > 当前 132 个 migration、183 个模型；第 132 条
 > `20260924180000_activity_os_r5_e2_contribution_rule_conversion` 已新增不可变来源收据

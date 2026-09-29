@@ -151,14 +151,14 @@ describe('E2 additive conversion receipt migration', () => {
     }
   });
 
-  it('cold-replays 132 migrations without old-table DML', () => {
+  it('cold-replays 133 migrations without old-table DML', () => {
     recreate();
     deploy();
     const names = readdirSync(path.join(ROOT, 'migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(132);
+    expect(names).toHaveLength(133);
     expect(names[131]).toBe(MIGRATION);
     expect(
       sql(`SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations"
