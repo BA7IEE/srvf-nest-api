@@ -13,11 +13,11 @@ E2E **并行执行**(Harness 3.0 P1;默认 `maxWorkers: 50%`,CI 由 `JEST_MAX_WO
 
 **句柄泄漏检测**(原 `detectOpenHandles` 与并行互斥,已分两条线;**禁 `forceExit`、afterAll 必须 `app.close()` 的纪律不变**):
 
-| 线 | 何时跑 | 判据 | 性质 |
-|---|---|---|---|
-| 并行主线(`ci.yml` slow job) | 每个 PR | grep `A worker process has failed to exit gracefully` | **告警注解**,不阻塞 |
-| 串行线(`nightly-e2e-leaks.yml` / 本地 `pnpm test:e2e:leaks`) | 每日 02:00 + 手动 | grep `Jest has detected the following ... open handle` + 超时兜底 | **硬失败**(权威判据) |
-| ↑ 同上,**按域 2 分片**(2026-08-19 起) | 同上 | 逐片各判各报;另加「实收 suite 数 == 清单预算数」防静默漏跑 | **任一片红 ⇒ 整条线红** |
+| 线                                                           | 何时跑            | 判据                                                              | 性质                    |
+| ------------------------------------------------------------ | ----------------- | ----------------------------------------------------------------- | ----------------------- |
+| 并行主线(`ci.yml` slow job)                                  | 每个 PR           | grep `A worker process has failed to exit gracefully`             | **告警注解**,不阻塞     |
+| 串行线(`nightly-e2e-leaks.yml` / 本地 `pnpm test:e2e:leaks`) | 每日 02:00 + 手动 | grep `Jest has detected the following ... open handle` + 超时兜底 | **硬失败**(权威判据)    |
+| ↑ 同上,**按域 2 分片**(2026-08-19 起)                        | 同上              | 逐片各判各报;另加「实收 suite 数 == 清单预算数」防静默漏跑        | **任一片红 ⇒ 整条线红** |
 
 为什么夜间线要分片(2026-08-19,issue #1080):套件长到 290 个 spec 后,单进程串行跑满 75m 内层上限仍未跑完(08-17 那晚是贴着线过的:4345s / 4500s,余量 3.1%)。历次「放宽 timeout」只是还利息,故改按**域**切两片(`scripts/e2e-shard-plan.mjs`),同域 spec 仍连续跑在同一进程里 —— 这一点是刻意的:`--detectOpenHandles` 的价值就在单进程连续跑时能看见 spec 之间累积出来的句柄,`jest --shard` 那种哈希均分会把同族泄漏的两端拆散。片数取 2 而非 3/4:activity 族单族是不可再分的地板(按 2026-08-19 实测反推约 23 分钟,而 3 片的均分目标才 19 分钟),切更细省不下多少时间却持续削弱检出能力。实测两片 32分41秒 / 25分7秒,墙钟 33 分钟。**保住**:单 spec 泄漏(100%,每个 spec 都在某片进程内被检)与同域跨 spec 泄漏;**放弃**:跨域跨 spec 交互泄漏,以及整套内存累积→OOM 的灵敏度(每片只累积约一半)——怀疑内存累积时,手动跑一次不带 `--testPathPatterns` 的全量串行才是权威判据。
 
@@ -30,6 +30,29 @@ E2E **并行执行**(Harness 3.0 P1;默认 `maxWorkers: 50%`,CI 由 `JEST_MAX_WO
 ---
 
 ## 准备与运行
+
+### 本地运行前确认目标库
+
+Contract、E2E 与 Golden journeys 共用 globalSetup，都会准备模板库、执行迁移并重建 worker 库；不是无数据库检查。先按准备执行的**同一命令和 worker 参数**预览，例如：
+
+```bash
+SRVF_TEST_RUN_PLAN_ONLY=1 pnpm test:contract
+SRVF_TEST_RUN_PLAN_ONLY=1 pnpm test:e2e --runInBand <spec路径>
+```
+
+预览在任何数据库操作之前以“仅预览”错误退出，退出码非零是预期行为，不能记为测试通过。输出只含库名与动作，不含连接串或凭证。它仍要求本地测试环境可加载且通过既有目标库校验。
+
+本地实际运行时，`SRVF_TEST_RUN_SCOPE` 必须列明**已获维护者批准**的模板库及全部 worker 库，以逗号分隔，不支持通配符。主仓串行示例（仅在这两个库及重建动作已获准时使用）：
+
+```bash
+SRVF_TEST_RUN_SCOPE=app_test,app_test_w1 pnpm test:contract
+```
+
+worktree 的库名从实际路径派生，须使用该工作树预览结果，不能照抄主仓示例；改变 worker 数量后重新核对范围。缺少清单、清单非法或遗漏任一目标时，入口在建库/迁移/清理前拒绝。仅获准 w98 不能授权模板库或 w1。助手不能将提示的目标列表自行当作授权；同一已授权范围内可以复用清单，不需每跑一次测试重新确认。
+
+GitHub Actions 沿既有隔离配置运行，未指定本地清单时保持原行为；显式提供清单仍会校验。`GITHUB_ACTIONS` 仅用于兼容执行环境，不是权限凭据，不得在本地伪装该标志绕过核对。数据库原有精确目标及零连接等保护继续执行。
+
+这项检查只覆盖共享 globalSetup/Teardown 的模板与 worker 操作。具名测试自行建立的 scratch 库、`db:test:init` 等独立命令仍须单独核实并授权。以下运行命令需先满足上述范围要求；本地无数据库任务只跑 unit/静态检查。
 
 ```bash
 # 1. 起 PostgreSQL 容器(若尚未起)
@@ -65,15 +88,15 @@ pnpm db:test:prune
 
 > 下表为早期代表性 spec 列举(v0.7 / v0.8 时代锁定),**非全集**;当前完整 spec 清单以 `find test/e2e -name '*.ts'` 实际输出为准。
 
-| spec 文件 | 覆盖内容 |
-|---|---|
-| [`health`](../test/e2e/health.e2e-spec.ts) | 健康检查响应包装 |
-| [`response-format`](../test/e2e/response-format.e2e-spec.ts) / [`swagger`](../test/e2e/swagger.e2e-spec.ts) / [`bizcode-http-status`](../test/e2e/bizcode-http-status.e2e-spec.ts) | 横切:统一响应格式 / Swagger 跳过包装 / BizCode httpStatus 一致性 |
-| [`auth-login`](../test/e2e/auth-login.e2e-spec.ts) / [`auth-jwt-guard`](../test/e2e/auth-jwt-guard.e2e-spec.ts) | 登录正反路径(含防账号枚举四场景一致性)+ JWT 鉴权失效全部分支 |
-| [`app-me`](../test/e2e/app-me.e2e-spec.ts) / [`app-me-password`](../test/e2e/app-me-password.e2e-spec.ts) | App 本人接口 `/api/app/v1/me*`(资料白名单 + 本人改密铁律;Route B Phase 4 删除 `/api/users/me*` 后,原 `users-me` spec 由此二者承接) |
-| [`users-admin-list`](../test/e2e/users-admin-list.e2e-spec.ts) / [`users-admin-crud`](../test/e2e/users-admin-crud.e2e-spec.ts) / [`users-role-boundary`](../test/e2e/users-role-boundary.e2e-spec.ts) | 管理接口分页 / CRUD 基础路径 / 跨角色边界 |
-| [`users-self-protection`](../test/e2e/users-self-protection.e2e-spec.ts) / [`users-last-super-admin`](../test/e2e/users-last-super-admin.e2e-spec.ts) / [`users-soft-delete`](../test/e2e/users-soft-delete.e2e-spec.ts) / [`users-password-reset`](../test/e2e/users-password-reset.e2e-spec.ts) | 自我保护 / SUPER_ADMIN 互操作正向回归 / 软删副作用矩阵 / 密码重置完整流程 |
-| [`seed`](../test/e2e/seed.e2e-spec.ts) | `prisma/seed.ts` 子进程行为 + production 强校验 |
+| spec 文件                                                                                                                                                                                                                                                                                         | 覆盖内容                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| [`health`](../test/e2e/health.e2e-spec.ts)                                                                                                                                                                                                                                                        | 健康检查响应包装                                                                                                                   |
+| [`response-format`](../test/e2e/response-format.e2e-spec.ts) / [`swagger`](../test/e2e/swagger.e2e-spec.ts) / [`bizcode-http-status`](../test/e2e/bizcode-http-status.e2e-spec.ts)                                                                                                                | 横切:统一响应格式 / Swagger 跳过包装 / BizCode httpStatus 一致性                                                                   |
+| [`auth-login`](../test/e2e/auth-login.e2e-spec.ts) / [`auth-jwt-guard`](../test/e2e/auth-jwt-guard.e2e-spec.ts)                                                                                                                                                                                   | 登录正反路径(含防账号枚举四场景一致性)+ JWT 鉴权失效全部分支                                                                       |
+| [`app-me`](../test/e2e/app-me.e2e-spec.ts) / [`app-me-password`](../test/e2e/app-me-password.e2e-spec.ts)                                                                                                                                                                                         | App 本人接口 `/api/app/v1/me*`(资料白名单 + 本人改密铁律;Route B Phase 4 删除 `/api/users/me*` 后,原 `users-me` spec 由此二者承接) |
+| [`users-admin-list`](../test/e2e/users-admin-list.e2e-spec.ts) / [`users-admin-crud`](../test/e2e/users-admin-crud.e2e-spec.ts) / [`users-role-boundary`](../test/e2e/users-role-boundary.e2e-spec.ts)                                                                                            | 管理接口分页 / CRUD 基础路径 / 跨角色边界                                                                                          |
+| [`users-self-protection`](../test/e2e/users-self-protection.e2e-spec.ts) / [`users-last-super-admin`](../test/e2e/users-last-super-admin.e2e-spec.ts) / [`users-soft-delete`](../test/e2e/users-soft-delete.e2e-spec.ts) / [`users-password-reset`](../test/e2e/users-password-reset.e2e-spec.ts) | 自我保护 / SUPER_ADMIN 互操作正向回归 / 软删副作用矩阵 / 密码重置完整流程                                                          |
+| [`seed`](../test/e2e/seed.e2e-spec.ts)                                                                                                                                                                                                                                                            | `prisma/seed.ts` 子进程行为 + production 强校验                                                                                    |
 
 ---
 
