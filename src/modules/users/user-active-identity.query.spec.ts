@@ -1,5 +1,63 @@
 import { PrismaClient, Role, UserStatus } from '@prisma/client';
-import { loadActiveUserIdentityInTx } from './user-active-identity.query';
+import {
+  loadActiveUserIdentityInTx,
+  lockUserMemberIdentityInTx,
+} from './user-active-identity.query';
+
+describe('User 属主显式关联共享锁', () => {
+  const payload = { actorUserId: 'original_user', actorMemberId: 'original_member' };
+
+  it('使用调用方事务与原联合 SQL，参数化绑定原执行人及成员，不改变锁类型或顺序', async () => {
+    const tx = new PrismaClient();
+    const query = jest.fn().mockResolvedValue([]);
+    jest.spyOn(tx, '$queryRaw').mockImplementation(query);
+    const read = jest.spyOn(tx.user, 'findFirst');
+    const transaction = jest.spyOn(tx, '$transaction');
+    try {
+      await expect(lockUserMemberIdentityInTx(tx, payload)).resolves.toBeUndefined();
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query).toHaveBeenCalledWith(
+        [
+          'SELECT u.id FROM "User" u JOIN "Member" m ON m.id = u."memberId"\n      WHERE u.id = ',
+          ' AND m.id = ',
+          ' FOR SHARE OF u, m',
+        ],
+        payload.actorUserId,
+        payload.actorMemberId,
+      );
+      expect(read).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      await tx.$disconnect();
+    }
+  });
+
+  it('每次调用重新取锁，不跨请求缓存；空结果仍由调用方后续身份检查裁决', async () => {
+    const tx = new PrismaClient();
+    const query = jest.fn().mockResolvedValue([]);
+    jest.spyOn(tx, '$queryRaw').mockImplementation(query);
+    try {
+      await lockUserMemberIdentityInTx(tx, payload);
+      await lockUserMemberIdentityInTx(tx, payload);
+      expect(query).toHaveBeenCalledTimes(2);
+    } finally {
+      await tx.$disconnect();
+    }
+  });
+
+  it('取锁失败原样抛出，不吞错、不回退为未加锁读取', async () => {
+    const tx = new PrismaClient();
+    const failure = new Error('lock failed');
+    const query = jest.fn().mockRejectedValue(failure);
+    jest.spyOn(tx, '$queryRaw').mockImplementation(query);
+    try {
+      await expect(lockUserMemberIdentityInTx(tx, payload)).rejects.toBe(failure);
+      expect(query).toHaveBeenCalledTimes(1);
+    } finally {
+      await tx.$disconnect();
+    }
+  });
+});
 
 describe('User 属主事务身份读取', () => {
   const current = {

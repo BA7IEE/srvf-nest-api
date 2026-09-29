@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:66fd4c0461fee6002e48a93314167cc024b6a2e4f5d9139e60d8fdc96f9a8b35",
+  "inputDigest": "sha256:8010c9cdc0a69063a0edea7d0ba515295f8608294f9bde85634b2e739282de0d",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -315,6 +315,78 @@
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ContributionPolicy": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ContributionPolicyVersion": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ContributionPolicyCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ContributionRuleConversionReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ContributionShadowObservationWindow": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowAttemptReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowComparisonReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowTerminalReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowDispositionReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ActivityContributionPolicySelectionRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ActivityContributionPolicySelectionItem": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
+      "confirmed": true
+    },
+    "ActivityContributionPolicySelectionCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "settlement-ledger",
       "confirmed": true
     },
     "ActivityTimePolicySelectionRevision": {
@@ -708,6 +780,72 @@
       "subdomain": "lifecycle",
       "confirmed": true
     },
+    "ActivitySettlementTimeRevision": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivityTimeCutoverReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipationTimeCutoverBinding": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipationTimeLedgerManifest": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipationTimeCorrectionManifest": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipationTimeCorrectionEntry": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipationTimeCorrectionCommitReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipationTimeLedgerEntry": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipantSettlementTimeBucket": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ParticipantSettlementTimeBucketSource": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "ActivitySettlementTimeCommandReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
     "ParticipantTimeAllocationRevision": {
       "domain": "participation",
       "ownerModule": "activities",
@@ -996,6 +1134,18 @@
       "subdomain": "lifecycle",
       "confirmed": true
     },
+    "CorrectionPendingTimeAllocation": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "CorrectionPendingTimeAllocationEvidence": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
     "CorrectionSegmentPreparationReceipt": {
       "domain": "participation",
       "ownerModule": "activities",
@@ -1003,6 +1153,18 @@
       "confirmed": true
     },
     "CorrectionSegmentCleanupReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "CorrectionTimeAllocationBinding": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "lifecycle",
+      "confirmed": true
+    },
+    "CorrectionTimeSourceProof": {
       "domain": "participation",
       "ownerModule": "activities",
       "subdomain": "lifecycle",

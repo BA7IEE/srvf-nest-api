@@ -16,6 +16,10 @@ import {
   parseActivityTemplateDefinitionV4,
   type ActivityTemplateDefinitionV4,
 } from './activity-template-definition-v4';
+import {
+  parseActivityTemplateDefinitionV5,
+  type ActivityTemplateDefinitionV5,
+} from './activity-template-definition-v5';
 
 export type GlobalTemplateVersionRow = ActivityTemplate & { family: ActivityTemplateFamily | null };
 export function globalTemplateFamilyWhere() {
@@ -27,7 +31,8 @@ export function parseStoredTemplateVersion(
   | ActivityTemplateDefinitionV1
   | ActivityTemplateDefinitionV2
   | ActivityTemplateDefinitionV3
-  | ActivityTemplateDefinitionV4 {
+  | ActivityTemplateDefinitionV4
+  | ActivityTemplateDefinitionV5 {
   if (
     !row.familyId ||
     !row.definitionHash ||
@@ -43,6 +48,7 @@ export function parseStoredTemplateVersion(
   if (row.schemaVersion === 2) return parseActivityTemplateDefinitionV2(row.definitionJson);
   if (row.schemaVersion === 3) return parseActivityTemplateDefinitionV3(row.definitionJson);
   if (row.schemaVersion === 4) return parseActivityTemplateDefinitionV4(row.definitionJson);
+  if (row.schemaVersion === 5) return parseActivityTemplateDefinitionV5(row.definitionJson);
   throw new TypeError('unsupported template schema');
 }
 export function presentTemplateVersionSummary(row: GlobalTemplateVersionRow) {

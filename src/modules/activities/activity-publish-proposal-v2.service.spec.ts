@@ -55,6 +55,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const governed = canonicalizeRegistrationFormDefinition({
       fields: [
@@ -148,6 +149,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
 
     expect(
@@ -167,6 +169,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as ProposalV2Internals;
     const activity = {
@@ -264,6 +267,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as { currentState: jest.Mock };
     const state = {
@@ -305,6 +309,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as { currentState: jest.Mock };
     const state = {
@@ -374,6 +379,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     const state = {
@@ -392,6 +398,7 @@ describe('ActivityPublishProposalV2Service', () => {
         metricSelectionRevision: 1,
       },
       timePolicySelection: null,
+      contributionPolicySelection: null,
     };
     internals.currentState = jest.fn().mockResolvedValue(state);
     internals.assertProposalValid = jest.fn();
@@ -409,6 +416,7 @@ describe('ActivityPublishProposalV2Service', () => {
       true,
       true,
       true,
+      true,
     );
   });
 
@@ -421,6 +429,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     const state = {
@@ -439,6 +448,7 @@ describe('ActivityPublishProposalV2Service', () => {
         metricSelectionRevision: 1,
       },
       timePolicySelection: { id: 'selection-revision', revision: 1 },
+      contributionPolicySelection: null,
     };
     internals.currentState = jest.fn().mockResolvedValue(state);
     internals.assertProposalValid = jest.fn();
@@ -478,6 +488,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as {
       toSnapshotV6: (...args: unknown[]) => ActivityPublishProposalSnapshotV6;
@@ -684,6 +695,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as { currentState: jest.Mock };
     const state = {
@@ -750,6 +762,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     const appliedAllocationModes: Array<string | undefined> = [];
@@ -861,6 +874,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     internals.currentState = jest
@@ -887,6 +901,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const selected = {
       id: 'selected-retired-version',
@@ -934,6 +949,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const fallback = {
       id: 'latest-active-legacy-version',
@@ -983,6 +999,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const calls: string[] = [];
     const internals = service as unknown as Record<string, jest.Mock>;
@@ -1080,6 +1097,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const calls: string[] = [];
     const internals = service as unknown as Record<string, jest.Mock>;
@@ -1166,6 +1184,7 @@ describe('ActivityPublishProposalV2Service', () => {
       { enqueueSessionCancellation: jest.fn() } as never,
       { log: jest.fn() } as never,
       timePolicySelections as never,
+      undefined as never,
     );
     const internals = service as unknown as Record<string, jest.Mock>;
     internals.applyActivity = jest.fn().mockResolvedValue(undefined);

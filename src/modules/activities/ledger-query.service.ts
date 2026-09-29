@@ -16,6 +16,17 @@ import type {
   ListAppMyParticipationLedgerQueryDto,
 } from './dto/app/app-participation-ledger.dto';
 import { decimalToHundredths, fromHundredths, hundredthsToDecimal } from './ledger-day-allocation';
+import {
+  ParticipationTimeTruthQueryService,
+  type OfficialParticipationTimeScope,
+  type OfficialParticipationTimeSnapshot,
+} from './participation-time-truth-query.service';
+
+export {
+  eligibleSecondsToServiceHours,
+  sumOfficialEligibleSeconds,
+} from './participation-time-truth-query.service';
+export type { OfficialParticipationTimeTotal } from './participation-time-truth-query.service';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:账本读面(合同 §3.22)=====
 //
@@ -139,7 +150,26 @@ export class LedgerQueryService {
     private readonly authz: AuthzService,
     private readonly rbac: RbacService,
     private readonly appIdentity: AppIdentityResolver,
+    // D8-2: optional only for legacy unit constructors that never call the official-time API.
+    // Nest still resolves the concrete provider in production; missing wiring fails on first use.
+    private readonly participationTimeTruth?: ParticipationTimeTruthQueryService,
   ) {}
+
+  /**
+   * Participation 域对外的 D8-2 official-time 查询出口。
+   *
+   * 调用方提供自己的事务，以便一次 receipt 判定和后续集合读取保持同一快照；本类不复制
+   * selector SQL，也不在这里另开事务。这样 meta 消费属主 API，而不是新增跨域深引。
+   */
+  async readOfficialParticipationTimeTotalsInTx(
+    tx: Prisma.TransactionClient,
+    input: OfficialParticipationTimeScope,
+  ): Promise<OfficialParticipationTimeSnapshot | null> {
+    if (!this.participationTimeTruth) {
+      throw new Error('ParticipationTimeTruthQueryService is not configured');
+    }
+    return this.participationTimeTruth.readOfficialTotalsInTx(tx, input);
+  }
 
   /** App self surface：memberId 只从当前登录身份解析，调用方没有可传入的主体参数。 */
   async listForCurrentMember(

@@ -3,7 +3,7 @@
 // surface: App 小程序
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:2aa52aba43f85bfbf899d7b3352f0dab1b627cd7556969cd09d4f2e36ff45033
+// inputDigest: sha256:a8b08bd749996c5ac7084f7b855e0ffe26dfa308282ebae71cfd2fcd627fcf21
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, ActivityPublishReviewResponseDto, ContentAttachmentDto, ContentReadDetailDto, ContentReadListItemDto, PageResultDto, UserLinkedMemberDto, UserResponseDto } from '../shared/types';
@@ -93,6 +93,67 @@ export interface AppActivityCheckInDto {
   "outOfRange": boolean;
   "createdAt": string;
   "updatedAt": string;
+}
+
+export interface AppActivityContributionPolicyOptionDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+  "policyCode": string;
+  "policyName": string;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+}
+
+export interface AppActivityContributionPolicyPointerDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+}
+
+export interface AppActivityContributionPolicySelectionChangeDto {
+  "scope": AppActivityContributionPolicySelectionScopeDto;
+  "selection": AppActivityContributionPolicySelectionValueDto;
+}
+
+export interface AppActivityContributionPolicySelectionItemDto {
+  "scope": AppActivityContributionPolicySelectionScopeDto;
+  "selection": AppActivityContributionPolicySelectionValueDto;
+}
+
+export interface AppActivityContributionPolicySelectionResponseDto {
+  "activityId": string;
+  "selectionRevisionId": string | null;
+  "revision": number;
+  "selectionHash": string | null;
+  "createdAt": string | null;
+  "items": AppActivityContributionPolicySelectionItemDto[];
+  "resolved": Record<string, unknown>[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+  "resolutionSummary": Record<string, unknown>;
+}
+
+export interface AppActivityContributionPolicySelectionResultDto {
+  "activityId": string;
+  "selectionRevisionId": string;
+  "revision": number;
+  "selectionHash": string;
+  "createdAt": string;
+}
+
+export interface AppActivityContributionPolicySelectionScopeDto {
+  "layerCode": "activity" | "position";
+  "sessionId": string | null;
+  "positionId": string | null;
+}
+
+export interface AppActivityContributionPolicySelectionValueDto {
+  "mode": "inherit" | "explicit";
+  "pointer": AppActivityContributionPolicyPointerDto;
 }
 
 export interface AppActivityControlPlaneStatusDto {
@@ -658,6 +719,91 @@ export interface AppActivityTemplateVersionOptionDto {
   "updatedAt": string;
 }
 
+export interface AppActivityTimeCorrectionCommitResultDto {
+  "requestId": string;
+  "applicationId": string;
+  "postingBatchId": string;
+  "settlementVersionId": string;
+  "settlementVersion": number;
+  "correctionStatus": "applied";
+  "applicationStatus": "committed";
+  "replayed": boolean;
+}
+
+export interface AppActivityTimeCorrectionDetailDto {
+  "requestId": string;
+  "requestVersion": number;
+  "baseSettlementVersionId": string;
+  "statusCode": string;
+  "submittedAt": string;
+  "reviewedAt"?: Record<string, unknown> | null;
+  "requestTypeCode": string;
+  "requestedChangeJson": Record<string, unknown> | null;
+  "reason": Record<string, unknown> | null;
+  "attachmentIds": string[] | null;
+  "reviewNote"?: Record<string, unknown> | null;
+  "resubmittedFromRequestId"?: Record<string, unknown> | null;
+  "resubmittedSuccessorRequestId"?: Record<string, unknown> | null;
+  "sourceProofHash"?: Record<string, unknown> | null;
+  "evidenceStatusCode": "not_frozen" | "frozen";
+  "sourcePage"?: Record<string, unknown> | null;
+}
+
+export interface AppActivityTimeCorrectionListItemDto {
+  "requestId": string;
+  "requestVersion": number;
+  "baseSettlementVersionId": string;
+  "statusCode": string;
+  "submittedAt": string;
+  "reviewedAt"?: Record<string, unknown> | null;
+}
+
+export interface AppActivityTimeCorrectionPrepareResultDto {
+  "requestId": string;
+  "applicationId": string;
+  "postingBatchId": string;
+  "settlementVersionId": string;
+  "requestHash": string;
+  "sourceProofHash"?: Record<string, unknown> | null;
+  "replayed": boolean;
+}
+
+export interface AppActivityTimeCorrectionResubmitResultDto {
+  "outcome": "resubmitted" | "voided";
+  "requestId": string;
+  "requestVersion"?: number;
+  "activityId"?: string;
+  "settlementRunId"?: string;
+  "baseSettlementVersionId"?: string;
+  "baseResultRevisionId"?: Record<string, unknown> | null;
+  "baseClosureRevision"?: number;
+  "statusCode"?: "pending";
+  "replayed"?: boolean;
+  "currentSettlementVersionId"?: Record<string, unknown> | null;
+}
+
+export interface AppActivityTimeCorrectionReviewResultDto {
+  "outcome": "reviewed" | "voided";
+  "requestId": string;
+  "statusCode"?: string;
+  "runStatus"?: string;
+  "reviewedByUserId"?: string;
+  "currentSettlementVersionId"?: Record<string, unknown> | null;
+  "replayed"?: boolean;
+}
+
+export interface AppActivityTimeCorrectionSubmitResultDto {
+  "requestId": string;
+  "requestVersion": number;
+  "activityId": string;
+  "settlementRunId": string;
+  "baseSettlementVersionId": string;
+  "baseResultRevisionId": Record<string, unknown> | null;
+  "baseClosureRevision": number;
+  "statusCode": "pending";
+  "replayed": boolean;
+}
+
 export interface AppActivityTimePolicyOptionDto {
   "policyId": string;
   "versionId": string;
@@ -813,6 +959,13 @@ export interface AppCollaboratorOptionsResponseDto {
   "pageSize": number;
 }
 
+export interface AppCommitActivityTimeCorrectionDto {
+  "expectedBaseSettlementVersionId": string;
+  "operationKey": string;
+  "correctionApplicationId": string;
+  "postingBatchId": string;
+}
+
 export interface AppConfirmActivityOutcomeDto {
   "operationKey": string;
   "expectedLatestRevision": number;
@@ -822,6 +975,17 @@ export interface AppConfirmActivityOutcomeDto {
   "candidateId"?: string | null;
   "manualDraftId"?: string | null;
   "values": AppOutcomeFinalizationSelectionDto[];
+}
+
+export interface AppCreationContributionPolicyPositionOverrideDto {
+  "sessionCode": string;
+  "positionCode": string;
+  "selection": AppActivityContributionPolicySelectionValueDto;
+}
+
+export interface AppCreationContributionPolicySelectionInputDto {
+  "activity": AppActivityContributionPolicySelectionValueDto;
+  "positionOverrides": AppCreationContributionPolicyPositionOverrideDto[];
 }
 
 export interface AppCreationPlaceCoordinateDto {
@@ -873,11 +1037,16 @@ export interface AppEmergencyActivityCreationDto {
   "location": string;
   "metricSelection"?: AppActivityMetricSelectionInputDto;
   "timePolicySelection"?: AppEmergencyTimePolicySelectionInputDto;
+  "contributionPolicySelection"?: AppEmergencyContributionPolicySelectionInputDto;
   "initiatorMemberId": string;
   "activityTypeCode": string;
   "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
   "organizationIds"?: string[];
   "memberIds"?: string[];
+}
+
+export interface AppEmergencyContributionPolicySelectionInputDto {
+  "activity": AppActivityContributionPolicySelectionValueDto;
 }
 
 export interface AppEmergencyCreationFollowUpDto {
@@ -1755,6 +1924,47 @@ export interface AppParticipationLedgerEntryDto {
   "cappedOutPointsDelta": number;
 }
 
+export interface AppParticipationTimeProofItemDto {
+  "ledgerDate": string;
+  "activityId": string;
+  "rootManifestId": string | null;
+  "participationIdentityId": string;
+  "sourceCategoryCode": "legacy_recognized_service" | "volunteer_service" | "training" | "organization" | "non_creditable";
+  "sourceEntryId": string;
+  "latestCorrectionManifestId": string | null;
+  "sourceMode": "legacy_ledger" | "classified_time_ledger";
+  "recognizedSeconds": number;
+}
+
+export interface AppParticipationTimeProofResponseDto {
+  "proofVersion": number;
+  "cutoverReceiptId": string;
+  "cutoverAt": string;
+  "asOf": string;
+  "memberId": string;
+  "dateFrom": string;
+  "dateTo": string;
+  "legacyRecognizedSeconds": number;
+  "volunteerServiceSeconds": number;
+  "trainingSeconds": number;
+  "organizationSeconds": number;
+  "nonCreditableSeconds": number;
+  "eligibleServiceSeconds": number;
+  "proofSetHash": string;
+  "isPubliclyVerifiable": boolean;
+  "provenance": string;
+  "items": AppParticipationTimeProofItemDto[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+}
+
+export interface AppPatchActivityContributionPolicySelectionDto {
+  "operationKey": string;
+  "expectedRevision": number;
+  "changes": AppActivityContributionPolicySelectionChangeDto[];
+}
+
 export interface AppPatchActivityTimePolicySelectionDto {
   "operationKey": string;
   "expectedRevision": number;
@@ -1771,6 +1981,18 @@ export interface AppPrepareActivityOutcomeCorrectionDto {
   "values": AppOutcomeCorrectionValueDto[];
 }
 
+export interface AppPrepareActivityTimeCorrectionDto {
+  "expectedBaseSettlementVersionId": string;
+  "operationKey": string;
+}
+
+export interface AppPrepareTimeSettlementDto {
+  "operationKey": string;
+  "expectedDraftVersion": number;
+  "expectedEvidenceSealId": string;
+  "expectedTimeRevision": number;
+}
+
 export interface AppProfessionalActivityCreationDto {
   "operationKey": string;
   "title": string;
@@ -1780,6 +2002,7 @@ export interface AppProfessionalActivityCreationDto {
   "location": string;
   "metricSelection"?: AppActivityMetricSelectionInputDto;
   "timePolicySelection"?: AppCreationTimePolicySelectionInputDto;
+  "contributionPolicySelection"?: AppCreationContributionPolicySelectionInputDto;
   "activityTypeCode": string;
   "allocationModeCode": "first_come" | "qualification_rank" | "lottery";
   "initiatorMemberId"?: string;
@@ -1818,6 +2041,21 @@ export interface AppQuickActivityCreationDto {
   "confirmedCapacity"?: number | null;
   "defaultPlaceVisibilityCode": "public" | "accepted" | "staff" | "command";
   "places"?: AppActivityCreationPlaceDto[];
+}
+
+export interface AppRecognizeTimeSettlementDto {
+  "operationKey": string;
+  "expectedDraftVersion": number;
+  "expectedEvidenceSealId": string;
+  "sourceSegmentId": string;
+  "expectedRevision": number;
+  "expectedEvidenceRevision": number;
+  "expectedPopulationRevision": number;
+  "expectedWorkflowRevision": number;
+  "recognitionModeCode": "automatic" | "manual";
+  "evidenceAttachmentIds": string[];
+  "manualReason"?: string;
+  "slices"?: AppTimeSettlementManualSliceDto[];
 }
 
 export interface AppRecordActivityOutcomeDto {
@@ -1868,6 +2106,12 @@ export interface AppRegistrationUploadSessionCreatedDto {
   "token": string;
   "expiresAt": string;
   "formVersion": number;
+}
+
+export interface AppReviewActivityTimeCorrectionDto {
+  "actionCode": "approve" | "return" | "reject";
+  "expectedRequestVersion": number;
+  "note"?: string;
 }
 
 export interface AppSelectActivityMetricSetDto {
@@ -2125,6 +2369,23 @@ export interface AppSubmitActivityChangeReviewDto {
   "positions"?: AppActivityChangePositionDto[];
 }
 
+export interface AppSubmitActivityTimeCorrectionDto {
+  "participationIdentityId": Record<string, unknown> | null;
+  "requestTypeCode": "result" | "service" | "time" | "points" | "person_identity" | "other";
+  "requestedChangeJson": Record<string, unknown>;
+  "reason": string;
+  "attachmentIds"?: string[];
+  "operationKey": string;
+}
+
+export interface AppSubmitTimeSettlementDto {
+  "operationKey": string;
+  "expectedDraftVersion": number;
+  "expectedEvidenceSealId": string;
+  "timeRevisionId": string;
+  "expectedBucketContentHash": string;
+}
+
 export interface AppTeamJoinApplicationDto {
   "id": string;
   "cycleId": string;
@@ -2142,6 +2403,334 @@ export interface AppTeamJoinApplicationDto {
   "evaluationNote"?: Record<string, unknown> | null;
   "eliminationStage"?: Record<string, unknown> | null;
   "createdAt": string;
+}
+
+export interface AppTimeCorrectionCategoryDto {
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "reversalSecondsTotal": string;
+  "replacementSecondsTotal": string;
+  "netSecondsDelta": string;
+}
+
+export interface AppTimeCorrectionEntryDto {
+  "id": string;
+  "rootEntryId": string;
+  "reversesCorrectionEntryId": string | null;
+  "participationIdentityId": string;
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "entryTypeCode": "reversal" | "credit";
+  "secondsDelta": number;
+}
+
+export interface AppTimeCorrectionPageDto {
+  "page": number;
+  "pageSize": number;
+  "total": number;
+  "items": AppTimeCorrectionEntryDto[];
+}
+
+export interface AppTimeCorrectionReportDto {
+  "manifestId": string;
+  "postingBatchId": string;
+  "settlementVersionId": string;
+  "baseSettlementVersionId": string;
+  "rootManifestId": string;
+  "predecessorManifestId": string | null;
+  "formatVersion": 1;
+  "contentHash": string;
+  "reversalSecondsTotal": string;
+  "replacementSecondsTotal": string;
+  "netSecondsDelta": string;
+  "categories": AppTimeCorrectionCategoryDto[];
+  "resultPage": AppTimeCorrectionPageDto;
+}
+
+export interface AppTimeLedgerCategoryTotalDto {
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "recognizedSecondsTotal": string;
+}
+
+export interface AppTimeLedgerEntryDto {
+  "id": string;
+  "bucketId": string;
+  "participationIdentityId": string;
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "recognizedSeconds": number;
+}
+
+export interface AppTimeLedgerPageDto {
+  "page": number;
+  "pageSize": number;
+  "total": number;
+  "items": AppTimeLedgerEntryDto[];
+}
+
+export interface AppTimeLedgerReportDto {
+  "postingBatchId": string;
+  "manifestId": string;
+  "timeRevisionId": string;
+  "formatVersion": 1;
+  "contentHash": string;
+  "entryCount": number;
+  "recognizedSecondsTotal": string;
+  "categories": AppTimeLedgerCategoryTotalDto[];
+  "resultPage": AppTimeLedgerPageDto;
+}
+
+export interface AppTimeSettlementAllocationDetailDto {
+  "allocationRevisionId": string;
+  "activityId": string;
+  "sourceSegmentId": string;
+  "sourceSegmentRevision": number;
+  "revision": number;
+  "recognitionModeCode": "automatic" | "manual";
+  "allocationHash": string;
+  "sliceCount": number;
+  "createdAt": string;
+  "slices": AppTimeSettlementSliceDto[];
+  "evidence": AppTimeSettlementEvidenceDto[];
+  "participationIdentityId": string;
+  "manualReason": string | null;
+  "settlementDraftVersionId": string | null;
+  "settlementEvidenceSealId": string | null;
+  "policyVersionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+  "policy": AppTimeSettlementPolicyDto;
+  "effectiveFrom": string;
+  "effectiveUntil": string | null;
+}
+
+export interface AppTimeSettlementAllocationResultDto {
+  "schemaVersion": 1;
+  "activityId": string;
+  "allocationRevisionId": string;
+  "revision": number;
+  "sourceSegmentId": string;
+  "sourceSegmentRevision": number;
+  "recognitionModeCode": "automatic" | "manual";
+  "allocationHash": string;
+  "sliceCount": number;
+  "evidenceCount": number;
+  "createdAt": string;
+}
+
+export interface AppTimeSettlementBlockerDto {
+  "code": string;
+  "count": number;
+}
+
+export interface AppTimeSettlementBucketDto {
+  "bucketId": string;
+  "timeRevisionId": string;
+  "participationIdentityId": string;
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "calculatedSeconds": number | null;
+  "recognizedSeconds": number;
+  "rawCalculatedMilliseconds": string | null;
+  "rawRecognizedMilliseconds": string;
+  "timePolicyVersionId": string | null;
+  "definitionHash": string | null;
+  "evaluatorVersion": number | null;
+  "quantumSeconds": number | null;
+  "hasAdjustment": boolean;
+  "emptyReasonCode": "no_valid_segment" | null;
+}
+
+export interface AppTimeSettlementBucketSourceDto {
+  "sourceId": string;
+  "bucketId": string;
+  "timeRevisionId": string;
+  "allocationRevisionId": string;
+  "sourceSegmentId": string;
+  "sourceSegmentRevision": number;
+  "rawCalculatedMilliseconds": string | null;
+  "rawRecognizedMilliseconds": string;
+}
+
+export interface AppTimeSettlementDraftDto {
+  "settlementVersionId": string;
+  "version": number;
+  "evidenceSealId": string | null;
+  "evidenceRevision": number | null;
+  "populationRevision": number | null;
+  "workflowRevision": number | null;
+  "sealCurrent": boolean;
+}
+
+export interface AppTimeSettlementEvidenceDto {
+  "attachmentId": string;
+  "ordinal": number;
+}
+
+export interface AppTimeSettlementEvidencePolicyDto {
+  "requiredSources": "punch_event" | "service_segment" | "attachment"[];
+  "requireManualRecognition": boolean;
+}
+
+export interface AppTimeSettlementManualPolicyDto {
+  "enabled": boolean;
+  "reasonRequired"?: true;
+  "evidenceRequired"?: boolean;
+}
+
+export interface AppTimeSettlementManualSliceDto {
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "startAt": string;
+  "endAt": string;
+}
+
+export interface AppTimeSettlementPolicyDto {
+  "defaultCategory": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "roleMappings": AppTimeSettlementRoleMappingDto[];
+  "allowSplit": boolean;
+  "specialIntervals": AppTimeSettlementSpecialIntervalsDto;
+  "rounding": AppTimeSettlementRoundingDto;
+  "evidence": AppTimeSettlementEvidencePolicyDto;
+  "manualAdjustment": AppTimeSettlementManualPolicyDto;
+}
+
+export interface AppTimeSettlementResultDto {
+  "schemaVersion": 1;
+  "activityId": string;
+  "timeRevisionId": string;
+  "revision": number;
+  "kindCode": "draft" | "submitted";
+  "settlementRunId": string;
+  "settlementVersionId": string;
+  "settlementVersion": number;
+  "contentHash": string;
+  "bucketContentHash": string;
+  "bucketCount": number;
+  "sourceCount": number;
+  "createdAt": string;
+}
+
+export interface AppTimeSettlementRevisionDto {
+  "activityId": string;
+  "timeRevisionId": string;
+  "settlementRunId": string;
+  "settlementVersionId": string;
+  "revision": number;
+  "kindCode": "draft" | "submitted";
+  "sourceDraftTimeRevisionId": string | null;
+  "evidenceSealId": string;
+  "evidenceRevision": number;
+  "populationRevision": number;
+  "workflowRevision": number;
+  "bucketContentHash": string;
+  "bucketCount": number;
+  "sourceCount": number;
+  "createdAt": string;
+}
+
+export interface AppTimeSettlementRoleMappingDto {
+  "attendanceRoleCode": string;
+  "category": "volunteer_service" | "training" | "organization" | "non_creditable";
+}
+
+export interface AppTimeSettlementRoundingDto {
+  "mode": "floor";
+  "quantumSeconds": number;
+}
+
+export interface AppTimeSettlementRunDto {
+  "settlementRunId": string;
+  "statusCode": string;
+  "currentDraftVersion": number | null;
+  "currentSubmittedVersion": number | null;
+}
+
+export interface AppTimeSettlementSliceDto {
+  "categoryCode": "volunteer_service" | "training" | "organization" | "non_creditable";
+  "startAt": string;
+  "endAt": string;
+  "intervalKindCode": "service_segment";
+}
+
+export interface AppTimeSettlementSourceDto {
+  "sourceSegmentId": string;
+  "participationIdentityId": string;
+  "sessionId": string;
+  "sourceSegmentRevision": number;
+  "statusCode": string;
+  "resultCode": string;
+  "checkInAt": string;
+  "checkOutAt": string | null;
+  "allocationRevisionId": string | null;
+  "allocationRevision": number;
+  "exclusionReasonCode": string | null;
+  "blockerCode": string | null;
+}
+
+export interface AppTimeSettlementSpecialIntervalDto {
+  "mode": "exclude" | "manual" | "category";
+  "category"?: "volunteer_service" | "training" | "organization" | "non_creditable";
+}
+
+export interface AppTimeSettlementSpecialIntervalsDto {
+  "preparation": AppTimeSettlementSpecialIntervalDto;
+  "duty": AppTimeSettlementSpecialIntervalDto;
+  "travel": AppTimeSettlementSpecialIntervalDto;
+}
+
+export interface AppTimeSettlementWorkbenchDto {
+  "activityId": string;
+  "run": AppTimeSettlementRunDto;
+  "draft": AppTimeSettlementDraftDto;
+  "latestRevision": AppTimeSettlementRevisionDto;
+  "ready": boolean;
+  "blockers": AppTimeSettlementBlockerDto[];
+}
+
+export interface AppTimeShadowCategoryDto {
+  "bucketId": string;
+  "categoryCode": string;
+  "calculatedSeconds": number | null;
+  "recognizedSeconds": number;
+  "manuallyAdjusted": boolean;
+}
+
+export interface AppTimeShadowItemDto {
+  "participationIdentityId": string;
+  "status": "matched" | "different" | "not_comparable";
+  "reasons": string[];
+  "legacyCalculatedSeconds": number | null;
+  "legacyRecognizedSeconds": number | null;
+  "calculatedDifferenceSeconds": number | null;
+  "recognizedDifferenceSeconds": number | null;
+  "categories": AppTimeShadowCategoryDto[];
+}
+
+export interface AppTimeShadowPageDto {
+  "items": AppTimeShadowItemDto[];
+  "total": number;
+  "page": number;
+  "pageSize": number;
+}
+
+export interface AppTimeShadowReportDto {
+  "formatVersion": 1;
+  "comparatorVersion": 1;
+  "activityId": string;
+  "settlementRunId": string;
+  "settlementVersionId": string;
+  "timeRevisionId": string;
+  "legacyContentHash": string;
+  "draftContentHash": string;
+  "sourceSetHash": string;
+  "bucketContentHash": string;
+  "inputFingerprint": string;
+  "summary": AppTimeShadowSummaryDto;
+  "resultPage": AppTimeShadowPageDto;
+}
+
+export interface AppTimeShadowSummaryDto {
+  "total": number;
+  "matched": number;
+  "different": number;
+  "notComparable": number;
+  "empty": boolean;
 }
 
 export interface ApproveAppManagedRegistrationDto {
@@ -2183,6 +2772,31 @@ export interface ChangeMyPasswordDto {
   "newPassword": string;
 }
 
+export interface ChangeReviewContributionPolicyPointerDto {
+  "policyId": string;
+  "versionId": string;
+  "definitionHash": string;
+  "evaluatorVersion": number;
+}
+
+export interface ChangeReviewContributionPolicySelectionChangeDto {
+  "scope": ChangeReviewContributionPolicySelectionScopeDto;
+  "selection": ChangeReviewContributionPolicySelectionValueDto;
+}
+
+export interface ChangeReviewContributionPolicySelectionScopeDto {
+  "layerCode": "activity" | "position";
+  "sessionId"?: string;
+  "sessionClientRef"?: string;
+  "positionId"?: string;
+  "positionClientRef"?: string;
+}
+
+export interface ChangeReviewContributionPolicySelectionValueDto {
+  "mode": "inherit" | "explicit";
+  "pointer": ChangeReviewContributionPolicyPointerDto;
+}
+
 export interface ChangeReviewDto {
   "operationKey": string;
   "confirmation": boolean;
@@ -2195,6 +2809,8 @@ export interface ChangeReviewDto {
   "expectedMetricSelectionRevision"?: number;
   "timePolicySelectionChanges"?: ChangeReviewTimePolicySelectionChangeDto[];
   "expectedTimePolicySelectionRevision"?: number;
+  "contributionPolicySelectionChanges"?: ChangeReviewContributionPolicySelectionChangeDto[];
+  "expectedContributionPolicySelectionRevision"?: number;
 }
 
 export interface ChangeReviewQualificationRuleScopeDto {

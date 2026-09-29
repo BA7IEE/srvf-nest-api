@@ -21,6 +21,7 @@ describe('LedgerReadyBatchCommitter', () => {
       memberId: null,
     };
     const prisma = {
+      correctionApplication: { findFirst: jest.fn().mockResolvedValue(null) },
       ledgerPostingBatch: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'batch-1',
@@ -65,6 +66,7 @@ describe('LedgerReadyBatchCommitter', () => {
 
   it('没有 final approve 动作时具名拒绝,不拿 batch 字段兜底', async () => {
     const prisma = {
+      correctionApplication: { findFirst: jest.fn().mockResolvedValue(null) },
       ledgerPostingBatch: {
         findUnique: jest.fn().mockResolvedValue({ settlementVersionId: 'version-1' }),
       },
@@ -79,6 +81,30 @@ describe('LedgerReadyBatchCommitter', () => {
     );
     expect(error).toBeInstanceOf(BizException);
     expect((error as BizException).biz).toBe(BizCode.LEDGER_COMMIT_FINAL_APPROVER_MISSING);
+    expect(posting.commitBatch).not.toHaveBeenCalled();
+  });
+
+  it('D7 V2 更正即使存在普通 final approve 也不得由 worker 提交', async () => {
+    const prisma = {
+      ledgerPostingBatch: {
+        findUnique: jest.fn().mockResolvedValue({ settlementVersionId: 'version' }),
+      },
+      correctionApplication: { findFirst: jest.fn().mockResolvedValue({ id: 'correction' }) },
+      settlementReviewAction: { findFirst: jest.fn() },
+    };
+    const posting = { commitBatch: jest.fn() };
+    const service = new LedgerReadyBatchCommitter(prisma as never, posting as never);
+    await expect(service.commitReadyBatch('batch')).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_TIME_LEDGER_CORRECTION_UNAVAILABLE,
+    });
+    expect(prisma.correctionApplication.findFirst).toHaveBeenCalledWith({
+      where: {
+        newPostingBatchId: 'batch',
+        correctionRequest: { requestedChangeJson: { path: ['schemaVersion'], equals: 2 } },
+      },
+      select: { id: true },
+    });
+    expect(prisma.settlementReviewAction.findFirst).not.toHaveBeenCalled();
     expect(posting.commitBatch).not.toHaveBeenCalled();
   });
 });

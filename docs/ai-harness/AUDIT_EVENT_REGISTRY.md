@@ -19,7 +19,7 @@
 > **三条写库漏斗**(全部 `event: AuditLogEvent` 类型锁,新增事件不进 union 编译不过):
 > `AuditLogsService.log()` · `writeConfigAudit()`(permissions)· `user-roles.service` 内联薄封装。
 
-**审计事件(机器核对):168 个 · 活跃(≥1 次出现):163 · 已退役/零产出:5**
+**审计事件(机器核对):174 个 · 活跃(≥1 次出现):169 · 已退役/零产出:5**
 
 
 ## profile
@@ -81,6 +81,10 @@
 | event | 仓内出现次数 | 备注 |
 |---|---|---|
 | `activity.publish` | 22 | AC-010 改期联动 +1(2026-08-28,extra.operation=activity-session-reschedule)；A7 生成独立 Activity 复用该事件，以 `extra.operation=generate_series_instance` 区分 |
+| `activity.contribution-rule.conversion` | 1 | E2 第一层：仅隔离测试夹具成功提交 draft 候选时同事务记录；只记政策／版本锚、批次摘要与来源数量，不记旧规则值、身份明细或原始映射；相同收据重放不重复审计 |
+| `activity.contribution-policy.command` | 1 | E1-2：创建稳定政策；仅记录命令、政策 ID 及闭合结果锚，和事实、收据同事务；不记录 code、name、description、definition、幂等键或请求哈希 |
+| `activity.contribution-policy-version.command` | 1 | E1-2：创建、激活或退役不可变政策版本；仅记录政策／版本 ID、definition hash、evaluator 与前后状态，和事实、收据同事务；不记录 definition、幂等键或请求哈希 |
+| `activity.contribution-policy.selection` | 1 | E1-3：活动贡献政策选择修订；仅记录 activityId、revision、selectionHash、operationCode 与目标数量，和选择、收据同事务；不记录完整政策定义、operationKey、requestHash 或人员明细 |
 
 ## activity-series
 
@@ -91,6 +95,8 @@
 | `activity.time-policy.command` | 1 | D1-2：政策目录创建/版本激活退役；仅操作、版本ID及前后hash/status，与业务及收据同事务，不记录定义或幂等键 |
 | `activity.time-policy.selection` | 1 | D1-3：活动四层选择修订；仅记录activityId、revision、selectionHash、operationCode与目标数量，和选择、收据同事务；不记录完整定义、用户身份、operationKey或requestHash |
 | `activity.time-allocation.command` | 1 | D3：追加参与时长认定、片段/证据、收据与审计同事务；仅记录活动、源段、认定修订、模式和数量，不记录幂等键、请求哈希、附件内容或完整政策 JSON |
+| `activity.time-settlement.command` | 1 | D4：分类 prepare / submit 及重放由 `activity-time-settlement-audit-recorder.ts` 同事务记录；仅操作、活动/版本 ID、计数和重放标记，不记录理由、附件内容、幂等键或请求哈希 |
+| `activity.time-cutover.command` | 1 | D8-1：首次成功写入不可变切换收据时同事务记录；仅记 actor、收据 ID、部署 SHA、证据包摘要、结果和重放标记，不记 token、完整请求、DB 地址或人员明细；同任务重放不重复写审计 |
 | `activity.metric-set.command` | 1 | C1 D2a：指标集版本命令；不记录配置全文或 operationKey |
 | `activity.metric-selection.command` | 1 | C1 D2b：草稿选择与创建初选；仅固定来源、前后要求/hash/revision，和选择、收据同事务；不记录配置全文或 operationKey |
 | `activity.outcome.command` | 1 | C2 D2：人工成果草稿追加、旧 draft 替代、收据及审计同事务；仅修订锚点、状态、来源和数量，不记实际值、operationKey、内部来源引用或附件凭证 |

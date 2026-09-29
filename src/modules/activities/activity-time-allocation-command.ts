@@ -10,6 +10,16 @@ import type { TimePolicyCategory } from './activity-time-policy-definition';
 export const ACTIVITY_TIME_ALLOCATION_OPERATION = 'recognize_time_allocation' as const;
 export const ACTIVITY_TIME_ALLOCATION_SCHEMA_VERSION = 1 as const;
 
+/** Server-resolved D4 proof, never accepted by the original V1 parser. */
+export interface ActivityTimeAllocationSettlementProof {
+  readonly settlementDraftVersionId: string;
+  readonly settlementEvidenceSealId: string;
+  readonly settlementEvidenceRevision: number;
+  readonly settlementPopulationRevision: number;
+  readonly settlementWorkflowRevision: number;
+  readonly settlementDraftContentHash: string;
+}
+
 export interface ActivityTimeAllocationSliceInput {
   readonly categoryCode: TimePolicyCategory;
   readonly intervalKindCode: 'service_segment';
@@ -230,6 +240,43 @@ export function buildActivityTimeAllocationManifest(
     manifest,
     allocationHash: fingerprintMetricEnvelope('activity-time-allocation-manifest-v1', manifest)
       .definitionHash,
+  };
+}
+
+/**
+ * D7-2 has one deliberately narrow exception to the D3 command grammar: a
+ * zero/voided corrected segment has no allocatable interval, so its frozen
+ * correction fact carries an empty slice object.  Keep this separate from the
+ * public D3 builder above: callers of the original command still require one
+ * to 500 slices and cannot silently acquire the exception.
+ */
+export function buildCorrectionTimeAllocationManifest(
+  slices: readonly ActivityTimeAllocationSliceInput[],
+): { manifest: ActivityTimeAllocationManifest; allocationHash: string } {
+  if (slices.length > 500) return allocationTypeError('correction slice count is invalid');
+  const ordered = sortSlices(slices);
+  const mapped = Object.fromEntries(
+    ordered.map((slice, ordinal) => [
+      String(ordinal),
+      {
+        ordinal,
+        categoryCode: slice.categoryCode,
+        intervalKindCode: slice.intervalKindCode,
+        startAt: slice.startAt,
+        endAt: slice.endAt,
+      },
+    ]),
+  ) as Record<string, ActivityTimeAllocationSliceManifest>;
+  const manifest: ActivityTimeAllocationManifest = {
+    schemaVersion: ACTIVITY_TIME_ALLOCATION_SCHEMA_VERSION,
+    slices: mapped,
+  };
+  return {
+    manifest,
+    allocationHash: fingerprintMetricEnvelope(
+      'activity-time-allocation-correction-manifest-v1',
+      manifest,
+    ).definitionHash,
   };
 }
 

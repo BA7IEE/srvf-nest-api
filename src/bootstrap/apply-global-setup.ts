@@ -1,6 +1,6 @@
 import { Logger, ValidationPipe, type INestApplication } from '@nestjs/common';
 import { isIP } from 'node:net';
-import type { NextFunction, Request, Response } from 'express';
+import { json as parseJson, type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
 import { BizCode } from '../common/exceptions/biz-code.constant';
 import { AllExceptionsFilter } from '../common/filters/all-exceptions.filter';
@@ -10,9 +10,56 @@ import { genReqId } from './request-id';
 
 const IPV4_MAPPED_CANONICAL_PATTERN = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/;
 const CLIENT_IDENTITY_REJECTED_EVENT = 'client_identity_rejected';
+const FACT_CORRECTION_BODY_LIMIT = '32mb';
+const FACT_CORRECTION_PATH =
+  /^\/api\/app\/v1\/my\/managed-activities\/[^/]+\/time-corrections(?:\/[^/]+\/resubmit)?$/u;
 const clientIdentityLogger = new Logger('ClientIdentityBoundary');
 
 type TrustProxyFunction = (address: string, index: number) => boolean;
+
+/**
+ * Only the two Human fact-correction write routes need the 32 MiB envelope
+ * accepted by their signed V3 source set.  This is registered before Nest's
+ * default parser during application setup: the local parser sets req.body for
+ * the exact path, then the ordinary parser observes an already-consumed body
+ * and leaves every other route at the existing default limit.
+ *
+ * Do not name this `jsonParser`: Nest's adapter uses that name when detecting
+ * its own global parser and could mistake this scoped wrapper for a global
+ * replacement.  Compressed payloads deliberately stay disabled (`inflate`
+ * false); a signed fact request is accepted only in its bounded raw JSON form.
+ */
+function applyFactCorrectionBodyEnvelope(req: Request, res: Response, next: NextFunction): void {
+  if (req.method !== 'POST' || !FACT_CORRECTION_PATH.test(req.path)) {
+    next();
+    return;
+  }
+  parseJson({ limit: FACT_CORRECTION_BODY_LIMIT, inflate: false })(req, res, (error?: unknown) => {
+    if (error === undefined) {
+      next();
+      return;
+    }
+    // body-parser failures happen before Nest reaches its exception filter.
+    // Normalize only this explicitly widened surface so a rejected 32 MiB
+    // envelope remains a client failure (413/415/400), never a misleading 500.
+    const status = parserFailureStatus(error);
+    if (status !== null) {
+      res.status(status).json({
+        code: BizCode.BAD_REQUEST.code,
+        message: BizCode.BAD_REQUEST.message,
+        data: null,
+      });
+      return;
+    }
+    next(error);
+  });
+}
+
+function parserFailureStatus(error: unknown): 400 | 413 | 415 | null {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return null;
+  const status = (error as { status?: unknown }).status;
+  return status === 400 || status === 413 || status === 415 ? status : null;
+}
 
 // Express/proxy-addr 负责按 trust proxy 从右向左选出 client token；这里仅收紧该最终
 // identity 的语法与表示，不自行解析 XFF。应用先显式拒绝 zone，Node isIP 再拒绝
@@ -158,6 +205,11 @@ export function applyGlobalSetup(app: INestApplication, appCfg: AppConfig): void
     }
     sendInvalidClientIdentity(req, res, appCfg);
   });
+
+  // Keep this before app.init() registers Nest's default parser.  It is a
+  // route discriminator, not a changed global default: every non-target path
+  // continues through the existing Nest parser and its existing body limit.
+  app.use(applyFactCorrectionBodyEnvelope);
 
   app.setGlobalPrefix('/api');
 

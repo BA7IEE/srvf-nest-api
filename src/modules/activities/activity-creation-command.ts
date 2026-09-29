@@ -21,6 +21,18 @@ import {
   type ActivityTimePolicySelectionValue,
 } from './activity-time-policy-selection';
 import { timePolicyObject, timePolicyText } from './activity-time-policy-command';
+import {
+  createActivityContributionPolicySelectionDocument,
+  parseActivityContributionPolicySelectionValue,
+  type ActivityContributionPolicyPointer,
+  type ActivityContributionPolicySelectionDocument,
+  type ActivityContributionPolicySelectionItem,
+  type ActivityContributionPolicySelectionValue,
+} from './activity-contribution-policy-selection';
+import {
+  contributionPolicyObject,
+  contributionPolicyText,
+} from './activity-contribution-policy-command';
 
 function optionalMetricSelection(value: unknown) {
   if (value === undefined) return {};
@@ -182,6 +194,120 @@ export function materializeCreationTimePolicySelection(
     });
   }
   return createActivityTimePolicySelectionDocument(items, { allowTemplate: false });
+}
+
+export interface CreationContributionPolicyPositionOverride {
+  readonly sessionCode: string;
+  readonly positionCode: string;
+  readonly selection: ActivityContributionPolicySelectionValue;
+}
+
+export interface CreationContributionPolicySelection {
+  readonly activity: ActivityContributionPolicySelectionValue;
+  readonly positionOverrides: readonly CreationContributionPolicyPositionOverride[];
+}
+
+function creationContributionPolicyCode(value: unknown): string {
+  const parsed = contributionPolicyText(value, 64);
+  if (!/^[a-z][a-z0-9_]*$/u.test(parsed)) {
+    throw new TypeError('invalid creation contribution-policy code');
+  }
+  return parsed;
+}
+
+function parseCreationContributionPolicySelection(
+  value: unknown,
+): CreationContributionPolicySelection {
+  const root = contributionPolicyObject(value, ['activity', 'positionOverrides']);
+  if (!Array.isArray(root.positionOverrides) || root.positionOverrides.length > 10_000) {
+    throw new TypeError('creation contribution-policy overrides must be a bounded array');
+  }
+  const positionOverrides = root.positionOverrides.map((raw) => {
+    const item = contributionPolicyObject(raw, ['sessionCode', 'positionCode', 'selection']);
+    return {
+      sessionCode: creationContributionPolicyCode(item.sessionCode),
+      positionCode: creationContributionPolicyCode(item.positionCode),
+      selection: parseActivityContributionPolicySelectionValue(item.selection),
+    };
+  });
+  if (
+    new Set(positionOverrides.map((item) => JSON.stringify([item.sessionCode, item.positionCode])))
+      .size !== positionOverrides.length
+  ) {
+    throw new TypeError('duplicate creation contribution-policy position selection');
+  }
+  return {
+    activity: parseActivityContributionPolicySelectionValue(root.activity),
+    positionOverrides: [...positionOverrides].sort(
+      (left, right) =>
+        left.sessionCode.localeCompare(right.sessionCode) ||
+        left.positionCode.localeCompare(right.positionCode),
+    ),
+  };
+}
+
+function optionalContributionPolicySelection(value: unknown) {
+  if (value === undefined) return {};
+  try {
+    return {
+      contributionPolicySelection: parseCreationContributionPolicySelection(
+        instanceToPlain(value, { exposeUnsetFields: false }),
+      ),
+    };
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new BizException(BizCode.ACTIVITY_CONTRIBUTION_POLICY_SELECTION_INVALID);
+    }
+    throw error;
+  }
+}
+
+export function creationContributionPolicyPointers(
+  selection: CreationContributionPolicySelection,
+): readonly ActivityContributionPolicyPointer[] {
+  return [selection.activity, ...selection.positionOverrides.map((item) => item.selection)].flatMap(
+    (item) => (item.pointer ? [item.pointer] : []),
+  );
+}
+
+export function materializeCreationContributionPolicySelection(
+  selection: CreationContributionPolicySelection,
+  sessions: readonly CreationTimePolicyMaterializationSession[],
+): ActivityContributionPolicySelectionDocument {
+  const positionsByCode = new Map<string, { sessionId: string; positionId: string }>();
+  for (const session of sessions) {
+    for (const position of session.positions) {
+      const key = JSON.stringify([session.code, position.code]);
+      if (positionsByCode.has(key)) {
+        throw new BizException(BizCode.ACTIVITY_CONTRIBUTION_POLICY_SELECTION_INVALID);
+      }
+      positionsByCode.set(key, { sessionId: session.id, positionId: position.id });
+    }
+  }
+  const items: ActivityContributionPolicySelectionItem[] = [
+    {
+      scope: { layerCode: 'activity', sessionId: null, positionId: null },
+      selection: selection.activity,
+    },
+  ];
+  for (const override of selection.positionOverrides) {
+    const position = positionsByCode.get(
+      JSON.stringify([override.sessionCode, override.positionCode]),
+    );
+    if (!position) {
+      throw new BizException(BizCode.ACTIVITY_CONTRIBUTION_POLICY_SELECTION_INVALID);
+    }
+    if (override.selection.mode === 'inherit') continue;
+    items.push({
+      scope: {
+        layerCode: 'position',
+        sessionId: position.sessionId,
+        positionId: position.positionId,
+      },
+      selection: override.selection,
+    });
+  }
+  return createActivityContributionPolicySelectionDocument(items);
 }
 
 function iso(value: string): string {
@@ -363,6 +489,7 @@ export function mapProfessionalCreation(dto: AppProfessionalActivityCreationDto)
     qualificationRuleSets,
     ...optionalMetricSelection(dto.metricSelection),
     ...optionalTimePolicySelection(dto.timePolicySelection),
+    ...optionalContributionPolicySelection(dto.contributionPolicySelection),
   };
 }
 export type ProfessionalCreationCommand = ReturnType<typeof mapProfessionalCreation>;
@@ -389,6 +516,14 @@ export function mapEmergencyCreation(dto: AppEmergencyActivityCreationDto) {
         : {
             activity: dto.timePolicySelection.activity,
             sessionOverrides: [],
+            positionOverrides: [],
+          },
+    ),
+    ...optionalContributionPolicySelection(
+      dto.contributionPolicySelection === undefined
+        ? undefined
+        : {
+            activity: dto.contributionPolicySelection.activity,
             positionOverrides: [],
           },
     ),

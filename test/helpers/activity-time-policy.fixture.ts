@@ -107,92 +107,101 @@ async function grantOrganizationPermissions(
 
 export async function createD13Fixture(): Promise<D13Fixture> {
   const app = await createTestApp();
-  await resetDb(app);
-  const db = app.get(PrismaService);
-  const prefix = `d13_${randomBytes(5).toString('hex')}`;
-  let sequence = 0;
-  const key = (label: string): string => `${prefix}_${label}_${++sequence}`;
+  try {
+    await resetDb(app);
+    const db = app.get(PrismaService);
+    const prefix = `d13_${randomBytes(5).toString('hex')}`;
+    let sequence = 0;
+    const key = (label: string): string => `${prefix}_${label}_${++sequence}`;
 
-  const creatorUser = await createTestUser(app, {
-    username: key('creator'),
-    role: Role.SUPER_ADMIN,
-  });
-  const reviewerUser = await createTestUser(app, { username: key('reviewer'), role: Role.USER });
-  const creatorMember = await db.member.create({
-    data: {
-      memberNo: key('creator_member'),
-      ...memberIdentityData('D1-3 发起人'),
-      gradeCode: 'level-3',
-    },
-  });
-  const reviewerMember = await db.member.create({
-    data: {
-      memberNo: key('reviewer_member'),
-      ...memberIdentityData('D1-3 审核人'),
-      gradeCode: 'level-3',
-    },
-  });
-  await db.user.update({ where: { id: creatorUser.id }, data: { memberId: creatorMember.id } });
-  await db.user.update({ where: { id: reviewerUser.id }, data: { memberId: reviewerMember.id } });
+    const creatorUser = await createTestUser(app, {
+      username: key('creator'),
+      role: Role.SUPER_ADMIN,
+    });
+    const reviewerUser = await createTestUser(app, { username: key('reviewer'), role: Role.USER });
+    const creatorMember = await db.member.create({
+      data: {
+        memberNo: key('creator_member'),
+        ...memberIdentityData('D1-3 发起人'),
+        gradeCode: 'level-3',
+      },
+    });
+    const reviewerMember = await db.member.create({
+      data: {
+        memberNo: key('reviewer_member'),
+        ...memberIdentityData('D1-3 审核人'),
+        gradeCode: 'level-3',
+      },
+    });
+    await db.user.update({ where: { id: creatorUser.id }, data: { memberId: creatorMember.id } });
+    await db.user.update({ where: { id: reviewerUser.id }, data: { memberId: reviewerMember.id } });
 
-  const root = await db.organization.create({
-    data: { name: key('root'), nodeTypeCode: key('root_type') },
-  });
-  const organization = await db.organization.create({
-    data: { name: key('organization'), nodeTypeCode: key('team_type'), parentId: root.id },
-  });
-  await db.organizationClosure.createMany({
-    data: [
-      { ancestorId: root.id, descendantId: root.id, depth: 0 },
-      { ancestorId: root.id, descendantId: organization.id, depth: 1 },
-      { ancestorId: organization.id, descendantId: organization.id, depth: 0 },
-    ],
-  });
-  await db.memberOrganizationMembership.create({
-    data: { memberId: creatorMember.id, organizationId: organization.id },
-  });
-  await db.memberOrganizationMembership.create({
-    data: { memberId: reviewerMember.id, organizationId: organization.id },
-  });
+    const root = await db.organization.create({
+      data: { name: key('root'), nodeTypeCode: key('root_type') },
+    });
+    const organization = await db.organization.create({
+      data: { name: key('organization'), nodeTypeCode: key('team_type'), parentId: root.id },
+    });
+    await db.organizationClosure.createMany({
+      data: [
+        { ancestorId: root.id, descendantId: root.id, depth: 0 },
+        { ancestorId: root.id, descendantId: organization.id, depth: 1 },
+        { ancestorId: organization.id, descendantId: organization.id, depth: 0 },
+      ],
+    });
+    await db.memberOrganizationMembership.create({
+      data: { memberId: creatorMember.id, organizationId: organization.id },
+    });
+    await db.memberOrganizationMembership.create({
+      data: { memberId: reviewerMember.id, organizationId: organization.id },
+    });
 
-  const type = await db.dictType.create({
-    data: { code: 'activity_type', label: 'D1-3 活动类型' },
-  });
-  await db.dictItem.create({
-    data: { typeId: type.id, code: 'event_support', label: '活动保障' },
-  });
-  const attendanceRole = await db.dictType.create({
-    data: { code: 'attendance_role', label: 'D1-3 考勤角色' },
-  });
-  await db.dictItem.create({
-    data: { typeId: attendanceRole.id, code: 'service', label: 'D1-3 服务岗位' },
-  });
+    const type = await db.dictType.create({
+      data: { code: 'activity_type', label: 'D1-3 活动类型' },
+    });
+    await db.dictItem.create({
+      data: { typeId: type.id, code: 'event_support', label: '活动保障' },
+    });
+    const attendanceRole = await db.dictType.create({
+      data: { code: 'attendance_role', label: 'D1-3 考勤角色' },
+    });
+    await db.dictItem.create({
+      data: { typeId: attendanceRole.id, code: 'service', label: 'D1-3 服务岗位' },
+    });
 
-  const fixture = {
-    app,
-    db,
-    organizationId: organization.id,
-    key,
-  } satisfies Pick<D13Fixture, 'app' | 'db' | 'organizationId' | 'key'>;
-  const bizAdmin = await seedBizAdminPermissionsAndRole(app);
-  await seedActivityResponsibilitySystemRoles(app);
-  await grantBizAdminToUser(app, creatorUser.id, bizAdmin.bizAdminRoleId);
-  await grantOrganizationPermissions(fixture, creatorUser.id, TIME_POLICY_SELECTION_PERMISSIONS);
-  await grantOrganizationPermissions(fixture, reviewerUser.id, REVIEWER_PERMISSIONS);
+    const fixture = {
+      app,
+      db,
+      organizationId: organization.id,
+      key,
+    } satisfies Pick<D13Fixture, 'app' | 'db' | 'organizationId' | 'key'>;
+    const bizAdmin = await seedBizAdminPermissionsAndRole(app);
+    await seedActivityResponsibilitySystemRoles(app);
+    await grantBizAdminToUser(app, creatorUser.id, bizAdmin.bizAdminRoleId);
+    await grantOrganizationPermissions(fixture, creatorUser.id, TIME_POLICY_SELECTION_PERMISSIONS);
+    await grantOrganizationPermissions(fixture, reviewerUser.id, REVIEWER_PERMISSIONS);
 
-  return {
-    ...fixture,
-    creator: {
-      id: creatorUser.id,
-      memberId: creatorMember.id,
-      auth: (await loginAs(app, creatorUser.username)).authHeader,
-    },
-    reviewer: {
-      id: reviewerUser.id,
-      memberId: reviewerMember.id,
-      auth: (await loginAs(app, reviewerUser.username)).authHeader,
-    },
-  };
+    return {
+      ...fixture,
+      creator: {
+        id: creatorUser.id,
+        memberId: creatorMember.id,
+        auth: (await loginAs(app, creatorUser.username)).authHeader,
+      },
+      reviewer: {
+        id: reviewerUser.id,
+        memberId: reviewerMember.id,
+        auth: (await loginAs(app, reviewerUser.username)).authHeader,
+      },
+    };
+  } catch (error) {
+    try {
+      await app.close();
+    } catch (closeError) {
+      throw new AggregateError([error, closeError], 'Fixture initialization and cleanup failed');
+    }
+    throw error;
+  }
 }
 
 export async function closeD13Fixture(fixture: D13Fixture | undefined): Promise<void> {

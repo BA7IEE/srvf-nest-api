@@ -4,6 +4,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { ActivityFeedbacksModule } from '../activity-feedbacks/activity-feedbacks.module';
 import { AuthzModule } from '../authz/authz.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { ContributionRulesModule } from '../contribution-rules/contribution-rules.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { InsurancesModule } from '../insurances/insurances.module';
@@ -33,6 +34,13 @@ import { ActivityTimePolicyService } from './activity-time-policy.service';
 import { ActivityTimePolicyCatalogueQueryService } from './activity-time-policy-catalogue-query.service';
 import { ActivityTimePolicyAuditRecorder } from './activity-time-policy-audit-recorder';
 import { AdminActivityTimePoliciesController } from './controllers/admin-activity-time-policies.controller';
+import { ActivityContributionPolicyCommand } from './activity-contribution-policy-command';
+import { ActivityContributionPolicyService } from './activity-contribution-policy.service';
+import { ActivityContributionPolicyCatalogueQueryService } from './activity-contribution-policy-catalogue-query.service';
+import { ActivityContributionPolicyAuditRecorder } from './activity-contribution-policy-audit-recorder';
+import { ActivityContributionRuleConversionService } from './activity-contribution-rule-conversion.service';
+import { ActivityContributionRuleConversionAuditRecorder } from './activity-contribution-rule-conversion-audit-recorder';
+import { SystemContributionPoliciesController } from './controllers/system-contribution-policies.controller';
 import { ActivityOutcomeService } from './activity-outcome.service';
 import { ActivityOutcomeFinalizationService } from './activity-outcome-finalization.service';
 import { ActivityOutcomeFinalizationAuditRecorder } from './activity-outcome-finalization-audit-recorder';
@@ -54,6 +62,15 @@ import { ActivityOutcomeAuditRecorder } from './activity-outcome-audit-recorder'
 import { ActivityTimeAllocationAccessService } from './activity-time-allocation-access.service';
 import { ActivityTimeAllocationAuditRecorder } from './activity-time-allocation-audit-recorder';
 import { ActivityTimeAllocationService } from './activity-time-allocation.service';
+import { ActivityTimeSettlementAccessService } from './activity-time-settlement-access.service';
+import { ActivityTimeCorrectionAccessService } from './activity-time-correction-access.service';
+import { ActivityTimeCorrectionCommandService } from './activity-time-correction-command.service';
+import { ActivityTimeCorrectionQueryService } from './activity-time-correction-query.service';
+import { ActivityTimeSettlementAuditRecorder } from './activity-time-settlement-audit-recorder';
+import { ActivityTimeSettlementQueryService } from './activity-time-settlement-query.service';
+import { ActivityTimeSettlementService } from './activity-time-settlement.service';
+import { AppManagedActivityTimeSettlementController } from './controllers/app-managed-activity-time-settlement.controller';
+import { AppManagedActivityTimeCorrectionController } from './controllers/app-managed-activity-time-correction.controller';
 import { AppManagedActivityOutcomesController } from './controllers/app-managed-activity-outcomes.controller';
 import { ActivityMetricAuditRecorder } from './activity-metric-audit-recorder';
 import { ActivityMetricDefinitionService } from './activity-metric-definition.service';
@@ -76,6 +93,12 @@ import { ActivityTimePolicySelectionAccess } from './activity-time-policy-select
 import { ActivityTimePolicySelectionAuditRecorder } from './activity-time-policy-selection-audit-recorder';
 import { ActivityTimePolicySelectionQueryService } from './activity-time-policy-selection-query.service';
 import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
+import { AdminActivityContributionPolicySelectionController } from './controllers/admin-activity-contribution-policy-selection.controller';
+import { AppManagedActivityContributionPolicySelectionController } from './controllers/app-managed-activity-contribution-policy-selection.controller';
+import { ActivityContributionPolicySelectionAccess } from './activity-contribution-policy-selection-access';
+import { ActivityContributionPolicySelectionAuditRecorder } from './activity-contribution-policy-selection-audit-recorder';
+import { ActivityContributionPolicySelectionQueryService } from './activity-contribution-policy-selection-query.service';
+import { ActivityContributionPolicySelectionService } from './activity-contribution-policy-selection.service';
 import { AdminActivityMetricDefinitionsController } from './controllers/admin-activity-metric-definitions.controller';
 import { AdminActivityMetricSetsController } from './controllers/admin-activity-metric-sets.controller';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
@@ -126,6 +149,7 @@ import { ContributionCalculator } from '../attendances/contribution-calculator';
 import { SettlementDraftAuditRecorder } from './settlement-draft-audit-recorder';
 import { SettlementDraftService } from './settlement-draft.service';
 import { SettlementDraftDispatchService } from './settlement-draft-dispatch.service';
+import { SettlementDraftBatchService } from './settlement-draft-batch.service';
 import { SettlementNotificationProducer } from './settlement-notification-producer';
 import { SettlementReviewAuditRecorder } from './settlement-review-audit-recorder';
 import { SettlementReviewService } from './settlement-review.service';
@@ -137,6 +161,17 @@ import { LedgerPostingService } from './ledger-posting.service';
 import { LegacyConversionRegistrationHeadService } from '../activity-registrations/legacy-conversion-registration-head.service';
 import { LegacyLedgerConversionService } from './legacy-ledger-conversion.service';
 import { LedgerPreparationService } from './ledger-preparation.service';
+import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
+import { ParticipationTimeCorrectionService } from './participation-time-correction.service';
+import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
+import { ParticipationTimeLedgerQueryService } from './participation-time-ledger-query.service';
+import { ParticipationTimeCorrectionQueryService } from './participation-time-correction-query.service';
+import { ActivityTimeCutoverCommand } from './activity-time-cutover-command';
+import { ActivityTimeCutoverAuditRecorder } from './activity-time-cutover-audit-recorder';
+import { ActivityTimeCutoverService } from './activity-time-cutover.service';
+import { ParticipationTimeTruthQueryService } from './participation-time-truth-query.service';
+import { ParticipationTimeProofQueryService } from './participation-time-proof-query.service';
+import { ParticipationTimeProofPresenter } from './participation-time-proof.presenter';
 import { LedgerQueryService } from './ledger-query.service';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
 import { ActivityClosureAuditRecorder } from './activity-closure-audit-recorder';
@@ -144,6 +179,7 @@ import { ActivityClosureNotificationProducer } from './activity-closure-notifica
 import { ActivityClosureService } from './activity-closure.service';
 import { CorrectionApplicationService } from './correction-application.service';
 import { CorrectionAuditRecorder } from './correction-audit-recorder';
+import { CorrectionTimeAllocationService } from './correction-time-allocation.service';
 import { ActivitySettlementHttpService } from './activity-settlement-http.service';
 import { ActivityLifecycleService } from './activity-lifecycle.service';
 // 归档 / 撤销归档(2026-08-25 拍板;§6.6 + AC-004 / AC-064)。
@@ -198,6 +234,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     MemberProfilesModule,
     NotificationsModule,
     OrganizationsModule,
+    ContributionRulesModule,
     ActivityFeedbacksModule,
     // P2-14 刀 A:封面 / 图集改附件制 —— 归属校验、存储边界锁与签 URL 全部复用
     // attachments 模块的既有实现(与内容模块同一份),本模块不另写一套。
@@ -207,14 +244,18 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     forwardRef(() => AttendancesModule),
   ],
   controllers: [
+    AppManagedActivityTimeSettlementController,
+    AppManagedActivityTimeCorrectionController,
     AppManagedActivityOutcomesController,
     AppManagedActivityOutcomeFinalizationsController,
     AdminActivityMetricRuleBindingsController,
     AppManagedActivityMetricCandidatesController,
     AppManagedActivityMetricsController,
     AppManagedActivityTimePolicySelectionController,
+    AppManagedActivityContributionPolicySelectionController,
     AdminActivityMetricSelectionController,
     AdminActivityTimePolicySelectionController,
+    AdminActivityContributionPolicySelectionController,
     AdminActivityTemplateVersionsController,
     AppManagedActivityControlPlaneController,
     AppManagedActivityCreationController,
@@ -226,6 +267,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     AdminActivityResponsibilitiesController,
     AdminActivityMetricDefinitionsController,
     AdminActivityTimePoliciesController,
+    SystemContributionPoliciesController,
     AdminActivityMetricSetsController,
     AppManagedActivitiesController,
     AdminAttendanceSettlementsController,
@@ -254,6 +296,13 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityTimeAllocationAccessService,
     ActivityTimeAllocationAuditRecorder,
     ActivityTimeAllocationService,
+    ActivityTimeSettlementAccessService,
+    ActivityTimeCorrectionAccessService,
+    ActivityTimeCorrectionCommandService,
+    ActivityTimeCorrectionQueryService,
+    ActivityTimeSettlementAuditRecorder,
+    ActivityTimeSettlementQueryService,
+    ActivityTimeSettlementService,
     ActivityControlPlaneGate,
     ActivityCreationService,
     ActivityCreationQuick,
@@ -275,10 +324,20 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityTimePolicyService,
     ActivityTimePolicyCatalogueQueryService,
     ActivityTimePolicyAuditRecorder,
+    ActivityContributionPolicyCommand,
+    ActivityContributionPolicyService,
+    ActivityContributionPolicyCatalogueQueryService,
+    ActivityContributionPolicyAuditRecorder,
+    ActivityContributionRuleConversionService,
+    ActivityContributionRuleConversionAuditRecorder,
     ActivityTimePolicySelectionAccess,
     ActivityTimePolicySelectionAuditRecorder,
     ActivityTimePolicySelectionService,
     ActivityTimePolicySelectionQueryService,
+    ActivityContributionPolicySelectionAccess,
+    ActivityContributionPolicySelectionAuditRecorder,
+    ActivityContributionPolicySelectionService,
+    ActivityContributionPolicySelectionQueryService,
     ActivityMetricAuditRecorder,
     ActivityMetricDefinitionService,
     ActivityMetricSetService,
@@ -348,6 +407,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     SettlementDraftAuditRecorder,
     SettlementDraftService,
     SettlementDraftDispatchService,
+    SettlementDraftBatchService,
     // 活动改造 v1.1 第 2 批第三刀(合同 §5.10):提交不可变 SettlementVersion。
     // 同样零端点 —— 消费方是第四刀(一审/终审)。
     SettlementNotificationProducer,
@@ -366,6 +426,17 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     // 保留 provider 只供显式 service/e2e 调用,不自启动。全仓仍零新增 cron、Redis、
     // 外部 queue 或新进程。
     LedgerPreparationService,
+    ParticipationTimeLedgerService,
+    ParticipationTimeCorrectionService,
+    ParticipationTimeLedgerAccessService,
+    ParticipationTimeLedgerQueryService,
+    ParticipationTimeCorrectionQueryService,
+    ActivityTimeCutoverCommand,
+    ActivityTimeCutoverAuditRecorder,
+    ActivityTimeCutoverService,
+    ParticipationTimeTruthQueryService,
+    ParticipationTimeProofQueryService,
+    ParticipationTimeProofPresenter,
     LedgerReadyBatchCommitter,
     // HTTP application context 不启动 worker daemon；保留显式 drain 的第五刀测试探针为
     // prepare-only。两个真实 worker process 的专用 module 把本 token 置 true。
@@ -382,6 +453,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     LegacyConversionRegistrationHeadService,
     LegacyLedgerConversionService,
     LedgerQueryService,
+    ActivityTimeCutoverService,
+    ParticipationTimeTruthQueryService,
     // 活动改造 v1.1 第 2 批第六刀(合同 §5.15 + §3.26):机器关账。
     //
     // 🔴 关账是"这场活动的账算完了"的唯一权威(合同 §1.2 把它从负责人**声明**
@@ -399,6 +472,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     //    重新关账走第六刀 `ActivityClosureService` —— 本刀两者都只调用,不复制。
     // 同样零端点 / 零 DTO / 零权限码 —— 消费方是第 ⑧ 刀。
     CorrectionAuditRecorder,
+    CorrectionTimeAllocationService,
     CorrectionApplicationService,
   ],
   exports: [
@@ -415,6 +489,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityBatchWorker,
     LedgerPostingService,
     LedgerQueryService,
+    // D8-2 official consumers in attendances/meta reuse the one receipt-aware truth selector.
+    ParticipationTimeTruthQueryService,
     ActivityClosureService,
     CorrectionApplicationService,
     // 存量考勤账本化转换刀(P1-28 第 7 批② A 案,2026-08-27 拍板):零端点 / 零 DTO /

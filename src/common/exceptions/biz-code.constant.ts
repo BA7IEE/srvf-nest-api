@@ -2086,6 +2086,191 @@ export const BizCode = {
     message: '冻结时长政策不可用于参与时长认定',
     httpStatus: HttpStatus.CONFLICT,
   },
+  ACTIVITY_TIME_SETTLEMENT_INVALID: {
+    code: 20218,
+    message: '活动分类结算请求无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE: {
+    code: 20219,
+    message: '活动分类结算引用不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_TIME_SETTLEMENT_STALE: {
+    code: 20220,
+    message: '分类结算草稿、封印或来源已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_COMMAND_CONFLICT: {
+    code: 20221,
+    message: '此操作标识已用于其他分类结算请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY: {
+    code: 20222,
+    message: '分类结算参与来源尚未就绪',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_POLICY_MIXED: {
+    code: 20223,
+    message: '同一参与身份的时长政策不一致，不能合并结算',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_OVERLAP: {
+    code: 20224,
+    message: '同一成员的参与时段重叠，不能重复结算',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_SETTLEMENT_SCALE_LIMIT: {
+    code: 20225,
+    message: '活动分类结算规模超过本次处理上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_LEDGER_SOURCE_INVALID: {
+    code: 20226,
+    message: '分类时长账本来源不完整或不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_LEDGER_CONTENT_CONFLICT: {
+    code: 20227,
+    message: '分类时长账本幂等内容冲突',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_LEDGER_NOT_READY: {
+    code: 20228,
+    message: '分类时长账本尚未准备完整',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_LEDGER_CORRECTION_UNAVAILABLE: {
+    code: 20229,
+    message: '分类时长账本更正尚未开放',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_LEDGER_REFERENCE_UNAVAILABLE: {
+    code: 20230,
+    message: '分类时长账本不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_TIME_CUTOVER_INVALID: {
+    code: 20231,
+    message: '正式时长切换请求无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_TIME_CUTOVER_COMMAND_CONFLICT: {
+    code: 20232,
+    message: '此操作标识已用于其他正式时长切换请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_CUTOVER_NOT_READY: {
+    code: 20233,
+    message: '正式时长切换条件尚未满足',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_CUTOVER_RECEIPT_INVALID: {
+    code: 20234,
+    message: '正式时长切换收据校验失败',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_PROOF_UNAVAILABLE: {
+    code: 20235,
+    message: '正式参与时长证明尚未启用',
+    httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+  },
+  ACTIVITY_TIME_PROOF_INVALID: {
+    code: 20236,
+    message: '正式参与时长证明来源不完整或不一致',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_PROOF_SCALE_LIMIT: {
+    code: 20237,
+    message: '正式参与时长证明集合超过处理上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_TIME_PROOF_RANGE_INVALID: {
+    code: 20238,
+    message: '正式参与时长证明日期范围无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_INVALID: {
+    code: 20239,
+    message: '贡献政策请求无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_NOT_FOUND: {
+    code: 20240,
+    message: '贡献政策或版本不存在',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_CODE_EXISTS: {
+    code: 20241,
+    message: '贡献政策代码已存在',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_STALE: {
+    code: 20242,
+    message: '贡献政策版本已变化',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_STATUS_INVALID: {
+    code: 20243,
+    message: '贡献政策版本状态不允许此操作',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_COMMAND_CONFLICT: {
+    code: 20244,
+    message: '此操作标识已用于其他贡献政策请求',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_RECEIPT_INVALID: {
+    code: 20245,
+    message: '贡献政策命令收据校验失败',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_VERSION_LIMIT: {
+    code: 20246,
+    message: '贡献政策版本数量已达上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_INVALID: {
+    code: 20247,
+    message: '活动贡献政策选择无效',
+    httpStatus: HttpStatus.BAD_REQUEST,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_REFERENCE_UNAVAILABLE: {
+    code: 20248,
+    message: '活动贡献政策选择引用不存在或不可访问',
+    httpStatus: HttpStatus.NOT_FOUND,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_STALE: {
+    code: 20249,
+    message: '活动贡献政策选择已变化，请刷新后重试',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_COMMAND_CONFLICT: {
+    code: 20250,
+    message: '此操作标识已用于其他贡献政策选择',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_RECEIPT_INVALID: {
+    code: 20251,
+    message: '活动贡献政策选择收据无效',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_POLICY_UNAVAILABLE: {
+    code: 20252,
+    message: '当前贡献政策引用不可用于新的选择',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_UNCHANGED: {
+    code: 20253,
+    message: '活动贡献政策选择没有实际变化',
+    httpStatus: HttpStatus.CONFLICT,
+  },
+  ACTIVITY_CONTRIBUTION_POLICY_SELECTION_REVISION_LIMIT: {
+    code: 20254,
+    message: '活动贡献政策选择修订号已达上限',
+    httpStatus: HttpStatus.CONFLICT,
+  },
   ACTIVITY_OPTIONS_CANDIDATE_LIMIT_EXCEEDED: {
     code: 20183,
     message: '可选目录候选数量超过安全上限，请联系管理员整理目录',

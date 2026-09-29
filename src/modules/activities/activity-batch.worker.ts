@@ -37,6 +37,14 @@ import {
   type LedgerPrepareLeaseFence,
 } from './ledger-preparation.service';
 import { LedgerReadyBatchCommitter } from './ledger-ready-batch-committer.service';
+import {
+  SettlementDraftBatchService,
+  SettlementDraftLeaseLostError,
+} from './settlement-draft-batch.service';
+import {
+  SETTLEMENT_DRAFT_GENERATE_JOB_ACTION,
+  SETTLEMENT_DRAFT_GENERATE_JOB_TYPE,
+} from './settlement-draft-dispatch.service';
 
 export const ACTIVITY_BATCH_AUTO_COMMIT_ENABLED = Symbol('ACTIVITY_BATCH_AUTO_COMMIT_ENABLED');
 
@@ -123,6 +131,7 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     @Optional() private readonly onsiteBulkPunches?: AttendanceOnsiteBatchJobService,
     // B6 import execute 复用同一个 ActivityBatchJob lease/fence，不允许直接从 controller 写 event。
     @Optional() private readonly importPreviews?: AttendanceImportPreviewService,
+    @Optional() private readonly settlementDrafts?: SettlementDraftBatchService,
   ) {}
 
   onApplicationShutdown(): Promise<void> {
@@ -188,6 +197,45 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
       leaseOwner: claimed.leaseOwner,
       leaseGeneration: claimed.leaseGeneration,
     };
+    if (
+      claimed.jobTypeCode === SETTLEMENT_DRAFT_GENERATE_JOB_TYPE &&
+      claimed.action === SETTLEMENT_DRAFT_GENERATE_JOB_ACTION
+    ) {
+      if (!this.settlementDrafts) throw new Error('SettlementDraftHandlerUnavailable');
+      try {
+        const result = await this.settlementDrafts.process({
+          jobId: claimed.id,
+          activityId: claimed.activityId,
+          ...fence,
+          maxAttempts: ACTIVITY_BATCH_MAX_ATTEMPTS,
+          retryBackoffMs: ACTIVITY_BATCH_RETRY_BACKOFF_MS,
+        });
+        return {
+          jobsEnqueued,
+          jobClaimed: true,
+          jobId: claimed.id,
+          itemsProcessed: result.succeeded ? 1 : 0,
+          itemsSkipped: 0,
+          itemsFailed: result.succeeded ? 0 : 1,
+          batchStatus: null,
+          commitAttempted: false,
+          commitErrorCode: null,
+        };
+      } catch (error) {
+        if (!(error instanceof SettlementDraftLeaseLostError)) throw error;
+        return {
+          jobsEnqueued,
+          jobClaimed: true,
+          jobId: claimed.id,
+          itemsProcessed: 0,
+          itemsSkipped: 0,
+          itemsFailed: 0,
+          batchStatus: null,
+          commitAttempted: false,
+          commitErrorCode: null,
+        };
+      }
+    }
     if (claimed.jobTypeCode === ACTIVITY_RECONCILIATION_JOB_TYPE) {
       return await this.processReconciliationJob(claimed, fence, now, jobsEnqueued);
     }
@@ -397,6 +445,7 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
     jobTypeCode: string;
     leaseOwner: string;
     leaseGeneration: number;
+    action: string | null;
   } | null> {
     const leaseOwner = `activity-batch-worker:${randomUUID()}`;
     const leaseExpiresAt = new Date(now.getTime() + ACTIVITY_BATCH_LEASE_MS);
@@ -412,6 +461,11 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
           OR (
             "jobTypeCode" = ${ONSITE_BULK_PUNCH_JOB_TYPE}
             AND "payload"->>'action' = ${ONSITE_BULK_PUNCH_JOB_ACTION}
+          )
+          OR (
+            "jobTypeCode" = ${SETTLEMENT_DRAFT_GENERATE_JOB_TYPE}
+            AND "payload"->>'action' = ${SETTLEMENT_DRAFT_GENERATE_JOB_ACTION}
+            AND "payload"->>'executionMode' = 'async'
           )
           OR (
             "jobTypeCode" = ${ATTENDANCE_IMPORT_EXECUTE_JOB_TYPE}
@@ -453,7 +507,13 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
           startedAt: now,
           lastErrorCode: null,
         },
-        select: { id: true, activityId: true, jobTypeCode: true, leaseGeneration: true },
+        select: {
+          id: true,
+          activityId: true,
+          jobTypeCode: true,
+          leaseGeneration: true,
+          payload: true,
+        },
       });
       return {
         id: updated.id,
@@ -461,6 +521,13 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
         jobTypeCode: updated.jobTypeCode,
         leaseOwner,
         leaseGeneration: updated.leaseGeneration,
+        action:
+          updated.payload &&
+          typeof updated.payload === 'object' &&
+          !Array.isArray(updated.payload) &&
+          typeof updated.payload.action === 'string'
+            ? updated.payload.action
+            : null,
       };
     });
   }
@@ -472,6 +539,21 @@ export class ActivityBatchWorker implements OnApplicationShutdown, OnModuleDestr
    * `processing` + 过期租约上,既不被取走也不被判死,运维看不出它已经放弃了。
    */
   private async sweepDead(tx: Prisma.TransactionClient, now: Date): Promise<void> {
+    // Expired final attempts must finish the item as well, so the existing retry endpoint works.
+    await tx.$executeRaw(Prisma.sql`
+      WITH expired AS (
+        UPDATE "ActivityBatchJob" SET "statusCode" = 'dead', "failed" = 1,
+          "succeeded" = 0, "skipped" = 0, "completedAt" = ${now},
+          "leaseOwner" = NULL, "leaseExpiresAt" = NULL, "lastErrorCode" = 'DraftJobAttemptsExhausted'
+        WHERE "jobTypeCode" = ${SETTLEMENT_DRAFT_GENERATE_JOB_TYPE}
+          AND "payload"->>'action' = ${SETTLEMENT_DRAFT_GENERATE_JOB_ACTION}
+          AND "payload"->>'executionMode' = 'async'
+          AND "statusCode" = 'processing' AND "attempts" >= ${ACTIVITY_BATCH_MAX_ATTEMPTS}
+          AND "leaseExpiresAt" <= ${now} RETURNING id
+      ) UPDATE "ActivityBatchJobItem" SET "statusCode" = 'failed',
+        "lastErrorCode" = 'DraftJobAttemptsExhausted', "safeMessage" = '草稿生成重试次数已用尽'
+        WHERE "jobId" IN (SELECT id FROM expired) AND "itemKey" = 'generate' AND "statusCode" <> 'succeeded'
+    `);
     for (const [jobTypeCode, lastErrorCode] of [
       [LEDGER_PREPARE_JOB_TYPE, 'LEDGER_PREPARE_MAX_ATTEMPTS_EXHAUSTED'],
       [ACTIVITY_RECONCILIATION_JOB_TYPE, 'ACTIVITY_RECONCILIATION_MAX_ATTEMPTS_EXHAUSTED'],

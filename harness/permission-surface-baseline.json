@@ -97,6 +97,16 @@
       "surface": "sha256:4d6c491d1717052603670b24a326bf16820ed5205c850f52274f5706c73a901d",
       "description": "sha256:f86286ed596d926337f4b80294a6a5915cdea8582027e68aa67b1d972bb8ec66"
     },
+    "activity.contribution-policy.read": {
+      "endpoints": 3,
+      "surface": "sha256:207390ccb514c9462a65b9fd9618bc5f2968ca205461f09a4e8df35d7703573b",
+      "description": "sha256:d104328e9a16252d7b27e375f8812427c8a2f253cc32fdf4269a31959cdeb943"
+    },
+    "activity.contribution-policy.select": {
+      "endpoints": 2,
+      "surface": "sha256:76940df59188f983c2ab675d7d9a9bda1942bae4c08b9aee979ab817272bde01",
+      "description": "sha256:b883b9d7fd457df24900a88b1e951513f11ab00013fbee25c7d369ab96bff690"
+    },
     "activity.create.cross-org": {
       "endpoints": 7,
       "surface": "sha256:b533865b15177ea7c0bee1e41e4ff07f81d8e84f7372a4e368fcb8eec651bbdb",
@@ -153,9 +163,9 @@
       "description": "sha256:e9f672b8e3359d066420ea31c1472fac49058fe78b580178da135da99b1a34db"
     },
     "activity.settlement-final-review.record": {
-      "endpoints": 2,
-      "surface": "sha256:30be7e675d6a4eb4d4af3b0df67e89669d65310440b995522909c64af9632ebd",
-      "description": "sha256:060b3dc1732c61bae9b789fffd63e2b824269921aa1f30eb1b1b348ae92192c9"
+      "endpoints": 5,
+      "surface": "sha256:2d76a0617db3b9c2177decf80f161c8cf7231c264d31eab81b103a592bf2fc68",
+      "description": "sha256:c5f69867bffa5cda685611e9981bc6ab1e144cc4b736dcc0bc5d9f01f38dbb3d"
     },
     "activity.settlement-first-review.record": {
       "endpoints": 2,
@@ -168,9 +178,9 @@
       "description": "sha256:72a8c3998f967813b34d482ee15ba4425d5a96c4aa98dd89e1cb8cbb3becf51a"
     },
     "activity.settlement-submit.record": {
-      "endpoints": 2,
-      "surface": "sha256:27676447cd5b18795a3adfff7089f878772caa978bbb3005bcd733e35793013c",
-      "description": "sha256:aba6b7abd2f31611be715bcce37916b05ded51e9200c9484e730b1bf343fc553"
+      "endpoints": 5,
+      "surface": "sha256:6853dbd22b28b1ad41c0479482f52bee744afe866d760cf7db938ad1b0c5010b",
+      "description": "sha256:a25b200ce82643c44533e80d729f58e26f433ad41d5968c7922d47013a5b8e08"
     },
     "activity.settlement-update-draft.record": {
       "endpoints": 1,
@@ -178,9 +188,9 @@
       "description": "sha256:ac398f0a06790e89da1531a06bdccf4f22afb6bb53eb2818d09c80350bbdf386"
     },
     "activity.time-allocation.recognize": {
-      "endpoints": 0,
-      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "description": "sha256:db2b8869ef2abbcadc54918ffab183c053ef20b7a8bcdaac3562c1b891fcec93"
+      "endpoints": 1,
+      "surface": "sha256:92f29e4141cd518ec14a5d5792653b508a8d357f250f434ad3d1cf7e593f45f3",
+      "description": "sha256:73032e23e7d1b3bb236d72480279763e1d66e2bb9b079be777a11a2692ce1407"
     },
     "activity.time-policy.read": {
       "endpoints": 3,
@@ -191,6 +201,16 @@
       "endpoints": 2,
       "surface": "sha256:0a49474513af90d458ca8eea966b8fa1938f1b484246237873afe33e1a21095b",
       "description": "sha256:1e7c0df4722f122eab5c4c8fbeb99e67fd5d720e8e8d0e8fc0eb2f423546f737"
+    },
+    "activity.time-settlement.prepare": {
+      "endpoints": 4,
+      "surface": "sha256:32a65d46939196897cc942022a430f7fa81f7254b131d1724dcd934290216c55",
+      "description": "sha256:c23023cf57b0f74cb2b8852e1d4c9acb62f5bfb2c06a643b575b028c26a6e2ec"
+    },
+    "activity.time-settlement.read": {
+      "endpoints": 10,
+      "surface": "sha256:70147ad3276ea07f8168caad17cf199dfdc2ce25b4657558c12e7909a880efff",
+      "description": "sha256:bc3a10aa1294516041efd6512b658c503384b172610374fdd39a3efafd6bd616"
     },
     "activity.update.record": {
       "endpoints": 8,
@@ -438,8 +458,8 @@
       "description": "sha256:4a5c0681c1c7d2cefdeffcd1091448a8139b94f0d0d86260ba1bfadfbc5c2e18"
     },
     "attendance.read.sheet": {
-      "endpoints": 19,
-      "surface": "sha256:e91fabfcd5d5bbf5199799d3bd41016b1629b6cc1d5211e6819c337a48e96f80",
+      "endpoints": 20,
+      "surface": "sha256:e0261ef9b58eacade1f8e920cc9dc27280c0295830ac900f431be83d596fbf41",
       "description": "sha256:efdfcdb3d7291a58a8bbdb0cf1c537ee6734e9fab0aa9558b3a916c1f693cbf8"
     },
     "attendance.reject.sheet": {
@@ -581,6 +601,16 @@
       "endpoints": 2,
       "surface": "sha256:e6bbb32cafad1b69bf8ae086a5cc639223907581237eb2d4aa8433e1ee1140ea",
       "description": "sha256:9edb32ab43138317af5eefd74d986699990c076ca0d81e86ac1cb5462167d34a"
+    },
+    "contribution-policy.manage.version": {
+      "endpoints": 4,
+      "surface": "sha256:bf6c3ed1dc244a07b8f57a1664cce81dcce74a2555094b5d030dee43438d816b",
+      "description": "sha256:5b93800deaf4003c3ca56b0a156df1523ff9f3e7344771b99452b913a622bdc5"
+    },
+    "contribution-policy.read.catalog": {
+      "endpoints": 4,
+      "surface": "sha256:64efe60fc4e270ab814a2a145f39e6386c714e6a6c65349215b2395330ebd487",
+      "description": "sha256:601ff843cb16b3fcbce77058ede02f8d3c4f0e7d3c005b61ecf7ea3c273192cb"
     },
     "contribution.create.rule": {
       "endpoints": 1,

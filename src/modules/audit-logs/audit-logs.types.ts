@@ -17,10 +17,16 @@
 // - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿或 goal 显式预授权(D6 v1.1 §8.1 / §16)
 
 export type AuditLogEvent =
+  | 'activity.contribution-rule.conversion' // E2 隔离夹具候选提交；仅锚点、数量与摘要，不复制旧规则原文
+  | 'activity.contribution-policy.command'
+  | 'activity.contribution-policy-version.command'
+  | 'activity.contribution-policy.selection'
   | 'activity.metric-definition.command'
   | 'activity.time-policy.command'
   | 'activity.time-policy.selection'
   | 'activity.time-allocation.command'
+  | 'activity.time-settlement.command'
+  | 'activity.time-cutover.command'
   | 'activity.metric-set.command'
   | 'activity.metric-selection.command'
   | 'activity.outcome.command'

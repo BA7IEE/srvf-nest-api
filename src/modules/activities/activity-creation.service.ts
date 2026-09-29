@@ -16,9 +16,11 @@ import { ActivityCreationProfessional } from './activity-creation-professional';
 import { ActivityCreationEmergency } from './activity-creation-emergency';
 import { ActivityAuditRecorder } from './activity-audit-recorder';
 import {
+  creationContributionPolicyPointers,
   creationRequestHash,
   creationTimePolicyPointers,
   isCreationReceiptConflict,
+  materializeCreationContributionPolicySelection,
   materializeCreationTimePolicySelection,
   type QuickCreationCommand,
   type ProfessionalCreationCommand,
@@ -34,6 +36,8 @@ import {
 import { ActivityMetricSelectionService } from './activity-metric-selection.service';
 import { ActivityTimePolicySelectionAccess } from './activity-time-policy-selection-access';
 import { ActivityTimePolicySelectionService } from './activity-time-policy-selection.service';
+import { ActivityContributionPolicySelectionAccess } from './activity-contribution-policy-selection-access';
+import { ActivityContributionPolicySelectionService } from './activity-contribution-policy-selection.service';
 
 type ReceiptCommand =
   | { mode: 'professional'; command: ProfessionalCreationCommand }
@@ -57,6 +61,8 @@ export class ActivityCreationService {
     private readonly metricSelection: ActivityMetricSelectionService,
     private readonly timePolicyAccess: ActivityTimePolicySelectionAccess,
     private readonly timePolicySelection: ActivityTimePolicySelectionService,
+    private readonly contributionPolicyAccess: ActivityContributionPolicySelectionAccess,
+    private readonly contributionPolicySelection: ActivityContributionPolicySelectionService,
   ) {}
 
   async createQuick(
@@ -98,6 +104,26 @@ export class ActivityCreationService {
             },
             revalidate: async () => {
               actor = await result.timePolicySelectionInitialization!.revalidate();
+              return actor;
+            },
+          });
+        }
+        if (result.contributionPolicySelectionInitialization) {
+          await this.contributionPolicySelection.initializeWithinTransaction({
+            tx,
+            activityId: result.activity.id,
+            selection: result.contributionPolicySelectionInitialization.selection,
+            templateSelection: result.contributionPolicySelectionInitialization.templateSelection,
+            actor,
+            meta: auditMeta,
+            source: {
+              originCode: 'template_creation',
+              templateId: result.contributionPolicySelectionInitialization.templateId,
+              templateDefinitionHash:
+                result.contributionPolicySelectionInitialization.templateDefinitionHash,
+            },
+            revalidate: async () => {
+              actor = await result.contributionPolicySelectionInitialization!.revalidate();
               return actor;
             },
           });
@@ -186,6 +212,8 @@ export class ActivityCreationService {
         await this.revalidateMetricCreation(tx, input, user);
       if (input.command.timePolicySelection !== undefined)
         await this.revalidateTimePolicyCreation(tx, input, user);
+      if (input.command.contributionPolicySelection !== undefined)
+        await this.revalidateContributionPolicyCreation(tx, input, user);
       if (input.mode === 'emergency')
         await reconcileEmergencyFollowUps(tx, receipt.activityId, user.id);
       return this.result(tx, receipt.activityId, input.mode, true);
@@ -202,12 +230,18 @@ export class ActivityCreationService {
           if (input.command.timePolicySelection !== undefined) {
             actor = await this.revalidateTimePolicyCreation(tx, input, user);
           }
+          if (input.command.contributionPolicySelection !== undefined) {
+            actor = await this.revalidateContributionPolicyCreation(tx, input, user);
+          }
           const revalidateCreation = async () => {
             if (input.command.metricSelection !== undefined) {
               actor = await this.revalidateMetricCreation(tx, input, user);
             }
             if (input.command.timePolicySelection !== undefined) {
               actor = await this.revalidateTimePolicyCreation(tx, input, user);
+            }
+            if (input.command.contributionPolicySelection !== undefined) {
+              actor = await this.revalidateContributionPolicyCreation(tx, input, user);
             }
             return actor;
           };
@@ -225,15 +259,26 @@ export class ActivityCreationService {
               },
             );
           }
+          if (input.command.contributionPolicySelection !== undefined) {
+            await this.contributionPolicySelection.assertPointersAvailableWithinTransaction(
+              tx,
+              creationContributionPolicyPointers(input.command.contributionPolicySelection),
+              async () => {
+                await revalidateCreation();
+              },
+            );
+          }
           let result: {
             activity: Awaited<ReturnType<ActivityCreationEmergency['createDraft']>>;
             placeCount: number;
           };
           let timePolicySelection;
+          let contributionPolicySelection;
           if (input.mode === 'professional') {
             const professional = await this.professional.create(tx, input.command, actor);
             result = professional;
             timePolicySelection = professional.timePolicySelection;
+            contributionPolicySelection = professional.contributionPolicySelection;
           } else {
             result = {
               activity: await this.emergency.createDraft(tx, input.command, actor),
@@ -243,6 +288,13 @@ export class ActivityCreationService {
               input.command.timePolicySelection === undefined
                 ? undefined
                 : materializeCreationTimePolicySelection(input.command.timePolicySelection, []);
+            contributionPolicySelection =
+              input.command.contributionPolicySelection === undefined
+                ? undefined
+                : materializeCreationContributionPolicySelection(
+                    input.command.contributionPolicySelection,
+                    [],
+                  );
           }
           if (input.command.metricSelection !== undefined) {
             await this.metricSelection.initializeWithinTransaction({
@@ -265,6 +317,18 @@ export class ActivityCreationService {
               tx,
               activityId: result.activity.id,
               selection: timePolicySelection,
+              actor,
+              meta: auditMeta,
+              source: { originCode: 'creation_receipt', creationReceiptId: receipt.id },
+              revalidate: revalidateCreation,
+            });
+          }
+          if (contributionPolicySelection !== undefined) {
+            await this.contributionPolicySelection.initializeWithinTransaction({
+              tx,
+              activityId: result.activity.id,
+              selection: contributionPolicySelection,
+              templateSelection: null,
               actor,
               meta: auditMeta,
               source: { originCode: 'creation_receipt', creationReceiptId: receipt.id },
@@ -367,6 +431,24 @@ export class ActivityCreationService {
     );
     if (input.mode === 'emergency')
       await this.access.assertCanOrThrow(actor, 'activity.create.emergency.record', undefined, tx);
+    return actor;
+  }
+
+  private async revalidateContributionPolicyCreation(
+    tx: Prisma.TransactionClient,
+    input: ReceiptCommand,
+    user: CurrentUserPayload,
+  ) {
+    const actor = await this.contributionPolicyAccess.authorizeCreation(
+      tx,
+      user,
+      'app',
+      input.command.activity.organizationId,
+      input.command.activity.initiatorMemberId,
+    );
+    if (input.mode === 'emergency') {
+      await this.access.assertCanOrThrow(actor, 'activity.create.emergency.record', undefined, tx);
+    }
     return actor;
   }
 }

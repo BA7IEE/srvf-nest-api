@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
+import {
+  ParticipationTimeCorrectionService,
+  type ReadyV3CorrectionReceiptAnchor,
+} from './participation-time-correction.service';
+import { fingerprintMetricEnvelope } from './activity-metric-definition';
+import { createHash, randomUUID } from 'node:crypto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
@@ -8,6 +14,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import { runMemberLinearizedTransaction } from '../../common/prisma/member-advisory-lock.util';
 import { PrismaService } from '../../database/prisma.service';
+import { AttendanceCorrectionWriteService } from '../attendances/attendance-correction-write.service';
 import { RbacService } from '../permissions/rbac.service';
 import { AppIdentityResolver } from '../users/app-identity.resolver';
 import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
@@ -15,7 +22,13 @@ import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { ActivityClosureService, type ActivityClosureOutcome } from './activity-closure.service';
 import { CorrectionAuditRecorder } from './correction-audit-recorder';
 import {
+  CorrectionTimeAllocationService,
+  type CorrectionTimeAllocationProofPrevalidation,
+} from './correction-time-allocation.service';
+import { ActivityTimeCorrectionAccessService } from './activity-time-correction-access.service';
+import {
   parseCorrectionChangeSet,
+  serializeCorrectionChangeSetForHash,
   type CorrectionChangeSet,
   type CorrectionSegmentChange,
 } from './correction-change-set';
@@ -182,8 +195,15 @@ export interface CorrectionSubmitInput {
   requestHash: string;
 }
 
+/** A returned request is never edited in place; this is its forward-only successor. */
+export interface CorrectionResubmitInput extends CorrectionSubmitInput {
+  resubmittedFromRequestId: string;
+}
+
 export interface CorrectionSubmitResult {
   correctionRequestId: string;
+  /** Optimistic version rendered back to the Human reviewer. */
+  requestVersion: number;
   activityId: string;
   settlementRunId: string;
   baseSettlementVersionId: string;
@@ -198,7 +218,13 @@ export interface CorrectionReviewInput {
   correctionRequestId: string;
   actionCode: CorrectionReviewAction;
   note?: string | null;
+  /** Server-derived Human review action fingerprint; legacy callers omit it. */
+  operationHash?: string;
 }
+
+export type CorrectionResubmitOutcome =
+  | ({ outcome: 'resubmitted' } & CorrectionSubmitResult)
+  | ({ outcome: 'voided'; correctionRequestId: string } & CorrectionBaseDrift);
 
 export interface CorrectionReviewed {
   correctionRequestId: string;
@@ -232,6 +258,24 @@ export interface CorrectionApplyInput {
   correctionRequestId: string;
   operationKey: string;
   requestHash: string;
+}
+
+/**
+ * Legacy internal callers keep their established authorization path.  The App
+ * Human surface opts in explicitly so that every lock/replay path rechecks its
+ * narrower activity/base-version qualification inside the same transaction.
+ */
+export interface CorrectionHumanExecutionOptions {
+  readonly human: true;
+  /** Human route activityId must remain bound to the immutable request owner. */
+  readonly expectedActivityId?: string;
+  /** Human prepare/commit never silently switch to a newer base version. */
+  readonly expectedBaseSettlementVersionId?: string;
+  /** Human review is compare-and-set against the version rendered to the reviewer. */
+  readonly expectedRequestVersion?: number;
+  /** Human commit must name the exact prepared application and posting batch. */
+  readonly expectedCorrectionApplicationId?: string;
+  readonly expectedPostingBatchId?: string;
 }
 
 export interface CorrectionPrepareResult {
@@ -287,6 +331,7 @@ interface LockedRun {
 
 interface LockedRequest {
   id: string;
+  version: number;
   activityId: string;
   settlementRunId: string;
   participationIdentityId: string | null;
@@ -300,6 +345,7 @@ interface LockedRequest {
   reviewNote: string | null;
   operationKey: string | null;
   requestHash: string | null;
+  resubmittedFromRequestId: string | null;
 }
 
 interface VersionRow {
@@ -390,6 +436,11 @@ export class CorrectionApplicationService {
     private readonly audit: CorrectionAuditRecorder,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly timeLedger: ParticipationTimeLedgerService,
+    private readonly timeCorrection: ParticipationTimeCorrectionService,
+    private readonly correctionTimeAllocation: CorrectionTimeAllocationService,
+    private readonly correctionWrites: AttendanceCorrectionWriteService,
+    private readonly humanAccess: ActivityTimeCorrectionAccessService,
     private readonly rbac: RbacService,
     private readonly identities: AppIdentityResolver,
   ) {}
@@ -401,6 +452,7 @@ export class CorrectionApplicationService {
     input: CorrectionSubmitInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    options?: CorrectionHumanExecutionOptions,
   ): Promise<CorrectionSubmitResult> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
@@ -410,10 +462,43 @@ export class CorrectionApplicationService {
     }
     // 形状校验放在事务**之前**:纯函数、不读库,没有理由占着行锁做。
     const changeSet = parseCorrectionChangeSet(input.requestedChangeJson);
+    // V3 is a server-canonical immutable fact.  Keep V1/V2 byte-for-byte
+    // unchanged, but never persist an order-dependent V3 payload after its
+    // hash has been computed from the canonical form.
+    if (changeSet.schemaVersion === 3) {
+      input = {
+        ...input,
+        requestedChangeJson: serializeCorrectionChangeSetForHash(changeSet),
+      };
+    }
+    if (changeSet.timeCorrection && !options?.human) {
+      const { requestHash: claimedHash, ...body } = input;
+      void claimedHash;
+      input = {
+        ...input,
+        requestHash: fingerprintMetricEnvelope(
+          changeSet.schemaVersion === 3
+            ? 'attendance-correction-request-v3'
+            : 'attendance-correction-request-v2',
+          {
+            ...body,
+            requestedChangeJson: serializeCorrectionChangeSetForHash(changeSet),
+          },
+        ).definitionHash,
+      };
+    }
 
     return await this.prisma.$transaction(async (tx) => {
       const activity = await this.lockActivity(tx, input.activityId);
       const run = await this.lockRun(tx, input.activityId);
+      const actor = options?.human
+        ? await this.humanAccess.authorizeSubmission(
+            tx,
+            currentUser,
+            input.activityId,
+            changeSet.schemaVersion,
+          )
+        : currentUser;
 
       // 🔴 幂等**必须排在状态闸之前**:重放请求打过来时 run 早已被第一次提交推到
       //    `correction_open`,先判状态会把一次合法重放判成非法(与第三/四/六刀同一处置)。
@@ -434,6 +519,28 @@ export class CorrectionApplicationService {
       // 变更集引用的每个 identity 都必须**属于本活动且在基础版本里有结果行** ——
       // 否则更正会给一个不在这场账里的人凭空造一条结果。
       await this.assertChangeSetResolvable(tx, baseVersion.id, input.activityId, changeSet);
+      if (changeSet.timeCorrection) {
+        const contents = await this.timeCorrection.source(
+          tx,
+          {
+            correctionRequestId: 'validation',
+            postingBatchId: 'validation',
+            activityId: input.activityId,
+            settlementRunId: run.id,
+            baseSettlementVersionId: baseVersion.id,
+            settlementVersionId: `${baseVersion.id}:next`,
+            requestHash: input.requestHash,
+          },
+          changeSet.timeCorrection,
+        );
+        const baseResults = await this.readBaseResults(tx, baseVersion.id);
+        if (
+          changeSet.schemaVersion !== 3 &&
+          !contents.changed &&
+          !correctionResultsChanged(baseResults, changeSet)
+        )
+          throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+      }
 
       const baseResultRevisionId =
         input.participationIdentityId === null
@@ -449,7 +556,7 @@ export class CorrectionApplicationService {
         baseVersionId: baseVersion.id,
         baseResultRevisionId,
         baseClosureRevision: activeClosure?.revision ?? 0,
-        actorUserId: currentUser.id,
+        actorUserId: actor.id,
       });
 
       // 有开放更正 ⇒ run 进 `correction_open`(§3.19 九值闭集里它正为这一步存在)。
@@ -467,12 +574,173 @@ export class CorrectionApplicationService {
         requestHash: input.requestHash,
         resultChangeCount: changeSet.results.length,
         segmentChangeCount: changeSet.segments.length,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
+        actorUserId: actor.id,
+        actorRoleSnap: actor.role,
         auditMeta,
         tx,
       });
       return result;
+    });
+  }
+
+  /**
+   * A returned request is never overwritten or revived.  Its successor is a
+   * fresh pending request, linked forward only after the old row is voided in
+   * the same transaction.  This path is deliberately Human-only: legacy
+   * internal correction callers retain their established submit contract.
+   */
+  async resubmit(
+    input: CorrectionResubmitInput,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+    options?: CorrectionHumanExecutionOptions,
+  ): Promise<CorrectionResubmitOutcome> {
+    this.activityWorkflowGate.assertV11WriteAllowed();
+    if (!options?.human || !CORRECTION_REQUEST_TYPE_CODES.includes(input.requestTypeCode)) {
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    }
+    const changeSet = parseCorrectionChangeSet(input.requestedChangeJson);
+    if (changeSet.schemaVersion === 3) {
+      input = {
+        ...input,
+        requestedChangeJson: serializeCorrectionChangeSetForHash(changeSet),
+      };
+    }
+    const anchor = await this.readRequestAnchor(input.resubmittedFromRequestId);
+    if (anchor.activityId !== input.activityId) {
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE);
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      const activity = await this.lockActivity(tx, input.activityId);
+      const run = await this.lockRun(tx, input.activityId);
+      const previous = await this.lockRequest(tx, input.resubmittedFromRequestId);
+      const actor = await this.humanAccess.authorizeSubmission(
+        tx,
+        currentUser,
+        input.activityId,
+        changeSet.schemaVersion,
+      );
+      const resubmitInput: CorrectionSubmitInput = {
+        ...input,
+        requestHash: fingerprintMetricEnvelope('attendance-correction-resubmit-v1', {
+          actorUserId: actor.id,
+          activityId: input.activityId,
+          resubmittedFromRequestId: input.resubmittedFromRequestId,
+          participationIdentityId: input.participationIdentityId,
+          requestTypeCode: input.requestTypeCode,
+          requestedChangeJson: input.requestedChangeJson,
+          reason: input.reason,
+          attachmentIds: input.attachmentIds ?? null,
+          operationKey: input.operationKey,
+        }).definitionHash,
+      };
+
+      // Idempotency is intentionally before the returned/status and base-drift
+      // branches: a completed same-task replay keeps its original conclusion,
+      // but it has already rechecked the caller's live Human qualification.
+      const replay = await this.findRequestByOperationKey(tx, resubmitInput);
+      if (replay !== null) {
+        if (replay.resubmittedFromRequestId !== previous.id) {
+          throw new BizException(BizCode.CORRECTION_OPERATION_KEY_CONFLICT);
+        }
+        return { outcome: 'resubmitted' as const, ...toSubmitResult(replay), replayed: true };
+      }
+
+      if (
+        previous.activityId !== input.activityId ||
+        previous.settlementRunId !== run.id ||
+        previous.statusCode !== 'returned'
+      ) {
+        throw new BizException(BizCode.CORRECTION_REVIEW_STATUS_INVALID);
+      }
+      if (previous.submittedByUserId !== actor.id) throw new BizException(BizCode.FORBIDDEN);
+      if (previous.participationIdentityId !== input.participationIdentityId) {
+        throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+      }
+      if (run.statusCode !== 'correction_open') {
+        throw new BizException(BizCode.CORRECTION_SUBMIT_RUN_STATUS_INVALID);
+      }
+
+      const drift = await this.detectBaseDrift(tx, input.activityId, run, previous);
+      if (drift !== null) {
+        await this.voidRequest(tx, previous.id);
+        await this.releaseRun(tx, input.activityId, run.id);
+        await this.audit.logVoided({
+          ...drift,
+          activityId: input.activityId,
+          correctionRequestId: previous.id,
+          actorUserId: actor.id,
+          actorRoleSnap: actor.role,
+          auditMeta,
+          tx,
+        });
+        return { outcome: 'voided' as const, correctionRequestId: previous.id, ...drift };
+      }
+
+      const baseVersion = await this.readPostedVersion(tx, run);
+      if (baseVersion === null) {
+        throw new BizException(BizCode.CORRECTION_SUBMIT_BASE_VERSION_INVALID);
+      }
+      const activeClosure = await this.readActiveClosure(tx, input.activityId);
+      await this.assertChangeSetResolvable(tx, baseVersion.id, input.activityId, changeSet);
+      if (changeSet.timeCorrection) {
+        const contents = await this.timeCorrection.source(
+          tx,
+          {
+            correctionRequestId: 'validation',
+            postingBatchId: 'validation',
+            activityId: input.activityId,
+            settlementRunId: run.id,
+            baseSettlementVersionId: baseVersion.id,
+            settlementVersionId: `${baseVersion.id}:next`,
+            requestHash: resubmitInput.requestHash,
+          },
+          changeSet.timeCorrection,
+        );
+        const baseResults = await this.readBaseResults(tx, baseVersion.id);
+        if (
+          changeSet.schemaVersion !== 3 &&
+          !contents.changed &&
+          !correctionResultsChanged(baseResults, changeSet)
+        ) {
+          throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+        }
+      }
+      const baseResultRevisionId =
+        input.participationIdentityId === null
+          ? null
+          : await this.readBaseResultRevisionId(tx, baseVersion.id, input.participationIdentityId);
+
+      // This is the point of no return for the old returned row.  Any later
+      // error, including audit failure, rolls the status change back with the
+      // new request rather than leaving a lost review history.
+      await this.correctionWrites.voidRequest(tx, previous.id);
+      await this.assertNoOpenRequest(tx, input.activityId, input.participationIdentityId);
+      const created = await this.createRequest(tx, {
+        input: resubmitInput,
+        runId: run.id,
+        baseVersionId: baseVersion.id,
+        baseResultRevisionId,
+        baseClosureRevision: activeClosure?.revision ?? 0,
+        actorUserId: actor.id,
+        resubmittedFromRequestId: previous.id,
+      });
+      const result: CorrectionSubmitResult = { ...toSubmitResult(created), replayed: false };
+      await this.audit.logResubmit({
+        ...result,
+        resubmittedFromRequestId: previous.id,
+        activityTitle: activity.title,
+        resultChangeCount: changeSet.results.length,
+        segmentChangeCount: changeSet.segments.length,
+        operationKey: resubmitInput.operationKey,
+        requestHash: resubmitInput.requestHash,
+        actorUserId: actor.id,
+        actorRoleSnap: actor.role,
+        auditMeta,
+        tx,
+      });
+      return { outcome: 'resubmitted' as const, ...result };
     });
   }
 
@@ -487,6 +755,7 @@ export class CorrectionApplicationService {
     input: CorrectionReviewInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    options?: CorrectionHumanExecutionOptions,
   ): Promise<CorrectionReviewOutcome> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
@@ -497,12 +766,22 @@ export class CorrectionApplicationService {
       await this.lockActivity(tx, anchor.activityId);
       const run = await this.lockRun(tx, anchor.activityId);
       const request = await this.lockRequest(tx, input.correctionRequestId);
+      this.assertHumanExpectedActivityId(options, request);
+      this.assertHumanExpectedRequestVersion(options, request);
+      const actor = options?.human
+        ? await this.humanAccess.authorizeReview(
+            tx,
+            currentUser,
+            anchor.activityId,
+            request.baseSettlementVersionId,
+          )
+        : currentUser;
       const targetStatus = REVIEW_ACTION_TO_STATUS[input.actionCode];
 
       // 幂等:同一个人对同一条申请重复审同一个动作 ⇒ 原样返回,不写第二遍。
       if (
         request.statusCode === targetStatus &&
-        request.reviewedByUserId === currentUser.id &&
+        request.reviewedByUserId === actor.id &&
         request.reviewNote === (input.note ?? null)
       ) {
         return {
@@ -510,7 +789,7 @@ export class CorrectionApplicationService {
           correctionRequestId: request.id,
           statusCode: request.statusCode,
           runStatus: run.statusCode,
-          reviewedByUserId: currentUser.id,
+          reviewedByUserId: actor.id,
           replayed: true,
         };
       }
@@ -523,6 +802,14 @@ export class CorrectionApplicationService {
       // ⭐ §3.25 末句:基础版本变化 ⇒ 置 voided 并要求新申请(**不允许照旧批准**)。
       //    刻意排在人员隔离**之前**:版本都换了,谁来审都没有意义。
       const drift = await this.detectBaseDrift(tx, anchor.activityId, run, request);
+      const finalActor = options?.human
+        ? await this.humanAccess.authorizeReview(
+            tx,
+            currentUser,
+            anchor.activityId,
+            request.baseSettlementVersionId,
+          )
+        : actor;
       if (drift !== null) {
         await this.voidRequest(tx, request.id);
         await this.releaseRun(tx, anchor.activityId, run.id);
@@ -530,8 +817,8 @@ export class CorrectionApplicationService {
           ...drift,
           activityId: anchor.activityId,
           correctionRequestId: request.id,
-          actorUserId: currentUser.id,
-          actorRoleSnap: currentUser.role,
+          actorUserId: finalActor.id,
+          actorRoleSnap: finalActor.role,
           auditMeta,
           tx,
         });
@@ -539,19 +826,16 @@ export class CorrectionApplicationService {
       }
 
       // §7.5 人员隔离(锁后 authoritative row 上判;见 `correction-review-separation.ts`)。
-      if (evaluateCorrectionReviewSeparation(request, currentUser.id) !== null) {
+      if (evaluateCorrectionReviewSeparation(request, finalActor.id) !== null) {
         throw new BizException(BizCode.CORRECTION_REVIEW_SELF_FORBIDDEN);
       }
 
-      await tx.attendanceCorrectionRequest.update({
-        where: { id: request.id },
-        data: {
-          statusCode: targetStatus,
-          reviewedByUserId: currentUser.id,
-          reviewedAt: new Date(),
-          reviewNote: input.note ?? null,
-          version: { increment: 1 },
-        },
+      await this.correctionWrites.reviewRequest(tx, {
+        correctionRequestId: request.id,
+        statusCode: targetStatus,
+        reviewedByUserId: finalActor.id,
+        reviewedAt: new Date(),
+        reviewNote: input.note ?? null,
       });
 
       // `rejected` 不再占住 target(不在 partial unique 的谓词里)⇒ run 交回常态。
@@ -565,7 +849,7 @@ export class CorrectionApplicationService {
         correctionRequestId: request.id,
         statusCode: targetStatus,
         runStatus,
-        reviewedByUserId: currentUser.id,
+        reviewedByUserId: finalActor.id,
         replayed: false,
       };
       await this.audit.logReview({
@@ -573,8 +857,9 @@ export class CorrectionApplicationService {
         activityId: anchor.activityId,
         actionCode: input.actionCode,
         note: input.note ?? null,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
+        operationHash: input.operationHash,
+        actorUserId: finalActor.id,
+        actorRoleSnap: finalActor.role,
         auditMeta,
         tx,
       });
@@ -592,6 +877,7 @@ export class CorrectionApplicationService {
     input: CorrectionApplyInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    options?: CorrectionHumanExecutionOptions,
   ): Promise<CorrectionPrepareResult> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
@@ -603,15 +889,53 @@ export class CorrectionApplicationService {
         async (tx) => {
           await this.lockActivity(tx, anchor.activityId);
           const run = await this.lockRun(tx, anchor.activityId);
-          const request = await this.lockAuthorizedRequest(
-            tx,
-            input.correctionRequestId,
-            currentUser,
-          );
+          const lockedRequest = await this.lockRequest(tx, input.correctionRequestId);
+          this.assertHumanExpectedActivityId(options, lockedRequest);
+          this.assertHumanExpectedBaseVersion(options, lockedRequest);
+          const request = {
+            ...lockedRequest,
+            actor: options?.human
+              ? await this.humanAccess.authorizePrepare(
+                  tx,
+                  currentUser,
+                  anchor.activityId,
+                  lockedRequest.baseSettlementVersionId,
+                )
+              : await this.authorizeApplication(tx, currentUser),
+          };
+          const frozenRequestHash = request.requestHash;
+          if (!frozenRequestHash) {
+            throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+          }
 
           // 幂等:已有 `preparing` / `committed` 的应用 ⇒ 原样返回(不再准备第二遍)。
-          const resumable = await this.findResumableApplication(tx, request, run);
-          if (resumable !== null) return resumable;
+          const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
+          if (!changeSet.timeCorrection) {
+            await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
+          }
+          const resumable = await this.findResumableApplication(
+            tx,
+            request,
+            run,
+            options?.human ? request.actor.id : undefined,
+          );
+          if (resumable !== null) {
+            if (changeSet.timeCorrection)
+              await this.timeCorrection.assertComplete(
+                tx,
+                resumable.newPostingBatchId,
+                resumable.batchStatus === 'committed',
+              );
+            if (options?.human) {
+              await this.humanAccess.authorizePrepare(
+                tx,
+                currentUser,
+                anchor.activityId,
+                request.baseSettlementVersionId,
+              );
+            }
+            return resumable;
+          }
 
           if (request.statusCode !== 'approved') {
             throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
@@ -622,7 +946,6 @@ export class CorrectionApplicationService {
           const drift = await this.detectBaseDrift(tx, anchor.activityId, run, request);
           if (drift !== null) throw new CorrectionBaseDriftSignal(request.id);
 
-          const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
           const baseVersion = await this.readVersionById(tx, request.baseSettlementVersionId);
           const baseResults = await this.readBaseResults(tx, baseVersion.id);
 
@@ -645,9 +968,90 @@ export class CorrectionApplicationService {
             totalCount: baseVersion.personCount,
             correctionRequestId: request.id,
             operationKey: input.operationKey,
-            requestHash: input.requestHash,
+            requestHash: frozenRequestHash,
             actorUserId: request.actor.id,
           });
+          let application: { id: string } | null = null;
+          let pendingSegmentRevisionCount = 0;
+          if (changeSet.schemaVersion === 3) {
+            // V3 proof rows must point at their real application.  The legacy
+            // V1/V2 order remains untouched below.
+            application = await this.correctionWrites.createApplication(tx, {
+              correctionRequestId: request.id,
+              newSettlementVersionId: newVersion.id,
+              newResultRevisionIds: resolved.map((row) => row.newResultRevisionId),
+              newPostingBatchId: batch.id,
+            });
+            pendingSegmentRevisionCount = await this.prepareV3PendingSegments(
+              tx,
+              application.id,
+              anchor.activityId,
+              changeSet,
+            );
+            // The V3 manifest/proof guards need the request to be in its
+            // transactional applying state.  A later failure rolls this back
+            // together with every prepared fact.
+            await this.correctionWrites.markRequestApplying(tx, request.id);
+          }
+          if (changeSet.timeCorrection) {
+            if (!request.requestHash)
+              throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+            const preview = await this.timeCorrection.source(
+              tx,
+              {
+                correctionRequestId: request.id,
+                postingBatchId: batch.id,
+                activityId: anchor.activityId,
+                settlementRunId: run.id,
+                baseSettlementVersionId: baseVersion.id,
+                settlementVersionId: newVersion.id,
+                requestHash: request.requestHash,
+              },
+              changeSet.timeCorrection,
+            );
+            if (
+              changeSet.schemaVersion !== 3 &&
+              !preview.changed &&
+              !correctionResultsChanged(baseResults, changeSet)
+            )
+              throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+            if (changeSet.schemaVersion === 3) {
+              if (application === null)
+                throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+              const correctionManifestId = randomUUID();
+              const allocationPreparation = await this.correctionTimeAllocation.prepare(tx, {
+                applicationId: application.id,
+                correctionManifestId,
+                activityId: anchor.activityId,
+                settlementRunId: run.id,
+                rootManifestId: preview.manifest.rootManifestId,
+                baseSettlementVersionId: baseVersion.id,
+                settlementVersionId: newVersion.id,
+                postingBatchId: batch.id,
+                changeSet,
+                calculatedBuckets: timeCorrectionCalculatedBuckets(preview.entries),
+              });
+              const contents = await this.timeCorrection.source(
+                tx,
+                {
+                  correctionRequestId: request.id,
+                  postingBatchId: batch.id,
+                  activityId: anchor.activityId,
+                  settlementRunId: run.id,
+                  baseSettlementVersionId: baseVersion.id,
+                  settlementVersionId: newVersion.id,
+                  requestHash: request.requestHash,
+                  sourceProofId: allocationPreparation.sourceProofId,
+                  sourceProofHash: allocationPreparation.sourceProofHash,
+                },
+                changeSet.timeCorrection,
+              );
+              await this.timeCorrection.prepare(tx, contents, { id: correctionManifestId });
+              await this.correctionTimeAllocation.createProof(tx, allocationPreparation);
+            } else {
+              await this.timeCorrection.prepare(tx, preview);
+            }
+          }
 
           // 冲回集 = 基础版本下**已生效**的全部 credit 分录。
           const originals = await this.readReversibleOriginals(tx, baseVersion.id);
@@ -667,7 +1071,7 @@ export class CorrectionApplicationService {
             tx,
             batch.id,
             anchor.activityId,
-            input.requestHash,
+            frozenRequestHash,
             originals,
           );
           await this.writeReplacementDays(tx, replacements);
@@ -675,7 +1079,7 @@ export class CorrectionApplicationService {
             tx,
             batch.id,
             anchor.activityId,
-            input.requestHash,
+            frozenRequestHash,
             replacements,
           );
 
@@ -689,10 +1093,25 @@ export class CorrectionApplicationService {
             activityId: anchor.activityId,
             newVersionId: newVersion.id,
             batchId: batch.id,
-            requestHash: input.requestHash,
+            requestHash: frozenRequestHash,
             baseline,
             actorUserId: request.actor.id,
           });
+          const newResultRevisionIds = resolved.map((row) => row.newResultRevisionId);
+          if (application === null) {
+            application = await this.correctionWrites.createApplication(tx, {
+              correctionRequestId: request.id,
+              newSettlementVersionId: newVersion.id,
+              newResultRevisionIds,
+              newPostingBatchId: batch.id,
+            });
+            pendingSegmentRevisionCount = await this.preparePendingSegments(
+              tx,
+              application.id,
+              anchor.activityId,
+              changeSet,
+            );
+          }
           await tx.ledgerPostingBatch.update({
             where: { id: batch.id },
             data: {
@@ -704,28 +1123,9 @@ export class CorrectionApplicationService {
             },
           });
 
-          const newResultRevisionIds = resolved.map((row) => row.newResultRevisionId);
-          const application = await tx.correctionApplication.create({
-            data: {
-              correctionRequestId: request.id,
-              newSettlementVersionId: newVersion.id,
-              newResultRevisionIds,
-              newPostingBatchId: batch.id,
-              statusCode: 'preparing',
-            },
-            select: { id: true },
-          });
-          const pendingSegmentRevisionCount = await this.preparePendingSegments(
-            tx,
-            application.id,
-            anchor.activityId,
-            changeSet,
-          );
-
-          await tx.attendanceCorrectionRequest.update({
-            where: { id: request.id },
-            data: { statusCode: 'applying', version: { increment: 1 } },
-          });
+          if (changeSet.schemaVersion !== 3) {
+            await this.correctionWrites.markRequestApplying(tx, request.id);
+          }
           // ⚠️ 见文件头「两处诚实标注」:这两个指针是**工作流**指针,不是正式读面的真源;
           //    推它们是复用第五刀 commit 协议的前置条件。
           await tx.attendanceSettlementRun.update({
@@ -754,12 +1154,20 @@ export class CorrectionApplicationService {
             batchStatus: 'ready',
             replayed: false,
           };
+          const finalActor = options?.human
+            ? await this.humanAccess.authorizePrepare(
+                tx,
+                currentUser,
+                anchor.activityId,
+                request.baseSettlementVersionId,
+              )
+            : request.actor;
           await this.audit.logPrepare({
             ...result,
             operationKey: input.operationKey,
-            requestHash: input.requestHash,
-            actorUserId: request.actor.id,
-            actorRoleSnap: request.actor.role,
+            requestHash: frozenRequestHash,
+            actorUserId: finalActor.id,
+            actorRoleSnap: finalActor.role,
             auditMeta,
             tx,
           });
@@ -770,13 +1178,10 @@ export class CorrectionApplicationService {
       .catch(async (error: unknown) => {
         // 基础版本漂移:置 voided 必须**落库**,所以它在准备事务之外独立完成。
         if (error instanceof CorrectionBaseDriftSignal) {
-          await this.prisma.attendanceCorrectionRequest.update({
-            where: { id: error.correctionRequestId },
-            data: { statusCode: 'voided', version: { increment: 1 } },
-          });
+          await this.correctionWrites.voidRequest(this.prisma, error.correctionRequestId);
           throw new BizException(BizCode.CORRECTION_BASE_VERSION_CHANGED);
         }
-        throw error;
+        this.timeCorrection.rethrowConstraint(error);
       });
   }
 
@@ -787,27 +1192,74 @@ export class CorrectionApplicationService {
     input: CorrectionApplyInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    options?: CorrectionHumanExecutionOptions,
   ): Promise<CorrectionCommitResult> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
     const anchor = await this.readRequestAnchor(input.correctionRequestId);
+    const prevalidatedTimeProof = await this.correctionTimeAllocation.prevalidateFrozenSourceProof(
+      this.prisma,
+      {
+        correctionRequestId: input.correctionRequestId,
+        activityId: anchor.activityId,
+      },
+    );
 
     return await runMemberLinearizedTransaction(this.prisma, async (tx) => {
       // ① Activity → ② run → ③ correction request(本刀新增的唯一一把,插在 run 之后)
       await this.lockActivity(tx, anchor.activityId);
       const run = await this.lockRun(tx, anchor.activityId);
       const request = await this.lockRequest(tx, input.correctionRequestId);
-      const application = await this.lockApplication(
-        tx,
-        request.id,
-        parseCorrectionChangeSet(request.requestedChangeJson),
-        currentUser,
-      );
+      this.assertHumanExpectedActivityId(options, request);
+      const frozenRequestHash = request.requestHash;
+      if (!frozenRequestHash) {
+        throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+      }
+      this.assertHumanExpectedBaseVersion(options, request);
+      const changeSet = parseCorrectionChangeSet(request.requestedChangeJson);
+      if (!changeSet.timeCorrection) {
+        await this.timeLedger.assertLegacyCorrection(tx, request.baseSettlementVersionId);
+      }
+      const lockedApplication = await this.lockApplication(tx, request.id, changeSet);
+      // `lockApplication` may itself wait on another prepare/commit.  The
+      // Human route takes its first qualification only after that lock: before
+      // this point the transaction has only read/locked rows, so the earlier
+      // qualification was duplicate work.  The post-lock and post-ledger
+      // qualifications remain the authoritative live checks before a replay
+      // or write can escape.
+      const application = {
+        ...lockedApplication,
+        actor: options?.human
+          ? await this.humanAccess.authorizeCommit(
+              tx,
+              currentUser,
+              anchor.activityId,
+              request.baseSettlementVersionId,
+            )
+          : await this.authorizeApplication(tx, currentUser),
+      };
+      this.assertHumanCommitTarget(options, application);
+      if (options?.human && application.preparedByUserId !== application.actor.id) {
+        throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
+      }
 
       // 幂等:已 committed ⇒ 原样返回上一次的结论。
       if (application.statusCode === 'committed') {
-        return replayCommitResult(anchor.activityId, request, application);
+        if (changeSet.timeCorrection)
+          await this.timeCorrection.assertComplete(tx, application.newPostingBatchId, true);
+        // Reuse the one existing committed-batch reader instead of returning
+        // placeholders.  The Human API promises the exact immutable batch and
+        // settlement identifiers on replay too; this branch performs no write
+        // or audit append because `commitBatchWithin` sees `committed` first.
+        const ledger = await this.ledgerPosting.commitBatchWithin(
+          tx,
+          anchor.activityId,
+          { postingBatchId: application.newPostingBatchId, operationKey: input.operationKey },
+          application.actor,
+          auditMeta,
+        );
+        return replayCommitResult(anchor.activityId, request, application, ledger);
       }
       if (request.statusCode !== 'applying' || application.statusCode !== 'preparing') {
         throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
@@ -822,14 +1274,36 @@ export class CorrectionApplicationService {
         application.id,
         anchor.activityId,
         parseCorrectionChangeSet(request.requestedChangeJson),
+        application.actor.id,
+        prevalidatedTimeProof,
       );
+      let readyV3CorrectionReceipt: ReadyV3CorrectionReceiptAnchor | undefined;
+      if (changeSet.timeCorrection) {
+        const receipt = await this.timeCorrection.createCommitReceipt(
+          tx,
+          application.newPostingBatchId,
+        );
+        if (changeSet.schemaVersion === 3) readyV3CorrectionReceipt = receipt;
+      }
       const ledger = await this.ledgerPosting.commitBatchWithin(
         tx,
         anchor.activityId,
         { postingBatchId: application.newPostingBatchId, operationKey: input.operationKey },
         application.actor,
         auditMeta,
+        readyV3CorrectionReceipt,
       );
+      // The shared committer may wait on member/day serialization locks.  A
+      // Human commit that loses its live qualification during that wait must
+      // roll the transaction back instead of leaking a successful replay.
+      const finalActor = options?.human
+        ? await this.humanAccess.authorizeCommit(
+            tx,
+            currentUser,
+            anchor.activityId,
+            request.baseSettlementVersionId,
+          )
+        : application.actor;
 
       // ===== §5.14 ⑥ 原子切换:以下全部与上面同一事务 =====
       //
@@ -858,14 +1332,8 @@ export class CorrectionApplicationService {
         data: { currentClosureRevision: null, version: { increment: 1 } },
       });
 
-      await tx.correctionApplication.update({
-        where: { id: application.id },
-        data: { statusCode: 'committed' },
-      });
-      await tx.attendanceCorrectionRequest.update({
-        where: { id: request.id },
-        data: { statusCode: 'applied', version: { increment: 1 } },
-      });
+      await this.correctionWrites.markApplicationCommitted(tx, application.id);
+      await this.correctionWrites.markRequestApplied(tx, request.id);
 
       const result: CorrectionCommitResult = {
         correctionRequestId: request.id,
@@ -886,9 +1354,9 @@ export class CorrectionApplicationService {
         ...result,
         settlementRunId: run.id,
         operationKey: input.operationKey,
-        requestHash: input.requestHash,
-        actorUserId: application.actor.id,
-        actorRoleSnap: application.actor.role,
+        requestHash: frozenRequestHash,
+        actorUserId: finalActor.id,
+        actorRoleSnap: finalActor.role,
         auditMeta,
         tx,
       });
@@ -953,10 +1421,11 @@ export class CorrectionApplicationService {
 
   private async lockRequest(tx: PrismaTx, correctionRequestId: string): Promise<LockedRequest> {
     const rows = await tx.$queryRaw<LockedRequest[]>`
-      SELECT id, "activityId", "settlementRunId", "participationIdentityId",
+      SELECT id, version, "activityId", "settlementRunId", "participationIdentityId",
              "baseSettlementVersionId", "baseResultRevisionId", "baseClosureRevision",
              "requestedChangeJson", "statusCode", "submittedByUserId",
-             "reviewedByUserId", "reviewNote", "operationKey", "requestHash"
+             "reviewedByUserId", "reviewNote", "operationKey", "requestHash",
+             "resubmittedFromRequestId"
       FROM "AttendanceCorrectionRequest"
       WHERE id = ${correctionRequestId}
       FOR UPDATE
@@ -970,13 +1439,12 @@ export class CorrectionApplicationService {
     tx: PrismaTx,
     correctionRequestId: string,
     changeSet: CorrectionChangeSet,
-    claimed: CurrentUserPayload,
   ): Promise<{
-    actor: CurrentUserPayload;
     id: string;
     statusCode: string;
     newSettlementVersionId: string;
     newPostingBatchId: string;
+    preparedByUserId: string;
   }> {
     const rows = await tx.$queryRaw<
       Array<{
@@ -984,19 +1452,22 @@ export class CorrectionApplicationService {
         statusCode: string;
         newSettlementVersionId: string;
         newPostingBatchId: string;
+        preparedByUserId: string;
       }>
     >`
-      SELECT id, "statusCode", "newSettlementVersionId", "newPostingBatchId"
-      FROM "CorrectionApplication"
-      WHERE "correctionRequestId" = ${correctionRequestId}
-        AND "statusCode" IN ('preparing', 'committed')
-      ORDER BY "createdAt" ASC
-      FOR UPDATE
+      SELECT application.id, application."statusCode", application."newSettlementVersionId",
+             application."newPostingBatchId", batch."preparedByUserId"
+      FROM "CorrectionApplication" AS application
+      INNER JOIN "LedgerPostingBatch" AS batch ON batch.id = application."newPostingBatchId"
+      WHERE application."correctionRequestId" = ${correctionRequestId}
+        AND application."statusCode" IN ('preparing', 'committed')
+      ORDER BY application."createdAt" ASC
+      FOR UPDATE OF application
     `;
     const row = rows[0];
     if (row === undefined) throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
     await this.readPreparedSegmentCount(tx, row.id, changeSet);
-    return { ...row, actor: await this.authorizeApplication(tx, claimed) };
+    return row;
   }
 
   // ===== 读 ================================================================
@@ -1137,6 +1608,45 @@ export class CorrectionApplicationService {
     if ((row?.resolved ?? 0) !== identityIds.length) {
       throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
     }
+    if (changeSet.schemaVersion !== 3 || !changeSet.allocations) return;
+
+    // V3 never creates a new source identity or segment key.  Each requested
+    // fact must point at the exact currently-effective committed source and
+    // its current allocation; the prepare path later freezes the entire set.
+    const requestedSources = JSON.stringify(
+      changeSet.allocations.map((allocation) => ({
+        participationIdentityId: allocation.participationIdentityId,
+        segmentKey: allocation.segmentKey,
+        baseSegmentRevisionId: allocation.baseSegmentRevisionId,
+        baseAllocationRevisionId: allocation.baseAllocationRevisionId,
+      })),
+    );
+    const [sources] = await tx.$queryRaw<Array<{ resolved: number }>>`
+      SELECT count(*)::int AS resolved
+      FROM jsonb_to_recordset(${requestedSources}::jsonb)
+        AS requested("participationIdentityId" TEXT, "segmentKey" TEXT,
+          "baseSegmentRevisionId" TEXT, "baseAllocationRevisionId" TEXT)
+      JOIN "ParticipantServiceSegmentRevision" segment
+        ON segment.id = requested."baseSegmentRevisionId"
+          AND segment."participationIdentityId" = requested."participationIdentityId"
+          AND segment."segmentKey" = requested."segmentKey"
+          AND segment."statusCode" = 'committed'
+          AND segment."resultCode" = 'valid'
+      JOIN "ActivityParticipationIdentity" identity
+        ON identity.id = segment."participationIdentityId"
+          AND identity."activityId" = ${activityId}
+      JOIN "ParticipantTimeAllocationRevision" allocation
+        ON allocation.id = requested."baseAllocationRevisionId"
+          AND allocation."activityId" = ${activityId}
+          AND allocation."participationIdentityId" = segment."participationIdentityId"
+          AND allocation."segmentKey" = segment."segmentKey"
+          AND allocation."sourceSegmentId" = segment.id
+          AND allocation."sourceSegmentRevision" = segment.revision
+          AND allocation."settlementDraftVersionId" IS NULL
+    `;
+    if ((sources?.resolved ?? 0) !== changeSet.segments.length) {
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    }
   }
 
   private async findRequestByOperationKey(
@@ -1147,6 +1657,7 @@ export class CorrectionApplicationService {
       where: { activityId: input.activityId, operationKey: input.operationKey },
       select: {
         id: true,
+        version: true,
         activityId: true,
         settlementRunId: true,
         participationIdentityId: true,
@@ -1160,6 +1671,7 @@ export class CorrectionApplicationService {
         reviewNote: true,
         operationKey: true,
         requestHash: true,
+        resubmittedFromRequestId: true,
       },
     });
     if (existing === null) return null;
@@ -1195,44 +1707,26 @@ export class CorrectionApplicationService {
       baseResultRevisionId: string | null;
       baseClosureRevision: number;
       actorUserId: string;
+      resubmittedFromRequestId?: string;
     },
   ): Promise<LockedRequest> {
     try {
-      return await tx.attendanceCorrectionRequest.create({
-        data: {
-          activityId: args.input.activityId,
-          settlementRunId: args.runId,
-          participationIdentityId: args.input.participationIdentityId,
-          baseSettlementVersionId: args.baseVersionId,
-          baseResultRevisionId: args.baseResultRevisionId,
-          baseClosureRevision: args.baseClosureRevision,
-          requestTypeCode: args.input.requestTypeCode,
-          requestedChangeJson: args.input.requestedChangeJson as Prisma.InputJsonValue,
-          reason: args.input.reason,
-          attachmentIds:
-            args.input.attachmentIds === undefined ? undefined : [...args.input.attachmentIds],
-          statusCode: 'pending',
-          submittedByUserId: args.actorUserId,
-          submittedAt: new Date(),
-          operationKey: args.input.operationKey,
-          requestHash: args.input.requestHash,
-        },
-        select: {
-          id: true,
-          activityId: true,
-          settlementRunId: true,
-          participationIdentityId: true,
-          baseSettlementVersionId: true,
-          baseResultRevisionId: true,
-          baseClosureRevision: true,
-          requestedChangeJson: true,
-          statusCode: true,
-          submittedByUserId: true,
-          reviewedByUserId: true,
-          reviewNote: true,
-          operationKey: true,
-          requestHash: true,
-        },
+      return await this.correctionWrites.createRequest(tx, {
+        activityId: args.input.activityId,
+        settlementRunId: args.runId,
+        participationIdentityId: args.input.participationIdentityId,
+        baseSettlementVersionId: args.baseVersionId,
+        baseResultRevisionId: args.baseResultRevisionId,
+        baseClosureRevision: args.baseClosureRevision,
+        requestTypeCode: args.input.requestTypeCode,
+        requestedChangeJson: args.input.requestedChangeJson as Prisma.InputJsonValue,
+        reason: args.input.reason,
+        attachmentIds: args.input.attachmentIds,
+        submittedByUserId: args.actorUserId,
+        submittedAt: new Date(),
+        operationKey: args.input.operationKey,
+        requestHash: args.input.requestHash,
+        resubmittedFromRequestId: args.resubmittedFromRequestId,
       });
     } catch (error) {
       // §3.25 partial unique 的第二道(`attendance_correction_request_open_unique`)。
@@ -1275,10 +1769,7 @@ export class CorrectionApplicationService {
   }
 
   private async voidRequest(tx: PrismaTx, correctionRequestId: string): Promise<void> {
-    await tx.attendanceCorrectionRequest.update({
-      where: { id: correctionRequestId },
-      data: { statusCode: 'voided', version: { increment: 1 } },
-    });
+    await this.correctionWrites.voidRequest(tx, correctionRequestId);
   }
 
   /**
@@ -1301,6 +1792,7 @@ export class CorrectionApplicationService {
     tx: PrismaTx,
     request: LockedRequest,
     run: LockedRun,
+    expectedPreparedByUserId?: string,
   ): Promise<CorrectionPrepareResult | null> {
     const existing = await tx.correctionApplication.findFirst({
       where: { correctionRequestId: request.id, statusCode: { in: ['preparing', 'committed'] } },
@@ -1315,7 +1807,12 @@ export class CorrectionApplicationService {
     if (existing === null) return null;
     const version = await this.readVersionById(tx, existing.newSettlementVersionId);
     const [counts] = await tx.$queryRaw<
-      Array<{ reversalEntryCount: number; replacementEntryCount: number; batchStatus: string }>
+      Array<{
+        reversalEntryCount: number;
+        replacementEntryCount: number;
+        batchStatus: string;
+        preparedByUserId: string | null;
+      }>
     >`
       SELECT
         count(*) FILTER (
@@ -1324,12 +1821,19 @@ export class CorrectionApplicationService {
         count(*) FILTER (
           WHERE e."entryTypeCode" IN ('service_credit', 'contribution_credit')
         )::int AS "replacementEntryCount",
-        max(b."statusCode") AS "batchStatus"
+        max(b."statusCode") AS "batchStatus",
+        max(b."preparedByUserId") AS "preparedByUserId"
       FROM "LedgerPostingBatch" b
       LEFT JOIN "ParticipationLedgerEntry" e ON e."postingBatchId" = b.id
       WHERE b.id = ${existing.newPostingBatchId}
       GROUP BY b.id
     `;
+    if (
+      expectedPreparedByUserId !== undefined &&
+      counts?.preparedByUserId !== expectedPreparedByUserId
+    ) {
+      throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
+    }
     const newResultRevisionIds = Array.isArray(existing.newResultRevisionIds)
       ? existing.newResultRevisionIds.filter((id): id is string => typeof id === 'string')
       : [];
@@ -1485,13 +1989,47 @@ export class CorrectionApplicationService {
     }
   }
 
-  private async lockAuthorizedRequest(
-    tx: PrismaTx,
-    requestId: string,
-    claimed: CurrentUserPayload,
-  ) {
-    const request = await this.lockRequest(tx, requestId);
-    return { ...request, actor: await this.authorizeApplication(tx, claimed) };
+  private assertHumanExpectedActivityId(
+    options: CorrectionHumanExecutionOptions | undefined,
+    request: LockedRequest,
+  ): void {
+    if (options?.human && options.expectedActivityId !== request.activityId) {
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_REFERENCE_UNAVAILABLE);
+    }
+  }
+
+  private assertHumanExpectedBaseVersion(
+    options: CorrectionHumanExecutionOptions | undefined,
+    request: LockedRequest,
+  ): void {
+    if (
+      options?.human &&
+      options.expectedBaseSettlementVersionId !== request.baseSettlementVersionId
+    ) {
+      throw new BizException(BizCode.CORRECTION_BASE_VERSION_CHANGED);
+    }
+  }
+
+  private assertHumanExpectedRequestVersion(
+    options: CorrectionHumanExecutionOptions | undefined,
+    request: LockedRequest,
+  ): void {
+    if (options?.human && options.expectedRequestVersion !== request.version) {
+      throw new BizException(BizCode.CORRECTION_REVIEW_STATUS_INVALID);
+    }
+  }
+
+  private assertHumanCommitTarget(
+    options: CorrectionHumanExecutionOptions | undefined,
+    application: { id: string; newPostingBatchId: string },
+  ): void {
+    if (
+      options?.human &&
+      (options.expectedCorrectionApplicationId !== application.id ||
+        options.expectedPostingBatchId !== application.newPostingBatchId)
+    ) {
+      throw new BizException(BizCode.CORRECTION_APPLY_STATUS_INVALID);
+    }
   }
 
   private async authorizeApplication(
@@ -1559,6 +2097,87 @@ export class CorrectionApplicationService {
     return 0;
   }
 
+  /**
+   * V3 needs the same immutable pending segment facts as legacy correction,
+   * but its 10,000-row ceiling forbids one read/write round trip per segment.
+   * Read and lock the approved base set once, then insert the prepared facts
+   * and their receipt as bounded set writes.
+   */
+  private async prepareV3PendingSegments(
+    tx: PrismaTx,
+    applicationId: string,
+    activityId: string,
+    changeSet: CorrectionChangeSet,
+  ): Promise<number> {
+    if (changeSet.schemaVersion !== 3 || changeSet.segments.length === 0)
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    const requested = JSON.stringify(
+      changeSet.segments.map((change) => ({
+        participationIdentityId: change.participationIdentityId,
+        segmentKey: change.segmentKey,
+      })),
+    );
+    const bases = await tx.$queryRaw<
+      Array<{
+        id: string;
+        participationIdentityId: string;
+        segmentKey: string;
+        revision: number;
+        sourceCheckInEventId: string;
+      }>
+    >`
+      SELECT segment.id, segment."participationIdentityId", segment."segmentKey",
+             segment.revision, segment."sourceCheckInEventId"
+      FROM jsonb_to_recordset(${requested}::jsonb)
+        AS requested("participationIdentityId" TEXT, "segmentKey" TEXT)
+      JOIN "ParticipantServiceSegmentRevision" segment
+        ON segment."participationIdentityId" = requested."participationIdentityId"
+          AND segment."segmentKey" = requested."segmentKey"
+          AND segment."statusCode" = 'committed'
+          AND segment."resultCode" = 'valid'
+      JOIN "ActivityParticipationIdentity" identity
+        ON identity.id = segment."participationIdentityId"
+          AND identity."activityId" = ${activityId}
+      ORDER BY segment."participationIdentityId", segment."segmentKey"
+      FOR SHARE OF segment
+    `;
+    if (bases.length !== changeSet.segments.length) {
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    }
+    const baseByKey = new Map(
+      bases.map((base) => [canonicalize([base.participationIdentityId, base.segmentKey]), base]),
+    );
+    if (baseByKey.size !== changeSet.segments.length)
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    const rows: Prisma.CorrectionPendingSegmentRevisionCreateManyInput[] = [];
+    for (const change of changeSet.segments) {
+      const base = baseByKey.get(canonicalize([change.participationIdentityId, change.segmentKey]));
+      if (!base) throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+      rows.push({
+        applicationId,
+        activityId,
+        participationIdentityId: change.participationIdentityId,
+        segmentKey: change.segmentKey,
+        baseRevisionId: base.id,
+        baseRevisionNumber: base.revision,
+        targetRevisionNumber: base.revision + 1,
+        sourceCheckInEventId: base.sourceCheckInEventId,
+        checkInAt: change.checkInAt,
+        checkOutAt: change.checkOutAt,
+        resultCode: change.resultCode,
+        serviceHours: new Prisma.Decimal(decimalToCanonicalString(change.serviceHours)),
+        payloadHash: this.pendingSegmentHash(change),
+      });
+    }
+    const created = await tx.correctionPendingSegmentRevision.createMany({ data: rows });
+    if (created.count !== rows.length)
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    await tx.correctionSegmentPreparationReceipt.create({
+      data: { applicationId, preparedSegmentCount: rows.length },
+    });
+    return rows.length;
+  }
+
   private async preparePendingSegments(
     tx: PrismaTx,
     applicationId: string,
@@ -1605,7 +2224,19 @@ export class CorrectionApplicationService {
     applicationId: string,
     activityId: string,
     changeSet: CorrectionChangeSet,
+    actorUserId: string,
+    prevalidatedTimeProof: CorrectionTimeAllocationProofPrevalidation | undefined,
   ): Promise<number> {
+    if (changeSet.schemaVersion === 3) {
+      return await this.materializeV3PendingSegments(
+        tx,
+        applicationId,
+        activityId,
+        changeSet,
+        actorUserId,
+        prevalidatedTimeProof,
+      );
+    }
     const pending = await tx.correctionPendingSegmentRevision.findMany({
       where: { applicationId },
       orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }],
@@ -1666,6 +2297,134 @@ export class CorrectionApplicationService {
           baseRevisionId: row.baseRevisionId,
         },
       });
+    }
+    return pending.length;
+  }
+
+  /**
+   * V3 preallocates every target ID during prepare.  Materialization therefore
+   * uses two bounded set writes: supersede the exact base set, create the exact
+   * target set, then delegate allocation/receipt/binding creation to its
+   * dedicated immutable-fact service.
+   */
+  private async materializeV3PendingSegments(
+    tx: PrismaTx,
+    applicationId: string,
+    activityId: string,
+    changeSet: CorrectionChangeSet,
+    actorUserId: string,
+    prevalidatedTimeProof: CorrectionTimeAllocationProofPrevalidation | undefined,
+  ): Promise<number> {
+    if (!changeSet.allocations || changeSet.allocations.length !== changeSet.segments.length) {
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    }
+    const pending = await tx.correctionPendingSegmentRevision.findMany({
+      where: { applicationId, activityId },
+      orderBy: [{ participationIdentityId: 'asc' }, { segmentKey: 'asc' }],
+    });
+    if (pending.length !== changeSet.segments.length) {
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    }
+    const changes = new Map(
+      changeSet.segments.map((change) => [
+        canonicalize([change.participationIdentityId, change.segmentKey]),
+        change,
+      ]),
+    );
+    const allocations = await tx.correctionPendingTimeAllocation.findMany({
+      where: { applicationId, activityId },
+      select: {
+        pendingSegmentId: true,
+        targetSegmentRevisionId: true,
+        targetAllocationRevisionId: true,
+      },
+    });
+    const allocationByPending = new Map(allocations.map((row) => [row.pendingSegmentId, row]));
+    if (allocationByPending.size !== pending.length) {
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+    }
+    for (const row of pending) {
+      const change = changes.get(canonicalize([row.participationIdentityId, row.segmentKey]));
+      const allocation = allocationByPending.get(row.id);
+      if (
+        !change ||
+        !allocation ||
+        row.payloadHash !== this.pendingSegmentHash(change) ||
+        row.checkInAt.getTime() !== change.checkInAt.getTime() ||
+        row.checkOutAt.getTime() !== change.checkOutAt.getTime() ||
+        row.resultCode !== change.resultCode ||
+        row.serviceHours.toFixed(2) !== decimalToCanonicalString(change.serviceHours) ||
+        !allocation.targetSegmentRevisionId ||
+        !allocation.targetAllocationRevisionId
+      ) {
+        throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
+      }
+    }
+    const baseIds = pending.map((row) => row.baseRevisionId);
+    const bases = await tx.participantServiceSegmentRevision.findMany({
+      where: {
+        id: { in: baseIds },
+        statusCode: 'committed',
+        identity: { activityId },
+      },
+      select: {
+        id: true,
+        participationIdentityId: true,
+        segmentKey: true,
+        revision: true,
+        sourceCheckInEventId: true,
+      },
+    });
+    const baseById = new Map(bases.map((row) => [row.id, row]));
+    if (baseById.size !== pending.length) {
+      throw new BizException(BizCode.CORRECTION_BASE_VERSION_CHANGED);
+    }
+    for (const row of pending) {
+      const base = baseById.get(row.baseRevisionId);
+      if (
+        !base ||
+        base.participationIdentityId !== row.participationIdentityId ||
+        base.segmentKey !== row.segmentKey ||
+        base.revision !== row.baseRevisionNumber ||
+        base.sourceCheckInEventId !== row.sourceCheckInEventId ||
+        row.targetRevisionNumber !== row.baseRevisionNumber + 1
+      ) {
+        throw new BizException(BizCode.CORRECTION_BASE_VERSION_CHANGED);
+      }
+    }
+    const superseded = await tx.participantServiceSegmentRevision.updateMany({
+      where: { id: { in: baseIds }, statusCode: 'committed' },
+      data: { statusCode: 'superseded' },
+    });
+    if (superseded.count !== pending.length) {
+      throw new BizException(BizCode.CORRECTION_BASE_VERSION_CHANGED);
+    }
+    const created = await tx.participantServiceSegmentRevision.createMany({
+      data: pending.map((row) => ({
+        id: allocationByPending.get(row.id)?.targetSegmentRevisionId,
+        participationIdentityId: row.participationIdentityId,
+        segmentKey: row.segmentKey,
+        revision: row.targetRevisionNumber,
+        sourceCheckInEventId: row.sourceCheckInEventId,
+        resultCode: row.resultCode,
+        statusCode: 'draft',
+        checkInAt: row.checkInAt,
+        checkOutAt: row.checkOutAt,
+        serviceHours: row.serviceHours,
+        baseRevisionId: row.baseRevisionId,
+      })),
+    });
+    if (created.count !== pending.length) {
+      throw new BizException(BizCode.CORRECTION_BASE_VERSION_CHANGED);
+    }
+    const materialized = await this.correctionTimeAllocation.materialize(tx, {
+      applicationId,
+      activityId,
+      actorUserId,
+      prevalidatedProof: prevalidatedTimeProof,
+    });
+    if (materialized !== pending.length) {
+      throw new BizException(BizCode.CORRECTION_CHANGE_SET_INVALID);
     }
     return pending.length;
   }
@@ -2239,9 +2998,39 @@ class CorrectionBaseDriftSignal extends Error {
   }
 }
 
+/** V3 proof records every root bucket once, in a stable payload that can be rehashed. */
+function timeCorrectionCalculatedBuckets(
+  entries: readonly {
+    rootEntryId: string;
+    participationIdentityId: string;
+    categoryCode: string;
+    entryTypeCode: 'reversal' | 'credit';
+    secondsDelta: number;
+  }[],
+): readonly Record<string, unknown>[] {
+  return entries
+    .filter((entry) => entry.entryTypeCode === 'credit')
+    .map((entry) => ({
+      rootEntryId: entry.rootEntryId,
+      participationIdentityId: entry.participationIdentityId,
+      categoryCode: entry.categoryCode,
+      recognizedSeconds: entry.secondsDelta,
+      calculatedSeconds: null,
+      calculationBasis: 'approved_time_correction',
+    }))
+    .sort((left, right) =>
+      String(left.rootEntryId) < String(right.rootEntryId)
+        ? -1
+        : String(left.rootEntryId) > String(right.rootEntryId)
+          ? 1
+          : 0,
+    );
+}
+
 function toSubmitResult(request: LockedRequest): Omit<CorrectionSubmitResult, 'replayed'> {
   return {
     correctionRequestId: request.id,
+    requestVersion: request.version,
     activityId: request.activityId,
     settlementRunId: request.settlementRunId,
     baseSettlementVersionId: request.baseSettlementVersionId,
@@ -2257,6 +3046,25 @@ function toSubmitResult(request: LockedRequest): Omit<CorrectionSubmitResult, 'r
  * 未被点名的人**逐字沿用**基础值(只换版本与前驱指针)—— 见
  * `createNewResultRevisions` 的注释:整份复制是重新关账能成功的前提。
  */
+function correctionResultsChanged(
+  baseResults: readonly BaseResultRow[],
+  changeSet: CorrectionChangeSet,
+): boolean {
+  const byIdentity = new Map(baseResults.map((row) => [row.participationIdentityId, row]));
+  return changeSet.results.some((change) => {
+    const base = byIdentity.get(change.participationIdentityId);
+    return (
+      !base ||
+      base.resultCode !== change.resultCode ||
+      base.lateFlag !== change.lateFlag ||
+      base.earlyLeaveFlag !== change.earlyLeaveFlag ||
+      base.adjustmentReason !== change.adjustmentReason ||
+      Number(base.recognizedServiceHours.toString()) !== change.recognizedServiceHours ||
+      Number(base.recognizedContributionPoints.toString()) !== change.recognizedContributionPoints
+    );
+  });
+}
+
 function resolveNewResults(
   baseResults: readonly BaseResultRow[],
   changeSet: CorrectionChangeSet,
@@ -2294,25 +3102,13 @@ function replayCommitResult(
   activityId: string,
   request: LockedRequest,
   application: { id: string; statusCode: string; newPostingBatchId: string },
+  ledger: LedgerCommitResult,
 ): CorrectionCommitResult {
   return {
     correctionRequestId: request.id,
     correctionApplicationId: application.id,
     activityId,
-    ledger: {
-      postingBatchId: application.newPostingBatchId,
-      activityId,
-      settlementRunId: request.settlementRunId,
-      settlementVersionId: '',
-      settlementVersion: 0,
-      batchStatus: 'committed',
-      runStatus: 'posted',
-      memberCount: 0,
-      dayStateCount: 0,
-      entryCount: 0,
-      committedAt: null,
-      replayed: true,
-    },
+    ledger,
     supersededResultRevisionCount: 0,
     supersededSegmentRevisionCount: 0,
     supersededClosureRevision: null,

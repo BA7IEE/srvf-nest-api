@@ -9,6 +9,7 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { loginAs } from '../fixtures/auth.fixture';
 import { createTestUser } from '../fixtures/users.fixture';
 import { expectBizError } from '../helpers/biz-code.assert';
+import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import { httpServer } from '../helpers/http-server';
 import {
   seedCertificateStandard,
@@ -216,7 +217,7 @@ describe('attachments upload-url + confirm-upload', () => {
     // 整个 spec 变成一片 401 —— 且错在"清表"这一步,读起来完全不像清表的锅。
     // `DELETE` 走 ON DELETE 规则:头像指针与标准照指针各自置空,User 行留存。
     await prisma.$executeRawUnsafe('DELETE FROM "attachments"');
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE');
+    await truncateAuditLogsTestOnly(app);
   };
 
   const buildUploadUrlBody = (

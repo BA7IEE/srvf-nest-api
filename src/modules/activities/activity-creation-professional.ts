@@ -4,6 +4,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import {
+  materializeCreationContributionPolicySelection,
   materializeCreationTimePolicySelection,
   type ProfessionalCreationCommand,
 } from './activity-creation-command';
@@ -95,6 +96,13 @@ export class ActivityCreationProfessional {
         command.timePolicySelection === undefined
           ? undefined
           : materializeCreationTimePolicySelection(command.timePolicySelection, timePolicySessions),
+      contributionPolicySelection:
+        command.contributionPolicySelection === undefined
+          ? undefined
+          : materializeCreationContributionPolicySelection(
+              command.contributionPolicySelection,
+              timePolicySessions,
+            ),
     };
   }
 }

@@ -66,7 +66,8 @@ import {
 //
 // ## 锁序(§10.1)
 //
-// ① `Activity` 行锁 → ② `AttendanceSettlementRun` 行锁。**只有这两把**。
+// 同步入口:① `Activity` 行锁 → ② `AttendanceSettlementRun` 行锁。
+// 后台调用方先按 Activity → job 取锁，再在同一事务调用共用核心取 run 锁。
 // ❌ 不取 member advisory lock:本刀不写任何队员维度的钱(账本分录、日上限归第五刀),
 //    取了只会凭空多一条死锁边(沿第一刀与 concurrency-review-m1-m6 的同一判断)。
 //
@@ -75,13 +76,28 @@ import {
 // ❌ 零 Punch 写路径(合同硬约束:本批完成前不开放新 Punch 写入口)——
 //    本文件对 `AttendancePunchEvent` **只读**。
 // ❌ 零端点 / 零 DTO / 零权限码(消费方在第三刀);判权在调用方。
-// ❌ 不实现 worker / `ActivityBatchJob`(§5.9 的大规模路径归第五刀),超阈值明确拒绝。
+// 本类不领取任务或写任务回执；后台调度由 SettlementDraftBatchService 持围栏调用共用核心。
+// 同步入口仍明确拒绝超500人口，后台容量仅由第16节获批的独立有界入口提供。
 
 type PrismaTx = Prisma.TransactionClient;
 
 // §5.9:「500 人以内可同步生成 working draft;更大规模创建 ActivityBatchJob」。
 // 取值 500 逐字来自合同;它是**同步路径的准入上限**,不是业务上限。
 export const SETTLEMENT_DRAFT_SYNC_MAX_POPULATION = 500;
+export const SETTLEMENT_DRAFT_BATCH_LIMITS = {
+  population: 2000,
+  segments: 10000,
+  events: 40000,
+  writeBatch: 500,
+} as const;
+
+/** Bound by the dispatch receipt; the batch caller supplies its existing fenced transaction. */
+export interface SettlementDraftBatchProof {
+  evidenceSealId: string;
+  evidenceRevision: number;
+  populationRevision: number;
+  workflowRevision: number;
+}
 
 // 无岗位时的考勤角色,沿本仓 attendances 既有口径(考勤草稿「无岗位为 member」)。
 // ⚠️ 这不是本刀发明的默认值:贡献规则的查找维度是
@@ -495,7 +511,11 @@ export class SettlementDraftService {
   }
 
   // ===== §5.9:人口来源 = ParticipationIdentity current revision + populationIncluded =====
-  private async readPopulation(tx: PrismaTx, activityId: string): Promise<PopulationIdentity[]> {
+  private async readPopulation(
+    tx: PrismaTx,
+    activityId: string,
+    limit?: number,
+  ): Promise<PopulationIdentity[]> {
     return await tx.activityParticipationIdentity.findMany({
       where: { activityId, populationIncluded: true },
       select: {
@@ -507,6 +527,7 @@ export class SettlementDraftService {
       },
       // 稳定序:contentHash 与逐项写入顺序都必须可复现。
       orderBy: { id: 'asc' },
+      ...(limit === undefined ? {} : { take: limit + 1 }),
     });
   }
 
@@ -546,6 +567,7 @@ export class SettlementDraftService {
     tx: PrismaTx,
     activityId: string,
     identityIds: string[],
+    limit?: number,
   ): Promise<Map<string, ProjectorPunchEvent[]>> {
     const byIdentity = new Map<string, ProjectorPunchEvent[]>();
     if (identityIds.length === 0) return byIdentity;
@@ -560,7 +582,10 @@ export class SettlementDraftService {
         supersedesEventId: true,
       },
       orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+      ...(limit === undefined ? {} : { take: limit + 1 }),
     });
+    if (limit !== undefined && rows.length > limit)
+      throw new BizException(BizCode.SETTLEMENT_DRAFT_POPULATION_TOO_LARGE);
     for (const row of rows) {
       const bucket = byIdentity.get(row.participationIdentityId);
       const event: ProjectorPunchEvent = {
@@ -689,8 +714,14 @@ export class SettlementDraftService {
         data: { statusCode: 'superseded' },
       });
     }
-    for (const data of inserts) {
-      await tx.participantServiceSegmentRevision.create({ data });
+    for (
+      let offset = 0;
+      offset < inserts.length;
+      offset += SETTLEMENT_DRAFT_BATCH_LIMITS.writeBatch
+    ) {
+      await tx.participantServiceSegmentRevision.createMany({
+        data: inserts.slice(offset, offset + SETTLEMENT_DRAFT_BATCH_LIMITS.writeBatch),
+      });
     }
     return { created, superseded, unchanged, currentCount };
   }
@@ -850,219 +881,263 @@ export class SettlementDraftService {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
-    return await this.prisma.$transaction(async (tx) => {
-      const activity = await this.lockActivity(tx, activityId);
-      const seal = await this.requireActiveSeal(tx, activityId, activity.workflowRevision);
-      const run = await this.lockOrCreateRun(tx, activityId);
+    return await this.prisma.$transaction((tx) =>
+      this.generateInTransaction(tx, activityId, currentUser, auditMeta),
+    );
+  }
 
-      const population = await this.readPopulation(tx, activityId);
-      this.assertSyncPathAllowed(population);
+  /** No nested transaction. Batch receipt completion must commit with these business writes. */
+  async generateInTransaction(
+    tx: PrismaTx,
+    activityId: string,
+    currentUser: CurrentUserPayload,
+    auditMeta: AuditMeta,
+    batchProof?: SettlementDraftBatchProof,
+  ): Promise<SettlementDraftResult> {
+    this.activityWorkflowGate.assertV11WriteAllowed();
+    const activity = await this.lockActivity(tx, activityId);
+    const seal = await this.requireActiveSeal(tx, activityId, activity.workflowRevision);
+    if (
+      batchProof &&
+      (seal.id !== batchProof.evidenceSealId ||
+        seal.evidenceRevision !== batchProof.evidenceRevision ||
+        seal.populationRevision !== batchProof.populationRevision ||
+        activity.workflowRevision !== batchProof.workflowRevision)
+    )
+      throw new BizException(BizCode.SETTLEMENT_DRAFT_EVIDENCE_SEAL_STALE);
+    const run = await this.lockOrCreateRun(tx, activityId);
 
-      const sessions = await this.readSessionThresholds(tx, activityId);
-      const identityIds = population.map((row) => row.id);
-      const eventsByIdentity = await this.readPunchEventsByIdentity(tx, activityId, identityIds);
+    const population = await this.readPopulation(
+      tx,
+      activityId,
+      batchProof ? SETTLEMENT_DRAFT_BATCH_LIMITS.population : undefined,
+    );
+    if (batchProof) {
+      if (population.length > SETTLEMENT_DRAFT_BATCH_LIMITS.population)
+        throw new BizException(BizCode.SETTLEMENT_DRAFT_POPULATION_TOO_LARGE);
+    } else this.assertSyncPathAllowed(population);
 
-      // 岗位 → 考勤角色(贡献规则查找的第二个维度)。批量一次,不 N+1。
-      const positionIds = [
-        ...new Set(
-          population
-            .map((row) => row.currentPositionId)
-            .filter((value): value is string => value !== null),
-        ),
-      ];
-      const positions =
-        positionIds.length === 0
-          ? []
-          : await tx.activitySessionPosition.findMany({
-              where: { id: { in: positionIds } },
-              select: { id: true, attendanceRoleCode: true },
-            });
-      const roleByPositionId = new Map(positions.map((row) => [row.id, row.attendanceRoleCode]));
+    const sessions = await this.readSessionThresholds(tx, activityId);
+    const identityIds = population.map((row) => row.id);
+    const eventsByIdentity = await this.readPunchEventsByIdentity(
+      tx,
+      activityId,
+      identityIds,
+      batchProof ? SETTLEMENT_DRAFT_BATCH_LIMITS.events : undefined,
+    );
 
-      const projectionByIdentity = new Map<string, ProjectedSegment[]>();
-      const items: SettlementDraftItem[] = [];
-      const roleByIdentityId = new Map<string, string>();
-
-      for (const identity of population) {
-        const session = sessions.get(identity.sessionId);
-        // 人口里的身份必然指向本活动的一个场次(复合 FK 保证);读不到只可能是
-        // 数据被绕过应用层改坏 —— fail-closed,不拿默认阈值糊过去。
-        if (session === undefined) throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
-
-        const projection = rebuildServiceSegments(eventsByIdentity.get(identity.id) ?? [], {
-          sessionStartAt: session.startAt,
-          sessionEndAt: session.endAt,
-          lateGraceMinutes: session.lateGraceMinutes,
-          earlyLeaveThresholdMinutes: session.earlyLeaveThresholdMinutes,
-        });
-        projectionByIdentity.set(identity.id, projection.segments);
-        items.push(this.buildItem(identity, projection.segments, projection.chainAnomalies));
-        roleByIdentityId.set(
-          identity.id,
-          identity.currentPositionId === null
-            ? DEFAULT_ATTENDANCE_ROLE_CODE
-            : (roleByPositionId.get(identity.currentPositionId) ?? DEFAULT_ATTENDANCE_ROLE_CODE),
-        );
-      }
-
-      await this.applyContributionPoints(tx, items, roleByIdentityId, activity.activityTypeCode);
-
-      const segmentStats = await this.persistSegments(tx, identityIds, projectionByIdentity);
-
-      const personCount = new Set(population.map((row) => row.memberId)).size;
-      const sessionParticipationCount = population.length;
-      const contentHash = this.computeContentHash({
-        activityId,
-        evidenceSealId: seal.id,
-        sealRevision: seal.sealRevision,
-        personCount,
-        sessionParticipationCount,
-        serviceSegmentCount: segmentStats.currentCount,
-        items,
-      });
-
-      // ===== working draft 版本:内容寻址,**零删除** =====
-      //
-      // 与段的处置同一口径(goal DoD 8「幂等 or 新 revision + 旧的标 superseded」),
-      // 两半都用上:
-      //   - `contentHash` 与当前 draft 版本相同 ⇒ **一行不动**(幂等);
-      //   - 不同 ⇒ 旧 draft 版本标 `voided`(§3.19 闭集里的终态),另开 version+1。
-      //
-      // ⚠️ **为什么不"就地重写"**:就地重写要先把旧草稿项删掉,而本仓铁律是
-      //    「业务数据一律软删」,`ParticipantSettlementResultRevision` 连 `deletedAt`
-      //    列都没有 ⇒ 硬删是唯一写法,而那正是 lint 拦下的形态(初版实测被拦)。
-      //    退一步说,就地重写还会留下"某人上一轮被判 present、这一轮变待定"时那条
-      //    **陈旧的认定行**没人清 —— 换成整版 `voided` 之后,"当前草稿"永远是
-      //    一个内部自洽的快照,读面按 `statusCode='draft'` 一刀切干净。
-      //
-      // 版本号只在**内容真的变了**时才前进,所以它不会退化成"生成次数"。
-      const existingDraft = await tx.attendanceSettlementVersion.findFirst({
-        where: { settlementRunId: run.id, statusCode: 'draft' },
-        orderBy: { version: 'desc' },
-        select: { id: true, version: true, contentHash: true },
-      });
-
-      let settlementVersionId: string;
-      let settlementVersion: number;
-      if (existingDraft !== null && existingDraft.contentHash === contentHash) {
-        settlementVersionId = existingDraft.id;
-        settlementVersion = existingDraft.version;
-      } else {
-        if (existingDraft !== null) {
-          await tx.attendanceSettlementVersion.update({
-            where: { id: existingDraft.id },
-            data: { statusCode: 'voided' },
+    // 岗位 → 考勤角色(贡献规则查找的第二个维度)。批量一次,不 N+1。
+    const positionIds = [
+      ...new Set(
+        population
+          .map((row) => row.currentPositionId)
+          .filter((value): value is string => value !== null),
+      ),
+    ];
+    const positions =
+      positionIds.length === 0
+        ? []
+        : await tx.activitySessionPosition.findMany({
+            where: { id: { in: positionIds } },
+            select: { id: true, attendanceRoleCode: true },
           });
-        }
-        const maxVersion = await tx.attendanceSettlementVersion.aggregate({
-          where: { settlementRunId: run.id },
-          _max: { version: true },
-        });
-        settlementVersion = (maxVersion._max.version ?? 0) + 1;
-        const created = await tx.attendanceSettlementVersion.create({
-          data: {
-            settlementRunId: run.id,
-            version: settlementVersion,
-            evidenceSealId: seal.id,
-            evidenceRevision: seal.evidenceRevision,
-            populationRevision: seal.populationRevision,
-            workflowRevision: activity.workflowRevision,
-            contentHash,
-            personCount,
-            sessionParticipationCount,
-            serviceSegmentCount: segmentStats.currentCount,
-            createdByUserId: currentUser.id,
-            statusCode: 'draft',
-          },
-          select: { id: true },
-        });
-        settlementVersionId = created.id;
+    const roleByPositionId = new Map(positions.map((row) => [row.id, row.attendanceRoleCode]));
 
-        // 🔴 只为**已认定**的项写结果行。待定项刻意不写(见文件头偏离说明)——
-        //    `sessionParticipationCount` 已经把"应有多少项"落在版本行上,
-        //    第三刀提交时按 §5.10 ④ 一比就红。
-        for (const item of items) {
-          if (item.decision !== 'machine_determined' || item.resultCode === null) continue;
-          await tx.participantSettlementResultRevision.create({
-            data: {
-              settlementVersionId,
-              participationIdentityId: item.participationIdentityId,
-              revision: 0,
-              resultCode: item.resultCode,
-              lateFlag: item.lateFlag,
-              earlyLeaveFlag: item.earlyLeaveFlag,
-              exceptionFlagsJson:
-                item.blockers.length === 0
-                  ? Prisma.DbNull
-                  : { blockers: [...item.blockers].sort() },
-              // 草稿阶段"认定值 = 计算值"(负责人还没调过);两者相等 ⇒
-              // §3.20 的 adjustmentReason 必填 CHECK 不触发。
-              recognizedServiceHours: item.calculatedServiceHours,
-              recognizedContributionPoints: item.calculatedContributionPoints,
-              calculatedServiceHours: item.calculatedServiceHours,
-              calculatedContributionPoints: item.calculatedContributionPoints,
-              statusCode: 'draft',
-            },
-          });
-        }
-      }
+    const projectionByIdentity = new Map<string, ProjectedSegment[]>();
+    const items: SettlementDraftItem[] = [];
+    const roleByIdentityId = new Map<string, string>();
 
-      await tx.attendanceSettlementRun.update({
-        where: { id: run.id },
-        data: {
-          statusCode: 'drafting',
-          currentDraftVersion: settlementVersion,
-          version: { increment: 1 },
-        },
+    for (const identity of population) {
+      const session = sessions.get(identity.sessionId);
+      // 人口里的身份必然指向本活动的一个场次(复合 FK 保证);读不到只可能是
+      // 数据被绕过应用层改坏 —— fail-closed,不拿默认阈值糊过去。
+      if (session === undefined) throw new BizException(BizCode.ACTIVITY_STATUS_INVALID);
+
+      const projection = rebuildServiceSegments(eventsByIdentity.get(identity.id) ?? [], {
+        sessionStartAt: session.startAt,
+        sessionEndAt: session.endAt,
+        lateGraceMinutes: session.lateGraceMinutes,
+        earlyLeaveThresholdMinutes: session.earlyLeaveThresholdMinutes,
       });
+      projectionByIdentity.set(identity.id, projection.segments);
+      items.push(this.buildItem(identity, projection.segments, projection.chainAnomalies));
+      roleByIdentityId.set(
+        identity.id,
+        identity.currentPositionId === null
+          ? DEFAULT_ATTENDANCE_ROLE_CODE
+          : (roleByPositionId.get(identity.currentPositionId) ?? DEFAULT_ATTENDANCE_ROLE_CODE),
+      );
+    }
 
-      const determinedItemCount = items.filter(
-        (item) => item.decision === 'machine_determined',
-      ).length;
-      const pendingItemCount = items.length - determinedItemCount;
-      const blockedItemCount = items.filter((item) => item.blockers.length > 0).length;
+    await this.applyContributionPoints(tx, items, roleByIdentityId, activity.activityTypeCode);
 
-      await this.audit.log({
-        activityId,
-        settlementVersionId,
-        settlementVersion,
-        evidenceSealId: seal.id,
-        sealRevision: seal.sealRevision,
-        personCount,
-        sessionParticipationCount,
-        serviceSegmentCount: segmentStats.currentCount,
-        determinedItemCount,
-        pendingItemCount,
-        blockedItemCount,
-        segmentsCreated: segmentStats.created,
-        segmentsSuperseded: segmentStats.superseded,
-        segmentsUnchanged: segmentStats.unchanged,
-        contentHash,
-        actorUserId: currentUser.id,
-        actorRoleSnap: currentUser.role,
-        auditMeta,
-        tx,
-      });
+    if (
+      batchProof &&
+      [...projectionByIdentity.values()].reduce((sum, rows) => sum + rows.length, 0) >
+        SETTLEMENT_DRAFT_BATCH_LIMITS.segments
+    )
+      throw new BizException(BizCode.SETTLEMENT_DRAFT_POPULATION_TOO_LARGE);
+    const segmentStats = await this.persistSegments(tx, identityIds, projectionByIdentity);
 
-      return {
-        activityId,
-        settlementRunId: run.id,
-        settlementVersionId,
-        settlementVersion,
-        evidenceSealId: seal.id,
-        sealRevision: seal.sealRevision,
-        personCount,
-        sessionParticipationCount,
-        serviceSegmentCount: segmentStats.currentCount,
-        contentHash,
-        items,
-        determinedItemCount,
-        pendingItemCount,
-        blockedItemCount,
-        segmentsCreated: segmentStats.created,
-        segmentsSuperseded: segmentStats.superseded,
-        segmentsUnchanged: segmentStats.unchanged,
-      };
+    const personCount = new Set(population.map((row) => row.memberId)).size;
+    const sessionParticipationCount = population.length;
+    const contentHash = this.computeContentHash({
+      activityId,
+      evidenceSealId: seal.id,
+      sealRevision: seal.sealRevision,
+      personCount,
+      sessionParticipationCount,
+      serviceSegmentCount: segmentStats.currentCount,
+      items,
     });
+
+    // ===== working draft 版本:内容寻址,**零删除** =====
+    //
+    // 与段的处置同一口径(goal DoD 8「幂等 or 新 revision + 旧的标 superseded」),
+    // 两半都用上:
+    //   - `contentHash` 与当前 draft 版本相同 ⇒ **一行不动**(幂等);
+    //   - 不同 ⇒ 旧 draft 版本标 `voided`(§3.19 闭集里的终态),另开 version+1。
+    //
+    // ⚠️ **为什么不"就地重写"**:就地重写要先把旧草稿项删掉,而本仓铁律是
+    //    「业务数据一律软删」,`ParticipantSettlementResultRevision` 连 `deletedAt`
+    //    列都没有 ⇒ 硬删是唯一写法,而那正是 lint 拦下的形态(初版实测被拦)。
+    //    退一步说,就地重写还会留下"某人上一轮被判 present、这一轮变待定"时那条
+    //    **陈旧的认定行**没人清 —— 换成整版 `voided` 之后,"当前草稿"永远是
+    //    一个内部自洽的快照,读面按 `statusCode='draft'` 一刀切干净。
+    //
+    // 版本号只在**内容真的变了**时才前进,所以它不会退化成"生成次数"。
+    const existingDraft = await tx.attendanceSettlementVersion.findFirst({
+      where: { settlementRunId: run.id, statusCode: 'draft' },
+      orderBy: { version: 'desc' },
+      select: { id: true, version: true, contentHash: true },
+    });
+
+    let settlementVersionId: string;
+    let settlementVersion: number;
+    if (existingDraft !== null && existingDraft.contentHash === contentHash) {
+      settlementVersionId = existingDraft.id;
+      settlementVersion = existingDraft.version;
+    } else {
+      if (existingDraft !== null) {
+        await tx.attendanceSettlementVersion.update({
+          where: { id: existingDraft.id },
+          data: { statusCode: 'voided' },
+        });
+      }
+      const maxVersion = await tx.attendanceSettlementVersion.aggregate({
+        where: { settlementRunId: run.id },
+        _max: { version: true },
+      });
+      settlementVersion = (maxVersion._max.version ?? 0) + 1;
+      const created = await tx.attendanceSettlementVersion.create({
+        data: {
+          settlementRunId: run.id,
+          version: settlementVersion,
+          evidenceSealId: seal.id,
+          evidenceRevision: seal.evidenceRevision,
+          populationRevision: seal.populationRevision,
+          workflowRevision: activity.workflowRevision,
+          contentHash,
+          personCount,
+          sessionParticipationCount,
+          serviceSegmentCount: segmentStats.currentCount,
+          createdByUserId: currentUser.id,
+          statusCode: 'draft',
+        },
+        select: { id: true },
+      });
+      settlementVersionId = created.id;
+
+      // 🔴 只为**已认定**的项写结果行。待定项刻意不写(见文件头偏离说明)——
+      //    `sessionParticipationCount` 已经把"应有多少项"落在版本行上,
+      //    第三刀提交时按 §5.10 ④ 一比就红。
+      const results: Prisma.ParticipantSettlementResultRevisionCreateManyInput[] = [];
+      for (const item of items) {
+        if (item.decision !== 'machine_determined' || item.resultCode === null) continue;
+        results.push({
+          settlementVersionId,
+          participationIdentityId: item.participationIdentityId,
+          revision: 0,
+          resultCode: item.resultCode,
+          lateFlag: item.lateFlag,
+          earlyLeaveFlag: item.earlyLeaveFlag,
+          exceptionFlagsJson:
+            item.blockers.length === 0 ? Prisma.DbNull : { blockers: [...item.blockers].sort() },
+          // 草稿阶段"认定值 = 计算值"(负责人还没调过);两者相等 ⇒
+          // §3.20 的 adjustmentReason 必填 CHECK 不触发。
+          recognizedServiceHours: item.calculatedServiceHours,
+          recognizedContributionPoints: item.calculatedContributionPoints,
+          calculatedServiceHours: item.calculatedServiceHours,
+          calculatedContributionPoints: item.calculatedContributionPoints,
+          statusCode: 'draft',
+        });
+      }
+      for (
+        let offset = 0;
+        offset < results.length;
+        offset += SETTLEMENT_DRAFT_BATCH_LIMITS.writeBatch
+      ) {
+        await tx.participantSettlementResultRevision.createMany({
+          data: results.slice(offset, offset + SETTLEMENT_DRAFT_BATCH_LIMITS.writeBatch),
+        });
+      }
+    }
+
+    await tx.attendanceSettlementRun.update({
+      where: { id: run.id },
+      data: {
+        statusCode: 'drafting',
+        currentDraftVersion: settlementVersion,
+        version: { increment: 1 },
+      },
+    });
+
+    const determinedItemCount = items.filter(
+      (item) => item.decision === 'machine_determined',
+    ).length;
+    const pendingItemCount = items.length - determinedItemCount;
+    const blockedItemCount = items.filter((item) => item.blockers.length > 0).length;
+
+    await this.audit.log({
+      activityId,
+      settlementVersionId,
+      settlementVersion,
+      evidenceSealId: seal.id,
+      sealRevision: seal.sealRevision,
+      personCount,
+      sessionParticipationCount,
+      serviceSegmentCount: segmentStats.currentCount,
+      determinedItemCount,
+      pendingItemCount,
+      blockedItemCount,
+      segmentsCreated: segmentStats.created,
+      segmentsSuperseded: segmentStats.superseded,
+      segmentsUnchanged: segmentStats.unchanged,
+      contentHash,
+      actorUserId: currentUser.id,
+      actorRoleSnap: currentUser.role,
+      auditMeta,
+      tx,
+    });
+
+    return {
+      activityId,
+      settlementRunId: run.id,
+      settlementVersionId,
+      settlementVersion,
+      evidenceSealId: seal.id,
+      sealRevision: seal.sealRevision,
+      personCount,
+      sessionParticipationCount,
+      serviceSegmentCount: segmentStats.currentCount,
+      contentHash,
+      items,
+      determinedItemCount,
+      pendingItemCount,
+      blockedItemCount,
+      segmentsCreated: segmentStats.created,
+      segmentsSuperseded: segmentStats.superseded,
+      segmentsUnchanged: segmentStats.unchanged,
+    };
   }
 }

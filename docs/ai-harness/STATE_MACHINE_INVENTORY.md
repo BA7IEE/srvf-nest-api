@@ -1,5 +1,61 @@
 # STATE_MACHINE_INVENTORY.md — 状态机登记现状(Phase 4-1a)
 
+## E3-2 D1 当前实施增量（本地候选，未提交）
+
+新增 `ContributionShadowTerminalReceipt.statusCode` 为 L1 inventory，闭集仅 `complete` /
+`failed`。它是每次尝试创建时写定的不可变结果分类，不存在原地状态迁移；第 133 条候选
+migration 的复合 CHECK 还约束失败类别与计数，提交触发器核对逐条对照集合。D1 尚无业务写者、
+专属错误码或 Human 读面，不提升 governed，也不表示运行时 shadow 已开启。当前登记 78 项，
+其中 8 项 governed、70 项 inventory；下方各阶段计数保留其历史时点。第 133 条 3b 尚待重签。
+
+## E1-3 当前实施增量（分支验证中，未提交）
+
+新增 `ActivityContributionPolicySelectionItem.mode` 为 L1 inventory，闭集为
+`inherit` / `explicit`。它是不可变选择明细的配置模式：只允许创建，不提供原地转换或删除入口；
+合法性还依赖政策指针、版本、hash 与 evaluator 的复合形状、同活动锚及清单完整性约束，故登记
+`closed-set-is-embedded-in-composite-shape-check`，不提升 governed。当前登记 77 项，其中
+8 项 governed、69 项 inventory；未新增生命周期或状态机边。
+
+## E1-2 当前实施增量（分支验证中，未提交）
+
+`ContributionPolicyVersion.statusCode` 仍为 L2 inventory，闭集与合法边为
+`(create) → draft → active → retired`。第 130 条 migration 继续负责创建态、不可变语义、
+actor 锚、合法迁移与永久留存；E1-2 新增 Human System runtime writer、锁后身份和显式权限复核、
+专属 `ACTIVITY_CONTRIBUTION_POLICY_STATUS_INVALID` 及闭合审计。当前 blocker 只剩
+`no-governed-evidence`，本刀仍不提升 governed。当前登记 76 项，其中 8 项 governed、68 项
+inventory；下方阶段记录保留其原历史时点。
+
+## D7-2 当前实施增量（分支验证中，未提交）
+
+`CorrectionPendingTimeAllocation.recognitionModeCode` 新增为 L1 inventory、not-derived
+配置，闭集仅 `automatic` / `manual`。它在 prepare 时冻结，commit 只将同一事实物化为正式
+分配；不是可流转生命周期，不增加状态边或提升 governed。四张 D7-2 事实表长期保留，当前
+登记 75 项，其中 8 项 governed、67 项 inventory；下方阶段记录保留其原历史时点。
+
+## D7-1 当前实施增量（分支验证中，未提交）
+
+新增 `ParticipationTimeCorrectionEntry.categoryCode` 与 `entryTypeCode` 两项 L1 inventory、
+not-derived 配置。前者保留四种根分类，后者固定为 reversal / credit，零值也明确配对。
+三张更正表永久追加，不引入生命周期或状态边，不提升 governed。检查器仅发现这两个精确
+模型/字段对，其他同名字段不纳入。当前登记 74 项，其中 8 项 governed、66 项 inventory；
+后续容量、迁移和全量验收尚未完成，下方记录保留原历史时点。
+
+## D6 当前实施增量（未提交、未合并）
+
+`ParticipationTimeLedgerEntry.categoryCode` 精确登记为 L1 inventory、not-derived，四值为
+volunteer_service / training / organization / non_creditable。它来自冻结桶，是不可变配置，
+不是生命周期；不新增状态边、不提升governed。检查器仅增加这个模型/字段对的发现，
+其他模型的categoryCode不泛化纳入。当前登记72项，其中8项governed、64项inventory；
+下方D4及之前计数保留为历史时点。
+
+## D4 当前实施增量（未提交、未合并）
+
+`ActivitySettlementTimeRevision.kindCode` 登记为 L1 inventory，闭集为 `draft` / `submitted`，
+`transitions` 为 `not-derived`。它区分创建时的不可变修订类型，不存在 draft 行原地变为
+submitted 的状态边；正式提交另外创建新行并保留草稿。第 121 条 migration 的复合 shape
+CHECK、同链与完整性触发器约束证明、版本、桶及收据；不提升 governed，不新增生命周期。
+当前共 71 项，其中 8 项 governed、63 项 inventory；下方阶段描述保留其历史时点。
+
 ## D3 当前实施增量（未合并）
 
 `ParticipantTimeAllocationRevision.recognitionModeCode` 登记为 L1 inventory，闭集为
@@ -375,21 +431,21 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > 引用本表前先看时点;要当前值请直接跑 `pnpm docs:boundaries`(`--violations`)读
 > `stateGovernance` 块,或数 `harness/state-machines.json` 的 `entries`。
 
-**取数时点:2026-09-12(Activity OS R4 / D3 当前实施分支，未合并)**
+**取数时点:2026-09-28(Activity OS R5 / E3-2 D1 本地候选，未提交)**
 
-| 项                                    |                               值 |
-| ------------------------------------- | -------------------------------: |
-| 总条目                                |                           **70** |
-| `governed` / `inventory`              |                       **8 / 62** |
-| 62 条 inventory 的分层                | L1 **10** · L2 **26** · L3 **26** |
-| 已有机器可读边(`transitions` 是数组)※ |                               30 |
-| `transitions: "not-derived"` ※        |                               27 |
-| `transitions: "unconstrained"` ※      |                               13 |
+| 项                                    |                                值 |
+| ------------------------------------- | --------------------------------: |
+| 总条目                                |                            **78** |
+| `governed` / `inventory`              |                        **8 / 70** |
+| 70 条 inventory 的分层                | L1 **17** · L2 **27** · L3 **26** |
+| 已有机器可读边(`transitions` 是数组)※ |                                32 |
+| `transitions: "not-derived"` ※        |                                33 |
+| `transitions: "unconstrained"` ※      |                                13 |
 
-> ※ 这三行按**全部 70 条**统计(30+27+13=70),不是按上一行那 62 条 inventory。
+> ※ 这三行按**全部 78 条**统计(32+33+13=78),不是按上一行那 70 条 inventory。
 > 原表未标口径,而两种口径下 `unconstrained` 分别是 13 与 5 —— 差 8 条,
 > 正是 L1 配置列升 `governed` 的那批。复核本表时先确认口径再比数字。
-> | **`vacuousGreenIfClosedSetOnly`** | **24** |
+> | **`vacuousGreenIfClosedSetOnly`** | **31** |
 > | 零 blocker 但仍 inventory 的升格候选 | **3** |
 
 > 🔴 **历史 true-up、A2 增补、A3 与本次 A7 落地要分开读**:
@@ -474,6 +530,23 @@ CHECK 提取**逐语句切分**(堵缺陷 1 的正则跨语句串味)、**按表
 > inventory L1 8→9、数组边 29→30。`inherit` / `explicit` 的合法性还依赖政策指针、版本和哈希的
 > 复合形状约束，因此登记 `closed-set-is-embedded-in-composite-shape-check`，不升 `governed`。
 > 选择明细不可变，不存在状态转换或业务数据清理入口。
+>
+> **⑬ D7-2 当前读数变化（分支验证中）**：新增
+> `CorrectionPendingTimeAllocation.recognitionModeCode` 一条 L1 inventory、not-derived 配置；
+> 总条目 74→75、inventory 66→67、inventory L1 14→15、not-derived 31→32。
+> `automatic` / `manual` 是冻结分配配置而非生命周期，不新增状态边、不升 governed。
+
+> **⑭ E1-1 当前读数变化（分支验证中）**：新增
+> `ContributionPolicyVersion.statusCode` 一条 L2 inventory；总条目 75→76、inventory 67→68、
+> inventory L2 26→27、数组边 30→31。第 130 条 migration 与纯状态判断登记
+> `(create) → draft → active → retired`，但当前没有 runtime writer 或专属 wrong-state BizCode，
+> 故保留 `no-runtime-writer` 与 `no-wrong-state-bizcode`，不提升 governed。
+
+> **⑮ E1-3 当前读数变化（分支验证中）**：新增
+> `ActivityContributionPolicySelectionItem.mode` 一条 L1 inventory；总条目 76→77、
+> inventory 68→69、inventory L1 15→16。`inherit` / `explicit` 的合法性嵌在完整指针、
+> 同活动复合锚与集合完整性约束中，保持 `closed-set-is-embedded-in-composite-shape-check`，
+> 不新增生命周期、不提升 governed。
 
 blocker 直方图(2026-09-05 现算;含 A3 future-Version 条件生命周期、A7、B6 D2 与 C1 D1):`no-wrong-state-bizcode` 30 ·
 `no-db-check` 23 · `edges-not-derived` 20 · `no-state-machine` 21 · `closed-set-undeclared` 5 ·

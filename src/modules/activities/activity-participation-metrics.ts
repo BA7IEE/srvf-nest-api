@@ -27,6 +27,32 @@ export interface DurationHistogramMetric {
   atLeast8Hours: number;
 }
 
+export interface OfficialParticipationTimeMetricRow {
+  eligibleSeconds: number;
+}
+
+/** D8-2: one exact-seconds observation per (activityId, memberId), including zero. */
+export function buildOfficialDurationHistogram(
+  rows: readonly OfficialParticipationTimeMetricRow[],
+): DurationHistogramMetric {
+  const result: DurationHistogramMetric = {
+    under2Hours: 0,
+    from2To4Hours: 0,
+    from4To8Hours: 0,
+    atLeast8Hours: 0,
+  };
+  for (const row of rows) {
+    if (!Number.isSafeInteger(row.eligibleSeconds) || row.eligibleSeconds < 0) {
+      throw new RangeError('invalid official participation time');
+    }
+    if (row.eligibleSeconds < 7_200) result.under2Hours += 1;
+    else if (row.eligibleSeconds < 14_400) result.from2To4Hours += 1;
+    else if (row.eligibleSeconds < 28_800) result.from4To8Hours += 1;
+    else result.atLeast8Hours += 1;
+  }
+  return result;
+}
+
 export interface ActivityParticipationMetrics {
   registrationCounts: {
     total: number;

@@ -61,6 +61,40 @@ export class CorrectionAuditRecorder {
     });
   }
 
+  /** A returned request is preserved; the new request is a separately auditable successor. */
+  async logResubmit(args: {
+    correctionRequestId: string;
+    resubmittedFromRequestId: string;
+    activityId: string;
+    activityTitle: string;
+    settlementRunId: string;
+    baseSettlementVersionId: string;
+    statusCode: string;
+    resultChangeCount: number;
+    segmentChangeCount: number;
+    operationKey: string;
+    requestHash: string;
+    actorUserId: string;
+    actorRoleSnap: Role;
+    auditMeta: AuditMeta;
+    tx: Prisma.TransactionClient;
+  }): Promise<void> {
+    await this.write(args.activityId, args, {
+      operation: 'correction-resubmit',
+      correctionRequestId: args.correctionRequestId,
+      resubmittedFromRequestId: args.resubmittedFromRequestId,
+      activityTitle: args.activityTitle,
+      settlementRunId: args.settlementRunId,
+      baseSettlementVersionId: args.baseSettlementVersionId,
+      statusCode: args.statusCode,
+      resultChangeCount: args.resultChangeCount,
+      segmentChangeCount: args.segmentChangeCount,
+      operationKey: args.operationKey,
+      requestHash: args.requestHash,
+      replayed: false,
+    });
+  }
+
   async logReview(args: {
     correctionRequestId: string;
     activityId: string;
@@ -70,6 +104,7 @@ export class CorrectionAuditRecorder {
     note: string | null;
     reviewedByUserId: string;
     replayed: boolean;
+    operationHash?: string;
     actorUserId: string;
     actorRoleSnap: Role;
     auditMeta: AuditMeta;
@@ -85,6 +120,7 @@ export class CorrectionAuditRecorder {
       hasNote: args.note !== null,
       reviewedByUserId: args.reviewedByUserId,
       replayed: args.replayed,
+      ...(args.operationHash === undefined ? {} : { operationHash: args.operationHash }),
     });
   }
 

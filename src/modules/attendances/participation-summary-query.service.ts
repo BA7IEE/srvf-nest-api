@@ -7,6 +7,11 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuthzService } from '../authz/authz.service';
 import type { MemberLedgerTotalsBreakdown } from '../activities/ledger-query.service';
 import { LedgerQueryService } from '../activities/ledger-query.service';
+import {
+  ParticipationTimeTruthQueryService,
+  eligibleSecondsToServiceHours,
+  sumOfficialEligibleSeconds,
+} from '../activities/participation-time-truth-query.service';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { RbacService } from '../permissions/rbac.service';
 import { computeCappedContribution } from '../team-join/team-join-progress';
@@ -32,6 +37,7 @@ export class ParticipationSummaryQueryService {
     private readonly rbac: RbacService,
     private readonly appIdentity: AppIdentityResolver,
     private readonly ledgerQuery: LedgerQueryService,
+    private readonly participationTimeTruth: ParticipationTimeTruthQueryService,
     // 活动 v1.1 cutover gate —— 统计读面取数源的判闸依据(合同 §16.2 单轨第三项)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
@@ -62,7 +68,7 @@ export class ParticipationSummaryQueryService {
     //
     // ⚠️ `contributionPoints` **不随闸切换**:维护者已拍板 computeCappedContribution
     //    与入队门槛恒按 approved 算。这条不一致是刻意的(判据 C4 反向锁住),别顺手统一。
-    const [records, contribution, ledgerTotals] = await Promise.all([
+    const [records, contribution, ledgerTotals, officialTime] = await Promise.all([
       this.prisma.attendanceRecord.findMany({
         where: {
           memberId,
@@ -76,19 +82,32 @@ export class ParticipationSummaryQueryService {
       }),
       computeCappedContribution(this.prisma, memberId, null),
       this.ledgerQuery.loadMemberLedgerTotals(memberId),
+      this.prisma.$transaction(
+        (tx) => this.participationTimeTruth.readOfficialTotalsInTx(tx, { memberIds: [memberId] }),
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      ),
     ]);
     const approvedServiceHours = records.reduce(
       (sum, record) => sum.add(record.serviceHours),
       new Prisma.Decimal(0),
     );
 
-    const positive =
+    const preCutoverPositive =
       this.activityWorkflowGate.participationReadSource() === 'committed-ledger'
         ? await this.loadCommittedPositive(memberId, ledgerTotals)
         : {
             totalServiceHours: approvedServiceHours.toString(),
             activityCount: new Set(records.map((record) => record.sheet.activityId)).size,
             recordCount: records.length,
+          };
+    const positive =
+      officialTime === null
+        ? preCutoverPositive
+        : {
+            ...preCutoverPositive,
+            totalServiceHours: eligibleSecondsToServiceHours(
+              sumOfficialEligibleSeconds(officialTime.totals),
+            ).toString(),
           };
 
     return {

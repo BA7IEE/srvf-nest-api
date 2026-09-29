@@ -1,3 +1,4 @@
+import { timeLedgerFixtureTriggerSql } from '../setup/time-ledger-fixture-cleanup';
 import { execFileSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
 import { assertTestDatabaseUrl } from '../setup/test-db';
@@ -101,6 +102,11 @@ describe('D1-1 time policy physical foundation', () => {
     } catch {
       throw new Error('D1-1 isolated migration deploy failed (connection details suppressed)');
     }
+    // Establish the same isolated-fixture baseline as the existing finally cleanup.
+    // A preceding suite may leave valid policies; keep the empty-table assertions intact.
+    raw(
+      `BEGIN; ${timeLedgerFixtureTriggerSql().before} TRUNCATE "ParticipationTimeCutoverBinding", "ActivityTimeCutoverReceipt", "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipationTimeCorrectionCommitReceipt", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ActivitySettlementTimeCommandReceipt", "ParticipantSettlementTimeBucketSource", "ParticipantSettlementTimeBucket", "ActivitySettlementTimeRevision", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationRevision", "ActivityTimePolicySelectionItem", "TimePolicyCommandReceipt", "TimePolicyVersion", "TimePolicy"; ${timeLedgerFixtureTriggerSql().after} DELETE FROM "User" WHERE id='tp-test-user'; COMMIT;`,
+    );
   });
 
   it.each(['version', 'receipt'])(
@@ -182,7 +188,7 @@ describe('D1-1 time policy physical foundation', () => {
         await first.$disconnect();
         await second.$disconnect();
         raw(
-          `BEGIN; TRUNCATE "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationRevision", "ActivityTimePolicySelectionItem", "TimePolicyCommandReceipt", "TimePolicyVersion", "TimePolicy"; DELETE FROM "User" WHERE id='tp-test-user'; COMMIT;`,
+          `BEGIN; ${timeLedgerFixtureTriggerSql().before} TRUNCATE "ParticipationTimeCutoverBinding", "ActivityTimeCutoverReceipt", "CorrectionTimeAllocationBinding", "CorrectionPendingTimeAllocationEvidence", "CorrectionTimeSourceProof", "CorrectionPendingTimeAllocation", "ParticipationTimeCorrectionCommitReceipt", "ParticipationTimeCorrectionEntry", "ParticipationTimeCorrectionManifest", "ParticipationTimeLedgerEntry", "ParticipationTimeLedgerManifest", "ActivitySettlementTimeCommandReceipt", "ParticipantSettlementTimeBucketSource", "ParticipantSettlementTimeBucket", "ActivitySettlementTimeRevision", "ParticipantTimeAllocationCommandReceipt", "ParticipantTimeAllocationEvidence", "ParticipantTimeAllocationSlice", "ParticipantTimeAllocationRevision", "ActivityTimePolicySelectionItem", "TimePolicyCommandReceipt", "TimePolicyVersion", "TimePolicy"; ${timeLedgerFixtureTriggerSql().after} DELETE FROM "User" WHERE id='tp-test-user'; COMMIT;`,
         );
       }
     },

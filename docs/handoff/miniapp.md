@@ -1,5 +1,97 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）
+
+Human App managed 面新增三项：
+
+- `GET /api/app/v1/my/managed-activities/contribution-policy-options`：按 `organizationId + plannedFrom + plannedUntil`
+  分页读取当前可新选的 active 版本；
+- `GET /api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection`：读取指定或当前不可变修订、解析来源与问题；
+- `PATCH /api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection`：以 `expectedRevision` 追加完整新修订。
+
+读使用 `activity.contribution-policy.read`，写使用 `activity.contribution-policy.select`；还必须是当前 ACTIVE 用户／成员、具有显式
+组织范围并实际负责该活动。权限提示不能代替服务端判权。活动根选择始终存在；岗位 `inherit` 表示新修订不再保留该岗位覆盖，
+不会删除历史。`explicit` 使用完整 policy/version/hash/evaluator 指针，客户端不得只传 ID 后让后端猜版本。
+
+quick／professional 可在创建时附带活动根及岗位覆盖，紧急创建只接受活动根；V5 模板创建和 series 生成会物化同样的第一版选择。
+发布审核会冻结 Proposal V9，审批前引用退役、时段覆盖不足、岗位拓扑或 revision 漂移都 fail-closed。`20247–20254` 不得降级为空配置，
+幂等重试复用原 operationKey 和完整载荷，修改意图才换新键。本候选尚未合入或部署；前端页面、正式贡献结算、Gate、D8-OPS、
+历史 `ContributionRule` 转换和生产验收均未完成。
+
+## D8 我的正式参与时长证明与累计（D8-2 已合入 main，未部署）
+
+新增 `GET /api/app/v1/my/participation-time-proof`，不接收 `memberId`，后端只从当前登录用户解析 active App member。
+查询必须传 `dateFrom`、`dateTo`，区间最多366天；`page` 从1开始，`pageSize` 为1..100。这个入口与
+`/participation-ledger` 是两份不同语义的合同：后者仍是原始兼容参与/贡献账本，不得用它在客户端拼凑正式时长证明。
+
+页面建议分开显示：历史已认定服务时长、切换后志愿服务、培训、组织和不计入秒数。
+`eligibleServiceSeconds` 只是历史已认定 + 切换后志愿服务，不包含其它三类。明细中
+`legacy_recognized_service` 不得翻译成“志愿服务”，建议显示为“历史已认定服务时长”。
+`proofSetHash` 基于完整区间，不受当前页影响；`isPubliclyVerifiable=false`，本期不提供对外公开验真或 PDF 签章。
+
+`20235` 表示切换收据尚不存在，应显示“正式证明尚未启用”，不是零时长；`20236` 表示证据链不完整，
+`20237` 表示查询集合超上限，`20238` 表示范围错误。任一具名错误都不得在屏幕上降级成旧汇总假冒正式证明。
+receipt 存在后，既有 `GET /api/app/v1/my/participation-summary` 的 `totalServiceHours` 改为本人全部根账的
+eligible 秒数一次换算；`activityCount`、`recordCount`、`contributionPoints` 和嵌套 `ledgerTotals` 不改来源。
+receipt 不存在时保持旧口径；链不完整时 fail-closed，客户端不得降级回旧小时数。D8-1／D8-2 已合入 main，
+生成的 App client 是当前仓库合同；前端页面、部署、Gate 和 D8-OPS 生产切换仍未完成。
+
+## D7-1 分类认定更正（分支验收中，未上线）
+
+新增 `GET /api/app/v1/my/managed-activities/{activityId}/time-settlement/versions/{settlementVersionId}/correction-ledger`，
+使用既有 `activity.time-settlement.read`。必须明确版本，只有 committed 批次且提交收据同链时可见；
+历史访问沿根 D6 版本重新校验当前资格。明细保留零值冲回/补记，分页上限100，汇总为精确十进制字符串。
+四类单列展示，不把合计当贡献积分；不返回更正原因。404 不等于零，也不触发自动补账。
+
+本轮 V2 更正仅在既有内部更正 Service 落地，不提供 HTTP 写入口、前端编辑页或 Integration 入口。
+V1 不变；已分类版本的 V1 更正及自动提交旁路仍返回20229。更正原因永久留在原申请中，旧分录不修改或删除。
+完整容量和最终 CI 尚未验收，不代表可上线。见[分类账本说明](../ops/activity-time-ledger.md)。
+
+## D6 正式分类时长账本（实施验收中，未上线）
+
+新增明确分类修订的 `ledger` GET，使用既有 `activity.time-settlement.read`，仅返回 committed 批次；ready 不代表正式入账。客户端使用生成的 App client，字段以 OpenAPI 为准，汇总十进制字符串不得转成32位整数；四类分别展示，全部分类总秒数不能当作志愿服务时长或贡献积分。
+
+历史版本也检查当前身份、组织范围和该版本审核资格；404不能展示为零或触发自动补账。同批重试不创建新分录，20227内容冲突不能通过覆盖处理，20229表示D7前分类更正未开放。沿旧任务恢复，不提供复制批次或删除分录按钮。操作边界见[分类账本说明](../ops/activity-time-ledger.md)。本轮不交付前端页面、不代表生产已可用。
+
+## D5 只读时长对账（本轮新增，未上线）
+
+`GET /api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/shadow` 使用明确 submitted 修订和既有 `activity.time-settlement.read`。响应 `data.resultPage` 是标准分页，`data.summary` 是完整分母；两项差额按新减旧、秒为单位，null 不得显示为零。`matched` 不等于审批或入账。翻页/导出须核验每页 inputFingerprint 一致；历史版本也实时检查撤权。其余分类单独展示，无自动调整按钮。安全导出和永久保留见 [影子对账 SOP](../ops/activity-time-shadow-reconciliation.md)。本轮只交付接口及客户端类型，未实现或发布前端页面。
+
+## D4 分类时长结算工作台（本轮实施分支，未合并、未部署）
+
+### 大规模草稿任务接线（不新增接口字段）
+
+沿既有 `POST /api/app/v1/my/managed-activities/{activityId}/settlement/generate` 发起。以响应 `outcome` 分支，不根据前端人数估算结果：`draft` 表示同步生成完成；`job` 仅表示任务已受理，应保留 `jobId` 并展示处理中，不能据此显示草稿已完成、已送审或已入账。
+
+通过既有 `GET /api/app/v1/my/activity-batch-jobs/{jobId}` 查询任务状态，必要时调用 `/items` 查看项目；页面离开或任务进入终态后停止轮询，读取失败不自动重发生成命令。任务成功后刷新结算工作台，即 `GET /api/app/v1/my/managed-activities/{activityId}/settlement`；任务接口不返回内部 `resultReference`，不新增结果指针字段。工作台返回当前结算状态，不能当作历史 job 的不可变回执；若期间另有生成或送审，以刷新结果为准。
+
+失败后展示既有安全错误信息及 `retryFailedAllowed`、`cancelAllowed` 提示；按钮提示不替代后端当前资格检查。由操作者明确触发既有 `/retry-failed` 或 `/cancel`，不能后台无限重试。重试仍使用原任务执行身份，不因重试人不同而换人执行。封印/输入变化时先刷新业务事实，确认重新生成后才使用新 operationKey；网络超时或同意图重放保留原键，不自动改键。旧v1异步任务缺少可信凭据时保留失败记录，确认当前事实后重新发起，不要求客户端补内部payload。
+
+读面按当前活动责任范围判定，不保证任务创建人一直可见；无权或不存在时停止轮询，不以本地缓存冒充授权。草稿单任务的进度不是逐人进度，不用 `total=1` 推导活动只有一名参与人。以上仅为后端实施分支的接线说明，前端页面和生产部署尚未验收。
+
+### 分类工作台接线
+
+本段是 D4 分支的对接增量，不表示下方历史阶段已上线。字段与调用签名以本分支生成的 `openapi.json` 和 App client 为准；前端页面、完整验收、生产部署和 Gate 启用均未完成。
+
+在活动详情内嵌结算任务，沿 `/api/app/v1/my/managed-activities/{activityId}/time-settlement` 操作：
+
+| 页面任务                               | 调用                                                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------ |
+| 看当前草稿与阻塞，定位待认定来源       | GET 根路径、GET `/sources`                                                           |
+| 逐段自动或人工认定，查看冻结政策及理由 | POST `/allocations`、GET `/allocations/{allocationRevisionId}`                       |
+| 生成完整分类草稿；确认后显式送审       | POST `/prepare`、POST `/submit`                                                      |
+| 按不可变版本回看四类桶与来源           | GET `/revisions/{timeRevisionId}/buckets`、GET `/revisions/{timeRevisionId}/sources` |
+
+三个写命令返回 200。认定仍使用既有 recognize 权限；读和 prepare 是两个独立的新权限，提交另需旧 settlement-submit 权限。均要求有效 App 成员、显式组织范围及实际责任或审核资格；Admin 身份或角色名称不能代替这些条件。按钮提示不构成授权。只读维护态仍可读取有权历史，写入及写命令重放沿既有 Gate 拒绝。
+
+历史桶／来源及带封印草稿证明的认定详情，按所请求记录绑定的结算版本核验当前审核资格，不借较新版本决定旧版本是否可见；较新版本由本人提交时，其自审限制仍成立，但不会误封其他有权旧版本。返回前仍复核当前资格，撤权后旧详情也不可再读；不要在前端缓存“曾经有权”作为访问依据。既有无草稿证明的 D3 认定仍沿原活动资格判断。
+
+自动时长为 null 时显示“未知／需认定”，不能显示 0。没有有效来源的身份只有通过阻塞检查后才生成四个零桶。四类先汇总原始毫秒再按冻结政策取整；毫秒在接口中为十进制字符串，不转换成 JavaScript Number。列表不含人工理由，需按认定详情下钻；附件只返回 ID，不返回地址或存储凭证。
+
+客户端传来源区间及期望版本，不传认定秒数、政策定义或内部内容 hash。prepare 返回的 bucketContentHash 才用于后续 submit。版本或封印过期须刷新工作台并由操作者重新确认，不能后台覆盖。相同意图重试沿用原 operationKey 和原 payload；改请求须用新键。重放是原命令收据，不代表当前业务状态，成功后应重新查询。
+
+正式提交创建新版本并保留分类草稿，历史桶只读；分类版本使用新的内容指纹域，旧提交的 V1 指纹及小时／贡献结果保持原义。D4 不生成分类账本、证明或旧小时投影，不自动切换结算入口。认定、桶、理由与收据持续保留，无删除入口。
+
 > **D1-3 已合入 main、未部署（2026-09-11）**：[#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已合入 `60414050b99fe661afbf0c87669597ad081a3b43`，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 通过。managed activity 的 `GET/PATCH /api/app/v1/my/managed-activities/:activityId/time-policy-selection` 与 `GET /api/app/v1/my/managed-activities/time-policy-options` 现为 main 的后端合同；读写仍需当前有效成员、显式时间政策权限、组织范围和发起人或责任资格，PATCH 使用 `expectedRevision` 生成完整不可变选择修订。前端本地联调以 main 的 OpenAPI / App client 为准；生产部署、Gate、整体跨模型复审及 D2–D8 尚未完成。
 
 > **D1 文档追加授权（2026-09-10）**：维护者已确认方案 A 方向，允许补充 changelog、提交、推送并创建文档评审 PR；不合并、不实施。本条覆盖下方起草时“方案待确认/不提交推送”的状态，不授权数据库、Gate 或后续实施。

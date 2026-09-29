@@ -13,12 +13,24 @@ import { parseActivityTemplateDefinitionV2 } from './activity-template-definitio
 import { parseActivityTemplateDefinitionV3 } from './activity-template-definition-v3';
 import { parseActivityTemplateDefinitionV4 } from './activity-template-definition-v4';
 import {
+  activityTemplateContributionPolicyRuntimeSelection,
+  parseActivityTemplateDefinitionV5,
+} from './activity-template-definition-v5';
+import {
   assertMetricSelectionReference,
   readActivityMetricSelection,
 } from './activity-metric-selection';
 import type { MetricSetRow } from './activity-metric-presenter';
 import { projectPlaceCoordinate } from './activity-place-coordinate-projection';
 import { fingerprintTimePolicyVersion } from './activity-time-policy-definition';
+import { fingerprintContributionPolicyVersion } from './activity-contribution-policy-definition';
+import {
+  activityContributionPolicySelectionHash,
+  activityContributionPolicySelectionScopeKey,
+  parseActivityContributionPolicySelectionDocument,
+  resolveActivityContributionPolicySelection,
+  type ActivityContributionPolicySelectionScope,
+} from './activity-contribution-policy-selection';
 import {
   activityTimePolicySelectionHash,
   activityTimePolicySelectionScopeKey,
@@ -58,6 +70,11 @@ export type ActivityReadinessTimePolicySelectionIssue =
   | 'target_invalid'
   | 'reference_unavailable'
   | 'coverage_incomplete';
+export type ActivityReadinessContributionPolicySelectionIssue =
+  | 'unconfigured'
+  | 'target_invalid'
+  | 'reference_unavailable'
+  | 'coverage_incomplete';
 
 interface TimePolicyReadinessRevision {
   readonly id: string;
@@ -68,8 +85,14 @@ interface TimePolicyReadinessRevision {
   readonly itemCount: number;
 }
 
+interface ContributionPolicyReadinessRevision extends TimePolicyReadinessRevision {
+  readonly templateId: string | null;
+  readonly templateDefinitionHash: string | null;
+}
+
 interface TimePolicyReadinessPosition {
   readonly id: string;
+  readonly code: string;
   readonly startAt: Date | null;
   readonly endAt: Date | null;
   readonly attendanceRoleCode: string;
@@ -77,6 +100,7 @@ interface TimePolicyReadinessPosition {
 
 interface TimePolicyReadinessSession {
   readonly id: string;
+  readonly code: string;
   readonly startAt: Date;
   readonly endAt: Date;
   readonly positions: readonly TimePolicyReadinessPosition[];
@@ -131,6 +155,7 @@ export interface ActivityPublishReadinessFacts {
   } | null;
   readonly sessions: readonly {
     readonly id: string;
+    readonly code: string;
     readonly statusCode: string;
     readonly startAt: Date;
     readonly endAt: Date;
@@ -141,6 +166,7 @@ export interface ActivityPublishReadinessFacts {
     readonly radiusMeters: number | null;
     readonly positions: readonly {
       readonly id: string;
+      readonly code: string;
       readonly capacity: number | null;
       readonly startAt: Date | null;
       readonly endAt: Date | null;
@@ -162,6 +188,8 @@ export interface ActivityPublishReadinessFacts {
   readonly metricSelection: ActivityReadinessMetricSelectionStatus;
   /** Empty only when every live target has a current, valid and interval-covering policy pointer. */
   readonly timePolicySelectionIssues: readonly ActivityReadinessTimePolicySelectionIssue[];
+  /** Empty only when every live target has a current, valid and interval-covering contribution policy. */
+  readonly contributionPolicySelectionIssues: readonly ActivityReadinessContributionPolicySelectionIssue[];
   readonly insuranceEnforcementEnabled: boolean;
 }
 
@@ -305,6 +333,24 @@ const ISSUE_DEFINITIONS = {
     message: '当前活动没有可解析的有效贡献政策指针。',
     resolutionHint: '在 Release 5 建立 ContributionPolicy / Version 与活动选择关系后重新判定。',
   },
+  CONTRIBUTION_POLICY_TARGET_INVALID: {
+    domain: 'terminalPolicyOutcomeSafety',
+    severity: 'blocker',
+    message: '当前贡献政策选择中的岗位目标无法与活动链一致解析。',
+    resolutionHint: '通过贡献政策选择受控面修复目标范围后重新判定。',
+  },
+  CONTRIBUTION_POLICY_REFERENCE_UNAVAILABLE: {
+    domain: 'terminalPolicyOutcomeSafety',
+    severity: 'blocker',
+    message: '当前贡献政策选择引用的模板或政策版本已不可用，或其冻结身份不一致。',
+    resolutionHint: '重新选择当前有效且哈希与 evaluator 一致的贡献政策版本。',
+  },
+  CONTRIBUTION_POLICY_COVERAGE_INCOMPLETE: {
+    domain: 'terminalPolicyOutcomeSafety',
+    severity: 'blocker',
+    message: '当前贡献政策选择未覆盖活动根或全部有效岗位的完整时间段。',
+    resolutionHint: '补齐每个目标的政策选择，或选择覆盖其实际时段的版本。',
+  },
   METRIC_SELECTION_MISSING: {
     domain: 'terminalPolicyOutcomeSafety',
     severity: 'blocker',
@@ -431,7 +477,8 @@ function templateDefinitionIsValid(
     (template.schemaVersion !== 1 &&
       template.schemaVersion !== 2 &&
       template.schemaVersion !== 3 &&
-      template.schemaVersion !== 4) ||
+      template.schemaVersion !== 4 &&
+      template.schemaVersion !== 5) ||
     template.definitionJson === null ||
     template.definitionHash === null
   ) {
@@ -455,8 +502,10 @@ function templateDefinitionIsValid(
       parseActivityTemplateDefinitionV2(template.definitionJson);
     } else if (template.schemaVersion === 3) {
       parseActivityTemplateDefinitionV3(template.definitionJson);
-    } else {
+    } else if (template.schemaVersion === 4) {
       parseActivityTemplateDefinitionV4(template.definitionJson);
+    } else {
+      parseActivityTemplateDefinitionV5(template.definitionJson);
     }
     return true;
   } catch {
@@ -653,7 +702,18 @@ export function evaluateActivityPublishReadiness(
   if (facts.timePolicySelectionIssues.includes('coverage_incomplete')) {
     addIssue(issues, 'TIME_POLICY_COVERAGE_INCOMPLETE', 'policy.time.coverage');
   }
-  addIssue(issues, 'CONTRIBUTION_POLICY_UNREPRESENTABLE', 'policy.contribution');
+  if (facts.contributionPolicySelectionIssues.includes('unconfigured')) {
+    addIssue(issues, 'CONTRIBUTION_POLICY_UNREPRESENTABLE', 'policy.contribution');
+  }
+  if (facts.contributionPolicySelectionIssues.includes('target_invalid')) {
+    addIssue(issues, 'CONTRIBUTION_POLICY_TARGET_INVALID', 'policy.contribution.selection');
+  }
+  if (facts.contributionPolicySelectionIssues.includes('reference_unavailable')) {
+    addIssue(issues, 'CONTRIBUTION_POLICY_REFERENCE_UNAVAILABLE', 'policy.contribution.references');
+  }
+  if (facts.contributionPolicySelectionIssues.includes('coverage_incomplete')) {
+    addIssue(issues, 'CONTRIBUTION_POLICY_COVERAGE_INCOMPLETE', 'policy.contribution.coverage');
+  }
   if (facts.metricSelection === 'unconfigured') {
     addIssue(issues, 'METRIC_SELECTION_MISSING', 'metrics.requiredSet');
   } else if (facts.metricSelection === 'invalid') {
@@ -724,6 +784,20 @@ export class ActivityPublishReadinessService {
             itemCount: true,
           },
         },
+        contributionPolicySelectionRevision: true,
+        currentContributionPolicySelectionRevisionId: true,
+        currentContributionPolicySelectionRevision: {
+          select: {
+            id: true,
+            activityId: true,
+            revision: true,
+            selectionHash: true,
+            selectionJson: true,
+            itemCount: true,
+            templateId: true,
+            templateDefinitionHash: true,
+          },
+        },
         selectedMetricSetVersion: {
           include: {
             items: {
@@ -738,6 +812,7 @@ export class ActivityPublishReadinessService {
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
           select: {
             id: true,
+            code: true,
             statusCode: true,
             startAt: true,
             endAt: true,
@@ -751,6 +826,7 @@ export class ActivityPublishReadinessService {
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
               select: {
                 id: true,
+                code: true,
                 capacity: true,
                 startAt: true,
                 endAt: true,
@@ -790,6 +866,18 @@ export class ActivityPublishReadinessService {
       currentRevision: activity.currentTimePolicySelectionRevision,
       sessions: activity.sessions,
     });
+    const contributionPolicySelectionIssues = await this.contributionPolicySelectionIssues(
+      tx,
+      activityId,
+      {
+        startAt: activity.startAt,
+        endAt: activity.endAt,
+        revision: activity.contributionPolicySelectionRevision,
+        currentRevisionId: activity.currentContributionPolicySelectionRevisionId,
+        currentRevision: activity.currentContributionPolicySelectionRevision,
+        sessions: activity.sessions,
+      },
+    );
 
     let registrationFormValid = true;
     try {
@@ -840,6 +928,7 @@ export class ActivityPublishReadinessService {
         : null,
       sessions: activity.sessions.map((session) => ({
         id: session.id,
+        code: session.code,
         statusCode: session.statusCode,
         startAt: session.startAt,
         endAt: session.endAt,
@@ -850,6 +939,7 @@ export class ActivityPublishReadinessService {
         radiusMeters: session.radiusMeters,
         positions: session.positions.map((position) => ({
           id: position.id,
+          code: position.code,
           capacity: position.capacity,
           startAt: position.startAt,
           endAt: position.endAt,
@@ -865,6 +955,7 @@ export class ActivityPublishReadinessService {
       },
       metricSelection,
       timePolicySelectionIssues,
+      contributionPolicySelectionIssues,
       insuranceEnforcementEnabled: this.insuranceRequirements.isEnforcementEnabled(),
     };
   }
@@ -1103,6 +1194,218 @@ export class ActivityPublishReadinessService {
       'coverage_incomplete',
     ];
     return order.filter((issue) => issues.has(issue));
+  }
+
+  private async contributionPolicySelectionIssues(
+    tx: PrismaTx,
+    activityId: string,
+    input: {
+      readonly startAt: Date;
+      readonly endAt: Date;
+      readonly revision: number;
+      readonly currentRevisionId: string | null;
+      readonly currentRevision: ContributionPolicyReadinessRevision | null;
+      readonly sessions: readonly TimePolicyReadinessSession[];
+    },
+  ): Promise<readonly ActivityReadinessContributionPolicySelectionIssue[]> {
+    if (input.revision === 0 && input.currentRevisionId === null) return ['unconfigured'];
+    const revision = input.currentRevision;
+    if (
+      !Number.isInteger(input.revision) ||
+      input.revision < 1 ||
+      input.currentRevisionId === null ||
+      revision === null ||
+      revision.id !== input.currentRevisionId ||
+      revision.activityId !== activityId ||
+      revision.revision !== input.revision
+    ) {
+      return ['target_invalid'];
+    }
+
+    let selection;
+    try {
+      selection = parseActivityContributionPolicySelectionDocument(revision.selectionJson);
+      if (
+        activityContributionPolicySelectionHash(selection) !== revision.selectionHash ||
+        Object.keys(selection.items).length !== revision.itemCount
+      ) {
+        return ['target_invalid'];
+      }
+    } catch {
+      return ['target_invalid'];
+    }
+
+    let templateSelection = null;
+    if ((revision.templateId === null) !== (revision.templateDefinitionHash === null)) {
+      return ['reference_unavailable'];
+    }
+    if (revision.templateId !== null && revision.templateDefinitionHash !== null) {
+      const template = await tx.activityTemplate.findFirst({
+        where: {
+          id: revision.templateId,
+          definitionHash: revision.templateDefinitionHash,
+        },
+        select: { schemaVersion: true, definitionJson: true, definitionHash: true },
+      });
+      if (
+        !template ||
+        template.schemaVersion !== 5 ||
+        template.definitionJson === null ||
+        template.definitionHash !== revision.templateDefinitionHash ||
+        !matchesActivityTemplateDefinitionHash(
+          { schemaVersion: 5, definition: template.definitionJson },
+          template.definitionHash,
+        )
+      ) {
+        return ['reference_unavailable'];
+      }
+      try {
+        templateSelection = activityTemplateContributionPolicyRuntimeSelection(
+          parseActivityTemplateDefinitionV5(template.definitionJson).contributionPolicySelection,
+        );
+      } catch {
+        return ['reference_unavailable'];
+      }
+    }
+
+    const positionTargets = input.sessions.flatMap((session) =>
+      session.positions.map((position) => ({
+        sessionId: session.id,
+        sessionCode: session.code,
+        positionId: position.id,
+        positionCode: position.code,
+      })),
+    );
+    const positionsById = new Map(positionTargets.map((target) => [target.positionId, target]));
+    if (positionsById.size !== positionTargets.length) return ['target_invalid'];
+    for (const item of Object.values(selection.items)) {
+      if (item.scope.layerCode !== 'position') continue;
+      const target = positionsById.get(item.scope.positionId!);
+      if (!target || target.sessionId !== item.scope.sessionId) return ['target_invalid'];
+    }
+
+    let resolved;
+    try {
+      resolved = resolveActivityContributionPolicySelection(
+        selection,
+        templateSelection,
+        positionTargets,
+      );
+    } catch {
+      return ['target_invalid'];
+    }
+
+    const intervals = this.contributionPolicyIntervals(input.startAt, input.endAt, input.sessions);
+    const issues = new Set<ActivityReadinessContributionPolicySelectionIssue>();
+    const versionIds = new Set<string>();
+    for (const entry of resolved) {
+      if (entry.pointer === null || entry.sourceLayerCode === null) {
+        issues.add('coverage_incomplete');
+        continue;
+      }
+      const interval = intervals.get(activityContributionPolicySelectionScopeKey(entry.scope));
+      if (
+        !interval ||
+        !isValidDate(interval.startAt) ||
+        !isValidDate(interval.endAt) ||
+        interval.startAt >= interval.endAt
+      ) {
+        issues.add('coverage_incomplete');
+      }
+      versionIds.add(entry.pointer.versionId);
+    }
+
+    const versions = versionIds.size
+      ? await tx.contributionPolicyVersion.findMany({
+          where: { id: { in: [...versionIds].sort() } },
+          select: {
+            id: true,
+            policyId: true,
+            definitionHash: true,
+            schemaVersion: true,
+            evaluatorVersion: true,
+            definitionJson: true,
+            effectiveFrom: true,
+            effectiveUntil: true,
+            statusCode: true,
+          },
+        })
+      : [];
+    const versionsById = new Map(versions.map((version) => [version.id, version]));
+    for (const entry of resolved) {
+      if (entry.pointer === null) continue;
+      const pointer = entry.pointer;
+      const version = versionsById.get(pointer.versionId);
+      if (
+        !version ||
+        version.policyId !== pointer.policyId ||
+        version.definitionHash !== pointer.definitionHash ||
+        version.evaluatorVersion !== pointer.evaluatorVersion ||
+        version.statusCode !== 'active' ||
+        version.schemaVersion !== 1 ||
+        version.evaluatorVersion !== 1
+      ) {
+        issues.add('reference_unavailable');
+        continue;
+      }
+      try {
+        if (
+          fingerprintContributionPolicyVersion({
+            schemaVersion: version.schemaVersion,
+            evaluatorVersion: version.evaluatorVersion,
+            definition: version.definitionJson,
+            effectiveFrom: version.effectiveFrom.toISOString(),
+            effectiveUntil: version.effectiveUntil?.toISOString() ?? null,
+          }).definitionHash !== pointer.definitionHash
+        ) {
+          issues.add('reference_unavailable');
+          continue;
+        }
+      } catch {
+        issues.add('reference_unavailable');
+        continue;
+      }
+      const interval = intervals.get(activityContributionPolicySelectionScopeKey(entry.scope));
+      if (
+        !interval ||
+        version.effectiveFrom > interval.startAt ||
+        (version.effectiveUntil !== null && version.effectiveUntil < interval.endAt)
+      ) {
+        issues.add('coverage_incomplete');
+      }
+    }
+
+    const order: readonly ActivityReadinessContributionPolicySelectionIssue[] = [
+      'target_invalid',
+      'reference_unavailable',
+      'coverage_incomplete',
+    ];
+    return order.filter((candidate) => issues.has(candidate));
+  }
+
+  private contributionPolicyIntervals(
+    startAt: Date,
+    endAt: Date,
+    sessions: readonly TimePolicyReadinessSession[],
+  ): ReadonlyMap<string, { readonly startAt: Date; readonly endAt: Date }> {
+    const intervals = new Map<string, { readonly startAt: Date; readonly endAt: Date }>();
+    const add = (
+      scope: ActivityContributionPolicySelectionScope,
+      interval: { startAt: Date; endAt: Date },
+    ) => intervals.set(activityContributionPolicySelectionScopeKey(scope), interval);
+    add({ layerCode: 'activity', sessionId: null, positionId: null }, { startAt, endAt });
+    for (const session of sessions) {
+      for (const position of session.positions) {
+        if ((position.startAt === null) !== (position.endAt === null)) continue;
+        add(
+          { layerCode: 'position', sessionId: session.id, positionId: position.id },
+          position.startAt === null
+            ? { startAt: session.startAt, endAt: session.endAt }
+            : { startAt: position.startAt, endAt: position.endAt! },
+        );
+      }
+    }
+    return intervals;
   }
 
   private timePolicyIntervals(

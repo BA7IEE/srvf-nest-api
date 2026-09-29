@@ -15,17 +15,23 @@
 | 版本 / 卫生 | 现场查:`pnpm agent:preflight` |
 | 本版 footprint | 即下方计数块(生成物) |
 
+> **D8 仓库交付与生产边界（2026-09-22）**：D8-1 [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341)
+> 与 D8-2 [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 已合入 main，仓库侧正式参与时长证明、
+> 不可逆切换地基、官方统计和新关账接线已完成；仍未部署或切换生产。新收据不存在时既有统计继续按原口径，
+> 正式证明入口 fail-closed。生产 Gate 仍是 NO-GO；v1.1 独立稳定窗、exact deployed SHA／fleet、证据包、
+> 结算只读、worker 排空及 D8-OPS 两次现场授权仍须另行完成，AI 不得自行运行 `--execute`。
+
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
 | 计数项 | 值 |
 |---|---|
 | 模块 | 43 |
-| Controller | 122 |
-| Endpoint | 625 |
-| Migration | 120 |
-| BizCode | 544 |
-| 权限码 | 263 |
-| AuditLogEvent | 168 |
+| Controller | 127 |
+| Endpoint | 658 |
+| Migration | 133 |
+| BizCode | 581 |
+| 权限码 | 269 |
+| AuditLogEvent | 174 |
 | 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->

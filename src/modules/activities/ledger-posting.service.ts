@@ -1,4 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
+import {
+  ParticipationTimeCorrectionService,
+  type ReadyV3CorrectionReceiptAnchor,
+} from './participation-time-correction.service';
+import { ParticipationTimeLedgerAccessService } from './participation-time-ledger-access.service';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 import { Prisma } from '@prisma/client';
 
@@ -170,6 +176,9 @@ export class LedgerPostingService {
     private readonly notifications: SettlementNotificationProducer,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly timeLedger: ParticipationTimeLedgerService,
+    private readonly timeCorrection: ParticipationTimeCorrectionService,
+    private readonly timeLedgerAccess: ParticipationTimeLedgerAccessService,
   ) {}
 
   async commitBatch(
@@ -217,13 +226,15 @@ export class LedgerPostingService {
     input: LedgerCommitInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
+    readyV3CorrectionReceipt?: ReadyV3CorrectionReceiptAnchor,
   ): Promise<LedgerCommitResult> {
     // 活动 v1.1 单一 cutover gate(合同 §16.2):闸未开时本实例仍按旧口径结算,
     // 新结算真相链禁止落库 —— 否则就是合同点名禁止的「新打卡＋旧结算」混合态。
     this.activityWorkflowGate.assertV11WriteAllowed();
     return this.commitBatchProtocol(tx, activityId, input, currentUser, auditMeta, {
       conversion: false,
-    });
+      readyV3CorrectionReceipt,
+    }).catch((error: unknown) => this.timeLedger.rethrowConstraint(error));
   }
 
   /**
@@ -249,7 +260,7 @@ export class LedgerPostingService {
     this.activityWorkflowGate.assertLegacyLedgerConversionAllowed();
     return this.commitBatchProtocol(tx, activityId, input, currentUser, auditMeta, {
       conversion: true,
-    });
+    }).catch((error: unknown) => this.timeLedger.rethrowConstraint(error));
   }
 
   /** `commitBatchWithin` / `commitConvertedBatchWithin` 的共享协议体(逐字,判闸位已外置)。 */
@@ -259,14 +270,44 @@ export class LedgerPostingService {
     input: LedgerCommitInput,
     currentUser: CurrentUserPayload,
     auditMeta: AuditMeta,
-    options: { conversion: boolean },
+    options: { conversion: boolean; readyV3CorrectionReceipt?: ReadyV3CorrectionReceiptAnchor },
   ): Promise<LedgerCommitResult> {
     {
+      let readyV3ReceiptMatches = false;
       // ===== ①②③④ 固定锁序 =====
       const activity = await this.lockActivity(tx, activityId);
       const run = await this.lockRun(tx, activityId);
       const version = await this.lockVersion(tx, run.id);
       const batch = await this.lockBatch(tx, input.postingBatchId);
+      const correctionFact = await this.timeCorrection.classifyBatch(tx, batch.id);
+      const correction = correctionFact.required;
+      if (correction) {
+        if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+        await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
+        // A fresh V3 outer correction has just inserted its receipt in this
+        // transaction.  That INSERT trigger already validated the full set;
+        // reuse only its compact immutable anchor here.  Every other entry
+        // point, stale anchor and replay keeps the historical full check.
+        readyV3ReceiptMatches =
+          batch.statusCode === 'ready' &&
+          options.readyV3CorrectionReceipt !== undefined &&
+          (await this.timeCorrection.hasReadyV3CommitReceiptAnchor(
+            tx,
+            options.readyV3CorrectionReceipt,
+          ));
+        if (!readyV3ReceiptMatches) await this.timeCorrection.assertComplete(tx, batch.id, true);
+      }
+      const classified = !correction && (await this.timeLedger.hasClassifiedSource(tx, batch));
+      if (classified) {
+        if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+        await this.timeLedgerAccess.authorize(
+          tx,
+          currentUser.id,
+          activityId,
+          batch.settlementVersionId,
+        );
+        await this.timeLedger.assertComplete(tx, batch);
+      }
 
       // 幂等:批次已生效 ⇒ 原样返回上一次的结论(不是错误,也不再写第二遍)。
       if (batch.statusCode === 'committed') {
@@ -292,7 +333,13 @@ export class LedgerPostingService {
 
       // ===== 分录集合复核(§5.12 ⑧ 的生效侧复验)=====
       const deltas = await this.readBatchDayDeltas(tx, batch.id);
-      await this.assertPreparedSetConsistent(tx, batch, version.id, deltas);
+      await this.assertPreparedSetConsistent(
+        tx,
+        batch,
+        version.id,
+        deltas,
+        correctionFact.hasApplication,
+      );
 
       const memberIds = [...new Set(deltas.map((row) => row.memberId))].sort();
       // AC-058:不能只锁有账本分录的人。零积分/零时长成员仍可能有一条即将正式生效的
@@ -321,6 +368,27 @@ export class LedgerPostingService {
       this.assertDailyCapRespected(deltas, current);
 
       // ===== ⑩ 原子切换:以下全部在同一事务内 =====
+      if (correction) {
+        await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
+        // The exact fresh-V3 receipt anchor was validated before the member/day
+        // locks, and all of its fact rows are immutable.  Do not rebuild and
+        // compare the 8k-root/16k-entry set in Node a second time here.  The
+        // upcoming LedgerPostingBatch ready -> committed write still runs the
+        // database ptc_visibility_guard under these locks; that guard executes
+        // ptc_assert_complete + ctsp_assert_complete(TRUE) before visibility.
+        // Every stale/missing/mismatched anchor and every V2/direct/replay path
+        // keeps the historical application-side complete-set recheck.
+        if (!readyV3ReceiptMatches) await this.timeCorrection.assertComplete(tx, batch.id, true);
+      }
+      if (classified) {
+        await this.timeLedgerAccess.authorize(
+          tx,
+          currentUser.id,
+          activityId,
+          batch.settlementVersionId,
+        );
+        await this.timeLedger.assertComplete(tx, batch);
+      }
       const now = new Date();
       await this.advanceDayStates(tx, batch.id, deltas);
       const entryCount = deltas.reduce((sum, row) => sum + row.entryCount, 0);
@@ -504,6 +572,11 @@ export class LedgerPostingService {
   /**
    * AC-058:成员锁内比较“本活动待生效段”与“其他活动已生效段”。区间统一按
    * [checkInAt, checkOutAt) 左闭右开;同活动修订由既有 correction 流程处理,不在此误杀。
+   *
+   * 从已生效段出发再连接本活动候选段，和原来的候选段相关 EXISTS 是同一存在性关系：
+   * 候选身份已限定为 activityId，故另一个身份的 activityId 不等于候选活动，等价于
+   * 不等于这里的 activityId。这样在没有其他活动已生效段时，status 索引可直接空返回，
+   * 不会对每个待生效候选重复做一次相关探测。
    */
   private async assertNoCrossActivitySegmentOverlap(
     tx: PrismaTx,
@@ -511,21 +584,21 @@ export class LedgerPostingService {
   ): Promise<void> {
     const rows = await tx.$queryRaw<Array<{ conflict: number }>>`
       SELECT 1 AS conflict
-      FROM "ParticipantServiceSegmentRevision" candidate
-      JOIN "ActivityParticipationIdentity" candidate_identity
-        ON candidate_identity.id = candidate."participationIdentityId"
+      FROM "ParticipantServiceSegmentRevision" existing
       JOIN "ActivityParticipationIdentity" existing_identity
-        ON existing_identity."memberId" = candidate_identity."memberId"
-       AND existing_identity."activityId" <> candidate_identity."activityId"
-      JOIN "ParticipantServiceSegmentRevision" existing
-        ON existing."participationIdentityId" = existing_identity.id
-      WHERE candidate_identity."activityId" = ${activityId}
-        AND candidate."statusCode" = 'draft'
-        AND candidate."resultCode" NOT IN ('voided', 'replaced')
-        AND candidate."checkOutAt" IS NOT NULL
+        ON existing_identity.id = existing."participationIdentityId"
+      JOIN "ActivityParticipationIdentity" candidate_identity
+        ON candidate_identity."memberId" = existing_identity."memberId"
+          AND candidate_identity."activityId" = ${activityId}
+      JOIN "ParticipantServiceSegmentRevision" candidate
+        ON candidate."participationIdentityId" = candidate_identity.id
+      WHERE existing_identity."activityId" <> ${activityId}
         AND existing."statusCode" = 'committed'
         AND existing."resultCode" NOT IN ('voided', 'replaced')
         AND existing."checkOutAt" IS NOT NULL
+        AND candidate."statusCode" = 'draft'
+        AND candidate."resultCode" NOT IN ('voided', 'replaced')
+        AND candidate."checkOutAt" IS NOT NULL
         AND candidate."checkInAt" < existing."checkOutAt"
         AND existing."checkInAt" < candidate."checkOutAt"
       LIMIT 1
@@ -576,6 +649,7 @@ export class LedgerPostingService {
     batch: LockedBatch,
     settlementVersionId: string,
     deltas: readonly DayDelta[],
+    hasCorrectionApplication: boolean,
   ): Promise<void> {
     // ⭐⭐ 第七刀(更正应用,§5.14 ④)按场景**放宽**下面那条 `nonCreditCount !== 0`。
     //
@@ -584,11 +658,11 @@ export class LedgerPostingService {
     //     它**比本判据更严**(冲回必须成对、等额、有 claim、把旧账冲干净);
     //   - 否则 ⇒ **逐字**走本判据,普通结算批次里出现任何 `*_reversal` 仍然 20089。
     //
-    // 判别式取自 **DB 上的事实**(`CorrectionApplication` 行),不是调用方传进来的
-    // flag —— flag 是"调用方说自己是更正",事实是"确实有一份更正申请把这条批次登记
-    // 成了自己的产物"。前者任何调用点都能伪造,后者不行。
+    // 判别式取自本事务内、已锁批次之后的一次 **DB 事实**(`CorrectionApplication` 行),
+    // 不是调用方传进来的 flag。它与上方 V2/V3 分类共用同一个事实探针，避免再做一条
+    // 重复的 application 存在性查询；锁后资格和完整性复核仍在各自原位独立执行。
     // 判据:e2e「普通批次里塞一条 reversal 仍然被拒」那一条(卸掉判别式即变红)。
-    if (await this.isCorrectionBatch(tx, batch.id)) {
+    if (hasCorrectionApplication) {
       return await this.assertCorrectionSetConsistent(tx, batch, settlementVersionId);
     }
 
@@ -624,15 +698,6 @@ export class LedgerPostingService {
 
   // ===== 更正批次的判别式与配对判据(第七刀,§5.14 ④ + §3.23.5)=============
 
-  /** 事实判别:有没有一条 `CorrectionApplication` 把本批次登记成自己的产物。 */
-  private async isCorrectionBatch(tx: PrismaTx, postingBatchId: string): Promise<boolean> {
-    const application = await tx.correctionApplication.findFirst({
-      where: { newPostingBatchId: postingBatchId },
-      select: { id: true },
-    });
-    return application !== null;
-  }
-
   /**
    * 更正批次的形状判据。判定本身是纯函数(`correction-posting-shape.ts`),
    * 本方法只负责把**事实计数**取回来 —— 让"判据"与"取数"分开,判据可被单测逐条钉住。
@@ -665,56 +730,83 @@ export class LedgerPostingService {
         JOIN "ParticipantSettlementResultRevision" prior ON prior.id = rr."baseResultRevisionId"
         WHERE rr."settlementVersionId" = ${settlementVersionId}
       ),
-      mine AS (
-        SELECT e.* FROM "ParticipationLedgerEntry" e WHERE e."postingBatchId" = ${batch.id}
-      )
-      SELECT
-        (SELECT count(*) FROM mine
-          WHERE "entryTypeCode" IN ('service_credit', 'contribution_credit'))::int
-          AS "creditEntryCount",
-        (SELECT count(DISTINCT ("resultRevisionId", "ledgerDate")) FROM mine
-          WHERE "entryTypeCode" IN ('service_credit', 'contribution_credit'))::int
-          AS "creditPairCount",
-        (SELECT count(*) FROM "ParticipantSettlementDay" d
-           JOIN "ParticipantSettlementResultRevision" rr ON rr.id = d."resultRevisionId"
-          WHERE rr."settlementVersionId" = ${settlementVersionId})::int
-          AS "settlementDayCount",
-        (SELECT count(*) FROM mine
-          WHERE "entryTypeCode" IN ('service_reversal', 'contribution_reversal'))::int
-          AS "reversalEntryCount",
-        (SELECT count(DISTINCT ("resultRevisionId", "ledgerDate")) FROM mine
-          WHERE "entryTypeCode" IN ('service_reversal', 'contribution_reversal'))::int
-          AS "reversalPairCount",
-        (SELECT count(*) FROM mine
-           JOIN "LedgerEntryReversalClaim" c ON c."originalEntryId" = mine."reversesEntryId"
-          WHERE mine."entryTypeCode" IN ('service_reversal', 'contribution_reversal'))::int
-          AS "reversalClaimCount",
+      -- Keep this batch scan narrow and perform the four independent shape counts
+      -- in one pass.  The prior shared CTE selected every ledger column and was
+      -- scanned repeatedly during the 2,000-identity correction commit.
+      mine_facts AS (
+        SELECT
+          (count(*) FILTER (
+            WHERE e."entryTypeCode" IN ('service_credit', 'contribution_credit')
+          ))::int AS "creditEntryCount",
+          (count(DISTINCT (e."resultRevisionId", e."ledgerDate")) FILTER (
+            WHERE e."entryTypeCode" IN ('service_credit', 'contribution_credit')
+          ))::int AS "creditPairCount",
+          (count(*) FILTER (
+            WHERE e."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
+          ))::int AS "reversalEntryCount",
+          (count(DISTINCT (e."resultRevisionId", e."ledgerDate")) FILTER (
+            WHERE e."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
+          ))::int AS "reversalPairCount"
+        FROM "ParticipationLedgerEntry" e
+        WHERE e."postingBatchId" = ${batch.id}
+      ),
+      settlement_facts AS (
+        SELECT count(*)::int AS "settlementDayCount"
+        FROM "ParticipantSettlementDay" d
+        JOIN "ParticipantSettlementResultRevision" rr ON rr.id = d."resultRevisionId"
+        WHERE rr."settlementVersionId" = ${settlementVersionId}
+      ),
+      reversal_facts AS (
+        SELECT
+          count(c."originalEntryId")::int AS "reversalClaimCount",
+          (count(o.id) FILTER (WHERE ob."statusCode" <> 'committed'))::int
+            AS "reversalOfUncommittedCount",
+          -- 🔴 四列逐列取反。光"有一条冲回"不够:冲 1.2 分的账只冲 0.2 分,配对计数
+          --    完全正确,而队员账上凭空多出 1.0 分。
+          (count(o.id) FILTER (
+            WHERE r."serviceHoursDelta" <> -o."serviceHoursDelta"
+              OR r."recognizedPointsDelta" <> -o."recognizedPointsDelta"
+              OR r."creditedPointsDelta" <> -o."creditedPointsDelta"
+              OR r."cappedOutPointsDelta" <> -o."cappedOutPointsDelta"
+          ))::int AS "mismatchedReversalAmountCount"
+        FROM "ParticipationLedgerEntry" r
+        LEFT JOIN "LedgerEntryReversalClaim" c ON c."originalEntryId" = r."reversesEntryId"
+        LEFT JOIN "ParticipationLedgerEntry" o ON o.id = r."reversesEntryId"
+        LEFT JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
+        WHERE r."postingBatchId" = ${batch.id}
+          AND r."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
+      ),
+      unreversed_facts AS (
         -- 🔴「只补不冲」的执行位:基础版本下已生效的 credit 分录,只要有一条没被本批次
-        --    冲回,那笔钱就在队员账上留了两遍。
-        (SELECT count(*) FROM "ParticipationLedgerEntry" o
-           JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
-           JOIN "ParticipantSettlementResultRevision" orr ON orr.id = o."resultRevisionId"
-          WHERE orr."settlementVersionId" IN (SELECT id FROM base)
-            AND ob."statusCode" = 'committed'
-            AND o."entryTypeCode" IN ('service_credit', 'contribution_credit')
-            AND NOT EXISTS (SELECT 1 FROM mine WHERE mine."reversesEntryId" = o.id))::int
-          AS "unreversedOriginalCount",
-        (SELECT count(*) FROM mine
-           JOIN "ParticipationLedgerEntry" o ON o.id = mine."reversesEntryId"
-           JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
-          WHERE mine."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
-            AND ob."statusCode" <> 'committed')::int
-          AS "reversalOfUncommittedCount",
-        -- 🔴 四列逐列取反。光"有一条冲回"不够:冲 1.2 分的账只冲 0.2 分,配对计数
-        --    完全正确,而队员账上凭空多出 1.0 分。
-        (SELECT count(*) FROM mine
-           JOIN "ParticipationLedgerEntry" o ON o.id = mine."reversesEntryId"
-          WHERE mine."entryTypeCode" IN ('service_reversal', 'contribution_reversal')
-            AND (mine."serviceHoursDelta" <> -o."serviceHoursDelta"
-              OR mine."recognizedPointsDelta" <> -o."recognizedPointsDelta"
-              OR mine."creditedPointsDelta" <> -o."creditedPointsDelta"
-              OR mine."cappedOutPointsDelta" <> -o."cappedOutPointsDelta"))::int
-          AS "mismatchedReversalAmountCount"
+        --    冲回,那笔钱就在队员账上留了两遍。反连接避免物化并反复扫描整批分录,
+        --    语义仍是“本批次任意一条记录指向原 entry 即视为已冲回”。
+        SELECT count(*)::int AS "unreversedOriginalCount"
+        FROM "ParticipationLedgerEntry" o
+        JOIN "LedgerPostingBatch" ob ON ob.id = o."postingBatchId"
+        JOIN "ParticipantSettlementResultRevision" orr ON orr.id = o."resultRevisionId"
+        WHERE orr."settlementVersionId" IN (SELECT id FROM base)
+          AND ob."statusCode" = 'committed'
+          AND o."entryTypeCode" IN ('service_credit', 'contribution_credit')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "ParticipationLedgerEntry" r
+            WHERE r."postingBatchId" = ${batch.id}
+              AND r."reversesEntryId" = o.id
+          )
+      )
+      SELECT mine_facts."creditEntryCount",
+             mine_facts."creditPairCount",
+             settlement_facts."settlementDayCount",
+             mine_facts."reversalEntryCount",
+             mine_facts."reversalPairCount",
+             reversal_facts."reversalClaimCount",
+             unreversed_facts."unreversedOriginalCount",
+             reversal_facts."reversalOfUncommittedCount",
+             reversal_facts."mismatchedReversalAmountCount"
+      FROM mine_facts
+      CROSS JOIN settlement_facts
+      CROSS JOIN reversal_facts
+      CROSS JOIN unreversed_facts
     `;
     if (facts === undefined) throw new BizException(BizCode.LEDGER_COMMIT_ENTRY_SET_MISMATCH);
 

@@ -92,6 +92,44 @@ export const ACTIVITY_TIME_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionS
   },
 ];
 
+// E1-2: contribution-policy catalogue is a Human-only GLOBAL control plane.
+// Both permissions are deliberately left unbound to built-in roles.
+export const CONTRIBUTION_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'contribution-policy.read.catalog',
+    module: 'contribution-policy',
+    action: 'read',
+    resourceType: 'catalog',
+    description: '查看贡献政策目录（仅真人显式 GLOBAL 授权）',
+  },
+  {
+    code: 'contribution-policy.manage.version',
+    module: 'contribution-policy',
+    action: 'manage',
+    resourceType: 'version',
+    description: '管理贡献政策版本（仅真人显式 GLOBAL 授权）',
+  },
+];
+
+// E1-3: Human-only scoped activity selection. Custom roles may grant these independently;
+// all built-in roles deliberately receive zero defaults.
+export const ACTIVITY_CONTRIBUTION_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity.contribution-policy.read',
+    module: 'activity',
+    action: 'contribution-policy',
+    resourceType: 'read',
+    description: '查看活动贡献政策选择；显式授权、当前活动范围及活动资格同时满足',
+  },
+  {
+    code: 'activity.contribution-policy.select',
+    module: 'activity',
+    action: 'contribution-policy',
+    resourceType: 'select',
+    description: '设置活动贡献政策选择；显式授权、当前活动范围及活动资格同时满足',
+  },
+];
+
 // D3: this command is deliberately registered but never attached to a built-in role.
 // A maintainer must grant it to a custom role before any internal caller can recognize time.
 export const ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
@@ -100,7 +138,27 @@ export const ACTIVITY_TIME_ALLOCATION_PERMISSION_SEED: ReadonlyArray<RbacPermiss
     module: 'activity',
     action: 'time-allocation',
     resourceType: 'recognize',
-    description: '认定活动参与时长原始区间；显式授权、当前责任及组织范围同时满足',
+    description:
+      '认定已提交参与段或有当前封印证明的结算草稿段；显式授权、当前责任及组织范围同时满足',
+  },
+];
+
+// D4: explicit custom-role grants only; neither permission implies the other.
+export const ACTIVITY_TIME_SETTLEMENT_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'activity.time-settlement.read',
+    module: 'activity',
+    action: 'time-settlement',
+    resourceType: 'read',
+    description:
+      '查看有权活动的分类时长结算、冻结证据及已提交分类时长账本和更正账本；显式范围及当前负责人或审核资格同时满足',
+  },
+  {
+    code: 'activity.time-settlement.prepare',
+    module: 'activity',
+    action: 'time-settlement',
+    resourceType: 'prepare',
+    description: '准备活动分类时长结算；显式范围及当前负责人资格同时满足，提交另需既有提交权限',
   },
 ];
 
@@ -3010,6 +3068,32 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       status: 'ACTIVE',
       uiVisibility: 'DEFAULT',
     },
+    'activity.contribution-policy.read': {
+      displayName: '查看活动贡献政策选择',
+      businessDescription:
+        '真人查看有权活动的贡献政策选择、解析来源与问题；显式授权、当前组织范围及活动资格同时满足，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 201,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.contribution-policy.select': {
+      displayName: '设置活动贡献政策选择',
+      businessDescription:
+        '真人在有权草稿活动中设置贡献政策选择；显式授权、当前组织范围及活动资格同时满足，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 202,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
     'activity.time-policy.read': {
       displayName: '查看活动时长政策选择',
       businessDescription:
@@ -3039,10 +3123,36 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.time-allocation.recognize': {
       displayName: '认定活动参与时长',
       businessDescription:
-        '真人基于已提交参与时段和冻结时长政策认定原始区间；不结算、不累计、不自动授予内建角色。',
+        '真人基于已提交参与段或有当前封印证明的结算草稿段及冻结政策认定原始区间；不累计、不自动授予内建角色。',
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 196,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.time-settlement.read': {
+      displayName: '查看分类时长结算',
+      businessDescription:
+        '真人凭显式范围和当前负责人或实际审核资格读取冻结分类桶、证据、已提交分类时长账本、指定版本更正账本及事实更正申请摘要与可见差异；更正详情的原因与证据仅由申请人或审核资格另行复核后返回，不隐含准备权限，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 197,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'activity.time-settlement.prepare': {
+      displayName: '准备分类时长结算',
+      businessDescription:
+        '真人凭显式范围和当前负责人资格准备冻结分类桶；与既有结算提交权限共同才可提交或重提事实更正申请，不隐含读取权限，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 198,
       riskLevel: 'HIGH',
       riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',
@@ -3069,6 +3179,32 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 193,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'contribution-policy.read.catalog': {
+      displayName: '查看贡献政策目录',
+      businessDescription:
+        '真人以显式GLOBAL权限查看贡献政策和历史版本；超级管理员不直通，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 199,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'contribution-policy.manage.version': {
+      displayName: '管理贡献政策版本',
+      businessDescription:
+        '真人以显式GLOBAL权限创建贡献政策及不可变版本、激活和退役；不授予读权限，不自动授予内建角色。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 200,
       riskLevel: 'HIGH',
       riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',
@@ -4166,7 +4302,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.settlement-final-review.record': {
       displayName: '结算终审',
       businessDescription:
-        '这项功能当前未启用。开启后:对一审通过的结算做最后一道确认,通过之后系统才开始准备把服务时长和贡献值记到每个人账上。不能审自己提交的,也不能审自己一审过的。',
+        '这项功能当前未启用。开启后:对一审通过的结算做最后一道确认,通过之后系统才开始准备把服务时长和贡献值记到每个人账上。不能审自己提交的,也不能审自己一审过的；同一权限还用于审核、准备及提交已批准的事实更正，申请人不得自审且每一步仍须复核当前活动和目标资格。',
       sectionCode: 'activity-participation',
       groupCode: 'activity-settlement',
       sortOrder: 23520,
@@ -4205,7 +4341,7 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
     'activity.settlement-submit.record': {
       displayName: '提交结算送审',
       businessDescription:
-        '这项功能当前未启用。开启后:把当前的结算草稿定稿送审。送出去这一版就锁死了,自己改不动,要改只能等审核的人退回来重走一遍。',
+        '这项功能当前未启用。开启后:把当前的结算草稿定稿送审。送出去这一版就锁死了,自己改不动,要改只能等审核的人退回来重走一遍；同一权限须与“准备分类时长结算”共同满足，才可提交或重提事实更正申请，申请仍须另经审核且不会直接记账。',
       sectionCode: 'activity-participation',
       groupCode: 'activity-settlement',
       sortOrder: 23550,

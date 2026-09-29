@@ -1,8 +1,8 @@
 # Activity OS Release 4 / D3：时长分配修订精确实施计划与授权清单
 
-> **当前状态（2026-09-12）**：D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。
+> **当前状态（2026-09-12）**：D3 已随 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323) 合入 main `921a6bf3fac66067e5232768d5c5d32bf92765fc`；批准 HEAD 为 `c3a969a22b4f59b2e2ca51a46660c04d10d53b41`，18 项 PR 检查及可信审批通过，[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34677507039) 在该合并 SHA 上 completed/success。仓内基线为 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），3b/4b 已重签；零内建角色默认授码。维护者本轮只授权 D3 台账更正及 D4 [评审](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-review.md)／[精确计划](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-implementation-plan.md)合并起草、验证后提交推送并创建 docs-only PR；D4 方案和实施仍待确认。本轮不合并、不实施、不操作数据库、不启用 Gate；整体跨模型复审、前端发布与生产验收尚未完成。下方较早阶段描述保留为历史，以本条为当前状态。
 
-> **不把分支当能力**：以下模型名、错误码、权限、审计事件、锁序和路径已在当前工作树按计划兑现，但未合并分支不是 main 或生产能力。红区登记及 3b/4b 重签已完成；可信审批、PR CI 与合并后 main CI 必须各自完成，不能以当前定向验证替代。
+> **仓内完成不等于上线**：以下 D3 实施已通过 PR 与合并后 main 的独立验证；生产部署、Gate、前端可用性和整体跨模型复审没有因此完成。D4 候选方案也不因 D3 合并而自动获准实施。
 
 ## 1. D3 要交付什么，以及绝不交付什么
 
@@ -35,7 +35,7 @@ D1 已固定活动在发布时选择的 TimePolicy，D2 已提供当前参与事
 | ActivityParticipationIdentity 与服务段复合锚 | identity 绑定 activity/session/member；服务段可用 sourceSegmentId 与 identity 组合证明来源。 | allocation 必须使用复合 FK 闭合活动、场次、成员、identity 与源段，不能只存裸 ID。 |
 | Attachment 现状 | Attachment 是 ownerType/ownerId 多态归属；既有成果证据已经采用 owner/storage 双锁。 | D3 证据须在同一事务锁定活动 owner 与存储边界，并扩展删除保护。 |
 
-当前工作树读数为 161 个模型、120 条 migration、263 个权限码、168 个 AuditLogEvent（163 个活跃）、625 个端点；main 尚未接收本分支，不能把这些读数写成 main、生产或提前签字事实。
+当前仓内 main 基线 `921a6bf3` 为 161 个模型、120 条 migration、263 个权限码、168 个 AuditLogEvent（163 个活跃）、625 个端点；不据此声明生产数据库或线上能力已经更新。
 
 ## 3. 方案 A：不可变 allocation revision 合同
 
@@ -210,8 +210,10 @@ Storage 的改动限于 AttachmentStorageOrchestrator 的已存在删除引用�
 
 维护者已授权本表中的 implementation 路径、实际第 120 条 migration、`app_test_w98` 隔离验证及 `prisma/seed.ts` 的精确 seed 闭包扩展。实施没有增加内建角色默认授予，也没有把 D3 变成对外能力。
 
-原写集、seed 闭包、inventory 扩展及 §8 的旧测试适配均已获得维护者确认；#1323 已创建。本轮 3b/4b 已重签，验证后允许提交推送更新 PR，检查通过后允许标记 Ready。可信红区审批仍须维护者独立完成；没有合并、生产或 Gate 授权。
+原写集、seed 闭包、inventory 扩展及 §8 的旧测试适配均已获得维护者确认。后续维护者明确确认合并 #1323，已于 2026-09-12T06:11:55Z squash 合入 main `921a6bf3`。最终批准 HEAD `c3a969a2` 的 18 项 PR 检查及可信审批通过；合并树与批准 HEAD 树一致，独立 main CI 34677507039 成功，五个 Contract + E2E 分片均通过。此证据覆盖 §9 的历史待验证状态，但不抹去首轮失败及测试库范围偏差记录。
+
+本轮仅更正 D3 台账并合并起草 D4 评审与精确计划。D4 的来源扩展、聚合规则、访问面和实施写集均是待确认提案；没有 D4 implementation、数据库、生产或 Gate 授权。
 
 ## 11. 本次未做
 
-本轮没有新增 controller、DTO、OpenAPI／contract snapshot、客户端、Gate、队列、cron、AI 写入口、结算／账本／证明接线或旧 `serviceHours` 投影；没有操作生产、删除／清理／回填业务数据，也没有启用 Gate、部署、合并或执行整体跨模型复审。D3 implementation 尚未完成签收，Release 4 D4-D8 仍未开始。
+本次台账更正没有新增 controller、DTO、OpenAPI／contract snapshot、客户端、schema、migration 或业务代码；没有操作数据库、生产，未删除／清理／回填业务数据，未启用 Gate、部署、合并当前文档 PR 或执行整体跨模型复审。D3 仓内交付已完成；D4 仅有待确认评审与精确计划，D4-D8 的实施仍未完成。

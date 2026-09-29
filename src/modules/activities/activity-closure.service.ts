@@ -22,6 +22,11 @@ import {
 } from './activity-closure-checks';
 import { ActivityClosureNotificationProducer } from './activity-closure-notification-producer';
 import { freezeResponsibility } from './activity-recipient-freeze';
+import {
+  ParticipationTimeTruthQueryService,
+  eligibleSecondsToServiceHours,
+  sumOfficialEligibleSeconds,
+} from './participation-time-truth-query.service';
 
 // ===== 活动改造 v1.1 第 2 批第六刀:机器关账(合同 §5.15 + §3.26)=====
 //
@@ -237,6 +242,7 @@ export class ActivityClosureService {
     private readonly prisma: PrismaService,
     private readonly audit: ActivityClosureAuditRecorder,
     private readonly notifications: ActivityClosureNotificationProducer,
+    private readonly participationTimeTruth: ParticipationTimeTruthQueryService,
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
   ) {}
@@ -938,6 +944,9 @@ export class ActivityClosureService {
     activityId: string,
     versionAnchor: string,
   ): Promise<ActivityClosureTotals> {
+    const officialTime = await this.participationTimeTruth.readOfficialTotalsInTx(tx, {
+      activityIds: [activityId],
+    });
     const [head] = await tx.$queryRaw<
       Array<{
         personCount: number;
@@ -977,7 +986,12 @@ export class ActivityClosureService {
       resultCountsJson,
       // 归一到两位小数:§3.26 的两列是 numeric(12,2),SUM 出来的文本形态随分录条数
       // 变化(`0` / `8.00` / `8`),不归一会让 checksHash 在同样事实上漂移。
-      serviceHours: new Prisma.Decimal(head?.serviceHours ?? '0').toFixed(2),
+      serviceHours:
+        officialTime === null
+          ? new Prisma.Decimal(head?.serviceHours ?? '0').toFixed(2)
+          : eligibleSecondsToServiceHours(sumOfficialEligibleSeconds(officialTime.totals)).toFixed(
+              2,
+            ),
       contributionPoints: new Prisma.Decimal(head?.contributionPoints ?? '0').toFixed(2),
     };
   }

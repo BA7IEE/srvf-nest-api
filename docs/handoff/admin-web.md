@@ -1,5 +1,93 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）
+
+Admin 新增 `GET/PATCH /api/admin/v1/activities/{id}/contribution-policy-selection`。GET 使用
+`activity.contribution-policy.read`，PATCH 使用独立的 `activity.contribution-policy.select`；两者均要求当前 ACTIVE Human、
+显式 scoped 授权及活动可见／可操作资格，`SUPER_ADMIN`、Service Principal、delegation 或角色名称都不直通。
+前端不能用 E1-2 的 GLOBAL 目录权限代替活动选择权限。
+
+PATCH 传 `operationKey`、`expectedRevision` 与增量 `changes`；活动根必须存在，岗位 `inherit` 表示在新修订中不再保留该覆盖，
+不是删除历史。`explicit` 必须提交完整 policy/version/hash/evaluator 指针。成功后应重新 GET 当前修订；同键同载荷重放返回原收据，
+不代表当前页面仍是该状态。`20247–20254` 依次覆盖选择形状、引用不可见、revision 过期、幂等冲突、收据失真、政策不可新选、
+无实际变化及 revision 上限，不能自动换 operationKey 绕过冲突。
+
+模板维护新增 schema V5，只在 V4 上增加闭合 `contributionPolicySelection`；发布审核详情可出现 proposal V9 的受控差异，
+不得展示政策定义全文或把 Readiness 通过解释为正式贡献已结算。本候选尚未合入或部署，生成 Admin client 仅用于联调；
+前端页面、角色授予、D8-OPS、正式贡献结算、Gate 和生产验收均未完成。
+
+## E1-2 贡献政策 System 目录（后端分支实现中，前端未发布）
+
+后端新增 `/api/system/v1/contribution-policies` 下 8 个 Human System 接口：政策列表／详情、版本列表／详情，
+以及创建政策、创建版本、激活和退役版本。生成的 System client 是唯一可调用入口；Admin/App/Auth/Open/Integration
+client 只因共享类型摘要刷新，不新增同类路由。前端接入前必须给当前 ACTIVE Human 用户显式授予 GLOBAL
+`contribution-policy.read.catalog` 或 `contribution-policy.manage.version`；两码互不蕴含、内建角色零默认授予，
+`SUPER_ADMIN` 也不直通，ServicePrincipal 不可使用。
+
+写响应是 8 字段命令收据，读面不返回 actor、operationKey、requestHash、原始 JSON 或审计元数据。列表分页默认 20、
+最大 100；版本详情才返回强类型 V1 definition。`20240` 表示政策或同政策版本不存在，`20242` 是并发锚已变化，
+`20243` 是版本状态不允许该操作，`20244` 是同操作键绑定了不同请求，`20245` 是既有收据锚失真。
+本刀只完成后端仓内能力；前端页面、角色授码、部署、E1-3 选择／发布冻结、账本消费与 Gate 均未完成。
+
+## D8 正式参与时长证明与官方汇总（D8-2 已合入 main，未部署）
+
+新增 `GET /api/admin/v1/members/{memberId}/participation-time-proof`，入参为 `dateFrom`、`dateTo`、`page`、
+`pageSize`。前端必须传入 ISO 日期，区间最多366天，每页1..100条。路由复用 `attendance.read.sheet`，
+但页面可见性和权限码不代表已可读目标成员；后端在 service 内对 member resource 做 scoped/GLOBAL 复核，
+撤权或目标不可见时须按错误处理，不得在前端降级为空证明。
+
+响应合计全部是整数秒：历史旧制度、志愿服务、培训、组织、不计入以及 eligible 分开返回。明细的
+`sourceCategoryCode=legacy_recognized_service` 是诚实历史标签，不是 `volunteer_service`。`proofSetHash`
+是整个查询区间的摘要，切页后仍相同；前端不得对当前页自行求哈希冒充完整证明。
+`isPubliclyVerifiable=false`，本期不得显示“公开验真”、法律证书或签章 PDF 文案。
+
+收据不存在时返回 `20235`，表示 D8 尚未正式切换，不是“无数据”；`20236` 是来源不完整或不一致，
+`20237` 是完整集合超上限，`20238` 是日期/分页范围无效。对 20235–20237 都不得改调旧 `participation-summary`
+伪造正式证明。
+
+D8-2 不新增路由或 DTO。receipt 存在后，以下既有读面中的 `totalServiceHours` 改为统一证明链的 eligible 秒数
+一次换算；逐活动和月度 `durationHistogram` 改为每个 `(activityId, memberId)` 计一次，精确秒边界为
+`[0,7200)`、`[7200,14400)`、`[14400,28800)`、`[28800,+∞)`：
+
+- `GET /api/admin/v1/members/{memberId}/participation-summary`
+- `GET /api/admin/v1/activities/{activityId}/reconciliation`
+- `GET /api/admin/v1/activities/{activityId}/participation-summary`
+- `GET /api/admin/v1/meta/participation-overview`
+
+报名、到场、no-show、反馈、贡献、活动/记录计数和原始 `participation-ledger` 保持现行来源；已有 closure
+不回写。receipt 不存在时上述接口保持旧口径。receipt 已存在而证明链损坏时后端 fail-closed，不允许前端回退
+旧小时数掩盖错误。D8-1／D8-2 已合入 main，生成的 Admin client 是当前仓库合同；前端页面、部署、Gate 和
+D8-OPS 均未因此完成。
+
+## D7-1 分类认定更正（分支验收中，未上线）
+
+新增查询只属于 Human App，路径及精确字段见[小程序交接](miniapp.md#d7-1-分类认定更正分支验收中未上线)。
+不新增 Admin 或 Integration 入口、权限码或内建角色默认授予。内部写链沿原 GLOBAL 结算终审资格，
+锁后重读身份，绑定成员失效拒绝；管理员身份不替代只读 App 准入。更正与旧贡献账本共享一次原子提交，
+不自动修改旧统计口径，不交付前端写页。当前仍在验收，不是生产或 Gate 授权。
+
+## D6 正式分类时长账本（实施验收中，未上线）
+
+本轮只新增 Human App 的明确修订账本读取，不新增 Admin 入口或默认角色授权。管理端身份不能绕过 App 当前准入、显式组织范围及该历史版本资格。仅 committed 账本可见，分类总秒数不等同于贡献积分或志愿服务时长；旧统计口径不自动切换。D7前分类更正拒绝，不能调用legacy更正入口代替。详细重试、错误和不可修改边界见[分类账本说明](../ops/activity-time-ledger.md)；前端页面与生产部署未在本轮实施。
+
+## D5 只读时长对账（本轮新增，未上线）
+
+新增入口只属于 Human App，不新增 Admin 权限或写命令。管理端不得借 Admin 身份绕过 App 当前身份、显式组织范围及负责人/实际审核资格。完整接口与人工留存边界见 [影子对账 SOP](../ops/activity-time-shadow-reconciliation.md)。本轮不交付前端页面，不代表生产可用。
+
+## D4 分类时长结算对接边界（本轮实施分支，未合并、未部署）
+
+大规模草稿生成仍沿既有 Human App 入口，不新增 Admin 任务入口或结果指针字段。响应 `outcome=job` 只代表任务受理；在有权 App 身份下查询既有任务状态，成功后刷新 `GET /api/app/v1/my/managed-activities/{activityId}/settlement`。任务 detail/items 不返回内部 `resultReference`，不得要求客户端从 payload、任务ID或内部数据库字段拼接结果引用。当前工作台可能已被后续操作推进，不等同于历史任务生成时的版本。
+
+具体轮询、失败重试与原执行身份边界见 [大规模草稿任务接线](miniapp.md#大规模草稿任务接线不新增接口字段)。管理端角色名称不代表 App 当前责任资格；不通过新增 Admin 旁路解决不可见，不把后台草稿成功显示成送审、终审或入账完成。
+
+D4 八个新增入口全部在 Human App managed activity 面，详见 [小程序 D4 任务图](miniapp.md#d4-分类时长结算工作台本轮实施分支未合并未部署)。Admin surface 没有新增同名接口，Admin client 仅刷新生成摘要，不能借管理员角色代替当前 App 成员和显式组织授权。
+
+审核工作台仍调用既有一审／终审命令，保留人员分离、状态与原有结果。若前端提供分类证据下钻，须在有权 App 身份下使用指定分类版本的桶／来源分页和认定详情；除了新 read 权限及组织范围，还须满足该活动、该结算版本的实际审核资格。角色名称、旧结算读权限或 prepare 权限本身都不隐含新 read 权限。
+
+回看历史版本时，不用最新版本的自审限制替代目标版本的资格判断；带封印草稿证明的认定也跟随其绑定版本。当前身份、组织范围和返回前复核照常执行，撤权即时拒绝。后端已在隔离库验证历史桶／来源／认定三条 HTTP 路径，前端不得据此绕过自己的当前身份接线或宣称已上线。
+
+历史桶不重算当前政策，列表不显示人工理由或附件地址。自动值 null 不能解释成 0；新分类提交的内容指纹包含冻结桶，旧提交仍保留 V1 语义。不新增时长账本、贡献分、证明或数据删除。后端分支实现及生成文件不是前端页面、PR 验证、生产部署或 Gate 启用的验收证据。
+
 > **D1-3 已合入 main、未部署（2026-09-11）**：[#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) 已合入 `60414050b99fe661afbf0c87669597ad081a3b43`，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) 通过。`GET/PATCH /api/admin/v1/activities/:id/time-policy-selection` 现为 main 的后端合同：读写仍要求显式时间政策权限及当前活动范围；PATCH 以 `expectedRevision` 生成完整不可变选择修订，不能用旧目录接口代替。前端本地联调以 main 的 OpenAPI / Admin client 为准；生产部署、Gate、整体跨模型复审及 D2–D8 尚未完成。
 
 > **D1-2 已合并并完成主干验证（2026-09-11）**：目录实施 [#1312](https://github.com/BA7IEE/srvf-nest-api/pull/1312) 合入 `c037073b`；合并后测试库初始化失败已由 [#1313](https://github.com/BA7IEE/srvf-nest-api/pull/1313) 修复，当前 main `ba100c1e` 的 [CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34498288827) 成功。修复保留全部断言，隔离顺序回归为旧测试 5/5、D1-2 并发 11/11；修复 PR 五个 E2E 分片均通过。154 模型、118 迁移、620 端点、260 权限、166 审计总计/161 活跃不变。此前“实施中/尚未合并/本分支待合并”均为历史时点，不再代表当前状态。维护者已确认 D1-3 精确计划方案 A，允许本轮八份文档补充 changelog、提交、推送和创建计划 PR；不合并、不实施；D1-3、D2–D8、生产和 Gate 未实施，整个 D1 尚未完成。

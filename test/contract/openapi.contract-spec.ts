@@ -45,6 +45,7 @@ interface OpenApiResponse {
 interface OpenApiOperation {
   operationId?: string;
   summary?: string;
+  tags?: string[];
   security?: Array<Record<string, unknown[]>>;
   responses?: Record<string, OpenApiResponse>;
   requestBody?: {
@@ -84,6 +85,46 @@ function documented4xxCodes(operation: OpenApiOperation | undefined): number[] {
 const EXPECTED_ROUTES: ReadonlyArray<
   readonly [Lowercase<'get' | 'post' | 'put' | 'patch' | 'delete'>, string]
 > = [
+  // D7-2: Human/App fact-correction lifecycle.  Submit/resubmit create a new
+  // immutable request; review/prepare/commit deliberately remain separate
+  // actions so a client cannot collapse the approval and posting boundaries.
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/time-corrections'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/review'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/resubmit'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/prepare'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-corrections/{requestId}/commit'],
+  // D4: explicit Human/App classified-settlement commands and bounded frozen read models.
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/time-settlement'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/sources'],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/allocations/{allocationRevisionId}',
+  ],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/buckets',
+  ],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/sources',
+  ],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/allocations'],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/shadow',
+  ],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/revisions/{timeRevisionId}/ledger',
+  ],
+  [
+    'get',
+    '/api/app/v1/my/managed-activities/{activityId}/time-settlement/versions/{settlementVersionId}/correction-ledger',
+  ],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/prepare'],
+  ['post', '/api/app/v1/my/managed-activities/{activityId}/time-settlement/submit'],
   // C3-1: separate immutable rule bindings and system candidate commands/read model.
   ['post', '/api/admin/v1/activity-metric-rule-bindings'],
   ['get', '/api/admin/v1/activity-metric-rule-bindings'],
@@ -103,6 +144,9 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['put', '/api/app/v1/my/managed-activities/{activityId}/metric-selection'],
   ['get', '/api/app/v1/my/managed-activities/{activityId}/time-policy-selection'],
   ['patch', '/api/app/v1/my/managed-activities/{activityId}/time-policy-selection'],
+  ['get', '/api/app/v1/my/managed-activities/contribution-policy-options'],
+  ['get', '/api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection'],
+  ['patch', '/api/app/v1/my/managed-activities/{activityId}/contribution-policy-selection'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcomes'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcome-confirmations'],
   ['post', '/api/app/v1/my/managed-activities/{activityId}/outcome-corrections'],
@@ -120,6 +164,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['put', '/api/admin/v1/activities/{id}/metric-selection'],
   ['get', '/api/admin/v1/activities/{id}/time-policy-selection'],
   ['patch', '/api/admin/v1/activities/{id}/time-policy-selection'],
+  ['get', '/api/admin/v1/activities/{id}/contribution-policy-selection'],
+  ['patch', '/api/admin/v1/activities/{id}/contribution-policy-selection'],
   ['get', '/api/admin/v1/activity-metric-definitions'],
   ['get', '/api/admin/v1/activity-time-policies'],
   ['get', '/api/admin/v1/activity-time-policies/{id}'],
@@ -477,6 +523,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/app/v1/my/participation-summary'],
   // 活动业务改造 v1.1 第 2 批第 ⑨b 刀：本人已生效账本；只经 LedgerQueryService 查询 committed 批次。
   ['get', '/api/app/v1/my/participation-ledger'],
+  // Activity OS R4 D8-1：本人正式时长证明；切换收据不存在时 fail-closed 503。
+  ['get', '/api/app/v1/my/participation-time-proof'],
 
   // 活动自助 GPS 签到 F2 + D-GPS fail-closed：canonical App self surface；当前 pass
   // registration 锚定，首次 POST 仅合法范围内位置写入，合法 winner 重试仍 200；GET 只读本人
@@ -498,7 +546,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
   // 行为契约沿 D-P2-7-15 + §11.1 锁定。
   ['get', '/api/app/v1/my/certificates'],
 
-  // System surface(Ops-* tag;57 路由):终态前缀 /api/system/v1/*
+  // System surface(Ops-* tag;65 路由):终态前缀 /api/system/v1/*
   // (Route B 终态;v2 老前缀已于 Phase 4 删除,沿 docs/api-surface-migration-plan.md §3.4)。
   ['get', '/api/system/v1/dict-types'],
   ['post', '/api/system/v1/dict-types'],
@@ -513,6 +561,14 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['patch', '/api/system/v1/dict-items/{id}'],
   ['patch', '/api/system/v1/dict-items/{id}/status'],
   ['delete', '/api/system/v1/dict-items/{id}'],
+  ['get', '/api/system/v1/contribution-policies'],
+  ['post', '/api/system/v1/contribution-policies'],
+  ['get', '/api/system/v1/contribution-policies/{id}'],
+  ['get', '/api/system/v1/contribution-policies/{id}/versions'],
+  ['post', '/api/system/v1/contribution-policies/{id}/versions'],
+  ['get', '/api/system/v1/contribution-policies/{id}/versions/{versionId}'],
+  ['post', '/api/system/v1/contribution-policies/{id}/versions/{versionId}/activate'],
+  ['post', '/api/system/v1/contribution-policies/{id}/versions/{versionId}/retire'],
   ['get', '/api/system/v1/contribution-rules'],
   ['post', '/api/system/v1/contribution-rules'],
   ['get', '/api/system/v1/contribution-rules/{id}'],
@@ -836,6 +892,8 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['get', '/api/admin/v1/members/{memberId}/participation-summary'],
   // 活动业务改造 v1.1 第 2 批第 ⑨b 刀：队员轴已生效账本。
   ['get', '/api/admin/v1/members/{memberId}/participation-ledger'],
+  // Activity OS R4 D8-1：队员轴正式时长证明，复用 attendance.read.sheet 访问面。
+  ['get', '/api/admin/v1/members/{memberId}/participation-time-proof'],
   ['post', '/api/admin/v1/attachments'],
   ['get', '/api/admin/v1/attachments'],
   ['post', '/api/admin/v1/attachments/upload-url'],
@@ -1147,7 +1205,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 625; // D1-3 +5 immutable activity time-policy selection routes
+const EXPECTED_ROUTE_COUNT = 658; // E1-3 contribution-policy activity selection +5.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',
@@ -2190,12 +2248,24 @@ describe('OpenAPI 契约快照', () => {
     expect(JSON.stringify(template)).not.toContain('Admin');
     expect(JSON.stringify(metric)).not.toContain('Admin');
   });
-  it('C1 D2b definition versions remain independent, with V3 adding only explicit metricSelection', () => {
+  it('definition versions remain independent through V5 additive policy selections', () => {
     const schemas = doc.components?.schemas ?? {};
     for (const [version, fields] of [
       [1, ['activity', 'sessions']],
       [2, ['activity', 'registrationForm', 'sessions']],
       [3, ['activity', 'metricSelection', 'registrationForm', 'sessions']],
+      [4, ['activity', 'metricSelection', 'registrationForm', 'sessions', 'timePolicySelection']],
+      [
+        5,
+        [
+          'activity',
+          'contributionPolicySelection',
+          'metricSelection',
+          'registrationForm',
+          'sessions',
+          'timePolicySelection',
+        ],
+      ],
     ] as const) {
       const schema = schemas[`AdminActivityTemplateDefinitionV${version}Dto`] as OpenApiSchema;
       expect(Object.keys(schema.properties ?? {}).sort()).toEqual(fields);
@@ -2203,7 +2273,7 @@ describe('OpenAPI 契约快照', () => {
     }
   });
 
-  it('C1 D2c metric input remains stable and D1-3 adds a paired time-policy change input', () => {
+  it('change review keeps metric input stable and pairs time/contribution policy revisions', () => {
     const schemas = doc.components?.schemas ?? {};
     const change = schemas.ChangeReviewDto as OpenApiSchema;
     const selection = schemas.AppActivityMetricSelectionInputDto as OpenApiSchema;
@@ -2215,6 +2285,8 @@ describe('OpenAPI 契约快照', () => {
     expect(Object.keys(change.properties ?? {}).sort()).toEqual([
       'activityPatch',
       'confirmation',
+      'contributionPolicySelectionChanges',
+      'expectedContributionPolicySelectionRevision',
       'expectedMetricSelectionRevision',
       'expectedTimePolicySelectionRevision',
       'metricSelection',
@@ -2254,6 +2326,20 @@ describe('OpenAPI 契约快照', () => {
     });
     expect(change.required).not.toEqual(
       expect.arrayContaining(['timePolicySelectionChanges', 'expectedTimePolicySelectionRevision']),
+    );
+    expect(change.properties?.contributionPolicySelectionChanges).toEqual(
+      expect.objectContaining({ type: 'array', minItems: 1, maxItems: 10001 }),
+    );
+    expect(change.properties?.expectedContributionPolicySelectionRevision).toMatchObject({
+      type: 'number',
+      minimum: 0,
+      maximum: 2147483647,
+    });
+    expect(change.required).not.toEqual(
+      expect.arrayContaining([
+        'contributionPolicySelectionChanges',
+        'expectedContributionPolicySelectionRevision',
+      ]),
     );
     expect(Object.keys(selection.properties ?? {}).sort()).toEqual([
       'metricRequirementCode',
@@ -3278,6 +3364,290 @@ describe('OpenAPI 契约快照', () => {
     const operation = doc.paths['/api/app/v1/my/managed-activities/outcome-reports/query'].post;
     expect(operation?.responses?.['200']).toBeDefined();
     expect(operation?.responses?.['201']).toBeUndefined();
+  });
+
+  it('D4 八个入口及 D5 对账、D6 账本、D7-1 更正查询仅属 Human App，三个显式写命令返回 200', () => {
+    const prefix = '/api/app/v1/my/managed-activities/{activityId}/time-settlement';
+    const routes = [
+      [prefix, 'get'],
+      [prefix + '/sources', 'get'],
+      [prefix + '/allocations/{allocationRevisionId}', 'get'],
+      [prefix + '/revisions/{timeRevisionId}/buckets', 'get'],
+      [prefix + '/revisions/{timeRevisionId}/sources', 'get'],
+      [prefix + '/revisions/{timeRevisionId}/shadow', 'get'],
+      [prefix + '/revisions/{timeRevisionId}/ledger', 'get'],
+      [prefix + '/versions/{settlementVersionId}/correction-ledger', 'get'],
+      [prefix + '/allocations', 'post'],
+      [prefix + '/prepare', 'post'],
+      [prefix + '/submit', 'post'],
+    ] as const;
+    expect(
+      Object.keys(doc.paths)
+        .filter((path) => path.includes('/time-settlement'))
+        .sort(),
+    ).toEqual(routes.map(([path]) => path).sort());
+    for (const [path, method] of routes) {
+      const operation = doc.paths[path][method];
+      expect(operation?.tags).toEqual(['Mobile - Managed Activity Time Settlement']);
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      expect(operation?.responses?.['200']).toBeDefined();
+      expect(operation?.responses?.['201']).toBeUndefined();
+      expect(operation?.responses?.['401']).toBeDefined();
+      expect(operation?.responses?.['403']).toBeDefined();
+      if (method === 'post') expect(operation?.responses?.['503']).toBeDefined();
+    }
+  });
+
+  it('D7-2 Human 事实更正严格保留提交、审核、准备、提交四个独立边界', () => {
+    const prefix = '/api/app/v1/my/managed-activities/{activityId}/time-corrections';
+    const routes = [
+      [prefix, 'post', '201'],
+      [prefix, 'get', '200'],
+      [prefix + '/{requestId}', 'get', '200'],
+      [prefix + '/{requestId}/review', 'post', '200'],
+      [prefix + '/{requestId}/resubmit', 'post', '201'],
+      [prefix + '/{requestId}/prepare', 'post', '200'],
+      [prefix + '/{requestId}/commit', 'post', '200'],
+    ] as const;
+    expect(
+      Object.keys(doc.paths)
+        .filter((path) => path.includes('/time-corrections'))
+        .sort(),
+    ).toEqual([...new Set(routes.map(([path]) => path))].sort());
+    for (const [path, method, success] of routes) {
+      const operation = doc.paths[path][method];
+      expect(operation?.tags).toEqual(['Mobile - Managed Activity Fact Corrections']);
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      expect(operation?.responses?.[success]).toBeDefined();
+      expect(operation?.responses?.['401']).toBeDefined();
+      expect(operation?.responses?.['403']).toBeDefined();
+      if (method === 'post') expect(operation?.responses?.['503']).toBeDefined();
+    }
+
+    const schemas = doc.components?.schemas ?? {};
+    const submit = schemas.AppSubmitActivityTimeCorrectionDto as OpenApiSchema;
+    expect(Object.keys(submit.properties ?? {}).sort()).toEqual([
+      'attachmentIds',
+      'operationKey',
+      'participationIdentityId',
+      'reason',
+      'requestTypeCode',
+      'requestedChangeJson',
+    ]);
+    expect(submit.required).toEqual([
+      'participationIdentityId',
+      'requestTypeCode',
+      'requestedChangeJson',
+      'reason',
+      'operationKey',
+    ]);
+    for (const forbidden of ['actorUserId', 'requestHash', 'trusted', 'calculatedSeconds']) {
+      expect(submit.properties).not.toHaveProperty(forbidden);
+    }
+
+    const prepare = schemas.AppPrepareActivityTimeCorrectionDto as OpenApiSchema;
+    expect(Object.keys(prepare.properties ?? {}).sort()).toEqual([
+      'expectedBaseSettlementVersionId',
+      'operationKey',
+    ]);
+    const commit = schemas.AppCommitActivityTimeCorrectionDto as OpenApiSchema;
+    expect(Object.keys(commit.properties ?? {}).sort()).toEqual([
+      'correctionApplicationId',
+      'expectedBaseSettlementVersionId',
+      'operationKey',
+      'postingBatchId',
+    ]);
+    const detail = schemas.AppActivityTimeCorrectionDetailDto as OpenApiSchema;
+    expect(detail.properties?.evidenceStatusCode.enum).toEqual(['not_frozen', 'frozen']);
+    expect(detail.properties?.sourceProofHash).toEqual({
+      type: 'object',
+      pattern: '^[0-9a-f]{64}$',
+      nullable: true,
+    });
+    for (const forbidden of ['actorUserId', 'preparedByUserId', 'signedUrl']) {
+      expect(detail.properties).not.toHaveProperty(forbidden);
+    }
+    const result = schemas.AppActivityTimeCorrectionCommitResultDto as OpenApiSchema;
+    expect(result.required).toEqual([
+      'requestId',
+      'applicationId',
+      'postingBatchId',
+      'settlementVersionId',
+      'settlementVersion',
+      'correctionStatus',
+      'applicationStatus',
+      'replayed',
+    ]);
+    expect(result.properties?.correctionStatus.enum).toEqual(['applied']);
+    expect(result.properties?.applicationStatus.enum).toEqual(['committed']);
+  });
+
+  it('D4 自动未知保持 nullable，原始毫秒是十进制字符串，分页不泄露理由', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const bucket = schemas.AppTimeSettlementBucketDto as OpenApiSchema;
+    expect(bucket.properties?.categoryCode.enum).toEqual([
+      'volunteer_service',
+      'training',
+      'organization',
+      'non_creditable',
+    ]);
+    expect(bucket.properties?.calculatedSeconds).toMatchObject({ type: 'number', nullable: true });
+    expect(bucket.properties?.emptyReasonCode).toMatchObject({
+      nullable: true,
+      enum: ['no_valid_segment'],
+    });
+    for (const name of ['AppTimeSettlementBucketDto', 'AppTimeSettlementBucketSourceDto']) {
+      const schema = schemas[name] as OpenApiSchema;
+      expect(schema.properties?.rawCalculatedMilliseconds).toEqual({
+        type: 'string',
+        nullable: true,
+        pattern: '^[0-9]+$',
+      });
+      expect(schema.properties?.rawRecognizedMilliseconds).toEqual({
+        type: 'string',
+        pattern: '^[0-9]+$',
+      });
+    }
+    for (const name of [
+      'AppTimeSettlementSourceDto',
+      'AppTimeSettlementBucketDto',
+      'AppTimeSettlementBucketSourceDto',
+      'AppTimeSettlementWorkbenchDto',
+    ]) {
+      const schema = schemas[name] as OpenApiSchema;
+      for (const field of [
+        'manualReason',
+        'adjustmentReason',
+        'phone',
+        'idCard',
+        'signedUrl',
+        'createdByUserId',
+        'actorUserId',
+      ]) {
+        expect(schema.properties).not.toHaveProperty(field);
+      }
+    }
+    const detail = schemas.AppTimeSettlementAllocationDetailDto as OpenApiSchema;
+    expect(detail.properties?.manualReason).toEqual({ type: 'string', nullable: true });
+    expect(detail.properties?.slices).toMatchObject({ maxItems: 500 });
+    expect(detail.properties?.evidence).toMatchObject({ maxItems: 500 });
+    expect((schemas.AppTimeSettlementEvidenceDto as OpenApiSchema).properties).toEqual({
+      attachmentId: { type: 'string' },
+      ordinal: { type: 'number' },
+    });
+  });
+
+  it('D4 人工输入只接收区间，不接收计算秒数；收据字段为安全闭集', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const inputSlice = schemas.AppTimeSettlementManualSliceDto as OpenApiSchema;
+    expect(Object.keys(inputSlice.properties ?? {}).sort()).toEqual([
+      'categoryCode',
+      'endAt',
+      'startAt',
+    ]);
+    const outputSlice = schemas.AppTimeSettlementSliceDto as OpenApiSchema;
+    expect(Object.keys(outputSlice.properties ?? {}).sort()).toEqual([
+      'categoryCode',
+      'endAt',
+      'intervalKindCode',
+      'startAt',
+    ]);
+    const recognize = schemas.AppRecognizeTimeSettlementDto as OpenApiSchema;
+    expect(recognize.properties?.slices).toMatchObject({
+      items: { $ref: '#/components/schemas/AppTimeSettlementManualSliceDto' },
+      minItems: 1,
+      maxItems: 500,
+    });
+    expect(recognize.properties?.evidenceAttachmentIds).toMatchObject({ maxItems: 500 });
+    expect(recognize.properties?.manualReason).toMatchObject({ minLength: 1, maxLength: 1024 });
+    expect(
+      Object.keys((schemas.AppPrepareTimeSettlementDto as OpenApiSchema).properties ?? {}).sort(),
+    ).toEqual([
+      'expectedDraftVersion',
+      'expectedEvidenceSealId',
+      'expectedTimeRevision',
+      'operationKey',
+    ]);
+    expect(
+      Object.keys((schemas.AppSubmitTimeSettlementDto as OpenApiSchema).properties ?? {}).sort(),
+    ).toEqual([
+      'expectedBucketContentHash',
+      'expectedDraftVersion',
+      'expectedEvidenceSealId',
+      'operationKey',
+      'timeRevisionId',
+    ]);
+    expect(
+      Object.keys((schemas.AppTimeSettlementResultDto as OpenApiSchema).properties ?? {}).sort(),
+    ).toEqual([
+      'activityId',
+      'bucketContentHash',
+      'bucketCount',
+      'contentHash',
+      'createdAt',
+      'kindCode',
+      'revision',
+      'schemaVersion',
+      'settlementRunId',
+      'settlementVersion',
+      'settlementVersionId',
+      'sourceCount',
+      'timeRevisionId',
+    ]);
+    expect(
+      Object.keys(
+        (schemas.AppTimeSettlementAllocationResultDto as OpenApiSchema).properties ?? {},
+      ).sort(),
+    ).toEqual([
+      'activityId',
+      'allocationHash',
+      'allocationRevisionId',
+      'createdAt',
+      'evidenceCount',
+      'recognitionModeCode',
+      'revision',
+      'schemaVersion',
+      'sliceCount',
+      'sourceSegmentId',
+      'sourceSegmentRevision',
+    ]);
+  });
+
+  it('D5 报告严格区分未知与零，完整摘要和分页同在只读响应内', () => {
+    const schemas = doc.components?.schemas ?? {};
+    const row = schemas.AppTimeShadowItemDto as OpenApiSchema;
+    expect(row.properties?.status.enum).toEqual(['matched', 'different', 'not_comparable']);
+    for (const key of [
+      'legacyCalculatedSeconds',
+      'legacyRecognizedSeconds',
+      'calculatedDifferenceSeconds',
+      'recognizedDifferenceSeconds',
+    ]) {
+      expect(row.properties?.[key]).toMatchObject({ type: 'number', nullable: true });
+    }
+    expect(Object.keys(row.properties ?? {}).sort()).toEqual(
+      [
+        'participationIdentityId',
+        'status',
+        'reasons',
+        'legacyCalculatedSeconds',
+        'legacyRecognizedSeconds',
+        'calculatedDifferenceSeconds',
+        'recognizedDifferenceSeconds',
+        'categories',
+      ].sort(),
+    );
+    const report = schemas.AppTimeShadowReportDto as OpenApiSchema;
+    expect(report.properties?.resultPage).toBeDefined();
+    expect(report.properties?.summary).toBeDefined();
+    expect(report.properties?.inputFingerprint).toMatchObject({ type: 'string' });
+    const page = schemas.AppTimeShadowPageDto as OpenApiSchema;
+    expect(Object.keys(page.properties ?? {}).sort()).toEqual([
+      'items',
+      'page',
+      'pageSize',
+      'total',
+    ]);
   });
 
   it('paths 段快照(锁定每个 operation 的响应结构)', () => {

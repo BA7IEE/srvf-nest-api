@@ -105,6 +105,8 @@ function makeHarness(enabled = true, controlMode: ActivityControlPlaneMode = 'ac
     undefined!,
     undefined!, // Legacy fixtures carry no D1-3 time-policy selection input.
     undefined!,
+    undefined!, // Legacy fixtures carry no E1-3 contribution-policy selection input.
+    undefined!,
   );
   const invoke = (mode: keyof typeof commands, user = actor) => {
     if (mode === 'quick') return service.createQuick(commands.quick, user, auditMeta);

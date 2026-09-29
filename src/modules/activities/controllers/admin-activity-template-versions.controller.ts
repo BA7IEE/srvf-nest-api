@@ -62,7 +62,7 @@ export class AdminActivityTemplateVersionsController {
   @Post()
   @RequiresPermission('activity-template.manage.version', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
-    summary: '新建全局模板 V3/V4 或从精确版本复制 [rbac: activity-template.manage.version]',
+    summary: '新建全局模板 V3/V4/V5 或从精确版本复制 [rbac: activity-template.manage.version]',
   })
   @ApiWrappedCreatedResponse(AdminActivityTemplateVersionCommandResultDto)
   @ApiBizErrorResponse(
@@ -77,6 +77,7 @@ export class AdminActivityTemplateVersionsController {
     BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE,
     BizCode.ACTIVITY_METRIC_RECEIPT_INVALID,
     BizCode.ACTIVITY_TIME_POLICY_SELECTION_POLICY_UNAVAILABLE,
+    BizCode.ACTIVITY_CONTRIBUTION_POLICY_SELECTION_POLICY_UNAVAILABLE,
     BizCode.ACTIVITY_TYPE_CODE_INVALID,
   )
   create(
@@ -88,7 +89,9 @@ export class AdminActivityTemplateVersionsController {
   }
   @Put(':id/draft')
   @RequiresPermission('activity-template.manage.version', { require: 'all', engine: 'rbac-global' })
-  @ApiOperation({ summary: '整份更新 draft V3/V4 定义 [rbac: activity-template.manage.version]' })
+  @ApiOperation({
+    summary: '整份更新 draft V3/V4/V5 定义 [rbac: activity-template.manage.version]',
+  })
   @ApiWrappedOkResponse(AdminActivityTemplateVersionCommandResultDto)
   @ApiBizErrorResponse(
     BizCode.BAD_REQUEST,
@@ -102,6 +105,7 @@ export class AdminActivityTemplateVersionsController {
     BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE,
     BizCode.ACTIVITY_METRIC_RECEIPT_INVALID,
     BizCode.ACTIVITY_TIME_POLICY_SELECTION_POLICY_UNAVAILABLE,
+    BizCode.ACTIVITY_CONTRIBUTION_POLICY_SELECTION_POLICY_UNAVAILABLE,
     BizCode.ACTIVITY_TYPE_CODE_INVALID,
   )
   update(
@@ -129,6 +133,7 @@ export class AdminActivityTemplateVersionsController {
     BizCode.ACTIVITY_METRIC_REFERENCE_UNAVAILABLE,
     BizCode.ACTIVITY_METRIC_RECEIPT_INVALID,
     BizCode.ACTIVITY_TIME_POLICY_SELECTION_POLICY_UNAVAILABLE,
+    BizCode.ACTIVITY_CONTRIBUTION_POLICY_SELECTION_POLICY_UNAVAILABLE,
     BizCode.ACTIVITY_TYPE_CODE_INVALID,
   )
   activate(
@@ -143,7 +148,7 @@ export class AdminActivityTemplateVersionsController {
   @HttpCode(200)
   @RequiresPermission('activity-template.manage.version', { require: 'all', engine: 'rbac-global' })
   @ApiOperation({
-    summary: '退役 active V3/V4，保留历史引用 [rbac: activity-template.manage.version]',
+    summary: '退役 active V3/V4/V5，保留历史引用 [rbac: activity-template.manage.version]',
   })
   @ApiWrappedOkResponse(AdminActivityTemplateVersionCommandResultDto)
   @ApiBizErrorResponse(

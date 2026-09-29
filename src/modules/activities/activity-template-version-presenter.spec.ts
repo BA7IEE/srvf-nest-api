@@ -153,7 +153,7 @@ describe('C1 D2b template presenter and independent historical parsers', () => {
 
   it('rejects an unsupported schema even when its canonical hash is valid', () => {
     const { row, definition } = fixture(3);
-    row.schemaVersion = 5;
+    row.schemaVersion = 6;
     row.definitionHash = fingerprintActivityTemplateDefinition({
       schemaVersion: row.schemaVersion,
       definition,

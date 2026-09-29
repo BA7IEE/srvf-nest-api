@@ -1,6 +1,86 @@
 # prisma — 本地铁律
 
-当前 D3 实施分支有 **120 个 migration**、161 个模型。D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。 第 120 条 SQL 仅 expand，含前后 revision 的 activity/session/member 复合锚；零历史数据 DML、零业务数据删除。下方 119 及更早条目保留历史时点。
+> **E3-2 D1 本地实施中（2026-09-28，未提交）**：当前工作树候选为 133 个 migration、188 个模型；
+> 第 133 条 `20260928095832_activity_os_r5_e3_shadow_evidence` 只新增五张不可变 shadow 证据表、
+> 三个既有表复合唯一 FK 靶点和同链／窗口／终态守卫。仅 `app_test_w98` 已完成从空库 133 条冷回放，
+> 定向正反例仍在补齐；SQL 尚未获 3b 重签，不可提交、部署或用于生产。无旧业务行 DML、回填、
+> 删除、seed、权限、审计事件、API 或 Gate 变更；31 类真实映射继续 `hold`。下方 E2 段落是已合入
+> main 的上一个正式时点，不代表第 133 条已签收。
+
+> **E2 第一层隔离能力已合入 main（2026-09-27，[#1356](https://github.com/BA7IEE/srvf-nest-api/pull/1356)）**：
+> 当前 132 个 migration、183 个模型；第 132 条
+> `20260924180000_activity_os_r5_e2_contribution_rule_conversion` 已新增不可变来源收据
+> `ContributionRuleConversionReceipt`、复合目标版本锚、唯一键与测试夹具清理闭包。
+> 不修改旧 `ContributionRule` 列，不含历史 DML、回填或删除。第 132 条 SQL 已按
+> [`CUTOVER_SIGNOFF`](../docs/ai-harness/CUTOVER_SIGNOFF.md) 重签 3b；4b 为权限码 269、审计
+> 174 总计／169 活跃。31 个真实活动类型仍全部 hold，只验证 `e2_fixture_*` 合成来源；
+> 未转换真实业务数据，未操作生产或启用 Gate。下方 E1-3“当前工作树”均为历史时点。
+
+> **E1-3 implementation 当前工作树（2026-09-24，未提交、未建 PR）**：现为 **131 个 migration、182 个模型**。
+> 第131条 `20260923190000_activity_os_r5_e1_3_contribution_policy_selection` 只新增不可变选择 revision、item、
+> command receipt 三表，向 Activity／发布快照增加可空同活动指针，并补复合外键、完整性、当前指针、收据结果及
+> 不可改删守卫；模板命令收据只扩展接受 schemaVersion 5。零 DML、回填、删除或旧 migration 修改；三张新表和
+> 历史选择永久留存。最终 SQL SHA-256 `11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5`
+> 的 3b 已重签；获准 `app_test_w98` 的131条冷回放、130→131非空升级及数据库正反例已通过。
+> 4b 已按269权限、173/168审计、30/277字典、seed摘要 `d2f330814b0a` 及权限目录摘要
+> `7685760467fbe0c06640c58805f8c15ef917b38f0edc7800abc21b2b17614203` 重签；本地最终门禁已通过，
+> Draft PR CI 尚未运行。未操作生产、启用 Gate、转换旧 `ContributionRule`、接正式贡献结算或删除／重算数据。
+
+> **E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：当前仍为 **130 个 migration、179 个模型**；第 130 条
+> `20260922194000_activity_os_r5_e1_contribution_policy_foundation` 只新增稳定政策、不可变版本与命令收据三表及
+> 对应约束／守卫，纯 additive，零 DML、回填、删除或旧表修改。版本固定
+> `(id, policyId, definitionHash, evaluatorVersion)` 精确锚，只允许 draft→active→retired；三表永久保留，禁止业务
+> UPDATE／DELETE／TRUNCATE。SQL 完整摘要
+> `a2447e373d8bc08ae58346574fabe0e88b4c25bc919eab7a2c8dd2fed758bb00` 的 3b 已重签；实现随
+> [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 合入 `48596844`，
+> [main CI 35822456365](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35822456365) 成功。E1-2 复用三表，
+> **不改 schema/migration**，只为 System 目录控制面新增两项零默认授予权限与两类审计；最终读数为
+> 267 权限／172 AuditLogEvent；4b 已按 seed 摘要 `9a62f918affc` 与权限目录摘要
+> `d2f4b3e450e7c750c0bc2b9375a6fcfb29fb9c93f3a0e6c57ac190d09f120314` 重签。最终 head
+> `0cc3938ce2471f1e56571f728f651e53d8566e88` 已随
+> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 合入 `09e7101f51d5a00e63bbdb8210cf00815563e12a`；
+> [main CI 35854133319](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35854133319) 同 SHA attempt 2 全绿。
+> E1-3 计划候选会新增第 131 条 additive migration 和三张永久选择事实表，但本轮只写计划，**未改 schema/migration、
+> 未操作数据库**。仍未接旧贡献规则、正式账本、Gate、D8-OPS 或生产，不删除或重算任何业务数据。下文 D8/D7-2
+> 描述保留为历史时点。
+
+> **D8-1 当前实施工作树（2026-09-21，未提交、未合并、未部署）**：当前累计 **129 个 migration、176 个模型**；第129条
+> `20260921180000_activity_os_r4_d8_proof_cutover` 只新增不可变单例切换收据和切换后根账绑定两表，
+> 以同一 PostgreSQL advisory shared/exclusive 事务锁线性化普通账本提交与切换。旧根账不回填、
+> 不重分类，correction 继承根账制度；切换后普通 committed batch 必须由数据库触发器同事务生成完整
+> binding，缺根清单或锚点不一致即 fail-closed 回滚。两表禁止 UPDATE、DELETE、TRUNCATE，不改旧
+> 128条 SQL，不删除、回填或重解释业务数据。`app_test_w98` 已通过 129 条冷回放、128→129 非空升级、
+> 不可变/锚点反例和两种真并发顺序。3b 尚待维护者按最终 SQL SHA-256 重签；签字不代替 PR CI、
+> 合并或 D8-OPS 生产切换授权。下文 D7-2 描述保留为历史时点。
+
+当前 D7-2 事实更正实现工作树为 **128 个 migration、174 个模型**。第123条仍为
+`20260915120000_activity_os_r4_d7_time_correction`，第124条
+`20260915170000_activity_os_r4_d7_pairing_index_probe` 保留 D7-1 的等价 SQL 修复；第125条
+`20260915180000_activity_os_r4_d7_2_fact_correction` 只追加四张永久事实表、既有表的可空证明字段与
+同链完整性约束，旧124条 SQL 不改、无存量回填或业务数据删除。第126条
+`20260917194000_activity_os_r4_d7_2_binding_guard_set` 只将 D7-2 的 `ctab_insert_guard` 改为
+插入语句级集合守护：同一证明、申请、请求、批次、分配和待物化链仍逐项锁定并 fail-closed，
+`ctsp_assert_complete` 的完整来源集合校验不变；不新增表、列、权限、DML、回填或业务数据删除。
+D7-2 第126条的 3b 已由维护者按实际 SQL 摘要重签。新增第127条
+`20260920090000_activity_os_r4_d7_2_allocation_guard_set` 仅把 correction allocation 从
+`ptar_parent_anchor_guard` 的逐行分支换成 AFTER INSERT 语句级集合守护；D3/D4 路径及
+`ptar_receipt_guard` 不变，待物化分配、申请、请求、批次、目标段、基础分配和政策仍锁定并
+fail-closed；当前 SQL 仅把五次重复 immutable-chain 拒绝查询收敛为一次集合聚合，以去重输入维持
+原四段锁序及拒绝优先级，不新增表、列、权限、DML、回填或业务数据删除。第127条的实际 SQL 摘要
+`d76418fb2b837a6ff264c4d061b43e7c0b476d3b71b238480b2ce67a8aeaf51d` 已获3b重签；随后仅在
+app*test_w98 通过第127条冷回放、126→127 非空升级及完整D7-2 E2E 7/7。新增第128条
+`20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set` 仅将已识别 correction
+receipt 从 `ptar_receipt_guard` 的逐行 immutable-proof 分支迁到 AFTER INSERT 语句级集合守护；
+D3/D4 与错误操作码继续走原行守卫。父行、子项、完整证明、既有锁序、拒绝优先级和7秒预算保持
+fail-closed；不新增表、列、权限、DML、回填或业务数据删除。受控 app_test_w98 已通过第128条冷
+回放、127→128 非空升级、单身份链与2,000身份 Human V3 链；`pnpm test:contract` 另在本工作树
+受控 `app_test*\*` 测试库应用第128条并通过1,072项契约（非生产库）。实际 SQL 摘要仍待维护者第128条3b
+重签，签字前不更新签字登记或推送。13份其他固定 scratch 测试留 PR CI 冷跑；#1337 保持 Draft，
+未 Ready、合并、部署或启用 Gate；下方保留历史时点。
+
+## D4 历史实施记录（不是当前待办或计数）
+
+当前 D4 实施分支有 **121 个 migration**、165 个模型，起点 main `eef0bbe4` 已含 D3/#1323；本轮未提交、未合并。第 121 条 `20260913090000_activity_os_r4_d4_time_bucket_settlement` 新增分类修订、桶、来源及命令收据四张不可变表，并为 D3 认定增加六个可空草稿证明字段；零存量回填、零业务数据删除、旧 120 条 SQL 不改。四表 Restrict 同链外键及完整性触发器独立验证证明、聚合、指纹、数量、收据和不可变性；旧 D3 行六字段全空，原 committed-only 合同保留。本轮已在 app_test_w98 验证空库 121 条校验和及非空 120→121 升级，旧认定、切片、收据和参与段保持不变；完整验证与查询预算尚未通过，3b/4b 待维护者重签。仅授权 w98 测试夹具重建及验证后提交、推送、开 PR；不合并、不操作生产、不启用 Gate、不删除业务数据。下方内容保留为历史时点。
 
 > **D1-1 已落地（2026-09-10）**：[#1310](https://github.com/BA7IEE/srvf-nest-api/pull/1310) 已合并至 main `04699ace`，18项PR检查通过，[合并后main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34474531083)通过。实际39路径，154模型/118迁移；第118条SQL的3b已重签。TimePolicy、TimePolicyVersion、TimePolicyCommandReceipt及纯解析/生命周期已落地，尚无目录HTTP入口。维护者现授权D1-1台账更正及D1-2精确计划起草，仅文档、不实施；整个D1仍未完成，D1-3选择/发布冻结及D2–D8仍待后续。未操作生产、启用Gate或删除业务数据。下方过程记录保留为历史，不代表当前待合并状态。
 

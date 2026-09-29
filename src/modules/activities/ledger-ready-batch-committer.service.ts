@@ -24,6 +24,14 @@ export class LedgerReadyBatchCommitter {
       select: { settlementVersionId: true },
     });
     if (batch === null) throw new BizException(BizCode.LEDGER_COMMIT_BATCH_STATUS_INVALID);
+    const correction = await this.prisma.correctionApplication.findFirst({
+      where: {
+        newPostingBatchId: postingBatchId,
+        correctionRequest: { requestedChangeJson: { path: ['schemaVersion'], equals: 2 } },
+      },
+      select: { id: true },
+    });
+    if (correction) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_CORRECTION_UNAVAILABLE);
 
     const decision = await this.prisma.settlementReviewAction.findFirst({
       where: {

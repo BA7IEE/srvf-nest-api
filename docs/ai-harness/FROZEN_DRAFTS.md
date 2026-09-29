@@ -1,6 +1,141 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
-> **D3 implementation（2026-09-12）**：D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。
+> **Release 5 / E3-2 D1 仓内已合入并通过主干 CI（2026-09-29）**：维护者批准的
+> [#1366](https://github.com/BA7IEE/srvf-nest-api/pull/1366) 已 Squash 合入 main
+> `de9575ea2ffb1ef6b123a734ad41dc4895c3dfd1`；[同 SHA main CI 36519673719](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36519673719)
+> completed/success，五个 Contract + E2E 分片均通过。该 PR 仅交付五张不可变证据空表、
+> 第 133 条 migration 和附件夹具兼容修复；`app_test_w98` 空库冷回放、132→133 非空升级及定向验证已完成。
+> 第 133 条 SQL 摘要 `8f615e62a20a2207a9c0e2315f46e3a25bccff703b9bffae00857c41d02bff2b`
+> 已获维护者 3b 重签。D1 **未部署**；D2 写者、D3 Human 读面、31 类真实映射、真实数据盘点、
+> 生产部署与 Gate 均未授权或未完成。本轮只更正台账并起草 D2 精确计划，不实施 D2。
+> 下方“E3-2 实施未授权”是上一设计阶段的历史状态。
+
+> **Release 5 / E3-2 设计已合入、实施未授权（2026-09-27）**：[#1361](https://github.com/BA7IEE/srvf-nest-api/pull/1361)、[#1362](https://github.com/BA7IEE/srvf-nest-api/pull/1362) 已合入 main `318f493290de34e818341dbbdc303e3129e39ad8`；[main CI 36313672482](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36313672482) 同 SHA completed/success（docs-only，行为测试未运行）。既有审计仅作保守定位，独立不可变收据才作证据；旧事务先提交，收据后写，缺口人工核对；资格锚点采用受控窗口内成功旧写的保守候选集合，不改变审计 `extra`。本轮只补精确计划，未建表、未接 shadow、未查真实业务库；31 类真实映射全部 `hold`，生产与 Gate 仍 NO-GO。下方 E3-1 顶部记录为其当时状态。
+
+> **Release 5 / E3-1 离线比较合同已合入，E3-2 仅起草评审（2026-09-27）**：[#1358](https://github.com/BA7IEE/srvf-nest-api/pull/1358)
+> Squash 合入 `c0f9f07548a018ee039610212d310a39ca884541`；
+> [main CI 36295160818](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36295160818) 同 SHA attempt 2
+> completed/success。首次运行 D4 旧迁移夹具遇隔离库连接守卫，单次授权重跑通过；根因未修。
+> 纯比较器和固定夹具只能证明离线分类能力，不能证明真实类型映射或真实差异归零。31 个真实类型仍全部
+> `hold`；E3-2 运行时 shadow、不可变证据与访问面未获实施授权，E4–E5、整体跨模型复审、前端发布、
+> 生产部署和 Gate 均未完成。下方 E2“本轮仅起草 E3”是当时记录，不代表当前交付边界。
+
+> **Release 5 / E2 第一层隔离能力仓内验收完成（2026-09-27）**：[#1356](https://github.com/BA7IEE/srvf-nest-api/pull/1356)
+> 已 Squash 合入 main `5510c43cefbe4f5e6f2fda506355c04a83efd975`；
+> [main CI 36260037114](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36260037114) completed/success，
+> 五组 Contract + E2E 全部通过。下方 E2“实施中／未提交／未开 PR／CI 尚未发生”均为历史时点。
+> 第 132 条 migration 与固定 `e2_fixture_*` 的收据、提交及重放已交付，但 31 个真实目录类型仍全部
+> `hold`；真实目标未确定，旧规则未盘点或转换，业务映射未逐项签字。E3–E5、整体跨模型复审、前端发布、
+> 生产部署及 Gate 均未完成。本轮仅起草 [E3 评审稿](../plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md)，
+> 不实施、不查库、不操作生产或真实数据。
+
+> **E2 第一层隔离能力实施中（2026-09-27，本工作树，未提交）**：#1355 纯转换器已合入
+> main；维护者随后批准 #1352 第 8–11 节的 41 路径上限、`w98` 隔离验证和 Draft PR。
+> 新收据、第 132 条候选 migration、固定夹具提交／重放与审计正在实现；31 个真实目录类型
+> 全部 hold，不查或转换真实业务数据。3b／4b 已按第 132 条与审计 174／169 登记，`w98`
+> 冷回放／非空升级 2/2、固定夹具转换 2/2 已通过；属主查询修复保留原结构断言，
+> 全量单测 425 套、9060 条通过（5 条历史 todo），`ROUTE_AUTHZ.md` 派生摘要已按授权刷新。
+> PR CI 尚未发生。不 Ready、不合并、不操作生产、不启用 Gate。下方“E2 未实施”为历史时点。
+
+> **Release 5 / E2 仍处评审与计划阶段（2026-09-25 核对）**：[#1350](https://github.com/BA7IEE/srvf-nest-api/pull/1350)
+> 评审、[#1351](https://github.com/BA7IEE/srvf-nest-api/pull/1351) 13 组／31 类映射及
+> [#1352](https://github.com/BA7IEE/srvf-nest-api/pull/1352) 精确计划已合入 main；#1352 的 Squash 提交
+> `873c873bd14891a6ca7468a455d763d9c6295879` 对应
+> [main CI 36015416210](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36015416210) completed/success。
+> docs-only 检查跳过 Contract + E2E／Golden journeys，不代表转换验收。下方 E1-3 段落的“当前仅起草
+> E2 评审”是历史时点；E2 的候选收据模型、迁移与 41 路径均未实施，真实旧规则未盘点，逐类型映射待签字。
+> 维护者确认系统尚未上线；不预设生产数据库目标，也不以测试库代替真实存量。未部署、未操作生产、未启用 Gate，
+> 旧规则及业务证据不删除、不重算。
+
+> **Release 5 / E1-3 仓内交付已完成（2026-09-24）**：[#1349](https://github.com/BA7IEE/srvf-nest-api/pull/1349)
+> 已 Squash 合入 main `279ed416800a778023a84edfaa640bf0d47092ff`；[main CI 35964179524](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35964179524)
+> 在该 SHA 上 completed/success，五组 Contract + E2E 均通过。下方本地候选与待 PR 记载仅为历史时点。
+> 已按维护者确认的
+> 方案 A 与 137 路径上限实现模板／活动／岗位三层贡献政策选择、Template V5、Proposal V9、发布批准冻结和
+> Readiness。E1-3 仓内读数为 43 module／127 controller／658 endpoint／131 migration／182 model／
+> 581 BizCode／269 permission／173 AuditLogEvent（168 active）。第131条 migration 为纯 additive，零 DML、
+> 回填或删除；SQL 摘要 `11b29ca8b2cf98afe525707532741688df94509883b04662a5284ab53a411de5`
+> 的 3b 已由维护者重签。`app_test_w98` 已通过131条冷回放、130→131非空升级、新增数据库负例及六份功能
+> E2E；OpenAPI contract 1,087项／2快照通过。4b 已按269权限、173/168审计、30/277字典及实际摘要重签；
+> lint／typecheck／build、Harness selftest/replay、边界与全部派生文档检查均通过。137路径上限内实际改动129路径、
+> 清单外0，8个候选零diff未伪造；三份既有兼容E2E在逐套重建w98后58/58通过。当前仅起草
+> [E2 评审与授权清单](../plans/activity-os-r5-e2-legacy-contribution-rule-conversion-review-and-plan.md)；E2 不继承 E1-3 实施授权。
+> 未部署、操作生产、启用 Gate、执行 D8-OPS、转换旧
+> `ContributionRule`、接正式贡献结算或删除／重算业务数据。
+
+> **Release 5 / E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：E1-2 最终 head
+> `0cc3938ce2471f1e56571f728f651e53d8566e88` 的全部 PR 检查成功，已随
+> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) squash 合入
+> `09e7101f51d5a00e63bbdb8210cf00815563e12a`。合并后
+> [main CI 35854133319](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35854133319) 首轮仅
+> Contract + E2E (3) 失败；不改代码、不改超时的同 SHA attempt 2 已 completed/success，五个 Contract + E2E
+> 分片及聚合全部成功。当前事实为 43 module／125 controller／653 endpoint／130 migration／179 model／
+> 573 BizCode／267 permission／172 AuditLogEvent（167 active）。E1-2 的 8 个 Human System 目录接口、两项显式
+> GLOBAL Human 权限、两类闭合审计与四类命令收据已进入 main，但仍未部署。当前只按
+> [E1 评审稿](../plans/activity-os-r5-e1-contribution-policy-review-and-plan.md)起草 E1-3 模板／活动／岗位三层选择、
+> 发布冻结及 137 路径实施上限；本轮不实施 E1-3，不操作数据库，不启用 Gate。
+> E2–E5、D8-OPS、前端发布、生产部署、历史转换、删除或重算仍未实施或授权。
+
+> **D8-1／D8-2 仓库交付已完成，D8-OPS 仅起草评审（2026-09-22）**：D8-1
+> [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 已合入 `65b26523393bb08c68d727852608432af58a5360`，
+> [main CI 35676480448](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35676480448) 成功。D8-2
+> [#1342](https://github.com/BA7IEE/srvf-nest-api/pull/1342) 最终 head `b768edfc5234e3e196370202e3e738d398baf63e`
+> 的 [PR CI 35699808977](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35699808977) 与
+> [可信红区 35701772130](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701772130) 成功，已 squash 合入
+> `802a636a19575c3e64016a56c469aed12b2d5035`；合并后
+> [main CI 35701932991](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35701932991) completed/success，五个
+> Contract + E2E 分片均成功。最终32路径授权上限内实际变更24路径、零越界。当前
+> `repositoryReady=yes`，但 exact deployed SHA／fleet 同版、v1.1 独立稳定窗、证据包、只读窗、worker 排空、
+> actor 与不可逆执行授权均未提供，所以部署未证明、运维未就绪、执行未授权。本轮在
+> [D8 评审稿](../plans/activity-os-r4-d8-proof-cutover-review-and-plan.md) 第17.1节登记的十份文档中更正合并状态并
+> 起草两阶段现场授权清单；不实施、不操作数据库、不启用 Gate。D8-OPS、前端、真实业务验收、外部端回执与
+> 整体跨模型复审未完成。
+
+> **历史过程记录：D8-1 Draft #1341 第二轮 CI 兼容修复已完成本地验证（2026-09-22）**：方案 A 的原87个去重路径、后续两份治理登记及两份旧夹具兼容扩写均获维护者确认，最终精确上限为91路径，
+> 第129条 migration、不可逆 cutover 收据/根账 binding、统一真相选择器、CLI 与 App/Admin 正式证明已实现。
+> w98 的冷回放、非空升级、真并发和真实 HTTP 链9项已通过；新增单测41项、定向 contract 1,074项通过。
+> 1／100／2,000身份及10,000行保持5条业务SQL，10,001行具名拒绝。全仓405/405套、8,810项单测
+> （5项既有todo）、build、CI同口径lint及w98最终9/9通过；cutover结果字段与北京日拆分两项架构偏差
+> 已在原写集内修复。`domain-map` 已仅补两个新模型属主并刷新摘要，`state-machines` 已仅刷新 schema
+> 输入摘要，没有新增状态机或生命周期；3b/4b 已按第129条及实际权限／审计／字典读数重签。最终 Harness、build、lint、
+> 派生文档检查通过，当前实际88路径零越界。Draft [#1341](https://github.com/BA7IEE/srvf-nest-api/pull/1341) 的 `0913cad9` 第二轮冷跑已通过可信红区、Fast checks、Docker、Harness、Golden journeys及E2E第1／4／5组；第2／3组只留下两份旧夹具未把D8新表放进同一条`TRUNCATE`的确定性失败，以及8192人规模用例一次12.288秒超时。两份夹具已按扩写授权修复，本工作树隔离库2/2 suites、35/35 tests通过；规模用例首轮同一D8实现2.646秒通过、本地原样复现1.039秒通过，故不改7秒预算或生产代码，交新SHA冷跑复核。第129条SQL及3b摘要不变；当前只待提交推送更新Draft及PR CI，不 Ready、不合并。D8-2、整体跨模型复审、真实业务验收、前端发布、生产部署、v1.1 Gate 与
+> D8-OPS 切换未完成；不 Ready、不合并、不操作生产、不删除或重分类业务数据，T0 保持 open。
+
+> **#1339 E2E 第4组夹具事务全量闭合已完成本地验证（2026-09-21）**：`e85e6edddfea004c52a3efb3597ab130642a9530` 的 [PR CI 35579292574](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35579292574) 中，D7 所在第5组成功；第4组两次均在35分钟 job 上限被取消。首次冷跑命中7份旧 E2E，获准的同 SHA attempt 2 有60份 suite通过、6份失败，失败均发生在业务断言前的 `withTimeLedgerFixtureCleanup` 外层事务：Prisma 默认5秒，实际约10–11秒。全仓 typed-AST 盘点确认31处调用中16处已有30/60秒，剩余15处默认值分布于14份旧 E2E，且回调只含受控清理或故意失败的夹具验证。本轮已将这15处统一显式设为60秒，结构复核为31处、默认0。四并发探针中7份通过、6份仅因共享负载触发既有30秒 Jest hook上限；同批13份改用单worker后13/13 suites、255/255 tests通过（353.636秒）。B3只运行命中改动的Form materialization分组并3/3通过（20.341秒），固定使用未授权w95的5个migration rehearsal用例明确留给PR CI；验证全程只使用授权模板库和w1，结束后worker库已回收、w95未创建。未改断言、Jest总时限、业务预算、生产代码、schema/migration/API/DTO/权限/Gate；下一步提交推送新SHA更新Draft #1339并交PR CI冷跑，不Ready、不合并、不操作生产。
+
+> **#1339 D7-2 fresh-V3 P2028 修复待 PR CI 冷跑（2026-09-21）**：`e0b0bcaf` 的 [PR CI 35573141915](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35573141915) 已使 B6 通过，唯一失败为 2,000 身份 fresh-V3 提交在 7,052ms 事务预算处 `P2028`。w98 分段诊断确认锁后应用层 `assertComplete` 会在 Node 重建约8,000个root／16,000条更正分录，而同一事务 member/day locks 后的 batch committed 触发器本就执行 `ptc_assert_complete` 与 `ctsp_assert_complete(TRUE)` 最终 fail-closed 校验。方案A仅在精确 fresh-V3 receipt anchor 匹配时省去该次重复重算，锁后 `authorizeCorrection`、数据库最终守卫、两轮权限复核、锁序和7秒预算均保留；V2、重放、直接提交及缺失／陈旧／不匹配锚点仍走原完整校验。w98 的100／2,000身份目标均通过；完整D7单进程6/7，唯一旧V2用例与本机60.707秒WAL checkpoint重叠后失败，独立冷跑通过，最终整套验收交给PR CI。#1339保持Draft，不Ready、不合并、不操作生产、不启用Gate；无schema/migration/API/DTO/权限变更或3b/4b。
+
+> **#1339 B6 脱敏取证待 CI 冷跑（2026-09-21）**：同一 SHA `206ccd737a9e90030a8df1a012fb6e34247fbf59` 的 [CI attempt 2](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35564304216) 已使前一轮 B4／D7 红点通过，唯一失败转为未改行为的 B6 App 紧急创建：预期201、实际500；历史同类500落在不同 B6 测试，现有证据不足以确定产品根因。本轮仅在 B6 E2E 增加异常类型、允许名单数据库码及仓内相对栈位置的服务端脱敏取证，并提供只操作本工作树 `app_test_w98` 的显式隔离入口；冷建迁移后的完整 B6 30/30通过（21.807秒），未复现且w98已回收。待提交推送新 SHA，由 PR CI 冷跑采证；这不是根因或修复完成。#1339保持 Draft，不 Ready、不合并、不启用Gate、不操作生产；断言、业务超时、生产代码、schema/migration/API/DTO/权限均未改。
+
+> **#1339 D7-2 主干 CI 修复当前状态（2026-09-21）**：[#1338](https://github.com/BA7IEE/srvf-nest-api/pull/1338) 已 squash 合入 `main` 的 `562ee0350b67f9887de0c5edd689a8437d153c27`；Draft [#1339](https://github.com/BA7IEE/srvf-nest-api/pull/1339) 的账本重叠查询修复 `62802990` 已获可信红区审批，w98 的 AC-058／规模套件29/29及冷建规模1/1通过（8,192人 commit 912ms、27条事务语句／17条裸SQL）。该 SHA 的 PR CI 仅 E2E 第5组红：未改的 M3 convoy ②用例未等待占锁事务实际取得 member 键，偶尔令终审先通过，`caught` 成为 `undefined`，不是产品路径或断言变化。本轮仅复用既有 `holdLock()` 并在终审前等待 `acquired`；获准 `app_test_w98` 冷建后的整文件6/6通过，40901和所有原断言、业务超时、生产代码均不变。待本补丁提交推送后的新 SHA 重新经过 PR CI；#1339保持 Draft，不 Ready、不合并、不操作生产或启用 Gate，也没有新 migration/3b/4b。
+
+> **D7-2 当前状态（2026-09-20）**：[#1335](https://github.com/BA7IEE/srvf-nest-api/pull/1335) 的方案 A / 第10–13节 / 124个精确路径已合入 `main`；[#1337](https://github.com/BA7IEE/srvf-nest-api/pull/1337) 保持 Draft。第128条 `20260920110000_activity_os_r4_d7_2_correction_receipt_guard_set` 的 SHA `a01dcbb922ba583c84a3278ebfe5ec9ee6d8083c6e0fd09d93585e68a0c6860b` 已获3b重签，`ab570301` 的可信审批已完成；该远端 SHA 仅第5组 E2E 在2,000身份 Human V3 写链中以 `P2028` 7,454ms 失败，其余检查通过。本地已在获准 P-Commit 范围删除仅锁前的重复 Human 资格读取，锁后及账本提交后复核保持；typecheck、目标 lint、w98 Human 链/并发链2/2、2,000身份链1/1和内部重放1/1通过，w98已回收。待提交推送后的新 SHA 可信审批与PR CI冷跑；不 Ready、不合并、不操作生产或启用 Gate。
+
+> **D6 仓内交付已合并 / D7 仅评审与计划（2026-09-15）**：[#1331](https://github.com/BA7IEE/srvf-nest-api/pull/1331) 已 Squash 合入 `e3eadddffc0f2c49ec27e3c34fa36df94043eec7`，最终 PR HEAD `032951a4` 的 CI 与 Ready 后可信审批通过；[main CI 34920687573](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34920687573) completed/success，五组 Contract + E2E 成功，main report-only 审批 skipped。D6 签字、PR 与合并验证已完成；早先“验证中/未提交/未合并”为历史时点，原失败记录保留。当前获准 D6 台账更正与 D7 评审、精确计划起草，仅文档，验证后提交推送创建PR，不合并、不实施、不操作数据库、不启用Gate。D7分阶段方案尚待选择，D7–D8、整体跨模型复审、真实业务验收、前端及生产切换仍未完成。
+
+> **D6 当前实施状态（2026-09-15）**：已按#1330及补充授权实施，原98路径加检查器两项、失败清理helper一项、copyBuckets集合复制优化一项，共102路径；当前101路径有改动，未超写集，本地验证和重签完成，进入提交及Draft PR流程，远端状态以GitHub为准。最新D4/D5/D6七套正式联动65项一次通过，含1/100/2000容量、权限与完整性反例、独立进程竞争和真实SIGKILL接管；契约1063项及2份快照通过。此前失败保留，不代表生产性能或真实业务验收。最终静态复核已通过，详见[D6计划第14节](../plans/activity-os-r4-d6-time-ledger-review-and-plan.md#14-implementation-阶段验证记录未完成不代表交付)。下方“仅计划/未实施”为历史时点。3b/4b已按确认摘要重签；最终SHA CI、整体复审及真实业务验收未完成；不合并、不操作生产、不启用Gate、不删除业务数据。
+
+> **D6 精确计划确认与文档交付授权（2026-09-14）**：维护者已确认 D6 精确计划方案 A（D6 计划第11–13节及98个去重实施路径），允许本轮五份文档（D5计划、D6计划、NEXT_TASKS、FROZEN_DRAFTS、D6 changelog）提交、推送并创建计划 PR；不合并、不实施。本条覆盖下方“精确计划待审批”“仅四份文档”“未获提交推送/PR授权”等历史时点。计划确认不等于98路径实施权限、数据库操作许可或红区令牌；D6仍未实施，生产、Gate、业务数据删除及独立整体复审均未获本轮执行授权。
+
+> **D6 方案 A 方向确认与精确计划细化（2026-09-14）**：维护者允许保留本轮四份未提交文档继续完善，不修改门禁。D6 计划第11–13节已补两表字段/复合FK/触发器、普通/自动/转换/更正提交链、分类批次当前actor复核、五个候选错误码、正式账本读权限说明和隔离测试清理边界；最终待审批写集98个唯一路径（11个红区），包括19份当前迁移回放和25份局部TRUNCATE关联测试（4份重复，已去重）。这些是未来实施的待审批范围，不是本轮写权限；本轮仍仅四份Markdown，未实施、未操作数据库、未提交推送或开PR。D5已合并与main CI成功的事实不变，D6及T0仍未完成。
+
+> **D5 仓内交付已合并 / D6 仅起草（2026-09-14）**：[#1329](https://github.com/BA7IEE/srvf-nest-api/pull/1329) 已 Squash 合入 `2609856e00b8274abb40cbd0cf5687d22d652b46`。最终 PR HEAD `5d54d60e` 的 CI、Ready 后可信审批通过；[main CI 34795854470](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34795854470) completed/success，五组 Contract + E2E 均成功（main 的 report-only 审批按工作流 skipped，不冒称执行通过）。CI 满额 2000 身份对账 638ms、32 次总查询；600 秒仅为整项夹具测试上限，业务 30 秒 / 120 次与全部断言保留。下方 Draft、未合并和待 CI 为历史时点。本轮获准更正 D5 台账及起草 [D6 评审与精确计划](../plans/activity-os-r4-d6-time-ledger-review-and-plan.md)，不实施、不操作数据库；提交推送、开 PR、合并须另行确认。D6–D8、整体复审、真实业务证据归档、前端发布和生产切换未完成，T0 保持 open。
+
+> **D5 本地验证完成（2026-09-14）**：实现提交 `6b8dd907`，34 路径未超范围；w98 六项 E2E、1062 项契约、最终定向 101 项、cold lint/typecheck/build 及治理检查通过。最大 2000 身份对账约 241 毫秒、业务与授权读取 31 次（连接健康检查另 1 次，仍计入 120 上限）。等待本轮 Draft PR CI，不登记仓内合并或真实业务验收；下方实施中/未提交为历史时点。完整记录见 D5 计划 §11。不合并、不操作生产、不启用 Gate、不删除业务数据。
+
+> **D5 implementation 当前授权（2026-09-14）**：#1328 已合入 main `8fd6a46a`；34 路径实施与 app_test_w98 验证已获授权，当前实现及验证进行中，尚未提交或合并。通过后允许提交推送并创建 PR；不合并、不操作生产、不启用 Gate、不删除业务数据。下方 docs-only/未获实施授权为历史。永久证据位置尚未指定，不宣称真实影子验收、D8 放行或 T0 完成。
+
+> **D5 文档交付授权（2026-09-14）**：维护者已确认方案 A，允许本轮 D5 计划、NEXT_TASKS、FROZEN_DRAFTS 和 changelog 四份文档提交、推送并创建计划 PR；不合并、不实施。下方“尚待方案授权/未提交”为此前时点；实施权限、数据库、Gate、生产及业务数据操作均未获授权。
+
+> **2026-09-14 D4 主干验证完成与 D5 当前范围**：草稿依赖 #1326 已合入 `c2cc3d5f`，其 main CI 成功；D4 #1327 已合入 `519d232e6d187bf58e9982b287764f05108dcf21`。批准头 `3bb54060` 的 PR CI、Docker 和 Ready 后可信审批均成功；[合并后 main CI 34768550257](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34768550257) 已核验 completed/success，五组 E2E 均通过。下面 D4 未合并及 main CI 待验为历史时点。本轮仅更新台账并起草 [D5 合并评审与精确计划](../plans/activity-os-r4-d5-time-shadow-review-and-plan.md)：方案 A 候选已收敛为单一路由、120 查询/30 秒验收上限、34 个精确路径（4 个红区）和不删除业务证据的留存边界，尚待方案及实施授权；真实业务验收前须指定永久证据位置。本轮未实施、未操作数据库、未启用 Gate、未删除数据，四份文档尚未提交推送。整体复审、前端与生产仍未完成，T0 保持 open；此前本地间歇性超时不因 CI 全绿而登记为已修复。
+
+> **当前交付状态（2026-09-13，拆分验证中）**：维护者已批准在122路径联合范围内保留全部现有改动，先草稿依赖、后D4分别完成独立验证、拆分提交、推送及两个关联Draft PR。草稿依赖保持D3的120条迁移／263权限／625端点；本D4下游实现为121条迁移／265权限／633端点、审计169总计／164活跃。3b（第121条）、4b（265／169／164）和7c（runbook摘要e53f7b4cedc8）已按维护者确认登记并通过对拍，不再是待授权项。预算120／400／950、kindCode检查器、封印查询等价优化、G6不同请求各留审计、既有测试前置与围栏适配均已批准；下文待确认／待签字的早期记录只保留历史证据。独立验证结果见计划后续登记；尚未合并、未操作生产、未启用Gate、未删除业务数据，整体跨模型复审、前端发布和生产验收仍未完成。
+
+> **D4 补充授权已落实（2026-09-12）**：维护者已批准总 SQL 预算120／400／950及 kindCode 精确检查器扩展；两项精确令牌已核验，写集为原101+1共102路径。metadata 71项通过，普通成员1／100／2000人的并发及计数组6项通过，查询40／334／805且不随人数增长。下方“预算／kindCode待补充确认”为此前时点，已解除；完整有效源规模、角色及历史版本矩阵、CI与3b/4b仍未完成。未提交、推送、开PR、合并或操作生产、Gate、业务数据。
+
+> **D4 implementation（2026-09-12，未提交、未合并）**：[#1325](https://github.com/BA7IEE/srvf-nest-api/pull/1325) 计划已合入起点 main `eef0bbe4`，维护者明确授权 101 路径 implementation、仅 app_test_w98 隔离验证和测试夹具重建，以及验证后的提交／推送／创建 PR。D4 正在实施与补验，不再是“方案待确认”；当前工作树 165 模型／121 migration／633 端点／265 权限／169 审计总计、164 活跃，不冒充 main 或生产读数。原查询预算未通过；kindCode 的 L1 登记与检查器识别范围不一致，待补充确认，未改裁判。3b/4b、完整验收及 PR CI 未完成，不合并、不操作生产、不启用 Gate、不删除业务数据。下方各阶段授权仅代表当时时点。
+
+> **D3 implementation（2026-09-12）**：D3 已随 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323) 合入 main `921a6bf3fac66067e5232768d5c5d32bf92765fc`；批准 HEAD 为 `c3a969a22b4f59b2e2ca51a46660c04d10d53b41`，18 项 PR 检查及可信审批通过，[合并后 main CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34677507039) 在该合并 SHA 上 completed/success。仓内基线为 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），3b/4b 已重签；零内建角色默认授码。维护者本轮只授权 D3 台账更正及 D4 [评审](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-review.md)／[精确计划](../plans/activity-os-r4-d4-time-bucket-settlement-workbench-implementation-plan.md)合并起草、验证后提交推送并创建 docs-only PR；D4 方案和实施仍待确认。本轮不合并、不实施、不操作数据库、不启用 Gate；整体跨模型复审、前端发布与生产验收尚未完成。下方较早阶段描述保留为历史，以本条为当前状态。
 
 > **D1-3 已合并并完成主干验证（2026-09-11）**：维护者确认的完整方案 A 已随 [#1316](https://github.com/BA7IEE/srvf-nest-api/pull/1316) squash 合入 main `60414050b99fe661afbf0c87669597ad081a3b43`；批准头 `2e67806722ebb442d98c8cc58dbf43fa3be4ee01` 与合并树一致。18 项 PR 检查及可信红区审批通过，合并后 [main CI 34575684751](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34575684751) completed/success。四层时长政策选择、模板 V4、提案 V8、Readiness、批准冻结、受控变更、三张不可变表与第 119 条 migration 均已进入 main；当前 157 模型、119 迁移、625 端点、262 权限、167 审计总计 / 162 活跃，3b / 4b 已重签。D1 三个批次的仓内实现与主干验证已完成；D2–D8、生产、Gate 与整体跨模型复审仍未完成，不删除业务数据。此条覆盖下方 D1-3 的历史起草授权状态。
 
@@ -53,17 +188,17 @@
 > **落地度列开头的 `` `↔…` `` 是给判据 6 读的对照标记**,不是装饰 —— 它声明本行与
 > `NEXT_TASKS.md` 同编号条目的状态行**是不是同一把尺子**。取值与写法见 [§4](#4-这份台账由什么守着)。
 
-| #   | 冻结稿                       | 台账  | 落地度                                                                                                                                                                                                                                                                    | 卡在谁                                                                                                                  |
-| --- | ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| 1   | Integration Foundation v1 T0 | P1-30 | `↔进行中` **1 / 8 PR**(PR1 schema 已交付 2026-08-28)                                                                                                                                                                                                                      | 维护者 2026-08-28 拍板开工(条件②③齐、④建议级;`D-IF-2` 的「上线后」理由已于 2026-08-20 换成四条件表,见 NEXT_TASKS P1-30) |
-| 2   | RBAC 权限目录终态            | P1-32 | `↔进行中 7/9` **完整落地 7 / 9 PR**(PR 4 两半齐全;PR 5 已合 #1175;PR 8 **只落了前一半**)                                                                                                                                                                                  | 剩 PR 6–7(都等前端 srvf-admin-web 投用)+ PR 8 后一半「Permission 写 CRUD 退役」待维护者拍板                             |
-| 3   | 活动业务 v1.1 合同(6 份)     | P1-28 | `↔进行中` 8 批:6 批主体完 / 2 批部分                                                                                                                                                                                                                                      | 施工中                                                                                                                  |
-| 4   | 架构治理 v4(3 份)            | P1-29 | `↔另尺(NEXT_TASKS 的 P1-29 条目只覆盖 Phase 0,本行覆盖 v4 全 11 阶段)` 11 阶段:6 个完 + Phase 6 部分                                                                                                                                                                      | 施工中                                                                                                                  |
-| 5   | 企业微信 T0                  | P1-25 | `↔⏸ 挂起` 代码 100%,运维 0%                                                                                                                                                                                                                                               | 备案                                                                                                                    |
-| 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                                                                                                                                                                                              | 维护者执行                                                                                                              |
-| 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                                                                                                                                                                                               | 运维窗口                                                                                                                |
-| 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                                                                                                                                                                                                | 维护者执行                                                                                                              |
-| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 已完成相应仓内实施；Release 4 的 D1-1/#1310、D1-2/#1312、D1-3/#1316 与 D2/#1319 均已合入并完成 main CI 验证；D3 implementation 已在当前分支完成定向验证，非生命周期 inventory 已按补充授权登记，PR 与后续签收尚未完成 | 原紧急创建 500 根因未定位；整体跨模型复审、Release 4 D3–D8 及后续、前端发布、生产部署和 Gate 切换未完成                 |
+| #   | 冻结稿                       | 台账  | 落地度                                                                                               | 卡在谁                                                                                                                    |
+| --- | ---------------------------- | ----- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Integration Foundation v1 T0 | P1-30 | `↔进行中` **1 / 8 PR**(PR1 schema 已交付 2026-08-28)                                                 | 维护者 2026-08-28 拍板开工(条件②③齐、④建议级;`D-IF-2` 的「上线后」理由已于 2026-08-20 换成四条件表,见 NEXT_TASKS P1-30)   |
+| 2   | RBAC 权限目录终态            | P1-32 | `↔进行中 7/9` **完整落地 7 / 9 PR**(PR 4 两半齐全;PR 5 已合 #1175;PR 8 **只落了前一半**)             | 剩 PR 6–7(都等前端 srvf-admin-web 投用)+ PR 8 后一半「Permission 写 CRUD 退役」待维护者拍板                               |
+| 3   | 活动业务 v1.1 合同(6 份)     | P1-28 | `↔进行中` 8 批:6 批主体完 / 2 批部分                                                                 | 施工中                                                                                                                    |
+| 4   | 架构治理 v4(3 份)            | P1-29 | `↔另尺(NEXT_TASKS 的 P1-29 条目只覆盖 Phase 0,本行覆盖 v4 全 11 阶段)` 11 阶段:6 个完 + Phase 6 部分 | 施工中                                                                                                                    |
+| 5   | 企业微信 T0                  | P1-25 | `↔⏸ 挂起` 代码 100%,运维 0%                                                                          | 备案                                                                                                                      |
+| 6   | 证书标准库 T0(2 份)          | P1-24 | `↔⏸ 挂起` 代码 100%,运维部分                                                                         | 维护者执行                                                                                                                |
+| 7   | D-INSURANCE v3               | P1-10 | `↔⏸ 挂起` 代码 100%,部署 0%                                                                          | 运维窗口                                                                                                                  |
+| 8   | 活动责任闭环 v2              | —     | `↔无台账` 代码 100%,闸未开                                                                           | 维护者执行                                                                                                                |
+| 9   | Activity OS T0-A 终态合同    | P1-33 | `↔进行中` Release 1–4、E1/E2 第一层与 E3-1 离线比较已合；E3-2 待评审                                 | E2 真实映射／转换、E3-2 运行时 shadow、E4–E5、D8-OPS、整体跨模型复审、真实业务验收、前端发布、生产部署与 v1.1 Gate 未完成 |
 
 ### 1.1 欠代码的五项
 
@@ -122,7 +257,7 @@ Phase 6-B(尺寸棘轮仍 report,基线仍在册)· Phase 7(债务台账待清�
 ⚠️ **2026-08-24 订正**:§1 表此前写"7 个完",那是把半个 Phase 6(即 6-A)当整阶段算 ——
 按合同的 11 阶段口径应为「6 个完 + Phase 6 部分」。**6-A / 6-B 是仓内的施工切分,不是合同阶段。**
 
-**⑤ Activity OS T0-A —— T0-A / T0-B、Release 1 A1–A8、Release 2 B1–B7、Release 3 C1–C5 与 Release 4 D1-1/D1-2/D1-3/D2 的仓内实施已通过；D2/#1319 已合入且 main CI 已由 `bcc29749` 的成功运行独立验证；D3 implementation 在当前分支完成定向验证，非生命周期 inventory 已登记，仍待 PR、签收与合并；前端发布、生产 Gate、整体跨模型复审与 Release 4 D3–D8／后续 Release 未完成**
+**⑤ Activity OS T0-A —— Release 1–4 与 E1-1／E1-2／E1-3 仓内交付已合入并完成 main CI；E2 仅起草评审，E2–E5、D8-OPS、真实业务验收、整体跨模型复审、前端、部署与 v1.1 Gate 均未完成**
 T0-A 阶段完成终态边界、数据所有权、迁移矩阵、接口合同和测试设计，24 项交付均在
 [Activity OS T0-A 冻结合同](../archive/reviews/activity-os-t0-terminal-review.md)。
 **T0-B 已通过并合入 #1236**：AI README 的主动文档纠偏、Integration 审查矩阵、核心零依赖
@@ -278,10 +413,10 @@ confirmed、system 与 AI 来源归 C3，import 另立方案。C2 本稿不新�
 | IF v1:第六 surface `integration/v1` 在 src 的命中文件数 | **3** | `src/**/*.ts(不含 .spec.ts)` |
 | P1-32 PR1:`permission-catalog*` 运行时文件数 | **2** | `src/modules/permissions/` |
 | P1-32:授码 / 撤码两侧是否复用控制面闸谓词 | **已接** | `src/modules/permissions/role-permissions.service.ts` |
-| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **263** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
+| 权限码总数(冻结件写 236,PR0 要逐条分类的就是这张表) | **269** | `scripts/docs-counts.ts 的 typed-AST 闭包` |
 | 活动 v1.1 验收编号:已绑真实证据 / 合同定义 | **90 / 95(5 条仍 it.todo)** | `合同正式版 + activity-business-overhaul-acceptance.spec.ts` |
-| 治理 Phase 7:债务身份证待清偿条数 | **229** | `harness/architecture-debt.json` |
-| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 70** | `harness/state-machines.json` |
+| 治理 Phase 7:债务身份证待清偿条数 | **221** | `harness/architecture-debt.json` |
+| 治理 Phase 4:状态列 governed / 登记总数 | **8 / 78** | `harness/state-machines.json` |
 | 治理 Phase 6-B:尺寸基线在册文件数(仍超 700 NCLOC) | **21** | `harness/service-size-baseline.json` |
 | 治理 Phase 1D:声明 Guard 模式 | **enforce** | `src/common/guards/authz-declaration.guard.ts` |
 | 治理 Phase 1J:跨域金路径 journey 数 | **6** | `test/journeys/` |
@@ -308,7 +443,7 @@ PostgreSQL 一致性加固、admin-api 路线图、org-position 终态这几份)
 
 | 文件                                                                                                  | 分类           | 去向 / 理由                                                                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；T0-B、Release 1 A1–A8 与 Release 2 B1–B7 仓内实施已落地，前端发布、生产 Gate 与 Release 3 C1 及后续仍待独立推进                                                                                                    |
+| `docs/archive/reviews/activity-os-t0-terminal-review.md`                                              | open · P1-33   | Activity OS T0-A 冻结合同；Release 1–4、E1/E2 第一层和 E3-1 离线比较已合；真实映射／转换、E3-2、E4–E5、D8-OPS、整体复审、前端、生产 Gate 与真实业务验收仍待独立推进                                                                           |
 | `docs/archive/reviews/activity-os-r1-a1-category-registry-review.md`                                  | landed · P1-33 | Release 1 / A1 的 D 档 seed 变更边界、拍板与风险记录；已随 #1237 合入，评审稿冻结不回改                                                                                                                                                       |
 | `docs/archive/reviews/activity-os-r1-a2-template-family-version-review.md`                            | landed · P1-33 | Release 1 / A2 D 档 Family / Version expand；已随 #1239 合入，评审稿冻结不回改                                                                                                                                                                |
 | `docs/archive/reviews/activity-os-r1-a3-template-definition-lifecycle-review.md`                      | landed · P1-33 | Release 1 / A3 D 档 canonical/hash 与 future Version lifecycle；已随 #1241 合入，评审稿冻结不回改                                                                                                                                             |

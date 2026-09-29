@@ -1,6 +1,48 @@
 # activities — 本地铁律
 
-> **D3 implementation（2026-09-12）**：D3 implementation 已提交至 [#1323](https://github.com/BA7IEE/srvf-nest-api/pull/1323)，尚未合并。当前分支 161 模型／120 migration／625 端点／263 权限／168 审计总计（163 活跃），零内建角色默认授码；recognitionModeCode 仅登记为 L1 inventory / not-derived。D3 应用 E2E 18 项、迁移 E2E 3 项已通过。维护者已确认五份旧 E2E 适配，保留历史升级和业务断言；3b/4b 已重签并通过对拍。验证及剩余边界见实施计划；本轮只用 app_test_w98 串行补验，验证后更新 PR，检查通过后允许 Ready。可信审批、PR CI、合并后 main CI、整体跨模型复审和生产验收尚未完成；不合并、不启用 Gate、不删除业务数据。
+> **E2 第一层隔离能力工作树（2026-09-25，尚未提交／建 PR）**：E1 事务内属主原语可创建
+> draft 政策版本；E2 服务仅在已核准 `w98` 库接受 `e2_fixture_*` 虚构类型，锁后重读来源和 GLOBAL
+> Human 权限，在单事务内写 draft、逐源不可变收据和脱敏审计；相同收据重放零新增。31 个真实类型
+> 全部 hold，旧考勤预填、贡献规则写者、正式选择与结算不接入。SQL 3b、审计 4b 与隔离库验证尚待完成；
+> 未操作生产、Gate 或真实业务数据。下方 E1-3“当前工作树”为历史时点。
+
+> **E1-3 implementation 当前工作树（2026-09-24，未提交、未建 PR）**：已实现 Template V5 的闭合贡献政策
+> 选择、quick／professional／series 一致物化、Admin/App 活动选择与 App options 五端点、Proposal V9、批准时锁后
+> 重解与精确修订冻结，以及 `unconfigured / target_invalid / reference_unavailable / coverage_incomplete`
+> 四类 Readiness。选择只允许 activity 根与 position 覆盖，不引入 session 层；`inherit` 不携带指针，`explicit`
+> 固定 policy/version/hash/evaluator 四元组。两项新权限均为显式 scoped Human，内建角色零默认授予；选择修订、
+> 收据与审计同事务且永久留存。旧 V1–V4 template、V2–V8 proposal 和 legacy 未配置活动保持兼容。
+> 当前658 Endpoint／269权限／173 AuditLogEvent（168 active）；3b／4b 已按最终实数与摘要重签，本地最终门禁已通过，
+> Draft PR CI 尚未运行。未接旧
+> `ContributionRule`、考勤／正式贡献账本、生产 Gate 或 D8-OPS，未删除或重算业务数据。
+
+> **E1-2 仓库交付已完成，E1-3 仅起草精确计划（2026-09-23）**：`ContributionPolicy`、不可变 `ContributionPolicyVersion`、
+> `ContributionPolicyCommandReceipt`，以及闭合 V1 parser／fingerprint／纯 evaluator 和 draft→active→retired
+> 纯状态判断已随 [#1345](https://github.com/BA7IEE/srvf-nest-api/pull/1345) 合入 `48596844`；
+> [main CI 35822456365](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35822456365) 成功。evaluator 只返回规范分值与
+> 稳定 explanation code，不查库、不猜版本、不执行每日封顶；所有未知键、重复 role/category、错类型、越界秒数、
+> 非规范小数或未知 evaluator 均 fail-closed。E1-2 在此地基上新增 8 个 Human System 目录接口、两项显式 GLOBAL
+> Human 权限、两类闭合审计和四类命令收据；`SUPER_ADMIN` 不短路，ServicePrincipal 禁止访问，写命令在同一事务内
+> 完成两轮身份／权限复核、锁定、事实、收据与审计。最终读数为 653 Endpoint／267 权限／172 AuditLogEvent；
+> 不接旧 `ContributionRule`、考勤、账本、Readiness、proposal 或 Gate，不改 schema/migration。目标单测、contract
+> 与两份定向 E2E、治理登记和最终检查均已通过，4b 已按最终读数重签。最终 head
+> `0cc3938ce2471f1e56571f728f651e53d8566e88` 已随
+> [#1347](https://github.com/BA7IEE/srvf-nest-api/pull/1347) 合入 `09e7101f51d5a00e63bbdb8210cf00815563e12a`；
+> [main CI 35854133319](https://github.com/BA7IEE/srvf-nest-api/actions/runs/35854133319) 同 SHA attempt 2 全绿。
+> E1-3 计划只定义模板／活动／岗位三层选择、V5 模板、V9 提案、发布冻结与 Readiness 闭环；本轮未实施 E1-3，
+> 未改业务代码、schema/migration、API、权限、Gate 或数据库。生产与 D8-OPS 仍未执行。
+
+> **D8-1 实施候选（2026-09-21，未提交、未合并、未上线）**：按 D8 方案 A 建立不可逆切换收据、
+> 切换后根账 binding、统一 `ParticipationTimeTruthQueryService`、只读预检/执行 CLI，以及 App self 和
+> Admin scoped/GLOBAL 两个正式参与时长证明入口。无收据时证明具名不可用，不改现有统计口径；
+> 有收据后旧制度行明示为 `legacy_recognized_service`，切换后根账从分类账本及 committed 更正链
+> 读取，异常链 fail-closed，不把旧数据冒充为 `volunteer_service`。不新增权限码或默认授权；
+> Admin 读复用 `attendance.read.sheet` 并在 service 内做 member resource scoped/GLOBAL 复核。本刀只是 D8-1；
+> D8-2 官方统计/关账接线、D8-OPS 生产切换、Gate、部署与整体跨模型复审仍未做。
+
+> **当前交付状态（2026-09-13，拆分验证中）**：维护者已批准在122路径联合范围内保留全部现有改动，先草稿依赖、后D4分别完成独立验证、拆分提交、推送及两个关联Draft PR。草稿依赖保持D3的120条迁移／263权限／625端点；本D4下游实现为121条迁移／265权限／633端点、审计169总计／164活跃。3b（第121条）、4b（265／169／164）和7c（runbook摘要e53f7b4cedc8）已按维护者确认登记并通过对拍，不再是待授权项。预算120／400／950、kindCode检查器、封印查询等价优化、G6不同请求各留审计、既有测试前置与围栏适配均已批准；下文待确认／待签字的早期记录只保留历史证据。独立验证结果见计划后续登记；尚未合并、未操作生产、未启用Gate、未删除业务数据，整体跨模型复审、前端发布和生产验收仍未完成。
+
+> **D4 implementation（2026-09-12，未提交、未合并）**：按 [#1325 精确计划](../../../docs/plans/activity-os-r4-d4-time-bucket-settlement-workbench-implementation-plan.md) 的 101 路径授权实施；起点 main `eef0bbe4` 已包含 D3/#1323。新增 8 个 Human App 分类结算入口、4 个不可变模型、2 个显式权限和 1 个审计事件；工作树读数为 165 模型／121 migration／633 端点／265 权限／169 审计总计（164 活跃），不是生产或 main 读数。新命令支持有完整封印证明的 draft 认定、prepare 和同原结算事务的显式 submit；原 D3 V1 committed-only、旧提交和 V1 contentHash 不变。桶 kindCode 只登记 L1 inventory / not-derived；零内建角色默认授码。当前在 app_test_w98 串行验证，性能查询预算尚未通过、3b/4b 待维护者重签；完整验证、PR CI、可信审批、整体跨模型复审及生产验收尚未完成。不合并、不启用 Gate、不删除业务数据。
 
 > **D1-2 已合并并完成主干验证（2026-09-11）**：目录实施 [#1312](https://github.com/BA7IEE/srvf-nest-api/pull/1312) 合入 `c037073b`；合并后测试库初始化失败已由 [#1313](https://github.com/BA7IEE/srvf-nest-api/pull/1313) 修复，当前 main `ba100c1e` 的 [CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/34498288827) 成功。修复保留全部断言，隔离顺序回归为旧测试 5/5、D1-2 并发 11/11；修复 PR 五个 E2E 分片均通过。154 模型、118 迁移、620 端点、260 权限、166 审计总计/161 活跃不变。此前“实施中/尚未合并/本分支待合并”均为历史时点，不再代表当前状态。维护者已确认 D1-3 精确计划方案 A，允许本轮八份文档补充 changelog、提交、推送和创建计划 PR；不合并、不实施；D1-3、D2–D8、生产和 Gate 未实施，整个 D1 尚未完成。
 
