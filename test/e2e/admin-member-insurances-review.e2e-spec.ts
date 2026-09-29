@@ -456,9 +456,15 @@ describe('POST /api/admin/v1/members/:memberId/insurances/:insuranceId/review', 
       const serialized = JSON.stringify(context);
       expect(serialized).not.toContain(original.insurerName);
       expect(serialized).not.toContain(original.policyNumber);
-      expect(serialized).not.toContain('note');
-      expect(serialized).not.toContain('image');
-      expect(serialized).not.toContain('url');
+      // All business values are checked above; generated IDs may contain note/image/url.
+      expect(Object.keys(context).sort()).toEqual([
+        'after',
+        'before',
+        'extra',
+        'ip',
+        'requestId',
+        'ua',
+      ]);
     },
   );
 
