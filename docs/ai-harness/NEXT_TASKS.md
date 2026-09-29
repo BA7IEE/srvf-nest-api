@@ -1,6 +1,6 @@
 # NEXT_TASKS — 后续任务拆解(P0 / P1 / P2)
 
-> **Release 5 / E3-2 D1 已提交至 Draft PR（2026-09-29，未合并）**：[#1366](https://github.com/BA7IEE/srvf-nest-api/pull/1366) 的第 133 条 migration 仅交付五张不可变证据空表及数据约束；SQL 摘要 `8f615e62a20a2207a9c0e2315f46e3a25bccff703b9bffae00857c41d02bff2b` 已获维护者 3b 重签。`app_test_w98` 已完成空库冷回放、132→133 非空升级和定向验证；附件夹具兼容修复已纳入该 PR。修复提交 `e159ccb057f48ed7341c78d850605c93738a378a` 的 18 项 PR 检查全部通过；本段状态更正推送后仍须对新提交重新检查。D1 尚未合入 main 或部署；D2 写者、D3 Human 复核、真实 31 类映射、生产和 Gate 均未实施或授权。下方“精确计划起草中”是此前时点。
+> **Release 5 / E3-2 D1 仓内已合入并通过主干 CI（2026-09-29）**：[#1366](https://github.com/BA7IEE/srvf-nest-api/pull/1366) 已 Squash 合入 main `de9575ea2ffb1ef6b123a734ad41dc4895c3dfd1`；[同 SHA main CI 36519673719](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36519673719) completed/success，五个 Contract + E2E 分片均通过。第 133 条 migration 只交付五张不可变证据空表及约束，SQL 摘要 `8f615e62a20a2207a9c0e2315f46e3a25bccff703b9bffae00857c41d02bff2b` 已获维护者 3b 重签；`app_test_w98` 空库冷回放、132→133 非空升级与定向验证已完成。D1 **未部署**；D2 写者、D3 Human 复核、真实 31 类映射、生产与 Gate 均未实施或授权。当前仅按维护者授权起草 D2 精确计划，不实施 D2。下方“精确计划起草中”是此前时点。
 
 > 状态清单已按维护者本轮授权补入 D1 不可变终态收据的 L1 inventory 登记；当前 78 项（8 governed、70 inventory），`docs:boundaries:check` 已通过。第 133 条 3b 签字另见 `CUTOVER_SIGNOFF.md`。
 
