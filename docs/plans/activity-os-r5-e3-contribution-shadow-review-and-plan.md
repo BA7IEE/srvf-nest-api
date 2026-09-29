@@ -514,7 +514,7 @@ pnpm harness:grant 'prisma/migrations/20260928095832_activity_os_r5_e3_shadow_ev
 | 可比较证明的条件扩展 | `prisma/schema.prisma`、`prisma/migrations/<实施时定稿时间戳>_activity_os_r5_e3_shadow_source_proof/migration.sql`（新）、`test/e2e/activity-os-r5-e3-contribution-shadow-migration.e2e-spec.ts`、`test/setup/reset-db.ts`、`test/setup/time-ledger-fixture-cleanup.ts`、`test/helpers/audit-logs-cleanup.ts`、`harness/domain-map.json`、`prisma/CLAUDE.md`                                                                          | **仅在**独立旧来源证明字段／关系及第 134 条 SQL 方案获批后冻结完整路径；只做加法 DDL 与守卫收紧／定向放行，不回改第 133 条，不删改任何业务或证据行。触发器恢复、非空升级与旧迁移回放按实际依赖逐项列全；缺路径不能借本表开工。 |
 | 派生与登记           | `CODEMAP.md`、`docs/current-state.md`、`docs/ai-harness/ROUTE_AUTHZ.md`、`docs/ai-harness/CUTOVER_SIGNOFF.md`、`docs/ai-harness/FROZEN_DRAFTS.md`、`docs/ai-harness/NEXT_TASKS.md`、本评审稿、`src/modules/attendances/CLAUDE.md`、`src/modules/activities/CLAUDE.md`、`src/modules/audit-logs/CLAUDE.md`、`changelog.d/activity-os-r5-e3-contribution-shadow-d2.md`（新）                                                            | 仅实际变动命中的派生块与状态登记；生成摘要逐项核对。若变更权限／审计码、API／DTO、测试基础设施或配置 env 文档，先列新增精确路径并重新授权，不以“相关文件”概括。                                                                |
 
-这里的尖括号 migration 路径是**占位符，不是可执行授权 glob**。实施前必须用真实时间戳与 `rg --files` 核实每个路径、补齐真正受影响的旧迁移 E2E、测试清理、配置文档和生成物；对每个红区文件单独核 `pnpm harness:needs <精确路径>`，维护者逐路径发令牌。#1324 仍为独立 Draft，已核其五个写路径与本轮**仅三份文档**无交集；它的存在不构成 D2 实施许可。
+这里的尖括号 migration 路径是**占位符，不是可执行授权 glob**。实施前必须用真实时间戳与 `rg --files` 核实每个路径、补齐真正受影响的旧迁移 E2E、测试清理、配置文档和生成物；对每个红区文件单独核 `pnpm harness:needs <精确路径>`，维护者逐路径发令牌。#1324 已作为独立文档 PR 合入 main（`2d8e2422`）；它不构成 D2 实施许可。
 
 ### 22.4 风险、方案取舍与一次性待签清单
 
@@ -528,3 +528,74 @@ pnpm harness:grant 'prisma/migrations/20260928095832_activity_os_r5_e3_shadow_ev
 下次实施前一次收齐：①选择可独立验证的旧来源锚方案并逐字段确认业务用途、可见者／掩码、长期留存和退队处理；②批准事务后有界等待的精确上限与失败呈现、人工缺口处理责任；③冻结本节实际文件清单、SQL diff、隔离测试库与允许的夹具重建范围及逐路径红区令牌；④SQL 定稿后另确认 3b，若权限／审计目录变化另确认 4b；⑤验证后提交／推送／Draft PR、Ready、合并均分别授权。任一项未决，保持 `off`，不得用 hold-only 写者顶替完整 D2。
 
 **本轮实际范围**：只更正 `NEXT_TASKS.md`、`FROZEN_DRAFTS.md` 的 D1 顶部状态，并新增本节 D2 评审计划；未修改生产代码、schema、migration、配置、测试、权限、审计、API／DTO 或 Gate；未连接、迁移、重建任何数据库，未提交、推送或创建 PR。D2、D3、31 类真实映射、生产部署与真实业务验收仍未完成。
+
+## 23. E3-2 D2 当次旧来源锚点数据合同与失败边界（2026-09-29；仅文档）
+
+### 23.1 拍板范围、现状与不能伪造的证明
+
+维护者本轮确认**最小事务内来源锚点方向，仅定稿设计与授权清单，不实施**。这重新打开 §16“旧业务先成功、独立证据随后写入”中的一个窄例外；本节对旧事务失败边界的后续评审结论优先于 §16 的原先表述，不回改历史：只有证明旧计算当次输入所必需的最小锚点可以同旧 Sheet／Record／Audit 事务提交；完整比较、Attempt／Comparison／Terminal 收据仍在旧事务**成功后**另写。锚点写入失败可能使旧事务回滚，不能继续声称“任何新证据故障都不影响旧提交”；但事务后比较失败仍不得反转已成功的旧提交。旧 API 响应、旧审计 `context/extra` 形状、正式贡献值与 7 秒旧业务事务预算均不变。
+
+代码事实：`ContributionCalculator.applyContributionRulePrefill` 当前只读 ACTIVE 规则的角色、阈值和上下档分值，未返回规则 ID／来源；`submit` 与带 records 的 `edit` 随后写 Sheet／Record，再写旧审计；审计快照只含结果分数。`ContributionRule` 可更新或软删，故事后读当前行、只存 ID／哈希、或拿 E2 隔离夹具收据都不能证明**本次**旧计算的输入。第 133 条 `cscr_insert_guard_fn` 无条件拒绝 `comparable=true`，历史 SQL 不回改。第 134 条仅是预计序号，实施时须按实际 main 核实。若下面的同事务与来源核对不能以数据库正反例证成，继续保持 `hold`，不得以文档或应用层自述放行 `equal/points_mismatch`。
+
+### 23.2 最小持久化合同（拟新增；字段名与 SQL 尚待实施评审）
+
+拟新增不可变 `ContributionShadowLegacySourceAnchor`，**每个新写入的 AttendanceRecord 恰一条**，且仅在已登记窗口、独立 shadow 开关开启的 `submit` 或带 records 的 `edit` 中创建；`edit-no-records` 不创建。无窗口／开关 `off` 时完全走旧路径，不强制新锚点。不得用历史 Record、事后当前规则或 E2 转换收据回填这张表。
+
+| 字段组         | 必须保存的最小事实与约束                                                                                                                                                                                                                  | 用途／禁止内容                                                                                                                                                       |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 同链定位       | 锚点 ID、`windowId`、旧 `auditLogId`、`sheetId`、`sheetVersion`、`activityId`、`recordId`、`memberId`；`(auditLogId,recordId)` 唯一，Record 按现有 `(id,sheetId,memberId)` 复合锚，窗口、Audit 事件／资源／after 快照、Sheet 版本逐一一致 | 只能定位**本次已提交旧写**及当次已登记窗口；映射签字版本与配置摘要取自不可变窗口，不能事后读最新值或拼接跨活动数据；不保存姓名、联系方式、备注或完整审计 `context`   |
+| 计算输入       | `activityTypeCode`、`attendanceRoleCode`、`legacyServiceHours`（固定 decimal 精度）                                                                                                                                                       | 与此次计算的 Activity、Record 及审计 after 值核对；不保存原始请求体                                                                                                  |
+| 规则来源       | 明确 `matched`／`no_match`；匹配时存 `legacyRuleId`、当次 `durationThreshold`、`pointsBelow`、`pointsAbove` 的可空和值；无匹配时 rule ID 和三个规则数值均为空                                                                             | `legacyRuleId` 仅作定位，**不是单独证明**；`no_match` 的旧分数必须为 0，且写入守卫核对同活动类型／角色没有当时可见的 ACTIVE 未软删规则                               |
+| 计算结果与摘要 | `legacyPoints`、固定 `hashAlgorithmCode`／`canonicalVersion`、`legacySourceHash`、数据库生成的 `createdAt`                                                                                                                                | 固定版本的 canonical 输入须覆盖上述同链、输入、来源状态、全部规则数值及结果；decimal／null 规范化与字段顺序在 SQL 定稿前逐项列出正反例，不能把任意 64 位字符串当证明 |
+
+摘要输入版本拟固定为 `canonicalVersion=1`、`hashAlgorithmCode=sha256`：先写 ASCII 域前缀 `SRVF:E3-2:legacy-source:v1:`，再依序编码 `windowId, auditLogId, sheetId, sheetVersion, activityId, recordId, memberId, activityTypeCode, attendanceRoleCode, legacyServiceHours, sourceKindCode, legacyRuleId, durationThreshold, pointsBelow, pointsAbove, legacyPoints`。每项 `null` 编码为 `N`；非空值编码为 `S`＋UTF-8 字节长度的十进制表示＋`:`＋原值 UTF-8 字节，依字段个数顺序直接拼接。整数用无前导零十进制；所有小时／分值先按已存的 `Decimal(5,2)` 规范成恰好两位小数（如 `1.50`），不把浮点显示或 JSON key 顺序当证明。`createdAt` 不入摘要。SHA-256 输出小写 64 位十六进制；实施时须用 TypeScript／PostgreSQL 同一组正反例确认字节级一致，若现有 calculator 输入不能无损转成持久化两位小数，必须分类失败而非四舍五入伪装同源。
+
+仅从**同一次**规则查询结果生成“计算值＋来源元组”，不为取证另查一次规则再冒充计算输入；旧查询的去重／冲突失败语义不变。新 Record ID 与来源元组必须确定性一一对应，不能靠 `findMany` 返回顺序、时间戳或相同分数猜配；`submit` 的嵌套创建与 `edit` 的 `createMany` 都须在测试中证明该对应。数据库对匹配规则当时的 ACTIVE／未软删状态及全部数值再核对；读后若规则并发改变到无法证明一致，**保守回滚该旧事务**，不得静默降为可比较。若无匹配规则并发出现，同样 fail-closed。该核对可能增加锁等待，必须测量并守住现有 7 秒预算；不得偷偷扩大业务超时。
+
+为防止给**已经提交**的旧审计事后伪造锚点，推荐在 `audit_logs` 增加默认 `false`、仅由本次旧写设置的内部 proof-required 标志，**不进入**旧审计 `context/extra`、DTO、响应或通用读面。标志为真时，旧审计插入的同一事务必须在提交前具有完整的锚点集合；数据库延迟约束／触发器核对审计 after 的 Record 集合、计数、来源分数、同链外键和规则核验，缺一则整个旧事务失败。标志为假的历史审计不得事后改为真，也不得追加“可比较”锚点；锚点与标志均禁止 UPDATE／DELETE。此方案不依赖 `xmin`、墙钟时间或可改 session flag 证明同事务。**实施前必须用直接 SQL 证明**：真实同事务正例通过；先提交旧审计再补锚点、错误事件或未登记窗口却设 flag、缺条／重复／跨 Sheet／跨活动／规则值漂移／无匹配却存在 ACTIVE 规则、UPDATE／DELETE 均被拒；旧非 shadow 审计零漂移。若上述数据库约束无法在现有 AuditLog 写模型下成立，应重新评审，不把“应用层按顺序调用”当独立证明。
+
+锚点含 `memberId` 等内部可关联标识，**仅**旧事务写者、D2 内部证据核验和未来经独立授权的 D3 Human 复核可见；不暴露 App／Admin 新接口、通用审计读面、日志或错误栈。长期留存为不可变业务证据；成员退队不自动物理删除或改写，按既有受限访问与另行隐私／保留期评审处理。此可见者、掩码与保留口径须在实施授权时逐字段再签，不因本稿自动获得生产使用许可。
+
+### 23.3 故障边界、回退与验收门槛
+
+| 故障点                                                                                | 旧业务结果                                                            | 新证据与处置                                                                                                         |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| shadow 关闭／无已登记窗口                                                             | 完全沿旧事务与响应                                                    | 不写锚点；不进入“已覆盖比较”分母。若窗口已登记但开关关闭，旧审计仍列入人工核对候选，不能以“未运行”冲销缺口           |
+| 已启用窗口内，旧来源查询、锚点写入或 DB 完整性核验失败                                | **整个旧事务回滚**，沿既有失败合同返回；不留下半张 Sheet／Audit／锚点 | 这是维护者本轮方向允许评审的新增失败面，必须在实施前证明失败分类、监测、7 秒预算与回退演练；不能把失败伪装成旧成功   |
+| 旧事务（含锚点）已提交，事务后 Attempt／Comparison／Terminal 写入失败、超时或进程崩溃 | 旧业务成功不可撤销、响应不因证据失败反转                              | 保留旧审计候选与缺口供人工逐项核对；不 fire-and-forget、不自动扫库或删改历史，具体有界等待毫秒数与告警出口实施前另签 |
+| 来源锚点存在但 31 类真实映射未签、政策不批准或输入不同源                              | 旧业务照常                                                            | 仅 `hold`／明确失败分类，不写 `equal/points_mismatch`；不拿夹具当真实映射                                            |
+
+回退只把独立 shadow 模式设 `off`；已提交的锚点、旧审计和事务后收据不删、不改、不重算。由于 proof-required 标志只对明确启用的旧审计生效，`off` 后新旧写必须恢复旧行为；先前窗口内的缺口仍保留人工核对。禁止通过改第 133 条历史 SQL、关约束、改旧断言或提高 7 秒业务超时来过验收。
+
+### 23.4 精确授权清单（**候选，不是本轮实施授权**）
+
+1. **先冻结真实 SQL 与写集**：在 §22.3 候选基础上，锚点必需 `prisma/schema.prisma`、**新时间戳** `prisma/migrations/<待定>_activity_os_r5_e3_shadow_source_proof/migration.sql`、`prisma/CLAUDE.md`、`harness/domain-map.json`、D1／新 migration 回放 E2E 与实际受影响的受控清理 helper；旧第 133 条文件只读。`audit_logs` 内部标志和同事务窄原语使 `src/modules/audit-logs/audit-logs.service.ts` 及其 spec 成为必需，而非可选；旧 `context/extra` 不变。逐路径 `rg --files`、引用链及 `pnpm harness:needs <精确路径>` 查实后，以**真实文件名**重列红区授权命令；占位符不得作为 grant glob。
+2. **旧写最小改动**：`src/modules/attendances/{attendances.service.ts,attendances.service.spec.ts,attendance-audit-recorder.ts,contribution-calculator.ts,contribution-calculator.spec.ts,attendances.module.ts}`；仅让同一次计算输出来源元组、确定性对应新 Record、事务内写锚点并传递准确 Audit ID。`submit` 与带 records 的 `edit` 两支均测，`edit-no-records`、旧响应和精确审计形状保持原断言。若需额外来源属主文件、ID 生成器或测试路径，先列出再授权，不以本表概括。
+3. **事务后写者**：沿 §22.3 的四个新 attendances 文件、活动政策只读属主和条件配置路径收窄；不得让应用层 hash 或 `legacyRuleId` 单独解锁数据库 `comparable`。第 134 条定向放行只有在同链锚点、政策版本及输入同源经 SQL 和 E2E 正反例验证后才可签 3b。
+4. **验收与后续动作分开授权**：先作读写影响与锁序分析，测 2,000 Record、并发改规则、无匹配→新增规则、锚点缺条、重放、进程中断、旧 off 回归及 7 秒旧事务；仅指定隔离测试库、允许的夹具重建范围须写明。schema／SQL 定稿后另签 3b；审计／权限目录若变化另签 4b；提交／推送／Draft PR、Ready／合并、真实业务映射、部署和 Gate 各自单独授权。任何一步未证成，保持 `off`，不得宣称 D2 完成。
+
+| D 档风险项                 | 本稿结论                                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| `schema.prisma`／migration | 未来实施需加法改 `AuditLog` 与新锚点表、定向放行 D1 守卫；本轮均未获实施授权，第 133 条不得回改 |
+| `seed.ts`                  | 不需要；若最终引用链证明需权限／审计码，重新评审及 4b                                           |
+| 既有数据／不可逆性         | 不回填、不删改既有行；新锚点一旦提交即不可变、长期保留，实施前还需独立隐私口径签字              |
+| OpenAPI／contract snapshot | 不改端点、DTO、旧响应或旧审计 `context/extra`；旧 characterization 必须保持原断言               |
+| 鉴权／审计                 | 复用旧写资格；仅 AuditLog 内部标志及窄返回 ID 原语，不能扩散到通用审计读面                      |
+| BizCode                    | 不预设新码；若失败需要独立对外错误码，先按段位规则另报，不借本稿授权                            |
+| 维护者拍板                 | 本轮仅确认设计方向；实施写集、数据库目标与重建、SQL 摘要 3b、必要 4b、PR／合并／部署各自另批    |
+
+已对**现存、名字确定**的候选文件逐路径运行 `pnpm harness:needs`（静态预算，不代表当前有令牌）：`prisma/schema.prisma`、`harness/domain-map.json`、`test/setup/reset-db.ts`、`test/setup/time-ledger-fixture-cleanup.ts`、`docs/ai-harness/ROUTE_AUTHZ.md` 需要维护者红区授权；`prisma/CLAUDE.md`、`src/modules/audit-logs/audit-logs.service.ts`、`src/modules/attendances/attendances.service.ts`、`test/helpers/audit-logs-cleanup.ts`、`src/config/app.config.ts`、`docs/current-state.md`、`CODEMAP.md`、`docs/ai-harness/CUTOVER_SIGNOFF.md`、两份台账及旧写属主文件在本次静态检查中不需红区令牌，但**仍须进入最终获批写集**。上列两个测试清理文件和生成摘要路径只有最终 diff 命中时才发令牌；不能为方便一次性扩大范围。未来新增 migration 的真实时间戳路径尚未存在，本轮禁止用占位符或 `prisma/**` 代授。
+
+实施方案与真实文件清单获批后，维护者才逐条执行下列**条件命令**；本轮仅列出，不执行、不视为实施授权：
+
+```bash
+pnpm harness:grant 'prisma/schema.prisma' --reason 'E3-2 D2 第23节旧来源锚点实施获批'
+pnpm harness:grant 'harness/domain-map.json' --reason 'E3-2 D2 第23节新模型属主登记获批'
+pnpm harness:grant 'test/setup/reset-db.ts' --reason 'E3-2 D2 第23节隔离测试清理获批'
+pnpm harness:grant 'test/setup/time-ledger-fixture-cleanup.ts' --reason 'E3-2 D2 第23节隔离测试清理获批'
+pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason 'E3-2 D2 第23节生成摘要刷新获批'
+```
+
+新 migration 要在 SQL／实际路径定稿后单独补一条**精确路径**授权；全部令牌属于执行 worktree，不能在主仓发给另一 worktree 使用。`harness:needs` 的“无需授权”只表示不需要红区令牌，**不等于**用户已批准改文件。这里也不授权 `prisma migrate dev|reset`、`db push`、生产 deploy、历史数据改删或 Gate。
+
+**本节实际范围**：只完善这一份评审稿的数据合同、失败边界和候选授权清单；没有修改 schema、migration、seed、生产代码、旧审计、测试、权限、Gate 或业务数据，没有连接或重建数据库，也没有实施 D2。§22.3 的旧候选清单以本节收窄／必需项为后续依据，不能直接当授权令牌使用。
