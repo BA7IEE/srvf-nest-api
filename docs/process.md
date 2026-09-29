@@ -42,13 +42,13 @@ fresh worktree 先 `pnpm install --frozen-lockfile && pnpm prisma:generate`,否�
 
 每个 PR 在打开前先判定档位,**不混档**。
 
-| 档位 | 范围 | 例子 | 必跑检查 | 用户拍板 | 连续推进 |
-|---|---|---|---|---|---|
-| **A 档** | docs-only;无 `.ts` / `.prisma` / `.yml` / `.json` 变动 | 改 README / CHANGELOG Unreleased | (可省;动地图 / 链接 → `docs:codemap:check` + `docs:rbacmap:check`) | ❌ | ✅(一次会话多 A 档可串行) |
-| **B 档** | 代码小修(无新 endpoint / DTO 字段增减 / schema / enum / error code 增减) | 内部重构 / 注释 / 单测补强 | `pnpm agent:check:quick` + 受影响模块 e2e(`pnpm test:e2e -- <spec名>`) | ❌(常规) | ✅ |
-| **C 档** | API 行为变化(新 endpoint / DTO 字段增减 / 错误码增减 / 响应语义变化 / 新 Guard 装饰器) | 加新接口 / 接口入参变更 | `agent:check:full`(执行体=PR CI 冷跑;本地= `quick` + 受影响模块定向 e2e);snapshot diff 必须逐行可解释 | ✅(范围已含于用户任务说明 / goal → 免二次确认;AI 自行发起仍须动手前确认) | ⚠ 单 PR 评审 |
-| **D 档** | schema / migration / permission seed / Role enum / 鉴权 / 存储 / 凭证 / audit / 不可逆变更 / 安全相关 | 新建表 / 加 unique / seed 改动 / 加密策略 | `agent:check:full`(执行体=PR CI 冷跑,本地同 C 档)+ 评审稿 / 立项 / 影响面分析 + handoff 段落;对应 `srvf-*` skill 必读 | ✅ + 评审稿冻结 + 立项记录 | ❌ 必须分 PR |
-| **E 档** | release / handoff / tag / GitHub Release / version bump | bump PR / handoff PR / tag + GitHub Release 收口 | `agent:check:full`(执行体=PR CI 冷跑,本地同 C 档)+ handoff 验收锚点;沿 `srvf-release-closeout` skill | ✅ | ❌ 强串行 |
+| 档位     | 范围                                                                                                  | 例子                                             | 必跑检查                                                                                                              | 用户拍板                                                                 | 连续推进                  |
+| -------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------- |
+| **A 档** | docs-only;无 `.ts` / `.prisma` / `.yml` / `.json` 变动                                                | 改 README / CHANGELOG Unreleased                 | (可省;动地图 / 链接 → `docs:codemap:check` + `docs:rbacmap:check`)                                                    | ❌                                                                       | ✅(一次会话多 A 档可串行) |
+| **B 档** | 代码小修(无新 endpoint / DTO 字段增减 / schema / enum / error code 增减)                              | 内部重构 / 注释 / 单测补强                       | `pnpm agent:check:quick` + 受影响模块 e2e(`pnpm test:e2e -- <spec名>`)                                                | ❌(常规)                                                                 | ✅                        |
+| **C 档** | API 行为变化(新 endpoint / DTO 字段增减 / 错误码增减 / 响应语义变化 / 新 Guard 装饰器)                | 加新接口 / 接口入参变更                          | `agent:check:full`(执行体=PR CI 冷跑;本地= `quick` + 受影响模块定向 e2e);snapshot diff 必须逐行可解释                 | ✅(范围已含于用户任务说明 / goal → 免二次确认;AI 自行发起仍须动手前确认) | ⚠ 单 PR 评审              |
+| **D 档** | schema / migration / permission seed / Role enum / 鉴权 / 存储 / 凭证 / audit / 不可逆变更 / 安全相关 | 新建表 / 加 unique / seed 改动 / 加密策略        | `agent:check:full`(执行体=PR CI 冷跑,本地同 C 档)+ 评审稿 / 立项 / 影响面分析 + handoff 段落;对应 `srvf-*` skill 必读 | ✅ + 评审稿冻结 + 立项记录                                               | ❌ 必须分 PR              |
+| **E 档** | release / handoff / tag / GitHub Release / version bump                                               | bump PR / handoff PR / tag + GitHub Release 收口 | `agent:check:full`(执行体=PR CI 冷跑,本地同 C 档)+ handoff 验收锚点;沿 `srvf-release-closeout` skill                  | ✅                                                                       | ❌ 强串行                 |
 
 组合命令:`agent:check:quick` = lint + typecheck + unit(无 DB);`api` = quick + `test:contract`;`full` = api + `nest build` + `test:e2e` 全量(`build` 仅 full,typecheck 后串入、与 CI 一致,拦"typecheck 过但 build 挂"的隐性回归)。contract / e2e 需本地 Docker PostgreSQL(`docker compose up -d postgres` + `pnpm db:test:init`);**无 Docker 时跑 quick 并显式声明"contract / e2e 留给 CI",不得谎报全绿**。**本机不跑全量 e2e**(2026-08-02 拍板):连跑必出榨干假红(耗时翻倍 + 数百条假失败,三次实录,判据=耗时是否翻倍)—— `full` 的执行体恒为 PR CI 冷跑,本地兜底 = `quick`(~25s)+ 定向 spec(单 spec ~24s);全量结论只引 CI。
 
@@ -84,6 +84,7 @@ C / D 档确认、goal 模式中途新发现问题的上报,一律用本格式�
 
 ```markdown
 ## 需要拍板:<一句话标题>
+
 - 人话简报·做什么:<一句话>
 - 人话简报·不做会怎样:<一句话>
 - 人话简报·最坏情况与回退:<一句话>
@@ -112,15 +113,16 @@ pnpm release:prepare 0.63.0             # 阶段 A:一次写完全部簿记
 pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
 ```
 
-| 段 | 内容 | 谁执行 | 幂等 |
-|---|---|---|---|
+| 段                    | 内容                                                                                                                                                                      | 谁执行    | 幂等                      |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------- |
 | **A**(合并前,一个 PR) | changelog.d 归并 → `## Unreleased` 折叠为 `## vX.Y.Z - <今天>`(**日期自动**)→ package.json + apply-swagger 版本 → 生成 handoff 快照(数字取自守护计数、叙事取自 CHANGELOG) | AI 跑脚本 | ✅ 重跑自动跳过已完成步骤 |
-| **拍板** | 复核 diff + 全量检查 + **维护者合并** | 维护者 | — |
-| **B**(合并后) | 打 tag → push → 建 GitHub Release(Notes 抽自 CHANGELOG)→ 输出收尾证据 | AI 跑脚本 | ✅ 已存在则跳过并校验指向 |
+| **拍板**              | 复核 diff + 全量检查 + **维护者合并**                                                                                                                                     | 维护者    | —                         |
+| **B**(合并后)         | 打 tag → push → 建 GitHub Release(Notes 抽自 CHANGELOG)→ 输出收尾证据                                                                                                     | AI 跑脚本 | ✅ 已存在则跳过并校验指向 |
 
 **为什么必须两段**:tag 与 Release 必须指向 release PR 的 **squash 合并提交**,而该提交在合并前不存在;塞进阶段 A 会指向一个将被 squash 丢弃的提交。
 
 **脚本的硬边界**(设计即约束,不靠自觉):
+
 - 阶段 A **不提交、不开 PR、不合并、不打 tag** —— 只写文件,其余全交人
 - 阶段 B **不改任何文件** —— 只与 git ref 和 GitHub 打交道
 - 两段均 **fail-closed**:任一步无法确定就停下并打印「已完成 / 未完成」清单,不猜
@@ -162,19 +164,19 @@ pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
 
 ## 6. 文档权威源制度
 
-| 类型 | 文件 | 允许回改? |
-|---|---|---|
-| **当前状态入口** | [`docs/current-state.md`](current-state.md) | ✅ 滚动维护 |
-| **架构铁律(蓝图)** | [`ARCHITECTURE.md`](../ARCHITECTURE.md) | ⚠ 谨慎改,用户拍板 |
-| **AI 铁律(主入口)** | [`AGENTS.md`](../AGENTS.md)(`CLAUDE.md` 为入口转发,非规则源) | ⚠ 非用户授权不动 |
-| **V2 基线** | [`docs/srvf-foundation-baseline.md`](srvf-foundation-baseline.md) | ⚠ 非用户授权不动 |
-| **V2 红线** | [`docs/V2红线与复活路径.md`](V2红线与复活路径.md) | ✅ 滚动维护 |
-| **历史 handoff / 冻结批次评审稿** | [`archive/handoff/`](archive/handoff/) / `archive/batches/` | ❌ 合入 / 冻结后不改 |
-| **harness v1 快照** | [`archive/harness-v1/`](archive/harness-v1/) | ❌ 冻结不回改 |
-| **release 记录** | [`CHANGELOG.md`](../CHANGELOG.md) | ❌ 已发布段不改;`## Unreleased` 可改 |
-| **运行 SOP** | `docs/{development,testing,deployment,security}.md` / [`ops/*.md`](ops/) | ✅ 按现实维护 |
-| **历史立项 / 评估** | `docs/archive/plans/**` | ❌ 归档,不回改 |
-| **本文件** | `docs/process.md` | ✅ 滚动维护 |
+| 类型                              | 文件                                                                     | 允许回改?                            |
+| --------------------------------- | ------------------------------------------------------------------------ | ------------------------------------ |
+| **当前状态入口**                  | [`docs/current-state.md`](current-state.md)                              | ✅ 滚动维护                          |
+| **架构铁律(蓝图)**                | [`ARCHITECTURE.md`](../ARCHITECTURE.md)                                  | ⚠ 谨慎改,用户拍板                    |
+| **AI 铁律(主入口)**               | [`AGENTS.md`](../AGENTS.md)(`CLAUDE.md` 为入口转发,非规则源)             | ⚠ 非用户授权不动                     |
+| **V2 基线**                       | [`docs/srvf-foundation-baseline.md`](srvf-foundation-baseline.md)        | ⚠ 非用户授权不动                     |
+| **V2 红线**                       | [`docs/V2红线与复活路径.md`](V2红线与复活路径.md)                        | ✅ 滚动维护                          |
+| **历史 handoff / 冻结批次评审稿** | [`archive/handoff/`](archive/handoff/) / `archive/batches/`              | ❌ 合入 / 冻结后不改                 |
+| **harness v1 快照**               | [`archive/harness-v1/`](archive/harness-v1/)                             | ❌ 冻结不回改                        |
+| **release 记录**                  | [`CHANGELOG.md`](../CHANGELOG.md)                                        | ❌ 已发布段不改;`## Unreleased` 可改 |
+| **运行 SOP**                      | `docs/{development,testing,deployment,security}.md` / [`ops/*.md`](ops/) | ✅ 按现实维护                        |
+| **历史立项 / 评估**               | `docs/archive/plans/**`                                                  | ❌ 归档,不回改                       |
+| **本文件**                        | `docs/process.md`                                                        | ✅ 滚动维护                          |
 
 冲突优先级:**全仓唯一副本在 [`AGENTS.md §0`](../AGENTS.md)**,本文件不再维护第二份;高低冲突低让步、不擅自调和、**暂停汇报**的原则不变。
 
@@ -214,13 +216,33 @@ pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
 
 首次请求实施拍板前,把同一业务目标的方案、DoD、精确候选写集(含生成物、台账和测试后果面)、必要授权及验证方式一起准备好。能从代码和 GitHub 核实的工程问题先自行查清;尚待维护者决定的业务口径、风险或范围集中说明。用户仅要求分析、评审或起草时,仍只交相应材料,不推定实施授权。
 
+完整任务包直接写进未冻结评审稿或 goal,不另建台账;已冻结稿只引用、不回改。逐项填具体路径/命令/证据,不适用则说明原因:
+
+| 项目       | 开工前必须核实                                                                                                                                      |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 交付终点   | 可观察结果、DoD、禁止域;明确提交/推送/Draft/Ready/合并分别获准到哪一步                                                                              |
+| 引用链     | 调用者、模块公开出口、模型属主、事务与权限边界;先核实可复用入口                                                                                     |
+| 旧测试     | 新表的外键/不可截断守卫与全部夹具清理入口、历史 schema 上运行当前服务的测试、专用库及 worker 差异                                                   |
+| 迁移计数   | 现有 `pnpm docs:migcount:check` 与 `CURRENT_MIGRATION_COUNT` 引用列出的当前计数钉子;历史升级目标保持固定,不得改为运行时自取期望值或放宽断言         |
+| 配套写集   | schema 输入摘要、domain-map/state-machines、CODEMAP、ROUTE_AUTHZ、OpenAPI/客户端、changelog、交接及必要台账;按实际影响逐文件做 `harness:needs` 预算 |
+| 验证副作用 | 阅读 package 脚本、Jest config、globalSetup/Teardown 与具名测试,列模板/worker/专用库的实际目标和建库、迁移、清理动作;不打印连接串或凭证             |
+| 后置决策   | 最终 SQL/权限摘要签字、红区令牌及可信审批分别列出;未知摘要不预签,维护者本人发令牌                                                                   |
+
+`test:contract` 不是纯内存检查:现有 globalSetup 会准备模板库、执行 migration 并重建 worker 库。仅获准 w98 或仅文档/无数据库操作时,不得直接运行标准 Contract/E2E 入口;目标不匹配须先调整获准的验证方案,不能靠设置 `DATABASE_URL` 猜测覆盖 `.env.test` 与 worktree 派生。夹具准备失败与业务断言失败分别报告。
+
 方案与精确实施计划可以放在同一份送审材料中;既有冻结稿引用原文,不回改。需要预先冻结的 D 档仍完成冻结与拍板后实施。已批准的业务阶段、D/E 分档与串行要求不合并、不跳过;减少的是同一阶段中重复起草材料的往返。
 
 获得授权后,按 §7.1 在清单内连续推进,不因切换到实现、补测或准备已获准的 PR 再索取同一项授权。红区 grant、数据库许可、签字、可信审批、Ready、合并、发布与生产操作仍分别遵循已有授权边界;范围外的新业务或风险仍按 §4.1 上报。
 
+遗漏需扩围时,先只读排查同因的全部引用与配套后果,一次列清精确范围;不把未知风险包进笼统授权。同一阻塞保持一条待办请求,仅在证据、范围或审批状态变化时更新;自动续跑不算新增授权。已有本机目录或无关 PR 的豁免按维护者实际授予的有效范围复用;仅限单次的不得跨任务套用,未获准的不得自行忽略。此条不改变 §5.4 合并前置。
+
 能力、债务和交接更新随实现 PR 按真实状态提交。GitHub 可查的 merge/SHA/check 状态留在 PR 与任务收尾证据中,不为重复登记这些机器事实单开台账 PR;确有非机器事实变化或既有守护要求更新时,按最小写集处理。不得在合并前写成已合并,不得省略已要求的签字或让台账过期。
 
 开发期间先运行正在修改的测试;交付前完成 §3 的本地检查、受影响生成物与签字的新鲜度检查。`docs:refresh` 只负责刷新,不替代检查。最后一次修改之后复核 diff 与精确写集,再提交最终候选;CI 与维护者审批绑定实际候选 SHA,任何新提交均按原门禁重新核验。CI 等待期间沿 §7.1 只读准备下一阶段。
+
+优先验证可能推翻方案的历史兼容、满额性能或跨模块接线。失败先区分业务缺陷、夹具/环境、资源争用与治理误报;未复现不算已修复,不靠盲目重跑、增加超时或削弱断言过关。相关输入未变且检查已通过时不机械重复全套;输入变化仍按影响范围重新验证,最终 PR/main 必需检查不省略。Ready 触发的新审批在工作流正式修改前仍须完成。
+
+规则交付另核实技能入口:比较仓库跟踪的 `.claude/skills/` 与当前执行器实际加载的 `.agents/skills/`。未跟踪的本机副本不算 PR 交付物;差异先报告。主干合入后只同步本次批准的技能文件并比对内容,不覆盖其它本机技能,不让未合入规则提前约束正在运行的任务。
 
 此条合入后的前三个新业务目标作为试点,在已有 PR 描述的「验证」节记录四项:①范围确认到可验收的自然时长及暂停原因;②人工确认次数(区分新增决策、重复确认、平台要求的维护者审批);③本目标的独立流程性 PR 数;④CI 等待与失败重跑时间(链接原始 run,不冒充人力工时)。每个目标另写一句可观察的业务结果及未接通的环节,内部阶段可用真实 HTTP/数据库证据,有用户界面的阶段需给出界面验收证据。无可靠数据时写未记录。三个目标后在任务报告中比较结果,不新增长期台账或 CI 门禁。
 
@@ -267,10 +289,15 @@ pnpm release:finish 0.63.0              # 阶段 B:tag + push + GitHub Release
 
 ```markdown
 ## 修改文件清单(新增 / 修改 / 删除;行数变化)
+
 ## 本次做了什么(1-5 条)
-## 本次未做什么(显式列出刻意没做的范围,如:未打 tag / 未启动 RBAC / 未改 src/*)
+
+## 本次未做什么(显式列出刻意没做的范围,如:未打 tag / 未启动 RBAC / 未改 src/\*)
+
 ## 验证命令(`agent:check:quick` / `full` 结果;不跑说明原因;`git diff --stat`)
+
 ## 当前 open PR / Release 状态(`gh pr list --state open` / `gh release list --limit 1`)
+
 ## 建议下一步(不自动启动;是否需要 PR / release / 回填 / 用户拍板)
 ```
 
