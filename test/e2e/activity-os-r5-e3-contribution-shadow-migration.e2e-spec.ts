@@ -115,12 +115,15 @@ describe('E3-2 D1 additive shadow evidence migration', () => {
       loadTestEnv();
     }
     assertTestDatabaseUrl(process.env.DATABASE_URL);
-    if (USE_DEDICATED_W98) {
-      recreate();
-      deployThroughD1();
-    }
+    recreate();
+    deployThroughD1();
   });
   afterAll(() => {
+    if (!USE_DEDICATED_W98) {
+      recreate();
+      deploy();
+      return;
+    }
     if (USE_DEDICATED_W98) {
       try {
         dropWorkerDatabase('98');

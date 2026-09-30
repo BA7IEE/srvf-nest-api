@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   cpSync,
   copyFileSync,
@@ -15,6 +15,9 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+import { createTestApp } from '../setup/test-app';
+import { PrismaService } from '../../src/database/prisma.service';
+import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import appConfig from '../../src/config/app.config';
 import databaseConfig from '../../src/config/database.config';
 import {
@@ -283,7 +286,7 @@ function actualSourceApprovalFixture(ambiguous = false, legacyPoints = 2) {
   }
   const literal = JSON.stringify(manifest).replaceAll("'", "''");
   const ids = ambiguous ? '["ref-approval","ref-second-approval"]' : '["ref-approval"]';
-  return `${fixtureSql} ${registrationHumanFixtureSql()}
+  return fixtureStatement(`${fixtureSql} ${registrationHumanFixtureSql()}
     ${registrationAuthorityFixtureSql(manifest)}
     SET SESSION AUTHORIZATION srvf_shadow_registrar_w98_fixture;
     DO $fixture$ BEGIN
@@ -309,7 +312,7 @@ function actualSourceApprovalFixture(ambiguous = false, legacyPoints = 2) {
       VALUES ('ref-source','ref-window','ref-source-audit','ref-sheet',1,'ref-activity','ref-record','ref-member','service','volunteer',1.00,'matched','ref-rule',${legacyPoints},${legacyPoints},'sha256',1,
         cslsa_source_hash_fn(jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",jsonb_build_object(
           'windowId','ref-window','auditLogId','ref-source-audit','sheetId','ref-sheet','sheetVersion',1,'activityId','ref-activity','recordId','ref-record','memberId','ref-member',
-          'activityTypeCode','service','attendanceRoleCode','volunteer','legacyServiceHours',1.00,'sourceKindCode','matched','legacyRuleId','ref-rule','pointsBelow',${legacyPoints},'legacyPoints',${legacyPoints}))));`;
+          'activityTypeCode','service','attendanceRoleCode','volunteer','legacyServiceHours',1.00,'sourceKindCode','matched','legacyRuleId','ref-rule','pointsBelow',${legacyPoints},'legacyPoints',${legacyPoints}))));`);
 }
 
 function actualSelectionFixtureSql(createdAt = '2099-09-01T00:00:00.000Z', revision = 1) {
@@ -429,7 +432,7 @@ function comparisonInsertSql(change: Record<string, string | number> = {}) {
 }
 
 // Most role/ACL probes roll back; the final cross-transaction persistence probe
-// commits these exact fixtures and removes them after dropping only w98. The
+// commits these exact fixtures and removes them after dropping only this worker. The
 // separately authorized final probe temporarily enables only runtime LOGIN,
 // verifies real authentication, then revokes it. No real mapping is registered.
 function registrationAuthorityFixtureSql(manifest: ReturnType<typeof manifestFixture>) {
@@ -450,10 +453,10 @@ function registrationAuthorityFixtureSql(manifest: ReturnType<typeof manifestFix
     join(process.cwd(), 'scripts/sql/contribution-shadow-registration-roles.sql'),
     'utf8',
   );
-  return `SET LOCAL srvf.shadow_acl_database = 'app_test_w98';
+  return fixtureStatement(`SET LOCAL srvf.shadow_acl_database = 'app_test_w98';
     SET LOCAL srvf.shadow_acl_action = 'bootstrap'; ${script}
     SET LOCAL srvf.shadow_registration_authority = '${authority}';
-    SET LOCAL srvf.shadow_acl_action = 'bind'; ${script}`;
+    SET LOCAL srvf.shadow_acl_action = 'bind'; ${script}`);
 }
 
 function checkRegistrationReferences(manifest: unknown, fixtureSql: string): string {
@@ -481,8 +484,36 @@ function sql(statement: string): string {
       '-v',
       'ON_ERROR_STOP=1',
     ],
-    { input: statement, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
+    { input: fixtureStatement(statement), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] },
   ).trim();
+}
+
+// Instantiate only the fixed test SQL template. Never execute its production
+// role branch on a worker database; all three names are unique to this worker.
+function fixtureDatabase(): string {
+  assertTestDatabaseUrl(process.env.DATABASE_URL);
+  const database = deriveTestDbName();
+  if (!process.env.JEST_WORKER_ID || !/^app_test(?:_[a-z0-9_]+)?_w[1-9][0-9]*$/.test(database)) {
+    throw new Error('mapping fixture requires an exact derived worker database');
+  }
+  return database;
+}
+
+function fixtureSuffix(): string {
+  const database = fixtureDatabase();
+  return database === 'app_test_w98'
+    ? 'w98'
+    : createHash('sha256').update(database).digest('hex').slice(0, 16);
+}
+
+function fixtureRole(kind: 'owner' | 'registrar' | 'runtime'): string {
+  return `srvf_shadow_${kind}_${fixtureSuffix()}_fixture`;
+}
+
+function fixtureStatement(statement: string): string {
+  return statement
+    .replaceAll('app_test_w98', fixtureDatabase())
+    .replaceAll('_w98_fixture', `_${fixtureSuffix()}_fixture`);
 }
 
 describe('E3-2 D2 mapping schema construction', () => {
@@ -510,12 +541,12 @@ describe('E3-2 D2 mapping schema construction', () => {
   }, 120_000);
 
   afterAll(() => {
-    if (!dedicated) return;
+    if (!dedicated && !committedAclFixture) return;
     try {
-      dropWorkerDatabase('98');
+      dropWorkerDatabase(process.env.JEST_WORKER_ID!);
       if (committedAclFixture) {
         // These three names were asserted absent before this suite created them.
-        // The dedicated fixture DB has now gone, so no owned object is cascaded
+        // This suite's fixture DB has now gone, so no owned object is cascaded
         // or reassigned. Do not use DROP OWNED or touch any real role/database.
         execFileSync(
           'docker',
@@ -534,13 +565,26 @@ describe('E3-2 D2 mapping schema construction', () => {
             'ON_ERROR_STOP=1',
           ],
           {
-            input:
+            input: fixtureStatement(
               'DROP ROLE srvf_shadow_runtime_w98_fixture, srvf_shadow_registrar_w98_fixture, srvf_shadow_owner_w98_fixture;',
+            ),
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'pipe'],
           },
         );
         committedAclFixture = false;
+      }
+      if (!dedicated) {
+        execFileSync(
+          'docker',
+          ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', fixtureDatabase()],
+          { stdio: 'pipe' },
+        );
+        execFileSync(
+          'pnpm',
+          ['exec', 'prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
+          { env: process.env, stdio: 'pipe' },
+        );
       }
     } finally {
       if (previous.worker === undefined) delete process.env.JEST_WORKER_ID;
@@ -749,7 +793,9 @@ describe('E3-2 D2 mapping schema construction', () => {
           await tx.$executeRawUnsafe(`DO $database_clock_fixture$ BEGIN
             ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
           END $database_clock_fixture$;`);
-          await tx.$executeRawUnsafe('SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture');
+          await tx.$executeRawUnsafe(
+            fixtureStatement('SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture'),
+          );
           await tx.contributionShadowMappingApplication.createMany({
             data: [
               {
@@ -821,7 +867,9 @@ describe('E3-2 D2 mapping schema construction', () => {
             await tx.$executeRawUnsafe(`DO $runtime_writer_fixture$ BEGIN
           ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
           END $runtime_writer_fixture$;`);
-            await tx.$executeRawUnsafe('SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture');
+            await tx.$executeRawUnsafe(
+              fixtureStatement('SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture'),
+            );
             const source = await tx.contributionShadowLegacySourceAnchor.findUniqueOrThrow({
               where: { id: 'ref-source' },
             });
@@ -1025,7 +1073,9 @@ describe('E3-2 D2 mapping schema construction', () => {
             [source.recordId],
             [source],
           );
-          await tx.$executeRawUnsafe('SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture');
+          await tx.$executeRawUnsafe(
+            fixtureStatement('SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture'),
+          );
           const writer = new ContributionShadowEvidenceWriteService();
           const started = await writer.readOrCreateAttempt(tx, input);
           const failed = await writer.writeFailedTerminal(tx, started.attempt);
@@ -1150,7 +1200,9 @@ describe('E3-2 D2 mapping schema construction', () => {
             policyVersion: versions[0],
           });
           expect(prepared.application).not.toBeNull();
-          await tx.$executeRawUnsafe('SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture');
+          await tx.$executeRawUnsafe(
+            fixtureStatement('SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture'),
+          );
           const writer = new ContributionShadowEvidenceWriteService();
           const attemptInput = prepareShadowAttempt(
             {
@@ -2331,6 +2383,61 @@ describe('E3-2 D2 mapping schema construction', () => {
   const mappingTruncate =
     'TRUNCATE TABLE "ContributionShadowMappingApplication", "ContributionShadowMappingRegistrationReceipt", "ContributionShadowMappingApproval" RESTART IDENTITY';
 
+  it.each(['ENABLE', 'DISABLE', 'ENABLE REPLICA', 'ENABLE ALWAYS'])(
+    'audit cleanup preserves exact mapping trigger mode %s and clears all evidence children',
+    async (clause) => {
+      const app = await createTestApp();
+      const before = mappingTriggerStates();
+      try {
+        sql(
+          `ALTER TABLE "ContributionShadowMappingApplication" ${clause} TRIGGER "csmap_no_truncate";`,
+        );
+        const configured = mappingTriggerStates();
+        await truncateAuditLogsTestOnly(app);
+        expect(mappingTriggerStates()).toBe(configured);
+        expect(
+          sql(`SELECT (SELECT count(*) FROM audit_logs) +
+          (SELECT count(*) FROM "ContributionShadowMappingApproval") +
+          (SELECT count(*) FROM "ContributionShadowMappingApplication") +
+          (SELECT count(*) FROM "ContributionShadowMappingRegistrationReceipt")`),
+        ).toBe('0');
+      } finally {
+        sql(
+          'ALTER TABLE "ContributionShadowMappingApplication" ENABLE TRIGGER "csmap_no_truncate";',
+        );
+        await app.close();
+      }
+      expect(mappingTriggerStates()).toBe(before);
+    },
+  );
+
+  it('audit cleanup fails closed on a missing mapping guard and rolls back base guard changes', async () => {
+    const states = () =>
+      sql(`SELECT string_agg(t.tgname || ':' || t.tgenabled::text, ',' ORDER BY t.tgname)
+      FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+      JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
+      WHERE NOT t.tgisinternal AND t.tgname LIKE 'cs%_no_truncate'`);
+    const before = states();
+    const app = await createTestApp();
+    const prisma = app.get(PrismaService);
+    try {
+      await prisma.$executeRawUnsafe(
+        'ALTER TRIGGER "csmap_no_truncate" ON "ContributionShadowMappingApplication" RENAME TO "csmap_missing_fixture"',
+      );
+      const configured = states();
+      await expect(truncateAuditLogsTestOnly(app)).rejects.toThrow(
+        'Shadow fixture no-truncate trigger missing or invalid',
+      );
+      expect(states()).toBe(configured);
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'ALTER TRIGGER "csmap_missing_fixture" ON "ContributionShadowMappingApplication" RENAME TO "csmap_no_truncate"',
+      );
+      await app.close();
+    }
+    expect(states()).toBe(before);
+  });
+
   it('restores all mapping guards after raw SQL fixture cleanup', () => {
     const before = mappingTriggerStates();
     const guarded = timeLedgerFixtureTriggerSql();
@@ -2654,8 +2761,7 @@ describe('E3-2 D2 mapping schema construction', () => {
   // Deliberately last: previous probes and 134→135 upgrade retain their original
   // rollback semantics. Only these authorized fixtures survive until afterAll.
   it('keeps a committed start after rollback, recovers read-only failed replay, and compares 2,000 frozen records within one budget', async () => {
-    if (!dedicated || deriveTestDbName() !== 'app_test_w98')
-      throw new Error('cross-transaction mapping fixture requires authorized w98');
+    fixtureDatabase();
     expect(
       sql(`SELECT count(*) FROM pg_roles WHERE rolname IN (
       'srvf_shadow_runtime_w98_fixture','srvf_shadow_registrar_w98_fixture','srvf_shadow_owner_w98_fixture')`),
@@ -2666,11 +2772,11 @@ describe('E3-2 D2 mapping schema construction', () => {
     const connection = new URL(process.env.DATABASE_URL ?? '');
     if (
       !['localhost', '127.0.0.1', '[::1]'].includes(connection.hostname) ||
-      connection.pathname !== '/app_test_w98'
+      connection.pathname !== `/${fixtureDatabase()}`
     )
-      throw new Error('LOGIN fixture requires exact local w98 connection');
+      throw new Error('LOGIN fixture requires exact local worker connection');
     const password = randomUUID().replaceAll('-', '') + randomUUID().replaceAll('-', '');
-    connection.username = 'srvf_shadow_runtime_w98_fixture';
+    connection.username = fixtureRole('runtime');
     connection.password = password;
     connection.searchParams.set('connect_timeout', '1');
     connection.searchParams.set('pool_timeout', '1');
@@ -2702,7 +2808,7 @@ describe('E3-2 D2 mapping schema construction', () => {
             has_table_privilege(CURRENT_USER,'public.audit_logs','SELECT') AS "auditRead"
         `;
         expect(identity).toEqual([
-          { identity: 'srvf_shadow_runtime_w98_fixture', oldWrite: false, auditRead: false },
+          { identity: fixtureRole('runtime'), oldWrite: false, auditRead: false },
         ]);
         return work(tx);
       }, options);
@@ -2710,11 +2816,13 @@ describe('E3-2 D2 mapping schema construction', () => {
       await primary
         .$transaction(async (tx) => {
           await tx.$queryRaw`SELECT set_config('srvf.shadow_login_fixture_password',${password},TRUE)`;
-          await tx.$executeRaw`DO $fixture_login$ BEGIN
+          await tx.$executeRawUnsafe(
+            fixtureStatement(`DO $fixture_login$ BEGIN
           EXECUTE format('ALTER ROLE srvf_shadow_runtime_w98_fixture LOGIN PASSWORD %L',
             current_setting('srvf.shadow_login_fixture_password'));
           GRANT CONNECT ON DATABASE app_test_w98 TO srvf_shadow_runtime_w98_fixture;
-        END $fixture_login$;`;
+        END $fixture_login$;`),
+          );
         })
         .catch(() => {
           throw new Error('isolated LOGIN fixture setup failed');
@@ -3059,8 +3167,14 @@ describe('E3-2 D2 mapping schema construction', () => {
       }
     } finally {
       await runtimeProvider.onModuleDestroy();
-      await primary.$executeRaw`ALTER ROLE srvf_shadow_runtime_w98_fixture NOLOGIN PASSWORD NULL`;
-      await primary.$executeRaw`REVOKE CONNECT ON DATABASE app_test_w98 FROM srvf_shadow_runtime_w98_fixture`;
+      await primary.$executeRawUnsafe(
+        fixtureStatement('ALTER ROLE srvf_shadow_runtime_w98_fixture NOLOGIN PASSWORD NULL'),
+      );
+      await primary.$executeRawUnsafe(
+        fixtureStatement(
+          'REVOKE CONNECT ON DATABASE app_test_w98 FROM srvf_shadow_runtime_w98_fixture',
+        ),
+      );
       await primary.$disconnect();
     }
   }, 120_000);

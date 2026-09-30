@@ -1050,3 +1050,88 @@ DoD逐项：三表及所有约束冷回放与134→135非空升级保持旧事�
 精确11路径：`src/modules/attendances/contribution-shadow.service.ts`及`.spec.ts`、`src/modules/attendances/attendances.service.ts`及`.spec.ts`、既有映射E2E、现评审稿、既有changelog、NEXT_TASKS、FROZEN_DRAFTS、CODEMAP、ROUTE_AUTHZ（末二仅生成器）。不修改schema／migration／权限／API／DTO／Gate／连接环境或旧数据。已有原5,000ms倒计时、default500ms分配器、余额不足不建池及全部旧业务断言保留；仅真实已建连的执行选项断言按实付合同适配，并补建连耗时／失败／超额、零重试、冷池与重放回归。w98与具名临时LOGIN许可沿用27.5；完整满额、原来源链、类型／lint／架构／生成物均验收后仅呈报。
 
 历史授权口令：**允许27.7 P-Budget实付建连时间方案，按11路径实施，保留五秒总预算与全部业务断言，沿用w98隔离验证，验证后仅呈报。** 维护者已确认此方向，未扩大提交、生产或开关授权。
+
+## 28. #1370 首轮完整 CI 整改包（35路径及1条基线追加已实施；本地验证完成，未提交）
+
+### 28.1 当前事实与本轮权限
+
+2026-09-30，D2 已在提交 `6341fccbe51f77abaf534ed7c0e7550e66d19af6` 创建 [#1370 Draft PR](https://github.com/BA7IEE/srvf-nest-api/pull/1370)。这覆盖 §27 的“未提交／无 PR”历史时点，但不覆盖其禁止域。[首轮 CI 36732529967](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36732529967) 已结束失败：Fast checks 的 migration 计数检查失败，五个 Contract + E2E 分片均失败；Docker build、Docker smoke 和本 SHA 红区审批通过。不能用本地 quick 或红区审批代替全量验收，不能 Ready 或合并。
+
+维护者本轮仅允许：在本评审稿统一汇总整改包；仅在 `app_test_w98` 临时给 source-proof E2E 加脱敏阶段耗时，诊断后还原。不改生产代码、断言或超时，不提交推送。下列候选路径与措施均是待审方案，不是本轮写入许可；不继承之前 D2 的提交授权执行新修复。
+
+### 28.2 根因分组与整改边界
+
+| 分组       | 证据与原因                                                                                                                                                                                              | 推荐措施／验收                                                                                                                                                                                                                                   | 风险边界                                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-Count    | `docs:migcount:check` 报 18 个当前常量仍为 133；另 8 个当前冷回放直接断言 133，实际 135。C1 D2b 当前 seed 断言仍 269，实际 270。                                                                        | 仅同步当前总数及对应标题 133→135、C1 D2b 当前 seed 269→270；保留所有历史升级目标、固定 migration 身份／摘要和业务断言。                                                                                                                          | 不能把期望值改为运行时自动计算，不能改检查器来消红。                                                                                                            |
+| P-Cleanup  | E2E 的 `23514: shadow mapping evidence is immutable`；`test/helpers/audit-logs-cleanup.ts` 只登记六张 shadow 表，遗漏第135条三张 mapping 证据表。`TRUNCATE audit_logs ... CASCADE` 到达仍受保护的子表。 | 在已有测试 helper 补三张固定表／触发器；三表存在性只能为 0 或完整 3，混合状态拒绝；同一受控事务显式子表先清、精确保存和恢复每个触发器原状态。覆盖调用者回归及恢复失败回滚。                                                                      | 保留 APP_ENV、URL 和实际连接库三层检查；不改生产触发器、不扩大到任意表，不逐个删除调用者断言。                                                                  |
+| P-Worker   | mapping-proof 的 ACL GUC 固定 `app_test_w98`，而 CI 使用真实派生 worker 库，因目标不符被正确拒绝。真实 LOGIN 用例还固定 w98 连接、角色、GRANT／REVOKE。                                                 | 测试侧建立完整 worker 身份合同：核对真实派生库；fixture owner／registrar／runtime 三角色按安全 worker 标识隔离；bootstrap、绑定、真实 LOGIN、连接授予与撤回、finally 清理一一对应。生产 ACL 脚本保持原样，只在测试中使用固定模板的具名夹具实例。 | 禁止只改 GUC 后放过 LOGIN；禁止在 CI worker 库运行脚本的生产角色分支；固定共享角色会造成跨 worker 竞态。实际角色隔离测试须另获明确授权，本轮 w98 诊断不涵盖它。 |
+| P-History  | D1 migration E2E 期望最后一条为第133条及原摘要；CI 夹具实际已经到第135条。本地专用开关才部署冻结 D1。                                                                                                   | 历史验收必须实际构造冻结133条的隔离夹具，核验132→133升级与第133条摘要；结束后恢复当前 schema，避免污染同 worker 后续测试。                                                                                                                       | 不把旧历史断言改成135；不得仅检查“当前最后一条”冒充历史升级。夹具生命周期必须完整。                                                                             |
+| P-Source   | E2E (2) 的2,000人真实提交报 P2028：7,000ms预算下实际10,730ms，在来源 `createMany` 报错；不能据报错行认定此前全部阶段无耗时。                                                                            | 本轮 w98 分阶段证据见28.3。保留 CI 失败为未关闭项；若前四组修复后冷跑仍超时，先补精确取证与候选修复审批，不直接改写者或 SQL。                                                                                                                    | 不加长7秒、不跳过来源守卫、不减人数、不改断言；本地一次通过不等于 CI 修复。                                                                                     |
+| P-Residual | D3 migration 的30秒准备失败、服务段旧迁移的 Prisma 错误、D1-3历史兼容夹具初始化失败及旧并发 fulfilled/rejected 差异，尚未逐一证明由上述共用缺陷导致。                                                   | 优先核对完整错误与调用链，再在已批准库内定向复现；前四组修复后仍红则单列精确措施，不能当成“偶发”自动重跑。                                                                                                                                       | 不预先扩大生产写集，不放宽超时或竞态断言，不宣布完整包已解决全部红点。                                                                                          |
+
+### 28.3 source-proof w98 临时诊断结果
+
+只选 `real submit/edit preserve CUIDs, roll back source failure and complete a 2,000-record old write within 7 seconds` 原用例，使用现有 ts-jest／setupFiles，不启动会创建其他 worker 库的 globalSetup。专用 `SRVF_E3_D2_W98=1` 入口再次核对目标严格等于 `app_test_w98`，冷部署135条；原 submit／edit、失败回滚、CUID、2,000个身份和来源、零比较收据及7秒断言原样保留。
+
+首个诊断脚本因测试侧漏取 provider 报 ReferenceError，未到达满额调用，不作为业务失败；补齐该临时变量后重建 w98 并完成同一用例。实测 1 条通过、9 条未选取（不是完整10条套件通过）：
+
+- submit 开始至来源匹配入口：493ms。
+- 匹配与输入准备：约111ms；来源写入入口在604ms。
+- `writeLegacySources` 总耗时：2,644ms，包含哈希／数据构建和真实 createMany；没有独立量到每条 SQL 或触发器，不能将此值写成纯 INSERT 耗时。
+- `writeMatchedLegacySources` 总耗时：2,756ms（包含上项，不能重复相加）。
+- 整个 submit：3,368ms，原7秒及全部该用例断言通过。
+
+结论：本地最大已量阶段是来源批量证明写入；CI 的10,730ms仍未在本机复现，尚不能划分 CI 数据库竞争、SQL守卫与客户端批量写的具体贡献。不追加生产优化。所有临时 Jest spies／计时日志已还原，E2E 与 HEAD 无 diff；w98 在 afterAll 回收。仅保留本稿取证摘要，不保存 SQL参数、业务ID、密码、连接串或审计内容。
+
+### 28.4 待批准的确定性修复写集（34路径，不含未定位的实现修复）
+
+P-Count 的27路径为 §19.3 逐字列明27份旧迁移 E2E。后续只读核对确认 `test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts:546–553` 同样含当前冷回放标题及 `expect(names).toHaveLength(133)`，故纳入当前计数适配，候选总路径由33更正为34；不是通过授权推定增加范围。该文件的准备超时仍未定位，不能以计数适配宣称修复。27份仅按28.2当前计数适配，其中 C1 D2b 同时仅同步当前权限数。历史目标不变。
+
+另外7个精确路径：
+
+1. `test/helpers/audit-logs-cleanup.ts`：P-Cleanup，固定三表与原态恢复。
+2. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`：P-Worker，完整具名隔离身份及生命周期；不是生产角色配置。
+3. `test/e2e/activity-os-r5-e3-contribution-shadow-migration.e2e-spec.ts`：P-History，真实冻结夹具与结束恢复。
+4. `docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`：审批、结果和未关闭项。
+5. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`：本修复的范围及真实验收。
+6. `docs/ai-harness/NEXT_TASKS.md`：仅顶部 #1370 当前状态。
+7. `docs/ai-harness/FROZEN_DRAFTS.md`：仅顶部 #1370 当前状态。
+
+P-Source、D3准备超时、服务段、D1-3历史兼容、旧并发目前只列待诊断，其实现修复不在这34路径许可中；D3只包含上一段的计数适配。没有生产代码、schema、migration、seed、权限、API、DTO、生成器、工作流、测试全局配置或 Gate 写入许可。测试侧模板实例不得编辑 `scripts/sql/contribution-shadow-registration-roles.sql`；若完整 fixture 需要额外 helper、新目录或红区路径，先呈报，不顺手增加。
+
+### 28.5 验收、授权与收尾
+
+顺序：P-Count静态检查→P-Cleanup触发器保存／完整三表／恢复失败与旧调用者→P-Worker具名真实LOGIN／错身份与错库负例／撤权→P-History历史升级及恢复→定向来源原完整套件→quick、类型、lint、生成物及差异核对→获提交许可后由 Draft PR CI 冷跑全量。CI worker 身份测试的数据库与具名角色范围须显式审批，不能将仅w98授权扩大到其他库；固定其他 scratch 库的历史测试留给 CI，除非另获授权。上述残余项若仍失败，保留红点并给出具体追加清单。
+
+若维护者批准，可一次确认：**允许按第28节34路径实施 P-Count／P-Cleanup／P-Worker／P-History，保留所有历史升级、业务断言、超时与数据库守卫；允许w98隔离验证与夹具重建，并允许仅该测试库的具名fixture角色验证及结束撤权；其他固定库只由PR CI验收。残余项只诊断呈报，不改生产代码。验证后呈报，不自动提交推送、Ready或合并。** 维护者仍需对红区候选路径执行精确 grant，AI不自行发放。真实映射继续hold；不开生产角色、shadow或Gate，不操作生产、不删除或重算业务数据。
+
+本轮未做：未实施上述修复，未改任何生产实现／SQL／断言／超时，未提交推送、重跑CI、Ready或合并；未证明全部CI失败已定位，未执行真实登记、D8-OPS、生产操作或开关启用。
+
+### 28.6 后续只读核对：历史审计客户端读回兼容（待独立批准）
+
+完整 E2E (5) 错误进一步证明，服务段非空历史升级失败不是 mapping 清理守卫：`activity-service-segment-correction-pending-migration.e2e-spec.ts:489` 的 `createSettledActivity` 经真实 `LedgerPostingService.commitBatch` → `LedgerPostingAuditRecorder.log` → `AuditLogsService.createLog:132`，Prisma明确报 `The column shadowProofRequired does not exist in the current database`。本测试故意回放到第115条之前；当前客户端的 `auditLog.create` 默认读回包含第134条新增列，旧库缺列。生产审计构造数据没有新增该标志，本例是当前客户端与历史夹具的读回形状冲突；不得据此修改生产服务或历史migration。
+
+推荐 P-Legacy：只扩展 `test/e2e/activity-service-segment-correction-pending-migration.e2e-spec.ts` 现有 readback-only fixture SQL，在旧迁移回放完成之后、创建应用之前给该历史夹具的 `audit_logs` 增加 `shadowProofRequired BOOLEAN NOT NULL DEFAULT FALSE`，并用固定 CHECK 禁止 TRUE，明确只是当前客户端读回兼容，不引入新shadow写入能力，不运行第134条、不伪造来源证据。保留历史回放输入／顺序、服务段升级、缺收据拒绝、重放及所有业务断言；失败立即呈报，不继续机械补列。只在已有w98授权下验证，不操作该测试默认的其他worker库，后者留给CI。
+
+如批准加入，此文件是28.4的额外第35路径（其余34路径不变；文档／changelog仍用原四路径）。建议统一授权为：**确认第28节35路径测试兼容修复包，包含28.6 P-Legacy；按上述精确边界实施并在w98验证，其他固定库留给CI。残余超时、登录与并发只诊断呈报，不改生产实现或放宽断言。验证后呈报，不自动提交推送、Ready或合并。** 本轮尚未收到这个实施授权，仍只保留本稿待审diff。
+
+D1-3历史兼容两个用例的栈进一步定位到 `createD13Fixture:189` → `loginAs:26`，失败发生在creator登录而非用例业务断言；没有证据将它并入mapping清理根因。里程碑并发用例仅已知一个 `Promise.allSettled` 结果 rejected，未取得该事务拒绝原因，亦不推定为fixture失败或缩短锁窗口。二者保留待定位，不纳入P-Legacy。
+
+再次只读核对 E2E (3) 完整日志，fixture 登录错误的脱敏状态为 HTTP `500`、业务码 `50000`。这不是已经证实的密码错误（10004）或限流拒绝（429）；不能改密码、跳过登录、放宽限流或给登录加重试。服务端根因日志仍缺失，保留未定位，不新增生产 auth 写集。当前PR仍为同一 `6341fccb`、OPEN Draft；本轮仅追加本稿，不提交推送。
+
+### 28.7 35路径实施及基线追加登记（2026-10-01；本地验证完成，未提交）
+
+维护者明确确认“第28节35路径测试兼容修复包，按所列边界实施，验证后呈报”，覆盖本节此前待审批时点；不包含提交、推送、Ready、合并或生产授权。开工preflight因本轮待审文档与既有目标PR报dirty/open-PR，已按继续同一批准任务研判，未落后origin/main；没有删除或暂存原文档，没有开新任务。本包不触红区生产代码／schema／migration或执法层，无AI自行发令牌。
+
+27份当前迁移计数／标题适配到135，C1 D2b仅当前seed总数269→270；历史升级目标与SQL摘要保持原样。共用审计helper纳入固定三张mapping证据表、完整组检查和逐个恢复后核验；缺守卫抛错的整个事务回滚。mapping E2E仅实例化原固定ACL测试模板，真实派生worker库与具名三角色一一绑定，非w98角色名以完整库名的SHA-256前16位隔离；角色已存在则拒绝，生产ACL脚本不改，生产角色分支不运行。真实LOGIN连接、身份断言及grant/revoke同步；结束先撤LOGIN／CONNECT、关闭池，再移除本套件数据库及其具名角色；CI重建本worker当前schema，w98结束直接回收。没有DROP OWNED／REASSIGN／角色CASCADE。
+
+D1在每次套件启动真实建立冻结133条的夹具，保留132→133与原摘要；CI结束恢复当前schema，w98回收。服务段旧夹具只增加default-false、CHECK禁止TRUE的审计读回列；新增测试专用w98选择入口用于本轮验证，默认worker流程与所有断言／超时不变，不连接额外数据库。
+
+当前迁移计数检查通过，18个固定常量均135；完整mapping套件248/248通过，新增四种触发器原态恢复和缺守卫事务回滚5条通过，真实LOGIN和2,000来源五秒链4,004ms通过。首轮新增诊断查询误将PostgreSQL内部char直接拼接文本导致1条失败并漏关闭应用，修正显式::text及资源取得顺序后整套自然退出0；旧失败进程的测试已结束，仅定向终止它遗留的Jest句柄，没有forceExit或放宽断言。D1、服务段、source-proof、最终quick／冷lint仍须完成，CI仍是首轮失败，未称全部修复或D2交付。
+
+**本轮验证收尾**：D1冻结迁移7/7、服务段历史升级5/5、原source-proof完整10/10均通过；不是仅选择满额1条。w98与三角色结束读数均0。三组类型检查、四份实现测试文件的定向冷lint、当前迁移计数、CODEMAP／counts、格式与diff检查通过。35个实际改动路径全部落在授权集，27份计数diff逐行核对只有获准当前总数／标题／一处当前权限数；历史时间戳及升级目标未改。schema、已签SQL134／135、权限目录、seed及原source-proof E2E的blob均与HEAD一致，不需要新3b／4b。没有执行w1或其他固定scratch库，没有运行标准Contract全局建库入口，worker特有分支仍需PR CI冷跑验收。
+
+quick首轮实际退出1：lint0、typecheck0、unit0（433套／9,430通过，5既有todo），harness1（137通过／1失败／5已知缺口）。唯一红点是墙钟跨到2026-10-01后，`harness/near-future-date-baseline.json` 的 `src/modules/certificates/certificates.service.spec.ts × 2026-10-01` 存量条目过期；对应测试未改且单测通过。保留此失败记录，不把首轮quick改记为成功。
+
+**基线追加已授权并完成**：维护者明确允许仅删除上述过期条目并执行精确grant，裁判实测返回GRANTED。仅删该一行，保留同文件2027-01-01、其余全部基线、测试及规则；总写集为原35路径加该基线文件，共36路径。随后完整`pnpm harness:selftest`退出0：日期基线12处／7文件逐条一致，ESLint自测138通过／0失败／5既有缺口，hook自测68通过／0失败，前置守护自测通过。仅重跑原失败组件，没有重复运行未受影响的9,430单测或数据库套件；结合本轮前述验证，已批准修复包的本地验证完成，不能称完整quick命令重新运行过或PR CI已通过。两份台账仅更新顶部，本轮仍未提交推送；原CI残余项保留，worker特有分支及全量Contract／E2E仍待更新PR后冷跑。
