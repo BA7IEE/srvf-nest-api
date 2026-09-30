@@ -202,7 +202,7 @@ describe('C1 D2b migration typed selection and receipts', () => {
       ),
     ).toBe(String(CURRENT_MIGRATION_COUNT));
   });
-  it('adds no Prisma schema drift beyond the checked-in twenty-one-statement baseline', () => {
+  it('adds no Prisma schema drift beyond the checked-in twenty-two-statement baseline', () => {
     expect(sql('SELECT current_database()')).toBe(database());
     const source = readFileSync(
       path.resolve('test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts'),
@@ -215,7 +215,7 @@ describe('C1 D2b migration typed selection and receipts', () => {
       .slice(start + marker.length)
       .split('`;')[0]
       .trim();
-    expect(baseline.split(';').filter((s) => s.trim())).toHaveLength(21);
+    expect(baseline.split(';').filter((s) => s.trim())).toHaveLength(22);
     let actual: string;
     try {
       // Read only. The approved w98 URL stays in env, not in command arguments/output.

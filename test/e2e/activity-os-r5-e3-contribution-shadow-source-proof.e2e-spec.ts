@@ -147,6 +147,263 @@ describe('E3-2 D2 source proof migration', () => {
     expect(pgHash).toBe(hashLegacySource(input));
   });
 
+  const lookupFact = (id: unknown = 'path-record', overrides: Record<string, unknown> = {}) => ({
+    id,
+    memberId: 'path-member',
+    roleCode: 'support',
+    serviceHours: '1',
+    contributionPoints: '0',
+    ...overrides,
+  });
+  const lookupCases: Array<{
+    name: string;
+    recordId: string;
+    records: unknown;
+    accepted: boolean;
+    closed: boolean;
+    anchorActivityId?: string;
+    referenceAccepted?: boolean;
+    invalidHash?: boolean;
+    error?: string;
+  }> = [
+    {
+      name: 'normal',
+      recordId: 'path-record',
+      records: [lookupFact()],
+      accepted: true,
+      closed: true,
+    },
+    {
+      name: 'cross-activity source rejected before lookup',
+      recordId: 'path-record',
+      records: [lookupFact()],
+      accepted: false,
+      closed: false,
+      anchorActivityId: 'path-other-activity',
+      referenceAccepted: true,
+      error: 'shadow source chain mismatch',
+    },
+    {
+      name: 'forged hash rejected after lookup',
+      recordId: 'path-record',
+      records: [lookupFact()],
+      accepted: false,
+      closed: false,
+      invalidHash: true,
+      referenceAccepted: true,
+      error: 'shadow source digest mismatch',
+    },
+    {
+      name: 'reordered',
+      recordId: 'path-record',
+      records: [lookupFact('other'), lookupFact()],
+      accepted: true,
+      closed: false,
+    },
+    {
+      name: 'duplicate first correct',
+      recordId: 'path-record',
+      records: [lookupFact(), lookupFact('path-record', { memberId: 'wrong' })],
+      accepted: true,
+      closed: false,
+    },
+    {
+      name: 'duplicate first wrong',
+      recordId: 'path-record',
+      records: [lookupFact('path-record', { memberId: 'wrong' }), lookupFact()],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'nested array is not a record',
+      recordId: 'path-record',
+      records: [[lookupFact()]],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'skip nested array and missing id',
+      recordId: 'path-record',
+      records: [[lookupFact()], {}, null, lookupFact()],
+      accepted: true,
+      closed: false,
+    },
+    {
+      name: 'numeric id text coercion',
+      recordId: '1',
+      records: [lookupFact(1)],
+      accepted: true,
+      closed: true,
+    },
+    {
+      name: 'numeric id precedes string id',
+      recordId: '1',
+      records: [lookupFact(1, { memberId: 'wrong' }), lookupFact('1')],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'boolean id text coercion',
+      recordId: 'false',
+      records: [lookupFact(false)],
+      accepted: true,
+      closed: true,
+    },
+    {
+      name: 'boolean id precedes string id',
+      recordId: 'false',
+      records: [lookupFact(false, { memberId: 'wrong' }), lookupFact('false')],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'string null is not JSON null',
+      recordId: 'null',
+      records: [lookupFact(null), lookupFact('null')],
+      accepted: true,
+      closed: false,
+    },
+    {
+      name: 'Unicode id fallback',
+      recordId: '来源记录',
+      records: [lookupFact('来源记录')],
+      accepted: true,
+      closed: true,
+    },
+    {
+      name: 'quoted id fallback',
+      recordId: "path'quoted",
+      records: [lookupFact("path'quoted")],
+      accepted: true,
+      closed: true,
+    },
+    {
+      name: 'unknown id',
+      recordId: 'path-record',
+      records: [lookupFact('missing')],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'null id',
+      recordId: 'path-record',
+      records: [lookupFact(null)],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'member mismatch',
+      recordId: 'path-record',
+      records: [lookupFact('path-record', { memberId: 'wrong' })],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'role mismatch',
+      recordId: 'path-record',
+      records: [lookupFact('path-record', { roleCode: 'wrong' })],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'numeric values',
+      recordId: 'path-record',
+      records: [lookupFact('path-record', { serviceHours: 1, contributionPoints: 0 })],
+      accepted: true,
+      closed: true,
+    },
+    {
+      name: 'decimal strings',
+      recordId: 'path-record',
+      records: [lookupFact('path-record', { serviceHours: '1.00', contributionPoints: '0.00' })],
+      accepted: true,
+      closed: true,
+    },
+    {
+      name: 'exponent string rejected',
+      recordId: 'path-record',
+      records: [lookupFact('path-record', { serviceHours: '1e0' })],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'null hours rejected',
+      recordId: 'path-record',
+      records: [lookupFact('path-record', { serviceHours: null })],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'wrong points rejected',
+      recordId: 'path-record',
+      records: [lookupFact('path-record', { contributionPoints: '1' })],
+      accepted: false,
+      closed: false,
+    },
+  ];
+
+  it.each(lookupCases)('preserves source first-match and closure: $name', (entry) => {
+    const literal = (value: string) => `'${value.replaceAll("'", "''")}'`;
+    const recordId = literal(entry.recordId);
+    const records = `${literal(JSON.stringify(entry.records))}::jsonb`;
+    // The reference is the original SELECT, not a copy of the proposed fast path.
+    // Both the real BEFORE INSERT guard and deferred closure execute below.
+    expect(
+      sql(`BEGIN;
+      INSERT INTO "User" (id,username,"passwordHash","updatedAt") VALUES ('path-user','path-user','fixture',CURRENT_TIMESTAMP);
+      INSERT INTO "Organization" (id,name,"nodeTypeCode","updatedAt") VALUES ('path-org','fixture','team',CURRENT_TIMESTAMP);
+      INSERT INTO "Member" (id,"memberNo","realName","memberSinceDate","memberOriginCode","updatedAt")
+        VALUES ('path-member','PATH001','fixture',CURRENT_TIMESTAMP,'manual',CURRENT_TIMESTAMP);
+      INSERT INTO "Activity" (id,title,"activityTypeCode","organizationId","startAt","endAt",location,"statusCode","updatedAt")
+        VALUES ('path-activity','fixture','path_fixture','path-org','2099-01-02','2099-01-03','test','draft',CURRENT_TIMESTAMP);
+      INSERT INTO "AttendanceSheet" (id,"activityId","submitterUserId","statusCode","updatedAt",version)
+        VALUES ('path-sheet','path-activity','path-user','pending_review',CURRENT_TIMESTAMP,1);
+      INSERT INTO "AttendanceRecord" (id,"sheetId","memberId","roleCode","checkInAt","checkOutAt","serviceHours","attendanceStatusCode","contributionPoints","updatedAt")
+        VALUES (${recordId},'path-sheet','path-member','support','2099-01-02','2099-01-02 01:00',1,'present',0,CURRENT_TIMESTAMP);
+      INSERT INTO "ContributionShadowObservationWindow" (id,"startsAt","endsAt","registeredByUserId","deploymentDigest","configDigest","signedMappingVersion","hashAlgorithmCode","canonicalVersion")
+        VALUES ('path-window','2099-01-01','2099-01-03','path-user',repeat('a',64),repeat('a',64),'fixture','sha256',1);
+      INSERT INTO audit_logs (id,"createdAt","resourceType","resourceId",event,context,"shadowProofRequired")
+        VALUES ('path-audit','2099-01-01 12:00','attendance_sheet','path-sheet','attendance-sheet.submit',
+          jsonb_build_object('after',jsonb_build_object('sheet',jsonb_build_object('activityId','path-activity','version',1),'records',${records}),
+            'extra',jsonb_build_object('operation','submit')),true);
+      DO $probe$
+      DECLARE fact JSONB; expected BOOLEAN; accepted BOOLEAN := FALSE; closed BOOLEAN := FALSE;
+        anchor "ContributionShadowLegacySourceAnchor";
+      BEGIN
+        SELECT e.value INTO fact FROM jsonb_array_elements(${records}) e(value) WHERE e.value->>'id'=${recordId};
+        expected := FOUND AND fact->>'memberId' IS NOT DISTINCT FROM 'path-member' AND
+          fact->>'roleCode' IS NOT DISTINCT FROM 'support' AND
+          (CASE WHEN fact->>'serviceHours' ~ '^[0-9]+(\\.[0-9]+)?$' THEN (fact->>'serviceHours')::NUMERIC ELSE NULL END) IS NOT DISTINCT FROM 1::NUMERIC AND
+          (CASE WHEN fact->>'contributionPoints' ~ '^[0-9]+(\\.[0-9]+)?$' THEN (fact->>'contributionPoints')::NUMERIC ELSE NULL END) IS NOT DISTINCT FROM 0::NUMERIC;
+        IF expected IS DISTINCT FROM ${entry.referenceAccepted ?? entry.accepted} THEN RAISE EXCEPTION 'reference witness mismatch'; END IF;
+        anchor := jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor", jsonb_build_object(
+          'id','path-source','windowId','path-window','auditLogId','path-audit','sheetId','path-sheet','sheetVersion',1,
+          'activityId',${literal(entry.anchorActivityId ?? 'path-activity')},'recordId',${recordId},'memberId','path-member','activityTypeCode','path_fixture',
+          'attendanceRoleCode','support','legacyServiceHours',1,'sourceKindCode','no_match','legacyPoints',0,
+          'hashAlgorithmCode','sha256','canonicalVersion',1,'createdAt',CURRENT_TIMESTAMP));
+        anchor."legacySourceHash" := cslsa_source_hash_fn(anchor);
+        IF ${entry.invalidHash ?? false} THEN anchor."legacySourceHash" := repeat('a',64); END IF;
+        BEGIN
+          INSERT INTO "ContributionShadowLegacySourceAnchor" SELECT (anchor).*;
+          accepted := TRUE;
+        EXCEPTION WHEN check_violation THEN
+          IF SQLERRM <> ${literal(entry.error ?? 'shadow source not in exact audit snapshot')} THEN RAISE; END IF;
+        END;
+        IF accepted IS DISTINCT FROM ${entry.accepted} THEN RAISE EXCEPTION 'production source guard differs from fixed witness'; END IF;
+        IF accepted THEN
+          BEGIN
+            SET CONSTRAINTS ALL IMMEDIATE;
+            closed := TRUE;
+          EXCEPTION WHEN check_violation THEN
+            IF SQLERRM <> 'shadow audit source set incomplete' THEN RAISE; END IF;
+          END;
+        END IF;
+        IF closed IS DISTINCT FROM ${entry.closed} THEN RAISE EXCEPTION 'production closure mismatch'; END IF;
+      END $probe$;
+      SELECT 'ok'; ROLLBACK;`),
+    ).toBe('ok');
+  });
+
   it('accepts complete matched and hold-only no_match sources in one old-write transaction', () => {
     const sourceHash = hashLegacySource({
       windowId: 'd2-window',
@@ -704,6 +961,7 @@ describe('E3-2 D2 source proof migration', () => {
         meta,
       );
       const elapsed = performance.now() - started;
+      console.info(`[shadow-w98-source-budget] elapsedMs=${Math.round(elapsed)} records=2000`);
       expect(elapsed).toBeLessThan(7000);
       const bulkAudit = await prisma.auditLog.findFirstOrThrow({
         where: {

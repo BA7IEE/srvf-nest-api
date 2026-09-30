@@ -41,7 +41,9 @@ const ACCEPTED_AT = '2099-08-13 08:30:00';
 // formal_event / identity 四条外键被整条 DROP 并重建为复合外键,不再需要"改名",
 // 于是从已知漂移里消失。**这是减少、不是放宽** —— 其余 19 条一字未动。
 // E1-3 第131条新增索引及长外键名带来两条已逐项核对的 Prisma 映射差异；
-// 当前精确基线为 21 条，不接受任意新增 drift。
+// E3-2 保留 dbgenerated(CURRENT_TIMESTAMP) 以保证数据库生成时钟；Prisma
+// 内省将同一默认式分类为 now()，产生一条已核验的同表达式 SET DEFAULT。
+// 当前精确基线为 22 条，不接受任何其他新增 drift。
 // D86 本身不能新增、删除或重命名任何 schema / migration 物理对象。
 const EXPECTED_PRISMA_CURRENT_DIFF = `-- DropForeignKey
 ALTER TABLE "ActivityQualificationRuleSet" DROP CONSTRAINT "ActivityQualificationRuleSet_positionId_fkey";
@@ -54,6 +56,9 @@ DROP INDEX "acps_activity_current_revision_idx";
 
 -- DropIndex
 DROP INDEX "activity_qualification_rule_set_scope_version_unique";
+
+-- AlterTable
+ALTER TABLE "ContributionShadowMappingApplication" ALTER COLUMN "createdAt" SET DEFAULT CURRENT_TIMESTAMP;
 
 -- RenameForeignKey
 ALTER TABLE "ActivityContributionPolicySelectionRevision" RENAME CONSTRAINT "ActivityContributionPolicySelectionRevision_createdByUserId_fke" TO "ActivityContributionPolicySelectionRevision_createdByUserI_fkey";

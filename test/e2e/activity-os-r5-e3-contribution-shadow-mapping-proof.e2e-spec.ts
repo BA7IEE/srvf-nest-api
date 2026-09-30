@@ -594,6 +594,53 @@ describe('E3-2 D2 mapping schema construction', () => {
     }
   });
 
+  it('matches the fixed pre-optimization text validator across ASCII and Unicode boundaries', () => {
+    const result = JSON.parse(
+      sql(`BEGIN;
+      CREATE FUNCTION pg_temp.old_text_limit(value JSONB, maximum_units INTEGER) RETURNS BOOLEAN
+      LANGUAGE plpgsql IMMUTABLE AS $$
+      DECLARE content TEXT; character_code INTEGER; units INTEGER := 0; i INTEGER;
+        trim_codes INTEGER[] := ARRAY[9,10,11,12,13,32,160,5760,8192,8193,8194,8195,
+          8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279];
+      BEGIN
+        IF value IS NULL OR jsonb_typeof(value) <> 'string' THEN RETURN FALSE; END IF;
+        content := value #>> '{}';
+        IF length(content) = 0 THEN RETURN FALSE; END IF;
+        FOR i IN 1..length(content) LOOP
+          character_code := ascii(substr(content, i, 1));
+          IF character_code < 32 OR character_code BETWEEN 127 AND 159 THEN RETURN FALSE; END IF;
+          IF (i = 1 OR i = length(content)) AND character_code = ANY(trim_codes) THEN RETURN FALSE; END IF;
+          units := units + CASE WHEN character_code > 65535 THEN 2 ELSE 1 END;
+        END LOOP;
+        RETURN maximum_units IS NOT NULL AND maximum_units > 0 AND units <= maximum_units;
+      END $$;
+      WITH chars AS (
+        SELECT chr(n) AS s FROM generate_series(1,159) n
+        UNION ALL SELECT chr(n) FROM unnest(ARRAY[160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279,20013,65535,65536,128512]) n
+      ), strings AS (
+        SELECT s FROM chars UNION ALL SELECT s || 'x' FROM chars
+        UNION ALL SELECT 'x' || s FROM chars UNION ALL SELECT 'x' || s || 'x' FROM chars
+        UNION ALL SELECT repeat('a',n) FROM unnest(ARRAY[0,1,2,63,64,65,127,128,129,255,256,257]) n
+        UNION ALL SELECT repeat(chr(128512),n) FROM unnest(ARRAY[1,31,32,33,63,64,65,127,128,129]) n
+        UNION ALL SELECT 'e' || chr(769)
+      ), values_to_check AS (
+        SELECT to_jsonb(s) AS value FROM strings
+        UNION ALL SELECT v FROM (VALUES (NULL::jsonb),('null'::jsonb),('1'::jsonb),('true'::jsonb),('[]'::jsonb),('{}'::jsonb)) extra(v)
+      ), limits AS (SELECT n FROM unnest(ARRAY[NULL,-1,0,1,2,63,64,65,127,128,129,255,256,257]) n),
+      checked AS (
+        SELECT csm_text_limit_fn(value,n) AS actual, pg_temp.old_text_limit(value,n) AS expected
+        FROM values_to_check CROSS JOIN limits
+      ) SELECT jsonb_build_object('cases',count(*),'mismatches',count(*) FILTER (WHERE actual IS DISTINCT FROM expected),
+        'accepted',count(*) FILTER (WHERE actual),'rejected',count(*) FILTER (WHERE NOT actual)) FROM checked;
+      ROLLBACK;`),
+    ) as { cases: number; mismatches: number; accepted: number; rejected: number };
+    expect(result.cases).toBe(10598);
+    expect(result.mismatches).toBe(0);
+    expect(result.accepted).toBeGreaterThan(0);
+    expect(result.rejected).toBeGreaterThan(0);
+    expect(result.accepted + result.rejected).toBe(result.cases);
+  });
+
   it('cold-replays 135 migrations and leaves all new evidence tables empty', () => {
     expect(
       sql(

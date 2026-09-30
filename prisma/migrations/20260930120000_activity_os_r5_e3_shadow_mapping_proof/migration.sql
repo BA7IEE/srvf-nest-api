@@ -118,6 +118,11 @@ BEGIN
   IF value IS NULL OR jsonb_typeof(value) <> 'string' THEN RETURN FALSE; END IF;
   content := value #>> '{}';
   IF length(content) = 0 THEN RETURN FALSE; END IF;
+  -- Positive ASCII witness only: byte length equals UTF-16 units, no control
+  -- characters or edge spaces. All misses retain the original Unicode scan.
+  IF maximum_units IS NOT NULL AND maximum_units > 0 AND
+    octet_length(content) <= maximum_units AND
+    content COLLATE "C" ~ '^[!-~]([ -~]*[!-~])?$' THEN RETURN TRUE; END IF;
   FOR i IN 1..length(content) LOOP
     character_code := ascii(substr(content, i, 1));
     IF character_code < 32 OR character_code BETWEEN 127 AND 159 THEN RETURN FALSE; END IF;

@@ -148,8 +148,22 @@ describe('E2 additive conversion receipt migration', () => {
         if (previous.url === undefined) delete process.env.DATABASE_URL;
         else process.env.DATABASE_URL = previous.url;
       }
+      return;
     }
-  });
+    // The final historical upgrade deliberately stops at migration 132.
+    // Restore the shared worker even when a test fails, before another suite
+    // uses the current Prisma client and its audit readback columns.
+    recreate();
+    deploy();
+    expect(sql('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).toBe(
+      '135',
+    );
+    expect(
+      sql(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='audit_logs'
+          AND column_name='shadowProofRequired')`),
+    ).toBe('t');
+  }, 120_000);
 
   it('cold-replays 135 migrations without old-table DML', () => {
     recreate();

@@ -117,6 +117,7 @@ DECLARE
   v_rule "ContributionRule"%ROWTYPE;
   v_active_count INTEGER;
   v_fact JSONB;
+  v_fact_found BOOLEAN := FALSE;
   v_expected NUMERIC(5,2);
 BEGIN
   SELECT * INTO v_audit FROM "audit_logs" WHERE "id" = NEW."auditLogId" FOR SHARE;
@@ -153,10 +154,23 @@ BEGIN
   IF jsonb_typeof(v_audit."context"->'after'->'records') IS DISTINCT FROM 'array' THEN
     RAISE EXCEPTION 'shadow audit records are not an array' USING ERRCODE = '23514';
   END IF;
-  SELECT e.value INTO v_fact
-    FROM jsonb_array_elements(v_audit."context"->'after'->'records') AS e(value)
-    WHERE e.value->>'id' = NEW."recordId";
-  IF NOT FOUND OR v_fact->>'memberId' IS DISTINCT FROM NEW."memberId" OR
+  -- This subset cannot equal a non-string JSON value after ->> coercion.
+  -- Strict, typed filters preserve the first matching object, without lax
+  -- array unwrapping. A mismatched first object's facts must still reject.
+  IF NEW."recordId" COLLATE "C" ~ '^[A-Za-z_][A-Za-z0-9_-]*$' AND
+     NEW."recordId" NOT IN ('true', 'false', 'null') THEN
+    v_fact := jsonb_path_query_first(v_audit."context"->'after'->'records',
+      'strict $[*] ? (@.type() == "object") ? (exists(@.id)) ? (@.id.type() == "string") ? (@.id == $wanted)',
+      jsonb_build_object('wanted', NEW."recordId"));
+    v_fact_found := v_fact IS NOT NULL;
+  END IF;
+  IF NOT v_fact_found THEN
+    SELECT e.value INTO v_fact
+      FROM jsonb_array_elements(v_audit."context"->'after'->'records') AS e(value)
+      WHERE e.value->>'id' = NEW."recordId";
+    v_fact_found := FOUND;
+  END IF;
+  IF NOT v_fact_found OR v_fact->>'memberId' IS DISTINCT FROM NEW."memberId" OR
      v_fact->>'roleCode' IS DISTINCT FROM NEW."attendanceRoleCode" OR
      (CASE WHEN v_fact->>'serviceHours' ~ '^[0-9]+(\.[0-9]+)?$'
        THEN (v_fact->>'serviceHours')::NUMERIC ELSE NULL END) IS DISTINCT FROM NEW."legacyServiceHours" OR
