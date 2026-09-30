@@ -365,7 +365,7 @@ END $$;
 -- the final application trigger must load these immutable rows itself.
 CREATE FUNCTION csm_policy_fingerprint_fn(policy "ContributionPolicyVersion") RETURNS TEXT
 LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, public AS $$
-DECLARE envelope JSONB;
+DECLARE envelope JSONB; canonical_roles TEXT; canonical_envelope TEXT;
 BEGIN
   IF policy."schemaVersion" IS DISTINCT FROM 1 OR policy."evaluatorVersion" IS DISTINCT FROM 1 OR
     policy."effectiveFrom" IS NULL OR
@@ -383,7 +383,39 @@ BEGIN
       NOT csm_manifest_instant_fn(envelope->'definition'->'effectiveUntil')) THEN
     RAISE EXCEPTION 'invalid contribution policy metadata' USING ERRCODE = '23514';
   END IF;
-  RETURN encode(sha256(convert_to(csm_manifest_canonical_fn(envelope),'UTF8')),'hex');
+  -- The full evaluator above validates all keys, strings and integer bounds,
+  -- including unselected rules. Only then serialize this fixed E1 shape.
+  -- Fixed object keys use C order; every array retains its stored ordinality.
+  SELECT coalesce(string_agg(
+    '{"attendanceRoleCode":' || (r.value->'attendanceRoleCode')::TEXT ||
+    ',"categoryRules":[' || categories.content || ']}', ',' ORDER BY r.ordinal), '')
+    INTO canonical_roles
+    FROM jsonb_array_elements(policy."definitionJson"->'roleRules')
+      WITH ORDINALITY AS r(value,ordinal)
+    CROSS JOIN LATERAL (
+      SELECT coalesce(string_agg(
+        '{"durationBands":[' || bands.content || '],"timeCategoryCode":' ||
+        (c.value->'timeCategoryCode')::TEXT || '}', ',' ORDER BY c.ordinal), '') AS content
+      FROM jsonb_array_elements(r.value->'categoryRules') WITH ORDINALITY AS c(value,ordinal)
+      CROSS JOIN LATERAL (
+        SELECT string_agg(
+          '{"explanationCode":' || (b.value->'explanationCode')::TEXT ||
+          ',"maxSecondsInclusive":' ||
+          CASE WHEN b.value->'maxSecondsInclusive' = 'null'::JSONB THEN 'null'
+            ELSE (b.value->>'maxSecondsInclusive')::NUMERIC::BIGINT::TEXT END ||
+          ',"recognizedPoints":' || (b.value->'recognizedPoints')::TEXT || '}',
+          ',' ORDER BY b.ordinal) AS content
+        FROM jsonb_array_elements(c.value->'durationBands') WITH ORDINALITY AS b(value,ordinal)
+      ) AS bands
+    ) AS categories;
+  canonical_envelope := '{"definition":{"definition":{"defaultResult":{"explanationCode":' ||
+    (policy."definitionJson"->'defaultResult'->'explanationCode')::TEXT ||
+    ',"recognizedPoints":' || (policy."definitionJson"->'defaultResult'->'recognizedPoints')::TEXT ||
+    '},"roleRules":[' || canonical_roles ||
+    ']},"effectiveFrom":' || (envelope->'definition'->'effectiveFrom')::TEXT ||
+    ',"effectiveUntil":' || (envelope->'definition'->'effectiveUntil')::TEXT ||
+    ',"evaluatorVersion":1},"schemaVersion":1}';
+  RETURN encode(sha256(convert_to(canonical_envelope,'UTF8')),'hex');
 END $$;
 
 -- Reference prevalidation against real activity-owned rows. This is NOT an
@@ -948,6 +980,7 @@ DECLARE
   v_item "ActivityContributionPolicySelectionItem";
   v_application "ContributionShadowMappingApplication";
   v_source "ContributionShadowLegacySourceAnchor";
+  v_records JSONB;
   v_found BOOLEAN; v_count BIGINT;
 BEGIN
   SELECT * INTO v_attempt FROM "ContributionShadowAttemptReceipt"
@@ -964,15 +997,16 @@ BEGIN
     RAISE EXCEPTION 'shadow comparison exceeds expected set' USING ERRCODE = '23514';
   END IF;
   SELECT * INTO v_audit FROM audit_logs WHERE id = v_attempt."auditLogId" FOR SHARE;
+  v_records := v_audit.context->'after'->'records';
   -- Positive string-object containment is the same-object membership witness.
   -- Misses retain the original text-coercion scan, including malformed-array
   -- errors and legacy numeric/boolean text matches. No negative shortcut.
-  IF jsonb_typeof(v_audit.context->'after'->'records') = 'array' AND
-    (v_audit.context->'after'->'records') @> jsonb_build_array(
+  IF jsonb_typeof(v_records) = 'array' AND
+    v_records @> jsonb_build_array(
       jsonb_build_object('id',NEW."recordId",'memberId',NEW."memberId")) THEN
     v_found := TRUE;
   ELSE
-    SELECT EXISTS (SELECT 1 FROM jsonb_array_elements(v_audit.context->'after'->'records') AS e(value)
+    SELECT EXISTS (SELECT 1 FROM jsonb_array_elements(v_records) AS e(value)
       WHERE value->>'id' = NEW."recordId" AND value->>'memberId' = NEW."memberId") INTO v_found;
   END IF;
   IF NOT v_found THEN

@@ -464,6 +464,15 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者对本轮列明两份完整SQL摘要的重签请求明确回复「确认上述第134、135条3b重签」。第134条 `20260929222500_activity_os_r5_e3_shadow_source_proof` SQL SHA-256：`e502dd4801de75791b699996054c9f5228c9fa3efb65d7de2f12cab500d64a3f`；第135条 `20260930120000_activity_os_r5_e3_shadow_mapping_proof` SQL SHA-256：`2f6ae11bbbea2ec74a3b59c9940e285b7af6db07e6023afb5fd29991ed249716`。已逐份重新计算并核对一致。
 - **对拍**:有 —— `migration-total` = `135`
 
+> **当前正式签字（2026-10-01，第29.10节；覆盖上方第134、135条当前SQL摘要，历史签字保留）**：维护者已确认三函数等价优化定稿后的第134、135条3b重签。
+
+- **结论**:认可
+- **理由**:第134条仅优化 `cslsa_insert_guard_fn` 的行内JSON投影与首匹配定位，非字符串候选或未命中保留原文本查询；第135条仅优化 `csm_policy_fingerprint_fn` 的固定合同序列化及 `cscr_insert_guard_fn` 的行内JSON投影复用。保留原完整政策校验、原扫描回退、全部锁与数据库守卫及五秒／七秒预算。w98完整来源40/40、映射250/250、未修改的D7完整回归7/7通过；最终quick退出0（433套／9,430条通过、5条既有todo；缓存lint、三组类型、harness通过，改动两份E2E另有冷lint通过）；单测报告一条worker未正常退出、被强制回收的警告，未据此宣称零警告或扩大范围修复。本签仅登记维护者对指定SQL的认可，不代表全部验收通过，不替代提交推送、PR CI、Ready、合并、真实登记、生产或开关授权，不改变既有4b结论。
+- **签字人**:维护者
+- **日期**:2026-10-01
+- **依据**:维护者对列明本轮两份完整SQL摘要及未完成验收边界的问题回复「确认上述第134、135条3b重签」。第134条 `20260929222500_activity_os_r5_e3_shadow_source_proof` SQL SHA-256：`f366329dc91a9fd912f7ec36e50227017d107cd3911888d064b4caba86877ba8`；第135条 `20260930120000_activity_os_r5_e3_shadow_mapping_proof` SQL SHA-256：`64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`。已逐份重新计算并核对一致。
+- **对拍**:有 —— `migration-total` = `135`
+
 ### 4b — 「字典、Audit events」的对账
 
 > **当前重签（2026-09-25，E2 第一层隔离能力）**：维护者确认权限码仍为269，

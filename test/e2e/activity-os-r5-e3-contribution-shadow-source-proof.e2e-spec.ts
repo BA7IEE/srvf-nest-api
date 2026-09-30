@@ -340,6 +340,58 @@ describe('E3-2 D2 source proof migration', () => {
       accepted: false,
       closed: false,
     },
+    {
+      name: 'array id is not a string match',
+      recordId: 'path-record',
+      records: [lookupFact(['path-record'])],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'array id before valid string falls back to exact first string',
+      recordId: 'path-record',
+      records: [lookupFact(['path-record'], { memberId: 'wrong' }), lookupFact()],
+      accepted: true,
+      closed: false,
+    },
+    {
+      name: 'array id cannot hide the first invalid string',
+      recordId: 'path-record',
+      records: [
+        lookupFact(['path-record']),
+        lookupFact('path-record', { memberId: 'wrong' }),
+        lookupFact(),
+      ],
+      accepted: false,
+      closed: false,
+    },
+    {
+      name: 'scalar and object id before matching string',
+      recordId: 'path-record',
+      records: ['path-record', 7, true, lookupFact({ id: 'path-record' }), lookupFact()],
+      accepted: true,
+      closed: false,
+    },
+    {
+      name: 'valid first match is not replaced after malformed elements',
+      recordId: 'path-record',
+      records: [
+        lookupFact(),
+        {},
+        null,
+        [lookupFact()],
+        lookupFact('path-record', { memberId: 'wrong' }),
+      ],
+      accepted: true,
+      closed: false,
+    },
+    {
+      name: 'true boolean precedes matching text',
+      recordId: 'true',
+      records: [lookupFact(true, { memberId: 'wrong' }), lookupFact('true')],
+      accepted: false,
+      closed: false,
+    },
   ];
 
   it.each(lookupCases)('preserves source first-match and closure: $name', (entry) => {

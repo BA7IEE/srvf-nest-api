@@ -1834,6 +1834,216 @@ describe('E3-2 D2 mapping schema construction', () => {
     ).toBe(expected.definitionHash);
   });
 
+  it('preserves exact policy canonical bytes against the fixed pre-optimization reference', () => {
+    const base = mappingInputsFixture().policy;
+    const cases: Array<{ policy: unknown; valid: boolean; expectedHash?: string }> = [];
+    const add = (definition: unknown, until: string | null = null) => {
+      const expected = fingerprintContributionPolicyVersion({
+        schemaVersion: 1,
+        evaluatorVersion: 1,
+        definition,
+        effectiveFrom: '2096-02-29T01:02:03.456Z',
+        effectiveUntil: until,
+      });
+      // The SQL contract fingerprints the stored array order, even when a valid
+      // synthetic row is not in the normal E1 writer's normalized order.
+      const expectedHash = computeActivityTemplateDefinitionHash({
+        schemaVersion: 1,
+        definition: {
+          definition,
+          evaluatorVersion: 1,
+          effectiveFrom: expected.effectiveFrom,
+          effectiveUntil: expected.effectiveUntil,
+        },
+      });
+      cases.push({
+        valid: true,
+        expectedHash,
+        policy: {
+          ...base,
+          definitionJson: definition,
+          effectiveFrom: expected.effectiveFrom,
+          effectiveUntil: expected.effectiveUntil,
+        },
+      });
+    };
+    const categories = ['volunteer_service', 'training', 'organization', 'non_creditable'];
+    for (const roleCount of [0, 1, 2, 64]) {
+      for (const categoryCount of [0, 1, 4]) {
+        for (const bandCount of [1, 2, 16]) {
+          add(
+            {
+              defaultResult: { recognizedPoints: '0.00', explanationCode: 'default' },
+              roleRules: Array.from({ length: roleCount }, (_, role) => ({
+                attendanceRoleCode: `role_${role}`,
+                categoryRules: categories
+                  .slice(0, categoryCount)
+                  .reverse()
+                  .map((timeCategoryCode) => ({
+                    timeCategoryCode,
+                    durationBands: Array.from({ length: bandCount }, (_, band) => ({
+                      maxSecondsInclusive:
+                        band === bandCount - 1
+                          ? null
+                          : band === bandCount - 2
+                            ? Number.MAX_SAFE_INTEGER
+                            : band,
+                      recognizedPoints: band % 2 === 0 ? '999.99' : '0.00',
+                      explanationCode: `band_${band}`,
+                    })),
+                  })),
+              })).reverse(),
+            },
+            roleCount % 2 === 0 ? null : '2100-01-01T00:00:00.001Z',
+          );
+        }
+      }
+    }
+    for (const role of [
+      '中文😀成员',
+      'member"quoted',
+      'member\\slash',
+      'e\u0301',
+      'x'.repeat(64),
+    ]) {
+      const definition = policyFixture();
+      definition.roleRules[0].attendanceRoleCode = role;
+      add(definition);
+    }
+    const invalidDefinitions: unknown[] = [
+      null,
+      [],
+      {},
+      { ...policyFixture(), extra: true },
+      { ...policyFixture(), defaultResult: { recognizedPoints: '0', explanationCode: 'default' } },
+      { ...policyFixture(), roleRules: null },
+      {
+        ...policyFixture(),
+        roleRules: Array.from({ length: 65 }, (_, i) => ({
+          attendanceRoleCode: `role_${i}`,
+          categoryRules: [],
+        })),
+      },
+    ];
+    const duplicate = policyFixture();
+    duplicate.roleRules.push(structuredClone(duplicate.roleRules[0]));
+    invalidDefinitions.push(duplicate);
+    for (const maximum of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      const definition = policyFixture();
+      definition.roleRules[0].categoryRules[0].durationBands[0].maxSecondsInclusive = maximum;
+      invalidDefinitions.push(definition);
+    }
+    const unseen = policyFixture();
+    unseen.roleRules.push({
+      attendanceRoleCode: 'unselected',
+      categoryRules: [
+        {
+          timeCategoryCode: 'training',
+          durationBands: [
+            { maxSecondsInclusive: null, recognizedPoints: '1000.00', explanationCode: 'invalid' },
+          ],
+        },
+      ],
+    });
+    invalidDefinitions.push(unseen);
+    for (const definitionJson of invalidDefinitions)
+      cases.push({ valid: false, policy: { ...base, definitionJson } });
+    for (const changes of [
+      { schemaVersion: 2 },
+      { evaluatorVersion: 2 },
+      { effectiveFrom: null },
+      { effectiveUntil: '2098-01-01T00:00:00.000Z' },
+    ])
+      cases.push({ valid: false, policy: { ...base, ...changes } });
+
+    // Extract only the actual function's hash preimage for byte-for-byte comparison.
+    // Neither its validation nor its canonical construction is copied into the reference.
+    const actualDefinition = sql(`SELECT pg_get_functiondef(
+      'csm_policy_fingerprint_fn("ContributionPolicyVersion")'::regprocedure)`);
+    const returnPattern = /RETURN encode\(sha256\(convert_to\((.+),'UTF8'\)\),'hex'\);/u;
+    expect(actualDefinition.match(returnPattern)).not.toBeNull();
+    expect(actualDefinition.includes('public.csm_policy_fingerprint_fn(')).toBe(true);
+    const actualCanonical = actualDefinition
+      .replace('public.csm_policy_fingerprint_fn(', 'pg_temp.actual_policy_canonical(')
+      .replace(returnPattern, 'RETURN $1;');
+    const payload = JSON.stringify(cases).replaceAll("'", "''");
+    const result = JSON.parse(
+      sql(`BEGIN; SET LOCAL TIME ZONE 'Asia/Shanghai';
+      CREATE FUNCTION pg_temp.reference_policy_canonical(policy "ContributionPolicyVersion") RETURNS TEXT
+      LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, public AS $reference$
+      DECLARE envelope JSONB;
+      BEGIN
+        IF policy."schemaVersion" IS DISTINCT FROM 1 OR policy."evaluatorVersion" IS DISTINCT FROM 1 OR
+          policy."effectiveFrom" IS NULL OR
+          (policy."effectiveUntil" IS NOT NULL AND policy."effectiveUntil" <= policy."effectiveFrom") THEN
+          RAISE EXCEPTION 'invalid contribution policy metadata' USING ERRCODE='23514';
+        END IF;
+        PERFORM csm_policy_evaluate_fn(policy."definitionJson",'__schema_validation__','volunteer_service',0);
+        envelope := jsonb_build_object('schemaVersion',1,'definition',jsonb_build_object(
+          'definition',policy."definitionJson",'evaluatorVersion',policy."evaluatorVersion",
+          'effectiveFrom',to_char(policy."effectiveFrom",'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+          'effectiveUntil',to_char(policy."effectiveUntil",'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')));
+        IF NOT csm_manifest_instant_fn(envelope->'definition'->'effectiveFrom') OR
+          (envelope->'definition'->'effectiveUntil'<>'null'::JSONB AND
+            NOT csm_manifest_instant_fn(envelope->'definition'->'effectiveUntil')) THEN
+          RAISE EXCEPTION 'invalid contribution policy metadata' USING ERRCODE='23514';
+        END IF;
+        RETURN csm_manifest_canonical_fn(envelope);
+      END $reference$;
+      ${actualCanonical};
+      CREATE TEMP TABLE policy_diff_result(accepted INTEGER, rejected INTEGER, reference_ms NUMERIC, actual_ms NUMERIC);
+      DO $diff$
+      DECLARE item JSONB; policy "ContributionPolicyVersion"; actual TEXT; reference TEXT; actual_hash TEXT;
+        actual_error TEXT; reference_error TEXT; accepted INTEGER:=0; rejected INTEGER:=0;
+        started TIMESTAMPTZ; reference_ms NUMERIC; actual_ms NUMERIC; n INTEGER; reference_hash TEXT;
+      BEGIN
+        FOR item IN SELECT value FROM jsonb_array_elements('${payload}'::jsonb) LOOP
+          policy := jsonb_populate_record(NULL::"ContributionPolicyVersion",item->'policy');
+          actual := NULL; reference := NULL; actual_hash:=NULL; actual_error:=NULL; reference_error:=NULL;
+          BEGIN reference := pg_temp.reference_policy_canonical(policy);
+          EXCEPTION WHEN OTHERS THEN reference_error := SQLSTATE||':'||SQLERRM; END;
+          BEGIN actual := pg_temp.actual_policy_canonical(policy); actual_hash := csm_policy_fingerprint_fn(policy);
+          EXCEPTION WHEN OTHERS THEN actual_error := SQLSTATE||':'||SQLERRM; END;
+          IF actual_error IS DISTINCT FROM reference_error OR actual IS DISTINCT FROM reference THEN
+            RAISE EXCEPTION 'policy canonical differential mismatch';
+          END IF;
+          IF (item->>'valid')::BOOLEAN THEN
+            IF actual_error IS NOT NULL OR actual IS NULL OR actual_hash IS DISTINCT FROM
+              encode(sha256(convert_to(reference,'UTF8')),'hex') OR actual_hash IS DISTINCT FROM item->>'expectedHash' THEN
+              RAISE EXCEPTION 'policy valid fixture/hash mismatch';
+            END IF;
+            accepted := accepted+1;
+          ELSE
+            IF actual_error IS NULL THEN RAISE EXCEPTION 'policy invalid fixture accepted'; END IF;
+            rejected := rejected+1;
+          END IF;
+        END LOOP;
+        policy := jsonb_populate_record(NULL::"ContributionPolicyVersion",'${JSON.stringify(base).replaceAll("'", "''")}'::jsonb);
+        started := clock_timestamp();
+        FOR n IN 1..2000 LOOP
+          policy.id := n::TEXT;
+          reference_hash := encode(sha256(convert_to(pg_temp.reference_policy_canonical(policy),'UTF8')),'hex');
+        END LOOP;
+        reference_ms := extract(epoch FROM clock_timestamp()-started)*1000;
+        started := clock_timestamp();
+        FOR n IN 1..2000 LOOP
+          policy.id := n::TEXT;
+          actual_hash := csm_policy_fingerprint_fn(policy);
+          IF actual_hash IS DISTINCT FROM reference_hash THEN RAISE EXCEPTION 'policy benchmark hash mismatch'; END IF;
+        END LOOP;
+        actual_ms := extract(epoch FROM clock_timestamp()-started)*1000;
+        INSERT INTO policy_diff_result VALUES(accepted,rejected,reference_ms,actual_ms);
+      END $diff$;
+      SELECT jsonb_build_object('accepted',accepted,'rejected',rejected,'referenceMs',reference_ms,'actualMs',actual_ms) FROM policy_diff_result;
+      ROLLBACK;`),
+    ) as { accepted: number; rejected: number; referenceMs: number; actualMs: number };
+    expect(result.accepted).toBe(cases.filter((entry) => entry.valid).length);
+    expect(result.rejected).toBe(cases.filter((entry) => !entry.valid).length);
+    expect(result.accepted).toBeGreaterThan(0);
+    expect(result.rejected).toBeGreaterThan(0);
+    console.info('[shadow-policy-canonical-diff] ' + JSON.stringify(result));
+  }, 120_000);
+
   it('rejects matching arbitrary hashes or changed policy content even when all supplied keys agree', () => {
     const value = mappingInputsFixture();
     value.policy.definitionHash = 'b'.repeat(64);

@@ -117,6 +117,9 @@ DECLARE
   v_rule "ContributionRule"%ROWTYPE;
   v_active_count INTEGER;
   v_fact JSONB;
+  v_after JSONB;
+  v_audit_sheet JSONB;
+  v_records JSONB;
   v_fact_found BOOLEAN := FALSE;
   v_expected NUMERIC(5,2);
 BEGIN
@@ -127,6 +130,10 @@ BEGIN
   IF v_audit."id" IS NULL OR v_window."id" IS NULL OR v_sheet."id" IS NULL OR v_record."id" IS NULL THEN
     RAISE EXCEPTION 'shadow source anchor missing' USING ERRCODE = '23514';
   END IF;
+  -- Row-local projections only: no cached facts cross rows, statements or locks.
+  v_after := v_audit."context"->'after';
+  v_audit_sheet := v_after->'sheet';
+  v_records := v_after->'records';
   IF v_audit."shadowProofRequired" IS DISTINCT FROM TRUE OR
      v_audit."success" IS DISTINCT FROM TRUE OR
      v_audit."resourceType" IS DISTINCT FROM 'attendance_sheet' OR
@@ -143,30 +150,33 @@ BEGIN
      v_record."serviceHours" IS DISTINCT FROM NEW."legacyServiceHours" OR
      v_record."contributionPoints" IS DISTINCT FROM NEW."legacyPoints" OR
      v_record."deletedAt" IS NOT NULL OR
-     v_audit."context"->'after'->'sheet'->>'activityId' IS DISTINCT FROM NEW."activityId" OR
-     v_audit."context"->'after'->'sheet'->>'version' IS DISTINCT FROM NEW."sheetVersion"::TEXT THEN
+     v_audit_sheet->>'activityId' IS DISTINCT FROM NEW."activityId" OR
+     v_audit_sheet->>'version' IS DISTINCT FROM NEW."sheetVersion"::TEXT THEN
     RAISE EXCEPTION 'shadow source chain mismatch' USING ERRCODE = '23514';
   END IF;
   SELECT "activityTypeCode" INTO v_activity_type FROM "Activity" WHERE "id" = NEW."activityId" FOR SHARE;
   IF v_activity_type IS DISTINCT FROM NEW."activityTypeCode" THEN
     RAISE EXCEPTION 'shadow activity type mismatch' USING ERRCODE = '23514';
   END IF;
-  IF jsonb_typeof(v_audit."context"->'after'->'records') IS DISTINCT FROM 'array' THEN
+  IF jsonb_typeof(v_records) IS DISTINCT FROM 'array' THEN
     RAISE EXCEPTION 'shadow audit records are not an array' USING ERRCODE = '23514';
   END IF;
   -- This subset cannot equal a non-string JSON value after ->> coercion.
-  -- Strict, typed filters preserve the first matching object, without lax
-  -- array unwrapping. A mismatched first object's facts must still reject.
+  -- Strict lookup is only a candidate. SQL/JSON comparisons can match an
+  -- array-valued id too, so require an exact string witness afterward.
+  -- Missing/malformed candidates and silent misses use the original SELECT.
+  -- A mismatched first string object's facts must still reject.
   IF NEW."recordId" COLLATE "C" ~ '^[A-Za-z_][A-Za-z0-9_-]*$' AND
      NEW."recordId" NOT IN ('true', 'false', 'null') THEN
-    v_fact := jsonb_path_query_first(v_audit."context"->'after'->'records',
-      'strict $[*] ? (@.type() == "object") ? (exists(@.id)) ? (@.id.type() == "string") ? (@.id == $wanted)',
-      jsonb_build_object('wanted', NEW."recordId"));
-    v_fact_found := v_fact IS NOT NULL;
+    v_fact := jsonb_path_query_first(v_records,
+      'strict $[*] ? (@.id == $wanted)',
+      jsonb_build_object('wanted', NEW."recordId"), TRUE);
+    v_fact_found := (jsonb_typeof(v_fact->'id') = 'string' AND
+      v_fact->>'id' = NEW."recordId") IS TRUE;
   END IF;
   IF NOT v_fact_found THEN
     SELECT e.value INTO v_fact
-      FROM jsonb_array_elements(v_audit."context"->'after'->'records') AS e(value)
+      FROM jsonb_array_elements(v_records) AS e(value)
       WHERE e.value->>'id' = NEW."recordId";
     v_fact_found := FOUND;
   END IF;
