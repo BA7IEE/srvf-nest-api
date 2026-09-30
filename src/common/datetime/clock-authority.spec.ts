@@ -427,6 +427,11 @@ const NOT_CLOCK_CRITICAL: ReadonlyArray<{
   readonly why: string;
 }> = [
   {
+    model: 'ContributionShadowMappingApproval',
+    column: 'approvedAt',
+    why: '数据库锁后生成并封入不可变批准；仅与同样数据库生成的旧来源审计时间比较，不与应用墙钟比较',
+  },
+  {
     model: 'CorrectionSegmentPreparationReceipt',
     column: 'preparedAt',
     why: '首次准备收据留痕；清理与重放依据状态和数量，不与时钟比较',

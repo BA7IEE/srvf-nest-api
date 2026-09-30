@@ -1,4 +1,5 @@
-import { Prisma, Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus, type PrismaClient } from '@prisma/client';
+import { Logger } from '@nestjs/common';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
 
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -6,6 +7,7 @@ import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { OrganizationsService } from '../organizations/organizations.service';
 import type { AttendanceAuditRecorder } from './attendance-audit-recorder';
 import type { AttendanceNotificationProducer } from './attendance-notification-producer';
@@ -19,6 +21,10 @@ import type { RbacService } from '../permissions/rbac.service';
 import type { AuthzService } from '../authz/authz.service';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import type { ContributionCalculator } from './contribution-calculator';
+import { ContributionShadowService } from './contribution-shadow.service';
+import { ContributionShadowEvidenceWriteService } from './contribution-shadow-evidence.write.service';
+import { ActivityContributionShadowMappingProofQuery } from '../activities/activity-contribution-shadow-mapping-proof.query';
+import { hashLegacySource } from './contribution-shadow-evidence.write.service';
 import { ATTENDANCE_SHEET_STATUS } from './attendances.dto';
 import type {
   ApproveAttendanceSheetDto,
@@ -187,6 +193,457 @@ function makeMyRecordsQuery(activityId?: string): MyAttendanceRecordsQueryDto {
 
 // ============ mock 工厂 ============
 
+describe('E3-2 D2 qualified post-commit preparation', () => {
+  const context = () => ({
+    windowId: 'window-1',
+    auditLogId: 'audit-1',
+    sheetId: 'sheet-1',
+    activityId: 'act-1',
+    sheetVersion: 1,
+    signedMappingVersion: 'signed-v1',
+    recordIds: ['record-1'],
+    operation: 'submit' as const,
+    managed: false,
+  });
+  function setup(mode: 'off' | 'shadow' = 'shadow') {
+    const prisma = makePrismaMock();
+    const authz = makeAuthzMock();
+    const actor = makeCurrentUser();
+    prisma.user.findFirst.mockResolvedValue(actor);
+    prisma.auditLog.findUnique.mockResolvedValue({
+      createdAt: FIXED_DATE,
+      event: 'attendance-sheet.submit',
+      resourceId: 'sheet-1',
+      resourceType: 'attendance_sheet',
+      success: true,
+      shadowProofRequired: true,
+    });
+    prisma.contributionShadowObservationWindow.findUnique.mockResolvedValue({
+      signedMappingVersion: 'signed-v1',
+      startsAt: new Date('2025-01-01T00:00:00Z'),
+      endsAt: new Date('2099-01-01T00:00:00Z'),
+    });
+    const source = {
+      id: 'source-1',
+      ...context(),
+      recordId: 'record-1',
+      memberId: 'member-1',
+      activityTypeCode: 'service',
+      attendanceRoleCode: 'member',
+      legacyServiceHours: new Prisma.Decimal('1.00'),
+      legacyPoints: new Prisma.Decimal('0.00'),
+      sourceKindCode: 'no_match' as const,
+      legacyRuleId: null,
+      durationThreshold: null,
+      pointsBelow: null,
+      pointsAbove: null,
+      legacySourceHash: '',
+      hashAlgorithmCode: 'sha256',
+      canonicalVersion: 1,
+      createdAt: FIXED_DATE,
+    };
+    source.legacySourceHash = hashLegacySource({
+      ...source,
+      source: {
+        sourceKindCode: 'no_match',
+        legacyRuleId: null,
+        durationThreshold: null,
+        pointsBelow: null,
+        pointsAbove: null,
+      },
+    });
+    prisma.contributionShadowLegacySourceAnchor.findMany.mockResolvedValue([source]);
+    const history = jest
+      .spyOn(ActivityContributionShadowMappingProofQuery.prototype, 'readComparisonMappingHistory')
+      .mockResolvedValue([]);
+    jest
+      .spyOn(ActivityContributionShadowMappingProofQuery.prototype, 'readSelectionAtSource')
+      .mockResolvedValue(null);
+    jest
+      .spyOn(ActivityContributionShadowMappingProofQuery.prototype, 'readComparisonPositions')
+      .mockResolvedValue([]);
+    jest
+      .spyOn(ActivityContributionShadowMappingProofQuery.prototype, 'readComparisonPolicyVersions')
+      .mockResolvedValue([]);
+    const service = makeService(prisma, { authz, shadowMode: mode });
+    return {
+      prisma,
+      authz,
+      actor,
+      history,
+      service,
+      prepare: (
+        value: Parameters<AttendancesService['prepareCommittedShadowComparison']>[1] = context(),
+      ) =>
+        service.prepareCommittedShadowComparison(
+          prisma as unknown as Prisma.TransactionClient,
+          value,
+          actor,
+        ),
+    };
+  }
+  afterEach(() => jest.restoreAllMocks());
+
+  function runtimeFixture() {
+    const f = setup();
+    const runtime = makePrismaMock();
+    const budgets: unknown[] = [];
+    const runtimeOptions: unknown[] = [];
+    const runtimeEntry = jest
+      .spyOn(ContributionShadowService.prototype, 'withBoundedRuntimeClient')
+      .mockImplementation((budget, work) => {
+        budgets.push(budget);
+        const options = budget.transactionOptions(0, 100);
+        runtimeOptions.push(options);
+        return work(runtime as unknown as PrismaClient, options);
+      });
+    const terminal = {
+      id: 'terminal-1',
+      attemptId: 'attempt-1',
+      statusCode: 'complete',
+      expectedRecordCount: 1,
+      writtenRecordCount: 1,
+      equalCount: 0,
+      mismatchCount: 0,
+      holdCount: 1,
+      errorCount: 0,
+      failureCode: null,
+      createdAt: FIXED_DATE,
+    };
+    const start = jest
+      .spyOn(ContributionShadowEvidenceWriteService.prototype, 'readOrCreateAttempt')
+      .mockImplementation((_tx, input) =>
+        Promise.resolve({
+          attempt: {
+            ...input,
+            id: 'attempt-1',
+            replayKey: 'fixture',
+            createdAt: FIXED_DATE,
+            hashAlgorithmCode: 'sha256',
+            canonicalVersion: 1,
+            terminal: null,
+          },
+          replayed: false,
+        }),
+      );
+    const complete = jest
+      .spyOn(ContributionShadowEvidenceWriteService.prototype, 'writeCompleteComparisonSet')
+      .mockResolvedValue(terminal);
+    const failed = jest
+      .spyOn(ContributionShadowEvidenceWriteService.prototype, 'writeFailedTerminal')
+      .mockResolvedValue({
+        terminal: {
+          ...terminal,
+          statusCode: 'failed',
+          writtenRecordCount: 0,
+          holdCount: 0,
+          failureCode: 'shadow_comparison_failed',
+        },
+        replayed: false,
+      });
+    const warning = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    return {
+      ...f,
+      runtime,
+      runtimeEntry,
+      start,
+      complete,
+      failed,
+      warning,
+      budgets,
+      runtimeOptions,
+      terminal,
+    };
+  }
+
+  it('commits start and complete in separate runtime transactions, requalifying every stage', async () => {
+    const f = runtimeFixture();
+    await f.service.compareCommittedShadow(context(), f.actor);
+    expect(f.prisma.$transaction).toHaveBeenCalledTimes(3);
+    expect(f.runtime.$transaction).toHaveBeenCalledTimes(2);
+    const transactions: unknown[][] = f.runtime.$transaction.mock.calls;
+    expect(transactions[0][1]).toBe(f.runtimeOptions[0]);
+    expect(transactions[1][1]).toBe(f.runtimeOptions[1]);
+    expect(f.prisma.user.findFirst).toHaveBeenCalledTimes(6);
+    expect(f.start).toHaveBeenCalledTimes(1);
+    expect(f.start.mock.calls[0][0]).toBe(f.runtime);
+    expect(f.start.mock.calls[0][1]).toMatchObject({
+      auditLogId: 'audit-1',
+      expectedRecordCount: 1,
+    });
+    expect(f.complete.mock.calls[0][0]).toBe(f.runtime);
+    expect(f.complete.mock.calls[0][3]).toHaveLength(1);
+    expect(f.start.mock.invocationCallOrder[0]).toBeLessThan(
+      f.complete.mock.invocationCallOrder[0],
+    );
+    expect(f.budgets).toHaveLength(2);
+    expect(f.budgets[0]).toBe(f.budgets[1]);
+    expect(f.failed).not.toHaveBeenCalled();
+    expect(f.warning).not.toHaveBeenCalled();
+  });
+
+  it.each(['complete', 'failed'])(
+    'existing %s terminal is read-only replay',
+    async (statusCode) => {
+      const f = runtimeFixture();
+      f.start.mockImplementation((_tx, input) =>
+        Promise.resolve({
+          attempt: {
+            ...input,
+            id: 'attempt-1',
+            replayKey: 'fixture',
+            createdAt: FIXED_DATE,
+            hashAlgorithmCode: 'sha256',
+            canonicalVersion: 1,
+            terminal: { ...f.terminal, statusCode },
+          },
+          replayed: true,
+        }),
+      );
+      await f.service.compareCommittedShadow(context(), f.actor);
+      expect(f.runtime.$transaction).toHaveBeenCalledTimes(1);
+      expect(f.complete).not.toHaveBeenCalled();
+      expect(f.failed).not.toHaveBeenCalled();
+    },
+  );
+
+  it('recovers a known committed start only after failed comparison settles, without retry', async () => {
+    const f = runtimeFixture();
+    f.complete.mockRejectedValue(new Error('sensitive driver details must never be logged'));
+    await expect(f.service.compareCommittedShadow(context(), f.actor)).resolves.toBeUndefined();
+    expect(f.runtime.$transaction).toHaveBeenCalledTimes(3);
+    expect(f.prisma.user.findFirst).toHaveBeenCalledTimes(8);
+    expect(f.complete).toHaveBeenCalledTimes(1);
+    expect(f.failed).toHaveBeenCalledTimes(1);
+    expect(f.complete.mock.invocationCallOrder[0]).toBeLessThan(
+      f.failed.mock.invocationCallOrder[0],
+    );
+    expect(f.budgets.every((budget) => budget === f.budgets[0])).toBe(true);
+    expect(f.warning).toHaveBeenCalledWith(
+      'contribution shadow evidence incomplete; manual reconciliation required',
+    );
+  });
+
+  it('failed start never guesses an attempt or writes a failed terminal', async () => {
+    const f = runtimeFixture();
+    f.start.mockRejectedValue(new Error('unique conflict'));
+    await f.service.compareCommittedShadow(context(), f.actor);
+    expect(f.start).toHaveBeenCalledTimes(1);
+    expect(f.runtime.$transaction).toHaveBeenCalledTimes(1);
+    expect(f.complete).not.toHaveBeenCalled();
+    expect(f.failed).not.toHaveBeenCalled();
+  });
+
+  it('drains a runtime start after containing transaction failure, never leaving a background write', async () => {
+    const f = runtimeFixture();
+    let release: (() => void) | undefined;
+    let signalStarted: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      signalStarted = resolve;
+    });
+    const originalStart = f.start.getMockImplementation()!;
+    f.start.mockImplementation(async (tx, input) => {
+      signalStarted!();
+      await gate;
+      return originalStart(tx, input);
+    });
+    f.prisma.$transaction
+      .mockImplementationOnce((arg: unknown) =>
+        (arg as (tx: PrismaMock) => Promise<unknown>)(f.prisma),
+      )
+      .mockImplementationOnce(async (arg: unknown) => {
+        // Simulate a driver reporting its containing timeout before the inner
+        // callback settles; observe the callback rejection to avoid a test leak.
+        const callback = (arg as (tx: PrismaMock) => Promise<unknown>)(f.prisma);
+        void callback.catch(() => undefined);
+        await entered;
+        throw new Error('containing transaction failed');
+      });
+    let returned = false;
+    const operation = f.service.compareCommittedShadow(context(), f.actor).then(() => {
+      returned = true;
+    });
+    await entered;
+    await Promise.resolve();
+    expect(returned).toBe(false);
+    release!();
+    await operation;
+    expect(returned).toBe(true);
+    expect(f.start).toHaveBeenCalledTimes(1);
+    expect(f.complete).not.toHaveBeenCalled();
+    expect(f.failed).not.toHaveBeenCalled();
+  });
+
+  it('revoked current identity after durable start prevents comparison and failure-terminal writes', async () => {
+    const f = runtimeFixture();
+    f.prisma.user.findFirst
+      .mockResolvedValueOnce(f.actor)
+      .mockResolvedValueOnce(f.actor)
+      .mockResolvedValueOnce(f.actor)
+      .mockResolvedValueOnce(f.actor)
+      .mockResolvedValue(null);
+    await f.service.compareCommittedShadow(context(), f.actor);
+    expect(f.start).toHaveBeenCalledTimes(1);
+    expect(f.complete).not.toHaveBeenCalled();
+    expect(f.failed).not.toHaveBeenCalled();
+    expect(f.runtime.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('off or missing committed context does no post-commit transaction or runtime work', async () => {
+    const f = runtimeFixture();
+    await f.service.compareCommittedShadow(null, f.actor);
+    await setup('off').service.compareCommittedShadow(context(), f.actor);
+    expect(f.prisma.$transaction).not.toHaveBeenCalled();
+    expect(f.runtimeEntry).not.toHaveBeenCalled();
+  });
+
+  it('off is zero new identity, lock, audit, source and candidate reads', async () => {
+    const f = setup('off');
+    await expect(f.prepare()).resolves.toBeNull();
+    expect(f.prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(f.prisma.user.findFirst).not.toHaveBeenCalled();
+    expect(f.prisma.auditLog.findUnique).not.toHaveBeenCalled();
+    expect(f.prisma.contributionShadowLegacySourceAnchor.findMany).not.toHaveBeenCalled();
+    expect(f.history).not.toHaveBeenCalled();
+  });
+
+  it('locks before current identity and qualifies twice, never projecting raw audit context', async () => {
+    const f = setup();
+    const prepared = await f.prepare();
+    expect(prepared?.attempt.expectedRecordCount).toBe(1);
+    expect(prepared?.comparisons[0].classificationCode).toBe('legacy_rule_missing');
+    expect(f.prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      f.prisma.user.findFirst.mock.invocationCallOrder[0],
+    );
+    expect(f.prisma.user.findFirst).toHaveBeenCalledTimes(2);
+    expect(f.authz.explain).toHaveBeenNthCalledWith(
+      1,
+      f.actor,
+      'attendance.create.sheet',
+      { type: 'activity', id: 'act-1' },
+      f.prisma,
+    );
+    expect(f.authz.explain).toHaveBeenNthCalledWith(
+      2,
+      f.actor,
+      'attendance.create.sheet',
+      { type: 'activity', id: 'act-1' },
+      f.prisma,
+    );
+    expect(f.prisma.auditLog.findUnique).toHaveBeenCalledWith({
+      where: { id: 'audit-1' },
+      select: {
+        createdAt: true,
+        event: true,
+        resourceId: true,
+        resourceType: true,
+        success: true,
+        shadowProofRequired: true,
+      },
+    });
+    expect(f.prisma.contributionShadowLegacySourceAnchor.createMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses inactive or missing current user before exposing audit or source', async () => {
+    const f = setup();
+    f.prisma.user.findFirst.mockResolvedValue(null);
+    await expect(f.prepare()).rejects.toEqual(new BizException(BizCode.UNAUTHORIZED));
+    expect(f.prisma.auditLog.findUnique).not.toHaveBeenCalled();
+    expect(f.history).not.toHaveBeenCalled();
+  });
+
+  it('refuses a changed member binding rather than using the old request identity', async () => {
+    const f = setup();
+    f.prisma.user.findFirst.mockResolvedValue(makeCurrentUser({ memberId: 'new-member' }));
+    await expect(f.prepare()).rejects.toEqual(new BizException(BizCode.UNAUTHORIZED));
+    expect(f.prisma.auditLog.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('refuses an inactive bound member before audit reads, including administrators', async () => {
+    const f = setup();
+    f.actor.memberId = 'bound-member';
+    const identity = jest.spyOn(AppIdentityResolver.prototype, 'resolve').mockResolvedValue({
+      canUseApp: false,
+      reason: 'MEMBER_INACTIVE',
+      member: null,
+    });
+    await expect(f.prepare()).rejects.toEqual(new BizException(BizCode.RBAC_FORBIDDEN));
+    expect(identity).toHaveBeenCalledWith(f.actor, f.prisma);
+    expect(f.prisma.auditLog.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('uses the original edit permission and sheet resource instead of create permission', async () => {
+    const f = setup();
+    f.prisma.auditLog.findUnique.mockResolvedValue({
+      createdAt: FIXED_DATE,
+      event: 'attendance-sheet.edit',
+      resourceId: 'sheet-1',
+      resourceType: 'attendance_sheet',
+      success: true,
+      shadowProofRequired: true,
+    });
+    await expect(f.prepare({ ...context(), operation: 'edit' })).resolves.not.toBeNull();
+    expect(f.authz.explain).toHaveBeenCalledTimes(2);
+    expect(f.authz.explain).toHaveBeenLastCalledWith(
+      f.actor,
+      'attendance.update.sheet',
+      { type: 'attendance_sheet', id: 'sheet-1' },
+      f.prisma,
+    );
+  });
+
+  it('managed requests cannot reuse an unbound admin identity', async () => {
+    const f = setup();
+    await expect(f.prepare({ ...context(), managed: true })).rejects.toEqual(
+      new BizException(BizCode.RBAC_FORBIDDEN),
+    );
+    expect(f.prisma.auditLog.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('refuses permissions revoked during candidate preparation', async () => {
+    const f = setup();
+    f.authz.explain
+      .mockResolvedValueOnce({ allow: true, reason: 'fixture' })
+      .mockResolvedValueOnce({ allow: false, reason: 'no_permission' });
+    await expect(f.prepare()).rejects.toEqual(new BizException(BizCode.RBAC_FORBIDDEN));
+    expect(f.prisma.user.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses user invalidation during candidate preparation', async () => {
+    const f = setup();
+    f.prisma.user.findFirst.mockResolvedValueOnce(f.actor).mockResolvedValueOnce(null);
+    await expect(f.prepare()).rejects.toEqual(new BizException(BizCode.UNAUTHORIZED));
+  });
+
+  it('does not read candidates outside the exact registered audit window', async () => {
+    const f = setup();
+    f.prisma.contributionShadowObservationWindow.findUnique.mockResolvedValue({
+      signedMappingVersion: 'signed-v1',
+      startsAt: new Date('2025-01-01T00:00:00Z'),
+      endsAt: FIXED_DATE,
+    });
+    await expect(f.prepare()).rejects.toThrow('shadow committed audit qualification mismatch');
+    expect(f.history).not.toHaveBeenCalled();
+  });
+
+  it('does not accept a successful audit lacking the same-transaction source requirement', async () => {
+    const f = setup();
+    f.prisma.auditLog.findUnique.mockResolvedValue({
+      createdAt: FIXED_DATE,
+      success: true,
+      shadowProofRequired: false,
+      event: 'attendance-sheet.submit',
+      resourceId: 'sheet-1',
+      resourceType: 'attendance_sheet',
+    });
+    await expect(f.prepare()).rejects.toThrow('shadow committed audit qualification mismatch');
+    expect(f.history).not.toHaveBeenCalled();
+  });
+});
+
 function makePrismaMock() {
   const attendanceSheet = {
     findFirst: jest.fn<Promise<SheetRow | null>, [unknown]>(),
@@ -200,6 +657,7 @@ function makePrismaMock() {
     findMany: jest.fn<Promise<unknown[]>, [unknown]>(),
     count: jest.fn<Promise<number>, [unknown]>(),
     updateMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 0 }),
+    createMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 2 }),
   };
   const user = { findFirst: jest.fn<Promise<{ memberId: string | null } | null>, [unknown]>() };
   const activity = {
@@ -220,6 +678,12 @@ function makePrismaMock() {
   // M3:runMemberLinearizedTransaction 给事务设 `SET LOCAL lock_timeout`(有界锁等待)。
   const $executeRawUnsafe = jest.fn().mockResolvedValue(0);
   const prisma = {
+    auditLog: { findUnique: jest.fn() },
+    contributionShadowObservationWindow: { findUnique: jest.fn() },
+    contributionShadowLegacySourceAnchor: {
+      createMany: jest.fn<Promise<{ count: number }>, [unknown]>().mockResolvedValue({ count: 2 }),
+      findMany: jest.fn(),
+    },
     attendanceSheet,
     attendanceRecord,
     user,
@@ -242,6 +706,190 @@ function makePrismaMock() {
 }
 type PrismaMock = ReturnType<typeof makePrismaMock>;
 
+describe('E3-2 D2 old-write source proof wiring', () => {
+  afterEach(() => jest.restoreAllMocks());
+  function setup() {
+    const prisma = makePrismaMock();
+    const recorder = makeRecorderMock();
+    const calculator = makeContributionCalculatorMock();
+    const findCurrentRegisteredWindow = jest.fn().mockResolvedValue({
+      id: 'window-1',
+      signedMappingVersion: 'mapping-hold',
+    });
+    const shadow = { findCurrentRegisteredWindow } as unknown as ContributionShadowService;
+    prisma.activity.findFirst.mockResolvedValue({
+      id: 'act-1',
+      statusCode: 'published',
+      activityTypeCode: 'training',
+      startAt: new Date('2026-01-01T07:00:00.000Z'),
+      endAt: new Date('2026-01-01T18:00:00.000Z'),
+    });
+    prisma.dictItem.findMany.mockResolvedValue([
+      { code: 'volunteer', type: { code: 'attendance_role' } },
+      { code: 'present', type: { code: 'attendance_status' } },
+    ]);
+    prisma.member.findMany.mockResolvedValue([{ id: 'mem-1' }, { id: 'mem-2' }]);
+    prisma.activityRegistration.findMany.mockResolvedValue([]);
+    prisma.attendanceSheet.create.mockResolvedValue(makeSheetRow());
+    prisma.attendanceSheet.findFirst.mockResolvedValue(makeSheetRow());
+    prisma.attendanceSheet.update.mockResolvedValue(makeSheetRow({ version: 2 }));
+    const rows = [
+      makeRecordRow({
+        id: 'cuid-two',
+        memberId: 'mem-2',
+        contributionPoints: new Prisma.Decimal(0),
+      }),
+      makeRecordRow({ id: 'cuid-one', contributionPoints: new Prisma.Decimal(0) }),
+    ];
+    const inputs = ['mem-1', 'mem-2'].map((memberId) => ({
+      memberId,
+      roleCode: 'volunteer',
+      checkInAt: FIXED_IN.toISOString(),
+      checkOutAt: FIXED_OUT.toISOString(),
+      attendanceStatusCode: 'present',
+    }));
+    const service = makeService(prisma, {
+      recorder,
+      contributionCalculator: calculator,
+      shadow,
+      stateMachine: makeStateMachineMock({
+        allowed: true,
+        nextStatusCode: ATTENDANCE_SHEET_STATUS.PENDING,
+      }),
+    });
+    return { prisma, recorder, calculator, service, rows, inputs, findCurrentRegisteredWindow };
+  }
+
+  it.each(['submit', 'edit'] as const)(
+    '%s passes only the exact successful old outcome after commit, keeping its public DTO',
+    async (operation) => {
+      const f = setup();
+      let committed = false;
+      f.prisma.$transaction.mockImplementation(async (arg: unknown) => {
+        const outcome = await (arg as (tx: PrismaMock) => Promise<unknown>)(f.prisma);
+        committed = true;
+        return outcome;
+      });
+      if (operation === 'edit')
+        f.prisma.attendanceRecord.findMany.mockResolvedValueOnce([makeRecordRow()]);
+      f.prisma.attendanceRecord.findMany.mockResolvedValue(f.rows);
+      const actor = makeCurrentUser();
+      const postCommit = jest
+        .spyOn(f.service, 'compareCommittedShadow')
+        .mockImplementation((context, authenticated) => {
+          expect(committed).toBe(true);
+          expect(authenticated).toBe(actor);
+          expect(context).toEqual({
+            windowId: 'window-1',
+            signedMappingVersion: 'mapping-hold',
+            auditLogId: `audit-${operation}`,
+            sheetId: 'sheet-1',
+            activityId: 'act-1',
+            sheetVersion: operation === 'submit' ? 1 : 2,
+            recordIds: ['cuid-two', 'cuid-one'],
+            operation,
+            managed: false,
+          });
+          return Promise.resolve();
+        });
+      const response =
+        operation === 'submit'
+          ? await f.service.submit('act-1', makeSubmitDto(f.inputs), actor, META)
+          : await f.service.edit('sheet-1', makeEditDto(f.inputs), actor, META);
+      expect(postCommit).toHaveBeenCalledTimes(1);
+      expect(response.id).toBe('sheet-1');
+      expect(response.version).toBe(operation === 'submit' ? 1 : 2);
+      expect(response).not.toHaveProperty('shadowContext');
+    },
+  );
+
+  it('source failure never invokes post-commit work', async () => {
+    const f = setup();
+    f.prisma.attendanceRecord.findMany.mockResolvedValue([f.rows[0]]);
+    const postCommit = jest.spyOn(f.service, 'compareCommittedShadow');
+    await expect(
+      f.service.submit('act-1', makeSubmitDto(f.inputs), makeCurrentUser(), META),
+    ).rejects.toThrow('correspondence failed');
+    expect(postCommit).not.toHaveBeenCalled();
+  });
+
+  it.each(['submit', 'edit'] as const)(
+    '%s binds reversed returned IDs to the exact source and audit in the old transaction',
+    async (operation) => {
+      const f = setup();
+      if (operation === 'edit')
+        f.prisma.attendanceRecord.findMany.mockResolvedValueOnce([
+          makeRecordRow({ id: 'old-record' }),
+        ]);
+      f.prisma.attendanceRecord.findMany.mockResolvedValue(f.rows);
+      if (operation === 'submit')
+        await f.service.submit('act-1', makeSubmitDto(f.inputs), makeCurrentUser(), META);
+      else await f.service.edit('sheet-1', makeEditDto(f.inputs), makeCurrentUser(), META);
+      const call = f.prisma.contributionShadowLegacySourceAnchor.createMany.mock.calls[0][0] as {
+        data: Array<{
+          recordId: string;
+          memberId: string;
+          auditLogId: string;
+          sheetVersion: number;
+        }>;
+      };
+      expect(call.data.map((row) => [row.recordId, row.memberId])).toEqual([
+        ['cuid-one', 'mem-1'],
+        ['cuid-two', 'mem-2'],
+      ]);
+      expect(
+        call.data.every(
+          (row) =>
+            row.auditLogId === `audit-${operation}` &&
+            row.sheetVersion === (operation === 'submit' ? 1 : 2),
+        ),
+      ).toBe(true);
+      expect(f.calculator.applyContributionRulePrefill).not.toHaveBeenCalled();
+      expect(f.recorder.logSubmit).not.toHaveBeenCalled();
+      expect(f.recorder.logEdit).not.toHaveBeenCalled();
+      expect(f.findCurrentRegisteredWindow).toHaveBeenCalledWith(f.prisma);
+    },
+  );
+
+  it.each(['submit', 'edit'] as const)(
+    '%s fails the old transaction callback when returned records are incomplete',
+    async (operation) => {
+      const f = setup();
+      if (operation === 'edit')
+        f.prisma.attendanceRecord.findMany.mockResolvedValueOnce([makeRecordRow()]);
+      f.prisma.attendanceRecord.findMany.mockResolvedValue([f.rows[0]]);
+      const action =
+        operation === 'submit'
+          ? f.service.submit('act-1', makeSubmitDto(f.inputs), makeCurrentUser(), META)
+          : f.service.edit('sheet-1', makeEditDto(f.inputs), makeCurrentUser(), META);
+      await expect(action).rejects.toThrow('correspondence failed');
+      expect(f.prisma.contributionShadowLegacySourceAnchor.createMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it('edit without records never queries a shadow window or creates a source proof', async () => {
+    const f = setup();
+    f.prisma.attendanceRecord.findMany.mockResolvedValue([makeRecordRow()]);
+    await f.service.edit('sheet-1', makeEditDto(), makeCurrentUser(), META);
+    expect(f.findCurrentRegisteredWindow).not.toHaveBeenCalled();
+    expect(f.recorder.logEditNoRecords).toHaveBeenCalled();
+    expect(f.recorder.logEditWithProof).not.toHaveBeenCalled();
+    expect(f.prisma.contributionShadowLegacySourceAnchor.createMany).not.toHaveBeenCalled();
+  });
+
+  it('without a registered window retains the original calculator and audit calls', async () => {
+    const f = setup();
+    f.findCurrentRegisteredWindow.mockResolvedValue(null);
+    f.prisma.attendanceRecord.findMany.mockResolvedValue(f.rows);
+    await f.service.submit('act-1', makeSubmitDto(f.inputs), makeCurrentUser(), META);
+    expect(f.calculator.applyContributionRulePrefill).toHaveBeenCalledTimes(1);
+    expect(f.calculator.applyContributionRulePrefillWithSource).not.toHaveBeenCalled();
+    expect(f.recorder.logSubmit).toHaveBeenCalledTimes(1);
+    expect(f.recorder.logSubmitWithProof).not.toHaveBeenCalled();
+    expect(f.prisma.contributionShadowLegacySourceAnchor.createMany).not.toHaveBeenCalled();
+  });
+});
+
 function makeStateMachineMock(decision: AttendanceSheetTransitionDecision) {
   return {
     decide: jest
@@ -255,7 +903,9 @@ function makeRecorderMock() {
   return {
     logRead: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logSubmit: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
+    logSubmitWithProof: jest.fn<Promise<string>, [unknown]>().mockResolvedValue('audit-submit'),
     logEdit: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
+    logEditWithProof: jest.fn<Promise<string>, [unknown]>().mockResolvedValue('audit-edit'),
     logEditNoRecords: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logDelete: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
     logReview: jest.fn<Promise<void>, [unknown]>().mockResolvedValue(undefined),
@@ -273,6 +923,20 @@ function makeContributionCalculatorMock() {
     applyContributionRulePrefill: jest
       .fn<Promise<unknown[]>, [unknown[], string, unknown]>()
       .mockImplementation((records: unknown[]) => Promise.resolve(records)),
+    applyContributionRulePrefillWithSource: jest
+      .fn()
+      .mockImplementation((records: Array<Record<string, unknown>>) =>
+        Promise.resolve({
+          records: records.map((record) => ({ ...record, contributionPoints: 0 })),
+          sources: records.map(() => ({
+            sourceKindCode: 'no_match',
+            legacyRuleId: null,
+            durationThreshold: null,
+            pointsBelow: null,
+            pointsAbove: null,
+          })),
+        }),
+      ),
   };
 }
 type ContributionCalculatorMock = ReturnType<typeof makeContributionCalculatorMock>;
@@ -343,6 +1007,9 @@ function makeService(
     notificationProducer?: AttendanceNotificationProducerMock;
     authz?: AuthzMock;
     organizations?: OrganizationsMock;
+    shadow?: ContributionShadowService;
+    shadowEvidence?: ContributionShadowEvidenceWriteService;
+    shadowMode?: 'off' | 'shadow';
     // PR9:resource_not_found 回退路径读 rbac.can(行为锁「先判码后查单」);默认 true
     rbacCan?: boolean;
   } = {},
@@ -420,9 +1087,21 @@ function makeService(
     authz as unknown as AuthzService,
     notificationProducer as unknown as AttendanceNotificationProducer,
     organizations as unknown as OrganizationsService,
-    { attendance: { allowSameReviewer: false, windowToleranceHours: 2 } } as never,
+    {
+      attendance: { allowSameReviewer: false, windowToleranceHours: 2 },
+      contributionShadowMode: opts.shadowMode ?? 'off',
+    } as never,
     new ActivityParticipationPolicy(),
     gateStub(false),
+    opts.shadow ??
+      new ContributionShadowService({ contributionShadowMode: 'off' } as never, {
+        url: undefined,
+        contributionShadowUrl: undefined,
+      }),
+    opts.shadowEvidence ?? new ContributionShadowEvidenceWriteService(),
+    new ActivityContributionShadowMappingProofQuery(),
+    new AppIdentityResolver(prisma as unknown as PrismaService),
+    new AuditLogsService(prisma as unknown as PrismaService, rbac),
   );
 }
 

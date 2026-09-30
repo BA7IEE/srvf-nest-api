@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -11,9 +11,13 @@ import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import appConfig from '../../config/app.config';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ActivityParticipationPolicy } from '../activities/activity-participation-policy';
 import { AuthzService } from '../authz/authz.service';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { AppIdentityResolver } from '../users/app-identity.resolver';
+import { loadActiveUserIdentityInTx } from '../users/user-active-identity.query';
+import { ActivityContributionShadowMappingProofQuery } from '../activities/activity-contribution-shadow-mapping-proof.query';
 import { RbacService } from '../permissions/rbac.service';
 // 跨轴只读(2026-06-23):复用 team-join 贡献值封顶核(单一真相源;生涯累计 cutoff=null)。
 // 纯函数调用,非 DI provider → 无 AttendancesModule → TeamJoinModule 依赖;team-join 不反向
@@ -38,6 +42,12 @@ import {
 } from './attendance-sheet-query.service';
 import { AttendanceSheetStateMachine } from './attendance-sheet-state-machine';
 import { ContributionCalculator } from './contribution-calculator';
+import {
+  ContributionShadowService,
+  ShadowComparisonBudget,
+  prepareShadowComparisonSet,
+} from './contribution-shadow.service';
+import { ContributionShadowEvidenceWriteService } from './contribution-shadow-evidence.write.service';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import {
   ATTENDANCE_SHEET_STATUS,
@@ -124,9 +134,15 @@ const SHEET_STATUS_PENDING = ATTENDANCE_SHEET_STATUS.PENDING;
 // §4「loading the aggregate root」,不是读侧查询构造。
 type PrismaTx = Prisma.TransactionClient;
 export type AttendanceAuthorization = 'authz' | 'managed';
+type CommittedShadowContext = Parameters<typeof prepareShadowComparisonSet>[0]['context'] & {
+  recordIds: readonly string[];
+  operation: 'submit' | 'edit';
+  managed: boolean;
+};
 
 @Injectable()
 export class AttendancesService {
+  private readonly shadowLogger = new Logger(AttendancesService.name);
   constructor(
     private readonly prisma: PrismaService,
     // Phase 6-B 第三域第一刀:submit / edit / softDelete / 审批八式 / 读侧**三段共用**的前置
@@ -161,7 +177,213 @@ export class AttendancesService {
     private readonly activityParticipationPolicy: ActivityParticipationPolicy,
     // 活动 v1.1 cutover gate —— 旧写路径的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
+    private readonly contributionShadow: ContributionShadowService,
+    private readonly shadowEvidence: ContributionShadowEvidenceWriteService,
+    private readonly shadowQuery: ActivityContributionShadowMappingProofQuery,
+    private readonly shadowIdentity: AppIdentityResolver,
+    private readonly shadowAudit: AuditLogsService,
   ) {}
+
+  /**
+   * Internal post-commit preparation, not an HTTP or replay authorization entry.
+   * Caller must pass the authenticated Human and exact successful old outcome,
+   * own a separate bounded transaction, and recheck access before runtime writes.
+   * Off performs zero new reads. Nothing here writes evidence or borrows runtime
+   * identity; raw audit projection remains on the qualified primary connection.
+   */
+  async prepareCommittedShadowComparison(
+    tx: PrismaTx,
+    context: CommittedShadowContext,
+    authenticated: CurrentUserPayload,
+  ) {
+    if (this.config.contributionShadowMode !== 'shadow') return null;
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Activity"
+      WHERE id = ${context.activityId} AND "deletedAt" IS NULL
+      FOR SHARE
+    `;
+    if (locked.length !== 1) throw new Error('shadow committed activity unavailable');
+    await this.assertShadowQualification(tx, context, authenticated);
+    const audit = await this.shadowAudit.readShadowSourceQualification(tx, context.auditLogId);
+    const window = await tx.contributionShadowObservationWindow.findUnique({
+      where: { id: context.windowId },
+      select: { signedMappingVersion: true, startsAt: true, endsAt: true },
+    });
+    if (
+      !audit ||
+      !window ||
+      !audit.success ||
+      !audit.shadowProofRequired ||
+      audit.event !== `attendance-sheet.${context.operation}` ||
+      audit.resourceId !== context.sheetId ||
+      audit.resourceType !== 'attendance_sheet' ||
+      window.signedMappingVersion !== context.signedMappingVersion ||
+      audit.createdAt < window.startsAt ||
+      audit.createdAt >= window.endsAt
+    )
+      throw new Error('shadow committed audit qualification mismatch');
+    const sources = await tx.contributionShadowLegacySourceAnchor.findMany({
+      where: {
+        windowId: context.windowId,
+        auditLogId: context.auditLogId,
+        sheetId: context.sheetId,
+        activityId: context.activityId,
+        sheetVersion: context.sheetVersion,
+      },
+      orderBy: { recordId: 'asc' },
+    });
+    const mappingHistory = await this.shadowQuery.readComparisonMappingHistory(tx, {
+      activityId: context.activityId,
+      sourceTime: audit.createdAt,
+    });
+    const selectionRevision = await this.shadowQuery.readSelectionAtSource(tx, {
+      activityId: context.activityId,
+      sourceTime: audit.createdAt,
+    });
+    const positions = await this.shadowQuery.readComparisonPositions(tx, {
+      activityId: context.activityId,
+      positionIds: mappingHistory.map((event) => event.sessionPositionId),
+    });
+    const policyVersions = await this.shadowQuery.readComparisonPolicyVersions(
+      tx,
+      mappingHistory.map((event) => ({
+        id: event.policyVersionId,
+        definitionHash: event.policyDefinitionHash,
+        evaluatorVersion: event.evaluatorVersion,
+      })),
+    );
+    await this.assertShadowQualification(tx, context, authenticated);
+    return prepareShadowComparisonSet({
+      context,
+      expectedRecordIds: context.recordIds,
+      sources,
+      sourceTime: audit.createdAt,
+      mappingHistory,
+      selectionRevision,
+      positions,
+      policyVersions,
+    });
+  }
+
+  private async assertShadowQualification(
+    tx: PrismaTx,
+    context: CommittedShadowContext,
+    authenticated: CurrentUserPayload,
+  ): Promise<void> {
+    const actor = await loadActiveUserIdentityInTx(tx, authenticated.id);
+    if (!actor || actor.memberId !== authenticated.memberId)
+      throw new BizException(BizCode.UNAUTHORIZED);
+    if (actor.memberId !== null && !(await this.shadowIdentity.resolve(actor, tx)).canUseApp)
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    const action =
+      context.operation === 'submit' ? 'attendance.create.sheet' : 'attendance.update.sheet';
+    const ref =
+      context.operation === 'submit'
+        ? { type: 'activity' as const, id: context.activityId }
+        : { type: 'attendance_sheet' as const, id: context.sheetId };
+    if (!(await this.authz.explain(actor, action, ref, tx)).allow)
+      throw new BizException(BizCode.RBAC_FORBIDDEN);
+    if (context.managed)
+      await this.access.assertManagedAttendanceAccess(context.activityId, actor, tx);
+  }
+
+  /** Keep the primary root lock until the separately owned runtime transaction settles. */
+  private async runQualifiedShadowStage<T>(
+    budget: ShadowComparisonBudget,
+    context: CommittedShadowContext,
+    authenticated: CurrentUserPayload,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    // The primary pool just committed the old write; only the independent
+    // runtime entry reserves its new connection time. Do not charge it twice.
+    const options = budget.transactionOptions(0, 100);
+    let pending: Promise<T> | undefined;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Pool acquisition has already elapsed; do not let the inner transaction
+        // outlive the containing lock transaction's own, possibly shorter, timeout.
+        budget.constrainRemaining(options.timeout);
+        const locked = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id FROM "Activity"
+          WHERE id = ${context.activityId} AND "deletedAt" IS NULL FOR SHARE
+        `;
+        if (locked.length !== 1) throw new Error('shadow committed activity unavailable');
+        await this.assertShadowQualification(tx, context, authenticated);
+        await this.assertShadowQualification(tx, context, authenticated);
+        pending = work();
+        return await pending;
+      }, options);
+    } catch (error) {
+      // A driver may report a containing timeout before its callback settles.
+      // Drain that exact operation: no background write, restart or Promise.race.
+      if (pending) await pending.catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /** Internal successful-old-outcome entry; never accepts an HTTP replay key. */
+  async compareCommittedShadow(
+    context: CommittedShadowContext | null,
+    authenticated: CurrentUserPayload,
+  ): Promise<void> {
+    if (!context || this.config.contributionShadowMode !== 'shadow') return;
+    const budget = new ShadowComparisonBudget();
+    let started: Awaited<
+      ReturnType<ContributionShadowEvidenceWriteService['readOrCreateAttempt']>
+    > | null = null;
+    try {
+      const prepared = await this.prisma.$transaction(
+        (tx) => this.prepareCommittedShadowComparison(tx, context, authenticated),
+        budget.transactionOptions(),
+      );
+      if (!prepared) return;
+      started = await this.runQualifiedShadowStage(budget, context, authenticated, () =>
+        this.contributionShadow.withBoundedRuntimeClient(budget, (client, options) =>
+          client.$transaction(
+            (tx) => this.shadowEvidence.readOrCreateAttempt(tx, prepared.attempt),
+            options,
+          ),
+        ),
+      );
+      if (!started || started.attempt.terminal) return;
+      const attempt = started.attempt;
+      await this.runQualifiedShadowStage(budget, context, authenticated, () =>
+        this.contributionShadow.withBoundedRuntimeClient(budget, (client, options) =>
+          client.$transaction(
+            (tx) =>
+              this.shadowEvidence.writeCompleteComparisonSet(
+                tx,
+                attempt,
+                prepared.applications,
+                prepared.comparisons,
+              ),
+            options,
+          ),
+        ),
+      );
+    } catch {
+      // Only a known committed start can be recovered. A late/uncertain start
+      // remains a manual gap; never guess an ID or retry the comparison.
+      if (started && !started.attempt.terminal) {
+        const attempt = started.attempt;
+        try {
+          await this.runQualifiedShadowStage(budget, context, authenticated, () =>
+            this.contributionShadow.withBoundedRuntimeClient(budget, (client, options) =>
+              client.$transaction(
+                (tx) => this.shadowEvidence.writeFailedTerminal(tx, attempt),
+                options,
+              ),
+            ),
+          );
+        } catch {
+          // Persisted starts without a terminal remain visible to manual review.
+        }
+      }
+      this.shadowLogger.warn(
+        'contribution shadow evidence incomplete; manual reconciliation required',
+      );
+    }
+  }
 
   // Slow-4 T3(2026-06-11,评审稿 §3.7 / D-S4-8)起点;终态 scoped-authz PR12(2026-07-02;
   // 冻结稿 §11 + 决断①②)升级:判权走 authz.explain,ref 矩阵——
@@ -357,7 +579,7 @@ export class AttendancesService {
       id: activityId,
     });
     // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
-    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+    const committed = await runMemberLinearizedTransaction(this.prisma, async (tx) => {
       // 1. 与 pass cancel / GPS check-in 统一 Activity → Registration 锁序。
       // managed 以 FOR UPDATE 与责任撤销/移交串行并锁后重读 capability；Admin 默认仍用 FOR SHARE。
       if (authorization === 'managed') {
@@ -397,11 +619,21 @@ export class AttendancesService {
       await this.timeOverlapPolicy.assertNoTimeOverlapForRecords(normalized, undefined, tx);
 
       // 5. contributionPoints 由 ContributionRule 权威计算;无匹配规则保守为 0。
-      const prefilled = await this.contributionCalculator.applyContributionRulePrefill(
-        normalized,
-        activity.activityTypeCode,
-        tx,
-      );
+      const shadowWindow = await this.contributionShadow.findCurrentRegisteredWindow(tx);
+      const sourceCalculation = shadowWindow
+        ? await this.contributionCalculator.applyContributionRulePrefillWithSource(
+            normalized,
+            activity.activityTypeCode,
+            tx,
+          )
+        : null;
+      const prefilled =
+        sourceCalculation?.records ??
+        (await this.contributionCalculator.applyContributionRulePrefill(
+          normalized,
+          activity.activityTypeCode,
+          tx,
+        ));
 
       // 6. 事务内一次性 create Sheet + N records
       const created = await tx.attendanceSheet.create({
@@ -438,7 +670,7 @@ export class AttendancesService {
         select: recordWithMemberSelect,
         orderBy: { checkInAt: 'asc' },
       });
-      await this.attendanceAuditRecorder.logSubmit({
+      const auditArgs = {
         sheetId: created.id,
         sheet: created,
         records: createdRecords,
@@ -449,10 +681,43 @@ export class AttendancesService {
         activityPushedToCompleted,
         auditMeta,
         tx,
-      });
+      };
+      let shadowContext: CommittedShadowContext | null = null;
+      if (shadowWindow && sourceCalculation) {
+        const auditLogId = await this.attendanceAuditRecorder.logSubmitWithProof(auditArgs);
+        await this.shadowEvidence.writeMatchedLegacySources(
+          tx,
+          {
+            windowId: shadowWindow.id,
+            auditLogId,
+            sheetId: created.id,
+            sheetVersion: created.version,
+            activityId,
+            activityTypeCode: activity.activityTypeCode,
+          },
+          prefilled,
+          sourceCalculation.sources,
+          createdRecords,
+        );
+        shadowContext = {
+          windowId: shadowWindow.id,
+          signedMappingVersion: shadowWindow.signedMappingVersion,
+          auditLogId,
+          sheetId: created.id,
+          sheetVersion: created.version,
+          activityId,
+          recordIds: createdRecords.map((record) => record.id),
+          operation: 'submit',
+          managed: authorization === 'managed',
+        };
+      } else {
+        await this.attendanceAuditRecorder.logSubmit(auditArgs);
+      }
 
-      return this.attendancePresenter.toSheetResponseDto(created);
+      return { response: this.attendancePresenter.toSheetResponseDto(created), shadowContext };
     });
+    await this.compareCommittedShadow(committed.shadowContext, currentUser);
+    return committed.response;
   }
 
   // 返回预填所需 activityTypeCode、参与状态与考勤时间窗。
@@ -579,7 +844,7 @@ export class AttendancesService {
       id,
     });
     // M3:本事务内会取队员线性化键 ⇒ 必须显式 ReadCommitted + 有界锁等待(见 util 注释)。
-    return runMemberLinearizedTransaction(this.prisma, async (tx) => {
+    const committed = await runMemberLinearizedTransaction(this.prisma, async (tx) => {
       // K1(S7 收口):Activity 聚合锁**两条 surface 都取**,不再只有 managed 分支取。
       // managed 面必须在暴露 Sheet 存在性之前先判权,所以它按 managedActivityId 先锁再判权;
       // Admin 面没有这道前置,读到 Sheet 后按其 activityId 取同一把锁。
@@ -638,7 +903,10 @@ export class AttendancesService {
           auditMeta,
           tx,
         });
-        return this.attendancePresenter.toSheetResponseDto(updated);
+        return {
+          response: this.attendancePresenter.toSheetResponseDto(updated),
+          shadowContext: null,
+        };
       }
 
       // 1. 校验新 records；edit 同样按所属活动时间窗复核。
@@ -671,11 +939,21 @@ export class AttendancesService {
       // edit 路径:排除本 Sheet 旧 records(它们将被软删)
       await this.timeOverlapPolicy.assertNoTimeOverlapForRecords(normalized, id, tx);
 
-      const computed = await this.contributionCalculator.applyContributionRulePrefill(
-        normalized,
-        activity.activityTypeCode,
-        tx,
-      );
+      const shadowWindow = await this.contributionShadow.findCurrentRegisteredWindow(tx);
+      const sourceCalculation = shadowWindow
+        ? await this.contributionCalculator.applyContributionRulePrefillWithSource(
+            normalized,
+            activity.activityTypeCode,
+            tx,
+          )
+        : null;
+      const computed =
+        sourceCalculation?.records ??
+        (await this.contributionCalculator.applyContributionRulePrefill(
+          normalized,
+          activity.activityTypeCode,
+          tx,
+        ));
 
       // 2. 生成 previousSnapshot(在旧 records 软删之前抓取)
       const currentRecords = await tx.attendanceRecord.findMany({
@@ -723,7 +1001,7 @@ export class AttendancesService {
         select: recordWithMemberSelect,
         orderBy: { checkInAt: 'asc' },
       });
-      await this.attendanceAuditRecorder.logEdit({
+      const auditArgs = {
         sheetId: id,
         beforeSheet: lockedSheet,
         beforeRecords: currentRecords,
@@ -736,10 +1014,43 @@ export class AttendancesService {
         newVersion: updated.version,
         auditMeta,
         tx,
-      });
+      };
+      let shadowContext: CommittedShadowContext | null = null;
+      if (shadowWindow && sourceCalculation) {
+        const auditLogId = await this.attendanceAuditRecorder.logEditWithProof(auditArgs);
+        await this.shadowEvidence.writeMatchedLegacySources(
+          tx,
+          {
+            windowId: shadowWindow.id,
+            auditLogId,
+            sheetId: id,
+            sheetVersion: updated.version,
+            activityId: lockedSheet.activityId,
+            activityTypeCode: activity.activityTypeCode,
+          },
+          computed,
+          sourceCalculation.sources,
+          newRecords,
+        );
+        shadowContext = {
+          windowId: shadowWindow.id,
+          signedMappingVersion: shadowWindow.signedMappingVersion,
+          auditLogId,
+          sheetId: id,
+          sheetVersion: updated.version,
+          activityId: lockedSheet.activityId,
+          recordIds: newRecords.map((record) => record.id),
+          operation: 'edit',
+          managed: managedActivityId !== undefined,
+        };
+      } else {
+        await this.attendanceAuditRecorder.logEdit(auditArgs);
+      }
 
-      return this.attendancePresenter.toSheetResponseDto(updated);
+      return { response: this.attendancePresenter.toSheetResponseDto(updated), shadowContext };
     });
+    await this.compareCommittedShadow(committed.shadowContext, currentUser);
+    return committed.response;
   }
 
   // ============ softDelete(DELETE)============

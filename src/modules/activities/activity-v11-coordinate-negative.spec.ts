@@ -151,9 +151,12 @@ describe('AC-072 坐标反向验收(本轮未新增六类坐标专用机制)', (
     expect(modelNames.filter(namesCoordinateMechanism)).toEqual([]);
   });
 
+  // 保留验收登记的既有标题；具名贡献比较连接不是坐标专用隔离库。
+  // 连接输入严格限定主连接与已批准的独立比较连接，不接受其他连接变量。
   it('② 未新增隔离库:schema 只有一个 datasource 块,且只有一个库连接串 env', () => {
     expect(extractDatasourceCount(schema)).toBe(1);
     expect(envNames.filter((name) => name.includes('DATABASE_URL')).sort()).toEqual([
+      'CONTRIBUTION_SHADOW_DATABASE_URL',
       'DATABASE_URL',
     ]);
   });

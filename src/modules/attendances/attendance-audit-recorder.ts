@@ -176,8 +176,12 @@ export class AttendanceAuditRecorder {
     auditMeta: AuditMeta;
     tx: PrismaTx;
   }): Promise<void> {
-    await this.auditLogs.log({
-      event: 'attendance-sheet.submit',
+    await this.auditLogs.log(this.submitAuditInput(args));
+  }
+
+  private submitAuditInput(args: Parameters<AttendanceAuditRecorder['logSubmit']>[0]) {
+    return {
+      event: 'attendance-sheet.submit' as const,
       actorUserId: args.actorUserId,
       actorRoleSnap: args.actorRoleSnap,
       resourceType: AUDIT_RESOURCE_TYPE,
@@ -191,7 +195,15 @@ export class AttendanceAuditRecorder {
         activityPushedToCompleted: args.activityPushedToCompleted,
       },
       tx: args.tx,
-    });
+    };
+  }
+
+  // E3-2 D2: identical legacy audit payload, but the same old transaction also
+  // requires a complete immutable source set and needs this exact INSERT ID.
+  async logSubmitWithProof(
+    args: Parameters<AttendanceAuditRecorder['logSubmit']>[0],
+  ): Promise<string> {
+    return this.auditLogs.logShadowProofRequired(this.submitAuditInput(args));
   }
 
   // ============ edit (records 分支) ============
@@ -212,8 +224,12 @@ export class AttendanceAuditRecorder {
     auditMeta: AuditMeta;
     tx: PrismaTx;
   }): Promise<void> {
-    await this.auditLogs.log({
-      event: 'attendance-sheet.edit',
+    await this.auditLogs.log(this.editAuditInput(args));
+  }
+
+  private editAuditInput(args: Parameters<AttendanceAuditRecorder['logEdit']>[0]) {
+    return {
+      event: 'attendance-sheet.edit' as const,
       actorUserId: args.actorUserId,
       actorRoleSnap: args.actorRoleSnap,
       resourceType: AUDIT_RESOURCE_TYPE,
@@ -228,7 +244,11 @@ export class AttendanceAuditRecorder {
         newVersion: args.newVersion,
       },
       tx: args.tx,
-    });
+    };
+  }
+
+  async logEditWithProof(args: Parameters<AttendanceAuditRecorder['logEdit']>[0]): Promise<string> {
+    return this.auditLogs.logShadowProofRequired(this.editAuditInput(args));
   }
 
   // ============ edit (no-records 分支) ============

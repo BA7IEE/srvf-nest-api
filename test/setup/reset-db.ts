@@ -217,24 +217,47 @@ export async function resetDb(app: INestApplication): Promise<void> {
           FROM (VALUES
             (to_regclass('public."ContributionShadowObservationWindow"')),
             (to_regclass('public."ContributionShadowAttemptReceipt"')),
+            (to_regclass('public."ContributionShadowLegacySourceAnchor"')),
             (to_regclass('public."ContributionShadowComparisonReceipt"')),
             (to_regclass('public."ContributionShadowTerminalReceipt"')),
             (to_regclass('public."ContributionShadowDispositionReceipt"'))
           ) AS tables(name)
           WHERE name IS NOT NULL
         `;
-        if (shadowTables.existing !== 0n && shadowTables.existing !== 5n) {
+        if (![0n, 5n, 6n].includes(shadowTables.existing)) {
           throw new Error('Incomplete shadow evidence fixture tables');
         }
-        const shadowPrefix =
-          shadowTables.existing === 5n
-            ? '"ContributionShadowDispositionReceipt", "ContributionShadowTerminalReceipt", "ContributionShadowComparisonReceipt", "ContributionShadowAttemptReceipt", "ContributionShadowObservationWindow", '
+        const [mappingTables] = await tx.$queryRaw<[{ existing: bigint }]>`
+          SELECT count(*)::bigint AS existing FROM (VALUES
+            (to_regclass('public."ContributionShadowMappingApproval"')),
+            (to_regclass('public."ContributionShadowMappingApplication"')),
+            (to_regclass('public."ContributionShadowMappingRegistrationReceipt"'))
+          ) AS tables(name) WHERE name IS NOT NULL
+        `;
+        if (
+          ![0n, 3n].includes(mappingTables.existing) ||
+          (mappingTables.existing === 3n && shadowTables.existing !== 6n)
+        ) {
+          throw new Error('Incomplete shadow mapping fixture tables');
+        }
+        const mappingPrefix =
+          mappingTables.existing === 3n
+            ? '"ContributionShadowMappingApplication", "ContributionShadowMappingRegistrationReceipt", "ContributionShadowMappingApproval", '
             : '';
+        const shadowPrefix =
+          shadowTables.existing === 6n
+            ? '"ContributionShadowDispositionReceipt", "ContributionShadowTerminalReceipt", "ContributionShadowComparisonReceipt", "ContributionShadowLegacySourceAnchor", "ContributionShadowAttemptReceipt", "ContributionShadowObservationWindow", '
+            : shadowTables.existing === 5n
+              ? '"ContributionShadowDispositionReceipt", "ContributionShadowTerminalReceipt", "ContributionShadowComparisonReceipt", "ContributionShadowAttemptReceipt", "ContributionShadowObservationWindow", '
+              : '';
         const baseTruncate =
           'TRUNCATE TABLE "activity_publish_reviews", "activity_responsibility_assignments", "insurance_eligibility_evidences", "notification_outbox_intents", "throttler_buckets", "organization_position_role_policies", "role_bindings", "role_permissions", "roles", "permissions", "audit_logs", "storage_settings", "sms_settings", "sms_verification_codes", "sms_send_logs", "wechat_settings", "wecom_settings", "wecom_identities", "wecom_auth_attempts", "realname_verification_settings", "RecruitmentCertificateClaim", "recruitment_applications", "recruitment_cycles", "recruitment_ocr_daily_counters", "team_join_applications", "team_join_cycles", "notification_reads", "notifications", "contents", "attachment_mime_configs", "attachment_size_limit_configs", "storage_object_operations", "storage_objects", "attachments", "attachment_type_configs", "team_insurance_coverages", "member_insurances", "team_insurance_policies", "ContributionRule", "activity_check_ins", "activity_feedbacks", "AttendanceRecord", "AttendanceSheet", "ActivityRegistration", "activity_positions", "ActivityPlace", "PlacePreset", "ActivityEmergencyFollowUpItem", "ActivityEmergencyInitiation", "ActivityCreationCommandReceipt", "ActivitySeriesCommandReceipt", "ActivitySeriesOccurrence", "ActivitySeriesRevision", "ActivitySeries", "Activity", "MemberProfile", "EmergencyContact", "Certificate", "CertificateRecognitionIssuer", "CertificateRecognitionPolicy", "CertificateStandard", "User", "member_organization_memberships", "organization_supervision_assignments", "organization_position_assignments", "organization_position_rules", "organization_positions", "Organization", "MemberNoReservation", "Member", "DictItem", "DictType" RESTART IDENTITY CASCADE';
         await tx.$executeRawUnsafe(
-          shadowPrefix
-            ? baseTruncate.replace('TRUNCATE TABLE ', `TRUNCATE TABLE ${shadowPrefix}`)
+          shadowPrefix || mappingPrefix
+            ? baseTruncate.replace(
+                'TRUNCATE TABLE ',
+                `TRUNCATE TABLE ${mappingPrefix}${shadowPrefix}`,
+              )
             : baseTruncate,
         );
       }),

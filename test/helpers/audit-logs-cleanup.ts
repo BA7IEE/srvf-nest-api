@@ -36,6 +36,7 @@ export async function truncateAuditLogsTestOnly(app: INestApplication): Promise<
       const triggers = [
         ['ContributionShadowObservationWindow', 'csow_no_truncate'],
         ['ContributionShadowAttemptReceipt', 'csar_no_truncate'],
+        ['ContributionShadowLegacySourceAnchor', 'cslsa_no_truncate'],
         ['ContributionShadowComparisonReceipt', 'cscr_no_truncate'],
         ['ContributionShadowTerminalReceipt', 'cstr_no_truncate'],
         ['ContributionShadowDispositionReceipt', 'csdr_no_truncate'],
@@ -58,13 +59,18 @@ export async function truncateAuditLogsTestOnly(app: INestApplication): Promise<
         await tx.$executeRawUnsafe(`ALTER TABLE "${table}" DISABLE TRIGGER "${trigger}"`);
         previous.push({ table, trigger, enabled });
       }
-      if (previous.length !== 0 && previous.length !== triggers.length) {
+      const legacyFive =
+        previous.length === triggers.length - 1 &&
+        !previous.some(({ table }) => table === 'ContributionShadowLegacySourceAnchor');
+      if (previous.length !== 0 && previous.length !== triggers.length && !legacyFive) {
         throw new Error('Incomplete shadow fixture tables');
       }
       await tx.$executeRawUnsafe(
         previous.length === 0
           ? 'TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE'
-          : 'TRUNCATE TABLE "ContributionShadowDispositionReceipt", "ContributionShadowTerminalReceipt", "ContributionShadowComparisonReceipt", "ContributionShadowAttemptReceipt", "ContributionShadowObservationWindow", "audit_logs" RESTART IDENTITY CASCADE',
+          : previous.length === triggers.length
+            ? 'TRUNCATE TABLE "ContributionShadowDispositionReceipt", "ContributionShadowTerminalReceipt", "ContributionShadowComparisonReceipt", "ContributionShadowLegacySourceAnchor", "ContributionShadowAttemptReceipt", "ContributionShadowObservationWindow", "audit_logs" RESTART IDENTITY CASCADE'
+            : 'TRUNCATE TABLE "ContributionShadowDispositionReceipt", "ContributionShadowTerminalReceipt", "ContributionShadowComparisonReceipt", "ContributionShadowAttemptReceipt", "ContributionShadowObservationWindow", "audit_logs" RESTART IDENTITY CASCADE',
       );
       for (const { table, trigger, enabled } of previous) {
         const clause =

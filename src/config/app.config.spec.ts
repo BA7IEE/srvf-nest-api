@@ -1,11 +1,23 @@
 import appConfig, {
   parseActivityControlPlaneMode,
+  parseContributionShadowMode,
   parseActivityAudienceTagsHttpEnabled,
   parseActivityResponsibilityWorkflowEnabled,
   parseActivityV11WorkflowEnabled,
   parseInsuranceEnforcementEnabled,
   parseTrustedProxyCidrs,
 } from './app.config';
+
+describe('ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE', () => {
+  it('defaults only an absent value to off and never inherits the B6 mode', () => {
+    expect(parseContributionShadowMode(undefined)).toBe('off');
+    expect(parseContributionShadowMode('off')).toBe('off');
+    expect(parseContributionShadowMode('shadow')).toBe('shadow');
+  });
+  it.each(['', ' ', 'active', 'true', 'SHADOW', 'shadow '])('rejects %j', (raw) => {
+    expect(() => parseContributionShadowMode(raw)).toThrow('必须严格为 off 或 shadow');
+  });
+});
 
 describe('ACTIVITY_OS_CONTROL_PLANE_MODE', () => {
   it.each(['development', 'test'] as const)(

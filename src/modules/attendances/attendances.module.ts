@@ -32,6 +32,8 @@ import { AttendanceReadService } from './attendance-read.service';
 import { AttendanceReviewService } from './attendance-review.service';
 import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
+import { ContributionShadowService } from './contribution-shadow.service';
+import { ContributionShadowEvidenceWriteService } from './contribution-shadow-evidence.write.service';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import { AdminActivityCheckInsController } from './controllers/admin-activity-check-ins.controller';
 import { AdminMemberAttendanceController } from './controllers/admin-member-attendance.controller';
@@ -132,6 +134,8 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     ActivityCheckInFieldPolicy,
     ActivityCheckInPresenter,
     ContributionCalculator,
+    ContributionShadowService,
+    ContributionShadowEvidenceWriteService,
     TimeOverlapPolicy,
     AttendanceSheetStateMachine,
     AttendanceAuditRecorder,

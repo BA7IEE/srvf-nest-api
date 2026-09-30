@@ -76,6 +76,37 @@ function deploy(schema = join(ROOT, 'schema.prisma')): void {
   });
 }
 
+// Historical D1 replay remains pinned to the exact 133rd migration even after
+// additive successors land. Do not change its 132→133 assertions.
+function deployThroughD1(): void {
+  const temporary = mkdtempSync(join(tmpdir(), 'srvf-e3-d1-frozen-'));
+  try {
+    mkdirSync(join(temporary, 'migrations'));
+    copyFileSync(join(ROOT, 'schema.prisma'), join(temporary, 'schema.prisma'));
+    copyFileSync(
+      join(ROOT, 'migrations', 'migration_lock.toml'),
+      join(temporary, 'migrations', 'migration_lock.toml'),
+    );
+    const names = readdirSync(join(ROOT, 'migrations'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name <= MIGRATION)
+      .map((entry) => entry.name)
+      .sort();
+    if (names.length !== 133 || names.at(-1) !== MIGRATION) {
+      throw new Error('D1 historical migration set changed');
+    }
+    for (const name of names) {
+      cpSync(join(ROOT, 'migrations', name), join(temporary, 'migrations', name), {
+        recursive: true,
+        force: false,
+        errorOnExist: true,
+      });
+    }
+    deploy(join(temporary, 'schema.prisma'));
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
 describe('E3-2 D1 additive shadow evidence migration', () => {
   const previous = { worker: process.env.JEST_WORKER_ID, url: process.env.DATABASE_URL };
   beforeAll(() => {
@@ -86,7 +117,7 @@ describe('E3-2 D1 additive shadow evidence migration', () => {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     if (USE_DEDICATED_W98) {
       recreate();
-      deploy();
+      deployThroughD1();
     }
   });
   afterAll(() => {
@@ -340,7 +371,7 @@ describe('E3-2 D1 additive shadow evidence migration', () => {
         join(temporary, 'migrations', 'migration_lock.toml'),
       );
       const names = readdirSync(join(ROOT, 'migrations'), { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
+        .filter((entry) => entry.isDirectory() && entry.name <= MIGRATION)
         .map((entry) => entry.name)
         .sort();
       expect(names).toHaveLength(133);

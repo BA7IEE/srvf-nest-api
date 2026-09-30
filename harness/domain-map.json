@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:8010c9cdc0a69063a0edea7d0ba515295f8608294f9bde85634b2e739282de0d",
+  "inputDigest": "sha256:e5a95bc615560aa964f3671f9569586f4af305baf6f1e0990cd2c764ea3ec565",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -351,6 +351,30 @@
       "domain": "participation",
       "ownerModule": "attendances",
       "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowLegacySourceAnchor": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowMappingApproval": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "activity",
+      "confirmed": true
+    },
+    "ContributionShadowMappingApplication": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowMappingRegistrationReceipt": {
+      "domain": "participation",
+      "ownerModule": "activities",
+      "subdomain": "activity",
       "confirmed": true
     },
     "ContributionShadowComparisonReceipt": {

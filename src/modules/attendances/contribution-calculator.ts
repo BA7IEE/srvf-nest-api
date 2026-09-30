@@ -27,6 +27,22 @@ type PrefillRecordLike = {
   serviceHours: number;
 };
 
+export type ContributionLegacySource =
+  | {
+      sourceKindCode: 'matched';
+      legacyRuleId: string;
+      durationThreshold: Prisma.Decimal | null;
+      pointsBelow: Prisma.Decimal;
+      pointsAbove: Prisma.Decimal | null;
+    }
+  | {
+      sourceKindCode: 'no_match';
+      legacyRuleId: null;
+      durationThreshold: null;
+      pointsBelow: null;
+      pointsAbove: null;
+    };
+
 @Injectable()
 export class ContributionCalculator {
   // 批次 4-B D14 5.B 预填(沿 D-S4 / D-A8 / 业务规则文档 §4)。
@@ -85,6 +101,75 @@ export class ContributionCalculator {
       result.push({ ...r, contributionPoints: points });
     }
     return result;
+  }
+
+  // E3-2 D2:shadow 开启时由同一轮规则查询同时取得旧预填结果与当次来源。
+  // 返回顺序与入参一一对应；调用方按唯一业务键严格匹配真实 CUID，不得按回查顺序猜配。
+  // 旧 applyContributionRulePrefill 的查询形状与返回合同保持不变。
+  async applyContributionRulePrefillWithSource<T extends PrefillRecordLike>(
+    records: T[],
+    activityTypeCode: string,
+    tx: PrismaTx,
+  ): Promise<{
+    records: Array<T & { contributionPoints: number }>;
+    sources: ContributionLegacySource[];
+  }> {
+    const rolesNeedingPrefill = [...new Set(records.map((record) => record.roleCode))];
+    const candidates =
+      rolesNeedingPrefill.length === 0
+        ? []
+        : await tx.contributionRule.findMany({
+            where: {
+              activityTypeCode,
+              attendanceRoleCode: { in: rolesNeedingPrefill },
+              status: 'ACTIVE',
+              deletedAt: null,
+            },
+            select: {
+              id: true,
+              attendanceRoleCode: true,
+              durationThreshold: true,
+              pointsBelow: true,
+              pointsAbove: true,
+            },
+          });
+    const candidateByRole = new Map<string, (typeof candidates)[number]>();
+    for (const candidate of candidates) {
+      if (candidateByRole.has(candidate.attendanceRoleCode)) {
+        throw new Error(
+          `ContributionRule ACTIVE pair invariant violated: ${activityTypeCode} × ${candidate.attendanceRoleCode}`,
+        );
+      }
+      candidateByRole.set(candidate.attendanceRoleCode, candidate);
+    }
+
+    const prefilled: Array<T & { contributionPoints: number }> = [];
+    const sources: ContributionLegacySource[] = [];
+    for (const record of records) {
+      const chosen = candidateByRole.get(record.roleCode);
+      prefilled.push({
+        ...record,
+        contributionPoints: this.computePrefilledPoints(chosen, record.serviceHours),
+      });
+      sources.push(
+        chosen
+          ? {
+              sourceKindCode: 'matched',
+              legacyRuleId: chosen.id,
+              durationThreshold: chosen.durationThreshold,
+              pointsBelow: chosen.pointsBelow,
+              pointsAbove: chosen.pointsAbove,
+            }
+          : {
+              sourceKindCode: 'no_match',
+              legacyRuleId: null,
+              durationThreshold: null,
+              pointsBelow: null,
+              pointsAbove: null,
+            },
+      );
+    }
+    return { records: prefilled, sources };
   }
 
   private computePrefilledPoints(

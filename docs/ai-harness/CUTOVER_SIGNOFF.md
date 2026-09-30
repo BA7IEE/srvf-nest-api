@@ -437,6 +437,24 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者本轮明确确认「确认 E3-2 D1 第133条 3b 重签（摘要 8f615e62a20a2207a9c0e2315f46e3a25bccff703b9bffae00857c41d02bff2b）」。
 - **对拍**:有 —— `migration-total` = `133`，SQL SHA-256 = `8f615e62a20a2207a9c0e2315f46e3a25bccff703b9bffae00857c41d02bff2b`
 
+> **当前正式签字（2026-09-30，覆盖上方第133条当前读数；历史签字保留）**：E3-2 D2 来源地基第134条 `20260929222500_activity_os_r5_e3_shadow_source_proof` 已由维护者按下列确切摘要重签。
+
+- **结论**:认可
+- **理由**:仅新增旧审计来源证明标志与不可变来源锚及同链、复算、集合完整性守卫；第133条比较守卫不变，仍拒绝 `comparable=true`。w98 已验证134条冷回放、133→134非空升级、真实旧提交／编辑来源对应、失败整笔回滚与2,000 Record原7秒预算。零旧业务数据回填、删除或生产操作。本签不替代政策映射批准、比较扩展、Contract／PR CI、提交推送、Ready、合并或开关授权。
+- **签字人**:维护者
+- **日期**:2026-09-30
+- **依据**:维护者本轮明确确认「确认第134条3b重签，摘要：21d2df904d96da1a70dcebdb40eac7818a353f0ff92646076cfec2550b19f735」。
+- **对拍**:有 —— `migration-total` = `134`，SQL SHA-256 = `21d2df904d96da1a70dcebdb40eac7818a353f0ff92646076cfec2550b19f735`
+
+> **当前正式签字（2026-09-30，覆盖上方第134条当前读数；历史签字保留）**：E3-2 D2 不可变映射与比较证明第135条 `20260930120000_activity_os_r5_e3_shadow_mapping_proof` 已由维护者按下列确切摘要重签。
+
+- **结论**:认可
+- **理由**:第135条映射、应用证明及比较守卫按已批准方案定稿，包含登记审计闭合与等价成员查找快路径，保留完整扫描回退及全部 fail-closed 约束。第134条已签 SQL 不变。w98 完整映射243项、原来源／submit/edit10项通过；独立 LOGIN 生产 provider 冷连接满额链3,990ms，保留五秒比较及七秒旧业务预算。仅隔离合成夹具验收；真实映射未签继续 hold。本签不替代提交推送、PR CI、Ready、合并、真实登记、生产或开关授权。
+- **签字人**:维护者
+- **日期**:2026-09-30
+- **依据**:维护者对明确列出 SQL、seed、权限目录完整摘要及访问边界的本轮问题回复「确认上述第135条3b及本轮4b重签」。
+- **对拍**:有 —— `migration-total` = `135`，SQL SHA-256 = `e21851f6d9ac032ad2841e988289e5657996dd478a57a95cfaa21e31ceb47ba9`
+
 ### 4b — 「字典、Audit events」的对账
 
 > **当前重签（2026-09-25，E2 第一层隔离能力）**：维护者确认权限码仍为269，
@@ -542,6 +560,15 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **日期**:2026-09-25
 - **依据**:维护者本轮确认 E2 4b 重签：权限码269、Audit events 174总计／169活跃，沿用既有 GLOBAL Human 管理权限。
 - **对拍**:有 —— `seed-sha256-12` = `d2f330814b0a`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `174`;`audit-event-registry-active` = `169`
+
+> **当前正式签字（2026-09-30，覆盖本节此前历史字段）**：E3-2 D2 受控映射登记的权限、审计、字典、seed 与隔离 Human 访问面已由维护者按下列确切摘要重签。
+
+- **结论**:认可
+- **理由**:权限270；Audit events175总计／170活跃；字典30类／277项。新增 `contribution-shadow-mapping.register.approval` 仅显式 GLOBAL Human、自定义角色可授、15个内建角色零默认授予、SUPER_ADMIN不直通、Service Principal与delegation均禁止。新增 `activity.contribution-shadow.mapping-register` 审计闭合。seed SHA-256为 `af0277a6ba784e040ccb9610b15691b2b2c615028301018514b861f7e4f6181b`；权限目录 SHA-256为 `d2edf001cb215c07229ad3579a4cfa0aab285a7330fb5d7abe846fbdd28ad153`。仅合成夹具验证，真实31类未签仍hold；本签不授权提交推送、真实映射登记、运行时开关、Gate或生产。
+- **签字人**:维护者
+- **日期**:2026-09-30
+- **依据**:维护者对明确列出本轮完整摘要、计数及访问边界的问题回复「确认上述第135条3b及本轮4b重签」。
+- **对拍**:有 —— `seed-sha256-12` = `af0277a6ba78`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `175`;`audit-event-registry-active` = `170`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。
