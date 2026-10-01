@@ -1953,6 +1953,36 @@ set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activit
     },
   );
 
+  it('scopes application set-guard JIT to the function and restores the caller on success and rejection', () => {
+    expect(
+      sql(`SELECT proconfig @> ARRAY['jit=off','search_path=pg_catalog, public, pg_temp']
+        FROM pg_proc WHERE oid='csm_application_set_guard_fn()'::regprocedure`),
+    ).toBe('t');
+    expect(
+      sql(`BEGIN; SET LOCAL jit=on;
+        ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()} ${setSourceFixtureSql(3)}
+        SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+        DO $rejected$ BEGIN
+          BEGIN
+            ${setApplicationInsertSql(1, 3, 'set-record-0002')}
+            RAISE EXCEPTION 'invalid policy points accepted';
+          EXCEPTION WHEN check_violation THEN
+            IF SQLERRM <> 'shadow mapping application differs from database proof' THEN RAISE; END IF;
+          END;
+          IF current_setting('jit') <> 'on' THEN RAISE EXCEPTION 'JIT leaked after rejection'; END IF;
+          IF EXISTS (SELECT 1 FROM "ContributionShadowMappingApplication" WHERE "auditLogId"='set-audit') THEN
+            RAISE EXCEPTION 'rejected set left rows'; END IF;
+        END $rejected$;
+        ${setApplicationInsertSql(1, 3)}
+        DO $accepted$ BEGIN
+          IF current_setting('jit') <> 'on' THEN RAISE EXCEPTION 'JIT leaked after success'; END IF;
+        END $accepted$;
+        RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE;
+        SELECT count(*) FROM "ContributionShadowMappingApplication" WHERE "auditLogId"='set-audit';
+        ROLLBACK;`),
+    ).toBe('3');
+  });
+
   it('counts actual source/comparison JSON expansion per audit across two 500-row batches', () => {
     const before = sql(`SELECT md5(pg_get_functiondef('cslsa_insert_set_guard_fn()'::regprocedure)||
       pg_get_functiondef('cscr_insert_set_guard_fn()'::regprocedure))`);

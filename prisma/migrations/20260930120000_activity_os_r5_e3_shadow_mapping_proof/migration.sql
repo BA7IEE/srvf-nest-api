@@ -1130,7 +1130,11 @@ CREATE TRIGGER csmap_pending_insert_guard BEFORE INSERT ON "ContributionShadowMa
   FOR EACH ROW EXECUTE FUNCTION csm_application_insert_guard_fn();
 
 CREATE FUNCTION csm_application_set_guard_fn() RETURNS TRIGGER
-LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+-- Bounded command latency: estimated JSON expansion cardinality can trigger
+-- costly JIT compilation even when the actual rule set is tiny. This setting
+-- is scoped to this function and restores the caller's setting on exit/error.
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp SET jit = off AS $$
 DECLARE
   g RECORD; bad RECORD; approval "ContributionShadowMappingApproval";
   source "ContributionShadowLegacySourceAnchor"; observation "ContributionShadowObservationWindow";
