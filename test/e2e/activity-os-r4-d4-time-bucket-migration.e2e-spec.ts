@@ -504,10 +504,10 @@ describe('D4 time-bucket migration replay and nonempty upgrade', () => {
     ).split('\n');
   }
 
-  it('replays all 133 migrations with exact checksums and four immutable tables', () => {
+  it('replays all 135 migrations with exact checksums and four immutable tables', () => {
     recreate();
     deploy(schema);
-    expect(names).toHaveLength(133);
+    expect(names).toHaveLength(135);
     expect(names[120]).toBe(MIGRATION);
     expect(checksums()).toEqual(
       names.map(

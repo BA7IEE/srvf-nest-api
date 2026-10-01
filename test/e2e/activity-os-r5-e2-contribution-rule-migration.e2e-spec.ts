@@ -148,17 +148,31 @@ describe('E2 additive conversion receipt migration', () => {
         if (previous.url === undefined) delete process.env.DATABASE_URL;
         else process.env.DATABASE_URL = previous.url;
       }
+      return;
     }
-  });
+    // The final historical upgrade deliberately stops at migration 132.
+    // Restore the shared worker even when a test fails, before another suite
+    // uses the current Prisma client and its audit readback columns.
+    recreate();
+    deploy();
+    expect(sql('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).toBe(
+      '135',
+    );
+    expect(
+      sql(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='audit_logs'
+          AND column_name='shadowProofRequired')`),
+    ).toBe('t');
+  }, 120_000);
 
-  it('cold-replays 133 migrations without old-table DML', () => {
+  it('cold-replays 135 migrations without old-table DML', () => {
     recreate();
     deploy();
     const names = readdirSync(path.join(ROOT, 'migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(133);
+    expect(names).toHaveLength(135);
     expect(names[131]).toBe(MIGRATION);
     expect(
       sql(`SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations"

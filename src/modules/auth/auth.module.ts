@@ -10,6 +10,7 @@ import { WechatModule } from '../wechat/wechat.module';
 import { WecomModule } from '../wecom/wecom.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AuthHumanCommandIdentityService } from './auth-human-command-identity.service';
 import { IdentityStepUpService } from './identity-step-up.service';
 import { LoginSmsService } from './login-sms.service';
 import { LoginWechatService } from './login-wechat.service';
@@ -53,6 +54,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   controllers: [AuthController],
   providers: [
     AuthService,
+    AuthHumanCommandIdentityService,
     PasswordResetService,
     LoginSmsService,
     LoginWechatService,
@@ -63,6 +65,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     IdentityStepUpService,
     JwtStrategy,
   ],
-  exports: [IdentityStepUpService],
+  exports: [IdentityStepUpService, AuthHumanCommandIdentityService],
 })
 export class AuthModule {}

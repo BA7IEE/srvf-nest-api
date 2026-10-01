@@ -541,18 +541,18 @@ pnpm harness:grant 'prisma/migrations/20260928095832_activity_os_r5_e3_shadow_ev
 
 拟新增不可变 `ContributionShadowLegacySourceAnchor`，**每个新写入的 AttendanceRecord 恰一条**，且仅在已登记窗口、独立 shadow 开关开启的 `submit` 或带 records 的 `edit` 中创建；`edit-no-records` 不创建。无窗口／开关 `off` 时完全走旧路径，不强制新锚点。不得用历史 Record、事后当前规则或 E2 转换收据回填这张表。
 
-| 字段组         | 必须保存的最小事实与约束                                                                                                                                                                                                                  | 用途／禁止内容                                                                                                                                                       |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 同链定位       | 锚点 ID、`windowId`、旧 `auditLogId`、`sheetId`、`sheetVersion`、`activityId`、`recordId`、`memberId`；`(auditLogId,recordId)` 唯一，Record 按现有 `(id,sheetId,memberId)` 复合锚，窗口、Audit 事件／资源／after 快照、Sheet 版本逐一一致 | 只能定位**本次已提交旧写**及当次已登记窗口；映射签字版本与配置摘要取自不可变窗口，不能事后读最新值或拼接跨活动数据；不保存姓名、联系方式、备注或完整审计 `context`   |
-| 计算输入       | `activityTypeCode`、`attendanceRoleCode`、`legacyServiceHours`（固定 decimal 精度）                                                                                                                                                       | 与此次计算的 Activity、Record 及审计 after 值核对；不保存原始请求体                                                                                                  |
-| 规则来源       | 明确 `matched`／`no_match`；匹配时存 `legacyRuleId`、当次 `durationThreshold`、`pointsBelow`、`pointsAbove` 的可空和值；无匹配时 rule ID 和三个规则数值均为空                                                                             | `legacyRuleId` 仅作定位，**不是单独证明**；`no_match` 的旧分数必须为 0，且写入守卫核对同活动类型／角色没有当时可见的 ACTIVE 未软删规则                               |
-| 计算结果与摘要 | `legacyPoints`、固定 `hashAlgorithmCode`／`canonicalVersion`、`legacySourceHash`、数据库生成的 `createdAt`                                                                                                                                | 固定版本的 canonical 输入须覆盖上述同链、输入、来源状态、全部规则数值及结果；decimal／null 规范化与字段顺序在 SQL 定稿前逐项列出正反例，不能把任意 64 位字符串当证明 |
+| 字段组         | 必须保存的最小事实与约束                                                                                                                                                                                                                  | 用途／禁止内容                                                                                                                                                                                                                                            |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 同链定位       | 锚点 ID、`windowId`、旧 `auditLogId`、`sheetId`、`sheetVersion`、`activityId`、`recordId`、`memberId`；`(auditLogId,recordId)` 唯一，Record 按现有 `(id,sheetId,memberId)` 复合锚，窗口、Audit 事件／资源／after 快照、Sheet 版本逐一一致 | 只能定位**本次已提交旧写**及当次已登记窗口；映射签字版本与配置摘要取自不可变窗口，不能事后读最新值或拼接跨活动数据；不保存姓名、联系方式、备注或完整审计 `context`                                                                                        |
+| 计算输入       | `activityTypeCode`、`attendanceRoleCode`、`legacyServiceHours`（固定 decimal 精度）                                                                                                                                                       | 与此次计算的 Activity、Record 及审计 after 值核对；不保存原始请求体                                                                                                                                                                                       |
+| 规则来源       | 明确 `matched`／`no_match`；匹配时存 `legacyRuleId`、当次 `durationThreshold`、`pointsBelow`、`pointsAbove` 的可空和值；无匹配时 rule ID 和三个规则数值均为空                                                                             | `legacyRuleId` 仅作定位，**不是单独证明**；`no_match` 的旧分数必须为 0，只能留证并计入 `hold`，绝不作为 `equal/points_mismatch` 的可比较来源；数据库写入时若已看到 ACTIVE 同键规则仍拒绝，未看到也不声称已证明其不存在（2026-09-29 维护者确认，详见 §24） |
+| 计算结果与摘要 | `legacyPoints`、固定 `hashAlgorithmCode`／`canonicalVersion`、`legacySourceHash`、数据库生成的 `createdAt`                                                                                                                                | 固定版本的 canonical 输入须覆盖上述同链、输入、来源状态、全部规则数值及结果；decimal／null 规范化与字段顺序在 SQL 定稿前逐项列出正反例，不能把任意 64 位字符串当证明                                                                                      |
 
 摘要输入版本拟固定为 `canonicalVersion=1`、`hashAlgorithmCode=sha256`：先写 ASCII 域前缀 `SRVF:E3-2:legacy-source:v1:`，再依序编码 `windowId, auditLogId, sheetId, sheetVersion, activityId, recordId, memberId, activityTypeCode, attendanceRoleCode, legacyServiceHours, sourceKindCode, legacyRuleId, durationThreshold, pointsBelow, pointsAbove, legacyPoints`。每项 `null` 编码为 `N`；非空值编码为 `S`＋UTF-8 字节长度的十进制表示＋`:`＋原值 UTF-8 字节，依字段个数顺序直接拼接。整数用无前导零十进制；所有小时／分值先按已存的 `Decimal(5,2)` 规范成恰好两位小数（如 `1.50`），不把浮点显示或 JSON key 顺序当证明。`createdAt` 不入摘要。SHA-256 输出小写 64 位十六进制；实施时须用 TypeScript／PostgreSQL 同一组正反例确认字节级一致，若现有 calculator 输入不能无损转成持久化两位小数，必须分类失败而非四舍五入伪装同源。
 
-仅从**同一次**规则查询结果生成“计算值＋来源元组”，不为取证另查一次规则再冒充计算输入；旧查询的去重／冲突失败语义不变。新 Record ID 与来源元组必须确定性一一对应，不能靠 `findMany` 返回顺序、时间戳或相同分数猜配；`submit` 的嵌套创建与 `edit` 的 `createMany` 都须在测试中证明该对应。数据库对匹配规则当时的 ACTIVE／未软删状态及全部数值再核对；读后若规则并发改变到无法证明一致，**保守回滚该旧事务**，不得静默降为可比较。若无匹配规则并发出现，同样 fail-closed。该核对可能增加锁等待，必须测量并守住现有 7 秒预算；不得偷偷扩大业务超时。
+仅从**同一次**规则查询结果生成“计算值＋来源元组”，不为取证另查一次规则再冒充计算输入；旧查询的去重／冲突失败语义不变。新 Record ID 与来源元组必须确定性一一对应，不能靠 `findMany` 返回顺序、时间戳或相同分数猜配；`submit` 的嵌套创建与 `edit` 的 `createMany` 都须在测试中证明该对应。数据库对匹配规则当时的 ACTIVE／未软删状态及全部数值再核对；读后若规则并发改变到无法证明一致，**保守回滚该旧事务**，不得静默降为可比较。`no_match` 写入时若已看到 ACTIVE 同键规则则 fail-closed；即使没看到也只留证为 `hold`，不把并发无匹配判成已证明的可比较来源。该核对可能增加锁等待，必须测量并守住现有 7 秒预算；不得偷偷扩大业务超时。
 
-为防止给**已经提交**的旧审计事后伪造锚点，推荐在 `audit_logs` 增加默认 `false`、仅由本次旧写设置的内部 proof-required 标志，**不进入**旧审计 `context/extra`、DTO、响应或通用读面。标志为真时，旧审计插入的同一事务必须在提交前具有完整的锚点集合；数据库延迟约束／触发器核对审计 after 的 Record 集合、计数、来源分数、同链外键和规则核验，缺一则整个旧事务失败。标志为假的历史审计不得事后改为真，也不得追加“可比较”锚点；锚点与标志均禁止 UPDATE／DELETE。此方案不依赖 `xmin`、墙钟时间或可改 session flag 证明同事务。**实施前必须用直接 SQL 证明**：真实同事务正例通过；先提交旧审计再补锚点、错误事件或未登记窗口却设 flag、缺条／重复／跨 Sheet／跨活动／规则值漂移／无匹配却存在 ACTIVE 规则、UPDATE／DELETE 均被拒；旧非 shadow 审计零漂移。若上述数据库约束无法在现有 AuditLog 写模型下成立，应重新评审，不把“应用层按顺序调用”当独立证明。
+为防止给**已经提交**的旧审计事后伪造锚点，推荐在 `audit_logs` 增加默认 `false`、仅由本次旧写设置的内部 proof-required 标志，**不进入**旧审计 `context/extra`、DTO、响应或通用读面。标志为真时，旧审计插入的同一事务必须在提交前具有完整的锚点集合；数据库延迟约束／触发器核对审计 after 的 Record 集合、计数、来源分数、同链外键和规则核验，缺一则整个旧事务失败。标志为假的历史审计不得事后改为真，也不得追加“可比较”锚点；锚点与标志均禁止 UPDATE／DELETE。此方案不依赖 `xmin`、墙钟时间或可改 session flag 证明同事务。**实施前必须用直接 SQL 证明**：真实同事务正例通过；先提交旧审计再补锚点、错误事件或未登记窗口却设 flag、缺条／重复／跨 Sheet／跨活动／规则值漂移／`no_match` 报相等、UPDATE／DELETE 均被拒；若 `no_match` 锚写入时已看到 ACTIVE 同键规则也须拒绝，但不把未看到当成并发缺席证明；旧非 shadow 审计零漂移。若上述数据库约束无法在现有 AuditLog 写模型下成立，应重新评审，不把“应用层按顺序调用”当独立证明。
 
 锚点含 `memberId` 等内部可关联标识，**仅**旧事务写者、D2 内部证据核验和未来经独立授权的 D3 Human 复核可见；不暴露 App／Admin 新接口、通用审计读面、日志或错误栈。长期留存为不可变业务证据；成员退队不自动物理删除或改写，按既有受限访问与另行隐私／保留期评审处理。此可见者、掩码与保留口径须在实施授权时逐字段再签，不因本稿自动获得生产使用许可。
 
@@ -599,3 +599,1898 @@ pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason 'E3-2 D2 第23节�
 新 migration 要在 SQL／实际路径定稿后单独补一条**精确路径**授权；全部令牌属于执行 worktree，不能在主仓发给另一 worktree 使用。`harness:needs` 的“无需授权”只表示不需要红区令牌，**不等于**用户已批准改文件。这里也不授权 `prisma migrate dev|reset`、`db push`、生产 deploy、历史数据改删或 Gate。
 
 **本节实际范围**：只完善这一份评审稿的数据合同、失败边界和候选授权清单；没有修改 schema、migration、seed、生产代码、旧审计、测试、权限、Gate 或业务数据，没有连接或重建数据库，也没有实施 D2。§22.3 的旧候选清单以本节收窄／必需项为后续依据，不能直接当授权令牌使用。
+
+## 24. E3-2 D2 第 134 条 SQL 待审草案与逐路径授权清单（2026-09-29；仅文档）
+
+本节是供实施前审查的**定稿候选，不是可运行 migration，也不是 3b 签字摘要**。当前 main 有 133 条 migration；第 134 条的序号、真实时间戳及路径必须在实施 worktree 再核。第 133 条 SQL 不回改。D2 必须先证明旧事务当次来源，之后才允许独立的事务后比较写者；只做一个 `hold` 写者不算 D2 完成。
+
+### 24.1 只读影响面与风险判定
+
+| 项                            | 本轮文档结论；未来实施条件                                                                                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema.prisma` / migration   | 未来需要 `AuditLog` 的内部 `shadowProofRequired` 默认 `false` 和新 `ContributionShadowLegacySourceAnchor`，再以加法 migration 替换 D1 的 `cscr_insert_guard_fn`；本轮不修改这两类文件。 |
+| seed / 权限 / 审计事件        | 按当前调用链预计不新增；最终写集若改变权限或审计目录，另行 4b，不沿用此假设。                                                                                                           |
+| 现有数据与不可逆性            | 历史 AuditLog 默认 `false`，不回填旧 Record、旧审计或新锚；新锚和既有五张证据表永久留存、禁止 UPDATE/DELETE/TRUNCATE。虽无破坏性 DML，新增的已启用事务提交约束属于行为风险。            |
+| API / DTO / OpenAPI / BizCode | 不计划变更；旧响应、旧 `context/extra`、旧失败码和 7 秒旧事务预算不变。若需新对外码或接口，暂停另审。                                                                                   |
+| 访问与隐私                    | 锚含 `memberId`、规则来源及分值，只限旧写者和内部核验；D3 Human 读面另审。不得记入通用日志或公开响应。长期留存且退队不自动删除，实施前逐字段签可见者、掩码和保留口径。                  |
+| 可回退性                      | 应用层 `off` 可停止新增锚和事务后收据；已提交锚不可删改。DB 守卫不能为回退而关闭。                                                                                                      |
+
+当前 `ContributionCalculator.applyContributionRulePrefill` 的规则查询只选角色和三个数值，不选 `id`；`submit` 嵌套创建 Record、带 records 的 `edit` 用 `createMany`，两者均在创建后回查完整快照，旧审计由 `AuditLogsService.log()` 写入且不返回 ID。实施不得用回查顺序、时间或分数反推来源，须在创建前为每条新 Record 确定 ID，把同一轮计算返回的来源元组按该 ID 携带至审计与锚点；审计属主只新增一个返回**本次 create 结果 ID**的窄原语，既有 `log()` 保持 `void` 与原调用合同。
+
+### 24.2 SQL 冻结候选：表、约束与触发器
+
+拟议 schema 字段按 §23.2；数据库 DDL 至少满足下列**精确条件**，不能只用应用层检查代替：
+
+1. `audit_logs."shadowProofRequired" BOOLEAN NOT NULL DEFAULT false` 是内部列，不进 `AuditContext`、DTO 或通用审计响应。直接 SQL `UPDATE` 不能把旧 `false` 改 `true`；已经为 `true` 的审计行不得 UPDATE/DELETE。旧审计若合法走其他维护 SQL，仍不得更改此标志。标志的值只在旧写审计 INSERT 时确定，`edit-no-records` 不得设置。
+2. 新 `ContributionShadowLegacySourceAnchor` 有 `id,windowId,auditLogId,sheetId,sheetVersion,activityId,recordId,memberId,activityTypeCode,attendanceRoleCode,legacyServiceHours,sourceKindCode,legacyRuleId,durationThreshold,pointsBelow,pointsAbove,legacyPoints,hashAlgorithmCode,canonicalVersion,legacySourceHash,createdAt`；decimal 全部 `DECIMAL(5,2)`，`sourceKindCode` 仅 `matched/no_match`。`(auditLogId,recordId)` 唯一；`(recordId,sheetId,memberId)`、`(sheetId,activityId)` 走既有复合 FK；`windowId`、`auditLogId` 和匹配时 `legacyRuleId` 均 `RESTRICT`。不得 CASCADE、SET NULL 或另造宽松单列同链 FK。新表 UPDATE/DELETE/TRUNCATE 全拒。
+3. 行级 `CHECK`：`matched` 要求规则 ID 与三数值按原规则可空合同成组；`no_match` 要求 ID 与三数值全空且 `legacyPoints=0.00`；小时与结果非负，摘要为小写 64 位 hex、算法仅 `sha256`、canonical 仅 `1`。这只是结构校验，不构成来源证明。
+4. `BEFORE INSERT` 锚点守卫在同一事务内锁定本次 `AuditLog`、窗口、Sheet、Record；校验 event/operation/success、resourceId、审计 `after.sheet.version`、`after.records` 中的精确 Record/Member/小时/旧分数、活动/成员/角色/活动类型、审计创建时间落入预先登记的 `[startsAt,endsAt)` 窗口。审计必须 `shadowProofRequired=true`；标志为 `false` 的已提交审计永不可补锚。匹配规则用 `FOR SHARE` 锁住当时 ACTIVE、未软删的同 type/role 行，并逐值核对规则 ID、阈值和上下档，按旧计算公式重算 `legacyPoints` 与审计结果；冲突或漂移 `23514` 整体回滚。摘要由数据库按 §23.2 固定字节编码重算比较，而非仅验证 hex 形状。
+5. 审计行 `AFTER INSERT` 的 **DEFERRABLE INITIALLY DEFERRED** 约束触发器只对 `shadowProofRequired=true` 生效；提交时将 `after.records` 的 Record ID 集合与锚集合逐项双向对拍，要求非空、无重复、每条唯一、计数相同，同 Sheet/版本/活动/窗口，且每条锚已经通过行守卫。少一条、多一条或错链均以 `23514` 回滚整笔旧事务。不能让一次提交先落带标志审计、下一事务再补锚。
+6. 第 134 条只能用 `CREATE OR REPLACE FUNCTION cscr_insert_guard_fn()` 定向替换第 133 条同名函数，保留原有 attempt 锁、终态后拒写、集合上限、精确审计快照、政策选择/版本与所有 fail-closed 检查。仅当 `NEW.comparable=true` 且 `matched` 锚与 `NEW.recordId/sheetId/memberId/activityId/legacyRuleId/legacyServiceHours/legacyPoints/legacySourceHash`、attempt 的审计/窗口/版本完全相等，政策来源与时长输入同源且已批准时，才可越过旧的无条件拒绝；其他分类和 `hold` 路径保持原拒绝语义。绝不能删除 D1 守卫后交给 TypeScript 自证。
+
+以下是**只供逐行评审的加法 DDL 片段**，不是完整 migration：尚缺触发器函数正文、Prisma 双向 relation、锁序／性能实测和实际时间戳路径，故不得复制执行或据此重签 3b。字段、约束名与第 133 条既有复合锚点逐一对齐；实施文件定稿后才核真实 SQL 摘要。
+
+```sql
+ALTER TABLE "audit_logs"
+  ADD COLUMN "shadowProofRequired" BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE "ContributionShadowLegacySourceAnchor" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "windowId" TEXT NOT NULL,
+  "auditLogId" TEXT NOT NULL,
+  "sheetId" TEXT NOT NULL,
+  "sheetVersion" INTEGER NOT NULL,
+  "activityId" TEXT NOT NULL,
+  "recordId" TEXT NOT NULL,
+  "memberId" TEXT NOT NULL,
+  "activityTypeCode" TEXT NOT NULL,
+  "attendanceRoleCode" TEXT NOT NULL,
+  "legacyServiceHours" DECIMAL(5,2) NOT NULL,
+  "sourceKindCode" TEXT NOT NULL,
+  "legacyRuleId" TEXT,
+  "durationThreshold" DECIMAL(5,2),
+  "pointsBelow" DECIMAL(5,2),
+  "pointsAbove" DECIMAL(5,2),
+  "legacyPoints" DECIMAL(5,2) NOT NULL,
+  "hashAlgorithmCode" TEXT NOT NULL,
+  "canonicalVersion" INTEGER NOT NULL,
+  "legacySourceHash" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "cslsa_window_fk" FOREIGN KEY ("windowId")
+    REFERENCES "ContributionShadowObservationWindow"("id") ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT "cslsa_audit_fk" FOREIGN KEY ("auditLogId")
+    REFERENCES "audit_logs"("id") ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT "cslsa_sheet_activity_fk" FOREIGN KEY ("sheetId", "activityId")
+    REFERENCES "AttendanceSheet"("id", "activityId") ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT "cslsa_record_chain_fk" FOREIGN KEY ("recordId", "sheetId", "memberId")
+    REFERENCES "AttendanceRecord"("id", "sheetId", "memberId") ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT "cslsa_legacy_rule_fk" FOREIGN KEY ("legacyRuleId")
+    REFERENCES "ContributionRule"("id") ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT "cslsa_source_group_check" CHECK (
+    ("sourceKindCode" = 'matched' AND "legacyRuleId" IS NOT NULL AND "pointsBelow" IS NOT NULL)
+    OR ("sourceKindCode" = 'no_match' AND "legacyRuleId" IS NULL
+        AND "durationThreshold" IS NULL AND "pointsBelow" IS NULL
+        AND "pointsAbove" IS NULL AND "legacyPoints" = 0.00)
+  ),
+  CONSTRAINT "cslsa_value_check" CHECK (
+    "sheetVersion" >= 1 AND "legacyServiceHours" > 0 AND "legacyPoints" >= 0
+    AND ("durationThreshold" IS NULL OR "durationThreshold" >= 0)
+    AND ("pointsBelow" IS NULL OR "pointsBelow" >= 0)
+    AND ("pointsAbove" IS NULL OR "pointsAbove" >= 0)
+  ),
+  CONSTRAINT "cslsa_digest_check" CHECK (
+    "hashAlgorithmCode" = 'sha256' AND "canonicalVersion" = 1
+    AND "legacySourceHash" ~ '^[a-f0-9]{64}$'
+  )
+);
+CREATE UNIQUE INDEX "cslsa_audit_record_key"
+  ON "ContributionShadowLegacySourceAnchor"("auditLogId", "recordId");
+CREATE INDEX "cslsa_record_chain_idx"
+  ON "ContributionShadowLegacySourceAnchor"("recordId", "sheetId", "memberId");
+```
+
+此片段**不能单独保证安全**：必须同一第 134 条 migration 加入审计标志不可变守卫、锚点行守卫、审计提交时的 deferred 集合守卫、锚表三类不可变触发器，并定向替换 `cscr_insert_guard_fn()`；缺任一项均不能将 `shadow` 打开。旧的 `cscr_insert_guard_fn()` 在新 SQL 验证前继续拒绝所有 `comparable=true`。
+
+**同一旧业务事务的建议顺序**：沿既有 Activity／Member／Sheet 锁序取资格与计算输入 → 为每个待写 Record 先确定唯一 ID、按该 ID 携带此次规则查询的来源元组 → 原样创建 Sheet／Records 并形成旧审计快照 → 通过审计属主窄原语 INSERT `shadowProofRequired=true` 的审计且返回本次精确 ID → 用这个 ID 插入完整锚点集合 → 事务提交时由延迟触发器双向对拍。只有旧事务成功后才进入独立的 Attempt／Comparison／Terminal 短事务；失败不能反转旧结果。锚点 INSERT 不得在已有旧事务外补做，也不得为了取得 ID 先提交审计。审计在锚点前插入是可行性的**待验证前提**，不是已通过的数据库结论；触发器中的行锁顺序须与现有旧写及规则更新路径逐项比对，避免把 7 秒预算变成无限等待。2,000 Record 集合对拍应一次聚合而非每条重复全量扫描。
+
+**2026-09-29 已拍板的 `no_match` 边界**：维护者确认无匹配只留证并计入 `hold`，绝不判 `equal/points_mismatch`；§23.2 原先要求“数据库证明当时不存在 ACTIVE 规则”的文字已按此更正。写入时看到 ACTIVE 同键规则仍拒绝；在 `ReadCommitted` 下未看到不构成并发缺席证明。若以后要把它纳入相等／差异分母，必须另设计与规则写者共同遵守的锁或串行化合同，再另审。**仍未证成的硬门**：`audit_logs` 的 deferred 审计集合守卫、触发器执行次序以及 `createMany` 的确定性 Record ID 对应，尚未经直接 SQL 与隔离库证明；证明失败就保持 D1 原守卫，不申请 3b 或实施授权。上述限制不能靠注释、任意 hash 或放宽断言越过。
+
+SQL 正反例必须分别覆盖：同事务完整 `matched` 通过；旧已提交审计后补锚、`false→true` 更新、`true` 行更新/删除、未登记/错窗、错 event/operation、错 Sheet/版本/活动/成员、缺条/重复/多条、软删或变值规则、错误分数/摘要、跨政策版本、终态后重放、`no_match` 却报相等、任意直接 SQL 伪造相等均拒绝；旧非 shadow 审计及 `edit-no-records` 零漂移。并发规则更新、同键重放和 2,000 Record 的 7 秒预算必须有独立隔离证据。不能将这张清单当作已经跑过的测试。
+
+### 24.3 冻结前逐路径清单与维护者命令（只列候选，不执行）
+
+**基础候选**：`prisma/schema.prisma`；待按时间戳新建的 `prisma/migrations/<YYYYMMDDHHMMSS>_activity_os_r5_e3_shadow_source_proof/migration.sql`；`prisma/CLAUDE.md`；`harness/domain-map.json`；`src/modules/audit-logs/audit-logs.service.ts` 与 `.spec.ts`；`src/modules/attendances/attendances.service.ts` 与 `.spec.ts`、`attendance-audit-recorder.ts`、`contribution-calculator.ts` 与 `.spec.ts`、`attendances.module.ts`；§22.3 所列四个新 attendances 写者文件、两个新 activities 查询文件及 `activities.module.ts`。`activity-contribution-shadow-comparison.ts` 与 `.spec.ts`、`src/config/app.config.ts` 与 `.spec.ts` 仅在现有比较器/控制面不足经引用链证明后纳入，不因“候选”二字自动授权。
+
+**验证候选**：现存 `test/e2e/activity-os-r5-e3-contribution-shadow-migration.e2e-spec.ts` 加第 134 条正反例；新 `test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts` 与 `test/e2e/activity-os-r5-e3-contribution-shadow.e2e-spec.ts`；原断言不动的 `test/e2e/attendances-contribution-prefill.e2e-spec.ts`、`test/e2e/attendances-audit-characterization.e2e-spec.ts`。清理闭包候选为 `test/setup/reset-db.ts`、`test/setup/time-ledger-fixture-cleanup.ts`、`test/helpers/audit-logs-cleanup.ts`；其他固定迁移回放夹具须依真实 FK 和触发器影响面补齐**逐文件**清单，不能用 `test/e2e/**` 代授权。仅指定隔离测试库与可重建夹具获批后才可执行。
+
+**派生候选**：`CODEMAP.md`、`docs/current-state.md`、`docs/ai-harness/ROUTE_AUTHZ.md`、`docs/ai-harness/CUTOVER_SIGNOFF.md`、`docs/ai-harness/FROZEN_DRAFTS.md`、`docs/ai-harness/NEXT_TASKS.md`、本评审稿、`src/modules/attendances/CLAUDE.md`、`src/modules/activities/CLAUDE.md`、`src/modules/audit-logs/CLAUDE.md`、新 `changelog.d/activity-os-r5-e3-contribution-shadow-d2.md`；只纳入实际被生成器或行为变化命中的文件。配置文档、OpenAPI、合同快照如实际命中，先重列路径再申请，不作隐含扩写。
+
+实施前须以 `rg --files` 核对真实路径、`pnpm harness:needs '<单一真实路径>'` 逐一计算红区，不使用占位符或通配符发令牌。当前可明确列出的**条件命令**为：
+
+```bash
+pnpm harness:grant 'prisma/schema.prisma' --reason 'E3-2 D2 第134条来源锚方案获批'
+pnpm harness:grant 'harness/domain-map.json' --reason 'E3-2 D2 新模型属主登记获批'
+pnpm harness:grant 'test/setup/reset-db.ts' --reason 'E3-2 D2 隔离测试清理获批'
+pnpm harness:grant 'test/setup/time-ledger-fixture-cleanup.ts' --reason 'E3-2 D2 隔离测试清理获批'
+pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason 'E3-2 D2 生成摘要刷新获批'
+```
+
+新 migration 的**实际时间戳路径**在 SQL 文本和实施 worktree 确定后另列一条精确命令；上面的命令目前都不执行，也不授权 AI 自行 grant。`no_match` 只计 `hold` 已获确认，进入实施还需维护者逐项确认：旧事务新增失败面、锚的敏感字段访问/长期留存、事务后有界等待毫秒数与告警/人工缺口责任、最终 SQL/完整写集/指定隔离库及夹具重建范围；SQL 定稿再签 3b，必要时另签 4b；提交/推送/Draft PR、Ready/合并、真实映射、生产与 Gate 均分开授权。没有这些签字时保持 `off`。
+
+**本节实际动作**：只更新评审文档和 `prisma/CLAUDE.md` 的 D1 当前摘要；未修改 schema、migration、seed、业务代码、测试或生成物，未连接数据库、运行 SQL、提交/推送、启用 Gate 或操作生产。
+
+## 25. E3-2 D2 本地实施 diff 进度（2026-09-29；未提交、未签 3b）
+
+§24 是实施前的文档时点；维护者随后批准按该节起草 diff、仅 `app_test_w98` 隔离验证，并逐路径发放本轮红区令牌。本工作树现有第 134 条加法 migration 草案：`audit_logs.shadowProofRequired` 默认 false、新 `ContributionShadowLegacySourceAnchor`、旧审计标志不可变、来源行同链与规则复算、延期审计集合守卫。第 133 条 SQL 不变；**第 134 条目前没有替换 `cscr_insert_guard_fn`，所有 `comparable=true` 仍被 D1 守卫拒绝**，因此这只是来源地基，不能声称 D2 完成或开启 shadow。
+
+初始来源地基隔离证据（后续运行时验收见下）：`w98` 空库冷回放至 134；同事务完整 matched 与 `no_match` 两条锚正例、错误摘要／事后改 flag／缺锚／改删证明、同键生效规则却报 `no_match`、旧规则值漂移等负例，TS 与 PG canonical hash 一致；133→134 非空升级保持旧 User／Record／Audit 事实与旧审计默认 false；D1 历史 132→133 回放保留原断言 7/7。旧计算“有阈值但无上档分值时回落下档”的合法合同已纳入第 134 条 SQL 正例，不改旧计算。受控夹具清理新增第六张表及触发器恢复。2,000 条合成锚的插入＋延期集合守卫在隔离库低于 7 秒，但这**不等于**完整旧提交（含资格、计算、审计）的 7 秒验收。新配置 `ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE` 独立于 B6，缺省 off；该初始时点没有连接到 submit/edit 或事务后比较写者，未启用任何环境。
+
+当前硬门状态：①同次旧写的真实 CUID、审计 ID 与来源一一对应接线及 characterization 已完成；②政策来源／输入同源独立证明及 SQL 正反例仅评审，不实施扩展；③事务后 Attempt／Comparison／Terminal、重放／故障边界与等待上限未实施；④完整 2,000 Record 旧提交已在 w98 验证低于原 7 秒预算，但并发规则变更及完整比较链仍未验收；⑤最终 SQL 第 134 条 3b 已于2026-09-30重签、PR CI 未运行。保持默认 off、旧比较守卫 fail-closed，不提交、不推送、不合并、不操作生产、不启用 Gate。
+
+旧 Record ID 接线复核：`AttendanceRecord.id` 仍由 Prisma `@default(cuid())` 生成；仓库没有可直接使用的 CUID 生成依赖，改用 UUID 预分配会改变旧 ID 格式。维护者已确认：submit 的嵌套 create、edit 的 `createMany` 在**同一旧事务内**回查真实 ID，以同 Sheet、Member、checkInAt、checkOutAt 作为唯一业务键，输入与回查集合做双向严格一一对应；任何缺条、重复键、额外行或字段不一致即回滚，绝不依赖数据库返回顺序。内部时间不重叠校验是唯一性的前置业务约束，但不能替代集合核验。本决定取代 §24.1／§24.2 的“创建前分配 ID”候选，不改变 Prisma CUID 合同。当前旧服务及来源写者单测基线 86/86 通过，不能据此声称新链已验收。
+
+观察窗口接线还需保住时间边界：D1 数据库以审计行 `createdAt ∈ [startsAt, endsAt)` 判资格，窗口使用排斥约束禁止重叠。旧审计列是无时区 `TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP`，D1 守卫将存储值按 UTC 解释；因此不能直接用应用机时钟、稍后的 `clock_timestamp()`，或未换算的 `transaction_timestamp()` 选择窗口。候选查询已改用 `transaction_timestamp()::timestamp(3) AT TIME ZONE 'UTC'`，与审计列的毫秒精度和解释一致；非 UTC 会话的真实审计 INSERT 隔离测试也已验证这点。不能通过扩大窗口、删除守卫或延长旧事务预算掩盖边界。
+
+窗口候选查询草稿：`ContributionShadowService.findCurrentRegisteredWindow(tx)` 在 `off`／缺配置时不查库，在 `shadow` 时沿调用方事务使用上述数据库时间表达式、`FOR SHARE` 查至多两行；数据库排斥约束之外再对多行 fail-closed。它**只返回窗口候选**，没有验证部署摘要或政策签字。2026-09-30 按维护者严格业务键匹配确认及当前未提交改动保留／preflight clean 豁免，两个 provider 已注册进 Nest module，submit 与带 records 的 edit 在旧事务内取得当次来源、准确审计 INSERT ID，再经 `matchLegacyRecords()` 双向严格匹配后批量写来源锚。off／无窗口保持原计算及审计调用，edit-no-records 不查询窗口、不写锚。定向 service/helper 单测覆盖逆序回查、缺条、重复输入／回查／ID、错 Sheet／字段，以及两支接线失败；真实 w98 Nest submit/edit 保持 CUID、匹配本次审计，来源写入失败时 Sheet version、有效 Record 集合、Audit 与来源锚整笔回滚，来源证明 E2E 10/10 通过。同一真实用例另完成 2,000 Record 全链提交（资格、旧计算、审计及来源守卫），保持原 7 秒业务预算与全部断言。政策证明扩展、事务后比较、第134条 SQL 3b 已重签，PR 交付仍未完成，不称 D2 完成。
+
+可比较结果的独立证明缺口（实施前必须另审）：D1 的 `cscr_insert_guard_fn()` 当前对所有 `comparable=true` 无条件拒绝。第 134 条草稿新增的来源锚可证明旧 `legacyPoints`、旧规则元组和旧审计同次一致，但 **不能**证明 `policyPoints` 是按所称 `ContributionPolicyVersion.definitionJson` 算出的，也不能证明某条 Record 所用的逐条映射已获签字。现有比较收据只以外键锚住政策版本／选择项，`policySourceHash`、`factHash` 是写入方提供的文本；`compareContributionShadow()` 仍明确是离线夹具计算器。若仅把新来源锚作为放行条件，直接 SQL 可以填入自选 `policyPoints`、哈希和 `equal`，与 §24.2 “任意直接 SQL 伪造相等均拒绝”冲突。**所以当前不得替换旧拒绝分支、不得把 hold-only 说成 D2 完成。**
+
+候选补齐方向（只作设计，不属本轮自动扩写）：数据库守卫须能从不可变、同活动、同 Record 的签字映射及政策版本定义重新验证所用角色／类别、时长来源、政策分数与 `equal/points_mismatch` 关系；或者引入等强度、数据库可独立校验的政策评价证明。逐条映射证据的模型／签字方式、SQL 计算范围、迁移与测试写集及 7 秒／事务后等待预算均需另行评审和维护者授权。在此之前可继续验证旧来源地基，但不能以应用层自述或自算哈希代替数据库证明。
+
+逐条映射引用链已核：旧 `AttendanceRecord` 只有 `registrationId`、`roleCode`、起止与小时，没有新 `sessionId/positionId/timeCategoryCode`；其可选报名头 `ActivityRegistration.activityPositionId` 指向旧 `ActivityPosition`，**不是** E1 选择项使用的 `ActivitySessionPosition`。同一个旧 `roleCode` 因此不能天然推出新场次岗位或政策时间类别；`registrationId` 为空的合法旧考勤更没有岗位桥。离线比较器测试的 `fixture-attendance-hours` 是固定夹具来源码，并非运行时来源证明。可比较路径必须有逐条、同活动、可追溯的显式映射与时长来源证据；未签的 31 类及无桥接记录只能 `mapping_hold`／`input_source_mismatch`，不能从同名字面或当前配置猜选政策项。
+
+时长来源亦非自动同源：`validateAndNormalizeRecord()` 允许请求显式给 `serviceHours`，只要求它大于零且不超过起止跨度；未提供时才从跨度计算。旧 Record／旧审计快照只保存规范化小时与起止时间，不保存“显式输入还是自动计算”的来源位。因而 `checkOutAt-checkInAt` 不能一律当成新政策的 `durationSeconds`，相等与否也不能反推来源。D2 可比较的逐条证据须明确哪种旧输入被签字映射到新时间来源；不具备时按 `input_source_mismatch`／精度边界保守分类，不能用请求外的当前事实补造。
+
+## 26. E3-2 D2 可比较结果的独立证明评审方案（2026-09-30；仅文档）
+
+维护者确认**先补齐不可变映射证据和数据库复算的精确评审方案，不实施扩展**。本节不授权新增表、字段、migration、写者、签字或 Gate；第 133 条 `cscr_insert_guard_fn()` 继续拒绝全部 `comparable=true`，第 134 条现有草稿只作旧来源地基。31 类真实映射尚未逐项签认，均维持 hold；不能将本稿或隔离夹具解释为签字。
+
+### 26.1 逐 Record 映射证据的数据合同候选
+
+候选为**不可变的版本化映射批准记录**与其逐 Record 应用证明，二者不能互相替代。批准记录至少绑定：映射版本及批准者／批准时间、适用活动类型和有效区间、旧 `attendanceRoleCode`、旧岗位来源类型、明确的新 `ActivitySessionPosition` 与时间类别、批准的 `ContributionPolicyVersion` 及定义摘要、时长来源及单位／精度／舍入合同、零分与边界档处理。逐 Record 证明至少绑定：旧 `recordId/sheetId/memberId/activityId/auditLogId`、第 134 条旧来源锚 ID、所用批准映射版本、E1 选择项与政策版本、**实际**输入时长和来源类型；所有引用必须有同活动复合锚与不可变性守卫。不能从旧 `ActivityPosition`、角色名称或 `serviceHours` 与时间跨度恰好相等推断新岗位、时间类别或来源位。若映射要求原始请求的显式／自动来源或真实起止跨度，而当次写未留下所需证据，必须 hold，不能事后补造。
+
+**建议供维护者评审的最小同源口径**：将不可变旧来源锚的 `legacyServiceHours` 本身命名为 `legacy_stored_hours_2` 输入来源，按百分之一小时整数乘 36 得到 `durationSeconds`；Decimal(5,2) 的非负两位小数可无损转换为整数秒，SQL 使用 numeric／bigint，不经浮点或额外舍入。这是对**旧计算所用规范化小时**作新政策评价，不是证明真实签到跨度，也不推断小时来自手填还是自动计算。此候选只有逐项映射明确批准该来源后才可比较；当前 31 类仍全部 hold。它可复用已经留存的最小事实，无须为单纯比较另存原请求或来源位。若业务签字要求真实秒级时长，就须另审独立的当次时间证据，不能拿这个候选替代。
+
+批准记录须设计签字主体、权限、撤销仅追加新版本、历史版本保留及有效时间重叠拒绝；第 26 节不预设谁拥有签字权。内部标识仅供受限复核，禁止姓名、联系方式、原始请求体和完整审计快照进入新证据；不新增通用读面。留存按不可变业务证据处理，退队不自动物理删除；具体可见者、掩码和保存期限须在实施授权前逐字段审批。任一字段若无法从当次旧写或已签版本独立取得，应从 comparable 路径剔除，而不是放宽 SQL。
+
+### 26.2 数据库独立复算与直接 SQL 对抗验收
+
+候选第 135 条**加法** migration（编号与路径在实施时核实）须在数据库内同时证明：旧审计和旧来源锚同次且完整；逐条映射批准记录在该旧写时点有效并与该 Record、活动、角色、岗位、类别、时长来源同链；E1 选择项及批准政策版本与映射引用一致。`policyPoints` 必须从**不可变政策定义、已证明的输入和冻结的 evaluator 版本**在数据库复算，按相同定点精度比较；`equal/points_mismatch` 必须由复算的旧／新值关系决定。`policySourceHash`、`factHash`、应用层返回值及 64 位字符串只能辅助定位，不能充当数据库独立证明。若现有政策表达式不能在 PostgreSQL 中完整、确定性、等价复算，应维持旧守卫，另审等强度证明，不以局部计算放行。
+
+已只读核对 `activity-contribution-policy-definition.ts`：schema/evaluator 均仅版本 1，定义最多 64 个不重复角色，每角色最多四个不重复类别，每类别 1–16 档；非末档 `maxSecondsInclusive` 是递增非负安全整数，末档为 null。评价只取精确角色／类别下按数组顺序第一个 `durationSeconds <= maxSecondsInclusive` 的档，null 末档覆盖剩余时长；否则取 `defaultResult`。返回 `recognizedPoints`（固定两位小数、0.00–999.99）与 `explanationCode`，没有按比例乘算、每日封顶或自定义表达式。拟议 SQL 评价函数应以 bigint/numeric 校验 JS 安全整数上限 9007199254740991、用 `WITH ORDINALITY` 保留档序、完整验证上述嵌套结构后复算两项结果；不得仅依赖 E1 第130条的顶层 JSON shape CHECK。E3-1 比较器另要求已签角色／类别实际存在，缺失时为 mapping_hold，因此 SQL 不得借 defaultResult 将缺失映射放进 comparable 分母。对默认零分、边界值 t−1/t/t+1、null 末档、非法顺序／重复项、超出安全整数、999.99 与解释码分别做 TS/PG 对拍；这是待实施验收清单，当前没有 SQL 评价函数。
+
+SQL 正例须覆盖签字版本、同链来源、边界时长及百分位精度；负例分开覆盖：未签／过期／跨活动映射、旧岗位冒充新岗位、空 `registrationId` 猜岗位、显式小时冒充跨度、改 policyPoints／分类／哈希、跨版本选择、重复／缺失逐条证明、批准记录及应用证明 UPDATE／DELETE、旧审计或锚点事后补写。每个负例须直接 SQL 命中具体数据库守卫，并证明旧 `hold`、off、历史 133→134 回放及旧业务断言不漂移。并发审批版本变更、2,000 Record 和旧写 7 秒预算分别验收；事务后比较的有界等待另行定稿，不把它偷算进旧写成功。
+
+### 26.3 精确写集与授权门槛（候选，**未授权实施**）
+
+**2026-09-30维护者决定**：映射由维护者逐项批准，未批准项继续 hold；本轮只定稿受控登记入口、权限与精确实施清单，不实施扩展。第134条来源地基3b已按 `21d2df904d96da1a70dcebdb40eac7818a353f0ff92646076cfec2550b19f735` 明确重签，登记见 CUTOVER_SIGNOFF；不代表任何映射已批准。
+
+推荐登记入口为**维护者离线批准清单＋具名受控 CLI**，而非新增通用 HTTP 管理面：逐项批准清单包含批准编号、映射版本、确切内容摘要与维护者确认出处；CLI 默认只校验和生成待登记报告，写入需额外显式 execute 授权及确切数据库目标。名单或摘要由执行人自行填写不等于批准，不能自动把31类改为已签。正式调用需运行身份与维护者批准证据分离，锁后复核同一批准内容，重复登记按批准编号及摘要幂等，不一致拒绝；撤销新增事件，不更新或删除历史批准证据。
+
+权限方案候选：不复用 `contribution-policy.manage.version`，不赋予 SUPER_ADMIN 直通，不默认授予内建角色，不允许 Service Principal 或 delegation。若采用应用身份执行登记，应另审专用 GLOBAL Human 权限及其审计事件；最终码名、运行身份绑定方式、CLI授权凭据来源和审计载荷须先列完整diff，再单独4b确认。本轮不增加权限码、seed、CLI或运行凭据，也不查询真实业务库。维护者逐项批准不等于授予任意身份执行登记的权限。
+
+追加候选路径为 `scripts/register-contribution-shadow-mapping.ts`、`src/modules/activities/activity-contribution-shadow-mapping-registration.service.ts` 及其 `.spec.ts`；如采用专用权限，再条件列入 `src/modules/permissions/permission-catalog.ts`、`prisma/seed.ts` 和实际审计登记真源。上述名称只作待审设计，授权前须核对真实权限目录与脚本入口规范，不把候选路径当授权。执行注册、签认真实31类、扩展schema／SQL均需新的独立实施许可。
+
+#### 26.3.1 登记命令与权限的待审定稿
+
+只读核对权限真源 `src/modules/permissions/permission-catalog.ts`：既有政策管理为显式 GLOBAL Human、自定义角色可授且内建角色零默认授予。推荐**新增待审码** `contribution-shadow-mapping.register.approval`（HIGH／WRITE／CUSTOM_ROLE_ALLOWED），只登记维护者已批准的确切映射，不附带政策管理、观察窗管理、切换或真实业务转换权限。这只是新码提案，当前权限总数仍269。审计待审事件为 `activity.contribution-shadow.mapping-register`，实际类型真源为 `src/modules/audit-logs/audit-logs.types.ts`；登记表次数测试路径为 `src/modules/audit-logs/audit-event-registry.spec.ts`。不得提前更改真源或登记计数。
+
+| 命令合同候选 | 必须行为                                                                                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 输入         | 明确 `--manifest`、`--expected-sha256`、`--approval-reference`、`--target`；默认 dry-run。manifest逐项列批准编号、映射完整定义与有效区间，拒绝未明确批准的项，不支持“一键批准全部”                                                          |
+| 身份         | 不能用 `--actor-user-id` 冒充已登录人，也不能用shell用户、数据库连接用户或任意 manifest 的 approvedBy 代替应用 Human身份。运行身份必须经既有认证语义核验，锁后查当前用户及显式GLOBAL授权；禁 Service Principal／delegation／SUPER_ADMIN直通 |
+| 批准证据     | 人工确认的确切内容摘要与批准出处必须独立于执行人提交的数据。未具备可验证的批准来源时 dry-run只报待签，不得execute；自填引用和64位hash不算证据                                                                                               |
+| dry-run      | 不写批准、应用证明、业务审计或观察窗；输出脱敏逐项状态、拒绝原因及摘要，不输出凭据、姓名、旧业务明细                                                                                                                                        |
+| execute      | 只有下一轮另外批准确切manifest摘要、登记身份、目标库及执行动作后才可使用。一个登记批次同事务写不可变批准版本、命令收据及审计；任一项未签、歧义或冲突整批回滚，不能部分放行                                                                  |
+| 重放         | 命令键＋完整载荷摘要一致返回原不可变结果；相同键不同载荷拒绝；再次登记同批准编号不同定义拒绝。重放仍检查当前身份与授权                                                                                                                      |
+| 失效         | 新增带前驱引用的撤销／替代事件，不UPDATE或DELETE批准行；旧来源及旧比较证据继续保留，不重算历史业务                                                                                                                                          |
+
+**尚不能宣称可实施的安全接口**：离线维护者确认如何被CLI独立验证，以及应用Human身份如何安全传入，必须出具体协议再审。推荐不把凭据放命令行、不读取任意actor ID作为认证结果、不开放通用签认HTTP入口；若需要验签公钥、认证属主新原语或新增配置，应具名扩展安全评审及精确写集，而不是在本稿里默认授权。这里明确拒绝“先记录approvedBy、以后再补验证”的实现。
+
+风险定性：本轮只改文档；候选实施将新增schema／migration、专用权限和审计，默认D档。无存量回填、删除、旧规则转换、政策变更或生产开关；但认证接口与批准证明未闭合前不得发出完整实施授权命令。后续一次报齐：批准证据协议、身份核验原语及真实路径、完整字段与SQL、全部候选新增码／事件、逐路径grant、w98验收和3b／4b，不再拆成含糊的逐文件审批。
+
+#### 26.3.2 两层身份与数据库信任边界（推荐评审方向，未实施）
+
+**2026-09-30方向确认**：维护者已接受登记身份隔离方向，并允许仅文档定稿完整实施包。该确认不授权创建角色、发放权限、取得凭据、实际登记或实施下列新代码／SQL。下文“尚未获批”指这些具体动作，不再指身份隔离方向本身。
+
+只读核对 `auth/strategies/jwt.strategy.ts`：Passport先校验签名和过期，再由 `validate` 每请求查ACTIVE、未软删用户；JWT载荷仍只有 sub／username。**直接调用validate不能代替验签**。现有 `identity-step-up.service.ts` 的proof有特定action与audience，不能拿其它操作的proof批准映射。推荐登记运行时通过auth属主提供的窄原语完成完整access-token校验，再由业务事务锁后重读用户与专用GLOBAL权限；不复制JWT规则，不扩载荷，不引入身份缓存。CLI凭据经非回显标准输入或受控文件描述符读取，禁止 argv、manifest、日志和审计留明文。该新属主原语的实际文件与导出必须另审，不直接深引strategy或扩大现有step-up动作。
+
+批准事实不能仅由持有普通业务数据库写权限的进程自造。推荐数据库分离**登记角色**与**shadow运行角色**：后者可写来源／比较，却不能INSERT映射批准记录或调用批准登记函数；专用登记角色仅在维护者逐项批准确切manifest后按单轮授权启用，通过具名受限函数登记不可变批准及审计／收据，不赋予业务表通用写权限。普通应用凭据或直接SQL不能进入该入口，伪造approvedBy／hash仍失败。登记函数使用固定search_path、撤销PUBLIC执行、检查SESSION_USER／角色授权边界，禁止运行角色SET ROLE到登记角色；所有ACL正反例需在w98使用非owner角色实测，不能用数据库owner测试冒充边界已有效。
+
+这里的信任根是**维护者控制的登记凭据及其确切执行授权**，不是manifest里的文字引用。应用Human认证证明谁执行，登记角色隔离证明普通业务写者不能制造批准；二者缺一拒绝。DB owner／superuser能改表与守卫，不在“普通直接SQL伪造”的威胁保证内，必须明确记录运维信任边界。若实际部署所有进程共用owner凭据，本方案不成立，保持hold，不宣称数据库已经验证维护者批准。
+
+该推荐新增数据库角色／ACL运维边界，因此**尚未获批**：本轮不CREATE ROLE、不GRANT、不采集或生成凭据、不变更连接配置。评审需一次确认是否接受角色隔离，以及维护者逐项批准后谁持有登记身份、单轮启用／撤回SOP。若拒绝角色隔离，应另审能够在数据库守卫独立验证的批准证明协议；不能退回“应用验过即可”而保留直接SQL对抗承诺。新配置和运维文档只在实际方案获准后具名加入精确写集。
+
+追加验收：未验签／过期token、用户禁用或权限撤回、其它action的step-up proof、未批准manifest、登记角色缺失、普通运行角色直接INSERT／调用函数／SET ROLE、重复键改载荷分别拒绝；合法单轮登记与重放通过，凭据不进入stdout／审计／异常。SQL evaluator、逐条证明及比较守卫仍按26.2独立验收，不能用权限测试替代结果复算。
+
+只读引用链已定位：旧写属主为 `attendances.service.ts` → `contribution-calculator.ts` → `contribution-shadow-evidence.write.service.ts`；新政策定义与评价真源为 `activities/activity-contribution-policy-definition.ts`，选择查询属主为 `activity-contribution-policy-selection-query.service.ts`；比较器 `activity-contribution-shadow-comparison.ts` 仍只是纯计算，不是数据库签字证据。以下是下一次字段 diff 的路径候选，不是已批准写集，也不授权修改已有定义或扩大活动读面。
+
+| 候选路径（仓库根相对）                                                                                                                                          | 拟议责任与严格限制                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `prisma/schema.prisma`                                                                                                                                          | 映射批准版本与逐 Record 应用证明两个候选模型；字段须先逐项定稿，不加原始请求、姓名或联系方式            |
+| `prisma/migrations/<待定时间戳>_activity_os_r5_e3_shadow_mapping_proof/migration.sql`                                                                           | 独立加法迁移；嵌套政策校验、数据库确定性评价、同链与不可变性守卫；路径须在授权前确定，不改第133／134条  |
+| `src/modules/activities/activity-contribution-shadow-mapping-proof.query.ts` 及同名 `.spec.ts`                                                                  | 拟新增 activities 属主只读原语，显式调用方事务；只返回实际有效批准证据，缺失或歧义 hold，不直接管理批准 |
+| `src/modules/attendances/contribution-shadow-evidence.write.service.ts` 及同名 `.spec.ts`                                                                       | 仅在已证明旧来源上形成逐条应用证明；不得凭调用方传入批准者／hash认定映射已签                            |
+| `src/modules/attendances/contribution-shadow.service.ts` 及同名 `.spec.ts`                                                                                      | 接受明确属主原语，不跨域直接读写政策或批准模型；等待／失败／重放边界另列验收                            |
+| `src/modules/attendances/attendances.module.ts`、`src/modules/activities/activities.module.ts`                                                                  | 仅在原语实际注入需要时登记与导出；不预增 provider 或 API                                                |
+| `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`                                                                                      | 拟新增 TS／PG 边界对拍与直接 SQL 伪造负例；仅 w98，不修改旧行为断言                                     |
+| `test/setup/time-ledger-fixture-cleanup.ts`、`test/setup/reset-db.ts`、`test/helpers/audit-logs-cleanup.ts`                                                     | 仅实际外键要求的受控测试夹具清理；生产守卫及恢复校验不变                                                |
+| `prisma/CLAUDE.md`、本评审稿、`harness/domain-map.json`、`harness/state-machines.json`、`CODEMAP.md`、`docs/ai-harness/ROUTE_AUTHZ.md`、`docs/current-state.md` | 当前摘要／属主登记／生成器实际输入变化；状态清单不凭空新增生命周期，生成计数不手改                      |
+
+**不能提前消除的授权缺口**：维护者逐项批准职责已明确；登记运行身份、专用权限与验证批准出处的机制仍须按上方方案定稿。数据库可以证明行不可变、引用同链及评价正确，但单凭一行 `approvedByUserId` 和摘要不能证明维护者作过业务批准。推荐先由维护者逐项确认映射口径、签字责任及受控登记入口，再定登记写者的真实路径和权限；若需要新命令、API、权限或审计，则单独列入下一包，不偷偷复用政策管理权限或旧 D2 授权。31类未签项保持 hold。以上候选因此还不能作为一条可直接执行的完整授权命令。
+
+来源地基与比较扩展分开验收：本工作树旧来源接线、133→134升级、整笔回滚及2,000 Record 7秒用例已经通过；新映射批准证据、数据库新政策评价与事务后比较仍未实施。不得用前者的绿灯替代后者或整体 D2 验收。
+
+实施前先只读核实 E1 政策 JSON/evaluator 的可复算表达式、旧 `serviceHours` 来源是否能在当次旧写留下证明、映射签字属主与既有权限。随后列出真实路径和字段 diff；候选写集仅包括 `prisma/schema.prisma`、**另一个新时间戳**的加法 migration、`prisma/CLAUDE.md`、`harness/domain-map.json`、映射批准与复算的明确属主 service/spec、`src/modules/attendances` 中的逐条证明写者、数据库直接 SQL 正反例 E2E、受实际 FK 影响的精确清理路径、本评审稿与实际命中的生成物。不得把本段当通配授权；新 API/DTO/权限/审计事件、签字管理入口若不可避免，先停下另列设计与写集，不借用现有 D2 令牌。
+
+下一轮必须单独确认：字段级数据合同和签字责任、真实 migration 路径及 SQL 摘要 3b、若涉及权限／审计则 4b、**仅指定隔离库**及测试夹具重建、逐路径红区 grant、验证与 PR 动作。禁止回改第 133／134 条历史 SQL，禁止查询或转换真实业务数据、打开 shadow／Gate、操作生产、删除或重算旧数据。任何数据库复算或映射签字证据无法闭合时，结果只允许 hold，不称 D2 完成。
+
+## 27. D2 映射证明与比较扩展完整实施包（待批准，当前仅文档）
+
+**2026-09-30实施状态（覆盖本节待批准时点）**：维护者已明确批准完整命名写集、w98验证与夹具重建、仅用于该库的具名隔离角色／ACL测试及测试后撤回授权；12项逐路径红区令牌已核对。本轮不提交推送、不操作生产、不登记真实映射、不启用开关；新增SQL与权限审计摘要仍分别另签3b／4b。
+
+已实施首段：`AuthHumanCommandIdentityService` 完整验签／有效期后复用JwtStrategy的每次当前用户校验，auth module仅注册与导出新窄原语；清单准备严格拒绝未知字段、重复批准编号、无前驱撤销、非法生效区间、未知评价版本／来源／类别及摘要不一致，复用现有canonical封装。两个新spec共22条通过，定向lint和生产／测试类型检查通过。清单解析不等于维护者批准，未接通登记写者或数据库ACL；新三表、SQL复算与完整比较链仍待实施。
+
+本包衔接第134条已签来源地基，不重写第133／134条。目的不是只增加更多hold收据，而是让**真正获维护者逐项批准**的映射在数据库独立复算后可比较，并完成旧业务成功后的有界证据写入。所有真实31类当前仍hold；测试中的合成批准不代表真实批准。本包全部内容待独立实施授权。
+
+### 27.1 字段与数据库合同
+
+**登记闭合当前证据（2026-09-30；未提交、第135条未签）**：默认信任根函数返回NULL，迁移不创建角色或授予登记。w98回滚式信任绑定固定数据库、完整manifest及摘要、Human、批准出处与三角色；具名SECURITY DEFINER函数固定pg_catalog/public/pg_temp并撤销PUBLIC执行，在当前用户／实际GLOBAL授权和有序引用锁后复验资格，批准时刻由数据库锁后生成。批准逐字段匹配信任清单，登记收据逐ID闭合完整批准集合及精确审计；孤立批准在事务末尾拒绝，登记审计不可改删。同命令同内容重放复用原收据，不新增批准或审计；替换清单／执行人、运行角色执行登记及跨角色SET ROLE均有定向拒绝证据。w98完整映射172/172通过，测试角色均NOLOGIN并随事务回滚，不能作为生产ACL已配置的声明。应用层接线在命令锁前后及SQL返回后完整验证凭据／当前身份／显式GLOBAL授权，身份／查询／权限及CLI相关66条单测通过；SQL返回后失效会抛在同一调用者事务中。PG行锁所需UPDATE(id)仅授予不可登录且无成员可切换的函数owner，无实际业务UPDATE。正式ACL脚本已补bootstrap／bind／close及信任根绑定／关闭；CLI默认只校验，执行模式限定私有管道凭据及registrar连接、无owner回退，实际LOGIN执行尚未验收。quick的lint与类型通过；批准时间登记、访问面基线及守护固定总数269→270待精确扩写，台账生成块刷新后6条校验通过。应用证明仍全部拒写，比较链与完整性能未完成；三路径扩写已获确认，审计表更新方式另待确认。不提交推送、不登记真实映射、不启用开关或生产操作。
+
+**真实引用前置校验已验证（2026-09-30）**：csm_assert_registration_references_fn先验证完整manifest，再读取实际活动类型、同活动未软删岗位／场次、精确政策版本与重新复算的定义摘要、政策角色／类别及同活动approve／replace前驱；仅作前置校验，不授予登记资格，也不声称未锁读可代替最终锁后复验。固定search_path显式为pg_catalog／public／pg_temp，避免临时同名表先于真实表解析。独立w98定向146/146通过，合成真实引用正例无批准写入、事务结束无fixture残留；缺失／跨活动／软删引用、已存政策内容与hash不符，以及同名临时Activity表正反例均实跑。错误断言逐项匹配本函数，防止fixture提前失败冒充守卫命中。原非空升级、旧证据不变和施工期全部拒写断言保留，测试类型、定向lint与diff检查通过，w98已移除。登记入口、非owner ACL及最终写入链仍待完成，第135条尚未定稿／重签，三个额外候选路径仍未获确认／未改。
+
+**身份及定义摘要复核（2026-09-30）**：登记service的assertAuthenticatedAccess只接受凭据，不接受执行人ID；先由auth属主完整验签，再经users属主在调用者事务内重读ACTIVE／未软删身份，rbac.can及真实GLOBAL权限集合两项均要求通过，不借SUPER_ADMIN短路。每次调用重新查库／判权，最终登记流程必须在等待锁后及重放再次调用，不能把此窄方法本身当完整锁序／ACL验收。登记service21条与auth8条单测通过。第135条政策指纹函数先验证完整嵌套规则，再按既有E1 envelope独立复算定义、评价版本、生效区间的canonical SHA-256，纯映射输入即使引用键与两侧任意hash一致也不能绕过定义摘要匹配；UTC时区、Unicode、改定义／区间及错误元数据均有对拍／拒绝证据，w98完整映射131/131通过。仍未接入正式登记／应用证明写者，三表继续全部拒写，第135条尚未定稿／重签。
+
+**活动属主窄查询已接线（2026-09-30）**：ActivityContributionShadowMappingProofQuery在activities module注册／导出，登记引用按三至四条集合查询读取，精确保留同活动岗位／前驱与政策版本／hash／evaluator锚点，不按批准条数逐项查询。历史事件查询同时限定activity／mappingVersion／批准时间／生效起点，但不删除撤销、替代或过期历史；仅交付实际行，不能把候选集合当最终资格决定。由调用方继续持有事务、锁和权限复核，不新增接口或跨读attendances表。8项定向单测通过；w98完整映射定向125/125通过，原134→135非空升级保留全部断言，并新增真实查询、缺失引用和旧证据不变检查。生产／测试类型、定向lint、边界元数据及授权文档检查通过；未接通正式登记或比较写者，不构成完整D2验收。domain-map仅刷新module输入摘要，CODEMAP／ROUTE_AUTHZ用既有生成器刷新。
+
+**登记内容校验已验证（2026-09-30）**：第135条新增独立清单类型／字段／长度／时间／前驱合同校验及与应用层一致的canonical SHA-256；固定ASCII键排序、数组保序、整数规范化、Unicode字符串均对拍。批准复合行与清单逐字段、manifest摘要、登记人及数据库登记时刻严格核对，任何内容替换均拒绝；纯函数不验证调用方资格、不赋予登记权限，最终登记函数仍须使用真实锁后身份与数据库时间，并读取实际持久化集合。本轮新解析器拒绝事件数组字符串化，清单单测15/15、w98完整映射定向125/125通过；下方72/72为此前阶段。三表仍全部拒写，正式登记／ACL／应用证明／事务后比较尚未完成，第135条未定稿／未签，未提交推送。
+
+**防清空守卫已验证（2026-09-30）**：第135条新增三张证据表各自的BEFORE TRUNCATE守卫；受控测试清理仅将这三组固定表／触发器纳入原允许清单，raw SQL清单从同一固定数组构造，恢复白名单仍逐项限定。新表缺一或预期触发器缺失立即拒绝；旧schema三表全不存在时继续原清理路径。resetDb仅显式补三表、独立验证0／3存在性及来源地基，仍保留真实连接库名核验、原测试清理超时及所有生产边界。映射定向现为72/72，含O／D／R／A四种原始模式精确恢复、清理失败事务回滚和缺表／缺触发器负例；来源／旧submit/edit回归10/10另通过，包含原7秒2,000 Record链，测试类型、定向lint及codemap检查通过。w98测试库已移除，无业务数据删除。这里完成的是防清空与隔离清理闭包，登记、非owner ACL、真实应用证明及事务后比较仍未实施；第135条未定稿／未签。下段60/60和38/38均为此前施工阶段。
+
+**后续施工验证（2026-09-30）**：新增纯SQL映射输入校验，独立验证批准／生效时间、左闭右开观察窗与映射版本、活动／旧角色／固定小时来源、精确政策版本以及角色／类别实际存在；按旧小时百分位无损转秒，缺失规则不得用defaultResult进入可比较分母。此函数只校验传入复合行，不授予登记权限，也未替代最终写入守卫对真实表行的重读。映射定向套件现为60/60，包含134→135非空升级后旧Source／Audit／Record／Sheet完整JSON逐项不变；来源套件10/10另通过，保留133→134历史升级目标与全部旧行为断言，当前冷回放计数适配为135，受控清理同一TRUNCATE仅补新Application引用表。生产／测试类型及定向lint通过，w98测试库已移除。新增登记权限的运行时闭包文件与RBAC生成文档不在原43路径内，已提出两路径扩写请求；未获确认前不改这两文件。三表仍全部拒写，登记／ACL／实际应用证明守卫／事务后比较和整体性能尚未完成，第135条SQL仍未定稿或重签；下段38/38为上一施工阶段记录。
+
+**实施证据更新**：schema三表与所有声明关系已新增，Prisma validate／generate及生产类型检查通过；第135条命名SQL已建立三表、复合同链锚、Restrict外键与不可变守卫，并新增数据库独立政策校验／复算函数。独立w98空库冷回放135条、新外键、TS／PG分档边界／缺失规则默认值／完整定义伪造负例／Unicode／安全整数上界对拍与施工期拒写共38/38通过，定向lint通过，测试结束已移除w98测试库。批准／登记收据归activities，逐Record应用证明归attendances。当前INSERT仍全部拒绝；评价函数尚未接入应用证明守卫，登记守卫、角色ACL、134→135非空升级和完整比较链待继续实现。这不是hold-only终态或D2完成。第135条SQL施工中，不能现在重签或将第134条签字自动延伸。
+
+新增三模型候选（第三个是登记命令收据，不复用旧业务命令收据）：
+
+| 模型                                           | 必需字段合同                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ContributionShadowMappingApproval`            | id、approvalNumber、mappingVersion、manifestHash、approvalReference、approvedAt、approvedByUserId、registeredByUserId、activityId、activityTypeCode、attendanceRoleCode、sessionPositionId、policyRoleCode、categoryCode、policyVersionId、policyDefinitionHash、evaluatorVersion、durationSourceCode、effectiveFrom／effectiveUntil、eventKindCode、previousApprovalId、createdAt |
+| `ContributionShadowMappingApplication`         | id、approvalId、legacySourceAnchorId、windowId、auditLogId、sheetId、sheetVersion、recordId、memberId、activityId、selectionItemId、policyVersionId、policyDefinitionHash、evaluatorVersion、durationSeconds、policyPoints、explanationCode、createdAt                                                                                                                             |
+| `ContributionShadowMappingRegistrationReceipt` | id、commandKey、payloadHash、manifestHash、registeredByUserId、approvalCount、approvalIdsCanonical、auditLogId、createdAt；批准编号和定义不能只靠可变JSON承载                                                                                                                                                                                                                      |
+
+批准记录只准登记角色通过具名函数写入；应用证明由shadow运行角色写入。所有外键Restrict、同活动复合锚、时间区间左闭右开，全部append-only；eventKindCode是不可变配置，不新增可更新生命周期。撤销／替代引用原批准记录并追加事件；作用于未来资格，不删除或重算旧比较。批准时间由数据库生成，不能用manifest自填时间冒充当时批准；未来窗口的生效区间须显式核准，禁止事后追认旧写。
+
+source仅允许逐项获批的 `legacy_stored_hours_2`；按旧锚点小时百分位乘36无损转秒，不代表真实签到秒数。旧岗位、policyRoleCode、categoryCode与真实sessionPosition须同活动核验，不能靠名称或空registration猜测。政策定义必须完整按26.2验证和复算，数据库生成policyPoints与explanationCode；比较收据只接受引用完整证明集合且结果关系由数据库核算的equal／points_mismatch。未签、歧义、来源不足均hold，不混入comparable分母。
+
+内部用户／成员ID用于资格与证据关联，仅具名受限复核和审计面可见，不新增通用读面；不存姓名、联系方式、token、原请求或完整审计快照。证据永久保留、退队不物理删除，按维护者已确认的数据资产留存原则；本包实施审批须明确认可上述用途、查看边界与留存，不默认为敏感字段获批。
+
+**当前锁后应用／比较证明（2026-09-30；未提交）**：上述38→198条记录为此前施工阶段。第135条现已将实际来源／批准前置核验接入应用证明守卫：Activity→Session→Position有序锁后重读真实来源、源时点有效批准及不可变E1选择，复算完整政策分数和解释码；独立运行身份根默认NULL，只有隔离具名runtime可写合法证明，无旧考勤表写权。伪造时间、事后选择、自填结果、登记角色／owner冒充runtime及改删均拒绝；登记EXECUTE关闭不抹掉历史批准。加法替换D1比较守卫保留原attempt锁、终态、集合上限、精确旧审计与政策锚校验，仅接受与已物化不可变应用证明／来源逐字段一致的可比较结果，分类由旧新值关系核对，不拿任意64位hash自证。w98完整映射219/219通过，覆盖equal／points_mismatch及完整终态统计、无应用证明继续拒绝、自填旧新值和伪造相等拒绝；这些比较及终态已改为具名非owner运行角色执行，旧考勤无写权、原始审计不可读；固定search_path的NOLOGIN守卫owner取必要读锁，私有守卫零PUBLIC／runtime直调权限，未修改D1 attempt／terminal守卫正文。真实Prisma写者正反例在回滚式会话身份下实跑，伪造相等被DB拒绝且证据／角色均回滚；尚非实际LOGIN验收。批量写者先证明Record集合及应用一一对应，再集合写应用／比较、最后核算终态；42条定向单测通过，2,000行仅两次集合写是编排证据，不是完整DB性能验收。源时点选择版本校验两条已通过：拒绝当时已有更新版本的旧选择，允许源时点之后的新选择不改写历史；合法fixture分别兑现每次选择的延期完整性检查，不禁用守卫。旧来源／submit/edit10/10通过，原7秒／2,000 Record断言保留，测试角色及ACL事务回滚。时间／访问面31条、守护561／138／68条通过，既有缺口1／5未消除；本轮quick最终复检通过432套／9,211条、5既有todo，lint及三组类型检查通过，不代替PR CI。实际LOGIN执行、事务后比较／重放调用链和全链性能仍未完成，第135条未定稿／未签；不提交推送、不登记真实映射、不启用开关或生产操作。
+
+### 27.2 身份、角色与提交边界
+
+**最新数据库验收（2026-09-30；未提交，性能仍红）**：应用证明数据库时钟修复已完成；独立开始提交、随后比较事务回滚、单独failed终态及只读重放已在w98具名NOLOGIN运行身份下验证，故障不改变原旧来源事实。新增2,000条可比较来源的完整五秒链尚未通过：最新定向执行P2028，应用证明两批耗时约2,054／79ms，开始收据约5ms，首批比较约880ms，随后超时；此前完整运行为223通过／1失败，不能沿用旧224通过作为当前全绿。回滚式集合SQL计划测得比较INSERT约1,378ms，其中逐行比较守卫约1,247ms；这些是分段证据，不是完整链验收。调用侧pool wait收紧到100ms并保留一秒连接预留与原五秒总预算，仍未解决超时；七条预算回归使四组单测达到300通过。实际LOGIN／冷连接／竞争验收、审计闭合、第135条定稿与签字仍未完成。第134／135条SQL摘要均未修改；w98及三个具名夹具角色在本轮结束后均为零残留。后续候选收口包见27.5，未经批准不实施新增边界。
+
+**真实旧提交后编排施工（2026-09-30；未提交）**：submit/edit在原事务成功返回后才传递本次来源审计ID、Sheet版本、窗口签字版本及实际Record ID集合；无窗口、off和无records编辑不启动后置查询，旧来源失败不调用比较。AttendancesService保持准备、资格锁事务和独立runtime事务持有权；开始收据独立提交，再单独写应用／比较／complete终态。每阶段在Activity读锁后重读当前资格，已有complete或failed终态只读返回；比较失败不自动重试，仅已知持久化开始且资格／剩余预算仍有效时尝试failed终态，开始不确定或终态失败留人工缺口。固定脱敏日志不带异常内容。统一预算只缩短不续时，独立连接预留不在主池重复扣减；包含事务提前失败时仍等待那个runtime操作结束，禁止Promise.race或后台残留。新增编排／预算回归保留旧断言，四组定向单测293/293、w98旧来源／submit/edit10/10、类型、定向lint、架构元数据／新债检查通过。数据库套件保留原7秒及2,000 Record断言，但尚未实跑独立事务持久性、实际LOGIN、竞争／冷连接／完整五秒比较链；单测不替代这些验收。第135条未签，不提交推送、不登记真实映射、不启用开关、不操作生产。下面“尚未接入真实调用”为此前施工时点。
+
+**独立池等待接线准备（2026-09-30；未提交）**：专用runtime池只接受PostgreSQL URL，解析失败固定脱敏错误；只覆盖connect_timeout／pool_timeout各1秒，保留其余身份、数据库、TLS及schema参数，不改变主池或默认关闭配置。`withBoundedRuntimeClient`先核对同一次预算足够支付1秒连接预留，再把扣减连接／maxWait后的事务timeout交给调用者；AttendancesService仍是事务持有者，尚未调用该新入口。callback已完成但过总预算仍不报及时完成、不重试，不能把该错误反向变成旧业务失败或覆盖已提交终态；最终编排仍须处理这种持久化不确定边界。相关shadow126条单测通过，新增URL保留／拒绝、off零工作、余额不足零创建、同预算options透传及晚完成零重试回归。现有池构造断言仅增强为精确固定等待参数，不删除既有身份、单池、关闭或重试断言；没有修改既有E2E断言。真实冷连接／竞争／网络尾部回滚及完整五秒验收未完成，不以单测替代端到端时限。
+
+**统一后置预算准备（2026-09-30；未提交）**：新增内部ShadowComparisonBudget，使用单调时钟，从同一次旧提交成功后的调用开始只分配一次5,000ms。准备耗时、连接预留、Prisma maxWait及事务timeout从剩余额度扣除；开始／比较／失败终态各阶段不得重新设置五秒，剩余不足拒绝启动。8条预算回归及shadow完整119条单测通过、定向lint通过；该对象尚未接入真实submit/edit后置流程。连接预留是算账，不是驱动限时证明；Prisma 6连接URL还具有独立connect_timeout／pool_timeout（官方文档：https://docs.prisma.io/docs/orm/v6/overview/databases/postgresql），实际连接配置、冷连接／池等待及跨事务回滚须另做完整接线与隔离取证。不使用Promise.race留下后台写任务，不引入重试、timer、queue或跨请求资格缓存，不以本段声称五秒验收已完成。
+
+**本次默认值修复最终定向结果**：修复后四组相关单测262/262、w98映射223/223、来源／旧submit/edit回归10/10均通过；来源套件保留原7秒及2,000 Record完整提交断言，仍不等于新后置比较链的五秒验收。三组类型、定向lint、格式、差异、架构元数据／新债及派生授权说明检查通过；第134条SQL摘要21d2df904d96da1a70dcebdb40eac7818a353f0ff92646076cfec2550b19f735、第135条候选摘要287235d13b27974a7ac9c1cd045be608cf4775cc621fed06ceb171806796452e均未改变。仅更正Prisma生成时间来源，不修改数据库默认值或要求新的SQL签字；第135条本身仍待最终定稿和首次签字。
+
+**应用证明数据库时钟修复（2026-09-30；获准、未提交）**：维护者明确批准仅更正ContributionShadowMappingApplication.createdAt为数据库生成默认值并补回归，其余边界不变。Prisma声明现为`@default(dbgenerated("CURRENT_TIMESTAMP")) @db.Timestamptz(3)`，对应第135条既有数据库默认值，SQL未修改；不向写者增加createdAt输入、不放宽守卫或时限、不改旧表。新增回归先在旧声明下精确失败，再验证生成客户端默认元数据、实际createMany INSERT不含createdAt参数、落库值等于数据库事务时刻及事务回滚无残留；完整w98映射223/223通过，前轮219/3失败已由本轮修复后结果覆盖。三组类型、定向lint、架构元数据与新债检查通过；domain-map/state-machines仅刷新输入摘要，不改属主或状态。实际提交后编排、跨事务故障恢复、完整五秒链、第135条定稿／签字和最终PR验收仍未完成，不称D2完成。
+
+**本轮重跑与新发现时钟问题（2026-09-30；待确认，不实施schema修复）**：审计属主改动后类型、定向lint、架构新债检查通过，四组单测262/262；完整w98映射本轮为219通过／3失败，不沿用此前222通过冒充当前全绿。失败被应用证明INSERT守卫拒绝；定向两用例取证出现2失败、1失败及2通过的变化。临时查询事件采集证明即便写者省略createdAt，Prisma仍把该字段作为第18个参数传入INSERT，而非数据库DEFAULT；成功取证时客户端参数比数据库事务开始晚100／48ms，尚未以失败行逐字段证明全部拒绝都仅由时间引起。临时采集已还原，未改既有断言、SQL或业务超时。建议仅将ContributionShadowMappingApplication.createdAt的Prisma默认声明改为dbgenerated("CURRENT_TIMESTAMP")，沿既有SQL数据库默认值，不改migration或守卫；补生成查询／数据库时钟回归并重跑完整w98。此新发现缺陷先呈报，未擅自实施。第135条仍未定稿／未签，不提交推送。
+
+**审计属主查询扩写与边界修复（2026-09-30；未提交）**：维护者明确批准audit-logs.service.ts及其spec仅新增六字段事务内查询。`AuditLogsService.readShadowSourceQualification` 只使用调用者tx，不回退主连接、不读取context／actor、不增加审计详情权限或路由；准备入口在首次资格复核后调用，再保留事件／resource／proof bit／窗口核对及候选查询后的第二次资格复核。真实属主方法已接入考勤characterization工厂，原projection／资格顺序断言不变；新增属主查询投影、事务透传、失败原样传播／零重试测试。四组定向单测262/262通过，架构新债检查unknownCount=0，未修改债务基线。下方关于待扩写／架构红点为修复前记录，不再是当前阻塞；正式旧提交后编排、跨事务故障恢复及整体五秒验收仍未完成。
+
+**当前资格与失败终态施工（2026-09-30；未提交）**：`prepareCommittedShadowComparison` 为内部候选准备入口，尚未被真实submit/edit提交后调用；off在任何查询前返回，shadow在Activity读锁后复用users属主当前用户查询与成员准入，拒绝请求成员绑定变化、失效用户／成员，按既有submit/edit权限及managed访问面复核，候选读后再次复核。现直接读取AuditLog的六字段（createdAt、event、resourceId、resourceType、success、shadowProofRequired）被架构新债检查拦下1条；仅提出扩展audit-logs.service.ts及其spec的属主事务窄查询，尚未获准或实施，不扩大权限／读取context，不修改基线。
+
+`writeFailedTerminal` 核对既有开始收据和实际比较集合，固定脱敏失败码、按四类实际数量写failed，拒绝重复Record、未知分类或超量；已有complete/failed终态只读返回。runtime不做FOR UPDATE、不新增UPDATE授权，最终INSERT沿数据库守卫锁后复算，竞争变化拒绝而不自动重试。236/236相关单测及w98完整映射222/222通过，三组类型与定向lint通过；新增真实Prisma具名NOLOGIN用例证明零比较failed不伪造成功、终态重放不覆盖且事务回滚无证据残留，未证明独立提交开始后的跨事务恢复、实际LOGIN或完整2,000 Record五秒链。验证日志为tmp/check/e3-d2-qualified-preparation-{unit,w98,types,lint,boundaries}.log；架构检查仍红，不能报D2全绿。下文为此前施工时点。
+
+**完整集合与批量准备施工（2026-09-30；未提交）**：`prepareShadowAttempt` 对旧成功事务返回的精确Record ID集合与不可变来源作双向一一对应，拒绝空集、缺条、多条、重复Record／来源ID、跨窗口／审计／Sheet／活动／版本和来源值／摘要篡改；每份来源按既有 `hashLegacySource` 字节合同独立复算。`committedFactHash` 为SHA-256 UTF-8 `SRVF:E3-2:committed-facts:v1:` 拼接标量／元组JSON数组：依序windowId、auditLogId、sheetId、activityId、sheetVersion、signedMappingVersion、Record总数、排序后的来源元组数组；每元组依序recordId、memberId、来源锚ID、legacySourceHash，按recordId的JavaScript码元比较排序（不按locale、调用顺序或数据库返回顺序）。不纳入当前政策结果或可变指针，不接受客户端重放键／写者ID／时间。2,000条乱序准备得到相同摘要且不修改输入；该摘要核对不可变输入集合，不替代Human资格或数据库证明。
+
+`prepareShadowComparisonSet` 一次准备开始／应用／比较候选，源时点完整映射事件只在本次纯调用按旧类型／角色复用解析结果；选择JSON与物化项整组只复算两次，不跨请求缓存身份、权限或政策验证。实际岗位必须同活动且角色与明确映射一致，政策按ID／摘要／evaluator精确定位，重复锚拒绝；缺映射／岗位／选择／版本不猜替代，每个Record保留明确非comparable分类且政策组清空。相关215条单测、w98映射221／221通过，实际Prisma用例已用完整集合指纹替换前轮单Record行诊断指纹，并以该批量入口结果创建开始、写应用／比较和核算终态，原审计、来源及SQL仍由数据库独立核对。2,000条单测只证明准备集合／同次选择校验次数，不证明完整DB五秒预算；实际旧提交后调用、当前资格／锁后复核、独立提交的开始持久性、跨事务失败／并发重放仍待完成。下面184条与单Record诊断指纹描述为前轮施工阶段，不是本轮当前输入算法。
+
+**证据准备与开始／重放施工（2026-09-30；未提交）**：`prepareShadowEvidence` 从冻结评价结果准备同链应用及比较候选，不接收写者ID／时间；hold清空整组政策锚与新值，不创建应用证明，错误仅固定脱敏分类。诊断SHA-256使用UTF-8 `SRVF:E3-2:{domain}:v1:` 加固定标量JSON数组：`shadow-fact`依序为windowId、auditLogId、sheetId、sheetVersion、activityId、recordId、memberId、activityTypeCode、attendanceRoleCode、旧小时两位小数、旧分数两位小数、legacySourceHash、来源审计UTC ISO时刻；`shadow-policy`依序为批准ID、mappingVersion、manifestHash、selectionRevisionId、selectionItemId、policyId、versionId、definitionHash、evaluatorVersion、policyRoleCode、categoryCode、durationSourceCode、durationSeconds、policyPoints、explanationCode。二者只是可复核诊断，不替代数据库独立证明。
+
+`readOrCreateAttempt`在调用者已获资格的独立runtime事务内，以auditLogId读取不可变开始收据并核对全部上下文／指纹／算法字段；精确重放原样返回既有终态，包括failed，不覆盖或自动续写。新开始收据由写者生成ID，数据库生成时刻，replayKey严格沿第133条 `SHA256(UTF8(e3-2-d1:v1:{windowId}:{auditLogId}:{sheetVersion}))`，调用方不能指定元数据。并发唯一冲突原样抛回并回滚，不upsert、不自动重试；后续仅另行获准的重放可以读取已提交赢家。184条相关单测、三组类型检查及定向lint通过；w98完整映射221／221通过，真实行准备→runtime开始→未完成重放→应用／比较／终态→终态只读重放均在同一回滚式NOLOGIN会话下验证，同审计换指纹拒绝。本用例单Record使用该行factHash作为诊断指纹，不证明正式完整集合承诺算法；未证明实际LOGIN、独立提交的开始持久性、当前Human资格、跨事务故障恢复或完整2,000 Record五秒预算。正式旧业务后置编排仍待接线，不改SQL或原业务断言。
+
+**冻结来源评价施工（2026-09-30；未提交）**：新增内部纯准备原语 `evaluateShadowFrozenSource`，从来源锚复算旧规则摘要及当次旧分数，不查询现行ContributionRule；以明确批准的 `legacy_stored_hours_2` Decimal百分位无损乘36取得秒数。源审计时刻、签字映射版本／角色／活动／有效区间、已校验explicit选择候选与政策版本ID／摘要／evaluator必须一致；政策定义按既有E1 fingerprint独立复算，再调用既有E3比较器。缺旧规则不以默认零分进入comparable，缺角色／类别不借defaultResult放行；伪造两侧一致摘要、来源篡改或旧规则重算与旧值不一致均拒绝。相关shadow及旧考勤120条单测、三组类型检查及定向lint通过；w98完整映射221／221通过，新增从真实来源／源审计／历史批准／E1选择／政策版本读到评价器并与数据库 `csm_application_result_fn` 结果对拍的回滚用例。该用例使用隔离owner准备读，不代表runtime具备原始审计读取权或实际LOGIN验收；未改SQL、ACL或旧断言。候选评价不是持久化证明或Human授权，数据库锁后守卫仍独立执行。完整后置收据调用、重放／失败缺口及2,000 Record五秒全链性能尚未完成，不能以本段称D2完成。
+
+**源时点选择准备施工（2026-09-30；未提交）**：attendances内部纯准备原语 `resolveShadowSelectionsAtSource` 校验最新源时点修订的schema／时刻／数量／同活动归属，以及JSON和物化项各自复算的完整摘要；物化项ID、scope和引用链严格校验。只选择实际岗位explicit覆盖或activity explicit；inherit、缺失及模板未物化的选择不猜成明确证据，保持现有数据库证明合同。单项原语沿用同一批量路径，2,000个重复岗位引用只对一份修订复算两次摘要；只在单次调用内索引，不跨请求复用验证或身份。相关shadow及旧考勤99条单测通过；实际Prisma源时点查询已接该准备原语，w98最终批量版完整映射220／220、三组类型检查及定向lint通过，测试库和具名角色无残留。完整政策评价输入、比较调用、重放及5秒全链验收仍未完成；本段不是Human授权或数据库锁后证明替代，不改SQL或增加继承规则。
+
+**实际岗位候选查询施工（2026-09-30；未提交）**：activities属主查询新增 `readComparisonPositions`，以活动与去重岗位ID作集合读；岗位及其实际场次均须同活动且未软删，只返回岗位／场次锚与角色，不按名称、registration或当前指针猜测缺失岗位。2,000个重复引用仍一次查询，空集合零查询，非法键拒绝。属主查询27条单测、三组类型检查及定向lint通过；w98完整映射220／220通过，新增真实Prisma同活动、异活动、缺失岗位及回滚验证。本轮未改schema、SQL、ACL或任何旧断言；前轮433套quick是本次新增前的读数，不能替代当前PR CI或完整比较编排验收。
+
+**映射事件解析施工（2026-09-30；未提交）**：比较用新属主读原语 `readComparisonMappingHistory` 按同活动、源时点批准及生效时间读取完整事件，不按mappingVersion提前过滤，避免遗漏跨版本指向旧批准的撤销／替换；既有登记查询不变。`resolveShadowMappingAtSource` 从完整历史解析唯一候选，按同活动／旧类型／角色／签字版本及左闭右开区间匹配；源时点已生效的撤销／替换永久排除前驱，不受事件数组顺序影响，未来事件不改写过去。空集／歧义返回缺失，不猜批准；非法事件、重复证据ID及非法时间拒绝。52条相关单测、定向lint及三组类型检查通过。解析只是候选，不替代不可变登记闭包、源时点选择、岗位事实、Human资格或数据库锁后证明；完整准备及比较编排仍未完成。
+
+**源时点输入查询施工（2026-09-30；未提交）**：activities 属主查询已补 `readSelectionAtSource` 与 `readComparisonPolicyVersions`，前者按同活动及 `createdAt <= 来源审计时刻` 取最高 revision，保留所有层和 E1 的 `inherit / explicit`（此前误写为指标域的 `not_required`，已由维护者批准更正；不新增选择模式），不读当前指针、不以缺失选择作默认；后者按版本ID／定义摘要／evaluator完整三元组去重集合读，缺失不替换。21条定向单测通过，包括2,000个重复引用仅一次集合读；w98完整映射219/219通过，真实Prisma用例在未来当前指针存在时仍取得历史版本，并核验左右边界、异活动缺失、版本摘要不匹配及夹具回滚。定向lint、三组类型检查通过。该查询是内部候选输入，不是映射批准或Human授权，数据库最终锁后守卫仍保留；完整比较编排、重放及5秒全链性能尚未完成。
+
+auth窄原语候选 `AuthHumanCommandIdentityService` 完整验access token签名／过期并复用当前用户有效性语义；不能仅调用JwtStrategy.validate。auth module只导出该原语，JWT／refresh／step-up／登录行为不变；活动登记service锁后重读用户及专用GLOBAL权限。CLI只接受非回显输入凭据，dry-run不落库。新增码及审计事件按26.3.1，默认授予为零。
+
+数据库拟议角色为 `srvf_shadow_runtime`、`srvf_shadow_registrar`、`srvf_shadow_registration_owner`：运行与登记角色均非owner／非superuser、不可相互SET ROLE；owner仅NOLOGIN，持有具名SECURITY DEFINER函数及批准表，固定search_path并撤销PUBLIC执行。登记角色仅EXECUTE登记函数及必要受限读，不直接INSERT批准表、不具备旧业务表通用写权。不得将应用的既有owner连接称为runtime隔离已完成。
+
+角色创建／ACL启用用独立具名SQL与现场运维授权，不混进自动迁移中CREATE ROLE，不在本轮获取凭据。维护者持有登记权限发放责任；获准Human执行人只在确切manifest摘要单轮授权下使用登记连接，结束撤回执行权限／会话。DB owner操作仍属可信运维边界，不宣称可抵抗owner禁用守卫。实际部署未完成此边界前，真实登记及shadow继续NO-GO。
+
+旧submit/edit来源锚仍在原7秒事务内，任何来源失败整笔回滚。旧业务提交成功后，比较Attempt／Comparison／Terminal在独立短事务执行；每次调用总等待候选上限5秒、禁止自动重试或后台queue。超时不反向回滚已成功旧业务，也不伪装比较完成：已成功写入的attempt保留，缺口由现有受限复核面定位和人工重放，终态通过后才进入统计。精确窗口／旧审计／manifest摘要作幂等锚，重放重新判当前访问资格，不重复终态；此候选等待上限随整包一起审批，不修改旧业务7秒预算。
+
+### 27.3 命名实施路径清单（非通配授权）
+
+**本轮获批兼容与复检（2026-09-30）**：维护者已批准按实际E1合同更正注释、测试夹具及本稿，并批准AC-072精确适配。新增授权路径 `src/modules/activities/activity-v11-coordinate-negative.spec.ts` 仅将第②项严格具名连接输入集合改为 `DATABASE_URL` 与 `CONTRIBUTION_SHADOW_DATABASE_URL`；保留一个datasource及其他全部断言，不增加通用豁免。原49路径加已批准的三个配置路径及本测试路径，当前53个命名路径。本轮相关29条单测及定向lint通过，完整quick退出0：433套／9,257条单测通过、5条既有todo，缓存lint、三组类型检查及harness通过。此前quick的唯一失败为该旧断言与具名独立连接冲突（432套通过／1套失败），保留为诊断记录，不再列为待授权事项；不提交推送或宣称PR CI全绿。
+
+**额外三路径（2026-09-30；维护者已确认扩写，原43路径加本3路径）**：`src/modules/permissions/seed-permission-codes.ts`仅补本包获批新码到原运行时闭包；`docs/ai-harness/RBAC_MAP.md`仅用既有生成器刷新；`docs/ai-harness/AUDIT_EVENT_REGISTRY.md`仅用既有生成器刷新本包获批新事件的登记。harness:needs逐项实测三者均非红区，无需grant命令。权限清单及RBAC生成物已闭合270码；审计表仅找到核对器，未找到既有生成器，因此尚未改该表，登记方式待核实。不给内建角色授予新码，不改检查器或放宽断言，不因此取得提交推送／真实登记／生产授权。
+
+**后续三路径登记同步（2026-09-30；维护者已确认并执行两项红区grant）**：`src/common/datetime/clock-authority.spec.ts`仅登记批准时间与数据库来源审计时间同源的比较关系；`harness/permission-surface-baseline.json`仅用既有生成器增加专用登记码访问面（0个HTTP端点），旧基线不漂移；`scripts/harness-guards.selftest.ts`仅固定总数及对应注释269→270，检查逻辑不变。原43路径加两轮各3路径，当前49个命名路径；不扩大业务、生产或提交权限。
+
+新增路径为待创建文件；现有路径只按列明责任修改。migration候选路径在发放令牌前复核无冲突，SQL定稿后单独3b，不以本稿当SQL签字。
+
+```text
+prisma/schema.prisma
+prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql
+prisma/seed.ts
+prisma/CLAUDE.md
+src/modules/auth/auth-human-command-identity.service.ts
+src/modules/auth/auth-human-command-identity.service.spec.ts
+src/modules/auth/auth.module.ts
+src/modules/activities/activity-contribution-shadow-mapping-proof.query.ts
+src/modules/activities/activity-contribution-shadow-mapping-proof.query.spec.ts
+src/modules/activities/activity-contribution-shadow-mapping-registration.service.ts
+src/modules/activities/activity-contribution-shadow-mapping-registration.service.spec.ts
+src/modules/activities/activities.module.ts
+src/modules/attendances/contribution-shadow-evidence.write.service.ts
+src/modules/attendances/contribution-shadow-evidence.write.service.spec.ts
+src/modules/attendances/contribution-shadow.service.ts
+src/modules/attendances/contribution-shadow.service.spec.ts
+src/modules/attendances/attendances.service.ts
+src/modules/attendances/attendances.service.spec.ts
+src/modules/attendances/attendances.module.ts
+src/modules/permissions/permission-catalog.ts
+src/modules/permissions/permission-code-holders.spec.ts
+src/modules/permissions/seed-permission-codes.spec.ts
+src/modules/audit-logs/audit-logs.types.ts
+src/modules/audit-logs/audit-event-registry.spec.ts
+scripts/register-contribution-shadow-mapping.ts
+scripts/sql/contribution-shadow-registration-roles.sql
+test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts
+test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts
+test/setup/time-ledger-fixture-cleanup.ts
+test/setup/reset-db.ts
+test/helpers/audit-logs-cleanup.ts
+harness/domain-map.json
+harness/state-machines.json
+CODEMAP.md
+docs/ai-harness/ROUTE_AUTHZ.md
+docs/current-state.md
+docs/reference/config-env.md
+docs/ops/contribution-shadow-mapping-registration.md
+docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md
+docs/ai-harness/CUTOVER_SIGNOFF.md
+docs/ai-harness/NEXT_TASKS.md
+docs/ai-harness/FROZEN_DRAFTS.md
+changelog.d/activity-os-r5-e3-shadow-mapping-proof.md
+```
+
+权限与审计真源的所有其它受影响路径必须引用链核实；不在上述清单则先汇报，不能顺手扩写。配置文件只说明输入与默认NO-GO，不新增通用环境凭据变量或更改JWT配置。维护者2026-09-30另行明确批准 `src/config/database.config.ts`、新增同名 `.spec.ts`、`.env.example` 三路径，仅补独立 `CONTRIBUTION_SHADOW_DATABASE_URL` 输入，默认留空关闭；这是上述凭据输入限制的具名例外，不包含真实凭据读取、连接或启用许可。现有 `ContributionShadowService` 已补惰性专用客户端和退出清理，不复用旧业务客户端；缺配置或直接填写同一主连接拒绝，失败无自动重试。这里只完成连接生命周期，不代表当前Human资格、实际LOGIN身份、事务后比较／重放调用或5秒全链性能已验收。禁止API／DTO／OpenAPI变更，禁止改裁判或债基线；生成物只用既有生成器。角色SQL不在生产自动执行；本包授权即便获准也不包含真实数据注册、真实账号授予或生产角色操作。
+
+### 27.4 探针、验收与一次性授权
+
+执行顺序：现有来源及旧业务characterization → 数据模型／加法SQL → 合成批准登记与非owner ACL → TS／PG政策边界对拍与SQL伪造负例 → 旧业务后比较／故障及幂等 → 2,000 Record全链性能 → 派生物／quick／定向w98 → 独立3b／4b → 呈报。只允w98隔离验证与夹具重建；ACL测试需要在该库关联的本地测试集群创建具名隔离非登录测试角色，**须独立明确授权且测试后撤回ACL**，不能将“允许重建库”解释为任意CREATE ROLE权限。
+
+DoD逐项：三表及所有约束冷回放与134→135非空升级保持旧事实；合法已签映射可比较且分数／解释码由数据库复算；26.2全部伪造负例命中守卫；26.3.2身份／非owner ACL正反例通过；off与未批准31类保持原行为和hold；新鲜／重放／部分失败／5秒比较等待及人工缺口链完整；原7秒旧业务与2,000 Record性能通过；权限零内建默认授予、审计及生成物闭合；SQL与权限审计摘要重签；PR CI全量冷跑另计。没有达到全部条件不称D2完成。
+
+风险表：候选改schema／加法migration／seed／专用权限／审计／auth窄原语；不改JWT载荷、密码、refresh、登录、现有API或历史migration；零存量回填／删除。证据提交不可逆但旧业务兼容，回退只关闭shadow与登记入口，不删证据、不倒退migration。主要风险是角色隔离未真正成立、批准口径和岗位映射猜测、JS／PG评价精度漂移、提交后缺口及超时；由上述独立探针分别覆盖，不能用一个全绿数字概括。
+
+维护者下一轮可一次审批以下内容（本轮尚未授予）：确认第27节字段、专用码／审计及5秒比较等待；批准上述命名写集实施；允许w98与具名隔离ACL测试角色；SQL定稿后另签3b、目录／审计定稿后另签4b；由维护者运行精确redzone grant。验证后仅呈报，**默认不提交推送**，若要Draft PR再明确授权。真实31类签认、登记身份开通、生产角色配置、真实登记、shadow／Gate启用均另行审批，不继承本包代码实施许可。
+
+### 27.5 剩余收口包 A（已获准实施，未提交）
+
+**授权与首轮结果（2026-09-30）**：维护者已明确确认本节17路径收口包及具名临时LOGIN验证，原禁止域不变。P-Write集合写者69条单测通过；登记审计实际SQL回归通过，登记检查器实测175总计／170活跃。实际runtime LOGIN连接成功且错误密码被拒绝，原资格／ACL及故障恢复断言随后通过；但新满额比较链仍P2028，应用集合写约1,977ms后比较阶段超时。优化未解决全链预算，不称收口完成；新增候选SQL计算优化见27.6，尚未获准，不擅自改。
+
+本节只补齐已批准D2合同，不新增业务能力。27.4中的“本轮尚未授予”为原方案历史时点；原命名实施包、w98与NOLOGIN角色夹具已经批准，本节新增的LOGIN验证、写入实现断言适配及审计登记表手工同步仍待独立批准。
+
+**P-Write**：仅把应用证明与比较收据的两个createMany改为各一条参数化集合INSERT，以单个JSON参数承载已验证行，固定表名／列名与显式类型，不拼接业务值、不使用unsafe API。保留数据库生成createdAt、调用内UUID、精确集合与一一对应核验、全部行级守卫／外键／锁序、真实写入行数核验、终态最后写入及事务归属；任一失败整笔回滚。不得ON CONFLICT跳过重复、不得重试或在mock与真实连接之间走不同业务路径。单测仅将createMany调用形状断言适配为两次参数化集合写及真实行数断言，原内容、数量、先后顺序、错误传播、无重复跳过、无终态提前写及全部E2E业务断言保留。优化是否足以通过五秒必须实测，不以SQL单段耗时代替完整验收。
+
+**P-Audit**：闭合原26.3.1已批准事件`activity.contribution-shadow.mapping-register`。当前SQL已经发出该事件，但AuditLogEvent联合类型／活跃登记尚未纳入，登记审计context也缺requestId／ip／ua。仅补新事件类型与生产合同常量，用实际登记E2E核对SQL事件和该常量；不伪造额外log调用来凑活跃计数。候选第135条登记函数补服务端内部requestId（与该次审计ID确定关联）、ip／ua为JSON null，不保存凭据、客户端令牌或自由文本；收据守卫核对该最小context。AUDIT_EVENT_REGISTRY没有现成生成器，须明确批准仅手工补此事件行及对应总计／活跃数，保留全部历史事件。预期174／169变为175／170，必须以检查器实测为准；不是当前已完成读数。SQL135定稿另报完整3b摘要；权限仍270码，不新增角色默认授予，审计闭合后另报4b。
+
+**P-Login**：仅将现有`srvf_shadow_runtime_w98_fixture`（去除展示空格）临时用于实际LOGIN测试；owner／registrar仍NOLOGIN。先确认精确三角色不存在，再在已批准本地测试集群建立具名夹具；随机测试密码只在进程内存传递、不写文件、不打印连接串／SQL参数、不取用真实账户密码。所有测试连接先验证目标恰为app_test_w98、固定本地测试集群，使用独立Prisma连接实际登录后核对session_user和原ACL正反例；连接字符串不同不算身份不同。验证冷连接、旧来源不可写、原始审计不可读、终态重放及故障恢复；真实认证不成立或环境使用trust时如实报告，不擅自改pg_hba／共享服务配置。结束后先NOLOGIN并撤回夹具授权、关闭测试连接，按原受控流程移除w98和精确三角色；存在非夹具依赖时停报，不DROP OWNED／REASSIGN／CASCADE。此许可不包括任何其他数据库连接或生产LOGIN账号配置。
+
+**本包精确写集（17路径）**：
+
+1. `src/modules/attendances/contribution-shadow-evidence.write.service.ts`
+2. `src/modules/attendances/contribution-shadow-evidence.write.service.spec.ts`
+3. `src/modules/activities/activity-contribution-shadow-mapping-registration.service.ts`
+4. `src/modules/activities/activity-contribution-shadow-mapping-registration.service.spec.ts`
+5. `src/modules/audit-logs/audit-logs.types.ts`
+6. `src/modules/audit-logs/audit-event-registry.spec.ts`
+7. `prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql`
+8. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`
+9. `docs/ai-harness/AUDIT_EVENT_REGISTRY.md`（仅新事件行／对应计数手工同步）
+10. `docs/current-state.md`（仅既有counts生成器刷新）
+11. `CODEMAP.md`（仅既有生成器刷新）
+12. `docs/ai-harness/ROUTE_AUTHZ.md`（仅既有生成器刷新）
+13. `docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`
+14. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`
+15. `docs/ai-harness/NEXT_TASKS.md`（顶部当前施工状态）
+16. `docs/ai-harness/FROZEN_DRAFTS.md`（顶部当前施工状态及既有派生读数）
+17. `docs/ai-harness/CUTOVER_SIGNOFF.md`（仅收到本包最终3b／4b明确重签后登记，不自行签字）
+
+风险：不改schema字段／seed／API／DTO／权限／默认角色／旧数据／历史migration；只改未提交第135条的登记审计context与对应守卫。批量写实现变化涉及参数化和计数风险；实际LOGIN涉及临时认证风险；审计同步涉及遗漏风险，分别用SQL参数与失败回滚、实际身份／ACL／清理、真实SQL事件／context／登记检查器验收。旧业务七秒和后置五秒、资格复核、fail-closed及禁止自动重试不变。连接／锁竞争超预算必须保留旧成功结果并留下可人工核对缺口，不宣称及时比较成功；已提交终态不得覆盖。
+
+顺序：先保留当前红例→P-Write定向unit与w98满额→P-Audit实际登记闭合→P-Login冷连接／竞争／恢复→原完整映射及来源回归→类型／lint／架构／生成物→最终SQL与目录摘要呈报重签。验证通过后仅呈报，不自动提交、推送、Ready、合并、登记真实映射、启用shadow／Gate、操作生产或删除业务数据。
+
+可一次回复：**确认27.5剩余收口包方案A，按17路径实施，允许w98及具名临时LOGIN夹具验证并在结束后撤回；SQL／审计定稿后另签3b／4b；其余禁止边界不变，验证后仅呈报。** 本句审批不替代维护者的红区命令；新路径需要时仍由维护者执行精确grant。
+
+### 27.6 P-Guard 集合成员核验等价快路径（已获准实施，未提交）
+
+**已获准并验证（2026-09-30）**：维护者确认本节等价快路径；17项正反例对拍通过，未改变原扫描回退。实际LOGIN冷连接满额仍失败，固定耗时取证为准备与开始合计645ms、比较事务分配3,254ms／pool wait100ms，应用INSERT1,934ms；回滚计划比较INSERT1,374ms。两次INSERT合计3,308ms高于预留连接一秒后的3,254ms，但加已量准备合计约3,953ms仍在原五秒内。这证明当前执行额度存在保守预留挤占，不证明完整业务调用链已通过。第135条候选摘要现为e21851f6d9ac032ad2841e988289e5657996dd478a57a95cfaa21e31ceb47ba9，仍未签；后续单独预算补充见27.7，不能以本节许可修改其写集外服务。
+
+27.5集合写减少参数拆批，但完整链仍失败；不能借已批准登记审计SQL改动扩写比较守卫。本补充只修改未提交第135条`cscr_insert_guard_fn`中的审计records成员查找：对JSON数组先用包含同一对象的字符串`id`和`memberId`的正向包含判断；命中时即为原扫描存在同一对象的正向证据，未命中时仍执行原`jsonb_array_elements + ->>文本比较`。非数组仍走原路径（包括原错误），数字／布尔等历史文本转换也只走原回退路径，不把未命中直接判拒。不缓存资格、不跳过数据库复算、锁、count、政策／来源链核验，也不改变五秒预算。
+
+证据：纯w98回滚探针覆盖空数组、null、标量、数字／布尔／null ID、缺memberId、数组／嵌套对象字段、嵌套记录及未命中值；实测fast正向误接收零，2,000字符串对象原扫描365ms／包含107ms。这些有限探针不能代替完整守卫回归，实施须新增原扫描与候选快路径的对拍，含任一字段数值与字符串混合、不同对象分别含id／memberId（必须拒绝）和数组非数组边界；完整225+映射和冷连接满额仍需实跑，失败不得加长预算或放宽断言。
+
+精确写集七路径：未提交第135条migration.sql、既有映射E2E、现评审稿、既有changelog、NEXT_TASKS／FROZEN_DRAFTS顶部、CUTOVER_SIGNOFF（仅最终明确签字后更新）。第134条及历史SQL、schema、API／DTO／权限／Gate不改。SQL定稿产生新3b摘要，另请维护者确认；原w98／临时LOGIN验证许可及所有禁止域沿用27.5，不自动提交推送。
+
+可回复：**允许27.6 P-Guard等价快路径，未命中保留原扫描；按七路径及原隔离授权验证，保留全部约束和五秒预算，SQL定稿另签3b，验证后仅呈报。**
+
+### 27.7 P-Budget 实付建连时间（已获准实施，本地验证通过，未提交）
+
+**签字收口（2026-09-30）**：维护者明确回复“确认上述第135条3b及本轮4b重签”；SQL／seed／权限目录完整摘要实测与本节候选逐字一致，已登记 CUTOVER_SIGNOFF。本条覆盖下方待最终签字的历史时点；不新增提交推送、真实映射登记、开关、Gate或生产授权。本地验收通过，后续Draft PR仍待授权。
+
+**最新本地收尾（2026-09-30）**：预算修复后最终quick退出0，433套／9,430条单测通过、5条既有todo；lint为缓存口径，当前改动另有定向冷lint，三组类型与harness自测通过。完整映射243/243、原来源／submit/edit10/10，独立生产provider的冷连接满额为3,990ms（定向4,449ms），全部原业务断言／五秒及七秒预算保留；没有以旧9428条结果替代当前结果。字典30／277、审计175／170对账通过，seed与目录／第134／135条摘要已实测复核，架构新债为零。测试w98与精确三个夹具角色已移除，未处理任何真实业务数据。下方“quick在跑”“候选未经确认未实施”为此前时点；当前尚待第135条3b及本轮4b确认后登记，未获提交推送授权，没有PR CI或真实角色配置／映射登记／上线／开关验收；本地检查通过不等于D2交付或T0整体完成。
+
+**已获准实施及定向／完整回归（2026-09-30；未提交）**：维护者明确确认本节11路径方案。runtime先在同一预算内实际$connect，随后交付实付后的transactionOptions(0,100)，应用服务三阶段透传同一选项，不重设倒计时。补建连失败、建连耗尽总额零写入／零重试，以及旧资格复核／独立事务选项透传断言；相关两组单测207通过。E2E改用真实生产ContributionShadowService创建的独立池，不以测试替身模拟建连分配器；具名LOGIN冷连接、2,000冻结来源完整链定向4,449ms通过，完整映射243/243通过，满额3,990ms；原来源／submit/edit10/10通过，原五秒／七秒及全部业务断言保留。实际厂商客户端未开启query event，旧诊断监听器因此删除，不用类型强转伪造事件能力；三组类型与定向lint已通过。最新quick在跑，不拿预算改动前9,428条全绿代替当前最终结果。
+
+**待维护者最终签字（不是提交／生产授权）**：第135条SQL SHA-256为`e21851f6d9ac032ad2841e988289e5657996dd478a57a95cfaa21e31ceb47ba9`，相对原候选仅27.5登记审计context／对应守卫闭合及27.6等价成员快路径，SQL134已签摘要保持不变。4b候选：权限270；审计175总计／170活跃；字典30类／277项；seed SHA-256 `af0277a6ba784e040ccb9610b15691b2b2c615028301018514b861f7e4f6181b`；权限目录SHA-256 `d2edf001cb215c07229ad3579a4cfa0aab285a7330fb5d7abe846fbdd28ad153`。新增登记码仅显式GLOBAL Human、自定义角色可授、十五内建角色零默认、SUPER_ADMIN不直通、Service Principal／delegation不允许；仅合成夹具验收，真实31类未签仍hold，不开真实登记或shadow。收到确切3b／4b确认前不更改签字登记，不提交推送、不操作生产或启用Gate。
+
+**本轮检查收尾**：当前完整映射242通过／1失败（只有新增满额链失败），六组单测352通过、原来源／submit/edit链10通过，原七秒及2,000旧Record断言保留；类型、定向lint、架构元数据／新债（unknownCount=0）、计数／CODEMAP／授权派生物及差异检查通过。来源测试一次误设D1专用变量，被精确库名门禁在任何数据库操作前拒绝；改为本套件实际`SRVF_E3_D2_W98=1`后10项通过，未改门禁。隔离库及精确三角色均结束清理；新SQL与目录／审计仍未签，不提交推送。本节预算服务候选未经确认未实施。
+
+不加长五秒总倒计时，不改任何业务预算或断言。仅把独立连接一秒预留改为真实建连时先占位、完成后按实际耗时扣减：`withBoundedRuntimeClient`进入仍验证剩余可支付一秒连接预留，在同一预算内await专用client.$connect（配置connect_timeout／pool_timeout仍各一秒，不重试、不Promise.race），随后按单调时钟真实剩余额度生成`transactionOptions(0,100)`，不再次扣除已经支付的整秒。应用服务接收该选项并持有事务，不另起预算；主资格事务仍缩短同一截止时刻，任何超预算完成仍不声称及时完成／不覆盖已提交终态。缺额、建连失败与回调失败继续原缺口处理，不延续后台任务。
+
+精确11路径：`src/modules/attendances/contribution-shadow.service.ts`及`.spec.ts`、`src/modules/attendances/attendances.service.ts`及`.spec.ts`、既有映射E2E、现评审稿、既有changelog、NEXT_TASKS、FROZEN_DRAFTS、CODEMAP、ROUTE_AUTHZ（末二仅生成器）。不修改schema／migration／权限／API／DTO／Gate／连接环境或旧数据。已有原5,000ms倒计时、default500ms分配器、余额不足不建池及全部旧业务断言保留；仅真实已建连的执行选项断言按实付合同适配，并补建连耗时／失败／超额、零重试、冷池与重放回归。w98与具名临时LOGIN许可沿用27.5；完整满额、原来源链、类型／lint／架构／生成物均验收后仅呈报。
+
+历史授权口令：**允许27.7 P-Budget实付建连时间方案，按11路径实施，保留五秒总预算与全部业务断言，沿用w98隔离验证，验证后仅呈报。** 维护者已确认此方向，未扩大提交、生产或开关授权。
+
+## 28. #1370 首轮完整 CI 整改包（35路径及1条基线追加已实施；本地验证完成，未提交）
+
+### 28.1 当前事实与本轮权限
+
+2026-09-30，D2 已在提交 `6341fccbe51f77abaf534ed7c0e7550e66d19af6` 创建 [#1370 Draft PR](https://github.com/BA7IEE/srvf-nest-api/pull/1370)。这覆盖 §27 的“未提交／无 PR”历史时点，但不覆盖其禁止域。[首轮 CI 36732529967](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36732529967) 已结束失败：Fast checks 的 migration 计数检查失败，五个 Contract + E2E 分片均失败；Docker build、Docker smoke 和本 SHA 红区审批通过。不能用本地 quick 或红区审批代替全量验收，不能 Ready 或合并。
+
+维护者本轮仅允许：在本评审稿统一汇总整改包；仅在 `app_test_w98` 临时给 source-proof E2E 加脱敏阶段耗时，诊断后还原。不改生产代码、断言或超时，不提交推送。下列候选路径与措施均是待审方案，不是本轮写入许可；不继承之前 D2 的提交授权执行新修复。
+
+### 28.2 根因分组与整改边界
+
+| 分组       | 证据与原因                                                                                                                                                                                              | 推荐措施／验收                                                                                                                                                                                                                                   | 风险边界                                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-Count    | `docs:migcount:check` 报 18 个当前常量仍为 133；另 8 个当前冷回放直接断言 133，实际 135。C1 D2b 当前 seed 断言仍 269，实际 270。                                                                        | 仅同步当前总数及对应标题 133→135、C1 D2b 当前 seed 269→270；保留所有历史升级目标、固定 migration 身份／摘要和业务断言。                                                                                                                          | 不能把期望值改为运行时自动计算，不能改检查器来消红。                                                                                                            |
+| P-Cleanup  | E2E 的 `23514: shadow mapping evidence is immutable`；`test/helpers/audit-logs-cleanup.ts` 只登记六张 shadow 表，遗漏第135条三张 mapping 证据表。`TRUNCATE audit_logs ... CASCADE` 到达仍受保护的子表。 | 在已有测试 helper 补三张固定表／触发器；三表存在性只能为 0 或完整 3，混合状态拒绝；同一受控事务显式子表先清、精确保存和恢复每个触发器原状态。覆盖调用者回归及恢复失败回滚。                                                                      | 保留 APP_ENV、URL 和实际连接库三层检查；不改生产触发器、不扩大到任意表，不逐个删除调用者断言。                                                                  |
+| P-Worker   | mapping-proof 的 ACL GUC 固定 `app_test_w98`，而 CI 使用真实派生 worker 库，因目标不符被正确拒绝。真实 LOGIN 用例还固定 w98 连接、角色、GRANT／REVOKE。                                                 | 测试侧建立完整 worker 身份合同：核对真实派生库；fixture owner／registrar／runtime 三角色按安全 worker 标识隔离；bootstrap、绑定、真实 LOGIN、连接授予与撤回、finally 清理一一对应。生产 ACL 脚本保持原样，只在测试中使用固定模板的具名夹具实例。 | 禁止只改 GUC 后放过 LOGIN；禁止在 CI worker 库运行脚本的生产角色分支；固定共享角色会造成跨 worker 竞态。实际角色隔离测试须另获明确授权，本轮 w98 诊断不涵盖它。 |
+| P-History  | D1 migration E2E 期望最后一条为第133条及原摘要；CI 夹具实际已经到第135条。本地专用开关才部署冻结 D1。                                                                                                   | 历史验收必须实际构造冻结133条的隔离夹具，核验132→133升级与第133条摘要；结束后恢复当前 schema，避免污染同 worker 后续测试。                                                                                                                       | 不把旧历史断言改成135；不得仅检查“当前最后一条”冒充历史升级。夹具生命周期必须完整。                                                                             |
+| P-Source   | E2E (2) 的2,000人真实提交报 P2028：7,000ms预算下实际10,730ms，在来源 `createMany` 报错；不能据报错行认定此前全部阶段无耗时。                                                                            | 本轮 w98 分阶段证据见28.3。保留 CI 失败为未关闭项；若前四组修复后冷跑仍超时，先补精确取证与候选修复审批，不直接改写者或 SQL。                                                                                                                    | 不加长7秒、不跳过来源守卫、不减人数、不改断言；本地一次通过不等于 CI 修复。                                                                                     |
+| P-Residual | D3 migration 的30秒准备失败、服务段旧迁移的 Prisma 错误、D1-3历史兼容夹具初始化失败及旧并发 fulfilled/rejected 差异，尚未逐一证明由上述共用缺陷导致。                                                   | 优先核对完整错误与调用链，再在已批准库内定向复现；前四组修复后仍红则单列精确措施，不能当成“偶发”自动重跑。                                                                                                                                       | 不预先扩大生产写集，不放宽超时或竞态断言，不宣布完整包已解决全部红点。                                                                                          |
+
+### 28.3 source-proof w98 临时诊断结果
+
+只选 `real submit/edit preserve CUIDs, roll back source failure and complete a 2,000-record old write within 7 seconds` 原用例，使用现有 ts-jest／setupFiles，不启动会创建其他 worker 库的 globalSetup。专用 `SRVF_E3_D2_W98=1` 入口再次核对目标严格等于 `app_test_w98`，冷部署135条；原 submit／edit、失败回滚、CUID、2,000个身份和来源、零比较收据及7秒断言原样保留。
+
+首个诊断脚本因测试侧漏取 provider 报 ReferenceError，未到达满额调用，不作为业务失败；补齐该临时变量后重建 w98 并完成同一用例。实测 1 条通过、9 条未选取（不是完整10条套件通过）：
+
+- submit 开始至来源匹配入口：493ms。
+- 匹配与输入准备：约111ms；来源写入入口在604ms。
+- `writeLegacySources` 总耗时：2,644ms，包含哈希／数据构建和真实 createMany；没有独立量到每条 SQL 或触发器，不能将此值写成纯 INSERT 耗时。
+- `writeMatchedLegacySources` 总耗时：2,756ms（包含上项，不能重复相加）。
+- 整个 submit：3,368ms，原7秒及全部该用例断言通过。
+
+结论：本地最大已量阶段是来源批量证明写入；CI 的10,730ms仍未在本机复现，尚不能划分 CI 数据库竞争、SQL守卫与客户端批量写的具体贡献。不追加生产优化。所有临时 Jest spies／计时日志已还原，E2E 与 HEAD 无 diff；w98 在 afterAll 回收。仅保留本稿取证摘要，不保存 SQL参数、业务ID、密码、连接串或审计内容。
+
+### 28.4 待批准的确定性修复写集（34路径，不含未定位的实现修复）
+
+P-Count 的27路径为 §19.3 逐字列明27份旧迁移 E2E。后续只读核对确认 `test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts:546–553` 同样含当前冷回放标题及 `expect(names).toHaveLength(133)`，故纳入当前计数适配，候选总路径由33更正为34；不是通过授权推定增加范围。该文件的准备超时仍未定位，不能以计数适配宣称修复。27份仅按28.2当前计数适配，其中 C1 D2b 同时仅同步当前权限数。历史目标不变。
+
+另外7个精确路径：
+
+1. `test/helpers/audit-logs-cleanup.ts`：P-Cleanup，固定三表与原态恢复。
+2. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`：P-Worker，完整具名隔离身份及生命周期；不是生产角色配置。
+3. `test/e2e/activity-os-r5-e3-contribution-shadow-migration.e2e-spec.ts`：P-History，真实冻结夹具与结束恢复。
+4. `docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`：审批、结果和未关闭项。
+5. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`：本修复的范围及真实验收。
+6. `docs/ai-harness/NEXT_TASKS.md`：仅顶部 #1370 当前状态。
+7. `docs/ai-harness/FROZEN_DRAFTS.md`：仅顶部 #1370 当前状态。
+
+P-Source、D3准备超时、服务段、D1-3历史兼容、旧并发目前只列待诊断，其实现修复不在这34路径许可中；D3只包含上一段的计数适配。没有生产代码、schema、migration、seed、权限、API、DTO、生成器、工作流、测试全局配置或 Gate 写入许可。测试侧模板实例不得编辑 `scripts/sql/contribution-shadow-registration-roles.sql`；若完整 fixture 需要额外 helper、新目录或红区路径，先呈报，不顺手增加。
+
+### 28.5 验收、授权与收尾
+
+顺序：P-Count静态检查→P-Cleanup触发器保存／完整三表／恢复失败与旧调用者→P-Worker具名真实LOGIN／错身份与错库负例／撤权→P-History历史升级及恢复→定向来源原完整套件→quick、类型、lint、生成物及差异核对→获提交许可后由 Draft PR CI 冷跑全量。CI worker 身份测试的数据库与具名角色范围须显式审批，不能将仅w98授权扩大到其他库；固定其他 scratch 库的历史测试留给 CI，除非另获授权。上述残余项若仍失败，保留红点并给出具体追加清单。
+
+若维护者批准，可一次确认：**允许按第28节34路径实施 P-Count／P-Cleanup／P-Worker／P-History，保留所有历史升级、业务断言、超时与数据库守卫；允许w98隔离验证与夹具重建，并允许仅该测试库的具名fixture角色验证及结束撤权；其他固定库只由PR CI验收。残余项只诊断呈报，不改生产代码。验证后呈报，不自动提交推送、Ready或合并。** 维护者仍需对红区候选路径执行精确 grant，AI不自行发放。真实映射继续hold；不开生产角色、shadow或Gate，不操作生产、不删除或重算业务数据。
+
+本轮未做：未实施上述修复，未改任何生产实现／SQL／断言／超时，未提交推送、重跑CI、Ready或合并；未证明全部CI失败已定位，未执行真实登记、D8-OPS、生产操作或开关启用。
+
+### 28.6 后续只读核对：历史审计客户端读回兼容（待独立批准）
+
+完整 E2E (5) 错误进一步证明，服务段非空历史升级失败不是 mapping 清理守卫：`activity-service-segment-correction-pending-migration.e2e-spec.ts:489` 的 `createSettledActivity` 经真实 `LedgerPostingService.commitBatch` → `LedgerPostingAuditRecorder.log` → `AuditLogsService.createLog:132`，Prisma明确报 `The column shadowProofRequired does not exist in the current database`。本测试故意回放到第115条之前；当前客户端的 `auditLog.create` 默认读回包含第134条新增列，旧库缺列。生产审计构造数据没有新增该标志，本例是当前客户端与历史夹具的读回形状冲突；不得据此修改生产服务或历史migration。
+
+推荐 P-Legacy：只扩展 `test/e2e/activity-service-segment-correction-pending-migration.e2e-spec.ts` 现有 readback-only fixture SQL，在旧迁移回放完成之后、创建应用之前给该历史夹具的 `audit_logs` 增加 `shadowProofRequired BOOLEAN NOT NULL DEFAULT FALSE`，并用固定 CHECK 禁止 TRUE，明确只是当前客户端读回兼容，不引入新shadow写入能力，不运行第134条、不伪造来源证据。保留历史回放输入／顺序、服务段升级、缺收据拒绝、重放及所有业务断言；失败立即呈报，不继续机械补列。只在已有w98授权下验证，不操作该测试默认的其他worker库，后者留给CI。
+
+如批准加入，此文件是28.4的额外第35路径（其余34路径不变；文档／changelog仍用原四路径）。建议统一授权为：**确认第28节35路径测试兼容修复包，包含28.6 P-Legacy；按上述精确边界实施并在w98验证，其他固定库留给CI。残余超时、登录与并发只诊断呈报，不改生产实现或放宽断言。验证后呈报，不自动提交推送、Ready或合并。** 本轮尚未收到这个实施授权，仍只保留本稿待审diff。
+
+D1-3历史兼容两个用例的栈进一步定位到 `createD13Fixture:189` → `loginAs:26`，失败发生在creator登录而非用例业务断言；没有证据将它并入mapping清理根因。里程碑并发用例仅已知一个 `Promise.allSettled` 结果 rejected，未取得该事务拒绝原因，亦不推定为fixture失败或缩短锁窗口。二者保留待定位，不纳入P-Legacy。
+
+再次只读核对 E2E (3) 完整日志，fixture 登录错误的脱敏状态为 HTTP `500`、业务码 `50000`。这不是已经证实的密码错误（10004）或限流拒绝（429）；不能改密码、跳过登录、放宽限流或给登录加重试。服务端根因日志仍缺失，保留未定位，不新增生产 auth 写集。当前PR仍为同一 `6341fccb`、OPEN Draft；本轮仅追加本稿，不提交推送。
+
+### 28.7 35路径实施及基线追加登记（2026-10-01；本地验证完成，未提交）
+
+维护者明确确认“第28节35路径测试兼容修复包，按所列边界实施，验证后呈报”，覆盖本节此前待审批时点；不包含提交、推送、Ready、合并或生产授权。开工preflight因本轮待审文档与既有目标PR报dirty/open-PR，已按继续同一批准任务研判，未落后origin/main；没有删除或暂存原文档，没有开新任务。本包不触红区生产代码／schema／migration或执法层，无AI自行发令牌。
+
+27份当前迁移计数／标题适配到135，C1 D2b仅当前seed总数269→270；历史升级目标与SQL摘要保持原样。共用审计helper纳入固定三张mapping证据表、完整组检查和逐个恢复后核验；缺守卫抛错的整个事务回滚。mapping E2E仅实例化原固定ACL测试模板，真实派生worker库与具名三角色一一绑定，非w98角色名以完整库名的SHA-256前16位隔离；角色已存在则拒绝，生产ACL脚本不改，生产角色分支不运行。真实LOGIN连接、身份断言及grant/revoke同步；结束先撤LOGIN／CONNECT、关闭池，再移除本套件数据库及其具名角色；CI重建本worker当前schema，w98结束直接回收。没有DROP OWNED／REASSIGN／角色CASCADE。
+
+D1在每次套件启动真实建立冻结133条的夹具，保留132→133与原摘要；CI结束恢复当前schema，w98回收。服务段旧夹具只增加default-false、CHECK禁止TRUE的审计读回列；新增测试专用w98选择入口用于本轮验证，默认worker流程与所有断言／超时不变，不连接额外数据库。
+
+当前迁移计数检查通过，18个固定常量均135；完整mapping套件248/248通过，新增四种触发器原态恢复和缺守卫事务回滚5条通过，真实LOGIN和2,000来源五秒链4,004ms通过。首轮新增诊断查询误将PostgreSQL内部char直接拼接文本导致1条失败并漏关闭应用，修正显式::text及资源取得顺序后整套自然退出0；旧失败进程的测试已结束，仅定向终止它遗留的Jest句柄，没有forceExit或放宽断言。D1、服务段、source-proof、最终quick／冷lint仍须完成，CI仍是首轮失败，未称全部修复或D2交付。
+
+**本轮验证收尾**：D1冻结迁移7/7、服务段历史升级5/5、原source-proof完整10/10均通过；不是仅选择满额1条。w98与三角色结束读数均0。三组类型检查、四份实现测试文件的定向冷lint、当前迁移计数、CODEMAP／counts、格式与diff检查通过。35个实际改动路径全部落在授权集，27份计数diff逐行核对只有获准当前总数／标题／一处当前权限数；历史时间戳及升级目标未改。schema、已签SQL134／135、权限目录、seed及原source-proof E2E的blob均与HEAD一致，不需要新3b／4b。没有执行w1或其他固定scratch库，没有运行标准Contract全局建库入口，worker特有分支仍需PR CI冷跑验收。
+
+quick首轮实际退出1：lint0、typecheck0、unit0（433套／9,430通过，5既有todo），harness1（137通过／1失败／5已知缺口）。唯一红点是墙钟跨到2026-10-01后，`harness/near-future-date-baseline.json` 的 `src/modules/certificates/certificates.service.spec.ts × 2026-10-01` 存量条目过期；对应测试未改且单测通过。保留此失败记录，不把首轮quick改记为成功。
+
+**基线追加已授权并完成**：维护者明确允许仅删除上述过期条目并执行精确grant，裁判实测返回GRANTED。仅删该一行，保留同文件2027-01-01、其余全部基线、测试及规则；总写集为原35路径加该基线文件，共36路径。随后完整`pnpm harness:selftest`退出0：日期基线12处／7文件逐条一致，ESLint自测138通过／0失败／5既有缺口，hook自测68通过／0失败，前置守护自测通过。仅重跑原失败组件，没有重复运行未受影响的9,430单测或数据库套件；结合本轮前述验证，已批准修复包的本地验证完成，不能称完整quick命令重新运行过或PR CI已通过。两份台账仅更新顶部，本轮仍未提交推送；原CI残余项保留，worker特有分支及全量Contract／E2E仍待更新PR后冷跑。
+
+## 29. 第二轮 CI 残余项与 w98 分段诊断（2026-10-01；仅诊断，未实施修复）
+
+### 29.1 当前事实与本轮许可
+
+第28节36路径修复随后已获提交许可，并以 `b5c2f316d3deb95f8846f9144fcea1668a783e40` 推送 [#1370](https://github.com/BA7IEE/srvf-nest-api/pull/1370)。这覆盖28.7的“未提交”历史时点，不回改历史记录。[CI 36744889984](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36744889984) 已结束失败：Fast checks、Harness Self-tests、Golden Journeys、E2E (5) 通过，E2E (1)–(4) 失败；本 SHA 红区检查与 Docker smoke 通过。PR仍是 OPEN Draft，不能据红区通过称全绿。
+
+维护者确认上一条隔离诊断方案：仅在既有本稿汇总整改包；仅在 `app_test_w98` 临时给 source-proof／mapping-proof E2E 添加固定脱敏分段计时，诊断后还原；核验旧迁移恢复及默认值差异。不改生产代码、断言或预算，不提交推送、Ready、合并、开关或生产操作。本轮未运行额外 EXPLAIN ANALYZE，也未启用既有可选 SQL 计划探针。
+
+### 29.2 逐类结论与证据
+
+| 类别          | 已确认的证据                                                                                                                                                                                                                                           | 结论／边界                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P-Restore     | E2迁移用例 `activity-os-r5-e2-contribution-rule-migration.e2e-spec.ts:178–236` 最后停在132条；其 `afterAll:141–152` 只处理专用w98，没有CI共享worker恢复分支。E2E (3) 四套、13条登录失败均报当前 `auditLog.create` 读回不存在的 `shadowProofRequired`。 | 夹具恢复缺口已证实，缺列与CI错误一致。不能改13个登录调用者、密码、限流或生产审计来遮盖；不能把尚未记录拒绝原因的并发用例也算作已定位。                                                        |
+| P-Default     | `schema.prisma:2914` 声明 `@default(dbgenerated("CURRENT_TIMESTAMP"))`；135条SQL及w98真实列默认均为 `CURRENT_TIMESTAMP`；Prisma只读内省输出 `@default(now())`，只读diff仍要求对同列 `SET DEFAULT CURRENT_TIMESTAMP`。                                  | 数据库默认并未缺失，是schema默认表达式分类不一致产生的漂移。D87与C1 D2b共用同一漂移基线，不能把重复报警当作两个独立结构缺陷；按29.6保留时钟合同，仅提请批准精确同表达式差异，不接纳其他漂移。 |
+| P-Source      | E2E (2) 在来源 `createMany` 报 P2028，7,000ms事务已过7,083ms。本轮w98完整2,000人用例5,282ms通过，其中来源批量调用4,569ms。                                                                                                                             | 来源批量调用是本地主要耗时段；本地没有复现7秒超时。调用耗时包括Prisma、SQL／触发器和等待，尚不能声称全部是某一个数据库函数或某条SQL。                                                         |
+| P-Compare     | E2E (1) 五秒链6,001ms、P2028。本轮w98复现5,987ms、P2028；应用证明INSERT 2,905ms，比较收据INSERT到报错2,218ms；终态写入未开始。                                                                                                                         | 不是仅CI现象，不靠同SHA重跑收口。两次参数化单语句已存在，不能再把“换单语句”当作尚未实施的修复，也不能通过缩小集合／五秒预算重置解决。                                                         |
+| P-Concurrency | E2E (3) 另1条 `activity-registration-member-lifecycle-concurrency` 期望fulfilled而实际rejected，日志未包含拒绝原因。当前代码已有锁屏障和waiter确认。                                                                                                   | 保持独立未关闭；先恢复共享库再核验。不能套用过去其他测试“漏await”的结论，不能改断言或盲加等待。                                                                                               |
+
+E2E (1)–(4) 分别失败1／2／14／1条，共18条；上述归类是18条的证据清单，不是18条已修复。D3准备与旧服务段在本轮没有同样失败，亦不能因此宣称性能永不再现。
+
+### 29.3 隔离取证方法与实测
+
+两个用例串行执行，使用现有ts-jest及setupFiles，不启用会创建其他测试库的globalSetup。每次先经原入口验证数据库必须严格为 `app_test_w98`，结束沿原清理流程回收；映射用例继续使用原具名临时LOGIN、错误密码负例、权限核验、撤回LOGIN／CONNECT及角色回收。没有削弱fail-closed。
+
+**迁移／默认值核验**：source-proof的临时诊断在同一w98先部署原样前132条，读数为迁移132、审计列不存在；随后部署原样当前135条，读数为迁移135、审计列存在。未编辑任一SQL、未运行reset／db push／migrate dev。对该库运行只读datasource→datamodel diff及 `db pull --print`，仅输出固定模型／字段的结果，不输出完整schema、连接串或数据。结果如下：
+
+```text
+132: hasShadowProofRequired=false
+135: hasShadowProofRequired=true
+database application.createdAt default: CURRENT_TIMESTAMP
+introspection: createdAt DateTime @default(now()) @db.Timestamptz(3)
+diff: ALTER TABLE "ContributionShadowMappingApplication" ALTER COLUMN "createdAt" SET DEFAULT CURRENT_TIMESTAMP;
+```
+
+这验证了缺列和恢复结果；不是CI完整调度重放，也没有直接证明那条并发rejected的原因。
+
+**P-Source**：保留原submit／edit、CUID、失败回滚、2,000身份精确集合、零比较收据和7秒断言。定向1条通过／9条未选取，不称完整10条通过。以submit开始为0：
+
+| 时点／区间         |  毫秒 |
+| ------------------ | ----: |
+| 来源写者入口       |   473 |
+| createMany调用入口 |   490 |
+| createMany调用耗时 | 4,569 |
+| createMany返回时点 | 5,059 |
+| submit返回时点     | 5,282 |
+
+**P-Compare**：保留真实独立冷连接、2,000条冻结记录、回滚／失败重放及原5秒倒计时。定向1条失败／247条未选取。计时只包装原调用，不改SQL参数、顺序、返回值、异常或事务：
+
+| 时点／区间                     |         毫秒 |
+| ------------------------------ | -----------: |
+| 比较阶段之前                   |          840 |
+| 比较事务配置timeout／maxWait   |   4,059／100 |
+| 写者入口                       |          843 |
+| 应用证明INSERT入口／耗时       |   850／2,905 |
+| 比较收据INSERT入口／到抛错耗时 | 3,762／2,218 |
+| 写者退出／事务退出             | 5,980／5,986 |
+| 外层捕获P2028                  |        5,987 |
+
+没有终态计时，表明失败前未调用终态create；不能将最后2,218ms记作“成功写入耗时”。计时含诊断包装少量开销，不是生产SLA或数据库纯执行时间。无固定sleep、重试、预算扩容或“先热身再验收”。
+
+### 29.4 推荐整改顺序与候选边界（待实施批准）
+
+1. **先修确定性兼容问题**：E2迁移测试补共享worker结束恢复最新schema的生命周期，专用w98仍只回收自身，保持131→132历史验证；增加恢复后迁移数／审计列读回验证，恢复失败必须报错。**默认值候选已撤回并由29.6更正**：本稿上一轮曾推荐 `@default(now())`，继续核对发现这与既有数据库时钟回归冲突，不能实施。保留 `dbgenerated("CURRENT_TIMESTAMP")`、`Timestamptz(3)` 与数据库生成时间，改为提请维护者批准登记一条精确Prisma同表达式差异；不能自行放宽旧漂移基线。
+2. **性能修复必须针对数据库写入段继续精确设计**：来源写者现有 `createMany` 会进入第134条 `cslsa_insert_guard_fn` 的逐行审计数组展开；映射已经使用两条集合INSERT，第135条应用守卫逐行调用 `csm_application_result_fn`，比较守卫逐行执行审计成员匹配与同attempt计数。静态代码证明有重复工作，但本轮计时没有量出各子函数贡献，不能据此直接删除、缓存或前移守卫。候选优化须逐项写出与原查询的等价性，覆盖重复ID、同对象匹配、历史文本／数值转换、null／格式异常、缺失／失效映射和并发锁后复核；未命中优化路径仍完整校验。保留完整性、权限、实际数据库复算、锁序、重放、7秒／5秒和全部原断言。若需要改变SQL，必须明确究竟修改未合并第134／135条还是新增迁移、列完整影响路径，并另行3b重签；当前均未授权。
+3. **最后验证未定位并发项**：共享worker恢复正确后先跑原用例；仍失败才在另获批准的测试路径采集脱敏错误分类，不改生产代码、锁屏障或断言。
+
+确定性修复的精确候选及配套路径已在29.6收齐，**不包含schema**。性能候选包括第134／135条相关守卫、其现有两份E2E；只有证明客户端调用改造有必要时，才另列 `contribution-shadow-evidence.write.service.ts` 及其spec，不预授权改生产写者。不扩展API／DTO／权限／角色默认授予，不启用shadow／Gate或真实映射。
+
+| 风险                         | 控制／验收                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| 测试恢复误连其他库           | 原URL／worker精确检查不变；本地仅w98，其他固定库由CI验收。                                      |
+| 默认值更正被误当作改时钟语义 | 撤回now()候选，保留schema及原时钟回归；仅提请明确批准登记一条精确同表达式差异，其他差异仍拒绝。 |
+| 性能优化减弱证据或访问控制   | 逐条件等价论证与正反例先行；现阶段不实施，未批准SQL不得更改。                                   |
+| 本地单次通过被当作交付       | 本地定向＋quick与PR全量分开记；本轮比较明确失败，不Ready、不合并、不自动重跑。                  |
+
+### 29.5 诊断收尾
+
+临时两份E2E已逐补丁还原，`git diff --exit-code -- <两路径>`通过；测试源、生产代码、schema、SQL及预算均与 `b5c2f316` 一致。诊断包装的测试类型检查通过，运行没有以类型断言或客户端事件假实现代替真实调用。结束只读核验先用存在的postgres角色作仪器正对照（true），再确认w98不存在、三具名fixture角色数量0；没有遗留测试授权。仅保留本稿新增第29节，不修改其他台账历史。
+
+本次未做：未实施29.4整改、未改生产代码／schema／migration／测试业务断言或超时，未完整重跑两套E2E／quick／Contract，未修复或关闭CI红点；未提交推送、CI重跑、Ready或合并，未查真实业务库、登记真实映射、启用开关／Gate或操作生产。
+
+### 29.6 引用链复核更正与下一包精确授权（已批准；实施结果见29.7）
+
+**撤回schema候选的依据**：同稿27节的时钟修复记录及现有映射E2E `generates application proof time in the database, never as an INSERT timestamp parameter`（原文件775–838行）明确要求DMMF默认值为 `dbgenerated(CURRENT_TIMESTAMP)`、真实Prisma INSERT不带createdAt参数、落库等于数据库事务时间、回滚零残留。29.3内省只证明数据库表达式与Prisma分类不同，不能证明改成now()后客户端行为等价。本轮停止该候选，不改schema或上述回归；这是撤回未实施建议，不是重新决定已冻结的数据时间合同。
+
+**推荐包A：两项确定性测试修复＋进一步隔离SQL取证**。它不宣称已包含性能实现，更不保证消除全部CI红点；先处理有完整因果证据的两项，同时把性能瓶颈继续拆到SQL／触发器层，之后一次给出有证据的生产修复包。
+
+精确9路径（前7条为可保留改动候选，后2条仅临时诊断并还原）：
+
+1. `test/e2e/activity-os-r5-e2-contribution-rule-migration.e2e-spec.ts`：仅补共享worker的afterAll恢复，以及恢复结果核验。沿用同仓E1-3已存在的受控recreate/deploy模式，保留专用w98清理和环境恢复；不更改131→132历史断言、失败语义或原用例预算。afterAll具名120秒测试清理预算与该文件既有迁移用例及E1-3清理一致，不是业务超时。
+2. `test/e2e/activity-v11-batch4-allocation-command-replay-migration.e2e-spec.ts`：在 `EXPECTED_PRISMA_CURRENT_DIFF` 精确增加唯一一条 `ALTER TABLE "ContributionShadowMappingApplication" ALTER COLUMN "createdAt" SET DEFAULT CURRENT_TIMESTAMP;` 及原因注释。保留原21条顺序与内容、D85→D87历史验证；仍全字符串严格相等，不接受其他ALTER、新默认表达式或其他模型漂移。**这是修改精确测试基线，需要维护者明确批准，不冒称断言完全不变。**
+3. `test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts`：只将读取上述共同基线后的精确语句数21→22；历史迁移、权限、模板和指标选择等业务断言保持原样，不复制另一份基线。
+4. `docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`：本轮证据、默认值候选撤回、修复与后续SQL方案。
+5. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`：仅登记本包真实完成与未完成项。
+6. `docs/ai-harness/FROZEN_DRAFTS.md`：仅顶部当前状态，不改历史。
+7. `docs/ai-harness/NEXT_TASKS.md`：仅顶部当前状态，不提前标记性能关闭或D2完成。
+8. `test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts`：仅临时固定脱敏计时、必要的w98恢复结果观察；诊断后还原，原7秒和全部业务断言保持。
+9. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`：仅临时w98回滚式 `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` 取证应用证明／比较收据INSERT，以及同形2,000来源夹具INSERT。使用现有固定fixture合同，保留全部守卫／权限／锁；不修改任何函数、触发器或生产SQL。只输出固定语句标签、耗时、实际行数、触发器名称／次数及聚合buffer计数，不输出原始计划、SQL值、凭据、ID或审计内容。诊断后还原。
+
+SQL探针和原五秒／七秒验收严格分开：不在原倒计时中插入额外重写或把探针当自动重试；仅在独立受控事务构造具名测试夹具，执行后ROLLBACK并确认零残留。来源探针是同形数据库守卫负载，不等同于真实Prisma多参数语句，不拿其耗时代替端到端验收；需观察真实客户端时沿第8路径原调用计时，不绕过工厂或引入Prisma扩展。应用／比较探针沿用现有真实独立角色，事务前后保持身份隔离。命中超时仍报告失败，不删断言、不延长业务预算、不更改角色ACL模板。
+
+**配套影响面已核对**：此包不改schema／SQL／src、不增测试文件，故不触发domain-map/state-machines的schema摘要、CODEMAP目录计数、ROUTE_AUTHZ的src摘要、OpenAPI及其client生成链。不新增migration，不修改签字登记，不需新3b／4b。若验证发现任一生成器真实漂移，先核对来源，不借本包写入未列路径。九个路径逐个传入 `pnpm harness:needs`，实测9个非红区、0个需本地grant；**只代表无需授权命令，不代表用户已同意修复／改测试基线**。不执行AI自授权。
+
+**验证边界**：只允许w98及原具名fixture角色，结束撤回并核对；不得创建D87默认的w86／w87。w98恢复验证须实际经过共享worker恢复分支（在既有loadTestEnv／派生校验下选择worker98，不绕过数据库安全检查），并核对135条和审计列；专用清理分支另核验w98退出后不存在。默认值用w98只读diff逐字对共同22条基线，保留原数据库时钟回归；C1 D2b固定w98可定向验证，D87双库完整历史用例留给PR CI。类型／lint／quick与定向结果分开登记，未定位并发先只运行原用例，不授权改该文件；不运行会自动建立其他库的标准Contract入口。所有夹具取证结束清理；通过后先呈报，不自动提交推送或重跑CI。
+
+可一次回复：**确认第29.6节9路径方案A：允许修复E2迁移恢复，并将已核验的单条默认值同表达式差异加入精确基线（21→22），保留dbgenerated及数据库时钟回归；允许仅w98隔离验证／夹具重建、原具名角色测试及回滚式SQL计划取证，临时诊断后还原；不改生产代码、schema、migration、权限、Gate、原业务断言或5秒／7秒预算。验证后呈报，不提交推送、不Ready、不合并。** 本包无需额外终端grant命令，勿让维护者重复跑无必要授权。
+
+### 29.7 第29.6节实施与独立回滚取证（2026-10-01；未提交）
+
+维护者已明确确认第29.6节9路径方案A。实际持久测试改动仅三份：E2旧迁移测试在共享worker结束时恢复当前结构，并严格核验135条及审计列；D87共同漂移基线增加获准的单条同表达式SET DEFAULT；C1 D2b引用计数与用例标题21→22。对HEAD提取原共同基线逐字比对，删除本次新增语句后与原21条完全相等。没有更改131→132／D85→D87历史目标、schema、SQL、数据库时钟或业务断言。沿用原afterAll专用w98回收与环境恢复；共享分支恢复失败会直接报错，具名120秒清理预算不是业务事务扩容。
+
+本机专用诊断入口只临时放在获准source-proof E2E里，加载现有loadTestEnv并严格确认worker98／app_test_w98，再运行未启用专用开关的E2原测试，真实经过共享worker恢复分支。随后加载原样成员生命周期并发测试，最后只读核验迁移／审计列及完整22条diff。4条通过：E2冷回放与历史升级2条、并发1条、恢复／精确diff观察1条；source-proof原10条未选取，不能记为完整来源套件通过。结束回收w98。并发本地通过不等于已取得CI那次rejected的错误分类，CI残余状态仍保留。
+
+映射原满额用例再次以P2028失败：总5,392ms，比较阶段前763ms，比较事务timeout4,136ms／maxWait100ms；原5,000ms预算、真实LOGIN、锁序和全部断言不变。随后才执行独立回滚计划探针，没有重试应用命令，也未将探针塞进原倒计时。数据库取证如下，均为2,000来源／身份，时间不可相加冒充一次端到端请求：
+
+| 独立SQL探针    | Execution Time | 主要行级守卫               | 守卫时间／调用数   | 缓冲读数                                      |
+| -------------- | -------------: | -------------------------- | ------------------ | --------------------------------------------- |
+| 同形来源INSERT |    2,164.397ms | cslsa_insert_guard         | 1,655.343ms／2,000 | shared hits 97,235；reads 0                   |
+| 应用证明INSERT |    2,337.403ms | csmap_pending_insert_guard | 2,243.092ms／2,000 | shared hits 126,096；reads 0                  |
+| 比较收据INSERT |    1,631.561ms | cscr_insert_guard          | 1,480.741ms／2,000 | 既有探针仅输出耗时与trigger聚合，未导出buffer |
+
+来源探针新建带独立前缀的纯测试Member／Sheet／Record／审计／来源集合，使用原同形SQL及全部守卫，显式强制延迟约束检查后ROLLBACK；不禁用trigger。它不是Prisma原多参数INSERT，不能把2,164ms替代前轮真实createMany的4,569ms。应用与比较探针在原runtime具名身份下各自BEGIN／ROLLBACK，保留全部ACL／外键／守卫；只打印固定标签、计数及trigger耗时，不保留原计划或业务内容。探针之后断言来源／测试sheet与应用／比较集合零残留，最终数据库／角色由原afterAll回收。
+
+**证据改变的下一步**：三段均由数据库逐行守卫占主要耗时；其中应用证明守卫约占96%，比较收据守卫约91%。因此不能仅重改客户端批次大小、连接预算或增加测试等待。仍不能将全部守卫耗时归因到某一子查询：下一份SQL等价优化方案须以这些具名函数为范围，分别证明减少重复审计数组扫描、共同锚点读取／复算与逐行集合计数的正确性，保留同一事务、锁后资格、数据库复算及完整证据；不得缓存权限、只信应用层hash、关闭触发器或延长预算。第134／135条已签SQL本轮不动，后续SQL范围及重签另审。
+
+两个临时E2E文件已还原为HEAD，测试类型检查通过；原数据库时钟回归另行原样运行1条通过／247条未选取，确认dbgenerated元数据、INSERT无客户端createdAt及落库事务时间合同未被基线登记弱化。最终quick退出0：缓存lint、三组类型、433套／9,430通过／5既有todo、harness均通过；另有三份持久改动测试的定向冷lint通过。E2专用w98完整2/2、C1 D2b完整63/63通过；D87双库完整回放留给CI，没有连接w86／w87。迁移计数、CODEMAP、counts、台账检查、readtax及格式／diff检查通过（CODEMAP两条既有warning不当作失败）；这些通过不覆盖本轮明确失败的五秒业务链。最终只读检查以postgres角色存在作正对照，确认w98不存在、三个fixture角色为0。本轮不提交推送、不Ready、不合并；真实映射继续hold，不启用shadow／Gate，不操作生产。
+
+### 29.8 两处守卫内部等价快路径候选（已批准实施；结果见29.9）
+
+**交付终点不变**：2,000 Record真实旧submit/edit链保持七秒预算，真实独立LOGIN冷连接比较链保持五秒总预算；全部证据、数据库复算、锁后资格、失败回滚和既有业务断言不减。本节不是把目标缩成“某个SQL快了一点”，两个满额入口任一个仍失败都不能报告性能收口。29.7只测得守卫总耗时，尚未测出下列单一内部函数的耗时占比；以下为有代码依据、需实测证实收益的候选，不是已证明足够的修复。
+
+**只读核对（2026-10-01）**：#1370仍为Draft，head为`b5c2f316d3deb95f8846f9144fcea1668a783e40`；run `36744889984`在同SHA以failure结束，并非正在跑。PR当前base为`1b4a413afcb7af70aee2a3b3762c9ef0bb0ab0c6`；该树中有第133条文件作正对照，没有134／135，而HEAD中有后两条。因此本候选仅修本PR尚未合入的134／135，不修改已合入历史SQL，不新增第136条；实施前须复核此条件仍成立。preflight非零来自当前获准未提交改动及目标open PR，未落后本地origin/main；不是新建另一任务，也不清理现有改动来过门禁。
+
+#### 29.8.1 调用链与候选边界
+
+1. **P-Source：只加速审计记录定位，不改变选中对象**。第134条`cslsa_insert_guard_fn`在audit/window/sheet/record锁及活动类型核验后，为每一条来源执行`jsonb_array_elements`并按`->>'id'`取首个匹配对象。候选只在recordId为ASCII标识符子集（`COLLATE "C"`下`^[A-Za-z_][A-Za-z0-9_-]*$`，且不为`true`／`false`／`null`）时尝试`jsonb_path_query_first`。路径用strict模式依次筛选对象、存在id、id是string、id等于具名vars参数；不拼接JSONPath，不开silent，不让lax自动展开嵌套数组。此子集不可能与JSON数字、布尔、null、对象或数组的文本表示相同，因此不会越过一个原本由文本转换匹配的非string id。子集外或查询无结果，完整回退原SELECT；命中后仍对**这个首个对象**执行原member／role／数值检查，不能因它不合格就再找后面的对象。显式保存定位结果布尔值，不能让赋值语句错误沿用PL/pgSQL的旧FOUND值。保留重复id的延迟闭合守卫、数值正则与NUMERIC转换、规则唯一性、源hash及所有取锁顺序；不以“包含某个合格对象”代替首对象检查。
+2. **P-Text：只为肯定合法的ASCII文本提前返回true**。第135条`csm_text_limit_fn`被manifest／登记收据及政策验证调用；`csm_application_result_fn → csm_source_approval_result_fn → csm_mapping_inputs_result_fn → csm_policy_fingerprint_fn / csm_policy_evaluate_fn`重复经过该纯函数。保留原null／JSON类型／空串检查，在原逐字循环前仅对正整数上限、字节长度不超上限、`COLLATE "C"`下`^[!-~]([ -~]*[!-~])?$`的字符串提前返回true；这些字符的UTF-16单位数等于字节数，首尾无空格、无C0/C1控制字符。任何不命中仍执行原完整循环，保留Unicode边缘空白、补充平面双单位、64／128／256上限和异常输入语义。不移除政策全量验证，不跳过未命中的role/category，不缓存政策hash或权限，不更改canonical/hash格式。
+3. **本包不改比较守卫**：第135条`cscr_insert_guard_fn`仍逐行锁attempt、复核terminal和集合上限、检查原审计成员、真实选择／不可变应用／来源及运行身份。29.7的比较守卫耗时已知，但尚不足以证明哪次查询可安全删除；不据此把计数改为应用层传值、GUC计数或跨请求缓存，也不把它换成语义未论证的statement trigger。P-Text是否为整个比较事务腾出足够预算，只能由原满额用例判定。
+
+PostgreSQL 16文档确认`jsonb_path_query_first`返回首个结果，strict与lax对结构处理不同；这只是候选API语义依据，不是仓内等价性或性能验收。[JSON函数与路径](https://www.postgresql.org/docs/16/functions-json.html)。ASCII正则明确指定C排序规则，避免范围随locale变化；Unicode走原逻辑。[正则范围与排序规则](https://www.postgresql.org/docs/16/functions-matching.html)。
+
+#### 29.8.2 风险与选择
+
+| 项                                  | 结论                                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 是否修改prisma/schema.prisma        | 否；特别保留createdAt的dbgenerated数据库时钟合同                                                  |
+| 是否新增／改动migration             | 候选仅改未合入134／135各一个现有函数内部；总数仍135，最终两份SQL分别重签3b                        |
+| 是否修改prisma/seed.ts              | 否                                                                                                |
+| 是否影响现有数据                    | 不回填、不改旧行；仅改变新证据写入的等价检查执行方式，需正反例证实                                |
+| 是否不可逆                          | 无新增表／列／索引／约束，无业务DML；未交付候选可逐块撤回，隔离库由已审迁移重建验证               |
+| 是否影响OpenAPI／contract snapshot  | 无接口／DTO／src改动；契约输出应零变化，不更新快照掩盖差异                                        |
+| 是否影响鉴权／Permission seed／审计 | 身份复核、ACL、权限码、审计数量及内容均不变；纯文本助手被登记调用，故登记负例必须回归，不只测性能 |
+| 是否需要新增BizCode                 | 否；原错误分支和数据库错误码不改                                                                  |
+| 是否需要用户拍板                    | 是；29.6不授权SQL实现，且两条旧3b不能覆盖新字节                                                   |
+
+方案A（推荐）是两个小范围等价候选连同差分与满额测试一包验证。最坏情况是字符串边界或首匹配规则出现差异，或者收益不足；前者立即撤回对应候选，不改测试迎合实现，后者保留失败证据、停止本候选继续扩散，不宣称修好。方案B是不动SQL，仅提交29.6兼容修复并保留性能失败；它不能达成本阶段验收。两方案都不允许提高五秒／七秒预算或自动反复重跑CI。
+
+**文档冲突单列待批准**：`prisma/CLAUDE.md`顶部仍写第135条未签、事务后比较未实施，与当前实现及`CUTOVER_SIGNOFF.md`现有134／135签字冲突。本轮只报告，不自行更正；方案A把其顶部当前摘要纳入写集，写明“既有版本已签、本性能SQL候选改后待重签、Draft／性能未收口”，历史记录保留，不虚写部署或全绿。
+
+#### 29.8.3 完整候选写集（10路径；不包含自动提交授权）
+
+1. `prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql`：仅P-Source现有来源守卫的定位分支和局部变量。
+2. `prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql`：仅P-Text现有纯函数快路径；其余SQL字节保持。
+3. `test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts`：新增首匹配／回退等价正反例及固定脱敏测量，原七秒链和所有断言保留。
+4. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`：新增文本等价对拍，保留原全部登记／权限／hash／时钟／满额五秒断言；独立回滚探针不计入业务倒计时、不作为业务重试。
+5. `docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`：只登记本包实测、未通过项与最终摘要。
+6. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`：本包真实变更与验收。
+7. `docs/ai-harness/FROZEN_DRAFTS.md`：仅顶部当前状态。
+8. `docs/ai-harness/NEXT_TASKS.md`：仅顶部当前状态。
+9. `docs/ai-harness/CUTOVER_SIGNOFF.md`：仅在维护者确认两份最终摘要后登记3b，保留历史与其余签字，不自签。
+10. `prisma/CLAUDE.md`：仅上述顶部当前摘要冲突更正。
+
+29.6已完成的三份兼容测试改动原样保留，不借本包继续修改它们；两包累计候选持久写集为13条。逐路径`harness:needs`核对：仅两个SQL文件需要红区grant；检查器的通配建议不扩大本包范围。无schema／src改动、无新增文件或migration目录，因此不刷新schema摘要／状态机、CODEMAP计数、ROUTE_AUTHZ、权限目录、OpenAPI或client；若实际生成检查出现差异，先查来源而非顺手扩写。权限／seed／审计合同不变，不借本轮新签4b。
+
+#### 29.8.4 验证顺序与退出条件
+
+1. 先在w98复现候选边界，再改两个函数。P-Source以原SELECT作为独立参考，对正常／乱序／重复id、首个错误后个正确与反向排列、缺字段、null、嵌套数组、数字／布尔id与其同文本string、特殊字符id、未知id分别比较定位结果；真实守卫必须仍拒绝首项事实不符、数值非法、跨成员／活动、重复闭合和伪造hash。不能只测新辅助表达式而不触发实际生产守卫；不能把原首次拒绝改为延迟到其他约束拒绝。
+2. P-Text保留一份固定旧循环作为参考，在PostgreSQL实际执行新函数：ASCII 1–127逐字符及首／中／尾位置、C1 128–159、全部既有trim_codes、中文／组合字符／补充平面、空串／JSON null／非string／SQL NULL、上限NULL／负／0／1／64／128／256及各自边界。必须比较结果，不靠源码字符串断言；有效Unicode不得被ASCII优化拒绝。登记清单／政策摘要与TS分档、错字段／未选中分支非法／精确ACL及数据库createdAt回归完整保留。
+3. 先跑最可能推翻候选的真实2,000 Record七秒链和独立LOGIN冷连接五秒链，分别记录SQL执行与端到端耗时；不得相加独立EXPLAIN时间替代业务验收。探针只用29.6获准固定脱敏聚合、具名夹具与回滚，不启用服务器全局采样、不新增扩展、角色或授权范围。
+4. 候选边界与预算通过后跑完整source-proof与mapping-proof两套、冷回放及133→134／134→135原历史升级，全部限定`app_test_w98`。沿既有独立Jest入口、loadTestEnv和派生目标校验，不运行会创建其他模板／worker库的标准Contract入口；具名角色仍仅原w98 fixture三角色，原ACL与撤权／移除流程不变。失败亦执行原清理并以非零对照核实数据库及角色回收。
+5. 最后运行quick及生成检查／精确13路径diff；本地定向与全量PR CI分开。本包只验证后呈报，不提交推送／Ready／合并，CI冷跑须另获推送授权。若两处候选收益不足，不自动删除重复校验、优化权限查库或改第三个守卫，给出实测差距再报。
+
+维护者同意后在**本工作树**执行（AI不得代发grant）：
+
+```bash
+cd /Users/dengwang/Documents/coding/srvf-nest-api
+pnpm harness:grant 'prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql' --reason '确认E3-2 D2第29.8节方案A：仅P-Source等价定位快路径'
+pnpm harness:grant 'prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql' --reason '确认E3-2 D2第29.8节方案A：仅P-Text等价校验快路径'
+```
+
+送审时的确认语句：**确认第29.8节10路径方案A；允许两处等价快路径及w98隔离验证／夹具重建，原具名角色测试结束撤回；SQL定稿后分别重签134／135条3b。保留29.6改动，验证后呈报，不自动提交推送、不Ready、不合并、不操作生产、不启用shadow或Gate、不登记真实映射。已执行两条精确grant。** 维护者已确认本节10路径方案A并执行两条精确grant；以下29.9记录实际实施，不把送审前的未实施状态当作现状。
+
+### 29.9 第29.8节实施与完整w98验收（2026-10-01；已获准送交PR CI）
+
+**实际SQL范围**：第134条只增加`cslsa_insert_guard_fn`内的具名变量、ASCII标识符条件和strict JSONPath首匹配；未命中仍执行原SELECT，原业务字段检查和后续守卫字节不变。第135条只在`csm_text_limit_fn`的原类型／空串检查后增加ASCII肯定快路径；原Unicode循环逐字保留。对HEAD逐份提取函数边界并替换为固定标记比较，两个SQL文件都满足“该具名函数之外全文相同”。没有改比较守卫、身份复核、锁序、schema、seed、ACL、默认时间、权限／审计或预算。
+
+**先旧后新**：改SQL前，新增22项首匹配／闭合测试在旧实现通过；固定旧文本循环与实际数据库函数的10,598组对拍通过。新增来源测试不只跑复制的表达式，而是写真实AttendanceRecord／审计／来源，调用实际BEFORE INSERT守卫，并在允许写入的用例里显式执行延迟约束；测试均ROLLBACK。改SQL后22项仍通过，再补跨活动及伪造hash两项真实守卫反例，最终新增24项。覆盖重复id首项错误不能被后项覆盖、数值／布尔id文本转换、嵌套数组、缺字段、未知id、Unicode／引号id、数值格式、成员／角色、源hash和集合闭合。既有10项来源测试和248项映射测试没有删改任何断言。
+
+文本对拍用固定旧循环作参考，实际执行新函数；10,598组覆盖ASCII／C1／全部旧trim_codes、中文、组合字符、补充平面及64／128／256边界、SQL／JSON null和非string。失配0，且接受／拒绝两侧均非零、两者之和严格等于总数，避免空集或NULL假绿；真实登记、政策复算、ACL、数据库时钟、历史升级仍由完整映射套件覆盖。
+
+| 验收                              | 实测结果                               | 边界                                                              |
+| --------------------------------- | -------------------------------------- | ----------------------------------------------------------------- |
+| 来源定向：首匹配＋真实submit/edit | 23通过／9未选取；2,000 Record 4,288ms  | 当时新增22项；原七秒预算                                          |
+| 映射定向：文本＋完整满额链        | 2通过／247未选取；2,000 Record 4,344ms | 原五秒总预算，实际LOGIN冷连接                                     |
+| 来源完整套件                      | 34/34通过；满额4,721ms                 | 包含新增24项、冷回放、原133→134升级及原行为                       |
+| 映射完整套件                      | 249/249通过；满额4,463ms               | 包含原134→135升级、真实身份／数据库时钟、故障回滚／重放及新增对拍 |
+
+本次没有运行独立EXPLAIN探针，也没有用探针耗时代替端到端预算。两次满额验证分别属于定向和完整套件，不是失败后自动重试；全部预算和断言保持。它们仅证明本机已通过，不宣称CI或资源竞争下必过；旧SHA `b5c2f316`的失败CI没有重跑。完整套件结束后以postgres角色存在作正对照，确认`app_test_w98`不存在，原三个具名fixture角色数量为0。
+
+最终quick退出0：缓存lint、三组类型、433套／9,430条单测通过（5既有todo），harness通过（5既有已知缺口仍明示）。两个新增测试文件另跑最终冷lint；迁移计数、counts、CODEMAP（2既有warning）、台账、readtax及格式／diff检查通过。除29.6三份兼容测试原样保留外，本包按批准10路径执行；维护者确认两份3b并更新签字登记后实际13个持久修改路径，没有清理其他工作树或用户数据。标准Contract／全量E2E留给后续PR CI，当前本机通过不替代CI。
+
+**定稿SQL已获维护者重签并登记（2026-10-01）**：
+
+- 第134条：`e502dd4801de75791b699996054c9f5228c9fa3efb65d7de2f12cab500d64a3f`。
+- 第135条：`2f6ae11bbbea2ec74a3b59c9940e285b7af6db07e6023afb5fd29991ed249716`。
+
+维护者已明确回复「确认上述第134、135条3b重签」，重新计算以上完整摘要一致后已更新CUTOVER_SIGNOFF；旧3b仍作为历史证据保留。维护者随后明确允许「提交、推送本轮13路径修复更新 #1370，保持 Draft，不 Ready、不合并」。本次按此授权送交PR CI；提交、推送与检查状态以GitHub对应SHA为准，不把本地通过写成CI全绿。真实映射登记、shadow／Gate及生产操作仍未授权。`prisma/CLAUDE.md`顶部已按本轮批准更正当前状态，其下历史原文保留。
+
+### 29.10 四项性能失败隔离诊断（2026-10-01；仅诊断及文档，未实施修复）
+
+#### 29.10.1 当前基线与授权
+
+PR [#1370](https://github.com/BA7IEE/srvf-nest-api/pull/1370) 的 head 为 `3f7a03b3b130867108d7e9e3b7c63a85ebebbdba`，OPEN／Draft。[CI 36758900979](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36758900979) 已 completed/failure；Docker 与可信红区通过不替代 E2E。本轮未重跑 CI。五分片合计6,795通过／4失败；此前兼容测试红点已通过，四项性能失败仍未关闭。
+
+| CI失败项                    | 原始证据                                                           | 不得过度推断                                           |
+| --------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
+| 来源纯SQL满额写入           | 原7,000ms断言收到9,996ms                                           | 包含来源INSERT及延迟集合检查，不是某一个函数的独占耗时 |
+| 来源真实submit/edit满额旧写 | P2028，7,000ms预算，报告13,190ms，在来源createMany处报错           | 报错位置不能证明之前零耗时                             |
+| 映射冷连接完整比较          | 捕获时9,897ms，P2028；比较前1,776ms，事务分配3,124ms               | 捕获时墙钟包含退出／回滚，不能当成单条SQL时间          |
+| D7 Human V3满额提交         | 500／P2028；7,000ms预算，报告7,272ms；外层correctionCommit 9,213ms | 不是E3比较路径；嵌套阶段不能相加，也未证明同一根因     |
+
+维护者已确认“四项性能失败隔离诊断方案A”：仅临时改source-proof、mapping-proof、D7三个具名E2E，保持全部业务断言及5秒／7秒预算；只用`app_test_w98`及映射原三个具名夹具角色，结束还原并撤权。本轮只持久编辑本评审稿、NEXT_TASKS、FROZEN_DRAFTS；不提交、推送、Ready、合并、改生产代码或SQL、启用shadow／Gate。
+
+#### 29.10.2 实际测量与仪器边界
+
+每次使用既有独立Jest入口、原loadTestEnv和目标校验，串行冷建w98并deploy现有135条migration，未调用会创建其他worker库的全量入口。只选失败用例，未选取不算通过。来源真实链观察连接在业务计时前建立，保留事务选项；计时在业务Promise完成处截止，日志及诊断连接关闭不混入断言耗时。映射仍使用实际ContributionShadowService及实际具名LOGIN冷连接，不用测试客户端替代运行时建连。
+
+| 有效诊断运行                       | 结果及固定脱敏阶段                                                                                                                        |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 来源第一轮：原SQL＋真实链          | 2通过／32未选取。纯SQL2,769ms；真实2,000条6,172ms，其中来源2次INSERT合计5,199ms，考勤INSERT71ms、审计INSERT10ms、两次COMMIT合计27ms       |
+| 来源第二轮：增加独立回滚计划       | 2通过／32未选取。原SQL2,534ms；真实链4,590ms，来源INSERT3,800ms。独立INSERT计划2,565.694ms，cslsa_insert_guard 2,000次共2,457.869ms       |
+| 来源第三轮：增加简化表达式候选探针 | 1通过／33未选取。真实链4,353ms，来源INSERT3,646ms；仅为了比较新的只读候选，不是失败后重试至绿                                             |
+| 映射有效第一轮                     | 1通过／248未选取。完整冷连接链4,342ms；比较前739ms，应用INSERT2,087ms、比较INSERT1,488ms                                                  |
+| 映射有效第二轮：增加只读函数计划   | 1通过／248未选取。完整链4,416ms；比较前651ms，应用INSERT2,216ms、比较INSERT1,518ms                                                        |
+| D7原2,000身份链                    | 1通过／6未选取，套件128.027秒；correctionCommit 4,818ms，其中时间分配713ms、收据432ms、ledgerCommit 1,692ms。原断言全部通过，未复现CI超时 |
+
+**无效仪器记录不能删除或冒充产品失败**：映射最初用jest替换事务代理的$executeRaw导致递归，RangeError后业务计时和调用数无效。随后改为不改原方法的观察Proxy，前述两轮有效测量各只记录应用与比较各1次INSERT。错误轮独立回滚比较计划得到1,386.064ms／cscr_insert_guard 1,250.891ms，但它不是业务链验收，不用于宣称CI已修复。
+
+D7新增细分是按SQL中固定表名归类，不等于独占函数成本：含LedgerPostingBatch的读语句4次1,036ms，状态UPDATE1次446ms，事务控制3次350ms，权限／身份类12次8ms；其余字段为固定计数与时间。分类有先后次序，因此timeLedger等桶为0不能推断没有账本操作。未输出SQL、参数、成员ID、连接串或凭据。没有服务器全局采样、额外扩展或未批准角色。
+
+#### 29.10.3 回滚式计划：定位热点，而非证明修复
+
+所有计划在业务计时和原成功断言之后、单独BEGIN／ROLLBACK中运行；不会把几个独立热计划相加冒充冷业务总时长。只输出固定标签、时间、共享块计数；下列READ探针Shared Read均为0，说明其为本地缓存数据，不能推断CI磁盘或资源竞争状态。
+
+| 探针                                            | Execution Time                   | 含义与限制                                                                 |
+| ----------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
+| 真实2,000来源按现有strict多过滤JSONPath逐条定位 | 1,860.341ms；后轮1,744.959ms     | 同审计数组被反复定位；只测读表达式，不含全部写守卫                         |
+| 同一数组一次展开，按id／ordinal保留首项后关联   | 4.309ms；后轮4.394ms             | 只证明批量解析潜力；没有验证所有异常输入、锁或触发器时点，不可直接替换生产 |
+| strict单条件JSONPath＋silent候选                | 780.018ms                        | 与上一行不同：仍逐条查询；正常CUID夹具下更快，尚未证明异常输入及回退等价   |
+| 2,000条实际csm_application_result_fn            | 1,781.981ms／103,752 shared hits | 包含来源批准、锁及选择核验                                                 |
+| 2,000条实际csm_source_approval_result_fn        | 1,296.474ms／50,776 hits         | 被application_result包含，两者不得相加                                     |
+| 2,000条实际csm_policy_fingerprint_fn            | 630.184ms／942 hits              | 被来源批准复算包含；保留未选中规则的完整校验                               |
+| 比较同对象audit containment                     | 288.616ms／8,134 hits            | 不是比较守卫全部成本，不能据此移除数量或hash检查                           |
+
+**结论**：源码与计划共同证实E3数据库逐条守卫为主要成本，来源中多过滤JSONPath是可定位热点，映射应用中政策完整校验／canonical复算有可观重复成本。第一轮真实来源已到6.172秒，映射稳定只剩约0.6秒本地余量。尚未在本地原样复现四项CI超时，未证明CI资源争用、冷缓存或某单函数是唯一根因；D7继续登记为CI未关闭、隔离定向通过，不顺手修改其生产路径。禁止再将单次本地通过直接称“性能收口”。
+
+#### 29.10.4 推荐修复候选与停止条件（待批准，不是实施授权）
+
+方案A：在现有逐行守卫内优化纯表达式与重复展开，**不移动守卫到AFTER／提交阶段，不改锁、权限或跳过验证**。先固定旧实现差分参考，再实现以下三个具名函数的候选，完整验证后呈报；不能承诺此包必然关闭全部CI红点。
+
+1. **P-Source**：第134条只改`cslsa_insert_guard_fn`的局部JSON提取与定位表达式。同一行局部取出after／sheet／records，减少反复取大context；在现有ASCII安全id条件内验证`strict $[*] ? (@.id == $wanted)`＋silent肯定快路径，NULL仍进入原SELECT。保留第一匹配项、原数值转换、原错误分支、全部锁、规则唯一性、hash及延迟集合守卫。silent不是宽松放行；缺失、错类型、嵌套数组、数字／布尔同文本、重复id首项错误／后项正确、未知及Unicode id必须逐项与旧参考及真实守卫对拍。
+2. **P-Policy**：第135条只改`csm_policy_fingerprint_fn`局部canonical构建。已完整调用原`csm_policy_evaluate_fn`之后，针对已验证的固定E1字段结构，候选直接拼接与旧canonical完全同字节的JSON；数组顺序、C排序、JSON字符串转义、null、整数边界、时刻格式、所有未选中规则校验必须保留。不得使用去空格正则、trust已有hash、跨行／跨请求缓存或跳过完整schema校验。若不能证明同字节或收益不足，不扩散修改evaluator、通用canonical或调用者。
+3. **P-Comparison**：第135条只改`cscr_insert_guard_fn`的局部records提取，供原array类型／同对象包含／原扫描回退复用；不得改attempt锁、数量上限、terminal拒写、选择和来源hash复算、ACL、错误码或不匹配拒绝逻辑。
+4. **D7**：不列生产修复；仅按原样纳入w98完整回归，并保留CI失败证据。本地通过不授权重跑CI或删除D7失败项。若下一轮CI仍失败，必须按实际分阶段证据另定精确修复，不伪称E3候选已解决D7。
+
+本轮**不推荐直接改为集合／statement触发器**：虽然4ms的读计划很快，BEFORE→AFTER、ON CONFLICT未插入行、混合有效／无效行、直接SQL及错误先后仍未闭合；不能把语义改动包装成等价优化。该方向不在下面写集许可内。
+
+| 风险项                     | 方案A边界                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------- |
+| schema／表／字段／index    | 不改，不加新表、字段或索引                                                            |
+| migration                  | 仅未合入134／135条的上述三个函数；改后分别重签3b，不沿用当前签字                      |
+| seed／权限／审计／BizCode  | 不改；不新增4b事项                                                                    |
+| API／DTO／正式业务结果     | 不改，5秒比较／7秒旧写保持                                                            |
+| 历史数据、生产、删除、回填 | 不触碰；隔离夹具结束回收；SQL有语义差异即停止该候选                                   |
+| 最坏情况与回退             | candidate性能无收益或边界不等价；保留原实现与失败证据，不放宽断言，不追加未经批准路径 |
+
+**完整候选写集（9路径，待批准）**：
+
+1. `prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql`：仅上述P-Source函数体。
+2. `prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql`：仅上述P-Policy／P-Comparison函数体。
+3. `test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts`：候选差分、真实负例及原满额预算，保留所有原断言。
+4. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`：固定E1 canonical／hash逐字对拍、原全规则负例、实际LOGIN及满额链。
+5. `docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`：实测、差分、剩余风险。
+6. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`：实际修复与边界。
+7. `docs/ai-harness/FROZEN_DRAFTS.md`：仅顶部当前状态。
+8. `docs/ai-harness/NEXT_TASKS.md`：仅顶部当前状态。
+9. `docs/ai-harness/CUTOVER_SIGNOFF.md`：只在维护者确认最终134／135摘要后登记，不自签。
+
+不改D7测试、生产service、schema、配置、守护、权限、生成物或其他migration；若实际检查证明需要清单外路径，先报告。先跑旧参考和最可能推翻候选的差分／负例，再跑w98原满额链及来源／映射完整套件、D7完整原套件、quick与生成检查。只在w98，三个原角色结束撤权；禁止并行占同库。保留失败结果，不盲重试至绿。验证后呈报，提交推送及新CI另行批准；CI／main验收与部署严格分开。
+
+维护者如选择方案A，确认语句为：**确认第29.10节9路径修复候选方案A；允许三个具名函数等价优化及w98隔离验证／夹具重建，三个原具名角色结束撤回；SQL定稿后分别重签134／135条3b。验证后呈报，不提交推送、不Ready、不合并、不启用shadow／Gate、不操作生产或真实映射。**
+
+相应红区命令须维护者在本工作树自行执行，AI不代发：
+
+```bash
+cd /Users/dengwang/Documents/coding/srvf-nest-api
+pnpm harness:grant 'prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql' --reason '确认E3-2 D2第29.10节P-Source：仅具名函数等价优化'
+pnpm harness:grant 'prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql' --reason '确认E3-2 D2第29.10节P-Policy/P-Comparison：仅两具名函数等价优化'
+```
+
+方案B是不修改SQL，保持Draft和CI失败，保留本轮诊断材料；它不满足D2收口。仅回复诊断完成不自动批准方案A。
+
+#### 29.10.5 本轮还原与未做
+
+三个临时E2E均已用精确反向补丁还原，`git diff --exit-code -- <三个实际路径>`退出0；不是删测试，也未回滚任何既有修复。以postgres角色计数1作正对照，数据库catalog确认w98数据库0、连接0、三个具名角色0；角色LOGIN／CONNECT在既有finally撤回，之后数据库及角色由原生命周期清理。只删除本轮w98测试夹具，无实际业务数据。
+
+本轮未改任何生产代码、SQL、schema、权限、断言或超时；未运行quick／全量E2E／Contract，未提交推送、重跑CI、Ready、合并、启用开关或访问真实业务库。上述三个修复候选尚未实施，当前签字摘要仍对应3f7a03b3。最终仅三份文档留在本地工作树。
+
+### 29.11 第29.10节实施验收（2026-10-01；本地，未提交）
+
+> **后续提交授权（2026-10-01）**：维护者明确允许“提交推送本轮9路径修复更新#1370，保持Draft，不Ready、不合并”。下文保留本地验收时点，随后仅补齐本节与两份台账当前状态后提交同一九路径候选；未改变已签SQL或验证输入。实际提交SHA、推送及新CI状态以GitHub为准，不将此前本地通过或红区批准沿用为新候选CI通过。
+
+维护者已明确确认“第29.10节9路径方案A；已执行；验证后呈报，不提交推送”，本工作树两条对应精确grant已核验。本节是当前实施状态，29.10为此前诊断时点。现有三份诊断文档原样保留并继续更新，不重置／清理其他改动。preflight未落后检查通过，非零项为本轮文档及同一Draft PR；按本次明确继续授权对齐，不修改门禁。
+
+**实际变更**：仅`cslsa_insert_guard_fn`、`csm_policy_fingerprint_fn`、`cscr_insert_guard_fn`三个函数体。分别屏蔽具名函数后对比HEAD，两个SQL文件其余字节一致，未改触发器时点、锁、权限、调用者或schema。来源单条件strict查询之后必须再核对候选id是同值字符串；数组型id或NULL候选回到原SELECT，不以silent吞掉事实不一致。政策保留完整evaluator及时间校验，固定key次序采用C顺序、数组保持原ordinality，数值经既有整数校验再转BIGINT文本，字符串仍用PostgreSQL原JSON转义；不缓存或信任已有hash。比较仅提取一次当前行records供原逻辑使用。
+
+**先旧后新**：新增6项真实来源守卫用例后，旧实现30项首匹配／闭合测试通过。政策新增固定旧SQL参考，抽取实际函数的hash前像比较逐字节canonical，再核验实际SQL SHA256与TS公共canonical工具；41组合法、16组非法输入在旧实现通过，包含0/1/2/64角色、0/1/4类别、1/2/16档、倒序数组、空集合、最大安全整数、Unicode／引号／反斜线、null截止、日期精度及未选中规则非法。测试装配初次缺少pg_get_functiondef末尾分号已修正；不是SQL业务失败。E1写者会规范数组顺序，SQL指纹则对存储顺序取值，测试保留两者区别，不用写者归一化掩盖旧SQL顺序合同。
+
+新实现来源定向32项通过，2,000条真实提交2,557ms；完整来源40/40通过（含冷回放、原133→134非空升级），满额2,787ms。完整映射250/250通过（含原134→135升级、实际LOGIN与撤权），实际生产provider冷连接满额4,279ms，仍在原五秒预算内；相对此前4.34–4.42秒，本地比较链收益有限，不宣称CI性能失败已关闭。固定同输入2,000次政策指纹在完整套件内参考488.857ms、实际245.489ms，哈希完全一致；该热函数探针不替代实际五秒冷连接链。
+
+未修改的D7完整原套件7/7通过，耗时323.563秒，保留2,000身份链、并发重放与全部原七秒业务预算。三套顺序执行，没有并行占用w98。结束后以postgres角色计数1作正对照，catalog确认w98数据库0、连接0、三个具名fixture角色0；只回收本轮隔离合成夹具，未触碰业务数据。
+
+维护者已明确确认第134／135条3b重签，重新计算完整SQL摘要一致并登记CUTOVER_SIGNOFF：134为`f366329dc91a9fd912f7ec36e50227017d107cd3911888d064b4caba86877ba8`，135为`64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`。最终quick退出0（433套／9,430条通过、5条既有todo；缓存lint、三组类型、harness通过，改动两份E2E另有冷lint通过）；单测报告一条worker未正常退出、被强制回收的警告，未据此宣称零警告或扩大范围修复。签字不替代验收，不提交推送。远端#1370仍为3f7a03b3的Draft，原CI失败未关闭。
+
+**其他检查与本次未做**：两份E2E及本轮文档格式、diff空白、CODEMAP／readtax／migration计数135／current-state生成计数、NEXT_TASKS状态检查通过；cutover工具71组正对照通过，仅自证未采数。CODEMAP保留两个既有告警，台账扫描有既有覆盖限制，不将这些检查等同全部业务验收。范围最终仍为九路径，src、schema、seed及D7测试无diff；两份SQL屏蔽三个具名函数后与HEAD字节一致。未跑全量Contract／E2E或新CI、未跨模型复审、未提交推送、Ready、合并、启用shadow／Gate、登记真实映射或操作生产。全量PR CI冷跑及剩余验收仍需后续交付，不称E3-2 D2或Release 5已完成。
+
+### 29.12 映射满额比较隔离诊断（2026-10-01；诊断完成，修复候选未实施）
+
+#### 29.12.1 授权与实际 CI 状态
+
+维护者允许仅在 `app_test_w98` 对满额比较做分段及回滚式 SQL 计划诊断，仅临时修改既有 mapping-proof E2E、诊断后还原，并更新本评审稿与两份台账。保留全部断言与五秒预算；不改生产代码或 migration，不提交推送。本节覆盖此前本地验收时点，不覆盖历史证据。
+
+第29.11节九路径已按后续授权提交推送为 `65990054dfcab610c53420bea9b9071b82966adc`，[#1370](https://github.com/BA7IEE/srvf-nest-api/pull/1370)仍为 OPEN Draft。[CI 36767429117](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36767429117)失败，仅[Contract + E2E (1)](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36767429117/job/110065045947)中映射满额比较用例失败：Contract 1,087通过，E2E 83套通过／1套失败、1,594条通过／1条失败。其余四分片分别1,491／1,225／1,215／1,280条通过，均83套；来源证明、D7配对索引及D7更正已在此次CI通过。Docker Smoke 36767429025与红区36767425968通过，无待批准项；未重跑CI。
+
+失败日志为 `comparison elapsedMs=9027 class=P2028`，准备至比较前1,823ms，比较事务分配3,076ms、poolWait 100ms。9,027ms是异常返回及回滚在内的观测墙钟，不是纯SQL耗时，也不是事务获准9秒。不能将旧四项红点继续报成当前四项失败。
+
+#### 29.12.2 仪器与两轮真实链
+
+仅临时调整 mapping-proof E2E：记录准备、开始、比较余额、写者及两次实际 `$executeRaw` 的固定脱敏耗时；透明Proxy保留PrismaPromise延迟执行，在finally恢复观察。真实链仍使用既有独立LOGIN与生产provider，所有原成功、重放、回滚及五秒断言不变，测试总时限不变。源码确认 `writeCompleteComparisonSet` 已是应用证明／比较收据各一次参数化集合INSERT，再写terminal，并非2,000次应用层请求。
+
+两轮各运行1条指定用例，1通过、249未选择，不称完整250条回归。第二轮为新增同表达式差分探针，不是盲重试至绿。第一轮启动时另有定向lint，其完成与业务计时的精确重叠未测量；第二轮待冷lint及测试类型检查结束后执行，无另开重测试并发。
+
+| 固定阶段                   |         第一轮 |         第二轮 |
+| -------------------------- | -------------: | -------------: |
+| 原业务链总墙钟             |        4,343ms |        4,722ms |
+| prepare                    |      681.578ms |      657.226ms |
+| start                      |       81.779ms |       51.407ms |
+| 比较前累计                 |          763ms |          709ms |
+| 比较事务分配／poolWait     | 4,136ms／100ms | 4,191ms／100ms |
+| writeCompleteComparisonSet |    3,564.122ms |    3,995.652ms |
+| 实际应用证明集合INSERT     |    2,112.581ms |    2,311.754ms |
+| 实际比较收据集合INSERT     |    1,442.361ms |    1,674.072ms |
+
+两次INSERT之外写者残余约9.2／9.8ms，包含terminal及应用层开销，不能冒充独立commit测量。本地只剩657／278ms余量；未原样复现CI P2028，不以两轮通过宣称修复。
+
+#### 29.12.3 回滚式计划与可确认的热点
+
+原业务链和成功／时间断言结束后，另开BEGIN／ROLLBACK，运行 `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`，只输出固定标签、耗时、节点种类、行数／循环数和共享块计数，不输出SQL参数、业务数据、连接或凭据。子函数探针以隔离库postgres身份执行，不替代真实LOGIN业务验收。两轮均成功，既有失败分支的实际INSERT回滚计划没有执行；本节INSERT成本来自上述真实调用计时，不是假称取得完整INSERT计划。
+
+| 独立读／锁计划                         |      第一轮 |      第二轮 | 解释                                      |
+| -------------------------------------- | ----------: | ----------: | ----------------------------------------- |
+| application-recheck（2,000条）         | 1,551.528ms | 1,997.980ms | 含来源批准与选择等核验                    |
+| source-approval-recheck（2,000条）     | 1,386.480ms | 1,113.634ms | 被上一项包含                              |
+| source-hash（2,000条）                 |   471.141ms |   586.935ms | 现有cslsa_source_hash_fn                  |
+| source-hash-same-expression（2,000条） |        未测 |    53.054ms | 从第134条提取完全相同表达式，只替换行别名 |
+| comparison-count-correlated            |   510.790ms |   516.069ms | 完整集合下内层2,000行×2,000次循环         |
+| audit-membership（2,000条）            |   281.600ms |   306.571ms | 同对象包含表达式，不是完整守卫            |
+
+同输入旧函数／原表达式差分返回 **2,000:true**，全部哈希一致，第二轮此热读探针约11.1倍差距。第134条 `cslsa_source_hash_fn` 使用固定前缀与16字段的N／S字节编码，**不是递归JSON canonical**；本证据定位函数调用／表达式执行形态的显著开销，并未证明所有开销的内部原因或一个替代实现已通过。
+
+来源批准调用来源hash，应用核验包含来源批准；比较守卫也重算来源hash。独立计划彼此嵌套，**不得相加**为业务成本。各计划Shared Read均为0，是本地缓存读，不是CI冷存储证据。完整集合计数探针读352,000 shared hits，实际INSERT的集合逐步增长0至1,999；该探针证明重复扫描，不代表真实计数恰耗516ms，不据此移除数量守卫。未证实网络、CPU争用或某一函数是CI唯一根因。
+
+#### 29.12.4 推荐下一包：来源指纹执行形态候选（待批准）
+
+方案A先限定第134条 `cslsa_source_hash_fn`：尝试用PL/pgSQL表达式RETURN执行**原样**16字段／前缀／类型转换／SHA256，保留签名、IMMUTABLE、NULL行为，不加STRICT、不改 `cslsa_canonical_field_fn`。保留每次复算、全部调用者／锁／数据库守卫；不缓存、不信任已有hash、不改变触发器时点。**这只是候选，尚未创建或测量该替代函数**；直接表达式更快不能保证该候选更快，不能承诺关闭CI失败。
+
+| 风险或边界 | 完整包要求                                                                                                                                                                                               |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 差分等价   | 固定旧SQL参考、TS镜像和候选逐项同字节／同hash；包括NULL复合值、全NULL字段、空字符串、冒号／前缀样文本、中文／emoji／组合字符、整数及合法numeric精度边界；数据库特有NULL输入以旧SQL参考为准，不伪造TS覆盖 |
+| 性能验收   | 先旧参考，再新候选的差分／负例和2,000条真实五秒链；后续w98来源／映射完整套件、未改D7回归和quick。探针收益不替代业务链收益                                                                                |
+| 停止条件   | hash／异常／NULL行为不等价即停止；实际完整链无收益或仍失败即保留证据并呈报，不放宽预算、不追加计数或其他函数修复、不盲重试                                                                               |
+| SQL签字    | 仅第134条最终全文摘要另行3b确认；135条不改、签字不变；不新增migration、权限或4b事项                                                                                                                      |
+| 数据与操作 | 只w98及既有三个具名测试角色；结束撤权、回收合成夹具；不登记真实映射、不查真实库、不启用开关／Gate、不操作生产                                                                                            |
+
+**候选精确写集8路径（未获本轮实施授权）**：
+
+1. `prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql`：仅cslsa_source_hash_fn执行形态，算法及其他函数不变。
+2. `test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts`：新增旧／新／TS差分与回归，不删改原断言。
+3. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`：新增对应差分／性能证据，保留完整原2,000条真实链和全部断言。
+4. `docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`：实测及剩余风险。
+5. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`：实际变更及边界。
+6. `docs/ai-harness/FROZEN_DRAFTS.md`：仅顶部当前状态。
+7. `docs/ai-harness/NEXT_TASKS.md`：仅顶部当前状态。
+8. `docs/ai-harness/CUTOVER_SIGNOFF.md`：仅维护者确认最终134摘要后登记，不自签。
+
+不改src、schema、seed、135条、权限／审计、API／DTO、配置、CI、测试预算或其他路径。完整确认语句：**确认第29.12节8路径来源指纹执行形态候选方案A；允许w98隔离验证与夹具重建、既有三个具名角色测试并在结束撤回；保留算法、全部守卫／断言与五秒预算。第134条定稿后另签3b，验证后呈报，不提交推送、不Ready、不合并、不启用开关或操作生产。**
+
+若批准上述实施包，维护者需在本工作树自行运行精确红区授权，AI不代发：
+
+```bash
+cd /Users/dengwang/Documents/coding/srvf-nest-api
+pnpm harness:grant 'prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql' --reason '确认E3-2 D2第29.12节：仅cslsa_source_hash_fn等价执行候选'
+```
+
+方案B保持现有代码和Draft失败状态、不实施候选；不是D2收口。当前诊断授权不自动转成方案A实施授权。
+
+#### 29.12.5 还原、清理与本次未做
+
+临时mapping-proof E2E已用精确反向补丁还原，`git diff --exit-code -- <该实际路径>`退出0，写本节前工作树完全干净；未回滚既有修复。隔离验证完成后，原finally撤回LOGIN／CONNECT，既有生命周期移除仅本轮w98合成夹具及角色；catalog正对照postgres角色1，w98数据库0、连接0、三个fixture角色0，测试夹具可重新生成。两条SQL完整摘要重新核对，134仍为 `f366329dc91a9fd912f7ec36e50227017d107cd3911888d064b4caba86877ba8`，135仍为 `64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`。
+
+本轮临时诊断版本冷lint与测试类型检查通过；仅上述两次定向用例，不称完整回归。持久改动仅本评审稿与两份台账顶部。未实现候选、改SQL或生产代码，未重跑quick、完整来源／映射／D7或全量Contract／E2E，未跨模型复审、更新签字、提交推送、重跑CI、Ready、合并或触碰生产。E3-2 D2及Release 5仍未完成。
+
+### 29.13 第29.12节来源指纹候选实施（2026-10-01；本地，未提交）
+
+**后续提交授权（2026-10-01）**：维护者明确“允许提交、推送本轮8路径修复更新 #1370，保持 Draft，不 Ready、不合并”。按下列已经完成的本地验收与已确认3b摘要提交同一候选；下文“未提交／不提交推送”保留为本地验收时点记录，本条覆盖此前提交边界，不扩大实施范围。新提交SHA、推送结果及新一轮CI以GitHub现场与PR交付说明为准；未验收新CI前不称性能失败已关闭，不启用shadow／Gate，不操作生产。
+
+维护者确认第29.12节八路径方案A，允许w98隔离验证、保留全部守卫／断言／五秒预算，SQL定稿另签3b，验证后呈报、不提交推送。当前工作树精确migration grant已核对，理由为“仅cslsa_source_hash_fn等价执行候选”。preflight未落后origin/main，非零项仅此前获准三份诊断文档与同一Draft PR；主干现场SHA为1b4a413a，本地／#1370为65990054，不开新功能或修改门禁。
+
+**实际SQL变化**：仅第134条 `cslsa_source_hash_fn` 从SQL SELECT包装改成PL/pgSQL BEGIN／RETURN／END包装；16字段的完整表达式与HEAD逐字相同。参数／返回类型、IMMUTABLE、默认非STRICT及invoker语义不变，`cslsa_canonical_field_fn`及其他SQL字节不变。第135条、生产service、schema、seed、权限／审计、API／DTO、锁、触发器、数量守卫、五秒／七秒预算全未改。SQL位于尚未合入main的134条，不修改已合入迁移。
+
+**先旧后新与差分**：两份E2E内固定旧SQL函数参考，逐字核对为HEAD原实现、仅改临时函数名，不从候选动态生成参考。来源新增37个SQL边界用例及7个TS对拍用例（每个8组，共56组合），覆盖NULL复合值、全NULL字段、16个字段分别NULL、空串、N／S前缀、引号／反斜线／冒号、中文／emoji／组合字符、负零、numeric精度与边界、Int边界及不参与hash的元数据。数据库特有NULL只与旧SQL对拍，不谎称TS可构造这些输入。保留原TS／PG用例；两份测试均为纯新增行，原断言／时限逐行保留。SQL表达式相同的静态核对与实际hash差分共同覆盖字节合同，不改字段算法。
+
+| 验证阶段          | 结果与边界                                                                                                                        |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 旧SQL固定参考基线 | 来源45条定向通过，39条未选；满额映射1条通过，249条未选，4,475ms；旧实际／参考热探针592.137／658.717ms                             |
+| 新候选定向        | 同45条通过；满额映射3,452ms，2,000/2,000哈希一致；固定旧参考642.420ms／新42.803ms                                                 |
+| 新候选完整来源    | 84/84通过，43.342秒；含冷回放、原133→134非空升级及旧submit/edit，2,000条旧提交1,978ms，原七秒不变                                 |
+| 新候选完整映射    | 250/250通过，65.639秒；含原134→135、负例、ACL、真实LOGIN与撤权；原五秒满额链3,082ms；旧参考579.270ms／新44.135ms，2,000/2,000一致 |
+| 未改D7完整回归    | 7/7通过，319.306秒；2,000身份、并发重放与原七秒预算保持，测试无diff                                                               |
+| 最终quick         | 退出0；433套／9,430条单测通过、5条既有todo；缓存lint、三组类型、harness通过，两份改动E2E另跑冷lint通过                            |
+
+新增热函数探针在原业务链成功和五秒断言之后，独立BEGIN／ROLLBACK中比较固定旧／新实现，计时只作证据，不以快慢写脆弱断言；不将读探针收益等同业务总收益。真实满额链冷建独立runtime连接，但本地数据库缓存条件不等于CI冷资源；较旧基线存在实际余量提升，尚不能宣称CI失败已关闭。
+
+**失败记录**：首次候选装配时JS替换字符串把SQL双美元定界符缩成单美元，且包装缺END分号，w98迁移准备报P3018／42601，业务用例未执行（Jest将45个选中用例计为失败）。已用精确补丁修正、核对完整函数包装后重跑；不把这次错误删掉或归咎业务／环境。未更改断言、增加预算或使用migrate reset／db push。后续均使用原w98创建／deploy／清理生命周期；不并行占同库或同时跑重检查。
+
+**签字与剩余边界**：第134条最终候选摘要 `ef6342f07efea392d91f989f264f1f5d72a81b8e410d3d2c740d011dbc439042` 已获维护者明确3b重签确认，完整SQL重新计算一致并登记CUTOVER_SIGNOFF。第135条仍为 `64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`，不重签、不新增4b。仅获准八路径内本地改动，无提交推送或新CI授权；旧远端CI失败仍未关闭。本轮本地验收已完成；PR CI和交付仍待办，不能称E3-2 D2／Release 5已完成。
+
+**最终范围与清理**：当前八路径有diff，与批准写集一致；第八项CUTOVER_SIGNOFF仅登记维护者本轮明确确认的第134条摘要。两份E2E仅新增，原断言／超时保持；SQL屏蔽具名函数后与HEAD逐字一致，函数内16字段表达式亦逐字一致；135条、src、schema、seed与D7测试无diff。w98数据库／连接／三个具名fixture角色均为0，postgres角色1为正对照；只回收可重建的合成测试夹具。CODEMAP、readtax、migration计数135、current-state生成计数、NEXT_TASKS结构及diff空白检查通过；保留CODEMAP两项既有告警、readtax容量提示和台账扫描的覆盖限制，不据此宣称零告警或全部业务验收。
+
+**验证入口**：使用下列无globalSetup／globalTeardown的独立配置，依各spec自身原有专用w98安全检查执行。三套串行；完整套件前另跑source hash及满额映射定向，未改已有测试预算。quick仅在E2E全部结束后启动，不并发干扰数据库耗时。
+
+```bash
+SRVF_W98_JEST_CONFIG='{"rootDir":"/Users/dengwang/Documents/coding/srvf-nest-api","testRegex":".*\\.e2e-spec\\.ts$","moduleFileExtensions":["ts","js","json"],"transform":{"^.+\\.ts$":["ts-jest",{"tsconfig":"<rootDir>/test/tsconfig.test.json"}]},"testEnvironment":"node","testTimeout":30000,"setupFiles":["<rootDir>/test/setup/setup-files.ts"]}'
+SRVF_E3_D2_W98=1 pnpm exec jest --config "$SRVF_W98_JEST_CONFIG" --runInBand --runTestsByPath test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts
+SRVF_E3_D2_MAPPING_W98=1 pnpm exec jest --config "$SRVF_W98_JEST_CONFIG" --runInBand --runTestsByPath test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts
+SRVF_D7_2_W98=1 pnpm exec jest --config "$SRVF_W98_JEST_CONFIG" --runInBand --runTestsByPath test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts
+pnpm agent:check:quick
+```
+
+**本次未做**：未提交推送、重跑CI、Ready、合并、全量Contract／E2E或跨模型复审；未改生产代码／135条、登记真实映射、启用shadow／Gate、查真实库、操作生产、删除或重算业务数据。候选兼容性以等价差分与历史升级通过为证据，运行性能以本地实测为证据；后续CI或边界出现新问题仍按停止条件报告，不放宽预算。未提交候选可在明确放弃后精确撤销本轮具名函数补丁；不自行回滚其他改动，更不对生产执行回滚SQL。
+
+### 29.14 a716a67c 两项 CI 失败的隔离诊断（2026-10-01；已还原临时测试，仅文档）
+
+#### 29.14.1 授权、现场与结论
+
+维护者确认“#1370 两项隔离诊断方案 A，按上述五路径边界执行”：仅临时修改 mapping-proof 与 D7 time-correction 两份既有 E2E，采集脱敏阶段耗时与错误分类，结束还原；持久写入仅本评审稿、FROZEN_DRAFTS 与 NEXT_TASKS 顶部。只用 app_test_w98 合成夹具；不改生产代码、schema、migration、原断言或超时，不提交推送、不 Ready、不合并、不操作生产。preflight 工作树干净、未落后 origin/main；唯一非零项为同一已获准继续诊断的 Draft PR，未修改门禁规则。五个实际文件逐项运行 harness:needs，均不属红区；不把该静态检查当作业务授权。
+
+本轮对象为 #1370 的 `a716a67c1eeaf3c544c131aefa051840c554d1d0`。红区 [36816202099](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36816202099) 已获人工批准并成功；[CI 36816204497](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36816204497) 已结束失败，实际失败两项，不是审批阻塞：
+
+- [Contract + E2E (1)](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36816204497/job/110221701642)：Contract 1,087通过；E2E 83套通过／1套失败、1,594条通过／1条失败。映射2,000条链在 comparison 阶段 P2028；异常返回墙钟7,199ms，比较前1,785ms，事务实际分配3,114ms、poolWait 100ms。7,199ms含异常返回／回滚，不是纯SQL耗时或获准预算。
+- [Contract + E2E (5)](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36816204497/job/110221701609)：82套通过／1套失败、1,279条通过／1条失败。D7的2,000身份用例在 `createCommittedFactCorrectionBase` 第990行的时长结算 `/prepare` 返回 HTTP 500／code 50000，尚未执行该前置的 submit／ledger commit，也尚未进入待测V3更正链。该 prepare 原事务预算为30秒，不是更正提交的7秒。远端日志只给通用500，未提供其底层异常类别。
+- 其余E2E (2)/(3)/(4)、Fast checks、Harness、事故回放、Golden journeys、差异守护、Docker build与Smoke通过。PR仍OPEN Draft；未重跑CI。
+
+**结论**：两项本地定向原断言均通过，未复现对应CI失败。已得到真实调用成本分布，但不能宣称根因已闭合、CI已修复或D2已交付。两项失败不能直接合并为同一个事务超时。
+
+#### 29.14.2 取证方法与安全边界
+
+临时观察器只代理原事务客户端／PrismaPromise：在原 `then` 被调用时计时，透传原方法、参数、返回值和异常；不提前执行查询，不串改原顺序、锁、事务选项、重放或失败分支，不加重试。仅输出固定模型／阶段名、计数、耗时、结果分类及允许名单错误码；不输出SQL参数、业务内容、连接、凭据或原始异常信息。
+
+映射观察实际prepare查询及两个集合INSERT／terminal；原独立LOGIN、权限断言、五秒链与之后原固定hash差分均照跑。D7只在2,000身份前置prepare期间包裹原事务，并透明观察prepare、readDraft、readSources、evaluate和authorize，finally恢复观察器。保留HTTP 200断言与完整后续V3用例；不能将一个HTTP请求的观测外推到其他事务。
+
+两套串行执行，没有同时启动另一套数据库测试或quick；本轮没有执行EXPLAIN、替换SQL函数或改变数据库配置。临时仪器初版一处方法解绑被eslint拦下，显式绑定原接收者后重新通过冷lint和测试类型检查；没有关闭规则。
+
+#### 29.14.3 映射满额链实测
+
+命令沿29.13的独立Jest配置（无globalSetup／globalTeardown）：
+
+```bash
+SRVF_E3_D2_MAPPING_W98=1 pnpm exec jest --config "$SRVF_W98_JEST_CONFIG" --runInBand --runTestsByPath test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts --testNamePattern 'keeps a committed start after rollback'
+```
+
+1条通过、249条未选择，25.337秒；不称完整250条回归。
+
+| 观测点                                 |                耗时 |
+| -------------------------------------- | ------------------: |
+| 原2,000条业务链                        |             3,366ms |
+| prepare累计（含读取与应用层求值）      |           610.483ms |
+| start（含真实冷runtime连接）           |            68.703ms |
+| 应用证明集合INSERT                     |         1,593.044ms |
+| 比较收据集合INSERT                     |         1,052.788ms |
+| terminal create                        |             3.168ms |
+| 原业务链结束后的旧hash／新hash独立探针 | 587.482ms／40.935ms |
+
+2,000/2,000 hash一致。两个INSERT合计约2,645.832ms，仍是本地主要成本；观测为完整客户端调用，包含数据库守卫和往返，不是纯触发器或纯SQL执行时间。prepare的六个查询合计仅约41.75ms，其余包含事务、数据处理与求值，不把差额直接归给某一个函数。start、prepare、查询之间有包含关系，不相加冒充独立总耗时。此轮未打开原失败分支的回滚式EXPLAIN开关，没有取得本轮触发器内部分解。
+
+#### 29.14.4 D7满额前置与完整指定用例实测
+
+```bash
+SRVF_D7_2_W98=1 pnpm exec jest --config "$SRVF_W98_JEST_CONFIG" --runInBand --runTestsByPath test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts --testNamePattern 'complete 2000-identity source proof'
+```
+
+1条通过、6条未选择，127.478秒；该指定用例的全部原业务断言通过，不称完整D7七条回归。
+
+| 观测点                          |                   耗时／计数 |
+| ------------------------------- | ---------------------------: |
+| HTTP prepare（含测试请求外围）  |                  8,696.381ms |
+| prepare service（含原30秒事务） |                  8,676.161ms |
+| authorize                       |          16次，合计148.387ms |
+| readDraft                       |             2次，合计1.869ms |
+| readSources（锁前／锁后）       |         870.637ms／770.295ms |
+| evaluate                        |                  1,625.728ms |
+| 准备收据create                  |                  2,770.755ms |
+| 桶来源集合INSERT                |                  1,362.659ms |
+| 桶集合INSERT                    |                    982.826ms |
+| allocation slices读取           |                    514.004ms |
+| 原事务客户端观测                | 222次查询，合计约7,075.591ms |
+
+readSources中的两次当前segment读取为403.090／361.363ms，两次latest allocation原SQL为249.649／196.011ms。上述query包含在service阶段内，不重复相加。222只是在该prepare原事务客户端中观察到的调用，不包含HTTP鉴权等外围，也不冒充其他既有预算检查器的读数。prepare所有观测项为成功，没有捕获P2028、数据库异常或500。
+
+仅在w98查看活动连接的一次快照未显示持续锁等待；该瞬时快照不证明整个请求无锁等待。再次对完整远端失败job日志检索P2028／P2010／57014／40P01、statement cancellation、transaction closed和连接／共享内存错误均未命中，且失败用例标题、50000为正对照。含义仅是日志没给底层异常，不能将未命中解释为这些原因不存在。
+
+#### 29.14.5 还原、验证与待确认下一步
+
+两份临时测试已通过精确反向补丁全部还原，`git diff --exit-code -- <两份实际路径>`退出0；写本节前工作树完全干净。没有撤销此前修复。两套原生命周期回收可重建的合成夹具；最后catalog核对：postgres角色1为正对照，app_test_w98数据库0、该库连接0、三个具名fixture角色0。未删除业务数据。
+
+SQL重算未变：第134条 `ef6342f07efea392d91f989f264f1f5d72a81b8e410d3d2c740d011dbc439042`；第135条 `64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`。没有新的3b／4b事项。当前只保留本评审稿和两份台账顶部诊断结论；临时仪器已通过测试类型、两份定向冷lint，文档检查另列于交付说明。
+
+**建议方案A：将受控取证送入实际CI失败环境，而非凭本地通过盲改SQL或重试至绿。** 这是待批准的下一包，不在本轮实施：
+
+1. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`：保留原完整链和五秒断言；在满额阶段保留脱敏prepare／start／两个实际集合写入／terminal计时和错误分类。
+2. `test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts`：仅2,000身份用例的前置prepare取证，记录底层异常类型、允许名单数据库码和固定阶段汇总；保留原30秒prepare、7秒后续提交与所有断言，不把500统一改成超时。
+3. 本评审稿。
+4. `docs/ai-harness/FROZEN_DRAFTS.md`，仅顶部当前状态。
+5. `docs/ai-harness/NEXT_TASKS.md`，仅顶部当前状态。
+6. 既有 `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`，仅本次取证目的与边界。
+
+风险：取证自身有少量开销，可能使靠近预算的CI请求更易超时；缓解为内存累计、finally汇总，不逐查询打印，不改变预算，不把带探针的结果当性能验收。不改变查询或事务语义是硬前置；代理不能保持PrismaPromise语义即停止。CI沿原每worker隔离方式，本地仍仅w98，不扩本机数据库目标，不开shadow／Gate。方案B保留失败状态等待其他证据，不重复同SHA重跑；无法解决当前证据缺口。
+
+如批准方案A，建议确认语句：**确认第29.14节六路径CI取证方案A；允许仅app_test_w98隔离验证与夹具重建，保留所有断言及业务预算；验证后提交推送更新#1370，保持Draft，不Ready、不合并、不改生产代码或SQL、不启用开关、不操作生产。** 其余权限、schema、migration、CI配置和真实映射均不在写集；新SHA的红区审批仍按原流程，不继承当前审批。下一轮先以CI错误分类决定修复包，未定位前不另行实施性能候选。
+
+**本次未做**：未改生产代码／SQL／断言／超时，未运行全量或quick、未重跑CI、未跨模型复审；未提交推送、Ready、合并、登记真实映射、启用shadow／Gate、操作生产、删除或重算业务数据。两项CI失败仍开放。
+
+### 29.15 第29.14节六路径 CI 取证包（2026-10-01；已授权实施，保持 Draft）
+
+维护者已确认第29.14节方案A，允许仅app_test_w98隔离验证与可重建测试夹具、验证后提交推送更新#1370。六路径与29.14.5完全一致；不扩大到生产代码、SQL、schema、权限、审计目录、CI配置或其他数据库。第134／135条SQL摘要与29.14.5一致，无新增3b／4b签字项。按Prisma变更流程复核，本包不产生任何模型、默认值、种子或数据兼容性变化。
+
+#### 29.15.1 取证实现与不变量
+
+- 映射满额链：在原prepare事务和实际比较写入的事务对象上透明观测；保留prepare／start总耗时、两次集合INSERT和terminal耗时，错误仅记录异常类型及允许名单Prisma／SQLSTATE码。未知错误归为other／unavailable，不输出原始message、meta、stack、SQL、参数、连接信息或业务值。
+- D7仅2,000身份用例的初始时长结算prepare：记录service、authorize、readDraft、readSources、evaluate和事务查询分组；finally恢复原调用与spy。原HTTP错误照常传播，不把所有500解释成超时；后续submit、ledger和V3更正链不加探针。
+- PrismaPromise在实际then消费时计时，不提前执行SQL；原参数、事务选项、this及返回／异常原对象保持。附加无数据库正对照证明延迟执行、返回值、异常同一性及错误码白名单脱敏；真实完整链仍由原业务断言检验。内存累计后一次汇总，不逐查询打印，不新增查询或重试。
+- 只包裹原调用；全部既有断言及5秒比较／30秒prepare／7秒更正预算不变。阶段耗时包含嵌套查询，不能重复相加；观测值包含客户端与往返，不冒充纯SQL执行时间。探针有轻微开销，不以带探针本地耗时替代CI冷跑验收。
+
+#### 29.15.2 验证与交付记录
+
+- 两份E2E测试类型检查、定向冷lint通过；差异核对未删除或更改既有断言。
+- w98完整映射250/250通过，满额五秒链3,898ms。prepare621.004ms、start78.197ms、应用证明集合1,861.842ms、比较收据集合1,303.510ms、terminal3.075ms；2,000条hash仍与固定旧参考逐条一致。探针成功输出，未出现真实异常，错误白名单由正对照覆盖。
+- w98完整D7回归7/7通过（262.667秒），原Human V3／重放／并发与满额链断言保持。初始prepare约9,025.379ms、service8,998.525ms、事务查询222次；准备收据3,121.110ms、桶来源1,429.287ms、桶859.496ms，未复现原CI 500。
+- 两套测试串行使用w98原生命周期；结束后catalog正对照postgres角色1，w98数据库0、连接0、三个具名fixture角色0。回收的仅为获准重建的隔离库与合成夹具／测试角色，未删除业务数据。
+- 最终quick退出0：433套、9,430条单测通过、5条既有todo；缓存lint、三组类型与harness自检通过（eslint守护自检138通过，5个既有已知缺口未改变）。改动两份E2E另跑冷lint通过；counts／codemap／readtax检查通过，保留既有地图与阅读体积警告，不扩写集修复。工作树复核仅六个获准路径；验证后按本轮授权提交推送，远端候选结果另见PR，不把本地通过写成全量CI验收。
+- 首次Jest启动误将独立配置字符串再次JSON编码，参数解析退出1、未连接数据库；改正命令序列化后运行上述套件，没有改测试配置、断言或超时。
+
+本包交付目的是让新SHA的实际CI环境给出两项失败的底层证据，**不是生产性能修复**。原a716a67c CI仍失败；新提交必须重新接受原检查及候选SHA审批，旧审批不继承。不改变#1370 Draft。风险与回退：若探针引入调用语义变化，回退本包两份E2E的取证差异，保留此前业务修复、原断言与预算，不以延长预算消除诊断失败。
+
+**本次未做**：未改生产代码或已签SQL，未查真实业务库、登记真实映射、启用shadow／Gate、操作生产、删除或重算业务数据；未Ready、合并、同SHA重跑CI或跨模型复审。全量Contract／E2E仍由PR CI冷跑，本地通过不等于两项CI失败已闭合。
+
+### 29.16 两项 w98 隔离诊断（2026-10-01；诊断完成，未提交）
+
+维护者明确确认“两项w98隔离诊断方案A”。本轮仅临时修改来源与映射两份既有E2E，完成后精确还原至 `5b1a475c`；持久差异只允许本评审稿与FROZEN_DRAFTS／NEXT_TASKS顶部。不继承第29.14节提交推送授权，不改生产代码、SQL定义、断言或预算。
+
+#### 29.16.1 当前候选与诊断边界
+
+现场复核：#1370为OPEN／Draft，head `5b1a475c648b46a10aeca40f7b0caebef40d22fd`；[CI 36827097461](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36827097461) completed/failure，Contract 1,087通过，E2E 6,848通过、2失败。红区36827095895及Docker Smoke成功，不再等待本候选人工批准。下方原六路径取证包“待推送／待审批”是历史时点，不是当前状态。
+
+| 项目                                               | 本轮结论                                                       |
+| -------------------------------------------------- | -------------------------------------------------------------- |
+| schema／migration／seed／权限／审计／BizCode／接口 | 均不改；没有新签字项                                           |
+| 数据库                                             | 仅app_test_w98合成夹具；沿原生命周期重建并回收                 |
+| 观测                                               | 原业务调用透明计时；会话／事务级track_functions；回滚式SQL取证 |
+| 禁止域                                             | 不修改函数定义，不调全局DB配置，不启用开关，不接触真实业务数据 |
+| 验收边界                                           | 诊断带额外开销且本地负载不同；不以本地通过替代CI冷跑           |
+| PR动作                                             | 不提交、推送、重跑CI、Ready或合并                              |
+
+global preflight因open PR退出1，既有E3执行lane preflight通过；另一#1371写集为交付流程／日期登记，与本轮五路径不相交。没有修改门禁规则。w98开工正对照postgres角色1、目标库0、连接0、具名fixture角色0。
+
+#### 29.16.2 来源链：主要成本在逐行审计JSON展开与精确成员查找
+
+CI失败位于来源 `createMany`，7秒事务结束时已耗时8,228ms。这只证明该调用收到P2028，不能把8,228ms全算给单条INSERT。生产引用链为AttendancesService.submit → writeMatchedLegacySources → writeLegacySources → ContributionShadowLegacySourceAnchor.createMany → 第134条cslsa_insert_guard_fn。
+
+两轮本地均沿原真实submit/edit、失败回滚与2,000 Record用例，不改7秒业务预算；第一轮2,610ms、第二轮2,311ms，均1条通过／83条未选择。测试套件分别25.255／22.615秒，不称完整来源84条回归。
+
+第二轮实际客户端阶段：
+
+| 阶段                           |                    耗时 |
+| ------------------------------ | ----------------------: |
+| 原考勤单及记录create           |               176.949ms |
+| 原记录回读                     |                46.293ms |
+| 原审计create                   |                49.468ms |
+| 来源createMany                 |             1,606.569ms |
+| cslsa_insert_guard_fn，2,000次 | 1,341.453ms（含子函数） |
+| 其中来源hash，2,000次          |                48.932ms |
+
+客户端阶段含往返与Prisma处理，数据库函数是其内含项，不能相加。函数统计在回调返回、事务提交前读取，**不覆盖延迟完整性触发器的提交耗时**。随后比较准备的另一事务没有调用这组函数，统计为空；前一事务2,000次为正对照，不能将空数组解释为守卫失效。透明代理正对照验证延迟消费、原this、返回值及异常对象同一性；原断言仍覆盖提交、CUID、旧事实及失败回滚。
+
+第二轮业务断言完成后，在独立回滚事务按同一批2,000来源逐行执行固定SQL片段：
+
+| SQL片段（累计，不是相互独立可相加的阶段）        | 2,000次耗时 |
+| ------------------------------------------------ | ----------: |
+| 仅按主键锁读同一审计行                           |    17.882ms |
+| 上述锁读 + 原after／sheet／records／extra投影    |   760.561ms |
+| 上述全部 + 原strict JSONPath精确id查找并核对命中 | 1,168.203ms |
+
+每组实计2,000次，精确查找每条均核对原recordId。说明本机该数据形态中，**重复处理大审计JSON比单纯锁读行贵得多**；不能仅用加索引或再次优化来源hash解释这一成本。各组顺序执行且缓存温度不同，差值只能作定位线索，不当生产收益承诺。未修改或替换实际数据库守卫。
+
+#### 29.16.3 映射链：第一批写入的数据库逐行守卫，成本分散
+
+CI证据：prepare1,156.577ms、start89.719ms，比较前累计1,246ms，事务余额3,653ms／pool wait100ms；第一批ContributionShadowMappingApplication写入3,920.620ms后P2028，比较收据和terminal未到达。错误捕获总计5,176ms包含回滚，不当纯SQL时间。D7满额测试在同一CI已通过，本轮不碰D7文件。
+
+两轮本地原完整五秒链分别3,429／3,192ms，均1条通过／249条未选择，套件23.533／22.623秒。第二轮prepare652.475ms、start52.278ms、应用证明集合1,420.394ms、比较收据集合1,041.144ms、terminal3.263ms。固定旧hash参考与实际函数仍2,000／2,000一致。
+
+业务断言后先只读调用同批冻结锚点的csm_application_result_fn，独立回滚；再用原runtime session身份执行回滚式EXPLAIN ANALYZE／BUFFERS。后者使用同批已存在的audit/record键、全新合成id和 `ON CONFLICT DO NOTHING`，让BEFORE INSERT守卫真实执行而不重复落库：**0插入、2,000冲突**；回滚后原应用证明仍2,000条。它不是首次写入计划，不含成功插入后的FK／索引写入成本，也不是重放业务命令，更不能替代原成功写入验收。
+
+| 回滚式冲突计划／函数          |   次数 |                     耗时 |
+| ----------------------------- | -----: | -----------------------: |
+| SQL整体                       |      1 |              1,348.017ms |
+| csmap_pending_insert_guard    |  2,000 |              1,322.019ms |
+| csm_application_result_fn     |  2,000 |    1,233.242ms（含下级） |
+| csm_source_approval_result_fn |  2,000 |      773.632ms（含下级） |
+| csm_mapping_inputs_result_fn  |  2,000 |      466.641ms（含下级） |
+| csm_policy_evaluate_fn        |  4,000 |      360.125ms（含下级） |
+| csm_policy_fingerprint_fn     |  2,000 | 267.479ms（含evaluator） |
+| csm_manifest_canonical_fn     | 50,000 |           self 222.708ms |
+| csm_assert_runtime_fn         |  2,000 |       71.545ms（含下级） |
+
+计划shared hits120,212、reads0；2,000次真实触发器及函数调用为正对照。reads0仅指本次暖缓存计划没有shared-block read，不代表CI无I/O、全链无等待或磁盘无问题。函数total包含嵌套项，**不叠加上表total**；self用于区分本体。身份校验并非主要成本，不能为性能删掉身份或锁后复核。
+
+当前实测能确认：映射应用证明逐行反复校验政策／重算摘要／核对关联，成本分布在多处；没有证据支持某一个漏索引就是唯一根因。源码也显示每条政策在fingerprint中完整校验一次、随后计算结果时再完整校验一次。消除重复工作有候选价值，但尚未证明某一局部改写足以在实际CI保持五秒。
+
+#### 29.16.4 收口与下一步建议
+
+临时两份E2E已精确反向还原，实际路径的 `git diff --exit-code`退出0；此前已提交的六路径CI取证器保留。最终临时仪器通过测试类型与两份定向冷lint；第一轮冷lint发现未绑定方法引用，已改为保持this的bound原方法，之后通过，不隐藏这次仪器校验失败。没有修改原断言、schema、已签SQL或生产服务。临时SQL只在原测试结束前执行并ROLLBACK，角色与库由原安全生命周期回收；最终正对照1、w98库0／连接0／三个具名fixture角色0。
+
+第134条摘要仍为 `ef6342f07efea392d91f989f264f1f5d72a81b8e410d3d2c740d011dbc439042`；第135条仍为 `64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`。本次没有重签或回填签字登记。
+
+文档readtax／counts／codemap及diff检查通过，保留已有阅读体积与地图警告。评审稿与NEXT_TASKS格式通过；FROZEN_DRAFTS整文件Prettier仍报已有表格格式差异，直接对HEAD与工作树格式化结果比对，首个差异同在第444行，不在本轮只准更正的顶部。仅格式化本轮新增段落，不顺手改历史表格或生成块；因此不称整组三文档格式全绿。最终只保留三份授权文档，两个测试文件无差异。
+
+**建议下一步将两项SQL优化合成一个评审包，不再凭本地偶然通过重跑CI。** 来源侧围绕cslsa_insert_guard_fn的大JSON投影／精确查找，映射侧围绕csm_application_result_fn、csm_source_approval_result_fn及纯政策校验／摘要链。必须保留同事务真实行重读、全部资格／锁序／完整性守卫、首次匹配语义、旧异常行为及5秒／7秒预算；不引入跨请求缓存、信任调用者“已校验”布尔值或删校验换性能。先给出具体等价改法及最坏数据形态，不把本节函数耗时当作新实现已验证。
+
+候选后续写集上限（**未授权实施**）：第134／135条候选migration、这两份既有E2E、本评审稿、两份台账顶部、既有mapping-proof changelog、CUTOVER_SIGNOFF，共9路径。两个migration仍未合入；若实现涉及此范围外的服务／schema／新表／新字段或其他路径须另报，不自动扩大。SQL定稿后按新摘要另签3b；权限／审计边界保持原样。当前仅诊断报告，不生成待审生产diff，不提交推送。
+
+**本次未做**：未修复两项CI失败，未运行完整来源／映射／D7套件、quick或全量CI；未重跑CI、跨模型复审、提交推送、Ready或合并；未修改业务代码／SQL定义／断言／超时，未启用shadow／Gate、登记真实映射、操作生产、删除或重算业务数据。#1370仍Draft且CI红，E3-2 D2尚未收口。
+
+### 29.17 两项 SQL 修复完整交付包（2026-10-01；方案 A 待实施批准）
+
+#### 29.17.1 基点、当前授权与目标
+
+维护者本轮允许保留三份诊断文档、同步 main，并在本评审稿一次定稿两项 SQL 修复方案、精确写集和完整交付授权清单；另明确允许**仅为同步 main 创建本地合并提交**。本轮不实施、不操作数据库、不提交诊断文档、不推送。下文的实施、测试、重签后提交推送均是完整送审建议，不因写入文档而生效。
+
+- 本地合并提交 `cb9d1309b19ea0551048b306ca35bf7db3c04980`，父提交为本 lane 的 `5b1a475c648b46a10aeca40f7b0caebef40d22fd` 和 main 的 `9aee103b56a40e0f85c9855596701661e89bac58`（#1371）；无冲突，不改写历史，未推送。
+- 相对 lane 原 HEAD，合并实际带入 `.claude/skills/srvf-goal-author/SKILL.md`、`docs/process.md`、`changelog.d/delivery-continuity.md` 三文件。main 另一个日期基线变更在本分支已相同，没有重复改动。三份诊断文档在合并前后逐文件内容 hash 相同，均未进入合并提交；本节在合并后追加。
+- #1370 仍 OPEN／Draft，远端 head 仍为 `5b1a475c`，CI 失败事实沿29.16。同步后的 lane preflight 显示落后 main 为0，但因保留三份未提交文档退出1；按本轮明确授权保留，不声称 preflight 全绿，不修改门禁。
+- 第134／135条仍是 #1370 未合入 main 的候选 migration；不是修改已上线迁移历史。未来开工必须复核这一前提；若其间已合入或部署，停止本方案，不能覆盖既有迁移文件来修生产。
+
+**目标**：来源2,000 Record真实 submit/edit 链保留7秒事务，映射2,000项真实首次写入链保留五秒总预算；在不改变数据库拒绝规则、摘要、业务结果、锁序和权限的前提下减少已取证的重复计算，并由原 PR CI 冷跑验收。仅本地通过或函数微基准变快均不算完成。诊断只支持下面的候选方向，尚未证明收益足以覆盖实际 CI 差距。
+
+本包沿 D 档既有评审→具体方案与风险→维护者批准及精确令牌→实现和隔离验证→定稿 SQL 重签→同一 PR 验收交付；不再分拆“补写集／补提交授权”的文档 PR。不实施其他 Release 5 业务轴。
+
+#### 29.17.2 来源 SQL：减少大 JSON 中间副本，保留原精确匹配
+
+第134条只改 `cslsa_insert_guard_fn` 的行内审计 JSON 投影及必要局部变量／说明，其他函数、触发器定义和表约束不动。
+
+1. 原 `audit_logs → window → sheet → record` 的真实行读取、`FOR SHARE` 和缺失检查完全保留；后续 Activity／ContributionRule 锁序、唯一性、事实比对、来源 hash 和延迟集合闭包均保留。
+2. 当前先取整个 `context.after`，再取 sheet／records，且两处分支再次取 extra.operation。改为从当前已锁审计行做完整路径投影：`#> '{after,sheet}'`、`#> '{after,records}'`、`#>> '{extra,operation}'`，operation只求值一次。避免显式生成含2,000条 records 的整个 after 中间值；不是把多次取值包装成 SELECT 就宣称只反序列化一次。
+3. 若压缩大 JSON 仍反复展开，限同一函数内对 **object** context 使用一次等值对象物化（候选 `context || '{}'::jsonb`），再作上述投影；SQL NULL、JSON null、数组和标量不得套用该表达式，沿原路径。是否保留物化由同输入的回滚式分段取证与完整链共同决定，无收益或更慢则不保留。它不缓存到另一行、语句、事务或请求，不增加会话标志、临时表或“已验证”信任位。
+4. `jsonb_path_query_first` 的 strict 候选、精确 string witness、未命中回落原 `jsonb_array_elements` 查询，以及首次匹配对象事实错误即拒绝的顺序保持原样。**本包不重写成员查找算法**，不把重复 recordId 任取一条、字符串与数字／布尔／数组 id 混为一谈。
+5. missing、JSON null、错误形态仍由原检查以原先次序拒绝，不将提取失败替换为空对象／空数组或跳过守卫。[PostgreSQL JSON 运算说明](https://www.postgresql.org/docs/16/functions-json.html)只支持路径提取和对象连接的语义；它不保证物化或性能收益，不能作为验收证据。
+
+新增回归使用固定旧投影／匹配参考，覆盖 object与非object、missing／null、extra.operation错误、合法 CUID、布尔／数字样式／数组值 id、重复 id 首项事实不符和大 records。逐项比较结果或 SQLSTATE／固定业务异常类别；原失败回滚与2,000条断言不改。局部探针只能说明成本位置，真实成功 INSERT 和事务提交才是验收路径。
+
+#### 29.17.3 映射 SQL：一次完整政策校验及等值选择摘要
+
+第135条只改 `csm_mapping_inputs_result_fn`、`csm_application_result_fn` 的下列计算点，并新增两个具名纯计算函数。`csm_source_approval_result_fn` 的真实行读取／关联复核、runtime身份校验、登记入口、`csar`／`cscr`／`cstr` 守卫、触发器挂载和延迟闭包不改。比较收据虽有耗时，不顺手扩改；本次 CI 首次失败在应用证明集合写入。
+
+**A. 同一政策仅做一次完整校验。** 新增 `csm_policy_evaluation_proof_fn(policy "ContributionPolicyVersion", role_code TEXT, category_code TEXT, duration_seconds BIGINT) RETURNS JSONB`，输入只有当前链从数据库读取的政策复合值及待计算参数，输出政策摘要、完整求值结果和显式角色／类别存在性证据。
+
+- 先按原 metadata 约束及时间规范核对政策，调用既有 `csm_policy_evaluate_fn` **完整遍历并验证整份定义一次**；包括未选规则、默认结果、全部角色／类别／durationBands，不改成只查命中的一个规则。
+- 在完整校验成功后，以当前 `csm_policy_fingerprint_fn` 相同的固定 E1 包络、C顺序、数组原顺序、整数和字符串转义生成摘要；不只比较行上存储的 definitionHash，不用 JSONB 的展示文本代替 canonical。helper 不调用 fingerprint 后又调用 evaluator，那仍是原重复成本。
+- `csm_mapping_inputs_result_fn` 原前四组时间／窗口／来源／政策引用检查保持顺序。仅当时长范围和整秒转换安全、完整政策校验成功、重算摘要与真实行匹配、角色／类别显式存在时，直接返回与原链相同的结果。不是把 evaluator 的 defaultResult 当已签映射。
+- 任一正向见证缺失、摘要不符、时长异常、角色／类别缺失或已知政策校验异常时，回到**原完整 fingerprint→时长检查→求值→显式存在检查**；由原链产生原先优先的异常。正向路径的提前试算不得改变“坏摘要与坏时长同时存在”等输入的错误顺序。只捕获明确的纯政策校验异常以回落，禁止 `WHEN OTHERS` 吞数据库故障／取消／超时；不能保持旧异常的输入不走快路径。
+- 既有 `csm_policy_fingerprint_fn`、`csm_policy_evaluate_fn` 的独立签名及实现不变，登记等其他调用不转入新路径。新 helper 与固定旧实现做结果／hash／异常差分，不以新 helper 自己生成的期望值自证。
+
+**B. 选择文档固定形态摘要。** 新增 `csm_selection_hash_fn(selection_json JSONB, schema_version INTEGER) RETURNS TEXT`，只替换 `csm_application_result_fn` 中原 `selection_hash := ...` 的纯计算，不改变它前后的任何数据库查询或判断。
+
+- 原摘要包络仍是 `{"definition": selectionJson, "schemaVersion": revision.schemaVersion}`；E1 的 `selectionJson.items` 是以 scope key 为键的对象，**不是数组**。固定形态序列化覆盖 V1 多 item、activity／position、inherit／explicit、nullable id及完整 pointer；动态 items 键按C顺序，字符串按原JSON转义，整数经安全范围见证后规范化，空对象与null不可混同。
+- 只在根／item／scope／selection／pointer 的键集、类型和数值均得到精确正向见证时走固定形态；未知键、版本、形态或数值不由优化器新判非法，而是调用原 `csm_manifest_canonical_fn(jsonb_build_object(...))` 路径，维持原接受／拒绝行为。SQL NULL和JSON null也保留原包络语义。
+- 原通用 canonical 函数完全不变，不影响登记 manifest 或其他摘要。即便文档已有独立 schema 约束，本函数仍做形态见证，不能仅凭 schemaVersion=1 就相信内容。
+- Activity→Session→Position的锁与锁后重读、source／approval／registration闭包、selection版本时点、更新版本查找、position override、权限与runtime身份全部保留。不得复用跨行／跨事务的选择hash，也不得由调用者传入“hash已验证”。
+
+**新增函数的权限合同**：两个 helper 均为只处理参数的纯计算，普通 `SECURITY INVOKER`，固定 `search_path = pg_catalog, public`，无表读取、DML、GUC信任位或权限授予能力；沿既有纯计算函数执行模型，不增加 SECURITY DEFINER、角色成员关系、受保护写入或表读取授权。即使可直接调用，也不能借伪造复合值写入应用证明：写入守卫仍自行从真实行重算。新增helper明确属于本包SQL，不把它隐瞒成“仅换一个表达式”。若落地实际要求更改ACL脚本或特权函数归属，超出九路径须集中上报，不能自行放宽。
+
+补测覆盖所有合法 E1 政策边界、未选规则损坏、hash与时长同时无效、显式角色缺失、Unicode／转义／键序／多item／null／未知形态及安全整数；旧canonical／fingerprint作独立参考。2,000条hash逐条相等和满额首次写入不变；补真实runtime拒绝伪造输出的负例。既有独立fingerprint参考测试及业务断言原样保留。
+
+#### 29.17.4 风险、替代与回退边界
+
+| 风险                                 | 不得退让的约束与验收                                                     | 失败处理                                             |
+| ------------------------------------ | ------------------------------------------------------------------------ | ---------------------------------------------------- |
+| JSON物化复制反而更贵／无法抵消CI开销 | 同输入原函数参考与回滚式阶段测量；最终无额外诊断探针的真实首次写入和提交 | 不保留无收益物化；未达预算则本包未完成，不声称已解决 |
+| 提前政策试算改变异常顺序             | 多重非法输入差分；只允许完整正向见证返回，其他情况原链处理               | 等价性不成立立即停下，不删负例                       |
+| 快速canonical改变hash或遗漏未知字段  | 固定旧参考；全部合法E1形态＋未知形态回落；2,000条逐项核对                | 任一不等即拒交付，不回填旧hash                       |
+| 计算结果被误作授权／锁后事实被缓存   | 真实行重读、原锁序、原身份与最终触发器保留；直接伪造写入仍失败           | 需要新特权或可信缓存则越界，不做                     |
+| 旧版本回放或清理失败                 | 133→134／134→135历史升级、当前冷回放和原测试清理；无新表无需扩清理表集   | 保留原历史目标和断言；新增其他测试改动先报告         |
+| 只在本地暖缓存通过                   | 两份完整定向回归＋PR CI冷跑；冲突计划不能替代首次成功INSERT              | CI失败保留开放状态，取证而非反复重跑至绿             |
+
+方案B为保留当前失败状态、不实施本优化；不能解决交付阻塞但无语义变化风险。不选增加5秒／7秒预算、降低2,000规模、删锁／重复身份复核、放宽守卫或信任调用者标志。语句级共享证据／临时缓存／新表／新索引与新的生命周期均不在本包；如这次实证否定局部优化，另行评审，不能借“范围内修复”换成另一套安全架构。
+
+回退仅撤回本包新增优化差异，保留先前已批准修复与所有测试断言；不得回滚业务数据或删历史收据。迁移仅在隔离库冷回放，未来若候选变为已发布历史则不再适用本方案。修复尝试计数沿29.6–29.16累计，**不因改方案／换SHA重置**；当前已是新证据后的集中评审，不授权原方法的重试循环。再遇同类失败先保存脱敏证据并按process §7.1报告，不能以延时、跳过或同SHA重跑代替定位。
+
+#### 29.17.5 九个精确路径及后果面
+
+以下是未来实施上限，当前只获准编辑第5项的方案正文。第134／135条定稿后才可更新第9项，签字不能预填。
+
+| #   | 精确路径                                                                                | 允许改动                                                       |
+| --- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1   | `prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql`  | 仅29.17.2具名函数的等价投影与行内计算                          |
+| 2   | `prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql` | 仅29.17.3两处计算调用与两个具名纯计算helper                    |
+| 3   | `test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts`               | 固定旧参考、形态／异常差分与上述成本取证；保留原断言及预算     |
+| 4   | `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`              | 纯函数等价／身份负例／摘要回归和上述成本取证；保留原断言及预算 |
+| 5   | `docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`                   | 本包实施、证据、未完成项与交接，不抹历史失败                   |
+| 6   | `docs/ai-harness/FROZEN_DRAFTS.md`                                                      | 仅顶部本lane当前状态，不改历史或生成表格                       |
+| 7   | `docs/ai-harness/NEXT_TASKS.md`                                                         | 仅顶部本lane当前状态，不改其他Release轴                        |
+| 8   | `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`                                 | 本包改动、兼容性和已跑／未跑证据                               |
+| 9   | `docs/ai-harness/CUTOVER_SIGNOFF.md`                                                    | 维护者对最终实际SHA256重签后，仅更新第134／135条3b相关登记     |
+
+`pnpm harness:needs`逐文件核验为9路径、2个migration红区、7个非红区；工具自动合并建议为`prisma/migrations/**`，本包**不用该宽泛glob**，改为下节两个完整文件路径。未执行grant，未延长或伪造令牌。
+
+后果面已核对：没有schema、migration数量、模型属主、状态机、TS生产代码、公开API／DTO、权限码、审计事件、seed或配置变更；migration总数仍135，不改旧升级目标。故不刷新CODEMAP、ROUTE_AUTHZ、OpenAPI/client、RBAC、domain-map、state-machines或生成计数；对应检查若意外报漂移，先核查输入和精确后果，不把“相关生成物”当隐含新增写集。旧D7测试只由既有CI回归，不改其诊断或断言。新helper不引出新HTTP出口，不修改原运行时／登记ACL脚本。已有三个未提交诊断文档属于未来交付包，可在获得实施与提交授权后随同一PR提交，不另起文档PR。
+
+#### 29.17.6 一次覆盖的验证与隔离生命周期
+
+下列为**待批准的执行清单**，本轮没有运行其中任何数据库操作。
+
+1. 引用链／差分探针：先冻结旧函数独立参考，覆盖多重非法输入与canonical，再跑已有真实来源／映射满额用例；性能实验不与quick、lint或其他重测试并跑。保留5秒总比较、7秒旧业务事务、原测试时限和全部断言，不以函数暖跑结果替代整链预算。
+2. 数据库仅精确 `app_test_w98`。沿既有两套E2E的beforeAll／afterAll生命周期建库、部署已审候选迁移、重建合成夹具并回收；允许为该库使用具名 `srvf_shadow_owner_w98_fixture`、`srvf_shadow_registrar_w98_fixture`、`srvf_shadow_runtime_w98_fixture` 及现有ACL夹具。角色是集群对象，授权仅用于该库测试；按既有用例临时开启runtime LOGIN并验证真实独立连接，结束撤回测试授权／LOGIN、回收连接和角色。owner保持NOLOGIN；不赋予真实应用用户、其他数据库或生产权限。
+3. 目标库名／角色名与原生命周期不符、已有非夹具对象／角色或无法证明用途时停止，不清空碰巧同名的库或角色。失败也走既有finally回收；只允许丢弃可重建的w98合成测试数据，**不允许 `prisma migrate reset/dev`、`db push`、真实业务删除／转换／回填**。
+4. 同库可做回滚式EXPLAIN ANALYZE／BUFFERS与会话级函数统计，限两份E2E的固定脱敏探针。不得输出连接串、密码、原SQL参数或业务值，不改全局数据库配置。带探针的性能结果与最终保留原观测面的验收结果分开报告，临时探针在交付前恢复，不删既有已批准CI取证器。
+5. 定向通过后完整运行来源、映射两套回归，包含历史升级及冷回放、真实ACL／独立连接、失败回滚、选择hash与满额链；来源84条、映射250条是本包前的基线，新增用例后如实报实际计数，不固定减少至这些数目。两套串行，最终核对w98库／连接／三个角色为0，以既有postgres角色为正对照。
+6. 非数据库验收包括quick、改动E2E的冷lint／测试类型、diff、readtax／counts／codemap／migration计数及直接受影响的文档检查。全量Contract／E2E按当前process由PR CI冷跑，不在本机套用标准test:contract／全局E2E入口，否则会触及未授权模板库／其他worker。若冷跑失败，报告具体分片／SHA／错误，不自动重跑。
+
+仅w98的已核对入口（使用项目现有dotenv安全加载，不展示环境值；不带标准globalSetup／globalTeardown）：
+
+```bash
+cd /Users/dengwang/Documents/coding/srvf-nest-api
+E3_FIX_JEST_CONFIG='{"rootDir":"/Users/dengwang/Documents/coding/srvf-nest-api","testRegex":".*\\.e2e-spec\\.ts$","moduleFileExtensions":["ts","js","json"],"transform":{"^.+\\.ts$":["ts-jest",{"tsconfig":"<rootDir>/test/tsconfig.test.json"}]},"testEnvironment":"node","testTimeout":30000,"setupFiles":["<rootDir>/test/setup/setup-files.ts"]}'
+SRVF_E3_D2_W98=1 pnpm exec jest --config "$E3_FIX_JEST_CONFIG" --runInBand --runTestsByPath test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts
+SRVF_E3_D2_MAPPING_W98=1 pnpm exec jest --config "$E3_FIX_JEST_CONFIG" --runInBand --runTestsByPath test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts
+```
+
+上述默认是完整定向套件；前置短探针可在对应原命令加 `-t 'real submit/edit preserve CUIDs'` 或 `-t 'keeps a committed start after rollback'`，必须先确认真实匹配到用例，报告未选择数量，不将定向单例说成完整套件。不得改worker编号、库名推导或清理保护来让命令通过。
+
+#### 29.17.7 完整授权清单与后置签字
+
+**建议一次确认的实施交付范围**：29.17.2–29.17.6、九路径、w98及上述具名角色生命周期；包括等价实现、补测、范围内脱敏取证与同方案修正、既有诊断文档、验证记录和changelog；本地验收且最终3b重签后允许普通提交／推送更新现有 #1370，包含本地main合并提交，保持Draft。不要求再申请一次仅提交推送授权。不含Ready、合并、同SHA CI重跑或生产动作；CI人工红区批准仍由维护者对实际候选执行。
+
+如同意，可回复：
+
+> 确认第29.17节九路径完整修复包方案A；允许仅app_test_w98隔离验证、夹具重建及本节具名角色／ACL／临时LOGIN测试，结束撤回并回收；保留全部守卫、断言及5秒／7秒预算。SQL定稿后另签第134／135条3b；验证与重签完成后允许提交、推送更新#1370，保持Draft，不Ready、不合并、不操作生产、不登记真实映射、不启用shadow或Gate、不删除或重算业务数据。
+
+**维护者执行的精确令牌命令**（工作路径一并给出；代理不得代跑）：
+
+```bash
+cd /Users/dengwang/Documents/coding/srvf-nest-api
+pnpm harness:grant 'prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql' --reason '确认E3-2 D2第29.17节九路径完整修复包方案A：来源SQL等价性能修复'
+pnpm harness:grant 'prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql' --reason '确认E3-2 D2第29.17节九路径完整修复包方案A：映射SQL等价性能修复'
+```
+
+截至本节定稿，旧已签摘要仍为第134条 `ef6342f07efea392d91f989f264f1f5d72a81b8e410d3d2c740d011dbc439042`、第135条 `64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`，**不覆盖新SQL**。未来用两文件实际SHA256集中请求两项3b，获明确回复后才更新CUTOVER_SIGNOFF；未知摘要不得提前授权代签。权限270、审计175／170及既有4b访问面不变，不重复请求同一4b；若实现引出真实权限／审计／ACL变化则说明越界并重新评审，不以本句豁免新的4b要求。
+
+#### 29.17.8 执行 Goal 与交付核验点（未下发）
+
+以下仅在维护者确认29.17.7后**复制给 goal 会话运行**；不另起任务或替维护者启动执行，发送前核对红区授权与禁止域。
+
+```text
+目标：完成现有#1370的E3-2 D2两项SQL等价性能修复，按评审稿29.17.2–29.17.7交付；不是重开业务合同或开始新Release轴。
+DoD：来源2,000记录原真实submit/edit链及映射2,000项原首次写入链通过原7秒／5秒预算；旧参考结果、hash和异常顺序一致，全部锁、身份、完整性及失败回滚保留；完整来源／映射回归、quick和文档检查有证据，PR全量冷跑与本地结果分列。最终SQL两项3b已由维护者按实际摘要重签；允许交付的九路径普通提交推送至#1370，保持Draft。
+探针队列：先核对main／PR／迁移未发布与精确令牌；随后用旧函数参考的等价性和满额首次写入判定SQL方向；通过后完成两套完整定向及静态门禁、w98与三角色回收；最终重签与普通提交推送后跟进新SHA冷跑。已有重复失败沿原计数熔断，CI独有失败用固定脱敏证据定位，不自动重跑至绿，不以本地通过替代CI验收。
+授权：维护者确认后，仅29.17.5九路径及29.17.6精确w98／角色生命周期；包括该方案内实现、补测、取证、修正、文档和验证后同PR提交推送。SQL摘要签字和人工红区批准仍后置，不自行发令牌或签字。范围内连续推进，不拆新计划PR或重复请求已覆盖的交付动作。
+禁止域：不Ready／合并，不查真实业务库，不操作生产或D8-OPS，不登记真实映射，不启用shadow／Gate，不删除转换回填重算旧数据；不改schema、API、DTO、权限、审计目录、seed、CI配置、测试断言或超时，不引缓存／语句级可信凭据，不扩大ACL或写集。
+精确写集：严格为29.17.5逐项列出的九个实际文件；未命名路径及业务改法先集中报告。流程引用当前process §3、§4.1、§7.1–7.2。
+```
+
+跑完回传四项核验：①实际九路径diff及两项SQL摘要／人签证据；②固定旧参考、完整套件实际计数与满额耗时（注明是否带探针）；③w98／连接／角色清理正对照与未触碰禁止域；④本地提交／远端head、CI状态、尚需人工审批或仍失败项目。不把推送、全绿、Ready、合并、部署混写为一个“完成”。
+
+本节文档验收：评审稿／NEXT_TASKS的Prettier、`git diff --check`、readtax／counts／codemap／migration计数检查通过；阅读体积及codemap两类既有警告保留。用Git blob hash确认29.17之前的评审内容与合并前完全相同，两份台账也与合并前完全相同；独立解析本节Jest配置，确认JSON有效且无globalSetup／globalTeardown，未启动Jest或连接数据库。FROZEN_DRAFTS整文件既有格式差异沿29.16.4记录，不宣称三份文档所有检查全绿。暂存区为空，仅三份文档未提交；两条SQL仍为29.17.7旧已签摘要。
+
+**本次未做**：本节只定稿方案，未改SQL、测试、生产代码、签字登记或changelog；未运行数据库验证、重建库／角色、实施任何优化或重跑CI。只创建经授权的本地main合并提交，三份诊断文档仍未提交；未推送、Ready、合并#1370、登记真实映射、启用开关／Gate或操作生产。两项CI失败仍未解决，待本完整包获批后实施。
+
+### 29.18 第29.17节实施记录（2026-10-01；已批准，验证中）
+
+维护者确认“第29.17节完整修复包方案A”，本worktree两条精确migration授权已于2026-10-01 16:30（北京时间）登记。沿九路径、w98与具名角色生命周期实施；保留此前三份诊断文档。#1370仍Draft、远端5b1a475c；main仍9aee103b，两条候选migration未合入。lane preflight落后0，但因三份保留文档退出1；沿明确保留授权继续，不改门禁、不伪报全绿。Prisma技能引用的prisma/AGENTS.md在本树不存在，遵循根AGENTS、现行reference与已批准评审，不补造该文件。
+
+| 项                                  | 结论                                                                      |
+| ----------------------------------- | ------------------------------------------------------------------------- |
+| 是否修改 prisma/schema.prisma       | 否                                                                        |
+| 是否新增／改动 migration            | 只改未合入第134／135条具名计算点，数量不变                                |
+| 是否修改 prisma/seed.ts             | 否                                                                        |
+| 是否影响现有数据                    | 不读取真实业务数据、不回填；仅w98合成夹具                                 |
+| 是否不可逆                          | 本包无数据转换或删除；候选SQL按29.17回退，既有不可变守卫保留              |
+| 是否影响 OpenAPI／contract snapshot | 否，无公开接口变化                                                        |
+| 是否影响鉴权／Permission seed／审计 | 原访问面、身份、锁序和审计不变；两个新增helper只有纯计算能力              |
+| 是否需要新增 BizCode                | 否，旧异常优先级保留                                                      |
+| 是否需要用户拍板                    | 完整实施已批准，令牌已核实；最终两项3b仍须另签，未获Ready／合并／生产授权 |
+
+开工隔离正对照：postgres角色1，app_test_w98库0／连接0，三个具名fixture角色0。SQL与测试结果待下方实测填写；本段不是验收通过声明。
+
+#### 29.18.1 实现、等价性与性能证据
+
+- 第134条仅在 `cslsa_insert_guard_fn` 内对object审计context作当前行等值展开，然后直接取sheet／records／operation；非object保留原值。原strict首匹配、string witness、原扫描回落、真实行锁和规则／hash／集合守卫未改。没有跨行缓存、会话标志或新可信凭据。
+- 第135条按29.17新增两个纯计算、invoker、immutable helper；只有 `csm_mapping_inputs_result_fn` 的正向计算与 `csm_application_result_fn` 的selection hash调用改变。逐函数对比确认其余既有函数原文不变，包括原独立fingerprint／evaluator／generic canonical、来源批准链、运行身份、应用写入与比较／终态守卫；schema、ACL脚本、权限与审计不变。
+- 新来源投影对照39种输入（含SQL NULL）与固定旧路径完全一致；原首匹配、伪造hash、异活动及延迟闭包用例保留。新映射补42组结果／异常顺序差分，覆盖有效／缺失时长、NaN、坏hash与坏时长叠加、缺角色／类别、未选规则损坏和无效时间；40组完整政策形态对比旧fingerprint与evaluator；选择文档对比原generic canonical的值或SQLSTATE＋异常，含多item、Unicode／转义、未知形态、null和安全整数边界。原断言无删除或放宽。
+- 一次正向映射的事务内函数统计：mapping_inputs=1、evaluation_proof=1、policy_evaluate=1、policy_fingerprint=0；前三项是仪器阳性对照，证明不再重复执行完整政策验证，而非仅改函数名称或以零读数猜测。真实runtime调用纯helper后伪造应用分数仍由原数据库proof拒绝；不新增任何写权限。
+- 源投影同一压缩2,000记录夹具、每组1,000次、正反顺序测量：第一轮old186.991／196.696ms，direct174.155／153.567ms，行内物化147.905／138.843ms；第二轮old151.272／156.525ms，direct153.202／166.683ms，物化149.810／147.565ms。采用已批准的物化分支；收益随缓存和环境变化，不将微基准下降比例当整链或CI收益保证。
+- 纯映射同输入2,000次、正反顺序：旧599.361／489.005ms，新278.563／284.975ms；选择摘要旧203.533／205.312ms，新92.568／95.957ms。每次结果／hash对拍，不把数值变快写成可取消任何校验，也不将互相嵌套的耗时相加。
+
+#### 29.18.2 本地验证与交付边界
+
+- 先跑映射新对照与满额：4条通过／1条失败、249未选择；失败是**新增测试SQL复合字段引用漏括号**，不是业务守卫或预算失败。仅改新测试为 `(policy)."definitionJson"` 后完整254条通过（62.877秒），满额3,206ms；既有断言未动。没有同SHA重跑CI。
+- 来源首轮定向32通过／53未选择，满额2,188ms；加候选对照后的完整86条通过（42.809秒），满额2,269ms。物化方案选定后再次完整86/86通过（44.389秒），真实2,000条旧submit/edit链2,307ms。后三者不是三个独立CI修复轮次：分别为受影响定向、方案内候选选择和最终SQL验收；历史修复失败计数仍沿29.17.4，不据此重置。
+- **最终两SQL与最终测试版本**：来源86/86；映射255/255（72.291秒），真实独立LOGIN／冷连接／开始持久化／失败回滚／只读恢复和2,000项首次比较链3,408ms，原5秒／7秒及测试总时限全部保留。映射满额保留既有CI取证器，prepare642.873ms、start59.579ms、应用集合1,644.451ms、比较集合1,039.510ms、terminal2.980ms；这些数值不冒充无探针的生产墙钟。2,000条来源hash与固定旧SQL参考逐条一致。
+- 完整套件沿29.17.6专用入口，串行只使用w98，覆盖133→134／134→135历史升级及当前冷回放；未用标准Contract全局入口或其他worker。结束catalog复核正对照postgres角色1、w98库0／连接0／三个fixture角色0；仅回收获准重建的合成夹具和角色，不涉及实际业务数据。
+- 最终 `pnpm agent:check:quick` 退出0：433套／9,430条单测通过、5条既有todo；缓存lint、三组类型、harness两组自检通过（561通过／1个既有缺口；138通过／5个既有缺口）。另有改动两份E2E定向冷lint通过。readtax／counts／codemap／migration计数与实际改动的五份格式检查通过；保留阅读体积／codemap警告及FROZEN_DRAFTS历史表格格式问题，不顺手改生成物或扩大写集。最后核对实际8个未提交路径都在九路径上限内，第9项CUTOVER_SIGNOFF仍无差异。
+- 两条待签SQL：第134条 `404caabf01e9aeb5b9744423d02212c6c83f5becae8640050fa6cae9b83b2cab`；第135条 `51d1ee6a5ccc70c43a32d3a2e775f13f2df47638b6ba68330f21baec5a587a26`。**尚未获本轮3b重签，不修改CUTOVER_SIGNOFF**；旧签字不覆盖这两份新SQL。既有4b边界不变，不重复请求权限签字。
+
+本包普通提交推送更新#1370已包含在29.17完整授权中，不再单独申请；但须先完成最后验证及上述两项3b。#1370仍Draft／旧远端head5b1a475c，CI两项失败未由新候选验证，不称D2已收口。待新SHA冷跑和必要人工审批；不自动Ready、合并或重跑失败CI。
+
+**本次未做**：未代签或更新CUTOVER_SIGNOFF，未提交／推送本包、Ready、合并、重跑CI或跨模型复审；本机未跑全量Contract／E2E（沿既定PR CI冷跑口径），未重跑未改的D7套件。未改schema、权限、审计、ACL脚本、API／DTO、Gate、配置和业务预算；未接触真实业务数据、生产、真实映射登记、业务删除或重算。旧SHA的CI失败仍开放，本地性能证据不是其修复验收。
+
+#### 29.18.3 最终重签与送验候选（2026-10-01）
+
+维护者已逐份明确确认第134条 `404caabf01e9aeb5b9744423d02212c6c83f5becae8640050fa6cae9b83b2cab`、第135条 `51d1ee6a5ccc70c43a32d3a2e775f13f2df47638b6ba68330f21baec5a587a26` 的3b重签。重新计算与确认逐字一致，已追加CUTOVER_SIGNOFF，历史签字和既有4b不变；上节“待签／未更新”是此前时点，不再代表当前阻塞。
+
+本次只补签字与交付记录，SQL、测试、依赖均未改变，沿用29.18.2最终版本的本地验证证据，不重复操作数据库。实际候选严格为29.17.5九路径；包含已获准的本地main同步提交cb9d1309，按完整授权普通提交、推送更新#1370并保持Draft。实际提交SHA、推送结果及新CI状态以GitHub为准；旧SHA失败仍待新候选冷跑验收，不提前记为修复通过。
+
+**本次未做**：不Ready、不合并、不重跑失败CI，不启用shadow／Gate，不登记真实映射或操作生产，不删除或重算业务数据；本轮不重复运行数据库套件，全量Contract／E2E留给新SHA的PR CI冷跑。
+
+### 29.19 第29.17节候选CI反证与下一步取证边界（2026-10-01；仅记录，不实施新修复）
+
+候选 `5871463d27440088d000ca35c266cb4e3cf52d7d` 已推送#1370，仍Draft；可信红区 `36839849140` 已获维护者批准并通过，Docker烟测 `36839854280` 通过。CI `36839854296` 的已完成分片给出下列反证；读取时分片5尚在运行，不能称整个run已经终态，也不能称两项SQL优化已通过验收。
+
+| 证据                   | 实际结果与限制                                                                                                                                                                                                                                                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 分片1／job110296142815 | Contract 1套／1,087项通过；E2E 83套通过、1套失败，1,599项通过、1项失败。失败为映射2,000条首次比较。prepare 1,691.363ms、start 140.793ms，进入比较前1,832ms；扣除100ms pool wait后比较事务预算3,067ms。应用证明批量写入4,528.802ms报P2028，观测整链6,377ms。其他尚未执行到的阶段不记为零成本或通过。                     |
+| 分片2／job110296142757 | E2E 82套通过、1套失败，1,536项通过、1项失败。来源2,000条旧submit/edit链在7,000ms事务内报已经过7,737ms；仓内栈为writeLegacySources:528→writeMatchedLegacySources:486→attendances.service:688，调用点source-proof E2E:1265。栈只证明报错位置，不证明单条INSERT耗时7,737ms；旧写、匹配准备、来源写入和提交各段仍缺CI耗时。 |
+| CI纯函数对照           | 2,000次旧mapping 1,690.326／1,434.839ms，新mapping 1,106.452／1,189.143ms；旧selection 1,031.059／891.379ms，新selection 325.014／321.294ms。来源1,000次旧投影1,131.537／983.092ms，物化969.618／1,049.590ms。纯函数收益不等于整链达标，来源物化也不是每一轮都更快。                                                    |
+| 当前验收裁决           | 本地86/86、255/255和quick仍为真实本地证据；但本次候选两项满额CI失败，29.17局部优化未完成交付验收，不能据此Ready、合并、提高预算或削减守卫。已完成分片3、4通过，分片5待终态；失败计数不因新SHA或换方法重置。                                                                                                             |
+
+**推荐下一步：真实写入链分层取证，而不是继续纯函数微调。** 仅临时修改既有source-proof及mapping-proof两份E2E，在app_test_w98保留原7秒／5秒和全部断言，分别记录旧业务事务固定阶段与映射完整准备／开始／应用写入／比较写入／终态；数据库侧只针对获准合成夹具做回滚式真实成功写入路径的EXPLAIN ANALYZE/BUFFERS及会话内函数调用计数／总耗时／自身耗时。分开记录带探针结果与原预算首次整链结果；如果预算阻止完整观测，则保留失败和已取得证据，不加长业务事务或以冲突INSERT替代真实首次写入。失败事务不能提供的统计标为缺失，不当零读数。
+
+候选诊断写集为上述两份E2E（诊断结束还原）及本评审稿、FROZEN_DRAFTS、NEXT_TASKS（保留脱敏结果）五路径；w98及既有三个具名fixture角色／ACL／临时LOGIN仅沿原隔离用途，结束撤回回收。不改业务代码、schema、migration、权限、Gate、超时、断言或CI，不增加跨行缓存、跳过复核或新的可信标志；不提交推送。该诊断方向须维护者明确确认后执行，不能用29.17授权倒推另一套安全架构的修复许可。结果须一次性给出成本归因、等价约束、精确修复写集及验证后果；尚无足够证据提出新的实现方案。
+
+本轮只读取GitHub与源码、记录以上三份文档；未运行本地数据库诊断或新修复，未重跑CI、提交推送、Ready、合并、操作生产或真实映射。
+
+### 29.20 第29.19节隔离取证结果（2026-10-01；诊断完成，未修复CI）
+
+维护者明确批准五路径诊断后执行；仅app_test_w98合成夹具及既有具名fixture角色。两份E2E临时改动已还原为HEAD，最终只保留本评审稿及两份台账顶部。没有修改生产函数、schema、migration、断言、预算或全局数据库配置，没有提交推送。
+
+#### 29.20.1 CI终态与测量边界
+
+- 同一候选5871463d的CI run36839854296已终态failure。五个E2E分片合计415套通过／2套失败，6,855项通过／2项失败；Contract另计1套1,087项通过。分片5最终83套1,280项通过，包含D7 time-correction及其migration，覆盖29.19“尚在运行”的时点。剩余红点仍为来源7秒旧提交、映射5秒满额比较。可信红区与Docker通过不代替这两项验收。#1370仍OPEN／Draft，head未变，未重跑CI。
+- 来源采用原真实提交链固定阶段计时、事务内函数统计，以及SAVEPOINT回滚式真实首次INSERT计划。映射采用真实runtime会话首次应用／比较INSERT的回滚式EXPLAIN ANALYZE/BUFFERS；插入前及回滚后计数均为零。只输出固定阶段、调用数、允许名单错误码及计划汇总，不输出业务标识、审计内容、连接串或完整参数。
+- track_functions仅设当前诊断事务；映射设置诊断选项后切换为既有runtime身份，不给runtime增权。来源另用pg_temp守卫副本分段计时，保留真实查询、锁、首匹配、条件及hash，结束回滚，未替换生产触发器。
+- 函数total含嵌套调用，self不含；不能将所有total相加。提交前统计不含之后的延迟闭包守卫，缺失不记零。shared reads为0仅代表该样本命中共享缓冲区，不代表无查询／锁成本、冷环境或CI特征。
+
+#### 29.20.2 来源写入：大快照重复处理是已测热点
+
+仅加阶段计时、没有额外INSERT的第一轮原用例通过：2,000记录整链2,240ms，旧事务体2,050.244ms。来源createMany 1,487.979ms；来源行守卫2,000次total 1,220.772ms／self 1,174.284ms，来源hash仅46.488ms。其他阶段为建sheet166.406ms、重叠查询155.835ms、记录读取110.255ms、审计写入65.677ms；并行预取不可直接相加。CI栈报7737ms只证明事务过期位置，不能说来源INSERT单独花了7737ms。
+
+| 回滚式真实2,000行INSERT |    执行ms | 行守卫ms／次数   | shared hits／reads |
+| ----------------------- | --------: | ---------------- | ------------------ |
+| 样本一                  | 1,397.101 | 1,280.217／2,000 | 80,023／0          |
+| 样本二                  | 1,289.446 | 1,188.205／2,000 | 80,025／0          |
+
+样本二FK触发器合计约55.67ms，已包含在INSERT执行时间内。探针后又执行原INSERT时统计4,000次是预期阳性对照，不是生产重复写；带额外探针用例3,831／3,447ms不能当正常业务墙钟。
+
+在已提交的同批2,000个合成来源上，完整守卫副本的暖路径分段为：锚点读锁68.903ms、审计JSON投影597.879ms、链及活动核对18.766ms、首条事实查找393.070ms、事实字段比较2.921ms、规则核对33.490ms、hash45.366ms。**投影加查找约991ms，明显高于hash。** 副本输入已经合法且缓冲区已热，只用于守卫内部成本分解，不是首次INSERT或CI复现，未测延迟提交守卫。
+
+结论：第134条每行重新处理同一大审计快照的成本仍随记录数放大。继续只做hash／纯函数微调缺乏足够收益证据。真实行锁和外键仍需完整保留。
+
+#### 29.20.3 映射写入：逐行独立复算占主要成本
+
+回滚式首次写入保留全部真实触发器、原始完整2,000项数据：
+
+| 语句           | planning／execution ms | 主守卫ms／次数   | shared hits／reads |
+| -------------- | ---------------------- | ---------------- | ------------------ |
+| 应用集合INSERT | 0.356／1,155.110       | 1,077.073／2,000 | 122,865／0         |
+| 比较集合INSERT | 0.219／958.007         | 829.329／2,000   | 581,491／0         |
+
+同事务函数统计如下；嵌套total不可相加。
+
+| 函数                            | 调用数 | total／self ms    |
+| ------------------------------- | -----: | ----------------- |
+| csm_application_insert_guard_fn |  2,000 | 1,075.680／14.944 |
+| csm_application_result_fn       |  2,000 | 991.209／220.731  |
+| csm_source_approval_result_fn   |  2,000 | 651.542／241.982  |
+| csm_mapping_inputs_result_fn    |  2,000 | 355.134／15.176   |
+| csm_policy_evaluation_proof_fn  |  2,000 | 339.958／79.642   |
+| csm_policy_evaluate_fn          |  2,000 | 251.910／56.302   |
+| cscr_insert_guard_fn            |  2,000 | 827.944／711.688  |
+| csm_assert_runtime_fn           |  4,000 | 135.132／107.191  |
+| csm_selection_hash_fn           |  2,000 | 118.936／54.705   |
+
+exact_keys为36,000次／158.509ms，来源hash为4,000次／105.076ms；两条INSERT外键触发器分别约56.69／63.23ms。2,000次应用／比较守卫和回滚前后零计数是仪器阳性对照，不以冲突INSERT跳过守卫。
+
+源码确认比较守卫每行重读审计快照并执行同attempt计数；但本轮仅测得其self 711.688ms，**不能全归于COUNT、JSON、索引或锁等待**。应用主守卫绝大部分时间在独立复算调用链，不能因为慢就直接删除复核。
+
+带额外EXPLAIN的原满额用例失败1项／未选择254项：探针消耗同一5秒余额，进入比较前3,094ms，事务余量1,805ms，观测整链5,456ms；正式应用INSERT 1,220.183ms完成，比较INSERT在1,124.836ms后报P2028。**这是附加取证造成预算不足，不是独立复现CI原失败。** 没有重置时钟、提高超时或排除探针成本来制造通过。
+
+#### 29.20.4 还原、原用例验证及清理
+
+两份测试经apply_patch撤回本轮诊断，文件存在性及SHA256均与HEAD逐字一致：
+
+- source-proof：d07c10962040ca9b80893cd40fdec6a619419126bdf8872c809703ae2b6bd76a。
+- mapping-proof：b200d3e5576b7d5b9949eae04cac14ebceb29ebd9a70383eeee5bfb05880d754。
+
+随后沿29.17.6专用Jest配置串行运行原用例，不开额外EXPLAIN：
+
+- 来源real submit/edit preserve CUIDs：1通过／85未选择，进程16.494秒；2,000记录整链2,042ms，原7秒预算。
+- 映射keeps a committed start after rollback：1通过／254未选择，进程19.754秒；整链2,946ms，原5秒预算。prepare604.086ms、start62.444ms、应用INSERT1,245.530ms、比较INSERT1,001.092ms、terminal2.732ms。保留HEAD已有计时器，不能称完全无探针；本轮额外诊断已移除。
+- 以上只是定向验证，不是本轮完整86／255套件或quick重跑，不能抵消CI失败。首次恢复后启动命令有一次Jest配置JSON重复编码的参数错误，未进入测试／数据库；修正参数后才得到上述结果，不计作业务失败或通过。
+
+最终catalog正对照postgres角色1；w98数据库0、连接0、三个具名fixture角色0。临时函数、会话权限和临时LOGIN随事务／夹具生命周期回收，不留授权、不删业务数据。两条SQL摘要仍为已签134条404caabf01e9aeb5b9744423d02212c6c83f5becae8640050fa6cae9b83b2cab、135条51d1ee6a5ccc70c43a32d3a2e775f13f2df47638b6ba68330f21baec5a587a26，无新SQL需重签。暂存区为空，HEAD／PR均5871463d，只剩三份诊断文档未提交。
+
+#### 29.20.5 修复建议及精确候选范围（未授权实施）
+
+建议改为**数据库内按批处理共同输入、逐项保留完整校验**，不再仅优化纯函数常数成本、不提高预算。此为待评审方向，并非已证明可交付的SQL：
+
+1. 来源：评估同一INSERT内按审计锚点只展开一次records，再按原数组顺序匹配各来源；活动／版本／Record／规则／hash仍独立核对。重复id首条命中、非字符串、畸形JSON及原回退语义必须保留；只信数据库锁后真实数据，不接受调用者“已验证”标志。
+2. 应用：评估本批相同批准／政策／选择锚点的共同计算；每条来源的生效时点、范围、时长、结果、事实hash仍逐项独立复算。不缓存身份／权限、不跨请求保存证明，不用应用层缓存替代数据库验算。
+3. 比较：评估集合计数及审计成员匹配，覆盖单次／多次INSERT、批内重复、并发同attempt、超额、terminal已存在及重放；保留真实attempt锁、全部关联及最终闭包，不以估计count替代实际集合。
+4. **必须先解决的设计风险**：BEFORE ROW迁到AFTER STATEMENT可能改变检查时点、混合坏行错误优先级及锁序；transition relation、函数属主和runtime权限也须核实。本轮不授权这种重构，不得包装成“等价优化”直接实施。无法保持合同则报告，不改旧断言。
+5. 验收需固定旧实现差分、原全部负例／身份／并发／回放／集合闭包、完整来源及映射E2E、原2,000项7秒／5秒链、quick及PR CI冷跑。多批／直接SQL不得走更弱守卫。暖路径数据不保证CI余量，不自动重试至绿。
+
+候选集中为以下九路径，不再另拆文档PR，但**目前只是评审上限**：
+
+| 精确路径                                                                              | 候选用途                                |
+| ------------------------------------------------------------------------------------- | --------------------------------------- |
+| prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql  | 未合入第134条来源集合校验候选           |
+| prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql | 未合入第135条应用／比较集合校验候选     |
+| test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts               | 固定旧参考、顺序／负例／原满额来源链    |
+| test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts              | runtime、并发／分批／篡改／原满额比较链 |
+| docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md                   | SQL职责、锁序、错误合同、风险及证据     |
+| docs/ai-harness/FROZEN_DRAFTS.md                                                      | 顶部状态                                |
+| docs/ai-harness/NEXT_TASKS.md                                                         | 顶部状态                                |
+| changelog.d/activity-os-r5-e3-shadow-mapping-proof.md                                 | 修复与兼容性                            |
+| docs/ai-harness/CUTOVER_SIGNOFF.md                                                    | 最终SQL实际摘要获明确重签后登记         |
+
+本轮完成**成本定位，不是最终SQL修复设计**。后续先在现评审稿定稿上述检查时点／锁序／错误优先级；若需新表／字段／ACL脚本／生产服务或扩大路径，集中报告，不从此表倒推授权，也不许诺九路径一定能完成集合化。既有失败计数不归零。
+
+文档验收：评审稿与NEXT_TASKS的Prettier、git diff --check、readtax、counts、codemap及其135条migration计数检查通过；保留readtax容量提示、codemap两项既有WARN和FROZEN_DRAFTS历史格式边界，不整页重排历史记录。最终diff仅三份文档，测试及两条SQL无差异，暂存区为空。
+
+**本次未做**：未实施候选优化或改SQL／签字、生产代码、schema、权限、API／DTO、断言、预算；未重跑完整quick／全量E2E／CI，未提交推送、Ready或合并。未登记真实映射、启用shadow／Gate、查真实业务库或操作生产，未删除／重算业务数据。#1370两项CI失败仍开放。
+
+### 29.21 批量校验完整方案A与精确实施写集（2026-10-01；旧CI失败保留，函数级JIT候选本地通过并已重签）
+
+**当前授权与执行状态**：本节最初按仅文档授权定稿；维护者随后明确批准29.21完整方案A、10路径及29.21.3语义差异，允许范围内实现／取证修复／补测／文档、仅w98和三个具名夹具角色验证，并在最终验收及实际3b／4b确认后提交推送同一Draft。下方“未来／待批准／本轮仅文档”保留的是送审时点，不覆盖该后续授权。29.21.11保留首轮原型停止证据；此后按同一获准范围修复两项旧错误兼容问题、先完成可行性门，再补完整回归，测试结果见29.21.12。未放宽断言、业务预算或数据库权限；维护者已明确确认29.21.12两项3b及新增DB执行面4b，实际摘要复核一致并登记，沿既有完整授权更新#1370 Draft，签字及交付边界见29.21.13。业务轴仍为E3-2 D2，不开启D3／E4或正式贡献结算。
+
+现场：分支codex/activity-os-r5-e3-d2-source-proof-implementation，HEAD／#1370为5871463d，PR仍Draft；GitHub main及本地origin/main均9aee103b，两条候选migration未出现在main目录树。preflight落后0，仅因本轮获准继续编辑的三份既有文档非clean退出1；不改门禁、不隐藏退出码。没有连接数据库。本轮影响面经srvf-prisma-change流程核对；prisma/AGENTS.md不存在，不补造。
+
+#### 29.21.1 决策、风险与A/B比较
+
+**需要拍板的不是“少验一点”，而是校验粒度与内部拒绝时点。** AGENTS §3“业务行为冻结”锁仍存在；本节仅提出下列明确差异，未重新决定既有合同。禁止将本方案称为逐行执行顺序完全不变的“等价微调”。
+
+| 风险项                 | 本轮文档／未来方案A                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| prisma/schema.prisma   | 都不改；不增删表、列、索引、enum或关系                                                                              |
+| migration              | 本轮不改；未来仅未合入第134／135条具名守卫，数量仍135；若届时已合入，停止，不改已发布历史                           |
+| seed                   | 不改；270权限、175／170审计及30／277字典不变                                                                        |
+| 现有数据               | 不查询真实数据、不回填；未来数据库验证也只限获准w98合成夹具                                                         |
+| 不可逆操作             | 不删除、转换或重算业务数据；不自动发布migration／ACL                                                                |
+| OpenAPI／snapshot      | 不改，服务调用、DTO、HTTP返回与业务输入不变                                                                         |
+| 鉴权／审计／Permission | Human访问面及逐请求资格复核不改；新增两个受保护数据库触发器函数须同步NOLOGIN属主和撤销直接EXECUTE，另做4b访问面复核 |
+| BizCode                | 不新增；保留既有业务错误和原断言；内部复合无效SQL的错误优先级变化见29.21.3                                          |
+| 维护者决策             | 本节方向、10路径、检查时点差异、隔离角色生命周期须整体批准；最终实际SQL两项3b及数据库ACL复核后置                    |
+
+- **方案A（推荐）**：保留逐行入口的身份、真实锁及必要链校验；把重复大JSON展开、共同政策验算和集合计数放在当前INSERT的不可延迟AFTER STATEMENT守卫。以数据库提供的实际新增行集合为输入，没有调用者可信标志、会话缓存或新持久化证明。完整坏批在当前语句返回前拒绝，旧业务／比较各自事务和失败恢复边界不变。
+- **方案B（保守回退）**：维持5871463d原逐行守卫，不迁移检查时点；两项CI性能失败继续开放、PR保持Draft，不把反复重跑或延长预算当交付。若不接受29.21.3差异，选B；不能同时承诺“全部逐行执行语义不变”和本方案的集合化收益。
+- 最坏情况：守卫漏项、角色可绕过、并发下使用旧快照、或额外集合开销仍超预算。任何一项失败即停止交付，保留旧参考／诊断证据；只定向撤销未来新增候选diff，保护本节及既有用户改动，不用reset --hard／强推／删业务数据回退。不存在已部署回滚步骤，因为本包不授权部署。
+
+#### 29.21.2 固定实现形状：三组真实transition relation
+
+PG16官方约束：NEW TABLE仅供AFTER非constraint触发器使用，语句级触发器在零新增行时也会触发；普通AFTER STATEMENT不是可推迟到COMMIT的constraint trigger。[CREATE TRIGGER](https://www.postgresql.org/docs/16/sql-createtrigger.html) 明确该边界。本方案不使用DEFERRABLE、不增加持久表／临时凭据，不从客户端JSON声明哪些行已经验过。
+
+| 表／migration                             | 保留的BEFORE ROW函数及职责                                                                                                                                        | 新增AFTER INSERT STATEMENT函数／NEW TABLE别名     |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| ContributionShadowLegacySourceAnchor／134 | cslsa_insert_guard_fn：原锚点真实读锁、缺失／关系基本校验；不在每行展开完整records                                                                                | cslsa_insert_set_guard_fn／cslsa_inserted_rows    |
+| ContributionShadowMappingApplication／135 | csm_application_insert_guard_fn：真实runtime身份、实际source／approval锚点、Activity→Session→Position锁及锁后重读、拒绝伪造关联；不逐行重复政策全遍历             | csm_application_set_guard_fn／csmap_inserted_rows |
+| ContributionShadowComparisonReceipt／135  | cscr_insert_guard_fn：attempt FOR UPDATE、terminal拒绝、audit与非空selectionItem真实锁、基本链及comparable必填／身份资格；逐行全表count和审计成员展开移到集合守卫 | cscr_insert_set_guard_fn／cscr_inserted_rows      |
+
+新触发器名称分别固定为cslsa_insert_set_guard、csmap_insert_set_guard、cscr_insert_set_guard。均为VOLATILE、AFTER INSERT、FOR EACH STATEMENT、REFERENCING NEW TABLE；函数开头校验TG_OP／TG_LEVEL／TG_RELID指向固定public表，禁止动态选择表／列／函数，不接受自定义GUC传来的“已验证”结果。空集合直接RETURN NULL，不伪造收据或放宽有行写入身份检查；不以RETURN NEW跳过某条坏行。
+
+检查只使用数据库transition relation和锁后真实锚点；CTE MATERIALIZED／局部结果仅生存于本函数／语句，不是跨请求缓存。对同一外层INSERT的新增行，AFTER函数能看到完整集合，含同事务先前已成功语句；不能把读取真实表的函数错标IMMUTABLE／STABLE来牺牲可见性。[PG16数据可见性](https://www.postgresql.org/docs/16/trigger-datachanges.html)
+
+**原D1、闭包及不可变守卫不动**：第133条历史SQL不改；cslsa_audit_complete继续DEFERRED且SET CONSTRAINTS ALL IMMEDIATE仍有效；csar_insert_guard、cstr_insert_guard、注册收据闭包、UPDATE／DELETE／TRUNCATE禁令、全部CHECK／UNIQUE／FK及时间默认值保留。本方案不能把本批完整性替换为最终收据的“以后会检查”。
+
+#### 29.21.3 接受集、错误顺序与冲突SQL的显式差异
+
+1. **硬不变量**：没有任何新增坏来源／应用／比较行能够在当前INSERT成功结束后留下；失败时本语句新增行全回滚。多语句事务中先前已验证行仍按原事务／savepoint规则处理。旧submit/edit原7秒事务失败必须整体回滚；映射独立start已提交、后续5秒比较失败则保留start并走原失败收口，不能回滚旧业务成功结果。触发器异常属于原事务，[PG16触发器行为](https://www.postgresql.org/docs/16/trigger-definition.html) 支持该机制，但本项目实际路径仍需w98证明。
+2. **同一行单项业务错误**：继续使用原SQLSTATE／错误文本；权限失败、错活动／错版本、坏指纹、缺事实、未批准映射等原E2E逐条不变。为避免原业务错被FK提前替代，BEFORE保留相应关联预检；不能只把整个旧函数改名接到AFTER。
+3. **多重错误与约束时点**：BEFORE保留身份／锁／必要链校验。当前第133–135条声明中，这三张目标表的NOT NULL／CHECK、唯一约束及FK没有新增可延迟声明；即时约束按PG实际执行机制生效。普通AFTER ROW在AFTER STATEMENT前，但不能据此概括“全部约束／所有FK总先于集合重算报错”：本项目cslsa_audit_complete与csma_receipt_closure明确为DEFERRABLE INITIALLY DEFERRED，可到事务末或被SET CONSTRAINTS提前触发，原闭包时点保留。[PG16触发器行为](https://www.postgresql.org/docs/16/trigger-definition.html) 区分普通AFTER与可延迟约束触发器。AFTER集合函数内部按来源／应用／比较各自原业务阶段选错，同阶段按新增行主键C排序；外部约束之间、单错／混错的实际优先级若无法由当前声明静态证明，必须纳入阶段2同一原型差分，不预承诺所有FK先报或与旧遍历完全一致。不吞掉native错误，不捕获取消／超时／死锁后改成成功。
+4. **ON CONFLICT DO NOTHING**：transition relation只含真正插入的行，因此被冲突跳过的输入仍走BEFORE身份／关联检查，但不再运行移到AFTER的重计算。它不能新增或替换证据、不能变成应用层幂等协议；现写者未使用skipDuplicates／ON CONFLICT。本差异明确纳入方案A审批，不谎称所有直接SQL的错误行为与旧实现相同。新增行中只要一行无效，整条语句仍失败。ON CONFLICT DO UPDATE仍由既有不可变UPDATE守卫拒绝，不新增可更新路径。
+5. **空INSERT、COPY、RETURNING、多写CTE**：空集不产生证明；COPY和直接多行INSERT必须受同组触发器约束；RETURNING不代表提交，若语句末校验失败不得当成功收据。多写CTE即使在同语句内部读到暂存行，也不得绕过该语句最终失败／事务回滚；不得添加非事务外部副作用。以上均列实际测试，不能靠文档假设。
+6. **既有断言保持**：不删除、不skip、不放宽任何旧断言／预算。只允许更新诊断器读取“实际在用函数”的位置及新增覆盖；若旧行为断言与本节候选冲突，停止呈报具体反例，不拿本节多错顺序条款当批量修改旧测试的许可。
+
+#### 29.21.4 来源集合算法与逐项守卫对照
+
+- BEFORE保留原逐行锁类别及先后：AuditLog→ObservationWindow→AttendanceSheet→AttendanceRecord→Activity；matched时沿旧规则ID顺序FOR SHARE锁定真实active规则。不提前缓存可变规则，不用无锁预取替代；取得锁后使用独立语句重读。no_match沿原规则存在性判据，不发明可跨请求缓存的“无规则证明”。
+- AFTER按实际auditLogId分组，从已锁真实审计取context，每组最多一次展开records。保留operation／sheet投影、成功事件、proof位、资源、观察窗、活动／版本及每条Record对应关系检查。数组非array仍用旧错误拒绝，不能用空数组coalesce掩盖坏输入。
+- records展开带WITH ORDINALITY，按auditLogId和元素->>'id'保留**最小原始ordinal**。同一记录的第二个正确对象不能覆盖第一个错误对象；数字／布尔转文本、Unicode、引号、NULL、数组id、嵌套非对象与现有固定旧参考逐项一致。不能只做字符串字典或jsonb_object_agg让最后一项胜出。
+- 每个NEW行独立核对memberId、roleCode、合法十进制时长与分数；来源规则唯一性、原阈值算法、字段组合、来源hash仍从真实数据逐条计算。共同JSON一次展开不代表某行通过就替其它行背书。
+- 原cslsa_audit_complete负责整个审计最终exact set，集合INSERT仅校验当前实际新增子集：允许原来合法的分批写入，但提交缺失／重复／多余记录仍拒绝。不能在每个子批要求达到整审计数量而破坏旧分批合同。
+- 需移走现source E2E第118行附近对cslsa_insert_guard_fn投影片段的取证指向，改读cslsa_insert_set_guard_fn的真实投影；同一组输入、固定旧参考、大小／形状／值断言全部保留，不能把旧闲置函数留着供测试假绿。
+
+#### 29.21.5 应用集合算法：完整定义一次验证，不信客户端预验
+
+BEFORE仍逐行验证真实runtime，读取source与approval，保留Activity→Session→Position的FOR SHARE锁序以及等待后独立重读；不得在一条锁前CTE里冻结旧快照后直接复用。之后按实际新增应用的锚点join，而非只按相同hash认定同源。
+
+AFTER内固定四层，每层真实数据都来自数据库：
+
+1. **来源与批准资格**：每条来源仍核对窗口、审计事件／operation／source hash、批准注册闭包、source-time、映射版本、唯一有效批准、revoke／replace、实际岗位／场次有效性。允许在同次锁后语句按完整资格键分组计算：windowId、auditLogId、activityId、activityTypeCode、attendanceRoleCode、approvalId；审计时点由auditLogId取，不用调用者时间。不按“同policy”合并不同行政范围或批准资格，不缓存当前用户／权限。
+2. **政策共同部分**：以实际policyVersionId绑定真实definitionJson、hash、schema／evaluator及生效区间。每个真实版本调用既有完整csm_policy_fingerprint_fn一次，校验全部规则（包括未选中规则及默认值）并核对存储hash；调用计数按“本次语句内不同版本数”，不能以hash相同合并不同版本。既有scalar函数及其旧顺序参考保留，不改变它们对外的纯计算／预读语义。
+3. **逐来源计算**：完整政策验证成功后，在当前函数局部把roleRules／categoryRules／durationBands按原序展开为关系；每条来源从原两位小时时长精确乘3600，保留整数／范围判定，用首个满足上限的band计算NUMERIC分数和说明。必须存在显式role+category；E1合法默认值不能被当作已批准E3映射。不能仅按“所有2,000人同一时长”的fixture去重，需验证2,000种不同时长、多个版本及不同角色／类别。
+4. **选择与应用逐字段对拍**：revision真实selectionJson hash每revision一次，逐行核对source-time最新版本、position覆盖activity优先级、policy及scope、各复合锚点、计算值和数据库createdAt边界。只要任何行不匹配就以原失败族拒绝整批。不得接受外部传入的compiled policy／evaluation result作为可信能力。
+
+集合positive path遇到形态／纯计算失败时，可以用现存scalar函数对指定坏行作**真实重算以确定旧错误**，但只捕获明确的业务check_violation；不允许“fallback返回旧值”掩盖取消、P2028、40P01或40001。所有单错／混合shape差分有原实现参考。旧应用函数仍需在回归中覆盖，且新增测试必须命中新集合触发器，不能只测未使用的scalar函数。
+
+#### 29.21.6 比较集合算法与并发边界
+
+- BEFORE保留attempt FOR UPDATE作为串行点，锁后重读attempt和terminal；审计FOR SHARE及非空selectionItem FOR SHARE保留原相对顺序，comparable实际runtime身份仍核验。不能拿新AFTER函数当减少两轮应用层资格复核的理由。
+- AFTER按attemptId分组，保持锁到事务结束，取实际ComparisonReceipt总count（含本批及同事务之前的批）。**新条件为total > expected则拒绝**，不是照搬旧“插入前count >= expected”，也不能再把本批数量重复相加。等于上限允许；最后的terminal exact buckets仍沿原独立守卫。
+- 成员判定按真实auditLogId一次展开records，比较的是同一个JSON对象里的(recordId,memberId)。这里是原EXISTS语义，**不是来源的首条事实语义**：有任意同对象匹配即可；不能把recordId集合和memberId集合分别存在当命中，也不能将来源first-match直接复用为比较规则。
+- 每条comparable继续从实际不可变application→source核对全部字段及source hash，保留原selection／category／classification／failure字段约束；没有application不接受hash替代。非comparable原分支也必须经过attempt、成员、数量与terminal守卫。
+- 同attempt两连接分别持锁竞争，后取得锁者必须看到前一提交后的count；使用READ COMMITTED和锁后独立读取，不能用取锁前预读数。RR／Serializable下不新增“捕获序列化失败并继续”的路径。新增并发测试屏障按当前库与自身PID收敛，不用固定sleep。
+- 多attempt一条SQL沿原逐行输入锁顺序；不声称突然获得跨attempt全局无死锁能力。若业务写者只写一attempt，测试仍覆盖直接SQL多组且反序竞争：失败必须原子、不得默默重试或留下半批。不得为提高通过率改变既有timeout或重排业务写者。
+
+#### 29.21.7 权限脚本与真实属主闭环
+
+只修改现有scripts/sql/contribution-shadow-registration-roles.sql的**具名函数清单**：
+
+- 新增csm*application_set_guard_fn()、cscr_insert_set_guard_fn()两项到bootstrap的ALTER OWNER＋REVOKE清单及bind／close前属主核验清单；不得用csm*\*宽泛匹配。
+- 两函数固定SECURITY DEFINER、VOLATILE、search_path=pg_catalog, public, pg_temp；属主为既有NOLOGIN owner。PUBLIC、registrar、runtime都无直接EXECUTE；runtime仍只有既有表级INSERT／SELECT，不扩成审计读、旧业务写、role membership或DDL。
+- 来源cslsa_insert_set_guard_fn沿来源入口SECURITY INVOKER，不转交shadow owner、不扩大原来源写者能力；普通用户不能靠调用trigger函数自行建立可信集合。
+- 不新增纯计算可信入口或GUC，不新增后台角色、口令或LOGIN配置，不改bootstrap／bind／close业务动作和登记manifest。测试新建的两个函数须逐个检查属主、prosecdef、provolatile、固定search_path和实际权限；保留既有五函数断言，另加两函数断言，不把5机械改7而移除原覆盖。
+- 新函数必须只能通过指定表／触发器实际transition relation工作。临时表同名、攻击search_path、自设authority GUC、合法helper结果搭配伪造NEW输入都不得通过；runtime、registrar及错误owner执行负例走真实会话，不只读GRANT文本。
+- 本包权限码／审计目录不变，但受保护执行面变化，需要最终4b明确复核新增数据库函数隔离。第134／135 SQL最终实算摘要分别另签3b；旧签字不覆盖新实现，当前不生成假摘要或提前登记。
+
+#### 29.21.8 十个精确实施路径与禁止扩散
+
+**当前只授权本表第6–8项的文档编辑。** 未来完整包确认后才可触及其余路径；第10项仅在人确认最终签字后写。
+
+| #   | 精确路径                                                                              | 未来允许内容                                                                          |
+| --- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 1   | prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql  | 来源BEFORE拆分及cslsa_insert_set_guard_fn／触发器；不改表结构、索引、hash合同、旧闭包 |
+| 2   | prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql | 应用／比较BEFORE拆分及两SET函数／触发器；原scalar参考与D1外部守卫保留                 |
+| 3   | scripts/sql/contribution-shadow-registration-roles.sql                                | 仅两新受保护函数的属主／REVOKE及核验清单，不新增角色或表权限                          |
+| 4   | test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts               | 新集合真实负例、固定旧参考差分、现取证位置适配及来源满额；保留原断言                  |
+| 5   | test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts              | 真实角色、分批／并发／回放／冲突SQL、独立计算与满额；保留原断言                       |
+| 6   | docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md                   | 本节方案、实施与验收证据，保留历史                                                    |
+| 7   | docs/ai-harness/FROZEN_DRAFTS.md                                                      | 仅顶部本lane状态                                                                      |
+| 8   | docs/ai-harness/NEXT_TASKS.md                                                         | 仅顶部本lane状态                                                                      |
+| 9   | changelog.d/activity-os-r5-e3-shadow-mapping-proof.md                                 | 本包语义差异、验证与未完成项                                                          |
+| 10  | docs/ai-harness/CUTOVER_SIGNOFF.md                                                    | 两项最终3b及本轮DB执行面4b获明确确认后登记                                            |
+
+已逐文件运行harness:needs：10路径中两migration为红区，8路径非红区；该读数只预算、不代表授权已在。工具建议的prisma/migrations/\*\*过宽，不采用。路径存在性另验，不用不存在路径的空diff证明安全。
+
+不含任何src生产文件、schema／seed、API／DTO、权限目录、CI、package／lock、test/setup、ACL CLI、其他migration或E2E、CODEMAP／ROUTE_AUTHZ等生成物。schema／路径数量／API均未变，暂不预计生成物联动；若检查证明产生必须新增的后果，集中报告后再授权，不擅自刷新。若最终需要表、字段、索引、ACL权限或代码范围外变化，当前包停止，不以“配套”隐含扩大。
+
+#### 29.21.9 单包实施顺序、验证矩阵及停止条件
+
+未来获完整实施授权后才执行；同一10路径、同一#1370交付，不另开诊断／计划PR。按process §7.2及已同步srvf-goal-author技能，**先验证能推翻方案的最小候选实现，再扩充完整回归**；最小原型不是可抛弃的计时脚本，也不是以纯函数／单条INSERT测量代替整链。
+
+| 顺序 | 必须取得的证据                                                                                                                                                                                           | 失败处理                                                                                                       |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 0    | main／head／两候选未发布、精确令牌、原三文档保留范围；实际schema与触发器基线                                                                                                                             | 状态漂移即报告，不改已发布迁移                                                                                 |
+| 1    | 冻结5871463d旧参考；复核可复用characterization的代码／环境输入与证据，先执行原型直接需要的身份、回滚和锁语义基线                                                                                         | 输入不同则补对应检查；不先运行整包重任务掩盖性能条件                                                           |
+| 2    | 在实际候选migration／ACL与两既有E2E内实现最小可沿用切片：三组真实集合触发器、真实旧业务写者与受限runtime／NOLOGIN属主，原2,000条来源完整7秒链、映射完整5秒链，以及必要拒绝／原子性／锁语义正反例同时验证 | 任一不达标先收束当前阶段／角色／规模／耗时与失败证据，报告下一项具体决策；不先扩展整包、刷新派生文档或猜测重跑 |
+| 3    | 最小切片满足可行性门后沿用同一实现补齐10路径与G1–G8全部回归，不丢弃原型从头重写                                                                                                                          | 可行性绿不等于完整验收；新越界集中报告，不削减旧断言                                                           |
+| 4    | 完整来源／映射回归、冷连接满额及固定取证；所有最终必须检查与预算不减                                                                                                                                     | 不加预算、不CI碰运气重试；同原因失败按原记录累计                                                               |
+| 5    | quick、定向冷lint、文档与migration计数；角色／连接／库回收                                                                                                                                               | 未跑不报通过，清理不完整先报告                                                                                 |
+| 6    | 实际两SQL摘要和ACL差异集中呈报，人确认3b／4b后登记                                                                                                                                                       | 不代签，旧签字不沿用                                                                                           |
+| 7    | 在完整包授权及最终验证／签字完成后，普通提交推送更新同一#1370 Draft，再跟进该SHA CI冷跑                                                                                                                  | 不再另问一次推送；红区可信审批仍由维护者对实际SHA批准，不自动Ready／合并或重跑失败CI                           |
+
+**阶段2可行性门的固定口径**：实际启用候选三组集合触发器，不只调用独立helper；原来源真实submit/edit整链包含原旧事务及来源落库，使用其原业务写者身份；映射原完整链用实际受限runtime连接，计入prepare、持久化start、实付建连、应用／比较／terminal，总预算仍5秒。source事务仍7秒，既有全部行为断言和测试总时限不改。至少同时取得：合法满额通过；坏来源／应用／比较各一例能拒绝且本批零残留；错误身份／直接EXECUTE拒绝；锁等待后重读与同attempt数量竞争不被跳过。固定计数／属主与一次实际触发证明排除“候选未接线而旧路径通过”的假绿。
+
+该最小切片是未来实现的一部分，可留在候选文件继续补齐；不先单独交付临时诊断，再重新申请实施或从头重写。原型尚不需要跑完G1–G8，但不豁免最终任何项目。阶段2同时覆盖即时FK／CHECK与新集合守卫的单错／混错，以及两个既有延迟闭包在默认DEFERRED和SET CONSTRAINTS IMMEDIATE下的差分，不能把未验证的错误顺序拖到全包完成后。性能运行与本机lint／typecheck等重任务错峰，记录并发条件；本地整链通过仅说明本机可行，PR CI冷跑才是最终全量验收。不达标先报告具体失败维度与下一项需要决定的事项；不把失败计数因“原型”或换方法而归零。范围内取证／修复已纳入待审完整包，越界才申请扩围；执行仍受process §7.1失败熔断约束。
+
+- **G1 规模与执行次数**：原2,000项来源7秒、完整映射5秒（含prepare、start、实付连接和terminal）全部断言不变；单行、10、500、2,000分批和两大批混合均覆盖；每审计／版本／revision的实际展开／验证计数有阳性对照，不只看总时间。旧业务事务与后置比较的预算不混算。
+- **G2 内容等价**：来源现有全部首匹配／文本强制转换／shape差分；完整E1定义（未选规则损坏也拒绝）、2,000不同合法时长、临界值／无效数值、默认项／显式规则、多角色／类别／版本／scope；每条hash和结果对固定旧参考，不对候选自己。
+- **G3 整批原子性**：坏行位于开头／中间／结尾，各只坏一个维度；验证同语句全回滚、先前合法start保留、合法savepoint回退、terminal不产生成功伪证；重复／遗漏／额外行及SET CONSTRAINTS IMMEDIATE仍拒绝。
+- **G4 写入变体**：VALUES、INSERT SELECT、COPY、RETURNING、同语句多写CTE、零行、ON CONFLICT DO NOTHING合法／伪造冲突输入与新增坏行混合、DO UPDATE不可变拒绝。每个接受差异按29.21.3审批口径断言，不删旧重复拒绝测试。
+- **G5 并发与锁**：真实被锁活动／岗位变更后重读；同attempt两连接卡住→首个提交→后者读新计数并拒超额；多attempt交叉、撤销／取代时点、批间资格变化；原锁点和两轮权限复核不减少，40001／40P01不自动重试。
+- **G6 权限**：runtime真实LOGIN可走合法链、不能读原始审计／写旧Record／直接执行新函数；registrar、未绑定owner、篡改authority、pg_temp同名关系均拒绝；未bootstrap不产生“默认通行”。
+- **G7 多样性及性能**：不能只靠同一policy／同一时长夹具绿色；不同审计、版本、revision都按实际不同数校验；SQL EXPLAIN取证与原预算整链分开，探针消耗不能重置计时。允许按计划记录两次独立新连接运行，无论过败全部保留，不连续跑到绿。
+- **G8 历史兼容与全量**：133→134、134→135及当前冷回放、原来源86项／映射255项的既有断言全部保留并增加新例；D7及其余全量由PR CI冷跑，不在本机其它库执行。未来数量增加须报实际已选择／未选择／通过／失败，旧数字不是预填验收。
+
+本地命令沿29.17.6的**无globalSetup／globalTeardown专用Jest配置**，SRVF_E3_D2_W98=1及SRVF_E3_D2_MAPPING_W98=1分开串行运行各自完整文件；不改测试总时限，不走标准入口隐式触碰其它worker库。quick仅无DB静态／单测；任何带DB的Contract或全量入口留给CI。角色授权仅app_test_w98及srvf_shadow_owner_w98_fixture／srvf_shadow_registrar_w98_fixture／srvf_shadow_runtime_w98_fixture；临时LOGIN凭证不输出、不写文档，结束撤回并回收。先查是否已有他人连接／同名角色，存在即停，不盲接管或drop；postgres存在为计数仪器正对照。只回收自己创建且获准重建的合成夹具，禁migrate reset/dev/db push及全局数据库设置。
+
+#### 29.21.10 一次性授权文本、命令及交付边界
+
+以下为**尚待维护者批准的推荐完整交付包**，不是当前授权。当前仍仅可修改本评审稿与两份台账，不得实施、操作数据库或提交推送。按process §7.2，推荐一次涵盖实现、范围内取证／修复、补测、文档与签字后推送同一Draft PR，不默认拆出后续推送授权。确认文本显式包含29.21.3的真实风险差异：
+
+> 确认第29.21节批量校验完整方案A及10路径，接受第29.21.3节语句末校验、复合错误优先级及冲突跳过行的明确差异；保留全部既有断言、真实锁、权限复核及5秒／7秒预算。允许按第29.21.9节先完成实际集合触发器、真实受限角色和原2,000条完整链的最小可沿用实现，不达标先收束证据报告，不扩展整包或猜测重跑。允许本包范围内实现、取证修复、补测和配套文档；仅app_test_w98隔离验证、合成夹具重建及本节三个具名角色／ACL／临时LOGIN测试，结束撤回回收。最终SQL另签第134／135条3b，新增DB执行面另复核4b；最终验证及维护者签字完成后，允许普通提交推送更新同一#1370，保持Draft。可信红区审批仍由我对实际SHA批准。不自动Ready、不合并、不操作生产、不登记真实映射、不启用shadow／Gate、不删除或重算业务数据。
+
+获得上述完整包批准后，不在同范围修复、补测或签字完成时再索要一次提交推送许可；最终未知摘要不得预签、代理不得代发grant或批准部署。若维护者实际回复另有限制，按其明确限制执行，不能用本推荐文本扩大权限。本次三文档更正及其它会话的流程建议均不等于该实施包已经获批；不新建流程文件、长期台账或独立PR。
+
+维护者确认实施后，才在实际工作树执行下列精确令牌命令；代理不得代跑：
+
+```bash
+cd /Users/dengwang/Documents/coding/srvf-nest-api
+pnpm harness:grant 'prisma/migrations/20260929222500_activity_os_r5_e3_shadow_source_proof/migration.sql' --reason '确认E3-2 D2第29.21节10路径批量校验完整方案A及明确SQL语义边界'
+pnpm harness:grant 'prisma/migrations/20260930120000_activity_os_r5_e3_shadow_mapping_proof/migration.sql' --reason '确认E3-2 D2第29.21节10路径批量校验完整方案A及明确SQL语义边界'
+```
+
+两文件逐次grant，不用单命令多个路径或prisma/\*\*宽泛授权。ACL脚本虽非红区仍属于D档业务批准范围；harness:needs未要求令牌不等于代理可自行改变权限语义。现有134／135签字仍是404caabf…／51d1ee6a…，尚无本方案新SQL摘要；当前既有4b不能冒充新增函数复核通过。
+
+**本轮文档完成判据**：三份且仅三份文档diff；29.21以前的评审稿逐字保留，两份台账仅替换顶部状态；10候选实际路径存在、2红区逐文件可核；plan／NEXT_TASKS格式、diff空白及既有文档静态检查完成。没有执行待审SQL、创建任何数据库／角色／临时函数或启动DB测试。后续只需维护者一次明确决定本完整实施包，不再继续拆小方案获取零散授权。
+
+**本轮实际检查结果**：上述三路径范围和10路径存在性均通过；评审稿原424,867字节的SHA256仍为c5fd66a1865cc0c56cf6d09cff564f927f8abe7f6e75a8238f8c4b5177ff1726，两份台账除第3行外的正文hash不变。评审稿／NEXT_TASKS的Prettier、git diff --check、readtax、counts、codemap及135条migration计数检查通过；保留readtax容量提示、codemap两项既有WARN，不重排FROZEN_DRAFTS历史格式。两份SQL仍与已签摘要一致、暂存区为空；只读preflight的既有非clean退出已如实记录，不称开工门禁全绿。
+
+**本次未做**：本节未实施任何优化、改变触发器或权限脚本、操作数据库、重签、跑业务测试或改生产文件；未提交推送、Ready／合并、重跑CI或启用开关。来源／映射两个CI红点仍开放，方案性能与并发正确性均待实际验收。
+
+#### 29.21.11 已批准最小候选的实际证据与停止点（2026-10-01）
+
+维护者已批准完整包，精确授权令牌覆盖第134／135条候选SQL。实施前主分支／PR基线仍为本节记录的9aee103b／5871463d，保留原三份未提交文档；两候选migration未合入main。本轮实际新增代码diff仅为两条SQL、具名ACL脚本和两份既有E2E，连同本稿及两份顶部台账共8路径；changelog与CUTOVER_SIGNOFF尚未动，未扩大整包。第133条、schema、src、seed、接口、权限目录、CI及所有业务预算未改。
+
+候选接入cslsa_insert_set_guard、csmap_insert_set_guard、cscr_insert_set_guard三组实际transition relation；来源保留逐行真实锁／关系／规则判定，审计JSON按组展开；应用保留真实身份及Activity→Session→Position锁后重读，集合中分组验证批准资格、完整政策及选择；比较保留attempt／audit／item锁，集合执行总数、成员和真实应用字段核验。原scalar参考函数、source hash、D1终态／延迟闭包／不可变守卫保留。ACL只把两个新增受保护函数加入属主／撤销EXECUTE及核验清单；旧五函数断言原样保留，新增独立两函数的真实目录断言。测试仅改变来源投影取证指向并增加检查，所有既有断言未改。
+
+本地使用29.17.6既有无globalSetup／globalTeardown配置，两份E2E串行，变量分别为SRVF_E3_D2_W98=1与SRVF_E3_D2_MAPPING_W98=1；未并行运行lint／typecheck重任务。以下各轮均为完整冷建w98后执行，不把跳过项计入通过：
+
+| 轮次             | 选择的检查                                                   | 实际结果                                                                                | 边界                                                                                                                                                                                            |
+| ---------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 来源原型         | 原real submit/edit整链、投影差分、first-match／closure矩阵   | 32通过／54未选择／86总；进程65.918s；原2,000条submit完整链1,033ms，小于原7秒            | 原CUID、回滚、数量及业务断言保留；不是完整来源86项验收                                                                                                                                          |
+| 映射原型首次     | 原真实LOGIN完整链、两新函数ACL、旧五函数、应用伪造及终态拒绝 | 7通过／9失败／240未选择／256总；50.915s；SQLSTATE42702                                  | 新set函数的approval变量与表别名冲突，单行回滚检查即失败，尚未到满额性能；不冒充业务超时或CI复现                                                                                                 |
+| 同切片精确修正后 | 同上16项；仅修正候选SQL命名冲突，并排除比较函数同类变量冲突  | 16通过／240未选择／256总；23.819s；原真实受限LOGIN冷连接2,000条完整链2,557ms，小于原5秒 | prepare651.751ms、start71.501ms、应用INSERT1,295.453ms、比较INSERT503.125ms、terminal3.048ms；固定旧source hash参考2,000／2,000相同。新函数直接EXECUTE及原始审计读／旧Record写均被真实LOGIN拒绝 |
+| 比较边界最小补验 | 原合法应用、6个伪造比较负例、满额后再次写入                  | 6通过／2失败／248未选择／256总；19.502s                                                 | 下述两个既有断言冲突；未重跑、未改断言，按29.21.3／29.21.9停止扩展完整G1–G8                                                                                                                     |
+
+**两个具体反例，不是笼统“CI偶发”**：
+
+1. 既有`rejects forged comparison values ... {legacyRuleId: 'other-rule'}`要求`shadow comparison differs from immutable application proof`；候选把字段等值检查后移，实际先触发`cscr_legacy_rule_fk`／23503。它是已受既有断言保护的单项伪造输入，不能用29.21.3复合错误许可把旧断言换成外键错误。
+2. 既有`retains the original comparison set bound after a legitimate comparison`要求`shadow comparison exceeds expected set`；候选把计数后移，第二条同attempt／record实际先触发`cscr_attempt_record_key`／23505。满额且重复虽同时违反两个条件，29.21.3仍明确要求保留该旧断言，不能删除或放宽它。
+
+**下一项建议，仅记录、尚未实施／验证**：继续沿原第135条及既有mapping E2E，不新增路径、ACL或业务输入。（a）在已有BEFORE comparable分支读取真实source后，保留`legacyRuleId`等真实关系字段的必要前置等值拒绝，避免FK抢先；集合守卫仍保留完整最终检查。（b）对已存在同attempt／record的冲突候选，在已持有真实attempt锁后作定向前置检查，只有该冲突分支核对真实已写count并保留原满额错误；正常新增批仍由AFTER按attempt计数一次。先说明与ON CONFLICT DO NOTHING的交互并验证旧原断言，不把冲突分支变为正常每行全表count。该建议仍在原10路径修复方向内；因本节明确约定原断言冲突先呈报，本轮不先写入后续修正、不自动重跑或扩充整包。
+
+**尚缺的可行性证据**：坏批原子性新增矩阵、实际锁等待后重读／同attempt计数竞争、即时FK／CHECK与延迟闭包的完整时点差分尚未齐备。两条满额链通过只证明本机该输入可行，不能宣称阶段2整体通过、CI已修复或全部安全守卫等价；不同合法时长／多版本等G1–G8完整项尚未启动。命名错误已在一轮明确修正中解决；两个兼容反例仍开放，失败记录不归零。
+
+**隔离回收与交付**：本轮前后使用postgres角色计数1作正对照；结束读数为w98库0、该库连接0、三个具名夹具角色0。测试自行关闭临时LOGIN、撤回CONNECT并在隔离库回收后删除仅本轮创建的三个角色；未触碰真实业务库／映射。未签署候选新摘要；既有404caabf…／51d1ee6a…签字不覆盖本轮diff。未提交／推送、重跑CI、Ready、合并、操作生产或启用shadow／Gate。保留候选及证据供下一步决定，不回滚用户文档、不称整包交付。
+
+收束检查：git diff --check退出0，实际diff为上述8个获准路径，暂存区为空；本评审稿、NEXT_TASKS及两份E2E的Prettier检查通过。TypeScript AST对比HEAD与候选的既有expect断言：来源50个、映射263个均原样存在，映射另增1个独立ACL断言；该静态结果不是业务测试全绿。未运行quick、全量回归或生成文档刷新，FROZEN_DRAFTS只改顶部当前状态，不重排历史。
+
+#### 29.21.12 同一授权范围内修复、完整回归与最终待签包（2026-10-01）
+
+本节接续29.21.11已呈报的两个具体失败，不将上一轮改写为成功，也不新增实施授权。维护者原完整包已包含范围内取证修复与补测，故在原BEFORE入口补齐：（1）真实source的legacyRuleId前置等值拒绝；（2）已存在同attempt／record的冲突分支在真实attempt锁后核对当前满额计数。正常新增仍按AFTER集合计数一次；满额重复的DO NOTHING仍按旧错误拒绝，其余冲突跳过差异沿29.21.3。原8项边界随后8/8通过，未更改旧错误断言。
+
+**先完成可行性门，再补全包**：真实受限LOGIN满额链、实际岗位锁等待后重读、同attempt计数竞争、坏批零残留、默认DEFERRED及IMMEDIATE闭包、原单错与native CHECK／集合错误顺序均通过，才继续G1–G8。实际group资格错误按原阶段、再按应用id的C排序选择，防止第一组较晚阶段的错误抢在另一组资格错误前。没有引入外部可信标志、跨请求缓存、跳过权限检查或增加业务超时。
+
+| 执行记录               | 实际结果与处理                                                                                                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 前置兼容修复定向       | 8/8通过，17.531s；两项原错误恢复，不按FK／UNIQUE改断言                                                                                                                                                                                                        |
+| 最小可行性及锁验证     | 映射11通过／246未选择，24.464s；满额2,705ms；来源33通过／55未选择，18.823s；闭包／native约束5通过／256未选择，16.456s                                                                                                                                         |
+| 首次扩大完整来源       | 88/88通过，42.307s；原满额1,146ms                                                                                                                                                                                                                             |
+| 首次扩大完整映射       | 261通过／7失败／268总，70.723s；所有旧用例通过，7个新规模／坏行位置夹具漏填audit.extra.recordsCount；满额2,146ms。仅补新夹具声明后7/7通过，22.284s                                                                                                            |
+| 集合语句边界补验       | 10通过／264未选择，22.929s；COPY／RETURNING／CTE／空集／冲突混合与不同合法时长                                                                                                                                                                                |
+| 多组新增夹具排查       | 新2组用例先因cp_code_key冲突，继而Member_memberNo_key、窗口csow_no_overlap失败，均未进入目标集合验算。修正第二组具名代码／成员号，并明确两活动共用同一全局旧规则及不重叠观察窗；不放宽数据库约束。最终该项通过，16.115s。同期原真实链2,588ms且锁验证通过      |
+| 规则／范围／坏行覆盖   | 新增16/16通过，22.780s：2角色×4类别、activity／position优先级、跨组错误阶段、来源首／中／末坏行、runtime冲突更新拒绝                                                                                                                                          |
+| 批间资格与真实反序竞争 | 5通过／290未选择，29.944s；revoke／replace在源时间之前／之后均按实际时点重读。真实LOGIN满额3,206ms；交叉attempt真实40P01，一笔提交、一笔失败，失败两条均零残留，无自动重试                                                                                    |
+| 实际JSON展开计数       | 新增1项通过／295未选择，20.245s。仅在w98回滚事务把两个实际触发器内唯一jsonb_array_elements调用包一层同参函数，两个审计各500条源和比较各展开2次；实际写入1,000条比较。ROLLBACK前后pg_get_functiondef摘要一致。不是预算计时数据、不是部署代码，也未关闭任何守卫 |
+| 最终完整来源           | **88/88通过，41.216s；真实2,000条旧submit完整链943ms＜7秒**                                                                                                                                                                                                   |
+| 最终完整映射           | **296/296通过，92.178s；真实受限LOGIN／独立冷连接2,000条完整链2,350ms＜5秒**；prepare598.314ms、持久化start67.341ms、应用INSERT1,103.647ms、比较INSERT553.464ms、terminal3.165ms。固定旧source hash2,000/2,000一致；真实锁与40P01检查再次通过                 |
+
+上述每轮只串行使用原无globalSetup配置与app_test_w98；没有同跑lint／typecheck争抢满额测试资源。每次失败均保留归因，不用换测试名或新连接把失败计数抹掉；实际满额记录既有2,146／2,350／2,557ms的较快结果，也保留3,206ms较慢结果，不只挑最快一次。全部预算断言仍在原测试内，函数级／插桩计时不替代整链。
+
+**G1–G8落点与证据边界**：
+
+- G1／G7：1、10、500、2,000不同合法时长均走真实源／应用／比较集合触发器；两个500条批次混合有真实展开次数正对照。实际policy／revision验证分别每组一次，两个不同policyVersion／revision即使hash相同也验证2次。固定旧标量参考和应用层独立E1 evaluator核对，不用候选结果自证。
+- G2：来源原shape／文本／first-match矩阵和完整映射原用例保留；8个不同角色／类别完整定义、不同阈值分数及3种selection范围均经过实际应用触发器。未选规则非法仍由完整政策验证／实际注册入口拒绝，不能为构造负例关闭不可变守卫把不可能的历史状态伪装成合法登记。已登记真实版本的完整指纹调用另有正计数验证。
+- G3／G4：源、应用、比较首／中／末坏行整批零残留；原start保留、terminal不伪造；合法分批、COPY、RETURNING、多写CTE、空INSERT、DO NOTHING跳过／新坏行混合与满额旧错误。runtime的DO UPDATE由现有表权限拒绝，原不可变UPDATE／DELETE／TRUNCATE断言未改；不为测试另授UPDATE。
+- G5：岗位真实锁等待后的deleted状态被重读；同attempt后到者等前笔提交后拒超额；两实际LOGIN连接逆序各持attempt锁再交叉写入，固定观察到40P01，无重试，失败事务全回滚，成功事务两组均1条、无伪造terminal。源时间前后revoke／replace分别拒绝／保留历史资格，先前合法批证据不删除。
+- G6：原五函数及新增两函数分开断言；实际LOGIN正确／错误凭证、原审计读／旧Record写／新函数直接EXECUTE均受原权限限制。NOLOGIN属主、VOLATILE和固定search_path真实核验；未绑定、registrar、caller authority／pg_temp同名关系负例保留。来源函数仍SECURITY INVOKER。
+- G8：最终两完整文件覆盖原133→134、134→135非空历史升级和135条冷回放；未执行其它数据库／标准globalSetup。D7及全量Contract＋E2E仍由PR CI冷跑，不把本地384条通过称为全仓／CI验收。
+
+**静态断言核对**：本轮新AST提取器同时计入await式expect及SQL模板，因此映射HEAD读数为269个（29.21.11的263是旧提取口径，不是删了6条）；本轮269个原调用都存在，候选311个。来源50个原调用保留；其中一个SQL输入额外增加3行“失败零残留”断言，严格逐字比较会报告一个差异，剔除且仅剔除该新增块后50/50一致，原matcher／期望值／测试矩阵均未改。读取当前事实不只依赖计数，实际两完整文件也全部通过。
+
+**静态检查记录**：首轮quick整体退出1，仅新增E2E的4个lint问题（两处正则连续空格和两处unknown异常抛出）；同轮三组类型、433套／9,430条单测（5既有todo）及harness均退出0。仅将新夹具正则改为等长` {4}`、新并发屏障的unknown先收窄为Error，不改SQL、业务断言或超时。修正后的全仓缓存lint、两改动E2E定向冷lint、test类型检查分别退出0；采用失败项复核，不冒称整条quick曾退出0，也不无故重跑9,430条单测。docs:counts／codemap／readtax、Prettier及diff检查通过；保留既有2条CODEMAP WARN及阅读体积提示。第29.21以前原424,867字节SHA-256仍为c5fd66a1865cc0c56cf6d09cff564f927f8abe7f6e75a8238f8c4b5177ff1726；两份台账只有顶部状态变化。当前9个持久改动都在获准10路径内，暂存区为空，CUTOVER_SIGNOFF未动。最后两处测试辅助逻辑修正后的多组／真实锁定向复核结果见下，签字前不提交。
+
+**最后辅助代码复核**：修正后多组及真实LOGIN完整链2通过／294未选择，23.075s；满额2,496ms、固定source hash2,000/2,000相同，岗位／计数锁和真实40P01回滚再次通过。不把这2项称作再次完整296项，也未重跑已通过的9,430条单测。SQL与ACL摘要未变。
+
+**回收及待签**：完整回归及最后定向复核均以postgres角色1作仪器正对照，w98库0、连接0、三个具名角色0。源和映射SQL及ACL的实际摘要如下，均尚未签署，不写CUTOVER_SIGNOFF：
+
+| 待签项         | 实际SHA-256／明确边界                                                                                                                                                                                                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 第134条3b      | `37f204e1c46a08040c04775e51823659399d18f3e11b0c873d502de464b3714f`                                                                                                                                                                                                                                     |
+| 第135条3b      | `7e60dec93122ff94dca8910731138ef41aeff820d0cf5596dacf260866e5a390`                                                                                                                                                                                                                                     |
+| 新增DB执行面4b | ACL脚本`65746a8892017144270034e654b1cee77c539d7374b27e9daca1faa95225aa8b`；仅新增`csm_application_set_guard_fn()`及`cscr_insert_set_guard_fn()`两函数到既有NOLOGIN属主及PUBLIC／registrar／runtime直接EXECUTE撤销、属主核验清单。无新增角色、LOGIN配置、表级写权限或Human权限码；来源集合函数仍invoker |
+
+4b原270权限、175总计／170活跃审计、30类／277项字典及Human访问边界保持，原4b不能代替本次新增DB执行面明确确认。最终检查通过且维护者确认实际两项3b／本项4b后，按现有完整包授权更新签字、普通提交推送同一#1370 Draft，不再拆一次推送审批；红区人工审批仍对实际新SHA另行执行。
+
+**本次未做**：截至本节，未提交／推送、签字登记、Ready、合并或重跑CI；未操作真实业务库／生产、登记真实映射、启用shadow／Gate、删除或重算旧数据。未实施D3／E4或正式贡献结算。#1370只读核验仍为Draft／5871463d，旧CI红点不因本地通过自动关闭。
+
+#### 29.21.13 维护者重签与本包交付边界（2026-10-01）
+
+维护者明确回复「确认第29.21.12节第134、135条3b及新增DB执行面4b重签。」重新计算两份SQL及ACL完整SHA-256，与29.21.12表内三项逐字一致；已在CUTOVER_SIGNOFF的3b／4b分别追加当前签字，保留此前历史。seed及权限目录摘要、权限270、审计175总计／170活跃、字典30类／277项与Human访问边界不变。本轮登记没有修改已验证的SQL、ACL或测试实现。
+
+本地验证沿29.21.12真实结果：来源88/88、映射296/296，末次辅助代码复核2项通过；quick首轮整体退出1，4项新增测试lint修复后单独复核通过，其余类型、harness及9,430单测结果复用，不冒称整条quick退出0。本轮仅补签字／当前状态，完成签字登记、文档和diff检查后按原完整授权普通提交推送既有#1370，保持Draft；新SHA的全量验收由PR CI冷跑，红区人工审批仍独立。preflight本次只因已获准保留的本包未提交改动及既有open PR退出1，未落后本地origin/main；不修改门禁、不自行发放授权。
+
+**本次未做**：不Ready、不合并、不重跑旧CI、不操作真实业务库／生产、不登记真实映射、不启用shadow／Gate、不删除或重算业务数据；不实施D3／E4。签字及本地通过不等同于CI通过或D2整体交付。
+
+#### 29.21.14 新SHA的CI失败收束（2026-10-01；仅证据，不新增修复）
+
+本包已按原授权普通提交推送为`d958516b8208db7d82e19dd58f77c41f35b23388`，#1370保持Draft。CI运行`36859708008`五个Contract＋E2E分片中，2／3／4／5通过，1失败；Fast checks、守护自测、事故回放、Golden journeys、Docker构建通过，独立容器smoke亦通过。Fast checks实际日志为433套／9,430单测通过、5既有todo，89.23s；该远端结果独立于29.21.12本地quick的失败项复核口径。
+
+失败job为`110360670903`：Contract 1,087/1,087通过；E2E 83套通过／1套失败，1,640条通过／1条失败。唯一失败为既有mapping-proof的“keeps a committed start after rollback, recovers read-only failed replay, and compares 2,000 frozen records within one budget”；文件4778行保留原五秒预算失败出口，错误类别为Prisma P2028，不是签字或ACL审批拒绝。
+
+既有脱敏诊断显示prepare.total 1,328.901ms、start.total 112.584ms、应用集合INSERT 2,765.964ms；比较集合INSERT 1,729.985ms后报P2028。该比较耗时是失败调用的实际耗时，不是成功耗时或可保证的上界；记录粒度只能定位到整段写入，不能据此断言某个SQL函数、锁等待或CI争用就是根因。相较本地2,350／2,496ms，远端完整链仍未达标，不把四个绿色分片抵消这一失败，也不将前一轮性能失败重命名归零。
+
+本轮只收束原始证据与当前状态，未重跑CI、未重建本地库、未改SQL／ACL／测试断言或预算、未变更任何签字。后续范围内取证须继续保留真实角色、锁与完整链，不能以纯函数或热路径计时替代验收；缺少具体失败层证据前不猜测改动或再次推送。红区人工审批仍独立等待，不会消除本次性能失败。未Ready／合并、启用开关或操作生产。
+
+#### 29.21.15 范围内w98分层取证与函数级JIT候选（2026-10-01）
+
+沿原十路径完整包的范围内取证／修复授权，先在既有mapping-proof临时增加一项诊断，串行仅用app_test_w98；不重跑CI。两次实际INSERT均执行原已签集合触发器、原行锁、外键和全部守卫，使用既有受限runtime会话身份；事务回滚后断言应用／比较均零残留、两集合函数定义摘要未变。诊断不是实际LOGIN完整链，不冒充五秒预算验收。临时诊断及事务内插桩已还原，SQL／ACL原三份摘要在取证结束时仍逐字一致。
+
+| 探针                     | 实际结果                                                                                                                                                 | 解释边界                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 原已签两次INSERT执行计划 | 应用1,631.861ms，其中集合守卫1,203.444ms、行守卫183.216ms；比较535.756ms，其中行守卫207.326ms、集合守卫186.443ms；两表各2,000条并回滚                    | 应用输入生成另有2,000次夹具evaluator调用，不能把整体INSERT耗时都归给守卫；EXPLAIN列出的守卫耗时独立可核 |
+| 实际应用集合函数内部查询 | 在原查询调用点额外执行一次相同只读EXPLAIN，原检查仍执行；内部查询960.208ms，JIT 140函数共736.028ms（生成4.529、内联57.065、优化303.999、发射370.435）    | 原查询未删；插桩重复执行不能作为原业务预算读数，临时函数体由事务回滚恢复                                |
+| 同查询事务内JIT关闭对照  | 仅探针事务SET LOCAL jit=off，同内部查询14.933ms、无JIT块；带重复查询的应用集合守卫74.470ms，应用整体456.896ms，比较457.120ms；2,000／2,000及回滚断言仍过 | 不改全局／数据库／角色配置；性能改善是本机对照，尚不是远端通过                                          |
+
+三次诊断各1项通过／296未选择，分别22.438s、24.659s、21.870s。实际plan的bands只有4行，但串联JSON展开与CTE扫描的估算成本达10,803,571,168.82；昂贵编译而非这4行本身是已证明的本机热点。这不能单凭本机计划断言CI全部1,729.985ms失败比较耗时也由JIT造成，CI仍以新候选实际冷跑判定。取证结束postgres仪器正对照1、w98库0／连接0／三具名角色0；未重建其他数据库。
+
+**同写集精确候选**：仅第135条`csm_application_set_guard_fn()`增加函数级`SET jit = off`及原因注释。函数的查询正文、SECURITY DEFINER、VOLATILE、固定search_path、原权限复核／锁／错误优先级／集合与逐行校验均不改；不改第134条、其他函数或全库参数。函数退出自动恢复调用者设置，并补既有mapping-proof中的正反例：调用者jit=on；坏分数触发原集合守卫错误且整批零残留，异常出口仍on；随后合法3条成功且仍on；实际proconfig同时包含jit=off和原search_path。
+
+原型先运行新增恢复回归及原受限LOGIN冷连接完整2,000条链：2通过／295未选择，25.429s；完整链1,861ms，prepare692.113、start68.707、应用397.878、比较675.983、terminal3.027ms；固定旧source hash2,000／2,000相同，岗位／计数真实锁及反序40P01（1提交、1回滚、失败零行、无重试）通过。随后才扩大完整映射回归；结果另列，不以原型代验收。第135条新SQL仍须维护者另签3b；第134条及ACL不变，4b访问面不扩大。当前不提交推送，不Ready／合并、不启用shadow／Gate、不操作生产。
+
+#### 29.21.16 函数级候选完整验证与维护者重签（2026-10-01）
+
+- 完整映射297/297通过，89.404s；真实受限LOGIN／独立冷连接原2,000条完整链1,738ms，prepare712.563ms、start60.811ms、应用348.327ms、比较580.682ms、terminal3.130ms。固定旧source hash2,000/2,000一致，岗位／attempt计数真实锁后重读、反序40P01（1提交／1回滚／失败零行／不重试）再次通过。
+- 完整来源88/88通过，56.332s；原2,000条旧业务提交链1,119ms。五秒／七秒预算、全部旧断言未变；新增仅函数执行设置及一项恢复回归，未删原测试。
+- 上述完整回归串行仅用w98，结束postgres角色1为仪器正对照，w98库0／连接0／三具名角色0。临时EXPLAIN／函数插桩已还原，候选只保留生产函数级设置及正式回归，不保留诊断事务SET LOCAL jit或取证GUC。
+- 维护者已明确回复「确认第135条3b重签」，与问题中完整摘要逐字对应。第135条实际SHA-256为`9536aaf97d704b433b3625014db0d7f882b4a0dbf8c98dec8cc78211dc539de4`，已追加CUTOVER_SIGNOFF；第134条`37f204e1c46a08040c04775e51823659399d18f3e11b0c873d502de464b3714f`、ACL`65746a8892017144270034e654b1cee77c539d7374b27e9daca1faa95225aa8b`保持，不扩大4b。
+
+最终quick退出0：433套／9,430单测通过、5既有todo，97.245s；缓存lint、三组类型、harness全部通过（138 passed、5已知缺口仍保留）。改动mapping E2E另跑定向冷lint通过；签字一致性、docs:counts、docs:codemap通过，CODEMAP保留2条既有WARN，不称零警告。第135条函数正文与HEAD逐字一致，第134条／ACL摘要不变；本轮7个路径均在原10路径授权内，两份台账只改顶部当前状态。沿既有授权普通提交推送同一#1370 Draft，仍由新SHA CI冷跑验收。29.21.14旧CI失败及其耗时保留，不据本地结果关闭。未Ready／合并、不操作生产、不登记真实映射、不启用shadow／Gate、不删除或重算旧数据。
+
+#### 29.21.17 旧8192人账本CI失败与五路径诊断交付（2026-10-01）
+
+`160f40be545195d47490ced0b3111479638482a0`的[CI 36864154186](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36864154186)已结束失败：E2E分片1／2／4／5通过，分片3失败；Fast checks、守护自测、事故回放、Golden journeys、Docker构建及独立smoke通过。分片1映射完整文件通过，原2,000条受限身份完整映射链4,750ms，固定旧hash2,000/2,000一致；距原五秒预算余量仍小，不据此声称跨环境性能稳定。
+
+唯一失败在[分片3 job 110375426077](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36864154186/job/110375426077)：82套／1,224条通过、1套／1条失败，旧`activity-ledger-posting-scale.e2e-spec.ts`的8,192人准备＋生效链事务预算7,000ms、实付7,454ms后过期。栈落于`LedgerPostingService.commitBatchProtocol`服务段状态UPDATE；这是错误观察点，原日志没有分段耗时，不能将整个7,454ms归给最后一条SQL，也不能无证据归因于CI争用。该测试与对应生产服务相对当时origin/main均无差异；仍保留失败，不因测试较旧而豁免。
+
+前一轮获准仅w98临时取证：冷回放后原用例1/1通过、34.525s，准备5,490ms、生效1,243ms、事务27条（17条raw），最大bind8,192仅为原成员锁，其他raw均≤16；所有15处原断言不变。分段本机读数：日状态补建136.964ms、回写204.358ms，结果／服务段UPDATE为211.597／406.686ms。阶段含内部查询，不能叠加两层读数。未复现CI超时；临时插桩已还原，测试文件SHA-256恢复为`167eee15a692be5a89568895555f8c7c3fee75413754fd918a918b65367501b3`，postgres角色正对照1、w98库0／连接0；本地通过不等于CI修复。
+
+维护者随后确认「允许上一条五路径 CI 诊断提交方案，保持 #1370 Draft，不 Ready、不合并」。本轮精确写集：
+
+1. `test/e2e/activity-ledger-posting-scale.e2e-spec.ts`：保留固定阶段／查询标签、耗时、查询数与允许名单错误码；成功／失败均在finally输出并恢复包装。保留PrismaPromise延迟执行、结果／异常原样透传；不输出SQL、参数、业务值或原始异常。原15处业务断言、真实锁及7秒预算均不改。CI沿既有worker配置，不提交本地w98生命周期代码。
+2. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`：记录诊断范围和未收口失败。
+3. 本评审稿：追加原CI证据、本地取证与验证边界，不回改旧失败。
+4. `docs/ai-harness/FROZEN_DRAFTS.md`：仅顶部当前状态。
+5. `docs/ai-harness/NEXT_TASKS.md`：仅顶部当前状态。
+
+本轮不改生产代码、schema／migration、权限、审计或Gate，不新增3b／4b签字。preflight本地main差距0，工作树初始clean；仅既有open #1370使global门禁退出1，本次为维护者已授权的同PR诊断，不开启新功能、不修改门禁。五个精确路径的harness:needs均非红区。定向及静态验证结果如下；按本轮授权普通提交推送原Draft，不另索取同一推送授权。新SHA仍须CI冷跑，不能以本地读数关闭本节CI失败。
+
+本轮诊断候选仅w98冷回放定向验证：1套／1条通过、33.396s；准备4,915ms、生效1,031ms（finally输出前读数1,007ms），27查询／17raw，最大bind8,192仅原成员锁、其他raw≤16，原7,000ms预算不变。日状态补建116.950ms、回写161.727ms，结果／服务段UPDATE分别142.857／298.046ms；只是本机通过，仍未复现远端失败。临时本地建库／迁移／回收代码已还原，不进入CI；postgres角色1为正对照、w98库0／连接0，无新增角色。
+
+独立诊断器正反例通过：构造延迟thenable确认消费前执行数0、消费后1，返回对象及拒绝异常同一性保持，错误消息哨兵不进入读数，原型方法在成功／失败后恢复。AST打印逐项对照确认15处原expect表达式及匹配器完全相同；两份台账除第3行外逐字保持。第134／135条及ACL完整摘要重新核对与29.21.16一致。定向冷lint、Prettier、counts、CODEMAP、readtax及diff检查通过，CODEMAP仍有2项既有WARN；未修改生成物。
+
+最终`pnpm agent:check:quick`退出0：缓存lint、三组typecheck、harness及433套／9,430条单测通过（5条既有todo，单测51.37s）；138项eslint自测通过，5个已知缺口保持。来源／映射实现、依赖、SQL及对应测试未变，本轮不重复运行其本地完整套件；沿160f40be已完成的CI分片1及本节新定向结果分别记录，下一SHA的全量Contract／E2E仍由PR CI冷跑，不复用旧CI替代新门禁。
+
+**本次未做**：未修复或宣称修复8192人CI超时；不Ready、不合并、不盲重跑旧CI、不操作真实业务库／生产、不登记真实映射、不启用shadow／Gate、不删除或重算业务数据。
+
+#### 29.21.18 两项w98执行计划与CPU取证（2026-10-01；仅诊断，测试已还原）
+
+**授权及边界**：维护者明确允许仅在w98对账本与mapping-proof两份E2E临时补充执行计划及分段诊断，结束还原；结果只保留本评审稿及FROZEN_DRAFTS／NEXT_TASKS顶部，不改生产代码、migration、原断言或预算，不提交推送。本轮五路径均经逐文件harness:needs核对为非红区；global preflight仅既有#1370触发open-PR限制，同一E3执行lane preflight通过、未落后本地origin/main。技能引用的prisma/AGENTS.md实际不存在，沿根AGENTS、current-state、process及testing-discipline执行，不另造规则。schema／migration／seed／OpenAPI／权限／审计／BizCode均无改动；数据库影响只限合成夹具，结束回收，不存在业务数据兼容或不可逆变更。
+
+**本轮要解释的远端失败仍开放**：[5fb7512c的CI 36871766718](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36871766718)已终态失败，分片2／4／5通过、1／3各一项失败；Fast checks、守护自测、事故回放、Golden journeys、Docker构建与独立smoke通过。
+
+- [分片1](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36871766718/job/110401093178)：映射满额链5,550ms，P2028；prepare总1,893.250ms、start123.621ms、应用INSERT1,266.926ms、比较INSERT失败调用2,236.347ms。prepare内部六类DB读约299ms，已包含在prepare总量，不再叠加；余量不能无采样直接称为CPU。beforeComparison2,017ms为实测时点；comparisonTimeout2,882ms及maxWait100ms是传入选项，不是已花时间。
+- [分片3](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36871766718/job/110401093197)：账本8,192人链事务预算7,000ms、实际事务存活7,318ms过期；外层commit包络7,398ms、失败前24查询。草稿成员SELECT调用2,366.662ms，最后服务段UPDATE失败调用3,347.390ms；成员锁38.464ms。阶段包含内部查询，不双算；失败调用时间不等同PostgreSQL成功执行时间。通知／审计后的剩余查询未执行，不能归因于尚未到达的审计写入。
+
+**运行方法与仪器边界**：基点固定5fb7512c，两测试串行；不跑全量、不并发跑lint／typecheck。用现有Jest配置在进程内去掉globalSetup／globalTeardown／setupFiles，避免标准入口写app_test及w1；临时ledger beforeAll与mapping既有dedicated入口分别严格设置worker98、loadTestEnv、assertTestDatabaseUrl并在唯一app_test_w98冷回放，结束关闭连接、回收库。未运行migrate dev／reset／db push。角色测试只复用mapping既有三个具名owner／registrar／runtime夹具及真实独立LOGIN，结束回收，错误凭证和禁止旧表写／审计读的原断言保留。最初直接node命令因本机根目录无法解析express而在suite加载失败（0条运行、10.307s、未建库）；后续仅通过命令级NODE_PATH指向本机既有node_modules/.pnpm/node_modules，不安装或改依赖。这一解析差异属于本地证据边界，不假称与CI环境完全相同。
+
+两条账本SQL、两条映射INSERT均按原参数、原事务及原调用身份采集EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)。每条探针用SAVEPOINT／ROLLBACK TO／RELEASE包裹，再执行原调用；不禁触发器、不跳原权限或真实锁、不改业务预算。只打印节点类型、表／索引名称、估计／实际行数、循环数、耗时、buffers及触发器名／耗时／次数，排除SQL文本、Filter／Cond表达式和参数。探针会增加耗时、预热数据并留下可回收死元组；因此本轮带计划运行不是无扰动冷性能验收。账本记录的27条是原代理统计口径，不含直接落原tx的探针SQL，不能称为含探针的全部查询数。
+
+| 定向运行                                         | 实际结果                                                  | 有效结论与限制                                                         |
+| ------------------------------------------------ | --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| ledger原8,192人用例＋两条回滚计划                | 1套／1条通过，35.199s；带探针commit包络1,415ms，原7秒不改 | 原15处行为断言保留；未复现CI超时，不称性能已修复                       |
+| mapping原2,000条完整链＋两条回滚计划             | 1条通过／296条未选择，21.191s；完整链2,565ms，原5秒不改   | 实际受限角色、冷runtime连接及完整收据链；不是297条全套通过             |
+| mapping同一完整链＋准备段CPU采样（关闭计划探针） | 1条通过／296条未选择，21.044s；完整链2,146ms              | 单独测计算热点，不是失败后碰运气重跑；采样有开销，不用此数估算优化收益 |
+
+**账本计划证据**：SELECT为Hash Join→Sort→Unique，执行8.700ms；UPDATE为Hash Join→ModifyTable，执行342.073ms，其中effectiveBatchId外键触发器8,192次合计55.401ms。两表均8,192行、reltuples=-1，未有analyze／autoanalyze记录；连接估计1行、实际8,192行，身份扫描估计31行、段扫描估计21／22行。SELECT shared hit473、read0；UPDATE shared hit267,924、read0；无计划顶层JIT项。这里只能证明当前w98计划和读数，read0不等于没有底层I/O成本，没有顶层JIT项也不证明所有嵌套函数均无JIT。统计缺口是后续对照因素，本轮没有手动ANALYZE、改planner参数或添加索引，更不能从本机Hash Join推断CI也是同一计划。
+
+**映射计划证据**：应用INSERT执行312.030ms；csmap_pending_insert_guard逐行2,000次175.659ms，csmap_insert_set_guard集合1次65.480ms，四组FK合计54.700ms。比较INSERT执行532.560ms；cscr_insert_guard逐行2,000次214.785ms，cscr_insert_set_guard集合1次185.771ms，五组FK合计62.122ms。两个JSON输入扫描均估计100行、实际2,000行，shared read0。EXPLAIN的ModifyTable时间已包含BEFORE行触发器，不能将其和全部trigger时间简单累加。本轮代理记录应用673.845ms／比较1,120.107ms包含各自保存点探针及原执行，不能当成单次INSERT本体。
+
+**应用计算证据**：计划运行中prepare纯计算wall641.959ms、进程CPU754.921ms，prepare总684.899ms；进程CPU可包含V8辅助线程，不是与wall相加的阶段。单独CPU采样运行pure wall968.775ms／进程CPU1,137.292ms，Profiler有额外开销。高位self样本为canonicalizeObject75、canonicalizeJson55、canonicalizeArray49、assertNoSymbolKeys25及GC54，另有匿名函数87；这里只记录top20计数，不据此给出完整百分比或预计收益。引用链核对：prepareShadowComparisonSet逐来源进入prepareShadowEvidence→evaluateShadowFrozenSource；其中每条都调用fingerprintContributionPolicyVersion，后者做规范化、定义解析、hash，随后evaluateContributionPolicy又解析定义。可讨论同一调用内对不可变政策重复纯计算的复用，但这还不是获准修复，不能删除逐来源hash／同链／有效期检查，不能扩为权限缓存或跨请求缓存；同一政策复用的语义、错误顺序及收益仍需独立验证。
+
+**根因判定与下一步**：目前已定位成本分布，尚未证明CI超时根因。基点9aee103b的历史CI 36830257960曾以27查询、2,936ms通过原账本用例，只是一次历史通过；账本十个已核对直接实现文件相对该基点逐字一致，但模块接线、审计及schema已有变化，不能称整个依赖图相同。CI两worker及同机PostgreSQL与本地串行w98条件不同，不能只凭本地绿判定资源争用或基线不稳。同一失败已超过两轮修复，按process §7.1／7.2停止猜测微调／盲重跑；本次不再据局部计时提出立即修改SQL。
+
+后续最小证据需求是失败环境的这两条账本原查询计划形状、执行时统计状态，以及映射prepare纯计算与SQL计划分布；必须保留原首次冷调用的时限与结果，诊断复算另列，不把插桩通过作为验收。若仅w98仍不能重现，就应一次送审固定SHA、固定次数的CI／基点受控对照（实现热点、两worker运行条件、原基线三个因素分开），明确实际文件、runner及库／角色边界后再执行；本轮未授权新CI提交、baseline worktree、w88等其他库或workflow修改，不将其包装为已获准。先判证据是否足够再决定修复，不按“再改一处SQL后等全量CI”的旧方法推进。
+
+**恢复及验证**：两份E2E已通过apply_patch逆向还原，随后逐字对照5fb7512c；原断言、生命周期及超时均回到该提交。三个具名角色、w98库／连接均0，postgres角色正对照1；删除的只是本次可由测试重建的合成夹具。第134条37f204e1c46a08040c04775e51823659399d18f3e11b0c873d502de464b3714f、第135条9536aaf97d704b433b3625014db0d7f882b4a0dbf8c98dec8cc78211dc539de4、ACL65746a8892017144270034e654b1cee77c539d7374b27e9daca1faa95225aa8b均未变化，不重签。临时诊断代码test typecheck两版通过；最终只保留本评审稿追加段、FROZEN_DRAFTS／NEXT_TASKS第3行。此前评审稿全文SHA-256为015f5fd354cc649d8880437f39c1aa13f8968128136dd246ebd97003dd437eef，旧记录不回改。脱敏原始本地记录位于/tmp/srvf-w98-plan-diagnostic.CrcCYU的ledger-plan.log、mapping-plan.log、mapping-cpu.log；只作短期取证，关键结论已记入本节，不依赖临时日志永久存在。
+
+**本次未做**：未宣称两项CI失败已修复；未提交／推送／Ready／合并、重跑CI、修改生产代码／migration／SQL配置／业务预算／既有断言、登记真实映射、启用shadow／Gate或操作真实业务数据。未跑mapping其余296项、全仓quick／Contract／全量E2E，最终文档检查与还原证明单独记录，不冒称全绿。
+
+**收尾自证**：两份测试当前字节与HEAD完全一致，SHA-256分别为e6c16910f912a05027d86a61b036ea16a10f2ec3b5883d9d57f5453f092a840e（ledger）及40b4fac8dad88b1fd679e74cdf020a006e47aa9409b79f34158359f2894d36ef（mapping）；本评审稿旧494,606字节前缀摘要不变，两份台账除第3行外逐字不变。首轮Prettier只报告新表格排版，修正后plan／NEXT_TASKS格式、git diff --check、docs:counts:check、docs:codemap:check及docs:readtax:check均通过；CODEMAP的2条既有WARN和readtax提示照留。最终仅三份文档未提交，HEAD与#1370仍为5fb7512c／OPEN Draft。
+
+#### 29.21.19 六路径CI计划／统计取证交付（2026-10-01；不作业务修复）
+
+维护者明确回复「允许上一条六路径CI取证包」，包含w98验证、验证后提交推送同一#1370 Draft；保留本轮已有29.21.18及两份台账改动，不Ready、不合并、不自动重跑。开工HEAD为5fb7512c，未落后本地origin/main；lane preflight仅因该包三份已获准文档未提交退出1，已与维护者本次完整包对齐，未修改门禁或自行发放授权。
+
+精确写集：
+
+1. `test/e2e/activity-ledger-posting-scale.e2e-spec.ts`。
+2. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`。
+3. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`。
+4. 本评审稿。
+5. `docs/ai-harness/FROZEN_DRAFTS.md`第3行。
+6. `docs/ai-harness/NEXT_TASKS.md`第3行。
+
+| 风险项                      | 本轮结论                                                         |
+| --------------------------- | ---------------------------------------------------------------- |
+| schema／migration／seed     | 均不改，第134／135条及ACL签字保持                                |
+| 现有数据／不可逆性          | 仅既有隔离合成夹具；新增计划探针不执行原SQL，无业务数据操作      |
+| OpenAPI／contract／BizCode  | 不改接口、快照或错误码                                           |
+| 鉴权／Permission seed／审计 | 不改；映射计划仍使用原受限runtime事务，不增加角色权能            |
+| 维护者拍板                  | 六路径、w98验证及验证后提交推送已批准；Ready／合并／新修复未批准 |
+
+**实现形状**：账本草稿成员SELECT及服务段UPDATE、映射应用及比较两条INSERT在原await处先执行同参数的`EXPLAIN (FORMAT JSON)`，再原样消费原PrismaPromise一次。没有ANALYZE、写入重放、保存点或触发器第二次执行，没有planner开关／统计重建。计划仍有解析／规划／锁元数据成本，不声称零扰动；它和真实调用分别计时，两者都包含在原5秒／7秒预算内。账本原query计数不包含直接原tx上的计划探针，计划次数另列；原查询数、bind断言不变。若计划先报错，保留diagnostic.plan错误分类并原样抛出，不把未执行的业务调用冒充业务失败或吞掉事务错误。
+
+**统计与隐私**：预算开始前只读当前库固定表的reltuples／relpages／pg_stat_user_tables计数、analyze是否发生及jit／jit_above_cost值。统计值是取样时点报告值，可能滞后，不冒充实时COUNT或CI全部数据库负载；未查跨库业务状态。计划JSON仅保留节点／连接类型、表／索引名、成本／估计行数及JIT元数据；拒绝输出Filter／Cond／Output、原SQL和参数。stdout统一在原finally输出，失败保留已取得的计划。映射纯计算只增performance／process.cpuUsage采样，不使用Profiler；CPU可含辅助线程，不与wall相加。计划不能揭示触发器内部实际执行时间，仍需结合29.21.18本地回滚计划和新CI真实调用耗时判断，不保证本包即可证明全部根因。
+
+**仪器自证**：从实际候选TS抽取并转译测试包装器，ledger／mapping各跑成功与失败正反例；await前执行次数0、之后计划1次＋原调用1次，返回对象／异常身份保持；模拟计划Filter及异常／参数哨兵没有进入记录。两测试原expect调用经AST打印后分别15／307处逐项一致，不靠计数代替内容对照。候选test typecheck及两文件定向冷lint通过。只跑已批准w98，账本临时专用生命周期验证后剥离；mapping复用dedicated及原三个具名角色／真实LOGIN并回收。性能验证与quick错峰，本地完整结果随后登记。
+
+**交付边界**：不改workflow、Jest配置、生产代码、schema／migration、接口、权限、断言、时限；不操作其他本地库、真实业务或生产，不新增baseline worktree，不登记映射、不启用shadow／Gate。旧CI两项失败保留，取得新证据后按累计失败轮数决定下一种方法，不在本包内猜测实现修复或自动重跑。PR继续Draft，红区可信审批如工作流要求仍由维护者对新SHA独立批准。
+
+**本地验证**：两套性能测试串行、不与quick重任务并发，使用29.21.18的进程内现有Jest配置及命令级NODE_PATH，无配置／依赖文件变更。账本冷回放1/1通过、38.215s；commit包络1,082ms，原查询27条，两个额外计划约1.516／1.770ms，真实SELECT12.004ms／UPDATE377.589ms。计划仍是Hash Join且join估计1行；两张合成夹具表报告8,192行、reltuples=-1、未analyze。完整映射297/297通过、80.935s；原2,000条链1,655ms，纯计算wall565.164ms／进程CPU664.514ms，应用／比较计划47.540／43.357ms，原INSERT358.006／494.320ms。映射两条Function Scan仍估计100行；只有计划而无ANALYZE，不伪造实际行数或触发器执行时间。
+
+完整测试后复核发现新增mapping计划探针失败分支还需透传thenable的reject回调，已在同一诊断写集补齐，未改业务路径。实际代码抽取自测增加plan-error：规划失败时原业务调用0次、异常同一对象、消费不挂起且不泄露消息；成功及原调用失败分支仍各执行原语句一次。最终候选定向2项通过／295未选择、23.411s，覆盖原2,000条完整链（1,747ms）、受限LOGIN及真实锁回读／竞争；不是第二次297条全跑。原297条结果复用于未变的其余用例，诊断包装器变化已由受影响满额用例和独立失败自测覆盖。
+
+账本临时w98建库／回收代码已剥离，CI仍沿原worker生命周期。结束独立复核postgres角色正对照1，w98库0／连接0、三个具名夹具角色0；移除的仅可重建合成夹具。日志位于/tmp/srvf-ci-plan-package.ixAb0F，关键读数已写入本节，临时日志不作为永久证据。第134／135条与ACL完整摘要逐份重算均与29.21.16一致；不新增签字。本地测试保留Node既有sys弃用／WASI实验提示，不宣称无警告。本轮未复现旧CI两项超时，业务修复与CI验收仍未完成。
+
+**最终交付自证**：`pnpm agent:check:quick`退出0，433套／9,430条单测通过、5条既有todo（66.519s），缓存lint、三组typecheck及harness自测通过；两份变动E2E另跑定向冷lint通过。Prettier、counts、CODEMAP、readtax及diff检查通过，CODEMAP两项既有WARN和readtax预算提示照留；未刷新或改动生成物。最终两份测试15／307处expect父表达式逐项AST打印一致，两份台账仅第3行变化，评审稿HEAD前缀逐字保持，精确六路径无扩围。只按授权普通提交推送#1370 Draft，不另索取同一提交许可；新SHA的全量Contract／E2E交PR CI冷跑，本地未运行会触碰其他库的标准Contract入口。
+
+**本次未做**：未修复或关闭旧CI性能失败，不自动重跑、不Ready／合并；未改生产代码、schema／migration、权限、业务断言或5秒／7秒，不登记真实映射、不启用shadow／Gate、不操作生产或真实业务数据。跨模型整体复审未执行，不伪称已评审。

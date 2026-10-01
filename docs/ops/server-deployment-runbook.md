@@ -91,6 +91,7 @@
 | `ACTIVITY_AUDIENCE_TAGS_HTTP_ENABLED` | ✅ | ✅ | `:499` | 同上,首次上线填 `false` |
 | `ACTIVITY_V11_WORKFLOW_ENABLED` | ✅ | ✅ | `:517` | 同上,首次上线填 `false`(切换闸,见 `docs/ops/activity-batch-worker-runbook.md`) |
 | `ACTIVITY_OS_CONTROL_PLANE_MODE` | ✅ | ✅ | `src/config/app.config.ts` 的 `parseActivityControlPlaneMode` | 严格 `off` / `shadow` / `active`，首次填 `off`；`active` 且 v1.1 未开时拒启 |
+| `ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE` | — | — | `src/config/app.config.ts` 的 `parseContributionShadowMode` | E3 独立开关，未设置默认 `off`；部署值保持 `off`，不得继承 B6 的 `shadow`；启用另审 |
 | `INSURANCE_ENFORCEMENT_ENABLED` | — | ✅ | `:326` | 第二阶段 §1.5 |
 | `STORAGE_CONSISTENCY_MODE` | — | ✅ | `:542` | 第二阶段 §1.5 |
 

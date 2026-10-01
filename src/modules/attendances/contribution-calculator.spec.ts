@@ -14,6 +14,7 @@ import { ContributionCalculator } from './contribution-calculator';
 // 与 attendances.service.spec.ts 的边界声明互补(该 spec 明确不复刻本组件内部矩阵)。
 
 interface RuleRow {
+  id: string;
   attendanceRoleCode: string;
   durationThreshold: Prisma.Decimal | null;
   pointsBelow: Prisma.Decimal;
@@ -23,6 +24,7 @@ interface RuleRow {
 // 活动闭环硬化(2026-06-21):calculator 不再读 dailyCap,RuleRow / makeRule 不再含该列。
 function makeRule(overrides: Partial<RuleRow> = {}): RuleRow {
   return {
+    id: 'rule-1',
     attendanceRoleCode: 'volunteer',
     durationThreshold: null,
     pointsBelow: new Prisma.Decimal('1.00'),
@@ -196,6 +198,91 @@ describe('ContributionCalculator', () => {
       const out = await calculator.applyContributionRulePrefill([rec(4)], 'rescue', tx);
 
       expect(out[0].contributionPoints).toBe(expected);
+    });
+  });
+
+  describe('E3-2 D2 当次来源元组', () => {
+    it('同一次查询返回分值与匹配规则全部计算字段，按输入顺序对应', async () => {
+      const rule = makeRule({
+        id: 'rule-7',
+        durationThreshold: new Prisma.Decimal('4.00'),
+        pointsBelow: new Prisma.Decimal('1.25'),
+        pointsAbove: new Prisma.Decimal('2.50'),
+      });
+      const { tx, findMany } = makeTx([rule]);
+      const records = [
+        { ...rec(4), memberId: 'member-a' },
+        { ...rec(5), memberId: 'member-b' },
+      ];
+
+      const result = await calculator.applyContributionRulePrefillWithSource(records, 'rescue', tx);
+
+      expect(findMany).toHaveBeenCalledTimes(1);
+      expect(findMany).toHaveBeenCalledWith({
+        where: {
+          activityTypeCode: 'rescue',
+          attendanceRoleCode: { in: ['volunteer'] },
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          attendanceRoleCode: true,
+          durationThreshold: true,
+          pointsBelow: true,
+          pointsAbove: true,
+        },
+      });
+      expect(result.records.map((record) => [record.memberId, record.contributionPoints])).toEqual([
+        ['member-a', 1.25],
+        ['member-b', 2.5],
+      ]);
+      expect(result.sources).toEqual([
+        {
+          sourceKindCode: 'matched',
+          legacyRuleId: 'rule-7',
+          durationThreshold: rule.durationThreshold,
+          pointsBelow: rule.pointsBelow,
+          pointsAbove: rule.pointsAbove,
+        },
+        {
+          sourceKindCode: 'matched',
+          legacyRuleId: 'rule-7',
+          durationThreshold: rule.durationThreshold,
+          pointsBelow: rule.pointsBelow,
+          pointsAbove: rule.pointsAbove,
+        },
+      ]);
+    });
+
+    it('无匹配仍预填 0，来源明确为 no_match 而非伪造规则', async () => {
+      const { tx, findMany } = makeTx([]);
+
+      const result = await calculator.applyContributionRulePrefillWithSource(
+        [rec(4)],
+        'rescue',
+        tx,
+      );
+
+      expect(findMany).toHaveBeenCalledTimes(1);
+      expect(result.records[0].contributionPoints).toBe(0);
+      expect(result.sources).toEqual([
+        {
+          sourceKindCode: 'no_match',
+          legacyRuleId: null,
+          durationThreshold: null,
+          pointsBelow: null,
+          pointsAbove: null,
+        },
+      ]);
+    });
+
+    it('同 role 多条 ACTIVE 仍 fail-closed，不返回任意来源', async () => {
+      const { tx } = makeTx([makeRule({ id: 'rule-1' }), makeRule({ id: 'rule-2' })]);
+
+      await expect(
+        calculator.applyContributionRulePrefillWithSource([rec(4)], 'rescue', tx),
+      ).rejects.toThrow('ContributionRule ACTIVE pair invariant violated: rescue × volunteer');
     });
   });
 });

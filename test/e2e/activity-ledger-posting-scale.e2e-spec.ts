@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import type { INestApplication } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
 import { MEMBER_TX_TIMEOUT_MS } from '../../src/common/prisma/member-advisory-lock.util';
@@ -46,13 +47,202 @@ interface StatementRecord {
   sample: string;
 }
 
+interface DiagnosticRow {
+  label: string;
+  elapsedMs: number;
+  status: string;
+}
+
+interface PlanDiagnostic {
+  label: string;
+  elapsedMs: number;
+  plan: unknown;
+}
+
+/** Keep planner metadata only; never emit conditions, output expressions or parameter values. */
+function redactLedgerPlan(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactLedgerPlan);
+  if (!value || typeof value !== 'object') return value;
+  const allowed = new Set([
+    'Plan',
+    'Plans',
+    'Node Type',
+    'Parent Relationship',
+    'Join Type',
+    'Relation Name',
+    'Index Name',
+    'Scan Direction',
+    'Strategy',
+    'Startup Cost',
+    'Total Cost',
+    'Plan Rows',
+    'Plan Width',
+    'JIT',
+    'Functions',
+    'Options',
+    'Inlining',
+    'Optimization',
+    'Expressions',
+    'Deforming',
+  ]);
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => allowed.has(key))
+      .map(([key, child]) => [key, redactLedgerPlan(child)]),
+  );
+}
+
+async function collectLedgerPlan(
+  target: object,
+  args: unknown[],
+  label: string,
+  plans: PlanDiagnostic[],
+  rows: DiagnosticRow[],
+): Promise<void> {
+  const began = performance.now();
+  const head = args[0];
+  if (!Array.isArray(head)) throw new Error('ledger plan expected original tagged query');
+  const query = Prisma.sql(head as string[], ...args.slice(1));
+  try {
+    // No ANALYZE: the original statement is still executed exactly once below.
+    const result = await (target as Prisma.TransactionClient).$queryRaw<
+      Array<Record<string, unknown>>
+    >(Prisma.sql`EXPLAIN (FORMAT JSON) ${query}`);
+    plans.push({
+      label,
+      elapsedMs: Number((performance.now() - began).toFixed(3)),
+      plan: redactLedgerPlan(result.map((row) => row['QUERY PLAN'])),
+    });
+    recordTiming(rows, 'diagnostic.plan.' + label, began);
+  } catch (error) {
+    recordTiming(rows, 'diagnostic.plan.' + label, began, error);
+    throw error;
+  }
+}
+
+/** 只记录固定标签、耗时与允许名单错误码；不输出异常消息、SQL 或参数。 */
+function recordTiming(rows: DiagnosticRow[], label: string, began: number, error?: unknown): void {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : null;
+  rows.push({
+    label,
+    elapsedMs: Number((performance.now() - began).toFixed(3)),
+    status: error === undefined ? 'ok' : code === 'P2028' || code === 'P2010' ? code : 'error',
+  });
+}
+
+/** 保留 PrismaPromise 的延迟执行；仅在既有 await 消费时包裹 then。 */
+function timedQuery(result: unknown, label: string, rows: DiagnosticRow[]): unknown {
+  if (!result || typeof result !== 'object' || !('then' in result)) return result;
+  return new Proxy(result, {
+    get(promise, property) {
+      if (property === 'then') {
+        return (
+          fulfilled?: (value: unknown) => unknown,
+          rejected?: (error: unknown) => unknown,
+        ) => {
+          const began = performance.now();
+          const then: unknown = Reflect.get(promise, 'then');
+          if (typeof then !== 'function') throw new Error('ledger diagnostic promise contract');
+          return Reflect.apply(then, promise, [
+            (value: unknown) => {
+              recordTiming(rows, label, began);
+              return fulfilled ? fulfilled(value) : value;
+            },
+            (error: unknown) => {
+              recordTiming(rows, label, began, error);
+              if (rejected) return rejected(error);
+              throw error;
+            },
+          ]);
+        };
+      }
+      const value: unknown = Reflect.get(promise, property);
+      return typeof value === 'function' ? value.bind(promise) : value;
+    },
+  });
+}
+
+function diagnosticSqlLabel(args: unknown[]): string {
+  const head = args[0];
+  const parts = Array.isArray(head)
+    ? head
+    : head && typeof head === 'object' && 'strings' in head && Array.isArray(head.strings)
+      ? head.strings
+      : [];
+  const literal =
+    typeof head === 'string' ? head : parts.filter((p) => typeof p === 'string').join('?');
+  const verb = /^\s*(SELECT|UPDATE|INSERT|SET|WITH)\b/.exec(literal)?.[1] ?? 'other';
+  if (literal.includes('pg_advisory_xact_lock')) return 'raw.member-or-budget-lock';
+  const tables = [
+    'Activity',
+    'AttendanceSettlementRun',
+    'AttendanceSettlementVersion',
+    'LedgerPostingBatch',
+    'ParticipationLedgerEntry',
+    'ParticipantServiceSegmentRevision',
+    'ParticipantSettlementResultRevision',
+    'MemberContributionDayState',
+    'MemberContributionDayBaseline',
+    'ActivityParticipationIdentity',
+  ].filter((name) => literal.includes('"' + name + '"'));
+  return ['raw', verb, ...tables].join('.');
+}
+
+function installStageTimers(service: LedgerPostingService, rows: DiagnosticRow[]): () => void {
+  const target = service as unknown as Record<string, unknown>;
+  const names = [
+    'lockActivity',
+    'lockRun',
+    'lockVersion',
+    'lockBatch',
+    'assertNoOtherCommittedBatch',
+    'readBatchDayDeltas',
+    'assertPreparedSetConsistent',
+    'readDraftSegmentMemberIds',
+    'acquireCommitBudget',
+    'assertNoCrossActivitySegmentOverlap',
+    'createMissingDayStates',
+    'lockDayStates',
+    'readPreparedBaseline',
+    'advanceDayStates',
+  ];
+  const originals = names.map((name) => {
+    const method = target[name];
+    if (typeof method !== 'function') throw new Error('ledger diagnostic stage missing');
+    return { name, method, descriptor: Object.getOwnPropertyDescriptor(target, name) };
+  });
+  for (const { name, method } of originals) {
+    target[name] = async (...args: unknown[]) => {
+      const began = performance.now();
+      try {
+        const result: unknown = await Reflect.apply(method, service, args);
+        recordTiming(rows, 'stage.' + name, began);
+        return result;
+      } catch (error) {
+        recordTiming(rows, 'stage.' + name, began, error);
+        throw error;
+      }
+    };
+  }
+  return () => {
+    for (const { name, descriptor } of originals) {
+      if (descriptor) Object.defineProperty(target, name, descriptor);
+      else Reflect.deleteProperty(target, name);
+    }
+  };
+}
+
 /**
  * 把交互事务里的 `$queryRaw` / `$executeRaw` / delegate 调用全部记下来。
  *
  * 沿 `attendance-final-approve-scale-isolation.e2e-spec.ts` 的既有手法(代理 tx),
  * 只多记一件事:**每条语句实际绑定了几个参数**。
  */
-function installStatementRecorder(prisma: PrismaService): {
+function installStatementRecorder(
+  prisma: PrismaService,
+  rows: DiagnosticRow[],
+  plans: PlanDiagnostic[],
+): {
   reset: () => void;
   statements: () => StatementRecord[];
   restore: () => void;
@@ -82,7 +272,30 @@ function installStatementRecorder(prisma: PrismaService): {
           const fn = value as (...args: never[]) => unknown;
           return (...args: never[]) => {
             records.push(bindCountOf(args));
-            return fn.apply(target, args);
+            const label = diagnosticSqlLabel(args);
+            const result = fn.apply(target, args);
+            const isMemberRead =
+              label ===
+                'raw.SELECT.ParticipantServiceSegmentRevision.ActivityParticipationIdentity' &&
+              Array.isArray(args[0]) &&
+              String(args[0]).includes('DISTINCT');
+            const isSegmentWrite =
+              label ===
+              'raw.UPDATE.ParticipantServiceSegmentRevision.ActivityParticipationIdentity';
+            if (isMemberRead || isSegmentWrite) {
+              // Still lazy: planning and consumption begin only when the caller awaits.
+              // Separate planner time from the one original call; both consume the unchanged budget.
+              return {
+                then: (
+                  fulfilled?: (output: unknown) => unknown,
+                  rejected?: (error: unknown) => unknown,
+                ) =>
+                  collectLedgerPlan(target, args, label, plans, rows)
+                    .then(() => timedQuery(result, label, rows))
+                    .then(fulfilled, rejected),
+              };
+            }
+            return timedQuery(result, label, rows);
           };
         }
         if (
@@ -97,7 +310,11 @@ function installStatementRecorder(prisma: PrismaService): {
               if (typeof fn !== 'function') return fn;
               return (...args: never[]) => {
                 records.push({ binds: -1, sample: `${prop}.${String(m)}` });
-                return (fn as (...a: never[]) => unknown).apply(d, args);
+                return timedQuery(
+                  (fn as (...a: never[]) => unknown).apply(d, args),
+                  `delegate.${prop}.${String(m)}`,
+                  rows,
+                );
               };
             },
           });
@@ -372,14 +589,44 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
     ).resolves.toBe(SCALE_MEMBER_COUNT * 2);
 
     // ===== 生效:一次短事务 =====
-    const recorder = installStatementRecorder(prisma);
+    const plannerStats = await prisma.$queryRaw`
+      SELECT c.relname AS table_name, c.reltuples::DOUBLE PRECISION AS estimated_rows,
+        c.relpages, s.n_live_tup::DOUBLE PRECISION AS reported_live_rows,
+        s.n_mod_since_analyze::DOUBLE PRECISION AS modified_since_analyze,
+        s.last_analyze IS NOT NULL AS analyzed, s.last_autoanalyze IS NOT NULL AS autoanalyzed,
+        current_setting('jit') AS jit, current_setting('jit_above_cost') AS jit_above_cost
+      FROM pg_class c JOIN pg_stat_user_tables s ON s.relid=c.oid
+      JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public'
+        AND c.relname IN ('ParticipantServiceSegmentRevision','ActivityParticipationIdentity')
+      ORDER BY c.relname
+    `;
+    const diagnosticRows: DiagnosticRow[] = [];
+    const plans: PlanDiagnostic[] = [];
+    const restoreStages = installStageTimers(posting, diagnosticRows);
+    const recorder = installStatementRecorder(prisma, diagnosticRows, plans);
     recorder.reset();
     const commitStartedAt = Date.now();
-    const result = await posting.commitBatch(
-      { postingBatchId: batch.id, operationKey: 'scale-commit' },
-      actor,
-      auditMeta,
-    );
+    const result = await posting
+      .commitBatch({ postingBatchId: batch.id, operationKey: 'scale-commit' }, actor, auditMeta)
+      .finally(() => {
+        recorder.restore();
+        restoreStages();
+        // 阶段包含其内部查询，不能将两层耗时相加；失败也保留现场并原样抛出。
+        console.info(
+          '[ledger-scale-diagnostic] ' +
+            JSON.stringify({
+              members: SCALE_MEMBER_COUNT,
+              budgetMs: MEMBER_TX_TIMEOUT_MS,
+              elapsedMs: Date.now() - commitStartedAt,
+              queries: recorder.statements().length,
+              // Original query count above excludes the two non-executing plans.
+              plannerStats,
+              plans,
+              rows: diagnosticRows,
+            }),
+        );
+      });
     const commitMs = Date.now() - commitStartedAt;
     const statements = recorder.statements();
     recorder.restore();

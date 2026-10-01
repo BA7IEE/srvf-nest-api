@@ -141,6 +141,7 @@ const MANUALLY_ASSIGNED_PERMISSION_CODES = new Set([
   'activity-template.manage.version',
   'contribution-policy.read.catalog',
   'contribution-policy.manage.version',
+  'contribution-shadow-mapping.register.approval',
   'activity.contribution-policy.read',
   'activity.contribution-policy.select',
 ]);
@@ -152,7 +153,7 @@ const isExempt = (code: string): boolean =>
   MANUALLY_ASSIGNED_PERMISSION_CODES.has(code);
 
 describe('C1 D2a/D2b、D1-3、D3、D4、E1-2 与 E1-3 人工授码例外边界', () => {
-  it('仅二十二条精确例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
+  it('仅二十三条精确例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
     expect([...MANUALLY_ASSIGNED_PERMISSION_CODES].sort()).toEqual([
       'activity-metric.manage.definition',
       'activity-metric.manage.rule-binding',
@@ -176,6 +177,7 @@ describe('C1 D2a/D2b、D1-3、D3、D4、E1-2 与 E1-3 人工授码例外边界',
       'activity.time-settlement.read',
       'contribution-policy.manage.version',
       'contribution-policy.read.catalog',
+      'contribution-shadow-mapping.register.approval',
     ]);
     for (const code of MANUALLY_ASSIGNED_PERMISSION_CODES) {
       expect(PERMISSION_UNIVERSE.has(code)).toBe(true);
@@ -192,6 +194,19 @@ describe('C1 D2a/D2b、D1-3、D3、D4、E1-2 与 E1-3 人工授码例外边界',
     expect(isExempt('activity-metric.manage.future')).toBe(false);
     expect(isExempt('activity-metric.read.future')).toBe(false);
     expect(isExempt('activity-template.manage.future')).toBe(false);
+    expect(isExempt('contribution-shadow-mapping.register.future')).toBe(false);
+  });
+  it('影子映射登记为高风险人工授码，所有内建角色零默认持有', () => {
+    const code = 'contribution-shadow-mapping.register.approval';
+    expect(PERMISSION_CATALOG_METADATA[code].riskLevel).toBe('HIGH');
+    expect(PERMISSION_CATALOG_METADATA[code].riskTags).toEqual(['WRITE']);
+    expect(PERMISSION_CATALOG_METADATA[code].businessDescription).toContain('真人显式GLOBAL');
+    expect(PERMISSION_CATALOG_METADATA[code].businessDescription).toContain('超级管理员不直通');
+    expect(PERMISSION_CATALOG_METADATA[code].businessDescription).toContain(
+      '不允许Service Principal或delegation',
+    );
+    expect(isHeld(code)).toBe(false);
+    expect(RESERVED_SUPER_ADMIN_ONLY_PERMISSION_CODE_SET.has(code)).toBe(false);
   });
 });
 

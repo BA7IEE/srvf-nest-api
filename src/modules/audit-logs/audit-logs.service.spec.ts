@@ -1,4 +1,4 @@
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, PrismaClient, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
@@ -90,7 +90,104 @@ function makeService(prisma: PrismaMock, rbac: RbacMock = makeRbacMock(true)): A
 }
 
 describe('AuditLogsService', () => {
+  describe('readShadowSourceQualification()', () => {
+    const projection = {
+      createdAt: true,
+      event: true,
+      resourceId: true,
+      resourceType: true,
+      success: true,
+      shadowProofRequired: true,
+    };
+
+    it('uses only the caller transaction and the six-field projection', async () => {
+      const primary = makePrismaMock();
+      const service = makeService(primary);
+      const tx = new PrismaClient();
+      const read = jest.spyOn(tx.auditLog, 'findUnique').mockResolvedValue(null);
+      await expect(service.readShadowSourceQualification(tx, 'exact-audit-id')).resolves.toBeNull();
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenCalledWith({ where: { id: 'exact-audit-id' }, select: projection });
+      expect(primary.auditLog.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns qualification anchors unchanged, including unsuccessful or unrequired rows', async () => {
+      const service = makeService(makePrismaMock());
+      const tx = new PrismaClient();
+      const row = {
+        id: 'exact-audit-id',
+        createdAt: new Date('2025-01-01T00:00:00Z'),
+        event: 'attendance-sheet.edit',
+        resourceId: 'sheet-id',
+        resourceType: 'attendance_sheet',
+        success: false,
+        shadowProofRequired: false,
+        actorUserId: null,
+        actorRoleSnap: null,
+        actorServicePrincipalId: null,
+        actorCredentialId: null,
+        onBehalfOfUserId: null,
+        onBehalfOfRoleSnap: null,
+        context: {},
+      };
+      jest.spyOn(tx.auditLog, 'findUnique').mockResolvedValue(row);
+      const result = await service.readShadowSourceQualification(tx, 'exact-audit-id');
+      // No success/proof filtering: the qualified caller must reject invalid anchors.
+      expect(result).toBe(row);
+      expect(result?.success).toBe(false);
+      expect(result?.shadowProofRequired).toBe(false);
+    });
+
+    it('propagates transaction failure without retrying or falling back to the primary client', async () => {
+      const primary = makePrismaMock();
+      const service = makeService(primary);
+      const tx = new PrismaClient();
+      const failure = new Error('isolated transaction failure');
+      const read = jest.spyOn(tx.auditLog, 'findUnique').mockRejectedValue(failure);
+      await expect(service.readShadowSourceQualification(tx, 'audit-id')).rejects.toBe(failure);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(primary.auditLog.findUnique).not.toHaveBeenCalled();
+      expect(primary.auditLog.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('log()', () => {
+    it('E3-2 D2 只在同一事务内设置 proof bit，并返回本次 INSERT 的精确 ID', async () => {
+      const prisma = makePrismaMock();
+      const service = makeService(prisma);
+      const create = jest
+        .fn<Promise<{ id: string }>, [unknown]>()
+        .mockResolvedValue({ id: 'exact-shadow-audit-id' });
+      const tx = { auditLog: { create } } as unknown as Prisma.TransactionClient;
+
+      const id = await service.logShadowProofRequired({
+        event: 'attendance-sheet.submit',
+        actorUserId: 'actor-1',
+        actorRoleSnap: Role.ADMIN,
+        resourceType: 'attendance_sheet',
+        resourceId: 'sheet-1',
+        meta: META,
+        after: { sheet: { version: 1 }, records: [{ id: 'record-1' }] },
+        tx,
+      });
+
+      expect(id).toBe('exact-shadow-audit-id');
+      const call = create.mock.calls[0][0] as {
+        data: { shadowProofRequired: boolean; event: string; resourceId: string; context: unknown };
+        select: { id: boolean };
+      };
+      expect(call.data.shadowProofRequired).toBe(true);
+      expect(call.data.event).toBe('attendance-sheet.submit');
+      expect(call.data.resourceId).toBe('sheet-1');
+      expect(call.data.context).toEqual({
+        requestId: META.requestId,
+        ip: META.ip,
+        ua: META.ua,
+        after: { sheet: { version: 1 }, records: [{ id: 'record-1' }] },
+      });
+      expect(call.select).toEqual({ id: true });
+      expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    });
     it('最简:不传 before / after / extra,context 只含 3 必填字段', async () => {
       const prisma = makePrismaMock();
       const service = makeService(prisma);

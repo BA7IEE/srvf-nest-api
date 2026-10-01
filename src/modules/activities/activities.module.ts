@@ -6,6 +6,7 @@ import { AuthzModule } from '../authz/authz.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { ContributionRulesModule } from '../contribution-rules/contribution-rules.module';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { AuthModule } from '../auth/auth.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 import { InsurancesModule } from '../insurances/insurances.module';
 import { CertificatesModule } from '../certificates/certificates.module';
@@ -99,6 +100,8 @@ import { ActivityContributionPolicySelectionAccess } from './activity-contributi
 import { ActivityContributionPolicySelectionAuditRecorder } from './activity-contribution-policy-selection-audit-recorder';
 import { ActivityContributionPolicySelectionQueryService } from './activity-contribution-policy-selection-query.service';
 import { ActivityContributionPolicySelectionService } from './activity-contribution-policy-selection.service';
+import { ActivityContributionShadowMappingProofQuery } from './activity-contribution-shadow-mapping-proof.query';
+import { ActivityContributionShadowMappingRegistrationService } from './activity-contribution-shadow-mapping-registration.service';
 import { AdminActivityMetricDefinitionsController } from './controllers/admin-activity-metric-definitions.controller';
 import { AdminActivityMetricSetsController } from './controllers/admin-activity-metric-sets.controller';
 import { ActivityDraftAuditRecorder } from './activity-draft-audit-recorder';
@@ -227,6 +230,7 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     DatabaseModule,
     AuditLogsModule,
     PermissionsModule,
+    AuthModule,
     AuthzModule,
     UsersModule,
     InsurancesModule,
@@ -338,6 +342,8 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
     ActivityContributionPolicySelectionAuditRecorder,
     ActivityContributionPolicySelectionService,
     ActivityContributionPolicySelectionQueryService,
+    ActivityContributionShadowMappingProofQuery,
+    ActivityContributionShadowMappingRegistrationService,
     ActivityMetricAuditRecorder,
     ActivityMetricDefinitionService,
     ActivityMetricSetService,
@@ -477,6 +483,9 @@ import { ActivityImageSigningService } from './activity-image-signing.service';
   ],
   exports: [
     ActivitiesService,
+    // E3-2 callers use activity-owned mapping reads, never cross-domain table access.
+    ActivityContributionShadowMappingProofQuery,
+    ActivityContributionShadowMappingRegistrationService,
     // 跨模块读侧(activity-registrations / attendances 的 App 列表)也要按 coverImageKey
     // 现签活动封面 —— 导出签名层,而不是让它们各自去调 AttachmentsService。
     ActivityImageSigningService,

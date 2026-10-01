@@ -113,6 +113,16 @@ export const CONTRIBUTION_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSe
 
 // E1-3: Human-only scoped activity selection. Custom roles may grant these independently;
 // all built-in roles deliberately receive zero defaults.
+export const CONTRIBUTION_SHADOW_MAPPING_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
+  {
+    code: 'contribution-shadow-mapping.register.approval',
+    module: 'contribution-shadow-mapping',
+    action: 'register',
+    resourceType: 'approval',
+    description: '登记逐项批准的贡献影子映射（仅真人显式 GLOBAL 授权）',
+  },
+];
+
 export const ACTIVITY_CONTRIBUTION_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'activity.contribution-policy.read',
@@ -3205,6 +3215,19 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 200,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'contribution-shadow-mapping.register.approval': {
+      displayName: '登记贡献影子映射批准',
+      businessDescription:
+        '仅真人显式GLOBAL授权登记逐项批准的不可变映射；内建角色零默认授予，超级管理员不直通，不允许Service Principal或delegation。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 201,
       riskLevel: 'HIGH',
       riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',

@@ -69,6 +69,40 @@ export class AuditLogsService {
   // - requestId / ip / ua 永远写入(ip / ua 可为 null,但字段必存在;requestId 必为非空字符串)
   // - before / after / extra 仅当调用方传入时写入(undefined 不写入,避免 JSON 里出现 "undefined" 字面或冗余 null)
   async log(input: AuditLogInput): Promise<void> {
+    await this.createLog(input);
+  }
+
+  // E3-2 D2: only the legacy attendance transaction uses this narrow entry.
+  // Return the ID of this exact INSERT; callers must not infer it from time/order.
+  async logShadowProofRequired(input: AuditLogInput & { tx: PrismaTx }): Promise<string> {
+    const created = await input.tx.auditLog.create({
+      data: { ...this.createLogData(input), shadowProofRequired: true },
+      select: { id: true },
+    });
+    return created.id;
+  }
+
+  /**
+   * Internal evidence qualification only, not an audit detail/read-scope entry.
+   * Caller must first requalify the Human in this same transaction and verify
+   * the returned event/resource/proof anchors. Never returns raw context or actor.
+   * No primary-client fallback: the caller owns the transaction and its deadline.
+   */
+  readShadowSourceQualification(tx: PrismaTx, auditLogId: string) {
+    return tx.auditLog.findUnique({
+      where: { id: auditLogId },
+      select: {
+        createdAt: true,
+        event: true,
+        resourceId: true,
+        resourceType: true,
+        success: true,
+        shadowProofRequired: true,
+      },
+    });
+  }
+
+  private createLogData(input: AuditLogInput) {
     const context: AuditContext = {
       requestId: input.meta.requestId,
       ip: input.meta.ip,
@@ -78,22 +112,24 @@ export class AuditLogsService {
     if (input.after !== undefined) context.after = input.after;
     if (input.extra !== undefined) context.extra = input.extra;
 
+    return {
+      actorUserId: input.actorUserId,
+      actorRoleSnap: input.actorRoleSnap,
+      actorServicePrincipalId: input.actorServicePrincipalId,
+      actorCredentialId: input.actorCredentialId,
+      onBehalfOfUserId: input.onBehalfOfUserId,
+      onBehalfOfRoleSnap: input.onBehalfOfRoleSnap,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      event: input.event,
+      context: context as unknown as Prisma.InputJsonValue,
+      // success 默认 true(schema @default);D-B fail-fast 路径下不需要显式传
+    };
+  }
+
+  private async createLog(input: AuditLogInput): Promise<void> {
     const client = input.tx ?? this.prisma;
-    await client.auditLog.create({
-      data: {
-        actorUserId: input.actorUserId,
-        actorRoleSnap: input.actorRoleSnap,
-        actorServicePrincipalId: input.actorServicePrincipalId,
-        actorCredentialId: input.actorCredentialId,
-        onBehalfOfUserId: input.onBehalfOfUserId,
-        onBehalfOfRoleSnap: input.onBehalfOfRoleSnap,
-        resourceType: input.resourceType,
-        resourceId: input.resourceId,
-        event: input.event,
-        context: context as unknown as Prisma.InputJsonValue,
-        // success 默认 true(schema @default);D-B fail-fast 路径下不需要显式传
-      },
-    });
+    await client.auditLog.create({ data: this.createLogData(input) });
   }
 
   // ============ list(分页 + 过滤 + 强制读取范围下推) ============

@@ -612,6 +612,11 @@
       "surface": "sha256:64efe60fc4e270ab814a2a145f39e6386c714e6a6c65349215b2395330ebd487",
       "description": "sha256:601ff843cb16b3fcbce77058ede02f8d3c4f0e7d3c005b61ecf7ea3c273192cb"
     },
+    "contribution-shadow-mapping.register.approval": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:c321f8aee459648933915c3a43088ba6e2b6a092f9676d792aa47183d2f5b186"
+    },
     "contribution.create.rule": {
       "endpoints": 1,
       "surface": "sha256:ece74d183099e0900af23d0f230716fbc0cbc78ce09e0c2517c0a647fc9a6cc0",

@@ -467,6 +467,16 @@ export interface ActivityControlPlaneConfig {
   mode: ActivityControlPlaneMode;
 }
 
+export type ContributionShadowMode = 'off' | 'shadow';
+
+export function parseContributionShadowMode(raw: string | undefined): ContributionShadowMode {
+  if (raw === undefined) return 'off';
+  if (raw !== 'off' && raw !== 'shadow') {
+    throw new Error('ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE 必须严格为 off 或 shadow');
+  }
+  return raw;
+}
+
 export function parseActivityControlPlaneMode(
   raw: string | undefined,
   env: AppEnv,
@@ -762,6 +772,8 @@ export interface AppConfig {
   activityAudienceTags: ActivityAudienceTagsConfig;
   activityV11Workflow: ActivityV11WorkflowConfig;
   activityOsControlPlane: ActivityControlPlaneConfig;
+  // Legacy typed test fixtures omit this additive key; missing is always off.
+  contributionShadowMode?: ContributionShadowMode;
 }
 
 export default registerAs('app', (): AppConfig => {
@@ -1067,6 +1079,9 @@ export default registerAs('app', (): AppConfig => {
       activityV11Workflow.enabled,
     ),
   };
+  const contributionShadowMode = parseContributionShadowMode(
+    process.env.ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE,
+  );
 
   return {
     env,
@@ -1099,5 +1114,6 @@ export default registerAs('app', (): AppConfig => {
     activityAudienceTags,
     activityV11Workflow,
     activityOsControlPlane,
+    contributionShadowMode,
   };
 });

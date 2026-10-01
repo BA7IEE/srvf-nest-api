@@ -17,14 +17,35 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+import { loadTestEnv } from '../setup/load-env';
 
 const migration = '20260908000000_correction_pending_segment_lifecycle';
+const isolatedW98 = process.env.SRVF_SEGMENT_PENDING_W98 === '1';
+const previousTarget = { worker: process.env.JEST_WORKER_ID, url: process.env.DATABASE_URL };
+beforeAll(() => {
+  if (!isolatedW98) return;
+  process.env.JEST_WORKER_ID = '98';
+  loadTestEnv();
+  assertTestDatabaseUrl(process.env.DATABASE_URL);
+  if (deriveTestDbName() !== 'app_test_w98') throw new Error('unexpected segment fixture target');
+});
 // Raw SQL replay intentionally has no Prisma migration history. Restore this
 // worker after both suites so subsequent specs can safely run migrate deploy.
 afterAll(() => {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
   const worker = process.env.JEST_WORKER_ID;
   if (!worker) throw new Error('Dedicated worker required');
+  if (isolatedW98) {
+    try {
+      dropWorkerDatabase('98');
+    } finally {
+      if (previousTarget.worker === undefined) delete process.env.JEST_WORKER_ID;
+      else process.env.JEST_WORKER_ID = previousTarget.worker;
+      if (previousTarget.url === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousTarget.url;
+    }
+    return;
+  }
   dropWorkerDatabase(worker);
   execFileSync(
     'docker',
@@ -124,6 +145,10 @@ describe('pending segment nonempty legacy upgrade', () => {
         ADD COLUMN "currentContributionPolicySelectionRevisionId" TEXT;
       ALTER TABLE "AttendanceCorrectionRequest"
         ADD COLUMN "resubmittedFromRequestId" TEXT;
+      -- Current-client readback only: historical audits cannot request shadow proof.
+      ALTER TABLE "audit_logs"
+        ADD COLUMN "shadowProofRequired" BOOLEAN NOT NULL DEFAULT FALSE
+          CHECK ("shadowProofRequired" = FALSE);
     `);
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     app = await createTestApp();
