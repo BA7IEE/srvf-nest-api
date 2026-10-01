@@ -2494,3 +2494,196 @@ pnpm harness:grant 'prisma/migrations/20260930120000_activity_os_r5_e3_shadow_ma
 **最终交付自证**：`pnpm agent:check:quick`退出0，433套／9,430条单测通过、5条既有todo（66.519s），缓存lint、三组typecheck及harness自测通过；两份变动E2E另跑定向冷lint通过。Prettier、counts、CODEMAP、readtax及diff检查通过，CODEMAP两项既有WARN和readtax预算提示照留；未刷新或改动生成物。最终两份测试15／307处expect父表达式逐项AST打印一致，两份台账仅第3行变化，评审稿HEAD前缀逐字保持，精确六路径无扩围。只按授权普通提交推送#1370 Draft，不另索取同一提交许可；新SHA的全量Contract／E2E交PR CI冷跑，本地未运行会触碰其他库的标准Contract入口。
 
 **本次未做**：未修复或关闭旧CI性能失败，不自动重跑、不Ready／合并；未改生产代码、schema／migration、权限、业务断言或5秒／7秒，不登记真实映射、不启用shadow／Gate、不操作生产或真实业务数据。跨模型整体复审未执行，不伪称已评审。
+
+### 29.22 合并后两项性能修复完整送审包（2026-10-02；仅文档，待实施拍板）
+
+#### 29.22.1 当前授权、基点与证据边界
+
+维护者本轮仅允许在本评审稿定稿两项主干性能修复的完整方案与精确授权清单；不实施、不操作数据库、不提交推送。以下实现、测试库生命周期、授权命令和Draft PR均为**待批准建议**，不能根据本节自行执行。本轮唯一实际写入是本节追加，不修改旧记录或两份台账。
+
+已只读核实：#1370已Squash合并，main为`21b8de1cf680e4ea62d345de6005a6e28c7f467b`；PR头`308a7be923d55521b91cfeee4c29d7976f26751b`与main的Git tree均为`872c50f2032967bca513bca8dbb7f59ffafc5cfd`。因此是**相同仓库内容在PR通过、main失败**，不是已证明合并引入新代码回归，也不代表性能已可靠达标。当前无open PR，#1324已合并，不继续套用旧豁免。版本仍为0.72.0；CHANGELOG当前首节为v0.72.0，没有Unreleased段，后续只新增下列具名fragment，不运行release归并。
+
+原主仓仍在保留的开发分支，preflight因落后Squash后的origin/main一个提交失败；没有绕过门禁或修改原分支。本文在`/Users/dengwang/Documents/coding/srvf-nest-api-delivery-flow-pilot`的干净main基点编辑，该工作树preflight通过；本轮不创建分支、不提交。文档编辑前文件为512531字节，SHA-256为`82ecf322d608760cf51e602060e7fc8df3138f479eca1d05b4050539ffe26925`，旧前缀必须逐字保留。
+
+| 观测                  | PR成功样本                                                  | main失败样本                                                                   | 能证明／不能证明                                                                                                      |
+| --------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| 账本8,192人完整commit | 1,855ms，27条原业务查询；SELECT18.737ms／UPDATE443.824ms    | 12,618ms，失败前24条；SELECT3,930.110ms／UPDATE失败调用6,407.260ms，P2028      | 已定位两个服务段SQL的巨大耗时差；失败调用不等于数据库成功执行耗时，未到达查询不能记作省掉                             |
+| 账本两条计划          | Hash Join，关联估计8,192行；两表reltuples=8192              | Nested Loop，关联估计1行；两表reltuples=-1、relpages=0                         | 存在真实计划差异；main的autoanalyzed=true不证明统计覆盖本批夹具，modified_since_analyze为8192／8205；尚未证明全部因果 |
+| 映射2,000条完整链     | 3,348ms；pure wall874.706ms；应用751.282ms／比较1,402.900ms | 5,246ms；pure wall1,498.122ms；应用1,261.201ms／比较失败调用2,094.644ms，P2028 | 多阶段一起变慢，不可套用账本根因；纯计算热点是候选优化面，不保证单项足以达标                                          |
+| 映射外层计划／统计    | 两条ModifyTable→Function Scan，估计100行；四表未analyze     | 外层形状相同、同样估计100行；四表未analyze                                     | 未观察到这两条外层计划的形状变化；不证明内部触发器计划、资源争用或缓存条件相同                                        |
+
+权威证据：[PR CI 36883021762](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36883021762)、[main CI 36888047618](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36888047618)、main失败[分片1](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36888047618/job/110456386651)与[分片3](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36888047618/job/110456386961)。main其余三个E2E分片、Fast checks、Golden journeys、守护／回放和Docker构建通过；聚合随失败分片失败，不计为第三项业务故障。映射prepare总1,602.029ms已包含pure与读取；CPU1,749.235ms可含辅助线程，不能与wall相加。comparisonTimeout3,169ms与poolWait100ms是传入选项而非已花时间。两条映射计划额外耗时52.877／81.930ms仍计入原预算，不靠移出计时变绿。
+
+#### 29.22.2 推荐方案A及不可改变的业务合同
+
+推荐一个独立修复PR同时交付下述P-Ledger与P-Prepare，两项各自有对照和验收，不互相抵扣。按D档送审：触碰正式账本生效链和影子证明计算，但本包不改业务合同、事务归属、权限、DB执行面或schema。不是god-service拆分、不新增跨模块服务抽象，已有characterization先于生产改动运行。
+
+- **P-Ledger**：用现有身份／服务段索引构造有界的参数化关联，阻止已观察到的“对每个段再次扫描本活动身份集合”路径；不通过ANALYZE测试夹具掩盖业务查询风险。
+- **P-Prepare**：同一个同步纯函数调用内复用已完整验证的政策定义与评估器；每条来源自己的哈希、映射、有效期、选项、金额、分类与证据哈希仍单独校验。不是权限缓存，也不是跨请求缓存。
+- 不选方案B“仅调大5秒／7秒、减少2,000／8,192规模、改CI worker数量或多次重跑取绿色”：这些均不能证明原合同达标。
+- 数据库第134／135条、全部trigger与ACL原样保留。若P-Prepare收益不足且需改SQL函数／migration，停在证据报告，不自动扩大本包或回改已合入migration。
+
+风险：SQL行访问次序可能影响竞争，必须覆盖现有并发回滚链；编译复用可能误把坏定义当好定义，必须差分验证错误优先级、同键异内容及调用间隔离；性能强依赖环境，w98通过只证明本地样本，最终仍由固定候选SHA的PR全量冷跑裁决。保持全部原始失败记录和累计修复轮次，不因新PR编号清零。
+
+#### 29.22.3 P-Ledger精确形状与等价证明义务
+
+入口仍是`LedgerPostingService.commitBatchWithin`：账本各公开调用与更正路径共同复用它；活动／run／version／batch锁→串行预算闸→成员锁→日状态锁的显式顺序不变。`readDraftSegmentMemberIds`负责把没有账本分录但有待生效服务段的成员也纳入锁，不能删掉或改成仅由分录推导。末尾服务段UPDATE仍在同一事务内，不拆批提交、不预先在事务外计算目标、不改audit／notification。
+
+固定候选为**以本活动身份为外层，按身份键访问段**：
+
+1. 成员SELECT保留`DISTINCT memberId`及升序；从`ActivityParticipationIdentity WHERE activityId=$1`出发，使用相关`LATERAL`段查询，以`s.participationIdentityId=i.id AND s.statusCode='draft'`利用现有`participant_service_segment_identity_status_idx`，并完整保留`resultCode NOT IN ('voided','replaced')`与`checkOutAt IS NOT NULL`。相关子查询以`OFFSET 0`作为局部不拉平边界；不用全局／会话planner开关、不强制某个索引名称、不新增索引。SQL内部逐身份索引访问不等于应用层N次查询；对外仍一条参数化语句。
+2. UPDATE同样从本活动身份出发，以相关段查询生成`id`集合，再用`WITH target AS MATERIALIZED (...)`在**同一语句**按段主键更新。候选段只筛`draft`，**不得误加成员SELECT的resultCode／checkOutAt条件**：原UPDATE也更新该活动的voided／replaced／开放draft段。最终UPDATE保留当前行`statusCode='draft'`复核，设定`committed`、原batch和`NOW()`，不加入LIMIT／客户端ID列表。目标主键唯一，必须证明没有重复更新或跨活动扩大。
+3. 该形状不是性能保证：必须采集候选真实计划，确认不再反复按activityId扫描身份集合；若目标UPDATE又形成无界重复扫描，报告候选失败，不能仅凭写了LATERAL／MATERIALIZED便宣告解决。
+4. 绑定参数数仍是常数、语句数不随人数增加；既有成员锁每人一个bind的例外不变。无额外DB round trip，不增加预算、不拆锁、不改变V2／V3／重放校验。
+
+先补最小服务编排characterization单测（原仓没有`ledger-posting.service.spec.ts`），再改这两处SQL。真实DB等价对照覆盖：空集、重复member的多身份、零分录成员、开放／闭合段、valid／early_departure_zero／voided／replaced、draft／committed／superseded、同成员跨活动、重放、最后一步失败全回滚。旧SQL与新SQL在同构夹具上对比成员集合与更新后全部相关字段；查询计划或源码字符串断言不能代替真实行结果。现有主E2E／并发E2E只运行，不改它们的断言。
+
+#### 29.22.4 P-Prepare精确形状与校验不减
+
+已核实引用链：`AttendancesService`在原准备事务读取来源／审计时间／映射／选择／岗位／政策→`prepareShadowComparisonSet`→`prepareShadowEvidence`→`evaluateShadowFrozenSource`→`compareContributionShadow`→`evaluateContributionPolicy`。现路径每条来源先fingerprint一次，compare又fingerprint一次，evaluate再次parse；此前CPU样本也命中canonicalize／parse相关路径。只优化这些重复纯计算，不改`attendances.service.ts`的事务、读取、预算及失败收据编排。
+
+设计约束：
+
+1. 在activities现有政策定义文件增加经严格解析生成的**封闭评估器工厂**，复用现有唯一计算内核；不复制一套积分算法。原`fingerprintContributionPolicyVersion`、`evaluateContributionPolicy`和`compareContributionShadow`对外调用、校验顺序及错误行为保持，普通未知输入仍走完整校验。
+2. 工厂自行从unknown输入执行完整canonical／schemaVersion／evaluatorVersion／有效期／定义解析／hash核验，捕获私有不可变规范化快照，返回只读结果和闭包能力。不接受调用者的`validated:true`、可构造“证明”或类型强转作为信任；不暴露可变定义供外部改写，不新增WeakMap／模块级Map／TTL／缓存服务。
+3. `prepareShadowComparisonSet`仅在本次调用内建立惰性复用表；以已通过现有重复键检查的**版本对象身份**关联，首次到达原fingerprint位置才构建，不提前遍历抛错或把整批变成失败。版本id／hash／evaluator同键异内容仍拒绝；不得仅凭id或声称的hash缓存。所有正常返回、失败和异常退出均不保留此表到下一次调用。
+4. 未命中走严格工厂；工厂异常仍在原位置转`evaluation_error`，已验证hash不符仍为`source_drift`。同一坏版本可记本调用的失败结果，但不能提升其优先级：每条来源仍先跑原source／mapping／selection／duration前置，再到原fingerprint判断点。分类优先级、处理顺序和application是否生成均与旧入口一致。
+5. 内部prepared比较通路复用严格工厂闭包，而非开放一个可任意传入“已验证定义”的裸函数。来源hash、源金额复算、映射批准／撤销／替换／有效期、selection与policy同链、角色／类别、时间精度、policy有效期、事实hash／政策证据hash全部保持逐行校验。数据库继续独立重新验证，不能把应用层编译产物当持久证据。
+6. 对照测试逐字段比较旧公开严格入口与新批量路径的attempt、application、comparison、Decimal值、分类和hash。覆盖同一政策2,000次与多政策混用、调用间修改同id内容、重复键、非法定义／时间／hash、坏来源先于坏政策、无匹配旧规则、映射hold、分段阈值两侧、默认结果及修改原输入不能污染已捕获结果。断言复用次数按不同有效版本数增长，而不是只看耗时。
+
+本包不承诺特定百分比收益。若全链仍超5秒，保留各阶段数据并报告不足，不把prepare移出预算、剥离数据库守卫或改比较结果来凑时间。
+
+#### 29.22.5 十八个精确候选路径（本轮不实施）
+
+| #   | 路径                                                                       | 唯一允许的后续改动                                                                                   |
+| --- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 1   | `src/modules/activities/ledger-posting.service.ts`                         | 仅上述两条SQL的等价形状及相邻说明                                                                    |
+| 2   | `src/modules/activities/ledger-posting.service.spec.ts`                    | 新增最小编排characterization与SQL绑定／目标约束测试                                                  |
+| 3   | `src/modules/attendances/contribution-shadow.service.ts`                   | 本调用惰性政策复用、原逐来源校验不减                                                                 |
+| 4   | `src/modules/attendances/contribution-shadow.service.spec.ts`              | 原入口／新批量路径差分与失败顺序、隔离测试                                                           |
+| 5   | `src/modules/activities/activity-contribution-policy-definition.ts`        | 严格封闭工厂及复用唯一评估内核，原入口不变                                                           |
+| 6   | `src/modules/activities/activity-contribution-policy-definition.spec.ts`   | 严格输入、不可变快照和评估等价测试                                                                   |
+| 7   | `src/modules/activities/activity-contribution-shadow-comparison.ts`        | 严格公共入口及内部prepared通路共用原比较逻辑                                                         |
+| 8   | `src/modules/activities/activity-contribution-shadow-comparison.spec.ts`   | 分类／错误优先级／精度／阈值差分测试                                                                 |
+| 9   | `test/e2e/activity-ledger-posting-scale.e2e-spec.ts`                       | 新增真实集合等价及计划退化对照；仅适配既有诊断对WITH形状的识别；原15处断言不变                       |
+| 10  | `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts` | 补多政策满额与原2,000完整链证据；原307处断言及三个角色隔离不变                                       |
+| 11  | `test/helpers/e3-main-performance-w98.setup.ts`                            | 新增仅显式本地模式启用的worker98入口；只加载原环境并精确验证库名，不连库／建库，不进入普通CI默认配置 |
+| 12  | `CODEMAP.md`                                                               | 仅既有生成器刷新计数／行数                                                                           |
+| 13  | `docs/ai-harness/ROUTE_AUTHZ.md`                                           | 仅既有生成器刷新摘要，无访问声明变化                                                                 |
+| 14  | `harness/authz-assertion-patterns.json`                                    | 仅既有生成器刷新摘要，不改变方法登记／匹配／基线                                                     |
+| 15  | `docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md`      | 本节方案、实际验证及限制，历史不回改                                                                 |
+| 16  | `docs/ai-harness/NEXT_TASKS.md`                                            | 顶部本任务当前状态，不启动后续业务轴                                                                 |
+| 17  | `docs/ai-harness/FROZEN_DRAFTS.md`                                         | 顶部本任务当前状态，不改历史／Gate                                                                   |
+| 18  | `changelog.d/activity-os-r5-e3-main-performance.md`                        | 新增本修复fragment，不改既有release                                                                  |
+
+不是允许写18个文件以外的同名候选。目录核实第2／11／18项为拟新增，其他存在；ledger没有现成同名spec，不把不存在路径的空diff当零差异。逐文件`harness:needs`预算为18项中2项红区（第13／14项），16项非红区；非红区不等于本轮已获得实施授权。本节不用通配符作预算，也不自行grant。
+
+不需要修改schema／migration／seed／domain-map／state-machines／counts、OpenAPI／13个前端client／DTO／Controller／BizCode／权限／审计、module接线、架构身份或债基线；运行对应检查时发现新后果须列实证停报，不能机械刷新扩散。`pnpm docs:codemap`与`pnpm docs:authz`为预计生成动作，必须逐文件检查仅上述生成内容变化；无变化不制造空改动。
+
+#### 29.22.6 验收矩阵、隔离副作用与停止条件
+
+**先证伪，再完整交付**：候选SQL只在上述两处、纯函数只在上述三条生产文件内实现。先完成旧行为characterization和两项固定规模首轮冷运行；不达标先报告失败证据，不扩大后续包、不反复跑到偶然绿色。对照探针与完整链验收分开标记，不将带回滚ANALYZE的探针冒充冷性能验收。
+
+| 验收项            | 必须提供的证据                                                                                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL集合／事务等价 | 原SQL与候选的成员集合、更新结果等价；主账本及并发原E2E完整通过；零分录成员仍锁住，跨活动不能生效，失败全回滚，重放不重复副作用                              |
+| 低统计因果对照    | w98全新合成夹具下各一次旧／新查询计划与实际行数、循环数、buffers；另对同构夹具仅做具名两表ANALYZE后各一次对照，原始结果全部保留；最多四组，不计入业务通过数 |
+| 账本完整链        | 原8,192规模、7,000ms、固定查询数及bind断言通过；计划捕获仍覆盖WITH更新，探针不吞错、原语句执行一次；不得只报微基准                                          |
+| 政策计算等价      | 原严格入口差分、独立调用无残留、不同版本不串、坏输入不因复用放行；原分类及所有证据hash相等                                                                  |
+| 映射完整链        | 原2,000记录、5,000ms内完成prepare→start→application→comparison→terminal；真实受限LOGIN、不可变与失败恢复／重放全部原断言通过，不用mock替代集合trigger       |
+| 回归              | 三份政策／shadow单测及新ledger单测；完整mapping-proof、source-proof、ledger主／并发／scale、D7 time-correction直接受影响套件；不改旧断言，不只跑满额单例    |
+| 最终本地检查      | 修改文件冷lint、typecheck、`pnpm agent:check:quick`，counts／codemap／authz／readtax／diff与精确写集检查；性能测试与quick串行错峰                           |
+| CI                | 新Draft PR固定最终SHA的全量Contract＋E2E及全部要求的检查；本地通过不替代。若再次失败，保留首次现场计划／计时并按累计轮次熔断，不自动重跑                    |
+
+计划退化对照仅允许操作w98的上述两张**合成夹具表**；ANALYZE是解释统计因素的独立实验，不加入业务事务或正式满额验收的前置，不改autovacuum配置、不写系统catalog、不禁trigger、不制造sleep或负载。若冷夹具未重現main坏计划，明确“未复现”，不得以本地Hash Join推翻真实main Nested Loop；候选仍须凭等价及最终CI完整链验收，不报已彻底证明根因。回滚式`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`只在独立取证事务／夹具中执行，诊断后回滚；正式计时保留既有非ANALYZE探针，不删原预算内的诊断来取得绿色。
+
+**本地DB目标必须是主仓派生的`app_test_w98`**，不使用linked worktree派生库冒充它。未来建议在主仓从核实后的origin/main创建`codex/e3-main-performance`新分支，保留旧分支／全部工作树；以apply_patch迁入本文追加段，核实一致后仅还原pilot中本轮自有文档改动，不使用reset或checkout覆盖文件。分支创建和文档迁移也是未来实施授权内容，本轮未执行。
+
+现有`test/jest-e2e.config.ts`的globalSetup会操作模板库并克隆workers，故**不能直接运行标准test:contract／test:e2e入口**。未来本地通过进程内读取现有Jest config并去掉globalSetup／globalTeardown、替换setupFiles为第11项的方式运行；不编辑Jest配置、test/setup或package。第11项必须在主仓、显式`SRVF_E3_MAIN_PERF_W98=1`时才将worker置98，调用原loadTestEnv并用`deriveTestDbName()`和`assertTestDatabaseUrl`双重断言逐字为app_test_w98；linked worktree／非显式模式／错误目标立即拒绝，不能用修改连接串绕过派生器。不输出环境值或连接串。
+
+需单独获准的生命周期：仅app_test_w98创建／冷回放已合入135条migration（`migrate deploy`）、测试夹具TRUNCATE／重建／回收，串行运行各具名套件；普通套件前由该精确库生命周期准备数据库，mapping使用既有`SRVF_E3_D2_MAPPING_W98=1`dedicated生命周期；不用migrate dev／reset／db push，不触碰app_test模板、w1或其他scratch库。每组结束关闭app／Prisma连接。mapping既有三个具名角色`srvf_shadow_owner_w98_fixture`、`srvf_shadow_registrar_w98_fixture`、`srvf_shadow_runtime_w98_fixture`仅对w98做真实owner／ACL／临时LOGIN测试；执行前若已存在且不能证明本测试所有权则停，不能删别人角色。退出撤回本轮授权并在库／连接关闭后回收本轮角色，无DROP OWNED／实例级清理；库／连接／角色零读数必须有postgres角色存在的正对照，不把诊断工具失效当清理成功。
+
+运行但不修改文件的直接E2E为：`test/e2e/activity-ledger-posting.e2e-spec.ts`、`test/e2e/activity-ledger-posting-concurrency.e2e-spec.ts`、`test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts`、`test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts`；运行会写w98夹具，不是只读数据库操作。已核实前两项使用当前worker的createTestApp／resetDb；D7以`SRVF_D7_2_W98=1`进入既有worker98建库／回收；source-proof以`SRVF_E3_D2_W98=1`进入既有w98生命周期，历史133→134验证也在该库，使用mkdtemp暂存迁移副本，不修改仓库migration。测试进程内部既有Gate=true仅服务合成夹具并随进程退出恢复，不等于允许更改部署开关。上述原文件不扩入写集；未来基点如改变目标库须停报，不能扩大权限。标准全量Contract／E2E由PR CI现有隔离库执行，不改workflow／worker数。失败修复超出18路径、需新增业务决策、改变签字SQL／ACL、或仅靠放宽限制才达标时立刻停报。
+
+第11项实现后，w98定向Jest的命令形状如下（仅待批准实施后运行；普通ledger套件执行前仍须完成上文获准的w98建库／migrate deploy，本命令不偷偷调用模板globalSetup）：
+
+```zsh
+cd /Users/dengwang/Documents/coding/srvf-nest-api
+SRVF_E3_MAIN_PERF_W98=1 SRVF_E3_D2_MAPPING_W98=1 pnpm exec tsx -e '
+import base from "./test/jest-e2e.config";
+import { runCLI } from "jest";
+const config = { ...base, rootDir: process.cwd(), globalSetup: undefined,
+  globalTeardown: undefined, setupFiles: ["<rootDir>/test/helpers/e3-main-performance-w98.setup.ts"] };
+runCLI({ config: JSON.stringify(config), runInBand: true, runTestsByPath: true,
+  _: ["test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts"],
+  $0: "e3-main-performance-w98" }, [process.cwd()])
+  .then(({ results }) => { process.exitCode = results.success ? 0 : 1; })
+  .catch(() => { console.error("w98 test runner failed; inspect sanitized local diagnostics"); process.exitCode = 1; });'
+```
+
+其他五份具名E2E分别替换`_`数组为对应精确路径，source-proof／D7仅启用各自上述dedicated标志，不并发共用w98。三个ledger套件由精确库生命周期前置和后置管理；不得因Jest默认设置worker1而跳过第11项保护。若本机模块解析需要29.21.18已有NODE_PATH调整，仅限命令进程，不安装依赖或修改环境文件。命令模板本轮未执行，不能标成验证通过。
+
+#### 29.22.7 一次性实施授权建议、命令与交付终点
+
+以下是**供维护者决定的完整包**，不是本轮授权。推荐批准文本：
+
+> 确认第29.22节完整方案A及18路径；允许按本节在主仓建立新修复分支并迁入本轮计划，保留旧分支及全部工作树；允许仅app_test_w98隔离验证、已合入迁移冷回放、测试夹具重建回收、具名两表统计对照与回滚式计划取证，以及本节三个具名角色的隔离ACL／临时LOGIN验证并在结束撤回回收。保持原业务语义、全部断言、真实锁、权限复核和5秒／7秒预算；允许清单内实施、补测、取证修复、生成物与文档更新。达成本节本地验收后允许普通提交、推送并创建一个新Draft PR；CI失败只在本写集和上述边界内修复，不盲重跑。超出写集或更改schema／migration／权限／ACL时先停报。不自动Ready、不合并、不操作生产、不登记真实映射、不启用shadow／Gate、不删除或重算业务数据。
+
+未来维护者授权命令（**本轮不要运行；AI不得代跑**；必须在实际实施的主仓执行，令牌不能跨worktree继承）：
+
+```zsh
+cd /Users/dengwang/Documents/coding/srvf-nest-api
+pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason 'E3评审稿29.22方案A：仅刷新生成摘要'
+pnpm harness:grant 'harness/authz-assertion-patterns.json' --reason 'E3评审稿29.22方案A：仅刷新生成摘要，不改登记或门禁'
+```
+
+每条grant只给一个精确路径，不用泛化glob。执行会话核实令牌来自维护者且有效，不自行补发。SQL迁移与权限／审计／ACL未改的前提下不新增3b／4b签字；第134／135条和ACL摘要仍须逐份核实未变，不能提前签未知差异。可信红区审批绑定新SHA，由维护者按CI实际要求独立批准。跨模型整体复审沿既有延期决定如实记“未执行”，不自动调用外部模型。
+
+交付终点：本地等价与完整链通过、范围内全部静态检查通过、新Draft PR附实际SHA和CI结果；不把Draft交付写成main已全绿或业务轴全部完成。Ready、合并及合并后main核验另按实际授权处理。本节不授权新release／tag、D8-OPS、真实映射登记或E3后续阶段，也不再操作已合并#1370。
+
+本轮仅文档的收尾判据：旧文件前缀逐字不变、仅本评审稿一条diff、Markdown及无数据库的派生文档检查通过；不运行quick／Contract／E2E冒充本包验收。**本次未做**：上述18路径实现、DB／角色／统计实验、业务测试、提交推送、CI重跑、Ready／合并、开关及生产操作均未执行。
+
+本轮文档自证：18个候选路径逐项去重并核实存在／拟新增状态；两次harness:needs共覆盖全部18项，只有第13／14项需要维护者grant。counts、CODEMAP、readtax检查通过；CODEMAP两项既有WARN与readtax预算提示原样保留。Markdown仅格式化本节追加内容；旧512531字节前缀保持原摘要。最终格式与diff检查另以实际退出码复核，不将前一个失败命令被后一个成功覆盖的退出码当通过。
+
+
+#### 29.22.8 实施授权与首轮证据（2026-10-02；完整回归进行中）
+
+维护者已明确确认§29.22完整方案A及18路径，实施／w98验证／通过后新Draft PR按29.22.7生效；不Ready、不合并、不操作生产。主仓从`21b8de1c`建立`codex/e3-main-performance`，旧分支及全部工作树保留；批准稿逐字迁入，pilot main工作树已恢复干净。两项生成物精确grant已核验，AI未代发。
+
+已实现固定候选：账本只有两个服务段SQL改变；原应用事务、成员／日锁、权限及7秒预算未动。封闭政策工厂复用唯一评估内核，只在一次同步准备内按版本对象复用；原严格公开入口、逐来源检查、DB独立守卫及5秒预算保留。新增失败顺序、同键异内容／跨调用隔离、两政策2,000行差分，以及真实SQL集合／回滚对照。
+
+- 最小冷映射：真实受限LOGIN原2,000条完整链通过，1,315ms；pure wall92.137ms、prepare144.877ms，应用381.077ms、比较637.694ms。单项通过不是完整298项验收；角色／库在该次结束按既有生命周期回收。
+- 最小冷账本：8,192人通过，提交包络1,080ms（包含最终console记录的读数1,105ms）、27条业务查询、SELECT18.392ms、UPDATE344.154ms，最大bind仍为唯一既有成员锁8,192。两表reltuples=-1／relpages=0，analyzed与autoanalyzed均false；候选身份集合读取一次，再按身份键访问段，更新最终Hash Join，没有反复按activityId重扫身份。
+- 四组受控探针：旧／新在低统计时SELECT15.720／17.904ms、UPDATE482.336／347.118ms；只ANALYZE具名两表后SELECT9.385／34.491ms、UPDATE308.199／632.157ms。成员结果8,192、更新目标8,200，四组全部相关字段一致，开放／voided／replaced的draft仍更新，committed／superseded及跨活动行不变；同事务NOW相等，重放更新0，savepoint及最终整体回滚通过。诊断事务120秒仅用于两份SQL各组对拍，不是业务预算，也不算业务完整链通过。
+- **限制**：本地旧SQL在低统计也选择身份外层，未复现main失败的反向Nested Loop；新SQL在已有统计样本比旧Hash Join慢，不能声称普遍提速或根因完全闭合。此次只能确认候选有界访问形状、真实集合等价和本地完整链达标；远端仍须新SHA冷跑，不盲重试。
+- 账本三套完整回归34/34通过，含原回滚、重放、零分录成员及并发锁测试。单测新增夹具的跨realm JSON与新SQL多活动夹具唯一键问题均在新测试内修正，未放宽原断言。AST逐条复核原规模15处、mapping-proof307处及三份单测212处expect链全部保留。
+- 已复核第134／135条与ACL仍为29.21已签摘要：`37f204e1c46a08040c04775e51823659399d18f3e11b0c873d502de464b3714f`／`9536aaf97d704b433b3625014db0d7f882b4a0dbf8c98dec8cc78211dc539de4`／`65746a8892017144270034e654b1cee77c539d7374b27e9daca1faa95225aa8b`，无新3b／4b执行面。
+
+当前完整mapping、source-proof、D7回归和最终静态检查尚未全部结束；没有提交推送或新PR。原主干失败记录保持开放，不能以这些本地读数标成main全绿。后续实际结果追加于下，不回改原批准稿或历史失败。
+
+#### 29.22.9 完整本地验收与交付记录（2026-10-02）
+
+本轮基点为`21b8de1cf680e4ea62d345de6005a6e28c7f467b`，在主仓`codex/e3-main-performance`实施。实际写入17/18个批准路径：`pnpm docs:authz`没有改变`harness/authz-assertion-patterns.json`，不人为制造第18项差异。CODEMAP只刷新两处模块行数，ROUTE_AUTHZ只有两处inputDigest刷新，658端点及方法登记不变。
+
+本地证据按实际命令和目标分开记录，完整原始日志保留在本机`/tmp/srvf-e3-main-performance.T11eVN`，不将包含合成夹具的原始日志上传为公开材料：
+
+| 检查                      | 实际结果与复用边界                                                                                                                                                                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| w98账本主／并发／规模三套 | 34/34通过，50.320秒；原8,192人、7秒和查询／bind断言保留，新增SQL集合及回滚等价通过。之后只删除该测试未使用的解构绑定，不改运行输入或断言，按process §7.2复用结果                                                                                |
+| w98完整mapping-proof      | 首轮297通过、1个新增数据库差分测试因SQL列名歧义失败；只更正新测试的列限定后298/298通过，86.802秒。之后为严格公开入口保留getter读取优先级补了惰性检查，最终完整重验另记下方，不把旧结果冒充最终代码                                              |
+| w98完整source-proof       | 88/88通过，45.927秒；来源证明写入、失败与权限链未改变，复用同一实现／依赖／测试输入下的本轮结果                                                                                                                                                 |
+| w98完整D7 time-correction | 7/7通过，273.042秒，含2,000身份完整链；其9,455ms准备阶段属于原30秒prepare预算，不是7秒commit计时。之后未改账本生产代码／D7测试及环境输入                                                                                                        |
+| `pnpm agent:check:quick`  | 首次整体退出1：全量434套、9,457条单测通过，5条既有todo；harness自测通过（末段ESLint规则138通过、5项已知缺口）。失败为新增测试两处lint及一处类型问题，均已修正；原运行有worker强制退出警告，保留为未定位警告，不冒充无警告或quick整体成功        |
+| 最终静态补验              | 默认4GB Node全仓冷lint曾OOM（exit134），未执行后续命令。改用当前CI已有的进程级`NODE_OPTIONS=--max-old-space-size=6144 pnpm lint`后退出0；`pnpm typecheck`三组均通过；四份定向单测233/233通过。没有修改CI、Node配置文件、测试预算或业务超时      |
+| quick结果复用             | 仅修复JSON.parse结果类型、已匹配旧规则夹具的非空类型和未使用绑定；生产代码、生成物、依赖、harness规则及原断言与上述全量单测／harness通过时一致，按process §7.2复用其通过证据，最终失败的lint／typecheck已独立重验。没有将首次quick退出码改写为0 |
+| 无数据库检查              | counts、codemap、authz、readtax、边界metadata／ids／debt、新债、authz graph、13个前端client新鲜度、135条迁移计数及cutover签字检查均通过；CODEMAP原有两项WARN保留。签字检查通过不等于Gate、Ready或生产授权                                       |
+
+额外独立对照：从基点`21b8de1c`内存编译旧政策／比较实现，与候选严格入口112组结果对比，零差异；不从新工厂复制“参考算法”。新增双政策2,000行逐字段差分与数据库独立复算已通过；原2,000条真实受限LOGIN链未被替换为mock或纯计算测试。新增多政策DB项证明逐项复算一致，不夸大为第二条多政策运行时写入全链。
+
+最终AST复核原expect链逐条保留：政策26、比较23、shadow服务163、账本规模15、mapping-proof307。历史评审稿前512531字节仍为`82ecf322d608760cf51e602060e7fc8df3138f479eca1d05b4050539ffe26925`；第134／135条与ACL的三个签字摘要仍与29.22.8一致，无新3b／4b重签事项。
+
+最终mapping完整重验298/298通过，111.968秒；原2,000条真实LOGIN完整链1,894ms，五秒预算及全部断言保留。未并发运行lint／typecheck／全量单测；仅使用原w98专用生命周期，未操作模板库或其他worker库。退出后独立只读核验：w98数据库0、连接0、三个具名夹具角色0，postgres角色正对照1；已回收本轮合成测试库与角色，不涉及业务数据。代码／新fragment的Prettier检查通过。
+
+本地性能限制仍沿29.22.8：旧SQL坏计划未在本机复现，新SQL在已有统计下并非更快；不能关闭主干原两项失败。允许按原授权提交17路径并创建新Draft PR，实际候选SHA、远端CI及维护者审批绑定PR记录，不为提前写入PR编号再制造状态提交。跨模型整体复审沿已批准延期决定未执行。
+
+**本次未做**：没有更改schema／migration／权限／ACL／接口／CI配置／业务预算，没有查询或转换真实业务数据，没有Ready、合并、部署、启用shadow／Gate、D8-OPS、删除或重算业务数据；全量Contract／E2E及固定SHA远端性能仍由新PR CI冷跑验收。

@@ -19,10 +19,9 @@ import {
   parseActivityContributionPolicySelectionItem,
 } from '../activities/activity-contribution-policy-selection';
 import {
-  compareContributionShadow,
+  prepareContributionShadowPolicy,
   type ContributionShadowComparisonResult,
 } from '../activities/activity-contribution-shadow-comparison';
-import { fingerprintContributionPolicyVersion } from '../activities/activity-contribution-policy-definition';
 import {
   hashLegacySource,
   type ShadowMappingApplicationInput,
@@ -206,7 +205,17 @@ export function prepareShadowEvidence(input: Parameters<typeof evaluateShadowFro
   application: ShadowMappingApplicationInput | null;
   comparison: ShadowComparisonInput;
 } {
-  const evaluated = evaluateShadowFrozenSource(input);
+  return prepareShadowEvidenceWith(input, prepareFrozenPolicy);
+}
+
+function prepareShadowEvidenceWith(
+  input: Parameters<typeof evaluateShadowFrozenSource>[0],
+  resolvePolicy: typeof prepareFrozenPolicy,
+): {
+  application: ShadowMappingApplicationInput | null;
+  comparison: ShadowComparisonInput;
+} {
+  const evaluated = evaluateShadowFrozenSourceWith(input, resolvePolicy);
   const { source, mapping, selectionItem: item, policyVersion: version } = input;
   const comparable = evaluated.comparable;
   if (
@@ -352,6 +361,18 @@ export function prepareShadowComparisonSet(input: {
   }
   // Candidate lookup reuse stays inside this pure call, never authorization caching.
   const mappings = new Map<string, ContributionShadowMappingApproval | null>();
+  // Only this synchronous preparation owns the map; no identity/access decision is cached.
+  const preparedPolicies = new Map<
+    NonNullable<Parameters<typeof evaluateShadowFrozenSource>[0]['policyVersion']>,
+    ReturnType<typeof prepareFrozenPolicy>
+  >();
+  const resolvePolicy: typeof prepareFrozenPolicy = (version) => {
+    const existing = preparedPolicies.get(version);
+    if (existing) return existing;
+    const prepared = prepareFrozenPolicy(version);
+    preparedPolicies.set(version, prepared);
+    return prepared;
+  };
   const applications: ShadowMappingApplicationInput[] = [];
   const comparisons: ShadowComparisonInput[] = [];
   for (const source of input.sources) {
@@ -373,22 +394,25 @@ export function prepareShadowComparisonSet(input: {
       mapping && position && position.attendanceRoleCode === mapping.policyRoleCode
         ? mapping
         : null;
-    const prepared = prepareShadowEvidence({
-      source,
-      sourceTime: input.sourceTime,
-      signedMappingVersion: input.context.signedMappingVersion,
-      mapping: usable,
-      selectionItem: usable ? (selected.get(usable.sessionPositionId) ?? null) : null,
-      policyVersion: usable
-        ? (versions.get(
-            versionKey(
-              usable.policyVersionId,
-              usable.policyDefinitionHash,
-              usable.evaluatorVersion,
-            ),
-          ) ?? null)
-        : null,
-    });
+    const prepared = prepareShadowEvidenceWith(
+      {
+        source,
+        sourceTime: input.sourceTime,
+        signedMappingVersion: input.context.signedMappingVersion,
+        mapping: usable,
+        selectionItem: usable ? (selected.get(usable.sessionPositionId) ?? null) : null,
+        policyVersion: usable
+          ? (versions.get(
+              versionKey(
+                usable.policyVersionId,
+                usable.policyDefinitionHash,
+                usable.evaluatorVersion,
+              ),
+            ) ?? null)
+          : null,
+      },
+      resolvePolicy,
+    );
     if (prepared.application) applications.push(prepared.application);
     comparisons.push(prepared.comparison);
   }
@@ -419,6 +443,25 @@ export function evaluateShadowFrozenSource(input: {
     | 'effectiveUntil'
   > | null;
 }): ContributionShadowComparisonResult & { durationSeconds: number | null } {
+  return evaluateShadowFrozenSourceWith(input, prepareFrozenPolicy);
+}
+
+function prepareFrozenPolicy(
+  version: NonNullable<Parameters<typeof evaluateShadowFrozenSource>[0]['policyVersion']>,
+) {
+  return prepareContributionShadowPolicy({
+    schemaVersion: version.schemaVersion,
+    evaluatorVersion: version.evaluatorVersion,
+    definition: version.definitionJson,
+    effectiveFrom: version.effectiveFrom.toISOString(),
+    effectiveUntil: version.effectiveUntil?.toISOString() ?? null,
+  });
+}
+
+function evaluateShadowFrozenSourceWith(
+  input: Parameters<typeof evaluateShadowFrozenSource>[0],
+  resolvePolicy: typeof prepareFrozenPolicy,
+): ContributionShadowComparisonResult & { durationSeconds: number | null } {
   const { source, sourceTime, mapping, selectionItem: item, policyVersion: version } = input;
   const hold = (classification: ContributionShadowComparisonResult['classification']) => ({
     classification,
@@ -507,67 +550,53 @@ export function evaluateShadowFrozenSource(input: {
     const seconds = source.legacyServiceHours.mul(100).mul(36);
     if (!seconds.isInteger() || !Number.isSafeInteger(seconds.toNumber()) || seconds.isNegative())
       return hold('input_source_mismatch');
-    const fingerprint = fingerprintContributionPolicyVersion({
-      schemaVersion: version.schemaVersion,
-      evaluatorVersion: version.evaluatorVersion,
-      definition: version.definitionJson,
-      effectiveFrom: version.effectiveFrom.toISOString(),
-      effectiveUntil: version.effectiveUntil?.toISOString() ?? null,
-    });
-    if (fingerprint.definitionHash !== version.definitionHash) return hold('source_drift');
-    const category = fingerprint.definition.roleRules
-      .find((role) => role.attendanceRoleCode === mapping.policyRoleCode)
-      ?.categoryRules.find((rule) => rule.timeCategoryCode === mapping.categoryCode);
+    const prepared = resolvePolicy(version);
+    if (prepared.definitionHash !== version.definitionHash) return hold('source_drift');
+    const category = prepared.categoryCode(mapping.policyRoleCode, mapping.categoryCode);
     if (!category) return hold('mapping_hold');
-    const result = compareContributionShadow({
-      fact: {
-        activityId: source.activityId,
-        memberId: source.memberId,
-        attendanceId: source.recordId,
-        occurredAt: sourceTime.toISOString(),
-        sourceCode: mapping.durationSourceCode,
-        legacyServiceHours: source.legacyServiceHours.toNumber(),
-        durationSeconds: seconds.toNumber(),
-        durationSourceCode: mapping.durationSourceCode,
+    const result = prepared.compare(
+      {
+        fact: {
+          activityId: source.activityId,
+          memberId: source.memberId,
+          attendanceId: source.recordId,
+          occurredAt: sourceTime.toISOString(),
+          sourceCode: mapping.durationSourceCode,
+          legacyServiceHours: source.legacyServiceHours.toNumber(),
+          durationSeconds: seconds.toNumber(),
+          durationSourceCode: mapping.durationSourceCode,
+        },
+        mapping: {
+          approved: true,
+          signedVersion: input.signedMappingVersion,
+          activityTypeCode: mapping.activityTypeCode,
+          legacyRoleCode: mapping.attendanceRoleCode,
+          policyRoleCode: mapping.policyRoleCode,
+          timeCategoryCode: category,
+          sourceCode: mapping.durationSourceCode,
+          precisionCode: 'decimal_hours_2',
+          missingRuleIsZero: false,
+        },
+        legacy: {
+          activityTypeCode: source.activityTypeCode,
+          roleCode: source.attendanceRoleCode,
+          serviceHours: source.legacyServiceHours.toNumber(),
+          expectedSourceFingerprint: source.legacySourceHash,
+          observedSourceFingerprint: observed,
+          rules: [
+            {
+              id: source.legacyRuleId!,
+              activityTypeCode: source.activityTypeCode,
+              attendanceRoleCode: source.attendanceRoleCode,
+              durationThreshold: source.durationThreshold?.toFixed(2) ?? null,
+              pointsBelow: source.pointsBelow!.toFixed(2),
+              pointsAbove: source.pointsAbove?.toFixed(2) ?? null,
+            },
+          ],
+        },
       },
-      mapping: {
-        approved: true,
-        signedVersion: input.signedMappingVersion,
-        activityTypeCode: mapping.activityTypeCode,
-        legacyRoleCode: mapping.attendanceRoleCode,
-        policyRoleCode: mapping.policyRoleCode,
-        timeCategoryCode: category.timeCategoryCode,
-        sourceCode: mapping.durationSourceCode,
-        precisionCode: 'decimal_hours_2',
-        missingRuleIsZero: false,
-      },
-      legacy: {
-        activityTypeCode: source.activityTypeCode,
-        roleCode: source.attendanceRoleCode,
-        serviceHours: source.legacyServiceHours.toNumber(),
-        expectedSourceFingerprint: source.legacySourceHash,
-        observedSourceFingerprint: observed,
-        rules: [
-          {
-            id: source.legacyRuleId!,
-            activityTypeCode: source.activityTypeCode,
-            attendanceRoleCode: source.attendanceRoleCode,
-            durationThreshold: source.durationThreshold?.toFixed(2) ?? null,
-            pointsBelow: source.pointsBelow!.toFixed(2),
-            pointsAbove: source.pointsAbove?.toFixed(2) ?? null,
-          },
-        ],
-      },
-      policy: {
-        approved: true,
-        definition: fingerprint.definition,
-        versionHash: version.definitionHash,
-        schemaVersion: version.schemaVersion,
-        evaluatorVersion: version.evaluatorVersion,
-        effectiveFrom: version.effectiveFrom.toISOString(),
-        effectiveUntil: version.effectiveUntil?.toISOString() ?? null,
-      },
-    });
+      version.definitionHash,
+    );
     if (result.comparable && !source.legacyPoints.equals(result.legacyPoints!))
       return hold('source_drift');
     return { ...result, durationSeconds: seconds.toNumber() };

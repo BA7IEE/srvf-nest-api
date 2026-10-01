@@ -418,11 +418,22 @@ export class LedgerPostingService {
         WHERE "settlementVersionId" = ${version.id} AND "statusCode" = 'draft'
       `;
       await tx.$executeRaw`
+        WITH target AS MATERIALIZED (
+          SELECT candidate.id
+          FROM "ActivityParticipationIdentity" i
+          CROSS JOIN LATERAL (
+            SELECT draft.id
+            FROM "ParticipantServiceSegmentRevision" draft
+            WHERE draft."participationIdentityId" = i.id
+              AND draft."statusCode" = 'draft'
+            OFFSET 0
+          ) candidate
+          WHERE i."activityId" = ${activityId}
+        )
         UPDATE "ParticipantServiceSegmentRevision" AS s
         SET "statusCode" = 'committed', "effectiveBatchId" = ${batch.id}, "updatedAt" = NOW()
-        FROM "ActivityParticipationIdentity" i
-        WHERE s."participationIdentityId" = i.id
-          AND i."activityId" = ${activityId}
+        FROM target
+        WHERE s.id = target.id
           AND s."statusCode" = 'draft'
       `;
 
@@ -558,12 +569,17 @@ export class LedgerPostingService {
   private async readDraftSegmentMemberIds(tx: PrismaTx, activityId: string): Promise<string[]> {
     const rows = await tx.$queryRaw<Array<{ memberId: string }>>`
       SELECT DISTINCT i."memberId"
-      FROM "ParticipantServiceSegmentRevision" s
-      JOIN "ActivityParticipationIdentity" i ON i.id = s."participationIdentityId"
+      FROM "ActivityParticipationIdentity" i
+      CROSS JOIN LATERAL (
+        SELECT s.id
+        FROM "ParticipantServiceSegmentRevision" s
+        WHERE s."participationIdentityId" = i.id
+          AND s."statusCode" = 'draft'
+          AND s."resultCode" NOT IN ('voided', 'replaced')
+          AND s."checkOutAt" IS NOT NULL
+        OFFSET 0
+      ) candidate
       WHERE i."activityId" = ${activityId}
-        AND s."statusCode" = 'draft'
-        AND s."resultCode" NOT IN ('voided', 'replaced')
-        AND s."checkOutAt" IS NOT NULL
       ORDER BY i."memberId" ASC
     `;
     return rows.map((row) => row.memberId);

@@ -202,6 +202,13 @@ export function evaluateContributionPolicy(
   inputValue: unknown,
 ): ContributionPolicyResult {
   const definition = parseContributionPolicyDefinition(definitionValue);
+  return evaluateParsedContributionPolicy(definition, inputValue);
+}
+
+function evaluateParsedContributionPolicy(
+  definition: ContributionPolicyDefinition,
+  inputValue: unknown,
+): ContributionPolicyResult {
   canonicalizeActivityTemplateDefinition(inputValue);
   const input = record(inputValue, ['attendanceRoleCode', 'timeCategoryCode', 'durationSeconds']);
   const attendanceRoleCode = text(input.attendanceRoleCode, 64);
@@ -226,4 +233,42 @@ export function evaluateContributionPolicy(
     recognizedPoints: selected.recognizedPoints,
     explanationCode: selected.explanationCode,
   };
+}
+
+/** Private normalized snapshot; neither a caller-supplied proof nor shared request state. */
+class PreparedContributionPolicy {
+  readonly #definition: ContributionPolicyDefinition;
+  readonly definitionHash: string;
+  readonly schemaVersion: number;
+  readonly evaluatorVersion: number;
+  readonly effectiveFrom: string;
+  readonly effectiveUntil: string | null;
+
+  constructor(value: unknown) {
+    const fingerprint = fingerprintContributionPolicyVersion(value);
+    this.#definition = fingerprint.definition;
+    this.definitionHash = fingerprint.definitionHash;
+    this.schemaVersion = fingerprint.schemaVersion;
+    this.evaluatorVersion = fingerprint.evaluatorVersion;
+    this.effectiveFrom = fingerprint.effectiveFrom;
+    this.effectiveUntil = fingerprint.effectiveUntil;
+    Object.freeze(this);
+  }
+
+  categoryCode(role: string, code: string): ContributionTimeCategoryCode | null {
+    return (
+      this.#definition.roleRules
+        .find((item) => item.attendanceRoleCode === role)
+        ?.categoryRules.find((item) => item.timeCategoryCode === code)?.timeCategoryCode ?? null
+    );
+  }
+
+  evaluate(input: unknown): ContributionPolicyResult {
+    return evaluateParsedContributionPolicy(this.#definition, input);
+  }
+}
+
+/** Always performs the strict fingerprint validation before creating a closed evaluator. */
+export function prepareContributionPolicyVersion(value: unknown) {
+  return new PreparedContributionPolicy(value);
 }

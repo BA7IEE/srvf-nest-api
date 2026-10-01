@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import type { INestApplication } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
@@ -42,6 +44,46 @@ const SESSION_START = new Date('2020-03-01T01:00:00.000Z');
 const SESSION_END = new Date('2020-03-01T05:00:00.000Z');
 const SEAL_AT = new Date('2020-03-01T09:00:00.000Z');
 
+/** Execute the actual tagged template from the service, not a second candidate implementation. */
+function segmentQueryFromService(kind: 'members' | 'update', activityId: string, batchId: string) {
+  const source = readFileSync(
+    join(process.cwd(), 'src/modules/activities/ledger-posting.service.ts'),
+    'utf8',
+  );
+  const template =
+    kind === 'members'
+      ? source.match(/`(\s*SELECT DISTINCT i\."memberId"[\s\S]*?)`/g)
+      : source.match(/`(\s*WITH target AS MATERIALIZED[\s\S]*?)`/g);
+  if (template?.length !== 1) throw new Error('segment query source is ambiguous');
+  const parts = template[0].slice(1, -1).split(/\$\{([^}]+)\}/);
+  const strings: string[] = [];
+  const values: string[] = [];
+  parts.forEach((part, index) => {
+    if (index % 2 === 0) strings.push(part);
+    else if (part === 'activityId') values.push(activityId);
+    else if (part === 'batch.id') values.push(batchId);
+    else throw new Error('unreviewed segment query binding');
+  });
+  return Prisma.sql(strings, ...values);
+}
+
+// Fixed main-21b8de1c reference, deliberately independent of the candidate.
+function previousSegmentQueries(activityId: string, batchId: string) {
+  return {
+    members: Prisma.sql`SELECT DISTINCT i."memberId"
+      FROM "ParticipantServiceSegmentRevision" s
+      JOIN "ActivityParticipationIdentity" i ON i.id = s."participationIdentityId"
+      WHERE i."activityId" = ${activityId} AND s."statusCode" = 'draft'
+        AND s."resultCode" NOT IN ('voided', 'replaced') AND s."checkOutAt" IS NOT NULL
+      ORDER BY i."memberId" ASC`,
+    update: Prisma.sql`UPDATE "ParticipantServiceSegmentRevision" AS s
+      SET "statusCode" = 'committed', "effectiveBatchId" = ${batchId}, "updatedAt" = NOW()
+      FROM "ActivityParticipationIdentity" i
+      WHERE s."participationIdentityId" = i.id AND i."activityId" = ${activityId}
+        AND s."statusCode" = 'draft'`,
+  };
+}
+
 interface StatementRecord {
   binds: number;
   sample: string;
@@ -65,6 +107,7 @@ function redactLedgerPlan(value: unknown): unknown {
   if (!value || typeof value !== 'object') return value;
   const allowed = new Set([
     'Plan',
+    'QUERY PLAN',
     'Plans',
     'Node Type',
     'Parent Relationship',
@@ -84,6 +127,16 @@ function redactLedgerPlan(value: unknown): unknown {
     'Optimization',
     'Expressions',
     'Deforming',
+    'Actual Rows',
+    'Actual Loops',
+    'Actual Startup Time',
+    'Actual Total Time',
+    'Execution Time',
+    'Planning Time',
+    'Shared Hit Blocks',
+    'Shared Read Blocks',
+    'Shared Dirtied Blocks',
+    'Shared Written Blocks',
   ]);
   return Object.fromEntries(
     Object.entries(value)
@@ -281,7 +334,11 @@ function installStatementRecorder(
               String(args[0]).includes('DISTINCT');
             const isSegmentWrite =
               label ===
-              'raw.UPDATE.ParticipantServiceSegmentRevision.ActivityParticipationIdentity';
+                'raw.UPDATE.ParticipantServiceSegmentRevision.ActivityParticipationIdentity' ||
+              (label ===
+                'raw.WITH.ParticipantServiceSegmentRevision.ActivityParticipationIdentity' &&
+                Array.isArray(args[0]) &&
+                String(args[0]).includes('UPDATE "ParticipantServiceSegmentRevision"'));
             if (isMemberRead || isSegmentWrite) {
               // Still lazy: planning and consumption begin only when the caller awaits.
               // Separate planner time from the one original call; both consume the unchanged budget.
@@ -378,7 +435,8 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
     await app.close();
   });
 
-  it('8192 人:准备 + 生效全过;生效事务的 SQL 条数固定、bind 参数与人数无关', async () => {
+  async function createScaleFixture(count = SCALE_MEMBER_COUNT) {
+    const tag = randomUUID();
     const organization = await prisma.organization.create({
       data: { name: '账本规模组织', nodeTypeCode: 'ledger-scale-team' },
       select: { id: true },
@@ -414,7 +472,7 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
       select: { id: true },
     });
 
-    const memberIds = Array.from({ length: SCALE_MEMBER_COUNT }, () => randomUUID());
+    const memberIds = Array.from({ length: count }, () => randomUUID());
     const registrationIds = memberIds.map(() => randomUUID());
     const identityIds = memberIds.map(() => randomUUID());
     const punchIds = memberIds.map(() => randomUUID());
@@ -428,7 +486,7 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
     await inChunks(
       memberIds.map((id, index) => ({
         id,
-        memberNo: `scale-m${index}`,
+        memberNo: `${tag}-${index}`,
         ...memberIdentityData(`规模队员 ${index}`),
         gradeCode: 'level-2',
       })),
@@ -467,7 +525,7 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
         occurredAt: SESSION_START,
         receivedAt: SESSION_START,
         operatorUserId: actor.id,
-        eventKey: `scale-in-${index}`,
+        eventKey: `${tag}-scale-in-${index}`,
         requestHash: `scale-in-hash-${index}`,
         evidenceRevision: 0,
       })),
@@ -498,7 +556,7 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
         allWindowsClosedAt: SEAL_AT,
         openSegmentCount: 0,
         manualReviewPendingCount: 0,
-        populationCountDistinct: SCALE_MEMBER_COUNT,
+        populationCountDistinct: count,
         populationCountBySession: {},
         contentHash: 'seal-scale',
         statusCode: 'active',
@@ -525,13 +583,13 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
         populationRevision: 0,
         workflowRevision: 0,
         contentHash: 'content-scale',
-        personCount: SCALE_MEMBER_COUNT,
-        sessionParticipationCount: SCALE_MEMBER_COUNT,
-        serviceSegmentCount: SCALE_MEMBER_COUNT,
+        personCount: count,
+        sessionParticipationCount: count,
+        serviceSegmentCount: count,
         createdByUserId: actor.id,
         submittedAt: SEAL_AT,
         statusCode: 'approved',
-        operationKey: 'scale-submit',
+        operationKey: `${tag}-scale-submit`,
         requestHash: 'scale-submit-hash',
       },
       select: { id: true },
@@ -556,14 +614,19 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
         settlementVersionId: version.id,
         batchRevision: 1,
         statusCode: 'preparing',
-        requestKey: 'settlement-final-approve:scale',
+        requestKey: `settlement-final-approve:${tag}`,
         requestHash: 'scale-approve-hash',
-        totalCount: SCALE_MEMBER_COUNT,
+        totalCount: count,
         preparedByUserId: actor.id,
       },
       select: { id: true },
     });
 
+    return { activity, session, batch, memberIds, identityIds, punchIds, registrationIds };
+  }
+
+  it('8192 人:准备 + 生效全过;生效事务的 SQL 条数固定、bind 参数与人数无关', async () => {
+    const { batch } = await createScaleFixture();
     // ===== 准备:分块跑完 =====
     const prepareStartedAt = Date.now();
     const { jobId, itemCount } = await preparation.ensurePrepareJob(batch.id);
@@ -683,5 +746,181 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
 
     // 🔴 判据三:恒串行闸给 8192 人算出的槽位数确实在预算内(否则 20088 会先拦住)。
     expect(ledgerCommitRequiredSlots(SCALE_MEMBER_COUNT)).toBe(9);
+  }, 600_000);
+
+  it('compares original and actual candidate SQL rows, replay and rollback; bounded planner probes are local only', async () => {
+    const plansEnabled = process.env.SRVF_E3_MAIN_PERF_SQL_PROBE === '1';
+    if (plansEnabled && process.env.SRVF_E3_MAIN_PERF_W98 !== '1') {
+      throw new Error('planner experiment is restricted to explicit w98 mode');
+    }
+    const f = await createScaleFixture(plansEnabled ? SCALE_MEMBER_COUNT : 4);
+    const outside = await createScaleFixture(1);
+    const rollback = new Error('rollback isolated equivalence probe');
+    const groups: unknown[] = [];
+    await expect(
+      prisma.$transaction(
+        async (tx) => {
+          const otherRegistration = await tx.activityRegistration.create({
+            data: {
+              activityId: outside.activity.id,
+              memberId: f.memberIds[0],
+              statusCode: 'approved',
+            },
+          });
+          const otherIdentity = await tx.activityParticipationIdentity.create({
+            data: {
+              activityId: outside.activity.id,
+              sessionId: outside.session.id,
+              registrationId: otherRegistration.id,
+              memberId: f.memberIds[0],
+              currentStatusCode: 'pass',
+            },
+          });
+          await tx.participantServiceSegmentRevision.create({
+            data: {
+              participationIdentityId: otherIdentity.id,
+              sourceCheckInEventId: outside.punchIds[0],
+              segmentKey: 'cross-activity',
+              revision: 0,
+              statusCode: 'draft',
+              resultCode: 'valid',
+              checkInAt: SESSION_START,
+              checkOutAt: SESSION_END,
+              serviceHours: 4,
+            },
+          });
+          const outsideIds = [...outside.identityIds, otherIdentity.id];
+          const session = await tx.activitySession.findUniqueOrThrow({
+            where: { id: f.session.id },
+          });
+          const duplicateSession = await tx.activitySession.create({
+            data: {
+              ...session,
+              id: randomUUID(),
+              code: 'equivalence-second-session',
+              name: 'equivalence second session',
+            },
+          });
+          const duplicate = await tx.activityParticipationIdentity.create({
+            data: {
+              activityId: f.activity.id,
+              sessionId: duplicateSession.id,
+              registrationId: f.registrationIds[0],
+              memberId: f.memberIds[0],
+              currentStatusCode: 'pass',
+            },
+          });
+          for (const statusCode of ['draft', 'committed', 'superseded']) {
+            for (const resultCode of ['valid', 'early_departure_zero', 'voided', 'replaced']) {
+              for (const closed of [true, false]) {
+                await tx.participantServiceSegmentRevision.create({
+                  data: {
+                    participationIdentityId: duplicate.id,
+                    sourceCheckInEventId: f.punchIds[0],
+                    segmentKey: `equivalence-${statusCode}-${resultCode}-${closed}`,
+                    revision: 0,
+                    statusCode,
+                    resultCode,
+                    checkInAt: SESSION_START,
+                    checkOutAt: closed ? SESSION_END : null,
+                    serviceHours: closed ? 0 : null,
+                  },
+                });
+              }
+            }
+          }
+          const old = previousSegmentQueries(f.activity.id, f.batch.id);
+          const candidate = {
+            members: segmentQueryFromService('members', f.activity.id, f.batch.id),
+            update: segmentQueryFromService('update', f.activity.id, f.batch.id),
+          };
+          const ids = [...f.identityIds, duplicate.id, ...outsideIds];
+          const snapshot = () =>
+            tx.participantServiceSegmentRevision.findMany({
+              where: { participationIdentityId: { in: ids } },
+              orderBy: { id: 'asc' },
+            });
+          const before = await snapshot();
+          expect(await posting['readDraftSegmentMemberIds'](tx, 'no-such-activity')).toEqual([]);
+          expect(
+            await tx.$executeRaw(segmentQueryFromService('update', 'no-such-activity', f.batch.id)),
+          ).toBe(0);
+          expect(
+            await tx.participationLedgerEntry.count({ where: { postingBatchId: f.batch.id } }),
+          ).toBe(0);
+          let expectedRows: Awaited<ReturnType<typeof snapshot>> | undefined;
+          for (const analyzed of plansEnabled ? [false, true] : [false]) {
+            if (analyzed) {
+              await tx.$executeRaw`ANALYZE "ActivityParticipationIdentity"`;
+              await tx.$executeRaw`ANALYZE "ParticipantServiceSegmentRevision"`;
+            }
+            const stats =
+              await tx.$queryRaw`SELECT relname,reltuples::DOUBLE PRECISION AS rows,relpages
+          FROM pg_class WHERE oid IN ('"ActivityParticipationIdentity"'::regclass,'"ParticipantServiceSegmentRevision"'::regclass) ORDER BY relname`;
+            for (const [label, queries] of [
+              ['original', old],
+              ['candidate', candidate],
+            ] as const) {
+              await tx.$executeRaw`SAVEPOINT segment_equivalence`;
+              const members = await tx.$queryRaw<Array<{ memberId: string }>>(queries.members);
+              expect(members.map((row) => row.memberId)).toEqual([...f.memberIds].sort());
+              expect(await posting['readDraftSegmentMemberIds'](tx, f.activity.id)).toEqual(
+                members.map((row) => row.memberId),
+              );
+              if (plansEnabled) {
+                const memberPlan = await tx.$queryRaw(
+                  Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${queries.members}`,
+                );
+                const updatePlan = await tx.$queryRaw(
+                  Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${queries.update}`,
+                );
+                groups.push({
+                  label,
+                  analyzed,
+                  stats,
+                  memberPlan: redactLedgerPlan(memberPlan),
+                  updatePlan: redactLedgerPlan(updatePlan),
+                });
+              } else await tx.$executeRaw(queries.update);
+              const after = await snapshot();
+              if (expectedRows === undefined) expectedRows = after;
+              else expect(after).toEqual(expectedRows);
+              for (let index = 0; index < before.length; index++) {
+                const prior = before[index];
+                const changed =
+                  prior.statusCode === 'draft' &&
+                  !outsideIds.includes(prior.participationIdentityId);
+                expect(after[index]).toEqual(
+                  changed
+                    ? {
+                        ...prior,
+                        statusCode: 'committed',
+                        effectiveBatchId: f.batch.id,
+                        updatedAt: after[index].updatedAt,
+                      }
+                    : prior,
+                );
+              }
+              expect(await tx.$executeRaw(queries.update)).toBe(0);
+              await tx.$executeRaw`ROLLBACK TO SAVEPOINT segment_equivalence`;
+              expect(await snapshot()).toEqual(before);
+              await tx.$executeRaw`RELEASE SAVEPOINT segment_equivalence`;
+            }
+          }
+          if (plansEnabled) expect(groups).toHaveLength(4);
+          throw rollback;
+        },
+        { timeout: 120_000 },
+      ),
+    ).rejects.toBe(rollback);
+    expect(
+      await prisma.activityParticipationIdentity.count({ where: { activityId: f.activity.id } }),
+    ).toBe(f.identityIds.length);
+    expect(
+      await prisma.participantServiceSegmentRevision.count({
+        where: { participationIdentityId: { in: f.identityIds }, statusCode: 'draft' },
+      }),
+    ).toBe(f.identityIds.length);
+    if (plansEnabled) console.info('[ledger-equivalence-four-groups] ' + JSON.stringify(groups));
   }, 600_000);
 });

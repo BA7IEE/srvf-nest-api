@@ -27,6 +27,7 @@ import {
 import {
   evaluateContributionPolicy,
   fingerprintContributionPolicyVersion,
+  prepareContributionPolicyVersion,
 } from '../../src/modules/activities/activity-contribution-policy-definition';
 import {
   parseShadowMappingRegistrationManifest,
@@ -1142,6 +1143,48 @@ describe('E3-2 D2 mapping schema construction', () => {
       if (previous.url === undefined) delete process.env.DATABASE_URL;
       else process.env.DATABASE_URL = previous.url;
     }
+  });
+
+  it('matches two closed policy evaluators against independent database recomputation for 2,000 mixed inputs', () => {
+    const definitions = [policyFixture(), policyFixture()];
+    definitions[1].roleRules[0].categoryRules[0].durationBands[2].recognizedPoints = '11.00';
+    const prepared = definitions.map((definition) =>
+      prepareContributionPolicyVersion({
+        schemaVersion: 1,
+        evaluatorVersion: 1,
+        definition,
+        effectiveFrom: '2099-01-01T00:00:00.000Z',
+        effectiveUntil: null,
+      }),
+    );
+    const durations = [0, 1, 60, 61, 3599, 3600, 3601, 7200];
+    const inputs = Array.from({ length: 2000 }, (_, index) => ({
+      index,
+      policy: index % 2,
+      role: index % 11 === 0 ? 'missing' : 'member',
+      duration: durations[Math.floor(index / 2) % durations.length],
+    }));
+    const payload = JSON.stringify({ definitions, inputs }).replaceAll("'", "''");
+    const database: Array<{ index: number; result: unknown }> = JSON.parse(
+      sql(`
+      WITH fixture AS (SELECT '${payload}'::JSONB value)
+      SELECT jsonb_agg(jsonb_build_object('index',(input->>'index')::INTEGER,
+        'result',csm_policy_evaluate_fn(fixture.value->'definitions'->((input->>'policy')::INTEGER),
+          input->>'role','volunteer_service',(input->>'duration')::BIGINT)) ORDER BY (input->>'index')::INTEGER)
+      FROM fixture CROSS JOIN LATERAL jsonb_array_elements(fixture.value->'inputs') AS samples(input)`),
+    );
+    expect(database).toHaveLength(2000);
+    inputs.forEach((input, index) => {
+      const fact = {
+        attendanceRoleCode: input.role,
+        timeCategoryCode: 'volunteer_service',
+        durationSeconds: input.duration,
+      };
+      const actual = prepared[input.policy].evaluate(fact);
+      expect(actual).toEqual(evaluateContributionPolicy(definitions[input.policy], fact));
+      expect(database[index]).toEqual({ index, result: actual });
+    });
+    expect(new Set(prepared.map((policy) => policy.definitionHash)).size).toBe(2);
   });
 
   it('matches pre-29.17 mapping results and exact exception priority on valid and ambiguous inputs', () => {

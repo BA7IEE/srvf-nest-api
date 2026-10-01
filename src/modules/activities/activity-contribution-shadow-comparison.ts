@@ -2,8 +2,7 @@ import { Prisma } from '@prisma/client';
 import {
   ContributionPolicyDefinition,
   ContributionTimeCategoryCode,
-  evaluateContributionPolicy,
-  fingerprintContributionPolicyVersion,
+  prepareContributionPolicyVersion,
 } from './activity-contribution-policy-definition';
 
 /** Offline fixture contract only. No database lookup, runtime shadow switch, or policy selection. */
@@ -107,6 +106,57 @@ function points(value: string): string {
 export function compareContributionShadow(
   input: ContributionShadowComparisonInput,
 ): ContributionShadowComparisonResult {
+  return compareWithPolicy(
+    input,
+    () =>
+      prepareContributionPolicyVersion({
+        schemaVersion: input.policy.schemaVersion,
+        definition: input.policy.definition,
+        evaluatorVersion: input.policy.evaluatorVersion,
+        effectiveFrom: input.policy.effectiveFrom,
+        effectiveUntil: input.policy.effectiveUntil,
+      }),
+    () => input.policy.definition !== null,
+  );
+}
+
+type ComparisonCoreInput = Omit<ContributionShadowComparisonInput, 'policy'> & {
+  policy: Omit<ContributionShadowComparisonInput['policy'], 'definition'>;
+};
+
+/** Strict factory: captures its own verified policy, never accepts a caller's validation flag. */
+export function prepareContributionShadowPolicy(value: unknown) {
+  const prepared = prepareContributionPolicyVersion(value);
+  return Object.freeze({
+    definitionHash: prepared.definitionHash,
+    categoryCode: (role: string, code: string) => prepared.categoryCode(role, code),
+    compare: (
+      input: Omit<ContributionShadowComparisonInput, 'policy'>,
+      versionHash: string,
+    ): ContributionShadowComparisonResult =>
+      compareWithPolicy(
+        {
+          ...input,
+          policy: {
+            approved: true,
+            versionHash,
+            schemaVersion: prepared.schemaVersion,
+            evaluatorVersion: prepared.evaluatorVersion,
+            effectiveFrom: prepared.effectiveFrom,
+            effectiveUntil: prepared.effectiveUntil,
+          },
+        },
+        () => prepared,
+        () => true,
+      ),
+  });
+}
+
+function compareWithPolicy(
+  input: ComparisonCoreInput,
+  resolvePolicy: () => ReturnType<typeof prepareContributionPolicyVersion>,
+  hasDefinition: () => boolean,
+): ContributionShadowComparisonResult {
   const { fact, mapping, legacy, policy } = input;
   if (
     !mapping.approved ||
@@ -166,7 +216,7 @@ export function compareContributionShadow(
   if (matches.length === 0 && !mapping.missingRuleIsZero) return result('legacy_rule_missing');
   if (
     !policy.approved ||
-    policy.definition === null ||
+    !hasDefinition() ||
     policy.versionHash === null ||
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(fact.occurredAt) ||
     !Number.isFinite(Date.parse(fact.occurredAt)) ||
@@ -177,20 +227,9 @@ export function compareContributionShadow(
     return result('policy_version_missing_or_unapproved');
   }
   try {
-    const fingerprint = fingerprintContributionPolicyVersion({
-      schemaVersion: policy.schemaVersion,
-      definition: policy.definition,
-      evaluatorVersion: policy.evaluatorVersion,
-      effectiveFrom: policy.effectiveFrom,
-      effectiveUntil: policy.effectiveUntil,
-    });
-    if (fingerprint.definitionHash !== policy.versionHash) return result('source_drift');
-    const signedRole = fingerprint.definition.roleRules.find(
-      (item) => item.attendanceRoleCode === mapping.policyRoleCode,
-    );
-    if (
-      !signedRole?.categoryRules.some((item) => item.timeCategoryCode === mapping.timeCategoryCode)
-    ) {
+    const prepared = resolvePolicy();
+    if (prepared.definitionHash !== policy.versionHash) return result('source_drift');
+    if (!prepared.categoryCode(mapping.policyRoleCode, mapping.timeCategoryCode)) {
       return result('mapping_hold');
     }
     const chosen = matches[0];
@@ -205,7 +244,7 @@ export function compareContributionShadow(
     if (chosen?.durationThreshold !== null && chosen !== undefined) {
       cents(chosen.durationThreshold);
     }
-    const evaluated = evaluateContributionPolicy(policy.definition, {
+    const evaluated = prepared.evaluate({
       attendanceRoleCode: mapping.policyRoleCode,
       timeCategoryCode: mapping.timeCategoryCode,
       durationSeconds: fact.durationSeconds,
