@@ -16,6 +16,9 @@ import {
   type ActivityTimeAllocationSliceInput,
 } from '../../src/modules/activities/activity-time-allocation-command';
 import { ActivityTimeAllocationService } from '../../src/modules/activities/activity-time-allocation.service';
+import { ActivityTimeSettlementService } from '../../src/modules/activities/activity-time-settlement.service';
+import { ActivityTimeSettlementQueryService } from '../../src/modules/activities/activity-time-settlement-query.service';
+import { ActivityTimeSettlementAccessService } from '../../src/modules/activities/activity-time-settlement-access.service';
 import request from 'supertest';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -46,6 +49,219 @@ import { httpServer } from '../helpers/http-server';
 import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+type DiagnosticRow = { label: string; elapsedMs: number; outcome: string; code: string };
+function diagnosticCode(error: unknown): string {
+  const kind =
+    error instanceof Error &&
+    [
+      'Error',
+      'TypeError',
+      'RangeError',
+      'BizException',
+      'PrismaClientKnownRequestError',
+      'PrismaClientUnknownRequestError',
+      'PrismaClientValidationError',
+      'PrismaClientInitializationError',
+    ].includes(error.name)
+      ? error.name
+      : 'other';
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return kind;
+  const prismaCode = ['P2028', 'P2010', 'P2002', 'P2003', 'P2024', 'P2034'].includes(error.code)
+    ? error.code
+    : 'other';
+  const state = error.meta?.code;
+  const sqlState =
+    typeof state === 'string' &&
+    [
+      '57014',
+      '55P03',
+      '23503',
+      '23505',
+      '23514',
+      '40001',
+      '40P01',
+      '53200',
+      '53400',
+      '08003',
+      '08006',
+      '57P01',
+    ].includes(state)
+      ? state
+      : 'unavailable';
+  return [kind, prismaCode, sqlState].join(':');
+}
+function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix = ''): T {
+  return new Proxy(target, {
+    get(object, key) {
+      const value: unknown = Reflect.get(object, key);
+      if (typeof key !== 'string') return value;
+      if (typeof value === 'object' && value !== null && !prefix && /^[a-z][a-zA-Z]+$/.test(key))
+        return diagnosticTx(value, rows, key);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        let label = prefix ? prefix + '.' + key : key;
+        if (['$queryRaw', '$executeRaw', '$queryRawUnsafe', '$executeRawUnsafe'].includes(key)) {
+          const first = args[0];
+          const literal =
+            typeof first === 'string'
+              ? first
+              : Array.isArray(first)
+                ? first.filter((part) => typeof part === 'string').join(' ')
+                : first &&
+                    typeof first === 'object' &&
+                    'strings' in first &&
+                    Array.isArray(first.strings)
+                  ? first.strings.filter((part) => typeof part === 'string').join(' ')
+                  : '';
+          const table = [
+            'ContributionShadowMappingApplication',
+            'ContributionShadowComparisonReceipt',
+            'ParticipantSettlementTimeBucketSource',
+            'ParticipantSettlementTimeBucket',
+            'ParticipantTimeAllocationRevision',
+            'ActivityParticipationIdentity',
+            'ParticipantServiceSegmentRevision',
+            'ActivityRuleSnapshot',
+            'TimePolicyVersion',
+            'AttendanceSettlementVersion',
+            'EvidenceSeal',
+            'ActivityEvidenceState',
+            'AttendanceSettlementRun',
+          ].find((name) => literal.includes('"' + name + '"'));
+          label +=
+            '.' + (table ?? (literal.includes('pg_advisory_xact_lock') ? 'advisoryLock' : 'other'));
+        }
+        const result: unknown = Reflect.apply(value, object, args);
+        if (
+          !result ||
+          typeof result !== 'object' ||
+          !('then' in result) ||
+          typeof result.then !== 'function'
+        )
+          return result;
+        return new Proxy(result, {
+          get(promise, property) {
+            if (property === 'then')
+              return (
+                fulfilled?: (output: unknown) => unknown,
+                rejected?: (error: unknown) => unknown,
+              ) => {
+                const began = performance.now();
+                const then: unknown = Reflect.get(promise, 'then');
+                if (typeof then !== 'function') throw new Error('diagnostic promise contract');
+                return Reflect.apply(then, promise, [
+                  (output: unknown) => {
+                    rows.push({
+                      label,
+                      elapsedMs: performance.now() - began,
+                      outcome: 'ok',
+                      code: '',
+                    });
+                    return fulfilled ? fulfilled(output) : output;
+                  },
+                  (error: unknown) => {
+                    rows.push({
+                      label,
+                      elapsedMs: performance.now() - began,
+                      outcome: 'error',
+                      code: diagnosticCode(error),
+                    });
+                    if (rejected) return rejected(error);
+                    throw error;
+                  },
+                ]);
+              };
+            const member: unknown = Reflect.get(promise, property);
+            return typeof member === 'function' ? member.bind(promise) : member;
+          },
+        });
+      };
+    },
+  });
+}
+
+function summarizeDiagnostics(rows: DiagnosticRow[]) {
+  const grouped = new Map<
+    string,
+    {
+      label: string;
+      calls: number;
+      totalMs: number;
+      maxMs: number;
+      failures: number;
+      codes: Set<string>;
+    }
+  >();
+  for (const row of rows) {
+    const group = grouped.get(row.label) ?? {
+      label: row.label,
+      calls: 0,
+      totalMs: 0,
+      maxMs: 0,
+      failures: 0,
+      codes: new Set<string>(),
+    };
+    group.calls += 1;
+    group.totalMs += row.elapsedMs;
+    group.maxMs = Math.max(group.maxMs, row.elapsedMs);
+    if (row.outcome === 'error') group.failures += 1;
+    if (row.code) group.codes.add(row.code);
+    grouped.set(row.label, group);
+  }
+  return [...grouped.values()].map((row) => ({
+    ...row,
+    totalMs: Math.round(row.totalMs * 1000) / 1000,
+    maxMs: Math.round(row.maxMs * 1000) / 1000,
+    codes: [...row.codes],
+  }));
+}
+
+// Instrument positive controls never contact a database or log exception text.
+async function assertDiagnosticObserver() {
+  const rows: DiagnosticRow[] = [];
+  let executed = 0;
+  const failure = new Error('synthetic private detail must not be logged');
+  const original = {
+    value: 17,
+    read() {
+      const value = this.value;
+      return {
+        then(resolve: (value: number) => unknown) {
+          executed += 1;
+          return Promise.resolve(value).then(resolve);
+        },
+      };
+    },
+    fail() {
+      return Promise.reject(failure);
+    },
+  };
+  const observed = diagnosticTx(original, rows);
+  const lazy = observed.read();
+  expect(executed).toBe(0);
+  expect(rows).toHaveLength(0);
+  expect(await lazy).toBe(17);
+  expect(executed).toBe(1);
+  await expect(observed.fail()).rejects.toBe(failure);
+  expect(rows.map(({ label, outcome, code }) => ({ label, outcome, code }))).toEqual([
+    { label: 'read', outcome: 'ok', code: '' },
+    { label: 'fail', outcome: 'error', code: 'Error' },
+  ]);
+  const databaseFailure = new Prisma.PrismaClientKnownRequestError('synthetic private detail', {
+    code: 'P2010',
+    clientVersion: 'diagnostic',
+    meta: { code: '23514', message: 'not logged' },
+  });
+  expect(diagnosticCode(databaseFailure)).toBe('PrismaClientKnownRequestError:P2010:23514');
+  const unknownFailure = new Prisma.PrismaClientKnownRequestError('not logged', {
+    code: 'PRIVATE',
+    clientVersion: 'diagnostic',
+    meta: { code: 'PRIVATE' },
+  });
+  expect(diagnosticCode(unknownFailure)).toBe('PrismaClientKnownRequestError:other:unavailable');
+}
+
 const START = new Date('2020-03-01T08:00:00.000Z');
 const END = new Date('2020-03-01T09:00:00.000Z');
 const WORKER = 98;
@@ -979,6 +1195,82 @@ describe('D7-1 recognition correction real transaction', () => {
     }
   }
 
+  async function diagnoseInitialPrepare<T>(run: () => Promise<T>): Promise<T> {
+    assertTestDatabaseUrl(process.env.DATABASE_URL);
+    await assertDiagnosticObserver();
+    const rows: DiagnosticRow[] = [];
+    const stages: DiagnosticRow[] = [];
+    const measured = async <R>(label: string, work: () => Promise<R>): Promise<R> => {
+      const started = performance.now();
+      let outcome = 'ok';
+      let code = '';
+      try {
+        return await work();
+      } catch (error) {
+        outcome = 'error';
+        code = diagnosticCode(error);
+        throw error;
+      } finally {
+        stages.push({ label, elapsedMs: performance.now() - started, outcome, code });
+      }
+    };
+    const service = f.app.get(ActivityTimeSettlementService);
+    const queries = f.app.get(ActivityTimeSettlementQueryService);
+    const access = f.app.get(ActivityTimeSettlementAccessService);
+    const prepare = service.prepare.bind(service);
+    const readDraft = queries.readDraftContextInTx.bind(queries);
+    const readSources = queries.readSourceSetInTx.bind(queries);
+    const evaluate = queries.evaluateInTx.bind(queries);
+    const authorize = access.authorize.bind(access);
+    const probes = [
+      jest
+        .spyOn(service, 'prepare')
+        .mockImplementation((...args) => measured('prepare.service', () => prepare(...args))),
+      jest
+        .spyOn(queries, 'readDraftContextInTx')
+        .mockImplementation((...args) => measured('prepare.readDraft', () => readDraft(...args))),
+      jest
+        .spyOn(queries, 'readSourceSetInTx')
+        .mockImplementation((...args) =>
+          measured('prepare.readSources', () => readSources(...args)),
+        ),
+      jest
+        .spyOn(queries, 'evaluateInTx')
+        .mockImplementation((...args) => measured('prepare.evaluate', () => evaluate(...args))),
+      jest
+        .spyOn(access, 'authorize')
+        .mockImplementation((...args) => measured('prepare.authorize', () => authorize(...args))),
+    ];
+    const transaction = f.db.$transaction.bind(f.db);
+    const began = performance.now();
+    f.db.$transaction = new Proxy(transaction, {
+      apply(original, receiver, args: unknown[]) {
+        const callback = args[0];
+        if (typeof callback !== 'function') return Reflect.apply(original, receiver, args);
+        return Reflect.apply(original, receiver, [
+          (tx: Prisma.TransactionClient) =>
+            Reflect.apply(callback, undefined, [diagnosticTx(tx, rows)]),
+          ...args.slice(1),
+        ]);
+      },
+    });
+    try {
+      return await run();
+    } finally {
+      f.db.$transaction = transaction;
+      for (const probe of probes) probe.mockRestore();
+      console.info(
+        '[d7-prepare-diagnostic] ' +
+          JSON.stringify({
+            elapsedMs: performance.now() - began,
+            queryCount: rows.length,
+            rows: summarizeDiagnostics(rows),
+            stages: summarizeDiagnostics(stages),
+          }),
+      );
+    }
+  }
+
   /**
    * D7-2 deliberately starts from the same committed, classified source as
    * D7-1.  This keeps the Human HTTP contract tied to real settlement, ledger,
@@ -987,7 +1279,10 @@ describe('D7-1 recognition correction real transaction', () => {
   async function createCommittedFactCorrectionBase(population = 1) {
     const p = population === 1 ? await prepareSource() : await createCapacitySource(population);
     if (population === 1) await recognize(p);
-    const preparedTime = await post(p.url + '/prepare', prepareCommand(p));
+    const preparedTime =
+      population === 2000
+        ? await diagnoseInitialPrepare(() => post(p.url + '/prepare', prepareCommand(p)))
+        : await post(p.url + '/prepare', prepareCommand(p));
     const submittedTime = await post(p.url + '/submit', {
       operationKey: f.key('submit_time'),
       expectedDraftVersion: p.proof.expectedDraftVersion,

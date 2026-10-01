@@ -77,6 +77,218 @@ LANGUAGE sql IMMUTABLE AS $$
     cslsa_canonical_field_fn(v."legacyPoints"::TEXT), 'UTF8')), 'hex')
 $$;`;
 
+type DiagnosticRow = { label: string; elapsedMs: number; outcome: string; code: string };
+function diagnosticCode(error: unknown): string {
+  const kind =
+    error instanceof Error &&
+    [
+      'Error',
+      'TypeError',
+      'RangeError',
+      'BizException',
+      'PrismaClientKnownRequestError',
+      'PrismaClientUnknownRequestError',
+      'PrismaClientValidationError',
+      'PrismaClientInitializationError',
+    ].includes(error.name)
+      ? error.name
+      : 'other';
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return kind;
+  const prismaCode = ['P2028', 'P2010', 'P2002', 'P2003', 'P2024', 'P2034'].includes(error.code)
+    ? error.code
+    : 'other';
+  const state = error.meta?.code;
+  const sqlState =
+    typeof state === 'string' &&
+    [
+      '57014',
+      '55P03',
+      '23503',
+      '23505',
+      '23514',
+      '40001',
+      '40P01',
+      '53200',
+      '53400',
+      '08003',
+      '08006',
+      '57P01',
+    ].includes(state)
+      ? state
+      : 'unavailable';
+  return [kind, prismaCode, sqlState].join(':');
+}
+function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix = ''): T {
+  return new Proxy(target, {
+    get(object, key) {
+      const value: unknown = Reflect.get(object, key);
+      if (typeof key !== 'string') return value;
+      if (typeof value === 'object' && value !== null && !prefix && /^[a-z][a-zA-Z]+$/.test(key))
+        return diagnosticTx(value, rows, key);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        let label = prefix ? prefix + '.' + key : key;
+        if (['$queryRaw', '$executeRaw', '$queryRawUnsafe', '$executeRawUnsafe'].includes(key)) {
+          const first = args[0];
+          const literal =
+            typeof first === 'string'
+              ? first
+              : Array.isArray(first)
+                ? first.filter((part) => typeof part === 'string').join(' ')
+                : first &&
+                    typeof first === 'object' &&
+                    'strings' in first &&
+                    Array.isArray(first.strings)
+                  ? first.strings.filter((part) => typeof part === 'string').join(' ')
+                  : '';
+          const table = [
+            'ContributionShadowMappingApplication',
+            'ContributionShadowComparisonReceipt',
+            'ParticipantSettlementTimeBucketSource',
+            'ParticipantSettlementTimeBucket',
+            'ParticipantTimeAllocationRevision',
+            'ActivityParticipationIdentity',
+            'ParticipantServiceSegmentRevision',
+            'ActivityRuleSnapshot',
+            'TimePolicyVersion',
+            'AttendanceSettlementVersion',
+            'EvidenceSeal',
+            'ActivityEvidenceState',
+            'AttendanceSettlementRun',
+          ].find((name) => literal.includes('"' + name + '"'));
+          label +=
+            '.' + (table ?? (literal.includes('pg_advisory_xact_lock') ? 'advisoryLock' : 'other'));
+        }
+        const result: unknown = Reflect.apply(value, object, args);
+        if (
+          !result ||
+          typeof result !== 'object' ||
+          !('then' in result) ||
+          typeof result.then !== 'function'
+        )
+          return result;
+        return new Proxy(result, {
+          get(promise, property) {
+            if (property === 'then')
+              return (
+                fulfilled?: (output: unknown) => unknown,
+                rejected?: (error: unknown) => unknown,
+              ) => {
+                const began = performance.now();
+                const then: unknown = Reflect.get(promise, 'then');
+                if (typeof then !== 'function') throw new Error('diagnostic promise contract');
+                return Reflect.apply(then, promise, [
+                  (output: unknown) => {
+                    rows.push({
+                      label,
+                      elapsedMs: performance.now() - began,
+                      outcome: 'ok',
+                      code: '',
+                    });
+                    return fulfilled ? fulfilled(output) : output;
+                  },
+                  (error: unknown) => {
+                    rows.push({
+                      label,
+                      elapsedMs: performance.now() - began,
+                      outcome: 'error',
+                      code: diagnosticCode(error),
+                    });
+                    if (rejected) return rejected(error);
+                    throw error;
+                  },
+                ]);
+              };
+            const member: unknown = Reflect.get(promise, property);
+            return typeof member === 'function' ? member.bind(promise) : member;
+          },
+        });
+      };
+    },
+  });
+}
+
+function summarizeDiagnostics(rows: DiagnosticRow[]) {
+  const grouped = new Map<
+    string,
+    {
+      label: string;
+      calls: number;
+      totalMs: number;
+      maxMs: number;
+      failures: number;
+      codes: Set<string>;
+    }
+  >();
+  for (const row of rows) {
+    const group = grouped.get(row.label) ?? {
+      label: row.label,
+      calls: 0,
+      totalMs: 0,
+      maxMs: 0,
+      failures: 0,
+      codes: new Set<string>(),
+    };
+    group.calls += 1;
+    group.totalMs += row.elapsedMs;
+    group.maxMs = Math.max(group.maxMs, row.elapsedMs);
+    if (row.outcome === 'error') group.failures += 1;
+    if (row.code) group.codes.add(row.code);
+    grouped.set(row.label, group);
+  }
+  return [...grouped.values()].map((row) => ({
+    ...row,
+    totalMs: Math.round(row.totalMs * 1000) / 1000,
+    maxMs: Math.round(row.maxMs * 1000) / 1000,
+    codes: [...row.codes],
+  }));
+}
+
+// Instrument positive controls never contact a database or log exception text.
+async function assertDiagnosticObserver() {
+  const rows: DiagnosticRow[] = [];
+  let executed = 0;
+  const failure = new Error('synthetic private detail must not be logged');
+  const original = {
+    value: 17,
+    read() {
+      const value = this.value;
+      return {
+        then(resolve: (value: number) => unknown) {
+          executed += 1;
+          return Promise.resolve(value).then(resolve);
+        },
+      };
+    },
+    fail() {
+      return Promise.reject(failure);
+    },
+  };
+  const observed = diagnosticTx(original, rows);
+  const lazy = observed.read();
+  expect(executed).toBe(0);
+  expect(rows).toHaveLength(0);
+  expect(await lazy).toBe(17);
+  expect(executed).toBe(1);
+  await expect(observed.fail()).rejects.toBe(failure);
+  expect(rows.map(({ label, outcome, code }) => ({ label, outcome, code }))).toEqual([
+    { label: 'read', outcome: 'ok', code: '' },
+    { label: 'fail', outcome: 'error', code: 'Error' },
+  ]);
+  const databaseFailure = new Prisma.PrismaClientKnownRequestError('synthetic private detail', {
+    code: 'P2010',
+    clientVersion: 'diagnostic',
+    meta: { code: '23514', message: 'not logged' },
+  });
+  expect(diagnosticCode(databaseFailure)).toBe('PrismaClientKnownRequestError:P2010:23514');
+  const unknownFailure = new Prisma.PrismaClientKnownRequestError('not logged', {
+    code: 'PRIVATE',
+    clientVersion: 'diagnostic',
+    meta: { code: 'PRIVATE' },
+  });
+  expect(diagnosticCode(unknownFailure)).toBe('PrismaClientKnownRequestError:other:unavailable');
+}
+
 function manifestFixture() {
   return {
     schemaVersion: 1,
@@ -3270,15 +3482,18 @@ describe('E3-2 D2 mapping schema construction', () => {
               'legacyRuleId','ref-rule','pointsBelow',2.00,'legacyPoints',2.00)))
           FROM "AttendanceRecord" WHERE "sheetId"='bulk-sheet';
         COMMIT;`);
+      await assertDiagnosticObserver();
       // Cold runtime connection belongs to this one countdown, not fixture prep.
       await runtime.$disconnect();
       const budget = new ShadowComparisonBudget();
       const began = performance.now();
       let stage = 'prepare';
       const phaseTimes = { beforeComparisonMs: 0, comparisonTimeoutMs: 0, poolWaitMs: 0 };
+      const diagnosticRows: DiagnosticRow[] = [];
       let rollbackPlanProbe: (() => void) | undefined;
       try {
-        const bulk = await primary.$transaction(async (tx) => {
+        const bulk = await primary.$transaction(async (originalTx) => {
+          const tx = diagnosticTx(originalTx, diagnosticRows);
           const sources = await tx.contributionShadowLegacySourceAnchor.findMany({
             where: { auditLogId: 'bulk-audit' },
           });
@@ -3330,7 +3545,14 @@ describe('E3-2 D2 mapping schema construction', () => {
         expect(bulk.comparisons.every((row) => row.classificationCode === 'points_mismatch')).toBe(
           true,
         );
+        diagnosticRows.push({
+          label: 'prepare.total',
+          elapsedMs: performance.now() - began,
+          outcome: 'ok',
+          code: '',
+        });
         stage = 'start';
+        const startBegan = performance.now();
         const bulkStart = await runtimeProvider.withBoundedRuntimeClient(
           budget,
           (client, options) => {
@@ -3339,6 +3561,12 @@ describe('E3-2 D2 mapping schema construction', () => {
           },
         );
         if (!bulkStart) throw new Error('isolated runtime unexpectedly disabled');
+        diagnosticRows.push({
+          label: 'start.total',
+          elapsedMs: performance.now() - startBegan,
+          outcome: 'ok',
+          code: '',
+        });
         if (process.env.SRVF_E3_D2_BULK_EXPLAIN_W98 === '1') {
           rollbackPlanProbe = () => {
             const insert = (
@@ -3410,7 +3638,7 @@ describe('E3-2 D2 mapping schema construction', () => {
             return inRuntime(
               (tx) =>
                 writer.writeCompleteComparisonSet(
-                  tx,
+                  diagnosticTx(tx, diagnosticRows),
                   bulkStart.attempt,
                   bulk.applications,
                   bulk.comparisons,
@@ -3478,8 +3706,14 @@ describe('E3-2 D2 mapping schema construction', () => {
           `[shadow-w98-bulk] stage=${stage} elapsedMs=${Math.round(performance.now() - began)} class=${code}`,
         );
         console.info('[shadow-w98-bulk] phases=' + JSON.stringify(phaseTimes));
+        console.info('[shadow-comparison-error] ' + diagnosticCode(error));
         rollbackPlanProbe?.();
         throw new Error('isolated 2,000-record shadow comparison failed its unchanged budget');
+      } finally {
+        console.info(
+          '[shadow-comparison-diagnostic] ' +
+            JSON.stringify({ rows: summarizeDiagnostics(diagnosticRows) }),
+        );
       }
     } finally {
       await runtimeProvider.onModuleDestroy();

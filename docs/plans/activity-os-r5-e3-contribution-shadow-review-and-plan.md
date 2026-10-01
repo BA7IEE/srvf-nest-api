@@ -1596,3 +1596,118 @@ pnpm agent:check:quick
 ```
 
 **本次未做**：未提交推送、重跑CI、Ready、合并、全量Contract／E2E或跨模型复审；未改生产代码／135条、登记真实映射、启用shadow／Gate、查真实库、操作生产、删除或重算业务数据。候选兼容性以等价差分与历史升级通过为证据，运行性能以本地实测为证据；后续CI或边界出现新问题仍按停止条件报告，不放宽预算。未提交候选可在明确放弃后精确撤销本轮具名函数补丁；不自行回滚其他改动，更不对生产执行回滚SQL。
+
+### 29.14 a716a67c 两项 CI 失败的隔离诊断（2026-10-01；已还原临时测试，仅文档）
+
+#### 29.14.1 授权、现场与结论
+
+维护者确认“#1370 两项隔离诊断方案 A，按上述五路径边界执行”：仅临时修改 mapping-proof 与 D7 time-correction 两份既有 E2E，采集脱敏阶段耗时与错误分类，结束还原；持久写入仅本评审稿、FROZEN_DRAFTS 与 NEXT_TASKS 顶部。只用 app_test_w98 合成夹具；不改生产代码、schema、migration、原断言或超时，不提交推送、不 Ready、不合并、不操作生产。preflight 工作树干净、未落后 origin/main；唯一非零项为同一已获准继续诊断的 Draft PR，未修改门禁规则。五个实际文件逐项运行 harness:needs，均不属红区；不把该静态检查当作业务授权。
+
+本轮对象为 #1370 的 `a716a67c1eeaf3c544c131aefa051840c554d1d0`。红区 [36816202099](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36816202099) 已获人工批准并成功；[CI 36816204497](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36816204497) 已结束失败，实际失败两项，不是审批阻塞：
+
+- [Contract + E2E (1)](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36816204497/job/110221701642)：Contract 1,087通过；E2E 83套通过／1套失败、1,594条通过／1条失败。映射2,000条链在 comparison 阶段 P2028；异常返回墙钟7,199ms，比较前1,785ms，事务实际分配3,114ms、poolWait 100ms。7,199ms含异常返回／回滚，不是纯SQL耗时或获准预算。
+- [Contract + E2E (5)](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36816204497/job/110221701609)：82套通过／1套失败、1,279条通过／1条失败。D7的2,000身份用例在 `createCommittedFactCorrectionBase` 第990行的时长结算 `/prepare` 返回 HTTP 500／code 50000，尚未执行该前置的 submit／ledger commit，也尚未进入待测V3更正链。该 prepare 原事务预算为30秒，不是更正提交的7秒。远端日志只给通用500，未提供其底层异常类别。
+- 其余E2E (2)/(3)/(4)、Fast checks、Harness、事故回放、Golden journeys、差异守护、Docker build与Smoke通过。PR仍OPEN Draft；未重跑CI。
+
+**结论**：两项本地定向原断言均通过，未复现对应CI失败。已得到真实调用成本分布，但不能宣称根因已闭合、CI已修复或D2已交付。两项失败不能直接合并为同一个事务超时。
+
+#### 29.14.2 取证方法与安全边界
+
+临时观察器只代理原事务客户端／PrismaPromise：在原 `then` 被调用时计时，透传原方法、参数、返回值和异常；不提前执行查询，不串改原顺序、锁、事务选项、重放或失败分支，不加重试。仅输出固定模型／阶段名、计数、耗时、结果分类及允许名单错误码；不输出SQL参数、业务内容、连接、凭据或原始异常信息。
+
+映射观察实际prepare查询及两个集合INSERT／terminal；原独立LOGIN、权限断言、五秒链与之后原固定hash差分均照跑。D7只在2,000身份前置prepare期间包裹原事务，并透明观察prepare、readDraft、readSources、evaluate和authorize，finally恢复观察器。保留HTTP 200断言与完整后续V3用例；不能将一个HTTP请求的观测外推到其他事务。
+
+两套串行执行，没有同时启动另一套数据库测试或quick；本轮没有执行EXPLAIN、替换SQL函数或改变数据库配置。临时仪器初版一处方法解绑被eslint拦下，显式绑定原接收者后重新通过冷lint和测试类型检查；没有关闭规则。
+
+#### 29.14.3 映射满额链实测
+
+命令沿29.13的独立Jest配置（无globalSetup／globalTeardown）：
+
+```bash
+SRVF_E3_D2_MAPPING_W98=1 pnpm exec jest --config "$SRVF_W98_JEST_CONFIG" --runInBand --runTestsByPath test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts --testNamePattern 'keeps a committed start after rollback'
+```
+
+1条通过、249条未选择，25.337秒；不称完整250条回归。
+
+| 观测点                                 |                耗时 |
+| -------------------------------------- | ------------------: |
+| 原2,000条业务链                        |             3,366ms |
+| prepare累计（含读取与应用层求值）      |           610.483ms |
+| start（含真实冷runtime连接）           |            68.703ms |
+| 应用证明集合INSERT                     |         1,593.044ms |
+| 比较收据集合INSERT                     |         1,052.788ms |
+| terminal create                        |             3.168ms |
+| 原业务链结束后的旧hash／新hash独立探针 | 587.482ms／40.935ms |
+
+2,000/2,000 hash一致。两个INSERT合计约2,645.832ms，仍是本地主要成本；观测为完整客户端调用，包含数据库守卫和往返，不是纯触发器或纯SQL执行时间。prepare的六个查询合计仅约41.75ms，其余包含事务、数据处理与求值，不把差额直接归给某一个函数。start、prepare、查询之间有包含关系，不相加冒充独立总耗时。此轮未打开原失败分支的回滚式EXPLAIN开关，没有取得本轮触发器内部分解。
+
+#### 29.14.4 D7满额前置与完整指定用例实测
+
+```bash
+SRVF_D7_2_W98=1 pnpm exec jest --config "$SRVF_W98_JEST_CONFIG" --runInBand --runTestsByPath test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts --testNamePattern 'complete 2000-identity source proof'
+```
+
+1条通过、6条未选择，127.478秒；该指定用例的全部原业务断言通过，不称完整D7七条回归。
+
+| 观测点                          |                   耗时／计数 |
+| ------------------------------- | ---------------------------: |
+| HTTP prepare（含测试请求外围）  |                  8,696.381ms |
+| prepare service（含原30秒事务） |                  8,676.161ms |
+| authorize                       |          16次，合计148.387ms |
+| readDraft                       |             2次，合计1.869ms |
+| readSources（锁前／锁后）       |         870.637ms／770.295ms |
+| evaluate                        |                  1,625.728ms |
+| 准备收据create                  |                  2,770.755ms |
+| 桶来源集合INSERT                |                  1,362.659ms |
+| 桶集合INSERT                    |                    982.826ms |
+| allocation slices读取           |                    514.004ms |
+| 原事务客户端观测                | 222次查询，合计约7,075.591ms |
+
+readSources中的两次当前segment读取为403.090／361.363ms，两次latest allocation原SQL为249.649／196.011ms。上述query包含在service阶段内，不重复相加。222只是在该prepare原事务客户端中观察到的调用，不包含HTTP鉴权等外围，也不冒充其他既有预算检查器的读数。prepare所有观测项为成功，没有捕获P2028、数据库异常或500。
+
+仅在w98查看活动连接的一次快照未显示持续锁等待；该瞬时快照不证明整个请求无锁等待。再次对完整远端失败job日志检索P2028／P2010／57014／40P01、statement cancellation、transaction closed和连接／共享内存错误均未命中，且失败用例标题、50000为正对照。含义仅是日志没给底层异常，不能将未命中解释为这些原因不存在。
+
+#### 29.14.5 还原、验证与待确认下一步
+
+两份临时测试已通过精确反向补丁全部还原，`git diff --exit-code -- <两份实际路径>`退出0；写本节前工作树完全干净。没有撤销此前修复。两套原生命周期回收可重建的合成夹具；最后catalog核对：postgres角色1为正对照，app_test_w98数据库0、该库连接0、三个具名fixture角色0。未删除业务数据。
+
+SQL重算未变：第134条 `ef6342f07efea392d91f989f264f1f5d72a81b8e410d3d2c740d011dbc439042`；第135条 `64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`。没有新的3b／4b事项。当前只保留本评审稿和两份台账顶部诊断结论；临时仪器已通过测试类型、两份定向冷lint，文档检查另列于交付说明。
+
+**建议方案A：将受控取证送入实际CI失败环境，而非凭本地通过盲改SQL或重试至绿。** 这是待批准的下一包，不在本轮实施：
+
+1. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`：保留原完整链和五秒断言；在满额阶段保留脱敏prepare／start／两个实际集合写入／terminal计时和错误分类。
+2. `test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts`：仅2,000身份用例的前置prepare取证，记录底层异常类型、允许名单数据库码和固定阶段汇总；保留原30秒prepare、7秒后续提交与所有断言，不把500统一改成超时。
+3. 本评审稿。
+4. `docs/ai-harness/FROZEN_DRAFTS.md`，仅顶部当前状态。
+5. `docs/ai-harness/NEXT_TASKS.md`，仅顶部当前状态。
+6. 既有 `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`，仅本次取证目的与边界。
+
+风险：取证自身有少量开销，可能使靠近预算的CI请求更易超时；缓解为内存累计、finally汇总，不逐查询打印，不改变预算，不把带探针的结果当性能验收。不改变查询或事务语义是硬前置；代理不能保持PrismaPromise语义即停止。CI沿原每worker隔离方式，本地仍仅w98，不扩本机数据库目标，不开shadow／Gate。方案B保留失败状态等待其他证据，不重复同SHA重跑；无法解决当前证据缺口。
+
+如批准方案A，建议确认语句：**确认第29.14节六路径CI取证方案A；允许仅app_test_w98隔离验证与夹具重建，保留所有断言及业务预算；验证后提交推送更新#1370，保持Draft，不Ready、不合并、不改生产代码或SQL、不启用开关、不操作生产。** 其余权限、schema、migration、CI配置和真实映射均不在写集；新SHA的红区审批仍按原流程，不继承当前审批。下一轮先以CI错误分类决定修复包，未定位前不另行实施性能候选。
+
+**本次未做**：未改生产代码／SQL／断言／超时，未运行全量或quick、未重跑CI、未跨模型复审；未提交推送、Ready、合并、登记真实映射、启用shadow／Gate、操作生产、删除或重算业务数据。两项CI失败仍开放。
+
+### 29.15 第29.14节六路径 CI 取证包（2026-10-01；已授权实施，保持 Draft）
+
+维护者已确认第29.14节方案A，允许仅app_test_w98隔离验证与可重建测试夹具、验证后提交推送更新#1370。六路径与29.14.5完全一致；不扩大到生产代码、SQL、schema、权限、审计目录、CI配置或其他数据库。第134／135条SQL摘要与29.14.5一致，无新增3b／4b签字项。按Prisma变更流程复核，本包不产生任何模型、默认值、种子或数据兼容性变化。
+
+#### 29.15.1 取证实现与不变量
+
+- 映射满额链：在原prepare事务和实际比较写入的事务对象上透明观测；保留prepare／start总耗时、两次集合INSERT和terminal耗时，错误仅记录异常类型及允许名单Prisma／SQLSTATE码。未知错误归为other／unavailable，不输出原始message、meta、stack、SQL、参数、连接信息或业务值。
+- D7仅2,000身份用例的初始时长结算prepare：记录service、authorize、readDraft、readSources、evaluate和事务查询分组；finally恢复原调用与spy。原HTTP错误照常传播，不把所有500解释成超时；后续submit、ledger和V3更正链不加探针。
+- PrismaPromise在实际then消费时计时，不提前执行SQL；原参数、事务选项、this及返回／异常原对象保持。附加无数据库正对照证明延迟执行、返回值、异常同一性及错误码白名单脱敏；真实完整链仍由原业务断言检验。内存累计后一次汇总，不逐查询打印，不新增查询或重试。
+- 只包裹原调用；全部既有断言及5秒比较／30秒prepare／7秒更正预算不变。阶段耗时包含嵌套查询，不能重复相加；观测值包含客户端与往返，不冒充纯SQL执行时间。探针有轻微开销，不以带探针本地耗时替代CI冷跑验收。
+
+#### 29.15.2 验证与交付记录
+
+- 两份E2E测试类型检查、定向冷lint通过；差异核对未删除或更改既有断言。
+- w98完整映射250/250通过，满额五秒链3,898ms。prepare621.004ms、start78.197ms、应用证明集合1,861.842ms、比较收据集合1,303.510ms、terminal3.075ms；2,000条hash仍与固定旧参考逐条一致。探针成功输出，未出现真实异常，错误白名单由正对照覆盖。
+- w98完整D7回归7/7通过（262.667秒），原Human V3／重放／并发与满额链断言保持。初始prepare约9,025.379ms、service8,998.525ms、事务查询222次；准备收据3,121.110ms、桶来源1,429.287ms、桶859.496ms，未复现原CI 500。
+- 两套测试串行使用w98原生命周期；结束后catalog正对照postgres角色1，w98数据库0、连接0、三个具名fixture角色0。回收的仅为获准重建的隔离库与合成夹具／测试角色，未删除业务数据。
+- 最终quick退出0：433套、9,430条单测通过、5条既有todo；缓存lint、三组类型与harness自检通过（eslint守护自检138通过，5个既有已知缺口未改变）。改动两份E2E另跑冷lint通过；counts／codemap／readtax检查通过，保留既有地图与阅读体积警告，不扩写集修复。工作树复核仅六个获准路径；验证后按本轮授权提交推送，远端候选结果另见PR，不把本地通过写成全量CI验收。
+- 首次Jest启动误将独立配置字符串再次JSON编码，参数解析退出1、未连接数据库；改正命令序列化后运行上述套件，没有改测试配置、断言或超时。
+
+本包交付目的是让新SHA的实际CI环境给出两项失败的底层证据，**不是生产性能修复**。原a716a67c CI仍失败；新提交必须重新接受原检查及候选SHA审批，旧审批不继承。不改变#1370 Draft。风险与回退：若探针引入调用语义变化，回退本包两份E2E的取证差异，保留此前业务修复、原断言与预算，不以延长预算消除诊断失败。
+
+**本次未做**：未改生产代码或已签SQL，未查真实业务库、登记真实映射、启用shadow／Gate、操作生产、删除或重算业务数据；未Ready、合并、同SHA重跑CI或跨模型复审。全量Contract／E2E仍由PR CI冷跑，本地通过不等于两项CI失败已闭合。
