@@ -86,8 +86,9 @@ CREATE FUNCTION cslsa_canonical_field_fn(v TEXT) RETURNS TEXT LANGUAGE sql IMMUT
 $$;
 
 CREATE FUNCTION cslsa_source_hash_fn(v "ContributionShadowLegacySourceAnchor") RETURNS TEXT
-LANGUAGE sql IMMUTABLE AS $$
-  SELECT encode(sha256(convert_to(
+LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+  RETURN encode(sha256(convert_to(
     'SRVF:E3-2:legacy-source:v1:' ||
     cslsa_canonical_field_fn(v."windowId") ||
     cslsa_canonical_field_fn(v."auditLogId") ||
@@ -104,7 +105,8 @@ LANGUAGE sql IMMUTABLE AS $$
     cslsa_canonical_field_fn(v."durationThreshold"::TEXT) ||
     cslsa_canonical_field_fn(v."pointsBelow"::TEXT) ||
     cslsa_canonical_field_fn(v."pointsAbove"::TEXT) ||
-    cslsa_canonical_field_fn(v."legacyPoints"::TEXT), 'UTF8')), 'hex')
+    cslsa_canonical_field_fn(v."legacyPoints"::TEXT), 'UTF8')), 'hex');
+END;
 $$;
 
 CREATE FUNCTION cslsa_insert_guard_fn() RETURNS trigger LANGUAGE plpgsql AS $$

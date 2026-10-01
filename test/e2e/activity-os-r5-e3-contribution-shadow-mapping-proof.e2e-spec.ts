@@ -54,6 +54,29 @@ import {
   type ShadowMappingApplicationInput,
 } from '../../src/modules/attendances/contribution-shadow-evidence.write.service';
 
+// Fixed pre-29.12 SQL reference; do not derive it from the candidate migration.
+const SOURCE_HASH_REFERENCE_SQL = `CREATE FUNCTION pg_temp.reference_source_hash_fn(v "ContributionShadowLegacySourceAnchor") RETURNS TEXT
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT encode(sha256(convert_to(
+    'SRVF:E3-2:legacy-source:v1:' ||
+    cslsa_canonical_field_fn(v."windowId") ||
+    cslsa_canonical_field_fn(v."auditLogId") ||
+    cslsa_canonical_field_fn(v."sheetId") ||
+    cslsa_canonical_field_fn(v."sheetVersion"::TEXT) ||
+    cslsa_canonical_field_fn(v."activityId") ||
+    cslsa_canonical_field_fn(v."recordId") ||
+    cslsa_canonical_field_fn(v."memberId") ||
+    cslsa_canonical_field_fn(v."activityTypeCode") ||
+    cslsa_canonical_field_fn(v."attendanceRoleCode") ||
+    cslsa_canonical_field_fn(v."legacyServiceHours"::TEXT) ||
+    cslsa_canonical_field_fn(v."sourceKindCode") ||
+    cslsa_canonical_field_fn(v."legacyRuleId") ||
+    cslsa_canonical_field_fn(v."durationThreshold"::TEXT) ||
+    cslsa_canonical_field_fn(v."pointsBelow"::TEXT) ||
+    cslsa_canonical_field_fn(v."pointsAbove"::TEXT) ||
+    cslsa_canonical_field_fn(v."legacyPoints"::TEXT), 'UTF8')), 'hex')
+$$;`;
+
 function manifestFixture() {
   return {
     schemaVersion: 1,
@@ -3410,6 +3433,42 @@ describe('E3-2 D2 mapping schema construction', () => {
           `[shadow-w98-bulk] status=complete elapsedMs=${Math.round(performance.now() - began)} records=2000`,
         );
         expect(legacyEvidence()).toBe(before);
+        // Outside the unchanged business budget: fixed old SQL versus the actual
+        // function on all 2,000 committed fixture anchors. Timing is evidence,
+        // not a flaky performance assertion or a replacement for the five-second chain.
+        const hashProbe: {
+          records: number;
+          matches: number;
+          referenceMs: number;
+          actualMs: number;
+        } = JSON.parse(
+          sql(`BEGIN;
+          ${SOURCE_HASH_REFERENCE_SQL}
+          CREATE TEMP TABLE source_hash_probe(records INTEGER,matches INTEGER,reference_ms NUMERIC,actual_ms NUMERIC);
+          DO $probe$
+          DECLARE s "ContributionShadowLegacySourceAnchor"; started TIMESTAMPTZ;
+            reference_ms NUMERIC; actual_ms NUMERIC; checked INTEGER; matched INTEGER;
+          BEGIN
+            SELECT count(*),count(*) FILTER (WHERE cslsa_source_hash_fn(a) = pg_temp.reference_source_hash_fn(a))
+              INTO checked,matched FROM "ContributionShadowLegacySourceAnchor" a WHERE "auditLogId"='bulk-audit';
+            started:=clock_timestamp();
+            FOR s IN SELECT * FROM "ContributionShadowLegacySourceAnchor" WHERE "auditLogId"='bulk-audit' ORDER BY id LOOP
+              PERFORM pg_temp.reference_source_hash_fn(s);
+            END LOOP;
+            reference_ms:=extract(epoch FROM clock_timestamp()-started)*1000;
+            started:=clock_timestamp();
+            FOR s IN SELECT * FROM "ContributionShadowLegacySourceAnchor" WHERE "auditLogId"='bulk-audit' ORDER BY id LOOP
+              PERFORM cslsa_source_hash_fn(s);
+            END LOOP;
+            actual_ms:=extract(epoch FROM clock_timestamp()-started)*1000;
+            INSERT INTO source_hash_probe VALUES(checked,matched,reference_ms,actual_ms);
+          END $probe$;
+          SELECT jsonb_build_object('records',records,'matches',matches,'referenceMs',reference_ms,'actualMs',actual_ms)
+            FROM source_hash_probe; ROLLBACK;`),
+        );
+        expect(hashProbe.records).toBe(2000);
+        expect(hashProbe.matches).toBe(2000);
+        console.info('[shadow-source-hash-diff] ' + JSON.stringify(hashProbe));
       } catch (error) {
         const code =
           error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2028'

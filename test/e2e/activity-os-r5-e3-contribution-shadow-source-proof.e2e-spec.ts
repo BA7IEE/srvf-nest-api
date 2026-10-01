@@ -16,6 +16,29 @@ import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-clean
 import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
+// Fixed pre-29.12 SQL reference; do not derive it from the candidate migration.
+const SOURCE_HASH_REFERENCE_SQL = `CREATE FUNCTION pg_temp.reference_source_hash_fn(v "ContributionShadowLegacySourceAnchor") RETURNS TEXT
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT encode(sha256(convert_to(
+    'SRVF:E3-2:legacy-source:v1:' ||
+    cslsa_canonical_field_fn(v."windowId") ||
+    cslsa_canonical_field_fn(v."auditLogId") ||
+    cslsa_canonical_field_fn(v."sheetId") ||
+    cslsa_canonical_field_fn(v."sheetVersion"::TEXT) ||
+    cslsa_canonical_field_fn(v."activityId") ||
+    cslsa_canonical_field_fn(v."recordId") ||
+    cslsa_canonical_field_fn(v."memberId") ||
+    cslsa_canonical_field_fn(v."activityTypeCode") ||
+    cslsa_canonical_field_fn(v."attendanceRoleCode") ||
+    cslsa_canonical_field_fn(v."legacyServiceHours"::TEXT) ||
+    cslsa_canonical_field_fn(v."sourceKindCode") ||
+    cslsa_canonical_field_fn(v."legacyRuleId") ||
+    cslsa_canonical_field_fn(v."durationThreshold"::TEXT) ||
+    cslsa_canonical_field_fn(v."pointsBelow"::TEXT) ||
+    cslsa_canonical_field_fn(v."pointsAbove"::TEXT) ||
+    cslsa_canonical_field_fn(v."legacyPoints"::TEXT), 'UTF8')), 'hex')
+$$;`;
+
 const USE_DEDICATED_W98 = process.env.SRVF_E3_D2_W98 === '1';
 
 function sql(statement: string): string {
@@ -146,6 +169,146 @@ describe('E3-2 D2 source proof migration', () => {
       )))`);
     expect(pgHash).toBe(hashLegacySource(input));
   });
+
+  const hashFields = [
+    'windowId',
+    'auditLogId',
+    'sheetId',
+    'sheetVersion',
+    'activityId',
+    'recordId',
+    'memberId',
+    'activityTypeCode',
+    'attendanceRoleCode',
+    'legacyServiceHours',
+    'sourceKindCode',
+    'legacyRuleId',
+    'durationThreshold',
+    'pointsBelow',
+    'pointsAbove',
+    'legacyPoints',
+  ];
+  const hashFixture = {
+    windowId: 'window',
+    auditLogId: 'audit',
+    sheetId: 'sheet',
+    sheetVersion: 2,
+    activityId: 'activity',
+    recordId: 'record',
+    memberId: 'member',
+    activityTypeCode: '救援',
+    attendanceRoleCode: 'volunteer',
+    legacyServiceHours: '1.50',
+    sourceKindCode: 'matched',
+    legacyRuleId: 'rule',
+    durationThreshold: '2.00',
+    pointsBelow: '3.00',
+    pointsAbove: '4.00',
+    legacyPoints: '3.00',
+  };
+  const hashCases: Array<{ name: string; value: Record<string, unknown> | null }> = [
+    { name: 'NULL composite', value: null },
+    { name: 'all NULL fields', value: {} },
+    { name: 'original populated row', value: hashFixture },
+    ...hashFields.map((field) => ({
+      name: `NULL ${field}`,
+      value: { ...hashFixture, [field]: null },
+    })),
+    ...['', 'N', 'S0:', 'S2:救援', "a:b|'\\\\", '救援😀e\u0301', 'é', 'e\u0301'].map((text) => ({
+      name: `text ${JSON.stringify(text)}`,
+      value: { ...hashFixture, windowId: text, legacyRuleId: text },
+    })),
+    ...['0', '-0.00', '0.01', '-0.01', '999.99', '-999.99', '1.5'].map((decimal) => ({
+      name: `numeric ${decimal}`,
+      value: {
+        ...hashFixture,
+        legacyServiceHours: decimal,
+        durationThreshold: decimal,
+        pointsBelow: decimal,
+        pointsAbove: decimal,
+        legacyPoints: decimal,
+      },
+    })),
+    ...[-2147483648, 2147483647].map((sheetVersion) => ({
+      name: `integer ${sheetVersion}`,
+      value: { ...hashFixture, sheetVersion },
+    })),
+    {
+      name: 'unhashed metadata',
+      value: {
+        ...hashFixture,
+        id: 'ignored',
+        canonicalVersion: 42,
+        hashAlgorithmCode: 'ignored',
+        legacySourceHash: 'ignored',
+        createdAt: '2099-01-01T00:00:00Z',
+      },
+    },
+  ];
+
+  it.each(hashCases)('preserves fixed SQL source hash for $name', ({ value }) => {
+    const row =
+      value === null
+        ? 'NULL::"ContributionShadowLegacySourceAnchor"'
+        : `jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor", '${JSON.stringify(value).replaceAll("'", "''")}'::jsonb)`;
+    const result: { actual: string; reference: string } = JSON.parse(
+      sql(`BEGIN;
+      ${SOURCE_HASH_REFERENCE_SQL}
+      SELECT jsonb_build_object('actual',cslsa_source_hash_fn(${row}),
+        'reference',pg_temp.reference_source_hash_fn(${row})); ROLLBACK;`),
+    );
+    expect(result.actual).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.actual).toBe(result.reference);
+  });
+
+  it.each(['', 'N', 'S0:', '冒号:😀e\u0301', "quote'\\\\", 'é', 'e\u0301'])(
+    'matches the TypeScript source hash byte contract for %p',
+    (text) => {
+      for (const decimal of ['0.00', '0.01', '1.50', '999.99']) {
+        const input = {
+          ...hashFixture,
+          windowId: text,
+          legacyServiceHours: new Prisma.Decimal(decimal),
+          legacyPoints: new Prisma.Decimal(decimal),
+          source: {
+            sourceKindCode: 'matched' as const,
+            legacyRuleId: text,
+            durationThreshold: new Prisma.Decimal(decimal),
+            pointsBelow: new Prisma.Decimal(decimal),
+            pointsAbove: null,
+          },
+        };
+        for (const source of [
+          input.source,
+          {
+            sourceKindCode: 'no_match' as const,
+            legacyRuleId: null,
+            durationThreshold: null,
+            pointsBelow: null,
+            pointsAbove: null,
+          },
+        ]) {
+          const row = {
+            ...hashFixture,
+            ...source,
+            windowId: text,
+            legacyServiceHours: decimal,
+            legacyPoints: decimal,
+          };
+          const result: { actual: string; reference: string } = JSON.parse(
+            sql(`BEGIN;
+            ${SOURCE_HASH_REFERENCE_SQL}
+            SELECT jsonb_build_object('actual',cslsa_source_hash_fn(v),
+              'reference',pg_temp.reference_source_hash_fn(v))
+            FROM jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",
+              '${JSON.stringify(row).replaceAll("'", "''")}'::jsonb) v; ROLLBACK;`),
+          );
+          expect(result.actual).toBe(result.reference);
+          expect(result.actual).toBe(hashLegacySource({ ...input, source }));
+        }
+      }
+    },
+  );
 
   const lookupFact = (id: unknown = 'path-record', overrides: Record<string, unknown> = {}) => ({
     id,

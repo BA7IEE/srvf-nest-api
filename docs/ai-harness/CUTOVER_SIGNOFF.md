@@ -473,6 +473,15 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者对列明本轮两份完整SQL摘要及未完成验收边界的问题回复「确认上述第134、135条3b重签」。第134条 `20260929222500_activity_os_r5_e3_shadow_source_proof` SQL SHA-256：`f366329dc91a9fd912f7ec36e50227017d107cd3911888d064b4caba86877ba8`；第135条 `20260930120000_activity_os_r5_e3_shadow_mapping_proof` SQL SHA-256：`64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`。已逐份重新计算并核对一致。
 - **对拍**:有 —— `migration-total` = `135`
 
+> **当前正式签字（2026-10-01，第29.12节；仅覆盖第134条当前SQL摘要，历史签字保留）**：维护者已明确确认来源指纹执行形态优化后的第134条3b重签。第135条沿用上一份确认，不改既有4b结论。
+
+- **结论**:认可
+- **理由**:仅第134条 `cslsa_source_hash_fn` 从SQL SELECT包装改为PL/pgSQL RETURN，16字段编码表达式逐字不变；签名、IMMUTABLE、NULL行为、全部复算、调用者、锁、数据库守卫及五秒／七秒预算保持。固定旧参考差分通过；w98完整来源84/84、映射250/250、未修改D7完整回归7/7通过，映射满额3,082ms。最终quick退出0（433套／9,430条通过、5条既有todo；缓存lint、三组类型、harness通过，两份E2E另有冷lint通过）。仅认可指定SQL，不替代PR CI、提交推送、Ready、合并、真实映射登记、生产或开关授权。
+- **签字人**:维护者
+- **日期**:2026-10-01
+- **依据**:维护者明确回复「确认第134条3b重签，摘要 ef6342f07efea392d91f989f264f1f5d72a81b8e410d3d2c740d011dbc439042」。第134条 `20260929222500_activity_os_r5_e3_shadow_source_proof` 完整SQL SHA-256已重新计算，与该摘要逐字一致。第135条仍为 `64a6d5d28cf0ec92afde74a61766921b62ed06911efc5bf88245faf8c2860659`，未改动。
+- **对拍**:有 —— `migration-total` = `135`
+
 ### 4b — 「字典、Audit events」的对账
 
 > **当前重签（2026-09-25，E2 第一层隔离能力）**：维护者确认权限码仍为269，
