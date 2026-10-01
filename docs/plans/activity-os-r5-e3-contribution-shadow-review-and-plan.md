@@ -2420,3 +2420,77 @@ pnpm harness:grant 'prisma/migrations/20260930120000_activity_os_r5_e3_shadow_ma
 最终`pnpm agent:check:quick`退出0：缓存lint、三组typecheck、harness及433套／9,430条单测通过（5条既有todo，单测51.37s）；138项eslint自测通过，5个已知缺口保持。来源／映射实现、依赖、SQL及对应测试未变，本轮不重复运行其本地完整套件；沿160f40be已完成的CI分片1及本节新定向结果分别记录，下一SHA的全量Contract／E2E仍由PR CI冷跑，不复用旧CI替代新门禁。
 
 **本次未做**：未修复或宣称修复8192人CI超时；不Ready、不合并、不盲重跑旧CI、不操作真实业务库／生产、不登记真实映射、不启用shadow／Gate、不删除或重算业务数据。
+
+#### 29.21.18 两项w98执行计划与CPU取证（2026-10-01；仅诊断，测试已还原）
+
+**授权及边界**：维护者明确允许仅在w98对账本与mapping-proof两份E2E临时补充执行计划及分段诊断，结束还原；结果只保留本评审稿及FROZEN_DRAFTS／NEXT_TASKS顶部，不改生产代码、migration、原断言或预算，不提交推送。本轮五路径均经逐文件harness:needs核对为非红区；global preflight仅既有#1370触发open-PR限制，同一E3执行lane preflight通过、未落后本地origin/main。技能引用的prisma/AGENTS.md实际不存在，沿根AGENTS、current-state、process及testing-discipline执行，不另造规则。schema／migration／seed／OpenAPI／权限／审计／BizCode均无改动；数据库影响只限合成夹具，结束回收，不存在业务数据兼容或不可逆变更。
+
+**本轮要解释的远端失败仍开放**：[5fb7512c的CI 36871766718](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36871766718)已终态失败，分片2／4／5通过、1／3各一项失败；Fast checks、守护自测、事故回放、Golden journeys、Docker构建与独立smoke通过。
+
+- [分片1](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36871766718/job/110401093178)：映射满额链5,550ms，P2028；prepare总1,893.250ms、start123.621ms、应用INSERT1,266.926ms、比较INSERT失败调用2,236.347ms。prepare内部六类DB读约299ms，已包含在prepare总量，不再叠加；余量不能无采样直接称为CPU。beforeComparison2,017ms为实测时点；comparisonTimeout2,882ms及maxWait100ms是传入选项，不是已花时间。
+- [分片3](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36871766718/job/110401093197)：账本8,192人链事务预算7,000ms、实际事务存活7,318ms过期；外层commit包络7,398ms、失败前24查询。草稿成员SELECT调用2,366.662ms，最后服务段UPDATE失败调用3,347.390ms；成员锁38.464ms。阶段包含内部查询，不双算；失败调用时间不等同PostgreSQL成功执行时间。通知／审计后的剩余查询未执行，不能归因于尚未到达的审计写入。
+
+**运行方法与仪器边界**：基点固定5fb7512c，两测试串行；不跑全量、不并发跑lint／typecheck。用现有Jest配置在进程内去掉globalSetup／globalTeardown／setupFiles，避免标准入口写app_test及w1；临时ledger beforeAll与mapping既有dedicated入口分别严格设置worker98、loadTestEnv、assertTestDatabaseUrl并在唯一app_test_w98冷回放，结束关闭连接、回收库。未运行migrate dev／reset／db push。角色测试只复用mapping既有三个具名owner／registrar／runtime夹具及真实独立LOGIN，结束回收，错误凭证和禁止旧表写／审计读的原断言保留。最初直接node命令因本机根目录无法解析express而在suite加载失败（0条运行、10.307s、未建库）；后续仅通过命令级NODE_PATH指向本机既有node_modules/.pnpm/node_modules，不安装或改依赖。这一解析差异属于本地证据边界，不假称与CI环境完全相同。
+
+两条账本SQL、两条映射INSERT均按原参数、原事务及原调用身份采集EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)。每条探针用SAVEPOINT／ROLLBACK TO／RELEASE包裹，再执行原调用；不禁触发器、不跳原权限或真实锁、不改业务预算。只打印节点类型、表／索引名称、估计／实际行数、循环数、耗时、buffers及触发器名／耗时／次数，排除SQL文本、Filter／Cond表达式和参数。探针会增加耗时、预热数据并留下可回收死元组；因此本轮带计划运行不是无扰动冷性能验收。账本记录的27条是原代理统计口径，不含直接落原tx的探针SQL，不能称为含探针的全部查询数。
+
+| 定向运行                                         | 实际结果                                                  | 有效结论与限制                                                         |
+| ------------------------------------------------ | --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| ledger原8,192人用例＋两条回滚计划                | 1套／1条通过，35.199s；带探针commit包络1,415ms，原7秒不改 | 原15处行为断言保留；未复现CI超时，不称性能已修复                       |
+| mapping原2,000条完整链＋两条回滚计划             | 1条通过／296条未选择，21.191s；完整链2,565ms，原5秒不改   | 实际受限角色、冷runtime连接及完整收据链；不是297条全套通过             |
+| mapping同一完整链＋准备段CPU采样（关闭计划探针） | 1条通过／296条未选择，21.044s；完整链2,146ms              | 单独测计算热点，不是失败后碰运气重跑；采样有开销，不用此数估算优化收益 |
+
+**账本计划证据**：SELECT为Hash Join→Sort→Unique，执行8.700ms；UPDATE为Hash Join→ModifyTable，执行342.073ms，其中effectiveBatchId外键触发器8,192次合计55.401ms。两表均8,192行、reltuples=-1，未有analyze／autoanalyze记录；连接估计1行、实际8,192行，身份扫描估计31行、段扫描估计21／22行。SELECT shared hit473、read0；UPDATE shared hit267,924、read0；无计划顶层JIT项。这里只能证明当前w98计划和读数，read0不等于没有底层I/O成本，没有顶层JIT项也不证明所有嵌套函数均无JIT。统计缺口是后续对照因素，本轮没有手动ANALYZE、改planner参数或添加索引，更不能从本机Hash Join推断CI也是同一计划。
+
+**映射计划证据**：应用INSERT执行312.030ms；csmap_pending_insert_guard逐行2,000次175.659ms，csmap_insert_set_guard集合1次65.480ms，四组FK合计54.700ms。比较INSERT执行532.560ms；cscr_insert_guard逐行2,000次214.785ms，cscr_insert_set_guard集合1次185.771ms，五组FK合计62.122ms。两个JSON输入扫描均估计100行、实际2,000行，shared read0。EXPLAIN的ModifyTable时间已包含BEFORE行触发器，不能将其和全部trigger时间简单累加。本轮代理记录应用673.845ms／比较1,120.107ms包含各自保存点探针及原执行，不能当成单次INSERT本体。
+
+**应用计算证据**：计划运行中prepare纯计算wall641.959ms、进程CPU754.921ms，prepare总684.899ms；进程CPU可包含V8辅助线程，不是与wall相加的阶段。单独CPU采样运行pure wall968.775ms／进程CPU1,137.292ms，Profiler有额外开销。高位self样本为canonicalizeObject75、canonicalizeJson55、canonicalizeArray49、assertNoSymbolKeys25及GC54，另有匿名函数87；这里只记录top20计数，不据此给出完整百分比或预计收益。引用链核对：prepareShadowComparisonSet逐来源进入prepareShadowEvidence→evaluateShadowFrozenSource；其中每条都调用fingerprintContributionPolicyVersion，后者做规范化、定义解析、hash，随后evaluateContributionPolicy又解析定义。可讨论同一调用内对不可变政策重复纯计算的复用，但这还不是获准修复，不能删除逐来源hash／同链／有效期检查，不能扩为权限缓存或跨请求缓存；同一政策复用的语义、错误顺序及收益仍需独立验证。
+
+**根因判定与下一步**：目前已定位成本分布，尚未证明CI超时根因。基点9aee103b的历史CI 36830257960曾以27查询、2,936ms通过原账本用例，只是一次历史通过；账本十个已核对直接实现文件相对该基点逐字一致，但模块接线、审计及schema已有变化，不能称整个依赖图相同。CI两worker及同机PostgreSQL与本地串行w98条件不同，不能只凭本地绿判定资源争用或基线不稳。同一失败已超过两轮修复，按process §7.1／7.2停止猜测微调／盲重跑；本次不再据局部计时提出立即修改SQL。
+
+后续最小证据需求是失败环境的这两条账本原查询计划形状、执行时统计状态，以及映射prepare纯计算与SQL计划分布；必须保留原首次冷调用的时限与结果，诊断复算另列，不把插桩通过作为验收。若仅w98仍不能重现，就应一次送审固定SHA、固定次数的CI／基点受控对照（实现热点、两worker运行条件、原基线三个因素分开），明确实际文件、runner及库／角色边界后再执行；本轮未授权新CI提交、baseline worktree、w88等其他库或workflow修改，不将其包装为已获准。先判证据是否足够再决定修复，不按“再改一处SQL后等全量CI”的旧方法推进。
+
+**恢复及验证**：两份E2E已通过apply_patch逆向还原，随后逐字对照5fb7512c；原断言、生命周期及超时均回到该提交。三个具名角色、w98库／连接均0，postgres角色正对照1；删除的只是本次可由测试重建的合成夹具。第134条37f204e1c46a08040c04775e51823659399d18f3e11b0c873d502de464b3714f、第135条9536aaf97d704b433b3625014db0d7f882b4a0dbf8c98dec8cc78211dc539de4、ACL65746a8892017144270034e654b1cee77c539d7374b27e9daca1faa95225aa8b均未变化，不重签。临时诊断代码test typecheck两版通过；最终只保留本评审稿追加段、FROZEN_DRAFTS／NEXT_TASKS第3行。此前评审稿全文SHA-256为015f5fd354cc649d8880437f39c1aa13f8968128136dd246ebd97003dd437eef，旧记录不回改。脱敏原始本地记录位于/tmp/srvf-w98-plan-diagnostic.CrcCYU的ledger-plan.log、mapping-plan.log、mapping-cpu.log；只作短期取证，关键结论已记入本节，不依赖临时日志永久存在。
+
+**本次未做**：未宣称两项CI失败已修复；未提交／推送／Ready／合并、重跑CI、修改生产代码／migration／SQL配置／业务预算／既有断言、登记真实映射、启用shadow／Gate或操作真实业务数据。未跑mapping其余296项、全仓quick／Contract／全量E2E，最终文档检查与还原证明单独记录，不冒称全绿。
+
+**收尾自证**：两份测试当前字节与HEAD完全一致，SHA-256分别为e6c16910f912a05027d86a61b036ea16a10f2ec3b5883d9d57f5453f092a840e（ledger）及40b4fac8dad88b1fd679e74cdf020a006e47aa9409b79f34158359f2894d36ef（mapping）；本评审稿旧494,606字节前缀摘要不变，两份台账除第3行外逐字不变。首轮Prettier只报告新表格排版，修正后plan／NEXT_TASKS格式、git diff --check、docs:counts:check、docs:codemap:check及docs:readtax:check均通过；CODEMAP的2条既有WARN和readtax提示照留。最终仅三份文档未提交，HEAD与#1370仍为5fb7512c／OPEN Draft。
+
+#### 29.21.19 六路径CI计划／统计取证交付（2026-10-01；不作业务修复）
+
+维护者明确回复「允许上一条六路径CI取证包」，包含w98验证、验证后提交推送同一#1370 Draft；保留本轮已有29.21.18及两份台账改动，不Ready、不合并、不自动重跑。开工HEAD为5fb7512c，未落后本地origin/main；lane preflight仅因该包三份已获准文档未提交退出1，已与维护者本次完整包对齐，未修改门禁或自行发放授权。
+
+精确写集：
+
+1. `test/e2e/activity-ledger-posting-scale.e2e-spec.ts`。
+2. `test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts`。
+3. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`。
+4. 本评审稿。
+5. `docs/ai-harness/FROZEN_DRAFTS.md`第3行。
+6. `docs/ai-harness/NEXT_TASKS.md`第3行。
+
+| 风险项                      | 本轮结论                                                         |
+| --------------------------- | ---------------------------------------------------------------- |
+| schema／migration／seed     | 均不改，第134／135条及ACL签字保持                                |
+| 现有数据／不可逆性          | 仅既有隔离合成夹具；新增计划探针不执行原SQL，无业务数据操作      |
+| OpenAPI／contract／BizCode  | 不改接口、快照或错误码                                           |
+| 鉴权／Permission seed／审计 | 不改；映射计划仍使用原受限runtime事务，不增加角色权能            |
+| 维护者拍板                  | 六路径、w98验证及验证后提交推送已批准；Ready／合并／新修复未批准 |
+
+**实现形状**：账本草稿成员SELECT及服务段UPDATE、映射应用及比较两条INSERT在原await处先执行同参数的`EXPLAIN (FORMAT JSON)`，再原样消费原PrismaPromise一次。没有ANALYZE、写入重放、保存点或触发器第二次执行，没有planner开关／统计重建。计划仍有解析／规划／锁元数据成本，不声称零扰动；它和真实调用分别计时，两者都包含在原5秒／7秒预算内。账本原query计数不包含直接原tx上的计划探针，计划次数另列；原查询数、bind断言不变。若计划先报错，保留diagnostic.plan错误分类并原样抛出，不把未执行的业务调用冒充业务失败或吞掉事务错误。
+
+**统计与隐私**：预算开始前只读当前库固定表的reltuples／relpages／pg_stat_user_tables计数、analyze是否发生及jit／jit_above_cost值。统计值是取样时点报告值，可能滞后，不冒充实时COUNT或CI全部数据库负载；未查跨库业务状态。计划JSON仅保留节点／连接类型、表／索引名、成本／估计行数及JIT元数据；拒绝输出Filter／Cond／Output、原SQL和参数。stdout统一在原finally输出，失败保留已取得的计划。映射纯计算只增performance／process.cpuUsage采样，不使用Profiler；CPU可含辅助线程，不与wall相加。计划不能揭示触发器内部实际执行时间，仍需结合29.21.18本地回滚计划和新CI真实调用耗时判断，不保证本包即可证明全部根因。
+
+**仪器自证**：从实际候选TS抽取并转译测试包装器，ledger／mapping各跑成功与失败正反例；await前执行次数0、之后计划1次＋原调用1次，返回对象／异常身份保持；模拟计划Filter及异常／参数哨兵没有进入记录。两测试原expect调用经AST打印后分别15／307处逐项一致，不靠计数代替内容对照。候选test typecheck及两文件定向冷lint通过。只跑已批准w98，账本临时专用生命周期验证后剥离；mapping复用dedicated及原三个具名角色／真实LOGIN并回收。性能验证与quick错峰，本地完整结果随后登记。
+
+**交付边界**：不改workflow、Jest配置、生产代码、schema／migration、接口、权限、断言、时限；不操作其他本地库、真实业务或生产，不新增baseline worktree，不登记映射、不启用shadow／Gate。旧CI两项失败保留，取得新证据后按累计失败轮数决定下一种方法，不在本包内猜测实现修复或自动重跑。PR继续Draft，红区可信审批如工作流要求仍由维护者对新SHA独立批准。
+
+**本地验证**：两套性能测试串行、不与quick重任务并发，使用29.21.18的进程内现有Jest配置及命令级NODE_PATH，无配置／依赖文件变更。账本冷回放1/1通过、38.215s；commit包络1,082ms，原查询27条，两个额外计划约1.516／1.770ms，真实SELECT12.004ms／UPDATE377.589ms。计划仍是Hash Join且join估计1行；两张合成夹具表报告8,192行、reltuples=-1、未analyze。完整映射297/297通过、80.935s；原2,000条链1,655ms，纯计算wall565.164ms／进程CPU664.514ms，应用／比较计划47.540／43.357ms，原INSERT358.006／494.320ms。映射两条Function Scan仍估计100行；只有计划而无ANALYZE，不伪造实际行数或触发器执行时间。
+
+完整测试后复核发现新增mapping计划探针失败分支还需透传thenable的reject回调，已在同一诊断写集补齐，未改业务路径。实际代码抽取自测增加plan-error：规划失败时原业务调用0次、异常同一对象、消费不挂起且不泄露消息；成功及原调用失败分支仍各执行原语句一次。最终候选定向2项通过／295未选择、23.411s，覆盖原2,000条完整链（1,747ms）、受限LOGIN及真实锁回读／竞争；不是第二次297条全跑。原297条结果复用于未变的其余用例，诊断包装器变化已由受影响满额用例和独立失败自测覆盖。
+
+账本临时w98建库／回收代码已剥离，CI仍沿原worker生命周期。结束独立复核postgres角色正对照1，w98库0／连接0、三个具名夹具角色0；移除的仅可重建合成夹具。日志位于/tmp/srvf-ci-plan-package.ixAb0F，关键读数已写入本节，临时日志不作为永久证据。第134／135条与ACL完整摘要逐份重算均与29.21.16一致；不新增签字。本地测试保留Node既有sys弃用／WASI实验提示，不宣称无警告。本轮未复现旧CI两项超时，业务修复与CI验收仍未完成。
+
+**最终交付自证**：`pnpm agent:check:quick`退出0，433套／9,430条单测通过、5条既有todo（66.519s），缓存lint、三组typecheck及harness自测通过；两份变动E2E另跑定向冷lint通过。Prettier、counts、CODEMAP、readtax及diff检查通过，CODEMAP两项既有WARN和readtax预算提示照留；未刷新或改动生成物。最终两份测试15／307处expect父表达式逐项AST打印一致，两份台账仅第3行变化，评审稿HEAD前缀逐字保持，精确六路径无扩围。只按授权普通提交推送#1370 Draft，不另索取同一提交许可；新SHA的全量Contract／E2E交PR CI冷跑，本地未运行会触碰其他库的标准Contract入口。
+
+**本次未做**：未修复或关闭旧CI性能失败，不自动重跑、不Ready／合并；未改生产代码、schema／migration、权限、业务断言或5秒／7秒，不登记真实映射、不启用shadow／Gate、不操作生产或真实业务数据。跨模型整体复审未执行，不伪称已评审。

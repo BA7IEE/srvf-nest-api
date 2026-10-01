@@ -79,6 +79,72 @@ LANGUAGE sql IMMUTABLE AS $$
 $$;`;
 
 type DiagnosticRow = { label: string; elapsedMs: number; outcome: string; code: string };
+type MappingPlanDiagnostic = { label: string; elapsedMs: number; plan: unknown };
+function redactMappingPlan(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactMappingPlan);
+  if (!value || typeof value !== 'object') return value;
+  const allowed = new Set([
+    'Plan',
+    'Plans',
+    'Node Type',
+    'Parent Relationship',
+    'Join Type',
+    'Relation Name',
+    'Index Name',
+    'Scan Direction',
+    'Strategy',
+    'Startup Cost',
+    'Total Cost',
+    'Plan Rows',
+    'Plan Width',
+    'JIT',
+    'Functions',
+    'Options',
+    'Inlining',
+    'Optimization',
+    'Expressions',
+    'Deforming',
+  ]);
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => allowed.has(key))
+      .map(([key, child]) => [key, redactMappingPlan(child)]),
+  );
+}
+
+async function collectMappingPlan(
+  target: object,
+  args: unknown[],
+  label: string,
+  plans: MappingPlanDiagnostic[],
+  rows: DiagnosticRow[],
+): Promise<void> {
+  const began = performance.now();
+  const head = args[0];
+  if (!Array.isArray(head)) throw new Error('mapping plan expected original tagged query');
+  const query = Prisma.sql(head as string[], ...args.slice(1));
+  try {
+    // Deliberately not ANALYZE: no second insert or trigger execution.
+    const result = await (target as Prisma.TransactionClient).$queryRaw<
+      Array<Record<string, unknown>>
+    >(Prisma.sql`EXPLAIN (FORMAT JSON) ${query}`);
+    const elapsedMs = performance.now() - began;
+    plans.push({
+      label,
+      elapsedMs,
+      plan: redactMappingPlan(result.map((row) => row['QUERY PLAN'])),
+    });
+    rows.push({ label: 'diagnostic.plan.' + label, elapsedMs, outcome: 'ok', code: '' });
+  } catch (error) {
+    rows.push({
+      label: 'diagnostic.plan.' + label,
+      elapsedMs: performance.now() - began,
+      outcome: 'error',
+      code: diagnosticCode(error),
+    });
+    throw error;
+  }
+}
 function diagnosticCode(error: unknown): string {
   const kind =
     error instanceof Error &&
@@ -119,13 +185,18 @@ function diagnosticCode(error: unknown): string {
       : 'unavailable';
   return [kind, prismaCode, sqlState].join(':');
 }
-function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix = ''): T {
+function diagnosticTx<T extends object>(
+  target: T,
+  rows: DiagnosticRow[],
+  prefix = '',
+  plans?: MappingPlanDiagnostic[],
+): T {
   return new Proxy(target, {
     get(object, key) {
       const value: unknown = Reflect.get(object, key);
       if (typeof key !== 'string') return value;
       if (typeof value === 'object' && value !== null && !prefix && /^[a-z][a-zA-Z]+$/.test(key))
-        return diagnosticTx(value, rows, key);
+        return diagnosticTx(value, rows, key, plans);
       if (typeof value !== 'function') return value;
       return (...args: unknown[]) => {
         let label = prefix ? prefix + '.' + key : key;
@@ -175,30 +246,48 @@ function diagnosticTx<T extends object>(target: T, rows: DiagnosticRow[], prefix
                 fulfilled?: (output: unknown) => unknown,
                 rejected?: (error: unknown) => unknown,
               ) => {
-                const began = performance.now();
                 const then: unknown = Reflect.get(promise, 'then');
                 if (typeof then !== 'function') throw new Error('diagnostic promise contract');
-                return Reflect.apply(then, promise, [
-                  (output: unknown) => {
-                    rows.push({
-                      label,
-                      elapsedMs: performance.now() - began,
-                      outcome: 'ok',
-                      code: '',
-                    });
-                    return fulfilled ? fulfilled(output) : output;
-                  },
-                  (error: unknown) => {
-                    rows.push({
-                      label,
-                      elapsedMs: performance.now() - began,
-                      outcome: 'error',
-                      code: diagnosticCode(error),
-                    });
-                    if (rejected) return rejected(error);
-                    throw error;
-                  },
-                ]);
+                const consume = () => {
+                  const began = performance.now();
+                  return Reflect.apply(then, promise, [
+                    (output: unknown) => {
+                      rows.push({
+                        label,
+                        elapsedMs: performance.now() - began,
+                        outcome: 'ok',
+                        code: '',
+                      });
+                      return fulfilled ? fulfilled(output) : output;
+                    },
+                    (error: unknown) => {
+                      rows.push({
+                        label,
+                        elapsedMs: performance.now() - began,
+                        outcome: 'error',
+                        code: diagnosticCode(error),
+                      });
+                      if (rejected) return rejected(error);
+                      throw error;
+                    },
+                  ]);
+                };
+                if (
+                  plans &&
+                  !prefix &&
+                  key === '$executeRaw' &&
+                  (label.endsWith('.ContributionShadowMappingApplication') ||
+                    label.endsWith('.ContributionShadowComparisonReceipt'))
+                ) {
+                  return collectMappingPlan(object, args, label, plans, rows).then(
+                    consume,
+                    (error: unknown) => {
+                      if (rejected) return rejected(error);
+                      throw error;
+                    },
+                  );
+                }
+                return consume();
               };
             const member: unknown = Reflect.get(promise, property);
             return typeof member === 'function' ? member.bind(promise) : member;
@@ -4580,6 +4669,19 @@ set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activit
           FROM "AttendanceRecord" WHERE "sheetId"='bulk-sheet';
         COMMIT;`);
       await assertDiagnosticObserver();
+      const plannerStats = await primary.$queryRaw`
+        SELECT c.relname AS table_name, c.reltuples::DOUBLE PRECISION AS estimated_rows,
+          c.relpages, s.n_live_tup::DOUBLE PRECISION AS reported_live_rows,
+          s.n_mod_since_analyze::DOUBLE PRECISION AS modified_since_analyze,
+          s.last_analyze IS NOT NULL AS analyzed, s.last_autoanalyze IS NOT NULL AS autoanalyzed,
+          current_setting('jit') AS jit, current_setting('jit_above_cost') AS jit_above_cost
+        FROM pg_class c JOIN pg_stat_user_tables s ON s.relid=c.oid
+        JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='public' AND c.relname IN (
+          'ContributionShadowLegacySourceAnchor','ContributionShadowMappingApproval',
+          'ContributionShadowMappingApplication','ContributionShadowComparisonReceipt')
+        ORDER BY c.relname
+      `;
       // Cold runtime connection belongs to this one countdown, not fixture prep.
       await runtime.$disconnect();
       const budget = new ShadowComparisonBudget();
@@ -4587,6 +4689,7 @@ set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activit
       let stage = 'prepare';
       const phaseTimes = { beforeComparisonMs: 0, comparisonTimeoutMs: 0, poolWaitMs: 0 };
       const diagnosticRows: DiagnosticRow[] = [];
+      const plans: MappingPlanDiagnostic[] = [];
       let rollbackPlanProbe: (() => void) | undefined;
       try {
         const bulk = await primary.$transaction(async (originalTx) => {
@@ -4619,7 +4722,9 @@ set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activit
               evaluatorVersion: event.evaluatorVersion,
             })),
           );
-          return prepareShadowComparisonSet({
+          const pureBegan = performance.now();
+          const cpuBegan = process.cpuUsage();
+          const preparedSet = prepareShadowComparisonSet({
             context: {
               windowId: 'ref-window',
               auditLogId: 'bulk-audit',
@@ -4636,6 +4741,20 @@ set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activit
             positions,
             policyVersions,
           });
+          const cpu = process.cpuUsage(cpuBegan);
+          diagnosticRows.push({
+            label: 'prepare.pure.wall',
+            elapsedMs: performance.now() - pureBegan,
+            outcome: 'ok',
+            code: '',
+          });
+          diagnosticRows.push({
+            label: 'prepare.pure.cpu',
+            elapsedMs: (cpu.user + cpu.system) / 1000,
+            outcome: 'ok',
+            code: '',
+          });
+          return preparedSet;
         }, budget.transactionOptions());
         expect(bulk.applications).toHaveLength(2000);
         expect(bulk.comparisons).toHaveLength(2000);
@@ -4735,7 +4854,7 @@ set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activit
             return inRuntime(
               (tx) =>
                 writer.writeCompleteComparisonSet(
-                  diagnosticTx(tx, diagnosticRows),
+                  diagnosticTx(tx, diagnosticRows, '', plans),
                   bulkStart.attempt,
                   bulk.applications,
                   bulk.comparisons,
@@ -4809,7 +4928,7 @@ set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activit
       } finally {
         console.info(
           '[shadow-comparison-diagnostic] ' +
-            JSON.stringify({ rows: summarizeDiagnostics(diagnosticRows) }),
+            JSON.stringify({ plannerStats, plans, rows: summarizeDiagnostics(diagnosticRows) }),
         );
       }
       // Separate from (and after) the unchanged five-second budget above.

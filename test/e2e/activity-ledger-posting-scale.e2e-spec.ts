@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type { INestApplication } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
 import { MEMBER_TX_TIMEOUT_MS } from '../../src/common/prisma/member-advisory-lock.util';
@@ -51,6 +51,73 @@ interface DiagnosticRow {
   label: string;
   elapsedMs: number;
   status: string;
+}
+
+interface PlanDiagnostic {
+  label: string;
+  elapsedMs: number;
+  plan: unknown;
+}
+
+/** Keep planner metadata only; never emit conditions, output expressions or parameter values. */
+function redactLedgerPlan(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactLedgerPlan);
+  if (!value || typeof value !== 'object') return value;
+  const allowed = new Set([
+    'Plan',
+    'Plans',
+    'Node Type',
+    'Parent Relationship',
+    'Join Type',
+    'Relation Name',
+    'Index Name',
+    'Scan Direction',
+    'Strategy',
+    'Startup Cost',
+    'Total Cost',
+    'Plan Rows',
+    'Plan Width',
+    'JIT',
+    'Functions',
+    'Options',
+    'Inlining',
+    'Optimization',
+    'Expressions',
+    'Deforming',
+  ]);
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => allowed.has(key))
+      .map(([key, child]) => [key, redactLedgerPlan(child)]),
+  );
+}
+
+async function collectLedgerPlan(
+  target: object,
+  args: unknown[],
+  label: string,
+  plans: PlanDiagnostic[],
+  rows: DiagnosticRow[],
+): Promise<void> {
+  const began = performance.now();
+  const head = args[0];
+  if (!Array.isArray(head)) throw new Error('ledger plan expected original tagged query');
+  const query = Prisma.sql(head as string[], ...args.slice(1));
+  try {
+    // No ANALYZE: the original statement is still executed exactly once below.
+    const result = await (target as Prisma.TransactionClient).$queryRaw<
+      Array<Record<string, unknown>>
+    >(Prisma.sql`EXPLAIN (FORMAT JSON) ${query}`);
+    plans.push({
+      label,
+      elapsedMs: Number((performance.now() - began).toFixed(3)),
+      plan: redactLedgerPlan(result.map((row) => row['QUERY PLAN'])),
+    });
+    recordTiming(rows, 'diagnostic.plan.' + label, began);
+  } catch (error) {
+    recordTiming(rows, 'diagnostic.plan.' + label, began, error);
+    throw error;
+  }
 }
 
 /** 只记录固定标签、耗时与允许名单错误码；不输出异常消息、SQL 或参数。 */
@@ -174,6 +241,7 @@ function installStageTimers(service: LedgerPostingService, rows: DiagnosticRow[]
 function installStatementRecorder(
   prisma: PrismaService,
   rows: DiagnosticRow[],
+  plans: PlanDiagnostic[],
 ): {
   reset: () => void;
   statements: () => StatementRecord[];
@@ -204,7 +272,30 @@ function installStatementRecorder(
           const fn = value as (...args: never[]) => unknown;
           return (...args: never[]) => {
             records.push(bindCountOf(args));
-            return timedQuery(fn.apply(target, args), diagnosticSqlLabel(args), rows);
+            const label = diagnosticSqlLabel(args);
+            const result = fn.apply(target, args);
+            const isMemberRead =
+              label ===
+                'raw.SELECT.ParticipantServiceSegmentRevision.ActivityParticipationIdentity' &&
+              Array.isArray(args[0]) &&
+              String(args[0]).includes('DISTINCT');
+            const isSegmentWrite =
+              label ===
+              'raw.UPDATE.ParticipantServiceSegmentRevision.ActivityParticipationIdentity';
+            if (isMemberRead || isSegmentWrite) {
+              // Still lazy: planning and consumption begin only when the caller awaits.
+              // Separate planner time from the one original call; both consume the unchanged budget.
+              return {
+                then: (
+                  fulfilled?: (output: unknown) => unknown,
+                  rejected?: (error: unknown) => unknown,
+                ) =>
+                  collectLedgerPlan(target, args, label, plans, rows)
+                    .then(() => timedQuery(result, label, rows))
+                    .then(fulfilled, rejected),
+              };
+            }
+            return timedQuery(result, label, rows);
           };
         }
         if (
@@ -498,9 +589,22 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
     ).resolves.toBe(SCALE_MEMBER_COUNT * 2);
 
     // ===== 生效:一次短事务 =====
+    const plannerStats = await prisma.$queryRaw`
+      SELECT c.relname AS table_name, c.reltuples::DOUBLE PRECISION AS estimated_rows,
+        c.relpages, s.n_live_tup::DOUBLE PRECISION AS reported_live_rows,
+        s.n_mod_since_analyze::DOUBLE PRECISION AS modified_since_analyze,
+        s.last_analyze IS NOT NULL AS analyzed, s.last_autoanalyze IS NOT NULL AS autoanalyzed,
+        current_setting('jit') AS jit, current_setting('jit_above_cost') AS jit_above_cost
+      FROM pg_class c JOIN pg_stat_user_tables s ON s.relid=c.oid
+      JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public'
+        AND c.relname IN ('ParticipantServiceSegmentRevision','ActivityParticipationIdentity')
+      ORDER BY c.relname
+    `;
     const diagnosticRows: DiagnosticRow[] = [];
+    const plans: PlanDiagnostic[] = [];
     const restoreStages = installStageTimers(posting, diagnosticRows);
-    const recorder = installStatementRecorder(prisma, diagnosticRows);
+    const recorder = installStatementRecorder(prisma, diagnosticRows, plans);
     recorder.reset();
     const commitStartedAt = Date.now();
     const result = await posting
@@ -516,6 +620,9 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
               budgetMs: MEMBER_TX_TIMEOUT_MS,
               elapsedMs: Date.now() - commitStartedAt,
               queries: recorder.statements().length,
+              // Original query count above excludes the two non-executing plans.
+              plannerStats,
+              plans,
               rows: diagnosticRows,
             }),
         );
