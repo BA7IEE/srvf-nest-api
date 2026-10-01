@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import type { INestApplication } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
@@ -46,13 +47,134 @@ interface StatementRecord {
   sample: string;
 }
 
+interface DiagnosticRow {
+  label: string;
+  elapsedMs: number;
+  status: string;
+}
+
+/** 只记录固定标签、耗时与允许名单错误码；不输出异常消息、SQL 或参数。 */
+function recordTiming(rows: DiagnosticRow[], label: string, began: number, error?: unknown): void {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : null;
+  rows.push({
+    label,
+    elapsedMs: Number((performance.now() - began).toFixed(3)),
+    status: error === undefined ? 'ok' : code === 'P2028' || code === 'P2010' ? code : 'error',
+  });
+}
+
+/** 保留 PrismaPromise 的延迟执行；仅在既有 await 消费时包裹 then。 */
+function timedQuery(result: unknown, label: string, rows: DiagnosticRow[]): unknown {
+  if (!result || typeof result !== 'object' || !('then' in result)) return result;
+  return new Proxy(result, {
+    get(promise, property) {
+      if (property === 'then') {
+        return (
+          fulfilled?: (value: unknown) => unknown,
+          rejected?: (error: unknown) => unknown,
+        ) => {
+          const began = performance.now();
+          const then: unknown = Reflect.get(promise, 'then');
+          if (typeof then !== 'function') throw new Error('ledger diagnostic promise contract');
+          return Reflect.apply(then, promise, [
+            (value: unknown) => {
+              recordTiming(rows, label, began);
+              return fulfilled ? fulfilled(value) : value;
+            },
+            (error: unknown) => {
+              recordTiming(rows, label, began, error);
+              if (rejected) return rejected(error);
+              throw error;
+            },
+          ]);
+        };
+      }
+      const value: unknown = Reflect.get(promise, property);
+      return typeof value === 'function' ? value.bind(promise) : value;
+    },
+  });
+}
+
+function diagnosticSqlLabel(args: unknown[]): string {
+  const head = args[0];
+  const parts = Array.isArray(head)
+    ? head
+    : head && typeof head === 'object' && 'strings' in head && Array.isArray(head.strings)
+      ? head.strings
+      : [];
+  const literal =
+    typeof head === 'string' ? head : parts.filter((p) => typeof p === 'string').join('?');
+  const verb = /^\s*(SELECT|UPDATE|INSERT|SET|WITH)\b/.exec(literal)?.[1] ?? 'other';
+  if (literal.includes('pg_advisory_xact_lock')) return 'raw.member-or-budget-lock';
+  const tables = [
+    'Activity',
+    'AttendanceSettlementRun',
+    'AttendanceSettlementVersion',
+    'LedgerPostingBatch',
+    'ParticipationLedgerEntry',
+    'ParticipantServiceSegmentRevision',
+    'ParticipantSettlementResultRevision',
+    'MemberContributionDayState',
+    'MemberContributionDayBaseline',
+    'ActivityParticipationIdentity',
+  ].filter((name) => literal.includes('"' + name + '"'));
+  return ['raw', verb, ...tables].join('.');
+}
+
+function installStageTimers(service: LedgerPostingService, rows: DiagnosticRow[]): () => void {
+  const target = service as unknown as Record<string, unknown>;
+  const names = [
+    'lockActivity',
+    'lockRun',
+    'lockVersion',
+    'lockBatch',
+    'assertNoOtherCommittedBatch',
+    'readBatchDayDeltas',
+    'assertPreparedSetConsistent',
+    'readDraftSegmentMemberIds',
+    'acquireCommitBudget',
+    'assertNoCrossActivitySegmentOverlap',
+    'createMissingDayStates',
+    'lockDayStates',
+    'readPreparedBaseline',
+    'advanceDayStates',
+  ];
+  const originals = names.map((name) => {
+    const method = target[name];
+    if (typeof method !== 'function') throw new Error('ledger diagnostic stage missing');
+    return { name, method, descriptor: Object.getOwnPropertyDescriptor(target, name) };
+  });
+  for (const { name, method } of originals) {
+    target[name] = async (...args: unknown[]) => {
+      const began = performance.now();
+      try {
+        const result: unknown = await Reflect.apply(method, service, args);
+        recordTiming(rows, 'stage.' + name, began);
+        return result;
+      } catch (error) {
+        recordTiming(rows, 'stage.' + name, began, error);
+        throw error;
+      }
+    };
+  }
+  return () => {
+    for (const { name, descriptor } of originals) {
+      if (descriptor) Object.defineProperty(target, name, descriptor);
+      else Reflect.deleteProperty(target, name);
+    }
+  };
+}
+
 /**
  * 把交互事务里的 `$queryRaw` / `$executeRaw` / delegate 调用全部记下来。
  *
  * 沿 `attendance-final-approve-scale-isolation.e2e-spec.ts` 的既有手法(代理 tx),
  * 只多记一件事:**每条语句实际绑定了几个参数**。
  */
-function installStatementRecorder(prisma: PrismaService): {
+function installStatementRecorder(
+  prisma: PrismaService,
+  rows: DiagnosticRow[],
+): {
   reset: () => void;
   statements: () => StatementRecord[];
   restore: () => void;
@@ -82,7 +204,7 @@ function installStatementRecorder(prisma: PrismaService): {
           const fn = value as (...args: never[]) => unknown;
           return (...args: never[]) => {
             records.push(bindCountOf(args));
-            return fn.apply(target, args);
+            return timedQuery(fn.apply(target, args), diagnosticSqlLabel(args), rows);
           };
         }
         if (
@@ -97,7 +219,11 @@ function installStatementRecorder(prisma: PrismaService): {
               if (typeof fn !== 'function') return fn;
               return (...args: never[]) => {
                 records.push({ binds: -1, sample: `${prop}.${String(m)}` });
-                return (fn as (...a: never[]) => unknown).apply(d, args);
+                return timedQuery(
+                  (fn as (...a: never[]) => unknown).apply(d, args),
+                  `delegate.${prop}.${String(m)}`,
+                  rows,
+                );
               };
             },
           });
@@ -372,14 +498,28 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
     ).resolves.toBe(SCALE_MEMBER_COUNT * 2);
 
     // ===== 生效:一次短事务 =====
-    const recorder = installStatementRecorder(prisma);
+    const diagnosticRows: DiagnosticRow[] = [];
+    const restoreStages = installStageTimers(posting, diagnosticRows);
+    const recorder = installStatementRecorder(prisma, diagnosticRows);
     recorder.reset();
     const commitStartedAt = Date.now();
-    const result = await posting.commitBatch(
-      { postingBatchId: batch.id, operationKey: 'scale-commit' },
-      actor,
-      auditMeta,
-    );
+    const result = await posting
+      .commitBatch({ postingBatchId: batch.id, operationKey: 'scale-commit' }, actor, auditMeta)
+      .finally(() => {
+        recorder.restore();
+        restoreStages();
+        // 阶段包含其内部查询，不能将两层耗时相加；失败也保留现场并原样抛出。
+        console.info(
+          '[ledger-scale-diagnostic] ' +
+            JSON.stringify({
+              members: SCALE_MEMBER_COUNT,
+              budgetMs: MEMBER_TX_TIMEOUT_MS,
+              elapsedMs: Date.now() - commitStartedAt,
+              queries: recorder.statements().length,
+              rows: diagnosticRows,
+            }),
+        );
+      });
     const commitMs = Date.now() - commitStartedAt;
     const statements = recorder.statements();
     recorder.restore();

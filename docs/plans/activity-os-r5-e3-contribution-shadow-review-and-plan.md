@@ -2394,3 +2394,29 @@ pnpm harness:grant 'prisma/migrations/20260930120000_activity_os_r5_e3_shadow_ma
 - 维护者已明确回复「确认第135条3b重签」，与问题中完整摘要逐字对应。第135条实际SHA-256为`9536aaf97d704b433b3625014db0d7f882b4a0dbf8c98dec8cc78211dc539de4`，已追加CUTOVER_SIGNOFF；第134条`37f204e1c46a08040c04775e51823659399d18f3e11b0c873d502de464b3714f`、ACL`65746a8892017144270034e654b1cee77c539d7374b27e9daca1faa95225aa8b`保持，不扩大4b。
 
 最终quick退出0：433套／9,430单测通过、5既有todo，97.245s；缓存lint、三组类型、harness全部通过（138 passed、5已知缺口仍保留）。改动mapping E2E另跑定向冷lint通过；签字一致性、docs:counts、docs:codemap通过，CODEMAP保留2条既有WARN，不称零警告。第135条函数正文与HEAD逐字一致，第134条／ACL摘要不变；本轮7个路径均在原10路径授权内，两份台账只改顶部当前状态。沿既有授权普通提交推送同一#1370 Draft，仍由新SHA CI冷跑验收。29.21.14旧CI失败及其耗时保留，不据本地结果关闭。未Ready／合并、不操作生产、不登记真实映射、不启用shadow／Gate、不删除或重算旧数据。
+
+#### 29.21.17 旧8192人账本CI失败与五路径诊断交付（2026-10-01）
+
+`160f40be545195d47490ced0b3111479638482a0`的[CI 36864154186](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36864154186)已结束失败：E2E分片1／2／4／5通过，分片3失败；Fast checks、守护自测、事故回放、Golden journeys、Docker构建及独立smoke通过。分片1映射完整文件通过，原2,000条受限身份完整映射链4,750ms，固定旧hash2,000/2,000一致；距原五秒预算余量仍小，不据此声称跨环境性能稳定。
+
+唯一失败在[分片3 job 110375426077](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36864154186/job/110375426077)：82套／1,224条通过、1套／1条失败，旧`activity-ledger-posting-scale.e2e-spec.ts`的8,192人准备＋生效链事务预算7,000ms、实付7,454ms后过期。栈落于`LedgerPostingService.commitBatchProtocol`服务段状态UPDATE；这是错误观察点，原日志没有分段耗时，不能将整个7,454ms归给最后一条SQL，也不能无证据归因于CI争用。该测试与对应生产服务相对当时origin/main均无差异；仍保留失败，不因测试较旧而豁免。
+
+前一轮获准仅w98临时取证：冷回放后原用例1/1通过、34.525s，准备5,490ms、生效1,243ms、事务27条（17条raw），最大bind8,192仅为原成员锁，其他raw均≤16；所有15处原断言不变。分段本机读数：日状态补建136.964ms、回写204.358ms，结果／服务段UPDATE为211.597／406.686ms。阶段含内部查询，不能叠加两层读数。未复现CI超时；临时插桩已还原，测试文件SHA-256恢复为`167eee15a692be5a89568895555f8c7c3fee75413754fd918a918b65367501b3`，postgres角色正对照1、w98库0／连接0；本地通过不等于CI修复。
+
+维护者随后确认「允许上一条五路径 CI 诊断提交方案，保持 #1370 Draft，不 Ready、不合并」。本轮精确写集：
+
+1. `test/e2e/activity-ledger-posting-scale.e2e-spec.ts`：保留固定阶段／查询标签、耗时、查询数与允许名单错误码；成功／失败均在finally输出并恢复包装。保留PrismaPromise延迟执行、结果／异常原样透传；不输出SQL、参数、业务值或原始异常。原15处业务断言、真实锁及7秒预算均不改。CI沿既有worker配置，不提交本地w98生命周期代码。
+2. `changelog.d/activity-os-r5-e3-shadow-mapping-proof.md`：记录诊断范围和未收口失败。
+3. 本评审稿：追加原CI证据、本地取证与验证边界，不回改旧失败。
+4. `docs/ai-harness/FROZEN_DRAFTS.md`：仅顶部当前状态。
+5. `docs/ai-harness/NEXT_TASKS.md`：仅顶部当前状态。
+
+本轮不改生产代码、schema／migration、权限、审计或Gate，不新增3b／4b签字。preflight本地main差距0，工作树初始clean；仅既有open #1370使global门禁退出1，本次为维护者已授权的同PR诊断，不开启新功能、不修改门禁。五个精确路径的harness:needs均非红区。定向及静态验证结果如下；按本轮授权普通提交推送原Draft，不另索取同一推送授权。新SHA仍须CI冷跑，不能以本地读数关闭本节CI失败。
+
+本轮诊断候选仅w98冷回放定向验证：1套／1条通过、33.396s；准备4,915ms、生效1,031ms（finally输出前读数1,007ms），27查询／17raw，最大bind8,192仅原成员锁、其他raw≤16，原7,000ms预算不变。日状态补建116.950ms、回写161.727ms，结果／服务段UPDATE分别142.857／298.046ms；只是本机通过，仍未复现远端失败。临时本地建库／迁移／回收代码已还原，不进入CI；postgres角色1为正对照、w98库0／连接0，无新增角色。
+
+独立诊断器正反例通过：构造延迟thenable确认消费前执行数0、消费后1，返回对象及拒绝异常同一性保持，错误消息哨兵不进入读数，原型方法在成功／失败后恢复。AST打印逐项对照确认15处原expect表达式及匹配器完全相同；两份台账除第3行外逐字保持。第134／135条及ACL完整摘要重新核对与29.21.16一致。定向冷lint、Prettier、counts、CODEMAP、readtax及diff检查通过，CODEMAP仍有2项既有WARN；未修改生成物。
+
+最终`pnpm agent:check:quick`退出0：缓存lint、三组typecheck、harness及433套／9,430条单测通过（5条既有todo，单测51.37s）；138项eslint自测通过，5个已知缺口保持。来源／映射实现、依赖、SQL及对应测试未变，本轮不重复运行其本地完整套件；沿160f40be已完成的CI分片1及本节新定向结果分别记录，下一SHA的全量Contract／E2E仍由PR CI冷跑，不复用旧CI替代新门禁。
+
+**本次未做**：未修复或宣称修复8192人CI超时；不Ready、不合并、不盲重跑旧CI、不操作真实业务库／生产、不登记真实映射、不启用shadow／Gate、不删除或重算业务数据。
