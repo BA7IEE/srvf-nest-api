@@ -119,9 +119,10 @@ DECLARE
   v_rule "ContributionRule"%ROWTYPE;
   v_active_count INTEGER;
   v_fact JSONB;
-  v_after JSONB;
+  v_context JSONB;
   v_audit_sheet JSONB;
   v_records JSONB;
+  v_operation TEXT;
   v_fact_found BOOLEAN := FALSE;
   v_expected NUMERIC(5,2);
 BEGIN
@@ -133,15 +134,20 @@ BEGIN
     RAISE EXCEPTION 'shadow source anchor missing' USING ERRCODE = '23514';
   END IF;
   -- Row-local projections only: no cached facts cross rows, statements or locks.
-  v_after := v_audit."context"->'after';
-  v_audit_sheet := v_after->'sheet';
-  v_records := v_after->'records';
+  -- Flatten an object once instead of repeatedly expanding the same toasted audit.
+  -- Non-objects keep their original value; object concatenation must not coerce them.
+  v_context := CASE WHEN jsonb_typeof(v_audit."context") = 'object'
+    THEN v_audit."context" || '{}'::JSONB ELSE v_audit."context" END;
+  -- Full paths avoid copying the entire large after object before its children.
+  v_audit_sheet := v_context #> '{after,sheet}';
+  v_records := v_context #> '{after,records}';
+  v_operation := v_context #>> '{extra,operation}';
   IF v_audit."shadowProofRequired" IS DISTINCT FROM TRUE OR
      v_audit."success" IS DISTINCT FROM TRUE OR
      v_audit."resourceType" IS DISTINCT FROM 'attendance_sheet' OR
      v_audit."resourceId" IS DISTINCT FROM NEW."sheetId" OR
-     ((v_audit."event" = 'attendance-sheet.submit' AND v_audit."context"->'extra'->>'operation' = 'submit') OR
-      (v_audit."event" = 'attendance-sheet.edit' AND v_audit."context"->'extra'->>'operation' = 'edit')) IS NOT TRUE OR
+     ((v_audit."event" = 'attendance-sheet.submit' AND v_operation = 'submit') OR
+      (v_audit."event" = 'attendance-sheet.edit' AND v_operation = 'edit')) IS NOT TRUE OR
      (v_audit."createdAt" AT TIME ZONE 'UTC') < v_window."startsAt" OR
      (v_audit."createdAt" AT TIME ZONE 'UTC') >= v_window."endsAt" OR
      v_sheet."activityId" IS DISTINCT FROM NEW."activityId" OR

@@ -114,6 +114,99 @@ describe('E3-2 D2 source proof migration', () => {
     }
   });
 
+  it('preserves source JSON projections against the fixed pre-29.17 projection', () => {
+    const body = sql("SELECT pg_get_functiondef('cslsa_insert_guard_fn()'::regprocedure)");
+    const start = body.indexOf('  -- Row-local projections only:');
+    const end = body.indexOf('  IF v_audit."shadowProofRequired"', start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const projection = body.slice(start, end);
+    const cases: unknown[] = [null, [], true, 1, 'after', {}, { after: null }, { after: [] }];
+    for (const after of [
+      {},
+      { sheet: null, records: null },
+      { sheet: [], records: {} },
+      { sheet: { activityId: 'projection-activity', version: 1 }, records: [] },
+      { records: Array.from({ length: 2000 }, (_, i) => ({ id: `cuid_${i}`, memberId: 'm' })) },
+    ])
+      for (const extra of [
+        null,
+        {},
+        [],
+        { operation: 'submit' },
+        { operation: 'edit' },
+        { operation: false },
+      ])
+        cases.push({ after, extra });
+    const payload = JSON.stringify(cases).replaceAll("'", "''");
+    const result = JSON.parse(
+      sql(`BEGIN;
+      CREATE FUNCTION pg_temp.actual_source_projection(context_json JSONB) RETURNS JSONB LANGUAGE plpgsql AS $actual$
+      DECLARE v_audit audit_logs%ROWTYPE; v_context JSONB; v_audit_sheet JSONB; v_records JSONB; v_operation TEXT;
+      BEGIN v_audit.context := context_json;
+        ${projection}
+        RETURN jsonb_build_array(v_audit_sheet,v_records,v_operation);
+      END $actual$;
+      CREATE FUNCTION pg_temp.old_source_projection(context_json JSONB) RETURNS JSONB LANGUAGE plpgsql AS $old$
+      DECLARE after_json JSONB;
+      BEGIN after_json := context_json->'after';
+        RETURN jsonb_build_array(after_json->'sheet',after_json->'records',context_json->'extra'->>'operation');
+      END $old$;
+      SELECT jsonb_build_object('cases',count(*),'matches',count(*) FILTER (
+        WHERE pg_temp.actual_source_projection(value) IS NOT DISTINCT FROM pg_temp.old_source_projection(value)))
+      FROM (SELECT value FROM jsonb_array_elements('${payload}'::jsonb) UNION ALL SELECT NULL::jsonb) AS cases(value);
+      ROLLBACK;`),
+    );
+    expect(result).toEqual({ cases: cases.length + 1, matches: cases.length + 1 });
+  });
+
+  it('measures equivalent source projection candidates on one toasted 2,000-record fixture', () => {
+    const rows: Array<{ variant: string; rows: number; elapsedMs: number }> = JSON.parse(
+      sql(`BEGIN;
+      CREATE TEMP TABLE projection_fixture(value JSONB);
+      INSERT INTO projection_fixture SELECT jsonb_build_object('after',jsonb_build_object(
+        'sheet',jsonb_build_object('activityId','projection-activity','version',1),
+        'records',jsonb_agg(jsonb_build_object('id','cuid_'||n::TEXT,'memberId','member_'||n::TEXT,
+          'roleCode','support','serviceHours','1.00','contributionPoints','0.00'))),
+        'extra',jsonb_build_object('operation','submit')) FROM generate_series(1,2000) n;
+      CREATE TEMP TABLE projection_timing(variant TEXT,rows INTEGER,elapsed_ms NUMERIC);
+      DO $timing$
+      DECLARE variant TEXT; n INTEGER; context_json JSONB; after_json JSONB; audit_sheet JSONB;
+        records JSONB; operation TEXT; started TIMESTAMPTZ;
+      BEGIN
+        FOREACH variant IN ARRAY ARRAY['old','direct','materialized','materialized','direct','old'] LOOP
+          started:=clock_timestamp();
+          FOR n IN 1..1000 LOOP
+            SELECT value INTO context_json FROM projection_fixture;
+            IF variant='old' THEN
+              after_json:=context_json->'after'; audit_sheet:=after_json->'sheet'; records:=after_json->'records';
+              operation:=context_json->'extra'->>'operation';
+            ELSE
+              IF variant='materialized' AND jsonb_typeof(context_json)='object' THEN context_json:=context_json||'{}'::JSONB; END IF;
+              audit_sheet:=context_json#>'{after,sheet}'; records:=context_json#>'{after,records}';
+              operation:=context_json#>>'{extra,operation}';
+            END IF;
+            IF audit_sheet IS DISTINCT FROM '{"activityId":"projection-activity","version":1}'::JSONB OR
+              jsonb_array_length(records)<>2000 OR operation IS DISTINCT FROM 'submit' THEN
+              RAISE EXCEPTION 'projection timing fixture mismatch';
+            END IF;
+          END LOOP;
+          INSERT INTO projection_timing VALUES(variant,1000,extract(epoch FROM clock_timestamp()-started)*1000);
+        END LOOP;
+      END $timing$;
+      SELECT jsonb_agg(jsonb_build_object('variant',variant,'rows',rows,'elapsedMs',elapsed_ms)) FROM projection_timing;
+      ROLLBACK;`),
+    );
+    expect(rows.map(({ variant, rows }) => ({ variant, rows }))).toEqual(
+      ['old', 'direct', 'materialized', 'materialized', 'direct', 'old'].map((variant) => ({
+        variant,
+        rows: 1000,
+      })),
+    );
+    expect(rows.every((row) => Number.isFinite(row.elapsedMs) && row.elapsedMs > 0)).toBe(true);
+    console.info('[shadow-projection-candidates]', JSON.stringify(rows));
+  });
+
   it('cold-replays 135 migrations with an empty anchor table and default-off audit bit', () => {
     expect(sql('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).toBe(
       '135',

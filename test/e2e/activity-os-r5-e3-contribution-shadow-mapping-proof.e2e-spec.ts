@@ -399,6 +399,69 @@ function evaluateSql(
   ) as unknown;
 }
 
+// Fixed pre-29.17 reference from cb9d1309; never rebuild it from candidate SQL.
+const MAPPING_INPUTS_REFERENCE_SQL = String.raw`CREATE FUNCTION pg_temp.reference_mapping_inputs_fn(
+  approval "ContributionShadowMappingApproval", source "ContributionShadowLegacySourceAnchor",
+  observation "ContributionShadowObservationWindow", policy "ContributionPolicyVersion",
+  audit_time TIMESTAMPTZ
+) RETURNS JSONB LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, public AS $$
+DECLARE
+  duration NUMERIC; evaluated JSONB;
+BEGIN
+  IF audit_time IS NULL OR approval."approvedAt" IS NULL OR
+    approval."approvedAt" > audit_time OR approval."effectiveFrom" IS NULL OR
+    approval."effectiveFrom" > audit_time OR
+    (approval."effectiveUntil" IS NOT NULL AND approval."effectiveUntil" <= audit_time) OR
+    approval."eventKindCode" IS NULL OR approval."eventKindCode" NOT IN ('approve','replace') THEN
+    RAISE EXCEPTION 'shadow mapping approval is not effective at source time' USING ERRCODE = '23514';
+  END IF;
+  IF source."windowId" IS NULL OR observation."id" IS DISTINCT FROM source."windowId" OR
+    observation."signedMappingVersion" IS NULL OR
+    approval."mappingVersion" IS DISTINCT FROM observation."signedMappingVersion" OR
+    observation."startsAt" IS NULL OR observation."startsAt" > audit_time OR
+    observation."endsAt" IS NULL OR observation."endsAt" <= audit_time THEN
+    RAISE EXCEPTION 'shadow mapping observation mismatch' USING ERRCODE = '23514';
+  END IF;
+  IF source."activityId" IS NULL OR approval."activityId" IS DISTINCT FROM source."activityId" OR
+    source."activityTypeCode" IS NULL OR approval."activityTypeCode" IS DISTINCT FROM source."activityTypeCode" OR
+    source."attendanceRoleCode" IS NULL OR approval."attendanceRoleCode" IS DISTINCT FROM source."attendanceRoleCode" OR
+    source."sourceKindCode" IS DISTINCT FROM 'matched' OR
+    approval."durationSourceCode" IS DISTINCT FROM 'legacy_stored_hours_2' THEN
+    RAISE EXCEPTION 'shadow mapping legacy source mismatch' USING ERRCODE = '23514';
+  END IF;
+  IF policy."id" IS NULL OR approval."policyVersionId" IS DISTINCT FROM policy."id" OR
+    policy."definitionHash" IS NULL OR approval."policyDefinitionHash" IS DISTINCT FROM policy."definitionHash" OR
+    policy."schemaVersion" IS DISTINCT FROM 1 OR policy."evaluatorVersion" IS DISTINCT FROM 1 OR
+    approval."evaluatorVersion" IS DISTINCT FROM policy."evaluatorVersion" THEN
+    RAISE EXCEPTION 'shadow mapping policy version mismatch' USING ERRCODE = '23514';
+  END IF;
+  IF policy."definitionHash" IS DISTINCT FROM csm_policy_fingerprint_fn(policy) THEN
+    RAISE EXCEPTION 'shadow mapping policy definition hash mismatch' USING ERRCODE = '23514';
+  END IF;
+  IF source."legacyServiceHours" IS NULL OR source."legacyServiceHours" < 0 OR
+    source."legacyServiceHours" > 999.99 THEN
+    RAISE EXCEPTION 'shadow mapping duration source invalid' USING ERRCODE = '23514';
+  END IF;
+  -- Stored hundredths of an hour multiply by 36 per hundredth, without rounding.
+  duration := source."legacyServiceHours" * 3600;
+  IF trunc(duration) <> duration THEN
+    RAISE EXCEPTION 'shadow mapping duration source invalid' USING ERRCODE = '23514';
+  END IF;
+  evaluated := csm_policy_evaluate_fn(policy."definitionJson", approval."policyRoleCode",
+    approval."categoryCode", duration::BIGINT);
+  -- Evaluator default is legitimate in E1 but cannot prove a signed E3 mapping.
+  IF NOT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(policy."definitionJson"->'roleRules') AS r(value)
+    CROSS JOIN LATERAL jsonb_array_elements(r.value->'categoryRules') AS c(value)
+    WHERE r.value->>'attendanceRoleCode' = approval."policyRoleCode"
+      AND c.value->>'timeCategoryCode' = approval."categoryCode"
+  ) THEN
+    RAISE EXCEPTION 'shadow mapping policy role or category missing' USING ERRCODE = '23514';
+  END IF;
+  RETURN jsonb_build_object('durationSeconds', duration::BIGINT,
+    'recognizedPoints', evaluated->>'recognizedPoints', 'explanationCode', evaluated->>'explanationCode');
+END $$;`;
+
 function mappingInputsFixture() {
   const policy = fingerprintContributionPolicyVersion({
     schemaVersion: 1,
@@ -827,6 +890,302 @@ describe('E3-2 D2 mapping schema construction', () => {
       if (previous.url === undefined) delete process.env.DATABASE_URL;
       else process.env.DATABASE_URL = previous.url;
     }
+  });
+
+  it('matches pre-29.17 mapping results and exact exception priority on valid and ambiguous inputs', () => {
+    const base = mappingInputsFixture();
+    const cases: unknown[] = [base];
+    for (const hours of [null, '-0.01', '0', '0.01', '1.00', '1.01', '999.99', 'NaN']) {
+      for (const badHash of [false, true]) {
+        const hash = badHash ? 'b'.repeat(64) : base.policy.definitionHash;
+        cases.push({
+          ...base,
+          source: { ...base.source, legacyServiceHours: hours },
+          policy: { ...base.policy, definitionHash: hash },
+          approval: { ...base.approval, policyDefinitionHash: hash },
+        });
+      }
+    }
+    for (const role of ['member', 'missing', '', null])
+      for (const category of ['volunteer_service', 'training', 'invalid', null])
+        cases.push({
+          ...base,
+          approval: { ...base.approval, policyRoleCode: role, categoryCode: category },
+        });
+    const unseen = policyFixture();
+    unseen.roleRules.push({
+      attendanceRoleCode: 'unselected',
+      categoryRules: [
+        {
+          timeCategoryCode: 'training',
+          durationBands: [
+            { maxSecondsInclusive: null, recognizedPoints: '1000.00', explanationCode: 'invalid' },
+          ],
+        },
+      ],
+    });
+    for (const definitionJson of [null, {}, [], unseen, { ...policyFixture(), extra: true }])
+      cases.push({
+        ...base,
+        source: { ...base.source, legacyServiceHours: null },
+        policy: { ...base.policy, definitionJson },
+      });
+    for (const effectiveFrom of [null, 'infinity', '2099-01-01T00:00:00.001Z'])
+      cases.push({ ...base, policy: { ...base.policy, effectiveFrom } });
+    cases.push({
+      ...base,
+      approval: { ...base.approval, approvedAt: null },
+      policy: { ...base.policy, definitionJson: null },
+    });
+    const payload = JSON.stringify(cases).replaceAll("'", "''");
+    const results = JSON.parse(
+      sql(`BEGIN; ${MAPPING_INPUTS_REFERENCE_SQL}
+      CREATE FUNCTION pg_temp.mapping_differential(v JSONB) RETURNS JSONB LANGUAGE plpgsql AS $diff$
+      DECLARE a "ContributionShadowMappingApproval"; s "ContributionShadowLegacySourceAnchor";
+        o "ContributionShadowObservationWindow"; p "ContributionPolicyVersion"; t TIMESTAMPTZ;
+        actual JSONB; reference JSONB; actual_error TEXT; reference_error TEXT;
+      BEGIN
+        a:=jsonb_populate_record(NULL::"ContributionShadowMappingApproval",v->'approval');
+        s:=jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",v->'source');
+        o:=jsonb_populate_record(NULL::"ContributionShadowObservationWindow",v->'observation');
+        p:=jsonb_populate_record(NULL::"ContributionPolicyVersion",v->'policy'); t:=(v->>'auditTime')::TIMESTAMPTZ;
+        BEGIN reference:=pg_temp.reference_mapping_inputs_fn(a,s,o,p,t);
+        EXCEPTION WHEN OTHERS THEN reference_error:=SQLSTATE||':'||SQLERRM; END;
+        BEGIN actual:=csm_mapping_inputs_result_fn(a,s,o,p,t);
+        EXCEPTION WHEN OTHERS THEN actual_error:=SQLSTATE||':'||SQLERRM; END;
+        RETURN jsonb_build_object('same',actual IS NOT DISTINCT FROM reference AND actual_error IS NOT DISTINCT FROM reference_error,
+          'accepted',reference_error IS NULL,'error',reference_error);
+      END $diff$;
+      SELECT jsonb_agg(pg_temp.mapping_differential(value)) FROM jsonb_array_elements('${payload}'::jsonb);
+      ROLLBACK;`),
+    );
+    expect(results).toHaveLength(cases.length);
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accepted: true }),
+        expect.objectContaining({ accepted: false }),
+      ]),
+    );
+    expect(results.every((entry: { same: boolean }) => entry.same)).toBe(true);
+  });
+
+  it('matches fused policy proof to independent fingerprint and evaluator for complete E1 shapes', () => {
+    const base = mappingInputsFixture().policy;
+    const cases: unknown[] = [];
+    for (const roleCount of [0, 1, 2, 64])
+      for (const categoryCount of [0, 1, 4])
+        for (const bandCount of [1, 2, 16]) {
+          const definitionJson = {
+            defaultResult: { recognizedPoints: '0.00', explanationCode: 'default' },
+            roleRules: Array.from({ length: roleCount }, (_, r) => ({
+              attendanceRoleCode: `role_${r}`,
+              categoryRules: ['volunteer_service', 'training', 'organization', 'non_creditable']
+                .slice(0, categoryCount)
+                .reverse()
+                .map((timeCategoryCode) => ({
+                  timeCategoryCode,
+                  durationBands: Array.from({ length: bandCount }, (_, b) => ({
+                    maxSecondsInclusive:
+                      b === bandCount - 1
+                        ? null
+                        : b === bandCount - 2
+                          ? Number.MAX_SAFE_INTEGER
+                          : b,
+                    recognizedPoints: b % 2 === 0 ? '999.99' : '0.00',
+                    explanationCode: `band_${b}`,
+                  })),
+                })),
+            })).reverse(),
+          };
+          cases.push({ ...base, definitionJson });
+        }
+    for (const role of ['中文😀', 'quoted"role', 'slash\\role', 'e\u0301']) {
+      const definitionJson = policyFixture();
+      definitionJson.roleRules[0].attendanceRoleCode = role;
+      cases.push({ ...base, definitionJson });
+    }
+    const payload = JSON.stringify(cases).replaceAll("'", "''");
+    const result = JSON.parse(
+      sql(`BEGIN;
+      SELECT jsonb_build_object('cases',count(*),'matches',count(*) FILTER (WHERE
+        proof->>'definitionHash'=csm_policy_fingerprint_fn(policy) AND
+        proof->'evaluated'=csm_policy_evaluate_fn((policy)."definitionJson",role,'volunteer_service',36) AND
+        proof->'explicitRule'=to_jsonb(EXISTS(SELECT 1 FROM jsonb_array_elements((policy)."definitionJson"->'roleRules') r(value)
+          CROSS JOIN LATERAL jsonb_array_elements(r.value->'categoryRules') c(value)
+          WHERE r.value->>'attendanceRoleCode'=role AND c.value->>'timeCategoryCode'='volunteer_service'))))
+      FROM (SELECT jsonb_populate_record(NULL::"ContributionPolicyVersion",value) policy,
+        coalesce(value->'definitionJson'->'roleRules'->0->>'attendanceRoleCode','no_role') role
+        FROM jsonb_array_elements('${payload}'::jsonb)) inputs
+      CROSS JOIN LATERAL (SELECT csm_policy_evaluation_proof_fn(policy,role,'volunteer_service',36) proof) evaluated;
+      ROLLBACK;`),
+    );
+    expect(result).toEqual({ cases: cases.length, matches: cases.length });
+  });
+
+  it('matches selection hashes and fallback errors to the unchanged generic canonicalizer', () => {
+    const item = (name: string, evaluatorVersion = 1) => ({
+      scope: { layerCode: 'position', positionId: name, sessionId: null },
+      selection: {
+        mode: 'explicit',
+        pointer: {
+          policyId: name,
+          versionId: 'v',
+          definitionHash: 'a'.repeat(64),
+          evaluatorVersion,
+        },
+      },
+    });
+    const documents: unknown[] = [
+      null,
+      [],
+      {},
+      true,
+      'selection',
+      1,
+      { schemaVersion: 1, items: {} },
+      { schemaVersion: 2, items: {} },
+      {
+        schemaVersion: 1,
+        items: {
+          activity: {
+            scope: { layerCode: 'activity', positionId: null, sessionId: null },
+            selection: { mode: 'inherit', pointer: null },
+          },
+        },
+      },
+    ];
+    for (const evaluator of [1, -1, 0, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1, 0.5])
+      documents.push({ schemaVersion: 1, items: { position: item('test', evaluator) } });
+    for (const name of ['a', '中文😀', 'quoted"key', 'slash\\key', "quote'key", 'e\u0301', '\n'])
+      documents.push({
+        schemaVersion: 1,
+        items: { z: item(name), [name]: item(name), a: item('first') },
+      });
+    documents.push(
+      { schemaVersion: 1, items: { x: { ...item('x'), extra: true } } },
+      { schemaVersion: 1, items: { x: { scope: { layerCode: 'activity' }, selection: null } } },
+      {
+        schemaVersion: 1,
+        items: {
+          x: {
+            ...item('x'),
+            selection: { mode: 'explicit', pointer: { ...item('x').selection.pointer, extra: 1 } },
+          },
+        },
+      },
+      { schemaVersion: 1, items: [], extra: true },
+    );
+    const payload = JSON.stringify(documents).replaceAll("'", "''");
+    const result = JSON.parse(
+      sql(`BEGIN;
+      CREATE FUNCTION pg_temp.selection_differential(doc JSONB,version INTEGER) RETURNS JSONB LANGUAGE plpgsql AS $diff$
+      DECLARE actual TEXT; reference TEXT; actual_error TEXT; reference_error TEXT;
+      BEGIN
+        BEGIN reference:=encode(sha256(convert_to(csm_manifest_canonical_fn(jsonb_build_object('definition',doc,'schemaVersion',version)),'UTF8')),'hex');
+        EXCEPTION WHEN OTHERS THEN reference_error:=SQLSTATE||':'||SQLERRM; END;
+        BEGIN actual:=csm_selection_hash_fn(doc,version);
+        EXCEPTION WHEN OTHERS THEN actual_error:=SQLSTATE||':'||SQLERRM; END;
+        RETURN jsonb_build_object('same',actual IS NOT DISTINCT FROM reference AND actual_error IS NOT DISTINCT FROM reference_error,
+          'accepted',reference_error IS NULL);
+      END $diff$;
+      SELECT jsonb_agg(pg_temp.selection_differential(value,version))
+      FROM (SELECT value FROM jsonb_array_elements('${payload}'::jsonb) UNION ALL SELECT NULL::JSONB) docs
+      CROSS JOIN unnest(ARRAY[1,2,NULL]::INTEGER[]) version;
+      ROLLBACK;`),
+    );
+    expect(result).toHaveLength((documents.length + 1) * 3);
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ accepted: true }),
+        expect.objectContaining({ accepted: false }),
+      ]),
+    );
+    expect(result.every((entry: { same: boolean }) => entry.same)).toBe(true);
+  });
+
+  it('measures old and optimized pure calculations with equal results and counts one policy validation', () => {
+    const input = JSON.stringify(mappingInputsFixture()).replaceAll("'", "''");
+    const rows: Array<{ variant: string; rows: number; elapsedMs: number }> = JSON.parse(
+      sql(`BEGIN;
+      ${MAPPING_INPUTS_REFERENCE_SQL}
+      CREATE TEMP TABLE calculation_timing(variant TEXT,rows INTEGER,elapsed_ms NUMERIC);
+      DO $timing$
+      DECLARE v JSONB:='${input}'::JSONB; a "ContributionShadowMappingApproval"; s "ContributionShadowLegacySourceAnchor";
+        o "ContributionShadowObservationWindow"; p "ContributionPolicyVersion"; t TIMESTAMPTZ;
+        doc JSONB; old_result JSONB; actual JSONB; old_hash TEXT; actual_hash TEXT;
+        variant TEXT; n INTEGER; started TIMESTAMPTZ;
+      BEGIN
+        a:=jsonb_populate_record(NULL::"ContributionShadowMappingApproval",v->'approval');
+        s:=jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",v->'source');
+        o:=jsonb_populate_record(NULL::"ContributionShadowObservationWindow",v->'observation');
+        p:=jsonb_populate_record(NULL::"ContributionPolicyVersion",v->'policy'); t:=(v->>'auditTime')::TIMESTAMPTZ;
+        doc:='{"schemaVersion":1,"items":{"activity":{"scope":{"layerCode":"activity","positionId":null,"sessionId":null},"selection":{"mode":"inherit","pointer":null}},"position:s:p":{"scope":{"layerCode":"position","sessionId":"s","positionId":"p"},"selection":{"mode":"explicit","pointer":{"policyId":"policy","versionId":"version","definitionHash":"hash","evaluatorVersion":1}}}}}'::JSONB;
+        old_result:=pg_temp.reference_mapping_inputs_fn(a,s,o,p,t);
+        old_hash:=encode(sha256(convert_to(csm_manifest_canonical_fn(jsonb_build_object('definition',doc,'schemaVersion',1)),'UTF8')),'hex');
+        FOREACH variant IN ARRAY ARRAY['old_mapping','new_mapping','new_mapping','old_mapping','old_selection','new_selection','new_selection','old_selection'] LOOP
+          started:=clock_timestamp();
+          FOR n IN 1..2000 LOOP
+            IF variant='old_mapping' THEN actual:=pg_temp.reference_mapping_inputs_fn(a,s,o,p,t);
+            ELSIF variant='new_mapping' THEN actual:=csm_mapping_inputs_result_fn(a,s,o,p,t);
+            ELSIF variant='old_selection' THEN actual_hash:=encode(sha256(convert_to(csm_manifest_canonical_fn(jsonb_build_object('definition',doc,'schemaVersion',1)),'UTF8')),'hex');
+            ELSE actual_hash:=csm_selection_hash_fn(doc,1); END IF;
+            IF (variant IN ('old_mapping','new_mapping') AND actual IS DISTINCT FROM old_result) OR
+              (variant IN ('old_selection','new_selection') AND actual_hash IS DISTINCT FROM old_hash) THEN
+              RAISE EXCEPTION 'pure calculation timing result mismatch';
+            END IF;
+          END LOOP;
+          INSERT INTO calculation_timing VALUES(variant,2000,extract(epoch FROM clock_timestamp()-started)*1000);
+        END LOOP;
+      END $timing$;
+      SELECT jsonb_agg(jsonb_build_object('variant',variant,'rows',rows,'elapsedMs',elapsed_ms)) FROM calculation_timing;
+      ROLLBACK;`),
+    );
+    expect(rows.map(({ variant, rows }) => ({ variant, rows }))).toEqual(
+      [
+        'old_mapping',
+        'new_mapping',
+        'new_mapping',
+        'old_mapping',
+        'old_selection',
+        'new_selection',
+        'new_selection',
+        'old_selection',
+      ].map((variant) => ({ variant, rows: 2000 })),
+    );
+    expect(rows.every((row) => Number.isFinite(row.elapsedMs) && row.elapsedMs > 0)).toBe(true);
+    console.info('[shadow-pure-calculation-timing]', JSON.stringify(rows));
+    const calls = JSON.parse(
+      sql(`BEGIN; SET LOCAL track_functions='all';
+      DO $count$
+      DECLARE v JSONB:='${input}'::JSONB;
+      BEGIN
+        PERFORM csm_mapping_inputs_result_fn(
+          jsonb_populate_record(NULL::"ContributionShadowMappingApproval",v->'approval'),
+          jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",v->'source'),
+          jsonb_populate_record(NULL::"ContributionShadowObservationWindow",v->'observation'),
+          jsonb_populate_record(NULL::"ContributionPolicyVersion",v->'policy'),(v->>'auditTime')::TIMESTAMPTZ);
+      END $count$;
+      SELECT coalesce(jsonb_object_agg(funcname,calls),'{}'::JSONB) FROM pg_stat_xact_user_functions
+        WHERE funcname IN ('csm_mapping_inputs_result_fn','csm_policy_evaluation_proof_fn','csm_policy_evaluate_fn','csm_policy_fingerprint_fn');
+      ROLLBACK;`),
+    );
+    expect(calls.csm_mapping_inputs_result_fn).toBe(1);
+    expect(calls.csm_policy_evaluation_proof_fn).toBe(1);
+    expect(calls.csm_policy_evaluate_fn).toBe(1);
+    expect(calls.csm_policy_fingerprint_fn ?? 0).toBe(0);
+  });
+
+  it('keeps pure proof helpers invoker-only and rejects caller-computed forged application points', () => {
+    expect(
+      sql(`SELECT count(*) FROM pg_proc WHERE proname IN ('csm_policy_evaluation_proof_fn','csm_selection_hash_fn')
+      AND pronamespace='public'::regnamespace AND NOT prosecdef AND provolatile='i'`),
+    ).toBe('2');
+    expect(() =>
+      sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      SELECT csm_selection_hash_fn('{"schemaVersion":1,"items":{}}'::JSONB,1);
+      ${applicationInsertSql({ policyPoints: 999.99 })} ROLLBACK;`),
+    ).toThrow('shadow mapping application differs from database proof');
   });
 
   it('matches the fixed pre-optimization text validator across ASCII and Unicode boundaries', () => {

@@ -459,13 +459,78 @@ BEGIN
   END LOOP;
 END $$;
 
+-- Pure positive-path proof: one full policy validation computes both hash and result.
+-- This grants no authority; the application guard still reads the actual immutable rows.
+CREATE FUNCTION csm_policy_evaluation_proof_fn(policy "ContributionPolicyVersion",
+  role_code TEXT, category_code TEXT, duration_seconds BIGINT) RETURNS JSONB
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path = pg_catalog, public AS $$
+DECLARE envelope JSONB; canonical_roles TEXT; canonical_envelope TEXT;
+  evaluated JSONB; explicit_rule BOOLEAN;
+BEGIN
+  IF policy."schemaVersion" IS DISTINCT FROM 1 OR policy."evaluatorVersion" IS DISTINCT FROM 1 OR
+    policy."effectiveFrom" IS NULL OR
+    (policy."effectiveUntil" IS NOT NULL AND policy."effectiveUntil" <= policy."effectiveFrom") THEN
+    RAISE EXCEPTION 'invalid contribution policy metadata' USING ERRCODE = '23514';
+  END IF;
+  -- Validate every nested rule first, including unselected/default-only definitions.
+  evaluated := csm_policy_evaluate_fn(policy."definitionJson", role_code, category_code, duration_seconds);
+  envelope := jsonb_build_object('schemaVersion',1,'definition',jsonb_build_object(
+    'definition',policy."definitionJson", 'evaluatorVersion',policy."evaluatorVersion",
+    'effectiveFrom',to_char(policy."effectiveFrom",'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'effectiveUntil',to_char(policy."effectiveUntil",'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')));
+  IF NOT csm_manifest_instant_fn(envelope->'definition'->'effectiveFrom') OR
+    (envelope->'definition'->'effectiveUntil' <> 'null'::JSONB AND
+      NOT csm_manifest_instant_fn(envelope->'definition'->'effectiveUntil')) THEN
+    RAISE EXCEPTION 'invalid contribution policy metadata' USING ERRCODE = '23514';
+  END IF;
+  -- The full evaluator above validates all keys, strings and integer bounds,
+  -- including unselected rules. Only then serialize this fixed E1 shape.
+  -- Fixed object keys use C order; every array retains its stored ordinality.
+  SELECT coalesce(string_agg(
+    '{"attendanceRoleCode":' || (r.value->'attendanceRoleCode')::TEXT ||
+    ',"categoryRules":[' || categories.content || ']}', ',' ORDER BY r.ordinal), '')
+    INTO canonical_roles
+    FROM jsonb_array_elements(policy."definitionJson"->'roleRules')
+      WITH ORDINALITY AS r(value,ordinal)
+    CROSS JOIN LATERAL (
+      SELECT coalesce(string_agg(
+        '{"durationBands":[' || bands.content || '],"timeCategoryCode":' ||
+        (c.value->'timeCategoryCode')::TEXT || '}', ',' ORDER BY c.ordinal), '') AS content
+      FROM jsonb_array_elements(r.value->'categoryRules') WITH ORDINALITY AS c(value,ordinal)
+      CROSS JOIN LATERAL (
+        SELECT string_agg(
+          '{"explanationCode":' || (b.value->'explanationCode')::TEXT ||
+          ',"maxSecondsInclusive":' ||
+          CASE WHEN b.value->'maxSecondsInclusive' = 'null'::JSONB THEN 'null'
+            ELSE (b.value->>'maxSecondsInclusive')::NUMERIC::BIGINT::TEXT END ||
+          ',"recognizedPoints":' || (b.value->'recognizedPoints')::TEXT || '}',
+          ',' ORDER BY b.ordinal) AS content
+        FROM jsonb_array_elements(c.value->'durationBands') WITH ORDINALITY AS b(value,ordinal)
+      ) AS bands
+    ) AS categories;
+  canonical_envelope := '{"definition":{"definition":{"defaultResult":{"explanationCode":' ||
+    (policy."definitionJson"->'defaultResult'->'explanationCode')::TEXT ||
+    ',"recognizedPoints":' || (policy."definitionJson"->'defaultResult'->'recognizedPoints')::TEXT ||
+    '},"roleRules":[' || canonical_roles ||
+    ']},"effectiveFrom":' || (envelope->'definition'->'effectiveFrom')::TEXT ||
+    ',"effectiveUntil":' || (envelope->'definition'->'effectiveUntil')::TEXT ||
+    ',"evaluatorVersion":1},"schemaVersion":1}';
+  SELECT EXISTS (
+    SELECT 1 FROM jsonb_array_elements(policy."definitionJson"->'roleRules') AS r(value)
+    CROSS JOIN LATERAL jsonb_array_elements(r.value->'categoryRules') AS c(value)
+    WHERE r.value->>'attendanceRoleCode' = role_code AND c.value->>'timeCategoryCode' = category_code
+  ) INTO explicit_rule;
+  RETURN jsonb_build_object('definitionHash', encode(sha256(convert_to(canonical_envelope,'UTF8')),'hex'),
+    'evaluated', evaluated, 'explicitRule', explicit_rule);
+END $$;
+
 CREATE FUNCTION csm_mapping_inputs_result_fn(
   approval "ContributionShadowMappingApproval", source "ContributionShadowLegacySourceAnchor",
   observation "ContributionShadowObservationWindow", policy "ContributionPolicyVersion",
   audit_time TIMESTAMPTZ
 ) RETURNS JSONB LANGUAGE plpgsql IMMUTABLE SET search_path = pg_catalog, public AS $$
 DECLARE
-  duration NUMERIC; evaluated JSONB;
+  duration NUMERIC; evaluated JSONB; evaluation_proof JSONB;
 BEGIN
   IF audit_time IS NULL OR approval."approvedAt" IS NULL OR
     approval."approvedAt" > audit_time OR approval."effectiveFrom" IS NULL OR
@@ -493,6 +558,26 @@ BEGIN
     policy."schemaVersion" IS DISTINCT FROM 1 OR policy."evaluatorVersion" IS DISTINCT FROM 1 OR
     approval."evaluatorVersion" IS DISTINCT FROM policy."evaluatorVersion" THEN
     RAISE EXCEPTION 'shadow mapping policy version mismatch' USING ERRCODE = '23514';
+  END IF;
+  -- Try only a fully witnessed success. All misses retain the original error order.
+  IF source."legacyServiceHours" IS NOT NULL AND source."legacyServiceHours" >= 0 AND
+    source."legacyServiceHours" <= 999.99 THEN
+    duration := source."legacyServiceHours" * 3600;
+    IF trunc(duration) = duration THEN
+      BEGIN
+        evaluation_proof := csm_policy_evaluation_proof_fn(policy, approval."policyRoleCode",
+          approval."categoryCode", duration::BIGINT);
+      EXCEPTION WHEN check_violation THEN
+        -- Only pure policy validation uses 23514 here; runtime/cancellation errors propagate.
+        evaluation_proof := NULL;
+      END;
+      IF evaluation_proof->>'definitionHash' = policy."definitionHash" AND
+        evaluation_proof->'explicitRule' = 'true'::JSONB THEN
+        evaluated := evaluation_proof->'evaluated';
+        RETURN jsonb_build_object('durationSeconds', duration::BIGINT,
+          'recognizedPoints', evaluated->>'recognizedPoints', 'explanationCode', evaluated->>'explanationCode');
+      END IF;
+    END IF;
   END IF;
   IF policy."definitionHash" IS DISTINCT FROM csm_policy_fingerprint_fn(policy) THEN
     RAISE EXCEPTION 'shadow mapping policy definition hash mismatch' USING ERRCODE = '23514';
@@ -872,6 +957,60 @@ CREATE FUNCTION csm_runtime_authority_fn() RETURNS JSONB
 LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$ SELECT NULL::JSONB $$;
 REVOKE ALL ON FUNCTION csm_runtime_authority_fn() FROM PUBLIC;
 
+-- Fixed E1 selection shape only. Unknown shapes use the original generic canonicalizer.
+-- Pure argument computation, never a stored/caller-supplied validation capability.
+CREATE FUNCTION csm_selection_hash_fn(selection_json JSONB, schema_version INTEGER) RETURNS TEXT
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path = pg_catalog, public AS $$
+DECLARE
+  entry RECORD; scope JSONB; selection JSONB; pointer JSONB;
+  evaluator NUMERIC; pointer_text TEXT; items_text TEXT := ''; item_text TEXT;
+BEGIN
+  <<fixed_shape>>
+  BEGIN
+    IF schema_version IS DISTINCT FROM 1 OR
+      NOT csm_exact_keys_fn(selection_json, ARRAY['schemaVersion','items']) OR
+      selection_json->'schemaVersion' IS DISTINCT FROM '1'::JSONB OR
+      jsonb_typeof(selection_json->'items') IS DISTINCT FROM 'object' THEN
+      EXIT fixed_shape;
+    END IF;
+    FOR entry IN SELECT key, value FROM jsonb_each(selection_json->'items') ORDER BY key COLLATE "C" LOOP
+      IF NOT csm_exact_keys_fn(entry.value, ARRAY['scope','selection']) THEN EXIT fixed_shape; END IF;
+      scope := entry.value->'scope'; selection := entry.value->'selection';
+      IF NOT csm_exact_keys_fn(scope, ARRAY['layerCode','sessionId','positionId']) OR
+        NOT csm_exact_keys_fn(selection, ARRAY['mode','pointer']) THEN EXIT fixed_shape; END IF;
+      IF (jsonb_typeof(scope->'layerCode') = 'string' AND
+        jsonb_typeof(scope->'sessionId') IN ('string','null') AND
+        jsonb_typeof(scope->'positionId') IN ('string','null') AND
+        jsonb_typeof(selection->'mode') = 'string') IS NOT TRUE THEN EXIT fixed_shape; END IF;
+      pointer := selection->'pointer';
+      IF pointer = 'null'::JSONB THEN
+        pointer_text := 'null';
+      ELSE
+        IF NOT csm_exact_keys_fn(pointer, ARRAY['policyId','versionId','definitionHash','evaluatorVersion']) THEN
+          EXIT fixed_shape;
+        END IF;
+        IF (jsonb_typeof(pointer->'policyId') = 'string' AND
+          jsonb_typeof(pointer->'versionId') = 'string' AND
+          jsonb_typeof(pointer->'definitionHash') = 'string' AND
+          jsonb_typeof(pointer->'evaluatorVersion') = 'number') IS NOT TRUE THEN EXIT fixed_shape; END IF;
+        evaluator := (pointer->>'evaluatorVersion')::NUMERIC;
+        IF abs(evaluator) > 9007199254740991 OR trunc(evaluator) <> evaluator THEN EXIT fixed_shape; END IF;
+        pointer_text := '{"definitionHash":' || (pointer->'definitionHash')::TEXT ||
+          ',"evaluatorVersion":' || evaluator::BIGINT::TEXT ||
+          ',"policyId":' || (pointer->'policyId')::TEXT || ',"versionId":' || (pointer->'versionId')::TEXT || '}';
+      END IF;
+      item_text := to_jsonb(entry.key)::TEXT || ':{"scope":{"layerCode":' || (scope->'layerCode')::TEXT ||
+        ',"positionId":' || (scope->'positionId')::TEXT || ',"sessionId":' || (scope->'sessionId')::TEXT ||
+        '},"selection":{"mode":' || (selection->'mode')::TEXT || ',"pointer":' || pointer_text || '}}';
+      items_text := items_text || CASE WHEN items_text = '' THEN '' ELSE ',' END || item_text;
+    END LOOP;
+    RETURN encode(sha256(convert_to('{"definition":{"items":{' || items_text ||
+      '},"schemaVersion":1},"schemaVersion":1}', 'UTF8')), 'hex');
+  END fixed_shape;
+  RETURN encode(sha256(convert_to(csm_manifest_canonical_fn(jsonb_build_object(
+    'definition',selection_json,'schemaVersion',schema_version)), 'UTF8')), 'hex');
+END $$;
+
 CREATE FUNCTION csm_application_result_fn(source_id TEXT, approval_id TEXT, item_id TEXT)
 RETURNS JSONB LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
@@ -899,8 +1038,7 @@ BEGIN
   SELECT * INTO item FROM "ActivityContributionPolicySelectionItem" WHERE id = item_id;
   SELECT * INTO revision FROM "ActivityContributionPolicySelectionRevision" WHERE id = item."selectionRevisionId";
   SELECT "createdAt" AT TIME ZONE 'UTC' INTO source_time FROM audit_logs WHERE id = source."auditLogId";
-  selection_hash := encode(sha256(convert_to(csm_manifest_canonical_fn(jsonb_build_object(
-    'definition',revision."selectionJson",'schemaVersion',revision."schemaVersion")), 'UTF8')), 'hex');
+  selection_hash := csm_selection_hash_fn(revision."selectionJson", revision."schemaVersion");
   IF item.id IS NULL OR revision.id IS NULL OR item.mode IS DISTINCT FROM 'explicit' OR
     item."activityId" IS DISTINCT FROM source."activityId" OR revision."activityId" IS DISTINCT FROM source."activityId" OR
     revision."schemaVersion" IS DISTINCT FROM 1 OR revision."selectionHash" IS DISTINCT FROM selection_hash OR
