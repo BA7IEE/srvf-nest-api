@@ -491,6 +491,15 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者分别明确回复第134条3b摘要 `404caabf01e9aeb5b9744423d02212c6c83f5becae8640050fa6cae9b83b2cab`、第135条3b摘要 `51d1ee6a5ccc70c43a32d3a2e775f13f2df47638b6ba68330f21baec5a587a26`。对应 `20260929222500_activity_os_r5_e3_shadow_source_proof` 与 `20260930120000_activity_os_r5_e3_shadow_mapping_proof` 完整SQL SHA-256已逐份重新计算并核对一致。提交推送沿第29.17节既有完整授权，不由本签扩大。
 - **对拍**:有 —— `migration-total` = `135`
 
+> **当前正式签字（2026-10-01，第29.21.12节；覆盖上方第134、135条当前SQL摘要，历史签字保留）**：维护者明确确认本轮两项3b及新增DB执行面4b重签。
+
+- **结论**:认可
+- **理由**:本轮将来源、应用、比较的批量复算收敛到实际集合触发器；维护者已接受第29.21.3节明确的校验时点、复合错误顺序及冲突跳过行差异。保留真实锁、锁后资格复核、旧断言、不可变与闭包守卫及来源7秒／映射5秒预算。w98完整来源88/88、映射296/296通过，原2,000条链分别943ms／2,350ms；最后辅助代码定向复核2项通过，映射2,496ms。首轮quick的4项新测试lint失败已单独修复复核，其余类型、harness及9,430条单测通过；不将整条quick记为退出0，不以本地结果代替PR CI。迁移总数仍135，无新增表或字段。
+- **签字人**:维护者
+- **日期**:2026-10-01
+- **依据**:维护者明确回复「确认第29.21.12节第134、135条3b及新增DB执行面4b重签。」第134条 `20260929222500_activity_os_r5_e3_shadow_source_proof` 完整SQL SHA-256为 `37f204e1c46a08040c04775e51823659399d18f3e11b0c873d502de464b3714f`；第135条 `20260930120000_activity_os_r5_e3_shadow_mapping_proof` 为 `7e60dec93122ff94dca8910731138ef41aeff820d0cf5596dacf260866e5a390`。两份实际摘要已重新核对一致；普通提交推送沿第29.21节既有授权，保持#1370 Draft，不授予Ready、合并、生产或开关权限。
+- **对拍**:有 —— `migration-total` = `135`
+
 ### 4b — 「字典、Audit events」的对账
 
 > **当前重签（2026-09-25，E2 第一层隔离能力）**：维护者确认权限码仍为269，
@@ -604,6 +613,15 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **签字人**:维护者
 - **日期**:2026-09-30
 - **依据**:维护者对明确列出本轮完整摘要、计数及访问边界的问题回复「确认上述第135条3b及本轮4b重签」。
+- **对拍**:有 —— `seed-sha256-12` = `af0277a6ba78`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `175`;`audit-event-registry-active` = `170`
+
+> **当前正式签字（2026-10-01，第29.21.12节新增DB执行面；原Human访问边界与计数保持）**：维护者确认本轮两项集合函数的属主与直接执行限制，不能以此前Human权限签字代替本项确认。
+
+- **结论**:认可
+- **理由**:ACL脚本仅将 `csm_application_set_guard_fn()`、`cscr_insert_set_guard_fn()` 加入既有NOLOGIN属主、PUBLIC／registrar／runtime直接EXECUTE撤销及属主核验清单；两函数固定search_path、VOLATILE、SECURITY DEFINER，来源集合函数仍为SECURITY INVOKER。不新增角色、LOGIN配置、表级写权限、Human权限或审计事件。真实受限LOGIN、直接EXECUTE拒绝及真实锁／回滚验证通过；w98库、连接与三个具名测试角色已回收。权限270、审计175总计／170活跃、字典30类／277项保持；登记仍仅显式GLOBAL Human，15个内建角色零默认、SUPER_ADMIN不直通、Service Principal／delegation禁止，真实未签映射继续hold。
+- **签字人**:维护者
+- **日期**:2026-10-01
+- **依据**:维护者明确回复「确认第29.21.12节第134、135条3b及新增DB执行面4b重签。」`scripts/sql/contribution-shadow-registration-roles.sql` 完整SHA-256为 `65746a8892017144270034e654b1cee77c539d7374b27e9daca1faa95225aa8b`；seed仍为 `af0277a6ba784e040ccb9610b15691b2b2c615028301018514b861f7e4f6181b`，权限目录仍为 `d2edf001cb215c07229ad3579a4cfa0aab285a7330fb5d7abe846fbdd28ad153`。本签只认可指定执行面，不授权真实映射登记、启用shadow／Gate、生产、Ready或合并。
 - **对拍**:有 —— `seed-sha256-12` = `af0277a6ba78`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `175`;`audit-event-registry-active` = `170`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;

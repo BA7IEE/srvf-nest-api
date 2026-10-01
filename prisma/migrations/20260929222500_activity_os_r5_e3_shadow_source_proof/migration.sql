@@ -118,12 +118,6 @@ DECLARE
   v_activity_type TEXT;
   v_rule "ContributionRule"%ROWTYPE;
   v_active_count INTEGER;
-  v_fact JSONB;
-  v_context JSONB;
-  v_audit_sheet JSONB;
-  v_records JSONB;
-  v_operation TEXT;
-  v_fact_found BOOLEAN := FALSE;
   v_expected NUMERIC(5,2);
 BEGIN
   SELECT * INTO v_audit FROM "audit_logs" WHERE "id" = NEW."auditLogId" FOR SHARE;
@@ -133,21 +127,10 @@ BEGIN
   IF v_audit."id" IS NULL OR v_window."id" IS NULL OR v_sheet."id" IS NULL OR v_record."id" IS NULL THEN
     RAISE EXCEPTION 'shadow source anchor missing' USING ERRCODE = '23514';
   END IF;
-  -- Row-local projections only: no cached facts cross rows, statements or locks.
-  -- Flatten an object once instead of repeatedly expanding the same toasted audit.
-  -- Non-objects keep their original value; object concatenation must not coerce them.
-  v_context := CASE WHEN jsonb_typeof(v_audit."context") = 'object'
-    THEN v_audit."context" || '{}'::JSONB ELSE v_audit."context" END;
-  -- Full paths avoid copying the entire large after object before its children.
-  v_audit_sheet := v_context #> '{after,sheet}';
-  v_records := v_context #> '{after,records}';
-  v_operation := v_context #>> '{extra,operation}';
   IF v_audit."shadowProofRequired" IS DISTINCT FROM TRUE OR
      v_audit."success" IS DISTINCT FROM TRUE OR
      v_audit."resourceType" IS DISTINCT FROM 'attendance_sheet' OR
      v_audit."resourceId" IS DISTINCT FROM NEW."sheetId" OR
-     ((v_audit."event" = 'attendance-sheet.submit' AND v_operation = 'submit') OR
-      (v_audit."event" = 'attendance-sheet.edit' AND v_operation = 'edit')) IS NOT TRUE OR
      (v_audit."createdAt" AT TIME ZONE 'UTC') < v_window."startsAt" OR
      (v_audit."createdAt" AT TIME ZONE 'UTC') >= v_window."endsAt" OR
      v_sheet."activityId" IS DISTINCT FROM NEW."activityId" OR
@@ -157,44 +140,12 @@ BEGIN
      v_record."roleCode" IS DISTINCT FROM NEW."attendanceRoleCode" OR
      v_record."serviceHours" IS DISTINCT FROM NEW."legacyServiceHours" OR
      v_record."contributionPoints" IS DISTINCT FROM NEW."legacyPoints" OR
-     v_record."deletedAt" IS NOT NULL OR
-     v_audit_sheet->>'activityId' IS DISTINCT FROM NEW."activityId" OR
-     v_audit_sheet->>'version' IS DISTINCT FROM NEW."sheetVersion"::TEXT THEN
+     v_record."deletedAt" IS NOT NULL THEN
     RAISE EXCEPTION 'shadow source chain mismatch' USING ERRCODE = '23514';
   END IF;
   SELECT "activityTypeCode" INTO v_activity_type FROM "Activity" WHERE "id" = NEW."activityId" FOR SHARE;
   IF v_activity_type IS DISTINCT FROM NEW."activityTypeCode" THEN
     RAISE EXCEPTION 'shadow activity type mismatch' USING ERRCODE = '23514';
-  END IF;
-  IF jsonb_typeof(v_records) IS DISTINCT FROM 'array' THEN
-    RAISE EXCEPTION 'shadow audit records are not an array' USING ERRCODE = '23514';
-  END IF;
-  -- This subset cannot equal a non-string JSON value after ->> coercion.
-  -- Strict lookup is only a candidate. SQL/JSON comparisons can match an
-  -- array-valued id too, so require an exact string witness afterward.
-  -- Missing/malformed candidates and silent misses use the original SELECT.
-  -- A mismatched first string object's facts must still reject.
-  IF NEW."recordId" COLLATE "C" ~ '^[A-Za-z_][A-Za-z0-9_-]*$' AND
-     NEW."recordId" NOT IN ('true', 'false', 'null') THEN
-    v_fact := jsonb_path_query_first(v_records,
-      'strict $[*] ? (@.id == $wanted)',
-      jsonb_build_object('wanted', NEW."recordId"), TRUE);
-    v_fact_found := (jsonb_typeof(v_fact->'id') = 'string' AND
-      v_fact->>'id' = NEW."recordId") IS TRUE;
-  END IF;
-  IF NOT v_fact_found THEN
-    SELECT e.value INTO v_fact
-      FROM jsonb_array_elements(v_records) AS e(value)
-      WHERE e.value->>'id' = NEW."recordId";
-    v_fact_found := FOUND;
-  END IF;
-  IF NOT v_fact_found OR v_fact->>'memberId' IS DISTINCT FROM NEW."memberId" OR
-     v_fact->>'roleCode' IS DISTINCT FROM NEW."attendanceRoleCode" OR
-     (CASE WHEN v_fact->>'serviceHours' ~ '^[0-9]+(\.[0-9]+)?$'
-       THEN (v_fact->>'serviceHours')::NUMERIC ELSE NULL END) IS DISTINCT FROM NEW."legacyServiceHours" OR
-     (CASE WHEN v_fact->>'contributionPoints' ~ '^[0-9]+(\.[0-9]+)?$'
-       THEN (v_fact->>'contributionPoints')::NUMERIC ELSE NULL END) IS DISTINCT FROM NEW."legacyPoints" THEN
-    RAISE EXCEPTION 'shadow source not in exact audit snapshot' USING ERRCODE = '23514';
   END IF;
   IF NEW."sourceKindCode" = 'matched' THEN
     v_active_count := 0;
@@ -226,13 +177,81 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'shadow no_match observed active rule' USING ERRCODE = '23514';
   END IF;
-  IF NEW."legacySourceHash" IS DISTINCT FROM cslsa_source_hash_fn(NEW) THEN
-    RAISE EXCEPTION 'shadow source digest mismatch' USING ERRCODE = '23514';
-  END IF;
   RETURN NEW;
 END $$;
 CREATE TRIGGER cslsa_insert_guard BEFORE INSERT ON "ContributionShadowLegacySourceAnchor"
   FOR EACH ROW EXECUTE FUNCTION cslsa_insert_guard_fn();
+
+-- Only the database's actual inserted set is evidence. All locks above remain
+-- held; this function neither trusts caller flags nor persists computed facts.
+CREATE FUNCTION cslsa_insert_set_guard_fn() RETURNS trigger
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  v_audit "audit_logs";
+  v_context JSONB; v_audit_sheet JSONB; v_records JSONB; v_operation TEXT;
+  v_error TEXT; v_first_error TEXT; v_first_stage INTEGER; v_first_id TEXT;
+  v_bad RECORD;
+BEGIN
+  IF TG_OP <> 'INSERT' OR TG_LEVEL <> 'STATEMENT' OR
+    TG_RELID <> 'public."ContributionShadowLegacySourceAnchor"'::regclass THEN
+    RAISE EXCEPTION 'shadow source transition relation invalid' USING ERRCODE = '23514';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM cslsa_inserted_rows) THEN RETURN NULL; END IF;
+  FOR v_audit IN SELECT a.* FROM public.audit_logs a
+    JOIN (SELECT DISTINCT "auditLogId" FROM cslsa_inserted_rows) inserted
+      ON inserted."auditLogId" = a.id
+    ORDER BY a.id COLLATE "C"
+  LOOP
+  -- Row-local projections only: scoped to one locked audit in this statement.
+  -- Non-objects retain their shape; no implicit object/array coercion.
+  v_context := CASE WHEN jsonb_typeof(v_audit."context") = 'object'
+    THEN v_audit."context" || '{}'::JSONB ELSE v_audit."context" END;
+  v_audit_sheet := v_context #> '{after,sheet}';
+  v_records := v_context #> '{after,records}';
+  v_operation := v_context #>> '{extra,operation}';
+  -- Projection end: instrumentation reads this active function.
+    WITH facts AS MATERIALIZED (
+      SELECT DISTINCT ON (e.value->>'id') e.value->>'id' AS record_id, e.value AS fact
+      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(v_records) = 'array'
+        THEN v_records ELSE '[]'::JSONB END) WITH ORDINALITY AS e(value,ordinal)
+      ORDER BY e.value->>'id', e.ordinal
+    ), checked AS (
+      SELECT n.id, CASE
+        WHEN ((v_audit.event = 'attendance-sheet.submit' AND v_operation = 'submit') OR
+          (v_audit.event = 'attendance-sheet.edit' AND v_operation = 'edit')) IS NOT TRUE OR
+          v_audit_sheet->>'activityId' IS DISTINCT FROM n."activityId" OR
+          v_audit_sheet->>'version' IS DISTINCT FROM n."sheetVersion"::TEXT THEN 1
+        WHEN jsonb_typeof(v_records) IS DISTINCT FROM 'array' THEN 2
+        WHEN f.record_id IS NULL OR f.fact->>'memberId' IS DISTINCT FROM n."memberId" OR
+          f.fact->>'roleCode' IS DISTINCT FROM n."attendanceRoleCode" OR
+          (CASE WHEN f.fact->>'serviceHours' ~ '^[0-9]+(\.[0-9]+)?$'
+            THEN (f.fact->>'serviceHours')::NUMERIC END) IS DISTINCT FROM n."legacyServiceHours" OR
+          (CASE WHEN f.fact->>'contributionPoints' ~ '^[0-9]+(\.[0-9]+)?$'
+            THEN (f.fact->>'contributionPoints')::NUMERIC END) IS DISTINCT FROM n."legacyPoints" THEN 3
+        WHEN n."legacySourceHash" IS DISTINCT FROM
+          cslsa_source_hash_fn(n::"ContributionShadowLegacySourceAnchor") THEN 4
+      END AS stage
+      FROM cslsa_inserted_rows n LEFT JOIN facts f ON f.record_id = n."recordId"
+      WHERE n."auditLogId" = v_audit.id
+    ) SELECT id,stage INTO v_bad FROM checked WHERE stage IS NOT NULL
+      ORDER BY stage,id COLLATE "C" LIMIT 1;
+    IF FOUND AND (v_first_stage IS NULL OR v_bad.stage < v_first_stage OR
+      (v_bad.stage = v_first_stage AND v_bad.id COLLATE "C" < v_first_id COLLATE "C")) THEN
+      v_first_stage := v_bad.stage; v_first_id := v_bad.id;
+    END IF;
+  END LOOP;
+  IF v_first_stage IS NOT NULL THEN
+    v_error := CASE v_first_stage WHEN 1 THEN 'shadow source chain mismatch'
+      WHEN 2 THEN 'shadow audit records are not an array'
+      WHEN 3 THEN 'shadow source not in exact audit snapshot'
+      WHEN 4 THEN 'shadow source digest mismatch' END;
+    RAISE EXCEPTION '%', v_error USING ERRCODE = '23514';
+  END IF;
+  RETURN NULL;
+END $$;
+CREATE TRIGGER cslsa_insert_set_guard AFTER INSERT ON "ContributionShadowLegacySourceAnchor"
+  REFERENCING NEW TABLE AS cslsa_inserted_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION cslsa_insert_set_guard_fn();
 
 CREATE TRIGGER cslsa_immutable_guard BEFORE UPDATE OR DELETE ON "ContributionShadowLegacySourceAnchor"
   FOR EACH ROW EXECUTE FUNCTION cs_immutable_guard_fn();

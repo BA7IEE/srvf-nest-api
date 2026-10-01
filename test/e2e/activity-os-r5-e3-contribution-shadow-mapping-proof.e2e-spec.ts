@@ -50,6 +50,7 @@ import {
 } from '../../src/modules/activities/activity-contribution-policy-selection';
 import {
   ContributionShadowEvidenceWriteService,
+  hashLegacySource,
   type ShadowComparisonInput,
   type ShadowMappingApplicationInput,
 } from '../../src/modules/attendances/contribution-shadow-evidence.write.service';
@@ -534,18 +535,23 @@ function policyFingerprintSql(policy: unknown): string {
   );
 }
 
-function registrationReferencesFixture() {
+function registrationReferencesFixture(
+  definitionInput: unknown = policyFixture(),
+  policyRole = 'member',
+  category = 'volunteer_service',
+) {
   const manifest = manifestFixture();
   const item = manifest.approvals[0];
   item.activityId = 'ref-activity';
   item.activityTypeCode = 'service';
   item.sessionPositionId = 'ref-position';
-  item.policyRoleCode = 'member';
+  item.policyRoleCode = policyRole;
+  item.categoryCode = category;
   item.policyVersionId = 'ref-version';
   const policy = fingerprintContributionPolicyVersion({
     schemaVersion: 1,
     evaluatorVersion: 1,
-    definition: policyFixture(),
+    definition: definitionInput,
     effectiveFrom: '2099-01-01T00:00:00.000Z',
     effectiveUntil: null,
   });
@@ -560,7 +566,7 @@ function registrationReferencesFixture() {
     INSERT INTO "ActivitySession" (id,"activityId",code,name,"startAt","endAt","locationText","checkInOpenAt","checkInCloseAt","checkOutOpenAt","checkOutCloseAt","locationRequired","locationPolicySourceCode","statusCode","updatedAt") VALUES
       ('ref-session','ref-activity','ref_session','Reference fixture','2099-10-01 01:00','2099-10-01 02:00','test','2099-10-01','2099-10-01 01:00','2099-10-01 02:00','2099-10-01 03:00',false,'activity','scheduled',CURRENT_TIMESTAMP);
     INSERT INTO "ActivitySessionPosition" (id,"activityId","sessionId",code,name,"attendanceRoleCode","updatedAt") VALUES
-      ('ref-position','ref-activity','ref-session','ref_position','Reference fixture','member',CURRENT_TIMESTAMP);
+      ('ref-position','ref-activity','ref-session','ref_position','Reference fixture','${policyRole.replaceAll("'", "''")}',CURRENT_TIMESTAMP);
     INSERT INTO "ContributionPolicy" (id,code,name,"updatedAt") VALUES ('ref-policy','ref_policy','Reference fixture',CURRENT_TIMESTAMP);
     INSERT INTO "ContributionPolicyVersion" (id,"policyId",version,"schemaVersion","definitionJson","definitionHash","evaluatorVersion","effectiveFrom","statusCode","createdByUserId","updatedAt") VALUES
       ('ref-version','ref-policy',1,1,'${definition}'::jsonb,'${policy.definitionHash}',1,'2099-01-01','draft','ref-user',CURRENT_TIMESTAMP);`;
@@ -577,8 +583,18 @@ function registrationHumanFixtureSql() {
       ('ref-binding','USER','ref-user','ref-role','GLOBAL','2000-01-01',CURRENT_TIMESTAMP);`;
 }
 
-function actualSourceApprovalFixture(ambiguous = false, legacyPoints = 2) {
-  const { manifest, fixtureSql } = registrationReferencesFixture();
+function actualSourceApprovalFixture(
+  ambiguous = false,
+  legacyPoints = 2,
+  definitionInput: unknown = policyFixture(),
+  policyRole = 'member',
+  category = 'volunteer_service',
+) {
+  const { manifest, fixtureSql } = registrationReferencesFixture(
+    definitionInput,
+    policyRole,
+    category,
+  );
   if (ambiguous) {
     manifest.approvals.push({ ...manifest.approvals[0], approvalNumber: 'ref-second' });
   }
@@ -613,28 +629,116 @@ function actualSourceApprovalFixture(ambiguous = false, legacyPoints = 2) {
           'activityTypeCode','service','attendanceRoleCode','volunteer','legacyServiceHours',1.00,'sourceKindCode','matched','legacyRuleId','ref-rule','pointsBelow',${legacyPoints},'legacyPoints',${legacyPoints}))));`);
 }
 
-function actualSelectionFixtureSql(createdAt = '2099-09-01T00:00:00.000Z', revision = 1) {
+// Independent synthetic rows with distinct stored durations, not 2,000 copies
+// of one calculation. All real source and deferred audit guards execute.
+function setSourceFixtureSql(size: number, includeSources = true) {
+  if (![1, 3, 10, 500, 2000].includes(size)) throw new Error('unexpected set fixture size');
+  return `INSERT INTO "AttendanceSheet" (id,"activityId","submitterUserId","statusCode","updatedAt",version)
+      VALUES ('set-sheet','ref-activity','ref-user','pending_review',CURRENT_TIMESTAMP,1);
+    INSERT INTO "AttendanceRecord" (id,"sheetId","memberId","roleCode","checkInAt","checkOutAt",
+      "serviceHours","attendanceStatusCode","contributionPoints","updatedAt")
+      SELECT 'set-record-'||lpad(n::TEXT,4,'0'),'set-sheet','ref-member','volunteer',
+        '2099-10-01'::TIMESTAMP+n*interval '1 hour','2099-10-01'::TIMESTAMP+(n+1)*interval '1 hour',
+        n::NUMERIC/100,'present',2.00,CURRENT_TIMESTAMP FROM generate_series(1,${size}) n;
+    INSERT INTO audit_logs (id,"createdAt","resourceType","resourceId",event,context,"shadowProofRequired")
+      SELECT 'set-audit','2099-10-01 12:00','attendance_sheet','set-sheet','attendance-sheet.submit',
+        jsonb_build_object('extra',jsonb_build_object('operation','submit','recordsCount',${size}),
+          'after',jsonb_build_object('sheet',jsonb_build_object('activityId','ref-activity','version',1),
+            'records',jsonb_agg(jsonb_build_object('id',id,'memberId',"memberId",'roleCode',"roleCode",
+              'serviceHours',"serviceHours"::TEXT,'contributionPoints',"contributionPoints"::TEXT) ORDER BY id))),TRUE
+      FROM "AttendanceRecord" WHERE "sheetId"='set-sheet';
+    ${
+      includeSources
+        ? `INSERT INTO "ContributionShadowLegacySourceAnchor"
+      SELECT (jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",
+        to_jsonb(s)||jsonb_build_object('legacySourceHash',cslsa_source_hash_fn(s)))).*
+      FROM (SELECT jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",jsonb_build_object(
+        'id','set-source-'||r.id,'windowId','ref-window','auditLogId','set-audit','sheetId','set-sheet',
+        'sheetVersion',1,'activityId','ref-activity','recordId',r.id,'memberId',r."memberId",'activityTypeCode','service',
+        'attendanceRoleCode','volunteer','legacyServiceHours',r."serviceHours",'sourceKindCode','matched',
+        'legacyRuleId','ref-rule','pointsBelow',2.00,'legacyPoints',2.00,'hashAlgorithmCode','sha256',
+        'canonicalVersion',1,'createdAt',CURRENT_TIMESTAMP)) s FROM "AttendanceRecord" r WHERE "sheetId"='set-sheet') rows;`
+        : ''
+    }`;
+}
+
+function setApplicationInsertSql(from: number, through: number, badRecord = '') {
   const { manifest } = registrationReferencesFixture();
+  const hash = manifest.approvals[0].policyDefinitionHash;
+  const definition = JSON.stringify(policyFixture()).replaceAll("'", "''");
+  return `WITH expected AS MATERIALIZED (
+      SELECT s.*,csm_policy_evaluate_fn('${definition}'::JSONB,'member','volunteer_service',
+        (s."legacyServiceHours"*3600)::BIGINT) evaluated FROM "ContributionShadowLegacySourceAnchor" s
+      WHERE s."auditLogId"='set-audit' AND s."recordId" BETWEEN
+        'set-record-${String(from).padStart(4, '0')}' AND 'set-record-${String(through).padStart(4, '0')}')
+    INSERT INTO "ContributionShadowMappingApplication"
+      (id,"approvalId","legacySourceAnchorId","windowId","auditLogId","sheetId","sheetVersion","recordId","memberId",
+        "activityId","selectionItemId","policyVersionId","policyDefinitionHash","evaluatorVersion","durationSeconds","policyPoints","explanationCode")
+      SELECT 'set-application-'||s."recordId",'ref-approval',s.id,s."windowId",s."auditLogId",s."sheetId",s."sheetVersion",
+        s."recordId",s."memberId",s."activityId",'ref-selection-position','ref-version','${hash}',1,
+        (s."legacyServiceHours"*3600)::INTEGER,
+        CASE WHEN s."recordId"='${badRecord}' THEN 0.01 ELSE (s.evaluated->>'recognizedPoints')::NUMERIC END,
+        s.evaluated->>'explanationCode' FROM expected s ORDER BY s."recordId";`;
+}
+
+function setAttemptSql(size: number) {
+  return `INSERT INTO "ContributionShadowAttemptReceipt"
+    (id,"windowId","auditLogId","sheetId","activityId","sheetVersion","replayKey","committedFactHash",
+      "signedMappingVersion","expectedRecordCount","hashAlgorithmCode","canonicalVersion")
+    VALUES ('set-attempt','ref-window','set-audit','set-sheet','ref-activity',1,
+      encode(sha256(convert_to('e3-2-d1:v1:ref-window:set-audit:1','UTF8')),'hex'),repeat('a',64),'fixture-v1',${size},'sha256',1);`;
+}
+
+function setComparisonInsertSql(from: number, through: number, badRecord = '') {
+  return `INSERT INTO "ContributionShadowComparisonReceipt"
+    (id,"attemptId","recordId","sheetId","memberId","activityId","classificationCode",comparable,"factHash",
+      "legacyRuleId","legacySourceHash","policySourceHash","selectionRevisionId","selectionItemId","policyId",
+      "policyVersionId","definitionHash","evaluatorVersion","legacyServiceHours","durationSeconds","legacyPoints",
+      "policyPoints","hashAlgorithmCode","canonicalVersion")
+    SELECT 'set-comparison-'||s."recordId",'set-attempt',s."recordId",s."sheetId",s."memberId",s."activityId",
+      CASE WHEN s."legacyPoints"=a."policyPoints" THEN 'equal' ELSE 'points_mismatch' END,TRUE,repeat('a',64),
+      s."legacyRuleId",s."legacySourceHash",repeat('b',64),'ref-selection',a."selectionItemId",'ref-policy',
+      a."policyVersionId",a."policyDefinitionHash",a."evaluatorVersion",s."legacyServiceHours",a."durationSeconds",
+      s."legacyPoints",CASE WHEN s."recordId"='${badRecord}' THEN 0.01 ELSE a."policyPoints" END,'sha256',1
+    FROM "ContributionShadowLegacySourceAnchor" s JOIN "ContributionShadowMappingApplication" a ON a."legacySourceAnchorId"=s.id
+    WHERE s."auditLogId"='set-audit' AND s."recordId" BETWEEN
+      'set-record-${String(from).padStart(4, '0')}' AND 'set-record-${String(through).padStart(4, '0')}' ORDER BY s."recordId";`;
+}
+
+function actualSelectionFixtureSql(
+  createdAt = '2099-09-01T00:00:00.000Z',
+  revision = 1,
+  prefix = 'ref',
+  definitionInput: unknown = policyFixture(),
+  scope: 'position' | 'activity' | 'both' = 'position',
+) {
+  const { manifest } = registrationReferencesFixture(definitionInput);
   const pointer = {
-    policyId: 'ref-policy',
-    versionId: 'ref-version',
+    policyId: `${prefix}-policy`,
+    versionId: `${prefix}-version`,
     definitionHash: manifest.approvals[0].policyDefinitionHash,
     evaluatorVersion: 1,
   };
   const document = createActivityContributionPolicySelectionDocument([
     {
       scope: { layerCode: 'activity', sessionId: null, positionId: null },
-      selection: { mode: 'inherit', pointer: null },
+      selection:
+        scope === 'position' ? { mode: 'inherit', pointer: null } : { mode: 'explicit', pointer },
     },
     {
-      scope: { layerCode: 'position', sessionId: 'ref-session', positionId: 'ref-position' },
-      selection: { mode: 'explicit', pointer },
+      scope: {
+        layerCode: 'position',
+        sessionId: `${prefix}-session`,
+        positionId: `${prefix}-position`,
+      },
+      selection:
+        scope === 'activity' ? { mode: 'inherit', pointer: null } : { mode: 'explicit', pointer },
     },
   ]);
   const hash = activityContributionPolicySelectionHash(document);
-  const selectionId = revision === 1 ? 'ref-selection' : `ref-selection-${revision}`;
+  const selectionId = revision === 1 ? `${prefix}-selection` : `${prefix}-selection-${revision}`;
   const result = JSON.stringify({
-    activityId: 'ref-activity',
+    activityId: `${prefix}-activity`,
     selectionRevisionId: selectionId,
     revision,
     selectionHash: hash,
@@ -642,15 +746,71 @@ function actualSelectionFixtureSql(createdAt = '2099-09-01T00:00:00.000Z', revis
   });
   return `INSERT INTO "ActivityContributionPolicySelectionRevision"
     (id,"activityId",revision,"schemaVersion","selectionHash","selectionJson","itemCount","originCode","createdAt","createdByUserId")
-    VALUES ('${selectionId}','ref-activity',${revision},1,'${hash}','${JSON.stringify(document).replaceAll("'", "''")}'::jsonb,2,'select','${createdAt}','ref-user');
+    VALUES ('${selectionId}','${prefix}-activity',${revision},1,'${hash}','${JSON.stringify(document).replaceAll("'", "''")}'::jsonb,2,'select','${createdAt}','${prefix}-user');
     INSERT INTO "ActivityContributionPolicySelectionItem"
     (id,"selectionRevisionId","activityId","layerCode","sessionId","positionId",mode,"policyId","versionId","definitionHash","evaluatorVersion") VALUES
-    ('${selectionId}-root','${selectionId}','ref-activity','activity',NULL,NULL,'inherit',NULL,NULL,NULL,NULL),
-    ('${selectionId}-position','${selectionId}','ref-activity','position','ref-session','ref-position','explicit','ref-policy','ref-version','${pointer.definitionHash}',1);
-    UPDATE "Activity" SET "contributionPolicySelectionRevision"=${revision},"currentContributionPolicySelectionRevisionId"='${selectionId}' WHERE id='ref-activity';
+    ('${selectionId}-root','${selectionId}','${prefix}-activity','activity',NULL,NULL,${scope === 'position' ? "'inherit',NULL,NULL,NULL,NULL" : `'explicit','${prefix}-policy','${prefix}-version','${pointer.definitionHash}',1`}),
+    ('${selectionId}-position','${selectionId}','${prefix}-activity','position','${prefix}-session','${prefix}-position',${scope === 'activity' ? "'inherit',NULL,NULL,NULL,NULL" : `'explicit','${prefix}-policy','${prefix}-version','${pointer.definitionHash}',1`});
+    UPDATE "Activity" SET "contributionPolicySelectionRevision"=${revision},"currentContributionPolicySelectionRevisionId"='${selectionId}' WHERE id='${prefix}-activity';
     INSERT INTO "ActivityContributionPolicySelectionCommandReceipt"
     (id,"actorUserId","activityId","operationCode","operationKey","requestHash","selectionRevisionId","resultJson","createdAt")
-    VALUES ('${selectionId}-receipt','ref-user','ref-activity','patch_contribution_policy_selection','${selectionId}-key',repeat('a',64),'${selectionId}','${result}'::jsonb,'${createdAt}');`;
+    VALUES ('${selectionId}-receipt','${prefix}-user','${prefix}-activity','patch_contribution_policy_selection','${selectionId}-key',repeat('a',64),'${selectionId}','${result}'::jsonb,'${createdAt}');`;
+}
+
+function secondMappingGroupSql(statement: string) {
+  return statement
+    .replaceAll('ref-', 'second-')
+    .replaceAll('second-window', 'ref-window')
+    .replaceAll('second-rule', 'ref-rule');
+}
+
+function twoActualMappingGroupsSql() {
+  const { manifest, fixtureSql } = registrationReferencesFixture();
+  manifest.commandKey = 'second-command';
+  Object.assign(manifest.approvals[0], {
+    approvalNumber: 'second-number',
+    activityId: 'second-activity',
+    sessionPositionId: 'second-position',
+    policyVersionId: 'second-version',
+  });
+  const authority = JSON.stringify({
+    databaseName: deriveTestDbName(),
+    manifestHash: manifestApplicationHash(manifest),
+    actorUserId: 'ref-user',
+    approvalReference: manifest.approvalReference,
+    ownerRole: fixtureRole('owner'),
+    registrarRole: fixtureRole('registrar'),
+    runtimeRole: fixtureRole('runtime'),
+    manifest,
+  }).replaceAll("'", "''");
+  const script = readFileSync(
+    join(process.cwd(), 'scripts/sql/contribution-shadow-registration-roles.sql'),
+    'utf8',
+  );
+  // Only this fixture's SQL identifiers are renamed. Manifest and selection
+  // digests are regenerated above/below, never mechanically edited.
+  const sourceStart = actualSourceApprovalFixture().indexOf('    INSERT INTO "Member"');
+  if (sourceStart < 0) throw new Error('source fixture marker missing');
+  const secondSource = secondMappingGroupSql(actualSourceApprovalFixture().slice(sourceStart))
+    .replaceAll("'REF135'", "'SECOND135'")
+    // The legacy rule and non-overlapping observation window are global;
+    // independent activity/audit/policy groups share these actual anchors.
+    .replace(/ {4}INSERT INTO "ContributionRule"[^;]+;/, '')
+    .replace(/ {4}INSERT INTO "ContributionShadowObservationWindow"[^;]+;/, '');
+  const secondReferences = fixtureSql
+    .replaceAll('ref-', 'second-')
+    .replaceAll("'ref_policy'", "'second_policy'")
+    .replaceAll("'ref_session'", "'second_session'")
+    .replaceAll("'ref_position'", "'second_position'");
+  return `${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
+    ${secondReferences}
+    SET LOCAL srvf.shadow_acl_database='${fixtureDatabase()}'; SET LOCAL srvf.shadow_acl_action='bind';
+    SET LOCAL srvf.shadow_registration_authority='${authority}'; ${script}
+    SET SESSION AUTHORIZATION srvf_shadow_registrar_w98_fixture;
+    DO $register_second$ BEGIN PERFORM csm_register_mapping_fn(
+      '${JSON.stringify(manifest).replaceAll("'", "''")}'::JSONB,'ref-user','second-receipt','second-register-audit','["second-approval"]'::JSONB);
+    END $register_second$; RESET SESSION AUTHORIZATION;
+    ${secondSource} ${actualSelectionFixtureSql(undefined, 1, 'second')}`;
 }
 
 function applicationInsertSql(change: Record<string, string | number> = {}) {
@@ -733,7 +893,10 @@ function comparisonInsertSql(change: Record<string, string | number> = {}) {
 // commits these exact fixtures and removes them after dropping only this worker. The
 // separately authorized final probe temporarily enables only runtime LOGIN,
 // verifies real authentication, then revokes it. No real mapping is registered.
-function registrationAuthorityFixtureSql(manifest: ReturnType<typeof manifestFixture>) {
+function registrationAuthorityFixtureSql(
+  manifest: ReturnType<typeof manifestFixture>,
+  bootstrap = true,
+) {
   const owner = 'srvf_shadow_owner_w98_fixture';
   const registrar = 'srvf_shadow_registrar_w98_fixture';
   const runtime = 'srvf_shadow_runtime_w98_fixture';
@@ -752,7 +915,7 @@ function registrationAuthorityFixtureSql(manifest: ReturnType<typeof manifestFix
     'utf8',
   );
   return fixtureStatement(`SET LOCAL srvf.shadow_acl_database = 'app_test_w98';
-    SET LOCAL srvf.shadow_acl_action = 'bootstrap'; ${script}
+    ${bootstrap ? `SET LOCAL srvf.shadow_acl_action = 'bootstrap'; ${script}` : ''}
     SET LOCAL srvf.shadow_registration_authority = '${authority}';
     SET LOCAL srvf.shadow_acl_action = 'bind'; ${script}`);
 }
@@ -1390,6 +1553,526 @@ describe('E3-2 D2 mapping schema construction', () => {
     ).toThrow('shadow comparison requires immutable legacy-source proof');
   });
 
+  it.each([1, 10, 500, 2000])(
+    'set guards independently validate %i distinct stored durations with one policy fingerprint',
+    (size) => {
+      expect(
+        sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()} ${setSourceFixtureSql(size)}
+      SET CONSTRAINTS ALL IMMEDIATE;
+      SET LOCAL track_functions='all';
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      DO $calls$
+      DECLARE before_policy BIGINT; before_selection BIGINT; after_policy BIGINT; after_selection BIGINT;
+      BEGIN
+        SELECT coalesce(sum(calls),0) INTO before_policy FROM pg_stat_xact_user_functions WHERE schemaname='public' AND funcname='csm_policy_fingerprint_fn';
+        SELECT coalesce(sum(calls),0) INTO before_selection FROM pg_stat_xact_user_functions WHERE schemaname='public' AND funcname='csm_selection_hash_fn';
+        ${setApplicationInsertSql(1, size)}
+        SELECT coalesce(sum(calls),0) INTO after_policy FROM pg_stat_xact_user_functions WHERE schemaname='public' AND funcname='csm_policy_fingerprint_fn';
+        SELECT coalesce(sum(calls),0) INTO after_selection FROM pg_stat_xact_user_functions WHERE schemaname='public' AND funcname='csm_selection_hash_fn';
+        IF after_policy-before_policy<>1 OR after_selection-before_selection<>1 THEN
+          RAISE EXCEPTION 'policy or selection was not validated exactly once for this actual group';
+        END IF;
+      END $calls$;
+      ${setAttemptSql(size)} ${setComparisonInsertSql(1, size)}
+      RESET SESSION AUTHORIZATION;
+      SELECT (SELECT count(*) FROM "ContributionShadowMappingApplication" WHERE "auditLogId"='set-audit')::TEXT||':'||
+        (SELECT count(DISTINCT "durationSeconds") FROM "ContributionShadowMappingApplication" WHERE "auditLogId"='set-audit')::TEXT||':'||
+        (SELECT count(*) FROM "ContributionShadowComparisonReceipt" WHERE "attemptId"='set-attempt')::TEXT;
+      ROLLBACK;`),
+      ).toBe(`${size}:${size}:${size}`);
+    },
+  );
+
+  it.each(['set-record-0001', 'set-record-0002', 'set-record-0003'])(
+    'set guards reject an entire application/comparison batch with a bad row at %s',
+    (badRecord) => {
+      expect(
+        sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()} ${setSourceFixtureSql(3)}
+        SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+        ${setAttemptSql(3)}
+        DO $atomic$
+        BEGIN
+          BEGIN
+            ${setApplicationInsertSql(1, 3, badRecord)}
+            RAISE EXCEPTION 'bad application batch accepted';
+          EXCEPTION WHEN check_violation THEN
+            IF SQLERRM <> 'shadow mapping application differs from database proof' THEN RAISE; END IF;
+          END;
+          IF EXISTS (SELECT 1 FROM "ContributionShadowMappingApplication" WHERE "auditLogId"='set-audit') THEN
+            RAISE EXCEPTION 'bad application batch left partial rows';
+          END IF;
+        END $atomic$;
+        ${setApplicationInsertSql(1, 1)} ${setApplicationInsertSql(2, 3)}
+        DO $atomic$
+        BEGIN
+          BEGIN
+            ${setComparisonInsertSql(1, 3, badRecord)}
+            RAISE EXCEPTION 'bad comparison batch accepted';
+          EXCEPTION WHEN check_violation THEN
+            IF SQLERRM <> 'shadow comparison differs from immutable application proof' THEN RAISE; END IF;
+          END;
+          IF EXISTS (SELECT 1 FROM "ContributionShadowComparisonReceipt" WHERE "attemptId"='set-attempt') THEN
+            RAISE EXCEPTION 'bad comparison batch left partial rows';
+          END IF;
+        END $atomic$;
+        ${setComparisonInsertSql(1, 1)} ${setComparisonInsertSql(2, 3)}
+        SELECT (SELECT count(*) FROM "ContributionShadowComparisonReceipt" WHERE "attemptId"='set-attempt')::TEXT||':'||
+          (SELECT count(*) FROM "ContributionShadowAttemptReceipt" WHERE id='set-attempt')::TEXT||':'||
+          (SELECT count(*) FROM "ContributionShadowTerminalReceipt" WHERE "attemptId"='set-attempt')::TEXT;
+        RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE; ROLLBACK;`),
+      ).toBe('3:1:0');
+    },
+  );
+
+  it.each(['valid', 'source', 'application', 'comparison'] as const)(
+    'actual COPY executes all three set guards and rejects forged %s content',
+    (variant) => {
+      const digest = hashLegacySource({
+        windowId: 'ref-window',
+        auditLogId: 'set-audit',
+        sheetId: 'set-sheet',
+        sheetVersion: 1,
+        activityId: 'ref-activity',
+        recordId: 'set-record-0001',
+        memberId: 'ref-member',
+        activityTypeCode: 'service',
+        attendanceRoleCode: 'volunteer',
+        legacyServiceHours: new Prisma.Decimal('0.01'),
+        legacyPoints: new Prisma.Decimal('2.00'),
+        source: {
+          sourceKindCode: 'matched',
+          legacyRuleId: 'ref-rule',
+          durationThreshold: null,
+          pointsBelow: new Prisma.Decimal('2.00'),
+          pointsAbove: null,
+        },
+      });
+      const hash = registrationReferencesFixture().manifest.approvals[0].policyDefinitionHash;
+      const statement = `BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()} ${setSourceFixtureSql(1, false)}
+        COPY "ContributionShadowLegacySourceAnchor" (id,"windowId","auditLogId","sheetId","sheetVersion","activityId",
+          "recordId","memberId","activityTypeCode","attendanceRoleCode","legacyServiceHours","sourceKindCode",
+          "legacyRuleId","pointsBelow","legacyPoints","hashAlgorithmCode","canonicalVersion","legacySourceHash") FROM STDIN WITH (FORMAT csv);
+set-copy-source,ref-window,set-audit,set-sheet,1,ref-activity,set-record-0001,ref-member,service,volunteer,0.01,matched,ref-rule,2.00,2.00,sha256,1,${variant === 'source' ? 'a'.repeat(64) : digest}
+\\.
+        SET CONSTRAINTS ALL IMMEDIATE;
+        SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+        COPY "ContributionShadowMappingApplication" (id,"approvalId","legacySourceAnchorId","windowId","auditLogId",
+          "sheetId","sheetVersion","recordId","memberId","activityId","selectionItemId","policyVersionId",
+          "policyDefinitionHash","evaluatorVersion","durationSeconds","policyPoints","explanationCode") FROM STDIN WITH (FORMAT csv);
+set-copy-application,ref-approval,set-copy-source,ref-window,set-audit,set-sheet,1,set-record-0001,ref-member,ref-activity,ref-selection-position,ref-version,${hash},1,36,${variant === 'application' ? '9.99' : '1.25'},short
+\\.
+        ${setAttemptSql(1)}
+        COPY "ContributionShadowComparisonReceipt" (id,"attemptId","recordId","sheetId","memberId","activityId",
+          "classificationCode",comparable,"factHash","legacyRuleId","legacySourceHash","policySourceHash",
+          "selectionRevisionId","selectionItemId","policyId","policyVersionId","definitionHash","evaluatorVersion",
+          "legacyServiceHours","durationSeconds","legacyPoints","policyPoints","hashAlgorithmCode","canonicalVersion") FROM STDIN WITH (FORMAT csv);
+set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activity,points_mismatch,true,${'a'.repeat(64)},ref-rule,${digest},${'b'.repeat(64)},ref-selection,ref-selection-position,ref-policy,ref-version,${hash},1,0.01,36,2.00,${variant === 'comparison' ? '9.99' : '1.25'},sha256,1
+\\.
+        RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE;
+        SELECT count(*) FROM "ContributionShadowComparisonReceipt" WHERE id='set-copy-comparison'; ROLLBACK;`;
+      if (variant === 'valid') expect(sql(statement)).toBe('1');
+      else
+        expect(() => sql(statement)).toThrow(
+          variant === 'source'
+            ? 'shadow source digest mismatch'
+            : variant === 'application'
+              ? 'shadow mapping application differs from database proof'
+              : 'shadow comparison differs from immutable application proof',
+        );
+      expect(
+        sql(
+          `SELECT count(*) FROM "ContributionShadowLegacySourceAnchor" WHERE "auditLogId"='set-audit'`,
+        ),
+      ).toBe('0');
+    },
+  );
+
+  it('set guards enforce RETURNING, multi-write CTEs, empty INSERT and conflict-skip boundaries', () => {
+    const app = (from: number, through: number, bad = '') =>
+      setApplicationInsertSql(from, through, bad).trim().replace(/;$/, '');
+    const comparison = (from: number, through: number, bad = '') =>
+      setComparisonInsertSql(from, through, bad).trim().replace(/;$/, '');
+    expect(
+      sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()} ${setSourceFixtureSql(3)}
+      INSERT INTO "ContributionShadowLegacySourceAnchor" SELECT * FROM "ContributionShadowLegacySourceAnchor" WHERE FALSE;
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      INSERT INTO "ContributionShadowMappingApplication" SELECT * FROM "ContributionShadowMappingApplication" WHERE FALSE;
+      INSERT INTO "ContributionShadowComparisonReceipt" SELECT * FROM "ContributionShadowComparisonReceipt" WHERE FALSE;
+      DO $variants$
+      DECLARE wrote BIGINT;
+      BEGIN
+        BEGIN
+          WITH inserted AS (${app(1, 3, 'set-record-0002')} RETURNING id) SELECT count(*) INTO wrote FROM inserted;
+          RAISE EXCEPTION 'invalid RETURNING application accepted';
+        EXCEPTION WHEN check_violation THEN
+          IF SQLERRM <> 'shadow mapping application differs from database proof' THEN RAISE; END IF;
+        END;
+        IF EXISTS (SELECT 1 FROM "ContributionShadowMappingApplication" WHERE "auditLogId"='set-audit') THEN
+          RAISE EXCEPTION 'failed RETURNING statement left application rows';
+        END IF;
+        ${app(1, 1)};
+        -- A skipped, forged value is not inserted evidence; its basic chain and
+        -- identity still pass BEFORE. New invalid rows must roll back the batch.
+        ${app(1, 1, 'set-record-0001')} ON CONFLICT DO NOTHING;
+        BEGIN
+          ${app(1, 3, 'set-record-0002')} ON CONFLICT DO NOTHING;
+          RAISE EXCEPTION 'mixed skipped/new bad application accepted';
+        EXCEPTION WHEN check_violation THEN
+          IF SQLERRM <> 'shadow mapping application differs from database proof' THEN RAISE; END IF;
+        END;
+        IF (SELECT count(*) FROM "ContributionShadowMappingApplication" WHERE "auditLogId"='set-audit')<>1 THEN
+          RAISE EXCEPTION 'mixed conflict failure left partial applications';
+        END IF;
+        ${app(2, 3)};
+        ${setAttemptSql(3)}
+        WITH left_rows AS (${comparison(1, 1)} RETURNING id),
+          right_rows AS (${comparison(2, 3)} RETURNING id)
+          SELECT (SELECT count(*) FROM left_rows)+(SELECT count(*) FROM right_rows) INTO wrote;
+        IF wrote<>3 THEN RAISE EXCEPTION 'multi-write CTE lost comparisons'; END IF;
+        BEGIN
+          ${comparison(1, 1)} ON CONFLICT DO NOTHING;
+          RAISE EXCEPTION 'full conflict bypassed the retained BEFORE bound';
+        EXCEPTION WHEN check_violation THEN
+          IF SQLERRM <> 'shadow comparison exceeds expected set' THEN RAISE; END IF;
+        END;
+      END $variants$;
+      RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE;
+      SELECT count(*) FROM "ContributionShadowComparisonReceipt" WHERE "attemptId"='set-attempt'; ROLLBACK;`),
+    ).toBe('3');
+  });
+
+  it('set guards use actual transition relations despite same-name temporary tables and caller settings', () => {
+    expect(() =>
+      sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      CREATE TEMP TABLE csmap_inserted_rows(id TEXT);
+      CREATE TEMP TABLE cscr_inserted_rows(id TEXT);
+      SET LOCAL srvf.shadow_verified='true';
+      SET LOCAL search_path=pg_temp,public;
+      ${applicationInsertSql({ policyPoints: '9.99' })} ROLLBACK;`),
+    ).toThrow('shadow mapping application differs from database proof');
+  });
+
+  it('validates two actual audit/policy/revision groups even when policy hashes are identical', () => {
+    const first = applicationInsertSql().trim().replace(/;$/, '');
+    const second = secondMappingGroupSql(applicationInsertSql());
+    const values = second.slice(second.indexOf('VALUES (') + 'VALUES '.length);
+    expect(
+      sql(`BEGIN; ${twoActualMappingGroupsSql()}
+      SET CONSTRAINTS ALL IMMEDIATE; SET LOCAL track_functions='all';
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      DO $groups$
+      DECLARE before_policy BIGINT; before_selection BIGINT; after_policy BIGINT; after_selection BIGINT;
+      BEGIN
+        SELECT coalesce(sum(calls),0) INTO before_policy FROM pg_stat_xact_user_functions WHERE schemaname='public' AND funcname='csm_policy_fingerprint_fn';
+        SELECT coalesce(sum(calls),0) INTO before_selection FROM pg_stat_xact_user_functions WHERE schemaname='public' AND funcname='csm_selection_hash_fn';
+        ${first},${values}
+        SELECT coalesce(sum(calls),0) INTO after_policy FROM pg_stat_xact_user_functions WHERE schemaname='public' AND funcname='csm_policy_fingerprint_fn';
+        SELECT coalesce(sum(calls),0) INTO after_selection FROM pg_stat_xact_user_functions WHERE schemaname='public' AND funcname='csm_selection_hash_fn';
+        IF after_policy-before_policy<>2 OR after_selection-before_selection<>2 THEN
+          RAISE EXCEPTION 'distinct actual versions or revisions collapsed by hash';
+        END IF;
+      END $groups$;
+      ${attemptInsertSql()} ${secondMappingGroupSql(attemptInsertSql())}
+      ${comparisonInsertSql()} ${secondMappingGroupSql(comparisonInsertSql())}
+      RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE;
+      SELECT count(DISTINCT "policyVersionId")::TEXT||':'||count(DISTINCT "policyDefinitionHash")::TEXT
+        FROM "ContributionShadowMappingApplication"; ROLLBACK;`),
+    ).toBe('2:1');
+  });
+
+  it.each(
+    ['member', '队员😀'].flatMap((role) =>
+      ['volunteer_service', 'training', 'organization', 'non_creditable'].map((category) => [
+        role,
+        category,
+      ]),
+    ),
+  )('actual set evaluation preserves complete role/category rules: %s / %s', (role, category) => {
+    const definition = {
+      ...policyFixture(),
+      roleRules: ['member', '队员😀'].map((attendanceRoleCode, roleIndex) => ({
+        attendanceRoleCode,
+        categoryRules: ['volunteer_service', 'training', 'organization', 'non_creditable'].map(
+          (timeCategoryCode, categoryIndex) => ({
+            timeCategoryCode,
+            durationBands: policyFixture().roleRules[0].categoryRules[0].durationBands.map(
+              (band, bandIndex) => ({
+                ...band,
+                recognizedPoints: `${roleIndex * 20 + categoryIndex * 4 + bandIndex}.00`,
+              }),
+            ),
+          }),
+        ),
+      })),
+    };
+    const policy = fingerprintContributionPolicyVersion({
+      schemaVersion: 1,
+      evaluatorVersion: 1,
+      definition,
+      effectiveFrom: '2099-01-01T00:00:00.000Z',
+      effectiveUntil: null,
+    });
+    const expected = evaluateContributionPolicy(policy.definition, {
+      attendanceRoleCode: role,
+      timeCategoryCode: category,
+      durationSeconds: 3600,
+    });
+    expect(
+      JSON.parse(
+        sql(`BEGIN;
+      ${actualSourceApprovalFixture(false, 2, definition, role, category)}
+      ${actualSelectionFixtureSql(undefined, 1, 'ref', definition)}
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      ${applicationInsertSql({
+        policyDefinitionHash: policy.definitionHash,
+        policyPoints: expected.recognizedPoints,
+        explanationCode: expected.explanationCode,
+      })}
+      SELECT jsonb_build_object('recognizedPoints',"policyPoints"::TEXT,'explanationCode',"explanationCode")
+        FROM "ContributionShadowMappingApplication" WHERE id='ref-application';
+      RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE; ROLLBACK;`),
+      ),
+    ).toEqual(expected);
+  });
+
+  it.each(['position', 'activity', 'both'] as const)(
+    'actual set selection preserves %s scope and override priority',
+    (scope) => {
+      const item = scope === 'activity' ? 'ref-selection-root' : 'ref-selection-position';
+      expect(
+        sql(`BEGIN; ${actualSourceApprovalFixture()}
+      ${actualSelectionFixtureSql(undefined, 1, 'ref', policyFixture(), scope)}
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      ${applicationInsertSql({ selectionItemId: item })}
+      SELECT "selectionItemId" FROM "ContributionShadowMappingApplication";
+      RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE; ROLLBACK;`),
+      ).toBe(item);
+      if (scope === 'both') {
+        expect(() =>
+          sql(`BEGIN; ${actualSourceApprovalFixture()}
+        ${actualSelectionFixtureSql(undefined, 1, 'ref', policyFixture(), scope)}
+        SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+        ${applicationInsertSql({ selectionItemId: 'ref-selection-root' })} ROLLBACK;`),
+        ).toThrow('shadow mapping immutable selection mismatch');
+      }
+    },
+  );
+
+  it('chooses a qualification error before an earlier-ID selection error across actual groups', () => {
+    const first = applicationInsertSql().trim().replace(/;$/, '');
+    const second = secondMappingGroupSql(applicationInsertSql());
+    const values = second.slice(second.indexOf('VALUES (') + 'VALUES '.length);
+    expect(() =>
+      sql(`BEGIN;
+      ${twoActualMappingGroupsSql().replaceAll('2099-09-01T00:00:00.000Z', '2099-11-01T00:00:00.000Z')}
+      UPDATE "ActivitySessionPosition" SET "deletedAt"=CURRENT_TIMESTAMP WHERE id='second-position';
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      ${first},${values} ROLLBACK;`),
+    ).toThrow('shadow mapping actual position unavailable');
+    expect(sql('SELECT count(*) FROM "ContributionShadowMappingApplication"')).toBe('0');
+  });
+
+  it.each(['set-record-0001', 'set-record-0002', 'set-record-0003'])(
+    'source set failure at %s rolls back the complete batch and allows valid split writes',
+    (badRecord) => {
+      const full = setSourceFixtureSql(3);
+      const insert = full.slice(
+        full.lastIndexOf('INSERT INTO "ContributionShadowLegacySourceAnchor"'),
+      );
+      const bad = insert.replace(
+        "'legacySourceHash',cslsa_source_hash_fn(s)",
+        `'legacySourceHash',CASE WHEN (s)."recordId"='${badRecord}' THEN repeat('a',64) ELSE cslsa_source_hash_fn(s) END`,
+      );
+      expect(bad).not.toBe(insert);
+      expect(
+        sql(`BEGIN; ${actualSourceApprovalFixture()} ${setSourceFixtureSql(3, false)}
+        DO $source_batch$ BEGIN
+          BEGIN ${bad} RAISE EXCEPTION 'bad source batch accepted';
+          EXCEPTION WHEN check_violation THEN
+            IF SQLERRM <> 'shadow source digest mismatch' THEN RAISE; END IF;
+          END;
+          IF EXISTS(SELECT 1 FROM "ContributionShadowLegacySourceAnchor" WHERE "auditLogId"='set-audit') THEN
+            RAISE EXCEPTION 'failed source batch left partial rows'; END IF;
+        END $source_batch$;
+        ${insert.replace(') rows;', ') rows WHERE (s)."recordId"=\'set-record-0001\';')}
+        ${insert.replace(') rows;', ') rows WHERE (s)."recordId"<>\'set-record-0001\';')}
+        SET CONSTRAINTS ALL IMMEDIATE;
+        SELECT count(*) FROM "ContributionShadowLegacySourceAnchor" WHERE "auditLogId"='set-audit'; ROLLBACK;`),
+      ).toBe('3');
+    },
+  );
+
+  it('runtime cannot turn a conflicting INSERT into an immutable application UPDATE', () => {
+    const conflict =
+      applicationInsertSql().trim().replace(/;$/, '') +
+      ' ON CONFLICT (id) DO UPDATE SET "policyPoints"=EXCLUDED."policyPoints";';
+    expect(() =>
+      sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      ${applicationInsertSql()} ${conflict} ROLLBACK;`),
+    ).toThrow('permission denied for table ContributionShadowMappingApplication');
+    expect(sql('SELECT count(*) FROM "ContributionShadowMappingApplication"')).toBe('0');
+  });
+
+  it.each(['revoke', 'replace'].flatMap((kind) => [false, true].map((later) => ({ kind, later }))))(
+    'rechecks actual %p successor qualification between valid application batches',
+    ({ kind, later }) => {
+      const { manifest } = registrationReferencesFixture();
+      manifest.commandKey = `successor-${kind}-${later}`;
+      Object.assign(manifest.approvals[0], {
+        approvalNumber: 'successor-number',
+        eventKindCode: kind,
+        previousApprovalId: 'ref-approval',
+        effectiveFrom: later ? '2099-10-02T00:00:00.000Z' : '2099-10-01T00:00:00.000Z',
+      });
+      const next = setApplicationInsertSql(2, 3);
+      expect(
+        sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()} ${setSourceFixtureSql(3)}
+        SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture; ${setApplicationInsertSql(1, 1)}
+        RESET SESSION AUTHORIZATION;
+        ${registrationAuthorityFixtureSql(manifest, false)}
+        SET SESSION AUTHORIZATION srvf_shadow_registrar_w98_fixture;
+        DO $successor$ BEGIN PERFORM csm_register_mapping_fn(
+          '${JSON.stringify(manifest).replaceAll("'", "''")}'::JSONB,'ref-user','successor-receipt','successor-audit','["successor-approval"]'::JSONB);
+        END $successor$;
+        RESET SESSION AUTHORIZATION;
+        SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+        ${
+          later
+            ? next
+            : `DO $batch$ BEGIN BEGIN ${next}
+          RAISE EXCEPTION 'superseded batch accepted';
+          EXCEPTION WHEN check_violation THEN
+            IF SQLERRM <> 'shadow mapping approval was superseded at source time' THEN RAISE; END IF;
+          END; END $batch$;`
+        }
+        SELECT count(*) FROM "ContributionShadowMappingApplication" WHERE "auditLogId"='set-audit';
+        RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE; ROLLBACK;`),
+      ).toBe(later ? '3' : '1');
+    },
+  );
+
+  it('counts actual source/comparison JSON expansion per audit across two 500-row batches', () => {
+    const before = sql(`SELECT md5(pg_get_functiondef('cslsa_insert_set_guard_fn()'::regprocedure)||
+      pg_get_functiondef('cscr_insert_set_guard_fn()'::regprocedure))`);
+    const full = setSourceFixtureSql(500);
+    const insert = full
+      .slice(full.lastIndexOf('INSERT INTO "ContributionShadowLegacySourceAnchor"'))
+      .trim()
+      .replace(/;$/, '');
+    const comparison = setComparisonInsertSql(1, 500).trim().replace(/;$/, '');
+    expect(
+      sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
+      ${setSourceFixtureSql(500, false)} ${setSourceFixtureSql(500, false).replaceAll('set-', 'other-')}
+      -- Isolated diagnostic only: wraps the actual expansion at its exact call
+      -- site, preserving arguments and every guard. ROLLBACK restores both
+      -- function definitions; budget tests never run this instrumented version.
+      CREATE FUNCTION pg_temp.shadow_records_probe(value JSONB) RETURNS SETOF JSONB
+        LANGUAGE plpgsql VOLATILE AS $probe$ BEGIN
+          RETURN QUERY SELECT * FROM pg_catalog.jsonb_array_elements(value);
+        END $probe$;
+      DO $instrument$ DECLARE fn TEXT; original TEXT; changed TEXT; BEGIN
+        FOREACH fn IN ARRAY ARRAY['cslsa_insert_set_guard_fn()','cscr_insert_set_guard_fn()'] LOOP
+          original:=pg_get_functiondef(fn::regprocedure);
+          IF (length(original)-length(replace(original,'jsonb_array_elements(','')))/length('jsonb_array_elements(')<>1 THEN
+            RAISE EXCEPTION 'unexpected active expansion sites'; END IF;
+          changed:=replace(original,'jsonb_array_elements(','pg_temp.shadow_records_probe(');
+          EXECUTE changed;
+        END LOOP;
+      END $instrument$;
+      SET LOCAL track_functions='all';
+      DO $counts$ DECLARE baseline BIGINT; after_source BIGINT; after_comparison BIGINT; written BIGINT; BEGIN
+        SELECT coalesce(sum(calls),0) INTO baseline FROM pg_stat_xact_user_functions WHERE funcid='pg_temp.shadow_records_probe(jsonb)'::regprocedure;
+        WITH a AS (${insert} RETURNING id), b AS (${insert.replaceAll('set-', 'other-')} RETURNING id)
+          SELECT (SELECT count(*) FROM a)+(SELECT count(*) FROM b) INTO written;
+        IF written<>1000 THEN RAISE EXCEPTION 'mixed source batches lost rows'; END IF;
+        SELECT coalesce(sum(calls),0) INTO after_source FROM pg_stat_xact_user_functions WHERE funcid='pg_temp.shadow_records_probe(jsonb)'::regprocedure;
+        IF after_source-baseline<>2 THEN RAISE EXCEPTION 'source expansion was not per actual audit'; END IF;
+        SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+        ${setApplicationInsertSql(1, 500)} ${setApplicationInsertSql(1, 500).replaceAll('set-', 'other-')}
+        ${setAttemptSql(500)} ${setAttemptSql(500).replaceAll('set-', 'other-')}
+        WITH a AS (${comparison} RETURNING id), b AS (${comparison.replaceAll('set-', 'other-')} RETURNING id)
+          SELECT (SELECT count(*) FROM a)+(SELECT count(*) FROM b) INTO written;
+        IF written<>1000 THEN RAISE EXCEPTION 'mixed comparison batches lost rows'; END IF;
+        RESET SESSION AUTHORIZATION;
+        SELECT coalesce(sum(calls),0) INTO after_comparison FROM pg_stat_xact_user_functions WHERE funcid='pg_temp.shadow_records_probe(jsonb)'::regprocedure;
+        IF after_comparison-after_source<>2 THEN RAISE EXCEPTION 'comparison expansion was not per actual audit'; END IF;
+      END $counts$;
+      SET CONSTRAINTS ALL IMMEDIATE;
+      SELECT count(*) FROM "ContributionShadowComparisonReceipt" WHERE "attemptId" IN ('set-attempt','other-attempt');
+      ROLLBACK;`),
+    ).toBe('1000');
+    expect(
+      sql(`SELECT md5(pg_get_functiondef('cslsa_insert_set_guard_fn()'::regprocedure)||
+      pg_get_functiondef('cscr_insert_set_guard_fn()'::regprocedure))`),
+    ).toBe(before);
+  });
+
+  it('retains the registration closure when explicitly made immediate before registration', () => {
+    const { manifest, fixtureSql } = registrationReferencesFixture();
+    const literal = JSON.stringify(manifest).replaceAll("'", "''");
+    expect(() =>
+      sql(`BEGIN; ${fixtureSql} ${registrationHumanFixtureSql()}
+      ${registrationAuthorityFixtureSql(manifest)}
+      SET CONSTRAINTS csma_receipt_closure IMMEDIATE;
+      SET SESSION AUTHORIZATION srvf_shadow_registrar_w98_fixture;
+      SELECT csm_register_mapping_fn('${literal}'::jsonb,'ref-user','ref-receipt','ref-register-audit','["ref-approval"]'::jsonb);
+      ROLLBACK;`),
+    ).toThrow('shadow mapping approval registration receipt missing');
+  });
+
+  it.each([
+    [{ durationSeconds: -1 }, 'csmap_value_check'],
+    [{ durationSeconds: -1, policyPoints: '9.99' }, 'csmap_value_check'],
+    [{ policyPoints: '9.99' }, 'shadow mapping application differs from database proof'],
+  ] as const)('records native CHECK versus set-guard rejection ordering: %p', (change, error) => {
+    expect(() =>
+      sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      ${applicationInsertSql(change)} ROLLBACK;`),
+    ).toThrow(error);
+  });
+
+  it('set guards roll back invalid statements and retain immediate/deferred closure checks', () => {
+    expect(
+      sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
+      SET CONSTRAINTS ALL IMMEDIATE;
+      SET CONSTRAINTS ALL DEFERRED;
+      SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+      DO $atomic$
+      BEGIN
+        BEGIN
+          ${applicationInsertSql({ policyPoints: '9.99' })}
+          RAISE EXCEPTION 'invalid application accepted';
+        EXCEPTION WHEN check_violation THEN
+          IF SQLERRM <> 'shadow mapping application differs from database proof' THEN RAISE; END IF;
+        END;
+        IF EXISTS (SELECT 1 FROM "ContributionShadowMappingApplication") THEN
+          RAISE EXCEPTION 'invalid application left partial rows';
+        END IF;
+      END $atomic$;
+      ${applicationInsertSql()} ${attemptInsertSql()}
+      DO $atomic$
+      BEGIN
+        BEGIN
+          ${comparisonInsertSql({ policyPoints: '9.99' })}
+          RAISE EXCEPTION 'invalid comparison accepted';
+        EXCEPTION WHEN check_violation THEN
+          IF SQLERRM <> 'shadow comparison differs from immutable application proof' THEN RAISE; END IF;
+        END;
+        IF EXISTS (SELECT 1 FROM "ContributionShadowComparisonReceipt") THEN
+          RAISE EXCEPTION 'invalid comparison left partial rows';
+        END IF;
+      END $atomic$;
+      ${comparisonInsertSql()}
+      RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE;
+      SELECT (SELECT count(*) FROM "ContributionShadowMappingApplication")::TEXT || ':' ||
+        (SELECT count(*) FROM "ContributionShadowComparisonReceipt")::TEXT;
+      ROLLBACK;`),
+    ).toBe('1:1');
+  });
+
   it('retains the original comparison set bound after a legitimate comparison', () => {
     expect(() =>
       sql(`BEGIN; ${actualSourceApprovalFixture()} ${actualSelectionFixtureSql()}
@@ -1624,6 +2307,29 @@ describe('E3-2 D2 mapping schema construction', () => {
         VALUES ('ref-terminal','ref-attempt','complete',1,1,0,1,0,0);
       ${comparisonInsertSql({ id: 'ref-late' })} ROLLBACK;`),
     ).toThrow('shadow comparison after terminal');
+  });
+
+  it('wires both actual set guards to isolated volatile NOLOGIN functions without direct EXECUTE', () => {
+    expect(
+      sql(`BEGIN; ${actualSourceApprovalFixture()}
+      SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
+      JOIN pg_namespace n ON n.oid=p.pronamespace
+      WHERE n.nspname='public' AND
+        ((t.tgname='csmap_insert_set_guard' AND p.proname='csm_application_set_guard_fn'
+          AND t.tgrelid='public."ContributionShadowMappingApplication"'::regclass
+          AND t.tgnewtable='csmap_inserted_rows') OR
+         (t.tgname='cscr_insert_set_guard' AND p.proname='cscr_insert_set_guard_fn'
+          AND t.tgrelid='public."ContributionShadowComparisonReceipt"'::regclass
+          AND t.tgnewtable='cscr_inserted_rows'))
+        AND t.tgtype=4 AND t.tgenabled='O' AND NOT t.tgdeferrable
+        AND pg_get_userbyid(p.proowner)='srvf_shadow_owner_w98_fixture'
+        AND NOT (SELECT rolcanlogin FROM pg_roles WHERE oid=p.proowner)
+        AND p.prosecdef AND p.provolatile='v'
+        AND p.proconfig @> ARRAY['search_path=pg_catalog, public, pg_temp']
+        AND NOT has_function_privilege('srvf_shadow_runtime_w98_fixture',p.oid,'EXECUTE')
+        AND NOT has_function_privilege('srvf_shadow_registrar_w98_fixture',p.oid,'EXECUTE');
+      ROLLBACK;`),
+    ).toBe('2');
   });
 
   it('owns protected trigger functions only with NOLOGIN owner, fixed search path and zero runtime direct EXECUTE', () => {
@@ -3697,6 +4403,8 @@ describe('E3-2 D2 mapping schema construction', () => {
       for (const statement of [
         'UPDATE public."AttendanceRecord" SET "roleCode"="roleCode" WHERE FALSE',
         'SELECT id FROM public.audit_logs LIMIT 0',
+        'SELECT public.csm_application_set_guard_fn()',
+        'SELECT public.cscr_insert_set_guard_fn()',
       ]) {
         const denied = await runtime.$executeRawUnsafe(statement).then(
           () => false,
@@ -4073,6 +4781,258 @@ describe('E3-2 D2 mapping schema construction', () => {
           '[shadow-comparison-diagnostic] ' +
             JSON.stringify({ rows: summarizeDiagnostics(diagnosticRows) }),
         );
+      }
+      // Separate from (and after) the unchanged five-second budget above.
+      // Use actual independent LOGIN connections, not an owner SET ROLE mock.
+      const contender = new PrismaClient({ datasourceUrl: connection.toString() });
+      const signal = () => {
+        let resolve!: () => void;
+        const promise = new Promise<void>((done) => (resolve = done));
+        return { promise, resolve };
+      };
+      const waitBlocked = async (pid: number) => {
+        const deadline = performance.now() + 4000;
+        while (performance.now() < deadline) {
+          const rows = await primary.$queryRaw<Array<{ blocked: boolean }>>`
+            SELECT cardinality(pg_blocking_pids(pid)) > 0 AS blocked
+            FROM pg_stat_activity WHERE datname = current_database() AND pid = ${pid}
+          `;
+          if (rows[0]?.blocked) return;
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+        throw new Error('isolated guard did not reach its real lock');
+      };
+      try {
+        await contender.$connect().catch(() => {
+          throw new Error('isolated contender LOGIN failed');
+        });
+        const identity = await contender.$queryRaw<Array<{ name: string }>>`
+          SELECT SESSION_USER::TEXT AS name
+        `;
+        expect(identity).toEqual([{ name: fixtureRole('runtime') }]);
+        const held = signal();
+        const release = signal();
+        const waiterReady = signal();
+        let waiterPid = 0;
+        const holder = primary.$transaction(async (tx) => {
+          await tx.$executeRaw`UPDATE "ActivitySessionPosition" SET "deletedAt"=CURRENT_TIMESTAMP
+            WHERE id='ref-position'`;
+          held.resolve();
+          await release.promise;
+        });
+        const holderResult = holder.then(
+          () => null,
+          (error: unknown) => error,
+        );
+        let waiterResult: Promise<unknown> | undefined;
+        try {
+          await Promise.race([held.promise, holder]);
+          waiterResult = contender
+            .$transaction(async (tx) => {
+              [{ pid: waiterPid }] = await tx.$queryRaw<
+                Array<{ pid: number }>
+              >`SELECT pg_backend_pid() AS pid`;
+              waiterReady.resolve();
+              await tx.$executeRawUnsafe(applicationInsertSql());
+            })
+            .then(
+              () => null,
+              (error: unknown) => error,
+            );
+          await Promise.race([
+            waiterReady.promise,
+            waiterResult.then((error) => {
+              if (error instanceof Error) throw error;
+              throw new Error('isolated waiter ended before its lock probe');
+            }),
+          ]);
+          await waitBlocked(waiterPid);
+          release.resolve();
+          expect(await holderResult).toBeNull();
+          const rejected = await waiterResult;
+          expect(rejected).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+          expect((rejected as Error).message).toContain(
+            'shadow mapping actual position unavailable',
+          );
+          expect(
+            await primary.contributionShadowMappingApplication.count({
+              where: { id: 'ref-application' },
+            }),
+          ).toBe(0);
+        } finally {
+          release.resolve();
+          await holderResult;
+          await waiterResult;
+          await primary.$executeRaw`UPDATE "ActivitySessionPosition" SET "deletedAt"=NULL WHERE id='ref-position'`;
+        }
+
+        // A separate synthetic source/attempt, leaving all earlier evidence and
+        // assertions unchanged. Its first comparison commits while the second
+        // connection is demonstrably waiting on that same attempt's real lock.
+        sql(`BEGIN;
+          INSERT INTO public.audit_logs SELECT (jsonb_populate_record(NULL::public.audit_logs,
+            to_jsonb(a)||jsonb_build_object('id','set-lock-audit'))).* FROM public.audit_logs a WHERE id='ref-source-audit';
+          INSERT INTO "ContributionShadowLegacySourceAnchor"
+            SELECT (s).* FROM (SELECT jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",
+              to_jsonb(a)||jsonb_build_object('id','set-lock-source','auditLogId','set-lock-audit',
+                'legacySourceHash',cslsa_source_hash_fn(jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",
+                  to_jsonb(a)||jsonb_build_object('id','set-lock-source','auditLogId','set-lock-audit'))))) s
+              FROM "ContributionShadowLegacySourceAnchor" a WHERE id='ref-source') changed;
+          SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+          ${applicationInsertSql({ id: 'set-lock-application', legacySourceAnchorId: 'set-lock-source', auditLogId: 'set-lock-audit' })}
+          ${attemptInsertSql().replaceAll('ref-attempt', 'set-lock-attempt').replaceAll('ref-source-audit', 'set-lock-audit')}
+          RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE; COMMIT;`);
+        const firstInserted = signal();
+        const commitFirst = signal();
+        const secondReady = signal();
+        let secondPid = 0;
+        const comparison = (id: string) =>
+          comparisonInsertSql({ id, attemptId: 'set-lock-attempt' }).replace(
+            "WHERE id='ref-source'",
+            "WHERE id='set-lock-source'",
+          );
+        const first = runtime.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(comparison('set-lock-first'));
+          firstInserted.resolve();
+          await commitFirst.promise;
+        });
+        const firstResult = first.then(
+          () => null,
+          (error: unknown) => error,
+        );
+        let secondResult: Promise<unknown> | undefined;
+        try {
+          await Promise.race([firstInserted.promise, first]);
+          secondResult = contender
+            .$transaction(async (tx) => {
+              [{ pid: secondPid }] = await tx.$queryRaw<
+                Array<{ pid: number }>
+              >`SELECT pg_backend_pid() AS pid`;
+              secondReady.resolve();
+              await tx.$executeRawUnsafe(comparison('set-lock-second'));
+            })
+            .then(
+              () => null,
+              (error: unknown) => error,
+            );
+          await Promise.race([
+            secondReady.promise,
+            secondResult.then((error) => {
+              if (error instanceof Error) throw error;
+              throw new Error('isolated count waiter ended before its lock probe');
+            }),
+          ]);
+          await waitBlocked(secondPid);
+          commitFirst.resolve();
+          expect(await firstResult).toBeNull();
+          const rejected = await secondResult;
+          expect(rejected).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+          expect((rejected as Error).message).toContain('shadow comparison exceeds expected set');
+          expect(
+            await primary.contributionShadowComparisonReceipt.count({
+              where: { attemptId: 'set-lock-attempt' },
+            }),
+          ).toBe(1);
+          expect(
+            await primary.contributionShadowComparisonReceipt.count({
+              where: { id: 'set-lock-second' },
+            }),
+          ).toBe(0);
+          expect(
+            await primary.contributionShadowTerminalReceipt.count({
+              where: { attemptId: 'set-lock-attempt' },
+            }),
+          ).toBe(0);
+          console.info(
+            '[shadow-w98-set-locks] positionReread=pass attemptCountReread=pass realLogin=true',
+          );
+        } finally {
+          commitFirst.resolve();
+          await firstResult;
+          await secondResult;
+        }
+        // Opposite attempt order is deliberately not reordered by the new
+        // statement guard. Prove an actual deadlock abort is atomic, not retried.
+        for (const side of ['left', 'right'] as const) {
+          sql(`BEGIN;
+            INSERT INTO public.audit_logs SELECT (jsonb_populate_record(NULL::public.audit_logs,
+              to_jsonb(a)||jsonb_build_object('id','cross-${side}-audit'))).* FROM public.audit_logs a WHERE id='ref-source-audit';
+            INSERT INTO "ContributionShadowLegacySourceAnchor"
+              SELECT (s).* FROM (SELECT jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",
+                to_jsonb(a)||jsonb_build_object('id','cross-${side}-source','auditLogId','cross-${side}-audit',
+                  'legacySourceHash',cslsa_source_hash_fn(jsonb_populate_record(NULL::"ContributionShadowLegacySourceAnchor",
+                    to_jsonb(a)||jsonb_build_object('auditLogId','cross-${side}-audit'))))) s
+                FROM "ContributionShadowLegacySourceAnchor" a WHERE id='ref-source') changed;
+            SET SESSION AUTHORIZATION srvf_shadow_runtime_w98_fixture;
+            ${applicationInsertSql({ id: `cross-${side}-application`, legacySourceAnchorId: `cross-${side}-source`, auditLogId: `cross-${side}-audit` })}
+            ${attemptInsertSql().replaceAll('ref-attempt', `cross-${side}-attempt`).replaceAll('ref-source-audit', `cross-${side}-audit`)}
+            RESET SESSION AUTHORIZATION; SET CONSTRAINTS ALL IMMEDIATE; COMMIT;`);
+        }
+        const leftHeld = signal();
+        const rightHeld = signal();
+        const cross = signal();
+        const crossInsert = (side: string, caller: string) =>
+          comparisonInsertSql({
+            id: `cross-${caller}-${side}`,
+            attemptId: `cross-${side}-attempt`,
+          }).replace("WHERE id='ref-source'", `WHERE id='cross-${side}-source'`);
+        const left = runtime.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(crossInsert('left', 'one'));
+          leftHeld.resolve();
+          await cross.promise;
+          await tx.$executeRawUnsafe(crossInsert('right', 'one'));
+        });
+        const right = contender.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(crossInsert('right', 'two'));
+          rightHeld.resolve();
+          await cross.promise;
+          await tx.$executeRawUnsafe(crossInsert('left', 'two'));
+        });
+        const outcomes = Promise.allSettled([left, right]);
+        try {
+          await Promise.all([
+            Promise.race([leftHeld.promise, left]),
+            Promise.race([rightHeld.promise, right]),
+          ]);
+          cross.resolve();
+          const result = await outcomes;
+          expect(result.filter((entry) => entry.status === 'fulfilled')).toHaveLength(1);
+          const rejected = result.find((entry) => entry.status === 'rejected');
+          expect(rejected?.status).toBe('rejected');
+          if (!rejected || rejected.status !== 'rejected')
+            throw new Error('cross-attempt conflict missing');
+          const failure: unknown = rejected.reason;
+          expect(failure).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+          expect((failure as Prisma.PrismaClientKnownRequestError).meta?.code).toBe('40P01');
+          const loser = result[0].status === 'rejected' ? 'one' : 'two';
+          expect(
+            await primary.contributionShadowComparisonReceipt.count({
+              where: {
+                id: { in: [`cross-${loser}-left`, `cross-${loser}-right`] },
+              },
+            }),
+          ).toBe(0);
+          for (const side of ['left', 'right']) {
+            expect(
+              await primary.contributionShadowComparisonReceipt.count({
+                where: { attemptId: `cross-${side}-attempt` },
+              }),
+            ).toBe(1);
+            expect(
+              await primary.contributionShadowTerminalReceipt.count({
+                where: { attemptId: `cross-${side}-attempt` },
+              }),
+            ).toBe(0);
+          }
+          console.info(
+            '[shadow-w98-cross-attempt] committed=1 aborted=1 sqlstate=40P01 loserRows=0 retries=0',
+          );
+        } finally {
+          cross.resolve();
+          await outcomes;
+        }
+      } finally {
+        await contender.$disconnect();
       }
     } finally {
       await runtimeProvider.onModuleDestroy();

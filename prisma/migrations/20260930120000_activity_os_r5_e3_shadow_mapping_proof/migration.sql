@@ -1083,20 +1083,43 @@ REVOKE ALL ON FUNCTION csm_assert_runtime_fn() FROM PUBLIC;
 
 CREATE FUNCTION csm_application_insert_guard_fn() RETURNS TRIGGER
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-DECLARE result JSONB;
+DECLARE
+  source "ContributionShadowLegacySourceAnchor";
+  approval "ContributionShadowMappingApproval";
+  position "ActivitySessionPosition";
+  item "ActivityContributionPolicySelectionItem";
 BEGIN
   PERFORM csm_assert_runtime_fn();
-  result := csm_application_result_fn(NEW."legacySourceAnchorId",NEW."approvalId",NEW."selectionItemId");
-  IF NEW."windowId" IS DISTINCT FROM result->>'windowId' OR NEW."auditLogId" IS DISTINCT FROM result->>'auditLogId' OR
-    NEW."sheetId" IS DISTINCT FROM result->>'sheetId' OR NEW."sheetVersion" IS DISTINCT FROM (result->>'sheetVersion')::INTEGER OR
-    NEW."recordId" IS DISTINCT FROM result->>'recordId' OR NEW."memberId" IS DISTINCT FROM result->>'memberId' OR
-    NEW."activityId" IS DISTINCT FROM result->>'activityId' OR NEW."policyVersionId" IS DISTINCT FROM result->>'policyVersionId' OR
-    NEW."policyDefinitionHash" IS DISTINCT FROM result->>'policyDefinitionHash' OR
-    NEW."evaluatorVersion" IS DISTINCT FROM (result->>'evaluatorVersion')::INTEGER OR
-    NEW."durationSeconds" IS DISTINCT FROM (result->>'durationSeconds')::INTEGER OR
-    NEW."policyPoints" IS DISTINCT FROM (result->>'recognizedPoints')::NUMERIC OR
-    NEW."explanationCode" IS DISTINCT FROM result->>'explanationCode' OR
-    NEW."createdAt" < transaction_timestamp()::TIMESTAMPTZ(3) OR NEW."createdAt" > clock_timestamp()::TIMESTAMPTZ(3) THEN
+  SELECT * INTO source FROM "ContributionShadowLegacySourceAnchor" WHERE id = NEW."legacySourceAnchorId";
+  SELECT * INTO approval FROM "ContributionShadowMappingApproval" WHERE id = NEW."approvalId";
+  IF source.id IS NULL OR approval.id IS NULL THEN
+    RAISE EXCEPTION 'shadow mapping source or approval unavailable' USING ERRCODE = '23514';
+  END IF;
+  PERFORM 1 FROM "Activity" WHERE id = source."activityId" AND "deletedAt" IS NULL FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'shadow mapping actual activity unavailable' USING ERRCODE = '23514';
+  END IF;
+  SELECT * INTO position FROM "ActivitySessionPosition" WHERE id = approval."sessionPositionId";
+  PERFORM 1 FROM "ActivitySession" WHERE id = position."sessionId" FOR SHARE;
+  PERFORM 1 FROM "ActivitySessionPosition" WHERE id = position.id FOR SHARE;
+  -- Separate statement after the wait, not a lock-before-read CTE snapshot.
+  SELECT * INTO position FROM "ActivitySessionPosition" WHERE id = approval."sessionPositionId";
+  SELECT * INTO item FROM "ActivityContributionPolicySelectionItem" WHERE id = NEW."selectionItemId";
+  IF item.id IS NULL OR item."activityId" IS DISTINCT FROM source."activityId" OR
+    item."versionId" IS DISTINCT FROM approval."policyVersionId" OR
+    item."definitionHash" IS DISTINCT FROM approval."policyDefinitionHash" OR
+    item."evaluatorVersion" IS DISTINCT FROM approval."evaluatorVersion" THEN
+    -- A relational failure must retain the old business error before its FK.
+    PERFORM csm_application_result_fn(source.id,approval.id,NEW."selectionItemId");
+    RAISE EXCEPTION 'shadow mapping immutable selection mismatch' USING ERRCODE = '23514';
+  END IF;
+  IF NEW."windowId" IS DISTINCT FROM source."windowId" OR NEW."auditLogId" IS DISTINCT FROM source."auditLogId" OR
+    NEW."sheetId" IS DISTINCT FROM source."sheetId" OR NEW."sheetVersion" IS DISTINCT FROM source."sheetVersion" OR
+    NEW."recordId" IS DISTINCT FROM source."recordId" OR NEW."memberId" IS DISTINCT FROM source."memberId" OR
+    NEW."activityId" IS DISTINCT FROM source."activityId" OR NEW."policyVersionId" IS DISTINCT FROM approval."policyVersionId" OR
+    NEW."policyDefinitionHash" IS DISTINCT FROM approval."policyDefinitionHash" OR
+    NEW."evaluatorVersion" IS DISTINCT FROM approval."evaluatorVersion" THEN
+    PERFORM csm_application_result_fn(source.id,approval.id,NEW."selectionItemId");
     RAISE EXCEPTION 'shadow mapping application differs from database proof' USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
@@ -1105,6 +1128,206 @@ REVOKE ALL ON FUNCTION csm_application_insert_guard_fn() FROM PUBLIC;
 DROP TRIGGER csmap_pending_insert_guard ON "ContributionShadowMappingApplication";
 CREATE TRIGGER csmap_pending_insert_guard BEFORE INSERT ON "ContributionShadowMappingApplication"
   FOR EACH ROW EXECUTE FUNCTION csm_application_insert_guard_fn();
+
+CREATE FUNCTION csm_application_set_guard_fn() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  g RECORD; bad RECORD; approval "ContributionShadowMappingApproval";
+  source "ContributionShadowLegacySourceAnchor"; observation "ContributionShadowObservationWindow";
+  audit_row public.audit_logs; position "ActivitySessionPosition";
+  policy "ContributionPolicyVersion"; source_time TIMESTAMPTZ;
+  first_stage INTEGER; first_id TEXT; first_error TEXT; group_stage INTEGER; group_error TEXT;
+BEGIN
+  IF TG_OP <> 'INSERT' OR TG_LEVEL <> 'STATEMENT' OR
+    TG_RELID <> 'public."ContributionShadowMappingApplication"'::regclass THEN
+    RAISE EXCEPTION 'shadow mapping transition relation invalid' USING ERRCODE = '23514';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM csmap_inserted_rows) THEN RETURN NULL; END IF;
+  PERFORM csm_assert_runtime_fn();
+  -- Row-specific source checks and shared qualification stages compete in the
+  -- original stage order; a later-stage error in the first group must not hide
+  -- an earlier-stage error in another group. Ties use actual application IDs.
+  SELECT n.id INTO bad FROM csmap_inserted_rows n
+    JOIN public."ContributionShadowLegacySourceAnchor" s ON s.id=n."legacySourceAnchorId"
+    JOIN public.audit_logs a ON a.id=s."auditLogId"
+    WHERE a."resourceId" IS DISTINCT FROM s."sheetId" OR
+      s."legacySourceHash" IS DISTINCT FROM cslsa_source_hash_fn(s)
+    ORDER BY n.id COLLATE "C" LIMIT 1;
+  IF FOUND THEN
+    first_stage:=0; first_id:=bad.id; first_error:='shadow mapping source audit or fingerprint mismatch';
+  ELSE
+    SELECT n.id INTO bad FROM csmap_inserted_rows n
+      JOIN public."ContributionShadowLegacySourceAnchor" s ON s.id=n."legacySourceAnchorId"
+      WHERE s."sourceKindCode" IS DISTINCT FROM 'matched' ORDER BY n.id COLLATE "C" LIMIT 1;
+    IF FOUND THEN
+      first_stage:=8; first_id:=bad.id; first_error:='shadow mapping legacy source mismatch';
+    END IF;
+  END IF;
+  -- Complete qualification key: no policy-only or caller-hash grouping.
+  FOR g IN SELECT s."windowId",s."auditLogId",s."activityId",s."activityTypeCode",
+      s."attendanceRoleCode",n."approvalId",min(n.id COLLATE "C") AS first_id,
+      min(s.id COLLATE "C") AS source_id
+    FROM csmap_inserted_rows n JOIN public."ContributionShadowLegacySourceAnchor" s
+      ON s.id = n."legacySourceAnchorId"
+    GROUP BY s."windowId",s."auditLogId",s."activityId",s."activityTypeCode",s."attendanceRoleCode",n."approvalId"
+    ORDER BY min(n.id COLLATE "C")
+  LOOP
+    group_stage:=NULL; group_error:=NULL;
+    <<qualification>>
+    BEGIN
+    SELECT * INTO source FROM public."ContributionShadowLegacySourceAnchor" WHERE id = g.source_id;
+    SELECT * INTO approval FROM public."ContributionShadowMappingApproval" WHERE id = g."approvalId";
+    SELECT * INTO audit_row FROM public.audit_logs WHERE id = g."auditLogId";
+    SELECT * INTO observation FROM public."ContributionShadowObservationWindow" WHERE id = g."windowId";
+    source_time := audit_row."createdAt" AT TIME ZONE 'UTC';
+    IF audit_row.id IS NULL OR audit_row."shadowProofRequired" IS DISTINCT FROM TRUE OR
+      audit_row.success IS DISTINCT FROM TRUE OR audit_row."resourceType" IS DISTINCT FROM 'attendance_sheet' OR
+      ((audit_row.event = 'attendance-sheet.submit' AND audit_row.context->'extra'->>'operation' = 'submit') OR
+       (audit_row.event = 'attendance-sheet.edit' AND audit_row.context->'extra'->>'operation' = 'edit')) IS NOT TRUE THEN
+      group_stage:=0; group_error:='shadow mapping source audit or fingerprint mismatch'; EXIT qualification;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public."ContributionShadowMappingRegistrationReceipt" receipt
+      WHERE receipt."manifestHash" = approval."manifestHash"
+        AND receipt."registeredByUserId" = approval."registeredByUserId"
+        AND receipt."createdAt" = approval."approvedAt"
+        AND receipt."approvalIdsCanonical" @> jsonb_build_array(approval.id)) THEN
+      group_stage:=1; group_error:='shadow mapping approval has no closed registration'; EXIT qualification;
+    END IF;
+    IF EXISTS (SELECT 1 FROM public."ContributionShadowMappingApproval" successor
+      WHERE successor."previousApprovalId" = approval.id
+        AND successor."approvedAt" <= source_time AND successor."effectiveFrom" <= source_time
+        AND successor."eventKindCode" IN ('revoke','replace')) THEN
+      group_stage:=2; group_error:='shadow mapping approval was superseded at source time'; EXIT qualification;
+    END IF;
+    IF (SELECT count(*) FROM public."ContributionShadowMappingApproval" candidate
+      WHERE candidate."activityId" = g."activityId" AND candidate."activityTypeCode" = g."activityTypeCode"
+        AND candidate."attendanceRoleCode" = g."attendanceRoleCode"
+        AND candidate."mappingVersion" = observation."signedMappingVersion"
+        AND candidate."eventKindCode" IN ('approve','replace')
+        AND candidate."approvedAt" <= source_time AND candidate."effectiveFrom" <= source_time
+        AND (candidate."effectiveUntil" IS NULL OR candidate."effectiveUntil" > source_time)
+        AND NOT EXISTS (SELECT 1 FROM public."ContributionShadowMappingApproval" successor
+          WHERE successor."previousApprovalId" = candidate.id
+            AND successor."approvedAt" <= source_time AND successor."effectiveFrom" <= source_time
+            AND successor."eventKindCode" IN ('revoke','replace'))) <> 1 THEN
+      group_stage:=3; group_error:='shadow mapping approval set is ambiguous or unavailable'; EXIT qualification;
+    END IF;
+    SELECT * INTO position FROM public."ActivitySessionPosition" WHERE id = approval."sessionPositionId";
+    IF position.id IS NULL OR position."activityId" IS DISTINCT FROM g."activityId" OR
+      position."attendanceRoleCode" IS DISTINCT FROM approval."policyRoleCode" OR position."deletedAt" IS NOT NULL OR
+      NOT EXISTS (SELECT 1 FROM public."ActivitySession" session WHERE session.id = position."sessionId"
+        AND session."activityId" = g."activityId" AND session."deletedAt" IS NULL) THEN
+      group_stage:=4; group_error:='shadow mapping actual position unavailable'; EXIT qualification;
+    END IF;
+    SELECT * INTO policy FROM public."ContributionPolicyVersion" WHERE id = approval."policyVersionId";
+    IF policy.id IS NULL OR policy."effectiveFrom" > source_time OR
+      (policy."effectiveUntil" IS NOT NULL AND policy."effectiveUntil" <= source_time) THEN
+      group_stage:=5; group_error:='shadow mapping policy interval unavailable'; EXIT qualification;
+    END IF;
+    IF source_time IS NULL OR approval."approvedAt" IS NULL OR approval."approvedAt" > source_time OR
+      approval."effectiveFrom" IS NULL OR approval."effectiveFrom" > source_time OR
+      (approval."effectiveUntil" IS NOT NULL AND approval."effectiveUntil" <= source_time) OR
+      approval."eventKindCode" IS NULL OR approval."eventKindCode" NOT IN ('approve','replace') THEN
+      group_stage:=6; group_error:='shadow mapping approval is not effective at source time'; EXIT qualification;
+    END IF;
+    IF observation.id IS DISTINCT FROM g."windowId" OR observation."signedMappingVersion" IS NULL OR
+      approval."mappingVersion" IS DISTINCT FROM observation."signedMappingVersion" OR
+      observation."startsAt" IS NULL OR observation."startsAt" > source_time OR
+      observation."endsAt" IS NULL OR observation."endsAt" <= source_time THEN
+      group_stage:=7; group_error:='shadow mapping observation mismatch'; EXIT qualification;
+    END IF;
+    IF approval."activityId" IS DISTINCT FROM g."activityId" OR
+      approval."activityTypeCode" IS DISTINCT FROM g."activityTypeCode" OR
+      approval."attendanceRoleCode" IS DISTINCT FROM g."attendanceRoleCode" OR
+      approval."durationSourceCode" IS DISTINCT FROM 'legacy_stored_hours_2' THEN
+      group_stage:=8; group_error:='shadow mapping legacy source mismatch'; EXIT qualification;
+    END IF;
+    IF approval."policyVersionId" IS DISTINCT FROM policy.id OR policy."definitionHash" IS NULL OR
+      approval."policyDefinitionHash" IS DISTINCT FROM policy."definitionHash" OR
+      policy."schemaVersion" IS DISTINCT FROM 1 OR policy."evaluatorVersion" IS DISTINCT FROM 1 OR
+      approval."evaluatorVersion" IS DISTINCT FROM policy."evaluatorVersion" THEN
+      group_stage:=9; group_error:='shadow mapping policy version mismatch'; EXIT qualification;
+    END IF;
+    END qualification;
+    IF group_stage IS NOT NULL AND (first_stage IS NULL OR group_stage < first_stage OR
+      (group_stage=first_stage AND g.first_id COLLATE "C" < first_id COLLATE "C")) THEN
+      first_stage:=group_stage; first_id:=g.first_id; first_error:=group_error;
+    END IF;
+  END LOOP;
+  IF first_stage IS NOT NULL THEN
+    RAISE EXCEPTION '%',first_error USING ERRCODE = '23514';
+  END IF;
+  -- Full definition validation once per actual version. Expansion/evaluation
+  -- remains local to this statement, and uses real stored rows, never a GUC.
+  WITH versions AS MATERIALIZED (
+    SELECT p.*,csm_policy_fingerprint_fn(p) AS actual_hash
+    FROM public."ContributionPolicyVersion" p
+    JOIN (SELECT DISTINCT "policyVersionId" FROM csmap_inserted_rows) n ON n."policyVersionId" = p.id
+  ), bands AS MATERIALIZED (
+    SELECT p.id AS version_id,r.value->>'attendanceRoleCode' AS role_code,
+      c.value->>'timeCategoryCode' AS category_code,b.value AS band,b.ordinal
+    FROM versions p CROSS JOIN LATERAL jsonb_array_elements(p."definitionJson"->'roleRules') r(value)
+    CROSS JOIN LATERAL jsonb_array_elements(r.value->'categoryRules') c(value)
+    CROSS JOIN LATERAL jsonb_array_elements(c.value->'durationBands') WITH ORDINALITY b(value,ordinal)
+  ), revisions AS MATERIALIZED (
+    SELECT r.*,csm_selection_hash_fn(r."selectionJson",r."schemaVersion") AS actual_hash
+    FROM public."ActivityContributionPolicySelectionRevision" r
+    JOIN (SELECT DISTINCT i."selectionRevisionId" FROM csmap_inserted_rows n
+      JOIN public."ActivityContributionPolicySelectionItem" i ON i.id = n."selectionItemId") i
+      ON i."selectionRevisionId" = r.id
+  ), checked AS (
+    SELECT n.id, CASE
+      WHEN p."definitionHash" IS DISTINCT FROM p.actual_hash THEN 1
+      WHEN s."legacyServiceHours" IS NULL OR s."legacyServiceHours" < 0 OR s."legacyServiceHours" > 999.99 OR
+        trunc(s."legacyServiceHours" * 3600) <> s."legacyServiceHours" * 3600 THEN 2
+      WHEN evaluated.band IS NULL THEN 3
+      WHEN i.id IS NULL OR r.id IS NULL OR i.mode IS DISTINCT FROM 'explicit' OR
+        i."activityId" IS DISTINCT FROM s."activityId" OR r."activityId" IS DISTINCT FROM s."activityId" OR
+        r."schemaVersion" IS DISTINCT FROM 1 OR r."selectionHash" IS DISTINCT FROM r.actual_hash OR
+        (r."createdAt" AT TIME ZONE 'UTC') > (a."createdAt" AT TIME ZONE 'UTC') OR
+        EXISTS (SELECT 1 FROM public."ActivityContributionPolicySelectionRevision" newer
+          WHERE newer."activityId" = s."activityId" AND newer.revision > r.revision
+            AND (newer."createdAt" AT TIME ZONE 'UTC') <= (a."createdAt" AT TIME ZONE 'UTC')) OR
+        i."versionId" IS DISTINCT FROM map_approval."policyVersionId" OR
+        i."definitionHash" IS DISTINCT FROM map_approval."policyDefinitionHash" OR
+        i."evaluatorVersion" IS DISTINCT FROM map_approval."evaluatorVersion" OR
+        ((i."layerCode" = 'position' AND i."positionId" = pos.id AND i."sessionId" = pos."sessionId") OR
+          (i."layerCode" = 'activity' AND i."positionId" IS NULL AND i."sessionId" IS NULL AND
+            NOT EXISTS (SELECT 1 FROM public."ActivityContributionPolicySelectionItem" override_item
+              WHERE override_item."selectionRevisionId" = r.id AND override_item."layerCode" = 'position'
+                AND override_item."positionId" = pos.id AND override_item.mode = 'explicit'))) IS NOT TRUE THEN 4
+      WHEN n."durationSeconds" IS DISTINCT FROM (s."legacyServiceHours" * 3600)::INTEGER OR
+        n."policyPoints" IS DISTINCT FROM (evaluated.band->>'recognizedPoints')::NUMERIC OR
+        n."explanationCode" IS DISTINCT FROM evaluated.band->>'explanationCode' OR
+        n."createdAt" < transaction_timestamp()::TIMESTAMPTZ(3) OR n."createdAt" > clock_timestamp()::TIMESTAMPTZ(3) THEN 5
+      END AS stage
+    FROM csmap_inserted_rows n JOIN public."ContributionShadowLegacySourceAnchor" s ON s.id = n."legacySourceAnchorId"
+    JOIN public."ContributionShadowMappingApproval" map_approval ON map_approval.id = n."approvalId"
+    JOIN public.audit_logs a ON a.id = s."auditLogId"
+    JOIN public."ActivitySessionPosition" pos ON pos.id = map_approval."sessionPositionId"
+    JOIN versions p ON p.id = map_approval."policyVersionId"
+    LEFT JOIN public."ActivityContributionPolicySelectionItem" i ON i.id = n."selectionItemId"
+    LEFT JOIN revisions r ON r.id = i."selectionRevisionId"
+    LEFT JOIN LATERAL (SELECT b.band FROM bands b WHERE b.version_id = p.id
+      AND b.role_code = map_approval."policyRoleCode" AND b.category_code = map_approval."categoryCode"
+      AND ((b.band->'maxSecondsInclusive') = 'null'::JSONB OR
+        s."legacyServiceHours" * 3600 <= (b.band->>'maxSecondsInclusive')::NUMERIC)
+      ORDER BY b.ordinal LIMIT 1) evaluated ON TRUE
+  ) SELECT id,stage INTO bad FROM checked WHERE stage IS NOT NULL ORDER BY stage,id COLLATE "C" LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION '%', CASE bad.stage
+      WHEN 1 THEN 'shadow mapping policy definition hash mismatch'
+      WHEN 2 THEN 'shadow mapping duration source invalid'
+      WHEN 3 THEN 'shadow mapping policy role or category missing'
+      WHEN 4 THEN 'shadow mapping immutable selection mismatch'
+      WHEN 5 THEN 'shadow mapping application differs from database proof' END USING ERRCODE = '23514';
+  END IF;
+  RETURN NULL;
+END $$;
+REVOKE ALL ON FUNCTION csm_application_set_guard_fn() FROM PUBLIC;
+CREATE TRIGGER csmap_insert_set_guard AFTER INSERT ON "ContributionShadowMappingApplication"
+  REFERENCING NEW TABLE AS csmap_inserted_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION csm_application_set_guard_fn();
 
 -- Additive replacement of D1's comparison guard. Retain every original attempt,
 -- terminal, set and audit check. Only an existing, immutable application produced
@@ -1118,8 +1341,6 @@ DECLARE
   v_item "ActivityContributionPolicySelectionItem";
   v_application "ContributionShadowMappingApplication";
   v_source "ContributionShadowLegacySourceAnchor";
-  v_records JSONB;
-  v_found BOOLEAN; v_count BIGINT;
 BEGIN
   SELECT * INTO v_attempt FROM "ContributionShadowAttemptReceipt"
     WHERE id = NEW."attemptId" FOR UPDATE;
@@ -1130,26 +1351,17 @@ BEGIN
   IF EXISTS (SELECT 1 FROM "ContributionShadowTerminalReceipt" WHERE "attemptId" = NEW."attemptId") THEN
     RAISE EXCEPTION 'shadow comparison after terminal' USING ERRCODE = '23514';
   END IF;
-  SELECT count(*) INTO v_count FROM "ContributionShadowComparisonReceipt" WHERE "attemptId" = NEW."attemptId";
-  IF v_count >= v_attempt."expectedRecordCount" THEN
-    RAISE EXCEPTION 'shadow comparison exceeds expected set' USING ERRCODE = '23514';
+  -- An existing same-attempt record would hit the unique constraint before
+  -- AFTER STATEMENT. Preserve the old full-set error on this conflict path
+  -- only; ordinary new rows never perform a per-row receipt count.
+  IF EXISTS (SELECT 1 FROM "ContributionShadowComparisonReceipt"
+    WHERE "attemptId" = NEW."attemptId" AND "recordId" = NEW."recordId") THEN
+    IF (SELECT count(*) FROM "ContributionShadowComparisonReceipt"
+      WHERE "attemptId" = NEW."attemptId") >= v_attempt."expectedRecordCount" THEN
+      RAISE EXCEPTION 'shadow comparison exceeds expected set' USING ERRCODE = '23514';
+    END IF;
   END IF;
   SELECT * INTO v_audit FROM audit_logs WHERE id = v_attempt."auditLogId" FOR SHARE;
-  v_records := v_audit.context->'after'->'records';
-  -- Positive string-object containment is the same-object membership witness.
-  -- Misses retain the original text-coercion scan, including malformed-array
-  -- errors and legacy numeric/boolean text matches. No negative shortcut.
-  IF jsonb_typeof(v_records) = 'array' AND
-    v_records @> jsonb_build_array(
-      jsonb_build_object('id',NEW."recordId",'memberId',NEW."memberId")) THEN
-    v_found := TRUE;
-  ELSE
-    SELECT EXISTS (SELECT 1 FROM jsonb_array_elements(v_records) AS e(value)
-      WHERE value->>'id' = NEW."recordId" AND value->>'memberId' = NEW."memberId") INTO v_found;
-  END IF;
-  IF NOT v_found THEN
-    RAISE EXCEPTION 'shadow record not in exact audit snapshot' USING ERRCODE = '23514';
-  END IF;
   IF NEW."selectionItemId" IS NOT NULL THEN
     SELECT * INTO v_item FROM "ActivityContributionPolicySelectionItem" WHERE id = NEW."selectionItemId" FOR SHARE;
     IF NOT FOUND OR v_item."selectionRevisionId" IS DISTINCT FROM NEW."selectionRevisionId" OR
@@ -1173,31 +1385,93 @@ BEGIN
       RAISE EXCEPTION 'shadow comparison requires immutable legacy-source proof' USING ERRCODE = '23514';
     END IF;
     PERFORM csm_assert_runtime_fn();
-    IF v_audit."shadowProofRequired" IS DISTINCT FROM TRUE OR
-      v_source."legacySourceHash" IS DISTINCT FROM cslsa_source_hash_fn(v_source) OR
-      v_application."windowId" IS DISTINCT FROM v_attempt."windowId" OR
-      v_application."sheetVersion" IS DISTINCT FROM v_attempt."sheetVersion" OR
-      v_application."sheetId" IS DISTINCT FROM NEW."sheetId" OR
-      v_application."memberId" IS DISTINCT FROM NEW."memberId" OR
-      v_application."activityId" IS DISTINCT FROM NEW."activityId" OR
-      v_application."selectionItemId" IS DISTINCT FROM NEW."selectionItemId" OR
-      v_application."policyVersionId" IS DISTINCT FROM NEW."policyVersionId" OR
-      v_application."policyDefinitionHash" IS DISTINCT FROM NEW."definitionHash" OR
-      v_application."evaluatorVersion" IS DISTINCT FROM NEW."evaluatorVersion" OR
-      v_application."durationSeconds" IS DISTINCT FROM NEW."durationSeconds" OR
-      v_application."policyPoints" IS DISTINCT FROM NEW."policyPoints" OR
-      v_source."legacyServiceHours" IS DISTINCT FROM NEW."legacyServiceHours" OR
-      v_source."legacyPoints" IS DISTINCT FROM NEW."legacyPoints" OR
-      v_source."legacyRuleId" IS DISTINCT FROM NEW."legacyRuleId" OR
-      v_source."legacySourceHash" IS DISTINCT FROM NEW."legacySourceHash" OR
-      NEW."classificationCode" IS DISTINCT FROM (CASE WHEN v_source."legacyPoints" = v_application."policyPoints"
-        THEN 'equal' ELSE 'points_mismatch' END) OR NEW."failureCode" IS NOT NULL THEN
+    -- This actual-source relation must reject before the legacy-rule FK.
+    -- The set guard still verifies the complete immutable application proof.
+    IF v_source."legacyRuleId" IS DISTINCT FROM NEW."legacyRuleId" THEN
       RAISE EXCEPTION 'shadow comparison differs from immutable application proof' USING ERRCODE = '23514';
     END IF;
   END IF;
   RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION cscr_insert_guard_fn() FROM PUBLIC;
+
+CREATE FUNCTION cscr_insert_set_guard_fn() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  bad RECORD; v_row "ContributionShadowComparisonReceipt";
+  v_attempt "ContributionShadowAttemptReceipt"; v_audit public.audit_logs;
+  v_application "ContributionShadowMappingApplication"; v_source "ContributionShadowLegacySourceAnchor";
+BEGIN
+  IF TG_OP <> 'INSERT' OR TG_LEVEL <> 'STATEMENT' OR
+    TG_RELID <> 'public."ContributionShadowComparisonReceipt"'::regclass THEN
+    RAISE EXCEPTION 'shadow comparison transition relation invalid' USING ERRCODE = '23514';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM cscr_inserted_rows) THEN RETURN NULL; END IF;
+  -- BEFORE holds the real attempt row locks. This separate volatile statement
+  -- rereads committed predecessors after a wait, plus this transaction's rows.
+  SELECT inserted.first_id INTO bad FROM
+    (SELECT "attemptId",min(id COLLATE "C") AS first_id FROM cscr_inserted_rows GROUP BY "attemptId") inserted
+    JOIN public."ContributionShadowAttemptReceipt" a ON a.id = inserted."attemptId"
+    WHERE (SELECT count(*) FROM public."ContributionShadowComparisonReceipt" c
+      WHERE c."attemptId" = a.id) > a."expectedRecordCount"
+    ORDER BY inserted.first_id COLLATE "C" LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'shadow comparison exceeds expected set' USING ERRCODE = '23514';
+  END IF;
+  WITH audits AS MATERIALIZED (
+    SELECT a.id,a.context->'after'->'records' AS records FROM public.audit_logs a
+    JOIN (SELECT DISTINCT attempt."auditLogId" FROM cscr_inserted_rows n
+      JOIN public."ContributionShadowAttemptReceipt" attempt ON attempt.id = n."attemptId") used
+      ON used."auditLogId" = a.id
+  ), members AS MATERIALIZED (
+    SELECT DISTINCT a.id AS audit_id,e.value->>'id' AS record_id,e.value->>'memberId' AS member_id
+    FROM audits a CROSS JOIN LATERAL jsonb_array_elements(a.records) e(value)
+  ) SELECT n.id INTO bad FROM cscr_inserted_rows n
+    JOIN public."ContributionShadowAttemptReceipt" attempt ON attempt.id = n."attemptId"
+    WHERE NOT EXISTS (SELECT 1 FROM members m WHERE m.audit_id = attempt."auditLogId"
+      AND m.record_id = n."recordId" AND m.member_id = n."memberId")
+    ORDER BY n.id COLLATE "C" LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'shadow record not in exact audit snapshot' USING ERRCODE = '23514';
+  END IF;
+  FOR v_row IN SELECT * FROM cscr_inserted_rows WHERE comparable ORDER BY id COLLATE "C" LOOP
+    PERFORM csm_assert_runtime_fn();
+    SELECT * INTO v_attempt FROM public."ContributionShadowAttemptReceipt" WHERE id = v_row."attemptId";
+    SELECT * INTO v_audit FROM public.audit_logs WHERE id = v_attempt."auditLogId";
+    SELECT * INTO v_application FROM public."ContributionShadowMappingApplication"
+      WHERE "auditLogId" = v_attempt."auditLogId" AND "recordId" = v_row."recordId";
+    SELECT * INTO v_source FROM public."ContributionShadowLegacySourceAnchor" WHERE id = v_application."legacySourceAnchorId";
+    IF v_application.id IS NULL OR v_source.id IS NULL THEN
+      RAISE EXCEPTION 'shadow comparison requires immutable legacy-source proof' USING ERRCODE = '23514';
+    END IF;
+    IF v_audit."shadowProofRequired" IS DISTINCT FROM TRUE OR
+      v_source."legacySourceHash" IS DISTINCT FROM cslsa_source_hash_fn(v_source) OR
+      v_application."windowId" IS DISTINCT FROM v_attempt."windowId" OR
+      v_application."sheetVersion" IS DISTINCT FROM v_attempt."sheetVersion" OR
+      v_application."sheetId" IS DISTINCT FROM v_row."sheetId" OR
+      v_application."memberId" IS DISTINCT FROM v_row."memberId" OR
+      v_application."activityId" IS DISTINCT FROM v_row."activityId" OR
+      v_application."selectionItemId" IS DISTINCT FROM v_row."selectionItemId" OR
+      v_application."policyVersionId" IS DISTINCT FROM v_row."policyVersionId" OR
+      v_application."policyDefinitionHash" IS DISTINCT FROM v_row."definitionHash" OR
+      v_application."evaluatorVersion" IS DISTINCT FROM v_row."evaluatorVersion" OR
+      v_application."durationSeconds" IS DISTINCT FROM v_row."durationSeconds" OR
+      v_application."policyPoints" IS DISTINCT FROM v_row."policyPoints" OR
+      v_source."legacyServiceHours" IS DISTINCT FROM v_row."legacyServiceHours" OR
+      v_source."legacyPoints" IS DISTINCT FROM v_row."legacyPoints" OR
+      v_source."legacyRuleId" IS DISTINCT FROM v_row."legacyRuleId" OR
+      v_source."legacySourceHash" IS DISTINCT FROM v_row."legacySourceHash" OR
+      v_row."classificationCode" IS DISTINCT FROM (CASE WHEN v_source."legacyPoints" = v_application."policyPoints"
+        THEN 'equal' ELSE 'points_mismatch' END) OR v_row."failureCode" IS NOT NULL THEN
+      RAISE EXCEPTION 'shadow comparison differs from immutable application proof' USING ERRCODE = '23514';
+    END IF;
+  END LOOP;
+  RETURN NULL;
+END $$;
+REVOKE ALL ON FUNCTION cscr_insert_set_guard_fn() FROM PUBLIC;
+CREATE TRIGGER cscr_insert_set_guard AFTER INSERT ON "ContributionShadowComparisonReceipt"
+  REFERENCING NEW TABLE AS cscr_inserted_rows
+  FOR EACH STATEMENT EXECUTE FUNCTION cscr_insert_set_guard_fn();
 
 -- Preserve D1 guard bodies and their complete validation semantics. The
 -- NOLOGIN definer reads/locks their anchor rows; a runtime login receives no

@@ -62,6 +62,7 @@ BEGIN
       'csm_register_mapping_fn(jsonb,text,text,text,jsonb)','csm_pending_insert_guard_fn()',
       'csm_approval_receipt_closure_fn()','csm_runtime_authority_fn()',
       'csm_application_insert_guard_fn()','csm_assert_runtime_fn()',
+      'csm_application_set_guard_fn()','cscr_insert_set_guard_fn()',
       'csar_insert_guard_fn()','cscr_insert_guard_fn()','cstr_insert_guard_fn()'] LOOP
       EXECUTE format('ALTER FUNCTION public.%s OWNER TO %I',signature,owner_role);
       EXECUTE format('REVOKE ALL ON FUNCTION public.%s FROM PUBLIC,%I,%I',signature,registrar_role,runtime_role);
@@ -104,6 +105,7 @@ BEGIN
         'csm_assert_registration_authority_fn','csm_assert_registration_human_fn',
         'csm_register_mapping_fn','csm_pending_insert_guard_fn','csm_approval_receipt_closure_fn',
         'csm_runtime_authority_fn','csm_application_insert_guard_fn','csm_assert_runtime_fn',
+        'csm_application_set_guard_fn','cscr_insert_set_guard_fn',
         'csar_insert_guard_fn','cscr_insert_guard_fn','cstr_insert_guard_fn') AND
         pg_get_userbyid(p.proowner) <> owner_role) THEN
     RAISE EXCEPTION 'shadow ACL role or owner isolation invalid';

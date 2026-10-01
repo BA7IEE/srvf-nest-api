@@ -115,9 +115,9 @@ describe('E3-2 D2 source proof migration', () => {
   });
 
   it('preserves source JSON projections against the fixed pre-29.17 projection', () => {
-    const body = sql("SELECT pg_get_functiondef('cslsa_insert_guard_fn()'::regprocedure)");
+    const body = sql("SELECT pg_get_functiondef('cslsa_insert_set_guard_fn()'::regprocedure)");
     const start = body.indexOf('  -- Row-local projections only:');
-    const end = body.indexOf('  IF v_audit."shadowProofRequired"', start);
+    const end = body.indexOf('  -- Projection end:', start);
     expect(start).toBeGreaterThan(0);
     expect(end).toBeGreaterThan(start);
     const projection = body.slice(start, end);
@@ -698,6 +698,9 @@ describe('E3-2 D2 source proof migration', () => {
           IF SQLERRM <> ${literal(entry.error ?? 'shadow source not in exact audit snapshot')} THEN RAISE; END IF;
         END;
         IF accepted IS DISTINCT FROM ${entry.accepted} THEN RAISE EXCEPTION 'production source guard differs from fixed witness'; END IF;
+        IF NOT accepted AND EXISTS (SELECT 1 FROM "ContributionShadowLegacySourceAnchor" WHERE id='path-source') THEN
+          RAISE EXCEPTION 'rejected source statement left a partial anchor';
+        END IF;
         IF accepted THEN
           BEGIN
             SET CONSTRAINTS ALL IMMEDIATE;
@@ -900,6 +903,20 @@ describe('E3-2 D2 source proof migration', () => {
       'shadow audit source set incomplete',
     );
   });
+
+  it.each(['COMMIT;', 'SET CONSTRAINTS ALL IMMEDIATE;'])(
+    'retains the missing source closure at %s',
+    (ending) => {
+      rejected(
+        `BEGIN;
+        INSERT INTO audit_logs (id,"resourceType","resourceId",event,context,"shadowProofRequired")
+          VALUES ('set-incomplete','attendance_sheet','sheet-1','attendance-sheet.submit',
+            '{"after":{"records":[{"id":"record-1"}]}}'::jsonb,true);
+        ${ending}`,
+        'shadow audit source set incomplete',
+      );
+    },
+  );
 
   it('allows only guarded w98 fixture cleanup and restores the anchor no-truncate trigger', async () => {
     const prisma = new PrismaClient();
