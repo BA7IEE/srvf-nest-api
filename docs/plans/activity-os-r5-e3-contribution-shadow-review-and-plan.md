@@ -3469,3 +3469,7 @@ helper仅在原受控30秒夹具事务中登记两新表／两trigger、成套�
 Prisma技能指向的`prisma/AGENTS.md`当前不存在，按根AGENTS及实际`prisma/CLAUDE.md`执行现有迁移禁令，不创建替代规则文件。本轮七路径均在原完整包内：E2测试、既有signature changelog、本评审稿、两份台账、`prisma/CLAUDE.md`及`docs/current-state.md`顶部状态；后两项仅更正已提交／已签事实。未跟踪的`docs/development/local-resource-audit-2026-10-02.md`不属于本轮，不修改或提交。不Ready、不合并、不自动重跑CI，不登记真实业务批准、不启用shadow／Gate或操作生产。
 
 w98定向完整2/2通过（30.182秒），明确未设置`SRVF_E2_W98`，实际执行普通afterAll恢复而非专用提前回收分支；结束读回current_database=app_test_w98、迁移136、shadowProofRequired存在，连接0／四角色0后仅回收该合成夹具库，回收后库数0。授权旧E2E字面135复核仅余三处，均为真实135历史schema／134→135升级，原样保留。最终quick退出0：缓存lint、三组类型、441套／9,562条单测及138项eslint自测通过，5条既有todo未执行、5个已知守护缺口仍公开；该E2文件另经定向冷lint，counts／冻结台账／diff通过。提交推送后CI需以新SHA重新验收，旧SHA红点不据本地通过关闭，SQL／seed／权限／ACL摘要不变，无新重签。
+
+最后CODEMAP独立复验发现本轮替换的Prisma顶部状态只写“第136条”而未显式声明当前总数，既有判据按首个“个migration”匹配到下方历史135，故退出1；不把此前quick通过当此闸通过。七路径已普通提交`f159be33`但未推送，立即停止推送；仅在同一已授权Prisma顶部补“当前136个migration、194个模型”，保留所有历史与检查器不变，补充普通文档提交并重新检查后才交付。未追改SQL、断言或生成规则，未跟踪的本地资源报告仍不提交。
+
+补明确当前读数后，`pnpm docs:codemap:check`复验退出0：136声明匹配、生成块一致，既有2 WARN保留；冻结台账及diff复验退出0。后置仅三份文档，不改变已通过的E2／quick代码内容；按原授权普通提交推送更新同一Draft，远端新SHA结论尚未取得。
