@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "1.0.0",
-  "inputDigest": "sha256:e5a95bc615560aa964f3671f9569586f4af305baf6f1e0990cd2c764ea3ec565",
+  "inputDigest": "sha256:c3c12091b4e494019be86a23e0244db4ab2de6b508749d9c0aacfe212740a5b9",
   "inputClosure": {
     "algorithm": "sha256(sorted relative input path + NUL + content sha256)",
     "filesAreEnumeratedBy": "scripts/check-boundaries.ts#metadataInputs",
@@ -390,6 +390,18 @@
       "confirmed": true
     },
     "ContributionShadowDispositionReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowWindowRegistrationReceipt": {
+      "domain": "participation",
+      "ownerModule": "attendances",
+      "subdomain": "attendance",
+      "confirmed": true
+    },
+    "ContributionShadowDispositionApprovalReceipt": {
       "domain": "participation",
       "ownerModule": "attendances",
       "subdomain": "attendance",

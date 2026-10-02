@@ -2,7 +2,7 @@
 // surface: System 系统面
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:a8b08bd749996c5ac7084f7b855e0ffe26dfa308282ebae71cfd2fcd627fcf21
+// inputDigest: sha256:e9c5f72f503c583fa81411c35bdbc02799b1a3cee0ba897a74eeef960cfc6b65
 //
 // ⚠️ 本文件**只有类型与调用签名**:不含 baseURL、不含令牌、不含任何鉴权逻辑。
 //    登录态怎么带、令牌怎么刷新,由消费方在注入的 Fetcher 里自理
@@ -79,6 +79,10 @@ import type {
   ServicePrincipalCredentialCreatedDto,
   ServicePrincipalCredentialResponseDto,
   ServicePrincipalResponseDto,
+  ShadowCandidateEvidenceDto,
+  ShadowComparisonEvidenceDto,
+  ShadowWindowEvidenceDto,
+  ShadowWindowSummaryDto,
   SmsSendLogResponseDto,
   SmsSettingsResponseDto,
   StorageSettingsResponseDto,
@@ -251,6 +255,26 @@ export function createSystemClient(fetcher: Fetcher) {
     /** 软删贡献值规则(写 deletedAt + deletedByUserId;不强制改 status;删完该维度 attendance 预填走 22048 不抛错路径) [rbac: contribution.delete.rule] */
     ContributionRulesControllerSoftDelete(id: string): Promise<ApiEnvelope<void>> {
       return fetcher<void>({ method: "DELETE", path: `/api/system/v1/contribution-rules/${id}` });
+    },
+    /** 查看贡献影子观察窗口 [rbac: contribution-shadow.read.evidence] */
+    SystemContributionShadowEvidenceControllerWindows(query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": ShadowWindowEvidenceDto[] }>> {
+      return fetcher<PageResultDto & { "items": ShadowWindowEvidenceDto[] }>({ method: "GET", path: "/api/system/v1/contribution-shadow/windows", query });
+    },
+    /** 分页查看贡献影子比较结果 [rbac: contribution-shadow.read.evidence] */
+    SystemContributionShadowEvidenceControllerComparisons(windowId: string, attemptId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": ShadowComparisonEvidenceDto[] }>> {
+      return fetcher<PageResultDto & { "items": ShadowComparisonEvidenceDto[] }>({ method: "GET", path: `/api/system/v1/contribution-shadow/windows/${windowId}/attempts/${attemptId}/comparisons`, query });
+    },
+    /** 分页查看贡献影子候选 [rbac: contribution-shadow.read.evidence] */
+    SystemContributionShadowEvidenceControllerCandidates(windowId: string, query?: { "page"?: number; "pageSize"?: number }): Promise<ApiEnvelope<PageResultDto & { "items": ShadowCandidateEvidenceDto[] }>> {
+      return fetcher<PageResultDto & { "items": ShadowCandidateEvidenceDto[] }>({ method: "GET", path: `/api/system/v1/contribution-shadow/windows/${windowId}/candidates`, query });
+    },
+    /** 查看单候选影子证据链 [rbac: contribution-shadow.read.evidence] */
+    SystemContributionShadowEvidenceControllerCandidate(windowId: string, auditLogId: string): Promise<ApiEnvelope<ShadowCandidateEvidenceDto>> {
+      return fetcher<ShadowCandidateEvidenceDto>({ method: "GET", path: `/api/system/v1/contribution-shadow/windows/${windowId}/candidates/${auditLogId}` });
+    },
+    /** 查看贡献影子原始与净缺口 [rbac: contribution-shadow.read.evidence] */
+    SystemContributionShadowEvidenceControllerSummary(windowId: string): Promise<ApiEnvelope<ShadowWindowSummaryDto>> {
+      return fetcher<ShadowWindowSummaryDto>({ method: "GET", path: `/api/system/v1/contribution-shadow/windows/${windowId}/summary` });
     },
     /** 分页查看委托（默认含历史） [rbac: delegation-grant.read.record] */
     DelegationGrantsControllerList(query?: { "page"?: number; "pageSize"?: number; "status"?: "ACTIVE" | "REVOKED" | "SUSPENDED" }): Promise<ApiEnvelope<PageResultDto & { "items": DelegationGrantResponseDto[] }>> {

@@ -90,6 +90,60 @@ function makeService(prisma: PrismaMock, rbac: RbacMock = makeRbacMock(true)): A
 }
 
 describe('AuditLogsService', () => {
+  describe('D3 owner evidence projection under the caller transaction', () => {
+    it('list uses one materialized page/count statement, never the primary audit delegate', async () => {
+      const primary = makePrismaMock();
+      const service = makeService(primary);
+      const raw = jest.fn().mockResolvedValue([{ result: { items: [], total: 0 } }]);
+      await expect(
+        service.readShadowReconciliationPageInTx(
+          { $queryRaw: raw } as unknown as Prisma.TransactionClient,
+          'window-fixture',
+          20,
+          20,
+        ),
+      ).resolves.toEqual({ items: [], total: 0 });
+      expect(raw).toHaveBeenCalledTimes(1);
+      const call = (raw.mock.calls as unknown[][])[0];
+      expect((call[0] as TemplateStringsArray).join('')).toContain('AS MATERIALIZED');
+      expect(call.slice(1)).toContain('window-fixture');
+      expect(primary.auditLog.findUnique).not.toHaveBeenCalled();
+    });
+    it('selected detail computes only its current digest via the safe SQL projection', async () => {
+      const service = makeService(makePrismaMock());
+      const value = { auditLogId: 'audit-fixture', candidateEvidenceHash: 'a'.repeat(64) };
+      const raw = jest.fn().mockResolvedValue([{ value }]);
+      await expect(
+        service.readShadowReconciliationPageInTx(
+          { $queryRaw: raw } as unknown as Prisma.TransactionClient,
+          'window-fixture',
+          0,
+          1,
+          'audit-fixture',
+        ),
+      ).resolves.toEqual({ items: [value], total: 1 });
+      expect(raw).toHaveBeenCalledTimes(1);
+      expect(((raw.mock.calls as unknown[][])[0][0] as TemplateStringsArray).join('')).toContain(
+        'csd3_read_candidate_fn',
+      );
+    });
+    it('summary is one database snapshot, and a missing projection is an error rather than zero', async () => {
+      const service = makeService(makePrismaMock());
+      const raw = jest.fn().mockResolvedValue([{ result: { candidateCount: 2 } }]);
+      const tx = { $queryRaw: raw } as unknown as Prisma.TransactionClient;
+      await expect(
+        service.summarizeShadowReconciliationInTx(tx, 'window-fixture'),
+      ).resolves.toEqual({ candidateCount: 2 });
+      expect(raw).toHaveBeenCalledTimes(1);
+      raw.mockResolvedValue([]);
+      await expect(service.summarizeShadowReconciliationInTx(tx, 'window-fixture')).rejects.toThrow(
+        'Missing shadow reconciliation summary',
+      );
+      await expect(
+        service.readShadowReconciliationPageInTx(tx, 'window-fixture', 0, 20),
+      ).rejects.toThrow('Missing shadow reconciliation projection');
+    });
+  });
   describe('readShadowSourceQualification()', () => {
     const projection = {
       createdAt: true,

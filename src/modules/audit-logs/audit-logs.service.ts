@@ -63,6 +63,42 @@ export class AuditLogsService {
     }
   }
 
+  /** Owner public tx query: only the SQL allowlist, never raw audit context. */
+  async readShadowReconciliationPageInTx(
+    tx: PrismaTx,
+    windowId: string,
+    offset: number,
+    limit: number,
+    auditLogId: string | null = null,
+  ): Promise<{ items: Prisma.JsonObject[]; total: number }> {
+    if (auditLogId !== null) {
+      const rows = await tx.$queryRaw<Array<{ value: Prisma.JsonObject }>>`
+        SELECT value FROM csd3_read_candidate_fn(${windowId},${auditLogId}) AS candidate(value)`;
+      return { items: rows.map((row) => row.value), total: rows.length };
+    }
+    const [row] = await tx.$queryRaw<
+      Array<{ result: { items: Prisma.JsonObject[]; total: number } }>
+    >`
+      WITH candidates AS MATERIALIZED (
+        SELECT value FROM csd3_read_candidates_fn(${windowId}) AS candidate(value)
+        WHERE (${auditLogId}::text IS NULL OR value->>'auditLogId'=${auditLogId})
+      ), page AS (SELECT value FROM candidates ORDER BY value->>'createdAt' DESC,value->>'auditLogId' DESC LIMIT ${limit} OFFSET ${offset})
+      SELECT jsonb_build_object('items',coalesce((SELECT jsonb_agg(value ORDER BY value->>'createdAt' DESC,value->>'auditLogId' DESC) FROM page),'[]'::jsonb),
+        'total',(SELECT count(*) FROM candidates)) AS result`;
+    if (!row) throw new Error('Missing shadow reconciliation projection');
+    return row.result;
+  }
+
+  async summarizeShadowReconciliationInTx(
+    tx: PrismaTx,
+    windowId: string,
+  ): Promise<Prisma.JsonObject> {
+    const [row] = await tx.$queryRaw<Array<{ result: Prisma.JsonObject }>>`
+      SELECT csd3_read_summary_fn(${windowId}) AS result`;
+    if (!row) throw new Error('Missing shadow reconciliation summary');
+    return row.result;
+  }
+
   // ============ 落库入口(PR #2 起被业务 service 调用) ============
 
   // 严格按 AuditContext 锁形(D7)构造 context;3 必填 + 3 可选:

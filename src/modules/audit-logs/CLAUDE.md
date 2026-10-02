@@ -4,6 +4,8 @@
 
 ## Scope
 
+- E3-2 D3：公开事务原语 `readShadowReconciliationPageInTx`／`summarizeShadowReconciliationInTx` 只向考勤属主返回SQL允许名单和有界计数，不返原context、证据正文或批准manifest。D3复核读面由考勤模块负责；不增加audit-logs自身端点或变更既有日志读取权限。
+
 - 对外仅 `GET system/v1/audit-logs` 与 `GET system/v1/audit-logs/:id`；禁止新增 update / delete / export。
 - `AuditLogsService.log()` 是业务写路径的不可变追加入口；读取 audit-logs 自身不写 audit。
 - 入口授权只走 `RbacService.can('audit-log.read.entry')`，因此只认当前有效 `USER × GLOBAL RoleBinding`；不把本模块伪装成 `AuthzService` scoped consumer。

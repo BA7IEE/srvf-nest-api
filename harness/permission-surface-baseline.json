@@ -617,6 +617,21 @@
       "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "description": "sha256:c321f8aee459648933915c3a43088ba6e2b6a092f9676d792aa47183d2f5b186"
     },
+    "contribution-shadow.read.evidence": {
+      "endpoints": 5,
+      "surface": "sha256:522513ca4dc8a2919344a657edc95a3269b2d20fd05f3d1d898dc177fa361add",
+      "description": "sha256:b343233109f50a894b325952e7d7e14f56624fb5524d1d0e6b3b5ff3a4c46736"
+    },
+    "contribution-shadow.register.window": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:47b7d80bf74035ca4178116c3d55048e07a0d6db482f01e5a013e5832b56f8ad"
+    },
+    "contribution-shadow.sign.disposition": {
+      "endpoints": 0,
+      "surface": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "description": "sha256:6f4af8c447eb83602bfe82a7e277017603e028ef418a5c83b577bb5fa1a7af59"
+    },
     "contribution.create.rule": {
       "endpoints": 1,
       "surface": "sha256:ece74d183099e0900af23d0f230716fbc0cbc78ce09e0c2517c0a647fc9a6cc0",

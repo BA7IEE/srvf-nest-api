@@ -671,6 +671,24 @@ function discoverAll(entry: Omit<ClockCriticalColumn, 'writeSites'>): Discovered
 }
 
 describe('统一时间权威 —— 「写用库时钟、判用应用时钟」缺陷类的执行位', () => {
+  it('D3两张批准收据的createdAt明确沿既有审计列登记，业务判定不引入应用时钟', () => {
+    const discovered = parseDatabaseClockDefaultColumns(fs.readFileSync(SCHEMA, 'utf8'));
+    for (const model of [
+      'ContributionShadowWindowRegistrationReceipt',
+      'ContributionShadowDispositionApprovalReceipt',
+    ])
+      expect(discovered).toContainEqual({ model, column: 'createdAt' });
+    expect(AUDIT_COLUMNS.has('createdAt')).toBe(true);
+    const sql = fs.readFileSync(
+      path.join(
+        REPO_ROOT,
+        'prisma/migrations/20261002170000_activity_os_r5_e3_reconciliation_signature/migration.sql',
+      ),
+      'utf8',
+    );
+    expect(sql).toContain('NEW."createdAt" := clock_timestamp()');
+    expect(sql).toContain('NEW."startsAt" <= NEW."createdAt"');
+  });
   // ===== ① 完整性硬闸:登记表从 schema 反推,不写「恰 N 条」 =====
   it('①schema 里每个非审计的数据库时钟默认列都已做过一次决定(判定列 / 显式豁免)', () => {
     const declared = parseDatabaseClockDefaultColumns(fs.readFileSync(SCHEMA, 'utf8')).filter(

@@ -1530,12 +1530,12 @@ describe('E3-2 D2 mapping schema construction', () => {
     expect(result.accepted + result.rejected).toBe(result.cases);
   });
 
-  it('cold-replays 135 migrations and leaves all new evidence tables empty', () => {
+  it('cold-replays 136 migrations and leaves all new evidence tables empty', () => {
     expect(
       sql(
         'SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',
       ),
-    ).toBe('135');
+    ).toBe('136');
     for (const table of [
       'ContributionShadowMappingApproval',
       'ContributionShadowMappingApplication',

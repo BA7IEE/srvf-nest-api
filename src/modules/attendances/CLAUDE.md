@@ -4,6 +4,8 @@
 
 ## 本地事实
 
+- E3-2 D3：五个System复核GET由独立EvidenceService／QueryService／Presenter／AuditRecorder承接；显式GLOBAL Human查看权限、Service判权及锁后复核、同事务最小读审计。受控窗口／签字仅CLI，操作各自独立权限，不开放写HTTP；未部署或启用shadow／Gate。批准只追加、不删除业务资产，confirmed_gap不清零，旧unsigned证据不升格。
+
 - `attendances.service.ts` 仍是 **god-service(Phase 6-B 两刀后 1481 NCLOC)**;`attendance-sheet-state-machine.ts` / `attendance-audit-recorder.ts` / `time-overlap-policy.ts` / `contribution-calculator.ts` / `attendance-presenter.ts`(P1-4 第一刀,2026-06-10)/ `attendance-sheet-query.service.ts` + `attendance-record.policy.ts`(Phase 6-B 第一/二刀,2026-08-15)已抽离。
 - 响应序列化必须走 `attendance-presenter.ts`(Sheet 详情 / 列表项 / Record 含 member 摘要 / Decimal→string),**不**在 service 内重新手写字段映射;**读侧** select 与 where 构造已随 Phase 6-B 第一刀迁入 `attendance-sheet-query.service.ts`(见下方「已抽出的职责边界」),**写侧** `sheetSafeSelect` / `sheetFullSelect` 仍留 service。
 - `attendance_sheets` **6 态**(含 `returned` 退回整改与终审);`attendance_records` 子表。

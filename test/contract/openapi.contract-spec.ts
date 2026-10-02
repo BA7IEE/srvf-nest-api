@@ -570,6 +570,11 @@ const EXPECTED_ROUTES: ReadonlyArray<
   ['post', '/api/system/v1/contribution-policies/{id}/versions/{versionId}/activate'],
   ['post', '/api/system/v1/contribution-policies/{id}/versions/{versionId}/retire'],
   ['get', '/api/system/v1/contribution-rules'],
+  ['get', '/api/system/v1/contribution-shadow/windows'],
+  ['get', '/api/system/v1/contribution-shadow/windows/{windowId}/summary'],
+  ['get', '/api/system/v1/contribution-shadow/windows/{windowId}/candidates'],
+  ['get', '/api/system/v1/contribution-shadow/windows/{windowId}/candidates/{auditLogId}'],
+  ['get', '/api/system/v1/contribution-shadow/windows/{windowId}/attempts/{attemptId}/comparisons'],
   ['post', '/api/system/v1/contribution-rules'],
   ['get', '/api/system/v1/contribution-rules/{id}'],
   ['patch', '/api/system/v1/contribution-rules/{id}'],
@@ -1205,7 +1210,7 @@ const EXPECTED_ROUTES: ReadonlyArray<
  * 本文件的用例断言的是本常量;两者必须同源,否则「条目加了、断言没加」会以
  * 「contract spec 内部不一致」的形式在 docs:counts 上爆出来(本刀就是这么被拦下的)。
  */
-const EXPECTED_ROUTE_COUNT = 658; // E1-3 contribution-policy activity selection +5.
+const EXPECTED_ROUTE_COUNT = 663; // E3-2 D3 adds exactly five System evidence GETs.
 
 const NULLABLE_SETTINGS_ROUTES = [
   '/api/system/v1/storage-settings',

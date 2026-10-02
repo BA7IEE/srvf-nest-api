@@ -34,6 +34,11 @@ import { AttendancesService } from './attendances.service';
 import { ContributionCalculator } from './contribution-calculator';
 import { ContributionShadowService } from './contribution-shadow.service';
 import { ContributionShadowEvidenceWriteService } from './contribution-shadow-evidence.write.service';
+import { ContributionShadowEvidenceService } from './contribution-shadow-evidence.service';
+import { ContributionShadowEvidenceQueryService } from './contribution-shadow-evidence.query.service';
+import { ContributionShadowEvidencePresenter } from './contribution-shadow-evidence.presenter';
+import { ContributionShadowEvidenceAuditRecorder } from './contribution-shadow-evidence.audit-recorder';
+import { SystemContributionShadowEvidenceController } from './controllers/system-contribution-shadow-evidence.controller';
 import { TimeOverlapPolicy } from './time-overlap-policy';
 import { AdminActivityCheckInsController } from './controllers/admin-activity-check-ins.controller';
 import { AdminMemberAttendanceController } from './controllers/admin-member-attendance.controller';
@@ -102,6 +107,7 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     OrganizationsModule,
   ],
   controllers: [
+    SystemContributionShadowEvidenceController,
     AttendanceSheetsCollectionController,
     AttendanceSheetsResourceController,
     AdminActivityCheckInsController,
@@ -117,6 +123,10 @@ import { AppMyAttendanceMemberCredentialController } from './controllers/app-my-
     AppMyAttendanceMemberCredentialController,
   ],
   providers: [
+    ContributionShadowEvidenceService,
+    ContributionShadowEvidenceQueryService,
+    ContributionShadowEvidencePresenter,
+    ContributionShadowEvidenceAuditRecorder,
     AttendanceMetricSourceQueryService,
     AttendanceCorrectionWriteService,
     ParticipationSegmentFacade,

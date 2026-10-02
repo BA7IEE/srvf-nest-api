@@ -270,14 +270,14 @@ describe('E1-3 contribution-policy selection migration', () => {
     else process.env[name] = value;
   }
 
-  it('replays all 135 migrations from empty and exposes the immutable selection database surface', () => {
+  it('replays all 136 migrations from empty and exposes the immutable selection database surface', () => {
     recreate();
     deploy(path.join(root, 'schema.prisma'));
     const names = readdirSync(path.join(root, 'migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(135);
+    expect(names).toHaveLength(136);
     expect(names[130]).toBe(MIGRATION);
     expect(
       sql(

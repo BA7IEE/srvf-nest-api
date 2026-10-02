@@ -33939,6 +33939,413 @@ exports[`OpenAPI 契约快照 components.schemas 段快照(锁定 DTO 字段集�
     ],
     "type": "object",
   },
+  "ShadowCandidateEvidenceDto": {
+    "properties": {
+      "activityId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "approvalReceiptId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "approvalReference": {
+        "nullable": true,
+        "type": "string",
+      },
+      "attemptId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "auditLogId": {
+        "type": "string",
+      },
+      "basisCode": {
+        "nullable": true,
+        "type": "string",
+      },
+      "candidateEvidenceHash": {
+        "description": "当前单候选签字锚点；分页不计算，返回null",
+        "nullable": true,
+        "type": "string",
+      },
+      "committedFactHash": {
+        "nullable": true,
+        "type": "string",
+      },
+      "comparisonCount": {
+        "type": "number",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "decisionCode": {
+        "nullable": true,
+        "type": "string",
+      },
+      "dispositionId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "equalCount": {
+        "type": "number",
+      },
+      "errorCount": {
+        "type": "number",
+      },
+      "event": {
+        "type": "string",
+      },
+      "evidenceHash": {
+        "nullable": true,
+        "type": "string",
+      },
+      "expectedRecordCount": {
+        "nullable": true,
+        "type": "number",
+      },
+      "failureCode": {
+        "nullable": true,
+        "type": "string",
+      },
+      "holdCount": {
+        "type": "number",
+      },
+      "mismatchCount": {
+        "type": "number",
+      },
+      "missingStart": {
+        "type": "boolean",
+      },
+      "missingTerminal": {
+        "type": "boolean",
+      },
+      "netUnresolved": {
+        "type": "boolean",
+      },
+      "notApplicable": {
+        "type": "boolean",
+      },
+      "operation": {
+        "nullable": true,
+        "type": "string",
+      },
+      "previousDispositionId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "primaryClassification": {
+        "type": "string",
+      },
+      "rawUnresolved": {
+        "type": "boolean",
+      },
+      "reasonCodes": {
+        "items": {
+          "type": "string",
+        },
+        "type": "array",
+      },
+      "revision": {
+        "nullable": true,
+        "type": "number",
+      },
+      "sheetId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "sheetVersion": {
+        "nullable": true,
+        "type": "number",
+      },
+      "signatureStatus": {
+        "enum": [
+          "unsigned",
+          "current",
+          "stale_evidence",
+        ],
+        "type": "string",
+      },
+      "signedAt": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string",
+      },
+      "signedByUserId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "terminalId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "terminalStatus": {
+        "nullable": true,
+        "type": "string",
+      },
+    },
+    "required": [
+      "auditLogId",
+      "createdAt",
+      "event",
+      "operation",
+      "sheetId",
+      "activityId",
+      "sheetVersion",
+      "attemptId",
+      "terminalId",
+      "terminalStatus",
+      "failureCode",
+      "expectedRecordCount",
+      "comparisonCount",
+      "equalCount",
+      "mismatchCount",
+      "holdCount",
+      "errorCount",
+      "committedFactHash",
+      "reasonCodes",
+      "primaryClassification",
+      "rawUnresolved",
+      "netUnresolved",
+      "missingStart",
+      "missingTerminal",
+      "notApplicable",
+      "dispositionId",
+      "revision",
+      "previousDispositionId",
+      "decisionCode",
+      "approvalReceiptId",
+      "signedByUserId",
+      "approvalReference",
+      "basisCode",
+      "evidenceHash",
+      "candidateEvidenceHash",
+      "signedAt",
+      "signatureStatus",
+    ],
+    "type": "object",
+  },
+  "ShadowComparisonEvidenceDto": {
+    "properties": {
+      "attemptId": {
+        "type": "string",
+      },
+      "canonicalVersion": {
+        "type": "number",
+      },
+      "classificationCode": {
+        "type": "string",
+      },
+      "comparable": {
+        "type": "boolean",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "durationSeconds": {
+        "nullable": true,
+        "type": "number",
+      },
+      "factHash": {
+        "type": "string",
+      },
+      "failureCode": {
+        "nullable": true,
+        "type": "string",
+      },
+      "hashAlgorithmCode": {
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "legacyPoints": {
+        "nullable": true,
+        "type": "string",
+      },
+      "legacySourceHash": {
+        "type": "string",
+      },
+      "memberId": {
+        "type": "string",
+      },
+      "policyPoints": {
+        "nullable": true,
+        "type": "string",
+      },
+      "policySourceHash": {
+        "nullable": true,
+        "type": "string",
+      },
+      "recordId": {
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "attemptId",
+      "recordId",
+      "memberId",
+      "classificationCode",
+      "comparable",
+      "factHash",
+      "legacySourceHash",
+      "policySourceHash",
+      "legacyPoints",
+      "policyPoints",
+      "durationSeconds",
+      "failureCode",
+      "hashAlgorithmCode",
+      "canonicalVersion",
+      "createdAt",
+    ],
+    "type": "object",
+  },
+  "ShadowWindowEvidenceDto": {
+    "properties": {
+      "configDigest": {
+        "type": "string",
+      },
+      "createdAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "deploymentDigest": {
+        "type": "string",
+      },
+      "endsAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+      "id": {
+        "type": "string",
+      },
+      "manifestHash": {
+        "nullable": true,
+        "type": "string",
+      },
+      "registrationReceiptId": {
+        "nullable": true,
+        "type": "string",
+      },
+      "registrationStatus": {
+        "enum": [
+          "registered",
+          "legacy_unsigned",
+        ],
+        "type": "string",
+      },
+      "signedMappingVersion": {
+        "type": "string",
+      },
+      "startsAt": {
+        "format": "date-time",
+        "type": "string",
+      },
+    },
+    "required": [
+      "id",
+      "startsAt",
+      "endsAt",
+      "createdAt",
+      "deploymentDigest",
+      "configDigest",
+      "signedMappingVersion",
+      "registrationReceiptId",
+      "manifestHash",
+      "registrationStatus",
+    ],
+    "type": "object",
+  },
+  "ShadowWindowSummaryDto": {
+    "properties": {
+      "anomalousReceiptCount": {
+        "type": "number",
+      },
+      "attemptCount": {
+        "type": "number",
+      },
+      "candidateCount": {
+        "type": "number",
+      },
+      "errorCount": {
+        "type": "number",
+      },
+      "failedCount": {
+        "type": "number",
+      },
+      "holdCount": {
+        "type": "number",
+      },
+      "mismatchCount": {
+        "type": "number",
+      },
+      "netMissingStartCount": {
+        "type": "number",
+      },
+      "netMissingTerminalCount": {
+        "type": "number",
+      },
+      "netUnresolvedCount": {
+        "type": "number",
+      },
+      "notApplicableCount": {
+        "type": "number",
+      },
+      "observationStatus": {
+        "enum": [
+          "zero_visible_candidates",
+          "evidence_visible",
+        ],
+        "type": "string",
+      },
+      "rawMissingStartCount": {
+        "type": "number",
+      },
+      "rawMissingTerminalCount": {
+        "type": "number",
+      },
+      "rawUnresolvedCount": {
+        "type": "number",
+      },
+      "sourceOrChainAnomalyCount": {
+        "type": "number",
+      },
+      "staleSignatureCount": {
+        "type": "number",
+      },
+      "terminalCount": {
+        "type": "number",
+      },
+      "window": {
+        "$ref": "#/components/schemas/ShadowWindowEvidenceDto",
+      },
+    },
+    "required": [
+      "window",
+      "candidateCount",
+      "attemptCount",
+      "terminalCount",
+      "rawMissingStartCount",
+      "rawMissingTerminalCount",
+      "rawUnresolvedCount",
+      "notApplicableCount",
+      "netUnresolvedCount",
+      "netMissingStartCount",
+      "netMissingTerminalCount",
+      "failedCount",
+      "mismatchCount",
+      "holdCount",
+      "errorCount",
+      "sourceOrChainAnomalyCount",
+      "staleSignatureCount",
+      "anomalousReceiptCount",
+      "observationStatus",
+    ],
+    "type": "object",
+  },
   "SmsSendLogResponseDto": {
     "properties": {
       "codeId": {
@@ -166432,6 +166839,1096 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
       "summary": "部分更新贡献值规则(白名单仅 pointsBelow / pointsAbove / status / remark;禁改 activityTypeCode / attendanceRoleCode / durationThreshold,由 ValidationPipe 拦截抛 40000) [rbac: contribution.update.rule]",
       "tags": [
         "Ops - Contribution Rules",
+      ],
+    },
+  },
+  "/api/system/v1/contribution-shadow/windows": {
+    "get": {
+      "operationId": "SystemContributionShadowEvidenceController_windows",
+      "parameters": [
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/ShadowWindowEvidenceDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      40300,
+                      37017,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 当前主体类型不能访问该接口(code=37017)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查看贡献影子观察窗口 [rbac: contribution-shadow.read.evidence]",
+      "tags": [
+        "System - Contribution Shadow Evidence",
+      ],
+    },
+  },
+  "/api/system/v1/contribution-shadow/windows/{windowId}/attempts/{attemptId}/comparisons": {
+    "get": {
+      "operationId": "SystemContributionShadowEvidenceController_comparisons",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "windowId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "attemptId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/ShadowComparisonEvidenceDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      40300,
+                      37017,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40400: 资源不存在",
+                    "enum": [
+                      40400,
+                    ],
+                    "example": 40400,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "资源不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "资源不存在(code=40400)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页查看贡献影子比较结果 [rbac: contribution-shadow.read.evidence]",
+      "tags": [
+        "System - Contribution Shadow Evidence",
+      ],
+    },
+  },
+  "/api/system/v1/contribution-shadow/windows/{windowId}/candidates": {
+    "get": {
+      "operationId": "SystemContributionShadowEvidenceController_candidates",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "windowId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "type": "string",
+          },
+        },
+        {
+          "description": "页码",
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "schema": {
+            "default": 1,
+            "example": 1,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+        {
+          "description": "每页数量",
+          "in": "query",
+          "name": "pageSize",
+          "required": false,
+          "schema": {
+            "default": 20,
+            "example": 20,
+            "maximum": 100,
+            "minimum": 1,
+            "type": "number",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/PageResultDto",
+                      },
+                      {
+                        "properties": {
+                          "items": {
+                            "items": {
+                              "$ref": "#/components/schemas/ShadowCandidateEvidenceDto",
+                            },
+                            "type": "array",
+                          },
+                        },
+                        "required": [
+                          "items",
+                          "total",
+                          "page",
+                          "pageSize",
+                        ],
+                        "type": "object",
+                      },
+                    ],
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      40300,
+                      37017,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40400: 资源不存在",
+                    "enum": [
+                      40400,
+                    ],
+                    "example": 40400,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "资源不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "资源不存在(code=40400)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "分页查看贡献影子候选 [rbac: contribution-shadow.read.evidence]",
+      "tags": [
+        "System - Contribution Shadow Evidence",
+      ],
+    },
+  },
+  "/api/system/v1/contribution-shadow/windows/{windowId}/candidates/{auditLogId}": {
+    "get": {
+      "operationId": "SystemContributionShadowEvidenceController_candidate",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "windowId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "type": "string",
+          },
+        },
+        {
+          "in": "path",
+          "name": "auditLogId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ShadowCandidateEvidenceDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      40300,
+                      37017,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40400: 资源不存在",
+                    "enum": [
+                      40400,
+                    ],
+                    "example": 40400,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "资源不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "资源不存在(code=40400)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查看单候选影子证据链 [rbac: contribution-shadow.read.evidence]",
+      "tags": [
+        "System - Contribution Shadow Evidence",
+      ],
+    },
+  },
+  "/api/system/v1/contribution-shadow/windows/{windowId}/summary": {
+    "get": {
+      "operationId": "SystemContributionShadowEvidenceController_summary",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "windowId",
+          "required": true,
+          "schema": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+            "type": "string",
+          },
+        },
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "业务码,0 表示成功",
+                    "example": 0,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "$ref": "#/components/schemas/ShadowWindowSummaryDto",
+                  },
+                  "message": {
+                    "example": "ok",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "",
+        },
+        "400": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40000: 请求参数错误",
+                    "enum": [
+                      40000,
+                    ],
+                    "example": 40000,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "请求参数错误",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "请求参数错误(code=40000)",
+        },
+        "401": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40100: 未登录或登录已失效",
+                    "enum": [
+                      40100,
+                    ],
+                    "example": 40100,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "未登录或登录已失效",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "未登录或登录已失效(code=40100)",
+        },
+        "403": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40300: 无权限访问; 37017: 当前主体类型不能访问该接口",
+                    "enum": [
+                      40300,
+                      37017,
+                    ],
+                    "example": 40300,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "无权限访问",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "无权限访问(code=40300) / 当前主体类型不能访问该接口(code=37017)",
+        },
+        "404": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "40400: 资源不存在",
+                    "enum": [
+                      40400,
+                    ],
+                    "example": 40400,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "资源不存在",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "资源不存在(code=40400)",
+        },
+      },
+      "security": [
+        {
+          "bearer": [],
+        },
+      ],
+      "summary": "查看贡献影子原始与净缺口 [rbac: contribution-shadow.read.evidence]",
+      "tags": [
+        "System - Contribution Shadow Evidence",
       ],
     },
   },

@@ -17,6 +17,9 @@
 // - **绝对禁止**:在本 union 自行新增字符串值;新增审计事件必须先经评审稿或 goal 显式预授权(D6 v1.1 §8.1 / §16)
 
 export type AuditLogEvent =
+  | 'activity.contribution-shadow.evidence-read'
+  | 'activity.contribution-shadow.window-register'
+  | 'activity.contribution-shadow.disposition-sign'
   | 'activity.contribution-shadow.mapping-register' // E3-2 D2：受控登记函数同事务写入，不复制凭据或原始清单
   | 'activity.contribution-rule.conversion' // E2 隔离夹具候选提交；仅锚点、数量与摘要，不复制旧规则原文
   | 'activity.contribution-policy.command'

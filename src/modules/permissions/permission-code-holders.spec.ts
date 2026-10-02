@@ -142,6 +142,9 @@ const MANUALLY_ASSIGNED_PERMISSION_CODES = new Set([
   'contribution-policy.read.catalog',
   'contribution-policy.manage.version',
   'contribution-shadow-mapping.register.approval',
+  'contribution-shadow.read.evidence',
+  'contribution-shadow.register.window',
+  'contribution-shadow.sign.disposition',
   'activity.contribution-policy.read',
   'activity.contribution-policy.select',
 ]);
@@ -153,7 +156,7 @@ const isExempt = (code: string): boolean =>
   MANUALLY_ASSIGNED_PERMISSION_CODES.has(code);
 
 describe('C1 D2a/D2b、D1-3、D3、D4、E1-2 与 E1-3 人工授码例外边界', () => {
-  it('仅二十三条精确例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
+  it('仅二十六条精确例外；码必须真实存在、允许自定义角色、且确实无内建持有人', () => {
     expect([...MANUALLY_ASSIGNED_PERMISSION_CODES].sort()).toEqual([
       'activity-metric.manage.definition',
       'activity-metric.manage.rule-binding',
@@ -178,6 +181,9 @@ describe('C1 D2a/D2b、D1-3、D3、D4、E1-2 与 E1-3 人工授码例外边界',
       'contribution-policy.manage.version',
       'contribution-policy.read.catalog',
       'contribution-shadow-mapping.register.approval',
+      'contribution-shadow.read.evidence',
+      'contribution-shadow.register.window',
+      'contribution-shadow.sign.disposition',
     ]);
     for (const code of MANUALLY_ASSIGNED_PERMISSION_CODES) {
       expect(PERMISSION_UNIVERSE.has(code)).toBe(true);

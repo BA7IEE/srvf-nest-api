@@ -19,7 +19,7 @@
 > **三条写库漏斗**(全部 `event: AuditLogEvent` 类型锁,新增事件不进 union 编译不过):
 > `AuditLogsService.log()` · `writeConfigAudit()`(permissions)· `user-roles.service` 内联薄封装。
 
-**审计事件(机器核对):175 个 · 活跃(≥1 次出现):170 · 已退役/零产出:5**
+**审计事件(机器核对):178 个 · 活跃(≥1 次出现):173 · 已退役/零产出:5**
 
 
 ## profile
@@ -86,6 +86,9 @@
 | `activity.contribution-policy-version.command` | 1 | E1-2：创建、激活或退役不可变政策版本；仅记录政策／版本 ID、definition hash、evaluator 与前后状态，和事实、收据同事务；不记录 definition、幂等键或请求哈希 |
 | `activity.contribution-policy.selection` | 1 | E1-3：活动贡献政策选择修订；仅记录 activityId、revision、selectionHash、operationCode 与目标数量，和选择、收据同事务；不记录完整政策定义、operationKey、requestHash 或人员明细 |
 | `activity.contribution-shadow.mapping-register` | 1 | E3-2 D2：实际产出位于 csm_register_mapping_fn，与批准／登记收据同事务；TS类型常量是SQL合同见证而非第二次写审计，E2E核对实际事件。context仅内部requestId、null ip／ua与manifestHash／approvalCount，不记录令牌或原始清单 |
+| `activity.contribution-shadow.evidence-read` | 1 | E3-2 D3：最小目标id／固定动作／行数，调用者五秒事务内记录，失败不返回证据 |
+| `activity.contribution-shadow.window-register` | 1 | E3-2 D3：SQL登记与窗口收据同事务；TS类型常量见证、真实LOGIN E2E核验实际审计，不重复写审计 |
+| `activity.contribution-shadow.disposition-sign` | 1 | E3-2 D3：SQL逐候选批准／处置同事务闭环，只记录允许名单锚点、revision，不记录批准正文或凭据 |
 
 ## activity-series
 

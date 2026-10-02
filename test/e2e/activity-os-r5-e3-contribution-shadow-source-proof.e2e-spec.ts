@@ -207,9 +207,9 @@ describe('E3-2 D2 source proof migration', () => {
     console.info('[shadow-projection-candidates]', JSON.stringify(rows));
   });
 
-  it('cold-replays 135 migrations with an empty anchor table and default-off audit bit', () => {
+  it('cold-replays 136 migrations with an empty anchor table and default-off audit bit', () => {
     expect(sql('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).toBe(
-      '135',
+      '136',
     );
     expect(sql('SELECT count(*) FROM "ContributionShadowLegacySourceAnchor"')).toBe('0');
     expect(
