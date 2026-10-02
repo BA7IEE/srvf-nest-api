@@ -1000,4 +1000,27 @@ PR 5 交付时这里写着一条如实说的限制:**旧的 `POST` / `DELETE /ro
 
 ## 6. 这份文件怎么不馊
 
+### E3-2 D3：贡献影子对账复核（技术候选，未提交／未部署）
+
+这是 System 证据读面，不是贡献结算写工作台。五个 GET 统一要求当前 ACTIVE Human 的显式 GLOBAL
+`contribution-shadow.read.evidence`；十五个内建角色零默认、SUPER_ADMIN 不直通，SP／delegation 禁止。
+
+| 页面任务 | System 路径（根 `/api/system/v1/contribution-shadow`） |
+| --- | --- |
+| 查窗口及正式登记状态 | `GET /windows` |
+| 看原始／净缺口汇总 | `GET /windows/:windowId/summary` |
+| 查候选与异常原因 | `GET /windows/:windowId/candidates` |
+| 查看单候选及当前摘要锚点 | `GET /windows/:windowId/candidates/:auditLogId` |
+| 查看同窗口尝试的比较行 | `GET /windows/:windowId/attempts/:attemptId/comparisons` |
+
+分页 `page/pageSize`，最大100；沿全局响应包装、40100／40300／40400／40000。内部锚点及摘要用于关联，
+不是姓名／手机号；十进制分值保持字符串。禁止展示或索取原始 audit context、政策正文、candidateEvidence。
+列表当前候选摘要为null，详情才复算；`evidenceHash` 是历史签字摘要，不能代替当前 `candidateEvidenceHash`。
+
+页面并排保留原始与净计数。confirmed_gap 不清零；N只抵扣当前有效的逐候选不适用签字，
+撤销或 `stale_evidence` 恢复缺口。零候选显示“当前没有可见证据”，不得显示“验收通过／可上线”。
+窗口登记与逐项签字仅受控CLI，不提供HTTP写按钮，读权限不赋予另外两项权限。
+详见 [操作与边界说明](../ops/contribution-shadow-reconciliation.md)。前端未实现／未发布，外部端未回执，
+真实业务验收未完成，shadow／Gate仍关闭；不能用生成客户端把这些状态改成已上线。
+
 改后端 API surface / RBAC / 契约 → **同 PR** 改本文件受影响行 + `pnpm docs:openapi`(沿 [`AGENTS.md`](../../AGENTS.md) 反漂铁律);"改什么必须动哪篇哪节"的逐行对照见 [`README.md §2`](README.md)。前端对接前先读本文件 + 对 live `/api/docs-json` 核字段。

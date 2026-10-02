@@ -156,7 +156,7 @@ describe('E2 additive conversion receipt migration', () => {
     recreate();
     deploy();
     expect(sql('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).toBe(
-      '135',
+      '136',
     );
     expect(
       sql(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
@@ -165,14 +165,14 @@ describe('E2 additive conversion receipt migration', () => {
     ).toBe('t');
   }, 120_000);
 
-  it('cold-replays 135 migrations without old-table DML', () => {
+  it('cold-replays 136 migrations without old-table DML', () => {
     recreate();
     deploy();
     const names = readdirSync(path.join(ROOT, 'migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(135);
+    expect(names).toHaveLength(136);
     expect(names[131]).toBe(MIGRATION);
     expect(
       sql(`SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations"

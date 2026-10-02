@@ -7,6 +7,8 @@ import {
 import { deriveTestDbName } from './worktree-db';
 
 const TRUNCATE_TRIGGERS = [
+  { table: 'ContributionShadowWindowRegistrationReceipt', trigger: 'cswr_no_truncate' },
+  { table: 'ContributionShadowDispositionApprovalReceipt', trigger: 'csda_no_truncate' },
   { table: 'ContributionShadowMappingApproval', trigger: 'csma_no_truncate' },
   { table: 'ContributionShadowMappingApplication', trigger: 'csmap_no_truncate' },
   { table: 'ContributionShadowMappingRegistrationReceipt', trigger: 'csmrr_no_truncate' },
@@ -53,6 +55,10 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
       DECLARE item record; states jsonb := '[]'::jsonb;
       BEGIN
         IF current_database() <> ${dbLiteral} THEN RAISE EXCEPTION 'Wrong fixture database'; END IF;
+        IF (to_regclass('public."ContributionShadowWindowRegistrationReceipt"') IS NULL) <>
+           (to_regclass('public."ContributionShadowDispositionApprovalReceipt"') IS NULL) THEN
+          RAISE EXCEPTION 'Incomplete shadow reconciliation fixture tables';
+        END IF;
         IF (to_regclass('public."ContributionShadowMappingApproval"') IS NOT NULL OR
             to_regclass('public."ContributionShadowMappingApplication"') IS NOT NULL OR
             to_regclass('public."ContributionShadowMappingRegistrationReceipt"') IS NOT NULL) AND
@@ -115,6 +121,8 @@ export function timeLedgerFixtureTriggerSql(expectedDatabase = deriveTestDbName(
         FOR item IN SELECT value FROM jsonb_array_elements(current_setting('srvf.d6_fixture_trigger_states')::jsonb)
         LOOP
           IF NOT ((item->>'table'='ContributionShadowObservationWindow' AND item->>'trigger'='csow_no_truncate') OR
+                  (item->>'table'='ContributionShadowWindowRegistrationReceipt' AND item->>'trigger'='cswr_no_truncate') OR
+                  (item->>'table'='ContributionShadowDispositionApprovalReceipt' AND item->>'trigger'='csda_no_truncate') OR
                   (item->>'table'='ContributionShadowMappingApproval' AND item->>'trigger'='csma_no_truncate') OR
                   (item->>'table'='ContributionShadowMappingApplication' AND item->>'trigger'='csmap_no_truncate') OR
                   (item->>'table'='ContributionShadowMappingRegistrationReceipt' AND item->>'trigger'='csmrr_no_truncate') OR
@@ -173,6 +181,15 @@ export async function withTimeLedgerFixtureCleanup<T>(
     // Both identifiers are from the fixed list above, never caller data.
     await tx.$executeRawUnsafe(`ALTER TABLE "${table}" DISABLE TRIGGER "${trigger}"`);
     changed.push({ table, trigger, enabled });
+  }
+  const reconciliationTables = changed.filter(({ table }) =>
+    [
+      'ContributionShadowWindowRegistrationReceipt',
+      'ContributionShadowDispositionApprovalReceipt',
+    ].includes(table),
+  );
+  if (reconciliationTables.length !== 0 && reconciliationTables.length !== 2) {
+    throw new Error('Incomplete shadow reconciliation fixture tables');
   }
   const cutoverTables = new Set(
     changed

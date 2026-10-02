@@ -21,6 +21,7 @@ import { assertConnectedTestDatabase, assertTestDatabaseUrl } from '../setup/tes
 // E3-2 D1 起，五张 shadow 证据表中的 Attempt / Disposition 引用 audit_logs。
 // D2 新增来源表与三张 mapping 证据表；清理必须在同一受控测试事务内
 // 显式清子表，并逐个恢复已有 no-truncate trigger 的原始状态。
+// D3 两张批准收据必须成套出现；旧 schema 两张都不存在时保持原分支。
 // RESTART IDENTITY 对 cuid 主键无效,留作防御。
 export async function truncateAuditLogsTestOnly(app: INestApplication): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
@@ -47,8 +48,12 @@ export async function truncateAuditLogsTestOnly(app: INestApplication): Promise<
         ['ContributionShadowMappingApplication', 'csmap_no_truncate'],
         ['ContributionShadowMappingRegistrationReceipt', 'csmrr_no_truncate'],
       ] as const;
+      const reconciliationTriggers = [
+        ['ContributionShadowWindowRegistrationReceipt', 'cswr_no_truncate'],
+        ['ContributionShadowDispositionApprovalReceipt', 'csda_no_truncate'],
+      ] as const;
       const previous: Array<{ table: string; trigger: string; enabled: string }> = [];
-      for (const [table, trigger] of [...triggers, ...mappingTriggers]) {
+      for (const [table, trigger] of [...triggers, ...mappingTriggers, ...reconciliationTriggers]) {
         const rows = await tx.$queryRawUnsafe<Array<{ enabled: string | null }>>(
           `SELECT t.tgenabled::text AS enabled FROM pg_class c
              JOIN pg_namespace n ON n.oid=c.relnamespace AND n.nspname='public'
@@ -68,7 +73,12 @@ export async function truncateAuditLogsTestOnly(app: INestApplication): Promise<
       const mappingPrevious = previous.filter(({ trigger }) =>
         mappingTriggers.some(([, name]) => name === trigger),
       );
-      const basePrevious = previous.filter((row) => !mappingPrevious.includes(row));
+      const reconciliationPrevious = previous.filter(({ trigger }) =>
+        reconciliationTriggers.some(([, name]) => name === trigger),
+      );
+      const basePrevious = previous.filter(
+        (row) => !mappingPrevious.includes(row) && !reconciliationPrevious.includes(row),
+      );
       const legacyFive =
         basePrevious.length === triggers.length - 1 &&
         !basePrevious.some(({ table }) => table === 'ContributionShadowLegacySourceAnchor');
@@ -81,6 +91,18 @@ export async function truncateAuditLogsTestOnly(app: INestApplication): Promise<
       ) {
         throw new Error('Incomplete shadow mapping fixture tables');
       }
+      if (
+        (reconciliationPrevious.length !== 0 &&
+          reconciliationPrevious.length !== reconciliationTriggers.length) ||
+        (reconciliationPrevious.length !== 0 &&
+          (basePrevious.length !== triggers.length ||
+            mappingPrevious.length !== mappingTriggers.length))
+      ) {
+        throw new Error('Incomplete shadow reconciliation fixture tables');
+      }
+      const reconciliationTables = reconciliationPrevious.length
+        ? '"ContributionShadowDispositionApprovalReceipt", "ContributionShadowWindowRegistrationReceipt", '
+        : '';
       const mappingTables = mappingPrevious.length
         ? '"ContributionShadowMappingApplication", "ContributionShadowMappingRegistrationReceipt", "ContributionShadowMappingApproval", '
         : '';
@@ -88,7 +110,7 @@ export async function truncateAuditLogsTestOnly(app: INestApplication): Promise<
         basePrevious.length === 0
           ? 'TRUNCATE TABLE "audit_logs" RESTART IDENTITY CASCADE'
           : basePrevious.length === triggers.length
-            ? `TRUNCATE TABLE ${mappingTables}"ContributionShadowDispositionReceipt", "ContributionShadowTerminalReceipt", "ContributionShadowComparisonReceipt", "ContributionShadowLegacySourceAnchor", "ContributionShadowAttemptReceipt", "ContributionShadowObservationWindow", "audit_logs" RESTART IDENTITY CASCADE`
+            ? `TRUNCATE TABLE ${reconciliationTables}${mappingTables}"ContributionShadowDispositionReceipt", "ContributionShadowTerminalReceipt", "ContributionShadowComparisonReceipt", "ContributionShadowLegacySourceAnchor", "ContributionShadowAttemptReceipt", "ContributionShadowObservationWindow", "audit_logs" RESTART IDENTITY CASCADE`
             : 'TRUNCATE TABLE "ContributionShadowDispositionReceipt", "ContributionShadowTerminalReceipt", "ContributionShadowComparisonReceipt", "ContributionShadowAttemptReceipt", "ContributionShadowObservationWindow", "audit_logs" RESTART IDENTITY CASCADE',
       );
       for (const { table, trigger, enabled } of previous) {

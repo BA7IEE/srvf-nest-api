@@ -16,8 +16,8 @@
 |---|---|
 | schemaVersion | 1.0.0 |
 | generatorVersion | 2.1.0 |
-| inputDigest | sha256:857da3fe05c632da2a90dd9a2cd1735c444a8d8fafda4cb328e031f78adfe8a6 |
-| endpoint count | 658 |
+| inputDigest | sha256:b8f8abd9c24a147f666ddd993993e9b96d347a543e94b340dfe678c89cb5389a |
+| endpoint count | 663 |
 | legacy [auth] count | 183 |
 | source of truth | normalized controller declarations |
 | retired overlay | harness/route-authz-classification.json must be absent |
@@ -31,7 +31,7 @@
 |---|---:|---:|---:|
 | admin | 316 | 316 | 0 |
 | app | 205 | 205 | 0 |
-| system | 97 | 97 | 0 |
+| system | 102 | 102 | 0 |
 | auth | 22 | 22 | 0 |
 | open | 16 | 16 | 0 |
 | integration | 2 | 2 | 0 |
@@ -41,7 +41,7 @@
 | marker | count |
 |---|---:|
 | public | 33 |
-| rbac | 442 |
+| rbac | 447 |
 | auth | 183 |
 | unclassified | 0 |
 
@@ -113,7 +113,7 @@
 {
   "schemaVersion": "1.0.0",
   "generatorVersion": "2.1.0",
-  "inputDigest": "sha256:857da3fe05c632da2a90dd9a2cd1735c444a8d8fafda4cb328e031f78adfe8a6",
+  "inputDigest": "sha256:b8f8abd9c24a147f666ddd993993e9b96d347a543e94b340dfe678c89cb5389a",
   "entries": [
     {
       "routeKey": "DELETE /api/admin/v1/activities/:activityId/positions/:activityPositionId",
@@ -5228,6 +5228,101 @@
         "codes": [
           {
             "code": "contribution.read.rule",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/contribution-shadow/windows",
+      "controller": "SystemContributionShadowEvidenceController",
+      "handler": "windows",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-shadow.read.evidence",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/contribution-shadow/windows/:windowId/attempts/:attemptId/comparisons",
+      "controller": "SystemContributionShadowEvidenceController",
+      "handler": "comparisons",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-shadow.read.evidence",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/contribution-shadow/windows/:windowId/candidates",
+      "controller": "SystemContributionShadowEvidenceController",
+      "handler": "candidates",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-shadow.read.evidence",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/contribution-shadow/windows/:windowId/candidates/:auditLogId",
+      "controller": "SystemContributionShadowEvidenceController",
+      "handler": "candidate",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-shadow.read.evidence",
+            "scope": null
+          }
+        ],
+        "require": "all",
+        "scopes": [],
+        "engine": "rbac-global"
+      }
+    },
+    {
+      "routeKey": "GET /api/system/v1/contribution-shadow/windows/:windowId/summary",
+      "controller": "SystemContributionShadowEvidenceController",
+      "handler": "summary",
+      "legacy": "rbac",
+      "policy": {
+        "admission": null,
+        "mode": "RBAC",
+        "codes": [
+          {
+            "code": "contribution-shadow.read.evidence",
             "scope": null
           }
         ],
@@ -12190,7 +12285,7 @@
 
 ## Permission code surface
 
-> 每条权限码守着哪些端点。**250 条码有端点;其中 94 条守多于一个端点。**
+> 每条权限码守着哪些端点。**251 条码有端点;其中 95 条守多于一个端点。**
 >
 > ⚠️ **本节只做归因,不做检测。** 权限码总数不变**不能**证明权限说明没过期 —— 已有的码会
 > 长出新的消费入口而总数不动(B7 受众标签即实例:3 个新端点、0 个新码)。但「码长出新端点」
@@ -12217,6 +12312,7 @@
 | `activity.settlement-final-review.record` | 5 | POST /api/admin/v1/attendance-settlements/:id/final-approve · POST /api/admin/v1/attendance-settlements/:id/final-return · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/commit · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/prepare · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/review |
 | `activity.settlement-submit.record` | 5 | POST /api/app/v1/my/managed-activities/:activityId/settlement/submit · POST /api/app/v1/my/managed-activities/:activityId/settlement/versions/:versionId/resubmit · POST /api/app/v1/my/managed-activities/:activityId/time-corrections · POST /api/app/v1/my/managed-activities/:activityId/time-corrections/:requestId/resubmit · POST /api/app/v1/my/managed-activities/:activityId/time-settlement/submit |
 | `certificate.read.record` | 5 | GET /api/admin/v1/certificates · GET /api/admin/v1/certificates/stats · GET /api/admin/v1/members/:memberId/certificates · GET /api/admin/v1/members/:memberId/certificates/:id · GET /api/admin/v1/members/:memberId/certificates/qualification-flag |
+| `contribution-shadow.read.evidence` | 5 | GET /api/system/v1/contribution-shadow/windows · GET /api/system/v1/contribution-shadow/windows/:windowId/attempts/:attemptId/comparisons · GET /api/system/v1/contribution-shadow/windows/:windowId/candidates · GET /api/system/v1/contribution-shadow/windows/:windowId/candidates/:auditLogId · GET /api/system/v1/contribution-shadow/windows/:windowId/summary |
 | `position-assignment.read.record` | 5 | GET /api/admin/v1/members/:memberId/position-assignments · GET /api/admin/v1/organizations/:orgId/position-assignments · GET /api/admin/v1/position-assignments · GET /api/admin/v1/position-assignments/:id · POST /api/admin/v1/position-assignments/preview |
 | `activity-metric.manage.definition` | 4 | POST /api/admin/v1/activity-metric-definitions · POST /api/admin/v1/activity-metric-definitions/:id/activate · POST /api/admin/v1/activity-metric-definitions/:id/retire · PUT /api/admin/v1/activity-metric-definitions/:id/draft |
 | `activity-metric.manage.set` | 4 | POST /api/admin/v1/activity-metric-sets · POST /api/admin/v1/activity-metric-sets/:id/activate · POST /api/admin/v1/activity-metric-sets/:id/retire · PUT /api/admin/v1/activity-metric-sets/:id/draft |
@@ -12735,6 +12831,11 @@
 | GET | /api/system/v1/contribution-policies/:id/versions/:versionId | System - Contribution Policies | rbac | RBAC; admission=-; codes=contribution-policy.read.catalog; require=all; scopes=-; engine=rbac-global | code | src/modules/activities/controllers/system-contribution-policies.controller.ts:124; src/modules/activities/controllers/system-contribution-policies.controller.ts:143 |
 | GET | /api/system/v1/contribution-rules | Ops - Contribution Rules | rbac | RBAC; admission=-; codes=contribution.read.rule; require=all; scopes=-; engine=rbac-global | code | src/modules/contribution-rules/contribution-rules.controller.ts:65; src/modules/contribution-rules/contribution-rules.controller.ts:77 |
 | GET | /api/system/v1/contribution-rules/:id | Ops - Contribution Rules | rbac | RBAC; admission=-; codes=contribution.read.rule; require=all; scopes=-; engine=rbac-global | code | src/modules/contribution-rules/contribution-rules.controller.ts:104; src/modules/contribution-rules/contribution-rules.controller.ts:118 |
+| GET | /api/system/v1/contribution-shadow/windows | System - Contribution Shadow Evidence | rbac | RBAC; admission=-; codes=contribution-shadow.read.evidence; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:40; src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:58 |
+| GET | /api/system/v1/contribution-shadow/windows/:windowId/attempts/:attemptId/comparisons | System - Contribution Shadow Evidence | rbac | RBAC; admission=-; codes=contribution-shadow.read.evidence; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:128; src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:148 |
+| GET | /api/system/v1/contribution-shadow/windows/:windowId/candidates | System - Contribution Shadow Evidence | rbac | RBAC; admission=-; codes=contribution-shadow.read.evidence; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:83; src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:103 |
+| GET | /api/system/v1/contribution-shadow/windows/:windowId/candidates/:auditLogId | System - Contribution Shadow Evidence | rbac | RBAC; admission=-; codes=contribution-shadow.read.evidence; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:106; src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:125 |
+| GET | /api/system/v1/contribution-shadow/windows/:windowId/summary | System - Contribution Shadow Evidence | rbac | RBAC; admission=-; codes=contribution-shadow.read.evidence; require=all; scopes=-; engine=rbac-global | code | src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:61; src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts:80 |
 | GET | /api/system/v1/delegation-grants | system/delegation-grants | rbac | RBAC; admission=-; codes=delegation-grant.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/delegation-grants/delegation-grants.controller.ts:66; src/modules/delegation-grants/delegation-grants.controller.ts:75 |
 | GET | /api/system/v1/delegation-grants/:id | system/delegation-grants | rbac | RBAC; admission=-; codes=delegation-grant.read.record; require=all; scopes=-; engine=rbac-global | code | src/modules/delegation-grants/delegation-grants.controller.ts:78; src/modules/delegation-grants/delegation-grants.controller.ts:91 |
 | GET | /api/system/v1/dict-items | Ops - Dictionaries | rbac | RBAC; admission=-; codes=dict.read.item; require=all; scopes=-; engine=rbac-global | code | src/modules/dictionaries/dictionaries.controller.ts:164; src/modules/dictionaries/dictionaries.controller.ts:178 |

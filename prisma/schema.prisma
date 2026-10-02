@@ -235,6 +235,8 @@ model User {
   auditLogsOnBehalfOf                AuditLog[]                   @relation("AuditOnBehalfOfUser")
   contributionShadowWindowsRegistered ContributionShadowObservationWindow[] @relation("ContributionShadowWindowRegistrar")
   contributionShadowDispositionsSigned ContributionShadowDispositionReceipt[] @relation("ContributionShadowDispositionSigner")
+  contributionShadowWindowRegistrationReceipts ContributionShadowWindowRegistrationReceipt[] @relation("ContributionShadowWindowReceiptActor")
+  contributionShadowDispositionApprovalReceipts ContributionShadowDispositionApprovalReceipt[] @relation("ContributionShadowApprovalSigner")
   shadowMappingsApproved ContributionShadowMappingApproval[] @relation("ShadowMappingApprover")
   shadowMappingsRegistered ContributionShadowMappingApproval[] @relation("ShadowMappingRegistrar")
   shadowMappingRegistrationReceipts ContributionShadowMappingRegistrationReceipt[]
@@ -2785,6 +2787,8 @@ model ContributionShadowObservationWindow {
   attempts     ContributionShadowAttemptReceipt[]
   dispositions ContributionShadowDispositionReceipt[]
   legacySources ContributionShadowLegacySourceAnchor[]
+  registrationReceipt ContributionShadowWindowRegistrationReceipt?
+  dispositionApprovals ContributionShadowDispositionApprovalReceipt[]
 
   @@index([startsAt, endsAt], map: "csow_range_idx")
 }
@@ -2810,6 +2814,7 @@ model ContributionShadowAttemptReceipt {
   comparisons ContributionShadowComparisonReceipt[]
   terminal    ContributionShadowTerminalReceipt?
   dispositions ContributionShadowDispositionReceipt[] @relation("ContributionShadowDispositionAttempt")
+  dispositionApprovals ContributionShadowDispositionApprovalReceipt[] @relation("ContributionShadowApprovalAttempt")
 
   @@unique([auditLogId], map: "csar_audit_key")
   @@unique([windowId, auditLogId], map: "csar_window_audit_key")
@@ -3000,6 +3005,7 @@ model ContributionShadowDispositionReceipt {
   attemptId             String?
   revision              Int
   previousDispositionId String?
+  approvalReceiptId     String?  @unique(map: "csdr_approval_key")
   decisionCode          String
   evidenceHash          String
   signedByUserId        String
@@ -3013,11 +3019,75 @@ model ContributionShadowDispositionReceipt {
   signer      User                                 @relation("ContributionShadowDispositionSigner", fields: [signedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csdr_signer_fk")
   previous    ContributionShadowDispositionReceipt?  @relation("ContributionShadowDispositionChain", fields: [previousDispositionId, windowId, auditLogId], references: [id, windowId, auditLogId], onDelete: Restrict, onUpdate: Restrict, map: "csdr_previous_chain_fk")
   successors  ContributionShadowDispositionReceipt[] @relation("ContributionShadowDispositionChain")
+  approval    ContributionShadowDispositionApprovalReceipt? @relation("ContributionShadowApprovedDisposition", fields: [approvalReceiptId, windowId, auditLogId, revision, decisionCode, signedByUserId, evidenceHash], references: [id, windowId, auditLogId, revision, decisionCode, signedByUserId, candidateEvidenceHash], onDelete: Restrict, onUpdate: Restrict, map: "csdr_approval_chain_fk")
+  approvedSuccessors ContributionShadowDispositionApprovalReceipt[] @relation("ContributionShadowApprovalPredecessor")
 
   @@unique([windowId, auditLogId, revision], map: "csdr_candidate_revision_key")
   @@unique([id, windowId, auditLogId], map: "csdr_id_candidate_key")
+  @@unique([approvalReceiptId, windowId, auditLogId, revision, decisionCode, signedByUserId, evidenceHash], map: "csdr_approval_anchor_key")
   @@index([auditLogId], map: "csdr_audit_idx")
   @@index([attemptId, windowId, auditLogId], map: "csdr_attempt_chain_idx")
+}
+
+// E3-2 D3: official, prospective registration evidence. No backfill for old windows.
+model ContributionShadowWindowRegistrationReceipt {
+  id                   String   @id @default(cuid())
+  windowId             String   @unique(map: "cswr_window_key")
+  commandKey           String   @unique(map: "cswr_command_key")
+  manifestHash         String
+  authorityDigest      String
+  actorUserId          String
+  approvalReference    String
+  startsAt             DateTime @db.Timestamptz(3)
+  endsAt               DateTime @db.Timestamptz(3)
+  deploymentDigest     String
+  configDigest         String
+  signedMappingVersion String
+  schemaVersion        Int
+  hashAlgorithmCode    String
+  canonicalVersion     Int
+  createdAt            DateTime @default(now()) @db.Timestamptz(3)
+
+  window ContributionShadowObservationWindow @relation(fields: [windowId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cswr_window_fk")
+  actor  User @relation("ContributionShadowWindowReceiptActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "cswr_actor_fk")
+
+  @@index([createdAt, id], map: "cswr_created_idx")
+}
+
+// E3-2 D3: one authenticated approval for one exact candidate snapshot and revision.
+// SQL reconstructs evidence and enforces deferred approval/disposition closure.
+model ContributionShadowDispositionApprovalReceipt {
+  id                    String   @id @default(cuid())
+  commandKey            String   @unique(map: "csda_command_key")
+  manifestHash          String
+  authorityDigest       String
+  windowId              String
+  auditLogId            String
+  attemptId             String?
+  revision              Int
+  previousDispositionId String?
+  decisionCode          String
+  operationCode         String
+  basisCode             String
+  approvalReference     String
+  signedByUserId        String
+  candidateEvidence     Json
+  candidateEvidenceHash String
+  hashAlgorithmCode     String
+  canonicalVersion      Int
+  createdAt             DateTime @default(now()) @db.Timestamptz(3)
+
+  window      ContributionShadowObservationWindow @relation(fields: [windowId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csda_window_fk")
+  auditLog    AuditLog @relation("ContributionShadowApprovalAudit", fields: [auditLogId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csda_audit_fk")
+  attempt     ContributionShadowAttemptReceipt? @relation("ContributionShadowApprovalAttempt", fields: [attemptId, windowId, auditLogId], references: [id, windowId, auditLogId], onDelete: Restrict, onUpdate: Restrict, map: "csda_attempt_chain_fk")
+  signer      User @relation("ContributionShadowApprovalSigner", fields: [signedByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "csda_signer_fk")
+  previous    ContributionShadowDispositionReceipt? @relation("ContributionShadowApprovalPredecessor", fields: [previousDispositionId, windowId, auditLogId], references: [id, windowId, auditLogId], onDelete: Restrict, onUpdate: Restrict, map: "csda_previous_chain_fk")
+  disposition ContributionShadowDispositionReceipt? @relation("ContributionShadowApprovedDisposition")
+
+  @@unique([windowId, auditLogId, revision], map: "csda_candidate_revision_key")
+  @@unique([id, windowId, auditLogId, revision, decisionCode, signedByUserId, candidateEvidenceHash], map: "csda_disposition_anchor_key")
+  @@index([attemptId, windowId, auditLogId], map: "csda_attempt_chain_idx")
+  @@index([auditLogId], map: "csda_audit_idx")
 }
 
 // ===== Activity OS R4 / D3: immutable participant time-allocation facts =====
@@ -3752,6 +3822,7 @@ model AuditLog {
   actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   contributionShadowAttempts ContributionShadowAttemptReceipt[] @relation("ContributionShadowAttemptAudit")
   contributionShadowDispositions ContributionShadowDispositionReceipt[] @relation("ContributionShadowDispositionAudit")
+  contributionShadowDispositionApprovals ContributionShadowDispositionApprovalReceipt[] @relation("ContributionShadowApprovalAudit")
   shadowMappingRegistrationReceipts ContributionShadowMappingRegistrationReceipt[]
   contributionShadowLegacySources ContributionShadowLegacySourceAnchor[] @relation("ContributionShadowLegacySourceAudit")
 

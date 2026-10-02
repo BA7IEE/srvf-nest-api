@@ -509,6 +509,15 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **依据**:维护者对列明完整摘要、函数级设置与未完成检查边界的问题回复「确认第135条3b重签」。第135条 `20260930120000_activity_os_r5_e3_shadow_mapping_proof` 完整SQL SHA-256重新核对为 `9536aaf97d704b433b3625014db0d7f882b4a0dbf8c98dec8cc78211dc539de4`；第134条仍为 `37f204e1c46a08040c04775e51823659399d18f3e11b0c873d502de464b3714f`，ACL仍为 `65746a8892017144270034e654b1cee77c539d7374b27e9daca1faa95225aa8b`。不新增函数执行权限、Human权限或审计；全部最终检查通过后沿原完整包授权普通推送#1370 Draft，不Ready／合并、不操作生产或启用开关。
 - **对拍**:有 —— `migration-total` = `135`
 
+> **当前正式签字（2026-10-02，E3-2 D3；历史签字保留）**：维护者确认第136条 `20261002170000_activity_os_r5_e3_reconciliation_signature`，不改已合入第133–135条。
+
+- **结论**:认可
+- **理由**:新增两张不可变批准收据空表及旧处置可空同链批准锚点；受控前瞻窗口、逐候选批准／追加修订、默认authority关闭与数据库拒绝式守卫。零真实业务DML、回填、删除或生产操作。w98非空135→136升级7项、完整签字读链13项与双worker三套24项通过；旧audit清理helper补测仍在收尾，本签不冒称整体验收或PR CI已通过，不授予Ready、合并、真实登记、开关或生产操作。
+- **签字人**:维护者
+- **日期**:2026-10-02
+- **依据**:维护者本轮明确确认「允许扩展 test/helpers/audit-logs-cleanup.ts，仅补两张新表及守卫的受控清理／恢复；确认评审稿§31.13列明的第136条3b及本轮4b重签」。实际第136条SQL完整SHA-256重新核对为 `184da14396cbdf7ad14b8ac654e05f0eab57809efe2b799f5b250a47d805b4b6`，与被确认评审稿一致。
+- **对拍**:有 —— `migration-total` = `136`，SQL SHA-256 = `184da14396cbdf7ad14b8ac654e05f0eab57809efe2b799f5b250a47d805b4b6`
+
 ### 4b — 「字典、Audit events」的对账
 
 > **当前重签（2026-09-25，E2 第一层隔离能力）**：维护者确认权限码仍为269，
@@ -632,6 +641,15 @@ function eviSub(id, kind, title, evidence): SubCheck {
 - **日期**:2026-10-01
 - **依据**:维护者明确回复「确认第29.21.12节第134、135条3b及新增DB执行面4b重签。」`scripts/sql/contribution-shadow-registration-roles.sql` 完整SHA-256为 `65746a8892017144270034e654b1cee77c539d7374b27e9daca1faa95225aa8b`；seed仍为 `af0277a6ba784e040ccb9610b15691b2b2c615028301018514b861f7e4f6181b`，权限目录仍为 `d2edf001cb215c07229ad3579a4cfa0aab285a7330fb5d7abe846fbdd28ad153`。本签只认可指定执行面，不授权真实映射登记、启用shadow／Gate、生产、Ready或合并。
 - **对拍**:有 —— `seed-sha256-12` = `af0277a6ba78`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `175`;`audit-event-registry-active` = `170`
+
+> **当前正式签字（2026-10-02，E3-2 D3三码／三审计及新增DB执行面）**：维护者确认§31.13列明的全部本轮摘要与访问边界；旧签字保留，不继承真实业务登记授权。
+
+- **结论**:认可
+- **理由**:权限273、Audit events178总计／173活跃、字典30类／277项。新增 `contribution-shadow.read.evidence`、`contribution-shadow.register.window`、`contribution-shadow.sign.disposition` 均仅显式GLOBAL Human、自定义角色可授、15内建角色零默认、SUPER_ADMIN不直通、Service Principal／delegation禁止；读、窗口登记和签字三权互不代授，三项同事务最小审计独立登记。新增NOLOGIN owner／registrar／reader分离，测试LOGIN仅w98合成夹具并已回收；PUBLIC私有执行权撤销、固定search_path、精确manifest／实际身份／时效authority默认关闭。真实映射、窗口和签字仍未登记，shadow／Gate未启用，不授予生产、Ready或合并权限。
+- **签字人**:维护者
+- **日期**:2026-10-02
+- **依据**:维护者明确确认评审稿§31.13的第136条3b及本轮4b。实际seed SHA-256 `4e53b0c802036f4bcc6cb8b4e5506cc4f9df25025077835cf120700b04bd02af`、权限目录 `9b643e93d55e10e591110d6ec7413bf0282ce7306ced01a7c71f3062ebbc7307`、新增ACL脚本 `scripts/sql/contribution-shadow-reconciliation-roles.sql` SHA-256 `096bfaed3e44c82ce33f6b751a72e511efb2d4774f09b412037415755cf91eed` 逐项重新核对一致。此签字不替代后续兼容验证或新SHA PR CI，提交Draft沿完整包既有授权。
+- **对拍**:有 —— `seed-sha256-12` = `4e53b0c80203`;`dict-registry-types` = `30`;`dict-registry-items` = `277`;`audit-event-registry-total` = `178`;`audit-event-registry-active` = `173`
 
 > ⭐ **对拍升级说明(2026-08-27 重签)**:首签(2026-08-26)只锚 seed 文件身份、audit 半零覆盖;
 > 本签锚五个读数 —— **增删/改任何字典项或审计事件 ⇒ 读数变 ⇒ 本条当场红,必须重签**。

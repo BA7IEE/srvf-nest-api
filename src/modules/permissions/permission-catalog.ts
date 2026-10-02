@@ -123,6 +123,31 @@ export const CONTRIBUTION_SHADOW_MAPPING_PERMISSION_SEED: ReadonlyArray<RbacPerm
   },
 ];
 
+export const CONTRIBUTION_SHADOW_RECONCILIATION_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> =
+  [
+    {
+      code: 'contribution-shadow.read.evidence',
+      module: 'contribution-shadow',
+      action: 'read',
+      resourceType: 'evidence',
+      description: '查看贡献影子证据与人工处置（仅真人显式 GLOBAL 授权）',
+    },
+    {
+      code: 'contribution-shadow.register.window',
+      module: 'contribution-shadow',
+      action: 'register',
+      resourceType: 'window',
+      description: '登记前瞻贡献影子观察窗口（仅真人显式 GLOBAL 授权）',
+    },
+    {
+      code: 'contribution-shadow.sign.disposition',
+      module: 'contribution-shadow',
+      action: 'sign',
+      resourceType: 'disposition',
+      description: '逐项签署贡献影子候选处置（仅真人显式 GLOBAL 授权）',
+    },
+  ];
+
 export const ACTIVITY_CONTRIBUTION_POLICY_PERMISSION_SEED: ReadonlyArray<RbacPermissionSeed> = [
   {
     code: 'activity.contribution-policy.read',
@@ -3228,6 +3253,45 @@ export const PERMISSION_CATALOG_METADATA: Readonly<Record<string, PermissionCata
       sectionCode: 'activity-participation',
       groupCode: 'activity',
       sortOrder: 201,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'contribution-shadow.read.evidence': {
+      displayName: '查看贡献影子复核证据',
+      businessDescription:
+        '仅真人显式GLOBAL查看窗口、原始缺口与可信人工处置；不授予登记或签字，内建角色零默认，超级管理员不直通，禁止Service Principal和delegation。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 202,
+      riskLevel: 'LOW',
+      riskTags: ['READ'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'contribution-shadow.register.window': {
+      displayName: '登记贡献影子观察窗口',
+      businessDescription:
+        '仅真人显式GLOBAL经受控命令登记已逐项批准的未来窗口；不启用影子开关或授予读和签字权限，内建角色零默认，超级管理员不直通，禁止Service Principal和delegation。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 203,
+      riskLevel: 'HIGH',
+      riskTags: ['WRITE'],
+      grantPolicy: 'CUSTOM_ROLE_ALLOWED',
+      status: 'ACTIVE',
+      uiVisibility: 'DEFAULT',
+    },
+    'contribution-shadow.sign.disposition': {
+      displayName: '逐项签署贡献影子处置',
+      businessDescription:
+        '仅真人显式GLOBAL经受控命令对关闭窗口的准确单候选及新鲜证据作不可变处置；不清除原始缺口或授予查看和窗口权限，内建角色零默认，超级管理员不直通，禁止Service Principal和delegation。',
+      sectionCode: 'activity-participation',
+      groupCode: 'activity',
+      sortOrder: 204,
       riskLevel: 'HIGH',
       riskTags: ['WRITE'],
       grantPolicy: 'CUSTOM_ROLE_ALLOWED',

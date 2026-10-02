@@ -3,7 +3,7 @@
 // surface: System 系统面
 // contractVersion: 0.72.0
 // generatorVersion: 1.0.0
-// inputDigest: sha256:a8b08bd749996c5ac7084f7b855e0ffe26dfa308282ebae71cfd2fcd627fcf21
+// inputDigest: sha256:e9c5f72f503c583fa81411c35bdbc02799b1a3cee0ba897a74eeef960cfc6b65
 
 // 共用类型不在本文件重复定义 —— 从 shared 引入并再导出,保证仓内每个类型只有一份定义。
 import type { ApiEnvelope, PageResult, FetchRequest, Fetcher, PageResultDto } from '../shared/types';
@@ -525,6 +525,100 @@ export interface ServicePrincipalResponseDto {
   "ownerOrganizationId": Record<string, unknown> | null;
   "createdAt": string;
   "updatedAt": string;
+}
+
+export interface ShadowCandidateEvidenceDto {
+  "auditLogId": string;
+  "createdAt": string;
+  "event": string;
+  "operation": string | null;
+  "sheetId": string | null;
+  "activityId": string | null;
+  "sheetVersion": number | null;
+  "attemptId": string | null;
+  "terminalId": string | null;
+  "terminalStatus": string | null;
+  "failureCode": string | null;
+  "expectedRecordCount": number | null;
+  "comparisonCount": number;
+  "equalCount": number;
+  "mismatchCount": number;
+  "holdCount": number;
+  "errorCount": number;
+  "committedFactHash": string | null;
+  "reasonCodes": string[];
+  "primaryClassification": string;
+  "rawUnresolved": boolean;
+  "netUnresolved": boolean;
+  "missingStart": boolean;
+  "missingTerminal": boolean;
+  "notApplicable": boolean;
+  "dispositionId": string | null;
+  "revision": number | null;
+  "previousDispositionId": string | null;
+  "decisionCode": string | null;
+  "approvalReceiptId": string | null;
+  "signedByUserId": string | null;
+  "approvalReference": string | null;
+  "basisCode": string | null;
+  "evidenceHash": string | null;
+  "candidateEvidenceHash": string | null;
+  "signedAt": string | null;
+  "signatureStatus": "unsigned" | "current" | "stale_evidence";
+}
+
+export interface ShadowComparisonEvidenceDto {
+  "id": string;
+  "attemptId": string;
+  "recordId": string;
+  "memberId": string;
+  "classificationCode": string;
+  "comparable": boolean;
+  "factHash": string;
+  "legacySourceHash": string;
+  "policySourceHash": string | null;
+  "legacyPoints": string | null;
+  "policyPoints": string | null;
+  "durationSeconds": number | null;
+  "failureCode": string | null;
+  "hashAlgorithmCode": string;
+  "canonicalVersion": number;
+  "createdAt": string;
+}
+
+export interface ShadowWindowEvidenceDto {
+  "id": string;
+  "startsAt": string;
+  "endsAt": string;
+  "createdAt": string;
+  "deploymentDigest": string;
+  "configDigest": string;
+  "signedMappingVersion": string;
+  "registrationReceiptId": string | null;
+  "manifestHash": string | null;
+  "registrationStatus": "registered" | "legacy_unsigned";
+}
+
+export interface ShadowWindowSummaryDto {
+  "window": ShadowWindowEvidenceDto;
+  "candidateCount": number;
+  "attemptCount": number;
+  "terminalCount": number;
+  "rawMissingStartCount": number;
+  "rawMissingTerminalCount": number;
+  "rawUnresolvedCount": number;
+  "notApplicableCount": number;
+  "netUnresolvedCount": number;
+  "netMissingStartCount": number;
+  "netMissingTerminalCount": number;
+  "failedCount": number;
+  "mismatchCount": number;
+  "holdCount": number;
+  "errorCount": number;
+  "sourceOrChainAnomalyCount": number;
+  "staleSignatureCount": number;
+  "anomalousReceiptCount": number;
+  "observationStatus": "zero_visible_candidates" | "evidence_visible";
 }
 
 export interface SmsSendLogResponseDto {

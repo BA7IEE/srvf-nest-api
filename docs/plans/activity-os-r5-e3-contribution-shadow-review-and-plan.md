@@ -3399,3 +3399,77 @@ pnpm harness:grant 'harness/state-machines.json' --reason 'E3 §31 完整D3实�
 本轮 preflight 与分支专属 hook 复核 exit0，无 open PR；换分支后旧标记曾拦截一次写入，刷新门禁后正常推进，未绕过规则。migcount 18 处常量一致；readtax／counts／codemap／rbacmap／冻结台账扫描均通过，codemap 两类既有 WARN 和 readtax 体量提示保留；这些检查不验证业务正确。实际四路径均非红区，105 个候选唯一且 25 个新增候选符合具名清单；现有模型实数 192。历史评审前缀 628,957 字节、SHA256 `d782928c25fafe81c9f70df4c09295c389ab339d51881d76dd57316513046714` 保留，两份台账去掉本轮顶部增补后与 main 基点逐字相等。仅机械格式化新增 §31 与 fragment，基线历史格式问题不批量修；新内容及 diff 检查单独验收，不声称全文件历史格式通过。PR CI 以新 SHA 为准，不冒称当前业务验收。
 
 **本次未做**：未实现端点、CLI、schema／SQL／权限／审计或业务测试，未连接任何数据库或创建角色；未登记真实窗口／映射／签字，未启用开关／Gate、执行 D8-OPS、部署或操作生产，未删除／重算业务数据；不 Ready、不合并本计划 PR。
+
+### 31.12 完整实施包施工证据（2026-10-02；未提交）
+
+维护者确认完整包并执行授权命令；本地核验14项精确红区授权。当前分支 `codex/e3-d3-reconciliation` 基于 main `46173e4a`，#1375已合入且同SHA main CI 36990897111通过。授权仅覆盖§31.8具名105路径、w98隔离库与四个具名夹具角色；SQL／权限／审计／DB执行面定稿后仍分别重签，不继承生产或真实业务批准。
+
+实施前旧shadow与Human命令身份定向6套314条单测通过；新清单／登记服务3套55条通过。两张新表和第136条追加迁移已实现，Prisma validate／generate及完整w98冷回放通过。新五GET已接线，三组typecheck通过；尚未完成读面、故障、兼容、生成物和最终quick验收。
+
+真实受限TCP LOGIN的满额首轮探针2条通过：2,000候选、10,000比较行，选中真实hold候选签confirmed_gap，事务约170ms，五秒预算保持；批准／处置／最小审计同事务闭环，原始缺口不清零。测试映射锚点是明确的合成夹具，不代表实际映射登记验收。四个具名角色均已撤权回收。首次SQL锁返回void不能反序列化，已在新服务将锁结果转text；第二次延期闭环检查因registrar无旧表读取权限而失败，改为新NOLOGIN owner持有的SECURITY DEFINER检查后通过。失败证据保留，不冒称首次全绿。
+
+**本次未做**：未完成D3全量验收、3b／4b最终重签、提交推送或PR CI；未登记真实窗口／映射／签字、未启用shadow／Gate、未部署或操作生产、未执行D8-OPS、未删除或重算业务数据。此前§31待审描述保留为计划时点，本节为当前已批准施工状态。
+
+### 31.13 后续本地验收与精确兼容缺项（2026-10-02；未提交）
+
+全部当前改动仍在§31.8的105路径上限内，现场核验99路径已修改／新增、清单外0。14项维护者红区授权不等于最终签字。沿 Prisma、安全、API 与交接技能落实独立批准证据、当前Human复核、精确DB身份及同PR交接；未改全局执法规则或历史断言。
+
+| 验证 | 实际结果与边界 |
+| --- | --- |
+| 定向单测 | 15套472条通过；之后真实CLI默认不连库／私有输入拒绝回归45条通过。最终全量以quick结果为准，不累加不同轮次作同一总数 |
+| 真实LOGIN／完整签字和读链 | 完整13项通过，2,000候选／10,000比较行；新签字约215ms，五GET约34–401ms，域查询9–12、含权限及审计总查询27–30，保留五秒及12／16／40查询上限 |
+| 并发与故障 | 实际Attempt锁等待后才释放签字，等待期间审计FOR SHARE可取得；签字保持Attempt先于Audit锁序，避免既有比较写者反向锁。未知／错锚点、不同输入同键、错误N、错前驱／revision拒绝，最终审计冲突整体回滚；同键重放只有一份最小审计 |
+| 证据与ACL | 有界N逐项签、追加撤销和来源变化stale；真实迟到Attempt使旧签字stale，不改旧批准。真实LOGIN撤registrar后授reader能读安全函数，原context／candidateEvidence／登记函数／SET ROLE owner拒绝。所有四个角色测试结束撤回回收，现场角色数0 |
+| 135→136历史升级 | 新迁移完整7项通过；逐一核验136文件／落库checksum，非空旧事实保持相等、旧批准null、不回填、默认authority关闭、PUBLIC无私有执行权、历史无签处置契约保留 |
+| 新夹具安全回归 | 完整4项通过；resetDb恢复两守卫，失败事务回滚停用，缺trigger和半套表均拒绝；SQL fragment与Prisma helper均校验两表成套。未知操作与错误源形状保持原始／净缺口，零候选不宣称GO |
+| 既有来源完整回归 | 88项通过，旧2,000 Record真实提交链约1,032ms，原七秒与全部断言保留。第一轮运行遗漏专用SRVF_E3_D2_W98初始化标志，87项因w98不存在失败；纠正运行配置后完整通过，未改测试断言或生产代码 |
+| OpenAPI／契约 | 完整1,092项及两快照通过；语义diff breaking0/additive5，既有658访问策略EQUIVALENT、新增5，无BROADER／INCOMPARABLE。逐旧路径／schema对照无变化，新增五GET／四DTO；histogram差异两份均仅1,497行新增、0删行，默认git相似片段对齐造成的大差异不是既有契约改动 |
+| 架构／生成物 | 边界metadata194模型／43模块／78状态列通过，新增债0；domain-map只加两模型属主、state-machines只刷新摘要，inventory无新状态无需修改。18处当前迁移常量136一致，历史升级目标保留；权限273、审计178总／173活跃、字典30／277，readtax通过（current-state92%提示保留）；生成器刷新与其check分开记结果 |
+
+CLI执行只输出允许名单最小收据，不输出URL／token／原证据；默认验证在不可达数据库配置下成功，明确authenticated=false、registered=false。五个System GET响应与前端接线说明在admin-web及独立ops文档同步；契约登记表的外部回执值不变，前端未实现／未发布，后端未部署。
+
+最终quick首轮全量441套中440套通过，9,561通过／1失败／5既有todo；单测唯一失败为FROZEN_DRAFTS派生权限数270未刷新273。按既有生成器刷新，保留原判断断言，定向6条复验通过。首轮quick守护另有两项CODEMAP新E2E计数418→419过期导致失败；刷新后独立完整harness退出0，含原判据正反例与hooks，既有已知缺口仍公开。权威冷lint首次达到Node默认约4GB堆上限并退出134，非检查通过；仅给本次进程设8GB重跑退出0，不修改配置或CI。最终quick退出0：缓存lint、三组类型、全量441套／9,562条通过、5既有todo及守护通过；首次并发全量单测的worker退出告警保留，最终轮未出现同告警也不等于已完成泄漏诊断。
+
+提交前发现新signature和reconciliation两文件在原生Jest分片同落第2片，均固定w98，存在互擦风险；仅在三份已授权新E2E内加独立scratch会话advisory锁，持有期间先后完整建库／测试／恢复，finally释放。不锁业务行、不改CI／runner／断言／业务预算，等待仅位于原120秒beforeAll内。最初临时tsx eval并发入口将eval参数继承给Jest子进程，出现递归启动，未形成验收；随后主机现场为重启后、原handle已不存在、OrbStack停止，不能判定重启原因。恢复既有测试环境后移除本次runner的execArgv继承，双真实worker三套24条通过（52.813秒），实际观察一持有／一等待；结束w98、四角色及scratch锁均0。新测试定向冷lint／test类型复验通过。上述并发运行修复不改变SQL／权限／ACL摘要。
+
+本轮候选签字集中呈报、尚未获确认：第136条SQL SHA-256 `184da14396cbdf7ad14b8ac654e05f0eab57809efe2b799f5b250a47d805b4b6`；seed `4e53b0c802036f4bcc6cb8b4e5506cc4f9df25025077835cf120700b04bd02af`；权限目录 `9b643e93d55e10e591110d6ec7413bf0282ce7306ced01a7c71f3062ebbc7307`；新增ACL `096bfaed3e44c82ce33f6b751a72e511efb2d4774f09b412037415755cf91eed`。273权限、178／173审计、30／277字典；三新码显式GLOBAL Human、自定义可授、15内建零默认、SUPER_ADMIN不直通、SP／delegation禁止，独立owner／registrar／reader与默认关闭authority。未更新CUTOVER_SIGNOFF，不把异步呈报当确认。
+
+**清单外兼容缺项待维护者确认**：`test/helpers/audit-logs-cleanup.ts`（机器预算非红区，但不在105清单，不得据此直接写）。该既有helper的TRUNCATE audit_logs／window会CASCADE命中新两张收据表，当前没有登记两表及no-truncate停用／恢复前置，旧映射及审计E2E将被守卫拒绝。建议仅加这一个路径：登记两表／两具名trigger、两表成套校验、旧schema不存在跳过和原状态复验，保留既有APP_ENV／连接目标双保护、全部断言／业务超时。配套故障／恢复回归使用已准许的D3 reconciliation E2E，w98验证；不改生产／SQL／权限／API／Gate。已异步呈报，未收到扩写确认，helper仍未修改，旧完整mapping ACL套件未执行（不继承其额外角色授权）。
+
+**本次未做**：未完成上述单路径兼容修复、未获得本轮最终3b／4b、未提交推送／创建PR／验收CI；旧mapping全套仍留PR CI冷跑、不在本地执行其额外角色测试；未登记真实映射、窗口或签字，未部署／操作生产／开启shadow或Gate／执行D8-OPS，未删除或重算业务数据。
+
+### 31.14 精确扩写、正式重签与Draft交付收口（2026-10-02；未提交）
+
+维护者本轮明确允许仅扩展 `test/helpers/audit-logs-cleanup.ts`，并确认§31.13所列第136条3b与三码／三审计／新增DB执行面4b。写集上限从§31.8的105具名路径增加至106，新增路径机器预算非红区、不需grant；CUTOVER_SIGNOFF原已在105清单，实际摘要逐项重算一致后已正式登记。`pnpm cutover:check:signoff`退出0，自证71/71、16个机器读数非退化、10项登记逐条匹配；这仅证明签字登记可信，不等于允许开闸。
+
+helper仅在原受控30秒夹具事务中登记两新表／两trigger、成套与既有来源／mapping前置校验、显式同条TRUNCATE及原tgenabled逐项恢复，APP_ENV与连接目标双保护保持。新D3 reconciliation E2E补三项：真实135历史schema两表均缺时原分支仍可清理、136缺trigger／半套表拒绝、真实事务停用后注入TRUNCATE失败回滚恢复。首轮5通过／2失败，均因新合成audit夹具漏必填context；只补`{}::jsonb`后完整7/7通过（40.123秒），不改原四项或任何旧断言、业务预算、schema／SQL／权限／Gate。当前两新表守卫复验恢复，w98结束回收；旧mapping额外角色全套仍只由PR CI冷跑。
+
+扩写后最终quick退出0：缓存lint、三组类型、全量441套／9,562条单测及harness自测通过，5条既有todo未执行；权威冷lint见§31.13，新增helper／E2E另有定向冷lint通过。冻结台账、counts、codemap与diff检查通过，既有体量／god-service提示保留。提交前现场复核w98数据库、连接、四角色和scratch锁均0；实际101个改动路径全部位于106候选写集，清单外0。按完整包原授权进入普通提交、推送一个Draft交付，PR CI仍未验收；不自动Ready／合并／重跑CI，不登记真实业务批准、不开shadow／Gate、不操作生产。上节待批准／未签表述为此前证据，本节覆盖其当前状态，失败过程不删除。
+
+**本次未做**：尚未提交推送／创建Draft或验收PR CI，未本地跑超出四个D3具名角色的旧mapping全套；未登记真实映射／窗口／签字，未启用shadow／Gate、部署、执行D8-OPS或删除／重算业务数据。
+
+### 31.15 首轮CI当前恢复计数漏项（2026-10-02；范围内收口）
+
+完整包已普通提交为`3659b80d195fc274127d7a2b73ab47cf2ba3c256`，推送并创建[#1376 Draft](https://github.com/BA7IEE/srvf-nest-api/pull/1376)。[CI 37011364843](https://github.com/BA7IEE/srvf-nest-api/actions/runs/37011364843)首轮第1／2／4／5分片通过，完整契约1,092项与两快照、Fast checks、harness、事故回放、容器与可信红区审批通过；第3分片83套／1,267条通过、1条既有skip，唯一失败为E2迁移套件afterAll当前schema恢复计数仍期待135，实际136。不是历史131→132升级或业务约束失败，不能报告整轮全绿。
+
+§31.8及已批准完整包明确包含当前migration 135→136同步、范围内等价修复及Draft交付。漏项位于原105具名路径，推荐只把该afterAll的固定当前计数改为136，保留历史131→132目标、全部业务断言及120秒总预算；不改成运行时计算期望。方案B盲重跑不会改变固定期望，故不采用。验证仅w98，显式不启用该测试的专用提前回收分支，以真实执行CI失败的afterAll恢复路径；结束检查当前136再回收w98。不增加角色或数据库范围。
+
+| 项 | 结论 |
+| --- | --- |
+| 是否修改 `prisma/schema.prisma` | 否 |
+| 是否新增／改动 migration | 否，第136条及全部历史SQL不变 |
+| 是否修改 `prisma/seed.ts` | 否 |
+| 是否影响现有数据 | 否，仅w98合成夹具重建，真实数据不碰 |
+| 是否不可逆 | 否，仅固定当前计数与结果文档 |
+| 是否影响OpenAPI／contract snapshot | 否 |
+| 是否影响鉴权／Permission seed／审计 | 否，3b／4b摘要不变，无需重签 |
+| 是否需要新增BizCode | 否 |
+| 是否需要用户拍板 | 原§31完整包已批准当前计数同步，无新增扩围；新SHA可信审批仍独立 |
+
+Prisma技能指向的`prisma/AGENTS.md`当前不存在，按根AGENTS及实际`prisma/CLAUDE.md`执行现有迁移禁令，不创建替代规则文件。本轮七路径均在原完整包内：E2测试、既有signature changelog、本评审稿、两份台账、`prisma/CLAUDE.md`及`docs/current-state.md`顶部状态；后两项仅更正已提交／已签事实。未跟踪的`docs/development/local-resource-audit-2026-10-02.md`不属于本轮，不修改或提交。不Ready、不合并、不自动重跑CI，不登记真实业务批准、不启用shadow／Gate或操作生产。
+
+w98定向完整2/2通过（30.182秒），明确未设置`SRVF_E2_W98`，实际执行普通afterAll恢复而非专用提前回收分支；结束读回current_database=app_test_w98、迁移136、shadowProofRequired存在，连接0／四角色0后仅回收该合成夹具库，回收后库数0。授权旧E2E字面135复核仅余三处，均为真实135历史schema／134→135升级，原样保留。最终quick退出0：缓存lint、三组类型、441套／9,562条单测及138项eslint自测通过，5条既有todo未执行、5个已知守护缺口仍公开；该E2文件另经定向冷lint，counts／冻结台账／diff通过。提交推送后CI需以新SHA重新验收，旧SHA红点不据本地通过关闭，SQL／seed／权限／ACL摘要不变，无新重签。
+
+最后CODEMAP独立复验发现本轮替换的Prisma顶部状态只写“第136条”而未显式声明当前总数，既有判据按首个“个migration”匹配到下方历史135，故退出1；不把此前quick通过当此闸通过。七路径已普通提交`f159be33`但未推送，立即停止推送；仅在同一已授权Prisma顶部补“当前136个migration、194个模型”，保留所有历史与检查器不变，补充普通文档提交并重新检查后才交付。未追改SQL、断言或生成规则，未跟踪的本地资源报告仍不提交。
+
+补明确当前读数后，`pnpm docs:codemap:check`复验退出0：136声明匹配、生成块一致，既有2 WARN保留；冻结台账及diff复验退出0。后置仅三份文档，不改变已通过的E2／quick代码内容；按原授权普通提交推送更新同一Draft，远端新SHA结论尚未取得。

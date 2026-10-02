@@ -21,17 +21,19 @@
 > 正式证明入口 fail-closed。生产 Gate 仍是 NO-GO；v1.1 独立稳定窗、exact deployed SHA／fleet、证据包、
 > 结算只读、worker 排空及 D8-OPS 两次现场授权仍须另行完成，AI 不得自行运行 `--execute`。
 
+> **E3-2 D3 边界（2026-10-02）**：影子对账复核读面及受控窗口／逐项签字已提交[#1376 Draft](https://github.com/BA7IEE/srvf-nest-api/pull/1376)，未合并、未部署、真实业务未验收；第136条3b与本轮4b已登记。首轮CI四分片通过，旧E2当前恢复计数漏项已在w98定向验证，新SHA全量仍待验收。真实映射继续hold；shadow／Gate仍关闭，不执行D8-OPS。操作入口及缺口计数含义见[对账说明](ops/contribution-shadow-reconciliation.md)，生成契约不代表外部端回执或生产批准。
+
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
 | 计数项 | 值 |
 |---|---|
 | 模块 | 43 |
-| Controller | 127 |
-| Endpoint | 658 |
-| Migration | 135 |
+| Controller | 128 |
+| Endpoint | 663 |
+| Migration | 136 |
 | BizCode | 581 |
-| 权限码 | 270 |
-| AuditLogEvent | 175 |
+| 权限码 | 273 |
+| AuditLogEvent | 178 |
 | 内建角色 | 15 |
 | Cron | 2 |
 <!-- counts:end -->
