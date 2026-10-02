@@ -53,6 +53,102 @@ import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
 type DiagnosticRow = { label: string; elapsedMs: number; outcome: string; code: string };
+function createCommitQueryTiming() {
+  const bucket = () => ({ count: 0, durationMs: 0, maxDurationMs: 0 });
+  return {
+    transactionControl: bucket(),
+    postingBatchStateWrite: bucket(),
+    settlementRunStateWrite: bucket(),
+    resultRevisionStateWrite: bucket(),
+    segmentRevisionStateWrite: bucket(),
+    auditWrite: bucket(),
+    notificationWrite: bucket(),
+    authorizationRead: bucket(),
+    identityRead: bucket(),
+    pendingMaterialization: bucket(),
+    timeAllocationMaterialization: bucket(),
+    segmentMaterialization: bucket(),
+    correctionReceipt: bucket(),
+    ledgerDeltas: bucket(),
+    draftSegmentMembers: bucket(),
+    memberLocks: bucket(),
+    dayStates: bucket(),
+    other: bucket(),
+  };
+}
+type CommitQueryTiming = ReturnType<typeof createCommitQueryTiming>;
+function classifyCommitQuery(query: string): keyof CommitQueryTiming {
+  if (/^\s*(?:BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|SET\s+TRANSACTION)(?:\s|;|$)/i.test(query))
+    return 'transactionControl';
+  if (query.includes('pg_advisory_xact_lock')) return 'memberLocks';
+  const stateWrites = [
+    ['LedgerPostingBatch', 'postingBatchStateWrite'],
+    ['AttendanceSettlementRun', 'settlementRunStateWrite'],
+    ['ParticipantSettlementResultRevision', 'resultRevisionStateWrite'],
+    ['ParticipantServiceSegmentRevision', 'segmentRevisionStateWrite'],
+  ] as const;
+  if (query.includes('"statusCode"')) {
+    for (const [table, label] of stateWrites) {
+      if (new RegExp('\\bUPDATE\\s+(?:"public"\\.)?"' + table + '"', 'i').test(query)) return label;
+    }
+  }
+  const writesTable = (table: string) =>
+    new RegExp(
+      '\\b(?:INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\s+(?:"public"\\.)?"' + table + '"',
+      'i',
+    ).test(query);
+  if (writesTable('audit_logs')) return 'auditWrite';
+  if (writesTable('notification_outbox_intents')) return 'notificationWrite';
+  if (query.includes('"CorrectionPendingSegmentRevision"')) return 'pendingMaterialization';
+  if (
+    [
+      'CorrectionTimeSourceProof',
+      'CorrectionPendingTimeAllocation',
+      'ParticipantTimeAllocationRevision',
+      'ParticipantTimeAllocationSlice',
+      'ParticipantTimeAllocationEvidence',
+      'ParticipantTimeAllocationCommandReceipt',
+      'CorrectionTimeAllocationBinding',
+    ].some((table) => query.includes('"' + table + '"'))
+  )
+    return 'timeAllocationMaterialization';
+  if (
+    query.includes('"ParticipationTimeCorrectionManifest"') ||
+    query.includes('"ParticipationTimeCorrectionCommitReceipt"')
+  )
+    return 'correctionReceipt';
+  if (query.includes('"ParticipationLedgerEntry"') && query.includes('GROUP BY'))
+    return 'ledgerDeltas';
+  if (query.includes('"ParticipantServiceSegmentRevision"') && query.includes('SELECT DISTINCT'))
+    return 'draftSegmentMembers';
+  if (query.includes('"ParticipantServiceSegmentRevision"')) return 'segmentMaterialization';
+  if (query.includes('"MemberContributionDayState"')) return 'dayStates';
+  if (/^\s*(?:SELECT|WITH)\b/i.test(query)) {
+    if (
+      [
+        'permissions',
+        'role_permissions',
+        'role_bindings',
+        'roles',
+        'Organization',
+        'organization_closure',
+        'organization_position_assignments',
+        'organization_supervision_assignments',
+      ].some((table) => query.includes('"' + table + '"'))
+    )
+      return 'authorizationRead';
+    if (['User', 'Member'].some((table) => query.includes('"' + table + '"')))
+      return 'identityRead';
+  }
+  return 'other';
+}
+function recordCommitQueryTiming(timing: CommitQueryTiming, query: string, durationMs: number) {
+  const bucket = timing[classifyCommitQuery(query)];
+  const roundedDuration = Math.round(durationMs);
+  bucket.count++;
+  bucket.durationMs += roundedDuration;
+  bucket.maxDurationMs = Math.max(bucket.maxDurationMs, roundedDuration);
+}
 function diagnosticCode(error: unknown): string {
   const kind =
     error instanceof Error &&
@@ -605,6 +701,55 @@ async function assertDiagnosticObserver() {
   ).rejects.toBe(failure);
   expect(collected).toBe(1);
 }
+
+describe('D7 commit query observer pure controls', () => {
+  it.each([
+    ['BEGIN', 'transactionControl'],
+    ['COMMIT', 'transactionControl'],
+    ['ROLLBACK', 'transactionControl'],
+    ['SELECT pg_advisory_xact_lock($1)', 'memberLocks'],
+    ['UPDATE "public"."LedgerPostingBatch" SET "statusCode"=$1', 'postingBatchStateWrite'],
+    ['UPDATE "AttendanceSettlementRun" SET "statusCode"=$1', 'settlementRunStateWrite'],
+    [
+      'UPDATE "ParticipantSettlementResultRevision" SET "statusCode"=$1',
+      'resultRevisionStateWrite',
+    ],
+    [
+      'WITH target AS (SELECT $1) UPDATE "ParticipantServiceSegmentRevision" SET "statusCode"=$2',
+      'segmentRevisionStateWrite',
+    ],
+    ['INSERT INTO "public"."audit_logs" VALUES ($1)', 'auditWrite'],
+    ['INSERT INTO "public"."notification_outbox_intents" VALUES ($1)', 'notificationWrite'],
+    ['SELECT * FROM "public"."role_bindings" WHERE "principalId"=$1', 'authorizationRead'],
+    ['SELECT * FROM "User" WHERE id=$1', 'identityRead'],
+    ['SELECT * FROM "CorrectionPendingSegmentRevision"', 'pendingMaterialization'],
+    ['INSERT INTO "CorrectionTimeAllocationBinding" VALUES ($1)', 'timeAllocationMaterialization'],
+    ['INSERT INTO "ParticipationTimeCorrectionCommitReceipt" VALUES ($1)', 'correctionReceipt'],
+    ['SELECT * FROM "ParticipationLedgerEntry" GROUP BY "memberId"', 'ledgerDeltas'],
+    ['SELECT DISTINCT "memberId" FROM "ParticipantServiceSegmentRevision"', 'draftSegmentMembers'],
+    [
+      'UPDATE "ParticipantServiceSegmentRevision" SET "effectiveBatchId"=$1',
+      'segmentMaterialization',
+    ],
+    ['SELECT * FROM "MemberContributionDayState"', 'dayStates'],
+    ['SELECT $1 FROM "unregistered_private_table"', 'other'],
+  ])('classifies fixed statement shape %#', (query, label) => {
+    expect(classifyCommitQuery(query)).toBe(label);
+  });
+
+  it('aggregates counts, total and maximum without retaining query or private input', () => {
+    const timing = createCommitQueryTiming();
+    const privateDetail = 'synthetic-private-value-not-for-output';
+    recordCommitQueryTiming(timing, 'SELECT $1 /* ' + privateDetail + ' */', 1.2);
+    recordCommitQueryTiming(timing, 'SELECT $1 /* ' + privateDetail + ' */', 4.4);
+    recordCommitQueryTiming(timing, 'COMMIT', 2.3);
+    expect(timing.other).toEqual({ count: 2, durationMs: 5, maxDurationMs: 4 });
+    expect(timing.transactionControl).toEqual({ count: 1, durationMs: 2, maxDurationMs: 2 });
+    expect(Object.values(timing).reduce((total, bucket) => total + bucket.count, 0)).toBe(3);
+    expect(JSON.stringify(timing)).not.toContain(privateDetail);
+    expect(JSON.stringify(timing)).not.toContain('SELECT');
+  });
+});
 
 const START = new Date('2020-03-01T08:00:00.000Z');
 const END = new Date('2020-03-01T09:00:00.000Z');
@@ -2394,55 +2539,9 @@ describe('D7-1 recognition correction real transaction', () => {
         correctionReceipt: null as number | null,
         ledgerCommit: null as number | null,
       };
-      const queryTiming = {
-        pendingMaterialization: { count: 0, durationMs: 0 },
-        timeAllocationMaterialization: { count: 0, durationMs: 0 },
-        segmentMaterialization: { count: 0, durationMs: 0 },
-        correctionReceipt: { count: 0, durationMs: 0 },
-        ledgerDeltas: { count: 0, durationMs: 0 },
-        draftSegmentMembers: { count: 0, durationMs: 0 },
-        memberLocks: { count: 0, durationMs: 0 },
-        dayStates: { count: 0, durationMs: 0 },
-        other: { count: 0, durationMs: 0 },
-      };
-      type QueryTimingBucket = keyof typeof queryTiming;
-      const classifyCommitQuery = (query: string): QueryTimingBucket => {
-        if (query.includes('pg_advisory_xact_lock')) return 'memberLocks';
-        if (query.includes('"CorrectionPendingSegmentRevision"')) return 'pendingMaterialization';
-        if (
-          [
-            '"CorrectionTimeSourceProof"',
-            '"CorrectionPendingTimeAllocation"',
-            '"ParticipantTimeAllocationRevision"',
-            '"ParticipantTimeAllocationSlice"',
-            '"ParticipantTimeAllocationEvidence"',
-            '"ParticipantTimeAllocationCommandReceipt"',
-            '"CorrectionTimeAllocationBinding"',
-          ].some((table) => query.includes(table))
-        ) {
-          return 'timeAllocationMaterialization';
-        }
-        if (
-          query.includes('"ParticipationTimeCorrectionManifest"') ||
-          query.includes('"ParticipationTimeCorrectionCommitReceipt"')
-        ) {
-          return 'correctionReceipt';
-        }
-        if (query.includes('"ParticipationLedgerEntry"') && query.includes('GROUP BY')) {
-          return 'ledgerDeltas';
-        }
-        if (
-          query.includes('"ParticipantServiceSegmentRevision"') &&
-          query.includes('SELECT DISTINCT')
-        ) {
-          return 'draftSegmentMembers';
-        }
-        if (query.includes('"ParticipantServiceSegmentRevision"')) {
-          return 'segmentMaterialization';
-        }
-        if (query.includes('"MemberContributionDayState"')) return 'dayStates';
-        return 'other';
-      };
+      const queryTiming = createCommitQueryTiming();
+      let commitHttpStatus: number | null = null;
+      let commitResponseCode: number | null = null;
       const measureCommitPhase = async <T>(
         phase: keyof typeof commitPhaseMs,
         work: () => Promise<T>,
@@ -2459,9 +2558,7 @@ describe('D7-1 recognition correction real transaction', () => {
       if (observed) {
         await observed.$connect();
         observed.$on('query', (event) => {
-          const bucket = queryTiming[classifyCommitQuery(event.query)];
-          bucket.count++;
-          bucket.durationMs += Math.round(event.duration);
+          recordCommitQueryTiming(queryTiming, event.query, event.duration);
         });
       }
       const transactionSpy = observed
@@ -2554,6 +2651,11 @@ describe('D7-1 recognition correction real transaction', () => {
               operationKey: f.key(`human_capacity_${population}_commit`),
             })
             .expect((response) => {
+              if (population === 2000) {
+                commitHttpStatus = response.status;
+                commitResponseCode =
+                  typeof response.body?.code === 'number' ? response.body.code : null;
+              }
               if (response.status !== 200) {
                 // Fixed diagnostic fields only; never expose raw response content, IDs, URLs or errors.
                 console.error('D7 2000-identity commit failure', {
@@ -2570,7 +2672,24 @@ describe('D7-1 recognition correction real transaction', () => {
           receiptSpy?.mockRestore();
           assertCompleteSpy.mockRestore();
           ledgerSpy?.mockRestore();
-          if (observed) await observed.$disconnect();
+          if (observed) {
+            try {
+              await observed.$disconnect();
+            } finally {
+              console.info(
+                '[d7-commit-diagnostic] ' +
+                  JSON.stringify({
+                    population: 2000,
+                    status: commitHttpStatus,
+                    code: commitResponseCode,
+                    outcome: commitHttpStatus === 200 ? 'success' : 'not_success',
+                    commitPhaseMs,
+                    queryTiming,
+                    failure: commitFailure === 'none' ? null : JSON.parse(commitFailure),
+                  }),
+              );
+            }
+          }
         }
       })();
       expect(lockedCompleteCalls).toBe(0);
