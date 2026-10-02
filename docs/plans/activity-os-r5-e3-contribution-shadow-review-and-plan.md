@@ -2959,3 +2959,177 @@ pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason 'E3 §29.22.16 九�
 **最后静态交付结论**：串行检查首次默认4GB在全仓冷lint因heap OOM退出134，没有进入类型／单测，日志`quick-delivery-serial.log`保留。这是本轮可避免的返工：此前§29.22.9已有CI同款6GB验证证据，本轮却未先复用；不把它解释为业务失败或已通过。随后沿既有CI配置`.github/workflows/ci.yml`的`NODE_OPTIONS=--max-old-space-size=6144`，仅给本机进程设置参数，未修改workflow／package／eslint／测试配置。等全部源码和派生物定稿、完整harness独立结束后，运行`NODE_OPTIONS=--max-old-space-size=6144 SRVF_CHECK_SERIAL=1 pnpm agent:check:quick`，实际exit0：全仓冷lint、生产／测试／scripts三组类型通过，434 suites／9,460单测通过、5既有todo，单测62.085秒。日志`quick-delivery-ciheap.log`；本轮末次日志没有worker非优雅退出警告，但不据此宣称前轮警告根因已修。修改三文件另有冷lint exit0（`cold-lint-delivery.log`）。
 
 完整独立`pnpm harness:selftest`实际exit0（`harness-delivery.log`）：主守护561通过／0失败／1既有已知缺口；eslint阳性反例138通过／0失败／5既有缺口；hooks68通过／0失败。这些种类不同，不合并为同一种保证；前轮authz临时副本两项新鲜度失败未在定稿复验中再出现。验证期间没有改变生产源或生成文件，不因回应进度再次运行74条已通过业务链或第二次回滚计划。历史评审前缀579,302字节、SHA256 `9d32ca9c1c681db9fb0c178193b0164a4b65e5d460da6a2958e3b4287b82a498`完整保留，原规模AST28处expect调用链无缺失。交付只到已授权普通提交／推送／Draft PR，新SHA全量Contract／E2E留待PR CI，main历史失败及D7收据原因仍开放。
+
+## 30. E3-2 D3 人工复核与对账精确计划（2026-10-02；仅文档）
+
+### 30.1 本轮授权、当前事实与完成边界
+
+维护者授权本轮四文档计划包，验证后提交、推送并创建 docs-only Draft PR；不实施、不查库、不启用开关、不合并。本节是未来实施候选，不继承 D2、§29 的数据库或生产文件写入授权。既有 §18.2 的 D3 整体验收目标与 §19.4 方案 A 不变。
+
+[#1373](https://github.com/BA7IEE/srvf-nest-api/pull/1373) 已于 2026-10-02T07:32:17Z Squash 合入 `1302061fd9943b34061eff17fdd7eb19d3183839`；[main CI 36979084953](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36979084953) 在该精确 SHA completed/success，五个 E2E 分片及汇总通过。此次 main 原 8,192 人链 commit 3,103ms、包络 3,129ms、27 查询，七秒预算不变；最终 UPDATE 797.327ms。这关闭当前候选的主干验收失败，不解释历史 D7 收据 28.812 秒根因。指定 main 已快进，分支和工作树保留。历史 §29.22.17 和两份台账的旧时点记录不改写。
+
+当前为 135 条 migration、192 模型、270 权限、175 审计总计／170 活跃、字典 30 类／277 项。本轮不改变这些数值。D2 提供来源／映射证明及不可变比较写链；尚无独立 System Human 复核 controller。未部署、未启用 shadow／Gate，31 类真实映射全部 hold；隔离夹具通过不是实际业务差异归零。
+
+**不能忽略的合同缺口**：第 133 条 `csdr_insert_guard_fn` 在 `decisionCode != 'unresolved'` 时拒绝写入，见 `prisma/migrations/20260928095832_activity_os_r5_e3_shadow_evidence/migration.sql:412`。CHECK 列举 `not_applicable`／`confirmed_gap` 不等于这些签字已可落库。现有自由摘要不能证明维护者批准；也未找到正式观察窗口登记或处置签字入口。不得绕过触发器、拿当前配置或旧审计标志代替当次签字。
+
+因此分开报告：①下列 D3-R 是已确认方向的复核读面候选；②D3-S 是观察窗口登记与签字证据闭环，合同尚待拍板；③D3-B 是真实目标、逐项映射与真实对账验收，另行授权。三个部分都在整体目标中，不因拆分删除②③。D3-R 可以独立送审，但不能标记 D3／E3 整体完成。
+
+### 30.2 D3-R 输出合同与去重公式
+
+观察窗口使用既有 `startsAt <= audit.createdAt < endsAt`、原 windowId 和窗口冻结锚点；端点只读取已登记窗口，不创建或修改窗口。没有窗口时返回空列表或既有 40400，不自动登记、不把空列表称为已对账。
+
+候选由 audit-logs 属主公开事务查询原语提供：成功的 `attendance-sheet.submit`／`attendance-sheet.edit`、准确 resourceType 和原 auditLogId。旧 recorder 的 operation 包括 submit／edit／edit-no-records／resubmit；后者不能因为复用 edit umbrella event 就静默漏掉。不在已实现比较路径的 operation 保留候选且标明未决，不能自动当 equal。只投影允许名单字段和最小 operation，不返回 context。查询识别失败单列，不凭事件同名关联。`shadowProofRequired=false`、无 Record 的 edit 或当下开关关闭均不能自动排除候选；没有可信“不适用”签字则仍未决。窗口边界、同时间稳定 id 排序、去重前总数与去重后总数分别给出。
+
+令 C 为去重候选数，A 为存在同链开始收据的候选数，M 为缺开始收据数；A 内 T 为有终态的候选数，L 为缺终态数。固定 `C = A + M`、`A = T + L`；每个候选按 auditLogId 只计一次，比较子行不放大母项计数。M、L 是两类**原始缺口**，任何后续处置都不抹掉它们。终态 complete／failed 与比较 equal／mismatch／hold／error 分开统计，失败终态不伪装 equal。
+
+未决数 U 为候选级分类并集，不是 M+L+hold 的盲加：缺开始、缺终态、失败、hold／error、来源无法识别、同链锚点冲突等按固定优先级归类且保留所有 reasonCodes。比较结果 mismatch 独立可见，不能靠“已有终态”清零。孤立收据单列 anomalousReceiptCount，不拼入其他活动的候选。分页筛选不改变窗口总数。
+
+当前可信 `notApplicableCount` 必须为 0，并返回 `dispositionCapability='unresolved_only'`；不得把所有 unresolved 列作已核销。候选数 0 输出 `zero_visible_candidates`，不是“真实零差异”。最新 revision、前驱 id 及原始收据 id 只用于解释链，不把自由 evidenceHash 升格为已签证据。D3-S 冻结后才能定义核销及净缺口公式。
+
+### 30.3 System 读面、权限与脱敏候选
+
+沿 §19.4 方案 A，五个 GET 共用 `/api/system/v1/contribution-shadow`，无兼容别名、无 Admin／App 写面、无导出下载。controller 只接参数；应用 service 持有事务、判权、审计编排；QueryService 只构造属主读查询；Presenter 只投影；AuditRecorder 只组装和调用审计。不得把判权／审计塞进 QueryService 或让 Presenter 碰数据库。
+
+| 后缀                                                 | 返回用途                 | 有界输出                               |
+| ---------------------------------------------------- | ------------------------ | -------------------------------------- |
+| `/windows`                                           | 已登记观察窗口列表       | page／pageSize，最大 100               |
+| `/windows/:windowId/summary`                         | 全窗口去重及原始缺口摘要 | 固定分类计数及完整性标志               |
+| `/windows/:windowId/candidates`                      | 候选、缺口和未决条目     | 同窗口稳定分页，最大 100               |
+| `/windows/:windowId/candidates/:auditLogId`          | 单候选不可变证据链       | 开始／终态／处置锚点，不展开全量比较行 |
+| `/windows/:windowId/attempts/:attemptId/comparisons` | 比较结果及失败分类       | 先验证同窗口归属，再分页，最大 100     |
+
+未来新权限候选 `contribution-shadow.read.evidence`：显式 GLOBAL Human，自定义角色可授、15 个内建角色零默认、SUPER_ADMIN 不直通、SP／delegation 禁止。与 `contribution-shadow-mapping.register.approval` 完全分离。路由结构声明与 service 实际 `rbac.can()`、真实 permission-code 集合检查均必须存在；不能只依赖 SUPER_ADMIN 可短路的返回值。每请求重读当前有效用户、角色绑定及授权，不跨请求缓存；失效绑定和仅有登记权限均拒绝。
+
+权限先于资源查找；未授权统一 40300，有权但不存在／跨窗口锚点统一 40400。沿既有参数 DTO／响应包装和 BizCode，不新增错误码。读事务内取得一致的候选计数／分页快照；锁后访问复核与并发撤权的线性化点须在实现 characterization 中证明，不能声称 Repeatable Read 会自动看到快照建立后的撤权。若既有公开原语不能证明访问复核，先报精确扩展，不绕过属主或改隔离级别掩盖问题。
+
+最小返回字段：原 window／audit／attempt／terminal／comparison／disposition id，必要的 sheet／activity／Record 关联 id，版本、算法、数据库时间、状态、reasonCode 及同链摘要。成员身份仅在确需定位的比较页提供既有稳定内部 id，不返回姓名、电话、身份证、联系方式、notes、原事实 JSON、原政策内容、审计 context、用户认证信息或 signed URL；schema／DTO 逐字段负例锁定。收据按原资产保留边界不删除；退队只影响当前查看资格，不删历史证据、不重算历史值。前端仅交接，不能据此发布页面或启用开关。
+
+读取事件候选 `activity.contribution-shadow.evidence-read`，只记操作类别、window／目标锚点、返回项数、过滤字段名和结果，不把返回体复制到审计。同一事务成功写入最小敏感读取审计后才返回；审计失败则不返回敏感数据。GET 的唯一预期写入是这条读取审计，不写业务收据、映射或处置；失败请求沿既有失败审计规则，不补新认证流程。
+
+### 30.4 数据／访问风险表与停止条件
+
+| 项                  | D3-R 约束／待验收                                                                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 数据模型／migration | 不新增表、字段、SQL、回填；133–135 正文及 ACL 不变，因此本读面候选无新 3b。D3-S 的 SQL 不在此写集。                                            |
+| 权限／审计／seed    | 候选权限 270→271，审计 175／170→176／171，字典不变；这是预测不是当前读数，最终全文和目录摘要须另签 4b。seed 只登记码闭包，无内建角色默认授予。 |
+| 查询／性能          | 五秒事务不提高；列表／详情／比较页业务读查询各≤12，窗口摘要≤16；不随候选数逐条查询。审计和两轮访问查询另逐项列报，不能偷出计数口径。           |
+| 规模                | 2,000 候选／10,000 比较行夹具：分页、摘要和选中详情不全量搬入应用层；用真实数据库验证去重与五秒预算，未通过先给分段证据，不猜测重跑或放宽。    |
+| 并发                | 同链开始／终态迟到、并发重放、窗口边界、权限撤销与审计失败；响应同一快照自洽，不宣称快照之后的全局事实。                                       |
+| 隐私／留存          | 最小字段输出、无敏感 context／事实 JSON，审计最小化；没有业务数据删除、自动清理、第三个 cron、缓存或队列。                                     |
+| 回退                | 撤回新权限和停止调用新读面；旧提交／D2 写链不变，已写收据及读取审计保留，不删表／删记录。                                                      |
+| 整体未决            | 正式窗口登记与“不适用”签字证据未冻结、真实 31 类 hold，不能出整体 GO。历史 D7 收据根因仍开放。                                                 |
+
+需修改原业务断言、预算、旧 API／DTO／提交协议、migration／ACL、开关或真实数据，或者属主查询必须越界，均停报，不顺手扩写。没有 SQL 签字需求不等于没有 4b／红区／合并审批。
+
+### 30.5 D3-R 精确候选写集（不是本轮写入许可）
+
+下列 57 个去重路径含业务、单测、旧计数适配、生成物与交接；不存在的新文件仅为候选，新职责不引入新 bounded context。本轮逐项 `harness:needs` 预算为 9 红区／48 非红区，不是许可；实施前以当时 main 再核对引用链和预算，不能用 glob 漏报或自行 grant。当前只允许 §30.8 的四个文档。
+
+```text
+src/modules/attendances/controllers/system-contribution-shadow-evidence.controller.ts
+src/modules/attendances/dto/system/contribution-shadow-evidence.dto.ts
+src/modules/attendances/contribution-shadow-evidence.service.ts
+src/modules/attendances/contribution-shadow-evidence.service.spec.ts
+src/modules/attendances/contribution-shadow-evidence.query.service.ts
+src/modules/attendances/contribution-shadow-evidence.query.service.spec.ts
+src/modules/attendances/contribution-shadow-evidence.presenter.ts
+src/modules/attendances/contribution-shadow-evidence.presenter.spec.ts
+src/modules/attendances/contribution-shadow-evidence.audit-recorder.ts
+src/modules/attendances/contribution-shadow-evidence.audit-recorder.spec.ts
+src/modules/attendances/attendances.module.ts
+src/modules/attendances/CLAUDE.md
+src/modules/audit-logs/audit-logs.service.ts
+src/modules/audit-logs/audit-logs.service.spec.ts
+src/modules/audit-logs/audit-logs.types.ts
+src/modules/audit-logs/audit-event-registry.spec.ts
+src/modules/audit-logs/CLAUDE.md
+src/modules/permissions/permission-catalog.ts
+src/modules/permissions/seed-permission-codes.ts
+src/modules/permissions/seed-permission-codes.spec.ts
+src/modules/permissions/permission-code-holders.spec.ts
+prisma/seed.ts
+scripts/harness-guards.selftest.ts
+test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts
+test/e2e/activity-os-r5-e3-d3-reconciliation.e2e-spec.ts
+test/contract/openapi.contract-spec.ts
+test/contract/__snapshots__/openapi.contract-spec.ts.snap
+harness/permission-surface-baseline.json
+harness/authz-assertion-patterns.json
+harness/domain-map.json
+docs/ai-harness/ROUTE_AUTHZ.md
+docs/ai-harness/RBAC_MAP.md
+docs/ai-harness/AUDIT_EVENT_REGISTRY.md
+docs/ai-harness/CUTOVER_SIGNOFF.md
+docs/current-state.md
+CODEMAP.md
+docs/handoff/openapi.json
+docs/handoff/contract-version-registry.md
+docs/handoff/admin-web.md
+docs/handoff/clients/shared/types.ts
+docs/handoff/clients/admin/types.ts
+docs/handoff/clients/admin/client.ts
+docs/handoff/clients/app/types.ts
+docs/handoff/clients/app/client.ts
+docs/handoff/clients/auth/types.ts
+docs/handoff/clients/auth/client.ts
+docs/handoff/clients/system/types.ts
+docs/handoff/clients/system/client.ts
+docs/handoff/clients/open/types.ts
+docs/handoff/clients/open/client.ts
+docs/handoff/clients/integration/types.ts
+docs/handoff/clients/integration/client.ts
+docs/ops/contribution-shadow-reconciliation.md
+docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md
+docs/ai-harness/NEXT_TASKS.md
+docs/ai-harness/FROZEN_DRAFTS.md
+changelog.d/activity-os-r5-e3-d3-reconciliation.md
+```
+
+其中旧迁移 E2E 和 selftest 仅适配当前权限闭包 270→271、保留历史升级和原断言；不是通用 fixture／timeout 修复授权。RBAC／CODEMAP／OpenAPI／authz／13 个 client 只运行既有生成器并解释逐行 diff；除 System 新端点外的 surface 仅允许必需摘要变化。domain-map 只作源摘要联动，不新建模型／属主；状态机和生命周期不变，无 state-machines 写集。新增五个端点对应契约白名单和快照同 PR，不修改 snapshot 生成器。若预检表明某候选无需改，记录理由并从实际 diff 剔除；未列出的派生路径先报告。
+
+### 30.6 探针队列、DoD 与验证副作用
+
+顺序固定：①核实 main、技能／引用链／授权；②旧 submit／edit 和 D2 写链 characterization；③纯分类／脱敏单测及属主事务查询；④真实 HTTP 准入、审计、去重与故障夹具；⑤2,000／10,000 满额与查询仪器；⑥quick、完整守护、生成物／契约 diff；⑦新 SHA PR CI 冷跑；⑧另获 Ready／合并后核验精确合并 SHA main CI。前一层失败先定位，不反复盲跑后一层。
+
+定向用例必须包括：窗口两端、相同 createdAt、重复比较行不放大总数；C／A／M／T／L 公式；缺开始、缺终态、failed／hold／error／mismatch、不适用未签；旧无 Record edit、`shadowProofRequired=false` 不擅自排除；跨活动／跨窗口／孤立／陈旧链失败关闭；终态迟到同快照；实际 Human 显式 GLOBAL、内建角色零默认、SA 无码拒绝、失效绑定、SP／delegation／仅登记权限拒绝；L3 字段及 context 不泄露；审计失败不返回；未授权先于存在性；原处置守卫仍拒绝自由“不适用”；满额分页／详情／摘要预算。新增用例不删旧测试、不放宽旧断言。
+
+未来本地仅 `app_test_w98` 授权时，必须使用现有 `test/helpers/e3-main-performance-w98.setup.ts` 并核实派生和实际连接目标；在内存 Jest 配置去掉模板 globalSetup／globalTeardown，不修改共享 test/setup。标准 Contract／E2E 默认会操作 app_test 及 worker 克隆库，不能凭 w98 许可运行。不能隔离到 w98 的旧历史迁移测试送 PR CI 冷跑，本地清楚列未跑。仅普通创建／部署已审 SQL与合成夹具重建，无 migrate dev／reset／db push，未获批不得操作具名角色／ACL 或其他库。
+
+本地 quick 复用已验证的 `NODE_OPTIONS=--max-old-space-size=6144 SRVF_CHECK_SERIAL=1`，全量 unit 与独立完整 harness 均验收；快照必须逐行可解释。实际 HTTP contract 在具名隔离入口验收或明确交 CI，不拿 schema 类型通过代替 HTTP。业务事务仍五秒，旧 D7 七秒、来源比较预算及旧断言不动。新客户端和 handoff 验收只是接口交接，不证明前端已发布。
+
+**D3-R DoD**：五个读面、最小输出、真实 Human 准入、最小读取审计、计数公式和原始 id、规模／故障／并发验证与同 SHA CI 均有证据；没有窗口／真实数据时明确空可见集合和未验收项。**D3 整体 DoD**另要求下节 D3-S 合同与真实 D3-B 独立验收，不把 R 的通过用于取消这些项。
+
+### 30.7 D3-S 尚待冻结的签字合同与独立授权
+
+建议在既有窗口／处置收据上补可信登记和批准来源，不以旧业务审计独自承担不可变批准证据，不允许自由摘要签字。需要维护者明确：谁以何身份登记窗口；窗口开始／结束、部署／配置／映射版本锚点如何冻结及是否允许追认；逐候选不适用和已确认缺口的证据输入、批准人／时间及可信来源；签字修订／撤销前驱和净缺口公式；失败原子性、重放键及证据留存。原编号、原始两类缺口永久可见，保留全部业务资产，不以删除回退。
+
+上述只是待决清单，**本节没有把新写 HTTP／CLI、权限、schema 或 SQL 当作已批准合同**，也没有擅自选择可回填的窗口方案。冻结后须一次提供完整 D 档风险表、实际 schema／SQL、属主／身份／审计原语、逐路径写集、负例／规模与角色 ACL 副作用，再单独实施及签字。不复用本节 read 权限批准映射或处置，不放行第 133 条守卫；真实目标尚无时维持 NO-GO／hold。
+
+### 30.8 授权清单、一次交付包与本次未做
+
+**本轮实际四路径**：本评审稿、NEXT_TASKS、FROZEN_DRAFTS、`changelog.d/activity-os-r5-e3-d3-reconciliation-plan.md`。维护者已授权仅文档验证、普通提交推送和创建 Draft；四路径 `harness:needs` 预算无红区，不自行授令牌。文档验证只跑格式／差异／派生新鲜度及台账扫描，无数据库、quick／Contract／E2E，也不运行写模式生成器扩大范围。
+
+**未来 D3-R 一次授权包（目前待确认，不执行）**：确认 §30.2–30.6 输出／访问／预算及具名候选路径；允许仅 app_test_w98 隔离验证与合成夹具重建；包含范围内补测、当前计数适配和既有生成物／handoff；权限／审计定稿另签 4b，维护者按逐文件 `harness:needs` 结果自行 `pnpm harness:grant '<精确路径>' --reason 'E3 §30 D3-R 实施'`，AI 不 self-grant。全部本地验证后可普通提交、推送并创建 Draft，完整 CI 冷跑；不自动 Ready／合并、盲重跑、清理分支／工作树、不实施 D3-S、不登记窗口／真实映射、不查真实业务库、不部署、不启用 shadow／Gate、不执行 D8-OPS、不删除或重算业务数据。由于 SQL 不改，无需预签 3b；若需改 SQL 即退出此包另审。没有这段实施确认前，仍只到本轮文档 Draft。
+
+维护者**确认未来实施包后**可在以下路径一次执行九条精确令牌命令；此处仅提供清单，本轮不执行，不提前请求发放：
+
+```zsh
+cd /Users/dengwang/Documents/coding/srvf-nest-api
+pnpm harness:grant 'src/modules/permissions/permission-catalog.ts' --reason 'E3 §30 D3-R 实施'
+pnpm harness:grant 'prisma/seed.ts' --reason 'E3 §30 D3-R 实施；仅权限闭包'
+pnpm harness:grant 'harness/authz-assertion-patterns.json' --reason 'E3 §30 D3-R；仅生成联动'
+pnpm harness:grant 'harness/domain-map.json' --reason 'E3 §30 D3-R；仅源摘要'
+pnpm harness:grant 'harness/permission-surface-baseline.json' --reason 'E3 §30 D3-R；新增显式 Human 读码'
+pnpm harness:grant 'scripts/harness-guards.selftest.ts' --reason 'E3 §30 D3-R；仅当前闭包计数'
+pnpm harness:grant 'test/contract/openapi.contract-spec.ts' --reason 'E3 §30 D3-R；五个 System GET'
+pnpm harness:grant 'test/contract/__snapshots__/openapi.contract-spec.ts.snap' --reason 'E3 §30 D3-R；精确新增契约'
+pnpm harness:grant 'docs/ai-harness/ROUTE_AUTHZ.md' --reason 'E3 §30 D3-R；仅生成联动'
+```
+
+**本次未做**：未开发五个端点、未新增权限／审计／模型／SQL／测试、未连接任何数据库；未验证候选性能或业务链、未登记窗口或“不适用”签字、未批准真实 31 类映射；未启用开关、操作生产或发布前端；不 Ready、不合并本计划 PR。
+
+### 30.9 本轮文档验证记录
+
+本轮 preflight exit0，四个实际路径均非红区；57 个未来候选路径逐项预算为 9／48，无 grant 执行。`git diff --check`、readtax、counts、codemap、rbacmap 及冻结稿台账扫描通过；codemap 既有两类 WARN 和 readtax 体量提示未消除，不把提示写成新故障或已解决。计数与生成块均未修改。
+
+全文件 Prettier 检查在本评审稿和 FROZEN_DRAFTS 报格式警告；对 HEAD 基线单独检查也失败，不能写成全文件格式通过。本轮仅机械格式化新增 §30，四文档新增内容独立格式检查通过；不批量格式化历史。主评审稿原前缀 607,088 字节、SHA256 `399930fc0e35912e843cf3207ed8e8adfe178afcee455b5898d5ac1bc0211188` 原样保留，两份台账去掉本轮顶部增补后与 HEAD 字节相等。实际写集精确四路径，无业务文件、生成物或数据库副作用。新 PR 的 CI 以其新 SHA 为准；本节静态检查不代替未来实施的业务／HTTP／数据库验收。
