@@ -417,6 +417,9 @@ export class LedgerPostingService {
         SET "statusCode" = 'committed', "updatedAt" = NOW()
         WHERE "settlementVersionId" = ${version.id} AND "statusCode" = 'draft'
       `;
+      // Materialize logical primary keys once inside PostgreSQL.  The final
+      // UPDATE has no unkeyed CTE join to rescan; CASE still rechecks the current
+      // row's draft status after any concurrent row-lock wait (including EPQ).
       await tx.$executeRaw`
         WITH target AS MATERIALIZED (
           SELECT candidate.id
@@ -432,9 +435,8 @@ export class LedgerPostingService {
         )
         UPDATE "ParticipantServiceSegmentRevision" AS s
         SET "statusCode" = 'committed', "effectiveBatchId" = ${batch.id}, "updatedAt" = NOW()
-        FROM target
-        WHERE s.id = target.id
-          AND s."statusCode" = 'draft'
+        WHERE s.id = ANY (ARRAY(SELECT target.id FROM target))
+          AND CASE WHEN s."statusCode" = 'draft' THEN TRUE ELSE FALSE END
       `;
 
       const result: LedgerCommitResult = {

@@ -111,6 +111,8 @@ function redactLedgerPlan(value: unknown): unknown {
     'Plans',
     'Node Type',
     'Parent Relationship',
+    'CTE Name',
+    'Subplan Name',
     'Join Type',
     'Relation Name',
     'Index Name',
@@ -137,6 +139,14 @@ function redactLedgerPlan(value: unknown): unknown {
     'Shared Read Blocks',
     'Shared Dirtied Blocks',
     'Shared Written Blocks',
+    'Temp Read Blocks',
+    'Temp Written Blocks',
+    'Rows Removed by Join Filter',
+    'Rows Removed by Filter',
+    'Triggers',
+    'Trigger Name',
+    'Time',
+    'Calls',
   ]);
   return Object.fromEntries(
     Object.entries(value)
@@ -295,6 +305,7 @@ function installStatementRecorder(
   prisma: PrismaService,
   rows: DiagnosticRow[],
   plans: PlanDiagnostic[],
+  rollbackProbe?: Error,
 ): {
   reset: () => void;
   statements: () => StatementRecord[];
@@ -347,7 +358,10 @@ function installStatementRecorder(
                   fulfilled?: (output: unknown) => unknown,
                   rejected?: (error: unknown) => unknown,
                 ) =>
-                  collectLedgerPlan(target, args, label, plans, rows)
+                  (isSegmentWrite && rollbackProbe
+                    ? collectRollbackUpdatePlan(target, args, plans, rollbackProbe)
+                    : collectLedgerPlan(target, args, label, plans, rows)
+                  )
                     .then(() => timedQuery(result, label, rows))
                     .then(fulfilled, rejected),
               };
@@ -395,6 +409,36 @@ function installStatementRecorder(
       (prisma as unknown as Record<string, unknown>).$transaction = original;
     },
   };
+}
+
+/** Exactly one real UPDATE under the original protocol locks, then rollback. */
+async function collectRollbackUpdatePlan(
+  target: object,
+  args: unknown[],
+  plans: PlanDiagnostic[],
+  rollback: Error,
+): Promise<never> {
+  const head = args[0];
+  if (
+    !Array.isArray(head) ||
+    diagnosticSqlLabel(args) !==
+      'raw.WITH.ParticipantServiceSegmentRevision.ActivityParticipationIdentity'
+  ) {
+    throw new Error('rollback plan requires the exact service segment tagged UPDATE');
+  }
+  const began = performance.now();
+  const query = Prisma.sql(head as string[], ...args.slice(1));
+  // No planner/JIT setting or ANALYZE-table changes. EXPLAIN ANALYZE performs
+  // the one original write; the lazy PrismaPromise is never consumed again.
+  const result = await (target as Prisma.TransactionClient).$queryRaw(
+    Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query}`,
+  );
+  plans.push({
+    label: 'rollback.segment-update',
+    elapsedMs: Number((performance.now() - began).toFixed(3)),
+    plan: redactLedgerPlan(result),
+  });
+  throw rollback;
 }
 
 describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', () => {
@@ -923,4 +967,258 @@ describe('ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13)', 
     ).toBe(f.identityIds.length);
     if (plansEnabled) console.info('[ledger-equivalence-four-groups] ' + JSON.stringify(groups));
   }, 600_000);
+
+  it('matches NULL, empty and duplicate-key membership without updating a row twice', async () => {
+    const rows = await prisma.$queryRaw<
+      Array<{
+        empty: boolean;
+        duplicate: boolean;
+        nullStatus: boolean;
+        draft: boolean;
+        other: boolean;
+      }>
+    >`
+      SELECT 'one'::text = ANY (ARRAY(SELECT id FROM (VALUES ('one'::text)) t(id) WHERE FALSE)) AS empty,
+        'one'::text = ANY (ARRAY(SELECT id FROM (VALUES ('one'::text), ('one'::text)) t(id))) AS duplicate,
+        CASE WHEN NULL::text = 'draft' THEN TRUE ELSE FALSE END AS "nullStatus",
+        CASE WHEN 'draft'::text = 'draft' THEN TRUE ELSE FALSE END AS draft,
+        CASE WHEN 'superseded'::text = 'draft' THEN TRUE ELSE FALSE END AS other
+    `;
+    expect(rows).toEqual([
+      { empty: false, duplicate: true, nullStatus: false, draft: true, other: false },
+    ]);
+    // Real schema keeps statusCode NOT NULL; do not manufacture an illegal row.
+  });
+
+  it('rechecks draft status after a real concurrent row-lock wait', async () => {
+    const f = await createScaleFixture(1);
+    const segment = await prisma.participantServiceSegmentRevision.findFirstOrThrow({
+      where: { participationIdentityId: f.identityIds[0] },
+    });
+    const deferred = () => {
+      let resolve: () => void = () => {
+        throw new Error('uninitialized lock barrier');
+      };
+      const promise = new Promise<void>((done) => {
+        resolve = done;
+      });
+      return { promise, resolve };
+    };
+    const acquired = deferred();
+    const release = deferred();
+    const waiting = deferred();
+    let contenderPid = 0;
+    const holder = prisma.$transaction(
+      async (tx) => {
+        await tx.participantServiceSegmentRevision.update({
+          where: { id: segment.id },
+          data: { statusCode: 'superseded' },
+        });
+        acquired.resolve();
+        await release.promise;
+      },
+      { timeout: 30_000 },
+    );
+    // Reject the barrier as well if fixture acquisition fails; no unhandled wait.
+    const holderOutcome = holder.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    let contender: Promise<number> | undefined;
+    try {
+      await Promise.race([
+        acquired.promise,
+        holder.then(() => {
+          throw new Error('holder released before barrier');
+        }),
+      ]);
+      contender = prisma.$transaction(
+        async (tx) => {
+          const [pid] = await tx.$queryRaw<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+          contenderPid = pid.pid;
+          waiting.resolve();
+          return tx.$executeRaw(segmentQueryFromService('update', f.activity.id, f.batch.id));
+        },
+        { timeout: MEMBER_TX_TIMEOUT_MS },
+      );
+      const contenderOutcome = contender.then(
+        (value) => ({ ok: true as const, value }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      await waiting.promise;
+      const deadline = performance.now() + 3_000;
+      let blocked = false;
+      while (performance.now() < deadline && !blocked) {
+        const [state] = await prisma.$queryRaw<Array<{ blocked: boolean }>>`
+          SELECT cardinality(pg_blocking_pids(pid)) > 0 AS blocked
+          FROM pg_stat_activity WHERE pid = ${contenderPid} AND datname = current_database()
+        `;
+        blocked = state?.blocked === true;
+        if (!blocked) await new Promise<void>((done) => setImmediate(done));
+      }
+      expect(blocked).toBe(true);
+      release.resolve();
+      await holder;
+      const outcome = await contenderOutcome;
+      if (!outcome.ok) throw outcome.error;
+      expect(outcome.value).toBe(0);
+      expect(
+        await prisma.participantServiceSegmentRevision.findUniqueOrThrow({
+          where: { id: segment.id },
+        }),
+      ).toEqual({ ...segment, statusCode: 'superseded', updatedAt: expect.any(Date) });
+    } finally {
+      release.resolve();
+      await holderOutcome;
+      if (contender) await contender.catch(() => undefined);
+    }
+  }, 120_000);
+
+  it('redacts plans without hiding original query failures or the rollback sentinel', async () => {
+    const secret = 'synthetic-sensitive-expression';
+    expect(
+      redactLedgerPlan({
+        Plan: {
+          'Node Type': 'Index Scan',
+          'Actual Loops': 1,
+          'CTE Name': 'target',
+          'Index Cond': secret,
+        },
+        Triggers: [{ 'Trigger Name': 'fk', Time: 2, Calls: 1 }],
+        Query: secret,
+      }),
+    ).toEqual({
+      Plan: { 'Node Type': 'Index Scan', 'Actual Loops': 1, 'CTE Name': 'target' },
+      Triggers: [{ 'Trigger Name': 'fk', Time: 2, Calls: 1 }],
+    });
+    const tagged = [
+      [
+        'WITH target AS MATERIALIZED (SELECT id FROM "ActivityParticipationIdentity") UPDATE "ParticipantServiceSegmentRevision" SET "statusCode" = \'committed\'',
+      ],
+    ];
+    const failure = new Error('synthetic database failure');
+    const rollback = new Error('synthetic rollback');
+    let calls = 0;
+    const target = {
+      $queryRaw: () => {
+        calls++;
+        return Promise.reject(failure);
+      },
+    };
+    await expect(collectRollbackUpdatePlan(target, tagged, [], rollback)).rejects.toBe(failure);
+    expect(calls).toBe(1);
+    const plans: PlanDiagnostic[] = [];
+    const success = {
+      $queryRaw: () => {
+        calls++;
+        return Promise.resolve([{ 'QUERY PLAN': [{ Plan: { 'Node Type': 'ModifyTable' } }] }]);
+      },
+    };
+    await expect(collectRollbackUpdatePlan(success, tagged, plans, rollback)).rejects.toBe(
+      rollback,
+    );
+    expect(calls).toBe(2);
+    expect(plans).toHaveLength(1);
+    await expect(
+      collectRollbackUpdatePlan(success, ['not a tagged update'], [], rollback),
+    ).rejects.toThrow('exact service segment');
+    expect(calls).toBe(2);
+    let consumed = 0;
+    const timings: DiagnosticRow[] = [];
+    const lazy = {
+      then: (fulfilled: (value: number) => unknown, rejected?: (error: unknown) => unknown) => {
+        consumed++;
+        return Promise.resolve(7).then(fulfilled, rejected);
+      },
+    };
+    const pending = timedQuery(lazy, 'synthetic.original-call', timings);
+    expect(consumed).toBe(0);
+    expect(await pending).toBe(7);
+    expect(consumed).toBe(1);
+    expect(timings.map(({ label, status }) => ({ label, status }))).toEqual([
+      { label: 'synthetic.original-call', status: 'ok' },
+    ]);
+    const rejected = timedQuery(Promise.reject(failure), 'synthetic.original-failure', timings);
+    await expect(rejected).rejects.toBe(failure);
+    expect(timings.at(-1)?.status).toBe('error');
+  });
+
+  // One opt-in local probe, independent of the original 7-second business case.
+  // Never enables the older four-group/ANALYZE experiment above.
+  const rollbackPlanTest = process.env.SRVF_E3_LEDGER_UPDATE_PLAN_PROBE === '1' ? it : it.skip;
+  rollbackPlanTest(
+    '8192 logical keys: one actual plan under protocol locks, complete rollback',
+    async () => {
+      if (
+        process.env.SRVF_E3_MAIN_PERF_W98 !== '1' ||
+        process.env.SRVF_E3_MAIN_PERF_SQL_PROBE === '1'
+      ) {
+        throw new Error('plan guard probe requires w98 without the historical planner experiment');
+      }
+      const f = await createScaleFixture();
+      const { jobId } = await preparation.ensurePrepareJob(f.batch.id);
+      const items = await prisma.activityBatchJobItem.findMany({
+        where: { jobId },
+        select: { id: true },
+        orderBy: { itemKey: 'asc' },
+      });
+      for (const item of items) await preparation.prepareChunk(jobId, item.id);
+      await preparation.finalize(jobId);
+      const before = await prisma.ledgerPostingBatch.findUniqueOrThrow({
+        where: { id: f.batch.id },
+      });
+      const run = await prisma.attendanceSettlementRun.findUniqueOrThrow({
+        where: { id: before.settlementRunId },
+      });
+      const plans: PlanDiagnostic[] = [];
+      const rows: DiagnosticRow[] = [];
+      const rollback = new Error('rollback exact segment update plan');
+      const recorder = installStatementRecorder(prisma, rows, plans, rollback);
+      try {
+        await expect(
+          prisma.$transaction(
+            async (tx) => {
+              await posting.commitBatchWithin(
+                tx,
+                f.activity.id,
+                { postingBatchId: f.batch.id, operationKey: 'rollback-update-plan' },
+                actor,
+                auditMeta,
+              );
+              throw new Error('rollback probe failed to intercept original update');
+            },
+            { timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+          ),
+        ).rejects.toBe(rollback);
+      } finally {
+        recorder.restore();
+      }
+      const updatePlans = plans.filter((plan) => plan.label === 'rollback.segment-update');
+      expect(updatePlans).toHaveLength(1);
+      expect(
+        await prisma.ledgerPostingBatch.findUniqueOrThrow({ where: { id: f.batch.id } }),
+      ).toEqual(before);
+      expect(
+        await prisma.attendanceSettlementRun.findUniqueOrThrow({ where: { id: run.id } }),
+      ).toEqual(run);
+      expect(
+        await prisma.memberContributionDayState.count({ where: { latestBatchId: f.batch.id } }),
+      ).toBe(0);
+      expect(
+        await prisma.participantServiceSegmentRevision.count({
+          where: { participationIdentityId: { in: f.identityIds }, statusCode: 'draft' },
+        }),
+      ).toBe(SCALE_MEMBER_COUNT);
+      expect(
+        await prisma.participantSettlementResultRevision.count({
+          where: { settlementVersionId: before.settlementVersionId, statusCode: 'draft' },
+        }),
+      ).toBe(SCALE_MEMBER_COUNT);
+      console.info(
+        '[ledger-update-plan-guard-rollback] ' +
+          JSON.stringify({ members: SCALE_MEMBER_COUNT, plans: updatePlans }),
+      );
+    },
+    600_000,
+  );
 });
