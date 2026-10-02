@@ -3447,3 +3447,25 @@ helper仅在原受控30秒夹具事务中登记两新表／两trigger、成套�
 扩写后最终quick退出0：缓存lint、三组类型、全量441套／9,562条单测及harness自测通过，5条既有todo未执行；权威冷lint见§31.13，新增helper／E2E另有定向冷lint通过。冻结台账、counts、codemap与diff检查通过，既有体量／god-service提示保留。提交前现场复核w98数据库、连接、四角色和scratch锁均0；实际101个改动路径全部位于106候选写集，清单外0。按完整包原授权进入普通提交、推送一个Draft交付，PR CI仍未验收；不自动Ready／合并／重跑CI，不登记真实业务批准、不开shadow／Gate、不操作生产。上节待批准／未签表述为此前证据，本节覆盖其当前状态，失败过程不删除。
 
 **本次未做**：尚未提交推送／创建Draft或验收PR CI，未本地跑超出四个D3具名角色的旧mapping全套；未登记真实映射／窗口／签字，未启用shadow／Gate、部署、执行D8-OPS或删除／重算业务数据。
+
+### 31.15 首轮CI当前恢复计数漏项（2026-10-02；范围内收口）
+
+完整包已普通提交为`3659b80d195fc274127d7a2b73ab47cf2ba3c256`，推送并创建[#1376 Draft](https://github.com/BA7IEE/srvf-nest-api/pull/1376)。[CI 37011364843](https://github.com/BA7IEE/srvf-nest-api/actions/runs/37011364843)首轮第1／2／4／5分片通过，完整契约1,092项与两快照、Fast checks、harness、事故回放、容器与可信红区审批通过；第3分片83套／1,267条通过、1条既有skip，唯一失败为E2迁移套件afterAll当前schema恢复计数仍期待135，实际136。不是历史131→132升级或业务约束失败，不能报告整轮全绿。
+
+§31.8及已批准完整包明确包含当前migration 135→136同步、范围内等价修复及Draft交付。漏项位于原105具名路径，推荐只把该afterAll的固定当前计数改为136，保留历史131→132目标、全部业务断言及120秒总预算；不改成运行时计算期望。方案B盲重跑不会改变固定期望，故不采用。验证仅w98，显式不启用该测试的专用提前回收分支，以真实执行CI失败的afterAll恢复路径；结束检查当前136再回收w98。不增加角色或数据库范围。
+
+| 项 | 结论 |
+| --- | --- |
+| 是否修改 `prisma/schema.prisma` | 否 |
+| 是否新增／改动 migration | 否，第136条及全部历史SQL不变 |
+| 是否修改 `prisma/seed.ts` | 否 |
+| 是否影响现有数据 | 否，仅w98合成夹具重建，真实数据不碰 |
+| 是否不可逆 | 否，仅固定当前计数与结果文档 |
+| 是否影响OpenAPI／contract snapshot | 否 |
+| 是否影响鉴权／Permission seed／审计 | 否，3b／4b摘要不变，无需重签 |
+| 是否需要新增BizCode | 否 |
+| 是否需要用户拍板 | 原§31完整包已批准当前计数同步，无新增扩围；新SHA可信审批仍独立 |
+
+Prisma技能指向的`prisma/AGENTS.md`当前不存在，按根AGENTS及实际`prisma/CLAUDE.md`执行现有迁移禁令，不创建替代规则文件。本轮七路径均在原完整包内：E2测试、既有signature changelog、本评审稿、两份台账、`prisma/CLAUDE.md`及`docs/current-state.md`顶部状态；后两项仅更正已提交／已签事实。未跟踪的`docs/development/local-resource-audit-2026-10-02.md`不属于本轮，不修改或提交。不Ready、不合并、不自动重跑CI，不登记真实业务批准、不启用shadow／Gate或操作生产。
+
+w98定向完整2/2通过（30.182秒），明确未设置`SRVF_E2_W98`，实际执行普通afterAll恢复而非专用提前回收分支；结束读回current_database=app_test_w98、迁移136、shadowProofRequired存在，连接0／四角色0后仅回收该合成夹具库，回收后库数0。授权旧E2E字面135复核仅余三处，均为真实135历史schema／134→135升级，原样保留。最终quick退出0：缓存lint、三组类型、441套／9,562条单测及138项eslint自测通过，5条既有todo未执行、5个已知守护缺口仍公开；该E2文件另经定向冷lint，counts／冻结台账／diff通过。提交推送后CI需以新SHA重新验收，旧SHA红点不据本地通过关闭，SQL／seed／权限／ACL摘要不变，无新重签。
