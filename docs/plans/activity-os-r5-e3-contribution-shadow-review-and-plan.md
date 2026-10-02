@@ -3473,3 +3473,76 @@ w98定向完整2/2通过（30.182秒），明确未设置`SRVF_E2_W98`，实际�
 最后CODEMAP独立复验发现本轮替换的Prisma顶部状态只写“第136条”而未显式声明当前总数，既有判据按首个“个migration”匹配到下方历史135，故退出1；不把此前quick通过当此闸通过。七路径已普通提交`f159be33`但未推送，立即停止推送；仅在同一已授权Prisma顶部补“当前136个migration、194个模型”，保留所有历史与检查器不变，补充普通文档提交并重新检查后才交付。未追改SQL、断言或生成规则，未跟踪的本地资源报告仍不提交。
 
 补明确当前读数后，`pnpm docs:codemap:check`复验退出0：136声明匹配、生成块一致，既有2 WARN保留；冻结台账及diff复验退出0。后置仅三份文档，不改变已通过的E2／quick代码内容；按原授权普通提交推送更新同一Draft，远端新SHA结论尚未取得。
+
+### 31.16 #1376 合入后的 D7 七秒超时隔离诊断（2026-10-02；不实施修复）
+
+维护者已明确允许 #1376 Ready、必要审批后在干净 pilot main Squash 合并；可信红区新轮37019224155审批后成功。合并前精确 head 为 `aeb71cd07189c65f2c9115313837da08fd1ae9b0`，21项检查成功、MERGEABLE／CLEAN。Squash 后 GitHub 确认 MERGED，main 为 `2d9fd0910fafea4b000dad12acedfeb3f575d09e`，pilot 仅 ff-only 同步；与原 head 文件树比较相同。原分支、远端分支及11个工作树均保留，未清理。实际无其他 open PR，#1324 已关闭；不冒称仍需其豁免。
+
+[main CI 37021160288](https://github.com/BA7IEE/srvf-nest-api/actions/runs/37021160288)（同 SHA、attempt 1）失败：Fast checks 441套／9,562单测通过、5既有todo未执行；harness、replay、Docker、Golden及 E2E 第1–4片成功。第5片82套／1,284条通过，唯一失败是既有 `activity-os-r4-d7-time-correction.e2e-spec.ts` 的 `runs the Human V3 write chain against a complete 2000-identity source proof`。HTTP commit未返回200；Prisma P2028报告7,000ms事务预算，错误时已过7,134ms。未重跑 CI。
+
+已有CI脱敏分段：外层 correctionCommit 9,844ms，timeAllocationMaterialization 1,269ms、correctionReceipt 1,383ms、ledgerCommit 3,515ms；SQL分桶 correctionReceipt 4次／1,384ms、timeAllocationMaterialization 8次／1,121ms、other 87次／3,423ms。这些外层／内层阶段重叠，不能相加。`other` 没有精确语句或实际loops，现证据不能认定具体SQL、JIT、锁等待或新D3为根因；也不能把未复现称作偶发误报。
+
+维护者本轮仅批准四路径：本E3评审稿、两份台账及D7 E2E临时诊断后还原；仅 `app_test_w98` 合成夹具验证／重建和回滚式SQL计划。无生产代码、schema／migration、角色／ACL、测试断言／七秒预算或CI配置修改权，无提交推送／重跑CI／Ready／合并权。
+
+#### 31.16.1 入口与首轮原样复现
+
+pilot 是 linked worktree，标准 runner 会派生另一库名，不能直接用于仅w98授权。主仓业务源码、Prisma、相关helper／fixture、D7测试及load-env／test-db／worktree-db均与获批main树一致；其他所有者的资源脚本、Jest及global setup未提交改动不碰。临时CLI Jest配置沿干净pilot原配置，只移除global setup／teardown并接既有 `e3-main-performance-w98.setup.ts`，复用主仓的exact-name／localhost保护；不改配置文件。生成客户端schema仅空白排版不同，`diff -w -q`一致。D7测试原SHA-256为 `962abec8a25d03ec7b0d38f2ea8570e62a375920a3d6019d5b921d472683448e`，两工作树相同。
+
+开跑前w98活动连接0。首轮设置现有 `SRVF_D7_2_W98=1` 专用生命周期，实际仅w98建库／136条获批迁移deploy，原2,000身份完整Human链1/1通过、6条未选择，150.081秒；七秒事务和全部断言不变，afterAll回收w98。既有prepare观察器正文5/5匹配、无ANALYZE计划7/7采到，初始prepare包络约11,536ms、receipt约3,282ms，属于原30秒准备链，不是失败的七秒更正commit。不能用其SQL计划替代失败commit的计划。
+
+为取得同规模后置计划，第二次诊断运行只重建同一w98，迁移136已核验，不设置自动回收分支，让原样链关闭应用后暂留合成夹具；随后只做回滚式取证，最终回收。本轮未修改D7测试，因此不需通过还原来掩盖任何断言变化。后续取证结果与完整候选修复清单追加于本节，不据首轮通过关闭main红点。
+
+#### 31.16.2 第二轮完整链、真实嵌套计划及回收
+
+第二次仍为原文件／原断言的2,000身份Human链，1/1通过、6条未选择，125.506秒。关闭应用后现场读回：迁移136、committed批次2、根分录8,000、更正配对分录16,000、binding 10,000；活动连接0、E3具名夹具角色0。此轮专为取得同规模后置计划保留w98，不是重跑CI或猜测重试修复。
+
+只在w98新诊断会话 `BEGIN` 中加载既有PostgreSQL `auto_explain` 库，设置事务局部嵌套JSON计划／buffers、关闭逐节点计时降低观察开销；statement_timeout仍7秒。对真实manifest调用 `ptc_assert_complete` 与 `ctsp_assert_complete(TRUE)`，用EXPLAIN ANALYZE／BUFFERS采集，最后显式ROLLBACK。未创建extension／表／函数、未改业务SQL或全局设置；连接退出撤销观察设置。两次探针均退出0、采到24份嵌套计划。原始Query Text／conditions只留子进程内存，输出只允许固定标签、表／索引名、行数／loops／buffers与耗时，不输出ID、SQL参数、URL或凭据。
+
+| 实际计划／耗时 | 证据与局限 |
+| --- | --- |
+| `ptc_assert_complete` 全调用 | 第二次外层EXPLAIN execution 192.614ms，包含其内部 `ctsp_assert_complete(FALSE)`；不是原失败事务现场、不是CI实付耗时 |
+| PTC配对完整性 | 54.360ms，JSON批准项8,000行／1 loop；反冲和credit各使用 `ptce_manifest_root_type_key`，每根索引1行、8,000 loops，未出现每根全扫8,000条的平方扫描；shared hits 67,086，temp blocks 0 |
+| `ctsp_assert_complete(TRUE)` 全调用 | 第二次外层EXPLAIN execution 127.192ms；binding多重集比较27.955ms，source和binding各10,000行、1 loop，无temp blocks |
+| 来源数、slice总数、pending覆盖 | 三处仍用宽 `jsonb_array_elements(sourceSnapshotJson)`，估计100、实际10,000行；分别25.385／13.525／47.447ms（FALSE内）、11.808／12.255／30.723ms（TRUE内）。实际临时读／写分别2,665／2,665、2,665／2,665、5,164／5,164 blocks；单次完整守卫累计10,494临时读块、10,494临时写块。不是磁盘物理读延迟的直接测量，但确实证明宽JSON重复展开和spill存在 |
+
+外层／内层耗时不可累加；plan notice对整串命令的Query Text可能含两次调用，外层函数身份按执行顺序与独立EXPLAIN结果确认，不能凭substring分类把首次PTC调用错标成CTSP。本地计划没有复现CI P2028，也没有证明最终ledger UPDATE或权限查询无慢计划。宽JSON开销是可检验的优化候选，不是已经确认的主干根因；不据此直接改生产SQL或历史migration。
+
+取证后未禁用任何trigger、未新增角色／ACL；现有测试文件未修改，SHA-256在两工作树均仍 `962abec8a25d03ec7b0d38f2ea8570e62a375920a3d6019d5b921d472683448e`。主仓相关业务／helper／Prisma相对main diff为空，其他所有者改动保留。使用非FORCE dropdb只回收具名w98合成夹具库，回收后库数0／连接0／E3夹具角色0。本轮仅三份批准文档改动。
+
+收尾检查：冻结台账分类／跨台账对照、`docs:counts:check`及`git diff --check`均退出0；readtax退出0，AGENTS／current-state各93%的既有提示保留。最终实际只有三份文档新增诊断记录，没有测试临时改动遗留。没有跑新全量quick／contract／E2E CI，不能把文档检查绿报成main绿。收尾GitHub精确查询仍为main `2d9fd091`、run37021160288 attempt1 completed/failure，未新增重跑。
+
+#### 31.16.3 推荐下一包：五路径CI更正提交现场取证（候选、未批准／未实施）
+
+先补齐真实失败事务的语句分布，再选修复，不重跑旧SHA碰运气，也不在未复现情况下猜改宽JSON。现有CI把87次／3,423ms放进 `other`，本轮本地的快速后置计划不能填补这个空缺。推荐一次批准以下五路径的完整取证／验证／Draft交付包：
+
+```text
+test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts
+docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md
+docs/ai-harness/NEXT_TASKS.md
+docs/ai-harness/FROZEN_DRAFTS.md
+changelog.d/activity-os-r5-e3-d3-main-commit-diagnostic.md
+```
+
+实施合同：仅利用已有observed Prisma查询事件，把 `other` 拆为固定白名单：事务控制、LedgerPostingBatch状态写、SettlementRun状态写、结果revision切换、服务段revision切换、audit／notification与权限／身份读；未知仍为other，禁止输出SQL／参数／ID／响应正文。对每标签输出count／duration／max以及原四阶段，不逐条刷日志，不新增业务查询、锁、sleep、重放或重试。仅针对原2,000身份用例在原commit的finally输出一次成功／失败摘要，使后续绿轮也能与失败轮对照；不改变HTTP断言、lockedCompleteCalls断言、所有结果计数和7秒事务／600秒测试预算。现有观察器纯函数回归若调整，只补白名单分类、未知不漏原始内容与不重复执行的断言；不得修改或删除旧断言。
+
+在主仓使用既有exact w98入口，D7行为文件若需本地临时写入必须先明确授权该执行工作树（本轮四路径许可仅为pilot诊断，不继承到主仓写入）。推荐正式实施／交付在pilot分支，必要时用主仓同相对路径的临时诊断副本验证后逐字还原；两处均需本包明确许可，其他所有者文件不碰。数据库仍只有app_test_w98；不运行共享global setup／teardown、不动linked派生库、模板库或其他worker库。定向原链／观察器与静态检查完成后，按新授权提交／推送创建Draft，PR CI执行全量冷跑；必要的新SHA红区审批另由维护者操作，不自动重跑、Ready或合并。
+
+验收：若新现场显示具体状态UPDATE／收据守卫独占慢耗时，下一包一次定稿其完整修复与回归写集；若仍全部快且无法对应主干慢样本，保留UNKNOWN，报告观察开销／外层预算与剩余盲区，不宣称修复。宽JSON窄投影候选只有取得现场对应证据后才进入独立SQL评审；如需改数据库函数，必须新迁移及新的3b，不追改第125–128条历史SQL，不删完整性守卫或改变现有错误顺序。不得以提高work_mem／关闭全局JIT／加长事务或放宽断言代替定位。
+
+下一包授权模板（不是本轮授权）：`确认§31.16.3五路径CI提交现场取证完整包，包含主仓同相对D7文件仅临时验证后还原、pilot正式实施；允许仅app_test_w98验证与合成夹具重建，保留全部断言和预算。验证后提交、推送并创建Draft PR；不Ready、不合并、不自动重跑CI、不改生产代码／SQL／schema／migration／权限／Gate、不操作生产。`
+
+**本次未做**：未定位／修复main超时根因、未完成main验收、未实施上述候选取证包；未改生产代码／SQL／断言／预算，未提交推送或重跑CI；未登记真实映射／窗口／签字，未启用shadow／Gate、操作生产或执行D8-OPS，未删除或重算业务数据。
+
+#### 31.16.4 五路径完整包验收（已批准；本地通过，待Draft CI）
+
+维护者明确确认§31.16.3完整包，包含主仓D7仅临时验证后还原、pilot正式实施、验证后提交推送并创建Draft；不Ready／合并。执行写集仍只有上节五个具名路径，不包含 `docs/current-state.md` 等清单外历史状态更正。根入口目前仍保留#1376 Draft历史描述，GitHub已合并事实与本节／两台账当前顶部为本轮证据，不据此擅自扩写。
+
+原三份本轮文档导致preflight clean失败。仅这三路径先保存为可恢复stash `b50d615f86fca8353b18256007a402f0cf5bb8c7`，在main `2d9fd091`新建 `codex/e3-d3-main-commit-diagnostic` 后preflight退出0（clean／open PR 0／behind 0），随后apply恢复，stash仍保留。未改门禁、未自发grant、未动其他所有者文件。pilot生成Prisma客户端缺旧E3-2字段，首轮test类型检查因此失败；按既有schema运行 `pnpm prisma:generate`，只刷新node_modules生成物，不改schema或连接数据库。原pure观察器21/21已先通过，不用它覆盖全仓类型失败。
+
+观察器只读取原observed Prisma事件；各固定桶补max、未知保留other。四种statusCode UPDATE区分父批次、run、result、segment；audit／outbox只匹配写入目标，权限／身份只读面单列。查询文本不进入汇总。原失败JSON及HTTP失败断言保持，2,000规模的finally在关闭observer后只输出一次新固定摘要，100规模及其他业务用例不输出新增摘要。AST链核对原107条expect链均按原序存在，新增仅六条纯函数断言表达式（it.each展开21例）；不是把业务断言改松。阶段彼此重叠，total不可相加；事件耗时只覆盖驱动可观测语句，不能单独证明触发器内部计划、锁等待或原失败事务里未上报的最后语句。
+
+主仓D7临时副本经apply_patch与pilot实现逐字一致，实现SHA-256为 `82821942c834569927af538380c8287308a6f49b8dd0cbe58b0ea4740f9db935`。真实w98原2,000身份链及纯观察器共22项通过、6项未选择，143.454秒；仍为7秒事务及原断言。HTTP 200／业务码0，correctionCommit 4,759ms、timeAllocationMaterialization 831ms、correctionReceipt 505ms、ledgerCommit 1,290ms。事件桶为事务控制3次／615ms（max615）、postingBatch状态写1次／482ms、run状态写2次／1ms、result状态写2次／62ms、segment状态写2次／3ms、审计2次／3ms、通知1次／0ms、权限读34次／16ms、身份读8次／8ms；原来源物化8次／715ms、收据4次／506ms、other34次／550ms（max494）。这是本轮快速样本，不把旧CI的other87次／3,423ms按本轮比例猜分；阶段重叠不相加。新摘要成功链实际输出一次、failure为null，失败样本仍待PR CI取得。
+
+执行结束已用反向apply_patch还原主仓D7，SHA恢复 `962abec8a25d03ec7b0d38f2ea8570e62a375920a3d6019d5b921d472683448e`、该路径diff为空，其他所有者未提交文件列表保留。独立复验w98库数0、连接0；首个本机socket psql诊断连接失败，仅改用既有具名PostgreSQL容器只读查询确认，不进行数据库重置或额外库操作。pilot测试类型、定向冷lint、冻结台账／counts／codemap及diff均退出0；codemap既有WARN保留。完整quick仍在收尾，尚未提交推送或取得本轮PR CI结果，不宣称修复根因。
+
+最终quick退出0：缓存lint、三组类型、441套／9,562条单测及138项eslint自测通过，5条既有todo未执行、5个已知守护缺口保留。单测runner有worker未自然退出并强制回收的警告，退出仍0；不是静默忽略失败，也不在本轮取证写集外修复测试资源释放。该D7另经定向冷lint；最后三份文档更新后冻结台账／readtax／diff复验通过。按授权普通提交、推送并创建Draft；此处只登记本地结果，新SHA CI尚未验收，原main失败不关闭、不重跑，不Ready／合并。主仓临时文件、其他所有者改动及恢复stash均保留既定边界。
