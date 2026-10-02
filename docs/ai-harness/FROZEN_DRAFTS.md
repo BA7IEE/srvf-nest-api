@@ -1,5 +1,7 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **E3-2 D3 完整计划（2026-10-02；四文档待审）**：#1374 的读面计划已合入 main `037fa0f1`，同 SHA main CI 36985616908 通过；本轮在[既有评审稿 §31](../plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#31-e3-2-d3-完整复核窗口登记与人工签字计划2026-10-02待审不实施)一次补齐五个 System 读面、前瞻窗口受控登记、可信单候选人工签字、原始／净缺口公式、两表候选 SQL 合同、权限／ACL、105 路径候选及完整验证／授权清单。推荐口径仍待完整方案拍板，不视为实施或真实批准；本轮仅四文档验证、提交推送与 Draft PR，不 Ready、不合并、不查库。真实 31 类映射 hold、生产 NO-GO、shadow／Gate 关闭、D8-OPS 未执行，旧 D7 收据未复现根因不关闭。历史正文及生成块保留，D3／E3 未完成。
+
 > **E3-2 D2 已合入且 main CI 通过；D3 仅计划送审（2026-10-02）**：#1373 Squash 为 `1302061fd9943b34061eff17fdd7eb19d3183839`，同 SHA main CI [36979084953](https://github.com/BA7IEE/srvf-nest-api/actions/runs/36979084953) completed/success，覆盖下方“待 Draft CI／main 账本仍失败”的历史当前状态。原 8,192 人提交链此次 main 样本 3,103ms／27 查询，七秒预算不变；不据此关闭历史 D7 收据 28.812 秒的未复现根因。下一步为[评审稿 §30](../plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#30-e3-2-d3-人工复核与对账精确计划2026-10-02仅文档)：独立 System Human 读面、两类原始缺口及未决数；数据库目前只接受 unresolved 处置，“不适用”正式签字证据仍是整体验收前置。维护者本轮只授权四文档验证及 Draft PR，不授权实施。真实 31 类映射继续 hold，未部署、shadow／Gate 未启用，未执行 D8-OPS；不查删重算真实业务数据。下方历史记录保留。
 
 > **E3 最终UPDATE计划围栏（2026-10-02；本地通过，待Draft CI）**：§29.22.16完整九路径及Draft交付获批，分支`codex/e3-ledger-update-plan-guard`基于main`4799a83b`，旧分支／工作树保留。仅最终服务段UPDATE使用数据库内主键数组＋锁后draft复核；原8,192业务链commit1,025ms／27查询，独立回滚计划371.058ms、CTE数组与主键扫描均1 loop。六份完整E2E共74条通过，最终串行quick退出0（冷lint／三组类型／434套、9,460单测、5既有todo），独立完整harness退出0；w98夹具库已回收。先前静态失败及单测隔离失误保留在§29.22.17，不冒称首次全绿。按已授权权限仅提交推送并创建Draft，CI结论尚未取得、不Ready／合并；main原失败及历史D7收据原因不关闭。第134／135条、权限／审计、七秒预算和Gate不变，不查删重算真实业务数据、不操作生产。下方保留历史时点。
