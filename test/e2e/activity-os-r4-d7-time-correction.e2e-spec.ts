@@ -7,6 +7,8 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { ParticipationTimeLedgerAccessService } from '../../src/modules/activities/participation-time-ledger-access.service';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import {
@@ -217,6 +219,209 @@ function summarizeDiagnostics(rows: DiagnosticRow[]) {
   }));
 }
 
+const PLAN_KEYS = new Set([
+  'Plan',
+  'Plans',
+  'Node Type',
+  'Parent Relationship',
+  'Subplan Name',
+  'Relation Name',
+  'Index Name',
+  'Join Type',
+  'Strategy',
+  'Scan Direction',
+  'Startup Cost',
+  'Total Cost',
+  'Plan Rows',
+  'Plan Width',
+  'Actual Startup Time',
+  'Actual Total Time',
+  'Actual Rows',
+  'Actual Loops',
+  'Rows Removed by Filter',
+  'Rows Removed by Join Filter',
+  'Shared Hit Blocks',
+  'Shared Read Blocks',
+  'Shared Dirtied Blocks',
+  'Shared Written Blocks',
+  'Temp Read Blocks',
+  'Temp Written Blocks',
+  'Planning Time',
+  'Execution Time',
+  'JIT',
+  'Functions',
+  'Options',
+  'Inlining',
+  'Optimization',
+  'Expressions',
+  'Deforming',
+  'Timing',
+  'Generation',
+  'Emission',
+  'Total',
+  'Hash Batches',
+  'Hash Buckets',
+  'Peak Memory Usage',
+  'Heap Fetches',
+  'Sort Method',
+  'Sort Space Used',
+  'Sort Space Type',
+]);
+function safeReceiptPlan(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(safeReceiptPlan);
+  if (value !== null && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => PLAN_KEYS.has(key))
+        .map(([key, member]) => [key, safeReceiptPlan(member)]),
+    );
+  return value;
+}
+function receiptEvidence(label: string, value: object) {
+  console.info('[d7-receipt-evidence] ' + JSON.stringify({ label, ...value }));
+}
+async function observeReceiptOnce<T>(
+  original: () => Promise<T>,
+  observe: () => Promise<void>,
+  report: (error: unknown) => void,
+): Promise<T> {
+  try {
+    await observe();
+  } catch (error) {
+    report(error);
+  }
+  return original();
+}
+async function preservePrepareFailure<T>(
+  original: () => Promise<T>,
+  eligible: () => Promise<boolean>,
+  probe: () => Promise<void>,
+  report: (error: unknown) => void,
+): Promise<T> {
+  try {
+    return await original();
+  } catch (error) {
+    try {
+      if (await eligible()) await probe();
+    } catch (diagnosticError) {
+      report(diagnosticError);
+    }
+    throw error;
+  }
+}
+type ReceiptPlanQuery = { label: string; sql: string; values: unknown[] };
+async function collectReceiptPlans(
+  queries: ReceiptPlanQuery[],
+  maximum: number,
+  expired: () => boolean,
+  execute: (query: ReceiptPlanQuery) => Promise<unknown>,
+  emit: (label: string, value: object) => void,
+) {
+  let collected = 0;
+  for (const query of queries.slice(0, maximum)) {
+    if (expired()) break;
+    const started = performance.now();
+    try {
+      const plan = await execute(query);
+      collected += 1;
+      emit(query.label, { elapsedMs: performance.now() - started, plan: safeReceiptPlan(plan) });
+    } catch (error) {
+      emit(query.label, { elapsedMs: performance.now() - started, error: diagnosticCode(error) });
+      // A failed query may abort this transaction. Never try another group after it.
+      throw error;
+    }
+  }
+  emit('collection', { collected, maximum, complete: collected === queries.length });
+}
+function receiptSqlAuthority() {
+  const migration = readFileSync(
+    'prisma/migrations/20260913090000_activity_os_r4_d4_time_bucket_settlement/migration.sql',
+    'utf8',
+  );
+  const names = [
+    'astr_canonical_json',
+    'astr_source_set_document',
+    'astr_source_set_hash',
+    'astr_bucket_content_hash',
+    'astr_receipt_complete_guard',
+  ];
+  const bodies = new Map(
+    names.map((name) => {
+      const body = migration
+        .split('CREATE FUNCTION ' + name + '(')[1]
+        ?.split('AS $$')[1]
+        ?.split('$$;')[0];
+      if (!body) throw new Error('receipt SQL authority unavailable');
+      return [name, body] as const;
+    }),
+  );
+  const guard = bodies.get('astr_receipt_complete_guard')!;
+  const checks = [
+    ...guard.matchAll(
+      / {2}IF EXISTS \(\n([\s\S]*?)\n {2}\) THEN\n {4}RAISE EXCEPTION USING ERRCODE = '23514', CONSTRAINT = '([^']+)'/g,
+    ),
+  ];
+  if (
+    checks.map((row) => row[2]).join(',') !==
+    'astcr_source_ready_guard,astcr_overlap_guard,astcr_bucket_source_guard,astcr_bucket_total_guard'
+  )
+    throw new Error('receipt guard extraction mismatch');
+  const population = guard.match(
+    /OR EXISTS \((SELECT 1 FROM "ActivityParticipationIdentity" i[\s\S]*?)\n {4}OR EXISTS/,
+  );
+  if (!population || !population[1].trimEnd().endsWith(')'))
+    throw new Error('receipt population extraction mismatch');
+  return { bodies, checks, population: population[1].trimEnd().slice(0, -1) };
+}
+function receiptQueries(
+  authority: ReturnType<typeof receiptSqlAuthority>,
+  parent: Record<string, unknown>,
+  analyze: boolean,
+): ReceiptPlanQuery[] {
+  const bind = (label: string, sql: string): ReceiptPlanQuery => {
+    const values: unknown[] = [];
+    const parameterized = sql.replace(
+      /parent_row\.(?:"([^"]+)"|([a-z_]+))|\b(activity_id|draft_id|revision_id)\b/g,
+      (
+        _token: string,
+        quoted: string | undefined,
+        plain: string | undefined,
+        argument: string | undefined,
+      ) => {
+        const field =
+          quoted ??
+          plain ??
+          { activity_id: 'activityId', draft_id: 'settlementVersionId', revision_id: 'id' }[
+            argument ?? ''
+          ];
+        if (!field || parent[field] === undefined) throw new Error('receipt anchor unavailable');
+        values.push(parent[field]);
+        return '$' + values.length + (argument ? '::text' : '');
+      },
+    );
+    return { label, sql: parameterized, values };
+  };
+  const guards = [
+    bind('population', 'SELECT EXISTS (' + authority.population + ')'),
+    ...authority.checks.map((row) =>
+      bind(row[2].replace('astcr_', '').replace('_guard', ''), 'SELECT EXISTS (' + row[1] + ')'),
+    ),
+  ];
+  const body = (name: string, label: string) => bind(label, authority.bodies.get(name)!);
+  const sourceDocument = body('astr_source_set_document', 'source_document_body');
+  const bucketBody = body('astr_bucket_content_hash', 'bucket_hash_body');
+  return analyze
+    ? [
+        ...guards,
+        bind('source_hash_call', 'SELECT public.astr_source_set_hash(activity_id, draft_id)'),
+        bind('bucket_hash_call', 'SELECT public.astr_bucket_content_hash(revision_id)'),
+        sourceDocument,
+        bucketBody,
+        body('astr_source_set_hash', 'source_hash_body'),
+      ]
+    : [...guards, sourceDocument, bucketBody];
+}
+
 // Instrument positive controls never contact a database or log exception text.
 async function assertDiagnosticObserver() {
   const rows: DiagnosticRow[] = [];
@@ -260,6 +465,145 @@ async function assertDiagnosticObserver() {
     meta: { code: 'PRIVATE' },
   });
   expect(diagnosticCode(unknownFailure)).toBe('PrismaClientKnownRequestError:other:unavailable');
+  const privatePlan = {
+    Plan: {
+      'Node Type': 'Index Scan',
+      'Actual Rows': 5,
+      'Index Cond': 'private-bind',
+      Output: ['private-column'],
+      Plans: [{ 'Node Type': 'Seq Scan', Filter: 'private-detail', 'Actual Loops': 8 }],
+    },
+    'Query Text': 'private-query',
+  };
+  expect(safeReceiptPlan(privatePlan)).toEqual({
+    Plan: {
+      'Node Type': 'Index Scan',
+      'Actual Rows': 5,
+      Plans: [{ 'Node Type': 'Seq Scan', 'Actual Loops': 8 }],
+    },
+  });
+  let calls = 0;
+  let observedErrors = 0;
+  await expect(
+    observeReceiptOnce(
+      async () => {
+        calls += 1;
+        throw failure;
+      },
+      async () => {
+        throw unknownFailure;
+      },
+      () => {
+        observedErrors += 1;
+      },
+    ),
+  ).rejects.toBe(failure);
+  expect(calls).toBe(1);
+  expect(observedErrors).toBe(1);
+  await expect(
+    observeReceiptOnce(
+      async () => 17,
+      async () => undefined,
+      () => undefined,
+    ),
+  ).resolves.toBe(17);
+  let probes = 0;
+  await expect(
+    preservePrepareFailure(
+      async () => 17,
+      async () => true,
+      async () => {
+        probes += 1;
+      },
+      () => undefined,
+    ),
+  ).resolves.toBe(17);
+  expect(probes).toBe(0);
+  const sentinel = new Error('synthetic rollback sentinel');
+  await expect(
+    preservePrepareFailure(
+      async () => {
+        throw failure;
+      },
+      async () => true,
+      async () => {
+        probes += 1;
+        throw sentinel;
+      },
+      () => undefined,
+    ),
+  ).rejects.toBe(failure);
+  expect(probes).toBe(1);
+  await expect(
+    preservePrepareFailure(
+      async () => {
+        throw failure;
+      },
+      async () => false,
+      async () => {
+        probes += 1;
+      },
+      () => undefined,
+    ),
+  ).rejects.toBe(failure);
+  expect(probes).toBe(1);
+  const authority = receiptSqlAuthority();
+  const parent = {
+    id: 'private',
+    activityId: 'private',
+    settlementVersionId: 'private',
+    evidenceSealId: 'private',
+    evidenceRevision: 1,
+    populationRevision: 1,
+    workflowRevision: 1,
+    draftContentHash: 'private',
+  };
+  const seven = receiptQueries(authority, parent, false);
+  const ten = receiptQueries(authority, parent, true);
+  expect(seven).toHaveLength(7);
+  expect(ten).toHaveLength(10);
+  expect(seven.every((query) => !query.sql.includes('parent_row.'))).toBe(true);
+  let collected = 0;
+  const quiet = () => undefined;
+  await collectReceiptPlans(
+    ten,
+    7,
+    () => false,
+    async () => {
+      collected += 1;
+      return privatePlan;
+    },
+    quiet,
+  );
+  expect(collected).toBe(7);
+  let elapsed = 0;
+  collected = 0;
+  await collectReceiptPlans(
+    seven,
+    7,
+    () => elapsed >= 200,
+    async () => {
+      collected += 1;
+      elapsed = 201;
+      return privatePlan;
+    },
+    quiet,
+  );
+  expect(collected).toBe(1);
+  collected = 0;
+  await expect(
+    collectReceiptPlans(
+      ten,
+      10,
+      () => false,
+      async () => {
+        collected += 1;
+        throw failure;
+      },
+      quiet,
+    ),
+  ).rejects.toBe(failure);
+  expect(collected).toBe(1);
 }
 
 const START = new Date('2020-03-01T08:00:00.000Z');
@@ -1195,9 +1539,14 @@ describe('D7-1 recognition correction real transaction', () => {
     }
   }
 
-  async function diagnoseInitialPrepare<T>(run: () => Promise<T>): Promise<T> {
+  async function diagnoseInitialPrepare<T>(
+    run: () => Promise<T>,
+    rollbackPrepare: () => Promise<unknown>,
+    deadline: number,
+  ): Promise<T> {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     await assertDiagnosticObserver();
+    const authority = receiptSqlAuthority();
     const rows: DiagnosticRow[] = [];
     const stages: DiagnosticRow[] = [];
     const measured = async <R>(label: string, work: () => Promise<R>): Promise<R> => {
@@ -1222,6 +1571,118 @@ describe('D7-1 recognition correction real transaction', () => {
     const readSources = queries.readSourceSetInTx.bind(queries);
     const evaluate = queries.evaluateInTx.bind(queries);
     const authorize = access.authorize.bind(access);
+    type ReceiptHost = {
+      receipt: (
+        tx: Prisma.TransactionClient,
+        actorId: string,
+        operation: string,
+        key: string,
+        hash: string,
+        result: Awaited<ReturnType<typeof service.prepare>>,
+        createdAt: Date,
+      ) => Promise<void>;
+    };
+    const receiptHost = service as unknown as ReceiptHost;
+    const originalReceipt = receiptHost.receipt.bind(receiptHost);
+    let reachedReceipt = false;
+    let failedReceipt = false;
+    let sqlMatches = false;
+    let parentId: string | undefined;
+    const report = (error: unknown) =>
+      receiptEvidence('observer_error', { error: diagnosticCode(error) });
+    const readAnchor = async (tx: Prisma.TransactionClient, id: string) => {
+      const parent = await tx.activitySettlementTimeRevision.findUniqueOrThrow({ where: { id } });
+      if (parent.kindCode !== 'draft') throw new Error('diagnostic requires draft anchor');
+      return parent as unknown as Record<string, unknown>;
+    };
+    const plansInTx = async (tx: Prisma.TransactionClient, id: string, analyze: boolean) => {
+      const began = performance.now();
+      try {
+        const parent = await readAnchor(tx, id);
+        if (!analyze) {
+          if (performance.now() - began >= 200) {
+            receiptEvidence('collection', {
+              analyze,
+              collected: 0,
+              complete: false,
+              reason: 'soft_stop',
+            });
+            return;
+          }
+          const installed = await tx.$queryRaw<Array<{ name: string; body: string }>>`
+          SELECT p.proname AS name, p.prosrc AS body FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public' AND p.proname IN (
+            'astr_canonical_json', 'astr_source_set_document', 'astr_source_set_hash',
+            'astr_bucket_content_hash', 'astr_receipt_complete_guard')`;
+          const matches =
+            installed.length === authority.bodies.size &&
+            [...authority.bodies].every(
+              ([name, body]) =>
+                installed.filter((row) => row.name === name && row.body === body).length === 1,
+            );
+          receiptEvidence('installed_body', {
+            matches,
+            functions: installed.map((row) => ({
+              name: authority.bodies.has(row.name) ? row.name : 'other',
+              matches: row.body === authority.bodies.get(row.name),
+              digest: createHash('sha256').update(row.body).digest('hex'),
+            })),
+          });
+          if (!matches) throw new Error('installed receipt SQL differs from authority');
+          sqlMatches = true;
+          if (performance.now() - began < 200) {
+            const snapshot = await tx.$queryRaw<Array<{ snapshot: unknown }>>`
+            SELECT jsonb_build_object('settings', jsonb_build_object(
+              'jit', current_setting('jit'), 'jit_above_cost', current_setting('jit_above_cost'),
+              'jit_inline_above_cost', current_setting('jit_inline_above_cost'),
+              'jit_optimize_above_cost', current_setting('jit_optimize_above_cost'),
+              'work_mem', current_setting('work_mem'), 'plan_cache_mode', current_setting('plan_cache_mode')),
+              'tables', (SELECT jsonb_agg(jsonb_build_object('table', c.relname,
+                'estimatedRows', c.reltuples, 'pages', c.relpages, 'liveRows', s.n_live_tup,
+                'modifiedSinceAnalyze', s.n_mod_since_analyze, 'hasAnalyze', s.last_analyze IS NOT NULL,
+                'hasAutoAnalyze', s.last_autoanalyze IS NOT NULL))
+                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
+                WHERE n.nspname = 'public' AND c.relname IN (
+                  'ActivityParticipationIdentity', 'ParticipantServiceSegmentRevision',
+                  'ParticipantTimeAllocationRevision', 'ParticipantTimeAllocationSlice',
+                  'ParticipantSettlementResultRevision', 'ParticipantSettlementTimeBucket',
+                  'ParticipantSettlementTimeBucketSource'))) AS snapshot`;
+            receiptEvidence('snapshot', { snapshot: snapshot[0]?.snapshot });
+          }
+        }
+        await collectReceiptPlans(
+          receiptQueries(authority, parent, analyze),
+          analyze ? 10 : 7,
+          () => !analyze && performance.now() - began >= 200,
+          async (query) => {
+            const result = await tx.$queryRawUnsafe<Array<{ 'QUERY PLAN': unknown }>>(
+              'EXPLAIN (' + (analyze ? 'ANALYZE, BUFFERS, ' : '') + 'FORMAT JSON) ' + query.sql,
+              ...query.values,
+            );
+            return result[0]?.['QUERY PLAN'];
+          },
+          (label, value) => receiptEvidence(label, { analyze, ...value }),
+        );
+      } finally {
+        receiptEvidence('observation_total', { analyze, elapsedMs: performance.now() - began });
+      }
+    };
+    const receiptProbe = jest.spyOn(receiptHost, 'receipt').mockImplementation(async (...args) => {
+      reachedReceipt = true;
+      parentId = args[5].timeRevisionId;
+      try {
+        await observeReceiptOnce(
+          () => originalReceipt(...args),
+          () => plansInTx(args[0], args[5].timeRevisionId, false),
+          report,
+        );
+      } catch (error) {
+        failedReceipt = true;
+        throw error;
+      }
+    });
     const probes = [
       jest
         .spyOn(service, 'prepare')
@@ -1254,21 +1715,80 @@ describe('D7-1 recognition correction real transaction', () => {
         ]);
       },
     });
-    try {
-      return await run();
-    } finally {
-      f.db.$transaction = transaction;
-      for (const probe of probes) probe.mockRestore();
-      console.info(
-        '[d7-prepare-diagnostic] ' +
-          JSON.stringify({
-            elapsedMs: performance.now() - began,
-            queryCount: rows.length,
-            rows: summarizeDiagnostics(rows),
-            stages: summarizeDiagnostics(stages),
-          }),
-      );
-    }
+    const originalRun = async () => {
+      try {
+        return await run();
+      } finally {
+        f.db.$transaction = transaction;
+        for (const probe of probes) probe.mockRestore();
+        receiptProbe.mockRestore();
+        console.info(
+          '[d7-prepare-diagnostic] ' +
+            JSON.stringify({
+              elapsedMs: performance.now() - began,
+              queryCount: rows.length,
+              rows: summarizeDiagnostics(rows),
+              stages: summarizeDiagnostics(stages),
+            }),
+        );
+      }
+    };
+    return preservePrepareFailure(
+      originalRun,
+      async () => {
+        const rollbackConfirmed =
+          reachedReceipt &&
+          failedReceipt &&
+          parentId !== undefined &&
+          (await f.db.activitySettlementTimeRevision.count({ where: { id: parentId } })) === 0;
+        const remainingMs = deadline - performance.now();
+        receiptEvidence('rollback_probe_eligibility', {
+          reachedReceipt,
+          failedReceipt,
+          sqlMatches,
+          rollbackConfirmed,
+          enoughTime: remainingMs >= 35000,
+        });
+        return rollbackConfirmed && sqlMatches && remainingMs >= 35000;
+      },
+      async () => {
+        // No second population or business-chain rerun: same source and command, always rollback.
+        const sentinel = new Error('receipt diagnostic rollback sentinel');
+        let probeParentId: string | undefined;
+        let sentinelReached = false;
+        const fallback = jest
+          .spyOn(receiptHost, 'receipt')
+          .mockImplementation(async (tx, _actor, _operation, _key, _hash, result) => {
+            probeParentId = result.timeRevisionId;
+            await plansInTx(tx, result.timeRevisionId, true);
+            sentinelReached = true;
+            throw sentinel;
+          });
+        let sentinelMatched = false;
+        let code = '';
+        try {
+          await rollbackPrepare();
+          throw new Error('rollback probe unexpectedly returned');
+        } catch (error) {
+          sentinelMatched = error === sentinel;
+          code = diagnosticCode(error);
+        } finally {
+          fallback.mockRestore();
+        }
+        const rollbackConfirmed =
+          probeParentId !== undefined &&
+          (await f.db.activitySettlementTimeRevision.count({ where: { id: probeParentId } })) === 0;
+        receiptEvidence('rollback_probe', {
+          sentinelReached,
+          sentinelMatched,
+          rollbackConfirmed,
+          error: code,
+        });
+        if (!rollbackConfirmed || (sentinelReached && !sentinelMatched))
+          throw new Error('rollback diagnostic verification failed');
+      },
+      report,
+    );
   }
 
   /**
@@ -1276,13 +1796,21 @@ describe('D7-1 recognition correction real transaction', () => {
    * D7-1.  This keeps the Human HTTP contract tied to real settlement, ledger,
    * allocation and final-review facts instead of creating a partial shortcut.
    */
-  async function createCommittedFactCorrectionBase(population = 1) {
+  async function createCommittedFactCorrectionBase(population = 1, diagnosticDeadline?: number) {
     const p = population === 1 ? await prepareSource() : await createCapacitySource(population);
     if (population === 1) await recognize(p);
+    const initialCommand = prepareCommand(p);
     const preparedTime =
       population === 2000
-        ? await diagnoseInitialPrepare(() => post(p.url + '/prepare', prepareCommand(p)))
-        : await post(p.url + '/prepare', prepareCommand(p));
+        ? await diagnoseInitialPrepare(
+            () => post(p.url + '/prepare', initialCommand),
+            () =>
+              f.app
+                .get(ActivityTimeSettlementService)
+                .prepare(p.activityId, initialCommand, actor, meta),
+            diagnosticDeadline ?? performance.now(),
+          )
+        : await post(p.url + '/prepare', initialCommand);
     const submittedTime = await post(p.url + '/submit', {
       operationKey: f.key('submit_time'),
       expectedDraftVersion: p.proof.expectedDraftVersion,
@@ -1719,8 +2247,9 @@ describe('D7-1 recognition correction real transaction', () => {
   it.each([100, 2000])(
     'runs the Human V3 write chain against a complete %i-identity source proof',
     async (population) => {
+      const diagnosticDeadline = performance.now() + 600000;
       const { p, timeRevision, root, roots, sources, allocations } =
-        await createCommittedFactCorrectionBase(population);
+        await createCommittedFactCorrectionBase(population, diagnosticDeadline);
       expect(sources).toHaveLength(population * 5);
       const source =
         sources.find((row) => row.participationIdentityId !== p.identityId) ?? sources[0];

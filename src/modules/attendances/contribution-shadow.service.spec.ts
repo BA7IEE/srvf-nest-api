@@ -2,6 +2,7 @@ import type { ConfigType } from '@nestjs/config';
 import { Prisma, PrismaClient } from '@prisma/client';
 import appConfig from '../../config/app.config';
 import databaseConfig from '../../config/database.config';
+import * as comparisonAuthority from '../activities/activity-contribution-shadow-comparison';
 import {
   ContributionShadowService,
   ShadowComparisonBudget,
@@ -17,6 +18,7 @@ import {
 } from './contribution-shadow.service';
 import {
   activityContributionPolicySelectionHash,
+  createActivityContributionPolicySelectionDocument,
   parseActivityContributionPolicySelectionDocument,
 } from '../activities/activity-contribution-policy-selection';
 import type { ActivityContributionPolicySelectionItem } from '@prisma/client';
@@ -467,6 +469,177 @@ describe('comparison from frozen legacy source and exact policy candidates', () 
       expect(hash).toHaveBeenCalledTimes(2);
     } finally {
       hash.mockRestore();
+    }
+  });
+
+  it('strictly prepares one policy per call and keeps all 2,000 independent evidence rows', () => {
+    const f = comparisonSet(2000);
+    const factory = jest.spyOn(comparisonAuthority, 'prepareContributionShadowPolicy');
+    try {
+      const prepared = prepareShadowComparisonSet(f);
+      expect(factory).toHaveBeenCalledTimes(1);
+      const expected = f.sources.map((source) =>
+        prepareShadowEvidence({
+          source,
+          sourceTime: f.sourceTime,
+          signedMappingVersion: f.context.signedMappingVersion,
+          mapping: f.mappingHistory[0],
+          selectionItem:
+            f.selectionRevision!.items.find((item) => item.mode === 'explicit') ?? null,
+          policyVersion: f.policyVersions[0],
+        }),
+      );
+      expect(prepared.applications).toHaveLength(expected.length);
+      expected.forEach((row, index) => {
+        expect(prepared.applications[index]).toEqual(row.application);
+        expect(prepared.comparisons[index]).toEqual(row.comparison);
+      });
+      factory.mockClear();
+      expect(prepareShadowComparisonSet(f)).toEqual(prepared);
+      expect(factory).toHaveBeenCalledTimes(1);
+    } finally {
+      factory.mockRestore();
+    }
+  });
+
+  it('does not reuse a previous call after a same-key definition changes', () => {
+    const f = comparisonSet();
+    expect(prepareShadowComparisonSet(f).applications).toHaveLength(2);
+    f.policyVersions[0].definitionJson = { invalid: true };
+    const next = prepareShadowComparisonSet(f);
+    expect(next.applications).toHaveLength(0);
+    expect(next.comparisons.map((row) => row.classificationCode)).toEqual([
+      'evaluation_error',
+      'evaluation_error',
+    ]);
+  });
+
+  it('keeps two policies separate in one 2,000-source call and validates each policy only once', () => {
+    const f = comparisonSet(2000);
+    const secondDefinition = JSON.parse(
+      JSON.stringify(fixture().policyVersion!.definitionJson),
+    ) as Prisma.JsonValue;
+    const definition = secondDefinition as {
+      roleRules: Array<{
+        categoryRules: Array<{ durationBands: Array<{ recognizedPoints: string }> }>;
+      }>;
+    };
+    definition.roleRules[0].categoryRules[0].durationBands[0].recognizedPoints = '3.00';
+    const second = {
+      ...f.policyVersions[0],
+      id: 'version-two',
+      policyId: 'policy-two',
+      definitionJson: secondDefinition,
+    };
+    second.definitionHash = fingerprintContributionPolicyVersion({
+      schemaVersion: second.schemaVersion,
+      evaluatorVersion: second.evaluatorVersion,
+      definition: secondDefinition,
+      effectiveFrom: second.effectiveFrom.toISOString(),
+      effectiveUntil: null,
+    }).definitionHash;
+    const mapping = {
+      ...f.mappingHistory[0],
+      id: 'approval-two',
+      approvalNumber: 'approval-two',
+      attendanceRoleCode: 'leader',
+      sessionPositionId: 'position-two',
+      policyVersionId: second.id,
+      policyDefinitionHash: second.definitionHash,
+    };
+    const item = {
+      ...f.selectionRevision!.items[1],
+      id: 'item-two',
+      positionId: 'position-two',
+      policyId: second.policyId,
+      versionId: second.id,
+      definitionHash: second.definitionHash,
+    };
+    const items = [...f.selectionRevision!.items, item];
+    const selectionJson = createActivityContributionPolicySelectionDocument(
+      items.map((entry) => ({
+        scope: {
+          layerCode: entry.layerCode === 'position' ? 'position' : 'activity',
+          sessionId: entry.sessionId,
+          positionId: entry.positionId,
+        },
+        selection:
+          entry.mode === 'explicit'
+            ? {
+                mode: 'explicit',
+                pointer: {
+                  policyId: entry.policyId!,
+                  versionId: entry.versionId!,
+                  definitionHash: entry.definitionHash!,
+                  evaluatorVersion: entry.evaluatorVersion!,
+                },
+              }
+            : { mode: 'inherit', pointer: null },
+      })),
+    );
+    f.selectionRevision = {
+      ...f.selectionRevision!,
+      items,
+      itemCount: items.length,
+      selectionJson: JSON.parse(JSON.stringify(selectionJson)) as Prisma.JsonValue,
+      selectionHash: activityContributionPolicySelectionHash(selectionJson),
+    };
+    f.mappingHistory = [...f.mappingHistory, mapping];
+    f.policyVersions = [...f.policyVersions, second];
+    f.positions = [...f.positions, { ...f.positions[0], id: 'position-two' }];
+    f.sources.forEach((source, index) => {
+      if (index % 2 === 0) return;
+      source.attendanceRoleCode = 'leader';
+      source.legacySourceHash = hashLegacySource({
+        ...source,
+        source: {
+          sourceKindCode: 'matched',
+          legacyRuleId: source.legacyRuleId!,
+          durationThreshold: source.durationThreshold,
+          pointsBelow: source.pointsBelow!,
+          pointsAbove: source.pointsAbove,
+        },
+      });
+    });
+    const factory = jest.spyOn(comparisonAuthority, 'prepareContributionShadowPolicy');
+    try {
+      const actual = prepareShadowComparisonSet(f);
+      expect(factory).toHaveBeenCalledTimes(2);
+      expect(actual.applications).toHaveLength(2000);
+      f.sources.forEach((source, index) => {
+        const alternate = index % 2 !== 0;
+        const reference = prepareShadowEvidence({
+          source,
+          sourceTime: f.sourceTime,
+          signedMappingVersion: f.context.signedMappingVersion,
+          mapping: alternate ? mapping : f.mappingHistory[0],
+          selectionItem: alternate ? item : items[1],
+          policyVersion: alternate ? second : f.policyVersions[0],
+        });
+        expect(actual.applications[index]).toEqual(reference.application);
+        expect(actual.comparisons[index]).toEqual(reference.comparison);
+        expect(actual.comparisons[index].policyPoints).toBe(alternate ? '3.00' : '2.00');
+      });
+    } finally {
+      factory.mockRestore();
+    }
+  });
+
+  it('does not prepare a malformed policy ahead of an unsigned mapping', () => {
+    const f = comparisonSet();
+    f.mappingHistory = [];
+    f.policyVersions[0].definitionJson = { invalid: true };
+    const factory = jest.spyOn(comparisonAuthority, 'prepareContributionShadowPolicy');
+    try {
+      const actual = prepareShadowComparisonSet(f);
+      expect(factory).not.toHaveBeenCalled();
+      expect(actual.applications).toEqual([]);
+      expect(actual.comparisons.map((row) => row.classificationCode)).toEqual([
+        'mapping_hold',
+        'mapping_hold',
+      ]);
+    } finally {
+      factory.mockRestore();
     }
   });
 

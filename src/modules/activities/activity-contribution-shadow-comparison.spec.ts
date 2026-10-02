@@ -2,6 +2,7 @@ import { fingerprintContributionPolicyVersion } from './activity-contribution-po
 import {
   compareContributionShadow,
   ContributionShadowComparisonInput,
+  prepareContributionShadowPolicy,
 } from './activity-contribution-shadow-comparison';
 
 function fixture(): ContributionShadowComparisonInput {
@@ -81,6 +82,66 @@ function fixture(): ContributionShadowComparisonInput {
 }
 
 describe('E3-1 offline contribution shadow comparison', () => {
+  it('retains early mapping failure without evaluating later policy properties', () => {
+    const input = fixture();
+    input.mapping.approved = false;
+    const read = jest.fn(() => {
+      throw new Error('late policy field must not be read');
+    });
+    Object.defineProperty(input.policy, 'definition', { get: read });
+    expect(compareContributionShadow(input).classification).toBe('mapping_hold');
+    expect(read).not.toHaveBeenCalled();
+  });
+  it.each([
+    'equal',
+    'mismatch',
+    'precision',
+    'hold',
+    'source',
+    'role',
+    'hash',
+    'expired',
+    'missing-rule',
+  ])('prepared comparison preserves strict classification for %s', (kind) => {
+    const input = fixture();
+    if (kind === 'mismatch')
+      input.legacy.rules = [{ ...input.legacy.rules[0], pointsBelow: '1.50' }];
+    if (kind === 'precision') input.fact.durationSeconds += 1;
+    if (kind === 'hold') input.mapping.approved = false;
+    if (kind === 'source') input.legacy.observedSourceFingerprint = 'other';
+    if (kind === 'role') input.mapping.policyRoleCode = 'absent';
+    if (kind === 'hash') input.policy.versionHash = 'a'.repeat(64);
+    if (kind === 'expired') input.fact.occurredAt = '2026-08-01T00:00:00.000Z';
+    if (kind === 'missing-rule') input.legacy.rules = [];
+    const prepared = prepareContributionShadowPolicy({
+      schemaVersion: input.policy.schemaVersion,
+      evaluatorVersion: input.policy.evaluatorVersion,
+      definition: input.policy.definition,
+      effectiveFrom: input.policy.effectiveFrom,
+      effectiveUntil: input.policy.effectiveUntil,
+    });
+    expect(prepared.compare(input, input.policy.versionHash!)).toEqual(
+      compareContributionShadow(input),
+    );
+  });
+
+  it('prepared comparison captures policy contents and does not accept a replacement proof', () => {
+    const input = fixture();
+    const prepared = prepareContributionShadowPolicy({
+      schemaVersion: 1,
+      evaluatorVersion: 1,
+      definition: input.policy.definition,
+      effectiveFrom: input.policy.effectiveFrom,
+      effectiveUntil: null,
+    });
+    const expected = compareContributionShadow(input);
+    input.policy.definition!.roleRules[0].categoryRules[0].durationBands[0].recognizedPoints =
+      '99.00';
+    expect(prepared.compare(input, input.policy.versionHash!)).toEqual(expected);
+    expect(compareContributionShadow(input).classification).toBe('source_drift');
+    input.mapping.approved = false;
+    expect(prepared.compare(input, 'bad').classification).toBe('mapping_hold');
+  });
   it('is equal at the inclusive threshold and deterministic on replay', () => {
     const input = fixture();
     expect(compareContributionShadow(input)).toEqual({

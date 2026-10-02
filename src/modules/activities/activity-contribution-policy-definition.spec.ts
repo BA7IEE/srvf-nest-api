@@ -2,6 +2,7 @@ import {
   evaluateContributionPolicy,
   fingerprintContributionPolicyVersion,
   parseContributionPolicyDefinition,
+  prepareContributionPolicyVersion,
 } from './activity-contribution-policy-definition';
 
 function result(recognizedPoints = '0.00', explanationCode = 'default_zero') {
@@ -40,6 +41,60 @@ function version() {
 }
 
 describe('contribution policy definition v1', () => {
+  it('captures a strictly verified private snapshot, not caller-owned mutable definition', () => {
+    const value = version();
+    const prepared = prepareContributionPolicyVersion(value);
+    const input = {
+      attendanceRoleCode: 'service',
+      timeCategoryCode: 'volunteer_service',
+      durationSeconds: 3600,
+    };
+    const expected = evaluateContributionPolicy(value.definition, input);
+    expect(prepared.evaluate(input)).toEqual(expected);
+    expect(prepared.definitionHash).toBe(
+      fingerprintContributionPolicyVersion(value).definitionHash,
+    );
+    value.definition.roleRules[0].categoryRules[0].durationBands[1].recognizedPoints = '99.00';
+    expect(prepared.evaluate(input)).toEqual(expected);
+    const returned = prepared.evaluate(input);
+    returned.recognizedPoints = '88.00';
+    expect(prepared.evaluate(input)).toEqual(expected);
+    expect(Object.isFrozen(prepared)).toBe(true);
+    expect(Object.keys(prepared)).not.toContain('definition');
+    expect(prepareContributionPolicyVersion(value).evaluate(input).recognizedPoints).toBe('99.00');
+  });
+
+  it.each([0, 3599, 3600, 7199, 7200, 999999])(
+    'closed evaluator preserves threshold %s',
+    (durationSeconds) => {
+      const value = version();
+      const input = {
+        attendanceRoleCode: 'service',
+        timeCategoryCode: 'volunteer_service',
+        durationSeconds,
+      };
+      expect(prepareContributionPolicyVersion(value).evaluate(input)).toEqual(
+        evaluateContributionPolicy(value.definition, input),
+      );
+    },
+  );
+
+  it('closed factory and evaluator reject unverified inputs without a trust flag', () => {
+    expect(() => prepareContributionPolicyVersion({ ...version(), validated: true })).toThrow();
+    expect(() => prepareContributionPolicyVersion({ ...version(), evaluatorVersion: 2 })).toThrow();
+    const bad = version();
+    Object.defineProperty(bad.definition, 'roleRules', { enumerable: true, get: () => [] });
+    expect(() => prepareContributionPolicyVersion(bad)).toThrow();
+    const prepared = prepareContributionPolicyVersion(version());
+    expect(() =>
+      prepared.evaluate({
+        attendanceRoleCode: 'service',
+        timeCategoryCode: 'volunteer_service',
+        durationSeconds: -1,
+      }),
+    ).toThrow();
+    expect(prepared.categoryCode('absent', 'training')).toBeNull();
+  });
   it('normalizes role and category ordering without mutating input', () => {
     const input = {
       defaultResult: result(),
