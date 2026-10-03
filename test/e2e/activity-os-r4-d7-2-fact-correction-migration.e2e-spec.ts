@@ -14,12 +14,12 @@ import * as path from 'node:path';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 import { loadTestEnv } from '../setup/load-env';
-import {
-  assertDroppableTestDbName,
-  assertTestDatabaseUrl,
-  dropWorkerDatabase,
-} from '../setup/test-db';
+import { assertDroppableTestDbName, assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D7_2_W98 === '1');
 
 const D7_2_FACT_MIGRATION = '20260915180000_activity_os_r4_d7_2_fact_correction';
 const BINDING_GUARD_MIGRATION = '20260917194000_activity_os_r4_d7_2_binding_guard_set';
@@ -76,7 +76,7 @@ function quote(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-function recreate(): void {
+async function recreate(): Promise<void> {
   const { database, worker } = target();
   const engine = execFileSync(
     'docker',
@@ -119,10 +119,8 @@ function recreate(): void {
       `D7-2 migration worker is in use; refusing reconstruction; backend summary: ${summary}`,
     );
   }
-  dropWorkerDatabase(worker);
-  execFileSync('docker', ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', database], {
-    stdio: 'pipe',
-  });
+  await scratchLifecycle.drop(worker);
+  await scratchLifecycle.create(database);
   if (sql('SELECT current_database()') !== database) {
     throw new Error('D7-2 migration connected target mismatch');
   }
@@ -337,10 +335,10 @@ describe('D7-2 immutable fact-correction migration', () => {
     target();
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     if (USE_DEDICATED_W98) {
       try {
-        dropWorkerDatabase(WORKER);
+        await scratchLifecycle.drop(WORKER);
       } finally {
         restoreEnvironment('JEST_WORKER_ID', previousEnvironment.worker);
         restoreEnvironment('DATABASE_URL', previousEnvironment.databaseUrl);
@@ -348,7 +346,7 @@ describe('D7-2 immutable fact-correction migration', () => {
       }
       return;
     }
-    recreate();
+    await recreate();
     deploy(schema);
   }, 180000);
 
@@ -418,8 +416,8 @@ describe('D7-2 immutable fact-correction migration', () => {
     ).toBe('ready\t0');
   }
 
-  it('cold replays all 136 migrations and installs the four immutable fact tables', () => {
-    recreate();
+  it('cold replays all 136 migrations and installs the four immutable fact tables', async () => {
+    await recreate();
     deploy(schema);
     expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[CORRECTION_RECEIPT_GUARD_MIGRATION_COUNT - 1]).toBe(MIGRATION);
@@ -458,7 +456,7 @@ describe('D7-2 immutable fact-correction migration', () => {
   }, 180000);
 
   it('upgrades a nonempty 124-migration database without rewriting legacy facts', async () => {
-    recreate();
+    await recreate();
     const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-d7-2-pre125-'));
     try {
       mkdirSync(path.join(temporary, 'migrations'));
@@ -517,7 +515,7 @@ describe('D7-2 immutable fact-correction migration', () => {
   }, 180000);
 
   it('upgrades a nonempty 125-migration database without rewriting facts and installs a statement binding guard', async () => {
-    recreate();
+    await recreate();
     const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-d7-2-binding-pre126-'));
     try {
       mkdirSync(path.join(temporary, 'migrations'));
@@ -562,7 +560,7 @@ describe('D7-2 immutable fact-correction migration', () => {
   }, 180000);
 
   it('upgrades a nonempty 126-migration database without rewriting facts and installs a statement allocation guard', async () => {
-    recreate();
+    await recreate();
     const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-d7-2-allocation-pre127-'));
     try {
       mkdirSync(path.join(temporary, 'migrations'));
@@ -618,7 +616,7 @@ describe('D7-2 immutable fact-correction migration', () => {
   }, 180000);
 
   it('upgrades a nonempty 127-migration database without rewriting facts and installs a statement correction receipt guard', async () => {
-    recreate();
+    await recreate();
     const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-d7-2-receipt-pre128-'));
     try {
       mkdirSync(path.join(temporary, 'migrations'));
@@ -673,3 +671,5 @@ describe('D7-2 immutable fact-correction migration', () => {
     }
   }, 180000);
 });
+
+scratchLifecycle.finish();

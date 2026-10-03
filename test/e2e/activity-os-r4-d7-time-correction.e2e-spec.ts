@@ -49,8 +49,13 @@ import {
 } from '../helpers/activity-time-policy.fixture';
 import { httpServer } from '../helpers/http-server';
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+import { runD7GuardPlanDiagnostic } from '../helpers/d7-guard-plan-diagnostic';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D7_2_W98 === '1');
 
 type DiagnosticRow = { label: string; elapsedMs: number; outcome: string; code: string };
 function createCommitQueryTiming() {
@@ -779,7 +784,7 @@ describe('D7-1 recognition correction real transaction', () => {
     databaseUrl: process.env.DATABASE_URL,
     storageRoot: process.env.STORAGE_LOCAL_ROOT,
   };
-  beforeAll(() => {
+  beforeAll(async () => {
     // Direct maintenance validation uses only the approved w98 clone. CI keeps
     // its assigned worker and its existing lifecycle unchanged.
     if (USE_DEDICATED_W98) {
@@ -787,12 +792,8 @@ describe('D7-1 recognition correction real transaction', () => {
       loadTestEnv();
       process.env.STORAGE_LOCAL_ROOT = `./tmp/storage-w${WORKER}`;
       assertTestDatabaseUrl(process.env.DATABASE_URL);
-      dropWorkerDatabase(WORKER);
-      execFileSync(
-        'docker',
-        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-        { stdio: 'pipe' },
-      );
+      await scratchLifecycle.drop(WORKER);
+      await scratchLifecycle.create(deriveTestDbName());
       execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
         env: process.env,
         stdio: 'pipe',
@@ -857,10 +858,10 @@ describe('D7-1 recognition correction real transaction', () => {
     if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
     else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
   });
-  afterAll(() => {
+  afterAll(async () => {
     if (!USE_DEDICATED_W98) return;
     try {
-      dropWorkerDatabase(WORKER);
+      await scratchLifecycle.drop(WORKER);
     } finally {
       restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
       restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
@@ -2688,6 +2689,24 @@ describe('D7-1 recognition correction real transaction', () => {
                     failure: commitFailure === 'none' ? null : JSON.parse(commitFailure),
                   }),
               );
+              if (process.env.SRVF_D7_GUARD_INTERNAL_DIAGNOSTIC === '1') {
+                try {
+                  // Outside the original transaction and after observer teardown. This does
+                  // not recreate its failed internal state or count as its acceptance.
+                  const evidence = await runD7GuardPlanDiagnostic(preparedData.postingBatchId);
+                  console.info('[d7-guard-internal-evidence] ' + JSON.stringify(evidence));
+                } catch {
+                  console.info(
+                    '[d7-guard-internal-evidence] ' +
+                      JSON.stringify({
+                        sample: 'separate_session_rollback',
+                        evidence: 'not_failed_transaction',
+                        channel: 'unavailable',
+                        outcome: 'rejected',
+                      }),
+                  );
+                }
+              }
             }
           }
         }
@@ -3152,3 +3171,5 @@ describe('D7-1 recognition correction real transaction', () => {
     600000,
   );
 });
+
+scratchLifecycle.finish();

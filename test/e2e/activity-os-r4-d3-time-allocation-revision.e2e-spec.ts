@@ -17,12 +17,16 @@ import {
 import { httpServer } from '../helpers/http-server';
 import { waitFor } from '../helpers/wait-for';
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 import { BindingScopeType, PrincipalType, Prisma, Role, UserStatus } from '@prisma/client';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import request from 'supertest';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D3_W98 === '1');
 
 const PERMISSION = 'activity.time-allocation.recognize';
 const WORKER = 98;
@@ -75,12 +79,8 @@ describe('D3 immutable participant time-allocation revision', () => {
       assertTestDatabaseUrl(process.env.DATABASE_URL);
       // Build only w98 from the current migration files; a template clone can carry
       // an earlier, uncommitted version of this branch's new migration.
-      dropWorkerDatabase(WORKER);
-      execFileSync(
-        'docker',
-        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-        { stdio: 'pipe' },
-      );
+      await scratchLifecycle.drop(WORKER);
+      await scratchLifecycle.create(deriveTestDbName());
       execFileSync(
         'pnpm',
         [
@@ -104,7 +104,7 @@ describe('D3 immutable participant time-allocation revision', () => {
     } finally {
       if (USE_DEDICATED_W98) {
         try {
-          dropWorkerDatabase(WORKER);
+          await scratchLifecycle.drop(WORKER);
         } finally {
           restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
           restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
@@ -950,3 +950,5 @@ describe('D3 immutable participant time-allocation revision', () => {
     ).resolves.toBe(0);
   });
 });
+
+scratchLifecycle.finish();

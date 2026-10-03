@@ -2645,7 +2645,6 @@ pnpm harness:grant 'harness/authz-assertion-patterns.json' --reason 'E3评审稿
 
 本轮文档自证：18个候选路径逐项去重并核实存在／拟新增状态；两次harness:needs共覆盖全部18项，只有第13／14项需要维护者grant。counts、CODEMAP、readtax检查通过；CODEMAP两项既有WARN与readtax预算提示原样保留。Markdown仅格式化本节追加内容；旧512531字节前缀保持原摘要。最终格式与diff检查另以实际退出码复核，不将前一个失败命令被后一个成功覆盖的退出码当通过。
 
-
 #### 29.22.8 实施授权与首轮证据（2026-10-02；完整回归进行中）
 
 维护者已明确确认§29.22完整方案A及18路径，实施／w98验证／通过后新Draft PR按29.22.7生效；不Ready、不合并、不操作生产。主仓从`21b8de1c`建立`codex/e3-main-performance`，旧分支及全部工作树保留；批准稿逐字迁入，pilot main工作树已恢复干净。两项生成物精确grant已核验，AI未代发。
@@ -3414,17 +3413,17 @@ pnpm harness:grant 'harness/state-machines.json' --reason 'E3 §31 完整D3实�
 
 全部当前改动仍在§31.8的105路径上限内，现场核验99路径已修改／新增、清单外0。14项维护者红区授权不等于最终签字。沿 Prisma、安全、API 与交接技能落实独立批准证据、当前Human复核、精确DB身份及同PR交接；未改全局执法规则或历史断言。
 
-| 验证 | 实际结果与边界 |
-| --- | --- |
-| 定向单测 | 15套472条通过；之后真实CLI默认不连库／私有输入拒绝回归45条通过。最终全量以quick结果为准，不累加不同轮次作同一总数 |
-| 真实LOGIN／完整签字和读链 | 完整13项通过，2,000候选／10,000比较行；新签字约215ms，五GET约34–401ms，域查询9–12、含权限及审计总查询27–30，保留五秒及12／16／40查询上限 |
-| 并发与故障 | 实际Attempt锁等待后才释放签字，等待期间审计FOR SHARE可取得；签字保持Attempt先于Audit锁序，避免既有比较写者反向锁。未知／错锚点、不同输入同键、错误N、错前驱／revision拒绝，最终审计冲突整体回滚；同键重放只有一份最小审计 |
-| 证据与ACL | 有界N逐项签、追加撤销和来源变化stale；真实迟到Attempt使旧签字stale，不改旧批准。真实LOGIN撤registrar后授reader能读安全函数，原context／candidateEvidence／登记函数／SET ROLE owner拒绝。所有四个角色测试结束撤回回收，现场角色数0 |
-| 135→136历史升级 | 新迁移完整7项通过；逐一核验136文件／落库checksum，非空旧事实保持相等、旧批准null、不回填、默认authority关闭、PUBLIC无私有执行权、历史无签处置契约保留 |
-| 新夹具安全回归 | 完整4项通过；resetDb恢复两守卫，失败事务回滚停用，缺trigger和半套表均拒绝；SQL fragment与Prisma helper均校验两表成套。未知操作与错误源形状保持原始／净缺口，零候选不宣称GO |
-| 既有来源完整回归 | 88项通过，旧2,000 Record真实提交链约1,032ms，原七秒与全部断言保留。第一轮运行遗漏专用SRVF_E3_D2_W98初始化标志，87项因w98不存在失败；纠正运行配置后完整通过，未改测试断言或生产代码 |
-| OpenAPI／契约 | 完整1,092项及两快照通过；语义diff breaking0/additive5，既有658访问策略EQUIVALENT、新增5，无BROADER／INCOMPARABLE。逐旧路径／schema对照无变化，新增五GET／四DTO；histogram差异两份均仅1,497行新增、0删行，默认git相似片段对齐造成的大差异不是既有契约改动 |
-| 架构／生成物 | 边界metadata194模型／43模块／78状态列通过，新增债0；domain-map只加两模型属主、state-machines只刷新摘要，inventory无新状态无需修改。18处当前迁移常量136一致，历史升级目标保留；权限273、审计178总／173活跃、字典30／277，readtax通过（current-state92%提示保留）；生成器刷新与其check分开记结果 |
+| 验证                      | 实际结果与边界                                                                                                                                                                                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 定向单测                  | 15套472条通过；之后真实CLI默认不连库／私有输入拒绝回归45条通过。最终全量以quick结果为准，不累加不同轮次作同一总数                                                                                                                                                                              |
+| 真实LOGIN／完整签字和读链 | 完整13项通过，2,000候选／10,000比较行；新签字约215ms，五GET约34–401ms，域查询9–12、含权限及审计总查询27–30，保留五秒及12／16／40查询上限                                                                                                                                                       |
+| 并发与故障                | 实际Attempt锁等待后才释放签字，等待期间审计FOR SHARE可取得；签字保持Attempt先于Audit锁序，避免既有比较写者反向锁。未知／错锚点、不同输入同键、错误N、错前驱／revision拒绝，最终审计冲突整体回滚；同键重放只有一份最小审计                                                                      |
+| 证据与ACL                 | 有界N逐项签、追加撤销和来源变化stale；真实迟到Attempt使旧签字stale，不改旧批准。真实LOGIN撤registrar后授reader能读安全函数，原context／candidateEvidence／登记函数／SET ROLE owner拒绝。所有四个角色测试结束撤回回收，现场角色数0                                                              |
+| 135→136历史升级           | 新迁移完整7项通过；逐一核验136文件／落库checksum，非空旧事实保持相等、旧批准null、不回填、默认authority关闭、PUBLIC无私有执行权、历史无签处置契约保留                                                                                                                                          |
+| 新夹具安全回归            | 完整4项通过；resetDb恢复两守卫，失败事务回滚停用，缺trigger和半套表均拒绝；SQL fragment与Prisma helper均校验两表成套。未知操作与错误源形状保持原始／净缺口，零候选不宣称GO                                                                                                                     |
+| 既有来源完整回归          | 88项通过，旧2,000 Record真实提交链约1,032ms，原七秒与全部断言保留。第一轮运行遗漏专用SRVF_E3_D2_W98初始化标志，87项因w98不存在失败；纠正运行配置后完整通过，未改测试断言或生产代码                                                                                                             |
+| OpenAPI／契约             | 完整1,092项及两快照通过；语义diff breaking0/additive5，既有658访问策略EQUIVALENT、新增5，无BROADER／INCOMPARABLE。逐旧路径／schema对照无变化，新增五GET／四DTO；histogram差异两份均仅1,497行新增、0删行，默认git相似片段对齐造成的大差异不是既有契约改动                                       |
+| 架构／生成物              | 边界metadata194模型／43模块／78状态列通过，新增债0；domain-map只加两模型属主、state-machines只刷新摘要，inventory无新状态无需修改。18处当前迁移常量136一致，历史升级目标保留；权限273、审计178总／173活跃、字典30／277，readtax通过（current-state92%提示保留）；生成器刷新与其check分开记结果 |
 
 CLI执行只输出允许名单最小收据，不输出URL／token／原证据；默认验证在不可达数据库配置下成功，明确authenticated=false、registered=false。五个System GET响应与前端接线说明在admin-web及独立ops文档同步；契约登记表的外部回执值不变，前端未实现／未发布，后端未部署。
 
@@ -3454,17 +3453,17 @@ helper仅在原受控30秒夹具事务中登记两新表／两trigger、成套�
 
 §31.8及已批准完整包明确包含当前migration 135→136同步、范围内等价修复及Draft交付。漏项位于原105具名路径，推荐只把该afterAll的固定当前计数改为136，保留历史131→132目标、全部业务断言及120秒总预算；不改成运行时计算期望。方案B盲重跑不会改变固定期望，故不采用。验证仅w98，显式不启用该测试的专用提前回收分支，以真实执行CI失败的afterAll恢复路径；结束检查当前136再回收w98。不增加角色或数据库范围。
 
-| 项 | 结论 |
-| --- | --- |
-| 是否修改 `prisma/schema.prisma` | 否 |
-| 是否新增／改动 migration | 否，第136条及全部历史SQL不变 |
-| 是否修改 `prisma/seed.ts` | 否 |
-| 是否影响现有数据 | 否，仅w98合成夹具重建，真实数据不碰 |
-| 是否不可逆 | 否，仅固定当前计数与结果文档 |
-| 是否影响OpenAPI／contract snapshot | 否 |
-| 是否影响鉴权／Permission seed／审计 | 否，3b／4b摘要不变，无需重签 |
-| 是否需要新增BizCode | 否 |
-| 是否需要用户拍板 | 原§31完整包已批准当前计数同步，无新增扩围；新SHA可信审批仍独立 |
+| 项                                  | 结论                                                           |
+| ----------------------------------- | -------------------------------------------------------------- |
+| 是否修改 `prisma/schema.prisma`     | 否                                                             |
+| 是否新增／改动 migration            | 否，第136条及全部历史SQL不变                                   |
+| 是否修改 `prisma/seed.ts`           | 否                                                             |
+| 是否影响现有数据                    | 否，仅w98合成夹具重建，真实数据不碰                            |
+| 是否不可逆                          | 否，仅固定当前计数与结果文档                                   |
+| 是否影响OpenAPI／contract snapshot  | 否                                                             |
+| 是否影响鉴权／Permission seed／审计 | 否，3b／4b摘要不变，无需重签                                   |
+| 是否需要新增BizCode                 | 否                                                             |
+| 是否需要用户拍板                    | 原§31完整包已批准当前计数同步，无新增扩围；新SHA可信审批仍独立 |
 
 Prisma技能指向的`prisma/AGENTS.md`当前不存在，按根AGENTS及实际`prisma/CLAUDE.md`执行现有迁移禁令，不创建替代规则文件。本轮七路径均在原完整包内：E2测试、既有signature changelog、本评审稿、两份台账、`prisma/CLAUDE.md`及`docs/current-state.md`顶部状态；后两项仅更正已提交／已签事实。未跟踪的`docs/development/local-resource-audit-2026-10-02.md`不属于本轮，不修改或提交。不Ready、不合并、不自动重跑CI，不登记真实业务批准、不启用shadow／Gate或操作生产。
 
@@ -3498,12 +3497,12 @@ pilot 是 linked worktree，标准 runner 会派生另一库名，不能直接�
 
 只在w98新诊断会话 `BEGIN` 中加载既有PostgreSQL `auto_explain` 库，设置事务局部嵌套JSON计划／buffers、关闭逐节点计时降低观察开销；statement_timeout仍7秒。对真实manifest调用 `ptc_assert_complete` 与 `ctsp_assert_complete(TRUE)`，用EXPLAIN ANALYZE／BUFFERS采集，最后显式ROLLBACK。未创建extension／表／函数、未改业务SQL或全局设置；连接退出撤销观察设置。两次探针均退出0、采到24份嵌套计划。原始Query Text／conditions只留子进程内存，输出只允许固定标签、表／索引名、行数／loops／buffers与耗时，不输出ID、SQL参数、URL或凭据。
 
-| 实际计划／耗时 | 证据与局限 |
-| --- | --- |
-| `ptc_assert_complete` 全调用 | 第二次外层EXPLAIN execution 192.614ms，包含其内部 `ctsp_assert_complete(FALSE)`；不是原失败事务现场、不是CI实付耗时 |
-| PTC配对完整性 | 54.360ms，JSON批准项8,000行／1 loop；反冲和credit各使用 `ptce_manifest_root_type_key`，每根索引1行、8,000 loops，未出现每根全扫8,000条的平方扫描；shared hits 67,086，temp blocks 0 |
-| `ctsp_assert_complete(TRUE)` 全调用 | 第二次外层EXPLAIN execution 127.192ms；binding多重集比较27.955ms，source和binding各10,000行、1 loop，无temp blocks |
-| 来源数、slice总数、pending覆盖 | 三处仍用宽 `jsonb_array_elements(sourceSnapshotJson)`，估计100、实际10,000行；分别25.385／13.525／47.447ms（FALSE内）、11.808／12.255／30.723ms（TRUE内）。实际临时读／写分别2,665／2,665、2,665／2,665、5,164／5,164 blocks；单次完整守卫累计10,494临时读块、10,494临时写块。不是磁盘物理读延迟的直接测量，但确实证明宽JSON重复展开和spill存在 |
+| 实际计划／耗时                      | 证据与局限                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ptc_assert_complete` 全调用        | 第二次外层EXPLAIN execution 192.614ms，包含其内部 `ctsp_assert_complete(FALSE)`；不是原失败事务现场、不是CI实付耗时                                                                                                                                                                                                                             |
+| PTC配对完整性                       | 54.360ms，JSON批准项8,000行／1 loop；反冲和credit各使用 `ptce_manifest_root_type_key`，每根索引1行、8,000 loops，未出现每根全扫8,000条的平方扫描；shared hits 67,086，temp blocks 0                                                                                                                                                             |
+| `ctsp_assert_complete(TRUE)` 全调用 | 第二次外层EXPLAIN execution 127.192ms；binding多重集比较27.955ms，source和binding各10,000行、1 loop，无temp blocks                                                                                                                                                                                                                              |
+| 来源数、slice总数、pending覆盖      | 三处仍用宽 `jsonb_array_elements(sourceSnapshotJson)`，估计100、实际10,000行；分别25.385／13.525／47.447ms（FALSE内）、11.808／12.255／30.723ms（TRUE内）。实际临时读／写分别2,665／2,665、2,665／2,665、5,164／5,164 blocks；单次完整守卫累计10,494临时读块、10,494临时写块。不是磁盘物理读延迟的直接测量，但确实证明宽JSON重复展开和spill存在 |
 
 外层／内层耗时不可累加；plan notice对整串命令的Query Text可能含两次调用，外层函数身份按执行顺序与独立EXPLAIN结果确认，不能凭substring分类把首次PTC调用错标成CTSP。本地计划没有复现CI P2028，也没有证明最终ledger UPDATE或权限查询无慢计划。宽JSON开销是可检验的优化候选，不是已经确认的主干根因；不据此直接改生产SQL或历史migration。
 
@@ -3546,3 +3545,105 @@ changelog.d/activity-os-r5-e3-d3-main-commit-diagnostic.md
 执行结束已用反向apply_patch还原主仓D7，SHA恢复 `962abec8a25d03ec7b0d38f2ea8570e62a375920a3d6019d5b921d472683448e`、该路径diff为空，其他所有者未提交文件列表保留。独立复验w98库数0、连接0；首个本机socket psql诊断连接失败，仅改用既有具名PostgreSQL容器只读查询确认，不进行数据库重置或额外库操作。pilot测试类型、定向冷lint、冻结台账／counts／codemap及diff均退出0；codemap既有WARN保留。完整quick仍在收尾，尚未提交推送或取得本轮PR CI结果，不宣称修复根因。
 
 最终quick退出0：缓存lint、三组类型、441套／9,562条单测及138项eslint自测通过，5条既有todo未执行、5个已知守护缺口保留。单测runner有worker未自然退出并强制回收的警告，退出仍0；不是静默忽略失败，也不在本轮取证写集外修复测试资源释放。该D7另经定向冷lint；最后三份文档更新后冻结台账／readtax／diff复验通过。按授权普通提交、推送并创建Draft；此处只登记本地结果，新SHA CI尚未验收，原main失败不关闭、不重跑，不Ready／合并。主仓临时文件、其他所有者改动及恢复stash均保留既定边界。
+
+### 31.17 主干双失败：测试隔离修复与守卫内部取证（2026-10-03，已批准43路径方案A）
+
+维护者在本会话明确回复“确认方案A，已执行”；四条test/setup精确grant在pilot工作树核实。基点为`e57b44bc7609e7e1b0cd39deb9a06805ade1bf2f`，新分支`codex/e3-main-isolation-guard-probe`；主仓所有者改动、分支、工作树及stash保留。本包终点为本地验收后一个Draft PR，不Ready、不合并、不操作生产、不登记真实映射、不启用shadow／Gate，不删除或重算业务数据。本节是新批准记录，不改写31.16历史证据。
+
+风险表：
+
+| 项                                     | 本包结论                                                                          |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| schema／migration／seed                | 均不修改；现有迁移136保持固定，仅在具名隔离库deploy已审查版本                     |
+| 真实数据／不可逆业务变化               | 不触及；只重建获批库中的合成夹具                                                  |
+| OpenAPI／契约／业务权限／审计／BizCode | 不修改；不修改生产源文件或CI配置                                                  |
+| 测试生命周期                           | 普通DROP拒绝活跃连接；已有连接泄漏将显式失败，不靠FORCE掩盖                       |
+| 诊断开销与证据局限                     | 外层Prisma事件不等于守卫内部计划；另会话回滚计划不等于失败现场，未知仍保持UNKNOWN |
+| 用户拍板                               | 已批准本节43路径、四库及四个D3具名夹具角色；SQL修复或范围外行为仍需另批           |
+
+已核验主干CI `37034855906` attempt1 completed/failure：E2E2 D3历史清理收到57P01／terminating connection due to administrator command；E2E5 D7原2,000身份链收到P2028（7000ms预算、7618ms实付）。收据写max2215ms、posting batch状态写max2219ms，权限读34次共23ms。阶段重叠不可累加。E1与D3共用w98且E1没有D3锁是已证代码缺口；未证明具体杀连接PID，不能把时间窗口重叠当作致因证明。
+
+原D3获取锁的Promise在成功后已settled，子进程后续退出不能让它重新reject；afterAll在release核验退出前就DROP，故新共享helper必须把reserved scratch生命周期DDL放在实际持锁的同一个maintenance backend上。连接／锁会话失效后不再发DDL；普通DROP必须拒绝活跃连接及检查后新连接竞态，不终止其他backend。
+
+实施顺序与DoD：
+
+1. 先纯单测验证锁前禁止DDL、等待者不删库、失锁停止、超时释放、scope拒绝，以及普通DROP的活跃连接和竞态拒绝。新纯单测由既有test-run-scope suite显式纳入，不能只写未被默认CI发现的spec。
+2. 真实两个进程验证reserved w98完整生命周期互斥；普通迁移测试切回当前Jest worker，恢复当前136条schema后交还runner。必须用w98的E2／D3、opt-in分支及fixture CLI共用原实例级D3 key，不放宽E2资格约束或把全CI串行化。
+3. 保留全部历史升级目标、迁移计数钉子及业务断言。改变的只是获批测试目标资格（当前worktree派生w98）和生命周期前置。beforeAll失败／正常退出均释放连接、会话及环境；四个D3夹具角色仅本轮具名w98，结束撤回回收，已有非本轮角色则停止。
+4. 验证脱敏计划通道后再做D7有界内部取证；保留原2,000身份完整链、真实锁、权限复核和七秒预算。原失败保持失败，不用探针取代验收，不把不同会话／诊断开销样本冒充真实失败事务。拿不到内部慢因则报告缺失证据，不猜测修改SQL或盲重跑；两轮熔断不因新PR重置。
+5. 定向测试、quick、受影响生成物／台账／diff检查后提交推送并创建一个Draft PR；全量由新候选PR CI冷跑，原SHA绿不能复用为新SHA验收。红区可信审批由维护者按实际SHA操作。无migration或生产权限变化，本包不产生3b／4b重签；若后续必须新增SQL修复，另列真实路径及签字，不预签未知摘要。
+
+具名本地范围（不得继承到其他scratch库）：
+
+```text
+app_test_srvf_nest_api_delivery_flow_pilot_f59fbc
+app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w1
+app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w2
+app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98
+srvf_d3_owner_w98_fixture
+srvf_d3_registrar_w98_fixture
+srvf_d3_reader_w98_fixture
+srvf_d3_login_w98_fixture
+```
+
+maintenance postgres仅承载具名advisory lease与获批测试库生命周期，不创建或清理其他数据库。标准runner实际模板／w1／w2副作用已包含；历史w82–w97兼容仅交PR CI，不在本地扩大权限。脚本不自动跑migrate dev／reset／db push。生产SQL、schema、migration、API、DTO、权限、Gate、CI配置均为禁止域。
+
+精确候选写集上限（43路径；未使用路径不制造空改动）：
+
+```text
+test/e2e/activity-os-r3-c1-d2a-metric-command-receipt-migration.e2e-spec.ts
+test/e2e/activity-os-r3-c1-d2b-selection-template-migration.e2e-spec.ts
+test/e2e/activity-os-r3-c2-d2-outcome-receipt-migration.e2e-spec.ts
+test/e2e/activity-os-r3-c2-outcome-value-revision.e2e-spec.ts
+test/e2e/activity-os-r4-d8-proof-cutover-migration.e2e-spec.ts
+test/e2e/activity-os-r5-e1-contribution-policy-migration.e2e-spec.ts
+test/e2e/activity-os-r5-e2-contribution-rule-conversion.e2e-spec.ts
+test/e2e/activity-os-r5-e3-d3-reconciliation.e2e-spec.ts
+test/e2e/activity-os-r5-e3-d3-signature.e2e-spec.ts
+test/e2e/activity-os-r5-e3-d3-signature-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d7-time-correction.e2e-spec.ts
+test/e2e/activity-os-r4-d8-participation-time-proof.e2e-spec.ts
+test/e2e/activity-os-r5-e2-contribution-rule-migration.e2e-spec.ts
+test/e2e/activity-os-r5-e3-contribution-shadow-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d7-2-fact-correction-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d3-time-allocation-revision.e2e-spec.ts
+test/e2e/activity-os-r4-d2-participation-segment-facade.e2e-spec.ts
+test/e2e/activity-os-r5-e1-3-contribution-policy-selection-migration.e2e-spec.ts
+test/e2e/activity-os-r5-e1-contribution-policy-foundation.e2e-spec.ts
+test/e2e/activity-os-r4-d8-official-time-cutover.e2e-spec.ts
+test/e2e/activity-os-r5-e3-contribution-shadow-source-proof.e2e-spec.ts
+test/e2e/activity-os-r5-e3-contribution-shadow-mapping-proof.e2e-spec.ts
+test/e2e/activity-os-r4-d8-proof-cutover.e2e-spec.ts
+test/e2e/activity-os-r2-b6-emergency-creation.e2e-spec.ts
+test/e2e/activity-service-segment-correction-pending-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d3-time-allocation-revision-migration.e2e-spec.ts
+test/e2e/activity-os-r4-d8-proof-cutover-concurrency.e2e-spec.ts
+test/setup/test-db.ts
+test/setup/test-db.lifecycle.spec.ts
+test/setup/test-run-scope.ts
+test/setup/test-run-scope.spec.ts
+test/helpers/scratch-database-lease.ts
+test/helpers/scratch-database-lease.spec.ts
+test/helpers/e3-main-performance-w98.setup.ts
+test/helpers/d7-guard-plan-diagnostic.ts
+test/helpers/d7-guard-plan-diagnostic.spec.ts
+test/e2e/scratch-database-isolation.e2e-spec.ts
+scripts/activity-contribution-rule-conversion.ts
+CODEMAP.md
+docs/plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md
+docs/ai-harness/NEXT_TASKS.md
+docs/ai-harness/FROZEN_DRAFTS.md
+changelog.d/activity-os-r5-e3-main-isolation-and-guard-diagnostic.md
+```
+
+配套后果：新隔离E2E将CODEMAP E2E计数419→420（仅运行既有生成器），业务counts及迁移136不变；无OpenAPI／客户端／ROUTE_AUTHZ摘要变化。执行结果追加本节与既有两份台账、changelog，不单开纯状态PR。
+
+#### 31.17.1 本地实施与验收记录（2026-10-03；最终quick通过，待业务Draft交付）
+
+43路径上限内实施共享scratch lease及精确目标资格；同一maintenance backend持有既有实例级D3锁并执行生命周期DDL，失锁后停止，不用FORCE杀连接。普通历史迁移回放改用当前worker库并恢复当前136条schema；显式w98分支、E2转换CLI与D3共用同一租约。新纯单测由既有test-run-scope入口显式纳入，不能靠未发现的单测文件假绿。D7诊断通道仅测试opt-in、固定脱敏计划字段及有界输出，单独会话回滚样本明确标记not_failed_transaction，不能据此关闭原CI超时。
+
+前轮实际定向结果：纯范围／生命周期／lease／脱敏解析43项通过；真实两个进程隔离3项通过；E1与D3两worker9项通过、D3签字20项通过；五组普通历史迁移与E2转换127项通过；原D7 Human V3完整2,000身份链及观察器22项通过、6项未选择，提交4,709ms，原7秒预算不变。上述定向合计181项通过，不包含未选择用例，也不等于全量CI。既有954条断言链保持，获批变化仅为派生w98资格与生命周期前置。前轮quick三组类型、441套／9,583条单测及138项eslint自测通过，5项既有todo与worker回收警告保留，但lint唯一多余字符串转义导致整体退出1，因此不记为quick通过。
+
+补丁入口另经维护者批准的六路径兼容包修复：维护者安装仓库补丁与本机配置、确认信任并重启桌面应用后，本会话范围内真实文档写入成功。工具自测35/35、hooks自测69/69、完整harness及仓库冷lint退出0；D7字符串等价修正后定向解析5/5，未修改断言。工具包五个仓库路径不属于本43路径业务交付，保持本地未提交；本机.codex/hooks.json不提交。未通过改变主仓分支、伪造marker、自授grant或禁用守卫解除阻塞。
+
+最终完整quick退出0：缓存lint、三组类型、441套／9,583条单测（另5项既有todo）、harness通过，138项eslint自测及5个已知缺口保留；另有此前本轮仓库冷lint退出0。counts／CODEMAP／readtax、冻结台账分类／两台账对照及diff检查退出0，原CODEMAP与readtax提示保留。当前分支与刚fetch的origin/main前后差均0，无open PR；业务提交按43个具名路径上限逐项加入，不包含兼容工具包或主仓所有者改动。历史w82–w97未在本地操作，完整契约与全量E2E由本轮候选PR CI冷跑。D7原失败根因仍UNKNOWN，原主干CI失败不关闭，不盲重跑或追加生产SQL。业务schema／migration／API／权限／Gate均无改动，无新3b／4b；真实映射、窗口与签字仍未执行，shadow／Gate关闭。本地验收不代表新SHA CI通过，不Ready／合并。

@@ -1,4 +1,8 @@
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import {
+  acquireScratchDatabaseLease,
+  type ScratchLeaseSession,
+} from '../helpers/scratch-database-lease';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,16 +32,22 @@ import {
 } from '../../src/modules/attendances/contribution-shadow-reconciliation-command';
 import { computeActivityTemplateDefinitionHash } from '../../src/modules/activities/activity-template-definition';
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
-import { deriveTemplateTestDbName, deriveTestDbName } from '../setup/worktree-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
+import { deriveWorkerTestDbName, deriveTestDbName } from '../setup/worktree-db';
 
 // One named role test runs in the dedicated scratch DB, not a worker's business
 // fixtures. SQL role names are global to PostgreSQL and must never collide with
 // other tests or pretend that SET ROLE proves a real authenticated session_user.
-const ACL = readFileSync(
+const sourceAcl = readFileSync(
   join(process.cwd(), 'scripts/sql/contribution-shadow-reconciliation-roles.sql'),
   'utf8',
 );
+const fixtureDatabase = deriveWorkerTestDbName(98);
+const fixtureBranch = "IF target = 'app_test_w98' THEN";
+if (sourceAcl.split(fixtureBranch).length !== 2) throw new Error('D3 fixture ACL branch drift');
+// Only retarget the shipped synthetic-role branch to this checkout's exact w98.
+// CI at the primary checkout remains byte-for-byte identical; production SQL is untouched.
+const ACL = sourceAcl.replace(fixtureBranch, `IF target = '${fixtureDatabase}' THEN`);
 const ROLES = [
   'srvf_d3_owner_w98_fixture',
   'srvf_d3_registrar_w98_fixture',
@@ -64,7 +74,8 @@ const FUNCTIONS = [
 
 function sql(statement: string): string {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
-  if (deriveTestDbName() !== 'app_test_w98') throw new Error('D3 role fixture requires exact w98');
+  if (deriveTestDbName() !== deriveWorkerTestDbName(98))
+    throw new Error('D3 role fixture requires exact w98');
   return execFileSync(
     'docker',
     [
@@ -77,7 +88,7 @@ function sql(statement: string): string {
       '-U',
       'postgres',
       '-d',
-      'app_test_w98',
+      deriveTestDbName(),
       '-v',
       'ON_ERROR_STOP=1',
     ],
@@ -89,67 +100,8 @@ function literal(value: unknown): string {
   return "'" + JSON.stringify(value).replaceAll("'", "''") + "'::jsonb";
 }
 
-/** Dedicated scratch DB coordination only; the session holds no business row lock. */
-async function acquireD3ScratchLease(): Promise<() => Promise<void>> {
-  const child = spawn(
-    'docker',
-    [
-      'exec',
-      '-i',
-      'u-nest-api-postgres',
-      'psql',
-      '--no-psqlrc',
-      '-qtA',
-      '-U',
-      'postgres',
-      '-d',
-      'postgres',
-      '-v',
-      'ON_ERROR_STOP=1',
-    ],
-    { stdio: ['pipe', 'pipe', 'pipe'] },
-  );
-  child.stderr.resume(); // Never surface connection details from a failed fixture command.
-  await new Promise<void>((resolve, reject) => {
-    let output = '';
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error('D3 scratch lease acquisition timed out'));
-    }, 110_000);
-    child.once('error', () => {
-      clearTimeout(timeout);
-      reject(new Error('D3 scratch lease process failed'));
-    });
-    child.once('exit', () => {
-      clearTimeout(timeout);
-      reject(new Error('D3 scratch lease ended before acquisition'));
-    });
-    child.stdout.on('data', (chunk: Buffer) => {
-      output = (output + chunk.toString()).slice(-256);
-      if (output.includes('D3_W98_LEASE_READY')) {
-        clearTimeout(timeout);
-        resolve();
-      }
-    });
-    child.stdin.write(
-      "SELECT pg_advisory_lock(hashtextextended('SRVF:test:D3:app_test_w98',0)); SELECT 'D3_W98_LEASE_READY';\n",
-    );
-  });
-  return () =>
-    new Promise<void>((resolve, reject) => {
-      if (child.exitCode !== null) {
-        reject(new Error('D3 scratch lease unexpectedly ended'));
-        return;
-      }
-      child.once('exit', (code) =>
-        code === 0 ? resolve() : reject(new Error('D3 scratch lease release failed')),
-      );
-      child.stdin.end('\\q\n');
-    });
-}
-
 describe('D3 actual LOGIN, collection guards and full-scale first probe (w98 only)', () => {
-  let releaseScratchLease: (() => Promise<void>) | undefined;
+  let scratchLease: ScratchLeaseSession | undefined;
   const original = { worker: process.env.JEST_WORKER_ID, url: process.env.DATABASE_URL };
   let admin: PrismaService;
   let registrar: PrismaService;
@@ -167,7 +119,7 @@ describe('D3 actual LOGIN, collection guards and full-scale first probe (w98 onl
     manifest: ShadowWindowRegistrationManifest | ShadowDispositionRegistrationManifest,
   ) {
     const authority = {
-      databaseName: 'app_test_w98',
+      databaseName: deriveTestDbName(),
       manifestHash: shadowReconciliationManifestHash(manifest),
       operation: manifest.operation,
       actorUserId: 'd3-human',
@@ -179,28 +131,22 @@ describe('D3 actual LOGIN, collection guards and full-scale first probe (w98 onl
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       manifest,
     };
-    sql(`BEGIN; SET LOCAL srvf.d3_acl_database='app_test_w98'; SET LOCAL srvf.d3_acl_action='bind';
+    sql(`BEGIN; SET LOCAL srvf.d3_acl_database='${deriveTestDbName()}'; SET LOCAL srvf.d3_acl_action='bind';
       SELECT set_config('srvf.d3_authority',${literal(authority)}::text,true); ${ACL} COMMIT;`);
   }
 
   beforeAll(async () => {
-    if (deriveTemplateTestDbName() !== 'app_test')
-      throw new Error('D3 fixture requires the primary checkout');
-    releaseScratchLease = await acquireD3ScratchLease();
+    scratchLease = await acquireScratchDatabaseLease();
     process.env.JEST_WORKER_ID = '98';
     loadTestEnv();
     assertTestDatabaseUrl(process.env.DATABASE_URL);
-    dropWorkerDatabase('98');
-    execFileSync(
-      'docker',
-      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', 'app_test_w98'],
-      { stdio: 'pipe' },
-    );
+    await scratchLease.dropDatabase();
+    await scratchLease.createDatabase();
     admin = new PrismaService();
     const [{ database }] = await admin.$queryRaw<
       Array<{ database: string }>
     >`SELECT current_database() AS database`;
-    expect(database).toBe('app_test_w98');
+    expect(database).toBe(deriveWorkerTestDbName(98));
     // Ordinary reviewed migration deploy, never migrate reset/dev/db push. No
     // template or other worker DB is operated on by this local acceptance path.
     execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
@@ -251,7 +197,7 @@ describe('D3 actual LOGIN, collection guards and full-scale first probe (w98 onl
       ALTER TABLE "ContributionShadowMappingApproval" ENABLE TRIGGER csma_receipt_closure;
       COMMIT;`);
     sql(
-      `BEGIN; SET LOCAL srvf.d3_acl_database='app_test_w98'; SET LOCAL srvf.d3_acl_action='bootstrap'; ${ACL} COMMIT;`,
+      `BEGIN; SET LOCAL srvf.d3_acl_database='${deriveTestDbName()}'; SET LOCAL srvf.d3_acl_action='bootstrap'; ${ACL} COMMIT;`,
     );
     bootstrapped = true;
     const password = randomBytes(32).toString('hex');
@@ -282,7 +228,7 @@ describe('D3 actual LOGIN, collection guards and full-scale first probe (w98 onl
     try {
       await registrar?.$disconnect();
       if (bootstrapped) {
-        sql(`BEGIN; SET LOCAL srvf.d3_acl_database='app_test_w98'; SET LOCAL srvf.d3_acl_action='close'; ${ACL}
+        sql(`BEGIN; SET LOCAL srvf.d3_acl_database='${deriveTestDbName()}'; SET LOCAL srvf.d3_acl_action='close'; ${ACL}
           ${FUNCTIONS.map((signature) => `ALTER FUNCTION public.${signature} OWNER TO postgres;`).join('\n')}
           ALTER TABLE "ContributionShadowWindowRegistrationReceipt" OWNER TO postgres;
           ALTER TABLE "ContributionShadowDispositionApprovalReceipt" OWNER TO postgres;
@@ -298,12 +244,13 @@ describe('D3 actual LOGIN, collection guards and full-scale first probe (w98 onl
     } finally {
       try {
         await admin?.$disconnect();
+        if (scratchLease) await scratchLease.dropDatabase();
       } finally {
         if (original.worker === undefined) delete process.env.JEST_WORKER_ID;
         else process.env.JEST_WORKER_ID = original.worker;
         if (original.url === undefined) delete process.env.DATABASE_URL;
         else process.env.DATABASE_URL = original.url;
-        await releaseScratchLease?.();
+        await scratchLease?.release();
       }
     }
   });

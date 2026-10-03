@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import { deriveTemplateTestDbName, deriveTestDbName, deriveWorkerTestDbName } from './worktree-db';
+import { assertNamedTestDatabaseScope } from './test-run-scope';
 
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 
@@ -193,7 +194,7 @@ export async function assertConnectedTestDatabase(
 // `docker exec` 指到一台远程主机上 —— 那样容器名再对也没用),再向容器内的
 // Postgres 问一次它是谁。结果按进程记忆,不给每条 psql() 加往返。
 let localPostgresVerified = false;
-function assertLocalPostgresServer(): void {
+export function assertLocalPostgresServer(): void {
   if (localPostgresVerified) return;
 
   const dockerHost = process.env.DOCKER_HOST;
@@ -307,13 +308,14 @@ export function assertConnectionCapacity(workers: number, connectionLimit = 5): 
   }
 }
 
-// 重建指定 worker 的克隆库:DROP ... WITH (FORCE)(PG13+,免手动 terminate)后按模板克隆。
+// 重建指定 worker 的克隆库:普通 DROP 后按模板克隆，不终止其他连接。
 // 文件级拷贝(单库实测 13-17MB,约 0.2-0.6s),且保证与模板逐字节同构、
 // 天然带上 _prisma_migrations —— worker 内任何再次 migrate deploy 都是 no-op。
 export function recreateWorkerDatabase(workerId: string | number): string {
   const templateName = deriveTemplateTestDbName();
   const workerName = deriveWorkerTestDbName(workerId);
   assertDroppableTestDbName(workerName);
+  assertNamedTestDatabaseScope([templateName, workerName]);
 
   // ⚠️ DROP ... WITH (FORCE) 会先 terminate 目标库的全部连接。若同一 worktree 内
   // 另一条 jest 命令(另一个窗口的 test:e2e / test:contract / agent:check:full)
@@ -329,7 +331,7 @@ export function recreateWorkerDatabase(workerId: string | number): string {
     );
   }
 
-  psql(`DROP DATABASE IF EXISTS \\"${workerName}\\" WITH (FORCE)`);
+  psql(`DROP DATABASE IF EXISTS \\"${workerName}\\"`);
   try {
     psql(`CREATE DATABASE \\"${workerName}\\" TEMPLATE \\"${templateName}\\"`);
   } catch (err) {
@@ -350,7 +352,16 @@ export function recreateWorkerDatabase(workerId: string | number): string {
 export function dropWorkerDatabase(workerId: string | number): void {
   const workerName = deriveWorkerTestDbName(workerId);
   assertDroppableTestDbName(workerName);
-  psql(`DROP DATABASE IF EXISTS \\"${workerName}\\" WITH (FORCE)`);
+  assertNamedTestDatabaseScope([workerName]);
+  const inUse = connectionCount(workerName);
+  if (inUse !== '0') {
+    throw new Error(
+      `worker 测试库 '${workerName}' 仍有活跃连接，拒绝清理。\n${inspectHint(workerName)}`,
+    );
+  }
+  // A connection may appear after the check. Ordinary DROP rejects that race;
+  // FORCE or terminating somebody else's backend must never make cleanup pass.
+  psql(`DROP DATABASE IF EXISTS \\"${workerName}\\"`);
 }
 
 function maskUrl(url: string): string {

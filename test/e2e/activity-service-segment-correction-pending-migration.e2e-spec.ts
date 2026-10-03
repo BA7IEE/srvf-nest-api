@@ -15,9 +15,13 @@ import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
-import { deriveTestDbName } from '../setup/worktree-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
+import { deriveTestDbName, deriveWorkerTestDbName } from '../setup/worktree-db';
 import { loadTestEnv } from '../setup/load-env';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_SEGMENT_PENDING_W98 === '1');
 
 const migration = '20260908000000_correction_pending_segment_lifecycle';
 const isolatedW98 = process.env.SRVF_SEGMENT_PENDING_W98 === '1';
@@ -27,17 +31,18 @@ beforeAll(() => {
   process.env.JEST_WORKER_ID = '98';
   loadTestEnv();
   assertTestDatabaseUrl(process.env.DATABASE_URL);
-  if (deriveTestDbName() !== 'app_test_w98') throw new Error('unexpected segment fixture target');
+  if (deriveTestDbName() !== deriveWorkerTestDbName(98))
+    throw new Error('unexpected segment fixture target');
 });
 // Raw SQL replay intentionally has no Prisma migration history. Restore this
 // worker after both suites so subsequent specs can safely run migrate deploy.
-afterAll(() => {
+afterAll(async () => {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
   const worker = process.env.JEST_WORKER_ID;
   if (!worker) throw new Error('Dedicated worker required');
   if (isolatedW98) {
     try {
-      dropWorkerDatabase('98');
+      await scratchLifecycle.drop('98');
     } finally {
       if (previousTarget.worker === undefined) delete process.env.JEST_WORKER_ID;
       else process.env.JEST_WORKER_ID = previousTarget.worker;
@@ -46,12 +51,8 @@ afterAll(() => {
     }
     return;
   }
-  dropWorkerDatabase(worker);
-  execFileSync(
-    'docker',
-    ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-    { stdio: 'pipe' },
-  );
+  await scratchLifecycle.drop(worker);
+  await scratchLifecycle.create(deriveTestDbName());
   try {
     execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
       env: process.env,
@@ -123,12 +124,8 @@ describe('pending segment nonempty legacy upgrade', () => {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     const worker = process.env.JEST_WORKER_ID;
     if (!worker) throw new Error('Dedicated worker required');
-    dropWorkerDatabase(worker);
-    execFileSync(
-      'docker',
-      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-      { stdio: 'pipe' },
-    );
+    await scratchLifecycle.drop(worker);
+    await scratchLifecycle.create(deriveTestDbName());
     for (const name of readdirSync('prisma/migrations').sort()) {
       if (name === 'migration_lock.toml' || name >= migration) continue;
       sql(readFileSync(join('prisma/migrations', name, 'migration.sql'), 'utf8'));
@@ -602,16 +599,12 @@ describe('pending segment nonempty legacy upgrade', () => {
 });
 
 describe('pending segment migration cold SQL replay and database invariants', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     const worker = process.env.JEST_WORKER_ID;
     if (!worker) throw new Error('Dedicated worker required');
-    dropWorkerDatabase(worker);
-    execFileSync(
-      'docker',
-      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-      { stdio: 'pipe' },
-    );
+    await scratchLifecycle.drop(worker);
+    await scratchLifecycle.create(deriveTestDbName());
     // Existing migrations are replayed unchanged, in repository order.
     for (const name of readdirSync(join(process.cwd(), 'prisma/migrations')).sort()) {
       if (name === 'migration_lock.toml') continue;
@@ -652,3 +645,5 @@ describe('pending segment migration cold SQL replay and database invariants', ()
     ).toBe('f');
   });
 });
+
+scratchLifecycle.finish();

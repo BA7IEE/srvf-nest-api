@@ -1,4 +1,8 @@
-import { execFileSync, spawn } from 'node:child_process';
+import {
+  acquireScratchDatabaseLease,
+  type ScratchLeaseSession,
+} from '../helpers/scratch-database-lease';
+import { execFileSync } from 'node:child_process';
 import { cpSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,74 +11,15 @@ import { PrismaService } from '../../src/database/prisma.service';
 import { loadTestEnv } from '../setup/load-env';
 import { resetDb } from '../setup/reset-db';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
-import { deriveTemplateTestDbName, deriveTestDbName } from '../setup/worktree-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
+import { deriveWorkerTestDbName, deriveTestDbName } from '../setup/worktree-db';
 import {
   timeLedgerFixtureTriggerSql,
   withTimeLedgerFixtureCleanup,
 } from '../setup/time-ledger-fixture-cleanup';
 
-/** Dedicated scratch DB coordination only; the session holds no business row lock. */
-async function acquireD3ScratchLease(): Promise<() => Promise<void>> {
-  const child = spawn(
-    'docker',
-    [
-      'exec',
-      '-i',
-      'u-nest-api-postgres',
-      'psql',
-      '--no-psqlrc',
-      '-qtA',
-      '-U',
-      'postgres',
-      '-d',
-      'postgres',
-      '-v',
-      'ON_ERROR_STOP=1',
-    ],
-    { stdio: ['pipe', 'pipe', 'pipe'] },
-  );
-  child.stderr.resume(); // Never surface connection details from a failed fixture command.
-  await new Promise<void>((resolve, reject) => {
-    let output = '';
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error('D3 scratch lease acquisition timed out'));
-    }, 110_000);
-    child.once('error', () => {
-      clearTimeout(timeout);
-      reject(new Error('D3 scratch lease process failed'));
-    });
-    child.once('exit', () => {
-      clearTimeout(timeout);
-      reject(new Error('D3 scratch lease ended before acquisition'));
-    });
-    child.stdout.on('data', (chunk: Buffer) => {
-      output = (output + chunk.toString()).slice(-256);
-      if (output.includes('D3_W98_LEASE_READY')) {
-        clearTimeout(timeout);
-        resolve();
-      }
-    });
-    child.stdin.write(
-      "SELECT pg_advisory_lock(hashtextextended('SRVF:test:D3:app_test_w98',0)); SELECT 'D3_W98_LEASE_READY';\n",
-    );
-  });
-  return () =>
-    new Promise<void>((resolve, reject) => {
-      if (child.exitCode !== null) {
-        reject(new Error('D3 scratch lease unexpectedly ended'));
-        return;
-      }
-      child.once('exit', (code) =>
-        code === 0 ? resolve() : reject(new Error('D3 scratch lease release failed')),
-      );
-      child.stdin.end('\\q\n');
-    });
-}
-
 describe('D3 controlled cleanup and conservative reconciliation (w98 only)', () => {
-  let releaseScratchLease: (() => Promise<void>) | undefined;
+  let scratchLease: ScratchLeaseSession | undefined;
   const original = { worker: process.env.JEST_WORKER_ID, url: process.env.DATABASE_URL };
   let prisma: PrismaService;
   const app = { get: () => prisma } as unknown as INestApplication;
@@ -84,18 +29,13 @@ describe('D3 controlled cleanup and conservative reconciliation (w98 only)', () 
   ] as const;
 
   beforeAll(async () => {
-    if (deriveTemplateTestDbName() !== 'app_test') throw new Error('D3 requires primary checkout');
-    releaseScratchLease = await acquireD3ScratchLease();
+    scratchLease = await acquireScratchDatabaseLease();
     process.env.JEST_WORKER_ID = '98';
     loadTestEnv();
     assertTestDatabaseUrl(process.env.DATABASE_URL);
-    if (deriveTestDbName() !== 'app_test_w98') throw new Error('D3 requires exact w98');
-    dropWorkerDatabase('98');
-    execFileSync(
-      'docker',
-      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', 'app_test_w98'],
-      { stdio: 'pipe' },
-    );
+    if (deriveTestDbName() !== deriveWorkerTestDbName(98)) throw new Error('D3 requires exact w98');
+    await scratchLease.dropDatabase();
+    await scratchLease.createDatabase();
     execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
       env: process.env,
       stdio: 'pipe',
@@ -108,13 +48,13 @@ describe('D3 controlled cleanup and conservative reconciliation (w98 only)', () 
   afterAll(async () => {
     try {
       await prisma?.$disconnect();
-      if (releaseScratchLease) dropWorkerDatabase('98');
+      if (scratchLease) await scratchLease.dropDatabase();
     } finally {
       if (original.worker === undefined) delete process.env.JEST_WORKER_ID;
       else process.env.JEST_WORKER_ID = original.worker;
       if (original.url === undefined) delete process.env.DATABASE_URL;
       else process.env.DATABASE_URL = original.url;
-      await releaseScratchLease?.();
+      await scratchLease?.release();
     }
   });
 
@@ -174,7 +114,7 @@ describe('D3 controlled cleanup and conservative reconciliation (w98 only)', () 
         { timeout: 30_000 },
       ),
     ).rejects.toThrow('Incomplete shadow reconciliation fixture tables');
-    const { before } = timeLedgerFixtureTriggerSql('app_test_w98');
+    const { before } = timeLedgerFixtureTriggerSql(deriveTestDbName());
     await expect(
       prisma.$transaction(
         async (tx) => {
@@ -321,12 +261,8 @@ describe('D3 controlled cleanup and conservative reconciliation (w98 only)', () 
           recursive: true,
         });
       await prisma.$disconnect();
-      dropWorkerDatabase('98');
-      execFileSync(
-        'docker',
-        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', 'app_test_w98'],
-        { stdio: 'pipe' },
-      );
+      await scratchLease!.dropDatabase();
+      await scratchLease!.createDatabase();
       execFileSync(
         'pnpm',
         ['exec', 'prisma', 'migrate', 'deploy', '--schema', join(temporary, 'schema.prisma')],

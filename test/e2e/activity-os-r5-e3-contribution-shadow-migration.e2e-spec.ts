@@ -15,8 +15,12 @@ import type { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../../src/database/prisma.service';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E3_D1_W98 === '1');
 
 const MIGRATION = '20260928095832_activity_os_r5_e3_shadow_evidence';
 const USE_DEDICATED_W98 = process.env.SRVF_E3_D1_W98 === '1';
@@ -58,14 +62,10 @@ function rejected(statement: string, marker: string): void {
   expect(message).toContain(marker);
 }
 
-function recreate(): void {
+async function recreate(): Promise<void> {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
-  dropWorkerDatabase(process.env.JEST_WORKER_ID!);
-  execFileSync(
-    'docker',
-    ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-    { stdio: 'pipe' },
-  );
+  await scratchLifecycle.drop(process.env.JEST_WORKER_ID!);
+  await scratchLifecycle.create(deriveTestDbName());
 }
 
 function deploy(schema = join(ROOT, 'schema.prisma')): void {
@@ -109,24 +109,24 @@ function deployThroughD1(): void {
 
 describe('E3-2 D1 additive shadow evidence migration', () => {
   const previous = { worker: process.env.JEST_WORKER_ID, url: process.env.DATABASE_URL };
-  beforeAll(() => {
+  beforeAll(async () => {
     if (USE_DEDICATED_W98) {
       process.env.JEST_WORKER_ID = '98';
       loadTestEnv();
     }
     assertTestDatabaseUrl(process.env.DATABASE_URL);
-    recreate();
+    await recreate();
     deployThroughD1();
   });
-  afterAll(() => {
+  afterAll(async () => {
     if (!USE_DEDICATED_W98) {
-      recreate();
+      await recreate();
       deploy();
       return;
     }
     if (USE_DEDICATED_W98) {
       try {
-        dropWorkerDatabase('98');
+        await scratchLifecycle.drop('98');
       } finally {
         if (previous.worker === undefined) delete process.env.JEST_WORKER_ID;
         else process.env.JEST_WORKER_ID = previous.worker;
@@ -363,8 +363,8 @@ describe('E3-2 D1 additive shadow evidence migration', () => {
     rejected(`TRUNCATE TABLE "ContributionShadowAttemptReceipt" CASCADE`, 'append-only');
   });
 
-  it('preserves a nonempty 132-migration database across the additive upgrade', () => {
-    recreate();
+  it('preserves a nonempty 132-migration database across the additive upgrade', async () => {
+    await recreate();
     const temporary = mkdtempSync(join(tmpdir(), 'srvf-e3-d1-pre133-'));
     try {
       mkdirSync(join(temporary, 'migrations'));
@@ -511,3 +511,5 @@ describe('E3-2 D1 additive shadow evidence migration', () => {
     }
   }, 60_000);
 });
+
+scratchLifecycle.finish();

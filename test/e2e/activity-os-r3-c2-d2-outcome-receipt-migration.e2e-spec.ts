@@ -9,7 +9,7 @@ import {
 } from '../setup/test-db';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
-const WORKER = 98;
+const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const hash = 'a'.repeat(64);
 function sql(statement: string): string {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
@@ -81,7 +81,7 @@ describe('C2 D2 actual PostgreSQL outcome receipt constraints', () => {
     recreateWorkerDatabase(WORKER);
     seedDefinitionFixture();
   });
-  afterAll(() => dropWorkerDatabase(WORKER));
+  afterAll(() => recreateWorkerDatabase(WORKER));
   beforeEach(() => {
     sql(`TRUNCATE "ActivityOutcomeFinalizationReceipt", "ActivityOutcomeValueSource", "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision";
       INSERT INTO "ActivityOutcomeRevision" (id,"activityId",revision,"metricSetVersionId","metricSetDefinitionHash","statusCode","createdByUserId","createdAt") VALUES
@@ -128,7 +128,7 @@ describe('C2 D2 actual PostgreSQL outcome receipt constraints', () => {
 });
 
 describe('C2 D2 nonempty 113 to 114 upgrade', () => {
-  afterAll(() => dropWorkerDatabase(WORKER));
+  afterAll(() => recreateWorkerDatabase(WORKER));
   it('preserves old outcomes, values, evidence and catalogue receipts byte-for-byte', () => {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     dropWorkerDatabase(WORKER);

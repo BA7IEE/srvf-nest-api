@@ -6,10 +6,11 @@ import {
   assertDroppableTestDbName,
   assertTestDatabaseUrl,
   dropWorkerDatabase,
+  recreateWorkerDatabase,
 } from '../setup/test-db';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
-const WORKER = 98;
+const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const MIGRATION = '20260905221158_activity_os_r3_c1_metric_command_receipts';
 const CURRENT_MIGRATION_COUNT = 136;
 const database = () => deriveWorkerTestDbName(WORKER);
@@ -120,7 +121,7 @@ describe('C1 D2a receipt DB constraints', () => {
     sql(fixtures);
   }, 180000);
   afterAll(() => {
-    dropWorkerDatabase(WORKER);
+    recreateWorkerDatabase(WORKER);
   });
   beforeEach(() => {
     sql('TRUNCATE "ActivityMetricCommandReceipt"');
@@ -239,7 +240,7 @@ describe('C1 D2a receipt DB constraints', () => {
 
 describe('C1 D2a nonempty upgrade and seed idempotency', () => {
   afterAll(() => {
-    dropWorkerDatabase(WORKER);
+    recreateWorkerDatabase(WORKER);
   });
   it('110 → 111 preserves catalogue rows; seed twice creates only Human permissions without role grants', () => {
     recreate();

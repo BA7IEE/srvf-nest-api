@@ -12,8 +12,12 @@ import {
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E2_W98 === '1');
 
 const MIGRATION = '20260924180000_activity_os_r5_e2_contribution_rule_conversion';
 const USE_DEDICATED_W98 = process.env.SRVF_E2_W98 === '1';
@@ -49,12 +53,10 @@ function sql(statement: string): string {
   ).trim();
 }
 
-function recreate(): void {
+async function recreate(): Promise<void> {
   const database = target();
-  dropWorkerDatabase(process.env.JEST_WORKER_ID!);
-  execFileSync('docker', ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', database], {
-    stdio: 'pipe',
-  });
+  await scratchLifecycle.drop(process.env.JEST_WORKER_ID!);
+  await scratchLifecycle.create(database);
 }
 
 function deploy(schema = path.join(ROOT, 'schema.prisma')): void {
@@ -138,10 +140,10 @@ describe('E2 additive conversion receipt migration', () => {
     }
     target();
   });
-  afterAll(() => {
+  afterAll(async () => {
     if (USE_DEDICATED_W98) {
       try {
-        dropWorkerDatabase('98');
+        await scratchLifecycle.drop('98');
       } finally {
         if (previous.worker === undefined) delete process.env.JEST_WORKER_ID;
         else process.env.JEST_WORKER_ID = previous.worker;
@@ -153,7 +155,7 @@ describe('E2 additive conversion receipt migration', () => {
     // The final historical upgrade deliberately stops at migration 132.
     // Restore the shared worker even when a test fails, before another suite
     // uses the current Prisma client and its audit readback columns.
-    recreate();
+    await recreate();
     deploy();
     expect(sql('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).toBe(
       '136',
@@ -165,8 +167,8 @@ describe('E2 additive conversion receipt migration', () => {
     ).toBe('t');
   }, 120_000);
 
-  it('cold-replays 136 migrations without old-table DML', () => {
-    recreate();
+  it('cold-replays 136 migrations without old-table DML', async () => {
+    await recreate();
     deploy();
     const names = readdirSync(path.join(ROOT, 'migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
@@ -188,8 +190,8 @@ describe('E2 additive conversion receipt migration', () => {
     expect(sql(`SELECT count(*) FROM "ContributionRuleConversionReceipt"`)).toBe('0');
   }, 120000);
 
-  it('preserves nonempty 131 facts, then enforces exact FK, unique and immutability', () => {
-    recreate();
+  it('preserves nonempty 131 facts, then enforces exact FK, unique and immutability', async () => {
+    await recreate();
     const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-e2-pre132-'));
     try {
       mkdirSync(path.join(temporary, 'migrations'));
@@ -241,3 +243,5 @@ describe('E2 additive conversion receipt migration', () => {
     }
   }, 120000);
 });
+
+scratchLifecycle.finish();

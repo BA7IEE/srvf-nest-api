@@ -14,8 +14,12 @@ import * as path from 'node:path';
 
 import { fingerprintTimePolicyVersion } from '../../src/modules/activities/activity-time-policy-definition';
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D3_W98 === '1');
 
 const MIGRATION = '20260912090000_activity_os_r4_d3_time_allocation_revision';
 const WORKER = 98;
@@ -86,12 +90,10 @@ function sql(statement: string): string {
   ).trim();
 }
 
-function recreate(): void {
+async function recreate(): Promise<void> {
   const { database } = target();
-  dropWorkerDatabase(target().worker);
-  execFileSync('docker', ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', database], {
-    stdio: 'pipe',
-  });
+  await scratchLifecycle.drop(target().worker);
+  await scratchLifecycle.create(database);
 }
 
 function deploy(schema: string): void {
@@ -523,10 +525,10 @@ describe('D3 immutable time-allocation migration', () => {
     target();
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     if (USE_DEDICATED_W98) {
       try {
-        dropWorkerDatabase(WORKER);
+        await scratchLifecycle.drop(WORKER);
       } finally {
         restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
         restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
@@ -534,7 +536,7 @@ describe('D3 immutable time-allocation migration', () => {
       }
       return;
     }
-    recreate();
+    await recreate();
     deploy(path.join(root, 'schema.prisma'));
   }, 120000);
 
@@ -543,8 +545,8 @@ describe('D3 immutable time-allocation migration', () => {
     else process.env[name] = value;
   }
 
-  it('replays all 136 migrations from empty and verifies the D3 append-only surface', () => {
-    recreate();
+  it('replays all 136 migrations from empty and verifies the D3 append-only surface', async () => {
+    await recreate();
     deploy(path.join(root, 'schema.prisma'));
     const names = readdirSync(path.join(root, 'migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
@@ -578,8 +580,8 @@ describe('D3 immutable time-allocation migration', () => {
     ).toBe('5');
   }, 120000);
 
-  it('preserves pre-120 Activity facts through a non-empty upgrade and then accepts a complete D3 chain', () => {
-    recreate();
+  it('preserves pre-120 Activity facts through a non-empty upgrade and then accepts a complete D3 chain', async () => {
+    await recreate();
     const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-d3-pre120-'));
     try {
       mkdirSync(path.join(temporary, 'migrations'));
@@ -634,8 +636,8 @@ describe('D3 immutable time-allocation migration', () => {
     }
   }, 120000);
 
-  it('enforces complete immutable chains, source anchors, manifest, evidence and receipt guards', () => {
-    recreate();
+  it('enforces complete immutable chains, source anchors, manifest, evidence and receipt guards', async () => {
+    await recreate();
     deploy(path.join(root, 'schema.prisma'));
     sql(`BEGIN;
       ${seedD3Anchors()};
@@ -803,3 +805,5 @@ describe('D3 immutable time-allocation migration', () => {
     );
   }, 120000);
 });
+
+scratchLifecycle.finish();

@@ -31,9 +31,13 @@ import { expectBizError } from '../helpers/biz-code.assert';
 import { httpServer } from '../helpers/http-server';
 import { loadTestEnv } from '../setup/load-env';
 import { resetDb } from '../setup/reset-db';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 import { createTestApp } from '../setup/test-app';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_B6_W98 === '1');
 
 const ROOT = '/api/app/v1/my/managed-activities';
 const START = '2099-09-01T08:00:00.000Z';
@@ -196,12 +200,8 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
       loadTestEnv();
       process.env.STORAGE_LOCAL_ROOT = `./tmp/storage-w${WORKER}`;
       assertTestDatabaseUrl(process.env.DATABASE_URL);
-      dropWorkerDatabase(WORKER);
-      execFileSync(
-        'docker',
-        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-        { stdio: 'pipe' },
-      );
+      await scratchLifecycle.drop(WORKER);
+      await scratchLifecycle.create(deriveTestDbName());
       execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
         env: process.env,
         stdio: 'pipe',
@@ -268,7 +268,7 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
       else process.env.ACTIVITY_OS_CONTROL_PLANE_MODE = previousControlMode;
       if (USE_DEDICATED_W98) {
         try {
-          dropWorkerDatabase(WORKER);
+          await scratchLifecycle.drop(WORKER);
         } finally {
           restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
           restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
@@ -792,3 +792,5 @@ describe('B6 emergency creation: frozen calls, real facts and publication refusa
     expect(await counts()).toEqual(before);
   });
 });
+
+scratchLifecycle.finish();
