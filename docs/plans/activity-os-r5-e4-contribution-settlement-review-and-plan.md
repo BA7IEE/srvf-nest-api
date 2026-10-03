@@ -63,22 +63,31 @@ policy_v1 要求 V9 贡献选择与可验证分类时间来源；历史无选择
 
 ### 4.1 ActivitySettlementContributionRevision
 
-字段：id／createdAt（数据库时间）；activityId、settlementRunId、settlementVersionId、timeRevisionId；revision；kindCode=draft／submitted／correction；previousContributionRevisionId、sourceDraftContributionRevisionId（按 kind 配对可空）；schemaVersion=1、regimeCode=policy_v1；evidenceSealId、evidenceRevision、populationRevision、workflowRevision、draftContentHash；ruleSnapshotId／hash、selectionRevisionId／hash；sourceSetHash、evaluationSetHash、recognizedPointsTotal Decimal(18,2)、evaluationCount；operationKey、requestHash、createdByUserId（沿现有 actor FK 范式）。该根合计覆盖多人，用宽精度；既有逐人认定列仍保持 Decimal(5,2)，不把多人总分错误限制为999.99。
+字段：id／createdAt（数据库时间）；activityId、settlementRunId、settlementVersionId；revision；kindCode=draft／submitted／correction；sourceKindCode=time_revision／correction_time_proof／unchanged_time；timeRevisionId；correctionApplicationId、correctionPostingBatchId、baseSettlementVersionId、correctionManifestId、correctionTimeSourceProofId、rootTimeManifestId、correctionSourceSetHash（按下述来源类型成组可空）；previousContributionRevisionId、sourceDraftContributionRevisionId（按 kind 配对可空）；schemaVersion=1、regimeCode=policy_v1；evidenceSealId、evidenceRevision、populationRevision、workflowRevision、draftContentHash；ruleSnapshotId／hash、selectionRevisionId／hash；sourceSetHash、evaluationSetHash、recognizedPointsTotal Decimal(18,2)、evaluationCount；operationKey、requestHash、createdByUserId（沿现有 actor FK 范式）。该根合计覆盖多人，用宽精度；既有逐人认定列仍保持 Decimal(5,2)，不把多人总分错误限制为999.99。
 
-draft 固定原草稿，submitted 固定新提交版本并指向 draft；correction 固定实际更正的新版本与前驱。operationKey 绑定 actor／operation 的既有命令域，不做另一个客户端命令。revision 唯一于 run；(id, activityId, settlementVersionId, timeRevisionId) 为同链被引用锚；相同内容可复用，合法重放返回同一证据。不新增可自由更新的生命周期字段；kind 是不可变类型不是状态机。
+draft 固定原草稿，submitted 固定新提交版本并指向 draft；correction 固定实际更正的新版本与前驱。operationKey 绑定 actor／operation 的既有命令域，不做另一个客户端命令。revision 唯一于 run；非空 (id, activityId, settlementVersionId) 为明细同链被引用锚，不把可空 timeRevisionId 放进该锚造成 FK 检查被 NULL 跳过。相同内容可复用，合法重放返回同一证据。不新增可自由更新的生命周期字段；kind／sourceKind 是不可变类型不是状态机。
+
+三种来源互斥，CHECK、复合 FK 与集合守卫共同验证：
+
+- draft／submitted 只能是 time_revision：timeRevisionId 非空，全部 correction 字段 NULL；引用真实 ActivitySettlementTimeRevision 的同活动／run／版本锚。submit 复制后必须指向新提交版本的真实时间证明，不能留草稿版本引用。
+- correction 必须固定 correctionApplicationId、correctionPostingBatchId、baseSettlementVersionId 及 previousContributionRevisionId；应用 (id, newPostingBatchId, newSettlementVersionId) 对齐 CorrectionApplication 既有 unique，前驱对齐同活动／run／base 版本，timeRevisionId 恒 NULL。既有 D7 更正不创建同版本 ActivitySettlementTimeRevision，不能为通过外键捏造 D4 副本。
+- 时间来源改变时 sourceKind=correction_time_proof：manifest／proof／root／sourceSetHash 四字段全非空；manifest 复合 FK 复用 ParticipationTimeCorrectionManifest 的 id／postingBatchId／activityId／settlementRunId／baseSettlementVersionId／settlementVersionId 六元组；proof 复合 FK 复用 CorrectionTimeSourceProof 的 id／rootManifestId／activityId／settlementRunId／sourceSetHash 五元组。集合守卫再核对 proof.applicationId、correctionManifestId、postingBatchId、base／新版本和 manifest.sourceProofId／hash 全部一致，不能以两个各自有效但互不关联的 FK 冒充同链。只接受当前应用真实 V3 冻结证明；有时间变更却仅有历史 V1/V2 manifest 或前驱 proof 时拒绝 native 重评价，不影响 legacy 原路径。
+- 时间来源未变时 sourceKind=unchanged_time：manifest／proof／root／sourceSetHash 四字段全 NULL，从精确前驱证明继承既有时间来源及评价内容；仍为当前 correction application／新版本建立自己的根与完整明细，不把旧版本根当新版本，也不重复计分。数据库须证明当前更正不存在时间来源变更，且评价单元、政策、整秒来源和北京日分摊与前驱完全一致；不能仅信任调用方声明“未变”。
+
+correction 的 seal／三个 revision／draftContentHash 表示沿前驱继承的原提交基础，不宣称本次生成了新 seal 或 D4 草稿；当前更正请求、应用、新版本、批次和 D7 source hash 另按上述锚固定。前驱集合按键整体对照，禁止逐条回溯历史链或递归全量重算。以上仅是本稿待审合同，未修改任何现有模型。
 
 ### 4.2 ParticipantContributionEvaluation
 
 字段：id／createdAt（数据库时间）；contributionRevisionId、activityId、settlementVersionId、participationIdentityId、memberId、sessionId；ruleSnapshotId、selectionItemId；policyId、policyVersionId、definitionHash、evaluatorVersion（not_required 时政策四元组全 NULL，否则全非空）；mode=policy／not_required；attendanceRoleCode、timeCategoryCode；durationSeconds（非负整数）；sourceRefsJson、sourceFingerprint；calculatedPoints Decimal(5,2)、recognizedPoints Decimal(5,2)、explanationCode；beijingDayPointsJson、evaluationHash。native 不支持人工覆盖，因此 recognizedPoints=calculatedPoints。
 
-增加非空 evaluationUnitKey，canonical 编码 identity／场次／policy四元组／冻结角色／类别，唯一 (contributionRevisionId, participationIdentityId, evaluationUnitKey)，避免不同selection item指向同政策时被重复评价。selectionItemId为该组排序最小的真实来源代表，sourceRefsJson同时固定并校验全组selection item引用，不能丢弃其余来源；not_required 用独立mode域编码且保留真实选择。源引用含具体 allocation revision／slice、来源段及冻结 hash，不接受裸合计秒数；JSON 字段有闭集、沿原D4来源容量和 canonical 顺序。零项 revision 合法但须与真实零参与集一致。
+增加非空 evaluationUnitKey，canonical 编码 identity／场次／policy四元组／冻结角色／类别，唯一 (contributionRevisionId, participationIdentityId, evaluationUnitKey)，避免不同selection item指向同政策时被重复评价。selectionItemId为该组排序最小的真实来源代表，sourceRefsJson同时固定并校验全组selection item引用，不能丢弃其余来源；not_required 用独立mode域编码且保留真实选择。源引用按根 sourceKind 分域：D4 为具体 allocation revision／slice、来源段及冻结 hash；D7 为当前 proof 固定的 pending／实际物化 allocation、slice／binding 与 source hash；unchanged_time 为前驱已验证的相同来源，不要求不存在的新版本 D4 行。不接受裸合计秒数或混合不同证明域；JSON 字段有闭集、沿原D4来源容量和 canonical 顺序。零项 revision 合法但须与真实零参与集一致。
 
 ### 4.3 现有列与 SQL 守卫
 
 AttendanceSettlementVersion 仅加 contributionRegimeCode，默认 legacy、创建后不变；追加新关系与被引用复合 unique，不改原状态／锁顺序。ActivitySettlementTimeRevision 等现有来源只加关系或必要同链复合 unique，不改事实列、旧 hash 或时长语义。
 
 - 全部新 FK 为 RESTRICT、同活动／同版本复合锚；政策 FK 对齐 id＋policyId＋definitionHash＋evaluatorVersion。不靠 Prisma 单列 id 假装同链。
-- CHECK 固定 kind／regime／schema／mode、政策四元组成组 NULL、非负秒数、两位 points、SHA-256 格式及 kind 前驱规则；来源/结果身份与 member／session 同链。
+- CHECK 固定 kind／sourceKind／regime／schema／mode、政策四元组成组 NULL、三种来源锚互斥、非负秒数、两位 points、SHA-256 格式及 kind 前驱规则；来源/结果身份与 member／session 同链。correction 两种来源仍有非空当前应用和前驱锚，拒绝部分 NULL、跨应用借 proof、跨批次或伪造 unchanged_time。
 - 两表禁止 UPDATE／DELETE／TRUNCATE；受控测试清理在既有 helper 中禁用具名守卫并恢复检查，不能关生产守卫、用未限定 CASCADE 或终止连接。
 - 评价集合守卫按实际集合复算 source／evaluation canonical hash、来源秒数、政策 evaluator 输出、北京日分摊及总数／总值。零集合、漏项、重复、跨活动、篡改 defaultResult／解释、溢出、未知 JSON 字段都 fail-closed。
 - 原提交／最终 LedgerPostingBatch committed 时，同事务最终集合检查验证 policy_v1 认定行和证明一一对应；legacy 不创建新证明但保留原完整约束。不能因“应用层校验过”跳过 DB 守卫。
@@ -92,11 +101,11 @@ AttendanceSettlementVersion 仅加 contributionRegimeCode，默认 legacy、创�
 
 1. generation／batch job 固定 regime；native 草稿的贡献 pending 不冒充 legacy 有效规则。旧规则 calculator、默认草稿和原 blocker 原样保留。
 2. D4 prepare 的原事务内，用已有分类来源构建贡献 draft revision；两次 prepare 同内容可复用，不同 operationKey 保留各自原审计，重放不重复写。仍执行锁后资格复核；失败回滚整个 prepare，不留下“时长准备成功、贡献未成功”的半成品。
-3. submit 先检验原 seal／三个 revision／draft hash／time proof，再校验新 contribution proof；一次事务复制时间与贡献证明、写政策认定结果。V3 域包含原 V1 hash、D4 bucket/source hash、贡献 selection/source/evaluation hash与 regime；V1/V2 验签函数及重放保持不动。
+3. submit 先检验原 seal／三个 revision／draft hash／time proof，再校验新 contribution proof；一次事务复制时间与贡献证明、写政策认定结果。V3 提交域包含原 V1 hash、D4 bucket/source hash、贡献 selection/source/evaluation hash与 regime；更正证明域额外固定 sourceKind、当前应用／批次／base／新版本及相应 D7 source hash 或精确前驱锚，不混用 D4 时间版本。V1/V2 验签函数及重放保持不动。
 4. original calculated/recognized 字段在 native 新提交结果中来自已冻结评价，readResultRevisions 因而读取正式同一真值；不另加可绕过封顶的正积分表。prepared→committed 可见性、成员／北京日 locks、day-state CAS、credited/cappedOut 与现有事务都保留。
 5. 训练等 0 volunteer hours 的积分必须从自己的分类认定日分配，不能错误套用“没有志愿服务日则无积分”条件。service_credit 与 contribution_credit 分开，正反例覆盖两个方向独立。
 6. 审核比较、审核详情及提交时均展示同一 V3 锚；policy_v1 缺证明拒绝，不能补默认分；审核人分离／两轮权限复核／已冻结版本依原约束。
-7. native 更正固定 base 政策／制度，按真实更正时间事实生成新评价证明；时间不变时复用同内容证据，变更时重新评价并冲销原 contribution_credit／重建封顶。新旧两组与 time correction 同批次原子提交。客户端手填 native points 与跨制度更正拒绝，V1/V2／直接旧提交／重放保留原路径。
+7. native 更正固定 base 政策／制度，按 §4.1 的当前 D7 proof 或精确未变前驱生成当前应用自己的贡献根。时间不变时复用同内容评价并核验来源未变，变更时重新评价并冲销原 contribution_credit／重建封顶；均不得伪造同版本 D4 time revision。D7 当前应用／manifest／proof 形成后，在原事务内写贡献证明；当前批次最终守卫验证全部关联及认定值后才 committed。新旧两组与 time correction 同批次原子提交。客户端手填 native points 与跨制度更正拒绝，V1/V2／直接旧提交／重放保留原路径。
 8. commit 保持原七秒、prepare 原三十秒及其他既有五秒边界；不通过调超时、固定 sleep、模拟 DB 守卫或拆原子性做绿。失败先有界阶段/查询/计划证据，首个满额瓶颈未达标先呈报，不猜测重跑。
 
 ## 6. 访问面、审计与前端契约
@@ -117,23 +126,24 @@ OpenAPI 两份快照、offline openapi 与13 client生成文件必须同 PR 更�
 
 ## 7. 风险表与验证顺序
 
-| 风险                 | 正向证据                                                         | 反例／失败边界                                                                   |
-| -------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 制度误切／部署误开   | off 下旧 HTTP 全链和 V1/V2 checksum 不变；fixture 仅 test        | production/smoke/development fixture、历史 run 变 native、off 下新 native 写拒绝 |
-| 重复计分／政策漂移   | 分段重排同 hash；同 identity/category 合并只评价一次             | 跨活动/version、漏 slice、改默认结果/解释、retired 历史重算、未知选择拒绝        |
-| 贡献与志愿小时被误绑 | training 0小时有分、volunteer 有小时0分                          | 不能将 non_creditable 当“贡献恒为0”，必须按明确政策定义                          |
-| 跨日／封顶           | 北京跨午夜、多个活动、分摊分位、稳定顺序、credited+cappedOut守恒 | 无来源日期却非零、溢出、按活动时区或裸SUM拒绝                                    |
-| 权限及资格竞态       | 原 scoped/GLOBAL、锁后身份/绑定/权限再读                         | 移除权限、成员失效、跨活动读、SP/delegation拒绝；不默认授予15内建角色            |
-| 重放／故障原子性     | 原 operationKey 同 actor 重放同proof；受控阶段故障全回滚         | 同键异payload、缺证／陈旧 proof、复制部分失败、commit失败不得半入账              |
-| 更正后守恒           | 原批次冲销＋新贡献日分摊，与时间一起提交                         | 跨制度、客户端伪造points、并发更正／封顶冲突、基准缺证拒绝                       |
-| SQL性能／集合守卫    | 真实触发器、真实锁、实际集合计数／计划                           | 逐行N+1、关守卫、加超时／sleep均不验收                                           |
+| 风险                 | 正向证据                                                             | 反例／失败边界                                                                         |
+| -------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 制度误切／部署误开   | off 下旧 HTTP 全链和 V1/V2 checksum 不变；fixture 仅 test            | production/smoke/development fixture、历史 run 变 native、off 下新 native 写拒绝       |
+| 重复计分／政策漂移   | 分段重排同 hash；同 identity/category 合并只评价一次                 | 跨活动/version、漏 slice、改默认结果/解释、retired 历史重算、未知选择拒绝              |
+| 贡献与志愿小时被误绑 | training 0小时有分、volunteer 有小时0分                              | 不能将 non_creditable 当“贡献恒为0”，必须按明确政策定义                                |
+| 跨日／封顶           | 北京跨午夜、多个活动、分摊分位、稳定顺序、credited+cappedOut守恒     | 无来源日期却非零、溢出、按活动时区或裸SUM拒绝                                          |
+| 权限及资格竞态       | 原 scoped/GLOBAL、锁后身份/绑定/权限再读                             | 移除权限、成员失效、跨活动读、SP/delegation拒绝；不默认授予15内建角色                  |
+| 重放／故障原子性     | 原 operationKey 同 actor 重放同proof；受控阶段故障全回滚             | 同键异payload、缺证／陈旧 proof、复制部分失败、commit失败不得半入账                    |
+| 更正后守恒           | 原批次冲销＋新贡献日分摊，与时间一起提交                             | 跨制度、客户端伪造points、并发更正／封顶冲突、基准缺证拒绝                             |
+| 三种来源锚混淆       | D4正常提交、D7当前V3证明、未变来源继承分别走真实链；连续更正保持同链 | 可空FK绕过、跨应用／批次借proof、有变更冒充未变、假D4副本、历史proof冒充当前证明均拒绝 |
+| SQL性能／集合守卫    | 真实触发器、真实锁、实际集合计数／计划                               | 逐行N+1、关守卫、加超时／sleep均不验收                                                 |
 
 实施验证队列（本轮不运行）：
 
 1. 无写前查 main／PR／授权精确覆盖；既有 contribution-policy、draft、submit、D4、D6、D7、daily-cap characterization 先跑。D7满额历史 UNKNOWN 不随本功能顺手改。
 2. schema/generate、两表＋136→137 migration：w98空库冷回放、非空升级、全部旧SQL checksum、旧历史目标不改、新表空及默认legacy/off；直接SQL负例和守卫恢复证明。
 3. 原 evaluator 对拍、默认分／阈值／整秒、同源分段稳定hash、not_required／missing、定向unit及权限竞态。
-4. w98 真实完整 D4→E4→submit→双审核→prepare ledger→commit→读取→D7更正；保留原断言、新 native 用例追加，不把 legacy 夹具改成 native 来消除失败。
+4. w98 真实完整 D4→E4→submit→双审核→prepare ledger→commit→读取→D7更正；含时间变化、时间未变及连续更正。既有本稿 migration／correction 新测试路径覆盖三种来源锚的正反例、部分NULL和跨应用证明；不新增候选路径。保留原断言、新 native 用例追加，不把 legacy 夹具改成 native 来消除失败。
 5. 满额先跑原2,000身份链，包含10,000来源绑定，并覆盖D4完整10,000段／50,000 slice／8,000桶／40,000来源上限；不扩大D4容量。8,192账本规模链是既有legacy回归，不冒称原D4能接受8,192身份。新贡献新增应用层业务查询的候选上限：prepare≤12、submit≤12、更正prepare/apply≤20、commit≤4、只读摘要≤3；采用集合查询／写入，无逐条N+1。原D4整体prepare≤400／submit≤950／页读≤120及其他既有总预算不提高，七秒／三十秒不变。这些是待维护者接受的验收上限，不是已测结果；未来实施须给出结构推导、实际Prisma查询数及DB函数内部计划，不以隐藏函数内部SQL冒称便宜。
 6. quick、相关surface E2E、contract、生成物/readtax/counts/codemap/两台账/边界自检；实际3b/4b定稿重签后才交付Draft。PR CI冷跑执行 agent:check:full的全量口径（五分片均验）；本地只有w98，固定其他scratch旧测试不擅自跑，交CI。
 7. 同SHA PR CI完成后再呈报Ready/合并，不自动决定；main验收／部署／业务映射／前端／E5切换分别登记。跨模型整体复审沿维护者已有暂停安排，不自行启无限工具评审。
@@ -291,7 +301,7 @@ docs/handoff/clients/integration/client.ts
 
 - migration路径为本稿拟定命名；实施时若并发已占第137条或命名冲突，先报告更正，不能偷偷另起SQL。
 - 四个新职责是新功能的事务编排／读查询／纯规则／展示，不从旧大服务搬多类存量逻辑；现有Service只做明确接线。
-- domain-map登记两表归activities；state-machines只登记不可变kind/regime inventory并刷新摘要，不新造状态机。现有check-boundaries对kindCode只识别旧D4具名模型，故精确扩展ActivitySettlementContributionRevision.kindCode/regimeCode和AttendanceSettlementVersion.contributionRegimeCode，selftest补必须发现与其他同名字段仍不泛化的正反例；不改stateLikeString/status-predicate规则、债基线或裁决。authz patterns/ROUTE_AUTHZ/CODEMAP只运行既有生成器刷新。
+- domain-map登记两表归activities；state-machines只登记不可变kind/sourceKind/regime inventory并刷新摘要，不新造状态机。现有check-boundaries对kindCode只识别旧D4具名模型，故精确扩展ActivitySettlementContributionRevision.kindCode/sourceKindCode/regimeCode和AttendanceSettlementVersion.contributionRegimeCode这四项具名配置，selftest补必须发现与其他同名字段仍不泛化的正反例；不改stateLikeString/status-predicate规则、债基线或裁决。authz patterns/ROUTE_AUTHZ/CODEMAP只运行既有生成器刷新。
 - 时钟测试仅登记两张新表createdAt；三个fixture清理helper仅具名新表和守卫，保持旧版本缺表跳过及共享库lease保护。
 - 旧迁移候选由当前136字面命中再逐项核对得出；不能用搜索结果代替引用链。已有D3的135→136标题保留，仅“全部成功文件当前数”改137。
 - permission/seed/审计目录无需数量变更，未列入写集；若新增错误码／审计事件／权限或SQL执行面需要额外文件，先报告一次完整扩写，不自行写入。
