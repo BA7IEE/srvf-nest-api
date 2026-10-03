@@ -3661,3 +3661,17 @@ changelog.d/activity-os-r5-e3-main-isolation-and-guard-diagnostic.md
 定向unit入口`test/setup/test-run-scope.spec.ts`49项通过，新增六项覆盖分类摘要、输出格式／大小拒绝、采样异常不泄漏以及空的稍后快照仍拒绝；既有全部断言保留。既有真实双进程隔离E2E 3项通过（13.975秒），具名模板已有136条、无pending migration，w1及w98正常回收；这是隔离回归，不冒称捕获原CI失败的分类现场。两份TS冷lint与diff检查通过；最终quick及新SHA全量CI仍待验收。取证包不修复清理失败，仅为下一步精确判断补证据。
 
 **最终本地验收**：quick整体退出0：缓存lint、三组typecheck、441套／9,589单测通过（62.857秒，另5既有todo）、harness通过；561项守护自测的1个已知缺口及138项eslint自测的5个已知缺口保留，不合并计作同一种保证。两份TS另有定向冷lint及Prettier通过；counts、CODEMAP、readtax、冻结台账／NEXT_TASKS检查和diff通过，原WARN保留。聚合SQL在维护库仅按获批派生w98过滤，只读执行返回none，验证SQL语法及空集合，不证明原失败现场或后台进程根因。精确六路径普通提交推送同一#1378 Draft，原CI失败保持开放，新SHA全量仍交CI，不复用47c2edef结论。不改生产代码、schema、migration、权限、Gate、既有断言、业务预算、DROP裁决或数据库范围，不Ready／合并；工具兼容包仍为独立未提交改动。
+
+#### 31.17.3 DROP计数边界修复（2026-10-03，维护者已批准六路径方案A）
+
+候选`110477cd14122b6f1aabfefe4aae14c5ae739df6`的[CI 37092160117](https://github.com/BA7IEE/srvf-nest-api/actions/runs/37092160117)已completed/failure，红区审批success。分片1／3／5通过，2／4各一项失败：D4原非空升级清理拒绝的稍后快照为`autovacuum:active:1`；command-replay migration的w86拒绝后快照为none。前者直接证明拒绝后有后台维护进程，结合D4先行client=0支持误计判断；两个快照都不是原判定时点，w86根因仍未知，不把none当无连接泄漏证明。
+
+[PostgreSQL 16官方源码](https://github.com/postgres/postgres/blob/REL_16_STABLE/src/backend/storage/ipc/procarray.c)的CountOtherDBBackends说明普通DROP在数据库互锁下有界等待，并由数据库自身令autovacuum退出，不主动终止普通用户会话；dbcommands的普通dropdb依然检查其他会话及prepared transaction。本包不调用terminate或FORCE，接受原普通DROP自身既有行为，不引入应用层等待／重试或调整数据库参数。
+
+维护者明确回复“确认六路径清理计数修复方案A，保持Draft”。写集与§31.17.2完全相同，代码仅两个test/setup文件，其余为本评审稿、两份台账、既有changelog。具名隔离库沿原四库，不在本地操作w86或其他历史scratch库。验证后普通提交推送更新#1378 Draft，不Ready／合并、不启用shadow／Gate、不操作生产、真实数据或迁移，不夹带工具兼容包。
+
+只有dropWorkerDatabase改用单次聚合查询：backend精确为autovacuum worker的行不计阻挡；client、parallel和所有unknown／other类型仍计阻挡，不按state忽略idle。分类及阻挡数量同源，原scope和本机校验仍先执行；返回格式／容量／数值与分组计算不一致或查询失败，固定unavailable并拒绝，不读取原错误正文。20组／有界字符／5秒查询上限保持；只有明确零阻挡才发一次普通DROP，之后新连接或prepared transaction由数据库最终互锁保护，原竞态单测仍断言一次失败且不重试。connectionCount、模板零连接、recreateWorkerDatabase及其稍后诊断仍保持原样，不扩大排除范围。
+
+原unit断言未删除或放宽；三处专门验证“稍后快照”的调用前置改用仍保留该行为的recreateWorkerDatabase。新增11项证明none与autovacuum-only正例、client／混合／parallel／other拒绝、矛盾及恶意输出拒绝、查询异常不重试，并断言判定只查询一次、普通DROP无FORCE／terminate。既有scope默认入口定向60项通过（0.373秒），两份TS冷lint通过。D4原套件实际四库范围内验证、quick及新SHA完整CI仍待验收；不声称w86已修复或所有清理失败消失。
+
+**最终验收与补充**：原D4 time-bucket migration完整3条通过（35.618秒），包含本轮CI原失败的非空120→121升级，原业务断言与预算不改，136条恢复及worker回收完成。随后实测当前Node execSync函数存在未显式stdio时在抛错前自动输出stderr的分支，证明单纯catch不足；已在相同六路径内把有界取证调用显式设为stdio=pipe，并加强既有options断言，普通DROP／原无timeout调用不变。最终补充后的60条定向unit再次通过（0.409秒）、两份TS冷lint通过。启动于补充之前的一轮quick虽退出0，不冒充最终代码口径；补充后的第二轮quick整体退出0：441套／9,600单测通过、5项既有todo，缓存lint／三组typecheck／harness通过，138项eslint自测及5个已知缺口保留。counts／CODEMAP／readtax／两台账检查和diff通过，原WARN保留。D4回归发生在最后的stderr隔离补充前，不宣称补充后再次运行；其SQL、判定和普通DROP逻辑未再变化，新SHA仍由PR全量CI冷跑验收。精确六路径普通提交推送#1378 Draft，不Ready／合并，不重跑旧SHA、不改生产代码或配置、不扩数据库范围、不关闭历史失败。

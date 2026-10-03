@@ -236,7 +236,7 @@ function psql(sql: string, timeout?: number): string {
     `docker exec ${POSTGRES_CONTAINER} psql -U postgres -d ${MAINTENANCE_DB} -tAc "${sql}"`,
     {
       encoding: 'utf-8',
-      ...(timeout === undefined ? {} : { timeout }),
+      ...(timeout === undefined ? {} : { timeout, stdio: 'pipe' as const }),
     },
   ).trim();
 }
@@ -271,6 +271,59 @@ function connectionCount(dbName: string): string {
   return psql(
     `SELECT count(*) FROM pg_stat_activity WHERE datname='${dbName}' AND pid<>pg_backend_pid()`,
   );
+}
+
+// DROP alone excludes PostgreSQL's own autovacuum workers. Every other kind,
+// including unknown background workers, still blocks; ordinary DROP remains the
+// final race/prepared-transaction guard. One aggregate supplies both verdict and evidence.
+function dropConnectionSnapshot(dbName: string): { blocked: boolean; summary: string } {
+  try {
+    const value = psql(
+      `SELECT COALESCE(sum(n) FILTER (WHERE kind <> 'autovacuum'), 0)::text || '|' ||
+        COALESCE(string_agg(kind || ':' || phase || ':' || n::text, ',' ORDER BY kind, phase), 'none')
+       FROM (
+         SELECT CASE backend_type
+           WHEN 'client backend' THEN 'client'
+           WHEN 'autovacuum worker' THEN 'autovacuum'
+           WHEN 'parallel worker' THEN 'parallel'
+           ELSE 'other' END AS kind,
+           CASE state
+             WHEN 'active' THEN 'active'
+             WHEN 'idle' THEN 'idle'
+             WHEN 'idle in transaction' THEN 'in_transaction'
+             WHEN 'idle in transaction (aborted)' THEN 'aborted'
+             ELSE 'other' END AS phase, count(*) AS n
+         FROM pg_stat_activity
+         WHERE datname='${dbName}' AND pid<>pg_backend_pid()
+         GROUP BY 1, 2
+       ) AS drop_snapshot`,
+      5_000,
+    );
+    if (value.length > 1040) throw new Error('Invalid snapshot');
+    const [count, summary, extra] = value.split('|');
+    if (extra !== undefined || !/^[0-9]{1,10}$/.test(count ?? ''))
+      throw new Error('Invalid snapshot');
+    const rows = summary === 'none' ? [] : (summary ?? '').split(',');
+    if (
+      rows.length > 20 ||
+      rows.some(
+        (row) =>
+          !/^(client|autovacuum|parallel|other):(active|idle|in_transaction|aborted|other):[0-9]{1,10}$/.test(
+            row,
+          ),
+      )
+    )
+      throw new Error('Invalid snapshot');
+    const blockingCount = rows.reduce((total, row) => {
+      const [kind, , amount] = row.split(':');
+      return total + (kind === 'autovacuum' ? 0 : Number(amount));
+    }, 0);
+    if (blockingCount !== Number(count)) throw new Error('Inconsistent snapshot');
+    return { blocked: blockingCount !== 0, summary };
+  } catch {
+    // A failed/malformed observation is never permission to drop or a reason to retry.
+    return { blocked: true, summary: 'unavailable' };
+  }
 }
 
 // Failure-only observation, never a cleanup decision. Emit fixed categories and
@@ -397,11 +450,11 @@ export function dropWorkerDatabase(workerId: string | number): void {
   const workerName = deriveWorkerTestDbName(workerId);
   assertDroppableTestDbName(workerName);
   assertNamedTestDatabaseScope([workerName]);
-  const inUse = connectionCount(workerName);
-  if (inUse !== '0') {
+  const snapshot = dropConnectionSnapshot(workerName);
+  if (snapshot.blocked) {
     throw new Error(
       `worker 测试库 '${workerName}' 仍有活跃连接，拒绝清理。\n${inspectHint(workerName)}\n` +
-        `脱敏进程分类（稍后独立采样，非原判定快照）: ${connectionSummary(workerName)}`,
+        `脱敏进程分类（同一次判定快照）: ${snapshot.summary}`,
     );
   }
   // A connection may appear after the check. Ordinary DROP rejects that race;

@@ -15,6 +15,7 @@ describe('ordinary worker lifecycle (no database)', () => {
       const sql = String(command);
       statements.push(sql);
       if (sql.includes('current_database()')) return 'postgres|';
+      if (sql.includes('AS drop_snapshot')) return '0|none';
       if (sql.includes('pg_stat_activity')) return '0';
       return '';
     });
@@ -35,6 +36,7 @@ describe('ordinary worker lifecycle (no database)', () => {
   it('active connections reject cleanup before DROP', () => {
     jest.mocked(execSync).mockImplementation((command) => {
       statements.push(String(command));
+      if (String(command).includes('AS drop_snapshot')) return '1|client:idle:1';
       return String(command).includes('pg_stat_activity') ? '1' : 'postgres|';
     });
     expect(() => actual.dropWorkerDatabase(1)).toThrow('活跃连接');
@@ -47,6 +49,7 @@ describe('ordinary worker lifecycle (no database)', () => {
       statements.push(sql);
       if (sql.includes('DROP DATABASE'))
         throw new Error('database is being accessed by other users');
+      if (sql.includes('AS drop_snapshot')) return '0|none';
       return sql.includes('pg_stat_activity') ? '0' : 'postgres|';
     });
     expect(() => actual.dropWorkerDatabase(1)).toThrow('being accessed');
@@ -67,14 +70,14 @@ describe('ordinary worker lifecycle (no database)', () => {
       const sql = String(command);
       statements.push(sql);
       if (sql.includes('AS classified')) {
-        expect(options).toEqual(expect.objectContaining({ timeout: 5_000 }));
+        expect(options).toEqual(expect.objectContaining({ timeout: 5_000, stdio: 'pipe' }));
         expect(sql).toContain("WHERE datname='app_test_w1' AND pid<>pg_backend_pid()");
         expect(sql).not.toMatch(/application_name|client_addr|SELECT query|pg_terminate_backend/);
         return 'autovacuum:active:1,client:idle:2';
       }
       return sql.includes('pg_stat_activity') ? '3' : 'postgres|';
     });
-    expect(() => actual.dropWorkerDatabase(1)).toThrow('autovacuum:active:1,client:idle:2');
+    expect(() => actual.recreateWorkerDatabase(1)).toThrow('autovacuum:active:1,client:idle:2');
     expect(statements.some((value) => value.includes('DROP DATABASE'))).toBe(false);
   });
 
@@ -87,7 +90,7 @@ describe('ordinary worker lifecycle (no database)', () => {
         if (sql.includes('AS classified')) return output;
         return sql.includes('pg_stat_activity') ? '1' : 'postgres|';
       });
-      expect(() => actual.dropWorkerDatabase(1)).toThrow('非原判定快照）: unavailable');
+      expect(() => actual.recreateWorkerDatabase(1)).toThrow('非原判定快照）: unavailable');
       expect(statements.some((value) => value.includes('DROP DATABASE'))).toBe(false);
     },
   );
@@ -110,7 +113,72 @@ describe('ordinary worker lifecycle (no database)', () => {
       if (sql.includes('AS classified')) return 'none';
       return sql.includes('pg_stat_activity') ? '1' : 'postgres|';
     });
-    expect(() => actual.dropWorkerDatabase(1)).toThrow('非原判定快照）: none');
+    expect(() => actual.recreateWorkerDatabase(1)).toThrow('非原判定快照）: none');
+    expect(statements.some((value) => value.includes('DROP DATABASE'))).toBe(false);
+  });
+
+  it.each(['0|none', '0|autovacuum:active:1'])(
+    'allows ordinary DROP for an empty or autovacuum-only snapshot (%#)',
+    (snapshot) => {
+      jest.mocked(execSync).mockImplementation((command, options) => {
+        const sql = String(command);
+        statements.push(sql);
+        if (sql.includes('AS drop_snapshot')) {
+          expect(options).toEqual(expect.objectContaining({ timeout: 5_000, stdio: 'pipe' }));
+          expect(sql).toContain("WHERE datname='app_test_w1' AND pid<>pg_backend_pid()");
+          return snapshot;
+        }
+        return 'postgres|';
+      });
+      actual.dropWorkerDatabase(1);
+      expect(statements.filter((value) => value.includes('pg_stat_activity'))).toHaveLength(1);
+      expect(statements.filter((value) => value.includes('DROP DATABASE'))).toHaveLength(1);
+      expect(statements.some((value) => /WITH \(FORCE\)|pg_terminate_backend/.test(value))).toBe(
+        false,
+      );
+    },
+  );
+
+  it.each([
+    '1|client:idle:1',
+    '1|autovacuum:active:1,client:active:1',
+    '1|parallel:active:1',
+    '1|other:other:1',
+  ])('rejects every non-autovacuum kind in the same snapshot (%#)', (snapshot) => {
+    jest.mocked(execSync).mockImplementation((command) => {
+      const sql = String(command);
+      statements.push(sql);
+      return sql.includes('AS drop_snapshot') ? snapshot : 'postgres|';
+    });
+    expect(() => actual.dropWorkerDatabase(1)).toThrow(
+      `同一次判定快照）: ${snapshot.split('|')[1]}`,
+    );
+    expect(statements.filter((value) => value.includes('pg_stat_activity'))).toHaveLength(1);
+    expect(statements.some((value) => value.includes('DROP DATABASE'))).toBe(false);
+  });
+
+  it.each(['0|client:idle:1', '0|private-data', '0|none|private-data', '0|' + 'x'.repeat(2000)])(
+    'fails closed on inconsistent or malformed snapshot (%#)',
+    (snapshot) => {
+      jest.mocked(execSync).mockImplementation((command) => {
+        const sql = String(command);
+        statements.push(sql);
+        return sql.includes('AS drop_snapshot') ? snapshot : 'postgres|';
+      });
+      expect(() => actual.dropWorkerDatabase(1)).toThrow('同一次判定快照）: unavailable');
+      expect(statements.some((value) => value.includes('DROP DATABASE'))).toBe(false);
+    },
+  );
+
+  it('does not retry or DROP when the authoritative snapshot query fails', () => {
+    jest.mocked(execSync).mockImplementation((command) => {
+      const sql = String(command);
+      statements.push(sql);
+      if (sql.includes('AS drop_snapshot')) throw new Error('private connection error');
+      return 'postgres|';
+    });
+    expect(() => actual.dropWorkerDatabase(1)).toThrow('同一次判定快照）: unavailable');
+    expect(statements.filter((value) => value.includes('pg_stat_activity'))).toHaveLength(1);
     expect(statements.some((value) => value.includes('DROP DATABASE'))).toBe(false);
   });
 });
