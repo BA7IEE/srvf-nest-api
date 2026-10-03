@@ -3647,3 +3647,17 @@ changelog.d/activity-os-r5-e3-main-isolation-and-guard-diagnostic.md
 补丁入口另经维护者批准的六路径兼容包修复：维护者安装仓库补丁与本机配置、确认信任并重启桌面应用后，本会话范围内真实文档写入成功。工具自测35/35、hooks自测69/69、完整harness及仓库冷lint退出0；D7字符串等价修正后定向解析5/5，未修改断言。工具包五个仓库路径不属于本43路径业务交付，保持本地未提交；本机.codex/hooks.json不提交。未通过改变主仓分支、伪造marker、自授grant或禁用守卫解除阻塞。
 
 最终完整quick退出0：缓存lint、三组类型、441套／9,583条单测（另5项既有todo）、harness通过，138项eslint自测及5个已知缺口保留；另有此前本轮仓库冷lint退出0。counts／CODEMAP／readtax、冻结台账分类／两台账对照及diff检查退出0，原CODEMAP与readtax提示保留。当前分支与刚fetch的origin/main前后差均0，无open PR；业务提交按43个具名路径上限逐项加入，不包含兼容工具包或主仓所有者改动。历史w82–w97未在本地操作，完整契约与全量E2E由本轮候选PR CI冷跑。D7原失败根因仍UNKNOWN，原主干CI失败不关闭，不盲重跑或追加生产SQL。业务schema／migration／API／权限／Gate均无改动，无新3b／4b；真实映射、窗口与签字仍未执行，shadow／Gate关闭。本地验收不代表新SHA CI通过，不Ready／合并。
+
+#### 31.17.2 #1378 清理拒绝的六路径脱敏取证（2026-10-03，已批准）
+
+实际候选`47c2edef9a250accab50d249b711ef48720629bf`的[CI 37090397178](https://github.com/BA7IEE/srvf-nest-api/actions/runs/37090397178)已completed/failure：分片1／3通过，2／4／5失败。四项失败分别为command-replay migration的w86、allocation-determinism migration的w85、D7-2 fact-correction migration的当前w2，以及qualification-contract migration的w83；均在`dropWorkerDatabase`原计数拒绝处失败。D7完整更正套件本轮PASS（447.939秒），不据此关闭历史七秒性能失败或声称整个CI通过。
+
+引用链核对发现D7-2 `recreate`先统计client backend，再调用通用drop的全部进程计数；两次采样之间可能有竞态，全部计数也可能含后台维护进程。现有日志不包含当时进程类型，两种原因都未证实。PostgreSQL 16官方`pg_stat_activity`说明其记录包含client及autovacuum等后台类型；这不是本次失败现场证据。不得直接改为只计客户端、等待重试、FORCE或终止连接。
+
+维护者本轮明确批准“上一条六路径脱敏取证包，保持Draft”。精确写集仅为`test/setup/test-db.ts`、`test/setup/test-db.lifecycle.spec.ts`、本评审稿、`docs/ai-harness/NEXT_TASKS.md`、`docs/ai-harness/FROZEN_DRAFTS.md`、既有`changelog.d/activity-os-r5-e3-main-isolation-and-guard-diagnostic.md`。沿既有具名四库授权验证，不操作w83／w85／w86本地库；不改六路径外文件，工具包保持未提交。普通提交推送更新同一#1378 Draft，不另开PR，不Ready／合并、不启用开关、不操作生产。
+
+只在原计数已经拒绝重建或清理时，维护库另发一条只读聚合：严格按已核验具名目标库过滤、排除自身PID；backend固定归类client／autovacuum／parallel／other，state固定归类active／idle／in_transaction／aborted／other，仅输出数量。最多20组、1024字符、5秒采样，未知输出或异常仅固定unavailable，不打印stderr；无进程时none仍然抛原拒绝。错误注明“稍后独立采样，非原判定快照”，不将新采样当原现场或改变失败裁决。原计数SQL、普通DROP、零重试、拒绝竞态及禁止terminate保持原样；成功路径不增加查询。该5秒是失败后的只读取证上限，不是业务事务超时变更。
+
+定向unit入口`test/setup/test-run-scope.spec.ts`49项通过，新增六项覆盖分类摘要、输出格式／大小拒绝、采样异常不泄漏以及空的稍后快照仍拒绝；既有全部断言保留。既有真实双进程隔离E2E 3项通过（13.975秒），具名模板已有136条、无pending migration，w1及w98正常回收；这是隔离回归，不冒称捕获原CI失败的分类现场。两份TS冷lint与diff检查通过；最终quick及新SHA全量CI仍待验收。取证包不修复清理失败，仅为下一步精确判断补证据。
+
+**最终本地验收**：quick整体退出0：缓存lint、三组typecheck、441套／9,589单测通过（62.857秒，另5既有todo）、harness通过；561项守护自测的1个已知缺口及138项eslint自测的5个已知缺口保留，不合并计作同一种保证。两份TS另有定向冷lint及Prettier通过；counts、CODEMAP、readtax、冻结台账／NEXT_TASKS检查和diff通过，原WARN保留。聚合SQL在维护库仅按获批派生w98过滤，只读执行返回none，验证SQL语法及空集合，不证明原失败现场或后台进程根因。精确六路径普通提交推送同一#1378 Draft，原CI失败保持开放，新SHA全量仍交CI，不复用47c2edef结论。不改生产代码、schema、migration、权限、Gate、既有断言、业务预算、DROP裁决或数据库范围，不Ready／合并；工具兼容包仍为独立未提交改动。

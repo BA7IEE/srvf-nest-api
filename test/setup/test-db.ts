@@ -230,12 +230,13 @@ export function assertLocalPostgresServer(): void {
   localPostgresVerified = true;
 }
 
-function psql(sql: string): string {
+function psql(sql: string, timeout?: number): string {
   assertLocalPostgresServer();
   return execSync(
     `docker exec ${POSTGRES_CONTAINER} psql -U postgres -d ${MAINTENANCE_DB} -tAc "${sql}"`,
     {
       encoding: 'utf-8',
+      ...(timeout === undefined ? {} : { timeout }),
     },
   ).trim();
 }
@@ -270,6 +271,48 @@ function connectionCount(dbName: string): string {
   return psql(
     `SELECT count(*) FROM pg_stat_activity WHERE datname='${dbName}' AND pid<>pg_backend_pid()`,
   );
+}
+
+// Failure-only observation, never a cleanup decision. Emit fixed categories and
+// counts, not query text, identities, application names, addresses or credentials.
+function connectionSummary(dbName: string): string {
+  try {
+    const summary = psql(
+      `SELECT COALESCE(string_agg(kind || ':' || phase || ':' || n::text, ',' ORDER BY kind, phase), 'none')
+       FROM (
+         SELECT CASE backend_type
+           WHEN 'client backend' THEN 'client'
+           WHEN 'autovacuum worker' THEN 'autovacuum'
+           WHEN 'parallel worker' THEN 'parallel'
+           ELSE 'other' END AS kind,
+           CASE state
+             WHEN 'active' THEN 'active'
+             WHEN 'idle' THEN 'idle'
+             WHEN 'idle in transaction' THEN 'in_transaction'
+             WHEN 'idle in transaction (aborted)' THEN 'aborted'
+             ELSE 'other' END AS phase, count(*) AS n
+         FROM pg_stat_activity
+         WHERE datname='${dbName}' AND pid<>pg_backend_pid()
+         GROUP BY 1, 2
+       ) AS classified`,
+      5_000,
+    );
+    if (summary === 'none') return summary;
+    const rows = summary.split(',');
+    if (
+      summary.length <= 1024 &&
+      rows.length <= 20 &&
+      rows.every((row) =>
+        /^(client|autovacuum|parallel|other):(active|idle|in_transaction|aborted|other):[0-9]{1,10}$/.test(
+          row,
+        ),
+      )
+    )
+      return summary;
+  } catch {
+    // Observation failure must not replace the original refusal or expose stderr.
+  }
+  return 'unavailable';
 }
 
 function inspectHint(dbName: string): string {
@@ -327,7 +370,8 @@ export function recreateWorkerDatabase(workerId: string | number): string {
     throw new Error(
       `worker 测试库 '${workerName}' 上有 ${inUse} 个活跃连接,拒绝强制重建。\n` +
         `通常意味着同一 worktree 内已有另一条 jest 命令在跑(test:e2e / test:contract / agent:check:full),` +
-        `两条 run 共用测试库会互相 TRUNCATE。请等它跑完或终止后重试;查看来源:\n${inspectHint(workerName)}`,
+        `两条 run 共用测试库会互相 TRUNCATE。请等它跑完或终止后重试;查看来源:\n${inspectHint(workerName)}\n` +
+        `脱敏进程分类（稍后独立采样，非原判定快照）: ${connectionSummary(workerName)}`,
     );
   }
 
@@ -356,7 +400,8 @@ export function dropWorkerDatabase(workerId: string | number): void {
   const inUse = connectionCount(workerName);
   if (inUse !== '0') {
     throw new Error(
-      `worker 测试库 '${workerName}' 仍有活跃连接，拒绝清理。\n${inspectHint(workerName)}`,
+      `worker 测试库 '${workerName}' 仍有活跃连接，拒绝清理。\n${inspectHint(workerName)}\n` +
+        `脱敏进程分类（稍后独立采样，非原判定快照）: ${connectionSummary(workerName)}`,
     );
   }
   // A connection may appear after the check. Ordinary DROP rejects that race;
