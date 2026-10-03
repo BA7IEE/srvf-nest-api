@@ -3,9 +3,13 @@ import { execFileSync } from 'node:child_process';
 
 import { fingerprintContributionPolicyVersion } from '../../src/modules/activities/activity-contribution-policy-definition';
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 import { timeLedgerFixtureTriggerSql } from '../setup/time-ledger-fixture-cleanup';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E1_1_W98 === '1');
 
 const WORKER = 98;
 const dedicatedW98 = process.env.SRVF_E1_1_W98 === '1';
@@ -173,17 +177,13 @@ describe('E1-1 contribution policy physical foundation', () => {
     databaseUrl: process.env.DATABASE_URL,
   };
 
-  beforeAll(() => {
+  beforeAll(async () => {
     if (dedicatedW98) {
       process.env.JEST_WORKER_ID = String(WORKER);
       loadTestEnv();
       assertTestDatabaseUrl(process.env.DATABASE_URL);
-      dropWorkerDatabase(WORKER);
-      execFileSync(
-        'docker',
-        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-        { stdio: 'pipe' },
-      );
+      await scratchLifecycle.drop(WORKER);
+      await scratchLifecycle.create(deriveTestDbName());
     }
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     try {
@@ -197,10 +197,10 @@ describe('E1-1 contribution policy physical foundation', () => {
     fixtureCleanup();
   }, 180_000);
 
-  afterAll(() => {
+  afterAll(async () => {
     try {
       fixtureCleanup();
-      if (dedicatedW98) dropWorkerDatabase(WORKER);
+      if (dedicatedW98) await scratchLifecycle.drop(WORKER);
     } finally {
       restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
       restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
@@ -427,3 +427,5 @@ describe('E1-1 contribution policy physical foundation', () => {
     ).toBe('0');
   });
 });
+
+scratchLifecycle.finish();

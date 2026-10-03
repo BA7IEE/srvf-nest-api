@@ -19,6 +19,7 @@ import {
   assertDroppableTestDbName,
   assertTestDatabaseUrl,
   dropWorkerDatabase,
+  recreateWorkerDatabase,
 } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
@@ -27,7 +28,7 @@ const LATEST_MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy
 const PREVIOUS_MIGRATION_COUNT = 129;
 const FOUNDATION_MIGRATION_COUNT = 130;
 const CURRENT_MIGRATION_COUNT = 136;
-const WORKER = 98;
+const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const prismaRoot = path.resolve(__dirname, '..', '..', 'prisma');
 const schema = path.join(prismaRoot, 'schema.prisma');
 
@@ -281,7 +282,7 @@ describe('E1-1 contribution policy migration', () => {
 
   afterAll(() => {
     try {
-      dropWorkerDatabase(WORKER);
+      recreateWorkerDatabase(WORKER);
     } finally {
       restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
       restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);

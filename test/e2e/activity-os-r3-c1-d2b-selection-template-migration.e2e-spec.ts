@@ -14,10 +14,11 @@ import {
   assertDroppableTestDbName,
   assertTestDatabaseUrl,
   dropWorkerDatabase,
+  recreateWorkerDatabase,
 } from '../setup/test-db';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
-const WORKER = 98;
+const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const MIGRATION = '20260906114906_activity_os_r3_c1_metric_selection_template_v3';
 const CURRENT_MIGRATION_COUNT = 136;
 const database = () => deriveWorkerTestDbName(WORKER);
@@ -191,7 +192,7 @@ describe('C1 D2b migration typed selection and receipts', () => {
     deploy();
     sql(fixtures);
   }, 180000);
-  afterAll(() => dropWorkerDatabase(WORKER));
+  afterAll(() => recreateWorkerDatabase(WORKER));
   beforeEach(() =>
     sql('TRUNCATE "ActivityMetricCommandReceipt"; ' + selection(null, null, null, 0)),
   );
@@ -390,7 +391,7 @@ describe('C1 D2b migration typed selection and receipts', () => {
 });
 
 describe('C1 D2b nonempty 111 to 112 upgrade', () => {
-  afterAll(() => dropWorkerDatabase(WORKER));
+  afterAll(() => recreateWorkerDatabase(WORKER));
   it('keeps every old business field and all eight receipt results byte-identical; seed twice grants no roles', () => {
     recreate();
     const root = path.resolve('prisma');

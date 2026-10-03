@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import { deriveTemplateTestDbName, deriveTestDbName, deriveWorkerTestDbName } from './worktree-db';
+import { assertNamedTestDatabaseScope } from './test-run-scope';
 
 const POSTGRES_CONTAINER = 'u-nest-api-postgres';
 
@@ -193,7 +194,7 @@ export async function assertConnectedTestDatabase(
 // `docker exec` 指到一台远程主机上 —— 那样容器名再对也没用),再向容器内的
 // Postgres 问一次它是谁。结果按进程记忆,不给每条 psql() 加往返。
 let localPostgresVerified = false;
-function assertLocalPostgresServer(): void {
+export function assertLocalPostgresServer(): void {
   if (localPostgresVerified) return;
 
   const dockerHost = process.env.DOCKER_HOST;
@@ -229,12 +230,13 @@ function assertLocalPostgresServer(): void {
   localPostgresVerified = true;
 }
 
-function psql(sql: string): string {
+function psql(sql: string, timeout?: number): string {
   assertLocalPostgresServer();
   return execSync(
     `docker exec ${POSTGRES_CONTAINER} psql -U postgres -d ${MAINTENANCE_DB} -tAc "${sql}"`,
     {
       encoding: 'utf-8',
+      ...(timeout === undefined ? {} : { timeout, stdio: 'pipe' as const }),
     },
   ).trim();
 }
@@ -269,6 +271,101 @@ function connectionCount(dbName: string): string {
   return psql(
     `SELECT count(*) FROM pg_stat_activity WHERE datname='${dbName}' AND pid<>pg_backend_pid()`,
   );
+}
+
+// DROP alone excludes PostgreSQL's own autovacuum workers. Every other kind,
+// including unknown background workers, still blocks; ordinary DROP remains the
+// final race/prepared-transaction guard. One aggregate supplies both verdict and evidence.
+function dropConnectionSnapshot(dbName: string): { blocked: boolean; summary: string } {
+  try {
+    const value = psql(
+      `SELECT COALESCE(sum(n) FILTER (WHERE kind <> 'autovacuum'), 0)::text || '|' ||
+        COALESCE(string_agg(kind || ':' || phase || ':' || n::text, ',' ORDER BY kind, phase), 'none')
+       FROM (
+         SELECT CASE backend_type
+           WHEN 'client backend' THEN 'client'
+           WHEN 'autovacuum worker' THEN 'autovacuum'
+           WHEN 'parallel worker' THEN 'parallel'
+           ELSE 'other' END AS kind,
+           CASE state
+             WHEN 'active' THEN 'active'
+             WHEN 'idle' THEN 'idle'
+             WHEN 'idle in transaction' THEN 'in_transaction'
+             WHEN 'idle in transaction (aborted)' THEN 'aborted'
+             ELSE 'other' END AS phase, count(*) AS n
+         FROM pg_stat_activity
+         WHERE datname='${dbName}' AND pid<>pg_backend_pid()
+         GROUP BY 1, 2
+       ) AS drop_snapshot`,
+      5_000,
+    );
+    if (value.length > 1040) throw new Error('Invalid snapshot');
+    const [count, summary, extra] = value.split('|');
+    if (extra !== undefined || !/^[0-9]{1,10}$/.test(count ?? ''))
+      throw new Error('Invalid snapshot');
+    const rows = summary === 'none' ? [] : (summary ?? '').split(',');
+    if (
+      rows.length > 20 ||
+      rows.some(
+        (row) =>
+          !/^(client|autovacuum|parallel|other):(active|idle|in_transaction|aborted|other):[0-9]{1,10}$/.test(
+            row,
+          ),
+      )
+    )
+      throw new Error('Invalid snapshot');
+    const blockingCount = rows.reduce((total, row) => {
+      const [kind, , amount] = row.split(':');
+      return total + (kind === 'autovacuum' ? 0 : Number(amount));
+    }, 0);
+    if (blockingCount !== Number(count)) throw new Error('Inconsistent snapshot');
+    return { blocked: blockingCount !== 0, summary };
+  } catch {
+    // A failed/malformed observation is never permission to drop or a reason to retry.
+    return { blocked: true, summary: 'unavailable' };
+  }
+}
+
+// Failure-only observation, never a cleanup decision. Emit fixed categories and
+// counts, not query text, identities, application names, addresses or credentials.
+function connectionSummary(dbName: string): string {
+  try {
+    const summary = psql(
+      `SELECT COALESCE(string_agg(kind || ':' || phase || ':' || n::text, ',' ORDER BY kind, phase), 'none')
+       FROM (
+         SELECT CASE backend_type
+           WHEN 'client backend' THEN 'client'
+           WHEN 'autovacuum worker' THEN 'autovacuum'
+           WHEN 'parallel worker' THEN 'parallel'
+           ELSE 'other' END AS kind,
+           CASE state
+             WHEN 'active' THEN 'active'
+             WHEN 'idle' THEN 'idle'
+             WHEN 'idle in transaction' THEN 'in_transaction'
+             WHEN 'idle in transaction (aborted)' THEN 'aborted'
+             ELSE 'other' END AS phase, count(*) AS n
+         FROM pg_stat_activity
+         WHERE datname='${dbName}' AND pid<>pg_backend_pid()
+         GROUP BY 1, 2
+       ) AS classified`,
+      5_000,
+    );
+    if (summary === 'none') return summary;
+    const rows = summary.split(',');
+    if (
+      summary.length <= 1024 &&
+      rows.length <= 20 &&
+      rows.every((row) =>
+        /^(client|autovacuum|parallel|other):(active|idle|in_transaction|aborted|other):[0-9]{1,10}$/.test(
+          row,
+        ),
+      )
+    )
+      return summary;
+  } catch {
+    // Observation failure must not replace the original refusal or expose stderr.
+  }
+  return 'unavailable';
 }
 
 function inspectHint(dbName: string): string {
@@ -307,13 +404,14 @@ export function assertConnectionCapacity(workers: number, connectionLimit = 5): 
   }
 }
 
-// 重建指定 worker 的克隆库:DROP ... WITH (FORCE)(PG13+,免手动 terminate)后按模板克隆。
+// 重建指定 worker 的克隆库:普通 DROP 后按模板克隆，不终止其他连接。
 // 文件级拷贝(单库实测 13-17MB,约 0.2-0.6s),且保证与模板逐字节同构、
 // 天然带上 _prisma_migrations —— worker 内任何再次 migrate deploy 都是 no-op。
 export function recreateWorkerDatabase(workerId: string | number): string {
   const templateName = deriveTemplateTestDbName();
   const workerName = deriveWorkerTestDbName(workerId);
   assertDroppableTestDbName(workerName);
+  assertNamedTestDatabaseScope([templateName, workerName]);
 
   // ⚠️ DROP ... WITH (FORCE) 会先 terminate 目标库的全部连接。若同一 worktree 内
   // 另一条 jest 命令(另一个窗口的 test:e2e / test:contract / agent:check:full)
@@ -325,11 +423,12 @@ export function recreateWorkerDatabase(workerId: string | number): string {
     throw new Error(
       `worker 测试库 '${workerName}' 上有 ${inUse} 个活跃连接,拒绝强制重建。\n` +
         `通常意味着同一 worktree 内已有另一条 jest 命令在跑(test:e2e / test:contract / agent:check:full),` +
-        `两条 run 共用测试库会互相 TRUNCATE。请等它跑完或终止后重试;查看来源:\n${inspectHint(workerName)}`,
+        `两条 run 共用测试库会互相 TRUNCATE。请等它跑完或终止后重试;查看来源:\n${inspectHint(workerName)}\n` +
+        `脱敏进程分类（稍后独立采样，非原判定快照）: ${connectionSummary(workerName)}`,
     );
   }
 
-  psql(`DROP DATABASE IF EXISTS \\"${workerName}\\" WITH (FORCE)`);
+  psql(`DROP DATABASE IF EXISTS \\"${workerName}\\"`);
   try {
     psql(`CREATE DATABASE \\"${workerName}\\" TEMPLATE \\"${templateName}\\"`);
   } catch (err) {
@@ -350,7 +449,17 @@ export function recreateWorkerDatabase(workerId: string | number): string {
 export function dropWorkerDatabase(workerId: string | number): void {
   const workerName = deriveWorkerTestDbName(workerId);
   assertDroppableTestDbName(workerName);
-  psql(`DROP DATABASE IF EXISTS \\"${workerName}\\" WITH (FORCE)`);
+  assertNamedTestDatabaseScope([workerName]);
+  const snapshot = dropConnectionSnapshot(workerName);
+  if (snapshot.blocked) {
+    throw new Error(
+      `worker 测试库 '${workerName}' 仍有活跃连接，拒绝清理。\n${inspectHint(workerName)}\n` +
+        `脱敏进程分类（同一次判定快照）: ${snapshot.summary}`,
+    );
+  }
+  // A connection may appear after the check. Ordinary DROP rejects that race;
+  // FORCE or terminating somebody else's backend must never make cleanup pass.
+  psql(`DROP DATABASE IF EXISTS \\"${workerName}\\"`);
 }
 
 function maskUrl(url: string): string {

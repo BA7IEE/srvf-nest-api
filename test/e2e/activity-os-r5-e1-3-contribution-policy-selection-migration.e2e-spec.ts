@@ -13,8 +13,12 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E1_3_W98 === '1');
 
 const MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
 const WORKER = 98;
@@ -50,12 +54,10 @@ function sql(statement: string): string {
   ).trim();
 }
 
-function recreate(): void {
+async function recreate(): Promise<void> {
   const { worker, database } = target();
-  dropWorkerDatabase(worker);
-  execFileSync('docker', ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', database], {
-    stdio: 'pipe',
-  });
+  await scratchLifecycle.drop(worker);
+  await scratchLifecycle.create(database);
 }
 
 function deploy(schema: string): void {
@@ -251,17 +253,17 @@ describe('E1-3 contribution-policy selection migration', () => {
   // Every case recreates the shared Jest worker database. Restore it even
   // when an earlier migration assertion fails, so unrelated later E2E specs
   // cannot inherit a partial historical replay.
-  afterAll(() => {
+  afterAll(async () => {
     if (USE_DEDICATED_W98) {
       try {
-        dropWorkerDatabase(WORKER);
+        await scratchLifecycle.drop(WORKER);
       } finally {
         restoreEnvironment('JEST_WORKER_ID', previousEnvironment.worker);
         restoreEnvironment('DATABASE_URL', previousEnvironment.databaseUrl);
       }
       return;
     }
-    recreate();
+    await recreate();
     deploy(path.join(root, 'schema.prisma'));
   }, 120000);
 
@@ -270,8 +272,8 @@ describe('E1-3 contribution-policy selection migration', () => {
     else process.env[name] = value;
   }
 
-  it('replays all 136 migrations from empty and exposes the immutable selection database surface', () => {
-    recreate();
+  it('replays all 136 migrations from empty and exposes the immutable selection database surface', async () => {
+    await recreate();
     deploy(path.join(root, 'schema.prisma'));
     const names = readdirSync(path.join(root, 'migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
@@ -305,8 +307,8 @@ describe('E1-3 contribution-policy selection migration', () => {
     ).toBe('3');
   }, 120000);
 
-  it('keeps V4 template receipts legal, admits V5, and rejects a V5 receipt bound to V4', () => {
-    recreate();
+  it('keeps V4 template receipts legal, admits V5, and rejects a V5 receipt bound to V4', async () => {
+    await recreate();
     deploy(path.join(root, 'schema.prisma'));
     seedLegacy();
     const hash = 'a'.repeat(64);
@@ -339,8 +341,8 @@ describe('E1-3 contribution-policy selection migration', () => {
     );
   }, 120000);
 
-  it('preserves old Activity facts across 130 to 131 and enforces append-only current selection facts', () => {
-    recreate();
+  it('preserves old Activity facts across 130 to 131 and enforces append-only current selection facts', async () => {
+    await recreate();
     const temporary = mkdtempSync(path.join(tmpdir(), 'srvf-e13-pre131-'));
     try {
       mkdirSync(path.join(temporary, 'migrations'));
@@ -645,3 +647,5 @@ describe('E1-3 contribution-policy selection migration', () => {
     }
   }, 120000);
 });
+
+scratchLifecycle.finish();

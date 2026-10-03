@@ -14,8 +14,12 @@ import {
   type D13Fixture,
 } from '../helpers/activity-time-policy.fixture';
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D8_1_W98 === '1');
 
 const REQUEST = {
   operationKey: 'd8-1-cutover-e2e',
@@ -35,18 +39,14 @@ describe('D8-1 activity time cutover command', () => {
     storageRoot: process.env.STORAGE_LOCAL_ROOT,
   };
 
-  beforeAll(() => {
+  beforeAll(async () => {
     if (!dedicatedW98) return;
     process.env.JEST_WORKER_ID = '98';
     loadTestEnv();
     process.env.STORAGE_LOCAL_ROOT = './tmp/storage-w98';
     assertTestDatabaseUrl(process.env.DATABASE_URL);
-    dropWorkerDatabase(98);
-    execFileSync(
-      'docker',
-      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-      { stdio: 'pipe' },
-    );
+    await scratchLifecycle.drop(98);
+    await scratchLifecycle.create(deriveTestDbName());
     execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
       env: process.env,
       stdio: 'pipe',
@@ -96,10 +96,10 @@ describe('D8-1 activity time cutover command', () => {
     restoreEnvironment('ACTIVITY_WORKFLOW_READONLY', previousReadonly);
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     if (!dedicatedW98) return;
     try {
-      dropWorkerDatabase(98);
+      await scratchLifecycle.drop(98);
     } finally {
       restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
       restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
@@ -199,3 +199,5 @@ describe('D8-1 activity time cutover command', () => {
     ).rejects.toThrow('activity time cutover facts are immutable');
   });
 });
+
+scratchLifecycle.finish();

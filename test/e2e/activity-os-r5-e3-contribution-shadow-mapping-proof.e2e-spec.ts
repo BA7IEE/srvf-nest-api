@@ -13,8 +13,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { loadTestEnv } from '../setup/load-env';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
-import { deriveTestDbName } from '../setup/worktree-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
+import { deriveTestDbName, deriveWorkerTestDbName } from '../setup/worktree-db';
 import { createTestApp } from '../setup/test-app';
 import { PrismaService } from '../../src/database/prisma.service';
 import { truncateAuditLogsTestOnly } from '../helpers/audit-logs-cleanup';
@@ -57,6 +57,10 @@ import {
 } from '../../src/modules/attendances/contribution-shadow-evidence.write.service';
 
 // Fixed pre-29.12 SQL reference; do not derive it from the candidate migration.
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E3_D2_MAPPING_W98 === '1');
+
 const SOURCE_HASH_REFERENCE_SQL = `CREATE FUNCTION pg_temp.reference_source_hash_fn(v "ContributionShadowLegacySourceAnchor") RETURNS TEXT
 LANGUAGE sql IMMUTABLE AS $$
   SELECT encode(sha256(convert_to(
@@ -1070,18 +1074,15 @@ function fixtureStatement(statement: string): string {
 describe('E3-2 D2 mapping schema construction', () => {
   const previous = { worker: process.env.JEST_WORKER_ID, url: process.env.DATABASE_URL };
   let committedAclFixture = false;
-  beforeAll(() => {
+  beforeAll(async () => {
     if (dedicated) {
       process.env.JEST_WORKER_ID = '98';
       loadTestEnv();
       assertTestDatabaseUrl(process.env.DATABASE_URL);
-      if (deriveTestDbName() !== 'app_test_w98') throw new Error('unexpected mapping proof target');
-      dropWorkerDatabase('98');
-      execFileSync(
-        'docker',
-        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', 'app_test_w98'],
-        { stdio: 'pipe' },
-      );
+      if (deriveTestDbName() !== deriveWorkerTestDbName(98))
+        throw new Error('unexpected mapping proof target');
+      await scratchLifecycle.drop('98');
+      await scratchLifecycle.create(deriveTestDbName());
       execFileSync(
         'pnpm',
         ['exec', 'prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
@@ -1091,10 +1092,10 @@ describe('E3-2 D2 mapping schema construction', () => {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
   }, 120_000);
 
-  afterAll(() => {
+  afterAll(async () => {
     if (!dedicated && !committedAclFixture) return;
     try {
-      dropWorkerDatabase(process.env.JEST_WORKER_ID!);
+      await scratchLifecycle.drop(process.env.JEST_WORKER_ID!);
       if (committedAclFixture) {
         // These three names were asserted absent before this suite created them.
         // This suite's fixture DB has now gone, so no owned object is cascaded
@@ -1126,11 +1127,7 @@ describe('E3-2 D2 mapping schema construction', () => {
         committedAclFixture = false;
       }
       if (!dedicated) {
-        execFileSync(
-          'docker',
-          ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', fixtureDatabase()],
-          { stdio: 'pipe' },
-        );
+        await scratchLifecycle.create(fixtureDatabase());
         execFileSync(
           'pnpm',
           ['exec', 'prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
@@ -4259,13 +4256,10 @@ set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activit
   it('preserves a nonempty source/audit/attendance chain across 134→135', async () => {
     if (!dedicated) return;
     assertTestDatabaseUrl(process.env.DATABASE_URL);
-    if (deriveTestDbName() !== 'app_test_w98') throw new Error('unexpected upgrade target');
-    dropWorkerDatabase('98');
-    execFileSync(
-      'docker',
-      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', 'app_test_w98'],
-      { stdio: 'pipe' },
-    );
+    if (deriveTestDbName() !== deriveWorkerTestDbName(98))
+      throw new Error('unexpected upgrade target');
+    await scratchLifecycle.drop('98');
+    await scratchLifecycle.create(deriveTestDbName());
     const temporary = mkdtempSync(join(tmpdir(), 'srvf-e3-d2-pre135-'));
     try {
       const root = join(process.cwd(), 'prisma');
@@ -5240,3 +5234,5 @@ set-copy-comparison,set-attempt,set-record-0001,set-sheet,ref-member,ref-activit
     }
   }, 120_000);
 });
+
+scratchLifecycle.finish();

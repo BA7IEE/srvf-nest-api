@@ -5,12 +5,11 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { loadTestEnv } from '../setup/load-env';
 import { resetDb } from '../setup/reset-db';
-import {
-  assertConnectedTestDatabase,
-  assertTestDatabaseUrl,
-  dropWorkerDatabase,
-  recreateWorkerDatabase,
-} from '../setup/test-db';
+import { assertConnectedTestDatabase, assertTestDatabaseUrl } from '../setup/test-db';
+
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D2_W98 === '1');
 
 const WORKER = 98;
 const USE_DEDICATED_W98 = process.env.SRVF_D2_W98 === '1';
@@ -54,7 +53,7 @@ describe('D2 participation segment facade', () => {
       loadTestEnv();
       process.env.STORAGE_LOCAL_ROOT = `./tmp/storage-w${WORKER}`;
       assertTestDatabaseUrl(process.env.DATABASE_URL);
-      recreateWorkerDatabase(WORKER);
+      await scratchLifecycle.clone();
     }
     assertTestDatabaseUrl(process.env.DATABASE_URL);
 
@@ -83,7 +82,7 @@ describe('D2 participation segment facade', () => {
     } finally {
       if (USE_DEDICATED_W98) {
         try {
-          dropWorkerDatabase(WORKER);
+          await scratchLifecycle.drop(WORKER);
         } finally {
           restoreEnvironment('JEST_WORKER_ID', originalEnvironment.worker);
           restoreEnvironment('DATABASE_URL', originalEnvironment.databaseUrl);
@@ -486,3 +485,5 @@ describe('D2 participation segment facade', () => {
     ).resolves.toBe(0);
   });
 });
+
+scratchLifecycle.finish();

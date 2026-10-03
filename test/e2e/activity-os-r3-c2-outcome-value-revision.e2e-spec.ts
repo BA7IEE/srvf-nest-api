@@ -6,10 +6,11 @@ import {
   assertTestDatabaseUrl,
   assertDroppableTestDbName,
   dropWorkerDatabase,
+  recreateWorkerDatabase,
 } from '../setup/test-db';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
-const WORKER = 98;
+const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const database = () => deriveWorkerTestDbName(WORKER);
 const hash = 'a'.repeat(64);
 const MIGRATION = '20260907103134_activity_os_r3_c2_outcome_value_revision';
@@ -72,7 +73,7 @@ function evidence(attachment = 'attachment', activity = 'activity') {
 }
 
 describe('C2 D1 nonempty 112 to 113 upgrade', () => {
-  afterAll(() => dropWorkerDatabase(WORKER));
+  afterAll(() => recreateWorkerDatabase(WORKER));
   it('preserves an existing activity byte-for-byte and creates empty outcome tables', () => {
     url();
     dropWorkerDatabase(WORKER);
@@ -174,7 +175,7 @@ describe('C2 D1 outcome revision database constraints', () => {
       INSERT INTO "ActivityMetricSetItem" (id,"setVersionId","metricDefinitionId",key,"sortOrder",required) VALUES ('item','set','definition','result',0,true);
       INSERT INTO attachments (id,"updatedAt",key,"originalName",mime,size,"uploadedBy","ownerType","ownerId",tags) VALUES ('attachment',CURRENT_TIMESTAMP,'c2-test','test','text/plain',1,'actor','activity','activity',ARRAY[]::text[]);`);
   }, 180000);
-  afterAll(() => dropWorkerDatabase(WORKER));
+  afterAll(() => recreateWorkerDatabase(WORKER));
   beforeEach(() => {
     sql(
       'TRUNCATE "ActivityOutcomeFinalizationReceipt", "ActivityOutcomeValueSource", "ActivityOutcomeCommandReceipt", "ActivityMetricValueEvidence", "ActivityMetricValueRevision", "ActivityOutcomeRevision"',

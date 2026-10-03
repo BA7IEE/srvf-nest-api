@@ -9,6 +9,36 @@ export interface TestRunIntent {
   githubActions?: string;
 }
 
+/** Actual scratch targets need a declaration too; this accidental-run guard is not a grant. */
+export function assertNamedTestDatabaseScope(
+  databases: string[],
+  intent: TestRunIntent = {
+    allowedDatabases: process.env.SRVF_TEST_RUN_SCOPE,
+    planOnly: process.env.SRVF_TEST_RUN_PLAN_ONLY,
+    githubActions: process.env.GITHUB_ACTIONS,
+  },
+): void {
+  if (databases.length === 0 || databases.some((name) => !validName(name))) {
+    throw new Error('测试库生命周期目标非法，拒绝执行（不回显输入）。');
+  }
+  if (intent.planOnly === '1') throw new Error('仅预览，未操作测试库。');
+  if (intent.planOnly !== undefined && intent.planOnly !== '0') {
+    throw new Error('SRVF_TEST_RUN_PLAN_ONLY 仅接受 0 或 1；拒绝执行。');
+  }
+  if (intent.allowedDatabases === undefined && intent.githubActions === 'true') return;
+  if (intent.allowedDatabases === undefined) {
+    throw new Error('本地测试库生命周期缺少 SRVF_TEST_RUN_SCOPE；未操作数据库。');
+  }
+  const allowed = intent.allowedDatabases.split(',').map((name) => name.trim());
+  if (allowed.some((name) => !validName(name))) {
+    throw new Error('SRVF_TEST_RUN_SCOPE 不接受空项、通配符或连接串。');
+  }
+  const missing = databases.filter((name) => !allowed.includes(name));
+  if (missing.length) {
+    throw new Error(`测试库生命周期超出已声明范围: ${missing.join(', ')}。未操作数据库。`);
+  }
+}
+
 // Only database identifiers are displayed. Never echo a supplied URL or invalid input.
 const TEST_DB_NAME = /^app_test(?:_[a-z0-9]+)*$/;
 function validName(name: string): boolean {

@@ -9,6 +9,7 @@ import { ActivityContributionRuleConversionService } from '../src/modules/activi
 import { ContributionRuleConversionSourceQuery } from '../src/modules/contribution-rules/contribution-rule-conversion-source.query';
 import { assertConnectedTestDatabase, assertTestDatabaseUrl } from '../test/setup/test-db';
 import { loadTestEnv } from '../test/setup/load-env';
+import { acquireScratchDatabaseLease } from '../test/helpers/scratch-database-lease';
 
 function argument(name: string): string | null {
   const index = process.argv.indexOf(name);
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
   process.env.JEST_WORKER_ID = '98';
   loadTestEnv();
   assertTestDatabaseUrl(process.env.DATABASE_URL);
+  const lease = await acquireScratchDatabaseLease();
   const prisma = new PrismaService();
   try {
     await prisma.$connect();
@@ -88,7 +90,11 @@ async function main(): Promise<void> {
       );
     }
   } finally {
-    await prisma.$disconnect();
+    try {
+      await prisma.$disconnect();
+    } finally {
+      await lease.release();
+    }
   }
 }
 

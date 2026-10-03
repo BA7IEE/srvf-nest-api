@@ -13,10 +13,14 @@ import { memberIdentityData } from '../helpers/member-identity.fixture';
 import { hashLegacySource } from '../../src/modules/attendances/contribution-shadow-evidence.write.service';
 import { loadTestEnv } from '../setup/load-env';
 import { withTimeLedgerFixtureCleanup } from '../setup/time-ledger-fixture-cleanup';
-import { assertTestDatabaseUrl, dropWorkerDatabase } from '../setup/test-db';
-import { deriveTestDbName } from '../setup/worktree-db';
+import { assertTestDatabaseUrl } from '../setup/test-db';
+import { deriveTestDbName, deriveWorkerTestDbName } from '../setup/worktree-db';
 
 // Fixed pre-29.12 SQL reference; do not derive it from the candidate migration.
+import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
+
+const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E3_D2_W98 === '1');
+
 const SOURCE_HASH_REFERENCE_SQL = `CREATE FUNCTION pg_temp.reference_source_hash_fn(v "ContributionShadowLegacySourceAnchor") RETURNS TEXT
 LANGUAGE sql IMMUTABLE AS $$
   SELECT encode(sha256(convert_to(
@@ -77,18 +81,15 @@ function rejected(statement: string, marker: string): void {
 
 describe('E3-2 D2 source proof migration', () => {
   const previous = { worker: process.env.JEST_WORKER_ID, url: process.env.DATABASE_URL };
-  beforeAll(() => {
+  beforeAll(async () => {
     if (USE_DEDICATED_W98) {
       process.env.JEST_WORKER_ID = '98';
       loadTestEnv();
       assertTestDatabaseUrl(process.env.DATABASE_URL);
-      if (deriveTestDbName() !== 'app_test_w98') throw new Error('unexpected isolated target');
-      dropWorkerDatabase('98');
-      execFileSync(
-        'docker',
-        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-        { stdio: 'pipe' },
-      );
+      if (deriveTestDbName() !== deriveWorkerTestDbName(98))
+        throw new Error('unexpected isolated target');
+      await scratchLifecycle.drop('98');
+      await scratchLifecycle.create(deriveTestDbName());
       execFileSync(
         'pnpm',
         ['exec', 'prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
@@ -101,10 +102,10 @@ describe('E3-2 D2 source proof migration', () => {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
   }, 120_000);
 
-  afterAll(() => {
+  afterAll(async () => {
     if (USE_DEDICATED_W98) {
       try {
-        dropWorkerDatabase('98');
+        await scratchLifecycle.drop('98');
       } finally {
         if (previous.worker === undefined) delete process.env.JEST_WORKER_ID;
         else process.env.JEST_WORKER_ID = previous.worker;
@@ -1004,15 +1005,11 @@ describe('E3-2 D2 source proof migration', () => {
     expect(elapsed).toBeLessThan(7000);
   }, 120_000);
 
-  it('preserves existing attendance and audit facts across nonempty 133→134 upgrade', () => {
+  it('preserves existing attendance and audit facts across nonempty 133→134 upgrade', async () => {
     if (!USE_DEDICATED_W98) return;
     assertTestDatabaseUrl(process.env.DATABASE_URL);
-    dropWorkerDatabase('98');
-    execFileSync(
-      'docker',
-      ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-      { stdio: 'pipe' },
-    );
+    await scratchLifecycle.drop('98');
+    await scratchLifecycle.create(deriveTestDbName());
     const temporary = mkdtempSync(join(tmpdir(), 'srvf-e3-d2-pre134-'));
     try {
       const root = join(process.cwd(), 'prisma');
@@ -1318,3 +1315,5 @@ describe('E3-2 D2 source proof migration', () => {
     }
   }, 120_000);
 });
+
+scratchLifecycle.finish();

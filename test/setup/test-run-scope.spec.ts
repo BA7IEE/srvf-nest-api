@@ -3,7 +3,14 @@ import * as fs from 'fs';
 import globalSetup from './global-setup';
 import { loadTestEnv } from './load-env';
 import * as db from './test-db';
-import { assertTestRunScope, describeTestRun } from './test-run-scope';
+import {
+  assertNamedTestDatabaseScope,
+  assertTestRunScope,
+  describeTestRun,
+} from './test-run-scope';
+import './test-db.lifecycle.spec';
+import '../helpers/scratch-database-lease.spec';
+import '../helpers/d7-guard-plan-diagnostic.spec';
 
 jest.mock('child_process', () => ({ execSync: jest.fn() }));
 jest.mock('fs', () => ({ existsSync: jest.fn(() => false), rmSync: jest.fn() }));
@@ -14,6 +21,8 @@ jest.mock('./test-db', () => ({
   assertConnectionCapacity: jest.fn(),
   assertTemplateHasNoConnections: jest.fn(),
   recreateWorkerDatabase: jest.fn(),
+  assertDroppableTestDbName: jest.fn(),
+  assertLocalPostgresServer: jest.fn(),
 }));
 jest.mock('./worktree-db', () => ({
   deriveTemplateTestDbName: () => 'app_test',
@@ -167,5 +176,36 @@ describe('test run scope (no database)', () => {
     expect(describeTestRun(plan)).toContain('模板库: app_test');
     expect(describeTestRun(plan)).toContain('重建 worker 库');
     expect(describeTestRun(plan)).toContain('scratch 库须另行核对');
+  });
+
+  it('checks scratch declarations separately from the standard runner plan', () => {
+    expect(() =>
+      assertNamedTestDatabaseScope(['app_test_w98'], {
+        allowedDatabases: complete,
+      }),
+    ).toThrow('超出已声明范围');
+    expect(() =>
+      assertNamedTestDatabaseScope(['app_test_w98'], {
+        allowedDatabases: complete + ',app_test_w98',
+      }),
+    ).not.toThrow();
+  });
+
+  it.each(
+    [[], ['postgres'], ['app_test_w98', 'private://secret']].map((databases) => ({ databases })),
+  )('rejects invalid lifecycle plans without displaying connection data', ({ databases }) => {
+    expect(() => assertNamedTestDatabaseScope(databases, { githubActions: 'true' })).toThrow(
+      '不回显',
+    );
+  });
+
+  it('never lets a scratch declaration override preview mode', () => {
+    expect(() =>
+      assertNamedTestDatabaseScope(['app_test_w98'], {
+        allowedDatabases: 'app_test_w98',
+        planOnly: '1',
+        githubActions: 'true',
+      }),
+    ).toThrow('仅预览');
   });
 });

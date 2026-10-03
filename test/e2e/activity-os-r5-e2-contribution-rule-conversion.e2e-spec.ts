@@ -9,12 +9,11 @@ import { createTestUser } from '../fixtures/users.fixture';
 import { loadTestEnv } from '../setup/load-env';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
+import { assertConnectedTestDatabase, assertTestDatabaseUrl } from '../setup/test-db';
 import {
-  assertConnectedTestDatabase,
-  assertTestDatabaseUrl,
-  dropWorkerDatabase,
-} from '../setup/test-db';
-import { deriveTestDbName } from '../setup/worktree-db';
+  acquireScratchDatabaseLease,
+  type ScratchLeaseSession,
+} from '../helpers/scratch-database-lease';
 
 // The capability is deliberately restricted to w98; CI workers must use that fixture too.
 const USE_DEDICATED_W98 = true;
@@ -26,18 +25,16 @@ describe('E2 isolated fixture conversion', () => {
   let db: PrismaService;
   let service: ActivityContributionRuleConversionService;
   let actor: CurrentUserPayload;
+  let scratchLease: ScratchLeaseSession | undefined;
 
   beforeAll(async () => {
     if (USE_DEDICATED_W98) {
+      scratchLease = await acquireScratchDatabaseLease();
       process.env.JEST_WORKER_ID = '98';
       loadTestEnv();
       assertTestDatabaseUrl(process.env.DATABASE_URL);
-      dropWorkerDatabase('98');
-      execFileSync(
-        'docker',
-        ['exec', 'u-nest-api-postgres', 'createdb', '-U', 'postgres', deriveTestDbName()],
-        { stdio: 'pipe' },
-      );
+      await scratchLease.dropDatabase();
+      await scratchLease.createDatabase();
     }
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     execFileSync('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
@@ -84,16 +81,17 @@ describe('E2 isolated fixture conversion', () => {
   }, 120000);
 
   afterAll(async () => {
-    if (app) await app.close();
-    if (USE_DEDICATED_W98) {
-      try {
-        dropWorkerDatabase('98');
-      } finally {
+    try {
+      if (app) await app.close();
+      if (scratchLease) await scratchLease.dropDatabase();
+    } finally {
+      if (USE_DEDICATED_W98) {
         if (previous.worker === undefined) delete process.env.JEST_WORKER_ID;
         else process.env.JEST_WORKER_ID = previous.worker;
         if (previous.url === undefined) delete process.env.DATABASE_URL;
         else process.env.DATABASE_URL = previous.url;
       }
+      await scratchLease?.release();
     }
   }, 120000);
 
