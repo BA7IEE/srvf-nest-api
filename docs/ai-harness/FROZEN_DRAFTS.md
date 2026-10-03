@@ -1,5 +1,7 @@
 # FROZEN_DRAFTS — 冻结稿落地台账
 
+> **当前：E3 仓内验收完成，E4 仅计划待审（2026-10-03）**：[#1378](https://github.com/BA7IEE/srvf-nest-api/pull/1378) 已 Squash 合入 main `f19191b43060a5e67ff32ac36cf4c97edd29d5d0`，[同 SHA main CI 37100521877](https://github.com/BA7IEE/srvf-nest-api/actions/runs/37100521877) completed/success，五个 Contract + E2E 分片及聚合通过；覆盖下方“保持 Draft／主干失败”的历史当前状态。E3 的不可变证据、复核窗口及逐项签字已在仓内交付，**未部署、真实业务未验收**；31 类真实映射仍 hold，shadow／Gate 关闭、D8-OPS 未执行。历史 D7 28.812 秒／七秒 P2028 与 w86 原时点根因继续 UNKNOWN，不因本轮绿关闭。按维护者本轮授权仅更正状态并起草 [E4 完整评审及精确计划](../plans/activity-os-r5-e4-contribution-settlement-review-and-plan.md)，验证后创建 docs-only Draft，不实施、不合并、不查库；E4/E5 未实施。完整收口证据见[既有 E3 评审稿 §32](../plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#32-e3-当前状态收口2026-10-03)。原分支／工作树、主仓改动及未提交工具包全部保留；下方为历史记录。
+
 > **#1378 DROP计数修复本地验收完成（2026-10-03；待新SHA CI，保持Draft）**：六路径方案A已实施；最终版quick退出0，441套／9,600单测通过（5既有todo）、三组类型／缓存lint／harness通过；60条定向unit和D4原迁移套件3条通过，原断言、超时、竞态保护保留。取证子进程显式stdio=pipe，防止catch前自动输出stderr。仅DROP前排除autovacuum，其他进程及查询异常仍拒绝；判定与分类为单次聚合，模板／recreate检查不改。不认定w86根因或全CI修复完成；本轮仅提交推送同六路径，工具包不夹带，不Ready／合并、不扩库、不操作生产或启用开关。下方保留历史时点。
 
 > **#1378 DROP计数修复（2026-10-03；已批准六路径，保持Draft）**：110477cd的CI 37092160117已结束失败，分片1／3／5通过，2／4各一项清理拒绝。D4拒绝后的独立快照为autovacuum:active:1，w86稍后快照none，原时点未知。本轮只对DROP前判定排除autovacuum，其余进程均拒绝；判定和固定分类改为同一条聚合查询，失败或不一致fail-closed，普通DROP继续保护后续竞态，不加重试、FORCE或主动终止连接。模板及recreate检查原样保留。定向60条unit通过，原D4隔离回归与quick待验收；验证后按授权更新同一Draft，不Ready／合并、不扩库、不改生产或开关。详见§31.17.3，下方保留历史。

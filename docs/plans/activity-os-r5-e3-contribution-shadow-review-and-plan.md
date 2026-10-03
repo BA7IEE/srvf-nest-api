@@ -3675,3 +3675,17 @@ changelog.d/activity-os-r5-e3-main-isolation-and-guard-diagnostic.md
 原unit断言未删除或放宽；三处专门验证“稍后快照”的调用前置改用仍保留该行为的recreateWorkerDatabase。新增11项证明none与autovacuum-only正例、client／混合／parallel／other拒绝、矛盾及恶意输出拒绝、查询异常不重试，并断言判定只查询一次、普通DROP无FORCE／terminate。既有scope默认入口定向60项通过（0.373秒），两份TS冷lint通过。D4原套件实际四库范围内验证、quick及新SHA完整CI仍待验收；不声称w86已修复或所有清理失败消失。
 
 **最终验收与补充**：原D4 time-bucket migration完整3条通过（35.618秒），包含本轮CI原失败的非空120→121升级，原业务断言与预算不改，136条恢复及worker回收完成。随后实测当前Node execSync函数存在未显式stdio时在抛错前自动输出stderr的分支，证明单纯catch不足；已在相同六路径内把有界取证调用显式设为stdio=pipe，并加强既有options断言，普通DROP／原无timeout调用不变。最终补充后的60条定向unit再次通过（0.409秒）、两份TS冷lint通过。启动于补充之前的一轮quick虽退出0，不冒充最终代码口径；补充后的第二轮quick整体退出0：441套／9,600单测通过、5项既有todo，缓存lint／三组typecheck／harness通过，138项eslint自测及5个已知缺口保留。counts／CODEMAP／readtax／两台账检查和diff通过，原WARN保留。D4回归发生在最后的stderr隔离补充前，不宣称补充后再次运行；其SQL、判定和普通DROP逻辑未再变化，新SHA仍由PR全量CI冷跑验收。精确六路径普通提交推送#1378 Draft，不Ready／合并，不重跑旧SHA、不改生产代码或配置、不扩数据库范围、不关闭历史失败。
+
+## 32. E3 当前状态收口（2026-10-03）
+
+本节是当前记录；§1–31 保留原授权和验收时点，不把历史“Draft／未合并”当今天状态。
+
+- [#1376](https://github.com/BA7IEE/srvf-nest-api/pull/1376) 已交付 D3 复核读面、受控窗口和逐项签字；后续 #1377／[#1378](https://github.com/BA7IEE/srvf-nest-api/pull/1378) 只补测试隔离和脱敏取证／清理计数保护，不扩展 E3 业务行为。
+- #1378 已由维护者批准 Ready／红区／Squash，合入 main `f19191b43060a5e67ff32ac36cf4c97edd29d5d0`（2026-10-03 13:39:26，北京时间）。实际 PR CI 37095139616、trusted 红区审批 37095138484／37099847538 均成功；保留原分支和全部工作树。
+- delivery-flow-pilot main 已普通 `--ff-only` 同步；提交树与候选 `09fbd64bb87e0107d7af4a5782ae0a466527bf38` 完全一致，43 路径逐项匹配批准清单。五份独立工具兼容改动的内容摘要保持不变、未夹带提交；主仓用户改动未处理。
+- [同 SHA main CI 37100521877](https://github.com/BA7IEE/srvf-nest-api/actions/runs/37100521877) completed/success；五个 Contract + E2E 分片和聚合通过。分片2中历史 w86 command-replay migration、分片4 D4 原升级套件、分片5 D7 时间更正及迁移均实际通过。push 的 report-only 红区 job skipped，不冒称通过。
+- **E3 仓内实施及当前 main 验收可登记已完成，真实业务验收仍未完成**：31 类真实映射全部 hold；未部署、未登记真实窗口／签字、shadow／Gate 仍关闭、D8-OPS 未执行，前端未取得新部署验收。不可把隔离夹具当真实差异归零。
+- 历史 D7 准备收据 28.812 秒、主干七秒 P2028 未复现原因，以及 w86 拒绝时点原因继续 UNKNOWN。当前通过不关闭历史根因、不承诺所有未来 CI 无性能／清理失败。
+- 维护者只授权更正 E3 当前状态并起草 [E4 评审与精确计划](activity-os-r5-e4-contribution-settlement-review-and-plan.md)，本轮六文档验证后 Draft 交付。E4/E5 未实施；方案、SQL、查询预算、业务口径和访问面仍须独立审批。
+
+**本次未做**：E4 实施、数据库操作、真实业务转换／映射／窗口／签字、生产部署、shadow／Gate、D8-OPS、E5、Ready／合并及清理分支／工作树。
