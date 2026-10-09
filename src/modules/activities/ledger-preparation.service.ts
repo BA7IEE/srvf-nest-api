@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { BizCode } from '../../common/exceptions/biz-code.constant';
@@ -12,8 +12,13 @@ import {
   decimalToHundredths,
   fromHundredths,
   splitRecognizedIntoDays,
+  splitNativeRecognizedIntoDays,
   type LedgerDaySplitRow,
 } from './ledger-day-allocation';
+import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:§5.12 万人账本准备协议 =====
 //
@@ -186,6 +191,7 @@ export class LedgerPreparationService {
     // 活动 v1.1 cutover gate —— 新结算真相链的判闸依据(合同 §16.2 单轨)。
     private readonly activityWorkflowGate: ActivityWorkflowGate,
     private readonly timeLedger: ParticipationTimeLedgerService,
+    @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
   // =========================================================================
@@ -209,6 +215,8 @@ export class LedgerPreparationService {
       if (batch.statusCode !== 'preparing') {
         throw new BizException(BizCode.LEDGER_PREPARE_BATCH_STATUS_INVALID);
       }
+
+      this.assertContributionWriteAllowed(batch.contributionRegimeCode);
 
       const operationKey = `${LEDGER_PREPARE_JOB_TYPE}:${postingBatchId}`;
       await this.timeLedger.ensureManifest(tx, batch);
@@ -305,6 +313,12 @@ export class LedgerPreparationService {
         if (batch.statusCode !== 'preparing') {
           throw new BizException(BizCode.LEDGER_PREPARE_BATCH_STATUS_INVALID);
         }
+        const native = frozenContributionRegime(batch.contributionRegimeCode) === 'policy_v1';
+        if (native) {
+          if (!this.contributions)
+            throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+          this.contributions.assertNativeWriteAllowed();
+        }
 
         const chunkIndex = chunkIndexOf(item.itemKey);
         const memberIds = await this.readVersionMemberIds(tx, batch.settlementVersionId);
@@ -331,14 +345,27 @@ export class LedgerPreparationService {
 
         // ===== §5.12 ③ 按北京日拆 day rows =====
         const splitRows: PreparedDayRow[] = [];
+        const contributionDays = native
+          ? await this.contributions?.ledgerDaysInTx(
+              tx,
+              batch.settlementVersionId,
+              revisions.map((row) => row.participationIdentityId),
+            )
+          : undefined;
         for (const revision of revisions) {
-          const outcome = splitRecognizedIntoDays({
+          const input = {
             spans: spansByIdentity.get(revision.participationIdentityId) ?? [],
             recognizedServiceHours: Number(revision.recognizedServiceHours.toString()),
             recognizedContributionPoints: Number(revision.recognizedContributionPoints.toString()),
             // §3.21 `stableOrderKey`:场次 + 身份,确定性且不依赖 id 生成顺序。
             stableOrderKey: `${revision.identity.sessionId}:${revision.participationIdentityId}`,
-          });
+          };
+          const outcome = native
+            ? splitNativeRecognizedIntoDays({
+                ...input,
+                contributionDays: contributionDays?.get(revision.participationIdentityId) ?? [],
+              })
+            : splitRecognizedIntoDays(input);
           // 🔴 有认定值却一天都归不上 ⇒ 拒绝。**不猜日期**(见 20078 的注释)。
           if (outcome.kind === 'no_service_day') {
             throw new BizException(BizCode.LEDGER_PREPARE_DAY_SPLIT_UNRESOLVED);
@@ -436,6 +463,7 @@ export class LedgerPreparationService {
           baselineJsonHash: batch.baselineJsonHash,
         };
       }
+      const native = this.assertContributionWriteAllowed(batch.contributionRegimeCode);
 
       // 🔴 §5.12 ⑧「数量一致」:准备到的队员数必须等于批次声明的人口数。
       //    不一致时**不进 ready**,也**不留在 preparing**(那等于一个永远可能
@@ -472,6 +500,8 @@ export class LedgerPreparationService {
 
       const baseline = readBaselineFromPayload(job.payload);
       await this.timeLedger.assertComplete(tx, batch);
+      if (native)
+        await this.contributions!.assertVersionInTx(tx, batch.settlementVersionId, batch.id);
       const baselineJsonHash = ledgerBaselineDigest(baseline);
       const now = new Date();
 
@@ -505,6 +535,14 @@ export class LedgerPreparationService {
 
   // ===== 读写细节 ==========================================================
 
+  private assertContributionWriteAllowed(value: string | undefined): boolean {
+    if (frozenContributionRegime(value) === 'legacy') return false;
+    if (!this.contributions)
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+    this.contributions.assertNativeWriteAllowed();
+    return true;
+  }
+
   private async lockBatch(
     tx: PrismaTx,
     postingBatchId: string,
@@ -518,6 +556,7 @@ export class LedgerPreparationService {
     preparedCount: number;
     totalCount: number;
     baselineJsonHash: string | null;
+    contributionRegimeCode?: string;
   }> {
     const rows = await tx.$queryRaw<
       Array<{
@@ -530,13 +569,15 @@ export class LedgerPreparationService {
         preparedCount: number;
         totalCount: number;
         baselineJsonHash: string | null;
+        contributionRegimeCode?: string;
       }>
     >`
       SELECT b.id, b."statusCode", b."settlementVersionId", b."settlementRunId",
              r."activityId", b."requestHash", b."preparedCount", b."totalCount",
-             b."baselineJsonHash"
+             b."baselineJsonHash", v."contributionRegimeCode"
       FROM "LedgerPostingBatch" b
       JOIN "AttendanceSettlementRun" r ON r.id = b."settlementRunId"
+      JOIN "AttendanceSettlementVersion" v ON v.id = b."settlementVersionId" AND v."settlementRunId" = r.id
       WHERE b.id = ${postingBatchId}
       FOR UPDATE OF b
     `;

@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { ActivityContributionSettlementQueryService } from './activity-contribution-settlement-query.service';
+import {
+  presentContributionProof,
+  type ContributionProofSummary,
+} from './activity-contribution-settlement-presenter';
 import { Prisma } from '@prisma/client';
 import { toMemberLabelFields } from '../../common/identity/member-label.util';
 
@@ -148,6 +153,7 @@ export interface SettlementHttpVersionPointer {
 }
 
 export interface SettlementHttpWorkbenchResult {
+  contributionProof?: ContributionProofSummary;
   activityId: string;
   run: {
     id: string;
@@ -209,6 +215,7 @@ export interface SettlementHttpItemsResult {
 }
 
 export interface SettlementHttpVersionDetailResult {
+  contributionProof?: ContributionProofSummary;
   version: SettlementHttpVersionPointer & {
     contentHash: string;
     evidenceRevision: number;
@@ -311,6 +318,7 @@ export class ActivitySettlementHttpService {
     private readonly submitter: SettlementSubmitService,
     private readonly reviews: SettlementReviewService,
     private readonly closure: ActivityClosureService,
+    @Optional() private readonly contributions?: ActivityContributionSettlementQueryService,
   ) {}
 
   async generate(
@@ -430,6 +438,8 @@ export class ActivitySettlementHttpService {
               populationRevision: true,
               workflowRevision: true,
               submittedAt: true,
+              contributionRegimeCode: true,
+              contentHash: true,
             },
           });
     const versionAt = (version: number | null | undefined) =>
@@ -500,6 +510,15 @@ export class ActivitySettlementHttpService {
       }
     }
 
+    const contributionProof =
+      draft?.contributionRegimeCode === 'policy_v1'
+        ? this.contributions
+          ? await this.contributions.readSummaryInTx(this.prisma, draft.id, {
+              draftContentHash: draft.contentHash,
+            })
+          : presentContributionProof(null, [])
+        : undefined;
+    if (contributionProof?.pending) gaps.push({ gapCode: 'contribution_pending', count: 1 });
     return {
       activityId,
       run: activity.settlementRun,
@@ -509,6 +528,7 @@ export class ActivitySettlementHttpService {
       posted: posted === null ? null : this.toVersionPointer(posted),
       closure,
       gaps,
+      ...(contributionProof ? { contributionProof } : {}),
     };
   }
 
@@ -652,6 +672,7 @@ export class ActivitySettlementHttpService {
         populationRevision: true,
         workflowRevision: true,
         contentHash: true,
+        contributionRegimeCode: true,
         personCount: true,
         sessionParticipationCount: true,
         serviceSegmentCount: true,
@@ -711,6 +732,19 @@ export class ActivitySettlementHttpService {
     ]);
 
     return {
+      ...(version.contributionRegimeCode === 'policy_v1'
+        ? {
+            contributionProof: this.contributions
+              ? await this.contributions.readSummaryInTx(
+                  this.prisma,
+                  version.id,
+                  version.statusCode === 'draft'
+                    ? { draftContentHash: version.contentHash }
+                    : undefined,
+                )
+              : presentContributionProof(null, []),
+          }
+        : {}),
       version: {
         ...this.toVersionPointer(version),
         contentHash: version.contentHash,

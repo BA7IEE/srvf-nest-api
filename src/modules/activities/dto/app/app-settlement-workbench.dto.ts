@@ -4,6 +4,7 @@ import { IsIn, IsInt, IsNumber, IsString, Max, MaxLength, Min, MinLength } from 
 import { OmittableOnly } from '../../../../common/decorators/omittable-only.decorator';
 import { PaginationQueryDto } from '../../../../common/dto/pagination.dto';
 import { AppManagedActivityParamsDto } from './app-managed-activity.dto';
+import { AppContributionProofDto } from './app-activity-time-settlement.dto';
 
 const APP_SETTLEMENT_RESULT_CODES = [
   'present',
@@ -184,6 +185,11 @@ export class AppSettlementClosureSummaryDto {
 }
 
 export class AppSettlementWorkbenchResponseDto {
+  @ApiPropertyOptional({
+    description: 'native草稿贡献准备状态；历史legacy省略',
+    type: () => AppContributionProofDto,
+  })
+  contributionProof?: AppContributionProofDto;
   @ApiProperty()
   activityId!: string;
 
@@ -365,6 +371,11 @@ export class AppSettlementSealRevisionDto extends AppSettlementSealSummaryDto {
 }
 
 export class AppSettlementVersionDetailResponseDto {
+  @ApiPropertyOptional({
+    description: '指定native版本的冻结贡献证明；历史legacy省略',
+    type: () => AppContributionProofDto,
+  })
+  contributionProof?: AppContributionProofDto;
   @ApiProperty({ type: AppSettlementVersionDetailHeaderDto })
   version!: AppSettlementVersionDetailHeaderDto;
 

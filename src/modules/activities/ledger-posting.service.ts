@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
 import { ParticipationTimeLedgerService } from './participation-time-ledger.service';
 import {
   ParticipationTimeCorrectionService,
@@ -179,6 +183,7 @@ export class LedgerPostingService {
     private readonly timeLedger: ParticipationTimeLedgerService,
     private readonly timeCorrection: ParticipationTimeCorrectionService,
     private readonly timeLedgerAccess: ParticipationTimeLedgerAccessService,
+    @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
   async commitBatch(
@@ -281,6 +286,10 @@ export class LedgerPostingService {
       const batch = await this.lockBatch(tx, input.postingBatchId);
       const correctionFact = await this.timeCorrection.classifyBatch(tx, batch.id);
       const correction = correctionFact.required;
+      if (correctionFact.nativeUnchanged) {
+        if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
+        await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
+      }
       if (correction) {
         if (options.conversion) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_SOURCE_INVALID);
         await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
@@ -312,6 +321,13 @@ export class LedgerPostingService {
       // 幂等:批次已生效 ⇒ 原样返回上一次的结论(不是错误,也不再写第二遍)。
       if (batch.statusCode === 'committed') {
         return await this.replayResult(tx, activityId, run, version, batch);
+      }
+
+      const native = frozenContributionRegime(version.contributionRegimeCode) === 'policy_v1';
+      if (native) {
+        if (options.conversion || !this.contributions)
+          throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+        this.contributions.assertNativeWriteAllowed();
       }
 
       // ===== 状态闸(三条各判各的)=====
@@ -368,6 +384,8 @@ export class LedgerPostingService {
       this.assertDailyCapRespected(deltas, current);
 
       // ===== ⑩ 原子切换:以下全部在同一事务内 =====
+      if (correctionFact.nativeUnchanged)
+        await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
       if (correction) {
         await this.timeLedgerAccess.authorizeCorrection(tx, currentUser.id);
         // The exact fresh-V3 receipt anchor was validated before the member/day
@@ -389,6 +407,8 @@ export class LedgerPostingService {
         );
         await this.timeLedger.assertComplete(tx, batch);
       }
+      // Native evidence is independent of the D7 receipt shortcut: check under the existing member/day locks.
+      if (native) await this.contributions!.assertVersionInTx(tx, version.id, batch.id);
       const now = new Date();
       await this.advanceDayStates(tx, batch.id, deltas);
       const entryCount = deltas.reduce((sum, row) => sum + row.entryCount, 0);
@@ -526,9 +546,11 @@ export class LedgerPostingService {
   private async lockVersion(
     tx: PrismaTx,
     settlementRunId: string,
-  ): Promise<{ id: string; version: number; statusCode: string }> {
-    const rows = await tx.$queryRaw<Array<{ id: string; version: number; statusCode: string }>>`
-      SELECT v.id, v.version, v."statusCode"
+  ): Promise<{ id: string; version: number; statusCode: string; contributionRegimeCode?: string }> {
+    const rows = await tx.$queryRaw<
+      Array<{ id: string; version: number; statusCode: string; contributionRegimeCode?: string }>
+    >`
+      SELECT v.id, v.version, v."statusCode", v."contributionRegimeCode"
       FROM "AttendanceSettlementVersion" v
       JOIN "AttendanceSettlementRun" r
         ON r.id = v."settlementRunId" AND r."currentSubmittedVersion" = v.version

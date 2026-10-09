@@ -27,7 +27,7 @@ const MIGRATION = '20260922194000_activity_os_r5_e1_contribution_policy_foundati
 const LATEST_MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
 const PREVIOUS_MIGRATION_COUNT = 129;
 const FOUNDATION_MIGRATION_COUNT = 130;
-const CURRENT_MIGRATION_COUNT = 136;
+const CURRENT_MIGRATION_COUNT = 137;
 const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const prismaRoot = path.resolve(__dirname, '..', '..', 'prisma');
 const schema = path.join(prismaRoot, 'schema.prisma');
@@ -179,6 +179,7 @@ async function seedExistingFacts(): Promise<void> {
       data: { id: 'e11-run', activityId: activity.id, statusCode: 'posted' },
     });
     const version = await db.attendanceSettlementVersion.create({
+      select: { id: true },
       data: {
         id: 'e11-settlement-version',
         settlementRunId: run.id,

@@ -1,5 +1,23 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
+## E4 负责人工作台贡献证明（本地实施候选，未提交、未合并、未部署）
+
+三个既有Human App managed GET增加可选 `contributionProof`，不新增路由或写入参数：
+
+- `/api/app/v1/my/managed-activities/{activityId}/time-settlement`：沿用 `activity.time-settlement.read`、当前成员及活动责任／组织范围复核。
+- `/api/app/v1/my/managed-activities/{activityId}/settlement`：沿用 `activity.settlement-generate.record` 及既有负责人资格。
+- `/api/app/v1/my/managed-activities/{activityId}/settlement/versions/{versionId}`：同上，读取指定不可变版本自己的证明，不借当前版本覆盖历史。
+
+字段与调用签名以本分支生成的 OpenAPI/App client 为准。legacy省略证明字段；native
+`pending=true` 或空总分表示未准备／来源陈旧，不得默认为零或在客户端调用旧规则兜底。
+明确零分也必须保留政策版本及解释证据。贡献积分和志愿服务时长独立展示，不能相互换算。
+最多100项 `evaluations` 是解释预览；`hasMore=true` 时不可把预览当全量或自行求和替代根总分。
+证明／摘要不是操作许可，后端仍在每次写入和锁后复核权限，客户端不得自动准备、送审或提交。
+
+本轮真实小链与连续更正通过，首次2,000身份满额prepare仍失败。E4未验收、未交付，
+默认off且fixture仅测试环境可写；不表示前端页面、部署、真实业务验收、Gate或D8-OPS完成。
+下方既有阶段说明保留其历史时点。
+
 ## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）
 
 Human App managed 面新增三项：

@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { ActivityContributionSettlementQueryService } from './activity-contribution-settlement-query.service';
+import { presentContributionProof } from './activity-contribution-settlement-presenter';
 import { Prisma, type ParticipantTimeAllocationRevision } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -40,6 +42,7 @@ export interface TimeSettlementDraftContext {
   populationRevision: number | null;
   workflowRevision: number | null;
   draftContentHash: string | null;
+  contributionRegimeCode?: string;
   sealCurrent: boolean;
 }
 
@@ -206,6 +209,7 @@ export class ActivityTimeSettlementQueryService {
     private readonly prisma: PrismaService,
     private readonly access: ActivityTimeSettlementAccessService,
     private readonly segments: ParticipationSegmentFacade,
+    @Optional() private readonly contributions?: ActivityContributionSettlementQueryService,
   ) {}
 
   /** Shared read primitive. Writers must acquire Activity -> Run locks before using the proof. */
@@ -216,7 +220,7 @@ export class ActivityTimeSettlementQueryService {
     const rows = await tx.$queryRaw<TimeSettlementDraftContext[]>`
       SELECT r.id AS "runId", r."statusCode" AS "runStatusCode", r."currentDraftVersion", r."currentSubmittedVersion",
         d.id AS "draftId", d.version AS "draftVersion", d."evidenceSealId", d."evidenceRevision",
-        d."populationRevision", d."workflowRevision", d."contentHash" AS "draftContentHash",
+        d."populationRevision", d."workflowRevision", d."contentHash" AS "draftContentHash", d."contributionRegimeCode",
         coalesce(s."statusCode" = 'active' AND s."activityId" = a.id
           AND s."evidenceRevision" = d."evidenceRevision" AND s."populationRevision" = d."populationRevision"
           AND s."workflowRevision" = d."workflowRevision" AND s."workflowRevision" = a."workflowRevision"
@@ -446,9 +450,11 @@ export class ActivityTimeSettlementQueryService {
         orderBy: { revision: 'desc' },
       });
       const blockers: { code: string; count: number }[] = [];
+      let contributionSourceSetHash: string | undefined;
       try {
         const proof = requireTimeSettlementDraft(activityId, context);
         const sourceSet = await this.readSourceSetInTx(tx, proof);
+        contributionSourceSetHash = sourceSet.sourceSetHash;
         blockers.push(...timeSettlementReadinessBlockers(sourceSet));
         if (blockers.length === 0) await this.evaluateInTx(tx, sourceSet);
       } catch (error) {
@@ -466,6 +472,16 @@ export class ActivityTimeSettlementQueryService {
           });
         else throw error;
       }
+      const contributionProof =
+        context?.contributionRegimeCode === 'policy_v1'
+          ? context.draftId && context.draftContentHash && this.contributions
+            ? await this.contributions.readSummaryInTx(tx, context.draftId, {
+                draftContentHash: context.draftContentHash,
+                sourceSetHash: contributionSourceSetHash,
+              })
+            : presentContributionProof(null, [])
+          : undefined;
+      if (contributionProof?.pending) blockers.push({ code: 'contribution_pending', count: 1 });
       return {
         activityId,
         run: context
@@ -490,6 +506,7 @@ export class ActivityTimeSettlementQueryService {
         latestRevision: latest ? presentTimeSettlementRevision(latest) : null,
         ready: blockers.length === 0,
         blockers,
+        ...(contributionProof ? { contributionProof } : {}),
       };
     });
   }

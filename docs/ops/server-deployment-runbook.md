@@ -92,11 +92,14 @@
 | `ACTIVITY_V11_WORKFLOW_ENABLED` | ✅ | ✅ | `:517` | 同上,首次上线填 `false`(切换闸,见 `docs/ops/activity-batch-worker-runbook.md`) |
 | `ACTIVITY_OS_CONTROL_PLANE_MODE` | ✅ | ✅ | `src/config/app.config.ts` 的 `parseActivityControlPlaneMode` | 严格 `off` / `shadow` / `active`，首次填 `off`；`active` 且 v1.1 未开时拒启 |
 | `ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE` | — | — | `src/config/app.config.ts` 的 `parseContributionShadowMode` | E3 独立开关，未设置默认 `off`；部署值保持 `off`，不得继承 B6 的 `shadow`；启用另审 |
+| `ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE` | — | — | `src/config/app.config.ts` 的 `parseContributionSettlementMode` | E4 本地未交付候选，缺省 `off`、部署保持 `off`；仅 `test` 可用 `fixture`，smoke／production 使用 fixture 拒启，无 active；正式启用另审 |
 | `INSURANCE_ENFORCEMENT_ENABLED` | — | ✅ | `:326` | 第二阶段 §1.5 |
 | `STORAGE_CONSISTENCY_MODE` | — | ✅ | `:542` | 第二阶段 §1.5 |
 
 另需 `JWT_SECRET`(`openssl rand -base64 48`)—— 它不在上表(不是启动期 fail-fast 项),
 但换掉会让所有已签发 token 失效。
+
+E4 行登记的是独立默认关闭的贡献结算配置，**不是新增必填项或第一阶段真机实测结果**。当前 E4 未验收、未合并、未部署；不要将隔离测试的 `fixture` 配置复制到服务器，不为测试模式将真实服务改成 `APP_ENV=test`。读取原生证明不等于允许生成、送审或入账；生产启用、E5 切换和 D8-OPS 仍分别授权，详见[贡献结算边界说明](activity-contribution-settlement.md)。本次未修改服务器配置、镜像或开关。
 
 ⚠️ 三个 `ACTIVITY_*` 开关在 2026-07-24 / 08-18 / 08-19 就已是必填,**早于本文 08-20 的实测**
 ⇒ 那次 PASS 时它们必然已被赋值,只是**本文原版没记下来**。重建服务器前先去

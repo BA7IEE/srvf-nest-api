@@ -1,5 +1,21 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
+## E4 原生贡献证明（本地实施候选，未提交、未合并、未部署）
+
+既有 `GET /api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail`
+增加可选的 `contributionProof`，仍使用 `attendance.read.sheet` 并保留服务端当前资格复核；
+不新增路由、权限或人工改分入口。字段与类型以本分支生成的 OpenAPI/Admin client 为准，
+不从较新版本借证明来展示所请求的历史版本。
+
+legacy 版本省略整个证明字段，历史小时和贡献结果不重新解释。native 的 `pending=true`
+表示贡献未准备或来源已陈旧，空总分不能显示为零；显式零分政策须有完整证明，才可展示为0.00。
+`evaluations` 仅为最多100项的解释预览，`hasMore=true` 时不得把预览求和当完整总分；
+贡献和志愿服务时长分别显示，培训可以有贡献但志愿小时为零。来源大JSON、完整政策配置和内部时间版本锚不返回。
+
+本轮小链及连续更正已验证，但首次2,000身份满额prepare失败，E4尚未验收或交付。
+fixture仅测试环境可写，默认off；生产NO-GO、Gate关闭、D8-OPS未执行、前端未发布及未回执均不变。
+不能根据候选生成物启用新制度或登记真实映射。
+
 ## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）
 
 Admin 新增 `GET/PATCH /api/admin/v1/activities/{id}/contribution-policy-selection`。GET 使用
@@ -1005,13 +1021,13 @@ PR 5 交付时这里写着一条如实说的限制:**旧的 `POST` / `DELETE /ro
 这是 System 证据读面，不是贡献结算写工作台。五个 GET 统一要求当前 ACTIVE Human 的显式 GLOBAL
 `contribution-shadow.read.evidence`；十五个内建角色零默认、SUPER_ADMIN 不直通，SP／delegation 禁止。
 
-| 页面任务 | System 路径（根 `/api/system/v1/contribution-shadow`） |
-| --- | --- |
-| 查窗口及正式登记状态 | `GET /windows` |
-| 看原始／净缺口汇总 | `GET /windows/:windowId/summary` |
-| 查候选与异常原因 | `GET /windows/:windowId/candidates` |
-| 查看单候选及当前摘要锚点 | `GET /windows/:windowId/candidates/:auditLogId` |
-| 查看同窗口尝试的比较行 | `GET /windows/:windowId/attempts/:attemptId/comparisons` |
+| 页面任务                 | System 路径（根 `/api/system/v1/contribution-shadow`）   |
+| ------------------------ | -------------------------------------------------------- |
+| 查窗口及正式登记状态     | `GET /windows`                                           |
+| 看原始／净缺口汇总       | `GET /windows/:windowId/summary`                         |
+| 查候选与异常原因         | `GET /windows/:windowId/candidates`                      |
+| 查看单候选及当前摘要锚点 | `GET /windows/:windowId/candidates/:auditLogId`          |
+| 查看同窗口尝试的比较行   | `GET /windows/:windowId/attempts/:attemptId/comparisons` |
 
 分页 `page/pageSize`，最大100；沿全局响应包装、40100／40300／40400／40000。内部锚点及摘要用于关联，
 不是姓名／手机号；十进制分值保持字符串。禁止展示或索取原始 audit context、政策正文、candidateEvidence。

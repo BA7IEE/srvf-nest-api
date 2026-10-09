@@ -94,10 +94,24 @@ export interface AnchorExemption {
   model: string;
   relation: string;
   reason: string;
+  /** 新的具名例外只能覆盖指定目标与缺失锚;既有四条历史例外保持原裁决。 */
+  target?: string;
+  missingAnchors?: readonly string[];
 }
 
+export const E4_SELECTION_SCOPE_EXEMPTION: AnchorExemption = {
+  model: 'ParticipantContributionEvaluation',
+  relation: 'selectionItem',
+  target: 'ActivityContributionPolicySelectionItem',
+  missingAnchors: ['sessionId'],
+  reason:
+    'E4评审稿§12.8及E1 activity层合同:活动级item.sessionId为NULL,评价场次属于真实identity;' +
+    '同活动复合FK保留,第137条e4_source_rows按冻结revision/实际场次岗位解析,' +
+    'e4_assert_complete逐集合复算selectionItemId;仅sessionId的语义差异,不豁免activityId。',
+};
+
 /**
- * 刻意**不**闭合的关系。全部四条同一个根因,都来自第 78 migration
+ * 刻意**不**闭合的关系。原CapacityReservation四条同一个根因,都来自第 78 migration
  * (`20260807154000_activity_v11_batch4_capacity_reservation_member_activity_unique`)
  * 的拍板:`CapacityReservation.memberId / activityId` **只对 active 且
  * activity_person 的行必填**,session / position reservation 保持可空、零回填,
@@ -139,6 +153,7 @@ export const ANCHOR_CLOSURE_EXEMPTIONS: readonly AnchorExemption[] = [
     relation: 'positionReservation',
     reason: '同上:position reservation 两锚点恒为 NULL,闭合会让该写路径恒 23503。',
   },
+  E4_SELECTION_SCOPE_EXEMPTION,
 ];
 
 // ⚠️ 本文件从 `src/modules/activities/` 搬进 `scripts/` 时,这里的层级从三级变一级。
@@ -293,9 +308,27 @@ export function findAnchorViolations(models: Map<string, PrismaModel>): AnchorVi
 
 const exemptionKey = (model: string, relation: string) => `${model}.${relation}`;
 
-export function isExempt(model: string, relation: string): boolean {
+function exemptionMatchesViolation(
+  exemption: AnchorExemption,
+  violation: AnchorViolation,
+): boolean {
+  return (
+    exemptionKey(exemption.model, exemption.relation) ===
+      exemptionKey(violation.model, violation.relation) &&
+    (exemption.target === undefined || exemption.target === violation.target) &&
+    (exemption.missingAnchors === undefined ||
+      (exemption.missingAnchors.length === violation.missing.length &&
+        exemption.missingAnchors.every((anchor) => violation.missing.includes(anchor))))
+  );
+}
+
+export function isExempt(model: string, relation: string, violation?: AnchorViolation): boolean {
   return ANCHOR_CLOSURE_EXEMPTIONS.some(
-    (item) => exemptionKey(item.model, item.relation) === exemptionKey(model, relation),
+    (item) =>
+      exemptionKey(item.model, item.relation) === exemptionKey(model, relation) &&
+      (violation === undefined
+        ? item.target === undefined && item.missingAnchors === undefined
+        : exemptionMatchesViolation(item, violation)),
   );
 }
 
@@ -575,7 +608,7 @@ export function analyzeAnchorClosure(
     models,
     holders,
     rawViolations,
-    violations: rawViolations.filter((v) => !isExempt(v.model, v.relation)),
+    violations: rawViolations.filter((v) => !isExempt(v.model, v.relation, v)),
     inspectedRelations: holders
       .flatMap((model) => model.relations)
       .filter((relation) => !relation.list && relation.fields.length > 0).length,
@@ -602,10 +635,7 @@ export function staleExemptions(
   return exemptions
     .filter(
       (exemption) =>
-        !report.rawViolations.some(
-          (violation) =>
-            violation.model === exemption.model && violation.relation === exemption.relation,
-        ),
+        !report.rawViolations.some((violation) => exemptionMatchesViolation(exemption, violation)),
     )
     .map((item) => `${item.model}.${item.relation}`);
 }
@@ -688,6 +718,113 @@ export function futureTableControl(schemaText: string = readSchemaText()): Ancho
   );
 }
 
+const E4_SELECTION_RELATION =
+  'selectionItem ActivityContributionPolicySelectionItem @relation(fields: [selectionItemId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "e4_evaluation_selection_fk")';
+const E4_IDENTITY_RELATION =
+  'participationIdentity ActivityParticipationIdentity @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "e4_evaluation_identity_fk")';
+
+/** 正例:只有活动级item的session语义差异在例外中,identity/同活动FK/改号锁仍完整。 */
+export function e4SelectionScopeIsNarrow(schemaText: string = readSchemaText()): boolean {
+  const normalized = normaliseSchema(schemaText);
+  const report = analyzeAnchorClosure(schemaText);
+  const actual = report.rawViolations.find((violation) =>
+    exemptionMatchesViolation(E4_SELECTION_SCOPE_EXEMPTION, violation),
+  );
+  return (
+    normalized.includes(E4_SELECTION_RELATION) &&
+    normalized.includes(E4_IDENTITY_RELATION) &&
+    /model ActivityContributionPolicySelectionItem \{[^}]*\bsessionId String\?/u.test(normalized) &&
+    actual !== undefined &&
+    isExempt(actual.model, actual.relation, actual) &&
+    !isExempt(actual.model, actual.relation) &&
+    report.violations.length === 0 &&
+    report.renumberingLeaks.length === 0
+  );
+}
+
+/** 变异只构造在受保护裁判中,spec不得自行替换关系或筛掉违规。 */
+export function e4SelectionMutationControl(
+  mutation: 'single-id' | 'target' | 'model' | 'relation' | 'identity',
+  schemaText: string = readSchemaText(),
+): { changed: boolean; violations: AnchorViolation[] } {
+  const normalized = normaliseSchema(schemaText);
+  let mutated: string;
+  switch (mutation) {
+    case 'single-id':
+      mutated = normalized.replace(
+        E4_SELECTION_RELATION,
+        E4_SELECTION_RELATION.replace(
+          'fields: [selectionItemId, activityId], references: [id, activityId]',
+          'fields: [selectionItemId], references: [id]',
+        ),
+      );
+      break;
+    case 'target':
+      mutated = normalized.replace(
+        E4_SELECTION_RELATION,
+        E4_SELECTION_RELATION.replace(
+          'ActivityContributionPolicySelectionItem',
+          'ActivitySessionPosition',
+        ),
+      );
+      break;
+    case 'model':
+      mutated = normalized.replace(
+        'model ParticipantContributionEvaluation {',
+        'model E4UnapprovedEvaluation {',
+      );
+      break;
+    case 'relation':
+      mutated = normalized.replace(
+        E4_SELECTION_RELATION,
+        E4_SELECTION_RELATION.replace('selectionItem ', 'unapprovedSelection '),
+      );
+      break;
+    case 'identity':
+      mutated = normalized.replace(
+        E4_IDENTITY_RELATION,
+        E4_IDENTITY_RELATION.replace(
+          'fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId]',
+          'fields: [participationIdentityId], references: [id]',
+        ),
+      );
+      break;
+  }
+  const relation =
+    mutation === 'identity'
+      ? 'participationIdentity'
+      : mutation === 'relation'
+        ? 'unapprovedSelection'
+        : 'selectionItem';
+  const model =
+    mutation === 'model' ? 'E4UnapprovedEvaluation' : 'ParticipantContributionEvaluation';
+  return {
+    changed: mutated !== normalized,
+    violations: analyzeAnchorClosure(mutated).violations.filter(
+      (violation) => violation.model === model && violation.relation === relation,
+    ),
+  };
+}
+
+/** 关系真正补齐后,旧的session例外必须过期,不能继续成为无效白名单。 */
+export function e4SelectionExemptionExpiryControl(schemaText: string = readSchemaText()): {
+  changed: boolean;
+  stale: string[];
+} {
+  const normalized = normaliseSchema(schemaText);
+  const mutated = normalized.replace(
+    E4_SELECTION_RELATION,
+    E4_SELECTION_RELATION.replace(
+      'fields: [selectionItemId, activityId], references: [id, activityId]',
+      'fields: [selectionItemId, activityId, sessionId], references: [id, activityId, sessionId]',
+    ),
+  );
+  return {
+    changed: normalized !== mutated,
+    stale: staleExemptions(analyzeAnchorClosure(mutated)),
+  };
+}
+
 // ============================================================================
 // 规则 ② 的变异对拍:四个维度,各自一条
 //
@@ -720,7 +857,10 @@ export function droppedUpdateLockControl(schemaText: string = readSchemaText()):
 } {
   const normalised = normaliseSchema(schemaText);
   const mutated = normalised.replace(LOCKED_RELATION_SNIPPET, UNLOCKED_RELATION_SNIPPET);
-  return { changed: mutated !== normalised, leaks: findRenumberingLeaks(parsePrismaModels(mutated)) };
+  return {
+    changed: mutated !== normalised,
+    leaks: findRenumberingLeaks(parsePrismaModels(mutated)),
+  };
 }
 
 /**
@@ -798,7 +938,9 @@ export function selfCheck(report: AnchorClosureReport): string[] {
   const problems: string[] = [];
 
   if (report.models.size <= MIN_PARSED_MODELS) {
-    problems.push(`schema 解析塌了:只解析出 ${report.models.size} 个模型,地板是 >${MIN_PARSED_MODELS}。`);
+    problems.push(
+      `schema 解析塌了:只解析出 ${report.models.size} 个模型,地板是 >${MIN_PARSED_MODELS}。`,
+    );
   }
   if (report.holders.length < MIN_ANCHOR_HOLDERS) {
     problems.push(

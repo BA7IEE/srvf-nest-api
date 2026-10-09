@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { instanceToPlain } from 'class-transformer';
 import { Prisma, type ActivitySettlementTimeRevision } from '@prisma/client';
 import { ActivityWorkflowGate } from '../../common/activity-workflow/activity-workflow.gate';
@@ -44,6 +44,11 @@ import {
   SettlementSubmitService,
   SETTLEMENT_SUBMIT_TX_TIMEOUT_MS,
 } from './settlement-submit.service';
+import {
+  ActivityContributionSettlementService,
+  frozenContributionRegime,
+} from './activity-contribution-settlement.service';
+import type { ContributionRegimeCode } from './activity-contribution-settlement-policy';
 
 type Tx = Prisma.TransactionClient;
 type Reauthorize = () => Promise<CurrentUserPayload>;
@@ -60,6 +65,7 @@ export class ActivityTimeSettlementService {
     private readonly settlements: SettlementSubmitService,
     private readonly audit: ActivityTimeSettlementAuditRecorder,
     private readonly gate: ActivityWorkflowGate,
+    @Optional() private readonly contributions?: ActivityContributionSettlementService,
   ) {}
 
   private async write<T>(
@@ -112,6 +118,7 @@ export class ActivityTimeSettlementService {
     activityId: string,
     expected: TimeSettlementDraftExpectation,
     reauthorize: Reauthorize,
+    captureRegime?: (regime: ContributionRegimeCode) => void,
   ): Promise<TimeSettlementDraftProof> {
     const initial = requireTimeSettlementDraft(
       activityId,
@@ -130,6 +137,7 @@ export class ActivityTimeSettlementService {
       proof.evidenceSealId !== expected.expectedEvidenceSealId
     )
       throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_STALE);
+    captureRegime?.(frozenContributionRegime(context?.contributionRegimeCode));
     return proof;
   }
 
@@ -216,7 +224,21 @@ export class ActivityTimeSettlementService {
             meta,
             reauthorize,
             async () => {
-              const proof = await this.lockedProof(tx, activityId, command, reauthorize);
+              const frozen: { regime: ContributionRegimeCode } = { regime: 'legacy' };
+              const proof = await this.lockedProof(
+                tx,
+                activityId,
+                command,
+                reauthorize,
+                (value) => {
+                  frozen.regime = value;
+                },
+              );
+              if (frozen.regime === 'policy_v1') {
+                if (!this.contributions)
+                  throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+                this.contributions.assertNativeWriteAllowed();
+              }
               if (
                 proof.evidenceRevision !== command.expectedEvidenceRevision ||
                 proof.populationRevision !== command.expectedPopulationRevision ||
@@ -271,7 +293,15 @@ export class ActivityTimeSettlementService {
             reauthorize,
           );
           if (replay) return replay;
-          const proof = await this.lockedProof(tx, activityId, command, reauthorize);
+          const frozen: { regime: ContributionRegimeCode } = { regime: 'legacy' };
+          const proof = await this.lockedProof(tx, activityId, command, reauthorize, (value) => {
+            frozen.regime = value;
+          });
+          if (frozen.regime === 'policy_v1') {
+            if (!this.contributions)
+              throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+            this.contributions.assertNativeWriteAllowed();
+          }
           const set = await this.lockedSources(tx, proof, reauthorize);
           const evaluated = await this.queries.evaluateInTx(tx, set);
           const previous = await tx.activitySettlementTimeRevision.findFirst({
@@ -306,6 +336,13 @@ export class ActivityTimeSettlementService {
             },
           });
           await this.insertBuckets(tx, revision, evaluated.buckets);
+          const contribution = await this.contributions?.prepareTimeInTx(
+            tx,
+            revision,
+            frozen.regime,
+            { operationKey: command.operationKey, requestHash },
+            reauthorize,
+          );
           const result = this.result(
             revision,
             command.expectedDraftVersion,
@@ -328,7 +365,15 @@ export class ActivityTimeSettlementService {
             TIME_SETTLEMENT_PREPARE_OPERATION,
             result,
             false,
+            contribution,
           );
+          if (frozen.regime === 'policy_v1') {
+            // Run only these queued native-prepare checks before leaving the callback.
+            // write() still reauthorizes after this barrier and awaits the actual COMMIT.
+            // No business writes may follow the barrier.
+            await tx.$executeRaw`SET CONSTRAINTS public.astr_parent_complete_guard,
+              public.e4_revision_complete_guard IMMEDIATE`;
+          }
           return result;
         },
       );
@@ -368,7 +413,15 @@ export class ActivityTimeSettlementService {
             reauthorize,
           );
           if (replay) return replay;
-          const proof = await this.lockedProof(tx, activityId, command, reauthorize);
+          const frozen: { regime: ContributionRegimeCode } = { regime: 'legacy' };
+          const proof = await this.lockedProof(tx, activityId, command, reauthorize, (value) => {
+            frozen.regime = value;
+          });
+          if (frozen.regime === 'policy_v1') {
+            if (!this.contributions)
+              throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+            this.contributions.assertNativeWriteAllowed();
+          }
           const prepared = await tx.activitySettlementTimeRevision.findFirst({
             where: { activityId, settlementRunId: proof.settlementRunId },
             orderBy: { revision: 'desc' },
@@ -395,6 +448,11 @@ export class ActivityTimeSettlementService {
           >`SELECT astr_bucket_content_hash(${prepared.id}) AS hash`;
           if (bucketHash[0]?.hash !== prepared.bucketContentHash)
             throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID);
+          const contribution = await this.contributions?.loadPreparedTimeInTx(
+            tx,
+            prepared,
+            frozen.regime,
+          );
           const internalKey =
             'time-settlement:' +
             fingerprintMetricEnvelope('activity-time-settlement-submit-link-v1', {
@@ -416,6 +474,7 @@ export class ActivityTimeSettlementService {
             {
               bucketContentHash: prepared.bucketContentHash,
               sourceSetHash: prepared.sourceSetHash,
+              contributionProof: contribution ?? undefined,
               reauthorize,
               copyPrepared: async (submitTx, target) => {
                 if (submitTx !== tx || target.draftVersionId !== prepared.settlementVersionId)
@@ -439,6 +498,15 @@ export class ActivityTimeSettlementService {
                   },
                 });
                 await this.copyBuckets(tx, prepared, submitted);
+                const submittedContribution = contribution
+                  ? await this.contributions?.copySubmittedTimeInTx(
+                      tx,
+                      contribution,
+                      submitted,
+                      { operationKey: command.operationKey, requestHash },
+                      reauthorize,
+                    )
+                  : null;
                 result = this.result(submitted, target.settlementVersion, target.contentHash);
                 await reauthorize();
                 await this.receipt(
@@ -457,6 +525,7 @@ export class ActivityTimeSettlementService {
                   TIME_SETTLEMENT_SUBMIT_OPERATION,
                   result,
                   false,
+                  submittedContribution,
                 );
               },
             },

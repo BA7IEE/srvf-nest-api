@@ -147949,6 +147949,139 @@
           "rawRecognizedMilliseconds"
         ]
       },
+      "AppContributionProofEvaluationDto": {
+        "type": "object",
+        "properties": {
+          "participationIdentityId": {
+            "type": "string",
+            "description": "参与身份 ID，不按队员合并"
+          },
+          "policyVersionId": {
+            "type": "string",
+            "description": "冻结贡献政策版本 ID"
+          },
+          "definitionHash": {
+            "type": "string",
+            "description": "冻结政策定义 SHA-256"
+          },
+          "evaluatorVersion": {
+            "type": "number",
+            "description": "冻结评价器版本"
+          },
+          "attendanceRoleCode": {
+            "type": "string",
+            "description": "发布快照中的考勤角色"
+          },
+          "timeCategoryCode": {
+            "type": "string",
+            "description": "独立认定类别，不从志愿小时反推"
+          },
+          "durationSeconds": {
+            "type": "number",
+            "description": "合并同一评价单元后的非负整秒"
+          },
+          "calculatedPoints": {
+            "type": "string",
+            "description": "政策计算分值，固定两位小数文本"
+          },
+          "recognizedPoints": {
+            "type": "string",
+            "description": "政策认定分值，无人工覆盖"
+          },
+          "explanationCode": {
+            "type": "string",
+            "description": "冻结评价解释码，不含政策完整配置"
+          }
+        },
+        "required": [
+          "participationIdentityId",
+          "policyVersionId",
+          "definitionHash",
+          "evaluatorVersion",
+          "attendanceRoleCode",
+          "timeCategoryCode",
+          "durationSeconds",
+          "calculatedPoints",
+          "recognizedPoints",
+          "explanationCode"
+        ]
+      },
+      "AppContributionProofDto": {
+        "type": "object",
+        "properties": {
+          "regimeCode": {
+            "type": "string",
+            "description": "冻结计算制度，旧版本省略整个证明字段",
+            "enum": [
+              "policy_v1"
+            ]
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "贡献未准备或来源已陈旧；不能将空值当零分"
+          },
+          "revisionId": {
+            "type": "string",
+            "description": "完整同版本证明 ID；pending 时为空",
+            "nullable": true
+          },
+          "sourceKindCode": {
+            "type": "string",
+            "description": "真实证明来源；pending 时为空",
+            "nullable": true
+          },
+          "selectionHash": {
+            "type": "string",
+            "description": "冻结政策选择摘要",
+            "nullable": true
+          },
+          "sourceSetHash": {
+            "type": "string",
+            "description": "冻结贡献来源集合摘要",
+            "nullable": true
+          },
+          "evaluationSetHash": {
+            "type": "string",
+            "description": "冻结评价集合摘要",
+            "nullable": true
+          },
+          "recognizedPointsTotal": {
+            "type": "string",
+            "description": "全证明认定总分；pending 时为空而非默认零",
+            "nullable": true
+          },
+          "evaluationCount": {
+            "type": "number",
+            "description": "完整评价集合数量；pending 时为空",
+            "nullable": true
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "解释预览仅显示前100项；为true时不能当全量明细"
+          },
+          "evaluations": {
+            "description": "按评价单元稳定排序的解释预览，不返回来源大JSON",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AppContributionProofEvaluationDto"
+            }
+          }
+        },
+        "required": [
+          "regimeCode",
+          "pending",
+          "revisionId",
+          "sourceKindCode",
+          "selectionHash",
+          "sourceSetHash",
+          "evaluationSetHash",
+          "recognizedPointsTotal",
+          "evaluationCount",
+          "hasMore",
+          "evaluations"
+        ]
+      },
       "AppTimeSettlementRunDto": {
         "type": "object",
         "properties": {
@@ -148106,6 +148239,14 @@
       "AppTimeSettlementWorkbenchDto": {
         "type": "object",
         "properties": {
+          "contributionProof": {
+            "description": "仅native版本返回贡献证明，历史legacy省略",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppContributionProofDto"
+              }
+            ]
+          },
           "activityId": {
             "type": "string"
           },
@@ -162027,6 +162168,14 @@
       "AppSettlementWorkbenchResponseDto": {
         "type": "object",
         "properties": {
+          "contributionProof": {
+            "description": "native草稿贡献准备状态；历史legacy省略",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppContributionProofDto"
+              }
+            ]
+          },
           "activityId": {
             "type": "string"
           },
@@ -162482,6 +162631,14 @@
       "AppSettlementVersionDetailResponseDto": {
         "type": "object",
         "properties": {
+          "contributionProof": {
+            "description": "指定native版本的冻结贡献证明；历史legacy省略",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AppContributionProofDto"
+              }
+            ]
+          },
           "version": {
             "$ref": "#/components/schemas/AppSettlementVersionDetailHeaderDto"
           },
@@ -163628,6 +163785,139 @@
           "statusCode"
         ]
       },
+      "AdminContributionProofEvaluationDto": {
+        "type": "object",
+        "properties": {
+          "participationIdentityId": {
+            "type": "string",
+            "description": "参与身份 ID，不按队员合并"
+          },
+          "policyVersionId": {
+            "type": "string",
+            "description": "冻结贡献政策版本 ID"
+          },
+          "definitionHash": {
+            "type": "string",
+            "description": "冻结政策定义 SHA-256"
+          },
+          "evaluatorVersion": {
+            "type": "number",
+            "description": "冻结评价器版本"
+          },
+          "attendanceRoleCode": {
+            "type": "string",
+            "description": "发布快照中的考勤角色"
+          },
+          "timeCategoryCode": {
+            "type": "string",
+            "description": "独立认定类别，不从志愿小时反推"
+          },
+          "durationSeconds": {
+            "type": "number",
+            "description": "合并同一评价单元后的非负整秒"
+          },
+          "calculatedPoints": {
+            "type": "string",
+            "description": "政策计算分值，固定两位小数文本"
+          },
+          "recognizedPoints": {
+            "type": "string",
+            "description": "政策认定分值，无人工覆盖"
+          },
+          "explanationCode": {
+            "type": "string",
+            "description": "冻结评价解释码，不含政策完整配置"
+          }
+        },
+        "required": [
+          "participationIdentityId",
+          "policyVersionId",
+          "definitionHash",
+          "evaluatorVersion",
+          "attendanceRoleCode",
+          "timeCategoryCode",
+          "durationSeconds",
+          "calculatedPoints",
+          "recognizedPoints",
+          "explanationCode"
+        ]
+      },
+      "AdminContributionProofDto": {
+        "type": "object",
+        "properties": {
+          "regimeCode": {
+            "type": "string",
+            "description": "冻结计算制度，旧版本省略整个证明字段",
+            "enum": [
+              "policy_v1"
+            ]
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "贡献未准备或来源已陈旧；不能将空值当零分"
+          },
+          "revisionId": {
+            "type": "string",
+            "description": "完整同版本证明 ID；pending 时为空",
+            "nullable": true
+          },
+          "sourceKindCode": {
+            "type": "string",
+            "description": "真实证明来源；pending 时为空",
+            "nullable": true
+          },
+          "selectionHash": {
+            "type": "string",
+            "description": "冻结政策选择摘要",
+            "nullable": true
+          },
+          "sourceSetHash": {
+            "type": "string",
+            "description": "冻结贡献来源集合摘要",
+            "nullable": true
+          },
+          "evaluationSetHash": {
+            "type": "string",
+            "description": "冻结评价集合摘要",
+            "nullable": true
+          },
+          "recognizedPointsTotal": {
+            "type": "string",
+            "description": "全证明认定总分；pending 时为空而非默认零",
+            "nullable": true
+          },
+          "evaluationCount": {
+            "type": "number",
+            "description": "完整评价集合数量；pending 时为空",
+            "nullable": true
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "解释预览仅显示前100项；为true时不能当全量明细"
+          },
+          "evaluations": {
+            "description": "按评价单元稳定排序的解释预览，不返回来源大JSON",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminContributionProofEvaluationDto"
+            }
+          }
+        },
+        "required": [
+          "regimeCode",
+          "pending",
+          "revisionId",
+          "sourceKindCode",
+          "selectionHash",
+          "sourceSetHash",
+          "evaluationSetHash",
+          "recognizedPointsTotal",
+          "evaluationCount",
+          "hasMore",
+          "evaluations"
+        ]
+      },
       "AdminSettlementReviewVersionDto": {
         "type": "object",
         "properties": {
@@ -163793,6 +164083,14 @@
       "AdminSettlementReviewDetailDto": {
         "type": "object",
         "properties": {
+          "contributionProof": {
+            "description": "同一审核版本的冻结贡献证明；历史legacy省略",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminContributionProofDto"
+              }
+            ]
+          },
           "version": {
             "$ref": "#/components/schemas/AdminSettlementReviewVersionDto"
           },

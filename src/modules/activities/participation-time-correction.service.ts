@@ -26,6 +26,8 @@ export interface CorrectionBatchClassification {
   required: boolean;
   /** A CorrectionApplication owns this batch, including legacy V1 applications. */
   hasApplication: boolean;
+  /** Current own E4 proof for a native correction with exactly unchanged time. */
+  nativeUnchanged?: true;
 }
 
 /**
@@ -60,10 +62,17 @@ export class ParticipationTimeCorrectionService {
     postingBatchId: string,
   ): Promise<CorrectionBatchClassification> {
     const [result] = await tx.$queryRaw<
-      { required: boolean; hasApplication: boolean; classifiedBase: boolean }[]
+      {
+        required: boolean;
+        hasApplication: boolean;
+        classifiedBase: boolean;
+        nativeApplication: boolean;
+        nativeUnchanged: boolean;
+      }[]
     >`
       WITH applications AS (
-        SELECT q."requestedChangeJson", q."baseSettlementVersionId" FROM "CorrectionApplication" a
+        SELECT q."requestedChangeJson", q."baseSettlementVersionId", q."activityId", q."settlementRunId",
+          a.id AS "applicationId", a."newSettlementVersionId", a."newPostingBatchId" FROM "CorrectionApplication" a
         JOIN "AttendanceCorrectionRequest" q ON q."id" = a."correctionRequestId"
         WHERE a."newPostingBatchId" = ${postingBatchId}
       )
@@ -75,13 +84,43 @@ export class ParticipationTimeCorrectionService {
         EXISTS(SELECT 1 FROM applications a WHERE
           EXISTS(SELECT 1 FROM "ParticipationTimeLedgerManifest" m WHERE m."settlementVersionId" = a."baseSettlementVersionId")
           OR EXISTS(SELECT 1 FROM "ParticipationTimeCorrectionManifest" m WHERE m."settlementVersionId" = a."baseSettlementVersionId")
-        ) AS "classifiedBase"
+        ) AS "classifiedBase",
+        EXISTS (SELECT 1 FROM applications a JOIN "AttendanceSettlementVersion" v
+          ON v.id=a."newSettlementVersionId" AND v."settlementRunId"=a."settlementRunId"
+          WHERE v."contributionRegimeCode"='policy_v1') AS "nativeApplication",
+        EXISTS (SELECT 1 FROM applications a
+          JOIN "ActivitySettlementContributionRevision" own ON own."correctionApplicationId"=a."applicationId"
+            AND own."correctionPostingBatchId"=a."newPostingBatchId" AND own."settlementVersionId"=a."newSettlementVersionId"
+            AND own."baseSettlementVersionId"=a."baseSettlementVersionId"
+            AND own."activityId"=a."activityId" AND own."settlementRunId"=a."settlementRunId"
+          JOIN "AttendanceSettlementVersion" v ON v.id=own."settlementVersionId"
+            AND v."settlementRunId"=own."settlementRunId" AND v."contributionRegimeCode"='policy_v1'
+          JOIN "LedgerPostingBatch" b ON b.id=own."correctionPostingBatchId"
+            AND b."settlementVersionId"=own."settlementVersionId" AND b."settlementRunId"=own."settlementRunId"
+          JOIN "ActivitySettlementContributionRevision" prior ON prior.id=own."previousContributionRevisionId"
+            AND prior."settlementVersionId"=own."baseSettlementVersionId" AND prior."activityId"=own."activityId"
+            AND prior."settlementRunId"=own."settlementRunId"
+            AND prior."effectiveTimeSettlementVersionId"=own."effectiveTimeSettlementVersionId"
+          WHERE own."kindCode"='correction' AND own."sourceKindCode"='unchanged_time' AND own."regimeCode"='policy_v1'
+            AND prior."kindCode" IN ('submitted','correction') AND a."requestedChangeJson"->'schemaVersion'='1'::jsonb
+            AND own."timeRevisionId" IS NULL AND own."correctionManifestId" IS NULL
+            AND own."correctionTimeSourceProofId" IS NULL AND own."rootTimeManifestId" IS NULL
+            AND own."correctionSourceSetHash" IS NULL
+        ) AS "nativeUnchanged"
     `;
     // Same legacy exclusion as assertNotClassifiedCorrectionBatch, in the same
     // bounded probe: ordinary D6 posting must not pay for a second application read.
-    if (!result.required && result.classifiedBase)
+    if (
+      !result.required &&
+      (result.classifiedBase || result.nativeApplication) &&
+      !result.nativeUnchanged
+    )
       throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_CORRECTION_UNAVAILABLE);
-    return { required: result.required, hasApplication: result.hasApplication };
+    return {
+      required: result.required,
+      hasApplication: result.hasApplication,
+      ...(result.nativeUnchanged ? { nativeUnchanged: true as const } : {}),
+    };
   }
 
   /** Compatibility helper for callers that need only the V2/V3 classification. */
@@ -104,25 +143,39 @@ export class ParticipationTimeCorrectionService {
         predecessorManifestId: string | null;
         sourceProofId: string | null;
         sourceProofHash: string | null;
+        nativeContributionRevisionId: string | null;
+        timeBasisVersionId: string;
       }[]
     >`
+      WITH requested_base AS (
+        SELECT ${anchor.baseSettlementVersionId}::text AS "businessBase",
+          ${anchor.activityId}::text AS "activityId", ${anchor.settlementRunId}::text AS "settlementRunId"
+      ), basis AS (
+        SELECT requested_base.*, coalesce(native."effectiveVersionId", v.id) AS "timeBasisVersionId",
+          native."contributionRevisionId" AS "nativeContributionRevisionId"
+        FROM requested_base JOIN "AttendanceSettlementVersion" v ON v.id=requested_base."businessBase"
+          AND v."settlementRunId"=requested_base."settlementRunId"
+        LEFT JOIN LATERAL e4_effective_time_base(v.id, requested_base."activityId", requested_base."settlementRunId") native ON TRUE
+      )
       SELECT root."id", root."settlementVersionId", root."expectedEntryCount",
         root."contentHash" AS "baseContentHash", NULL::text AS "predecessorManifestId",
-        NULL::text AS "sourceProofId", NULL::text AS "sourceProofHash"
+        NULL::text AS "sourceProofId", NULL::text AS "sourceProofHash",
+        basis."nativeContributionRevisionId", basis."timeBasisVersionId"
       FROM "ParticipationTimeLedgerManifest" root
+      JOIN basis ON root."settlementVersionId"=basis."timeBasisVersionId"
       JOIN "LedgerPostingBatch" b ON b."id" = root."postingBatchId" AND b."statusCode" = 'committed'
-      WHERE root."settlementVersionId" = ${anchor.baseSettlementVersionId}
-        AND root."activityId" = ${anchor.activityId} AND root."settlementRunId" = ${anchor.settlementRunId}
+      WHERE root."activityId" = basis."activityId" AND root."settlementRunId" = basis."settlementRunId"
       UNION ALL
       SELECT root."id", root."settlementVersionId", root."expectedEntryCount", m."contentHash", m."id",
-        m."sourceProofId", m."sourceProofHash"
+        m."sourceProofId", m."sourceProofHash", basis."nativeContributionRevisionId", basis."timeBasisVersionId"
       FROM "ParticipationTimeCorrectionManifest" m
+      JOIN basis ON m."settlementVersionId"=basis."timeBasisVersionId"
       JOIN "ParticipationTimeCorrectionCommitReceipt" r ON r."manifestId" = m."id" AND r."contentHash" = m."contentHash"
       JOIN "LedgerPostingBatch" b ON b."id" = m."postingBatchId" AND b."statusCode" = 'committed'
       JOIN "ParticipationTimeLedgerManifest" root ON root."id" = m."rootManifestId"
         AND root."activityId" = m."activityId" AND root."settlementRunId" = m."settlementRunId"
       JOIN "LedgerPostingBatch" rb ON rb."id" = root."postingBatchId" AND rb."statusCode" = 'committed'
-      WHERE m."settlementVersionId" = ${anchor.baseSettlementVersionId}
+      WHERE basis."businessBase" = ${anchor.baseSettlementVersionId}
         AND m."activityId" = ${anchor.activityId} AND m."settlementRunId" = ${anchor.settlementRunId}
       LIMIT 2
     `;
@@ -189,6 +242,17 @@ export class ParticipationTimeCorrectionService {
           // source set with a newly frozen complete one.
           sourceProofId: anchor.sourceProofId ?? root.sourceProofId,
           sourceProofHash: anchor.sourceProofHash ?? root.sourceProofHash,
+          ...(root.nativeContributionRevisionId
+            ? {
+                nativeTimeBasis: {
+                  contributionRevisionId: root.nativeContributionRevisionId,
+                  activityId: anchor.activityId,
+                  settlementRunId: anchor.settlementRunId,
+                  baseSettlementVersionId: anchor.baseSettlementVersionId,
+                  effectiveTimeSettlementVersionId: root.timeBasisVersionId,
+                },
+              }
+            : {}),
         },
         roots,
         change.items,

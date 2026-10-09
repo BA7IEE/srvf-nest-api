@@ -192,7 +192,7 @@ model User {
   contributionPolicyVersionsActivated          ContributionPolicyVersion[]                         @relation("ContributionPolicyVersionActivator")
   contributionPolicyVersionsRetired            ContributionPolicyVersion[]                         @relation("ContributionPolicyVersionRetirer")
   contributionPolicyCommandReceipts            ContributionPolicyCommandReceipt[]
-  contributionRuleConversionReceipts            ContributionRuleConversionReceipt[]
+  contributionRuleConversionReceipts           ContributionRuleConversionReceipt[]
   activityTimePolicySelectionRevisions         ActivityTimePolicySelectionRevision[]               @relation("ActivityTimePolicySelectionCreator")
   activityTimePolicySelectionReceipts          ActivityTimePolicySelectionCommandReceipt[]
   activityContributionPolicySelectionRevisions ActivityContributionPolicySelectionRevision[]       @relation("ActivityContributionPolicySelectionCreator")
@@ -225,21 +225,22 @@ model User {
   officialPortraitsEnded     MemberOfficialPortrait[] @relation("OfficialPortraitEnder")
 
   // Integration Foundation v1 PR1 backrelations(规格书 §27/§28/§30/§32/§33)
-  servicePrincipalsCreated           ServicePrincipal[]           @relation("ServicePrincipalCreator")
-  servicePrincipalCredentialsCreated ServicePrincipalCredential[] @relation("ServiceCredentialCreator")
-  servicePrincipalCredentialsRevoked ServicePrincipalCredential[] @relation("ServiceCredentialRevoker")
-  delegationGrantsCreated            DelegationGrant[]            @relation("DelegationGrantCreator")
-  delegationGrantsRevoked            DelegationGrant[]            @relation("DelegationGrantRevoker")
-  delegationGrantsSubject            DelegationGrant[]            @relation("DelegationSubject")
-  integrationReceiptsSubject         IntegrationCommandReceipt[]  @relation("IntegrationReceiptSubject")
-  auditLogsOnBehalfOf                AuditLog[]                   @relation("AuditOnBehalfOfUser")
-  contributionShadowWindowsRegistered ContributionShadowObservationWindow[] @relation("ContributionShadowWindowRegistrar")
-  contributionShadowDispositionsSigned ContributionShadowDispositionReceipt[] @relation("ContributionShadowDispositionSigner")
-  contributionShadowWindowRegistrationReceipts ContributionShadowWindowRegistrationReceipt[] @relation("ContributionShadowWindowReceiptActor")
+  servicePrincipalsCreated                      ServicePrincipal[]                             @relation("ServicePrincipalCreator")
+  servicePrincipalCredentialsCreated            ServicePrincipalCredential[]                   @relation("ServiceCredentialCreator")
+  servicePrincipalCredentialsRevoked            ServicePrincipalCredential[]                   @relation("ServiceCredentialRevoker")
+  delegationGrantsCreated                       DelegationGrant[]                              @relation("DelegationGrantCreator")
+  delegationGrantsRevoked                       DelegationGrant[]                              @relation("DelegationGrantRevoker")
+  delegationGrantsSubject                       DelegationGrant[]                              @relation("DelegationSubject")
+  integrationReceiptsSubject                    IntegrationCommandReceipt[]                    @relation("IntegrationReceiptSubject")
+  auditLogsOnBehalfOf                           AuditLog[]                                     @relation("AuditOnBehalfOfUser")
+  contributionShadowWindowsRegistered           ContributionShadowObservationWindow[]          @relation("ContributionShadowWindowRegistrar")
+  settlementContributionRevisionsCreated        ActivitySettlementContributionRevision[]       @relation("SettlementContributionRevisionCreator")
+  contributionShadowDispositionsSigned          ContributionShadowDispositionReceipt[]         @relation("ContributionShadowDispositionSigner")
+  contributionShadowWindowRegistrationReceipts  ContributionShadowWindowRegistrationReceipt[]  @relation("ContributionShadowWindowReceiptActor")
   contributionShadowDispositionApprovalReceipts ContributionShadowDispositionApprovalReceipt[] @relation("ContributionShadowApprovalSigner")
-  shadowMappingsApproved ContributionShadowMappingApproval[] @relation("ShadowMappingApprover")
-  shadowMappingsRegistered ContributionShadowMappingApproval[] @relation("ShadowMappingRegistrar")
-  shadowMappingRegistrationReceipts ContributionShadowMappingRegistrationReceipt[]
+  shadowMappingsApproved                        ContributionShadowMappingApproval[]            @relation("ShadowMappingApprover")
+  shadowMappingsRegistered                      ContributionShadowMappingApproval[]            @relation("ShadowMappingRegistrar")
+  shadowMappingRegistrationReceipts             ContributionShadowMappingRegistrationReceipt[]
 
   @@index([deletedAt])
   @@index([status])
@@ -1610,6 +1611,7 @@ model Activity {
   contributionPolicySelectionRevisions       ActivityContributionPolicySelectionRevision[]       @relation("ActivityContributionPolicySelectionActivity")
   currentContributionPolicySelectionRevision ActivityContributionPolicySelectionRevision?        @relation("ActivityCurrentContributionPolicySelection", fields: [currentContributionPolicySelectionRevisionId, id, contributionPolicySelectionRevision], references: [id, activityId, revision], onDelete: Restrict, onUpdate: Restrict, map: "acps_current_revision_fkey")
   contributionPolicySelectionReceipts        ActivityContributionPolicySelectionCommandReceipt[]
+  settlementContributionRevisions            ActivitySettlementContributionRevision[]
   participantTimeAllocationRevisions         ParticipantTimeAllocationRevision[]                 @relation("ParticipantTimeAllocationRevisionActivity")
   participantTimeAllocationReceipts          ParticipantTimeAllocationCommandReceipt[]           @relation("ParticipantTimeAllocationReceiptActivity")
   settlementTimeRevisions                    ActivitySettlementTimeRevision[]
@@ -1866,9 +1868,10 @@ model ContributionPolicyVersion {
   commandReceipts                          ContributionPolicyCommandReceipt[]
   conversionReceipts                       ContributionRuleConversionReceipt[]
   activityContributionPolicySelectionItems ActivityContributionPolicySelectionItem[]
-  contributionShadowComparisons             ContributionShadowComparisonReceipt[] @relation("ContributionShadowPolicyVersion")
-  shadowMappingApprovals ContributionShadowMappingApproval[] @relation("ShadowMappingApprovalPolicy")
-  shadowMappingApplications ContributionShadowMappingApplication[] @relation("ShadowMappingApplicationPolicy")
+  contributionShadowComparisons            ContributionShadowComparisonReceipt[]     @relation("ContributionShadowPolicyVersion")
+  shadowMappingApprovals                   ContributionShadowMappingApproval[]       @relation("ShadowMappingApprovalPolicy")
+  shadowMappingApplications                ContributionShadowMappingApplication[]    @relation("ShadowMappingApplicationPolicy")
+  settlementContributionEvaluations        ParticipantContributionEvaluation[]
 
   @@unique([policyId, version], map: "cpv_policy_version_key")
   @@unique([id, policyId, definitionHash, evaluatorVersion], map: "cpv_exact_anchor_key")
@@ -2582,6 +2585,8 @@ model ActivityRuleSnapshot {
   offlinePackages                     OfflinePackage[]
   participantTimeAllocationRevisions  ParticipantTimeAllocationRevision[]
   correctionPendingTimeAllocations    CorrectionPendingTimeAllocation[]
+  settlementContributionRevisions     ActivitySettlementContributionRevision[]
+  settlementContributionEvaluations   ParticipantContributionEvaluation[]
 
   // 一个活动的一个 workflow revision 只能对应一份最终规则快照。createdByReviewId
   // 只保存审核来源，不假定合同未声明的“一审核请求至多一快照”。
@@ -2589,6 +2594,7 @@ model ActivityRuleSnapshot {
   // 业务复合锚点闭合(第六轮评审 A-2 / B-03):被引用侧锚点 —— PostgreSQL 复合外键
   // 要求被引用列上有**精确匹配**的 unique;id 单列主键不能替代。仅作 FK 靶点,不新增业务约束。
   @@unique([id, activityId], map: "activity_rule_snapshot_id_activity_key")
+  @@unique([id, activityId, snapshotHash], map: "e4_snapshot_hash_anchor_key")
   @@index([templateVersionId])
   @@index([timePolicySelectionRevisionId], map: "atps_snapshot_revision_idx")
   @@index([contributionPolicySelectionRevisionId], map: "acps_snapshot_revision_idx")
@@ -2704,20 +2710,22 @@ model ActivityContributionPolicySelectionRevision {
   createdAt              DateTime @default(now())
   createdByUserId        String
 
-  activity             Activity                                           @relation("ActivityContributionPolicySelectionActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  creator              User                                               @relation("ActivityContributionPolicySelectionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  template             ActivityTemplate?                                  @relation("ActivityContributionPolicySelectionTemplate", fields: [templateId, templateDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_template_fkey")
-  creationReceipt      ActivityCreationCommandReceipt?                    @relation("ActivityContributionPolicySelectionCreationReceipt", fields: [creationReceiptId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_creation_fkey")
-  seriesOccurrence     ActivitySeriesOccurrence?                          @relation("ActivityContributionPolicySelectionOccurrence", fields: [seriesOccurrenceId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_occurrence_fkey")
-  publishReview        ActivityPublishReview?                             @relation("ActivityContributionPolicySelectionPublishReview", fields: [publishReviewId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_review_fkey")
-  currentForActivities Activity[]                                         @relation("ActivityCurrentContributionPolicySelection")
-  items                ActivityContributionPolicySelectionItem[]
-  commandReceipt       ActivityContributionPolicySelectionCommandReceipt?
-  ruleSnapshots        ActivityRuleSnapshot[]                             @relation("ActivityContributionPolicySelectionRuleSnapshot")
+  activity                        Activity                                           @relation("ActivityContributionPolicySelectionActivity", fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  creator                         User                                               @relation("ActivityContributionPolicySelectionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  template                        ActivityTemplate?                                  @relation("ActivityContributionPolicySelectionTemplate", fields: [templateId, templateDefinitionHash], references: [id, definitionHash], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_template_fkey")
+  creationReceipt                 ActivityCreationCommandReceipt?                    @relation("ActivityContributionPolicySelectionCreationReceipt", fields: [creationReceiptId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_creation_fkey")
+  seriesOccurrence                ActivitySeriesOccurrence?                          @relation("ActivityContributionPolicySelectionOccurrence", fields: [seriesOccurrenceId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_occurrence_fkey")
+  publishReview                   ActivityPublishReview?                             @relation("ActivityContributionPolicySelectionPublishReview", fields: [publishReviewId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_revision_review_fkey")
+  currentForActivities            Activity[]                                         @relation("ActivityCurrentContributionPolicySelection")
+  items                           ActivityContributionPolicySelectionItem[]
+  commandReceipt                  ActivityContributionPolicySelectionCommandReceipt?
+  ruleSnapshots                   ActivityRuleSnapshot[]                             @relation("ActivityContributionPolicySelectionRuleSnapshot")
+  settlementContributionRevisions ActivitySettlementContributionRevision[]
 
   @@unique([activityId, revision], map: "acps_revision_activity_revision_key")
   @@unique([id, activityId], map: "acps_revision_id_activity_key")
   @@unique([id, activityId, revision], map: "acps_revision_id_activity_revision_key")
+  @@unique([id, activityId, selectionHash], map: "e4_selection_hash_anchor_key")
   @@index([activityId, createdAt], map: "acps_revision_activity_created_idx")
   @@index([templateId], map: "acps_revision_template_idx")
   @@index([publishReviewId], map: "acps_revision_review_idx")
@@ -2736,13 +2744,15 @@ model ActivityContributionPolicySelectionItem {
   definitionHash      String?
   evaluatorVersion    Int?
 
-  revision ActivityContributionPolicySelectionRevision @relation(fields: [selectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_revision_fkey")
-  position ActivitySessionPosition?                    @relation(fields: [activityId, sessionId, positionId], references: [activityId, sessionId, id], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_position_fkey")
-  version  ContributionPolicyVersion?                  @relation(fields: [versionId, policyId, definitionHash, evaluatorVersion], references: [id, policyId, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_policy_version_fkey")
-  shadowComparisons ContributionShadowComparisonReceipt[] @relation("ContributionShadowSelectionItem")
-  shadowMappingApplications ContributionShadowMappingApplication[]
+  revision                          ActivityContributionPolicySelectionRevision @relation(fields: [selectionRevisionId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_revision_fkey")
+  position                          ActivitySessionPosition?                    @relation(fields: [activityId, sessionId, positionId], references: [activityId, sessionId, id], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_position_fkey")
+  version                           ContributionPolicyVersion?                  @relation(fields: [versionId, policyId, definitionHash, evaluatorVersion], references: [id, policyId, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "acps_item_policy_version_fkey")
+  shadowComparisons                 ContributionShadowComparisonReceipt[]       @relation("ContributionShadowSelectionItem")
+  shadowMappingApplications         ContributionShadowMappingApplication[]
+  settlementContributionEvaluations ParticipantContributionEvaluation[]
 
   @@unique([id, selectionRevisionId, activityId], map: "acps_item_id_revision_activity_key")
+  @@unique([id, activityId], map: "e4_selection_item_activity_key")
   @@unique([id, activityId, versionId, definitionHash, evaluatorVersion], map: "csm_selection_exact_key")
   @@index([selectionRevisionId], map: "acps_item_revision_idx")
   @@index([activityId, sessionId], map: "acps_item_session_idx")
@@ -3255,18 +3265,19 @@ model ActivitySettlementTimeRevision {
   createdAt                 DateTime @default(now())
   createdByUserId           String
 
-  activity                Activity                              @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "astr_activity_fkey")
-  settlementRun           AttendanceSettlementRun               @relation(fields: [settlementRunId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astr_run_fkey")
-  settlementVersion       AttendanceSettlementVersion           @relation(fields: [settlementVersionId, settlementRunId], references: [id, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "astr_version_fkey")
-  evidenceSeal            EvidenceSeal                          @relation(fields: [evidenceSealId, activityId, evidenceRevision, populationRevision, workflowRevision], references: [id, activityId, evidenceRevision, populationRevision, workflowRevision], onDelete: Restrict, onUpdate: Restrict, map: "astr_seal_fkey")
-  previousTimeRevision    ActivitySettlementTimeRevision?       @relation("SettlementTimeRevisionPrevious", fields: [previousTimeRevisionId, settlementRunId, activityId], references: [id, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astr_previous_fkey")
-  nextTimeRevisions       ActivitySettlementTimeRevision[]      @relation("SettlementTimeRevisionPrevious")
-  sourceDraftTimeRevision ActivitySettlementTimeRevision?       @relation("SettlementTimeRevisionSourceDraft", fields: [sourceDraftTimeRevisionId, settlementRunId, activityId], references: [id, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astr_source_draft_fkey")
-  submittedTimeRevisions  ActivitySettlementTimeRevision[]      @relation("SettlementTimeRevisionSourceDraft")
-  creator                 User                                  @relation("SettlementTimeRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "astr_creator_fkey")
+  activity                Activity                                 @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "astr_activity_fkey")
+  settlementRun           AttendanceSettlementRun                  @relation(fields: [settlementRunId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astr_run_fkey")
+  settlementVersion       AttendanceSettlementVersion              @relation(fields: [settlementVersionId, settlementRunId], references: [id, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "astr_version_fkey")
+  evidenceSeal            EvidenceSeal                             @relation(fields: [evidenceSealId, activityId, evidenceRevision, populationRevision, workflowRevision], references: [id, activityId, evidenceRevision, populationRevision, workflowRevision], onDelete: Restrict, onUpdate: Restrict, map: "astr_seal_fkey")
+  previousTimeRevision    ActivitySettlementTimeRevision?          @relation("SettlementTimeRevisionPrevious", fields: [previousTimeRevisionId, settlementRunId, activityId], references: [id, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astr_previous_fkey")
+  nextTimeRevisions       ActivitySettlementTimeRevision[]         @relation("SettlementTimeRevisionPrevious")
+  sourceDraftTimeRevision ActivitySettlementTimeRevision?          @relation("SettlementTimeRevisionSourceDraft", fields: [sourceDraftTimeRevisionId, settlementRunId, activityId], references: [id, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "astr_source_draft_fkey")
+  submittedTimeRevisions  ActivitySettlementTimeRevision[]         @relation("SettlementTimeRevisionSourceDraft")
+  creator                 User                                     @relation("SettlementTimeRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "astr_creator_fkey")
   buckets                 ParticipantSettlementTimeBucket[]
   commandReceipt          ActivitySettlementTimeCommandReceipt?
   timeLedgerManifests     ParticipationTimeLedgerManifest[]
+  contributionRevisions   ActivitySettlementContributionRevision[]
 
   @@unique([id, settlementVersionId, settlementRunId, activityId], map: "astr_id_version_run_activity_key")
   @@unique([settlementRunId, revision], map: "astr_run_revision_key")
@@ -3343,6 +3354,114 @@ model ActivitySettlementTimeCommandReceipt {
   @@unique([actorUserId, operationCode, operationKey], map: "astcr_actor_operation_key")
   @@unique([timeRevisionId, activityId], map: "astcr_revision_activity_key")
   @@index([activityId, createdAt], map: "astcr_activity_created_idx")
+}
+
+// E4 append-only evaluation evidence. SQL proves exact source, selection and result sets.
+model ActivitySettlementContributionRevision {
+  id                                String   @id @default(cuid())
+  createdAt                         DateTime @default(now())
+  activityId                        String
+  settlementRunId                   String
+  settlementVersionId               String
+  effectiveTimeSettlementVersionId  String
+  revision                          Int
+  kindCode                          String
+  sourceKindCode                    String
+  timeRevisionId                    String?
+  correctionApplicationId           String?
+  correctionPostingBatchId          String?
+  baseSettlementVersionId           String?
+  correctionManifestId              String?
+  correctionTimeSourceProofId       String?
+  rootTimeManifestId                String?
+  correctionSourceSetHash           String?
+  previousContributionRevisionId    String?
+  sourceDraftContributionRevisionId String?
+  schemaVersion                     Int      @default(1)
+  regimeCode                        String   @default("policy_v1")
+  evidenceSealId                    String
+  evidenceRevision                  Int
+  populationRevision                Int
+  workflowRevision                  Int
+  draftContentHash                  String
+  ruleSnapshotId                    String
+  ruleSnapshotHash                  String
+  selectionRevisionId               String
+  selectionRevisionHash             String
+  sourceSetHash                     String
+  evaluationSetHash                 String
+  recognizedPointsTotal             Decimal  @db.Decimal(18, 2)
+  evaluationCount                   Int
+  operationKey                      String
+  requestHash                       String
+  createdByUserId                   String
+
+  activity                        Activity                                    @relation(fields: [activityId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_activity_fk")
+  settlementRun                   AttendanceSettlementRun                     @relation(fields: [settlementRunId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_run_fk")
+  settlementVersion               AttendanceSettlementVersion                 @relation("ContributionRevisionVersion", fields: [settlementVersionId, settlementRunId], references: [id, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_version_fk")
+  effectiveTimeSettlementVersion  AttendanceSettlementVersion                 @relation("ContributionRevisionEffectiveTime", fields: [effectiveTimeSettlementVersionId, settlementRunId], references: [id, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_effective_time_fk")
+  evidenceSeal                    EvidenceSeal                                @relation(fields: [evidenceSealId, activityId, evidenceRevision, populationRevision, workflowRevision], references: [id, activityId, evidenceRevision, populationRevision, workflowRevision], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_seal_fk")
+  ruleSnapshot                    ActivityRuleSnapshot                        @relation(fields: [ruleSnapshotId, activityId, ruleSnapshotHash], references: [id, activityId, snapshotHash], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_snapshot_fk")
+  selectionRevision               ActivityContributionPolicySelectionRevision @relation(fields: [selectionRevisionId, activityId, selectionRevisionHash], references: [id, activityId, selectionHash], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_selection_fk")
+  timeRevision                    ActivitySettlementTimeRevision?             @relation(fields: [timeRevisionId, settlementVersionId, settlementRunId, activityId], references: [id, settlementVersionId, settlementRunId, activityId], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_time_fk")
+  correctionApplication           CorrectionApplication?                      @relation(fields: [correctionApplicationId, correctionPostingBatchId, settlementVersionId], references: [id, newPostingBatchId, newSettlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_application_fk")
+  correctionManifest              ParticipationTimeCorrectionManifest?        @relation(fields: [correctionManifestId, correctionPostingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], references: [id, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_manifest_fk")
+  correctionTimeSourceProof       CorrectionTimeSourceProof?                  @relation(fields: [correctionTimeSourceProofId, rootTimeManifestId, activityId, settlementRunId, correctionSourceSetHash], references: [id, rootManifestId, activityId, settlementRunId, sourceSetHash], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_time_proof_fk")
+  previousContributionRevision    ActivitySettlementContributionRevision?     @relation("ContributionRevisionPrevious", fields: [previousContributionRevisionId, activityId, baseSettlementVersionId, settlementRunId], references: [id, activityId, settlementVersionId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_previous_fk")
+  nextContributionRevisions       ActivitySettlementContributionRevision[]    @relation("ContributionRevisionPrevious")
+  sourceDraftContributionRevision ActivitySettlementContributionRevision?     @relation("ContributionRevisionDraft", fields: [sourceDraftContributionRevisionId, activityId, settlementRunId], references: [id, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_source_draft_fk")
+  submittedContributionRevisions  ActivitySettlementContributionRevision[]    @relation("ContributionRevisionDraft")
+  creator                         User                                        @relation("SettlementContributionRevisionCreator", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "e4_revision_creator_fk")
+  evaluations                     ParticipantContributionEvaluation[]
+
+  @@unique([settlementRunId, revision], map: "e4_revision_run_revision_key")
+  @@unique([id, activityId, settlementVersionId], map: "e4_revision_detail_anchor_key")
+  @@unique([id, activityId, settlementVersionId, settlementRunId], map: "e4_revision_previous_anchor_key")
+  @@unique([id, activityId, settlementRunId], map: "e4_revision_draft_anchor_key")
+  @@unique([createdByUserId, kindCode, operationKey], map: "e4_revision_actor_operation_key")
+  @@index([settlementVersionId, kindCode, revision], map: "e4_revision_version_kind_idx")
+  @@index([activityId, createdAt], map: "e4_revision_activity_created_idx")
+  @@index([timeRevisionId], map: "e4_revision_time_idx")
+  @@index([correctionApplicationId], map: "e4_revision_application_idx")
+}
+
+model ParticipantContributionEvaluation {
+  id                      String   @id @default(cuid())
+  createdAt               DateTime @default(now())
+  contributionRevisionId  String
+  activityId              String
+  settlementVersionId     String
+  participationIdentityId String
+  memberId                String
+  sessionId               String
+  ruleSnapshotId          String
+  selectionItemId         String
+  policyId                String
+  policyVersionId         String
+  definitionHash          String
+  evaluatorVersion        Int
+  mode                    String
+  attendanceRoleCode      String
+  timeCategoryCode        String
+  evaluationUnitKey       String
+  durationSeconds         Int
+  sourceRefsJson          Json
+  sourceFingerprint       String
+  calculatedPoints        Decimal  @db.Decimal(5, 2)
+  recognizedPoints        Decimal  @db.Decimal(5, 2)
+  explanationCode         String
+  beijingDayPointsJson    Json
+  evaluationHash          String
+
+  contributionRevision  ActivitySettlementContributionRevision  @relation(fields: [contributionRevisionId, activityId, settlementVersionId], references: [id, activityId, settlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "e4_evaluation_revision_fk")
+  participationIdentity ActivityParticipationIdentity           @relation(fields: [participationIdentityId, activityId, sessionId, memberId], references: [id, activityId, sessionId, memberId], onDelete: Restrict, onUpdate: Restrict, map: "e4_evaluation_identity_fk")
+  ruleSnapshot          ActivityRuleSnapshot                    @relation(fields: [ruleSnapshotId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "e4_evaluation_snapshot_fk")
+  selectionItem         ActivityContributionPolicySelectionItem @relation(fields: [selectionItemId, activityId], references: [id, activityId], onDelete: Restrict, onUpdate: Restrict, map: "e4_evaluation_selection_fk")
+  policyVersion         ContributionPolicyVersion               @relation(fields: [policyVersionId, policyId, definitionHash, evaluatorVersion], references: [id, policyId, definitionHash, evaluatorVersion], onDelete: Restrict, onUpdate: Restrict, map: "e4_evaluation_policy_fk")
+
+  @@unique([contributionRevisionId, participationIdentityId, evaluationUnitKey], map: "e4_evaluation_unit_key")
+  @@index([contributionRevisionId, participationIdentityId], map: "e4_evaluation_revision_identity_idx")
+  @@index([activityId, settlementVersionId], map: "e4_evaluation_activity_version_idx")
 }
 
 // ===== 活动责任闭环 PR1:负责人 / 协办历史 =====
@@ -5827,9 +5946,10 @@ model ActivitySessionPosition {
 // ⇒ (activityId, sessionId, memberId) 是**普通 unique,不带删除条件**(§3.8 原话)。
 // 因此本表**没有 deletedAt**:永久身份不软删。
 model ActivityParticipationIdentity {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                                String                              @id @default(cuid())
+  settlementContributionEvaluations ParticipantContributionEvaluation[]
+  createdAt                         DateTime                            @default(now())
+  updatedAt                         DateTime                            @updatedAt
 
   activityId     String
   sessionId      String
@@ -6700,9 +6820,10 @@ model ActivityEvidenceState {
 // ⚠️ 合同**未给**「一活动至多一个 active seal」的 partial unique
 // (§11.3 只给 Closure 点了 partial unique active,Seal 没给)⇒ 按 ④ 不自行发明。
 model EvidenceSeal {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                              String                                   @id @default(cuid())
+  settlementContributionRevisions ActivitySettlementContributionRevision[]
+  createdAt                       DateTime                                 @default(now())
+  updatedAt                       DateTime                                 @updatedAt
 
   activityId   String
   sealRevision Int
@@ -6881,10 +7002,11 @@ model AttendanceSettlementRun {
 
   activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
 
-  versions                AttendanceSettlementVersion[]
-  postingBatches          LedgerPostingBatch[]
-  correctionRequests      AttendanceCorrectionRequest[]
-  settlementTimeRevisions ActivitySettlementTimeRevision[]
+  versions                        AttendanceSettlementVersion[]
+  postingBatches                  LedgerPostingBatch[]
+  correctionRequests              AttendanceCorrectionRequest[]
+  settlementTimeRevisions         ActivitySettlementTimeRevision[]
+  settlementContributionRevisions ActivitySettlementContributionRevision[]
 
   @@unique([id, activityId], map: "asr_id_activity_key")
   @@index([statusCode], map: "attendance_settlement_run_status_idx")
@@ -6901,8 +7023,9 @@ model AttendanceSettlementVersion {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settlementRunId String
-  version         Int
+  settlementRunId        String
+  contributionRegimeCode String @default("legacy")
+  version                Int
 
   evidenceSealId     String
   evidenceRevision   Int
@@ -6933,15 +7056,17 @@ model AttendanceSettlementVersion {
   priorVersion    AttendanceSettlementVersion?  @relation("SettlementVersionPrior", fields: [priorVersionId], references: [id], onDelete: Restrict)
   derivedVersions AttendanceSettlementVersion[] @relation("SettlementVersionPrior")
 
-  reviewActions             SettlementReviewAction[]
-  resultRevisions           ParticipantSettlementResultRevision[]
-  postingBatches            LedgerPostingBatch[]
-  closureRevisions          ActivitySettlementClosureRevision[]
-  correctionRequests        AttendanceCorrectionRequest[]         @relation("CorrectionRequestBaseVersion")
-  correctionApplied         CorrectionApplication[]               @relation("CorrectionApplicationNewVersion")
-  batchJobs                 ActivityBatchJob[]
-  settlementTimeRevisions   ActivitySettlementTimeRevision[]
-  timeAllocationDraftProofs ParticipantTimeAllocationRevision[]   @relation("TimeAllocationSettlementDraft")
+  reviewActions                   SettlementReviewAction[]
+  resultRevisions                 ParticipantSettlementResultRevision[]
+  postingBatches                  LedgerPostingBatch[]
+  closureRevisions                ActivitySettlementClosureRevision[]
+  correctionRequests              AttendanceCorrectionRequest[]            @relation("CorrectionRequestBaseVersion")
+  correctionApplied               CorrectionApplication[]                  @relation("CorrectionApplicationNewVersion")
+  batchJobs                       ActivityBatchJob[]
+  settlementTimeRevisions         ActivitySettlementTimeRevision[]
+  timeAllocationDraftProofs       ParticipantTimeAllocationRevision[]      @relation("TimeAllocationSettlementDraft")
+  settlementContributionRevisions ActivitySettlementContributionRevision[] @relation("ContributionRevisionVersion")
+  effectiveTimeContributionRevisions ActivitySettlementContributionRevision[] @relation("ContributionRevisionEffectiveTime")
 
   @@unique([id, settlementRunId], map: "asv_id_run_key")
   @@unique([id, evidenceSealId, evidenceRevision, populationRevision, workflowRevision, contentHash], map: "asv_id_seal_revisions_hash_key")
@@ -7210,15 +7335,16 @@ model ParticipationTimeCorrectionManifest {
   formatVersion           Int
   createdAt               DateTime @default(now())
 
-  postingBatch      LedgerPostingBatch                        @relation(fields: [postingBatchId, settlementVersionId, settlementRunId], references: [id, settlementVersionId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_batch_fkey")
-  rootManifest      ParticipationTimeLedgerManifest           @relation(fields: [rootManifestId, activityId, settlementRunId], references: [id, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_root_fkey")
-  correctionRequest AttendanceCorrectionRequest               @relation(fields: [correctionRequestId, baseSettlementVersionId, activityId, settlementRunId], references: [id, baseSettlementVersionId, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_request_fkey")
-  predecessor       ParticipationTimeCorrectionManifest?      @relation("TimeCorrectionPredecessor", fields: [predecessorManifestId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_predecessor_fkey")
-  successors        ParticipationTimeCorrectionManifest[]     @relation("TimeCorrectionPredecessor")
-  sourceProof       CorrectionTimeSourceProof?                @relation("TimeCorrectionManifestSourceProof", fields: [sourceProofId, rootManifestId, activityId, settlementRunId, sourceProofHash], references: [id, rootManifestId, activityId, settlementRunId, sourceSetHash], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_source_proof_fkey")
-  correctionProof   CorrectionTimeSourceProof?                @relation("CorrectionTimeSourceProofManifest")
-  entries           ParticipationTimeCorrectionEntry[]
-  commitReceipt     ParticipationTimeCorrectionCommitReceipt?
+  postingBatch          LedgerPostingBatch                        @relation(fields: [postingBatchId, settlementVersionId, settlementRunId], references: [id, settlementVersionId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_batch_fkey")
+  rootManifest          ParticipationTimeLedgerManifest           @relation(fields: [rootManifestId, activityId, settlementRunId], references: [id, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_root_fkey")
+  correctionRequest     AttendanceCorrectionRequest               @relation(fields: [correctionRequestId, baseSettlementVersionId, activityId, settlementRunId], references: [id, baseSettlementVersionId, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_request_fkey")
+  predecessor           ParticipationTimeCorrectionManifest?      @relation("TimeCorrectionPredecessor", fields: [predecessorManifestId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_predecessor_fkey")
+  successors            ParticipationTimeCorrectionManifest[]     @relation("TimeCorrectionPredecessor")
+  sourceProof           CorrectionTimeSourceProof?                @relation("TimeCorrectionManifestSourceProof", fields: [sourceProofId, rootManifestId, activityId, settlementRunId, sourceProofHash], references: [id, rootManifestId, activityId, settlementRunId, sourceSetHash], onDelete: Restrict, onUpdate: Restrict, map: "ptcm_source_proof_fkey")
+  correctionProof       CorrectionTimeSourceProof?                @relation("CorrectionTimeSourceProofManifest")
+  entries               ParticipationTimeCorrectionEntry[]
+  commitReceipt         ParticipationTimeCorrectionCommitReceipt?
+  contributionRevisions ActivitySettlementContributionRevision[]
 
   @@unique([id, postingBatchId, activityId], map: "ptcm_id_batch_activity_key")
   @@unique([id, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], map: "ptcm_receipt_anchor_key")
@@ -7516,6 +7642,7 @@ model CorrectionApplication {
   segmentPreparationReceipt CorrectionSegmentPreparationReceipt?
   segmentCleanupReceipt     CorrectionSegmentCleanupReceipt?
   timeSourceProof           CorrectionTimeSourceProof?
+  contributionRevisions     ActivitySettlementContributionRevision[]
 
   correctionRequest    AttendanceCorrectionRequest @relation(fields: [correctionRequestId], references: [id], onDelete: Restrict)
   newSettlementVersion AttendanceSettlementVersion @relation("CorrectionApplicationNewVersion", fields: [newSettlementVersionId], references: [id], onDelete: Restrict)
@@ -7652,11 +7779,12 @@ model CorrectionTimeSourceProof {
   expectedBindingCount    Int
   formatVersion           Int    @default(1)
 
-  application        CorrectionApplication                @relation(fields: [applicationId, postingBatchId, settlementVersionId], references: [id, newPostingBatchId, newSettlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "ctsp_application_fkey")
-  correctionManifest ParticipationTimeCorrectionManifest  @relation("CorrectionTimeSourceProofManifest", fields: [correctionManifestId, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], references: [id, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "ctsp_manifest_fkey")
-  rootManifest       ParticipationTimeLedgerManifest      @relation(fields: [rootManifestId, activityId, settlementRunId], references: [id, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ctsp_root_fkey")
-  sourceManifest     ParticipationTimeCorrectionManifest? @relation("TimeCorrectionManifestSourceProof")
-  bindings           CorrectionTimeAllocationBinding[]
+  application           CorrectionApplication                    @relation(fields: [applicationId, postingBatchId, settlementVersionId], references: [id, newPostingBatchId, newSettlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "ctsp_application_fkey")
+  correctionManifest    ParticipationTimeCorrectionManifest      @relation("CorrectionTimeSourceProofManifest", fields: [correctionManifestId, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], references: [id, postingBatchId, activityId, settlementRunId, baseSettlementVersionId, settlementVersionId], onDelete: Restrict, onUpdate: Restrict, map: "ctsp_manifest_fkey")
+  rootManifest          ParticipationTimeLedgerManifest          @relation(fields: [rootManifestId, activityId, settlementRunId], references: [id, activityId, settlementRunId], onDelete: Restrict, onUpdate: Restrict, map: "ctsp_root_fkey")
+  sourceManifest        ParticipationTimeCorrectionManifest?     @relation("TimeCorrectionManifestSourceProof")
+  bindings              CorrectionTimeAllocationBinding[]
+  contributionRevisions ActivitySettlementContributionRevision[]
 
   @@unique([applicationId], map: "ctsp_application_key")
   @@unique([applicationId, postingBatchId, settlementVersionId], map: "ctsp_application_anchor_key")

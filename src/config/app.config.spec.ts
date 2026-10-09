@@ -1,12 +1,34 @@
 import appConfig, {
   parseActivityControlPlaneMode,
   parseContributionShadowMode,
+  parseContributionSettlementMode,
   parseActivityAudienceTagsHttpEnabled,
   parseActivityResponsibilityWorkflowEnabled,
   parseActivityV11WorkflowEnabled,
   parseInsuranceEnforcementEnabled,
   parseTrustedProxyCidrs,
 } from './app.config';
+
+describe('ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE', () => {
+  describe.each(['development', 'test', 'production', 'smoke'] as const)('%s', (env) => {
+    it('defaults to off independently of other activity switches', () => {
+      expect(parseContributionSettlementMode(undefined, env)).toBe('off');
+      expect(parseContributionSettlementMode('off', env)).toBe('off');
+    });
+    it.each(['', ' ', 'active', 'shadow', 'true', 'OFF', 'fixture ', ' fixture'])(
+      'rejects %j',
+      (raw) => {
+        expect(() => parseContributionSettlementMode(raw, env)).toThrow('必须严格为');
+      },
+    );
+  });
+  it('accepts fixture only in test', () => {
+    expect(parseContributionSettlementMode('fixture', 'test')).toBe('fixture');
+  });
+  it.each(['development', 'production', 'smoke'] as const)('refuses fixture in %s', (env) => {
+    expect(() => parseContributionSettlementMode('fixture', env)).toThrow('仅允许 APP_ENV=test');
+  });
+});
 
 describe('ACTIVITY_E3_CONTRIBUTION_SHADOW_MODE', () => {
   it('defaults only an absent value to off and never inherits the B6 mode', () => {

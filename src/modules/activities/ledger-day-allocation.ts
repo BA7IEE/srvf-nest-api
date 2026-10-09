@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import { splitSpanByBeijingDay } from '../../common/datetime/date-only.util';
+import { beijingDateOnly, splitSpanByBeijingDay } from '../../common/datetime/date-only.util';
 import { GLOBAL_DAILY_CONTRIBUTION_CAP } from '../team-join/team-join.constants';
 
 // ===== 活动改造 v1.1 第 2 批第五刀:北京日拆分 + 日上限分配(纯函数)=====
@@ -77,6 +77,53 @@ export interface LedgerDaySplitRow {
 export type LedgerDaySplitOutcome =
   | { readonly kind: 'split'; readonly rows: readonly LedgerDaySplitRow[] }
   | { readonly kind: 'no_service_day' };
+
+export interface NativeContributionDay {
+  readonly ledgerDate: Date;
+  readonly recognizedPoints: string;
+  readonly sequenceStartAt: Date;
+}
+
+/** E4 contribution dates are already frozen from classified coverage, independent of service hours. */
+export function splitNativeRecognizedIntoDays(
+  input: LedgerDaySplitInput & { readonly contributionDays: readonly NativeContributionDay[] },
+): LedgerDaySplitOutcome {
+  const service = splitRecognizedIntoDays({ ...input, recognizedContributionPoints: 0 });
+  if (service.kind === 'no_service_day') return service;
+  const rows = new Map(service.rows.map((row) => [row.ledgerDate.getTime(), row]));
+  const seen = new Set<number>();
+  let contributionHundredths = 0;
+  for (const day of input.contributionDays) {
+    const date = day.ledgerDate.getTime();
+    if (
+      !Number.isFinite(date) ||
+      day.ledgerDate.toISOString().slice(11) !== '00:00:00.000Z' ||
+      !Number.isFinite(day.sequenceStartAt.getTime()) ||
+      beijingDateOnly(day.sequenceStartAt).getTime() !== date ||
+      seen.has(date) ||
+      !/^(?:0|[1-9][0-9]{0,2})\.[0-9]{2}$/u.test(day.recognizedPoints)
+    )
+      throw new TypeError('native contribution day proof is not canonical');
+    seen.add(date);
+    const hundredths = decimalToHundredths(day.recognizedPoints);
+    contributionHundredths += hundredths;
+    rows.set(date, {
+      ledgerDate: day.ledgerDate,
+      serviceHours: rows.get(date)?.serviceHours ?? 0,
+      recognizedPoints: fromHundredths(hundredths),
+      sequenceStartAt: day.sequenceStartAt,
+      stableOrderKey: input.stableOrderKey,
+    });
+  }
+  if (contributionHundredths !== toHundredths(input.recognizedContributionPoints))
+    throw new TypeError('native contribution days do not conserve the recognized result');
+  return {
+    kind: 'split',
+    rows: [...rows.values()].sort(
+      (left, right) => left.ledgerDate.getTime() - right.ledgerDate.getTime(),
+    ),
+  };
+}
 
 export function splitRecognizedIntoDays(input: LedgerDaySplitInput): LedgerDaySplitOutcome {
   const hoursHundredths = toHundredths(input.recognizedServiceHours);

@@ -28,6 +28,100 @@ const root: TimeCorrectionRoot = {
 const value = { rootEntryId: 'entry', recognizedSeconds: 1800 };
 const build = () => buildParticipationTimeCorrection(anchor, [root], [value], []);
 
+describe('E4 native unchanged-time basis remains separate from the current business base', () => {
+  const nativeTimeBasis = {
+    contributionRevisionId: 'native-unchanged-proof',
+    activityId: anchor.activityId,
+    settlementRunId: anchor.settlementRunId,
+    baseSettlementVersionId: 'unchanged-business-version',
+    effectiveTimeSettlementVersionId: anchor.rootSettlementVersionId,
+  };
+  const nativeAnchor = {
+    ...anchor,
+    baseSettlementVersionId: nativeTimeBasis.baseSettlementVersionId,
+    settlementVersionId: 'next-time-version',
+    sourceProofId: 'current-v3-source',
+    sourceProofHash: 'c'.repeat(64),
+    nativeTimeBasis,
+  };
+  it('pairs the real root after an unchanged business version, without leaking a synthetic basis into the manifest', () => {
+    const next = buildParticipationTimeCorrection(nativeAnchor, [root], [value], []);
+    expect(next.manifest.baseSettlementVersionId).toBe(nativeTimeBasis.baseSettlementVersionId);
+    expect(next.manifest.rootManifestId).toBe(root.manifestId);
+    expect(next.entries.map((entry) => entry.secondsDelta)).toEqual([-3600, 1800]);
+    expect('nativeTimeBasis' in next.manifest).toBe(false);
+  });
+  it('retains the latest actual time predecessor across an unchanged business version', () => {
+    const next = buildParticipationTimeCorrection(
+      {
+        ...nativeAnchor,
+        predecessorManifestId: 'actual-time-predecessor',
+        nativeTimeBasis: {
+          ...nativeTimeBasis,
+          effectiveTimeSettlementVersionId: 'last-time-version',
+        },
+      },
+      [root],
+      [value],
+      [
+        {
+          id: 'prior-credit',
+          manifestId: 'actual-time-predecessor',
+          rootEntryId: root.id,
+          participationIdentityId: root.participationIdentityId,
+          categoryCode: root.categoryCode,
+          entryTypeCode: 'credit',
+          secondsDelta: 2400,
+        },
+      ],
+    );
+    expect(next.entries[0].secondsDelta).toBe(-2400);
+    expect(next.entries[0].reversesCorrectionEntryId).toBe('prior-credit');
+  });
+  it.each([
+    { contributionRevisionId: '' },
+    { activityId: 'other-activity' },
+    { settlementRunId: 'other-run' },
+    { baseSettlementVersionId: 'stale-base' },
+    { effectiveTimeSettlementVersionId: '' },
+    { effectiveTimeSettlementVersionId: nativeAnchor.baseSettlementVersionId },
+    { effectiveTimeSettlementVersionId: nativeAnchor.settlementVersionId },
+    { effectiveTimeSettlementVersionId: 'different-time-root' },
+  ])('rejects a missing, mismatched or unpaired native basis %#', (change) => {
+    expect(() =>
+      buildParticipationTimeCorrection(
+        {
+          ...nativeAnchor,
+          nativeTimeBasis: { ...nativeTimeBasis, ...change },
+        },
+        [root],
+        [value],
+        [],
+      ),
+    ).toThrow(TimeCorrectionPolicyError);
+  });
+  it('can validate exact time pairing before submit has created its current V3 proof, without claiming it already exists', () => {
+    const preview = buildParticipationTimeCorrection(
+      { ...nativeAnchor, sourceProofId: null, sourceProofHash: null },
+      [root],
+      [value],
+      [],
+    );
+    expect(preview.manifest.formatVersion).toBe(1);
+    expect('sourceProofId' in preview.manifest).toBe(false);
+    expect('sourceProofHash' in preview.manifest).toBe(false);
+    expect(preview.manifest.baseSettlementVersionId).toBe(nativeAnchor.baseSettlementVersionId);
+    expect(preview.entries.map((entry) => entry.secondsDelta)).toEqual([-3600, 1800]);
+  });
+  it('still rejects the different business base without a proven native basis', () => {
+    const { nativeTimeBasis: _basis, ...unproven } = nativeAnchor;
+    void _basis;
+    expect(() => buildParticipationTimeCorrection(unproven, [root], [value], [])).toThrow(
+      TimeCorrectionPolicyError,
+    );
+  });
+});
+
 describe('D7-1 immutable correction contents', () => {
   it('reverses the initial root exactly and posts a full replacement', () => {
     const result = build();

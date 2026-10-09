@@ -207,6 +207,7 @@ async function seedLegacy() {
         },
       });
       const version = await tx.attendanceSettlementVersion.create({
+        select: { id: true },
         data: {
           settlementRunId: run.id,
           version: 1,
