@@ -1,0 +1,280 @@
+name: R5 E4 isolated validation
+
+# Only the approved adaptation commit can consume this one-shot queue.
+# Subsequent report pushes do not match this workflow path; reruns are refused.
+on:
+  push:
+    branches: [codex/activity-os-r5-e4-github-validation]
+    paths: [.github/workflows/activity-os-r5-e4-validation.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e4-once-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  validation:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[e4-validation-once]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      APP_ENV: test
+      SRVF_E4_GITHUB_ISOLATED: '1'
+      SRVF_TEST_RUN_SCOPE: app_test_w98
+      SRVF_E4_W98: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+
+      - name: Prepare private serial gate and safe NOT_RUN ledger
+        run: |
+          mkdir -p tmp/e4-github-evidence
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const stages = ['offline', 'install', 'd1', 'd3', 'd4', 'd5', 'd6-migration', 'd6-regression', 'd6-static'];
+          const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'srvf-e4-cloud-'));
+          fs.chmodSync(dir, 0o700);
+          fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({
+            head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
+            attempt: process.env.GITHUB_RUN_ATTEMPT, next: 0, stopped: false,
+          }), { mode: 0o600, flag: 'wx' });
+          fs.writeFileSync('tmp/e4-github-evidence/status.json', JSON.stringify({
+            schema: 'srvf-e4-github-validation/v1', head: process.env.GITHUB_SHA,
+            stages: Object.fromEntries(stages.map(stage => [stage, { status: 'NOT_RUN' }])),
+          }, null, 2));
+          fs.appendFileSync(process.env.GITHUB_ENV, 'SRVF_E4_GITHUB_PRIVATE_DIR=' + dir + '\n');
+          NODE
+          cat > "$RUNNER_TEMP/e4-gate.cjs" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const cp = require('node:child_process');
+          const stages = ['offline', 'install', 'd1', 'd3', 'd4', 'd5', 'd6-migration', 'd6-regression', 'd6-static'];
+          const stage = process.argv[2];
+          const dir = process.env.SRVF_E4_GITHUB_PRIVATE_DIR;
+          const ledgerFile = 'tmp/e4-github-evidence/status.json';
+          const root = process.cwd();
+          const migration = 'test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts';
+          const scale = 'test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts';
+          const config = JSON.stringify({
+            rootDir: root, testEnvironment: 'node', testRegex: '.*\\.e2e-spec\\.ts$',
+            moduleFileExtensions: ['ts', 'js', 'json'], maxWorkers: 1, testTimeout: 30000,
+            transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/test/tsconfig.test.json' }] },
+            setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
+          });
+          async function child(args, env, capMs, capture = false) {
+            const proc = cp.spawn('pnpm', args, {
+              env: { ...process.env, ...env }, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            let bytes = 0, exceeded = false, timedOut = false, stdout = '';
+            const drain = (part, keep) => {
+              bytes += Buffer.byteLength(part);
+              if (bytes > 65536) exceeded = true;
+              else if (keep) stdout += part.toString();
+            };
+            proc.stdout.on('data', part => drain(part, capture));
+            proc.stderr.on('data', part => drain(part, false));
+            const kill = signal => {
+              try { process.kill(-proc.pid, signal); } catch { proc.kill(signal); }
+            };
+            let force;
+            const timer = setTimeout(() => {
+              timedOut = true; kill('SIGTERM'); force = setTimeout(() => kill('SIGKILL'), 2000);
+            }, capMs);
+            const outcome = await new Promise(resolve => {
+              proc.once('error', () => resolve({ exitCode: null, signaled: false, spawnError: true }));
+              proc.once('close', (exitCode, signal) => resolve({ exitCode, signaled: signal !== null, spawnError: false }));
+            });
+            clearTimeout(timer); clearTimeout(force);
+            return { ...outcome, exceeded, timedOut, stdout };
+          }
+          function privateJson(file) {
+            const stat = fs.lstatSync(file);
+            if (!stat.isFile() || stat.size <= 0 || stat.size > 2097152) throw Error('private JSON unavailable');
+            return JSON.parse(fs.readFileSync(file, 'utf8'));
+          }
+          async function jestGate(files, pattern, target, lifecycle = '') {
+            const file = path.join(dir, 'jest-' + stage + '-' + path.basename(files[0]) + '.json');
+            const result = await child([
+              'exec', 'jest', '--runInBand', '--no-cache', '--bail', '--silent', '--json',
+              '--outputFile', file, '--config', config, '--runTestsByPath', ...files,
+              '--testNamePattern', pattern,
+            ], { SRVF_E4_W98: stage === 'offline' ? '0' : '1', SRVF_E4_N1_LIFECYCLE: lifecycle }, 600000);
+            let value;
+            try { value = privateJson(file); } catch { return { status: 'UNKNOWN', reason: 'JEST_UNAVAILABLE' }; }
+            const counts = {
+              passed: value.numPassedTests, failed: value.numFailedTests,
+              skipped: value.numPendingTests, suites: value.numTotalTestSuites,
+            };
+            if (Object.values(counts).some(n => !Number.isSafeInteger(n) || n < 0 || n > 10000))
+              return { status: 'UNKNOWN', reason: 'COUNTS_INVALID' };
+            const selected = value.testResults.flatMap(suite => suite.assertionResults)
+              .filter(test => test.status !== 'pending');
+            const names = new RegExp(pattern);
+            const selection = counts.suites === files.length && selected.length > 0 &&
+              selected.every(test => typeof test.fullName === 'string' && names.test(test.fullName)) &&
+              (target === undefined || (selected.length === 1 && selected[0].fullName === target));
+            if (result.exceeded || result.timedOut || result.signaled || result.spawnError || !selection)
+              return { status: 'UNKNOWN', reason: 'PROCESS_OR_SELECTION', counts };
+            return {
+              status: result.exitCode === 0 && value.success === true && counts.failed === 0 ? 'PASS' : 'FAIL',
+              reason: 'JEST', counts, exitCode: result.exitCode,
+            };
+          }
+          function freshEmptyRunner() {
+            const sql = "SELECT json_build_object('observer',pg_backend_pid()>0,'db',current_database()='postgres'," +
+              "'version',current_setting('server_version_num')::int/10000," +
+              "'databases',(SELECT count(*) FROM pg_database WHERE datname='app_test_w98')," +
+              "'clients',(SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid())," +
+              "'locks',(SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND granted))";
+            const facts = JSON.parse(cp.execFileSync('docker', [
+              'exec', 'u-nest-api-postgres', 'psql', '--no-psqlrc', '-qtA', '-U', 'postgres',
+              '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', sql,
+            ], { encoding: 'utf8', timeout: 15000, maxBuffer: 4096, stdio: ['ignore', 'pipe', 'pipe'] }));
+            if (facts.observer !== true || facts.db !== true || facts.version !== 16 ||
+                facts.databases !== 0 || facts.clients !== 0 || facts.locks !== 0)
+              throw Error('fresh runner precondition refused');
+            return facts;
+          }
+          async function execute() {
+            if (stage === 'offline')
+              return jestGate([migration, scale], '(?: offline | offline$)');
+            if (stage === 'install') {
+              const precondition = freshEmptyRunner();
+              const name = 'E4 migration dedicated lease envelope E4 N1 install-retain stage builds the sole full synthetic root for D1 admission';
+              const result = await jestGate([migration], '^' + name + '$', name, 'install-retain');
+              return { ...result, precondition };
+            }
+            if (stage === 'd1') {
+              const args = ['exec', 'tsx', 'test/helpers/e4-d1-evidence-launcher.ts'];
+              const result = await child([...args, '--execute', '--scope', 'app_test_w98'],
+                { SRVF_E4_W98: '1', SRVF_E4_N1_LIFECYCLE: '' }, 120000, true);
+              const value = JSON.parse(result.stdout);
+              if (!['PASS', 'FAIL', 'UNKNOWN'].includes(value.status) ||
+                  result.exceeded || result.timedOut || result.signaled || result.spawnError)
+                return { status: 'UNKNOWN', reason: 'D1_TRANSPORT' };
+              fs.writeFileSync('tmp/e4-github-evidence/d1.json', JSON.stringify(value, null, 2));
+              if (value.status !== 'PASS') return { status: value.status, reason: value.reason, d1Started: value.d1Started };
+              const reader = await child([...args, '--read-latest', '--scope', 'app_test_w98'],
+                { SRVF_E4_W98: '1' }, 30000, true);
+              const readback = JSON.parse(reader.stdout);
+              fs.writeFileSync('tmp/e4-github-evidence/d1-readback.json', JSON.stringify(readback, null, 2));
+              if (reader.exitCode !== 0 || reader.exceeded || reader.timedOut ||
+                  readback.status !== 'PASS' || readback.runId !== value.runId)
+                return { status: 'UNKNOWN', reason: 'D1_READBACK' };
+              return { status: result.exitCode === 0 ? 'PASS' : 'UNKNOWN', reason: value.reason, d1Started: value.d1Started };
+            }
+            if (stage === 'd3') return jestGate([migration],
+              '^E4 migration dedicated lease envelope E4 migration real PostgreSQL cold replay and closed proof functions (E4 terminal expected small real proof |E4 terminal refs projection small real proof )');
+            if (stage === 'd4' || stage === 'd5') {
+              const suffix = stage === 'd4' ? 'E4 S13 thin-key exact full-doc probe' :
+                '2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
+              const name = 'E4 maximum real sources with unchanged transaction and query budgets ' + suffix;
+              return jestGate([scale], '^' + name + '$', name);
+            }
+            if (stage === 'd6-migration') return jestGate([migration],
+              '^(?!E4 terminal expected retained function-body diagnostic |E4 N1 candidate admission gate )');
+            if (stage === 'd6-regression') {
+              let passed = 0;
+              for (const suffix of ['', '-http', '-correction', '-concurrency']) {
+                const file = 'test/e2e/activity-os-r5-e4-contribution-settlement' + suffix + '.e2e-spec.ts';
+                const result = await jestGate([file], '.*');
+                if (result.status !== 'PASS') return { ...result, completedSuites: passed };
+                passed++;
+              }
+              return { status: 'PASS', completedSuites: passed };
+            }
+            if (stage === 'd6-static') {
+              for (const args of [['agent:check:quick'], ['test:contract']]) {
+                const result = await child(args, { SRVF_E4_W98: '0' }, 600000);
+                if (result.timedOut || result.exceeded || result.signaled || result.spawnError)
+                  return { status: 'UNKNOWN', reason: 'STATIC_PROCESS' };
+                if (result.exitCode !== 0) return { status: 'FAIL', reason: 'STATIC_GATE' };
+              }
+              return { status: 'PASS' };
+            }
+            throw Error('stage refused');
+          }
+          async function main() {
+            let result = { status: 'UNKNOWN', reason: 'GATE_REFUSED' }, state;
+            const stateFile = path.join(dir, 'state.json');
+            const ledger = JSON.parse(fs.readFileSync(ledgerFile, 'utf8'));
+            try {
+              state = privateJson(stateFile);
+              if (process.env.GITHUB_RUN_ATTEMPT !== '1' ||
+                  state.head !== process.env.GITHUB_SHA || state.run !== process.env.GITHUB_RUN_ID ||
+                  state.attempt !== '1' || state.stopped || stages[state.next] !== stage)
+                throw Error('one-shot sequence refused');
+              // Persist consumption before starting any child. An interrupted gate cannot be retried.
+              state.next++; state.stopped = true;
+              fs.writeFileSync(stateFile, JSON.stringify(state), { mode: 0o600 });
+              result = await execute();
+              state.stopped = result.status !== 'PASS';
+              fs.writeFileSync(stateFile, JSON.stringify(state), { mode: 0o600 });
+            } catch { result = { status: 'UNKNOWN', reason: 'GATE_OR_EVIDENCE_UNKNOWN' }; }
+            if (stages.includes(stage)) ledger.stages[stage] = result;
+            fs.writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2));
+            process.stdout.write(JSON.stringify({ stage, ...result }) + '\n');
+            process.exitCode = result.status === 'PASS' ? 0 : result.status === 'FAIL' ? 1 : 2;
+          }
+          void main();
+          NODE
+
+      - name: Full TypeScript check before database admission
+        run: pnpm typecheck
+      - name: D0 complete offline groups
+        run: node "$RUNNER_TEMP/e4-gate.cjs" offline
+      - name: Start isolated runner PostgreSQL 16
+        run: |
+          docker compose up -d postgres
+          for attempt in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: Fresh zero-client precondition and N1 install-retain
+        run: node "$RUNNER_TEMP/e4-gate.cjs" install
+      - name: Admission then one D1 with independent readback
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d1
+      - name: D3 original small correctness
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d3
+      - name: D4 one strict AB to BA S13
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d4
+      - name: D5 one original maximum full chain
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d5
+      - name: D6 migration excluding consumed D1
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d6-migration
+      - name: D6 four direct suites in sequence
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d6-regression
+      - name: D6 existing quick and contract gates
+        run: node "$RUNNER_TEMP/e4-gate.cjs" d6-static
+
+      # No raw Jest/SQL/stdout, private capture directory, fixture identifiers,
+      # token, connection URL, or Git metadata is uploaded.
+      - name: Retain closed safe gate summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e4-safe-gates-${{ github.run_id }}
+          path: |
+            tmp/e4-github-evidence/status.json
+            tmp/e4-github-evidence/d1.json
+            tmp/e4-github-evidence/d1-readback.json
+          if-no-files-found: ignore
+          retention-days: 7
