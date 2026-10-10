@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
   assertTestDatabaseUrl,
   assertDroppableTestDbName,
@@ -206,25 +206,19 @@ async function seedLegacy() {
           currentSubmittedVersion: 1,
         },
       });
-      const version = await tx.attendanceSettlementVersion.create({
-        select: { id: true },
-        data: {
-          settlementRunId: run.id,
-          version: 1,
-          evidenceSealId: seal.id,
-          evidenceRevision: 0,
-          populationRevision: 0,
-          workflowRevision: 0,
-          contentHash: 'fixture-version',
-          personCount: 1,
-          sessionParticipationCount: 1,
-          serviceSegmentCount: 1,
-          createdByUserId: user.id,
-          submittedAt: end,
-          statusCode: 'approved',
-          operationKey: 'fixture-submit',
-        },
-      });
+      const [version] = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+INSERT INTO "AttendanceSettlementVersion" (
+  "updatedAt", "id", "settlementRunId", "version",
+  "evidenceSealId", "evidenceRevision", "populationRevision", "workflowRevision",
+  "contentHash", "personCount", "sessionParticipationCount", "serviceSegmentCount",
+  "createdByUserId", "submittedAt", "statusCode", "operationKey"
+) VALUES (
+  CURRENT_TIMESTAMP, ${'legacy-d7-1-settlement-version'}, ${run.id}, ${1},
+  ${seal.id}, ${0}, ${0}, ${0},
+  ${'fixture-version'}, ${1}, ${1}, ${1},
+  ${user.id}, ${end}, ${'approved'}, ${'fixture-submit'}
+) RETURNING "id"
+`);
       const result = await tx.participantSettlementResultRevision.create({
         data: {
           settlementVersionId: version.id,
@@ -332,7 +326,7 @@ describe('D7-1 migration cold replay and nonempty legacy upgrade', () => {
   it('replays 136 exact SQL files and leaves both D7-1 tables empty', () => {
     recreate();
     deploy(schema);
-    expect(names).toHaveLength(136);
+    expect(names).toHaveLength(137);
     expect(names[122]).toBe(MIGRATION);
     expect(checksums()).toEqual(
       names.map(

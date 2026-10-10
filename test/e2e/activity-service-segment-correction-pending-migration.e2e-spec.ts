@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { PrismaService } from '../../src/database/prisma.service';
@@ -337,28 +337,23 @@ describe('pending segment nonempty legacy upgrade', () => {
       select: { id: true },
     });
 
-    const version = await prisma.attendanceSettlementVersion.create({
-      data: {
-        settlementRunId: run.id,
-        version: 1,
-        evidenceSealId: seal.id,
-        evidenceRevision: 0,
-        populationRevision: 0,
-        workflowRevision: 0,
-        contentHash: `content-hash-${tag}`,
-        personCount: memberCount,
-        sessionParticipationCount: memberCount,
-        serviceSegmentCount: memberCount,
-        // ⭐ 提交人 = `submitter` —— §7.5 后半句「若更正由**原结算提交人**提出仍适用」
-        //    那条 red-first 就靠它成立。
-        createdByUserId: submitter.id,
-        submittedAt: SEAL_AT,
-        statusCode: 'approved',
-        operationKey: `${tag}-submit-key`,
-        requestHash: `${tag}-submit-hash`,
-      },
-      select: { id: true },
-    });
+    // ⭐ 提交人 = `submitter` —— §7.5 后半句「若更正由**原结算提交人**提出仍适用」
+    //    那条 red-first 就靠它成立。
+    const [version] = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+INSERT INTO "AttendanceSettlementVersion" (
+  "updatedAt", "id", "settlementRunId", "version",
+  "evidenceSealId", "evidenceRevision", "populationRevision", "workflowRevision",
+  "contentHash", "personCount", "sessionParticipationCount", "serviceSegmentCount",
+  "createdByUserId", "submittedAt", "statusCode", "operationKey",
+  "requestHash"
+) VALUES (
+  CURRENT_TIMESTAMP, ${`legacy-pending-${tag}`}, ${run.id}, ${1},
+  ${seal.id}, ${0}, ${0}, ${0},
+  ${`content-hash-${tag}`}, ${memberCount}, ${memberCount}, ${memberCount},
+  ${submitter.id}, ${SEAL_AT}, ${'approved'}, ${`${tag}-submit-key`},
+  ${`${tag}-submit-hash`}
+) RETURNING "id"
+`);
 
     const identityIds: string[] = [];
     const resultRevisionIds: string[] = [];

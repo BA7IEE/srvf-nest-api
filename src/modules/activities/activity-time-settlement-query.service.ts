@@ -354,6 +354,32 @@ export class ActivityTimeSettlementQueryService {
       list.push(slice);
       byAllocation.set(slice.allocationRevisionId, list);
     }
+    // Reuse only successful historical roles during this synchronous evaluation.
+    // These are this transaction's JSON snapshots; no state survives the call.
+    const historicalRoles = new Map<(typeof snapshots)[number], Map<string, Map<string, string>>>();
+    const roleForSnapshot = (
+      snapshot: (typeof snapshots)[number],
+      sessionId: string,
+      positionId: string | null,
+    ): string | null => {
+      if (positionId === null)
+        return historicalAttendanceRoleFromRuleSnapshot(snapshot.resolvedConfig, sessionId, null);
+      const sessions = historicalRoles.get(snapshot) ?? new Map<string, Map<string, string>>();
+      const positions = sessions.get(sessionId) ?? new Map<string, string>();
+      const previous = positions.get(positionId);
+      if (previous !== undefined) return previous;
+      const role = historicalAttendanceRoleFromRuleSnapshot(
+        snapshot.resolvedConfig,
+        sessionId,
+        positionId,
+      );
+      if (role !== null) {
+        positions.set(positionId, role);
+        sessions.set(sessionId, positions);
+        historicalRoles.set(snapshot, sessions);
+      }
+      return role;
+    };
     const allocations: TimeSettlementAllocation[] = applicable.map((row) => {
       const snapshot = bySnapshot.get(row.ruleSnapshotId),
         sourceSlices = byAllocation.get(row.id) ?? [];
@@ -370,11 +396,7 @@ export class ActivityTimeSettlementQueryService {
       return {
         ...row,
         recognitionModeCode: row.recognitionModeCode,
-        attendanceRoleCode: historicalAttendanceRoleFromRuleSnapshot(
-          snapshot.resolvedConfig,
-          row.sessionId,
-          row.sourcePositionId,
-        ),
+        attendanceRoleCode: roleForSnapshot(snapshot, row.sessionId, row.sourcePositionId),
         slices: sourceSlices.map((slice) => {
           if (
             (slice.categoryCode !== 'volunteer_service' &&

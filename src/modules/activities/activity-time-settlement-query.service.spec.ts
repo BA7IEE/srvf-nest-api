@@ -1,3 +1,5 @@
+import * as historicalRolePolicy from './activity-time-allocation-policy';
+import * as timeSettlementPolicy from './activity-time-settlement-policy';
 import { Prisma, Role, UserStatus, type ParticipantTimeAllocationRevision } from '@prisma/client';
 import type { PrismaService } from '../../database/prisma.service';
 import type { ParticipationSegmentFacade } from '../attendances/participation-segment.facade';
@@ -733,5 +735,154 @@ describe('E4 time workbench contribution proof wiring', () => {
     f.contributions.readSummaryInTx.mockRejectedValue(failure);
     await expect(f.service.workbench('activity', actor)).rejects.toThrow(failure);
     expect(f.access.authorize).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('D4 historical-role reuse stays inside one evaluation', () => {
+  function roleFixture() {
+    const first = { ...segment('first'), sourcePositionId: 'position' };
+    const second = { ...segment('second'), sourcePositionId: 'position' };
+    const snapshots = [
+      {
+        id: 'snapshot',
+        snapshotHash: 'b'.repeat(64),
+        resolvedConfig: {
+          sessions: [
+            {
+              sessionId: 'session',
+              positions: [{ positionId: 'position', attendanceRoleCode: 'service' }],
+            },
+          ],
+        },
+      },
+    ];
+    const rows: Array<Omit<ParticipantTimeAllocationRevision, 'allocationJson'>> = [
+      first,
+      second,
+    ].map((source) => ({ ...allocation(source), sourcePositionId: 'position' }));
+    const tx = {
+      participantTimeAllocationSlice: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue(
+            rows.map((row) => ({
+              allocationRevisionId: row.id,
+              ordinal: 0,
+              activityId: 'activity',
+              categoryCode: 'volunteer_service',
+              intervalKindCode: 'service_segment',
+              startAt: first.checkInAt,
+              endAt: first.checkOutAt,
+            })),
+          ),
+      },
+      timePolicyVersion: { findMany: jest.fn().mockResolvedValue([]) },
+      activityRuleSnapshot: { findMany: jest.fn().mockResolvedValue(snapshots) },
+    };
+    const access = { authorize: jest.fn() };
+    const service = new ActivityTimeSettlementQueryService(
+      {} as PrismaService,
+      {} as ParticipationSegmentFacade,
+      access as unknown as ActivityTimeSettlementAccessService,
+    );
+    const set = sourceSet({ segments: [first, second], latest: rows });
+    return { tx, access, service, set, snapshots, rows };
+  }
+  it('reuses a successful role while retaining all reads and full builder input', async () => {
+    const f = roleFixture();
+    const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
+    const builder = jest
+      .spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets')
+      .mockReturnValue({
+        buckets: [],
+        bucketCount: 0,
+        sourceCount: 0,
+        bucketContentHash: 'f'.repeat(64),
+      });
+    try {
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect(resolver).toHaveBeenCalledTimes(1);
+      expect(builder.mock.calls[0][0].allocations.map((row) => row.attendanceRoleCode)).toEqual([
+        'service',
+        'service',
+      ]);
+      expect(f.tx.participantTimeAllocationSlice.findMany).toHaveBeenCalledTimes(1);
+      expect(f.tx.timePolicyVersion.findMany).toHaveBeenCalledTimes(1);
+      expect(f.tx.activityRuleSnapshot.findMany).toHaveBeenCalledTimes(1);
+      expect(f.access.authorize).not.toHaveBeenCalled();
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect(resolver).toHaveBeenCalledTimes(2);
+      expect(f.tx.activityRuleSnapshot.findMany).toHaveBeenCalledTimes(2);
+    } finally {
+      resolver.mockRestore();
+      builder.mockRestore();
+    }
+  });
+  it('does not borrow a role from another snapshot or hide a later malformed snapshot', async () => {
+    const f = roleFixture();
+    f.rows[1].ruleSnapshotId = 'other-snapshot';
+    f.snapshots.push({
+      id: 'other-snapshot',
+      snapshotHash: 'b'.repeat(64),
+      resolvedConfig: {
+        sessions: [
+          {
+            sessionId: 'session',
+            positions: [{ positionId: 'position', attendanceRoleCode: 'other-role' }],
+          },
+        ],
+      },
+    });
+    const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
+    const builder = jest
+      .spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets')
+      .mockReturnValue({
+        buckets: [],
+        bucketCount: 0,
+        sourceCount: 0,
+        bucketContentHash: 'f'.repeat(64),
+      });
+    try {
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect(resolver).toHaveBeenCalledTimes(2);
+      expect(builder.mock.calls[0][0].allocations.map((row) => row.attendanceRoleCode)).toEqual([
+        'service',
+        'other-role',
+      ]);
+      f.snapshots[0].resolvedConfig.sessions[0].positions = [];
+      await expect(
+        f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set),
+      ).rejects.toBeInstanceOf(BizException);
+      expect(builder).toHaveBeenCalledTimes(1);
+    } finally {
+      resolver.mockRestore();
+      builder.mockRestore();
+    }
+  });
+  it('retains the null-position branch without parsing or reusing historical roles', async () => {
+    const f = roleFixture();
+    f.rows.forEach((row) => {
+      row.sourcePositionId = null;
+    });
+    const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
+    const builder = jest
+      .spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets')
+      .mockReturnValue({
+        buckets: [],
+        bucketCount: 0,
+        sourceCount: 0,
+        bucketContentHash: 'f'.repeat(64),
+      });
+    try {
+      await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
+      expect(resolver).toHaveBeenCalledTimes(2);
+      expect(builder.mock.calls[0][0].allocations.map((row) => row.attendanceRoleCode)).toEqual([
+        null,
+        null,
+      ]);
+    } finally {
+      resolver.mockRestore();
+      builder.mockRestore();
+    }
   });
 });

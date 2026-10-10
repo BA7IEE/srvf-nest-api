@@ -76,18 +76,62 @@ jobs:
             transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/test/tsconfig.test.json' }] },
             setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
           });
+          const closedReporterSource = String.raw`
+          'use strict';
+          const fs = require('node:fs');
+          const path = require('node:path');
+          module.exports = class E4ClosedReporter {
+            onRunComplete(_contexts, result) {
+              const file = process.env.SRVF_E4_CLOSED_JEST_FILE;
+              const directory = process.env.SRVF_E4_GITHUB_PRIVATE_DIR;
+              if (typeof file !== 'string' || typeof directory !== 'string' ||
+                  path.dirname(file) !== directory) throw Error('closed reporter destination refused');
+              const keys = ['numPassedTests', 'numFailedTests', 'numPendingTests', 'numTotalTestSuites',
+                'numPassedTestSuites', 'numFailedTestSuites', 'numRuntimeErrorTestSuites'];
+              if (keys.some(key => !Number.isSafeInteger(result[key]) || result[key] < 0 || result[key] > 10000) ||
+                  !Array.isArray(result.testResults)) throw Error('closed reporter counts refused');
+              const testResults = result.testResults.map(suite => {
+                if (!Array.isArray(suite.testResults)) throw Error('closed reporter assertions refused');
+                return { assertionResults: suite.testResults.map(test => {
+                  if (typeof test.fullName !== 'string' ||
+                      !['passed', 'failed', 'pending', 'todo', 'disabled'].includes(test.status))
+                    throw Error('closed reporter selection refused');
+                  return { fullName: test.fullName, status: test.status };
+                }) };
+              });
+              const value = {
+                schema: 'srvf-e4-closed-jest/v1',
+                binding: { head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
+                  attempt: process.env.GITHUB_RUN_ATTEMPT, stage: process.env.SRVF_E4_CLOSED_JEST_STAGE },
+                success: result.numFailedTests === 0 && result.numFailedTestSuites === 0 &&
+                  result.numRuntimeErrorTestSuites === 0 &&
+                  result.numPassedTestSuites === result.numTotalTestSuites,
+                numPassedTests: result.numPassedTests, numFailedTests: result.numFailedTests,
+                numPendingTests: result.numPendingTests, numTotalTestSuites: result.numTotalTestSuites,
+                testResults,
+              };
+              const payload = JSON.stringify(value);
+              if (Buffer.byteLength(payload) > 2097152) throw Error('closed reporter output limit');
+              fs.writeFileSync(file, payload, { mode: 0o600, flag: 'wx' });
+            }
+          };
+          `;
           async function child(args, env, capMs, capture = false) {
             const proc = cp.spawn('pnpm', args, {
               env: { ...process.env, ...env }, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
             });
             let bytes = 0, exceeded = false, timedOut = false, stdout = '';
-            const drain = (part, keep) => {
-              bytes += Buffer.byteLength(part);
+            let stdoutBytes = 0, stderrBytes = 0;
+            const drain = (part, keep, stream) => {
+              const size = Buffer.byteLength(part);
+              if (stream === 'stdout') stdoutBytes = Math.min(65537, stdoutBytes + size);
+              else stderrBytes = Math.min(65537, stderrBytes + size);
+              bytes += size;
               if (bytes > 65536) exceeded = true;
               else if (keep) stdout += part.toString();
             };
-            proc.stdout.on('data', part => drain(part, capture));
-            proc.stderr.on('data', part => drain(part, false));
+            proc.stdout.on('data', part => drain(part, capture, 'stdout'));
+            proc.stderr.on('data', part => drain(part, false, 'stderr'));
             const kill = signal => {
               try { process.kill(-proc.pid, signal); } catch { proc.kill(signal); }
             };
@@ -100,39 +144,75 @@ jobs:
               proc.once('close', (exitCode, signal) => resolve({ exitCode, signaled: signal !== null, spawnError: false }));
             });
             clearTimeout(timer); clearTimeout(force);
-            return { ...outcome, exceeded, timedOut, stdout };
+            return { ...outcome, exceeded, timedOut, stdout, stdoutBytes, stderrBytes };
           }
           function privateJson(file) {
             const stat = fs.lstatSync(file);
             if (!stat.isFile() || stat.size <= 0 || stat.size > 2097152) throw Error('private JSON unavailable');
             return JSON.parse(fs.readFileSync(file, 'utf8'));
           }
+          function closedJestFile(file) {
+            let stat;
+            try { stat = fs.lstatSync(file); }
+            catch (error) { return { fileState: error.code === 'ENOENT' ? 'MISSING' : 'READ_ERROR' }; }
+            if (!stat.isFile()) return { fileState: 'NON_REGULAR' };
+            if (stat.size === 0) return { fileState: 'EMPTY' };
+            if (stat.size > 2097152) return { fileState: 'TOO_LARGE' };
+            let value;
+            try { value = JSON.parse(fs.readFileSync(file, 'utf8')); }
+            catch { return { fileState: 'INVALID_JSON' }; }
+            if (value === null || value.schema !== 'srvf-e4-closed-jest/v1' ||
+                value.binding === null || typeof value.binding !== 'object' ||
+                value.binding.head !== process.env.GITHUB_SHA || value.binding.run !== process.env.GITHUB_RUN_ID ||
+                value.binding.attempt !== process.env.GITHUB_RUN_ATTEMPT || value.binding.stage !== stage)
+              return { fileState: 'BINDING_REFUSED' };
+            if (typeof value.success !== 'boolean' || !Array.isArray(value.testResults) ||
+                value.testResults.some(suite => suite === null || !Array.isArray(suite.assertionResults) ||
+                  suite.assertionResults.some(test => test === null || typeof test.fullName !== 'string' ||
+                    !['passed', 'failed', 'pending', 'todo', 'disabled'].includes(test.status))))
+              return { fileState: 'SCHEMA_REFUSED' };
+            return { fileState: 'VALID', value };
+          }
           async function jestGate(files, pattern, target, lifecycle = '') {
             const file = path.join(dir, 'jest-' + stage + '-' + path.basename(files[0]) + '.json');
+            const reporterFile = file + '.reporter.cjs';
+            fs.writeFileSync(reporterFile, closedReporterSource, { mode: 0o600, flag: 'wx' });
+            const closedConfig = JSON.stringify({ ...JSON.parse(config), reporters: ['default', reporterFile] });
             const result = await child([
-              'exec', 'jest', '--runInBand', '--no-cache', '--bail', '--silent', '--json',
-              '--outputFile', file, '--config', config, '--runTestsByPath', ...files,
+              'exec', 'jest', '--runInBand', '--no-cache', '--bail', '--silent',
+              '--config', closedConfig, '--runTestsByPath', ...files,
               '--testNamePattern', pattern,
-            ], { SRVF_E4_W98: stage === 'offline' ? '0' : '1', SRVF_E4_N1_LIFECYCLE: lifecycle }, 600000);
-            let value;
-            try { value = privateJson(file); } catch { return { status: 'UNKNOWN', reason: 'JEST_UNAVAILABLE' }; }
+            ], { SRVF_E4_W98: stage === 'offline' ? '0' : '1', SRVF_E4_N1_LIFECYCLE: lifecycle,
+              SRVF_E4_CLOSED_JEST_FILE: file, SRVF_E4_CLOSED_JEST_STAGE: stage }, 600000);
+            const childFacts = {
+              exitCode: Number.isSafeInteger(result.exitCode) && result.exitCode >= 0 && result.exitCode <= 255 ? result.exitCode : null,
+              signaled: result.signaled, spawnError: result.spawnError, timedOut: result.timedOut,
+              outputLimitExceeded: result.exceeded, stdoutBytes: result.stdoutBytes, stderrBytes: result.stderrBytes,
+            };
+            const report = closedJestFile(file);
+            const evidence = { fileState: report.fileState, process: childFacts };
+            if (report.fileState !== 'VALID') return { status: 'UNKNOWN', reason: 'JEST_UNAVAILABLE', ...evidence };
+            const value = report.value;
             const counts = {
               passed: value.numPassedTests, failed: value.numFailedTests,
               skipped: value.numPendingTests, suites: value.numTotalTestSuites,
             };
             if (Object.values(counts).some(n => !Number.isSafeInteger(n) || n < 0 || n > 10000))
-              return { status: 'UNKNOWN', reason: 'COUNTS_INVALID' };
+              return { status: 'UNKNOWN', reason: 'COUNTS_INVALID', ...evidence };
             const selected = value.testResults.flatMap(suite => suite.assertionResults)
               .filter(test => test.status !== 'pending');
             const names = new RegExp(pattern);
             const selection = counts.suites === files.length && selected.length > 0 &&
+              selected.filter(test => test.status === 'passed').length === counts.passed &&
+              selected.filter(test => test.status === 'failed').length === counts.failed &&
+              selected.every(test => test.status === 'passed' || test.status === 'failed') &&
               selected.every(test => typeof test.fullName === 'string' && names.test(test.fullName)) &&
               (target === undefined || (selected.length === 1 && selected[0].fullName === target));
             if (result.exceeded || result.timedOut || result.signaled || result.spawnError || !selection)
-              return { status: 'UNKNOWN', reason: 'PROCESS_OR_SELECTION', counts };
+              return { status: 'UNKNOWN', reason: 'PROCESS_OR_SELECTION', counts, ...evidence };
             return {
               status: result.exitCode === 0 && value.success === true && counts.failed === 0 ? 'PASS' : 'FAIL',
-              reason: 'JEST', counts, exitCode: result.exitCode,
+              reason: 'JEST', counts, exitCode: result.exitCode, ...evidence,
             };
           }
           function freshEmptyRunner() {

@@ -459,6 +459,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # 通过项目自带的 docker-compose.yml 启动 postgres:16-alpine。
       # 容器名固定为 'u-nest-api-postgres',与 package.json#db:test:init 与

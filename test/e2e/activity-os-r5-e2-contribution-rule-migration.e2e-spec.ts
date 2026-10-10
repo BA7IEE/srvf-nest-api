@@ -158,7 +158,7 @@ describe('E2 additive conversion receipt migration', () => {
     await recreate();
     deploy();
     expect(sql('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).toBe(
-      '136',
+      '137',
     );
     expect(
       sql(`SELECT EXISTS (SELECT 1 FROM information_schema.columns
@@ -174,7 +174,7 @@ describe('E2 additive conversion receipt migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(136);
+    expect(names).toHaveLength(137);
     expect(names[131]).toBe(MIGRATION);
     expect(
       sql(`SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations"

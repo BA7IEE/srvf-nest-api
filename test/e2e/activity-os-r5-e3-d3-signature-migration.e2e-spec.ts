@@ -149,7 +149,7 @@ describe('D3 nonempty 135→136 upgrade, additive checksums and default-closed D
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(136);
+    expect(names).toHaveLength(137);
     expect(names[134]).toBe(PREDECESSOR);
     expect(names[135]).toBe(MIGRATION);
     expect(

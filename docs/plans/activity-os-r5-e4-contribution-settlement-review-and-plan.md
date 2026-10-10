@@ -1,5 +1,59 @@
 # Activity OS R5 / E4 贡献政策接入结算：评审与精确实施计划
 
+<!-- E4-12.35.45-user-approved-grant-current-begin -->
+### E4 当前补充：用户明确批准的本地 grant 已执行，27 路径候选待发布（2026-10-10T14:24:17.059Z）
+
+本节是 §12.35.44 的后续检查点。用户在主会话 Sentinel_ec1525d24d908191a7306063a97029f7 明确要求在会话中批准并由代理处理已展示的 ci.yml grant。核查原工具后确认它仅在本 worktree 的 git 目录写入 glob／reason／timestamp 许可记录，不是凭据或法律／人工签名。代理据此执行原目标原范围命令，reason 如实注明“用户批准，由代理执行，非维护者亲手运行”；原命令退出 0，原裁判返回 GRANTED。没有伪造本人亲手动作，也未修改 grant 工具、安全门、可信身份、凭据或规则。
+
+获批 ci.yml 候选现已落实：仅 `jobs.slow` 的 Checkout 加 `fetch-depth: 0`。YAML 全对象比较证明除此项外完全一致；已有专用 workflow 的门序、预算、权限、runner、首红／UNKNOWN 停止与门前持久消费逻辑全部保留。精确普通修复累计 27 路径，五个无关修改仍单独保留，不进入提交。此前来源 opening SHA、旧签字、历史边界、`5c296d62`、全部 SQL checksum 与非白名单断言未改；生产 SQL 无新变化。
+
+准备将该完整候选提交至既有 Draft PR 的分支，并仅执行已批准的新一次隔离队列。当前检查的是提交前 HEAD `230301656ab1854307a329346cacea76d1e498f0`；确切提交／远端 SHA、运行 URL 和结果将在后续证据中核实，不预写成功。现有 OAuth 的 scope 元数据显示缺少 workflow；只能使用现有 HTTPS 路径作一次精确发布尝试，若服务器拒绝，不扩 OAuth、不换凭据，交接最小本人 SSH 发布命令。发布失败不算新队列已消费。
+
+静态语法、格式、小规模离线字节／hash／错误与生命周期比较及 `git diff --check` 保持 PASS；完整 TypeScript／Jest、contract／e2e及性能仍等待获批远端检查，不能把离线结果当作 E4／Release 5 验收。新队列不重试、不追加样本；Ready、可信本人审批、旧签字、合并和上线仍未由此批准。
+
+**本次未做**：本地重测试、Docker／psql／fixture 写入、新性能样本、扩权／切换凭据、修改安全门、伪造旧签字、Ready、合并、部署、开关和生产操作。
+<!-- E4-12.35.45-user-approved-grant-current-end -->
+
+<!-- E4-12.35.44-approved-ordinary-current-begin -->
+### E4 当前补充：获批普通修复已应用，CI 本人 grant 待落实（2026-10-10T12:30:40.318Z）
+
+本节是 §12.35.43 之后的新鲜检查点。当前分支仍为 `codex/activity-os-r5-e4-github-workflow`，HEAD 仍为 `230301656ab1854307a329346cacea76d1e498f0`，暂存区为空；没有提交、推送或新 Actions run。
+
+用户已同意精确普通修复及一次新的 GitHub 隔离验证。13 个普通 E2E 文件已应用：12 文件的 13 处当前迁移总数从 136 校正为实际目录计数 137；另一个旧服务段夹具改用历史列的参数化 SQL，并补齐实际使用的 Prisma 运行时导入。旧签字、历史迁移边界、`5c296d62`、SQL checksum 和非白名单断言均保留。修复累计 26 路径：既有 15 加本次 13，其中 2 个路径交叠；五个无关修改的 SHA 保持原样。
+
+静态语法、精确 Prettier、`git diff --check`、正反补丁检查 PASS；夹具的 16 个参数用真实 `Prisma.sql` 离线构造通过，全部列存在于原历史建表 SQL，未实例化数据库客户端。此前两项普通源代码修复的小规模字节／hash、错误和生命周期等价证据仍绑定当前文件；这些结果不代表 E4／Release 5 或性能验收通过。完整 TypeScript／Jest、contract／e2e、数据库及新性能样本均 NOT_RUN。
+
+当前 worktree 的真实 grant 文件存在，但没有匹配 `.github/workflows/ci.yml` 的授权。因此 ci.yml 完全未改，slow Checkout 的 `fetch-depth: 0` 仍待维护者本人执行已提供的精确 grant；用户“同意”不能替代这一步，AI 未代发 grant。依据 AGENTS.md §1，在候选完整且该权限门解除前不提交推送。新一次隔离验证为 AUTHORIZED_NOT_CONSUMED，没有 run URL；真正执行时仍须在门执行前记消费，保留全部原门槛、预算、断言与 first-fail-stop，不重试、不追加样本。
+
+**本次未做**：ci.yml 修改、提交、推送、新验证队列、D1／D3–D6、本地重测试、Docker／psql／fixture 写入、grant／旧签字、权限或凭据修改、合并、部署、开关和生产操作。
+<!-- E4-12.35.44-approved-ordinary-current-end -->
+
+<!-- E4-12.35.43-local-repair-current-begin -->
+
+> **2026-10-10 当前常规修复已继续（下方§12.35.42及更早“当前”为历史时点）**：已在原授权范围本机落地11路径：两份E4 spec的来源逆转器、D6／D7-1／D7-2／E1四个旧seed、既有本人精确grant覆盖的专用workflow采集器及本四报告。原refs／grand全文SHA、1148个E4 expect调用、原生driver、全部既有E2E断言、生产SQL137和所有预算不变。四个seed以同一连接／原事务中的参数化Prisma.sql仅写历史AttendanceSettlementVersion列，完整保留旧data表达式；E1既定ID保留，另三例只使用各测试专属的合成ID，updatedAt显式按历史非空列写入，createdAt沿原DB默认值。当前Prisma的新增默认列不再参与这些旧表INSERT；这仍是未执行的数据库修复，不能宣称旧升级E2E通过。
+>
+> **D0来源与采集器**：依赖安装与Prisma生成本就在D0前；其后的install-retain是数据库夹具安装，必须待纯离线组通过才启动PG及资源准入，顺序未改。旧采集器把缺失、空、非普通文件、超限或坏JSON统一归为JEST_UNAVAILABLE，故历史D0具体文件状态／首断言仍未知。本机极小CLI校准在同样PIPE方式下复现旧bail首红child=1且CLI JSON缺失；新onRunComplete reporter在bail退出前写0600／独占的闭合计数及私有选择元数据，失败与成功均闭合。公共输出只增加固定文件状态和子进程exit／signal布尔／字节计数；不保存原始Jest失败文本、SQL、root或业务载荷。权限、触发器、步骤顺序、逐门一次消费／首停函数、D1／S13／满额正文与预算逐字保持；只加强计数与实际已选状态的一致性拒绝。该机制及修补不能回填历史UNKNOWN或证明本次runner首断言。
+>
+> **轻量检查与未执行范围**：两份完整来源逆转及10个篡改拒绝、四例真实Prisma.sql构造／历史列与57个参数保留、采集器17个纯函数正反例、三例极小真实Jest CLI仪器校准、7路径精确Prettier、YAML／内嵌JS／14段Bash语法及diff检查通过。没有运行应用Jest、完整类型图、Docker／数据库或新的GitHub工作流；这些不构成专用D0、D1或业务／性能PASS。旧专用run38036926115仍D0 UNKNOWN、安装／D1／D3–D6 NOT_RUN；旧普通run38036928392仍FAIL。现有Draft远端仍23030165／114路径／3提交，本轮代码未提交或发布，未触发新采样。
+>
+> **最小下一候选与本人边界**：已另备14文件可审阅patch但未应用：12个旧E2E共13处当前迁移总数136→137（所有历史边界／checksum不变）、pending-segment第五个旧seed、普通CI的slow E2E checkout仅fetch-depth=0。该14与本轮11重叠D6／D7-1两路径，合计23路径；完整公开候选预计126路径，须按精确范围协调。AGENTS要求既有E2E断言修改先报告；ci.yml不在现有精确grant内，只有维护者可实际发该grant，既有专用workflow不用重复grant。新的单次条件D0→安装→D1→D3→D4→D5→D6必须另获明确确认，不能继承已消费队列。cold lint300秒超窗、满额prepare P2028／42599ms（原30秒）、旧Cutover136／137矛盾及trusted／3b／4b／D7本人审批／签字均未关闭；本轮不调整这些门或代签。
+>
+> **本次未做**：未应用额外14文件、代发／清除grant或签字、扩OAuth／切换凭据、推送新修复、重跑专用队列或增加业务／性能样本；未改生产SQL／schema／预算，未运行本地重测试／数据库、重建或删除资源，未Ready／合并／上线。五个无关Codex hook路径保留；E4／Release5仍未验收。
+
+<!-- E4-12.35.43-local-repair-current-end -->
+
+<!-- E4-12.35.42-cloud-terminal-current-begin -->
+
+> **2026-10-10 当前云端终态（下方发布阻塞及旧“最新状态”均为历史时点）**：维护者本人 SSH 推送后，远端与 [Draft PR #1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380) 已核实为精确 `230301656ab1854307a329346cacea76d1e498f0`／114路径／3提交；此前 OAuth workflow 发布阻塞已解决，AI未扩权或切换凭据。一次 [专用验证](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38036926115) 已终态 failure：完整 TypeScript `PASS`，安全 artifact 中 D0为 `UNKNOWN/JEST_UNAVAILABLE`，安装／D1／D3–D6全部 `NOT_RUN`；启动 PostgreSQL 的步骤也为 skipped。该记录不能证明首个离线断言、Jest计数或资源前提，更不能证明 sourceHash／业务／性能通过。逐门一次许可已在 D0消费并按首个UNKNOWN停止，未重跑；D1本体未启动，不自动恢复后续队列。
+>
+> [上一轮普通 CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38036485447) 终态 failure，E2E因新提交 cancelled；[23030165 普通 CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38036928392) 亦已终态 failure，五个E2E分片均FAIL。contract为1092通过／2快照通过；Harness selftests、Incident replay、Docker image build、Golden journeys、Change set及 [Docker Smoke](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38036928422) PASS。cold lint前5批各300文件均0错误／0警告，但固定300秒总窗超限，不能记为lint通过；旧3b签字136与机器137不符。普通失败包括旧迁移计数136、历史seed使用当前Prisma默认写入／返列时缺 `contributionRegimeCode`、浅checkout缺固定历史Git输入及E4来源逆转；原满额prepare固定脱敏计数为P2028／42599ms，原30秒预算未改且未通过。普通结果不替代专用D1或D3–D6。
+>
+> **本轮六路径常规修复仅本机准备**：两份E4 spec的历史来源逆转器补齐N1准入／保留安装／离线新增区块及安装调用绑定的完整字节校验；逐字保留原refs opening SHA `9ceb1068…`／`45320d17…`及grand opening SHA `7682abce…`／`155d9385…`。轻量纯函数校验、10个篡改拒绝反例、语法／格式及diff检查通过；291个静态测试／describe名称、1148个expect调用和原生driver逐字不变。未本地运行Jest／typecheck／数据库；修复后的GitHub验证为 `NOT_RUN`，不能把静态证据当运行时PASS。Jest30.3.0的bail代码会在CLI JSON结果写出前退出，这是结果缺失机制的源码证据，不能倒推本次runner首断言或把D0 UNKNOWN改成FAIL。后续collector需可在首停前保留闭合计数，另行准备后由父会话协调新的单次队列；不改变断言、pin或首停规则。
+>
+> **本次未做／继续边界**：未发布本轮修复、重跑专用队列或追加性能样本，未扩大旧E2E断言写集、放宽lint／事务预算或修改生产SQL；五个无关Codex hook路径原样保留。trusted redzone仍等待 `harness-review`／维护者BA7IEE本人审批，3b／4b／D7签字不能由AI代办；未发grant、签字、Ready、合并、真实映射、开关或生产操作。涉及既有E2E断言、旧seed更改和CI checkout写集的下一候选先按AGENTS判断规则报告；当前E4／Release5仍未验收。
+
+<!-- E4-12.35.42-cloud-terminal-current-end -->
+
 > **2026-10-10 实际发布权限阻塞**：本地云端适配已提交为 `a172cc1f`，项目内两个精确grant均已核验；但同分支推送被GitHub明确拒绝，因为当前OAuth App缺少 `workflow` scope。远端当时仍为 `700abb76`，新专用Actions未启动，D0／安装／D1／D3–D6全部 `NOT_RUN`。不自动扩充OAuth、切换凭据、伪造trusted review或重试已知不具权限的workflow推送。后续将既有授权的snapshot／测试／报告九路径作为无workflow的普通候选发布到同一Draft，workflow保留为单独、可审阅提交，由维护者本人使用合适的现有凭据发布；不会修改验收门或消费D1机会。下方§12.35.41为该提交前的静态检查点，普通CI结果不能替代专用门。
 
 <!-- E4-12.35.41-cloud-current-begin -->

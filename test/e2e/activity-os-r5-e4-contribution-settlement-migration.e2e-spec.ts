@@ -1154,8 +1154,47 @@ function terminalGithubScopeOpening(source: string): string {
     )
     .replace(calls, '');
 }
+function terminalN1LifecycleOpening(source: string): string {
+  const additions = [
+    ['N1_ADMISSION', 'e7d377a51359f467fe806c2c5fc0aeb62fc7dbadedc5b5539b785a7d197ee60f'],
+    ['N1_INSTALL_STAGE', '4502968f50cad3dfb6222f979bba1a95c587f88527bc3edb913e996e3360ae4d'],
+    ['N1_LIFECYCLE_OFFLINE', '1f5c0d7fa1464accc2217e88ea3ce6e6d100e2fe2479a384b16d7356a58ae78c'],
+  ] as const;
+  for (const [name, expected] of additions) {
+    const pattern = new RegExp(
+      '^ *// E4_TERMINAL_' + name + '_BEGIN\n[\\s\\S]*?^ *// E4_TERMINAL_' + name + '_END\n\n',
+      'gmu',
+    );
+    const matches = [...source.matchAll(pattern)];
+    if (matches.length !== 1 || terminalHash(matches[0][0]) !== expected)
+      throw new Error('N1 lifecycle opening addition bytes differ');
+    source = source.replace(pattern, '');
+  }
+  const mode =
+    /^  \/\/ E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_BEGIN\n[\s\S]*?^  \/\/ E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_END/gmu;
+  const metadata = /  \{\n    kind: 'N1_INSTALLER_MODE',[\s\S]*?\n  \},\n/gu;
+  for (const [pattern, expected, replacement] of [
+    [
+      mode,
+      '0d562a2a6c897a017f4ba6614339963221ff7d8c85e546e2acdbe1a2af2b9d50',
+      '  installE4ValidationDatabase();',
+    ],
+    [metadata, 'db920eb604fb4a5b6c38b9d4675d0b7522575ba4b5ec7aeefc9d9723ff5565ad', ''],
+  ] as const) {
+    const matches = [...source.matchAll(pattern)];
+    if (matches.length !== 1 || terminalHash(matches[0][0]) !== expected)
+      throw new Error('N1 lifecycle opening binding bytes differ');
+    source = source.replace(pattern, () => replacement);
+  }
+  const added =
+    "\n    ['HELPERS', 'FROZEN', 'OFFLINE', 'REAL', 'N1_ADMISSION', 'N1_INSTALL_STAGE'],\n";
+  if (source.split(added).length !== 2)
+    throw new Error('N1 lifecycle opening inverse list differs');
+  return source.replace(added, "\n    ['HELPERS', 'FROZEN', 'OFFLINE', 'REAL'],\n");
+}
 function terminalRefsTestOpening(source: string, kind: 'migration' | 'scale') {
   source = terminalGithubScopeOpening(source);
+  if (kind === 'migration') source = terminalN1LifecycleOpening(source);
   for (const name of [
     'REFS_BODY_HELPERS',
     'REFS_BODY_OFFLINE',
@@ -7157,6 +7196,7 @@ describe('E4 terminal D1 result capture offline', () => {
 });
 // E4_TERMINAL_REFS_BODY_OFFLINE_END
 
+// E4_TERMINAL_N1_LIFECYCLE_OFFLINE_BEGIN
 describe('E4 N1 admission and retained install offline', () => {
   it('keeps the historical local scope and refuses every incomplete GitHub opt-in', async () => {
     const { resolveE4ValidationScope } = await import('../helpers/e4-d1-result-capture');
@@ -7404,6 +7444,7 @@ describe('E4 N1 admission and retained install offline', () => {
     expect(stageBlock).not.toContain("process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true'");
   });
 });
+// E4_TERMINAL_N1_LIFECYCLE_OFFLINE_END
 
 // E4_TERMINAL_OFFLINE_END
 
