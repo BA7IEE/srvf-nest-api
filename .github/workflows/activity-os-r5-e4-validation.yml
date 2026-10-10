@@ -1,6 +1,6 @@
 name: R5 E4 isolated validation
 
-# Only the approved adaptation commit can consume this one-shot queue.
+# Only a newly approved candidate commit can consume this one-shot queue.
 # Subsequent report pushes do not match this workflow path; reruns are refused.
 on:
   push:

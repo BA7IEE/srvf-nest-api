@@ -1028,11 +1028,18 @@ function terminalRetainedPublicBytes(total: number, value: unknown) {
   return next;
 }
 function terminalGithubScopeOpening(source: string): string {
+  const clientType = /^ {2}constructor\(private readonly database: typeof S13_LOCAL_DB\) \{\}$/gmu;
+  if ([...source.matchAll(clientType)].length !== 1)
+    throw new Error('E4 GitHub scope opening client type differs');
+  source = source.replace(
+    clientType,
+    "  constructor(private readonly database: 'postgres' | typeof S13_LOCAL_DB) {}",
+  );
   const addedImport = "import { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\n";
   const binding = /^const S13_LOCAL_DB = E4_D1_SCOPE;$/gmu;
   if (source.split(addedImport).length !== 2 || [...source.matchAll(binding)].length !== 1)
     throw new Error('E4 GitHub scope opening binding differs');
-  const calls = /^  source = terminalGithubScopeOpening\(source\);\n/gmu;
+  const calls = /^ {2}source = terminalGithubScopeOpening\(source\);\n/gmu;
   if ([...source.matchAll(calls)].length !== 2)
     throw new Error('E4 GitHub scope opening inverse differs');
   return source
@@ -1060,8 +1067,8 @@ function terminalN1LifecycleOpening(source: string): string {
     source = source.replace(pattern, '');
   }
   const mode =
-    /^  \/\/ E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_BEGIN\n[\s\S]*?^  \/\/ E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_END/gmu;
-  const metadata = /  \{\n    kind: 'N1_INSTALLER_MODE',[\s\S]*?\n  \},\n/gu;
+    /^ {2}\/\/ E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_BEGIN\n[\s\S]*?^ {2}\/\/ E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_END/gmu;
+  const metadata = / {2}\{\n {4}kind: 'N1_INSTALLER_MODE',[\s\S]*?\n {2}\},\n/gu;
   for (const [pattern, expected, replacement] of [
     [
       mode,
@@ -2228,7 +2235,7 @@ class S13ReadClient {
     reject: (e: Error) => void;
     timer: ReturnType<typeof setTimeout>;
   };
-  constructor(private readonly database: 'postgres' | typeof S13_LOCAL_DB) {}
+  constructor(private readonly database: typeof S13_LOCAL_DB) {}
   async connect(timeoutMs = 30_000) {
     if (this.child || this.closed) throw new Error('S13 client cannot reconnect');
     this.child = spawn(

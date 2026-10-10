@@ -131,7 +131,7 @@ describe('pending segment nonempty legacy upgrade', () => {
       sql(readFileSync(join('prisma/migrations', name, 'migration.sql'), 'utf8'));
     }
     // This replay intentionally stops before migration 115, while the checked-in
-    // Prisma client is generated from migration 131. Keep the real services on
+    // Prisma client includes the current migrations. Keep the real services on
     // the legacy fixture with readback-only columns/tables. The empty classified
     // tables reject every INSERT: this is not a D4/D6 migration or classified fixture.
     sql(`
@@ -142,6 +142,10 @@ describe('pending segment nonempty legacy upgrade', () => {
         ADD COLUMN "currentContributionPolicySelectionRevisionId" TEXT;
       ALTER TABLE "AttendanceCorrectionRequest"
         ADD COLUMN "resubmittedFromRequestId" TEXT;
+      -- Current-client readback only: this historical fixture remains strictly legacy.
+      ALTER TABLE "AttendanceSettlementVersion"
+        ADD COLUMN "contributionRegimeCode" TEXT NOT NULL DEFAULT 'legacy'
+          CHECK ("contributionRegimeCode" = 'legacy');
       -- Current-client readback only: historical audits cannot request shadow proof.
       ALTER TABLE "audit_logs"
         ADD COLUMN "shadowProofRequired" BOOLEAN NOT NULL DEFAULT FALSE

@@ -762,19 +762,17 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
     ].map((source) => ({ ...allocation(source), sourcePositionId: 'position' }));
     const tx = {
       participantTimeAllocationSlice: {
-        findMany: jest
-          .fn()
-          .mockResolvedValue(
-            rows.map((row) => ({
-              allocationRevisionId: row.id,
-              ordinal: 0,
-              activityId: 'activity',
-              categoryCode: 'volunteer_service',
-              intervalKindCode: 'service_segment',
-              startAt: first.checkInAt,
-              endAt: first.checkOutAt,
-            })),
-          ),
+        findMany: jest.fn().mockResolvedValue(
+          rows.map((row) => ({
+            allocationRevisionId: row.id,
+            ordinal: 0,
+            activityId: 'activity',
+            categoryCode: 'volunteer_service',
+            intervalKindCode: 'service_segment',
+            startAt: first.checkInAt,
+            endAt: first.checkOutAt,
+          })),
+        ),
       },
       timePolicyVersion: { findMany: jest.fn().mockResolvedValue([]) },
       activityRuleSnapshot: { findMany: jest.fn().mockResolvedValue(snapshots) },
@@ -782,8 +780,8 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
     const access = { authorize: jest.fn() };
     const service = new ActivityTimeSettlementQueryService(
       {} as PrismaService,
-      {} as ParticipationSegmentFacade,
       access as unknown as ActivityTimeSettlementAccessService,
+      {} as ParticipationSegmentFacade,
     );
     const set = sourceSet({ segments: [first, second], latest: rows });
     return { tx, access, service, set, snapshots, rows };
@@ -791,14 +789,12 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
   it('reuses a successful role while retaining all reads and full builder input', async () => {
     const f = roleFixture();
     const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
-    const builder = jest
-      .spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets')
-      .mockReturnValue({
-        buckets: [],
-        bucketCount: 0,
-        sourceCount: 0,
-        bucketContentHash: 'f'.repeat(64),
-      });
+    const builder = jest.spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets').mockReturnValue({
+      buckets: [],
+      bucketCount: 0,
+      sourceCount: 0,
+      bucketContentHash: 'f'.repeat(64),
+    });
     try {
       await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
       expect(resolver).toHaveBeenCalledTimes(1);
@@ -834,14 +830,12 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
       },
     });
     const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
-    const builder = jest
-      .spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets')
-      .mockReturnValue({
-        buckets: [],
-        bucketCount: 0,
-        sourceCount: 0,
-        bucketContentHash: 'f'.repeat(64),
-      });
+    const builder = jest.spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets').mockReturnValue({
+      buckets: [],
+      bucketCount: 0,
+      sourceCount: 0,
+      bucketContentHash: 'f'.repeat(64),
+    });
     try {
       await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
       expect(resolver).toHaveBeenCalledTimes(2);
@@ -865,14 +859,12 @@ describe('D4 historical-role reuse stays inside one evaluation', () => {
       row.sourcePositionId = null;
     });
     const resolver = jest.spyOn(historicalRolePolicy, 'historicalAttendanceRoleFromRuleSnapshot');
-    const builder = jest
-      .spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets')
-      .mockReturnValue({
-        buckets: [],
-        bucketCount: 0,
-        sourceCount: 0,
-        bucketContentHash: 'f'.repeat(64),
-      });
+    const builder = jest.spyOn(timeSettlementPolicy, 'buildTimeSettlementBuckets').mockReturnValue({
+      buckets: [],
+      bucketCount: 0,
+      sourceCount: 0,
+      bucketContentHash: 'f'.repeat(64),
+    });
     try {
       await f.service.evaluateInTx(f.tx as unknown as Prisma.TransactionClient, f.set);
       expect(resolver).toHaveBeenCalledTimes(2);
