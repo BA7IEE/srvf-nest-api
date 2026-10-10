@@ -26,6 +26,7 @@ import { installScratchDatabaseLease } from './scratch-database-lease';
 import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
+import { resolveE4ValidationScope } from './e4-d1-result-capture';
 import type { CurrentUserPayload } from '../../src/common/decorators/current-user.decorator';
 import { EvidenceSealService } from '../../src/modules/activities/evidence-seal.service';
 import { SettlementDraftService } from '../../src/modules/activities/settlement-draft.service';
@@ -53,8 +54,8 @@ export type E4ValidationLifecycleMode = 'NORMAL' | 'INSTALL_RETAIN';
 
 /**
  * The retained-install path is intentionally opt-in and available only to the
- * explicitly scoped local w98 lifecycle.  It is not a new default cleanup
- * policy and never affects CI or another worker.
+ * explicitly scoped w98 lifecycle, including the isolated GitHub opt-in.
+ * It is not a new default cleanup policy or another worker's lifecycle.
  */
 export function resolveE4ValidationLifecycleMode(
   requested = process.env.SRVF_E4_N1_LIFECYCLE,
@@ -168,6 +169,7 @@ export function installE4ValidationDatabase(options?: {
   allowInstallRetain?: boolean;
 }) {
   const dedicated = process.env.SRVF_E4_W98 === '1';
+  if (process.env.SRVF_E4_GITHUB_ISOLATED !== undefined) resolveE4ValidationScope();
   const lifecycleMode = e4ValidationLifecycleModeForInstall(options?.allowInstallRetain === true);
   const lifecyclePlan = e4ValidationLifecyclePlan(lifecycleMode);
   const baseline = options?.baselineMigrationCount === 136;
@@ -225,6 +227,11 @@ export function installE4ValidationDatabase(options?: {
       assertTestDatabaseUrl(process.env.DATABASE_URL);
       if (new URL(process.env.DATABASE_URL!).pathname !== '/' + deriveTestDbName())
         throw new Error('E4 worker and configured database mismatch');
+      if (
+        process.env.SRVF_E4_GITHUB_ISOLATED === '1' &&
+        deriveTestDbName() !== resolveE4ValidationScope()
+      )
+        throw new Error('E4 isolated GitHub derived scope differs');
       let baselineSchema: string | undefined;
       if (baseline) {
         const root = resolve(__dirname, '../../prisma');

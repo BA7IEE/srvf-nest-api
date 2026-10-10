@@ -44,8 +44,9 @@ import { buildParticipationTimeLedger } from '../../src/modules/activities/parti
 import { hashCanonical } from '../../src/modules/activities/activity-publish-review-idempotency';
 
 // E4_TERMINAL_HELPERS_BEGIN
+import { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';
 import { ScratchLeaseSession } from '../helpers/scratch-database-lease';
-const S13_LOCAL_DB = 'app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98';
+const S13_LOCAL_DB = E4_D1_SCOPE;
 class S13ReadClient {
   private child?: ReturnType<typeof spawn>;
   private sequence = 0;
@@ -1137,7 +1138,24 @@ function terminalRetainedPublicBytes(total: number, value: unknown) {
   if (next > 32 * 1024) throw new Error('Retained cumulative public bound exceeded');
   return next;
 }
+function terminalGithubScopeOpening(source: string): string {
+  const addedImport = "import { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\n";
+  const binding = /^const S13_LOCAL_DB = E4_D1_SCOPE;$/gmu;
+  if (source.split(addedImport).length !== 2 || [...source.matchAll(binding)].length !== 1)
+    throw new Error('E4 GitHub scope opening binding differs');
+  const calls = /^  source = terminalGithubScopeOpening\(source\);\n/gmu;
+  if ([...source.matchAll(calls)].length !== 2)
+    throw new Error('E4 GitHub scope opening inverse differs');
+  return source
+    .replace(addedImport, '')
+    .replace(
+      binding,
+      "const S13_LOCAL_DB = 'app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98';",
+    )
+    .replace(calls, '');
+}
 function terminalRefsTestOpening(source: string, kind: 'migration' | 'scale') {
+  source = terminalGithubScopeOpening(source);
   for (const name of [
     'REFS_BODY_HELPERS',
     'REFS_BODY_OFFLINE',
@@ -1167,6 +1185,7 @@ function restoreTerminalSource(
   additions: string[],
   expected: string,
 ) {
+  source = terminalGithubScopeOpening(source);
   for (const kind of additions) {
     const start = '// E4_TERMINAL_' + kind + '_BEGIN';
     const end = '// E4_TERMINAL_' + kind + '_END';
@@ -7139,6 +7158,31 @@ describe('E4 terminal D1 result capture offline', () => {
 // E4_TERMINAL_REFS_BODY_OFFLINE_END
 
 describe('E4 N1 admission and retained install offline', () => {
+  it('keeps the historical local scope and refuses every incomplete GitHub opt-in', async () => {
+    const { resolveE4ValidationScope } = await import('../helpers/e4-d1-result-capture');
+    const env = {
+      SRVF_E4_GITHUB_ISOLATED: '1',
+      GITHUB_ACTIONS: 'true',
+      GITHUB_REPOSITORY: 'BA7IEE/srvf-nest-api',
+      GITHUB_REF: 'refs/heads/codex/activity-os-r5-e4-github-validation',
+      SRVF_TEST_RUN_SCOPE: 'app_test_w98',
+    };
+    expect(resolveE4ValidationScope({}, false)).toBe(
+      'app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98',
+    );
+    expect(resolveE4ValidationScope(env, true)).toBe('app_test_w98');
+    expect(() => resolveE4ValidationScope(env, false)).toThrow('scope refused');
+    for (const key of Object.keys(env)) {
+      if (key === 'SRVF_E4_GITHUB_ISOLATED') continue;
+      expect(() => resolveE4ValidationScope({ ...env, [key]: 'wrong' }, true)).toThrow(
+        'scope refused',
+      );
+    }
+    expect(() =>
+      resolveE4ValidationScope({ ...env, SRVF_E4_GITHUB_ISOLATED: 'wrong' }, true),
+    ).toThrow('scope refused');
+  });
+
   it('keeps retained installation explicitly opt-in while preserving the original lease release', async () => {
     const lifecycle = await import('../helpers/activity-contribution-policy.fixture');
     expect(lifecycle.resolveE4ValidationLifecycleMode(undefined, false)).toBe('NORMAL');

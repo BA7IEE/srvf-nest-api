@@ -83,6 +83,7 @@ class ObservedE4Database extends PrismaClient<Prisma.PrismaClientOptions, 'query
 }
 
 // E4_TERMINAL_HELPERS_BEGIN
+import { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';
 function terminalHash(source: string, algorithm: 'sha256' | 'md5' = 'sha256') {
   return createHash(algorithm).update(source).digest('hex');
 }
@@ -1026,7 +1027,24 @@ function terminalRetainedPublicBytes(total: number, value: unknown) {
   if (next > 32 * 1024) throw new Error('Retained cumulative public bound exceeded');
   return next;
 }
+function terminalGithubScopeOpening(source: string): string {
+  const addedImport = "import { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\n";
+  const binding = /^const S13_LOCAL_DB = E4_D1_SCOPE;$/gmu;
+  if (source.split(addedImport).length !== 2 || [...source.matchAll(binding)].length !== 1)
+    throw new Error('E4 GitHub scope opening binding differs');
+  const calls = /^  source = terminalGithubScopeOpening\(source\);\n/gmu;
+  if ([...source.matchAll(calls)].length !== 2)
+    throw new Error('E4 GitHub scope opening inverse differs');
+  return source
+    .replace(addedImport, '')
+    .replace(
+      binding,
+      "const S13_LOCAL_DB = 'app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98';",
+    )
+    .replace(calls, '');
+}
 function terminalRefsTestOpening(source: string, kind: 'migration' | 'scale') {
+  source = terminalGithubScopeOpening(source);
   for (const name of [
     'REFS_BODY_HELPERS',
     'REFS_BODY_OFFLINE',
@@ -1056,6 +1074,7 @@ function restoreTerminalSource(
   additions: string[],
   expected: string,
 ) {
+  source = terminalGithubScopeOpening(source);
   for (const kind of additions) {
     const start = '// E4_TERMINAL_' + kind + '_BEGIN';
     const end = '// E4_TERMINAL_' + kind + '_END';
@@ -2154,7 +2173,7 @@ async function assertFixedE4Oracle(db: PrismaClient, revisionId: string, expecte
   });
 }
 
-const S13_LOCAL_DB = 'app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98';
+const S13_LOCAL_DB = E4_D1_SCOPE;
 
 /** One existing local psql backend per client; stdout stays private until numeric projection. */
 // E4_TERMINAL_REPLACE_CLIENT_BEGIN

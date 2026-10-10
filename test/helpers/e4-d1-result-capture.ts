@@ -28,7 +28,29 @@ export const E4_D1_CAPTURE_SUMMARY_SCHEMA_V2 = 'srvf-e4-d1-capture-summary/v2';
 export const E4_D1_CAPTURE_SUMMARY_SCHEMA_V3 = 'srvf-e4-d1-capture-summary/v3';
 export const E4_D1_CAPTURE_SUMMARY_SCHEMA = 'srvf-e4-d1-capture-summary/v4';
 export const E4_D1_TEST_ID = 'E4_D1_RETAINED_BODY';
-export const E4_D1_SCOPE = 'app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98';
+const E4_D1_LOCAL_SCOPE = 'app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98';
+
+/** An explicit test-only opt-in; ordinary CI and historical local bindings keep
+ * the original scope. The shared database derivation/safety guards are untouched. */
+export function resolveE4ValidationScope(
+  env: NodeJS.ProcessEnv = process.env,
+  normalCheckout = statSync(resolve(__dirname, '../../.git')).isDirectory(),
+): string {
+  if (env.SRVF_E4_GITHUB_ISOLATED === undefined || env.SRVF_E4_GITHUB_ISOLATED === '')
+    return E4_D1_LOCAL_SCOPE;
+  if (
+    env.SRVF_E4_GITHUB_ISOLATED !== '1' ||
+    env.GITHUB_ACTIONS !== 'true' ||
+    env.GITHUB_REPOSITORY !== 'BA7IEE/srvf-nest-api' ||
+    env.GITHUB_REF !== 'refs/heads/codex/activity-os-r5-e4-github-validation' ||
+    env.SRVF_TEST_RUN_SCOPE !== 'app_test_w98' ||
+    !normalCheckout
+  )
+    throw new Error('E4 isolated GitHub scope refused');
+  return 'app_test_w98';
+}
+
+export const E4_D1_SCOPE = resolveE4ValidationScope();
 export const E4_D1_JEST_FULL_NAME =
   'E4 terminal expected retained function-body diagnostic pins retained full source and captures the complete current body once';
 export const E4_N1_ADMISSION_SCHEMA = 'srvf-e4-n1-admission/v1';

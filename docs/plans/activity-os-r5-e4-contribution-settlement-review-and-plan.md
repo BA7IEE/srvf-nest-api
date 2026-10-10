@@ -1,5 +1,17 @@
 # Activity OS R5 / E4 贡献政策接入结算：评审与精确实施计划
 
+> **2026-10-10 实际发布权限阻塞**：本地云端适配已提交为 `a172cc1f`，项目内两个精确grant均已核验；但同分支推送被GitHub明确拒绝，因为当前OAuth App缺少 `workflow` scope。远端当时仍为 `700abb76`，新专用Actions未启动，D0／安装／D1／D3–D6全部 `NOT_RUN`。不自动扩充OAuth、切换凭据、伪造trusted review或重试已知不具权限的workflow推送。后续将既有授权的snapshot／测试／报告九路径作为无workflow的普通候选发布到同一Draft，workflow保留为单独、可审阅提交，由维护者本人使用合适的现有凭据发布；不会修改验收门或消费D1机会。下方§12.35.41为该提交前的静态检查点，普通CI结果不能替代专用门。
+
+<!-- E4-12.35.41-cloud-current-begin -->
+
+> **2026-10-10 云端接续检查点（下方旧“最新状态”均为历史时点）**：[Draft PR #1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380) 已实际发布，首个候选为 `700abb76`／112路径；公开推送的精确确认已收到，同一推送重试成功。首轮 [CI](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38033353816) 为 `FAIL`：contract 为1091通过／1失败（路由快照通过，components未同步）；cold lint前5批均0错误／0警告，但固定300秒总窗超限；旧3b签字136与机器137矛盾；E2E分片亦失败。Harness selftests、Incident replay、Docker image build、Golden journeys及 [Docker Smoke](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38033353831) 已通过。这些普通结果不是新 D1／S13验收。
+>
+> **实际授权与本轮窄修**：维护者本人 workflow grant 已在当前 worktree 私有记录中核验，时间 `2026-10-10T07:24:33.202Z`，仅 `.github/workflows/activity-os-r5-e4-validation.yml`；实现无到期字段，AI未发放或改动令牌。新专用流程仅 `contents:read`、正常 runner checkout的显式 `app_test_w98`、一次适配提交触发／attempt=1／持久化逐门消费／首个FAIL或UNKNOWN停止；无新secret、通知或部署。共享数据库推导／安全守卫、原生读取驱动、SQL137、root、完整袋／21字段／50000来源及原40000关联校验、75／15／30秒限制和严格AB→BA门均不变。D0先类型和完整离线组，只有前置通过才启动runner PG、零旧clients／旧lease核验、install-retain、只读admission及一次D1，随后仅条件D3–D6；D1独立reader读回，不重跑已消费D1。四个云端测试路径、workflow、四报告共9路径；另同步既有授权contract snapshot，仅新增4 DTO和4个可选字段，298增／0删，路由及旧required集合不变。五个无关Codex hook路径完整保留且不提交。
+>
+> **验证口径与停止边界**：本机只做语法／格式／YAML与内嵌Bash/JS解析、两份完整历史opening SHA逆转及驱动SHA比对；这是静态证据，不能当typecheck、Jest或业务PASS。专用新 D0／安装／D1／D3–D6在本检查点仍为 `NOT_RUN`，提交后仅GitHub跑。旧D4 `FAIL`与旧D1 `UNKNOWN`不改写；普通CI暴露的其他旧断言／夹具失败先如实保留，不在scope适配中删改。trusted review和最终3b／4b／D7仍由维护者本人完成；不加Lint时间／缓存／减覆盖，不追加性能样本。本轮不本地查库、重建或运行重测试；没有重签、Ready、合并、生产、真实映射或开关操作，E4／Release5尚未验收。
+
+<!-- E4-12.35.41-cloud-current-end -->
+
 > **2026-10-09 GitHub 接续（最新状态）**：维护者明确授权继续 R5、普通修复、独立验证分支、推送和 Draft PR，并要求 GitHub 优先；本机仅轻量读写。本轮仅修复 retained staging 的 operationKey 生产侧标签：普通 helper 默认仍为 `prepare`／`submit`，该 staging 显式使用 `s13_prepare`／`s13_submit`，root 正则、完整证明、SQL、预算和所有旧断言不变。89 个具名 TS 的语法／相对 import 存在性及候选新增内容的受限 secret-literal 扫描通过；这不是 typecheck、Jest、数据库或 D1 验收。本轮新 D1／D3–D6均为 `NOT_RUN`；旧 D4 `FAIL`和旧 D1 `UNKNOWN`保留。新 CI 专用入口仍缺维护者本人 workflow grant，AI不代发、不绕过；可先发布已批准候选由既有 CI 做普通回归，不能把它记为新 D1／S13配额结果。真正无关的 Codex hook 5 路径不提交；已批准的 cold-lint 3 路径属于 §12.24.13 的 E4 闭包并保留，精确候选为112路径。生产、开关、Ready、合并和 D7签字仍禁止。
 
 ### 12.35.40 GitHub 接续、候选闭包及真实停止边界（2026-10-09）
