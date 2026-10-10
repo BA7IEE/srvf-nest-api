@@ -1,0 +1,166 @@
+name: Ledger 8192 isolated diagnostic
+
+on:
+  push:
+    branches: [codex/ledger-8192-isolated-diagnostic]
+    paths: [.github/workflows/ledger-8192-isolated-diagnostic.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ledger-8192-once-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  diagnostic:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[ledger-8192-once]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: business
+    env:
+      APP_ENV: test
+      SRVF_TEST_RUN_SCOPE: app_test,app_test_w1
+      JEST_MAX_WORKERS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 5c296d62c8dbdd1800b47d679c7681c6ad99ef09
+          path: business
+          persist-credentials: false
+      - name: Verify immutable business code
+        run: test "$(git rev-parse HEAD)" = 5c296d62c8dbdd1800b47d679c7681c6ad99ef09
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: business/package.json
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - name: Start fresh runner PostgreSQL
+        run: |
+          docker compose up -d postgres
+          for attempt in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Admit only fresh test resources
+        run: |
+          python3 <<'PY'
+          import subprocess, json
+          query = "SELECT json_build_object('version',current_setting('server_version_num')::int/10000,'targets',(SELECT count(*) FROM pg_database WHERE datname IN ('app_test','app_test_w1')),'clients',(SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid()),'leases',(SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND granted))"
+          result = subprocess.run(['docker','exec','u-nest-api-postgres','psql','--no-psqlrc','-qtA','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-c',query], capture_output=True, timeout=15)
+          if result.returncode != 0 or len(result.stdout)>4096: raise SystemExit('fresh admission UNKNOWN')
+          facts=json.loads(result.stdout)
+          if facts!={'version':16,'targets':0,'clients':0,'leases':0}: raise SystemExit('fresh admission refused')
+          print(json.dumps({'freshAdmission':'PASS'}))
+          PY
+      - run: pnpm db:test:init
+      - name: Consume one original case and observe bounded member wait classes
+        run: |
+          python3 <<'PY'
+          import os, json, time, signal, subprocess, threading, re
+          from pathlib import Path
+          fixed='5c296d62c8dbdd1800b47d679c7681c6ad99ef09'
+          target='ledger posting scale —— 8192 人越过 bind 上限(goal DoD 13) 8192 人:准备 + 生效全过;生效事务的 SQL 条数固定、bind 参数与人数无关'
+          safe=Path('tmp/ledger-8192-safe'); safe.mkdir(parents=True,exist_ok=True)
+          private=Path(os.environ['RUNNER_TEMP'])/('ledger-8192-'+os.environ['GITHUB_RUN_ID'])
+          private.mkdir(mode=0o700,exist_ok=False)
+          result={'schema':'srvf-ledger-8192-diagnostic/v1','businessSHA':fixed,'controlSHA':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'attempt':1,'transactionBudgetMs':7000,'childStarted':False,'testStatus':'NOT_RUN','diagnosticStatus':'NOT_RUN','rawLogsRetained':False,'statisticsWritten':False}
+          def persist(): (safe/'summary.json').write_text(json.dumps(result,indent=2)+'\n')
+          persist()
+          reporter=private/'reporter.cjs'; output=private/'closed.json'
+          reporter.write_text("""
+          const fs=require('node:fs');
+          module.exports=class {
+            onRunComplete(_contexts,r) {
+              const selected=r.testResults.flatMap(s=>s.testResults).filter(t=>t.status!=='pending');
+              const valid=r.numTotalTestSuites===1&&selected.length===1&&selected[0].fullName===process.env.LEDGER_8192_EXPECTED_NAME&&['passed','failed'].includes(selected[0].status);
+              const data={valid,passed:r.numPassedTests,failed:r.numFailedTests,skipped:r.numPendingTests,status:valid?selected[0].status:'UNKNOWN'};
+              fs.writeFileSync(process.env.LEDGER_8192_CLOSED_FILE,JSON.stringify(data),{mode:0o600,flag:'wx'});
+            }
+          };
+          """)
+          env=dict(os.environ,LEDGER_8192_EXPECTED_NAME=target,LEDGER_8192_CLOSED_FILE=str(output))
+          args=['pnpm','exec','jest','--config','test/jest-e2e.config.ts','--runInBand','--detectOpenHandles','--bail','--runTestsByPath','test/e2e/activity-ledger-posting-scale.e2e-spec.ts','--testNamePattern','^'+re.escape(target)+'$','--reporters=default','--reporters='+str(reporter)]
+          # Persist consumption before spawning. No retry or downstream test.
+          result.update(childStarted=True,testStatus='UNKNOWN',diagnosticStatus='UNKNOWN'); persist()
+          proc=subprocess.Popen(args,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True)
+          captured=bytearray(); capped=threading.Event()
+          def stop():
+            try: os.killpg(proc.pid,signal.SIGTERM)
+            except ProcessLookupError: pass
+          def drain():
+            while True:
+              part=proc.stdout.read(4096)
+              if not part: break
+              if len(captured)+len(part)>2*1024*1024: capped.set();stop();break
+              captured.extend(part)
+          reader=threading.Thread(target=drain,daemon=True);reader.start()
+          # Read only the sole worker's matching backend; never return query text,
+          # parameters, backend IDs, roots, URLs or business rows.
+          query="SELECT coalesce(json_agg(json_build_object('state',state,'wait',wait_event_type)),'[]'::json) FROM pg_stat_activity WHERE datname='app_test_w1' AND usename=current_user AND backend_type='client backend' AND pid<>pg_backend_pid() AND state='active' AND query LIKE '%SELECT DISTINCT i.\"memberId\"%' AND query LIKE '%CROSS JOIN LATERAL%' AND query LIKE '%ParticipantServiceSegmentRevision%'"
+          allowed={'Lock','IO','LWLock','IPC','Client','BufferPin','Timeout','Extension','Activity'}
+          classes={}; first=None; samples=0; observer_unknown=False
+          while proc.poll() is None:
+            if capped.is_set(): observer_unknown=True;stop();break
+            if first is not None and (samples>=28 or time.monotonic()-first>=7): break
+            try:
+              remaining=2 if first is None else max(0.01,min(2,7-(time.monotonic()-first)))
+              observed=subprocess.run(['docker','exec','-e','PGOPTIONS=-c statement_timeout=200ms -c lock_timeout=100ms','u-nest-api-postgres','psql','--no-psqlrc','-qtA','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-c',query],capture_output=True,timeout=remaining)
+              if observed.returncode or len(observed.stdout)>4096: raise ValueError('observer')
+              rows=json.loads(observed.stdout)
+              if not isinstance(rows,list) or len(rows)>1: raise ValueError('binding')
+              if rows:
+                row=rows[0]
+                if set(row)!={'state','wait'} or row['state']!='active': raise ValueError('schema')
+                wait=row['wait']
+                if wait is not None and wait not in allowed: raise ValueError('wait class')
+                if first is None: first=time.monotonic()
+                key=wait if wait is not None else 'ACTIVE_NO_REPORTED_WAIT'
+                classes[key]=classes.get(key,0)+1;samples+=1
+              time.sleep(0.25 if first is not None else 1)
+            except (ValueError,subprocess.TimeoutExpired): observer_unknown=True;stop();break
+          if observer_unknown and proc.poll() is None:
+            try: proc.wait(timeout=10)
+            except subprocess.TimeoutExpired: os.killpg(proc.pid,signal.SIGKILL)
+          exit_code=proc.wait();reader.join(timeout=5)
+          result.update(exitCode=exit_code,observationSamples=samples,waitClasses=classes,observationWindowMs=7000,observerUnknown=observer_unknown,outputLimitExceeded=capped.is_set())
+          try:
+            closed=json.loads(output.read_text())
+            valid=set(closed)=={'valid','passed','failed','skipped','status'} and closed['valid'] is True and closed['passed']+closed['failed']==1
+            if valid:
+              result['testCounts']={k:closed[k] for k in ['passed','failed','skipped']}
+              result['testStatus']='PASS' if exit_code==0 and closed['status']=='passed' else 'FAIL' if exit_code==1 and closed['status']=='failed' else 'UNKNOWN'
+          except (OSError,ValueError): pass
+          if observer_unknown or capped.is_set(): result['diagnosticStatus']='UNKNOWN'
+          else: result['diagnosticStatus']='OBSERVED' if samples>0 else 'UNKNOWN_NOT_OBSERVED'
+          # Only whitelisted clocks from the pre-existing synthetic diagnostic.
+          labels={'stage.readDraftSegmentMemberIds','raw.SELECT.ParticipantServiceSegmentRevision.ActivityParticipationIdentity','diagnostic.plan.raw.SELECT.ParticipantServiceSegmentRevision.ActivityParticipationIdentity'}
+          for line in re.sub(r'\x1b\[[0-9;]*m','',captured.decode(errors='replace')).splitlines():
+            prefix='[ledger-scale-diagnostic] '
+            if prefix not in line: continue
+            try: d=json.loads(line.split(prefix,1)[1])
+            except ValueError: continue
+            if d.get('members')!=8192 or d.get('budgetMs')!=7000: continue
+            clocks=[]
+            for row in d.get('rows',[]):
+              if row.get('label') in labels and isinstance(row.get('elapsedMs'),(int,float)) and 0<=row['elapsedMs']<=600000 and row.get('status') in ['ok','P2028','P2010','error']:
+                clocks.append({k:row[k] for k in ['label','elapsedMs','status']})
+            result['awaitClocks']=clocks
+          captured.clear();persist();print(json.dumps(result))
+          raise SystemExit(0 if result['testStatus']=='PASS' and result['diagnosticStatus']=='OBSERVED' else 1 if result['testStatus']=='FAIL' else 2)
+          PY
+      - name: Retain only closed safe result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ledger-8192-safe-${{ github.run_id }}
+          path: business/tmp/ledger-8192-safe/summary.json
+          if-no-files-found: ignore
+          retention-days: 7
