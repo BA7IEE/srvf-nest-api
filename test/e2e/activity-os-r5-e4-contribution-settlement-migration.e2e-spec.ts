@@ -1170,17 +1170,17 @@ function terminalNativeWorkerOpening(source: string): string {
       },
       {
         candidate:
-          "  return { current, opening };\n}\nasync function terminalBusinessPrincipal(db: PrismaClient) {\n  const rows = await db.$queryRawUnsafe<{ db: string; session: string; principal: string }[]>(\n    'SELECT current_database() AS db,session_user::text AS session,current_user::text AS principal',\n  );\n  if (\n    rows.length !== 1 ||\n    rows[0].db !== e4NativeMeasurementDatabase(S13_LOCAL_DB) ||\n    rows[0].session !== rows[0].principal ||\n    !rows[0].session ||\n    !rows[0].principal\n",
-        candidateHash: 'b11e1e56ba72f0230d96ef477e79acefe2f58ee481ffe409b325d0d37892704a',
-        opening:
-          "  return { current, opening };\n}\nasync function terminalBusinessPrincipal(db: PrismaClient) {\n  const rows = await db.$queryRawUnsafe<{ session: string; principal: string }[]>(\n    'SELECT session_user::text AS session,current_user::text AS principal',\n  );\n  if (\n    rows.length !== 1 ||\n    rows[0].session !== rows[0].principal ||\n    !rows[0].session ||\n    !rows[0].principal\n",
-      },
-      {
-        candidate:
           "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, e4NativeMeasurementDatabase(S13_LOCAL_DB)],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
         candidateHash: '9ec69755204978179430b9fc7a877c908d25d5279754a72d356beba4df7c4e00',
         opening:
           "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, S13_LOCAL_DB],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
+      },
+      {
+        candidate:
+          "  return { current, opening };\n}\nasync function terminalBusinessPrincipal(db: PrismaClient) {\n  const rows = await db.$queryRawUnsafe<{ db: string; session: string; principal: string }[]>(\n    'SELECT current_database() AS db,session_user::text AS session,current_user::text AS principal',\n  );\n  if (\n    rows.length !== 1 ||\n    rows[0].db !== e4NativeMeasurementDatabase(S13_LOCAL_DB) ||\n    rows[0].session !== rows[0].principal ||\n    !rows[0].session ||\n    !rows[0].principal\n",
+        candidateHash: 'b11e1e56ba72f0230d96ef477e79acefe2f58ee481ffe409b325d0d37892704a',
+        opening:
+          "  return { current, opening };\n}\nasync function terminalBusinessPrincipal(db: PrismaClient) {\n  const rows = await db.$queryRawUnsafe<{ session: string; principal: string }[]>(\n    'SELECT session_user::text AS session,current_user::text AS principal',\n  );\n  if (\n    rows.length !== 1 ||\n    rows[0].session !== rows[0].principal ||\n    !rows[0].session ||\n    !rows[0].principal\n",
       },
       {
         candidate:
@@ -1228,6 +1228,13 @@ function terminalNativeWorkerOpening(source: string): string {
       },
       {
         candidate:
+          "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, e4NativeMeasurementDatabase(S13_LOCAL_DB)],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
+        candidateHash: '9ec69755204978179430b9fc7a877c908d25d5279754a72d356beba4df7c4e00',
+        opening:
+          "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, S13_LOCAL_DB],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
+      },
+      {
+        candidate:
           "  return { current, opening };\n}\nasync function terminalBusinessPrincipal(db: PrismaClient) {\n  const rows = await db.$queryRawUnsafe<{ db: string; session: string; principal: string }[]>(\n    'SELECT current_database() AS db,session_user::text AS session,current_user::text AS principal',\n  );\n  if (\n    rows.length !== 1 ||\n    rows[0].db !== e4NativeMeasurementDatabase(S13_LOCAL_DB) ||\n    rows[0].session !== rows[0].principal ||\n    !rows[0].session ||\n    !rows[0].principal\n",
         candidateHash: 'b11e1e56ba72f0230d96ef477e79acefe2f58ee481ffe409b325d0d37892704a',
         opening:
@@ -1235,10 +1242,28 @@ function terminalNativeWorkerOpening(source: string): string {
       },
       {
         candidate:
-          "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, e4NativeMeasurementDatabase(S13_LOCAL_DB)],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
-        candidateHash: '9ec69755204978179430b9fc7a877c908d25d5279754a72d356beba4df7c4e00',
+          "import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';\n",
+        candidateHash: 'd9cd8b34976e5272eae3ce03d94247bc7f9d75da2cc658ce2520f367de80bee0',
+        opening: '',
+      },
+      {
+        candidate:
+          "    const timing = { readMs: 0, writeMs: 0, largestMs: 0 };\n    let preparePhaseDiagnostic: E4PreparePhaseDiagnostic | undefined;\n    observed.$on('query', (event) => {\n      if (!/^\\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\\b/iu.test(event.query)) {\n        queries++;\n        preparePhaseDiagnostic?.query(\n          /^\\s*(SELECT|WITH)\\b/iu.test(event.query) ? 'READ' : 'WRITE',\n          event.duration,\n        );\n      }\n      if (\n        /(?:ActivitySettlementContributionRevision|ParticipantContributionEvaluation|e4_assert_|e4_revision_complete_guard)/u.test(\n          event.query,\n        )\n      )\n        e4Queries++;\n      if (/^\\s*SET CONSTRAINTS public\\.astr_parent_complete_guard,/u.test(event.query))\n        barrierQueries++;\n      if (/^\\s*(SELECT|WITH)\\b/iu.test(event.query)) timing.readMs += event.duration;\n      else timing.writeMs += event.duration;\n      timing.largestMs = Math.max(timing.largestMs, event.duration);\n    });\n",
+        candidateHash: 'fd8dfc19e8145a07ed846615487248f161cb3d4adfdad3ebc2b3a57b127af100',
         opening:
-          "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, S13_LOCAL_DB],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
+          "    const timing = { readMs: 0, writeMs: 0, largestMs: 0 };\n    observed.$on('query', (event) => {\n      if (!/^\\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\\b/iu.test(event.query)) queries++;\n      if (\n        /(?:ActivitySettlementContributionRevision|ParticipantContributionEvaluation|e4_assert_|e4_revision_complete_guard)/u.test(\n          event.query,\n        )\n      )\n        e4Queries++;\n      if (/^\\s*SET CONSTRAINTS public\\.astr_parent_complete_guard,/u.test(event.query))\n        barrierQueries++;\n      if (/^\\s*(SELECT|WITH)\\b/iu.test(event.query)) timing.readMs += event.duration;\n      else timing.writeMs += event.duration;\n      timing.largestMs = Math.max(timing.largestMs, event.duration);\n    });\n",
+      },
+      {
+        candidate:
+          "      let prepared;\n      const phaseDiagnostic = new E4PreparePhaseDiagnostic([\n        { phase: 'C3_PROOF', target: measured, method: 'lockedProof' },\n        { phase: 'C3_SOURCE', target: measured, method: 'lockedSources' },\n        { phase: 'C3_EVAL', target: reader, method: 'evaluateInTx' },\n        { phase: 'C3_BUCKET_WRITE', target: measured, method: 'insertBuckets' },\n        { phase: 'E4_PREPARE', target: contributions, method: 'prepareTimeInTx' },\n        {\n          phase: 'E4_EVAL',\n          target: f.app.get(ActivityContributionSettlementQueryService),\n          method: 'readTimeEvaluationInTx',\n        },\n        { phase: 'E4_EVAL_WRITE', target: contributions, method: 'insertEvaluations' },\n        { phase: 'C3_RECEIPT', target: measured, method: 'receipt' },\n      ]);\n      preparePhaseDiagnostic = phaseDiagnostic;\n      try {\n        phaseDiagnostic.begin();\n        let prepareOutcome: 'OK' | 'FAIL' = 'FAIL';\n        try {\n          prepared = await measured.prepare(\n            source.activityId,\n            prepareCommand,\n            e4Actor(f.creator, true),\n            E4_META,\n          );\n          prepareOutcome = 'OK';\n        } finally {\n          phaseDiagnostic.finish(prepareOutcome);\n          phaseDiagnostic.restore();\n          preparePhaseDiagnostic = undefined;\n          phaseDiagnostic.emitTo((safeJson) =>\n            console.info('E4 maximum prepare phases (fixed counters)', safeJson),\n          );\n        }\n      }",
+        candidateHash: '9ab998936440952a18cb34926d0435ac69b94136bd4d032a1f32687e6b00a621',
+        opening:
+          '      let prepared;\n      try {\n        prepared = await measured.prepare(\n          source.activityId,\n          prepareCommand,\n          e4Actor(f.creator, true),\n          E4_META,\n        );\n      }',
+      },
+      {
+        candidate: "\n      expect(phaseDiagnostic.snapshot().status).toBe('COMPLETE');",
+        candidateHash: 'dd506dba73f442acfb8a2b370bfc9c63d2832db02e2f3e623fb6863297a56485',
+        opening: '',
       },
     ],
   } as const;
