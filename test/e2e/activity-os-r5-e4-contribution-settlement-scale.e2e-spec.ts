@@ -83,6 +83,7 @@ class ObservedE4Database extends PrismaClient<Prisma.PrismaClientOptions, 'query
 }
 
 // E4_TERMINAL_HELPERS_BEGIN
+import { e4NativeMeasurementDatabase } from '../helpers/e4-native-measurement-owner';
 import { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';
 function terminalHash(source: string, algorithm: 'sha256' | 'md5' = 'sha256') {
   return createHash(algorithm).update(source).digest('hex');
@@ -260,7 +261,7 @@ function terminalAssertIdentity(
   expected: TerminalIdentity | Pick<TerminalIdentity, 'session' | 'principal'>,
 ) {
   if (
-    actual.db !== S13_LOCAL_DB ||
+    actual.db !== e4NativeMeasurementDatabase(S13_LOCAL_DB) ||
     !Number.isInteger(actual.pid) ||
     actual.pid <= 0 ||
     typeof actual.session !== 'string' ||
@@ -319,11 +320,12 @@ function terminalValidateCatalog(rows: TerminalCatalog[], identity: TerminalIden
   return { current, opening };
 }
 async function terminalBusinessPrincipal(db: PrismaClient) {
-  const rows = await db.$queryRawUnsafe<{ session: string; principal: string }[]>(
-    'SELECT session_user::text AS session,current_user::text AS principal',
+  const rows = await db.$queryRawUnsafe<{ db: string; session: string; principal: string }[]>(
+    'SELECT current_database() AS db,session_user::text AS session,current_user::text AS principal',
   );
   if (
     rows.length !== 1 ||
+    rows[0].db !== e4NativeMeasurementDatabase(S13_LOCAL_DB) ||
     rows[0].session !== rows[0].principal ||
     !rows[0].session ||
     !rows[0].principal
@@ -380,7 +382,7 @@ async function terminalIdle(
   if (client.terminalState().pending) throw new Error('Terminal pending request not settled');
   const result = await monitor.query<{ idle: boolean }>(
     "SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2",
-    [identity.pid, S13_LOCAL_DB],
+    [identity.pid, e4NativeMeasurementDatabase(S13_LOCAL_DB)],
     terminalRemaining(deadline),
   );
   if (result.rows.length !== 1 || result.rows[0].idle !== true)
@@ -1027,6 +1029,115 @@ function terminalRetainedPublicBytes(total: number, value: unknown) {
   if (next > 32 * 1024) throw new Error('Retained cumulative public bound exceeded');
   return next;
 }
+function terminalNativeWorkerOpening(source: string): string {
+  const migration = /^function restoreTerminalMigrationOpening\(/gmu;
+  const scale = /^function restoreTerminalScaleOpening\(/gmu;
+  const migrationCount = [...source.matchAll(migration)].length;
+  const scaleCount = [...source.matchAll(scale)].length;
+  if (migrationCount + scaleCount !== 1)
+    throw new Error('Native worker opening source kind differs');
+  const bindings = {
+    migration: [
+      {
+        candidate:
+          "import { hashCanonical } from '../../src/modules/activities/activity-publish-review-idempotency';\n\n// E4_TERMINAL_HELPERS_BEGIN\nimport { e4NativeMeasurementDatabase } from '../helpers/e4-native-measurement-owner';\nimport {\n  E4NativeMeasurementOwner,\n  withE4NativeMeasurementBinding,\n  type E4NativeMeasurementLease,\n} from '../helpers/e4-native-measurement-owner';\nimport { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\nimport { ScratchLeaseSession } from '../helpers/scratch-database-lease';\nconst S13_LOCAL_DB = E4_D1_SCOPE;\n",
+        candidateHash: '12a73b42a07396f0f0d5ba21f1ed3b7f5437de099e627b656eefa60f455ad788',
+        opening:
+          "import { hashCanonical } from '../../src/modules/activities/activity-publish-review-idempotency';\n\n// E4_TERMINAL_HELPERS_BEGIN\nimport { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\nimport { ScratchLeaseSession } from '../helpers/scratch-database-lease';\nconst S13_LOCAL_DB = E4_D1_SCOPE;\n",
+      },
+      {
+        candidate:
+          "  expected: TerminalIdentity | Pick<TerminalIdentity, 'session' | 'principal'>,\n) {\n  if (\n    actual.db !== e4NativeMeasurementDatabase(S13_LOCAL_DB) ||\n    !Number.isInteger(actual.pid) ||\n    actual.pid <= 0 ||\n    typeof actual.session !== 'string' ||\n",
+        candidateHash: '746567ac1248ed00c458ca295e157ffcc36ecbbe1dcb82b9319ddbb3f0e2c823',
+        opening:
+          "  expected: TerminalIdentity | Pick<TerminalIdentity, 'session' | 'principal'>,\n) {\n  if (\n    actual.db !== S13_LOCAL_DB ||\n    !Number.isInteger(actual.pid) ||\n    actual.pid <= 0 ||\n    typeof actual.session !== 'string' ||\n",
+      },
+      {
+        candidate:
+          "  return { current, opening };\n}\nasync function terminalBusinessPrincipal(db: PrismaClient) {\n  const rows = await db.$queryRawUnsafe<{ db: string; session: string; principal: string }[]>(\n    'SELECT current_database() AS db,session_user::text AS session,current_user::text AS principal',\n  );\n  if (\n    rows.length !== 1 ||\n    rows[0].db !== e4NativeMeasurementDatabase(S13_LOCAL_DB) ||\n    rows[0].session !== rows[0].principal ||\n    !rows[0].session ||\n    !rows[0].principal\n",
+        candidateHash: 'b11e1e56ba72f0230d96ef477e79acefe2f58ee481ffe409b325d0d37892704a',
+        opening:
+          "  return { current, opening };\n}\nasync function terminalBusinessPrincipal(db: PrismaClient) {\n  const rows = await db.$queryRawUnsafe<{ session: string; principal: string }[]>(\n    'SELECT session_user::text AS session,current_user::text AS principal',\n  );\n  if (\n    rows.length !== 1 ||\n    rows[0].session !== rows[0].principal ||\n    !rows[0].session ||\n    !rows[0].principal\n",
+      },
+      {
+        candidate:
+          "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, e4NativeMeasurementDatabase(S13_LOCAL_DB)],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
+        candidateHash: '9ec69755204978179430b9fc7a877c908d25d5279754a72d356beba4df7c4e00',
+        opening:
+          "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, S13_LOCAL_DB],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
+      },
+      {
+        candidate:
+          '}\nlet terminalMigrationFailed = false;\nlet terminalMigrationPending = 0;\nconst terminalMigrationLease: { owner?: E4NativeMeasurementLease } = {};\nlet terminalMigrationNativeOwner: E4NativeMeasurementOwner | undefined;\nfunction terminalMigrationDropAllowed() {\n  return (\n    !terminalMigrationFailed &&\n',
+        candidateHash: '6aa20a9bf7f2e91d26ba14d939be38c93936f2c47c17eac65230aae317144a69',
+        opening:
+          '}\nlet terminalMigrationFailed = false;\nlet terminalMigrationPending = 0;\nconst terminalMigrationLease: { owner?: ScratchLeaseSession } = {};\nfunction terminalMigrationDropAllowed() {\n  return (\n    !terminalMigrationFailed &&\n',
+      },
+      {
+        candidate:
+          "  ) => Promise<T>,\n  expectedFault?: Error,\n) {\n  const binding = terminalMigrationNativeOwner?.current();\n  if (!binding || binding.owner !== terminalMigrationLease.owner)\n    throw new Error('Terminal actual original lease owner missing');\n  return withE4NativeMeasurementBinding(binding, async () => {\n    // The exact runtime binding is validated above; preserve the frozen driver's bytes/type.\n    const database = e4NativeMeasurementDatabase(S13_LOCAL_DB);\n    const plan = new S13ReadClient(database as typeof S13_LOCAL_DB);\n    const monitor = new S13ReadClient('postgres');\n    const deadline = performance.now() + 30_000;\n    // This single owner, both clients, and pending are registered before async connect/DDL.\n    terminalMigrationLease.owner?.assertHeld();\n    if (!terminalMigrationLease.owner)\n      throw new Error('Terminal actual original lease owner missing');\n    terminalMigrationPending++;\n    let planOpened = false,\n      monitorOpened = false;\n    let identity: TerminalIdentity | undefined;\n    let catalog: ReturnType<typeof terminalValidateCatalog> | undefined;\n    let cleaned = false,\n      closed = false;\n    let primary: { value: unknown } | undefined;\n    let completed: { value: T } | undefined;\n    let cleanupFailure = false;\n    const cleanTemporary = async () => {\n      if (!identity || !catalog) throw new Error('Terminal partial install/catalog UNKNOWN');\n      await terminalDropOpening(plan, monitor, deadline, identity, catalog.current);\n      cleaned = true;\n    };\n    try {\n      const business = await terminalBusinessPrincipal(db);\n      monitorOpened = true;\n      await monitor.connect(terminalRemaining(deadline));\n      planOpened = true;\n      await plan.connect(terminalRemaining(deadline));\n      identity = await terminalNativeIdentity(plan, deadline);\n      terminalAssertIdentity(identity, business);\n      catalog = await terminalInstallOpening(plan, deadline, identity);\n      completed = { value: await work(plan, deadline, identity, catalog) };\n    } catch (error) {\n      primary = { value: error };\n      if (error !== expectedFault) terminalMigrationFailed = true;\n    } finally {\n      try {\n        await cleanTemporary();\n      } catch {\n        terminalMigrationFailed = true;\n        cleanupFailure = true;\n      }\n      for (const [client, opened] of [\n        [plan, planOpened],\n        [monitor, monitorOpened],\n      ] as const) {\n        if (!opened) continue;\n        try {\n          await client.end(performance.now() < deadline ? terminalRemaining(deadline) : 10_000);\n        } catch {\n          terminalMigrationFailed = true;\n          cleanupFailure = true;\n        }\n      }\n      closed = terminalCleanupKnown({\n        pending: plan.terminalState().pending || monitor.terminalState().pending ? 1 : 0,\n        idle: cleaned,\n        cleaned,\n        closed: !cleanupFailure && plan.terminalState().closed && monitor.terminalState().closed,\n      });\n      if (closed) terminalMigrationPending--;\n      console.info(\n        'E4_TERMINAL_SMALL_RESOURCES',\n        JSON.stringify({\n          temporary: cleaned ? 'ABSENT' : 'UNKNOWN',\n          closed,\n          pending: terminalMigrationPending,\n          deadlinePassed: performance.now() >= deadline,\n          cleanupFailure,\n        }),\n      );\n    }\n    if (cleanupFailure || performance.now() >= deadline) {\n      terminalMigrationFailed = true;\n      throw new Error('Terminal small execution/cleanup UNKNOWN or deadline exceeded');\n    }\n    if (primary) throw primary.value;\n    if (!completed) throw new Error('Terminal small work terminal UNKNOWN');\n    return completed.value;\n  });\n}\n// E4_TERMINAL_RETAINED_DIAGNOSTIC_BEGIN\ntype E4D1CaptureTerminalState = import('../helpers/e4-d1-result-capture').E4D1TerminalState;\n",
+        candidateHash: 'fd04fa263ae4ff1925ecf0e88352d29e99d8da22124556c4ad8c1f2dc9f303eb',
+        opening:
+          "  ) => Promise<T>,\n  expectedFault?: Error,\n) {\n  const plan = new S13ReadClient(S13_LOCAL_DB);\n  const monitor = new S13ReadClient('postgres');\n  const deadline = performance.now() + 30_000;\n  // This single owner, both clients, and pending are registered before async connect/DDL.\n  terminalMigrationLease.owner?.assertHeld();\n  if (!terminalMigrationLease.owner)\n    throw new Error('Terminal actual original lease owner missing');\n  terminalMigrationPending++;\n  let planOpened = false,\n    monitorOpened = false;\n  let identity: TerminalIdentity | undefined;\n  let catalog: ReturnType<typeof terminalValidateCatalog> | undefined;\n  let cleaned = false,\n    closed = false;\n  let primary: { value: unknown } | undefined;\n  let completed: { value: T } | undefined;\n  let cleanupFailure = false;\n  const cleanTemporary = async () => {\n    if (!identity || !catalog) throw new Error('Terminal partial install/catalog UNKNOWN');\n    await terminalDropOpening(plan, monitor, deadline, identity, catalog.current);\n    cleaned = true;\n  };\n  try {\n    const business = await terminalBusinessPrincipal(db);\n    monitorOpened = true;\n    await monitor.connect(terminalRemaining(deadline));\n    planOpened = true;\n    await plan.connect(terminalRemaining(deadline));\n    identity = await terminalNativeIdentity(plan, deadline);\n    terminalAssertIdentity(identity, business);\n    catalog = await terminalInstallOpening(plan, deadline, identity);\n    completed = { value: await work(plan, deadline, identity, catalog) };\n  } catch (error) {\n    primary = { value: error };\n    if (error !== expectedFault) terminalMigrationFailed = true;\n  } finally {\n    try {\n      await cleanTemporary();\n    } catch {\n      terminalMigrationFailed = true;\n      cleanupFailure = true;\n    }\n    for (const [client, opened] of [\n      [plan, planOpened],\n      [monitor, monitorOpened],\n    ] as const) {\n      if (!opened) continue;\n      try {\n        await client.end(performance.now() < deadline ? terminalRemaining(deadline) : 10_000);\n      } catch {\n        terminalMigrationFailed = true;\n        cleanupFailure = true;\n      }\n    }\n    closed = terminalCleanupKnown({\n      pending: plan.terminalState().pending || monitor.terminalState().pending ? 1 : 0,\n      idle: cleaned,\n      cleaned,\n      closed: !cleanupFailure && plan.terminalState().closed && monitor.terminalState().closed,\n    });\n    if (closed) terminalMigrationPending--;\n    console.info(\n      'E4_TERMINAL_SMALL_RESOURCES',\n      JSON.stringify({\n        temporary: cleaned ? 'ABSENT' : 'UNKNOWN',\n        closed,\n        pending: terminalMigrationPending,\n        deadlinePassed: performance.now() >= deadline,\n        cleanupFailure,\n      }),\n    );\n  }\n  if (cleanupFailure || performance.now() >= deadline) {\n    terminalMigrationFailed = true;\n    throw new Error('Terminal small execution/cleanup UNKNOWN or deadline exceeded');\n  }\n  if (primary) throw primary.value;\n  if (!completed) throw new Error('Terminal small work terminal UNKNOWN');\n  return completed.value;\n}\n// E4_TERMINAL_RETAINED_DIAGNOSTIC_BEGIN\ntype E4D1CaptureTerminalState = import('../helpers/e4-d1-result-capture').E4D1TerminalState;\n",
+      },
+      {
+        candidate:
+          "  // E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_BEGIN\n  installE4ValidationDatabase({ allowInstallRetain: true });\n  // E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_END\n  // E4_TERMINAL_N1_INSTALL_STAGE_BEGIN\n  const runN1InstallRetain =\n    process.env.SRVF_E4_W98 === '1' && process.env.SRVF_E4_N1_LIFECYCLE === 'install-retain';\n",
+        candidateHash: '35fc8e60bb654c32b0b663a9d8ad3bdf9a853f76a31bb0d3694de33257c32e36',
+        opening:
+          "  // E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_BEGIN\n  installE4ValidationDatabase({ allowInstallRetain: true });\n  // E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_END\n  // Child resources close before the lease envelope's ordinary DROP and release hooks.\n  // E4_TERMINAL_N1_INSTALL_STAGE_BEGIN\n  const runN1InstallRetain =\n    process.env.SRVF_E4_W98 === '1' && process.env.SRVF_E4_N1_LIFECYCLE === 'install-retain';\n",
+      },
+      {
+        candidate:
+          "    });\n    // E4_TERMINAL_REAL_BEGIN\n    describe('E4 terminal expected small real proof', () => {\n      // Bind the actual owner before child fixtures; do not move or skip native proofs.\n      const nativeMeasurementOwner = new E4NativeMeasurementOwner(\n        process.env.SRVF_E4_W98 === '1',\n        () => terminalMigrationLease.owner,\n        S13_LOCAL_DB,\n      );\n      beforeAll(async () => {\n        await nativeMeasurementOwner.start();\n        terminalMigrationNativeOwner = nativeMeasurementOwner;\n        terminalMigrationLease.owner = nativeMeasurementOwner.current().owner;\n      }, 120_000);\n      afterAll(async () => {\n        try {\n          await nativeMeasurementOwner.finish();\n        } finally {\n          terminalMigrationNativeOwner = undefined;\n          if (process.env.SRVF_E4_W98 !== '1') terminalMigrationLease.owner = undefined;\n        }\n      }, 120_000);\n      // Child resources close before the lease envelope's ordinary DROP and release hooks.\n      beforeEach(() => {\n        if (terminalMigrationFailed)\n          throw new Error('Terminal small group stopped after first red');\n",
+        candidateHash: 'd697fb4a00baf1f18ca1fcb04c36783fdf84bbd5cefc1cf358b29708678aa9e9',
+        opening:
+          "    });\n    // E4_TERMINAL_REAL_BEGIN\n    describe('E4 terminal expected small real proof', () => {\n      beforeEach(() => {\n        if (terminalMigrationFailed)\n          throw new Error('Terminal small group stopped after first red');\n",
+      },
+    ],
+    scale: [
+      {
+        candidate:
+          "}\n\n// E4_TERMINAL_HELPERS_BEGIN\nimport { e4NativeMeasurementDatabase } from '../helpers/e4-native-measurement-owner';\nimport { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\nfunction terminalHash(source: string, algorithm: 'sha256' | 'md5' = 'sha256') {\n  return createHash(algorithm).update(source).digest('hex');\n",
+        candidateHash: '76667f95ba211c5db92e03c656eccb9504e97025cfb3a3c7d876711516e94b8d',
+        opening:
+          "}\n\n// E4_TERMINAL_HELPERS_BEGIN\nimport { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\nfunction terminalHash(source: string, algorithm: 'sha256' | 'md5' = 'sha256') {\n  return createHash(algorithm).update(source).digest('hex');\n",
+      },
+      {
+        candidate:
+          "  expected: TerminalIdentity | Pick<TerminalIdentity, 'session' | 'principal'>,\n) {\n  if (\n    actual.db !== e4NativeMeasurementDatabase(S13_LOCAL_DB) ||\n    !Number.isInteger(actual.pid) ||\n    actual.pid <= 0 ||\n    typeof actual.session !== 'string' ||\n",
+        candidateHash: '746567ac1248ed00c458ca295e157ffcc36ecbbe1dcb82b9319ddbb3f0e2c823',
+        opening:
+          "  expected: TerminalIdentity | Pick<TerminalIdentity, 'session' | 'principal'>,\n) {\n  if (\n    actual.db !== S13_LOCAL_DB ||\n    !Number.isInteger(actual.pid) ||\n    actual.pid <= 0 ||\n    typeof actual.session !== 'string' ||\n",
+      },
+      {
+        candidate:
+          "  return { current, opening };\n}\nasync function terminalBusinessPrincipal(db: PrismaClient) {\n  const rows = await db.$queryRawUnsafe<{ db: string; session: string; principal: string }[]>(\n    'SELECT current_database() AS db,session_user::text AS session,current_user::text AS principal',\n  );\n  if (\n    rows.length !== 1 ||\n    rows[0].db !== e4NativeMeasurementDatabase(S13_LOCAL_DB) ||\n    rows[0].session !== rows[0].principal ||\n    !rows[0].session ||\n    !rows[0].principal\n",
+        candidateHash: 'b11e1e56ba72f0230d96ef477e79acefe2f58ee481ffe409b325d0d37892704a',
+        opening:
+          "  return { current, opening };\n}\nasync function terminalBusinessPrincipal(db: PrismaClient) {\n  const rows = await db.$queryRawUnsafe<{ session: string; principal: string }[]>(\n    'SELECT session_user::text AS session,current_user::text AS principal',\n  );\n  if (\n    rows.length !== 1 ||\n    rows[0].session !== rows[0].principal ||\n    !rows[0].session ||\n    !rows[0].principal\n",
+      },
+      {
+        candidate:
+          "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, e4NativeMeasurementDatabase(S13_LOCAL_DB)],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
+        candidateHash: '9ec69755204978179430b9fc7a877c908d25d5279754a72d356beba4df7c4e00',
+        opening:
+          "  if (client.terminalState().pending) throw new Error('Terminal pending request not settled');\n  const result = await monitor.query<{ idle: boolean }>(\n    \"SELECT state='idle' AND xact_start IS NULL AS idle FROM pg_stat_activity WHERE pid=$1 AND datname=$2\",\n    [identity.pid, S13_LOCAL_DB],\n    terminalRemaining(deadline),\n  );\n  if (result.rows.length !== 1 || result.rows[0].idle !== true)\n",
+      },
+    ],
+  } as const;
+  for (const { candidate, candidateHash, opening } of bindings[
+    migrationCount === 1 ? 'migration' : 'scale'
+  ]) {
+    if (source.split(candidate).length !== 2 || terminalHash(candidate) !== candidateHash)
+      throw new Error('Native worker exact opening binding differs');
+    source = source.replace(candidate, () => opening);
+  }
+  const calls = /^ {2}source = terminalNativeWorkerOpening\(source\);\n/gmu;
+  if ([...source.matchAll(calls)].length !== 2)
+    throw new Error('Native worker opening inverse call differs');
+  return source.replace(calls, '');
+}
 function terminalGithubScopeOpening(source: string): string {
   const clientType =
     /^ {2}constructor\(private readonly database: 'postgres' \| typeof S13_LOCAL_DB\) \{\}$/gmu;
@@ -1086,6 +1197,7 @@ function terminalN1LifecycleOpening(source: string): string {
   return source.replace(added, "\n    ['HELPERS', 'FROZEN', 'OFFLINE', 'REAL'],\n");
 }
 function terminalRefsTestOpening(source: string, kind: 'migration' | 'scale') {
+  source = terminalNativeWorkerOpening(source);
   source = terminalGithubScopeOpening(source);
   if (kind === 'migration') source = terminalN1LifecycleOpening(source);
   for (const name of [
@@ -1117,6 +1229,7 @@ function restoreTerminalSource(
   additions: string[],
   expected: string,
 ) {
+  source = terminalNativeWorkerOpening(source);
   source = terminalGithubScopeOpening(source);
   for (const kind of additions) {
     const start = '// E4_TERMINAL_' + kind + '_BEGIN';
