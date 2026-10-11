@@ -633,7 +633,7 @@ export class ActivityContributionSettlementService {
         e."ruleSnapshotId", e."selectionItemId", e."policyId", e."policyVersionId", e."definitionHash", e."evaluatorVersion", e.mode,
         e."attendanceRoleCode", e."timeCategoryCode", e."evaluationUnitKey", e."durationSeconds", e."sourceRefsJson", e."sourceFingerprint",
         e."calculatedPoints", e."recognizedPoints", e."explanationCode", e."beijingDayPointsJson", e."evaluationHash"
-      FROM jsonb_to_recordset(${json}::jsonb) AS e(
+      FROM json_to_recordset(${json}::json) AS e(
         "participationIdentityId" TEXT, "memberId" TEXT, "sessionId" TEXT, "ruleSnapshotId" TEXT, "selectionItemId" TEXT,
         "policyId" TEXT, "policyVersionId" TEXT, "definitionHash" TEXT, "evaluatorVersion" INTEGER, mode TEXT,
         "attendanceRoleCode" TEXT, "timeCategoryCode" TEXT, "evaluationUnitKey" TEXT, "durationSeconds" INTEGER,

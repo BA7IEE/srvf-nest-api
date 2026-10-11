@@ -495,6 +495,24 @@ describe('E4 transaction-owned contribution orchestration', () => {
       tx.activitySettlementContributionRevision.create.mock.invocationCallOrder[0],
     );
   });
+  it('sends every frozen evaluation field and reference as the original JSON bytes', async () => {
+    const { service, prismaTx, tx, command, reauthorize, read } = setup();
+    const expected = evaluation();
+    for (const row of expected.evaluations) {
+      Object.freeze(row.sourceRefsJson);
+      Object.freeze(row.beijingDayPointsJson);
+      Object.freeze(row);
+    }
+    Object.freeze(expected.evaluations);
+    read.mockResolvedValue(expected);
+    await service.prepareTimeInTx(prismaTx, time(), 'policy_v1', command, reauthorize);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    const call = tx.$executeRaw.mock.calls[0] as unknown[];
+    const payload = call[call.length - 1];
+    expect(payload).toBe(JSON.stringify(expected.evaluations));
+    expect(JSON.parse(payload as string)).toEqual(expected.evaluations);
+  });
+
   it('reuses exact content without minting a second evaluation, but still rechecks the current actor', async () => {
     const { service, prismaTx, tx, command, reauthorize } = setup();
     tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(root());
