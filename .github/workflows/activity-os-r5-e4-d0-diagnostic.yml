@@ -1,0 +1,50 @@
+name: R5 E4 D0 safe diagnostic
+
+# One new SHA, one attempt, D0 only. The original full queue remains unchanged.
+on:
+  push:
+    branches: [codex/activity-os-r5-e4-github-validation]
+    paths:
+      - .github/workflows/activity-os-r5-e4-d0-diagnostic.yml
+permissions:
+  contents: read
+concurrency:
+  group: e4-d0-once-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[e4-d0-diagnostic-once]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: test
+      SRVF_E4_GITHUB_ISOLATED: '1'
+      SRVF_TEST_RUN_SCOPE: app_test_w98
+      SRVF_E4_W98: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.3'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - name: One D0 with validated safe failure evidence
+        run: node test/helpers/e4-safe-case-diagnostics.cjs --run-d0
+      - name: Retain safe D0 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e4-d0-safe-${{ github.run_id }}
+          path: |
+            tmp/e4-github-evidence/status.json
+            tmp/e4-github-evidence/d0-case-diagnostics.json
+            tmp/e4-github-evidence/d0-runtime.json
+          if-no-files-found: ignore
+          retention-days: 7
