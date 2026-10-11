@@ -1,6 +1,7 @@
 name: R5 E4 D0 safe diagnostic
 
 # One new SHA, one attempt, D0 only. The original full queue remains unchanged.
+# Approved fresh D0 source binding: 3fa8dbcf1d44ebf5d80531914caff21f9bf568d9.
 on:
   push:
     branches: [codex/activity-os-r5-e4-github-validation]

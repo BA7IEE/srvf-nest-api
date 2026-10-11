@@ -1,2084 +1,2084 @@
 {
   "schema": "srvf-e4-case-catalog/v1",
-  "sourceHead": "2e5828715a9fd7238b7ab73416dcffa1d9f32efc",
+  "sourceHead": "3fa8dbcf1d44ebf5d80531914caff21f9bf568d9",
   "files": [
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "sha256": "bed336fa38ff84d935eb76d40cca00335f2ebe9618aae18d011ec583875e03d8"
+      "sha256": "6b516e302100b01b901111e997e24d455feff7383053d04807f748739b635400"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "sha256": "4ba541ac9cce9a8ae89aec7b6383c15a919c188ba5170149104e7a607c0e2c1b"
+      "sha256": "8fa088f036c821779024ac3e9b44ae30440ce0e087b3a156dab8defcee97d640"
     }
   ],
   "cases": [
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4045,
+      "line": 4171,
       "column": 3,
       "name": "pins the independent frozen full function and actual one-word migration"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4065,
+      "line": 4191,
       "column": 3,
       "name": "demonstrates the dollar-delimiter replacement trap without using it to produce SQL"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4071,
+      "line": 4197,
       "column": 79,
       "name": "refuses %s actual complete function input"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4093,
+      "line": 4219,
       "column": 3,
       "name": "closes both test files, all original assertions, and the exact shared native implementation"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4121,
+      "line": 4247,
       "column": 71,
       "name": "refuses %s test-source byte damage"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4141,
+      "line": 4267,
       "column": 3,
       "name": "retains two-root and three-root fixed query bindings with a sole explicit old/public call"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4220,
+      "line": 4346,
       "column": 3,
       "name": "requires the actual full catalog, not a guessed default or a body-only hash"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4250,
+      "line": 4376,
       "column": 5,
       "name": "refuses forged or missing %s catalog evidence"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4264,
+      "line": 4390,
       "column": 5,
       "name": "refuses scope/PID/principal mismatch (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4267,
+      "line": 4393,
       "column": 70,
       "name": "does not extend or guess the native request ceiling (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4273,
+      "line": 4399,
       "column": 3,
       "name": "uses the paid remaining deadline and refuses the exact expiry boundary"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4279,
+      "line": 4405,
       "column": 3,
       "name": "does not send even a SET or DDL after the deadline"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4287,
+      "line": 4413,
       "column": 3,
       "name": "keeps fifteen seconds as a cap and clips it to the real remaining pair window"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4295,
+      "line": 4421,
       "column": 3,
       "name": "marks an active request expiry UNKNOWN rather than pretending it was canceled"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4312,
+      "line": 4438,
       "column": 3,
       "name": "does not turn a pending request, unproved rollback, residue or unknown close into cleanup success"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4318,
+      "line": 4444,
       "column": 3,
       "name": "refuses normal close while a real request is pending"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4337,
+      "line": 4463,
       "column": 41,
       "name": "requires the exact PG16 display label and complete actual identity/catalog for %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4353,
+      "line": 4479,
       "column": 14,
       "name": "refuses the wrong plan namespace %s / %s rather than normalizing it"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4361,
+      "line": 4487,
       "column": 41,
       "name": "refuses wrong or dual actual producer for %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4374,
+      "line": 4500,
       "column": 83,
       "name": "rejects a missing real producer %s field on each side"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4391,
+      "line": 4517,
       "column": 5,
       "name": "rejects wrong real producer %s=%s on each side"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4398,
+      "line": 4524,
       "column": 3,
       "name": "refuses an absent actual identity before mapping the plan display"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4403,
+      "line": 4529,
       "column": 49,
       "name": "refuses a missing %s identity at the provenance gate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4419,
+      "line": 4545,
       "column": 5,
       "name": "refuses wrong identity at the provenance gate (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4427,
+      "line": 4553,
       "column": 3,
       "name": "refuses an absent complete catalog before mapping the plan display"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4430,
+      "line": 4556,
       "column": 34,
       "name": "refuses missing %s catalog at the provenance gate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4445,
+      "line": 4571,
       "column": 5,
       "name": "revalidates complete catalog %s at the provenance gate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4451,
+      "line": 4577,
       "column": 3,
       "name": "keeps the complete failed inner query while adapting only its SELECT interface and approved exact field/NULL checks"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4466,
+      "line": 4592,
       "column": 3,
       "name": "pins all 21 independent document names and refuses missing, extra or same-count wrong names"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4477,
+      "line": 4603,
       "column": 3,
       "name": "reproduces the WITH row-interface refusal and parses the adapted rows along the untouched native query implementation"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4519,
+      "line": 4645,
       "column": 3,
       "name": "uses the declared independent frozen constant rather than the subject"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4533,
+      "line": 4659,
       "column": 3,
       "name": "restores both complete current test openings and the unchanged native driver"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4548,
+      "line": 4674,
       "column": 3,
       "name": "projects the D2 and N1 anchors and restores all complete SQL inputs"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4568,
+      "line": 4694,
       "column": 79,
       "name": "refuses %s source instead of weakening the frozen migration pin"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4589,
+      "line": 4715,
       "column": 3,
       "name": "keeps source grouping, canonical hash and CTE choices while narrowing selected"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4678,
+      "line": 4804,
       "column": 3,
       "name": "binds exactly two unquoted complete-body parameters and reverses every byte"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4690,
+      "line": 4816,
       "column": 3,
       "name": "skips quoted, escaped, dollar-quoted and nested-comment parameter lookalikes"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4697,
+      "line": 4823,
       "column": 79,
       "name": "refuses an unclosed SQL lexical region (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4703,
+      "line": 4829,
       "column": 63,
       "name": "refuses %s full diagnostic body input"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4718,
+      "line": 4844,
       "column": 3,
       "name": "projects only safe numeric stage fields from the complete private plan"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4747,
+      "line": 4873,
       "column": 3,
       "name": "accepts one exact root documents CTE Scan without a subplan as the consumer"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4769,
+      "line": 4895,
       "column": 3,
       "name": "rejects a root documents-prefix CTE Scan"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4776,
+      "line": 4902,
       "column": 3,
       "name": "rejects a root documents CTE Scan with a subplan"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4785,
+      "line": 4911,
       "column": 3,
       "name": "rejects a non-CTE-Scan root even when its CTE target is exact"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4794,
+      "line": 4920,
       "column": 3,
       "name": "rejects an exact root consumer plus an ordinary exact consumer as a duplicate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4822,
+      "line": 4948,
       "column": 14,
       "name": "retains the root consumer $name rejection"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4837,
+      "line": 4963,
       "column": 3,
       "name": "retains the existing exact non-root documents CTE Scan consumer"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4847,
+      "line": 4973,
       "column": 3,
       "name": "projects a bounded nested recognition graph without names, aliases or raw plan fields"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4905,
+      "line": 5031,
       "column": 3,
       "name": "keeps the recognition node-type allowlist exactly aligned with the capture schema"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4909,
+      "line": 5035,
       "column": 3,
       "name": "rejects a target-prefix CTE name through the original body eligibility only"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4942,
+      "line": 5068,
       "column": 3,
       "name": "records an unknown node type as OTHER without expanding body eligibility"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 4980,
+      "line": 5106,
       "column": 5,
       "name": "refuses missing %s instead of reporting a tidy zero"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5056,
+      "line": 5182,
       "column": 14,
       "name": "publishes every fixed documents eligibility rejection branch for %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5093,
+      "line": 5219,
       "column": 14,
       "name": "refuses %s documents eligibility"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5107,
+      "line": 5233,
       "column": 3,
       "name": "does not treat the exterior Function Scan totals as documents evidence"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5115,
+      "line": 5241,
       "column": 3,
       "name": "recognizes zero-row NULL calibration but refuses the 8000-row gate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5123,
+      "line": 5249,
       "column": 3,
       "name": "rejects unknown body pins even when the numbers look right"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5131,
+      "line": 5257,
       "column": 3,
       "name": "bounds complete-tree traversal without pruning child evidence"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5152,
+      "line": 5278,
       "column": 3,
       "name": "requires actual observer, owner, plan and lease positive controls"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5181,
+      "line": 5307,
       "column": 14,
       "name": "refuses missing or forged %s resource evidence"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5189,
+      "line": 5315,
       "column": 3,
       "name": "caps cumulative public frames rather than each frame alone"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5198,
+      "line": 5324,
       "column": 3,
       "name": "sets a paid 75-second whole diagnostic with the unchanged 30-second request cap"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5215,
+      "line": 5341,
       "column": 3,
       "name": "requires a unique complete synthetic submitted root, never a latest or first row"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5220,
+      "line": 5346,
       "column": 97,
       "name": "refuses missing or mismatched %s synthetic retained proof"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5235,
+      "line": 5361,
       "column": 3,
       "name": "keeps the exact top-level group outside installer/app hooks and CI selection"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5258,
+      "line": 5384,
       "column": 3,
       "name": "wraps the full SELECT interface with three complete bidirectional bags and fixed keys"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5272,
+      "line": 5398,
       "column": 3,
       "name": "keeps both public return names outside the complete pinned direct function body"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5291,
+      "line": 5417,
       "column": 5,
       "name": "refuses the new direct output declaration %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5306,
+      "line": 5432,
       "column": 3,
       "name": "publishes only closed failure categories, never an arbitrary exception"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5337,
+      "line": 5463,
       "column": 3,
       "name": "pins the complete public source and all attributes before temporary DDL"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5345,
+      "line": 5471,
       "column": 3,
       "name": "does not backfill an unknown exit with a later zero or incomplete guard"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5403,
+      "line": 5529,
       "column": 14,
       "name": "refuses missing or forged initial %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5466,
+      "line": 5592,
       "column": 3,
       "name": "runs exactly six full statements in fixed order and strips every private root"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5509,
+      "line": 5635,
       "column": 3,
       "name": "keeps the 40,000 D4 associations distinct from 50,000 full source references"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5534,
+      "line": 5660,
       "column": 33,
       "name": "rejects %i instead of the required 50,000 source references"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5551,
+      "line": 5677,
       "column": 3,
       "name": "publishes only a whitelist-safe rejected source proof frame"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5589,
+      "line": 5715,
       "column": 3,
       "name": "does not publish a rejected frame when the whitelist is not closed"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5617,
+      "line": 5743,
       "column": 21,
       "name": "uses a complete two-way EXCEPT ALL bag in step %i"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5641,
+      "line": 5767,
       "column": 3,
       "name": "checks all 21 keys and recomputes every evaluation hash only after full bags"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5676,
+      "line": 5802,
       "column": 3,
       "name": "recomputes all complete source arrays rather than recycling compared fingerprints"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5686,
+      "line": 5812,
       "column": 3,
       "name": "rebuilds full unit and root envelopes with C sorting and exact total"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5720,
+      "line": 5846,
       "column": 14,
       "name": "refuses the %s queue instead of changing the approved evidence method"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5742,
+      "line": 5868,
       "column": 35,
       "name": "does not execute any step after %s fails"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5763,
+      "line": 5889,
       "column": 35,
       "name": "rejects empty, duplicated or wrong-root %s results"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5783,
+      "line": 5909,
       "column": 4,
       "name": "refuses missing or forged $step.$key proof"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5798,
+      "line": 5924,
       "column": 35,
       "name": "refuses missing %s complete truth, not default true"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5810,
+      "line": 5936,
       "column": 3,
       "name": "requires actual repeatable-read and READ ONLY in the same transaction as the full plan"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 5830,
+      "line": 5956,
       "column": 47,
       "name": "blocks the queue when actual %s is false or missing"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6214,
+      "line": 6340,
       "column": 3,
       "name": "atomically binds the complete production-shaped safe result to this scope and token"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6242,
+      "line": 6368,
       "column": 3,
       "name": "treats OTHER as a safe recognition class instead of a new terminal rejection"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6264,
+      "line": 6390,
       "column": 24,
       "name": "rejects an omitted production terminal field: %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6282,
+      "line": 6408,
       "column": 5,
       "name": "rejects %s proof duration milliseconds"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6293,
+      "line": 6419,
       "column": 3,
       "name": "refuses unknown proof keys instead of widening the persisted whitelist"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6318,
+      "line": 6444,
       "column": 3,
       "name": "marks missing finally evidence, interrupted execution and capped streams UNKNOWN"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6352,
+      "line": 6478,
       "column": 3,
       "name": "does not let a passing Jest JSON override a nonzero process exit or token mismatch"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6378,
+      "line": 6504,
       "column": 3,
       "name": "withholds Jest failure text and only reports a fixed UNKNOWN reason"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6404,
+      "line": 6530,
       "column": 3,
       "name": "requires both complete closure and complete evidence before it can ever record PASS"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6448,
+      "line": 6574,
       "column": 3,
       "name": "continues draining capped stdout without retaining its contents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6456,
+      "line": 6582,
       "column": 3,
       "name": "persists the existing primary and cleanup terminal combinations without hiding cleanup UNKNOWN"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6497,
+      "line": 6623,
       "column": 3,
       "name": "keeps local offline parameter tables equal to the helper enumerations"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6503,
+      "line": 6629,
       "column": 35,
       "name": "projects fixed first-red diagnostics for failure phase %s without upgrading it to PASS"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6547,
+      "line": 6673,
       "column": 33,
       "name": "projects missing fixed proof %s as absent rather than a passing value"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6586,
+      "line": 6712,
       "column": 14,
       "name": "projects nonconforming fixed proof value for %s.%s without reporting PASS"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6765,
+      "line": 6891,
       "column": 5,
       "name": "runs the real CLI/Jest capture chain safely for $scenario"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6874,
+      "line": 7000,
       "column": 3,
       "name": "persists fractional production-shaped success through an independently invoked reader when outer stdout is dropped"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 6973,
+      "line": 7099,
       "column": 14,
       "name": "persists the real offline $scenario chain without upgrading a nonzero or interrupted child to PASS"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7023,
+      "line": 7149,
       "column": 3,
       "name": "reads historical v1/v2/v3 summaries strictly and rejects incomplete v4"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7128,
+      "line": 7254,
       "column": 3,
       "name": "rejects wrong, missing, tampered and oversized durable records and cannot promote fallback to PASS"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7205,
+      "line": 7331,
       "column": 3,
       "name": "keeps the historical local scope and refuses every incomplete GitHub opt-in"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7230,
+      "line": 7356,
       "column": 3,
       "name": "keeps retained installation explicitly opt-in while preserving the original lease release"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7269,
+      "line": 7395,
       "column": 3,
       "name": "scopes the v1.1 fixture gate to retained install and emits only fixed failure diagnostics"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7322,
+      "line": 7448,
       "column": 3,
       "name": "requires an installed N1 candidate, intact catalog and exact retained root before D1"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7366,
+      "line": 7492,
       "column": 3,
       "name": "does not start a D1 child when admission rejects or is unknown"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7419,
+      "line": 7545,
       "column": 3,
       "name": "keeps the admission child read-only and the retained install stage separately opt-in"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7456,
+      "line": 7582,
       "column": 3,
       "name": "pins the original e70 oracle and only changes the current expected-evaluation function body"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7496,
+      "line": 7622,
       "column": 3,
       "name": "pins the separate abc root oracle and changes no bytes outside that single aggregate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7533,
+      "line": 7659,
       "column": 3,
       "name": "uses the fixed AB/BA/BA/AB/AB/BA order and retains all six raw samples"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7551,
+      "line": 7677,
       "column": 3,
       "name": "rejects a missing pair"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7554,
+      "line": 7680,
       "column": 3,
       "name": "rejects a seventh pair instead of selecting the best six"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7558,
+      "line": 7684,
       "column": 3,
       "name": "rejects reordered pairs"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7563,
+      "line": 7689,
       "column": 3,
       "name": "rejects order drift even when pair indexes are unchanged"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7568,
+      "line": 7694,
       "column": 3,
       "name": "rejects duplicate pair indexes"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7573,
+      "line": 7699,
       "column": 41,
       "name": "rejects changed %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7578,
+      "line": 7704,
       "column": 3,
       "name": "rejects incomplete JSON comparison instead of accepting performance alone"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7588,
+      "line": 7714,
       "column": 14,
       "name": "rejects %s timing in either member of a pair"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7595,
+      "line": 7721,
       "column": 3,
       "name": "rejects overflow in a relative delta"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7600,
+      "line": 7726,
       "column": 3,
       "name": "requires strictly negative medians in both orders"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7606,
+      "line": 7732,
       "column": 3,
       "name": "rejects AB gain with BA loss without cross-order averaging"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7611,
+      "line": 7737,
       "column": 3,
       "name": "rejects BA gain with AB loss"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7616,
+      "line": 7742,
       "column": 33,
       "name": "rejects a zero median in %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7624,
+      "line": 7750,
       "column": 3,
       "name": "keeps an individual loser visible but accepts two negative order medians"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7631,
+      "line": 7757,
       "column": 3,
       "name": "uses all three relative deltas rather than an absolute-time median"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7640,
+      "line": 7766,
       "column": 3,
       "name": "rejects a majority of losers even with one arbitrarily large gain"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7645,
+      "line": 7771,
       "column": 80,
       "name": "latches a %s red and refuses later callbacks and SQL"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7667,
+      "line": 7793,
       "column": 3,
       "name": "latches the real final median assertion outside an oracle callback"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7678,
+      "line": 7804,
       "column": 3,
       "name": "latches throw undefined without using the error value as the state flag"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7697,
+      "line": 7823,
       "column": 3,
       "name": "records the primary error before cleanup and still executes cleanup"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7719,
+      "line": 7845,
       "column": 3,
       "name": "keeps primary identity while separately recording a secondary cleanup failure"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7749,
+      "line": 7875,
       "column": 3,
       "name": "preserves throw undefined even when cleanup also fails"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7767,
+      "line": 7893,
       "column": 3,
       "name": "makes a cleanup-only failure the primary red"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7786,
+      "line": 7912,
       "column": 3,
       "name": "refuses work and cleanup callbacks after the group is already failed"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7797,
+      "line": 7923,
       "column": 3,
       "name": "isolates calibration factories from each other and the real suite gate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7813,
+      "line": 7939,
       "column": 3,
       "name": "reads the real complete new migration and restores exactly the opening whole source"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7822,
+      "line": 7948,
       "column": 79,
       "name": "refuses %s input before any historical projection"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7841,
+      "line": 7967,
       "column": 3,
       "name": "refuses an unknown opening rather than accepting a current/historical fallback"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7845,
+      "line": 7971,
       "column": 3,
       "name": "retains the complete existing format, S13 and P-Set historical chain"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7857,
+      "line": 7983,
       "column": 3,
       "name": "pins the full real prosrc, while the inverse exactly restores the old full body"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7872,
+      "line": 7998,
       "column": 3,
       "name": "materializes only the actual identifier and NULL-safe full-document comparison"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7887,
+      "line": 8013,
       "column": 3,
       "name": "binds the raw actual SQL without altering the inner complete-document comparison"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7901,
+      "line": 8027,
       "column": 3,
       "name": "reads the actual two CASEs and reverses exactly the full fixed opening migration"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7910,
+      "line": 8036,
       "column": 69,
       "name": "rejects %s actual source mutation"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7925,
+      "line": 8051,
       "column": 3,
       "name": "binds the actual new precheck while keeping the original two named constants"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7934,
+      "line": 8060,
       "column": 3,
       "name": "proves every positive template fixture belongs to the old ASCII regex"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7945,
+      "line": 8071,
       "column": 31,
       "name": "keeps the fallback result %s without coalescing"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7968,
+      "line": 8094,
       "column": 3,
       "name": "restores only the day window to the complete fixed pre-§12.20 migration"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7978,
+      "line": 8104,
       "column": 3,
       "name": "rejects a byte changed outside the authorized day function window"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 7991,
+      "line": 8117,
       "column": 3,
       "name": "binds the actual precheck and independent fallback without changing either SELECT"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8003,
+      "line": 8129,
       "column": 3,
       "name": "refuses missing or duplicated actual precheck extraction windows"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8010,
+      "line": 8136,
       "column": 3,
       "name": "restores exactly the complete opening d405632f migration from one narrow precheck"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8017,
+      "line": 8143,
       "column": 3,
       "name": "rejects a missing, repeated or mutated narrow precheck"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8030,
+      "line": 8156,
       "column": 3,
       "name": "detects adjacent and other-function mutations after only the narrow precheck is restored"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8046,
+      "line": 8172,
       "column": 3,
       "name": "restores exactly the complete fixed 0d5def0a migration"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8052,
+      "line": 8178,
       "column": 3,
       "name": "rejects zero authorized-window matches"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8055,
+      "line": 8181,
       "column": 3,
       "name": "rejects two authorized-window matches"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8058,
+      "line": 8184,
       "column": 3,
       "name": "detects a byte changed immediately outside the window"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8069,
+      "line": 8195,
       "column": 3,
       "name": "detects a change in a different function"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8080,
+      "line": 8206,
       "column": 3,
       "name": "binds only explicit virtual sources/rows and rejects a missing substitution"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8088,
+      "line": 8214,
       "column": 3,
       "name": "restores the fixed complete opening 137 using only one S13 window"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8092,
+      "line": 8218,
       "column": 3,
       "name": "rejects zero S13 windows"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8095,
+      "line": 8221,
       "column": 3,
       "name": "rejects two S13 windows"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8098,
+      "line": 8224,
       "column": 3,
       "name": "rejects an adjacent byte mutation after the exact window restore"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8107,
+      "line": 8233,
       "column": 3,
       "name": "rejects a changed function outside S13 without accepting a new opening pin"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8116,
+      "line": 8242,
       "column": 3,
       "name": "refuses a malformed actual new window rather than normalizing it into a passing oracle"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8124,
+      "line": 8250,
       "column": 3,
       "name": "materializes only row identifiers at matching and retains exact full-doc and same-root backjoins"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8143,
+      "line": 8269,
       "column": 3,
       "name": "binds the fixed historical S13 window to virtual inputs with no root or table leaks"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8153,
+      "line": 8279,
       "column": 3,
       "name": "extracts the actual candidate and restores exactly the complete fixed S13 migration"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8160,
+      "line": 8286,
       "column": 3,
       "name": "rejects zero actual candidate windows"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8163,
+      "line": 8289,
       "column": 3,
       "name": "rejects two actual candidate windows"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8172,
+      "line": 8298,
       "column": 5,
       "name": "rejects a byte mutation outside the sole candidate window (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8178,
+      "line": 8304,
       "column": 3,
       "name": "rejects a changed candidate rather than routing it into a historical pass"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8186,
+      "line": 8312,
       "column": 3,
       "name": "carries the exact expected document through the FULL JOIN and retains the same-root PK backjoin"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 8202,
+      "line": 8328,
       "column": 3,
       "name": "binds only the actual unnormalized candidate to virtual sources and full documents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9019,
+      "line": 9145,
       "column": 3,
       "name": "preserves two committed historical chains, full old columns and checksums through upgrade and no-op"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9422,
+      "line": 9547,
       "column": 7,
       "name": "accepts equal complete documents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9430,
+      "line": 9555,
       "column": 7,
       "name": "accepts two empty sets"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9433,
+      "line": 9558,
       "column": 7,
       "name": "rejects a missing actual row"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9436,
+      "line": 9561,
       "column": 7,
       "name": "rejects an extra actual row"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9439,
+      "line": 9564,
       "column": 7,
       "name": "retains four equal Cartesian pairs for two duplicate keys per side"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9450,
+      "line": 9575,
       "column": 7,
       "name": "does not assume key uniqueness across different identities"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9462,
+      "line": 9587,
       "column": 7,
       "name": "retains unmatchable NULL keys, even with equal full documents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9466,
+      "line": 9591,
       "column": 7,
       "name": "retains the old SQL-NULL / SQL-NULL non-difference on unmatched NULL keys"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9474,
+      "line": 9599,
       "column": 7,
       "name": "does not equate JSON null with SQL NULL"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9477,
+      "line": 9602,
       "column": 7,
       "name": "retains SQL-NULL actual rows versus missing expected rows"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9526,
+      "line": 9651,
       "column": 9,
       "name": "rejects a full-document mutation in %s (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9534,
+      "line": 9659,
       "column": 7,
       "name": "rejects different keys as missing plus extra rather than matching their documents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9538,
+      "line": 9663,
       "column": 7,
       "name": "S13 retains all six two-by-three mixed duplicate pairs and their full-document differences"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9551,
+      "line": 9676,
       "column": 61,
       "name": "S13 retains a literal key without normalization (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9582,
+      "line": 9727,
       "column": 9,
       "name": "accepts equal complete documents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9590,
+      "line": 9735,
       "column": 9,
       "name": "accepts two empty sets"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9593,
+      "line": 9738,
       "column": 9,
       "name": "rejects a missing actual row"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9596,
+      "line": 9741,
       "column": 9,
       "name": "rejects an extra actual row"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9599,
+      "line": 9744,
       "column": 9,
       "name": "retains four equal Cartesian pairs for two duplicate keys per side"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9610,
+      "line": 9755,
       "column": 9,
       "name": "does not assume key uniqueness across different identities"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9622,
+      "line": 9767,
       "column": 9,
       "name": "retains unmatchable NULL keys, even with equal full documents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9626,
+      "line": 9771,
       "column": 9,
       "name": "retains the old SQL-NULL / SQL-NULL non-difference on unmatched NULL keys"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9634,
+      "line": 9779,
       "column": 9,
       "name": "does not equate JSON null with SQL NULL"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9637,
+      "line": 9782,
       "column": 9,
       "name": "retains SQL-NULL actual rows versus missing expected rows"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9686,
+      "line": 9831,
       "column": 11,
       "name": "rejects a full-document mutation in %s (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9694,
+      "line": 9839,
       "column": 9,
       "name": "rejects different keys as missing plus extra rather than matching their documents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9698,
+      "line": 9843,
       "column": 9,
       "name": "S13 retains all six two-by-three mixed duplicate pairs and their full-document differences"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9711,
+      "line": 9856,
       "column": 63,
       "name": "S13 retains a literal key without normalization (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9795,
+      "line": 9940,
       "column": 9,
       "name": "compares three versions on equal full documents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9799,
+      "line": 9944,
       "column": 9,
       "name": "compares three empty bags"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9803,
+      "line": 9948,
       "column": 9,
       "name": "retains missing rows in all three versions"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9807,
+      "line": 9952,
       "column": 9,
       "name": "retains extra rows in all three versions"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9811,
+      "line": 9956,
       "column": 9,
       "name": "retains all six Cartesian rows for a two-by-three equal duplicate bag"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9815,
+      "line": 9960,
       "column": 9,
       "name": "retains cross-identity differences for the same virtual key"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9825,
+      "line": 9970,
       "column": 9,
       "name": "does not match NULL keys"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9830,
+      "line": 9975,
       "column": 9,
       "name": "keeps SQL NULL versus SQL NULL as a non-difference"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9839,
+      "line": 9984,
       "column": 9,
       "name": "distinguishes JSON null from SQL NULL"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9848,
+      "line": 9993,
       "column": 9,
       "name": "retains a SQL NULL actual document with no expected document"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9852,
+      "line": 9997,
       "column": 9,
       "name": "filters a cross-root same-key actual row before matching"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9856,
+      "line": 10001,
       "column": 43,
       "name": "compares the entire %s field in all three versions"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9877,
+      "line": 10022,
       "column": 69,
       "name": "retains %s array order, unknown keys, JSON null and empty arrays"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9896,
+      "line": 10041,
       "column": 47,
       "name": "retains Unicode and whitespace in the full document (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 9977,
+      "line": 10122,
       "column": 11,
       "name": "compares three genuine revision bags, symmetric NULL input and all 21 exact fields on the native measurement session"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10043,
+      "line": 10188,
       "column": 11,
       "name": "proves raw PG16 temporary/public NULL plans on the actual native session without accepting zero-row coverage"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10100,
+      "line": 10245,
       "column": 11,
       "name": "closes a real read-only transaction and installed temporary object after a controlled post-DDL failure"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10122,
+      "line": 10267,
       "column": 11,
       "name": "executes the actual complete guard and proves exact full prosrc and catalog properties"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10194,
+      "line": 10339,
       "column": 22,
       "name": "rejects %s for a genuine submitted anchor and restores the catalog by rollback"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10276,
+      "line": 10421,
       "column": 22,
       "name": "keeps the exact first rejection and zero partial facts: %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10350,
+      "line": 10495,
       "column": 7,
       "name": "P-Day actual format CASE retains real prosrc, properties, SQL three values and complete old outcomes"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10506,
+      "line": 10651,
       "column": 7,
       "name": "compares three versions on equal full documents"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10510,
+      "line": 10655,
       "column": 7,
       "name": "compares three empty bags"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10514,
+      "line": 10659,
       "column": 7,
       "name": "retains missing rows in all three versions"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10518,
+      "line": 10663,
       "column": 7,
       "name": "retains extra rows in all three versions"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10522,
+      "line": 10667,
       "column": 7,
       "name": "retains all six Cartesian rows for a two-by-three equal duplicate bag"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10526,
+      "line": 10671,
       "column": 7,
       "name": "retains cross-identity differences for the same virtual key"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10536,
+      "line": 10681,
       "column": 7,
       "name": "does not match NULL keys"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10541,
+      "line": 10686,
       "column": 7,
       "name": "keeps SQL NULL versus SQL NULL as a non-difference"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10550,
+      "line": 10695,
       "column": 7,
       "name": "distinguishes JSON null from SQL NULL"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10559,
+      "line": 10704,
       "column": 7,
       "name": "retains a SQL NULL actual document with no expected document"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10563,
+      "line": 10708,
       "column": 7,
       "name": "filters a cross-root same-key actual row before matching"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10567,
+      "line": 10712,
       "column": 41,
       "name": "compares the entire %s field in all three versions"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10588,
+      "line": 10733,
       "column": 67,
       "name": "retains %s array order, unknown keys, JSON null and empty arrays"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10607,
+      "line": 10752,
       "column": 45,
       "name": "retains Unicode and whitespace in the full document (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10681,
+      "line": 10826,
       "column": 9,
       "name": "executes the actual complete guard and proves exact full prosrc and catalog properties"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10752,
+      "line": 10897,
       "column": 20,
       "name": "rejects %s for a genuine submitted anchor and restores the catalog by rollback"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10834,
+      "line": 10979,
       "column": 20,
       "name": "keeps the exact first rejection and zero partial facts: %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10906,
+      "line": 11051,
       "column": 5,
       "name": "P-Set retains real PK / identity-scoped key, complete document attributes and invoker metadata"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 10963,
+      "line": 11108,
       "column": 5,
       "name": "P-Day actual format CASE retains real prosrc, properties, SQL three values and complete old outcomes"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11095,
+      "line": 11240,
       "column": 7,
       "name": "P-Day independent complete result / SQLSTATE / constraint: %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11157,
+      "line": 11302,
       "column": 7,
       "name": "P-Day compound first-error order and complete diagnostics: %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11191,
+      "line": 11336,
       "column": 5,
       "name": "P-Day non-finite spans retain the old bounded statement cancellation"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11219,
+      "line": 11364,
       "column": 5,
       "name": "P-Day fixed 8000-unit / 40000-ref AB and BA probes consume complete results"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11276,
+      "line": 11421,
       "column": 5,
       "name": "replays all 137 migrations and introduces two tables without historical business DML or DB roles"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11354,
+      "line": 11499,
       "column": 5,
       "name": "has non-null policy four-tuples and all four immutable guards enabled"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11368,
+      "line": 11513,
       "column": 5,
       "name": "uses actual Beijing coverage, conserving a single fixed award across days"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11384,
+      "line": 11529,
       "column": 5,
       "name": "fixes the effective time anchor as non-null and keeps the native formal-version and invoker boundary"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11409,
+      "line": 11554,
       "column": 5,
       "name": "keeps empty zero distinct from missing-date positive points and refuses overflow"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11417,
+      "line": 11562,
       "column": 5,
       "name": "P-Canonical keeps C ordering, duplicates, escapes, controls and missing versus null byte-exact"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11449,
+      "line": 11594,
       "column": 5,
       "name": "cannot truncate either evidence table even when empty"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11458,
+      "line": 11603,
       "column": 5,
       "name": "P-Root matches the separate frozen aggregate for text boundaries, C ordering and an empty set"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11885,
+      "line": 12030,
       "column": 7,
       "name": "accepts one real activity-level item in two actual sessions under the full guard"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11904,
+      "line": 12049,
       "column": 7,
       "name": "rejects a same-activity wrong selection revision and rolls back the entire proof"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11916,
+      "line": 12061,
       "column": 7,
       "name": "rejects a foreign-activity selection FK and rolls back the entire proof"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11925,
+      "line": 12070,
       "column": 7,
       "name": "rejects a wrong position scope from the exact frozen revision and rolls back"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 11946,
+      "line": 12091,
       "column": 7,
       "name": "P-Canonical preserves independent single-cause SQL rejection and zero partial facts"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts",
-      "line": 12046,
+      "line": 12191,
       "column": 9,
       "name": "P-Set real guard and exact first SQLSTATE / constraint: %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 2907,
+      "line": 3020,
       "column": 3,
       "name": "pins the independent frozen full function and actual one-word migration"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 2927,
+      "line": 3040,
       "column": 3,
       "name": "demonstrates the dollar-delimiter replacement trap without using it to produce SQL"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 2933,
+      "line": 3046,
       "column": 79,
       "name": "refuses %s actual complete function input"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 2955,
+      "line": 3068,
       "column": 3,
       "name": "closes both test files, all original assertions, and the exact shared native implementation"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 2983,
+      "line": 3096,
       "column": 71,
       "name": "refuses %s test-source byte damage"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3003,
+      "line": 3116,
       "column": 3,
       "name": "retains two-root and three-root fixed query bindings with a sole explicit old/public call"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3082,
+      "line": 3195,
       "column": 3,
       "name": "requires the actual full catalog, not a guessed default or a body-only hash"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3112,
+      "line": 3225,
       "column": 5,
       "name": "refuses forged or missing %s catalog evidence"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3126,
+      "line": 3239,
       "column": 5,
       "name": "refuses scope/PID/principal mismatch (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3129,
+      "line": 3242,
       "column": 70,
       "name": "does not extend or guess the native request ceiling (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3135,
+      "line": 3248,
       "column": 3,
       "name": "uses the paid remaining deadline and refuses the exact expiry boundary"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3141,
+      "line": 3254,
       "column": 3,
       "name": "does not send even a SET or DDL after the deadline"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3149,
+      "line": 3262,
       "column": 3,
       "name": "keeps fifteen seconds as a cap and clips it to the real remaining pair window"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3157,
+      "line": 3270,
       "column": 3,
       "name": "marks an active request expiry UNKNOWN rather than pretending it was canceled"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3174,
+      "line": 3287,
       "column": 3,
       "name": "does not turn a pending request, unproved rollback, residue or unknown close into cleanup success"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3180,
+      "line": 3293,
       "column": 3,
       "name": "refuses normal close while a real request is pending"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3199,
+      "line": 3312,
       "column": 41,
       "name": "requires the exact PG16 display label and complete actual identity/catalog for %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3215,
+      "line": 3328,
       "column": 14,
       "name": "refuses the wrong plan namespace %s / %s rather than normalizing it"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3223,
+      "line": 3336,
       "column": 41,
       "name": "refuses wrong or dual actual producer for %s"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3236,
+      "line": 3349,
       "column": 83,
       "name": "rejects a missing real producer %s field on each side"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3253,
+      "line": 3366,
       "column": 5,
       "name": "rejects wrong real producer %s=%s on each side"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3260,
+      "line": 3373,
       "column": 3,
       "name": "refuses an absent actual identity before mapping the plan display"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3265,
+      "line": 3378,
       "column": 49,
       "name": "refuses a missing %s identity at the provenance gate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3281,
+      "line": 3394,
       "column": 5,
       "name": "refuses wrong identity at the provenance gate (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3289,
+      "line": 3402,
       "column": 3,
       "name": "refuses an absent complete catalog before mapping the plan display"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3292,
+      "line": 3405,
       "column": 34,
       "name": "refuses missing %s catalog at the provenance gate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3307,
+      "line": 3420,
       "column": 5,
       "name": "revalidates complete catalog %s at the provenance gate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3315,
+      "line": 3428,
       "column": 3,
       "name": "restores both complete current test openings and the unchanged native driver"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3330,
+      "line": 3443,
       "column": 3,
       "name": "projects the D2 and N1 anchors and restores all complete SQL inputs"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3350,
+      "line": 3463,
       "column": 79,
       "name": "refuses %s source instead of weakening the frozen migration pin"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3371,
+      "line": 3484,
       "column": 3,
       "name": "keeps source grouping, canonical hash and CTE choices while narrowing selected"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3460,
+      "line": 3573,
       "column": 3,
       "name": "binds exactly two unquoted complete-body parameters and reverses every byte"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3472,
+      "line": 3585,
       "column": 3,
       "name": "skips quoted, escaped, dollar-quoted and nested-comment parameter lookalikes"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3479,
+      "line": 3592,
       "column": 79,
       "name": "refuses an unclosed SQL lexical region (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3485,
+      "line": 3598,
       "column": 63,
       "name": "refuses %s full diagnostic body input"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3500,
+      "line": 3613,
       "column": 3,
       "name": "projects only safe numeric stage fields from the complete private plan"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3512,
+      "line": 3625,
       "column": 3,
       "name": "accepts one exact root documents CTE Scan without a subplan as the consumer"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3534,
+      "line": 3647,
       "column": 3,
       "name": "rejects a root documents-prefix CTE Scan"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3541,
+      "line": 3654,
       "column": 3,
       "name": "rejects a root documents CTE Scan with a subplan"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3550,
+      "line": 3663,
       "column": 3,
       "name": "rejects a non-CTE-Scan root even when its CTE target is exact"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3559,
+      "line": 3672,
       "column": 3,
       "name": "rejects an exact root consumer plus an ordinary exact consumer as a duplicate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3587,
+      "line": 3700,
       "column": 14,
       "name": "retains the root consumer $name rejection"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3602,
+      "line": 3715,
       "column": 3,
       "name": "retains the existing exact non-root documents CTE Scan consumer"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3619,
+      "line": 3732,
       "column": 5,
       "name": "refuses missing %s instead of reporting a tidy zero"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3634,
+      "line": 3747,
       "column": 14,
       "name": "refuses %s documents eligibility"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3648,
+      "line": 3761,
       "column": 3,
       "name": "does not treat the exterior Function Scan totals as documents evidence"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3656,
+      "line": 3769,
       "column": 3,
       "name": "recognizes zero-row NULL calibration but refuses the 8000-row gate"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3664,
+      "line": 3777,
       "column": 3,
       "name": "rejects unknown body pins even when the numbers look right"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3672,
+      "line": 3785,
       "column": 3,
       "name": "bounds complete-tree traversal without pruning child evidence"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3693,
+      "line": 3806,
       "column": 3,
       "name": "requires actual observer, owner, plan and lease positive controls"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3722,
+      "line": 3835,
       "column": 14,
       "name": "refuses missing or forged %s resource evidence"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3730,
+      "line": 3843,
       "column": 3,
       "name": "caps cumulative public frames rather than each frame alone"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3739,
+      "line": 3852,
       "column": 3,
       "name": "sets a paid 75-second whole diagnostic with the unchanged 30-second request cap"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3753,
+      "line": 3866,
       "column": 3,
       "name": "pins the actual complete SQL and proves the whole fixed opening inverse"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3763,
+      "line": 3876,
       "column": 79,
       "name": "refuses %s actual source rather than turning it into a historical baseline"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3782,
+      "line": 3895,
       "column": 3,
       "name": "closes the whole original scale source, including all unchanged assertions"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3788,
+      "line": 3901,
       "column": 67,
       "name": "refuses %s scale source instead of deleting an old byte proof"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3816,
+      "line": 3929,
       "column": 3,
       "name": "binds exactly three actual root parameters while retaining both fixed old inputs"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3885,
+      "line": 3998,
       "column": 3,
       "name": "measures every real producer from the legal full tree, not estimated rows"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3897,
+      "line": 4010,
       "column": 3,
       "name": "retains the legal one-row by 8,000-loop full-document backjoin"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 3904,
+      "line": 4017,
       "column": 3,
       "name": "still executes the unchanged historical parser calibration"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4134,
+      "line": 4247,
       "column": 21,
       "name": "refuses %s without a fake 8,000 or zero default"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4139,
+      "line": 4252,
       "column": 58,
       "name": "refuses a missing or ambiguous envelope (%#)"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4145,
+      "line": 4258,
       "column": 3,
       "name": "does not leak function names, SQL, filters, relations, IDs or source parameters"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4192,
+      "line": 4305,
       "column": 3,
       "name": "pins the actual SQL independently from the historical opening"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4198,
+      "line": 4311,
       "column": 3,
       "name": "inverts exactly two prescribed CASE expressions to the complete fixed opening"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4207,
+      "line": 4320,
       "column": 3,
       "name": "retains the original S13 historical whole-source pin"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4214,
+      "line": 4327,
       "column": 3,
       "name": "retains the original P-Set opening whole-source pin"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4223,
+      "line": 4336,
       "column": 3,
       "name": "rejects a missing prescribed CASE expression"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4229,
+      "line": 4342,
       "column": 3,
       "name": "rejects a duplicate prescribed CASE expression"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4233,
+      "line": 4346,
       "column": 3,
       "name": "rejects an adjacent change outside the two expressions"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4237,
+      "line": 4350,
       "column": 3,
       "name": "rejects a change outside the function window"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4242,
+      "line": 4355,
       "column": 3,
       "name": "rejects an unknown historical whole source"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4246,
+      "line": 4359,
       "column": 3,
       "name": "restores the entire scale opening after removing only the approved additions"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4276,
+      "line": 4389,
       "column": 3,
       "name": "keeps parameterized old and actual candidate query shapes"
     },
     {
       "file": "test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts",
-      "line": 4635,
+      "line": 4748,
       "column": 3,
       "name": "2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards"
     }

@@ -17,7 +17,7 @@ fs.writeFileSync(path.join(root, 'test/unexecuted.cjs'), '// unexecuted\n', {
 });
 const catalog = {
   schema: 'srvf-e4-case-catalog/v1',
-  sourceHead: '2e5828715a9fd7238b7ab73416dcffa1d9f32efc',
+  sourceHead: '3fa8dbcf1d44ebf5d80531914caff21f9bf568d9',
   files: [{ file: 'fixture.test.cjs', sha256: api.sha(fixture) }],
   cases: [{ file: 'fixture.test.cjs', line: 2, column: 1, name: 'safe assertion' }],
 };

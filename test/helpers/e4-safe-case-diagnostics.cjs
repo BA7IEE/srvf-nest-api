@@ -55,7 +55,7 @@ function prepare(catalog, binding) {
   if (
     !exact(catalog, ['schema', 'sourceHead', 'files', 'cases']) ||
     catalog.schema !== 'srvf-e4-case-catalog/v1' ||
-    catalog.sourceHead !== '2e5828715a9fd7238b7ab73416dcffa1d9f32efc' ||
+    catalog.sourceHead !== '3fa8dbcf1d44ebf5d80531914caff21f9bf568d9' ||
     !Array.isArray(catalog.files) ||
     !Array.isArray(catalog.cases) ||
     catalog.files.length < 1 ||
@@ -602,11 +602,11 @@ async function runDiagnostic() {
     const frozenFiles = [
       {
         file: 'test/e2e/activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts',
-        sha256: 'bed336fa38ff84d935eb76d40cca00335f2ebe9618aae18d011ec583875e03d8',
+        sha256: '6b516e302100b01b901111e997e24d455feff7383053d04807f748739b635400',
       },
       {
         file: 'test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts',
-        sha256: '4ba541ac9cce9a8ae89aec7b6383c15a919c188ba5170149104e7a607c0e2c1b',
+        sha256: '8fa088f036c821779024ac3e9b44ae30440ce0e087b3a156dab8defcee97d640',
       },
     ];
     if (JSON.stringify(catalog.files) !== JSON.stringify(frozenFiles))
