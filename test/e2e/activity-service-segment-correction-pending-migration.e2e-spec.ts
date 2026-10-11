@@ -181,6 +181,19 @@ describe('pending segment nonempty legacy upgrade', () => {
         "recognizedSecondsTotal" BIGINT NOT NULL, "formatVersion" INTEGER NOT NULL,
         "createdAt" TIMESTAMP(3) NOT NULL, CHECK (false)
       );
+      -- Current classification reads this relation even for legacy applications.
+      -- It stays empty: every INSERT is rejected, so native E4 proof is impossible.
+      CREATE TABLE "ActivitySettlementContributionRevision" (
+        "id" TEXT PRIMARY KEY, "activityId" TEXT NOT NULL,
+        "settlementRunId" TEXT NOT NULL, "settlementVersionId" TEXT NOT NULL,
+        "effectiveTimeSettlementVersionId" TEXT NOT NULL,
+        "kindCode" TEXT NOT NULL, "sourceKindCode" TEXT NOT NULL,
+        "regimeCode" TEXT NOT NULL, "previousContributionRevisionId" TEXT,
+        "correctionApplicationId" TEXT, "correctionPostingBatchId" TEXT,
+        "baseSettlementVersionId" TEXT, "timeRevisionId" TEXT,
+        "correctionManifestId" TEXT, "correctionTimeSourceProofId" TEXT,
+        "rootTimeManifestId" TEXT, "correctionSourceSetHash" TEXT, CHECK (false)
+      );
       CREATE TABLE "ActivityTimeCutoverReceipt" (
         "id" TEXT PRIMARY KEY, "operationKey" TEXT NOT NULL UNIQUE,
         "requestHash" TEXT NOT NULL, "deployedMainSha" TEXT NOT NULL,

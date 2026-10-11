@@ -1028,13 +1028,10 @@ function terminalRetainedPublicBytes(total: number, value: unknown) {
   return next;
 }
 function terminalGithubScopeOpening(source: string): string {
-  const clientType = /^ {2}constructor\(private readonly database: typeof S13_LOCAL_DB\) \{\}$/gmu;
+  const clientType =
+    /^ {2}constructor\(private readonly database: 'postgres' \| typeof S13_LOCAL_DB\) \{\}$/gmu;
   if ([...source.matchAll(clientType)].length !== 1)
     throw new Error('E4 GitHub scope opening client type differs');
-  source = source.replace(
-    clientType,
-    "  constructor(private readonly database: 'postgres' | typeof S13_LOCAL_DB) {}",
-  );
   const addedImport = "import { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\n";
   const binding = /^const S13_LOCAL_DB = E4_D1_SCOPE;$/gmu;
   if (source.split(addedImport).length !== 2 || [...source.matchAll(binding)].length !== 1)
@@ -2235,7 +2232,7 @@ class S13ReadClient {
     reject: (e: Error) => void;
     timer: ReturnType<typeof setTimeout>;
   };
-  constructor(private readonly database: typeof S13_LOCAL_DB) {}
+  constructor(private readonly database: 'postgres' | typeof S13_LOCAL_DB) {}
   async connect(timeoutMs = 30_000) {
     if (this.child || this.closed) throw new Error('S13 client cannot reconnect');
     this.child = spawn(

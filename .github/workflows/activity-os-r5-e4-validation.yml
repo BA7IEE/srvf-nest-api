@@ -1,6 +1,7 @@
 name: R5 E4 isolated validation
 
 # Only a newly approved candidate commit can consume this one-shot queue.
+# Repair candidate: frozen driver bytes, scope typing, and read-only legacy fixture.
 # Subsequent report pushes do not match this workflow path; reruns are refused.
 on:
   push:

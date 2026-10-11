@@ -35,7 +35,7 @@ const E4_D1_LOCAL_SCOPE = 'app_test_srvf_nest_api_delivery_flow_pilot_f59fbc_w98
 export function resolveE4ValidationScope(
   env: NodeJS.ProcessEnv = process.env,
   normalCheckout = statSync(resolve(__dirname, '../../.git')).isDirectory(),
-): string {
+): 'app_test_w98' | typeof E4_D1_LOCAL_SCOPE {
   if (env.SRVF_E4_GITHUB_ISOLATED === undefined || env.SRVF_E4_GITHUB_ISOLATED === '')
     return E4_D1_LOCAL_SCOPE;
   if (
@@ -595,7 +595,7 @@ export function openE4D1CaptureContext(env: NodeJS.ProcessEnv): E4D1CaptureConte
   };
 }
 
-export function createE4D1CaptureSession(scope = E4_D1_SCOPE): E4D1RunnerSession {
+export function createE4D1CaptureSession(scope: string = E4_D1_SCOPE): E4D1RunnerSession {
   if (scope !== E4_D1_SCOPE) throw new Error('E4 D1 capture scope differs');
   const captureDir = mkdtempSync(join(resolve(tmpdir()), 'srvf-e4-d1-capture-'));
   chmodSync(captureDir, 0o700);
