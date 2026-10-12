@@ -71,14 +71,15 @@ describe('E4 guard planning diagnostic offline', () => {
     expect(() =>
       resolveE4ValidationScope({ ...CLOUD, SRVF_TEST_RUN_SCOPE: 'app_test,app_test_w1' }, true),
     ).toThrow('E4 isolated GitHub scope refused');
+    const planWorkflow = workflow.split('\n  guard-functions:\n')[0];
     const configs = [
-      ...workflow.matchAll(/const config = JSON.stringify\(\{[\s\S]*?^ {10}\}\);$/gmu),
+      ...planWorkflow.matchAll(/const config = JSON.stringify\(\{[\s\S]*?^ {10}\}\);$/gmu),
     ].map((match) => match[0]);
     expect(configs).toHaveLength(2);
     expect(configs[0]).toBe(configs[1]);
     expect(configs[1]).not.toContain('globalSetup');
     const reporters = [
-      ...workflow.matchAll(/const closedReporterSource = String.raw`[\s\S]*?^ {10}`;$/gmu),
+      ...planWorkflow.matchAll(/const closedReporterSource = String.raw`[\s\S]*?^ {10}`;$/gmu),
     ].map((match) => match[0]);
     expect(reporters).toHaveLength(2);
     expect(reporters[0]).toBe(reporters[1]);

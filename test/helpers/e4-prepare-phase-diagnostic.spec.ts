@@ -450,6 +450,7 @@ function wiredPrepare(error?: Error, missingBinding = false, loggerFails = false
   const returned: unknown = vm.runInNewContext(compileProbe(program), {
     E4PreparePhaseDiagnostic,
     guardPlanDiagnostic: undefined,
+    guardFunctionDiagnostic: undefined,
     ActivityContributionSettlementQueryService: class {},
     measured,
     contributions,

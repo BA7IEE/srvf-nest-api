@@ -1214,6 +1214,24 @@ function terminalNativeWorkerOpening(source: string): string {
     scale: [
       {
         candidate:
+          "// E4_GUARD_FUNCTION_IMPORT_BEGIN\nimport {\n  E4GuardFunctionDiagnostic,\n  guardFunctionDiagnosticEnabled,\n} from '../helpers/e4-guard-function-diagnostic';\n// E4_GUARD_FUNCTION_IMPORT_END\n",
+        candidateHash: '6fc81b7055704aa6033d92834487bf0d1137e528f357df8683444b8798f0c8e8',
+        opening: '',
+      },
+      {
+        candidate:
+          "      // E4_GUARD_FUNCTION_INSTANCE_BEGIN\n      const guardFunctionDiagnostic = guardFunctionDiagnosticEnabled()\n        ? new E4GuardFunctionDiagnostic(\n            contributions,\n            resolve(process.cwd(), 'tmp/e4-guard-functions-evidence/functions.json'),\n          )\n        : undefined;\n      // E4_GUARD_FUNCTION_INSTANCE_END\n",
+        candidateHash: 'dca24ac247f9dd82b185df0bd8a55a80751e316039126252748621022e0b0381',
+        opening: '',
+      },
+      {
+        candidate:
+          '          // E4_GUARD_FUNCTION_RESTORE_BEGIN\n          guardFunctionDiagnostic?.restore();\n          await guardFunctionDiagnostic?.collect(observed);\n          guardFunctionDiagnostic?.emit();\n          // E4_GUARD_FUNCTION_RESTORE_END\n',
+        candidateHash: '3dd50e4a9f5ca0f3313f479ba834d1eabc2bc68583bbe80da0c9d1262171305a',
+        opening: '',
+      },
+      {
+        candidate:
           "// E4_GUARD_PLAN_IMPORT_BEGIN\nimport {\n  E4GuardPlanDiagnostic,\n  guardPlanDiagnosticEnabled,\n} from '../helpers/e4-guard-plan-diagnostic';\n// E4_GUARD_PLAN_IMPORT_END\n",
         candidateHash: '2ada5932382737b25498cebe1e4ac8b63f841ca85bcc98194d47fa2c0324773c',
         opening: '',
