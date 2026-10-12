@@ -124,6 +124,16 @@ function hash(value: unknown): string {
   return computeActivityTemplateDefinitionHash({ schemaVersion: 1, definition: value });
 }
 
+// Exact primitive branches of the original canonicalizer. Unsupported values
+// continue through its structural and numeric checks.
+function canonicalPrimitive(value: unknown): string | undefined {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  return undefined;
+}
+
 // These flat references are newly built locally and never mutate after sorting.
 // Other properties still pass through the original canonicalizer.
 function hashWithTimeReferences(
@@ -133,11 +143,13 @@ function hashWithTimeReferences(
 ): string {
   const parts = Object.keys(definition)
     .sort()
-    .map((key) =>
-      key === field
-        ? JSON.stringify(key) + ':[' + canonicalRefs.join(',') + ']'
-        : canonicalizeActivityTemplateDefinition({ [key]: definition[key] }).slice(1, -1),
-    );
+    .map((key) => {
+      if (key === field) return JSON.stringify(key) + ':[' + canonicalRefs.join(',') + ']';
+      const primitive = canonicalPrimitive(definition[key]);
+      return primitive === undefined
+        ? canonicalizeActivityTemplateDefinition({ [key]: definition[key] }).slice(1, -1)
+        : JSON.stringify(key) + ':' + primitive;
+    });
   return createHash('sha256')
     .update('{"definition":{' + parts.join(',') + '},"schemaVersion":1}', 'utf8')
     .digest('hex');
@@ -210,6 +222,7 @@ export function evaluateSettlementContributions(input: {
     ReturnType<typeof prepareContributionPolicyVersion>
   >();
   const snapshots = new Map<string, string>();
+  const unitCanonicals = new Map<string, string>();
   for (const source of input.sources) {
     for (const value of [
       source.participationIdentityId,
@@ -296,7 +309,21 @@ export function evaluateSettlementContributions(input: {
       attendanceRoleCode: source.attendanceRoleCode,
       timeCategoryCode: source.timeCategoryCode,
     };
-    const unitKey = canonicalizeActivityTemplateDefinition(unit);
+    // All fields are copied into this local flat object after the original
+    // per-source and per-policy validation. Equal primitive tuples have equal
+    // canonical bytes; other shapes still use the original canonicalizer.
+    const cacheable =
+      input.sourceKindCode === 'time_revision' &&
+      Object.values(unit).every(
+        (value) =>
+          typeof value === 'string' || (typeof value === 'number' && Number.isSafeInteger(value)),
+      );
+    const unitInput = cacheable ? JSON.stringify(unit) : undefined;
+    let unitKey = unitInput === undefined ? undefined : unitCanonicals.get(unitInput);
+    if (unitKey === undefined) {
+      unitKey = canonicalizeActivityTemplateDefinition(unit);
+      if (unitInput !== undefined) unitCanonicals.set(unitInput, unitKey);
+    }
     const group = groups.get(unitKey) ?? { first: source, refs: [] };
     group.refs.push({
       selectionItemId: source.selection.id,

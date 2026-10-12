@@ -178,11 +178,12 @@ function instant(value: string): Date {
 function milliseconds(
   slices: readonly ActivityTimeAllocationSliceInput[],
   category: TimePolicyCategory,
+  resolveInstant: (value: string) => number,
 ): bigint {
   let sum = 0n;
   for (const slice of slices) {
     if (slice.categoryCode === category)
-      sum += BigInt(instant(slice.endAt).getTime()) - BigInt(instant(slice.startAt).getTime());
+      sum += BigInt(resolveInstant(slice.endAt)) - BigInt(resolveInstant(slice.startAt));
   }
   return sum;
 }
@@ -271,6 +272,17 @@ export function buildTimeSettlementBuckets(input: {
   if (input.allocations.some((row) => !sourceIds.has(row.sourceSegmentId)))
     return reject('invalid');
 
+  // Only successfully parsed primitive strings are reused inside this build.
+  // Store milliseconds, so callers cannot mutate a cached Date instance.
+  const parsedInstants = new Map<string, number>();
+  const resolveInstant = (value: string): number => {
+    const old = typeof value === 'string' ? parsedInstants.get(value) : undefined;
+    if (old !== undefined) return old;
+    const parsed = instant(value).getTime();
+    if (typeof value === 'string') parsedInstants.set(value, parsed);
+    return parsed;
+  };
+
   const policies = new Map<string, ReturnType<typeof fingerprintTimePolicyVersion>>();
   for (const row of input.policies) {
     if (policies.has(row.id)) return reject('invalid');
@@ -334,8 +346,8 @@ export function buildTimeSettlementBuckets(input: {
     for (const slice of allocation.slices) {
       if (!TIME_SETTLEMENT_CATEGORIES.some((category) => category === slice.categoryCode))
         return reject('invalid');
-      instant(slice.startAt);
-      instant(slice.endAt);
+      resolveInstant(slice.startAt);
+      resolveInstant(slice.endAt);
     }
     assertAllocationSlicesWithinSource(
       allocation.slices,
@@ -405,8 +417,8 @@ export function buildTimeSettlementBuckets(input: {
           sourceSegmentId: source.id,
           sourceSegmentRevision: source.revision,
           rawCalculatedMilliseconds:
-            automatic === null ? null : milliseconds(automatic, categoryCode),
-          rawRecognizedMilliseconds: milliseconds(allocation.slices, categoryCode),
+            automatic === null ? null : milliseconds(automatic, categoryCode, resolveInstant),
+          rawRecognizedMilliseconds: milliseconds(allocation.slices, categoryCode, resolveInstant),
         }),
       );
       const rawRecognizedMilliseconds = sources.reduce(
