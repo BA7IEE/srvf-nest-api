@@ -1,4 +1,5 @@
 name: R5 E4 isolated validation
+# One bounded existing guard-functions diagnostic; executable workflow unchanged.
 
 # Only a newly approved candidate commit can consume this one-shot queue.
 # Repair candidate: frozen driver bytes, scope typing, and read-only legacy fixture.
