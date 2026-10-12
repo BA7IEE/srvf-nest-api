@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { ESLint } from 'eslint';
 
-// Full, uncached lint through one original ESLint CLI invocation.
+// Full, uncached lint through serial original CLI calls for the three original root globs.
 // Reporting remains partitioned; config, projects, rules, heap and window stay fixed.
 export const COLD_LINT_PATTERNS = ['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts'];
 export const COLD_LINT_BATCH_SIZE = 300;
@@ -169,6 +169,39 @@ export function coldLintReport(
   );
   requireCondition(child.code === (errors + warnings > 0 ? 1 : 0), 'EXIT_DIAGNOSTIC_MISMATCH');
   return { files, errors, warnings, diagnostics };
+}
+
+export function coldLintRootReports(
+  root: string,
+  expected: readonly string[],
+  children: readonly ChildResult[],
+  outputLimit = OUTPUT_LIMIT,
+): Report {
+  requireCondition(children.length === ROOTS.length, 'ROOT_REPORT_COUNT');
+  requireCondition(
+    integer(outputLimit) && outputLimit > 0 && outputLimit <= OUTPUT_LIMIT,
+    'REPORT_LIMIT',
+  );
+  const total: Report = { files: [], errors: 0, warnings: 0, diagnostics: [] };
+  let bytes = 0;
+  for (const [index, child] of children.entries()) {
+    bytes += Buffer.byteLength(child.stdout, 'utf8');
+    requireCondition(bytes <= outputLimit, 'REPORT_LIMIT');
+    const files = expected.filter((file) => file.startsWith(ROOTS[index] + '/'));
+    requireCondition(files.length > 0, 'EMPTY_GLOB');
+    const report = coldLintReport(root, files, child);
+    total.files.push(...report.files);
+    total.errors += report.errors;
+    total.warnings += report.warnings;
+    total.diagnostics.push(...report.diagnostics);
+  }
+  requireCondition(
+    total.files.length === expected.length &&
+      new Set(total.files).size === expected.length &&
+      expected.every((file) => total.files.includes(file)),
+    'FULL_COVERAGE_MISSING',
+  );
+  return total;
 }
 
 function walk(root: string, folder: string): string[] {
@@ -358,10 +391,21 @@ export async function runColdLint(root: string): Promise<Report> {
   assertInputUnchanged(before, inputSeal(root));
   // The original globs avoid argument limits and retain the original CLI host.
   // Validate the complete report against the independently sealed jurisdiction.
-  phase('CLI_START', files.length);
-  const child = await runCli(root, COLD_LINT_PATTERNS, deadline);
-  phase('CLI_END', files.length, child);
-  const total = coldLintReport(root, files, child);
+  const children: ChildResult[] = [];
+  let outputBytes = 0;
+  for (const [index, pattern] of COLD_LINT_PATTERNS.entries()) {
+    const selected = files.filter((file) => file.startsWith(ROOTS[index] + '/'));
+    assertInputUnchanged(before, inputSeal(root));
+    phase('CLI_START', selected.length);
+    const child = await runCli(root, [pattern], deadline);
+    phase('CLI_END', selected.length, child);
+    outputBytes += Buffer.byteLength(child.stdout, 'utf8');
+    requireCondition(outputBytes <= OUTPUT_LIMIT, 'REPORT_LIMIT');
+    // Reject a failed/missing/duplicate root before starting the next CLI.
+    coldLintReport(root, selected, child);
+    children.push(child);
+  }
+  const total = coldLintRootReports(root, files, children);
   for (const [index, batch] of batches.entries()) {
     const diagnostics = total.diagnostics.filter((row) => batch.includes(row.file));
     console.info(
@@ -608,6 +652,39 @@ export function coldLintSelfChecks(): ColdLintSelfCheck[] {
   );
   no('spawn failures fail closed', 'CHILD_SPAWN', () =>
     coldLintReport(root, names, child(names.map(zero), { spawnFailed: true })),
+  );
+  const roots = names.map((name) => child([zero(name)]));
+  yes(
+    'serial root reports equal the original complete report',
+    () =>
+      canonical(coldLintRootReports(root, names, roots)) ===
+      canonical(coldLintReport(root, names, child(names.map(zero)))),
+  );
+  no('missing root report fails', 'ROOT_REPORT_COUNT', () =>
+    coldLintRootReports(root, names, roots.slice(0, 2)),
+  );
+  no('wrong root report fails', 'UNKNOWN_REPORT_FILE', () =>
+    coldLintRootReports(root, names, [roots[1], roots[0], roots[2]]),
+  );
+  no('duplicate within root fails', 'DUPLICATE_REPORT_FILE', () =>
+    coldLintRootReports(root, names, [child([zero(names[0]), zero(names[0])]), ...roots.slice(1)]),
+  );
+  no('later root signal fails', 'CHILD_SIGNAL', () =>
+    coldLintRootReports(root, names, [roots[0], { ...roots[1], signal: 'SIGABRT' }, roots[2]]),
+  );
+  no('later root deadline fails', 'WINDOW_EXCEEDED', () =>
+    coldLintRootReports(root, names, [roots[0], { ...roots[1], timedOut: true }, roots[2]]),
+  );
+  no('cumulative output cap retained across roots', 'REPORT_LIMIT', () =>
+    coldLintRootReports(
+      root,
+      names,
+      roots,
+      roots.reduce((sum, item) => sum + Buffer.byteLength(item.stdout, 'utf8'), 0) - 1,
+    ),
+  );
+  no('output cap cannot be widened', 'REPORT_LIMIT', () =>
+    coldLintRootReports(root, names, roots, OUTPUT_LIMIT + 1),
   );
   return checks;
 }
