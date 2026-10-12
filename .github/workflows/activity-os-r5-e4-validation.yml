@@ -367,8 +367,8 @@ jobs:
     env:
       APP_ENV: test
       SRVF_E4_GITHUB_ISOLATED: '1'
-      SRVF_TEST_RUN_SCOPE: 'app_test,app_test_w1'
-      SRVF_E4_W98: '0'
+      SRVF_TEST_RUN_SCOPE: 'app_test_w98'
+      SRVF_E4_W98: '1'
       SRVF_E4_GUARD_PLAN_DIAGNOSTIC: '1'
       JEST_MAX_WORKERS: '1'
     steps:
@@ -395,8 +395,6 @@ jobs:
             sleep 1
           done
           exit 1
-      - name: Initialize ordinary test database
-        run: pnpm db:test:init
       - name: One original maximum case with non-executing guard plan
         run: |
           node <<'NODE'
@@ -410,6 +408,13 @@ jobs:
           const privateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'e4-guard-plan-'));
           fs.chmodSync(privateDir, 0o700);
           const report = path.join(privateDir, 'jest.json');
+          const root = process.cwd();
+          const config = JSON.stringify({
+            rootDir: root, testEnvironment: 'node', testRegex: '.*\\.e2e-spec\\.ts$',
+            moduleFileExtensions: ['ts', 'js', 'json'], maxWorkers: 1, testTimeout: 30000,
+            transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/test/tsconfig.test.json' }] },
+            setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
+          });
           const target = 'E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
           const binding = { head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID, attempt: 1 };
           const summary = { schema: 'e4-guard-plan-process/v1', binding, status: 'UNKNOWN', reason: 'START', acceptance: 'NOT_AN_ACCEPTANCE_RESULT', originalCase: 'NOT_RUN', counts: null };
@@ -448,7 +453,7 @@ jobs:
             try {
               if (process.env.GITHUB_RUN_ATTEMPT !== '1' || !/^[a-f0-9]{40}$/.test(binding.head || '') || !/^[0-9]+$/.test(binding.run || '')) throw Error('BINDING_REFUSED');
               const pattern = '^' + target.replace(/[.*+?^$()|[\]\\]/g, '\\$&') + '$';
-              const proc = cp.spawn('pnpm', ['exec', 'jest', '--config', 'test/jest-e2e.config.ts', '--runInBand', '--no-cache', '--bail', '--silent', '--runTestsByPath', 'test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts', '--testNamePattern', pattern, '--json', '--outputFile', report], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+              const proc = cp.spawn('pnpm', ['exec', 'jest', '--config', config, '--runInBand', '--no-cache', '--bail', '--silent', '--runTestsByPath', 'test/e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts', '--testNamePattern', pattern, '--json', '--outputFile', report], { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
               let bytes = 0, timedOut = false, force;
               const drain = b => { bytes += b.length; };
               proc.stdout.on('data', drain); proc.stderr.on('data', drain);

@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import { resolve } from 'node:path';
-import { assertTestRunScope } from '../setup/test-run-scope';
-import { deriveTestDbNameFrom } from '../setup/worktree-db';
+import { resolveE4ValidationScope } from './e4-d1-result-capture';
 import {
   E4GuardPlanDiagnostic,
   guardPlanDiagnosticEnabled,
@@ -57,22 +56,28 @@ describe('E4 guard planning diagnostic offline', () => {
       sourceGuardPlanSql(migration.replace('contribution source population mismatch', 'tampered')),
     ).toThrow('GUARD_SOURCE_PIN');
   });
-  it('declares both ordinary cloud targets before the original globalSetup', () => {
+  it('uses the established dedicated D5 entry and exact cloud scope', () => {
     const workflow = fs.readFileSync(
       resolve(__dirname, '../../.github/workflows/activity-os-r5-e4-validation.yml'),
       'utf8',
     );
     const job = workflow.split('\n  guard-plan:\n')[1];
     const scope = /^ {6}SRVF_TEST_RUN_SCOPE: '([^']+)'$/mu.exec(job)?.[1];
-    expect(scope).toBe('app_test,app_test_w1');
-    const template = deriveTestDbNameFrom('/cloud/check-out', false);
-    const plan = { template, workers: [template + '_w1'] };
+    expect(scope).toBe('app_test_w98');
+    expect(job).toMatch(/^ {6}SRVF_E4_W98: '1'$/mu);
+    expect(resolveE4ValidationScope({ ...CLOUD, SRVF_TEST_RUN_SCOPE: scope }, true)).toBe(
+      'app_test_w98',
+    );
     expect(() =>
-      assertTestRunScope(plan, { allowedDatabases: scope, githubActions: 'true' }),
-    ).not.toThrow();
-    expect(() =>
-      assertTestRunScope(plan, { allowedDatabases: 'app_test_w98', githubActions: 'true' }),
-    ).toThrow('测试目标超出已声明范围');
+      resolveE4ValidationScope({ ...CLOUD, SRVF_TEST_RUN_SCOPE: 'app_test,app_test_w1' }, true),
+    ).toThrow('E4 isolated GitHub scope refused');
+    const configs = [
+      ...workflow.matchAll(/const config = JSON.stringify\(\{[\s\S]*?^ {10}\}\);$/gmu),
+    ].map((match) => match[0]);
+    expect(configs).toHaveLength(2);
+    expect(configs[0]).toBe(configs[1]);
+    expect(configs[1]).not.toContain('globalSetup');
+    expect(job).toContain("'--config', config");
   });
   it('requires actual physical populations and drops unrelated fields', () => {
     const physical = { sources: 40000, allocations: 10000, buckets: 8000, results: 2000 };
