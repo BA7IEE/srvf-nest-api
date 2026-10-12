@@ -94,3 +94,64 @@ describe('local reference canonical text agrees with the unchanged generic oracl
     }
   });
 });
+
+describe('fresh closed producer reference equivalence', () => {
+  it('retains complete bytes and original failures for locally built field values', () => {
+    const values: unknown[] = [
+      '',
+      'quote" slash\\ tab\t newline\n 雪 é é 😀',
+      '\u0001',
+      '\u2028\u2029',
+      null,
+      true,
+      false,
+      -0,
+      1,
+      Number.MAX_SAFE_INTEGER,
+      { nested: ['unknown', null] },
+      [1, 2],
+      1.25,
+      Number.NaN,
+      undefined,
+    ];
+    for (const value of values) {
+      for (const field of Object.keys(reference())) {
+        const record = { ...reference(), [field]: value };
+        const actual = () =>
+          canonicalizeLocalContributionReference(
+            record as unknown as ContributionSourceReference,
+            true,
+          );
+        const original = () => canonicalizeActivityTemplateDefinition(record);
+        const expectedFailure = failure(original);
+        if (expectedFailure === null) expect(actual()).toBe(original());
+        else expect(failure(actual)).toEqual(expectedFailure);
+      }
+    }
+  });
+
+  it('keeps correction references on the original structural validation path', () => {
+    const record = {
+      ...reference(),
+      correctionSource: {
+        proofId: 'proof',
+        pendingAllocationId: null,
+        sourceHash: 'b'.repeat(64),
+        sliceOrdinal: 0,
+      },
+    };
+    expect(
+      canonicalizeLocalContributionReference(
+        record as unknown as ContributionSourceReference,
+        true,
+      ),
+    ).toBe(canonicalizeActivityTemplateDefinition(record));
+  });
+});
+
+it('fresh producer assurance still retains future extra-field fallback', () => {
+  const record = { ...reference(), future: { unknown: ['nested', null] } };
+  expect(
+    canonicalizeLocalContributionReference(record as unknown as ContributionSourceReference, true),
+  ).toBe(canonicalizeActivityTemplateDefinition(record));
+});

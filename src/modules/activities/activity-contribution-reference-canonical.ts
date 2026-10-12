@@ -22,19 +22,31 @@ function canonicalPrimitive(value: unknown): string | undefined {
 }
 
 /** Canonical text for newly constructed flat references; generic validation is the fallback. */
-export function canonicalizeLocalContributionReference(ref: ContributionSourceReference): string {
+export function canonicalizeLocalContributionReference(
+  ref: ContributionSourceReference,
+  freshLocalData = false,
+): string {
   if (ref === null || typeof ref !== 'object' || Array.isArray(ref))
     return canonicalizeActivityTemplateDefinition(ref);
-  const prototype: unknown = Object.getPrototypeOf(ref);
-  if (
-    (prototype !== Object.prototype && prototype !== null) ||
-    Object.getOwnPropertySymbols(ref).length !== 0 ||
-    Object.keys(ref).length !== 9 ||
-    Object.getOwnPropertyNames(ref).length !== 9 ||
-    Object.hasOwn(ref, 'correctionSource')
-  )
-    return canonicalizeActivityTemplateDefinition(ref);
+  // The producer may supply this assurance only for its new closed data records.
+  // Raw callers keep all original descriptor/shape checks and fallback behavior.
+  const fresh =
+    freshLocalData === true &&
+    Reflect.ownKeys(ref).length === 9 &&
+    !Object.hasOwn(ref, 'correctionSource');
+  if (!fresh) {
+    const prototype: unknown = Object.getPrototypeOf(ref);
+    if (
+      (prototype !== Object.prototype && prototype !== null) ||
+      Object.getOwnPropertySymbols(ref).length !== 0 ||
+      Object.keys(ref).length !== 9 ||
+      Object.getOwnPropertyNames(ref).length !== 9 ||
+      Object.hasOwn(ref, 'correctionSource')
+    )
+      return canonicalizeActivityTemplateDefinition(ref);
+  }
   const parts = referenceKeys.map((key) => {
+    if (fresh) return Object.hasOwn(ref, key) ? canonicalPrimitive(ref[key]) : undefined;
     const descriptor = Object.getOwnPropertyDescriptor(ref, key);
     return descriptor !== undefined && 'value' in descriptor
       ? canonicalPrimitive(descriptor.value)

@@ -26,6 +26,15 @@ export const TIME_SETTLEMENT_CATEGORIES = [
   'organization',
   'non_creditable',
 ] as const;
+const nativeDateGetTime: unknown = Object.getOwnPropertyDescriptor(
+  Date.prototype,
+  'getTime',
+)?.value;
+const nativeDateToISOString: unknown = Object.getOwnPropertyDescriptor(
+  Date.prototype,
+  'toISOString',
+)?.value;
+
 export const TIME_SETTLEMENT_LIMITS = Object.freeze({
   identities: 2000,
   segments: 10000,
@@ -301,6 +310,56 @@ export function buildTimeSettlementBuckets(input: {
     policies.set(row.id, policy);
   }
 
+  // Successful immutable baseline arrays are reused only during this build.
+  const automaticBaselines = new WeakMap<
+    ReturnType<typeof fingerprintTimePolicyVersion>,
+    Map<string, readonly ActivityTimeAllocationSliceInput[]>
+  >();
+  const resolveAutomaticBaseline = (
+    policy: ReturnType<typeof fingerprintTimePolicyVersion>,
+    source: CurrentParticipationSegment & { checkOutAt: Date },
+    allocation: TimeSettlementAllocation,
+  ) => {
+    const start = Object.getOwnPropertyDescriptor(source, 'checkInAt');
+    const end = Object.getOwnPropertyDescriptor(source, 'checkOutAt');
+    const role = Object.getOwnPropertyDescriptor(allocation, 'attendanceRoleCode');
+    const plainDate = (value: unknown): value is Date =>
+      value instanceof Date &&
+      Object.getPrototypeOf(value) === Date.prototype &&
+      Reflect.ownKeys(value).length === 0 &&
+      Object.getOwnPropertyDescriptor(Date.prototype, 'getTime')?.value === nativeDateGetTime &&
+      Object.getOwnPropertyDescriptor(Date.prototype, 'toISOString')?.value ===
+        nativeDateToISOString;
+    if (
+      !start ||
+      !('value' in start) ||
+      !end ||
+      !('value' in end) ||
+      !role ||
+      !('value' in role) ||
+      !plainDate(start.value) ||
+      !plainDate(end.value) ||
+      !(role.value === null || typeof role.value === 'string')
+    )
+      return automaticBaseline(policy, source, allocation);
+    const key = JSON.stringify([
+      Date.prototype.getTime.call(start.value),
+      Date.prototype.getTime.call(end.value),
+      role.value,
+    ]);
+    const previous = automaticBaselines.get(policy)?.get(key);
+    if (previous !== undefined) return previous;
+    const baseline = automaticBaseline(policy, source, allocation);
+    if (baseline !== null) {
+      const values =
+        automaticBaselines.get(policy) ??
+        new Map<string, readonly ActivityTimeAllocationSliceInput[]>();
+      values.set(key, baseline);
+      automaticBaselines.set(policy, values);
+    }
+    return baseline;
+  };
+
   type Resolved = {
     source: CurrentParticipationSegment;
     allocation: TimeSettlementAllocation;
@@ -364,7 +423,7 @@ export function buildTimeSettlementBuckets(input: {
       allocation.allocationHash
     )
       return reject('invalid');
-    const automatic = automaticBaseline(policy, { ...source, checkOutAt }, allocation);
+    const automatic = resolveAutomaticBaseline(policy, { ...source, checkOutAt }, allocation);
     if (allocation.recognitionModeCode === 'automatic') {
       if (
         allocation.manualReason !== null ||

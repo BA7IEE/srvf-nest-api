@@ -121,7 +121,7 @@ async function businessSnapshot(db: PrismaClient) {
   return JSON.stringify(rows);
 }
 async function expectedDocuments(db: PrismaClient) {
-  return db.$queryRaw<{ document: string }[]>`
+  return db.$queryRaw<{ id: string; unit_canonical: string; document: string }[]>`
     SELECT r.id,e.unit_canonical,e.evaluation::text AS document,
       astr_canonical_json(e.evaluation) AS canonical,
       encode(sha256(convert_to(astr_canonical_json(e.evaluation),'UTF8')),'hex') AS hash
@@ -136,6 +136,7 @@ async function verifyRootsAndOldOracle(
   prepare: boolean,
   installed: () => void,
   originalSnapshot?: string,
+  firstActualDocuments?: { id: string; unit_canonical: string; document: string }[],
 ) {
   if (!/^e4_reference_oracle_[a-f0-9]{16}$/u.test(namespace))
     throw new Error('E4 private oracle namespace invalid');
@@ -153,6 +154,14 @@ async function verifyRootsAndOldOracle(
         CROSS JOIN LATERAL ${Prisma.raw(namespace + '.e4_reference_old_expected')}(r.id) e`
     : Prisma.sql`SELECT * FROM jsonb_to_recordset(${originalSnapshot}::jsonb)
         AS original(id text,unit_canonical text,evaluation jsonb)`;
+  if (prepare && firstActualDocuments === undefined)
+    throw new Error('E4 pre-upgrade actual documents missing');
+  const actualRows = prepare
+    ? Prisma.sql`SELECT id,unit_canonical,document::jsonb AS evaluation
+        FROM jsonb_to_recordset(${JSON.stringify(firstActualDocuments)}::jsonb)
+          AS actual(id text,unit_canonical text,document text)`
+    : Prisma.sql`SELECT r.id,e.* FROM "ActivitySettlementContributionRevision" r
+        CROSS JOIN LATERAL public.e4_expected_evaluations(r.id) e`;
   const facts = await db.$transaction(async (tx) => {
     if (prepare) {
       // Same original 5s transaction: install once, then retain this immutable
@@ -164,8 +173,7 @@ async function verifyRootsAndOldOracle(
       { expected: number; forward: number; backward: number; fields: number; original: string }[]
     >`
       WITH actual AS MATERIALIZED (
-        SELECT r.id,e.* FROM "ActivitySettlementContributionRevision" r
-        CROSS JOIN LATERAL public.e4_expected_evaluations(r.id) e
+        ${actualRows}
       ), original AS MATERIALIZED (
         ${originalRows}
       )
@@ -270,9 +278,16 @@ describe('E4 reference canonical migration 139 nonempty upgrade', () => {
     const beforeBusiness = await businessSnapshot(db);
     const beforeDocuments = await expectedDocuments(db);
     expect(beforeDocuments.length).toBeGreaterThan(0);
-    const originalSnapshot = await verifyRootsAndOldOracle(db, namespace, true, () => {
-      oracleInstalled = true;
-    });
+    const originalSnapshot = await verifyRootsAndOldOracle(
+      db,
+      namespace,
+      true,
+      () => {
+        oracleInstalled = true;
+      },
+      undefined,
+      beforeDocuments,
+    );
 
     owner.deployReferenceMigrations();
     const afterMigrations = await migrations(db);

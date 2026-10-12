@@ -136,6 +136,7 @@ function canonicalPrimitive(value: unknown): string | undefined {
 }
 
 // Inputs are the closed objects constructed below, after the original validation.
+
 // Fixed ASCII field order is the original canonicalizer's sorted key order.
 function canonicalSourceKey(key: {
   allocationRevisionId: unknown;
@@ -376,7 +377,10 @@ export function evaluateSettlementContributions(input: {
     if (refs.length > 1) {
       const orderedRefs = refs.map((ref) => ({
         ref,
-        canonical: canonicalizeLocalContributionReference(ref),
+        canonical:
+          input.sourceKindCode === 'time_revision'
+            ? canonicalizeLocalContributionReference(ref, true)
+            : canonicalizeLocalContributionReference(ref),
       }));
       orderedRefs.sort((a, b) => compare(a.canonical, b.canonical));
       if (input.sourceKindCode === 'time_revision')
@@ -398,7 +402,7 @@ export function evaluateSettlementContributions(input: {
     if (identityTotal > 99999) reject('overflow');
     totals.set(first.participationIdentityId, identityTotal);
     if (input.sourceKindCode === 'time_revision' && canonicalRefs === undefined)
-      canonicalRefs = refs.map(canonicalizeLocalContributionReference);
+      canonicalRefs = refs.map((ref) => canonicalizeLocalContributionReference(ref, true));
     const sourceDefinition = { domain: input.sourceKindCode, sources: refs };
     const sourceFingerprint = canonicalRefs
       ? hashWithTimeReferences(sourceDefinition, 'sources', canonicalRefs)
