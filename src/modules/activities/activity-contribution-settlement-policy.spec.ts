@@ -501,4 +501,50 @@ describe('E4 pure contribution evaluation', () => {
       ContributionSettlementPolicyError,
     );
   });
+  it.each(['single', 'reordered-unicode', 'zero', 'correction'] as const)(
+    'preserves the full evaluation and original generic hashes: %s',
+    (name) => {
+      let rows: ContributionSource[];
+      let domain: ContributionSourceKind = 'time_revision';
+      if (name === 'reordered-unicode')
+        rows = [
+          source({
+            sliceId: '片"z',
+            allocationRevisionId: 'allocation-z',
+            selection: { id: '选择"z', mode: 'policy', policy: policy() },
+          }),
+          source({ sliceId: '片a', allocationRevisionId: 'allocation-a' }),
+        ];
+      else if (name === 'zero')
+        rows = [source({ durationSeconds: 0, endsAt: new Date('2026-10-01T15:59:00.000Z') })];
+      else if (name === 'correction') {
+        domain = 'correction_time_proof';
+        rows = [
+          source({
+            sliceId: 'allocation-one:0',
+            correctionSource: {
+              proofId: 'proof',
+              pendingAllocationId: null,
+              sourceHash: 'a'.repeat(64),
+              sliceOrdinal: 0,
+            },
+          }),
+        ];
+      } else rows = [source()];
+      const result = evaluate(rows, domain);
+      expect(result).toMatchSnapshot(name);
+      for (const row of result.evaluations) {
+        expect(row.sourceFingerprint).toBe(
+          computeActivityTemplateDefinitionHash({
+            schemaVersion: 1,
+            definition: { domain, sources: row.sourceRefsJson },
+          }),
+        );
+        const { evaluationHash, ...definition } = row;
+        expect(evaluationHash).toBe(
+          computeActivityTemplateDefinitionHash({ schemaVersion: 1, definition }),
+        );
+      }
+    },
+  );
 });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { splitSpanByBeijingDay } from '../../common/datetime/date-only.util';
 import {
   CONTRIBUTION_TIME_CATEGORY_CODES,
@@ -121,6 +122,25 @@ function compare(left: string, right: string): number {
 
 function hash(value: unknown): string {
   return computeActivityTemplateDefinitionHash({ schemaVersion: 1, definition: value });
+}
+
+// These flat references are newly built locally and never mutate after sorting.
+// Other properties still pass through the original canonicalizer.
+function hashWithTimeReferences(
+  definition: Record<string, unknown>,
+  field: 'sources' | 'sourceRefsJson',
+  canonicalRefs: readonly string[],
+): string {
+  const parts = Object.keys(definition)
+    .sort()
+    .map((key) =>
+      key === field
+        ? JSON.stringify(key) + ':[' + canonicalRefs.join(',') + ']'
+        : canonicalizeActivityTemplateDefinition({ [key]: definition[key] }).slice(1, -1),
+    );
+  return createHash('sha256')
+    .update('{"definition":{' + parts.join(',') + '},"schemaVersion":1}', 'utf8')
+    .digest('hex');
 }
 
 function cents(value: string): number {
@@ -301,12 +321,15 @@ export function evaluateSettlementContributions(input: {
   )) {
     // These refs are newly built for this invocation and remain unchanged during sorting.
     // Keep the original canonicalizer/comparator; only reuse each ref's sort key.
+    let canonicalRefs: string[] | undefined;
     if (refs.length > 1) {
       const orderedRefs = refs.map((ref) => ({
         ref,
         canonical: canonicalizeActivityTemplateDefinition(ref),
       }));
       orderedRefs.sort((a, b) => compare(a.canonical, b.canonical));
+      if (input.sourceKindCode === 'time_revision')
+        canonicalRefs = orderedRefs.map((row) => row.canonical);
       for (const [index, { ref }] of orderedRefs.entries()) refs[index] = ref;
     }
     const durationSeconds = nonnegative(refs.reduce((sum, ref) => sum + ref.durationSeconds, 0));
@@ -323,7 +346,12 @@ export function evaluateSettlementContributions(input: {
     const identityTotal = (totals.get(first.participationIdentityId) ?? 0) + amount;
     if (identityTotal > 99999) reject('overflow');
     totals.set(first.participationIdentityId, identityTotal);
-    const sourceFingerprint = hash({ domain: input.sourceKindCode, sources: refs });
+    if (input.sourceKindCode === 'time_revision' && canonicalRefs === undefined)
+      canonicalRefs = refs.map((ref) => canonicalizeActivityTemplateDefinition(ref));
+    const sourceDefinition = { domain: input.sourceKindCode, sources: refs };
+    const sourceFingerprint = canonicalRefs
+      ? hashWithTimeReferences(sourceDefinition, 'sources', canonicalRefs)
+      : hash(sourceDefinition);
     const evaluation = {
       participationIdentityId: first.participationIdentityId,
       memberId: first.memberId,
@@ -346,7 +374,12 @@ export function evaluateSettlementContributions(input: {
       explanationCode: result.explanationCode,
       beijingDayPointsJson: distributeDays(amount, refs),
     };
-    evaluations.push({ ...evaluation, evaluationHash: hash(evaluation) });
+    evaluations.push({
+      ...evaluation,
+      evaluationHash: canonicalRefs
+        ? hashWithTimeReferences(evaluation, 'sourceRefsJson', canonicalRefs)
+        : hash(evaluation),
+    });
   }
   const recognizedHundredths = [...totals.values()].reduce((sum, value) => sum + value, 0);
   return {

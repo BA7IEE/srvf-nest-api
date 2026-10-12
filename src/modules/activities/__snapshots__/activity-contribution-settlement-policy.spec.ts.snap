@@ -1,0 +1,229 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`E4 pure contribution evaluation preserves the full evaluation and original generic hashes: correction: correction 1`] = `
+{
+  "evaluationCount": 1,
+  "evaluationSetHash": "1f8fa7e3be2dff8b0130637dc7790579876de3c76e918a326390911b97707cae",
+  "evaluations": [
+    {
+      "attendanceRoleCode": "participant",
+      "beijingDayPointsJson": [
+        {
+          "ledgerDate": "2026-10-01",
+          "recognizedPoints": "0.50",
+        },
+        {
+          "ledgerDate": "2026-10-02",
+          "recognizedPoints": "0.50",
+        },
+      ],
+      "calculatedPoints": "1.00",
+      "definitionHash": "5139e00f0b9130c4c8616202670845d383b129d435ef198a2ac25e89de7834e5",
+      "durationSeconds": 120,
+      "evaluationHash": "1e9e01fefccdb4930f7f4c792a0431057cb276791b9c675b86a0456991b9b278",
+      "evaluationUnitKey": "ffc3e4d6e3eb1a3b26d13094627859914144eed8508575c15bc068d70f1b2126",
+      "evaluatorVersion": 1,
+      "explanationCode": "training_credit",
+      "memberId": "member-one",
+      "mode": "policy",
+      "participationIdentityId": "identity-one",
+      "policyId": "policy-one",
+      "policyVersionId": "version-one",
+      "recognizedPoints": "1.00",
+      "ruleSnapshotId": "snapshot-one",
+      "selectionItemId": "selection-one",
+      "sessionId": "session-one",
+      "sourceFingerprint": "6c19ce03ba4f9893028654abdeb360b58dda34865dcbb1e810b89e67bdecadc0",
+      "sourceRefsJson": [
+        {
+          "allocationHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "allocationRevisionId": "allocation-one",
+          "correctionSource": {
+            "pendingAllocationId": null,
+            "proofId": "proof",
+            "sliceOrdinal": 0,
+            "sourceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          },
+          "durationSeconds": 120,
+          "endsAt": "2026-10-01T16:01:00.000Z",
+          "selectionItemId": "selection-one",
+          "sliceId": "allocation-one:0",
+          "sourceSegmentId": "segment-one",
+          "sourceSegmentRevision": 1,
+          "startsAt": "2026-10-01T15:59:00.000Z",
+        },
+      ],
+      "timeCategoryCode": "training",
+    },
+  ],
+  "recognizedPointsTotal": "1.00",
+  "sourceSetHash": "b6e5151f9d5d8e8a301822d801ee2afb8845e72c5d70cf004e841462ba24d95c",
+}
+`;
+
+exports[`E4 pure contribution evaluation preserves the full evaluation and original generic hashes: reordered-unicode: reordered-unicode 1`] = `
+{
+  "evaluationCount": 1,
+  "evaluationSetHash": "f14db1f7f612886f880c0a60725dede66d9a8be8acb266d394f34ef805049a2c",
+  "evaluations": [
+    {
+      "attendanceRoleCode": "participant",
+      "beijingDayPointsJson": [
+        {
+          "ledgerDate": "2026-10-01",
+          "recognizedPoints": "0.50",
+        },
+        {
+          "ledgerDate": "2026-10-02",
+          "recognizedPoints": "0.50",
+        },
+      ],
+      "calculatedPoints": "1.00",
+      "definitionHash": "5139e00f0b9130c4c8616202670845d383b129d435ef198a2ac25e89de7834e5",
+      "durationSeconds": 240,
+      "evaluationHash": "e82aef20b9611518b64aeb10ee7c955224a10092dbe7580224929cce33e51b7f",
+      "evaluationUnitKey": "ffc3e4d6e3eb1a3b26d13094627859914144eed8508575c15bc068d70f1b2126",
+      "evaluatorVersion": 1,
+      "explanationCode": "training_credit",
+      "memberId": "member-one",
+      "mode": "policy",
+      "participationIdentityId": "identity-one",
+      "policyId": "policy-one",
+      "policyVersionId": "version-one",
+      "recognizedPoints": "1.00",
+      "ruleSnapshotId": "snapshot-one",
+      "selectionItemId": "selection-one",
+      "sessionId": "session-one",
+      "sourceFingerprint": "5f348dcdcb7905d3fa7c5c33ecd99ac1a4e3dc6384672d4300b0cb459bb1f4aa",
+      "sourceRefsJson": [
+        {
+          "allocationHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "allocationRevisionId": "allocation-a",
+          "durationSeconds": 120,
+          "endsAt": "2026-10-01T16:01:00.000Z",
+          "selectionItemId": "selection-one",
+          "sliceId": "片a",
+          "sourceSegmentId": "segment-one",
+          "sourceSegmentRevision": 1,
+          "startsAt": "2026-10-01T15:59:00.000Z",
+        },
+        {
+          "allocationHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "allocationRevisionId": "allocation-z",
+          "durationSeconds": 120,
+          "endsAt": "2026-10-01T16:01:00.000Z",
+          "selectionItemId": "选择"z",
+          "sliceId": "片"z",
+          "sourceSegmentId": "segment-one",
+          "sourceSegmentRevision": 1,
+          "startsAt": "2026-10-01T15:59:00.000Z",
+        },
+      ],
+      "timeCategoryCode": "training",
+    },
+  ],
+  "recognizedPointsTotal": "1.00",
+  "sourceSetHash": "a7693e165698d2b83bc57cc5ac3d935fc943ba3324689a1fa79f5f3b65e1d448",
+}
+`;
+
+exports[`E4 pure contribution evaluation preserves the full evaluation and original generic hashes: single: single 1`] = `
+{
+  "evaluationCount": 1,
+  "evaluationSetHash": "77ccbfaec84fe323a49fa5047b23f05dda224616fa71ef9bcc6549e5d357921e",
+  "evaluations": [
+    {
+      "attendanceRoleCode": "participant",
+      "beijingDayPointsJson": [
+        {
+          "ledgerDate": "2026-10-01",
+          "recognizedPoints": "0.50",
+        },
+        {
+          "ledgerDate": "2026-10-02",
+          "recognizedPoints": "0.50",
+        },
+      ],
+      "calculatedPoints": "1.00",
+      "definitionHash": "5139e00f0b9130c4c8616202670845d383b129d435ef198a2ac25e89de7834e5",
+      "durationSeconds": 120,
+      "evaluationHash": "f1f0f10a848a188f5e2c2e0f6d27e3ac4e4864eff2d7f0957cb0005055dec2d6",
+      "evaluationUnitKey": "ffc3e4d6e3eb1a3b26d13094627859914144eed8508575c15bc068d70f1b2126",
+      "evaluatorVersion": 1,
+      "explanationCode": "training_credit",
+      "memberId": "member-one",
+      "mode": "policy",
+      "participationIdentityId": "identity-one",
+      "policyId": "policy-one",
+      "policyVersionId": "version-one",
+      "recognizedPoints": "1.00",
+      "ruleSnapshotId": "snapshot-one",
+      "selectionItemId": "selection-one",
+      "sessionId": "session-one",
+      "sourceFingerprint": "a5f25fa1bd1e660b975d1ab94d9d80277fb61739587cef6d4bb28b612a423ce3",
+      "sourceRefsJson": [
+        {
+          "allocationHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "allocationRevisionId": "allocation-one",
+          "durationSeconds": 120,
+          "endsAt": "2026-10-01T16:01:00.000Z",
+          "selectionItemId": "selection-one",
+          "sliceId": "slice-one",
+          "sourceSegmentId": "segment-one",
+          "sourceSegmentRevision": 1,
+          "startsAt": "2026-10-01T15:59:00.000Z",
+        },
+      ],
+      "timeCategoryCode": "training",
+    },
+  ],
+  "recognizedPointsTotal": "1.00",
+  "sourceSetHash": "610dd2815b824ea5efdc7856911117603a8ad9bae5dc34aae90108b0a9c0e811",
+}
+`;
+
+exports[`E4 pure contribution evaluation preserves the full evaluation and original generic hashes: zero: zero 1`] = `
+{
+  "evaluationCount": 1,
+  "evaluationSetHash": "3f65ce20d4f5ecf252dd577cbc21271e70f2dcb917a02fbf250e8d98e04fd0fc",
+  "evaluations": [
+    {
+      "attendanceRoleCode": "participant",
+      "beijingDayPointsJson": [],
+      "calculatedPoints": "0.00",
+      "definitionHash": "5139e00f0b9130c4c8616202670845d383b129d435ef198a2ac25e89de7834e5",
+      "durationSeconds": 0,
+      "evaluationHash": "6b451d1a8a047528180924344179c030d696bed2c73532fb76bbc883d7b1b7c8",
+      "evaluationUnitKey": "ffc3e4d6e3eb1a3b26d13094627859914144eed8508575c15bc068d70f1b2126",
+      "evaluatorVersion": 1,
+      "explanationCode": "below_threshold",
+      "memberId": "member-one",
+      "mode": "policy",
+      "participationIdentityId": "identity-one",
+      "policyId": "policy-one",
+      "policyVersionId": "version-one",
+      "recognizedPoints": "0.00",
+      "ruleSnapshotId": "snapshot-one",
+      "selectionItemId": "selection-one",
+      "sessionId": "session-one",
+      "sourceFingerprint": "aa3522aa3b04e7cd28ff75741a76baa4e35f806aff4ed885a9392443a2a41b73",
+      "sourceRefsJson": [
+        {
+          "allocationHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "allocationRevisionId": "allocation-one",
+          "durationSeconds": 0,
+          "endsAt": "2026-10-01T15:59:00.000Z",
+          "selectionItemId": "selection-one",
+          "sliceId": "slice-one",
+          "sourceSegmentId": "segment-one",
+          "sourceSegmentRevision": 1,
+          "startsAt": "2026-10-01T15:59:00.000Z",
+        },
+      ],
+      "timeCategoryCode": "training",
+    },
+  ],
+  "recognizedPointsTotal": "0.00",
+  "sourceSetHash": "32286c231784f1e68c5ea9392345d22d31969b0183dd435f75a7ac4e543df6ce",
+}
+`;
