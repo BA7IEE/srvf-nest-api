@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { ScratchLeaseSession } from '../helpers/scratch-database-lease';
 import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';
+import { E4EngineRequestWaitDiagnostic } from '../helpers/e4-engine-request-wait-diagnostic';
 // E4_GUARD_PLAN_IMPORT_BEGIN
 import {
   E4GuardPlanDiagnostic,
@@ -1136,6 +1137,41 @@ function terminalNativeWorkerOpening(source: string): string {
       },
     ],
     scale: [
+      {
+        candidate:
+          "      if (engineRequests.snapshot().status !== 'COMPLETE')\n        throw new Error('E4 engine request waits UNKNOWN; stop before next stage');\n",
+        candidateHash: 'f8c3d99bca5bc93a38871d42ba61c1938df1a84f615ef8ebd351ffefbc0ba991',
+        opening: '',
+      },
+      {
+        candidate:
+          "import { E4EngineRequestWaitDiagnostic } from '../helpers/e4-engine-request-wait-diagnostic';\n",
+        candidateHash: '65cef7579ec83f1ca88961d5dab768ba2394dc3e253535d407df3fc13ba978bf',
+        opening: '',
+      },
+      {
+        candidate:
+          "    const engineRequests = new E4EngineRequestWaitDiagnostic(\n      Reflect.get(observed, '_engine') as object,\n    );\n",
+        candidateHash: '57ae6349d240986e6a4d141defabc270b5c5c3d1ae04d7c93065fb4a00f62307',
+        opening: '',
+      },
+      {
+        candidate: '        engineRequests.begin();\n',
+        candidateHash: 'aff2c0bae0bb4ff49e6b400f3082dcd8308c3c24c3b0c338e538c3800610dec4',
+        opening: '',
+      },
+      {
+        candidate:
+          "          engineRequests.finish();\n          engineRequests.restore();\n          console.info(\n            'E4 maximum engine request waits (fixed counters)',\n            JSON.stringify(engineRequests.snapshot()),\n          );\n",
+        candidateHash: '9bdde4d1708c2e9600ac0d2fd8d35ab97864b652d85812d93d0f393bfb3825f2',
+        opening: '',
+      },
+      {
+        candidate: '      engineRequests.restore();\n',
+        candidateHash: '4074b8a2544dea6fd74d58c72134135bc34e46dbb0c1ecd42a2a2c1006919251',
+        opening: '',
+      },
+
       {
         candidate:
           "// E4_GUARD_FUNCTION_IMPORT_BEGIN\nimport {\n  E4GuardFunctionDiagnostic,\n  guardFunctionDiagnosticEnabled,\n} from '../helpers/e4-guard-function-diagnostic';\n// E4_GUARD_FUNCTION_IMPORT_END\n",
@@ -4861,6 +4897,9 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
     ).toBe(50000);
     const observed = new ObservedE4Database({ log: [{ emit: 'event', level: 'query' }] });
     const engineObserver = observeEngineTransactions(observed);
+    const engineRequests = new E4EngineRequestWaitDiagnostic(
+      Reflect.get(observed, '_engine') as object,
+    );
     let queries = 0;
     let e4Queries = 0;
     let barrierQueries = 0;
@@ -4963,6 +5002,7 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
       ]);
       preparePhaseDiagnostic = phaseDiagnostic;
       try {
+        engineRequests.begin();
         phaseDiagnostic.begin();
         let prepareOutcome: 'OK' | 'FAIL' = 'FAIL';
         try {
@@ -4974,6 +5014,12 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
           );
           prepareOutcome = 'OK';
         } finally {
+          engineRequests.finish();
+          engineRequests.restore();
+          console.info(
+            'E4 maximum engine request waits (fixed counters)',
+            JSON.stringify(engineRequests.snapshot()),
+          );
           phaseDiagnostic.finish(prepareOutcome);
           phaseDiagnostic.restore();
           // E4_GUARD_FUNCTION_RESTORE_BEGIN
@@ -5159,6 +5205,8 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
         throw error;
       }
       expect(phaseDiagnostic.snapshot().status).toBe('COMPLETE');
+      if (engineRequests.snapshot().status !== 'COMPLETE')
+        throw new Error('E4 engine request waits UNKNOWN; stop before next stage');
       const prepareMs = Date.now() - started;
       console.info(
         'E4 maximum prepare',
@@ -5300,6 +5348,7 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
       // Reuses this exact immutable root; no extra fixture, prepare, INSERT or pre-business warming.
       await assertPostBusinessPSetProbe(f.db, proof.id);
     } finally {
+      engineRequests.restore();
       engineObserver.restore();
       await observed.$disconnect();
     }

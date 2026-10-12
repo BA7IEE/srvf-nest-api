@@ -1242,6 +1242,41 @@ function terminalNativeWorkerOpening(source: string): string {
     scale: [
       {
         candidate:
+          "      if (engineRequests.snapshot().status !== 'COMPLETE')\n        throw new Error('E4 engine request waits UNKNOWN; stop before next stage');\n",
+        candidateHash: 'f8c3d99bca5bc93a38871d42ba61c1938df1a84f615ef8ebd351ffefbc0ba991',
+        opening: '',
+      },
+      {
+        candidate:
+          "import { E4EngineRequestWaitDiagnostic } from '../helpers/e4-engine-request-wait-diagnostic';\n",
+        candidateHash: '65cef7579ec83f1ca88961d5dab768ba2394dc3e253535d407df3fc13ba978bf',
+        opening: '',
+      },
+      {
+        candidate:
+          "    const engineRequests = new E4EngineRequestWaitDiagnostic(\n      Reflect.get(observed, '_engine') as object,\n    );\n",
+        candidateHash: '57ae6349d240986e6a4d141defabc270b5c5c3d1ae04d7c93065fb4a00f62307',
+        opening: '',
+      },
+      {
+        candidate: '        engineRequests.begin();\n',
+        candidateHash: 'aff2c0bae0bb4ff49e6b400f3082dcd8308c3c24c3b0c338e538c3800610dec4',
+        opening: '',
+      },
+      {
+        candidate:
+          "          engineRequests.finish();\n          engineRequests.restore();\n          console.info(\n            'E4 maximum engine request waits (fixed counters)',\n            JSON.stringify(engineRequests.snapshot()),\n          );\n",
+        candidateHash: '9bdde4d1708c2e9600ac0d2fd8d35ab97864b652d85812d93d0f393bfb3825f2',
+        opening: '',
+      },
+      {
+        candidate: '      engineRequests.restore();\n',
+        candidateHash: '4074b8a2544dea6fd74d58c72134135bc34e46dbb0c1ecd42a2a2c1006919251',
+        opening: '',
+      },
+
+      {
+        candidate:
           "// E4_GUARD_FUNCTION_IMPORT_BEGIN\nimport {\n  E4GuardFunctionDiagnostic,\n  guardFunctionDiagnosticEnabled,\n} from '../helpers/e4-guard-function-diagnostic';\n// E4_GUARD_FUNCTION_IMPORT_END\n",
         candidateHash: '6fc81b7055704aa6033d92834487bf0d1137e528f357df8683444b8798f0c8e8',
         opening: '',
