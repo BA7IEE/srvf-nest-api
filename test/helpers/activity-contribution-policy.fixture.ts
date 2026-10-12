@@ -287,7 +287,7 @@ export function installE4ValidationDatabase(options?: {
       if (dedicated && worker !== undefined && lifecyclePlan.databaseFinalizer === 'DROP')
         await lifecycle.drop(worker);
       // CI retains its assigned worker, restored to the current schema even after a failed fixture.
-      else if (baseline && initialized) deploy();
+      else if ((baseline || historical137) && initialized) deploy();
     } finally {
       if (temporary) rmSync(temporary, { recursive: true, force: false });
       for (const [name, value] of [
