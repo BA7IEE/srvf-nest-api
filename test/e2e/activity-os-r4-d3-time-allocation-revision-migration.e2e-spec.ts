@@ -19,6 +19,8 @@ import { deriveTestDbName } from '../setup/worktree-db';
 
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 
+const CURRENT_MIGRATION_COUNT = 141;
+
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_D3_W98 === '1');
 
 const MIGRATION = '20260912090000_activity_os_r4_d3_time_allocation_revision';
@@ -552,7 +554,7 @@ describe('D3 immutable time-allocation migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(141);
+    expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[119]).toBe(MIGRATION);
     expect(
       sql(

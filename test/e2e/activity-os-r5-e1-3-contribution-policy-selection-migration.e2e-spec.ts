@@ -18,6 +18,8 @@ import { deriveTestDbName } from '../setup/worktree-db';
 
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 
+const CURRENT_MIGRATION_COUNT = 141;
+
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E1_3_W98 === '1');
 
 const MIGRATION = '20260923190000_activity_os_r5_e1_3_contribution_policy_selection';
@@ -279,7 +281,7 @@ describe('E1-3 contribution-policy selection migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(141);
+    expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[130]).toBe(MIGRATION);
     expect(
       sql(

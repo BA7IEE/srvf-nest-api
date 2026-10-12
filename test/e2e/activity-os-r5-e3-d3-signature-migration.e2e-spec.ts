@@ -20,6 +20,8 @@ import { loadTestEnv } from '../setup/load-env';
 import { assertTestDatabaseUrl } from '../setup/test-db';
 import { deriveWorkerTestDbName, deriveTestDbName } from '../setup/worktree-db';
 
+const CURRENT_MIGRATION_COUNT = 141;
+
 const MIGRATION = '20261002170000_activity_os_r5_e3_reconciliation_signature';
 const PREDECESSOR = '20260930120000_activity_os_r5_e3_shadow_mapping_proof';
 const ROOT = join(process.cwd(), 'prisma');
@@ -149,7 +151,7 @@ describe('D3 nonempty 135→136 upgrade, additive checksums and default-closed D
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(141);
+    expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[134]).toBe(PREDECESSOR);
     expect(names[135]).toBe(MIGRATION);
     expect(

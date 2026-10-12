@@ -19,6 +19,8 @@ import {
 } from '../setup/test-db';
 import { deriveTestDbName } from '../setup/worktree-db';
 
+const CURRENT_MIGRATION_COUNT = 141;
+
 const MIGRATION = '20260915120000_activity_os_r4_d7_time_correction';
 function target() {
   assertTestDatabaseUrl(process.env.DATABASE_URL);
@@ -326,7 +328,7 @@ describe('D7-1 migration cold replay and nonempty legacy upgrade', () => {
   it('replays 136 exact SQL files and leaves both D7-1 tables empty', () => {
     recreate();
     deploy(schema);
-    expect(names).toHaveLength(141);
+    expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     expect(names[122]).toBe(MIGRATION);
     expect(checksums()).toEqual(
       names.map(

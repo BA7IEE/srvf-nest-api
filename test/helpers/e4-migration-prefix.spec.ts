@@ -9,6 +9,8 @@ import {
   E4_MIGRATION_141,
 } from './e4-migration-prefix';
 
+const CURRENT_MIGRATION_COUNT = 141;
+
 describe('fixed E4 historical migration prefix', () => {
   const names = readdirSync(resolve(__dirname, '../../prisma/migrations'), {
     withFileTypes: true,
@@ -17,7 +19,7 @@ describe('fixed E4 historical migration prefix', () => {
     .map((entry) => entry.name);
 
   it('retains exactly 137 historical migrations and separately pins the new successor', () => {
-    expect(names).toHaveLength(141);
+    expect(names).toHaveLength(CURRENT_MIGRATION_COUNT);
     const prefix = e4HistoricalMigrationPrefix([...names].reverse());
     expect(prefix).toHaveLength(137);
     expect(prefix[136]).toBe(E4_MIGRATION_137);
