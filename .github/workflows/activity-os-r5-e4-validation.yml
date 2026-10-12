@@ -367,7 +367,7 @@ jobs:
     env:
       APP_ENV: test
       SRVF_E4_GITHUB_ISOLATED: '1'
-      SRVF_TEST_RUN_SCOPE: app_test_w98
+      SRVF_TEST_RUN_SCOPE: 'app_test,app_test_w1'
       SRVF_E4_W98: '0'
       SRVF_E4_GUARD_PLAN_DIAGNOSTIC: '1'
       JEST_MAX_WORKERS: '1'
@@ -413,6 +413,7 @@ jobs:
           const target = 'E4 maximum real sources with unchanged transaction and query budgets 2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards';
           const binding = { head: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID, attempt: 1 };
           const summary = { schema: 'e4-guard-plan-process/v1', binding, status: 'UNKNOWN', reason: 'START', acceptance: 'NOT_AN_ACCEPTANCE_RESULT', originalCase: 'NOT_RUN', counts: null };
+          const reasons = new Set(['BINDING_REFUSED', 'EVIDENCE_UNAVAILABLE', 'JEST_REFUSED', 'SELECTION_REFUSED', 'PLAN_REFUSED', 'NODE_REFUSED', 'DATASET_REFUSED', 'PHYSICAL_REFUSED', 'OBSERVATION_REFUSED', 'PROCESS_REFUSED']);
           const integer = n => Number.isSafeInteger(n) && n >= 0 && n <= 10000;
           const kinds = new Set(['Result', 'Nested Loop', 'Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan', 'Bitmap Index Scan', 'Hash Join', 'Merge Join', 'Hash', 'Sort', 'Aggregate', 'Materialize', 'CTE Scan', 'Subquery Scan', 'Limit', 'OTHER']);
           const roles = new Set(['SOURCES', 'ALLOCATIONS', 'BUCKETS', 'RESULTS', 'OTHER']);
@@ -474,7 +475,7 @@ jobs:
               fs.writeFileSync(path.join(dir, 'safe-plan.json'), JSON.stringify(plan) + '\n', { flag: 'wx', mode: 0o600 });
               process.stdout.write('E4 guard estimated plan (closed metadata) ' + JSON.stringify(plan) + '\n');
               code = plan.status === 'OBSERVED' ? summary.originalCase === 'PASS' ? 0 : 1 : 2;
-            } catch { summary.status = 'UNKNOWN'; summary.reason = 'PROCESS_OR_EVIDENCE'; }
+            } catch (error) { summary.status = 'UNKNOWN'; summary.reason = reasons.has(error?.message) ? error.message : 'PROCESS_OR_EVIDENCE'; }
             fs.writeFileSync(path.join(dir, 'summary.json'), JSON.stringify(summary) + '\n', { flag: 'wx', mode: 0o600 });
             process.stdout.write('E4 guard diagnostic summary ' + JSON.stringify(summary) + '\n');
             process.exitCode = code;
