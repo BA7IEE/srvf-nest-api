@@ -1,4 +1,8 @@
-import { e4HistoricalMigrationPrefix, E4_MIGRATION_137 } from './e4-migration-prefix';
+import {
+  e4HistoricalMigrationPrefix,
+  E4_MIGRATION_137,
+  E4_MIGRATION_138,
+} from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'node:crypto';
@@ -212,6 +216,20 @@ export function installE4ValidationDatabase(options?: {
       );
     }
   };
+  const deployHistoricalMigrations = (count: 137 | 138) => {
+    if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');
+    if (!temporary || !historicalSchema) throw new Error('E4 historical schema missing');
+    const successors = count === 137 ? [E4_MIGRATION_137] : [E4_MIGRATION_137, E4_MIGRATION_138];
+    for (const name of successors) {
+      const directory = join(temporary, 'migrations', name);
+      mkdirSync(directory, { recursive: true });
+      copyFileSync(
+        resolve(__dirname, '../../prisma/migrations', name, 'migration.sql'),
+        join(directory, 'migration.sql'),
+      );
+    }
+    deploy(historicalSchema);
+  };
   const previous = {
     worker: process.env.JEST_WORKER_ID,
     url: process.env.DATABASE_URL,
@@ -306,15 +324,10 @@ export function installE4ValidationDatabase(options?: {
   lifecycle.finish();
   return {
     deployCurrentMigrations() {
-      if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');
-      if (!temporary || !historicalSchema) throw new Error('E4 historical schema missing');
-      const directory = join(temporary, 'migrations', E4_MIGRATION_137);
-      mkdirSync(directory, { recursive: true });
-      copyFileSync(
-        resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_137, 'migration.sql'),
-        join(directory, 'migration.sql'),
-      );
-      deploy(historicalSchema);
+      deployHistoricalMigrations(137);
+    },
+    deployScalarMigrations() {
+      deployHistoricalMigrations(138);
     },
     deployLatestMigrations() {
       if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');

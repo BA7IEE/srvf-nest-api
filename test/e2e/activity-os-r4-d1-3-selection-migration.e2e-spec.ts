@@ -171,7 +171,7 @@ describe('D1-3 time-policy selection migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(138);
+    expect(names).toHaveLength(139);
     expect(names[118]).toBe(MIGRATION);
     expect(
       sql(

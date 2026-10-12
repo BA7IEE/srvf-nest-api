@@ -1532,7 +1532,7 @@ describe('E3-2 D2 mapping schema construction', () => {
       sql(
         'SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL',
       ),
-    ).toBe('138');
+    ).toBe('139');
     for (const table of [
       'ContributionShadowMappingApproval',
       'ContributionShadowMappingApplication',

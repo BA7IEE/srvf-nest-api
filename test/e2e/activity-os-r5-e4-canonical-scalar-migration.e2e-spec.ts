@@ -187,7 +187,7 @@ describe('E4 canonical scalar migration 138 nonempty upgrade', () => {
     });
     expect((beforeCorpus as { equal: boolean }[]).every((row) => row.equal)).toBe(true);
 
-    owner.deployLatestMigrations();
+    owner.deployScalarMigrations();
     const afterMigrations = await migrations(db);
     expect(afterMigrations).toHaveLength(138);
     expect(JSON.stringify(afterMigrations.slice(0, 137)) === JSON.stringify(beforeMigrations)).toBe(
@@ -223,7 +223,7 @@ describe('E4 canonical scalar migration 138 nonempty upgrade', () => {
     expect(JSON.stringify(afterCorpus) === JSON.stringify(beforeCorpus)).toBe(true);
     expect((afterCorpus as { equal: boolean }[]).every((row) => row.equal)).toBe(true);
 
-    owner.deployLatestMigrations();
+    owner.deployScalarMigrations();
     expect(JSON.stringify(await migrations(db)) === JSON.stringify(afterMigrations)).toBe(true);
     expect((await businessSnapshot(db)) === beforeBusiness).toBe(true);
     expect(JSON.stringify(await catalog(db)) === JSON.stringify(beforeCatalog)).toBe(true);

@@ -1,0 +1,3 @@
+- Add migration 139 for the exact nine-scalar source-reference shape in E4 expected evaluations; retain the generic canonicalizer for every other shape and preserve migrations 1–138, all hashes, guards and budgets.
+- Keep historical E4 proofs at 137 and the scalar upgrade at 138. Add an independent nonempty 138→139 upgrade/no-op comparison of complete evaluations, hashes, business rows, constraints and function metadata, plus the scalar/fallback corpus.
+- Update only current migration inventory pins. Original maximum-chain acceptance and maintainer signatures remain pending; no deployment or merge approval is implied.
