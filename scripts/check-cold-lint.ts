@@ -333,15 +333,35 @@ async function runCli(
 export async function runColdLint(root: string): Promise<Report> {
   const started = Date.now();
   const deadline = started + COLD_LINT_WINDOW_MS;
+  const phase = (
+    name: 'MANIFEST' | 'INPUT_SEAL' | 'CONFIG_SEAL' | 'CLI_START' | 'CLI_END',
+    files: number,
+    child?: ChildResult,
+  ) =>
+    console.info(
+      'COLD_LINT_PHASE',
+      JSON.stringify({
+        phase: name,
+        files,
+        elapsedMs: Date.now() - started,
+        ...(child ? { code: child.code, signal: child.signal, timedOut: child.timedOut } : {}),
+      }),
+    );
   const eslint = new ESLint({ cwd: root });
   const files = await manifest(root, eslint);
+  phase('MANIFEST', files.length);
   const before = inputSeal(root);
+  phase('INPUT_SEAL', files.length);
   const config = await configSeal(root, eslint, files);
+  phase('CONFIG_SEAL', files.length);
   const batches = coldLintPlan(files);
   assertInputUnchanged(before, inputSeal(root));
   // The original globs avoid argument limits and retain the original CLI host.
   // Validate the complete report against the independently sealed jurisdiction.
-  const total = coldLintReport(root, files, await runCli(root, COLD_LINT_PATTERNS, deadline));
+  phase('CLI_START', files.length);
+  const child = await runCli(root, COLD_LINT_PATTERNS, deadline);
+  phase('CLI_END', files.length, child);
+  const total = coldLintReport(root, files, child);
   for (const [index, batch] of batches.entries()) {
     const diagnostics = total.diagnostics.filter((row) => batch.includes(row.file));
     console.info(
