@@ -14,6 +14,8 @@
 
 ## 2. 开工前 checklist
 
+日常版本核对、切片 checkpoint 与交接另按 [WORKING-STATE](WORKING-STATE.md) 执行仓内 `scripts/dev-guard.py` 入口；该审计只读、dirty 仅提示，不替代下面的原项目门禁。新构建按该文档记录精确来源，禁止给旧产物追补认证。
+
 任何新任务开始前(无论 AI 自动启动还是用户驱动),**必须**依次确认:
 
 ```bash
