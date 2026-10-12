@@ -138,9 +138,17 @@ async function verifyRealRoots(db: PrismaClient) {
 describe('E4 canonical scalar migration 138 nonempty upgrade', () => {
   const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
   let fixture: E4Fixture | undefined;
-
+  const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+  beforeAll(() => {
+    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
+  });
   afterAll(async () => {
-    await closeE13Fixture(fixture);
+    try {
+      await closeE13Fixture(fixture);
+    } finally {
+      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+    }
   });
 
   it('preserves canonical bytes, hashes, business rows, function identity and privileges through 137 to 138 and no-op', async () => {

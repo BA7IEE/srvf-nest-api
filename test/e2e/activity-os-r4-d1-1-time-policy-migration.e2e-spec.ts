@@ -121,7 +121,7 @@ describe('D1-1 117 to 118 migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(137);
+    expect(names).toHaveLength(138);
     expect(names[117]).toBe(MIGRATION);
     const records = sql(
       'SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations" WHERE finished_at IS NOT NULL ORDER BY migration_name',

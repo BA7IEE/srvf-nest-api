@@ -210,7 +210,7 @@ describe('E3-2 D2 source proof migration', () => {
 
   it('cold-replays 136 migrations with an empty anchor table and default-off audit bit', () => {
     expect(sql('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).toBe(
-      '137',
+      '138',
     );
     expect(sql('SELECT count(*) FROM "ContributionShadowLegacySourceAnchor"')).toBe('0');
     expect(
