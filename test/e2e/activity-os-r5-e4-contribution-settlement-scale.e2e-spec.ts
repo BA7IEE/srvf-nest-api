@@ -1053,6 +1053,33 @@ function terminalNativeWorkerOpening(source: string): string {
     migration: [
       {
         candidate:
+          "import { e4HistoricalMigrationPrefix } from '../helpers/e4-migration-prefix';\n",
+        candidateHash: '58b4d89228d9b5e39855abf83fd17299e44049ebde45170e4de308fa95718eb4',
+        opening: '',
+      },
+      {
+        candidate:
+          '  installE4ValidationDatabase({ allowInstallRetain: true, historicalMigration137: true });\n',
+        candidateHash: '83e155eaa7a492d78d4963ae2cf02c46d848eb778382badd324a7c9a904a414f',
+        opening: '  installE4ValidationDatabase({ allowInstallRetain: true });\n',
+      },
+      {
+        candidate:
+          "    const migrations = e4HistoricalMigrationPrefix(\n      readdirSync(resolve(__dirname, '../../prisma/migrations')).filter((name) =>\n        /^[0-9]{14}_/u.test(name),\n      ),\n    );",
+        candidateHash: 'e09a4664b71b48e244d438fdf871311cd5d3b4501948d56029284f2f01717c9b',
+        opening:
+          "    const migrations = readdirSync(resolve(__dirname, '../../prisma/migrations'))\n      .filter((name) => /^[0-9]{14}_/u.test(name))\n      .sort();",
+      },
+      {
+        candidate:
+          "      const migrations = e4HistoricalMigrationPrefix(\n        readdirSync(resolve(__dirname, '../../prisma/migrations')).filter((name) =>\n          /^[0-9]{14}_/u.test(name),\n        ),\n      );",
+        candidateHash: 'f831c8e4c88b04629c017af2ad21e71ebe1d2e688e2b8a55ace591dfb683a487',
+        opening:
+          "      const migrations = readdirSync(resolve(__dirname, '../../prisma/migrations')).filter((name) =>\n        /^[0-9]{14}_/u.test(name),\n      );",
+      },
+
+      {
+        candidate:
           "import { hashCanonical } from '../../src/modules/activities/activity-publish-review-idempotency';\n\n// E4_TERMINAL_HELPERS_BEGIN\nimport { e4NativeMeasurementDatabase } from '../helpers/e4-native-measurement-owner';\nimport {\n  E4NativeMeasurementOwner,\n  withE4NativeMeasurementBinding,\n  type E4NativeMeasurementLease,\n} from '../helpers/e4-native-measurement-owner';\nimport { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\nimport { ScratchLeaseSession } from '../helpers/scratch-database-lease';\nconst S13_LOCAL_DB = E4_D1_SCOPE;\n",
         candidateHash: '12a73b42a07396f0f0d5ba21f1ed3b7f5437de099e627b656eefa60f455ad788',
         opening:

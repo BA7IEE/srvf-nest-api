@@ -1,3 +1,4 @@
+import { e4HistoricalMigrationPrefix, E4_MIGRATION_137 } from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'node:crypto';
@@ -166,6 +167,7 @@ export function e4N1InstallRetainFailure(
  * CI uses its existing assigned worker/global setup; no template or other-worker mutation here. */
 export function installE4ValidationDatabase(options?: {
   baselineMigrationCount?: 136;
+  historicalMigration137?: true;
   allowInstallRetain?: boolean;
 }) {
   const dedicated = process.env.SRVF_E4_W98 === '1';
@@ -173,6 +175,7 @@ export function installE4ValidationDatabase(options?: {
   const lifecycleMode = e4ValidationLifecycleModeForInstall(options?.allowInstallRetain === true);
   const lifecyclePlan = e4ValidationLifecyclePlan(lifecycleMode);
   const baseline = options?.baselineMigrationCount === 136;
+  const historical137 = options?.historicalMigration137 === true;
   if (options?.baselineMigrationCount !== undefined && !baseline)
     throw new Error('E4 fixed baseline option differs');
   if (lifecycleMode === 'INSTALL_RETAIN' && (!dedicated || options?.allowInstallRetain !== true))
@@ -183,6 +186,7 @@ export function installE4ValidationDatabase(options?: {
   let temporary: string | undefined;
   let worker: number | undefined;
   let initialized = false;
+  let historicalSchema: string | undefined;
   const deploy = (schema?: string) => {
     assertTestDatabaseUrl(process.env.DATABASE_URL);
     try {
@@ -221,7 +225,7 @@ export function installE4ValidationDatabase(options?: {
       process.env.STORAGE_LOCAL_ROOT = './tmp/storage-w98';
       assertTestDatabaseUrl(process.env.DATABASE_URL);
     }
-    if (dedicated || baseline) {
+    if (dedicated || baseline || historical137) {
       worker = Number(process.env.JEST_WORKER_ID);
       if (!Number.isInteger(worker) || worker < 1) throw new Error('E4 isolated worker required');
       assertTestDatabaseUrl(process.env.DATABASE_URL);
@@ -233,38 +237,37 @@ export function installE4ValidationDatabase(options?: {
       )
         throw new Error('E4 isolated GitHub derived scope differs');
       let baselineSchema: string | undefined;
-      if (baseline) {
+      if (baseline || historical137) {
         const root = resolve(__dirname, '../../prisma');
         const names = readdirSync(join(root, 'migrations'), { withFileTypes: true })
           .filter((entry) => entry.isDirectory())
           .map((entry) => entry.name)
           .sort();
-        if (
-          names.length !== 137 ||
-          names[136] !== '20261003000000_activity_contribution_settlement'
-        )
-          throw new Error('E4 fixed 136 baseline changed');
+        const prefix = e4HistoricalMigrationPrefix(names);
         temporary = mkdtempSync(join(tmpdir(), 'srvf-e4-pre137-'));
         mkdirSync(join(temporary, 'migrations'));
         baselineSchema = join(temporary, 'schema.prisma');
+        historicalSchema = baselineSchema;
         copyFileSync(join(root, 'schema.prisma'), baselineSchema);
         copyFileSync(
           join(root, 'migrations/migration_lock.toml'),
           join(temporary, 'migrations/migration_lock.toml'),
         );
-        for (const name of names.slice(0, 136)) {
+        for (const name of prefix.slice(0, baseline ? 136 : 137)) {
           const relative = 'prisma/migrations/' + name + '/migration.sql';
-          const historical = execFileSync(
-            'git',
-            ['show', '5c296d62c8dbdd1800b47d679c7681c6ad99ef09:' + relative],
-            { cwd: resolve(root, '..') },
-          );
-          const current = readFileSync(join(root, 'migrations', name, 'migration.sql'));
-          if (
-            createHash('sha256').update(current).digest('hex') !==
-            createHash('sha256').update(historical).digest('hex')
-          )
-            throw new Error('E4 historical migration bytes changed: ' + name);
+          if (name !== E4_MIGRATION_137) {
+            const historical = execFileSync(
+              'git',
+              ['show', '5c296d62c8dbdd1800b47d679c7681c6ad99ef09:' + relative],
+              { cwd: resolve(root, '..') },
+            );
+            const current = readFileSync(join(root, 'migrations', name, 'migration.sql'));
+            if (
+              createHash('sha256').update(current).digest('hex') !==
+              createHash('sha256').update(historical).digest('hex')
+            )
+              throw new Error('E4 historical migration bytes changed: ' + name);
+          }
           mkdirSync(join(temporary, 'migrations', name));
           copyFileSync(
             join(root, 'migrations', name, 'migration.sql'),
@@ -304,6 +307,17 @@ export function installE4ValidationDatabase(options?: {
   return {
     deployCurrentMigrations() {
       if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');
+      if (!temporary || !historicalSchema) throw new Error('E4 historical schema missing');
+      const directory = join(temporary, 'migrations', E4_MIGRATION_137);
+      mkdirSync(directory, { recursive: true });
+      copyFileSync(
+        resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_137, 'migration.sql'),
+        join(directory, 'migration.sql'),
+      );
+      deploy(historicalSchema);
+    },
+    deployLatestMigrations() {
+      if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');
       deploy();
     },
     async recreateCurrentMigrations() {
@@ -315,7 +329,8 @@ export function installE4ValidationDatabase(options?: {
         throw new Error('E4 worker and configured database mismatch');
       await lifecycle.drop(worker);
       await lifecycle.create(deriveTestDbName());
-      deploy();
+      if (!historicalSchema) throw new Error('E4 historical schema missing');
+      deploy(historicalSchema);
     },
   };
 }

@@ -1,3 +1,4 @@
+import { e4HistoricalMigrationPrefix } from '../helpers/e4-migration-prefix';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { createHash } from 'node:crypto';
 // E4_TERMINAL_REPLACE_CHILD_IMPORT_BEGIN
@@ -1154,6 +1155,33 @@ function terminalNativeWorkerOpening(source: string): string {
     throw new Error('Native worker opening source kind differs');
   const bindings = {
     migration: [
+      {
+        candidate:
+          "import { e4HistoricalMigrationPrefix } from '../helpers/e4-migration-prefix';\n",
+        candidateHash: '58b4d89228d9b5e39855abf83fd17299e44049ebde45170e4de308fa95718eb4',
+        opening: '',
+      },
+      {
+        candidate:
+          '  installE4ValidationDatabase({ allowInstallRetain: true, historicalMigration137: true });\n',
+        candidateHash: '83e155eaa7a492d78d4963ae2cf02c46d848eb778382badd324a7c9a904a414f',
+        opening: '  installE4ValidationDatabase({ allowInstallRetain: true });\n',
+      },
+      {
+        candidate:
+          "    const migrations = e4HistoricalMigrationPrefix(\n      readdirSync(resolve(__dirname, '../../prisma/migrations')).filter((name) =>\n        /^[0-9]{14}_/u.test(name),\n      ),\n    );",
+        candidateHash: 'e09a4664b71b48e244d438fdf871311cd5d3b4501948d56029284f2f01717c9b',
+        opening:
+          "    const migrations = readdirSync(resolve(__dirname, '../../prisma/migrations'))\n      .filter((name) => /^[0-9]{14}_/u.test(name))\n      .sort();",
+      },
+      {
+        candidate:
+          "      const migrations = e4HistoricalMigrationPrefix(\n        readdirSync(resolve(__dirname, '../../prisma/migrations')).filter((name) =>\n          /^[0-9]{14}_/u.test(name),\n        ),\n      );",
+        candidateHash: 'f831c8e4c88b04629c017af2ad21e71ebe1d2e688e2b8a55ace591dfb683a487',
+        opening:
+          "      const migrations = readdirSync(resolve(__dirname, '../../prisma/migrations')).filter((name) =>\n        /^[0-9]{14}_/u.test(name),\n      );",
+      },
+
       {
         candidate:
           "import { hashCanonical } from '../../src/modules/activities/activity-publish-review-idempotency';\n\n// E4_TERMINAL_HELPERS_BEGIN\nimport { e4NativeMeasurementDatabase } from '../helpers/e4-native-measurement-owner';\nimport {\n  E4NativeMeasurementOwner,\n  withE4NativeMeasurementBinding,\n  type E4NativeMeasurementLease,\n} from '../helpers/e4-native-measurement-owner';\nimport { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\nimport { ScratchLeaseSession } from '../helpers/scratch-database-lease';\nconst S13_LOCAL_DB = E4_D1_SCOPE;\n",
@@ -7661,9 +7689,11 @@ describe('E4 P-Canonical offline byte closure and independent old oracle', () =>
     expect(createHash('sha256').update(outsideBody).digest('hex')).toBe(
       'd968834bff34451180c82fda50cb0a8373bab05223f033b9eeeef3f282941de3',
     );
-    const migrations = readdirSync(resolve(__dirname, '../../prisma/migrations'))
-      .filter((name) => /^[0-9]{14}_/u.test(name))
-      .sort();
+    const migrations = e4HistoricalMigrationPrefix(
+      readdirSync(resolve(__dirname, '../../prisma/migrations')).filter((name) =>
+        /^[0-9]{14}_/u.test(name),
+      ),
+    );
     expect(migrations).toHaveLength(137);
     expect(migrations[136]).toBe('20261003000000_activity_contribution_settlement');
     for (const migration of migrations.slice(0, 136)) {
@@ -9417,7 +9447,7 @@ describe('E4 nonempty 136 to 137 upgrade', () => {
 describe('E4 migration dedicated lease envelope', () => {
   // Nested lifecycle lets the offline closure run without creating or connecting a database.
   // E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_BEGIN
-  installE4ValidationDatabase({ allowInstallRetain: true });
+  installE4ValidationDatabase({ allowInstallRetain: true, historicalMigration137: true });
   // E4_TERMINAL_REPLACE_N1_INSTALLER_MODE_END
   // E4_TERMINAL_N1_INSTALL_STAGE_BEGIN
   const runN1InstallRetain =
@@ -11480,8 +11510,10 @@ describe('E4 migration dedicated lease envelope', () => {
       });
     }, 180_000);
     it('replays all 137 migrations and introduces two tables without historical business DML or DB roles', async () => {
-      const migrations = readdirSync(resolve(__dirname, '../../prisma/migrations')).filter((name) =>
-        /^[0-9]{14}_/u.test(name),
+      const migrations = e4HistoricalMigrationPrefix(
+        readdirSync(resolve(__dirname, '../../prisma/migrations')).filter((name) =>
+          /^[0-9]{14}_/u.test(name),
+        ),
       );
       expect(migrations).toHaveLength(137);
       const [row] = await db.$queryRaw<
