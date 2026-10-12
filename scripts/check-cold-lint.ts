@@ -4,8 +4,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { ESLint } from 'eslint';
 
-// Full, uncached lint. Only process lifetime changes; every child is the real
-// ESLint CLI with the original config, full TypeScript projects and rules.
+// Full, uncached lint through one original ESLint CLI invocation.
+// Reporting remains partitioned; config, projects, rules, heap and window stay fixed.
 export const COLD_LINT_PATTERNS = ['src/**/*.ts', 'test/**/*.ts', 'prisma/**/*.ts'];
 export const COLD_LINT_BATCH_SIZE = 300;
 export const COLD_LINT_WINDOW_MS = 300_000;
@@ -338,22 +338,20 @@ export async function runColdLint(root: string): Promise<Report> {
   const before = inputSeal(root);
   const config = await configSeal(root, eslint, files);
   const batches = coldLintPlan(files);
-  const total: Report = { files: [], errors: 0, warnings: 0, diagnostics: [] };
+  assertInputUnchanged(before, inputSeal(root));
+  // The original globs avoid argument limits and retain the original CLI host.
+  // Validate the complete report against the independently sealed jurisdiction.
+  const total = coldLintReport(root, files, await runCli(root, COLD_LINT_PATTERNS, deadline));
   for (const [index, batch] of batches.entries()) {
-    assertInputUnchanged(before, inputSeal(root));
-    const report = coldLintReport(root, batch, await runCli(root, batch, deadline));
-    total.files.push(...report.files);
-    total.errors += report.errors;
-    total.warnings += report.warnings;
-    total.diagnostics.push(...report.diagnostics);
+    const diagnostics = total.diagnostics.filter((row) => batch.includes(row.file));
     console.info(
       'COLD_LINT_BATCH',
       JSON.stringify({
         batch: index + 1,
         batches: batches.length,
-        files: report.files.length,
-        errors: report.errors,
-        warnings: report.warnings,
+        files: batch.length,
+        errors: diagnostics.filter((row) => row.severity === 2).length,
+        warnings: diagnostics.filter((row) => row.severity === 1).length,
         elapsedMs: Date.now() - started,
       }),
     );
