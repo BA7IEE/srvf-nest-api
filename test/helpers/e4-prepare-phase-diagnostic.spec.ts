@@ -522,6 +522,8 @@ describe('E4 actual maximum prepare diagnostic wiring offline', () => {
         'ok',
         'failed',
         'wallMs',
+        'cpuUserUs',
+        'cpuSystemUs',
         'queryCount',
         'readMs',
         'writeMs',

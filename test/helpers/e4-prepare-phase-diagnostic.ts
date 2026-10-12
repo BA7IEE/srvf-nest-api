@@ -23,6 +23,8 @@ type Counters = {
   ok: number;
   failed: number;
   wallMs: number | null;
+  cpuUserUs: number | null;
+  cpuSystemUs: number | null;
   queryCount: number;
   readMs: number;
   writeMs: number;
@@ -33,7 +35,13 @@ type Installed = E4PreparePhaseBinding & {
   descriptor: PropertyDescriptor | undefined;
   wrapper: (...args: unknown[]) => unknown;
 };
-type Frame = { phase: E4PreparePhase; started: number | null; settled: boolean };
+type Cpu = { user: number; system: number };
+type Frame = {
+  phase: E4PreparePhase;
+  started: number | null;
+  cpuStarted: Cpu | null;
+  settled: boolean;
+};
 const activeWrappers = new WeakSet<object>();
 const MAX_CALLS = 32;
 const MAX_BYTES = 4096;
@@ -45,6 +53,8 @@ function counters(): Counters {
     ok: 0,
     failed: 0,
     wallMs: 0,
+    cpuUserUs: 0,
+    cpuSystemUs: 0,
     queryCount: 0,
     readMs: 0,
     writeMs: 0,
@@ -65,10 +75,13 @@ export class E4PreparePhaseDiagnostic {
   private unknown = false;
   private lastTick: number | undefined;
   private rootStarted: number | null = null;
+  private rootCpuStarted: Cpu | null = null;
+  private lastCpu: Cpu | undefined;
 
   constructor(
     bindings: readonly E4PreparePhaseBinding[],
     private readonly clock: () => number = () => performance.now(),
+    private readonly cpu: () => unknown = () => process.cpuUsage(),
   ) {
     // Complete preflight before shadowing any instance method.
     try {
@@ -142,6 +155,53 @@ export class E4PreparePhaseDiagnostic {
     }
   }
 
+  private cpuTick(): Cpu | null {
+    try {
+      const value = this.cpu();
+      if (!value || typeof value !== 'object' || !('user' in value) || !('system' in value))
+        throw new Error('Process CPU unavailable');
+      const { user, system } = value;
+      if (
+        typeof user !== 'number' ||
+        typeof system !== 'number' ||
+        !Number.isSafeInteger(user) ||
+        !Number.isSafeInteger(system) ||
+        user < 0 ||
+        system < 0 ||
+        (this.lastCpu !== undefined && (user < this.lastCpu.user || system < this.lastCpu.system))
+      )
+        throw new Error('Process CPU counter invalid');
+      const current = { user, system };
+      this.lastCpu = current;
+      return current;
+    } catch {
+      this.unknown = true;
+      return null;
+    }
+  }
+
+  private addCpu(row: Counters, start: Cpu | null, end: Cpu | null): void {
+    const user = start === null || end === null ? null : end.user - start.user;
+    const system = start === null || end === null ? null : end.system - start.system;
+    if (
+      user === null ||
+      system === null ||
+      user < 0 ||
+      system < 0 ||
+      row.cpuUserUs === null ||
+      row.cpuSystemUs === null ||
+      !Number.isSafeInteger(row.cpuUserUs + user) ||
+      !Number.isSafeInteger(row.cpuSystemUs + system)
+    ) {
+      this.unknown = true;
+      row.cpuUserUs = null;
+      row.cpuSystemUs = null;
+      return;
+    }
+    row.cpuUserUs += user;
+    row.cpuSystemUs += system;
+  }
+
   private elapsed(start: number | null, end: number | null): number | null {
     if (start === null || end === null || !Number.isFinite(end - start) || end < start) {
       this.unknown = true;
@@ -161,7 +221,12 @@ export class E4PreparePhaseDiagnostic {
       this.unknown = true;
       return Reflect.apply(item.original, receiver, args);
     }
-    const frame: Frame = { phase: item.phase, started: this.tick(), settled: false };
+    const frame: Frame = {
+      phase: item.phase,
+      started: this.tick(),
+      cpuStarted: this.cpuTick(),
+      settled: false,
+    };
     row.calls++;
     row.pending++;
     this.frames.push(frame);
@@ -212,6 +277,7 @@ export class E4PreparePhaseDiagnostic {
         this.unknown = true;
         row.wallMs = null;
       } else row.wallMs += duration;
+      this.addCpu(row, frame.cpuStarted, this.cpuTick());
     } catch {
       this.unknown = true;
     }
@@ -227,9 +293,10 @@ export class E4PreparePhaseDiagnostic {
     this.root.calls = 1;
     this.root.pending = 1;
     this.rootStarted = this.tick();
+    this.rootCpuStarted = this.cpuTick();
   }
 
-  /** Query counts describe event delivery windows; nested phase counters are inclusive. */
+  /** Event windows and process CPU intervals are inclusive. CPU includes native threads; do not sum nested phases or infer JavaScript-only CPU. */
   query(kind: 'READ' | 'WRITE', durationMs: number): void {
     if (!this.active) return;
     if (!['READ', 'WRITE'].includes(kind) || !Number.isFinite(durationMs) || durationMs < 0) {
@@ -257,6 +324,7 @@ export class E4PreparePhaseDiagnostic {
       return;
     }
     this.root.wallMs = this.elapsed(this.rootStarted, this.tick());
+    this.addCpu(this.root, this.rootCpuStarted, this.cpuTick());
     this.root.pending = 0;
     this.root[outcome === 'OK' ? 'ok' : 'failed'] = 1;
     this.active = false;
