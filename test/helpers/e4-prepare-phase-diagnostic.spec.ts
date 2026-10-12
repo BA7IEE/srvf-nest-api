@@ -449,6 +449,7 @@ function wiredPrepare(error?: Error, missingBinding = false, loggerFails = false
     '\nreturn prepared; } actualMaximumPrepare();';
   const returned: unknown = vm.runInNewContext(compileProbe(program), {
     E4PreparePhaseDiagnostic,
+    guardPlanDiagnostic: undefined,
     ActivityContributionSettlementQueryService: class {},
     measured,
     contributions,

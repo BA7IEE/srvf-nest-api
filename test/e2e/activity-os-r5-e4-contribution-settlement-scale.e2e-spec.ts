@@ -5,6 +5,12 @@ import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { ScratchLeaseSession } from '../helpers/scratch-database-lease';
 import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';
+// E4_GUARD_PLAN_IMPORT_BEGIN
+import {
+  E4GuardPlanDiagnostic,
+  guardPlanDiagnosticEnabled,
+} from '../helpers/e4-guard-plan-diagnostic';
+// E4_GUARD_PLAN_IMPORT_END
 import {
   closeE13Fixture,
   createE4Fixture,
@@ -1097,6 +1103,24 @@ function terminalNativeWorkerOpening(source: string): string {
       },
     ],
     scale: [
+      {
+        candidate:
+          "// E4_GUARD_PLAN_IMPORT_BEGIN\nimport {\n  E4GuardPlanDiagnostic,\n  guardPlanDiagnosticEnabled,\n} from '../helpers/e4-guard-plan-diagnostic';\n// E4_GUARD_PLAN_IMPORT_END\n",
+        candidateHash: '2ada5932382737b25498cebe1e4ac8b63f841ca85bcc98194d47fa2c0324773c',
+        opening: '',
+      },
+      {
+        candidate:
+          "      // E4_GUARD_PLAN_INSTANCE_BEGIN\n      const guardPlanDiagnostic = guardPlanDiagnosticEnabled()\n        ? new E4GuardPlanDiagnostic(\n            contributions,\n            resolve(process.cwd(), 'tmp/e4-guard-plan-evidence/guard-plan.json'),\n          )\n        : undefined;\n      // E4_GUARD_PLAN_INSTANCE_END\n",
+        candidateHash: 'c3629e917b505c0fbd90be80fd02e804b00d406e4ecd75caa0a86bf45a48b9f7',
+        opening: '',
+      },
+      {
+        candidate:
+          '          // E4_GUARD_PLAN_RESTORE_BEGIN\n          guardPlanDiagnostic?.restore();\n          guardPlanDiagnostic?.emit();\n          // E4_GUARD_PLAN_RESTORE_END\n',
+        candidateHash: '1ee548ed77e5a4b737af9aa9785ec237d0c603ca28e494982a4f2237699b6525',
+        opening: '',
+      },
       {
         candidate:
           "}\n\n// E4_TERMINAL_HELPERS_BEGIN\nimport { e4NativeMeasurementDatabase } from '../helpers/e4-native-measurement-owner';\nimport { E4_D1_SCOPE } from '../helpers/e4-d1-result-capture';\nfunction terminalHash(source: string, algorithm: 'sha256' | 'md5' = 'sha256') {\n  return createHash(algorithm).update(source).digest('hex');\n",
@@ -4855,6 +4879,14 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
       );
       reset();
       const started = Date.now();
+      // E4_GUARD_PLAN_INSTANCE_BEGIN
+      const guardPlanDiagnostic = guardPlanDiagnosticEnabled()
+        ? new E4GuardPlanDiagnostic(
+            contributions,
+            resolve(process.cwd(), 'tmp/e4-guard-plan-evidence/guard-plan.json'),
+          )
+        : undefined;
+      // E4_GUARD_PLAN_INSTANCE_END
       let prepared;
       const phaseDiagnostic = new E4PreparePhaseDiagnostic([
         { phase: 'C3_PROOF', target: measured, method: 'lockedProof' },
@@ -4885,6 +4917,10 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
         } finally {
           phaseDiagnostic.finish(prepareOutcome);
           phaseDiagnostic.restore();
+          // E4_GUARD_PLAN_RESTORE_BEGIN
+          guardPlanDiagnostic?.restore();
+          guardPlanDiagnostic?.emit();
+          // E4_GUARD_PLAN_RESTORE_END
           preparePhaseDiagnostic = undefined;
           phaseDiagnostic.emitTo((safeJson) =>
             console.info('E4 maximum prepare phases (fixed counters)', safeJson),
