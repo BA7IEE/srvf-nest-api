@@ -440,15 +440,20 @@ export class LedgerPostingService {
       // Materialize logical primary keys once inside PostgreSQL.  The final
       // UPDATE has no unkeyed CTE join to rescan; CASE still rechecks the current
       // row's draft status after any concurrent row-lock wait (including EPQ).
+      // Apply draft status after the keyed identity scan, not inside that scan.
       await tx.$executeRaw`
         WITH target AS MATERIALIZED (
           SELECT candidate.id
           FROM "ActivityParticipationIdentity" i
           CROSS JOIN LATERAL (
             SELECT draft.id
-            FROM "ParticipantServiceSegmentRevision" draft
-            WHERE draft."participationIdentityId" = i.id
-              AND draft."statusCode" = 'draft'
+            FROM (
+              SELECT draft.id, draft."statusCode"
+              FROM "ParticipantServiceSegmentRevision" draft
+              WHERE draft."participationIdentityId" = i.id
+              OFFSET 0
+            ) draft
+            WHERE draft."statusCode" = 'draft'
             OFFSET 0
           ) candidate
           WHERE i."activityId" = ${activityId}
@@ -589,16 +594,23 @@ export class LedgerPostingService {
 
   // ===== 分录集合 =========================================================
 
-  /** 本次 commit 会从 draft 切到 committed 的所有闭合服务段成员,包含零分录成员。 */
+  /** 本次 commit 会从 draft 切到 committed 的所有闭合服务段成员,包含零分录成员。
+   * Keep status/result predicates outside the inner boundary: each keyed scan
+   * is keyed only by identity, even when fresh-table estimates prefer status.
+   */
   private async readDraftSegmentMemberIds(tx: PrismaTx, activityId: string): Promise<string[]> {
     const rows = await tx.$queryRaw<Array<{ memberId: string }>>`
       SELECT DISTINCT i."memberId"
       FROM "ActivityParticipationIdentity" i
       CROSS JOIN LATERAL (
         SELECT s.id
-        FROM "ParticipantServiceSegmentRevision" s
-        WHERE s."participationIdentityId" = i.id
-          AND s."statusCode" = 'draft'
+        FROM (
+          SELECT s.id, s."statusCode", s."resultCode", s."checkOutAt"
+          FROM "ParticipantServiceSegmentRevision" s
+          WHERE s."participationIdentityId" = i.id
+          OFFSET 0
+        ) s
+        WHERE s."statusCode" = 'draft'
           AND s."resultCode" NOT IN ('voided', 'replaced')
           AND s."checkOutAt" IS NOT NULL
         OFFSET 0

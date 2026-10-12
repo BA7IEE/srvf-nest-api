@@ -439,6 +439,15 @@ function receiptSqlAuthority() {
     'prisma/migrations/20260913090000_activity_os_r4_d4_time_bucket_settlement/migration.sql',
     'utf8',
   );
+  const scalarMigration = readFileSync(
+    'prisma/migrations/20261012000000_activity_canonical_json_scalar_fast_path/migration.sql',
+    'utf8',
+  );
+  const scalarBody = scalarMigration
+    .split('CREATE OR REPLACE FUNCTION astr_canonical_json(')[1]
+    ?.split('AS $$')[1]
+    ?.split('$$;')[0];
+  if (!scalarBody) throw new Error('current canonical SQL authority unavailable');
   const names = [
     'astr_canonical_json',
     'astr_source_set_document',
@@ -448,10 +457,13 @@ function receiptSqlAuthority() {
   ];
   const bodies = new Map(
     names.map((name) => {
-      const body = migration
-        .split('CREATE FUNCTION ' + name + '(')[1]
-        ?.split('AS $$')[1]
-        ?.split('$$;')[0];
+      const body =
+        name === 'astr_canonical_json'
+          ? scalarBody
+          : migration
+              .split('CREATE FUNCTION ' + name + '(')[1]
+              ?.split('AS $$')[1]
+              ?.split('$$;')[0];
       if (!body) throw new Error('receipt SQL authority unavailable');
       return [name, body] as const;
     }),
@@ -473,6 +485,18 @@ function receiptSqlAuthority() {
   if (!population || !population[1].trimEnd().endsWith(')'))
     throw new Error('receipt population extraction mismatch');
   return { bodies, checks, population: population[1].trimEnd().slice(0, -1) };
+}
+function receiptInstalledBodiesMatch(
+  authority: ReturnType<typeof receiptSqlAuthority>,
+  installed: Array<{ name: string; body: string }>,
+) {
+  return (
+    installed.length === authority.bodies.size &&
+    [...authority.bodies].every(
+      ([name, body]) =>
+        installed.filter((row) => row.name === name && row.body === body).length === 1,
+    )
+  );
 }
 function receiptQueries(
   authority: ReturnType<typeof receiptSqlAuthority>,
@@ -706,6 +730,65 @@ async function assertDiagnosticObserver() {
   ).rejects.toBe(failure);
   expect(collected).toBe(1);
 }
+
+describe('D7 receipt SQL authority pure controls', () => {
+  it('matches the current scalar replacement and unchanged receipt definitions', () => {
+    const authority = receiptSqlAuthority();
+    const installed = [...authority.bodies].map(([name, body]) => ({ name, body }));
+    expect(receiptInstalledBodiesMatch(authority, installed)).toBe(true);
+    const scalarMigration = readFileSync(
+      'prisma/migrations/20261012000000_activity_canonical_json_scalar_fast_path/migration.sql',
+      'utf8',
+    );
+    expect(authority.bodies.get('astr_canonical_json')).toBe(
+      scalarMigration.split('AS $$')[1].split('$$;')[0],
+    );
+    const original = readFileSync(
+      'prisma/migrations/20260913090000_activity_os_r4_d4_time_bucket_settlement/migration.sql',
+      'utf8',
+    );
+    for (const [name, body] of authority.bodies) {
+      const oldBody = original
+        .split('CREATE FUNCTION ' + name + '(')[1]
+        .split('AS $$')[1]
+        .split('$$;')[0];
+      if (name === 'astr_canonical_json') expect(body).not.toBe(oldBody);
+      else expect(body).toBe(oldBody);
+    }
+  });
+
+  it('rejects stale, drifted, missing, duplicate and extra installed definitions', () => {
+    const authority = receiptSqlAuthority();
+    const installed = [...authority.bodies].map(([name, body]) => ({ name, body }));
+    const original = readFileSync(
+      'prisma/migrations/20260913090000_activity_os_r4_d4_time_bucket_settlement/migration.sql',
+      'utf8',
+    );
+    const oldCanonical = original
+      .split('CREATE FUNCTION astr_canonical_json(')[1]
+      .split('AS $$')[1]
+      .split('$$;')[0];
+    expect(
+      receiptInstalledBodiesMatch(
+        authority,
+        installed.map((row) =>
+          row.name === 'astr_canonical_json' ? { ...row, body: oldCanonical } : row,
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      receiptInstalledBodiesMatch(
+        authority,
+        installed.map((row, index) => (index === 1 ? { ...row, body: row.body + ' ' } : row)),
+      ),
+    ).toBe(false);
+    expect(receiptInstalledBodiesMatch(authority, installed.slice(1))).toBe(false);
+    expect(
+      receiptInstalledBodiesMatch(authority, [installed[0], installed[0], ...installed.slice(2)]),
+    ).toBe(false);
+    expect(receiptInstalledBodiesMatch(authority, [...installed, installed[0]])).toBe(false);
+  });
+});
 
 describe('D7 commit query observer pure controls', () => {
   it.each([
@@ -1761,12 +1844,7 @@ describe('D7-1 recognition correction real transaction', () => {
           WHERE n.nspname = 'public' AND p.proname IN (
             'astr_canonical_json', 'astr_source_set_document', 'astr_source_set_hash',
             'astr_bucket_content_hash', 'astr_receipt_complete_guard')`;
-          const matches =
-            installed.length === authority.bodies.size &&
-            [...authority.bodies].every(
-              ([name, body]) =>
-                installed.filter((row) => row.name === name && row.body === body).length === 1,
-            );
+          const matches = receiptInstalledBodiesMatch(authority, installed);
           receiptEvidence('installed_body', {
             matches,
             functions: installed.map((row) => ({
