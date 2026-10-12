@@ -6,6 +6,7 @@ import {
   E4_MIGRATION_138,
   E4_MIGRATION_139,
   E4_MIGRATION_140,
+  E4_MIGRATION_141,
 } from './e4-migration-prefix';
 
 describe('fixed E4 historical migration prefix', () => {
@@ -16,7 +17,7 @@ describe('fixed E4 historical migration prefix', () => {
     .map((entry) => entry.name);
 
   it('retains exactly 137 historical migrations and separately pins the new successor', () => {
-    expect(names).toHaveLength(140);
+    expect(names).toHaveLength(141);
     const prefix = e4HistoricalMigrationPrefix([...names].reverse());
     expect(prefix).toHaveLength(137);
     expect(prefix[136]).toBe(E4_MIGRATION_137);
@@ -26,6 +27,8 @@ describe('fixed E4 historical migration prefix', () => {
     expect(prefix).not.toContain(E4_MIGRATION_138);
     expect(prefix).not.toContain(E4_MIGRATION_139);
     expect(prefix).not.toContain(E4_MIGRATION_140);
+    expect([...names].sort()[140]).toBe(E4_MIGRATION_141);
+    expect(prefix).not.toContain(E4_MIGRATION_141);
   });
 
   it.each([
@@ -34,6 +37,7 @@ describe('fixed E4 historical migration prefix', () => {
     'unknown scalar successor',
     'unknown reference successor',
     'unknown evaluation successor',
+    'unknown bucket successor',
     'extra migration',
   ])('rejects %s without silently widening the historical proof', (kind) => {
     const changed = [...names].sort();
@@ -42,9 +46,10 @@ describe('fixed E4 historical migration prefix', () => {
     if (kind === 'unknown scalar successor') changed[137] = '20261012000000_unknown';
     if (kind === 'unknown reference successor') changed[138] = '20261012010000_unknown';
     if (kind === 'unknown evaluation successor') changed[139] = '20261012020000_unknown';
+    if (kind === 'unknown bucket successor') changed[140] = '20261012030000_unknown';
     if (kind === 'extra migration') changed.push('20261013000000_unknown');
     expect(() => e4HistoricalMigrationPrefix(changed)).toThrow(
-      'E4 fixed 137 prefix or explicit 138/139/140 successors changed',
+      'E4 fixed 137 prefix or explicit 138/139/140/141 successors changed',
     );
   });
 });

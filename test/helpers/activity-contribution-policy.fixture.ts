@@ -3,6 +3,7 @@ import {
   E4_MIGRATION_137,
   E4_MIGRATION_138,
   E4_MIGRATION_139,
+  E4_MIGRATION_140,
 } from './e4-migration-prefix';
 import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
@@ -217,10 +218,15 @@ export function installE4ValidationDatabase(options?: {
       );
     }
   };
-  const deployHistoricalMigrations = (count: 137 | 138 | 139) => {
+  const deployHistoricalMigrations = (count: 137 | 138 | 139 | 140) => {
     if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');
     if (!temporary || !historicalSchema) throw new Error('E4 historical schema missing');
-    const successors = [E4_MIGRATION_137, E4_MIGRATION_138, E4_MIGRATION_139].slice(0, count - 136);
+    const successors = [
+      E4_MIGRATION_137,
+      E4_MIGRATION_138,
+      E4_MIGRATION_139,
+      E4_MIGRATION_140,
+    ].slice(0, count - 136);
     for (const name of successors) {
       const directory = join(temporary, 'migrations', name);
       mkdirSync(directory, { recursive: true });
@@ -332,6 +338,9 @@ export function installE4ValidationDatabase(options?: {
     },
     deployReferenceMigrations() {
       deployHistoricalMigrations(139);
+    },
+    deployEvaluationMigrations() {
+      deployHistoricalMigrations(140);
     },
     deployLatestMigrations() {
       if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');

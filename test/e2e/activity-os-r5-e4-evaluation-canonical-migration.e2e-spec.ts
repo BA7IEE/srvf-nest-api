@@ -435,7 +435,7 @@ describe('E4 evaluation canonical migration 140 nonempty upgrade', () => {
       beforeDocuments,
     );
 
-    owner.deployLatestMigrations();
+    owner.deployEvaluationMigrations();
     const afterMigrations = await migrations(db);
     expect(afterMigrations).toHaveLength(140);
     expect(JSON.stringify(afterMigrations.slice(0, 139)) === JSON.stringify(beforeMigrations)).toBe(
@@ -466,7 +466,7 @@ describe('E4 evaluation canonical migration 140 nonempty upgrade', () => {
     await verifyInstalledExpression(db);
     await verifyEvaluationExpressions(db);
 
-    owner.deployLatestMigrations();
+    owner.deployEvaluationMigrations();
     expect(JSON.stringify(await migrations(db)) === JSON.stringify(afterMigrations)).toBe(true);
     expect((await businessSnapshot(db)) === beforeBusiness).toBe(true);
     expect(JSON.stringify(await catalog(db)) === JSON.stringify(beforeCatalog)).toBe(true);
