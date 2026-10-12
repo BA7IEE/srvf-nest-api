@@ -14,6 +14,7 @@ import { httpServer } from '../helpers/http-server';
 import { resetDb } from '../setup/reset-db';
 import { createTestApp } from '../setup/test-app';
 import { memberIdentityData } from '../helpers/member-identity.fixture';
+import { smsFirstResponseEvidence } from '../helpers/sms-first-response-evidence';
 
 // 统一通知模块 S5 短信兜底渠道 e2e(冻结评审稿 unified-notification-dispatcher-review.md §4 / §8.3 / D-N4)。
 //
@@ -468,6 +469,39 @@ describe('统一通知模块 S5 短信兜底渠道 e2e', () => {
 
         const id = await createDeptNotification(org);
         const first = await sendSms(adminAuth, id, { confirmed: true });
+        if (first.body.data === null || first.body.data === undefined) {
+          const window =
+            reasonCode === 'idempotent' || reasonCode === 'daily-limit' ? reasonCode : 'interval';
+          console.info(
+            'SMS_FIRST_RESPONSE_FIXED_EVIDENCE',
+            smsFirstResponseEvidence(first, window),
+          );
+          try {
+            const intents = await prisma.notificationOutboxIntent.groupBy({
+              by: ['status'],
+              where: { eventType: 'notification.admin-sms', aggregateId: id },
+              _count: { _all: true },
+            });
+            const deliveries = await prisma.notificationDelivery.groupBy({
+              by: ['status'],
+              where: { notificationId: id, channel: 'sms' },
+              _count: { _all: true },
+            });
+            const count = (rows: typeof intents, status: string) =>
+              rows.find((row) => row.status === status)?._count._all ?? 0;
+            console.info('SMS_FIRST_RESPONSE_FIXED_FACTS', {
+              pending: count(intents, 'pending'),
+              processing: count(intents, 'processing'),
+              succeeded: count(intents, 'succeeded'),
+              dead: count(intents, 'dead'),
+              sent: count(deliveries, 'sent'),
+              failed: count(deliveries, 'failed'),
+              skipped: count(deliveries, 'skipped'),
+            });
+          } catch {
+            console.info('SMS_FIRST_RESPONSE_FIXED_FACTS', { read: 'UNKNOWN' });
+          }
+        }
         expect(first.body.data).toMatchObject({ recipientCount: 1, sent: 0, skipped: 1 });
         const delivery = await prisma.notificationDelivery.findFirst({
           where: { notificationId: id, status: 'skipped' },
