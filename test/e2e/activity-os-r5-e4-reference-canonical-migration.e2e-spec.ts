@@ -135,6 +135,7 @@ async function verifyRootsAndOldOracle(
   namespace: string,
   prepare: boolean,
   installed: () => void,
+  originalSnapshot?: string,
 ) {
   if (!/^e4_reference_oracle_[a-f0-9]{16}$/u.test(namespace))
     throw new Error('E4 private oracle namespace invalid');
@@ -142,6 +143,16 @@ async function verifyRootsAndOldOracle(
     'CREATE FUNCTION e4_expected_evaluations(',
     'CREATE FUNCTION ' + namespace + '.e4_reference_old_expected(',
   );
+  if (!prepare && originalSnapshot === undefined)
+    throw new Error('E4 original oracle snapshot missing');
+  // Capture complete PostgreSQL text once, before upgrading the only changed function.
+  // The fixture rows and every dependency of the fixed 137 oracle stay unchanged.
+  // JSONB text retains numeric precision, nulls, nested fields and duplicate rows.
+  const originalRows = prepare
+    ? Prisma.sql`SELECT r.id,e.* FROM "ActivitySettlementContributionRevision" r
+        CROSS JOIN LATERAL ${Prisma.raw(namespace + '.e4_reference_old_expected')}(r.id) e`
+    : Prisma.sql`SELECT * FROM jsonb_to_recordset(${originalSnapshot}::jsonb)
+        AS original(id text,unit_canonical text,evaluation jsonb)`;
   const facts = await db.$transaction(async (tx) => {
     if (prepare) {
       // Same original 5s transaction: install once, then retain this immutable
@@ -149,19 +160,21 @@ async function verifyRootsAndOldOracle(
       await tx.$executeRawUnsafe('CREATE SCHEMA ' + namespace);
       await tx.$executeRawUnsafe(oracle);
     }
-    return tx.$queryRaw<{ expected: number; forward: number; backward: number; fields: number }[]>`
+    return tx.$queryRaw<
+      { expected: number; forward: number; backward: number; fields: number; original: string }[]
+    >`
       WITH actual AS MATERIALIZED (
         SELECT r.id,e.* FROM "ActivitySettlementContributionRevision" r
         CROSS JOIN LATERAL public.e4_expected_evaluations(r.id) e
       ), original AS MATERIALIZED (
-        SELECT r.id,e.* FROM "ActivitySettlementContributionRevision" r
-        CROSS JOIN LATERAL ${Prisma.raw(namespace + '.e4_reference_old_expected')}(r.id) e
+        ${originalRows}
       )
       SELECT (SELECT count(*)::int FROM actual) AS expected,
         (SELECT count(*)::int FROM (SELECT * FROM actual EXCEPT ALL SELECT * FROM original) d) AS forward,
         (SELECT count(*)::int FROM (SELECT * FROM original EXCEPT ALL SELECT * FROM actual) d) AS backward,
         (SELECT count(*)::int FROM actual a WHERE
-          (SELECT count(*) FROM jsonb_object_keys(a.evaluation)) <> 21) AS fields
+          (SELECT count(*) FROM jsonb_object_keys(a.evaluation)) <> 21) AS fields,
+        (SELECT coalesce(jsonb_agg(to_jsonb(original)),'[]'::jsonb)::text FROM original) AS original
     `;
   });
   if (prepare) installed();
@@ -178,6 +191,7 @@ async function verifyRootsAndOldOracle(
   await db.$queryRaw`
     SELECT e4_assert_complete(id)::text FROM "ActivitySettlementContributionRevision" ORDER BY id
   `;
+  return facts[0].original;
 }
 async function verifyInstalledExpression(db: PrismaClient) {
   const [definition] = await db.$queryRaw<{ body: string }[]>`
@@ -256,11 +270,11 @@ describe('E4 reference canonical migration 139 nonempty upgrade', () => {
     const beforeBusiness = await businessSnapshot(db);
     const beforeDocuments = await expectedDocuments(db);
     expect(beforeDocuments.length).toBeGreaterThan(0);
-    await verifyRootsAndOldOracle(db, namespace, true, () => {
+    const originalSnapshot = await verifyRootsAndOldOracle(db, namespace, true, () => {
       oracleInstalled = true;
     });
 
-    owner.deployLatestMigrations();
+    owner.deployReferenceMigrations();
     const afterMigrations = await migrations(db);
     expect(afterMigrations).toHaveLength(139);
     expect(JSON.stringify(afterMigrations.slice(0, 138)) === JSON.stringify(beforeMigrations)).toBe(
@@ -279,12 +293,18 @@ describe('E4 reference canonical migration 139 nonempty upgrade', () => {
     expect(JSON.stringify(await expectedDocuments(db)) === JSON.stringify(beforeDocuments)).toBe(
       true,
     );
-    await verifyRootsAndOldOracle(db, namespace, false, () => {
-      oracleInstalled = true;
-    });
+    await verifyRootsAndOldOracle(
+      db,
+      namespace,
+      false,
+      () => {
+        oracleInstalled = true;
+      },
+      originalSnapshot,
+    );
     await verifyInstalledExpression(db);
 
-    owner.deployLatestMigrations();
+    owner.deployReferenceMigrations();
     expect(JSON.stringify(await migrations(db)) === JSON.stringify(afterMigrations)).toBe(true);
     expect((await businessSnapshot(db)) === beforeBusiness).toBe(true);
     expect(JSON.stringify(await catalog(db)) === JSON.stringify(beforeCatalog)).toBe(true);
