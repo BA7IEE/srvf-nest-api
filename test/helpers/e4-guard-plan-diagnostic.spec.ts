@@ -77,7 +77,14 @@ describe('E4 guard planning diagnostic offline', () => {
     expect(configs).toHaveLength(2);
     expect(configs[0]).toBe(configs[1]);
     expect(configs[1]).not.toContain('globalSetup');
-    expect(job).toContain("'--config', config");
+    const reporters = [
+      ...workflow.matchAll(/const closedReporterSource = String.raw`[\s\S]*?^ {10}`;$/gmu),
+    ].map((match) => match[0]);
+    expect(reporters).toHaveLength(2);
+    expect(reporters[0]).toBe(reporters[1]);
+    expect(job).not.toContain("'--json', '--outputFile'");
+    expect(job).toContain("originalCase: 'UNKNOWN'");
+    expect(job).toContain("'--config', closedConfig");
   });
   it('requires actual physical populations and drops unrelated fields', () => {
     const physical = { sources: 40000, allocations: 10000, buckets: 8000, results: 2000 };
