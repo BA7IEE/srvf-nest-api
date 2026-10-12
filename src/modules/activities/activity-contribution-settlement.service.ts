@@ -479,6 +479,11 @@ export class ActivityContributionSettlementService {
           createdByUserId: actor.id,
         },
       });
+      // Parameter-specific plans apply to this native draft's remaining validation work.
+      // PostgreSQL restores the previous mode when the owner's transaction ends.
+      await tx.$queryRaw`
+        SELECT pg_catalog.set_config('plan_cache_mode', 'force_custom_plan', true)
+      `;
       await this.insertEvaluations(tx, revision, evaluated.evaluations);
       await reauthorize();
       return revision;

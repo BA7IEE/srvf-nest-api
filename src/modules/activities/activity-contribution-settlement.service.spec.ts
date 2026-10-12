@@ -423,6 +423,73 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
 });
 
 describe('E4 transaction-owned contribution orchestration', () => {
+  it('sets one transaction-local planner mode before the unchanged native bulk INSERT', async () => {
+    const { service, prismaTx, tx, command, reauthorize } = setup();
+    tx.$queryRaw.mockResolvedValue([{ set_config: 'force_custom_plan' }]);
+    await service.prepareTimeInTx(prismaTx, time(), 'policy_v1', command, reauthorize);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect((tx.$queryRaw.mock.calls[0][0] as TemplateStringsArray).join('').trim()).toBe(
+      "SELECT pg_catalog.set_config('plan_cache_mode', 'force_custom_plan', true)",
+    );
+    expect(
+      tx.activitySettlementContributionRevision.create.mock.invocationCallOrder[0],
+    ).toBeLessThan(tx.$queryRaw.mock.invocationCallOrder[0]);
+    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.$executeRaw.mock.invocationCallOrder[0],
+    );
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(reauthorize).toHaveBeenCalledTimes(2);
+  });
+  it('propagates planner configuration failure before inserting any evaluation', async () => {
+    const { service, prismaTx, tx, command, reauthorize } = setup();
+    const failure = new Error('native planner setting unavailable');
+    tx.$queryRaw.mockRejectedValue(failure);
+    await expect(
+      service.prepareTimeInTx(prismaTx, time(), 'policy_v1', command, reauthorize),
+    ).rejects.toBe(failure);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(reauthorize).toHaveBeenCalledTimes(1);
+  });
+  it.each(['legacy', 'reuse', 'off'] as const)(
+    'does not configure planner mode for %s preparation',
+    async (entry) => {
+      const { service, prismaTx, tx, command, reauthorize } = setup(
+        entry === 'off' ? 'off' : 'fixture',
+      );
+      if (entry === 'reuse')
+        tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(root());
+      const action = service.prepareTimeInTx(
+        prismaTx,
+        time(),
+        entry === 'legacy' ? 'legacy' : 'policy_v1',
+        command,
+        reauthorize,
+      );
+      if (entry === 'off') await expect(action).rejects.toThrow();
+      else await action;
+      expect(tx.$queryRaw).not.toHaveBeenCalled();
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+    },
+  );
+  it('does not configure planner mode when copying a submitted contribution proof', async () => {
+    const { service, prismaTx, tx, command, reauthorize } = setup();
+    tx.activitySettlementContributionRevision.findFirst.mockResolvedValue({ revision: 3 });
+    await service.copySubmittedTimeInTx(
+      prismaTx,
+      root(),
+      {
+        ...time(),
+        id: 'submitted-time',
+        settlementVersionId: 'submitted-one',
+        kindCode: 'submitted',
+      },
+      command,
+      reauthorize,
+    );
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  });
   it.each([
     { enabled: false, readonlyMaintenance: false },
     { enabled: true, readonlyMaintenance: true },

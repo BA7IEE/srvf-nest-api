@@ -17,6 +17,12 @@ import {
   E13_ADMIN,
   type E4Fixture,
 } from '../helpers/activity-contribution-policy.fixture';
+import { PrismaService } from '../../src/database/prisma.service';
+import { ParticipationSegmentFacade } from '../../src/modules/attendances/participation-segment.facade';
+import { ActivityTimeAllocationService } from '../../src/modules/activities/activity-time-allocation.service';
+import { ActivityTimeSettlementAccessService } from '../../src/modules/activities/activity-time-settlement-access.service';
+import { ActivityTimeSettlementQueryService } from '../../src/modules/activities/activity-time-settlement-query.service';
+import { SettlementSubmitService } from '../../src/modules/activities/settlement-submit.service';
 import { ActivityContributionSettlementQueryService } from '../../src/modules/activities/activity-contribution-settlement-query.service';
 import { ActivityContributionSettlementService } from '../../src/modules/activities/activity-contribution-settlement.service';
 import { BizCode } from '../../src/common/exceptions/biz-code.constant';
@@ -388,6 +394,111 @@ describe('E4 native contribution: actual policy, frozen source, review and atomi
     throw new Error('Actual first-review lock wait was not observed');
   }
 
+  it.each([false, true])(
+    'restores transaction-local native planner mode after rollback=%s on the same backend',
+    async (rollback) => {
+      const source = await createE4Source(f);
+      const configuredUrl = process.env.DATABASE_URL;
+      if (!configuredUrl) throw new Error('native planner test database unavailable');
+      const url = new URL(configuredUrl);
+      url.searchParams.set('connection_limit', '1');
+      const observed = new PrismaClient({ datasources: { db: { url: url.toString() } } });
+      const contributions = f.app.get(ActivityContributionSettlementService);
+      const descriptor = Object.getOwnPropertyDescriptor(contributions, 'insertEvaluations');
+      const original: unknown = Reflect.get(contributions, 'insertEvaluations');
+      if (typeof original !== 'function')
+        throw new Error('native planner insertion seam unavailable');
+      let calls = 0;
+      const command = {
+        expectedDraftVersion: source.expectation.expectedDraftVersion,
+        expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
+        expectedTimeRevision: 0,
+        operationKey: f.key('native_planner_probe'),
+      };
+      try {
+        await assertConnectedTestDatabase(observed);
+        const [initial] = await observed.$queryRaw<{ pid: number; mode: string }[]>`
+          SELECT pg_backend_pid()::int AS pid, current_setting('plan_cache_mode') AS mode
+        `;
+        expect(initial).toBeDefined();
+        expect(initial.mode).not.toBe('force_custom_plan');
+        Object.defineProperty(contributions, 'insertEvaluations', {
+          configurable: true,
+          writable: true,
+          value: async function (this: unknown, ...args: unknown[]) {
+            const tx = args[0] as Prisma.TransactionClient;
+            const [setting] = await tx.$queryRaw<{ pid: number; mode: string }[]>`
+              SELECT pg_backend_pid()::int AS pid, current_setting('plan_cache_mode') AS mode
+            `;
+            expect(setting).toEqual({ pid: initial.pid, mode: 'force_custom_plan' });
+            calls++;
+            if (rollback) throw new Error('native planner controlled rollback');
+            return Reflect.apply(original, this, args);
+          },
+        });
+        const measured = new ActivityTimeSettlementService(
+          observed as unknown as PrismaService,
+          f.app.get(ActivityTimeSettlementAccessService),
+          f.app.get(ActivityTimeSettlementQueryService),
+          f.app.get(ParticipationSegmentFacade),
+          f.app.get(ActivityTimeAllocationService),
+          f.app.get(SettlementSubmitService),
+          f.app.get(ActivityTimeSettlementAuditRecorder),
+          f.app.get(ActivityWorkflowGate),
+          contributions,
+        );
+        const prepared = measured.prepare(
+          source.activityId,
+          command,
+          e4Actor(f.creator, true),
+          E4_META,
+        );
+        if (rollback) {
+          await expect(prepared).rejects.toThrow('native planner controlled rollback');
+          expect(
+            await f.db.activitySettlementTimeRevision.count({
+              where: { activityId: source.activityId },
+            }),
+          ).toBe(0);
+          expect(
+            await f.db.activitySettlementContributionRevision.count({
+              where: { activityId: source.activityId },
+            }),
+          ).toBe(0);
+          expect(
+            await f.db.activitySettlementTimeCommandReceipt.count({
+              where: { activityId: source.activityId, operationKey: command.operationKey },
+            }),
+          ).toBe(0);
+        } else {
+          const result = await prepared;
+          const root = await f.db.activitySettlementContributionRevision.findFirstOrThrow({
+            where: { timeRevisionId: result.timeRevisionId },
+          });
+          await assertFixedE4Oracle(f.db, root.id);
+        }
+        expect(calls).toBe(1);
+        const [restored] = await observed.$queryRaw<{ pid: number; mode: string }[]>`
+          SELECT pg_backend_pid()::int AS pid, current_setting('plan_cache_mode') AS mode
+        `;
+        expect(restored).toEqual(initial);
+        console.info(
+          'E4_NATIVE_PLANNER_LOCAL',
+          JSON.stringify({
+            rollback,
+            calls,
+            sameBackend: true,
+            modeAtInsert: 'FORCE_CUSTOM',
+            restored: true,
+          }),
+        );
+      } finally {
+        if (descriptor) Object.defineProperty(contributions, 'insertEvaluations', descriptor);
+        else Reflect.deleteProperty(contributions, 'insertEvaluations');
+        await observed.$disconnect();
+      }
+    },
+  );
   it('First-Barrier uses live pinned guard identity, writes once, and preserves replay and key conflict', async () => {
     const c = await reviewFixture();
     const contributions = f.app.get(ActivityContributionSettlementService);
