@@ -1,5 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-import { createHash } from 'node:crypto';
+import { PrismaClient, Prisma } from '@prisma/client';
+import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
@@ -130,21 +130,32 @@ async function expectedDocuments(db: PrismaClient) {
     ORDER BY r.id COLLATE "C",e.unit_canonical COLLATE "C",e.evaluation::text COLLATE "C"
   `;
 }
-async function verifyRootsAndOldOracle(db: PrismaClient) {
+async function verifyRootsAndOldOracle(
+  db: PrismaClient,
+  namespace: string,
+  prepare: boolean,
+  installed: () => void,
+) {
+  if (!/^e4_reference_oracle_[a-f0-9]{16}$/u.test(namespace))
+    throw new Error('E4 private oracle namespace invalid');
   const oracle = oldExpectedDefinition().replace(
     'CREATE FUNCTION e4_expected_evaluations(',
-    'CREATE OR REPLACE FUNCTION pg_temp.e4_reference_old_expected(',
+    'CREATE FUNCTION ' + namespace + '.e4_reference_old_expected(',
   );
   const facts = await db.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe('CREATE TEMP TABLE e4_reference_scope (id int) ON COMMIT DROP');
-    await tx.$executeRawUnsafe(oracle);
+    if (prepare) {
+      // Same original 5s transaction: install once, then retain this immutable
+      // oracle across the public upgrade and pooled physical connections.
+      await tx.$executeRawUnsafe('CREATE SCHEMA ' + namespace);
+      await tx.$executeRawUnsafe(oracle);
+    }
     return tx.$queryRaw<{ expected: number; forward: number; backward: number; fields: number }[]>`
       WITH actual AS MATERIALIZED (
         SELECT r.id,e.* FROM "ActivitySettlementContributionRevision" r
         CROSS JOIN LATERAL public.e4_expected_evaluations(r.id) e
       ), original AS MATERIALIZED (
         SELECT r.id,e.* FROM "ActivitySettlementContributionRevision" r
-        CROSS JOIN LATERAL pg_temp.e4_reference_old_expected(r.id) e
+        CROSS JOIN LATERAL ${Prisma.raw(namespace + '.e4_reference_old_expected')}(r.id) e
       )
       SELECT (SELECT count(*)::int FROM actual) AS expected,
         (SELECT count(*)::int FROM (SELECT * FROM actual EXCEPT ALL SELECT * FROM original) d) AS forward,
@@ -153,6 +164,7 @@ async function verifyRootsAndOldOracle(db: PrismaClient) {
           (SELECT count(*) FROM jsonb_object_keys(a.evaluation)) <> 21) AS fields
     `;
   });
+  if (prepare) installed();
   expect(facts).toHaveLength(1);
   expect(facts[0].expected).toBeGreaterThan(0);
   expect(facts[0].forward).toBe(0);
@@ -204,6 +216,8 @@ async function verifyInstalledExpression(db: PrismaClient) {
 describe('E4 reference canonical migration 139 nonempty upgrade', () => {
   const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
   let fixture: E4Fixture | undefined;
+  const namespace = 'e4_reference_oracle_' + randomBytes(8).toString('hex');
+  let oracleInstalled = false;
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   beforeAll(async () => {
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
@@ -215,10 +229,19 @@ describe('E4 reference canonical migration 139 nonempty upgrade', () => {
   });
   afterAll(async () => {
     try {
-      await closeE13Fixture(fixture);
+      if (oracleInstalled && fixture) {
+        await fixture.db.$executeRawUnsafe(
+          'DROP FUNCTION ' + namespace + '.e4_reference_old_expected(TEXT)',
+        );
+        await fixture.db.$executeRawUnsafe('DROP SCHEMA ' + namespace);
+      }
     } finally {
-      if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
-      else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+      try {
+        await closeE13Fixture(fixture);
+      } finally {
+        if (previousGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+        else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = previousGate;
+      }
     }
   });
 
@@ -233,7 +256,9 @@ describe('E4 reference canonical migration 139 nonempty upgrade', () => {
     const beforeBusiness = await businessSnapshot(db);
     const beforeDocuments = await expectedDocuments(db);
     expect(beforeDocuments.length).toBeGreaterThan(0);
-    await verifyRootsAndOldOracle(db);
+    await verifyRootsAndOldOracle(db, namespace, true, () => {
+      oracleInstalled = true;
+    });
 
     owner.deployLatestMigrations();
     const afterMigrations = await migrations(db);
@@ -254,7 +279,9 @@ describe('E4 reference canonical migration 139 nonempty upgrade', () => {
     expect(JSON.stringify(await expectedDocuments(db)) === JSON.stringify(beforeDocuments)).toBe(
       true,
     );
-    await verifyRootsAndOldOracle(db);
+    await verifyRootsAndOldOracle(db, namespace, false, () => {
+      oracleInstalled = true;
+    });
     await verifyInstalledExpression(db);
 
     owner.deployLatestMigrations();
