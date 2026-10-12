@@ -174,7 +174,7 @@ describe('E2 additive conversion receipt migration', () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(names).toHaveLength(140);
+    expect(names).toHaveLength(141);
     expect(names[131]).toBe(MIGRATION);
     expect(
       sql(`SELECT migration_name || chr(9) || checksum FROM "_prisma_migrations"
