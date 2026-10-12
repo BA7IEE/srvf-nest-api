@@ -1,3 +1,4 @@
+import * as referenceCanonical from './activity-contribution-reference-canonical';
 import { fingerprintContributionPolicyVersion } from './activity-contribution-policy-definition';
 import { parseActivityContributionPolicySelectionValue } from './activity-contribution-policy-selection';
 import { parseActivityRuleSnapshotV9ContributionPolicyPointers } from './activity-publish-proposal-v9';
@@ -5,7 +6,6 @@ import {
   canonicalizeActivityTemplateDefinition,
   computeActivityTemplateDefinitionHash,
 } from './activity-template-definition';
-import * as templateCanonical from './activity-template-definition';
 import {
   ContributionSettlementPolicyError,
   evaluateSettlementContributions,
@@ -189,7 +189,7 @@ describe('E4 pure contribution evaluation', () => {
     expect(evaluate(refs)).toEqual(evaluate([...refs].reverse()));
   });
   it('P-Local computes each new reference sort key once without changing hash inputs', () => {
-    const serializer = jest.spyOn(templateCanonical, 'canonicalizeActivityTemplateDefinition');
+    const serializer = jest.spyOn(referenceCanonical, 'canonicalizeLocalContributionReference');
     try {
       const result = evaluate(twoSources());
       const refCalls = serializer.mock.calls.filter(
@@ -602,6 +602,59 @@ describe('E4 primitive unit memo equivalence', () => {
       const { evaluationHash, ...definition } = row;
       expect(evaluationHash).toBe(
         computeActivityTemplateDefinitionHash({ schemaVersion: 1, definition }),
+      );
+    }
+  });
+});
+
+describe('E4 flat source canonical equivalence', () => {
+  it('preserves the frozen full output for escaped references, zero duration and the largest safe revision', () => {
+    const frozenPolicy = policy();
+    const rows = [
+      source({
+        allocationRevisionId: 'allocation","片\\quote',
+        sliceId: 'slice\t\né é 😀',
+        sourceSegmentId: '段"\\\n尾',
+        sourceSegmentRevision: Number.MAX_SAFE_INTEGER,
+        durationSeconds: 0,
+        endsAt: new Date('2026-10-01T15:59:00.000Z'),
+        selection: { id: '选择"\\\t尾', mode: 'policy', policy: frozenPolicy },
+      }),
+      source({
+        allocationRevisionId: 'allocation',
+        sliceId: '片","slice',
+        selection: { id: 'selection-b', mode: 'policy', policy: frozenPolicy },
+      }),
+      source({
+        allocationRevisionId: 'allocation","片',
+        sliceId: '\\quote,slice',
+        selection: { id: 'selection-a', mode: 'policy', policy: frozenPolicy },
+      }),
+    ];
+    const result = evaluate(rows);
+    const fullOutput = computeActivityTemplateDefinitionHash({
+      schemaVersion: 1,
+      definition: result,
+    });
+    expect(fullOutput).toBe('7a9b0ca7c9514bab1cc1e22fa0bec5cfe7fe91a6468c3078e60f37e582969b8f');
+    for (const row of result.evaluations) {
+      expect(row.sourceFingerprint).toBe(
+        computeActivityTemplateDefinitionHash({
+          schemaVersion: 1,
+          definition: { domain: 'time_revision', sources: row.sourceRefsJson },
+        }),
+      );
+      const { evaluationHash, ...definition } = row;
+      expect(evaluationHash).toBe(
+        computeActivityTemplateDefinitionHash({ schemaVersion: 1, definition }),
+      );
+      expect([...row.sourceRefsJson]).toEqual(
+        [...row.sourceRefsJson].sort((a, b) =>
+          Buffer.compare(
+            Buffer.from(canonicalizeActivityTemplateDefinition(a)),
+            Buffer.from(canonicalizeActivityTemplateDefinition(b)),
+          ),
+        ),
       );
     }
   });

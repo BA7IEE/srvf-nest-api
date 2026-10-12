@@ -1,3 +1,4 @@
+import { canonicalizeLocalContributionReference } from './activity-contribution-reference-canonical';
 import { createHash } from 'node:crypto';
 import { splitSpanByBeijingDay } from '../../common/datetime/date-only.util';
 import {
@@ -132,6 +133,28 @@ function canonicalPrimitive(value: unknown): string | undefined {
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
   return undefined;
+}
+
+// Inputs are the closed objects constructed below, after the original validation.
+// Fixed ASCII field order is the original canonicalizer's sorted key order.
+function canonicalSourceKey(key: {
+  allocationRevisionId: unknown;
+  participationIdentityId: unknown;
+  sliceId: unknown;
+}): string {
+  const parts = [key.allocationRevisionId, key.participationIdentityId, key.sliceId].map(
+    canonicalPrimitive,
+  );
+  if (parts.some((part) => part === undefined)) return canonicalizeActivityTemplateDefinition(key);
+  return (
+    '{"allocationRevisionId":' +
+    parts[0] +
+    ',"participationIdentityId":' +
+    parts[1] +
+    ',"sliceId":' +
+    parts[2] +
+    '}'
+  );
 }
 
 // These flat references are newly built locally and never mutate after sorting.
@@ -271,7 +294,7 @@ export function evaluateSettlementContributions(input: {
       (source.durationSeconds > 0 && source.endsAt <= source.startsAt)
     )
       reject('invalid');
-    const sourceKey = canonicalizeActivityTemplateDefinition({
+    const sourceKey = canonicalSourceKey({
       participationIdentityId: source.participationIdentityId,
       allocationRevisionId: source.allocationRevisionId,
       sliceId: source.sliceId,
@@ -348,12 +371,12 @@ export function evaluateSettlementContributions(input: {
     compare(a, b),
   )) {
     // These refs are newly built for this invocation and remain unchanged during sorting.
-    // Keep the original canonicalizer/comparator; only reuse each ref's sort key.
+    // Keep the original comparator and reuse each exact canonical sort key.
     let canonicalRefs: string[] | undefined;
     if (refs.length > 1) {
       const orderedRefs = refs.map((ref) => ({
         ref,
-        canonical: canonicalizeActivityTemplateDefinition(ref),
+        canonical: canonicalizeLocalContributionReference(ref),
       }));
       orderedRefs.sort((a, b) => compare(a.canonical, b.canonical));
       if (input.sourceKindCode === 'time_revision')
@@ -375,7 +398,7 @@ export function evaluateSettlementContributions(input: {
     if (identityTotal > 99999) reject('overflow');
     totals.set(first.participationIdentityId, identityTotal);
     if (input.sourceKindCode === 'time_revision' && canonicalRefs === undefined)
-      canonicalRefs = refs.map((ref) => canonicalizeActivityTemplateDefinition(ref));
+      canonicalRefs = refs.map(canonicalizeLocalContributionReference);
     const sourceDefinition = { domain: input.sourceKindCode, sources: refs };
     const sourceFingerprint = canonicalRefs
       ? hashWithTimeReferences(sourceDefinition, 'sources', canonicalRefs)
