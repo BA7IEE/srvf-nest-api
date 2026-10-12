@@ -1,7 +1,11 @@
 import { BizCode } from '../../common/exceptions/biz-code.constant';
 import { BizException } from '../../common/exceptions/biz.exception';
 import type { CurrentParticipationSegment } from '../attendances/participation-segment.facade';
-import { fingerprintMetricEnvelope, metricText } from './activity-metric-definition';
+import { metricText } from './activity-metric-definition';
+import {
+  fingerprintLocalTimeBucketManifest,
+  fingerprintLocalTimeSourceManifest,
+} from './activity-time-settlement-canonical';
 import {
   buildActivityTimeAllocationManifest,
   type ActivityTimeAllocationSliceInput,
@@ -141,7 +145,7 @@ export function timeSettlementSourceSetHash(
     ]),
   );
   if (latest.size !== latestAllocations.length) return reject('invalid');
-  return fingerprintMetricEnvelope('activity-time-settlement-sources-v1', {
+  return fingerprintLocalTimeSourceManifest({
     ...proof,
     population: [...population].sort((a, b) =>
       compareId(a.participationIdentityId, b.participationIdentityId),
@@ -474,8 +478,7 @@ export function buildTimeSettlementBuckets(input: {
     sourceCount > TIME_SETTLEMENT_LIMITS.sources
   )
     return reject('scale_limit');
-  const bucketContentHash = fingerprintMetricEnvelope(
-    'activity-time-settlement-buckets-v1',
+  const bucketContentHash = fingerprintLocalTimeBucketManifest(
     buckets.map((bucket) => ({
       ...bucket,
       rawCalculatedMilliseconds: bucket.rawCalculatedMilliseconds?.toString() ?? null,
