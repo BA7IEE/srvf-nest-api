@@ -318,7 +318,8 @@ export function evaluateSettlementContributions(input: {
         (value) =>
           typeof value === 'string' || (typeof value === 'number' && Number.isSafeInteger(value)),
       );
-    const unitInput = cacheable ? JSON.stringify(unit) : undefined;
+    // Encode only primitive values; object serialization could invoke toJSON.
+    const unitInput = cacheable ? Object.values(unit).map(canonicalPrimitive).join(',') : undefined;
     let unitKey = unitInput === undefined ? undefined : unitCanonicals.get(unitInput);
     if (unitKey === undefined) {
       unitKey = canonicalizeActivityTemplateDefinition(unit);

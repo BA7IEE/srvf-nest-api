@@ -548,3 +548,61 @@ describe('E4 pure contribution evaluation', () => {
     },
   );
 });
+
+describe('E4 primitive unit memo equivalence', () => {
+  it('does not serialize unit objects or invoke object serialization hooks for cache identity', () => {
+    const rows = [
+      source({ participationIdentityId: 'identity-a' }),
+      source({ participationIdentityId: 'identity-b', sliceId: 'slice-b' }),
+    ];
+    const original = JSON.stringify.bind(JSON);
+    let unitObjects = 0;
+    const serialize = jest.spyOn(JSON, 'stringify').mockImplementation(((
+      value: unknown,
+      ...args: unknown[]
+    ) => {
+      if (
+        value !== null &&
+        typeof value === 'object' &&
+        Object.keys(value).length === 9 &&
+        'participationIdentityId' in value &&
+        'policyVersionId' in value &&
+        'timeCategoryCode' in value
+      ) {
+        unitObjects++;
+        return '"untrusted-unit-hook"';
+      }
+      return Reflect.apply(original, JSON, [value, ...args]) as string | undefined;
+    }) as typeof JSON.stringify);
+    let result: ReturnType<typeof evaluate>;
+    try {
+      result = evaluate(rows);
+    } finally {
+      serialize.mockRestore();
+    }
+    expect(unitObjects).toBe(0);
+    expect(result.evaluationCount).toBe(2);
+    expect(new Set(result.evaluations.map((row) => row.evaluationUnitKey)).size).toBe(2);
+    for (const row of result.evaluations) {
+      const { evaluationHash, ...definition } = row;
+      expect(evaluationHash).toBe(
+        computeActivityTemplateDefinitionHash({ schemaVersion: 1, definition }),
+      );
+    }
+  });
+
+  it('keeps quoted delimiters and Unicode in distinct units and original hashes', () => {
+    const rows = [
+      source({ participationIdentityId: '身份","乙', sessionId: 'session-a' }),
+      source({ participationIdentityId: '身份', sessionId: '乙","session-a', sliceId: 'slice-b' }),
+    ];
+    const result = evaluate(rows);
+    expect(result.evaluationCount).toBe(2);
+    for (const row of result.evaluations) {
+      const { evaluationHash, ...definition } = row;
+      expect(evaluationHash).toBe(
+        computeActivityTemplateDefinitionHash({ schemaVersion: 1, definition }),
+      );
+    }
+  });
+});
