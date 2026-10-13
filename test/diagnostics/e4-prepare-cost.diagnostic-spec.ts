@@ -13,6 +13,7 @@ import {
   e4DiagnosticStageReceipt,
   e4DiagnosticErrorCategory,
   readE4DiagnosticStageReceipt,
+  installE4DiagnosticFixtureGate,
 } from '../helpers/e4-diagnostic-limits-client';
 import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';
 import {
@@ -217,6 +218,15 @@ function registerDiagnosticChild() {
   afterAll(() => writeBounded(join(privateDir, 'child.json'), report));
   describe('E4 DIAGNOSTIC_ONLY one maximum prepare', () => {
     it('records original complete prepare and commit with the full frozen oracle', async () => {
+      // The database installer has finished loading .env.test; capture the gate before Nest config.
+      const context = e4DiagnosticContext({
+        purpose: 'DIAGNOSTIC_ONLY',
+        scope: 'app_test_w98',
+        sourceHead: head,
+        databaseUrl: process.env.DATABASE_URL ?? '',
+        appEnv: process.env.APP_ENV ?? '',
+      });
+      const restoreGate = installE4DiagnosticFixtureGate(context);
       let f: E4Fixture | undefined, db: DiagnosticDatabase | undefined;
       try {
         f = await fixture.createE4Fixture();
@@ -240,13 +250,6 @@ function registerDiagnosticChild() {
         ).toBe(50000);
         checkpoint.mark('SOURCE_BUILD', 'COMPLETE');
         checkpoint.mark('PREPARE', 'ENTER');
-        const context = e4DiagnosticContext({
-          purpose: 'DIAGNOSTIC_ONLY',
-          scope: 'app_test_w98',
-          sourceHead: head,
-          databaseUrl: process.env.DATABASE_URL ?? '',
-          appEnv: process.env.APP_ENV ?? '',
-        });
         db = new DiagnosticDatabase({
           datasources: { db: { url: process.env.DATABASE_URL! } },
           log: [{ emit: 'event', level: 'query' }],
@@ -364,19 +367,27 @@ function registerDiagnosticChild() {
         report.errorCode = ['P2028', 'P2010', 'P2002', 'P2003'].includes(code) ? code : 'other';
         throw new Error('E4 diagnostic failed; see redacted counters');
       } finally {
-        // All connections must close before the existing normal DROP and lease release.
-        checkpoint.mark('CLEANUP', 'ENTER');
         try {
+          // All connections must close before the existing normal DROP and lease release.
+          checkpoint.mark('CLEANUP', 'ENTER');
           try {
-            await db?.$disconnect();
-          } finally {
-            await fixture.closeE13Fixture(f);
+            try {
+              await db?.$disconnect();
+            } finally {
+              await fixture.closeE13Fixture(f);
+            }
+            checkpoint.mark('CLEANUP', 'COMPLETE');
+            report.resources = 'CLOSED';
+          } catch (error) {
+            report.status = 'FAILED';
+            checkpoint.mark(
+              'CLEANUP',
+              'FAILED',
+              e4DiagnosticErrorCategory(error, 'CLEANUP_FAILED'),
+            );
           }
-          checkpoint.mark('CLEANUP', 'COMPLETE');
-          report.resources = 'CLOSED';
-        } catch (error) {
-          report.status = 'FAILED';
-          checkpoint.mark('CLEANUP', 'FAILED', e4DiagnosticErrorCategory(error, 'CLEANUP_FAILED'));
+        } finally {
+          restoreGate();
         }
       }
       if (report.resources !== 'CLOSED') throw new Error('E4 diagnostic cleanup failed');

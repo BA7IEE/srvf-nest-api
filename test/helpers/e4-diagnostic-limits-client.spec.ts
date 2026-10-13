@@ -1,11 +1,20 @@
 import { PrismaClient } from '@prisma/client';
 import { spawn } from 'node:child_process';
+import { ActivityWorkflowGate } from '../../src/common/activity-workflow/activity-workflow.gate';
+import {
+  parseActivityV11WorkflowEnabled,
+  parseActivityWorkflowReadonly,
+  type AppConfig,
+} from '../../src/config/app.config';
+import { BizCode } from '../../src/common/exceptions/biz-code.constant';
+import { BizException } from '../../src/common/exceptions/biz.exception';
 import {
   e4DiagnosticContext,
   E4_DIAGNOSTIC_LIMITS,
   installE4DiagnosticLimits,
   superviseE4DiagnosticChild,
   type E4DiagnosticChild,
+  installE4DiagnosticFixtureGate,
 } from './e4-diagnostic-limits-client';
 
 const input = {
@@ -16,6 +25,114 @@ const input = {
   appEnv: 'test',
 };
 const context = () => e4DiagnosticContext(input);
+describe('E4 diagnostic fixture gate (offline, actual config parser and gate)', () => {
+  function fixtureEnv(value?: string): NodeJS.ProcessEnv {
+    return {
+      APP_ENV: 'test',
+      SRVF_E4_DIAGNOSTIC_PURPOSE: 'DIAGNOSTIC_ONLY',
+      SRVF_E4_W98: '1',
+      ...(value === undefined ? {} : { ACTIVITY_V11_WORKFLOW_ENABLED: value }),
+    };
+  }
+  function capture(env: NodeJS.ProcessEnv) {
+    return new ActivityWorkflowGate({
+      activityV11Workflow: {
+        enabled: parseActivityV11WorkflowEnabled(env.ACTIVITY_V11_WORKFLOW_ENABLED, 'test'),
+        readonlyMaintenance: parseActivityWorkflowReadonly(env.ACTIVITY_WORKFLOW_READONLY),
+      },
+    } as AppConfig);
+  }
+  it.each([undefined, 'false', 'true'])(
+    'enables before config capture and restores exact original%p after fixture close',
+    async (value) => {
+      const env = fixtureEnv(value);
+      const restore = installE4DiagnosticFixtureGate(context(), env);
+      const gate = capture(env);
+      expect(() => gate.assertV11WriteAllowed()).not.toThrow();
+      const close = jest.fn(async () => {
+        expect(env.ACTIVITY_V11_WORKFLOW_ENABLED).toBe('true');
+      });
+      try {
+        await Promise.resolve();
+      } finally {
+        try {
+          await close();
+        } finally {
+          restore();
+        }
+      }
+      restore();
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(env.ACTIVITY_V11_WORKFLOW_ENABLED).toBe(value);
+      expect(Object.hasOwn(env, 'ACTIVITY_V11_WORKFLOW_ENABLED')).toBe(value !== undefined);
+    },
+  );
+  it('reproduces the exact closed-gate BizException offline, and opening after config capture cannot fix that instance', () => {
+    const env = fixtureEnv();
+    const capturedBefore = capture(env);
+    try {
+      capturedBefore.assertV11WriteAllowed();
+      throw new Error('expected rejection');
+    } catch (error) {
+      expect(error).toBeInstanceOf(BizException);
+      expect((error as BizException).biz).toEqual(BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED);
+      expect((error as BizException).biz).toMatchObject({ code: 20153, httpStatus: 503 });
+    }
+    const restore = installE4DiagnosticFixtureGate(context(), env);
+    try {
+      expect(() => capturedBefore.assertV11WriteAllowed()).toThrow(BizException);
+      expect(() => capture(env).assertV11WriteAllowed()).not.toThrow();
+    } finally {
+      restore();
+    }
+    expect(env.ACTIVITY_V11_WORKFLOW_ENABLED).toBeUndefined();
+  });
+  it('restores after initialization or cleanup throws, and never clears readonly maintenance', async () => {
+    const env = fixtureEnv('false');
+    env.ACTIVITY_WORKFLOW_READONLY = 'true';
+    const restore = installE4DiagnosticFixtureGate(context(), env);
+    const original = new Error('fixture initialization failed');
+    await expect(
+      (async () => {
+        try {
+          expect(() => capture(env).assertV11WriteAllowed()).toThrow(
+            BizCode.ACTIVITY_WORKFLOW_READONLY_MAINTENANCE.message,
+          );
+          throw original;
+        } finally {
+          restore();
+        }
+      })(),
+    ).rejects.toBe(original);
+    expect(env.ACTIVITY_V11_WORKFLOW_ENABLED).toBe('false');
+    expect(env.ACTIVITY_WORKFLOW_READONLY).toBe('true');
+    const restoreAgain = installE4DiagnosticFixtureGate(context(), env);
+    const failClose = () => Promise.reject(original);
+    await expect(
+      (async () => {
+        try {
+          await Promise.resolve();
+        } finally {
+          try {
+            await failClose();
+          } finally {
+            restoreAgain();
+          }
+        }
+      })(),
+    ).rejects.toBe(original);
+    expect(env.ACTIVITY_V11_WORKFLOW_ENABLED).toBe('false');
+  });
+  it.each([
+    { APP_ENV: 'production' },
+    { SRVF_E4_DIAGNOSTIC_PURPOSE: 'FORMAL' },
+    { SRVF_E4_W98: '1-other' },
+  ])('refuses a non-diagnostic lifecycle without changing the gate:%p', (change) => {
+    const env: NodeJS.ProcessEnv = { ...fixtureEnv('false'), ...change };
+    expect(() => installE4DiagnosticFixtureGate(context(), env)).toThrow();
+    expect(env.ACTIVITY_V11_WORKFLOW_ENABLED).toBe('false');
+  });
+});
 describe('E4 diagnostic instance budget (offline)', () => {
   it.each([
     { purpose: 'FORMAL' },

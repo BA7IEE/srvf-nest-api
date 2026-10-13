@@ -48,6 +48,32 @@ export function e4DiagnosticContext(input: {
   });
 }
 
+/** Test-process gate only: install after env loading, before Nest configuration; restore after close. */
+export function installE4DiagnosticFixtureGate(
+  context: E4DiagnosticContext,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  if (
+    context.purpose !== 'DIAGNOSTIC_ONLY' ||
+    context.scope !== 'app_test_w98' ||
+    context.fixture !== 'createMaximumE4Source' ||
+    !/^[0-9a-f]{40}$/u.test(context.sourceHead) ||
+    env.APP_ENV !== 'test' ||
+    env.SRVF_E4_DIAGNOSTIC_PURPOSE !== 'DIAGNOSTIC_ONLY' ||
+    env.SRVF_E4_W98 !== '1'
+  )
+    throw new Error('E4 diagnostic fixture gate context refused');
+  const previous = env.ACTIVITY_V11_WORKFLOW_ENABLED;
+  let restored = false;
+  env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
+  return () => {
+    if (restored) return;
+    restored = true;
+    if (previous === undefined) delete env.ACTIVITY_V11_WORKFLOW_ENABLED;
+    else env.ACTIVITY_V11_WORKFLOW_ENABLED = previous;
+  };
+}
+
 /** One instance, one original prepare callback. No SQL, trigger, isolation or maxWait rewrite. */
 export function installE4DiagnosticLimits<T extends object>(
   client: T,
