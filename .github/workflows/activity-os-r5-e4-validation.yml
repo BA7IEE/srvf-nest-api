@@ -5,6 +5,12 @@ name: R5 E4 isolated validation
 # Repair candidate: frozen driver bytes, scope typing, and read-only legacy fixture.
 # Subsequent report pushes do not match this workflow path; reruns are refused.
 on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Approved exact commit SHA
+        required: true
+        type: string
   push:
     branches: [codex/activity-os-r5-e4-github-validation]
     paths: [.github/workflows/activity-os-r5-e4-validation.yml]
@@ -18,7 +24,7 @@ concurrency:
 
 jobs:
   validation:
-    if: github.repository == 'BA7IEE/srvf-nest-api' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[e4-validation-once]')
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && github.event_name == 'push' && !contains(github.event.head_commit.message, '[e4-prepare-cost-once]') && contains(github.event.head_commit.message, '[e4-validation-once]')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -362,7 +368,7 @@ jobs:
           retention-days: 7
 
   guard-plan:
-    if: github.repository == 'BA7IEE/srvf-nest-api' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[e4-guard-plan-once]')
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && github.event_name == 'push' && !contains(github.event.head_commit.message, '[e4-prepare-cost-once]') && contains(github.event.head_commit.message, '[e4-guard-plan-once]')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -548,7 +554,7 @@ jobs:
           retention-days: 7
 
   guard-functions:
-    if: github.repository == 'BA7IEE/srvf-nest-api' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[e4-guard-functions-once]')
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && github.event_name == 'push' && !contains(github.event.head_commit.message, '[e4-prepare-cost-once]') && contains(github.event.head_commit.message, '[e4-guard-functions-once]')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -728,7 +734,7 @@ jobs:
           retention-days: 7
 
   prepare-cost:
-    if: github.repository == 'BA7IEE/srvf-nest-api' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[e4-prepare-cost-once]')
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && ((github.event_name == 'workflow_dispatch' && inputs.expected_sha == github.sha) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[e4-prepare-cost-once]')))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
