@@ -22,6 +22,7 @@ import {
 import { ActivityTimeSettlementQueryService } from './activity-time-settlement-query.service';
 import { ActivityTimeSettlementService } from './activity-time-settlement.service';
 import { ActivityContributionSettlementService } from './activity-contribution-settlement.service';
+import type { TimeSettlementBucket } from './activity-time-settlement-policy';
 import {
   SettlementSubmitService,
   SETTLEMENT_SUBMIT_TX_TIMEOUT_MS,
@@ -451,6 +452,149 @@ describe('D4 write orchestration and replay safety', () => {
   function statement(query: TemplateStringsArray | Prisma.Sql) {
     return ('sql' in query ? query.sql : query.join('')).replace(/\s+/gu, ' ').trim();
   }
+
+  it('keeps all SQL-selected bucket/source values and shared IDs while projecting each JSON payload', async () => {
+    const sources = [
+      {
+        allocationRevisionId: 'allocation-a',
+        sourceSegmentId: 'segment-a',
+        sourceSegmentRevision: 2,
+        rawCalculatedMilliseconds: null,
+        rawRecognizedMilliseconds: 9007199254740993n,
+      },
+      {
+        allocationRevisionId: 'allocation-b',
+        sourceSegmentId: 'segment-b',
+        sourceSegmentRevision: 1,
+        rawCalculatedMilliseconds: 3000n,
+        rawRecognizedMilliseconds: 2000n,
+      },
+    ];
+    const buckets: TimeSettlementBucket[] = [
+      {
+        participationIdentityId: 'identity-a',
+        categoryCode: 'volunteer_service',
+        calculatedSeconds: null,
+        recognizedSeconds: 3,
+        rawCalculatedMilliseconds: null,
+        rawRecognizedMilliseconds: 9007199254742993n,
+        timePolicyVersionId: 'policy',
+        definitionHash: 'd'.repeat(64),
+        evaluatorVersion: 1,
+        quantumSeconds: 1,
+        adjustmentReason: [{ allocationRevisionId: 'allocation-a', manualReason: 'approved' }],
+        emptyReasonCode: null,
+        sources,
+      },
+      {
+        participationIdentityId: 'identity-b',
+        categoryCode: 'training',
+        calculatedSeconds: 0,
+        recognizedSeconds: 0,
+        rawCalculatedMilliseconds: 0n,
+        rawRecognizedMilliseconds: 0n,
+        timePolicyVersionId: null,
+        definitionHash: null,
+        evaluatorVersion: null,
+        quantumSeconds: null,
+        adjustmentReason: null,
+        emptyReasonCode: 'no_valid_segment',
+        sources: [],
+      },
+    ];
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValueOnce(2).mockResolvedValueOnce(2);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await insert.call(service, tx, { ...parent, bucketCount: 2, sourceCount: 2 }, buckets);
+    expect(execute).toHaveBeenCalledTimes(2);
+    const first = JSON.parse(execute.mock.calls[0].at(-1) as string) as Record<string, unknown>[];
+    const second = JSON.parse(execute.mock.calls[1].at(-1) as string) as {
+      id: string;
+      sources: Record<string, unknown>[];
+    }[];
+    expect(new Set(first.map((row) => row.id)).size).toBe(2);
+    expect(first).toEqual(
+      buckets.map(({ sources: _sources, ...row }, index) => {
+        void _sources;
+        return {
+          ...row,
+          id: first[index].id,
+          rawCalculatedMilliseconds: row.rawCalculatedMilliseconds?.toString() ?? null,
+          rawRecognizedMilliseconds: row.rawRecognizedMilliseconds.toString(),
+        };
+      }),
+    );
+    expect(second).toEqual(
+      buckets.map((row, index) => ({
+        id: first[index].id,
+        sources: row.sources.map((source) => ({
+          ...source,
+          rawCalculatedMilliseconds: source.rawCalculatedMilliseconds?.toString() ?? null,
+          rawRecognizedMilliseconds: source.rawRecognizedMilliseconds.toString(),
+        })),
+      })),
+    );
+    expect(statement(execute.mock.calls[0][0])).toContain(
+      'INSERT INTO "ParticipantSettlementTimeBucket"',
+    );
+    expect(statement(execute.mock.calls[1][0])).toContain(
+      'INSERT INTO "ParticipantSettlementTimeBucketSource"',
+    );
+    expect(buckets[0].sources).toBe(sources);
+    expect(sources[0].rawRecognizedMilliseconds).toBe(9007199254740993n);
+  });
+
+  it('still rejects inconsistent inserted bucket/source counts after both original statements', async () => {
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await expect(
+      insert.call(service, tx, { ...parent, bucketCount: 1, sourceCount: 0 }, []),
+    ).rejects.toThrow(new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_INVALID));
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('still completes serialization before any write when a source cannot be encoded', async () => {
+    const source = {
+      allocationRevisionId: 'allocation',
+      sourceSegmentId: 'segment',
+      sourceSegmentRevision: 1,
+      rawCalculatedMilliseconds: 1n,
+      rawRecognizedMilliseconds: 1n,
+      unsupported: 1n,
+    };
+    const bucket: TimeSettlementBucket = {
+      participationIdentityId: 'identity',
+      categoryCode: 'training',
+      calculatedSeconds: 0,
+      recognizedSeconds: 0,
+      rawCalculatedMilliseconds: 1n,
+      rawRecognizedMilliseconds: 1n,
+      timePolicyVersionId: null,
+      definitionHash: null,
+      evaluatorVersion: null,
+      quantumSeconds: null,
+      adjustmentReason: null,
+      emptyReasonCode: null,
+      sources: [source],
+    };
+    const execute = jest.spyOn(tx, '$executeRaw').mockResolvedValue(1);
+    const insert = Reflect.get(service, 'insertBuckets') as (
+      client: Prisma.TransactionClient,
+      revision: ActivitySettlementTimeRevision,
+      rows: readonly TimeSettlementBucket[],
+    ) => Promise<void>;
+    await expect(
+      insert.call(service, tx, { ...parent, bucketCount: 1, sourceCount: 1 }, [bucket]),
+    ).rejects.toThrow(TypeError);
+    expect(execute).not.toHaveBeenCalled();
+  });
 
   it('fresh native prepare writes facts, current receipt and audit before its two-name barrier and final authorization', async () => {
     const f = freshPrepare();

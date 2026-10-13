@@ -604,7 +604,14 @@ export class ActivityTimeSettlementService {
         rawRecognizedMilliseconds: source.rawRecognizedMilliseconds.toString(),
       })),
     }));
-    const json = JSON.stringify(rows);
+    // Each statement decodes only its own columns; do not send the full source graph twice.
+    const bucketJson = JSON.stringify(
+      rows.map(({ sources, ...bucket }) => {
+        void sources;
+        return bucket;
+      }),
+    );
+    const sourceJson = JSON.stringify(rows.map(({ id, sources }) => ({ id, sources })));
     const bucketCount = await tx.$executeRaw`
       INSERT INTO "ParticipantSettlementTimeBucket" (id, "timeRevisionId", "activityId", "participationIdentityId",
         "categoryCode", "calculatedSeconds", "recognizedSeconds", "adjustmentReason", "timePolicyVersionId",
@@ -612,7 +619,7 @@ export class ActivityTimeSettlementService {
       SELECT x.id, ${revision.id}, ${revision.activityId}, x."participationIdentityId", x."categoryCode", x."calculatedSeconds",
         x."recognizedSeconds", nullif(x."adjustmentReason", 'null'::jsonb), x."timePolicyVersionId", x."definitionHash", x."evaluatorVersion",
         x."quantumSeconds", x."rawCalculatedMilliseconds", x."rawRecognizedMilliseconds"
-      FROM jsonb_to_recordset(${json}::jsonb) AS x(id TEXT, "participationIdentityId" TEXT, "categoryCode" TEXT,
+      FROM jsonb_to_recordset(${bucketJson}::jsonb) AS x(id TEXT, "participationIdentityId" TEXT, "categoryCode" TEXT,
         "calculatedSeconds" INTEGER, "recognizedSeconds" INTEGER, "adjustmentReason" JSONB, "timePolicyVersionId" TEXT,
         "definitionHash" TEXT, "evaluatorVersion" INTEGER, "quantumSeconds" INTEGER,
         "rawCalculatedMilliseconds" BIGINT, "rawRecognizedMilliseconds" BIGINT)
@@ -622,7 +629,7 @@ export class ActivityTimeSettlementService {
         "allocationRevisionId", "sourceSegmentId", "sourceSegmentRevision", "rawCalculatedMilliseconds", "rawRecognizedMilliseconds")
       SELECT gen_random_uuid()::text, b.id, ${revision.id}, ${revision.activityId}, s."allocationRevisionId", s."sourceSegmentId",
         s."sourceSegmentRevision", s."rawCalculatedMilliseconds", s."rawRecognizedMilliseconds"
-      FROM jsonb_to_recordset(${json}::jsonb) AS b(id TEXT, sources JSONB)
+      FROM jsonb_to_recordset(${sourceJson}::jsonb) AS b(id TEXT, sources JSONB)
       CROSS JOIN LATERAL jsonb_to_recordset(b.sources) AS s("allocationRevisionId" TEXT, "sourceSegmentId" TEXT,
         "sourceSegmentRevision" INTEGER, "rawCalculatedMilliseconds" BIGINT, "rawRecognizedMilliseconds" BIGINT)
     `;
