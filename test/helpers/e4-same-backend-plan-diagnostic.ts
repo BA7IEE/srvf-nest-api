@@ -126,7 +126,7 @@ type Plan = {
   role: string;
   durationMs: number;
   nodes: { parent: number | null; type: string; values: (number | null)[] }[];
-  triggers: { role: string; calls: number; timeMs: number }[];
+  triggers: { role: string; calls: number; timeMs: number | null }[];
 };
 
 function number(value: unknown, max = 1e12): number {
@@ -193,7 +193,8 @@ export function projectE4NestedPlan(value: unknown, durationMs: number): Plan {
               ? 'TIME_PARENT'
               : 'OTHER',
       calls: number(trigger.Calls),
-      timeMs: number(trigger.Time, 600000),
+      // PG16 omits Time when auto_explain.log_timing is off; it was not measured.
+      timeMs: trigger.Time === undefined ? null : number(trigger.Time, 600000),
     };
   });
   return {
@@ -245,7 +246,13 @@ export function projectE4ServerLogs(text: string, pid: number): Plan[] {
       else if (char === '{' || char === '[') depth++;
       else if (char === '}' || char === ']') depth--;
       if (depth === 0) {
-        plans.push(projectE4NestedPlan(JSON.parse(payload), duration));
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(payload);
+        } catch {
+          throw new Error('E4_LOG_JSON');
+        }
+        plans.push(projectE4NestedPlan(parsed, duration));
         pending = false;
         if (
           plans.length > 32 ||
@@ -293,6 +300,37 @@ type SetupReason =
   | 'SETTINGS'
   | 'CONFIGURATION_QUERY'
   | 'CONFIGURATION_CHECK';
+const logErrorReasons = {
+  E4_LOG_INPUT: 'INPUT',
+  E4_LOG_STREAM: 'STREAM',
+  E4_LOG_UNCLOSED: 'UNCLOSED',
+  E4_LOG_JSON: 'JSON',
+  E4_LOG_MISSING: 'MISSING',
+  E4_LOG_OUTPUT: 'OUTPUT',
+  E4_PLAN_NUMBER: 'PLAN_NUMBER',
+  E4_PLAN_OBJECT: 'PLAN_OBJECT',
+  E4_PLAN_QUERY_SHAPE: 'PLAN_QUERY_SHAPE',
+  E4_PLAN_NODES: 'PLAN_NODES',
+  E4_PLAN_CHILDREN: 'PLAN_CHILDREN',
+  E4_PLAN_TRIGGERS: 'PLAN_TRIGGERS',
+  E4_HOTSPOT_COVERAGE: 'HOTSPOT_COVERAGE',
+} as const;
+type LogReason =
+  | 'NONE'
+  | 'READ'
+  | 'UNKNOWN'
+  | (typeof logErrorReasons)[keyof typeof logErrorReasons];
+function logErrorReason(error: unknown, fallback: LogReason): LogReason {
+  try {
+    if (error && typeof error === 'object') {
+      const message: unknown = Reflect.get(error, 'message');
+      return Object.entries(logErrorReasons).find(([key]) => key === message)?.[1] ?? fallback;
+    }
+  } catch {
+    // Hostile getters and arbitrary exceptions cannot export raw log/SQL text.
+  }
+  return fallback;
+}
 async function dockerLogs(since: string, until: string): Promise<string> {
   const result = await runFile(
     'docker',
@@ -314,6 +352,7 @@ export class E4SameBackendPlanDiagnostic<T extends object> {
   private status: 'NOT_RUN' | 'OBSERVED' | 'UNKNOWN' = 'NOT_RUN';
   private reason: 'NONE' | 'SETUP' | 'MONITOR' | 'RESTORE' | 'LOG' = 'NONE';
   private setupReason: SetupReason = 'NONE';
+  private logReason: LogReason = 'NONE';
   private restored = false;
   private monitor: Promise<void> | undefined;
   private plans: Plan[] = [];
@@ -500,11 +539,11 @@ export class E4SameBackendPlanDiagnostic<T extends object> {
       this.unknown('RESTORE');
       return;
     }
+    let logFallback: LogReason = 'READ';
     try {
-      this.plans = projectE4ServerLogs(
-        await (this.deps.logs ?? dockerLogs)(since, new Date().toISOString()),
-        this.pid,
-      );
+      const logs = await (this.deps.logs ?? dockerLogs)(since, new Date().toISOString());
+      logFallback = 'UNKNOWN';
+      this.plans = projectE4ServerLogs(logs, this.pid);
       if (
         !this.plans.some((p) =>
           ['EXPECTED_BUILD', 'EXPECTED_COMPARE', 'SOURCE_EXPANSION', 'SOURCE_CHECK'].includes(
@@ -514,7 +553,8 @@ export class E4SameBackendPlanDiagnostic<T extends object> {
       )
         throw new Error('E4_HOTSPOT_COVERAGE');
       if (this.reason === 'NONE') this.status = 'OBSERVED';
-    } catch {
+    } catch (error) {
+      this.logReason = logErrorReason(error, logFallback);
       this.unknown('LOG');
     }
   }
@@ -526,6 +566,7 @@ export class E4SameBackendPlanDiagnostic<T extends object> {
       status: this.status,
       reason: this.reason,
       setupReason: this.setupReason,
+      logReason: this.logReason,
       sameBackendAndSettingsRestored: this.restored,
       terminal: this.terminal,
       logMinDurationMs: 250,

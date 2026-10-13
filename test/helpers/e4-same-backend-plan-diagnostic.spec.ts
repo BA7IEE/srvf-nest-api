@@ -109,6 +109,21 @@ describe('same-backend prepare plans (offline; no Docker/DB)', () => {
     expect(projectE4ServerLogs(log(82) + log(81, input), 81)).toHaveLength(1);
     expect(projectE4ServerLogs(log(81, input), 81)[0].durationMs).toBe(900.5);
   });
+  it('preserves unmeasured trigger time as null with TIMING OFF, without fabricating zero', () => {
+    const { Time, ...trigger } = document.Triggers[0];
+    expect(Time).toBe(900);
+    const result = projectE4ServerLogs(log(81, { ...document, Triggers: [trigger] }), 81);
+    expect(result[0].triggers).toEqual([{ role: 'EVALUATION_SET', calls: 1, timeMs: null }]);
+    expect(JSON.stringify(result)).not.toContain('secret sentinel');
+  });
+  it.each([null, -1, '900', NaN, Infinity, 600001])(
+    'still refuses invalid present trigger time %s',
+    (Time) => {
+      expect(() =>
+        projectE4NestedPlan({ ...document, Triggers: [{ ...document.Triggers[0], Time }] }, 1),
+      ).toThrow('E4_PLAN_NUMBER');
+    },
+  );
   it.each([
     log(82),
     log().slice(0, -8),
@@ -159,6 +174,7 @@ describe('same-backend prepare plans (offline; no Docker/DB)', () => {
     expect(f.diagnostic.snapshot()).toMatchObject({
       status: 'OBSERVED',
       setupReason: 'NONE',
+      logReason: 'NONE',
       sameBackendAndSettingsRestored: true,
       terminal: 'IDLE_NO_TX',
       nestedTotalsAdditive: false,
@@ -273,9 +289,59 @@ describe('same-backend prepare plans (offline; no Docker/DB)', () => {
     expect(f.diagnostic.snapshot()).toMatchObject({
       status: 'UNKNOWN',
       reason: 'LOG',
+      logReason: 'READ',
       terminal: 'IDLE_NO_TX',
     });
     expect(JSON.stringify(f.diagnostic.snapshot())).not.toContain('secret sentinel');
+  });
+  it('rejects a lookalike error prefix carrying private text', async () => {
+    const f = fixture({
+      logs: async () => {
+        throw new Error('E4_PLAN_NUMBER secret sentinel');
+      },
+    });
+    await expect(f.run()).resolves.toEqual({ original: 'business result' });
+    expect(f.diagnostic.snapshot()).toMatchObject({ reason: 'LOG', logReason: 'READ' });
+    expect(JSON.stringify(f.diagnostic.snapshot())).not.toContain('secret sentinel');
+  });
+  it.each([
+    ['MISSING', () => log(82)],
+    ['JSON', () => log().replace('"Query Text":', '"Query Text" secret sentinel:')],
+    ['PLAN_NUMBER', () => log(81, { ...document, Triggers: [{ Calls: 'private' }] })],
+    ['HOTSPOT_COVERAGE', () => log(81, { ...document, 'Query Text': 'SELECT 1' })],
+  ])(
+    'classifies actual parser/coverage failure %s without SQL or exception text',
+    async (logReason, logs) => {
+      const f = fixture({ logs: async () => logs() });
+      await expect(f.run()).resolves.toEqual({ original: 'business result' });
+      expect(f.diagnostic.snapshot()).toMatchObject({
+        status: 'UNKNOWN',
+        reason: 'LOG',
+        logReason,
+      });
+      expect(JSON.stringify(f.diagnostic.snapshot())).not.toMatch(/secret sentinel|private/);
+    },
+  );
+  it('closes hostile error getters and arbitrary parser exceptions without exporting text', async () => {
+    const f = fixture({
+      logs: async () => {
+        const error = new Error();
+        Object.defineProperty(error, 'message', {
+          get() {
+            throw new Error('private');
+          },
+        });
+        throw error;
+      },
+    });
+    await expect(f.run()).resolves.toEqual({ original: 'business result' });
+    expect(f.diagnostic.snapshot()).toMatchObject({ reason: 'LOG', logReason: 'READ' });
+    const wrong = fixture({ logs: async () => undefined });
+    await wrong.run();
+    expect(wrong.diagnostic.snapshot()).toMatchObject({ reason: 'LOG', logReason: 'UNKNOWN' });
+    expect(JSON.stringify([f.diagnostic.snapshot(), wrong.diagnostic.snapshot()])).not.toContain(
+      'private',
+    );
   });
   it('records original transaction settlement before the separately bounded log capture completes', async () => {
     let finish!: () => void, entered!: () => void;
