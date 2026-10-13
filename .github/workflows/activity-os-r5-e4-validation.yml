@@ -726,3 +726,52 @@ jobs:
             tmp/e4-guard-functions-evidence/summary.json
           if-no-files-found: ignore
           retention-days: 7
+
+  prepare-cost:
+    if: github.repository == 'BA7IEE/srvf-nest-api' && github.run_attempt == 1 && contains(github.event.head_commit.message, '[e4-prepare-cost-once]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: test
+      SRVF_E4_DIAGNOSTIC_PURPOSE: DIAGNOSTIC_ONLY
+      SRVF_E4_GITHUB_ISOLATED: '1'
+      SRVF_TEST_RUN_SCOPE: app_test_w98
+      SRVF_E4_W98: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.3
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma:generate
+      - name: Start fresh PostgreSQL 16 runner
+        run: |
+          docker compose up -d postgres
+          for attempt in $(seq 1 60); do
+            if docker exec u-nest-api-postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: One DIAGNOSTIC_ONLY maximum prepare with independent 600s watchdog
+        env:
+          TS_NODE_PROJECT: test/tsconfig.test.json
+        run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --execute
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e4-prepare-cost-${{ github.run_id }}
+          path: tmp/e4-prepare-cost-evidence/result.json
+          if-no-files-found: error
+      - name: Remove this job's ephemeral PostgreSQL container
+        if: always()
+        run: docker compose down
