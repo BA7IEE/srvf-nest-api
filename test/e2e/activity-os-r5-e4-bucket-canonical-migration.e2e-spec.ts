@@ -459,7 +459,7 @@ describe('E4 bucket canonical migration 141 nonempty upgrade', () => {
     const beforeConstraints = await constraints(db);
     const beforeBusiness = await businessSnapshot(db);
     const beforeDocuments = await verifyBusinessRoots(db, false);
-    owner.deployLatestMigrations();
+    owner.deployBucketMigrations();
     const afterMigrations = await migrationRows(db);
     expect(afterMigrations).toHaveLength(141);
     expect(JSON.stringify(afterMigrations.slice(0, 140)) === JSON.stringify(beforeMigrations)).toBe(
@@ -481,7 +481,7 @@ describe('E4 bucket canonical migration 141 nonempty upgrade', () => {
     expect(JSON.stringify(await constraints(db)) === JSON.stringify(beforeConstraints)).toBe(true);
     expect((await businessSnapshot(db)) === beforeBusiness).toBe(true);
     expect((await verifyBusinessRoots(db, true)) === beforeDocuments).toBe(true);
-    owner.deployLatestMigrations();
+    owner.deployBucketMigrations();
     expect(JSON.stringify(await migrationRows(db)) === JSON.stringify(afterMigrations)).toBe(true);
     expect(JSON.stringify(await functionCatalog(db)) === JSON.stringify(beforeCatalog)).toBe(true);
     expect(JSON.stringify(await constraints(db)) === JSON.stringify(beforeConstraints)).toBe(true);

@@ -428,7 +428,8 @@ describe('E4 transaction-owned contribution orchestration', () => {
     tx.$queryRaw.mockResolvedValue([{ set_config: 'force_custom_plan' }]);
     await service.prepareTimeInTx(prismaTx, time(), 'policy_v1', command, reauthorize);
     expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
-    expect((tx.$queryRaw.mock.calls[0][0] as TemplateStringsArray).join('').trim()).toBe(
+    const [statement] = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray];
+    expect(statement.join('').trim()).toBe(
       "SELECT pg_catalog.set_config('plan_cache_mode', 'force_custom_plan', true)",
     );
     expect(

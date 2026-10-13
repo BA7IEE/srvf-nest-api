@@ -59,7 +59,7 @@ import {
 // Fixed pre-29.12 SQL reference; do not derive it from the candidate migration.
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 
-const CURRENT_MIGRATION_COUNT = 141;
+const CURRENT_MIGRATION_COUNT = 142;
 
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E3_D2_MAPPING_W98 === '1');
 

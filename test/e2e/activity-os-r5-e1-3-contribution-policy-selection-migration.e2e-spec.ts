@@ -18,7 +18,7 @@ import { deriveTestDbName } from '../setup/worktree-db';
 
 import { installScratchDatabaseLease } from '../helpers/scratch-database-lease';
 
-const CURRENT_MIGRATION_COUNT = 141;
+const CURRENT_MIGRATION_COUNT = 142;
 
 const scratchLifecycle = installScratchDatabaseLease(process.env.SRVF_E1_3_W98 === '1');
 

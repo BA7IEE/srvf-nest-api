@@ -9,16 +9,19 @@ export const E4_MIGRATION_140 =
 
 export const E4_MIGRATION_141 = '20261012030000_activity_time_bucket_canonical_fast_path';
 
+export const E4_MIGRATION_142 = '20261012040000_activity_canonical_json_unit_fast_path';
+
 export function e4HistoricalMigrationPrefix(names: readonly string[]): string[] {
   const ordered = [...names].sort();
   if (
-    ordered.length !== 141 ||
+    ordered.length !== 142 ||
     ordered[136] !== E4_MIGRATION_137 ||
     ordered[137] !== E4_MIGRATION_138 ||
     ordered[138] !== E4_MIGRATION_139 ||
     ordered[139] !== E4_MIGRATION_140 ||
-    ordered[140] !== E4_MIGRATION_141
+    ordered[140] !== E4_MIGRATION_141 ||
+    ordered[141] !== E4_MIGRATION_142
   )
-    throw new Error('E4 fixed 137 prefix or explicit 138/139/140/141 successors changed');
+    throw new Error('E4 fixed 137 prefix or explicit 138/139/140/141/142 successors changed');
   return ordered.slice(0, 137);
 }

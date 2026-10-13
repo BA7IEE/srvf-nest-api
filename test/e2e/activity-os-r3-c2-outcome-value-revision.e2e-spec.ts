@@ -10,7 +10,7 @@ import {
 } from '../setup/test-db';
 import { deriveWorkerTestDbName } from '../setup/worktree-db';
 
-const CURRENT_MIGRATION_COUNT = 141;
+const CURRENT_MIGRATION_COUNT = 142;
 
 const WORKER = process.env.JEST_WORKER_ID ?? '1';
 const database = () => deriveWorkerTestDbName(WORKER);
