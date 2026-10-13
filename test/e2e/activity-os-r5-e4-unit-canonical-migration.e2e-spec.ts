@@ -303,7 +303,7 @@ describe('E4 unit canonical helper migration 142 nonempty upgrade', () => {
     await verifyRealRoots(db);
     await verifyCorpus(db);
 
-    owner.deployLatestMigrations();
+    owner.deployUnitMigrations();
     const afterMigrations = await migrationRows(db);
     expect(afterMigrations).toHaveLength(142);
     expect(JSON.stringify(afterMigrations.slice(0, 141)) === JSON.stringify(beforeMigrations)).toBe(
@@ -329,7 +329,7 @@ describe('E4 unit canonical helper migration 142 nonempty upgrade', () => {
     );
     await verifyRealRoots(db);
     await verifyCorpus(db);
-    owner.deployLatestMigrations();
+    owner.deployUnitMigrations();
     expect(JSON.stringify(await migrationRows(db)) === JSON.stringify(afterMigrations)).toBe(true);
     expect(JSON.stringify(await publicCatalog(db)) === JSON.stringify(beforeCatalog)).toBe(true);
     expect(JSON.stringify(await constraints(db)) === JSON.stringify(beforeConstraints)).toBe(true);

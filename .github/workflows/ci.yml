@@ -303,6 +303,13 @@ jobs:
         if: needs.changeset.outputs.docs_only != 'true'
         run: pnpm test
 
+      - name: Run E4 historical prefix offline regression
+        if: needs.changeset.outputs.docs_only != 'true'
+        run: >-
+          pnpm exec jest --config test/jest-unit.config.ts --runInBand
+          --testRegex 'test/helpers/e4-migration-prefix\.spec\.ts$'
+          --runTestsByPath test/helpers/e4-migration-prefix.spec.ts
+
   # ── 守护线:harness 自测 ∥ 事故回放 ─────────────────────────────────────────
   # 为什么拆出来(2026-08-15,维护者拍板):这两步在 fast 里合计 9m08s = 61% 预算,
   # 且 5 天内从 4m17s 涨到 9m08s(08-09 run 31318061317:147s + 110s;

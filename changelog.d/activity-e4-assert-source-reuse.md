@@ -1,0 +1,5 @@
+# E4 complete assertion source reuse
+
+Migration143 reuses relation-valued source rows within one complete assertion. INSERT and deferred checks remain independent, with the existing frozen selection, source, evaluation, root/hash and version/result checks intact. The first-review service pins the exact new function body; migrations1–142 remain unchanged.
+
+Adds nonempty142→143/no-op preservation, old/new guard equivalence and precedence, private SQL double-fault fixtures, native INSERT/deferred rollback, observed two-backend snapshot/freshness and frozen root/day/source oracle regressions. Historical142 tests keep their fixed migration entry. The formal full-scale30-second budget is unchanged; GitHub validation and maintainer SQL/trusted approval remain required before acceptance.

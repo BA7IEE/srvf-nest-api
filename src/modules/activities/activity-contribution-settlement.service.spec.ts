@@ -302,9 +302,22 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
       'utf8',
     );
     for (const name of ['e4_native_version_complete_guard', 'e4_assert_complete']) {
+      const source =
+        name === 'e4_assert_complete'
+          ? readFileSync(
+              resolve(
+                __dirname,
+                '../../../prisma/migrations/20261013000000_activity_contribution_assert_source_reuse/migration.sql',
+              ),
+              'utf8',
+            )
+          : migration;
       const matches = [
-        ...migration.matchAll(
-          new RegExp(`CREATE FUNCTION ${name}\\([^]*? AS \\$\\$([^]*?)\\$\\$;`, 'gu'),
+        ...source.matchAll(
+          new RegExp(
+            `CREATE(?: OR REPLACE)? FUNCTION ${name}\\([^]*? AS \\$\\$([^]*?)\\$\\$;`,
+            'gu',
+          ),
         ),
       ];
       expect(matches).toHaveLength(1);
@@ -329,13 +342,14 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
       expect(sql).toContain(predicate);
   });
 
-  it('accepts only the finalized S13 whole-body pin and never the superseded opening body', async () => {
+  it('accepts only the source-reuse143 whole-body pin and never a superseded body', async () => {
     const { service, prismaTx, tx } = setup();
     tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(firstReviewProof());
     tx.$queryRaw.mockResolvedValue([FIRST_REVIEW_TEST_GUARD]);
     await service.readFirstReviewBarrierCandidateInTx(prismaTx, firstReviewAnchor());
     const call = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, Prisma.Sql];
-    expect(call[1].text).toContain("md5(complete_proc.prosrc)='21fe9ecf6df989a3f8fa5878df40b93c'");
+    expect(call[1].text).toContain("md5(complete_proc.prosrc)='59a9bc7d7c0c3b38df982536a2632b15'");
+    expect(call[1].text).not.toContain('21fe9ecf6df989a3f8fa5878df40b93c');
     expect(call[1].text).not.toContain('edd162a44264b0d073d0009d3e592d0e');
     expect(call[1].text).not.toContain('7e56ad35c5266706ab7cf12757c8f1b2');
     expect(call[1].text).toContain('fa428e2eb3e733f770cbb31c15dd4720');

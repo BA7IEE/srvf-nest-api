@@ -23,7 +23,7 @@
 
 > **E3 当前边界（2026-10-03）**：不可变来源／映射证明、影子对账复核读面、受控窗口与逐项签字已仓内交付，当前主干验收通过；证据见[既有评审稿 §32](plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#32-e3-当前状态收口2026-10-03)。仍未部署、真实业务未验收，31 类真实映射继续 hold，shadow／Gate 关闭、D8-OPS 未执行。历史未复现性能／隔离根因不因一次 CI 绿而关闭。操作入口及缺口计数见[对账说明](ops/contribution-shadow-reconciliation.md)；生成契约不代表外部端回执或生产批准。
 
-> **E4 当前边界（2026-10-13）**：仓内实现候选已推进到 migration 142，仍在 Draft PR1380，未正式验收、合入 main 或部署。最新原规模验证仅原满额 prepare 以 P2028 失败，30秒业务标准保留；三条诊断接线回归已恢复。历史性能／隔离仍 FAIL／UNKNOWN，E5未实施，生产 Gate仍关闭。[E4短入口与harness候选](plans/activity-os-r5-e4-harness-candidate.md)汇总当前事实和待核方法；旧[评审稿](plans/activity-os-r5-e4-contribution-settlement-review-and-plan.md)保留为历史证据，不再作为当前状态的唯一入口。
+> **E4 当前边界（2026-10-14）**：来源复用候选推进到 migration 143，仍在 Draft PR1380，未合入或部署。PG16 TIMING OFF 投影兼容修复后的 run38457728710 在诊断预算内完成真实 prepare（39.656秒）及完整 oracle、COMMIT和正常清理；正式30秒仍 FAIL，计划观测为 UNKNOWN/LOG/OUTPUT。143仅减少单次完整校验内的重复来源展开，保留所有独立数据库校验；新增142→143非空升级、旧新等价、错误优先级与两连接快照回归，GitHub实测待完成。最终SQL签字、trusted审批与生产 Gate未改变。当前候选及验证见[来源复用评审记录](plans/activity-os-r5-e4-assert-source-reuse-review.md)。
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
@@ -32,7 +32,7 @@
 | 模块 | 43 |
 | Controller | 128 |
 | Endpoint | 663 |
-| Migration | 142 |
+| Migration | 143 |
 | BizCode | 581 |
 | 权限码 | 273 |
 | AuditLogEvent | 178 |
