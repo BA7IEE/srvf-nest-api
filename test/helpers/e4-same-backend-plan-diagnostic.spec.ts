@@ -57,8 +57,9 @@ const observation = {
 
 function fixture(patch: Record<string, unknown> = {}) {
   const tx = {
-    $queryRawUnsafe: jest.fn(async (sql: string) =>
-      sql.includes(' AS configured') ? [{ pid: 81, scope: true, configured: true }] : initial(),
+    $queryRawUnsafe: jest.fn(
+      async (sql: string): Promise<Record<string, unknown>[]> =>
+        sql.includes(' AS configured') ? [{ pid: 81, scope: true, configured: true }] : initial(),
     ),
     $executeRawUnsafe: jest.fn().mockResolvedValue(0),
   };
@@ -157,6 +158,7 @@ describe('same-backend prepare plans (offline; no Docker/DB)', () => {
     );
     expect(f.diagnostic.snapshot()).toMatchObject({
       status: 'OBSERVED',
+      setupReason: 'NONE',
       sameBackendAndSettingsRestored: true,
       terminal: 'IDLE_NO_TX',
       nestedTotalsAdditive: false,
@@ -166,23 +168,90 @@ describe('same-backend prepare plans (offline; no Docker/DB)', () => {
     expect(f.db.$transaction).toHaveBeenCalledTimes(1);
     expect(f.limits.snapshot().actualTransactionMs).toBe(90000);
   });
-  it.each(['scope', 'version', 'allowed', 'logFormat', 'activity', 'disabled', 'catalog'])(
-    'refuses%s before LOAD or business',
-    async (key) => {
-      const f = fixture();
-      f.tx.$queryRawUnsafe.mockResolvedValue([{ ...initial()[0], [key]: false }]);
-      await expect(f.run()).rejects.toThrow('E4_SAME_BACKEND_DIAGNOSTIC_UNKNOWN');
-      expect(f.tx.$executeRawUnsafe).not.toHaveBeenCalled();
-      expect(f.work).not.toHaveBeenCalled();
-      expect(f.diagnostic.snapshot()).toMatchObject({ status: 'UNKNOWN', reason: 'SETUP' });
-    },
-  );
+  it.each([
+    ['scope', 'PREFLIGHT_SCOPE'],
+    ['version', 'PREFLIGHT_VERSION'],
+    ['allowed', 'PREFLIGHT_ROLE'],
+    ['logFormat', 'PREFLIGHT_LOG_FORMAT'],
+    ['activity', 'PREFLIGHT_ACTIVITY'],
+    ['disabled', 'PREFLIGHT_DISABLED'],
+    ['catalog', 'PREFLIGHT_CATALOG'],
+  ])('refuses%s before LOAD or business', async (key, setupReason) => {
+    const f = fixture();
+    f.tx.$queryRawUnsafe.mockResolvedValue([{ ...initial()[0], [key]: false }]);
+    await expect(f.run()).rejects.toThrow('E4_SAME_BACKEND_DIAGNOSTIC_UNKNOWN');
+    expect(f.tx.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(f.work).not.toHaveBeenCalled();
+    expect(f.diagnostic.snapshot()).toMatchObject({
+      status: 'UNKNOWN',
+      reason: 'SETUP',
+      setupReason,
+    });
+  });
+  it('reports the PostgreSQL-folded preflight field without retaining the returned row', async () => {
+    const f = fixture();
+    const { logFormat, ...row } = initial()[0];
+    f.tx.$queryRawUnsafe.mockResolvedValue([{ ...row, logformat: logFormat }]);
+    await expect(f.run()).rejects.toThrow('E4_SAME_BACKEND_DIAGNOSTIC_UNKNOWN');
+    expect(f.tx.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(f.work).not.toHaveBeenCalled();
+    expect(f.diagnostic.snapshot()).toMatchObject({
+      reason: 'SETUP',
+      setupReason: 'PREFLIGHT_LOG_FORMAT',
+    });
+    expect(JSON.stringify(f.diagnostic.snapshot())).not.toContain('logformat');
+  });
+  it.each([
+    [[], 'PREFLIGHT_SHAPE'],
+    [[{ ...initial()[0], pid: 0 }], 'PREFLIGHT_PID'],
+  ])('classifies an invalid preflight shape or PID before business', async (rows, setupReason) => {
+    const f = fixture();
+    f.tx.$queryRawUnsafe.mockResolvedValue(rows);
+    await expect(f.run()).rejects.toThrow('E4_SAME_BACKEND_DIAGNOSTIC_UNKNOWN');
+    expect(f.work).not.toHaveBeenCalled();
+    expect(f.diagnostic.snapshot()).toMatchObject({ reason: 'SETUP', setupReason });
+  });
+  it('classifies a preflight read failure without retaining its raw exception', async () => {
+    const f = fixture();
+    f.tx.$queryRawUnsafe.mockRejectedValue(new Error('secret sentinel read detail'));
+    await expect(f.run()).rejects.toThrow('E4_SAME_BACKEND_DIAGNOSTIC_UNKNOWN');
+    expect(f.work).not.toHaveBeenCalled();
+    expect(f.diagnostic.snapshot()).toMatchObject({
+      reason: 'SETUP',
+      setupReason: 'PREFLIGHT_QUERY',
+    });
+    expect(JSON.stringify(f.diagnostic.snapshot())).not.toContain('secret sentinel');
+  });
   it('closes a LOAD/settings permission failure without echoing the original error', async () => {
     const f = fixture();
     f.tx.$executeRawUnsafe.mockRejectedValue(new Error('secret sentinel permission detail'));
     await expect(f.run()).rejects.toThrow('E4_SAME_BACKEND_DIAGNOSTIC_UNKNOWN');
     expect(f.work).not.toHaveBeenCalled();
     expect(f.logs).not.toHaveBeenCalled();
+    expect(f.diagnostic.snapshot()).toMatchObject({ setupReason: 'LOAD' });
+    expect(JSON.stringify(f.diagnostic.snapshot())).not.toContain('secret sentinel');
+  });
+  it('distinguishes a setting failure from LOAD without retaining SQL or errors', async () => {
+    const f = fixture();
+    f.tx.$executeRawUnsafe
+      .mockResolvedValueOnce(0)
+      .mockRejectedValue(new Error('secret sentinel setting detail'));
+    await expect(f.run()).rejects.toThrow('E4_SAME_BACKEND_DIAGNOSTIC_UNKNOWN');
+    expect(f.work).not.toHaveBeenCalled();
+    expect(f.diagnostic.snapshot()).toMatchObject({ reason: 'SETUP', setupReason: 'SETTINGS' });
+    expect(JSON.stringify(f.diagnostic.snapshot())).not.toContain('secret sentinel');
+  });
+  it('distinguishes configuration read failure from configuration refusal', async () => {
+    const f = fixture();
+    f.tx.$queryRawUnsafe
+      .mockResolvedValueOnce(initial())
+      .mockRejectedValue(new Error('secret sentinel configuration detail'));
+    await expect(f.run()).rejects.toThrow('E4_SAME_BACKEND_DIAGNOSTIC_UNKNOWN');
+    expect(f.work).not.toHaveBeenCalled();
+    expect(f.diagnostic.snapshot()).toMatchObject({
+      reason: 'SETUP',
+      setupReason: 'CONFIGURATION_QUERY',
+    });
     expect(JSON.stringify(f.diagnostic.snapshot())).not.toContain('secret sentinel');
   });
   it('refuses mismatched actual settings or a backend switch before business execution', async () => {
@@ -192,6 +261,7 @@ describe('same-backend prepare plans (offline; no Docker/DB)', () => {
     );
     await expect(f.run()).rejects.toThrow('E4_SAME_BACKEND_DIAGNOSTIC_UNKNOWN');
     expect(f.work).not.toHaveBeenCalled();
+    expect(f.diagnostic.snapshot()).toMatchObject({ setupReason: 'CONFIGURATION_CHECK' });
   });
   it('does not convert a successful committed business result into failure when log capture fails', async () => {
     const f = fixture({

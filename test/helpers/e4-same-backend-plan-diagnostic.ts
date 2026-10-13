@@ -66,7 +66,7 @@ const preflight = `SELECT pg_backend_pid() AS pid,current_database()=$1 AS scope
   current_setting('server_version_num')::int BETWEEN 160000 AND 169999 AS version,
   (SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS allowed,
   current_setting('log_line_prefix')='%m [%p] ' AND current_setting('log_destination')='stderr'
-    AND current_setting('logging_collector')='off' AS logFormat,
+    AND current_setting('logging_collector')='off' AS "logFormat",
   current_setting('track_activities')='on' AS activity,
   coalesce(current_setting('auto_explain.log_min_duration',true),'-1')='-1' AS disabled,
   (SELECT count(*)=1 AND bool_and(md5(p.prosrc)='21fe9ecf6df989a3f8fa5878df40b93c')
@@ -94,7 +94,7 @@ const configurationCheck = `SELECT pg_backend_pid() AS pid,current_database()=$1
     AND current_setting('auto_explain.sample_rate')='1' AS configured`;
 const observerSql = `SELECT current_database()=$2 AS scope,a.state,
   coalesce(a.wait_event_type,'NONE') AS type,coalesce(a.wait_event,'NONE') AS event,
-  cardinality(pg_blocking_pids(a.pid)) AS blockers,a.xact_start IS NULL AS noTransaction
+  cardinality(pg_blocking_pids(a.pid)) AS blockers,a.xact_start IS NULL AS "noTransaction"
   FROM pg_stat_activity a WHERE a.pid=$1 AND a.datname=$2`;
 const waitTypes = [
   'NONE',
@@ -274,6 +274,25 @@ type Dependencies = {
   logs?: (since: string, until: string) => Promise<string>;
   pause?: () => Promise<void>;
 };
+const preflightReasons = {
+  scope: 'PREFLIGHT_SCOPE',
+  version: 'PREFLIGHT_VERSION',
+  allowed: 'PREFLIGHT_ROLE',
+  logFormat: 'PREFLIGHT_LOG_FORMAT',
+  activity: 'PREFLIGHT_ACTIVITY',
+  disabled: 'PREFLIGHT_DISABLED',
+  catalog: 'PREFLIGHT_CATALOG',
+} as const;
+type SetupReason =
+  | 'NONE'
+  | 'PREFLIGHT_QUERY'
+  | 'PREFLIGHT_SHAPE'
+  | 'PREFLIGHT_PID'
+  | (typeof preflightReasons)[keyof typeof preflightReasons]
+  | 'LOAD'
+  | 'SETTINGS'
+  | 'CONFIGURATION_QUERY'
+  | 'CONFIGURATION_CHECK';
 async function dockerLogs(since: string, until: string): Promise<string> {
   const result = await runFile(
     'docker',
@@ -294,6 +313,7 @@ export class E4SameBackendPlanDiagnostic<T extends object> {
   private pid = 0;
   private status: 'NOT_RUN' | 'OBSERVED' | 'UNKNOWN' = 'NOT_RUN';
   private reason: 'NONE' | 'SETUP' | 'MONITOR' | 'RESTORE' | 'LOG' = 'NONE';
+  private setupReason: SetupReason = 'NONE';
   private restored = false;
   private monitor: Promise<void> | undefined;
   private plans: Plan[] = [];
@@ -342,39 +362,47 @@ export class E4SameBackendPlanDiagnostic<T extends object> {
           async (tx: Prisma.TransactionClient) => {
             const setupStarted = performance.now();
             try {
+              this.setupReason = 'PREFLIGHT_QUERY';
               const rows = await tx.$queryRawUnsafe<Record<string, unknown>[]>(
                 preflight,
                 context.scope,
               );
+              this.setupReason = 'PREFLIGHT_SHAPE';
               if (
+                !Array.isArray(rows) ||
                 rows.length !== 1 ||
-                !Number.isSafeInteger(rows[0].pid) ||
-                Number(rows[0].pid) <= 0 ||
-                [
-                  'scope',
-                  'version',
-                  'allowed',
-                  'logFormat',
-                  'activity',
-                  'disabled',
-                  'catalog',
-                ].some((key) => rows[0][key] !== true)
+                !rows[0] ||
+                typeof rows[0] !== 'object'
               )
                 throw new Error('E4_PLAN_PREFLIGHT');
+              this.setupReason = 'PREFLIGHT_PID';
+              if (!Number.isSafeInteger(rows[0].pid) || Number(rows[0].pid) <= 0)
+                throw new Error('E4_PLAN_PREFLIGHT');
+              for (const [key, reason] of Object.entries(preflightReasons)) {
+                this.setupReason = reason;
+                if (rows[0][key] !== true) throw new Error('E4_PLAN_PREFLIGHT');
+              }
               this.pid = Number(rows[0].pid);
+              this.setupReason = 'LOAD';
               await tx.$executeRawUnsafe("LOAD 'auto_explain'");
+              this.setupReason = 'SETTINGS';
               for (const statement of settings) await tx.$executeRawUnsafe(statement);
+              this.setupReason = 'CONFIGURATION_QUERY';
               const enabled = await tx.$queryRawUnsafe<Record<string, unknown>[]>(
                 configurationCheck,
                 context.scope,
               );
+              this.setupReason = 'CONFIGURATION_CHECK';
               if (
+                !Array.isArray(enabled) ||
                 enabled.length !== 1 ||
+                !enabled[0] ||
                 enabled[0].pid !== this.pid ||
                 enabled[0].scope !== true ||
                 enabled[0].configured !== true
               )
                 throw new Error('E4_PLAN_SETTINGS');
+              this.setupReason = 'NONE';
               this.active = true;
               this.monitor = this.monitorLoop();
             } catch {
@@ -497,6 +525,7 @@ export class E4SameBackendPlanDiagnostic<T extends object> {
       acceptance: 'NOT_AN_ACCEPTANCE_RESULT',
       status: this.status,
       reason: this.reason,
+      setupReason: this.setupReason,
       sameBackendAndSettingsRestored: this.restored,
       terminal: this.terminal,
       logMinDurationMs: 250,
