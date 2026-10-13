@@ -16,6 +16,7 @@ import {
   installE4DiagnosticFixtureGate,
 } from '../helpers/e4-diagnostic-limits-client';
 import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';
+import { E4SameBackendPlanDiagnostic } from '../helpers/e4-same-backend-plan-diagnostic';
 import {
   E4EngineRequestWaitDiagnostic,
   E4NativeRequestBoundaryDiagnostic,
@@ -141,6 +142,7 @@ type Report = typeof E4_DIAGNOSTIC_PLAN & {
   requests?: unknown;
   transaction?: unknown;
   limits?: unknown;
+  internal?: unknown;
 };
 function writeBounded(path: string, value: unknown) {
   const json = JSON.stringify(value, null, 2) + '\n';
@@ -250,23 +252,36 @@ function registerDiagnosticChild() {
         ).toBe(50000);
         checkpoint.mark('SOURCE_BUILD', 'COMPLETE');
         checkpoint.mark('PREPARE', 'ENTER');
+        const measuredUrl = new URL(process.env.DATABASE_URL!);
+        measuredUrl.searchParams.set('connection_limit', '1');
         db = new DiagnosticDatabase({
-          datasources: { db: { url: process.env.DATABASE_URL! } },
+          datasources: { db: { url: measuredUrl.toString() } },
           log: [{ emit: 'event', level: 'query' }],
         });
         await assertConnectedTestDatabase(db);
         const limits = installE4DiagnosticLimits(db, context);
+        const observer = f.db;
+        const internal = new E4SameBackendPlanDiagnostic(limits.client, context, {
+          observe: (sql, pid, scope) =>
+            observer.$transaction(
+              async (tx) => {
+                await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+                return tx.$queryRawUnsafe(sql, pid, scope);
+              },
+              { timeout: 2000, maxWait: 1000 },
+            ),
+        });
         const contributions = f.app.get(ActivityContributionSettlementService),
           access = f.app.get(ActivityTimeSettlementAccessService),
           segments = f.app.get(ParticipationSegmentFacade);
         const reader = new ActivityTimeSettlementQueryService(
-          limits.client,
+          internal.client,
           access,
           segments,
           f.app.get(ActivityContributionSettlementQueryService),
         );
         const measured = new ActivityTimeSettlementService(
-          limits.client,
+          internal.client,
           access,
           reader,
           segments,
@@ -339,6 +354,7 @@ function registerDiagnosticChild() {
           report.requests = requests.snapshot();
           report.transaction = transaction.snapshot();
           report.limits = limits.snapshot();
+          report.internal = internal.snapshot();
         }
         checkpoint.mark('PREPARE', 'COMPLETE');
         checkpoint.mark('ORACLE', 'ENTER');
@@ -352,7 +368,7 @@ function registerDiagnosticChild() {
         await frozenE4Oracle()(f.db, proof.id, 8000);
         checkpoint.mark('ORACLE', 'COMPLETE');
         report.oracle = 'COMPLETE';
-        report.status = 'COMPLETE';
+        report.status = internal.snapshot().status === 'OBSERVED' ? 'COMPLETE' : 'UNKNOWN';
       } catch (error) {
         report.status = 'FAILED';
         checkpoint.mark(
