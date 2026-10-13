@@ -23500,3 +23500,21 @@ pnpm harness:grant 'prisma/migrations/20261003000000_activity_contribution_settl
 该 N1 D1 一次机会已经消费。按首个`UNKNOWN`停止，D3、D4、D5、D6均为`NOT_RUN`；不重跑D1、不将新 migration 部署进留存库、不重建／清理夹具、不放宽 checksum或任一正确性／性能门。若要继续，必须由维护者另行决定一个不改变验收合同的候选可验证数据库／临时候选来源方案，并重新明确授权；历史 D4 BA `FAIL`仍独立成立，Release 5仍未验收、生产 NO-GO。
 
 **本次未做**：未运行D3–D6或新的性能样本，未部署 migration、修改schema／seed／driver／setup／权限或控制面，未清理或重建留存夹具，未发新 grant／签字、提交、推送、PR、Ready、合并、E5、真实映射、开关或生产操作。
+
+<!-- E4-CLOUD-NATIVE-BOUNDARIES-20261013-BEGIN -->
+## 2026-10-13：获批七路径云端诊断候选（提交前记录）
+
+用户在父会话明确批准“SRVF 7 文件诊断包”，由现有云任务作为本批唯一写者。基点为 `bc28e204c7f21349c3de647978c0b050e45ca630`；本树与远端基点核对一致，本节仅在其文档末尾追加，没有读取、吸收或覆盖 Mac 的未提交内容。实际云实例 `24ba833c3ac0`／boot `4d731aba-77a4-492e-8930-eb6d1a538f0b`；Node `22.23.3`、pnpm `10.14.0`。本树实跑 install 与 Prisma generate，原 `preflight-gate.sh` 生成本树通行标记；open PR1380 是继续当前已授权任务的提示，没有复制 Mac grant、手写标记或修改门禁。
+
+本刀补齐观察边界：独立的 `E4_EVAL_WRITE` 方法进入／结束时间线与 outer／native 请求时间线使用同一单调时钟；只有明确、唯一待决的 outer 请求才关联 native 调用，歧义、缺失或限额异常标为 `UNKNOWN`。原 query callback 另投影 `BEGIN`／`COMMIT`／`ROLLBACK`／`SET_TRANSACTION`／目标 INSERT／OTHER 的固定分类、次数、duration 与收到事件时的偏移。原计数器、默认 snapshot 与业务 Promise／异常身份保持；新增输出独立有界，原 engine 400 调用、phase 32 调用及4096字节限制不扩大。只读固定 SQL 形状作分类，不读取参数，不解码或保留 native 请求／响应，不输出原始 SQL、ID、token、结果或错误内容。`NATIVE_OK` 仅指原 native Promise fulfilled，不能当作 SQL 成功；事件收到时间也不是服务器 `query_start`。
+
+完整原满额文件的旧断言和 SQL 不改：本轮十个新增诊断／逆转块各有精确摘要，剥离本轮块及两个新增逆转调用后，完整文件恢复基点 SHA256 `50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6`。旧 opening/hash 断言与安全判断保留；新增正反例拒绝缺块、重复块、改块及旧字节漂移。两个 helper 离线夹具补齐实际源码片段中的观察器上下文，不修改旧断言。
+
+已完成的云端检查：显式 unit-config／testRegex 的 `listTests` 精确返回两个 helper 文件，离线测试51项通过；格式、逆转字节与精确7路径核验通过。首轮并行 quick 的 cached lint 在6GiB堆上OOM，新增 snapshot 返回类型问题及三处 lint 诊断在本轮范围内修正；未改变规则、堆大小或检查射程。使用仓内既有 `NODE_OPTIONS=--max-old-space-size=6144 SRVF_CHECK_SERIAL=1 pnpm agent:check:quick` 排障入口后，完整冷 lint1965文件零错误／警告、src／test／scripts三项目类型及449 suites／9968 tests／8 snapshots通过。该 serial 分支不运行 harness，因此原 guards／eslint自测另以既有命令在最终代码上核对，两步均退出0；ESLint自测138通过、0失败、5个原已知缺口，不将缺口描述为关闭，也不把 serial 退出0冒充包含它们。获批终点是向现有 Draft PR1380 的同一分支单次推送最终候选，并跟踪自动 GitHub 原规模验证到终态；本节不预写尚未执行的 CI 成功，推送后不为记账再推一次。
+
+上轮 CI38338139272 的原满额 prepare 42297ms／P2028、无完成 INSERT event、旧12087ms无事件名差额仍保留。新增诊断不能给旧差额追补事件名，不能关闭缓存计划、durable commit／root isolation 或旧 D4／D8 根因 `UNKNOWN`。原2000／10000／50000／8000规模、30秒事务、5秒查询、全部SQL／migration1–142、生命周期、worker／PG、签字ledger、旧断言和生产边界保持；本刀没有生产性能实现修复。
+
+精确写集：两个 `e4-engine-request-wait-diagnostic` helper／spec、两个 `e4-prepare-phase-diagnostic` helper／spec、原 scale E2E 文件、本评审稿末尾和 `changelog.d/activity-e4-native-request-boundaries.md`，共7路径；静态红区预算0，实际阳性对照正常，不将预算当作授权凭据。
+
+**本次未做**：本云数据库／contract／E2E／满额操作、SQL或预算变更、新CI workflow／重跑、Mac未提交文件迁移、grant／凭据创建、签字、Ready、合并、部署或生产开关。提交／唯一推送及自动CI终态由本轮任务证据另行记录，旧段落不回改。
+<!-- E4-CLOUD-NATIVE-BOUNDARIES-20261013-END -->

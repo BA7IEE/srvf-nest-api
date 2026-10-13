@@ -77,6 +77,14 @@ export class E4PreparePhaseDiagnostic {
   private rootStarted: number | null = null;
   private rootCpuStarted: Cpu | null = null;
   private lastCpu: Cpu | undefined;
+  private boundaryEnabled = false;
+  private boundaryAnchor: number | null = null;
+  private boundaryUnknown = false;
+  private boundaryCalls = 0;
+  private readonly boundaryTrace: {
+    edge: 'METHOD_ENTER' | 'METHOD_OK' | 'METHOD_ERROR' | 'METHOD_UNKNOWN';
+    atMs: number | null;
+  }[] = [];
 
   constructor(
     bindings: readonly E4PreparePhaseBinding[],
@@ -230,6 +238,10 @@ export class E4PreparePhaseDiagnostic {
     row.calls++;
     row.pending++;
     this.frames.push(frame);
+    if (this.boundaryEnabled && frame.phase === 'E4_EVAL_WRITE') {
+      this.boundaryCalls++;
+      this.boundaryRecord('METHOD_ENTER', frame.started);
+    }
     let result: unknown;
     try {
       result = Reflect.apply(item.original, receiver, args);
@@ -272,7 +284,13 @@ export class E4PreparePhaseDiagnostic {
       }
       if (ok === null) this.unknown = true;
       else row[ok ? 'ok' : 'failed']++;
-      const duration = this.elapsed(frame.started, this.tick());
+      const ended = this.tick();
+      const duration = this.elapsed(frame.started, ended);
+      if (this.boundaryEnabled && frame.phase === 'E4_EVAL_WRITE')
+        this.boundaryRecord(
+          ok === null ? 'METHOD_UNKNOWN' : ok ? 'METHOD_OK' : 'METHOD_ERROR',
+          ended,
+        );
       if (duration === null || row.wallMs === null || !Number.isFinite(row.wallMs + duration)) {
         this.unknown = true;
         row.wallMs = null;
@@ -365,6 +383,54 @@ export class E4PreparePhaseDiagnostic {
       root: { ...this.root },
       phases: E4_PREPARE_PHASES.map((phase) => ({ phase, ...this.phases.get(phase)! })),
     };
+  }
+
+  /** Explicit one-case timeline; the existing snapshot and default observer stay unchanged. */
+  enableBoundaryTimeline(anchor: number): void {
+    if (
+      this.boundaryEnabled ||
+      this.begun ||
+      this.restored ||
+      !Number.isFinite(anchor) ||
+      anchor < 0
+    ) {
+      this.boundaryEnabled = this.boundaryUnknown = true;
+      return;
+    }
+    this.boundaryEnabled = true;
+    this.boundaryAnchor = anchor;
+  }
+
+  private boundaryRecord(edge: (typeof this.boundaryTrace)[number]['edge'], at: number | null) {
+    if (this.boundaryTrace.length >= 8) {
+      this.boundaryUnknown = true;
+      return;
+    }
+    const offset = at === null || this.boundaryAnchor === null ? null : at - this.boundaryAnchor;
+    if (offset === null || !Number.isFinite(offset) || offset < 0) this.boundaryUnknown = true;
+    this.boundaryTrace.push({
+      edge,
+      atMs: offset !== null && Number.isFinite(offset) && offset >= 0 ? offset : null,
+    });
+  }
+
+  boundarySnapshot() {
+    const value = {
+      status: !this.boundaryEnabled
+        ? 'NOT_RUN'
+        : this.boundaryUnknown || this.boundaryCalls !== 1 || this.snapshot().status !== 'COMPLETE'
+          ? 'UNKNOWN'
+          : 'COMPLETE',
+      clock: 'SHARED_PREPARE_MONOTONIC',
+      phase: 'E4_EVAL_WRITE',
+      calls: this.boundaryCalls,
+      trace: this.boundaryTrace.map((row) => ({ ...row })),
+    };
+    if (Buffer.byteLength(JSON.stringify(value), 'utf8') > MAX_BYTES) {
+      this.boundaryUnknown = true;
+      return { ...value, status: 'UNKNOWN', reason: 'OUTPUT_LIMIT', trace: [] };
+    }
+    return value;
   }
 
   emitTo(write: (safeJson: string) => void): boolean {

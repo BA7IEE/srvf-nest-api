@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import * as ts from 'typescript';
+import { createHash } from 'node:crypto';
 import {
   E4_PREPARE_PHASES,
   E4PreparePhaseDiagnostic,
@@ -470,6 +471,19 @@ function wiredPrepare(error?: Error, missingBinding = false, loggerFails = false
     barrierQueries: 0,
     timing: { readMs: 0, writeMs: 0, largestMs: 0 },
     engineObserver: { phases: [] },
+    engineRequests: {
+      begin: () => undefined,
+      finish: () => undefined,
+      restore: () => undefined,
+      snapshot: () => ({ status: 'COMPLETE' }),
+    },
+    boundaryAnchor: 0,
+    nativeBoundaryDiagnostic: {
+      begin: () => undefined,
+      finish: () => undefined,
+      restore: () => undefined,
+      snapshot: () => ({ status: 'NOT_RUN' }),
+    },
     Prisma: { PrismaClientKnownRequestError: class extends Error {} },
     console: {
       info: (tag: string, payload: unknown) => {
@@ -605,5 +619,173 @@ describe('E4 actual maximum prepare diagnostic wiring offline', () => {
       ['READ', 7],
       ['WRITE', 11],
     ]);
+  });
+});
+
+describe('E4 explicit method boundary timeline', () => {
+  it('keeps the default snapshot and timeline disabled', () => {
+    const f = fixture();
+    const diagnostic = new E4PreparePhaseDiagnostic(f.bindings(), f.clock);
+    expect(Object.keys(diagnostic.snapshot())).toEqual(['status', 'root', 'phases']);
+    expect(diagnostic.boundarySnapshot().status).toBe('NOT_RUN');
+    diagnostic.restore();
+  });
+
+  it('uses the shared monotonic anchor and preserves the original method promise', async () => {
+    const f = fixture();
+    let now = 100;
+    let done!: () => void;
+    const promise = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    f.targets.E4_EVAL_WRITE.work = () => promise;
+    const diagnostic = new E4PreparePhaseDiagnostic(
+      f.bindings(),
+      () => now,
+      () => ({ user: 0, system: 0 }),
+    );
+    diagnostic.enableBoundaryTimeline(100);
+    diagnostic.begin();
+    now = 110;
+    expect(f.targets.E4_EVAL_WRITE.work()).toBe(promise);
+    now = 130;
+    done();
+    await promise;
+    await remaining(f, ['E4_EVAL_WRITE']);
+    diagnostic.finish('OK');
+    diagnostic.restore();
+    expect(diagnostic.boundarySnapshot()).toMatchObject({
+      status: 'COMPLETE',
+      calls: 1,
+      trace: [
+        { edge: 'METHOD_ENTER', atMs: 10 },
+        { edge: 'METHOD_OK', atMs: 30 },
+      ],
+    });
+    expect(Object.keys(diagnostic.snapshot())).toEqual(['status', 'root', 'phases']);
+  });
+
+  it('preserves rejected method identity without retaining its input or error', async () => {
+    const f = fixture();
+    const error = new Error('opaque original method failure');
+    const promise = Promise.reject(error);
+    f.targets.E4_EVAL_WRITE.work = () => promise;
+    const diagnostic = new E4PreparePhaseDiagnostic(
+      f.bindings(),
+      () => 100,
+      () => ({ user: 0, system: 0 }),
+    );
+    diagnostic.enableBoundaryTimeline(100);
+    diagnostic.begin();
+    expect(
+      f.targets.E4_EVAL_WRITE.work({
+        toJSON() {
+          throw new Error('do not serialize input');
+        },
+      }),
+    ).toBe(promise);
+    await expect(promise).rejects.toBe(error);
+    diagnostic.finish('FAIL');
+    diagnostic.restore();
+    expect(diagnostic.boundarySnapshot()).toMatchObject({
+      status: 'COMPLETE',
+      trace: [{ edge: 'METHOD_ENTER' }, { edge: 'METHOD_ERROR' }],
+    });
+    expect(JSON.stringify(diagnostic.boundarySnapshot())).not.toContain(error.message);
+  });
+
+  it('does not turn an invalid anchor or missing method into a complete boundary record', async () => {
+    const f = fixture();
+    const diagnostic = new E4PreparePhaseDiagnostic(f.bindings(), f.clock);
+    diagnostic.enableBoundaryTimeline(Number.NaN);
+    diagnostic.begin();
+    await remaining(f);
+    diagnostic.finish('OK');
+    diagnostic.restore();
+    expect(diagnostic.snapshot().status).toBe('COMPLETE');
+    expect(diagnostic.boundarySnapshot().status).toBe('UNKNOWN');
+    const second = fixture();
+    const missing = new E4PreparePhaseDiagnostic(second.bindings(), second.clock);
+    missing.enableBoundaryTimeline(0);
+    missing.begin();
+    missing.finish('FAIL');
+    missing.restore();
+    expect(missing.boundarySnapshot().status).toBe('UNKNOWN');
+  });
+
+  it('caps boundary records without dropping original method invocations', async () => {
+    const f = fixture();
+    const original = jest.fn(() => Promise.resolve(undefined));
+    f.targets.E4_EVAL_WRITE.work = original;
+    const diagnostic = new E4PreparePhaseDiagnostic(f.bindings(), f.clock);
+    diagnostic.enableBoundaryTimeline(0);
+    diagnostic.begin();
+    for (let i = 0; i < 10; i++) await f.targets.E4_EVAL_WRITE.work();
+    diagnostic.finish('FAIL');
+    diagnostic.restore();
+    expect(original).toHaveBeenCalledTimes(10);
+    expect(diagnostic.boundarySnapshot().status).toBe('UNKNOWN');
+    expect(diagnostic.boundarySnapshot().trace.length).toBeLessThanOrEqual(8);
+    expect(Buffer.byteLength(JSON.stringify(diagnostic.boundarySnapshot()))).toBeLessThanOrEqual(
+      4096,
+    );
+  });
+});
+
+describe('E4 native boundary source additions preserve the complete approved base', () => {
+  function opening() {
+    const source = fs.readFileSync(
+      path.join(__dirname, '../e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'),
+      'utf8',
+    );
+    const block =
+      /^\/\/ E4_NATIVE_BOUNDARY_OPENING_BEGIN\n[\s\S]*?^\/\/ E4_NATIVE_BOUNDARY_OPENING_END\n/mu.exec(
+        source,
+      );
+    if (!block) throw new Error('Native boundary opening definition unavailable');
+    const program = compileProbe(block[0] + '\nterminalNativeBoundaryOpening(sourceText);');
+    const restore = (sourceText: string): string => {
+      const value: unknown = vm.runInNewContext(program, {
+        sourceText,
+        terminalHash: (text: string) => createHash('sha256').update(text).digest('hex'),
+      });
+      if (typeof value !== 'string') throw new Error('Native opening returned an invalid source');
+      return value;
+    };
+    return { source, restore };
+  }
+  it('restores the entire bc28 scale file including every old assertion and SQL byte', () => {
+    const { source, restore } = opening();
+    expect(createHash('sha256').update(restore(source)).digest('hex')).toBe(
+      '50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6',
+    );
+  });
+  it('rejects missing, duplicated and modified additions', () => {
+    const { source, restore } = opening();
+    expect(() =>
+      restore(
+        source.replace('const boundaryAnchor = performance.now();', 'const boundaryAnchor = 0;'),
+      ),
+    ).toThrow();
+    expect(() =>
+      restore(source.replace('// E4_NATIVE_BOUNDARY_EVENT_BEGIN', '// removed marker')),
+    ).toThrow();
+    const block =
+      /^ {4}\/\/ E4_NATIVE_BOUNDARY_DECL_BEGIN\n[\s\S]*?^ {4}\/\/ E4_NATIVE_BOUNDARY_DECL_END\n/mu.exec(
+        source,
+      );
+    if (!block) throw new Error('Native boundary declaration unavailable');
+    expect(() => restore(source + block[0])).toThrow();
+  });
+  it('keeps old byte changes visible after removing only the new additions', () => {
+    const { source, restore } = opening();
+    const changed = source.replace(
+      'expect(barrierQueries).toBe(1);',
+      'expect(barrierQueries).toBe(0);',
+    );
+    expect(changed).not.toBe(source);
+    expect(createHash('sha256').update(restore(changed)).digest('hex')).not.toBe(
+      '50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6',
+    );
   });
 });

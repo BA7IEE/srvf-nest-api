@@ -1,0 +1,1 @@
+补齐原 E4 满额 prepare 的有界方法时钟、outer/native 请求边界和具名事务控制事件诊断，区分客户端协议编码／native 等待与 query event 汇总。只输出固定分类和计数，不读取参数或响应；native Promise fulfilled 不代表 SQL 成功。原数据量、30秒／5秒标准、SQL、断言、生命周期、worker、PG、迁移和安全守护保持，历史性能与隔离根因继续 UNKNOWN。
