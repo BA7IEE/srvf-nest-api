@@ -1,4 +1,8 @@
 import { performance } from 'node:perf_hooks';
+import {
+  joinE4NativeBoundary,
+  type E4NativeBoundaryComposition,
+} from './e4-engine-request-wait-diagnostic';
 
 export const E4_PREPARE_PHASES = [
   'C3_PROOF',
@@ -85,6 +89,8 @@ export class E4PreparePhaseDiagnostic {
     edge: 'METHOD_ENTER' | 'METHOD_OK' | 'METHOD_ERROR' | 'METHOD_UNKNOWN';
     atMs: number | null;
   }[] = [];
+  private boundaryClient: object | undefined;
+  private boundaryComposition: E4NativeBoundaryComposition | undefined;
 
   constructor(
     bindings: readonly E4PreparePhaseBinding[],
@@ -137,6 +143,27 @@ export class E4PreparePhaseDiagnostic {
         });
         activeWrappers.add(wrapper);
         this.installed.push({ ...item, wrapper });
+      }
+      // Both existing observers explicitly select this one E4 flow. Match object identity,
+      // not call order, and leave generic/R4 phase observers unchanged.
+      const fixedMethods: Record<E4PreparePhase, string> = {
+        C3_PROOF: 'lockedProof',
+        C3_SOURCE: 'lockedSources',
+        C3_EVAL: 'evaluateInTx',
+        C3_BUCKET_WRITE: 'insertBuckets',
+        E4_PREPARE: 'prepareTimeInTx',
+        E4_EVAL: 'readTimeEvaluationInTx',
+        E4_EVAL_WRITE: 'insertEvaluations',
+        C3_RECEIPT: 'receipt',
+      };
+      if (prepared.every((binding) => binding.method === fixedMethods[binding.phase])) {
+        const proof = prepared.find((binding) => binding.phase === 'C3_PROOF')!;
+        try {
+          const client: unknown = Reflect.get(proof.target, 'prisma');
+          if (client && typeof client === 'object') this.boundaryClient = client;
+        } catch {
+          // A test-local handshake must not invalidate the original phase observer.
+        }
       }
     } catch {
       this.unknown = true;
@@ -306,6 +333,10 @@ export class E4PreparePhaseDiagnostic {
       this.unknown = true;
       return;
     }
+    if (this.boundaryClient && !this.boundaryEnabled) {
+      this.boundaryComposition = joinE4NativeBoundary(this.boundaryClient);
+      if (this.boundaryComposition) this.enableBoundaryTimeline(this.boundaryComposition.anchor);
+    }
     this.begun = true;
     this.active = true;
     this.root.calls = 1;
@@ -441,6 +472,21 @@ export class E4PreparePhaseDiagnostic {
         return false;
       }
       write(safeJson);
+      if (this.boundaryComposition) {
+        try {
+          const method = JSON.stringify(this.boundarySnapshot());
+          const native = JSON.stringify(this.boundaryComposition.snapshot());
+          if (
+            Buffer.byteLength(method, 'utf8') <= MAX_BYTES &&
+            Buffer.byteLength(native, 'utf8') <= MAX_BYTES
+          ) {
+            console.info('E4 maximum method boundaries (fixed counters)', method);
+            console.info('E4 maximum native request boundaries (fixed counters)', native);
+          }
+        } catch {
+          // Extra output must not alter the original emitter result or prepare outcome.
+        }
+      }
       return true;
     } catch {
       this.unknown = true;

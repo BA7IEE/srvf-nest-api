@@ -8,6 +8,10 @@ import {
   E4PreparePhaseDiagnostic,
   type E4PreparePhase,
 } from './e4-prepare-phase-diagnostic';
+import {
+  E4EngineRequestWaitDiagnostic,
+  joinE4NativeBoundary,
+} from './e4-engine-request-wait-diagnostic';
 
 type Target = { work: (this: object, ...args: unknown[]) => unknown };
 
@@ -732,59 +736,373 @@ describe('E4 explicit method boundary timeline', () => {
   });
 });
 
-describe('E4 native boundary source additions preserve the complete approved base', () => {
+const compositionMethods: Record<E4PreparePhase, string> = {
+  C3_PROOF: 'lockedProof',
+  C3_SOURCE: 'lockedSources',
+  C3_EVAL: 'evaluateInTx',
+  C3_BUCKET_WRITE: 'insertBuckets',
+  E4_PREPARE: 'prepareTimeInTx',
+  E4_EVAL: 'readTimeEvaluationInTx',
+  E4_EVAL_WRITE: 'insertEvaluations',
+  C3_RECEIPT: 'receipt',
+};
+function compositionFixture(promise: Promise<unknown> = Promise.resolve(undefined)) {
+  let tick = 0;
+  const clock = () => tick++;
+  const listeners: ((event: unknown) => void)[] = [];
+  const native = jest.fn<Promise<unknown>, unknown[]>(() => promise);
+  const engine = {
+    name: 'LibraryEngine',
+    engine: { query: native },
+    request(...args: unknown[]) {
+      return this.engine.query(...args);
+    },
+    requestBatch: () => Promise.resolve(undefined),
+  };
+  const client = {
+    _engine: engine,
+    $on(kind: string, listener: (event: unknown) => void) {
+      expect(this).toBe(client);
+      expect(kind).toBe('query');
+      listeners.push(listener);
+    },
+  };
+  const request = {
+    action: 'executeRaw',
+    query: {
+      arguments: {
+        query:
+          'INSERT INTO "ParticipantContributionEvaluation" ("one") SELECT one FROM jsonb_to_recordset($1::jsonb)',
+      },
+    },
+  };
+  const received: { phase: E4PreparePhase; receiver: object; args: unknown[] }[] = [];
+  function phaseFor(actualClient: object = client) {
+    const bindings = E4_PREPARE_PHASES.map((phase) => ({
+      phase,
+      method: compositionMethods[phase],
+      target: {
+        ...(phase === 'C3_PROOF' ? { prisma: actualClient } : {}),
+        [compositionMethods[phase]]: function (this: object, ...args: unknown[]) {
+          received.push({ phase, receiver: this, args });
+          return phase === 'E4_EVAL_WRITE' ? engine.request(request) : Promise.resolve(undefined);
+        },
+      },
+    }));
+    const diagnostic = new E4PreparePhaseDiagnostic(bindings, clock, () => ({
+      user: 0,
+      system: 0,
+    }));
+    return { bindings, diagnostic };
+  }
+  const phase = phaseFor();
+  const keys = Reflect.ownKeys(engine);
+  const requestDescriptor = Object.getOwnPropertyDescriptor(engine, 'request');
+  const nativeDescriptor = Object.getOwnPropertyDescriptor(engine.engine, 'query');
+  const waits = new E4EngineRequestWaitDiagnostic(engine, clock);
+  const invoke = (binding: (typeof phase.bindings)[number], ...args: unknown[]): unknown => {
+    const method: unknown = Reflect.get(binding.target, binding.method);
+    if (typeof method !== 'function') throw new Error('Fixture method missing');
+    return Reflect.apply(method, binding.target, args);
+  };
+  return {
+    client,
+    engine,
+    listeners,
+    native,
+    promise,
+    request,
+    phase,
+    phaseFor,
+    waits,
+    received,
+    invoke,
+    keys,
+    requestDescriptor,
+    nativeDescriptor,
+    event: (query: string, duration: number) =>
+      listeners.forEach((listener) => listener({ query, duration })),
+  };
+}
+async function completeComposition(f: ReturnType<typeof compositionFixture>) {
+  const payload = Object.freeze({ opaque: Symbol('unrecorded') });
+  for (const binding of f.phase.bindings) {
+    const returned = f.invoke(binding, payload);
+    if (binding.phase === 'E4_EVAL_WRITE') expect(returned).toBe(f.promise);
+    await returned;
+  }
+  f.waits.finish();
+  f.waits.restore();
+  f.phase.diagnostic.finish('OK');
+  f.phase.diagnostic.restore();
+  for (const binding of f.phase.bindings)
+    expect(f.received.find((row) => row.phase === binding.phase)).toEqual({
+      phase: binding.phase,
+      receiver: binding.target,
+      args: [payload],
+    });
+}
+function loggedBoundary(log: jest.SpyInstance, tag: string): unknown {
+  const entry = log.mock.calls.find((args: unknown[]) => args[0] === tag);
+  if (!entry || typeof entry[1] !== 'string') throw new Error('Fixed boundary output missing');
+  expect(Buffer.byteLength(entry[1], 'utf8')).toBeLessThanOrEqual(4096);
+  const value: unknown = JSON.parse(entry[1]);
+  return value;
+}
+describe('E4 explicit same-engine observer composition', () => {
+  afterEach(() => jest.restoreAllMocks());
+  it('joins the actual engine, preserves method Promise/arguments and restores native before outer', async () => {
+    const log = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    const f = compositionFixture();
+    f.waits.begin();
+    f.phase.diagnostic.begin();
+    f.event('BEGIN', 0);
+    f.event('SET TRANSACTION READ ONLY', 0);
+    f.event(f.request.query.arguments.query, 3);
+    f.event('COMMIT', 0);
+    await completeComposition(f);
+    const old: string[] = [];
+    expect(f.phase.diagnostic.emitTo((text) => old.push(text))).toBe(true);
+    expect(old).toHaveLength(1);
+    expect(Object.keys(f.phase.diagnostic.snapshot())).toEqual(['status', 'root', 'phases']);
+    expect(Object.keys(f.waits.snapshot())).toEqual([
+      'status',
+      'bridgeCalls',
+      'pending',
+      'wallMs',
+      'insideRequestMs',
+      'outsideRequestMs',
+      'categories',
+    ]);
+    expect(f.waits.snapshot()).toMatchObject({ status: 'COMPLETE', bridgeCalls: 1 });
+    expect(f.native).toHaveBeenCalledWith(f.request);
+    expect(f.native.mock.contexts[0]).toBe(f.engine.engine);
+    expect(loggedBoundary(log, 'E4 maximum method boundaries (fixed counters)')).toMatchObject({
+      status: 'COMPLETE',
+      calls: 1,
+      trace: [{ edge: 'METHOD_ENTER' }, { edge: 'METHOD_OK' }],
+    });
+    expect(
+      loggedBoundary(log, 'E4 maximum native request boundaries (fixed counters)'),
+    ).toMatchObject({
+      status: 'COMPLETE',
+      selectedCalls: 1,
+      nativeCalls: 1,
+      reasons: [],
+      events: expect.arrayContaining([
+        expect.objectContaining({ event: 'EVAL_INSERT', calls: 1, durationMs: 3 }),
+        expect.objectContaining({ event: 'COMMIT', calls: 1 }),
+      ]),
+    });
+    expect(Object.getOwnPropertyDescriptor(f.engine, 'request')).toEqual(f.requestDescriptor);
+    expect(Object.getOwnPropertyDescriptor(f.engine.engine, 'query')).toEqual(f.nativeDescriptor);
+    expect(Reflect.ownKeys(f.engine)).toEqual(f.keys);
+    const before = log.mock.calls.length;
+    f.event('SELECT 1', 8);
+    expect(log.mock.calls).toHaveLength(before);
+  });
+  it('preserves the original rejection and failure outcome through the composed observers', async () => {
+    const error = new Error('unrecorded original');
+    const promise = Promise.reject(error);
+    const f = compositionFixture(promise);
+    const log = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    f.waits.begin();
+    f.phase.diagnostic.begin();
+    const write = f.phase.bindings.find((binding) => binding.phase === 'E4_EVAL_WRITE')!;
+    const returned = f.invoke(write);
+    expect(returned).toBe(promise);
+    await expect(returned).rejects.toBe(error);
+    f.waits.finish();
+    f.waits.restore();
+    f.phase.diagnostic.finish('FAIL');
+    f.phase.diagnostic.restore();
+    expect(f.phase.diagnostic.emitTo(() => undefined)).toBe(true);
+    expect(f.phase.diagnostic.snapshot()).toMatchObject({
+      status: 'COMPLETE',
+      root: { failed: 1 },
+    });
+    expect(
+      loggedBoundary(log, 'E4 maximum native request boundaries (fixed counters)'),
+    ).toMatchObject({
+      status: 'COMPLETE',
+      trace: [
+        { edge: 'OUTER_ENTER' },
+        { edge: 'NATIVE_ENTER' },
+        { edge: 'NATIVE_ERROR' },
+        { edge: 'OUTER_ERROR' },
+      ],
+    });
+    expect(Reflect.ownKeys(f.engine)).toEqual(f.keys);
+  });
+  it('leaves an outer-only R4 observer and its native bridge unchanged', async () => {
+    const f = compositionFixture();
+    f.waits.begin();
+    expect(f.engine.engine.query).toBe(f.native);
+    expect(f.listeners).toHaveLength(0);
+    expect(f.engine.request({ action: 'queryRaw' })).toBe(f.promise);
+    await f.promise;
+    f.waits.finish();
+    f.waits.restore();
+    expect(f.engine.engine.query).toBe(f.native);
+    expect(f.waits.snapshot()).toMatchObject({ status: 'COMPLETE', bridgeCalls: 1 });
+    expect(Reflect.ownKeys(f.engine)).toEqual(f.keys);
+  });
+  it('does not join a different client engine or a phase that starts without an active owner', async () => {
+    const f = compositionFixture(),
+      other = compositionFixture();
+    const phase = f.phaseFor(other.client);
+    f.waits.begin();
+    phase.diagnostic.begin();
+    expect(phase.diagnostic.boundarySnapshot().status).toBe('NOT_RUN');
+    expect(f.listeners).toHaveLength(0);
+    expect(other.listeners).toHaveLength(0);
+    expect(f.engine.engine.query).toBe(f.native);
+    expect(other.engine.engine.query).toBe(other.native);
+    phase.diagnostic.finish('FAIL');
+    phase.diagnostic.restore();
+    f.waits.finish();
+    f.waits.restore();
+    other.phase.diagnostic.begin();
+    other.waits.begin();
+    expect(other.phase.diagnostic.boundarySnapshot().status).toBe('NOT_RUN');
+    other.waits.finish();
+    other.waits.restore();
+    other.phase.diagnostic.finish('FAIL');
+    other.phase.diagnostic.restore();
+  });
+  it('keeps two interleaved engines and event subscribers independent', async () => {
+    const log = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    const a = compositionFixture(),
+      b = compositionFixture();
+    a.waits.begin();
+    b.waits.begin();
+    a.phase.diagnostic.begin();
+    b.phase.diagnostic.begin();
+    a.event('ROLLBACK', 7);
+    b.event('COMMIT', 9);
+    await completeComposition(a);
+    await completeComposition(b);
+    a.phase.diagnostic.emitTo(() => undefined);
+    expect(
+      loggedBoundary(log, 'E4 maximum native request boundaries (fixed counters)'),
+    ).toMatchObject({
+      status: 'COMPLETE',
+      events: expect.arrayContaining([
+        expect.objectContaining({ event: 'ROLLBACK', calls: 1, durationMs: 7 }),
+        expect.objectContaining({ event: 'COMMIT', calls: 0 }),
+      ]),
+    });
+    log.mockClear();
+    b.phase.diagnostic.emitTo(() => undefined);
+    expect(
+      loggedBoundary(log, 'E4 maximum native request boundaries (fixed counters)'),
+    ).toMatchObject({
+      status: 'COMPLETE',
+      events: expect.arrayContaining([
+        expect.objectContaining({ event: 'COMMIT', calls: 1, durationMs: 9 }),
+        expect.objectContaining({ event: 'ROLLBACK', calls: 0 }),
+      ]),
+    });
+    expect(Reflect.ownKeys(a.engine)).toEqual(a.keys);
+    expect(Reflect.ownKeys(b.engine)).toEqual(b.keys);
+  });
+  it('marks a second join UNKNOWN instead of sharing one native observer by call order', async () => {
+    const log = jest.spyOn(console, 'info').mockImplementation(() => undefined),
+      f = compositionFixture();
+    f.waits.begin();
+    f.phase.diagnostic.begin();
+    expect(joinE4NativeBoundary(f.client)).toBeUndefined();
+    await completeComposition(f);
+    f.phase.diagnostic.emitTo(() => undefined);
+    expect(
+      loggedBoundary(log, 'E4 maximum native request boundaries (fixed counters)'),
+    ).toMatchObject({ status: 'UNKNOWN', reasons: ['OWNER_AMBIGUITY'] });
+  });
+  it('rejects two active owners on one engine and removes only each owned handshake', async () => {
+    const log = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    const f = compositionFixture();
+    const second = new E4EngineRequestWaitDiagnostic(f.engine);
+    f.waits.begin();
+    second.begin();
+    f.phase.diagnostic.begin();
+    expect(f.engine.engine.query).toBe(f.native);
+    for (const binding of f.phase.bindings) await f.invoke(binding);
+    second.finish();
+    second.restore();
+    f.waits.finish();
+    f.waits.restore();
+    f.phase.diagnostic.finish('OK');
+    f.phase.diagnostic.restore();
+    expect(second.snapshot().status).toBe('COMPLETE');
+    expect(f.waits.snapshot().status).toBe('COMPLETE');
+    f.phase.diagnostic.emitTo(() => undefined);
+    expect(
+      loggedBoundary(log, 'E4 maximum native request boundaries (fixed counters)'),
+    ).toMatchObject({ status: 'UNKNOWN', reasons: ['OWNER_AMBIGUITY'], nativeCalls: 0 });
+    expect(Reflect.ownKeys(f.engine)).toEqual(f.keys);
+  });
+  it('does not let extra logging or subscription failures replace the old emitter result', async () => {
+    const f = compositionFixture();
+    f.client.$on = () => {
+      throw new Error('unrecorded subscription');
+    };
+    f.waits.begin();
+    f.phase.diagnostic.begin();
+    expect(f.engine.engine.query).toBe(f.native);
+    await completeComposition(f);
+    const log = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    expect(f.phase.diagnostic.emitTo(() => undefined)).toBe(true);
+    expect(
+      loggedBoundary(log, 'E4 maximum native request boundaries (fixed counters)'),
+    ).toMatchObject({ status: 'UNKNOWN', reasons: expect.arrayContaining(['SUBSCRIBE']) });
+    log.mockImplementation(() => {
+      throw new Error('unrecorded extra logger');
+    });
+    expect(f.phase.diagnostic.emitTo(() => undefined)).toBe(true);
+    expect(f.phase.diagnostic.snapshot().status).toBe('COMPLETE');
+    expect(f.waits.snapshot().status).toBe('COMPLETE');
+  });
+});
+
+describe('E4 native composition preserves the complete approved scale base', () => {
   function opening() {
     const source = fs.readFileSync(
       path.join(__dirname, '../e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'),
       'utf8',
     );
-    const block =
-      /^\/\/ E4_NATIVE_BOUNDARY_OPENING_BEGIN\n[\s\S]*?^\/\/ E4_NATIVE_BOUNDARY_OPENING_END\n/mu.exec(
-        source,
-      );
-    if (!block) throw new Error('Native boundary opening definition unavailable');
-    const program = compileProbe(block[0] + '\nterminalNativeBoundaryOpening(sourceText);');
-    const restore = (sourceText: string): string => {
-      const value: unknown = vm.runInNewContext(program, {
-        sourceText,
-        terminalHash: (text: string) => createHash('sha256').update(text).digest('hex'),
-      });
-      if (typeof value !== 'string') throw new Error('Native opening returned an invalid source');
-      return value;
+    const check = (text: string): void => {
+      if (
+        createHash('sha256').update(text).digest('hex') !==
+        '50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6'
+      )
+        throw new Error('Complete approved scale bytes differ');
     };
-    return { source, restore };
+    return { source, check };
   }
   it('restores the entire bc28 scale file including every old assertion and SQL byte', () => {
-    const { source, restore } = opening();
-    expect(createHash('sha256').update(restore(source)).digest('hex')).toBe(
+    const { source } = opening();
+    expect(createHash('sha256').update(source).digest('hex')).toBe(
       '50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6',
     );
   });
-  it('rejects missing, duplicated and modified additions', () => {
-    const { source, restore } = opening();
+  it('rejects missing, duplicated and modified source bytes', () => {
+    const { source, check } = opening();
     expect(() =>
-      restore(
-        source.replace('const boundaryAnchor = performance.now();', 'const boundaryAnchor = 0;'),
-      ),
+      check(source.replace('import { PrismaClient, Prisma }', 'import { PrismaClient }')),
     ).toThrow();
     expect(() =>
-      restore(source.replace('// E4_NATIVE_BOUNDARY_EVENT_BEGIN', '// removed marker')),
+      check(source.replace('// E4_TERMINAL_HELPERS_BEGIN', '// removed marker')),
     ).toThrow();
-    const block =
-      /^ {4}\/\/ E4_NATIVE_BOUNDARY_DECL_BEGIN\n[\s\S]*?^ {4}\/\/ E4_NATIVE_BOUNDARY_DECL_END\n/mu.exec(
-        source,
-      );
-    if (!block) throw new Error('Native boundary declaration unavailable');
-    expect(() => restore(source + block[0])).toThrow();
+    expect(() => check(source + source.slice(0, source.indexOf('\n')))).toThrow();
   });
-  it('keeps old byte changes visible after removing only the new additions', () => {
-    const { source, restore } = opening();
+  it('keeps every old assertion byte change visible without a source normalizer', () => {
+    const { source } = opening();
     const changed = source.replace(
       'expect(barrierQueries).toBe(1);',
       'expect(barrierQueries).toBe(0);',
     );
     expect(changed).not.toBe(source);
-    expect(createHash('sha256').update(restore(changed)).digest('hex')).not.toBe(
+    expect(createHash('sha256').update(changed).digest('hex')).not.toBe(
       '50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6',
     );
   });

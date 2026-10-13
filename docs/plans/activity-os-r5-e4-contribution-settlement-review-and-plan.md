@@ -23518,3 +23518,17 @@ pnpm harness:grant 'prisma/migrations/20261003000000_activity_contribution_settl
 
 **本次未做**：本云数据库／contract／E2E／满额操作、SQL或预算变更、新CI workflow／重跑、Mac未提交文件迁移、grant／凭据创建、签字、Ready、合并、部署或生产开关。提交／唯一推送及自动CI终态由本轮任务证据另行记录，旧段落不回改。
 <!-- E4-CLOUD-NATIVE-BOUNDARIES-20261013-END -->
+
+<!-- E4-CLOUD-NATIVE-BOUNDARIES-LOCAL-REPAIR-20261013-BEGIN -->
+### 云端原七路径诊断接线回归修复（2026-10-13，补充推送前检查点）
+
+`83868c263c0a7be1b9525982c50bb78a1ace9061` 的唯一自动 CI38348002112 已终态失败：Fast checks、Harness、Incident replay、Golden journeys、Docker image build 与 E2E1／2／3／5通过，E2E4有4项失败。除原满额 `P2028` 外，本批在 scale 共享 helper 区与原满额正文增加接线，造成两条原 helper 字节相等断言和迁移侧原 source projection 失败。这三条回归属于本批引入，不能按历史性能问题归档。本地51项 inverse／helper 自测没有收集这些原跨文件入口，之前的 byte inverse PASS 不代表原三入口 PASS。Diff guards 的136／142签字矛盾与 trusted approval 等待仍独立成立。
+
+父线程批准只在原7路径修复并验证，维护者随后明确批准通过检查后的单次补充推送；本节记录该推送前检查点。本地现将完整 scale 文件恢复到 `bc28e204c7f21349c3de647978c0b050e45ca630` 原字节（SHA256 `50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6`），不改任何原断言、pin、SQL、规模、预算或迁移文件。新接线由两个既有 helper 的显式同 engine 握手完成：旧 outer 观察器 begin 时仅在 actual engine 本体用私有 Symbol 登记该实例 owner；E4 phase 的完整固定 binding 集合通过 `C3_PROOF.target.prisma._engine` 与该 active owner 身份一致才启用 native 组合。状态只属于实例与 engine，没有模块级注册表、顺序配对、全局测试 hook 或向旧 OFFLINE 标记藏运行接线。两个 owner／重复 join 标 UNKNOWN；native wrapper 在旧 outer 恢复前结束／逆序恢复，owner 只移除自己登记的 Symbol。R4 也使用旧 outer helper，因此仅有 outer 观察器时不新增 native wrapper 或 query event 订阅，默认 snapshot／计数保持原样。
+
+原 query event 观测窗口225项／6607ms，新具名记录220项／6192ms，差5项／415ms；结合有效 duration 和 Prisma 字符串输入，符合现有输入早退的是 SQL 长度护栏。16384护栏保留，超限仍 UNKNOWN，未提高长度或输出上限；新增固定 reason 与有界未覆盖计数区分 SQL_LENGTH、OWNER_AMBIGUITY 等条件，不保留 SQL、参数、native payload 或实际长度。单布尔旧输出不能排除额外歧义；20.181s native fulfilled 区间仍包含调度／回调，不是纯 SQL、协议编码或 durable commit 证明。
+
+仓外 AST／VM 逐字提取原三条完整断言回调及原 helper／绑定表，未加载 E2E 模块、根数据库 hook 或 fixture：已发布838三 FAIL、bc28三 PASS、本地恢复后三 PASS；原回调摘要一致，额外源码字节负对照仍被完整 hash／projection 拒绝。两个 helper 使用 unit config 显式 testRegex，listTests仍恰两个文件，最终60项离线测试通过；四 helper 文件定向 lint通过。原 source 断言没有改写或跳过。不能直接用 testNamePattern 加载原 E2E 来声称无 DB，因为 scale 的顶层数据库安装 hook 仍会执行。6GiB官方 serial quick 最终退出0：冷 lint1965文件零错误／警告，src／test／scripts类型、449 unit suites／9968 tests／8 snapshots通过。独立 guards573通过／0失败／1原已知缺口，eslint138通过／0失败／5原已知缺口。先前 quick 曾因与harness eslint探针并发而在源码扫描时遇到临时文件ENOENT；待原harness结束并清理后，同一入口隔离重跑通过，没有改判据、测试选择或标准。
+
+**本次未做**：本云 DB／contract／完整 E2E／满额、SQL性能修复、改变规模／30秒／5秒或长SQL护栏、改迁移／旧 pin／ledger、Mac脏文件或secret迁移、grant创建、提交／推送／新CI、Ready、合并、部署或生产开关。本地修复不改变已发布838的CI失败事实；已批准的单次补充推送及其自动CI终态由本任务交付证据另行记录，本节不预写CI成功。
+<!-- E4-CLOUD-NATIVE-BOUNDARIES-LOCAL-REPAIR-20261013-END -->

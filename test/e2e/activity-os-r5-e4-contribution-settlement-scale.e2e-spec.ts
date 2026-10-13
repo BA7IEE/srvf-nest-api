@@ -6,9 +6,6 @@ import { spawn } from 'node:child_process';
 import { ScratchLeaseSession } from '../helpers/scratch-database-lease';
 import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';
 import { E4EngineRequestWaitDiagnostic } from '../helpers/e4-engine-request-wait-diagnostic';
-// E4_NATIVE_BOUNDARY_IMPORT_BEGIN
-import { E4NativeRequestBoundaryDiagnostic } from '../helpers/e4-engine-request-wait-diagnostic';
-// E4_NATIVE_BOUNDARY_IMPORT_END
 // E4_GUARD_PLAN_IMPORT_BEGIN
 import {
   E4GuardPlanDiagnostic,
@@ -1046,62 +1043,6 @@ function terminalRetainedPublicBytes(total: number, value: unknown) {
   if (next > 32 * 1024) throw new Error('Retained cumulative public bound exceeded');
   return next;
 }
-// E4_NATIVE_BOUNDARY_OPENING_BEGIN
-const E4_NATIVE_BOUNDARY_PINS: Record<string, string> = {
-  IMPORT: '10f34d738b60bb06d4fb544a74ca0eeecec5a12098bb2234802f9c9109474379',
-  DECL: '26c0e9f9f81dcdd0090adcbf2bd006f135fa83d82501cd9590d7fc414dd3a1ae',
-  EVENT: '90f11fd069a38c3cb32170fd3f9be179831f308dfb25d40d61bc34ad8e964906',
-  INSTANCE: 'ab6d250a46059304812320d93451dd17999f32eb0950b24875683810c96ab02f',
-  METHOD: '0dff631d8f288c26dc29f3ef808d2d90af29f6fb092e729e120944db7a2b4701',
-  BEGIN: 'c062ec917dc65bada76325956eff29c127e819005d66318553caa629f2806bbc',
-  FINISH: '08f6d56bced97726b0c8e29be7000c206e0fba96a2bb9499737270512bca52c9',
-  EMIT: '23936cd4f104face692412609e8378eb794b3be81dfff26b8d1dad7f09834ce0',
-  RESTORE: '93032ffa8e44243ac5219f53d506cc0effe51f937fad33eef43885174ef3e0eb',
-  OPENING: '0028c8bfeecc6618d026c1f40d632769410829c245f82b763851afda2581ca67',
-};
-function terminalNativeBoundaryOpening(source: string): string {
-  if (!/^\/\/ E4_NATIVE_BOUNDARY_OPENING_BEGIN$/mu.test(source)) return source;
-  const names = [
-    'IMPORT',
-    'DECL',
-    'EVENT',
-    'INSTANCE',
-    'METHOD',
-    'BEGIN',
-    'FINISH',
-    'EMIT',
-    'RESTORE',
-    'OPENING',
-  ];
-  if (Object.keys(E4_NATIVE_BOUNDARY_PINS).sort().join(',') !== [...names].sort().join(','))
-    throw new Error('Native boundary opening coverage differs');
-  for (const name of names) {
-    const pattern = new RegExp(
-      '^ *// E4_NATIVE_BOUNDARY_' +
-        name +
-        '_BEGIN\\n[\\s\\S]*?^ *// E4_NATIVE_BOUNDARY_' +
-        name +
-        '_END\\n',
-      'gmu',
-    );
-    const matches = [...source.matchAll(pattern)];
-    if (matches.length !== 1) throw new Error('Native boundary opening block differs');
-    const text =
-      name === 'OPENING'
-        ? matches[0][0].replace(
-            /const E4_NATIVE_BOUNDARY_PINS: Record<string, string> = \{[\s\S]*?\n\};/u,
-            'const E4_NATIVE_BOUNDARY_PINS: Record<string, string> = {};',
-          )
-        : matches[0][0];
-    if (terminalHash(text) !== E4_NATIVE_BOUNDARY_PINS[name])
-      throw new Error('Native boundary opening bytes differ');
-    source = source.replace(pattern, '');
-  }
-  const call = '  source = terminalNativeBoundaryOpening(source);\n';
-  if (source.split(call).length !== 3) throw new Error('Native boundary opening callers differ');
-  return source.split(call).join('');
-}
-// E4_NATIVE_BOUNDARY_OPENING_END
 function terminalNativeWorkerOpening(source: string): string {
   const migration = /^function restoreTerminalMigrationOpening\(/gmu;
   const scale = /^function restoreTerminalScaleOpening\(/gmu;
@@ -1393,7 +1334,6 @@ function terminalN1LifecycleOpening(source: string): string {
   return source.replace(added, "\n    ['HELPERS', 'FROZEN', 'OFFLINE', 'REAL'],\n");
 }
 function terminalRefsTestOpening(source: string, kind: 'migration' | 'scale') {
-  source = terminalNativeBoundaryOpening(source);
   source = terminalNativeWorkerOpening(source);
   source = terminalGithubScopeOpening(source);
   if (kind === 'migration') source = terminalN1LifecycleOpening(source);
@@ -1426,7 +1366,6 @@ function restoreTerminalSource(
   additions: string[],
   expected: string,
 ) {
-  source = terminalNativeBoundaryOpening(source);
   source = terminalNativeWorkerOpening(source);
   source = terminalGithubScopeOpening(source);
   for (const kind of additions) {
@@ -4966,13 +4905,7 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
     let barrierQueries = 0;
     const timing = { readMs: 0, writeMs: 0, largestMs: 0 };
     let preparePhaseDiagnostic: E4PreparePhaseDiagnostic | undefined;
-    // E4_NATIVE_BOUNDARY_DECL_BEGIN
-    let nativeBoundaryDiagnostic: E4NativeRequestBoundaryDiagnostic | undefined;
-    // E4_NATIVE_BOUNDARY_DECL_END
     observed.$on('query', (event) => {
-      // E4_NATIVE_BOUNDARY_EVENT_BEGIN
-      nativeBoundaryDiagnostic?.queryEvent(event.query, event.duration);
-      // E4_NATIVE_BOUNDARY_EVENT_END
       if (!/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\b/iu.test(event.query)) {
         queries++;
         preparePhaseDiagnostic?.query(
@@ -5052,12 +4985,6 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
           )
         : undefined;
       // E4_GUARD_PLAN_INSTANCE_END
-      // E4_NATIVE_BOUNDARY_INSTANCE_BEGIN
-      const boundaryAnchor = performance.now();
-      nativeBoundaryDiagnostic = new E4NativeRequestBoundaryDiagnostic(
-        Reflect.get(observed, '_engine') as object,
-      );
-      // E4_NATIVE_BOUNDARY_INSTANCE_END
       let prepared;
       const phaseDiagnostic = new E4PreparePhaseDiagnostic([
         { phase: 'C3_PROOF', target: measured, method: 'lockedProof' },
@@ -5074,14 +5001,8 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
         { phase: 'C3_RECEIPT', target: measured, method: 'receipt' },
       ]);
       preparePhaseDiagnostic = phaseDiagnostic;
-      // E4_NATIVE_BOUNDARY_METHOD_BEGIN
-      phaseDiagnostic.enableBoundaryTimeline(boundaryAnchor);
-      // E4_NATIVE_BOUNDARY_METHOD_END
       try {
         engineRequests.begin();
-        // E4_NATIVE_BOUNDARY_BEGIN_BEGIN
-        nativeBoundaryDiagnostic.begin(boundaryAnchor);
-        // E4_NATIVE_BOUNDARY_BEGIN_END
         phaseDiagnostic.begin();
         let prepareOutcome: 'OK' | 'FAIL' = 'FAIL';
         try {
@@ -5093,10 +5014,6 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
           );
           prepareOutcome = 'OK';
         } finally {
-          // E4_NATIVE_BOUNDARY_FINISH_BEGIN
-          nativeBoundaryDiagnostic.finish();
-          nativeBoundaryDiagnostic.restore();
-          // E4_NATIVE_BOUNDARY_FINISH_END
           engineRequests.finish();
           engineRequests.restore();
           console.info(
@@ -5118,20 +5035,6 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
           phaseDiagnostic.emitTo((safeJson) =>
             console.info('E4 maximum prepare phases (fixed counters)', safeJson),
           );
-          // E4_NATIVE_BOUNDARY_EMIT_BEGIN
-          try {
-            console.info(
-              'E4 maximum method boundaries (fixed counters)',
-              JSON.stringify(phaseDiagnostic.boundarySnapshot()),
-            );
-            console.info(
-              'E4 maximum native request boundaries (fixed counters)',
-              JSON.stringify(nativeBoundaryDiagnostic.snapshot()),
-            );
-          } catch {
-            /* Diagnostic output cannot replace the original prepare outcome. */
-          }
-          // E4_NATIVE_BOUNDARY_EMIT_END
         }
       } catch (error) {
         const prismaCode =
@@ -5445,9 +5348,6 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
       // Reuses this exact immutable root; no extra fixture, prepare, INSERT or pre-business warming.
       await assertPostBusinessPSetProbe(f.db, proof.id);
     } finally {
-      // E4_NATIVE_BOUNDARY_RESTORE_BEGIN
-      nativeBoundaryDiagnostic?.restore();
-      // E4_NATIVE_BOUNDARY_RESTORE_END
       engineRequests.restore();
       engineObserver.restore();
       await observed.$disconnect();

@@ -1,1 +1,1 @@
-补齐原 E4 满额 prepare 的有界方法时钟、outer/native 请求边界和具名事务控制事件诊断，区分客户端协议编码／native 等待与 query event 汇总。只输出固定分类和计数，不读取参数或响应；native Promise fulfilled 不代表 SQL 成功。原数据量、30秒／5秒标准、SQL、断言、生命周期、worker、PG、迁移和安全守护保持，历史性能与隔离根因继续 UNKNOWN。
+通过既有诊断 helper 的同 engine 实例 owner 握手补齐原 E4 满额 prepare 的有界方法时钟、outer/native 请求边界和具名控制事件，保留完整原 scale 文件及跨文件 opening 守卫。默认／R4 outer 观察不启用 native 组合；长 SQL 16384护栏仍将未覆盖事件标 UNKNOWN，并输出有界原因计数。只输出固定分类和计数，不读取参数或响应；边界包含调度／回调，native Promise fulfilled 不代表 SQL 成功。原数据量、30秒／5秒标准、SQL、断言、快照、Promise／异常、生命周期、worker、PG、迁移和安全守护保持，历史性能与隔离根因继续 UNKNOWN。

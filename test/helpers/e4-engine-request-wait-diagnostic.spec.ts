@@ -518,4 +518,24 @@ describe('E4 explicit native request boundary observer', () => {
     expect(db.engine.query).toBe(replacement);
     expect(observer.snapshot().status).toBe('UNKNOWN');
   });
+
+  it('keeps the 16384 SQL guard and reports bounded coverage loss without payload or length', async () => {
+    const db = nativeFixture();
+    const observer = new E4NativeRequestBoundaryDiagnostic(db);
+    observer.begin(0);
+    for (let i = 0; i < 405; i++) observer.queryEvent('SELECT ' + 'private'.repeat(3000), 83);
+    observer.queryEvent('SELECT 1', Number.NaN);
+    await db.request(evaluationRequest);
+    observer.finish();
+    observer.restore();
+    expect(observer.snapshot()).toMatchObject({
+      status: 'UNKNOWN',
+      reasons: ['SQL_LENGTH', 'QUERY_EVENT_INVALID'],
+      uncoveredQueryEvents: { sqlLength: 400, invalid: 1, eventLimit: 0 },
+    });
+    expect(observer.snapshot().events.find((row) => row.event === 'OTHER')?.calls).toBe(0);
+    const text = JSON.stringify(observer.snapshot());
+    expect(text).not.toContain('private');
+    expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(4096);
+  });
 });

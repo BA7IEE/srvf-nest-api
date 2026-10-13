@@ -1,5 +1,12 @@
 import { performance } from 'node:perf_hooks';
 
+// Immutable protocol key; mutable ownership lives only on the actual engine.
+const boundaryOwner = Symbol('E4 native boundary owner');
+export type E4NativeBoundaryComposition = {
+  anchor: number;
+  snapshot: () => BoundarySnapshot;
+};
+
 const categories = ['READ', 'WRITE', 'MODEL', 'BATCH', 'BARRIER', 'UNKNOWN'] as const;
 type Category = (typeof categories)[number];
 type Counter = {
@@ -64,6 +71,10 @@ export class E4EngineRequestWaitDiagnostic {
   private calls = 0;
   private insideMs = 0;
   private outsideMs = 0;
+  private ownsBoundaryHandshake = false;
+  private boundaryConflict = false;
+  private nativeBoundary: E4NativeRequestBoundaryDiagnostic | undefined;
+  private nativeComposition: E4NativeBoundaryComposition | undefined;
 
   constructor(
     private readonly engine: object,
@@ -124,6 +135,74 @@ export class E4EngineRequestWaitDiagnostic {
     }
     this.started = this.tick();
     this.active = true;
+    // Publish identity only. No native wrapper or event observer is enabled here.
+    try {
+      const held = Object.getOwnPropertyDescriptor(this.engine, boundaryOwner);
+      if (held) {
+        this.boundaryConflict = true;
+        if (held.value instanceof E4EngineRequestWaitDiagnostic)
+          held.value.rejectBoundaryOwnership();
+      } else {
+        Object.defineProperty(this.engine, boundaryOwner, { value: this, configurable: true });
+        this.ownsBoundaryHandshake = true;
+      }
+    } catch {
+      this.boundaryConflict = true;
+    }
+  }
+
+  rejectBoundaryOwnership(): void {
+    this.boundaryConflict = true;
+    this.nativeBoundary?.markUnknown('OWNER_AMBIGUITY');
+  }
+
+  /** Explicit join by the same client/engine object; caller must select the fixed E4 bindings. */
+  joinNativeBoundary(client: object): E4NativeBoundaryComposition | undefined {
+    if (
+      !this.active ||
+      !this.ownsBoundaryHandshake ||
+      member(client, '_engine') !== this.engine ||
+      Object.getOwnPropertyDescriptor(this.engine, boundaryOwner)?.value !== this
+    )
+      return undefined;
+    if (this.nativeComposition) {
+      this.rejectBoundaryOwnership();
+      return undefined;
+    }
+    if (this.boundaryConflict) {
+      this.nativeComposition = {
+        anchor: this.started,
+        snapshot: () => emptyBoundarySnapshot('OWNER_AMBIGUITY'),
+      };
+      return this.nativeComposition;
+    }
+    const diagnostic = new E4NativeRequestBoundaryDiagnostic(this.engine, this.clock);
+    this.nativeBoundary = diagnostic;
+    diagnostic.begin(this.started);
+    this.nativeComposition = { anchor: this.started, snapshot: () => diagnostic.snapshot() };
+    try {
+      const subscribe: unknown = Reflect.get(client, '$on');
+      if (typeof subscribe !== 'function') throw new Error('Query event subscription unavailable');
+      Reflect.apply(subscribe, client, [
+        'query',
+        (event: unknown) => {
+          if (!this.active) return;
+          try {
+            const sql = member(event, 'query');
+            const duration = member(event, 'duration');
+            if (typeof sql !== 'string' || typeof duration !== 'number')
+              diagnostic.markUnknown('QUERY_EVENT_INVALID');
+            else diagnostic.queryEvent(sql, duration);
+          } catch {
+            diagnostic.markUnknown('QUERY_EVENT_INVALID');
+          }
+        },
+      ]);
+    } catch {
+      diagnostic.markUnknown('SUBSCRIBE');
+      diagnostic.restore();
+    }
+    return this.nativeComposition;
   }
   private invoke(
     original: (...args: unknown[]) => unknown,
@@ -198,6 +277,8 @@ export class E4EngineRequestWaitDiagnostic {
     return result;
   }
   finish() {
+    this.nativeBoundary?.finish();
+    this.nativeBoundary?.restore();
     if (!this.active) {
       this.unknown = true;
       return;
@@ -210,6 +291,7 @@ export class E4EngineRequestWaitDiagnostic {
   }
   restore() {
     if (this.restored) return;
+    this.nativeBoundary?.restore();
     for (const item of this.installed) {
       try {
         if (Reflect.get(this.engine, item.method) !== item.wrapper) {
@@ -221,6 +303,17 @@ export class E4EngineRequestWaitDiagnostic {
       } catch {
         this.unknown = true;
       }
+    }
+    if (this.ownsBoundaryHandshake) {
+      try {
+        if (Object.getOwnPropertyDescriptor(this.engine, boundaryOwner)?.value !== this)
+          this.nativeBoundary?.markUnknown('RESTORE');
+        else if (!Reflect.deleteProperty(this.engine, boundaryOwner))
+          this.nativeBoundary?.markUnknown('RESTORE');
+      } catch {
+        this.nativeBoundary?.markUnknown('RESTORE');
+      }
+      this.ownsBoundaryHandshake = false;
     }
     this.restored = true;
   }
@@ -234,6 +327,19 @@ export class E4EngineRequestWaitDiagnostic {
       outsideRequestMs: this.outsideMs,
       categories: categories.map((category) => ({ category, ...this.counters.get(category)! })),
     };
+  }
+}
+
+export function joinE4NativeBoundary(client: object): E4NativeBoundaryComposition | undefined {
+  try {
+    const engine = member(client, '_engine');
+    if (!engine || typeof engine !== 'object') return undefined;
+    const owner: unknown = Object.getOwnPropertyDescriptor(engine, boundaryOwner)?.value;
+    return owner instanceof E4EngineRequestWaitDiagnostic
+      ? owner.joinNativeBoundary(client)
+      : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -271,7 +377,40 @@ type BoundarySnapshot = {
     lastReceivedMs: number | null;
   }[];
   reason?: 'OUTPUT_LIMIT';
+  reasons: BoundaryReason[];
+  uncoveredQueryEvents: { sqlLength: number; invalid: number; eventLimit: number };
 };
+const boundaryReasons = [
+  'SHAPE',
+  'CLOCK',
+  'TRACE_LIMIT',
+  'OWNER_AMBIGUITY',
+  'CALL_LIMIT',
+  'SETTLE_AFTER_STOP',
+  'NATIVE_CARDINALITY',
+  'RESTORE',
+  'QUERY_EVENT_INVALID',
+  'SQL_LENGTH',
+  'EVENT_LIMIT',
+  'OUTPUT_LIMIT',
+  'LIFECYCLE',
+  'SUBSCRIBE',
+] as const;
+type BoundaryReason = (typeof boundaryReasons)[number];
+function emptyBoundarySnapshot(reason: BoundaryReason): BoundarySnapshot {
+  return {
+    status: 'UNKNOWN',
+    clock: 'SHARED_PREPARE_MONOTONIC',
+    selectedCalls: 0,
+    nativeCalls: 0,
+    pendingOuter: 0,
+    pendingNative: 0,
+    trace: [],
+    events: [],
+    reasons: [reason],
+    uncoveredQueryEvents: { sqlLength: 0, invalid: 0, eventLimit: 0 },
+  };
+}
 type BoundaryInstalled = {
   target: object;
   method: string;
@@ -326,6 +465,13 @@ export class E4NativeRequestBoundaryDiagnostic {
   private nativeCalls = 0;
   private pendingNative = 0;
   private native: object | undefined;
+  private readonly reasons = new Set<BoundaryReason>();
+  private readonly uncoveredQueryEvents = { sqlLength: 0, invalid: 0, eventLimit: 0 };
+
+  markUnknown(reason: BoundaryReason): void {
+    this.unknown = true;
+    this.reasons.add(boundaryReasons.includes(reason) ? reason : 'SHAPE');
+  }
 
   constructor(
     private readonly engine: object,
@@ -367,7 +513,7 @@ export class E4NativeRequestBoundaryDiagnostic {
         this.installed.push({ ...item, wrapper });
       }
     } catch {
-      this.unknown = true;
+      this.markUnknown('SHAPE');
       this.restore();
     }
   }
@@ -380,13 +526,13 @@ export class E4NativeRequestBoundaryDiagnostic {
       this.last = now;
       return now - this.anchor;
     } catch {
-      this.unknown = true;
+      this.markUnknown('CLOCK');
       return null;
     }
   }
   private record(edge: BoundaryEdge) {
     if (this.trace.length >= 8) {
-      this.unknown = true;
+      this.markUnknown('TRACE_LIMIT');
       return;
     }
     this.trace.push({ edge, atMs: this.offset() });
@@ -400,19 +546,19 @@ export class E4NativeRequestBoundaryDiagnostic {
           try {
             settle(true);
           } catch {
-            this.unknown = true;
+            this.markUnknown('LIFECYCLE');
           }
         },
         () => {
           try {
             settle(false);
           } catch {
-            this.unknown = true;
+            this.markUnknown('LIFECYCLE');
           }
         },
       ]);
     } catch {
-      this.unknown = true;
+      this.markUnknown('SUBSCRIBE');
       settle(false);
     }
   }
@@ -424,7 +570,7 @@ export class E4NativeRequestBoundaryDiagnostic {
   ) {
     if (!this.active) return Reflect.apply(original, receiver, args);
     if (receiver !== this.engine || ++this.calls > 400 || this.frames.size >= 32) {
-      this.unknown = true;
+      this.markUnknown(receiver !== this.engine ? 'SHAPE' : 'CALL_LIMIT');
       return Reflect.apply(original, receiver, args);
     }
     let selected = false;
@@ -435,7 +581,7 @@ export class E4NativeRequestBoundaryDiagnostic {
         member(query, 'action') === 'executeRaw' &&
         evaluationInsert(member(member(member(query, 'query'), 'arguments'), 'query'));
     } catch {
-      this.unknown = true;
+      this.markUnknown('SHAPE');
     }
     const frame: BoundaryFrame = { selected, nativeCalls: 0 };
     this.frames.add(frame);
@@ -444,9 +590,9 @@ export class E4NativeRequestBoundaryDiagnostic {
       this.record('OUTER_ENTER');
     }
     const settle = (ok: boolean) => {
-      if (!this.active || !this.frames.delete(frame)) this.unknown = true;
+      if (!this.active || !this.frames.delete(frame)) this.markUnknown('SETTLE_AFTER_STOP');
       if (selected) {
-        if (frame.nativeCalls !== 1) this.unknown = true;
+        if (frame.nativeCalls !== 1) this.markUnknown('NATIVE_CARDINALITY');
         this.record(ok ? 'OUTER_OK' : 'OUTER_ERROR');
       }
     };
@@ -469,7 +615,7 @@ export class E4NativeRequestBoundaryDiagnostic {
     const owners = [...this.frames];
     const frame = owners.length === 1 ? owners[0] : undefined;
     if (receiver !== this.native || (owners.length !== 1 && owners.some((owner) => owner.selected)))
-      this.unknown = true;
+      this.markUnknown(receiver !== this.native ? 'SHAPE' : 'OWNER_AMBIGUITY');
     if (!frame?.selected || receiver !== this.native)
       return Reflect.apply(original, receiver, args);
     frame.nativeCalls++;
@@ -477,7 +623,7 @@ export class E4NativeRequestBoundaryDiagnostic {
     this.pendingNative++;
     this.record('NATIVE_ENTER');
     const settle = (ok: boolean) => {
-      if (!this.active) this.unknown = true;
+      if (!this.active) this.markUnknown('SETTLE_AFTER_STOP');
       this.pendingNative--;
       this.record(ok ? 'NATIVE_OK' : 'NATIVE_ERROR');
     };
@@ -494,7 +640,7 @@ export class E4NativeRequestBoundaryDiagnostic {
 
   begin(anchor: number) {
     if (this.begun || this.restored || !Number.isFinite(anchor) || anchor < 0) {
-      this.unknown = true;
+      this.markUnknown('LIFECYCLE');
       return;
     }
     this.anchor = this.last = anchor;
@@ -502,13 +648,14 @@ export class E4NativeRequestBoundaryDiagnostic {
   }
   queryEvent(sql: string, durationMs: number) {
     if (!this.active) return;
-    if (
-      !Number.isFinite(durationMs) ||
-      durationMs < 0 ||
-      typeof sql !== 'string' ||
-      sql.length > 16_384
-    ) {
-      this.unknown = true;
+    if (!Number.isFinite(durationMs) || durationMs < 0 || typeof sql !== 'string') {
+      this.uncoveredQueryEvents.invalid = Math.min(400, this.uncoveredQueryEvents.invalid + 1);
+      this.markUnknown('QUERY_EVENT_INVALID');
+      return;
+    }
+    if (sql.length > 16_384) {
+      this.uncoveredQueryEvents.sqlLength = Math.min(400, this.uncoveredQueryEvents.sqlLength + 1);
+      this.markUnknown('SQL_LENGTH');
       return;
     }
     const control = sql.trim().replace(/;$/u, '');
@@ -526,7 +673,11 @@ export class E4NativeRequestBoundaryDiagnostic {
                 : 'OTHER';
     const row = this.events.get(event)!;
     if (row.calls >= 400 || !Number.isFinite(row.durationMs + durationMs)) {
-      this.unknown = true;
+      this.uncoveredQueryEvents.eventLimit = Math.min(
+        400,
+        this.uncoveredQueryEvents.eventLimit + 1,
+      );
+      this.markUnknown('EVENT_LIMIT');
       return;
     }
     const atMs = this.offset();
@@ -544,7 +695,7 @@ export class E4NativeRequestBoundaryDiagnostic {
       this.selectedCalls !== 1 ||
       this.nativeCalls !== 1
     )
-      this.unknown = true;
+      this.markUnknown('NATIVE_CARDINALITY');
     this.active = false;
   }
   restore() {
@@ -558,7 +709,7 @@ export class E4NativeRequestBoundaryDiagnostic {
         if (Reflect.get(item.target, item.method) !== item.original)
           throw new Error('Boundary original was not restored');
       } catch {
-        this.unknown = true;
+        this.markUnknown('RESTORE');
       }
     }
     this.restored = true;
@@ -578,10 +729,19 @@ export class E4NativeRequestBoundaryDiagnostic {
       pendingNative: this.pendingNative,
       trace: this.trace.map((row) => ({ ...row })),
       events: boundaryEvents.map((event) => ({ event, ...this.events.get(event)! })),
+      reasons: [...this.reasons],
+      uncoveredQueryEvents: { ...this.uncoveredQueryEvents },
     };
     if (Buffer.byteLength(JSON.stringify(value), 'utf8') > 4096) {
-      this.unknown = true;
-      return { ...value, status: 'UNKNOWN', reason: 'OUTPUT_LIMIT', trace: [], events: [] };
+      this.markUnknown('OUTPUT_LIMIT');
+      return {
+        ...value,
+        status: 'UNKNOWN',
+        reason: 'OUTPUT_LIMIT',
+        reasons: [...this.reasons],
+        trace: [],
+        events: [],
+      };
     }
     return value;
   }
