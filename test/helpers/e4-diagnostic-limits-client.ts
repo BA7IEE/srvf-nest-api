@@ -6,11 +6,26 @@ export const E4_DIAGNOSTIC_LIMITS = Object.freeze({
   forcedStopMs: 590_000,
   standardTransactionMs: 30_000,
 });
+export const E4_DIAGNOSTIC_SCENARIOS = [
+  'ordinary-1',
+  'ordinary-100',
+  'ordinary-500',
+  'maximum',
+  'lock-contention',
+  'failure-retry',
+] as const;
+export type E4DiagnosticScenario = (typeof E4_DIAGNOSTIC_SCENARIOS)[number];
+export function e4DiagnosticScenario(value: unknown): E4DiagnosticScenario {
+  if (!E4_DIAGNOSTIC_SCENARIOS.includes(value as E4DiagnosticScenario))
+    throw new Error('E4 finite diagnostic scenario refused');
+  return value as E4DiagnosticScenario;
+}
 export type E4DiagnosticContext = Readonly<{
   purpose: 'DIAGNOSTIC_ONLY';
   scope: string;
   sourceHead: string;
-  fixture: 'createMaximumE4Source';
+  fixture: 'createMaximumE4Source' | 'createDiagnosticE4Source';
+  scenario: E4DiagnosticScenario;
 }>;
 
 /** No URL or credential is retained or emitted. This is not an authorization grant. */
@@ -20,7 +35,9 @@ export function e4DiagnosticContext(input: {
   sourceHead: string;
   databaseUrl: string;
   appEnv: string;
+  scenario?: string;
 }): E4DiagnosticContext {
+  const scenario = e4DiagnosticScenario(input.scenario ?? 'maximum');
   if (
     input.purpose !== E4_DIAGNOSTIC_LIMITS.purpose ||
     input.appEnv !== 'test' ||
@@ -44,7 +61,8 @@ export function e4DiagnosticContext(input: {
     purpose: 'DIAGNOSTIC_ONLY',
     scope: input.scope,
     sourceHead: input.sourceHead,
-    fixture: 'createMaximumE4Source',
+    fixture: scenario === 'maximum' ? 'createMaximumE4Source' : 'createDiagnosticE4Source',
+    scenario,
   });
 }
 
@@ -56,7 +74,7 @@ export function installE4DiagnosticFixtureGate(
   if (
     context.purpose !== 'DIAGNOSTIC_ONLY' ||
     context.scope !== 'app_test_w98' ||
-    context.fixture !== 'createMaximumE4Source' ||
+    !E4_DIAGNOSTIC_SCENARIOS.includes(context.scenario) ||
     !/^[0-9a-f]{40}$/u.test(context.sourceHead) ||
     env.APP_ENV !== 'test' ||
     env.SRVF_E4_DIAGNOSTIC_PURPOSE !== 'DIAGNOSTIC_ONLY' ||
@@ -83,6 +101,7 @@ export function installE4DiagnosticLimits<T extends object>(
     context.purpose !== 'DIAGNOSTIC_ONLY' ||
     context.scope !== 'app_test_w98' ||
     context.fixture !== 'createMaximumE4Source' ||
+    context.scenario !== 'maximum' ||
     !/^[0-9a-f]{40}$/u.test(context.sourceHead)
   )
     throw new Error('E4 diagnostic context refused');
@@ -147,12 +166,142 @@ export type E4DiagnosticChild = {
   groupAlive: () => boolean;
 };
 
+/** Transparent engine observation. Never change options, retain transaction IDs or error text. */
+export function observeE4DiagnosticTransactionLifetime(
+  engine: object,
+  clock = () => performance.now(),
+) {
+  const original: unknown = Reflect.get(engine, 'transaction');
+  const descriptor = Object.getOwnPropertyDescriptor(engine, 'transaction');
+  if (typeof original !== 'function' || (descriptor && !descriptor.configurable))
+    throw new Error('E4 diagnostic engine observation unavailable');
+  const transactions: {
+    timeoutMs: number | null;
+    transactionMs: number;
+    workAndWaitMs: number;
+    terminalMs: number;
+    terminal: 'commit' | 'rollback';
+    outcome: 'OK' | 'ERROR';
+  }[] = [];
+  let active: { started: number; timeoutMs: number | null } | undefined;
+  let pending = 0,
+    unknown = false,
+    restored = false;
+  const tick = () => {
+    let value = 0;
+    try {
+      value = clock();
+    } catch {
+      unknown = true;
+    }
+    if (!Number.isFinite(value) || value < 0) {
+      unknown = true;
+      return 0;
+    }
+    return value;
+  };
+  const wrapper = function (this: unknown, ...args: unknown[]) {
+    const phase = args[0];
+    const started = tick();
+    const options = args[2];
+    const timeout: unknown =
+      options && typeof options === 'object' ? Reflect.get(options, 'timeout') : undefined;
+    const result: unknown = Reflect.apply(original, this, args);
+    if (!(result instanceof Promise)) {
+      unknown = true;
+      return result;
+    }
+    pending++;
+    const settle = (ok: boolean) => {
+      pending--;
+      const ended = tick();
+      if (phase === 'start') {
+        if (!ok || active) {
+          unknown = true;
+          return;
+        }
+        active = {
+          started: ended,
+          timeoutMs:
+            typeof timeout === 'number' &&
+            Number.isInteger(timeout) &&
+            timeout > 0 &&
+            timeout <= 90000
+              ? timeout
+              : null,
+        };
+      } else if (phase === 'commit' || phase === 'rollback') {
+        if (!active || transactions.length >= 32 || started < active.started || ended < started) {
+          unknown = true;
+          return;
+        }
+        transactions.push({
+          timeoutMs: active.timeoutMs,
+          transactionMs: ended - active.started,
+          workAndWaitMs: started - active.started,
+          terminalMs: ended - started,
+          terminal: phase,
+          outcome: ok ? 'OK' : 'ERROR',
+        });
+        active = undefined;
+      } else unknown = true;
+    };
+    void result.then(
+      () => {
+        try {
+          settle(true);
+        } catch {
+          unknown = true;
+        }
+      },
+      () => {
+        try {
+          settle(false);
+        } catch {
+          unknown = true;
+        }
+      },
+    );
+    return result;
+  };
+  Object.defineProperty(engine, 'transaction', {
+    configurable: true,
+    writable: true,
+    value: wrapper,
+    enumerable: descriptor?.enumerable ?? false,
+  });
+  return {
+    snapshot: () => ({
+      status:
+        unknown || pending || active || !restored ? ('UNKNOWN' as const) : ('COMPLETE' as const),
+      transactions: transactions.map((row) => ({ ...row })),
+    }),
+    restore: () => {
+      if (restored) return;
+      restored = true;
+      if (Reflect.get(engine, 'transaction') !== wrapper) {
+        unknown = true;
+        return;
+      }
+      if (descriptor) Object.defineProperty(engine, 'transaction', descriptor);
+      else Reflect.deleteProperty(engine, 'transaction');
+    },
+  };
+}
+
 const diagnosticStages = [
   'GUARD',
   'FIXTURE_BOOTSTRAP',
   'SOURCE_BUILD',
   'PREPARE',
   'ORACLE',
+  'SUBMIT',
+  'FIRST_REVIEW',
+  'FINAL_REVIEW',
+  'LEDGER',
+  'ROLLBACK',
+  'RETRY',
+  'REPLAY',
   'CLEANUP',
 ] as const;
 const diagnosticErrors = [
@@ -221,7 +370,7 @@ export function e4DiagnosticStageReceipt(
     errorCategory: DiagnosticError = 'NONE',
   ) => {
     if (
-      events.length >= 16 ||
+      events.length >= 40 ||
       !diagnosticStages.includes(stage) ||
       !diagnosticErrors.includes(errorCategory) ||
       !['ENTER', 'COMPLETE', 'FAILED'].includes(outcome)
@@ -270,7 +419,7 @@ export function readE4DiagnosticStageReceipt(
   )
     return invalid();
   const rows: unknown = Reflect.get(value, 'events');
-  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 16) return invalid();
+  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 40) return invalid();
   const events: StageEvent[] = [];
   for (const row of rows) {
     if (!row || typeof row !== 'object') return invalid();

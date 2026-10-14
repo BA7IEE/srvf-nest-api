@@ -15,6 +15,9 @@ import {
   superviseE4DiagnosticChild,
   type E4DiagnosticChild,
   installE4DiagnosticFixtureGate,
+  E4_DIAGNOSTIC_SCENARIOS,
+  e4DiagnosticScenario,
+  observeE4DiagnosticTransactionLifetime,
 } from './e4-diagnostic-limits-client';
 
 const input = {
@@ -134,6 +137,24 @@ describe('E4 diagnostic fixture gate (offline, actual config parser and gate)', 
   });
 });
 describe('E4 diagnostic instance budget (offline)', () => {
+  it('allows only the maximum scenario to acquire the single90s instance adapter', () => {
+    for (const scenario of E4_DIAGNOSTIC_SCENARIOS.filter((value) => value !== 'maximum')) {
+      const c = e4DiagnosticContext({ ...input, scenario });
+      const client = { $transaction: jest.fn() };
+      expect(() => installE4DiagnosticLimits(client, c)).toThrow();
+      expect(client.$transaction).not.toHaveBeenCalled();
+      const env: NodeJS.ProcessEnv = {
+        APP_ENV: 'test',
+        SRVF_E4_DIAGNOSTIC_PURPOSE: 'DIAGNOSTIC_ONLY',
+        SRVF_E4_W98: '1',
+      };
+      const restore = installE4DiagnosticFixtureGate(c, env);
+      restore();
+      expect(env.ACTIVITY_V11_WORKFLOW_ENABLED).toBeUndefined();
+    }
+    expect(() => e4DiagnosticScenario('ordinary-2000')).toThrow();
+    expect(() => e4DiagnosticContext({ ...input, scenario: 'again' })).toThrow();
+  });
   it.each([
     { purpose: 'FORMAL' },
     { appEnv: 'production' },
@@ -223,6 +244,57 @@ describe('E4 diagnostic instance budget (offline)', () => {
     limits.restore();
     expect(Reflect.get(client, '$transaction')).toBe(original);
     await client.$disconnect();
+  });
+});
+describe('E4 transaction lifetime observer (offline, transparent original engine bridge)', () => {
+  it.each(['commit', 'rollback'] as const)(
+    'records%s work/wait and terminal costs without changing options or Promise identity',
+    async (terminal) => {
+      let now = 10;
+      const options = Object.freeze({ timeout: 30000, maxWait: 2000 });
+      const original = jest.fn(async () => 'opaque');
+      const engine = { transaction: original };
+      const descriptor = Object.getOwnPropertyDescriptor(engine, 'transaction');
+      const observation = observeE4DiagnosticTransactionLifetime(engine, () => now);
+      const call = engine.transaction as (...args: unknown[]) => Promise<string>;
+      const started = call.call(engine, 'start', {}, options);
+      expect(started).toBe(original.mock.results[0].value);
+      await started;
+      now = 30;
+      await call.call(engine, terminal, {}, { id: 'never-retain' });
+      observation.restore();
+      expect(Object.getOwnPropertyDescriptor(engine, 'transaction')).toEqual(descriptor);
+      expect(original.mock.contexts).toEqual([engine, engine]);
+      expect(original.mock.calls[0]).toEqual(['start', {}, options]);
+      expect(observation.snapshot()).toEqual({
+        status: 'COMPLETE',
+        transactions: [
+          {
+            timeoutMs: 30000,
+            transactionMs: 20,
+            workAndWaitMs: 20,
+            terminalMs: 0,
+            terminal,
+            outcome: 'OK',
+          },
+        ],
+      });
+      expect(JSON.stringify(observation.snapshot())).not.toContain('never-retain');
+    },
+  );
+  it('keeps an engine rejection and ownership changes visible without exporting the error', async () => {
+    const failure = new Error('postgresql://private:password@example/secret');
+    const engine = {
+      transaction: jest.fn<Promise<void>, unknown[]>(() => Promise.reject(failure)),
+    };
+    const observation = observeE4DiagnosticTransactionLifetime(engine);
+    await expect(engine.transaction('start', {}, { timeout: 30000 })).rejects.toBe(failure);
+    const replacement = jest.fn<Promise<void>, unknown[]>(async () => undefined);
+    engine.transaction = replacement;
+    observation.restore();
+    expect(engine.transaction).toBe(replacement);
+    expect(observation.snapshot().status).toBe('UNKNOWN');
+    expect(JSON.stringify(observation.snapshot())).not.toMatch(/postgresql|password|secret/u);
   });
 });
 describe('E4 independent600s process deadline (offline)', () => {

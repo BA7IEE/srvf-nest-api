@@ -10,6 +10,9 @@ import ts from 'typescript';
 import {
   E4_DIAGNOSTIC_PLAN,
   frozenE4OracleSource,
+  frozenOrdinaryOracleSource,
+  verifyDiagnosticMigrationSource,
+  diagnosticPopulation,
   requireDiagnosticEnvironment,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
@@ -25,6 +28,7 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_GITHUB_ISOLATED: '1',
   SRVF_TEST_RUN_SCOPE: 'app_test_w98',
   SRVF_E4_W98: '1',
+  SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
   it.each(['GUARD', 'FIXTURE_BOOTSTRAP'] as const)(
@@ -105,7 +109,7 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
         .receiptStatus,
     ).toBe('UNKNOWN');
     expect(
-      readE4DiagnosticStageReceipt({ ...value, events: Array(17).fill(event) }, head, '123', 1)
+      readE4DiagnosticStageReceipt({ ...value, events: Array(41).fill(event) }, head, '123', 1)
         .receiptStatus,
     ).toBe('UNKNOWN');
     expect(
@@ -119,6 +123,8 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       { SRVF_E4_DIAGNOSTIC_PURPOSE: 'FORMAL' },
       { GITHUB_SHA: 'b'.repeat(40) },
       { GITHUB_RUN_ATTEMPT: '2' },
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: 'unbounded' },
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: '' },
       { GITHUB_REPOSITORY: 'elsewhere/repo' },
       { GITHUB_ACTIONS: 'false' },
       { APP_ENV: 'production' },
@@ -147,6 +153,23 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(source).toContain('assertFixedE4DayOracle');
     expect(source).not.toMatch(/\b(?:describe|beforeAll|afterAll|it)\(/u);
     expect(() => frozenE4OracleSource(source)).toThrow('frozen oracle');
+  });
+  it('binds current143 before any database work and freezes both complete oracle sources', () => {
+    expect(() => verifyDiagnosticMigrationSource()).not.toThrow();
+    expect(() => verifyDiagnosticMigrationSource(Buffer.from('old migration'))).toThrow(
+      'current143',
+    );
+    const ordinary = frozenOrdinaryOracleSource();
+    expect(ordinary).toContain('FULL JOIN');
+    expect(ordinary).toContain('sourceSetHash');
+    expect(ordinary).toContain('evaluationSetHash');
+    expect(ordinary).not.toMatch(/\b(?:describe|beforeAll|afterAll|it)\(/u);
+    expect(() => frozenOrdinaryOracleSource(ordinary)).toThrow('frozen oracle');
+    expect(E4_DIAGNOSTIC_PLAN.scenarios.map(diagnosticPopulation)).toEqual([
+      1, 100, 500, 2000, 1, 1,
+    ]);
+    expect(E4_DIAGNOSTIC_PLAN.completeFunctionMd5).toBe('ade4d2af9aa0baf8400a79fc6b62c797');
+    expect(E4_DIAGNOSTIC_PLAN.internalSqlPlan).toBe('NOT_RUN');
   });
   it('is excluded by the unchanged default E2E collection regex', () => {
     const config = readFileSync(resolve(__dirname, '../jest-e2e.config.ts'), 'utf8');

@@ -1,8 +1,8 @@
 name: R5 E4 isolated validation
-# One bounded existing guard-functions diagnostic; executable workflow unchanged.
+# Approved finite budget diagnostics: six isolated cases, one execution per case.
 
 # Only a newly approved candidate commit can consume this one-shot queue.
-# Repair candidate: frozen driver bytes, scope typing, and read-only legacy fixture.
+# Current143 checksum/body pin and complete frozen oracles are checked before measurement.
 # Subsequent report pushes do not match this workflow path; reruns are refused.
 on:
   workflow_dispatch:
@@ -737,9 +737,14 @@ jobs:
     if: github.repository == 'BA7IEE/srvf-nest-api' && github.ref == 'refs/heads/codex/activity-os-r5-e4-github-validation' && github.run_attempt == 1 && ((github.event_name == 'workflow_dispatch' && inputs.expected_sha == github.sha) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[e4-prepare-cost-once]')))
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [ordinary-1, ordinary-100, ordinary-500, maximum, lock-contention, failure-retry]
     env:
       APP_ENV: test
       SRVF_E4_DIAGNOSTIC_PURPOSE: DIAGNOSTIC_ONLY
+      SRVF_E4_DIAGNOSTIC_SCENARIO: ${{ matrix.scenario }}
       SRVF_E4_GITHUB_ISOLATED: '1'
       SRVF_TEST_RUN_SCOPE: app_test_w98
       SRVF_E4_W98: '1'
@@ -768,14 +773,14 @@ jobs:
             sleep 1
           done
           exit 1
-      - name: One DIAGNOSTIC_ONLY maximum prepare with independent 600s watchdog
+      - name: One fixed scenario, current143, original later budgets and independent 600s watchdog
         env:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --execute
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: e4-prepare-cost-${{ github.run_id }}
+          name: e4-prepare-cost-${{ github.run_id }}-${{ matrix.scenario }}
           path: tmp/e4-prepare-cost-evidence/result.json
           if-no-files-found: error
       - name: Remove this job's ephemeral PostgreSQL container
