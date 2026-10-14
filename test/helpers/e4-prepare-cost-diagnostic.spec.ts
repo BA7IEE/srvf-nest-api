@@ -8,12 +8,17 @@ import {
 } from './e4-diagnostic-limits-client';
 import ts from 'typescript';
 import type { PrismaClient } from '@prisma/client';
+import type { E4Fixture, createE4Source } from './activity-contribution-policy.fixture';
+import { runInNewContext } from 'node:vm';
 import {
   E4_DIAGNOSTIC_PLAN,
   frozenE4OracleSource,
   frozenOrdinaryOracleSource,
   verifyDiagnosticMigrationSource,
   verifyDiagnosticDatabase,
+  createDiagnosticE4Source,
+  diagnosticOracleClient,
+  oracleStageWrappers,
   diagnosticPopulation,
   requireDiagnosticEnvironment,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
@@ -33,6 +38,67 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  it('distinguishes source denominator,60s day,30s root and canonical steps without changing frozen function results', async () => {
+    const steps: string[] = [];
+    const code = `async function assertFixedE4RootOracle(){return 1;} async function assertE4SliceSourceDenominators(){return 2;} async function assertFixedE4DayOracle(){await assertE4SliceSourceDenominators();return 3;} async function assertFixedE4Oracle(){await assertFixedE4DayOracle();await assertFixedE4RootOracle();return 4;}`;
+    const run = runInNewContext(code + oracleStageWrappers(true) + '\nassertFixedE4Oracle;', {
+      oracleStep: (step: string) => steps.push(step),
+    }) as () => Promise<number>;
+    await expect(run()).resolves.toBe(4);
+    expect(steps).toEqual([
+      'ORACLE_DAY_POINTS',
+      'ORACLE_SOURCE_DENOMINATORS',
+      'ORACLE_DAY_POINTS',
+      'ORACLE_ROOT_AGGREGATE',
+      'ORACLE_CANONICAL_DOCUMENT',
+    ]);
+  });
+  it('preserves the exact original oracle Promise, callback, receiver and explicit budget on failure', async () => {
+    const error = Object.assign(
+      new Error(
+        'The timeout for this transaction was 30000 ms, however 31812 ms passed since the start of the transaction.',
+      ),
+      { code: 'P2028' },
+    );
+    const promise = Promise.reject(error);
+    const original = jest.fn<Promise<never>, unknown[]>(() => promise);
+    const client = { $transaction: original };
+    const evidence: Parameters<typeof diagnosticOracleClient>[1] = {
+      substage: 'ORACLE_ROOT_AGGREGATE',
+    };
+    const observed = diagnosticOracleClient(client, evidence);
+    const callback = () => Promise.resolve();
+    const options = Object.freeze({ timeout: 30000, maxWait: 2000 });
+    expect(observed.$transaction(callback, options)).toBe(promise);
+    await expect(promise).rejects.toBe(error);
+    expect(original.mock.contexts[0]).toBe(client);
+    expect(original).toHaveBeenCalledWith(callback, options);
+    expect(client.$transaction).toBe(original);
+    expect(evidence.oracleTransactions).toHaveLength(1);
+    expect(evidence.oracleTransactions![0]).toMatchObject({
+      substage: 'ORACLE_ROOT_AGGREGATE',
+      timeoutMs: 30000,
+      outcome: 'REJECTED',
+      error: { timing: { timeoutMs: 30000, elapsedMs: 31812 } },
+    });
+  });
+  it.each([1, 100, 500] as const)(
+    'builds ordinary population%s through the existing synchronous fixture path',
+    async (identities) => {
+      const boundary = new Error('offline source-entry boundary');
+      const source = jest.fn(
+        async (_fixture: E4Fixture, options: Parameters<typeof createE4Source>[1]) => {
+          expect(options).toMatchObject({ batch: false });
+          expect(options?.manualSlices).toHaveLength(5);
+          throw boundary;
+        },
+      );
+      await expect(createDiagnosticE4Source({} as E4Fixture, identities, source)).rejects.toBe(
+        boundary,
+      );
+      expect(source).toHaveBeenCalledTimes(1);
+    },
+  );
   it('queries the actual two-argument143 catalog identity despite the defaulted boolean', async () => {
     const migration = readFileSync(
       resolve(

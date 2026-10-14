@@ -352,6 +352,75 @@ export function e4DiagnosticErrorCategory(
   }
   return fallback;
 }
+
+/** Fixed templates and numeric/closed-enum evidence only; never echo SQL, values or paths. */
+export function e4DiagnosticSafeError(error: unknown) {
+  const get = (value: unknown, key: string): unknown => {
+    try {
+      return value && (typeof value === 'object' || typeof value === 'function')
+        ? Reflect.get(value, key)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const rawName = get(error, 'name');
+  const constructorName = get(get(error, 'constructor'), 'name');
+  const allowedNames = [
+    'Error',
+    'JestAssertionError',
+    'AssertionError',
+    'BizException',
+    'PrismaClientKnownRequestError',
+    'PrismaClientUnknownRequestError',
+  ];
+  const className =
+    typeof constructorName === 'string' && allowedNames.includes(constructorName)
+      ? constructorName
+      : typeof rawName === 'string' && allowedNames.includes(rawName)
+        ? rawName
+        : 'OTHER';
+  const category = e4DiagnosticErrorCategory(error);
+  const raw = get(error, 'message');
+  const message =
+    typeof raw === 'string'
+      ? raw
+          .slice(0, 12000)
+          .split(String.fromCharCode(27))
+          .join('')
+          .replace(/\[[0-9;]*m/gu, '')
+      : '';
+  const timeout =
+    category === 'P2028'
+      ? message.match(/timeout for this transaction was (\d+) ms[\s\S]*?(\d+) ms passed/u)
+      : null;
+  const timing =
+    timeout && +timeout[1] <= 600000 && +timeout[2] <= 600000
+      ? { timeoutMs: +timeout[1], elapsedMs: +timeout[2] }
+      : null;
+  const assertion = message.match(
+    /Expected:\s*"?(job|draft|true|false|\d+)"?\s*Received:\s*"?(job|draft|true|false|\d+)"?(?:\s|$)/u,
+  );
+  const controlled = [
+    'E4 complete actual day oracle rollback',
+    'E4 ordinary fixed day oracle rollback',
+    'E4 diagnostic controlled rollback after actual barrier',
+  ].includes(message);
+  const safeMessage = timing
+    ? `Transaction expired: timeout ${timing.timeoutMs} ms, elapsed ${timing.elapsedMs} ms`
+    : assertion
+      ? `Assertion mismatch: expected ${assertion[1]}, received ${assertion[2]}`
+      : controlled
+        ? message
+        : category === 'P2028'
+          ? 'Transaction API error (P2028); timing unavailable'
+          : ['P2010', 'P2002', 'P2003'].includes(category)
+            ? `Database request failed (${category})`
+            : className === 'JestAssertionError' || className === 'AssertionError'
+              ? 'Assertion failed; nonnumeric details withheld'
+              : 'Diagnostic error; unrecognized message withheld';
+  return { className, category, message: safeMessage, timing, controlledRollback: controlled };
+}
 export function e4DiagnosticStageReceipt(
   head: string,
   run: string,

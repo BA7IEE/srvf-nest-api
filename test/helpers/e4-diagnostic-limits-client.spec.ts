@@ -18,6 +18,7 @@ import {
   E4_DIAGNOSTIC_SCENARIOS,
   e4DiagnosticScenario,
   observeE4DiagnosticTransactionLifetime,
+  e4DiagnosticSafeError,
 } from './e4-diagnostic-limits-client';
 
 const input = {
@@ -28,6 +29,53 @@ const input = {
   appEnv: 'test',
 };
 const context = () => e4DiagnosticContext(input);
+describe('E4 bounded safe error messages (offline)', () => {
+  it('retains explicit expired-transaction timing while discarding raw query and credentials', () => {
+    const error = {
+      code: 'P2028',
+      name: 'PrismaClientKnownRequestError',
+      message:
+        'SELECT private; postgresql://person:password@example/database\nThe timeout for this transaction was 30000 ms, however 31812 ms passed since the start of the transaction.',
+    };
+    expect(e4DiagnosticSafeError(error)).toMatchObject({
+      category: 'P2028',
+      message: 'Transaction expired: timeout 30000 ms, elapsed 31812 ms',
+      timing: { timeoutMs: 30000, elapsedMs: 31812 },
+    });
+    expect(JSON.stringify(e4DiagnosticSafeError(error))).not.toMatch(
+      /SELECT|private|postgresql|password|example|database/u,
+    );
+  });
+  it('retains the closed job/draft mismatch and recognizes intentional oracle rollback', () => {
+    expect(
+      e4DiagnosticSafeError(
+        new Error('expect(received).toBe(expected)\nExpected: "job"\nReceived: "draft"'),
+      ).message,
+    ).toBe('Assertion mismatch: expected job, received draft');
+    expect(
+      e4DiagnosticSafeError(new Error('E4 complete actual day oracle rollback')),
+    ).toMatchObject({
+      controlledRollback: true,
+      message: 'E4 complete actual day oracle rollback',
+    });
+  });
+  it.each([
+    new Error('SELECT sensitive; /workspace/private/path; https://example/private?sig=token'),
+    new Error('Expected: "secret-member"\nReceived: "private-person"'),
+    {
+      get message() {
+        throw new Error('secret');
+      },
+      get name() {
+        throw new Error('secret');
+      },
+    },
+  ])('withholds unknown and hostile error contents', (error) => {
+    expect(JSON.stringify(e4DiagnosticSafeError(error))).not.toMatch(
+      /sensitive|workspace|https|sig=|token|secret|private/u,
+    );
+  });
+});
 describe('E4 diagnostic fixture gate (offline, actual config parser and gate)', () => {
   function fixtureEnv(value?: string): NodeJS.ProcessEnv {
     return {

@@ -16,6 +16,7 @@ import {
   superviseE4DiagnosticChild,
   e4DiagnosticStageReceipt,
   e4DiagnosticErrorCategory,
+  e4DiagnosticSafeError,
   readE4DiagnosticStageReceipt,
   installE4DiagnosticFixtureGate,
 } from '../helpers/e4-diagnostic-limits-client';
@@ -112,17 +113,104 @@ export function frozenE4OracleSource(source = readFileSync(oraclePath, 'utf8')) 
     throw new Error('E4 oracle coverage refused');
   return functions.map((node) => node.getText(ast)).join('\n');
 }
-function frozenE4Oracle() {
+export function oracleStageWrappers(maximum: boolean) {
+  return `
+const originalRootOracle = assertFixedE4RootOracle;
+assertFixedE4RootOracle = function(...args) {
+  oracleStep('ORACLE_ROOT_AGGREGATE');
+  return originalRootOracle(...args).then(result => {
+    oracleStep('ORACLE_CANONICAL_DOCUMENT');
+    return result;
+  });
+};
+${
+  maximum
+    ? `
+const originalDenominators = assertE4SliceSourceDenominators;
+assertE4SliceSourceDenominators = function(...args) {
+  oracleStep('ORACLE_SOURCE_DENOMINATORS');
+  return originalDenominators(...args).then(result => {
+    oracleStep('ORACLE_DAY_POINTS');
+    return result;
+  });
+};
+const originalDayOracle = assertFixedE4DayOracle;
+assertFixedE4DayOracle = function(...args) {
+  oracleStep('ORACLE_DAY_POINTS');
+  return originalDayOracle(...args);
+};`
+    : ''
+}
+`;
+}
+type OracleTransactionReceipt = {
+  substage: string;
+  timeoutMs: number | null;
+  wallMs: number;
+  outcome: 'PENDING' | 'RETURNED' | 'REJECTED';
+  error?: ReturnType<typeof e4DiagnosticSafeError>;
+};
+/** Independent oracle instance adapter; callback, original Promise and budgets stay untouched. */
+export function diagnosticOracleClient<T extends object>(
+  client: T,
+  evidence: { substage?: string; oracleTransactions?: OracleTransactionReceipt[] },
+) {
+  const original: unknown = Reflect.get(client, '$transaction');
+  if (typeof original !== 'function') throw new Error('E4 oracle observation unavailable');
+  const adapter = new Proxy(client, {
+    get: (target, key) =>
+      key !== '$transaction'
+        ? Reflect.get(target, key, target)
+        : function (this: unknown, ...args: unknown[]) {
+            if (this !== adapter) throw new Error('E4 oracle adapter receiver refused');
+            const started = performance.now();
+            const options = args[1];
+            const timeout: unknown =
+              options && typeof options === 'object' ? Reflect.get(options, 'timeout') : undefined;
+            evidence.oracleTransactions ??= [];
+            if (evidence.oracleTransactions.length >= 32)
+              throw new Error('E4 oracle observation limit');
+            const result: unknown = Reflect.apply(original, client, args);
+            const row: OracleTransactionReceipt = {
+              substage: evidence.substage ?? 'ORACLE_PROOF_READ',
+              timeoutMs: typeof timeout === 'number' && Number.isFinite(timeout) ? timeout : null,
+              wallMs: 0,
+              outcome: 'PENDING',
+            };
+            evidence.oracleTransactions.push(row);
+            if (!(result instanceof Promise))
+              throw new Error('E4 oracle original Promise required');
+            void result.then(
+              () => {
+                row.wallMs = performance.now() - started;
+                row.outcome = 'RETURNED';
+              },
+              (error) => {
+                row.wallMs = performance.now() - started;
+                row.outcome = 'REJECTED';
+                row.error = e4DiagnosticSafeError(error);
+              },
+            );
+            return result;
+          },
+  });
+  return adapter;
+}
+
+function frozenE4Oracle(report: Report) {
   const code = ts.transpileModule(frozenE4OracleSource(), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText;
-  return runInNewContext(code + '\nassertFixedE4Oracle;', {
+  return runInNewContext(code + oracleStageWrappers(true) + '\nassertFixedE4Oracle;', {
     Prisma,
     createHash,
     readFileSync,
     resolve,
     __dirname: dirname(oraclePath),
     expect,
+    oracleStep: (step: string) => {
+      report.substage = step;
+    },
   }) as (db: PrismaClient, id: string, count: number) => Promise<void>;
 }
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
@@ -170,6 +258,10 @@ type Report = typeof E4_DIAGNOSTIC_PLAN & {
   facts?: unknown;
   ledger?: unknown;
   failureStage?: string;
+  substage?: string;
+  errorSubstage?: string;
+  error?: ReturnType<typeof e4DiagnosticSafeError>;
+  oracleTransactions?: OracleTransactionReceipt[];
   scenarioShape?: { identities: number; segments: number; slices: number; units: number };
   budgetRecommendation?: string;
 };
@@ -188,7 +280,7 @@ export function stageReceipt(privateDir: string, head: string, run: string) {
   });
 }
 
-async function createDiagnosticE4Source(
+export async function createDiagnosticE4Source(
   f: E4Fixture,
   identities: 1 | 100 | 500,
   createE4Source: (typeof import('../helpers/activity-contribution-policy.fixture'))['createE4Source'],
@@ -217,7 +309,7 @@ async function createDiagnosticE4Source(
   const p = await createE4Source(f, {
     startsAt: start,
     endsAt: end,
-    batch: true,
+    batch: false,
     manualSlices: slicesFor(start, end),
     beforeSeal: async (draft) => {
       for (let offset = 0; offset < identities - 1; offset += 100) {
@@ -470,17 +562,20 @@ export function frozenOrdinaryOracleSource(source = readFileSync(ordinaryOracleP
     throw new Error('E4 ordinary oracle coverage refused');
   return functions.map((node) => node.getText(ast)).join('\n');
 }
-function frozenOrdinaryOracle() {
+function frozenOrdinaryOracle(report: Report) {
   const code = ts.transpileModule(frozenOrdinaryOracleSource(), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText;
-  return runInNewContext(code + '\nassertFixedE4Oracle;', {
+  return runInNewContext(code + oracleStageWrappers(false) + '\nassertFixedE4Oracle;', {
     Prisma,
     createHash,
     readFileSync,
     resolve,
     __dirname: dirname(ordinaryOraclePath),
     expect,
+    oracleStep: (step: string) => {
+      report.substage = step;
+    },
   }) as (db: PrismaClient, id: string, count: number) => Promise<void>;
 }
 async function assertDiagnosticProof(
@@ -488,7 +583,10 @@ async function assertDiagnosticProof(
   versionId: string,
   units: number,
   maximum: boolean,
+  report: Report,
 ) {
+  const observed = diagnosticOracleClient(db, report);
+  report.substage = 'ORACLE_PROOF_READ';
   const proof = await db.activitySettlementContributionRevision.findFirstOrThrow({
     where: { settlementVersionId: versionId },
     orderBy: { revision: 'desc' },
@@ -496,10 +594,11 @@ async function assertDiagnosticProof(
   expect(proof.evaluationCount).toBe(units);
   if (maximum) {
     expect(proof.recognizedPointsTotal.toFixed(2)).toBe('1000.00');
-    await frozenE4Oracle()(db, proof.id, units);
+    await frozenE4Oracle(report)(observed, proof.id, units);
   } else {
-    await frozenOrdinaryOracle()(db, proof.id, units);
-    await assertOrdinaryDayOracle(db, proof.id, units);
+    await frozenOrdinaryOracle(report)(observed, proof.id, units);
+    report.substage = 'ORDINARY_DAY_POINTS';
+    await assertOrdinaryDayOracle(observed, proof.id, units);
   }
   return proof;
 }
@@ -742,6 +841,7 @@ async function completeDiagnosticSettlement(
   const units = diagnosticPopulation(report.scenario) * 4;
   const maximum = report.scenario === 'maximum';
   checkpoint.mark('SUBMIT', 'ENTER');
+  report.substage = 'SUBMIT';
   const submitted = await measureOperation(report, 'SUBMIT', f.db, () =>
     fixture.submitE4Time(f, source, prepared),
   );
@@ -750,6 +850,7 @@ async function completeDiagnosticSettlement(
     submitted.settlementVersionId,
     units,
     maximum,
+    report,
   );
 
   checkpoint.mark('SUBMIT', 'COMPLETE');
@@ -765,6 +866,7 @@ async function completeDiagnosticSettlement(
   };
   const review = f.app.get(SettlementReviewService);
   checkpoint.mark('FIRST_REVIEW', 'ENTER');
+  report.substage = 'FIRST_REVIEW';
   await measureOperation(report, 'FIRST_REVIEW', f.db, () =>
     review.firstReview(
       {
@@ -789,9 +891,10 @@ async function completeDiagnosticSettlement(
       })
     ).statusCode,
   ).toBe('pending_final_review');
-  await assertDiagnosticProof(observer, submitted.settlementVersionId, units, maximum);
+  await assertDiagnosticProof(observer, submitted.settlementVersionId, units, maximum, report);
   checkpoint.mark('FIRST_REVIEW', 'COMPLETE');
   checkpoint.mark('FINAL_REVIEW', 'ENTER');
+  report.substage = 'FINAL_REVIEW';
   const final = await measureOperation(report, 'FINAL_REVIEW', f.db, () =>
     review.finalReview(
       {
@@ -807,9 +910,10 @@ async function completeDiagnosticSettlement(
   );
   if (!final.ledgerPostingBatchId)
     throw new Error('E4 final review requires ledger preparation batch');
-  await assertDiagnosticProof(observer, submitted.settlementVersionId, units, maximum);
+  await assertDiagnosticProof(observer, submitted.settlementVersionId, units, maximum, report);
   checkpoint.mark('FINAL_REVIEW', 'COMPLETE');
   checkpoint.mark('LEDGER', 'ENTER');
+  report.substage = 'LEDGER';
   const preparation = f.app.get(LedgerPreparationService);
   const posting = f.app.get(LedgerPostingService);
   const batchId = final.ledgerPostingBatchId;
@@ -840,7 +944,7 @@ async function completeDiagnosticSettlement(
   expect(
     (await observer.ledgerPostingBatch.findUniqueOrThrow({ where: { id: batchId } })).statusCode,
   ).toBe('committed');
-  await assertDiagnosticProof(observer, submitted.settlementVersionId, units, maximum);
+  await assertDiagnosticProof(observer, submitted.settlementVersionId, units, maximum, report);
   report.ledger = { credits: credits._count, totalMatchesFrozenRoot: true, committed: true };
   checkpoint.mark('LEDGER', 'COMPLETE');
 }
@@ -929,6 +1033,7 @@ function registerDiagnosticChild() {
         f = await fixture.createE4Fixture();
         checkpoint.mark('FIXTURE_BOOTSTRAP', 'COMPLETE');
         checkpoint.mark('SOURCE_BUILD', 'ENTER');
+        report.substage = 'CATALOG_143';
         await verifyDiagnosticDatabase(f.db);
         report.migration = 'VERIFIED_143';
         const maximum = report.scenario === 'maximum';
@@ -939,9 +1044,11 @@ function registerDiagnosticChild() {
           slices: maximum ? 50000 : identities * 5,
           units: identities * 4,
         };
+        report.substage = maximum ? 'MAXIMUM_SOURCE_ENTRY' : 'ORDINARY_SYNC_SOURCE_ENTRY';
         const source = maximum
           ? await fixture.createMaximumE4Source(f)
           : await createDiagnosticE4Source(f, identities as 1 | 100 | 500, fixture.createE4Source);
+        report.substage = 'SOURCE_SHAPE';
         expect(
           await f.db.activityParticipationIdentity.count({
             where: { activityId: source.activityId },
@@ -959,6 +1066,7 @@ function registerDiagnosticChild() {
         ).toBe(maximum ? 50000 : identities * 5);
         checkpoint.mark('SOURCE_BUILD', 'COMPLETE');
         checkpoint.mark('PREPARE', 'ENTER');
+        report.substage = 'PREPARE';
         const measuredUrl = new URL(process.env.DATABASE_URL!);
         measuredUrl.searchParams.set('connection_limit', '1');
         db = new DiagnosticDatabase({
@@ -1192,7 +1300,13 @@ function registerDiagnosticChild() {
         const units = identities * 4;
         expect(prepared!.bucketCount).toBe(units);
         expect(prepared!.sourceCount).toBe(maximum ? 40000 : identities * 4);
-        await assertDiagnosticProof(observer, prepared!.settlementVersionId, units, maximum);
+        await assertDiagnosticProof(
+          observer,
+          prepared!.settlementVersionId,
+          units,
+          maximum,
+          report,
+        );
         const preparedFacts = await diagnosticFacts(
           observer,
           source.activityId,
@@ -1232,6 +1346,8 @@ function registerDiagnosticChild() {
       } catch (error) {
         report.status = 'FAILED';
         report.failureStage = checkpoint.lastStage();
+        report.errorSubstage = report.substage;
+        report.error = e4DiagnosticSafeError(error);
         report.budgetRecommendation = 'KEEP_FORMAL_BUDGETS_FAILURE_REQUIRES_STAGE_SPECIFIC_REVIEW';
         checkpoint.mark(
           checkpoint.lastStage(),
