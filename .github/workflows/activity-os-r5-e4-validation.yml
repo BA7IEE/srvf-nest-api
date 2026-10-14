@@ -799,7 +799,7 @@ jobs:
           if (!fs.existsSync(file) || fs.statSync(file).size > 65536) throw Error('E4 closed evidence unavailable');
           const r = JSON.parse(fs.readFileSync(file, 'utf8'));
           if (r.head !== process.env.GITHUB_SHA || r.run !== process.env.GITHUB_RUN_ID || r.scenario !== 'maximum' || r.purpose !== 'DIAGNOSTIC_ONLY') throw Error('E4 closed evidence binding refused');
-          process.stdout.write('E4_SHARED_GUARD_RESULT ' + JSON.stringify({ head:r.head, run:r.run, status:r.status, coverage:r.coverage, migration:r.migration, oracle:r.oracle, prepareMs:r.prepareMs, resources:r.resources, databaseCleanup:r.databaseCleanup, firstCanonical32:r.firstCanonical32, internalSqlPlan:r.internalSqlPlan, internal:r.internal, joinKeyCandidate:r.joinKeyCandidate, errorSubstage:r.errorSubstage, error:r.error }) + '\n');
+          process.stdout.write('E4_SHARED_GUARD_RESULT ' + JSON.stringify({ head:r.head, run:r.run, status:r.status, coverage:r.coverage, migration:r.migration, oracle:r.oracle, prepareMs:r.prepareMs, resources:r.resources, databaseCleanup:r.databaseCleanup, firstCanonical32:r.firstCanonical32, internalSqlPlan:r.internalSqlPlan, internal:r.internal, joinKeyCandidate:r.joinKeyCandidate, joinKeyPostFailureOracle:r.joinKeyPostFailureOracle, joinKeyVerificationError:r.joinKeyVerificationError, errorSubstage:r.errorSubstage, error:r.error }) + '\n');
           NODE
       - uses: actions/upload-artifact@v4
         if: always()

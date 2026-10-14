@@ -398,6 +398,8 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
     | 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
     | 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY';
   joinKeyCandidate?: unknown;
+  joinKeyPostFailureOracle?: unknown;
+  joinKeyVerificationError?: ReturnType<typeof e4DiagnosticSafeError>;
   firstCanonical32?: FirstCanonical32Evidence;
   canonicalCost?: {
     purpose: 'READ_ONLY_COST_NOT_ACCEPTANCE';
@@ -422,7 +424,12 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
   budgetRecommendation?: string;
 };
 function writeBounded(path: string, value: unknown) {
-  const json = JSON.stringify(value, null, 2) + '\n';
+  // Preserve every node from both actual plans within the existing64KiB envelope.
+  const comparison =
+    value &&
+    typeof value === 'object' &&
+    Reflect.get(value, 'coverage') === 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY';
+  const json = (comparison ? JSON.stringify(value) : JSON.stringify(value, null, 2)) + '\n';
   if (Buffer.byteLength(json) > 65536) throw new Error('E4 diagnostic output limit');
   writeFileSync(path, json, { flag: 'wx', mode: 0o600 });
 }
@@ -1673,12 +1680,44 @@ export function compactJoinKeyEvidence(raw: string) {
   };
 }
 
+export function joinKeyOracleGate(input: {
+  oracle: string;
+  errorSubstage?: string;
+  error?: ReturnType<typeof e4DiagnosticSafeError>;
+  firstCanonical32?: Pick<
+    FirstCanonical32Evidence,
+    'outcome' | 'fullComparisonValidated' | 'error' | 'transactionMs' | 'workMemKb'
+  >;
+}) {
+  const first = input.firstCanonical32;
+  if (input.oracle === 'COMPLETE' && first?.fullComparisonValidated === true)
+    return 'FIRST_ORACLE_COMPLETE';
+  if (
+    input.oracle === 'NOT_RUN' &&
+    input.errorSubstage === 'ORACLE_CANONICAL_DOCUMENT' &&
+    input.error?.className === 'PrismaClientKnownRequestError' &&
+    input.error.category === 'P2028' &&
+    input.error.timing?.timeoutMs === 30000 &&
+    input.error.timing.elapsedMs > 30000 &&
+    first?.outcome === 'REJECTED' &&
+    first.transactionMs === 30000 &&
+    first.workMemKb === 32768 &&
+    first.error?.category === 'P2028' &&
+    first.error.timing?.timeoutMs === 30000 &&
+    first.error.timing.elapsedMs === input.error.timing.elapsedMs &&
+    first.fullComparisonValidated !== true
+  )
+    return 'FIRST_CANONICAL_TIMEOUT_RETAINED';
+  throw new Error('E4 join key oracle gate refused');
+}
+
 async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
   report.joinKeyCandidate = { status: 'UNKNOWN', reason: 'PROOF' };
   const proof = privateDiagnosticProofs.get(report),
     databaseName = deriveTestDbName();
-  if (!proof || report.oracle !== 'COMPLETE' || databaseName !== 'app_test_w98')
+  if (!proof || databaseName !== 'app_test_w98')
     throw new Error('E4 join key verified proof refused');
+  const oracleGate = joinKeyOracleGate(report);
   await assertConnectedTestDatabase(db);
   await verifyDiagnosticDatabase(db);
   const owner = `e4_key_${report.head.slice(0, 12)}_${report.run}`;
@@ -1761,11 +1800,65 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
   report.joinKeyCandidate = { ...(report.joinKeyCandidate as object), reason: 'EVIDENCE' };
   report.joinKeyCandidate = {
     ...compactJoinKeyEvidence(proc.stderr),
+    oracleGate,
     ownedBackendGone: true,
     tempObjectsLifetime: 'OWNED_BACKEND_DISCONNECTED',
   };
   report.internalSqlPlan = 'OBSERVED';
   await verifyDiagnosticDatabase(db);
+}
+
+async function joinKeyPostFailureOracle(db: PrismaClient, report: Report) {
+  if (joinKeyOracleGate(report) !== 'FIRST_CANONICAL_TIMEOUT_RETAINED')
+    throw new Error('E4 retained oracle timeout required');
+  const proof = privateDiagnosticProofs.get(report);
+  if (!proof) throw new Error('E4 retained oracle proof required');
+  frozenE4OracleSource();
+  const sql = canonicalCostQueries(proof.revisionId, proof.sourceKindCode).comparison;
+  const started = performance.now();
+  const common = {
+    purpose: 'POST_FAILURE_IDENTICAL_FROZEN_QUERY_NOT_FIRST_OR_FORMAL_ACCEPTANCE',
+    firstFailureRetained: true,
+    frozenSourceSha256: oracleHash,
+    transactionMs: 30000,
+    statementMs: 30000,
+    workMemKb: 32768,
+  };
+  report.joinKeyPostFailureOracle = { ...common, status: 'UNKNOWN' };
+  try {
+    const result = await db.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+        await tx.$executeRaw`SET LOCAL statement_timeout='30s'`;
+        await tx.$executeRaw`SET LOCAL work_mem='32MB'`;
+        const [settings] = await tx.$queryRaw<
+          { readonly: boolean; workMemKb: number; jitEnabled: boolean }[]
+        >`
+        SELECT current_setting('transaction_read_only')='on' AS readonly,
+        (pg_size_bytes(current_setting('work_mem'))/1024)::int AS "workMemKb",current_setting('jit')='on' AS "jitEnabled"
+      `;
+        expect(settings).toEqual({ readonly: true, workMemKb: 32768, jitEnabled: true });
+        const [comparison] = await tx.$queryRaw<CanonicalComparison[]>(sql);
+        assertCanonicalComparison(comparison, proof.units);
+        return comparison;
+      },
+      { timeout: 30000 },
+    );
+    report.joinKeyPostFailureOracle = {
+      ...common,
+      status: 'COMPLETE',
+      wallMs: performance.now() - started,
+      comparison: result,
+    };
+  } catch (error) {
+    report.joinKeyPostFailureOracle = {
+      ...common,
+      status: 'FAILED',
+      wallMs: performance.now() - started,
+      error: e4DiagnosticSafeError(error),
+    };
+    throw error;
+  }
 }
 async function probeCanonicalJit(
   db: PrismaClient,
@@ -2501,6 +2594,7 @@ function registerDiagnosticChild() {
       let f: E4Fixture | undefined, db: DiagnosticDatabase | undefined;
       const auxiliary: PrismaClient[] = [];
       let releaseOwnedLock: (() => void) | undefined;
+      let joinKeyFactsContext: { activityId: string; operationKey: string } | undefined;
       try {
         f = await fixture.createE4Fixture();
         checkpoint.mark('FIXTURE_BOOTSTRAP', 'COMPLETE');
@@ -2558,6 +2652,11 @@ function registerDiagnosticChild() {
           operationKey: f.key('diagnostic_prepare'),
           expectedTimeRevision: 0,
         };
+        if (process.env.SRVF_E4_JOIN_KEY_ONCE === '1')
+          joinKeyFactsContext = {
+            activityId: source.activityId,
+            operationKey: command.operationKey,
+          };
         const beforeFacts = await diagnosticFacts(
           observer,
           source.activityId,
@@ -2844,6 +2943,43 @@ function registerDiagnosticChild() {
         report.failureStage = checkpoint.lastStage();
         report.errorSubstage = report.substage;
         report.error = e4DiagnosticSafeError(error);
+        if (
+          process.env.SRVF_E4_JOIN_KEY_ONCE === '1' &&
+          report.errorSubstage === 'ORACLE_CANONICAL_DOCUMENT' &&
+          db &&
+          f &&
+          joinKeyFactsContext
+        ) {
+          try {
+            joinKeyOracleGate(report);
+            const before = await diagnosticFacts(
+              f.db,
+              joinKeyFactsContext.activityId,
+              joinKeyFactsContext.operationKey,
+            );
+            expect(before).toEqual({
+              roots: 1,
+              evaluations: 8000,
+              timeRoots: 1,
+              buckets: 8000,
+              sources: 40000,
+              receipts: 1,
+              audits: 1,
+            });
+            report.facts = before;
+            await probeJoinKeyCandidate(db, report);
+            expect(
+              await diagnosticFacts(
+                f.db,
+                joinKeyFactsContext.activityId,
+                joinKeyFactsContext.operationKey,
+              ),
+            ).toEqual(before);
+            await joinKeyPostFailureOracle(db, report);
+          } catch (verificationError) {
+            report.joinKeyVerificationError = e4DiagnosticSafeError(verificationError);
+          }
+        }
         if (
           process.env.SRVF_E4_CANONICAL_COST_ONLY === '1' &&
           report.errorSubstage === 'ORACLE_CANONICAL_DOCUMENT'

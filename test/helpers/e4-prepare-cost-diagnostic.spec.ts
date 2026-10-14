@@ -34,6 +34,7 @@ import {
   joinKeyProbeSql,
   compactJoinKeyEvidence,
   JOIN_KEY_ORDER,
+  joinKeyOracleGate,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -331,6 +332,59 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       expect(() =>
         requireDiagnosticEnvironment({ ...env, SRVF_E4_CANONICAL_FIRST32: '1', ...change }, head),
       ).toThrow();
+  });
+  const timeoutError = {
+    className: 'PrismaClientKnownRequestError',
+    category: 'P2028' as const,
+    message: 'Transaction expired: timeout 30000 ms, elapsed 30079 ms',
+    timing: { timeoutMs: 30000, elapsedMs: 30079 },
+    controlledRollback: false,
+  };
+  const retainedTimeout = {
+    oracle: 'NOT_RUN',
+    errorSubstage: 'ORACLE_CANONICAL_DOCUMENT',
+    error: timeoutError,
+    firstCanonical32: {
+      outcome: 'REJECTED' as const,
+      transactionMs: 30000 as const,
+      workMemKb: 32768 as const,
+      error: timeoutError,
+    },
+  };
+  it('keeps a known first canonical timeout separate from independent candidate verification', () => {
+    expect(joinKeyOracleGate(retainedTimeout)).toBe('FIRST_CANONICAL_TIMEOUT_RETAINED');
+    expect(retainedTimeout.oracle).toBe('NOT_RUN');
+    expect(retainedTimeout.firstCanonical32.outcome).toBe('REJECTED');
+    expect(
+      joinKeyOracleGate({
+        oracle: 'COMPLETE',
+        firstCanonical32: {
+          outcome: 'RETURNED',
+          transactionMs: 30000,
+          workMemKb: 32768,
+          fullComparisonValidated: true,
+        },
+      }),
+    ).toBe('FIRST_ORACLE_COMPLETE');
+  });
+  it.each(['ORACLE_DAY_POINTS', 'ORACLE_ROOT_HASH', 'PREPARE'])(
+    'refuses independent sampling after a failure at %s',
+    (errorSubstage) => {
+      expect(() => joinKeyOracleGate({ ...retainedTimeout, errorSubstage })).toThrow();
+    },
+  );
+  it('refuses unknown timeout evidence, assertion failures, mismatched adapters and an unvalidated complete flag', () => {
+    expect(() =>
+      joinKeyOracleGate({
+        ...retainedTimeout,
+        error: { ...timeoutError, category: 'ASSERTION_FAILED' },
+      }),
+    ).toThrow();
+    expect(() =>
+      joinKeyOracleGate({ ...retainedTimeout, error: { ...timeoutError, timing: null } }),
+    ).toThrow();
+    expect(() => joinKeyOracleGate({ ...retainedTimeout, firstCanonical32: undefined })).toThrow();
+    expect(() => joinKeyOracleGate({ oracle: 'COMPLETE' })).toThrow();
   });
   it('isolates the memory pair from JIT ordering and refuses unbounded or combined modes', () => {
     expect(() =>
