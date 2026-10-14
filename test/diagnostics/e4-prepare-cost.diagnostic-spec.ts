@@ -1,4 +1,4 @@
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,6 +48,7 @@ import type { TimeSettlementReceiptResult } from '../../src/modules/activities/a
 import type { E4Fixture } from '../helpers/activity-contribution-policy.fixture';
 import { loadTestEnv } from '../setup/load-env';
 import { assertConnectedTestDatabase } from '../setup/test-db';
+import { deriveTestDbName } from '../setup/worktree-db';
 
 class DiagnosticDatabase extends PrismaClient<Prisma.PrismaClientOptions, 'query'> {
   async onModuleInit() {
@@ -301,6 +302,13 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_SHARED_GUARD_ONCE &&
+    (env.SRVF_E4_SHARED_GUARD_ONCE !== '1' ||
+      env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum' ||
+      env.SRVF_E4_CANONICAL_FIRST32 !== '1')
+  )
+    throw new Error('E4 shared guard scope refused');
+  if (
     env.SRVF_E4_CANONICAL_COST_ONLY &&
     (env.SRVF_E4_CANONICAL_COST_ONLY !== '1' || env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum')
   )
@@ -349,7 +357,8 @@ export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: strin
   )
     throw new Error('E4 one-round isolated diagnostic environment refused');
 }
-type Report = typeof E4_DIAGNOSTIC_PLAN & {
+type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
+  internalSqlPlan: 'NOT_RUN' | 'OBSERVED';
   head: string;
   run: string;
   status: 'COMPLETE' | 'FAILED' | 'UNKNOWN' | 'TIMED_OUT';
@@ -375,7 +384,10 @@ type Report = typeof E4_DIAGNOSTIC_PLAN & {
   errorSubstage?: string;
   error?: ReturnType<typeof e4DiagnosticSafeError>;
   oracleTransactions?: OracleTransactionReceipt[];
-  coverage?: 'FULL_SETTLEMENT' | 'PREPARE_AND_FIRST_ORACLE_ONLY';
+  coverage?:
+    | 'FULL_SETTLEMENT'
+    | 'PREPARE_AND_FIRST_ORACLE_ONLY'
+    | 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY';
   firstCanonical32?: FirstCanonical32Evidence;
   canonicalCost?: {
     purpose: 'READ_ONLY_COST_NOT_ACCEPTANCE';
@@ -992,6 +1004,355 @@ export function compactCanonicalActualPlan(value: unknown, operatorDetail = fals
       : null,
     selected,
   };
+}
+
+/** Identify the actual SPI statement by pinned source bytes; never execute an extracted query. */
+export function sharedGuardStatement() {
+  verifyDiagnosticMigrationSource();
+  const source = readFileSync(
+    resolve(
+      __dirname,
+      '../../prisma/migrations/20261013000000_activity_contribution_assert_source_reuse/migration.sql',
+    ),
+    'utf8',
+  );
+  const matches = [
+    ...source.matchAll(
+      /WITH assertion_sources AS MATERIALIZED \([\s\S]*?FROM source_status status;/gu,
+    ),
+  ];
+  if (matches.length !== 1) throw new Error('E4 shared guard statement refused');
+  return matches[0][0];
+}
+
+/** Closed metadata only: no query text, parameters, expressions, fixture identifiers or raw notices. */
+export function compactSharedGuardNotice(raw: string) {
+  if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 shared guard capture limit');
+  const normalize = (sql: string) =>
+    sql
+      .replace(/INTO source_invalid,evaluation_mismatch/gu, '')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .replace(/;$/u, '');
+  const expected = normalize(sharedGuardStatement());
+  const found: { durationMs: number; document: Record<string, unknown> }[] = [];
+  let notices = 0;
+  for (const match of raw.matchAll(/NOTICE:\s+duration:\s+([0-9.]+) ms\s+plan:\s*\n/gu)) {
+    if (++notices > 16) throw new Error('E4 shared guard notice count');
+    const start = match.index + match[0].length;
+    let depth = 0,
+      quoted = false,
+      escaped = false,
+      end = start;
+    if (raw[start] !== '{') throw new Error('E4 shared guard JSON refused');
+    for (; end < raw.length; end++) {
+      const char = raw[end];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') quoted = false;
+      } else if (char === '"') quoted = true;
+      else if (char === '{') depth++;
+      else if (char === '}' && --depth === 0) break;
+    }
+    if (depth || quoted || end === raw.length) throw new Error('E4 shared guard incomplete JSON');
+    const document: unknown = JSON.parse(raw.slice(start, end + 1));
+    if (!document || typeof document !== 'object')
+      throw new Error('E4 shared guard document refused');
+    const query: unknown = Reflect.get(document, 'Query Text');
+    if (typeof query === 'string' && normalize(query) === expected)
+      found.push({ durationMs: +match[1], document: document as Record<string, unknown> });
+  }
+  if (found.length !== 1) throw new Error('E4 shared guard actual statement missing or repeated');
+  const { durationMs, document } = found[0];
+  if (!Number.isFinite(durationMs) || durationMs <= 0 || durationMs > 30000)
+    throw new Error('E4 shared guard duration refused');
+  const number = (row: object, field: string) => {
+    const value: unknown = Reflect.get(row, field);
+    if (value === undefined) return null;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1e15)
+      throw new Error('E4 shared guard metric refused');
+    return value;
+  };
+  const kinds = [
+    'Aggregate',
+    'Result',
+    'Function Scan',
+    'CTE Scan',
+    'Seq Scan',
+    'Index Scan',
+    'Index Only Scan',
+    'Bitmap Heap Scan',
+    'Bitmap Index Scan',
+    'Hash',
+    'Hash Join',
+    'Merge Join',
+    'Nested Loop',
+    'Sort',
+    'Materialize',
+    'Append',
+    'Subquery Scan',
+    'Limit',
+  ];
+  const ctes = [
+    'assertion_sources',
+    'source_status',
+    'revision_domain',
+    'sources',
+    'groups',
+    'policy_bands',
+    'selected',
+    'documents',
+    'canonical_documents',
+    'expected_documents',
+    'expected',
+    'actual',
+    'pairs',
+  ];
+  const tables = [
+    'ParticipantContributionEvaluation',
+    'ContributionPolicyVersion',
+    'ActivitySettlementContributionRevision',
+  ];
+  const nodes: Record<string, unknown>[] = [];
+  const visit = (value: unknown, parent: number | null, depth: number) => {
+    if (!value || typeof value !== 'object' || nodes.length >= 160 || depth > 32)
+      throw new Error('E4 shared guard node limit');
+    const id = nodes.length;
+    const type: unknown = Reflect.get(value, 'Node Type');
+    const cteName: unknown = Reflect.get(value, 'CTE Name');
+    const subplanName: unknown = Reflect.get(value, 'Subplan Name');
+    const cte =
+      typeof cteName === 'string'
+        ? cteName
+        : typeof subplanName === 'string' && subplanName.startsWith('CTE ')
+          ? subplanName.slice(4)
+          : null;
+    const table: unknown = Reflect.get(value, 'Relation Name');
+    const functionName: unknown = Reflect.get(value, 'Function Name');
+    const subplan = typeof subplanName === 'string' ? subplanName.match(/^SubPlan (\d+)$/u) : null;
+    const loops = number(value, 'Actual Loops');
+    const totalMs = number(value, 'Actual Total Time');
+    const rows = number(value, 'Actual Rows');
+    if (loops === null || rows === null || totalMs === null)
+      throw new Error('E4 shared guard actual timing missing');
+    nodes.push({
+      id,
+      parent,
+      type: typeof type === 'string' && kinds.includes(type) ? type : 'OTHER',
+      ...(ctes.includes(String(cte)) ? { cte } : {}),
+      ...(typeof table === 'string' && tables.includes(table) ? { table } : {}),
+      ...(typeof functionName === 'string' &&
+      ['e4_source_rows', 'jsonb_each', 'jsonb_array_elements'].includes(functionName)
+        ? { function: functionName }
+        : {}),
+      ...(subplan && +subplan[1] <= 160 ? { subplan: +subplan[1] } : {}),
+      estimatedRows: number(value, 'Plan Rows'),
+      width: number(value, 'Plan Width'),
+      rows,
+      loops,
+      startupMs: number(value, 'Actual Startup Time'),
+      totalMs,
+      tempRead: number(value, 'Temp Read Blocks'),
+      tempWritten: number(value, 'Temp Written Blocks'),
+      ...(Reflect.has(value, 'Sort Method')
+        ? {
+            sort: [
+              'quicksort',
+              'top-N heapsort',
+              'external merge',
+              'external sort',
+              'heapsort',
+            ].includes(String(Reflect.get(value, 'Sort Method')))
+              ? Reflect.get(value, 'Sort Method')
+              : 'OTHER',
+            sortSpace: ['Memory', 'Disk'].includes(String(Reflect.get(value, 'Sort Space Type')))
+              ? Reflect.get(value, 'Sort Space Type')
+              : 'OTHER',
+            sortKb: number(value, 'Sort Space Used'),
+          }
+        : {}),
+      ...(Reflect.has(value, 'Hash Batches')
+        ? {
+            hashBatches: number(value, 'Hash Batches'),
+            peakMemoryKb: number(value, 'Peak Memory Usage'),
+          }
+        : {}),
+    });
+    const children: unknown = Reflect.get(value, 'Plans');
+    if (children !== undefined) {
+      if (!Array.isArray(children)) throw new Error('E4 shared guard children refused');
+      for (const child of children) visit(child, id, depth + 1);
+    }
+  };
+  visit(document.Plan, null, 0);
+  if (
+    !nodes.some(
+      (node) => node.cte === 'assertion_sources' && node.rows === 50000 && node.loops === 1,
+    ) ||
+    !nodes.some((node) => node.cte === 'groups' && node.rows === 8000 && node.loops === 1) ||
+    !nodes.some((node) => node.cte === 'pairs' && node.rows === 8000 && node.loops === 1)
+  )
+    throw new Error('E4 shared guard full dataset refused');
+  const jit: unknown = document.JIT;
+  const timing: unknown = jit && typeof jit === 'object' ? Reflect.get(jit, 'Timing') : undefined;
+  return {
+    status: 'OBSERVED',
+    mode: 'ACTUAL_PRODUCTION_FUNCTION_NESTED_STATEMENT',
+    purpose: 'READ_ONLY_POST_PREPARE_NOT_ACCEPTANCE',
+    statementSha256: createHash('sha256').update(expected).digest('hex'),
+    durationMs,
+    timing: 'NODE_AVERAGES_PER_LOOP_INCLUSIVE_DO_NOT_SUM',
+    instrumentation: 'ANALYZE_BUFFERS_TIMING_ON_OVERHEAD',
+    jitMs: timing && typeof timing === 'object' ? number(timing, 'Total') : null,
+    nodes,
+  };
+}
+
+/** One owned psql backend, one actual production function call, local settings and unconditional disconnect. */
+export function sharedGuardProbeSql(revisionId: string, databaseName: string) {
+  if (databaseName !== 'app_test_w98' || !/^[A-Za-z0-9_-]{1,160}$/u.test(revisionId))
+    throw new Error('E4 shared guard probe scope refused');
+  return `BEGIN READ ONLY;
+SET LOCAL statement_timeout='30s';
+SET LOCAL idle_in_transaction_session_timeout='30s';
+SET LOCAL plan_cache_mode='force_custom_plan';
+LOAD 'auto_explain';
+DO $$ BEGIN
+ IF current_database()<>'app_test_w98' OR current_setting('transaction_read_only')<>'on'
+   OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'ade4d2af9aa0baf8400a79fc6b62c797'
+ THEN RAISE EXCEPTION 'E4 shared guard connected scope refused'; END IF;
+END $$;
+SELECT 'E4_GUARD_META ' || json_build_object('database',current_database(),'readonly',current_setting('transaction_read_only')='on',
+ 'bodyMd5',(SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure),
+ 'kind',(SELECT "kindCode" FROM "ActivitySettlementContributionRevision" WHERE id=:'root_id'),
+ 'units',(SELECT count(*) FROM "ParticipantContributionEvaluation" WHERE "contributionRevisionId"=:'root_id'),
+ 'refs',(SELECT sum(jsonb_array_length("sourceRefsJson")) FROM "ParticipantContributionEvaluation" WHERE "contributionRevisionId"=:'root_id'),
+ 'workMemKb',pg_size_bytes(current_setting('work_mem'))/1024,'jitEnabled',current_setting('jit')='on',
+ 'planCacheMode',current_setting('plan_cache_mode'))::text;
+SET LOCAL client_min_messages='notice';
+SET LOCAL auto_explain.log_level='notice';
+SET LOCAL auto_explain.log_min_duration='1000ms';
+SET LOCAL auto_explain.log_nested_statements=on;
+SET LOCAL auto_explain.log_analyze=on;
+SET LOCAL auto_explain.log_timing=on;
+SET LOCAL auto_explain.log_buffers=on;
+SET LOCAL auto_explain.log_format='json';
+SET LOCAL auto_explain.log_parameter_max_length=0;
+SET LOCAL auto_explain.sample_rate=1;
+SELECT public.e4_assert_complete(:'root_id',FALSE);
+SET LOCAL auto_explain.log_min_duration=-1;
+ROLLBACK;
+SELECT 'E4_GUARD_COMPLETE';
+`;
+}
+
+async function probeSharedGuard(db: PrismaClient, report: Report) {
+  report.internal = { status: 'UNKNOWN', reason: 'VERIFIED_PROOF' };
+  const proof = privateDiagnosticProofs.get(report);
+  const databaseName = deriveTestDbName();
+  if (!proof || report.oracle !== 'COMPLETE' || databaseName !== 'app_test_w98')
+    throw new Error('E4 shared guard verified proof required');
+  await assertConnectedTestDatabase(db);
+  await verifyDiagnosticDatabase(db);
+  const started = performance.now();
+  const owner = `e4_guard_${report.head.slice(0, 12)}_${report.run}`;
+  report.internal = { status: 'UNKNOWN', reason: 'PROCESS' };
+  const proc = spawnSync(
+    'docker',
+    [
+      'exec',
+      '-i',
+      '-e',
+      `PGAPPNAME=${owner}`,
+      'u-nest-api-postgres',
+      'psql',
+      '-X',
+      '-q',
+      '-A',
+      '-t',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-v',
+      `root_id=${proof.revisionId}`,
+      '-U',
+      'postgres',
+      '-d',
+      databaseName,
+    ],
+    {
+      input: sharedGuardProbeSql(proof.revisionId, databaseName),
+      encoding: 'utf8',
+      timeout: 30000,
+      maxBuffer: 2097152,
+    },
+  );
+  report.internal = {
+    status: 'UNKNOWN',
+    reason: 'BACKEND_CLEANUP',
+    process: {
+      exitCode: proc.status,
+      signaled: proc.signal !== null,
+      error: !!proc.error,
+      stdoutBytes: Buffer.byteLength(proc.stdout ?? ''),
+      stderrBytes: Buffer.byteLength(proc.stderr ?? ''),
+    },
+  };
+  // A killed docker client need not kill psql: terminate only this exact owned session in this database.
+  const owned = await db.$queryRaw<{ pid: number }[]>`
+    SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner} AND pid<>pg_backend_pid()
+  `;
+  if (owned.length > 1) throw new Error('E4 shared guard backend ownership refused');
+  for (const { pid } of owned)
+    await db.$queryRaw`
+      SELECT pg_terminate_backend(pid,1000) FROM pg_stat_activity
+      WHERE datname=current_database() AND application_name=${owner} AND pid=${pid} AND pid<>pg_backend_pid()
+    `;
+  const [{ remaining }] = await db.$queryRaw<{ remaining: number }[]>`
+    SELECT count(*)::int AS remaining FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner}
+  `;
+  if (remaining !== 0) throw new Error('E4 shared guard backend cleanup refused');
+  report.internal = {
+    ...(report.internal as object),
+    reason: 'PROCESS_RECEIPT',
+    ownedBackendGone: true,
+  };
+  if (
+    proc.error ||
+    proc.signal ||
+    proc.status !== 0 ||
+    !proc.stdout.includes('\nE4_GUARD_COMPLETE\n')
+  )
+    throw new Error('E4 shared guard process refused');
+  report.internal = { ...(report.internal as object), reason: 'EFFECTIVE_METADATA' };
+  const rows = proc.stdout.split('\n').filter((line) => line.startsWith('E4_GUARD_META '));
+  if (rows.length !== 1) throw new Error('E4 shared guard metadata refused');
+  const effective: unknown = JSON.parse(rows[0].slice('E4_GUARD_META '.length));
+  expect(effective).toEqual({
+    database: databaseName,
+    readonly: true,
+    bodyMd5: E4_DIAGNOSTIC_PLAN.completeFunctionMd5,
+    kind: 'draft',
+    units: 8000,
+    refs: 50000,
+    workMemKb: 4096,
+    jitEnabled: true,
+    planCacheMode: 'force_custom_plan',
+  });
+  report.internal = { ...(report.internal as object), reason: 'ACTUAL_PLAN_CAPTURE' };
+  report.internal = {
+    ...compactSharedGuardNotice(proc.stderr),
+    attempts: 1,
+    statementMs: 30000,
+    processMs: 30000,
+    wallMs: performance.now() - started,
+    effective,
+    settingsLifetime: 'LOCAL_ROLLBACK_BACKEND_DISCONNECTED',
+    ownedBackendGone: true,
+    validateVersion: false,
+    versionSpecificChecks: 'NOT_PROFILED',
+  };
+  report.internalSqlPlan = 'OBSERVED';
 }
 async function probeCanonicalJit(
   db: PrismaClient,
@@ -1665,9 +2026,11 @@ function registerDiagnosticChild() {
     migration: 'NOT_VERIFIED',
     stages: [],
     coverage:
-      process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-        ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-        : 'FULL_SETTLEMENT',
+      process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+        ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+        : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+          ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+          : 'FULL_SETTLEMENT',
     status: 'UNKNOWN',
     oracle: 'NOT_RUN',
     resources: 'UNKNOWN',
@@ -2016,6 +2379,14 @@ function registerDiagnosticChild() {
           audits: 1,
         });
         report.facts = preparedFacts;
+        if (process.env.SRVF_E4_SHARED_GUARD_ONCE === '1') {
+          report.oracle = 'COMPLETE';
+          report.substage = 'ORACLE_SHARED_GUARD_ACTUAL_PLAN';
+          await probeSharedGuard(db, report);
+          expect(await diagnosticFacts(observer, source.activityId, command.operationKey)).toEqual(
+            preparedFacts,
+          );
+        }
         checkpoint.mark('ORACLE', 'COMPLETE');
         if (process.env.SRVF_E4_CANONICAL_FIRST32 === '1') {
           expect(report.firstCanonical32?.fullComparisonValidated).toBe(true);
@@ -2193,9 +2564,11 @@ export async function runDiagnosticParent() {
       migration: 'NOT_VERIFIED',
       stages: [],
       coverage:
-        process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-          ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-          : 'FULL_SETTLEMENT',
+        process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+          ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+          : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+            ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+            : 'FULL_SETTLEMENT',
       status: 'UNKNOWN',
       oracle: 'NOT_RUN',
       resources: 'UNKNOWN',

@@ -27,6 +27,9 @@ import {
   firstCanonical32Client,
   diagnosticPopulation,
   requireDiagnosticEnvironment,
+  sharedGuardStatement,
+  sharedGuardProbeSql,
+  compactSharedGuardNotice,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -44,6 +47,88 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  const guardNode = (cte: string, rows: number) => ({
+    'Node Type': 'CTE Scan',
+    'CTE Name': cte,
+    'Plan Rows': 1000,
+    'Plan Width': 256,
+    'Actual Rows': rows,
+    'Actual Loops': 1,
+    'Actual Startup Time': 1,
+    'Actual Total Time': 2,
+    'Temp Read Blocks': 7,
+    'Temp Written Blocks': 11,
+    Filter: 'private fixture identifier and SQL expression',
+  });
+  const guardDocument = () => ({
+    'Query Text': sharedGuardStatement(),
+    Plan: {
+      ...guardNode('pairs', 8000),
+      Plans: [guardNode('assertion_sources', 50000), guardNode('groups', 8000)],
+    },
+  });
+  const notice = (document: unknown) =>
+    `NOTICE:  duration: 1234.5 ms  plan:\n${JSON.stringify(document, null, 2)}\n`;
+  it('captures the pinned actual nested statement with hierarchy, node timing and physical metrics only', () => {
+    const result = compactSharedGuardNotice(notice(guardDocument()));
+    expect(result.durationMs).toBe(1234.5);
+    expect(result.nodes).toHaveLength(3);
+    expect(result.nodes[1]).toMatchObject({
+      parent: 0,
+      rows: 50000,
+      loops: 1,
+      totalMs: 2,
+      tempWritten: 11,
+    });
+    const json = JSON.stringify(result);
+    expect(json).not.toMatch(/private|Query Text|Filter|root\.id|INTO source_invalid/u);
+    expect(result.timing).toBe('NODE_AVERAGES_PER_LOOP_INCLUSIVE_DO_NOT_SUM');
+  });
+  it('matches PostgreSQL SPI removal of the PLpgSQL INTO clause without accepting changed SQL', () => {
+    const document = guardDocument();
+    document['Query Text'] = document['Query Text'].replace(
+      'INTO source_invalid,evaluation_mismatch',
+      ' ',
+    );
+    expect(() => compactSharedGuardNotice(notice(document))).not.toThrow();
+    document['Query Text'] = document['Query Text'].replace('FULL JOIN actual', 'LEFT JOIN actual');
+    expect(() => compactSharedGuardNotice(notice(document))).toThrow('missing or repeated');
+  });
+  it('refuses missing, duplicate, truncated, estimated-only and partial-dataset receipts', () => {
+    const document = guardDocument();
+    expect(() => compactSharedGuardNotice('')).toThrow();
+    expect(() => compactSharedGuardNotice(notice(document).repeat(2))).toThrow();
+    expect(() => compactSharedGuardNotice(notice(document).slice(0, -5))).toThrow();
+    const estimated = { ...document, Plan: { 'Node Type': 'Result', 'Plan Rows': 1 } };
+    expect(() => compactSharedGuardNotice(notice(estimated))).toThrow('actual timing');
+    document.Plan.Plans[0]['Actual Rows'] = 49999;
+    expect(() => compactSharedGuardNotice(notice(document))).toThrow('full dataset');
+  });
+  it('refuses shared profiling without maximum, the complete first oracle or exact opt-in', () => {
+    const approved = { ...env, SRVF_E4_SHARED_GUARD_ONCE: '1', SRVF_E4_CANONICAL_FIRST32: '1' };
+    expect(() => requireDiagnosticEnvironment(approved, head)).not.toThrow();
+    for (const change of [
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-500' },
+      { SRVF_E4_CANONICAL_FIRST32: '' },
+      { SRVF_E4_SHARED_GUARD_ONCE: 'true' },
+      { SRVF_E4_CANONICAL_COST_ONLY: '1' },
+    ])
+      expect(() => requireDiagnosticEnvironment({ ...approved, ...change }, head)).toThrow();
+  });
+  it('profiles exactly one actual function call read-only at original settings and30s with quoted psql binding', () => {
+    const sql = sharedGuardProbeSql('synthetic_root', 'app_test_w98');
+    expect(sql.match(/SELECT public\.e4_assert_complete/gu)).toHaveLength(1);
+    expect(sql).toContain("SELECT public.e4_assert_complete(:'root_id',FALSE)");
+    expect(sql).toContain('BEGIN READ ONLY');
+    expect(sql).toContain('ROLLBACK;');
+    expect(sql).toContain("SET LOCAL statement_timeout='30s'");
+    expect(sql).toContain("SET LOCAL plan_cache_mode='force_custom_plan'");
+    expect(sql).not.toMatch(
+      /SET(?: LOCAL)? (?:work_mem|jit)|CREATE|ALTER|INSERT|UPDATE|DELETE|synthetic_root/u,
+    );
+    expect(() => sharedGuardProbeSql("root'; DROP TABLE x", 'app_test_w98')).toThrow();
+    expect(() => sharedGuardProbeSql('root', 'app_test')).toThrow();
+  });
   it.each([true, false])(
     'sets only transaction-local32MB while keeping the effective default JIT=%s and original30s',
     async (jitEnabled) => {
