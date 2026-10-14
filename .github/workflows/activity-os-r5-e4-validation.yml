@@ -40,13 +40,13 @@ on:
         default: false
         type: boolean
       source_join_comparison:
-        description: One source-edge materialization variable; small proof before one ordinary500 ABBA
+        description: Small equivalence proof, ordinary500 source-edge ABBA, or500 five-table statistics intervention
         required: false
         default: 'off'
         type: choice
-        options: ['off', small, ordinary-500]
+        options: ['off', small, ordinary-500, statistics-500]
       source_join_small_run:
-        description: Successful small calibration run on the exact same HEAD; required for ordinary500
+        description: Successful small proof; statistics500 reuses the fixed proof by SQL identities
         required: false
         type: string
   push:
@@ -781,7 +781,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ fromJSON(inputs.source_join_comparison == 'small' && '["ordinary-1"]' || inputs.source_join_comparison == 'ordinary-500' && '["ordinary-500"]' || inputs.native_prepare_plan_500 && '["ordinary-500"]' || (inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')) && '["ordinary-1"]' || (inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-canonical-cost-once]') || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
+        scenario: ${{ fromJSON(inputs.source_join_comparison == 'small' && '["ordinary-1"]' || (inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500') && '["ordinary-500"]' || inputs.native_prepare_plan_500 && '["ordinary-500"]' || (inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')) && '["ordinary-1"]' || (inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-canonical-cost-once]') || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
     env:
       APP_ENV: test
       SRVF_E4_DIAGNOSTIC_PURPOSE: DIAGNOSTIC_ONLY
@@ -816,10 +816,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm prisma:generate
       - name: Offline calibration boundary tests
-        if: "!inputs.native_prepare_plan_500 && inputs.source_join_comparison != 'small' && inputs.source_join_comparison != 'ordinary-500' && (inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]'))"
+        if: "!inputs.native_prepare_plan_500 && inputs.source_join_comparison != 'small' && inputs.source_join_comparison != 'ordinary-500' && inputs.source_join_comparison != 'statistics-500' && (inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]'))"
         run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client)\.spec\.ts$'
       - name: Native plan redaction and completeness boundary tests
-        if: inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500'
+        if: inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
         run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts --testRegex 'test/helpers/e4-prepare-cost-diagnostic\.spec\.ts$'
       - name: Start fresh PostgreSQL 16 runner
         run: |
@@ -832,12 +832,12 @@ jobs:
           done
           exit 1
       - name: Prove PG16 native collection and redaction before any business fixture
-        if: inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500'
+        if: inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
         env:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --native-plan-capability
-      - name: Verify successful source-join small proof at exact HEAD before ordinary500
-        if: inputs.source_join_comparison == 'ordinary-500'
+      - name: Verify source-join small proof by exact HEAD or fixed SQL identities for statistics
+        if: inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
         env:
           TS_NODE_PROJECT: test/tsconfig.test.json
           GH_TOKEN: ${{ github.token }}
@@ -852,7 +852,7 @@ jobs:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --execute
       - name: Summarize closed shared-guard evidence
-        if: always() && (inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.native_prepare_plan_500 || inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]'))
+        if: always() && (inputs.source_join_comparison == 'statistics-500' || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.native_prepare_plan_500 || inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]'))
         run: |
           node <<'NODE'
           const fs = require('node:fs');
@@ -872,7 +872,7 @@ jobs:
             };
             emit('result.json',closed);
             const sidecars = process.env.SRVF_E4_SOURCE_JOIN ? (closed.sourceJoinComparison?.plans ?? []).map(p => p.file) : ['native-plan.json'];
-            if (sidecars.some((name,index) => process.env.SRVF_E4_SOURCE_JOIN && (index >= 4 || name !== 'source-join-plan-' + index + '.json'))) throw Error('E4 source sidecar path refused');
+            if (sidecars.some((name,index) => process.env.SRVF_E4_SOURCE_JOIN && (index >= (process.env.SRVF_E4_SOURCE_JOIN === 'statistics-500' ? 5 : 4) || name !== 'source-join-plan-' + index + '.json'))) throw Error('E4 source sidecar path refused');
             if (fs.existsSync(file)) for (const name of sidecars) {
               const planFile = 'tmp/e4-prepare-cost-evidence/' + name;
               if (!fs.existsSync(planFile) || fs.statSync(planFile).size > 65536) throw Error('E4 native sidecar unavailable');

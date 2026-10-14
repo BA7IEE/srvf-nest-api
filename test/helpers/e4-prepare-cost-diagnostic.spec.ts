@@ -67,6 +67,12 @@ import {
   compactSourceJoinEvidence,
   compactSourceJoinPlans,
   validateSourceJoinCalibration,
+  SOURCE_JOIN_REUSABLE_SMALL,
+  SOURCE_JOIN_INPUTS,
+  SOURCE_STATISTICS_ORDER,
+  SOURCE_STATISTICS_SETTINGS,
+  sourceJoinStatsDigestSql,
+  compactSourceStatisticsEvidence,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -395,6 +401,7 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(select(true, '[e4-join-key-once]', true, true)).toEqual(['ordinary-500']);
     expect(select(false, '', false, false, 'small')).toEqual(['ordinary-1']);
     expect(select(false, '', false, false, 'ordinary-500')).toEqual(['ordinary-500']);
+    expect(select(false, '', false, false, 'statistics-500')).toEqual(['ordinary-500']);
     expect(workflow).toContain(
       "github.event_name == 'workflow_dispatch' && inputs.expected_sha == github.sha",
     );
@@ -459,6 +466,7 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     for (const [mode, scenario] of [
       ['small', 'ordinary-1'],
       ['ordinary-500', 'ordinary-500'],
+      ['statistics-500', 'ordinary-500'],
     ]) {
       const scoped = { ...env, SRVF_E4_SOURCE_JOIN: mode, SRVF_E4_DIAGNOSTIC_SCENARIO: scenario };
       expect(() => requireDiagnosticEnvironment(scoped, head)).not.toThrow();
@@ -493,6 +501,57 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       { status: 'COMPLETE' },
     ])
       expect(() => validateSourceJoinCalibration({ ...proof, ...change }, head, '124')).toThrow();
+  });
+  it('reuses only the pinned small proof when both SQL definitions and original143 identity are unchanged', () => {
+    const proof = {
+      head,
+      forRun: '124',
+      smallRun: SOURCE_JOIN_REUSABLE_SMALL.run,
+      status: 'VERIFIED_SMALL',
+      candidateSha256: SOURCE_JOIN_REUSABLE_SMALL.candidateSha256,
+      resultSha256: SOURCE_JOIN_REUSABLE_SMALL.resultSha256,
+      calibrationHead: SOURCE_JOIN_REUSABLE_SMALL.head,
+      sourceFunctionSha256: SOURCE_JOIN_BASELINE_SHA,
+      completeFunctionMd5: E4_DIAGNOSTIC_PLAN.completeFunctionMd5,
+    };
+    expect(validateSourceJoinCalibration(proof, head, '124', true)).toMatchObject({
+      head,
+      calibrationHead: SOURCE_JOIN_REUSABLE_SMALL.head,
+      reuseCondition: 'UNCHANGED_SOURCE_SQL_AND_ORIGINAL143',
+    });
+    for (const change of [
+      { calibrationHead: head },
+      { smallRun: '123' },
+      { resultSha256: 'b'.repeat(64) },
+      { sourceFunctionSha256: 'c'.repeat(64) },
+      { completeFunctionMd5: 'a'.repeat(32) },
+    ])
+      expect(() =>
+        validateSourceJoinCalibration({ ...proof, ...change }, head, '124', true),
+      ).toThrow();
+  });
+  it('places exactly five test-only ANALYZE commands between cold A and analyzed ABBA without changing planner settings', () => {
+    const sql = sourceJoinSessionSql('a'.repeat(24), false, true);
+    const commands = sql.match(/^ANALYZE public\."[A-Za-z]+";$/gmu);
+    expect(commands).toEqual(SOURCE_JOIN_INPUTS.map(([name]) => `ANALYZE public."${name}";`));
+    const position = sql.indexOf(commands![0]);
+    expect(position).toBeGreaterThan(sql.indexOf("RAISE LOG 'E4_SOURCE_JOIN_PLAN_END 0'"));
+    expect(position).toBeLessThan(sql.indexOf("RAISE LOG 'E4_SOURCE_JOIN_PLAN_BEGIN 1'"));
+    expect(sql).toContain("current_database()<>'app_test_w98' OR inet_server_addr() IS NOT NULL");
+    expect(sql).toContain('E4 source statistics test-only scope refused');
+    expect(sql).not.toMatch(
+      /SET(?: LOCAL)? (?:jit|work_mem|enable_\w+|default_statistics_target)=/iu,
+    );
+    expect(sourceJoinSessionSql('a'.repeat(24), false)).not.toMatch(/^ANALYZE public/mu);
+    expect(() => sourceJoinSessionSql('a'.repeat(24), true, true)).toThrow();
+    expect(() => joinKeyProbeSql('a'.repeat(24), 'postgres', 2000, false, true, true)).toThrow();
+    const digest = sourceJoinStatsDigestSql(true);
+    expect(digest).toContain('FROM pg_statistic');
+    expect(digest).toContain('s.stavalues1::TEXT');
+    expect(digest).not.toContain('last_analyze');
+    expect(createHash('sha256').update(sourceJoinFunction(true)).digest('hex')).toBe(
+      SOURCE_JOIN_REUSABLE_SMALL.candidateSha256,
+    );
   });
   it('admits native plans only for ordinary500 without any alternate budget or candidate mode', () => {
     const native = {
@@ -867,6 +926,170 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
         true,
       ),
     ).toThrow();
+  });
+  const statisticsNotice = () => {
+    const values = Object.fromEntries(
+      SOURCE_STATISTICS_SETTINGS.map((name) => [
+        name,
+        name === 'work_mem'
+          ? '4096'
+          : name === 'jit'
+            ? 'on'
+            : name === 'plan_cache_mode'
+              ? 'auto'
+              : name.startsWith('enable_')
+                ? 'on'
+                : '100',
+      ]),
+    );
+    const digest = createHash('md5')
+      .update(
+        [...SOURCE_STATISTICS_SETTINGS]
+          .sort()
+          .map((name) => name + '=' + values[name])
+          .join(','),
+      )
+      .digest('hex');
+    const notice = (tag: string, value: unknown) =>
+      'NOTICE: ' + tag + ' ' + JSON.stringify(value) + '\n';
+    let raw = calibrationNotice()
+      .replace(/^NOTICE: E4_JOIN_KEY_SAMPLE \{[^\n]+\}\n/gmu, '')
+      .replace('"publicEvaluationCount":4', '"publicEvaluationCount":2000');
+    raw += notice('E4_SOURCE_JOIN_EQ', {
+      case: 'PUBLIC',
+      rows: 2500,
+      bagEqual: true,
+      hashEqual: true,
+      mutation: false,
+      rolledBack: false,
+    });
+    for (const [index, [phase, variant]] of SOURCE_STATISTICS_ORDER.entries())
+      raw += notice('E4_JOIN_KEY_SAMPLE', {
+        index,
+        phase,
+        variant,
+        wallMs: 100,
+        returned: true,
+        completeDocumentAndRootGuard: true,
+        sameBackend: true,
+        readonly: true,
+        workMemKb: 4096,
+        jitEnabled: true,
+        planCacheMode: 'auto',
+        statisticsDigest: (phase === 'COLD' ? 'c' : 'a').repeat(32),
+        statisticsUnchanged: true,
+        settingsDigest: digest,
+      });
+    const counts = [2000, 2000, 500, 2500, 500];
+    for (const stage of ['COLD', 'ANALYZED'])
+      raw += notice('E4_SOURCE_JOIN_STATS', {
+        stage,
+        database: 'app_test_w98',
+        statisticsDigest: (stage === 'COLD' ? 'c' : 'a').repeat(32),
+        dataUnchanged: true,
+        settingsDigest: digest,
+        statistics: SOURCE_JOIN_INPUTS.map(([table], i) => ({
+          table,
+          tuples: stage === 'COLD' ? -1 : counts[i],
+          pages: stage === 'COLD' ? 0 : 1,
+          statsColumns: stage === 'COLD' ? 0 : 1,
+          rows: counts[i],
+          analyzed: stage !== 'COLD',
+          autoanalyzed: false,
+          private: 'PRIVATE_CANARY',
+        })),
+      });
+    raw +=
+      notice('E4_SOURCE_JOIN_SETTINGS', values) +
+      notice('E4_SOURCE_JOIN_STATS_COMPLETE', {
+        dataUnchanged: true,
+        settingsUnchanged: true,
+        database: 'app_test_w98',
+        analyzedTables: 5,
+      });
+    return raw;
+  };
+  it('requires five visible analyzed relations, unchanged data/settings and condition labels, including verbose notices', () => {
+    const raw = statisticsNotice(),
+      proof = compactSourceJoinEvidence(raw, false, true);
+    expect(proof.timings.map((s) => [s.phase, s.variant])).toEqual(SOURCE_STATISTICS_ORDER);
+    expect(proof.statisticsExperiment).toMatchObject({
+      status: 'COMPLETE',
+      conditionalOnly: true,
+      coldGuarantee: 'NOT_ESTABLISHED_BY_ANALYZED_RESULTS',
+    });
+    expect(JSON.stringify(proof)).not.toContain('PRIVATE_CANARY');
+    expect(
+      compactSourceJoinEvidence(raw.replaceAll('NOTICE: E4_', 'NOTICE:  00000: E4_'), false, true),
+    ).toEqual(proof);
+    for (const changed of [
+      raw.replace('"dataUnchanged":true', '"dataUnchanged":false'),
+      raw.replaceAll('"database":"app_test_w98"', '"database":"postgres"'),
+      raw.replace(
+        '"statisticsDigest":"' + 'a'.repeat(32) + '"',
+        '"statisticsDigest":"' + 'b'.repeat(32) + '"',
+      ),
+      raw.replace('"settingsUnchanged":true', '"settingsUnchanged":false'),
+    ])
+      expect(() => compactSourceJoinEvidence(changed, false, true)).toThrow();
+    expect(() =>
+      compactSourceStatisticsEvidence(
+        raw.replace(
+          '"tuples":2000,"pages":1,"statsColumns":1',
+          '"tuples":-1,"pages":0,"statsColumns":0',
+        ),
+      ),
+    ).toThrow();
+    expect(() => compactSourceJoinEvidence(raw, true, true)).toThrow();
+  });
+  it('retains five cold/analyzed plans with per-scan filtering instead of treating fewer calls as less total work', () => {
+    let raw = '';
+    for (const [index, [phase, variant]] of SOURCE_STATISTICS_ORDER.entries()) {
+      if (phase === 'SHADOW_CONTROL') continue;
+      const fn = variant === 'BASELINE' ? 'e4_sj_original' : 'e4_sj_rows';
+      raw += `2026-10-14 12:00:00 UTC [42] LOG: E4_SOURCE_JOIN_PLAN_BEGIN ${index}\n`;
+      raw += nativeLog('SELECT source query', fn, [], 42, {
+        Plan: {
+          'Node Type': 'Nested Loop',
+          'Actual Rows': 2500,
+          'Actual Loops': 1,
+          'Plan Rows': 1,
+          Plans: [
+            {
+              'Node Type': 'Index Scan',
+              'Relation Name': 'ParticipantSettlementTimeBucketSource',
+              'Actual Rows': 1,
+              'Actual Loops': 2000,
+              'Plan Rows': 1,
+              'Rows Removed by Filter': 1999,
+            },
+          ],
+        },
+      });
+      raw += nativeLog(
+        sharedGuardStatement().replace(
+          'SELECT * FROM e4_source_rows(root.id)',
+          `SELECT * FROM pg_temp.${fn}(root.id)`,
+        ),
+        'e4_join_candidate',
+      );
+      raw += nativeLog(
+        variant === 'BASELINE'
+          ? 'SELECT pg_temp.e4_sj_complete_baseline(root_id,FALSE)'
+          : 'SELECT pg_temp.e4_join_candidate(root_id,FALSE)',
+      );
+      raw += `2026-10-14 12:00:00 UTC [42] LOG: E4_SOURCE_JOIN_PLAN_END ${index}\n`;
+    }
+    const plans = compactSourceJoinPlans(raw, 42, false, true, true);
+    expect(plans).toHaveLength(5);
+    expect(plans.map((p) => p.statisticsStage)).toEqual([
+      'COLD',
+      'ANALYZED',
+      'ANALYZED',
+      'ANALYZED',
+      'ANALYZED',
+    ]);
+    expect(plans[2].probes[0]).toMatchObject({ loops: 2000, rowsFilteredPerLoop: 1999 });
   });
   it('binds source plans to ordered same-PID markers and preserves actual probe counts for each variant', () => {
     let raw = '';
