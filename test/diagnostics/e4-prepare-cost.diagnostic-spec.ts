@@ -1453,7 +1453,7 @@ export function joinKeyProbeSql(revisionId: string, databaseName: string) {
       .replaceAll('"ParticipantContributionEvaluation"', 'pg_temp.e4_probe_evaluations')
       .replaceAll(
         'e4_evaluation_document(e)',
-        'e4_evaluation_document(jsonb_populate_record(NULL::public."ParticipantContributionEvaluation",to_jsonb(e)))',
+        'e4_evaluation_document(ROW(e.*)::public."ParticipantContributionEvaluation")',
       );
   const create = (name: string, contents: string) =>
     `CREATE FUNCTION pg_temp.${name}(revision_id TEXT, validate_version BOOLEAN DEFAULT TRUE) RETURNS VOID
@@ -1525,9 +1525,10 @@ ROLLBACK;\n`;
     [
       'EXTRA',
       `INSERT INTO pg_temp.e4_probe_evaluations
-      SELECT (jsonb_populate_record(NULL::public."ParticipantContributionEvaluation",to_jsonb(e)||
-        jsonb_build_object('id','e4_diag_extra_row','evaluationUnitKey',repeat('f',64)))).*
-      FROM pg_temp.e4_probe_evaluations e ORDER BY id COLLATE "C" LIMIT 1`,
+      SELECT altered.* FROM
+        (SELECT * FROM pg_temp.e4_probe_evaluations ORDER BY id COLLATE "C" LIMIT 1) e
+      CROSS JOIN LATERAL jsonb_populate_record(NULL::public."ParticipantContributionEvaluation",to_jsonb(e)||
+        jsonb_build_object('id','e4_diag_extra_row','evaluationUnitKey',repeat('f',64))) altered`,
     ],
     [
       'TAMPERED',
@@ -1546,9 +1547,11 @@ DO $$ DECLARE root_id TEXT; before_hash TEXT; state TEXT; guard TEXT; message TE
  before_hash:=${digest};
  BEGIN
    INSERT INTO pg_temp.e4_probe_marks VALUES ('${kind}');
+   RAISE NOTICE 'E4_JOIN_KEY_NEGATIVE_STEP ${kind} ${variant} MUTATION';
    ${mutation};
    GET DIAGNOSTICS affected=ROW_COUNT;
    IF affected<>1 THEN RAISE EXCEPTION 'E4 join key negative mutation refused'; END IF;
+   RAISE NOTICE 'E4_JOIN_KEY_NEGATIVE_STEP ${kind} ${variant} GUARD';
    PERFORM pg_temp.${callable}(root_id,FALSE);
    RAISE EXCEPTION 'E4 join key negative guard did not reject';
  EXCEPTION WHEN OTHERS THEN
@@ -1558,6 +1561,7 @@ DO $$ DECLARE root_id TEXT; before_hash TEXT; state TEXT; guard TEXT; message TE
        'state',state,'constraintMatches',guard='e4_evaluation_guard','messageMatches',message='contribution evaluation set mismatch')::text;
        RAISE EXCEPTION 'E4 join key negative outcome refused'; END IF;
  END;
+ RAISE NOTICE 'E4_JOIN_KEY_NEGATIVE_STEP ${kind} ${variant} ROLLBACK';
  IF (SELECT count(*) FROM pg_temp.e4_probe_marks)<>0 OR (SELECT count(*) FROM pg_temp.e4_probe_evaluations)<>8000
    OR ${digest} IS DISTINCT FROM before_hash THEN RAISE EXCEPTION 'E4 join key negative rollback refused'; END IF;
  RAISE NOTICE 'E4_JOIN_KEY_NEGATIVE %',json_build_object('kind','${kind}','variant','${variant}',
@@ -1577,19 +1581,13 @@ SELECT 'E4_JOIN_KEY_SUCCESS';\n`;
   return sql;
 }
 
-export function compactJoinKeyEvidence(raw: string) {
+export function compactJoinKeyPositiveEvidence(raw: string) {
   if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
   const samples = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_SAMPLE (\{[^\n]+\})/gu)].map(
     (match) => JSON.parse(match[1]) as Record<string, unknown>,
   );
-  const negatives = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_NEGATIVE (\{[^\n]+\})/gu)].map(
-    (match) => JSON.parse(match[1]) as Record<string, unknown>,
-  );
-  const complete = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_COMPLETE (\{[^\n]+\})/gu)].map(
-    (match) => JSON.parse(match[1]) as Record<string, unknown>,
-  );
-  if (samples.length !== JOIN_KEY_ORDER.length || negatives.length !== 6 || complete.length !== 1)
-    throw new Error('E4 join key evidence count refused');
+  if (samples.length !== JOIN_KEY_ORDER.length)
+    throw new Error('E4 join key positive count refused');
   const timings = samples.map((sample, index) => {
     const [phase, variant] = JOIN_KEY_ORDER[index];
     if (
@@ -1617,6 +1615,40 @@ export function compactJoinKeyEvidence(raw: string) {
       completeDocumentAndRootGuard: true,
     };
   });
+  const plans = (['BASELINE', 'CANDIDATE'] as const).map((variant, i) => {
+    const index = i + 4;
+    const marker = new RegExp(`NOTICE:\\s+E4_JOIN_KEY_BEGIN ${index}\\s*\\n`, 'u').exec(raw);
+    if (!marker) throw new Error('E4 join key plan marker refused');
+    const start = marker.index + marker[0].length;
+    const next = raw.indexOf('E4_JOIN_KEY_BEGIN ', start);
+    return {
+      variant,
+      ...compactSharedGuardNotice(raw.slice(start, next < 0 ? raw.length : next), variant),
+    };
+  });
+  return {
+    status: 'PARTIAL',
+    purpose: 'DIAGNOSTIC_ONLY_NOT_ACCEPTANCE',
+    order: 'ABBA_TWO_ACTUAL_PLANS_TWO_SHADOW_CONTROLS',
+    sameFixture: true,
+    sameBackend: true,
+    session: { workMemKb: 4096, jitEnabled: true, planCacheMode: 'force_custom_plan' },
+    statementMs: 30000,
+    processMs: 240000,
+    timings,
+    plans,
+    negativeScope:
+      'TEMP_SHADOW_FULL_SQL_NATIVE_EXCEPTION_AND_SUBTRANSACTION_ROLLBACK_NOT_PRODUCTION_TRIGGER_E2E',
+    cacheLimit: 'FIXED_TWO_ORDERS_ONE_RUN_NO_CAUSAL_OR_PERCENTILE_CLAIM',
+    versionSpecificChecks: 'NOT_PROFILED',
+  };
+}
+
+function compactJoinKeyNegativeCases(raw: string) {
+  const negatives = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_NEGATIVE (\{[^\n]+\})/gu)].map(
+    (match) => JSON.parse(match[1]) as Record<string, unknown>,
+  );
+  if (negatives.length > 6) throw new Error('E4 join key negative count refused');
   const cases = negatives.map((value, index) => {
     const kind = ['MISSING', 'EXTRA', 'TAMPERED'][Math.floor(index / 2)],
       variant = index % 2 === 0 ? 'BASELINE' : 'CANDIDATE';
@@ -1642,41 +1674,98 @@ export function compactJoinKeyEvidence(raw: string) {
       markerRestored: true,
     };
   });
+  return cases;
+}
+
+export function compactJoinKeyEvidence(raw: string) {
+  const positive = compactJoinKeyPositiveEvidence(raw);
+  const cases = compactJoinKeyNegativeCases(raw);
+  const complete = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_COMPLETE (\{[^\n]+\})/gu)].map(
+    (match) => JSON.parse(match[1]) as Record<string, unknown>,
+  );
+  if (cases.length !== 6 || complete.length !== 1)
+    throw new Error('E4 join key evidence count refused');
   expect(complete[0]).toEqual({
     catalogUnchanged: true,
     guardsUnchanged: true,
     sameBackend: true,
     publicEvaluationCount: 8000,
   });
-  const plans = (['BASELINE', 'CANDIDATE'] as const).map((variant, i) => {
-    const index = i + 4;
-    const marker = new RegExp(`NOTICE:\\s+E4_JOIN_KEY_BEGIN ${index}\\s*\\n`, 'u').exec(raw);
-    if (!marker) throw new Error('E4 join key plan marker refused');
-    const start = marker.index + marker[0].length;
-    const next = raw.indexOf('E4_JOIN_KEY_BEGIN ', start);
-    return {
-      variant,
-      ...compactSharedGuardNotice(raw.slice(start, next < 0 ? raw.length : next), variant),
-    };
-  });
   return {
+    ...positive,
     status: 'COMPLETE',
-    purpose: 'DIAGNOSTIC_ONLY_NOT_ACCEPTANCE',
-    order: 'ABBA_TWO_ACTUAL_PLANS_TWO_SHADOW_CONTROLS',
-    sameFixture: true,
-    sameBackend: true,
-    session: { workMemKb: 4096, jitEnabled: true, planCacheMode: 'force_custom_plan' },
-    statementMs: 30000,
-    processMs: 240000,
-    timings,
-    plans,
     cases,
     catalogUnchanged: true,
     guardsUnchanged: true,
-    negativeScope:
-      'TEMP_SHADOW_FULL_SQL_NATIVE_EXCEPTION_AND_SUBTRANSACTION_ROLLBACK_NOT_PRODUCTION_TRIGGER_E2E',
-    cacheLimit: 'FIXED_TWO_ORDERS_ONE_RUN_NO_CAUSAL_OR_PERCENTILE_CLAIM',
-    versionSpecificChecks: 'NOT_PROFILED',
+  };
+}
+
+export function compactJoinKeyFailure(raw: string) {
+  if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
+  const step = [
+    ...raw.matchAll(
+      /NOTICE:\s+E4_JOIN_KEY_NEGATIVE_STEP (MISSING|EXTRA|TAMPERED) (BASELINE|CANDIDATE) (MUTATION|GUARD|ROLLBACK)/gu,
+    ),
+  ].at(-1);
+  const unexpected = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_UNEXPECTED (\{[^\n]+\})/gu)].at(-1);
+  let native: {
+    kind: string;
+    variant: string;
+    state: string;
+    constraintMatches: boolean;
+    messageMatches: boolean;
+  } | null = null;
+  if (unexpected) {
+    let value: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(unexpected[1]);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+        value = parsed as Record<string, unknown>;
+    } catch {
+      /* A malformed/truncated native-error receipt remains UNKNOWN. */
+    }
+    if (
+      ['MISSING', 'EXTRA', 'TAMPERED'].includes(String(value.kind)) &&
+      ['BASELINE', 'CANDIDATE'].includes(String(value.variant)) &&
+      typeof value.state === 'string' &&
+      /^[A-Z0-9]{5}$/u.test(value.state) &&
+      typeof value.constraintMatches === 'boolean' &&
+      typeof value.messageMatches === 'boolean'
+    )
+      native = {
+        kind: String(value.kind),
+        variant: String(value.variant),
+        state: value.state,
+        constraintMatches: value.constraintMatches,
+        messageMatches: value.messageMatches,
+      };
+  }
+  const classification =
+    native?.state === '57014' || raw.includes('canceling statement due to statement timeout')
+      ? 'STATEMENT_TIMEOUT'
+      : native?.state === '42702' || /ERROR:[^\n]*column reference "id" is ambiguous/u.test(raw)
+        ? 'AMBIGUOUS_ID'
+        : raw.includes('E4 join key negative outcome refused')
+          ? 'NEGATIVE_OUTCOME'
+          : 'OTHER';
+  let partialEvidence:
+    | (ReturnType<typeof compactJoinKeyPositiveEvidence> & {
+        cases: ReturnType<typeof compactJoinKeyNegativeCases>;
+      })
+    | null = null;
+  try {
+    partialEvidence = {
+      ...compactJoinKeyPositiveEvidence(raw),
+      cases: compactJoinKeyNegativeCases(raw),
+    };
+  } catch {
+    /* An incomplete or invalid plan/settings receipt cannot become evidence. */
+  }
+  return {
+    classification,
+    lastNegativeStep: step ? { kind: step[1], variant: step[2], step: step[3] } : null,
+    unexpected: native,
+    partialEvidence,
   };
 }
 
@@ -1790,6 +1879,10 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
   >`SELECT count(*)::int AS remaining FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner}`;
   if (remaining !== 0) throw new Error('E4 join key backend cleanup refused');
   report.joinKeyCandidate = { ...(report.joinKeyCandidate as object), ownedBackendGone: true };
+  report.joinKeyCandidate = {
+    ...(report.joinKeyCandidate as object),
+    ...compactJoinKeyFailure(stderr),
+  };
   if (
     proc.error ||
     proc.signal ||

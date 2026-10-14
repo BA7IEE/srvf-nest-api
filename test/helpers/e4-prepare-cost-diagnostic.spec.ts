@@ -33,6 +33,8 @@ import {
   joinKeyCandidateSource,
   joinKeyProbeSql,
   compactJoinKeyEvidence,
+  compactJoinKeyPositiveEvidence,
+  compactJoinKeyFailure,
   JOIN_KEY_ORDER,
   joinKeyOracleGate,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
@@ -161,6 +163,14 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(sql).toContain('before_hash');
     expect(sql).toContain('e4_probe_marks');
     expect(sql).toContain('E4 join key public catalog changed');
+    expect(sql).toContain(
+      'e4_evaluation_document(ROW(e.*)::public."ParticipantContributionEvaluation")',
+    );
+    expect(sql).not.toContain('e4_evaluation_document(jsonb_populate_record');
+    expect(sql).toContain(
+      '(SELECT * FROM pg_temp.e4_probe_evaluations ORDER BY id COLLATE "C" LIMIT 1) e',
+    );
+    expect(sql).toContain('CROSS JOIN LATERAL jsonb_populate_record');
     expect(() => joinKeyProbeSql('root', 'app_test')).toThrow();
   });
   it('requires fixed ABBA, both actual plans, two valid shadow controls and all six native-error rollback cases', () => {
@@ -170,6 +180,65 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(result.cases).toHaveLength(6);
     expect(result.cases.every((c) => c.rolledBack)).toBe(true);
     expect(JSON.stringify(result)).not.toMatch(/Query Text|Filter|root\.id|private/u);
+  });
+  it('retains validated positive plans and completed negative prefix while refusing incomplete acceptance', () => {
+    const raw = comparisonNotice().split('NOTICE: E4_JOIN_KEY_NEGATIVE ')[0];
+    expect(compactJoinKeyPositiveEvidence(raw).status).toBe('PARTIAL');
+    expect(() => compactJoinKeyEvidence(raw)).toThrow();
+    const failure = compactJoinKeyFailure(
+      raw +
+        'NOTICE: E4_JOIN_KEY_NEGATIVE_STEP EXTRA BASELINE GUARD\n' +
+        'NOTICE: E4_JOIN_KEY_UNEXPECTED {"kind":"EXTRA","variant":"BASELINE","state":"57014","constraintMatches":false,"messageMatches":false,"message":"private SQL"}\n' +
+        'ERROR: E4 join key negative outcome refused\n',
+    );
+    expect(failure.classification).toBe('STATEMENT_TIMEOUT');
+    expect(failure.lastNegativeStep).toEqual({ kind: 'EXTRA', variant: 'BASELINE', step: 'GUARD' });
+    expect(failure.partialEvidence?.plans).toHaveLength(2);
+    expect(failure.partialEvidence?.cases).toHaveLength(0);
+    expect(failure.partialEvidence?.status).toBe('PARTIAL');
+    expect(JSON.stringify(failure)).not.toMatch(/private SQL|Query Text|catalogUnchanged/u);
+    const prefix =
+      comparisonNotice().split('NOTICE: E4_JOIN_KEY_NEGATIVE ')[0] +
+      comparisonNotice()
+        .split('NOTICE: E4_JOIN_KEY_NEGATIVE ')
+        .slice(1, 3)
+        .map((v) => 'NOTICE: E4_JOIN_KEY_NEGATIVE ' + v)
+        .join('');
+    expect(compactJoinKeyFailure(prefix).partialEvidence?.cases).toHaveLength(2);
+    expect(() => compactJoinKeyEvidence(prefix)).toThrow();
+  });
+  it('does not retain incomplete or unsafe positive evidence after a failed process', () => {
+    for (const raw of [
+      comparisonNotice().replace('"sameBackend":true', '"sameBackend":false'),
+      comparisonNotice().replace('"workMemKb":4096', '"workMemKb":32768'),
+      comparisonNotice().split('NOTICE: E4_JOIN_KEY_BEGIN 5')[0],
+    ])
+      expect(compactJoinKeyFailure(raw).partialEvidence).toBeNull();
+    expect(
+      compactJoinKeyFailure('ERROR: column reference "id" is ambiguous\n').classification,
+    ).toBe('AMBIGUOUS_ID');
+    expect(
+      compactJoinKeyFailure('ERROR: canceling statement due to statement timeout\n').classification,
+    ).toBe('STATEMENT_TIMEOUT');
+    const unsafe = compactJoinKeyFailure(
+      'NOTICE: E4_JOIN_KEY_UNEXPECTED {"kind":"secret","variant":"BASELINE","state":"private","constraintMatches":false,"messageMatches":false}\n',
+    );
+    expect(unsafe.unexpected).toBeNull();
+    expect(JSON.stringify(unsafe)).not.toContain('secret');
+    expect(
+      compactJoinKeyFailure('NOTICE: E4_JOIN_KEY_UNEXPECTED {invalid}\n').unexpected,
+    ).toBeNull();
+    const driver = readFileSync(
+      resolve(__dirname, '../diagnostics/e4-prepare-cost.diagnostic-spec.ts'),
+      'utf8',
+    );
+    const probe = driver.slice(
+      driver.indexOf('async function probeJoinKeyCandidate('),
+      driver.indexOf('async function joinKeyPostFailureOracle('),
+    );
+    expect(probe.indexOf('ownedBackendGone: true')).toBeLessThan(
+      probe.indexOf('compactJoinKeyFailure(stderr)'),
+    );
   });
   it.each([
     ['wrong sqlstate', '"sqlstate":"23514"', '"sqlstate":"P0001"'],
