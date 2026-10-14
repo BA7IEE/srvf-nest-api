@@ -43,6 +43,69 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  it('isolates the memory pair from JIT ordering and refuses unbounded or combined modes', () => {
+    expect(() =>
+      requireDiagnosticEnvironment(
+        { ...env, SRVF_E4_CANONICAL_COST_ONLY: '1', SRVF_E4_CANONICAL_MEMORY_PAIR: '1' },
+        head,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      requireDiagnosticEnvironment({ ...env, SRVF_E4_CANONICAL_MEMORY_PAIR: '1' }, head),
+    ).toThrow();
+    expect(() =>
+      requireDiagnosticEnvironment(
+        {
+          ...env,
+          SRVF_E4_CANONICAL_COST_ONLY: '1',
+          SRVF_E4_CANONICAL_MEMORY_PAIR: '1',
+          SRVF_E4_CANONICAL_JIT_ABBA: '1',
+        },
+        head,
+      ),
+    ).toThrow();
+    expect(() =>
+      requireDiagnosticEnvironment(
+        { ...env, SRVF_E4_CANONICAL_COST_ONLY: '1', SRVF_E4_CANONICAL_MEMORY_PAIR: 'again' },
+        head,
+      ),
+    ).toThrow();
+  });
+  it('retains actual sort/disk/temp metrics without keys, expressions or data values', () => {
+    const plan = compactCanonicalActualPlan(
+      [
+        {
+          Plan: {
+            'Node Type': 'Sort',
+            'Plan Rows': 8000,
+            'Plan Width': 32,
+            'Total Cost': 100,
+            'Actual Rows': 8000,
+            'Actual Loops': 1,
+            'Sort Method': 'external merge',
+            'Sort Space Type': 'Disk',
+            'Sort Space Used': 31000,
+            'Temp Read Blocks': 100,
+            'Temp Written Blocks': 200,
+            'Sort Key': ['private-member'],
+          },
+          'Execution Time': 1000,
+        },
+      ],
+      true,
+    );
+    expect(plan.selected[0]).toMatchObject({
+      type: 'Sort',
+      actualRows: 8000,
+      loops: 1,
+      sortMethod: 'external merge',
+      sortSpaceType: 'Disk',
+      sortSpace: 31000,
+      tempRead: 100,
+      tempWritten: 200,
+    });
+    expect(JSON.stringify(plan)).not.toMatch(/private-member|Sort Key/u);
+  });
   it('uses a fixed ON/OFF then OFF/ON sequence without increasing either30s budget', () => {
     expect(CANONICAL_JIT_ORDER).toEqual([
       ['ON_OFF', 'on'],

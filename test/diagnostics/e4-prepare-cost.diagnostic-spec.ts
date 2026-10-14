@@ -226,6 +226,13 @@ export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: strin
   )
     throw new Error('E4 canonical JIT scope refused');
   if (
+    env.SRVF_E4_CANONICAL_MEMORY_PAIR &&
+    (env.SRVF_E4_CANONICAL_MEMORY_PAIR !== '1' ||
+      env.SRVF_E4_CANONICAL_COST_ONLY !== '1' ||
+      !!env.SRVF_E4_CANONICAL_JIT_ABBA)
+  )
+    throw new Error('E4 canonical memory scope refused');
+  if (
     env.SRVF_E4_DIAGNOSTIC_PURPOSE !== 'DIAGNOSTIC_ONLY' ||
     env.APP_ENV !== 'test' ||
     env.GITHUB_ACTIONS !== 'true' ||
@@ -283,6 +290,12 @@ type Report = typeof E4_DIAGNOSTIC_PLAN & {
       samples: CanonicalJitSample[];
       actualPlan?: unknown;
       actualPlanError?: ReturnType<typeof e4DiagnosticSafeError>;
+    };
+    memoryComparison?: {
+      baselineWorkMemKb: number;
+      baselineJit: boolean;
+      settingsRestored?: boolean;
+      samples: CanonicalMemorySample[];
     };
   };
   scenarioShape?: { identities: number; segments: number; slices: number; units: number };
@@ -798,7 +811,7 @@ export function assertCanonicalComparison(value: unknown, units: number) {
     rootMatches: true,
   });
 }
-export function compactCanonicalActualPlan(value: unknown) {
+export function compactCanonicalActualPlan(value: unknown, operatorDetail = false) {
   const estimated = compactCanonicalCostPlan(value);
   const document = (value as Record<string, unknown>[])[0];
   const number = (row: Record<string, unknown>, key: string) => {
@@ -814,16 +827,23 @@ export function compactCanonicalActualPlan(value: unknown) {
     loops: number | null;
     tempRead: number | null;
     tempWritten: number | null;
+    sortMethod?: string;
+    sortSpaceType?: string;
+    sortSpace?: number | null;
+    peakMemory?: number | null;
+    hashBatches?: number | null;
   }[] = [];
   let seen = 0;
   const visit = (row: Record<string, unknown>) => {
     const node = estimated.nodes[seen++];
     if (
-      selected.length < 12 &&
+      selected.length < (operatorDetail ? 32 : 12) &&
       (node.cte === 'policy_bands' ||
         node.type === 'Hash Join' ||
         node.type === 'Merge Join' ||
-        node.type === 'Function Scan')
+        node.type === 'Function Scan' ||
+        (operatorDetail &&
+          ['Sort', 'Materialize', 'Hash', 'Aggregate', 'CTE Scan'].includes(node.type)))
     )
       selected.push({
         type: node.type,
@@ -833,6 +853,25 @@ export function compactCanonicalActualPlan(value: unknown) {
         loops: number(row, 'Actual Loops'),
         tempRead: number(row, 'Temp Read Blocks'),
         tempWritten: number(row, 'Temp Written Blocks'),
+        ...(operatorDetail
+          ? {
+              sortMethod: [
+                'quicksort',
+                'top-N heapsort',
+                'external merge',
+                'external sort',
+                'heapsort',
+              ].includes(String(row['Sort Method']))
+                ? String(row['Sort Method'])
+                : 'OTHER',
+              sortSpaceType: ['Memory', 'Disk'].includes(String(row['Sort Space Type']))
+                ? String(row['Sort Space Type'])
+                : 'OTHER',
+              sortSpace: number(row, 'Sort Space Used'),
+              peakMemory: number(row, 'Peak Memory Usage'),
+              hashBatches: number(row, 'Hash Batches'),
+            }
+          : {}),
       });
     const children = row.Plans as Record<string, unknown>[] | undefined;
     children?.forEach(visit);
@@ -940,6 +979,117 @@ async function probeCanonicalJit(
     restored.pid === baseline.pid && restored.jitEnabled === baseline.jitEnabled;
 }
 
+type CanonicalMemorySample = {
+  mode: 'BASELINE' | 'LOCAL_32MB';
+  workMemKb: number;
+  jit: 'off';
+  transactionMs: 30000;
+  statementMs: 30000;
+  wallMs: number;
+  outcome: 'COMPLETE' | 'FAILED';
+  sameBackend?: boolean;
+  comparison?: CanonicalComparison;
+  error?: ReturnType<typeof e4DiagnosticSafeError>;
+  actualPlan?: unknown;
+  actualPlanError?: ReturnType<typeof e4DiagnosticSafeError>;
+};
+async function probeCanonicalMemory(
+  db: PrismaClient,
+  evidence: NonNullable<Report['canonicalCost']>,
+  sql: Prisma.Sql,
+  units: number,
+) {
+  const readSettings = () =>
+    db.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+        return tx.$queryRaw<
+          { pid: number; jitEnabled: boolean; workMemKb: number }[]
+        >`SELECT pg_backend_pid() AS pid,current_setting('jit')='on' AS "jitEnabled",(pg_size_bytes(current_setting('work_mem'))/1024)::int AS "workMemKb"`;
+      },
+      { timeout: 30000 },
+    );
+  const [baseline] = await readSettings();
+  if (
+    !Number.isInteger(baseline.workMemKb) ||
+    baseline.workMemKb <= 0 ||
+    baseline.workMemKb >= 32768
+  )
+    throw new Error('E4 memory baseline unsuitable for bounded pair');
+  const results: NonNullable<NonNullable<Report['canonicalCost']>['memoryComparison']> = {
+    baselineWorkMemKb: baseline.workMemKb,
+    baselineJit: baseline.jitEnabled,
+    samples: [],
+  };
+  evidence.memoryComparison = results;
+  const initialize = async (tx: Prisma.TransactionClient, mode: 'BASELINE' | 'LOCAL_32MB') => {
+    await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+    await tx.$executeRaw`SET LOCAL statement_timeout='30s'`;
+    await tx.$executeRaw`SET LOCAL jit=off`;
+    if (mode === 'LOCAL_32MB') await tx.$executeRaw`SET LOCAL work_mem='32MB'`;
+    const [identity] = await tx.$queryRaw<
+      { pid: number; readonly: boolean; jitEnabled: boolean; workMemKb: number }[]
+    >`SELECT pg_backend_pid() AS pid,current_setting('transaction_read_only')='on' AS readonly,current_setting('jit')='on' AS "jitEnabled",(pg_size_bytes(current_setting('work_mem'))/1024)::int AS "workMemKb"`;
+    expect(identity).toEqual({
+      pid: baseline.pid,
+      readonly: true,
+      jitEnabled: false,
+      workMemKb: mode === 'BASELINE' ? baseline.workMemKb : 32768,
+    });
+    return identity.pid === baseline.pid;
+  };
+  for (const mode of ['BASELINE', 'LOCAL_32MB'] as const) {
+    const sample: CanonicalMemorySample = {
+      mode,
+      workMemKb: mode === 'BASELINE' ? baseline.workMemKb : 32768,
+      jit: 'off',
+      transactionMs: 30000,
+      statementMs: 30000,
+      wallMs: 0,
+      outcome: 'FAILED',
+    };
+    const started = performance.now();
+    try {
+      sample.comparison = await db.$transaction(
+        async (tx) => {
+          sample.sameBackend = await initialize(tx, mode);
+          const [row] = await tx.$queryRaw<CanonicalComparison[]>(sql);
+          assertCanonicalComparison(row, units);
+          return row;
+        },
+        { timeout: 30000 },
+      );
+      sample.outcome = 'COMPLETE';
+    } catch (error) {
+      sample.error = e4DiagnosticSafeError(error);
+    } finally {
+      sample.wallMs = performance.now() - started;
+      results.samples.push(sample);
+    }
+    if (sample.outcome === 'COMPLETE') {
+      try {
+        const [plan] = await db.$transaction(
+          async (tx) => {
+            await initialize(tx, mode);
+            return tx.$queryRaw<{ 'QUERY PLAN': unknown }[]>(
+              Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) ${sql}`,
+            );
+          },
+          { timeout: 30000 },
+        );
+        sample.actualPlan = compactCanonicalActualPlan(plan['QUERY PLAN'], true);
+      } catch (error) {
+        sample.actualPlanError = e4DiagnosticSafeError(error);
+      }
+    }
+  }
+  const [restored] = await readSettings();
+  results.settingsRestored =
+    restored.pid === baseline.pid &&
+    restored.jitEnabled === baseline.jitEnabled &&
+    restored.workMemKb === baseline.workMemKb;
+}
+
 async function probeCanonicalCosts(
   db: PrismaClient,
   report: Report,
@@ -948,7 +1098,8 @@ async function probeCanonicalCosts(
   report.canonicalCost = { purpose: 'READ_ONLY_COST_NOT_ACCEPTANCE', samples: [] };
   try {
     const sql = canonicalCostQueries(proof.revisionId, proof.sourceKindCode);
-    for (const [component, query] of process.env.SRVF_E4_CANONICAL_JIT_ABBA === '1'
+    for (const [component, query] of process.env.SRVF_E4_CANONICAL_JIT_ABBA === '1' ||
+    process.env.SRVF_E4_CANONICAL_MEMORY_PAIR === '1'
       ? []
       : ([
           ['OLD_FROZEN', sql.old],
@@ -1002,6 +1153,8 @@ async function probeCanonicalCosts(
     }
     if (process.env.SRVF_E4_CANONICAL_JIT_ABBA === '1')
       await probeCanonicalJit(db, report.canonicalCost, sql.comparison, proof.units);
+    if (process.env.SRVF_E4_CANONICAL_MEMORY_PAIR === '1')
+      await probeCanonicalMemory(db, report.canonicalCost, sql.comparison, proof.units);
   } catch (error) {
     report.canonicalCost.planError = e4DiagnosticSafeError(error);
   }

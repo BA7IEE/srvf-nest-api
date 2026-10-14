@@ -7,6 +7,7 @@ name: R5 E4 isolated validation
 # Ordinary fixtures use the synchronous <=500 path; oracle errors retain exact original budgets.
 # Cost-only candidates execute maximum once and probe the failed immutable canonical comparison.
 # JIT candidates compare the same frozen query in fixed ON/OFF then OFF/ON order, at30s.
+# Memory candidates isolate baseline versus local32MB once each, with JIT off and original30s.
 # Subsequent report pushes do not match this workflow path; reruns are refused.
 on:
   workflow_dispatch:
@@ -751,6 +752,7 @@ jobs:
       SRVF_E4_DIAGNOSTIC_SCENARIO: ${{ matrix.scenario }}
       SRVF_E4_CANONICAL_COST_ONLY: ${{ contains(github.event.head_commit.message, '[e4-canonical-cost-once]') && '1' || '' }}
       SRVF_E4_CANONICAL_JIT_ABBA: ${{ contains(github.event.head_commit.message, '[e4-canonical-jit-once]') && '1' || '' }}
+      SRVF_E4_CANONICAL_MEMORY_PAIR: ${{ contains(github.event.head_commit.message, '[e4-canonical-memory-once]') && '1' || '' }}
       SRVF_E4_GITHUB_ISOLATED: '1'
       SRVF_TEST_RUN_SCOPE: app_test_w98
       SRVF_E4_W98: '1'
