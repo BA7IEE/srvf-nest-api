@@ -304,6 +304,21 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_FIXED_METADATA_MAX_ONCE &&
+    (env.SRVF_E4_FIXED_METADATA_MAX_ONCE !== '1' ||
+      env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum' ||
+      env.SRVF_E4_JOIN_KEY_ONCE !== '1' ||
+      env.SRVF_E4_CANONICAL_FIRST32 !== '1' ||
+      [
+        'SRVF_E4_JOIN_KEY_CALIBRATION',
+        'SRVF_E4_SHARED_GUARD_ONCE',
+        'SRVF_E4_CANONICAL_COST_ONLY',
+        'SRVF_E4_CANONICAL_JIT_ABBA',
+        'SRVF_E4_CANONICAL_MEMORY_PAIR',
+      ].some((key) => !!env[key]))
+  )
+    throw new Error('E4 fixed metadata maximum scope refused');
+  if (
     env.SRVF_E4_JOIN_KEY_CALIBRATION &&
     (env.SRVF_E4_JOIN_KEY_CALIBRATION !== '1' ||
       env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'ordinary-1' ||
@@ -415,7 +430,12 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
     | 'PREPARE_AND_FIRST_ORACLE_ONLY'
     | 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
     | 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
-    | 'SMALL_JOIN_KEY_CALIBRATION_ONLY';
+    | 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
+    | 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY';
+  metadataPostOracle?: {
+    status: 'ENTERED' | 'COMPLETE' | 'FAILED';
+    firstCanonical32?: FirstCanonical32Evidence;
+  };
   joinKeyCandidate?: unknown;
   joinKeyPostFailureOracle?: unknown;
   joinKeyVerificationError?: ReturnType<typeof e4DiagnosticSafeError>;
@@ -447,7 +467,9 @@ function writeBounded(path: string, value: unknown) {
   const comparison =
     value &&
     typeof value === 'object' &&
-    Reflect.get(value, 'coverage') === 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY';
+    ['PREPARE_ORACLE_AND_JOIN_KEY_ONLY', 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'].includes(
+      String(Reflect.get(value, 'coverage')),
+    );
   const json = (comparison ? JSON.stringify(value) : JSON.stringify(value, null, 2)) + '\n';
   if (Buffer.byteLength(json) > 65536) throw new Error('E4 diagnostic output limit');
   writeFileSync(path, json, { flag: 'wx', mode: 0o600 });
@@ -1116,6 +1138,10 @@ export const E4_METADATA_FIELDS = Object.freeze([
 ]);
 export const E4_METADATA_CASE_DIGEST =
   'cc6bdc63188e6990288063b06c8dd74459383240b3a20f835379c856f66c4203';
+export const E4_FIXED_METADATA_CANDIDATE = Object.freeze({
+  sourceHead: '20cbaf6d22429db19a1378d2c4bbf39889162f60',
+  sqlSha256: '6962099f42c34335708c065423fb982f81bcfe110f05125b91089ecb426ce78f',
+});
 const metadataReferenceExpression = `(SELECT '{' || string_agg(to_jsonb(field_name)::TEXT || ':' || field_canonical,',' ORDER BY field_name COLLATE "C") || '}'
      FROM (
        SELECT key AS field_name,
@@ -1153,6 +1179,10 @@ export function metadataCanonicalCandidateSource() {
   const candidate = source.replace(metadataReferenceExpression, metadataCanonicalExpression());
   if (candidate.replace(metadataCanonicalExpression(), metadataReferenceExpression) !== source)
     throw new Error('E4 metadata canonical reverse edit refused');
+  if (
+    createHash('sha256').update(candidate).digest('hex') !== E4_FIXED_METADATA_CANDIDATE.sqlSha256
+  )
+    throw new Error('E4 fixed metadata20cbaf6d SQL identity refused');
   return candidate;
 }
 
@@ -1840,8 +1870,25 @@ export const JOIN_KEY_CALIBRATION_ORDER = [
   ['SHADOW_CONTROL', 'CANDIDATE'],
 ] as const;
 
-export function joinKeyProbeSql(revisionId: string, databaseName: string, units: 4 | 8000 = 8000) {
+// Reserve the unchanged240s for six negatives and six priority cases, rather than extra plan calls.
+export const FIXED_METADATA_MAX_ORDER = [
+  ['LATENCY', 'BASELINE'],
+  ['LATENCY', 'CANDIDATE'],
+  ['LATENCY', 'CANDIDATE'],
+  ['LATENCY', 'BASELINE'],
+  ['SHADOW_CONTROL', 'BASELINE'],
+  ['SHADOW_CONTROL', 'CANDIDATE'],
+] as const;
+
+export function joinKeyProbeSql(
+  revisionId: string,
+  databaseName: string,
+  units: 4 | 8000 = 8000,
+  fixedMetadataMaximum = false,
+) {
   if (units !== 4 && units !== 8000) throw new Error('E4 join key fixed shape refused');
+  if (fixedMetadataMaximum && units !== 8000) throw new Error('E4 metadata maximum shape refused');
+  const fixedMetadata = units === 4 || fixedMetadataMaximum;
   sharedGuardProbeSql(revisionId, databaseName); // Reuse the exact scope/identifier refusal.
   const source = readFileSync(
     resolve(
@@ -1861,12 +1908,12 @@ export function joinKeyProbeSql(revisionId: string, databaseName: string, units:
     createHash('md5').update(baselineBody).digest('hex') !== E4_DIAGNOSTIC_PLAN.completeFunctionMd5
   )
     throw new Error('E4 join key baseline body pin refused');
-  // Maximum's previous diagnostic remains unchanged; the new candidate is small-only.
+  // The explicit maximum mode uses precisely the SQL proved at20cbaf6d; legacy modes stay distinct.
   const candidateBody = body(
-    units === 4 ? metadataCanonicalCandidateSource() : joinKeyCandidateSource(),
+    fixedMetadata ? metadataCanonicalCandidateSource() : joinKeyCandidateSource(),
   );
   const shadow = (input: string) =>
-    (units === 4
+    (fixedMetadata
       ? input
           .replaceAll(
             'FROM "ActivitySettlementContributionRevision"',
@@ -1892,7 +1939,7 @@ LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, public AS $e4_co
   const settings = `SET LOCAL statement_timeout='30s';
 SET LOCAL idle_in_transaction_session_timeout='30s';
 SET LOCAL plan_cache_mode='force_custom_plan';\n`;
-  let sql = `${units === 4 ? metadataCanonicalEquivalenceSql(true) : ''}SET statement_timeout='30s';
+  let sql = `${fixedMetadata ? metadataCanonicalEquivalenceSql(true) : ''}SET statement_timeout='30s';
 LOAD 'auto_explain';
 SET auto_explain.log_min_duration=-1;
 SET client_min_messages='notice';
@@ -1915,7 +1962,7 @@ CREATE TEMP TABLE e4_probe_metadata AS SELECT pg_backend_pid() AS pid,${guardDig
 CREATE TEMP TABLE e4_probe_evaluations AS SELECT * FROM public."ParticipantContributionEvaluation" WHERE "contributionRevisionId"=:'root_id';
 CREATE TEMP TABLE e4_probe_marks(label TEXT);
 ${
-  units === 4
+  fixedMetadata
     ? `CREATE TEMP TABLE e4_probe_roots AS SELECT * FROM public."ActivitySettlementContributionRevision" WHERE id=:'root_id';
 CREATE TEMP TABLE e4_probe_sources AS SELECT * FROM public.e4_source_rows(:'root_id');`
     : ''
@@ -1924,7 +1971,11 @@ ${create('e4_join_candidate', candidateBody)}
 ${create('e4_baseline_shadow', shadow(baselineBody))}
 ${create('e4_candidate_shadow', shadow(candidateBody))}
 COMMIT;\n`;
-  const order = units === 4 ? JOIN_KEY_CALIBRATION_ORDER : JOIN_KEY_ORDER;
+  const order = fixedMetadataMaximum
+    ? FIXED_METADATA_MAX_ORDER
+    : units === 4
+      ? JOIN_KEY_CALIBRATION_ORDER
+      : JOIN_KEY_ORDER;
   for (const [index, [phase, variant]] of order.entries()) {
     const callable =
       phase === 'SHADOW_CONTROL'
@@ -2004,11 +2055,12 @@ DO $$ DECLARE root_id TEXT; before_hash TEXT; state TEXT; guard TEXT; message TE
 END $$;
 ROLLBACK;\n`;
     }
-  if (units === 4) {
+  if (fixedMetadata) {
     const allRowsDigest = `(SELECT md5(jsonb_build_object(
       'evaluations',${digest},
       'roots',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id COLLATE "C") FROM pg_temp.e4_probe_roots r),
-      'sources',(SELECT jsonb_agg(to_jsonb(s) ORDER BY to_jsonb(s)::TEXT COLLATE "C") FROM pg_temp.e4_probe_sources s))::TEXT))`;
+      'sources',(SELECT md5(string_agg(fingerprint,',' ORDER BY fingerprint COLLATE "C")) FROM
+        (SELECT encode(sha256(convert_to(to_jsonb(s)::TEXT,'UTF8')),'hex') AS fingerprint FROM pg_temp.e4_probe_sources s) fingerprints))::TEXT))`;
     const singleMutation = (statement: string) => `${statement}
       GET DIAGNOSTICS affected=ROW_COUNT;
       IF affected<>1 THEN RAISE EXCEPTION 'E4 metadata priority mutation refused'; END IF;
@@ -2227,6 +2279,78 @@ export function compactMetadataPriorityEvidence(raw: string, complete = true) {
   });
 }
 
+/** One fixture/backend, uninstrumented ABBA; no cross-runner or percentile comparison. */
+export function compactFixedMetadataMaximumEvidence(raw: string, complete = true) {
+  raw = joinKeyDiagnosticNotices(raw);
+  const samples = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_SAMPLE (\{[^\n]+\})/gu)];
+  if (samples.length > FIXED_METADATA_MAX_ORDER.length || (complete && samples.length !== 6))
+    throw new Error('E4 metadata maximum sample count refused');
+  const timings = samples.map((match, index) => {
+    const value = JSON.parse(match[1]) as Record<string, unknown>;
+    const [phase, variant] = FIXED_METADATA_MAX_ORDER[index];
+    if (
+      value.index !== index ||
+      value.phase !== phase ||
+      value.variant !== variant ||
+      value.returned !== true ||
+      value.completeDocumentAndRootGuard !== true ||
+      value.sameBackend !== true ||
+      value.readonly !== true ||
+      value.workMemKb !== 4096 ||
+      value.jitEnabled !== true ||
+      value.planCacheMode !== 'force_custom_plan' ||
+      typeof value.wallMs !== 'number' ||
+      !Number.isFinite(value.wallMs) ||
+      value.wallMs <= 0 ||
+      value.wallMs > 30000
+    )
+      throw new Error('E4 metadata maximum sample refused');
+    return {
+      phase,
+      variant,
+      wallMs: value.wallMs,
+      returned: true,
+      completeDocumentAndRootGuard: true,
+    };
+  });
+  const cases = compactJoinKeyNegativeCases(raw);
+  const priorityCases = compactMetadataPriorityEvidence(raw, complete);
+  const metadataCanonical = complete ? compactMetadataCanonicalEvidence(raw, true) : undefined;
+  if (complete) {
+    const endings = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_COMPLETE (\{[^\n]+\})/gu)];
+    if (cases.length !== 6 || endings.length !== 1)
+      throw new Error('E4 metadata maximum completion refused');
+    expect(JSON.parse(endings[0][1])).toEqual({
+      catalogUnchanged: true,
+      guardsUnchanged: true,
+      sameBackend: true,
+      publicEvaluationCount: 8000,
+    });
+  }
+  return {
+    status: complete ? ('COMPLETE' as const) : ('PARTIAL' as const),
+    purpose: 'FIXED_METADATA_MAXIMUM_DIAGNOSTIC_NOT_ACCEPTANCE',
+    order: 'ABBA_TWO_SHADOW_CONTROLS_NO_PLAN_OVERHEAD',
+    units: 8000,
+    candidate: E4_FIXED_METADATA_CANDIDATE,
+    ...(timings.length ? { sameFixture: true, sameBackend: true } : {}),
+    session: { workMemKb: 4096, jitEnabled: true, planCacheMode: 'force_custom_plan' },
+    timings,
+    cases,
+    priorityCases,
+    ...(metadataCanonical ? { metadataCanonical } : {}),
+    statementMs: 30000,
+    processMs: 240000,
+    negativeScope:
+      'TEMP_SHADOW_FULL_SQL_NATIVE_EXCEPTION_AND_SUBTRANSACTION_ROLLBACK_NOT_PRODUCTION_TRIGGER_E2E',
+    versionSpecificChecks: 'NOT_PROFILED',
+    cacheLimit: 'ONE_ABBA_RUN_NO_CAUSAL_OR_PERCENTILE_CLAIM',
+    ...(complete
+      ? { catalogUnchanged: true, guardsUnchanged: true, publicEvaluationCount: 8000 }
+      : {}),
+  };
+}
+
 /** Four controls, fixed-metadata byte proof, six native negatives and six priority/rollback cases. */
 export function compactJoinKeyCalibrationEvidence(raw: string, complete = true) {
   raw = joinKeyDiagnosticNotices(raw);
@@ -2432,9 +2556,12 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
   if (!proof || databaseName !== 'app_test_w98')
     throw new Error('E4 join key verified proof refused');
   const calibration = process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1';
+  const fixedMetadataMaximum = process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1';
   const oracleGate = calibration
     ? joinKeyCalibrationGate(report, proof.units)
     : joinKeyOracleGate(report);
+  if (fixedMetadataMaximum && (proof.units !== 8000 || oracleGate !== 'FIRST_ORACLE_COMPLETE'))
+    throw new Error('E4 metadata maximum complete oracle required');
   await assertConnectedTestDatabase(db);
   await verifyDiagnosticDatabase(db);
   await verifyDiagnosticGuards(db);
@@ -2455,7 +2582,7 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
       '-t',
       '-v',
       'ON_ERROR_STOP=1',
-      ...(calibration ? ['-v', 'VERBOSITY=verbose'] : []),
+      ...(calibration || fixedMetadataMaximum ? ['-v', 'VERBOSITY=verbose'] : []),
       '-v',
       `root_id=${proof.revisionId}`,
       '-U',
@@ -2464,7 +2591,12 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
       databaseName,
     ],
     {
-      input: joinKeyProbeSql(proof.revisionId, databaseName, calibration ? 4 : 8000),
+      input: joinKeyProbeSql(
+        proof.revisionId,
+        databaseName,
+        calibration ? 4 : 8000,
+        fixedMetadataMaximum,
+      ),
       encoding: 'utf8',
       timeout: 240000,
       maxBuffer: 2097152,
@@ -2490,7 +2622,7 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
     stdoutBytes: Buffer.byteLength(proc.stdout ?? ''),
     stderrBytes: Buffer.byteLength(proc.stderr ?? ''),
     progress: {
-      metadata: calibration ? compactMetadataProgress(stderr) : undefined,
+      metadata: calibration || fixedMetadataMaximum ? compactMetadataProgress(stderr) : undefined,
       lastPositiveIndex: positive.at(-1) ?? null,
       lastNegative: negative.at(-1) ?? null,
       completedPositive: (stderr.match(/NOTICE:\s+E4_JOIN_KEY_SAMPLE /gu) ?? []).length,
@@ -2517,11 +2649,13 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
     ...(report.joinKeyCandidate as object),
     ...compactJoinKeyFailure(stderr),
   };
-  if (calibration) {
+  if (calibration || fixedMetadataMaximum) {
     try {
       report.joinKeyCandidate = {
         ...(report.joinKeyCandidate as object),
-        partialEvidence: compactJoinKeyCalibrationEvidence(stderr, false),
+        partialEvidence: fixedMetadataMaximum
+          ? compactFixedMetadataMaximumEvidence(stderr, false)
+          : compactJoinKeyCalibrationEvidence(stderr, false),
       };
     } catch {
       /* Invalid or truncated controls cannot become evidence. */
@@ -2536,7 +2670,11 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
     throw new Error('E4 join key process refused');
   report.joinKeyCandidate = { ...(report.joinKeyCandidate as object), reason: 'EVIDENCE' };
   report.joinKeyCandidate = {
-    ...(calibration ? compactJoinKeyCalibrationEvidence(stderr) : compactJoinKeyEvidence(stderr)),
+    ...(fixedMetadataMaximum
+      ? compactFixedMetadataMaximumEvidence(stderr)
+      : calibration
+        ? compactJoinKeyCalibrationEvidence(stderr)
+        : compactJoinKeyEvidence(stderr)),
     oracleGate,
     wallMs: processWallMs,
     ownedBackendGone: true,
@@ -2545,7 +2683,7 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
   report.internalSqlPlan = 'OBSERVED';
   await verifyDiagnosticDatabase(db);
   await verifyDiagnosticGuards(db);
-  if (calibration) {
+  if (calibration || fixedMetadataMaximum) {
     report.internalSqlPlan = 'NOT_RUN';
   }
 }
@@ -2864,6 +3002,27 @@ async function probeCanonicalCosts(
       await probeCanonicalMemory(db, report.canonicalCost, sql.comparison, proof.units);
   } catch (error) {
     report.canonicalCost.planError = e4DiagnosticSafeError(error);
+  }
+}
+
+export async function completeFixedMetadataPostOracle(
+  report: Pick<Report, 'oracle' | 'firstCanonical32' | 'metadataPostOracle'>,
+  verify: () => Promise<unknown>,
+) {
+  if (report.oracle !== 'COMPLETE' || report.firstCanonical32?.fullComparisonValidated !== true)
+    throw new Error('E4 metadata pre-oracle incomplete');
+  const first = report.firstCanonical32;
+  report.oracle = 'NOT_RUN';
+  report.metadataPostOracle = { status: 'ENTERED' };
+  try {
+    await verify();
+    report.metadataPostOracle = { status: 'COMPLETE', firstCanonical32: report.firstCanonical32 };
+    report.oracle = 'COMPLETE';
+  } catch (error) {
+    report.metadataPostOracle = { status: 'FAILED', firstCanonical32: report.firstCanonical32 };
+    throw error;
+  } finally {
+    report.firstCanonical32 = first;
   }
 }
 
@@ -3274,15 +3433,17 @@ function registerDiagnosticChild() {
     migration: 'NOT_VERIFIED',
     stages: [],
     coverage:
-      process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
-        ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
-        : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
-          ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
-          : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
-            ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
-            : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-              ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-              : 'FULL_SETTLEMENT',
+      process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1'
+        ? 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
+        : process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
+          ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
+          : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+            ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
+            : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+              ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+              : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+                ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+                : 'FULL_SETTLEMENT',
     status: 'UNKNOWN',
     oracle: 'NOT_RUN',
     resources: 'UNKNOWN',
@@ -3305,6 +3466,7 @@ function registerDiagnosticChild() {
       frozenE4OracleSource();
       frozenOrdinaryOracleSource();
       verifyDiagnosticMigrationSource();
+      if (process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1') metadataCanonicalCandidateSource();
     },
     'REFUSED',
   );
@@ -3657,6 +3819,11 @@ function registerDiagnosticChild() {
           );
           if (process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1')
             await assertDiagnosticProof(observer, prepared!.settlementVersionId, 4, false, report);
+          if (process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1') {
+            await completeFixedMetadataPostOracle(report, () =>
+              assertDiagnosticProof(observer, prepared!.settlementVersionId, 8000, true, report),
+            );
+          }
         }
         if (process.env.SRVF_E4_SHARED_GUARD_ONCE === '1') {
           report.oracle = 'COMPLETE';
@@ -3671,6 +3838,12 @@ function registerDiagnosticChild() {
           report.status = 'COMPLETE';
           report.budgetRecommendation =
             'SMALL_TOOL_CALIBRATION_ONLY_NO_MAXIMUM_OR_PERFORMANCE_CLAIM';
+        } else if (process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1') {
+          expect(report.metadataPostOracle?.status).toBe('COMPLETE');
+          report.oracle = 'COMPLETE';
+          report.status = 'COMPLETE';
+          report.budgetRecommendation =
+            'ONE_FIXED_METADATA_ABBA_SAMPLE_NO_FULL_CHAIN_FORMAL_BUDGET_OR_PERCENTILE_CLAIM';
         } else if (process.env.SRVF_E4_CANONICAL_FIRST32 === '1') {
           expect(report.firstCanonical32?.fullComparisonValidated).toBe(true);
           report.oracle = 'COMPLETE';
@@ -3706,6 +3879,7 @@ function registerDiagnosticChild() {
         report.error = e4DiagnosticSafeError(error);
         if (
           process.env.SRVF_E4_JOIN_KEY_ONCE === '1' &&
+          process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE !== '1' &&
           report.errorSubstage === 'ORACLE_CANONICAL_DOCUMENT' &&
           db &&
           f &&
@@ -3934,15 +4108,17 @@ export async function runDiagnosticParent() {
       migration: 'NOT_VERIFIED',
       stages: [],
       coverage:
-        process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
-          ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
-          : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
-            ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
-            : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
-              ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
-              : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-                ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-                : 'FULL_SETTLEMENT',
+        process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1'
+          ? 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
+          : process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
+            ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
+            : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+              ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
+              : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+                ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+                : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+                  ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+                  : 'FULL_SETTLEMENT',
       status: 'UNKNOWN',
       oracle: 'NOT_RUN',
       resources: 'UNKNOWN',

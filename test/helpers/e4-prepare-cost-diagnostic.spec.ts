@@ -52,6 +52,10 @@ import {
   compactMetadataCanonicalEvidence,
   compactMetadataPriorityEvidence,
   compactMetadataProgress,
+  E4_FIXED_METADATA_CANDIDATE,
+  FIXED_METADATA_MAX_ORDER,
+  compactFixedMetadataMaximumEvidence,
+  completeFixedMetadataPostOracle,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -258,7 +262,10 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(sql).toContain('changed:=changed+affected');
     expect(sql).toContain('E4 metadata priority rollback refused');
     expect(sql).toContain("'roots',(SELECT jsonb_agg(to_jsonb(r)");
-    expect(sql).toContain("'sources',(SELECT jsonb_agg(to_jsonb(s)");
+    expect(sql).toContain(
+      "'sources',(SELECT md5(string_agg(fingerprint,',' ORDER BY fingerprint COLLATE \"C\"))",
+    );
+    expect(sql).toContain("sha256(convert_to(to_jsonb(s)::TEXT,'UTF8'))");
     expect(joinKeyProbeSql('synthetic_root', 'app_test_w98')).not.toContain(
       'E4_JOIN_KEY_METADATA_',
     );
@@ -350,9 +357,9 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     );
     const expression = workflow.match(/scenario: \$\{\{ (fromJSON\([^\n]+) \}\}/u)?.[1];
     expect(expression).toBeDefined();
-    const select = (small: boolean, message: string) =>
+    const select = (small: boolean, message: string, maximum = false) =>
       runInNewContext(expression!, {
-        inputs: { small_metadata_calibration: small },
+        inputs: { small_metadata_calibration: small, fixed_metadata_maximum: maximum },
         github: { event: { head_commit: { message } } },
         contains: (value: string, token: string) => value.includes(token),
         fromJSON: JSON.parse,
@@ -361,10 +368,164 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(select(true, '[e4-join-key-once]')).toEqual(['ordinary-1']);
     expect(select(false, '[e4-join-key-calibration-once]')).toEqual(['ordinary-1']);
     expect(select(false, '[e4-join-key-once]')).toEqual(['maximum']);
+    expect(select(false, '', true)).toEqual(['maximum']);
     expect(workflow).toContain(
       "github.event_name == 'workflow_dispatch' && inputs.expected_sha == github.sha",
     );
   });
+  it('admits the fixed maximum only with original maximum/oracle flags and no competing mode', () => {
+    const maximum = {
+      ...env,
+      SRVF_E4_FIXED_METADATA_MAX_ONCE: '1',
+      SRVF_E4_JOIN_KEY_ONCE: '1',
+      SRVF_E4_CANONICAL_FIRST32: '1',
+    };
+    expect(() => requireDiagnosticEnvironment(maximum, head)).not.toThrow();
+    for (const change of [
+      { SRVF_E4_FIXED_METADATA_MAX_ONCE: '2' },
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-1' },
+      { SRVF_E4_JOIN_KEY_ONCE: '' },
+      { SRVF_E4_CANONICAL_FIRST32: '' },
+      { SRVF_E4_JOIN_KEY_CALIBRATION: '1' },
+      { SRVF_E4_SHARED_GUARD_ONCE: '1' },
+      { SRVF_E4_CANONICAL_COST_ONLY: '1' },
+      { SRVF_E4_CANONICAL_JIT_ABBA: '1' },
+      { SRVF_E4_CANONICAL_MEMORY_PAIR: '1' },
+    ])
+      expect(() => requireDiagnosticEnvironment({ ...maximum, ...change }, head)).toThrow();
+  });
+  it('covers the actual metadata input types and preserves canonical non-NULL references without changing the fixed20cb SQL', () => {
+    const sql = metadataCanonicalCandidateSource();
+    expect(createHash('sha256').update(sql).digest('hex')).toBe(
+      E4_FIXED_METADATA_CANDIDATE.sqlSha256,
+    );
+    expect(E4_FIXED_METADATA_CANDIDATE.sourceHead).toBe('20cbaf6d22429db19a1378d2c4bbf39889162f60');
+    const migration = readFileSync(
+      resolve(
+        __dirname,
+        '../../prisma/migrations/20261003000000_activity_contribution_settlement/migration.sql',
+      ),
+      'utf8',
+    );
+    for (const field of E4_METADATA_FIELDS.filter(
+      (value) =>
+        !['calculatedPoints', 'recognizedPoints', 'mode', 'beijingDayPointsJson'].includes(value),
+    )) {
+      expect(migration).toContain(
+        `"${field}" ${['durationSeconds', 'evaluatorVersion'].includes(field) ? 'INTEGER' : 'TEXT'} NOT NULL`,
+      );
+      expect(metadataCanonicalExpression()).toContain(`(metadata->'${field}')::TEXT`);
+    }
+    expect(sql).toContain(
+      "'calculatedPoints',result->>'recognizedPoints','recognizedPoints',result->>'recognizedPoints'",
+    );
+    expect(sql).toContain("'mode','policy'");
+    expect(sql).toContain(
+      "'[' || string_agg(coalesce(source_canonical,'null'),',' ORDER BY source_canonical COLLATE \"C\") || ']' AS refs_canonical",
+    );
+    expect(metadataCanonicalExpression()).toContain(
+      "THEN astr_canonical_json(metadata->'beijingDayPointsJson')",
+    );
+  });
+  const maximumMetadataNotice = () => {
+    const samples = FIXED_METADATA_MAX_ORDER.map(
+      ([phase, variant], index) =>
+        'NOTICE: E4_JOIN_KEY_SAMPLE ' +
+        JSON.stringify({
+          index,
+          phase,
+          variant,
+          wallMs: 12000,
+          returned: true,
+          completeDocumentAndRootGuard: true,
+          sameBackend: true,
+          readonly: true,
+          workMemKb: 4096,
+          jitEnabled: true,
+          planCacheMode: 'force_custom_plan',
+        }) +
+        '\n',
+    ).join('');
+    return calibrationNotice()
+      .replace(/NOTICE: E4_JOIN_KEY_SAMPLE \{[^\n]+\}\n/gu, '')
+      .replace('NOTICE: E4_JOIN_KEY_NEGATIVE ', samples + 'NOTICE: E4_JOIN_KEY_NEGATIVE ')
+      .replace('"publicEvaluationCount":4', '"publicEvaluationCount":8000');
+  };
+  it('runs fixed metadata ABBA and both shadow controls before all negatives/priorities inside unchanged limits', () => {
+    const sql = joinKeyProbeSql('synthetic_root', 'app_test_w98', 8000, true);
+    expect(sql.match(/E4_JOIN_KEY_SAMPLE /gu)).toHaveLength(6);
+    expect(sql).not.toContain("'ACTUAL_PLAN'");
+    expect(sql).toContain(metadataCanonicalExpression());
+    expect(sql).toContain('SELECT * FROM pg_temp.e4_probe_sources');
+    expect(sql).toContain('count(*) FROM pg_temp.e4_probe_evaluations)<>8000');
+    expect(sql).toContain('E4_JOIN_KEY_METADATA_PRIORITY_BEGIN ROOT CANDIDATE');
+    expect(sql.indexOf('E4_JOIN_KEY_SAMPLE ')).toBeLessThan(
+      sql.indexOf('E4_JOIN_KEY_NEGATIVE_BEGIN '),
+    );
+    expect(() => joinKeyProbeSql('synthetic_root', 'app_test_w98', 4, true)).toThrow();
+    const result = compactFixedMetadataMaximumEvidence(maximumMetadataNotice());
+    expect(result.timings).toHaveLength(6);
+    expect(result.cases).toHaveLength(6);
+    expect(result.priorityCases).toHaveLength(6);
+    expect(result.metadataCanonical?.cases).toBe(37);
+    expect(result.processMs).toBe(240000);
+    expect(result.statementMs).toBe(30000);
+    for (const raw of [
+      maximumMetadataNotice().replace('"wallMs":12000', '"wallMs":30001'),
+      maximumMetadataNotice().replace('"sameBackend":true', '"sameBackend":false'),
+      maximumMetadataNotice().replace('"publicEvaluationCount":8000', '"publicEvaluationCount":4'),
+      maximumMetadataNotice().replace(
+        '"constraint":"e4_source_guard"',
+        '"constraint":"e4_complete_guard"',
+      ),
+      maximumMetadataNotice().replace(E4_METADATA_CASE_DIGEST, '0'.repeat(64)),
+    ])
+      expect(() => compactFixedMetadataMaximumEvidence(raw)).toThrow();
+    const prefix = maximumMetadataNotice().split('NOTICE: E4_JOIN_KEY_NEGATIVE ')[0];
+    expect(compactFixedMetadataMaximumEvidence(prefix, false).status).toBe('PARTIAL');
+    expect(() => compactFixedMetadataMaximumEvidence(prefix)).toThrow();
+  });
+  it.each([false, true])(
+    'preserves the pre-oracle and records one separate post-oracle, failed=%s, without retry',
+    async (failed) => {
+      const first = {
+        purpose: 'ISOLATED_FIRST_CANONICAL_NOT_PRODUCTION' as const,
+        attempts: 1 as const,
+        transactionMs: 30000 as const,
+        workMemKb: 32768 as const,
+        jit: 'DEFAULT_UNCHANGED' as const,
+        wallMs: 29000,
+        outcome: 'RETURNED' as const,
+        fullComparisonValidated: true,
+      };
+      const report: Parameters<typeof completeFixedMetadataPostOracle>[0] = {
+        oracle: 'COMPLETE',
+        firstCanonical32: first,
+      };
+      const post = { ...first, wallMs: 28000 };
+      const failure = new Error('controlled post oracle failure');
+      const verify = jest.fn(async () => {
+        expect(report.oracle).toBe('NOT_RUN');
+        report.firstCanonical32 = post;
+        if (failed) throw failure;
+      });
+      const result = completeFixedMetadataPostOracle(report, verify);
+      if (failed) await expect(result).rejects.toBe(failure);
+      else await expect(result).resolves.toBeUndefined();
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(report.firstCanonical32).toBe(first);
+      expect(report.metadataPostOracle).toEqual({
+        status: failed ? 'FAILED' : 'COMPLETE',
+        firstCanonical32: post,
+      });
+      expect(report.oracle).toBe(failed ? 'NOT_RUN' : 'COMPLETE');
+      const driver = readFileSync(
+        resolve(__dirname, '../diagnostics/e4-prepare-cost.diagnostic-spec.ts'),
+        'utf8',
+      );
+      expect(driver).toContain("process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE !== '1' &&");
+    },
+  );
   it('observes cleanup with a positive instrument and the exact existing lease key through read-only SQL', () => {
     const sql = calibrationCleanupSql();
     expect(sql).toContain('BEGIN READ ONLY');
