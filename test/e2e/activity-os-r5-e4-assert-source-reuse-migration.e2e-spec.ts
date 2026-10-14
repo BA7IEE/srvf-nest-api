@@ -58,10 +58,111 @@ function deferredEvaluationErrorEvidence(error: unknown) {
   };
 }
 
+function redactedDiagnosticText(text: string) {
+  const allowed = new Set([
+    '23514',
+    '23505',
+    '23503',
+    '40P01',
+    'P2028',
+    'P2010',
+    'ERROR',
+    'contribution evaluation set mismatch',
+    'e4_evaluation_guard',
+    'PrismaClientUnknownRequestError',
+    'PrismaClientKnownRequestError',
+    'Error',
+    'code',
+    'message',
+    'severity',
+    'constraint',
+    'name',
+    'kind',
+    'clientVersion',
+    'cause',
+    'detail',
+    'column',
+    'hint',
+    'error',
+    'meta',
+    'sqlstate',
+    'original_code',
+  ]);
+  return text
+    .replace(/https?:\/\/[^\s"'<>]+/giu, '[URL_REDACTED]')
+    .replace(/(?:[A-Za-z]:\\|\/)[^\s"'<>)}]+/gu, '[PATH_REDACTED]')
+    .replace(
+      /\b(?:password|secret|token|authorization)\s*[:=]\s*[^,;\n}]+/giu,
+      '[CREDENTIAL_REDACTED]',
+    )
+    .replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`[^`]*`/gu, (quoted) =>
+      allowed.has(quoted.slice(1, -1)) ? quoted : '[QUOTED_REDACTED]',
+    )
+    .replace(/\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/gu, '[EMAIL_REDACTED]')
+    .replace(
+      /\b(?:[a-f0-9]{32,64}|c[a-z0-9]{20,32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\b/giu,
+      '[ID_REDACTED]',
+    )
+    .replace(/\b\d{9,}\b/gu, '[NUMBER_REDACTED]');
+}
+
+function deferredErrorDiagnostic(error: unknown, depth = 0): object {
+  const object = error !== null && typeof error === 'object' ? error : undefined;
+  const properties = object ? Object.getOwnPropertyDescriptors(object) : {};
+  const message: unknown = typeof error === 'string' ? error : properties.message?.value;
+  const name: unknown = error instanceof Error ? error.name : properties.name?.value;
+  const prototype: unknown = object ? Object.getPrototypeOf(object) : undefined;
+  const constructorValue: unknown =
+    prototype !== null && typeof prototype === 'object'
+      ? Object.getOwnPropertyDescriptor(prototype, 'constructor')?.value
+      : undefined;
+  const constructor = typeof constructorValue === 'function' ? constructorValue.name : undefined;
+  const clientVersion: unknown = properties.clientVersion?.value;
+  const cause: unknown = properties.cause?.value;
+  const code: unknown = properties.code?.value;
+  const meta: unknown = properties.meta?.value;
+  const sanitized = typeof message === 'string' ? redactedDiagnosticText(message) : '';
+  const nativeOffset = sanitized.indexOf('PostgresError');
+  return {
+    type: typeof error,
+    constructor:
+      typeof constructor === 'string' && /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/u.test(constructor)
+        ? constructor
+        : 'OTHER',
+    name:
+      typeof name === 'string' && /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/u.test(name) ? name : 'OTHER',
+    clientVersion:
+      typeof clientVersion === 'string' && /^\d+\.\d+\.\d+$/u.test(clientVersion)
+        ? clientVersion
+        : 'OTHER',
+    ownProperties: Object.entries(properties).map(([key, descriptor]) => ({
+      name: key,
+      type: 'value' in descriptor ? typeof descriptor.value : 'accessor',
+    })),
+    message: sanitized.slice(0, 1600),
+    messageCharacters: typeof message === 'string' ? message.length : 0,
+    messageTruncated: sanitized.length > 1600,
+    nativeWindow: nativeOffset < 0 ? '' : sanitized.slice(nativeOffset, nativeOffset + 800),
+    messageMarkers: {
+      postgresError: typeof message === 'string' && message.includes('PostgresError'),
+      queryError: typeof message === 'string' && message.includes('QueryError'),
+      sqlstate23514: typeof message === 'string' && message.includes('23514'),
+      evaluationGuardMessage:
+        typeof message === 'string' && message.includes('contribution evaluation set mismatch'),
+    },
+    nativeCode:
+      typeof code === 'string' && /^(?:P[0-9]{4}|23514|23505|23503|40P01|55P03|57P01)$/u.test(code)
+        ? code
+        : 'OTHER',
+    meta: depth < 1 && meta !== undefined ? deferredErrorDiagnostic(meta, depth + 1) : null,
+    cause: depth < 1 && cause !== undefined ? deferredErrorDiagnostic(cause, depth + 1) : null,
+  };
+}
+
 describe('E4 deferred COMMIT error evidence adapter', () => {
   const nativeMessage = (code: string, message: string) =>
     `ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "${code}", message: "${message}", severity: "ERROR", detail: None, column: None, hint: None }), transient: false })`;
-  it('accepts the actual Prisma unknown-request wrapper with the exact native code and message', () => {
+  it('accepts a PostgresError-shaped unknown-request fixture with the exact native code and message', () => {
     expect(
       deferredEvaluationErrorEvidence(
         new Prisma.PrismaClientUnknownRequestError(
@@ -100,6 +201,53 @@ describe('E4 deferred COMMIT error evidence adapter', () => {
         ),
       ),
     ).toEqual({ unknownRequest: false, sqlstate: 'NONE', evaluationGuardMessage: false });
+  });
+  it('redacts diagnostic values while retaining native code/message structure', () => {
+    const text =
+      nativeMessage('23514', 'contribution evaluation set mismatch') +
+      ' https://example.invalid/private?token=fixture-secret /private/fixture/path ' +
+      'password="fixture-password" "fixture-member" user@example.invalid 12345678901';
+    const redacted = redactedDiagnosticText(text);
+    expect(redacted).toContain('code: "23514"');
+    expect(redacted).toContain('message: "contribution evaluation set mismatch"');
+    for (const value of [
+      'example.invalid',
+      '/private/',
+      'fixture-secret',
+      'fixture-password',
+      'fixture-member',
+      '12345678901',
+    ])
+      expect(redacted).not.toContain(value);
+  });
+  it('records actual error descriptors and a redacted cause without changing strict evidence', () => {
+    const error = new Prisma.PrismaClientUnknownRequestError(
+      nativeMessage('23514', 'contribution evaluation set mismatch'),
+      { clientVersion: Prisma.prismaVersion.client },
+    );
+    Object.defineProperty(error, 'cause', {
+      value: new Error('https://example.invalid/private?token=fixture-secret "fixture-member"'),
+    });
+    const diagnostic = deferredErrorDiagnostic(error);
+    expect(diagnostic).toMatchObject({
+      constructor: error.constructor.name,
+      name: error.name,
+      clientVersion: Prisma.prismaVersion.client,
+      ownProperties: expect.arrayContaining([
+        { name: 'message', type: 'string' },
+        { name: 'cause', type: 'object' },
+      ]),
+      messageMarkers: { postgresError: true, queryError: true, sqlstate23514: true },
+      cause: { constructor: 'Error', name: 'Error' },
+    });
+    const serialized = JSON.stringify(diagnostic);
+    for (const value of ['example.invalid', 'fixture-secret', 'fixture-member'])
+      expect(serialized).not.toContain(value);
+    expect(deferredEvaluationErrorEvidence(error)).toEqual({
+      unknownRequest: true,
+      sqlstate: '23514',
+      evaluationGuardMessage: true,
+    });
   });
 });
 
@@ -258,6 +406,117 @@ async function catalog(db: Database) {
   const indexes =
     await db.$queryRaw`SELECT oid::text AS oid,pg_get_indexdef(oid) AS definition FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind='i' ORDER BY oid`;
   return JSON.stringify({ functions, constraints, triggers, indexes });
+}
+
+async function catalogTargetSignature(db: Database) {
+  const [signature] = await db.$queryRaw<
+    {
+      oid: string;
+      arguments: string;
+      identityArguments: string;
+      defaultExpression: string | null;
+      proargdefaults: string | null;
+      proargtypes: string;
+      proallargtypes: string | null;
+      proargmodes: string | null;
+      proargnames: string[] | null;
+    }[]
+  >`
+    SELECT p.oid::text AS oid,pg_get_function_arguments(p.oid) AS arguments,
+      pg_get_function_identity_arguments(p.oid) AS "identityArguments",
+      pg_get_expr(p.proargdefaults,0) AS "defaultExpression",p.proargdefaults::text AS proargdefaults,
+      p.proargtypes::text AS proargtypes,p.proallargtypes::text AS proallargtypes,
+      p.proargmodes::text AS proargmodes,p.proargnames AS proargnames
+    FROM pg_proc p WHERE p.oid='public.e4_assert_complete(text,boolean)'::regprocedure
+  `;
+  return signature;
+}
+
+function catalogDiagnosticFields(source: string) {
+  const parsed: unknown = JSON.parse(source);
+  const fields = new Map<string, unknown>();
+  if (parsed === null || typeof parsed !== 'object') throw new Error('E4 catalog diagnostic shape');
+  for (const [category, rows] of Object.entries(parsed)) {
+    if (!Array.isArray(rows)) throw new Error('E4 catalog diagnostic rows');
+    for (const entry of rows) {
+      const row: unknown = entry;
+      if (row === null || typeof row !== 'object') throw new Error('E4 catalog diagnostic row');
+      let record: object = row;
+      if ('metadata' in row && row.metadata !== null && typeof row.metadata === 'object')
+        record = row.metadata;
+      else if (
+        'definition' in row &&
+        typeof row.definition === 'string' &&
+        row.definition.startsWith('{')
+      ) {
+        const definition: unknown = JSON.parse(row.definition);
+        if (definition === null || typeof definition !== 'object')
+          throw new Error('E4 catalog definition shape');
+        record = definition;
+      }
+      const oid: unknown = 'oid' in row ? row.oid : 'oid' in record ? record.oid : undefined;
+      if (!/^\d+$/u.test(String(oid))) throw new Error('E4 catalog diagnostic oid');
+      for (const [field, value] of Object.entries(record))
+        fields.set(`${category}.${String(oid)}.${field}`, value);
+    }
+  }
+  return fields;
+}
+
+function catalogFieldDiagnostic(value: unknown, field: string, target: boolean) {
+  if (
+    value === undefined ||
+    value === null ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  )
+    return value ?? null;
+  // Only the target's fixed boolean default node is printed verbatim. Other
+  // catalog strings (function SQL, ACLs, index definitions) stay hashed.
+  if (target && field === 'proargdefaults' && typeof value === 'string') return value;
+  const serialized = JSON.stringify(value);
+  return {
+    characters: serialized.length,
+    sha256: createHash('sha256').update(serialized).digest('hex'),
+  };
+}
+
+function emitCatalogDiagnostic(
+  before: string,
+  after: string,
+  phase: 'BASELINE_ORACLE' | 'UPGRADE' | 'CANDIDATE_ORACLE' | 'NOOP',
+  beforeTarget: Awaited<ReturnType<typeof catalogTargetSignature>>,
+  afterTarget: Awaited<ReturnType<typeof catalogTargetSignature>>,
+) {
+  const a = catalogDiagnosticFields(before);
+  const b = catalogDiagnosticFields(after);
+  const changed = [...new Set([...a.keys(), ...b.keys()])].filter(
+    (key) => JSON.stringify(a.get(key)) !== JSON.stringify(b.get(key)),
+  );
+  console.info(
+    'E4_ASSERT143_CATALOG_DIFF',
+    JSON.stringify({
+      phase,
+      equal: before === after,
+      changedFields: changed.length,
+      changes: changed.slice(0, 12).map((key) => {
+        const [category, oid, field] = key.split('.');
+        const target =
+          category === 'functions' && (oid === beforeTarget.oid || oid === afterTarget.oid);
+        return {
+          category,
+          oid,
+          field,
+          target,
+          before: catalogFieldDiagnostic(a.get(key), field, target),
+          after: catalogFieldDiagnostic(b.get(key), field, target),
+        };
+      }),
+      truncated: changed.length > 12,
+      beforeTarget,
+      afterTarget,
+    }),
+  );
 }
 
 async function migrationRows(db: Database) {
@@ -425,11 +684,21 @@ describe('E4 complete assertion source reuse migration 143', () => {
     expect(beforeMigrations).toHaveLength(142);
     expect(beforeMigrations[141].name).toBe(E4_MIGRATION_142);
     const beforeCatalog = await catalog(db());
+    const beforeTarget = await catalogTargetSignature(db());
     const beforeBusiness = await businessSnapshot(db());
     for (const root of roots) {
       expect(await outcome(db(), root.id)).toEqual({ state: '00000', guard: 'NONE' });
       await oracle(db(), root.id);
     }
+    const baselineAfterOracleCatalog = await catalog(db());
+    const baselineAfterOracleTarget = await catalogTargetSignature(db());
+    emitCatalogDiagnostic(
+      beforeCatalog,
+      baselineAfterOracleCatalog,
+      'BASELINE_ORACLE',
+      beforeTarget,
+      baselineAfterOracleTarget,
+    );
     owner.deployLatestMigrations();
     const afterMigrations = await migrationRows(db());
     expect(afterMigrations).toHaveLength(143);
@@ -457,17 +726,43 @@ describe('E4 complete assertion source reuse migration 143', () => {
         bodyPin: installedBody.pin,
       }),
     );
-    expect((await catalog(db())) === beforeCatalog).toBe(true);
+    const afterCatalog = await catalog(db());
+    const afterTarget = await catalogTargetSignature(db());
+    emitCatalogDiagnostic(
+      baselineAfterOracleCatalog,
+      afterCatalog,
+      'UPGRADE',
+      baselineAfterOracleTarget,
+      afterTarget,
+    );
+    expect(afterCatalog === beforeCatalog).toBe(true);
     expect((await businessSnapshot(db())) === beforeBusiness).toBe(true);
     for (const root of roots) {
       expect(await outcome(db(), root.id)).toEqual(await outcome(db(), root.id, true));
       await oracle(db(), root.id);
     }
+    const afterOracleCatalog = await catalog(db());
+    const afterOracleTarget = await catalogTargetSignature(db());
+    emitCatalogDiagnostic(
+      afterCatalog,
+      afterOracleCatalog,
+      'CANDIDATE_ORACLE',
+      afterTarget,
+      afterOracleTarget,
+    );
     owner.deployLatestMigrations();
     expect(JSON.stringify(await migrationRows(db())) === JSON.stringify(afterMigrations)).toBe(
       true,
     );
-    expect((await catalog(db())) === beforeCatalog).toBe(true);
+    const noopCatalog = await catalog(db());
+    emitCatalogDiagnostic(
+      afterOracleCatalog,
+      noopCatalog,
+      'NOOP',
+      afterOracleTarget,
+      await catalogTargetSignature(db()),
+    );
+    expect(noopCatalog === beforeCatalog).toBe(true);
     expect((await businessSnapshot(db())) === beforeBusiness).toBe(true);
     console.info(
       'E4_ASSERT143_NONEMPTY_UPGRADE',
@@ -676,6 +971,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
       let statementPassed = false;
       let incompleteGuard: Outcome | undefined;
       let commitError: unknown;
+      let callbackReturned = false;
       try {
         await db().$transaction(async (tx) => {
           const root = await tx.activitySettlementContributionRevision.create({
@@ -698,6 +994,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
           // It leaves the unchanged queued deferred trigger to reject actual COMMIT.
           incompleteGuard = await outcome(tx, incomplete.id);
           // No explicit SET: the unchanged native deferred trigger must reject COMMIT.
+          callbackReturned = true;
         }, guardTransactionOptions);
       } catch (error) {
         commitError = error;
@@ -706,6 +1003,17 @@ describe('E4 complete assertion source reuse migration 143', () => {
       // unexpected wrapper/failure, so a mismatch never hides rollback evidence.
       const rolledBack = (await businessSnapshot(observer)) === before;
       console.info('E4_ASSERT143_DEFERRED_ROLLBACK', JSON.stringify({ rolledBack }));
+      console.info(
+        'E4_ASSERT143_COMMIT_ERROR',
+        JSON.stringify({
+          callbackReturned,
+          rolledBack,
+          statementPassed,
+          incompleteGuard,
+          parsedCommitError: deferredEvaluationErrorEvidence(commitError),
+          actualError: deferredErrorDiagnostic(commitError),
+        }),
+      );
       expect(rolledBack).toBe(true);
       expect(statementPassed).toBe(true);
       expect(incompleteGuard).toEqual({ state: '23514', guard: 'e4_evaluation_guard' });
