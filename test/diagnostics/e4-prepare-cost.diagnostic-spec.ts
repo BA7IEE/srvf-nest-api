@@ -221,6 +221,11 @@ export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: strin
   )
     throw new Error('E4 canonical cost-only scope refused');
   if (
+    env.SRVF_E4_CANONICAL_JIT_ABBA &&
+    (env.SRVF_E4_CANONICAL_JIT_ABBA !== '1' || env.SRVF_E4_CANONICAL_COST_ONLY !== '1')
+  )
+    throw new Error('E4 canonical JIT scope refused');
+  if (
     env.SRVF_E4_DIAGNOSTIC_PURPOSE !== 'DIAGNOSTIC_ONLY' ||
     env.APP_ENV !== 'test' ||
     env.GITHUB_ACTIONS !== 'true' ||
@@ -272,6 +277,13 @@ type Report = typeof E4_DIAGNOSTIC_PLAN & {
     samples: CanonicalCostSample[];
     plan?: unknown;
     planError?: ReturnType<typeof e4DiagnosticSafeError>;
+    jitComparison?: {
+      baselineJit: boolean;
+      settingsRestored?: boolean;
+      samples: CanonicalJitSample[];
+      actualPlan?: unknown;
+      actualPlanError?: ReturnType<typeof e4DiagnosticSafeError>;
+    };
   };
   scenarioShape?: { identities: number; segments: number; slices: number; units: number };
   budgetRecommendation?: string;
@@ -683,6 +695,7 @@ export function compactCanonicalCostPlan(value: unknown) {
     rows: number | null;
     width: number | null;
     totalCost: number | null;
+    cte?: string;
   }[] = [];
   const kinds = [
     'Aggregate',
@@ -712,11 +725,30 @@ export function compactCanonicalCostPlan(value: unknown) {
     if (!row || typeof row !== 'object' || nodes.length >= 64)
       throw new Error('E4 canonical estimate limit');
     const type: unknown = Reflect.get(row, 'Node Type');
+    const cteName: unknown = Reflect.get(row, 'CTE Name');
+    const subplanName: unknown = Reflect.get(row, 'Subplan Name');
+    const cte =
+      typeof cteName === 'string'
+        ? cteName
+        : typeof subplanName === 'string' && subplanName.startsWith('CTE ')
+          ? subplanName.slice(4)
+          : undefined;
     nodes.push({
       type: typeof type === 'string' && kinds.includes(type) ? type : 'OTHER',
       rows: number(row, 'Plan Rows'),
       width: number(row, 'Plan Width'),
       totalCost: number(row, 'Total Cost'),
+      ...([
+        'oracle',
+        'candidate',
+        'stored',
+        'summary',
+        'sources',
+        'groups',
+        'policy_bands',
+      ].includes(cte ?? '')
+        ? { cte }
+        : {}),
     });
     const children: unknown = Reflect.get(row, 'Plans');
     if (children !== undefined) {
@@ -731,6 +763,183 @@ export function compactCanonicalCostPlan(value: unknown) {
     nodes,
   };
 }
+export const CANONICAL_JIT_ORDER = [
+  ['ON_OFF', 'on'],
+  ['ON_OFF', 'off'],
+  ['OFF_ON', 'off'],
+  ['OFF_ON', 'on'],
+] as const;
+type CanonicalComparison = {
+  oldCount: number;
+  candidateCount: number;
+  storedCount: number;
+  candidateDifferences: number;
+  storedDifferences: number;
+  rootMatches: boolean;
+};
+type CanonicalJitSample = {
+  order: 'ON_OFF' | 'OFF_ON';
+  jit: 'on' | 'off';
+  transactionMs: 30000;
+  statementMs: 30000;
+  wallMs: number;
+  outcome: 'COMPLETE' | 'FAILED';
+  sameBackend?: boolean;
+  comparison?: CanonicalComparison;
+  error?: ReturnType<typeof e4DiagnosticSafeError>;
+};
+export function assertCanonicalComparison(value: unknown, units: number) {
+  expect(value).toEqual({
+    oldCount: units,
+    candidateCount: units,
+    storedCount: units,
+    candidateDifferences: 0,
+    storedDifferences: 0,
+    rootMatches: true,
+  });
+}
+export function compactCanonicalActualPlan(value: unknown) {
+  const estimated = compactCanonicalCostPlan(value);
+  const document = (value as Record<string, unknown>[])[0];
+  const number = (row: Record<string, unknown>, key: string) => {
+    const x = row[key];
+    return typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : null;
+  };
+  const root = document.Plan as Record<string, unknown>;
+  const selected: {
+    type: string;
+    cte?: string;
+    estimatedRows: number | null;
+    actualRows: number | null;
+    loops: number | null;
+    tempRead: number | null;
+    tempWritten: number | null;
+  }[] = [];
+  let seen = 0;
+  const visit = (row: Record<string, unknown>) => {
+    const node = estimated.nodes[seen++];
+    if (
+      selected.length < 12 &&
+      (node.cte === 'policy_bands' ||
+        node.type === 'Hash Join' ||
+        node.type === 'Merge Join' ||
+        node.type === 'Function Scan')
+    )
+      selected.push({
+        type: node.type,
+        ...(node.cte ? { cte: node.cte } : {}),
+        estimatedRows: node.rows,
+        actualRows: number(row, 'Actual Rows'),
+        loops: number(row, 'Actual Loops'),
+        tempRead: number(row, 'Temp Read Blocks'),
+        tempWritten: number(row, 'Temp Written Blocks'),
+      });
+    const children = row.Plans as Record<string, unknown>[] | undefined;
+    children?.forEach(visit);
+  };
+  visit(root);
+  const jit =
+    document.JIT && typeof document.JIT === 'object'
+      ? (document.JIT as Record<string, unknown>)
+      : null;
+  const timing =
+    jit?.Timing && typeof jit.Timing === 'object' ? (jit.Timing as Record<string, unknown>) : null;
+  return {
+    mode: 'ACTUAL_ANALYZE_BUFFERS_TIMING_OFF',
+    executionMs: number(document, 'Execution Time'),
+    planningMs: number(document, 'Planning Time'),
+    rootTempRead: number(root, 'Temp Read Blocks'),
+    rootTempWritten: number(root, 'Temp Written Blocks'),
+    jit: jit
+      ? { functions: number(jit, 'Functions'), totalMs: timing ? number(timing, 'Total') : null }
+      : null,
+    selected,
+  };
+}
+async function probeCanonicalJit(
+  db: PrismaClient,
+  evidence: NonNullable<Report['canonicalCost']>,
+  sql: Prisma.Sql,
+  units: number,
+) {
+  const readSettings = async () =>
+    db.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+        return tx.$queryRaw<
+          { pid: number; jitEnabled: boolean }[]
+        >`SELECT pg_backend_pid() AS pid,current_setting('jit')='on' AS "jitEnabled"`;
+      },
+      { timeout: 30000 },
+    );
+  const [baseline] = await readSettings();
+  const results: NonNullable<NonNullable<Report['canonicalCost']>['jitComparison']> = {
+    baselineJit: baseline.jitEnabled,
+    samples: [],
+  };
+  evidence.jitComparison = results;
+  let analyzed = false;
+  for (const [order, jit] of CANONICAL_JIT_ORDER) {
+    const started = performance.now();
+    const sample: CanonicalJitSample = {
+      order,
+      jit,
+      transactionMs: 30000,
+      statementMs: 30000,
+      wallMs: 0,
+      outcome: 'FAILED',
+    };
+    try {
+      const row = await db.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+          await tx.$executeRaw`SET LOCAL statement_timeout='30s'`;
+          if (jit === 'on') await tx.$executeRaw`SET LOCAL jit=on`;
+          else await tx.$executeRaw`SET LOCAL jit=off`;
+          const [identity] = await tx.$queryRaw<
+            { pid: number; readonly: boolean; jitEnabled: boolean }[]
+          >`SELECT pg_backend_pid() AS pid,current_setting('transaction_read_only')='on' AS readonly,current_setting('jit')='on' AS "jitEnabled"`;
+          sample.sameBackend = identity.pid === baseline.pid;
+          expect(identity).toEqual({ pid: baseline.pid, readonly: true, jitEnabled: jit === 'on' });
+          const [comparison] = await tx.$queryRaw<CanonicalComparison[]>(sql);
+          assertCanonicalComparison(comparison, units);
+          return comparison;
+        },
+        { timeout: 30000 },
+      );
+      sample.comparison = row;
+      sample.outcome = 'COMPLETE';
+    } catch (error) {
+      sample.error = e4DiagnosticSafeError(error);
+    } finally {
+      sample.wallMs = performance.now() - started;
+      results.samples.push(sample);
+    }
+    if (!analyzed && jit === 'off' && sample.outcome === 'COMPLETE') {
+      analyzed = true;
+      try {
+        const [plan] = await db.$transaction(
+          async (tx) => {
+            await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+            await tx.$executeRaw`SET LOCAL statement_timeout='30s'`;
+            await tx.$executeRaw`SET LOCAL jit=off`;
+            return tx.$queryRaw<{ 'QUERY PLAN': unknown }[]>(
+              Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON) ${sql}`,
+            );
+          },
+          { timeout: 30000 },
+        );
+        results.actualPlan = compactCanonicalActualPlan(plan['QUERY PLAN']);
+      } catch (error) {
+        results.actualPlanError = e4DiagnosticSafeError(error);
+      }
+    }
+  }
+  const [restored] = await readSettings();
+  results.settingsRestored =
+    restored.pid === baseline.pid && restored.jitEnabled === baseline.jitEnabled;
+}
+
 async function probeCanonicalCosts(
   db: PrismaClient,
   report: Report,
@@ -739,11 +948,13 @@ async function probeCanonicalCosts(
   report.canonicalCost = { purpose: 'READ_ONLY_COST_NOT_ACCEPTANCE', samples: [] };
   try {
     const sql = canonicalCostQueries(proof.revisionId, proof.sourceKindCode);
-    for (const [component, query] of [
-      ['OLD_FROZEN', sql.old],
-      ['CANDIDATE', sql.candidate],
-      ['STORED', sql.stored],
-    ] as const) {
+    for (const [component, query] of process.env.SRVF_E4_CANONICAL_JIT_ABBA === '1'
+      ? []
+      : ([
+          ['OLD_FROZEN', sql.old],
+          ['CANDIDATE', sql.candidate],
+          ['STORED', sql.stored],
+        ] as const)) {
       const started = performance.now();
       const sample: CanonicalCostSample = {
         component,
@@ -789,6 +1000,8 @@ async function probeCanonicalCosts(
     } catch (error) {
       report.canonicalCost.planError = e4DiagnosticSafeError(error);
     }
+    if (process.env.SRVF_E4_CANONICAL_JIT_ABBA === '1')
+      await probeCanonicalJit(db, report.canonicalCost, sql.comparison, proof.units);
   } catch (error) {
     report.canonicalCost.planError = e4DiagnosticSafeError(error);
   }
@@ -1574,7 +1787,7 @@ function registerDiagnosticChild() {
           report.errorSubstage === 'ORACLE_CANONICAL_DOCUMENT'
         ) {
           const proof = privateDiagnosticProofs.get(report);
-          if (proof) await probeCanonicalCosts(f!.db, report, proof);
+          if (proof) await probeCanonicalCosts(db ?? f!.db, report, proof);
         }
         report.budgetRecommendation = 'KEEP_FORMAL_BUDGETS_FAILURE_REQUIRES_STAGE_SPECIFIC_REVIEW';
         checkpoint.mark(

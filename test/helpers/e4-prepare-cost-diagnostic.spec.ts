@@ -21,6 +21,9 @@ import {
   oracleStageWrappers,
   canonicalCostQueries,
   compactCanonicalCostPlan,
+  compactCanonicalActualPlan,
+  CANONICAL_JIT_ORDER,
+  assertCanonicalComparison,
   diagnosticPopulation,
   requireDiagnosticEnvironment,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
@@ -40,6 +43,78 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  it('uses a fixed ON/OFF then OFF/ON sequence without increasing either30s budget', () => {
+    expect(CANONICAL_JIT_ORDER).toEqual([
+      ['ON_OFF', 'on'],
+      ['ON_OFF', 'off'],
+      ['OFF_ON', 'off'],
+      ['OFF_ON', 'on'],
+    ]);
+    expect(() =>
+      requireDiagnosticEnvironment(
+        { ...env, SRVF_E4_CANONICAL_COST_ONLY: '1', SRVF_E4_CANONICAL_JIT_ABBA: '1' },
+        head,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      requireDiagnosticEnvironment({ ...env, SRVF_E4_CANONICAL_JIT_ABBA: '1' }, head),
+    ).toThrow();
+  });
+  it.each([
+    { oldCount: 7999 },
+    { candidateCount: 8001 },
+    { storedCount: 7999 },
+    { candidateDifferences: 1 },
+    { storedDifferences: 1 },
+    { rootMatches: false },
+  ])(
+    'keeps the full frozen comparison assertions for missing, extra, changed and hash-mismatching rows:%p',
+    (change) => {
+      const original = {
+        oldCount: 8000,
+        candidateCount: 8000,
+        storedCount: 8000,
+        candidateDifferences: 0,
+        storedDifferences: 0,
+        rootMatches: true,
+      };
+      expect(() => assertCanonicalComparison(original, 8000)).not.toThrow();
+      expect(() => assertCanonicalComparison({ ...original, ...change }, 8000)).toThrow();
+    },
+  );
+  it('separates actual policy-band rows/loops from estimates without exporting predicates or values', () => {
+    const actual = compactCanonicalActualPlan([
+      {
+        Plan: {
+          'Node Type': 'Nested Loop',
+          'Subplan Name': 'CTE policy_bands',
+          'Plan Rows': 200000000,
+          'Plan Width': 136,
+          'Total Cost': 123,
+          'Actual Rows': 4,
+          'Actual Loops': 1,
+          'Temp Read Blocks': 0,
+          'Temp Written Blocks': 0,
+          Filter: 'private-member',
+        },
+        'Execution Time': 10,
+        'Planning Time': 1,
+      },
+    ]);
+    expect(actual.selected).toEqual([
+      {
+        type: 'Nested Loop',
+        cte: 'policy_bands',
+        estimatedRows: 200000000,
+        actualRows: 4,
+        loops: 1,
+        tempRead: 0,
+        tempWritten: 0,
+      },
+    ]);
+    expect(JSON.stringify(actual)).not.toContain('private-member');
+    expect(actual.mode).toBe('ACTUAL_ANALYZE_BUFFERS_TIMING_OFF');
+  });
   it('forces every full canonical document and key in separate read-only cost projections with bound identities', () => {
     const id = 'PRIVATE_ROOT_ID_FOR_OFFLINE';
     const queries = canonicalCostQueries(id, 'time_revision');
