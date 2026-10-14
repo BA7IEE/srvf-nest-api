@@ -22,13 +22,19 @@
 
 ## 2026-10-14 测试夹具恢复
 
-`58ad2830` 的新143测试误从满额scale套件抽取了固定50000来源/10000分配预期，实际使用的是单身份小夹具，首个失败发生在143部署之前。此次仅修测试：从非scale settlement套件抽取固定根聚合、根oracle、完整oracle三个函数，保留全文来源SHA及内部canonical/root SQL SHA，不注册被读取套件的生命周期。日oracle另从固定 `E4_P_DAY_ORACLE_SQL` 提取并保持 `a8cdf667c0632e832d10ea2912ebd510e84163097ddfc594f55d000746446274`，显式验证单来源3600秒、跨日两来源5400秒与零人口的独立预期，包括1.00以及跨日0.33/0.67；不从候选/存储计数学习预期。
+`58ad2830` 的新143测试误从满额scale套件抽取了固定50000来源/10000分配预期，实际使用的是单身份小夹具，首个失败发生在143部署之前。此次仅修测试：从非scale settlement套件抽取固定根聚合、根oracle、完整oracle三个函数，保留全文来源SHA及内部canonical/root SQL SHA，不注册被读取套件的生命周期。日oracle另从固定 `E4_P_DAY_ORACLE_SQL` 提取并保持 `a8cdf667c0632e832d10ea2912ebd510e84163097ddfc594f55d000746446274`，显式验证单来源3600秒、跨日单来源5400秒与零人口的独立预期，包括1.00以及跨日0.33/0.67；不从候选/存储计数学习预期。
 
 三个测试自有guard事务明确使用30秒timeout/5秒maxWait，防止默认5秒P2028遮蔽23514或刻意回滚；原SQLSTATE、constraint和整事务回滚断言保留。正式业务及scale文件不改。真实部署143后的日志另记录迁移数量、迁移名、checksum和body pin，不能将首个测试失败后残留142的后续结果算成143证据。
 
 恢复轮本地已实跑：服务72项PASS，迁移前缀10项PASS，定向冷lint PASS；离线加载实际三个oracle函数及单评价替身比较PASS（不执行数据库，不代表SQL验收）。完整quick首次FAIL（lint=134堆内存耗尽，typecheck=1两处查询行类型缺失，unit=0、harness=0）。补齐行类型后完整typecheck复跑退出0；第二次全仓lint曾遇到并发自测探针清理的ENOENT，等待自测结束后以仅本地 `NODE_OPTIONS=--max-old-space-size=8192` 串行lint:cached退出0。复用未改动输入的449套/9971项单测、8快照以及guard/ESLint自测退出0，最终quick四项组件通过，不冒称首次quick全绿。counts/readtax/codemap/authz/migcount检查PASS。GitHub PG16数据库结果待本轮提交后的实际运行；143 SQL字节与正文pin在此次测试修复中保持原值。本轮三个路径不在红区，未发放不必要grant，工作树原无grant。
 
 原run38474895287已终态FAIL。已取得的满额证据为prepare35115ms/267queries、E4_EVAL_WRITE12619ms、SET CONSTRAINTS8588ms及P2028（35002/30000）；独立连接落库计数全零，后续submit/review/ledger未执行。写入及屏障包括各自独立守卫，D4和E4成本须分开；这组总计时不能用于声称来源复用收益或143全项通过。历史失败保留，不重试旧交接中已被拒绝的日志下载路径。
+
+`0054d125`/run38529368300 分片1的独立授权日志由父端提供：1 failed/86 passed suites、2 failed/1668 passed tests。小夹具来源预期误写2，实为1；D4桶的唯一键为timeRevision/identity/category（无日期），该单allocation/单slice只有一条sourceRef，5400秒和两个Beijing日分摊保持。此错误在专用升级测试第357行、`deployLatestMigrations()`第359行之前；job中07:36:42的全局143应用与无pending日志不能单独证明此专用baseline库已升级143。后续六个用例新增143安装前置核验：仅在本库迁移数量/名/checksum/body pin与候选字节都通过后继续，避免把残留142的结果标成143。
+
+同一日志证明默认deferred COMMIT被`contribution evaluation set mismatch`拒绝，但Prisma6.19以UnknownRequestError封装，原P2010/meta断言不适用。修复保持原生COMMIT（不显式SET或改变触发器），在同一不完整根上用既有私有outcome函数取得真实23514/e4_evaluation_guard，再严格核对实际UnknownRequestError的PostgresError原生23514和精确消息。独立Prisma连接的完整业务快照先于错误断言执行，任何包装不符都不能遮蔽回滚检查。新增6个离线阳性/反例，拒绝普通Error、P2028、23505、其他guard消息及事务超时消息。本地6项PASS、定向lint PASS；7个数据库用例未在本云运行。全仓unit及Harness复用0054d125检查（src、配置、依赖与自测输入未变），受影响e2e类型/lint本轮重新检查。当前满额分片终态前不推送，不取消现有量测；143 SQL与正式30秒仍不改。
+
+run38529368300现已终态FAIL：Fast checks、Harness、Incident replay、Golden journeys、Docker image build及E2E2/3/5 PASS；E2E1/4与Diff guards FAIL。父端从独立授权连接器取得分片4正式规模日志：prepare41437ms，P2028为41226/30000ms，E4_EVAL_WRITE24804ms，rollback11222ms，COMMIT0，独立失败后各数据表计数全0，submit/review/ledger未执行。这组写入及回滚时间不能相加充当无重叠阶段，也不能把与上一次运行的差额归因于SQL（143字节未变）。第二轮测试修复的完整typecheck、定向冷lint、全仓lint:cached及counts/codemap检查最终退出0；六项离线适配测试PASS。满额终态已核实，后续普通推送不取消该次运行。
 
 ## 收口边界
 

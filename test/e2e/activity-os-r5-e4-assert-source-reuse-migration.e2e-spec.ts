@@ -44,6 +44,65 @@ const singleSourceExpectation: OracleExpectation = {
   days: [{ ledgerDate: '2020-03-01', recognizedPoints: '1.00' }],
 };
 
+function deferredEvaluationErrorEvidence(error: unknown) {
+  const unknownRequest = error instanceof Prisma.PrismaClientUnknownRequestError;
+  const native = unknownRequest
+    ? error.message.match(
+        /PostgresError \{ code: "([0-9A-Z]{5})", message: "([^"]*)", severity: "ERROR"/u,
+      )
+    : null;
+  return {
+    unknownRequest,
+    sqlstate: native?.[1] ?? 'NONE',
+    evaluationGuardMessage: native?.[2] === 'contribution evaluation set mismatch',
+  };
+}
+
+describe('E4 deferred COMMIT error evidence adapter', () => {
+  const nativeMessage = (code: string, message: string) =>
+    `ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "${code}", message: "${message}", severity: "ERROR", detail: None, column: None, hint: None }), transient: false })`;
+  it('accepts the actual Prisma unknown-request wrapper with the exact native code and message', () => {
+    expect(
+      deferredEvaluationErrorEvidence(
+        new Prisma.PrismaClientUnknownRequestError(
+          nativeMessage('23514', 'contribution evaluation set mismatch'),
+          { clientVersion: Prisma.prismaVersion.client },
+        ),
+      ),
+    ).toEqual({ unknownRequest: true, sqlstate: '23514', evaluationGuardMessage: true });
+  });
+  it.each([
+    ['23505', 'contribution evaluation set mismatch'],
+    ['23514', 'contribution unresolved source'],
+    ['23514', 'transaction expired'],
+  ])('rejects native code=%s/message=%s from another failure', (code, message) => {
+    expect(
+      deferredEvaluationErrorEvidence(
+        new Prisma.PrismaClientUnknownRequestError(nativeMessage(code, message), {
+          clientVersion: Prisma.prismaVersion.client,
+        }),
+      ),
+    ).not.toEqual({ unknownRequest: true, sqlstate: '23514', evaluationGuardMessage: true });
+  });
+  it('rejects an arbitrary Error even when its text imitates the native error', () => {
+    expect(
+      deferredEvaluationErrorEvidence(
+        new Error(nativeMessage('23514', 'contribution evaluation set mismatch')),
+      ),
+    ).toEqual({ unknownRequest: false, sqlstate: 'NONE', evaluationGuardMessage: false });
+  });
+  it('rejects P2028 even when its text imitates the native error', () => {
+    expect(
+      deferredEvaluationErrorEvidence(
+        new Prisma.PrismaClientKnownRequestError(
+          nativeMessage('23514', 'contribution evaluation set mismatch'),
+          { code: 'P2028', clientVersion: Prisma.prismaVersion.client },
+        ),
+      ),
+    ).toEqual({ unknownRequest: false, sqlstate: 'NONE', evaluationGuardMessage: false });
+  });
+});
+
 function frozenAssertion() {
   const source = readFileSync(
     resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_137, 'migration.sql'),
@@ -248,6 +307,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
   const priorGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   let fixture: E4Fixture | undefined;
   let installed = false;
+  let upgraded143 = false;
   let roots: ActivitySettlementContributionRevision[] = [];
   const fixedOracle = frozenOracle();
   const expectations = new Map<string, OracleExpectation>();
@@ -264,6 +324,18 @@ describe('E4 complete assertion source reuse migration 143', () => {
     if (!fixture) throw new Error('E4 source reuse fixture missing');
     return fixture.db;
   };
+  const require143 = async () => {
+    if (!upgraded143)
+      throw new Error('E4 dedicated 142 to143 installation prerequisite was not reached');
+    const migrations = await migrationRows(db());
+    expect(migrations).toHaveLength(143);
+    expect(migrations[142]).toEqual({ name: E4_MIGRATION_143, checksum: candidateSha });
+    const [body] = await db().$queryRaw<{ pin: string }[]>`
+      SELECT md5(prosrc) AS pin FROM pg_proc
+      WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure
+    `;
+    expect(body.pin).toBe(newPin);
+  };
   beforeAll(async () => {
     process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
     owner.deployUnitMigrations();
@@ -277,7 +349,9 @@ describe('E4 complete assertion source reuse migration 143', () => {
         },
         expected: {
           evaluations: 1,
-          sources: 2,
+          // D4's bucket key is revision/identity/category, not a Beijing date.
+          // This single allocation/slice is one source reference spanning two days.
+          sources: 1,
           seconds: 5400,
           days: [
             { ledgerDate: '2020-03-01', recognizedPoints: '0.33' },
@@ -373,6 +447,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
     >`SELECT md5(prosrc) AS pin,prosrc AS body FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure`;
     expect(installedBody.pin).toBe(newPin);
     expect(installedBody.body === candidate.split('$$')[1]).toBe(true);
+    upgraded143 = true;
     console.info(
       'E4_ASSERT143_INSTALLED',
       JSON.stringify({
@@ -410,6 +485,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
   }, 120_000);
 
   it('retains native source before evaluation before root error precedence with exact old/new SQLSTATE and rollback', async () => {
+    await require143();
     const empty = roots.find((root) => root.kindCode === 'draft' && root.evaluationCount === 0)!;
     const nonempty = roots.find((root) => root.kindCode === 'draft' && root.evaluationCount > 0)!;
     const cases = [
@@ -453,6 +529,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
   }, 120_000);
 
   it('keeps the independent final version/result check after valid sources and evaluations', async () => {
+    await require143();
     const root = roots.find((row) => row.kindCode === 'submitted' && row.evaluationCount > 0)!;
     const before = await businessSnapshot(db());
     await expect(
@@ -475,6 +552,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
   });
 
   it('rejects unresolved sources before evaluation/day construction in private SQL fault fixtures', async () => {
+    await require143();
     const root = roots.find((row) => row.kindCode === 'draft' && row.evaluationCount > 0)!;
     // No production function, trigger, index or constraint is changed. Private copies
     // inject one NULL source field and a failing day constructor to exercise the
@@ -586,38 +664,63 @@ describe('E4 complete assertion source reuse migration 143', () => {
   });
 
   it('keeps INSERT and deferred checks independent and rolls back the whole transaction on a later incomplete root', async () => {
+    await require143();
     const template = roots.find((row) => row.kindCode === 'draft' && row.evaluationCount > 0)!;
     const evaluations = await db().participantContributionEvaluation.findMany({
       where: { contributionRevisionId: template.id },
     });
-    const before = await businessSnapshot(db());
-    let statementPassed = false;
-    await expect(
-      db().$transaction(async (tx) => {
-        const root = await tx.activitySettlementContributionRevision.create({
-          data: rootData(template, template.revision + 10, fixture!.key('source_reuse_insert')),
-        });
-        await tx.participantContributionEvaluation.createMany({
-          data: evaluations.map((evaluation) => ({
-            ...withoutIdentity(evaluation),
-            contributionRevisionId: root.id,
-            sourceRefsJson: evaluation.sourceRefsJson as Prisma.InputJsonValue,
-            beijingDayPointsJson: evaluation.beijingDayPointsJson as Prisma.InputJsonValue,
-          })),
-        });
-        statementPassed = true;
-        expect(await outcome(tx, root.id)).toEqual({ state: '00000', guard: 'NONE' });
-        await tx.activitySettlementContributionRevision.create({
-          data: rootData(template, template.revision + 11, fixture!.key('source_reuse_deferred')),
-        });
-        // No explicit SET: the unchanged native deferred trigger must reject COMMIT.
-      }, guardTransactionOptions),
-    ).rejects.toMatchObject({ code: 'P2010', meta: { code: '23514' } });
-    expect(statementPassed).toBe(true);
-    expect((await businessSnapshot(db())) === before).toBe(true);
+    const observer = new PrismaClient();
+    try {
+      await assertConnectedTestDatabase(observer);
+      const before = await businessSnapshot(observer);
+      let statementPassed = false;
+      let incompleteGuard: Outcome | undefined;
+      let commitError: unknown;
+      try {
+        await db().$transaction(async (tx) => {
+          const root = await tx.activitySettlementContributionRevision.create({
+            data: rootData(template, template.revision + 10, fixture!.key('source_reuse_insert')),
+          });
+          await tx.participantContributionEvaluation.createMany({
+            data: evaluations.map((evaluation) => ({
+              ...withoutIdentity(evaluation),
+              contributionRevisionId: root.id,
+              sourceRefsJson: evaluation.sourceRefsJson as Prisma.InputJsonValue,
+              beijingDayPointsJson: evaluation.beijingDayPointsJson as Prisma.InputJsonValue,
+            })),
+          });
+          statementPassed = true;
+          expect(await outcome(tx, root.id)).toEqual({ state: '00000', guard: 'NONE' });
+          const incomplete = await tx.activitySettlementContributionRevision.create({
+            data: rootData(template, template.revision + 11, fixture!.key('source_reuse_deferred')),
+          });
+          // This catches the original SQLSTATE and constraint for this same root.
+          // It leaves the unchanged queued deferred trigger to reject actual COMMIT.
+          incompleteGuard = await outcome(tx, incomplete.id);
+          // No explicit SET: the unchanged native deferred trigger must reject COMMIT.
+        }, guardTransactionOptions);
+      } catch (error) {
+        commitError = error;
+      }
+      // Read on the independent client before error assertions, including on an
+      // unexpected wrapper/failure, so a mismatch never hides rollback evidence.
+      const rolledBack = (await businessSnapshot(observer)) === before;
+      console.info('E4_ASSERT143_DEFERRED_ROLLBACK', JSON.stringify({ rolledBack }));
+      expect(rolledBack).toBe(true);
+      expect(statementPassed).toBe(true);
+      expect(incompleteGuard).toEqual({ state: '23514', guard: 'e4_evaluation_guard' });
+      expect(deferredEvaluationErrorEvidence(commitError)).toEqual({
+        unknownRequest: true,
+        sqlstate: '23514',
+        evaluationGuardMessage: true,
+      });
+    } finally {
+      await observer.$disconnect();
+    }
   });
 
   it('uses a real statement snapshot across an observed two-backend commit and reads fresh sources on the next invocation', async () => {
+    await require143();
     const observer = new PrismaClient();
     const template = roots.find((row) => row.kindCode === 'draft' && row.evaluationCount > 0)!;
     const evaluations = await db().participantContributionEvaluation.findMany({
@@ -714,6 +817,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
   }, 30_000);
 
   it('runs real prepare and submit after143 with native guards and the independent frozen oracle', async () => {
+    await require143();
     const source = await createE4Source(fixture!);
     expectations.set(source.activityId, singleSourceExpectation);
     const prepared = await prepareE4Time(fixture!, source);
