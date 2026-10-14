@@ -23,6 +23,11 @@ on:
         description: Approved exact commit SHA
         required: true
         type: string
+      small_metadata_calibration:
+        description: Only one legal identity and four units; no maximum scenario
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [codex/activity-os-r5-e4-github-validation]
     paths: [.github/workflows/activity-os-r5-e4-validation.yml]
@@ -752,7 +757,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ fromJSON(contains(github.event.head_commit.message, '[e4-join-key-calibration-once]') && '["ordinary-1"]' || (contains(github.event.head_commit.message, '[e4-canonical-cost-once]') || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
+        scenario: ${{ fromJSON((inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')) && '["ordinary-1"]' || (contains(github.event.head_commit.message, '[e4-canonical-cost-once]') || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
     env:
       APP_ENV: test
       SRVF_E4_DIAGNOSTIC_PURPOSE: DIAGNOSTIC_ONLY
@@ -762,7 +767,7 @@ jobs:
       SRVF_E4_CANONICAL_MEMORY_PAIR: ${{ contains(github.event.head_commit.message, '[e4-canonical-memory-once]') && '1' || '' }}
       SRVF_E4_CANONICAL_FIRST32: ${{ (contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '1' || '' }}
       SRVF_E4_JOIN_KEY_ONCE: ${{ contains(github.event.head_commit.message, '[e4-join-key-once]') && '1' || '' }}
-      SRVF_E4_JOIN_KEY_CALIBRATION: ${{ contains(github.event.head_commit.message, '[e4-join-key-calibration-once]') && '1' || '' }}
+      SRVF_E4_JOIN_KEY_CALIBRATION: ${{ (inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')) && '1' || '' }}
       SRVF_E4_SHARED_GUARD_ONCE: ${{ contains(github.event.head_commit.message, '[e4-shared-guard-once]') && '1' || '' }}
       SRVF_E4_GITHUB_ISOLATED: '1'
       SRVF_TEST_RUN_SCOPE: app_test_w98
@@ -783,7 +788,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm prisma:generate
       - name: Offline calibration boundary tests
-        if: contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')
+        if: inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')
         run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client)\.spec\.ts$'
       - name: Start fresh PostgreSQL 16 runner
         run: |
@@ -796,7 +801,7 @@ jobs:
           done
           exit 1
       - name: Prove fixed metadata bytes and hashes before fixture construction
-        if: contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')
+        if: inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')
         env:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --canonical-equivalence
@@ -805,7 +810,7 @@ jobs:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --execute
       - name: Summarize closed shared-guard evidence
-        if: always() && (contains(github.event.head_commit.message, '[e4-join-key-calibration-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]'))
+        if: always() && (inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]'))
         run: |
           node <<'NODE'
           const fs = require('node:fs');

@@ -1174,6 +1174,26 @@ function metadataReferenceFunction(name: 'astr_canonical_json' | 'e4_day_points'
   return { sql: match[0], bodyMd5: createHash('md5').update(match[1]).digest('hex') };
 }
 
+function metadataCurrentCanonicalFunction() {
+  const source = readFileSync(
+    resolve(
+      __dirname,
+      '../../prisma/migrations/20261012040000_activity_canonical_json_unit_fast_path/migration.sql',
+    ),
+    'utf8',
+  );
+  const match = source.match(
+    /CREATE OR REPLACE FUNCTION astr_canonical_json\([\s\S]*?AS \$\$([\s\S]*?)\$\$;/u,
+  );
+  if (
+    !match ||
+    createHash('sha256').update(match[0]).digest('hex') !==
+      '614106b916b033ef2f6488ebef3735fed70024e14ae4e49f2e005d48cdbfd108'
+  )
+    throw new Error('E4 metadata current canonical source refused');
+  return { sql: match[0], bodyMd5: createHash('md5').update(match[1]).digest('hex') };
+}
+
 function metadataLiteral(value: string) {
   return "'" + value.replaceAll("'", "''") + "'";
 }
@@ -1265,13 +1285,14 @@ export function metadataCanonicalCases() {
 
 /** Small standalone PostgreSQL proof, or the same proof against the fixture's real public helpers. */
 export function metadataCanonicalEquivalenceSql(publicHelpers = false) {
-  const canonical = metadataReferenceFunction('astr_canonical_json');
+  const historical = metadataReferenceFunction('astr_canonical_json');
+  const canonical = metadataCurrentCanonicalFunction();
   const day = metadataReferenceFunction('e4_day_points');
   const cases = metadataCanonicalCases();
   const qualify = (sql: string) =>
     publicHelpers
       ? sql.replaceAll('astr_canonical_json(', 'public.astr_canonical_json(')
-      : sql.replaceAll('astr_canonical_json(', 'pg_temp.e4_metadata_canonical(');
+      : sql.replaceAll('astr_canonical_json(', 'pg_temp.e4_metadata_current(');
   const rows = cases.map(({ label, metadata, refs, dayRefs }) => {
     const value =
       dayRefs === null
@@ -1281,14 +1302,17 @@ export function metadataCanonicalEquivalenceSql(publicHelpers = false) {
   });
   const setup = publicHelpers
     ? `BEGIN READ ONLY;
-DO $$ BEGIN
- IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.astr_canonical_json(jsonb)'::regprocedure)<>'${canonical.bodyMd5}'
- OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_day_points(jsonb,integer)'::regprocedure)<>'${day.bodyMd5}'
+DO $$ DECLARE canonical_body TEXT; day_body TEXT; BEGIN
+ SELECT md5(prosrc) INTO STRICT canonical_body FROM pg_proc WHERE oid='public.astr_canonical_json(jsonb)'::regprocedure;
+ SELECT md5(prosrc) INTO STRICT day_body FROM pg_proc WHERE oid='public.e4_day_points(jsonb,integer)'::regprocedure;
+ RAISE NOTICE 'E4_JOIN_KEY_METADATA_HELPERS %',json_build_object('canonicalBodyMd5',canonical_body,'dayBodyMd5',day_body);
+ IF canonical_body<>'${canonical.bodyMd5}' OR day_body<>'${day.bodyMd5}'
  THEN RAISE EXCEPTION 'E4 metadata public helper pin refused'; END IF;
 END $$;`
     : `BEGIN;
 CREATE TEMP TABLE e4_metadata_scope_marker(value INTEGER);
-${canonical.sql.replace('CREATE FUNCTION astr_canonical_json(', 'CREATE FUNCTION pg_temp.e4_metadata_canonical(').replaceAll('astr_canonical_json(item)', 'pg_temp.e4_metadata_canonical(item)')}
+${historical.sql.replace('CREATE FUNCTION astr_canonical_json(', 'CREATE FUNCTION pg_temp.e4_metadata_canonical(').replaceAll('astr_canonical_json(item)', 'pg_temp.e4_metadata_canonical(item)')}
+${canonical.sql.replace('CREATE OR REPLACE FUNCTION astr_canonical_json(', 'CREATE FUNCTION pg_temp.e4_metadata_current(').replaceAll('astr_canonical_json(item)', 'pg_temp.e4_metadata_current(item)')}
 ${day.sql.replace('CREATE FUNCTION e4_day_points(', 'CREATE FUNCTION pg_temp.e4_metadata_day_points(')}`;
   return `${setup}
 SET LOCAL statement_timeout='5s';
@@ -1297,9 +1321,11 @@ DO $$ DECLARE r RECORD; seen INTEGER:=0; digest TEXT:=''; BEGIN
  IF current_setting('server_version_num')::INTEGER NOT BETWEEN 160000 AND 169999
  THEN RAISE EXCEPTION 'E4 metadata PostgreSQL16 refused'; END IF;
  FOR r IN WITH documents(label,metadata,refs_canonical) AS (VALUES ${rows.join(',\n')})
- SELECT label,${qualify(metadataReferenceExpression)} AS original,${qualify(metadataCanonicalExpression())} AS candidate FROM documents ORDER BY label COLLATE "C"
+ SELECT label,${qualify(metadataReferenceExpression)} AS original,${qualify(metadataCanonicalExpression())} AS candidate,
+ ${publicHelpers ? qualify(metadataReferenceExpression) : metadataReferenceExpression.replaceAll('astr_canonical_json(', 'pg_temp.e4_metadata_canonical(')} AS historical FROM documents ORDER BY label COLLATE "C"
  LOOP
-   IF convert_to(r.original,'UTF8') IS DISTINCT FROM convert_to(r.candidate,'UTF8')
+   IF convert_to(r.original,'UTF8') IS DISTINCT FROM convert_to(r.historical,'UTF8')
+     OR convert_to(r.original,'UTF8') IS DISTINCT FROM convert_to(r.candidate,'UTF8')
      OR sha256(convert_to('{"definition":'||r.original||',"schemaVersion":1}','UTF8')) IS DISTINCT FROM sha256(convert_to('{"definition":'||r.candidate||',"schemaVersion":1}','UTF8'))
    THEN RAISE NOTICE 'E4_JOIN_KEY_METADATA_MISMATCH %',json_build_object('case',r.label,'originalBytes',octet_length(r.original),'candidateBytes',octet_length(r.candidate));
      RAISE EXCEPTION 'E4 metadata byte/hash mismatch' USING ERRCODE='23514'; END IF;
@@ -1309,7 +1335,7 @@ DO $$ DECLARE r RECORD; seen INTEGER:=0; digest TEXT:=''; BEGIN
  IF seen<>${cases.length} THEN RAISE EXCEPTION 'E4 metadata case count refused'; END IF;
  RAISE NOTICE 'E4_JOIN_KEY_METADATA_EQUIVALENCE %',json_build_object('cases',seen,'bytesEqual',true,'hashesEqual',true,'publicHelpers',${publicHelpers},
    'caseDigest',encode(sha256(convert_to(digest,'UTF8')),'hex'),'candidateSha256','${createHash('sha256').update(metadataCanonicalCandidateSource()).digest('hex')}',
-   'canonicalBodyMd5','${canonical.bodyMd5}','dayBodyMd5','${day.bodyMd5}');
+   'canonicalBodyMd5','${canonical.bodyMd5}','historicalCanonicalBodyMd5','${historical.bodyMd5}','dayBodyMd5','${day.bodyMd5}');
 END $$;
 ROLLBACK;
 `;
@@ -1330,12 +1356,23 @@ export function compactMetadataCanonicalEvidence(raw: string, publicHelpers: boo
     value.publicHelpers !== publicHelpers ||
     value.candidateSha256 !==
       createHash('sha256').update(metadataCanonicalCandidateSource()).digest('hex') ||
-    value.canonicalBodyMd5 !== metadataReferenceFunction('astr_canonical_json').bodyMd5 ||
+    value.canonicalBodyMd5 !== metadataCurrentCanonicalFunction().bodyMd5 ||
+    value.historicalCanonicalBodyMd5 !== metadataReferenceFunction('astr_canonical_json').bodyMd5 ||
     value.dayBodyMd5 !== metadataReferenceFunction('e4_day_points').bodyMd5 ||
     value.caseDigest !== E4_METADATA_CASE_DIGEST
   )
     throw new Error('E4 metadata equivalence binding refused');
-  return value;
+  return {
+    cases: value.cases,
+    bytesEqual: true,
+    hashesEqual: true,
+    publicHelpers,
+    caseDigest: value.caseDigest,
+    candidateSha256: value.candidateSha256,
+    canonicalBodyMd5: value.canonicalBodyMd5,
+    historicalCanonicalBodyMd5: value.historicalCanonicalBodyMd5,
+    dayBodyMd5: value.dayBodyMd5,
+  };
 }
 
 function runMetadataCanonicalEquivalence() {
@@ -1377,6 +1414,54 @@ function runMetadataCanonicalEquivalence() {
     'E4_METADATA_EQUIVALENCE ' +
       JSON.stringify(compactMetadataCanonicalEvidence(proc.stderr, false)),
   );
+}
+
+/** Retain closed failure location/identity even when no positive control has completed. */
+export function compactMetadataProgress(raw: string) {
+  const progress: {
+    helperIdentity: { canonicalBodyMd5: string; dayBodyMd5: string } | null;
+    lastPriority: { kind: string; variant: string } | null;
+    unexpected: { sqlstate: string; constraintMatches: boolean; messageMatches: boolean } | null;
+  } = { helperIdentity: null, lastPriority: null, unexpected: null };
+  raw = joinKeyDiagnosticNotices(raw);
+  try {
+    const match = raw.match(/NOTICE:\s+E4_JOIN_KEY_METADATA_HELPERS (\{[^\n]+\})/u);
+    const identity = match ? (JSON.parse(match[1]) as Record<string, unknown>) : null;
+    if (
+      identity &&
+      typeof identity.canonicalBodyMd5 === 'string' &&
+      /^[a-f0-9]{32}$/u.test(identity.canonicalBodyMd5) &&
+      typeof identity.dayBodyMd5 === 'string' &&
+      /^[a-f0-9]{32}$/u.test(identity.dayBodyMd5)
+    )
+      progress.helperIdentity = {
+        canonicalBodyMd5: identity.canonicalBodyMd5,
+        dayBodyMd5: identity.dayBodyMd5,
+      };
+    const priority = [
+      ...raw.matchAll(
+        /NOTICE:\s+E4_JOIN_KEY_METADATA_PRIORITY_BEGIN (SOURCE_EVALUATION_ROOT|EVALUATION_ROOT|ROOT) (BASELINE|CANDIDATE)/gu,
+      ),
+    ].at(-1);
+    if (priority) progress.lastPriority = { kind: priority[1], variant: priority[2] };
+    const failure = raw.match(/NOTICE:\s+E4_JOIN_KEY_METADATA_PRIORITY_UNEXPECTED (\{[^\n]+\})/u);
+    const value = failure ? (JSON.parse(failure[1]) as Record<string, unknown>) : null;
+    if (
+      value &&
+      typeof value.sqlstate === 'string' &&
+      /^[A-Z0-9]{5}$/u.test(value.sqlstate) &&
+      typeof value.constraintMatches === 'boolean' &&
+      typeof value.messageMatches === 'boolean'
+    )
+      progress.unexpected = {
+        sqlstate: value.sqlstate,
+        constraintMatches: value.constraintMatches,
+        messageMatches: value.messageMatches,
+      };
+  } catch {
+    /* Unparseable metadata remains unknown; backend cleanup must still run. */
+  }
+  return progress;
 }
 
 export function sharedGuardStatement(variant: 'BASELINE' | 'CANDIDATE' = 'BASELINE') {
@@ -2405,6 +2490,7 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
     stdoutBytes: Buffer.byteLength(proc.stdout ?? ''),
     stderrBytes: Buffer.byteLength(proc.stderr ?? ''),
     progress: {
+      metadata: calibration ? compactMetadataProgress(stderr) : undefined,
       lastPositiveIndex: positive.at(-1) ?? null,
       lastNegative: negative.at(-1) ?? null,
       completedPositive: (stderr.match(/NOTICE:\s+E4_JOIN_KEY_SAMPLE /gu) ?? []).length,

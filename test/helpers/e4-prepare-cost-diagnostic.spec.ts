@@ -51,6 +51,7 @@ import {
   metadataCanonicalEquivalenceSql,
   compactMetadataCanonicalEvidence,
   compactMetadataPriorityEvidence,
+  compactMetadataProgress,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -80,7 +81,8 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
         candidateSha256: createHash('sha256')
           .update(metadataCanonicalCandidateSource())
           .digest('hex'),
-        canonicalBodyMd5: 'ced7d8a0b439351a09db28dca7356760',
+        canonicalBodyMd5: '4efaa26893651a9afa11825b772ee0b9',
+        historicalCanonicalBodyMd5: 'ced7d8a0b439351a09db28dca7356760',
         dayBodyMd5: 'fb1c94691765f89a5c4f55d55fec92ea',
       }) +
       '\n' +
@@ -202,6 +204,11 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     const standalone = metadataCanonicalEquivalenceSql();
     expect(standalone).toContain('CREATE FUNCTION pg_temp.e4_metadata_canonical(');
     expect(standalone).toContain('pg_temp.e4_metadata_canonical(item)');
+    expect(standalone).toContain('CREATE FUNCTION pg_temp.e4_metadata_current(');
+    expect(standalone).toContain('pg_temp.e4_metadata_current(item)');
+    expect(standalone).toContain(
+      "convert_to(r.original,'UTF8') IS DISTINCT FROM convert_to(r.historical,'UTF8')",
+    );
     expect(standalone).toContain('pg_temp.e4_metadata_day_points(');
     expect(standalone).not.toMatch(
       /CREATE (?:OR REPLACE )?FUNCTION public\.|INSERT INTO public\.|UPDATE public\./u,
@@ -255,6 +262,26 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(joinKeyProbeSql('synthetic_root', 'app_test_w98')).not.toContain(
       'E4_JOIN_KEY_METADATA_',
     );
+  });
+  it('retains current helper identities and exact native priority failure without arbitrary notice fields', () => {
+    const raw =
+      'NOTICE:  00000: E4_JOIN_KEY_METADATA_HELPERS {"canonicalBodyMd5":"4efaa26893651a9afa11825b772ee0b9","dayBodyMd5":"fb1c94691765f89a5c4f55d55fec92ea","private":"withheld"}\n' +
+      'NOTICE: E4_JOIN_KEY_METADATA_PRIORITY_BEGIN EVALUATION_ROOT CANDIDATE\n' +
+      'NOTICE: E4_JOIN_KEY_METADATA_PRIORITY_UNEXPECTED {"sqlstate":"42702","constraintMatches":false,"messageMatches":false,"private":"withheld"}\n';
+    expect(compactMetadataProgress(raw)).toEqual({
+      helperIdentity: {
+        canonicalBodyMd5: '4efaa26893651a9afa11825b772ee0b9',
+        dayBodyMd5: 'fb1c94691765f89a5c4f55d55fec92ea',
+      },
+      lastPriority: { kind: 'EVALUATION_ROOT', variant: 'CANDIDATE' },
+      unexpected: { sqlstate: '42702', constraintMatches: false, messageMatches: false },
+    });
+    expect(compactMetadataProgress('NOTICE: E4_JOIN_KEY_METADATA_HELPERS {malformed}')).toEqual({
+      helperIdentity: null,
+      lastPriority: null,
+      unexpected: null,
+    });
+    expect(JSON.stringify(compactMetadataProgress(raw))).not.toContain('withheld');
   });
   it('retains only the validated small prefix and refuses incomplete or cross-shape completion', () => {
     const prefix = calibrationNotice().split('NOTICE: E4_JOIN_KEY_NEGATIVE ')[0];
@@ -315,6 +342,28 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(() =>
       joinKeyCalibrationGate({ ...proof, facts: { ...proof.facts, sources: 0 } }, 4),
     ).toThrow();
+  });
+  it('selects exactly ordinary-one for explicit small dispatch while preserving existing maximum selection', () => {
+    const workflow = readFileSync(
+      resolve(__dirname, '../../.github/workflows/activity-os-r5-e4-validation.yml'),
+      'utf8',
+    );
+    const expression = workflow.match(/scenario: \$\{\{ (fromJSON\([^\n]+) \}\}/u)?.[1];
+    expect(expression).toBeDefined();
+    const select = (small: boolean, message: string) =>
+      runInNewContext(expression!, {
+        inputs: { small_metadata_calibration: small },
+        github: { event: { head_commit: { message } } },
+        contains: (value: string, token: string) => value.includes(token),
+        fromJSON: JSON.parse,
+      }) as string[];
+    expect(select(true, '')).toEqual(['ordinary-1']);
+    expect(select(true, '[e4-join-key-once]')).toEqual(['ordinary-1']);
+    expect(select(false, '[e4-join-key-calibration-once]')).toEqual(['ordinary-1']);
+    expect(select(false, '[e4-join-key-once]')).toEqual(['maximum']);
+    expect(workflow).toContain(
+      "github.event_name == 'workflow_dispatch' && inputs.expected_sha == github.sha",
+    );
   });
   it('observes cleanup with a positive instrument and the exact existing lease key through read-only SQL', () => {
     const sql = calibrationCleanupSql();
