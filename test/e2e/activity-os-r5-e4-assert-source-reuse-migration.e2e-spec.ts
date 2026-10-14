@@ -43,6 +43,8 @@ const singleSourceExpectation: OracleExpectation = {
   seconds: 3600,
   days: [{ ledgerDate: '2020-03-01', recognizedPoints: '1.00' }],
 };
+const deferredCommitMessage =
+  'Error in connector: Error querying the database: ERROR: contribution evaluation set mismatch';
 
 function deferredEvaluationErrorEvidence(error: unknown) {
   const unknownRequest = error instanceof Prisma.PrismaClientUnknownRequestError;
@@ -54,7 +56,8 @@ function deferredEvaluationErrorEvidence(error: unknown) {
   return {
     unknownRequest,
     sqlstate: native?.[1] ?? 'NONE',
-    evaluationGuardMessage: native?.[2] === 'contribution evaluation set mismatch',
+    // The observed COMMIT wrapper exposes this exact message, not a SQLSTATE.
+    evaluationGuardMessage: unknownRequest && error.message === deferredCommitMessage,
   };
 }
 
@@ -162,7 +165,7 @@ function deferredErrorDiagnostic(error: unknown, depth = 0): object {
 describe('E4 deferred COMMIT error evidence adapter', () => {
   const nativeMessage = (code: string, message: string) =>
     `ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "${code}", message: "${message}", severity: "ERROR", detail: None, column: None, hint: None }), transient: false })`;
-  it('accepts a PostgresError-shaped unknown-request fixture with the exact native code and message', () => {
+  it('records a PostgreSQL-shaped fixture without accepting it as the observed COMMIT wrapper', () => {
     expect(
       deferredEvaluationErrorEvidence(
         new Prisma.PrismaClientUnknownRequestError(
@@ -170,7 +173,44 @@ describe('E4 deferred COMMIT error evidence adapter', () => {
           { clientVersion: Prisma.prismaVersion.client },
         ),
       ),
-    ).toEqual({ unknownRequest: true, sqlstate: '23514', evaluationGuardMessage: true });
+    ).toEqual({ unknownRequest: true, sqlstate: '23514', evaluationGuardMessage: false });
+  });
+  it('accepts only the observed complete COMMIT message and does not fabricate SQLSTATE', () => {
+    expect(
+      deferredEvaluationErrorEvidence(
+        new Prisma.PrismaClientUnknownRequestError(deferredCommitMessage, {
+          clientVersion: Prisma.prismaVersion.client,
+        }),
+      ),
+    ).toEqual({ unknownRequest: true, sqlstate: 'NONE', evaluationGuardMessage: true });
+  });
+  it.each([
+    deferredCommitMessage + ' extra error',
+    'prefix ' + deferredCommitMessage,
+    deferredCommitMessage.replace('evaluation set mismatch', 'unresolved source'),
+    'Error in connector: transaction expired',
+  ])('rejects a different complete COMMIT message: %s', (message) => {
+    expect(
+      deferredEvaluationErrorEvidence(
+        new Prisma.PrismaClientUnknownRequestError(message, {
+          clientVersion: Prisma.prismaVersion.client,
+        }),
+      ),
+    ).not.toEqual({ unknownRequest: true, sqlstate: 'NONE', evaluationGuardMessage: true });
+  });
+  it('rejects other error classes carrying the exact observed COMMIT message', () => {
+    for (const error of [
+      new Error(deferredCommitMessage),
+      new Prisma.PrismaClientKnownRequestError(deferredCommitMessage, {
+        code: 'P2028',
+        clientVersion: Prisma.prismaVersion.client,
+      }),
+    ])
+      expect(deferredEvaluationErrorEvidence(error)).toEqual({
+        unknownRequest: false,
+        sqlstate: 'NONE',
+        evaluationGuardMessage: false,
+      });
   });
   it.each([
     ['23505', 'contribution evaluation set mismatch'],
@@ -246,7 +286,7 @@ describe('E4 deferred COMMIT error evidence adapter', () => {
     expect(deferredEvaluationErrorEvidence(error)).toEqual({
       unknownRequest: true,
       sqlstate: '23514',
-      evaluationGuardMessage: true,
+      evaluationGuardMessage: false,
     });
   });
 });
@@ -431,6 +471,101 @@ async function catalogTargetSignature(db: Database) {
   `;
   return signature;
 }
+
+function normalizeDefaultLocation(node: string) {
+  const locations = [...node.matchAll(/:location (-?\d+)\b/gu)];
+  if (locations.length !== 1) throw new Error('E4 fixed boolean default location shape differs');
+  return node.replace(/:location (-?\d+)\b/gu, ':location -1');
+}
+
+function normalizedTargetCatalog(source: string, targetOid: string) {
+  const snapshot: unknown = JSON.parse(source);
+  if (
+    snapshot === null ||
+    typeof snapshot !== 'object' ||
+    !('functions' in snapshot) ||
+    !Array.isArray(snapshot.functions)
+  )
+    throw new Error('E4 catalog normalization shape');
+  const matches = snapshot.functions.filter(
+    (row: unknown) =>
+      row !== null && typeof row === 'object' && 'oid' in row && row.oid === targetOid,
+  );
+  if (matches.length !== 1) throw new Error('E4 exact target catalog row differs');
+  const row: unknown = matches[0];
+  if (
+    row === null ||
+    typeof row !== 'object' ||
+    !('metadata' in row) ||
+    row.metadata === null ||
+    typeof row.metadata !== 'object' ||
+    !('proargdefaults' in row.metadata) ||
+    typeof row.metadata.proargdefaults !== 'string'
+  )
+    throw new Error('E4 target default node missing');
+  row.metadata.proargdefaults = normalizeDefaultLocation(row.metadata.proargdefaults);
+  return JSON.stringify(snapshot);
+}
+
+function assertTargetDefaultSemantics(
+  before: Awaited<ReturnType<typeof catalogTargetSignature>>,
+  after: Awaited<ReturnType<typeof catalogTargetSignature>>,
+) {
+  expect(before.defaultExpression).toBe('true');
+  expect(after.defaultExpression).toBe('true');
+  expect(before.proargdefaults).not.toBeNull();
+  expect(after.proargdefaults).not.toBeNull();
+  if (before.proargdefaults === null || after.proargdefaults === null)
+    throw new Error('E4 target default node missing');
+  expect({ ...after, proargdefaults: normalizeDefaultLocation(after.proargdefaults) }).toEqual({
+    ...before,
+    proargdefaults: normalizeDefaultLocation(before.proargdefaults),
+  });
+}
+
+describe('E4 target default location normalization (offline)', () => {
+  const before = '({CONST :consttype 16 :constisnull false :location 41034 :constvalue 1 [ 1 ]})';
+  const after = before.replace(':location 41034', ':location 350');
+  const snapshot = (node: string, owner = 10, otherDefault = 'other unchanged default') =>
+    JSON.stringify({
+      functions: [
+        { oid: '42', metadata: { proargdefaults: node, proowner: owner } },
+        { oid: '43', metadata: { proargdefaults: otherDefault } },
+      ],
+      constraints: [{ definition: 'unchanged constraint' }],
+      triggers: [],
+      indexes: [],
+    });
+  it('normalizes only the one location token in the exact target row', () => {
+    expect(normalizedTargetCatalog(snapshot(before), '42')).toBe(
+      normalizedTargetCatalog(snapshot(after), '42'),
+    );
+    expect(normalizeDefaultLocation(before)).toBe(
+      before.replace(':location 41034', ':location -1'),
+    );
+  });
+  it.each([
+    before.replace(':constvalue 1 [ 1 ]', ':constvalue 1 [ 0 ]'),
+    before.replace(':consttype 16', ':consttype 23'),
+    before.replace(':constisnull false', ':constisnull true'),
+  ])('retains every non-location default node difference', (changed) => {
+    expect(normalizedTargetCatalog(snapshot(changed), '42')).not.toBe(
+      normalizedTargetCatalog(snapshot(before), '42'),
+    );
+  });
+  it('retains owner and other function default differences', () => {
+    for (const changed of [snapshot(after, 11), snapshot(after, 10, 'other changed default')])
+      expect(normalizedTargetCatalog(changed, '42')).not.toBe(
+        normalizedTargetCatalog(snapshot(before), '42'),
+      );
+  });
+  it.each([before.replace(':location 41034', ''), before + ' :location 2'])(
+    'rejects absent or duplicate location nodes',
+    (node) => {
+      expect(() => normalizeDefaultLocation(node)).toThrow('location shape differs');
+    },
+  );
+});
 
 function catalogDiagnosticFields(source: string) {
   const parsed: unknown = JSON.parse(source);
@@ -735,7 +870,11 @@ describe('E4 complete assertion source reuse migration 143', () => {
       baselineAfterOracleTarget,
       afterTarget,
     );
-    expect(afterCatalog === beforeCatalog).toBe(true);
+    assertTargetDefaultSemantics(beforeTarget, afterTarget);
+    expect(
+      normalizedTargetCatalog(afterCatalog, afterTarget.oid) ===
+        normalizedTargetCatalog(beforeCatalog, beforeTarget.oid),
+    ).toBe(true);
     expect((await businessSnapshot(db())) === beforeBusiness).toBe(true);
     for (const root of roots) {
       expect(await outcome(db(), root.id)).toEqual(await outcome(db(), root.id, true));
@@ -750,19 +889,21 @@ describe('E4 complete assertion source reuse migration 143', () => {
       afterTarget,
       afterOracleTarget,
     );
+    assertTargetDefaultSemantics(afterTarget, afterOracleTarget);
+    expect(afterOracleCatalog === afterCatalog).toBe(true);
     owner.deployLatestMigrations();
     expect(JSON.stringify(await migrationRows(db())) === JSON.stringify(afterMigrations)).toBe(
       true,
     );
     const noopCatalog = await catalog(db());
-    emitCatalogDiagnostic(
-      afterOracleCatalog,
-      noopCatalog,
-      'NOOP',
-      afterOracleTarget,
-      await catalogTargetSignature(db()),
-    );
-    expect(noopCatalog === beforeCatalog).toBe(true);
+    const noopTarget = await catalogTargetSignature(db());
+    emitCatalogDiagnostic(afterOracleCatalog, noopCatalog, 'NOOP', afterOracleTarget, noopTarget);
+    assertTargetDefaultSemantics(afterOracleTarget, noopTarget);
+    expect(noopCatalog === afterOracleCatalog).toBe(true);
+    expect(
+      normalizedTargetCatalog(noopCatalog, noopTarget.oid) ===
+        normalizedTargetCatalog(beforeCatalog, beforeTarget.oid),
+    ).toBe(true);
     expect((await businessSnapshot(db())) === beforeBusiness).toBe(true);
     console.info(
       'E4_ASSERT143_NONEMPTY_UPGRADE',
@@ -1016,10 +1157,11 @@ describe('E4 complete assertion source reuse migration 143', () => {
       );
       expect(rolledBack).toBe(true);
       expect(statementPassed).toBe(true);
+      expect(callbackReturned).toBe(true);
       expect(incompleteGuard).toEqual({ state: '23514', guard: 'e4_evaluation_guard' });
       expect(deferredEvaluationErrorEvidence(commitError)).toEqual({
         unknownRequest: true,
-        sqlstate: '23514',
+        sqlstate: 'NONE',
         evaluationGuardMessage: true,
       });
     } finally {
