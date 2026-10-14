@@ -1,4 +1,5 @@
 import { readFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -42,6 +43,14 @@ import {
   joinKeyCalibrationGate,
   calibrationCleanupSql,
   joinKeyDiagnosticNotices,
+  E4_METADATA_FIELDS,
+  E4_METADATA_CASE_DIGEST,
+  metadataCanonicalExpression,
+  metadataCanonicalCandidateSource,
+  metadataCanonicalCases,
+  metadataCanonicalEquivalenceSql,
+  compactMetadataCanonicalEvidence,
+  compactMetadataPriorityEvidence,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -60,24 +69,39 @@ const env: NodeJS.ProcessEnv = {
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
   const calibrationNotice = () => {
-    let raw = JOIN_KEY_CALIBRATION_ORDER.map(
-      ([phase, variant], index) =>
-        'NOTICE: E4_JOIN_KEY_SAMPLE ' +
-        JSON.stringify({
-          index,
-          phase,
-          variant,
-          wallMs: 1,
-          returned: true,
-          completeDocumentAndRootGuard: true,
-          sameBackend: true,
-          readonly: true,
-          workMemKb: 4096,
-          jitEnabled: true,
-          planCacheMode: 'force_custom_plan',
-        }) +
-        '\n',
-    ).join('');
+    let raw =
+      'NOTICE: E4_JOIN_KEY_METADATA_EQUIVALENCE ' +
+      JSON.stringify({
+        cases: 37,
+        bytesEqual: true,
+        hashesEqual: true,
+        publicHelpers: true,
+        caseDigest: E4_METADATA_CASE_DIGEST,
+        candidateSha256: createHash('sha256')
+          .update(metadataCanonicalCandidateSource())
+          .digest('hex'),
+        canonicalBodyMd5: 'ced7d8a0b439351a09db28dca7356760',
+        dayBodyMd5: 'fb1c94691765f89a5c4f55d55fec92ea',
+      }) +
+      '\n' +
+      JOIN_KEY_CALIBRATION_ORDER.map(
+        ([phase, variant], index) =>
+          'NOTICE: E4_JOIN_KEY_SAMPLE ' +
+          JSON.stringify({
+            index,
+            phase,
+            variant,
+            wallMs: 1,
+            returned: true,
+            completeDocumentAndRootGuard: true,
+            sameBackend: true,
+            readonly: true,
+            workMemKb: 4096,
+            jitEnabled: true,
+            planCacheMode: 'force_custom_plan',
+          }) +
+          '\n',
+      ).join('');
     for (const kind of ['MISSING', 'EXTRA', 'TAMPERED'])
       for (const variant of ['BASELINE', 'CANDIDATE'])
         raw +=
@@ -89,6 +113,24 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
             constraint: 'e4_evaluation_guard',
             affected: 1,
             rolledBack: true,
+            allShadowRowsRestored: true,
+            markerRestored: true,
+          }) +
+          '\n';
+    for (const [kind, constraint, mutations] of [
+      ['SOURCE_EVALUATION_ROOT', 'e4_source_guard', 3],
+      ['EVALUATION_ROOT', 'e4_evaluation_guard', 2],
+      ['ROOT', 'e4_complete_guard', 1],
+    ])
+      for (const variant of ['BASELINE', 'CANDIDATE'])
+        raw +=
+          'NOTICE: E4_JOIN_KEY_METADATA_PRIORITY ' +
+          JSON.stringify({
+            kind,
+            variant,
+            sqlstate: '23514',
+            constraint,
+            mutations,
             allShadowRowsRestored: true,
             markerRestored: true,
           }) +
@@ -121,7 +163,98 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(result.status).toBe('COMPLETE');
     expect(result.controls).toHaveLength(4);
     expect(result.cases).toHaveLength(6);
+    expect(result.priorityCases).toHaveLength(6);
+    expect(result.metadataCanonical?.cases).toBe(37);
     expect(JSON.stringify(result)).not.toMatch(/wallMs|LATENCY|ACTUAL_PLAN|Query Text/u);
+  });
+  it('changes only the canonical metadata expression in the additional small candidate', () => {
+    const original = joinKeyCandidateSource();
+    const candidate = metadataCanonicalCandidateSource();
+    const before = original.match(
+      /\(SELECT '\{' \|\| string_agg\(to_jsonb\(field_name\)[\s\S]*?\) field\)/u,
+    )?.[0];
+    expect(before).toBeDefined();
+    expect(candidate.replace(metadataCanonicalExpression(), before!)).toBe(original);
+    expect(candidate).toContain('expected x FULL JOIN actual a USING (key)');
+    expect(candidate.slice(candidate.indexOf('  WITH documents AS MATERIALIZED ('))).toBe(
+      original.slice(original.indexOf('  WITH documents AS MATERIALIZED (')),
+    );
+    expect(candidate).toContain('PERFORM e4_assert_frozen_selection(root)');
+    expect(candidate).not.toContain('field_name COLLATE');
+    expect(candidate).toContain("THEN astr_canonical_json(metadata->'beijingDayPointsJson')");
+    const metadata = original.slice(
+      original.indexOf("jsonb_build_object('participationIdentityId',identity_id"),
+      original.indexOf('AS metadata\n  FROM selected'),
+    );
+    for (const key of E4_METADATA_FIELDS) expect(metadata).toContain("'" + key + "',");
+    expect(E4_METADATA_FIELDS).toHaveLength(19);
+  });
+  it('covers every nullable field, PostgreSQL numeric spelling, escaped Unicode and actual Beijing boundary day calculations', () => {
+    const cases = metadataCanonicalCases();
+    expect(cases).toHaveLength(37);
+    expect(new Set(cases.map((value) => value.label)).size).toBe(37);
+    for (const key of E4_METADATA_FIELDS)
+      expect(cases.some((value) => value.label === `null_${key}`)).toBe(true);
+    expect(cases.find((value) => value.label === 'numeric_precision')!.metadata).toContain(
+      '123456789012345678901234567890.123456789',
+    );
+    expect(cases.filter((value) => value.dayRefs !== null)).toHaveLength(6);
+    const standalone = metadataCanonicalEquivalenceSql();
+    expect(standalone).toContain('CREATE FUNCTION pg_temp.e4_metadata_canonical(');
+    expect(standalone).toContain('pg_temp.e4_metadata_canonical(item)');
+    expect(standalone).toContain('pg_temp.e4_metadata_day_points(');
+    expect(standalone).not.toMatch(
+      /CREATE (?:OR REPLACE )?FUNCTION public\.|INSERT INTO public\.|UPDATE public\./u,
+    );
+    expect(standalone).toContain("SET LOCAL statement_timeout='5s'");
+    expect(standalone).toContain(
+      "convert_to(r.original,'UTF8') IS DISTINCT FROM convert_to(r.candidate,'UTF8')",
+    );
+    const publicSql = metadataCanonicalEquivalenceSql(true);
+    expect(publicSql).toContain('BEGIN READ ONLY');
+    expect(publicSql).not.toContain('CREATE ');
+    expect(publicSql).toContain('public.e4_day_points(');
+  });
+  it('refuses any byte/hash failure, changed case digest, helper body or candidate source binding', () => {
+    expect(compactMetadataCanonicalEvidence(calibrationNotice(), true).cases).toBe(37);
+    for (const raw of [
+      calibrationNotice().replace('"bytesEqual":true', '"bytesEqual":false'),
+      calibrationNotice().replace('"hashesEqual":true', '"hashesEqual":false'),
+      calibrationNotice().replace('"cases":37', '"cases":36'),
+      calibrationNotice().replace(E4_METADATA_CASE_DIGEST, '0'.repeat(64)),
+      calibrationNotice().replace('ced7d8a0b439351a09db28dca7356760', '0'.repeat(32)),
+      calibrationNotice().replace(
+        createHash('sha256').update(metadataCanonicalCandidateSource()).digest('hex'),
+        '0'.repeat(64),
+      ),
+    ])
+      expect(() => compactMetadataCanonicalEvidence(raw, true)).toThrow();
+    expect(() => compactMetadataCanonicalEvidence(calibrationNotice(), false)).toThrow();
+  });
+  it('requires exact source before evaluation before root priority and actual shadow/marker restoration', () => {
+    expect(compactMetadataPriorityEvidence(calibrationNotice())).toHaveLength(6);
+    for (const raw of [
+      calibrationNotice().replace('"mutations":3', '"mutations":2'),
+      calibrationNotice().replace(
+        '"constraint":"e4_source_guard"',
+        '"constraint":"e4_complete_guard"',
+      ),
+      calibrationNotice().replace('"allShadowRowsRestored":true', '"allShadowRowsRestored":false'),
+      calibrationNotice().replace('"markerRestored":true', '"markerRestored":false'),
+    ])
+      expect(() => compactJoinKeyCalibrationEvidence(raw)).toThrow();
+    const sql = joinKeyProbeSql('synthetic_root', 'app_test_w98', 4);
+    expect(sql).toContain(
+      'CREATE TEMP TABLE e4_probe_sources AS SELECT * FROM public.e4_source_rows',
+    );
+    expect(sql).toContain('SELECT * FROM pg_temp.e4_probe_sources');
+    expect(sql).toContain('changed:=changed+affected');
+    expect(sql).toContain('E4 metadata priority rollback refused');
+    expect(sql).toContain("'roots',(SELECT jsonb_agg(to_jsonb(r)");
+    expect(sql).toContain("'sources',(SELECT jsonb_agg(to_jsonb(s)");
+    expect(joinKeyProbeSql('synthetic_root', 'app_test_w98')).not.toContain(
+      'E4_JOIN_KEY_METADATA_',
+    );
   });
   it('retains only the validated small prefix and refuses incomplete or cross-shape completion', () => {
     const prefix = calibrationNotice().split('NOTICE: E4_JOIN_KEY_NEGATIVE ')[0];

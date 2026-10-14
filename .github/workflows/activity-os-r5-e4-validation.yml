@@ -14,6 +14,7 @@ name: R5 E4 isolated validation
 # Small calibration uses one legal identity/four units, the same SQL and six negatives; it never selects maximum.
 # Calibration accepts verbose NOTICE success prefixes while preserving native ERROR SQLSTATEs.
 # One maximum comparison reuses the repaired notice contract and independently observes cleanup inside the original600s.
+# Fixed-metadata calibration proves37 canonical byte/hash cases before the single four-unit fixture; maximum is excluded.
 # Subsequent report pushes do not match this workflow path; reruns are refused.
 on:
   workflow_dispatch:
@@ -794,6 +795,11 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Prove fixed metadata bytes and hashes before fixture construction
+        if: contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')
+        env:
+          TS_NODE_PROJECT: test/tsconfig.test.json
+        run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --canonical-equivalence
       - name: One fixed scenario, current143, original later budgets and independent 600s watchdog
         env:
           TS_NODE_PROJECT: test/tsconfig.test.json

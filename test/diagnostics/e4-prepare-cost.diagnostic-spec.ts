@@ -1091,6 +1091,294 @@ export function joinKeyCandidateSource() {
   return candidate;
 }
 
+// These nineteen keys are emitted unconditionally by the pinned documents CTE.
+// sourceRefsJson is the twentieth field, already canonicalized by the source grouping.
+export const E4_METADATA_FIELDS = Object.freeze([
+  'attendanceRoleCode',
+  'beijingDayPointsJson',
+  'calculatedPoints',
+  'definitionHash',
+  'durationSeconds',
+  'evaluationUnitKey',
+  'evaluatorVersion',
+  'explanationCode',
+  'memberId',
+  'mode',
+  'participationIdentityId',
+  'policyId',
+  'policyVersionId',
+  'recognizedPoints',
+  'ruleSnapshotId',
+  'selectionItemId',
+  'sessionId',
+  'sourceFingerprint',
+  'timeCategoryCode',
+]);
+export const E4_METADATA_CASE_DIGEST =
+  'cc6bdc63188e6990288063b06c8dd74459383240b3a20f835379c856f66c4203';
+const metadataReferenceExpression = `(SELECT '{' || string_agg(to_jsonb(field_name)::TEXT || ':' || field_canonical,',' ORDER BY field_name COLLATE "C") || '}'
+     FROM (
+       SELECT key AS field_name,
+          CASE WHEN jsonb_typeof(value) IN ('object','array') THEN astr_canonical_json(value)
+            ELSE value::TEXT END AS field_canonical FROM jsonb_each(metadata)
+       UNION ALL SELECT 'sourceRefsJson',refs_canonical
+     ) field)`;
+
+/** Preserve JSONB's own scalar spelling/escaping and the original recursive nested algorithm. */
+export function metadataCanonicalExpression() {
+  const fields = [...E4_METADATA_FIELDS, 'sourceRefsJson'].sort();
+  return (
+    "'{' || " +
+    fields
+      .map((key, index) => {
+        const value =
+          key === 'sourceRefsJson'
+            ? 'refs_canonical'
+            : key === 'beijingDayPointsJson'
+              ? `CASE WHEN jsonb_typeof(metadata->'${key}') IN ('object','array')
+                  THEN astr_canonical_json(metadata->'${key}') ELSE (metadata->'${key}')::TEXT END`
+              : `(metadata->'${key}')::TEXT`;
+        return `'${index === 0 ? '' : ','}"${key}":' || ${value}`;
+      })
+      .join(' ||\n    ') +
+    " || '}'"
+  );
+}
+
+/** Additional diagnostic edit only; both original complete guard invocations remain intact. */
+export function metadataCanonicalCandidateSource() {
+  const source = joinKeyCandidateSource();
+  if (source.split(metadataReferenceExpression).length !== 2)
+    throw new Error('E4 metadata canonical unique edit refused');
+  const candidate = source.replace(metadataReferenceExpression, metadataCanonicalExpression());
+  if (candidate.replace(metadataCanonicalExpression(), metadataReferenceExpression) !== source)
+    throw new Error('E4 metadata canonical reverse edit refused');
+  return candidate;
+}
+
+function metadataReferenceFunction(name: 'astr_canonical_json' | 'e4_day_points') {
+  const path =
+    name === 'astr_canonical_json'
+      ? '../../prisma/migrations/20260913090000_activity_os_r4_d4_time_bucket_settlement/migration.sql'
+      : '../../prisma/migrations/20261003000000_activity_contribution_settlement/migration.sql';
+  const source = readFileSync(resolve(__dirname, path), 'utf8');
+  const match = source.match(
+    new RegExp(`CREATE FUNCTION ${name}\\([\\s\\S]*?AS \\$\\$([\\s\\S]*?)\\$\\$;`, 'u'),
+  );
+  const expected =
+    name === 'astr_canonical_json'
+      ? '9f9bf45e972f24970c7000f317dfaf54089b33485ca6e003344f69e5a9aa187a'
+      : '99aaa9c49322dc5ed58397001894b1ea189304974ba1dd29c4baec86d1635fe3';
+  if (!match || createHash('sha256').update(match[0]).digest('hex') !== expected)
+    throw new Error('E4 metadata reference function source refused');
+  return { sql: match[0], bodyMd5: createHash('md5').update(match[1]).digest('hex') };
+}
+
+function metadataLiteral(value: string) {
+  return "'" + value.replaceAll("'", "''") + "'";
+}
+
+/** Synthetic inputs exercise serialization; they never become business rows. */
+export function metadataCanonicalCases() {
+  const base = Object.fromEntries(E4_METADATA_FIELDS.map((key) => [key, `${key}_value`])) as Record<
+    string,
+    unknown
+  >;
+  Object.assign(base, {
+    durationSeconds: 1800,
+    evaluatorVersion: 1,
+    calculatedPoints: '1.01',
+    recognizedPoints: '1.01',
+    beijingDayPointsJson: [{ ledgerDate: '2026-01-01', recognizedPoints: '1.01' }],
+  });
+  const cases = [
+    {
+      label: 'ordinary',
+      metadata: JSON.stringify(base),
+      refs: '[]',
+      dayRefs: null as string | null,
+    },
+  ];
+  const add = (label: string, patch: Record<string, unknown>, refs = '[]') =>
+    cases.push({ label, metadata: JSON.stringify({ ...base, ...patch }), refs, dayRefs: null });
+  for (const key of E4_METADATA_FIELDS) add(`null_${key}`, { [key]: null });
+  for (const [label, value] of [
+    ['escaping', 'quote" backslash\\ slash/ tab\t line\n return\r back\b form\f apostrophe\''],
+    ['unicode', '中文😀é e\u0301 \u2028\u2029'],
+    ['empty', ''],
+    ['json_words', 'null true false -0 1.00'],
+  ])
+    add(
+      label,
+      Object.fromEntries(
+        E4_METADATA_FIELDS.filter((key) => typeof base[key] === 'string').map((key) => [
+          key,
+          value,
+        ]),
+      ),
+    );
+  add('nested_day_points', {
+    beijingDayPointsJson: [
+      {
+        z: ['中文', null, true, { a: '\\"\n', b: -1.25 }],
+        ledgerDate: '2026-01-01',
+        recognizedPoints: '0.00',
+      },
+    ],
+  });
+  add('empty_day_points', { beijingDayPointsJson: [] });
+  add('nested_sources', {}, '[{"z":[null,true,1.2500,{"中文":"😀\\n\\""}],"a":"\\\\"}]');
+  for (const [label, numbers] of [
+    [
+      'zero',
+      '{"durationSeconds":0,"evaluatorVersion":0,"recognizedPoints":"0.00","calculatedPoints":"0.00"}',
+    ],
+    [
+      'integer_max',
+      '{"durationSeconds":2147483647,"evaluatorVersion":1,"recognizedPoints":"999.99","calculatedPoints":"999.99"}',
+    ],
+    ['numeric_spelling', '{"durationSeconds":7.1200,"evaluatorVersion":-0.00}'],
+    [
+      'numeric_precision',
+      '{"durationSeconds":123456789012345678901234567890.123456789,"evaluatorVersion":1e3}',
+    ],
+  ])
+    cases.push({
+      label,
+      metadata: JSON.stringify(base).slice(0, -1) + ',' + numbers.slice(1),
+      refs: '[]',
+      dayRefs: null,
+    });
+  for (const [label, startsAt, endsAt] of [
+    ['before_beijing_midnight', '2026-01-01T15:59:59.999Z', '2026-01-01T16:00:00.000Z'],
+    ['at_beijing_midnight', '2026-01-01T16:00:00.000Z', '2026-01-01T16:00:00.001Z'],
+    ['straddle_beijing_midnight', '2026-01-01T15:59:59.999Z', '2026-01-01T16:00:00.001Z'],
+    ['utc_midnight', '2026-01-01T23:59:00.000Z', '2026-01-02T00:01:00.000Z'],
+    ['year_boundary', '2025-12-31T15:59:00.000Z', '2025-12-31T16:01:00.000Z'],
+    ['leap_day', '2024-02-29T15:59:00.000Z', '2024-02-29T16:01:00.000Z'],
+  ]) {
+    const refs = JSON.stringify([{ durationSeconds: 2, startsAt, endsAt }]);
+    cases.push({ label, metadata: JSON.stringify(base), refs, dayRefs: refs });
+  }
+  return cases;
+}
+
+/** Small standalone PostgreSQL proof, or the same proof against the fixture's real public helpers. */
+export function metadataCanonicalEquivalenceSql(publicHelpers = false) {
+  const canonical = metadataReferenceFunction('astr_canonical_json');
+  const day = metadataReferenceFunction('e4_day_points');
+  const cases = metadataCanonicalCases();
+  const qualify = (sql: string) =>
+    publicHelpers
+      ? sql.replaceAll('astr_canonical_json(', 'public.astr_canonical_json(')
+      : sql.replaceAll('astr_canonical_json(', 'pg_temp.e4_metadata_canonical(');
+  const rows = cases.map(({ label, metadata, refs, dayRefs }) => {
+    const value =
+      dayRefs === null
+        ? `${metadataLiteral(metadata)}::JSONB`
+        : `${metadataLiteral(metadata)}::JSONB || jsonb_build_object('beijingDayPointsJson',${publicHelpers ? 'public.e4_day_points' : 'pg_temp.e4_metadata_day_points'}(${metadataLiteral(dayRefs)}::JSONB,101))`;
+    return `(${metadataLiteral(label)},${value},${qualify(`astr_canonical_json(${metadataLiteral(refs)}::JSONB)`)})`;
+  });
+  const setup = publicHelpers
+    ? `BEGIN READ ONLY;
+DO $$ BEGIN
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.astr_canonical_json(jsonb)'::regprocedure)<>'${canonical.bodyMd5}'
+ OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_day_points(jsonb,integer)'::regprocedure)<>'${day.bodyMd5}'
+ THEN RAISE EXCEPTION 'E4 metadata public helper pin refused'; END IF;
+END $$;`
+    : `BEGIN;
+CREATE TEMP TABLE e4_metadata_scope_marker(value INTEGER);
+${canonical.sql.replace('CREATE FUNCTION astr_canonical_json(', 'CREATE FUNCTION pg_temp.e4_metadata_canonical(').replaceAll('astr_canonical_json(item)', 'pg_temp.e4_metadata_canonical(item)')}
+${day.sql.replace('CREATE FUNCTION e4_day_points(', 'CREATE FUNCTION pg_temp.e4_metadata_day_points(')}`;
+  return `${setup}
+SET LOCAL statement_timeout='5s';
+SET LOCAL search_path=pg_catalog,public;
+DO $$ DECLARE r RECORD; seen INTEGER:=0; digest TEXT:=''; BEGIN
+ IF current_setting('server_version_num')::INTEGER NOT BETWEEN 160000 AND 169999
+ THEN RAISE EXCEPTION 'E4 metadata PostgreSQL16 refused'; END IF;
+ FOR r IN WITH documents(label,metadata,refs_canonical) AS (VALUES ${rows.join(',\n')})
+ SELECT label,${qualify(metadataReferenceExpression)} AS original,${qualify(metadataCanonicalExpression())} AS candidate FROM documents ORDER BY label COLLATE "C"
+ LOOP
+   IF convert_to(r.original,'UTF8') IS DISTINCT FROM convert_to(r.candidate,'UTF8')
+     OR sha256(convert_to('{"definition":'||r.original||',"schemaVersion":1}','UTF8')) IS DISTINCT FROM sha256(convert_to('{"definition":'||r.candidate||',"schemaVersion":1}','UTF8'))
+   THEN RAISE NOTICE 'E4_JOIN_KEY_METADATA_MISMATCH %',json_build_object('case',r.label,'originalBytes',octet_length(r.original),'candidateBytes',octet_length(r.candidate));
+     RAISE EXCEPTION 'E4 metadata byte/hash mismatch' USING ERRCODE='23514'; END IF;
+   seen:=seen+1;
+   digest:=digest||r.label||':'||encode(sha256(convert_to(r.original,'UTF8')),'hex')||';';
+ END LOOP;
+ IF seen<>${cases.length} THEN RAISE EXCEPTION 'E4 metadata case count refused'; END IF;
+ RAISE NOTICE 'E4_JOIN_KEY_METADATA_EQUIVALENCE %',json_build_object('cases',seen,'bytesEqual',true,'hashesEqual',true,'publicHelpers',${publicHelpers},
+   'caseDigest',encode(sha256(convert_to(digest,'UTF8')),'hex'),'candidateSha256','${createHash('sha256').update(metadataCanonicalCandidateSource()).digest('hex')}',
+   'canonicalBodyMd5','${canonical.bodyMd5}','dayBodyMd5','${day.bodyMd5}');
+END $$;
+ROLLBACK;
+`;
+}
+
+export function compactMetadataCanonicalEvidence(raw: string, publicHelpers: boolean) {
+  const notices = [
+    ...joinKeyDiagnosticNotices(raw).matchAll(
+      /NOTICE:\s+E4_JOIN_KEY_METADATA_EQUIVALENCE (\{[^\n]+\})/gu,
+    ),
+  ];
+  if (notices.length !== 1) throw new Error('E4 metadata equivalence evidence refused');
+  const value = JSON.parse(notices[0][1]) as Record<string, unknown>;
+  if (
+    value.cases !== metadataCanonicalCases().length ||
+    value.bytesEqual !== true ||
+    value.hashesEqual !== true ||
+    value.publicHelpers !== publicHelpers ||
+    value.candidateSha256 !==
+      createHash('sha256').update(metadataCanonicalCandidateSource()).digest('hex') ||
+    value.canonicalBodyMd5 !== metadataReferenceFunction('astr_canonical_json').bodyMd5 ||
+    value.dayBodyMd5 !== metadataReferenceFunction('e4_day_points').bodyMd5 ||
+    value.caseDigest !== E4_METADATA_CASE_DIGEST
+  )
+    throw new Error('E4 metadata equivalence binding refused');
+  return value;
+}
+
+function runMetadataCanonicalEquivalence() {
+  const proc = spawnSync(
+    'docker',
+    [
+      'exec',
+      '-i',
+      'u-nest-api-postgres',
+      'psql',
+      '-X',
+      '-q',
+      '-A',
+      '-t',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-v',
+      'VERBOSITY=verbose',
+      '-U',
+      'postgres',
+      '-d',
+      'postgres',
+    ],
+    {
+      input: `DO $$ BEGIN IF current_database()<>'postgres' THEN RAISE EXCEPTION 'E4 metadata standalone scope refused'; END IF; END $$;\n${metadataCanonicalEquivalenceSql()}`,
+      encoding: 'utf8',
+      timeout: 10000,
+      maxBuffer: 65536,
+    },
+  );
+  if (proc.error || proc.signal || proc.status !== 0) {
+    const mismatch = joinKeyDiagnosticNotices(proc.stderr ?? '').match(
+      /NOTICE:\s+E4_JOIN_KEY_METADATA_MISMATCH (\{[^\n]+\})/u,
+    );
+    if (mismatch) console.error('E4_METADATA_MISMATCH ' + mismatch[1]);
+    throw new Error('E4 metadata standalone process failed');
+  }
+  console.info(
+    'E4_METADATA_EQUIVALENCE ' +
+      JSON.stringify(compactMetadataCanonicalEvidence(proc.stderr, false)),
+  );
+}
+
 export function sharedGuardStatement(variant: 'BASELINE' | 'CANDIDATE' = 'BASELINE') {
   if (!['BASELINE', 'CANDIDATE'].includes(variant)) throw new Error('E4 guard variant refused');
   verifyDiagnosticMigrationSource();
@@ -1488,9 +1776,23 @@ export function joinKeyProbeSql(revisionId: string, databaseName: string, units:
     createHash('md5').update(baselineBody).digest('hex') !== E4_DIAGNOSTIC_PLAN.completeFunctionMd5
   )
     throw new Error('E4 join key baseline body pin refused');
-  const candidateBody = body(joinKeyCandidateSource());
+  // Maximum's previous diagnostic remains unchanged; the new candidate is small-only.
+  const candidateBody = body(
+    units === 4 ? metadataCanonicalCandidateSource() : joinKeyCandidateSource(),
+  );
   const shadow = (input: string) =>
-    input
+    (units === 4
+      ? input
+          .replaceAll(
+            'FROM "ActivitySettlementContributionRevision"',
+            'FROM pg_temp.e4_probe_roots',
+          )
+          .replace(
+            'SELECT * FROM e4_source_rows(root.id)',
+            'SELECT * FROM pg_temp.e4_probe_sources',
+          )
+      : input
+    )
       .replaceAll('"ParticipantContributionEvaluation"', 'pg_temp.e4_probe_evaluations')
       .replaceAll(
         'e4_evaluation_document(e)',
@@ -1505,7 +1807,7 @@ LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, public AS $e4_co
   const settings = `SET LOCAL statement_timeout='30s';
 SET LOCAL idle_in_transaction_session_timeout='30s';
 SET LOCAL plan_cache_mode='force_custom_plan';\n`;
-  let sql = `SET statement_timeout='30s';
+  let sql = `${units === 4 ? metadataCanonicalEquivalenceSql(true) : ''}SET statement_timeout='30s';
 LOAD 'auto_explain';
 SET auto_explain.log_min_duration=-1;
 SET client_min_messages='notice';
@@ -1527,6 +1829,12 @@ CREATE TEMP TABLE e4_probe_context AS SELECT id FROM public."ActivitySettlementC
 CREATE TEMP TABLE e4_probe_metadata AS SELECT pg_backend_pid() AS pid,${guardDigest} AS guards;
 CREATE TEMP TABLE e4_probe_evaluations AS SELECT * FROM public."ParticipantContributionEvaluation" WHERE "contributionRevisionId"=:'root_id';
 CREATE TEMP TABLE e4_probe_marks(label TEXT);
+${
+  units === 4
+    ? `CREATE TEMP TABLE e4_probe_roots AS SELECT * FROM public."ActivitySettlementContributionRevision" WHERE id=:'root_id';
+CREATE TEMP TABLE e4_probe_sources AS SELECT * FROM public.e4_source_rows(:'root_id');`
+    : ''
+}
 ${create('e4_join_candidate', candidateBody)}
 ${create('e4_baseline_shadow', shadow(baselineBody))}
 ${create('e4_candidate_shadow', shadow(candidateBody))}
@@ -1611,6 +1919,69 @@ DO $$ DECLARE root_id TEXT; before_hash TEXT; state TEXT; guard TEXT; message TE
 END $$;
 ROLLBACK;\n`;
     }
+  if (units === 4) {
+    const allRowsDigest = `(SELECT md5(jsonb_build_object(
+      'evaluations',${digest},
+      'roots',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id COLLATE "C") FROM pg_temp.e4_probe_roots r),
+      'sources',(SELECT jsonb_agg(to_jsonb(s) ORDER BY to_jsonb(s)::TEXT COLLATE "C") FROM pg_temp.e4_probe_sources s))::TEXT))`;
+    const singleMutation = (statement: string) => `${statement}
+      GET DIAGNOSTICS affected=ROW_COUNT;
+      IF affected<>1 THEN RAISE EXCEPTION 'E4 metadata priority mutation refused'; END IF;
+      changed:=changed+affected;\n`;
+    const sourceMutation = singleMutation(
+      `UPDATE pg_temp.e4_probe_sources SET item_id=NULL WHERE ctid=(SELECT ctid FROM pg_temp.e4_probe_sources ORDER BY ctid LIMIT 1);`,
+    );
+    const evaluationMutation = singleMutation(
+      `UPDATE pg_temp.e4_probe_evaluations SET "explanationCode"='e4_diag_priority' WHERE id=(SELECT min(id COLLATE "C") FROM pg_temp.e4_probe_evaluations);`,
+    );
+    const rootMutation = singleMutation(
+      `UPDATE pg_temp.e4_probe_roots SET "evaluationCount"="evaluationCount"+1;`,
+    );
+    for (const [kind, expected, message, mutation, mutations] of [
+      [
+        'SOURCE_EVALUATION_ROOT',
+        'e4_source_guard',
+        'contribution unresolved source',
+        sourceMutation + evaluationMutation + rootMutation,
+        3,
+      ],
+      [
+        'EVALUATION_ROOT',
+        'e4_evaluation_guard',
+        'contribution evaluation set mismatch',
+        evaluationMutation + rootMutation,
+        2,
+      ],
+      ['ROOT', 'e4_complete_guard', 'contribution root count/hash/total mismatch', rootMutation, 1],
+    ] as const)
+      for (const variant of ['BASELINE', 'CANDIDATE']) {
+        const callable = variant === 'BASELINE' ? 'e4_baseline_shadow' : 'e4_candidate_shadow';
+        sql += `BEGIN;
+${settings}
+DO $$ DECLARE root_id TEXT; before_hash TEXT; state TEXT; guard TEXT; message TEXT; affected INTEGER; changed INTEGER:=0; BEGIN
+ RAISE NOTICE 'E4_JOIN_KEY_METADATA_PRIORITY_BEGIN ${kind} ${variant}';
+ SELECT id INTO STRICT root_id FROM pg_temp.e4_probe_context;
+ before_hash:=${allRowsDigest};
+ BEGIN
+   INSERT INTO pg_temp.e4_probe_marks VALUES ('${kind}');
+   ${mutation}
+   PERFORM pg_temp.${callable}(root_id,FALSE);
+   RAISE EXCEPTION 'E4 metadata priority did not reject';
+ EXCEPTION WHEN OTHERS THEN
+   GET STACKED DIAGNOSTICS state=RETURNED_SQLSTATE,guard=CONSTRAINT_NAME,message=MESSAGE_TEXT;
+   IF state<>'23514' OR guard<>'${expected}' OR message<>'${message}'
+   THEN RAISE NOTICE 'E4_JOIN_KEY_METADATA_PRIORITY_UNEXPECTED %',json_build_object('kind','${kind}','variant','${variant}','sqlstate',state,'constraintMatches',guard='${expected}','messageMatches',message='${message}');
+     RAISE EXCEPTION 'E4 metadata priority outcome refused'; END IF;
+ END;
+ IF changed<>${mutations} OR (SELECT count(*) FROM pg_temp.e4_probe_marks)<>0 OR ${allRowsDigest} IS DISTINCT FROM before_hash
+ THEN RAISE EXCEPTION 'E4 metadata priority rollback refused'; END IF;
+ RAISE NOTICE 'E4_JOIN_KEY_METADATA_PRIORITY %',json_build_object('kind','${kind}','variant','${variant}',
+   'sqlstate',state,'constraint',guard,'mutations',changed,'allShadowRowsRestored',true,'markerRestored',true);
+END $$;
+ROLLBACK;
+`;
+      }
+  }
   sql += `DO $$ BEGIN
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'ade4d2af9aa0baf8400a79fc6b62c797'
  OR ${guardDigest} IS DISTINCT FROM (SELECT guards FROM pg_temp.e4_probe_metadata)
@@ -1742,7 +2113,36 @@ export function compactJoinKeyEvidence(raw: string) {
   };
 }
 
-/** Four real controls and the same six native negatives; no maximum plan/performance claim. */
+export function compactMetadataPriorityEvidence(raw: string, complete = true) {
+  const entries = [
+    ...joinKeyDiagnosticNotices(raw).matchAll(
+      /NOTICE:\s+E4_JOIN_KEY_METADATA_PRIORITY (\{[^\n]+\})/gu,
+    ),
+  ];
+  if (entries.length > 6 || (complete && entries.length !== 6))
+    throw new Error('E4 metadata priority count refused');
+  return entries.map((entry, index) => {
+    const [kind, constraint, mutations] = [
+      ['SOURCE_EVALUATION_ROOT', 'e4_source_guard', 3],
+      ['EVALUATION_ROOT', 'e4_evaluation_guard', 2],
+      ['ROOT', 'e4_complete_guard', 1],
+    ][Math.floor(index / 2)];
+    const variant = index % 2 === 0 ? 'BASELINE' : 'CANDIDATE';
+    const expected = {
+      kind,
+      variant,
+      sqlstate: '23514',
+      constraint,
+      mutations,
+      allShadowRowsRestored: true,
+      markerRestored: true,
+    };
+    expect(JSON.parse(entry[1])).toEqual(expected);
+    return expected;
+  });
+}
+
+/** Four controls, fixed-metadata byte proof, six native negatives and six priority/rollback cases. */
 export function compactJoinKeyCalibrationEvidence(raw: string, complete = true) {
   raw = joinKeyDiagnosticNotices(raw);
   if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
@@ -1773,6 +2173,8 @@ export function compactJoinKeyCalibrationEvidence(raw: string, complete = true) 
     return { phase, variant, returned: true, completeDocumentAndRootGuard: true };
   });
   const cases = compactJoinKeyNegativeCases(raw);
+  const metadataCanonical = complete ? compactMetadataCanonicalEvidence(raw, true) : undefined;
+  const priorityCases = compactMetadataPriorityEvidence(raw, complete);
   if (complete) {
     const end = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_COMPLETE (\{[^\n]+\})/gu)];
     if (controls.length !== 4 || cases.length !== 6 || end.length !== 1)
@@ -1790,6 +2192,8 @@ export function compactJoinKeyCalibrationEvidence(raw: string, complete = true) 
     units: 4,
     controls,
     cases,
+    ...(metadataCanonical ? { metadataCanonical } : {}),
+    priorityCases,
     statementMs: 30000,
     processMs: 240000,
     negativeScope:
@@ -3536,7 +3940,14 @@ if (process.env.SRVF_E4_DIAGNOSTIC_CHILD === '1') registerDiagnosticChild();
 if (require.main === module) {
   if (process.argv.length === 3 && process.argv[2] === '--plan')
     console.info(JSON.stringify(E4_DIAGNOSTIC_PLAN, null, 2));
-  else if (process.argv.length === 3 && process.argv[2] === '--execute')
+  else if (process.argv.length === 3 && process.argv[2] === '--canonical-equivalence') {
+    try {
+      runMetadataCanonicalEquivalence();
+    } catch {
+      console.error('E4 metadata equivalence refused or failed; no fixture executed');
+      process.exitCode = 1;
+    }
+  } else if (process.argv.length === 3 && process.argv[2] === '--execute')
     void runDiagnosticParent().then(
       (code) => {
         process.exitCode = code;
@@ -3547,7 +3958,7 @@ if (require.main === module) {
       },
     );
   else {
-    console.error('Use --plan or explicit supervised --execute');
+    console.error('Use --plan, --canonical-equivalence or explicit supervised --execute');
     process.exitCode = 1;
   }
 }
