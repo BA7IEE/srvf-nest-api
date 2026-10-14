@@ -312,6 +312,24 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_SOURCE_JOIN &&
+    (!['small', 'ordinary-500'].includes(env.SRVF_E4_SOURCE_JOIN) ||
+      env.SRVF_E4_DIAGNOSTIC_SCENARIO !==
+        (env.SRVF_E4_SOURCE_JOIN === 'small' ? 'ordinary-1' : 'ordinary-500') ||
+      [
+        'SRVF_E4_NATIVE_PREPARE_PLAN',
+        'SRVF_E4_JOIN_KEY_ONCE',
+        'SRVF_E4_JOIN_KEY_CALIBRATION',
+        'SRVF_E4_FIXED_METADATA_MAX_ONCE',
+        'SRVF_E4_SHARED_GUARD_ONCE',
+        'SRVF_E4_CANONICAL_FIRST32',
+        'SRVF_E4_CANONICAL_COST_ONLY',
+        'SRVF_E4_CANONICAL_JIT_ABBA',
+        'SRVF_E4_CANONICAL_MEMORY_PAIR',
+      ].some((key) => !!env[key]))
+  )
+    throw new Error('E4 source join scope refused');
+  if (
     env.SRVF_E4_NATIVE_PREPARE_PLAN &&
     (env.SRVF_E4_NATIVE_PREPARE_PLAN !== '1' ||
       env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'ordinary-500' ||
@@ -456,7 +474,11 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
     | 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
     | 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
     | 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
-    | 'PREPARE_NATIVE_PLAN_ONLY';
+    | 'PREPARE_NATIVE_PLAN_ONLY'
+    | 'PREPARE_SOURCE_JOIN_ONLY';
+  sourceJoinStats?: unknown;
+  sourceJoinComparison?: unknown;
+  sourceJoinPostOracle?: 'ENTERED' | 'COMPLETE';
   nativePreparePlan?: unknown;
   metadataPostOracle?: {
     status: 'ENTERED' | 'COMPLETE' | 'FAILED';
@@ -497,6 +519,7 @@ function writeBounded(path: string, value: unknown) {
       'PREPARE_ORACLE_AND_JOIN_KEY_ONLY',
       'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY',
       'PREPARE_NATIVE_PLAN_ONLY',
+      'PREPARE_SOURCE_JOIN_ONLY',
     ].includes(String(Reflect.get(value, 'coverage')));
   const json = (comparison ? JSON.stringify(value) : JSON.stringify(value, null, 2)) + '\n';
   if (Buffer.byteLength(json) > 65536) throw new Error('E4 diagnostic output limit');
@@ -1911,12 +1934,17 @@ export const FIXED_METADATA_MAX_ORDER = [
 export function joinKeyProbeSql(
   revisionId: string,
   databaseName: string,
-  units: 4 | 8000 = 8000,
+  units: 4 | 2000 | 8000 = 8000,
   fixedMetadataMaximum = false,
+  sourceJoin = false,
 ) {
-  if (units !== 4 && units !== 8000) throw new Error('E4 join key fixed shape refused');
+  if (units !== 4 && units !== 8000 && !(sourceJoin && units === 2000))
+    throw new Error('E4 join key fixed shape refused');
+  if (sourceJoin && (fixedMetadataMaximum || units === 8000))
+    throw new Error('E4 source join shape refused');
   if (fixedMetadataMaximum && units !== 8000) throw new Error('E4 metadata maximum shape refused');
-  const fixedMetadata = units === 4 || fixedMetadataMaximum;
+  const fixedMetadata = !sourceJoin && (units === 4 || fixedMetadataMaximum);
+  const typedSources = fixedMetadata || sourceJoin;
   sharedGuardProbeSql(revisionId, databaseName); // Reuse the exact scope/identifier refusal.
   const source = readFileSync(
     resolve(
@@ -1938,10 +1966,17 @@ export function joinKeyProbeSql(
     throw new Error('E4 join key baseline body pin refused');
   // The explicit maximum mode uses precisely the SQL proved at20cbaf6d; legacy modes stay distinct.
   const candidateBody = body(
-    fixedMetadata ? metadataCanonicalCandidateSource() : joinKeyCandidateSource(),
+    sourceJoin
+      ? source.replace(
+          'SELECT * FROM e4_source_rows(root.id)',
+          'SELECT * FROM pg_temp.e4_sj_rows(root.id)',
+        )
+      : fixedMetadata
+        ? metadataCanonicalCandidateSource()
+        : joinKeyCandidateSource(),
   );
   const shadow = (input: string) =>
-    (fixedMetadata
+    (typedSources
       ? input
           .replaceAll(
             'FROM "ActivitySettlementContributionRevision"',
@@ -1949,6 +1984,10 @@ export function joinKeyProbeSql(
           )
           .replace(
             'SELECT * FROM e4_source_rows(root.id)',
+            'SELECT * FROM pg_temp.e4_probe_sources',
+          )
+          .replace(
+            'SELECT * FROM pg_temp.e4_sj_rows(root.id)',
             'SELECT * FROM pg_temp.e4_probe_sources',
           )
       : input
@@ -1966,12 +2005,12 @@ LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, public AS $e4_co
       'public."ActivitySettlementContributionRevision"'::regclass,'public."AttendanceSettlementVersion"'::regclass))`;
   const settings = `SET LOCAL statement_timeout='30s';
 SET LOCAL idle_in_transaction_session_timeout='30s';
-SET LOCAL plan_cache_mode='force_custom_plan';\n`;
+${sourceJoin ? '' : "SET LOCAL plan_cache_mode='force_custom_plan';"}\n`;
   let sql = `${fixedMetadata ? metadataCanonicalEquivalenceSql(true) : ''}SET statement_timeout='30s';
 LOAD 'auto_explain';
 SET auto_explain.log_min_duration=-1;
 SET client_min_messages='notice';
-SET auto_explain.log_level='notice';
+SET auto_explain.log_level='${sourceJoin ? 'log' : 'notice'}';
 SET auto_explain.log_nested_statements=on;
 SET auto_explain.log_analyze=on;
 SET auto_explain.log_timing=on;
@@ -1986,24 +2025,30 @@ DO $$ BEGIN
  THEN RAISE EXCEPTION 'E4 join key connected scope refused'; END IF;
 END $$;
 CREATE TEMP TABLE e4_probe_context AS SELECT id FROM public."ActivitySettlementContributionRevision" WHERE id=:'root_id';
-CREATE TEMP TABLE e4_probe_metadata AS SELECT pg_backend_pid() AS pid,${guardDigest} AS guards;
+CREATE TEMP TABLE e4_probe_metadata AS SELECT pg_backend_pid() AS pid,${guardDigest} AS guards${sourceJoin ? `,${sourceJoinStatsDigestSql()} AS source_stats` : ''};
 CREATE TEMP TABLE e4_probe_evaluations AS SELECT * FROM public."ParticipantContributionEvaluation" WHERE "contributionRevisionId"=:'root_id';
 CREATE TEMP TABLE e4_probe_marks(label TEXT);
 ${
-  fixedMetadata
+  typedSources
     ? `CREATE TEMP TABLE e4_probe_roots AS SELECT * FROM public."ActivitySettlementContributionRevision" WHERE id=:'root_id';
 CREATE TEMP TABLE e4_probe_sources AS SELECT * FROM public.e4_source_rows(:'root_id');`
     : ''
 }
+${sourceJoin ? sourceJoinSetupSql(units === 4) : ''}
 ${create('e4_join_candidate', candidateBody)}
+${sourceJoin ? create('e4_sj_complete_baseline', baselineBody.replace('SELECT * FROM e4_source_rows(root.id)', 'SELECT * FROM pg_temp.e4_sj_original(root.id)')) : ''}
 ${create('e4_baseline_shadow', shadow(baselineBody))}
 ${create('e4_candidate_shadow', shadow(candidateBody))}
 COMMIT;\n`;
-  const order = fixedMetadataMaximum
-    ? FIXED_METADATA_MAX_ORDER
-    : units === 4
+  const order = sourceJoin
+    ? units === 4
       ? JOIN_KEY_CALIBRATION_ORDER
-      : JOIN_KEY_ORDER;
+      : FIXED_METADATA_MAX_ORDER
+    : fixedMetadataMaximum
+      ? FIXED_METADATA_MAX_ORDER
+      : units === 4
+        ? JOIN_KEY_CALIBRATION_ORDER
+        : JOIN_KEY_ORDER;
   for (const [index, [phase, variant]] of order.entries()) {
     const callable =
       phase === 'SHADOW_CONTROL'
@@ -2011,22 +2056,28 @@ COMMIT;\n`;
           ? 'pg_temp.e4_baseline_shadow'
           : 'pg_temp.e4_candidate_shadow'
         : variant === 'BASELINE'
-          ? 'public.e4_assert_complete'
+          ? sourceJoin
+            ? 'pg_temp.e4_sj_complete_baseline'
+            : 'public.e4_assert_complete'
           : 'pg_temp.e4_join_candidate';
     sql += `BEGIN READ ONLY;
 ${settings}
-SET LOCAL auto_explain.log_min_duration=${phase === 'ACTUAL_PLAN' ? '1000' : '-1'};
-DO $$ DECLARE root_id TEXT; started TIMESTAMPTZ; elapsed NUMERIC; BEGIN
+SET LOCAL auto_explain.log_min_duration=${sourceJoin && phase !== 'SHADOW_CONTROL' ? '50' : phase === 'ACTUAL_PLAN' ? '1000' : '-1'};
+DO $$ DECLARE root_id TEXT; started TIMESTAMPTZ; elapsed NUMERIC; ${sourceJoin ? 'before_stats TEXT;after_stats TEXT;' : ''} BEGIN
  SELECT id INTO STRICT root_id FROM pg_temp.e4_probe_context;
+ ${sourceJoin ? `before_stats:=${sourceJoinStatsDigestSql()};IF before_stats IS DISTINCT FROM (SELECT source_stats FROM pg_temp.e4_probe_metadata) THEN RAISE EXCEPTION 'E4 source join statistics changed before sample'; END IF;` : ''}
  RAISE NOTICE 'E4_JOIN_KEY_BEGIN ${index}';
+ ${sourceJoin && phase !== 'SHADOW_CONTROL' ? `RAISE LOG 'E4_SOURCE_JOIN_PLAN_BEGIN ${index}';` : ''}
  started:=clock_timestamp();
  PERFORM ${callable}(root_id,FALSE);
  elapsed:=extract(epoch FROM clock_timestamp()-started)*1000;
+ ${sourceJoin ? `after_stats:=${sourceJoinStatsDigestSql()};IF after_stats IS DISTINCT FROM before_stats THEN RAISE EXCEPTION 'E4 source join statistics changed during sample'; END IF;` : ''}
+ ${sourceJoin && phase !== 'SHADOW_CONTROL' ? `RAISE LOG 'E4_SOURCE_JOIN_PLAN_END ${index}';` : ''}
  RAISE NOTICE 'E4_JOIN_KEY_SAMPLE %',json_build_object('index',${index},'phase','${phase}','variant','${variant}',
    'wallMs',elapsed,'returned',true,'completeDocumentAndRootGuard',true,
    'sameBackend',pg_backend_pid()=(SELECT pid FROM pg_temp.e4_probe_metadata),
    'readonly',current_setting('transaction_read_only')='on','workMemKb',pg_size_bytes(current_setting('work_mem'))/1024,
-   'jitEnabled',current_setting('jit')='on','planCacheMode',current_setting('plan_cache_mode'))::text;
+   'jitEnabled',current_setting('jit')='on','planCacheMode',current_setting('plan_cache_mode')${sourceJoin ? `, 'statisticsDigest',before_stats,'statisticsUnchanged',true` : ''})::text;
 END $$;
 ROLLBACK;\n`;
   }
@@ -2083,7 +2134,7 @@ DO $$ DECLARE root_id TEXT; before_hash TEXT; state TEXT; guard TEXT; message TE
 END $$;
 ROLLBACK;\n`;
     }
-  if (fixedMetadata) {
+  if (typedSources) {
     const allRowsDigest = `(SELECT md5(jsonb_build_object(
       'evaluations',${digest},
       'roots',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id COLLATE "C") FROM pg_temp.e4_probe_roots r),
@@ -2150,6 +2201,7 @@ ROLLBACK;
   sql += `DO $$ BEGIN
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'ade4d2af9aa0baf8400a79fc6b62c797'
  OR ${guardDigest} IS DISTINCT FROM (SELECT guards FROM pg_temp.e4_probe_metadata)
+ ${sourceJoin ? `OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure)<>'d8934c5bf29f8b16f820ba6cd950698b'` : ''}
  THEN RAISE EXCEPTION 'E4 join key public catalog changed'; END IF;
  RAISE NOTICE 'E4_JOIN_KEY_COMPLETE %',json_build_object('catalogUnchanged',true,'guardsUnchanged',true,'sameBackend',
    pg_backend_pid()=(SELECT pid FROM pg_temp.e4_probe_metadata),'publicEvaluationCount',
@@ -3460,8 +3512,9 @@ function registerDiagnosticChild() {
     scenario: e4DiagnosticScenario(process.env.SRVF_E4_DIAGNOSTIC_SCENARIO),
     migration: 'NOT_VERIFIED',
     stages: [],
-    coverage:
-      process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1'
+    coverage: process.env.SRVF_E4_SOURCE_JOIN
+      ? 'PREPARE_SOURCE_JOIN_ONLY'
+      : process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1'
         ? 'PREPARE_NATIVE_PLAN_ONLY'
         : process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1'
           ? 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
@@ -3496,7 +3549,9 @@ function registerDiagnosticChild() {
       frozenE4OracleSource();
       frozenOrdinaryOracleSource();
       verifyDiagnosticMigrationSource();
-      if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1') readNativeCapability();
+      if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' || process.env.SRVF_E4_SOURCE_JOIN)
+        readNativeCapability();
+      if (process.env.SRVF_E4_SOURCE_JOIN === 'ordinary-500') readSourceJoinCalibration();
       if (process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1') metadataCanonicalCandidateSource();
     },
     'REFUSED',
@@ -3588,6 +3643,8 @@ function registerDiagnosticChild() {
         auxiliary.push(observer);
         await assertConnectedTestDatabase(observer);
         const [{ pid }] = await db.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        if (process.env.SRVF_E4_SOURCE_JOIN)
+          report.sourceJoinStats = { beforePrepare: await sourceJoinStatistics(db) };
         const command = {
           expectedDraftVersion: source.expectation.expectedDraftVersion,
           expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
@@ -3824,6 +3881,11 @@ function registerDiagnosticChild() {
           }
         }
         if (nativeCaptureError) throw nativeCaptureError;
+        if (process.env.SRVF_E4_SOURCE_JOIN)
+          report.sourceJoinStats = {
+            ...(report.sourceJoinStats as object),
+            afterPrepare: await sourceJoinStatistics(db),
+          };
         checkpoint.mark('PREPARE', 'COMPLETE');
         if (report.scenario === 'lock-contention') {
           expect(lock.snapshot()).toMatchObject({
@@ -3899,6 +3961,24 @@ function registerDiagnosticChild() {
           audits: 1,
         });
         report.facts = preparedFacts;
+        if (process.env.SRVF_E4_SOURCE_JOIN) {
+          report.oracle = 'COMPLETE';
+          report.substage = 'SOURCE_JOIN_COMPARISON';
+          await probeSourceJoin(db, report, privateDir);
+          expect(await diagnosticFacts(observer, source.activityId, command.operationKey)).toEqual(
+            preparedFacts,
+          );
+          report.substage = 'SOURCE_JOIN_POST_ORACLE';
+          report.sourceJoinPostOracle = 'ENTERED';
+          await assertDiagnosticProof(
+            observer,
+            prepared!.settlementVersionId,
+            units,
+            false,
+            report,
+          );
+          report.sourceJoinPostOracle = 'COMPLETE';
+        }
         if (
           process.env.SRVF_E4_JOIN_KEY_ONCE === '1' ||
           process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
@@ -3926,7 +4006,17 @@ function registerDiagnosticChild() {
           );
         }
         checkpoint.mark('ORACLE', 'COMPLETE');
-        if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1') {
+        if (process.env.SRVF_E4_SOURCE_JOIN) {
+          expect(report.sourceJoinComparison).toMatchObject({
+            status: 'COMPLETE',
+            sameBackend: true,
+            ownedBackendGone: true,
+          });
+          report.status = 'COMPLETE';
+          report.oracle = 'COMPLETE';
+          report.budgetRecommendation =
+            'SINGLE_SOURCE_JOIN_VARIABLE_NO_METADATA_JIT_OR_BUDGET_CHANGE';
+        } else if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1') {
           expect(report.nativePreparePlan).toMatchObject({
             status: 'COMPLETE',
             sameBackend: true,
@@ -4209,8 +4299,9 @@ export async function runDiagnosticParent() {
       scenario: e4DiagnosticScenario(process.env.SRVF_E4_DIAGNOSTIC_SCENARIO),
       migration: 'NOT_VERIFIED',
       stages: [],
-      coverage:
-        process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1'
+      coverage: process.env.SRVF_E4_SOURCE_JOIN
+        ? 'PREPARE_SOURCE_JOIN_ONLY'
+        : process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1'
           ? 'PREPARE_NATIVE_PLAN_ONLY'
           : process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1'
             ? 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
@@ -4272,6 +4363,7 @@ export async function runDiagnosticParent() {
     )
       report.status = 'UNKNOWN';
     const cleanup =
+      process.env.SRVF_E4_SOURCE_JOIN ||
       process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' ||
       process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1' ||
       process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
@@ -4295,6 +4387,37 @@ export async function runDiagnosticParent() {
           ? 'NORMAL_DROP_AND_LEASE_RELEASE'
           : 'UNKNOWN',
     };
+    if (process.env.SRVF_E4_SOURCE_JOIN) {
+      const comparison = report.sourceJoinComparison as
+        | { plans?: { file: string; sha256: string }[] }
+        | undefined;
+      const refs = comparison?.plans ?? [];
+      if (
+        refs.length !== (process.env.SRVF_E4_SOURCE_JOIN === 'small' ? 2 : 4) &&
+        closedReport.status === 'COMPLETE'
+      )
+        closedReport.status = 'UNKNOWN';
+      for (const [index, ref] of refs.entries()) {
+        if (ref.file !== `source-join-plan-${index}.json` || index >= 4)
+          throw new Error('E4 source join sidecar path refused');
+        try {
+          const raw = readFileSync(join(privateDir, ref.file));
+          if (raw.length > 65536 || createHash('sha256').update(raw).digest('hex') !== ref.sha256)
+            throw new Error('binding');
+          const artifact = JSON.parse(raw.toString()) as Record<string, unknown>;
+          if (
+            artifact.head !== head ||
+            artifact.run !== report.run ||
+            artifact.index !== index ||
+            artifact.coverage !== 'PREPARE_SOURCE_JOIN_ONLY'
+          )
+            throw new Error('binding');
+          writeBounded(join(dirname(output), ref.file), artifact);
+        } catch {
+          closedReport.status = 'FAILED';
+        }
+      }
+    }
     if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1') {
       const file = join(privateDir, 'native-plan.json');
       try {
@@ -4337,6 +4460,687 @@ export async function runDiagnosticParent() {
     rmSync(privateDir, { recursive: true, force: true });
   }
 }
+export const SOURCE_JOIN_BASELINE_SHA =
+  'fa1c0f752201ffd118b46e0dae80137584394d2b47b8ae59c9eb309709c91b3c';
+export function validateSourceJoinCalibration(value: unknown, head: string, forRun: string) {
+  if (!value || typeof value !== 'object') throw new Error('E4 source join calibration missing');
+  const r = value as Record<string, unknown>;
+  if (
+    r.head !== head ||
+    r.forRun !== forRun ||
+    r.status !== 'VERIFIED_SMALL' ||
+    typeof r.smallRun !== 'string' ||
+    !/^\d+$/u.test(r.smallRun) ||
+    r.smallRun === forRun ||
+    r.candidateSha256 !== createHash('sha256').update(sourceJoinFunction(true)).digest('hex') ||
+    typeof r.resultSha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(r.resultSha256)
+  )
+    throw new Error('E4 source join calibration binding refused');
+  return {
+    head,
+    forRun,
+    status: 'VERIFIED_SMALL',
+    smallRun: r.smallRun,
+    candidateSha256: r.candidateSha256,
+    resultSha256: r.resultSha256,
+  };
+}
+function readSourceJoinCalibration() {
+  const raw = readFileSync(
+    resolve(process.cwd(), 'tmp/e4-prepare-cost-evidence/source-join-calibration.json'),
+  );
+  if (raw.length > 4096) throw new Error('E4 source join calibration bound refused');
+  return validateSourceJoinCalibration(
+    JSON.parse(raw.toString()),
+    process.env.GITHUB_SHA!,
+    process.env.GITHUB_RUN_ID!,
+  );
+}
+function verifySourceJoinCalibration() {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  requireDiagnosticEnvironment(process.env, head);
+  const run = process.env.SRVF_E4_SOURCE_JOIN_SMALL_RUN;
+  if (
+    process.env.SRVF_E4_SOURCE_JOIN !== 'ordinary-500' ||
+    !/^\d+$/u.test(run ?? '') ||
+    run === process.env.GITHUB_RUN_ID
+  )
+    throw new Error('E4 source join calibration run refused');
+  const metadata = JSON.parse(
+    execFileSync('gh', ['api', `repos/BA7IEE/srvf-nest-api/actions/runs/${run}`], {
+      encoding: 'utf8',
+      timeout: 40000,
+      maxBuffer: 65536,
+    }),
+  ) as Record<string, unknown>;
+  if (
+    metadata.head_sha !== head ||
+    metadata.conclusion !== 'success' ||
+    metadata.status !== 'completed' ||
+    metadata.run_attempt !== 1 ||
+    metadata.event !== 'workflow_dispatch' ||
+    metadata.head_branch !== 'codex/activity-os-r5-e4-github-validation'
+  )
+    throw new Error('E4 source join calibration origin refused');
+  const raw = execFileSync('gh', ['run', 'view', run!, '--repo', 'BA7IEE/srvf-nest-api', '--log'], {
+    encoding: 'utf8',
+    timeout: 40000,
+    maxBuffer: 2097152,
+  });
+  const chunks = new Map<number, { index: number; total: number; data: string }>();
+  for (const line of raw.split('\n')) {
+    const marker = 'E4_NATIVE_PLAN_CHUNK ';
+    if (!line.includes(marker)) continue;
+    let r: Record<string, unknown>;
+    try {
+      r = JSON.parse(line.slice(line.indexOf(marker) + marker.length)) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (r.artifact !== 'result.json') continue;
+    if (
+      r.head !== head ||
+      r.run !== run ||
+      typeof r.index !== 'number' ||
+      !Number.isInteger(r.index) ||
+      r.index < 0 ||
+      r.index > 5 ||
+      typeof r.total !== 'number' ||
+      r.total < 1 ||
+      r.total > 6 ||
+      typeof r.data !== 'string' ||
+      r.data.length > 12000 ||
+      chunks.has(r.index)
+    )
+      throw new Error('E4 source join calibration chunk refused');
+    chunks.set(r.index, { index: r.index, total: r.total, data: r.data });
+  }
+  const count = chunks.get(0)?.total;
+  if (!count || chunks.size !== count) throw new Error('E4 source join calibration incomplete');
+  let json = '';
+  for (let i = 0; i < count; i++) {
+    const part = chunks.get(i);
+    if (!part || part.total !== count)
+      throw new Error('E4 source join calibration sequence refused');
+    json += part.data;
+  }
+  if (Buffer.byteLength(json) > 65536)
+    throw new Error('E4 source join calibration report bound refused');
+  const report = JSON.parse(json) as Report;
+  const proof = report.sourceJoinComparison as {
+    status: string;
+    small: boolean;
+    candidateSha256: string;
+    equivalence: unknown[];
+    negatives: unknown[];
+    priorities: unknown[];
+    plans: unknown[];
+  };
+  const cleanup = Reflect.get(report, 'independentCleanup') as {
+    status: string;
+    databases: number;
+    clients: number;
+    leaseBackends: number;
+    leaseLocks: number;
+  };
+  if (
+    report.head !== head ||
+    report.run !== run ||
+    report.coverage !== 'PREPARE_SOURCE_JOIN_ONLY' ||
+    report.scenario !== 'ordinary-1' ||
+    report.status !== 'COMPLETE' ||
+    report.oracle !== 'COMPLETE' ||
+    report.sourceJoinPostOracle !== 'COMPLETE' ||
+    report.resources !== 'CLOSED' ||
+    proof?.status !== 'COMPLETE' ||
+    proof.small !== true ||
+    proof.candidateSha256 !== createHash('sha256').update(sourceJoinFunction(true)).digest('hex') ||
+    proof.equivalence.length !== 6 ||
+    proof.negatives.length !== 6 ||
+    proof.priorities.length !== 6 ||
+    proof.plans.length !== 2 ||
+    cleanup?.status !== 'OBSERVED_ABSENT' ||
+    [cleanup.databases, cleanup.clients, cleanup.leaseBackends, cleanup.leaseLocks].some(
+      (n) => n !== 0,
+    )
+  )
+    throw new Error('E4 source join calibration proof refused');
+  const evidence = validateSourceJoinCalibration(
+    {
+      head,
+      forRun: process.env.GITHUB_RUN_ID,
+      status: 'VERIFIED_SMALL',
+      smallRun: run,
+      candidateSha256: proof.candidateSha256,
+      resultSha256: createHash('sha256')
+        .update(json + '\n')
+        .digest('hex'),
+    },
+    head,
+    process.env.GITHUB_RUN_ID!,
+  );
+  const file = resolve(process.cwd(), 'tmp/e4-prepare-cost-evidence/source-join-calibration.json');
+  mkdirSync(dirname(file), { recursive: true });
+  writeBounded(file, evidence);
+  console.info('E4_SOURCE_JOIN_CALIBRATION ' + JSON.stringify(evidence));
+}
+export function sourceJoinFunction(candidate = false) {
+  const migration = readFileSync(
+    resolve(
+      __dirname,
+      '../../prisma/migrations/20261003000000_activity_contribution_settlement/migration.sql',
+    ),
+    'utf8',
+  );
+  const original = migration.match(/CREATE FUNCTION e4_source_rows\([\s\S]*?\n\$\$;/u)?.[0];
+  if (!original || createHash('sha256').update(original).digest('hex') !== SOURCE_JOIN_BASELINE_SHA)
+    throw new Error('E4 source join original identity refused');
+  if (!candidate) return original;
+  const marker = '), raw_sources AS MATERIALIZED (\n';
+  const begin = original.indexOf(marker),
+    end = original.indexOf('  UNION ALL\n', begin);
+  if (begin < 0 || end < 0 || original.indexOf(marker, begin + 1) >= 0)
+    throw new Error('E4 source join unique rewrite refused');
+  const edges = `), time_source_edges AS MATERIALIZED (
+  SELECT b.id AS bucket_key, b."recognizedSeconds" AS recognized_seconds,
+    b."rawRecognizedMilliseconds" AS raw_ms, b."activityId" AS activity_id, b."categoryCode" AS category_code,
+    a."participationIdentityId" AS identity_id, a."memberId" AS member_id, a."sessionId" AS session_id,
+    a."ruleSnapshotId" AS snapshot_id, a."ruleSnapshotHash" AS snapshot_hash, a."sourcePositionId" AS position_id,
+    a.id AS allocation_id, a."allocationHash" AS allocation_hash,
+    a."sourceSegmentId" AS segment_id, a."sourceSegmentRevision" AS segment_revision
+  FROM root r JOIN "ParticipantSettlementTimeBucket" b ON b."timeRevisionId"=r."timeRevisionId" AND b."activityId"=r."activityId"
+  JOIN "ParticipantSettlementTimeBucketSource" bs ON bs."bucketId"=b.id AND bs."activityId"=b."activityId" AND bs."timeRevisionId"=b."timeRevisionId"
+  JOIN "ParticipantTimeAllocationRevision" a ON a.id=bs."allocationRevisionId" AND a."activityId"=bs."activityId"
+    AND a."participationIdentityId"=b."participationIdentityId" AND a."sourceSegmentId"=bs."sourceSegmentId" AND a."sourceSegmentRevision"=bs."sourceSegmentRevision"
+  JOIN "ParticipantSettlementResultRevision" rr ON rr."settlementVersionId"=r."settlementVersionId" AND rr."participationIdentityId"=a."participationIdentityId"
+  WHERE r."sourceKindCode"='time_revision' AND rr."resultCode"='present'
+), raw_sources AS MATERIALIZED (
+  SELECT e.bucket_key,e.recognized_seconds,e.raw_ms,e.identity_id,e.member_id,e.session_id,
+    e.snapshot_id,e.snapshot_hash,e.position_id,e.allocation_id,e.allocation_hash,e.segment_id,e.segment_revision,
+    s.id AS slice_key,s."categoryCode" AS category_code,s."startAt" AS starts_at,s."endAt" AS ends_at,
+    NULL::JSONB AS correction_source
+  FROM time_source_edges e JOIN "ParticipantTimeAllocationSlice" s
+    ON s."allocationRevisionId"=e.allocation_id AND s."activityId"=e.activity_id AND s."categoryCode"=e.category_code
+`;
+  return original.slice(0, begin) + edges + original.slice(end);
+}
+export const SOURCE_JOIN_INPUTS = [
+  ['ParticipantSettlementTimeBucket', 'e4_sj_buckets'],
+  ['ParticipantSettlementTimeBucketSource', 'e4_sj_links'],
+  ['ParticipantTimeAllocationRevision', 'e4_sj_allocations'],
+  ['ParticipantTimeAllocationSlice', 'e4_sj_slices'],
+  ['ParticipantSettlementResultRevision', 'e4_sj_results'],
+] as const;
+function sourceJoinStatsDigestSql() {
+  return `(SELECT md5(string_agg(jsonb_build_array(c.relname,c.reltuples,c.relpages,s.last_analyze,s.last_autoanalyze)::TEXT,',' ORDER BY c.relname COLLATE "C"))
+ FROM pg_class c JOIN pg_stat_all_tables s ON s.relid=c.oid WHERE c.oid IN (${SOURCE_JOIN_INPUTS.map(([name]) => `'public."${name}"'::regclass`).join(',')}))`;
+}
+function sourceJoinSetupSql(small: boolean) {
+  const renamed = (candidate: boolean, name: string, shadow = false) => {
+    let source = sourceJoinFunction(candidate).replace(
+      'CREATE FUNCTION e4_source_rows(',
+      `CREATE FUNCTION pg_temp.${name}(`,
+    );
+    if (shadow)
+      for (const [table, temp] of SOURCE_JOIN_INPUTS)
+        source = source.replaceAll(`"${table}"`, `pg_temp.${temp}`);
+    if (!shadow)
+      source = source.replace(' AS $$', () => " SET auto_explain.log_min_duration='0' AS $$");
+    return source;
+  };
+  const bagQuery = (
+    a: string,
+    b: string,
+  ) => `WITH a AS MATERIALIZED (SELECT to_jsonb(s) AS value FROM ${a}((SELECT id FROM pg_temp.e4_probe_context)) s),
+ b AS MATERIALIZED (SELECT to_jsonb(s) AS value FROM ${b}((SELECT id FROM pg_temp.e4_probe_context)) s)
+ SELECT (SELECT count(*) FROM a),NOT EXISTS((SELECT * FROM a EXCEPT ALL SELECT * FROM b) UNION ALL (SELECT * FROM b EXCEPT ALL SELECT * FROM a)),
+ (SELECT sha256(convert_to(coalesce(string_agg(value::TEXT,',' ORDER BY value::TEXT COLLATE "C"),''),'UTF8')) FROM a)
+ IS NOT DISTINCT FROM (SELECT sha256(convert_to(coalesce(string_agg(value::TEXT,',' ORDER BY value::TEXT COLLATE "C"),''),'UTF8')) FROM b)
+ INTO total,equal,hash_equal;`;
+  const digest = `md5(jsonb_build_array(${SOURCE_JOIN_INPUTS.map(([, temp]) => `(SELECT jsonb_agg(value ORDER BY value::TEXT COLLATE "C") FROM (SELECT to_jsonb(t) AS value FROM pg_temp.${temp} t) rows)`).join(',')})::TEXT)`;
+  let sql = `DO $$ BEGIN IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure)<>'d8934c5bf29f8b16f820ba6cd950698b' THEN RAISE EXCEPTION 'E4 source join public helper identity refused'; END IF; END $$;
+${renamed(false, 'e4_sj_original')}
+${renamed(true, 'e4_sj_rows')}
+`;
+  if (small) {
+    for (const [table, temp] of SOURCE_JOIN_INPUTS)
+      sql += `CREATE TEMP TABLE ${temp} AS SELECT t.* FROM public."${table}" t
+ WHERE ${table === 'ParticipantSettlementResultRevision' ? `t."settlementVersionId"=(SELECT "settlementVersionId" FROM pg_temp.e4_probe_roots)` : `t."activityId"=(SELECT "activityId" FROM pg_temp.e4_probe_roots)`} ORDER BY id COLLATE "C" DESC;\n`;
+    sql +=
+      renamed(false, 'e4_sj_original_shadow', true) +
+      '\n' +
+      renamed(true, 'e4_sj_candidate_shadow', true) +
+      '\n';
+  }
+  sql += `CREATE FUNCTION pg_temp.e4_sj_compare(mode INTEGER) RETURNS INTEGER LANGUAGE plpgsql AS $sj$
+DECLARE total BIGINT; equal BOOLEAN; hash_equal BOOLEAN; BEGIN
+ IF mode=0 THEN ${bagQuery('public.e4_source_rows', 'pg_temp.e4_sj_rows')}
+ ${
+   small
+     ? `ELSIF mode=1 THEN ${bagQuery('public.e4_source_rows', 'pg_temp.e4_sj_original_shadow')}
+ ELSE ${bagQuery('pg_temp.e4_sj_original_shadow', 'pg_temp.e4_sj_candidate_shadow')}`
+     : ''
+ }
+ END IF;
+ IF NOT equal OR NOT hash_equal OR total<1 THEN RAISE EXCEPTION 'E4 source join bag/hash equivalence refused'; END IF;
+ RETURN total::INTEGER;
+END $sj$;
+DO $$ DECLARE total INTEGER; BEGIN total:=pg_temp.e4_sj_compare(0);
+ RAISE NOTICE 'E4_SOURCE_JOIN_EQ %',json_build_object('case','PUBLIC','rows',total,'bagEqual',true,'hashEqual',true,'rolledBack',false,'mutation',false);
+END $$;
+`;
+  if (small) {
+    sql += `DO $$ DECLARE total INTEGER; BEGIN total:=pg_temp.e4_sj_compare(1);
+ RAISE NOTICE 'E4_SOURCE_JOIN_EQ %',json_build_object('case','REVERSED_INPUT','rows',total,'bagEqual',true,'hashEqual',true,'rolledBack',false,'mutation',false);
+END $$;\n`;
+    for (const [label, mutation, direction] of [
+      [
+        'DUPLICATE_EDGE',
+        'INSERT INTO pg_temp.e4_sj_links SELECT * FROM pg_temp.e4_sj_links ORDER BY id COLLATE "C" LIMIT 1',
+        '>',
+      ],
+      [
+        'NULL_LINK',
+        'UPDATE pg_temp.e4_sj_links SET "allocationRevisionId"=NULL WHERE ctid=(SELECT ctid FROM pg_temp.e4_sj_links ORDER BY ctid LIMIT 1)',
+        '<',
+      ],
+      [
+        'MISSING_EDGE',
+        'DELETE FROM pg_temp.e4_sj_links WHERE ctid=(SELECT ctid FROM pg_temp.e4_sj_links ORDER BY ctid LIMIT 1)',
+        '<',
+      ],
+      [
+        'NULL_MEMBER',
+        'UPDATE pg_temp.e4_sj_allocations SET "memberId"=NULL WHERE ctid=(SELECT ctid FROM pg_temp.e4_sj_allocations ORDER BY ctid LIMIT 1)',
+        '=',
+      ],
+    ])
+      sql += `DO $$ DECLARE before_hash TEXT; base INTEGER; total INTEGER; affected INTEGER; BEGIN
+ before_hash:=${digest};base:=pg_temp.e4_sj_compare(2);
+ BEGIN
+  INSERT INTO pg_temp.e4_probe_marks VALUES ('${label}');
+  ${mutation};GET DIAGNOSTICS affected=ROW_COUNT;
+  IF affected<>1 THEN RAISE EXCEPTION 'E4 source join mutation cardinality refused'; END IF;
+  total:=pg_temp.e4_sj_compare(2);
+  IF NOT(total${direction}base) THEN RAISE EXCEPTION 'E4 source join non-vacuous case refused'; END IF;
+  ${label === 'NULL_MEMBER' ? `IF NOT EXISTS(SELECT 1 FROM pg_temp.e4_sj_candidate_shadow((SELECT id FROM pg_temp.e4_probe_context)) WHERE member_id IS NULL) THEN RAISE EXCEPTION 'E4 source join NULL output refused'; END IF;` : ''}
+  RAISE EXCEPTION 'E4 source join controlled rollback';
+ EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'E4 source join controlled rollback' THEN RAISE; END IF; END;
+ IF ${digest} IS DISTINCT FROM before_hash OR EXISTS(SELECT 1 FROM pg_temp.e4_probe_marks) THEN RAISE EXCEPTION 'E4 source join rollback refused'; END IF;
+ RAISE NOTICE 'E4_SOURCE_JOIN_EQ %',json_build_object('case','${label}','rows',total,'bagEqual',true,'hashEqual',true,'rolledBack',true,'mutation',true);
+END $$;\n`;
+  }
+  return sql;
+}
+
+async function sourceJoinStatistics(db: PrismaClient) {
+  const rows = [];
+  for (const [table] of SOURCE_JOIN_INPUTS) {
+    const [row] = await db.$queryRaw<
+      {
+        tuples: number;
+        pages: number;
+        statsColumns: number;
+        analyzed: boolean;
+        autoanalyzed: boolean;
+        rows: number;
+      }[]
+    >(
+      Prisma.raw(`SELECT c.reltuples::FLOAT8 AS tuples,c.relpages AS pages,
+ (SELECT count(*)::INT FROM pg_stats WHERE schemaname='public' AND tablename='${table}') AS "statsColumns",
+ s.last_analyze IS NOT NULL AS analyzed,s.last_autoanalyze IS NOT NULL AS autoanalyzed,
+ (SELECT count(*)::INT FROM public."${table}") AS rows
+ FROM pg_class c JOIN pg_stat_all_tables s ON s.relid=c.oid WHERE c.oid='public."${table}"'::regclass`),
+    );
+    if (
+      !row ||
+      Object.values(row).some(
+        (v) => typeof v === 'number' && (!Number.isFinite(v) || v < -1 || v > 1e9),
+      )
+    )
+      throw new Error('E4 source join statistics refused');
+    rows.push({ table, ...row });
+  }
+  return rows;
+}
+export function compactSourceJoinEvidence(raw: string, small: boolean) {
+  raw = joinKeyDiagnosticNotices(raw);
+  if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 source join evidence bound refused');
+  const order = small ? JOIN_KEY_CALIBRATION_ORDER : FIXED_METADATA_MAX_ORDER;
+  const matches = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_SAMPLE (\{[^\n]+\})/gu)];
+  if (matches.length !== order.length) throw new Error('E4 source join sample count refused');
+  const timings = matches.map((m, index) => {
+    const r = JSON.parse(m[1]) as Record<string, unknown>;
+    const [phase, variant] = order[index];
+    if (
+      r.index !== index ||
+      r.phase !== phase ||
+      r.variant !== variant ||
+      r.returned !== true ||
+      r.completeDocumentAndRootGuard !== true ||
+      r.sameBackend !== true ||
+      r.readonly !== true ||
+      r.workMemKb !== 4096 ||
+      r.jitEnabled !== true ||
+      r.planCacheMode !== 'auto' ||
+      r.statisticsUnchanged !== true ||
+      typeof r.statisticsDigest !== 'string' ||
+      !/^[a-f0-9]{32}$/u.test(r.statisticsDigest) ||
+      r.statisticsDigest !==
+        (JSON.parse(matches[0][1]) as Record<string, unknown>).statisticsDigest ||
+      typeof r.wallMs !== 'number' ||
+      !Number.isFinite(r.wallMs) ||
+      r.wallMs <= 0 ||
+      r.wallMs > 30000
+    )
+      throw new Error('E4 source join sample/settings refused');
+    return { index, phase, variant, wallMs: r.wallMs };
+  });
+  const names = small
+    ? ['PUBLIC', 'REVERSED_INPUT', 'DUPLICATE_EDGE', 'NULL_LINK', 'MISSING_EDGE', 'NULL_MEMBER']
+    : ['PUBLIC'];
+  const eq = [...raw.matchAll(/NOTICE:\s+E4_SOURCE_JOIN_EQ (\{[^\n]+\})/gu)];
+  if (eq.length !== names.length) throw new Error('E4 source join equivalence count refused');
+  const equivalence = eq.map((m, i) => {
+    const r = JSON.parse(m[1]) as Record<string, unknown>;
+    const mutation = i >= 2;
+    if (
+      r.case !== names[i] ||
+      r.bagEqual !== true ||
+      r.hashEqual !== true ||
+      r.mutation !== mutation ||
+      r.rolledBack !== mutation ||
+      typeof r.rows !== 'number' ||
+      !Number.isInteger(r.rows) ||
+      r.rows < 1 ||
+      r.rows > 5000 ||
+      (i < 2 && r.rows !== (small ? 5 : 2500)) ||
+      (names[i] === 'DUPLICATE_EDGE' && r.rows <= 5) ||
+      (['NULL_LINK', 'MISSING_EDGE'].includes(names[i]) && r.rows >= 5) ||
+      (names[i] === 'NULL_MEMBER' && r.rows !== 5)
+    )
+      throw new Error('E4 source join equivalence refused');
+    return {
+      case: names[i],
+      rows: r.rows,
+      bagEqual: true,
+      hashEqual: true,
+      mutation,
+      rolledBack: mutation,
+    };
+  });
+  const negatives = compactJoinKeyNegativeCases(raw);
+  if (negatives.length !== 6) throw new Error('E4 source join negative count refused');
+  const priorities = compactMetadataPriorityEvidence(raw);
+  const complete = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_COMPLETE (\{[^\n]+\})/gu)];
+  if (complete.length !== 1) throw new Error('E4 source join catalog receipt refused');
+  expect(JSON.parse(complete[0][1])).toEqual({
+    catalogUnchanged: true,
+    guardsUnchanged: true,
+    sameBackend: true,
+    publicEvaluationCount: small ? 4 : 2000,
+  });
+  return {
+    timings,
+    equivalence,
+    negatives,
+    priorities,
+    catalogUnchanged: true,
+    guardsUnchanged: true,
+    sameBackend: true,
+    settings: {
+      workMemKb: 4096,
+      jitEnabled: true,
+      planCacheMode: 'auto',
+      statisticsUnchanged: true,
+      statisticsDigest: (JSON.parse(matches[0][1]) as Record<string, unknown>).statisticsDigest,
+    },
+    statementMs: 30000,
+    processMs: 240000,
+  };
+}
+export function compactSourceJoinPlans(raw: string, pid: number, small: boolean, complete = true) {
+  if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 source join log bound refused');
+  const result = [];
+  for (let index = 0; index < (small ? 2 : 4); index++) {
+    const variant = (
+      small ? ['BASELINE', 'CANDIDATE'] : ['BASELINE', 'CANDIDATE', 'CANDIDATE', 'BASELINE']
+    )[index];
+    const begin = new RegExp(
+      `^.*?\\[${pid}\\]\\s+LOG:\\s+E4_SOURCE_JOIN_PLAN_BEGIN ${index}\\s*$`,
+      'mu',
+    ).exec(raw);
+    const end = new RegExp(
+      `^.*?\\[${pid}\\]\\s+LOG:\\s+E4_SOURCE_JOIN_PLAN_END ${index}\\s*$`,
+      'mu',
+    ).exec(raw);
+    if (!begin || !end) {
+      if (!complete) break;
+      throw new Error('E4 source join plan boundary refused');
+    }
+    if (end.index <= begin.index) throw new Error('E4 source join plan boundary refused');
+    const plans = compactNativePrepareLog(
+      raw.slice(begin.index + begin[0].length, end.index),
+      pid,
+      false,
+      true,
+    );
+    const shared = plans.records.filter((r) => r.kind === 'E4_SHARED');
+    const source = plans.records.filter((r) =>
+      r.functions.some((i) =>
+        ['e4_source_rows', 'e4_sj_original', 'e4_sj_rows'].includes(plans.dictionary[i]),
+      ),
+    );
+    const completeCalls = plans.records.filter((r) => r.kind === 'E4_COMPLETE_CALL');
+    if (
+      !complete &&
+      (plans.malformed || shared.length !== 1 || source.length !== 1 || completeCalls.length !== 1)
+    ) {
+      result.push({
+        index,
+        variant,
+        sharedMs: shared[0]?.durationMs ?? null,
+        sourceMs: source[0]?.durationMs ?? null,
+        completeMs: completeCalls[0]?.durationMs ?? null,
+        sourceProbeLoops: null,
+        sourceRows: null,
+        probes: [],
+        jit: shared[0]?.jit ?? [],
+        plans,
+        coverageMissing: true,
+      });
+      continue;
+    }
+    if (plans.malformed || shared.length !== 1 || source.length !== 1 || completeCalls.length !== 1)
+      throw new Error('E4 source join nested coverage refused');
+    const column = (name: string) => plans.nodeColumns.indexOf(name);
+    const sourceNodes = source[0].nodes.filter(
+      (n) =>
+        plans.dictionary[n[column('relation')]!] === 'ParticipantSettlementTimeBucketSource' ||
+        plans.dictionary[n[column('index')]!] === 'pstbs_bucket_allocation_key',
+    );
+    if (!sourceNodes.length) throw new Error('E4 source join source scan missing');
+    const probes = sourceNodes.map((n) => ({
+      type: plans.dictionary[n[column('type')]!],
+      loops: n[column('loops')],
+      rowsPerLoop: n[column('rows')],
+      estimatedRows: n[column('estimatedRows')],
+    }));
+    if (probes.some((n) => n.loops === null || n.rowsPerLoop === null || n.estimatedRows === null))
+      throw new Error('E4 source join scan metrics missing');
+    const sourceProbeLoops = Math.max(...probes.map((n) => n.loops!));
+    const sourceRows = source[0].nodes[0][column('rows')];
+    if (sourceRows !== (small ? 5 : 2500)) throw new Error('E4 source join actual shape refused');
+    result.push({
+      index,
+      variant,
+      sharedMs: shared[0].durationMs,
+      sourceMs: source[0].durationMs,
+      completeMs: completeCalls[0].durationMs,
+      sourceProbeLoops,
+      sourceRows,
+      probes,
+      jit: shared[0].jit,
+      plans,
+      coverageMissing: false,
+    });
+  }
+  return result;
+}
+export function sourceJoinSessionSql(revisionId: string, small: boolean) {
+  return joinKeyProbeSql(revisionId, 'app_test_w98', small ? 4 : 2000, false, true).replace(
+    'BEGIN;\nDO $$ BEGIN',
+    () =>
+      `${nativeSettingsSql}\nBEGIN;\nCREATE TEMP TABLE e4_sj_session AS ${nativeClusterSql()};\nSELECT 'E4_SOURCE_JOIN_SESSION '||row_to_json(s)::TEXT FROM pg_temp.e4_sj_session s;\nDO $$ BEGIN`,
+  );
+}
+async function probeSourceJoin(db: PrismaClient, report: Report, privateDir: string) {
+  const small = process.env.SRVF_E4_SOURCE_JOIN === 'small',
+    proof = privateDiagnosticProofs.get(report);
+  if (!proof || report.oracle !== 'COMPLETE' || proof.units !== (small ? 4 : 2000))
+    throw new Error('E4 source join frozen proof refused');
+  const capability = readNativeCapability();
+  const owner = `e4_sj_${report.head.slice(0, 12)}_${report.run}`;
+  const started = performance.now(),
+    since = new Date().toISOString();
+  report.sourceJoinComparison = {
+    status: 'ENTERED',
+    candidateSha256: createHash('sha256').update(sourceJoinFunction(true)).digest('hex'),
+  };
+  const sql = sourceJoinSessionSql(proof.revisionId, small);
+  const proc = spawnSync(
+    'docker',
+    [
+      'exec',
+      '-i',
+      '-e',
+      `PGAPPNAME=${owner}`,
+      'u-nest-api-postgres',
+      'psql',
+      '-X',
+      '-q',
+      '-A',
+      '-t',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-v',
+      'VERBOSITY=verbose',
+      '-v',
+      `root_id=${proof.revisionId}`,
+      '-U',
+      'postgres',
+      '-d',
+      'app_test_w98',
+    ],
+    { input: sql, encoding: 'utf8', timeout: 240000, maxBuffer: 2097152 },
+  );
+  const stderr = joinKeyDiagnosticNotices(proc.stderr ?? '');
+  const owned = await db.$queryRaw<
+    { pid: number }[]
+  >`SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner} AND pid<>pg_backend_pid()`;
+  if (owned.length > 1) throw new Error('E4 source join backend ownership refused');
+  for (const { pid } of owned)
+    await db.$queryRaw`SELECT pg_terminate_backend(pid,1000) FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner} AND pid=${pid}`;
+  const [{ remaining }] = await db.$queryRaw<
+    { remaining: number }[]
+  >`SELECT count(*)::INT AS remaining FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner}`;
+  if (remaining !== 0) throw new Error('E4 source join backend cleanup refused');
+  report.sourceJoinStats = {
+    ...(report.sourceJoinStats as object),
+    afterComparison: await sourceJoinStatistics(db),
+  };
+  report.sourceJoinComparison = {
+    ...(report.sourceJoinComparison as object),
+    status: 'INCOMPLETE',
+    ownedBackendGone: true,
+    exitCode: proc.status,
+    signaled: proc.signal !== null,
+    processError: !!proc.error,
+    wallMs: performance.now() - started,
+    nativeErrors: [
+      ...new Set([...stderr.matchAll(/ERROR:\s+([A-Z0-9]{5})(?::|\s|$)/gu)].map((m) => m[1])),
+    ].slice(0, 4),
+    failure: compactJoinKeyFailure(stderr),
+    failureReason: stderr.includes('E4 source join statistics changed')
+      ? 'STATISTICS_CHANGED'
+      : stderr.includes('E4 source join bag/hash equivalence refused')
+        ? 'BAG_OR_HASH_MISMATCH'
+        : 'PROCESS_OR_NATIVE_EXCEPTION',
+    priorityProgress: compactMetadataProgress(stderr),
+    progress: {
+      samples: (stderr.match(/NOTICE:\s+E4_JOIN_KEY_SAMPLE /gu) ?? []).length,
+      equivalence: (stderr.match(/NOTICE:\s+E4_SOURCE_JOIN_EQ /gu) ?? []).length,
+    },
+  };
+  const session = proc.stdout.match(/^E4_SOURCE_JOIN_SESSION (\{[^\n]+\})$/mu);
+  if (!session) throw new Error('E4 source join backend receipt refused');
+  const effective = JSON.parse(session[1]) as NativeSettings;
+  validNativeSettings(effective, 'app_test_w98');
+  if (effective.cluster !== capability.cluster)
+    throw new Error('E4 source join cluster binding refused');
+  const success =
+    !proc.error && !proc.signal && proc.status === 0 && proc.stdout.includes('E4_JOIN_KEY_SUCCESS');
+  const nativeRaw = nativeDockerLog(since);
+  const collected = compactSourceJoinPlans(nativeRaw, effective.pid, small, false);
+  const plans = collected.map(({ plans, ...summary }) => {
+    const artifact = {
+      head: report.head,
+      run: report.run,
+      scenario: report.scenario,
+      purpose: 'DIAGNOSTIC_ONLY',
+      coverage: 'PREPARE_SOURCE_JOIN_ONLY',
+      ...summary,
+      plans,
+    };
+    const file = `source-join-plan-${summary.index}.json`;
+    writeBounded(join(privateDir, file), artifact);
+    return {
+      ...summary,
+      file,
+      sha256: createHash('sha256')
+        .update(JSON.stringify(artifact) + '\n')
+        .digest('hex'),
+    };
+  });
+  const baseline = plans.filter((p) => p.variant === 'BASELINE'),
+    candidate = plans.filter((p) => p.variant === 'CANDIDATE');
+  report.sourceJoinComparison = { ...(report.sourceJoinComparison as object), plans };
+  if (!success) throw new Error('E4 source join process refused');
+  compactSourceJoinPlans(nativeRaw, effective.pid, small);
+  const evidence = compactSourceJoinEvidence(stderr, small);
+  report.sourceJoinComparison = {
+    status: 'COMPLETE',
+    small,
+    ownedBackendGone: true,
+    ...evidence,
+    plans,
+    wallMs: performance.now() - started,
+    sourceFunctionSha256: SOURCE_JOIN_BASELINE_SHA,
+    candidateSha256: createHash('sha256').update(sourceJoinFunction(true)).digest('hex'),
+    calibration: small ? null : readSourceJoinCalibration(),
+    probeReductionObserved: small
+      ? null
+      : Math.max(...candidate.map((p) => p.sourceProbeLoops ?? Infinity)) <= 4000 &&
+        Math.min(...baseline.map((p) => p.sourceProbeLoops ?? 0)) > 4000,
+    productionTriggerCoverage: 'ORIGINAL_PREPARE_UNCHANGED_COMPARISON_ONLY_TEMP_FUNCTIONS',
+    observation: {
+      sourceHelperMinimumMs: 0,
+      outerMinimumMs: 50,
+      symmetricTemporarySourceAndCompleteCopies: true,
+    },
+    physicalRowOrder: 'UNSPECIFIED_SQL_ORDER_WINDOW_AND_CANONICAL_ORDER_UNCHANGED',
+  };
+  report.internalSqlPlan = 'OBSERVED';
+  if (
+    !small &&
+    !(report.sourceJoinComparison as { probeReductionObserved: boolean }).probeReductionObserved
+  )
+    throw new Error('E4 source join probe reduction not observed');
+  await verifyDiagnosticDatabase(db);
+  await verifyDiagnosticGuards(db);
+}
+
 const NATIVE_PLAN_NODE_TYPES = [
   'Result',
   'ProjectSet',
@@ -4436,6 +5240,11 @@ function nativeObjects() {
     ...NATIVE_CAP_OBJECTS,
     ...NATIVE_PLAN_NODE_TYPES,
     'FOREIGN_KEY',
+    'time_source_edges',
+    'e4_sj_rows',
+    'e4_sj_original',
+    'e4_sj_complete_baseline',
+    'e4_join_candidate',
     'quicksort',
     'external merge',
     'top-N heapsort',
@@ -4470,7 +5279,12 @@ export function nativePlanCategory(sql: string): NativePlanCategory {
   return 'OTHER';
 }
 /** Values, expressions, query text, parameter data and arbitrary identifiers are never projected. */
-export function compactNativePrepareLog(raw: string, pid: number, capability = false) {
+export function compactNativePrepareLog(
+  raw: string,
+  pid: number,
+  capability = false,
+  sourceJoin = false,
+) {
   if (Buffer.byteLength(raw) > 2097152 || !Number.isInteger(pid) || pid < 1)
     throw new Error('E4 native log bound refused');
   const dictionary = ['OTHER'];
@@ -4497,6 +5311,22 @@ export function compactNativePrepareLog(raw: string, pid: number, capability = f
       .trim()
       .replace(/;$/u, '');
   const shared = normalize(sharedGuardStatement());
+  const sourceShared = sourceJoin
+    ? normalize(
+        sharedGuardStatement().replace(
+          'SELECT * FROM e4_source_rows(root.id)',
+          'SELECT * FROM pg_temp.e4_sj_rows(root.id)',
+        ),
+      )
+    : null;
+  const sourceBaselineShared = sourceJoin
+    ? normalize(
+        sharedGuardStatement().replace(
+          'SELECT * FROM e4_source_rows(root.id)',
+          'SELECT * FROM pg_temp.e4_sj_original(root.id)',
+        ),
+      )
+    : null;
   type RecordRow = {
     kind: string;
     site: string;
@@ -4535,9 +5365,14 @@ export function compactNativePrepareLog(raw: string, pid: number, capability = f
       const query = typeof document['Query Text'] === 'string' ? document['Query Text'] : '';
       const category = nativePlanCategory(query);
       const kind =
-        normalize(query) === shared
+        normalize(query) === shared ||
+        (sourceJoin && [sourceShared, sourceBaselineShared].includes(normalize(query)))
           ? 'E4_SHARED'
-          : /^SELECT\s+(?:public\.)?e4_assert_complete\(/iu.test(query.trim())
+          : /^SELECT\s+(?:public\.)?e4_assert_complete\(/iu.test(query.trim()) ||
+              (sourceJoin &&
+                /^SELECT\s+pg_temp\.(?:e4_join_candidate|e4_sj_complete_baseline)\(/iu.test(
+                  query.trim(),
+                ))
             ? 'E4_COMPLETE_CALL'
             : capability && /^INSERT INTO e4_native_cap_target/u.test(query.trim())
               ? 'CAP_INSERT'
@@ -4736,6 +5571,7 @@ export function validateNativeCapability(value: unknown, head: string, run: stri
     r.server !== 16 ||
     r.triggerTiming !== true ||
     r.foreignKeyTiming !== true ||
+    r.functionLocalSourcePlan !== true ||
     r.nested !== true ||
     r.redacted !== true ||
     typeof r.cluster !== 'string' ||
@@ -4749,6 +5585,7 @@ export function validateNativeCapability(value: unknown, head: string, run: stri
     server: 16,
     triggerTiming: true,
     foreignKeyTiming: true,
+    functionLocalSourcePlan: true,
     nested: true,
     redacted: true,
     cluster: r.cluster,
@@ -4768,7 +5605,7 @@ function runNativeCapability() {
   if (process.env.GITHUB_ACTIONS === 'true') {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     requireDiagnosticEnvironment(process.env, head);
-    if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN !== '1')
+    if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN !== '1' && !process.env.SRVF_E4_SOURCE_JOIN)
       throw new Error('E4 native capability scope refused');
   }
   const since = new Date().toISOString();
@@ -4780,7 +5617,10 @@ CREATE FUNCTION pg_temp.e4_native_cap_trigger() RETURNS TRIGGER LANGUAGE plpgsql
 CREATE TRIGGER e4_native_cap_trigger AFTER INSERT ON e4_native_cap_target FOR EACH STATEMENT EXECUTE FUNCTION pg_temp.e4_native_cap_trigger();
 ${nativeSettingsSql}
 SET auto_explain.log_min_duration=0;
-INSERT INTO e4_native_cap_target VALUES (1,'E4_PRIVATE_CANARY'); SET auto_explain.log_min_duration=-1;
+INSERT INTO e4_native_cap_target VALUES (1,'E4_PRIVATE_CANARY');
+CREATE FUNCTION pg_temp.e4_sj_original() RETURNS BIGINT LANGUAGE sql STABLE SET search_path=pg_catalog,pg_temp SET auto_explain.log_min_duration='0' AS $$ SELECT count(*) FROM pg_temp.e4_native_cap_target $$;
+SET auto_explain.log_min_duration='50ms'; SELECT pg_temp.e4_sj_original();
+SET auto_explain.log_min_duration=-1;
 SELECT row_to_json(s)::TEXT FROM (${nativeClusterSql()}) s; ROLLBACK;`;
   const r = spawnSync(
     'docker',
@@ -4818,6 +5658,7 @@ SELECT row_to_json(s)::TEXT FROM (${nativeClusterSql()}) s; ROLLBACK;`;
       (t) => plan.dictionary[t[0]!] === 'FOREIGN_KEY' && t[3] !== null && t[4] === 1,
     ) ||
     !plan.records.some((p) => p.site === 'CAP_TRIGGER') ||
+    !plan.records.some((p) => p.functions.some((i) => plan.dictionary[i] === 'e4_sj_original')) ||
     JSON.stringify(plan).includes('E4_PRIVATE_CANARY')
   )
     throw new Error('E4 native capability evidence incomplete');
@@ -4830,6 +5671,7 @@ SELECT row_to_json(s)::TEXT FROM (${nativeClusterSql()}) s; ROLLBACK;`;
     server: 16,
     triggerTiming: true,
     foreignKeyTiming: true,
+    functionLocalSourcePlan: true,
     nested: true,
     redacted: true,
     cluster,
@@ -5006,6 +5848,16 @@ if (require.main === module) {
         writeBounded(file, evidence);
       }
       console.error('E4_NATIVE_CAPABILITY_FAILURE ' + JSON.stringify(evidence));
+      process.exitCode = 1;
+    }
+  } else if (process.argv.length === 3 && process.argv[2] === '--source-join-calibration') {
+    try {
+      verifySourceJoinCalibration();
+    } catch {
+      console.error(
+        'E4_SOURCE_JOIN_CALIBRATION_FAILURE ' +
+          JSON.stringify({ category: 'CALIBRATION_NOT_VERIFIED', businessFixtureExecuted: false }),
+      );
       process.exitCode = 1;
     }
   } else if (process.argv.length === 3 && process.argv[2] === '--canonical-equivalence') {
