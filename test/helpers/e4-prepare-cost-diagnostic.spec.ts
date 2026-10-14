@@ -19,6 +19,8 @@ import {
   createDiagnosticE4Source,
   diagnosticOracleClient,
   oracleStageWrappers,
+  canonicalCostQueries,
+  compactCanonicalCostPlan,
   diagnosticPopulation,
   requireDiagnosticEnvironment,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
@@ -38,6 +40,70 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  it('forces every full canonical document and key in separate read-only cost projections with bound identities', () => {
+    const id = 'PRIVATE_ROOT_ID_FOR_OFFLINE';
+    const queries = canonicalCostQueries(id, 'time_revision');
+    for (const query of [queries.old, queries.candidate, queries.stored]) {
+      expect(query.sql).toContain('pg_column_size(evaluation)');
+      expect(query.sql).toContain('octet_length(unit_canonical)');
+      expect(query.sql).toContain('MATERIALIZED');
+      expect(query.sql).not.toContain(id);
+      expect(query.values).toContain(id);
+      expect(query.sql).not.toMatch(/\b(?:INSERT|UPDATE|DELETE|CREATE|DROP|ALTER)\b/u);
+    }
+    expect(queries.comparison.sql).toContain('FULL JOIN candidate');
+    expect(queries.comparison.sql).toContain('FULL JOIN stored');
+    expect(queries.comparison.sql).toContain('rootMatches');
+    expect(queries.comparison.sql).not.toContain(id);
+    expect(queries.comparison.values).toContain('time_revision');
+  });
+  it('exports only estimated numeric/operator plan fields, excluding SQL, filters and business values', () => {
+    const value = [
+      {
+        Plan: {
+          'Node Type': 'Hash Join',
+          'Plan Rows': 8000,
+          'Plan Width': 32,
+          'Total Cost': 12.5,
+          Filter: 'secret-member',
+          Output: ['private-id'],
+          Plans: [
+            {
+              'Node Type': 'Function Scan',
+              'Plan Rows': 1000,
+              'Plan Width': 64,
+              'Total Cost': 5,
+              'Function Name': 'private-name',
+            },
+          ],
+        },
+      },
+    ];
+    const compact = compactCanonicalCostPlan(value);
+    expect(compact).toMatchObject({
+      mode: 'ESTIMATED_ONLY_NO_ANALYZE',
+      costUnits: 'OPTIMIZER_UNITS_NOT_MILLISECONDS',
+      nodes: [
+        { type: 'Hash Join', rows: 8000, width: 32, totalCost: 12.5 },
+        { type: 'Function Scan', rows: 1000, width: 64, totalCost: 5 },
+      ],
+    });
+    expect(JSON.stringify(compact)).not.toMatch(/secret|private|Filter|Output|Function Name/u);
+  });
+  it('permits cost-only mode solely for the closed maximum case', () => {
+    expect(() =>
+      requireDiagnosticEnvironment({ ...env, SRVF_E4_CANONICAL_COST_ONLY: '1' }, head),
+    ).not.toThrow();
+    expect(() =>
+      requireDiagnosticEnvironment(
+        { ...env, SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-500', SRVF_E4_CANONICAL_COST_ONLY: '1' },
+        head,
+      ),
+    ).toThrow();
+    expect(() =>
+      requireDiagnosticEnvironment({ ...env, SRVF_E4_CANONICAL_COST_ONLY: 'again' }, head),
+    ).toThrow();
+  });
   it('distinguishes source denominator,60s day,30s root and canonical steps without changing frozen function results', async () => {
     const steps: string[] = [];
     const code = `async function assertFixedE4RootOracle(){return 1;} async function assertE4SliceSourceDenominators(){return 2;} async function assertFixedE4DayOracle(){await assertE4SliceSourceDenominators();return 3;} async function assertFixedE4Oracle(){await assertFixedE4DayOracle();await assertFixedE4RootOracle();return 4;}`;

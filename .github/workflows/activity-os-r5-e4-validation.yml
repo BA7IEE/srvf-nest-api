@@ -5,6 +5,7 @@ name: R5 E4 isolated validation
 # Current143 checksum/body pin and complete frozen oracles are checked before measurement.
 # Catalog identity uses the actual (text,boolean) signature, including its defaulted argument.
 # Ordinary fixtures use the synchronous <=500 path; oracle errors retain exact original budgets.
+# Cost-only candidates execute maximum once and probe the failed immutable canonical comparison.
 # Subsequent report pushes do not match this workflow path; reruns are refused.
 on:
   workflow_dispatch:
@@ -742,11 +743,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [ordinary-1, ordinary-100, ordinary-500, maximum, lock-contention, failure-retry]
+        scenario: ${{ fromJSON(contains(github.event.head_commit.message, '[e4-canonical-cost-once]') && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
     env:
       APP_ENV: test
       SRVF_E4_DIAGNOSTIC_PURPOSE: DIAGNOSTIC_ONLY
       SRVF_E4_DIAGNOSTIC_SCENARIO: ${{ matrix.scenario }}
+      SRVF_E4_CANONICAL_COST_ONLY: ${{ contains(github.event.head_commit.message, '[e4-canonical-cost-once]') && '1' || '' }}
       SRVF_E4_GITHUB_ISOLATED: '1'
       SRVF_TEST_RUN_SCOPE: app_test_w98
       SRVF_E4_W98: '1'

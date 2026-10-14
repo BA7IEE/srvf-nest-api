@@ -216,6 +216,11 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_CANONICAL_COST_ONLY &&
+    (env.SRVF_E4_CANONICAL_COST_ONLY !== '1' || env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum')
+  )
+    throw new Error('E4 canonical cost-only scope refused');
+  if (
     env.SRVF_E4_DIAGNOSTIC_PURPOSE !== 'DIAGNOSTIC_ONLY' ||
     env.APP_ENV !== 'test' ||
     env.GITHUB_ACTIONS !== 'true' ||
@@ -262,6 +267,12 @@ type Report = typeof E4_DIAGNOSTIC_PLAN & {
   errorSubstage?: string;
   error?: ReturnType<typeof e4DiagnosticSafeError>;
   oracleTransactions?: OracleTransactionReceipt[];
+  canonicalCost?: {
+    purpose: 'READ_ONLY_COST_NOT_ACCEPTANCE';
+    samples: CanonicalCostSample[];
+    plan?: unknown;
+    planError?: ReturnType<typeof e4DiagnosticSafeError>;
+  };
   scenarioShape?: { identities: number; segments: number; slices: number; units: number };
   budgetRecommendation?: string;
 };
@@ -578,6 +589,211 @@ function frozenOrdinaryOracle(report: Report) {
     },
   }) as (db: PrismaClient, id: string, count: number) => Promise<void>;
 }
+type PrivateDiagnosticProof = { revisionId: string; sourceKindCode: string; units: number };
+const privateDiagnosticProofs = new WeakMap<Report, PrivateDiagnosticProof>();
+type CanonicalCostSample = {
+  component: 'OLD_FROZEN' | 'CANDIDATE' | 'STORED';
+  transactionMs: 30000;
+  statementMs: 30000;
+  wallMs: number;
+  outcome: 'COMPLETE' | 'FAILED';
+  rows?: number;
+  documentBytes?: number;
+  keyBytes?: number;
+  error?: ReturnType<typeof e4DiagnosticSafeError>;
+};
+export function canonicalCostQueries(revisionId: string, sourceKindCode: string) {
+  const source = readFileSync(
+    resolve(dirname(oraclePath), 'activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),
+    'utf8',
+  );
+  const matches = [
+    ...source.matchAll(/const E4_P_CANONICAL_ORACLE_SQL = String\.raw`([\s\S]*?)`;/gu),
+  ];
+  if (
+    matches.length !== 1 ||
+    createHash('sha256').update(matches[0][1]).digest('hex') !==
+      '1aaf91d632713dddaeb106ad4095ac5650aa65416841f8c865d2fd0020fa465b'
+  )
+    throw new Error('E4 canonical cost frozen source refused');
+  const parts = matches[0][1].split(/\brevision_id\b/u);
+  if (parts.length !== 3) throw new Error('E4 canonical cost binding refused');
+  const oracle = Prisma.join(
+    parts.flatMap((part, index) =>
+      index === parts.length - 1
+        ? [Prisma.raw(part)]
+        : [Prisma.raw(part), Prisma.sql`${revisionId}::text`],
+    ),
+    '',
+  );
+  const ast = ts.createSourceFile(
+    'fixed-oracle.ts',
+    frozenE4OracleSource(),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const templates: ts.TemplateExpression[] = [];
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isTaggedTemplateExpression(node) &&
+      ts.isTemplateExpression(node.template) &&
+      /WITH\s+oracle\(unit_canonical,evaluation\)\s+AS MATERIALIZED/u.test(node.template.head.text)
+    )
+      templates.push(node.template);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  if (templates.length !== 1) throw new Error('E4 canonical full comparison refused');
+  const template = templates[0];
+  const fullParts: Prisma.Sql[] = [Prisma.raw(template.head.text)];
+  for (const span of template.templateSpans) {
+    const name = span.expression.getText(ast);
+    const binding =
+      name === 'oracle'
+        ? oracle
+        : name === 'revisionId'
+          ? Prisma.sql`${revisionId}`
+          : name === 'root.sourceKindCode'
+            ? Prisma.sql`${sourceKindCode}`
+            : undefined;
+    if (!binding) throw new Error('E4 canonical full comparison binding refused');
+    fullParts.push(binding, Prisma.raw(span.literal.text));
+  }
+  const stats = (input: Prisma.Sql) => Prisma.sql`
+    WITH docs(unit_canonical,evaluation) AS MATERIALIZED (${input})
+    SELECT count(*)::int AS rows,coalesce(sum(pg_column_size(evaluation)),0)::text AS "documentBytes",
+      coalesce(sum(octet_length(unit_canonical)),0)::text AS "keyBytes" FROM docs
+  `;
+  return {
+    old: stats(oracle),
+    candidate: stats(Prisma.sql`SELECT * FROM public.e4_expected_evaluations(${revisionId}::text)`),
+    stored: stats(
+      Prisma.sql`SELECT e."evaluationUnitKey",public.e4_evaluation_document(e) FROM "ParticipantContributionEvaluation" e WHERE e."contributionRevisionId"=${revisionId}`,
+    ),
+    comparison: Prisma.join(fullParts, ''),
+  };
+}
+export function compactCanonicalCostPlan(value: unknown) {
+  if (!Array.isArray(value) || value.length !== 1 || !value[0] || typeof value[0] !== 'object')
+    throw new Error('E4 canonical estimate refused');
+  const root: unknown = Reflect.get(value[0], 'Plan');
+  const nodes: {
+    type: string;
+    rows: number | null;
+    width: number | null;
+    totalCost: number | null;
+  }[] = [];
+  const kinds = [
+    'Aggregate',
+    'Result',
+    'Function Scan',
+    'CTE Scan',
+    'Seq Scan',
+    'Index Scan',
+    'Index Only Scan',
+    'Bitmap Heap Scan',
+    'Bitmap Index Scan',
+    'Hash',
+    'Hash Join',
+    'Merge Join',
+    'Nested Loop',
+    'Sort',
+    'Materialize',
+    'Append',
+    'Subquery Scan',
+    'Limit',
+  ];
+  const number = (row: object, field: string) => {
+    const x: unknown = Reflect.get(row, field);
+    return typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : null;
+  };
+  const visit = (row: unknown) => {
+    if (!row || typeof row !== 'object' || nodes.length >= 64)
+      throw new Error('E4 canonical estimate limit');
+    const type: unknown = Reflect.get(row, 'Node Type');
+    nodes.push({
+      type: typeof type === 'string' && kinds.includes(type) ? type : 'OTHER',
+      rows: number(row, 'Plan Rows'),
+      width: number(row, 'Plan Width'),
+      totalCost: number(row, 'Total Cost'),
+    });
+    const children: unknown = Reflect.get(row, 'Plans');
+    if (children !== undefined) {
+      if (!Array.isArray(children)) throw new Error('E4 canonical estimate children refused');
+      children.forEach(visit);
+    }
+  };
+  visit(root);
+  return {
+    mode: 'ESTIMATED_ONLY_NO_ANALYZE',
+    costUnits: 'OPTIMIZER_UNITS_NOT_MILLISECONDS',
+    nodes,
+  };
+}
+async function probeCanonicalCosts(
+  db: PrismaClient,
+  report: Report,
+  proof: PrivateDiagnosticProof,
+) {
+  report.canonicalCost = { purpose: 'READ_ONLY_COST_NOT_ACCEPTANCE', samples: [] };
+  try {
+    const sql = canonicalCostQueries(proof.revisionId, proof.sourceKindCode);
+    for (const [component, query] of [
+      ['OLD_FROZEN', sql.old],
+      ['CANDIDATE', sql.candidate],
+      ['STORED', sql.stored],
+    ] as const) {
+      const started = performance.now();
+      const sample: CanonicalCostSample = {
+        component,
+        transactionMs: 30000,
+        statementMs: 30000,
+        wallMs: 0,
+        outcome: 'FAILED',
+      };
+      try {
+        const [row] = await db.$transaction(
+          async (tx) => {
+            await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+            await tx.$executeRaw`SET LOCAL statement_timeout='30s'`;
+            return tx.$queryRaw<{ rows: number; documentBytes: string; keyBytes: string }[]>(query);
+          },
+          { timeout: 30000 },
+        );
+        const documentBytes = Number(row.documentBytes),
+          keyBytes = Number(row.keyBytes);
+        expect(row.rows).toBe(proof.units);
+        if (![documentBytes, keyBytes].every((x) => Number.isSafeInteger(x) && x >= 0 && x <= 1e12))
+          throw new Error('E4 canonical size evidence refused');
+        Object.assign(sample, { outcome: 'COMPLETE', rows: row.rows, documentBytes, keyBytes });
+      } catch (error) {
+        sample.error = e4DiagnosticSafeError(error);
+      } finally {
+        sample.wallMs = performance.now() - started;
+        report.canonicalCost.samples.push(sample);
+      }
+    }
+    try {
+      const [plan] = await db.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+          await tx.$executeRaw`SET LOCAL statement_timeout='30s'`;
+          return tx.$queryRaw<{ 'QUERY PLAN': unknown }[]>(
+            Prisma.sql`EXPLAIN (FORMAT JSON) ${sql.comparison}`,
+          );
+        },
+        { timeout: 30000 },
+      );
+      report.canonicalCost.plan = compactCanonicalCostPlan(plan['QUERY PLAN']);
+    } catch (error) {
+      report.canonicalCost.planError = e4DiagnosticSafeError(error);
+    }
+  } catch (error) {
+    report.canonicalCost.planError = e4DiagnosticSafeError(error);
+  }
+}
+
 async function assertDiagnosticProof(
   db: PrismaClient,
   versionId: string,
@@ -590,6 +806,11 @@ async function assertDiagnosticProof(
   const proof = await db.activitySettlementContributionRevision.findFirstOrThrow({
     where: { settlementVersionId: versionId },
     orderBy: { revision: 'desc' },
+  });
+  privateDiagnosticProofs.set(report, {
+    revisionId: proof.id,
+    sourceKindCode: proof.sourceKindCode,
+    units,
   });
   expect(proof.evaluationCount).toBe(units);
   if (maximum) {
@@ -1348,6 +1569,13 @@ function registerDiagnosticChild() {
         report.failureStage = checkpoint.lastStage();
         report.errorSubstage = report.substage;
         report.error = e4DiagnosticSafeError(error);
+        if (
+          process.env.SRVF_E4_CANONICAL_COST_ONLY === '1' &&
+          report.errorSubstage === 'ORACLE_CANONICAL_DOCUMENT'
+        ) {
+          const proof = privateDiagnosticProofs.get(report);
+          if (proof) await probeCanonicalCosts(f!.db, report, proof);
+        }
         report.budgetRecommendation = 'KEEP_FORMAL_BUDGETS_FAILURE_REQUIRES_STAGE_SPECIFIC_REVIEW';
         checkpoint.mark(
           checkpoint.lastStage(),
