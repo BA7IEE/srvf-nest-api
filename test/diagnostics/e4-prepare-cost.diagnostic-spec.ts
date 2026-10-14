@@ -428,13 +428,13 @@ export function verifyDiagnosticMigrationSource(
   if (createHash('sha256').update(source).digest('hex') !== E4_DIAGNOSTIC_PLAN.migration143Sha256)
     throw new Error('E4 current143 source pin refused');
 }
-async function verifyDiagnosticDatabase(db: PrismaClient) {
+export async function verifyDiagnosticDatabase(db: Pick<PrismaClient, '$queryRaw'>) {
   const [metadata] = await db.$queryRaw<
     { count: number; checksum: string | null; pin: string; enabled: string }[]
   >`
     SELECT (SELECT count(*)::int FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL) AS count,
       (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261013000000_activity_contribution_assert_source_reuse' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS checksum,
-      (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text)'::regprocedure) AS pin,
+      (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure) AS pin,
       (SELECT tgenabled::text FROM pg_trigger WHERE tgname='e4_revision_complete_guard') AS enabled
   `;
   expect(metadata).toEqual({

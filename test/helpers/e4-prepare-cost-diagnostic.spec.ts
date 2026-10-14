@@ -7,11 +7,13 @@ import {
   e4DiagnosticErrorCategory,
 } from './e4-diagnostic-limits-client';
 import ts from 'typescript';
+import type { PrismaClient } from '@prisma/client';
 import {
   E4_DIAGNOSTIC_PLAN,
   frozenE4OracleSource,
   frozenOrdinaryOracleSource,
   verifyDiagnosticMigrationSource,
+  verifyDiagnosticDatabase,
   diagnosticPopulation,
   requireDiagnosticEnvironment,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
@@ -31,6 +33,63 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  it('queries the actual two-argument143 catalog identity despite the defaulted boolean', async () => {
+    const migration = readFileSync(
+      resolve(
+        __dirname,
+        '../../prisma/migrations/20261013000000_activity_contribution_assert_source_reuse/migration.sql',
+      ),
+      'utf8',
+    );
+    const declaration = migration.match(
+      /CREATE OR REPLACE FUNCTION e4_assert_complete\(([^)]+)\)/u,
+    );
+    expect(declaration).not.toBeNull();
+    const argumentTypes = declaration![1]
+      .split(',')
+      .map((argument) => argument.trim().split(/\s+/u)[1].toLowerCase());
+    expect(argumentTypes).toEqual(['text', 'boolean']);
+    expect(declaration![1]).toContain('BOOLEAN DEFAULT TRUE');
+    const actualIdentity = `public.e4_assert_complete(${argumentTypes.join(',')})`;
+    const query = jest.fn(async (strings: TemplateStringsArray) => {
+      const identities = [...strings.join('').matchAll(/'([^']+)'::regprocedure/gu)].map(
+        (match) => match[1],
+      );
+      if (identities.length !== 1 || identities[0] !== actualIdentity)
+        throw Object.assign(new Error('synthetic catalog identity missing'), { code: 'P2010' });
+      return [
+        {
+          count: 143,
+          checksum: E4_DIAGNOSTIC_PLAN.migration143Sha256,
+          pin: E4_DIAGNOSTIC_PLAN.completeFunctionMd5,
+          enabled: 'O',
+        },
+      ];
+    });
+    await expect(
+      verifyDiagnosticDatabase({ $queryRaw: query as unknown as PrismaClient['$queryRaw'] }),
+    ).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    { count: 142 },
+    { checksum: '0'.repeat(64) },
+    { pin: '21fe9ecf6df989a3f8fa5878df40b93c' },
+    { enabled: 'D' },
+  ])('still refuses a stale or disabled installed143 catalog:%p', async (change) => {
+    const query = jest.fn(async () => [
+      {
+        count: 143,
+        checksum: E4_DIAGNOSTIC_PLAN.migration143Sha256,
+        pin: E4_DIAGNOSTIC_PLAN.completeFunctionMd5,
+        enabled: 'O',
+        ...change,
+      },
+    ]);
+    await expect(
+      verifyDiagnosticDatabase({ $queryRaw: query as unknown as PrismaClient['$queryRaw'] }),
+    ).rejects.toThrow();
+  });
   it.each(['GUARD', 'FIXTURE_BOOTSTRAP'] as const)(
     'keeps a bounded%s receipt after a real child startup failure, without child.json or raw errors',
     (stage) => {

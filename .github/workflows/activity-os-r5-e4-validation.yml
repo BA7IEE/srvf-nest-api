@@ -3,6 +3,7 @@ name: R5 E4 isolated validation
 
 # Only a newly approved candidate commit can consume this one-shot queue.
 # Current143 checksum/body pin and complete frozen oracles are checked before measurement.
+# Catalog identity uses the actual (text,boolean) signature, including its defaulted argument.
 # Subsequent report pushes do not match this workflow path; reruns are refused.
 on:
   workflow_dispatch:
