@@ -30,6 +30,10 @@ import {
   sharedGuardStatement,
   sharedGuardProbeSql,
   compactSharedGuardNotice,
+  joinKeyCandidateSource,
+  joinKeyProbeSql,
+  compactJoinKeyEvidence,
+  JOIN_KEY_ORDER,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -69,6 +73,126 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
   });
   const notice = (document: unknown) =>
     `NOTICE:  duration: 1234.5 ms  plan:\n${JSON.stringify(document, null, 2)}\n`;
+  const comparisonNotice = () => {
+    let raw = '';
+    for (const [index, [phase, variant]] of JOIN_KEY_ORDER.entries()) {
+      raw += `NOTICE: E4_JOIN_KEY_BEGIN ${index}\n`;
+      if (phase === 'ACTUAL_PLAN')
+        raw += notice({ ...guardDocument(), 'Query Text': sharedGuardStatement(variant) });
+      raw +=
+        'NOTICE: E4_JOIN_KEY_SAMPLE ' +
+        JSON.stringify({
+          index,
+          phase,
+          variant,
+          wallMs: 1200,
+          returned: true,
+          completeDocumentAndRootGuard: true,
+          sameBackend: true,
+          readonly: true,
+          workMemKb: 4096,
+          jitEnabled: true,
+          planCacheMode: 'force_custom_plan',
+        }) +
+        '\n';
+    }
+    for (const kind of ['MISSING', 'EXTRA', 'TAMPERED'])
+      for (const variant of ['BASELINE', 'CANDIDATE'])
+        raw +=
+          'NOTICE: E4_JOIN_KEY_NEGATIVE ' +
+          JSON.stringify({
+            kind,
+            variant,
+            sqlstate: '23514',
+            constraint: 'e4_evaluation_guard',
+            affected: 1,
+            rolledBack: true,
+            allShadowRowsRestored: true,
+            markerRestored: true,
+          }) +
+          '\n';
+    raw +=
+      'NOTICE: E4_JOIN_KEY_COMPLETE ' +
+      JSON.stringify({
+        catalogUnchanged: true,
+        guardsUnchanged: true,
+        sameBackend: true,
+        publicEvaluationCount: 8000,
+      }) +
+      '\n';
+    return raw;
+  };
+  it('constructs exactly the three key-carry edits with an unchanged complete evaluation expression', () => {
+    const path = resolve(
+      __dirname,
+      '../../prisma/migrations/20261013000000_activity_contribution_assert_source_reuse/migration.sql',
+    );
+    const original = readFileSync(path, 'utf8'),
+      candidate = joinKeyCandidateSource();
+    const restored = candidate
+      .replace(
+        'expected_documents(unit_canonical,evaluation_key,evaluation)',
+        'expected_documents(unit_canonical,evaluation)',
+      )
+      .replace("SELECT unit,metadata->>'evaluationUnitKey',metadata ||", 'SELECT unit,metadata ||')
+      .replace(
+        'SELECT evaluation_key AS key,evaluation',
+        "SELECT evaluation->>'evaluationUnitKey' AS key,evaluation",
+      );
+    expect(restored).toBe(original);
+    expect(candidate).toContain('expected x FULL JOIN actual a USING (key)');
+    expect(candidate).toContain('x.evaluation IS DISTINCT FROM');
+    expect(readFileSync(path, 'utf8')).toBe(original);
+  });
+  it('uses only temporary candidate/shadow objects, real SQL mutations and exception rollback with original production catalog checks', () => {
+    const sql = joinKeyProbeSql('synthetic_root', 'app_test_w98');
+    expect(sql.match(/CREATE FUNCTION pg_temp\./gu)).toHaveLength(3);
+    expect(sql).not.toMatch(
+      /CREATE OR REPLACE FUNCTION|DISABLE TRIGGER|session_replication_role|(?:UPDATE|INSERT INTO|DELETE FROM) public\./u,
+    );
+    expect(sql.match(/PERFORM public\.e4_assert_complete\(root_id,FALSE\)/gu)).toHaveLength(3);
+    expect(sql.match(/PERFORM pg_temp\.e4_join_candidate\(root_id,FALSE\)/gu)).toHaveLength(3);
+    expect(sql).toContain('GET STACKED DIAGNOSTICS');
+    expect(sql).toContain("state<>'23514' OR guard<>'e4_evaluation_guard'");
+    expect(sql).toContain('DELETE FROM pg_temp.e4_probe_evaluations');
+    expect(sql).toContain('INSERT INTO pg_temp.e4_probe_evaluations');
+    expect(sql).toContain('UPDATE pg_temp.e4_probe_evaluations');
+    expect(sql).toContain('before_hash');
+    expect(sql).toContain('e4_probe_marks');
+    expect(sql).toContain('E4 join key public catalog changed');
+    expect(() => joinKeyProbeSql('root', 'app_test')).toThrow();
+  });
+  it('requires fixed ABBA, both actual plans, two valid shadow controls and all six native-error rollback cases', () => {
+    const result = compactJoinKeyEvidence(comparisonNotice());
+    expect(result.timings).toHaveLength(8);
+    expect(result.plans.map((p) => p.variant)).toEqual(['BASELINE', 'CANDIDATE']);
+    expect(result.cases).toHaveLength(6);
+    expect(result.cases.every((c) => c.rolledBack)).toBe(true);
+    expect(JSON.stringify(result)).not.toMatch(/Query Text|Filter|root\.id|private/u);
+  });
+  it.each([
+    ['wrong sqlstate', '"sqlstate":"23514"', '"sqlstate":"P0001"'],
+    ['wrong constraint', '"constraint":"e4_evaluation_guard"', '"constraint":"e4_complete_guard"'],
+    ['missing rollback', '"rolledBack":true', '"rolledBack":false'],
+    ['lost rows', '"allShadowRowsRestored":true', '"allShadowRowsRestored":false'],
+    ['lost marker', '"markerRestored":true', '"markerRestored":false'],
+    ['changed backend', '"sameBackend":true', '"sameBackend":false'],
+    ['changed memory', '"workMemKb":4096', '"workMemKb":32768'],
+    ['failed control', '"returned":true', '"returned":false'],
+  ])('refuses %s in candidate receipts', (_label, before, after) => {
+    expect(() => compactJoinKeyEvidence(comparisonNotice().replace(before, after))).toThrow();
+  });
+  it('refuses a candidate execution outside maximum/first oracle or combined with the earlier single-plan mode', () => {
+    const approved = { ...env, SRVF_E4_JOIN_KEY_ONCE: '1', SRVF_E4_CANONICAL_FIRST32: '1' };
+    expect(() => requireDiagnosticEnvironment(approved, head)).not.toThrow();
+    for (const change of [
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-500' },
+      { SRVF_E4_CANONICAL_FIRST32: '' },
+      { SRVF_E4_SHARED_GUARD_ONCE: '1' },
+      { SRVF_E4_JOIN_KEY_ONCE: 'true' },
+    ])
+      expect(() => requireDiagnosticEnvironment({ ...approved, ...change }, head)).toThrow();
+  });
   it('captures the pinned actual nested statement with hierarchy, node timing and physical metrics only', () => {
     const result = compactSharedGuardNotice(notice(guardDocument()));
     expect(result.durationMs).toBe(1234.5);

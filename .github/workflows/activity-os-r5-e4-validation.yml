@@ -747,7 +747,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ fromJSON((contains(github.event.head_commit.message, '[e4-canonical-cost-once]') || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]')) && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
+        scenario: ${{ fromJSON((contains(github.event.head_commit.message, '[e4-canonical-cost-once]') || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
     env:
       APP_ENV: test
       SRVF_E4_DIAGNOSTIC_PURPOSE: DIAGNOSTIC_ONLY
@@ -755,7 +755,8 @@ jobs:
       SRVF_E4_CANONICAL_COST_ONLY: ${{ contains(github.event.head_commit.message, '[e4-canonical-cost-once]') && '1' || '' }}
       SRVF_E4_CANONICAL_JIT_ABBA: ${{ contains(github.event.head_commit.message, '[e4-canonical-jit-once]') && '1' || '' }}
       SRVF_E4_CANONICAL_MEMORY_PAIR: ${{ contains(github.event.head_commit.message, '[e4-canonical-memory-once]') && '1' || '' }}
-      SRVF_E4_CANONICAL_FIRST32: ${{ (contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]')) && '1' || '' }}
+      SRVF_E4_CANONICAL_FIRST32: ${{ (contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '1' || '' }}
+      SRVF_E4_JOIN_KEY_ONCE: ${{ contains(github.event.head_commit.message, '[e4-join-key-once]') && '1' || '' }}
       SRVF_E4_SHARED_GUARD_ONCE: ${{ contains(github.event.head_commit.message, '[e4-shared-guard-once]') && '1' || '' }}
       SRVF_E4_GITHUB_ISOLATED: '1'
       SRVF_TEST_RUN_SCOPE: app_test_w98
@@ -790,7 +791,7 @@ jobs:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --execute
       - name: Summarize closed shared-guard evidence
-        if: always() && contains(github.event.head_commit.message, '[e4-shared-guard-once]')
+        if: always() && (contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]'))
         run: |
           node <<'NODE'
           const fs = require('node:fs');
@@ -798,7 +799,7 @@ jobs:
           if (!fs.existsSync(file) || fs.statSync(file).size > 65536) throw Error('E4 closed evidence unavailable');
           const r = JSON.parse(fs.readFileSync(file, 'utf8'));
           if (r.head !== process.env.GITHUB_SHA || r.run !== process.env.GITHUB_RUN_ID || r.scenario !== 'maximum' || r.purpose !== 'DIAGNOSTIC_ONLY') throw Error('E4 closed evidence binding refused');
-          process.stdout.write('E4_SHARED_GUARD_RESULT ' + JSON.stringify({ head:r.head, run:r.run, status:r.status, coverage:r.coverage, migration:r.migration, oracle:r.oracle, prepareMs:r.prepareMs, resources:r.resources, databaseCleanup:r.databaseCleanup, firstCanonical32:r.firstCanonical32, internalSqlPlan:r.internalSqlPlan, internal:r.internal, errorSubstage:r.errorSubstage, error:r.error }) + '\n');
+          process.stdout.write('E4_SHARED_GUARD_RESULT ' + JSON.stringify({ head:r.head, run:r.run, status:r.status, coverage:r.coverage, migration:r.migration, oracle:r.oracle, prepareMs:r.prepareMs, resources:r.resources, databaseCleanup:r.databaseCleanup, firstCanonical32:r.firstCanonical32, internalSqlPlan:r.internalSqlPlan, internal:r.internal, joinKeyCandidate:r.joinKeyCandidate, errorSubstage:r.errorSubstage, error:r.error }) + '\n');
           NODE
       - uses: actions/upload-artifact@v4
         if: always()

@@ -302,6 +302,14 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_JOIN_KEY_ONCE &&
+    (env.SRVF_E4_JOIN_KEY_ONCE !== '1' ||
+      env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum' ||
+      env.SRVF_E4_CANONICAL_FIRST32 !== '1' ||
+      !!env.SRVF_E4_SHARED_GUARD_ONCE)
+  )
+    throw new Error('E4 join key comparison scope refused');
+  if (
     env.SRVF_E4_SHARED_GUARD_ONCE &&
     (env.SRVF_E4_SHARED_GUARD_ONCE !== '1' ||
       env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum' ||
@@ -387,7 +395,9 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
   coverage?:
     | 'FULL_SETTLEMENT'
     | 'PREPARE_AND_FIRST_ORACLE_ONLY'
-    | 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY';
+    | 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+    | 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY';
+  joinKeyCandidate?: unknown;
   firstCanonical32?: FirstCanonical32Evidence;
   canonicalCost?: {
     purpose: 'READ_ONLY_COST_NOT_ACCEPTANCE';
@@ -1007,15 +1017,53 @@ export function compactCanonicalActualPlan(value: unknown, operatorDetail = fals
 }
 
 /** Identify the actual SPI statement by pinned source bytes; never execute an extracted query. */
-export function sharedGuardStatement() {
+export function joinKeyCandidateSource() {
   verifyDiagnosticMigrationSource();
-  const source = readFileSync(
+  const original = readFileSync(
     resolve(
       __dirname,
       '../../prisma/migrations/20261013000000_activity_contribution_assert_source_reuse/migration.sql',
     ),
     'utf8',
   );
+  const edits = [
+    [
+      'expected_documents(unit_canonical,evaluation) AS NOT MATERIALIZED',
+      'expected_documents(unit_canonical,evaluation_key,evaluation) AS NOT MATERIALIZED',
+    ],
+    [
+      "SELECT unit,metadata || jsonb_build_object('sourceRefsJson'",
+      "SELECT unit,metadata->>'evaluationUnitKey',metadata || jsonb_build_object('sourceRefsJson'",
+    ],
+    [
+      "SELECT evaluation->>'evaluationUnitKey' AS key,evaluation",
+      'SELECT evaluation_key AS key,evaluation',
+    ],
+  ];
+  let candidate = original;
+  for (const [before, after] of edits) {
+    if (candidate.split(before).length !== 2) throw new Error('E4 join key unique edit refused');
+    candidate = candidate.replace(before, after);
+  }
+  let restored = candidate;
+  for (const [before, after] of [...edits].reverse()) restored = restored.replace(after, before);
+  if (restored !== original) throw new Error('E4 join key reverse edit refused');
+  return candidate;
+}
+
+export function sharedGuardStatement(variant: 'BASELINE' | 'CANDIDATE' = 'BASELINE') {
+  if (!['BASELINE', 'CANDIDATE'].includes(variant)) throw new Error('E4 guard variant refused');
+  verifyDiagnosticMigrationSource();
+  const source =
+    variant === 'CANDIDATE'
+      ? joinKeyCandidateSource()
+      : readFileSync(
+          resolve(
+            __dirname,
+            '../../prisma/migrations/20261013000000_activity_contribution_assert_source_reuse/migration.sql',
+          ),
+          'utf8',
+        );
   const matches = [
     ...source.matchAll(
       /WITH assertion_sources AS MATERIALIZED \([\s\S]*?FROM source_status status;/gu,
@@ -1026,7 +1074,10 @@ export function sharedGuardStatement() {
 }
 
 /** Closed metadata only: no query text, parameters, expressions, fixture identifiers or raw notices. */
-export function compactSharedGuardNotice(raw: string) {
+export function compactSharedGuardNotice(
+  raw: string,
+  variant: 'BASELINE' | 'CANDIDATE' = 'BASELINE',
+) {
   if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 shared guard capture limit');
   const normalize = (sql: string) =>
     sql
@@ -1034,7 +1085,7 @@ export function compactSharedGuardNotice(raw: string) {
       .replace(/\s+/gu, ' ')
       .trim()
       .replace(/;$/u, '');
-  const expected = normalize(sharedGuardStatement());
+  const expected = normalize(sharedGuardStatement(variant));
   const found: { durationMs: number; document: Record<string, unknown> }[] = [];
   let notices = 0;
   for (const match of raw.matchAll(/NOTICE:\s+duration:\s+([0-9.]+) ms\s+plan:\s*\n/gu)) {
@@ -1198,7 +1249,10 @@ export function compactSharedGuardNotice(raw: string) {
   const timing: unknown = jit && typeof jit === 'object' ? Reflect.get(jit, 'Timing') : undefined;
   return {
     status: 'OBSERVED',
-    mode: 'ACTUAL_PRODUCTION_FUNCTION_NESTED_STATEMENT',
+    mode:
+      variant === 'BASELINE'
+        ? 'ACTUAL_PRODUCTION_FUNCTION_NESTED_STATEMENT'
+        : 'ACTUAL_TEMP_CANDIDATE_FUNCTION_NESTED_STATEMENT',
     purpose: 'READ_ONLY_POST_PREPARE_NOT_ACCEPTANCE',
     statementSha256: createHash('sha256').update(expected).digest('hex'),
     durationMs,
@@ -1353,6 +1407,365 @@ async function probeSharedGuard(db: PrismaClient, report: Report) {
     versionSpecificChecks: 'NOT_PROFILED',
   };
   report.internalSqlPlan = 'OBSERVED';
+}
+
+export const JOIN_KEY_ORDER = [
+  ['LATENCY', 'BASELINE'],
+  ['LATENCY', 'CANDIDATE'],
+  ['LATENCY', 'CANDIDATE'],
+  ['LATENCY', 'BASELINE'],
+  ['ACTUAL_PLAN', 'BASELINE'],
+  ['ACTUAL_PLAN', 'CANDIDATE'],
+  ['SHADOW_CONTROL', 'BASELINE'],
+  ['SHADOW_CONTROL', 'CANDIDATE'],
+] as const;
+
+export function joinKeyProbeSql(revisionId: string, databaseName: string) {
+  sharedGuardProbeSql(revisionId, databaseName); // Reuse the exact scope/identifier refusal.
+  const source = readFileSync(
+    resolve(
+      __dirname,
+      '../../prisma/migrations/20261013000000_activity_contribution_assert_source_reuse/migration.sql',
+    ),
+    'utf8',
+  );
+  const body = (sql: string) => {
+    const match = sql.match(/AS \$\$([\s\S]*?)\$\$;\s*COMMIT;/u);
+    if (!match || match[1].includes('$e4_copy$'))
+      throw new Error('E4 join key function body refused');
+    return match[1];
+  };
+  const baselineBody = body(source);
+  if (
+    createHash('md5').update(baselineBody).digest('hex') !== E4_DIAGNOSTIC_PLAN.completeFunctionMd5
+  )
+    throw new Error('E4 join key baseline body pin refused');
+  const candidateBody = body(joinKeyCandidateSource());
+  const shadow = (input: string) =>
+    input
+      .replaceAll('"ParticipantContributionEvaluation"', 'pg_temp.e4_probe_evaluations')
+      .replaceAll(
+        'e4_evaluation_document(e)',
+        'e4_evaluation_document(jsonb_populate_record(NULL::public."ParticipantContributionEvaluation",to_jsonb(e)))',
+      );
+  const create = (name: string, contents: string) =>
+    `CREATE FUNCTION pg_temp.${name}(revision_id TEXT, validate_version BOOLEAN DEFAULT TRUE) RETURNS VOID
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, public AS $e4_copy$${contents}$e4_copy$;\n`;
+  const guardDigest = `(SELECT md5(string_agg(to_jsonb(t)::text,',' ORDER BY t.oid)) FROM pg_trigger t
+    WHERE t.tgrelid IN ('public."ParticipantContributionEvaluation"'::regclass,
+      'public."ActivitySettlementContributionRevision"'::regclass,'public."AttendanceSettlementVersion"'::regclass))`;
+  const settings = `SET LOCAL statement_timeout='30s';
+SET LOCAL idle_in_transaction_session_timeout='30s';
+SET LOCAL plan_cache_mode='force_custom_plan';\n`;
+  let sql = `SET statement_timeout='30s';
+LOAD 'auto_explain';
+SET auto_explain.log_min_duration=-1;
+SET client_min_messages='notice';
+SET auto_explain.log_level='notice';
+SET auto_explain.log_nested_statements=on;
+SET auto_explain.log_analyze=on;
+SET auto_explain.log_timing=on;
+SET auto_explain.log_buffers=on;
+SET auto_explain.log_format='json';
+SET auto_explain.log_parameter_max_length=0;
+SET auto_explain.sample_rate=1;
+BEGIN;
+DO $$ BEGIN
+ IF current_database()<>'app_test_w98' OR
+ (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'ade4d2af9aa0baf8400a79fc6b62c797'
+ THEN RAISE EXCEPTION 'E4 join key connected scope refused'; END IF;
+END $$;
+CREATE TEMP TABLE e4_probe_context AS SELECT id FROM public."ActivitySettlementContributionRevision" WHERE id=:'root_id';
+CREATE TEMP TABLE e4_probe_metadata AS SELECT pg_backend_pid() AS pid,${guardDigest} AS guards;
+CREATE TEMP TABLE e4_probe_evaluations AS SELECT * FROM public."ParticipantContributionEvaluation" WHERE "contributionRevisionId"=:'root_id';
+CREATE TEMP TABLE e4_probe_marks(label TEXT);
+${create('e4_join_candidate', candidateBody)}
+${create('e4_baseline_shadow', shadow(baselineBody))}
+${create('e4_candidate_shadow', shadow(candidateBody))}
+COMMIT;\n`;
+  for (const [index, [phase, variant]] of JOIN_KEY_ORDER.entries()) {
+    const callable =
+      phase === 'SHADOW_CONTROL'
+        ? variant === 'BASELINE'
+          ? 'pg_temp.e4_baseline_shadow'
+          : 'pg_temp.e4_candidate_shadow'
+        : variant === 'BASELINE'
+          ? 'public.e4_assert_complete'
+          : 'pg_temp.e4_join_candidate';
+    sql += `BEGIN READ ONLY;
+${settings}
+SET LOCAL auto_explain.log_min_duration=${phase === 'ACTUAL_PLAN' ? '1000' : '-1'};
+DO $$ DECLARE root_id TEXT; started TIMESTAMPTZ; elapsed NUMERIC; BEGIN
+ SELECT id INTO STRICT root_id FROM pg_temp.e4_probe_context;
+ RAISE NOTICE 'E4_JOIN_KEY_BEGIN ${index}';
+ started:=clock_timestamp();
+ PERFORM ${callable}(root_id,FALSE);
+ elapsed:=extract(epoch FROM clock_timestamp()-started)*1000;
+ RAISE NOTICE 'E4_JOIN_KEY_SAMPLE %',json_build_object('index',${index},'phase','${phase}','variant','${variant}',
+   'wallMs',elapsed,'returned',true,'completeDocumentAndRootGuard',true,
+   'sameBackend',pg_backend_pid()=(SELECT pid FROM pg_temp.e4_probe_metadata),
+   'readonly',current_setting('transaction_read_only')='on','workMemKb',pg_size_bytes(current_setting('work_mem'))/1024,
+   'jitEnabled',current_setting('jit')='on','planCacheMode',current_setting('plan_cache_mode'))::text;
+END $$;
+ROLLBACK;\n`;
+  }
+  const digest = `(SELECT md5(string_agg(md5(to_jsonb(e)::text),',' ORDER BY id COLLATE "C")) FROM pg_temp.e4_probe_evaluations e)`;
+  const mutations = [
+    [
+      'MISSING',
+      'DELETE FROM pg_temp.e4_probe_evaluations WHERE id=(SELECT min(id COLLATE "C") FROM pg_temp.e4_probe_evaluations)',
+    ],
+    [
+      'EXTRA',
+      `INSERT INTO pg_temp.e4_probe_evaluations
+      SELECT (jsonb_populate_record(NULL::public."ParticipantContributionEvaluation",to_jsonb(e)||
+        jsonb_build_object('id','e4_diag_extra_row','evaluationUnitKey',repeat('f',64)))).*
+      FROM pg_temp.e4_probe_evaluations e ORDER BY id COLLATE "C" LIMIT 1`,
+    ],
+    [
+      'TAMPERED',
+      `UPDATE pg_temp.e4_probe_evaluations SET "explanationCode"='e4_diag_tampered'
+      WHERE id=(SELECT min(id COLLATE "C") FROM pg_temp.e4_probe_evaluations)`,
+    ],
+  ];
+  for (const [kind, mutation] of mutations)
+    for (const variant of ['BASELINE', 'CANDIDATE']) {
+      const callable = variant === 'BASELINE' ? 'e4_baseline_shadow' : 'e4_candidate_shadow';
+      sql += `BEGIN;
+${settings}
+DO $$ DECLARE root_id TEXT; before_hash TEXT; state TEXT; guard TEXT; message TEXT; affected INTEGER; BEGIN
+ RAISE NOTICE 'E4_JOIN_KEY_NEGATIVE_BEGIN ${kind} ${variant}';
+ SELECT id INTO STRICT root_id FROM pg_temp.e4_probe_context;
+ before_hash:=${digest};
+ BEGIN
+   INSERT INTO pg_temp.e4_probe_marks VALUES ('${kind}');
+   ${mutation};
+   GET DIAGNOSTICS affected=ROW_COUNT;
+   IF affected<>1 THEN RAISE EXCEPTION 'E4 join key negative mutation refused'; END IF;
+   PERFORM pg_temp.${callable}(root_id,FALSE);
+   RAISE EXCEPTION 'E4 join key negative guard did not reject';
+ EXCEPTION WHEN OTHERS THEN
+   GET STACKED DIAGNOSTICS state=RETURNED_SQLSTATE,guard=CONSTRAINT_NAME,message=MESSAGE_TEXT;
+   IF state<>'23514' OR guard<>'e4_evaluation_guard' OR message<>'contribution evaluation set mismatch'
+     THEN RAISE NOTICE 'E4_JOIN_KEY_UNEXPECTED %',json_build_object('kind','${kind}','variant','${variant}',
+       'state',state,'constraintMatches',guard='e4_evaluation_guard','messageMatches',message='contribution evaluation set mismatch')::text;
+       RAISE EXCEPTION 'E4 join key negative outcome refused'; END IF;
+ END;
+ IF (SELECT count(*) FROM pg_temp.e4_probe_marks)<>0 OR (SELECT count(*) FROM pg_temp.e4_probe_evaluations)<>8000
+   OR ${digest} IS DISTINCT FROM before_hash THEN RAISE EXCEPTION 'E4 join key negative rollback refused'; END IF;
+ RAISE NOTICE 'E4_JOIN_KEY_NEGATIVE %',json_build_object('kind','${kind}','variant','${variant}',
+   'sqlstate',state,'constraint',guard,'affected',affected,'rolledBack',true,'allShadowRowsRestored',true,'markerRestored',true)::text;
+END $$;
+ROLLBACK;\n`;
+    }
+  sql += `DO $$ BEGIN
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'ade4d2af9aa0baf8400a79fc6b62c797'
+ OR ${guardDigest} IS DISTINCT FROM (SELECT guards FROM pg_temp.e4_probe_metadata)
+ THEN RAISE EXCEPTION 'E4 join key public catalog changed'; END IF;
+ RAISE NOTICE 'E4_JOIN_KEY_COMPLETE %',json_build_object('catalogUnchanged',true,'guardsUnchanged',true,'sameBackend',
+   pg_backend_pid()=(SELECT pid FROM pg_temp.e4_probe_metadata),'publicEvaluationCount',
+   (SELECT count(*) FROM public."ParticipantContributionEvaluation" WHERE "contributionRevisionId"=(SELECT id FROM pg_temp.e4_probe_context)))::text;
+END $$;
+SELECT 'E4_JOIN_KEY_SUCCESS';\n`;
+  return sql;
+}
+
+export function compactJoinKeyEvidence(raw: string) {
+  if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
+  const samples = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_SAMPLE (\{[^\n]+\})/gu)].map(
+    (match) => JSON.parse(match[1]) as Record<string, unknown>,
+  );
+  const negatives = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_NEGATIVE (\{[^\n]+\})/gu)].map(
+    (match) => JSON.parse(match[1]) as Record<string, unknown>,
+  );
+  const complete = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_COMPLETE (\{[^\n]+\})/gu)].map(
+    (match) => JSON.parse(match[1]) as Record<string, unknown>,
+  );
+  if (samples.length !== JOIN_KEY_ORDER.length || negatives.length !== 6 || complete.length !== 1)
+    throw new Error('E4 join key evidence count refused');
+  const timings = samples.map((sample, index) => {
+    const [phase, variant] = JOIN_KEY_ORDER[index];
+    if (
+      sample.index !== index ||
+      sample.phase !== phase ||
+      sample.variant !== variant ||
+      sample.returned !== true ||
+      sample.completeDocumentAndRootGuard !== true ||
+      sample.sameBackend !== true ||
+      sample.readonly !== true ||
+      sample.workMemKb !== 4096 ||
+      sample.jitEnabled !== true ||
+      sample.planCacheMode !== 'force_custom_plan' ||
+      typeof sample.wallMs !== 'number' ||
+      !Number.isFinite(sample.wallMs) ||
+      sample.wallMs <= 0 ||
+      sample.wallMs > 30000
+    )
+      throw new Error('E4 join key timing or settings refused');
+    return {
+      phase,
+      variant,
+      wallMs: sample.wallMs,
+      returned: true,
+      completeDocumentAndRootGuard: true,
+    };
+  });
+  const cases = negatives.map((value, index) => {
+    const kind = ['MISSING', 'EXTRA', 'TAMPERED'][Math.floor(index / 2)],
+      variant = index % 2 === 0 ? 'BASELINE' : 'CANDIDATE';
+    if (
+      value.kind !== kind ||
+      value.variant !== variant ||
+      value.sqlstate !== '23514' ||
+      value.constraint !== 'e4_evaluation_guard' ||
+      value.affected !== 1 ||
+      value.rolledBack !== true ||
+      value.allShadowRowsRestored !== true ||
+      value.markerRestored !== true
+    )
+      throw new Error('E4 join key negative or rollback refused');
+    return {
+      kind,
+      variant,
+      sqlstate: '23514',
+      constraint: 'e4_evaluation_guard',
+      affected: 1,
+      rolledBack: true,
+      allShadowRowsRestored: true,
+      markerRestored: true,
+    };
+  });
+  expect(complete[0]).toEqual({
+    catalogUnchanged: true,
+    guardsUnchanged: true,
+    sameBackend: true,
+    publicEvaluationCount: 8000,
+  });
+  const plans = (['BASELINE', 'CANDIDATE'] as const).map((variant, i) => {
+    const index = i + 4;
+    const marker = new RegExp(`NOTICE:\\s+E4_JOIN_KEY_BEGIN ${index}\\s*\\n`, 'u').exec(raw);
+    if (!marker) throw new Error('E4 join key plan marker refused');
+    const start = marker.index + marker[0].length;
+    const next = raw.indexOf('E4_JOIN_KEY_BEGIN ', start);
+    return {
+      variant,
+      ...compactSharedGuardNotice(raw.slice(start, next < 0 ? raw.length : next), variant),
+    };
+  });
+  return {
+    status: 'COMPLETE',
+    purpose: 'DIAGNOSTIC_ONLY_NOT_ACCEPTANCE',
+    order: 'ABBA_TWO_ACTUAL_PLANS_TWO_SHADOW_CONTROLS',
+    sameFixture: true,
+    sameBackend: true,
+    session: { workMemKb: 4096, jitEnabled: true, planCacheMode: 'force_custom_plan' },
+    statementMs: 30000,
+    processMs: 240000,
+    timings,
+    plans,
+    cases,
+    catalogUnchanged: true,
+    guardsUnchanged: true,
+    negativeScope:
+      'TEMP_SHADOW_FULL_SQL_NATIVE_EXCEPTION_AND_SUBTRANSACTION_ROLLBACK_NOT_PRODUCTION_TRIGGER_E2E',
+    cacheLimit: 'FIXED_TWO_ORDERS_ONE_RUN_NO_CAUSAL_OR_PERCENTILE_CLAIM',
+    versionSpecificChecks: 'NOT_PROFILED',
+  };
+}
+
+async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
+  report.joinKeyCandidate = { status: 'UNKNOWN', reason: 'PROOF' };
+  const proof = privateDiagnosticProofs.get(report),
+    databaseName = deriveTestDbName();
+  if (!proof || report.oracle !== 'COMPLETE' || databaseName !== 'app_test_w98')
+    throw new Error('E4 join key verified proof refused');
+  await assertConnectedTestDatabase(db);
+  await verifyDiagnosticDatabase(db);
+  const owner = `e4_key_${report.head.slice(0, 12)}_${report.run}`;
+  const proc = spawnSync(
+    'docker',
+    [
+      'exec',
+      '-i',
+      '-e',
+      `PGAPPNAME=${owner}`,
+      'u-nest-api-postgres',
+      'psql',
+      '-X',
+      '-q',
+      '-A',
+      '-t',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-v',
+      `root_id=${proof.revisionId}`,
+      '-U',
+      'postgres',
+      '-d',
+      databaseName,
+    ],
+    {
+      input: joinKeyProbeSql(proof.revisionId, databaseName),
+      encoding: 'utf8',
+      timeout: 240000,
+      maxBuffer: 2097152,
+    },
+  );
+  const stderr = proc.stderr ?? '';
+  const positive = [...stderr.matchAll(/NOTICE:\s+E4_JOIN_KEY_BEGIN ([0-7])\s*\n/gu)].map(
+    (match) => +match[1],
+  );
+  const negative = [
+    ...stderr.matchAll(
+      /NOTICE:\s+E4_JOIN_KEY_NEGATIVE_BEGIN (MISSING|EXTRA|TAMPERED) (BASELINE|CANDIDATE)/gu,
+    ),
+  ].map((match) => ({ kind: match[1], variant: match[2] }));
+  report.joinKeyCandidate = {
+    status: 'UNKNOWN',
+    reason: 'PROCESS',
+    exitCode: proc.status,
+    signaled: proc.signal !== null,
+    error: !!proc.error,
+    stdoutBytes: Buffer.byteLength(proc.stdout ?? ''),
+    stderrBytes: Buffer.byteLength(proc.stderr ?? ''),
+    progress: {
+      lastPositiveIndex: positive.at(-1) ?? null,
+      lastNegative: negative.at(-1) ?? null,
+      completedPositive: (stderr.match(/NOTICE:\s+E4_JOIN_KEY_SAMPLE /gu) ?? []).length,
+      completedNegative: (stderr.match(/NOTICE:\s+E4_JOIN_KEY_NEGATIVE /gu) ?? []).length,
+      nativeErrors: [
+        ...new Set(
+          [...stderr.matchAll(/ERROR:\s+([A-Z0-9]{5})(?:\s|$)/gu)].map((match) => match[1]),
+        ),
+      ].slice(0, 4),
+    },
+  };
+  const owned = await db.$queryRaw<
+    { pid: number }[]
+  >`SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner} AND pid<>pg_backend_pid()`;
+  if (owned.length > 1) throw new Error('E4 join key backend ownership refused');
+  for (const { pid } of owned)
+    await db.$queryRaw`SELECT pg_terminate_backend(pid,1000) FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner} AND pid=${pid} AND pid<>pg_backend_pid()`;
+  const [{ remaining }] = await db.$queryRaw<
+    { remaining: number }[]
+  >`SELECT count(*)::int AS remaining FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner}`;
+  if (remaining !== 0) throw new Error('E4 join key backend cleanup refused');
+  report.joinKeyCandidate = { ...(report.joinKeyCandidate as object), ownedBackendGone: true };
+  if (
+    proc.error ||
+    proc.signal ||
+    proc.status !== 0 ||
+    !proc.stdout.includes('E4_JOIN_KEY_SUCCESS')
+  )
+    throw new Error('E4 join key process refused');
+  report.joinKeyCandidate = { ...(report.joinKeyCandidate as object), reason: 'EVIDENCE' };
+  report.joinKeyCandidate = {
+    ...compactJoinKeyEvidence(proc.stderr),
+    ownedBackendGone: true,
+    tempObjectsLifetime: 'OWNED_BACKEND_DISCONNECTED',
+  };
+  report.internalSqlPlan = 'OBSERVED';
+  await verifyDiagnosticDatabase(db);
 }
 async function probeCanonicalJit(
   db: PrismaClient,
@@ -2026,11 +2439,13 @@ function registerDiagnosticChild() {
     migration: 'NOT_VERIFIED',
     stages: [],
     coverage:
-      process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
-        ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
-        : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-          ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-          : 'FULL_SETTLEMENT',
+      process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+        ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
+        : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+          ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+          : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+            ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+            : 'FULL_SETTLEMENT',
     status: 'UNKNOWN',
     oracle: 'NOT_RUN',
     resources: 'UNKNOWN',
@@ -2379,6 +2794,14 @@ function registerDiagnosticChild() {
           audits: 1,
         });
         report.facts = preparedFacts;
+        if (process.env.SRVF_E4_JOIN_KEY_ONCE === '1') {
+          report.oracle = 'COMPLETE';
+          report.substage = 'ORACLE_JOIN_KEY_CANDIDATE';
+          await probeJoinKeyCandidate(db, report);
+          expect(await diagnosticFacts(observer, source.activityId, command.operationKey)).toEqual(
+            preparedFacts,
+          );
+        }
         if (process.env.SRVF_E4_SHARED_GUARD_ONCE === '1') {
           report.oracle = 'COMPLETE';
           report.substage = 'ORACLE_SHARED_GUARD_ACTUAL_PLAN';
@@ -2564,11 +2987,13 @@ export async function runDiagnosticParent() {
       migration: 'NOT_VERIFIED',
       stages: [],
       coverage:
-        process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
-          ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
-          : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-            ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-            : 'FULL_SETTLEMENT',
+        process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+          ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
+          : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+            ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+            : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+              ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+              : 'FULL_SETTLEMENT',
       status: 'UNKNOWN',
       oracle: 'NOT_RUN',
       resources: 'UNKNOWN',
