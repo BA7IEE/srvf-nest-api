@@ -20,6 +20,7 @@ import {
   readE4DiagnosticStageReceipt,
   installE4DiagnosticFixtureGate,
   e4DiagnosticCleanupReceipt,
+  e4DiagnosticCleanupAllowance,
 } from '../helpers/e4-diagnostic-limits-client';
 import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';
 import {
@@ -388,6 +389,8 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
   oracle: 'NOT_RUN' | 'COMPLETE';
   resources: 'UNKNOWN' | 'CLOSED';
   prepareMs?: number;
+  sourceBuildMs?: number;
+  oracleMs?: number;
   errorCode?: string;
   phase?: unknown;
   boundary?: unknown;
@@ -716,7 +719,7 @@ export async function verifyDiagnosticDatabase(db: Pick<PrismaClient, '$queryRaw
   });
 }
 
-async function verifyCalibrationGuards(db: PrismaClient) {
+async function verifyDiagnosticGuards(db: PrismaClient) {
   const guards = await db.$queryRaw<{ name: string; enabled: string; deferred: boolean }[]>`
     SELECT tgname::text AS name,tgenabled::text AS enabled,tgdeferrable AND tginitdeferred AS deferred
     FROM pg_trigger WHERE
@@ -1945,8 +1948,9 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
     : joinKeyOracleGate(report);
   await assertConnectedTestDatabase(db);
   await verifyDiagnosticDatabase(db);
-  if (calibration) await verifyCalibrationGuards(db);
+  await verifyDiagnosticGuards(db);
   const owner = `e4_key_${report.head.slice(0, 12)}_${report.run}`;
+  const processStarted = performance.now();
   const proc = spawnSync(
     'docker',
     [
@@ -1977,7 +1981,8 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
       maxBuffer: 2097152,
     },
   );
-  const stderr = calibration ? joinKeyDiagnosticNotices(proc.stderr ?? '') : (proc.stderr ?? '');
+  const processWallMs = performance.now() - processStarted;
+  const stderr = joinKeyDiagnosticNotices(proc.stderr ?? '');
   const positive = [...stderr.matchAll(/NOTICE:\s+E4_JOIN_KEY_BEGIN ([0-7])\s*\n/gu)].map(
     (match) => +match[1],
   );
@@ -1992,6 +1997,7 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
     exitCode: proc.status,
     signaled: proc.signal !== null,
     error: !!proc.error,
+    wallMs: processWallMs,
     stdoutBytes: Buffer.byteLength(proc.stdout ?? ''),
     stderrBytes: Buffer.byteLength(proc.stderr ?? ''),
     progress: {
@@ -2042,14 +2048,15 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
   report.joinKeyCandidate = {
     ...(calibration ? compactJoinKeyCalibrationEvidence(stderr) : compactJoinKeyEvidence(stderr)),
     oracleGate,
+    wallMs: processWallMs,
     ownedBackendGone: true,
     tempObjectsLifetime: 'OWNED_BACKEND_DISCONNECTED',
   };
   report.internalSqlPlan = 'OBSERVED';
   await verifyDiagnosticDatabase(db);
+  await verifyDiagnosticGuards(db);
   if (calibration) {
     report.internalSqlPlan = 'NOT_RUN';
-    await verifyCalibrationGuards(db);
   }
 }
 
@@ -2858,9 +2865,14 @@ function registerDiagnosticChild() {
           units: identities * 4,
         };
         report.substage = maximum ? 'MAXIMUM_SOURCE_ENTRY' : 'ORDINARY_SYNC_SOURCE_ENTRY';
-        const source = maximum
-          ? await fixture.createMaximumE4Source(f)
-          : await createDiagnosticE4Source(f, identities as 1 | 100 | 500, fixture.createE4Source);
+        const sourceStarted = performance.now();
+        const source = await (
+          maximum
+            ? fixture.createMaximumE4Source(f)
+            : createDiagnosticE4Source(f, identities as 1 | 100 | 500, fixture.createE4Source)
+        ).finally(() => {
+          report.sourceBuildMs = performance.now() - sourceStarted;
+        });
         report.substage = 'SOURCE_SHAPE';
         expect(
           await f.db.activityParticipationIdentity.count({
@@ -3118,13 +3130,16 @@ function registerDiagnosticChild() {
         const units = identities * 4;
         expect(prepared!.bucketCount).toBe(units);
         expect(prepared!.sourceCount).toBe(maximum ? 40000 : identities * 4);
+        const oracleStarted = performance.now();
         await assertDiagnosticProof(
           observer,
           prepared!.settlementVersionId,
           units,
           maximum,
           report,
-        );
+        ).finally(() => {
+          report.oracleMs = performance.now() - oracleStarted;
+        });
         const preparedFacts = await diagnosticFacts(
           observer,
           source.activityId,
@@ -3307,7 +3322,8 @@ ROLLBACK;
 `;
 }
 
-function observeCalibrationCleanup() {
+function observeDiagnosticCleanup(timeout: number) {
+  if (timeout !== 10000) return e4DiagnosticCleanupReceipt(null);
   try {
     const raw = execFileSync(
       'docker',
@@ -3326,7 +3342,7 @@ function observeCalibrationCleanup() {
         '-c',
         calibrationCleanupSql(),
       ],
-      { encoding: 'utf8', timeout: 10000, maxBuffer: 8192, stdio: ['ignore', 'pipe', 'pipe'] },
+      { encoding: 'utf8', timeout, maxBuffer: 8192, stdio: ['ignore', 'pipe', 'pipe'] },
     );
     return e4DiagnosticCleanupReceipt(JSON.parse(raw));
   } catch {
@@ -3335,6 +3351,7 @@ function observeCalibrationCleanup() {
 }
 
 export async function runDiagnosticParent() {
+  const parentStarted = performance.now();
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   requireDiagnosticEnvironment(process.env, head);
   if (
@@ -3485,7 +3502,9 @@ export async function runDiagnosticParent() {
     )
       report.status = 'UNKNOWN';
     const cleanup =
-      process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1' ? observeCalibrationCleanup() : undefined;
+      process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1' || process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+        ? observeDiagnosticCleanup(e4DiagnosticCleanupAllowance(performance.now() - parentStarted))
+        : undefined;
     if (cleanup && cleanup.status !== 'OBSERVED_ABSENT' && report.status === 'COMPLETE')
       report.status = 'UNKNOWN';
     mkdirSync(dirname(output), { recursive: true });

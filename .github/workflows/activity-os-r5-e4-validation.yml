@@ -13,6 +13,7 @@ name: R5 E4 isolated validation
 # Join-key candidates use typed shadow rows and bounded one-row mutations; failures retain validated partial plans after backend cleanup.
 # Small calibration uses one legal identity/four units, the same SQL and six negatives; it never selects maximum.
 # Calibration accepts verbose NOTICE success prefixes while preserving native ERROR SQLSTATEs.
+# One maximum comparison reuses the repaired notice contract and independently observes cleanup inside the original600s.
 # Subsequent report pushes do not match this workflow path; reruns are refused.
 on:
   workflow_dispatch:
@@ -806,7 +807,7 @@ jobs:
           if (!fs.existsSync(file) || fs.statSync(file).size > 65536) throw Error('E4 closed evidence unavailable');
           const r = JSON.parse(fs.readFileSync(file, 'utf8'));
           if (r.head !== process.env.GITHUB_SHA || r.run !== process.env.GITHUB_RUN_ID || r.scenario !== process.env.SRVF_E4_DIAGNOSTIC_SCENARIO || r.purpose !== 'DIAGNOSTIC_ONLY') throw Error('E4 closed evidence binding refused');
-          process.stdout.write('E4_SHARED_GUARD_RESULT ' + JSON.stringify({ head:r.head, run:r.run, status:r.status, coverage:r.coverage, migration:r.migration, oracle:r.oracle, scenario:r.scenario, scenarioShape:r.scenarioShape, facts:r.facts, limits:r.limits, prepareMs:r.prepareMs, resources:r.resources, databaseCleanup:r.databaseCleanup, independentCleanup:r.independentCleanup, firstCanonical32:r.firstCanonical32, internalSqlPlan:r.internalSqlPlan, internal:r.internal, joinKeyCandidate:r.joinKeyCandidate, joinKeyPostFailureOracle:r.joinKeyPostFailureOracle, joinKeyVerificationError:r.joinKeyVerificationError, errorSubstage:r.errorSubstage, error:r.error }) + '\n');
+          process.stdout.write('E4_SHARED_GUARD_RESULT ' + JSON.stringify({ head:r.head, run:r.run, status:r.status, coverage:r.coverage, migration:r.migration, oracle:r.oracle, scenario:r.scenario, scenarioShape:r.scenarioShape, facts:r.facts, limits:r.limits, sourceBuildMs:r.sourceBuildMs, prepareMs:r.prepareMs, oracleMs:r.oracleMs, stages:r.stages, phase:r.phase, oracleTransactions:r.oracleTransactions, resources:r.resources, databaseCleanup:r.databaseCleanup, independentCleanup:r.independentCleanup, firstCanonical32:r.firstCanonical32, internalSqlPlan:r.internalSqlPlan, internal:r.internal, joinKeyCandidate:r.joinKeyCandidate, joinKeyPostFailureOracle:r.joinKeyPostFailureOracle, joinKeyVerificationError:r.joinKeyVerificationError, errorSubstage:r.errorSubstage, error:r.error }) + '\n');
           NODE
       - uses: actions/upload-artifact@v4
         if: always()

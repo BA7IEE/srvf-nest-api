@@ -20,9 +20,23 @@ import {
   observeE4DiagnosticTransactionLifetime,
   e4DiagnosticSafeError,
   e4DiagnosticCleanupReceipt,
+  e4DiagnosticCleanupAllowance,
 } from './e4-diagnostic-limits-client';
 
 describe('E4 independent scoped cleanup facts (offline)', () => {
+  it.each([0, 589999, 590000])(
+    'keeps the existing cleanup within the original600s at %sms',
+    (elapsed) => {
+      expect(e4DiagnosticCleanupAllowance(elapsed)).toBe(10000);
+      expect(elapsed + e4DiagnosticCleanupAllowance(elapsed)).toBeLessThanOrEqual(600000);
+    },
+  );
+  it.each([-1, 590001, 600000, Infinity, NaN])(
+    'refuses a new cleanup window at %sms',
+    (elapsed) => {
+      expect(e4DiagnosticCleanupAllowance(elapsed)).toBe(0);
+    },
+  );
   const facts = {
     observer: true,
     scope: true,

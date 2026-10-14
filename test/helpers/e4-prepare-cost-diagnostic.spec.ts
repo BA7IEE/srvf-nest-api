@@ -318,6 +318,17 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(result.cases.every((c) => c.rolledBack)).toBe(true);
     expect(JSON.stringify(result)).not.toMatch(/Query Text|Filter|root\.id|private/u);
   });
+  it('reuses the notice repair for maximum ABBA, both actual plans and six strict native rollback receipts', () => {
+    const verbose = comparisonNotice().replaceAll(
+      'NOTICE: E4_JOIN_KEY_',
+      'NOTICE:  00000: E4_JOIN_KEY_',
+    );
+    const result = compactJoinKeyEvidence(joinKeyDiagnosticNotices(verbose));
+    expect(result.status).toBe('COMPLETE');
+    expect(result.timings).toHaveLength(8);
+    expect(result.plans).toHaveLength(2);
+    expect(result.cases).toHaveLength(6);
+  });
   it('retains validated positive plans and completed negative prefix while refusing incomplete acceptance', () => {
     const raw = comparisonNotice().split('NOTICE: E4_JOIN_KEY_NEGATIVE ')[0];
     expect(compactJoinKeyPositiveEvidence(raw).status).toBe('PARTIAL');

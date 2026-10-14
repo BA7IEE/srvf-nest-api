@@ -16,6 +16,15 @@ export const E4_DIAGNOSTIC_SCENARIOS = [
 ] as const;
 export type E4DiagnosticScenario = (typeof E4_DIAGNOSTIC_SCENARIOS)[number];
 
+/** The existing ten-second cleanup probe must fit inside the original process budget. */
+export function e4DiagnosticCleanupAllowance(elapsedMs: number) {
+  return Number.isFinite(elapsedMs) &&
+    elapsedMs >= 0 &&
+    elapsedMs + 10000 <= E4_DIAGNOSTIC_LIMITS.processMs
+    ? 10000
+    : 0;
+}
+
 /** Closed cleanup facts are independent of the business/Jest exit code. */
 export function e4DiagnosticCleanupReceipt(raw: unknown) {
   const unknown = { status: 'UNKNOWN' as const };
