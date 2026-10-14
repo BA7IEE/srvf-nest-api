@@ -37,6 +37,10 @@ import {
   compactJoinKeyFailure,
   JOIN_KEY_ORDER,
   joinKeyOracleGate,
+  JOIN_KEY_CALIBRATION_ORDER,
+  compactJoinKeyCalibrationEvidence,
+  joinKeyCalibrationGate,
+  calibrationCleanupSql,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -54,6 +58,127 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  const calibrationNotice = () => {
+    let raw = JOIN_KEY_CALIBRATION_ORDER.map(
+      ([phase, variant], index) =>
+        'NOTICE: E4_JOIN_KEY_SAMPLE ' +
+        JSON.stringify({
+          index,
+          phase,
+          variant,
+          wallMs: 1,
+          returned: true,
+          completeDocumentAndRootGuard: true,
+          sameBackend: true,
+          readonly: true,
+          workMemKb: 4096,
+          jitEnabled: true,
+          planCacheMode: 'force_custom_plan',
+        }) +
+        '\n',
+    ).join('');
+    for (const kind of ['MISSING', 'EXTRA', 'TAMPERED'])
+      for (const variant of ['BASELINE', 'CANDIDATE'])
+        raw +=
+          'NOTICE: E4_JOIN_KEY_NEGATIVE ' +
+          JSON.stringify({
+            kind,
+            variant,
+            sqlstate: '23514',
+            constraint: 'e4_evaluation_guard',
+            affected: 1,
+            rolledBack: true,
+            allShadowRowsRestored: true,
+            markerRestored: true,
+          }) +
+          '\n';
+    return (
+      raw +
+      'NOTICE: E4_JOIN_KEY_COMPLETE ' +
+      JSON.stringify({
+        catalogUnchanged: true,
+        guardsUnchanged: true,
+        sameBackend: true,
+        publicEvaluationCount: 4,
+      }) +
+      '\n'
+    );
+  };
+  it('calibrates the same complete SQL, typed shadow and six mutations at four units without maximum plans', () => {
+    const sql = joinKeyProbeSql('synthetic_root', 'app_test_w98', 4);
+    expect(sql).toContain('expected x FULL JOIN actual a USING (key)');
+    expect(sql).toContain('contribution root count/hash/total mismatch');
+    expect(sql).toContain(
+      'e4_evaluation_document(ROW(e.*)::public."ParticipantContributionEvaluation")',
+    );
+    expect(sql).toContain('count(*) FROM pg_temp.e4_probe_evaluations)<>4');
+    expect(sql.match(/E4_JOIN_KEY_NEGATIVE_BEGIN /gu)).toHaveLength(6);
+    expect(sql.match(/E4_JOIN_KEY_SAMPLE /gu)).toHaveLength(4);
+    expect(sql).not.toContain("'ACTUAL_PLAN'");
+    expect(() => compactJoinKeyEvidence(calibrationNotice())).toThrow();
+    const result = compactJoinKeyCalibrationEvidence(calibrationNotice());
+    expect(result.status).toBe('COMPLETE');
+    expect(result.controls).toHaveLength(4);
+    expect(result.cases).toHaveLength(6);
+    expect(JSON.stringify(result)).not.toMatch(/wallMs|LATENCY|ACTUAL_PLAN|Query Text/u);
+  });
+  it('retains only the validated small prefix and refuses incomplete or cross-shape completion', () => {
+    const prefix = calibrationNotice().split('NOTICE: E4_JOIN_KEY_NEGATIVE ')[0];
+    expect(compactJoinKeyCalibrationEvidence(prefix, false).status).toBe('PARTIAL');
+    expect(() => compactJoinKeyCalibrationEvidence(prefix)).toThrow();
+    for (const raw of [
+      calibrationNotice().replace('"sameBackend":true', '"sameBackend":false'),
+      calibrationNotice().replace('"sqlstate":"23514"', '"sqlstate":"23505"'),
+      calibrationNotice().replace('"publicEvaluationCount":4', '"publicEvaluationCount":8000'),
+    ])
+      expect(() => compactJoinKeyCalibrationEvidence(raw)).toThrow();
+  });
+  it('admits only the complete independently frozen ordinary-one shape and forbids maximum flags', () => {
+    const calibration = {
+      ...env,
+      SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-1',
+      SRVF_E4_JOIN_KEY_CALIBRATION: '1',
+    };
+    expect(() => requireDiagnosticEnvironment(calibration, head)).not.toThrow();
+    for (const change of [
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum' },
+      { SRVF_E4_JOIN_KEY_CALIBRATION: '2' },
+      { SRVF_E4_JOIN_KEY_ONCE: '1' },
+      { SRVF_E4_CANONICAL_FIRST32: '1' },
+      { SRVF_E4_SHARED_GUARD_ONCE: '1' },
+      { SRVF_E4_CANONICAL_COST_ONLY: '1' },
+    ])
+      expect(() => requireDiagnosticEnvironment({ ...calibration, ...change }, head)).toThrow();
+    const proof = {
+      scenario: 'ordinary-1' as const,
+      coverage: 'SMALL_JOIN_KEY_CALIBRATION_ONLY',
+      oracle: 'COMPLETE',
+      scenarioShape: { identities: 1, segments: 1, slices: 5, units: 4 },
+      facts: {
+        roots: 1,
+        evaluations: 4,
+        timeRoots: 1,
+        buckets: 4,
+        sources: 4,
+        receipts: 1,
+        audits: 1,
+      },
+    };
+    expect(joinKeyCalibrationGate(proof, 4)).toBe('SMALL_COMPLETE_FROZEN_ORACLE');
+    expect(() => joinKeyCalibrationGate({ ...proof, oracle: 'NOT_RUN' }, 4)).toThrow();
+    expect(() => joinKeyCalibrationGate(proof, 8000)).toThrow();
+    expect(() =>
+      joinKeyCalibrationGate({ ...proof, facts: { ...proof.facts, sources: 0 } }, 4),
+    ).toThrow();
+  });
+  it('observes cleanup with a positive instrument and the exact existing lease key through read-only SQL', () => {
+    const sql = calibrationCleanupSql();
+    expect(sql).toContain('BEGIN READ ONLY');
+    expect(sql).toContain('pid=pg_backend_pid() AND datname=current_database()');
+    expect(sql).toContain("datname='app_test_w98'");
+    expect(sql).toContain('SRVF:test:D3:app_test_w98');
+    expect(sql).not.toMatch(/DROP|CREATE|pg_terminate_backend|pg_cancel_backend/u);
+  });
   const guardNode = (cte: string, rows: number) => ({
     'Node Type': 'CTE Scan',
     'CTE Name': cte,

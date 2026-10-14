@@ -15,6 +15,33 @@ export const E4_DIAGNOSTIC_SCENARIOS = [
   'failure-retry',
 ] as const;
 export type E4DiagnosticScenario = (typeof E4_DIAGNOSTIC_SCENARIOS)[number];
+
+/** Closed cleanup facts are independent of the business/Jest exit code. */
+export function e4DiagnosticCleanupReceipt(raw: unknown) {
+  const unknown = { status: 'UNKNOWN' as const };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return unknown;
+  const fields = ['databases', 'clients', 'leaseBackends', 'leaseLocks'] as const;
+  const counts = fields.map((key) => Reflect.get(raw, key));
+  if (
+    Reflect.get(raw, 'observer') !== true ||
+    Reflect.get(raw, 'scope') !== true ||
+    Reflect.get(raw, 'pg16') !== true ||
+    counts.some((value) => !Number.isSafeInteger(value) || value < 0 || value > 10000)
+  )
+    return unknown;
+  return {
+    status: counts.every((value) => value === 0)
+      ? ('OBSERVED_ABSENT' as const)
+      : ('REMAINS' as const),
+    observer: true,
+    scope: 'EXACT_W98_AND_SHARED_LEASE_KEY',
+    pg16: true,
+    databases: counts[0] as number,
+    clients: counts[1] as number,
+    leaseBackends: counts[2] as number,
+    leaseLocks: counts[3] as number,
+  };
+}
 export function e4DiagnosticScenario(value: unknown): E4DiagnosticScenario {
   if (!E4_DIAGNOSTIC_SCENARIOS.includes(value as E4DiagnosticScenario))
     throw new Error('E4 finite diagnostic scenario refused');

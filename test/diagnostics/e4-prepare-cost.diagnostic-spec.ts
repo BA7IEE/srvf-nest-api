@@ -19,6 +19,7 @@ import {
   e4DiagnosticSafeError,
   readE4DiagnosticStageReceipt,
   installE4DiagnosticFixtureGate,
+  e4DiagnosticCleanupReceipt,
 } from '../helpers/e4-diagnostic-limits-client';
 import { E4PreparePhaseDiagnostic } from '../helpers/e4-prepare-phase-diagnostic';
 import {
@@ -302,6 +303,20 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_JOIN_KEY_CALIBRATION &&
+    (env.SRVF_E4_JOIN_KEY_CALIBRATION !== '1' ||
+      env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'ordinary-1' ||
+      [
+        'SRVF_E4_JOIN_KEY_ONCE',
+        'SRVF_E4_SHARED_GUARD_ONCE',
+        'SRVF_E4_CANONICAL_FIRST32',
+        'SRVF_E4_CANONICAL_COST_ONLY',
+        'SRVF_E4_CANONICAL_JIT_ABBA',
+        'SRVF_E4_CANONICAL_MEMORY_PAIR',
+      ].some((key) => !!env[key]))
+  )
+    throw new Error('E4 small join key calibration scope refused');
+  if (
     env.SRVF_E4_JOIN_KEY_ONCE &&
     (env.SRVF_E4_JOIN_KEY_ONCE !== '1' ||
       env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum' ||
@@ -396,7 +411,8 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
     | 'FULL_SETTLEMENT'
     | 'PREPARE_AND_FIRST_ORACLE_ONLY'
     | 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
-    | 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY';
+    | 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
+    | 'SMALL_JOIN_KEY_CALIBRATION_ONLY';
   joinKeyCandidate?: unknown;
   joinKeyPostFailureOracle?: unknown;
   joinKeyVerificationError?: ReturnType<typeof e4DiagnosticSafeError>;
@@ -698,6 +714,20 @@ export async function verifyDiagnosticDatabase(db: Pick<PrismaClient, '$queryRaw
     pin: E4_DIAGNOSTIC_PLAN.completeFunctionMd5,
     enabled: 'O',
   });
+}
+
+async function verifyCalibrationGuards(db: PrismaClient) {
+  const guards = await db.$queryRaw<{ name: string; enabled: string; deferred: boolean }[]>`
+    SELECT tgname::text AS name,tgenabled::text AS enabled,tgdeferrable AND tginitdeferred AS deferred
+    FROM pg_trigger WHERE
+      (tgname='astr_parent_complete_guard' AND tgrelid='public."ActivitySettlementTimeRevision"'::regclass)
+      OR (tgname='e4_revision_complete_guard' AND tgrelid='public."ActivitySettlementContributionRevision"'::regclass)
+    ORDER BY tgname
+  `;
+  expect(guards).toEqual([
+    { name: 'astr_parent_complete_guard', enabled: 'O', deferred: true },
+    { name: 'e4_revision_complete_guard', enabled: 'O', deferred: true },
+  ]);
 }
 const ordinaryOraclePath = resolve(
   __dirname,
@@ -1427,7 +1457,15 @@ export const JOIN_KEY_ORDER = [
   ['SHADOW_CONTROL', 'CANDIDATE'],
 ] as const;
 
-export function joinKeyProbeSql(revisionId: string, databaseName: string) {
+export const JOIN_KEY_CALIBRATION_ORDER = [
+  ['CONTROL', 'BASELINE'],
+  ['CONTROL', 'CANDIDATE'],
+  ['SHADOW_CONTROL', 'BASELINE'],
+  ['SHADOW_CONTROL', 'CANDIDATE'],
+] as const;
+
+export function joinKeyProbeSql(revisionId: string, databaseName: string, units: 4 | 8000 = 8000) {
+  if (units !== 4 && units !== 8000) throw new Error('E4 join key fixed shape refused');
   sharedGuardProbeSql(revisionId, databaseName); // Reuse the exact scope/identifier refusal.
   const source = readFileSync(
     resolve(
@@ -1490,7 +1528,8 @@ ${create('e4_join_candidate', candidateBody)}
 ${create('e4_baseline_shadow', shadow(baselineBody))}
 ${create('e4_candidate_shadow', shadow(candidateBody))}
 COMMIT;\n`;
-  for (const [index, [phase, variant]] of JOIN_KEY_ORDER.entries()) {
+  const order = units === 4 ? JOIN_KEY_CALIBRATION_ORDER : JOIN_KEY_ORDER;
+  for (const [index, [phase, variant]] of order.entries()) {
     const callable =
       phase === 'SHADOW_CONTROL'
         ? variant === 'BASELINE'
@@ -1562,7 +1601,7 @@ DO $$ DECLARE root_id TEXT; before_hash TEXT; state TEXT; guard TEXT; message TE
        RAISE EXCEPTION 'E4 join key negative outcome refused'; END IF;
  END;
  RAISE NOTICE 'E4_JOIN_KEY_NEGATIVE_STEP ${kind} ${variant} ROLLBACK';
- IF (SELECT count(*) FROM pg_temp.e4_probe_marks)<>0 OR (SELECT count(*) FROM pg_temp.e4_probe_evaluations)<>8000
+ IF (SELECT count(*) FROM pg_temp.e4_probe_marks)<>0 OR (SELECT count(*) FROM pg_temp.e4_probe_evaluations)<>${units}
    OR ${digest} IS DISTINCT FROM before_hash THEN RAISE EXCEPTION 'E4 join key negative rollback refused'; END IF;
  RAISE NOTICE 'E4_JOIN_KEY_NEGATIVE %',json_build_object('kind','${kind}','variant','${variant}',
    'sqlstate',state,'constraint',guard,'affected',affected,'rolledBack',true,'allShadowRowsRestored',true,'markerRestored',true)::text;
@@ -1700,6 +1739,93 @@ export function compactJoinKeyEvidence(raw: string) {
   };
 }
 
+/** Four real controls and the same six native negatives; no maximum plan/performance claim. */
+export function compactJoinKeyCalibrationEvidence(raw: string, complete = true) {
+  if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
+  const samples = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_SAMPLE (\{[^\n]+\})/gu)].map(
+    (match) => JSON.parse(match[1]) as Record<string, unknown>,
+  );
+  if (samples.length > JOIN_KEY_CALIBRATION_ORDER.length)
+    throw new Error('E4 calibration control count refused');
+  const controls = samples.map((sample, index) => {
+    const [phase, variant] = JOIN_KEY_CALIBRATION_ORDER[index];
+    if (
+      sample.index !== index ||
+      sample.phase !== phase ||
+      sample.variant !== variant ||
+      sample.returned !== true ||
+      sample.completeDocumentAndRootGuard !== true ||
+      sample.sameBackend !== true ||
+      sample.readonly !== true ||
+      sample.workMemKb !== 4096 ||
+      sample.jitEnabled !== true ||
+      sample.planCacheMode !== 'force_custom_plan' ||
+      typeof sample.wallMs !== 'number' ||
+      !Number.isFinite(sample.wallMs) ||
+      sample.wallMs <= 0 ||
+      sample.wallMs > 30000
+    )
+      throw new Error('E4 calibration control refused');
+    return { phase, variant, returned: true, completeDocumentAndRootGuard: true };
+  });
+  const cases = compactJoinKeyNegativeCases(raw);
+  if (complete) {
+    const end = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_COMPLETE (\{[^\n]+\})/gu)];
+    if (controls.length !== 4 || cases.length !== 6 || end.length !== 1)
+      throw new Error('E4 calibration completion refused');
+    expect(JSON.parse(end[0][1])).toEqual({
+      catalogUnchanged: true,
+      guardsUnchanged: true,
+      sameBackend: true,
+      publicEvaluationCount: 4,
+    });
+  }
+  return {
+    status: complete ? ('COMPLETE' as const) : ('PARTIAL' as const),
+    purpose: 'SMALL_TOOL_CALIBRATION_NOT_MAXIMUM_OR_ACCEPTANCE',
+    units: 4,
+    controls,
+    cases,
+    statementMs: 30000,
+    processMs: 240000,
+    negativeScope:
+      'TEMP_SHADOW_FULL_SQL_NATIVE_EXCEPTION_AND_SUBTRANSACTION_ROLLBACK_NOT_PRODUCTION_TRIGGER_E2E',
+    ...(complete
+      ? { catalogUnchanged: true, guardsUnchanged: true, publicEvaluationCount: 4 }
+      : {}),
+  };
+}
+
+export function joinKeyCalibrationGate(
+  input: {
+    scenario: E4DiagnosticScenario;
+    coverage?: string;
+    oracle: string;
+    facts?: unknown;
+    scenarioShape?: Report['scenarioShape'];
+  },
+  units: number,
+) {
+  if (
+    input.scenario !== 'ordinary-1' ||
+    input.coverage !== 'SMALL_JOIN_KEY_CALIBRATION_ONLY' ||
+    input.oracle !== 'COMPLETE' ||
+    units !== 4
+  )
+    throw new Error('E4 complete small oracle required');
+  expect(input.scenarioShape).toEqual({ identities: 1, segments: 1, slices: 5, units: 4 });
+  expect(input.facts).toEqual({
+    roots: 1,
+    evaluations: 4,
+    timeRoots: 1,
+    buckets: 4,
+    sources: 4,
+    receipts: 1,
+    audits: 1,
+  });
+  return 'SMALL_COMPLETE_FROZEN_ORACLE';
+}
+
 export function compactJoinKeyFailure(raw: string) {
   if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
   const step = [
@@ -1806,9 +1932,13 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
     databaseName = deriveTestDbName();
   if (!proof || databaseName !== 'app_test_w98')
     throw new Error('E4 join key verified proof refused');
-  const oracleGate = joinKeyOracleGate(report);
+  const calibration = process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1';
+  const oracleGate = calibration
+    ? joinKeyCalibrationGate(report, proof.units)
+    : joinKeyOracleGate(report);
   await assertConnectedTestDatabase(db);
   await verifyDiagnosticDatabase(db);
+  if (calibration) await verifyCalibrationGuards(db);
   const owner = `e4_key_${report.head.slice(0, 12)}_${report.run}`;
   const proc = spawnSync(
     'docker',
@@ -1825,6 +1955,7 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
       '-t',
       '-v',
       'ON_ERROR_STOP=1',
+      ...(calibration ? ['-v', 'VERBOSITY=verbose'] : []),
       '-v',
       `root_id=${proof.revisionId}`,
       '-U',
@@ -1833,7 +1964,7 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
       databaseName,
     ],
     {
-      input: joinKeyProbeSql(proof.revisionId, databaseName),
+      input: joinKeyProbeSql(proof.revisionId, databaseName, calibration ? 4 : 8000),
       encoding: 'utf8',
       timeout: 240000,
       maxBuffer: 2097152,
@@ -1863,7 +1994,7 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
       completedNegative: (stderr.match(/NOTICE:\s+E4_JOIN_KEY_NEGATIVE /gu) ?? []).length,
       nativeErrors: [
         ...new Set(
-          [...stderr.matchAll(/ERROR:\s+([A-Z0-9]{5})(?:\s|$)/gu)].map((match) => match[1]),
+          [...stderr.matchAll(/ERROR:\s+([A-Z0-9]{5})(?::|\s|$)/gu)].map((match) => match[1]),
         ),
       ].slice(0, 4),
     },
@@ -1883,6 +2014,16 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
     ...(report.joinKeyCandidate as object),
     ...compactJoinKeyFailure(stderr),
   };
+  if (calibration) {
+    try {
+      report.joinKeyCandidate = {
+        ...(report.joinKeyCandidate as object),
+        partialEvidence: compactJoinKeyCalibrationEvidence(stderr, false),
+      };
+    } catch {
+      /* Invalid or truncated controls cannot become evidence. */
+    }
+  }
   if (
     proc.error ||
     proc.signal ||
@@ -1892,13 +2033,17 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
     throw new Error('E4 join key process refused');
   report.joinKeyCandidate = { ...(report.joinKeyCandidate as object), reason: 'EVIDENCE' };
   report.joinKeyCandidate = {
-    ...compactJoinKeyEvidence(proc.stderr),
+    ...(calibration ? compactJoinKeyCalibrationEvidence(stderr) : compactJoinKeyEvidence(stderr)),
     oracleGate,
     ownedBackendGone: true,
     tempObjectsLifetime: 'OWNED_BACKEND_DISCONNECTED',
   };
   report.internalSqlPlan = 'OBSERVED';
   await verifyDiagnosticDatabase(db);
+  if (calibration) {
+    report.internalSqlPlan = 'NOT_RUN';
+    await verifyCalibrationGuards(db);
+  }
 }
 
 async function joinKeyPostFailureOracle(db: PrismaClient, report: Report) {
@@ -2625,13 +2770,15 @@ function registerDiagnosticChild() {
     migration: 'NOT_VERIFIED',
     stages: [],
     coverage:
-      process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
-        ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
-        : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
-          ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
-          : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-            ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-            : 'FULL_SETTLEMENT',
+      process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
+        ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
+        : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+          ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
+          : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+            ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+            : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+              ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+              : 'FULL_SETTLEMENT',
     status: 'UNKNOWN',
     oracle: 'NOT_RUN',
     resources: 'UNKNOWN',
@@ -2986,13 +3133,18 @@ function registerDiagnosticChild() {
           audits: 1,
         });
         report.facts = preparedFacts;
-        if (process.env.SRVF_E4_JOIN_KEY_ONCE === '1') {
+        if (
+          process.env.SRVF_E4_JOIN_KEY_ONCE === '1' ||
+          process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
+        ) {
           report.oracle = 'COMPLETE';
           report.substage = 'ORACLE_JOIN_KEY_CANDIDATE';
           await probeJoinKeyCandidate(db, report);
           expect(await diagnosticFacts(observer, source.activityId, command.operationKey)).toEqual(
             preparedFacts,
           );
+          if (process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1')
+            await assertDiagnosticProof(observer, prepared!.settlementVersionId, 4, false, report);
         }
         if (process.env.SRVF_E4_SHARED_GUARD_ONCE === '1') {
           report.oracle = 'COMPLETE';
@@ -3003,7 +3155,11 @@ function registerDiagnosticChild() {
           );
         }
         checkpoint.mark('ORACLE', 'COMPLETE');
-        if (process.env.SRVF_E4_CANONICAL_FIRST32 === '1') {
+        if (process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1') {
+          report.status = 'COMPLETE';
+          report.budgetRecommendation =
+            'SMALL_TOOL_CALIBRATION_ONLY_NO_MAXIMUM_OR_PERFORMANCE_CLAIM';
+        } else if (process.env.SRVF_E4_CANONICAL_FIRST32 === '1') {
           expect(report.firstCanonical32?.fullComparisonValidated).toBe(true);
           report.oracle = 'COMPLETE';
           report.status = 'COMPLETE';
@@ -3123,6 +3279,54 @@ function registerDiagnosticChild() {
   });
 }
 
+export function calibrationCleanupSql() {
+  return `BEGIN READ ONLY;
+SET LOCAL statement_timeout='5s';
+WITH lease AS (
+  SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted
+    AND database=(SELECT oid FROM pg_database WHERE datname=current_database())
+    AND classid=((hashtextextended('SRVF:test:D3:app_test_w98',0)>>32)&4294967295)::oid
+    AND objid=(hashtextextended('SRVF:test:D3:app_test_w98',0)&4294967295)::oid AND objsubid=1
+)
+SELECT json_build_object(
+  'observer',EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid=pg_backend_pid() AND datname=current_database()),
+  'scope',current_database()='postgres' AND inet_server_addr() IS NULL,
+  'pg16',current_setting('server_version_num')::int BETWEEN 160000 AND 169999,
+  'databases',(SELECT count(*) FROM pg_database WHERE datname='app_test_w98'),
+  'clients',(SELECT count(*) FROM pg_stat_activity WHERE datname='app_test_w98'),
+  'leaseBackends',(SELECT count(DISTINCT pid) FROM lease),
+  'leaseLocks',(SELECT count(*) FROM lease));
+ROLLBACK;
+`;
+}
+
+function observeCalibrationCleanup() {
+  try {
+    const raw = execFileSync(
+      'docker',
+      [
+        'exec',
+        'u-nest-api-postgres',
+        'psql',
+        '--no-psqlrc',
+        '-qtA',
+        '-U',
+        'postgres',
+        '-d',
+        'postgres',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-c',
+        calibrationCleanupSql(),
+      ],
+      { encoding: 'utf8', timeout: 10000, maxBuffer: 8192, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    return e4DiagnosticCleanupReceipt(JSON.parse(raw));
+  } catch {
+    return e4DiagnosticCleanupReceipt(null);
+  }
+}
+
 export async function runDiagnosticParent() {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   requireDiagnosticEnvironment(process.env, head);
@@ -3216,13 +3420,15 @@ export async function runDiagnosticParent() {
       migration: 'NOT_VERIFIED',
       stages: [],
       coverage:
-        process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
-          ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
-          : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
-            ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
-            : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-              ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-              : 'FULL_SETTLEMENT',
+        process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
+          ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
+          : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+            ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
+            : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+              ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+              : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+                ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+                : 'FULL_SETTLEMENT',
       status: 'UNKNOWN',
       oracle: 'NOT_RUN',
       resources: 'UNKNOWN',
@@ -3271,17 +3477,23 @@ export async function runDiagnosticParent() {
       report.oracle !== 'COMPLETE'
     )
       report.status = 'UNKNOWN';
+    const cleanup =
+      process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1' ? observeCalibrationCleanup() : undefined;
+    if (cleanup && cleanup.status !== 'OBSERVED_ABSENT' && report.status === 'COMPLETE')
+      report.status = 'UNKNOWN';
     mkdirSync(dirname(output), { recursive: true });
     writeBounded(output, {
       ...report,
       process: processResult,
       stage,
       interrupted,
-      databaseCleanup:
-        !interrupted &&
-        !processResult.stopped &&
-        processResult.exitCode === 0 &&
-        processResult.cleanupConfirmed
+      ...(cleanup ? { independentCleanup: cleanup } : {}),
+      databaseCleanup: cleanup
+        ? cleanup.status
+        : !interrupted &&
+            !processResult.stopped &&
+            processResult.exitCode === 0 &&
+            processResult.cleanupConfirmed
           ? 'NORMAL_DROP_AND_LEASE_RELEASE'
           : 'UNKNOWN',
     });

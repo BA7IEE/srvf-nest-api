@@ -19,7 +19,47 @@ import {
   e4DiagnosticScenario,
   observeE4DiagnosticTransactionLifetime,
   e4DiagnosticSafeError,
+  e4DiagnosticCleanupReceipt,
 } from './e4-diagnostic-limits-client';
+
+describe('E4 independent scoped cleanup facts (offline)', () => {
+  const facts = {
+    observer: true,
+    scope: true,
+    pg16: true,
+    databases: 0,
+    clients: 0,
+    leaseBackends: 0,
+    leaseLocks: 0,
+  };
+  it('reports observed absence even when the business run failed, without exporting extra fields', () => {
+    const result = e4DiagnosticCleanupReceipt({
+      ...facts,
+      businessExitCode: 1,
+      secret: 'withheld',
+    });
+    expect(result.status).toBe('OBSERVED_ABSENT');
+    expect(JSON.stringify(result)).not.toMatch(/businessExitCode|secret|withheld/u);
+  });
+  it.each(['databases', 'clients', 'leaseBackends', 'leaseLocks'] as const)(
+    'keeps a remaining %s resource visible',
+    (key) => {
+      expect(e4DiagnosticCleanupReceipt({ ...facts, [key]: 1 }).status).toBe('REMAINS');
+    },
+  );
+  it.each([
+    null,
+    {},
+    { ...facts, observer: false },
+    { ...facts, scope: false },
+    { ...facts, pg16: false },
+    { ...facts, databases: '0' },
+    { ...facts, clients: -1 },
+    { ...facts, leaseLocks: 10001 },
+  ])('refuses unobserved, foreign or invalid cleanup facts %j', (raw) => {
+    expect(e4DiagnosticCleanupReceipt(raw)).toEqual({ status: 'UNKNOWN' });
+  });
+});
 
 const input = {
   purpose: 'DIAGNOSTIC_ONLY',
