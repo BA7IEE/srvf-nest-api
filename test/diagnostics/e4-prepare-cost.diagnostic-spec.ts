@@ -197,6 +197,91 @@ export function diagnosticOracleClient<T extends object>(
   return adapter;
 }
 
+type FirstCanonical32Evidence = {
+  purpose: 'ISOLATED_FIRST_CANONICAL_NOT_PRODUCTION';
+  attempts: 1;
+  transactionMs: 30000;
+  workMemKb: 32768;
+  jit: 'DEFAULT_UNCHANGED';
+  wallMs: number;
+  outcome: 'ENTERED' | 'RETURNED' | 'REJECTED';
+  effective?: { readonly: boolean; workMemKb: number; jitEnabled: boolean };
+  fullComparisonValidated?: boolean;
+  error?: ReturnType<typeof e4DiagnosticSafeError>;
+};
+/** Opt-in test instance: only the first canonical callback gets one transaction-local setting. */
+export function firstCanonical32Client<T extends object>(
+  client: T,
+  evidence: { substage?: string; firstCanonical32?: FirstCanonical32Evidence },
+) {
+  const original: unknown = Reflect.get(client, '$transaction');
+  if (typeof original !== 'function') throw new Error('E4 first canonical adapter unavailable');
+  let used = false;
+  const adapter = new Proxy(client, {
+    get: (target, key) =>
+      key !== '$transaction'
+        ? Reflect.get(target, key, target)
+        : function (this: unknown, ...args: unknown[]) {
+            if (this !== adapter) throw new Error('E4 first canonical receiver refused');
+            if (evidence.substage !== 'ORACLE_CANONICAL_DOCUMENT')
+              return Reflect.apply(original, client, args);
+            const options = args[1],
+              callback = args[0];
+            if (
+              used ||
+              args.length !== 2 ||
+              typeof callback !== 'function' ||
+              !options ||
+              typeof options !== 'object' ||
+              Reflect.get(options, 'timeout') !== 30000
+            )
+              throw new Error('E4 first canonical scope or budget refused');
+            used = true;
+            const row: FirstCanonical32Evidence = {
+              purpose: 'ISOLATED_FIRST_CANONICAL_NOT_PRODUCTION',
+              attempts: 1,
+              transactionMs: 30000,
+              workMemKb: 32768,
+              jit: 'DEFAULT_UNCHANGED',
+              wallMs: 0,
+              outcome: 'ENTERED',
+            };
+            evidence.firstCanonical32 = row;
+            const started = performance.now();
+            const result: unknown = Reflect.apply(original, client, [
+              async (tx: Prisma.TransactionClient) => {
+                // SET LOCAL does not read/write business rows; the frozen callback retains READ ONLY and30s.
+                await tx.$executeRaw`SET LOCAL work_mem='32MB'`;
+                const value: unknown = await Reflect.apply(callback, undefined, [tx]);
+                const [settings] = await tx.$queryRaw<
+                  { readonly: boolean; workMemKb: number; jitEnabled: boolean }[]
+                >`SELECT current_setting('transaction_read_only')='on' AS readonly,(pg_size_bytes(current_setting('work_mem'))/1024)::int AS "workMemKb",current_setting('jit')='on' AS "jitEnabled"`;
+                expect(settings.readonly).toBe(true);
+                expect(settings.workMemKb).toBe(32768);
+                row.effective = settings;
+                return value;
+              },
+              options,
+            ]);
+            if (!(result instanceof Promise))
+              throw new Error('E4 first canonical Promise required');
+            void result.then(
+              () => {
+                row.wallMs = performance.now() - started;
+                row.outcome = 'RETURNED';
+              },
+              (error) => {
+                row.wallMs = performance.now() - started;
+                row.outcome = 'REJECTED';
+                row.error = e4DiagnosticSafeError(error);
+              },
+            );
+            return result;
+          },
+  });
+  return adapter;
+}
+
 function frozenE4Oracle(report: Report) {
   const code = ts.transpileModule(frozenE4OracleSource(), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
@@ -232,6 +317,17 @@ export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: strin
       !!env.SRVF_E4_CANONICAL_JIT_ABBA)
   )
     throw new Error('E4 canonical memory scope refused');
+  if (
+    env.SRVF_E4_CANONICAL_FIRST32 &&
+    (env.SRVF_E4_CANONICAL_FIRST32 !== '1' ||
+      env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum' ||
+      [
+        'SRVF_E4_CANONICAL_COST_ONLY',
+        'SRVF_E4_CANONICAL_JIT_ABBA',
+        'SRVF_E4_CANONICAL_MEMORY_PAIR',
+      ].some((key) => !!env[key]))
+  )
+    throw new Error('E4 canonical first32 scope refused');
   if (
     env.SRVF_E4_DIAGNOSTIC_PURPOSE !== 'DIAGNOSTIC_ONLY' ||
     env.APP_ENV !== 'test' ||
@@ -279,6 +375,8 @@ type Report = typeof E4_DIAGNOSTIC_PLAN & {
   errorSubstage?: string;
   error?: ReturnType<typeof e4DiagnosticSafeError>;
   oracleTransactions?: OracleTransactionReceipt[];
+  coverage?: 'FULL_SETTLEMENT' | 'PREPARE_AND_FIRST_ORACLE_ONLY';
+  firstCanonical32?: FirstCanonical32Evidence;
   canonicalCost?: {
     purpose: 'READ_ONLY_COST_NOT_ACCEPTANCE';
     samples: CanonicalCostSample[];
@@ -1167,7 +1265,11 @@ async function assertDiagnosticProof(
   maximum: boolean,
   report: Report,
 ) {
-  const observed = diagnosticOracleClient(db, report);
+  const observedBase = diagnosticOracleClient(db, report);
+  const observed =
+    process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+      ? firstCanonical32Client(observedBase, report)
+      : observedBase;
   report.substage = 'ORACLE_PROOF_READ';
   const proof = await db.activitySettlementContributionRevision.findFirstOrThrow({
     where: { settlementVersionId: versionId },
@@ -1182,6 +1284,7 @@ async function assertDiagnosticProof(
   if (maximum) {
     expect(proof.recognizedPointsTotal.toFixed(2)).toBe('1000.00');
     await frozenE4Oracle(report)(observed, proof.id, units);
+    if (report.firstCanonical32) report.firstCanonical32.fullComparisonValidated = true;
   } else {
     await frozenOrdinaryOracle(report)(observed, proof.id, units);
     report.substage = 'ORDINARY_DAY_POINTS';
@@ -1561,6 +1664,10 @@ function registerDiagnosticChild() {
     scenario: e4DiagnosticScenario(process.env.SRVF_E4_DIAGNOSTIC_SCENARIO),
     migration: 'NOT_VERIFIED',
     stages: [],
+    coverage:
+      process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+        ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+        : 'FULL_SETTLEMENT',
     status: 'UNKNOWN',
     oracle: 'NOT_RUN',
     resources: 'UNKNOWN',
@@ -1910,26 +2017,34 @@ function registerDiagnosticChild() {
         });
         report.facts = preparedFacts;
         checkpoint.mark('ORACLE', 'COMPLETE');
-        await completeDiagnosticSettlement(
-          f,
-          source,
-          prepared!,
-          observer,
-          report,
-          checkpoint,
-          fixture,
-        );
-        expect(
-          report.stages.every(
-            (stage) =>
-              stage.transaction.status === 'COMPLETE' && stage.transaction.transactions.length > 0,
-          ),
-        ).toBe(true);
-        report.oracle = 'COMPLETE';
-        report.budgetRecommendation = maximum
-          ? 'ONE_SAMPLE_ONLY_KEEP_FORMAL_30_AND_DO_NOT_SELECT_NEW_BUDGET'
-          : 'ORIGINAL_BUDGETS_OBSERVED_ONE_SAMPLE_NO_PERCENTILE_OR_HEADROOM_CLAIM';
-        report.status = 'COMPLETE';
+        if (process.env.SRVF_E4_CANONICAL_FIRST32 === '1') {
+          expect(report.firstCanonical32?.fullComparisonValidated).toBe(true);
+          report.oracle = 'COMPLETE';
+          report.status = 'COMPLETE';
+          report.budgetRecommendation = 'FIRST_ORACLE_ONLY_NO_FULL_CHAIN_OR_FORMAL_BUDGET_CLAIM';
+        } else {
+          await completeDiagnosticSettlement(
+            f,
+            source,
+            prepared!,
+            observer,
+            report,
+            checkpoint,
+            fixture,
+          );
+          expect(
+            report.stages.every(
+              (stage) =>
+                stage.transaction.status === 'COMPLETE' &&
+                stage.transaction.transactions.length > 0,
+            ),
+          ).toBe(true);
+          report.oracle = 'COMPLETE';
+          report.budgetRecommendation = maximum
+            ? 'ONE_SAMPLE_ONLY_KEEP_FORMAL_30_AND_DO_NOT_SELECT_NEW_BUDGET'
+            : 'ORIGINAL_BUDGETS_OBSERVED_ONE_SAMPLE_NO_PERCENTILE_OR_HEADROOM_CLAIM';
+          report.status = 'COMPLETE';
+        }
       } catch (error) {
         report.status = 'FAILED';
         report.failureStage = checkpoint.lastStage();
@@ -2077,6 +2192,10 @@ export async function runDiagnosticParent() {
       scenario: e4DiagnosticScenario(process.env.SRVF_E4_DIAGNOSTIC_SCENARIO),
       migration: 'NOT_VERIFIED',
       stages: [],
+      coverage:
+        process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+          ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+          : 'FULL_SETTLEMENT',
       status: 'UNKNOWN',
       oracle: 'NOT_RUN',
       resources: 'UNKNOWN',

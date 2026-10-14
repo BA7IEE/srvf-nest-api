@@ -24,6 +24,7 @@ import {
   compactCanonicalActualPlan,
   CANONICAL_JIT_ORDER,
   assertCanonicalComparison,
+  firstCanonical32Client,
   diagnosticPopulation,
   requireDiagnosticEnvironment,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
@@ -43,6 +44,85 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  it.each([true, false])(
+    'sets only transaction-local32MB while keeping the effective default JIT=%s and original30s',
+    async (jitEnabled) => {
+      const statements: string[] = [];
+      const tx = {
+        $executeRaw: jest.fn(async (strings: TemplateStringsArray) => {
+          statements.push(strings.join(''));
+          return 1;
+        }),
+        $queryRaw: jest.fn(async () => [{ readonly: true, workMemKb: 32768, jitEnabled }]),
+      };
+      const original = jest.fn<Promise<unknown>, unknown[]>(async (...args) =>
+        Reflect.apply(args[0] as (...a: unknown[]) => unknown, undefined, [tx]),
+      );
+      const client = { $transaction: original };
+      const evidence: Parameters<typeof firstCanonical32Client>[1] = {
+        substage: 'ORACLE_CANONICAL_DOCUMENT',
+      };
+      const adapted = firstCanonical32Client(client, evidence);
+      const value = {
+        oldCount: 8000,
+        candidateCount: 8000,
+        storedCount: 8000,
+        candidateDifferences: 0,
+        storedDifferences: 0,
+        rootMatches: true,
+      };
+      const callback = jest.fn(async () => value);
+      const options = Object.freeze({ timeout: 30000, maxWait: 2000 });
+      const result = adapted.$transaction(callback, options);
+      expect(result).toBe(original.mock.results[0].value);
+      await expect(result).resolves.toBe(value);
+      expect(original.mock.contexts[0]).toBe(client);
+      expect(original.mock.calls[0][1]).toBe(options);
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback).toHaveBeenCalledWith(tx);
+      expect(statements).toEqual(["SET LOCAL work_mem='32MB'"]);
+      expect(evidence.firstCanonical32).toMatchObject({
+        attempts: 1,
+        transactionMs: 30000,
+        workMemKb: 32768,
+        jit: 'DEFAULT_UNCHANGED',
+        outcome: 'RETURNED',
+        effective: { readonly: true, workMemKb: 32768, jitEnabled },
+      });
+      expect(evidence.firstCanonical32?.fullComparisonValidated).toBeUndefined();
+      expect(() => adapted.$transaction(callback, options)).toThrow();
+    },
+  );
+  it('leaves Day and Root callbacks and budgets untouched and refuses a changed canonical budget', () => {
+    const original = jest.fn<Promise<void>, unknown[]>(async () => undefined);
+    const client = { $transaction: original };
+    const evidence: Parameters<typeof firstCanonical32Client>[1] = {
+      substage: 'ORACLE_DAY_POINTS',
+    };
+    const adapted = firstCanonical32Client(client, evidence);
+    const callback = () => Promise.resolve();
+    const options = { timeout: 60000 };
+    expect(adapted.$transaction(callback, options)).toBe(original.mock.results[0].value);
+    expect(original).toHaveBeenCalledWith(callback, options);
+    expect(evidence.firstCanonical32).toBeUndefined();
+    evidence.substage = 'ORACLE_CANONICAL_DOCUMENT';
+    expect(() => adapted.$transaction(callback, { timeout: 60000 })).toThrow();
+    expect(original).toHaveBeenCalledTimes(1);
+  });
+  it('refuses first32 combined with cost/warm-up probes or a nonmaximum case', () => {
+    expect(() =>
+      requireDiagnosticEnvironment({ ...env, SRVF_E4_CANONICAL_FIRST32: '1' }, head),
+    ).not.toThrow();
+    for (const change of [
+      { SRVF_E4_CANONICAL_COST_ONLY: '1' },
+      { SRVF_E4_CANONICAL_JIT_ABBA: '1' },
+      { SRVF_E4_CANONICAL_MEMORY_PAIR: '1' },
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-500' },
+    ])
+      expect(() =>
+        requireDiagnosticEnvironment({ ...env, SRVF_E4_CANONICAL_FIRST32: '1', ...change }, head),
+      ).toThrow();
+  });
   it('isolates the memory pair from JIT ordering and refuses unbounded or combined modes', () => {
     expect(() =>
       requireDiagnosticEnvironment(
