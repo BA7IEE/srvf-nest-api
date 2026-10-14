@@ -23,8 +23,8 @@ import { assertConnectedTestDatabase } from '../setup/test-db';
 
 const namespace = 'e4_assert_oracle_' + randomBytes(8).toString('hex');
 const oldPin = '21fe9ecf6df989a3f8fa5878df40b93c';
-const newPin = '59a9bc7d7c0c3b38df982536a2632b15';
-const candidateSha = 'e1403f8aefb8e41bf050b4355551c42f3c7a889723782ce4b362ffc740c1d15b';
+const newPin = 'ade4d2af9aa0baf8400a79fc6b62c797';
+const candidateSha = 'c996a26fc7dca81e73a75843d9cdd792d895e5e66855899fd05a42ce7c02d819';
 const rollback = new Error('E4 source reuse intentional rollback');
 // Only these test-owned transactions run several independent old/new guards.
 // Keep Prisma's default 5s deadline from masking the native SQLSTATE/rollback.
@@ -124,7 +124,7 @@ function frozenOracle() {
   const path = resolve(__dirname, 'activity-os-r5-e4-contribution-settlement.e2e-spec.ts');
   const source = readFileSync(path, 'utf8');
   expect(createHash('sha256').update(source).digest('hex')).toBe(
-    'afc063d8dd5e62815c77735b26429533521fc30b350c7970d8f65fb3d7b8b2d7',
+    '46c31154bfa284f923ab34ca8be651573a8fe3a1f6d6035e1010265371a17e72',
   );
   const names = ['fixedE4RootAggregateSql', 'assertFixedE4RootOracle', 'assertFixedE4Oracle'];
   const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);

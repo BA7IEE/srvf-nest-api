@@ -348,7 +348,8 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
     tx.$queryRaw.mockResolvedValue([FIRST_REVIEW_TEST_GUARD]);
     await service.readFirstReviewBarrierCandidateInTx(prismaTx, firstReviewAnchor());
     const call = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, Prisma.Sql];
-    expect(call[1].text).toContain("md5(complete_proc.prosrc)='59a9bc7d7c0c3b38df982536a2632b15'");
+    expect(call[1].text).toContain("md5(complete_proc.prosrc)='ade4d2af9aa0baf8400a79fc6b62c797'");
+    expect(call[1].text).not.toContain('59a9bc7d7c0c3b38df982536a2632b15');
     expect(call[1].text).not.toContain('21fe9ecf6df989a3f8fa5878df40b93c');
     expect(call[1].text).not.toContain('edd162a44264b0d073d0009d3e592d0e');
     expect(call[1].text).not.toContain('7e56ad35c5266706ab7cf12757c8f1b2');

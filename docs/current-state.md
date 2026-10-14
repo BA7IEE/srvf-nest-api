@@ -23,7 +23,7 @@
 
 > **E3 当前边界（2026-10-03）**：不可变来源／映射证明、影子对账复核读面、受控窗口与逐项签字已仓内交付，当前主干验收通过；证据见[既有评审稿 §32](plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#32-e3-当前状态收口2026-10-03)。仍未部署、真实业务未验收，31 类真实映射继续 hold，shadow／Gate 关闭、D8-OPS 未执行。历史未复现性能／隔离根因不因一次 CI 绿而关闭。操作入口及缺口计数见[对账说明](ops/contribution-shadow-reconciliation.md)；生成契约不代表外部端回执或生产批准。
 
-> **E4 当前边界（2026-10-14）**：来源复用候选推进到 migration 143，仍在 Draft PR1380，未合入或部署。PG16 TIMING OFF 投影兼容修复后的 run38457728710 在诊断预算内完成真实 prepare（39.656秒）及完整 oracle、COMMIT和正常清理；正式30秒仍 FAIL，计划观测为 UNKNOWN/LOG/OUTPUT。143仅减少单次完整校验内的重复来源展开，保留所有独立数据库校验；新增142→143非空升级、旧新等价、错误优先级与两连接快照回归，GitHub实测待完成。最终SQL签字、trusted审批与生产 Gate未改变。当前候选及验证见[来源复用评审记录](plans/activity-os-r5-e4-assert-source-reuse-review.md)。
+> **E4 当前边界（2026-10-14）**：143来源复用候选仍未合入或部署。run38529368300正式满额prepare41.437秒/P2028，E4写入24.804秒、回滚11.222秒；COMMIT0、独立落库计数全零，submit/review/ledger未执行，正式30秒仍FAIL。全局143已应用，专用142→143回归尚待通过。新候选仅缩窄根聚合物化投影，不携带整行宽JSON；独立INSERT/deferred与全部guard保留，收益待GitHub量测。小夹具来源及Prisma错误封装修复保留冻结oracle/SQLSTATE/回滚；最终SQL签字、trusted审批与生产Gate未改变。见[来源复用评审记录](plans/activity-os-r5-e4-assert-source-reuse-review.md)。
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->

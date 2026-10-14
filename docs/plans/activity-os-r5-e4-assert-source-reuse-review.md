@@ -4,7 +4,7 @@
 
 ## 改动与等价目标
 
-新增 `20261013000000_activity_contribution_assert_source_reuse`（143），仅替换 `public.e4_assert_complete(text,boolean)`。完整SQL SHA256：`e1403f8aefb8e41bf050b4355551c42f3c7a889723782ce4b362ffc740c1d15b`；静态正文MD5：`59a9bc7d7c0c3b38df982536a2632b15`。服务和精确pin回归同步更新，不接受旧新二选一，也不从live DB学习pin。旧1–142不改。
+新增 `20261013000000_activity_contribution_assert_source_reuse`（143），仅替换 `public.e4_assert_complete(text,boolean)`。根聚合窄投影候选完整SQL SHA256：`c996a26fc7dca81e73a75843d9cdd792d895e5e66855899fd05a42ce7c02d819`；静态正文MD5：`ade4d2af9aa0baf8400a79fc6b62c797`。服务和精确pin回归同步更新，不接受旧新二选一，也不从live DB学习pin。旧1–142不改。
 
 非unchanged_time分支内，来源合法性检查与expected全集比较共用同一SQL作用域的关系型MATERIALIZED来源，不构造JSON/数组缓存，不跨调用复用。expected构造复制140最新版，其余canonical快路保留。来源非法时CASE阻止expected/day构造。原错误优先级、SQLSTATE、constraint、消息与cast/溢出保持；FULL JOIN/IS DISTINCT FROM、排序、全文哈希、规模限制与全部前后检查保留。public来源/expected函数、所有触发器、OID/owner/ACL/default/security/search_path不改。
 
@@ -35,6 +35,18 @@
 同一日志证明默认deferred COMMIT被`contribution evaluation set mismatch`拒绝，但Prisma6.19以UnknownRequestError封装，原P2010/meta断言不适用。修复保持原生COMMIT（不显式SET或改变触发器），在同一不完整根上用既有私有outcome函数取得真实23514/e4_evaluation_guard，再严格核对实际UnknownRequestError的PostgresError原生23514和精确消息。独立Prisma连接的完整业务快照先于错误断言执行，任何包装不符都不能遮蔽回滚检查。新增6个离线阳性/反例，拒绝普通Error、P2028、23505、其他guard消息及事务超时消息。本地6项PASS、定向lint PASS；7个数据库用例未在本云运行。全仓unit及Harness复用0054d125检查（src、配置、依赖与自测输入未变），受影响e2e类型/lint本轮重新检查。当前满额分片终态前不推送，不取消现有量测；143 SQL与正式30秒仍不改。
 
 run38529368300现已终态FAIL：Fast checks、Harness、Incident replay、Golden journeys、Docker image build及E2E2/3/5 PASS；E2E1/4与Diff guards FAIL。父端从独立授权连接器取得分片4正式规模日志：prepare41437ms，P2028为41226/30000ms，E4_EVAL_WRITE24804ms，rollback11222ms，COMMIT0，独立失败后各数据表计数全0，submit/review/ledger未执行。这组写入及回滚时间不能相加充当无重叠阶段，也不能把与上一次运行的差额归因于SQL（143字节未变）。第二轮测试修复的完整typecheck、定向冷lint、全仓lint:cached及counts/codemap检查最终退出0；六项离线适配测试PASS。满额终态已核实，后续普通推送不取消该次运行。
+
+## 根聚合标量投影单变量候选
+
+测试修复先单独提交04627fe7。随后143 SQL只改一处投影：根聚合的MATERIALIZED documents由 `e.*` 缩窄为 `e."recognizedPoints"` 与原有unit/unit_key_json/source_fingerprint_json/evaluation_hash_json四个文本结果。`sourceRefsJson`、`beijingDayPointsJson`等整行字段不再携带进这一物化层，规范文本的计算、C排序、aggregate/hash、空集合和NULL语义不改；后续规模/日期来源检查仍从真实表独立读取。全文逆替换校验证明除这一标量投影外143字节不变，旧1–142无diff；静态候选SHA/body MD5见顶部。
+
+服务只接受新正文MD5，首审单测额外拒绝上一个143 pin；专用143 checksum与安装前置核验、现有非scale精确pin测试同步新值。三个冻结oracle函数及其内部canonical/root/day SQL未改，仅被读取的非scale文件全文SHA因精确pin同步重算。权限、函数元数据、触发器、公开expected/source函数与全部守卫不改，不跨调用缓存，不复用一次INSERT的证明去放行deferred检查。
+
+成本边界由现有代码确认：评价INSERT后的statement trigger调用 `e4_assert_complete(root_id,FALSE)`；根的deferred trigger再调用 `e4_assert_complete(NEW.id)`，两次完整校验独立。具名SET CONSTRAINTS屏障还处理D4的astr_parent_complete_guard，E4_EVAL_WRITE、屏障与rollback是不同观测范围，不能把屏障总耗时当成纯E4第二次守卫成本。当前只有总阶段证据，没有各SQL子段或D4/E4独占时长，窄投影收益尚未量测；正式规模和30秒通过条件不变。本云不执行SQL，等待新head GitHub PG16回归及正式满额。
+
+按用户明确批准仅发放143 SQL精确路径grant，reason记录Sentinel批准原文及47路径附件；不授目录通配符，结束撤销该单项。最终SQL签字、trusted审批、合并部署仍不执行。
+
+本候选实际轻检查：最终服务72项PASS（含拒绝旧143 pin），错误封装适配6项PASS、7项数据库用例本云SKIPPED；完整typecheck、最终全仓lint:cached退出0。authz检查曾按真实输入摘要判stale，给既有生成器的ROUTE_AUTHZ和assertion-patterns两个批准输出路径补精确grant后正常生成；ROUTE_AUTHZ只改两处inputDigest，patterns字节不变，663条授权声明不变，生成后authz退出0。readtax/codemap/counts通过。完整单测/Harness复用既有已通过且未受影响输入，首审服务72项单独复跑；SQL/数据库/e2e/正式满额仍须此最终head的GitHub实测。工作树核验全部变更均在47路径内；SQL逆替换证明只有一处投影变化，旧1–142和scale不变。本树原无grant，本次持有且仅持有上述3项，提交后核对撤销，不清他人授权。
 
 ## 收口边界
 

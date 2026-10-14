@@ -250,7 +250,7 @@ BEGIN
     IF evaluation_mismatch THEN RAISE EXCEPTION 'contribution evaluation set mismatch' USING ERRCODE='23514',CONSTRAINT='e4_evaluation_guard'; END IF;
   END IF;
   WITH documents AS MATERIALIZED (
-    SELECT e.*,astr_canonical_json(jsonb_build_object('participationIdentityId',e."participationIdentityId",'sessionId',e."sessionId",
+    SELECT e."recognizedPoints",astr_canonical_json(jsonb_build_object('participationIdentityId',e."participationIdentityId",'sessionId',e."sessionId",
       'mode',e.mode,'policyId',e."policyId",'policyVersionId',e."policyVersionId",'definitionHash',e."definitionHash",
       'evaluatorVersion',e."evaluatorVersion",'attendanceRoleCode',e."attendanceRoleCode",'timeCategoryCode',e."timeCategoryCode")) AS unit,
       astr_canonical_json(to_jsonb(e."evaluationUnitKey")) AS unit_key_json,

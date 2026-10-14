@@ -70,7 +70,7 @@ const FIRST_REVIEW_GUARD_CATALOG = Prisma.sql`
     AND complete_proc.prokind='f' AND NOT complete_proc.prosecdef
     AND complete_language.lanname='plpgsql'
     AND complete_proc.proconfig=ARRAY['search_path=pg_catalog, public']::text[]
-    AND pg_catalog.md5(complete_proc.prosrc)='59a9bc7d7c0c3b38df982536a2632b15'
+    AND pg_catalog.md5(complete_proc.prosrc)='ade4d2af9aa0baf8400a79fc6b62c797'
     AND (SELECT count(*) FROM pg_catalog.pg_proc callable
       JOIN pg_catalog.pg_namespace ns ON ns.oid=callable.pronamespace
       WHERE ns.nspname IN ('pg_catalog','public') AND callable.proname='e4_assert_complete'
