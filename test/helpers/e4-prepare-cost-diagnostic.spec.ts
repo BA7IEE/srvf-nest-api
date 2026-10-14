@@ -56,6 +56,11 @@ import {
   FIXED_METADATA_MAX_ORDER,
   compactFixedMetadataMaximumEvidence,
   completeFixedMetadataPostOracle,
+  nativePlanCategory,
+  compactNativePrepareLog,
+  validateNativeCapability,
+  nativePrepareCompleteness,
+  nativePlanFailureCategory,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -357,9 +362,13 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     );
     const expression = workflow.match(/scenario: \$\{\{ (fromJSON\([^\n]+) \}\}/u)?.[1];
     expect(expression).toBeDefined();
-    const select = (small: boolean, message: string, maximum = false) =>
+    const select = (small: boolean, message: string, maximum = false, native = false) =>
       runInNewContext(expression!, {
-        inputs: { small_metadata_calibration: small, fixed_metadata_maximum: maximum },
+        inputs: {
+          small_metadata_calibration: small,
+          fixed_metadata_maximum: maximum,
+          native_prepare_plan_500: native,
+        },
         github: { event: { head_commit: { message } } },
         contains: (value: string, token: string) => value.includes(token),
         fromJSON: JSON.parse,
@@ -369,9 +378,297 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(select(false, '[e4-join-key-calibration-once]')).toEqual(['ordinary-1']);
     expect(select(false, '[e4-join-key-once]')).toEqual(['maximum']);
     expect(select(false, '', true)).toEqual(['maximum']);
+    expect(select(false, '', false, true)).toEqual(['ordinary-500']);
+    expect(select(true, '[e4-join-key-once]', true, true)).toEqual(['ordinary-500']);
     expect(workflow).toContain(
       "github.event_name == 'workflow_dispatch' && inputs.expected_sha == github.sha",
     );
+  });
+  it('admits native plans only for ordinary500 without any alternate budget or candidate mode', () => {
+    const native = {
+      ...env,
+      SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-500',
+      SRVF_E4_NATIVE_PREPARE_PLAN: '1',
+    };
+    expect(() => requireDiagnosticEnvironment(native, head)).not.toThrow();
+    for (const change of [
+      { SRVF_E4_NATIVE_PREPARE_PLAN: '2' },
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum' },
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-1' },
+      ...[
+        'SRVF_E4_CANONICAL_COST_ONLY',
+        'SRVF_E4_CANONICAL_JIT_ABBA',
+        'SRVF_E4_CANONICAL_MEMORY_PAIR',
+        'SRVF_E4_CANONICAL_FIRST32',
+        'SRVF_E4_JOIN_KEY_ONCE',
+        'SRVF_E4_JOIN_KEY_CALIBRATION',
+        'SRVF_E4_SHARED_GUARD_ONCE',
+        'SRVF_E4_FIXED_METADATA_MAX_ONCE',
+      ].map((key) => ({ [key]: '1' })),
+    ])
+      expect(() => requireDiagnosticEnvironment({ ...native, ...change }, head)).toThrow();
+  });
+  const nativeLog = (
+    query: string,
+    context = '',
+    triggers: unknown[] = [],
+    pid = 42,
+    overrides = {},
+  ) =>
+    `2026-10-14 12:00:00.000 UTC [${pid}] LOG:  duration: 120.5 ms  plan:\n` +
+    JSON.stringify({
+      'Query Text': query,
+      Parameters: 'PRIVATE_CANARY',
+      Settings: { secret: 'PRIVATE_CANARY' },
+      JIT: {
+        Functions: 8,
+        Timing: { Generation: 1, Inlining: 2, Optimization: 3, Emission: 4, Total: 10 },
+        Options: 'PRIVATE_CANARY',
+      },
+      Plan: {
+        'Node Type': 'ModifyTable',
+        'Relation Name': 'ParticipantContributionEvaluation',
+        'Actual Rows': 2000,
+        'Actual Loops': 1,
+        'Plan Rows': 20,
+        'Actual Total Time': 12.5,
+        'Temp Read Blocks': 10,
+        'Temp Written Blocks': 15,
+        'Shared Hit Blocks': 30,
+        Filter: 'PRIVATE_CANARY',
+        Output: ['PRIVATE_CANARY'],
+        Plans: [
+          {
+            'Node Type': 'Seq Scan',
+            'Relation Name': 'PRIVATE_CANARY',
+            'Index Name': 'PRIVATE_CANARY',
+            'Actual Rows': 2000,
+            'Actual Loops': 2,
+            'Actual Total Time': 4.5,
+          },
+        ],
+      },
+      Triggers: triggers,
+      ...overrides,
+    }) +
+    '\n' +
+    (context
+      ? `2026-10-14 12:00:00.001 UTC [${pid}] CONTEXT:  PL/pgSQL function ${context}() line 3 at PERFORM\n`
+      : '');
+  const nativeTrigger = (name: string, time: number | undefined = 90) => ({
+    'Trigger Name': name,
+    'Constraint Name': 'PRIVATE_CANARY',
+    Relation: 'ParticipantContributionEvaluation',
+    Time: time,
+    Calls: 1,
+  });
+  it('projects numeric PG16 plans and trusted names without expressions, values, parameters or arbitrary identifiers', () => {
+    const raw =
+      nativeLog(
+        'INSERT INTO "public"."ParticipantContributionEvaluation" VALUES (\'PRIVATE_CANARY\')',
+        '',
+        [
+          nativeTrigger('e4_evaluation_set_guard'),
+          nativeTrigger('RI_ConstraintTrigger_c_12345', 1.5),
+        ],
+      ) + nativeLog('SELECT private_data', '', [], 999);
+    const result = compactNativePrepareLog(raw, 42);
+    expect(JSON.stringify(result)).not.toContain('PRIVATE_CANARY');
+    expect(JSON.stringify(result)).not.toContain('private_data');
+    expect(result.malformed).toBe(0);
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]).toMatchObject({
+      kind: 'EVAL_INSERT',
+      durationMs: 120.5,
+      site: 'EVAL_INSERT',
+    });
+    expect(result.records[0].nodes[0].slice(5, 13)).toEqual([2000, 1, 20, 12.5, 10, 15, 30, null]);
+    expect(result.records[0].nodes[1].slice(0, 4)).toEqual([
+      0,
+      result.dictionary.indexOf('Seq Scan'),
+      0,
+      0,
+    ]);
+    expect(result.records[0].triggers[1][0]).toBe(result.dictionary.indexOf('FOREIGN_KEY'));
+    expect(result.records[0].jit).toEqual([8, 1, 2, 3, 4, 10]);
+    expect(
+      nativePlanCategory('INSERT INTO "public"."ActivitySettlementTimeCommandReceipt" VALUES ($1)'),
+    ).toBe('RECEIPT');
+    expect(
+      nativePlanCategory(
+        'SET CONSTRAINTS public.astr_parent_complete_guard, public.e4_revision_complete_guard IMMEDIATE;',
+      ),
+    ).toBe('BARRIER');
+    expect(nativePlanCategory("SELECT 'ParticipantContributionEvaluation'")).toBe('OTHER');
+  });
+  it('requires both complete-function/shared plans, original statement events and actual trigger timing', () => {
+    const evalSql = 'INSERT INTO "ParticipantContributionEvaluation" VALUES ($1)';
+    const receiptSql = 'INSERT INTO "ActivitySettlementTimeCommandReceipt" VALUES ($1)';
+    let raw =
+      nativeLog(evalSql, '', [
+        nativeTrigger('e4_evaluation_set_guard'),
+        nativeTrigger('RI_ConstraintTrigger_c_12345', 1),
+      ]) + nativeLog(receiptSql, '', [nativeTrigger('astcr_receipt_complete_guard')]);
+    for (const context of ['e4_evaluation_set_guard', 'e4_revision_complete_guard']) {
+      raw += nativeLog('SELECT e4_assert_complete(root_id,FALSE)', context);
+      raw += nativeLog(sharedGuardStatement(), context);
+    }
+    const plans = compactNativePrepareLog(raw, 42);
+    const events = {
+      EVAL_INSERT: { calls: 1, durationMs: 1, largestMs: 1 },
+      RECEIPT: { calls: 1, durationMs: 1, largestMs: 1 },
+      BARRIER: { calls: 1, durationMs: 1, largestMs: 1 },
+      BUCKETS: { calls: 0, durationMs: 0, largestMs: 0 },
+      SOURCES: { calls: 0, durationMs: 0, largestMs: 0 },
+      OTHER: { calls: 0, durationMs: 0, largestMs: 0 },
+    };
+    expect(nativePrepareCompleteness(plans, events, true, 0)).toEqual({
+      status: 'COMPLETE',
+      missing: [],
+    });
+    expect(plans.records.filter((p) => p.kind === 'E4_SHARED').map((p) => p.site)).toEqual([
+      'EVAL_INSERT',
+      'BARRIER',
+    ]);
+    for (const [changed, completed, invalid] of [
+      [{ ...plans, records: plans.records.slice(1) }, true, 0],
+      [{ ...plans, malformed: 1 }, true, 0],
+      [plans, false, 0],
+      [plans, true, 1],
+    ] as const)
+      expect(nativePrepareCompleteness(changed, events, completed, invalid).status).toBe(
+        'INCOMPLETE',
+      );
+    // Undefined Time is missing, never a measured zero.
+    const missingTime = compactNativePrepareLog(
+      nativeLog(evalSql, '', [{ 'Trigger Name': 'e4_evaluation_set_guard', Calls: 1 }]),
+      42,
+    );
+    expect(missingTime.records[0].triggers[0][3]).toBeNull();
+    expect(
+      nativePrepareCompleteness(
+        { ...plans, records: [missingTime.records[0], ...plans.records.slice(1)] },
+        events,
+        true,
+        0,
+      ).missing,
+    ).toContain('EVAL_INSERT_PLAN_OR_TRIGGER');
+  });
+  it('fails closed on malformed/truncated/oversized or invalid numeric plan data', () => {
+    expect(
+      compactNativePrepareLog('2026-10-14 12:00:00 UTC [42] LOG: duration: 1 ms plan:\n{', 42)
+        .malformed,
+    ).toBe(1);
+    expect(() => compactNativePrepareLog('x'.repeat(2097153), 42)).toThrow(/bound/u);
+    expect(() =>
+      compactNativePrepareLog(
+        nativeLog('SELECT 1', '', [], 42, { Plan: { 'Actual Rows': -1 } }),
+        42,
+      ),
+    ).toThrow(/metric/u);
+    expect(() => compactNativePrepareLog(nativeLog('SELECT 1').repeat(65), 42)).toThrow(/bound/u);
+    expect(nativePlanFailureCategory(new Error('E4 native effective settings refused'))).toBe(
+      'SESSION_IDENTITY_OR_SETTINGS',
+    );
+    expect(nativePlanFailureCategory(new Error('PRIVATE_CANARY'))).toBe('UNCLASSIFIED');
+  });
+  it('binds the temporary capability receipt to exact head/run/PG16 and strips untrusted extras', () => {
+    const proof = {
+      head,
+      run: '123',
+      status: 'COMPLETE',
+      server: 16,
+      triggerTiming: true,
+      foreignKeyTiming: true,
+      nested: true,
+      redacted: true,
+      cluster: 'b'.repeat(64),
+    };
+    expect(validateNativeCapability({ ...proof, secret: 'PRIVATE_CANARY' }, head, '123')).toEqual(
+      proof,
+    );
+    for (const change of [
+      { head: 'c'.repeat(40) },
+      { run: '124' },
+      { server: 15 },
+      { triggerTiming: false },
+      { foreignKeyTiming: false },
+      { nested: false },
+      { redacted: false },
+      { cluster: 'unknown' },
+      { status: 'FAILED' },
+    ])
+      expect(() => validateNativeCapability({ ...proof, ...change }, head, '123')).toThrow();
+  });
+  it('retains the full native artifact as numbered log chunks and never mistakes capability success for prepare success', () => {
+    const workflow = readFileSync(
+      resolve(__dirname, '../../.github/workflows/activity-os-r5-e4-validation.yml'),
+      'utf8',
+    );
+    const script = workflow.match(
+      /- name: Summarize closed shared-guard evidence[\s\S]*?node <<'NODE'\n([\s\S]*?)\n\s+NODE/u,
+    )?.[1];
+    expect(script).toBeDefined();
+    const receipt = {
+      head,
+      run: '123',
+      purpose: 'DIAGNOSTIC_ONLY',
+      coverage: 'PREPARE_NATIVE_PLAN_ONLY',
+      scenario: 'ordinary-500',
+      status: 'COMPLETE',
+      nativePreparePlan: { status: 'COMPLETE', plans: { nodes: Array<number>(5000).fill(12345) } },
+    };
+    const execute = (value: unknown, hasResult: boolean) => {
+      let output = '';
+      const stopped = new Error('TEST_PROCESS_EXIT');
+      try {
+        runInNewContext(script!, {
+          require: () => ({
+            existsSync: (file: string) => !file.endsWith('/result.json') || hasResult,
+            statSync: () => ({ size: Buffer.byteLength(JSON.stringify(value)) }),
+            readFileSync: () => JSON.stringify(value),
+          }),
+          process: {
+            env: { SRVF_E4_NATIVE_PREPARE_PLAN: '1', GITHUB_SHA: head, GITHUB_RUN_ID: '123' },
+            stdout: {
+              write: (text: string) => {
+                output += text;
+              },
+            },
+            exit: () => {
+              throw stopped;
+            },
+          },
+        });
+      } catch (error) {
+        if (error !== stopped) throw error;
+      }
+      const chunks = output
+        .split('\n')
+        .filter((line) => line.startsWith('E4_NATIVE_PLAN_CHUNK '))
+        .map(
+          (line) =>
+            JSON.parse(line.slice('E4_NATIVE_PLAN_CHUNK '.length)) as {
+              artifact: string;
+              index: number;
+              total: number;
+              data: string;
+            },
+        )
+        .filter((chunk) => chunk.artifact === 'result.json');
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks.map((c) => c.index)).toEqual(chunks.map((_, i) => i));
+      expect(chunks.every((c) => c.total === chunks.length && c.data.length <= 12000)).toBe(true);
+      return JSON.parse(chunks.map((c) => c.data).join('')) as {
+        status: string;
+        nativePreparePlan: { status: string };
+      };
+    };
+    expect(execute(receipt, true)).toEqual(receipt);
+    expect(
+      execute({ head, run: '123', status: 'COMPLETE', temporaryOnly: true }, false),
+    ).toMatchObject({ status: 'INCOMPLETE', nativePreparePlan: { status: 'NOT_CAPTURED' } });
+    expect(() => execute({ ...receipt, head: 'c'.repeat(40) }, true)).toThrow();
   });
   it('admits the fixed maximum only with original maximum/oracle flags and no competing mode', () => {
     const maximum = {

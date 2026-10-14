@@ -1,6 +1,14 @@
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, renameSync } from 'node:fs';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  renameSync,
+  readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -304,6 +312,22 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_NATIVE_PREPARE_PLAN &&
+    (env.SRVF_E4_NATIVE_PREPARE_PLAN !== '1' ||
+      env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'ordinary-500' ||
+      [
+        'SRVF_E4_JOIN_KEY_ONCE',
+        'SRVF_E4_JOIN_KEY_CALIBRATION',
+        'SRVF_E4_FIXED_METADATA_MAX_ONCE',
+        'SRVF_E4_SHARED_GUARD_ONCE',
+        'SRVF_E4_CANONICAL_FIRST32',
+        'SRVF_E4_CANONICAL_COST_ONLY',
+        'SRVF_E4_CANONICAL_JIT_ABBA',
+        'SRVF_E4_CANONICAL_MEMORY_PAIR',
+      ].some((key) => !!env[key]))
+  )
+    throw new Error('E4 native prepare500 scope refused');
+  if (
     env.SRVF_E4_FIXED_METADATA_MAX_ONCE &&
     (env.SRVF_E4_FIXED_METADATA_MAX_ONCE !== '1' ||
       env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum' ||
@@ -431,7 +455,9 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
     | 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
     | 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
     | 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
-    | 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY';
+    | 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
+    | 'PREPARE_NATIVE_PLAN_ONLY';
+  nativePreparePlan?: unknown;
   metadataPostOracle?: {
     status: 'ENTERED' | 'COMPLETE' | 'FAILED';
     firstCanonical32?: FirstCanonical32Evidence;
@@ -467,9 +493,11 @@ function writeBounded(path: string, value: unknown) {
   const comparison =
     value &&
     typeof value === 'object' &&
-    ['PREPARE_ORACLE_AND_JOIN_KEY_ONLY', 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'].includes(
-      String(Reflect.get(value, 'coverage')),
-    );
+    [
+      'PREPARE_ORACLE_AND_JOIN_KEY_ONLY',
+      'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY',
+      'PREPARE_NATIVE_PLAN_ONLY',
+    ].includes(String(Reflect.get(value, 'coverage')));
   const json = (comparison ? JSON.stringify(value) : JSON.stringify(value, null, 2)) + '\n';
   if (Buffer.byteLength(json) > 65536) throw new Error('E4 diagnostic output limit');
   writeFileSync(path, json, { flag: 'wx', mode: 0o600 });
@@ -3433,17 +3461,19 @@ function registerDiagnosticChild() {
     migration: 'NOT_VERIFIED',
     stages: [],
     coverage:
-      process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1'
-        ? 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
-        : process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
-          ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
-          : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
-            ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
-            : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
-              ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
-              : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-                ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-                : 'FULL_SETTLEMENT',
+      process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1'
+        ? 'PREPARE_NATIVE_PLAN_ONLY'
+        : process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1'
+          ? 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
+          : process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
+            ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
+            : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+              ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
+              : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+                ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+                : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+                  ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+                  : 'FULL_SETTLEMENT',
     status: 'UNKNOWN',
     oracle: 'NOT_RUN',
     resources: 'UNKNOWN',
@@ -3466,6 +3496,7 @@ function registerDiagnosticChild() {
       frozenE4OracleSource();
       frozenOrdinaryOracleSource();
       verifyDiagnosticMigrationSource();
+      if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1') readNativeCapability();
       if (process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1') metadataCanonicalCandidateSource();
     },
     'REFUSED',
@@ -3645,7 +3676,9 @@ function registerDiagnosticChild() {
           { phase: 'E4_EVAL_WRITE', target: contributions, method: 'insertEvaluations' },
           { phase: 'C3_RECEIPT', target: measured, method: 'receipt' },
         ]);
+        let nativeCapture: NativePrepareCapture | undefined;
         db.$on('query', (event) => {
+          nativeCapture?.event(event.query, event.duration);
           native.queryEvent(event.query, event.duration);
           if (!/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\b/iu.test(event.query))
             phase.query(
@@ -3653,12 +3686,27 @@ function registerDiagnosticChild() {
               event.duration,
             );
         });
+        if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1') {
+          report.substage = 'NATIVE_PLAN_SESSION';
+          report.nativePreparePlan = { status: 'ENTERED' };
+          try {
+            nativeCapture = await startNativePrepareCapture(db, pid);
+          } catch (error) {
+            report.nativePreparePlan = {
+              status: 'INCOMPLETE',
+              reason: nativePlanFailureCategory(error),
+            };
+            throw error;
+          }
+          report.substage = 'PREPARE';
+        }
         const anchor = performance.now();
         phase.enableBoundaryTimeline(anchor);
         requests.begin();
         native.begin(anchor);
         phase.begin();
         let outcome: 'OK' | 'FAIL' = 'FAIL';
+        let nativeCaptureError: Error | undefined;
         let prepared: Awaited<ReturnType<ActivityTimeSettlementService['prepare']>> | undefined;
         try {
           const operation = measureOperation(report, 'PREPARE', db, () =>
@@ -3731,7 +3779,51 @@ function registerDiagnosticChild() {
             status: 'NOT_RUN',
             reason: 'BUDGET_ASSESSMENT_NO_INTERNAL_PLAN_OBSERVER',
           };
+          if (nativeCapture) {
+            try {
+              const captured = await nativeCapture.finish(outcome === 'OK');
+              // Keep the full plan independently bounded: phase/request timelines must not
+              // compete with native nodes for the original64KiB report envelope.
+              const artifact = {
+                head,
+                run: report.run,
+                scenario: report.scenario,
+                purpose: 'DIAGNOSTIC_ONLY',
+                coverage: 'PREPARE_NATIVE_PLAN_ONLY',
+                nativePreparePlan: captured,
+              };
+              writeBounded(join(privateDir, 'native-plan.json'), artifact);
+              const { plans, ...summary } = captured;
+              report.nativePreparePlan = {
+                ...summary,
+                planArtifactSha256: createHash('sha256')
+                  .update(JSON.stringify(artifact) + '\n')
+                  .digest('hex'),
+                planCounts: {
+                  records: plans.records.length,
+                  nodes: plans.records.reduce((sum, row) => sum + row.nodes.length, 0),
+                  malformed: plans.malformed,
+                },
+              };
+              report.internalSqlPlan = captured.status === 'COMPLETE' ? 'OBSERVED' : 'NOT_RUN';
+              if (outcome === 'OK' && captured.status !== 'COMPLETE')
+                nativeCaptureError = new Error('E4 native evidence incomplete');
+            } catch (error) {
+              if (
+                !report.nativePreparePlan ||
+                Reflect.get(report.nativePreparePlan, 'status') === 'ENTERED'
+              )
+                report.nativePreparePlan = {
+                  ...nativeCapture.partial(),
+                  reason: nativePlanFailureCategory(error),
+                };
+              if (outcome === 'OK')
+                nativeCaptureError =
+                  error instanceof Error ? error : new Error('E4 native capture failed');
+            }
+          }
         }
+        if (nativeCaptureError) throw nativeCaptureError;
         checkpoint.mark('PREPARE', 'COMPLETE');
         if (report.scenario === 'lock-contention') {
           expect(lock.snapshot()).toMatchObject({
@@ -3834,7 +3926,17 @@ function registerDiagnosticChild() {
           );
         }
         checkpoint.mark('ORACLE', 'COMPLETE');
-        if (process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1') {
+        if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1') {
+          expect(report.nativePreparePlan).toMatchObject({
+            status: 'COMPLETE',
+            sameBackend: true,
+            tracingDisabledAfter: true,
+          });
+          report.status = 'COMPLETE';
+          report.oracle = 'COMPLETE';
+          report.budgetRecommendation =
+            'ONE_INSTRUMENTED_ORIGINAL500_PREPARE_ONLY_NO_MAXIMUM_OR_OPTIMIZATION_CLAIM';
+        } else if (process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1') {
           report.status = 'COMPLETE';
           report.budgetRecommendation =
             'SMALL_TOOL_CALIBRATION_ONLY_NO_MAXIMUM_OR_PERFORMANCE_CLAIM';
@@ -4108,17 +4210,19 @@ export async function runDiagnosticParent() {
       migration: 'NOT_VERIFIED',
       stages: [],
       coverage:
-        process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1'
-          ? 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
-          : process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
-            ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
-            : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
-              ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
-              : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
-                ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
-                : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
-                  ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
-                  : 'FULL_SETTLEMENT',
+        process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1'
+          ? 'PREPARE_NATIVE_PLAN_ONLY'
+          : process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1'
+            ? 'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY'
+            : process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1'
+              ? 'SMALL_JOIN_KEY_CALIBRATION_ONLY'
+              : process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+                ? 'PREPARE_ORACLE_AND_JOIN_KEY_ONLY'
+                : process.env.SRVF_E4_SHARED_GUARD_ONCE === '1'
+                  ? 'PREPARE_ORACLE_AND_SHARED_GUARD_ONLY'
+                  : process.env.SRVF_E4_CANONICAL_FIRST32 === '1'
+                    ? 'PREPARE_AND_FIRST_ORACLE_ONLY'
+                    : 'FULL_SETTLEMENT',
       status: 'UNKNOWN',
       oracle: 'NOT_RUN',
       resources: 'UNKNOWN',
@@ -4168,13 +4272,15 @@ export async function runDiagnosticParent() {
     )
       report.status = 'UNKNOWN';
     const cleanup =
-      process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1' || process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
+      process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' ||
+      process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1' ||
+      process.env.SRVF_E4_JOIN_KEY_ONCE === '1'
         ? observeDiagnosticCleanup(e4DiagnosticCleanupAllowance(performance.now() - parentStarted))
         : undefined;
     if (cleanup && cleanup.status !== 'OBSERVED_ABSENT' && report.status === 'COMPLETE')
       report.status = 'UNKNOWN';
     mkdirSync(dirname(output), { recursive: true });
-    writeBounded(output, {
+    const closedReport = {
       ...report,
       process: processResult,
       stage,
@@ -4188,8 +4294,41 @@ export async function runDiagnosticParent() {
             processResult.cleanupConfirmed
           ? 'NORMAL_DROP_AND_LEASE_RELEASE'
           : 'UNKNOWN',
-    });
-    return report.status === 'COMPLETE' ? 0 : 1;
+    };
+    if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1') {
+      const file = join(privateDir, 'native-plan.json');
+      try {
+        const raw = readFileSync(file);
+        if (raw.length > 65536) throw new Error('bound');
+        const data = JSON.parse(raw.toString()) as Record<string, unknown>;
+        if (
+          data.head !== head ||
+          data.run !== report.run ||
+          data.scenario !== report.scenario ||
+          data.purpose !== 'DIAGNOSTIC_ONLY' ||
+          data.coverage !== 'PREPARE_NATIVE_PLAN_ONLY'
+        )
+          throw new Error('binding');
+        const expected =
+          report.nativePreparePlan && Reflect.get(report.nativePreparePlan, 'planArtifactSha256');
+        if (expected !== createHash('sha256').update(raw).digest('hex'))
+          closedReport.status = 'UNKNOWN';
+        writeBounded(join(dirname(output), 'native-plan.json'), data);
+      } catch {
+        closedReport.status = 'FAILED';
+        writeBounded(join(dirname(output), 'native-plan.json'), {
+          head,
+          run: report.run,
+          scenario: report.scenario,
+          purpose: 'DIAGNOSTIC_ONLY',
+          coverage: 'PREPARE_NATIVE_PLAN_ONLY',
+          nativePreparePlan: report.nativePreparePlan ?? { status: 'NOT_CAPTURED' },
+          reason: 'NATIVE_SIDECAR_UNAVAILABLE',
+        });
+      }
+    }
+    writeBounded(output, closedReport);
+    return closedReport.status === 'COMPLETE' ? 0 : 1;
   } finally {
     emergency();
     process.removeListener('exit', emergency);
@@ -4198,11 +4337,678 @@ export async function runDiagnosticParent() {
     rmSync(privateDir, { recursive: true, force: true });
   }
 }
+const NATIVE_PLAN_NODE_TYPES = [
+  'Result',
+  'ProjectSet',
+  'ModifyTable',
+  'Append',
+  'Merge Append',
+  'Recursive Union',
+  'BitmapAnd',
+  'BitmapOr',
+  'Nested Loop',
+  'Merge Join',
+  'Hash Join',
+  'Seq Scan',
+  'Sample Scan',
+  'Gather',
+  'Gather Merge',
+  'Index Scan',
+  'Index Only Scan',
+  'Bitmap Index Scan',
+  'Bitmap Heap Scan',
+  'Tid Scan',
+  'Tid Range Scan',
+  'Subquery Scan',
+  'Function Scan',
+  'Table Function Scan',
+  'Values Scan',
+  'CTE Scan',
+  'Named Tuplestore Scan',
+  'WorkTable Scan',
+  'Foreign Scan',
+  'Custom Scan',
+  'Materialize',
+  'Memoize',
+  'Sort',
+  'Incremental Sort',
+  'Group',
+  'Aggregate',
+  'WindowAgg',
+  'Unique',
+  'SetOp',
+  'LockRows',
+  'Limit',
+  'Hash',
+];
+const NATIVE_PLAN_COLUMNS = [
+  'parent',
+  'type',
+  'relation',
+  'index',
+  'cte',
+  'rows',
+  'loops',
+  'estimatedRows',
+  'nodeInclusiveMsPerLoop',
+  'tempRead',
+  'tempWritten',
+  'sharedHit',
+  'sharedRead',
+  'sort',
+  'sortKb',
+  'hashBatches',
+  'walBytes',
+  'rowsRemovedFilter',
+  'function',
+];
+const NATIVE_CAP_OBJECTS = [
+  'e4_native_cap_parent',
+  'e4_native_cap_parent_pkey',
+  'e4_native_cap_target',
+  'e4_native_cap_target_parent_id_fkey',
+  'e4_native_cap_trigger',
+];
+let nativeTrustedObjects: Set<string> | undefined;
+function nativeObjects() {
+  if (nativeTrustedObjects) return nativeTrustedObjects;
+  const schema = readFileSync(resolve(__dirname, '../../prisma/schema.prisma'), 'utf8');
+  const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gmu)].map((m) => m[1]);
+  const root = resolve(__dirname, '../../prisma/migrations');
+  const source = readdirSync(root)
+    .filter((n) => /^\d{14}_/u.test(n))
+    .sort()
+    .map((n) => readFileSync(join(root, n, 'migration.sql'), 'utf8'))
+    .join('\n');
+  const identifiers = [
+    ...source.matchAll(
+      /(?:CONSTRAINT|(?:UNIQUE\s+)?INDEX|TRIGGER|FUNCTION)\s+(?:"([A-Za-z0-9_]+)"|([A-Za-z_][A-Za-z0-9_]*))/gu,
+    ),
+  ].map((m) => m[1] ?? m[2]);
+  const ctes = [
+    ...source.matchAll(/\b([A-Za-z_][A-Za-z0-9_]*)\s+AS\s+(?:(?:NOT\s+)?MATERIALIZED\s+)?\(/gu),
+  ].map((m) => m[1]);
+  nativeTrustedObjects = new Set([
+    ...models,
+    ...models.map((n) => n + '_pkey'),
+    ...identifiers,
+    ...ctes,
+    ...NATIVE_CAP_OBJECTS,
+    ...NATIVE_PLAN_NODE_TYPES,
+    'FOREIGN_KEY',
+    'quicksort',
+    'external merge',
+    'top-N heapsort',
+    'heapsort',
+    'jsonb_array_elements',
+    'jsonb_each',
+    'jsonb_to_recordset',
+    'generate_series',
+  ]);
+  return nativeTrustedObjects;
+}
+type NativePlanCategory = 'EVAL_INSERT' | 'RECEIPT' | 'BUCKETS' | 'SOURCES' | 'BARRIER' | 'OTHER';
+type NativePlanEvent = { calls: number; durationMs: number; largestMs: number };
+export function nativePlanCategory(sql: string): NativePlanCategory {
+  const value = sql
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .replace(/;$/u, '')
+    .replace(/^INSERT INTO "public"\./u, 'INSERT INTO ');
+  if (
+    value ===
+    'SET CONSTRAINTS public.astr_parent_complete_guard, public.e4_revision_complete_guard IMMEDIATE'
+  )
+    return 'BARRIER';
+  for (const [name, category] of [
+    ['ParticipantContributionEvaluation', 'EVAL_INSERT'],
+    ['ActivitySettlementTimeCommandReceipt', 'RECEIPT'],
+    ['ParticipantSettlementTimeBucket', 'BUCKETS'],
+    ['ParticipantSettlementTimeBucketSource', 'SOURCES'],
+  ] as const)
+    if (value.startsWith(`INSERT INTO "${name}"`)) return category;
+  return 'OTHER';
+}
+/** Values, expressions, query text, parameter data and arbitrary identifiers are never projected. */
+export function compactNativePrepareLog(raw: string, pid: number, capability = false) {
+  if (Buffer.byteLength(raw) > 2097152 || !Number.isInteger(pid) || pid < 1)
+    throw new Error('E4 native log bound refused');
+  const dictionary = ['OTHER'];
+  const trusted = nativeObjects();
+  const intern = (value: unknown) => {
+    if (typeof value !== 'string' || !trusted.has(value)) return 0;
+    let index = dictionary.indexOf(value);
+    if (index < 0) {
+      index = dictionary.length;
+      dictionary.push(value);
+    }
+    return index;
+  };
+  const metric = (value: unknown): number | null => {
+    if (value === undefined) return null;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1e15)
+      throw new Error('E4 native metric refused');
+    return value;
+  };
+  const normalize = (s: string) =>
+    s
+      .replace(/INTO source_invalid,evaluation_mismatch/gu, '')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .replace(/;$/u, '');
+  const shared = normalize(sharedGuardStatement());
+  type RecordRow = {
+    kind: string;
+    site: string;
+    durationMs: number;
+    functions: number[];
+    nodes: (number | null)[][];
+    triggers: (number | null)[][];
+    jit: (number | null)[];
+  };
+  const records: RecordRow[] = [];
+  let nodes = 0;
+  let malformed = 0;
+  let current: { pid: number; level: string; text: string } | undefined;
+  let last: RecordRow | undefined;
+  const consume = () => {
+    if (!current || current.pid !== pid) return;
+    if (current.level === 'CONTEXT' && last) {
+      for (const m of current.text.matchAll(
+        /(?:PL\/pgSQL function|SQL function)\s+"?([A-Za-z_][A-Za-z0-9_.]*)/gu,
+      )) {
+        const index = intern(m[1].split('.').at(-1));
+        if (index && !last.functions.includes(index)) last.functions.push(index);
+      }
+      return;
+    }
+    last = undefined;
+    const header = current.text.match(/^duration:\s+([0-9.]+) ms\s+plan:\s*\n/u);
+    if (current.level !== 'LOG' || !header) return;
+    if (records.length >= 64) throw new Error('E4 native plan count bound refused');
+    try {
+      const document = JSON.parse(current.text.slice(header[0].length).trim()) as Record<
+        string,
+        unknown
+      >;
+      if (!document.Plan || typeof document.Plan !== 'object') throw new Error('plan');
+      const query = typeof document['Query Text'] === 'string' ? document['Query Text'] : '';
+      const category = nativePlanCategory(query);
+      const kind =
+        normalize(query) === shared
+          ? 'E4_SHARED'
+          : /^SELECT\s+(?:public\.)?e4_assert_complete\(/iu.test(query.trim())
+            ? 'E4_COMPLETE_CALL'
+            : capability && /^INSERT INTO e4_native_cap_target/u.test(query.trim())
+              ? 'CAP_INSERT'
+              : category === 'OTHER'
+                ? 'NESTED'
+                : category;
+      const row: RecordRow = {
+        kind,
+        site: category === 'OTHER' ? 'UNKNOWN' : category,
+        durationMs: metric(+header[1])!,
+        functions: [],
+        nodes: [],
+        triggers: [],
+        jit: [],
+      };
+      const walk = (input: unknown, parent: number | null, depth: number) => {
+        if (
+          !input ||
+          typeof input !== 'object' ||
+          Array.isArray(input) ||
+          depth > 24 ||
+          ++nodes > 512
+        )
+          throw new Error('E4 native node bound refused');
+        const n = input as Record<string, unknown>;
+        const id = row.nodes.length;
+        row.nodes.push([
+          parent,
+          intern(n['Node Type']),
+          intern(n['Relation Name']),
+          intern(n['Index Name']),
+          intern(n['CTE Name']),
+          metric(n['Actual Rows']),
+          metric(n['Actual Loops']),
+          metric(n['Plan Rows']),
+          metric(n['Actual Total Time']),
+          metric(n['Temp Read Blocks']),
+          metric(n['Temp Written Blocks']),
+          metric(n['Shared Hit Blocks']),
+          metric(n['Shared Read Blocks']),
+          intern(n['Sort Method']),
+          metric(n['Sort Space Used']),
+          metric(n['Hash Batches']),
+          metric(n['WAL Bytes']),
+          metric(n['Rows Removed by Filter']),
+          intern(n['Function Name']),
+        ]);
+        if (n.Plans !== undefined) {
+          if (!Array.isArray(n.Plans)) throw new Error('children');
+          for (const c of n.Plans) walk(c, id, depth + 1);
+        }
+      };
+      walk(document.Plan, null, 0);
+      if (document.JIT && typeof document.JIT === 'object') {
+        const jit = document.JIT as Record<string, unknown>;
+        const timing =
+          jit.Timing && typeof jit.Timing === 'object'
+            ? (jit.Timing as Record<string, unknown>)
+            : {};
+        row.jit = [
+          metric(jit.Functions),
+          ...['Generation', 'Inlining', 'Optimization', 'Emission', 'Total'].map((key) =>
+            metric(timing[key]),
+          ),
+        ];
+      }
+      if (document.Triggers !== undefined) {
+        if (!Array.isArray(document.Triggers)) throw new Error('triggers');
+        for (const input of document.Triggers) {
+          if (!input || typeof input !== 'object') throw new Error('trigger');
+          const t = input as Record<string, unknown>;
+          row.triggers.push([
+            intern(
+              typeof t['Trigger Name'] === 'string' &&
+                /^RI_ConstraintTrigger_[ac]_\d+$/u.test(t['Trigger Name'])
+                ? 'FOREIGN_KEY'
+                : t['Trigger Name'],
+            ),
+            intern(t['Constraint Name']),
+            intern(t.Relation),
+            metric(t.Time),
+            metric(t.Calls),
+          ]);
+        }
+      }
+      records.push(row);
+      last = row;
+    } catch (error) {
+      if (error instanceof Error && /bound refused|metric refused/u.test(error.message))
+        throw error;
+      malformed++;
+    }
+  };
+  for (const line of raw.split('\n')) {
+    const h = line.match(/^\d{4}-\d\d-\d\d .*?\[(\d+)\]\s+([A-Z]+):\s*(.*)$/u);
+    if (h) {
+      consume();
+      current = { pid: +h[1], level: h[2], text: h[3] };
+    } else if (current) current.text += '\n' + line;
+  }
+  consume();
+  for (const row of records) {
+    const names = row.functions.map((i) => dictionary[i]);
+    if (names.includes('e4_evaluation_set_guard')) row.site = 'EVAL_INSERT';
+    else if (names.includes('e4_revision_complete_guard')) row.site = 'BARRIER';
+    else if (names.includes('astr_receipt_complete_guard')) row.site = 'RECEIPT';
+    else if (names.includes('e4_native_cap_trigger')) row.site = 'CAP_TRIGGER';
+  }
+  const result = {
+    format: 'NATIVE_PG16_PLAN_V1',
+    nodeColumns: NATIVE_PLAN_COLUMNS,
+    triggerColumns: ['trigger', 'constraint', 'relation', 'timeMs', 'calls'],
+    jitColumns: [
+      'functions',
+      'generationMs',
+      'inliningMs',
+      'optimizationMs',
+      'emissionMs',
+      'totalMs',
+    ],
+    dictionary,
+    records,
+    malformed,
+    nodeTiming: 'INCLUSIVE_AVERAGE_PER_LOOP_DO_NOT_SUM',
+    parameterData: 'OMITTED',
+    rawBytes: Buffer.byteLength(raw),
+  };
+  if (Buffer.byteLength(JSON.stringify(result)) > 49152)
+    throw new Error('E4 native closed output bound refused');
+  return result;
+}
+
+const nativeSettingsSql = `LOAD 'auto_explain';
+SET auto_explain.log_min_duration=-1;
+SET auto_explain.log_level='log'; SET auto_explain.log_format='json';
+SET auto_explain.log_parameter_max_length=0; SET auto_explain.log_analyze=on;
+SET auto_explain.log_buffers=on; SET auto_explain.log_wal=on; SET auto_explain.log_timing=on;
+SET auto_explain.log_triggers=on; SET auto_explain.log_settings=on; SET auto_explain.log_nested_statements=on; SET auto_explain.sample_rate=1;`;
+function nativeDockerLog(since: string) {
+  const r = spawnSync(
+    'docker',
+    ['logs', '--since', since, '--tail', '20000', 'u-nest-api-postgres'],
+    { encoding: 'utf8', timeout: 10000, maxBuffer: 2097152 },
+  );
+  if (r.error || r.signal || r.status !== 0)
+    throw new Error('E4 native server log capture refused');
+  const raw = r.stdout + r.stderr;
+  if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 native raw log bound refused');
+  return raw;
+}
+function nativeClusterSql() {
+  return `SELECT pg_backend_pid() AS pid,current_database() AS database,current_setting('server_version_num')::INT AS server,
+  encode(sha256(convert_to((SELECT system_identifier::TEXT FROM pg_control_system()),'UTF8')),'hex') AS cluster,
+  current_setting('auto_explain.log_parameter_max_length') AS parameters,current_setting('auto_explain.log_timing') AS timing,
+  current_setting('auto_explain.log_triggers') AS triggers,current_setting('auto_explain.log_nested_statements') AS nested,
+  position('%p' in current_setting('log_line_prefix'))>0 AS prefix,current_setting('log_timezone') AS timezone,
+  current_setting('application_name') AS application,current_setting('auto_explain.log_min_duration') AS minimum`;
+}
+type NativeSettings = {
+  pid: number;
+  database: string;
+  server: number;
+  cluster: string;
+  parameters: string;
+  timing: string;
+  triggers: string;
+  nested: string;
+  prefix: boolean;
+  timezone: string;
+  application: string;
+  minimum: string;
+};
+function validNativeSettings(value: NativeSettings, database: string) {
+  if (
+    value.database !== database ||
+    value.server < 160000 ||
+    value.server >= 170000 ||
+    value.parameters !== '0' ||
+    value.timing !== 'on' ||
+    value.triggers !== 'on' ||
+    value.nested !== 'on' ||
+    !value.prefix ||
+    !['UTC', 'Etc/UTC'].includes(value.timezone) ||
+    !/^[a-f0-9]{64}$/u.test(value.cluster)
+  )
+    throw new Error('E4 native effective settings refused');
+}
+
+export function validateNativeCapability(value: unknown, head: string, run: string) {
+  if (!value || typeof value !== 'object') throw new Error('E4 native capability receipt refused');
+  const r = value as Record<string, unknown>;
+  if (
+    r.head !== head ||
+    r.run !== run ||
+    r.status !== 'COMPLETE' ||
+    r.server !== 16 ||
+    r.triggerTiming !== true ||
+    r.foreignKeyTiming !== true ||
+    r.nested !== true ||
+    r.redacted !== true ||
+    typeof r.cluster !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(r.cluster)
+  )
+    throw new Error('E4 native capability binding refused');
+  return {
+    head,
+    run,
+    status: 'COMPLETE',
+    server: 16,
+    triggerTiming: true,
+    foreignKeyTiming: true,
+    nested: true,
+    redacted: true,
+    cluster: r.cluster,
+  };
+}
+function readNativeCapability() {
+  const file = resolve(process.cwd(), 'tmp/e4-prepare-cost-evidence/native-capability.json');
+  const raw = readFileSync(file);
+  if (raw.length > 4096) throw new Error('E4 native capability receipt bound refused');
+  return validateNativeCapability(
+    JSON.parse(raw.toString()),
+    process.env.GITHUB_SHA!,
+    process.env.GITHUB_RUN_ID!,
+  );
+}
+function runNativeCapability() {
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    requireDiagnosticEnvironment(process.env, head);
+    if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN !== '1')
+      throw new Error('E4 native capability scope refused');
+  }
+  const since = new Date().toISOString();
+  const sql = `SET statement_timeout='5s'; SET idle_in_transaction_session_timeout='5s'; BEGIN;
+CREATE TEMP TABLE e4_native_cap_parent(id INTEGER PRIMARY KEY);
+CREATE TEMP TABLE e4_native_cap_target(parent_id INTEGER REFERENCES e4_native_cap_parent(id),payload TEXT);
+INSERT INTO e4_native_cap_parent VALUES (1);
+CREATE FUNCTION pg_temp.e4_native_cap_trigger() RETURNS TRIGGER LANGUAGE plpgsql AS $$ BEGIN PERFORM count(*) FROM pg_temp.e4_native_cap_target; RETURN NULL; END $$;
+CREATE TRIGGER e4_native_cap_trigger AFTER INSERT ON e4_native_cap_target FOR EACH STATEMENT EXECUTE FUNCTION pg_temp.e4_native_cap_trigger();
+${nativeSettingsSql}
+SET auto_explain.log_min_duration=0;
+INSERT INTO e4_native_cap_target VALUES (1,'E4_PRIVATE_CANARY'); SET auto_explain.log_min_duration=-1;
+SELECT row_to_json(s)::TEXT FROM (${nativeClusterSql()}) s; ROLLBACK;`;
+  const r = spawnSync(
+    'docker',
+    [
+      'exec',
+      '-i',
+      'u-nest-api-postgres',
+      'psql',
+      '-X',
+      '-q',
+      '-A',
+      '-t',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-U',
+      'postgres',
+      '-d',
+      'postgres',
+    ],
+    { input: sql, encoding: 'utf8', timeout: 10000, maxBuffer: 65536 },
+  );
+  if (r.error || r.signal || r.status !== 0) throw new Error('E4 native capability SQL refused');
+  const effective = JSON.parse(r.stdout.trim().split('\n').at(-1)!) as NativeSettings;
+  validNativeSettings(effective, 'postgres');
+  const { pid, cluster } = effective;
+  const plan = compactNativePrepareLog(nativeDockerLog(since), pid, true);
+  const insert = plan.records.find((p) => p.kind === 'CAP_INSERT');
+  if (
+    plan.malformed ||
+    !insert ||
+    !insert.triggers.some(
+      (t) => plan.dictionary[t[0]!] === 'e4_native_cap_trigger' && t[3] !== null && t[4] === 1,
+    ) ||
+    !insert.triggers.some(
+      (t) => plan.dictionary[t[0]!] === 'FOREIGN_KEY' && t[3] !== null && t[4] === 1,
+    ) ||
+    !plan.records.some((p) => p.site === 'CAP_TRIGGER') ||
+    JSON.stringify(plan).includes('E4_PRIVATE_CANARY')
+  )
+    throw new Error('E4 native capability evidence incomplete');
+  const evidence = {
+    head:
+      process.env.GITHUB_SHA ??
+      execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+    run: process.env.GITHUB_RUN_ID ?? 'LOCAL_CAPABILITY',
+    status: 'COMPLETE',
+    server: 16,
+    triggerTiming: true,
+    foreignKeyTiming: true,
+    nested: true,
+    redacted: true,
+    cluster,
+    temporaryOnly: true,
+  };
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    const file = resolve(process.cwd(), 'tmp/e4-prepare-cost-evidence/native-capability.json');
+    mkdirSync(dirname(file), { recursive: true });
+    writeBounded(file, evidence);
+  }
+  console.info('E4_NATIVE_CAPABILITY ' + JSON.stringify(evidence));
+}
+
+export function nativePlanFailureCategory(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  if (!message.startsWith('E4 native ')) return 'UNCLASSIFIED';
+  if (/bound/u.test(message)) return 'CAPTURE_BOUND';
+  if (/settings|backend/u.test(message)) return 'SESSION_IDENTITY_OR_SETTINGS';
+  if (/capability/u.test(message)) return 'CAPABILITY_INCOMPLETE';
+  if (/evidence|missing/u.test(message)) return 'PLAN_EVIDENCE_INCOMPLETE';
+  return 'CAPTURE_FAILED';
+}
+export function nativePrepareCompleteness(
+  plans: ReturnType<typeof compactNativePrepareLog>,
+  events: Record<NativePlanCategory, NativePlanEvent>,
+  completed: boolean,
+  invalid: number,
+) {
+  const missing: string[] = [];
+  if (!completed) missing.push('PREPARE_FAILED');
+  if (invalid) missing.push('INVALID_EVENT');
+  if (plans.malformed) missing.push('MALFORMED_PLAN');
+  for (const kind of ['EVAL_INSERT', 'RECEIPT', 'BARRIER'] as const)
+    if (events[kind].calls !== 1) missing.push(kind + '_EVENT');
+  for (const [kind, trigger] of [
+    ['EVAL_INSERT', 'e4_evaluation_set_guard'],
+    ['RECEIPT', 'astcr_receipt_complete_guard'],
+  ]) {
+    const rows = plans.records.filter((p) => p.kind === kind);
+    const t = rows[0]?.triggers.find((t) => plans.dictionary[t[0]!] === trigger);
+    if (rows.length !== 1 || !t || t[3] === null || t[4] !== 1)
+      missing.push(kind + '_PLAN_OR_TRIGGER');
+  }
+  for (const site of ['EVAL_INSERT', 'BARRIER']) {
+    if (plans.records.filter((p) => p.kind === 'E4_COMPLETE_CALL' && p.site === site).length !== 1)
+      missing.push(site + '_COMPLETE_FUNCTION');
+    if (plans.records.filter((p) => p.kind === 'E4_SHARED' && p.site === site).length !== 1)
+      missing.push(site + '_SHARED_PLAN');
+  }
+  const evaluation = plans.records.find((p) => p.kind === 'EVAL_INSERT');
+  const foreignKeys = evaluation?.triggers.filter((t) => plans.dictionary[t[0]!] === 'FOREIGN_KEY');
+  if (!foreignKeys?.length || foreignKeys.some((t) => t[3] === null || t[4] === null || t[4] < 1))
+    missing.push('EVAL_FOREIGN_KEY_TIMING');
+  return { status: missing.length ? 'INCOMPLETE' : 'COMPLETE', missing };
+}
+type NativePrepareCapture = Awaited<ReturnType<typeof startNativePrepareCapture>>;
+async function startNativePrepareCapture(db: PrismaClient, pid: number) {
+  const capability = readNativeCapability();
+  const [original] = await db.$queryRaw<
+    { application: string }[]
+  >`SELECT current_setting('application_name') AS application`;
+  for (const sql of nativeSettingsSql
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean))
+    await db.$executeRaw(Prisma.raw(sql));
+  const application = `e4_native_${process.env.GITHUB_SHA!.slice(0, 12)}_${process.env.GITHUB_RUN_ID}`;
+  await db.$queryRaw`SELECT set_config('application_name',${application},false)`;
+  const [effective] = await db.$queryRaw<NativeSettings[]>(Prisma.raw(nativeClusterSql()));
+  validNativeSettings(effective, 'app_test_w98');
+  if (effective.pid !== pid || effective.cluster !== capability.cluster)
+    throw new Error('E4 native backend binding refused');
+  const events = Object.fromEntries(
+    ['EVAL_INSERT', 'RECEIPT', 'BUCKETS', 'SOURCES', 'BARRIER', 'OTHER'].map((k) => [
+      k,
+      { calls: 0, durationMs: 0, largestMs: 0 },
+    ]),
+  ) as Record<NativePlanCategory, NativePlanEvent>;
+  const since = new Date().toISOString();
+  await db.$executeRaw`SET auto_explain.log_min_duration='50ms'`;
+  const [enabled] = await db.$queryRaw<NativeSettings[]>(Prisma.raw(nativeClusterSql()));
+  validNativeSettings(enabled, 'app_test_w98');
+  if (enabled.pid !== pid || !/^50(?:ms)?$/u.test(enabled.minimum))
+    throw new Error('E4 native settings enable refused');
+  let active = true;
+  let invalid = 0;
+  return {
+    event(sql: string, duration: number) {
+      if (!active) return;
+      if (!Number.isFinite(duration) || duration < 0 || duration > 90000) {
+        invalid++;
+        return;
+      }
+      const row = events[nativePlanCategory(sql)];
+      row.calls++;
+      row.durationMs += duration;
+      row.largestMs = Math.max(row.largestMs, duration);
+    },
+    async finish(completed: boolean) {
+      active = false;
+      await db.$executeRaw`SET auto_explain.log_min_duration=-1`;
+      const [after] = await db.$queryRaw<NativeSettings[]>(Prisma.raw(nativeClusterSql()));
+      validNativeSettings(after, 'app_test_w98');
+      await db.$queryRaw`SELECT set_config('application_name',${original.application},false)`;
+      if (after.pid !== pid || after.cluster !== capability.cluster || after.minimum !== '-1')
+        throw new Error('E4 native backend restore refused');
+      const plans = compactNativePrepareLog(nativeDockerLog(since), pid);
+      const evalPlan = plans.records.filter((p) => p.kind === 'EVAL_INSERT');
+      const receiptPlan = plans.records.filter((p) => p.kind === 'RECEIPT');
+      const e4Calls = plans.records.filter((p) => p.kind === 'E4_COMPLETE_CALL');
+      const named = (row: (typeof plans.records)[number] | undefined, name: string) =>
+        row?.triggers.find((t) => plans.dictionary[t[0]!] === name);
+      const e4Trigger = named(evalPlan[0], 'e4_evaluation_set_guard');
+      const receiptTrigger = named(receiptPlan[0], 'astcr_receipt_complete_guard');
+      return {
+        ...nativePrepareCompleteness(plans, events, completed, invalid),
+        purpose: 'INSTRUMENTED_ORIGINAL500_PREPARE_NOT_ACCEPTANCE',
+        sameBackend: true,
+        server: 16,
+        capability,
+        parametersLogged: false,
+        timingOn: true,
+        minimumMs: 50,
+        tracingDisabledAfter: true,
+        statementEvents: events,
+        invalidEvents: invalid,
+        plans,
+        breakdown: {
+          evaluationStatementTriggerMs: e4Trigger?.[3] ?? null,
+          receiptTriggerMs: receiptTrigger?.[3] ?? null,
+          evaluationForeignKeyMs: (() => {
+            const rows = evalPlan[0]?.triggers.filter(
+              (t) => plans.dictionary[t[0]!] === 'FOREIGN_KEY',
+            );
+            return rows?.length && rows.every((t) => t[3] !== null)
+              ? rows.reduce((sum, t) => sum + t[3]!, 0)
+              : null;
+          })(),
+          barrierCompleteFunctionMs: e4Calls.find((p) => p.site === 'BARRIER')?.durationMs ?? null,
+        },
+        timingMeaning: 'TRIGGER_CUMULATIVE_AND_NODE_INCLUSIVE_DO_NOT_ADD_PARENTS_AND_CHILDREN',
+      };
+    },
+    partial() {
+      active = false;
+      return {
+        status: 'INCOMPLETE',
+        purpose: 'INSTRUMENTED_ORIGINAL500_PREPARE_NOT_ACCEPTANCE',
+        statementEvents: events,
+        invalidEvents: invalid,
+      };
+    },
+  };
+}
+
 if (process.env.SRVF_E4_DIAGNOSTIC_CHILD === '1') registerDiagnosticChild();
 if (require.main === module) {
   if (process.argv.length === 3 && process.argv[2] === '--plan')
     console.info(JSON.stringify(E4_DIAGNOSTIC_PLAN, null, 2));
-  else if (process.argv.length === 3 && process.argv[2] === '--canonical-equivalence') {
+  else if (process.argv.length === 3 && process.argv[2] === '--native-plan-capability') {
+    try {
+      runNativeCapability();
+    } catch (error) {
+      const evidence = {
+        head: process.env.GITHUB_SHA,
+        run: process.env.GITHUB_RUN_ID,
+        status: 'FAILED',
+        category: nativePlanFailureCategory(error),
+        businessFixtureExecuted: false,
+      };
+      if (process.env.GITHUB_ACTIONS === 'true') {
+        const file = resolve(process.cwd(), 'tmp/e4-prepare-cost-evidence/native-capability.json');
+        mkdirSync(dirname(file), { recursive: true });
+        writeBounded(file, evidence);
+      }
+      console.error('E4_NATIVE_CAPABILITY_FAILURE ' + JSON.stringify(evidence));
+      process.exitCode = 1;
+    }
+  } else if (process.argv.length === 3 && process.argv[2] === '--canonical-equivalence') {
     try {
       runMetadataCanonicalEquivalence();
     } catch {
