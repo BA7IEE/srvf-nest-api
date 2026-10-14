@@ -827,6 +827,17 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       .join('');
     raw += eq;
     const proof = compactSourceJoinEvidence(raw, true);
+    const verbose = raw.replaceAll('NOTICE: E4_', 'NOTICE:  00000: E4_');
+    expect(compactSourceJoinEvidence(verbose, true)).toEqual(proof);
+    expect(joinKeyDiagnosticNotices(verbose + '\nERROR: 23514: native failure')).toContain(
+      'ERROR: 23514: native failure',
+    );
+    expect(() =>
+      compactSourceJoinEvidence(
+        verbose.replace('00000: E4_SOURCE_JOIN_EQ', '23514: E4_SOURCE_JOIN_EQ'),
+        true,
+      ),
+    ).toThrow();
     expect(proof.equivalence).toHaveLength(6);
     expect(proof.negatives).toHaveLength(6);
     expect(proof.priorities).toHaveLength(6);

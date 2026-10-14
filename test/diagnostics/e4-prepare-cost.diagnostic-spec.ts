@@ -2496,7 +2496,10 @@ export function compactJoinKeyCalibrationEvidence(raw: string, complete = true) 
 /** PostgreSQL verbose NOTICE adds its success SQLSTATE; leave ERROR codes and other text private. */
 export function joinKeyDiagnosticNotices(raw: string) {
   if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
-  return raw.replace(/(^|\n)NOTICE:[ \t]+00000:[ \t]+(?=E4_JOIN_KEY_)/gu, '$1NOTICE: ');
+  return raw.replace(
+    /(^|\n)NOTICE:[ \t]+00000:[ \t]+(?=E4_(?:JOIN_KEY|SOURCE_JOIN)_)/gu,
+    '$1NOTICE: ',
+  );
 }
 
 export function joinKeyCalibrationGate(
@@ -5108,7 +5111,19 @@ async function probeSourceJoin(db: PrismaClient, report: Report, privateDir: str
   report.sourceJoinComparison = { ...(report.sourceJoinComparison as object), plans };
   if (!success) throw new Error('E4 source join process refused');
   compactSourceJoinPlans(nativeRaw, effective.pid, small);
-  const evidence = compactSourceJoinEvidence(stderr, small);
+  let evidence: ReturnType<typeof compactSourceJoinEvidence>;
+  try {
+    evidence = compactSourceJoinEvidence(stderr, small);
+  } catch (error) {
+    report.sourceJoinComparison = {
+      ...(report.sourceJoinComparison as object),
+      failureReason:
+        error instanceof Error && error.message === 'E4 source join equivalence count refused'
+          ? 'SOURCE_EQ_NOTICE_COUNT'
+          : 'EVIDENCE_CONTRACT',
+    };
+    throw error;
+  }
   report.sourceJoinComparison = {
     status: 'COMPLETE',
     small,
