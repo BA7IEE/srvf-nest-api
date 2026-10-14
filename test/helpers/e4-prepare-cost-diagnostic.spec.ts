@@ -41,6 +41,7 @@ import {
   compactJoinKeyCalibrationEvidence,
   joinKeyCalibrationGate,
   calibrationCleanupSql,
+  joinKeyDiagnosticNotices,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -132,6 +133,17 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       calibrationNotice().replace('"publicEvaluationCount":4', '"publicEvaluationCount":8000'),
     ])
       expect(() => compactJoinKeyCalibrationEvidence(raw)).toThrow();
+  });
+  it('accepts PostgreSQL verbose success NOTICE prefixes without stripping native ERROR states', () => {
+    const verbose = calibrationNotice().replaceAll(
+      'NOTICE: E4_JOIN_KEY_',
+      'NOTICE:  00000: E4_JOIN_KEY_',
+    );
+    expect(compactJoinKeyCalibrationEvidence(verbose).cases).toHaveLength(6);
+    expect(compactJoinKeyCalibrationEvidence(verbose).controls).toHaveLength(4);
+    expect(joinKeyDiagnosticNotices(verbose)).toBe(calibrationNotice());
+    expect(joinKeyDiagnosticNotices('ERROR:  42702: withheld\n')).toBe('ERROR:  42702: withheld\n');
+    expect(() => compactJoinKeyCalibrationEvidence(verbose.replace('00000:', '23514:'))).toThrow();
   });
   it('admits only the complete independently frozen ordinary-one shape and forbids maximum flags', () => {
     const calibration = {

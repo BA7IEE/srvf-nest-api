@@ -1741,6 +1741,7 @@ export function compactJoinKeyEvidence(raw: string) {
 
 /** Four real controls and the same six native negatives; no maximum plan/performance claim. */
 export function compactJoinKeyCalibrationEvidence(raw: string, complete = true) {
+  raw = joinKeyDiagnosticNotices(raw);
   if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
   const samples = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_SAMPLE (\{[^\n]+\})/gu)].map(
     (match) => JSON.parse(match[1]) as Record<string, unknown>,
@@ -1794,6 +1795,12 @@ export function compactJoinKeyCalibrationEvidence(raw: string, complete = true) 
       ? { catalogUnchanged: true, guardsUnchanged: true, publicEvaluationCount: 4 }
       : {}),
   };
+}
+
+/** PostgreSQL verbose NOTICE adds its success SQLSTATE; leave ERROR codes and other text private. */
+export function joinKeyDiagnosticNotices(raw: string) {
+  if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
+  return raw.replace(/(^|\n)NOTICE:[ \t]+00000:[ \t]+(?=E4_JOIN_KEY_)/gu, '$1NOTICE: ');
 }
 
 export function joinKeyCalibrationGate(
@@ -1970,7 +1977,7 @@ async function probeJoinKeyCandidate(db: PrismaClient, report: Report) {
       maxBuffer: 2097152,
     },
   );
-  const stderr = proc.stderr ?? '';
+  const stderr = calibration ? joinKeyDiagnosticNotices(proc.stderr ?? '') : (proc.stderr ?? '');
   const positive = [...stderr.matchAll(/NOTICE:\s+E4_JOIN_KEY_BEGIN ([0-7])\s*\n/gu)].map(
     (match) => +match[1],
   );
