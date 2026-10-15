@@ -122,3 +122,25 @@ E5仍是实际可用的硬依赖：当前assertNativeWriteAllowed仅允许test+f
 首次run的真实small全链未执行，500及满额未派发，满额仍0。GitHub最终移除临时容器成功；由于该轮未输出独立DB收据，数据库/lease清理单项仍UNKNOWN，不能借容器移除补称四零。新清理顺序将在下个小规模隔离run验证。
 
 该清理修复的125项相关离线测试通过，新增6个真实workflow脚本VM边界案例单独复跑通过，完整test typecheck和最终定向lint均退出0。跨模型只读审查确认没有门禁弱化；项目安装的jest-circus执行代码也确认先递归子describe、后执行父afterAll。未在云端再跑PG夹具，实际清理与真实小全链交给下一次GitHub隔离运行。
+
+### 2026-10-15 候选C真实队列最终实测（同一代码HEAD）
+
+验证代码HEAD为 `e589b2d0148d345d5bcc2e7f37c3da11c7092a9f`。清理修复后依次执行small、500、唯一一次maximum，全部为attempt1、GitHub独占PG16、锁定pnpm10.14.0和Node22.23.3。每轮196项聚焦离线测试通过；只在前一场景的完整闭合报告验证通过后才派发下一场景。最大派发/执行次数为1，不再重试。三个场景均验证144/143 checksum、C source pin、complete pin和独立INSERT/deferred guard目录，manualAnalyze=false、实际prepare预算30000ms、90秒适配调用0。
+
+| 场景         | run                                                                             | source build（秒） | prepare（秒） | 后续链与冻结oracle                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------- | -----------------: | ------------: | ------------------------------------------------------------------------------------------------------------------------------------- |
+| ordinary-1   | [38720653421](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38720653421) |              0.776 |         3.508 | submit6.708、first review1.544、final review3.099、ledger7.853；五阶段及每阶段冻结oracle完成，1条ledger credit，总额匹配冻结root。    |
+| ordinary-500 | [38721184446](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38721184446) |              2.560 |         8.630 | submit8.764、first review2.072、final review4.142、ledger11.563；五阶段及每阶段冻结oracle完成，500条ledger credit，总额匹配冻结root。 |
+| maximum      | [38721554302](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38721554302) |             35.958 |        35.708 | PREPARE/P2028；错误记录timeout30000ms、elapsed35601ms。后续oracle、submit、双审、ledger均NOT_RUN。                                    |
+
+source build与prepare是不同阶段，不能相加作为事务耗时。small的144专用4个数据库测试全部通过，10组袋/哈希、6个影子负例、6个影子优先级与两个真实原生guard测试各自留存；专用suite结束后、真实全链结束后两次独立清理均四零。500实际形状为500身份/500服务段及分配/2500切片/2000单元与桶及bucketSource关联；prepare后的独立事实为roots1/evaluations2000/timeRoots1/buckets2000/sources2000/receipts1/audits1。small/500各281条prepare查询，评价INSERT1、屏障1。它们证明本候选真实路径通过，不能代替所有业务场景或完整R5验收。
+
+满额已通过真实合成来源的2000身份/10000服务段与分配/50000切片/8000单元形状检查。事务观测为30000ms预算、35705.795ms事务wall、terminal=rollback/outcome=ERROR；native事件COMMIT0、ROLLBACK1（query event duration5599ms）。失败后在正常DROP之前，独立只读连接观测roots/evaluations/timeRoots/buckets/sources/receipts/audits七项全部0，状态OBSERVED_SEVEN_ZERO。该七零与最后DROP之后的清理四零分别记录，不混为一种证明。
+
+满额失败方法阶段是E4_EVAL_WRITE，wall21618.941ms；E4_EVAL已返回，E4_PREPARE整体25412.553ms为包含该方法的嵌套范围，不能相加。选定native请求进入时钟14365.324ms、返回时钟35604.197ms，随后外层报错。native覆盖状态UNKNOWN、原因SQL_LENGTH、5个query事件未覆盖；EVAL_INSERT计数0及屏障0不能据此认定INSERT从未执行，不能声称C纯SQL/guard完整成本已取得。ROLLBACK query event包含的等待/回滚也不能直接加到E4_EVAL_WRITE wall上。35.708秒与历史55/94秒不构成受控单变量比较，收益归因及既有波动原因仍未知。
+
+三个实际run的父报告均独立观测PG16且databases/clients/leaseBackends/leaseLocks=0/0/0/0，resources=CLOSED，GitHub容器移除步骤成功；满额失败完整闭合报告、原生事务时钟、七零和清理收据均已保留，未丢失为只有泛化stderr。交接目录为云端 `/workspace/e4-c-real-github-e589b2d0/`，包含每run元数据、脱敏/私有日志、闭合JSON、队列门禁收据和hash清单。报告保留DIAGNOSTIC_ONLY/NOT_AN_ACCEPTANCE_RESULT，accepted=true仅表示下一场景的队列条件满足。
+
+旧143的四个超时仍为FAIL/hold，名称、原预算和未知步骤见上表；旧套件仍在常规必跑E2E与required聚合门禁中。本轮不修订它的断言或预算，不把候选取证成功当成旧回归通过。最终SQL签字、trusted审批、完整必跑CI和生产门禁均未代办。
+
+限量评估现在具备本候选500形状完整链的正面证据，但满额30秒仍FAIL，仍无上线许可。最多只能将已验证的单活动/单session/单北京时间日、500身份/500段及分配/2500切片/2000单元及桶/2000bucketSource关联/约2500sourceRefs/500结果作为待正式验收的多维上限，不扩展成任意500人活动或未经验证的更正/跨日/多session。独立E4服务端准入、锁后重验和稳定拒绝、E5正式限量启用模式及停用/恢复、适用E2/E3与D8-OPS/人工审批仍待完成；当前服务仍仅test+fixture可写，不能用fixture上线。共享D4/TIME_SETTLEMENT_LIMITS、预算和双guard均不降低，代码关闭态部署也不代表业务已可用。
