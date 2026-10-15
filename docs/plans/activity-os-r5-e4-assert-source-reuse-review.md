@@ -238,6 +238,19 @@ JIT-off夹具的prepare1899.692ms、submit4790.590ms、冻结oracle320.047ms，�
 
 最小实施只改原143 spec：默认monitor先连接，再给本spec的业务／迁移CLI URL追加`options=-c jit=off`；fixture、每个case、取消probe和两个observer检查实际off，teardown独立核对默认值未变后按原错误汇总继续关闭连接。未更改全局、数据库或角色JIT配置。原88个直接断言、全部SQL模板、三活动／六roots、30秒／120秒预算及双guard逐项保留。默认JIT的历史性能继续HOLD；修复后的历史正确性整组尚待下文实际验证，不能预写通过。用户已明确继续开发测试；先前“本轮不再开库”是代理对单次实验收口的自行安排，并非授权禁令。
 
-独立治理阻塞仍分列：常规CI的Cutover sign-off ledger gate失败，仓内只读重验同为exit1，3b签字记录migration-total136而现读145，需要维护者重签；AI不改数补签。Trusted历史503按父会话证据单列为平台错误，本轮最新7c472fb7的trusted scan已通过、approval仍waiting，未代批或重跑；历史日志下载不可用，未独立复核503正文。它们均不由本次JIT正确性修复代替，SQL／trusted／人工签字及生产Gate仍保留。
+独立治理阻塞仍分列：常规CI的Cutover sign-off ledger gate失败，仓内只读重验同为exit1，3b签字记录migration-total136而现读145，需要维护者重签；AI不改数补签。Trusted历史503按父会话证据单列为平台错误，本轮7bbcaaee的trusted scan已通过、approval仍waiting，未代批或重跑；历史日志下载不可用，未独立复核503正文。它们均不由本次JIT正确性修复代替，SQL／trusted／人工签字及生产Gate仍保留。
 
 最小补丁提交前：原21项离线通过、9项DB未选择；新增连接检查和case包装函数的原样抽取闭包类型检查退出0，非完整test类型检查。首次定向lint仅11处新增代码格式错误，修正后最终原文件定向lint退出0、格式检查通过；全文件静态核对原88个expect调用及全部原SQL模板保留、全部case和setup预算不变。未运行全量单测或新增满额；下一步在该实际提交上执行一次原整组，不把离线或单来源结果代替原回归。
+
+### 2026-10-15 原143整组实际收口（显式历史正确性配置）
+
+实际代码HEAD `7bbcaaee2e705d704771c4ad5b14347c7942c9c6`，原spec SHA256 `7dedb2d846898a2ae6574badd9941a506ce4165eedc7df9911791d0d250704b3`；提交／推送后在云端本地W98独占租约执行一次原文件，无testName筛选、无伪造GitHub标记、无并发类型检查或lint。结果**30通过／0失败／0跳过**，包括21离线及9数据库用例；suite154480ms含加载、基线安装、全部测试及关闭，不是业务性能值。三活动／六roots初始化56147.672ms，在原120秒内完成。
+
+| 原四项阻塞 | 原预算ms | 实际ms | 原断言结果 |
+| --- | ---: | ---: | --- |
+| 非空142→143及noop、完整业务／catalog／冻结root/day/source oracle | 120000 | 41733 | PASS，6 roots、142历史checksum、完整业务及catalog保持、noop均完成 |
+| 独立最终version/result检查 | 30000 | 866 | PASS，四次原old/new错误优先级及回滚检查完成 |
+| INSERT与deferred独立、后续缺项导致整事务回滚 | 30000 | 1567 | PASS，statementPassed/callbackReturned/rolledBack均true，原23514 guard及严格COMMIT包装验证完成 |
+| 双后端真实statement snapshot与后续新鲜读取 | 30000 | 1541 | PASS，实际观察锁等待、statement前后0／0、下一调用可见及提交均完成 |
+
+新增真实取消、全文snapshot等价、错误优先级、私有双故障及143后真实prepare／submit用例也全部通过。PROFILE收据确认业务jit=off、独立默认on，关闭前默认保持；原正常客户端关闭→DROP→租约释放后，独立PG16观测databases／clients／leaseBackends／leaseLocks全部0，既有容器保留，未使用FORCE。这解除本次显式JIT-off配置下旧143的正确性阻塞；历史默认JIT性能记录、旧C满额FAIL和145满额NOT_RUN均不核销。常规required CI、3b签字136→145、Trusted及正式启用／生产条件仍独立保留。
