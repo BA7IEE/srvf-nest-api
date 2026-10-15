@@ -530,7 +530,7 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
         validateSourceJoinCalibration({ ...proof, ...change }, head, '124', true),
       ).toThrow();
   });
-  it('places exactly five test-only ANALYZE commands between cold A and analyzed ABBA without changing planner settings', () => {
+  it('records actual initial statistics before A, then places exactly five test-only ANALYZE commands before analyzed ABBA', () => {
     const sql = sourceJoinSessionSql('a'.repeat(24), false, true);
     const commands = sql.match(/^ANALYZE public\."[A-Za-z]+";$/gmu);
     expect(commands).toEqual(SOURCE_JOIN_INPUTS.map(([name]) => `ANALYZE public."${name}";`));
@@ -539,6 +539,14 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(position).toBeLessThan(sql.indexOf("RAISE LOG 'E4_SOURCE_JOIN_PLAN_BEGIN 1'"));
     expect(sql).toContain("current_database()<>'app_test_w98' OR inet_server_addr() IS NOT NULL");
     expect(sql).toContain('E4 source statistics test-only scope refused');
+    expect(sql).toContain("'stage','PRE_ANALYZE'");
+    expect(sql).not.toContain('cold unavailable');
+    expect(
+      sql.match(/UPDATE pg_temp.e4_probe_metadata SET source_stats=stats_digest/gu),
+    ).toHaveLength(2);
+    expect(
+      sql.indexOf('UPDATE pg_temp.e4_probe_metadata SET source_stats=stats_digest'),
+    ).toBeLessThan(sql.indexOf("RAISE LOG 'E4_SOURCE_JOIN_PLAN_BEGIN 0'"));
     expect(sql).not.toMatch(
       /SET(?: LOCAL)? (?:jit|work_mem|enable_\w+|default_statistics_target)=/iu,
     );
@@ -927,7 +935,7 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       ),
     ).toThrow();
   });
-  const statisticsNotice = () => {
+  const statisticsNotice = (initial: 'NONE' | 'PARTIAL' | 'PRESENT' = 'NONE') => {
     const values = Object.fromEntries(
       SOURCE_STATISTICS_SETTINGS.map((name) => [
         name,
@@ -976,28 +984,32 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
         workMemKb: 4096,
         jitEnabled: true,
         planCacheMode: 'auto',
-        statisticsDigest: (phase === 'COLD' ? 'c' : 'a').repeat(32),
+        statisticsDigest: (phase === 'PRE_ANALYZE' ? 'c' : 'a').repeat(32),
         statisticsUnchanged: true,
         settingsDigest: digest,
       });
     const counts = [2000, 2000, 500, 2500, 500];
-    for (const stage of ['COLD', 'ANALYZED'])
+    for (const stage of ['PRE_ANALYZE', 'ANALYZED'])
       raw += notice('E4_SOURCE_JOIN_STATS', {
         stage,
         database: 'app_test_w98',
-        statisticsDigest: (stage === 'COLD' ? 'c' : 'a').repeat(32),
+        statisticsDigest: (stage === 'PRE_ANALYZE' ? 'c' : 'a').repeat(32),
         dataUnchanged: true,
         settingsDigest: digest,
-        statistics: SOURCE_JOIN_INPUTS.map(([table], i) => ({
-          table,
-          tuples: stage === 'COLD' ? -1 : counts[i],
-          pages: stage === 'COLD' ? 0 : 1,
-          statsColumns: stage === 'COLD' ? 0 : 1,
-          rows: counts[i],
-          analyzed: stage !== 'COLD',
-          autoanalyzed: false,
-          private: 'PRIVATE_CANARY',
-        })),
+        statistics: SOURCE_JOIN_INPUTS.map(([table], i) => {
+          const present =
+            stage === 'ANALYZED' || initial === 'PRESENT' || (initial === 'PARTIAL' && i >= 2);
+          return {
+            table,
+            tuples: present ? counts[i] : -1,
+            pages: present ? 1 : 0,
+            statsColumns: present ? 1 : 0,
+            rows: counts[i],
+            analyzed: stage === 'ANALYZED',
+            autoanalyzed: stage === 'PRE_ANALYZE' && present,
+            private: 'PRIVATE_CANARY',
+          };
+        }),
       });
     raw +=
       notice('E4_SOURCE_JOIN_SETTINGS', values) +
@@ -1009,6 +1021,48 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       });
     return raw;
   };
+  it.each(['NONE', 'PARTIAL', 'PRESENT'] as const)(
+    'records %s initial statistics without requiring cold relations',
+    (initial) => {
+      const evidence = compactSourceJoinEvidence(statisticsNotice(initial), false, true);
+      expect(evidence.statisticsExperiment).toMatchObject({
+        initialStatistics: initial,
+        statisticsChanged: true,
+        conditionalOnly: true,
+        snapshots: [{ stage: 'PRE_ANALYZE' }, { stage: 'ANALYZED' }],
+      });
+      expect(evidence.timings[0].phase).toBe('PRE_ANALYZE');
+      const before = evidence.statisticsExperiment!.snapshots[0].statistics;
+      expect(before.filter((s) => s.statsColumns > 0)).toHaveLength(
+        initial === 'NONE' ? 0 : initial === 'PARTIAL' ? 3 : 5,
+      );
+    },
+  );
+  it('labels unchanged statistics after explicit ANALYZE without inventing a missing-statistics effect', () => {
+    const raw = statisticsNotice('PRESENT').replaceAll('c'.repeat(32), 'a'.repeat(32));
+    expect(compactSourceJoinEvidence(raw, false, true).statisticsExperiment).toMatchObject({
+      initialStatistics: 'PRESENT',
+      statisticsChanged: false,
+      conditionalOnly: true,
+    });
+  });
+  it('rejects statistics drift within each observed phase, including a partially analyzed initial state', () => {
+    const raw = statisticsNotice('PARTIAL');
+    for (const digest of ['c', 'a'])
+      expect(() =>
+        compactSourceJoinEvidence(
+          raw.replace(
+            '"statisticsDigest":"' + digest.repeat(32),
+            '"statisticsDigest":"' + 'b'.repeat(32),
+          ),
+          false,
+          true,
+        ),
+      ).toThrow('E4 source join sample/settings refused');
+    expect(sourceJoinSessionSql('a'.repeat(24), false, true)).toContain(
+      'E4 source join statistics changed during sample',
+    );
+  });
   it('requires five visible analyzed relations, unchanged data/settings and condition labels, including verbose notices', () => {
     const raw = statisticsNotice(),
       proof = compactSourceJoinEvidence(raw, false, true);
@@ -1042,7 +1096,7 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     ).toThrow();
     expect(() => compactSourceJoinEvidence(raw, true, true)).toThrow();
   });
-  it('retains five cold/analyzed plans with per-scan filtering instead of treating fewer calls as less total work', () => {
+  it('retains five pre/analyzed plans with per-scan filtering instead of treating fewer calls as less total work', () => {
     let raw = '';
     for (const [index, [phase, variant]] of SOURCE_STATISTICS_ORDER.entries()) {
       if (phase === 'SHADOW_CONTROL') continue;
@@ -1083,7 +1137,7 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     const plans = compactSourceJoinPlans(raw, 42, false, true, true);
     expect(plans).toHaveLength(5);
     expect(plans.map((p) => p.statisticsStage)).toEqual([
-      'COLD',
+      'PRE_ANALYZE',
       'ANALYZED',
       'ANALYZED',
       'ANALYZED',

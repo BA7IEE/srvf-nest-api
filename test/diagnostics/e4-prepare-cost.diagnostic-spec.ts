@@ -1931,7 +1931,7 @@ export const FIXED_METADATA_MAX_ORDER = [
   ['SHADOW_CONTROL', 'CANDIDATE'],
 ] as const;
 export const SOURCE_STATISTICS_ORDER = [
-  ['COLD', 'BASELINE'],
+  ['PRE_ANALYZE', 'BASELINE'],
   ['ANALYZED', 'BASELINE'],
   ['ANALYZED', 'CANDIDATE'],
   ['ANALYZED', 'CANDIDATE'],
@@ -2060,7 +2060,7 @@ ${sourceJoin ? create('e4_sj_complete_baseline', baselineBody.replace('SELECT * 
 ${create('e4_baseline_shadow', shadow(baselineBody))}
 ${create('e4_candidate_shadow', shadow(candidateBody))}
 COMMIT;\n`;
-  if (statisticsComparison) sql += sourceStatisticsStageSql('COLD');
+  if (statisticsComparison) sql += sourceStatisticsStageSql('PRE_ANALYZE');
   const order = sourceJoin
     ? sourceJoinOrder(units === 4, statisticsComparison)
     : fixedMetadataMaximum
@@ -4828,7 +4828,7 @@ function sourceStatisticsProjectionSql() {
  FROM pg_class c JOIN pg_stat_all_tables s ON s.relid=c.oid WHERE c.oid='public."${name}"'::regclass`,
   ).join(' UNION ALL ')}) t)`;
 }
-function sourceStatisticsStageSql(stage: 'COLD' | 'ANALYZED') {
+function sourceStatisticsStageSql(stage: 'PRE_ANALYZE' | 'ANALYZED') {
   return `BEGIN;
 SET LOCAL statement_timeout='30s';SET LOCAL idle_in_transaction_session_timeout='30s';
 DO $$ BEGIN IF current_database()<>'app_test_w98' OR inet_server_addr() IS NOT NULL
@@ -4836,18 +4836,17 @@ DO $$ BEGIN IF current_database()<>'app_test_w98' OR inet_server_addr() IS NOT N
  OR pg_backend_pid()<>(SELECT pid FROM pg_temp.e4_probe_metadata)
  THEN RAISE EXCEPTION 'E4 source statistics test-only scope refused'; END IF; END $$;
 ${stage === 'ANALYZED' ? SOURCE_JOIN_INPUTS.map(([name]) => `ANALYZE public."${name}";`).join('\n') : ''}
-DO $$ DECLARE snapshot JSONB; data_equal BOOLEAN; BEGIN
- snapshot:=${sourceStatisticsProjectionSql()};
- IF jsonb_array_length(snapshot)<>5 OR EXISTS(SELECT 1 FROM jsonb_array_elements(snapshot) item WHERE
- ${stage === 'COLD' ? `(item->>'statsColumns')::INT<>0 OR (item->>'tuples')::FLOAT8<>-1` : `(item->>'statsColumns')::INT<1 OR (item->>'tuples')::FLOAT8<0`})
- THEN RAISE EXCEPTION 'E4 source statistics ${stage === 'COLD' ? 'cold unavailable' : 'analyze not visible'}'; END IF;
+DO $$ DECLARE snapshot JSONB; data_equal BOOLEAN; stats_digest TEXT; BEGIN
+ SELECT ${sourceStatisticsProjectionSql()},${sourceJoinStatsDigestSql(true)} INTO snapshot,stats_digest;
+ IF jsonb_array_length(snapshot)<>5${stage === 'ANALYZED' ? ` OR EXISTS(SELECT 1 FROM jsonb_array_elements(snapshot) item WHERE (item->>'statsColumns')::INT<1 OR (item->>'tuples')::FLOAT8<0)` : ''}
+ THEN RAISE EXCEPTION 'E4 source statistics ${stage === 'PRE_ANALYZE' ? 'initial snapshot unavailable' : 'analyze not visible'}'; END IF;
  data_equal:=${sourceDataDigestSql()} IS NOT DISTINCT FROM (SELECT data_digest FROM pg_temp.e4_probe_metadata);
  IF NOT data_equal OR ${sourceSettingsDigestSql()} IS DISTINCT FROM (SELECT settings_digest FROM pg_temp.e4_probe_metadata)
  THEN RAISE EXCEPTION 'E4 source statistics data/settings changed'; END IF;
- ${stage === 'ANALYZED' ? `UPDATE pg_temp.e4_probe_metadata SET source_stats=${sourceJoinStatsDigestSql(true)};` : ''}
+ UPDATE pg_temp.e4_probe_metadata SET source_stats=stats_digest;
  RAISE NOTICE 'E4_SOURCE_JOIN_STATS %',jsonb_build_object('stage','${stage}','database',current_database(),'statistics',snapshot,
- 'statisticsDigest',${sourceJoinStatsDigestSql(true)},'dataUnchanged',data_equal,'settingsDigest',${sourceSettingsDigestSql()});
- ${stage === 'COLD' ? `RAISE NOTICE 'E4_SOURCE_JOIN_SETTINGS %',(SELECT jsonb_object_agg(name,setting) FROM pg_settings WHERE name IN (${SOURCE_STATISTICS_SETTINGS.map((name) => `'${name}'`).join(',')}));` : ''}
+ 'statisticsDigest',stats_digest,'dataUnchanged',data_equal,'settingsDigest',${sourceSettingsDigestSql()});
+ ${stage === 'PRE_ANALYZE' ? `RAISE NOTICE 'E4_SOURCE_JOIN_SETTINGS %',(SELECT jsonb_object_agg(name,setting) FROM pg_settings WHERE name IN (${SOURCE_STATISTICS_SETTINGS.map((name) => `'${name}'`).join(',')}));` : ''}
 END $$;
 COMMIT;\n`;
 }
@@ -4985,7 +4984,7 @@ export function compactSourceStatisticsEvidence(raw: string) {
   if (entries.length !== 2) throw new Error('E4 source statistics snapshot count refused');
   const snapshots = entries.map((m, index) => {
     const r = JSON.parse(m[1]) as Record<string, unknown>;
-    const stage = index === 0 ? 'COLD' : 'ANALYZED';
+    const stage = index === 0 ? 'PRE_ANALYZE' : 'ANALYZED';
     if (
       r.stage !== stage ||
       r.database !== 'app_test_w98' ||
@@ -5014,9 +5013,7 @@ export function compactSourceStatisticsEvidence(raw: string) {
         typeof v.analyzed !== 'boolean' ||
         typeof v.autoanalyzed !== 'boolean' ||
         (v.rows as number) < 1 ||
-        (index === 0
-          ? v.tuples !== -1 || v.statsColumns !== 0
-          : (v.tuples as number) < 0 || (v.statsColumns as number) < 1)
+        (index === 1 && ((v.tuples as number) < 0 || (v.statsColumns as number) < 1))
       )
         throw new Error('E4 source statistics visibility refused');
       return {
@@ -5038,7 +5035,6 @@ export function compactSourceStatisticsEvidence(raw: string) {
     };
   });
   if (
-    snapshots[0].statisticsDigest === snapshots[1].statisticsDigest ||
     snapshots[0].settingsDigest !== snapshots[1].settingsDigest ||
     snapshots[0].statistics.some((s, i) => s.rows !== snapshots[1].statistics[i].rows)
   )
@@ -5083,6 +5079,12 @@ export function compactSourceStatisticsEvidence(raw: string) {
   return {
     status: 'COMPLETE',
     intervention: 'ANALYZE_FIVE_TEST_TABLES_ONLY',
+    initialStatistics: snapshots[0].statistics.every((s) => s.statsColumns === 0)
+      ? 'NONE'
+      : snapshots[0].statistics.every((s) => s.statsColumns > 0)
+        ? 'PRESENT'
+        : 'PARTIAL',
+    statisticsChanged: snapshots[0].statisticsDigest !== snapshots[1].statisticsDigest,
     snapshots,
     settings,
     settingsDigest,
@@ -5122,7 +5124,7 @@ export function compactSourceJoinEvidence(
       !/^[a-f0-9]{32}$/u.test(r.statisticsDigest) ||
       r.statisticsDigest !==
         (statistics
-          ? statistics.snapshots[phase === 'COLD' ? 0 : 1].statisticsDigest
+          ? statistics.snapshots[phase === 'PRE_ANALYZE' ? 0 : 1].statisticsDigest
           : (JSON.parse(matches[0][1]) as Record<string, unknown>).statisticsDigest) ||
       (statistics && r.settingsDigest !== statistics.settingsDigest) ||
       typeof r.wallMs !== 'number' ||
@@ -5391,8 +5393,8 @@ async function probeSourceJoin(db: PrismaClient, report: Report, privateDir: str
     ].slice(0, 4),
     failure: compactJoinKeyFailure(stderr),
     failureReason:
-      statisticsFailure === 'cold unavailable'
-        ? 'COLD_STATISTICS_UNAVAILABLE'
+      statisticsFailure === 'initial snapshot unavailable'
+        ? 'INITIAL_STATISTICS_UNAVAILABLE'
         : statisticsFailure === 'analyze not visible'
           ? 'ANALYZE_NOT_VISIBLE'
           : statisticsFailure === 'test-only scope refused'
@@ -5490,7 +5492,7 @@ async function probeSourceJoin(db: PrismaClient, report: Report, privateDir: str
     physicalRowOrder: 'UNSPECIFIED_SQL_ORDER_WINDOW_AND_CANONICAL_ORDER_UNCHANGED',
     ...(statisticsComparison
       ? {
-          comparisonDesign: 'ONE_COLD_A_THEN_FIVE_TABLE_ANALYZE_THEN_ANALYZED_ABBA',
+          comparisonDesign: 'ONE_OBSERVED_A_THEN_FIVE_TABLE_ANALYZE_THEN_ANALYZED_ABBA',
           catalogScope:
             'FUNCTION_BODIES_AND_TRIGGERS_UNCHANGED_PLANNER_STATISTICS_INTENTIONALLY_CHANGED',
           coldGuarantee: 'ANALYZED_RESULTS_ARE_CONDITIONAL_NOT_A_COLD_START_GUARANTEE',
