@@ -1,5 +1,9 @@
 import { spawn } from 'node:child_process';
 
+// Native errno errors can originate outside Jest's Error realm.
+const isMissingProcessGroup = (failure: unknown) =>
+  typeof failure === 'object' && failure !== null && 'code' in failure && failure.code === 'ESRCH';
+
 /** The bounded historical test owns the whole CLI process group, including Prisma. */
 export function runE4OwnedMigrationProcess(args: readonly string[], timeout: number) {
   if (process.platform === 'win32')
@@ -19,7 +23,7 @@ export function runE4OwnedMigrationProcess(args: readonly string[], timeout: num
       try {
         process.kill(-child.pid, 'SIGKILL');
       } catch (failure) {
-        if (!(failure instanceof Error && 'code' in failure && failure.code === 'ESRCH'))
+        if (!isMissingProcessGroup(failure))
           error = Object.assign(new Error('E4 owned migration process group termination unknown'), {
             processCleanupUnknown: true,
           });
@@ -55,7 +59,7 @@ export function runE4OwnedMigrationProcess(args: readonly string[], timeout: num
             processCleanupUnknown: true,
           });
         } catch (failure) {
-          if (!(failure instanceof Error && 'code' in failure && failure.code === 'ESRCH'))
+          if (!isMissingProcessGroup(failure))
             error = Object.assign(new Error('E4 owned migration group check unknown'), {
               processCleanupUnknown: true,
             });
