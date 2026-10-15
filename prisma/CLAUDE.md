@@ -1,6 +1,6 @@
 # prisma — 本地铁律
 
-> **2026-10-15 开发候选**：当前144个 migration、196个模型。144仅将 e4_source_rows 的 time_revision 来源 JOIN 改为 bucketId LATERAL OFFSET 0，保留外层三条件、袋语义及全部计算；不改143、双guard或预算。143只替换 e4_assert_complete，非 unchanged_time 分支在单次SQL内物化并复用来源行，expected 构造沿用140；独立INSERT/deferred调用与全部guard保留。服务首审精确正文MD5更新为ade4d2af9aa0baf8400a79fc6b62c797，旧1–142字节不改；142历史测试固定自己的部署入口。新增142→143非空升级、noop、旧新错误优先级与两连接快照回归；GitHub验证待完成。正式满额2000/10000/50000/8000及30秒预算不变；最终签字未完成，未合入或部署。下方保留历史时点。
+> **2026-10-15 开发候选**：当前145个 migration、196个模型。145在完整JSON/FULL JOIN/root及双guard内携带metadata.evaluationUnitKey作为JOIN key，143／144 SQL不改；complete正文MD5为b03a7298e625b703fa2f011c0fbcc6c0，144来源pin仍为19d84ee9f25b81d33f0ffdef0a800ab5。145真实small／500五阶段及冻结oracle通过；旧C唯一满额仍超30秒，145满额未跑，旧143初始化及四项回归、常规required CI仍hold。off准备任务回执兼容单人隔离通过，不代表正式active启用。原满额容量／预算、全部guard与人工签字边界不变；Draft PR1380未合入或部署。详见来源复用评审稿，下方保留历史时点。
 
 > **E4 §12.23最新结果（2026-10-05；满额prepare首红，未签／未交付）**：获准中断恢复后仅补跑一次原满额，实际P2028／prepare 30,892ms超过原30,000ms，1项失败／退出1；原数量通过，同请求七事实0，未观察到COMMIT，不据此关闭历史迟提交UNKNOWN。按首红未继续后续业务／收益，不重跑。原同backend租约普通回收后具名库／连接／租约0／0／0。第137条SHA仍3f73112f745247fd5ce4762a1b8e8d3551e4648f48ec47e76eb9b54ad4fd8b02，旧1–136、schema／seed／五工具／CUTOVER未改；此前98迁移及26业务通过保留，冷lint两次OOM仍未验收。实际3b／完整4b与条件Draft不提前办理，开关关闭、不操作生产；见§12.23.17，下方为历史时点。
 
