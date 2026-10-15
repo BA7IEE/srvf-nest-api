@@ -1,6 +1,6 @@
 # 交接:后端 ↔ 小程序前端 / 招新 H5
 
-## E4 负责人工作台贡献证明（本地实施候选，未提交、未合并、未部署）
+## E4 负责人工作台贡献证明（Draft PR1380，未合并、未部署）
 
 三个既有Human App managed GET增加可选 `contributionProof`，不新增路由或写入参数：
 
@@ -14,8 +14,7 @@
 最多100项 `evaluations` 是解释预览；`hasMore=true` 时不可把预览当全量或自行求和替代根总分。
 证明／摘要不是操作许可，后端仍在每次写入和锁后复核权限，客户端不得自动准备、送审或提交。
 
-本轮真实小链与连续更正通过，首次2,000身份满额prepare仍失败。E4未验收、未交付，
-默认off且fixture仅测试环境可写；不表示前端页面、部署、真实业务验收、Gate或D8-OPS完成。
+2026-10-15：候选已提交至[Draft PR1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380)，145 small／500全链及冻结oracle通过；旧C满额失败；145专用满额未运行，常规CI最大例prepare29.271秒后整例600秒超时、全链未过。当前仍默认off、fixture仅测试可写，E5正式准入与完整发布验收未完成；前端发布／回执、生产、Gate和D8-OPS未完成。最新边界见[来源复用评审记录](../plans/activity-os-r5-e4-assert-source-reuse-review.md)。
 下方既有阶段说明保留其历史时点。
 
 ## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）

@@ -21,6 +21,10 @@ import {
   evaluateSettlementContributions,
 } from './activity-contribution-settlement-policy';
 import { fingerprintContributionPolicyVersion } from './activity-contribution-policy-definition';
+import {
+  frozen137FirstReviewCatalogQuery,
+  frozen137FirstReviewCatalogTx,
+} from '../../../test/helpers/e4-frozen137-first-review-catalog';
 
 const FIRST_REVIEW_TEST_GUARD = {
   valid: true,
@@ -355,6 +359,79 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
     expect(call[1].text).not.toContain('edd162a44264b0d073d0009d3e592d0e');
     expect(call[1].text).not.toContain('7e56ad35c5266706ab7cf12757c8f1b2');
     expect(call[1].text).toContain('fa428e2eb3e733f770cbb31c15dd4720');
+  });
+
+  it('scopes the frozen137 test catalog to one exact pin while preserving every other byte', async () => {
+    const { service, prismaTx, tx } = setup();
+    tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(firstReviewProof());
+    tx.$queryRaw.mockResolvedValue([FIRST_REVIEW_TEST_GUARD]);
+    await service.readFirstReviewBarrierCandidateInTx(prismaTx, firstReviewAnchor());
+    const call = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, Prisma.Sql];
+    const query = Prisma.sql(call[0], call[1]);
+    const historical = frozen137FirstReviewCatalogQuery(query);
+    expect(historical.values).toEqual([]);
+    expect(
+      historical.sql.replace(
+        "md5(complete_proc.prosrc)='21fe9ecf6df989a3f8fa5878df40b93c'",
+        "md5(complete_proc.prosrc)='b03a7298e625b703fa2f011c0fbcc6c0'",
+      ),
+    ).toBe(query.sql);
+    expect(query.sql).not.toContain('21fe9ecf6df989a3f8fa5878df40b93c');
+  });
+
+  it.each([
+    'missing',
+    'duplicate',
+    'other_sql',
+    'changed_guard',
+    'already_historical',
+    'barrier',
+    'parameter',
+  ])('refuses an out-of-scope frozen137 catalog query: %s', async (point) => {
+    const { service, prismaTx, tx } = setup();
+    tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(firstReviewProof());
+    tx.$queryRaw.mockResolvedValue([FIRST_REVIEW_TEST_GUARD]);
+    await service.readFirstReviewBarrierCandidateInTx(prismaTx, firstReviewAnchor());
+    const call = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, Prisma.Sql];
+    const text = call[1].sql;
+    const pin = "pg_catalog.md5(complete_proc.prosrc)='b03a7298e625b703fa2f011c0fbcc6c0'";
+    const variants: Record<string, string> = {
+      missing: text.replace(pin, 'TRUE'),
+      duplicate: text + pin,
+      other_sql: 'SELECT 1',
+      changed_guard: text.replace("trigger_row.tgenabled::text='O'", 'TRUE'),
+      already_historical: text.replace(
+        'b03a7298e625b703fa2f011c0fbcc6c0',
+        '21fe9ecf6df989a3f8fa5878df40b93c',
+      ),
+      barrier: text + '; SET CONSTRAINTS ALL IMMEDIATE',
+      parameter: text,
+    };
+    const changed = variants[point];
+    const query =
+      point === 'parameter' ? Prisma.sql`${Prisma.raw(changed)} ${1}` : Prisma.raw(changed);
+    expect(() => frozen137FirstReviewCatalogQuery(query)).toThrow('query scope refused');
+  });
+
+  it('passes catalog results and proof reads through without manufacturing validity', async () => {
+    const { service, prismaTx, tx } = setup();
+    const proof = firstReviewProof();
+    tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(proof);
+    tx.$queryRaw.mockResolvedValue([FIRST_REVIEW_TEST_GUARD]);
+    await service.readFirstReviewBarrierCandidateInTx(prismaTx, firstReviewAnchor());
+    const call = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, Prisma.Sql];
+    const nativeRows = [{ ...FIRST_REVIEW_TEST_GUARD, valid: false }];
+    tx.$queryRaw.mockReset().mockResolvedValue(nativeRows);
+    const profile = frozen137FirstReviewCatalogTx(prismaTx);
+    await expect(profile.$queryRaw`${call[1]}`).resolves.toBe(nativeRows);
+    await expect(profile.activitySettlementContributionRevision.findFirst({})).resolves.toBe(proof);
+    expect(() => profile.$executeRaw`SELECT 1`).toThrow('client scope refused');
+    expect(() => profile.$queryRawUnsafe('SELECT 1')).toThrow('client scope refused');
+    expect(() => profile.activitySettlementContributionRevision.create({} as never)).toThrow(
+      'proof read scope refused',
+    );
+    expect(() => profile.$queryRaw(Prisma.raw(call[1].sql))).toThrow('query tag scope refused');
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('rechecks the latest whole anchor and identical catalog identities after UPDATE, then consumes only the named constraint', async () => {

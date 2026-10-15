@@ -18,7 +18,11 @@ const REVIEW_META = { requestId: 'review-characterization', ip: null, ua: null }
 
 // Characterizes the original owner and fallbacks before §12.26 changes orchestration.
 // These mocks prove calls and ordering, not database integrity or actual rollback.
-function reviewFixture(stage: SettlementReviewStage = 'first', regime = 'legacy') {
+function reviewFixture(
+  stage: SettlementReviewStage = 'first',
+  regime = 'legacy',
+  contributionSettlementMode: 'off' | 'fixture' = 'fixture',
+) {
   const events: string[] = [];
   const version = {
     id: 'version',
@@ -40,7 +44,7 @@ function reviewFixture(stage: SettlementReviewStage = 'first', regime = 'legacy'
   };
   const config = {
     env: 'test',
-    contributionSettlementMode: 'fixture',
+    contributionSettlementMode,
     activityV11Workflow: { enabled: true, readonlyMaintenance: false },
   } as AppConfig;
   const gate = new ActivityWorkflowGate(config);
@@ -217,6 +221,7 @@ function reviewFixture(stage: SettlementReviewStage = 'first', regime = 'legacy'
     version,
     run,
     gate,
+    config,
   };
 }
 
@@ -433,6 +438,144 @@ describe('SettlementReviewService original transaction characterization', () => 
       await expect(f.invoke()).rejects.toBe(failure);
       expect(f.events).not.toContain('tx:end');
       if (point === 'notification') expect(f.audit.log).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('E4 frozen off-mode review compatibility', () => {
+  const decisions = [
+    ['first', 'approve'],
+    ['first', 'return'],
+    ['final', 'approve'],
+    ['final', 'return'],
+  ] as const;
+
+  it.each([
+    ['settlementVersionId', 'different-version'],
+    ['stageCode', 'final'],
+    ['actionCode', 'return'],
+    ['requestHash', 'different-hash'],
+  ])('refuses an off-mode native receipt with a different %s', async (field, value) => {
+    const f = reviewFixture('first', 'policy_v1', 'off');
+    f.tx.settlementReviewAction.findUnique.mockResolvedValue({
+      id: 'existing-native-action',
+      actedAt: new Date(0),
+      settlementVersionId: f.version.id,
+      stageCode: 'first',
+      actionCode: 'approve',
+      requestHash: f.input.requestHash,
+      [field]: value,
+    });
+    await expect(f.invoke()).rejects.toMatchObject({
+      biz: BizCode.SETTLEMENT_REVIEW_OPERATION_KEY_CONFLICT,
+    });
+    expect(f.tx.settlementReviewAction.create).not.toHaveBeenCalled();
+    expect(f.audit.log).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [false, false, BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED],
+    [true, true, BizCode.ACTIVITY_WORKFLOW_READONLY_MAINTENANCE],
+  ] as const)(
+    'keeps workflow enabled=%s/maintenance=%s on native replay',
+    async (enabled, maintenance, biz) => {
+      const f = reviewFixture('first', 'policy_v1', 'off');
+      f.config.activityV11Workflow.enabled = enabled;
+      f.config.activityV11Workflow.readonlyMaintenance = maintenance;
+      f.tx.settlementReviewAction.findUnique.mockResolvedValue({
+        id: 'original-native-action',
+        actedAt: new Date(0),
+        settlementVersionId: f.version.id,
+        stageCode: 'first',
+        actionCode: 'approve',
+        requestHash: f.input.requestHash,
+      });
+      await expect(f.invoke()).rejects.toMatchObject({ biz });
+      expect(f.transaction).not.toHaveBeenCalled();
+      expect(f.tx.settlementReviewAction.findUnique).not.toHaveBeenCalled();
+      expect(f.audit.log).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(decisions)(
+    'returns the original native %s/%s receipt while off',
+    async (stage, action) => {
+      const f = reviewFixture(stage, 'policy_v1', 'off');
+      const writeGate = jest.spyOn(f.contributions, 'assertNativeWriteAllowed');
+      f.input.actionCode = action;
+      f.input.returnReason = 'documented reason';
+      f.run.statusCode = 'posting';
+      f.version.statusCode = 'approved';
+      f.tx.settlementReviewAction.findUnique.mockResolvedValue({
+        id: 'original-native-action',
+        actedAt: new Date(0),
+        settlementVersionId: f.version.id,
+        stageCode: stage,
+        actionCode: action,
+        requestHash: f.input.requestHash,
+      });
+
+      await expect(f.invoke()).resolves.toMatchObject({
+        replayed: true,
+        reviewActionId: 'original-native-action',
+        runStatusBefore: 'posting',
+        runStatusAfter: 'posting',
+      });
+      expect(writeGate).not.toHaveBeenCalled();
+      expect(f.full).not.toHaveBeenCalled();
+      expect(f.tx.$executeRaw).not.toHaveBeenCalled();
+      expect(f.tx.settlementReviewAction.create).not.toHaveBeenCalled();
+      expect(f.tx.attendanceSettlementVersion.update).not.toHaveBeenCalled();
+      expect(f.tx.attendanceSettlementRun.update).not.toHaveBeenCalled();
+      expect(f.tx.ledgerPostingBatch.create).not.toHaveBeenCalled();
+      expect(f.tx.ledgerPostingBatch.updateMany).not.toHaveBeenCalled();
+      expect(f.notifications.enqueueReviewed).not.toHaveBeenCalled();
+      expect(f.audit.log).toHaveBeenCalledTimes(1);
+      expect(f.version.contributionRegimeCode).toBe('policy_v1');
+    },
+  );
+
+  it.each(decisions)('rejects a new native %s/%s decision while off', async (stage, action) => {
+    const f = reviewFixture(stage, 'policy_v1', 'off');
+    f.input.actionCode = action;
+    f.input.returnReason = 'documented reason';
+
+    await expect(f.invoke()).rejects.toMatchObject({
+      biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY,
+    });
+    expect(f.full).not.toHaveBeenCalled();
+    expect(f.tx.$executeRaw).not.toHaveBeenCalled();
+    expect(f.tx.settlementReviewAction.create).not.toHaveBeenCalled();
+    expect(f.tx.attendanceSettlementVersion.update).not.toHaveBeenCalled();
+    expect(f.tx.attendanceSettlementRun.update).not.toHaveBeenCalled();
+    expect(f.tx.ledgerPostingBatch.create).not.toHaveBeenCalled();
+    expect(f.tx.ledgerPostingBatch.updateMany).not.toHaveBeenCalled();
+    expect(f.notifications.enqueueReviewed).not.toHaveBeenCalled();
+    expect(f.audit.log).not.toHaveBeenCalled();
+    expect(f.version.contributionRegimeCode).toBe('policy_v1');
+  });
+
+  it.each(decisions)(
+    'retains the original legacy %s/%s decision while off',
+    async (stage, action) => {
+      const f = reviewFixture(stage, 'legacy', 'off');
+      const writeGate = jest.spyOn(f.contributions, 'assertNativeWriteAllowed');
+      f.input.actionCode = action;
+      f.input.returnReason = 'documented reason';
+
+      await expect(f.invoke()).resolves.toMatchObject({
+        replayed: false,
+        stageCode: stage,
+        actionCode: action,
+      });
+      expect(writeGate).not.toHaveBeenCalled();
+      expect(f.full).not.toHaveBeenCalled();
+      expect(f.tx.settlementReviewAction.create).toHaveBeenCalledTimes(1);
+      expect(f.tx.attendanceSettlementVersion.update).toHaveBeenCalledTimes(1);
+      expect(f.tx.attendanceSettlementRun.update).toHaveBeenCalledTimes(1);
+      expect(f.notifications.enqueueReviewed).toHaveBeenCalledTimes(1);
+      expect(f.audit.log).toHaveBeenCalledTimes(1);
+      expect(f.version.contributionRegimeCode).toBe('legacy');
     },
   );
 });

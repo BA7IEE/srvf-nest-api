@@ -253,4 +253,54 @@ JIT-off夹具的prepare1899.692ms、submit4790.590ms、冻结oracle320.047ms，�
 | INSERT与deferred独立、后续缺项导致整事务回滚 | 30000 | 1567 | PASS，statementPassed/callbackReturned/rolledBack均true，原23514 guard及严格COMMIT包装验证完成 |
 | 双后端真实statement snapshot与后续新鲜读取 | 30000 | 1541 | PASS，实际观察锁等待、statement前后0／0、下一调用可见及提交均完成 |
 
-新增真实取消、全文snapshot等价、错误优先级、私有双故障及143后真实prepare／submit用例也全部通过。PROFILE收据确认业务jit=off、独立默认on，关闭前默认保持；原正常客户端关闭→DROP→租约释放后，独立PG16观测databases／clients／leaseBackends／leaseLocks全部0，既有容器保留，未使用FORCE。这解除本次显式JIT-off配置下旧143的正确性阻塞；历史默认JIT性能记录、旧C满额FAIL和145满额NOT_RUN均不核销。常规required CI、3b签字136→145、Trusted及正式启用／生产条件仍独立保留。
+新增真实取消、全文snapshot等价、错误优先级、私有双故障及143后真实prepare／submit用例也全部通过。PROFILE收据确认业务jit=off、独立默认on，关闭前默认保持；原正常客户端关闭→DROP→租约释放后，独立PG16观测databases／clients／leaseBackends／leaseLocks全部0，既有容器保留，未使用FORCE。这解除本次显式JIT-off配置下旧143的正确性阻塞；历史默认JIT性能记录及旧C满额FAIL均不核销；当时145专用满额尚未派发，后续常规CI最大例的失败见下文。常规required CI、3b签字136→145、Trusted及正式启用／生产条件仍独立保留。
+
+
+### 2026-10-15 继续Release 5：确认缺口与实现缺口分开
+
+719e16a8的实际required CI快照：Diff guards仅Cutover sign-off ledger gate失败，其余该job步骤通过；Trusted scan通过、approval等待，Fast checks及五个E2E分片当时尚在执行，不能称全绿或代码失败。7bbcaaee部分工作被后续提交自动取消，聚合required失败不等于新增TypeScript/E2E失败；本轮未手动cancel/rerun。历史503按既有证据保留，不挪用为当前失败原因。
+
+**最小需维护者决定的三项：**
+
+1. **3b审查确认**：最后有效签字为第136条，而不是137–145已签仅漏改计数。须确认下表九份实际SQL均已按逐刀变更审查，覆盖137新增不可变根／评价、同链锚和完整性守卫，138–142完整canonical等价快路径，143来源复用、144来源JOIN与145 key携带；核对变更没有改旧1–136字节、放宽完整JSON／FULL JOIN／root／双guard／预算或引入真实数据DML。附当前准确SHA和验证结果，明确145 small/500通过、原143仅JIT-off正确性通过、145专用满额未派发、常规CI最大例prepare29.271秒后整例600秒失败及required CI未绿。维护者审查后明确确认“第137–145条上述完整摘要的3b重签”，才可登记新日期／依据及migration-total145；此确认不代替尚缺测试，不代表生产或Gate批准。AI本轮不改CUTOVER_SIGNOFF。
+
+| 序号 | 实际migration目录 | SQL SHA256 |
+| --- | --- | --- |
+| 137 | `20261003000000_activity_contribution_settlement` | `90f09f61ef65753a00b885cd960e9f85ee8d9ed9ff39f2c55c2f7d5942fb0e61` |
+| 138 | `20261012000000_activity_canonical_json_scalar_fast_path` | `f6f0718c6043ee4dc739276db2a90700bfcce159a1666f202e48ee639ffe2f5f` |
+| 139 | `20261012010000_activity_contribution_reference_canonical_fast_path` | `8f6fee0ae5e7d29e4da15d0f79e1dfc275ec3efc87931b2fd67b1e5b935c6652` |
+| 140 | `20261012020000_activity_contribution_evaluation_canonical_fast_path` | `5d7ff28a64a638440aaa1e9a798a2602f933fc9d6f8b23b68355199dad143513` |
+| 141 | `20261012030000_activity_time_bucket_canonical_fast_path` | `d10d495eb1e2bc9447f491fb7960eba0c58b8bfb3ab990803e57f676431658a4` |
+| 142 | `20261012040000_activity_canonical_json_unit_fast_path` | `bfac074c91474783f7b91f73b44e8ff431facef3f8139d1535a06c0fe45e6fa7` |
+| 143 | `20261013000000_activity_contribution_assert_source_reuse` | `c996a26fc7dca81e73a75843d9cdd792d895e5e66855899fd05a42ce7c02d819` |
+| 144 | `20261015000000_activity_contribution_source_bucket_lateral` | `ac47d7564ef20d3b5f82d9729d6e35ac04068729f2e73a288af6b606c726cb4e` |
+| 145 | `20261015010000_activity_contribution_evaluation_join_key` | `821e176badcd6a0264a4e45535a9d226dc8a09525db56299561527d56316166d` |
+
+2. **下一次145满额的范围和一次执行授权**：推荐只验证原业务service全链的一次隔离样本（不代表受限生产数据库执行面已验证），精确新HEAD／run_attempt1与新的145专用一次收据（不重用旧C已消费额度）、官方PG16隔离scope、原2000身份／10000段及分配／50000切片／8000单元及桶／40000bucketSource来源关联，prepare→submit→一审→终审→ledger，每阶段完整冻结maximum oracle和实际credit合计；保持原prepare30000ms、后续原预算、双guard、业务连接默认JIT与原事务local plan配置（不套用143的JIT-off正确性配置，oracle仍沿原只读设置），不手工ANALYZE、不附加ABBA／影子变体或扩大探针，不把单次通过写成p95／容量承诺。开跑前核实SQL143–145、source／complete pin、冻结oracle摘要、独占租约及空目标。身份／摘要／范围／预算校准失败在夹具前停止；任一阶段超时、原生错误、oracle不等、回执缺失或资源状态UNKNOWN即停止下游，保留主错误／完成阶段与独立清理，不换key或重建fixture求绿；仍用原560秒TERM／590秒KILL／600秒硬截止监督和具名正常close→DROP→release，禁止FORCE。旧C唯一满额失败不核销。
+
+   **这不只是缺确认，入口代码也未完成**：`requireDiagnosticEnvironment`主动拒绝key145+maximum，且`realKeyCarryProbeSql`／`realKeyCarryPlans`仅支持4／2000单元，后置计划／普通oracle不能拿来冒充8000单元。最小候选写集是现有`.github/workflows/activity-os-r5-e4-validation.yml`、`test/diagnostics/e4-prepare-cost.diagnostic-spec.ts`、`test/helpers/e4-evaluation-join-key-migration.spec.ts`及本评审稿：新建显式、默认关闭、独立一次范围；保留原small/500拒绝max测试，为新范围加精确HEAD／原预算／8000形状／失败停止／报告64KiB负例，并把满额完整业务oracle与small/500后置性能比较分开。workflow精确grant和一次执行须另行确认，本轮不修改这些入口或消费满额标记。
+
+3. **E5正式制度合同**：E4§3.1明确只允许off/fixture，active“必须另行评审扩展及生产授权”；T0只定义正式切换／旧规则只读及“差异归零或有批准清单”的退出条件。维护者至少需确定：首发是否仅新活动／新run／新发布政策且延期历史转换与复杂更正；精确多维及政策／字节复杂度上限与稳定拒绝语义；旧ContributionRule只读作用范围及既有legacy业务如何继续；off后的待处理native任务／更正如何恢复、谁执行与怎样验证。500实测形状只能作为候选上限，不能自动变为任意500人的业务许可。正式active、锁后全量准入、防分批绕限、旧规则写者约束和恢复流程均是**尚未完成的代码与验证**，确认合同后仍须精确写集、红区及隔离正反例实施；不是补一个环境变量或单纯缺签字。
+
+可独立推进部分：跨模型按draft→prepare→submit→review→ledger／历史读面追踪，尚未发现可确定的冻结off合同生产代码违例；不为凑进度新增active。原审核26项characterization先通过，新增真实off配置下首／终审×approve／return的合法原生回执、新原生写入拒绝和legacy继续原路径，并补失配回执及v11／maintenance门，保留原全部断言；这些是模拟DB协作者的定向单测，不是正式active或完整HTTP／DB恢复验收。已有真实off准备回执隔离证据保持，不扩大其覆盖范围。
+
+本轮最终定向结果：四套367/367（配置222、贡献service72、ledger准备29、审核44），审核为原26加新增18，不与中间批次361重复计数。目标文件及导入闭包类型检查1031源码／0诊断、定向lint退出0；静态核对原60个expect全部保留，跨模型移除新增块／fixture扩展后确认旧spec逐字一致。readtax、CODEMAP与counts检查通过；这不是全仓新一轮DB／HTTP或active验收。
+
+
+### 2026-10-15 required CI终态与可确定夹具修复
+
+719e16a8的常规CI `38749797740` 现已终态：Fast checks／Harness／Golden／Incident／E2E2、3、5通过；E2E1为5失败／1688通过，E2E4为25失败／2096通过／4跳过，Diff guards仍是3b签字136→145。授权GitHub连接器已取得完整解码日志，私有证据在`/workspace/r5-continue-719e16a8/`；CLI下载跳转失败单列，不以其失败当CI结果。
+
+确定夹具错误：当前basic套件正向catalog、变更前pin和变更后not-current三处仍写143 `ade4...`，实际CI为冻结145 `b03...`，现三处同步当前精确值，143历史suite不改。historicalMigration137两组catalog负例仍安装冻结137的`21fe...`（沿用至142），却调用当前严格145客户端，故在原positive前置就拒绝，随后first-red守卫阻断其余例；不能把这种失败算成负例通过。
+
+历史组只加入测试私有frozen137 catalog client profile：原生产客户端先对该真实旧catalog拒绝；版本profile只允许proof.findFirst及原完整catalog SELECT，固定其全部SQL SHA256 `221e86a74b9450bde6bac57c3f47730e5f872bb7d109f8938047811bb4628115`、零绑定值和唯一完整complete-pin谓词，只把145 expected pin换成冻结137 expected pin，其余SQL字节、真实PG返回、guard／权限／属性／四类mutation／原回滚与catalog恢复断言全部保留。其他SQL、后置barrier、参数和写入拒绝；仅两组历史catalog调用使用，不进入业务审核链，不让生产接受旧pin。9项新离线边界和原当前生产pin单测通过，四套最终376/376，前缀12/12；前述367是此前批次，不重复计数。
+
+另有必须保留的新事实：常规CI原maximum测试已被自动执行，prepare返回29271ms（281查询／4 E4查询／1具名屏障），在原30000ms内；之后无submit／formal summary或完整阶段oracle完成收据，最终整例600000ms超时。源代码在prepare日志后依次有计数／根检查、完整冻结oracle及submit，但没有各步进入回执，故精确卡点、失败后业务状态与资源闭合仍UNKNOWN。这个结果是满额prepare的一次正面观测，不是满额全链PASS；“145专用满额未派发”和“常规最大用例已执行失败”须分开记录，不再笼统称满额NOT_RUN。四个correction用例在beforeEach120秒、visual五个用例在beforeAll30秒超时；不把它们归因于pin或并发，也不增加预算或重跑。
+
+下一次145专用满额仍需前节明确范围和新入口支持；必须在每个昂贵fixture／oracle／submit步骤前后保留可闭合收据及原窗口，不等整例600秒后仍不知道停在哪一步。原CI包含maximum，因此普通推送也会触发该原考卷；在“不擅自重跑满额”的当前指示下，先完成本地补丁／轻量验证及提交，推送前须明确是否授权下一轮完整required CI所含的最大用例，不能通过删测／跳过它来取得绿灯。
+
+历史catalog修复的冻结设施闭合：仅migration新增八段严格候选→原始字节逆映射，原全文`7682…`与refs`9ceb…`不变；共享设施比较限定当前helper全文SHA、唯一八绑定段SHA及还原后的旧helper全文SHA，再执行原两文件相等断言。scale全文仍为`50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6`，五个实际oracle函数、driver和phase来源钉子逐字不动。最终127项聚焦离线全部通过（另560项未选择），覆盖原完整闭合与8项新篡改负例；首次候选的2项离线失败及其修正收据另存，不抹去失败。跨模型静态复核无剩余阻断；四项真实历史catalog小验证实际收据如下，不冒充整套历史suite已通过。
+
+本轮只运行一次W98四项历史137 catalog小验证，4通过／0失败，另683项未选择；完整进程270197ms（Jest suite260274ms），含加载、基线迁移、夹具及关闭，不作为业务性能或CI环境收益。真实PG通过当前生产客户端拒绝旧pin、历史profile合法positive、四类mutation拒绝及原catalog回滚恢复；原预算未改。正常关闭后独立PG16观测库／连接／租约backend／租约锁均0，未发TERM或使用FORCE，既有容器保留。没有重跑第二组重复用例、basic完整fixture、correction、visual、500或最大例；未将本地四项推广为最新required CI全绿。最终源级lint与三项文档check均退出0；完整quick／全量typecheck和完整E2E本轮未跑。
+
+本次还暴露测试组织的耦合：历史catalog测试、来源逆映射及共享设施比较绑定整份大型spec，而诊断器又将scale整文件作为oracle容器钉住。外围夹具修复会传播到不相关的冻结校验。当前用精确逆映射保留旧来源，未重新pin或移动oracle；后续如解耦，应另审独立冻结oracle模块及其完整来源／函数摘要与反向损坏测试，不能在本轮顺手改结构。

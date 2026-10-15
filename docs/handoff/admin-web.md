@@ -1,6 +1,6 @@
 # 交接:后端 ↔ admin 前端(srvf-admin-web)
 
-## E4 原生贡献证明（本地实施候选，未提交、未合并、未部署）
+## E4 原生贡献证明（Draft PR1380，未合并、未部署）
 
 既有 `GET /api/admin/v1/attendance-settlements/{settlementVersionId}/review-detail`
 增加可选的 `contributionProof`，仍使用 `attendance.read.sheet` 并保留服务端当前资格复核；
@@ -12,8 +12,7 @@ legacy 版本省略整个证明字段，历史小时和贡献结果不重新解�
 `evaluations` 仅为最多100项的解释预览，`hasMore=true` 时不得把预览求和当完整总分；
 贡献和志愿服务时长分别显示，培训可以有贡献但志愿小时为零。来源大JSON、完整政策配置和内部时间版本锚不返回。
 
-本轮小链及连续更正已验证，但首次2,000身份满额prepare失败，E4尚未验收或交付。
-fixture仅测试环境可写，默认off；生产NO-GO、Gate关闭、D8-OPS未执行、前端未发布及未回执均不变。
+2026-10-15：候选已提交至[Draft PR1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380)，145 small／500全链及冻结oracle通过；旧C满额失败；145专用满额未运行，常规CI最大例prepare29.271秒后整例600秒超时、全链未过。当前仍默认off、fixture仅测试可写，E5正式准入与完整发布验收未完成；前端发布／回执、生产、Gate和D8-OPS未完成。最新边界见[来源复用评审记录](../plans/activity-os-r5-e4-assert-source-reuse-review.md)。
 不能根据候选生成物启用新制度或登记真实映射。
 
 ## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）

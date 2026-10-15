@@ -1,4 +1,5 @@
 import { e4HistoricalMigrationPrefix } from '../helpers/e4-migration-prefix';
+import { frozen137FirstReviewCatalogTx } from '../helpers/e4-frozen137-first-review-catalog';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { createHash } from 'node:crypto';
 // E4_TERMINAL_REPLACE_CHILD_IMPORT_BEGIN
@@ -1155,6 +1156,57 @@ function terminalNativeWorkerOpening(source: string): string {
     throw new Error('Native worker opening source kind differs');
   const bindings = {
     migration: [
+      {
+        candidate: '      return terminalFrozen137SharedOpening(source.slice(from, to));\n',
+        candidateHash: 'ba552412e43b304133f3ef6314bf54dbaf8039afc2e0c576da529710f5303dbb',
+        opening: '      return source.slice(from, to);\n',
+      },
+      {
+        candidate:
+          "import { frozen137FirstReviewCatalogTx } from '../helpers/e4-frozen137-first-review-catalog';\n",
+        candidateHash: '4ac68662c2d65dd50b93e0c3ee9ad2ca14d5da60929de3302d0937ecb2df6dff',
+        opening: '',
+      },
+      {
+        candidate:
+          '                    // Current production client still rejects this frozen137 catalog.\n                    await expect(\n                      contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),\n                    ).rejects.toMatchObject({\n                      biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY,\n                    });\n                    const historicalCatalogTx = frozen137FirstReviewCatalogTx(tx);\n',
+        candidateHash: '0a8bafd0141237fd732e487699a33eb04fbf267e92f612ac57cef10246aac91a',
+        opening: '',
+      },
+      {
+        candidate:
+          '                      await contributions.readFirstReviewBarrierCandidateInTx(\n                        historicalCatalogTx,\n                        anchor,\n                      ),\n',
+        candidateHash: 'ab0bc327ad5360c1d71d813bfee46e4abc9a2ed603531016d86205cc5ea773ad',
+        opening:
+          '                      await contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),\n',
+      },
+      {
+        candidate:
+          '                      contributions.readFirstReviewBarrierCandidateInTx(\n                        historicalCatalogTx,\n                        anchor,\n                      ),\n',
+        candidateHash: '0a9c2ae47ecc3be5fdd817eb2ef44f5e817aecbaec51b704de79d3cdf775f31b',
+        opening:
+          '                      contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),\n',
+      },
+      {
+        candidate:
+          '                  // Current production client still rejects this frozen137 catalog.\n                  await expect(\n                    contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),\n                  ).rejects.toMatchObject({\n                    biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY,\n                  });\n                  const historicalCatalogTx = frozen137FirstReviewCatalogTx(tx);\n',
+        candidateHash: '9f172d529c555dc82a64d93be98959d91d484ae163f4fd0b11f38a90eacff11f',
+        opening: '',
+      },
+      {
+        candidate:
+          '                    await contributions.readFirstReviewBarrierCandidateInTx(\n                      historicalCatalogTx,\n                      anchor,\n                    ),\n',
+        candidateHash: '27c37ba60e6838efe740f02b0a42c2e8c0e4abc7b6c8f4d733a1b14c085db5b5',
+        opening:
+          '                    await contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),\n',
+      },
+      {
+        candidate:
+          '                    contributions.readFirstReviewBarrierCandidateInTx(historicalCatalogTx, anchor),\n',
+        candidateHash: '5c8c24500ec6a6e7b0388a5f19958fd68c09ccb9d493c452abebd32087d4ebe0',
+        opening:
+          '                    contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),\n',
+      },
       {
         candidate:
           "import { e4HistoricalMigrationPrefix } from '../helpers/e4-migration-prefix';\n",
@@ -4364,7 +4416,7 @@ describe('E4 terminal expected source offline', () => {
       const to = source.indexOf('\ntype TerminalOpeningBinding', from);
       expect(from).toBeGreaterThan(0);
       expect(to).toBeGreaterThan(from);
-      return source.slice(from, to);
+      return terminalFrozen137SharedOpening(source.slice(from, to));
     };
     expect(helpers(migration)).toBe(helpers(scale));
   });
@@ -4771,6 +4823,29 @@ describe('E4 terminal expected source offline', () => {
   });
 });
 // E4_TERMINAL_REFS_BODY_OFFLINE_BEGIN
+// Only the exact migration-only catalog profile bindings may differ in shared facilities.
+function terminalFrozen137SharedOpening(source: string): string {
+  const opening = 'bcc4fabb397bb510355694364e64927f73119ed7f9539508ca18c8559c1410ba';
+  if (terminalHash(source) === opening) return source;
+  if (terminalHash(source) !== '42020afefbe051567087e3f3672d68f978bb5f790d07a503f0d6f2cf3af50a2b')
+    throw new Error('Frozen137 shared helper candidate bytes differ');
+  const from = '    migration: [\n';
+  const to = '      {\n        candidate:\n          "import { e4HistoricalMigrationPrefix }';
+  if (source.split(from).length !== 2 || source.split(to).length !== 2)
+    throw new Error('Frozen137 shared helper addition boundary differs');
+  const start = source.indexOf(from) + from.length;
+  const end = source.indexOf(to, start);
+  if (
+    end <= start ||
+    terminalHash(source.slice(start, end)) !==
+      'be82188adc7643260c96a84bd4911c904f81997502aa5e08582a5743fabc2f6d'
+  )
+    throw new Error('Frozen137 shared helper addition bytes differ');
+  const restored = source.slice(0, start) + source.slice(end);
+  if (terminalHash(restored) !== opening)
+    throw new Error('Frozen137 shared helper opening bytes differ');
+  return restored;
+}
 const e4D1EvidenceModules = async () => {
   const [fs, os, path] = await Promise.all([
     import('node:fs'),
@@ -4780,6 +4855,52 @@ const e4D1EvidenceModules = async () => {
   return { fs, os, path };
 };
 describe('E4 terminal source projection offline', () => {
+  it.each(['binding', 'adjacent', 'missing_boundary', 'duplicate_boundary'] as const)(
+    'refuses frozen137 shared helper damage: %s',
+    (kind) => {
+      const source = readFileSync(__filename, 'utf8');
+      const shared = source.slice(
+        source.indexOf('\nfunction terminalHash('),
+        source.indexOf('\ntype TerminalOpeningBinding'),
+      );
+      const marker = '    migration: [\n';
+      const invalid =
+        kind === 'binding'
+          ? shared.replace('candidateHash:', 'candidateHashX:')
+          : kind === 'adjacent'
+            ? shared + '\n'
+            : kind === 'missing_boundary'
+              ? shared.replace(marker, '')
+              : shared + marker;
+      expect(invalid).not.toBe(shared);
+      expect(() => terminalFrozen137SharedOpening(invalid)).toThrow();
+    },
+  );
+  it.each(['missing_import', 'duplicate_import', 'changed_profile', 'removed_rejection'] as const)(
+    'refuses frozen137 catalog adapter source damage: %s',
+    (kind) => {
+      const source = readFileSync(__filename, 'utf8');
+      const addedImport =
+        "import { frozen137FirstReviewCatalogTx } from '../helpers/e4-frozen137-first-review-catalog';\n";
+      const invalid =
+        kind === 'missing_import'
+          ? source.replace(addedImport, '')
+          : kind === 'duplicate_import'
+            ? source + addedImport
+            : kind === 'changed_profile'
+              ? source.replace(
+                  '                    const historicalCatalogTx = frozen137FirstReviewCatalogTx(tx);\n',
+                  '                    const historicalCatalogTx = tx;\n',
+                )
+              : source.replace(
+                  '                    // Current production client still rejects this frozen137 catalog.\n',
+                  '',
+                );
+      expect(invalid).not.toBe(source);
+      expect(() => restoreTerminalMigrationOpening(invalid)).toThrow();
+      expect(() => terminalRefsTestOpening(invalid, 'migration')).toThrow();
+    },
+  );
   it('restores both complete current test openings and the unchanged native driver', () => {
     for (const kind of ['migration', 'scale'] as const) {
       const source = readFileSync(
@@ -10485,8 +10606,18 @@ describe('E4 migration dedicated lease envelope', () => {
                 const rollback = new Error('Boolean collection controlled catalog rollback');
                 await expect(
                   f.db.$transaction(async (tx) => {
+                    // Current production client still rejects this frozen137 catalog.
+                    await expect(
+                      contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),
+                    ).rejects.toMatchObject({
+                      biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY,
+                    });
+                    const historicalCatalogTx = frozen137FirstReviewCatalogTx(tx);
                     expect(
-                      await contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),
+                      await contributions.readFirstReviewBarrierCandidateInTx(
+                        historicalCatalogTx,
+                        anchor,
+                      ),
                     ).not.toBeNull();
                     if (point === 'historical_body' || point === 'same_name_fake_body') {
                       const definitions = [
@@ -10520,7 +10651,10 @@ describe('E4 migration dedicated lease envelope', () => {
                       await tx.$executeRaw`ALTER FUNCTION public.e4_assert_complete(text,boolean) SET search_path = public, pg_catalog`;
                     }
                     await expect(
-                      contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),
+                      contributions.readFirstReviewBarrierCandidateInTx(
+                        historicalCatalogTx,
+                        anchor,
+                      ),
                     ).rejects.toMatchObject({
                       biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY,
                     });
@@ -11043,8 +11177,18 @@ describe('E4 migration dedicated lease envelope', () => {
               const rollback = new Error('Boolean collection controlled catalog rollback');
               await expect(
                 f.db.$transaction(async (tx) => {
+                  // Current production client still rejects this frozen137 catalog.
+                  await expect(
+                    contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),
+                  ).rejects.toMatchObject({
+                    biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY,
+                  });
+                  const historicalCatalogTx = frozen137FirstReviewCatalogTx(tx);
                   expect(
-                    await contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),
+                    await contributions.readFirstReviewBarrierCandidateInTx(
+                      historicalCatalogTx,
+                      anchor,
+                    ),
                   ).not.toBeNull();
                   if (point === 'historical_body' || point === 'same_name_fake_body') {
                     const definitions = [
@@ -11078,7 +11222,7 @@ describe('E4 migration dedicated lease envelope', () => {
                     await tx.$executeRaw`ALTER FUNCTION public.e4_assert_complete(text,boolean) SET search_path = public, pg_catalog`;
                   }
                   await expect(
-                    contributions.readFirstReviewBarrierCandidateInTx(tx, anchor),
+                    contributions.readFirstReviewBarrierCandidateInTx(historicalCatalogTx, anchor),
                   ).rejects.toMatchObject({
                     biz: BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY,
                   });
