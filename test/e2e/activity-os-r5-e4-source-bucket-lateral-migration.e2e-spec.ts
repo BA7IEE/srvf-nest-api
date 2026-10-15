@@ -59,8 +59,10 @@ function withoutIdentity<T extends { id: string; createdAt: Date }>(
   ) as Omit<T, 'id' | 'createdAt'>;
 }
 
+// Root teardown runs after the suite closes its Prisma/Nest clients.
+const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
+
 describe('E4 real source bucket lateral migration144', () => {
-  const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
   const previousGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
   let fixture: E4Fixture | undefined;
   let upgraded = false;

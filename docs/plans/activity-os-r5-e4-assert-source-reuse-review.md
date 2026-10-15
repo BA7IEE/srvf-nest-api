@@ -112,3 +112,13 @@ E5仍是实际可用的硬依赖：当前assertNativeWriteAllowed仅允许test+f
 | uses a real statement snapshot across an observed two-backend commit and reads fresh sources on the next invocation |  30000ms | E4_ASSERT143_SNAPSHOT完成收据缺失；最后完成步骤UNKNOWN。writer事务原预算20000ms，观察锁等待窗口5000ms，均不变。                                                                             |
 
 这些失败保留为未解决项，暂不修改旧测试或重新量测。新候选按现有项目锁定工具链在GitHub独占合成PG16先执行144非空升级／原生guard／袋语义，然后真实small全链；各阶段通过才进入500及仅一次maximum。记录各run的HEAD、SQL pin、冻结oracle、完整链与独立清理；最大尝试在本轮开始仍为0。
+
+### GitHub专用144首次结果与清理顺序修复
+
+`7d63f002`／run38719292715的190离线测试通过；144专用套件4项业务测试全部通过：143→144非空升级与noop、完整目录/设置保持、10组来源袋和全文哈希相等、6个影子负例及6个优先级、原生INSERT缺项23514/e4_evaluation_guard且rowsAfter=0和独立快照相等、原生deferred COMMIT拒绝且statementPassed/callbackReturned/rolledBack/unknownRequest均true。
+
+该suite仍整体FAIL（75.287秒）：afterAll报Scratch maintenance session ended。代码确认owner在同一describe中先注册DROP及lease release，而fixture close hook后注册，DROP先于Prisma/Nest关闭。最小修复仅把144 owner移至模块根：根beforeAll仍先安装，子suite afterAll先关连接，最后根afterAll执行既有DROP和lease释放；不修改scratch helper、断言或任何预算。workflow在专用suite后复用已有只读calibrationCleanupSql作独立四项清理观测，绑定HEAD/run并保存闭合收据；suite退出非零或清理未确认仍使步骤FAIL。旧143四超时不因此核销。
+
+首次run的真实small全链未执行，500及满额未派发，满额仍0。GitHub最终移除临时容器成功；由于该轮未输出独立DB收据，数据库/lease清理单项仍UNKNOWN，不能借容器移除补称四零。新清理顺序将在下个小规模隔离run验证。
+
+该清理修复的125项相关离线测试通过，新增6个真实workflow脚本VM边界案例单独复跑通过，完整test typecheck和最终定向lint均退出0。跨模型只读审查确认没有门禁弱化；项目安装的jest-circus执行代码也确认先递归子describe、后执行父afterAll。未在云端再跑PG夹具，实际清理与真实小全链交给下一次GitHub隔离运行。

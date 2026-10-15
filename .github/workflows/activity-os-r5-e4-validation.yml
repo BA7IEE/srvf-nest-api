@@ -876,6 +876,7 @@ jobs:
         run: |
           node <<'NODE'
           const cp = require('node:child_process');
+          const fs = require('node:fs');
           const config = JSON.stringify({
             rootDir: process.cwd(), testEnvironment: 'node', testRegex: '.*\\.e2e-spec\\.ts$',
             moduleFileExtensions: ['ts','js','json'], maxWorkers: 1, testTimeout: 30000,
@@ -884,8 +885,22 @@ jobs:
           });
           const result = cp.spawnSync('pnpm', ['exec','jest','--config',config,'--runInBand','--no-cache','--bail','--runTestsByPath',
             'test/e2e/activity-os-r5-e4-source-bucket-lateral-migration.e2e-spec.ts'], {env:process.env,stdio:'inherit'});
-          if (result.error || result.signal) throw Error('E4 real source migration runner failed');
-          process.exit(result.status ?? 1);
+          // Observe cleanup independently even when the migration suite failed.
+          const source = fs.readFileSync('test/diagnostics/e4-prepare-cost.diagnostic-spec.ts','utf8');
+          const sql = source.match(/export function calibrationCleanupSql\(\) \{\s*return `([\s\S]*?)`;/)?.[1];
+          let cleanup = {head:process.env.GITHUB_SHA,run:process.env.GITHUB_RUN_ID,status:'UNKNOWN'};
+          try {
+            if (!sql) throw Error('E4 cleanup SQL unavailable');
+            const raw = cp.execFileSync('docker',['exec','u-nest-api-postgres','psql','--no-psqlrc','-qtA','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-c',sql],{encoding:'utf8',timeout:10000,maxBuffer:8192,stdio:['ignore','pipe','pipe']});
+            const facts = JSON.parse(raw);
+            const keys = ['databases','clients','leaseBackends','leaseLocks'];
+            if (facts.observer !== true || facts.scope !== true || facts.pg16 !== true || keys.some(k => !Number.isSafeInteger(facts[k]) || facts[k] < 0 || facts[k] > 10000)) throw Error('E4 cleanup facts refused');
+            cleanup = {...cleanup,status:keys.every(k => facts[k] === 0) ? 'OBSERVED_ABSENT' : 'REMAINS',facts};
+          } catch { /* UNKNOWN never turns a failed suite green. */ }
+          fs.mkdirSync('tmp/e4-prepare-cost-evidence',{recursive:true});
+          fs.writeFileSync('tmp/e4-prepare-cost-evidence/source144-cleanup.json',JSON.stringify(cleanup)+'\n',{mode:0o600});
+          process.stdout.write('E4_SOURCE144_CLEANUP '+JSON.stringify(cleanup)+'\n');
+          process.exit(result.error || result.signal ? 1 : result.status !== 0 ? result.status ?? 1 : cleanup.status === 'OBSERVED_ABSENT' ? 0 : 1);
           NODE
       - name: One fixed scenario, exact migration pins, original later budgets and independent 600s watchdog
         env:
@@ -944,6 +959,7 @@ jobs:
             tmp/e4-prepare-cost-evidence/source-join-plan-*.json
             tmp/e4-prepare-cost-evidence/source-join-calibration.json
             tmp/e4-prepare-cost-evidence/migration-failure-*.json
+            tmp/e4-prepare-cost-evidence/source144-cleanup.json
           if-no-files-found: error
       - name: Remove this job's ephemeral PostgreSQL container
         if: always()

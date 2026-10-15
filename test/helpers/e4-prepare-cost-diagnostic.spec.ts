@@ -3089,3 +3089,72 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(E4_DIAGNOSTIC_PLAN.acceptance).toBe('NOT_AN_ACCEPTANCE_RESULT');
   });
 });
+
+describe('real candidate migration gate independent cleanup (offline)', () => {
+  const zero = {
+    observer: true,
+    scope: true,
+    pg16: true,
+    databases: 0,
+    clients: 0,
+    leaseBackends: 0,
+    leaseLocks: 0,
+  };
+  it.each([
+    { suite: 0, facts: zero, expected: 0, status: 'OBSERVED_ABSENT' },
+    { suite: 1, facts: zero, expected: 1, status: 'OBSERVED_ABSENT' },
+    { suite: 0, facts: { ...zero, clients: 1 }, expected: 1, status: 'REMAINS' },
+    { suite: 0, facts: { ...zero, scope: false }, expected: 1, status: 'UNKNOWN' },
+    { suite: 0, facts: { ...zero, databases: -1 }, expected: 1, status: 'UNKNOWN' },
+    { suite: 0, facts: null, expected: 1, status: 'UNKNOWN' },
+  ])('keeps suite=$suite cleanup=$status fail-closed', ({ suite, facts, expected, status }) => {
+    const workflow = readFileSync(
+      resolve(__dirname, '../../.github/workflows/activity-os-r5-e4-validation.yml'),
+      'utf8',
+    );
+    const script = workflow.match(
+      / {6}- name: Nonempty143[^\n]*\n[\s\S]*? {10}node <<'NODE'\n([\s\S]*?) {10}NODE/u,
+    )?.[1];
+    expect(script).toBeDefined();
+    const source = readFileSync(
+      resolve(__dirname, '../diagnostics/e4-prepare-cost.diagnostic-spec.ts'),
+      'utf8',
+    );
+    const execFileSync = jest.fn(() => {
+      if (!facts) throw Error('observer unavailable');
+      return JSON.stringify(facts);
+    });
+    let exitCode: number | undefined;
+    let saved: Record<string, unknown> | undefined;
+    runInNewContext(
+      script!,
+      {
+        require: (name: string) => {
+          if (name === 'node:child_process')
+            return { spawnSync: () => ({ status: suite }), execFileSync };
+          if (name === 'node:fs')
+            return {
+              readFileSync: () => source,
+              mkdirSync: () => undefined,
+              writeFileSync: (_file: string, text: string) => {
+                saved = JSON.parse(text) as Record<string, unknown>;
+              },
+            };
+          throw Error('unexpected module');
+        },
+        process: {
+          cwd: () => '/fixture',
+          env: { GITHUB_SHA: 'a'.repeat(40), GITHUB_RUN_ID: '123' },
+          stdout: { write: () => undefined },
+          exit: (code: number) => {
+            exitCode = code;
+          },
+        },
+      },
+      { timeout: 1000 },
+    );
+    expect(execFileSync).toHaveBeenCalledTimes(1);
+    expect(exitCode).toBe(expected);
+    expect(saved).toMatchObject({ head: 'a'.repeat(40), run: '123', status });
+  });
+});
