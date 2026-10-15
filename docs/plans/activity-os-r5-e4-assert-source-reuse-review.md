@@ -227,3 +227,17 @@ E5局部修复已提交1796f90，后续文档校准9fa363e；继续处理旧143�
 不连接PG的真实Jest进程复现确认原生ESRCH来自另一Error realm，`instanceof Error`为false；修前11例恰有跨realm ESRCH及真实pnpm调用两例失败，其余9例通过。最小修复只将两处ESRCH改为结构化code判断；EPERM、缺失／非字符串code、后代残留、未close、超时及非零退出继续失败。最终两个helper共17例通过，包含有界真实CLI；没有额外裸子进程。单来源诊断与应用闭包定向类型检查、最终helper类型检查退出0，最后真实CLI取证收尾修订的定向lint也退出0；完整常规CI未据此核销。
 
 修复后仅运行一次合法单来源142诊断，1项通过。原120秒封套内实际103364ms：142部署5583ms、应用夹具13283ms、来源3442ms、prepare15779ms、submit33901ms、冻结oracle30759ms；suite总182406ms还含加载及外层基线安装，不能作为业务耗时。这证明已越过进程管理阻断，并表明该次主要成本在历史142的prepare／submit及oracle，尚不能归因为某条SQL或JIT。冻结oracle文件SHA和142 pin均核对，真实来源与完整两个roots保持；该诊断明确acceptance=false，不能代替原三活动／六roots及四项旧143回归。结束后独立确认PG16及资源四零，既有容器保留。原四项仍HOLD，下一步须先取得具体执行成本证据；不盲目重跑整套夹具或增加预算。
+
+### 2026-10-15 历史143专用连接修复：JIT固定成本取证
+
+一次明确受控实验复用同一份合法单来源142夹具：真实prepare／submit后，原冻结oracle完整两个roots通过，再在同一后端／同一draft root的只读事务执行ON／OFF／OFF／ON四次原生`e4_assert_complete(root,FALSE)`。带auto_explain ANALYZE／TIMING的墙钟分别4622.722／103.633／101.396／3709.542ms；它们不等于默认TRUE校验或完整prepare耗时。100ms日志门槛会漏掉更快的OFF计划，不能解释为OFF未执行。
+
+两次ON的内部EXPECTED_BUILD估算cost均1603558301.13、实际返回1行，77个JIT函数编译分别4042.297／3531.908ms，占该内部语句4128.649／3608.935ms的约97.9%。因此本次历史142同root校验的高固定成本可以明确归因为该语句的JIT编译主导；内外层耗时包含，不能相加，也不能把全部历史超时或当前145表现归因于此。PG按估算成本决定JIT及高成本优化，机制见[PG16文档](https://www.postgresql.org/docs/16/jit-decision.html)。没有改变plan_cache_mode；探针实读auto，prepare自身仍按原实现事务局部force_custom_plan。
+
+JIT-off夹具的prepare1899.692ms、submit4790.590ms、冻结oracle320.047ms，整个诊断含ABBA为39095.293ms，suite总77050ms；这些是另一轮夹具的阶段观测，不作为生产收益或p95。实验1项通过，8条目标PID嵌套计划完整解析并经跨模型逐项核对；LOCAL GUC在同PID恢复，独立默认连接始终on，最终独立四零。此前空库轻量验证还确认URL启动选项覆盖两个不同池连接，无迁移或业务夹具，结束四零。完整受控源码／补丁及私有原始计划保存在云端`/workspace/e4-143-followup-9fa363e/`，没有将这套一次性控制代码并入诊断入口。
+
+最小实施只改原143 spec：默认monitor先连接，再给本spec的业务／迁移CLI URL追加`options=-c jit=off`；fixture、每个case、取消probe和两个observer检查实际off，teardown独立核对默认值未变后按原错误汇总继续关闭连接。未更改全局、数据库或角色JIT配置。原88个直接断言、全部SQL模板、三活动／六roots、30秒／120秒预算及双guard逐项保留。默认JIT的历史性能继续HOLD；修复后的历史正确性整组尚待下文实际验证，不能预写通过。用户已明确继续开发测试；先前“本轮不再开库”是代理对单次实验收口的自行安排，并非授权禁令。
+
+独立治理阻塞仍分列：常规CI的Cutover sign-off ledger gate失败，仓内只读重验同为exit1，3b签字记录migration-total136而现读145，需要维护者重签；AI不改数补签。Trusted历史503按父会话证据单列为平台错误，本轮最新7c472fb7的trusted scan已通过、approval仍waiting，未代批或重跑；历史日志下载不可用，未独立复核503正文。它们均不由本次JIT正确性修复代替，SQL／trusted／人工签字及生产Gate仍保留。
+
+最小补丁提交前：原21项离线通过、9项DB未选择；新增连接检查和case包装函数的原样抽取闭包类型检查退出0，非完整test类型检查。首次定向lint仅11处新增代码格式错误，修正后最终原文件定向lint退出0、格式检查通过；全文件静态核对原88个expect调用及全部原SQL模板保留、全部case和setup预算不变。未运行全量单测或新增满额；下一步在该实际提交上执行一次原整组，不把离线或单来源结果代替原回归。

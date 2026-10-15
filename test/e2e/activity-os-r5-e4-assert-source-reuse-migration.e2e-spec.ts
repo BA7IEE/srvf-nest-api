@@ -709,6 +709,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
     const priorGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
     const applicationName = namespace;
     let previousUrl: string | undefined;
+    let defaultJit: string | undefined;
     let monitor: PrismaClient | undefined;
     const cancelOwnedBackends = async (ownedName: string) => {
       if (!monitor) throw new Error('E4 assertion cancellation monitor missing');
@@ -732,8 +733,24 @@ describe('E4 complete assertion source reuse migration 143', () => {
       if (!fixtureClosed)
         throw new Error('E4 assertion fixture cleanup unknown; database finalizer refused');
     };
+    // Explicit historical correctness profile; default-JIT performance remains HOLD.
+    // Startup options cover every pooled connection and this spec's migration CLI.
+    const assertHistoricalJit = async (client: Database) => {
+      const [setting] = await client.$queryRaw<{ jit: string }[]>`
+        SELECT current_setting('jit') AS jit
+      `;
+      expect(setting.jit).toBe('off');
+    };
     const caseIt = (name: string, work: () => Promise<void>, budget = 30_000) =>
-      it(name, () => cases.run(work, budget), budget);
+      it(
+        name,
+        () =>
+          cases.run(async () => {
+            await assertHistoricalJit(db());
+            await work();
+          }, budget),
+        budget,
+      );
     let fixture: E4Fixture | undefined;
     let installed = false;
     let upgraded143 = false;
@@ -782,15 +799,34 @@ describe('E4 complete assertion source reuse migration 143', () => {
             previousUrl = process.env.DATABASE_URL;
             const url = new URL(previousUrl!);
             url.searchParams.set('application_name', applicationName);
-            process.env.DATABASE_URL = url.toString();
             const monitorUrl = new URL(url);
             monitorUrl.searchParams.set('application_name', applicationName + '_monitor');
             monitor = new PrismaClient({ datasourceUrl: monitorUrl.toString() });
             await assertConnectedTestDatabase(monitor);
+            const [defaults] = await monitor.$queryRaw<{ jit: string }[]>`
+              SELECT current_setting('jit') AS jit
+            `;
+            defaultJit = defaults.jit;
+            url.searchParams.set(
+              'options',
+              `${url.searchParams.get('options') ?? ''} -c jit=off`.trim(),
+            );
+            process.env.DATABASE_URL = url.toString();
+            console.info(
+              'E4_ASSERT143_PROFILE',
+              JSON.stringify({
+                scope: 'HISTORICAL_CORRECTNESS',
+                jit: 'off',
+                independentDefaultJit: defaultJit,
+                migrationCliUsesSameUrl: true,
+                productionPerformanceAcceptance: false,
+              }),
+            );
             enter('UNIT_MIGRATIONS');
             await owner.deployUnitMigrations(cases.remainingMs());
             enter('APP_FIXTURE');
             fixture = await createE4Fixture();
+            await assertHistoricalJit(fixture.db);
             let sourceIndex = 0;
             for (const { options, expected } of [
               { options: {}, expected: singleSourceExpectation },
@@ -876,6 +912,20 @@ describe('E4 complete assertion source reuse migration 143', () => {
       const failures: unknown[] = [];
       try {
         cases.assertSettled();
+        if (monitor && defaultJit !== undefined) {
+          const [defaults] = await monitor.$queryRaw<{ jit: string }[]>`
+            SELECT current_setting('jit') AS jit
+          `;
+          expect(defaults.jit).toBe(defaultJit);
+          console.info(
+            'E4_ASSERT143_PROFILE_CLOSED',
+            JSON.stringify({
+              independentDefaultUnchanged: true,
+              jit: 'off',
+              productionPerformanceAcceptance: false,
+            }),
+          );
+        }
         if (installed && fixture)
           await fixture.db.$executeRawUnsafe('DROP SCHEMA ' + namespace + ' CASCADE');
       } catch (error) {
@@ -902,6 +952,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
       const bounded = new E4AssertionCaseOwner(() => cancelOwnedBackends(probeName));
       try {
         await assertConnectedTestDatabase(probe);
+        await assertHistoricalJit(probe);
         await expect(
           bounded.run(async () => {
             await probe.$queryRaw`SELECT pg_sleep(60)::text`;
@@ -1313,6 +1364,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
         const observer = new PrismaClient();
         try {
           await assertConnectedTestDatabase(observer);
+          await assertHistoricalJit(observer);
           const before = await businessSnapshot(observer);
           let statementPassed = false;
           let incompleteGuard: Outcome | undefined;
@@ -1408,6 +1460,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
         let reader: Promise<{ before: number; after: number }[]> | undefined;
         try {
           await assertConnectedTestDatabase(observer);
+          await assertHistoricalJit(observer);
           writer = db().$transaction(
             async (tx) => {
               const [{ pid }] = await tx.$queryRaw<
