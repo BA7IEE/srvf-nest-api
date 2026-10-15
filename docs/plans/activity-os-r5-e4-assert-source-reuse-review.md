@@ -328,3 +328,10 @@ active时旧规则create／update／softDelete在原RBAC后、任何事务／查
 证据口径：先跑旧规则7项characterization再改编排；E5等七套未再改动用例3383项通过，阶段26项及原诊断159项在最终三套185项全通过；另147项源码恢复通过，无数据库或maximum执行。全三段typecheck通过，离线OpenAPI装配／生成通过，13份client仅inputDigest更新；counts／codemap／rbacmap／readtax／client新鲜度检查通过。query原全量桶／切片超限与冻结来源拒绝用例随既有套件执行；新增service完整proof用例的reader为mock，只证明锁内proof传参和重放顺序，不是新增容量、真实HTTP或受限生产身份验收。原2000／10000／50000／8000／40000上限不降低，生产时延仍未证明。
 
 生成API只改变旧规则三个写operation的23013／409描述，路由与components.schemas均不变，离线契约语义diff为空。授权manifest663条policy entries逐项相同，仅摘要及源码行号变化。契约snapshot与ROUTE_AUTHZ两份仓内文件需维护者grant，当前没有令牌；已在证据包生成85行和56行可审补丁，未修改这两个受保护文件。故E5工程实现已本地提交，不声明派生契约闭合、required CI全绿、Ready或可发布；补齐grant后应用精确补丁并校验才可关闭该缺口。3b、Trusted及生产硬门不由本提交代签。
+
+
+### 2026-10-15 E5 独立小型HTTP补验（无数据库）
+
+在未获两份受保护文件grant期间，追加只依赖非保护新spec的6项HTTP错误响应测试：真实Controller／Service／AllExceptionsFilter及ResponseInterceptor，小型TestModule使用合成principal、RBAC／Prisma／Audit doubles，不启动AppModule、不连接数据库、不改环境。POST／PATCH／DELETE均实际返回409／23013，DELETE原204声明不吞错误；RBAC先拒时三条路由实际返回403／30100，事务和审计均未调用。6项与原配置230项、旧规则18项合计254通过，定向lint通过，跨模型静态复核无阻断；app.close在afterAll执行。
+
+本验证仅补HTTP路由和Filter错误封装，未安装ValidationPipe或JWT／route guard，不代表参数校验、真实认证／授权、真实DB全链、容量或恢复执行验收。现有active锁内proof单测仍使用mock reader；真实active小链、更正／撤权／并发／恢复矩阵未据此关闭。两份受保护候选补丁与既有84文件证据包保持原摘要，可审且未应用；grant执行路径、精确命令、影响及最小后续计划已保存至/workspace/r5-e5-morning-handoff-81ae6537/MORNING.md。未运行最大例、推送、CI或生产操作。
