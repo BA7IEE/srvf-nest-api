@@ -545,6 +545,12 @@ function writeBounded(path: string, value: unknown) {
   if (Buffer.byteLength(json) > 65536) throw new Error('E4 diagnostic output limit');
   writeFileSync(path, json, { flag: 'wx', mode: 0o600 });
 }
+export function writeRealStatisticsArtifact(directory: string, artifact: unknown) {
+  const file = 'real-statistics.json';
+  const path = join(directory, file);
+  writeBounded(path, artifact);
+  return { file, sha256: createHash('sha256').update(readFileSync(path)).digest('hex') };
+}
 export function stageReceipt(privateDir: string, head: string, run: string) {
   return e4DiagnosticStageReceipt(head, run, (receipt) => {
     const json = JSON.stringify(receipt);
@@ -4243,17 +4249,14 @@ function registerDiagnosticChild() {
                 purpose: 'DIAGNOSTIC_ONLY',
                 realStatistics: statisticsControl.snapshot(),
               };
-              writeBounded(join(privateDir, 'real-statistics.json'), artifact);
+              const reference = writeRealStatisticsArtifact(privateDir, artifact);
               report.realStatistics = {
                 ...(report.realStatistics as object),
                 status: artifact.realStatistics.status,
                 lastPoint: artifact.realStatistics.lastPoint,
                 restored: artifact.realStatistics.restored,
                 conditionalOnly: true,
-                file: 'real-statistics.json',
-                sha256: createHash('sha256')
-                  .update(JSON.stringify(artifact) + '\n')
-                  .digest('hex'),
+                ...reference,
               };
             } catch (error) {
               report.status = 'FAILED';

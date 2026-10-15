@@ -78,6 +78,7 @@ import {
   realStatisticsSnapshotSql,
   realStatisticsCapabilitySql,
   validateRealStatisticsCapability,
+  writeRealStatisticsArtifact,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -95,6 +96,30 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  it('hashes the exact bounded statistics artifact bytes, including pretty formatting and trailing newline', () => {
+    const directory = mkdtempSync(resolve(tmpdir(), 'e4-real-statistics-bytes-'));
+    try {
+      const artifact = {
+        head,
+        run: '123',
+        scenario: 'maximum',
+        purpose: 'DIAGNOSTIC_ONLY',
+        realStatistics: { status: 'INCOMPLETE', wallMs: 1.234 },
+      };
+      const ref = writeRealStatisticsArtifact(directory, artifact);
+      const raw = readFileSync(resolve(directory, ref.file));
+      expect(ref.sha256).toBe(createHash('sha256').update(raw).digest('hex'));
+      expect(ref.sha256).not.toBe(
+        createHash('sha256')
+          .update(JSON.stringify(artifact) + '\n')
+          .digest('hex'),
+      );
+      expect(JSON.parse(raw.toString())).toEqual(artifact);
+      expect(raw.toString().endsWith('\n')).toBe(true);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   const realStatisticsHarness = () => {
     let stage: 'SOURCE_BUILD' | 'PREPARE' | 'SUBMIT' = 'SOURCE_BUILD',
       serial = 1,
