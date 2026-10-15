@@ -20,6 +20,7 @@ import {
   E4_MIGRATION_143,
 } from '../helpers/e4-migration-prefix';
 import { assertConnectedTestDatabase } from '../setup/test-db';
+import { E4AssertionCaseOwner, e4FullRowSnapshotSql } from '../helpers/e4-assert143-lifecycle';
 
 const namespace = 'e4_assert_oracle_' + randomBytes(8).toString('hex');
 const oldPin = '21fe9ecf6df989a3f8fa5878df40b93c';
@@ -665,18 +666,19 @@ async function businessSnapshot(db: Database) {
     { name: string }[]
   >`SELECT relname AS name FROM pg_class WHERE relnamespace='public'::regnamespace AND relkind='r' AND relname <> '_prisma_migrations' ORDER BY relname COLLATE "C"`;
   expect(tables.length).toBeGreaterThanOrEqual(196);
-  const snapshots: string[] = [];
-  for (const { name } of tables) {
-    const quoted = '"' + name.replaceAll('"', '""') + '"';
-    const [row] = await db.$queryRawUnsafe<{ snapshot: string }[]>(
-      'SELECT coalesce(jsonb_agg(to_jsonb(row) ORDER BY to_jsonb(row)::text COLLATE "C"),\'[]\'::jsonb)::text AS snapshot FROM public.' +
-        quoted +
-        ' row',
-    );
-    snapshots.push(row.snapshot);
-  }
+  const started = performance.now();
+  const snapshots = await db.$queryRawUnsafe<{ snapshot: string }[]>(
+    e4FullRowSnapshotSql(
+      'public',
+      tables.map(({ name }) => name),
+    ),
+  );
+  console.info(
+    'E4_ASSERT143_FULL_SNAPSHOT',
+    JSON.stringify({ tables: tables.length, queries: 2, wallMs: performance.now() - started }),
+  );
   // Private rows remain in memory; failure output receives only a boolean.
-  return JSON.stringify(snapshots);
+  return JSON.stringify(snapshots.map(({ snapshot }) => snapshot));
 }
 
 function withoutIdentity<T extends { id: string; createdAt: Date }>(
@@ -697,98 +699,159 @@ function rootData(
 }
 
 describe('E4 complete assertion source reuse migration 143', () => {
-  const owner = installE4ValidationDatabase({ baselineMigrationCount: 136 });
-  const priorGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
-  let fixture: E4Fixture | undefined;
-  let installed = false;
-  let upgraded143 = false;
-  let roots: ActivitySettlementContributionRevision[] = [];
-  const fixedOracle = frozenOracle();
-  const expectations = new Map<string, OracleExpectation>();
-  const oracle = async (client: PrismaClient, id: string) => {
-    const root = await client.activitySettlementContributionRevision.findUniqueOrThrow({
-      where: { id },
-    });
-    const expected = expectations.get(root.activityId);
-    if (!expected) throw new Error('E4 small fixture oracle expectation missing');
-    await fixedOracle(client, id, expected.evaluations);
-    await assertSmallFixtureDayOracle(client, id, expected);
-  };
-  const db = () => {
-    if (!fixture) throw new Error('E4 source reuse fixture missing');
-    return fixture.db;
-  };
-  const require143 = async () => {
-    if (!upgraded143)
-      throw new Error('E4 dedicated 142 to143 installation prerequisite was not reached');
-    const migrations = await migrationRows(db());
-    expect(migrations).toHaveLength(143);
-    expect(migrations[142]).toEqual({ name: E4_MIGRATION_143, checksum: candidateSha });
-    const [body] = await db().$queryRaw<{ pin: string }[]>`
+  let assertFixtureClosed = () => undefined as void;
+  const owner = installE4ValidationDatabase({
+    baselineMigrationCount: 136,
+    boundMigrationProcesses: true,
+    assertReadyToFinalize: () => assertFixtureClosed(),
+  });
+  describe('owned fixture and cases', () => {
+    const priorGate = process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
+    const applicationName = namespace;
+    let previousUrl: string | undefined;
+    let monitor: PrismaClient | undefined;
+    const cancelOwnedBackends = async (ownedName: string) => {
+      if (!monitor) throw new Error('E4 assertion cancellation monitor missing');
+      await monitor.$queryRaw`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+      WHERE datname=current_database() AND application_name=${ownedName}
+        AND pid<>pg_backend_pid()`;
+      const until = performance.now() + 1_000;
+      do {
+        const [row] = await monitor.$queryRaw<{ remaining: bigint }[]>`SELECT count(*) AS remaining
+        FROM pg_stat_activity WHERE datname=current_database() AND application_name=${ownedName}
+          AND pid<>pg_backend_pid()`;
+        if (row.remaining === 0n) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      } while (performance.now() < until);
+      throw new Error('E4 assertion owned backends still present');
+    };
+    const cases = new E4AssertionCaseOwner(() => cancelOwnedBackends(applicationName));
+    let fixtureClosed = false;
+    assertFixtureClosed = () => {
+      cases.assertSettled();
+      if (!fixtureClosed)
+        throw new Error('E4 assertion fixture cleanup unknown; database finalizer refused');
+    };
+    const caseIt = (name: string, work: () => Promise<void>, budget = 30_000) =>
+      it(name, () => cases.run(work, budget), budget);
+    let fixture: E4Fixture | undefined;
+    let installed = false;
+    let upgraded143 = false;
+    let roots: ActivitySettlementContributionRevision[] = [];
+    const fixedOracle = frozenOracle();
+    const expectations = new Map<string, OracleExpectation>();
+    const oracle = async (client: PrismaClient, id: string) => {
+      const root = await client.activitySettlementContributionRevision.findUniqueOrThrow({
+        where: { id },
+      });
+      const expected = expectations.get(root.activityId);
+      if (!expected) throw new Error('E4 small fixture oracle expectation missing');
+      await fixedOracle(client, id, expected.evaluations);
+      await assertSmallFixtureDayOracle(client, id, expected);
+    };
+    const db = () => {
+      if (!fixture) throw new Error('E4 source reuse fixture missing');
+      return fixture.db;
+    };
+    const require143 = async () => {
+      if (!upgraded143)
+        throw new Error('E4 dedicated 142 to143 installation prerequisite was not reached');
+      const migrations = await migrationRows(db());
+      expect(migrations).toHaveLength(143);
+      expect(migrations[142]).toEqual({ name: E4_MIGRATION_143, checksum: candidateSha });
+      const [body] = await db().$queryRaw<{ pin: string }[]>`
       SELECT md5(prosrc) AS pin FROM pg_proc
       WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure
     `;
-    expect(body.pin).toBe(newPin);
-  };
-  beforeAll(async () => {
-    process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
-    owner.deployUnitMigrations();
-    fixture = await createE4Fixture();
-    for (const { options, expected } of [
-      { options: {}, expected: singleSourceExpectation },
-      {
-        options: {
-          startsAt: new Date('2020-03-01T15:30:00.000Z'),
-          endsAt: new Date('2020-03-01T17:00:00.000Z'),
-        },
-        expected: {
-          evaluations: 1,
-          // D4's bucket key is revision/identity/category, not a Beijing date.
-          // This single allocation/slice is one source reference spanning two days.
-          sources: 1,
-          seconds: 5400,
-          days: [
-            { ledgerDate: '2020-03-01', recognizedPoints: '0.33' },
-            { ledgerDate: '2020-03-02', recognizedPoints: '0.67' },
-          ],
-        },
-      },
-      {
-        options: {
-          beforeSeal: async (draft: { activityId: string }) => {
-            await db().activityParticipationIdentity.updateMany({
-              where: { activityId: draft.activityId, populationIncluded: true },
-              data: { populationIncluded: false },
+      expect(body.pin).toBe(newPin);
+    };
+    beforeAll(
+      () =>
+        cases.run(async () => {
+          const setupStarted = performance.now();
+          let stage = 'MONITOR';
+          const enter = (next: string) => {
+            stage = next;
+            console.info(
+              'E4_ASSERT143_SETUP_STAGE',
+              JSON.stringify({ stage, elapsedMs: performance.now() - setupStarted }),
+            );
+          };
+          try {
+            process.env.ACTIVITY_V11_WORKFLOW_ENABLED = 'true';
+            previousUrl = process.env.DATABASE_URL;
+            const url = new URL(previousUrl!);
+            url.searchParams.set('application_name', applicationName);
+            process.env.DATABASE_URL = url.toString();
+            const monitorUrl = new URL(url);
+            monitorUrl.searchParams.set('application_name', applicationName + '_monitor');
+            monitor = new PrismaClient({ datasourceUrl: monitorUrl.toString() });
+            await assertConnectedTestDatabase(monitor);
+            enter('UNIT_MIGRATIONS');
+            await owner.deployUnitMigrations(cases.remainingMs());
+            enter('APP_FIXTURE');
+            fixture = await createE4Fixture();
+            let sourceIndex = 0;
+            for (const { options, expected } of [
+              { options: {}, expected: singleSourceExpectation },
+              {
+                options: {
+                  startsAt: new Date('2020-03-01T15:30:00.000Z'),
+                  endsAt: new Date('2020-03-01T17:00:00.000Z'),
+                },
+                expected: {
+                  evaluations: 1,
+                  // D4's bucket key is revision/identity/category, not a Beijing date.
+                  // This single allocation/slice is one source reference spanning two days.
+                  sources: 1,
+                  seconds: 5400,
+                  days: [
+                    { ledgerDate: '2020-03-01', recognizedPoints: '0.33' },
+                    { ledgerDate: '2020-03-02', recognizedPoints: '0.67' },
+                  ],
+                },
+              },
+              {
+                options: {
+                  beforeSeal: async (draft: { activityId: string }) => {
+                    await db().activityParticipationIdentity.updateMany({
+                      where: { activityId: draft.activityId, populationIncluded: true },
+                      data: { populationIncluded: false },
+                    });
+                  },
+                },
+                expected: { evaluations: 0, sources: 0, seconds: 0, days: [] },
+              },
+            ]) {
+              enter('SOURCE_' + sourceIndex);
+              const source = await createE4Source(fixture, options);
+              expectations.set(source.activityId, expected);
+              enter('PREPARE_' + sourceIndex);
+              const prepared = await prepareE4Time(fixture, source);
+              enter('SUBMIT_' + sourceIndex);
+              await submitE4Time(fixture, source, prepared);
+              sourceIndex++;
+            }
+            enter('ROOTS_AND_PRIVATE_ORACLE');
+            roots = await db().activitySettlementContributionRevision.findMany({
+              orderBy: { revision: 'asc' },
             });
-          },
-        },
-        expected: { evaluations: 0, sources: 0, seconds: 0, days: [] },
-      },
-    ]) {
-      const source = await createE4Source(fixture, options);
-      expectations.set(source.activityId, expected);
-      const prepared = await prepareE4Time(fixture, source);
-      await submitE4Time(fixture, source, prepared);
-    }
-    roots = await db().activitySettlementContributionRevision.findMany({
-      orderBy: { revision: 'asc' },
-    });
-    expect(roots.length).toBe(6);
-    if (!/^e4_assert_oracle_[a-f0-9]{16}$/u.test(namespace))
-      throw new Error('E4 oracle namespace refused');
-    await db().$executeRawUnsafe('CREATE SCHEMA ' + namespace);
-    installed = true;
-    await db().$executeRawUnsafe(frozenAssertion());
-    await db().$executeRawUnsafe(
-      'CREATE FUNCTION ' +
-        namespace +
-        `.outcome(root_id text, original boolean, validate_version boolean) RETURNS TABLE(state text,guard text)
+            expect(roots.length).toBe(6);
+            if (!/^e4_assert_oracle_[a-f0-9]{16}$/u.test(namespace))
+              throw new Error('E4 oracle namespace refused');
+            await db().$executeRawUnsafe('CREATE SCHEMA ' + namespace);
+            installed = true;
+            await db().$executeRawUnsafe(frozenAssertion());
+            await db().$executeRawUnsafe(
+              'CREATE FUNCTION ' +
+                namespace +
+                `.outcome(root_id text, original boolean, validate_version boolean) RETURNS TABLE(state text,guard text)
       LANGUAGE plpgsql SECURITY INVOKER SET search_path=pg_catalog,public AS $body$
       DECLARE actual_state text; actual_guard text;
       BEGIN
         IF original THEN PERFORM ` +
-        namespace +
-        `.original142(root_id,validate_version);
+                namespace +
+                `.original142(root_id,validate_version);
         ELSE PERFORM public.e4_assert_complete(root_id,validate_version); END IF;
         RETURN QUERY SELECT '00000'::text,'NONE'::text;
       EXCEPTION WHEN OTHERS THEN
@@ -798,205 +861,342 @@ describe('E4 complete assertion source reuse migration 143', () => {
           THEN RETURN QUERY SELECT actual_state,actual_guard;
         ELSE RAISE EXCEPTION 'E4 assertion unexpected error category'; END IF;
       END $body$;`,
+            );
+            enter('COMPLETE');
+          } finally {
+            console.info(
+              'E4_ASSERT143_SETUP_END',
+              JSON.stringify({ stage, elapsedMs: performance.now() - setupStarted }),
+            );
+          }
+        }, 120_000),
+      120_000,
     );
-  }, 120_000);
-  afterAll(async () => {
-    try {
-      if (installed && fixture)
-        await fixture.db.$executeRawUnsafe('DROP SCHEMA ' + namespace + ' CASCADE');
-    } finally {
+    afterAll(async () => {
+      const failures: unknown[] = [];
       try {
-        await closeE13Fixture(fixture);
+        cases.assertSettled();
+        if (installed && fixture)
+          await fixture.db.$executeRawUnsafe('DROP SCHEMA ' + namespace + ' CASCADE');
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        const closed = await Promise.allSettled([closeE13Fixture(fixture), monitor?.$disconnect()]);
+        fixtureClosed = closed.every((result) => result.status === 'fulfilled');
+        for (const result of closed) if (result.status === 'rejected') failures.push(result.reason);
       } finally {
+        if (previousUrl !== undefined) process.env.DATABASE_URL = previousUrl;
         if (priorGate === undefined) delete process.env.ACTIVITY_V11_WORKFLOW_ENABLED;
         else process.env.ACTIVITY_V11_WORKFLOW_ENABLED = priorGate;
       }
-    }
-  });
+      if (failures.length)
+        throw new AggregateError(failures, 'E4 assertion fixture cleanup failed');
+    });
 
-  it('preserves every business row and catalog identity on nonempty142 to143 and no-op with frozen root/day/source oracle', async () => {
-    const beforeMigrations = await migrationRows(db());
-    expect(beforeMigrations).toHaveLength(142);
-    expect(beforeMigrations[141].name).toBe(E4_MIGRATION_142);
-    const beforeCatalog = await catalog(db());
-    const beforeTarget = await catalogTargetSignature(db());
-    const beforeBusiness = await businessSnapshot(db());
-    for (const root of roots) {
-      expect(await outcome(db(), root.id)).toEqual({ state: '00000', guard: 'NONE' });
-      await oracle(db(), root.id);
-    }
-    const baselineAfterOracleCatalog = await catalog(db());
-    const baselineAfterOracleTarget = await catalogTargetSignature(db());
-    emitCatalogDiagnostic(
-      beforeCatalog,
-      baselineAfterOracleCatalog,
-      'BASELINE_ORACLE',
-      beforeTarget,
-      baselineAfterOracleTarget,
-    );
-    owner.deploySourceReuseMigrations();
-    const afterMigrations = await migrationRows(db());
-    expect(afterMigrations).toHaveLength(143);
-    expect(JSON.stringify(afterMigrations.slice(0, 142)) === JSON.stringify(beforeMigrations)).toBe(
-      true,
-    );
-    expect(afterMigrations[142]).toEqual({ name: E4_MIGRATION_143, checksum: candidateSha });
-    const candidate = readFileSync(
-      resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_143, 'migration.sql'),
-      'utf8',
-    );
-    expect(createHash('sha256').update(candidate).digest('hex')).toBe(candidateSha);
-    const [installedBody] = await db().$queryRaw<
-      { pin: string; body: string }[]
-    >`SELECT md5(prosrc) AS pin,prosrc AS body FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure`;
-    expect(installedBody.pin).toBe(newPin);
-    expect(installedBody.body === candidate.split('$$')[1]).toBe(true);
-    upgraded143 = true;
-    console.info(
-      'E4_ASSERT143_INSTALLED',
-      JSON.stringify({
-        migrations: afterMigrations.length,
-        migration: afterMigrations[142].name,
-        checksum: candidateSha,
-        bodyPin: installedBody.pin,
-      }),
-    );
-    const afterCatalog = await catalog(db());
-    const afterTarget = await catalogTargetSignature(db());
-    emitCatalogDiagnostic(
-      baselineAfterOracleCatalog,
-      afterCatalog,
-      'UPGRADE',
-      baselineAfterOracleTarget,
-      afterTarget,
-    );
-    assertTargetDefaultSemantics(beforeTarget, afterTarget);
-    expect(
-      normalizedTargetCatalog(afterCatalog, afterTarget.oid) ===
-        normalizedTargetCatalog(beforeCatalog, beforeTarget.oid),
-    ).toBe(true);
-    expect((await businessSnapshot(db())) === beforeBusiness).toBe(true);
-    for (const root of roots) {
-      expect(await outcome(db(), root.id)).toEqual(await outcome(db(), root.id, true));
-      await oracle(db(), root.id);
-    }
-    const afterOracleCatalog = await catalog(db());
-    const afterOracleTarget = await catalogTargetSignature(db());
-    emitCatalogDiagnostic(
-      afterCatalog,
-      afterOracleCatalog,
-      'CANDIDATE_ORACLE',
-      afterTarget,
-      afterOracleTarget,
-    );
-    assertTargetDefaultSemantics(afterTarget, afterOracleTarget);
-    expect(afterOracleCatalog === afterCatalog).toBe(true);
-    owner.deploySourceReuseMigrations();
-    expect(JSON.stringify(await migrationRows(db())) === JSON.stringify(afterMigrations)).toBe(
-      true,
-    );
-    const noopCatalog = await catalog(db());
-    const noopTarget = await catalogTargetSignature(db());
-    emitCatalogDiagnostic(afterOracleCatalog, noopCatalog, 'NOOP', afterOracleTarget, noopTarget);
-    assertTargetDefaultSemantics(afterOracleTarget, noopTarget);
-    expect(noopCatalog === afterOracleCatalog).toBe(true);
-    expect(
-      normalizedTargetCatalog(noopCatalog, noopTarget.oid) ===
-        normalizedTargetCatalog(beforeCatalog, beforeTarget.oid),
-    ).toBe(true);
-    expect((await businessSnapshot(db())) === beforeBusiness).toBe(true);
-    console.info(
-      'E4_ASSERT143_NONEMPTY_UPGRADE',
-      JSON.stringify({
-        from: 142,
-        to: 143,
-        historicalChecksums: 142,
-        roots: roots.length,
-        businessUnchanged: true,
-        catalogUnchanged: true,
-        frozenOracle: true,
-        noop: true,
-      }),
-    );
-  }, 120_000);
+    caseIt('cancels only its owned slow backend and settles before the next case', async () => {
+      const url = new URL(process.env.DATABASE_URL!);
+      const probeName = applicationName + '_probe';
+      url.searchParams.set('application_name', probeName);
+      const probe = new PrismaClient({ datasourceUrl: url.toString() });
+      const bounded = new E4AssertionCaseOwner(() => cancelOwnedBackends(probeName));
+      try {
+        await assertConnectedTestDatabase(probe);
+        await expect(
+          bounded.run(async () => {
+            await probe.$queryRaw`SELECT pg_sleep(60)::text`;
+          }, 5_000),
+        ).rejects.toThrow();
+        bounded.assertSettled();
+        const [alive] = await db().$queryRaw<{ alive: number }[]>`SELECT 1 AS alive`;
+        expect(alive.alive).toBe(1);
+        console.info(
+          'E4_ASSERT143_CANCELLATION',
+          JSON.stringify({
+            exactOwnedName: true,
+            currentDatabase: true,
+            pending: 0,
+            fixtureStillConnected: true,
+          }),
+        );
+      } finally {
+        await probe.$disconnect();
+      }
+    });
 
-  it('retains native source before evaluation before root error precedence with exact old/new SQLSTATE and rollback', async () => {
-    await require143();
-    const empty = roots.find((root) => root.kindCode === 'draft' && root.evaluationCount === 0)!;
-    const nonempty = roots.find((root) => root.kindCode === 'draft' && root.evaluationCount > 0)!;
-    const cases = [
-      { root: empty, mutation: { evaluationCount: 1 }, guard: 'e4_complete_guard' },
-      { root: empty, mutation: { draftContentHash: '0'.repeat(64) }, guard: 'e4_source_guard' },
-      {
-        root: empty,
-        mutation: { draftContentHash: '0'.repeat(64), evaluationCount: 1 },
-        guard: 'e4_source_guard',
+    caseIt(
+      'matches the original full-row snapshot on empty, duplicate and quoted synthetic tables',
+      async () => {
+        const names = ['snapshot_empty', 'snapshot_rows', 'snapshot_"quoted'];
+        const quoted = (name: string) => namespace + '."' + name.replaceAll('"', '""') + '"';
+        try {
+          for (const name of names)
+            await db().$executeRawUnsafe(
+              'CREATE TABLE ' + quoted(name) + ' (n integer,document jsonb)',
+            );
+          await db().$executeRawUnsafe(
+            'INSERT INTO ' +
+              quoted(names[1]) +
+              ` VALUES (2,'{"a":null,"b":"值"}'),(1,'{"z":[2,1]}'),(1,'{"z":[2,1]}')`,
+          );
+          await db().$executeRawUnsafe('INSERT INTO ' + quoted(names[2]) + ' VALUES (NULL,NULL)');
+          const original: string[] = [];
+          for (const name of names) {
+            const [row] = await db().$queryRawUnsafe<{ snapshot: string }[]>(
+              'SELECT coalesce(jsonb_agg(to_jsonb(row) ORDER BY to_jsonb(row)::text COLLATE "C"),\'[]\'::jsonb)::text AS snapshot FROM ' +
+                quoted(name) +
+                ' row',
+            );
+            original.push(row.snapshot);
+          }
+          const batched = await db().$queryRawUnsafe<{ snapshot: string }[]>(
+            e4FullRowSnapshotSql(namespace, names),
+          );
+          expect(
+            JSON.stringify(batched.map(({ snapshot }) => snapshot)) === JSON.stringify(original),
+          ).toBe(true);
+          expect(JSON.parse(batched[1].snapshot)).toHaveLength(3);
+          await db().$executeRawUnsafe(
+            'UPDATE ' +
+              quoted(names[1]) +
+              ' SET document=\'{"sameCountChangedValue":true}\' WHERE n=2',
+          );
+          const changed = await db().$queryRawUnsafe<{ snapshot: string }[]>(
+            e4FullRowSnapshotSql(namespace, names),
+          );
+          expect(JSON.stringify(changed) === JSON.stringify(batched)).toBe(false);
+          console.info(
+            'E4_ASSERT143_SNAPSHOT_EQUIVALENCE',
+            JSON.stringify({
+              fullRows: true,
+              empty: true,
+              duplicates: true,
+              quotedIdentifiers: true,
+              sameCountMutationDetected: true,
+            }),
+          );
+        } finally {
+          for (const name of names)
+            await db().$executeRawUnsafe('DROP TABLE IF EXISTS ' + quoted(name));
+        }
       },
-      { root: nonempty, mutation: {}, guard: 'e4_evaluation_guard' },
-      { root: nonempty, mutation: { evaluationCount: 99 }, guard: 'e4_evaluation_guard' },
-      {
-        root: nonempty,
-        mutation: { draftContentHash: '0'.repeat(64), evaluationCount: 99 },
-        guard: 'e4_source_guard',
+    );
+
+    caseIt(
+      'preserves every business row and catalog identity on nonempty142 to143 and no-op with frozen root/day/source oracle',
+      async () => {
+        const beforeMigrations = await migrationRows(db());
+        expect(beforeMigrations).toHaveLength(142);
+        expect(beforeMigrations[141].name).toBe(E4_MIGRATION_142);
+        const beforeCatalog = await catalog(db());
+        const beforeTarget = await catalogTargetSignature(db());
+        const beforeBusiness = await businessSnapshot(db());
+        for (const root of roots) {
+          expect(await outcome(db(), root.id)).toEqual({ state: '00000', guard: 'NONE' });
+          await oracle(db(), root.id);
+        }
+        const baselineAfterOracleCatalog = await catalog(db());
+        const baselineAfterOracleTarget = await catalogTargetSignature(db());
+        emitCatalogDiagnostic(
+          beforeCatalog,
+          baselineAfterOracleCatalog,
+          'BASELINE_ORACLE',
+          beforeTarget,
+          baselineAfterOracleTarget,
+        );
+        await owner.deploySourceReuseMigrations(cases.remainingMs());
+        const afterMigrations = await migrationRows(db());
+        expect(afterMigrations).toHaveLength(143);
+        expect(
+          JSON.stringify(afterMigrations.slice(0, 142)) === JSON.stringify(beforeMigrations),
+        ).toBe(true);
+        expect(afterMigrations[142]).toEqual({ name: E4_MIGRATION_143, checksum: candidateSha });
+        const candidate = readFileSync(
+          resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_143, 'migration.sql'),
+          'utf8',
+        );
+        expect(createHash('sha256').update(candidate).digest('hex')).toBe(candidateSha);
+        const [installedBody] = await db().$queryRaw<
+          { pin: string; body: string }[]
+        >`SELECT md5(prosrc) AS pin,prosrc AS body FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure`;
+        expect(installedBody.pin).toBe(newPin);
+        expect(installedBody.body === candidate.split('$$')[1]).toBe(true);
+        console.info(
+          'E4_ASSERT143_INSTALLED',
+          JSON.stringify({
+            migrations: afterMigrations.length,
+            migration: afterMigrations[142].name,
+            checksum: candidateSha,
+            bodyPin: installedBody.pin,
+          }),
+        );
+        const afterCatalog = await catalog(db());
+        const afterTarget = await catalogTargetSignature(db());
+        emitCatalogDiagnostic(
+          baselineAfterOracleCatalog,
+          afterCatalog,
+          'UPGRADE',
+          baselineAfterOracleTarget,
+          afterTarget,
+        );
+        assertTargetDefaultSemantics(beforeTarget, afterTarget);
+        expect(
+          normalizedTargetCatalog(afterCatalog, afterTarget.oid) ===
+            normalizedTargetCatalog(beforeCatalog, beforeTarget.oid),
+        ).toBe(true);
+        expect((await businessSnapshot(db())) === beforeBusiness).toBe(true);
+        for (const root of roots) {
+          expect(await outcome(db(), root.id)).toEqual(await outcome(db(), root.id, true));
+          await oracle(db(), root.id);
+        }
+        const afterOracleCatalog = await catalog(db());
+        const afterOracleTarget = await catalogTargetSignature(db());
+        emitCatalogDiagnostic(
+          afterCatalog,
+          afterOracleCatalog,
+          'CANDIDATE_ORACLE',
+          afterTarget,
+          afterOracleTarget,
+        );
+        assertTargetDefaultSemantics(afterTarget, afterOracleTarget);
+        expect(afterOracleCatalog === afterCatalog).toBe(true);
+        await owner.deploySourceReuseMigrations(cases.remainingMs());
+        expect(JSON.stringify(await migrationRows(db())) === JSON.stringify(afterMigrations)).toBe(
+          true,
+        );
+        const noopCatalog = await catalog(db());
+        const noopTarget = await catalogTargetSignature(db());
+        emitCatalogDiagnostic(
+          afterOracleCatalog,
+          noopCatalog,
+          'NOOP',
+          afterOracleTarget,
+          noopTarget,
+        );
+        assertTargetDefaultSemantics(afterOracleTarget, noopTarget);
+        expect(noopCatalog === afterOracleCatalog).toBe(true);
+        expect(
+          normalizedTargetCatalog(noopCatalog, noopTarget.oid) ===
+            normalizedTargetCatalog(beforeCatalog, beforeTarget.oid),
+        ).toBe(true);
+        expect((await businessSnapshot(db())) === beforeBusiness).toBe(true);
+        upgraded143 = true;
+        console.info(
+          'E4_ASSERT143_NONEMPTY_UPGRADE',
+          JSON.stringify({
+            from: 142,
+            to: 143,
+            historicalChecksums: 142,
+            roots: roots.length,
+            businessUnchanged: true,
+            catalogUnchanged: true,
+            frozenOracle: true,
+            noop: true,
+          }),
+        );
       },
-    ];
-    const before = await businessSnapshot(db());
-    for (const testcase of cases) {
-      await expect(
-        db().$transaction(async (tx) => {
-          const root = await tx.activitySettlementContributionRevision.create({
-            data: {
-              ...rootData(
-                testcase.root,
-                testcase.root.revision + 10,
-                fixture!.key('source_reuse_negative'),
-              ),
-              ...testcase.mutation,
-            },
-          });
-          const expected = { state: '23514', guard: testcase.guard };
-          expect(await outcome(tx, root.id, true)).toEqual(expected);
-          expect(await outcome(tx, root.id)).toEqual(expected);
-          throw rollback;
-        }, guardTransactionOptions),
-      ).rejects.toBe(rollback);
-      expect((await businessSnapshot(db())) === before).toBe(true);
-    }
-  }, 120_000);
+      120_000,
+    );
 
-  it('keeps the independent final version/result check after valid sources and evaluations', async () => {
-    await require143();
-    const root = roots.find((row) => row.kindCode === 'submitted' && row.evaluationCount > 0)!;
-    const before = await businessSnapshot(db());
-    await expect(
-      db().$transaction(async (tx) => {
-        await tx.attendanceSettlementVersion.update({
-          where: { id: root.settlementVersionId },
-          data: { sessionParticipationCount: { increment: 1 } },
-        });
-        expect(await outcome(tx, root.id, true, false)).toEqual({ state: '00000', guard: 'NONE' });
-        expect(await outcome(tx, root.id, false, false)).toEqual({ state: '00000', guard: 'NONE' });
-        expect(await outcome(tx, root.id, true)).toEqual({
-          state: '23514',
-          guard: 'e4_result_guard',
-        });
-        expect(await outcome(tx, root.id)).toEqual({ state: '23514', guard: 'e4_result_guard' });
-        throw rollback;
-      }, guardTransactionOptions),
-    ).rejects.toBe(rollback);
-    expect((await businessSnapshot(db())) === before).toBe(true);
-  });
+    caseIt(
+      'retains native source before evaluation before root error precedence with exact old/new SQLSTATE and rollback',
+      async () => {
+        await require143();
+        const empty = roots.find(
+          (root) => root.kindCode === 'draft' && root.evaluationCount === 0,
+        )!;
+        const nonempty = roots.find(
+          (root) => root.kindCode === 'draft' && root.evaluationCount > 0,
+        )!;
+        const cases = [
+          { root: empty, mutation: { evaluationCount: 1 }, guard: 'e4_complete_guard' },
+          { root: empty, mutation: { draftContentHash: '0'.repeat(64) }, guard: 'e4_source_guard' },
+          {
+            root: empty,
+            mutation: { draftContentHash: '0'.repeat(64), evaluationCount: 1 },
+            guard: 'e4_source_guard',
+          },
+          { root: nonempty, mutation: {}, guard: 'e4_evaluation_guard' },
+          { root: nonempty, mutation: { evaluationCount: 99 }, guard: 'e4_evaluation_guard' },
+          {
+            root: nonempty,
+            mutation: { draftContentHash: '0'.repeat(64), evaluationCount: 99 },
+            guard: 'e4_source_guard',
+          },
+        ];
+        const before = await businessSnapshot(db());
+        for (const testcase of cases) {
+          await expect(
+            db().$transaction(async (tx) => {
+              const root = await tx.activitySettlementContributionRevision.create({
+                data: {
+                  ...rootData(
+                    testcase.root,
+                    testcase.root.revision + 10,
+                    fixture!.key('source_reuse_negative'),
+                  ),
+                  ...testcase.mutation,
+                },
+              });
+              const expected = { state: '23514', guard: testcase.guard };
+              expect(await outcome(tx, root.id, true)).toEqual(expected);
+              expect(await outcome(tx, root.id)).toEqual(expected);
+              throw rollback;
+            }, guardTransactionOptions),
+          ).rejects.toBe(rollback);
+          expect((await businessSnapshot(db())) === before).toBe(true);
+        }
+      },
+      120_000,
+    );
 
-  it('rejects unresolved sources before evaluation/day construction in private SQL fault fixtures', async () => {
-    await require143();
-    const root = roots.find((row) => row.kindCode === 'draft' && row.evaluationCount > 0)!;
-    // No production function, trigger, index or constraint is changed. Private copies
-    // inject one NULL source field and a failing day constructor to exercise the
-    // otherwise unreachable double fault without weakening earlier database guards.
-    await db().$executeRawUnsafe(
-      'CREATE FUNCTION ' +
-        namespace +
-        `.invalid_sources(revision_id text)
+    caseIt(
+      'keeps the independent final version/result check after valid sources and evaluations',
+      async () => {
+        await require143();
+        const root = roots.find((row) => row.kindCode === 'submitted' && row.evaluationCount > 0)!;
+        const before = await businessSnapshot(db());
+        await expect(
+          db().$transaction(async (tx) => {
+            await tx.attendanceSettlementVersion.update({
+              where: { id: root.settlementVersionId },
+              data: { sessionParticipationCount: { increment: 1 } },
+            });
+            expect(await outcome(tx, root.id, true, false)).toEqual({
+              state: '00000',
+              guard: 'NONE',
+            });
+            expect(await outcome(tx, root.id, false, false)).toEqual({
+              state: '00000',
+              guard: 'NONE',
+            });
+            expect(await outcome(tx, root.id, true)).toEqual({
+              state: '23514',
+              guard: 'e4_result_guard',
+            });
+            expect(await outcome(tx, root.id)).toEqual({
+              state: '23514',
+              guard: 'e4_result_guard',
+            });
+            throw rollback;
+          }, guardTransactionOptions),
+        ).rejects.toBe(rollback);
+        expect((await businessSnapshot(db())) === before).toBe(true);
+      },
+    );
+
+    caseIt(
+      'rejects unresolved sources before evaluation/day construction in private SQL fault fixtures',
+      async () => {
+        await require143();
+        const root = roots.find((row) => row.kindCode === 'draft' && row.evaluationCount > 0)!;
+        // No production function, trigger, index or constraint is changed. Private copies
+        // inject one NULL source field and a failing day constructor to exercise the
+        // otherwise unreachable double fault without weakening earlier database guards.
+        await db().$executeRawUnsafe(
+          'CREATE FUNCTION ' +
+            namespace +
+            `.invalid_sources(revision_id text)
       RETURNS TABLE(identity_id text,member_id text,session_id text,snapshot_id text,item_id text,
         policy_id text,policy_version_id text,definition_hash text,evaluator_version integer,
         role_code text,category_code text,source_ref jsonb)
@@ -1004,64 +1204,66 @@ describe('E4 complete assertion source reuse migration 143', () => {
       SELECT identity_id,NULL::text,session_id,snapshot_id,item_id,policy_id,policy_version_id,
         definition_hash,evaluator_version,role_code,category_code,source_ref
       FROM public.e4_source_rows(revision_id) $body$;`,
-    );
-    await db().$executeRawUnsafe(
-      'CREATE FUNCTION ' +
-        namespace +
-        `.failing_days(refs jsonb,hundredths integer)
+        );
+        await db().$executeRawUnsafe(
+          'CREATE FUNCTION ' +
+            namespace +
+            `.failing_days(refs jsonb,hundredths integer)
       RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER AS $body$
       BEGIN RAISE EXCEPTION 'E4 private unexpected day construction'; END $body$;`,
-    );
-    const expectedSql = readFileSync(
-      resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_140, 'migration.sql'),
-      'utf8',
-    );
-    const expectedDefinitions = [
-      ...expectedSql.matchAll(/CREATE OR REPLACE FUNCTION e4_expected_evaluations\([^]*?\$\$;/gu),
-    ];
-    expect(expectedDefinitions).toHaveLength(1);
-    await db().$executeRawUnsafe(
-      expectedDefinitions[0][0]
-        .replace(
-          'CREATE OR REPLACE FUNCTION e4_expected_evaluations(',
-          'CREATE FUNCTION ' + namespace + '.invalid_expected(',
-        )
-        .replaceAll('e4_source_rows(', namespace + '.invalid_sources(')
-        .replaceAll('e4_day_points(', namespace + '.failing_days('),
-    );
-    await db().$executeRawUnsafe(
-      frozenAssertion()
-        .replace(namespace + '.original142(', namespace + '.invalid142(')
-        .replaceAll('e4_source_rows(', namespace + '.invalid_sources(')
-        .replaceAll('e4_expected_evaluations(', namespace + '.invalid_expected('),
-    );
-    const candidate = readFileSync(
-      resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_143, 'migration.sql'),
-      'utf8',
-    );
-    const definition = [
-      ...candidate.matchAll(/CREATE OR REPLACE FUNCTION e4_assert_complete\([^]*?\$\$;/gu),
-    ];
-    expect(definition).toHaveLength(1);
-    await db().$executeRawUnsafe(
-      definition[0][0]
-        .replace(
-          'CREATE OR REPLACE FUNCTION e4_assert_complete(',
-          'CREATE FUNCTION ' + namespace + '.invalid143(',
-        )
-        .replaceAll('e4_source_rows(', namespace + '.invalid_sources(')
-        .replaceAll('e4_day_points(', namespace + '.failing_days('),
-    );
-    await db().$executeRawUnsafe(
-      'CREATE FUNCTION ' +
-        namespace +
-        `.invalid_priority(revision_id text) RETURNS boolean
+        );
+        const expectedSql = readFileSync(
+          resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_140, 'migration.sql'),
+          'utf8',
+        );
+        const expectedDefinitions = [
+          ...expectedSql.matchAll(
+            /CREATE OR REPLACE FUNCTION e4_expected_evaluations\([^]*?\$\$;/gu,
+          ),
+        ];
+        expect(expectedDefinitions).toHaveLength(1);
+        await db().$executeRawUnsafe(
+          expectedDefinitions[0][0]
+            .replace(
+              'CREATE OR REPLACE FUNCTION e4_expected_evaluations(',
+              'CREATE FUNCTION ' + namespace + '.invalid_expected(',
+            )
+            .replaceAll('e4_source_rows(', namespace + '.invalid_sources(')
+            .replaceAll('e4_day_points(', namespace + '.failing_days('),
+        );
+        await db().$executeRawUnsafe(
+          frozenAssertion()
+            .replace(namespace + '.original142(', namespace + '.invalid142(')
+            .replaceAll('e4_source_rows(', namespace + '.invalid_sources(')
+            .replaceAll('e4_expected_evaluations(', namespace + '.invalid_expected('),
+        );
+        const candidate = readFileSync(
+          resolve(__dirname, '../../prisma/migrations', E4_MIGRATION_143, 'migration.sql'),
+          'utf8',
+        );
+        const definition = [
+          ...candidate.matchAll(/CREATE OR REPLACE FUNCTION e4_assert_complete\([^]*?\$\$;/gu),
+        ];
+        expect(definition).toHaveLength(1);
+        await db().$executeRawUnsafe(
+          definition[0][0]
+            .replace(
+              'CREATE OR REPLACE FUNCTION e4_assert_complete(',
+              'CREATE FUNCTION ' + namespace + '.invalid143(',
+            )
+            .replaceAll('e4_source_rows(', namespace + '.invalid_sources(')
+            .replaceAll('e4_day_points(', namespace + '.failing_days('),
+        );
+        await db().$executeRawUnsafe(
+          'CREATE FUNCTION ' +
+            namespace +
+            `.invalid_priority(revision_id text) RETURNS boolean
       LANGUAGE plpgsql SECURITY INVOKER AS $body$
       DECLARE actual_state text; actual_guard text; day_failed boolean := false;
       BEGIN
         BEGIN PERFORM * FROM ` +
-        namespace +
-        `.invalid_expected(revision_id);
+            namespace +
+            `.invalid_expected(revision_id);
         EXCEPTION WHEN OTHERS THEN
           IF SQLERRM IS DISTINCT FROM 'E4 private unexpected day construction' THEN
             RAISE EXCEPTION 'E4 private day fault fixture mismatch';
@@ -1070,8 +1272,8 @@ describe('E4 complete assertion source reuse migration 143', () => {
         END;
         IF NOT day_failed THEN RAISE EXCEPTION 'E4 private day fault fixture did not execute'; END IF;
         BEGIN PERFORM ` +
-        namespace +
-        `.invalid142(revision_id);
+            namespace +
+            `.invalid142(revision_id);
           RAISE EXCEPTION 'E4 private unresolved source accepted';
         EXCEPTION WHEN OTHERS THEN
           GET STACKED DIAGNOSTICS actual_state=RETURNED_SQLSTATE,actual_guard=CONSTRAINT_NAME;
@@ -1080,8 +1282,8 @@ describe('E4 complete assertion source reuse migration 143', () => {
           END IF;
         END;
         BEGIN PERFORM ` +
-        namespace +
-        `.invalid143(revision_id);
+            namespace +
+            `.invalid143(revision_id);
           RAISE EXCEPTION 'E4 private unresolved source accepted';
         EXCEPTION WHEN OTHERS THEN
           GET STACKED DIAGNOSTICS actual_state=RETURNED_SQLSTATE,actual_guard=CONSTRAINT_NAME;
@@ -1091,194 +1293,221 @@ describe('E4 complete assertion source reuse migration 143', () => {
         END;
         RETURN true;
       END $body$;`,
+        );
+        const [result] = await db().$queryRawUnsafe<{ matches: boolean }[]>(
+          'SELECT ' + namespace + '.invalid_priority($1) AS matches',
+          root.id,
+        );
+        expect(result.matches).toBe(true);
+      },
     );
-    const [result] = await db().$queryRawUnsafe<{ matches: boolean }[]>(
-      'SELECT ' + namespace + '.invalid_priority($1) AS matches',
-      root.id,
+
+    caseIt(
+      'keeps INSERT and deferred checks independent and rolls back the whole transaction on a later incomplete root',
+      async () => {
+        await require143();
+        const template = roots.find((row) => row.kindCode === 'draft' && row.evaluationCount > 0)!;
+        const evaluations = await db().participantContributionEvaluation.findMany({
+          where: { contributionRevisionId: template.id },
+        });
+        const observer = new PrismaClient();
+        try {
+          await assertConnectedTestDatabase(observer);
+          const before = await businessSnapshot(observer);
+          let statementPassed = false;
+          let incompleteGuard: Outcome | undefined;
+          let commitError: unknown;
+          let callbackReturned = false;
+          try {
+            await db().$transaction(async (tx) => {
+              const root = await tx.activitySettlementContributionRevision.create({
+                data: rootData(
+                  template,
+                  template.revision + 10,
+                  fixture!.key('source_reuse_insert'),
+                ),
+              });
+              await tx.participantContributionEvaluation.createMany({
+                data: evaluations.map((evaluation) => ({
+                  ...withoutIdentity(evaluation),
+                  contributionRevisionId: root.id,
+                  sourceRefsJson: evaluation.sourceRefsJson as Prisma.InputJsonValue,
+                  beijingDayPointsJson: evaluation.beijingDayPointsJson as Prisma.InputJsonValue,
+                })),
+              });
+              statementPassed = true;
+              expect(await outcome(tx, root.id)).toEqual({ state: '00000', guard: 'NONE' });
+              const incomplete = await tx.activitySettlementContributionRevision.create({
+                data: rootData(
+                  template,
+                  template.revision + 11,
+                  fixture!.key('source_reuse_deferred'),
+                ),
+              });
+              // This catches the original SQLSTATE and constraint for this same root.
+              // It leaves the unchanged queued deferred trigger to reject actual COMMIT.
+              incompleteGuard = await outcome(tx, incomplete.id);
+              // No explicit SET: the unchanged native deferred trigger must reject COMMIT.
+              callbackReturned = true;
+            }, guardTransactionOptions);
+          } catch (error) {
+            commitError = error;
+          }
+          // Read on the independent client before error assertions, including on an
+          // unexpected wrapper/failure, so a mismatch never hides rollback evidence.
+          const rolledBack = (await businessSnapshot(observer)) === before;
+          console.info('E4_ASSERT143_DEFERRED_ROLLBACK', JSON.stringify({ rolledBack }));
+          console.info(
+            'E4_ASSERT143_COMMIT_ERROR',
+            JSON.stringify({
+              callbackReturned,
+              rolledBack,
+              statementPassed,
+              incompleteGuard,
+              parsedCommitError: deferredEvaluationErrorEvidence(commitError),
+              actualError: deferredErrorDiagnostic(commitError),
+            }),
+          );
+          expect(rolledBack).toBe(true);
+          expect(statementPassed).toBe(true);
+          expect(callbackReturned).toBe(true);
+          expect(incompleteGuard).toEqual({ state: '23514', guard: 'e4_evaluation_guard' });
+          expect(deferredEvaluationErrorEvidence(commitError)).toEqual({
+            unknownRequest: true,
+            sqlstate: 'NONE',
+            evaluationGuardMessage: true,
+          });
+        } finally {
+          await observer.$disconnect();
+        }
+      },
     );
-    expect(result.matches).toBe(true);
-  });
 
-  it('keeps INSERT and deferred checks independent and rolls back the whole transaction on a later incomplete root', async () => {
-    await require143();
-    const template = roots.find((row) => row.kindCode === 'draft' && row.evaluationCount > 0)!;
-    const evaluations = await db().participantContributionEvaluation.findMany({
-      where: { contributionRevisionId: template.id },
-    });
-    const observer = new PrismaClient();
-    try {
-      await assertConnectedTestDatabase(observer);
-      const before = await businessSnapshot(observer);
-      let statementPassed = false;
-      let incompleteGuard: Outcome | undefined;
-      let commitError: unknown;
-      let callbackReturned = false;
-      try {
-        await db().$transaction(async (tx) => {
-          const root = await tx.activitySettlementContributionRevision.create({
-            data: rootData(template, template.revision + 10, fixture!.key('source_reuse_insert')),
-          });
-          await tx.participantContributionEvaluation.createMany({
-            data: evaluations.map((evaluation) => ({
-              ...withoutIdentity(evaluation),
-              contributionRevisionId: root.id,
-              sourceRefsJson: evaluation.sourceRefsJson as Prisma.InputJsonValue,
-              beijingDayPointsJson: evaluation.beijingDayPointsJson as Prisma.InputJsonValue,
-            })),
-          });
-          statementPassed = true;
-          expect(await outcome(tx, root.id)).toEqual({ state: '00000', guard: 'NONE' });
-          const incomplete = await tx.activitySettlementContributionRevision.create({
-            data: rootData(template, template.revision + 11, fixture!.key('source_reuse_deferred')),
-          });
-          // This catches the original SQLSTATE and constraint for this same root.
-          // It leaves the unchanged queued deferred trigger to reject actual COMMIT.
-          incompleteGuard = await outcome(tx, incomplete.id);
-          // No explicit SET: the unchanged native deferred trigger must reject COMMIT.
-          callbackReturned = true;
-        }, guardTransactionOptions);
-      } catch (error) {
-        commitError = error;
-      }
-      // Read on the independent client before error assertions, including on an
-      // unexpected wrapper/failure, so a mismatch never hides rollback evidence.
-      const rolledBack = (await businessSnapshot(observer)) === before;
-      console.info('E4_ASSERT143_DEFERRED_ROLLBACK', JSON.stringify({ rolledBack }));
-      console.info(
-        'E4_ASSERT143_COMMIT_ERROR',
-        JSON.stringify({
-          callbackReturned,
-          rolledBack,
-          statementPassed,
-          incompleteGuard,
-          parsedCommitError: deferredEvaluationErrorEvidence(commitError),
-          actualError: deferredErrorDiagnostic(commitError),
-        }),
-      );
-      expect(rolledBack).toBe(true);
-      expect(statementPassed).toBe(true);
-      expect(callbackReturned).toBe(true);
-      expect(incompleteGuard).toEqual({ state: '23514', guard: 'e4_evaluation_guard' });
-      expect(deferredEvaluationErrorEvidence(commitError)).toEqual({
-        unknownRequest: true,
-        sqlstate: 'NONE',
-        evaluationGuardMessage: true,
-      });
-    } finally {
-      await observer.$disconnect();
-    }
-  });
-
-  it('uses a real statement snapshot across an observed two-backend commit and reads fresh sources on the next invocation', async () => {
-    await require143();
-    const observer = new PrismaClient();
-    const template = roots.find((row) => row.kindCode === 'draft' && row.evaluationCount > 0)!;
-    const evaluations = await db().participantContributionEvaluation.findMany({
-      where: { contributionRevisionId: template.id },
-    });
-    const lockKey = randomBytes(4).readInt32BE();
-    const rootId = fixture!.key('source_reuse_visibility');
-    let started!: (pid: number) => void;
-    let rejectStarted!: (error: unknown) => void;
-    let release!: () => void;
-    const ready = new Promise<number>((resolve, reject) => {
-      started = resolve;
-      rejectStarted = reject;
-    });
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let writer: Promise<unknown> | undefined;
-    let reader: Promise<{ before: number; after: number }[]> | undefined;
-    try {
-      await assertConnectedTestDatabase(observer);
-      writer = db().$transaction(
-        async (tx) => {
-          const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-          await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)::text`;
-          await tx.activitySettlementContributionRevision.create({
-            data: {
-              ...rootData(template, template.revision + 20, fixture!.key('source_reuse_committed')),
-              id: rootId,
+    caseIt(
+      'uses a real statement snapshot across an observed two-backend commit and reads fresh sources on the next invocation',
+      async () => {
+        await require143();
+        const observer = new PrismaClient();
+        const template = roots.find((row) => row.kindCode === 'draft' && row.evaluationCount > 0)!;
+        const evaluations = await db().participantContributionEvaluation.findMany({
+          where: { contributionRevisionId: template.id },
+        });
+        const lockKey = randomBytes(4).readInt32BE();
+        const rootId = fixture!.key('source_reuse_visibility');
+        let started!: (pid: number) => void;
+        let rejectStarted!: (error: unknown) => void;
+        let release!: () => void;
+        const ready = new Promise<number>((resolve, reject) => {
+          started = resolve;
+          rejectStarted = reject;
+        });
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        let writer: Promise<unknown> | undefined;
+        let reader: Promise<{ before: number; after: number }[]> | undefined;
+        try {
+          await assertConnectedTestDatabase(observer);
+          writer = db().$transaction(
+            async (tx) => {
+              const [{ pid }] = await tx.$queryRaw<
+                { pid: number }[]
+              >`SELECT pg_backend_pid() AS pid`;
+              await tx.$queryRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)::text`;
+              await tx.activitySettlementContributionRevision.create({
+                data: {
+                  ...rootData(
+                    template,
+                    template.revision + 20,
+                    fixture!.key('source_reuse_committed'),
+                  ),
+                  id: rootId,
+                },
+              });
+              await tx.participantContributionEvaluation.createMany({
+                data: evaluations.map((evaluation) => ({
+                  ...withoutIdentity(evaluation),
+                  contributionRevisionId: rootId,
+                  sourceRefsJson: evaluation.sourceRefsJson as Prisma.InputJsonValue,
+                  beijingDayPointsJson: evaluation.beijingDayPointsJson as Prisma.InputJsonValue,
+                })),
+              });
+              started(pid);
+              await gate;
             },
-          });
-          await tx.participantContributionEvaluation.createMany({
-            data: evaluations.map((evaluation) => ({
-              ...withoutIdentity(evaluation),
-              contributionRevisionId: rootId,
-              sourceRefsJson: evaluation.sourceRefsJson as Prisma.InputJsonValue,
-              beijingDayPointsJson: evaluation.beijingDayPointsJson as Prisma.InputJsonValue,
-            })),
-          });
-          started(pid);
-          await gate;
-        },
-        { timeout: 20_000 },
-      );
-      void writer.catch(rejectStarted);
-      const writerPid = await ready;
-      expect(await outcome(observer, rootId)).toEqual({ state: 'P0002', guard: 'NONE' });
-      reader = observer.$queryRaw<{ before: number; after: number }[]>`
+            { timeout: 20_000 },
+          );
+          void writer.catch(rejectStarted);
+          const writerPid = await ready;
+          expect(await outcome(observer, rootId)).toEqual({ state: 'P0002', guard: 'NONE' });
+          reader = observer.$queryRaw<{ before: number; after: number }[]>`
         WITH before_read AS MATERIALIZED (SELECT count(*)::int AS n FROM public.e4_source_rows(${rootId})),
         barrier AS MATERIALIZED (SELECT pg_advisory_xact_lock(${lockKey}::bigint)::text FROM before_read)
         SELECT b.n AS before,(SELECT count(*)::int FROM public.e4_source_rows(${rootId})) AS after FROM before_read b CROSS JOIN barrier
       `.then((rows) => rows);
-      void reader.catch(() => undefined);
-      // Observe the actual advisory waiter in this database before permitting COMMIT.
-      const deadline = Date.now() + 5_000;
-      let waited = false;
-      while (Date.now() < deadline) {
-        const [row] = await db().$queryRaw<{ waiting: boolean }[]>`
+          void reader.catch(() => undefined);
+          // Observe the actual advisory waiter in this database before permitting COMMIT.
+          const deadline = Date.now() + 5_000;
+          let waited = false;
+          while (Date.now() < deadline) {
+            const [row] = await db().$queryRaw<{ waiting: boolean }[]>`
           SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database()
             AND wait_event_type='Lock' AND ${writerPid} = ANY(pg_blocking_pids(pid))) AS waiting
         `;
-        if (row.waiting) {
-          waited = true;
-          break;
+            if (row.waiting) {
+              waited = true;
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          expect(waited).toBe(true);
+          release();
+          await writer;
+          expect(await reader).toEqual([{ before: 0, after: 0 }]);
+          const [fresh] = await observer.$queryRaw<
+            { sources: number }[]
+          >`SELECT count(*)::int AS sources FROM public.e4_source_rows(${rootId})`;
+          expect(fresh.sources).toBeGreaterThan(0);
+          expect(await outcome(observer, rootId)).toEqual({ state: '00000', guard: 'NONE' });
+          expect(await outcome(observer, rootId, true)).toEqual({ state: '00000', guard: 'NONE' });
+          await oracle(observer, rootId);
+          console.info(
+            'E4_ASSERT143_SNAPSHOT',
+            JSON.stringify({
+              observedWait: true,
+              statementBefore: 0,
+              statementAfter: 0,
+              nextInvocationFresh: true,
+              committed: true,
+            }),
+          );
+        } finally {
+          release?.();
+          await Promise.allSettled([writer, reader]);
+          await observer.$disconnect();
         }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(waited).toBe(true);
-      release();
-      await writer;
-      expect(await reader).toEqual([{ before: 0, after: 0 }]);
-      const [fresh] = await observer.$queryRaw<
-        { sources: number }[]
-      >`SELECT count(*)::int AS sources FROM public.e4_source_rows(${rootId})`;
-      expect(fresh.sources).toBeGreaterThan(0);
-      expect(await outcome(observer, rootId)).toEqual({ state: '00000', guard: 'NONE' });
-      expect(await outcome(observer, rootId, true)).toEqual({ state: '00000', guard: 'NONE' });
-      await oracle(observer, rootId);
-      console.info(
-        'E4_ASSERT143_SNAPSHOT',
-        JSON.stringify({
-          observedWait: true,
-          statementBefore: 0,
-          statementAfter: 0,
-          nextInvocationFresh: true,
-          committed: true,
-        }),
-      );
-    } finally {
-      release?.();
-      await Promise.allSettled([writer, reader]);
-      await observer.$disconnect();
-    }
-  }, 30_000);
+      },
+      30_000,
+    );
 
-  it('runs real prepare and submit after143 with native guards and the independent frozen oracle', async () => {
-    await require143();
-    const source = await createE4Source(fixture!);
-    expectations.set(source.activityId, singleSourceExpectation);
-    const prepared = await prepareE4Time(fixture!, source);
-    await submitE4Time(fixture!, source, prepared);
-    const current = await db().activitySettlementContributionRevision.findMany({
-      where: { activityId: source.activityId },
-    });
-    expect(current).toHaveLength(2);
-    for (const root of current) {
-      expect(await outcome(db(), root.id)).toEqual(await outcome(db(), root.id, true));
-      await oracle(db(), root.id);
-    }
-  }, 120_000);
+    caseIt(
+      'runs real prepare and submit after143 with native guards and the independent frozen oracle',
+      async () => {
+        await require143();
+        const source = await createE4Source(fixture!);
+        expectations.set(source.activityId, singleSourceExpectation);
+        const prepared = await prepareE4Time(fixture!, source);
+        await submitE4Time(fixture!, source, prepared);
+        const current = await db().activitySettlementContributionRevision.findMany({
+          where: { activityId: source.activityId },
+        });
+        expect(current).toHaveLength(2);
+        for (const root of current) {
+          expect(await outcome(db(), root.id)).toEqual(await outcome(db(), root.id, true));
+          await oracle(db(), root.id);
+        }
+      },
+      120_000,
+    );
+  });
 });

@@ -13,6 +13,7 @@ import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { runE4OwnedMigrationProcess } from './e4-owned-migration-process';
 import {
   copyFileSync,
   mkdirSync,
@@ -188,6 +189,8 @@ export function installE4ValidationDatabase(options?: {
   baselineMigrationCount?: 136;
   historicalMigration137?: true;
   allowInstallRetain?: boolean;
+  assertReadyToFinalize?: () => void;
+  boundMigrationProcesses?: true;
 }) {
   const dedicated = process.env.SRVF_E4_W98 === '1';
   if (process.env.SRVF_E4_GITHUB_ISOLATED !== undefined) resolveE4ValidationScope();
@@ -206,49 +209,75 @@ export function installE4ValidationDatabase(options?: {
   let worker: number | undefined;
   let initialized = false;
   let historicalSchema: string | undefined;
-  const deploy = (schema?: string) => {
-    assertTestDatabaseUrl(process.env.DATABASE_URL);
+  let boundedDeployPending = 0;
+  let boundedDeployUnknown = false;
+  let setupPending = 0;
+  let setupUnknown = false;
+  const deployFailure = (error: unknown): never => {
+    const databaseUrl = process.env.DATABASE_URL ?? '';
+    const secrets = [databaseUrl];
     try {
-      execFileSync(
-        'pnpm',
-        ['exec', 'prisma', 'migrate', 'deploy', ...(schema ? ['--schema', schema] : [])],
-        {
-          env: process.env,
-          stdio: 'pipe',
-        },
-      );
-    } catch (error) {
-      const databaseUrl = process.env.DATABASE_URL ?? '';
-      const secrets = [databaseUrl];
-      try {
-        const password = new URL(databaseUrl).password;
-        secrets.push(password, decodeURIComponent(password));
-      } catch {
-        // URL parsing cannot replace the original subprocess failure.
-      }
-      const evidence = e4MigrationFailureEvidence(error, secrets);
-      let retained = false;
-      try {
-        const directory = resolve(__dirname, '../../tmp/e4-prepare-cost-evidence');
-        mkdirSync(directory, { recursive: true });
-        const body = JSON.stringify(evidence, null, 2) + '\n';
-        if (Buffer.byteLength(body) > 65536) throw new Error('E4 migration evidence size exceeded');
-        writeFileSync(
-          join(directory, `migration-failure-${process.pid}-${Date.now()}.json`),
-          body,
-          { mode: 0o600, flag: 'wx' },
-        );
-        retained = true;
-      } catch {
-        // Retention failure must not replace the original subprocess failure.
-      }
-      throw new Error(
-        `E4 isolated migration deploy failed status=${evidence.status} signal=${evidence.signal} code=${evidence.processCode} retained=${retained}\n` +
-          JSON.stringify(evidence),
-      );
+      const password = new URL(databaseUrl).password;
+      secrets.push(password, decodeURIComponent(password));
+    } catch {
+      // URL parsing cannot replace the original subprocess failure.
     }
+    const evidence = e4MigrationFailureEvidence(error, secrets);
+    let retained = false;
+    try {
+      const directory = resolve(__dirname, '../../tmp/e4-prepare-cost-evidence');
+      mkdirSync(directory, { recursive: true });
+      const body = JSON.stringify(evidence, null, 2) + '\n';
+      if (Buffer.byteLength(body) > 65536) throw new Error('E4 migration evidence size exceeded');
+      writeFileSync(join(directory, `migration-failure-${process.pid}-${Date.now()}.json`), body, {
+        mode: 0o600,
+        flag: 'wx',
+      });
+      retained = true;
+    } catch {
+      // Retention failure must not replace the original subprocess failure.
+    }
+    throw new Error(
+      `E4 isolated migration deploy failed status=${evidence.status} signal=${evidence.signal} code=${evidence.processCode} retained=${retained}\n` +
+        JSON.stringify(evidence),
+    );
   };
-  const deployHistoricalMigrations = (count: 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144) => {
+  function deploy(schema?: string): void;
+  function deploy(schema: string | undefined, timeout: number): Promise<void>;
+  function deploy(schema: string | undefined, timeout: number | undefined): void | Promise<void>;
+  function deploy(schema?: string, timeout?: number) {
+    assertTestDatabaseUrl(process.env.DATABASE_URL);
+    const args = ['exec', 'prisma', 'migrate', 'deploy', ...(schema ? ['--schema', schema] : [])];
+    if (timeout !== undefined) {
+      boundedDeployPending++;
+      return runE4OwnedMigrationProcess(args, timeout)
+        .catch((error: unknown) => {
+          if (
+            error instanceof Error &&
+            'processCleanupUnknown' in error &&
+            error.processCleanupUnknown === true
+          )
+            boundedDeployUnknown = true;
+          return deployFailure(error);
+        })
+        .finally(() => boundedDeployPending--);
+    }
+    try {
+      execFileSync('pnpm', args, { env: process.env, stdio: 'pipe' });
+    } catch (error) {
+      deployFailure(error);
+    }
+  }
+  type HistoricalCount = 137 | 138 | 139 | 140 | 141 | 142 | 143 | 144;
+  function deployHistoricalMigrations(count: HistoricalCount): void;
+  function deployHistoricalMigrations(count: HistoricalCount, timeout: number): Promise<void>;
+  function deployHistoricalMigrations(
+    count: HistoricalCount,
+    timeout: number | undefined,
+  ): void | Promise<void>;
+  function deployHistoricalMigrations(count: HistoricalCount, timeout?: number) {
+    if (timeout !== undefined && (!Number.isInteger(timeout) || timeout < 1 || timeout > 120_000))
+      throw new Error('E4 historical migration deadline invalid');
     if (!baseline || !initialized) throw new Error('E4 baseline owner is not initialized');
     if (!temporary || !historicalSchema) throw new Error('E4 historical schema missing');
     const successors = [
@@ -269,8 +298,18 @@ export function installE4ValidationDatabase(options?: {
         join(directory, 'migration.sql'),
       );
     }
-    deploy(historicalSchema);
-  };
+    return deploy(historicalSchema, timeout);
+  }
+  function deployUnitMigrations(): void;
+  function deployUnitMigrations(timeout: number): Promise<void>;
+  function deployUnitMigrations(timeout?: number) {
+    return deployHistoricalMigrations(142, timeout);
+  }
+  function deploySourceReuseMigrations(): void;
+  function deploySourceReuseMigrations(timeout: number): Promise<void>;
+  function deploySourceReuseMigrations(timeout?: number) {
+    return deployHistoricalMigrations(143, timeout);
+  }
   const previous = {
     worker: process.env.JEST_WORKER_ID,
     url: process.env.DATABASE_URL,
@@ -278,75 +317,99 @@ export function installE4ValidationDatabase(options?: {
     mode: process.env.ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE,
   };
   beforeAll(async () => {
-    if (dedicated) {
-      process.env.JEST_WORKER_ID = '98';
-      loadTestEnv();
-      process.env.STORAGE_LOCAL_ROOT = './tmp/storage-w98';
-      assertTestDatabaseUrl(process.env.DATABASE_URL);
-    }
-    if (dedicated || baseline || historical137) {
-      worker = Number(process.env.JEST_WORKER_ID);
-      if (!Number.isInteger(worker) || worker < 1) throw new Error('E4 isolated worker required');
-      assertTestDatabaseUrl(process.env.DATABASE_URL);
-      if (new URL(process.env.DATABASE_URL!).pathname !== '/' + deriveTestDbName())
-        throw new Error('E4 worker and configured database mismatch');
-      if (
-        process.env.SRVF_E4_GITHUB_ISOLATED === '1' &&
-        deriveTestDbName() !== resolveE4ValidationScope()
-      )
-        throw new Error('E4 isolated GitHub derived scope differs');
-      let baselineSchema: string | undefined;
-      if (baseline || historical137) {
-        const root = resolve(__dirname, '../../prisma');
-        const names = readdirSync(join(root, 'migrations'), { withFileTypes: true })
-          .filter((entry) => entry.isDirectory())
-          .map((entry) => entry.name)
-          .sort();
-        const prefix = e4HistoricalMigrationPrefix(names);
-        temporary = mkdtempSync(join(tmpdir(), 'srvf-e4-pre137-'));
-        mkdirSync(join(temporary, 'migrations'));
-        baselineSchema = join(temporary, 'schema.prisma');
-        historicalSchema = baselineSchema;
-        copyFileSync(join(root, 'schema.prisma'), baselineSchema);
-        copyFileSync(
-          join(root, 'migrations/migration_lock.toml'),
-          join(temporary, 'migrations/migration_lock.toml'),
-        );
-        for (const name of prefix.slice(0, baseline ? 136 : 137)) {
-          const relative = 'prisma/migrations/' + name + '/migration.sql';
-          if (name !== E4_MIGRATION_137) {
-            const historical = execFileSync(
-              'git',
-              ['show', '5c296d62c8dbdd1800b47d679c7681c6ad99ef09:' + relative],
-              { cwd: resolve(root, '..') },
-            );
-            const current = readFileSync(join(root, 'migrations', name, 'migration.sql'));
-            if (
-              createHash('sha256').update(current).digest('hex') !==
-              createHash('sha256').update(historical).digest('hex')
-            )
-              throw new Error('E4 historical migration bytes changed: ' + name);
-          }
-          mkdirSync(join(temporary, 'migrations', name));
-          copyFileSync(
-            join(root, 'migrations', name, 'migration.sql'),
-            join(temporary, 'migrations', name, 'migration.sql'),
-          );
-        }
+    setupPending++;
+    const started = performance.now();
+    try {
+      if (dedicated) {
+        process.env.JEST_WORKER_ID = '98';
+        loadTestEnv();
+        process.env.STORAGE_LOCAL_ROOT = './tmp/storage-w98';
+        assertTestDatabaseUrl(process.env.DATABASE_URL);
       }
-      await lifecycle.drop(worker);
-      await lifecycle.create(deriveTestDbName());
-      initialized = true;
-      deploy(baselineSchema);
+      if (dedicated || baseline || historical137) {
+        worker = Number(process.env.JEST_WORKER_ID);
+        if (!Number.isInteger(worker) || worker < 1) throw new Error('E4 isolated worker required');
+        assertTestDatabaseUrl(process.env.DATABASE_URL);
+        if (new URL(process.env.DATABASE_URL!).pathname !== '/' + deriveTestDbName())
+          throw new Error('E4 worker and configured database mismatch');
+        if (
+          process.env.SRVF_E4_GITHUB_ISOLATED === '1' &&
+          deriveTestDbName() !== resolveE4ValidationScope()
+        )
+          throw new Error('E4 isolated GitHub derived scope differs');
+        let baselineSchema: string | undefined;
+        if (baseline || historical137) {
+          const root = resolve(__dirname, '../../prisma');
+          const names = readdirSync(join(root, 'migrations'), { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => entry.name)
+            .sort();
+          const prefix = e4HistoricalMigrationPrefix(names);
+          temporary = mkdtempSync(join(tmpdir(), 'srvf-e4-pre137-'));
+          mkdirSync(join(temporary, 'migrations'));
+          baselineSchema = join(temporary, 'schema.prisma');
+          historicalSchema = baselineSchema;
+          copyFileSync(join(root, 'schema.prisma'), baselineSchema);
+          copyFileSync(
+            join(root, 'migrations/migration_lock.toml'),
+            join(temporary, 'migrations/migration_lock.toml'),
+          );
+          for (const name of prefix.slice(0, baseline ? 136 : 137)) {
+            const relative = 'prisma/migrations/' + name + '/migration.sql';
+            if (name !== E4_MIGRATION_137) {
+              const historical = execFileSync(
+                'git',
+                ['show', '5c296d62c8dbdd1800b47d679c7681c6ad99ef09:' + relative],
+                { cwd: resolve(root, '..') },
+              );
+              const current = readFileSync(join(root, 'migrations', name, 'migration.sql'));
+              if (
+                createHash('sha256').update(current).digest('hex') !==
+                createHash('sha256').update(historical).digest('hex')
+              )
+                throw new Error('E4 historical migration bytes changed: ' + name);
+            }
+            mkdirSync(join(temporary, 'migrations', name));
+            copyFileSync(
+              join(root, 'migrations', name, 'migration.sql'),
+              join(temporary, 'migrations', name, 'migration.sql'),
+            );
+          }
+        }
+        await lifecycle.drop(worker);
+        await lifecycle.create(deriveTestDbName());
+        initialized = true;
+        const remaining = 117_000 - Math.ceil(performance.now() - started);
+        if (options?.boundMigrationProcesses && remaining < 1)
+          throw new Error('E4 baseline migration hook execution deadline exceeded');
+        if (options?.boundMigrationProcesses)
+          console.info(
+            'E4_ASSERT143_OWNER_STAGE',
+            JSON.stringify({ stage: 'BASELINE_DEPLOY', elapsedMs: performance.now() - started }),
+          );
+        await deploy(baselineSchema, options?.boundMigrationProcesses ? remaining : undefined);
+      }
+      process.env.ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE = 'fixture';
+    } finally {
+      setupPending--;
     }
-    process.env.ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE = 'fixture';
   }, 120_000);
   afterAll(async () => {
+    const started = performance.now();
+    if (setupPending !== 0) setupUnknown = true;
+    if (setupUnknown || boundedDeployPending !== 0 || boundedDeployUnknown)
+      throw new Error('E4 owned migration cleanup unknown; database finalizer refused');
+    options?.assertReadyToFinalize?.();
     try {
       if (dedicated && worker !== undefined && lifecyclePlan.databaseFinalizer === 'DROP')
         await lifecycle.drop(worker);
       // CI retains its assigned worker, restored to the current schema even after a failed fixture.
-      else if ((baseline || historical137) && initialized) deploy();
+      else if ((baseline || historical137) && initialized) {
+        const remaining = 117_000 - Math.ceil(performance.now() - started);
+        if (options?.boundMigrationProcesses && remaining < 1)
+          throw new Error('E4 restore migration hook execution deadline exceeded');
+        await deploy(undefined, options?.boundMigrationProcesses ? remaining : undefined);
+      }
     } finally {
       if (temporary) rmSync(temporary, { recursive: true, force: false });
       for (const [name, value] of [
@@ -379,12 +442,8 @@ export function installE4ValidationDatabase(options?: {
     deployBucketMigrations() {
       deployHistoricalMigrations(141);
     },
-    deployUnitMigrations() {
-      deployHistoricalMigrations(142);
-    },
-    deploySourceReuseMigrations() {
-      deployHistoricalMigrations(143);
-    },
+    deployUnitMigrations,
+    deploySourceReuseMigrations,
     deploySourceBucketMigrations() {
       deployHistoricalMigrations(144);
     },

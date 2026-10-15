@@ -219,15 +219,23 @@ export class LedgerPreparationService {
         throw new BizException(BizCode.LEDGER_PREPARE_BATCH_STATUS_INVALID);
       }
 
-      this.assertContributionWriteAllowed(batch.contributionRegimeCode);
-
       const operationKey = `${LEDGER_PREPARE_JOB_TYPE}:${postingBatchId}`;
-      await this.timeLedger.ensureManifest(tx, batch);
       const existing = await tx.activityBatchJob.findUnique({
         where: { operationKey },
         select: { id: true, total: true },
       });
-      if (existing !== null) return { jobId: existing.id, itemCount: existing.total };
+      if (existing !== null) {
+        if (frozenContributionRegime(batch.contributionRegimeCode) === 'policy_v1') {
+          if (!this.contributions)
+            throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+          this.activityWorkflowGate.assertV11WriteAllowed();
+        }
+        await this.timeLedger.assertManifestForReplay(tx, batch);
+        return { jobId: existing.id, itemCount: existing.total };
+      }
+
+      this.assertContributionWriteAllowed(batch.contributionRegimeCode);
+      await this.timeLedger.ensureManifest(tx, batch);
 
       const memberIds = await this.readVersionMemberIds(tx, batch.settlementVersionId);
       const chunkCount = Math.max(

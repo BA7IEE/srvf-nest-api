@@ -202,3 +202,20 @@ small专用suite结束及真实全链结束均独立清理四零；500对照owne
 此结果解除145的小规模/已测500形状候选取证阻塞；未解除旧C满额30秒FAIL或证明145满额。旧143四项FAIL及逐项最小修复仍按上节保留，常规required CI继续hold；E4多维准入/真实规则与字节边界、E5正式模式/停用恢复、适用E2/E3、SQL/trusted/人工签字及D8-OPS/生产Gate均未代办。未部署、合并或将fixture用于生产。
 
 终版跨模型只读复算核对两份报告绑定、完整五阶段、账本、预算、独立清理及500计划节点，未发现与结论冲突；两份闭合报告17144/27650字节，均低于64KiB上限。该复核不替代完整required CI或人工批准。
+
+
+### 2026-10-15 旧143设施收束与off准备回执兼容续作
+
+本轮基于644482cf，未追加500、满额或GitHub诊断运行。旧143的全部原业务断言、比较点及30秒／120秒预算保留；源码token核对覆盖16个静态具名旧用例。完整业务快照保留相同public普通表集合（至少196张）、每表完整JSONB规范化、行序和重复行，仅将每次至少197次往返合为2次；新增空表／重复行／引号标识符及同计数内容变化的PG等价用例。DB owner外层、fixture内层，正常路径先关闭客户端再DROP；143升级完成标记移到完整oracle、catalog、业务数据及noop证明末端。
+
+每个DB用例及整个内部初始化钩子由同一owner收束，在原预算内预留3秒；任何失败均按当前库及本次随机application_name取消自己持有的后端，取消和工作结束各限1秒，UNKNOWN持续阻断后续用例及DDL。专用143迁移使用真正await的独立进程组及剩余预算，后代闭合未知禁止DROP／restore；不会驱逐其他worker连接或使用FORCE。基线owner的完整setupPending也接到finalizer。 随后将取消能力从昂贵业务前置独立验证：原具名租约持有的空W98库、不执行迁移或业务fixture，真实Prisma后端的慢查询被精确PID／当前库／随机application_name取消，原5秒probe预算内返回P2010、pending=0、独立monitor可用，最终独立四零。此为取消设施验证，不冒充143业务回归。外层同步git show及租约DROP／CREATE仍不具备相同主动取消，不能称整个外层setup均可在117秒内取消；其未闭合状态只能阻断finalizer。新增阶段收据只含阶段与耗时，不含业务行或SQL参数。
+
+实际仅启动一次旧143小suite：173.151秒退出1，21项离线通过；内部beforeAll超过原120秒，9项DB用例均未进入，含原四项回归，不能关闭旧失败，也不能把新增PG取消／快照等价记为实测通过。初始化的最后SQL及耗时主因仍UNKNOWN。此失败揭示初始化也必须纳入owner，后续已补整体初始化收束及阶段收据，但本轮未重复夹具验证最新补丁。原进程退出后经原具名租约独立回收，最终再次独立读取databases／clients／leaseBackends／leaseLocks均为0，既有PG容器保留。 另用单一psql会话、三个TEMP表和实际同一snapshot helper完成轻量PG等价验证：空表、重复行、引号标识符、同计数内容变化均通过，ROLLBACK后TEMP表消失、会话关闭；未建立新的业务夹具。
+
+E5只修复已经冻结的off兼容不变量：ensurePrepareJob对已有job保留batch锁、preparing状态及独立v1.1／maintenance闸，只读重验原source和manifest再返回旧回执；缺失manifest拒绝，不补建；新job仍先过原native写闸再创建。只读入口复用原source及逐字段manifest验证，不要求未完成job已生成完整entries。改编排前48项characterization通过；最终4套定向70项通过，包含11项取消／进程组离线用例，且两个helper已精确纳入常规unit收集。
+
+新增隔离单人DB用例通过（suite总142.011秒，含编译／安装／fixture，不作为业务性能值）：真实prepare→submit→双审建batch，独立off配置实例拒绝无job的新写，fixture合法建立原job后off返回同一未完成回执，两个比较点均核对全部业务行不变；job仍pending且succeeded=0、manifest=1、entries=0。最终独立四零。该结果仅证明准备任务回执路径，不能替代所有HTTP／审核／更正off兼容验收。
+
+正式active仍未实现；冻结原文只给方向与兼容不变量，没有给全套活动／新run资格、多维限量及字节／政策复杂度阈值、旧规则只读范围和恢复off后旧规则写入策略。不能自行补制度。生产窗口、映射／差异批准、SQL／trusted／人工签字、D8-OPS及开关仍为独立硬门。本轮未改143／144／145 SQL、pin、生产预算或双guard，未运行新满额、部署、合并或代签。
+
+最终完整src类型检查及本轮12文件闭包定向类型检查退出0，目标lint退出0。完整test类型检查曾启动后主动终止（143），不计为通过；定向70项单测与最终21项离线回归通过，9项DB仍未重新进入。常规required CI继续hold。

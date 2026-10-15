@@ -210,13 +210,86 @@ describe('LedgerPreparationService finalize characterization', () => {
 
   it('leaves ensurePrepareJob on its original implicit budget', async () => {
     query.mockReset().mockResolvedValueOnce([batch()]);
-    jest.spyOn(timeLedger, 'ensureManifest').mockResolvedValue(null);
+    jest.spyOn(timeLedger, 'assertManifestForReplay').mockResolvedValue(null);
     jest.spyOn(tx.activityBatchJob, 'findUnique').mockResolvedValue(job());
     await expect(service.ensurePrepareJob('batch-one')).resolves.toEqual({
       jobId: 'job-one',
       itemCount: 1,
     });
     expect(transaction).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('replays an existing native job with contribution writes off using only immutable source checks', async () => {
+    query.mockReset().mockResolvedValueOnce([batch()]);
+    const find = jest.spyOn(tx.activityBatchJob, 'findUnique').mockResolvedValue(job());
+    const replay = jest.spyOn(timeLedger, 'assertManifestForReplay').mockResolvedValue(null);
+    const ensure = jest.spyOn(timeLedger, 'ensureManifest');
+    const create = jest.spyOn(tx.activityBatchJob, 'create');
+    const items = jest.spyOn(tx.activityBatchJobItem, 'createMany');
+    contributions.assertNativeWriteAllowed.mockImplementation(() => {
+      throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+    });
+    await expect(service.ensurePrepareJob('batch-one')).resolves.toEqual({
+      jobId: 'job-one',
+      itemCount: 1,
+    });
+    expect(find).toHaveBeenCalledWith({
+      where: { operationKey: 'settlement_prepare:batch-one' },
+      select: { id: true, total: true },
+    });
+    expect(gate.assertV11WriteAllowed).toHaveBeenCalledTimes(1);
+    expect(replay).toHaveBeenCalledWith(tx, batch());
+    expect(query.mock.invocationCallOrder[0]).toBeLessThan(find.mock.invocationCallOrder[0]);
+    expect(gate.assertV11WriteAllowed.mock.invocationCallOrder[0]).toBeLessThan(
+      replay.mock.invocationCallOrder[0],
+    );
+    expect(contributions.assertNativeWriteAllowed).not.toHaveBeenCalled();
+    expect(ensure).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(items).not.toHaveBeenCalled();
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it.each([
+    BizCode.ACTIVITY_V11_WORKFLOW_NOT_ENABLED,
+    BizCode.ACTIVITY_WORKFLOW_READONLY_MAINTENANCE,
+  ])('keeps the independent workflow gate on native job replay (%s)', async (biz) => {
+    query.mockReset().mockResolvedValueOnce([batch()]);
+    jest.spyOn(tx.activityBatchJob, 'findUnique').mockResolvedValue(job());
+    const replay = jest.spyOn(timeLedger, 'assertManifestForReplay');
+    const failure = new BizException(biz);
+    gate.assertV11WriteAllowed.mockImplementation(() => {
+      throw failure;
+    });
+    await expect(service.ensurePrepareJob('batch-one')).rejects.toBe(failure);
+    expect(replay).not.toHaveBeenCalled();
+    expect(contributions.assertNativeWriteAllowed).not.toHaveBeenCalled();
+  });
+
+  it('refuses a new native job with writes off before creating any manifest or item', async () => {
+    query.mockReset().mockResolvedValueOnce([batch()]);
+    jest.spyOn(tx.activityBatchJob, 'findUnique').mockResolvedValue(null);
+    const ensure = jest.spyOn(timeLedger, 'ensureManifest');
+    const create = jest.spyOn(tx.activityBatchJob, 'create');
+    const items = jest.spyOn(tx.activityBatchJobItem, 'createMany');
+    const failure = new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
+    contributions.assertNativeWriteAllowed.mockImplementation(() => {
+      throw failure;
+    });
+    await expect(service.ensurePrepareJob('batch-one')).rejects.toBe(failure);
+    expect(ensure).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(items).not.toHaveBeenCalled();
+  });
+
+  it('preserves source-validation errors during an existing job replay without repairing it', async () => {
+    query.mockReset().mockResolvedValueOnce([batch()]);
+    jest.spyOn(tx.activityBatchJob, 'findUnique').mockResolvedValue(job());
+    const failure = new BizException(BizCode.ACTIVITY_TIME_LEDGER_NOT_READY);
+    jest.spyOn(timeLedger, 'assertManifestForReplay').mockRejectedValue(failure);
+    const ensure = jest.spyOn(timeLedger, 'ensureManifest');
+    await expect(service.ensurePrepareJob('batch-one')).rejects.toBe(failure);
+    expect(ensure).not.toHaveBeenCalled();
   });
 
   it('leaves prepareChunk on its original explicit 60s budget', async () => {

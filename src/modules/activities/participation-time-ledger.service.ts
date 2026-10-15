@@ -190,6 +190,19 @@ export class ParticipationTimeLedgerService {
   }
 
   async ensureManifest(tx: Prisma.TransactionClient, batch: TimeLedgerBatch) {
+    return this.manifest(tx, batch, true);
+  }
+
+  /** An existing prepare receipt never repairs missing immutable evidence. */
+  async assertManifestForReplay(tx: Prisma.TransactionClient, batch: TimeLedgerBatch) {
+    return this.manifest(tx, batch, false);
+  }
+
+  private async manifest(
+    tx: Prisma.TransactionClient,
+    batch: TimeLedgerBatch,
+    allowCreate: boolean,
+  ) {
     const source = await this.source(tx, batch);
     const existing = await tx.participationTimeLedgerManifest.findUnique({
       where: { postingBatchId: batch.id },
@@ -202,6 +215,7 @@ export class ParticipationTimeLedgerService {
       this.assertManifest(existing, source.manifest);
       return existing;
     }
+    if (!allowCreate) throw new BizException(BizCode.ACTIVITY_TIME_LEDGER_NOT_READY);
     // The parent batch lock serializes legitimate writers; constraint errors are not swallowed.
     return tx.participationTimeLedgerManifest
       .create({ data: source.manifest })
