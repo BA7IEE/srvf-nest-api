@@ -467,16 +467,17 @@ export interface ActivityControlPlaneConfig {
   mode: ActivityControlPlaneMode;
 }
 
-export type ContributionSettlementMode = 'off' | 'fixture';
+export type ContributionSettlementMode = 'off' | 'fixture' | 'active';
 
-/** E4 has no production activation mode. E5 must separately authorize that boundary. */
+/** Explicit E5 mode support; default remains off. Deployment/cutover is separately approved. */
 export function parseContributionSettlementMode(
   raw: string | undefined,
   env: AppEnv,
 ): ContributionSettlementMode {
   if (raw === undefined || raw === 'off') return 'off';
+  if (raw === 'active') return 'active';
   if (raw !== 'fixture') {
-    throw new Error('ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE 必须严格为 off 或 fixture');
+    throw new Error('ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE 必须严格为 off、fixture 或 active');
   }
   if (env !== 'test') {
     throw new Error('ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE=fixture 仅允许 APP_ENV=test');

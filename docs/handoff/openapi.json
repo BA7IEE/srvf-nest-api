@@ -91928,7 +91928,7 @@
             }
           },
           "409": {
-            "description": "该维度已存在生效中的规则(code=23002)",
+            "description": "该维度已存在生效中的规则(code=23002) / 旧贡献值规则在正式贡献模式下只读(code=23013)",
             "content": {
               "application/json": {
                 "schema": {
@@ -91942,9 +91942,10 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        23002
+                        23002,
+                        23013
                       ],
-                      "description": "23002: 该维度已存在生效中的规则",
+                      "description": "23002: 该维度已存在生效中的规则; 23013: 旧贡献值规则在正式贡献模式下只读",
                       "example": 23002
                     },
                     "message": {
@@ -92361,7 +92362,7 @@
             }
           },
           "409": {
-            "description": "该维度已存在生效中的规则(code=23002)",
+            "description": "该维度已存在生效中的规则(code=23002) / 旧贡献值规则在正式贡献模式下只读(code=23013)",
             "content": {
               "application/json": {
                 "schema": {
@@ -92375,9 +92376,10 @@
                     "code": {
                       "type": "integer",
                       "enum": [
-                        23002
+                        23002,
+                        23013
                       ],
-                      "description": "23002: 该维度已存在生效中的规则",
+                      "description": "23002: 该维度已存在生效中的规则; 23013: 旧贡献值规则在正式贡献模式下只读",
                       "example": 23002
                     },
                     "message": {
@@ -92550,6 +92552,40 @@
                     "message": {
                       "type": "string",
                       "example": "贡献值规则不存在"
+                    },
+                    "data": {
+                      "type": "object",
+                      "nullable": true,
+                      "example": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "旧贡献值规则在正式贡献模式下只读(code=23013)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "enum": [
+                        23013
+                      ],
+                      "description": "23013: 旧贡献值规则在正式贡献模式下只读",
+                      "example": 23013
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "旧贡献值规则在正式贡献模式下只读"
                     },
                     "data": {
                       "type": "object",

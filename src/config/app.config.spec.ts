@@ -15,7 +15,10 @@ describe('ACTIVITY_E4_CONTRIBUTION_SETTLEMENT_MODE', () => {
       expect(parseContributionSettlementMode(undefined, env)).toBe('off');
       expect(parseContributionSettlementMode('off', env)).toBe('off');
     });
-    it.each(['', ' ', 'active', 'shadow', 'true', 'OFF', 'fixture ', ' fixture'])(
+    it('accepts only the explicit active value without enabling another gate', () => {
+      expect(parseContributionSettlementMode('active', env)).toBe('active');
+    });
+    it.each(['', ' ', 'ACTIVE', 'shadow', 'true', 'OFF', 'fixture ', ' fixture', 'active '])(
       'rejects %j',
       (raw) => {
         expect(() => parseContributionSettlementMode(raw, env)).toThrow('必须严格为');

@@ -12,8 +12,10 @@ legacy 版本省略整个证明字段，历史小时和贡献结果不重新解�
 `evaluations` 仅为最多100项的解释预览，`hasMore=true` 时不得把预览求和当完整总分；
 贡献和志愿服务时长分别显示，培训可以有贡献但志愿小时为零。来源大JSON、完整政策配置和内部时间版本锚不返回。
 
-2026-10-15：候选已提交至[Draft PR1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380)，145 small／500全链及冻结oracle通过；旧C满额失败；145专用满额未运行，常规CI最大例prepare29.271秒后整例600秒超时、全链未过。当前仍默认off、fixture仅测试可写，E5正式准入与完整发布验收未完成；前端发布／回执、生产、Gate和D8-OPS未完成。最新边界见[来源复用评审记录](../plans/activity-os-r5-e4-assert-source-reuse-review.md)。
+2026-10-15：候选已提交至[Draft PR1380](https://github.com/BA7IEE/srvf-nest-api/pull/1380)，145 small／500全链及冻结oracle通过；旧C满额失败；145专用满额未运行，常规CI最大例prepare29.271秒、含fixture整例600秒超时、全链未过。当前仍默认off；E5 active解析及原来源链准入已作工程扩展，fixture仍仅测试可写，生产准入与完整发布验收未完成；前端发布／回执、生产、Gate和D8-OPS未完成。最新边界见[来源复用评审记录](../plans/activity-os-r5-e4-assert-source-reuse-review.md)。
 不能根据候选生成物启用新制度或登记真实映射。
+
+E5 active 下 System 旧规则 `POST /api/system/v1/contribution-rules`、`PATCH/DELETE /api/system/v1/contribution-rules/{id}` 在原 RBAC 后返回 `23013`／HTTP409（旧贡献值规则在正式贡献模式下只读）。前端应停止旧规则写并保留列表／详情读取，不自动重试或另建规则绕过；历史 legacy 计算仍读取原规则。恢复 off 会按兼容语义恢复旧规则管理写，本刀未实现永久只读 latch，也未执行恢复操作。
 
 ## E1-3 活动贡献政策选择（后端 Draft 候选，前端未发布）
 

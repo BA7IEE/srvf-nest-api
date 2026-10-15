@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ContributionRuleStatus, DictItemStatus, DictTypeStatus, Prisma } from '@prisma/client';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { PageResultDto } from '../../common/dto/pagination.dto';
@@ -6,6 +6,7 @@ import { BizCode, type BizCodeEntry } from '../../common/exceptions/biz-code.con
 import { BizException } from '../../common/exceptions/biz.exception';
 import { notDeletedWhere } from '../../common/prisma/soft-delete.util';
 import { PrismaService } from '../../database/prisma.service';
+import appConfig, { type AppConfig } from '../../config/app.config';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import type { AuditMeta } from '../audit-logs/audit-logs.types';
 import { RbacService } from '../permissions/rbac.service';
@@ -49,7 +50,13 @@ export class ContributionRulesService {
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
     private readonly rbac: RbacService,
+    @Inject(appConfig.KEY) private readonly config: AppConfig,
   ) {}
+
+  private assertLegacyWriteAllowed(): void {
+    if (this.config.contributionSettlementMode === 'active')
+      throw new BizException(BizCode.CONTRIBUTION_RULE_READONLY);
+  }
 
   // ============ helpers ============
 
@@ -226,6 +233,7 @@ export class ContributionRulesService {
     auditMeta: AuditMeta,
   ): Promise<ContributionRuleResponseDto> {
     await this.assertCanOrThrow(currentUser, 'contribution.create.rule');
+    this.assertLegacyWriteAllowed();
     const normalizedStatus = dto.status ?? ContributionRuleStatus.ACTIVE;
     const durationThreshold = dto.durationThreshold ?? null;
     const pointsAbove = dto.pointsAbove ?? null;
@@ -311,6 +319,7 @@ export class ContributionRulesService {
     auditMeta: AuditMeta,
   ): Promise<ContributionRuleResponseDto> {
     await this.assertCanOrThrow(currentUser, 'contribution.update.rule');
+    this.assertLegacyWriteAllowed();
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.contributionRule.findFirst({
         where: notDeletedWhere({ id }),
@@ -393,6 +402,7 @@ export class ContributionRulesService {
     auditMeta: AuditMeta,
   ): Promise<void> {
     await this.assertCanOrThrow(currentUser, 'contribution.delete.rule');
+    this.assertLegacyWriteAllowed();
     await this.prisma.$transaction(async (tx) => {
       // PR #3 audit:softDelete 需要 before 完整快照(沿 certificates.softDelete 范式),
       // 因此 select 从 { id: true } 扩展为 contributionRuleSafeSelect。

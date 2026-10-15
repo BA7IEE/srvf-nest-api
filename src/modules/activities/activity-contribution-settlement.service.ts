@@ -126,14 +126,19 @@ export class ActivityContributionSettlementService {
   ) {}
 
   assertNativeWriteAllowed(): void {
-    if (this.config.env !== 'test' || this.config.contributionSettlementMode !== 'fixture')
+    const mode = this.config.contributionSettlementMode;
+    if (mode !== 'active' && !(mode === 'fixture' && this.config.env === 'test'))
       throw new BizException(BizCode.ACTIVITY_TIME_SETTLEMENT_SOURCE_NOT_READY);
     this.activityWorkflowGate.assertV11WriteAllowed();
   }
 
   draftRegime(previous: ContributionRegimeCode | null): ContributionRegimeCode {
     const regime =
-      previous ?? (this.config.contributionSettlementMode === 'fixture' ? 'policy_v1' : 'legacy');
+      previous ??
+      (this.config.contributionSettlementMode === 'fixture' ||
+      this.config.contributionSettlementMode === 'active'
+        ? 'policy_v1'
+        : 'legacy');
     if (regime === 'policy_v1') this.assertNativeWriteAllowed();
     return regime;
   }

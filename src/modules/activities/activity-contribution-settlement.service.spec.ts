@@ -174,7 +174,7 @@ function root(): ActivitySettlementContributionRevision {
   };
 }
 function setup(
-  mode: 'off' | 'fixture' = 'fixture',
+  mode: AppConfig['contributionSettlementMode'] = 'fixture',
   env: AppConfig['env'] = 'test',
   workflow = { enabled: true, readonlyMaintenance: false },
 ) {
@@ -810,5 +810,46 @@ describe('E4 transaction-owned contribution orchestration', () => {
       return;
     }
     throw new Error('missing policy was not rejected');
+  });
+});
+
+describe('E5 explicit active admission reuses the frozen native contract', () => {
+  it.each(['development', 'test', 'smoke', 'production'] as const)(
+    'admits explicit active in %s while fixing the existing run regime',
+    (env) => {
+      const { service } = setup('active', env);
+      expect(() => service.assertNativeWriteAllowed()).not.toThrow();
+      expect(service.draftRegime(null)).toBe('policy_v1');
+      expect(service.draftRegime('legacy')).toBe('legacy');
+      expect(service.draftRegime('policy_v1')).toBe('policy_v1');
+    },
+  );
+  it.each([
+    { enabled: false, readonlyMaintenance: false },
+    { enabled: true, readonlyMaintenance: true },
+    { enabled: false, readonlyMaintenance: true },
+  ])('retains the workflow gate for active: %j', (workflow) => {
+    const { service, read, tx } = setup('active', 'production', workflow);
+    expect(() => service.assertNativeWriteAllowed()).toThrow();
+    expect(() => service.draftRegime(null)).toThrow();
+    expect(read).not.toHaveBeenCalled();
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+  });
+  it('passes the complete locked time proof to the unchanged source evaluator instead of accepting a caller subset', async () => {
+    const { service, prismaTx, tx, command, reauthorize, read } = setup('active');
+    const proof = time();
+    await service.prepareTimeInTx(prismaTx, proof, 'policy_v1', command, reauthorize);
+    expect(read).toHaveBeenCalledWith(prismaTx, proof);
+    expect(reauthorize).toHaveBeenCalledTimes(2);
+    expect(tx.activitySettlementContributionRevision.create).toHaveBeenCalledTimes(1);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  });
+  it('keeps active existing legacy preparation query-free', async () => {
+    const { service, prismaTx, tx, command, reauthorize, read } = setup('active');
+    await expect(
+      service.prepareTimeInTx(prismaTx, time(), 'legacy', command, reauthorize),
+    ).resolves.toBeNull();
+    expect(read).not.toHaveBeenCalled();
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
   });
 });

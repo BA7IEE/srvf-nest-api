@@ -316,4 +316,15 @@ JIT-off夹具的prepare1899.692ms、submit4790.590ms、冻结oracle320.047ms，�
 
 冻结校验不重签旧oracle：严格候选全文→唯一片段→恢复全文，scale仍恢复到50a090de…、migration counterpart到d6c887c0…；所有完整JSON、FULL JOIN、root和双guard保持。另修复上一提交三处145 pin镜像使ordinary driver旧全文绑定过期的问题：只对内存源码恢复这三处并核对46c31154…，再抽取原三个oracle函数；真实E2E及生产仍为145 pin，任意正文／pin篡改先拒绝。旧prepare离线接线注入真实内存stage实例，继续执行当前源码，旧行为断言不变。
 
-本轮仅本地定向与离线检查：阶段、driver和原接线三套185项全通过，无跳过；另两套147项完整源码恢复校验通过（763项数据库相关用例未选择，unit配置无全局数据库setup、W98未开）。证据包/workspace/r5-stage-active-74834ad9保留全部结果。此前在校验进程读取源码期间更改候选导致的两项摘要失败、ordinary旧绑定失败及旧VM缺stage依赖均保留日志，已由固定源码复验闭合。不重跑maximum、不推送、不改SQL／pin／预算或人工签字；3b／Trusted和生产条件仍hold。
+本轮仅本地定向与离线检查：阶段、driver和原接线三套185项全通过，无跳过；另两套147项完整源码恢复校验通过（763项未选择；数据库用例未运行，unit配置无全局数据库setup、W98未开）。证据包/workspace/r5-stage-active-74834ad9保留全部结果。此前在校验进程读取源码期间更改候选导致的两项摘要失败、ordinary旧绑定失败及旧VM缺stage依赖均保留日志，已由固定源码复验闭合。不重跑maximum、不推送、不改SQL／pin／预算或人工签字；3b／Trusted和生产条件仍hold。
+
+
+### 2026-10-15 E5 正式模式工程门控（本地，默认off）
+
+沿本轮“继续推进”授权交付active parser／原生写准入及旧ContributionRule管理三写门，不重新决定已冻结的新run选择、历史legacy、更正继承、明确零政策、缺失阻塞和off规则。精确active在四种APP_ENV可解析，默认仍off；fixture仍仅test。新run在原锁内全活动D4来源、V9冻结政策链与原规模校验下选择policy_v1，历史legacy及其更正不转换；独立v1.1／maintenance门、原幂等回执顺序及所有原SQL／pin／双guard／预算保持。
+
+active时旧规则create／update／softDelete在原RBAC后、任何事务／查询／审计前返回23013／HTTP409；列表／详情和legacy计算读面保留。active→off按既有兼容语义恢复旧规则管理写，本刀没有永久只读cutover latch；生产目标／切换时间／恢复执行仍须发布阶段批准，未改实际环境值或开关。
+
+证据口径：先跑旧规则7项characterization再改编排；E5等七套未再改动用例3383项通过，阶段26项及原诊断159项在最终三套185项全通过；另147项源码恢复通过，无数据库或maximum执行。全三段typecheck通过，离线OpenAPI装配／生成通过，13份client仅inputDigest更新；counts／codemap／rbacmap／readtax／client新鲜度检查通过。query原全量桶／切片超限与冻结来源拒绝用例随既有套件执行；新增service完整proof用例的reader为mock，只证明锁内proof传参和重放顺序，不是新增容量、真实HTTP或受限生产身份验收。原2000／10000／50000／8000／40000上限不降低，生产时延仍未证明。
+
+生成API只改变旧规则三个写operation的23013／409描述，路由与components.schemas均不变，离线契约语义diff为空。授权manifest663条policy entries逐项相同，仅摘要及源码行号变化。契约snapshot与ROUTE_AUTHZ两份仓内文件需维护者grant，当前没有令牌；已在证据包生成85行和56行可审补丁，未修改这两个受保护文件。故E5工程实现已本地提交，不声明派生契约闭合、required CI全绿、Ready或可发布；补齐grant后应用精确补丁并校验才可关闭该缺口。3b、Trusted及生产硬门不由本提交代签。
