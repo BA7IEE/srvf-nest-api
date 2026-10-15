@@ -39,6 +39,11 @@ on:
         required: false
         default: false
         type: boolean
+      real_statistics_maximum:
+        description: One real maximum full chain with test-only same-transaction statistics and original30s prepare
+        required: false
+        default: false
+        type: boolean
       source_join_comparison:
         description: Small equivalence proof, ordinary500 source-edge ABBA, or500 five-table statistics intervention
         required: false
@@ -781,12 +786,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ fromJSON(inputs.source_join_comparison == 'small' && '["ordinary-1"]' || (inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500') && '["ordinary-500"]' || inputs.native_prepare_plan_500 && '["ordinary-500"]' || (inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')) && '["ordinary-1"]' || (inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-canonical-cost-once]') || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
+        scenario: ${{ fromJSON(inputs.real_statistics_maximum && '["maximum"]' || inputs.source_join_comparison == 'small' && '["ordinary-1"]' || (inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500') && '["ordinary-500"]' || inputs.native_prepare_plan_500 && '["ordinary-500"]' || (inputs.small_metadata_calibration || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]')) && '["ordinary-1"]' || (inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-canonical-cost-once]') || contains(github.event.head_commit.message, '[e4-canonical-first32-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]')) && '["maximum"]' || '["ordinary-1","ordinary-100","ordinary-500","maximum","lock-contention","failure-retry"]') }}
     env:
       APP_ENV: test
       SRVF_E4_DIAGNOSTIC_PURPOSE: DIAGNOSTIC_ONLY
       SRVF_E4_DIAGNOSTIC_SCENARIO: ${{ matrix.scenario }}
       SRVF_E4_NATIVE_PREPARE_PLAN: ${{ inputs.native_prepare_plan_500 && '1' || '' }}
+      SRVF_E4_REAL_STATISTICS: ${{ inputs.real_statistics_maximum && '1' || '' }}
       SRVF_E4_SOURCE_JOIN: ${{ inputs.source_join_comparison != 'off' && inputs.source_join_comparison || '' }}
       SRVF_E4_SOURCE_JOIN_SMALL_RUN: ${{ inputs.source_join_small_run }}
       SRVF_E4_CANONICAL_COST_ONLY: ${{ contains(github.event.head_commit.message, '[e4-canonical-cost-once]') && '1' || '' }}
@@ -819,7 +825,7 @@ jobs:
         if: "!inputs.native_prepare_plan_500 && inputs.source_join_comparison != 'small' && inputs.source_join_comparison != 'ordinary-500' && inputs.source_join_comparison != 'statistics-500' && (inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]'))"
         run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client)\.spec\.ts$'
       - name: Native plan redaction and completeness boundary tests
-        if: inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
+        if: inputs.real_statistics_maximum || inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
         run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts --testRegex 'test/helpers/e4-prepare-cost-diagnostic\.spec\.ts$'
       - name: Start fresh PostgreSQL 16 runner
         run: |
@@ -836,6 +842,11 @@ jobs:
         env:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --native-plan-capability
+      - name: Prove same-transaction statistics on tiny temporary tables before maximum fixture
+        if: inputs.real_statistics_maximum
+        env:
+          TS_NODE_PROJECT: test/tsconfig.test.json
+        run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --real-statistics-capability
       - name: Verify source-join small proof by exact HEAD or fixed SQL identities for statistics
         if: inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
         env:
@@ -852,18 +863,19 @@ jobs:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --execute
       - name: Summarize closed shared-guard evidence
-        if: always() && (inputs.source_join_comparison == 'statistics-500' || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.native_prepare_plan_500 || inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]'))
+        if: always() && (inputs.real_statistics_maximum || inputs.source_join_comparison == 'statistics-500' || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.native_prepare_plan_500 || inputs.small_metadata_calibration || inputs.fixed_metadata_maximum || contains(github.event.head_commit.message, '[e4-join-key-calibration-once]') || contains(github.event.head_commit.message, '[e4-shared-guard-once]') || contains(github.event.head_commit.message, '[e4-join-key-once]'))
         run: |
           node <<'NODE'
           const fs = require('node:fs');
           const file = 'tmp/e4-prepare-cost-evidence/result.json';
-          if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' || process.env.SRVF_E4_SOURCE_JOIN) {
-            const nativeFile = fs.existsSync(file) ? file : 'tmp/e4-prepare-cost-evidence/native-capability.json';
+          if (process.env.SRVF_E4_REAL_STATISTICS === '1' || process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' || process.env.SRVF_E4_SOURCE_JOIN) {
+            const realStatistics = process.env.SRVF_E4_REAL_STATISTICS === '1';
+            const nativeFile = fs.existsSync(file) ? file : 'tmp/e4-prepare-cost-evidence/' + (realStatistics ? 'real-statistics-capability.json' : 'native-capability.json');
             if (!fs.existsSync(nativeFile) || fs.statSync(nativeFile).size > 65536) throw Error('E4 native closed evidence unavailable');
             const native = JSON.parse(fs.readFileSync(nativeFile, 'utf8'));
             if (native.head !== process.env.GITHUB_SHA || native.run !== process.env.GITHUB_RUN_ID) throw Error('E4 native closed evidence binding refused');
             const closed = fs.existsSync(file) ? native : {head:native.head,run:native.run,status:native.status === 'FAILED' ? 'FAILED' : 'INCOMPLETE',nativePreparePlan:{status:'NOT_CAPTURED',reason:'RESULT_UNAVAILABLE'},capability:native};
-            if (fs.existsSync(file) && (closed.coverage !== (process.env.SRVF_E4_SOURCE_JOIN ? 'PREPARE_SOURCE_JOIN_ONLY' : 'PREPARE_NATIVE_PLAN_ONLY') || closed.scenario !== process.env.SRVF_E4_DIAGNOSTIC_SCENARIO || closed.purpose !== 'DIAGNOSTIC_ONLY')) throw Error('E4 native scenario binding refused');
+            if (fs.existsSync(file) && (closed.coverage !== (realStatistics ? 'FULL_SETTLEMENT' : process.env.SRVF_E4_SOURCE_JOIN ? 'PREPARE_SOURCE_JOIN_ONLY' : 'PREPARE_NATIVE_PLAN_ONLY') || closed.scenario !== process.env.SRVF_E4_DIAGNOSTIC_SCENARIO || closed.purpose !== 'DIAGNOSTIC_ONLY')) throw Error('E4 native scenario binding refused');
             // Numbered closed JSON chunks preserve the complete bounded evidence even if a log line is capped.
             const emit = (artifact,value) => {
               const json = JSON.stringify(value);
@@ -871,7 +883,7 @@ jobs:
                 process.stdout.write('E4_NATIVE_PLAN_CHUNK ' + JSON.stringify({artifact,head:closed.head,run:closed.run,index,total:Math.ceil(json.length/12000),data:json.slice(offset,offset+12000)}) + '\n');
             };
             emit('result.json',closed);
-            const sidecars = process.env.SRVF_E4_SOURCE_JOIN ? (closed.sourceJoinComparison?.plans ?? []).map(p => p.file) : ['native-plan.json'];
+            const sidecars = realStatistics ? (closed.realStatistics?.file ? ['real-statistics.json'] : []) : process.env.SRVF_E4_SOURCE_JOIN ? (closed.sourceJoinComparison?.plans ?? []).map(p => p.file) : ['native-plan.json'];
             if (sidecars.some((name,index) => process.env.SRVF_E4_SOURCE_JOIN && (index >= (process.env.SRVF_E4_SOURCE_JOIN === 'statistics-500' ? 5 : 4) || name !== 'source-join-plan-' + index + '.json'))) throw Error('E4 source sidecar path refused');
             if (fs.existsSync(file)) for (const name of sidecars) {
               const planFile = 'tmp/e4-prepare-cost-evidence/' + name;
@@ -896,6 +908,8 @@ jobs:
             tmp/e4-prepare-cost-evidence/result.json
             tmp/e4-prepare-cost-evidence/native-plan.json
             tmp/e4-prepare-cost-evidence/native-capability.json
+            tmp/e4-prepare-cost-evidence/real-statistics.json
+            tmp/e4-prepare-cost-evidence/real-statistics-capability.json
             tmp/e4-prepare-cost-evidence/source-join-plan-*.json
             tmp/e4-prepare-cost-evidence/source-join-calibration.json
           if-no-files-found: error

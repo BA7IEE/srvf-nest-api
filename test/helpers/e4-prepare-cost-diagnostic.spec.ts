@@ -73,6 +73,11 @@ import {
   SOURCE_STATISTICS_SETTINGS,
   sourceJoinStatsDigestSql,
   compactSourceStatisticsEvidence,
+  installRealStatistics,
+  realStatisticsAnalyzeCommands,
+  realStatisticsSnapshotSql,
+  realStatisticsCapabilitySql,
+  validateRealStatisticsCapability,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -90,6 +95,259 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  const realStatisticsHarness = () => {
+    let stage: 'SOURCE_BUILD' | 'PREPARE' | 'SUBMIT' = 'SOURCE_BUILD',
+      serial = 1,
+      transaction = '1',
+      mode = 'auto';
+    const analyzed = new Set<string>(),
+      events: string[] = [];
+    const counts = () =>
+      stage === 'SOURCE_BUILD'
+        ? [0, 0, 10000, 50000, 2000]
+        : stage === 'PREPARE'
+          ? [8000, 40000, 10000, 50000, 2000]
+          : [16000, 80000, 10000, 50000, 4000];
+    const tx = {
+      async $queryRawUnsafe(query: string) {
+        expect(query).toBe(realStatisticsSnapshotSql());
+        events.push('SNAPSHOT');
+        return [
+          {
+            database: 'app_test_w98',
+            local: false,
+            writable: true,
+            server: 160015,
+            pid: 42,
+            transaction,
+            statisticsDigest: serial.toString(16).padStart(32, '0'),
+            settingsDigest: (mode === 'auto' ? 'a' : 'c').repeat(32),
+            workMemKb: 4096,
+            jitEnabled: true,
+            planCacheMode: mode,
+            statistics: SOURCE_JOIN_INPUTS.map(([table], i) => ({
+              table,
+              rows: counts()[i],
+              tuples: analyzed.has(table) ? counts()[i] : -1,
+              statsColumns: analyzed.has(table) ? 2 : 0,
+            })),
+          },
+        ];
+      },
+      async $executeRawUnsafe(query: string) {
+        const name = query.match(/^ANALYZE public\."([A-Za-z]+)"$/u)?.[1];
+        if (!name || !SOURCE_JOIN_INPUTS.some(([n]) => n === name))
+          throw new Error('unexpected SQL');
+        events.push('ANALYZE:' + name);
+        analyzed.add(name);
+        serial++;
+        return 0;
+      },
+    };
+    const target = {
+      async prepareTimeInTx(received: typeof tx, ...args: unknown[]) {
+        expect(this).toBe(target);
+        expect(received).toBe(tx);
+        events.push('PREPARE_ORIGINAL');
+        mode = 'force_custom_plan';
+        await target.insertEvaluations(received);
+        return args;
+      },
+      async copySubmittedTimeInTx(received: typeof tx, ...args: unknown[]) {
+        expect(this).toBe(target);
+        expect(received).toBe(tx);
+        events.push('SUBMIT_ORIGINAL');
+        await target.copyEvaluations(received);
+        return args;
+      },
+      async insertEvaluations(received: typeof tx) {
+        expect(received).toBe(tx);
+        events.push('INSERT_ORIGINAL');
+      },
+      async copyEvaluations(received: typeof tx) {
+        expect(received).toBe(tx);
+        events.push('COPY_ORIGINAL');
+      },
+    };
+    const audit = {
+      async log(received: typeof tx, ...args: unknown[]) {
+        expect(this).toBe(audit);
+        expect(received).toBe(tx);
+        events.push('AUDIT_ORIGINAL');
+        return args;
+      },
+    };
+    return {
+      tx,
+      target,
+      audit,
+      events,
+      drift: () => {
+        serial++;
+      },
+      stage: (next: typeof stage) => {
+        stage = next;
+        transaction = String(Number(transaction) + 1);
+        mode = 'auto';
+      },
+    };
+  };
+  it('rejects mixed modes and preserves the real maximum singleton, original30 and full-chain wiring', () => {
+    expect(() =>
+      requireDiagnosticEnvironment({ ...env, SRVF_E4_REAL_STATISTICS: '1' }, head),
+    ).not.toThrow();
+    for (const override of [
+      { SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-500' },
+      { SRVF_E4_REAL_STATISTICS: 'true' },
+      { SRVF_E4_CANONICAL_FIRST32: '1' },
+      { SRVF_E4_SOURCE_JOIN: 'statistics-500' },
+      { SRVF_E4_NATIVE_PREPARE_PLAN: '1' },
+    ])
+      expect(() =>
+        requireDiagnosticEnvironment({ ...env, SRVF_E4_REAL_STATISTICS: '1', ...override }, head),
+      ).toThrow();
+    const source = readFileSync(
+      resolve(__dirname, '../diagnostics/e4-prepare-cost.diagnostic-spec.ts'),
+      'utf8',
+    );
+    expect(source).toContain('maximum && !realStatistics ? installE4DiagnosticLimits');
+    expect(source).toContain('transactionMs: realStatistics ? 30000 : 90000');
+    expect(source).toContain('statisticsControl.complete()');
+    const workflow = readFileSync(
+      resolve(__dirname, '../../.github/workflows/activity-os-r5-e4-validation.yml'),
+      'utf8',
+    );
+    expect(workflow).toContain('inputs.real_statistics_maximum && \'["maximum"]\'');
+    expect(workflow).toContain('--real-statistics-capability');
+    expect(workflow).toContain("realStatistics ? 'FULL_SETTLEMENT'");
+  });
+  it('refreshes only the three committed source tables and five real-transaction inputs without any settings change', () => {
+    expect(realStatisticsAnalyzeCommands('SOURCE_BUILD')).toEqual(
+      SOURCE_JOIN_INPUTS.slice(2).map(([n]) => `ANALYZE public."${n}"`),
+    );
+    for (const stage of ['PREPARE', 'SUBMIT'] as const)
+      expect(realStatisticsAnalyzeCommands(stage)).toEqual(
+        SOURCE_JOIN_INPUTS.map(([n]) => `ANALYZE public."${n}"`),
+      );
+    expect(realStatisticsSnapshotSql()).toContain('txid_current()::TEXT');
+    expect(realStatisticsSnapshotSql()).not.toContain('inet_server_addr');
+    expect(realStatisticsSnapshotSql()).not.toMatch(/set_config|SET LOCAL|ALTER|UPDATE|INSERT/iu);
+  });
+  it('runs each original method once on the same tx, keeps both guard checkpoints, and restores every original', async () => {
+    const h = realStatisticsHarness(),
+      originals = [
+        Reflect.get(h.target, 'prepareTimeInTx'),
+        Reflect.get(h.target, 'copySubmittedTimeInTx'),
+        Reflect.get(h.target, 'insertEvaluations'),
+        Reflect.get(h.target, 'copyEvaluations'),
+        Reflect.get(h.audit, 'log'),
+      ];
+    const controller = installRealStatistics(h.target, h.audit);
+    await controller.source(h.tx);
+    h.stage('PREPARE');
+    const args = [{ original: 'time' }, 'policy_v1'];
+    expect(await h.target.prepareTimeInTx(h.tx, ...args)).toEqual(args);
+    await h.audit.log(h.tx, {}, {}, 'prepare_time_settlement');
+    h.stage('SUBMIT');
+    expect(await h.target.copySubmittedTimeInTx(h.tx, ...args)).toEqual(args);
+    await h.audit.log(h.tx, {}, {}, 'submit_time_settlement');
+    controller.complete();
+    controller.restore();
+    const proof = controller.snapshot();
+    expect(proof).toMatchObject({
+      status: 'COMPLETE',
+      restored: true,
+      prepareBudgetMs: 30000,
+      inTransactionAnalyzeIncluded: true,
+      conditionalOnly: true,
+    });
+    expect(proof.stages.map((s) => [s.stage, s.commands])).toEqual([
+      ['SOURCE_BUILD', 3],
+      ['PREPARE', 5],
+      ['SUBMIT', 5],
+    ]);
+    expect(proof.checks).toHaveLength(6);
+    expect(h.events.filter((e) => e === 'INSERT_ORIGINAL')).toHaveLength(1);
+    expect(h.events.filter((e) => e === 'COPY_ORIGINAL')).toHaveLength(1);
+    expect(
+      h.events.slice(
+        h.events.indexOf('PREPARE_ORIGINAL') - 5,
+        h.events.indexOf('PREPARE_ORIGINAL'),
+      ),
+    ).toContain('SNAPSHOT');
+    expect([
+      Reflect.get(h.target, 'prepareTimeInTx'),
+      Reflect.get(h.target, 'copySubmittedTimeInTx'),
+      Reflect.get(h.target, 'insertEvaluations'),
+      Reflect.get(h.target, 'copyEvaluations'),
+      Reflect.get(h.audit, 'log'),
+    ]).toEqual(originals);
+    expect(JSON.stringify(proof)).not.toMatch(/"pid"|"transaction"/u);
+  });
+  it('refuses a statistics drift inside the actual INSERT guard and preserves the failure', async () => {
+    const h = realStatisticsHarness();
+    h.target.insertEvaluations = async (received) => {
+      expect(received).toBe(h.tx);
+      h.drift();
+    };
+    const controller = installRealStatistics(h.target, h.audit);
+    h.stage('PREPARE');
+    await expect(h.target.prepareTimeInTx(h.tx)).rejects.toThrow(
+      'E4 real statistics drift refused',
+    );
+    expect(() => controller.complete()).toThrow();
+    controller.restore();
+    expect(controller.snapshot().restored).toBe(true);
+  });
+  it('does not swallow an original SQLSTATE failure or invoke later guards, and restores on the failed path', async () => {
+    const h = realStatisticsHarness(),
+      failure = Object.assign(new Error('controlled'), { code: '23514' });
+    h.target.insertEvaluations = async () => {
+      throw failure;
+    };
+    const controller = installRealStatistics(h.target, h.audit);
+    h.stage('PREPARE');
+    await expect(h.target.prepareTimeInTx(h.tx)).rejects.toBe(failure);
+    expect(controller.snapshot().checks.map((c) => c.point)).toEqual(['BEFORE_INSERT_GUARD']);
+    controller.restore();
+    expect(controller.snapshot()).toMatchObject({ status: 'INCOMPLETE', restored: true });
+  });
+  it('proves own uncommitted rows with five tiny temporary tables and a rolled-back native constraint failure', () => {
+    const sql = realStatisticsCapabilitySql();
+    expect(sql.match(/^ANALYZE pg_temp\./gmu)).toHaveLength(5);
+    expect(sql.match(/CREATE TEMP TABLE "Participant/gu)).toHaveLength(5);
+    expect(sql).toContain("VALUES ('one',1),('two',2),('three',3)");
+    expect(sql).toContain('txid_current()::TEXT<>(SELECT transaction');
+    expect(sql).toContain('EXCEPTION WHEN check_violation');
+    expect(sql).not.toMatch(/ANALYZE public\.|COMMIT;|CREATE TABLE public/iu);
+    const receipt = {
+      head,
+      run: '123',
+      status: 'COMPLETE',
+      server: 16,
+      sameTransaction: true,
+      tables: 5,
+      rowsPerTable: 3,
+      statisticsVisible: true,
+      negativeSqlstate: '23514',
+      negativeRolledBack: true,
+      businessFixtureExecuted: false,
+    };
+    expect(
+      validateRealStatisticsCapability({ ...receipt, private: 'CANARY' }, head, '123'),
+    ).toEqual(receipt);
+    for (const change of [
+      { head: 'b'.repeat(40) },
+      { sameTransaction: false },
+      { rowsPerTable: 0 },
+      { statisticsVisible: false },
+      { negativeRolledBack: false },
+      { businessFixtureExecuted: true },
+    ])
+      expect(() =>
+        validateRealStatisticsCapability({ ...receipt, ...change }, head, '123'),
+      ).toThrow();
+  });
   const calibrationNotice = () => {
     let raw =
       'NOTICE: E4_JOIN_KEY_METADATA_EQUIVALENCE ' +

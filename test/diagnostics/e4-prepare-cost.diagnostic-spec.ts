@@ -312,6 +312,24 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_REAL_STATISTICS &&
+    (env.SRVF_E4_REAL_STATISTICS !== '1' ||
+      env.SRVF_E4_DIAGNOSTIC_SCENARIO !== 'maximum' ||
+      [
+        'SRVF_E4_SOURCE_JOIN',
+        'SRVF_E4_NATIVE_PREPARE_PLAN',
+        'SRVF_E4_JOIN_KEY_ONCE',
+        'SRVF_E4_JOIN_KEY_CALIBRATION',
+        'SRVF_E4_FIXED_METADATA_MAX_ONCE',
+        'SRVF_E4_SHARED_GUARD_ONCE',
+        'SRVF_E4_CANONICAL_FIRST32',
+        'SRVF_E4_CANONICAL_COST_ONLY',
+        'SRVF_E4_CANONICAL_JIT_ABBA',
+        'SRVF_E4_CANONICAL_MEMORY_PAIR',
+      ].some((key) => !!env[key]))
+  )
+    throw new Error('E4 real statistics maximum scope refused');
+  if (
     env.SRVF_E4_SOURCE_JOIN &&
     (!['small', 'ordinary-500', 'statistics-500'].includes(env.SRVF_E4_SOURCE_JOIN) ||
       env.SRVF_E4_DIAGNOSTIC_SCENARIO !==
@@ -438,7 +456,8 @@ export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: strin
   )
     throw new Error('E4 one-round isolated diagnostic environment refused');
 }
-type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
+type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan' | 'transactionMs'> & {
+  transactionMs: 30000 | 90000;
   internalSqlPlan: 'NOT_RUN' | 'OBSERVED';
   head: string;
   run: string;
@@ -477,6 +496,7 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan'> & {
     | 'PREPARE_NATIVE_PLAN_ONLY'
     | 'PREPARE_SOURCE_JOIN_ONLY';
   sourceJoinStats?: unknown;
+  realStatistics?: unknown;
   sourceJoinComparison?: unknown;
   sourceJoinPostOracle?: 'ENTERED' | 'COMPLETE';
   nativePreparePlan?: unknown;
@@ -3525,6 +3545,7 @@ async function completeDiagnosticSettlement(
 /** This closed Jest child is registered only through an IPC-supervised parent. */
 function registerDiagnosticChild() {
   const head = process.env.SRVF_E4_DIAGNOSTIC_HEAD ?? '';
+  const realStatistics = process.env.SRVF_E4_REAL_STATISTICS === '1';
   requireDiagnosticEnvironment(process.env, head);
   if (
     !process.connected ||
@@ -3542,6 +3563,7 @@ function registerDiagnosticChild() {
     throw new Error('E4 private output refused');
   const report: Report = {
     ...E4_DIAGNOSTIC_PLAN,
+    transactionMs: realStatistics ? 30000 : 90000,
     head,
     run: process.env.GITHUB_RUN_ID!,
     scenario: e4DiagnosticScenario(process.env.SRVF_E4_DIAGNOSTIC_SCENARIO),
@@ -3589,6 +3611,7 @@ function registerDiagnosticChild() {
       if (['ordinary-500', 'statistics-500'].includes(process.env.SRVF_E4_SOURCE_JOIN ?? ''))
         readSourceJoinCalibration();
       if (process.env.SRVF_E4_FIXED_METADATA_MAX_ONCE === '1') metadataCanonicalCandidateSource();
+      if (realStatistics) readRealStatisticsCapability();
     },
     'REFUSED',
   );
@@ -3623,8 +3646,14 @@ function registerDiagnosticChild() {
       const auxiliary: PrismaClient[] = [];
       let releaseOwnedLock: (() => void) | undefined;
       let joinKeyFactsContext: { activityId: string; operationKey: string } | undefined;
+      let statisticsControl: ReturnType<typeof installRealStatistics> | undefined;
       try {
         f = await fixture.createE4Fixture();
+        if (realStatistics)
+          statisticsControl = installRealStatistics(
+            f.app.get(ActivityContributionSettlementService),
+            f.app.get(ActivityTimeSettlementAuditRecorder),
+          );
         checkpoint.mark('FIXTURE_BOOTSTRAP', 'COMPLETE');
         checkpoint.mark('SOURCE_BUILD', 'ENTER');
         report.substage = 'CATALOG_143';
@@ -3647,6 +3676,12 @@ function registerDiagnosticChild() {
         ).finally(() => {
           report.sourceBuildMs = performance.now() - sourceStarted;
         });
+        if (statisticsControl) {
+          report.substage = 'SOURCE_BUILD_STATISTICS';
+          const statisticsStarted = performance.now();
+          await f.db.$transaction((tx) => statisticsControl!.source(tx), { timeout: 30000 });
+          report.sourceBuildMs! += performance.now() - statisticsStarted;
+        }
         report.substage = 'SOURCE_SHAPE';
         expect(
           await f.db.activityParticipationIdentity.count({
@@ -3673,7 +3708,8 @@ function registerDiagnosticChild() {
           log: [{ emit: 'event', level: 'query' }],
         });
         await assertConnectedTestDatabase(db);
-        const limits = maximum ? installE4DiagnosticLimits(db, context) : undefined;
+        const limits =
+          maximum && !realStatistics ? installE4DiagnosticLimits(db, context) : undefined;
         const measuredClient = limits?.client ?? db;
         const observer = new PrismaClient();
         auxiliary.push(observer);
@@ -3770,7 +3806,22 @@ function registerDiagnosticChild() {
           { phase: 'C3_RECEIPT', target: measured, method: 'receipt' },
         ]);
         let nativeCapture: NativePrepareCapture | undefined;
+        const realPrepareQueries = { queries: 0, e4Queries: 0, evaluationInserts: 0, barriers: 0 };
         db.$on('query', (event) => {
+          if (realStatistics) {
+            if (!/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\b/iu.test(event.query))
+              realPrepareQueries.queries++;
+            if (
+              /(?:ActivitySettlementContributionRevision|ParticipantContributionEvaluation|e4_assert_|e4_revision_complete_guard)/u.test(
+                event.query,
+              )
+            )
+              realPrepareQueries.e4Queries++;
+            if (/^\s*INSERT INTO "ParticipantContributionEvaluation"/u.test(event.query))
+              realPrepareQueries.evaluationInserts++;
+            if (/^\s*SET CONSTRAINTS public\.astr_parent_complete_guard,/u.test(event.query))
+              realPrepareQueries.barriers++;
+          }
           nativeCapture?.event(event.query, event.duration);
           native.queryEvent(event.query, event.duration);
           if (!/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\b/iu.test(event.query))
@@ -3917,6 +3968,15 @@ function registerDiagnosticChild() {
           }
         }
         if (nativeCaptureError) throw nativeCaptureError;
+        if (realStatistics) {
+          expect(report.prepareMs).toBeLessThan(30000);
+          expect(realPrepareQueries.queries).toBeGreaterThan(0);
+          expect(realPrepareQueries.queries).toBeLessThanOrEqual(400);
+          expect(realPrepareQueries.e4Queries).toBeLessThanOrEqual(12);
+          expect(realPrepareQueries.evaluationInserts).toBe(1);
+          expect(realPrepareQueries.barriers).toBe(1);
+          report.realStatistics = { prepareQueries: realPrepareQueries };
+        }
         if (process.env.SRVF_E4_SOURCE_JOIN)
           report.sourceJoinStats = {
             ...(report.sourceJoinStats as object),
@@ -4089,6 +4149,11 @@ function registerDiagnosticChild() {
             checkpoint,
             fixture,
           );
+          if (statisticsControl) {
+            await verifyDiagnosticDatabase(observer);
+            await verifyDiagnosticGuards(observer);
+            statisticsControl.complete();
+          }
           expect(
             report.stages.every(
               (stage) =>
@@ -4098,7 +4163,9 @@ function registerDiagnosticChild() {
           ).toBe(true);
           report.oracle = 'COMPLETE';
           report.budgetRecommendation = maximum
-            ? 'ONE_SAMPLE_ONLY_KEEP_FORMAL_30_AND_DO_NOT_SELECT_NEW_BUDGET'
+            ? realStatistics
+              ? 'REAL_FULL_CHAIN_TEST_ONLY_STATISTICS_ORIGINAL_BUDGETS_NOT_COLD_START_ACCEPTANCE'
+              : 'ONE_SAMPLE_ONLY_KEEP_FORMAL_30_AND_DO_NOT_SELECT_NEW_BUDGET'
             : 'ORIGINAL_BUDGETS_OBSERVED_ONE_SAMPLE_NO_PERCENTILE_OR_HEADROOM_CLAIM';
           report.status = 'COMPLETE';
         }
@@ -4166,6 +4233,36 @@ function registerDiagnosticChild() {
         throw new Error('E4 diagnostic failed; see redacted counters');
       } finally {
         try {
+          if (statisticsControl) {
+            try {
+              statisticsControl.restore();
+              const artifact = {
+                head,
+                run: report.run,
+                scenario: report.scenario,
+                purpose: 'DIAGNOSTIC_ONLY',
+                realStatistics: statisticsControl.snapshot(),
+              };
+              writeBounded(join(privateDir, 'real-statistics.json'), artifact);
+              report.realStatistics = {
+                ...(report.realStatistics as object),
+                status: artifact.realStatistics.status,
+                lastPoint: artifact.realStatistics.lastPoint,
+                restored: artifact.realStatistics.restored,
+                conditionalOnly: true,
+                file: 'real-statistics.json',
+                sha256: createHash('sha256')
+                  .update(JSON.stringify(artifact) + '\n')
+                  .digest('hex'),
+              };
+            } catch (error) {
+              report.status = 'FAILED';
+              report.realStatistics = {
+                status: 'RESTORE_OR_EVIDENCE_FAILED',
+                error: e4DiagnosticSafeError(error),
+              };
+            }
+          }
           // All connections must close before the existing normal DROP and lease release.
           checkpoint.mark('CLEANUP', 'ENTER');
           try {
@@ -4332,6 +4429,7 @@ export async function runDiagnosticParent() {
     });
     let report: Report = {
       ...E4_DIAGNOSTIC_PLAN,
+      transactionMs: process.env.SRVF_E4_REAL_STATISTICS === '1' ? 30000 : 90000,
       head,
       run: process.env.GITHUB_RUN_ID!,
       scenario: e4DiagnosticScenario(process.env.SRVF_E4_DIAGNOSTIC_SCENARIO),
@@ -4367,7 +4465,7 @@ export async function runDiagnosticParent() {
         data.scenario !== report.scenario ||
         data.purpose !== 'DIAGNOSTIC_ONLY' ||
         data.acceptance !== 'NOT_AN_ACCEPTANCE_RESULT' ||
-        data.transactionMs !== 90000 ||
+        data.transactionMs !== (process.env.SRVF_E4_REAL_STATISTICS === '1' ? 30000 : 90000) ||
         data.processMs !== 600000
       )
         throw new Error('binding');
@@ -4401,6 +4499,7 @@ export async function runDiagnosticParent() {
     )
       report.status = 'UNKNOWN';
     const cleanup =
+      process.env.SRVF_E4_REAL_STATISTICS === '1' ||
       process.env.SRVF_E4_SOURCE_JOIN ||
       process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' ||
       process.env.SRVF_E4_JOIN_KEY_CALIBRATION === '1' ||
@@ -4425,6 +4524,29 @@ export async function runDiagnosticParent() {
           ? 'NORMAL_DROP_AND_LEASE_RELEASE'
           : 'UNKNOWN',
     };
+    if (process.env.SRVF_E4_REAL_STATISTICS === '1') {
+      const ref = report.realStatistics as
+        | { file?: string; sha256?: string; status?: string; restored?: boolean }
+        | undefined;
+      try {
+        if (ref?.file !== 'real-statistics.json') throw new Error('missing');
+        const raw = readFileSync(join(privateDir, ref.file));
+        if (raw.length > 65536 || createHash('sha256').update(raw).digest('hex') !== ref.sha256)
+          throw new Error('hash');
+        const artifact = JSON.parse(raw.toString()) as Record<string, unknown>;
+        if (
+          artifact.head !== head ||
+          artifact.run !== report.run ||
+          artifact.scenario !== 'maximum'
+        )
+          throw new Error('binding');
+        if (report.status === 'COMPLETE' && (ref.status !== 'COMPLETE' || ref.restored !== true))
+          throw new Error('incomplete');
+        writeBounded(join(dirname(output), ref.file), artifact);
+      } catch {
+        closedReport.status = 'FAILED';
+      }
+    }
     if (process.env.SRVF_E4_SOURCE_JOIN) {
       const comparison = report.sourceJoinComparison as
         | { plans?: { file: string; sha256: string }[] }
@@ -4765,6 +4887,420 @@ export const SOURCE_JOIN_INPUTS = [
   ['ParticipantTimeAllocationSlice', 'e4_sj_slices'],
   ['ParticipantSettlementResultRevision', 'e4_sj_results'],
 ] as const;
+type RealStatisticsStage = 'SOURCE_BUILD' | 'PREPARE' | 'SUBMIT';
+type RealStatisticsClient = {
+  $queryRawUnsafe(query: string): PromiseLike<unknown>;
+  $executeRawUnsafe(query: string): PromiseLike<unknown>;
+};
+type RealStatisticsSnapshot = {
+  pid: number;
+  transaction: string;
+  statisticsDigest: string;
+  settingsDigest: string;
+  workMemKb: number;
+  jitEnabled: boolean;
+  planCacheMode: string;
+  statistics: { table: string; rows: number; tuples: number; statsColumns: number }[];
+};
+function isRealStatisticsClient(value: unknown): value is RealStatisticsClient {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof Reflect.get(value, '$queryRawUnsafe') === 'function' &&
+    typeof Reflect.get(value, '$executeRawUnsafe') === 'function'
+  );
+}
+export function realStatisticsAnalyzeCommands(stage: RealStatisticsStage) {
+  return SOURCE_JOIN_INPUTS.filter((_, i) => stage !== 'SOURCE_BUILD' || i >= 2).map(
+    ([name]) => `ANALYZE public."${name}"`,
+  );
+}
+export function realStatisticsSnapshotSql() {
+  return `SELECT current_database() AS database,pg_backend_pid() AS pid,txid_current()::TEXT AS transaction,
+ current_setting('server_version_num')::INT AS server,
+ current_setting('transaction_read_only')='off' AS writable,
+ ${sourceStatisticsProjectionSql()} AS statistics,${sourceJoinStatsDigestSql(true)} AS "statisticsDigest",
+ ${sourceSettingsDigestSql()} AS "settingsDigest",(pg_size_bytes(current_setting('work_mem'))/1024)::INT AS "workMemKb",
+ current_setting('jit')='on' AS "jitEnabled",current_setting('plan_cache_mode') AS "planCacheMode"`;
+}
+async function readRealStatistics(tx: RealStatisticsClient): Promise<RealStatisticsSnapshot> {
+  const rows = await tx.$queryRawUnsafe(realStatisticsSnapshotSql());
+  if (!Array.isArray(rows) || rows.length !== 1) throw new Error('E4 real statistics row refused');
+  const r = rows[0] as Record<string, unknown>;
+  if (
+    r.database !== 'app_test_w98' ||
+    r.writable !== true ||
+    typeof r.server !== 'number' ||
+    r.server < 160000 ||
+    r.server >= 170000 ||
+    typeof r.pid !== 'number' ||
+    !Number.isInteger(r.pid) ||
+    r.pid < 1 ||
+    typeof r.transaction !== 'string' ||
+    !/^\d+$/u.test(r.transaction) ||
+    typeof r.statisticsDigest !== 'string' ||
+    !/^[a-f0-9]{32}$/u.test(r.statisticsDigest) ||
+    typeof r.settingsDigest !== 'string' ||
+    !/^[a-f0-9]{32}$/u.test(r.settingsDigest) ||
+    r.workMemKb !== 4096 ||
+    r.jitEnabled !== true ||
+    !['auto', 'force_custom_plan'].includes(String(r.planCacheMode)) ||
+    !Array.isArray(r.statistics) ||
+    r.statistics.length !== 5
+  )
+    throw new Error('E4 real statistics scope/settings refused');
+  const values = r.statistics as Record<string, unknown>[];
+  const statistics = SOURCE_JOIN_INPUTS.map(([table]) => {
+    const matches = values.filter((s) => s.table === table);
+    if (matches.length !== 1) throw new Error('E4 real statistics table refused');
+    const s = matches[0];
+    for (const k of ['rows', 'tuples', 'statsColumns'])
+      if (
+        typeof s[k] !== 'number' ||
+        !Number.isFinite(s[k]) ||
+        s[k] < (k === 'tuples' ? -1 : 0) ||
+        s[k] > 1e6
+      )
+        throw new Error('E4 real statistics count refused');
+    return {
+      table,
+      rows: s.rows as number,
+      tuples: s.tuples as number,
+      statsColumns: s.statsColumns as number,
+    };
+  });
+  return {
+    pid: r.pid,
+    transaction: r.transaction,
+    statisticsDigest: r.statisticsDigest,
+    settingsDigest: r.settingsDigest,
+    workMemKb: 4096,
+    jitEnabled: true,
+    planCacheMode: String(r.planCacheMode),
+    statistics,
+  };
+}
+function closedRealStatistics(s: RealStatisticsSnapshot) {
+  const { pid, transaction, ...closed } = s;
+  void pid;
+  void transaction;
+  return closed;
+}
+/** Isolated test-instance hooks only. Every original call receives its original this/arguments/tx. */
+export function installRealStatistics(target: object, audit: object) {
+  const state: {
+    status: string;
+    restored: boolean;
+    lastPoint?: string;
+    stages: {
+      stage: RealStatisticsStage;
+      status: string;
+      wallMs: number;
+      commands: number;
+      before?: ReturnType<typeof closedRealStatistics>;
+      after?: ReturnType<typeof closedRealStatistics>;
+    }[];
+    checks: {
+      stage: RealStatisticsStage;
+      point: string;
+      statisticsDigest: string;
+      settingsDigest: string;
+      planCacheMode: string;
+      sameTransaction: boolean;
+      statisticsUnchanged: boolean;
+    }[];
+  } = { status: 'ENTERED', restored: false, stages: [], checks: [] };
+  const contexts = new WeakMap<
+    object,
+    { stage: RealStatisticsStage; baseline: RealStatisticsSnapshot; first?: RealStatisticsSnapshot }
+  >();
+  const installed: {
+    target: object;
+    method: string;
+    original: unknown;
+    descriptor?: PropertyDescriptor;
+    wrapper: (...args: unknown[]) => unknown;
+  }[] = [];
+  const identity = (a: RealStatisticsSnapshot, b: RealStatisticsSnapshot) => {
+    if (a.pid !== b.pid || a.transaction !== b.transaction)
+      throw new Error('E4 real statistics transaction changed');
+  };
+  const check = async (tx: RealStatisticsClient, point: string) => {
+    const context = contexts.get(tx);
+    if (!context) throw new Error('E4 real statistics guard context absent');
+    state.lastPoint = context.stage + ':' + point;
+    const s = await readRealStatistics(tx);
+    identity(context.baseline, s);
+    if (s.statisticsDigest !== context.baseline.statisticsDigest)
+      throw new Error('E4 real statistics drift refused');
+    if (point === 'BEFORE_INSERT_GUARD') context.first = s;
+    else if (!context.first || context.first.settingsDigest !== s.settingsDigest)
+      throw new Error('E4 real statistics guard settings changed');
+    state.checks.push({
+      stage: context.stage,
+      point,
+      statisticsDigest: s.statisticsDigest,
+      settingsDigest: s.settingsDigest,
+      planCacheMode: s.planCacheMode,
+      sameTransaction: true,
+      statisticsUnchanged: true,
+    });
+    return s;
+  };
+  const analyze = async (tx: RealStatisticsClient, stage: RealStatisticsStage) => {
+    if (state.stages.some((s) => s.stage === stage))
+      throw new Error('E4 real statistics repeated stage refused');
+    state.lastPoint = stage + ':ANALYZE';
+    const receipt: (typeof state.stages)[number] = {
+      stage,
+      status: 'ENTERED',
+      wallMs: 0,
+      commands: 0,
+    };
+    state.stages.push(receipt);
+    const started = performance.now();
+    try {
+      const before = await readRealStatistics(tx);
+      receipt.before = closedRealStatistics(before);
+      const expected =
+        stage === 'SOURCE_BUILD'
+          ? [0, 0, 10000, 50000, 2000]
+          : stage === 'PREPARE'
+            ? [8000, 40000, 10000, 50000, 2000]
+            : [16000, 80000, 10000, 50000, 4000];
+      if (before.statistics.some((s, i) => s.rows !== expected[i]))
+        throw new Error('E4 real statistics fixed maximum shape refused');
+      for (const sql of realStatisticsAnalyzeCommands(stage)) {
+        await tx.$executeRawUnsafe(sql);
+        receipt.commands++;
+      }
+      const after = await readRealStatistics(tx);
+      receipt.after = closedRealStatistics(after);
+      identity(before, after);
+      if (
+        before.settingsDigest !== after.settingsDigest ||
+        after.statistics.some(
+          (s, i) =>
+            s.rows !== before.statistics[i].rows ||
+            ((stage !== 'SOURCE_BUILD' || i >= 2) && (s.statsColumns < 1 || s.tuples < 0)),
+        )
+      )
+        throw new Error('E4 real statistics analyze visibility/data/settings refused');
+      if (stage !== 'SOURCE_BUILD') contexts.set(tx, { stage, baseline: after });
+      receipt.status = 'COMPLETE';
+    } finally {
+      receipt.wallMs = performance.now() - started;
+    }
+  };
+  const bind = (
+    object: object,
+    method: string,
+    run: (args: unknown[], original: (...args: unknown[]) => unknown) => Promise<unknown>,
+  ) => {
+    const original: unknown = Reflect.get(object, method),
+      descriptor = Object.getOwnPropertyDescriptor(object, method);
+    if (typeof original !== 'function' || (descriptor && !descriptor.configurable))
+      throw new Error('E4 real statistics method unavailable');
+    const invoke = (...args: unknown[]) => Reflect.apply(original, object, args) as unknown;
+    const wrapper = async function (this: unknown, ...args: unknown[]) {
+      if (this !== object || state.restored || !isRealStatisticsClient(args[0]))
+        throw new Error('E4 real statistics method/tx refused');
+      return run(args, invoke);
+    };
+    Object.defineProperty(object, method, { configurable: true, writable: true, value: wrapper });
+    installed.push({ target: object, method, original, descriptor, wrapper });
+  };
+  const restore = () => {
+    if (state.restored) return;
+    for (const item of [...installed].reverse()) {
+      if (Reflect.get(item.target, item.method) !== item.wrapper)
+        throw new Error('E4 real statistics restore ownership refused');
+      if (item.descriptor) Object.defineProperty(item.target, item.method, item.descriptor);
+      else Reflect.deleteProperty(item.target, item.method);
+      if (Reflect.get(item.target, item.method) !== item.original)
+        throw new Error('E4 real statistics original method not restored');
+    }
+    state.restored = true;
+  };
+  try {
+    for (const [method, stage] of [
+      ['prepareTimeInTx', 'PREPARE'],
+      ['copySubmittedTimeInTx', 'SUBMIT'],
+    ] as const)
+      bind(target, method, async (args, original) => {
+        const tx = args[0];
+        if (!isRealStatisticsClient(tx)) throw new Error('E4 real statistics tx refused');
+        await analyze(tx, stage);
+        return original(...args);
+      });
+    for (const method of ['insertEvaluations', 'copyEvaluations'])
+      bind(target, method, async (args, original) => {
+        const tx = args[0];
+        if (!isRealStatisticsClient(tx)) throw new Error('E4 real statistics tx refused');
+        await check(tx, 'BEFORE_INSERT_GUARD');
+        const result = await original(...args);
+        await check(tx, 'AFTER_INSERT_GUARD');
+        return result;
+      });
+    bind(audit, 'log', async (args, original) => {
+      const result = await original(...args),
+        tx = args[0];
+      if (
+        isRealStatisticsClient(tx) &&
+        contexts.has(tx) &&
+        ['prepare_time_settlement', 'submit_time_settlement'].includes(String(args[3]))
+      )
+        await check(tx, 'BEFORE_DEFERRED_GUARD');
+      return result;
+    });
+  } catch (error) {
+    restore();
+    throw error;
+  }
+  return {
+    source: (tx: RealStatisticsClient) => analyze(tx, 'SOURCE_BUILD'),
+    restore,
+    snapshot: () => ({
+      ...state,
+      status: state.status === 'COMPLETE' ? 'COMPLETE' : 'INCOMPLETE',
+      conditionalOnly: true,
+      statisticsScope: 'FIVE_TEST_TABLES_ONLY',
+      prepareBudgetMs: 30000,
+      inTransactionAnalyzeIncluded: true,
+    }),
+    complete: () => {
+      if (
+        state.stages.length !== 3 ||
+        state.stages.some((s) => s.status !== 'COMPLETE') ||
+        state.checks.length !== 6
+      )
+        throw new Error('E4 real statistics full chain evidence incomplete');
+      for (const stage of ['PREPARE', 'SUBMIT'])
+        for (const point of ['BEFORE_INSERT_GUARD', 'AFTER_INSERT_GUARD', 'BEFORE_DEFERRED_GUARD'])
+          if (state.checks.filter((s) => s.stage === stage && s.point === point).length !== 1)
+            throw new Error('E4 real statistics guard coverage refused');
+      state.status = 'COMPLETE';
+      delete state.lastPoint;
+    },
+  };
+}
+
+export function realStatisticsCapabilitySql() {
+  const rebound = (sql: string) => {
+    for (const [name] of SOURCE_JOIN_INPUTS)
+      sql = sql.replaceAll(`public."${name}"`, `pg_temp."${name}"`);
+    return sql.replaceAll(
+      "schemaname='public'",
+      'schemaname=(SELECT nspname FROM pg_namespace WHERE oid=pg_my_temp_schema())',
+    );
+  };
+  return `BEGIN;
+SET LOCAL statement_timeout='5s';
+DO $$ BEGIN IF current_database()<>'postgres' OR inet_server_addr() IS NOT NULL OR current_setting('server_version_num')::INT NOT BETWEEN 160000 AND 169999 THEN RAISE EXCEPTION 'E4 real statistics capability scope refused'; END IF; END $$;
+${SOURCE_JOIN_INPUTS.map(([name]) => `CREATE TEMP TABLE "${name}"(id TEXT,value INTEGER CHECK(value>=0)); INSERT INTO pg_temp."${name}" VALUES ('one',1),('two',2),('three',3);`).join('\n')}
+CREATE TEMP TABLE e4_real_statistics_owner AS SELECT pg_backend_pid() AS pid,txid_current()::TEXT AS transaction;
+${realStatisticsAnalyzeCommands('PREPARE')
+  .map((s) => rebound(s) + ';')
+  .join('\n')}
+DO $$ DECLARE snapshot JSONB; rejected BOOLEAN:=false; BEGIN
+ snapshot:=${rebound(sourceStatisticsProjectionSql())};
+ IF jsonb_array_length(snapshot)<>5 OR EXISTS(SELECT 1 FROM jsonb_array_elements(snapshot) s WHERE (s->>'rows')::INT<>3 OR (s->>'tuples')::FLOAT8<>3 OR (s->>'statsColumns')::INT<>2)
+ OR pg_backend_pid()<>(SELECT pid FROM e4_real_statistics_owner) OR txid_current()::TEXT<>(SELECT transaction FROM e4_real_statistics_owner)
+ THEN RAISE EXCEPTION 'E4 same transaction analyze unavailable'; END IF;
+ BEGIN INSERT INTO pg_temp."ParticipantSettlementTimeBucket" VALUES ('invalid',-1);
+ EXCEPTION WHEN check_violation THEN rejected:=true; END;
+ IF NOT rejected OR (SELECT count(*) FROM pg_temp."ParticipantSettlementTimeBucket")<>3 THEN RAISE EXCEPTION 'E4 tiny rollback refused'; END IF;
+END $$;
+SELECT json_build_object('server',16,'sameTransaction',true,'tables',5,'rowsPerTable',3,'statisticsVisible',true,'negativeSqlstate','23514','negativeRolledBack',true,'businessFixtureExecuted',false);
+ROLLBACK;
+`;
+}
+export function validateRealStatisticsCapability(value: unknown, head: string, run: string) {
+  if (!value || typeof value !== 'object') throw new Error('E4 real statistics capability refused');
+  const r = value as Record<string, unknown>;
+  if (
+    r.head !== head ||
+    r.run !== run ||
+    r.status !== 'COMPLETE' ||
+    r.server !== 16 ||
+    r.sameTransaction !== true ||
+    r.tables !== 5 ||
+    r.rowsPerTable !== 3 ||
+    r.statisticsVisible !== true ||
+    r.negativeSqlstate !== '23514' ||
+    r.negativeRolledBack !== true ||
+    r.businessFixtureExecuted !== false
+  )
+    throw new Error('E4 real statistics capability refused');
+  return {
+    head,
+    run,
+    status: 'COMPLETE',
+    server: 16,
+    sameTransaction: true,
+    tables: 5,
+    rowsPerTable: 3,
+    statisticsVisible: true,
+    negativeSqlstate: '23514',
+    negativeRolledBack: true,
+    businessFixtureExecuted: false,
+  };
+}
+function readRealStatisticsCapability() {
+  const raw = readFileSync(
+    resolve(process.cwd(), 'tmp/e4-prepare-cost-evidence/real-statistics-capability.json'),
+  );
+  if (raw.length > 4096) throw new Error('E4 real statistics capability bound refused');
+  return validateRealStatisticsCapability(
+    JSON.parse(raw.toString()),
+    process.env.GITHUB_SHA!,
+    process.env.GITHUB_RUN_ID!,
+  );
+}
+function runRealStatisticsCapability() {
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  requireDiagnosticEnvironment(process.env, head);
+  if (process.env.SRVF_E4_REAL_STATISTICS !== '1')
+    throw new Error('E4 real statistics mode required');
+  const raw = execFileSync(
+    'docker',
+    [
+      'exec',
+      '-i',
+      'u-nest-api-postgres',
+      'psql',
+      '-X',
+      '-q',
+      '-A',
+      '-t',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-U',
+      'postgres',
+      '-d',
+      'postgres',
+    ],
+    {
+      input: realStatisticsCapabilitySql(),
+      encoding: 'utf8',
+      timeout: 10000,
+      maxBuffer: 8192,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
+  const evidence = validateRealStatisticsCapability(
+    { ...JSON.parse(raw.trim()), head, run: process.env.GITHUB_RUN_ID, status: 'COMPLETE' },
+    head,
+    process.env.GITHUB_RUN_ID!,
+  );
+  const file = resolve(
+    process.cwd(),
+    'tmp/e4-prepare-cost-evidence/real-statistics-capability.json',
+  );
+  mkdirSync(dirname(file), { recursive: true });
+  writeBounded(file, evidence);
+  console.info('E4_REAL_STATISTICS_CAPABILITY ' + JSON.stringify(evidence));
+}
 export function sourceJoinStatsDigestSql(plannerOnly = false) {
   if (plannerOnly) {
     const fields = [
@@ -6201,7 +6737,28 @@ if (process.env.SRVF_E4_DIAGNOSTIC_CHILD === '1') registerDiagnosticChild();
 if (require.main === module) {
   if (process.argv.length === 3 && process.argv[2] === '--plan')
     console.info(JSON.stringify(E4_DIAGNOSTIC_PLAN, null, 2));
-  else if (process.argv.length === 3 && process.argv[2] === '--native-plan-capability') {
+  else if (process.argv.length === 3 && process.argv[2] === '--real-statistics-capability') {
+    try {
+      runRealStatisticsCapability();
+    } catch {
+      const evidence = {
+        head: process.env.GITHUB_SHA,
+        run: process.env.GITHUB_RUN_ID,
+        status: 'FAILED',
+        businessFixtureExecuted: false,
+      };
+      if (process.env.GITHUB_ACTIONS === 'true') {
+        const file = resolve(
+          process.cwd(),
+          'tmp/e4-prepare-cost-evidence/real-statistics-capability.json',
+        );
+        mkdirSync(dirname(file), { recursive: true });
+        writeBounded(file, evidence);
+      }
+      console.error('E4_REAL_STATISTICS_CAPABILITY_FAILURE ' + JSON.stringify(evidence));
+      process.exitCode = 1;
+    }
+  } else if (process.argv.length === 3 && process.argv[2] === '--native-plan-capability') {
     try {
       runNativeCapability();
     } catch (error) {
