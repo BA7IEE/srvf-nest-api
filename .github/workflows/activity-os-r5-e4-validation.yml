@@ -54,6 +54,11 @@ on:
         description: Successful small proof; statistics500 reuses the fixed proof by SQL identities
         required: false
         type: string
+      source_join_bucket_c:
+        description: Cold bucket LATERAL OFFSET0 candidate C; only small or one ordinary500, no manual ANALYZE
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [codex/activity-os-r5-e4-github-validation]
     paths: [.github/workflows/activity-os-r5-e4-validation.yml]
@@ -794,6 +799,7 @@ jobs:
       SRVF_E4_NATIVE_PREPARE_PLAN: ${{ inputs.native_prepare_plan_500 && '1' || '' }}
       SRVF_E4_REAL_STATISTICS: ${{ inputs.real_statistics_maximum && '1' || '' }}
       SRVF_E4_SOURCE_JOIN: ${{ inputs.source_join_comparison != 'off' && inputs.source_join_comparison || '' }}
+      SRVF_E4_SOURCE_JOIN_C: ${{ inputs.source_join_bucket_c && '1' || '' }}
       SRVF_E4_SOURCE_JOIN_SMALL_RUN: ${{ inputs.source_join_small_run }}
       SRVF_E4_CANONICAL_COST_ONLY: ${{ contains(github.event.head_commit.message, '[e4-canonical-cost-once]') && '1' || '' }}
       SRVF_E4_CANONICAL_JIT_ABBA: ${{ contains(github.event.head_commit.message, '[e4-canonical-jit-once]') && '1' || '' }}
@@ -892,7 +898,8 @@ jobs:
               if (plan.head !== closed.head || plan.run !== closed.run) throw Error('E4 native sidecar binding refused');
               emit(name,plan);
             }
-            process.stdout.write('E4_NATIVE_PLAN_SUMMARY ' + JSON.stringify({head:closed.head,run:closed.run,status:closed.status,scenario:closed.scenario,prepareMs:closed.prepareMs,oracle:closed.oracle,nativeStatus:closed.nativePreparePlan?.status,sourceJoinStatus:closed.sourceJoinComparison?.status,probeReductionObserved:closed.sourceJoinComparison?.probeReductionObserved,missing:closed.nativePreparePlan?.missing,reason:closed.nativePreparePlan?.reason,breakdown:closed.nativePreparePlan?.breakdown,resources:closed.resources,independentCleanup:closed.independentCleanup}) + '\n');
+            process.stdout.write('E4_NATIVE_PLAN_SUMMARY ' + JSON.stringify({head:closed.head,run:closed.run,status:closed.status,scenario:closed.scenario,prepareMs:closed.prepareMs,oracle:closed.oracle,nativeStatus:closed.nativePreparePlan?.status,sourceJoinStatus:closed.sourceJoinComparison?.status,sourceVariant:closed.sourceJoinComparison?.sourceVariant,coldBucketDecision:closed.sourceJoinComparison?.coldBucketAssessment?.decision,coldBucketReasons:closed.sourceJoinComparison?.coldBucketAssessment?.reasons,probeReductionObserved:closed.sourceJoinComparison?.probeReductionObserved,missing:closed.nativePreparePlan?.missing,reason:closed.nativePreparePlan?.reason,breakdown:closed.nativePreparePlan?.breakdown,resources:closed.resources,independentCleanup:closed.independentCleanup}) + '\n');
+            if (process.env.SRVF_E4_SOURCE_JOIN_C === '1' && closed.sourceJoinComparison?.coldBucketAssessment?.decision === 'REJECTED') process.exit(3);
             process.exit(0);
           }
           if (!fs.existsSync(file) || fs.statSync(file).size > 65536) throw Error('E4 closed evidence unavailable');

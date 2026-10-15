@@ -1,4 +1,12 @@
-import { readFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  statSync,
+  mkdtempSync,
+  rmSync,
+  existsSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -79,6 +87,8 @@ import {
   realStatisticsCapabilitySql,
   validateRealStatisticsCapability,
   writeRealStatisticsArtifact,
+  retainRealStatisticsArtifact,
+  assessColdBucketCandidate,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -96,6 +106,266 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  it.each(['COMPLETE', 'FAILED'] as const)(
+    'retains a real %s child artifact through parent hash validation and actual workflow chunks',
+    (status) => {
+      const root = mkdtempSync(resolve(tmpdir(), 'e4-sidecar-roundtrip-')),
+        origin = resolve(root, 'child'),
+        destination = resolve(root, 'parent');
+      mkdirSync(origin);
+      mkdirSync(destination);
+      try {
+        const artifact = {
+          head,
+          run: '123',
+          scenario: 'maximum',
+          purpose: 'DIAGNOSTIC_ONLY',
+          businessFixtureExecuted: false,
+          realStatistics: {
+            status: status === 'COMPLETE' ? 'COMPLETE' : 'INCOMPLETE',
+            restored: true,
+            wallMs: 1.234,
+            intentionalToolFailure: status === 'FAILED',
+          },
+        };
+        const source = readFileSync(
+          resolve(__dirname, '../diagnostics/e4-prepare-cost.diagnostic-spec.ts'),
+          'utf8',
+        );
+        const ast = ts.createSourceFile(
+          'driver.ts',
+          source,
+          ts.ScriptTarget.Latest,
+          true,
+          ts.ScriptKind.TS,
+        );
+        const declarations = ast.statements.filter(
+          (n): n is ts.FunctionDeclaration =>
+            ts.isFunctionDeclaration(n) &&
+            !!n.name &&
+            ['writeBounded', 'writeRealStatisticsArtifact'].includes(n.name.text),
+        );
+        expect(declarations).toHaveLength(2);
+        const writer = ts.transpileModule(declarations.map((n) => n.getText(ast)).join('\n'), {
+          compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+        }).outputText;
+        const code = `const {readFileSync,writeFileSync}=require('node:fs');const {join}=require('node:path');const {createHash}=require('node:crypto');${writer}\nconst value=JSON.parse(process.argv[2]);const ref=writeRealStatisticsArtifact(process.argv[1],value);process.stdout.write(JSON.stringify({...ref,status:value.realStatistics.status,restored:true}));process.exitCode=Number(process.argv[3]);`;
+        const child = spawnSync(
+          process.execPath,
+          ['-e', code, origin, JSON.stringify(artifact), status === 'COMPLETE' ? '0' : '3'],
+          {
+            env: {
+              ...process.env,
+              TS_NODE_PROJECT: resolve(__dirname, '../tsconfig.test.json'),
+              SRVF_E4_DIAGNOSTIC_CHILD: '',
+            },
+            encoding: 'utf8',
+            timeout: 20000,
+            maxBuffer: 4096,
+          },
+        );
+        expect(child.status).toBe(status === 'COMPLETE' ? 0 : 3);
+        const ref = JSON.parse(child.stdout) as {
+          file: string;
+          sha256: string;
+          status: string;
+          restored: boolean;
+        };
+        retainRealStatisticsArtifact(origin, destination, ref, { head, run: '123', status });
+        expect(
+          createHash('sha256')
+            .update(readFileSync(resolve(destination, ref.file)))
+            .digest('hex'),
+        ).toBe(ref.sha256);
+        const result = {
+          head,
+          run: '123',
+          scenario: 'maximum',
+          purpose: 'DIAGNOSTIC_ONLY',
+          coverage: 'FULL_SETTLEMENT',
+          status,
+          realStatistics: ref,
+        };
+        writeFileSync(resolve(destination, 'result.json'), JSON.stringify(result));
+        const workflow = readFileSync(
+          resolve(__dirname, '../../.github/workflows/activity-os-r5-e4-validation.yml'),
+          'utf8',
+        );
+        const script = workflow.match(
+          /- name: Summarize closed shared-guard evidence[\s\S]*?node <<'NODE'\n([\s\S]*?)\n\s+NODE/u,
+        )?.[1];
+        expect(script).toBeDefined();
+        const mapped = (path: string) => resolve(destination, path.split('/').pop()!);
+        let output = '';
+        const stopped = new Error('STOP');
+        try {
+          runInNewContext(script!, {
+            require: () => ({
+              existsSync: (p: string) => existsSync(mapped(p)),
+              statSync: (p: string) => statSync(mapped(p)),
+              readFileSync: (p: string) => readFileSync(mapped(p), 'utf8'),
+            }),
+            process: {
+              env: {
+                SRVF_E4_REAL_STATISTICS: '1',
+                GITHUB_SHA: head,
+                GITHUB_RUN_ID: '123',
+                SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
+              },
+              stdout: {
+                write: (s: string) => {
+                  output += s;
+                },
+              },
+              exit: () => {
+                throw stopped;
+              },
+            },
+          });
+        } catch (error) {
+          if (error !== stopped) throw error;
+        }
+        const chunks = output
+          .split('\n')
+          .filter((l) => l.startsWith('E4_NATIVE_PLAN_CHUNK '))
+          .map(
+            (l) =>
+              JSON.parse(l.slice('E4_NATIVE_PLAN_CHUNK '.length)) as {
+                artifact: string;
+                index: number;
+                data: string;
+              },
+          );
+        const recover = (name: string) =>
+          JSON.parse(
+            chunks
+              .filter((c) => c.artifact === name)
+              .sort((a, b) => a.index - b.index)
+              .map((c) => c.data)
+              .join(''),
+          ) as unknown;
+        expect(recover('result.json')).toEqual(result);
+        expect(recover(ref.file)).toEqual(artifact);
+        expect(
+          createHash('sha256')
+            .update(JSON.stringify(recover(ref.file), null, 2) + '\n')
+            .digest('hex'),
+        ).toBe(ref.sha256);
+        expect(() =>
+          retainRealStatisticsArtifact(
+            origin,
+            destination,
+            { ...ref, sha256: '0'.repeat(64) },
+            { head, run: '123', status },
+          ),
+        ).toThrow('hash refused');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+    30000,
+  );
+  it('changes only the original time-branch source JOIN into a narrow bucket-only lateral lookup', () => {
+    const a = sourceJoinFunction(),
+      c = sourceJoinFunction(true, 'C');
+    const join =
+      'JOIN "ParticipantSettlementTimeBucketSource" bs ON bs."bucketId"=b.id AND bs."activityId"=b."activityId" AND bs."timeRevisionId"=b."timeRevisionId"';
+    const replacement = c.match(/JOIN LATERAL \([\s\S]*?\n {2}\) bs ON[^\n]+/u)?.[0];
+    expect(replacement).toBeDefined();
+    expect(c.replace(replacement!, join)).toBe(a);
+    expect(replacement).toContain('WHERE bs0."bucketId"=b.id\n    OFFSET 0');
+    expect(replacement?.split('WHERE ')[1].split('OFFSET 0')[0].trim()).toBe('bs0."bucketId"=b.id');
+    expect(replacement).not.toMatch(/SELECT \*|DISTINCT|LIMIT|GROUP BY|ORDER BY|coalesce/iu);
+    expect(c).not.toContain('time_source_edges AS MATERIALIZED');
+    const sql = sourceJoinSessionSql('a'.repeat(24), true, false, 'C');
+    for (const name of [
+      'WRONG_ACTIVITY',
+      'WRONG_TIME_REVISION',
+      'NULL_ACTIVITY',
+      'NULL_TIME_REVISION',
+    ])
+      expect(sql).toContain(name);
+    expect(sql).not.toMatch(/^ANALYZE\b/gmu);
+    expect(sql).toContain("'analyzedTables',0");
+    expect(sql).not.toMatch(/SET(?: LOCAL)? (?:jit|work_mem|enable_\w+|plan_cache_mode)=/iu);
+    expect(() => sourceJoinSessionSql('a'.repeat(24), false, true, 'C')).toThrow();
+    expect(() =>
+      requireDiagnosticEnvironment(
+        {
+          ...env,
+          SRVF_E4_SOURCE_JOIN: 'statistics-500',
+          SRVF_E4_SOURCE_JOIN_C: '1',
+          SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-500',
+        },
+        head,
+      ),
+    ).toThrow();
+  });
+  it('rejects product scans, missing bucket Index Cond, unexercised baselines and unclear complete-guard gains', () => {
+    const scan = {
+      type: 'Index Scan',
+      index: 'pstbs_bucket_allocation_key',
+      bucketIdIndexCond: true,
+      loops: 2000,
+      rowsPerLoop: 1,
+      rowsFilteredPerLoop: 0,
+      hasFilter: false,
+      rowsRecheckedPerLoop: 0,
+    };
+    const base = {
+      ...scan,
+      index: 'pstbs_revision_idx',
+      bucketIdIndexCond: false,
+      rowsFilteredPerLoop: 1999,
+      hasFilter: true,
+    };
+    const plans = [
+      { variant: 'BASELINE', probes: [base] },
+      { variant: 'CANDIDATE', probes: [scan] },
+      { variant: 'CANDIDATE', probes: [scan] },
+      { variant: 'BASELINE', probes: [base] },
+    ];
+    const timings = plans.map((p, i) => ({
+      phase: 'LATENCY',
+      variant: p.variant,
+      wallMs: [4000, 2700, 2600, 4100][i],
+    }));
+    expect(assessColdBucketCandidate(plans, timings)).toMatchObject({
+      decision: 'PROCEED_TO_REAL_PATH_REVIEW',
+      candidateScanWork: [2000, 2000],
+      baselineScanWork: [4000000, 4000000],
+    });
+    for (const bad of [
+      {
+        ...scan,
+        type: 'Seq Scan',
+        index: 'OTHER',
+        bucketIdIndexCond: false,
+        rowsFilteredPerLoop: 1999,
+        hasFilter: true,
+      },
+      { ...scan, bucketIdIndexCond: false },
+      { ...scan, loops: 1250000, rowsPerLoop: 0 },
+    ])
+      expect(
+        assessColdBucketCandidate(
+          plans.map((p) => (p.variant === 'CANDIDATE' ? { ...p, probes: [bad] } : p)),
+          timings,
+        ).decision,
+      ).toBe('REJECTED');
+    expect(
+      assessColdBucketCandidate(
+        plans,
+        timings.map((t) => ({ ...t, wallMs: 3000 })),
+      ).decision,
+    ).toBe('REJECTED');
+    expect(
+      assessColdBucketCandidate(
+        plans.map((p) => ({ ...p, probes: [scan] })),
+        timings,
+      ).decision,
+    ).toBe('REJECTED');
+  });
   it('hashes the exact bounded statistics artifact bytes, including pretty formatting and trailing newline', () => {
     const directory = mkdtempSync(resolve(tmpdir(), 'e4-real-statistics-bytes-'));
     try {
@@ -775,6 +1045,13 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     expect(
       validateSourceJoinCalibration({ ...proof, secret: 'PRIVATE_CANARY' }, head, '124'),
     ).toEqual(proof);
+    const cProof = {
+      ...proof,
+      candidateSha256: createHash('sha256').update(sourceJoinFunction(true, 'C')).digest('hex'),
+    };
+    expect(validateSourceJoinCalibration(cProof, head, '124', false, 'C')).toEqual(cProof);
+    expect(() => validateSourceJoinCalibration(proof, head, '124', false, 'C')).toThrow();
+    expect(() => validateSourceJoinCalibration(cProof, head, '124')).toThrow();
     for (const change of [
       { head: 'c'.repeat(40) },
       { forRun: '123' },
@@ -960,6 +1237,34 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       ),
     ).toBe('BARRIER');
     expect(nativePlanCategory("SELECT 'ParticipantContributionEvaluation'")).toBe('OTHER');
+  });
+  it('retains only the closed bucketId Index Cond fact and never the actual predicate text', () => {
+    const query = (condition: string) =>
+      nativeLog('SELECT private_source', 'e4_sj_rows', [], 42, {
+        Plan: {
+          'Node Type': 'Index Scan',
+          'Relation Name': 'ParticipantSettlementTimeBucketSource',
+          'Index Name': 'pstbs_bucket_allocation_key',
+          'Actual Rows': 1,
+          'Actual Loops': 2000,
+          'Plan Rows': 1,
+          'Index Cond': condition,
+          Filter: 'PRIVATE_CANARY',
+          'Rows Removed by Filter': 0,
+        },
+      });
+    const proof = compactNativePrepareLog(query('(bs0."bucketId" = b.id)'), 42, false, true);
+    expect(proof.records[0].nodes[0][proof.nodeColumns.indexOf('bucketIdIndexCond')]).toBe(1);
+    expect(proof.records[0].nodes[0][proof.nodeColumns.indexOf('hasFilter')]).toBe(1);
+    const rejected = compactNativePrepareLog(
+      query('(bs0."bucketId" = \'PRIVATE_CANARY\')'),
+      42,
+      false,
+      true,
+    );
+    expect(rejected.records[0].nodes[0][rejected.nodeColumns.indexOf('bucketIdIndexCond')]).toBe(0);
+    expect(JSON.stringify(proof) + JSON.stringify(rejected)).not.toContain('PRIVATE_CANARY');
+    expect(JSON.stringify(proof)).not.toContain('Index Cond');
   });
   it('requires both complete-function/shared plans, original statement events and actual trigger timing', () => {
     const evalSql = 'INSERT INTO "ParticipantContributionEvaluation" VALUES ($1)';
@@ -1304,6 +1609,116 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       });
     return raw;
   };
+  it('requires all ten C bag/hash cases, original negatives/priority and stable unmodified statistics without ANALYZE', () => {
+    const counts = [4, 4, 1, 5, 1];
+    let settingsDigest = '';
+    let raw =
+      statisticsNotice('PARTIAL')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          if (
+            line.startsWith('NOTICE: E4_JOIN_KEY_SAMPLE ') ||
+            line.startsWith('NOTICE: E4_SOURCE_JOIN_EQ ')
+          )
+            return '';
+          if (line.startsWith('NOTICE: E4_SOURCE_JOIN_STATS ')) {
+            const r = JSON.parse(line.slice('NOTICE: E4_SOURCE_JOIN_STATS '.length)) as {
+              stage: string;
+              settingsDigest: string;
+              statistics: { rows: number; tuples: number }[];
+            };
+            if (r.stage !== 'PRE_ANALYZE') return '';
+            settingsDigest = r.settingsDigest;
+            r.statistics.forEach((s, i) => {
+              s.rows = counts[i];
+              if (s.tuples >= 0) s.tuples = counts[i];
+            });
+            return 'NOTICE: E4_SOURCE_JOIN_STATS ' + JSON.stringify(r);
+          }
+          return line
+            .replace('"publicEvaluationCount":2000', '"publicEvaluationCount":4')
+            .replace('"analyzedTables":5', '"analyzedTables":0');
+        })
+        .filter(Boolean)
+        .join('\n') + '\n';
+    for (const [index, [phase, variant]] of JOIN_KEY_CALIBRATION_ORDER.entries())
+      raw +=
+        'NOTICE: E4_JOIN_KEY_SAMPLE ' +
+        JSON.stringify({
+          index,
+          phase,
+          variant,
+          wallMs: 1,
+          returned: true,
+          completeDocumentAndRootGuard: true,
+          sameBackend: true,
+          readonly: true,
+          workMemKb: 4096,
+          jitEnabled: true,
+          planCacheMode: 'auto',
+          statisticsUnchanged: true,
+          statisticsDigest: 'c'.repeat(32),
+          settingsDigest,
+        }) +
+        '\n';
+    for (const [i, name] of [
+      'PUBLIC',
+      'REVERSED_INPUT',
+      'DUPLICATE_EDGE',
+      'NULL_LINK',
+      'MISSING_EDGE',
+      'NULL_MEMBER',
+      'WRONG_ACTIVITY',
+      'WRONG_TIME_REVISION',
+      'NULL_ACTIVITY',
+      'NULL_TIME_REVISION',
+    ].entries())
+      raw +=
+        'NOTICE: E4_SOURCE_JOIN_EQ ' +
+        JSON.stringify({
+          case: name,
+          rows: i === 2 ? 6 : i < 2 || i === 5 ? 5 : 4,
+          bagEqual: true,
+          hashEqual: true,
+          mutation: i >= 2,
+          rolledBack: i >= 2,
+        }) +
+        '\n';
+    const proof = compactSourceJoinEvidence(raw, true, false, 'C');
+    expect(proof.equivalence).toHaveLength(10);
+    expect(proof.negatives).toHaveLength(6);
+    expect(proof.priorities).toHaveLength(6);
+    expect(proof.statisticsExperiment).toMatchObject({
+      intervention: 'NO_MANUAL_ANALYZE',
+      initialStatistics: 'PARTIAL',
+      businessDataUnchanged: true,
+    });
+    const partial = raw.replace(/^NOTICE: E4_SOURCE_JOIN_STATS_COMPLETE .*\n/gmu, '');
+    expect(compactSourceStatisticsEvidence(partial, false, false)).toMatchObject({
+      status: 'INITIAL_SNAPSHOT_ONLY',
+      businessDataUnchanged: null,
+    });
+    expect(() =>
+      compactSourceJoinEvidence(
+        raw.replace(/NOTICE: E4_SOURCE_JOIN_EQ \{"case":"WRONG_ACTIVITY"[^\n]+\n/u, ''),
+        true,
+        false,
+        'C',
+      ),
+    ).toThrow();
+    expect(() =>
+      compactSourceJoinEvidence(
+        raw.replace(
+          '"statisticsDigest":"' + 'c'.repeat(32),
+          '"statisticsDigest":"' + 'b'.repeat(32),
+        ),
+        true,
+        false,
+        'C',
+      ),
+    ).toThrow();
+  });
   it.each(['NONE', 'PARTIAL', 'PRESENT'] as const)(
     'records %s initial statistics without requiring cold relations',
     (initial) => {
