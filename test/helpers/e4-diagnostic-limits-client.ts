@@ -6,6 +6,59 @@ export const E4_DIAGNOSTIC_LIMITS = Object.freeze({
   forcedStopMs: 590_000,
   standardTransactionMs: 30_000,
 });
+
+/** Bounded migration subprocess evidence. Redact before taking excerpts. */
+export function e4MigrationFailureEvidence(error: unknown, secrets: readonly string[] = []) {
+  const get = (key: string): unknown => {
+    try {
+      return error && typeof error === 'object' ? Reflect.get(error, key) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const redact = (raw: string) => {
+    let safe = raw
+      .split(String.fromCharCode(27))
+      .join('')
+      .replace(/\[[0-9;]*m/gu, '');
+    for (const secret of [...secrets].filter(Boolean).sort((a, b) => b.length - a.length))
+      safe = safe.split(secret).join('[REDACTED]');
+    return safe
+      .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/giu, '[REDACTED_URL]')
+      .split('\n')
+      .map((line) =>
+        /(?:password|token|secret|authorization)["']?\s*[=:]/iu.test(line)
+          ? '[REDACTED_CREDENTIAL_LINE]'
+          : line,
+      )
+      .join('\n');
+  };
+  const capture = (raw: unknown, limit: number) => {
+    const value = Buffer.isBuffer(raw) ? raw.toString('utf8') : typeof raw === 'string' ? raw : '';
+    const safe = Buffer.from(redact(value));
+    const truncated = safe.length > limit;
+    return {
+      bytes: Buffer.byteLength(value),
+      truncated,
+      text: truncated
+        ? safe.subarray(0, limit / 2).toString('utf8') +
+          '\n[TRUNCATED]\n' +
+          safe.subarray(-limit / 2).toString('utf8')
+        : safe.toString('utf8'),
+    };
+  };
+  const status = get('status');
+  const signal = get('signal');
+  const code = get('code');
+  return {
+    status: Number.isSafeInteger(status) ? (status as number) : null,
+    signal: typeof signal === 'string' && /^SIG[A-Z0-9]{1,16}$/u.test(signal) ? signal : null,
+    processCode: typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/u.test(code) ? code : null,
+    message: capture(get('message'), 1024),
+    stdout: capture(get('stdout'), 4096),
+    stderr: capture(get('stderr'), 4096),
+  };
+}
 export const E4_DIAGNOSTIC_SCENARIOS = [
   'ordinary-1',
   'ordinary-100',

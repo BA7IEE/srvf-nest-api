@@ -839,7 +839,7 @@ jobs:
         run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client)\.spec\.ts$'
       - name: Native plan redaction and completeness boundary tests
         if: (inputs.real_source_c_scenario && inputs.real_source_c_scenario != 'off') || inputs.real_statistics_maximum || inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
-        run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-source-bucket-lateral-migration.spec.ts test/helpers/e4-migration-prefix.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-source-bucket-lateral-migration|e4-migration-prefix)\.spec\.ts$'
+        run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts test/helpers/e4-source-bucket-lateral-migration.spec.ts test/helpers/e4-migration-prefix.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client|e4-source-bucket-lateral-migration|e4-migration-prefix)\.spec\.ts$'
       - name: Start fresh PostgreSQL 16 runner
         run: |
           docker compose up -d postgres
@@ -944,6 +944,7 @@ jobs:
             tmp/e4-prepare-cost-evidence/real-statistics-capability.json
             tmp/e4-prepare-cost-evidence/source-join-plan-*.json
             tmp/e4-prepare-cost-evidence/source-join-calibration.json
+            tmp/e4-prepare-cost-evidence/migration-failure-*.json
           if-no-files-found: error
       - name: Remove this job's ephemeral PostgreSQL container
         if: always()

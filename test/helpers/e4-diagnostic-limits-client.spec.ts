@@ -21,7 +21,85 @@ import {
   e4DiagnosticSafeError,
   e4DiagnosticCleanupReceipt,
   e4DiagnosticCleanupAllowance,
+  e4MigrationFailureEvidence,
 } from './e4-diagnostic-limits-client';
+
+describe('E4 migration failure evidence (offline)', () => {
+  it('retains both subprocess streams and original exit information', () => {
+    expect(
+      e4MigrationFailureEvidence({
+        status: 1,
+        signal: null,
+        code: 'ENOENT',
+        message: 'failed',
+        stdout: Buffer.from('schema error'),
+        stderr: 'engine failed',
+      }),
+    ).toEqual({
+      status: 1,
+      signal: null,
+      processCode: 'ENOENT',
+      message: { bytes: 6, truncated: false, text: 'failed' },
+      stdout: { bytes: 12, truncated: false, text: 'schema error' },
+      stderr: { bytes: 13, truncated: false, text: 'engine failed' },
+    });
+  });
+
+  it('redacts URLs, supplied credentials and assignments before retaining excerpts', () => {
+    const result = e4MigrationFailureEvidence(
+      {
+        stdout: 'postgresql://u:p@host/db\ntoken=abc custom-password',
+        stderr: 'password: xyz',
+        message: 'failed custom-password',
+      },
+      ['custom-password'],
+    );
+    const text = JSON.stringify(result);
+    for (const secret of ['postgresql://', 'u:p@host', 'abc', 'custom-password', 'xyz'])
+      expect(text).not.toContain(secret);
+    expect(result.stdout.bytes).toBeGreaterThan(0);
+    expect(result.stdout.text).toContain('[REDACTED_URL]');
+  });
+
+  it.each([
+    '{"password":"demo-value"}',
+    'Authorization: Bearer demo-value',
+    'password="two words demo-value"',
+  ])('redacts the entire credential line: %s', (stdout) => {
+    expect(e4MigrationFailureEvidence({ stdout }).stdout.text).toBe('[REDACTED_CREDENTIAL_LINE]');
+  });
+
+  it('bounds both streams, keeps their tail, and safely handles absent or hostile fields', () => {
+    const result = e4MigrationFailureEvidence({
+      stdout: 'A'.repeat(10000) + 'TAIL',
+      stderr: '\0'.repeat(10000),
+      message: '\0'.repeat(10000),
+      signal: 'SIGTERM',
+    });
+    expect(result.stdout).toMatchObject({ bytes: 10004, truncated: true });
+    expect(result.stdout.text.endsWith('TAIL')).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(65536);
+    expect(result.signal).toBe('SIGTERM');
+    expect(e4MigrationFailureEvidence({ signal: 'SIG' + 'A'.repeat(100000) }).signal).toBeNull();
+    expect(
+      e4MigrationFailureEvidence(
+        new Proxy(
+          {},
+          {
+            get() {
+              throw Error('hidden');
+            },
+          },
+        ),
+      ),
+    ).toMatchObject({
+      status: null,
+      signal: null,
+      processCode: null,
+      stdout: { bytes: 0, text: '' },
+    });
+  });
+});
 
 describe('E4 independent scoped cleanup facts (offline)', () => {
   it.each([0, 589999, 590000])(

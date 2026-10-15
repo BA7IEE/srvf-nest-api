@@ -12,7 +12,16 @@ import type { INestApplication } from '@nestjs/common';
 import { BindingScopeType, PrincipalType, Role, UserStatus, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { e4MigrationFailureEvidence } from './e4-diagnostic-limits-client';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import request from 'supertest';
@@ -208,16 +217,33 @@ export function installE4ValidationDatabase(options?: {
         },
       );
     } catch (error) {
-      const stderr =
-        error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
-      const safe = stderr
-        .split('\n')
-        .filter((line) =>
-          /^(?:Error: P[0-9]+|Database error code:|ERROR: |LINE [0-9]+:|CONTEXT: )/u.test(line),
-        )
-        .join('\n');
+      const databaseUrl = process.env.DATABASE_URL ?? '';
+      const secrets = [databaseUrl];
+      try {
+        const password = new URL(databaseUrl).password;
+        secrets.push(password, decodeURIComponent(password));
+      } catch {
+        // URL parsing cannot replace the original subprocess failure.
+      }
+      const evidence = e4MigrationFailureEvidence(error, secrets);
+      let retained = false;
+      try {
+        const directory = resolve(__dirname, '../../tmp/e4-prepare-cost-evidence');
+        mkdirSync(directory, { recursive: true });
+        const body = JSON.stringify(evidence, null, 2) + '\n';
+        if (Buffer.byteLength(body) > 65536) throw new Error('E4 migration evidence size exceeded');
+        writeFileSync(
+          join(directory, `migration-failure-${process.pid}-${Date.now()}.json`),
+          body,
+          { mode: 0o600, flag: 'wx' },
+        );
+        retained = true;
+      } catch {
+        // Retention failure must not replace the original subprocess failure.
+      }
       throw new Error(
-        'E4 isolated migration deploy failed' + (safe ? '\n' + safe : ' (details not echoed)'),
+        `E4 isolated migration deploy failed status=${evidence.status} signal=${evidence.signal} code=${evidence.processCode} retained=${retained}\n` +
+          JSON.stringify(evidence),
       );
     }
   };
