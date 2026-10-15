@@ -89,6 +89,12 @@ import {
   writeRealStatisticsArtifact,
   retainRealStatisticsArtifact,
   assessColdBucketCandidate,
+  E4_REAL_SOURCE_C,
+  verifyRealSourceDatabase,
+  verifyRealSourceMigrationSource,
+  diagnosticTransactionMs,
+  readDiagnosticChildReport,
+  observePrepareFailureFacts,
 } from '../diagnostics/e4-prepare-cost.diagnostic-spec';
 const head = 'a'.repeat(40);
 const env: NodeJS.ProcessEnv = {
@@ -106,6 +112,142 @@ const env: NodeJS.ProcessEnv = {
   SRVF_E4_DIAGNOSTIC_SCENARIO: 'maximum',
 };
 describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () => {
+  it('retains independent prepare rollback counts and marks a failed observation UNKNOWN without throwing', async () => {
+    const zero = {
+      roots: 0,
+      evaluations: 0,
+      timeRoots: 0,
+      buckets: 0,
+      sources: 0,
+      receipts: 0,
+      audits: 0,
+    };
+    const statements = jest.fn(async () => 0);
+    const query = (facts: object) => ({
+      $transaction: jest.fn(async (work: (tx: object) => Promise<unknown>) =>
+        work({ $executeRaw: statements, $queryRaw: jest.fn(async () => [facts]) }),
+      ) as unknown as PrismaClient['$transaction'],
+    });
+    await expect(
+      observePrepareFailureFacts(query(zero), 'private-activity', 'private-operation'),
+    ).resolves.toMatchObject({ status: 'OBSERVED_SEVEN_ZERO', facts: zero });
+    await expect(
+      observePrepareFailureFacts(
+        query({ ...zero, roots: 1 }),
+        'private-activity',
+        'private-operation',
+      ),
+    ).resolves.toMatchObject({ status: 'REMAINS' });
+    const failed = {
+      $transaction: jest.fn(async () => {
+        throw new Error('private observer failure');
+      }) as unknown as PrismaClient['$transaction'],
+    };
+    await expect(
+      observePrepareFailureFacts(failed, 'private-activity', 'private-operation'),
+    ).resolves.toMatchObject({ status: 'UNKNOWN', observer: true });
+    expect(statements).toHaveBeenCalled();
+  });
+  it.each(['COMPLETE', 'FAILED'] as const)(
+    'retains the serialized real C%s child report at30s and refuses90s',
+    (status) => {
+      const root = mkdtempSync(resolve(tmpdir(), 'e4-real-c-child-'));
+      const realEnv = { SRVF_E4_REAL_SOURCE_C: '1' };
+      try {
+        const data = {
+          ...E4_DIAGNOSTIC_PLAN,
+          head,
+          run: '123',
+          scenario: 'maximum',
+          transactionMs: 30000,
+          status,
+          stages: [{ stage: 'PREPARE', outcome: status }],
+          realSourceCandidate: E4_REAL_SOURCE_C,
+        };
+        const file = resolve(root, 'child.json');
+        writeFileSync(file, JSON.stringify(data));
+        expect(readDiagnosticChildReport(root, head, '123', 'maximum', realEnv)).toEqual(data);
+        expect(readDiagnosticChildReport(root, head, '123', 'maximum', {})).toBeUndefined();
+        writeFileSync(file, JSON.stringify({ ...data, transactionMs: 90000 }));
+        expect(readDiagnosticChildReport(root, head, '123', 'maximum', realEnv)).toBeUndefined();
+        expect(diagnosticTransactionMs(realEnv)).toBe(30000);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+  it('allows current144 controls only in explicit isolated worker databases without widening legacy W98 checks', () => {
+    expect(
+      sourceJoinSessionSql(
+        'a'.repeat(24),
+        true,
+        false,
+        'C',
+        E4_REAL_SOURCE_C.sourceFunctionMd5,
+        'app_test_w1',
+      ),
+    ).toContain("current_database()<>'app_test_w1'");
+    expect(() =>
+      sourceJoinSessionSql(
+        'a'.repeat(24),
+        true,
+        false,
+        'C',
+        E4_REAL_SOURCE_C.sourceFunctionMd5,
+        'production',
+      ),
+    ).toThrow();
+    expect(() =>
+      sourceJoinSessionSql('a'.repeat(24), true, false, 'C', undefined, 'app_test_w1'),
+    ).toThrow();
+  });
+  it.each(['ordinary-1', 'ordinary-500', 'maximum'])(
+    'admits real C full-chain%s only without diagnostic competitors',
+    (scenario) => {
+      const real = { ...env, SRVF_E4_REAL_SOURCE_C: '1', SRVF_E4_DIAGNOSTIC_SCENARIO: scenario };
+      expect(() => requireDiagnosticEnvironment(real, head)).not.toThrow();
+      for (const key of [
+        'SRVF_E4_REAL_STATISTICS',
+        'SRVF_E4_SOURCE_JOIN_C',
+        'SRVF_E4_NATIVE_PREPARE_PLAN',
+        'SRVF_E4_JOIN_KEY_ONCE',
+        'SRVF_E4_CANONICAL_FIRST32',
+      ])
+        expect(() => requireDiagnosticEnvironment({ ...real, [key]: '1' }, head)).toThrow();
+      expect(() =>
+        requireDiagnosticEnvironment(
+          { ...real, SRVF_E4_DIAGNOSTIC_SCENARIO: 'ordinary-100' },
+          head,
+        ),
+      ).toThrow();
+    },
+  );
+  it('pins144 in addition to143 and rejects a disabled native guard or changed installed source', async () => {
+    expect(() => verifyRealSourceMigrationSource()).not.toThrow();
+    const correct = {
+      count: 144,
+      prior_checksum: E4_DIAGNOSTIC_PLAN.migration143Sha256,
+      checksum: E4_REAL_SOURCE_C.migrationSha256,
+      complete_pin: E4_DIAGNOSTIC_PLAN.completeFunctionMd5,
+      source_pin: E4_REAL_SOURCE_C.sourceFunctionMd5,
+      statement_guard: true,
+      deferred_guard: true,
+    };
+    const query = (value: object) => ({
+      $queryRaw: jest.fn(async () => [value]) as unknown as PrismaClient['$queryRaw'],
+    });
+    await expect(verifyRealSourceDatabase(query(correct))).resolves.toBeUndefined();
+    for (const change of [
+      { count: 143 },
+      { prior_checksum: '0'.repeat(64) },
+      { checksum: '0'.repeat(64) },
+      { source_pin: 'd8934c5bf29f8b16f820ba6cd950698b' },
+      { complete_pin: '0'.repeat(32) },
+      { statement_guard: false },
+      { deferred_guard: false },
+    ])
+      await expect(verifyRealSourceDatabase(query({ ...correct, ...change }))).rejects.toThrow();
+  });
   it.each(['COMPLETE', 'FAILED'] as const)(
     'retains a real %s child artifact through parent hash validation and actual workflow chunks',
     (status) => {
@@ -505,8 +647,12 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
       resolve(__dirname, '../diagnostics/e4-prepare-cost.diagnostic-spec.ts'),
       'utf8',
     );
-    expect(source).toContain('maximum && !realStatistics ? installE4DiagnosticLimits');
-    expect(source).toContain('transactionMs: realStatistics ? 30000 : 90000');
+    expect(source).toMatch(
+      /maximum && !realStatistics && !realSource\s*\? installE4DiagnosticLimits/u,
+    );
+    expect(source).toContain('transactionMs: diagnosticTransactionMs()');
+    expect(diagnosticTransactionMs({ SRVF_E4_REAL_STATISTICS: '1' })).toBe(30000);
+    expect(diagnosticTransactionMs({})).toBe(90000);
     expect(source).toContain('statisticsControl.complete()');
     const workflow = readFileSync(
       resolve(__dirname, '../../.github/workflows/activity-os-r5-e4-validation.yml'),
@@ -514,7 +660,7 @@ describe('E4 prepare cost closed driver (offline; no lifecycle registered)', () 
     );
     expect(workflow).toContain('inputs.real_statistics_maximum && \'["maximum"]\'');
     expect(workflow).toContain('--real-statistics-capability');
-    expect(workflow).toContain("realStatistics ? 'FULL_SETTLEMENT'");
+    expect(workflow).toContain("realStatistics || realSource ? 'FULL_SETTLEMENT'");
   });
   it('refreshes only the three committed source tables and five real-transaction inputs without any settings change', () => {
     expect(realStatisticsAnalyzeCommands('SOURCE_BUILD')).toEqual(

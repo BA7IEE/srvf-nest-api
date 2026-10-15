@@ -834,7 +834,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
       beforeTarget,
       baselineAfterOracleTarget,
     );
-    owner.deployLatestMigrations();
+    owner.deploySourceReuseMigrations();
     const afterMigrations = await migrationRows(db());
     expect(afterMigrations).toHaveLength(143);
     expect(JSON.stringify(afterMigrations.slice(0, 142)) === JSON.stringify(beforeMigrations)).toBe(
@@ -891,7 +891,7 @@ describe('E4 complete assertion source reuse migration 143', () => {
     );
     assertTargetDefaultSemantics(afterTarget, afterOracleTarget);
     expect(afterOracleCatalog === afterCatalog).toBe(true);
-    owner.deployLatestMigrations();
+    owner.deploySourceReuseMigrations();
     expect(JSON.stringify(await migrationRows(db())) === JSON.stringify(afterMigrations)).toBe(
       true,
     );

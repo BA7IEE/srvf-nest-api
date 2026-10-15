@@ -9,9 +9,10 @@ import {
   E4_MIGRATION_141,
   E4_MIGRATION_142,
   E4_MIGRATION_143,
+  E4_MIGRATION_144,
 } from './e4-migration-prefix';
 
-const CURRENT_MIGRATION_COUNT = 143;
+const CURRENT_MIGRATION_COUNT = 144;
 
 describe('fixed E4 historical migration prefix', () => {
   const names = readdirSync(resolve(__dirname, '../../prisma/migrations'), {
@@ -37,6 +38,8 @@ describe('fixed E4 historical migration prefix', () => {
     expect(prefix).not.toContain(E4_MIGRATION_142);
     expect([...names].sort()[142]).toBe(E4_MIGRATION_143);
     expect(prefix).not.toContain(E4_MIGRATION_143);
+    expect([...names].sort()[143]).toBe(E4_MIGRATION_144);
+    expect(prefix).not.toContain(E4_MIGRATION_144);
   });
 
   it.each([
@@ -48,6 +51,7 @@ describe('fixed E4 historical migration prefix', () => {
     'unknown bucket successor',
     'unknown unit helper successor',
     'unknown source reuse successor',
+    'unknown source bucket successor',
     'extra migration',
   ])('rejects %s without silently widening the historical proof', (kind) => {
     const changed = [...names].sort();
@@ -59,9 +63,10 @@ describe('fixed E4 historical migration prefix', () => {
     if (kind === 'unknown bucket successor') changed[140] = '20261012030000_unknown';
     if (kind === 'unknown unit helper successor') changed[141] = '20261012040000_unknown';
     if (kind === 'unknown source reuse successor') changed[142] = '20261013000000_unknown';
+    if (kind === 'unknown source bucket successor') changed[143] = '20261015000000_unknown';
     if (kind === 'extra migration') changed.push('20261013000000_unknown');
     expect(() => e4HistoricalMigrationPrefix(changed)).toThrow(
-      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143 successors changed',
+      'E4 fixed 137 prefix or explicit 138/139/140/141/142/143/144 successors changed',
     );
   });
 });

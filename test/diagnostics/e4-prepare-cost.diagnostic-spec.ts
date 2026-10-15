@@ -92,6 +92,15 @@ export const E4_DIAGNOSTIC_PLAN = Object.freeze({
   guardFunctions: 'NOT_RUN',
   formal30: 'NOT_REASSESSED',
 });
+export const E4_REAL_SOURCE_C = Object.freeze({
+  migration: '20261015000000_activity_contribution_source_bucket_lateral',
+  migrationSha256: 'ac47d7564ef20d3b5f82d9729d6e35ac04068729f2e73a288af6b606c726cb4e',
+  sourceFunctionMd5: '19d84ee9f25b81d33f0ffdef0a800ab5',
+  definitionSha256: 'eaaae461562388412ea526e8ae5290a87786b2132e153f359338c2135a826a2e',
+});
+export function diagnosticTransactionMs(env: NodeJS.ProcessEnv = process.env): 30000 | 90000 {
+  return env.SRVF_E4_REAL_STATISTICS === '1' || env.SRVF_E4_REAL_SOURCE_C === '1' ? 30000 : 90000;
+}
 const oraclePath = resolve(
   __dirname,
   '../e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts',
@@ -312,6 +321,18 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_REAL_SOURCE_C &&
+    (env.SRVF_E4_REAL_SOURCE_C !== '1' ||
+      !['ordinary-1', 'ordinary-500', 'maximum'].includes(env.SRVF_E4_DIAGNOSTIC_SCENARIO ?? '') ||
+      Object.keys(env).some(
+        (key) =>
+          /^SRVF_E4_(?:SOURCE_JOIN|NATIVE_PREPARE_PLAN|REAL_STATISTICS|JOIN_KEY|FIXED_METADATA|SHARED_GUARD|CANONICAL_)/u.test(
+            key,
+          ) && !!env[key],
+      ))
+  )
+    throw new Error('E4 real source C isolated full-chain scope refused');
+  if (
     env.SRVF_E4_SOURCE_JOIN_C &&
     (env.SRVF_E4_SOURCE_JOIN_C !== '1' ||
       !['small', 'ordinary-500'].includes(env.SRVF_E4_SOURCE_JOIN ?? '') ||
@@ -482,7 +503,7 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan' | 'transactionMs
   limits?: unknown;
   internal?: unknown;
   scenario: E4DiagnosticScenario;
-  migration: 'NOT_VERIFIED' | 'VERIFIED_143';
+  migration: 'NOT_VERIFIED' | 'VERIFIED_143' | 'VERIFIED_144';
   stages: OperationReceipt[];
   lock?: unknown;
   recovery?: unknown;
@@ -504,6 +525,8 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan' | 'transactionMs
     | 'PREPARE_SOURCE_JOIN_ONLY';
   sourceJoinStats?: unknown;
   realStatistics?: unknown;
+  realSourceCandidate?: unknown;
+  prepareFailureObservation?: unknown;
   sourceJoinComparison?: unknown;
   sourceJoinPostOracle?: 'ENTERED' | 'COMPLETE';
   nativePreparePlan?: unknown;
@@ -537,6 +560,33 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan' | 'transactionMs
   scenarioShape?: { identities: number; segments: number; slices: number; units: number };
   budgetRecommendation?: string;
 };
+export function readDiagnosticChildReport(
+  directory: string,
+  head: string,
+  run: string,
+  scenario: E4DiagnosticScenario,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  try {
+    const raw = readFileSync(join(directory, 'child.json'));
+    if (raw.length > 65536) return undefined;
+    const data = JSON.parse(raw.toString()) as Report;
+    if (
+      data.schema !== E4_DIAGNOSTIC_PLAN.schema ||
+      data.head !== head ||
+      data.run !== run ||
+      data.scenario !== scenario ||
+      data.purpose !== 'DIAGNOSTIC_ONLY' ||
+      data.acceptance !== 'NOT_AN_ACCEPTANCE_RESULT' ||
+      data.transactionMs !== diagnosticTransactionMs(env) ||
+      data.processMs !== 600000
+    )
+      return undefined;
+    return data;
+  } catch {
+    return undefined;
+  }
+}
 function writeBounded(path: string, value: unknown) {
   // Preserve every node from both actual plans within the existing64KiB envelope.
   const comparison =
@@ -849,6 +899,34 @@ export async function verifyDiagnosticDatabase(db: Pick<PrismaClient, '$queryRaw
     checksum: E4_DIAGNOSTIC_PLAN.migration143Sha256,
     pin: E4_DIAGNOSTIC_PLAN.completeFunctionMd5,
     enabled: 'O',
+  });
+}
+export function verifyRealSourceMigrationSource() {
+  verifyDiagnosticMigrationSource();
+  const sql = readFileSync(
+    resolve(__dirname, '../../prisma/migrations', E4_REAL_SOURCE_C.migration, 'migration.sql'),
+  );
+  if (createHash('sha256').update(sql).digest('hex') !== E4_REAL_SOURCE_C.migrationSha256)
+    throw new Error('E4 current144 source pin refused');
+}
+export async function verifyRealSourceDatabase(db: Pick<PrismaClient, '$queryRaw'>) {
+  const [metadata] = await db.$queryRaw<Record<string, unknown>[]>`
+    SELECT (SELECT count(*)::int FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL) AS count,
+      (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261013000000_activity_contribution_assert_source_reuse' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS prior_checksum,
+      (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261015000000_activity_contribution_source_bucket_lateral' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS checksum,
+      (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure) AS complete_pin,
+      (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure) AS source_pin,
+      (SELECT tgenabled='O' AND tgtype=4 AND tgnewtable='e4_inserted_evaluations' FROM pg_trigger WHERE tgname='e4_evaluation_set_guard' AND tgrelid='public."ParticipantContributionEvaluation"'::regclass) AS statement_guard,
+      (SELECT tgenabled='O' AND tgtype=5 AND tgdeferrable AND tginitdeferred FROM pg_trigger WHERE tgname='e4_revision_complete_guard' AND tgrelid='public."ActivitySettlementContributionRevision"'::regclass) AS deferred_guard
+  `;
+  expect(metadata).toEqual({
+    count: 144,
+    prior_checksum: E4_DIAGNOSTIC_PLAN.migration143Sha256,
+    checksum: E4_REAL_SOURCE_C.migrationSha256,
+    complete_pin: E4_DIAGNOSTIC_PLAN.completeFunctionMd5,
+    source_pin: E4_REAL_SOURCE_C.sourceFunctionMd5,
+    statement_guard: true,
+    deferred_guard: true,
   });
 }
 
@@ -2015,6 +2093,7 @@ export function joinKeyProbeSql(
   sourceJoin = false,
   statisticsComparison = false,
   sourceVariant: SourceJoinVariant = 'B',
+  publicSourcePin = 'd8934c5bf29f8b16f820ba6cd950698b',
 ) {
   if (sourceVariant === 'C' && (!sourceJoin || statisticsComparison))
     throw new Error('E4 cold bucket candidate mode refused');
@@ -2027,7 +2106,15 @@ export function joinKeyProbeSql(
   if (fixedMetadataMaximum && units !== 8000) throw new Error('E4 metadata maximum shape refused');
   const fixedMetadata = !sourceJoin && (units === 4 || fixedMetadataMaximum);
   const typedSources = fixedMetadata || sourceJoin;
-  sharedGuardProbeSql(revisionId, databaseName); // Reuse the exact scope/identifier refusal.
+  if (
+    sourceJoin &&
+    sourceVariant === 'C' &&
+    publicSourcePin === E4_REAL_SOURCE_C.sourceFunctionMd5 &&
+    !statisticsComparison
+  ) {
+    sharedGuardProbeSql(revisionId, 'app_test_w98'); // Preserve the original identifier check.
+    sourceJoinTestDatabase(databaseName);
+  } else sharedGuardProbeSql(revisionId, databaseName);
   const source = readFileSync(
     resolve(
       __dirname,
@@ -2104,7 +2191,7 @@ SET auto_explain.log_parameter_max_length=0;
 SET auto_explain.sample_rate=1;
 BEGIN;
 DO $$ BEGIN
- IF current_database()<>'app_test_w98' OR
+ IF current_database()<>'${databaseName}' OR
  (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'ade4d2af9aa0baf8400a79fc6b62c797'
  THEN RAISE EXCEPTION 'E4 join key connected scope refused'; END IF;
 END $$;
@@ -2118,13 +2205,13 @@ ${
 CREATE TEMP TABLE e4_probe_sources AS SELECT * FROM public.e4_source_rows(:'root_id');`
     : ''
 }
-${sourceJoin ? sourceJoinSetupSql(units === 4, sourceVariant) : ''}
+${sourceJoin ? sourceJoinSetupSql(units === 4, sourceVariant, publicSourcePin) : ''}
 ${create('e4_join_candidate', candidateBody)}
 ${sourceJoin ? create('e4_sj_complete_baseline', baselineBody.replace('SELECT * FROM e4_source_rows(root.id)', 'SELECT * FROM pg_temp.e4_sj_original(root.id)')) : ''}
 ${create('e4_baseline_shadow', shadow(baselineBody))}
 ${create('e4_candidate_shadow', shadow(candidateBody))}
 COMMIT;\n`;
-  if (controlledStatistics) sql += sourceStatisticsStageSql('PRE_ANALYZE');
+  if (controlledStatistics) sql += sourceStatisticsStageSql('PRE_ANALYZE', databaseName);
   const order = sourceJoin
     ? sourceJoinOrder(units === 4, statisticsComparison)
     : fixedMetadataMaximum
@@ -2133,7 +2220,8 @@ COMMIT;\n`;
         ? JOIN_KEY_CALIBRATION_ORDER
         : JOIN_KEY_ORDER;
   for (const [index, [phase, variant]] of order.entries()) {
-    if (statisticsComparison && index === 1) sql += sourceStatisticsStageSql('ANALYZED');
+    if (statisticsComparison && index === 1)
+      sql += sourceStatisticsStageSql('ANALYZED', databaseName);
     const callable =
       phase === 'SHADOW_CONTROL'
         ? variant === 'BASELINE'
@@ -2287,7 +2375,7 @@ ROLLBACK;
   sql += `DO $$ BEGIN
  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'ade4d2af9aa0baf8400a79fc6b62c797'
  OR ${guardDigest} IS DISTINCT FROM (SELECT guards FROM pg_temp.e4_probe_metadata)
- ${sourceJoin ? `OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure)<>'d8934c5bf29f8b16f820ba6cd950698b'` : ''}
+ ${sourceJoin ? `OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure)<>'${publicSourcePin}'` : ''}
  THEN RAISE EXCEPTION 'E4 join key public catalog changed'; END IF;
  RAISE NOTICE 'E4_JOIN_KEY_COMPLETE %',json_build_object('catalogUnchanged',true,'guardsUnchanged',true,'sameBackend',
    pg_backend_pid()=(SELECT pid FROM pg_temp.e4_probe_metadata),'publicEvaluationCount',
@@ -3325,7 +3413,11 @@ const EMPTY_FACTS = {
   receipts: 0,
   audits: 0,
 };
-async function diagnosticFacts(observer: PrismaClient, activityId: string, operationKey: string) {
+async function diagnosticFacts(
+  observer: Pick<PrismaClient, '$queryRaw'>,
+  activityId: string,
+  operationKey: string,
+) {
   const [facts] = await observer.$queryRaw<(typeof EMPTY_FACTS)[]>`
     WITH roots AS MATERIALIZED (SELECT id,"timeRevisionId" FROM "ActivitySettlementContributionRevision" WHERE "activityId"=${activityId} AND "operationKey"=${operationKey}),
     time_roots AS MATERIALIZED (SELECT id FROM "ActivitySettlementTimeRevision" WHERE "activityId"=${activityId})
@@ -3340,6 +3432,38 @@ async function diagnosticFacts(observer: PrismaClient, activityId: string, opera
         AND context->'extra'->>'timeRevisionId' IN (SELECT id FROM time_roots)) AS audits
   `;
   return facts;
+}
+export async function observePrepareFailureFacts(
+  observer: Pick<PrismaClient, '$transaction'>,
+  activityId: string,
+  operationKey: string,
+) {
+  try {
+    const facts = await observer.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+        await tx.$executeRaw`SET LOCAL statement_timeout='5s'`;
+        return diagnosticFacts(tx, activityId, operationKey);
+      },
+      { maxWait: 1000, timeout: 6000 },
+    );
+    if (
+      !facts ||
+      Object.keys(EMPTY_FACTS).some(
+        (key) => !Number.isSafeInteger(Reflect.get(facts, key)) || Reflect.get(facts, key) < 0,
+      )
+    )
+      return { status: 'UNKNOWN', observer: true };
+    return {
+      status: Object.values(facts).every((value) => value === 0)
+        ? 'OBSERVED_SEVEN_ZERO'
+        : 'REMAINS',
+      observer: true,
+      facts,
+    };
+  } catch (error) {
+    return { status: 'UNKNOWN', observer: true, error: e4DiagnosticSafeError(error) };
+  }
 }
 async function measureOperation<T>(
   report: Report,
@@ -3590,6 +3714,7 @@ async function completeDiagnosticSettlement(
 function registerDiagnosticChild() {
   const head = process.env.SRVF_E4_DIAGNOSTIC_HEAD ?? '';
   const realStatistics = process.env.SRVF_E4_REAL_STATISTICS === '1';
+  const realSource = process.env.SRVF_E4_REAL_SOURCE_C === '1';
   requireDiagnosticEnvironment(process.env, head);
   if (
     !process.connected ||
@@ -3607,7 +3732,17 @@ function registerDiagnosticChild() {
     throw new Error('E4 private output refused');
   const report: Report = {
     ...E4_DIAGNOSTIC_PLAN,
-    transactionMs: realStatistics ? 30000 : 90000,
+    transactionMs: diagnosticTransactionMs(),
+    ...(realSource
+      ? {
+          realSourceCandidate: {
+            ...E4_REAL_SOURCE_C,
+            mode: 'REAL_FULL_CHAIN',
+            manualAnalyze: false,
+            originalPrepareBudgetMs: 30000,
+          },
+        }
+      : {}),
     head,
     run: process.env.GITHUB_RUN_ID!,
     scenario: e4DiagnosticScenario(process.env.SRVF_E4_DIAGNOSTIC_SCENARIO),
@@ -3650,6 +3785,7 @@ function registerDiagnosticChild() {
       frozenE4OracleSource();
       frozenOrdinaryOracleSource();
       verifyDiagnosticMigrationSource();
+      if (realSource) verifyRealSourceMigrationSource();
       if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' || process.env.SRVF_E4_SOURCE_JOIN)
         readNativeCapability();
       if (['ordinary-500', 'statistics-500'].includes(process.env.SRVF_E4_SOURCE_JOIN ?? ''))
@@ -3701,8 +3837,9 @@ function registerDiagnosticChild() {
         checkpoint.mark('FIXTURE_BOOTSTRAP', 'COMPLETE');
         checkpoint.mark('SOURCE_BUILD', 'ENTER');
         report.substage = 'CATALOG_143';
-        await verifyDiagnosticDatabase(f.db);
-        report.migration = 'VERIFIED_143';
+        if (realSource) await verifyRealSourceDatabase(f.db);
+        else await verifyDiagnosticDatabase(f.db);
+        report.migration = realSource ? 'VERIFIED_144' : 'VERIFIED_143';
         const maximum = report.scenario === 'maximum';
         const identities = diagnosticPopulation(report.scenario);
         report.scenarioShape = {
@@ -3753,7 +3890,9 @@ function registerDiagnosticChild() {
         });
         await assertConnectedTestDatabase(db);
         const limits =
-          maximum && !realStatistics ? installE4DiagnosticLimits(db, context) : undefined;
+          maximum && !realStatistics && !realSource
+            ? installE4DiagnosticLimits(db, context)
+            : undefined;
         const measuredClient = limits?.client ?? db;
         const observer = new PrismaClient();
         auxiliary.push(observer);
@@ -3851,8 +3990,16 @@ function registerDiagnosticChild() {
         ]);
         let nativeCapture: NativePrepareCapture | undefined;
         const realPrepareQueries = { queries: 0, e4Queries: 0, evaluationInserts: 0, barriers: 0 };
+        if (realSource)
+          report.realSourceCandidate = {
+            ...E4_REAL_SOURCE_C,
+            mode: 'REAL_FULL_CHAIN',
+            manualAnalyze: false,
+            originalPrepareBudgetMs: 30000,
+            prepareQueries: realPrepareQueries,
+          };
         db.$on('query', (event) => {
-          if (realStatistics) {
+          if (realStatistics || realSource) {
             if (!/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION)\b/iu.test(event.query))
               realPrepareQueries.queries++;
             if (
@@ -3913,6 +4060,12 @@ function registerDiagnosticChild() {
           try {
             prepared = await operation;
           } catch (error) {
+            if (realSource)
+              report.prepareFailureObservation = await observePrepareFailureFacts(
+                observer,
+                source.activityId,
+                command.operationKey,
+              );
             if (report.scenario !== 'failure-retry' || error !== injected || !barrierCompleted)
               throw error;
             checkpoint.mark('ROLLBACK', 'ENTER');
@@ -4012,14 +4165,22 @@ function registerDiagnosticChild() {
           }
         }
         if (nativeCaptureError) throw nativeCaptureError;
-        if (realStatistics) {
+        if (realStatistics || realSource) {
           expect(report.prepareMs).toBeLessThan(30000);
           expect(realPrepareQueries.queries).toBeGreaterThan(0);
           expect(realPrepareQueries.queries).toBeLessThanOrEqual(400);
           expect(realPrepareQueries.e4Queries).toBeLessThanOrEqual(12);
           expect(realPrepareQueries.evaluationInserts).toBe(1);
           expect(realPrepareQueries.barriers).toBe(1);
-          report.realStatistics = { prepareQueries: realPrepareQueries };
+          if (realStatistics) report.realStatistics = { prepareQueries: realPrepareQueries };
+          if (realSource)
+            report.realSourceCandidate = {
+              ...E4_REAL_SOURCE_C,
+              mode: 'REAL_FULL_CHAIN',
+              manualAnalyze: false,
+              originalPrepareBudgetMs: 30000,
+              prepareQueries: realPrepareQueries,
+            };
         }
         if (process.env.SRVF_E4_SOURCE_JOIN)
           report.sourceJoinStats = {
@@ -4208,6 +4369,10 @@ function registerDiagnosticChild() {
             ),
           ).toBe(true);
           report.oracle = 'COMPLETE';
+          if (realSource) {
+            await verifyRealSourceDatabase(observer);
+            await verifyDiagnosticGuards(observer);
+          }
           report.budgetRecommendation = maximum
             ? realStatistics
               ? 'REAL_FULL_CHAIN_TEST_ONLY_STATISTICS_ORIGINAL_BUDGETS_NOT_COLD_START_ACCEPTANCE'
@@ -4472,7 +4637,7 @@ export async function runDiagnosticParent() {
     });
     let report: Report = {
       ...E4_DIAGNOSTIC_PLAN,
-      transactionMs: process.env.SRVF_E4_REAL_STATISTICS === '1' ? 30000 : 90000,
+      transactionMs: diagnosticTransactionMs(),
       head,
       run: process.env.GITHUB_RUN_ID!,
       scenario: e4DiagnosticScenario(process.env.SRVF_E4_DIAGNOSTIC_SCENARIO),
@@ -4497,25 +4662,7 @@ export async function runDiagnosticParent() {
       oracle: 'NOT_RUN',
       resources: 'UNKNOWN',
     };
-    try {
-      const raw = readFileSync(join(privateDir, 'child.json'));
-      if (raw.length > 65536) throw new Error('size');
-      const data = JSON.parse(raw.toString()) as Report;
-      if (
-        data.schema !== E4_DIAGNOSTIC_PLAN.schema ||
-        data.head !== head ||
-        data.run !== report.run ||
-        data.scenario !== report.scenario ||
-        data.purpose !== 'DIAGNOSTIC_ONLY' ||
-        data.acceptance !== 'NOT_AN_ACCEPTANCE_RESULT' ||
-        data.transactionMs !== (process.env.SRVF_E4_REAL_STATISTICS === '1' ? 30000 : 90000) ||
-        data.processMs !== 600000
-      )
-        throw new Error('binding');
-      report = data;
-    } catch {
-      /* Missing/invalid evidence stays UNKNOWN. */
-    }
+    report = readDiagnosticChildReport(privateDir, head, report.run, report.scenario) ?? report;
     let stage = readE4DiagnosticStageReceipt(null, head, report.run, processResult.exitCode);
     try {
       const raw = readFileSync(join(privateDir, 'stage.json'));
@@ -4542,6 +4689,7 @@ export async function runDiagnosticParent() {
     )
       report.status = 'UNKNOWN';
     const cleanup =
+      process.env.SRVF_E4_REAL_SOURCE_C === '1' ||
       process.env.SRVF_E4_REAL_STATISTICS === '1' ||
       process.env.SRVF_E4_SOURCE_JOIN ||
       process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' ||
@@ -5423,10 +5571,18 @@ function sourceStatisticsProjectionSql() {
  FROM pg_class c JOIN pg_stat_all_tables s ON s.relid=c.oid WHERE c.oid='public."${name}"'::regclass`,
   ).join(' UNION ALL ')}) t)`;
 }
-function sourceStatisticsStageSql(stage: 'PRE_ANALYZE' | 'ANALYZED') {
+function sourceJoinTestDatabase(name: string) {
+  if (!/^app_test(?:_[a-z0-9]+)*_w[1-9][0-9]*$/u.test(name))
+    throw new Error('E4 source control test database refused');
+  return name;
+}
+function sourceStatisticsStageSql(
+  stage: 'PRE_ANALYZE' | 'ANALYZED',
+  databaseName = 'app_test_w98',
+) {
   return `BEGIN;
 SET LOCAL statement_timeout='30s';SET LOCAL idle_in_transaction_session_timeout='30s';
-DO $$ BEGIN IF current_database()<>'app_test_w98' OR inet_server_addr() IS NOT NULL
+DO $$ BEGIN IF current_database()<>'${sourceJoinTestDatabase(databaseName)}' OR inet_server_addr() IS NOT NULL
  OR current_setting('server_version_num')::INTEGER NOT BETWEEN 160000 AND 169999
  OR pg_backend_pid()<>(SELECT pid FROM pg_temp.e4_probe_metadata)
  THEN RAISE EXCEPTION 'E4 source statistics test-only scope refused'; END IF; END $$;
@@ -5445,7 +5601,13 @@ DO $$ DECLARE snapshot JSONB; data_equal BOOLEAN; stats_digest TEXT; BEGIN
 END $$;
 COMMIT;\n`;
 }
-function sourceJoinSetupSql(small: boolean, variant: SourceJoinVariant = 'B') {
+export function sourceJoinSetupSql(
+  small: boolean,
+  variant: SourceJoinVariant = 'B',
+  publicPin = 'd8934c5bf29f8b16f820ba6cd950698b',
+) {
+  if (!['d8934c5bf29f8b16f820ba6cd950698b', E4_REAL_SOURCE_C.sourceFunctionMd5].includes(publicPin))
+    throw new Error('E4 source join public pin refused');
   const renamed = (candidate: boolean, name: string, shadow = false) => {
     let source = sourceJoinFunction(candidate, variant).replace(
       'CREATE FUNCTION e4_source_rows(',
@@ -5468,7 +5630,7 @@ function sourceJoinSetupSql(small: boolean, variant: SourceJoinVariant = 'B') {
  IS NOT DISTINCT FROM (SELECT sha256(convert_to(coalesce(string_agg(value::TEXT,',' ORDER BY value::TEXT COLLATE "C"),''),'UTF8')) FROM b)
  INTO total,equal,hash_equal;`;
   const digest = `md5(jsonb_build_array(${SOURCE_JOIN_INPUTS.map(([, temp]) => `(SELECT jsonb_agg(value ORDER BY value::TEXT COLLATE "C") FROM (SELECT to_jsonb(t) AS value FROM pg_temp.${temp} t) rows)`).join(',')})::TEXT)`;
-  let sql = `DO $$ BEGIN IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure)<>'d8934c5bf29f8b16f820ba6cd950698b' THEN RAISE EXCEPTION 'E4 source join public helper identity refused'; END IF; END $$;
+  let sql = `DO $$ BEGIN IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure)<>'${publicPin}' THEN RAISE EXCEPTION 'E4 source join public helper identity refused'; END IF; END $$;
 ${renamed(false, 'e4_sj_original')}
 ${renamed(true, 'e4_sj_rows')}
 `;
@@ -5597,7 +5759,13 @@ async function sourceJoinStatistics(db: PrismaClient) {
   }
   return rows;
 }
-export function compactSourceStatisticsEvidence(raw: string, intervened = true, complete = true) {
+export function compactSourceStatisticsEvidence(
+  raw: string,
+  intervened = true,
+  complete = true,
+  databaseName = 'app_test_w98',
+) {
+  sourceJoinTestDatabase(databaseName);
   raw = joinKeyDiagnosticNotices(raw);
   const entries = [...raw.matchAll(/NOTICE:\s+E4_SOURCE_JOIN_STATS (\{[^\n]+\})/gu)];
   if (entries.length !== (intervened ? 2 : 1))
@@ -5607,7 +5775,7 @@ export function compactSourceStatisticsEvidence(raw: string, intervened = true, 
     const stage = index === 0 ? 'PRE_ANALYZE' : 'ANALYZED';
     if (
       r.stage !== stage ||
-      r.database !== 'app_test_w98' ||
+      r.database !== databaseName ||
       r.dataUnchanged !== true ||
       typeof r.statisticsDigest !== 'string' ||
       !/^[a-f0-9]{32}$/u.test(r.statisticsDigest) ||
@@ -5695,7 +5863,7 @@ export function compactSourceStatisticsEvidence(raw: string, intervened = true, 
     expect(JSON.parse(end[0][1])).toEqual({
       dataUnchanged: true,
       settingsUnchanged: true,
-      database: 'app_test_w98',
+      database: databaseName,
       analyzedTables: intervened ? 5 : 0,
     });
   return {
@@ -5722,14 +5890,15 @@ export function compactSourceJoinEvidence(
   small: boolean,
   statisticsComparison = false,
   sourceVariant: SourceJoinVariant = 'B',
+  databaseName = 'app_test_w98',
 ) {
   raw = joinKeyDiagnosticNotices(raw);
   if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 source join evidence bound refused');
   if (statisticsComparison && small) throw new Error('E4 source statistics shape refused');
   const statistics = statisticsComparison
-    ? compactSourceStatisticsEvidence(raw)
+    ? compactSourceStatisticsEvidence(raw, true, true, databaseName)
     : sourceVariant === 'C'
-      ? compactSourceStatisticsEvidence(raw, false)
+      ? compactSourceStatisticsEvidence(raw, false, true, databaseName)
       : undefined;
   const order = sourceJoinOrder(small, statisticsComparison);
   const matches = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_SAMPLE (\{[^\n]+\})/gu)];
@@ -6050,15 +6219,18 @@ export function sourceJoinSessionSql(
   small: boolean,
   statisticsComparison = false,
   sourceVariant: SourceJoinVariant = 'B',
+  publicSourcePin = 'd8934c5bf29f8b16f820ba6cd950698b',
+  databaseName = 'app_test_w98',
 ) {
   return joinKeyProbeSql(
     revisionId,
-    'app_test_w98',
+    databaseName,
     small ? 4 : 2000,
     false,
     true,
     statisticsComparison,
     sourceVariant,
+    publicSourcePin,
   ).replace(
     'BEGIN;\nDO $$ BEGIN',
     () =>

@@ -51,3 +51,33 @@ run38529368300现已终态FAIL：Fast checks、Harness、Incident replay、Golde
 ## 收口边界
 
 CUTOVER_SIGNOFF仍签历史136而实际目录143，不借用旧签字、不代填。trusted审批留给维护者，不代点批准。最终SQL签字、主干合并、生产迁移/部署、业务标准修改均本次未做。额外诊断、SQL_LENGTH5缺口与工作流扩建不在本批。结束核对并撤销仅本批4项grant，其他授权保留；GitHub失败如需清单外改动则报告精确阻塞。
+
+## 2026-10-15 候选 C 正式接入（144）
+
+用户已明确批准同一云端开发分支新增迁移、同步校验标识并执行隔离合成库小规模、500及仅一次满额 prepare→submit→first/final review→ledger。此次授权不含合并、部署、生产数据或人工签字。
+
+144只替换 e4_source_rows 的 time_revision 来源 JOIN：内部仅 bucketId=b.id、窄列及 OFFSET 0；外层三相等、UNION ALL袋语义、allocation/slice/result和全部计算不变。规范化定义 SHA256 为 eaaae461562388412ea526e8ae5290a87786b2132e153f359338c2135a826a2e，与800f3f3d影子候选逐字一致；迁移 SHA256 为 ac47d7564ef20d3b5f82d9729d6e35ac04068729f2e73a288af6b606c726cb4e，source body MD5 为19d84ee9f25b81d33f0ffdef0a800ab5。历史1–143不改，143 checksum及complete body pin仍分别为c996a26f…/ade4d2af…。
+
+真实入口独立选择ordinary-1、ordinary-500或maximum，保留原prepare30秒及后续预算、双guard与全局设置，无ANALYZE或90秒适配。父子报告绑定、成功/失败保留、原生INSERT缺项拒绝、deferred COMMIT回滚与独立失败七项计数均有对应验证路径。临时影子六负例/六优先级与原生guard测试分别记录，不混称相同覆盖。31处当前迁移计数同步144，旧143回归通过显式历史迁移入口保持143范围。
+
+本地focused为130/130通过，完整test typecheck及定向lint退出0。首次本地E2E在模块收集期因Node搜索路径无法解析已安装的express而失败，127.791秒、0 tests、未创建目标库；只补本地NODE_PATH后重新执行收集，尚未有业务通过结论。真实路径结果在后续证据段记录；影子500通过不代替真实prepare或满额验收。
+
+### 本轮实际结果与阻塞
+
+本地三次启动分别停于：①缺少pnpm虚拟依赖目录的Node解析（127.791秒、0 tests）；②误带GitHub专用标记，被scope保护拒绝（43.800秒、0 tests）；③按本地W98入口运行后，在143 suite的beforeAll隔离迁移安装失败（45.623秒，21项离线通过、7项数据库前置失败）。144 suite被bail停止，prepare及500/maximum均NOT_RUN。未重跑已失败的业务序列。
+
+第三次原错误仅为`E4 isolated migration deploy failed (details not echoed)`；包装丢失详细stderr，不能声称已取得原deploy的完整错误。无DB只读工具检查另复现`ENOENT: mkdir /home/agent/.local/share/pnpm`；把数据目录改到tmp后又被pnpm的无TTY模块重建保护拒绝，未允许删除或重建依赖。直接运行现有Prisma CLI可读出6.19.3。最小运行器修正是使用原workflow固定pnpm10.14.0的干净GitHub runner；已将143/144升级与原生guard回归接在真实ordinary-1全链之前，失败会阻断后续全链。
+
+独立维护连接最终观测PG16、databases/clients/leaseBackends/leaseLocks=0/0/0/0；这是清理证据，不代表144业务回归通过。复用了原有PG容器，未移除共享容器。
+
+正式git commit在自动审批审查中被拒绝，审查仍引用旧“只读、不得修改”范围，未采纳父任务附带的新确认（Sentinel_4dfee21d5ef48191a16b4d00cf5d5955）。按“再次拒绝则停止该动作”的指示，不再提交、推送或派发新run。当前HEAD仍800f3f3d，44文件改动仅在工作树，可审阅patch另存交接。下一步须先修复审批上下文，然后在新提交上按ordinary-1→ordinary-500→仅一次maximum执行，任何阶段失败即停止下游，不增加原预算、不重跑昂贵fixture求绿。
+
+### 限量首发评估（只评估，未实施或部署）
+
+本轮144真实路径未通过，不能给出新的生产安全人数。已有500档证据仅支持一个待验收形状：单活动、单session、一个北京时间日、500身份/500服务段及分配/2500切片/2000桶及bucketSource关联/2000评价单元/约2500条来源引用、500条结果；不能解释为任意500人活动。若未来真实500全链通过而满额仍失败，可把这组多维规模作为限量方案的最高待验收档，实际上线仍需下面的准入与验证。
+
+服务端须单设E4准入，不能降低共享TIME_SETTLEMENT_LIMITS而改变既有D4。对身份、服务段、分配、切片、桶、bucketSource、sourceRefs、评价单元、Beijing日/跨日分摊及结果复杂度设明确上限；读取完整集合、锁后复核并在写入前以稳定业务错误拒绝超额。prepare、submit、重试及更正均不能靠分批绕限；更正按完整有效集合计算，尚未验证的跨日、多session、复杂更正及历史回填首发延期。已固定policy_v1的版本不能在超界或停用时暗退legacy。双guard、完整oracle、账目/幂等/权限/事务一致性/失败回滚与可恢复性不降级。
+
+可先用的目标应是上述限定范围的新活动、新发布政策的正常prepare→submit→双审→ledger及只读证明；完整历史转换、广泛历史更正和更大/更复杂规模延期。E2全历史转换只有在维护者批准仅新活动/新政策口径后才可延期，既有legacy保持原真相；E3须确认首发活动是否涉及仍hold的映射/历史窗口，涉及者继续阻断，不把31类真实映射或未决窗口核销。
+
+E5仍是实际可用的硬依赖：当前assertNativeWriteAllowed仅允许test+fixture，必须另行实现正式限量启用、独立服务端准入、版本制度边界和停用/恢复流程，不能把fixture用于生产。代码部署但保持off只交付关闭的代码，不代表用户能使用新积分，更不代表整个R5完成。必要上线证据仍包括当前候选的真实小规模/500全链及前后oracle、权限/幂等/并发与故障恢复、超额拒绝及锁后防绕限、准确部署SHA/迁移与回退演练、适用范围的E2/E3结论、维护者SQL/trusted/签字及既有D8-OPS/生产gate。当前不部署、不切换、不代签。
