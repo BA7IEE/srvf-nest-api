@@ -59,6 +59,11 @@ on:
         required: false
         default: false
         type: boolean
+      real_key_carry:
+        description: Add exact145 key-carry to C; only ordinary1 or500, never maximum
+        required: false
+        default: false
+        type: boolean
       real_source_c_scenario:
         description: One real144 settlement full chain at original budgets, without ANALYZE
         required: false
@@ -804,6 +809,7 @@ jobs:
       SRVF_E4_DIAGNOSTIC_SCENARIO: ${{ matrix.scenario }}
       SRVF_E4_NATIVE_PREPARE_PLAN: ${{ inputs.native_prepare_plan_500 && '1' || '' }}
       SRVF_E4_REAL_SOURCE_C: ${{ inputs.real_source_c_scenario && inputs.real_source_c_scenario != 'off' && '1' || '' }}
+      SRVF_E4_REAL_KEY_CARRY: ${{ inputs.real_key_carry && '1' || '' }}
       SRVF_E4_REAL_STATISTICS: ${{ inputs.real_statistics_maximum && '1' || '' }}
       SRVF_E4_SOURCE_JOIN: ${{ inputs.source_join_comparison != 'off' && inputs.source_join_comparison || '' }}
       SRVF_E4_SOURCE_JOIN_C: ${{ inputs.source_join_bucket_c && '1' || '' }}
@@ -839,7 +845,7 @@ jobs:
         run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client)\.spec\.ts$'
       - name: Native plan redaction and completeness boundary tests
         if: (inputs.real_source_c_scenario && inputs.real_source_c_scenario != 'off') || inputs.real_statistics_maximum || inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
-        run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts test/helpers/e4-source-bucket-lateral-migration.spec.ts test/helpers/e4-migration-prefix.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client|e4-source-bucket-lateral-migration|e4-migration-prefix)\.spec\.ts$'
+        run: pnpm exec jest --config test/jest-unit.config.ts --runInBand --no-cache --runTestsByPath test/helpers/e4-prepare-cost-diagnostic.spec.ts test/helpers/e4-diagnostic-limits-client.spec.ts test/helpers/e4-source-bucket-lateral-migration.spec.ts test/helpers/e4-migration-prefix.spec.ts test/helpers/e4-evaluation-join-key-migration.spec.ts --testRegex 'test/helpers/(e4-prepare-cost-diagnostic|e4-diagnostic-limits-client|e4-source-bucket-lateral-migration|e4-migration-prefix|e4-evaluation-join-key-migration)\.spec\.ts$'
       - name: Start fresh PostgreSQL 16 runner
         run: |
           docker compose up -d postgres
@@ -851,7 +857,7 @@ jobs:
           done
           exit 1
       - name: Prove PG16 native collection and redaction before any business fixture
-        if: inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
+        if: inputs.real_key_carry || inputs.native_prepare_plan_500 || inputs.source_join_comparison == 'small' || inputs.source_join_comparison == 'ordinary-500' || inputs.source_join_comparison == 'statistics-500'
         env:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --native-plan-capability
@@ -871,7 +877,7 @@ jobs:
         env:
           TS_NODE_PROJECT: test/tsconfig.test.json
         run: pnpm exec ts-node test/diagnostics/e4-prepare-cost.diagnostic-spec.ts --canonical-equivalence
-      - name: Nonempty143 to144 and native guard rollback before real small chain
+      - name: Nonempty143 to144 or144 to145 and native guards before real small chain
         if: inputs.real_source_c_scenario == 'ordinary-1'
         run: |
           node <<'NODE'
@@ -884,7 +890,7 @@ jobs:
             setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
           });
           const result = cp.spawnSync('pnpm', ['exec','jest','--config',config,'--runInBand','--no-cache','--bail','--runTestsByPath',
-            'test/e2e/activity-os-r5-e4-source-bucket-lateral-migration.e2e-spec.ts'], {env:process.env,stdio:'inherit'});
+            process.env.SRVF_E4_REAL_KEY_CARRY === '1' ? 'test/e2e/activity-os-r5-e4-evaluation-join-key-migration.e2e-spec.ts' : 'test/e2e/activity-os-r5-e4-source-bucket-lateral-migration.e2e-spec.ts'], {env:process.env,stdio:'inherit'});
           // Observe cleanup independently even when the migration suite failed.
           const source = fs.readFileSync('test/diagnostics/e4-prepare-cost.diagnostic-spec.ts','utf8');
           const sql = source.match(/export function calibrationCleanupSql\(\) \{\s*return `([\s\S]*?)`;/)?.[1];
@@ -898,8 +904,8 @@ jobs:
             cleanup = {...cleanup,status:keys.every(k => facts[k] === 0) ? 'OBSERVED_ABSENT' : 'REMAINS',facts};
           } catch { /* UNKNOWN never turns a failed suite green. */ }
           fs.mkdirSync('tmp/e4-prepare-cost-evidence',{recursive:true});
-          fs.writeFileSync('tmp/e4-prepare-cost-evidence/source144-cleanup.json',JSON.stringify(cleanup)+'\n',{mode:0o600});
-          process.stdout.write('E4_SOURCE144_CLEANUP '+JSON.stringify(cleanup)+'\n');
+          fs.writeFileSync('tmp/e4-prepare-cost-evidence/'+(process.env.SRVF_E4_REAL_KEY_CARRY === '1' ? 'key145-cleanup.json' : 'source144-cleanup.json'),JSON.stringify(cleanup)+'\n',{mode:0o600});
+          process.stdout.write((process.env.SRVF_E4_REAL_KEY_CARRY === '1' ? 'E4_KEY145_CLEANUP ' : 'E4_SOURCE144_CLEANUP ')+JSON.stringify(cleanup)+'\n');
           process.exit(result.error || result.signal ? 1 : result.status !== 0 ? result.status ?? 1 : cleanup.status === 'OBSERVED_ABSENT' ? 0 : 1);
           NODE
       - name: One fixed scenario, exact migration pins, original later budgets and independent 600s watchdog
@@ -960,6 +966,7 @@ jobs:
             tmp/e4-prepare-cost-evidence/source-join-calibration.json
             tmp/e4-prepare-cost-evidence/migration-failure-*.json
             tmp/e4-prepare-cost-evidence/source144-cleanup.json
+            tmp/e4-prepare-cost-evidence/key145-cleanup.json
           if-no-files-found: error
       - name: Remove this job's ephemeral PostgreSQL container
         if: always()

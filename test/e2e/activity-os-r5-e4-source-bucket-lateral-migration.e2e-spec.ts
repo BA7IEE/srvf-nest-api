@@ -97,14 +97,14 @@ describe('E4 real source bucket lateral migration144', () => {
       { count: number; pin: string }[]
     >`SELECT (SELECT count(*)::int FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL) AS count,(SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure) AS pin`;
     expect(prior).toEqual([{ count: 143, pin: 'd8934c5bf29f8b16f820ba6cd950698b' }]);
-    owner.deployLatestMigrations();
+    owner.deploySourceBucketMigrations();
     await verifyRealSourceDatabase(db());
     expect((await businessSnapshot(db())) === beforeRows).toBe(true);
     expect((await catalog(db())) === beforeCatalog).toBe(true);
     expect(await db().$queryRaw`SELECT name,setting FROM pg_settings ORDER BY name`).toEqual(
       beforeSettings,
     );
-    owner.deployLatestMigrations();
+    owner.deploySourceBucketMigrations();
     await verifyRealSourceDatabase(db());
     expect((await businessSnapshot(db())) === beforeRows).toBe(true);
     upgraded = true;

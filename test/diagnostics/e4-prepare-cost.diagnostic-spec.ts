@@ -98,6 +98,12 @@ export const E4_REAL_SOURCE_C = Object.freeze({
   sourceFunctionMd5: '19d84ee9f25b81d33f0ffdef0a800ab5',
   definitionSha256: 'eaaae461562388412ea526e8ae5290a87786b2132e153f359338c2135a826a2e',
 });
+export const E4_REAL_KEY_CARRY = Object.freeze({
+  migration: '20261015010000_activity_contribution_evaluation_join_key',
+  migrationSha256: '821e176badcd6a0264a4e45535a9d226dc8a09525db56299561527d56316166d',
+  completeFunctionMd5: 'b03a7298e625b703fa2f011c0fbcc6c0',
+  sourceMigration: E4_REAL_SOURCE_C,
+});
 export function diagnosticTransactionMs(env: NodeJS.ProcessEnv = process.env): 30000 | 90000 {
   return env.SRVF_E4_REAL_STATISTICS === '1' || env.SRVF_E4_REAL_SOURCE_C === '1' ? 30000 : 90000;
 }
@@ -321,6 +327,13 @@ function frozenE4Oracle(report: Report) {
 export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: string) {
   e4DiagnosticScenario(env.SRVF_E4_DIAGNOSTIC_SCENARIO);
   if (
+    env.SRVF_E4_REAL_KEY_CARRY &&
+    (env.SRVF_E4_REAL_KEY_CARRY !== '1' ||
+      env.SRVF_E4_REAL_SOURCE_C !== '1' ||
+      !['ordinary-1', 'ordinary-500'].includes(env.SRVF_E4_DIAGNOSTIC_SCENARIO ?? ''))
+  )
+    throw new Error('E4 real key145 small/500 scope refused');
+  if (
     env.SRVF_E4_REAL_SOURCE_C &&
     (env.SRVF_E4_REAL_SOURCE_C !== '1' ||
       !['ordinary-1', 'ordinary-500', 'maximum'].includes(env.SRVF_E4_DIAGNOSTIC_SCENARIO ?? '') ||
@@ -484,7 +497,13 @@ export function requireDiagnosticEnvironment(env: NodeJS.ProcessEnv, head: strin
   )
     throw new Error('E4 one-round isolated diagnostic environment refused');
 }
-type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan' | 'transactionMs'> & {
+type Report = Omit<
+  typeof E4_DIAGNOSTIC_PLAN,
+  'internalSqlPlan' | 'transactionMs' | 'completeFunctionMd5'
+> & {
+  completeFunctionMd5:
+    | typeof E4_DIAGNOSTIC_PLAN.completeFunctionMd5
+    | typeof E4_REAL_KEY_CARRY.completeFunctionMd5;
   transactionMs: 30000 | 90000;
   internalSqlPlan: 'NOT_RUN' | 'OBSERVED';
   head: string;
@@ -503,7 +522,7 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan' | 'transactionMs
   limits?: unknown;
   internal?: unknown;
   scenario: E4DiagnosticScenario;
-  migration: 'NOT_VERIFIED' | 'VERIFIED_143' | 'VERIFIED_144';
+  migration: 'NOT_VERIFIED' | 'VERIFIED_143' | 'VERIFIED_144' | 'VERIFIED_145';
   stages: OperationReceipt[];
   lock?: unknown;
   recovery?: unknown;
@@ -526,6 +545,8 @@ type Report = Omit<typeof E4_DIAGNOSTIC_PLAN, 'internalSqlPlan' | 'transactionMs
   sourceJoinStats?: unknown;
   realStatistics?: unknown;
   realSourceCandidate?: unknown;
+  realKeyCarryCandidate?: unknown;
+  keyCarryComparison?: unknown;
   prepareFailureObservation?: unknown;
   sourceJoinComparison?: unknown;
   sourceJoinPostOracle?: 'ENTERED' | 'COMPLETE';
@@ -579,7 +600,11 @@ export function readDiagnosticChildReport(
       data.purpose !== 'DIAGNOSTIC_ONLY' ||
       data.acceptance !== 'NOT_AN_ACCEPTANCE_RESULT' ||
       data.transactionMs !== diagnosticTransactionMs(env) ||
-      data.processMs !== 600000
+      data.processMs !== 600000 ||
+      Boolean(data.realKeyCarryCandidate) !== (env.SRVF_E4_REAL_KEY_CARRY === '1') ||
+      (env.SRVF_E4_REAL_KEY_CARRY === '1' &&
+        (data.completeFunctionMd5 !== E4_REAL_KEY_CARRY.completeFunctionMd5 ||
+          JSON.stringify(data.realKeyCarryCandidate) !== JSON.stringify(E4_REAL_KEY_CARRY)))
     )
       return undefined;
     return data;
@@ -592,12 +617,13 @@ function writeBounded(path: string, value: unknown) {
   const comparison =
     value &&
     typeof value === 'object' &&
-    [
-      'PREPARE_ORACLE_AND_JOIN_KEY_ONLY',
-      'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY',
-      'PREPARE_NATIVE_PLAN_ONLY',
-      'PREPARE_SOURCE_JOIN_ONLY',
-    ].includes(String(Reflect.get(value, 'coverage')));
+    (Reflect.has(value, 'realKeyCarryCandidate') ||
+      [
+        'PREPARE_ORACLE_AND_JOIN_KEY_ONLY',
+        'PREPARE_ORACLE_AND_FIXED_METADATA_ONLY',
+        'PREPARE_NATIVE_PLAN_ONLY',
+        'PREPARE_SOURCE_JOIN_ONLY',
+      ].includes(String(Reflect.get(value, 'coverage'))));
   const json = (comparison ? JSON.stringify(value) : JSON.stringify(value, null, 2)) + '\n';
   if (Buffer.byteLength(json) > 65536) throw new Error('E4 diagnostic output limit');
   writeFileSync(path, json, { flag: 'wx', mode: 0o600 });
@@ -924,6 +950,44 @@ export async function verifyRealSourceDatabase(db: Pick<PrismaClient, '$queryRaw
     prior_checksum: E4_DIAGNOSTIC_PLAN.migration143Sha256,
     checksum: E4_REAL_SOURCE_C.migrationSha256,
     complete_pin: E4_DIAGNOSTIC_PLAN.completeFunctionMd5,
+    source_pin: E4_REAL_SOURCE_C.sourceFunctionMd5,
+    statement_guard: true,
+    deferred_guard: true,
+  });
+}
+
+export function verifyRealKeyCarryMigrationSource() {
+  verifyRealSourceMigrationSource();
+  const sql = readFileSync(
+    resolve(__dirname, '../../prisma/migrations', E4_REAL_KEY_CARRY.migration, 'migration.sql'),
+    'utf8',
+  );
+  if (
+    createHash('sha256').update(sql).digest('hex') !== E4_REAL_KEY_CARRY.migrationSha256 ||
+    createHash('md5').update(sql.split('$$')[1]).digest('hex') !==
+      E4_REAL_KEY_CARRY.completeFunctionMd5 ||
+    sql.slice(sql.indexOf('BEGIN;')) !==
+      joinKeyCandidateSource().slice(joinKeyCandidateSource().indexOf('BEGIN;'))
+  )
+    throw new Error('E4 current145 exact key-only source refused');
+}
+export async function verifyRealKeyCarryDatabase(db: Pick<PrismaClient, '$queryRaw'>) {
+  const [metadata] = await db.$queryRaw<Record<string, unknown>[]>`
+    SELECT (SELECT count(*)::int FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL) AS count,
+      (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261013000000_activity_contribution_assert_source_reuse' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS prior_checksum,
+      (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261015000000_activity_contribution_source_bucket_lateral' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS source_checksum,
+      (SELECT checksum FROM _prisma_migrations WHERE migration_name='20261015010000_activity_contribution_evaluation_join_key' AND finished_at IS NOT NULL AND rolled_back_at IS NULL) AS checksum,
+      (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure) AS complete_pin,
+      (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure) AS source_pin,
+      (SELECT tgenabled='O' AND tgtype=4 AND tgnewtable='e4_inserted_evaluations' FROM pg_trigger WHERE tgname='e4_evaluation_set_guard' AND tgrelid='public."ParticipantContributionEvaluation"'::regclass) AS statement_guard,
+      (SELECT tgenabled='O' AND tgtype=5 AND tgdeferrable AND tginitdeferred FROM pg_trigger WHERE tgname='e4_revision_complete_guard' AND tgrelid='public."ActivitySettlementContributionRevision"'::regclass) AS deferred_guard
+  `;
+  expect(metadata).toEqual({
+    count: 145,
+    prior_checksum: E4_DIAGNOSTIC_PLAN.migration143Sha256,
+    source_checksum: E4_REAL_SOURCE_C.migrationSha256,
+    checksum: E4_REAL_KEY_CARRY.migrationSha256,
+    complete_pin: E4_REAL_KEY_CARRY.completeFunctionMd5,
     source_pin: E4_REAL_SOURCE_C.sourceFunctionMd5,
     statement_guard: true,
     deferred_guard: true,
@@ -1709,7 +1773,15 @@ export function sharedGuardStatement(variant: 'BASELINE' | 'CANDIDATE' = 'BASELI
 export function compactSharedGuardNotice(
   raw: string,
   variant: 'BASELINE' | 'CANDIDATE' = 'BASELINE',
+  shape = { sources: 50000, units: 8000 },
 ) {
+  if (
+    !(
+      (shape.sources === 50000 && shape.units === 8000) ||
+      (shape.sources === 2500 && shape.units === 2000)
+    )
+  )
+    throw new Error('E4 shared guard fixed shape refused');
   if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 shared guard capture limit');
   const normalize = (sql: string) =>
     sql
@@ -1871,10 +1943,10 @@ export function compactSharedGuardNotice(
   visit(document.Plan, null, 0);
   if (
     !nodes.some(
-      (node) => node.cte === 'assertion_sources' && node.rows === 50000 && node.loops === 1,
+      (node) => node.cte === 'assertion_sources' && node.rows === shape.sources && node.loops === 1,
     ) ||
-    !nodes.some((node) => node.cte === 'groups' && node.rows === 8000 && node.loops === 1) ||
-    !nodes.some((node) => node.cte === 'pairs' && node.rows === 8000 && node.loops === 1)
+    !nodes.some((node) => node.cte === 'groups' && node.rows === shape.units && node.loops === 1) ||
+    !nodes.some((node) => node.cte === 'pairs' && node.rows === shape.units && node.loops === 1)
   )
     throw new Error('E4 shared guard full dataset refused');
   const jit: unknown = document.JIT;
@@ -2094,21 +2166,30 @@ export function joinKeyProbeSql(
   statisticsComparison = false,
   sourceVariant: SourceJoinVariant = 'B',
   publicSourcePin = 'd8934c5bf29f8b16f820ba6cd950698b',
+  realKeyCarry = false,
 ) {
+  if (
+    realKeyCarry &&
+    (sourceJoin ||
+      fixedMetadataMaximum ||
+      statisticsComparison ||
+      ![4, 2000].includes(units) ||
+      publicSourcePin !== E4_REAL_SOURCE_C.sourceFunctionMd5)
+  )
+    throw new Error('E4 key145 probe scope refused');
   if (sourceVariant === 'C' && (!sourceJoin || statisticsComparison))
     throw new Error('E4 cold bucket candidate mode refused');
-  if (units !== 4 && units !== 8000 && !(sourceJoin && units === 2000))
+  if (units !== 4 && units !== 8000 && !((sourceJoin || realKeyCarry) && units === 2000))
     throw new Error('E4 join key fixed shape refused');
   if (sourceJoin && (fixedMetadataMaximum || units === 8000))
     throw new Error('E4 source join shape refused');
   if (statisticsComparison && (!sourceJoin || units !== 2000 || fixedMetadataMaximum))
     throw new Error('E4 source statistics scope refused');
   if (fixedMetadataMaximum && units !== 8000) throw new Error('E4 metadata maximum shape refused');
-  const fixedMetadata = !sourceJoin && (units === 4 || fixedMetadataMaximum);
-  const typedSources = fixedMetadata || sourceJoin;
+  const fixedMetadata = !sourceJoin && !realKeyCarry && (units === 4 || fixedMetadataMaximum);
+  const typedSources = fixedMetadata || sourceJoin || realKeyCarry;
   if (
-    sourceJoin &&
-    sourceVariant === 'C' &&
+    (realKeyCarry || (sourceJoin && sourceVariant === 'C')) &&
     publicSourcePin === E4_REAL_SOURCE_C.sourceFunctionMd5 &&
     !statisticsComparison
   ) {
@@ -2192,7 +2273,7 @@ SET auto_explain.sample_rate=1;
 BEGIN;
 DO $$ BEGIN
  IF current_database()<>'${databaseName}' OR
- (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'ade4d2af9aa0baf8400a79fc6b62c797'
+ (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'${realKeyCarry ? E4_REAL_KEY_CARRY.completeFunctionMd5 : E4_DIAGNOSTIC_PLAN.completeFunctionMd5}'
  THEN RAISE EXCEPTION 'E4 join key connected scope refused'; END IF;
 END $$;
 CREATE TEMP TABLE e4_probe_context AS SELECT id FROM public."ActivitySettlementContributionRevision" WHERE id=:'root_id';
@@ -2207,6 +2288,7 @@ CREATE TEMP TABLE e4_probe_sources AS SELECT * FROM public.e4_source_rows(:'root
 }
 ${sourceJoin ? sourceJoinSetupSql(units === 4, sourceVariant, publicSourcePin) : ''}
 ${create('e4_join_candidate', candidateBody)}
+${realKeyCarry ? create('e4_key_baseline', baselineBody) : ''}
 ${sourceJoin ? create('e4_sj_complete_baseline', baselineBody.replace('SELECT * FROM e4_source_rows(root.id)', 'SELECT * FROM pg_temp.e4_sj_original(root.id)')) : ''}
 ${create('e4_baseline_shadow', shadow(baselineBody))}
 ${create('e4_candidate_shadow', shadow(candidateBody))}
@@ -2230,11 +2312,13 @@ COMMIT;\n`;
         : variant === 'BASELINE'
           ? sourceJoin
             ? 'pg_temp.e4_sj_complete_baseline'
-            : 'public.e4_assert_complete'
+            : realKeyCarry
+              ? 'pg_temp.e4_key_baseline'
+              : 'public.e4_assert_complete'
           : 'pg_temp.e4_join_candidate';
     sql += `BEGIN READ ONLY;
 ${settings}
-SET LOCAL auto_explain.log_min_duration=${sourceJoin && phase !== 'SHADOW_CONTROL' ? '50' : phase === 'ACTUAL_PLAN' ? '1000' : '-1'};
+SET LOCAL auto_explain.log_min_duration=${sourceJoin && phase !== 'SHADOW_CONTROL' ? '50' : phase === 'ACTUAL_PLAN' ? (realKeyCarry ? '100' : '1000') : '-1'};
 DO $$ DECLARE root_id TEXT; started TIMESTAMPTZ; elapsed NUMERIC; ${sourceJoin ? 'before_stats TEXT;after_stats TEXT;' : ''} BEGIN
  SELECT id INTO STRICT root_id FROM pg_temp.e4_probe_context;
  ${sourceJoin ? `before_stats:=${sourceStatsDigest};IF before_stats IS DISTINCT FROM (SELECT source_stats FROM pg_temp.e4_probe_metadata) THEN RAISE EXCEPTION 'E4 source join statistics changed before sample'; END IF;` : ''}
@@ -2373,9 +2457,9 @@ ROLLBACK;
       }
   }
   sql += `DO $$ BEGIN
- IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'ade4d2af9aa0baf8400a79fc6b62c797'
+ IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_assert_complete(text,boolean)'::regprocedure)<>'${realKeyCarry ? E4_REAL_KEY_CARRY.completeFunctionMd5 : E4_DIAGNOSTIC_PLAN.completeFunctionMd5}'
  OR ${guardDigest} IS DISTINCT FROM (SELECT guards FROM pg_temp.e4_probe_metadata)
- ${sourceJoin ? `OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure)<>'${publicSourcePin}'` : ''}
+ ${sourceJoin || realKeyCarry ? `OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.e4_source_rows(text)'::regprocedure)<>'${publicSourcePin}'` : ''}
  THEN RAISE EXCEPTION 'E4 join key public catalog changed'; END IF;
  RAISE NOTICE 'E4_JOIN_KEY_COMPLETE %',json_build_object('catalogUnchanged',true,'guardsUnchanged',true,'sameBackend',
    pg_backend_pid()=(SELECT pid FROM pg_temp.e4_probe_metadata),'publicEvaluationCount',
@@ -2512,6 +2596,228 @@ export function compactJoinKeyEvidence(raw: string) {
     catalogUnchanged: true,
     guardsUnchanged: true,
   };
+}
+
+function realKeyCarryPlans(raw: string, units: 4 | 2000) {
+  return units === 4
+    ? []
+    : (['BASELINE', 'CANDIDATE'] as const).map((variant, i) => {
+        const index = i + 4;
+        const marker = new RegExp(`NOTICE:\\s+E4_JOIN_KEY_BEGIN ${index}\\s*\\n`, 'u').exec(raw);
+        if (!marker) throw new Error('E4 key145 plan marker missing');
+        const start = marker.index + marker[0].length;
+        const next = raw.indexOf('E4_JOIN_KEY_BEGIN ', start);
+        const plan = compactSharedGuardNotice(
+          raw.slice(start, next < 0 ? raw.length : next),
+          variant,
+          { sources: 2500, units: 2000 },
+        );
+        const nodes = plan.nodes.map((n) => ({
+          id: n.id,
+          parent: n.parent,
+          type: n.type,
+          cte: n.cte,
+          function: n.function,
+          rows: n.rows,
+          loops: n.loops,
+          totalMs: n.totalMs,
+        }));
+        const canonicalAggregates = nodes.filter(
+          (n) =>
+            n.type === 'Aggregate' &&
+            n.loops === units &&
+            nodes.some((child) => {
+              if (child.function !== 'jsonb_each' || child.rows !== 19 || child.loops !== units)
+                return false;
+              let parent = child.parent;
+              while (typeof parent === 'number') {
+                const ancestor = nodes[parent];
+                if (ancestor.type === 'Aggregate') return ancestor.id === n.id;
+                parent = ancestor.parent;
+              }
+              return false;
+            }),
+        );
+        return {
+          variant,
+          mode: 'ACTUAL_TEMP_COMPLETE_FUNCTION_CURRENT_C_SOURCE',
+          statementSha256: plan.statementSha256,
+          durationMs: plan.durationMs,
+          canonicalAggregates: canonicalAggregates.map((n) => ({ id: n.id, loops: n.loops })),
+          nodes,
+        };
+      });
+}
+
+/** Current C source, two complete implementations and one legally prepared fixture. */
+export function realKeyCarryProbeSql(revisionId: string, databaseName: string, units: 4 | 2000) {
+  return joinKeyProbeSql(
+    revisionId,
+    databaseName,
+    units,
+    false,
+    false,
+    false,
+    'B',
+    E4_REAL_SOURCE_C.sourceFunctionMd5,
+    true,
+  );
+}
+export function compactRealKeyCarryEvidence(raw: string, units: 4 | 2000) {
+  raw = joinKeyDiagnosticNotices(raw);
+  const order = units === 4 ? JOIN_KEY_CALIBRATION_ORDER : JOIN_KEY_ORDER;
+  const samples = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_SAMPLE (\{[^\n]+\})/gu)].map((m) =>
+    JSON.parse(m[1]),
+  );
+  expect(samples).toHaveLength(order.length);
+  for (const [index, value] of samples.entries()) {
+    expect(value).toMatchObject({
+      index,
+      phase: order[index][0],
+      variant: order[index][1],
+      returned: true,
+      completeDocumentAndRootGuard: true,
+      sameBackend: true,
+      readonly: true,
+      workMemKb: 4096,
+      jitEnabled: true,
+      planCacheMode: 'force_custom_plan',
+    });
+    expect(Number.isFinite(value.wallMs) && value.wallMs > 0 && value.wallMs <= 30000).toBe(true);
+  }
+  const negatives = compactJoinKeyNegativeCases(raw);
+  expect(negatives).toHaveLength(6);
+  const priorities = compactMetadataPriorityEvidence(raw);
+  const endings = [...raw.matchAll(/NOTICE:\s+E4_JOIN_KEY_COMPLETE (\{[^\n]+\})/gu)];
+  expect(endings).toHaveLength(1);
+  expect(JSON.parse(endings[0][1])).toEqual({
+    catalogUnchanged: true,
+    guardsUnchanged: true,
+    sameBackend: true,
+    publicEvaluationCount: units,
+  });
+  const plans = realKeyCarryPlans(raw, units);
+  for (const plan of plans)
+    expect(plan.canonicalAggregates).toHaveLength(plan.variant === 'BASELINE' ? 2 : 1);
+  return {
+    status: 'COMPLETE',
+    units,
+    sameBackend: true,
+    sameFixture: true,
+    sourceFunctionMd5: E4_REAL_SOURCE_C.sourceFunctionMd5,
+    installedCompleteMd5: E4_REAL_KEY_CARRY.completeFunctionMd5,
+    session: { workMemKb: 4096, jitEnabled: true, planCacheMode: 'force_custom_plan' },
+    samples,
+    negatives,
+    priorities,
+    plans,
+    repeatedCanonicalization:
+      units === 2000 ? 'OBSERVED_4000_TO_2000' : 'NOT_PROFILED_SMALL_CORRECTNESS_ONLY',
+    guardScope: 'TEMP_FULL_SQL_SHADOW_NEGATIVES_NATIVE_TRIGGERS_TESTED_SEPARATELY',
+    timingMeaning:
+      'POST_FULL_CHAIN_FUNCTION_COMPARISON_NOT_PREPARE_COST_OR_30_SECOND_MAXIMUM_ACCEPTANCE',
+  };
+}
+export async function probeRealKeyCarry(
+  db: PrismaClient,
+  report: Report,
+  proof: PrivateDiagnosticProof | undefined,
+  run: typeof spawnSync = spawnSync,
+) {
+  report.substage = 'KEY145_COMPARISON_ENTRY';
+  if (report.oracle !== 'COMPLETE' || !proof || (proof.units !== 4 && proof.units !== 2000))
+    throw new Error('E4 key145 complete legal fixture required');
+  const root = await db.activitySettlementContributionRevision.findUniqueOrThrow({
+    where: { id: proof.revisionId },
+    select: { kindCode: true },
+  });
+  expect(root.kindCode).toBe('draft');
+  const owner = `e4_key145_${report.head.slice(0, 12)}_${report.run}`;
+  const databaseName = new URL(process.env.DATABASE_URL!).pathname.slice(1);
+  report.keyCarryComparison = { status: 'ENTERED', units: proof.units };
+  let primaryError: Error | undefined;
+  let cleanupError = false;
+  try {
+    report.substage = 'KEY145_COMPARISON_PROCESS';
+    const proc = run(
+      'docker',
+      [
+        'exec',
+        '-i',
+        '-e',
+        `PGAPPNAME=${owner}`,
+        'u-nest-api-postgres',
+        'psql',
+        '-X',
+        '-q',
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-v',
+        'VERBOSITY=verbose',
+        '-v',
+        `root_id=${proof.revisionId}`,
+        '-U',
+        'postgres',
+        '-d',
+        databaseName,
+      ],
+      {
+        input: realKeyCarryProbeSql(proof.revisionId, databaseName, proof.units),
+        encoding: 'utf8',
+        timeout: 120000,
+        maxBuffer: 2097152,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    );
+    let progress: unknown = { status: 'UNKNOWN' },
+      plans: unknown = { status: 'NOT_CAPTURED' };
+    try {
+      progress = compactJoinKeyFailure(proc.stderr ?? '');
+    } catch {
+      /* Retain process facts even if parsing fails. */
+    }
+    try {
+      plans = realKeyCarryPlans(joinKeyDiagnosticNotices(proc.stderr ?? ''), proof.units);
+    } catch {
+      /* Incomplete actual plans remain unknown. */
+    }
+    report.keyCarryComparison = {
+      status: 'PROCESS_RETURNED',
+      units: proof.units,
+      exitCode: proc.status,
+      stdoutBytes: Buffer.byteLength(proc.stdout ?? ''),
+      stderrBytes: Buffer.byteLength(proc.stderr ?? ''),
+      progress,
+      plans,
+    };
+    if (proc.status !== 0) throw new Error('E4 key145 bounded comparison process failed');
+    report.substage = 'KEY145_COMPARISON_PARSE';
+    report.keyCarryComparison = compactRealKeyCarryEvidence(proc.stderr, proof.units);
+  } catch (error) {
+    primaryError =
+      error instanceof Error ? error : new Error('E4 key145 comparison non-Error failure');
+    report.keyCarryComparison = { ...(report.keyCarryComparison as object), status: 'FAILED' };
+  } finally {
+    try {
+      await db.$queryRaw`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner} AND pid<>pg_backend_pid()`;
+      const [gone] = await db.$queryRaw<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=current_database() AND application_name=${owner}`;
+      expect(gone.count).toBe(0);
+      report.keyCarryComparison = {
+        ...(report.keyCarryComparison as object),
+        cleanup: { status: 'OBSERVED_ABSENT', ownedBackendGone: true },
+      };
+    } catch {
+      cleanupError = true;
+      report.keyCarryComparison = {
+        ...(report.keyCarryComparison as object),
+        cleanup: { status: 'UNKNOWN' },
+      };
+    }
+  }
+  if (primaryError) throw primaryError;
+  if (cleanupError) throw new Error('E4 key145 owned backend cleanup not verified');
 }
 
 export function compactMetadataPriorityEvidence(raw: string, complete = true) {
@@ -2680,10 +2986,12 @@ export function compactJoinKeyCalibrationEvidence(raw: string, complete = true) 
 /** PostgreSQL verbose NOTICE adds its success SQLSTATE; leave ERROR codes and other text private. */
 export function joinKeyDiagnosticNotices(raw: string) {
   if (Buffer.byteLength(raw) > 2097152) throw new Error('E4 join key capture limit');
-  return raw.replace(
-    /(^|\n)NOTICE:[ \t]+00000:[ \t]+(?=E4_(?:JOIN_KEY|SOURCE_JOIN)_)/gu,
-    '$1NOTICE: ',
-  );
+  return raw
+    .replace(/(^|\n)NOTICE:[ \t]+00000:[ \t]+(?=E4_(?:JOIN_KEY|SOURCE_JOIN)_)/gu, '$1NOTICE: ')
+    .replace(
+      /(^|\n)NOTICE:[ \t]+00000:[ \t]+(?=duration:[ \t]+[0-9.]+[ \t]+ms[ \t]+plan:)/gu,
+      '$1NOTICE: ',
+    );
 }
 
 export function joinKeyCalibrationGate(
@@ -3715,6 +4023,7 @@ function registerDiagnosticChild() {
   const head = process.env.SRVF_E4_DIAGNOSTIC_HEAD ?? '';
   const realStatistics = process.env.SRVF_E4_REAL_STATISTICS === '1';
   const realSource = process.env.SRVF_E4_REAL_SOURCE_C === '1';
+  const realKeyCarry = process.env.SRVF_E4_REAL_KEY_CARRY === '1';
   requireDiagnosticEnvironment(process.env, head);
   if (
     !process.connected ||
@@ -3733,6 +4042,12 @@ function registerDiagnosticChild() {
   const report: Report = {
     ...E4_DIAGNOSTIC_PLAN,
     transactionMs: diagnosticTransactionMs(),
+    ...(realKeyCarry
+      ? {
+          completeFunctionMd5: E4_REAL_KEY_CARRY.completeFunctionMd5,
+          realKeyCarryCandidate: E4_REAL_KEY_CARRY,
+        }
+      : {}),
     ...(realSource
       ? {
           realSourceCandidate: {
@@ -3785,8 +4100,13 @@ function registerDiagnosticChild() {
       frozenE4OracleSource();
       frozenOrdinaryOracleSource();
       verifyDiagnosticMigrationSource();
-      if (realSource) verifyRealSourceMigrationSource();
-      if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' || process.env.SRVF_E4_SOURCE_JOIN)
+      if (realKeyCarry) verifyRealKeyCarryMigrationSource();
+      else if (realSource) verifyRealSourceMigrationSource();
+      if (
+        realKeyCarry ||
+        process.env.SRVF_E4_NATIVE_PREPARE_PLAN === '1' ||
+        process.env.SRVF_E4_SOURCE_JOIN
+      )
         readNativeCapability();
       if (['ordinary-500', 'statistics-500'].includes(process.env.SRVF_E4_SOURCE_JOIN ?? ''))
         readSourceJoinCalibration();
@@ -3837,9 +4157,14 @@ function registerDiagnosticChild() {
         checkpoint.mark('FIXTURE_BOOTSTRAP', 'COMPLETE');
         checkpoint.mark('SOURCE_BUILD', 'ENTER');
         report.substage = 'CATALOG_143';
-        if (realSource) await verifyRealSourceDatabase(f.db);
+        if (realKeyCarry) await verifyRealKeyCarryDatabase(f.db);
+        else if (realSource) await verifyRealSourceDatabase(f.db);
         else await verifyDiagnosticDatabase(f.db);
-        report.migration = realSource ? 'VERIFIED_144' : 'VERIFIED_143';
+        report.migration = realKeyCarry
+          ? 'VERIFIED_145'
+          : realSource
+            ? 'VERIFIED_144'
+            : 'VERIFIED_143';
         const maximum = report.scenario === 'maximum';
         const identities = diagnosticPopulation(report.scenario);
         report.scenarioShape = {
@@ -4247,6 +4572,9 @@ function registerDiagnosticChild() {
         ).finally(() => {
           report.oracleMs = performance.now() - oracleStarted;
         });
+        // Later full-chain oracles point at submitted roots; shadow controls need
+        // this already-proved draft, whose complete assertion has no ancestor lookup.
+        const keyCarryDraftProof = realKeyCarry ? privateDiagnosticProofs.get(report) : undefined;
         const preparedFacts = await diagnosticFacts(
           observer,
           source.activityId,
@@ -4370,7 +4698,17 @@ function registerDiagnosticChild() {
           ).toBe(true);
           report.oracle = 'COMPLETE';
           if (realSource) {
-            await verifyRealSourceDatabase(observer);
+            if (realKeyCarry) {
+              await verifyRealKeyCarryDatabase(observer);
+              await probeRealKeyCarry(observer, report, keyCarryDraftProof);
+              await assertDiagnosticProof(
+                observer,
+                prepared!.settlementVersionId,
+                units,
+                false,
+                report,
+              );
+            } else await verifyRealSourceDatabase(observer);
             await verifyDiagnosticGuards(observer);
           }
           report.budgetRecommendation = maximum
@@ -4638,6 +4976,12 @@ export async function runDiagnosticParent() {
     let report: Report = {
       ...E4_DIAGNOSTIC_PLAN,
       transactionMs: diagnosticTransactionMs(),
+      ...(process.env.SRVF_E4_REAL_KEY_CARRY === '1'
+        ? {
+            completeFunctionMd5: E4_REAL_KEY_CARRY.completeFunctionMd5,
+            realKeyCarryCandidate: E4_REAL_KEY_CARRY,
+          }
+        : {}),
       head,
       run: process.env.GITHUB_RUN_ID!,
       scenario: e4DiagnosticScenario(process.env.SRVF_E4_DIAGNOSTIC_SCENARIO),
@@ -6927,7 +7271,11 @@ function runNativeCapability() {
   if (process.env.GITHUB_ACTIONS === 'true') {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     requireDiagnosticEnvironment(process.env, head);
-    if (process.env.SRVF_E4_NATIVE_PREPARE_PLAN !== '1' && !process.env.SRVF_E4_SOURCE_JOIN)
+    if (
+      process.env.SRVF_E4_NATIVE_PREPARE_PLAN !== '1' &&
+      !process.env.SRVF_E4_SOURCE_JOIN &&
+      process.env.SRVF_E4_REAL_KEY_CARRY !== '1'
+    )
       throw new Error('E4 native capability scope refused');
   }
   const since = new Date().toISOString();

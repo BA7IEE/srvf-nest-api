@@ -44,7 +44,7 @@ export interface FirstReviewBarrierCandidate {
   guard: FirstReviewGuardIdentity;
 }
 
-// Exact, independently extracted §12.26 pins from migration 137, not learned from live DB.
+// Exact §12.26 guard137 and complete145 pins, independently extracted from migration SQL.
 // A fixed SQL fragment is not a cross-request authorization/identity cache.
 const FIRST_REVIEW_GUARD_CATALOG = Prisma.sql`
   SELECT (
@@ -70,7 +70,7 @@ const FIRST_REVIEW_GUARD_CATALOG = Prisma.sql`
     AND complete_proc.prokind='f' AND NOT complete_proc.prosecdef
     AND complete_language.lanname='plpgsql'
     AND complete_proc.proconfig=ARRAY['search_path=pg_catalog, public']::text[]
-    AND pg_catalog.md5(complete_proc.prosrc)='ade4d2af9aa0baf8400a79fc6b62c797'
+    AND pg_catalog.md5(complete_proc.prosrc)='b03a7298e625b703fa2f011c0fbcc6c0'
     AND (SELECT count(*) FROM pg_catalog.pg_proc callable
       JOIN pg_catalog.pg_namespace ns ON ns.oid=callable.pronamespace
       WHERE ns.nspname IN ('pg_catalog','public') AND callable.proname='e4_assert_complete'

@@ -307,7 +307,7 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
           ? readFileSync(
               resolve(
                 __dirname,
-                '../../../prisma/migrations/20261013000000_activity_contribution_assert_source_reuse/migration.sql',
+                '../../../prisma/migrations/20261015010000_activity_contribution_evaluation_join_key/migration.sql',
               ),
               'utf8',
             )
@@ -342,13 +342,14 @@ describe('§12.26 first-review candidate and actual constraint barrier', () => {
       expect(sql).toContain(predicate);
   });
 
-  it('accepts only the source-reuse143 whole-body pin and never a superseded body', async () => {
+  it('accepts only the evaluation-key145 whole-body pin and never a superseded body', async () => {
     const { service, prismaTx, tx } = setup();
     tx.activitySettlementContributionRevision.findFirst.mockResolvedValue(firstReviewProof());
     tx.$queryRaw.mockResolvedValue([FIRST_REVIEW_TEST_GUARD]);
     await service.readFirstReviewBarrierCandidateInTx(prismaTx, firstReviewAnchor());
     const call = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray, Prisma.Sql];
-    expect(call[1].text).toContain("md5(complete_proc.prosrc)='ade4d2af9aa0baf8400a79fc6b62c797'");
+    expect(call[1].text).toContain("md5(complete_proc.prosrc)='b03a7298e625b703fa2f011c0fbcc6c0'");
+    expect(call[1].text).not.toContain('ade4d2af9aa0baf8400a79fc6b62c797');
     expect(call[1].text).not.toContain('59a9bc7d7c0c3b38df982536a2632b15');
     expect(call[1].text).not.toContain('21fe9ecf6df989a3f8fa5878df40b93c');
     expect(call[1].text).not.toContain('edd162a44264b0d073d0009d3e592d0e');
