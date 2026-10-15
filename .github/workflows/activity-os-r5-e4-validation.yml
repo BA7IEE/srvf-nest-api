@@ -883,7 +883,6 @@ jobs:
             setupFiles: ['<rootDir>/test/setup/setup-files.ts'],
           });
           const result = cp.spawnSync('pnpm', ['exec','jest','--config',config,'--runInBand','--no-cache','--bail','--runTestsByPath',
-            'test/e2e/activity-os-r5-e4-assert-source-reuse-migration.e2e-spec.ts',
             'test/e2e/activity-os-r5-e4-source-bucket-lateral-migration.e2e-spec.ts'], {env:process.env,stdio:'inherit'});
           if (result.error || result.signal) throw Error('E4 real source migration runner failed');
           process.exit(result.status ?? 1);

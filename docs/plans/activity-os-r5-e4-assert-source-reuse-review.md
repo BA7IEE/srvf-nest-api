@@ -97,3 +97,18 @@ E5仍是实际可用的硬依赖：当前assertNativeWriteAllowed仅允许test+f
 下一步的最小组织修正应先改workflow中真实C ordinary-1的前置命令：单独运行已有143→144非空升级/原生guard专用suite，不把完整142→143历史回归串在候选取证之前；旧143 suite继续由既有E2E CI必跑，失败仍阻断合并，不能被跳过或写成通过。候选专用suite失败则立即停止，不派发500或满额。若专用suite及真实small全链通过，才依次500及仅一次满额，沿用现有30秒及后续预算、完整冻结oracle和独立清理。此处只给出精确下一步，没有自行再运行。
 
 另一个已暴露的组织缺口是Jest套件级bail不能取消已超时的异步数据库工作：本轮首个用例超时后仍有oracle/noop日志，现场也曾看到多条旧测试查询同时活动。不能把后续超时直接归因于候选SQL。若继续处理旧143测试，应让其数据库操作在原用例预算耗尽前可取消并完成cleanup，而非增加timeout或继续执行后续故障用例；所有原断言、SQLSTATE与双guard保持。55秒到94秒的既有波动原因仍未知，本轮日志不能解释那两次差异。
+
+### 2026-10-15 候选专用前置与旧143必跑回归解耦
+
+按父任务本轮明确指示应用原一行编排补丁：真实C ordinary-1前置只选 `activity-os-r5-e4-source-bucket-lateral-migration.e2e-spec.ts`。旧143 suite未删除、未skip、未修改；`test/jest-e2e.config.ts`的全量e2e匹配和`.github/workflows/ci.yml`第537行五分片仍会收集它，既有required聚合gate依赖slow且不接受非docs-only跳过。独立候选取证可继续，总体验收仍被旧143四个超时阻断。未改任何断言、超时、预算、SQL或正确性门禁，也未新建CI job或required context。
+
+旧143这次失败的精确用例及证据如下。日志没有逐步时间戳，无法给出某个Jest超时瞬间的最后SQL；以下只记录实际可证事实，未观测处保留UNKNOWN。
+
+| 旧用例（原文件test/e2e/activity-os-r5-e4-assert-source-reuse-migration.e2e-spec.ts）                                | Jest预算 | 最后已记录事实／缺口                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------- | -------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| preserves every business row and catalog identity on nonempty142 to143 and no-op with frozen root/day/source oracle | 120000ms | BASELINE_ORACLE相等、143安装pin正确、UPGRADE仅proargdefaults location差异；后续还输出CANDIDATE_ORACLE及NOOP相等，但NONEMPTY_UPGRADE完成收据缺失。哪些日志在120秒内完成为UNKNOWN，整项FAIL。 |
+| keeps the independent final version/result check after valid sources and evaluations                                |  30000ms | 仅Jest超时，未设步骤收据；最后完成步骤UNKNOWN。事务原预算同为30000ms。                                                                                                                      |
+| keeps INSERT and deferred checks independent and rolls back the whole transaction on a later incomplete root        |  30000ms | createMany处P2028，30000ms预算／31134ms已过；statementPassed=false、callbackReturned=false、独立业务snapshot相等=false。未到实际COMMIT，不算deferred拒绝或整事务回滚通过。                  |
+| uses a real statement snapshot across an observed two-backend commit and reads fresh sources on the next invocation |  30000ms | E4_ASSERT143_SNAPSHOT完成收据缺失；最后完成步骤UNKNOWN。writer事务原预算20000ms，观察锁等待窗口5000ms，均不变。                                                                             |
+
+这些失败保留为未解决项，暂不修改旧测试或重新量测。新候选按现有项目锁定工具链在GitHub独占合成PG16先执行144非空升级／原生guard／袋语义，然后真实small全链；各阶段通过才进入500及仅一次maximum。记录各run的HEAD、SQL pin、冻结oracle、完整链与独立清理；最大尝试在本轮开始仍为0。
