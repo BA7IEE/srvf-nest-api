@@ -145,7 +145,7 @@ source build与prepare是不同阶段，不能相加作为事务耗时。small�
 
 限量评估现在具备本候选500形状完整链的正面证据，但满额30秒仍FAIL，仍无上线许可。最多只能将已验证的单活动/单session/单北京时间日、500身份/500段及分配/2500切片/2000单元及桶/2000bucketSource关联/约2500sourceRefs/500结果作为待正式验收的多维上限，不扩展成任意500人活动或未经验证的更正/跨日/多session。独立E4服务端准入、锁后重验和稳定拒绝、E5正式限量启用模式及停用/恢复、适用E2/E3与D8-OPS/人工审批仍待完成；当前服务仍仅test+fixture可写，不能用fixture上线。共享D4/TIME_SETTLEMENT_LIMITS、预算和双guard均不降低，代码关闭态部署也不代表业务已可用。
 
-### 2026-10-15 145精确key携带实施与有限验证队列（进行中）
+### 2026-10-15 145精确key携带实施与有限验证队列
 
 用户本轮明确批准在同一开发分支新增145、先等价与负例/回滚、再small及一次500真实全链、提交推送现有Draft PR；禁止自动再次满额。145 `20261015010000_activity_contribution_evaluation_join_key` 仅替换complete函数：expected_documents携带metadata内evaluationUnitKey、expected直接用该列，全文JSON/FULL JOIN/root/错误优先级及双guard不变。143/144 SQL不改，144来源pin继续19d84ee9f25b81d33f0ffdef0a800ab5，complete新pin为b03a7298e625b703fa2f011c0fbcc6c0。145文件SHA256为821e176badcd6a0264a4e45535a9d226dc8a09525db56299561527d56316166d。
 
@@ -160,3 +160,45 @@ source build与prepare是不同阶段，不能相加作为事务耗时。small�
 旧143最小组织修复应保留离线describe在外，将DB owner放外层DB describe、fixture置内层，使客户端先关闭再DROP/release；还须让预算到期时取消并等待本用例所有查询/事务结束，不能只移动owner或继续下一用例。四项仍FAIL/hold，常规required CI继续必跑，候选入口拆分不核销任何旧失败。
 
 145提交前结果：改动前service72项通过，最终六套聚焦277项全部通过；src/test/scripts三段完整typecheck退出0，定向lint在修复throw类型后退出0。authz当前663条，仅生成输入摘要变化；counts145、31处迁移计数、readtax通过，CODEMAP同步迁移/E2E计数。跨模型复核闭合draft取证根、verbose实际计划前缀、主错误与清理错误分离、145报告身份及64KiB边界。误启动的常规全量单测已主动终止（143），未计为通过；本轮仅采用聚焦测试。尚未运行业务数据库或GitHub队列，下一步为独立PG16临时能力检查、非空144→145及原生guard四项、small全链，再由同HEAD成功收据放行唯一一次500。
+
+### 2026-10-15 145真实small/500及同夹具规范化取证完成
+
+代码HEAD `32343421f6fbb68125464a4a08ef007b2a3b1d6c`，同一分支Draft PR1380；45文件提交包含145及必要配套，143/144历史SQL SHA均保持。small和500都是attempt1、独占合成PG16、原30秒prepare与原后续预算、无手工ANALYZE。最后两处诊断能力guard的完整test typecheck与driver lint复查均退出0。
+
+| 145场景 | run | prepare | 结果 |
+| --- | --- | ---: | --- |
+| small | [38729058358](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38729058358) | 3.332秒 | 专用非空144→145/noop、业务/其他catalog/设置保持、六影子负例/六影子优先级及真实INSERT/deferred回滚四项通过；真实五阶段、每阶段冻结oracle、1条credit及总额通过。 |
+| 500 | [38729748256](https://github.com/BA7IEE/srvf-nest-api/actions/runs/38729748256) | 6.219秒 | 500身份/500段及分配/2500切片/2000单元及桶形状、五阶段与冻结oracle通过；500条credit、总额匹配root。 |
+
+以下为跨runner阶段观测对照，不把全部差额归因于key携带，不推算满额或百分位：
+
+| 阶段 | C原代码e589b2d0 small | 145 small | C原代码e589b2d0 500 | 145 500 |
+| --- | ---: | ---: | ---: | ---: |
+| PREPARE | 3.508秒 | 3.332秒 | 8.630秒 | 6.219秒 |
+| SUBMIT | 6.708秒 | 6.190秒 | 8.764秒 | 7.964秒 |
+| FIRST_REVIEW | 1.544秒 | 1.429秒 | 2.072秒 | 1.675秒 |
+| FINAL_REVIEW | 3.099秒 | 2.788秒 | 4.142秒 | 2.439秒 |
+| LEDGER | 7.853秒 | 7.093秒 | 11.563秒 | 6.925秒 |
+
+500 prepare内部阶段对照（wall，不能把E4_PREPARE与其内层EVAL/WRITE相加）：
+
+| 阶段 | e589b2d0 | 145 |
+| --- | ---: | ---: |
+| C3_PROOF | 0.041秒 | 0.050秒 |
+| C3_SOURCE | 0.189秒 | 0.183秒 |
+| C3_EVAL | 0.126秒 | 0.097秒 |
+| C3_BUCKET_WRITE | 0.327秒 | 0.261秒 |
+| E4_PREPARE | 4.292秒 | 3.086秒 |
+| E4_EVAL | 0.414秒 | 0.309秒 |
+| E4_EVAL_WRITE | 3.844秒 | 2.746秒 |
+| C3_RECEIPT | 0.345秒 | 0.249秒 |
+
+500同一合法完整链的draft在业务链完成后被复用，当前public C来源helper、同一psql后端、work_mem4096KiB/JIT on/事务局部force_custom_plan。旧/新两个临时完整函数体均保留完整JSON/FULL JOIN/root，standalone调用validate_version=false；最终版本状态与两个native guard由真实全链/专用数据库测试分别证明，不能混称standalone覆盖。ABBA基线1912.945/1730.826ms，候选1455.626/1453.114ms（单组均值约低20.2%，无百分位/独占因果承诺，未单独保留统计不变收据）。
+
+两份严格匹配完整共享guard语句、全2500来源/2000groups/2000pairs的实际计划中：基线document canonical Aggregate节点39、44各loops2000，候选仅节点39 loops2000；同样19字段jsonb_each，documents规范化聚合调用4000→2000，确实观测到预期机制。instrumented statement为1688.428/1336.047ms，节点均值为每loop inclusive，不求和。该取证不计入prepare，也不能从原生INSERT耗时扣除它来推算纯写入成本。145的原生INSERT query event为2703ms，e589为3781ms，同样只作跨run观测。
+
+small专用suite结束及真实全链结束均独立清理四零；500对照owned backend确认消失，最终databases/clients/leaseBackends/leaseLocks四零、resources=CLOSED，两个job的临时PG容器移除均成功。结果标签仍DIAGNOSTIC_ONLY/NOT_AN_ACCEPTANCE_RESULT，accepted=true只表示有限队列放行。闭合报告、两份精简完整计划、原始私有job log和逐阶段对照留在云端证据包。仅执行small及一次500，原满额nonce与唯一run38721554302保持，没有再派发满额。
+
+此结果解除145的小规模/已测500形状候选取证阻塞；未解除旧C满额30秒FAIL或证明145满额。旧143四项FAIL及逐项最小修复仍按上节保留，常规required CI继续hold；E4多维准入/真实规则与字节边界、E5正式模式/停用恢复、适用E2/E3、SQL/trusted/人工签字及D8-OPS/生产Gate均未代办。未部署、合并或将fixture用于生产。
+
+终版跨模型只读复算核对两份报告绑定、完整五阶段、账本、预算、独立清理及500计划节点，未发现与结论冲突；两份闭合报告17144/27650字节，均低于64KiB上限。该复核不替代完整required CI或人工批准。

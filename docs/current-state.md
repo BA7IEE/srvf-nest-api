@@ -23,7 +23,7 @@
 
 > **E3 当前边界（2026-10-03）**：不可变来源／映射证明、影子对账复核读面、受控窗口与逐项签字已仓内交付，当前主干验收通过；证据见[既有评审稿 §32](plans/activity-os-r5-e3-contribution-shadow-review-and-plan.md#32-e3-当前状态收口2026-10-03)。仍未部署、真实业务未验收，31 类真实映射继续 hold，shadow／Gate 关闭、D8-OPS 未执行。历史未复现性能／隔离根因不因一次 CI 绿而关闭。操作入口及缺口计数见[对账说明](ops/contribution-shadow-reconciliation.md)；生成契约不代表外部端回执或生产批准。
 
-> **E4 当前边界（2026-10-15）**：候选144按桶来源查询仍在Draft PR1380，未合入或部署。代码e589b2d0的真实small/500五阶段与冻结oracle通过，500 prepare8.630秒；唯一满额run38721554302 prepare35.708秒/P2028，仍未过原30秒。失败后独立业务七零、资源四零，后续链未执行；native SQL_LENGTH漏覆盖5事件，SQL成本归因未知。旧143四超时及常规必跑CI仍hold，最终SQL/trusted/人工签字和生产Gate未改变；限量仍需独立E4准入与E5正式模式，fixture不能上线。见[来源复用评审记录](plans/activity-os-r5-e4-assert-source-reuse-review.md)。
+> **E4 当前边界（2026-10-15）**：候选145（C来源+JOIN key携带）在Draft PR1380，未合入或部署。32343421真实small/500五阶段及冻结oracle通过，500 prepare6.219秒；同夹具完整guard计划的documents规范化聚合4000→2000。旧C唯一满额run38721554302为35.708秒/P2028，原30秒未过，145满额未运行。该失败后独立业务七零、资源四零；后续链未跑，原生SQL_LENGTH漏5事件，纯SQL归因未知。旧143四超时、常规必跑CI及SQL/trusted/人工签字仍hold。限量需E4多维准入/E5正式模式，fixture不能上线，生产Gate不变。见[来源复用评审记录](plans/activity-os-r5-e4-assert-source-reuse-review.md)。
 
 <!-- counts:begin -->
 <!-- 由 `pnpm docs:counts` 生成;禁止手改,`pnpm docs:counts:check` 守护 -->
