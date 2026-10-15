@@ -166500,9 +166500,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "23002: 该维度已存在生效中的规则",
+                    "description": "23002: 该维度已存在生效中的规则; 23013: 旧贡献值规则在正式贡献模式下只读",
                     "enum": [
                       23002,
+                      23013,
                     ],
                     "example": 23002,
                     "type": "integer",
@@ -166526,7 +166527,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "该维度已存在生效中的规则(code=23002)",
+          "description": "该维度已存在生效中的规则(code=23002) / 旧贡献值规则在正式贡献模式下只读(code=23013)",
         },
       },
       "security": [
@@ -166696,6 +166697,40 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
             },
           },
           "description": "贡献值规则不存在(code=23001)",
+        },
+        "409": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "code": {
+                    "description": "23013: 旧贡献值规则在正式贡献模式下只读",
+                    "enum": [
+                      23013,
+                    ],
+                    "example": 23013,
+                    "type": "integer",
+                  },
+                  "data": {
+                    "example": null,
+                    "nullable": true,
+                    "type": "object",
+                  },
+                  "message": {
+                    "example": "旧贡献值规则在正式贡献模式下只读",
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "data",
+                ],
+                "type": "object",
+              },
+            },
+          },
+          "description": "旧贡献值规则在正式贡献模式下只读(code=23013)",
         },
       },
       "security": [
@@ -167100,9 +167135,10 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               "schema": {
                 "properties": {
                   "code": {
-                    "description": "23002: 该维度已存在生效中的规则",
+                    "description": "23002: 该维度已存在生效中的规则; 23013: 旧贡献值规则在正式贡献模式下只读",
                     "enum": [
                       23002,
+                      23013,
                     ],
                     "example": 23002,
                     "type": "integer",
@@ -167126,7 +167162,7 @@ exports[`OpenAPI 契约快照 paths 段快照(锁定每个 operation 的响应�
               },
             },
           },
-          "description": "该维度已存在生效中的规则(code=23002)",
+          "description": "该维度已存在生效中的规则(code=23002) / 旧贡献值规则在正式贡献模式下只读(code=23013)",
         },
       },
       "security": [
