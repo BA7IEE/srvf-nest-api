@@ -304,3 +304,16 @@ JIT-off夹具的prepare1899.692ms、submit4790.590ms、冻结oracle320.047ms，�
 本轮只运行一次W98四项历史137 catalog小验证，4通过／0失败，另683项未选择；完整进程270197ms（Jest suite260274ms），含加载、基线迁移、夹具及关闭，不作为业务性能或CI环境收益。真实PG通过当前生产客户端拒绝旧pin、历史profile合法positive、四类mutation拒绝及原catalog回滚恢复；原预算未改。正常关闭后独立PG16观测库／连接／租约backend／租约锁均0，未发TERM或使用FORCE，既有容器保留。没有重跑第二组重复用例、basic完整fixture、correction、visual、500或最大例；未将本地四项推广为最新required CI全绿。最终源级lint与三项文档check均退出0；完整quick／全量typecheck和完整E2E本轮未跑。
 
 本次还暴露测试组织的耦合：历史catalog测试、来源逆映射及共享设施比较绑定整份大型spec，而诊断器又将scale整文件作为oracle容器钉住。外围夹具修复会传播到不相关的冻结校验。当前用精确逆映射保留旧来源，未重新pin或移动oracle；后续如解耦，应另审独立冻结oracle模块及其完整来源／函数摘要与反向损坏测试，不能在本轮顺手改结构。
+
+
+### 2026-10-15 maximum 阶段取证工程补齐（本地，未重跑）
+
+原常规CI run38749797740的maximum是613.943秒suite失败、600000ms整例超时，窗口包含fixture；prepare回执29271ms／281查询／4 E4查询／1屏障，不能写成“prepare后又运行600秒”。14:27的相邻日志是Jest BufferedConsole交付时间，不是实际阶段UTC；无完整oracle／submit完成收据，精确卡点及最终业务／资源状态仍UNKNOWN。
+
+本刀在原maximum增加20个顺序阶段的ENTER／COMPLETE／FAILED／INCOMPLETE收据，覆盖fixture、prepare设置与请求、证明读取、完整oracle、submit、ledger、summary、终态oracle、后探针和observed客户端关闭。使用事件自身UTC／单调耗时、同步私有独占JSONL及直接stderr，最多64事件／32KiB；默认mkdtemp独立目录，文件0600，无SQL、业务载荷或标识。原600000ms整例、30000ms prepare、事务／查询预算及所有旧断言不变。CLEANUP仅表示observed客户端关闭，不代表Nest／数据库／租约四零；Jest超时不取消仍在运行的业务，只有ENTER不能推断提交／回滚。未修改workflow artifact收集，不能称JSONL已可从CI下载。
+
+跨模型只读复核发现的两项问题均已修复：实际prepare异常用存在性wrapper与Object.is分流；真实成功立即记OK，COMPLETE／下一ENTER写入失败直接保留，不进入旧roots／EXPLAIN／零行诊断。可靠闭合要求20阶段全部COMPLETE并且无failed／pending／unavailable；末阶段FAILED或INCOMPLETE均拒绝。新增实际源码块执行的两种sink故障及末阶段两种不完整测试，保留原业务异常、返回值和清理异常身份。
+
+冻结校验不重签旧oracle：严格候选全文→唯一片段→恢复全文，scale仍恢复到50a090de…、migration counterpart到d6c887c0…；所有完整JSON、FULL JOIN、root和双guard保持。另修复上一提交三处145 pin镜像使ordinary driver旧全文绑定过期的问题：只对内存源码恢复这三处并核对46c31154…，再抽取原三个oracle函数；真实E2E及生产仍为145 pin，任意正文／pin篡改先拒绝。旧prepare离线接线注入真实内存stage实例，继续执行当前源码，旧行为断言不变。
+
+本轮仅本地定向与离线检查：阶段、driver和原接线三套185项全通过，无跳过；另两套147项完整源码恢复校验通过（763项数据库相关用例未选择，unit配置无全局数据库setup、W98未开）。证据包/workspace/r5-stage-active-74834ad9保留全部结果。此前在校验进程读取源码期间更改候选导致的两项摘要失败、ordinary旧绑定失败及旧VM缺stage依赖均保留日志，已由固定源码复验闭合。不重跑maximum、不推送、不改SQL／pin／预算或人工签字；3b／Trusted和生产条件仍hold。

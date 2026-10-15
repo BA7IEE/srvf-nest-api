@@ -1,3 +1,4 @@
+import { E4MaximumStageReceipt, restoreE4MaximumStageOpening } from './e4-maximum-stage-receipt';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -446,6 +447,8 @@ function wiredPrepare(error?: Error, missingBinding = false, loggerFails = false
   const source = { activityId: 'opaque-activity', generated: {} };
   if (missingBinding) Reflect.deleteProperty(measured, 'lockedProof');
   const fragment = maximumSourceFragments();
+  const stages = new E4MaximumStageReceipt(() => undefined);
+  stages.enter('PREPARE_SETUP');
   const program =
     'async function actualMaximumPrepare() { let preparePhaseDiagnostic; ' +
     fragment.invocation +
@@ -453,6 +456,7 @@ function wiredPrepare(error?: Error, missingBinding = false, loggerFails = false
     fragment.integrity +
     '\nreturn prepared; } actualMaximumPrepare();';
   const returned: unknown = vm.runInNewContext(compileProbe(program), {
+    stages,
     E4PreparePhaseDiagnostic,
     guardPlanDiagnostic: undefined,
     guardFunctionDiagnostic: undefined,
@@ -1070,6 +1074,7 @@ describe('E4 native composition preserves the complete approved scale base', () 
       path.join(__dirname, '../e2e/activity-os-r5-e4-contribution-settlement-scale.e2e-spec.ts'),
       'utf8',
     );
+    const sourceOpening = restoreE4MaximumStageOpening(source);
     const check = (text: string): void => {
       if (
         createHash('sha256').update(text).digest('hex') !==
@@ -1077,7 +1082,7 @@ describe('E4 native composition preserves the complete approved scale base', () 
       )
         throw new Error('Complete approved scale bytes differ');
     };
-    return { source, check };
+    return { source: sourceOpening, check };
   }
   it('restores the entire bc28 scale file including every old assertion and SQL byte', () => {
     const { source } = opening();

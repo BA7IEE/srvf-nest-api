@@ -1,3 +1,7 @@
+import {
+  restoreE4MaximumStageOpening,
+  restoreE4OrdinaryOracleOpening,
+} from '../helpers/e4-maximum-stage-receipt';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import {
@@ -122,6 +126,7 @@ const oracleNames = [
 
 /** Read frozen functions as data; never import/register the original E2E suite. */
 export function frozenE4OracleSource(source = readFileSync(oraclePath, 'utf8')) {
+  source = restoreE4MaximumStageOpening(source);
   if (createHash('sha256').update(source).digest('hex') !== oracleHash)
     throw new Error('E4 frozen oracle source refused');
   const ast = ts.createSourceFile(
@@ -1012,6 +1017,7 @@ const ordinaryOraclePath = resolve(
   '../e2e/activity-os-r5-e4-contribution-settlement.e2e-spec.ts',
 );
 export function frozenOrdinaryOracleSource(source = readFileSync(ordinaryOraclePath, 'utf8')) {
+  source = restoreE4OrdinaryOracleOpening(source);
   if (
     createHash('sha256').update(source).digest('hex') !==
     '46c31154bfa284f923ab34ca8be651573a8fe3a1f6d6035e1010265371a17e72'

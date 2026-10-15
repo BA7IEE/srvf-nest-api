@@ -1,3 +1,8 @@
+import {
+  createE4MaximumStageReceipt,
+  restoreE4MaximumStageOpening,
+  restoreE4HistoricalCatalogOpening,
+} from '../helpers/e4-maximum-stage-receipt';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -1475,6 +1480,7 @@ const E4_TERMINAL_OPENING_BINDINGS: TerminalOpeningBinding[] = [
   },
 ];
 function restoreTerminalScaleOpening(source: string) {
+  source = restoreE4MaximumStageOpening(source);
   return restoreTerminalSource(
     source,
     E4_TERMINAL_OPENING_BINDINGS,
@@ -3568,7 +3574,11 @@ describe('E4 terminal source projection offline', () => {
         resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-' + kind + '.e2e-spec.ts'),
         'utf8',
       );
-      expect(terminalRefsTestOpening(source, kind)).not.toBe(source);
+      const opening =
+        kind === 'scale'
+          ? restoreE4MaximumStageOpening(source)
+          : restoreE4HistoricalCatalogOpening(source);
+      expect(terminalRefsTestOpening(opening, kind)).not.toBe(opening);
       expect(() => terminalRefsTestOpening(source + '\n', kind)).toThrow();
       const driver = [...source.matchAll(/^class S13ReadClient \{[\s\S]*?^\}/gmu)];
       expect(driver).toHaveLength(1);
@@ -4883,7 +4893,9 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
   }, 75_000);
 
   it('2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards', async () => {
-    const source = await createMaximumE4Source(f);
+    const stages = createE4MaximumStageReceipt();
+    const source = await stages.run('FIXTURE', () => createMaximumE4Source(f));
+    stages.enter('FIXTURE_CHECKS');
     expect(
       await f.db.activityParticipationIdentity.count({ where: { activityId: source.activityId } }),
     ).toBe(2000);
@@ -4895,6 +4907,8 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
     expect(
       await f.db.participantTimeAllocationSlice.count({ where: { activityId: source.activityId } }),
     ).toBe(50000);
+    stages.complete('FIXTURE_CHECKS');
+    stages.enter('PREPARE_SETUP');
     const observed = new ObservedE4Database({ log: [{ emit: 'event', level: 'query' }] });
     const engineObserver = observeEngineTransactions(observed);
     const engineRequests = new E4EngineRequestWaitDiagnostic(
@@ -5001,18 +5015,29 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
         { phase: 'C3_RECEIPT', target: measured, method: 'receipt' },
       ]);
       preparePhaseDiagnostic = phaseDiagnostic;
+      let prepareBusinessFailure: { error: unknown } | undefined;
       try {
         engineRequests.begin();
         phaseDiagnostic.begin();
+        stages.complete('PREPARE_SETUP');
         let prepareOutcome: 'OK' | 'FAIL' = 'FAIL';
         try {
-          prepared = await measured.prepare(
-            source.activityId,
-            prepareCommand,
-            e4Actor(f.creator, true),
-            E4_META,
-          );
-          prepareOutcome = 'OK';
+          prepared = await stages.run('PREPARE', async () => {
+            try {
+              const result = await measured.prepare(
+                source.activityId,
+                prepareCommand,
+                e4Actor(f.creator, true),
+                E4_META,
+              );
+              prepareOutcome = 'OK';
+              return result;
+            } catch (error) {
+              prepareBusinessFailure = { error };
+              throw error;
+            }
+          });
+          stages.enter('PREPARE_RECEIPT');
         } finally {
           engineRequests.finish();
           engineRequests.restore();
@@ -5037,6 +5062,8 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
           );
         }
       } catch (error) {
+        // A receipt failure after COMMIT must not enter business rollback diagnostics.
+        if (!prepareBusinessFailure || !Object.is(prepareBusinessFailure.error, error)) throw error;
         const prismaCode =
           error instanceof Prisma.PrismaClientKnownRequestError ? error.code : 'other';
         console.info(
@@ -5219,6 +5246,8 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
           enginePhases: engineObserver.phases,
         }),
       );
+      stages.complete('PREPARE_RECEIPT');
+      stages.enter('PREPARE_CHECKS');
       expect(prepareMs).toBeLessThan(30_000);
       expect(queries).toBeGreaterThan(0);
       expect(queries).toBeLessThanOrEqual(400);
@@ -5226,27 +5255,35 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
       expect(barrierQueries).toBe(1);
       expect(prepared.bucketCount).toBe(8000);
       expect(prepared.sourceCount).toBe(40000);
-      const proof = await f.db.activitySettlementContributionRevision.findFirstOrThrow({
-        where: { settlementVersionId: prepared.settlementVersionId },
-      });
+      stages.complete('PREPARE_CHECKS');
+      const proof = await stages.run('PROOF_READ', () =>
+        f.db.activitySettlementContributionRevision.findFirstOrThrow({
+          where: { settlementVersionId: prepared.settlementVersionId },
+        }),
+      );
+      stages.enter('PROOF_CHECKS');
       expect(proof.evaluationCount).toBe(8000);
       expect(proof.recognizedPointsTotal.toFixed(2)).toBe('1000.00');
       // Full old expected documents and the independent abc actual-row root oracle,
       // before any submit/review/ledger stage. These reads are outside the measured command.
-      await assertFixedE4Oracle(f.db, proof.id, 8000);
+      stages.complete('PROOF_CHECKS');
+      await stages.run('ORACLE', () => assertFixedE4Oracle(f.db, proof.id, 8000));
       reset();
-      const submitted = await measured.submit(
-        source.activityId,
-        {
-          expectedDraftVersion: source.expectation.expectedDraftVersion,
-          expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
-          operationKey: f.key('maximum_submit'),
-          timeRevisionId: prepared.timeRevisionId,
-          expectedBucketContentHash: prepared.bucketContentHash,
-        },
-        e4Actor(f.creator, true),
-        E4_META,
+      const submitted = await stages.run('SUBMIT', () =>
+        measured.submit(
+          source.activityId,
+          {
+            expectedDraftVersion: source.expectation.expectedDraftVersion,
+            expectedEvidenceSealId: source.expectation.expectedEvidenceSealId,
+            operationKey: f.key('maximum_submit'),
+            timeRevisionId: prepared.timeRevisionId,
+            expectedBucketContentHash: prepared.bucketContentHash,
+          },
+          e4Actor(f.creator, true),
+          E4_META,
+        ),
       );
+      stages.enter('SUBMIT_CHECKS');
       console.info('E4 maximum submit', JSON.stringify({ queries, e4Queries, ...timing }));
       expect(queries).toBeGreaterThan(0);
       expect(queries).toBeLessThanOrEqual(950);
@@ -5303,12 +5340,14 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
           throw error;
         }
       });
+      stages.complete('SUBMIT_CHECKS');
       let posted: Awaited<ReturnType<typeof postE4Ledger>>;
       try {
-        posted = await postE4Ledger(f, submitted);
+        posted = await stages.run('LEDGER', () => postE4Ledger(f, submitted));
       } finally {
         capture.mockRestore();
       }
+      stages.enter('LEDGER_CHECKS');
       expect(posted.committed.replayed).toBe(false);
       expect(
         await f.db.participationLedgerEntry.count({
@@ -5321,11 +5360,15 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
       });
       expect(total._sum.recognizedPointsDelta?.toFixed(2)).toBe('1000.00');
       reset();
-      const summary = await observed.$transaction((tx) =>
-        f.app
-          .get(ActivityContributionSettlementQueryService)
-          .readSummaryInTx(tx, submitted.settlementVersionId),
+      stages.complete('LEDGER_CHECKS');
+      const summary = await stages.run('SUMMARY', () =>
+        observed.$transaction((tx) =>
+          f.app
+            .get(ActivityContributionSettlementQueryService)
+            .readSummaryInTx(tx, submitted.settlementVersionId),
+        ),
       );
+      stages.enter('SUMMARY_CHECKS');
       console.info('E4 maximum formal summary', JSON.stringify({ queries, e4Queries }));
       expect(queries).toBeGreaterThan(0);
       expect(queries).toBeLessThanOrEqual(3);
@@ -5334,23 +5377,29 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
         recognizedPointsTotal: '1000.00',
         hasMore: true,
       });
-      const formalProof = await f.db.activitySettlementContributionRevision.findFirstOrThrow({
-        where: { settlementVersionId: submitted.settlementVersionId },
-      });
+      stages.complete('SUMMARY_CHECKS');
+      const formalProof = await stages.run('FORMAL_PROOF_READ', () =>
+        f.db.activitySettlementContributionRevision.findFirstOrThrow({
+          where: { settlementVersionId: submitted.settlementVersionId },
+        }),
+      );
       // Outside all measured business operations; compares every complete JSON, not a sample.
-      await assertFixedE4Oracle(f.db, proof.id, 8000);
-      await assertFixedE4Oracle(f.db, formalProof.id, 8000);
+      await stages.run('FINAL_ORACLE_DRAFT', () => assertFixedE4Oracle(f.db, proof.id, 8000));
+      await stages.run('FINAL_ORACLE_FORMAL', () =>
+        assertFixedE4Oracle(f.db, formalProof.id, 8000),
+      );
       console.info(
         'E4 maximum independent old/new oracle',
         JSON.stringify({ evaluations: 8000, differences: 0 }),
       );
       // Only after every original business budget and full draft/formal oracle has passed.
       // Reuses this exact immutable root; no extra fixture, prepare, INSERT or pre-business warming.
-      await assertPostBusinessPSetProbe(f.db, proof.id);
+      await stages.run('POST_BUSINESS_PROBE', () => assertPostBusinessPSetProbe(f.db, proof.id));
     } finally {
       engineRequests.restore();
       engineObserver.restore();
-      await observed.$disconnect();
+      await stages.cleanup(() => observed.$disconnect());
     }
+    stages.assertReliable();
   }, 600_000);
 });
