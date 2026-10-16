@@ -9,6 +9,19 @@ import { assertNamedTestDatabaseScope } from '../setup/test-run-scope';
 export const E4_SLICE_SQL_SHA256 =
   '8558d7eaceacebb98f37c7d7879c0c2e7b7d6bfa60464a0005c2c6d1bac3b262';
 export const E4_SLICE_PREFIX_MD5 = '26a76ae33c01abd6a7905880ac47b10d';
+export const E4_EVAL_INSERT_SQL_SHA256 =
+  'bbd5c19bba6466dbe309e151bc636b25ffc02c4ce9e6688066d443fe62cc4c68';
+export const E4_EVAL_INSERT_PREFIX_MD5 = 'ce70b3dfc579c6fb38bd21b2e9633918';
+export const E4_GUARD_BARRIER_SQL_SHA256 =
+  '7d38ece065b155bfade0c09b8a1da4dc01d5ff800f859af04046648fd17323c1';
+export const E4_GUARD_BARRIER_SQL_MD5 = 'cd601bbd0540014c7af41e1b5e4879eb';
+export const E4_OBSERVATION_PHASES = [
+  'SLICE_READ',
+  'EVAL_INSERT',
+  'RECEIPT_INSERT',
+  'GUARD_BARRIER',
+] as const;
+type Phase = (typeof E4_OBSERVATION_PHASES)[number];
 const runFile = promisify(execFile);
 const normalize = (sql: string) => sql.trim().replace(/\s+/gu, ' ');
 const hash = (sql: string) => createHash('sha256').update(normalize(sql)).digest('hex');
@@ -59,6 +72,13 @@ SELECT current_database()=$1 AS scope,pg_backend_pid() AS "observerPid",
  (SELECT jsonb_agg(jsonb_build_object('pid',pid,'epoch',backend_start::text,'transaction',xact_start::text,'state',state,
  'type',coalesce(wait_event_type,'NONE'),'event',coalesce(wait_event,'NONE'),
  'slicePrefixMatches',md5(left(btrim(regexp_replace(query,'\\s+',' ','g')),128))=$3,
+ 'statement',CASE
+ WHEN md5(left(btrim(regexp_replace(query,'\\s+',' ','g')),128))=$3 THEN 'SLICE_READ'
+ WHEN md5(left(btrim(regexp_replace(query,'\\s+',' ','g')),128))=$4 THEN 'EVAL_INSERT'
+ WHEN md5(btrim(regexp_replace(query,'\\s+',' ','g')))=$5 THEN 'GUARD_BARRIER'
+ WHEN btrim(regexp_replace(query,'\\s+',' ','g')) ~ '^INSERT INTO ("public"\\.)?"ActivitySettlementTimeCommandReceipt" ' THEN 'RECEIPT_INSERT'
+ WHEN btrim(query)='ROLLBACK' THEN 'ROLLBACK'
+ WHEN btrim(query)='COMMIT' THEN 'COMMIT' ELSE 'OTHER' END,
  'queryMayBeTruncated',octet_length(query)>=pg_size_bytes(current_setting('track_activity_query_size'))-1,
  'blockers',cardinality(pg_blocking_pids(pid)))) FROM chosen) AS target,
  (SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM (
@@ -99,6 +119,8 @@ async function observeSlice(monitor: PrismaClient, binding: Binding) {
         binding.scope,
         binding.applicationName,
         E4_SLICE_PREFIX_MD5,
+        E4_EVAL_INSERT_PREFIX_MD5,
+        E4_GUARD_BARRIER_SQL_MD5,
       );
     },
     { timeout: 1000, maxWait: 500 },
@@ -127,14 +149,20 @@ export async function preflightE4SliceReadDiagnostic(monitor: PrismaClient, bind
   }
 }
 type Dependencies = {
-  observe?: () => Promise<unknown>;
+  observe?: (phase: Phase) => Promise<unknown>;
   maintenance?: (sql: string) => Promise<unknown>;
   pause?: () => Promise<void>;
   now?: () => number;
+  selfNow?: () => number;
   emit?: (event: object) => void;
 };
 type Sample = {
   atMs: number;
+  readStartedAtMs: number;
+  requestPendingAtSample: boolean;
+  statement: string;
+  statementMatchesWindow: boolean;
+  executingWindow: boolean;
   pid: number | null;
   state: string;
   type: string;
@@ -153,6 +181,17 @@ type Sample = {
     blockers: number;
   }[];
 };
+type Window = {
+  phase: Phase;
+  started: number;
+  pending: boolean;
+  outcome: 'PENDING' | 'OK' | 'FAIL';
+  durationMs: number | null;
+  queryEventMs: number | null;
+  queryEventCalls: number;
+  samples: Sample[];
+};
+type SelfCost = { calls: number; wallMs: number; processCpuUs: number };
 type Hook = {
   target: object;
   key: string;
@@ -167,23 +206,20 @@ type Hook = {
 export class E4SliceReadDiagnostic {
   private readonly hooks: Hook[] = [];
   private readonly reasons = new Set<string>();
-  private readonly samples: Sample[] = [];
+  private readonly windows = new Map<Phase, Window>();
+  private readonly selfCost: Record<string, SelfCost> = {};
+  private readonly observerRoundTrip = { calls: 0, failures: 0, totalMs: 0, maxMs: 0 };
   private readonly observerPids = new Set<number>();
   private readonly clock: () => number;
   private readonly deadline: number;
   private armed = false;
-  private started: number | undefined;
-  private pending = false;
-  private terminal: 'NOT_RUN' | 'PENDING' | 'OK' | 'FAIL' = 'NOT_RUN';
-  private durationMs: number | null = null;
   private pid: number | null = null;
   private epoch = '';
   private transaction = '';
   private monitoring: Promise<void> | undefined;
   private stopped = false;
   private outputEvents = 0;
-  private queryEventMs: number | null = null;
-  private queryEventCalls = 0;
+  private outputBytes = 0;
   private observedClose = 'NOT_RUN';
   private appClose = 'NOT_RUN';
   private cleanup: object | null = null;
@@ -222,31 +258,66 @@ export class E4SliceReadDiagnostic {
   private unknown(reason: string) {
     this.reasons.add(reason);
   }
-  private emit(stage: string) {
+  // Disjoint synchronous leaf scopes only. Never wrap the original request or an await.
+  private cost<T>(scope: string, work: () => T): T {
+    const now = this.deps.selfNow ?? (() => performance.now());
+    let start: number, cpu: NodeJS.CpuUsage;
     try {
-      if (++this.outputEvents > 16) throw new Error('BOUND');
-      const snapshot = this.snapshot();
-      const full = [
-        'REQUEST_TERMINAL',
-        'OBSERVATION_DRAINED',
-        'MONITOR_UNKNOWN',
-        'INDEPENDENT_CLEANUP',
-      ].includes(stage);
-      const event = {
-        schema: 'e4-slice-read/v1',
-        stage,
-        purpose: 'DIAGNOSTIC_ONLY',
-        acceptance: 'NOT_AN_ACCEPTANCE_RESULT',
-        ...snapshot,
-        samples: full ? snapshot.samples : [],
-        plan: full ? snapshot.plan : null,
-      };
-      if (Buffer.byteLength(JSON.stringify(event)) > 65536) throw new Error('BOUND');
-      if (this.deps.emit) this.deps.emit(event);
-      else writeSync(2, 'E4_SLICE_READ ' + JSON.stringify(event) + '\n');
+      start = now();
+      cpu = process.cpuUsage();
     } catch {
-      this.unknown('OUTPUT');
+      this.unknown('SELF_COST');
+      return work();
     }
+    try {
+      return work();
+    } finally {
+      try {
+        const wallMs = now() - start,
+          used = process.cpuUsage(cpu);
+        if (!Number.isFinite(wallMs) || wallMs < 0) this.unknown('SELF_COST');
+        else {
+          const value = (this.selfCost[scope] ??= { calls: 0, wallMs: 0, processCpuUs: 0 });
+          value.calls++;
+          value.wallMs += wallMs;
+          value.processCpuUs += used.user + used.system;
+        }
+      } catch {
+        this.unknown('SELF_COST');
+      }
+    }
+  }
+  private emit(stage: string, window?: Window) {
+    this.cost('EMIT', () => {
+      try {
+        if (++this.outputEvents > 40) throw new Error('BOUND');
+        const snapshot = this.snapshot();
+        // One full record per window, after the last issued read returns. Avoid duplicate arrays.
+        const full = stage === 'WINDOW_DRAINED';
+        const event = {
+          schema: 'e4-slice-read/v2',
+          stage,
+          phase: window?.phase ?? null,
+          purpose: 'DIAGNOSTIC_ONLY',
+          acceptance: 'NOT_AN_ACCEPTANCE_RESULT',
+          ...snapshot,
+          samples: [],
+          windows: snapshot.windows.map((w) => ({
+            ...w,
+            samples: full && w.phase === window?.phase ? w.samples : [],
+          })),
+          plan: full ? snapshot.plan : null,
+        };
+        const serialized = JSON.stringify(event),
+          bytes = Buffer.byteLength(serialized);
+        if (bytes > 65536 || this.outputBytes + bytes > 524288) throw new Error('BOUND');
+        this.outputBytes += bytes;
+        if (this.deps.emit) this.deps.emit(event);
+        else writeSync(2, 'E4_SLICE_READ ' + serialized + '\n');
+      } catch {
+        this.unknown('OUTPUT');
+      }
+    });
   }
   private hook(
     target: object,
@@ -286,35 +357,52 @@ export class E4SliceReadDiagnostic {
     }
   }
   arm() {
-    if (this.armed || this.started !== undefined) this.unknown('REPEATED_ARM');
+    if (this.armed || this.windows.size) this.unknown('REPEATED_ARM');
     else this.armed = true;
   }
   restoreEngine() {
-    this.restore(this.hooks[0]);
+    this.armed = false;
+    this.cost('RESTORE', () => this.restore(this.hooks[0]));
+  }
+  private phase(message: unknown): Phase | undefined {
+    const action = member(message, 'action');
+    if (
+      action === 'createOne' &&
+      member(message, 'modelName') === 'ActivitySettlementTimeCommandReceipt'
+    )
+      return 'RECEIPT_INSERT';
+    if (action !== 'queryRaw' && action !== 'executeRaw') return;
+    const sql = member(member(member(message, 'query'), 'arguments'), 'query');
+    if (typeof sql !== 'string' || sql.length > 16384) return;
+    const digest = hash(sql);
+    if (action === 'queryRaw' && digest === E4_SLICE_SQL_SHA256) return 'SLICE_READ';
+    if (action === 'executeRaw' && digest === E4_EVAL_INSERT_SQL_SHA256) return 'EVAL_INSERT';
+    if (action === 'executeRaw' && digest === E4_GUARD_BARRIER_SQL_SHA256) return 'GUARD_BARRIER';
   }
   private request(original: Hook['original'], receiver: unknown, args: unknown[]) {
-    let selected = false;
+    let window: Window | undefined;
     try {
-      const message = args[0],
-        argument = member(member(message, 'query'), 'arguments');
-      const sql = member(argument, 'query');
-      selected =
-        this.armed &&
-        member(message, 'action') === 'queryRaw' &&
-        typeof sql === 'string' &&
-        sql.length <= 16384 &&
-        hash(sql) === E4_SLICE_SQL_SHA256;
-      if (selected) {
-        if (this.started !== undefined) {
-          this.unknown('REPEATED_SLICE');
-          selected = false;
-        } else {
-          this.started = this.clock();
-          this.pending = true;
-          this.terminal = 'PENDING';
-          this.emit('REQUEST_ENTER');
+      this.cost('SELECT', () => {
+        const phase = this.armed ? this.phase(args[0]) : undefined;
+        if (!phase) return;
+        if (this.windows.has(phase)) {
+          this.unknown('REPEATED_' + phase);
+          return;
         }
-      }
+        if ([...this.windows.values()].some((w) => w.pending)) this.unknown('OVERLAPPING_REQUESTS');
+        window = {
+          phase,
+          started: this.clock(),
+          pending: true,
+          outcome: 'PENDING',
+          durationMs: null,
+          queryEventMs: null,
+          queryEventCalls: 0,
+          samples: [],
+        };
+        this.windows.set(phase, window);
+      });
+      if (window) this.emit('REQUEST_ENTER', window);
     } catch {
       this.unknown('REQUEST_SHAPE');
     }
@@ -322,153 +410,218 @@ export class E4SliceReadDiagnostic {
     try {
       result = Reflect.apply(original, receiver, args);
     } catch (error) {
-      if (selected) this.settle(false);
+      if (window) this.settle(window, false);
       throw error;
     }
-    if (selected) {
+    if (window) {
+      const selected = window;
       if (!(result instanceof Promise)) this.unknown('PROMISE_SHAPE');
       else {
-        this.monitoring = this.monitorLoop();
-        void result.then(
-          () => this.settle(true),
-          () => this.settle(false),
-        );
+        this.cost('SUBSCRIBE', () => {
+          void result.then(
+            () => this.settle(selected, true),
+            () => this.settle(selected, false),
+          );
+        });
+        const previous = this.monitoring;
+        const observe = async () => {
+          await this.monitorLoop(selected);
+          this.emit('WINDOW_DRAINED', selected);
+        };
+        // Only independent reads wait for their predecessor; never delay the original request.
+        this.monitoring = previous ? previous.then(observe) : observe();
       }
     }
     return result;
   }
-  private settle(ok: boolean) {
-    this.pending = false;
-    this.armed = false;
-    this.terminal = ok ? 'OK' : 'FAIL';
-    try {
-      const elapsed = this.clock() - this.started!;
-      if (!Number.isFinite(elapsed) || elapsed < 0) this.unknown('CLOCK');
-      else this.durationMs = elapsed;
-    } catch {
-      this.unknown('CLOCK');
-    }
-    this.emit('REQUEST_TERMINAL');
+  private settle(window: Window, ok: boolean) {
+    this.cost('SETTLE', () => {
+      window.pending = false;
+      window.outcome = ok ? 'OK' : 'FAIL';
+      try {
+        const elapsed = this.clock() - window.started;
+        if (!Number.isFinite(elapsed) || elapsed < 0) this.unknown('CLOCK');
+        else window.durationMs = elapsed;
+      } catch {
+        this.unknown('CLOCK');
+      }
+    });
+    this.emit('REQUEST_TERMINAL', window);
   }
   queryEvent(sql: string, durationMs: number) {
-    if (this.started === undefined || sql.length > 16384 || hash(sql) !== E4_SLICE_SQL_SHA256)
-      return;
-    if (!Number.isFinite(durationMs) || durationMs < 0 || ++this.queryEventCalls > 1)
-      this.unknown('QUERY_EVENT');
-    else this.queryEventMs = durationMs;
+    // Original submit/review phases can reuse the same INSERT/barrier SQL after prepare.
+    if (!this.armed) return;
+    this.cost('QUERY_EVENT', () => {
+      if (sql.length > 16384) return;
+      const digest = hash(sql),
+        normalized = normalize(sql);
+      const phase =
+        digest === E4_SLICE_SQL_SHA256
+          ? 'SLICE_READ'
+          : digest === E4_EVAL_INSERT_SQL_SHA256
+            ? 'EVAL_INSERT'
+            : digest === E4_GUARD_BARRIER_SQL_SHA256
+              ? 'GUARD_BARRIER'
+              : /^INSERT INTO ("public"\.)?"ActivitySettlementTimeCommandReceipt" /u.test(
+                    normalized,
+                  )
+                ? 'RECEIPT_INSERT'
+                : undefined;
+      const window = phase ? this.windows.get(phase) : undefined;
+      if (!window) return;
+      if (!Number.isFinite(durationMs) || durationMs < 0 || ++window.queryEventCalls > 1)
+        this.unknown('QUERY_EVENT');
+      else window.queryEventMs = durationMs;
+    });
   }
-  private async read() {
-    return this.deps.observe?.() ?? observeSlice(this.monitor, this.binding);
-  }
-  private async monitorLoop() {
+  private async read(window: Window) {
+    const now = () => performance.now(),
+      start = now();
+    this.observerRoundTrip.calls++;
     try {
-      while (this.pending && !this.stopped) {
+      return await (this.deps.observe?.(window.phase) ?? observeSlice(this.monitor, this.binding));
+    } catch (error) {
+      this.observerRoundTrip.failures++;
+      throw error;
+    } finally {
+      const elapsed = now() - start;
+      this.observerRoundTrip.totalMs += elapsed;
+      this.observerRoundTrip.maxMs = Math.max(this.observerRoundTrip.maxMs, elapsed);
+    }
+  }
+  private async monitorLoop(window: Window) {
+    try {
+      while (window.pending && !this.stopped) {
         if (
-          this.samples.length >= 180 ||
-          this.clock() - this.started! > 40000 ||
+          window.samples.length >= 180 ||
+          this.clock() - window.started > 40000 ||
           this.clock() > this.deadline - 2000
         )
           throw new Error('BOUND');
-        const raw = await this.read();
-        if (!Array.isArray(raw) || raw.length !== 1) throw new Error('SHAPE');
-        const row = record(raw[0]);
-        if (
-          row.scope !== true ||
-          row.activityOn !== true ||
-          !integer(row.activityBytes) ||
-          row.activityBytes < 256 ||
-          !integer(row.observerPid) ||
-          row.observerPid < 1 ||
-          !integer(row.targetCount) ||
-          row.targetCount > 1
-        )
-          throw new Error('BINDING');
-        this.observerPids.add(row.observerPid);
-        if (row.targetCount === 0)
-          this.samples.push({
-            atMs: this.clock() - this.started!,
-            pid: null,
-            state: 'NO_TRANSACTION',
-            type: 'NONE',
-            event: 'NONE',
-            slicePrefixMatches: null,
-            activityBytes: row.activityBytes,
-            queryMayBeTruncated: false,
-            blockers: 0,
-            chain: [],
-          });
-        else {
+        const readStartedAtMs = this.clock() - window.started;
+        const raw = await this.read(window);
+        let first = false;
+        this.cost('SAMPLE_PROJECT', () => {
+          if (!Array.isArray(raw) || raw.length !== 1) throw new Error('SHAPE');
+          const row = record(raw[0]);
           if (
-            !Array.isArray(row.target) ||
-            row.target.length !== 1 ||
-            !Array.isArray(row.chain) ||
-            row.chain.length > 24
+            row.scope !== true ||
+            row.activityOn !== true ||
+            !integer(row.activityBytes) ||
+            row.activityBytes < 256 ||
+            !integer(row.observerPid) ||
+            row.observerPid < 1 ||
+            !integer(row.targetCount) ||
+            row.targetCount > 1
           )
-            throw new Error('SHAPE');
-          const t = record(row.target[0]);
-          if (
-            !integer(t.pid) ||
-            t.pid < 1 ||
-            t.pid === row.observerPid ||
-            typeof t.epoch !== 'string' ||
-            t.epoch.length > 64 ||
-            typeof t.transaction !== 'string' ||
-            t.transaction.length > 64 ||
-            typeof t.slicePrefixMatches !== 'boolean' ||
-            typeof t.queryMayBeTruncated !== 'boolean' ||
-            !integer(t.blockers, 8)
-          )
-            throw new Error('PID');
-          if (
-            this.pid !== null &&
-            (this.pid !== t.pid || this.epoch !== t.epoch || this.transaction !== t.transaction)
-          )
-            throw new Error('PID_CHANGED');
-          const first = this.pid === null;
-          this.pid = t.pid;
-          this.epoch = t.epoch;
-          this.transaction = t.transaction;
-          const chain = row.chain.map((value: unknown) => {
-            const n = record(value);
+            throw new Error('BINDING');
+          this.observerPids.add(row.observerPid);
+          if (row.targetCount === 0)
+            window.samples.push({
+              atMs: this.clock() - window.started,
+              readStartedAtMs,
+              requestPendingAtSample: window.pending,
+              statement: 'NO_TRANSACTION',
+              statementMatchesWindow: false,
+              executingWindow: false,
+              pid: null,
+              state: 'NO_TRANSACTION',
+              type: 'NONE',
+              event: 'NONE',
+              slicePrefixMatches: null,
+              activityBytes: row.activityBytes,
+              queryMayBeTruncated: false,
+              blockers: 0,
+              chain: [],
+            });
+          else {
             if (
-              !integer(n.pid) ||
-              n.pid < 1 ||
-              (n.parent !== null && (!integer(n.parent) || n.parent < 1)) ||
-              !integer(n.depth, 2) ||
-              !integer(n.blockers, 8)
+              !Array.isArray(row.target) ||
+              row.target.length !== 1 ||
+              !Array.isArray(row.chain) ||
+              row.chain.length > 24
             )
-              throw new Error('CHAIN');
-            return {
-              pid: n.pid,
-              parent: n.parent,
-              depth: n.depth,
-              state: allowed(n.state, states),
-              type: allowed(n.type, waits),
-              event: allowed(n.event, events),
-              blockers: n.blockers,
-            };
-          });
-          this.samples.push({
-            atMs: this.clock() - this.started!,
-            pid: t.pid,
-            state: allowed(t.state, states),
-            type: allowed(t.type, waits),
-            event: allowed(t.event, events),
-            slicePrefixMatches: t.slicePrefixMatches ? true : null,
-            activityBytes: row.activityBytes,
-            queryMayBeTruncated: t.queryMayBeTruncated,
-            blockers: t.blockers,
-            chain,
-          });
-          if (first) this.emit('BACKEND_BOUND');
-        }
-        if (Buffer.byteLength(JSON.stringify(this.samples)) > 48000) throw new Error('BOUND');
-        if (this.pending && !this.stopped)
+              throw new Error('SHAPE');
+            const t = record(row.target[0]);
+            if (
+              !integer(t.pid) ||
+              t.pid < 1 ||
+              t.pid === row.observerPid ||
+              typeof t.epoch !== 'string' ||
+              t.epoch.length > 64 ||
+              typeof t.transaction !== 'string' ||
+              t.transaction.length > 64 ||
+              typeof t.slicePrefixMatches !== 'boolean' ||
+              typeof t.statement !== 'string' ||
+              typeof t.queryMayBeTruncated !== 'boolean' ||
+              !integer(t.blockers, 8)
+            )
+              throw new Error('PID');
+            if (
+              this.pid !== null &&
+              (this.pid !== t.pid || this.epoch !== t.epoch || this.transaction !== t.transaction)
+            )
+              throw new Error('PID_CHANGED');
+            first = this.pid === null;
+            this.pid = t.pid;
+            this.epoch = t.epoch;
+            this.transaction = t.transaction;
+            const chain = row.chain.map((value: unknown) => {
+              const n = record(value);
+              if (
+                !integer(n.pid) ||
+                n.pid < 1 ||
+                (n.parent !== null && (!integer(n.parent) || n.parent < 1)) ||
+                !integer(n.depth, 2) ||
+                !integer(n.blockers, 8)
+              )
+                throw new Error('CHAIN');
+              return {
+                pid: n.pid,
+                parent: n.parent,
+                depth: n.depth,
+                state: allowed(n.state, states),
+                type: allowed(n.type, waits),
+                event: allowed(n.event, events),
+                blockers: n.blockers,
+              };
+            });
+            const statement = allowed(t.statement, [
+              ...E4_OBSERVATION_PHASES,
+              'ROLLBACK',
+              'COMMIT',
+              'OTHER',
+            ]);
+            window.samples.push({
+              readStartedAtMs,
+              requestPendingAtSample: window.pending,
+              statement,
+              statementMatchesWindow: statement === window.phase,
+              executingWindow: window.pending && t.state === 'active' && statement === window.phase,
+              atMs: this.clock() - window.started,
+              pid: t.pid,
+              state: allowed(t.state, states),
+              type: allowed(t.type, waits),
+              event: allowed(t.event, events),
+              slicePrefixMatches: t.slicePrefixMatches ? true : null,
+              activityBytes: row.activityBytes,
+              queryMayBeTruncated: t.queryMayBeTruncated,
+              blockers: t.blockers,
+              chain,
+            });
+          }
+          if (Buffer.byteLength(JSON.stringify(window.samples)) > 48000) {
+            window.samples.pop();
+            throw new Error('BOUND');
+          }
+        });
+        if (first) this.emit('BACKEND_BOUND', window);
+        if (window.pending && !this.stopped)
           await (this.deps.pause?.() ?? new Promise<void>((resolve) => setTimeout(resolve, 200)));
       }
     } catch {
       this.unknown('MONITOR');
-      this.emit('MONITOR_UNKNOWN');
+      this.emit('MONITOR_UNKNOWN', window);
     }
   }
   private close(
@@ -510,14 +663,18 @@ export class E4SliceReadDiagnostic {
   async finishObservation() {
     this.stopped = true;
     await this.monitoring;
-    if (this.pending) this.unknown('PENDING_AT_COLLECTION');
-    if (this.pid === null && this.started !== undefined) this.unknown('NO_BACKEND');
+    if ([...this.windows.values()].some((w) => w.pending)) this.unknown('PENDING_AT_COLLECTION');
+    if (this.pid === null && this.windows.size) this.unknown('NO_BACKEND');
     this.emit('OBSERVATION_DRAINED');
   }
   // Called after the fixture app and its independent review client have actually closed.
   async collectCleanup() {
     this.stopped = true;
-    if (this.pending || this.appClose !== 'COMPLETE' || this.observedClose !== 'COMPLETE')
+    if (
+      [...this.windows.values()].some((w) => w.pending) ||
+      this.appClose !== 'COMPLETE' ||
+      this.observedClose !== 'COMPLETE'
+    )
       this.unknown('CLEANUP_LIFECYCLE');
     const pids = [this.pid, ...this.observerPids].filter((v): v is number => v !== null);
     const sql = `SELECT json_build_object('databases',(SELECT count(*) FROM pg_database WHERE datname='${this.binding.scope}'),'clients',(SELECT count(*) FROM pg_stat_activity WHERE datname='${this.binding.scope}'),'capturedBackends',(SELECT count(*) FROM pg_stat_activity WHERE datname='${this.binding.scope}' AND pid=ANY(ARRAY[${pids.join(',')}]::int[])))::text`;
@@ -572,23 +729,81 @@ export class E4SliceReadDiagnostic {
     } catch {
       this.unknown('CLEANUP_READ');
     }
-    for (const hook of this.hooks.slice().reverse()) this.restore(hook);
+    this.cost('RESTORE', () => {
+      for (const hook of this.hooks.slice().reverse()) this.restore(hook);
+    });
     this.emit('INDEPENDENT_CLEANUP');
   }
   snapshot() {
+    const slice = this.windows.get('SLICE_READ');
+    const windows = E4_OBSERVATION_PHASES.map((phase) => {
+      const w = this.windows.get(phase);
+      return {
+        phase,
+        requestOutcome: w?.outcome ?? 'NOT_RUN',
+        requestDurationMs: w?.durationMs ?? null,
+        sampleCoverage: !w
+          ? 'NOT_RUN'
+          : !w.samples.length
+            ? 'NOT_CAPTURED'
+            : w.samples.some((s) => s.executingWindow)
+              ? 'MATCHING_ACTIVE_SAMPLES_ONLY'
+              : 'NO_MATCHING_ACTIVE_SAMPLE_NOT_PROOF_OF_ABSENCE',
+        queryEvent: {
+          calls: w?.queryEventCalls ?? 0,
+          durationMs: w?.queryEventMs ?? null,
+          meaning: 'PRISMA_QUERY_EVENT_NOT_PURE_SERVER_TIME',
+        },
+        samples: (w?.samples ?? []).map((s) => ({ ...s, chain: s.chain.map((n) => ({ ...n })) })),
+        clientIdentity:
+          phase === 'RECEIPT_INSERT'
+            ? 'MODEL_NAME_AND_CREATE_ONE_ACTION'
+            : 'FULL_NORMALIZED_SQL_SHA256',
+        serverIdentity:
+          phase === 'GUARD_BARRIER'
+            ? 'FULL_NORMALIZED_SQL_MD5'
+            : phase === 'RECEIPT_INSERT'
+              ? 'TABLE_INSERT_PREFIX_ONLY'
+              : 'NORMALIZED_PREFIX_128_CHARS_ONLY',
+        backendIdentity: 'PID_BACKEND_START_XACT_START_STICKY_ACROSS_WINDOWS',
+      };
+    });
     return {
       status: this.reasons.size
         ? 'UNKNOWN'
-        : this.terminal === 'NOT_RUN'
+        : this.windows.size === 0
           ? 'NOT_RUN'
-          : this.pending
+          : [...this.windows.values()].some((w) => w.pending)
             ? 'PENDING'
             : 'OBSERVED',
       reasons: [...this.reasons],
-      requestOutcome: this.terminal,
-      requestDurationMs: this.durationMs,
+      requestOutcome: slice?.outcome ?? 'NOT_RUN',
+      requestDurationMs: slice?.durationMs ?? null,
       backendPid: this.pid,
-      samples: this.samples.map((s) => ({ ...s, chain: s.chain.map((n) => ({ ...n })) })),
+      samples: windows[0].samples,
+      windows,
+      observationMeaning:
+        'BOUNDED_POINT_SAMPLES_NOT_CONTINUOUS_SERVER_EXECUTION_OR_LOCK_ABSENCE_PROOF',
+      observerCost: {
+        synchronousScopes: Object.fromEntries(
+          Object.entries(this.selfCost).map(([k, v]) => [k, { ...v }]),
+        ),
+        synchronousTotalWallMs: Object.values(this.selfCost).reduce((n, v) => n + v.wallMs, 0),
+        processCpuMeaning:
+          'PROCESS_WIDE_THREADS_DURING_DISJOINT_SYNC_SCOPES_NOT_ISOLATED_OBSERVER_CPU',
+        snapshotBoundary: 'BEFORE_CURRENT_EMIT_RECORD_INCLUDING_ITS_WRITE',
+        observerRoundTrip: { ...this.observerRoundTrip },
+        roundTripMeaning: 'INDEPENDENT_READ_ONLY_TRANSACTION_RTT_NOT_ADDED_BUSINESS_LATENCY',
+        exclusions: 'BUSINESS_REQUEST_AND_AWAITS_PAUSE_AND_ASYNC_SCHEDULING',
+        coverage: 'INSTRUMENTED_SYNC_SCOPES_ONLY_NOT_TOTAL_INCREMENTAL_BUSINESS_OVERHEAD',
+        acceptance: 'NEVER_SUBTRACT_COST_TO_ACCEPT_30_SECOND_BUDGET',
+      },
+      outputBound: {
+        frames: this.outputEvents,
+        bytes: this.outputBytes,
+        maxFrames: 40,
+        maxBytes: 524288,
+      },
       queryIdentity: {
         client: 'FULL_NORMALIZED_SQL_SHA256',
         server: 'NORMALIZED_PREFIX_128_CHARS_ONLY',
@@ -597,8 +812,8 @@ export class E4SliceReadDiagnostic {
       },
       lockChainBound: { depth: 2, fanout: 8, rows: 24, completeGraph: false },
       queryEvent: {
-        calls: this.queryEventCalls,
-        durationMs: this.queryEventMs,
+        calls: slice?.queryEventCalls ?? 0,
+        durationMs: slice?.queryEventMs ?? null,
         meaning: 'PRISMA_QUERY_EVENT_NOT_PURE_SERVER_TIME',
       },
       planStatus: 'UNAVAILABLE',
