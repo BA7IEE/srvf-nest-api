@@ -232,6 +232,7 @@ describe('E4 actual maximum prepare receipt failure boundary without a database'
       stages,
       measured,
       phaseDiagnostic,
+      sliceReadDiagnostic: undefined,
       engineRequests,
       source: { activityId: 'synthetic-activity' },
       prepareCommand: {},

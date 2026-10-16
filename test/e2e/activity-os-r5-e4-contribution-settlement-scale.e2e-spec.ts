@@ -1,4 +1,9 @@
 import {
+  E4SliceReadDiagnostic,
+  e4SliceReadOptions,
+  preflightE4SliceReadDiagnostic,
+} from '../helpers/e4-slice-read-diagnostic';
+import {
   createE4MaximumStageReceipt,
   restoreE4MaximumStageOpening,
   restoreE4HistoricalCatalogOpening,
@@ -4571,6 +4576,7 @@ afterAll(async () => {
 }, 75_000);
 describe('E4 maximum real sources with unchanged transaction and query budgets', () => {
   let f: E4Fixture;
+  let sliceReadDiagnostic: E4SliceReadDiagnostic | undefined;
   let firstReviewOracle:
     | {
         db: PrismaClient;
@@ -4681,6 +4687,11 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
       await firstReviewOracle.db.$disconnect();
     }
   }, 75_000);
+
+  // Independent receipt after both original fixture and review clients have closed.
+  afterAll(async () => {
+    await sliceReadDiagnostic?.collectCleanup();
+  }, 10_000);
 
   // This owner-bound diagnostic is explicitly local-only; CI still runs the unchanged original full chain.
   (process.env.SRVF_E4_W98 === '1' ? it : it.skip)(
@@ -4895,6 +4906,9 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
   }, 75_000);
 
   it('2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards', async () => {
+    const sliceObservationDeadline = performance.now() + 600_000;
+    const sliceOptions = e4SliceReadOptions();
+    await preflightE4SliceReadDiagnostic(f.db, sliceOptions);
     const stages = createE4MaximumStageReceipt();
     const source = await stages.run('FIXTURE', () => createMaximumE4Source(f));
     stages.enter('FIXTURE_CHECKS');
@@ -4911,7 +4925,23 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
     ).toBe(50000);
     stages.complete('FIXTURE_CHECKS');
     stages.enter('PREPARE_SETUP');
-    const observed = new ObservedE4Database({ log: [{ emit: 'event', level: 'query' }] });
+    const observed = new ObservedE4Database({
+      log: [{ emit: 'event', level: 'query' }],
+      ...sliceOptions.clientOptions,
+    });
+    try {
+      sliceReadDiagnostic = new E4SliceReadDiagnostic(observed, f.db, f.app, {
+        scope: sliceOptions.scope,
+        applicationName: sliceOptions.applicationName,
+        deadlineMs: sliceObservationDeadline,
+        dedicatedLease: process.env.SRVF_E4_W98 === '1',
+      });
+      observed.$on('query', (event) =>
+        sliceReadDiagnostic?.queryEvent(event.query, event.duration),
+      );
+    } catch {
+      console.info('E4_SLICE_READ', '{"status":"UNKNOWN","reason":"INSTALL"}');
+    }
     const engineObserver = observeEngineTransactions(observed);
     const engineRequests = new E4EngineRequestWaitDiagnostic(
       Reflect.get(observed, '_engine') as object,
@@ -5019,6 +5049,7 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
       preparePhaseDiagnostic = phaseDiagnostic;
       let prepareBusinessFailure: { error: unknown } | undefined;
       try {
+        sliceReadDiagnostic?.arm();
         engineRequests.begin();
         phaseDiagnostic.begin();
         stages.complete('PREPARE_SETUP');
@@ -5043,6 +5074,7 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
         } finally {
           engineRequests.finish();
           engineRequests.restore();
+          sliceReadDiagnostic?.restoreEngine();
           console.info(
             'E4 maximum engine request waits (fixed counters)',
             JSON.stringify(engineRequests.snapshot()),
@@ -5399,8 +5431,15 @@ describe('E4 maximum real sources with unchanged transaction and query budgets',
       await stages.run('POST_BUSINESS_PROBE', () => assertPostBusinessPSetProbe(f.db, proof.id));
     } finally {
       engineRequests.restore();
+      sliceReadDiagnostic?.restoreEngine();
       engineObserver.restore();
-      await stages.cleanup(() => observed.$disconnect());
+      try {
+        await sliceReadDiagnostic?.finishObservation();
+      } catch {
+        console.info('E4_SLICE_READ', '{"status":"UNKNOWN","reason":"COLLECTION"}');
+      } finally {
+        await stages.cleanup(() => observed.$disconnect());
+      }
     }
     stages.assertReliable();
   }, 600_000);

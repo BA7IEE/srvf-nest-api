@@ -255,8 +255,63 @@ export function restoreE4OrdinaryOracleOpening(source: string): string {
 
 // Exact outer instrumentation inverse. The original complete scale source stays frozen.
 const OPENING_SHA = '50a090de9193d80ab659852c0420aed4e05290913be1050b5f5631da9cf17ed6';
-const CANDIDATE_SHA = '576eb7cd5edd0d30160c83161fbeb99d3dfeee6f614e78915b96ea8f03697442';
+const CANDIDATE_SHA = '5408651f58567fe8b9468f93326686ede1b6ac4da1d15028784fd0c3e3e51d87';
 const STAGE_BINDINGS: { candidate: string; opening: string; sha256: string }[] = [
+  {
+    candidate:
+      "import {\n  E4SliceReadDiagnostic,\n  e4SliceReadOptions,\n  preflightE4SliceReadDiagnostic,\n} from '../helpers/e4-slice-read-diagnostic';\nimport {\n  createE4MaximumStageReceipt,\n  restoreE4MaximumStageOpening,\n",
+    opening: 'import {\n  createE4MaximumStageReceipt,\n  restoreE4MaximumStageOpening,\n',
+    sha256: '1824a01dd40645fe67eda9eb9f33fbc5316a7defdb4748b04cce5a8f8b6022a7',
+  },
+  {
+    candidate:
+      "}, 75_000);\ndescribe('E4 maximum real sources with unchanged transaction and query budgets', () => {\n  let f: E4Fixture;\n  let sliceReadDiagnostic: E4SliceReadDiagnostic | undefined;\n  let firstReviewOracle:\n    | {\n        db: PrismaClient;\n",
+    opening:
+      "}, 75_000);\ndescribe('E4 maximum real sources with unchanged transaction and query budgets', () => {\n  let f: E4Fixture;\n  let firstReviewOracle:\n    | {\n        db: PrismaClient;\n",
+    sha256: 'b0cab4abb0267a3e1e4aca419f05b90e38549535ac75beacfd458b2cc1810d0c',
+  },
+  {
+    candidate:
+      "    }\n  }, 75_000);\n\n  // Independent receipt after both original fixture and review clients have closed.\n  afterAll(async () => {\n    await sliceReadDiagnostic?.collectCleanup();\n  }, 10_000);\n\n  // This owner-bound diagnostic is explicitly local-only; CI still runs the unchanged original full chain.\n  (process.env.SRVF_E4_W98 === '1' ? it : it.skip)(\n    'E4 S13 thin-key exact full-doc probe',\n",
+    opening:
+      "    }\n  }, 75_000);\n\n  // This owner-bound diagnostic is explicitly local-only; CI still runs the unchanged original full chain.\n  (process.env.SRVF_E4_W98 === '1' ? it : it.skip)(\n    'E4 S13 thin-key exact full-doc probe',\n",
+    sha256: 'a7c87eafe7fa55fb0423e6a4ed7c797c84b49069d019cfbd900df12fb7b2edf1',
+  },
+  {
+    candidate:
+      "  }, 75_000);\n\n  it('2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards', async () => {\n    const sliceObservationDeadline = performance.now() + 600_000;\n    const sliceOptions = e4SliceReadOptions();\n    await preflightE4SliceReadDiagnostic(f.db, sliceOptions);\n    const stages = createE4MaximumStageReceipt();\n    const source = await stages.run('FIXTURE', () => createMaximumE4Source(f));\n    stages.enter('FIXTURE_CHECKS');\n",
+    opening:
+      "  }, 75_000);\n\n  it('2,000 identities / 10,000 segments / 50,000 slices yield 8,000 policy units without repeated awards', async () => {\n    const stages = createE4MaximumStageReceipt();\n    const source = await stages.run('FIXTURE', () => createMaximumE4Source(f));\n    stages.enter('FIXTURE_CHECKS');\n",
+    sha256: '9b9591a7a76678892ba96a11347ab54d3e3f2ec94679dd5a8e0dc5d57324bd92',
+  },
+  {
+    candidate:
+      "    ).toBe(50000);\n    stages.complete('FIXTURE_CHECKS');\n    stages.enter('PREPARE_SETUP');\n    const observed = new ObservedE4Database({\n      log: [{ emit: 'event', level: 'query' }],\n      ...sliceOptions.clientOptions,\n    });\n    try {\n      sliceReadDiagnostic = new E4SliceReadDiagnostic(observed, f.db, f.app, {\n        scope: sliceOptions.scope,\n        applicationName: sliceOptions.applicationName,\n        deadlineMs: sliceObservationDeadline,\n        dedicatedLease: process.env.SRVF_E4_W98 === '1',\n      });\n      observed.$on('query', (event) =>\n        sliceReadDiagnostic?.queryEvent(event.query, event.duration),\n      );\n    } catch {\n      console.info('E4_SLICE_READ', '{\"status\":\"UNKNOWN\",\"reason\":\"INSTALL\"}');\n    }\n    const engineObserver = observeEngineTransactions(observed);\n    const engineRequests = new E4EngineRequestWaitDiagnostic(\n      Reflect.get(observed, '_engine') as object,\n",
+    opening:
+      "    ).toBe(50000);\n    stages.complete('FIXTURE_CHECKS');\n    stages.enter('PREPARE_SETUP');\n    const observed = new ObservedE4Database({ log: [{ emit: 'event', level: 'query' }] });\n    const engineObserver = observeEngineTransactions(observed);\n    const engineRequests = new E4EngineRequestWaitDiagnostic(\n      Reflect.get(observed, '_engine') as object,\n",
+    sha256: '7ce40e7b976b466221837dda879552a23cf2c8c13e945a3ecb32a4bbbcf0edee',
+  },
+  {
+    candidate:
+      "      preparePhaseDiagnostic = phaseDiagnostic;\n      let prepareBusinessFailure: { error: unknown } | undefined;\n      try {\n        sliceReadDiagnostic?.arm();\n        engineRequests.begin();\n        phaseDiagnostic.begin();\n        stages.complete('PREPARE_SETUP');\n",
+    opening:
+      "      preparePhaseDiagnostic = phaseDiagnostic;\n      let prepareBusinessFailure: { error: unknown } | undefined;\n      try {\n        engineRequests.begin();\n        phaseDiagnostic.begin();\n        stages.complete('PREPARE_SETUP');\n",
+    sha256: 'ba71dbe68e35ccd8443fac961560583e18d57df9a47a9c63c3045ecf89c2042f',
+  },
+  {
+    candidate:
+      "        } finally {\n          engineRequests.finish();\n          engineRequests.restore();\n          sliceReadDiagnostic?.restoreEngine();\n          console.info(\n            'E4 maximum engine request waits (fixed counters)',\n            JSON.stringify(engineRequests.snapshot()),\n",
+    opening:
+      "        } finally {\n          engineRequests.finish();\n          engineRequests.restore();\n          console.info(\n            'E4 maximum engine request waits (fixed counters)',\n            JSON.stringify(engineRequests.snapshot()),\n",
+    sha256: 'ccc69511ac1b9c0dac7c2f9d83081575e22f280e8c6a2b90b46954ceb3d9890f',
+  },
+  {
+    candidate:
+      '      await stages.run(\'POST_BUSINESS_PROBE\', () => assertPostBusinessPSetProbe(f.db, proof.id));\n    } finally {\n      engineRequests.restore();\n      sliceReadDiagnostic?.restoreEngine();\n      engineObserver.restore();\n      try {\n        await sliceReadDiagnostic?.finishObservation();\n      } catch {\n        console.info(\'E4_SLICE_READ\', \'{"status":"UNKNOWN","reason":"COLLECTION"}\');\n      } finally {\n        await stages.cleanup(() => observed.$disconnect());\n      }\n    }\n    stages.assertReliable();\n  }, 600_000);\n',
+    opening:
+      "      await stages.run('POST_BUSINESS_PROBE', () => assertPostBusinessPSetProbe(f.db, proof.id));\n    } finally {\n      engineRequests.restore();\n      engineObserver.restore();\n      await stages.cleanup(() => observed.$disconnect());\n    }\n    stages.assertReliable();\n  }, 600_000);\n",
+    sha256: 'a20981797503820d5c12fe01e18e4307ef29dbdc95f2c1f7bdb58fed66e13eaa',
+  },
   {
     candidate:
       "  it('closes both test files, all original assertions, and the exact shared native implementation', () => {\n    const migration = restoreE4HistoricalCatalogOpening(\n      readFileSync(\n        resolve(__dirname, 'activity-os-r5-e4-contribution-settlement-migration.e2e-spec.ts'),\n        'utf8',\n      ),\n    );\n",
